@@ -189,7 +189,7 @@ void vg_add_client_stack_block ( ThreadState* tst, Addr aa, UInt sz )
    vg_assert(vg_csb_used <= vg_csb_size);
 
    /* VG_(printf)("acsb  %p %d\n", aa, sz); */
-   VG_(make_noaccess) ( aa, sz );
+   SK_(make_noaccess) ( aa, sz );
 
    /* And make sure that they are in descending order of address. */
    i = vg_csb_used;
@@ -288,7 +288,7 @@ void SK_(delete_client_stack_blocks_following_ESP_change) ( void )
 }
 
 
-UInt SKN_(handle_client_request) ( ThreadState* tst, UInt* arg_block )
+UInt SK_(handle_client_request) ( ThreadState* tst, UInt* arg_block )
 {
    Int   i;
    Bool  ok;
@@ -297,19 +297,19 @@ UInt SKN_(handle_client_request) ( ThreadState* tst, UInt* arg_block )
 
    switch (arg[0]) {
       case VG_USERREQ__CHECK_WRITABLE: /* check writable */
-         ok = VG_(check_writable) ( arg[1], arg[2], &bad_addr );
+         ok = SK_(check_writable) ( arg[1], arg[2], &bad_addr );
          if (!ok)
             SK_(record_user_error) ( tst, bad_addr, True );
          return ok ? (UInt)NULL : bad_addr;
 
       case VG_USERREQ__CHECK_READABLE: /* check readable */
-         ok = VG_(check_readable) ( arg[1], arg[2], &bad_addr );
+         ok = SK_(check_readable) ( arg[1], arg[2], &bad_addr );
          if (!ok)
             SK_(record_user_error) ( tst, bad_addr, False );
          return ok ? (UInt)NULL : bad_addr;
 
       case VG_USERREQ__DO_LEAK_CHECK:
-         VG_(detect_memory_leaks)();
+         SK_(detect_memory_leaks)();
          return 0; /* return value is meaningless */
 
       case VG_USERREQ__MAKE_NOACCESS: /* make no access */
@@ -319,7 +319,7 @@ UInt SKN_(handle_client_request) ( ThreadState* tst, UInt* arg_block )
          vg_cgbs[i].start = arg[1];
          vg_cgbs[i].size  = arg[2];
          vg_cgbs[i].where = VG_(get_ExeContext) ( tst );
-         VG_(make_noaccess) ( arg[1], arg[2] );
+         SK_(make_noaccess) ( arg[1], arg[2] );
          return i;
 
       case VG_USERREQ__MAKE_WRITABLE: /* make writable */
@@ -328,7 +328,7 @@ UInt SKN_(handle_client_request) ( ThreadState* tst, UInt* arg_block )
          vg_cgbs[i].start = arg[1];
          vg_cgbs[i].size  = arg[2];
          vg_cgbs[i].where = VG_(get_ExeContext) ( tst );
-         VG_(make_writable) ( arg[1], arg[2] );
+         SK_(make_writable) ( arg[1], arg[2] );
          return i;
 
       case VG_USERREQ__MAKE_READABLE: /* make readable */
@@ -337,7 +337,7 @@ UInt SKN_(handle_client_request) ( ThreadState* tst, UInt* arg_block )
          vg_cgbs[i].start = arg[1];
          vg_cgbs[i].size  = arg[2];
          vg_cgbs[i].where = VG_(get_ExeContext) ( tst );
-         VG_(make_readable) ( arg[1], arg[2] );
+         SK_(make_readable) ( arg[1], arg[2] );
          return i;
          
       case VG_USERREQ__DISCARD: /* discard */

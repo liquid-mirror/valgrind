@@ -38,7 +38,7 @@
    vg_translate.c:VG_(saneUInstr)().  Everything general said there applies
    here too.
 */
-Bool SKN_(saneExtUInstr)(Bool beforeRA, Bool beforeLiveness, UInstr* u)
+Bool SK_(saneExtUInstr)(Bool beforeRA, Bool beforeLiveness, UInstr* u)
 {
 // SSS: duplicating these macros really sucks
 #  define LIT0 (u->lit32 == 0)
@@ -93,7 +93,7 @@ Bool SKN_(saneExtUInstr)(Bool beforeRA, Bool beforeLiveness, UInstr* u)
    case TAG2:   return LIT0 && SZ0 && CC0 &&  TR1 && TR2 && Ls3 && XOTHER;
    default:
       VG_(printf)("unhandled opcode: %u\n", u->opcode);
-      VG_(panic)("SKN_(saneExtUInstr): unhandled opcode");
+      VG_(panic)("SK_(saneExtUInstr): unhandled opcode");
    }
 #  undef LIT0
 #  undef LIT1
@@ -120,47 +120,47 @@ Bool SKN_(saneExtUInstr)(Bool beforeRA, Bool beforeLiveness, UInstr* u)
 #  undef XOTHER
 }
 
-static Char* nameOfTagOp ( VgTagOp h )
+static Char* nameOfTagOp ( TagOp h )
 {
    switch (h) {
-      case VgT_PCast40:        return "PCast40";
-      case VgT_PCast20:        return "PCast20";
-      case VgT_PCast10:        return "PCast10";
-      case VgT_PCast01:        return "PCast01";
-      case VgT_PCast02:        return "PCast02";
-      case VgT_PCast04:        return "PCast04";
-      case VgT_PCast14:        return "PCast14";
-      case VgT_PCast12:        return "PCast12";
-      case VgT_PCast11:        return "PCast11";
-      case VgT_Left4:          return "Left4";
-      case VgT_Left2:          return "Left2";
-      case VgT_Left1:          return "Left1";
-      case VgT_SWiden14:       return "SWiden14";
-      case VgT_SWiden24:       return "SWiden24";
-      case VgT_SWiden12:       return "SWiden12";
-      case VgT_ZWiden14:       return "ZWiden14";
-      case VgT_ZWiden24:       return "ZWiden24";
-      case VgT_ZWiden12:       return "ZWiden12";
-      case VgT_UifU4:          return "UifU4";
-      case VgT_UifU2:          return "UifU2";
-      case VgT_UifU1:          return "UifU1";
-      case VgT_UifU0:          return "UifU0";
-      case VgT_DifD4:          return "DifD4";
-      case VgT_DifD2:          return "DifD2";
-      case VgT_DifD1:          return "DifD1";
-      case VgT_ImproveAND4_TQ: return "ImproveAND4_TQ";
-      case VgT_ImproveAND2_TQ: return "ImproveAND2_TQ";
-      case VgT_ImproveAND1_TQ: return "ImproveAND1_TQ";
-      case VgT_ImproveOR4_TQ:  return "ImproveOR4_TQ";
-      case VgT_ImproveOR2_TQ:  return "ImproveOR2_TQ";
-      case VgT_ImproveOR1_TQ:  return "ImproveOR1_TQ";
-      case VgT_DebugFn:        return "DebugFn";
+      case Tag_PCast40:        return "PCast40";
+      case Tag_PCast20:        return "PCast20";
+      case Tag_PCast10:        return "PCast10";
+      case Tag_PCast01:        return "PCast01";
+      case Tag_PCast02:        return "PCast02";
+      case Tag_PCast04:        return "PCast04";
+      case Tag_PCast14:        return "PCast14";
+      case Tag_PCast12:        return "PCast12";
+      case Tag_PCast11:        return "PCast11";
+      case Tag_Left4:          return "Left4";
+      case Tag_Left2:          return "Left2";
+      case Tag_Left1:          return "Left1";
+      case Tag_SWiden14:       return "SWiden14";
+      case Tag_SWiden24:       return "SWiden24";
+      case Tag_SWiden12:       return "SWiden12";
+      case Tag_ZWiden14:       return "ZWiden14";
+      case Tag_ZWiden24:       return "ZWiden24";
+      case Tag_ZWiden12:       return "ZWiden12";
+      case Tag_UifU4:          return "UifU4";
+      case Tag_UifU2:          return "UifU2";
+      case Tag_UifU1:          return "UifU1";
+      case Tag_UifU0:          return "UifU0";
+      case Tag_DifD4:          return "DifD4";
+      case Tag_DifD2:          return "DifD2";
+      case Tag_DifD1:          return "DifD1";
+      case Tag_ImproveAND4_TQ: return "ImproveAND4_TQ";
+      case Tag_ImproveAND2_TQ: return "ImproveAND2_TQ";
+      case Tag_ImproveAND1_TQ: return "ImproveAND1_TQ";
+      case Tag_ImproveOR4_TQ:  return "ImproveOR4_TQ";
+      case Tag_ImproveOR2_TQ:  return "ImproveOR2_TQ";
+      case Tag_ImproveOR1_TQ:  return "ImproveOR1_TQ";
+      case Tag_DebugFn:        return "DebugFn";
       default: VG_(panic)("vg_nameOfTagOp");
    }
 }
 
 
-Char* SKN_(nameExtUOpcode)(Opcode opc)
+Char* SK_(nameExtUOpcode)(Opcode opc)
 {
    switch (opc) {
       case GETVF:   return "GETVF";
@@ -175,7 +175,7 @@ Char* SKN_(nameExtUOpcode)(Opcode opc)
       case SETV:    return "SETV";
       default:      
          VG_(printf)("unhandled opcode: %u\n", opc);
-         VG_(panic)("SKN_(nameExtUOpcode): unhandled case");
+         VG_(panic)("SK_(nameExtUOpcode): unhandled case");
    }
 }
 
@@ -183,7 +183,7 @@ Char* SKN_(nameExtUOpcode)(Opcode opc)
    Debugging stuff.
    ------------------------------------------------------------------ */
 
-void SKN_(ppExtUInstr)(UInstr* u)
+void SK_(ppExtUInstr)(UInstr* u)
 {
    switch (u->opcode) {
 
@@ -232,12 +232,12 @@ void SKN_(ppExtUInstr)(UInstr* u)
 
       default:
          VG_(printf)("unhandled opcode: %u\n", u->opcode);
-         VG_(panic)("SKN_(ppExtUInstr): unhandled opcode");
+         VG_(panic)("SK_(ppExtUInstr): unhandled opcode");
    }
 
 }
 
-Int SKN_(getExtRegUsage)(UInstr* u, Tag tag, RegUse* arr)
+Int SK_(getExtRegUsage)(UInstr* u, Tag tag, RegUse* arr)
 {
 #  define RD(ono)    VG_UINSTR_READS_REG(ono)
 #  define WR(ono)    VG_UINSTR_WRITES_REG(ono)
@@ -264,7 +264,7 @@ Int SKN_(getExtRegUsage)(UInstr* u, Tag tag, RegUse* arr)
 
       default: 
          VG_(printf)("unhandled opcode: %u\n", u->opcode);
-         VG_(panic)("SKN_(getExtRegUsage): unhandled opcode");
+         VG_(panic)("SK_(getExtRegUsage): unhandled opcode");
    }
    return n;
 
@@ -285,97 +285,97 @@ Int SKN_(getExtRegUsage)(UInstr* u, Tag tag, RegUse* arr)
 #define newShadow VG_(getNewShadow)
 
 static
-VgTagOp get_VgT_ImproveOR_TQ ( Int sz )
+TagOp get_Tag_ImproveOR_TQ ( Int sz )
 {
    switch (sz) {
-      case 4: return VgT_ImproveOR4_TQ;
-      case 2: return VgT_ImproveOR2_TQ;
-      case 1: return VgT_ImproveOR1_TQ;
-      default: VG_(panic)("get_VgT_ImproveOR_TQ");
+      case 4: return Tag_ImproveOR4_TQ;
+      case 2: return Tag_ImproveOR2_TQ;
+      case 1: return Tag_ImproveOR1_TQ;
+      default: VG_(panic)("get_Tag_ImproveOR_TQ");
    }
 }
 
 
 static
-VgTagOp get_VgT_ImproveAND_TQ ( Int sz )
+TagOp get_Tag_ImproveAND_TQ ( Int sz )
 {
    switch (sz) {
-      case 4: return VgT_ImproveAND4_TQ;
-      case 2: return VgT_ImproveAND2_TQ;
-      case 1: return VgT_ImproveAND1_TQ;
-      default: VG_(panic)("get_VgT_ImproveAND_TQ");
+      case 4: return Tag_ImproveAND4_TQ;
+      case 2: return Tag_ImproveAND2_TQ;
+      case 1: return Tag_ImproveAND1_TQ;
+      default: VG_(panic)("get_Tag_ImproveAND_TQ");
    }
 }
 
 
 static
-VgTagOp get_VgT_Left ( Int sz )
+TagOp get_Tag_Left ( Int sz )
 {
    switch (sz) {
-      case 4: return VgT_Left4;
-      case 2: return VgT_Left2;
-      case 1: return VgT_Left1;
-      default: VG_(panic)("get_VgT_Left");
+      case 4: return Tag_Left4;
+      case 2: return Tag_Left2;
+      case 1: return Tag_Left1;
+      default: VG_(panic)("get_Tag_Left");
    }
 }
 
 
 static
-VgTagOp get_VgT_UifU ( Int sz )
+TagOp get_Tag_UifU ( Int sz )
 {
    switch (sz) {
-      case 4: return VgT_UifU4;
-      case 2: return VgT_UifU2;
-      case 1: return VgT_UifU1;
-      case 0: return VgT_UifU0;
-      default: VG_(panic)("get_VgT_UifU");
+      case 4: return Tag_UifU4;
+      case 2: return Tag_UifU2;
+      case 1: return Tag_UifU1;
+      case 0: return Tag_UifU0;
+      default: VG_(panic)("get_Tag_UifU");
    }
 }
 
 
 static
-VgTagOp get_VgT_DifD ( Int sz )
+TagOp get_Tag_DifD ( Int sz )
 {
    switch (sz) {
-      case 4: return VgT_DifD4;
-      case 2: return VgT_DifD2;
-      case 1: return VgT_DifD1;
-      default: VG_(panic)("get_VgT_DifD");
+      case 4: return Tag_DifD4;
+      case 2: return Tag_DifD2;
+      case 1: return Tag_DifD1;
+      default: VG_(panic)("get_Tag_DifD");
    }
 }
 
 
 static 
-VgTagOp get_VgT_PCast ( Int szs, Int szd )
+TagOp get_Tag_PCast ( Int szs, Int szd )
 {
-   if (szs == 4 && szd == 0) return VgT_PCast40;
-   if (szs == 2 && szd == 0) return VgT_PCast20;
-   if (szs == 1 && szd == 0) return VgT_PCast10;
-   if (szs == 0 && szd == 1) return VgT_PCast01;
-   if (szs == 0 && szd == 2) return VgT_PCast02;
-   if (szs == 0 && szd == 4) return VgT_PCast04;
-   if (szs == 1 && szd == 4) return VgT_PCast14;
-   if (szs == 1 && szd == 2) return VgT_PCast12;
-   if (szs == 1 && szd == 1) return VgT_PCast11;
-   VG_(printf)("get_VgT_PCast(%d,%d)\n", szs, szd);
-   VG_(panic)("get_VgT_PCast");
+   if (szs == 4 && szd == 0) return Tag_PCast40;
+   if (szs == 2 && szd == 0) return Tag_PCast20;
+   if (szs == 1 && szd == 0) return Tag_PCast10;
+   if (szs == 0 && szd == 1) return Tag_PCast01;
+   if (szs == 0 && szd == 2) return Tag_PCast02;
+   if (szs == 0 && szd == 4) return Tag_PCast04;
+   if (szs == 1 && szd == 4) return Tag_PCast14;
+   if (szs == 1 && szd == 2) return Tag_PCast12;
+   if (szs == 1 && szd == 1) return Tag_PCast11;
+   VG_(printf)("get_Tag_PCast(%d,%d)\n", szs, szd);
+   VG_(panic)("get_Tag_PCast");
 }
 
 
 static 
-VgTagOp get_VgT_Widen ( Bool syned, Int szs, Int szd )
+TagOp get_Tag_Widen ( Bool syned, Int szs, Int szd )
 {
-   if (szs == 1 && szd == 2 && syned)  return VgT_SWiden12;
-   if (szs == 1 && szd == 2 && !syned) return VgT_ZWiden12;
+   if (szs == 1 && szd == 2 && syned)  return Tag_SWiden12;
+   if (szs == 1 && szd == 2 && !syned) return Tag_ZWiden12;
 
-   if (szs == 1 && szd == 4 && syned)  return VgT_SWiden14;
-   if (szs == 1 && szd == 4 && !syned) return VgT_ZWiden14;
+   if (szs == 1 && szd == 4 && syned)  return Tag_SWiden14;
+   if (szs == 1 && szd == 4 && !syned) return Tag_ZWiden14;
 
-   if (szs == 2 && szd == 4 && syned)  return VgT_SWiden24;
-   if (szs == 2 && szd == 4 && !syned) return VgT_ZWiden24;
+   if (szs == 2 && szd == 4 && syned)  return Tag_SWiden24;
+   if (szs == 2 && szd == 4 && !syned) return Tag_ZWiden24;
 
-   VG_(printf)("get_VgT_Widen(%d,%d,%d)\n", (Int)syned, szs, szd);
-   VG_(panic)("get_VgT_Widen");
+   VG_(printf)("get_Tag_Widen(%d,%d,%d)\n", (Int)syned, szs, szd);
+   VG_(panic)("get_Tag_Widen");
 }
 
 /* Pessimally cast the spec'd shadow from one size to another. */
@@ -386,7 +386,7 @@ void create_PCast ( UCodeBlock* cb, Int szs, Int szd, Int tempreg )
       return;
    uInstr3(cb, TAG1, 0, TempReg, tempreg, 
                         NoValue, 0, 
-                        Lit16,   get_VgT_PCast(szs,szd));
+                        Lit16,   get_Tag_PCast(szs,szd));
 }
 
 
@@ -400,7 +400,7 @@ void create_Widen ( UCodeBlock* cb, Bool signed_widen,
    if (szs == szd) return;
    uInstr3(cb, TAG1, 0, TempReg, tempreg, 
                         NoValue, 0, 
-                        Lit16,   get_VgT_Widen(signed_widen,szs,szd));
+                        Lit16,   get_Tag_Widen(signed_widen,szs,szd));
 }
 
 
@@ -437,7 +437,7 @@ void create_Left ( UCodeBlock* cb, Int sz, Int tempreg )
    uInstr3(cb, TAG1, 0, 
                TempReg, tempreg,
                NoValue, 0, 
-               Lit16, get_VgT_Left(sz));
+               Lit16, get_Tag_Left(sz));
 }
 
 
@@ -446,7 +446,7 @@ static
 void create_UifU ( UCodeBlock* cb, Int sz, Int ts, Int td )
 {
    uInstr3(cb, TAG2, 0, TempReg, ts, TempReg, td,
-               Lit16, get_VgT_UifU(sz));
+               Lit16, get_Tag_UifU(sz));
 }
 
 
@@ -455,7 +455,7 @@ static
 void create_DifD ( UCodeBlock* cb, Int sz, Int ts, Int td )
 {
    uInstr3(cb, TAG2, 0, TempReg, ts, TempReg, td,
-               Lit16, get_VgT_DifD(sz));
+               Lit16, get_Tag_DifD(sz));
 }
 
 
@@ -465,7 +465,7 @@ static
 void create_ImproveAND_TQ ( UCodeBlock* cb, Int sz, Int tval, Int tqqq )
 {
    uInstr3(cb, TAG2, 0, TempReg, tval, TempReg, tqqq,
-               Lit16, get_VgT_ImproveAND_TQ(sz));
+               Lit16, get_Tag_ImproveAND_TQ(sz));
 }
 
 
@@ -475,7 +475,7 @@ static
 void create_ImproveOR_TQ ( UCodeBlock* cb, Int sz, Int tval, Int tqqq )
 {
    uInstr3(cb, TAG2, 0, TempReg, tval, TempReg, tqqq,
-               Lit16, get_VgT_ImproveOR_TQ(sz));
+               Lit16, get_Tag_ImproveOR_TQ(sz));
 }
 
 
@@ -539,7 +539,7 @@ static UCodeBlock* memcheck_instrument ( UCodeBlock* cb_in )
             address. */
 
          case LOAD: 
-            if (VG_(clo_check_addrVs)) {
+            if (SK_(clo_check_addrVs)) {
                uInstr1(cb, TESTV, 4, TempReg, SHADOW(u_in->val1));
                uInstr1(cb, SETV,  4, TempReg, SHADOW(u_in->val1));
             }
@@ -550,7 +550,7 @@ static UCodeBlock* memcheck_instrument ( UCodeBlock* cb_in )
             break;
 
          case STORE:
-            if (VG_(clo_check_addrVs)) {
+            if (SK_(clo_check_addrVs)) {
                uInstr1(cb, TESTV,  4, TempReg, SHADOW(u_in->val2));
                uInstr1(cb, SETV,   4, TempReg, SHADOW(u_in->val2));
             }
@@ -1106,7 +1106,7 @@ static void vg_delete_redundant_SETVs ( UCodeBlock* cb )
 
       if (u->opcode == GETV && VGC_IS_SHADOW(u->val2) 
                             && next_is_write[u->val2]
-                            && !VG_(clo_check_addrVs)) {
+                            && !SK_(clo_check_addrVs)) {
          VG_(newNOP)(u);
          if (dis) 
             VG_(printf)("   at %2d: delete GETV\n", i);
@@ -1114,7 +1114,7 @@ static void vg_delete_redundant_SETVs ( UCodeBlock* cb )
 
       if (u->opcode == TAG1 && VGC_IS_SHADOW(u->val1) 
                             && next_is_write[u->val1]
-                            && !VG_(clo_check_addrVs)) {
+                            && !SK_(clo_check_addrVs)) {
          VG_(newNOP)(u);
          if (dis) 
             VG_(printf)("   at %2d: delete TAG1\n", i);
@@ -1122,7 +1122,7 @@ static void vg_delete_redundant_SETVs ( UCodeBlock* cb )
 
       if (u->opcode == TAG2 && VGC_IS_SHADOW(u->val2) 
                             && next_is_write[u->val2]
-                            && !VG_(clo_check_addrVs)) {
+                            && !SK_(clo_check_addrVs)) {
          VG_(newNOP)(u);
          if (dis) 
             VG_(printf)("   at %2d: delete TAG2\n", i);
@@ -1287,9 +1287,9 @@ static void vg_propagate_definedness ( UCodeBlock* cb )
             vg_assert(u->tag3 == Lit16);
             /* Ultra-paranoid "type" checking. */
             switch (u->val3) {
-               case VgT_ImproveAND4_TQ: case VgT_ImproveAND2_TQ:
-               case VgT_ImproveAND1_TQ: case VgT_ImproveOR4_TQ:
-               case VgT_ImproveOR2_TQ: case VgT_ImproveOR1_TQ:
+               case Tag_ImproveAND4_TQ: case Tag_ImproveAND2_TQ:
+               case Tag_ImproveAND1_TQ: case Tag_ImproveOR4_TQ:
+               case Tag_ImproveOR2_TQ: case Tag_ImproveOR1_TQ:
                   vg_assert(u->tag1 == TempReg && !VGC_IS_SHADOW(u->val1));
                   break;
                default:
@@ -1298,13 +1298,13 @@ static void vg_propagate_definedness ( UCodeBlock* cb )
             }
             switch (u->val3) {
                Int sz;
-               case VgT_UifU4: 
+               case Tag_UifU4: 
                   sz = 4; goto do_UifU;
-               case VgT_UifU2: 
+               case Tag_UifU2: 
                   sz = 2; goto do_UifU;
-               case VgT_UifU1:
+               case Tag_UifU1:
                   sz = 1; goto do_UifU;
-               case VgT_UifU0:
+               case Tag_UifU0:
                   sz = 0; goto do_UifU;
                do_UifU:
                   vg_assert(u->tag1 == TempReg && VGC_IS_SHADOW(u->val1));
@@ -1335,9 +1335,9 @@ static void vg_propagate_definedness ( UCodeBlock* cb )
                            i, sz);
                   }
                   break;
-               case VgT_ImproveAND4_TQ:
+               case Tag_ImproveAND4_TQ:
                   sz = 4; goto do_ImproveAND;
-               case VgT_ImproveAND1_TQ:
+               case Tag_ImproveAND1_TQ:
                   sz = 1; goto do_ImproveAND;
                do_ImproveAND:
                   /* Implements Q = T OR Q.  So if Q is entirely defined,
@@ -1369,36 +1369,36 @@ static void vg_propagate_definedness ( UCodeBlock* cb )
                the size, we can delete it completely. */
             switch (u->val3) {
                /* Maintain the same size ... */
-               case VgT_Left4: 
+               case Tag_Left4: 
                   vg_assert(def[u->val1] == 4);
                   NOP_tag1_op(u);
                   break;
-               case VgT_PCast11: 
+               case Tag_PCast11: 
                   vg_assert(def[u->val1] == 1);
                   NOP_tag1_op(u);
                   break;
                /* Change size ... */
-               case VgT_PCast40: 
+               case Tag_PCast40: 
                   vg_assert(def[u->val1] == 4);
                   SETV_tag1_op(u,0);
                   def[u->val1] = 0;
                   break;
-               case VgT_PCast14: 
+               case Tag_PCast14: 
                   vg_assert(def[u->val1] == 1);
                   SETV_tag1_op(u,4);
                   def[u->val1] = 4;
                   break;
-               case VgT_PCast12: 
+               case Tag_PCast12: 
                   vg_assert(def[u->val1] == 1);
                   SETV_tag1_op(u,2);
                   def[u->val1] = 2;
                   break;
-               case VgT_PCast10: 
+               case Tag_PCast10: 
                   vg_assert(def[u->val1] == 1);
                   SETV_tag1_op(u,0);
                   def[u->val1] = 0;
                   break;
-               case VgT_PCast02: 
+               case Tag_PCast02: 
                   vg_assert(def[u->val1] == 0);
                   SETV_tag1_op(u,2);
                   def[u->val1] = 2;
@@ -1453,7 +1453,7 @@ static void vg_cleanup ( UCodeBlock* cb )
 UCodeBlock* SK_(instrument) ( UCodeBlock* cb, Addr not_used )
 {
    cb = memcheck_instrument ( cb );
-   if (VG_(clo_cleanup)) {
+   if (SK_(clo_cleanup)) {
       if (dis) {
          VG_(ppUCodeBlock) ( cb, "Unimproved instrumented UCode:" );
          VG_(printf)("Instrumentation improvements:\n");

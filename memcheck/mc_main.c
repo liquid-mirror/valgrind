@@ -49,14 +49,14 @@
 /*--- Command line options                                 ---*/
 /*------------------------------------------------------------*/
 
-Bool  VG_(clo_partial_loads_ok)       = True;
-Int   VG_(clo_freelist_vol)           = 1000000;
-Bool  VG_(clo_leak_check)             = False;
-VgRes VG_(clo_leak_resolution)        = Vg_LowRes;
-Bool  VG_(clo_show_reachable)         = False;
-Bool  VG_(clo_workaround_gcc296_bugs) = False;
-Bool  VG_(clo_check_addrVs)           = True;
-Bool  VG_(clo_cleanup)                = True;
+Bool  SK_(clo_partial_loads_ok)       = True;
+Int   SK_(clo_freelist_vol)           = 1000000;
+Bool  SK_(clo_leak_check)             = False;
+VgRes SK_(clo_leak_resolution)        = Vg_LowRes;
+Bool  SK_(clo_show_reachable)         = False;
+Bool  SK_(clo_workaround_gcc296_bugs) = False;
+Bool  SK_(clo_check_addrVs)           = True;
+Bool  SK_(clo_cleanup)                = True;
 
 /*------------------------------------------------------------*/
 /*--- Low-level support for memory checking.               ---*/
@@ -339,14 +339,14 @@ void SK_(fini) ( void )
    VG_(print_malloc_stats)();
 
    if (VG_(clo_verbosity) == 1) {
-      if (!VG_(clo_leak_check))
+      if (!SK_(clo_leak_check))
          VG_(message)(Vg_UserMsg, 
              "For a detailed leak analysis,  rerun with: --leak-check=yes");
 
       VG_(message)(Vg_UserMsg, 
                    "For counts of detected errors, rerun with: -v");
    }
-   if (VG_(clo_leak_check)) VG_(detect_memory_leaks)();
+   if (SK_(clo_leak_check)) SK_(detect_memory_leaks)();
 
    done_prof_mem();
 
@@ -593,30 +593,30 @@ static void set_address_range_perms ( Addr a, UInt len,
    /* Check that zero page and highest page have not been written to
       -- this could happen with buggy syscall wrappers.  Today
       (2001-04-26) had precisely such a problem with __NR_setitimer. */
-   vg_assert(SKN_(cheap_sanity_check)());
+   vg_assert(SK_(cheap_sanity_check)());
    VGP_POPCC(VgpSetMem);
 }
 
 /* Set permissions for address ranges ... */
 
-void VG_(make_noaccess) ( Addr a, UInt len )
+void SK_(make_noaccess) ( Addr a, UInt len )
 {
    PROF_EVENT(35);
-   DEBUG("VG_(make_noaccess)(%p, %x)\n", a, len);
+   DEBUG("SK_(make_noaccess)(%p, %x)\n", a, len);
    set_address_range_perms ( a, len, VGM_BIT_INVALID, VGM_BIT_INVALID );
 }
 
-void VG_(make_writable) ( Addr a, UInt len )
+void SK_(make_writable) ( Addr a, UInt len )
 {
    PROF_EVENT(36);
-   DEBUG("VG_(make_writable)(%p, %x)\n", a, len);
+   DEBUG("SK_(make_writable)(%p, %x)\n", a, len);
    set_address_range_perms ( a, len, VGM_BIT_VALID, VGM_BIT_INVALID );
 }
 
-void VG_(make_readable) ( Addr a, UInt len )
+void SK_(make_readable) ( Addr a, UInt len )
 {
    PROF_EVENT(37);
-   DEBUG("VG_(make_readable)(%p, 0x%x)\n", a, len);
+   DEBUG("SK_(make_readable)(%p, 0x%x)\n", a, len);
    set_address_range_perms ( a, len, VGM_BIT_VALID, VGM_BIT_VALID );
 }
 
@@ -643,7 +643,7 @@ static void copy_address_range_state ( Addr src, Addr dst, UInt len )
    exist, *bad_addr is set to the offending address, so the caller can
    know what it is. */
 
-Bool VG_(check_writable) ( Addr a, UInt len, Addr* bad_addr )
+Bool SK_(check_writable) ( Addr a, UInt len, Addr* bad_addr )
 {
    UInt  i;
    UChar abit;
@@ -660,14 +660,14 @@ Bool VG_(check_writable) ( Addr a, UInt len, Addr* bad_addr )
    return True;
 }
 
-Bool VG_(check_readable) ( Addr a, UInt len, Addr* bad_addr )
+Bool SK_(check_readable) ( Addr a, UInt len, Addr* bad_addr )
 {
    UInt  i;
    UChar abit;
    UChar vbyte;
 
    PROF_EVENT(44);
-   DEBUG("VG_(check_readable)\n");
+   DEBUG("SK_(check_readable)\n");
    for (i = 0; i < len; i++) {
       abit  = get_abit(a);
       vbyte = get_vbyte(a);
@@ -686,12 +686,12 @@ Bool VG_(check_readable) ( Addr a, UInt len, Addr* bad_addr )
    examine the actual bytes, to find the end, until we're sure it is
    safe to do so. */
 
-Bool VG_(check_readable_asciiz) ( Addr a, Addr* bad_addr )
+Bool SK_(check_readable_asciiz) ( Addr a, Addr* bad_addr )
 {
    UChar abit;
    UChar vbyte;
    PROF_EVENT(46);
-   DEBUG("VG_(check_readable_asciiz)\n");
+   DEBUG("SK_(check_readable_asciiz)\n");
    while (True) {
       PROF_EVENT(47);
       abit  = get_abit(a);
@@ -784,7 +784,7 @@ void check_is_writable ( CorePart part, ThreadState* tst,
 
    /* VG_(message)(Vg_DebugMsg,"check is writable: %x .. %x",
                                base,base+size-1); */
-   ok = VG_(check_writable) ( base, size, &bad_addr );
+   ok = SK_(check_writable) ( base, size, &bad_addr );
    if (!ok) {
       switch (part) {
       case Vg_CoreSysCall:
@@ -815,7 +815,7 @@ void check_is_readable ( CorePart part, ThreadState* tst,
    
    /* VG_(message)(Vg_DebugMsg,"check is readable: %x .. %x",
                                base,base+size-1); */
-   ok = VG_(check_readable) ( base, size, &bad_addr );
+   ok = SK_(check_readable) ( base, size, &bad_addr );
    if (!ok) {
       switch (part) {
       case Vg_CoreSysCall:
@@ -850,7 +850,7 @@ void check_is_readable_asciiz ( CorePart part, ThreadState* tst,
    VGP_PUSHCC(VgpCheckMem);
 
    vg_assert(part == Vg_CoreSysCall);
-   ok = VG_(check_readable_asciiz) ( (Addr)str, &bad_addr );
+   ok = SK_(check_readable_asciiz) ( (Addr)str, &bad_addr );
    if (!ok) {
       SK_(record_param_error) ( tst, bad_addr, /*is_writable =*/False, s );
    }
@@ -863,7 +863,7 @@ void check_is_readable_asciiz ( CorePart part, ThreadState* tst,
 /*      Nb: Returning zero is sometimes bad! */
 UInt VG_(dereference) ( Addr aa )
 {
-   if (VG_(check_readable)(aa,4,NULL))
+   if (SK_(check_readable)(aa,4,NULL))
       return * (UInt*)aa;
    else
       return 0;
@@ -875,16 +875,16 @@ void memcheck_new_mem_startup( Addr a, UInt len, Bool rr, Bool ww, Bool xx )
    // JJJ: this ignores the permissions and just makes it readable, like the
    // old code did, AFAICT
    DEBUG("new_mem_startup(%p, %u, rr=%u, ww=%u, xx=%u)\n", a,len,rr,ww,xx);
-   VG_(make_readable)(a, len);
+   SK_(make_readable)(a, len);
 }
 
 static
 void memcheck_new_mem_heap ( Addr a, UInt len, Bool is_inited )
 {
    if (is_inited) {
-      VG_(make_readable)(a, len);
+      SK_(make_readable)(a, len);
    } else {
-      VG_(make_writable)(a, len);
+      SK_(make_writable)(a, len);
    }
 }
 
@@ -894,9 +894,9 @@ void memcheck_set_perms (Addr a, UInt len,
 {
    DEBUG("memcheck_set_perms(%p, %u, nn=%u, rr=%u ww=%u, xx=%u)\n",
                              a, len, nn, rr, ww, xx);
-   if      (rr) VG_(make_readable)(a, len);
-   else if (ww) VG_(make_writable)(a, len);
-   else         VG_(make_noaccess)(a, len);
+   if      (rr) SK_(make_readable)(a, len);
+   else if (ww) SK_(make_writable)(a, len);
+   else         SK_(make_noaccess)(a, len);
 }
 
 
@@ -1112,7 +1112,7 @@ static UInt vgmext_rd_V4_SLOWLY ( Addr a )
       error arose in the first place from an invalid address. 
    */
    /* VG_(printf)("%p (%d %d %d %d)\n", a, a0ok, a1ok, a2ok, a3ok); */
-   if (!VG_(clo_partial_loads_ok) 
+   if (!SK_(clo_partial_loads_ok) 
        || ((a & 3) != 0)
        || (!a0ok && !a1ok && !a2ok && !a3ok)) {
       SK_(record_address_error)( a, 4, False );
@@ -1124,11 +1124,11 @@ static UInt vgmext_rd_V4_SLOWLY ( Addr a )
       - no addressing error
       - returned V word is invalid where the address is invalid, 
         and contains V bytes from memory otherwise. 
-      Case 3 is only allowed if VG_(clo_partial_loads_ok) is True
+      Case 3 is only allowed if SK_(clo_partial_loads_ok) is True
       (which is the default), and the address is 4-aligned.  
       If not, Case 2 will have applied.
    */
-   vg_assert(VG_(clo_partial_loads_ok));
+   vg_assert(SK_(clo_partial_loads_ok));
    {
       UInt vw = VGM_WORD_INVALID;
       vw <<= 8; vw |= (a3ok ? vb3 : VGM_BYTE_INVALID);
@@ -1527,7 +1527,7 @@ ExeContext *get_where( ShadowChunk* sc )
    return (ExeContext*)sc->skin_extra[0];
 }
 
-void SKN_(complete_shadow_chunk) ( ShadowChunk* sc, ThreadState* tst )
+void SK_(complete_shadow_chunk) ( ShadowChunk* sc, ThreadState* tst )
 {
    set_where( sc, VG_(get_ExeContext) ( tst ) );
 }
@@ -1584,7 +1584,7 @@ static void add_to_freed_queue ( ShadowChunk* sc )
    /* Release enough of the oldest blocks to bring the free queue
       volume below vg_clo_freelist_vol. */
    
-   while (vg_freed_list_volume > VG_(clo_freelist_vol)) {
+   while (vg_freed_list_volume > SK_(clo_freelist_vol)) {
       /* freelist_sanity(); */
       vg_assert(vg_freed_list_start != NULL);
       vg_assert(vg_freed_list_end != NULL);
@@ -1605,7 +1605,7 @@ static void add_to_freed_queue ( ShadowChunk* sc )
 }
 
 /* Return the first shadow chunk satisfying the predicate p. */
-ShadowChunk* VG_(any_matching_freed_ShadowChunks)
+ShadowChunk* SK_(any_matching_freed_ShadowChunks)
                         ( Bool (*p) ( ShadowChunk* ))
 {
    ShadowChunk* sc;
@@ -1619,7 +1619,7 @@ ShadowChunk* VG_(any_matching_freed_ShadowChunks)
    return NULL;
 }
 
-void SKN_(alt_free) ( ShadowChunk* sc, ThreadState* tst )
+void SK_(alt_free) ( ShadowChunk* sc, ThreadState* tst )
 {
    /* Record where freed */
    set_where( sc, VG_(get_ExeContext) ( tst ) );
@@ -1878,7 +1878,7 @@ static void sort_malloc_shadows ( ShadowChunk** shadows, UInt n_shadows )
    }
 }
 
-/* Globals, for the callback used by VG_(detect_memory_leaks). */
+/* Globals, for the callback used by SK_(detect_memory_leaks). */
 
 static ShadowChunk** vglc_shadows;
 static Int           vglc_n_shadows;
@@ -1936,7 +1936,7 @@ void vg_detect_memory_leaks_notify_addr ( Addr a, UInt word_at_a )
 }
 
 
-void VG_(detect_memory_leaks) ( void )
+void SK_(detect_memory_leaks) ( void )
 {
    Int    i;
    Int    blocks_leaked, bytes_leaked;
@@ -2029,7 +2029,7 @@ void VG_(detect_memory_leaks) ( void )
 
       for (p = errlist; p != NULL; p = p->next) {
          if (p->loss_mode == vglc_reachedness[i]
-             && VG_(eq_ExeContext) ( VG_(clo_leak_resolution),
+             && VG_(eq_ExeContext) ( SK_(clo_leak_resolution),
                                      p->allocated_at, 
                                      where) ) {
             break;
@@ -2061,7 +2061,7 @@ void VG_(detect_memory_leaks) ( void )
       }
       vg_assert(p_min != NULL);
 
-      if ( (!VG_(clo_show_reachable)) && p_min->loss_mode == Proper) {
+      if ( (!SK_(clo_show_reachable)) && p_min->loss_mode == Proper) {
          p_min->num_blocks = 0;
          continue;
       }
@@ -2088,7 +2088,7 @@ void VG_(detect_memory_leaks) ( void )
                             bytes_dubious, blocks_dubious );
    VG_(message)(Vg_UserMsg, "   still reachable: %d bytes in %d blocks.", 
                             bytes_reachable, blocks_reachable );
-   if (!VG_(clo_show_reachable)) {
+   if (!SK_(clo_show_reachable)) {
       VG_(message)(Vg_UserMsg, 
          "Reachable blocks (those to which a pointer was found) are not shown.");
       VG_(message)(Vg_UserMsg, 
@@ -2111,7 +2111,7 @@ void VG_(detect_memory_leaks) ( void )
    problem, but they are so likely to that we really want to know
    about it if so. */
 
-Bool SKN_(cheap_sanity_check) ( void )
+Bool SK_(cheap_sanity_check) ( void )
 {
    if (IS_DISTINGUISHED_SM(primary_map[0]) && 
        IS_DISTINGUISHED_SM(primary_map[65535]))
@@ -2120,7 +2120,7 @@ Bool SKN_(cheap_sanity_check) ( void )
       return False;
 }
 
-Bool SKN_(expensive_sanity_check) ( void )
+Bool SK_(expensive_sanity_check) ( void )
 {
    Int i;
 
@@ -2239,17 +2239,17 @@ void show_bb ( Addr eip_next )
 /*--- Syscall wrappers                                     ---*/
 /*------------------------------------------------------------*/
 
-void* SKN_(pre_syscall)  ( ThreadId tid, UInt syscallno, Bool isBlocking )
+void* SK_(pre_syscall)  ( ThreadId tid, UInt syscallno, Bool isBlocking )
 {
-   Int sane = SKN_(cheap_sanity_check)();
+   Int sane = SK_(cheap_sanity_check)();
    return (void*)sane;
 }
 
-void  SKN_(post_syscall) ( ThreadId tid, UInt syscallno,
+void  SK_(post_syscall) ( ThreadId tid, UInt syscallno,
                            void* pre_result, Int res, Bool isBlocking )
 {
    Int  sane_before_call = (Int)pre_result;
-   Bool sane_after_call  = SKN_(cheap_sanity_check)();
+   Bool sane_after_call  = SK_(cheap_sanity_check)();
 
    if ((Int)sane_before_call && (!sane_after_call)) {
       VG_(message)(Vg_DebugMsg, "post-syscall: ");
@@ -2265,59 +2265,59 @@ void  SKN_(post_syscall) ( ThreadId tid, UInt syscallno,
 /*--- Setup                                                ---*/
 /*------------------------------------------------------------*/
 
-void SKN_(written_shadow_regs_values)( UInt* gen_reg_value, UInt* eflags_value )
+void SK_(written_shadow_regs_values)( UInt* gen_reg_value, UInt* eflags_value )
 {
    *gen_reg_value = VGM_WORD_VALID;
    *eflags_value  = VGM_EFLAGS_VALID;
 }
 
-Bool SKN_(process_cmd_line_option)(UChar* arg)
+Bool SK_(process_cmd_line_option)(UChar* arg)
 {
 #  define STREQ(s1,s2)     (0==VG_(strcmp_ws)((s1),(s2)))
 #  define STREQN(nn,s1,s2) (0==VG_(strncmp_ws)((s1),(s2),(nn)))
 
    if      (STREQ(arg, "--partial-loads-ok=yes"))
-      VG_(clo_partial_loads_ok) = True;
+      SK_(clo_partial_loads_ok) = True;
    else if (STREQ(arg, "--partial-loads-ok=no"))
-      VG_(clo_partial_loads_ok) = False;
+      SK_(clo_partial_loads_ok) = False;
 
    else if (STREQN(15, arg, "--freelist-vol=")) {
-      VG_(clo_freelist_vol) = (Int)VG_(atoll)(&arg[15]);
+      SK_(clo_freelist_vol) = (Int)VG_(atoll)(&arg[15]);
       // SSS: default size of 2 bytes??
-      if (VG_(clo_freelist_vol) < 0) VG_(clo_freelist_vol) = 2;
+      if (SK_(clo_freelist_vol) < 0) SK_(clo_freelist_vol) = 2;
    }
 
    else if (STREQ(arg, "--leak-check=yes"))
-      VG_(clo_leak_check) = True;
+      SK_(clo_leak_check) = True;
    else if (STREQ(arg, "--leak-check=no"))
-      VG_(clo_leak_check) = False;
+      SK_(clo_leak_check) = False;
 
    else if (STREQ(arg, "--leak-resolution=low"))
-      VG_(clo_leak_resolution) = Vg_LowRes;
+      SK_(clo_leak_resolution) = Vg_LowRes;
    else if (STREQ(arg, "--leak-resolution=med"))
-      VG_(clo_leak_resolution) = Vg_MedRes;
+      SK_(clo_leak_resolution) = Vg_MedRes;
    else if (STREQ(arg, "--leak-resolution=high"))
-      VG_(clo_leak_resolution) = Vg_HighRes;
+      SK_(clo_leak_resolution) = Vg_HighRes;
    
    else if (STREQ(arg, "--show-reachable=yes"))
-      VG_(clo_show_reachable) = True;
+      SK_(clo_show_reachable) = True;
    else if (STREQ(arg, "--show-reachable=no"))
-      VG_(clo_show_reachable) = False;
+      SK_(clo_show_reachable) = False;
 
    else if (STREQ(arg, "--workaround-gcc296-bugs=yes"))
-      VG_(clo_workaround_gcc296_bugs) = True;
+      SK_(clo_workaround_gcc296_bugs) = True;
    else if (STREQ(arg, "--workaround-gcc296-bugs=no"))
-      VG_(clo_workaround_gcc296_bugs) = False;
+      SK_(clo_workaround_gcc296_bugs) = False;
 
    else if (STREQ(arg, "--check-addrVs=yes"))
-      VG_(clo_check_addrVs) = True;
+      SK_(clo_check_addrVs) = True;
    else if (STREQ(arg, "--check-addrVs=no"))
-      VG_(clo_check_addrVs) = False;
+      SK_(clo_check_addrVs) = False;
 
    else if (STREQ(arg, "--cleanup=yes"))
-      VG_(clo_cleanup) = True;
+      SK_(clo_cleanup) = True;
    else if (STREQ(arg, "--cleanup=no"))
-      VG_(clo_cleanup) = False;
+      SK_(clo_cleanup) = False;
 
    else
       return False;
@@ -2328,7 +2328,7 @@ Bool SKN_(process_cmd_line_option)(UChar* arg)
 #undef STREQN
 }
 
-Char* SKN_(usage)(void)
+Char* SK_(usage)(void)
 {  
    return  
 "    --partial-loads-ok=no|yes too hard to explain here; see manual [yes]\n"
@@ -2392,24 +2392,24 @@ void SK_(pre_clo_init)(VgNeeds* needs, VgTrackEvents* track)
    /* Events to track */
    track->new_mem_startup       = & memcheck_new_mem_startup;
    track->new_mem_heap          = & memcheck_new_mem_heap;
-   track->new_mem_stack         = & VG_(make_writable);
+   track->new_mem_stack         = & SK_(make_writable);
    track->new_mem_stack_aligned = & make_writable_aligned;
-   track->new_mem_stack_signal  = & VG_(make_writable);
-   track->new_mem_brk           = & VG_(make_writable);
+   track->new_mem_stack_signal  = & SK_(make_writable);
+   track->new_mem_brk           = & SK_(make_writable);
    track->new_mem_mmap          = & memcheck_set_perms;
    
    track->copy_mem_heap         = & copy_address_range_state;
    track->change_mem_mprotect   = & memcheck_set_perms;
       
-   track->ban_mem_heap          = & VG_(make_noaccess);
-   track->ban_mem_stack         = & VG_(make_noaccess);
+   track->ban_mem_heap          = & SK_(make_noaccess);
+   track->ban_mem_stack         = & SK_(make_noaccess);
 
-   track->die_mem_heap          = & VG_(make_noaccess);
-   track->die_mem_stack         = & VG_(make_noaccess);
+   track->die_mem_heap          = & SK_(make_noaccess);
+   track->die_mem_stack         = & SK_(make_noaccess);
    track->die_mem_stack_aligned = & make_noaccess_aligned; 
-   track->die_mem_stack_signal  = & VG_(make_noaccess); 
-   track->die_mem_brk           = & VG_(make_noaccess);
-   track->die_mem_munmap        = & VG_(make_noaccess); 
+   track->die_mem_stack_signal  = & SK_(make_noaccess); 
+   track->die_mem_brk           = & SK_(make_noaccess);
+   track->die_mem_munmap        = & SK_(make_noaccess); 
 
    track->bad_free              = & SK_(record_free_error);
    track->mismatched_free       = & SK_(record_freemismatch_error);
@@ -2417,7 +2417,7 @@ void SK_(pre_clo_init)(VgNeeds* needs, VgTrackEvents* track)
    track->pre_mem_read          = & check_is_readable;
    track->pre_mem_read_asciiz   = & check_is_readable_asciiz;
    track->pre_mem_write         = & check_is_writable;
-   track->post_mem_write        = & VG_(make_readable);
+   track->post_mem_write        = & SK_(make_readable);
 
    init_shadow_memory();
 

@@ -345,7 +345,7 @@ void set_address_range_state ( Addr a, UInt len /* in bytes */,
       -- this could happen with buggy syscall wrappers.  Today
       (2001-04-26) had precisely such a problem with
       __NR_setitimer. */
-   vg_assert(SKN_(cheap_sanity_check)());
+   vg_assert(SK_(cheap_sanity_check)());
    VGP_POPCC(VgpSARP);
 }
 
@@ -468,7 +468,7 @@ static void init_shadow_memory(void)
    problem, but they are so likely to that we really want to know
    about it if so. */
 
-Bool SKN_(cheap_sanity_check) ( void )
+Bool SK_(cheap_sanity_check) ( void )
 {
    if (VGE_IS_DISTINGUISHED_SM(primary_map[0]) && 
        VGE_IS_DISTINGUISHED_SM(primary_map[65535]))
@@ -477,7 +477,7 @@ Bool SKN_(cheap_sanity_check) ( void )
       return False;
 }
 
-Bool SKN_(expensive_sanity_check)(void)
+Bool SK_(expensive_sanity_check)(void)
 {
    Int i;
 
@@ -620,7 +620,7 @@ static void record_eraser_error ( ThreadId tid, Addr a, Bool is_write )
                             /*extra*/NULL);
 }
 
-Bool SKN_(eq_SkinError) ( VgRes not_used,
+Bool SK_(eq_SkinError) ( VgRes not_used,
                           SkinError* e1, SkinError* e2 )
 {
    vg_assert(EraserErr == e1->ekind && EraserErr == e2->ekind);
@@ -629,7 +629,7 @@ Bool SKN_(eq_SkinError) ( VgRes not_used,
    return True;
 }
 
-void SKN_(pp_SkinError) ( SkinError* err, void (*pp_ExeContext)(void) )
+void SK_(pp_SkinError) ( SkinError* err, void (*pp_ExeContext)(void) )
 {
    vg_assert(EraserErr == err->ekind);
    VG_(message)(Vg_UserMsg, "Possible data race %s variable at 0x%x",
@@ -637,12 +637,12 @@ void SKN_(pp_SkinError) ( SkinError* err, void (*pp_ExeContext)(void) )
    pp_ExeContext();
 }
 
-void SKN_(dup_extra_and_update)(SkinError* err)
+void SK_(dup_extra_and_update)(SkinError* err)
 {
    /* do nothing -- extra field not used, and no need to update */
 }
 
-Bool SKN_(recognised_suppression) ( Char* name, SuppKind *skind )
+Bool SK_(recognised_suppression) ( Char* name, SuppKind *skind )
 {
    if (0 == VG_(strcmp)(name, "Eraser")) {
       *skind = EraserSupp;
@@ -652,7 +652,7 @@ Bool SKN_(recognised_suppression) ( Char* name, SuppKind *skind )
    }
 }
 
-Bool SKN_(read_extra_suppression_info) ( Int fd, Char* buf, 
+Bool SK_(read_extra_suppression_info) ( Int fd, Char* buf, 
                                          Int nBuf, SkinSupp* s )
 {
    /* do nothing -- no extra suppression info present.  Return True to
@@ -660,7 +660,7 @@ Bool SKN_(read_extra_suppression_info) ( Int fd, Char* buf,
    return True;
 }
 
-Bool SKN_(error_matches_suppression)(SkinError* err, SkinSupp* su)
+Bool SK_(error_matches_suppression)(SkinError* err, SkinSupp* su)
 {
    vg_assert( su->skind == EraserSupp);
    vg_assert(err->ekind == EraserErr);

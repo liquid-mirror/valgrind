@@ -86,52 +86,41 @@ void SK_(fini)(void)
    For error reporting and suppression handling
    ------------------------------------------------------------------ */
 
-Bool SKN_(eq_SkinError)(VgRes res, SkinError* e1, SkinError* e2)
+Bool SK_(eq_SkinError)(VgRes res, SkinError* e1, SkinError* e2)
 {
    VG_(printf)(nonfund_panic);
-   VG_(panic)("called SKN_(eq_SkinError)");
+   VG_(panic)("called SK_(eq_SkinError)");
 }
 
-void SKN_(pp_SkinError)(SkinError* ec, void (*pp_ExeContext)(void))
+void SK_(pp_SkinError)(SkinError* ec, void (*pp_ExeContext)(void))
 {
    VG_(printf)(nonfund_panic);
-   VG_(panic)("called SKN_(pp_SkinError)");
+   VG_(panic)("called SK_(pp_SkinError)");
 }
 
-void SKN_(dup_extra_and_update)(SkinError* ec)
+void SK_(dup_extra_and_update)(SkinError* ec)
 {
    VG_(printf)(nonfund_panic);
-   VG_(panic)("called SKN_(dup_extra_and_update)");
+   VG_(panic)("called SK_(dup_extra_and_update)");
 }
 
-Bool SKN_(recognised_suppression)(Char* name, SuppKind* skind)
+Bool SK_(recognised_suppression)(Char* name, SuppKind* skind)
 {
    VG_(printf)(nonfund_panic);
-   VG_(panic)("called SKN_(recognised_suppression)");
+   VG_(panic)("called SK_(recognised_suppression)");
 }
 
-Bool SKN_(read_extra_suppression_info)(Int fd, Char* buf, 
+Bool SK_(read_extra_suppression_info)(Int fd, Char* buf, 
                                        Int nBuf, SkinSupp *s)
 {
    VG_(printf)(nonfund_panic);
-   VG_(panic)("called SKN_(read_extra_suppression_info)");
+   VG_(panic)("called SK_(read_extra_suppression_info)");
 }
 
-Bool SKN_(error_matches_suppression)(SkinError* ec, SkinSupp* su)
+Bool SK_(error_matches_suppression)(SkinError* ec, SkinSupp* su)
 {
    VG_(printf)(nonfund_panic);
-   VG_(panic)("called SKN_(error_matches_suppression)");
-}
-
-
-/* ---------------------------------------------------------------------
-   For throwing out basic block level info when code is invalidated
-   ------------------------------------------------------------------ */
-
-void SKN_(discard_basic_block_info)(Addr a, UInt size)
-{
-   VG_(printf)(nonfund_panic);
-   VG_(panic)("called SKN_(discard_basic_block_info)");
+   VG_(panic)("called SK_(error_matches_suppression)");
 }
 
 
@@ -139,10 +128,21 @@ void SKN_(discard_basic_block_info)(Addr a, UInt size)
    For throwing out basic block level info when code is invalidated
    ------------------------------------------------------------------ */
 
-void SKN_(written_shadow_regs_values)(UInt* gen_reg, UInt* eflags)
+void SK_(discard_basic_block_info)(Addr a, UInt size)
 {
    VG_(printf)(nonfund_panic);
-   VG_(panic)("called SKN_(written_shadow_regs_values)");
+   VG_(panic)("called SK_(discard_basic_block_info)");
+}
+
+
+/* ---------------------------------------------------------------------
+   For throwing out basic block level info when code is invalidated
+   ------------------------------------------------------------------ */
+
+void SK_(written_shadow_regs_values)(UInt* gen_reg, UInt* eflags)
+{
+   VG_(printf)(nonfund_panic);
+   VG_(panic)("called SK_(written_shadow_regs_values)");
 }
 
 
@@ -150,113 +150,113 @@ void SKN_(written_shadow_regs_values)(UInt* gen_reg, UInt* eflags)
    Command line arg template function
    ------------------------------------------------------------------ */
 
-Bool SKN_(process_cmd_line_option)(UChar* argv)
+Bool SK_(process_cmd_line_option)(UChar* argv)
 {
    VG_(printf)(nonfund_panic);
-   VG_(panic)("called SKN_(process_cmd_line_option)");
+   VG_(panic)("called SK_(process_cmd_line_option)");
 }
 
-Char* SKN_(usage)(void)
+Char* SK_(usage)(void)
 {
    VG_(printf)(nonfund_panic);
-   VG_(panic)("called SKN_(usage)");
+   VG_(panic)("called SK_(usage)");
 }
 
 /* ---------------------------------------------------------------------
    Client request template function
    ------------------------------------------------------------------ */
 
-UInt SKN_(handle_client_request)(ThreadState* tst, UInt* arg_block)
+UInt SK_(handle_client_request)(ThreadState* tst, UInt* arg_block)
 {
    VG_(printf)(nonfund_panic);
-   VG_(panic)("called SKN_(handle_client_request)");
+   VG_(panic)("called SK_(handle_client_request)");
 }
 
 /* ---------------------------------------------------------------------
    UCode extension
    ------------------------------------------------------------------ */
 
-void SKN_(emitExtUInstr)(UInstr* u)
+void SK_(emitExtUInstr)(UInstr* u)
 {
    VG_(printf)(nonfund_panic);
-   VG_(panic)("called SKN_(emitExtUInstr)");
+   VG_(panic)("called SK_(emitExtUInstr)");
 }
 
-Bool SKN_(saneExtUInstr)(Bool beforeRA, Bool beforeLiveness, UInstr* u)
+Bool SK_(saneExtUInstr)(Bool beforeRA, Bool beforeLiveness, UInstr* u)
 {
    VG_(printf)(nonfund_panic);
-   VG_(panic)("called SKN_(saneExtUInstr)");
+   VG_(panic)("called SK_(saneExtUInstr)");
 }
 
-Char* SKN_(nameExtUOpcode)(Opcode opc)
+Char* SK_(nameExtUOpcode)(Opcode opc)
 {
    VG_(printf)(nonfund_panic);
-   VG_(panic)("called SKN_(nameExtUOpcode)");
+   VG_(panic)("called SK_(nameExtUOpcode)");
 }
 
-void SKN_(ppExtUInstr)(UInstr* u)
+void SK_(ppExtUInstr)(UInstr* u)
 {
    VG_(printf)(nonfund_panic);
-   VG_(panic)("called SKN_(ppExtUInstr)");
+   VG_(panic)("called SK_(ppExtUInstr)");
 }
 
-Int SKN_(getExtRegUsage)(UInstr* u, Tag tag, RegUse* arr)
+Int SK_(getExtRegUsage)(UInstr* u, Tag tag, RegUse* arr)
 {
    VG_(printf)(nonfund_panic);
-   VG_(panic)("called SKN_(getExtTempUsage)");
+   VG_(panic)("called SK_(getExtTempUsage)");
 }
 
 /* ---------------------------------------------------------------------
    Syscall wrapping
    ------------------------------------------------------------------ */
 
-void* SKN_(pre_syscall)(ThreadId tid, UInt syscallno, Bool is_blocking)
+void* SK_(pre_syscall)(ThreadId tid, UInt syscallno, Bool is_blocking)
 {
    VG_(printf)(nonfund_panic);
-   VG_(panic)("called SKN_(pre_syscall)");
+   VG_(panic)("called SK_(pre_syscall)");
 }
 
-void  SKN_(post_syscall)(ThreadId tid, UInt syscallno,
+void  SK_(post_syscall)(ThreadId tid, UInt syscallno,
                          void* pre_result, Int res, Bool is_blocking)
 {
    VG_(printf)(nonfund_panic);
-   VG_(panic)("called SKN_(post_syscall)");
+   VG_(panic)("called SK_(post_syscall)");
 }
 
 /* ---------------------------------------------------------------------
    Shadow chunks
    ------------------------------------------------------------------ */
 
-void SKN_(complete_shadow_chunk)( ShadowChunk* sc, ThreadState* tst )
+void SK_(complete_shadow_chunk)( ShadowChunk* sc, ThreadState* tst )
 {
    VG_(printf)(nonfund_panic);
-   VG_(panic)("SKN_(complete_shadow_chunk)");
+   VG_(panic)("SK_(complete_shadow_chunk)");
 }
 
 /* ---------------------------------------------------------------------
    Alternative free()
    ------------------------------------------------------------------ */
 
-void SKN_(alt_free) ( ShadowChunk* sc, ThreadState* tst )
+void SK_(alt_free) ( ShadowChunk* sc, ThreadState* tst )
 {
    VG_(printf)(nonfund_panic);
-   VG_(panic)("SKN_(alt_free)");
+   VG_(panic)("SK_(alt_free)");
 }
 
 /* ---------------------------------------------------------------------
    Sanity checks
    ------------------------------------------------------------------ */
 
-Bool SKN_(cheap_sanity_check)(void)
+Bool SK_(cheap_sanity_check)(void)
 {
    VG_(printf)(nonfund_panic);
-   VG_(panic)("SKN_(cheap_sanity_check)");
+   VG_(panic)("SK_(cheap_sanity_check)");
 }
 
-Bool SKN_(expensive_sanity_check)(void)
+Bool SK_(expensive_sanity_check)(void)
 {
    VG_(printf)(nonfund_panic);
-   VG_(panic)("SKN_(expensive_sanity_check)");
+   VG_(panic)("SK_(expensive_sanity_check)");
 }
 
 /*--------------------------------------------------------------------*/
