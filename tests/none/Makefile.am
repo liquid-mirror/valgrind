@@ -8,6 +8,7 @@ noinst_PROGRAMS = \
 	bitfield1 bt_everything bt_literal coolo_strlen \
 	cpuid dastest floored fork fucomip munmap_exe rcl_assert \
 	rcrl readline1 sha1_test shortpush shorts smc1 \
+	pth_blockedsig \
 	coolo_sigaction gxx304
 
 CFLAGS   = $(WERROR) -Winline -Wall -Wshadow -g
@@ -32,6 +33,10 @@ smc1_SOURCES 		= smc1.c
 sha1_test_SOURCES 	= sha1_test.c
 shortpush_SOURCES 	= shortpush.c
 shorts_SOURCES 		= shorts.c
+
+# pthread C ones
+pth_blockedsig_SOURCES	= pth_blockedsig.c
+pth_blockedsig_LDADD	= -lpthread
 
 # generic C++ ones
 coolo_sigaction_SOURCES	= coolo_sigaction.cpp
