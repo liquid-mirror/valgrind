@@ -11,12 +11,22 @@ Fairly minor things -- stability fixes and a few new syscalls.
 Note that new functionality will appear in development snapshots,
 not this stable branch.
 
+- Fix some segfaults apparently caused by the duplicate-error-merging
+  machinery.  This is a potentially important stability fix.
+
+- pthread_kill would incorrectly deliver a signal to a thread even
+  if the thread currently had the signal blocked.  Fixed.  It _may_
+  also fix some assertion failures in scheduler_sanity() in
+  vg_scheduler.c.
+
+- Add suppressions for SuSE 8.1.
+
 - improvements to valgrind.spec.in, of interest to RPM builders
 
 - cachesim: fix cache auto-detection on Pentium 4s
 
 - valgrind: fix longstanding bug in handling of 108 byte
-  FPU loads/storesd (FSAVE/FRSTOR)
+  FPU loads/stores (FSAVE/FRSTOR)
 
 - Reduce polling delays in poll(), select(), pause() and in the
   scheduler idle loop.  This reduces some strange non-CPU-bound delays
@@ -28,12 +38,10 @@ not this stable branch.
 
 - Implement primary opcode 0x15 (ADC Iv, eAX)
 
-- Fix some segfaults apparently caused by the duplicate-error-merging
-  machinery.  This is a potentially important stability fix.
-
 - Merge invalid-addressing errors more aggressively.
 
 - Implement syscalls: __NR_setresgid, __NR_ptrace, __NR_mount, __NR_umount.
+  You can now use valgrind to debug GDB!  Bwaha!
 
 - Increase number of reader/writer locks supported from 50 to 500.
 
@@ -153,9 +161,9 @@ bug reports for version 1.0.0.  I have fixed the following bugs
 - Add this file!
 
 
-Bugs known but not fixed in 1.0.2
+Bugs known but not fixed in 1.0.3
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-The following bugs were reported and are NOT FIXED in 1.0.2,
+The following bugs were reported and are NOT FIXED in 1.0.3,
 due to one or more of the following: lack of time, technical
 difficulty, or the report is really a feature request, in which case
 it will not make it into the 1.0.X branch.  Anyway, for the record:
