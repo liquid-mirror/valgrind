@@ -108,18 +108,17 @@ void VG_(pp_ExeContext) ( ExeContext* e )
 
 
 /* Compare two ExeContexts, comparing all callers. */
-Bool VG_(eq_ExeContext) ( ExeContextRes res, 
-                          ExeContext* e1, ExeContext* e2 )
+Bool VG_(eq_ExeContext) ( VgRes res, ExeContext* e1, ExeContext* e2 )
 {
    switch (res) {
-   case LowRes:
+   case Vg_LowRes:
       /* Just compare the top two callers. */
       vg_ec_cmp2s++;
       if (e1->eips[0] != e2->eips[0]
           || e1->eips[1] != e2->eips[1]) return False;
       return True;
 
-   case MedRes:
+   case Vg_MedRes:
       /* Just compare the top four callers. */
       vg_ec_cmp4s++;
       if (e1->eips[0] != e2->eips[0]
@@ -132,14 +131,14 @@ Bool VG_(eq_ExeContext) ( ExeContextRes res,
       if (e1->eips[3] != e2->eips[3]) return False;
       return True;
 
-   case HighRes:
+   case Vg_HighRes:
       vg_ec_cmpAlls++;
       /* Compare them all -- just do pointer comparison. */
       if (e1 != e2) return False;
       return True;
 
    default:
-      VG_(panic)("VG_(eq_ExeContext): unrecognised ExeContextRes");
+      VG_(panic)("VG_(eq_ExeContext): unrecognised VgRes");
    }
 }
 
@@ -244,7 +243,7 @@ ExeContext* VG_(get_ExeContext2) ( Addr eip, Addr ebp,
    vg_ec_totstored++;
 
    new_ec = VG_(arena_malloc)( VG_AR_EXECTXT, 
-                               sizeof(struct _ExeContextRec *) 
+                               sizeof(struct _ExeContext *) 
                                + VG_(clo_backtrace_size) * sizeof(Addr) );
 
    for (i = 0; i < VG_(clo_backtrace_size); i++)

@@ -48,13 +48,13 @@
 /*--- Command line options                                 ---*/
 /*------------------------------------------------------------*/
 
-Bool          VG_(clo_partial_loads_ok)       = True;
-Bool          VG_(clo_leak_check)             = False;
-ExeContextRes VG_(clo_leak_resolution)        = LowRes;
-Bool          VG_(clo_show_reachable)         = False;
-Bool          VG_(clo_workaround_gcc296_bugs) = False;
-Bool          VG_(clo_check_addrVs)           = True;
-Bool          VG_(clo_cleanup)                = True;
+Bool  VG_(clo_partial_loads_ok)       = True;
+Bool  VG_(clo_leak_check)             = False;
+VgRes VG_(clo_leak_resolution)        = Vg_LowRes;
+Bool  VG_(clo_show_reachable)         = False;
+Bool  VG_(clo_workaround_gcc296_bugs) = False;
+Bool  VG_(clo_check_addrVs)           = True;
+Bool  VG_(clo_cleanup)                = True;
 
 /*------------------------------------------------------------*/
 /*--- Low-level support for memory checking.               ---*/
@@ -2184,11 +2184,11 @@ Bool SKN_(process_cmd_line_option)(UChar* arg)
       VG_(clo_leak_check) = False;
 
    else if (STREQ(arg, "--leak-resolution=low"))
-      VG_(clo_leak_resolution) = LowRes;
+      VG_(clo_leak_resolution) = Vg_LowRes;
    else if (STREQ(arg, "--leak-resolution=med"))
-      VG_(clo_leak_resolution) = MedRes;
+      VG_(clo_leak_resolution) = Vg_MedRes;
    else if (STREQ(arg, "--leak-resolution=high"))
-      VG_(clo_leak_resolution) = HighRes;
+      VG_(clo_leak_resolution) = Vg_HighRes;
    
    else if (STREQ(arg, "--show-reachable=yes"))
       VG_(clo_show_reachable) = True;
