@@ -86,8 +86,7 @@ void SK_(fini)(void)
    For error reporting and suppression handling
    ------------------------------------------------------------------ */
 
-Bool SKN_(eq_ErrContext)(Bool cheap_addr_cmp,
-                           ErrContext* e1, ErrContext* e2)
+Bool SKN_(eq_ErrContext)(ExeContextRes res, ErrContext* e1, ErrContext* e2)
 {
    VG_(printf)(nonfund_panic);
    VG_(panic)("called SKN_(eq_ErrContext)");

@@ -101,7 +101,7 @@ Bool VG_(clo_partial_loads_ok);
 Bool VG_(clo_leak_check);
 
 /* How closely should we compare ExeContexts in leak records? default: 2 */
-Int  VG_(clo_leak_resolution);
+ExeContextRes VG_(clo_leak_resolution);
 
 /* In leak check, show reachable-but-not-freed blocks?  default: NO */
 Bool VG_(clo_show_reachable);

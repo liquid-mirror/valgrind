@@ -633,7 +633,7 @@ void record_eraser_error ( ThreadId tid, Addr a, Bool is_write )
    VG_(maybe_add_context) ( &ec );
 }
 
-Bool SKN_(eq_ErrContext) ( Bool cheap_addr_cmp,
+Bool SKN_(eq_ErrContext) ( ExeContextRes not_used,
                            ErrContext* e1, ErrContext* e2 )
 {
    vg_assert(EraserErr == e1->ekind && EraserErr == e2->ekind);

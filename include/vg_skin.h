@@ -53,11 +53,6 @@
 #define VG_MAX_REALREGS 5
 
 // SSS: for leak checks, hmm
-/* The maximum number of calls we're prepared to save in a
-   backtrace. */
-#define VG_DEEPEST_BACKTRACE 50
-
-// SSS: for leak checks, hmm
 /* Number of lists in which we keep track of malloc'd but not free'd
    blocks.  Should be prime. */
 #define VG_N_MALLOCLISTS 997
@@ -250,7 +245,7 @@ extern void* VG_(malloc_aligned) ( Int req_alignB, Int req_pszB );
 
 extern void  VG_(exit)( Int status )
              __attribute__ ((__noreturn__));
-/* Print a (panic) message (constant string), and abort. */
+/* Print a (panic) message (constant string) appending newline, and abort. */
 extern void  VG_(panic) ( Char* str )
              __attribute__ ((__noreturn__));
 
@@ -690,6 +685,7 @@ extern Int   VG_(rankToRealRegNo) ( Int rank );
 
 /* ------------------------------------------------------------------ */
 /* Allocating/freeing small blocks during translation */
+// SSS: remove these
 extern void* VG_(jitmalloc) ( Int nbytes );
 extern void  VG_(jitfree)   ( void* ptr );
 
@@ -791,16 +787,14 @@ typedef
    struct _ExeContextRec
    ExeContext;
 
-// SSS: these three for the leak checker...
+/* Depth of the stack to consider when comparing contexts, etc. */
+typedef 
+   enum { LowRes, MedRes, HighRes } 
+   ExeContextRes;
 
 /* Compare two ExeContexts, just comparing the top two callers. */
-extern Bool VG_(eq_ExeContext_top2) ( ExeContext* e1, ExeContext* e2 );
-
-/* Compare two ExeContexts, just comparing the top four callers. */
-extern Bool VG_(eq_ExeContext_top4) ( ExeContext* e1, ExeContext* e2 );
-
-/* Compare two ExeContexts, comparing all callers. */
-extern Bool VG_(eq_ExeContext_all) ( ExeContext* e1, ExeContext* e2 );
+extern Bool VG_(eq_ExeContext) ( ExeContextRes res,
+                                 ExeContext* e1, ExeContext* e2 );
 
 /* Print an ExeContext. */
 extern void VG_(pp_ExeContext) ( ExeContext* );
@@ -1100,6 +1094,7 @@ typedef
       void (*ban_mem_heap)   ( Addr a, UInt len );
       void (*ban_mem_stack)  ( Addr a, UInt len );
 
+      // SSS: alloc_free_kinds_match isn't good.
       void (*die_mem_heap)   ( ThreadState* tst, Addr a, UInt len,
                                Bool alloc_free_kinds_match );
       void (*die_mem_stack) ( Addr a, UInt len );
@@ -1160,22 +1155,27 @@ extern void        SK_(fini)         ( void );
 /* VG_(needs).report_errors */
 
 /* Identify if two errors are equal, or equal enough.  Should not check the
-   ExeContext (e->where field) as it's checked separately */
-extern Bool SKN_(eq_ErrContext) ( Bool cheap_addr_cmp,
+   ExeContext (e->where field) as it's checked separately.  But if
+   the ErrContext's extra field contains an ExeContext, 'res' should be
+   passed to VG_(eq_ExeContext) if it's looked at.
+
+   (SSS: yuk)
+ */
+extern Bool SKN_(eq_ErrContext) ( ExeContextRes res,
                                   ErrContext* e1, ErrContext* e2 );
 
 /* Print error context.  It should include a call to
- * VG_(pp_ExeContext)(ec->where). */
+   VG_(pp_ExeContext)(ec->where). */
 extern void SKN_(pp_ErrContext) ( ErrContext* ec );
 
 /* Copy the ec->extra part and replace ec->extra with the new copy.  This is
- * necessary to move from a temporary stack copy to a permanent one.
- *
- * Then fill in any details that could be postponed until after the decision
- * whether to ignore the error (ie. details not affecting the result of
- * SKN_(eq_ErrContext)).  This saves time when errors are ignored.
- *
- * Yuk.
+   necessary to move from a temporary stack copy to a permanent one.
+  
+   Then fill in any details that could be postponed until after the decision
+   whether to ignore the error (ie. details not affecting the result of
+   SKN_(eq_ErrContext)).  This saves time when errors are ignored.
+  
+   Yuk.
  */
 extern void SKN_(dup_extra_and_update)(ErrContext* ec);
 
@@ -1201,7 +1201,7 @@ extern void SKN_(discard_basic_block_info) ( Addr a, UInt size );
 /* VG_(needs).shadow_regs */
 
 /* Valid values for general registers and EFLAGS register, for initialising
- * and updating registers when written in certain places in core. */
+   and updating registers when written in certain places in core. */
 extern void SKN_(written_shadow_regs_values) ( UInt* gen_reg, UInt* eflags );
 
 

@@ -69,7 +69,7 @@ typedef
    enum { ReadAxs, WriteAxs, ExecAxs }
    AxsKind;
 
-/* Top-level struct for recording errors. */
+/* Extra context for memory errors */
 typedef
    struct {
       /* AddrErr */
@@ -107,20 +107,7 @@ void clear_MemCheckErrContext ( MemCheckErrContext* ec_extra )
    ec_extra->isWrite = False;
 }
 
-static __inline__
-Bool vg_eq_ExeContext ( Bool top_2_only,
-                        ExeContext* e1, ExeContext* e2 )
-{
-   /* Note that frames after the 4th are always ignored. */
-   if (top_2_only) {
-      return VG_(eq_ExeContext_top2(e1, e2));
-   } else {
-      return VG_(eq_ExeContext_top4(e1, e2));
-   }
-}
-
-static Bool eq_AddrInfo ( Bool cheap_addr_cmp,
-                          AddrInfo* ai1, AddrInfo* ai2 )
+static Bool eq_AddrInfo ( ExeContextRes res, AddrInfo* ai1, AddrInfo* ai2 )
 {
    if (ai1->akind != Undescribed 
        && ai2->akind != Undescribed
@@ -129,8 +116,7 @@ static Bool eq_AddrInfo ( Bool cheap_addr_cmp,
    if (ai1->akind == Freed || ai1->akind == Mallocd) {
       if (ai1->blksize != ai2->blksize)
          return False;
-      if (!vg_eq_ExeContext(cheap_addr_cmp, 
-                            ai1->lastchange, ai2->lastchange))
+      if (!VG_(eq_ExeContext)(res, ai1->lastchange, ai2->lastchange))
          return False;
    }
    return True;
@@ -140,8 +126,7 @@ static Bool eq_AddrInfo ( Bool cheap_addr_cmp,
    are otherwise the same, the faulting addrs and associated rwoffsets
    are allowed to be different.  */
 
-Bool SKN_(eq_ErrContext) ( Bool cheap_addr_cmp,
-                           ErrContext* e1, ErrContext* e2 )
+Bool SKN_(eq_ErrContext) ( ExeContextRes res, ErrContext* e1, ErrContext* e2 )
 {
    MemCheckErrContext* e1_extra = e1->extra;
    MemCheckErrContext* e2_extra = e2->extra;
@@ -166,16 +151,14 @@ Bool SKN_(eq_ErrContext) ( Bool cheap_addr_cmp,
       case FreeErr:
       case FreeMismatchErr:
          if (e1->addr != e2->addr) return False;
-         if (!eq_AddrInfo(cheap_addr_cmp, 
-                          &e1_extra->addrinfo, &e2_extra->addrinfo)) 
+         if (!eq_AddrInfo(res, &e1_extra->addrinfo, &e2_extra->addrinfo)) 
             return False;
          return True;
 
       case AddrErr:
          if (e1_extra->axskind != e2_extra->axskind) return False;
          if (e1_extra->size != e2_extra->size) return False;
-         if (!eq_AddrInfo(cheap_addr_cmp, 
-                          &e1_extra->addrinfo, &e2_extra->addrinfo)) 
+         if (!eq_AddrInfo(res, &e1_extra->addrinfo, &e2_extra->addrinfo)) 
             return False;
          return True;
 
@@ -400,7 +383,7 @@ static void describe_addr ( Addr a, AddrInfo* ai )
 void SKN_(dup_extra_and_update)(ErrContext* ec)
 {
    MemCheckErrContext* p_extra;
-   
+
    p_extra  = VG_(malloc)(sizeof(MemCheckErrContext));
    *p_extra = *((MemCheckErrContext*)ec->extra);
 
