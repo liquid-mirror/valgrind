@@ -485,6 +485,18 @@ void VG_(perform_assumed_nonblocking_syscall) ( ThreadId tid )
 
       /* !!!!!!!!!! New, untested syscalls !!!!!!!!!!!!!!!!!!!!! */
   
+#     if defined(__NR_clock_gettime)
+      case __NR_clock_gettime: /* syscall 265 */
+         /* int clock_gettime(clockid_t clk_id, struct timespec *tp); */
+         MAYBE_PRINTF( "clock_gettime( %d, %p )\n" ,arg1,arg2);
+         SYSCALL_TRACK( pre_mem_write, tid, "clock_gettime(tp)", 
+                        arg2, sizeof(struct timespec) );
+         KERNEL_DO_SYSCALL(tid,res);
+         if (!VG_(is_kerror)(res) && res > 0)
+            VG_TRACK( post_mem_write, arg2, sizeof(struct timespec) );
+         break;
+#     endif
+
 #     if defined(__NR_ptrace)
       case __NR_ptrace: { /* syscall 26 */
          /* long ptrace (enum __ptrace_request request, pid_t pid, 
