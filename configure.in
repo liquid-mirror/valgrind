@@ -281,6 +281,23 @@ EOF
 fi
 
 
+# check if the GNU as supports CFI directives
+AC_MSG_CHECKING([if gas accepts .cfi])
+AC_TRY_LINK(, [
+
+__asm__ __volatile__ (".cfi_startproc\n"
+                      ".cfi_adjust_cfa_offset 0x0\n"
+                      ".cfi_endproc\n");
+],
+[
+  AC_DEFINE_UNQUOTED([HAVE_GAS_CFI], 1, [Define if your GNU as supports .cfi])
+  AC_MSG_RESULT(yes)
+],
+  AC_MSG_RESULT(no)
+)
+
+
+
 AC_MSG_CHECKING([if this is an NPTL-based system])
 safe_LIBS="$LIBS"
 LIBS="$LIBS -lpthread"
