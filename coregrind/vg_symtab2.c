@@ -1744,7 +1744,7 @@ void VG_(maybe_read_symbols) ( void )
 
    VGP_PUSHCC(VgpReadSyms);
       VG_(read_procselfmaps) ( VG_(read_symtab_callback) );
-   VGP_POPCC;
+   VGP_POPCC(VgpReadSyms);
 }
 
 /* When an munmap() call happens, check to see whether it corresponds
@@ -1843,13 +1843,13 @@ static void search_all_symtabs ( Addr ptr, /*OUT*/SegInfo** psi,
          if (sno == -1) goto not_found;
          *symno = sno;
          *psi = si;
-         VGP_POPCC;
+         VGP_POPCC(VgpSearchSyms);
          return;
       }
    }
   not_found:
    *psi = NULL;
-   VGP_POPCC;
+   VGP_POPCC(VgpSearchSyms);
 }
 
 
@@ -1896,13 +1896,13 @@ static void search_all_loctabs ( Addr ptr, /*OUT*/SegInfo** psi,
          if (lno == -1) goto not_found;
          *locno = lno;
          *psi = si;
-         VGP_POPCC;
+         VGP_POPCC(VgpSearchSyms);
          return;
       }
    }
   not_found:
    *psi = NULL;
-   VGP_POPCC;
+   VGP_POPCC(VgpSearchSyms);
 }
 
 
