@@ -45,13 +45,6 @@
 /* You should be able to change these options or sizes, recompile, and 
    still have a working system. */
 
-/* Total number of integer registers available for allocation.  That's
-   all of them except %esp, %edi and %ebp.  %edi is a general spare
-   temporary.  %ebp permanently points at VG_(baseBlock).  Note that
-   it's important that this tie in with what rankToRealRegNo() says.
-   DO NOT CHANGE THIS VALUE FROM 5. !  */
-#define VG_MAX_REALREGS 5
-
 /* The maximum number of pthreads that we support.  This is
    deliberately not very high since our implementation of some of the
    scheduler algorithms is surely O(N) in the number of threads, since
@@ -386,8 +379,9 @@ typedef
           NoValue=6 }
    Tag;
 
-/* An invalid temporary number :-) */
+/* Invalid register numbers :-) */
 #define INVALID_TEMPREG 999999999
+#define INVALID_REALREG 999999999
 
 /* Microinstruction opcodes. */
 typedef
@@ -651,10 +645,6 @@ extern void  VG_(ppUOperand)      ( UInstr* u, Int operandNo,
 extern UCodeBlock* VG_(allocCodeBlock) ( void );
 extern void  VG_(freeCodeBlock)        ( UCodeBlock* cb );
 
-// SSS: get rid of this...
-extern Int   VG_(rankToRealRegNo) ( Int rank );
-
-
 /* ------------------------------------------------------------------ */
 /* Allocating/freeing small blocks during translation */
 // SSS: remove these
@@ -670,7 +660,6 @@ extern void  VG_(jitfree)   ( void* ptr );
    VG_(needs).extends_UCode == True. */
 
 /* This is the Intel register encoding. */
-// SSS: get rid of this with the LOADV/STOREV push/pop improvement
 #define R_EAX 0
 #define R_ECX 1
 #define R_EDX 2
@@ -708,8 +697,17 @@ extern Int  VG_(shadowRegOffset)   ( Int arch );
 extern Int  VG_(shadowFlagsOffset) ( void );
 
 /* Subroutine calls */
-void VG_(synth_call_baseBlock_method) ( Bool ensure_shortform, 
-                                        Int word_offset );
+/* This one just calls it. */
+void VG_(synth_call) ( Bool ensure_shortform, Int word_offset );
+
+/* This one is good for calling C functions -- saves caller save regs,
+   pushes args, calls, clears the stack, restores caller save regs.
+   Acceptable tags are RealReg and Literal.  `fn' must be registered
+   in the baseBlock first. */
+// SSS: Lit16 args too?
+void VG_(synth_ccall) ( Addr fn, UInt argc, UInt argv[], Tag tagv[],
+                        Int ret_reg );
+
 /* Addressing modes */
 void VG_(emit_amode_offregmem_reg) ( Int off, Int regmem, Int reg );
 void VG_(emit_amode_ereg_greg)     ( Int e_reg, Int g_reg );
@@ -1142,7 +1140,6 @@ extern VgTrackEvents VG_(track_events);
 /* ------------------------------------------------------------------ */
 /* Fundamental template functions */
 
-// SSS: rename to SK_({pre,post}_init_clo)
 extern void        SK_(pre_clo_init) ( VgNeeds* needs, VgTrackEvents* track );
 extern void        SK_(post_clo_init)( void );
 extern UCodeBlock* SK_(instrument)   ( UCodeBlock* cb, Addr a );

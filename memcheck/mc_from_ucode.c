@@ -48,12 +48,6 @@
 /* See the corresponding comment at the top of vg_from_ucode.c to find out
  * how all this works */
 
-
-/* Is this a callee-save register, in the normal C calling convention?  */
-// SSS: get rid of this
-#define VG_CALLEE_SAVED(reg) (reg == R_EBX || reg == R_ESI || reg == R_EDI)
-
-
 /*----------------------------------------------------*/
 /*--- v-size (4, or 2 with OSO) insn emitters      ---*/
 /*----------------------------------------------------*/
@@ -122,51 +116,17 @@ static void synth_minimal_test_lit_reg ( UInt lit, Int reg32 )
 
 static void synth_LOADV ( Int sz, Int a_reg, Int tv_reg )
 {
-   Int i, j, helper_offw;
-   Int pushed[VG_MAX_REALREGS+2];
-   Int n_pushed;
+   Addr helper;
+   UInt argv[] = { a_reg };
+   UInt tagv[] = { RealReg };
+
    switch (sz) {
-      case 4: helper_offw =
-                 VG_(helper_offset)((Addr) & SK_(helperc_LOADV4));
-              break;
-      case 2: helper_offw =
-                 VG_(helper_offset)((Addr) & SK_(helperc_LOADV2));
-              break;
-      case 1: helper_offw =
-                 VG_(helper_offset)((Addr) & SK_(helperc_LOADV1));
-              break;
+      case 4: helper = (Addr) & SK_(helperc_LOADV4); break;
+      case 2: helper = (Addr) & SK_(helperc_LOADV2); break;
+      case 1: helper = (Addr) & SK_(helperc_LOADV1); break;
       default: VG_(panic)("synth_LOADV");
    }
-   n_pushed = 0;
-
-
-// SSS: come up with a decent way to save/restore regs;  use it for
-// LOADV/STOREV/TAG2.  Will slim down vg_skin.h a bit.
-   
-   for (i = 0; i < VG_MAX_REALREGS; i++) {
-      j = VG_(rankToRealRegNo) ( i );
-      if (VG_CALLEE_SAVED(j)) continue;
-      if (j == tv_reg || j == a_reg) continue;
-      VG_(emit_pushv_reg) ( 4, j );
-      pushed[n_pushed++] = j;
-   }
-   VG_(emit_pushv_reg) ( 4, a_reg );
-   pushed[n_pushed++] = a_reg;
-   vg_assert(n_pushed <= VG_MAX_REALREGS+1);
-
-   VG_(synth_call_baseBlock_method) ( False, helper_offw );
-   /* Result is in %eax; we need to get it to tv_reg. */
-   if (tv_reg != R_EAX)
-      VG_(emit_movv_reg_reg) ( 4, R_EAX, tv_reg );
-
-   while (n_pushed > 0) {
-      n_pushed--;
-      if (pushed[n_pushed] == tv_reg) {
-         VG_(emit_add_lit_to_esp) ( 4 );
-      } else {
-         VG_(emit_popv_reg) ( 4, pushed[n_pushed] );
-      }
-   }
+   VG_(synth_ccall) ( helper, 1, argv, tagv, tv_reg );
 }
 
 
@@ -174,48 +134,18 @@ static void synth_STOREV ( Int sz,
                            Int tv_tag, Int tv_val,
                            Int a_reg )
 {
-   Int i, j, helper_offw;
+   Addr helper;
+   UInt argv[] = { a_reg,   tv_val };
+   Tag  tagv[] = { RealReg, tv_tag };
+
    vg_assert(tv_tag == RealReg || tv_tag == Literal);
    switch (sz) {
-      case 4: helper_offw =
-                 VG_(helper_offset)((Addr) & SK_(helperc_STOREV4));
-              break;
-      case 2: helper_offw =
-                 VG_(helper_offset)((Addr) & SK_(helperc_STOREV2));
-              break;
-      case 1: helper_offw =
-                 VG_(helper_offset)((Addr) & SK_(helperc_STOREV1));
-              break;
+      case 4: helper = (Addr) SK_(helperc_STOREV4); break;
+      case 2: helper = (Addr) SK_(helperc_STOREV2); break;
+      case 1: helper = (Addr) SK_(helperc_STOREV1); break;
       default: VG_(panic)("synth_STOREV");
    }
-   for (i = 0; i < VG_MAX_REALREGS; i++) {
-      j = VG_(rankToRealRegNo) ( i );
-      if (VG_CALLEE_SAVED(j)) continue;
-      if ((tv_tag == RealReg && j == tv_val) || j == a_reg) continue;
-      VG_(emit_pushv_reg) ( 4, j );
-   }
-   if (tv_tag == RealReg) {
-      VG_(emit_pushv_reg) ( 4, tv_val );
-   } else {
-     if (tv_val == VG_(extend_s_8to32)(tv_val))
-        VG_(emit_pushl_lit8) ( VG_(extend_s_8to32)(tv_val) );
-     else
-        VG_(emit_pushl_lit32)(tv_val);
-   }
-   VG_(emit_pushv_reg) ( 4, a_reg );
-   VG_(synth_call_baseBlock_method) ( False, helper_offw );
-   VG_(emit_popv_reg) ( 4, a_reg );
-   if (tv_tag == RealReg) {
-      VG_(emit_popv_reg) ( 4, tv_val );
-   } else {
-      VG_(emit_add_lit_to_esp) ( 4 );
-   }
-   for (i = VG_MAX_REALREGS-1; i >= 0; i--) {
-      j = VG_(rankToRealRegNo) ( i );
-      if (VG_CALLEE_SAVED(j)) continue;
-      if ((tv_tag == RealReg && j == tv_val) || j == a_reg) continue;
-      VG_(emit_popv_reg) ( 4, j );
-   }
+   VG_(synth_ccall) ( helper, 2, argv, tagv, INVALID_REALREG );
 }
 
 
@@ -285,7 +215,7 @@ static void synth_TESTV ( Int sz, Int tag, Int val )
       }
    }
    VG_(emit_jcondshort_delta) ( CondZ, 3 );
-   VG_(synth_call_baseBlock_method) (
+   VG_(synth_call) (
       True, /* needed to guarantee that this insn is indeed 3 bytes long */
       ( sz==4 
       ? VG_(helper_offset)((Addr) & SK_(helper_value_check4_fail))
@@ -607,150 +537,72 @@ static void synth_TAG2_op ( VgTagOp op, Int regs, Int regd )
    }
 }
 
-/* Implementation for checking tag values. */
-UInt VG_(DebugFn) ( UInt a1, UInt a2 )
-{
-   vg_assert(2+2 == 5);
-   return 0;
-}
-
 /*----------------------------------------------------*/
 /*--- Generate code for a single UInstr.           ---*/
 /*----------------------------------------------------*/
 
 void SKN_(emitExtUInstr) ( UInstr* u )
 {
-#  if 0
-   /* Pass args to TAG1/TAG2 to vg_DebugFn for sanity checking.
-      Requires a suitable definition of vg_DebugFn. */
-   if (u->opcode == TAG1) {
-      UInstr t1;
-      vg_assert(u->tag1 == RealReg);
-      VG_(emptyUInstr)( &t1 );
-      t1.opcode = TAG2;
-      t1.tag1 = t1.tag2 = RealReg;
-      t1.val1 = t1.val2 = u->val1;
-      t1.tag3 = Lit16;
-      t1.val3 = VgT_DebugFn;
-      emitUInstr( i, &t1 );
-   }
-   if (u->opcode == TAG2) {
-      UInstr t1;
-      vg_assert(u->tag1 == RealReg);
-      vg_assert(u->tag2 == RealReg);
-      VG_(emptyUInstr)( &t1 );
-      t1.opcode = TAG2;
-      t1.tag1 = t1.tag2 = RealReg;
-      t1.val1 = t1.val2 = u->val1;
-      t1.tag3 = Lit16;
-      t1.val3 = VgT_DebugFn;
-      if (u->val3 == VgT_UifU1 || u->val3 == VgT_UifU2 
-          || u->val3 == VgT_UifU4 || u->val3 == VgT_DifD1 
-          || u->val3 == VgT_DifD2 || u->val3 == VgT_DifD4)
-         emitUInstr( i, &t1 );
-      t1.val1 = t1.val2 = u->val2;
-      emitUInstr( i, &t1 );
-   }
-#  endif
    switch (u->opcode) {
 
-      case SETV: {
+      case SETV:
          vg_assert(u->tag1 == RealReg);
          synth_SETV ( u->size, u->val1 );
          break;
-      }
 
-      case STOREV: {
+      case STOREV:
          vg_assert(u->tag1 == RealReg || u->tag1 == Literal);
          vg_assert(u->tag2 == RealReg);
          synth_STOREV ( u->size, u->tag1, 
                                  u->tag1==Literal ? u->lit32 : u->val1, 
                                  u->val2 );
          break;
-      }
 
-      case LOADV: {
+      case LOADV:
          vg_assert(u->tag1 == RealReg);
          vg_assert(u->tag2 == RealReg);
          if (0)
             VG_(emit_AMD_prefetch_reg) ( u->val1 );
          synth_LOADV ( u->size, u->val1, u->val2 );
          break;
-      }
 
-      case TESTV: {
+      case TESTV:
          vg_assert(u->tag1 == RealReg || u->tag1 == ArchReg);
          synth_TESTV(u->size, u->tag1, u->val1);
          break;
-      }
 
-      case GETV: {
+      case GETV:
          vg_assert(u->tag1 == ArchReg);
          vg_assert(u->tag2 == RealReg);
          synth_GETV(u->size, u->val1, u->val2);
          break;
-      }
 
-      case GETVF: {
+      case GETVF:
          vg_assert(u->tag1 == RealReg);
          vg_assert(u->size == 0);
          synth_GETVF(u->val1);
          break;
-      }
 
-      case PUTV: {
+      case PUTV:
          vg_assert(u->tag1 == RealReg || u->tag1 == Literal);
          vg_assert(u->tag2 == ArchReg);
          synth_PUTV(u->size, u->tag1, 
                              u->tag1==Literal ? u->lit32 : u->val1, 
                              u->val2 );
          break;
-      }
 
-      case PUTVF: {
+      case PUTVF:
          vg_assert(u->tag1 == RealReg);
          vg_assert(u->size == 0);
          synth_PUTVF(u->val1);
          break;
-      }
 
       case TAG1:
          synth_TAG1_op ( u->val3, u->val1 );
          break;
 
       case TAG2:
-         if (u->val3 != VgT_DebugFn) {
-            synth_TAG2_op ( u->val3, u->val1, u->val2 );
-         } else {
-            /* Assume a call to VgT_DebugFn passing both args
-               and placing the result back in the second. */
-            Int j, k;
-            /* u->val2 is the reg into which the result is written.  So
-               don't save/restore it.  And it can be used as a temp for
-               the call target, too.  Since %eax is used for the return
-               value from the C procedure, it is preserved only by
-               virtue of not being mentioned as a VG_CALLEE_SAVED reg. */
-            for (k = 0; k < VG_MAX_REALREGS; k++) {
-               j = VG_(rankToRealRegNo) ( k );
-               if (VG_CALLEE_SAVED(j)) continue;
-               if (j == u->val2) continue;
-               VG_(emit_pushv_reg) ( 4, j );
-            }
-            VG_(emit_pushv_reg)(4, u->val2);
-            VG_(emit_pushv_reg)(4, u->val1);
-            VG_(emit_movv_lit_reg) ( 4, (UInt)(&VG_(DebugFn)), u->val2 );
-            VG_(emit_call_reg) ( u->val2 );
-            if (u->val2 != R_EAX)
-               VG_(emit_movv_reg_reg) ( 4, R_EAX, u->val2 );
-            /* nuke args */
-            VG_(emit_add_lit_to_esp)(8);
-            for (k = VG_MAX_REALREGS-1; k >= 0; k--) {
-               j = VG_(rankToRealRegNo) ( k );
-               if (VG_CALLEE_SAVED(j)) continue;
-               if (j == u->val2) continue;
-               VG_(emit_popv_reg) ( 4, j );
-            }
-         }
+         synth_TAG2_op ( u->val3, u->val1, u->val2 );
          break;
 
       default: 
