@@ -180,7 +180,8 @@ void vg_add_client_stack_block ( ThreadState* tst, Addr aa, UInt sz )
    vg_csbs[vg_csb_used].size  = sz;
    /* Actually running a thread at this point. */
    vg_csbs[vg_csb_used].where 
-      = VG_(get_ExeContext) ( False, tst->m_eip, tst->m_ebp );
+      = VG_(get_ExeContext) ( tst->m_eip, tst->m_ebp,
+                              tst->m_esp, tst->stack_highest_word );
    vg_csb_used++;
 
    if (vg_csb_used > vg_csb_used_MAX)
@@ -314,7 +315,8 @@ UInt VG_(handle_client_request) ( ThreadState* tst, UInt* arg_block )
          vg_cgbs[i].start = arg[1];
          vg_cgbs[i].size  = arg[2];
          vg_cgbs[i].where 
-            = VG_(get_ExeContext) ( False, tst->m_eip, tst->m_ebp );
+            = VG_(get_ExeContext) ( tst->m_eip, tst->m_ebp,
+                                    tst->m_esp, tst->stack_highest_word );
          SKN_(make_noaccess) ( arg[1], arg[2] );
          return i;
 
@@ -326,7 +328,8 @@ UInt VG_(handle_client_request) ( ThreadState* tst, UInt* arg_block )
          vg_cgbs[i].start = arg[1];
          vg_cgbs[i].size  = arg[2];
          vg_cgbs[i].where 
-            = VG_(get_ExeContext) ( False, tst->m_eip, tst->m_ebp );
+            = VG_(get_ExeContext) ( tst->m_eip, tst->m_ebp,
+                                    tst->m_esp, tst->stack_highest_word );
          SKN_(make_writable) ( arg[1], arg[2] );
          return i;
 
@@ -338,7 +341,8 @@ UInt VG_(handle_client_request) ( ThreadState* tst, UInt* arg_block )
          vg_cgbs[i].start = arg[1];
          vg_cgbs[i].size  = arg[2];
          vg_cgbs[i].where 
-            = VG_(get_ExeContext) ( False, tst->m_eip, tst->m_ebp );
+            = VG_(get_ExeContext) ( tst->m_eip, tst->m_ebp,
+                                    tst->m_esp, tst->stack_highest_word );
          SKN_(make_readable) ( arg[1], arg[2] );
          return i;
 #if 0

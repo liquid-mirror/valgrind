@@ -237,8 +237,10 @@ void VG_(pp_sched_status) ( void )
                   VG_(threads)[i].associated_mx,
                   VG_(threads)[i].associated_cv );
       VG_(pp_ExeContext)( 
-         VG_(get_ExeContext)( False, VG_(threads)[i].m_eip, 
-                                     VG_(threads)[i].m_ebp ));
+         VG_(get_ExeContext)( VG_(threads)[i].m_eip, VG_(threads)[i].m_ebp,
+                              VG_(threads)[i].m_esp, 
+                              VG_(threads)[i].stack_highest_word)
+      );
    }
    VG_(printf)("\n");
 }

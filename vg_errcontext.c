@@ -389,18 +389,22 @@ void VG_(construct_err_context) ( ErrContext* ec, ErrKind ekind, Addr a,
    ec->extra  = NULL;
 
    if (NULL == tst) {
-      ec->where = VG_(get_ExeContext)( False, VG_(baseBlock)[VGOFF_(m_eip)], 
-                                             VG_(baseBlock)[VGOFF_(m_ebp)] );
+      ec->tid   = VG_(get_current_tid)();
+      ec->where = VG_(get_ExeContext)( VG_(baseBlock)[VGOFF_(m_eip)], 
+                                       VG_(baseBlock)[VGOFF_(m_ebp)],
+                                       VG_(baseBlock)[VGOFF_(m_esp)],
+                                    VG_(threads)[ec->tid].stack_highest_word);
+               
       ec->m_eip = VG_(baseBlock)[VGOFF_(m_eip)];
       ec->m_esp = VG_(baseBlock)[VGOFF_(m_esp)];
       ec->m_ebp = VG_(baseBlock)[VGOFF_(m_ebp)];
-      ec->tid   = VG_(get_current_tid)();
    } else {
-      ec->where   = VG_(get_ExeContext)( False, tst->m_eip, tst->m_ebp );
+      ec->where   = VG_(get_ExeContext) ( tst->m_eip, tst->m_ebp, tst->m_esp,
+                                          tst->stack_highest_word );
+      ec->tid     = tst->tid;
       ec->m_eip   = tst->m_eip;
       ec->m_esp   = tst->m_esp;
       ec->m_ebp   = tst->m_ebp;
-      ec->tid     = tst->tid;
    }
 }
 

@@ -155,8 +155,8 @@ Bool VG_(eq_ExeContext_top4) ( ExeContext* e1, ExeContext* e2 )
 
    In order to be thread-safe, we pass in the thread's %EIP and %EBP.
 */
-ExeContext* VG_(get_ExeContext) ( Bool skip_top_frame,
-                                  Addr eip, Addr ebp )
+ExeContext* VG_(get_ExeContext) ( Addr eip, Addr ebp,
+                                  Addr ebp_min, Addr ebp_max )
 {
    Int         i;
    Addr        eips[VG_DEEPEST_BACKTRACE];
@@ -169,33 +169,31 @@ ExeContext* VG_(get_ExeContext) ( Bool skip_top_frame,
 
    vg_assert(VG_(clo_backtrace_size) >= 2 
              && VG_(clo_backtrace_size) <= VG_DEEPEST_BACKTRACE);
+   /* Second part basically checks the stack isn't riduculously big */
+   vg_assert(ebp_min <= ebp_max && ebp_min + 4000000 > ebp_max);
 
    /* First snaffle %EIPs from the client's stack into eips[0
       .. VG_(clo_backtrace_size)-1], putting zeroes in when the trail
-      goes cold. */
+      goes cold, which we guess to be when %ebp is not a reasonable
+      stack location.  We also assert that %ebp increases down the chain. */
 
-   for (i = 0; i < VG_(clo_backtrace_size); i++)
-      eips[i] = 0;
-   
-   // JJJ: this call to check_readable is dodgy when not doing MemCheck.
-   // It's not a problem for --skin=none since it never calls get_ExeContext
-   // unless there's an internal error.  But for other skins...
+// SSS: unnecessary, AFAICT --njn
+//   for (i = 0; i < VG_(clo_backtrace_size); i++)
+//      eips[i] = 0;
+
 #  define GET_CALLER(lval)                                        \
-   if (ebp != 0 && SKN_(check_readable)(ebp, 8, NULL)) {          \
+/*   if (ebp != 0 && SKN_(check_readable)(ebp, 8, NULL)) {  */      \
+   if (ebp_min <= ebp && ebp <= ebp_max) {                        \
+      vg_assert(ebp < ((UInt*)ebp)[0]);                           \
       lval = ((UInt*)ebp)[1];  /* ret addr */                     \
       ebp  = ((UInt*)ebp)[0];  /* old ebp */                      \
    } else {                                                       \
       lval = ebp = 0;                                             \
    }
 
-   if (skip_top_frame) {
-      for (i = 0; i < VG_(clo_backtrace_size); i++)
-         GET_CALLER(eips[i]);
-   } else {
-      eips[0] = eip;
-      for (i = 1; i < VG_(clo_backtrace_size); i++)
-         GET_CALLER(eips[i]);
-   }
+   eips[0] = eip;
+   for (i = 1; i < VG_(clo_backtrace_size); i++)
+      GET_CALLER(eips[i]);
 #  undef GET_CALLER
 
    /* Now figure out if we've seen this one before.  First hash it so
@@ -237,12 +235,11 @@ ExeContext* VG_(get_ExeContext) ( Bool skip_top_frame,
    /* Bummer.  We have to allocate a new context record. */
    vg_ec_totstored++;
 
-   new_ec 
-      = VG_(malloc)( 
-           VG_AR_EXECTXT, 
-           sizeof(struct _ExeContextRec *) 
-              + VG_(clo_backtrace_size) * sizeof(Addr) 
-        );
+   new_ec = VG_(malloc)( 
+               VG_AR_EXECTXT, 
+               sizeof(struct _ExeContextRec *) 
+                  + VG_(clo_backtrace_size) * sizeof(Addr) 
+            );
 
    for (i = 0; i < VG_(clo_backtrace_size); i++)
       new_ec->eips[i] = eips[i];
