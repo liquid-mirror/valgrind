@@ -25,7 +25,7 @@
    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA
    02111-1307, USA.
 
-   The GNU General Public License is contained in the file LICENSE.
+   The GNU General Public License is contained in the file COPYING.
 */
 
 // SSS: should this file should eventually not be in core, but included in
