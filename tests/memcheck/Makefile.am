@@ -1,33 +1,27 @@
 ## Process this file with automake to produce Makefile.in
 
 ##---------------------------------------------------------------------------
-## malloc2 is very slow
-
 ## Some of them user client requests which are now totally different for
 ## HEAD vs. ERASER due to changed client request codes.
-
-## Some of them are hard to test because they require signals or something:
-## blocked_syscall, signal1, signal3, sigwait_all, pth_pause, pth_sig*
 
 ## Need more tests:
 ## - more C++ ones
 ## - lots more mmap/munmap/mremap/mprotect ones
-##---------------------------------------------------------------------------
 
 ## Notes:
 ##   - HEAD and ERASER stderr.exp are different for signal2 due to lazy vs.
 ##     strict EIP updating
+##---------------------------------------------------------------------------
 
 noinst_PROGRAMS = \
 	badaddrvalue badfree badjump badloop buflen_check \
-	doublefree errs1 exitprog fprw fwrite inline malloc1 malloc2 \
-	manuel1 manuel2 manuel3 \
+	doublefree errs1 exitprog fprw fwrite inits inline \
+	malloc1 malloc2 manuel1 manuel2 manuel3 \
 	memalign_test memcmptest mmaptest nanoleak pushfpopf \
 	realloc1 realloc2 sigaltstack signal2 supp1 supp2 suppfree \
 	trivialleak tronical weirdioctl	\
 	mismatches new_override
 
-# XXX: want to have this inherited from ../Makefile.am
 CFLAGS   = $(WERROR) -Winline -Wall -Wshadow -g
 CXXFLAGS = $(CFLAGS)
 
@@ -42,6 +36,7 @@ errs1_SOURCES 		= errs1.c
 exitprog_SOURCES 	= exitprog.c
 fprw_SOURCES 		= fprw.c
 fwrite_SOURCES 		= fwrite.c
+inits_SOURCES		= inits.c
 inline_SOURCES 	        = inline.c
 malloc1_SOURCES 	= malloc1.c
 malloc2_SOURCES 	= malloc2.c
