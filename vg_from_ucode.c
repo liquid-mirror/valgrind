@@ -1687,39 +1687,6 @@ static Int shadowFlagsOffset ( void )
 }
 
 
-/* Make a word of the following form 
-      
-      30-N    N
-      A--A B--B CD
-
-      where: N = VG_N_VCACHE_BITS
-             A = tagb
-             B = entb
-             C = a1
-             D = a0
-*/
-static
-UInt mkVCacheWord ( UInt tagb, UInt entb, UInt a1, UInt a0 )
-{
-   UInt aaa, bbb, www;
-
-   vg_assert(tagb <= 1);
-   vg_assert(entb <= 1);
-   vg_assert(a1 <= 1);
-   vg_assert(a0 <= 1);
-
-   aaa = tagb==0 ? 0 : ((1 << (30 - VG_N_VCACHE_BITS)) - 1);
-   bbb = entb==0 ? 0 : ((1 << VG_N_VCACHE_BITS) - 1);
-   
-   www = (aaa << (VG_N_VCACHE_BITS+2));
-   www |= (bbb << 2);
-   www |= ((a1 & 1) << 1);
-   www |= (a0 & 1);
-
-   return www;
-}
-
-
 static 
 void synth_LOADV ( Int sz, Int a_reg, Int tv_reg )
 {
@@ -1766,7 +1733,7 @@ void synth_LOADV ( Int sz, Int a_reg, Int tv_reg )
          Which gets the V bits into tv_reg in 5 instructions in most cases. 
       */
       emit_movv_reg_reg ( 4, a_reg, R_EDI );
-      emit_nonshiftopv_lit_reg ( 4, AND, mkVCacheWord(0,1, 0,0), R_EDI );
+      emit_nonshiftopv_lit_reg ( 4, AND, VG_(mkVCacheWord)(0,1, 0,0), R_EDI );
       emit_cmpl_reg_offregmem ( a_reg, (Int)&VG_(vcache_discr), R_EDI );
       emit_movv_offregmem_reg ( 4, (Int)&VG_(vcache_vbits), R_EDI, tv_reg );
       emit_jcondshort_delta ( CondZ, 1+3+1 /* length of the next 3 insns */);
@@ -1811,12 +1778,12 @@ void synth_LOADV ( Int sz, Int a_reg, Int tv_reg )
 
          Which gets the V bits into tv_reg in 8 instructions in most cases.  */
       emit_movv_reg_reg ( 4, a_reg, R_EDI );
-      emit_nonshiftopv_lit_reg ( 4, AND, mkVCacheWord(0,1, 1,1), R_EDI );
+      emit_nonshiftopv_lit_reg ( 4, AND, VG_(mkVCacheWord)(0,1, 1,1), R_EDI );
       emit_movzbl_offregmem_reg ( (Int)&VG_(vcache_vbits), R_EDI, tv_reg );
-      emit_nonshiftopv_lit_reg ( 4, AND, mkVCacheWord(1,1, 0,0), R_EDI );
+      emit_nonshiftopv_lit_reg ( 4, AND, VG_(mkVCacheWord)(1,1, 0,0), R_EDI );
       emit_movv_offregmem_reg ( 4, (Int)&VG_(vcache_discr), R_EDI, R_EDI );
       emit_nonshiftopv_reg_reg ( 4, XOR, a_reg, R_EDI );
-      emit_nonshiftopv_lit_reg ( 4, AND, mkVCacheWord(1,1, 0,0), R_EDI );
+      emit_nonshiftopv_lit_reg ( 4, AND, VG_(mkVCacheWord)(1,1, 0,0), R_EDI );
       emit_jcondshort_delta ( CondZ, 1+3+1 /* length of the next 3 insns */);
       /* 1 */ emit_pushv_reg ( 4, a_reg );
       /* 3 */ synth_call_baseBlock_method ( True, VGOFF_(helpers_LOADV1) );
@@ -1855,12 +1822,12 @@ void synth_LOADV ( Int sz, Int a_reg, Int tv_reg )
           VALID:
       */
       emit_movv_reg_reg ( 4, a_reg, R_EDI );
-      emit_nonshiftopv_lit_reg ( 4, AND, mkVCacheWord(0,1, 1,0), R_EDI );
+      emit_nonshiftopv_lit_reg ( 4, AND, VG_(mkVCacheWord)(0,1, 1,0), R_EDI );
       emit_movzbl_offregmem_reg ( (Int)&VG_(vcache_vbits), R_EDI, tv_reg );
-      emit_nonshiftopv_lit_reg ( 4, AND, mkVCacheWord(1,1, 0,0), R_EDI );
+      emit_nonshiftopv_lit_reg ( 4, AND, VG_(mkVCacheWord)(1,1, 0,0), R_EDI );
       emit_movv_offregmem_reg ( 4, (Int)&VG_(vcache_discr), R_EDI, R_EDI );
       emit_nonshiftopv_reg_reg ( 4, XOR, a_reg, R_EDI );
-      emit_nonshiftopv_lit_reg ( 4, AND, mkVCacheWord(1,1, 0,1), R_EDI );
+      emit_nonshiftopv_lit_reg ( 4, AND, VG_(mkVCacheWord)(1,1, 0,1), R_EDI );
       emit_jcondshort_delta ( CondZ, 1+3+1 /* length of the next 3 insns */);
       /* 1 */ emit_pushv_reg ( 4, a_reg );
       /* 3 */ synth_call_baseBlock_method ( True, VGOFF_(helpers_LOADV2) );
@@ -1956,7 +1923,7 @@ void synth_STOREV ( Int sz,
 
       */
       emit_movv_reg_reg ( 4, a_reg, R_EDI );
-      emit_nonshiftopv_lit_reg ( 4, AND, mkVCacheWord(0,1, 0,0), R_EDI );
+      emit_nonshiftopv_lit_reg ( 4, AND, VG_(mkVCacheWord)(0,1, 0,0), R_EDI );
       emit_cmpl_reg_offregmem ( a_reg, (Int)&VG_(vcache_discr), R_EDI );
       emit_jcondshort_delta ( CondZ, 
          1 /* push reg */
@@ -2019,10 +1986,10 @@ void synth_STOREV ( Int sz,
 
       */
       emit_movv_reg_reg ( 4, a_reg, R_EDI );
-      emit_nonshiftopv_lit_reg ( 4, AND, mkVCacheWord(0,1, 0,0), R_EDI );
+      emit_nonshiftopv_lit_reg ( 4, AND, VG_(mkVCacheWord)(0,1, 0,0), R_EDI );
       emit_movv_offregmem_reg ( 4, (Int)&VG_(vcache_discr), R_EDI, R_EDI );
       emit_nonshiftopv_reg_reg ( 4, XOR, a_reg, R_EDI );
-      emit_nonshiftopv_lit_reg ( 4, AND, mkVCacheWord(1,1, 0,0), R_EDI );
+      emit_nonshiftopv_lit_reg ( 4, AND, VG_(mkVCacheWord)(1,1, 0,0), R_EDI );
       emit_jcondshort_delta ( CondZ, 
          /* size of invalid section is ... */
          1 /* push reg */
@@ -2049,7 +2016,7 @@ void synth_STOREV ( Int sz,
 
       /* VALID: */
       emit_movv_reg_reg ( 4, a_reg, R_EDI );
-      emit_nonshiftopv_lit_reg ( 4, AND, mkVCacheWord(0,1, 1,1), R_EDI );
+      emit_nonshiftopv_lit_reg ( 4, AND, VG_(mkVCacheWord)(0,1, 1,1), R_EDI );
       if (tv_tag == RealReg)
 	/* 6 or 8 */
         synth_mov_reg_offregmem ( 
@@ -2098,10 +2065,10 @@ void synth_STOREV ( Int sz,
 
       */
       emit_movv_reg_reg ( 4, a_reg, R_EDI );
-      emit_nonshiftopv_lit_reg ( 4, AND, mkVCacheWord(0,1, 0,0), R_EDI );
+      emit_nonshiftopv_lit_reg ( 4, AND, VG_(mkVCacheWord)(0,1, 0,0), R_EDI );
       emit_movv_offregmem_reg ( 4, (Int)&VG_(vcache_discr), R_EDI, R_EDI );
       emit_nonshiftopv_reg_reg ( 4, XOR, a_reg, R_EDI );
-      emit_nonshiftopv_lit_reg ( 4, AND, mkVCacheWord(1,1, 0,1), R_EDI );
+      emit_nonshiftopv_lit_reg ( 4, AND, VG_(mkVCacheWord)(1,1, 0,1), R_EDI );
       emit_jcondshort_delta ( CondZ, 
          /* size of invalid section is ... */
          1 /* push reg */
@@ -2126,7 +2093,7 @@ void synth_STOREV ( Int sz,
 
       /* VALID: */
       emit_movv_reg_reg ( 4, a_reg, R_EDI );
-      emit_nonshiftopv_lit_reg ( 4, AND, mkVCacheWord(0,1, 1,1), R_EDI );
+      emit_nonshiftopv_lit_reg ( 4, AND, VG_(mkVCacheWord)(0,1, 1,1), R_EDI );
       if (tv_tag == RealReg)
          /* 7 */ emit_movv_reg_offregmem ( 
                     2, tv_val, (Int)&VG_(vcache_vbits), R_EDI );
@@ -2408,8 +2375,8 @@ static void synth_fpu_mem_check_actions ( Bool isWrite,
                                           Int size, Int a_reg )
 {
    Int helper_offw
-     = isWrite ? VGOFF_(helperc_STORE_FP)
-               : VGOFF_(helperc_LOAD_FP);
+     = isWrite ? VGOFF_(helperc_STOREV_FP)
+               : VGOFF_(helperc_LOADV_FP);
    emit_pushal();
    emit_pushl_lit8 ( size );
    emit_pushv_reg ( 4, a_reg );

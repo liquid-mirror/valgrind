@@ -32,8 +32,10 @@
 
 #include "vg_include.h"
 
-/* Define to debug the mem audit system. */
-/* #define VG_DEBUG_MEMORY */
+/* Give a value to debug the mem audit system.  1 is normal operation
+   (minimal checks).  2 is more checks.  10 is total paranoia. */
+#define VG_DEBUG_MEM_LEVEL 10
+
 
 /* Define to debug the memory-leak-detector. */
 /* #define VG_DEBUG_LEAKCHECK */
@@ -266,29 +268,6 @@ static void init_prof_mem ( void ) { }
    114  vg_handle_esp_assignment_SLOWLY(>= HUGE_DELTA)
 */
 
-/*------------------------------------------------------------*/
-/*--- Function declarations.                               ---*/
-/*------------------------------------------------------------*/
-
-/* Set permissions for an address range.  Not speed-critical. */
-void VGM_(make_noaccess) ( Addr a, UInt len );
-void VGM_(make_writable) ( Addr a, UInt len );
-void VGM_(make_readable) ( Addr a, UInt len );
-
-/* Check permissions for an address range.  Not speed-critical. */
-Bool VGM_(check_writable) ( Addr a, UInt len, Addr* bad_addr );
-Bool VGM_(check_readable) ( Addr a, UInt len, Addr* bad_addr );
-Bool VGM_(check_readable_asciiz) ( Addr a, Addr* bad_addr );
-
-static UInt vgm_rd_V4_SLOWLY ( Addr a );
-static UInt vgm_rd_V2_SLOWLY ( Addr a );
-static UInt vgm_rd_V1_SLOWLY ( Addr a );
-static void vgm_wr_V4_SLOWLY ( Addr a, UInt vbytes );
-static void vgm_wr_V2_SLOWLY ( Addr a, UInt vbytes );
-static void vgm_wr_V1_SLOWLY ( Addr a, UInt vbytes );
-static void fpu_read_check_SLOWLY ( Addr addr, Int size );
-static void fpu_write_check_SLOWLY ( Addr addr, Int size );
-
 
 /*------------------------------------------------------------*/
 /*--- Data defns.                                          ---*/
@@ -323,10 +302,6 @@ static SecMap* vg_primary_map[65536];
 static UInt VG_(vcache_vorig)[VG_N_VCACHE];
 
 
-#define VG_N_VCACHE_LINES_PER_GROUP 2   /* must be a power of 2 */
-#define VG_N_VCACHE_BYTES_PER_GROUP (4 * VG_N_VCACHE_LINES_PER_GROUP)
-
-
 /*----------- Some handy bit values -----------*/
 
 #define VGM_BIT_VALID      0
@@ -347,19 +322,19 @@ static UInt VG_(vcache_vorig)[VG_N_VCACHE];
 #define VGM_EFLAGS_INVALID 0xFFFFFFFF
 
 
-#define IS_ALIGNED4_ADDR(aaa_p) (0 == (((UInt)(aaa_p)) & 3))
-
+#define IS_ALIGNED4(aaa_p) (0 == (((UInt)(aaa_p)) & 3))
+#define ALIGN4(aaa_p) ( ((UInt)(aaa_p)) & (~3) )
 
 /*------------------------------------------------------------*/
 /*--- Operations on the backing store.                     ---*/
 /*------------------------------------------------------------*/
 
-#define ENSURE_MAPPABLE(addr,caller)                                   \
-   do {                                                                \
-      if (NULL == VG_(primary_map)[(addr) >> 16])              {       \
-         VG_(primary_map)[(addr) >> 16] = alloc_secondary_map(caller); \
-         /* VG_(printf)("new 2map because of %p\n", addr);   */        \
-      }                                                                \
+#define ENSURE_MAPPABLE(addr,caller)                                  \
+   do {                                                               \
+      if (NULL == vg_primary_map[(addr) >> 16])                {      \
+         vg_primary_map[(addr) >> 16] = alloc_secondary_map(caller);  \
+         /* VG_(printf)("new 2map because of %p\n", addr);   */       \
+      }                                                               \
    } while(0)
 
 
@@ -411,36 +386,39 @@ static SecMap* alloc_secondary_map ( __attribute__ ((unused))
 
 /* Basic reading/writing of the bitmaps, for byte-sized accesses. */
 
-static __inline__ UChar get_backing_abit ( Addr a )
+static __inline__ 
+UChar get_backing_abit ( Addr a )
 {
    SecMap* sm;
    UInt    sm_off;
    ENSURE_MAPPABLE(a, "get_backing_abit");
-   sm     = VG_(primary_map)[a >> 16];
+   sm     = vg_primary_map[a >> 16];
    sm_off = a & 0xFFFF;
    PROF_EVENT(20);
    return BITARR_TEST(sm->abits, sm_off) 
              ? VGM_BIT_INVALID : VGM_BIT_VALID;
 }
 
-static __inline__ UChar get_backing_vbyte ( Addr a )
+static __inline__ 
+UChar get_backing_vbyte ( Addr a )
 {
    SecMap* sm;
    UInt    sm_off;
    ENSURE_MAPPABLE(a, "get_backing_vbyte");
-   sm     = VG_(primary_map)[a >> 16];
+   sm     = vg_primary_map[a >> 16];
    sm_off = a & 0xFFFF;
    PROF_EVENT(21);
    return sm->vbyte[sm_off];
 }
 
-static __inline__ void set_backing_abit ( Addr a, UChar abit )
+static __inline__ 
+void set_backing_abit ( Addr a, UChar abit )
 {
    SecMap* sm;
    UInt    sm_off;
    PROF_EVENT(22);
    ENSURE_MAPPABLE(a, "set_backing_abit");
-   sm     = VG_(primary_map)[a >> 16];
+   sm     = vg_primary_map[a >> 16];
    sm_off = a & 0xFFFF;
    if (abit) 
       BITARR_SET(sm->abits, sm_off);
@@ -448,13 +426,14 @@ static __inline__ void set_backing_abit ( Addr a, UChar abit )
       BITARR_CLEAR(sm->abits, sm_off);
 }
 
-static __inline__ void set_backing_vbyte ( Addr a, UChar vbyte )
+static __inline__ 
+void set_backing_vbyte ( Addr a, UChar vbyte )
 {
    SecMap* sm;
    UInt    sm_off;
    PROF_EVENT(23);
    ENSURE_MAPPABLE(a, "set_backing_vbyte");
-   sm     = VG_(primary_map)[a >> 16];
+   sm     = vg_primary_map[a >> 16];
    sm_off = a & 0xFFFF;
    sm->vbyte[sm_off] = vbyte;
 }
@@ -462,17 +441,18 @@ static __inline__ void set_backing_vbyte ( Addr a, UChar vbyte )
 
 /* Reading/writing of the bitmaps, for aligned word-sized accesses. */
 
-static __inline__ UChar get_backing_abits4_ALIGNED ( Addr a )
+static __inline__ 
+UChar get_backing_abits4_ALIGNED ( Addr a )
 {
    SecMap* sm;
    UInt    sm_off;
    UChar   abits8;
    PROF_EVENT(24);
-#  ifdef VG_DEBUG_MEMORY
-   vg_assert(IS_ALIGNED4_ADDR(a));
+#  if VG_DEBUG_MEM_LEVEL >= 2
+   vg_assert(IS_ALIGNED4(a));
 #  endif
    ENSURE_MAPPABLE(a, "get_backing_abits4_ALIGNED");
-   sm     = VG_(primary_map)[a >> 16];
+   sm     = vg_primary_map[a >> 16];
    sm_off = a & 0xFFFF;
    abits8 = sm->abits[sm_off >> 3];
    abits8 >>= (a & 4 /* 100b */);   /* a & 4 is either 0 or 4 */
@@ -480,35 +460,53 @@ static __inline__ UChar get_backing_abits4_ALIGNED ( Addr a )
    return abits8;
 }
 
-static UInt __inline__ get_backing_vbytes4_ALIGNED ( Addr a )
+static __inline__ 
+UInt get_backing_vbytes4_ALIGNED ( Addr a )
 {
    SecMap* sm;
    UInt    sm_off;
    PROF_EVENT(25);
-#  ifdef VG_DEBUG_MEMORY
-   vg_assert(IS_ALIGNED4_ADDR(a));
+#  if VG_DEBUG_MEM_LEVEL >= 2
+   vg_assert(IS_ALIGNED4(a));
 #  endif
    ENSURE_MAPPABLE(a, "get_backing_vbytes4_ALIGNED");
-   sm     = VG_(primary_map)[a >> 16];
+   sm     = vg_primary_map[a >> 16];
    sm_off = a & 0xFFFF;
    return ((UInt*)(sm->vbyte))[sm_off >> 2];
+}
+
+
+static __inline__ 
+void set_backing_vbytes4_ALIGNED ( Addr a, UInt vword )
+{
+   SecMap* sm;
+   UInt    sm_off;
+   PROF_EVENT(25);
+#  if VG_DEBUG_MEM_LEVEL >= 2
+   vg_assert(IS_ALIGNED4(a));
+#  endif
+   ENSURE_MAPPABLE(a, "set_backing_vbytes4_ALIGNED");
+   sm     = vg_primary_map[a >> 16];
+   sm_off = a & 0xFFFF;
+   ((UInt*)(sm->vbyte))[sm_off >> 2] = vword;
 }
 
 
 /* Setting permissions for aligned words.  This supports fast stack
    operations and general address-range-permissions-setting. */
 
-static __inline__ void make_aligned_backing_word_NOACCESS ( Addr a )
+static __inline__ 
+void make_aligned_backing_word_NOACCESS ( Addr a )
 {
    SecMap* sm;
    UInt    sm_off;
    UChar   mask;
    PROF_EVENT(50);
-#  ifdef VG_DEBUG_MEMORY
-   vg_assert(IS_ALIGNED4_ADDR(a));
+#  if VG_DEBUG_MEM_LEVEL >= 2
+   vg_assert(IS_ALIGNED4(a));
 #  endif
    ENSURE_MAPPABLE(a, "make_aligned_word_backing_NOACCESS");
-   sm     = VG_(primary_map)[a >> 16];
+   sm     = vg_primary_map[a >> 16];
    sm_off = a & 0xFFFF;
    ((UInt*)(sm->vbyte))[sm_off >> 2] = VGM_WORD_INVALID;
    mask = 0x0F;
@@ -518,17 +516,18 @@ static __inline__ void make_aligned_backing_word_NOACCESS ( Addr a )
    sm->abits[sm_off >> 3] |= mask;
 }
 
-static __inline__ void make_aligned_backing_word_WRITABLE ( Addr a )
+static __inline__ 
+void make_aligned_backing_word_WRITABLE ( Addr a )
 {
    SecMap* sm;
    UInt    sm_off;
    UChar   mask;
    PROF_EVENT(51);
-#  ifdef VG_DEBUG_MEMORY
-   vg_assert(IS_ALIGNED4_ADDR(a));
+#  if VG_DEBUG_MEM_LEVEL >= 2
+   vg_assert(IS_ALIGNED4(a));
 #  endif
    ENSURE_MAPPABLE(a, "make_aligned_backing_word_WRITABLE");
-   sm     = VG_(primary_map)[a >> 16];
+   sm     = vg_primary_map[a >> 16];
    sm_off = a & 0xFFFF;
    ((UInt*)(sm->vbyte))[sm_off >> 2] = VGM_WORD_INVALID;
    mask = 0x0F;
@@ -538,17 +537,18 @@ static __inline__ void make_aligned_backing_word_WRITABLE ( Addr a )
    sm->abits[sm_off >> 3] &= ~mask;
 }
 
-static __inline__ void make_aligned_backing_word_READABLE ( Addr a )
+static __inline__ 
+void make_aligned_backing_word_READABLE ( Addr a )
 {
    SecMap* sm;
    UInt    sm_off;
    UChar   mask;
    PROF_EVENT(51);
-#  ifdef VG_DEBUG_MEMORY
-   vg_assert(IS_ALIGNED4_ADDR(a));
+#  if VG_DEBUG_MEM_LEVEL >= 2
+   vg_assert(IS_ALIGNED4(a));
 #  endif
    ENSURE_MAPPABLE(a, "make_aligned_backing_word_READABLE");
-   sm     = VG_(primary_map)[a >> 16];
+   sm     = vg_primary_map[a >> 16];
    sm_off = a & 0xFFFF;
    ((UInt*)(sm->vbyte))[sm_off >> 2] = VGM_WORD_VALID;
    mask = 0x0F;
@@ -564,16 +564,49 @@ static __inline__ void make_aligned_backing_word_READABLE ( Addr a )
 /*--- with the backing store.                              ---*/
 /*------------------------------------------------------------*/
 
+/* Make a word of the following form 
+      
+      30-N    N
+      A--A B--B CD
+
+      where: N = VG_N_VCACHE_BITS
+             A = tagb
+             B = entb
+             C = a1
+             D = a0
+*/
+__inline__
+UInt VG_(mkVCacheWord) ( UInt tagb, UInt entb, UInt a1, UInt a0 )
+{
+   UInt aaa, bbb, www;
+
+   vg_assert(tagb <= 1);
+   vg_assert(entb <= 1);
+   vg_assert(a1 <= 1);
+   vg_assert(a0 <= 1);
+
+   aaa = tagb==0 ? 0 : ((1 << (30 - VG_N_VCACHE_BITS)) - 1);
+   bbb = entb==0 ? 0 : ((1 << VG_N_VCACHE_BITS) - 1);
+   
+   www = (aaa << (VG_N_VCACHE_BITS+2));
+   www |= (bbb << 2);
+   www |= ((a1 & 1) << 1);
+   www |= (a0 & 1);
+
+   return www;
+}
+
+
 static __inline__
 UInt addr_to_voffset ( Addr addr )
 {
-   return addr & ((VG_N_VCACHE_MASK << 2) | (1 << 1) | 1);
+   return addr & VG_(mkVCacheWord)(0,1, 1,1);
 }
 
 static __inline__
 UInt addr_to_doffset ( Addr addr )
 {
-   return addr & ((VG_N_VCACHE_MASK << 2) | (0 << 1) | 0);
+   return addr & VG_(mkVCacheWord)(0,1, 0,0);
 }
 
 static __inline__
@@ -583,8 +616,15 @@ UInt addr_to_lineno ( Addr addr )
 }
 
 static __inline__
-void is_empty_vcache_line ( UInt lineno )
+UInt addr_to_groupno ( Addr addr )
 {
+   return addr_to_lineno(addr) / VG_N_VCACHE_LINES_PER_GROUP;
+}
+
+static __inline__
+Bool is_empty_vcache_line ( UInt lineno )
+{
+   UInt d;
    vg_assert(lineno < VG_N_VCACHE);
    d = VG_(vcache_discr)[lineno];
    return
@@ -596,35 +636,15 @@ void make_empty_vcache_line ( UInt lineno )
 {
    vg_assert(lineno < VG_N_VCACHE);
    vg_assert(!is_empty_vcache_line(lineno));
-   VG_(vcache_discr)[lineno] ^= (VG_N_VCACHE_MASK << 2);
+   VG_(vcache_discr)[lineno] ^= VG_(mkVCacheWord)(0,1, 0,0);
    vg_assert(is_empty_vcache_line(lineno));
 }
 
 
-/* Assuming a is 4-aligned, return the 2 4 bytes in the cache that
-   would correspond to a, ignoring the _discr (tag) field. */
-static 
-UUInt get_vcache_vbits4 ( Addr a )
-{
-   Addr   voffset = addr_to_voffset(a);
-   UChar* pc      = (UChar*)(& VG_(vcache_vbits)[0] );
-   pc += voffset;
-   return * ((UInt*)pc);
-}
-
-/* Same, for 2-byte access. */
-static 
-UShort get_vcache_vbits2 ( Addr a )
-{
-   Addr   voffset = addr_to_voffset(a);
-   UChar* pc      = (UChar*)(& VG_(vcache_vbits)[0] );
-   pc += voffset;
-   return * ((UShort*)pc);
-}
-
-/* Same, for 1-byte access. */
+/* Return the byte in the cache that would correspond to a, ignoring
+   the _discr (tag) field. */
 static
-UChar get_vcache_vbits1 ( Addr a )
+UChar get_vcache_vbyte ( Addr a )
 {
    Addr   voffset = addr_to_voffset(a);
    UChar* pc      = (UChar*)(& VG_(vcache_vbits)[0] );
@@ -632,8 +652,9 @@ UChar get_vcache_vbits1 ( Addr a )
    return * ((UChar*)pc);
 }
 
+/* ... and write it. */
 static
-void set_vcache_vbits1 ( Addr a, UChar v )
+void set_vcache_vbyte ( Addr a, UChar v )
 {
    Addr   voffset = addr_to_voffset(a);
    UChar* pc      = (UChar*)(& VG_(vcache_vbits)[0] );
@@ -660,7 +681,7 @@ void writeback_vcache_line ( UInt lineno )
       /* Not different from backing store. */
       return;
 
-   put_backing_vbytes4_ALIGNED ( addr, VG_(vcache_vbits)[lineno] );
+   set_backing_vbytes4_ALIGNED ( addr, VG_(vcache_vbits)[lineno] );
 }
 
 
@@ -743,7 +764,7 @@ void get_byte_A_and_V ( Addr addr, /*OUT*/ UChar* p_A, /*OUT*/ UInt* p_V )
    otherwise update the backing map.  VCache remains unchanged in the
    case of a miss. */
 static
-UChar put_byte_V_and_get_A ( Addr addr, UInt vbyte )
+UChar set_byte_V_and_get_A ( Addr addr, UInt vbyte )
 {
    UInt lineno = addr_to_lineno(addr);
    if (ALIGN4(addr) == VG_(vcache_discr)[lineno]) {
@@ -763,7 +784,7 @@ static
 void set_byte_A_and_V ( Addr addr, UChar abit, UInt vbyte )
 {
    UInt lno = addr_to_lineno(addr);
-   if (ALIGN4(addr) == VG_(vcache_discr)[lineno]) {
+   if (ALIGN4(addr) == VG_(vcache_discr)[lno]) {
       /* Hit. */
       set_vcache_vbyte ( addr, vbyte );
       if (abit == VGM_BIT_INVALID) {
@@ -791,9 +812,9 @@ void make_aligned_word_NOACCESS ( Addr addr )
    UInt lno;
    vg_assert(IS_ALIGNED4(addr));
    lno = addr_to_lineno(addr);
-   if (ALIGN4(addr) == VG_(vcache_discr)[lineno]) {
+   if (ALIGN4(addr) == VG_(vcache_discr)[lno]) {
       /* Hit. */
-      make_empty_vcache_line ( lineno );
+      make_empty_vcache_line ( lno );
    }
    /* In all cases ... */
    make_aligned_backing_word_NOACCESS ( addr );
@@ -806,7 +827,7 @@ void make_aligned_word_WRITABLE ( Addr addr )
    UInt lno;
    vg_assert(IS_ALIGNED4(addr));
    lno = addr_to_lineno(addr);
-   if (ALIGN4(addr) == VG_(vcache_discr)[lineno]) {
+   if (ALIGN4(addr) == VG_(vcache_discr)[lno]) {
       /* Hit.  Set the V bits to invalid. */
       VG_(vcache_discr)[lno] = VGM_WORD_INVALID;
    }
@@ -821,7 +842,7 @@ void make_aligned_word_READABLE ( Addr addr )
    UInt lno;
    vg_assert(IS_ALIGNED4(addr));
    lno = addr_to_lineno(addr);
-   if (ALIGN4(addr) == VG_(vcache_discr)[lineno]) {
+   if (ALIGN4(addr) == VG_(vcache_discr)[lno]) {
       /* Hit.  Set the V bits to valid. */
       VG_(vcache_discr)[lno] = VGM_WORD_VALID;
    }
@@ -829,6 +850,42 @@ void make_aligned_word_READABLE ( Addr addr )
    make_aligned_backing_word_READABLE ( addr );
 }
 
+
+/*------------------------------------------------------------*/
+/*--- Sanity checker for the vcache.                       ---*/
+/*------------------------------------------------------------*/
+
+static 
+void vcache_sanity ( void )
+{
+   UInt tagMask, alMask, lno, dw;
+   tagMask = VG_(mkVCacheWord)(0,1, 0,0);
+   alMask  = VG_(mkVCacheWord)(0,0, 1,1);
+   for (lno = 0; lno < VG_N_VCACHE; lno++) {
+      dw = VG_(vcache_discr)[lno];
+      vg_assert((dw & alMask) == 0);
+      dw &= tagMask;
+      dw >>= 2;
+      if (dw == lno) {
+         /* Cache line in use.  */
+         /* Check requirement that valid lines are completely addressible. */
+         vg_assert(get_backing_abits4_ALIGNED(VG_(vcache_discr)[lno])
+                   == VGM_NIBBLE_VALID);
+	 /* Check that the vorig field matches the backing store; if
+            not, someone did a write-around, which isn't allowed --
+            could give an incoherent cache. */
+         vg_assert(get_backing_vbytes4_ALIGNED(VG_(vcache_discr)[lno])
+                   == VG_(vcache_vorig)[lno]);
+      }
+      else 
+      if ( ((~dw) & (tagMask >> 2)) == lno ) {
+         /* dw is a correct indication of Not in use. */
+      }
+      else { 
+         VG_(panic)("invalid tag field in cache");
+      }
+   }
+}
 
 
 /*------------------------------------------------------------*/
@@ -847,13 +904,17 @@ void make_aligned_word_READABLE ( Addr addr )
 
    - Then we just consult/update the relevant values from the
      vcache+backing using the official "front door" access functions,
-     get_byte_A_and_V and put_byte_A_and_get_V.  */
+     get_byte_A_and_V and put_byte_A_and_get_V.
 */
 
 UInt VG_(helperc_LOADV4) ( Addr addr )
 {
    UChar aa0, aa1, aa2, aa3;
    UInt  vv0, vv1, vv2, vv3, vw;
+
+#  if VG_DEBUG_MEM_LEVEL >= 10
+   vcache_sanity();
+#  endif
 
    try_fault_in_range ( addr, 4 );
 
@@ -881,7 +942,7 @@ UInt VG_(helperc_LOADV4) ( Addr addr )
    else 
    if (!VG_(clo_partial_loads_ok) 
        || (aa0 != VGM_BIT_VALID && aa1 != VGM_BIT_VALID
-           && aa2 != VGM_BIT_VALID && aa3 != VGM_BIT_VALID))
+           && aa2 != VGM_BIT_VALID && aa3 != VGM_BIT_VALID)) {
       /* Case 2: the address is completely invalid.  
          - emit addressing error
          - return V word indicating validity.  
@@ -924,6 +985,10 @@ UInt VG_(helperc_LOADV2) ( Addr addr )
    UChar aa0, aa1;
    UInt  vv0, vv1, vw;
 
+#  if VG_DEBUG_MEM_LEVEL >= 10
+   vcache_sanity();
+#  endif
+
    try_fault_in_range ( addr, 2 );
 
    get_byte_A_and_V ( addr+0, &aa0, &vv0 );
@@ -948,6 +1013,10 @@ UInt VG_(helperc_LOADV1) ( Addr addr )
    UChar aa0;
    UInt  vv0, vw;
 
+#  if VG_DEBUG_MEM_LEVEL >= 10
+   vcache_sanity();
+#  endif
+
    /* We're in a miss situation.  Try and fault in the containing
       group. */
    try_fault_in_range ( addr, 1 );
@@ -971,24 +1040,28 @@ void VG_(helperc_STOREV4) ( Addr addr, UInt vbyte )
 {
    Bool aerr;
 
+#  if VG_DEBUG_MEM_LEVEL >= 10
+   vcache_sanity();
+#  endif
+
    try_fault_in_range ( addr, 4 );
 
    aerr = False;
-   if (put_byte_V_and_get_A(a+0, vbyte & 0x000000FF) != VGM_BIT_VALID) 
+   if (set_byte_V_and_get_A(addr+0, vbyte & 0x000000FF) != VGM_BIT_VALID) 
       aerr = True;
    vbyte >>= 8;
-   if (put_byte_V_and_get_A(a+1, vbyte & 0x000000FF) != VGM_BIT_VALID) 
+   if (set_byte_V_and_get_A(addr+1, vbyte & 0x000000FF) != VGM_BIT_VALID) 
       aerr = True;
    vbyte >>= 8;
-   if (put_byte_V_and_get_A(a+2, vbyte & 0x000000FF) != VGM_BIT_VALID) 
+   if (set_byte_V_and_get_A(addr+2, vbyte & 0x000000FF) != VGM_BIT_VALID) 
       aerr = True;
    vbyte >>= 8;
-   if (put_byte_V_and_get_A(a+3, vbyte & 0x000000FF) != VGM_BIT_VALID) 
+   if (set_byte_V_and_get_A(addr+3, vbyte & 0x000000FF) != VGM_BIT_VALID) 
       aerr = True;
 
    /* If an address error has happened, report it. */
    if (aerr)
-      VG_(record_address_error)( a, 4, True );
+      VG_(record_address_error)( addr, 4, True );
 }
 
 
@@ -996,18 +1069,22 @@ void VG_(helperc_STOREV2) ( Addr addr, UInt vbyte )
 {
    Bool aerr;
 
+#  if VG_DEBUG_MEM_LEVEL >= 10
+   vcache_sanity();
+#  endif
+
    try_fault_in_range ( addr, 2 );
 
    aerr = False;
-   if (put_byte_V_and_get_A(a+0, vbyte & 0x000000FF) != VGM_BIT_VALID) 
+   if (set_byte_V_and_get_A(addr+0, vbyte & 0x000000FF) != VGM_BIT_VALID) 
       aerr = True;
    vbyte >>= 8;
-   if (put_byte_V_and_get_A(a+1, vbyte & 0x000000FF) != VGM_BIT_VALID) 
+   if (set_byte_V_and_get_A(addr+1, vbyte & 0x000000FF) != VGM_BIT_VALID) 
       aerr = True;
 
    /* If an address error has happened, report it. */
    if (aerr)
-      VG_(record_address_error)( a, 2, True );
+      VG_(record_address_error)( addr, 2, True );
 }
 
 
@@ -1015,15 +1092,19 @@ void VG_(helperc_STOREV1) ( Addr addr, UInt vbyte )
 {
    Bool aerr;
 
+#  if VG_DEBUG_MEM_LEVEL >= 10
+   vcache_sanity();
+#  endif
+
    try_fault_in_range ( addr, 1 );
 
    aerr = False;
-   if (put_byte_V_and_get_A(a+0, vbyte & 0x000000FF) != VGM_BIT_VALID) 
+   if (set_byte_V_and_get_A(addr+0, vbyte & 0x000000FF) != VGM_BIT_VALID) 
       aerr = True;
 
    /* If an address error has happened, report it. */
    if (aerr)
-      VG_(record_address_error)( a, 1, True );
+      VG_(record_address_error)( addr, 1, True );
 }
 
 
@@ -1038,8 +1119,13 @@ void VG_(helperc_STOREV1) ( Addr addr, UInt vbyte )
 
 void VG_(helperc_LOADV_FP) ( Addr addr, Int size )
 {
-   Bool aerr;
-   Bool verr;
+   Bool  aerr, verr;
+   UInt  lno03, lno47, i, v0;
+   UChar a0;
+
+#  if VG_DEBUG_MEM_LEVEL >= 10
+   vcache_sanity();
+#  endif
 
    /* Deal with the only two important cases quickly. */
 
@@ -1048,7 +1134,7 @@ void VG_(helperc_LOADV_FP) ( Addr addr, Int size )
       if (addr == VG_(vcache_discr)[lno03]) {
          /* Cache hit, so there can't be any addressing error. */
          if (VG_(vcache_vbits)[lno03] != VGM_WORD_VALID) {
-            VG_(record_value_error)( addr, 4, False );
+            VG_(record_value_error)( 4 );
          }
          return;
       } else {
@@ -1064,7 +1150,7 @@ void VG_(helperc_LOADV_FP) ( Addr addr, Int size )
          /* Cache hit, so there can't be any addressing error. */
          if (VG_(vcache_vbits)[lno03] != VGM_WORD_VALID
              || VG_(vcache_vbits)[lno47] != VGM_WORD_VALID) {
-            VG_(record_value_error)( addr, 8, False );
+            VG_(record_value_error)( 8 );
          }
          return;
       } else {
@@ -1097,8 +1183,13 @@ void VG_(helperc_LOADV_FP) ( Addr addr, Int size )
 
 void VG_(helperc_STOREV_FP) ( Addr addr, Int size )
 {
-   Bool aerr;
-   Bool verr;
+   Bool  aerr, verr;
+   UInt  lno03, lno47, i;
+   UChar a0;
+
+#  if VG_DEBUG_MEM_LEVEL >= 10
+   vcache_sanity();
+#  endif
 
    /* Deal with the only two important cases quickly. */
 
@@ -1152,11 +1243,14 @@ static void set_address_range_perms ( Addr a, UInt len,
                                       UInt example_a_bit,
                                       UInt example_v_bit )
 {
-   UChar   vbyte, abyte8;
-   UInt    vword4, sm_off;
-   SecMap* sm;
+   UChar   vbyte;
+   UInt    vword4;
 
    PROF_EVENT(30);
+
+#  if VG_DEBUG_MEM_LEVEL >= 10
+   vcache_sanity();
+#  endif
 
    if (len == 0)
       return;
@@ -1187,16 +1281,6 @@ static void set_address_range_perms ( Addr a, UInt len,
    vbyte = example_v_bit==VGM_BIT_VALID 
               ? VGM_BYTE_VALID : VGM_BYTE_INVALID;
 
-   /* In order that we can charge through the address space at 8
-      bytes/main-loop iteration, make up some perms. */
-   abyte8 = (example_a_bit << 7)
-            | (example_a_bit << 6)
-            | (example_a_bit << 5)
-            | (example_a_bit << 4)
-            | (example_a_bit << 3)
-            | (example_a_bit << 2)
-            | (example_a_bit << 1)
-            | (example_a_bit << 0);
    vword4 = (vbyte << 24) | (vbyte << 16) | (vbyte << 8) | vbyte;
 
    /* Slowly do parts preceding 4-byte alignment. */
@@ -1204,7 +1288,7 @@ static void set_address_range_perms ( Addr a, UInt len,
       PROF_EVENT(31);
       if (len == 0) break;
       if (IS_ALIGNED4(a)) break;
-      put_byte_A_and_V ( a, example_a_bit, vbyte );
+      set_byte_A_and_V ( a, example_a_bit, vbyte );
       a++;
       len--;
    }   
@@ -1262,7 +1346,7 @@ static void set_address_range_perms ( Addr a, UInt len,
    while (True) {
       PROF_EVENT(33);
       if (len == 0) break;
-      put_byte_A_and_V ( a, example_a_bit, vbyte );
+      set_byte_A_and_V ( a, example_a_bit, vbyte );
       a++;
       len--;
    }   
@@ -1382,50 +1466,6 @@ Bool VGM_(check_readable_asciiz) ( Addr a, Addr* bad_addr )
 }
 
 
-/* Setting permissions for aligned words.  This supports fast stack
-   operations. */
-
-static __inline__ void make_aligned_word_NOACCESS ( Addr a )
-{
-   SecMap* sm;
-   UInt    sm_off;
-   UChar   mask;
-   PROF_EVENT(50);
-#  ifdef VG_DEBUG_MEMORY
-   vg_assert(IS_ALIGNED4_ADDR(a));
-#  endif
-   ENSURE_MAPPABLE(a, "make_aligned_word_NOACCESS");
-   sm     = VG_(primary_map)[a >> 16];
-   sm_off = a & 0xFFFF;
-   ((UInt*)(sm->vbyte))[sm_off >> 2] = VGM_WORD_INVALID;
-   mask = 0x0F;
-   mask <<= (a & 4 /* 100b */);   /* a & 4 is either 0 or 4 */
-   /* mask now contains 1s where we wish to make address bits
-      invalid (1s). */
-   sm->abits[sm_off >> 3] |= mask;
-}
-
-static __inline__ void make_aligned_word_WRITABLE ( Addr a )
-{
-   SecMap* sm;
-   UInt    sm_off;
-   UChar   mask;
-   PROF_EVENT(51);
-#  ifdef VG_DEBUG_MEMORY
-   vg_assert(IS_ALIGNED4_ADDR(a));
-#  endif
-   ENSURE_MAPPABLE(a, "make_aligned_word_WRITABLE");
-   sm     = VG_(primary_map)[a >> 16];
-   sm_off = a & 0xFFFF;
-   ((UInt*)(sm->vbyte))[sm_off >> 2] = VGM_WORD_INVALID;
-   mask = 0x0F;
-   mask <<= (a & 4 /* 100b */);   /* a & 4 is either 0 or 4 */
-   /* mask now contains 1s where we wish to make address bits
-      invalid (0s). */
-   sm->abits[sm_off >> 3] &= ~mask;
-}
-
-
 /* ---------------------------------------------------------------------
    Called from generated code, or from the assembly helpers.
    Handlers for value check failures.
@@ -1530,13 +1570,15 @@ void VGM_(handle_esp_assignment) ( Addr new_espA )
 {
    UInt old_esp = VG_(baseBlock)[VGOFF_(m_esp)];
    UInt new_esp = (UInt)new_espA;
+
+   __attribute__((unused))
    Int  delta   = ((Int)new_esp) - ((Int)old_esp);
 
    PROF_EVENT(101);
 
-#  ifndef VG_DEBUG_MEMORY
+#  if VG_DEBUG_MEM_LEVEL <= 1
 
-   if (IS_ALIGNED4_ADDR(old_esp)) {
+   if (IS_ALIGNED4(old_esp)) {
 
       /* Deal with the most common cases fast.  These are ordered in
          the sequence most common first. */
@@ -1765,10 +1807,11 @@ void VGM_(init_memory_audit) ( void )
    /* These entries gradually get overwritten as the used address
       space expands. */
    for (i = 0; i < 65536; i++)
-      VG_(primary_map)[i] = NULL;
+      vg_primary_map[i] = NULL;
 
    /* Make the vcache completely invalid. */
    invalidate_vcache();
+   vcache_sanity();
 
    /* Read the initial memory mapping from the /proc filesystem, and
       set up our own maps accordingly. */
@@ -1876,7 +1919,7 @@ UInt VG_(scan_all_valid_memory) ( void (*notify_word)( Addr, UInt ) )
    for (page = 0; page < numPages; page++) {
       pageBase = page << VKI_BYTES_PER_PAGE_BITS;
       primaryMapNo = pageBase >> 16;
-      sm = VG_(primary_map)[primaryMapNo];
+      sm = vg_primary_map[primaryMapNo];
       if (sm == NULL) continue;
       if (__builtin_setjmp(memscan_jmpbuf) == 0) {
          /* try this ... */
@@ -1884,8 +1927,8 @@ UInt VG_(scan_all_valid_memory) ( void (*notify_word)( Addr, UInt ) )
          /* we get here if we didn't get a fault */
          /* Scan the page */
          for (addr = pageBase; addr < pageBase+VKI_BYTES_PER_PAGE; addr += 4) {
-            abits  = get_abits4_ALIGNED(addr);
-            vbytes = get_vbytes4_ALIGNED(addr);
+            abits  = get_backing_abits4_ALIGNED(addr);
+            vbytes = get_backing_vbytes4_ALIGNED(addr);
             if (abits == VGM_NIBBLE_VALID 
                 && vbytes == VGM_WORD_VALID) {
                nWordsNotified++;
@@ -2277,8 +2320,8 @@ void VG_(detect_memory_leaks) ( void )
 
 Bool VG_(first_and_last_secondaries_look_plausible) ( void )
 {
-   if (IS_DISTINGUISHED_SM(VG_(primary_map)[0])
-       && IS_DISTINGUISHED_SM(VG_(primary_map)[65535])) {
+   if (NULL == vg_primary_map[0]
+       && NULL == vg_primary_map[65535]) {
       return True;
    } else {
       return False;
@@ -2341,6 +2384,7 @@ void VG_(do_sanity_checks) ( Bool force_expensive )
          VG_(sanity_check_tc_tt)();
 
       if (VG_(clo_instrument)) {
+         vcache_sanity();
       }
       /* 
       if ((VG_(sanity_fast_count) % 500) == 0) VG_(mallocSanityCheckAll)(); 
