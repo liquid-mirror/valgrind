@@ -992,7 +992,7 @@ int process_extended_line_op( SegInfo *si, UInt** fnames,
         *fnames = VG_(malloc)(VG_AR_SYMTAB, sizeof (UInt) * 2);
       else
         *fnames = VG_(realloc)(
-                     VG_AR_SYMTAB, *fnames, 
+                     VG_AR_SYMTAB, *fnames, /*alignment*/4,
                      sizeof(UInt) 
                         * (state_machine_regs.last_file_entry + 1));
       (*fnames)[state_machine_regs.last_file_entry] = addStr (si,name);
@@ -1121,7 +1121,7 @@ void read_debuginfo_dwarf2 ( SegInfo* si, UChar* dwarf2, Int dwarf2_sz )
              if (fnames == NULL)
                fnames = VG_(malloc)(VG_AR_SYMTAB, sizeof (UInt) * 2);
              else
-               fnames = VG_(realloc)(VG_AR_SYMTAB, fnames, 
+               fnames = VG_(realloc)(VG_AR_SYMTAB, fnames, /*alignment*/4,
                            sizeof(UInt) 
                               * (state_machine_regs.last_file_entry + 1));
              data += VG_(strlen) ((Char *) data) + 1;

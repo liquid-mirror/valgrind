@@ -311,7 +311,7 @@ void VGM_(handle_esp_assignment) ( Addr new_espA )
 
 #  ifndef VG_DEBUG_MEMORY
 
-   if (IS_ALIGNED4_ADDR(old_esp)) {
+   if (IS_ALIGNED4_ADDR(old_esp) &&  IS_ALIGNED4_ADDR(new_esp)) {
 
       /* Deal with the most common cases fast.  These are ordered in
          the sequence most common first. */
