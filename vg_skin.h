@@ -919,8 +919,8 @@ extern Bool VG_(get_filename_linenum)
                               ( Addr a, Char* filename, Int n_filename,
                                         UInt* linenum );
 
-/* Succeeds if the address is within a shared object.  It doesn't matter
-   if debug info is present or not. */
+/* Succeeds if the address is within a shared object or the main executable.
+   It doesn't matter if debug info is present or not. */
 extern Bool VG_(get_objname)  ( Addr a, Char* objname,  Int n_objname  );
 
 
