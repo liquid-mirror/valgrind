@@ -1680,23 +1680,26 @@ may result:
   <li>A pointer to the start of the block is found.  This usually
       indicates programming sloppiness; since the block is still
       pointed at, the programmer could, at least in principle, free'd
-      it before program exit.</li><br>
+      it before program exit.  This type of unfreed memory block is
+      labeled as "still reachable" in the leak summary.</li><br>
       <p>
 
   <li>A pointer to the interior of the block is found.  The pointer
       might originally have pointed to the start and have been moved
       along, or it might be entirely unrelated.  Valgrind deems such a
-      block as "dubious", that is, possibly leaked,
-      because it's unclear whether or
-      not a pointer to it still exists.</li><br>
+      block as "dubious", that is, possibly leaked, because it's
+      unclear whether or not a pointer to it still exists.  This type
+      of unfreed memory block is labeled as "possibly lost" in the
+      leak summary.</li><br>
       <p>
 
   <li>The worst outcome is that no pointer to the block can be found.
-      The block is classified as "leaked", because the
-      programmer could not possibly have free'd it at program exit,
-      since no pointer to it exists.  This might be a symptom of
-      having lost the pointer at some earlier point in the
-      program.</li>
+      The block is classified as "leaked", because the programmer
+      could not possibly have free'd it at program exit, since no
+      pointer to it exists.  This might be a symptom of having lost
+      the pointer at some earlier point in the program.  This type of
+      unfreed memory block is labeled as "definitely lost" in the leak
+      summary.</li>
 </ul>
 
 Valgrind reports summaries about leaked and dubious blocks.
