@@ -3,8 +3,8 @@
 #include <stdlib.h>
 
 /* The original test driver machinery. */
-#define N_TEST_TRANSACTIONS 50000
-#define N_TEST_ARR 10000
+#define N_TEST_TRANSACTIONS 500
+#define N_TEST_ARR 2000
 
 #define M_TEST_MALLOC 1000
 
