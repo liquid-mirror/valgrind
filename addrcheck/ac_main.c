@@ -2457,8 +2457,7 @@ Bool SK_(process_cmd_line_option)(Char* arg)
 
    else if (STREQN(15, arg, "--freelist-vol=")) {
       SK_(clo_freelist_vol) = (Int)VG_(atoll)(&arg[15]);
-      // SSS: default size of 2 bytes??
-      if (SK_(clo_freelist_vol) < 0) SK_(clo_freelist_vol) = 2;
+      if (SK_(clo_freelist_vol) < 0) SK_(clo_freelist_vol) = 0;
    }
 
    else if (STREQ(arg, "--leak-check=yes"))
