@@ -251,14 +251,14 @@ Bool VG_(anyFlagUse) ( UInstr* u )
 /* Convert a rank in the range 0 .. VG_MAX_REALREGS-1 into an Intel
    register number.  This effectively defines the order in which real
    registers are allocated.  %ebp is excluded since it is permanently
-   reserved for pointing at VG_(baseBlock).  %edi is a general spare
-   temp used for Left4 and various misc tag ops.
+   reserved for pointing at VG_(baseBlock).
 
-   Important!  If you change the set of allocatable registers from
-   %eax, %ebx, %ecx, %edx, %esi you must change the
-   save/restore sequences in various places to match!  
+   Important!  This function must correspond with the value of
+   VG_MAX_REALREGS (actually, VG_MAX_REALREGS can be reduced without
+   a problem, except the generated code will obviously be worse).
 */
-static __inline__ Int rankToRealRegNum ( Int rank )
+__inline__ 
+Int VG_(rankToRealRegNum) ( Int rank )
 {
    switch (rank) {
 #     ifdef BEST_ALLOC_ORDER
@@ -268,15 +268,17 @@ static __inline__ Int rankToRealRegNum ( Int rank )
       case 2: return R_ECX;
       case 3: return R_EDX;
       case 4: return R_ESI;
+      case 5: return R_EDI;
 #     else
       /* Contrary; probably the worst.  Helpful for debugging, tho. */
-      case 4: return R_EAX;
-      case 3: return R_EBX;
-      case 2: return R_ECX;
-      case 1: return R_EDX;
-      case 0: return R_ESI;
+      case 5: return R_EAX;
+      case 4: return R_EBX;
+      case 3: return R_ECX;
+      case 2: return R_EDX;
+      case 1: return R_ESI;
+      case 0: return R_EDI;
 #     endif
-      default: VG_(panic)("rankToRealRegNum");
+      default: VG_(panic)("VG_(rankToRealRegNum)");
    }
 }
 
@@ -293,12 +295,14 @@ Int VG_(realRegNumToRank) ( Int realReg )
       case R_ECX: return 2;
       case R_EDX: return 3;
       case R_ESI: return 4;
+      case R_EDI: return 5;
 #     else
-      case R_EAX: return 4;
-      case R_EBX: return 3;
-      case R_ECX: return 2;
-      case R_EDX: return 1;
-      case R_ESI: return 0;
+      case R_EAX: return 5;
+      case R_EBX: return 4;
+      case R_ECX: return 3;
+      case R_EDX: return 2;
+      case R_ESI: return 1;
+      case R_EDI: return 0;
 #     endif
       default: VG_(panic)("VG_(realRegNumToRank)");
    }
@@ -833,8 +837,8 @@ void ppRealRegsLiveness ( UInstr* u )
    PRINT_REG_LIVENESS(R_EBX, "b");
    PRINT_REG_LIVENESS(R_ECX, "c");
    PRINT_REG_LIVENESS(R_EDX, "d");
-   PRINT_REG_LIVENESS(R_ESI, "s");
-   //PRINT_REG_LIVENESS(R_EDI, "i");
+   PRINT_REG_LIVENESS(R_ESI, "S");
+   PRINT_REG_LIVENESS(R_EDI, "D");
    VG_(printf)("]");
 
 #undef PRINT_REG_LIVENESS
@@ -1859,7 +1863,7 @@ UCodeBlock* vg_do_register_allocation ( UCodeBlock* c1 )
          temp_info[real_to_temp[r]].real_no = VG_NOTHING;
          if (temp_info[real_to_temp[r]].dead_before > i) {
             uInstr2(c2, PUT, 4, 
-                        RealReg, rankToRealRegNum(r), 
+                        RealReg, VG_(rankToRealRegNum)(r), 
                         SpillNo, temp_info[real_to_temp[r]].spill_no);
             VG_(uinstrs_spill)++;
             spill_reqd = True;
@@ -1877,7 +1881,7 @@ UCodeBlock* vg_do_register_allocation ( UCodeBlock* c1 )
          if (isRead) {
             uInstr2(c2, GET, 4, 
                         SpillNo, temp_info[tno].spill_no, 
-                        RealReg, rankToRealRegNum(r) );
+                        RealReg, VG_(rankToRealRegNum)(r) );
             VG_(uinstrs_spill)++;
             spill_reqd = True;
             if (dis)
@@ -1894,7 +1898,7 @@ UCodeBlock* vg_do_register_allocation ( UCodeBlock* c1 )
          and use patchUInstr to convert its rTempRegs into
          realregs. */
       for (j = 0; j < k; j++)
-         realUse[j] = rankToRealRegNum(temp_info[tempUse[j].num].real_no);
+         realUse[j] = VG_(rankToRealRegNum)(temp_info[tempUse[j].num].real_no);
       VG_(copyUInstr)(c2, &c1->instrs[i]);
       patchUInstr(&LAST_UINSTR(c2), &tempUse[0], &realUse[0], k);
 
