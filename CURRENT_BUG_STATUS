@@ -25,7 +25,10 @@ not this stable branch.
   This bug could also have caused arbitrary other weird failures
   in signal handling.
 
-- Add suppressions for SuSE 8.1.
+- Add suppressions for SuSE 8.1.  It seems to work OK on 8.1, but
+  given that 8.1 is based on gcc-3.2, use of Valgrind on this
+  platform is not recommended -- you still get a lot of spurious
+  uninit-value warnings.  This may get fixed in later versions.
 
 - improvements to valgrind.spec.in, of interest to RPM builders
 
