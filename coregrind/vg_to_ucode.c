@@ -1446,7 +1446,7 @@ static void codegen_mul_A_D_Reg ( UCodeBlock* cb, Int sz,
       uInstr1(cb, POP,   2, TempReg, t1);
       uInstr2(cb, PUT,   2, TempReg, t1, ArchReg, R_EAX);
    }
-	uInstr0(cb, CALLM_E, 0);
+   uInstr0(cb, CALLM_E, 0);
    if (dis) VG_(printf)("%s%c %s\n", signed_multiply ? "imul" : "mul",
                         nameISize(sz), nameIReg(sz, eregOfRM(modrm)));
 
@@ -1898,7 +1898,7 @@ void codegen_REPNE_SCAS ( UCodeBlock* cb, Int sz, Addr eip, Addr eip_next )
    uFlagsRWU(cb, FlagD, FlagsEmpty, FlagsEmpty);
 
    uInstr1(cb, POP,   4, TempReg, tv);
-	uInstr0(cb, CALLM_E, 0);
+   uInstr0(cb, CALLM_E, 0);
 
    if (sz == 4 || sz == 2) {
       uInstr2(cb, SHL, 4, Literal, 0, TempReg, tv);
@@ -1909,6 +1909,56 @@ void codegen_REPNE_SCAS ( UCodeBlock* cb, Int sz, Addr eip, Addr eip_next )
    uInstr1(cb, JMP,   0, Literal, 0);
    uLiteral(cb, eip);
    uCond(cb, CondNZ);
+   uFlagsRWU(cb, FlagsOSZACP, FlagsEmpty, FlagsEmpty);
+   uInstr1(cb, JMP,   0, Literal, 0);
+   uLiteral(cb, eip_next);
+   uCond(cb, CondAlways);
+}
+
+/* Template for REPE SCAS<sz>.  Assumes this insn is the last one in
+   the basic block, and so emits a jump to the next insn. */
+static 
+void codegen_REPE_SCAS ( UCodeBlock* cb, Int sz, Addr eip, Addr eip_next )
+{
+   Int ta /* EAX */, tc /* ECX */, td /* EDI */, tv;
+   ta = newTemp(cb);
+   tc = newTemp(cb);
+   tv = newTemp(cb);
+   td = newTemp(cb);
+
+   uInstr2(cb, GET,   4, ArchReg, R_ECX, TempReg, tc);
+   uInstr2(cb, JIFZ,  4, TempReg, tc,    Literal, 0);
+   uLiteral(cb, eip_next);
+   uInstr1(cb, DEC,   4, TempReg, tc);
+   uInstr2(cb, PUT,   4, TempReg, tc,    ArchReg, R_ECX);
+
+   uInstr2(cb, GET,  sz, ArchReg, R_EAX, TempReg, ta);
+   uInstr2(cb, GET,   4, ArchReg, R_EDI, TempReg, td);
+   uInstr2(cb, LOAD, sz, TempReg, td,    TempReg, tv);
+   /* next uinstr kills ta, but that's ok -- don't need it again */
+   uInstr2(cb, SUB,  sz, TempReg, tv,    TempReg, ta);
+   setFlagsFromUOpcode(cb, SUB);
+
+   uInstr0(cb, CALLM_S, 0);
+   uInstr2(cb, MOV,   4, Literal, 0,     TempReg, tv);
+   uLiteral(cb, 0);
+   uInstr1(cb, PUSH,  4, TempReg, tv);
+
+   uInstr1(cb, CALLM, 0, Lit16, VGOFF_(helper_get_dirflag));
+   uFlagsRWU(cb, FlagD, FlagsEmpty, FlagsEmpty);
+
+   uInstr1(cb, POP,   4, TempReg, tv);
+   uInstr0(cb, CALLM_E, 0);
+
+   if (sz == 4 || sz == 2) {
+      uInstr2(cb, SHL, 4, Literal, 0, TempReg, tv);
+      uLiteral(cb, sz/2);
+   }
+   uInstr2(cb, ADD,   4, TempReg, tv,    TempReg, td);
+   uInstr2(cb, PUT,   4, TempReg, td,    ArchReg, R_EDI);
+   uInstr1(cb, JMP,   0, Literal, 0);
+   uLiteral(cb, eip);
+   uCond(cb, CondZ);
    uFlagsRWU(cb, FlagsOSZACP, FlagsEmpty, FlagsEmpty);
    uInstr1(cb, JMP,   0, Literal, 0);
    uLiteral(cb, eip_next);
@@ -2156,7 +2206,7 @@ void codegen_LODS ( UCodeBlock* cb, Int sz )
 }
 
 
-/* Template for REPNE SCAS<sz>, _not_ preceded by a REP prefix. */
+/* Template for SCAS<sz>, _not_ preceded by a REP prefix. */
 static 
 void codegen_SCAS ( UCodeBlock* cb, Int sz )
 {
@@ -4742,6 +4792,14 @@ static Addr disInstr ( UCodeBlock* cb, Addr eip, Bool* isEnd )
       goto decode_success;
    }
 
+   /* CVTPD2PS -- convert two doubles to two floats. */
+   if (sz == 2 &&
+       insn[0] == 0x0F && insn[1] == 0x5A) {
+      eip = dis_SSE3_reg_or_mem ( cb, sorb, eip+2, 16, "cvtpd2ps",
+                                 0x66, insn[0], insn[1] );
+      goto decode_success;
+   }
+
    /* SQRTPD: square root of packed double. */
    if (sz == 2
        && insn[0] == 0x0F && insn[1] == 0x51) {
@@ -5201,6 +5259,7 @@ static Addr disInstr ( UCodeBlock* cb, Addr eip, Bool* isEnd )
    case 0xB9: /* MOV imm,eCX */
    case 0xBA: /* MOV imm,eDX */
    case 0xBB: /* MOV imm,eBX */
+   case 0xBC: /* MOV imm,eSP */
    case 0xBD: /* MOV imm,eBP */
    case 0xBE: /* MOV imm,eSI */
    case 0xBF: /* MOV imm,eDI */
@@ -5710,6 +5769,12 @@ static Addr disInstr ( UCodeBlock* cb, Addr eip, Bool* isEnd )
       if (dis) VG_(printf)("scasb\n");
       break;
 
+   case 0xAF: /* SCASl, no REP prefix */
+      vg_assert(sorb == 0);
+      codegen_SCAS ( cb, sz );
+      if (dis) VG_(printf)("scas;\n");
+      break;
+
    case 0xFC: /* CLD */
       uInstr0(cb, CALLM_S, 0);
       uInstr1(cb, CALLM, 0, Lit16, VGOFF_(helper_CLD));
@@ -5785,6 +5850,13 @@ static Addr disInstr ( UCodeBlock* cb, Addr eip, Bool* isEnd )
          codegen_REPE_STOS ( cb, sz, eip_orig, eip );
          *isEnd = True;
          if (dis) VG_(printf)("repe stos%c\n", nameISize(sz));
+      }
+      else
+      if (abyte == 0xAE || abyte == 0xAF) { /* REPE SCAS<sz> */
+         if (abyte == 0xAE) sz = 1;
+         codegen_REPE_SCAS ( cb, sz, eip_orig, eip );
+         *isEnd = True;         
+         if (dis) VG_(printf)("repe scas%c\n", nameISize(sz));
       }
       else
       if (abyte == 0x90) { /* REPE NOP (PAUSE) */
