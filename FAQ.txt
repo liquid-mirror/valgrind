@@ -1,4 +1,9 @@
 
+A mini-FAQ for valgrind, versions 1.0.4 and 1.1.0
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Last revised 13 Oct 2002
+~~~~~~~~~~~~~~~~~~~~~~~~
+
 
 Q1. Programs run OK on valgrind, but at exit produce a bunch
     of errors a bit like this
@@ -37,6 +42,7 @@ A1. When the program exits, valgrind runs the procedure
     --run-libc-freeres=no flag.
 
 
+
 Q2. My program dies complaining that syscall 197 is unimplemented.
 
 A2. 197, which is fstat64, is supported by valgrind.  The problem is
@@ -57,26 +63,49 @@ A2. 197, which is fstat64, is supported by valgrind.  The problem is
     and later, the relevant file is actually coregrind/vg_syscalls.c.
 
 
-This buffer is for notes you don't want to save, and for Lisp evaluation.
-If you want to create a file, visit that file with C-x C-f,
-then enter the text in that file's own buffer.
+Q3. My (buggy) program dies like this:
+      valgrind: vg_malloc2.c:442 (bszW_to_pszW): 
+                Assertion `pszW >= 0' failed.
+    And/or my (buggy) program runs OK on valgrind, but dies like 
+    this on cachegrind.
 
-20021008: confirmed as working on RHAS 2.1.
-< 
-<        /* HACK for R H Advanced server.  Ignore all the above and
-<           start the search 18 pages below the "obvious" start point.
-<           God knows why.  Seems like we can't go into the highest 18
-<           pages of the stack.  This is not good! -- the 18 pages is
-<           determined just by looking for the highest proddable
-<           address.  It would be nice to see some kernel or libc or
-<           something code to justify this.  */
-< 
-<        /* 0xBFFEE000 is 0xC0000000 - 18 pages */
-<        sp = 0xBFFEE000; 
-< 
-<        /* end of HACK for R H Advanced server. */
-< 
----
->  
-649d635
-< 
+A3. If valgrind shows any invalid reads, invalid writes and invalid
+    frees in your program, the above may happen.  Reason is that your
+    program may trash valgrind's low-level memory manager, which then
+    dies with the above assertion, or something like this.  The cure
+    is to fix your program so that it doesn't do any illegal memory
+    accesses.  The above failure will hopefully go away after that.
+
+
+Q4. I'm running Red Hat Advanced Server.  Valgrind always segfaults at
+    startup.  
+
+A4. Known issue with RHAS 2.1.  The following kludge works, but 
+    is too gruesome to put in the sources permanently.  Try it.
+    Last verified as working on RHAS 2.1 at 20021008.
+
+    Find the following comment in vg_main.c -- in 1.0.4 this is at
+    line 636:
+
+       /* we locate: NEW_AUX_ENT(1, AT_PAGESZ, ELF_EXEC_PAGESIZE) in
+          the elf interpreter table */
+
+    Immediately _before_ this comment add the following:
+
+       /* HACK for R H Advanced server.  Ignore all the above and
+          start the search 18 pages below the "obvious" start point.
+          God knows why.  Seems like we can't go into the highest 18
+          pages of the stack.  This is not good! -- the 18 pages is
+          determined just by looking for the highest proddable
+          address.  It would be nice to see some kernel or libc or
+          something code to justify this.  */
+
+       /* 0xBFFEE000 is 0xC0000000 - 18 pages */
+       sp = 0xBFFEE000; 
+
+       /* end of HACK for R H Advanced server. */
+
+    Obviously the assignment to sp is the only important line.
+
+
+(this is the end of the FAQ.)
