@@ -164,10 +164,12 @@ Bool SK_(eq_SkinError) ( VgRes res,
          return True;
 
       case AddrErr:
-         if (e1_extra->axskind != e2_extra->axskind) return False;
+         /* if (e1_extra->axskind != e2_extra->axskind) return False; */
          if (e1_extra->size != e2_extra->size) return False;
+         /*
          if (!eq_AddrInfo(res, &e1_extra->addrinfo, &e2_extra->addrinfo)) 
             return False;
+         */
          return True;
 
       case ValueErr:
