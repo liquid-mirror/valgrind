@@ -329,7 +329,7 @@ void create_translation_for ( ThreadId tid, Addr orig_addr, Bool is_x86_callee )
                        ( trans_addr, trans_size );
    tte.mru_epoch  = VG_(current_epoch);
    /* Free the intermediary -- was allocated by VG_(emit_code). */
-   VG_(jitfree)( (void*)trans_addr );
+   VG_(arena_free)( VG_AR_JITTER, (void*)trans_addr );
    /* Add to trans tab and set back pointer. */
    VG_(add_to_trans_tab) ( &tte );
    /* Update stats. */

@@ -1068,15 +1068,13 @@ Bool VG_(clo_memcheck_codegen) = False;
 */
 static void vg_delete_redundant_SETVs ( UCodeBlock* cb )
 {
-   Bool*   next_is_write;
-   Int     i, j, k, n_temps;
+   Int     i, j, k;
+   Int     n_temps = cb->nextTemp;
+   Bool    next_is_write[n_temps];
    UInstr* u;
    RegUse  tempUse[3];
 
-   n_temps = cb->nextTemp;
    if (n_temps == 0) return;
-
-   next_is_write = VG_(jitmalloc)(n_temps * sizeof(Bool));
 
    for (i = 0; i < n_temps; i++) next_is_write[i] = True;
 
@@ -1154,7 +1152,6 @@ static void vg_delete_redundant_SETVs ( UCodeBlock* cb )
          }
       }
    }
-   VG_(jitfree)(next_is_write);
 }
 
 
@@ -1174,15 +1171,14 @@ static void vg_delete_redundant_SETVs ( UCodeBlock* cb )
 */
 static void vg_propagate_definedness ( UCodeBlock* cb )
 {
-   UChar*  def;
-   Int     i, j, k, t, n_temps;
+   Int     i, j, k, t;
+   Int     n_temps = cb->nextTemp;
+   UChar   def[n_temps];
    UInstr* u;
    RegUse  tempUse[3];
 
-   n_temps = cb->nextTemp;
    if (n_temps == 0) return;
 
-   def = VG_(jitmalloc)(n_temps * sizeof(UChar));
    for (i = 0; i < n_temps; i++) 
       def[i] = VGC_IS_SHADOW(i) ? VGC_UNDEF : VGC_VALUE;
 
@@ -1425,8 +1421,6 @@ static void vg_propagate_definedness ( UCodeBlock* cb )
             }
       }
    }
-
-   VG_(jitfree)(def);
 }
 
 

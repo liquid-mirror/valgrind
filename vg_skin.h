@@ -415,11 +415,12 @@ typedef
       PUSH, POP, CLEAR, /* Add/remove/zap args for helpers. */
       CALLM,  /* call to a machine-code helper */
 
-      /* for calling C functions of up to three arguments (or two if the
+      /* For calling C functions of up to three arguments (or two if the
          functions has a return value).  Arguments and return value must be
          word-sized.  If you want to pass more arguments than this to a C
-         function (SSS: baseBlock global...) 
-        
+         function you have to use global variables to fake it (eg. use
+         VG_(set_global_var)()).
+
          Seven possibilities: 'arg1..3' show where args go, 'ret' shows
          where return values go.
         

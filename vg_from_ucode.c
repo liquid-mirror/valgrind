@@ -114,11 +114,11 @@ void VG_(print_ccall_stats)(void)
 static void expandEmittedCode ( void )
 {
    Int    i;
-   UChar* tmp = VG_(jitmalloc)(2 * emitted_code_size);
+   UChar *tmp = VG_(arena_malloc)(VG_AR_JITTER, 2 * emitted_code_size);
    /* VG_(printf)("expand to %d\n", 2 * emitted_code_size); */
    for (i = 0; i < emitted_code_size; i++)
       tmp[i] = emitted_code[i];
-   VG_(jitfree)(emitted_code);
+   VG_(arena_free)(VG_AR_JITTER, emitted_code);
    emitted_code = tmp;
    emitted_code_size *= 2;
 }
@@ -2175,7 +2175,7 @@ UChar* VG_(emit_code) ( UCodeBlock* cb, Int* nbytes )
    Int i;
    emitted_code_used = 0;
    emitted_code_size = 500; /* reasonable initial size */
-   emitted_code = VG_(jitmalloc)(emitted_code_size);
+   emitted_code = VG_(arena_malloc)(VG_AR_JITTER, emitted_code_size);
 
    if (dis) VG_(printf)("Generated x86 code:\n");
 
@@ -2196,8 +2196,7 @@ UChar* VG_(emit_code) ( UCodeBlock* cb, Int* nbytes )
    if (dis) VG_(printf)("\n");
 
    /* Returns a pointer to the emitted code.  This will have to be
-      copied by the caller into the translation cache, and then freed
-      using VG_(jitfree). */
+      copied by the caller into the translation cache, and then freed */
    *nbytes = emitted_code_used;
    return emitted_code;
 }

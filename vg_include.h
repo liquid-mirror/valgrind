@@ -333,28 +333,31 @@ extern void VGP_(popcc) ( void );
    ------------------------------------------------------------------ */
 
 /* Allocation arenas.  
+      CORE      is for the core's general use.
+      SKIN      is for the skin to use (and the only one it uses).
       SYMTAB    is for Valgrind's symbol table storage.
+      JITTER    is for small storage during translation.
       CLIENT    is for the client's mallocs/frees.
       DEMANGLE  is for the C++ demangler.
       EXECTXT   is for storing ExeContexts.
       ERRCTXT   is for storing ErrContexts.
-      PRIVATE   is for Valgrind general stuff.
       TRANSIENT is for very short-term use.  It should be empty
                 in between uses.
    When adding a new arena, remember also to add it to ensure_mm_init(). 
 */
 typedef Int ArenaId;
 
-#define VG_N_ARENAS 8
+#define VG_N_ARENAS 9
 
 #define VG_AR_CORE      0    /* :: ArenaId */
 #define VG_AR_SKIN      1    /* :: ArenaId */
 #define VG_AR_SYMTAB    2    /* :: ArenaId */
-#define VG_AR_CLIENT    3    /* :: ArenaId */
-#define VG_AR_DEMANGLE  4    /* :: ArenaId */
-#define VG_AR_EXECTXT   5    /* :: ArenaId */
-#define VG_AR_ERRCTXT   6    /* :: ArenaId */
-#define VG_AR_TRANSIENT 7    /* :: ArenaId */
+#define VG_AR_JITTER    3    /* :: ArenaId */
+#define VG_AR_CLIENT    4    /* :: ArenaId */
+#define VG_AR_DEMANGLE  5    /* :: ArenaId */
+#define VG_AR_EXECTXT   6    /* :: ArenaId */
+#define VG_AR_ERRCTXT   7    /* :: ArenaId */
+#define VG_AR_TRANSIENT 8    /* :: ArenaId */
 
 extern void* VG_(arena_malloc)  ( ArenaId arena, Int nbytes );
 extern void  VG_(arena_free)    ( ArenaId arena, void* ptr );
