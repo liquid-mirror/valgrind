@@ -21,8 +21,10 @@ manuel2
 manuel3
 memalign_test
 memcmptest
+mismatches
 mmaptest
 nanoleak
+new_override
 pushfpopf
 realloc1
 realloc2

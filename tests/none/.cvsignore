@@ -3,12 +3,15 @@ Makefile
 bitfield1
 bt_everything
 bt_literal
+coolo_sigaction
 coolo_strlen
 cpuid
 dastest
 floored
 fucomip
+gxx304
 munmap_exe
+pluto
 rcl_assert
 rcrl
 readline1
