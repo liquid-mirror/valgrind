@@ -340,7 +340,7 @@ extern void VGP_(popcc) ( void );
       CLIENT    is for the client's mallocs/frees.
       DEMANGLE  is for the C++ demangler.
       EXECTXT   is for storing ExeContexts.
-      ERRCTXT   is for storing ErrContexts.
+      ERRORS    is for storing CoreErrors.
       TRANSIENT is for very short-term use.  It should be empty
                 in between uses.
    When adding a new arena, remember also to add it to ensure_mm_init(). 
@@ -356,7 +356,7 @@ typedef Int ArenaId;
 #define VG_AR_CLIENT    4    /* :: ArenaId */
 #define VG_AR_DEMANGLE  5    /* :: ArenaId */
 #define VG_AR_EXECTXT   6    /* :: ArenaId */
-#define VG_AR_ERRCTXT   7    /* :: ArenaId */
+#define VG_AR_ERRORS    7    /* :: ArenaId */
 #define VG_AR_TRANSIENT 8    /* :: ArenaId */
 
 extern void* VG_(arena_malloc)  ( ArenaId arena, Int nbytes );
@@ -375,7 +375,7 @@ extern Bool  VG_(is_empty_arena) ( ArenaId aid );
 
 /* The red-zone size for the client.  This can be arbitrary, but
    unfortunately must be set at compile time. */
-// SSS: why?
+// JJJ: why?
 #define VG_AR_CLIENT_REDZONE_SZW 4
 
 #define VG_AR_CLIENT_REDZONE_SZB \
@@ -894,10 +894,10 @@ extern Bool  VG_(saneUCodeBlock)  ( UCodeBlock* cb );
    comparing against suppression specifications.  The rest are purely
    informational (but often important). */
 
-struct _ExeContextRec {
-   struct _ExeContextRec * next;
-   /* The size of this array is VG_(clo_backtrace_size); at least
-      2, at most VG_DEEPEST_BACKTRACE.  [0] is the current %eip,
+struct _ExeContext {
+   struct _ExeContext * next;
+   /* Variable-length array.  The size is VG_(clo_backtrace_size); at
+      least 2, at most VG_DEEPEST_BACKTRACE.  [0] is the current %eip,
       [1] is its caller, [2] is the caller of [1], etc. */
    Addr eips[0];
 };
@@ -918,12 +918,85 @@ extern ExeContext* VG_(get_ExeContext2) ( Addr eip, Addr ebp,
    Exports of vg_errcontext.c.
    ------------------------------------------------------------------ */
 
-extern void VG_(load_suppressions)    ( void );
-extern void VG_(show_all_errors)      ( void );
+/* Note: it is imperative this doesn't overlap with (0..) at all, as skins
+ * effectively extend it by defining their own enums in the (0..) range. */
+typedef
+   enum {
+      /* Pthreading error */
+      PThreadSupp = -1
+   }
+   CoreSuppKind;
 
-extern void VG_(clear_ErrContext) ( ErrContext* ec );
+/* For each caller specified for a suppression, record the nature of
+   the caller name.  Not of interest to skins. */
+typedef
+   enum { 
+      ObjName,    /* Name is of an shared object file. */
+      FunName     /* Name is of a function. */
+   }
+   SuppLocTy;
+
+/* Suppressions.  Skin part `SkinSupp' (which is all skins have to deal
+   with) is in vg_skin.h */
+typedef
+   struct _CoreSupp {
+      struct _CoreSupp* next;
+      /* The number of times this error has been suppressed. */
+      Int count;
+      /* The name by which the suppression is referred to. */
+      Char* sname;
+      /* Name of fn where err occurs, and immediate caller (mandatory). */
+      SuppLocTy caller0_ty;
+      Char*     caller0;
+      SuppLocTy caller1_ty;
+      Char*     caller1;
+      /* Optional extra callers. */
+      SuppLocTy caller2_ty;
+      Char*     caller2;
+      SuppLocTy caller3_ty;
+      Char*     caller3;
+      /* The skin-specific part */
+      SkinSupp  skin_supp;
+   } 
+   CoreSupp;
+
+/* Note: it is imperative this doesn't overlap with (0..) at all, as skins
+ * effectively extend it by defining their own enums in the (0..) range. */
+typedef
+   enum { 
+      /* Pthreading error */
+      PThreadErr = -1
+   }
+   CoreErrorKind;
+
+/* Errors.  Skin part `SkinError' (which is all skins have to deal
+   with) is in vg_skin.h */
+typedef
+   struct _CoreErrContext {
+      struct _CoreErrContext* next;
+      /* NULL if unsuppressed; or ptr to suppression record. */
+      CoreSupp* supp;
+      Int count;
+      ExeContext* where;
+      ThreadId tid;
+      /* These record %EIP, %ESP and %EBP at the error point.  They
+         are only used to make GDB-attaching convenient; there is no
+         other purpose; specifically they are not used to do
+         comparisons between errors. */
+      UInt m_eip;
+      UInt m_esp;
+      UInt m_ebp;
+      /* The skin-specific part */
+      SkinError skin_err;
+   } 
+   CoreError;
+
+
+extern void VG_(load_suppressions)    ( void );
 
 extern void VG_(record_pthread_error) ( ThreadId tid, Char* msg );
+
+extern void VG_(show_all_errors)      ( void );
 
 /* ---------------------------------------------------------------------
    Exports of vg_procselfmaps.c
