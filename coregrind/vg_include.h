@@ -210,13 +210,6 @@ typedef unsigned char Bool;
 
 #define VG_CLO_MAX_SFILES 10
 
-// SSS: remove this eventually -- need something else for all the
-// if (clo_action==Vg_MemCheck) tests
-typedef 
-   enum { Vg_MemCheck, Vg_Other }
-   VgSkin;
-
-
 
 /* Should we stop collecting errors if too many appear?  default: YES */
 extern Bool  VG_(clo_error_limit);
@@ -263,8 +256,6 @@ extern Char* VG_(clo_suppressions)[VG_CLO_MAX_SFILES];
 extern Bool  VG_(clo_single_step);
 /* Code improvement?  default: YES */
 extern Bool  VG_(clo_optimise);
-/* Action being performed.  default: Vg_MemCheck */
-extern VgSkin VG_(clo_skin);
 /* DEBUG: clean up instrumented code?  default: YES */
 extern Bool  VG_(clo_cleanup);
 /* SMC write checks?  default: SOME (1,2,4 byte movs to mem) */
