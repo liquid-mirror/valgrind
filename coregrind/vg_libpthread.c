@@ -1388,13 +1388,14 @@ struct __res_state* __res_state ( void )
 /* Relies on assumption that initial private data is NULL.  This
    should be fixed somehow. */
 
-/* The allowable keys (indices) (all 2 of them). 
+/* The allowable keys (indices) (all 3 of them). 
    From sysdeps/pthread/bits/libc-tsd.h
 */
-#define N_LIBC_TSD_EXTRA_KEYS 1
+#define N_LIBC_TSD_EXTRA_KEYS 0
 
 enum __libc_tsd_key_t { _LIBC_TSD_KEY_MALLOC = 0,
                         _LIBC_TSD_KEY_DL_ERROR,
+                        _LIBC_TSD_KEY_RPC_VARS,
                         _LIBC_TSD_KEY_N };
 
 /* Auto-initialising subsystem.  libc_specifics_inited is set 
