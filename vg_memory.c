@@ -133,6 +133,9 @@ void VG_(new_exe_segment) ( Addr a, UInt len )
 /* Invalidate translations as necessary (also discarding any basic
    block-specific info retained by the skin) and unload any debug
    symbols. */
+// Nb: remove_if_exe_segment_from_list() and VG_(maybe_unload_symbols)()
+// both ignore 'len', but that seems that's ok for most programs...  see
+// comment above vg_syscalls.c:mmap_segment() et al for more details.
 void VG_(remove_if_exe_segment) ( Addr a, UInt len )
 {
    if (remove_if_exe_segment_from_list( a, len )) {

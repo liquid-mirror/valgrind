@@ -150,7 +150,7 @@ Int addStr ( SegInfo* si, Char* str )
    /* prevN[0] has the most recent, prevN[NN-1] the least recent */
    static UInt     prevN[] = { EMPTY, EMPTY, EMPTY, EMPTY, EMPTY };
    static SegInfo* curr_si = NULL;
-                           
+
    Char* new_tab;
    Int   new_sz, i, space_needed;
 
@@ -1804,10 +1804,11 @@ static __inline__ void ensure_debug_info_inited ( void )
 /* Find a symbol-table index containing the specified pointer, or -1
    if not found.  Binary search.  */
 
-static Int search_one_symtab ( SegInfo* si, Addr ptr )
+static Int search_one_symtab ( SegInfo* si, Addr ptr,
+                               Bool match_anywhere_in_fun )
 {
    Addr a_mid_lo, a_mid_hi;
-   Int  mid, 
+   Int  mid, size, 
         lo = 0, 
         hi = si->symtab_used-1;
    while (True) {
@@ -1815,7 +1816,10 @@ static Int search_one_symtab ( SegInfo* si, Addr ptr )
       if (lo > hi) return -1; /* not found */
       mid      = (lo + hi) / 2;
       a_mid_lo = si->symtab[mid].addr;
-      a_mid_hi = ((Addr)si->symtab[mid].addr) + si->symtab[mid].size - 1;
+      size = ( match_anywhere_in_fun
+             ? si->symtab[mid].size
+             : 1);
+      a_mid_hi = ((Addr)si->symtab[mid].addr) + size - 1;
 
       if (ptr < a_mid_lo) { hi = mid-1; continue; } 
       if (ptr > a_mid_hi) { lo = mid+1; continue; }
@@ -1830,16 +1834,18 @@ static Int search_one_symtab ( SegInfo* si, Addr ptr )
    within that.  If not found, *psi is set to NULL.  */
 
 static void search_all_symtabs ( Addr ptr, /*OUT*/SegInfo** psi, 
-                                           /*OUT*/Int* symno )
+                                           /*OUT*/Int* symno,
+                                 Bool match_anywhere_in_fun )
 {
    Int      sno;
    SegInfo* si;
 
    ensure_debug_info_inited();
    VGP_PUSHCC(VgpSearchSyms);
+   
    for (si = segInfo; si != NULL; si = si->next) {
       if (si->start <= ptr && ptr < si->start+si->size) {
-         sno = search_one_symtab ( si, ptr );
+         sno = search_one_symtab ( si, ptr, match_anywhere_in_fun );
          if (sno == -1) goto not_found;
          *symno = sno;
          *psi = si;
@@ -1911,12 +1917,13 @@ static void search_all_loctabs ( Addr ptr, /*OUT*/SegInfo** psi,
    Caller supplies buf and nbuf.  If demangle is False, don't do
    demangling, regardless of vg_clo_demangle -- probably because the
    call has come from vg_what_fn_or_object_is_this. */
-static __inline__
-Bool get_fnname ( Bool demangle, Addr a, Char* buf, Int nbuf )
+static
+Bool get_fnname ( Bool demangle, Addr a, Char* buf, Int nbuf,
+                  Bool match_anywhere_in_fun )
 {
    SegInfo* si;
    Int      sno;
-   search_all_symtabs ( a, &si, &sno );
+   search_all_symtabs ( a, &si, &sno, match_anywhere_in_fun );
    if (si == NULL) 
       return False;
    if (demangle) {
@@ -1931,13 +1938,23 @@ Bool get_fnname ( Bool demangle, Addr a, Char* buf, Int nbuf )
 /* This is available to skins... always demangle C++ names */
 Bool VG_(get_fnname) ( Addr a, Char* buf, Int nbuf )
 {
-   return get_fnname ( /*demangle*/True, a, buf, nbuf);
+   return get_fnname ( /*demangle*/True, a, buf, nbuf,
+                       /*match_anywhere_in_fun*/True );
+}
+
+/* This is available to skins... always demangle C++ names,
+   only succeed if 'a' matches first instruction of function. */
+Bool VG_(get_fnname_if_start) ( Addr a, Char* buf, Int nbuf )
+{
+   return get_fnname ( /*demangle*/True, a, buf, nbuf,
+                       /*match_anywhere_in_fun*/False );
 }
 
 /* This is only available to core... don't demangle C++ names */
 Bool VG_(get_fnname_nodemangle) ( Addr a, Char* buf, Int nbuf )
 {
-   return get_fnname ( /*demangle*/False, a, buf, nbuf);
+   return get_fnname ( /*demangle*/False, a, buf, nbuf,
+                       /*match_anywhere_in_fun*/True );
 }
 
 /* Map a code address to the name of a shared object file or the executable.
