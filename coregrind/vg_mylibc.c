@@ -1271,6 +1271,21 @@ void* VG_(get_memory_from_mmap) ( Int nBytes, Char* who )
    VG_(panic)("vg_get_memory_from_mmap: out of memory!  Fatal!  Bye!\n");
 }
 
+/* ---------------------------------------------------------------------
+   Generally useful...
+   ------------------------------------------------------------------ */
+
+Int VG_(log2) ( Int x ) 
+{
+   Int i;
+   /* Any more than 32 and we overflow anyway... */
+   for (i = 0; i < 32; i++) {
+      if (1 << i == x) return i;
+   }
+   return -1;
+}
+
+
 
 /*--------------------------------------------------------------------*/
 /*--- end                                              vg_mylibc.c ---*/
