@@ -1645,6 +1645,14 @@ void VG_(perform_assumed_nonblocking_syscall) ( ThreadId tid )
          KERNEL_DO_SYSCALL(tid,res);
          break;
 
+#if   defined(__NR_gettid)
+      case __NR_gettid: /* syscall 224 */
+          /* pid_t gettid(void); */
+         MAYBE_PRINTF("gettid ()\n");
+         KERNEL_DO_SYSCALL(tid, res);
+         break;
+#endif
+
       case __NR_getpgid: /* syscall 132 */
          /* pid_t getpgid(pid_t pid); */
          MAYBE_PRINTF("getpgid ( %d )\n", arg1);
