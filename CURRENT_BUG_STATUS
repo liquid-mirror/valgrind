@@ -5,6 +5,67 @@ the end of this file, which has a list of the bugs known in, but not
 fixed in, the current release.
 
 
+Release 1.0.4 (14 Oct 02)
+~~~~~~~~~~~~~~~~~~~~~~~~~
+1.0.4 adds support for Red Hat 8, and improves support for code
+compiled with gcc-3.1 and above.  Really this is the first valgrind
+which works reasonably well for systems built with gcc-3.1 and above.
+
+- Support for Red Hat 8.  Mostly this means changes to the thread
+  support to make thread-local locales work.
+
+- Fix a serious bug in the DWARF2 debug information reader.  DWARF2 is
+  the debug info format used by gcc-3.1 and above.  The bug caused
+  approximately one third of all addresses to not get mapped to any
+  source location, so this fix should make a big difference.
+
+- Better handling of inlined strlen() et al with gcc-3.1 and above.
+  Versions of valgrind prior to 1.0.4 tended to falsely report 
+  uninitialised value errors in some inlined strlen() functions
+  created with recent gcc's.  1.0.4 includes a fix for this.  The
+  --avoid-strlen-errors= flag controls the fix; it is enabled by
+  default.
+
+- Valgrind now makes use of information from ELF dynamic symbol
+  tables.  This means it can often find function names even in ELF
+  .so's which have been stripped.
+
+- The longstanding link-errors caused by missing
+  __pthread_clock_settime / __pthread_clock_gettime have been fixed, I
+  hope.  These problems particularly afflicted Red Hat 7.3 users for
+  some reason.
+
+- Fixed a nasty bug in which valgrind's calloc() was ignoring
+  alignment requests made with the --alignment= flag.
+
+- Added an FAQ.txt to the source distribution, to help people work
+  around commonly encountered problems.
+
+- Added the flag --weird-hacks=lax-ioctls.  This selects more relaxed
+  checking of ioctl() arguments, which is useful if you're dealing
+  with ioctls which valgrind knows nothing about and are getting a lot
+  of errors as a result.
+
+- Catch uses of __select() and __poll() and treat them as select() and
+  poll().
+
+- Implement (sort-of) pthread_attr_{set,get}guardsize.
+
+- Implement sem_timedwait().
+
+- Implement primary opcode 0x1A (SBB Eb,Gb).
+
+- Add a small army of new syscalls:
+     setxattr lsetxattr fsetxattr getxattr fgetxattr listxattr 
+     llistxattr flistxattr removexattr lremovexattr fremovexattr 
+  and ioctls:
+     SNDCTL_DSP_POST SNDCTL_DSP_RESET SNDCTL_DSP_SYNC
+     SNDCTL_DSP_SETSYNCRO SNDCTL_DSP_SETDUPLEX
+
+- Minor documentation updates.
+
+
+
 Release 1.0.3 (18 Sept 02)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
 Fairly minor things -- stability fixes and a few new syscalls.
@@ -170,9 +231,9 @@ bug reports for version 1.0.0.  I have fixed the following bugs
 - Add this file!
 
 
-Bugs known but not fixed in 1.0.3
+Bugs known but not fixed in 1.0.4
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-The following bugs were reported and are NOT FIXED in 1.0.3,
+The following bugs were reported and are NOT FIXED in 1.0.4,
 due to one or more of the following: lack of time, technical
 difficulty, or the report is really a feature request, in which case
 it will not make it into the 1.0.X branch.  Anyway, for the record:
@@ -184,11 +245,8 @@ it will not make it into the 1.0.X branch.  Anyway, for the record:
   beyond 1.0.X.
 
 - modify_ldt syscall and supporting stuff for segment override 
-  prefixes.  Undecided whether to implement in 1.0.X series or
-  not; glibc-2.3.X will probably need it.
-
-- Missing symbols pthread_clock_{get,set}time.  Too difficult to
-  establish a fix which will work for all distros.  Help appreciated!
+  prefixes.  This is now available in the 1.1.X development series
+  but will not appear in the 1.0.X stable line.
 
 - Primary opcodes 0xEC .. 0xEF.  These are the x86 IN/OUT insns.
   Deferred beyond 1.0.X.
@@ -210,10 +268,6 @@ it will not make it into the 1.0.X branch.  Anyway, for the record:
 - A few inexplicable segfaults.
 
 - Probably a few more; those are the main ones.
-
-- There's some kind of problem with missing debug info (line numbers, 
-  especially) with gcc-3.2 generated code.  Further info about this 
-  would be appreciated.
 
 - I'm getting reports of this assertion failure
     valgrind: vg_scheduler.c:2270 (do_pthread_mutex_lock): 
