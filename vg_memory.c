@@ -82,32 +82,28 @@ void init_memory_audit_callback (
    r_esp = VG_(baseBlock)[VGOFF_(m_esp)];
    is_stack_segment = start <= r_esp && r_esp < start+size;
 
-   if (! VG_(needs).shadow_memory) 
-      return;
-   
    /* Figure out the segment's permissions.
 
       All segments are addressible -- since a process can read its
       own text segment.
 
-      [JJJ: this comment looks wrong]
+      [this comment looks wrong --njn]
       A read-but-not-write segment presumably contains initialised
       data, so is all valid.  Read-write segments presumably contains
       uninitialised data, so is all invalid.  */
-
-   // JJJ: is this really bogus?  (can ---p ever be the segment permission?)
-   // If it is bogus, make it an assertion and SKN_(make_segment_noaccess)
-   // can be removed!
 
    /* ToDo: make this less bogus. */
    if (rr != 'r' && xx != 'x' && ww != 'w') {
       /* Very bogus; this path never gets taken. */
       /* A no, V no */
-      SKN_(make_segment_noaccess) ( start, size );
+      //SKN_(make_segment_noaccess) ( start, size );
+      VG_(panic)("non-readable, writable, executable segment");
        
    } else {
       /* A yes, V yes */
       SKN_(make_segment_readable) ( start, size );
+
+      /* This is an old comment --njn */
       /* Causes a lot of errs for unknown reasons. 
          if (filename is valgrind.so 
                [careful about end conditions on filename]) {
@@ -131,8 +127,7 @@ void init_memory_audit_callback (
 /* Initialise the memory audit system. */
 void VGM_(init_memory_audit) ( void )
 {
-   if (VG_(needs).shadow_memory)
-      SKN_(init_shadow_memory)();
+   SKN_(init_shadow_memory)();
 
    // JJJ: is VG_(read_procselfmaps) necessary if not using shadow memory?
    // (currently I'm cutting init_memory_audit_callback() short halfway if
@@ -142,21 +137,6 @@ void VGM_(init_memory_audit) ( void )
       set up our own maps accordingly. */
    VG_(read_procselfmaps) ( init_memory_audit_callback );
 
-   /* Record the end of the data segment, so that vg_syscall_mem.c
-      can make sense of calls to brk(). 
-   */
-   VGM_(curr_dataseg_end) = (Addr)VG_(brk)(0);
-   if (VGM_(curr_dataseg_end) == (Addr)(-1))
-      VG_(panic)("VGM_(init_memory_audit): can't determine data-seg end");
-
-   if (0)
-      VG_(printf)("DS END is %p\n", (void*)VGM_(curr_dataseg_end));
-
-   /* Read the list of errors to suppress.  This should be found in
-      the file specified by vg_clo_suppressions. */
-   // JJJ: odd spot to have this...
-   if (VG_(needs).pthread_errors || VG_(needs).report_errors)
-      VG_(load_suppressions)();
 }
 
 
@@ -434,6 +414,7 @@ static void vg_handle_esp_assignment_SLOWLY ( Addr new_espA )
 /* A fast sanity check -- suitable for calling circa once per
    millisecond. */
 
+// SSS: move this into a separate file... vg_sanity?
 void VG_(do_sanity_checks) ( Bool force_expensive )
 {
    Int          i;

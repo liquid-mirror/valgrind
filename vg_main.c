@@ -30,7 +30,6 @@
 */
 
 #include "vg_include.h"
-#include "vg_constants.h"
 
 /* ---------------------------------------------------------------------
    Compute offsets into baseBlock.  See comments in vg_include.h.
@@ -415,6 +414,8 @@ VgNeeds VG_(needs) = {
 
    .augments_UInstrs        = INVALID_Bool,
    .extends_UCode           = INVALID_Bool,
+
+   .wrap_syscalls           = INVALID_Bool,
 
    .shadow_memory           = INVALID_Bool,
    .track_threads           = INVALID_Bool,
@@ -1102,17 +1103,24 @@ void VG_(main) ( void )
    /* Start calibration of our RDTSC-based clock. */
    VG_(start_rdtsc_calibration)();
 
-   // JJJ: this condition surely isn't correct: should be either always
-   // done, or done only for shadow memory.  Also, loading suppressions in
-   // init_memory_audit is silly.
-
-//   if (Vg_None != VG_(clo_skin)) {
+   /* Setup shadow memory, if needed */
+   if (VG_(needs).shadow_memory) {
       VGP_PUSHCC(VgpInitAudit);
       VGM_(init_memory_audit)();
       VGP_POPCC;
-//   }
+   }
 
-   // JJJ: necessary for skins that don't use debug info?
+   /* Read the list of errors to suppress.  This should be found in
+      the file specified by vg_clo_suppressions. */
+   if (VG_(needs).pthread_errors || VG_(needs).report_errors)
+      VG_(load_suppressions)();
+
+   /* This does two things: 
+      1. Sets up segments (always necessary, because if they're munmap()ed
+         we need to know if they were executable in order to discard
+         translations.
+      2. Reads debug info, but only if VG_(needs).debug_info != * Vg_DebugNone.
+    */
    VGP_PUSHCC(VgpReadSyms);
    VG_(read_symbols)();
    VGP_POPCC;
@@ -1156,6 +1164,9 @@ void VG_(main) ( void )
      VG_(message)(Vg_UserMsg, 
         "Warning: pthread scheduler exited due to deadlock");
    }
+
+   if (VG_(needs).pthread_errors || VG_(needs).report_errors)
+      VG_(show_all_errors)();
 
    SK_(fini)();
 

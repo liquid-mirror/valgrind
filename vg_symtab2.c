@@ -1708,8 +1708,6 @@ void read_symtab_callback (
       = si->start==VG_ASSUMED_EXE_BASE ? 0 : si->start;
 
    /* And actually fill it up. */
-   // JJJ: does this need to be so late?  Does all the previous stuff need
-   // to happen in debug info is not needed?
    if (Vg_DebugNone != VG_(needs).debug_info) {
       vg_read_lib_symbols ( si );
       canonicaliseSymtab ( si );

@@ -217,7 +217,7 @@ static __inline__ void set_sword ( Addr a, shadow_word sword )
    vg_assert(sm != &distinguished_secondary_map);
    sm->swords[(a & 0xFFFC) >> 2] = sword;
 
-   if (sm == &distinguished_secondary_map) {
+   if (VGE_IS_DISTINGUISHED_SM(sm)) {
       VG_(printf)("wrote to distinguished 2ndary map! 0x%x\n", a);
       // XXX: may be legit, but I want to know when it happens --njn
       VG_(panic)("wrote to distinguished 2ndary map!");
@@ -230,7 +230,7 @@ static __inline__ shadow_word* get_sword_addr ( Addr a )
    ESecMap* sm     = primary_map[a >> 16];
    UInt    sm_off = (a & 0xFFFC) >> 2;
 
-   if (sm == &distinguished_secondary_map) {
+   if (VGE_IS_DISTINGUISHED_SM(sm)) {
       VG_(printf)("accessed distinguished 2ndary map! 0x%x\n", a);
       // XXX: may be legit, but I want to know when it happens --njn
       //VG_(panic)("accessed distinguished 2ndary map!");
@@ -361,12 +361,6 @@ void set_address_range_state ( Addr a, UInt len /* in bytes */,
 }
 
 
-
-void SKN_(make_segment_noaccess) ( Addr a, UInt len )
-{
-   //PROF_EVENT(??);    PPP
-   set_address_range_state ( a, len, Vge_SegmentInit );
-}
 
 void SKN_(make_segment_readable) ( Addr a, UInt len )
 {
@@ -608,6 +602,85 @@ static void print_lock_vector(lock_vector* p)
 }
 
 /*--------------------------------------------------------------------*/
+/*--- Error and suppression handling                               ---*/
+/*--------------------------------------------------------------------*/
+
+typedef
+   enum {
+      /* Possible data race */
+      Eraser = FinalDummySuppressionKind + 1
+   }
+   EraserSuppressionKind;
+
+/* What kind of error it is. */
+typedef
+   enum { EraserErr = FinalDummyErrKind + 1
+   }
+   EraserErrKind;
+
+
+void record_eraser_err ( ThreadId tid, Addr a, Bool is_write )
+{
+   ErrContext ec;
+
+   if (VG_(ignore_errors)()) return;
+
+   // SSS: probably gets the tid wrong sometimes...
+   VG_(construct_err_context)(&ec, EraserErr, a, 
+                              (is_write ? "writing" : "reading"), NULL);
+   /* Nothing required in 'extra' field */
+   VG_(maybe_add_context) ( &ec );
+}
+
+Bool SKN_(eq_ErrContext) ( Bool cheap_addr_cmp,
+                           ErrContext* e1, ErrContext* e2 )
+{
+   vg_assert(EraserErr == e1->ekind && EraserErr == e2->ekind);
+   if (e1->string != e2->string) return False;
+   if (0 != VG_(strcmp)(e1->string, e2->string)) return False;
+   return True;
+}
+
+void SKN_(pp_ErrContext) ( ErrContext* ec )
+{
+   vg_assert(EraserErr == ec->ekind);
+   VG_(message)(Vg_UserMsg, "Possible data race %s variable at 0x%x",
+                ec->string, ec->addr );
+   VG_(pp_ExeContext)(ec->where);
+}
+
+void SKN_(dup_extra_and_update)(ErrContext* ec)
+{
+   /* do nothing -- extra field not used */
+}
+
+Bool SKN_(recognised_suppression) ( Char* name, SuppressionKind *skind )
+{
+   if (0 == VG_(strcmp)(name, "Eraser")) {
+      *skind = Eraser;
+      return True;
+   } else {
+      return False;
+   }
+}
+
+Bool SKN_(read_extra_suppression_info) ( Int fd, Char* buf, 
+                                         Int nBuf, Suppression *s )
+{
+   /* do nothing -- no extra suppression info present.  Return True to
+      indicate nothing bad happened. */
+   return True;
+}
+
+Bool SKN_(error_matches_suppression)(ErrContext* ec, Suppression* su)
+{
+   vg_assert(su->skind == Eraser);
+   vg_assert(ec->ekind == EraserErr);
+   return True;
+}
+
+
+/*--------------------------------------------------------------------*/
 /*--- Setup                                                        ---*/
 /*--------------------------------------------------------------------*/
 
@@ -628,6 +701,8 @@ void SK_(setup)(VgNeeds* needs)
 
    needs->augments_UInstrs        = False;
    needs->extends_UCode           = False;
+
+   needs->wrap_syscalls           = True;
 
    needs->shadow_memory           = True;
    needs->track_threads           = True;
@@ -827,10 +902,11 @@ void SKN_(thread_does_unlock)(ThreadId tid, void* void_mutex)
    thread_locks[tid] = i;
 }
 
+// SSS: omitted for the moment because it's dangerous...
 //void SKN_(thread_dies)(void)
 //{
-//   //VG_(printf)("thread died!\n");
-//   //VG_(exit)(1);
+//   VG_(printf)("thread died!\n");
+//   VG_(exit)(1);
 //}
 
 /* ---------------------------------------------------------------------
@@ -1029,7 +1105,7 @@ static void eraser_mem_read(Addr a, UInt data_size)
          sword->other = intersect(sword->other, thread_locks[tid]);
 
          if (lockset_table[sword->other] == NULL) {
-            VG_(record_eraser_err)(tid, a, False /* !is_write */);
+            record_eraser_err(tid, a, False /* !is_write */);
             n_eraser_warnings++;
          }
          break;
@@ -1090,7 +1166,7 @@ static void eraser_mem_write(Addr a, UInt data_size)
          sword->other = intersect(sword->other, thread_locks[tid]);
          SHARED_MODIFIED:
          if (lockset_table[sword->other] == NULL) {
-            VG_(record_eraser_err)(tid, a, True /* is_write */);
+            record_eraser_err(tid, a, True /* is_write */);
             n_eraser_warnings++;
          }
          break;

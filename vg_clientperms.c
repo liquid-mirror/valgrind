@@ -30,7 +30,6 @@
 */
 
 #include "vg_include.h"
-#include "vg_constants.h"
 
 #include "valgrind.h"  /* for VG_USERREQ__* */
 
@@ -225,6 +224,7 @@ void VG_(show_client_block_stats) ( void )
 }
 
 
+// SSS: skin-specific
 Bool VG_(client_perm_maybe_describe)( Addr a, AddrInfo* ai )
 {
    Int i;
@@ -296,8 +296,8 @@ void VG_(delete_client_stack_blocks_following_ESP_change) ( void )
 UInt VG_(handle_client_request) ( ThreadState* tst, UInt* arg_block )
 {
    Int   i;
-   Bool  ok;
-   Addr  bad_addr;
+//   Bool  ok;
+//   Addr  bad_addr;
    UInt* arg = arg_block;
 
    if (VG_(clo_verbosity) > 2)
@@ -341,7 +341,7 @@ UInt VG_(handle_client_request) ( ThreadState* tst, UInt* arg_block )
             = VG_(get_ExeContext) ( False, tst->m_eip, tst->m_ebp );
          SKN_(make_readable) ( arg[1], arg[2] );
          return i;
-
+#if 0
       case VG_USERREQ__CHECK_WRITABLE: /* check writable */
          if (Vg_MemCheck != VG_(clo_skin))
             return 0;
@@ -359,7 +359,7 @@ UInt VG_(handle_client_request) ( ThreadState* tst, UInt* arg_block )
          if (!ok)
             VG_(record_user_err) ( tst, bad_addr, False );
          return ok ? (UInt)NULL : bad_addr;
-
+#endif
       case VG_USERREQ__DISCARD: /* discard */
          if (Vg_MemCheck != VG_(clo_skin))
             return 0;

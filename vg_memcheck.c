@@ -328,7 +328,6 @@ void SK_(init) ( void )
 
 void SK_(fini) ( void )
 {
-   VG_(show_all_errors)();
    VG_(clientmalloc_done)();
    if (VG_(clo_verbosity) == 1) {
       VG_(message)(Vg_UserMsg, 
@@ -386,6 +385,12 @@ static __inline__ UChar get_vbyte ( Addr a )
    SecMap* sm     = primary_map[a >> 16];
    UInt    sm_off = a & 0xFFFF;
    PROF_EVENT(21);
+
+   if (VGM_IS_DISTINGUISHED_SM(sm))
+      VG_(printf)("accessed distinguished 2ndary map! 0x%x\n", a);
+
+
+
    return sm->vbyte[sm_off];
 }
 
@@ -571,14 +576,6 @@ static void set_address_range_perms ( Addr a, UInt len,
 
 
 /* Set permissions for address ranges ... */
-
-/* Just for initialising text/data segments */
-/* JJJ: this should never be called due to bogosity of the call site... */
-void SKN_(make_segment_noaccess) ( Addr a, UInt len )
-{
-   //PROF_EVENT(??);    PPP
-   set_address_range_perms ( a, len, VGM_BIT_INVALID, VGM_BIT_INVALID );
-}
 
 /* Just for initialising text/data segments */
 void SKN_(make_segment_readable) ( Addr a, UInt len )
@@ -1349,12 +1346,10 @@ void SKN_(init_shadow_memory) ( void )
 {
    Int i;
 
-   for (i = 0; i < 8192; i++)
-      distinguished_secondary_map.abits[i] 
-         = VGM_BYTE_INVALID; /* Invalid address */
-   for (i = 0; i < 65536; i++)
-      distinguished_secondary_map.vbyte[i] 
-         = VGM_BYTE_INVALID; /* Invalid Value */
+   for (i = 0; i < 8192; i++)             /* Invalid address */
+      distinguished_secondary_map.abits[i] = VGM_BYTE_INVALID; 
+   for (i = 0; i < 65536; i++)            /* Invalid Value */
+      distinguished_secondary_map.vbyte[i] = VGM_BYTE_INVALID; 
 
    /* These entries gradually get overwritten as the used address
       space expands. */
@@ -1364,6 +1359,17 @@ void SKN_(init_shadow_memory) ( void )
    /* These ones should never change; it's a bug in Valgrind if they do. */
    for (i = 65536; i < 262144; i++)
       primary_map[i] = &distinguished_secondary_map;
+
+
+   /* Record the end of the data segment, so that vg_syscall_mem.c
+      can make sense of calls to brk(). 
+   */
+   SK_(curr_dataseg_end) = (Addr)VG_(brk)(0);
+   if (SK_(curr_dataseg_end) == (Addr)(-1))
+      VG_(panic)("VGM_(init_memory_audit): can't determine data-seg end");
+
+   if (0)
+      VG_(printf)("DS END is %p\n", (void*)SK_(curr_dataseg_end));
 }
 
 
@@ -1991,17 +1997,46 @@ void show_bb ( Addr eip_next )
 /*--- MemCheck-specific client requests                    ---*/
 /*------------------------------------------------------------*/
 
-UInt SKN_(handle_client_request) ( ThreadState* not_used, UInt* arg)
+UInt SKN_(handle_client_request) ( ThreadState* tst, UInt* arg)
 {
-   switch (arg[0]) {
-   case VG_USERREQ__DO_LEAK_CHECK:
-      VG_(detect_memory_leaks)();
-      return 0; /* return value is meaningless */
+//   Bool  ok;
+//   Addr  bad_addr;
 
-   default:     // SSS: better message
-      VG_(printf)("\nError:\n"
-                  "  unknown MemCheck client request: 0x%x\n", arg[0]);
-      VG_(panic)("SKN_(handle_client_request) unknown request");
+   switch (arg[0]) {
+
+// SSS: this is all screwed up, because of the client blocks...
+      case VG_USERREQ__CHECK_WRITABLE: /* check writable */
+#if 0
+         if (Vg_MemCheck != VG_(clo_skin))
+            return 0;
+
+         ok = SKN_(check_writable) ( arg[1], arg[2], &bad_addr );
+         if (!ok)
+            VG_(record_user_err) ( tst, bad_addr, True );
+         return ok ? (UInt)NULL : bad_addr;
+#endif
+         VG_(panic)("can't handle VG_USERREQ__CHECK_WRITABLE yet, sorry");
+
+      case VG_USERREQ__CHECK_READABLE: /* check readable */
+#if 0
+         if (Vg_MemCheck != VG_(clo_skin))
+            return 0;
+
+         ok = SKN_(check_readable) ( arg[1], arg[2], &bad_addr );
+         if (!ok)
+            VG_(record_user_err) ( tst, bad_addr, False );
+         return ok ? (UInt)NULL : bad_addr;
+#endif
+         VG_(panic)("can't handle VG_USERREQ__CHECK_READABLE yet, sorry");
+
+      case VG_USERREQ__DO_LEAK_CHECK:
+         VG_(detect_memory_leaks)();
+         return 0; /* return value is meaningless */
+
+      default:
+         VG_(printf)("\nError:\n"
+                     "  unknown MemCheck client request: 0x%x\n", arg[0]);
+         VG_(panic)("SKN_(handle_client_request) unknown request");
    }
 }
 
@@ -2012,12 +2047,12 @@ UInt SKN_(handle_client_request) ( ThreadState* not_used, UInt* arg)
 void SK_(setup)(VgNeeds* needs)
 {
    needs->name                    = "valgrind";
-   needs->description             = "a memory detector error";
+   needs->description             = "a memory error detector";
 
    needs->debug_info              = Vg_DebugImprecise;
    needs->precise_x86_instr_sizes = False;
    needs->pthread_errors          = True;
-   needs->suppressions            = True;
+   needs->report_errors           = True;
 
    needs->identifies_basic_blocks = False;
 
@@ -2026,6 +2061,8 @@ void SK_(setup)(VgNeeds* needs)
 
    needs->augments_UInstrs        = True;
    needs->extends_UCode           = True;
+
+   needs->wrap_syscalls           = True;
 
    needs->shadow_memory           = True;
    needs->track_threads           = False;

@@ -207,7 +207,7 @@ typedef unsigned char Bool;
 // SSS: remove this eventually -- need something else for all the
 // if (clo_action==Vg_MemCheck) tests
 typedef 
-   enum { Vg_None, Vg_MemCheck, Vg_Eraser, Vg_CacheSim, Vg_Other }
+   enum { Vg_MemCheck, Vg_Eraser, Vg_CacheSim, Vg_Other }
    VgSkin;
 
 typedef
@@ -249,15 +249,18 @@ typedef
        */
       Bool identifies_basic_blocks;
 
-      /* Extension defines its own command line options? */
+      /* Skin defines its own command line options? */
       Bool command_line_options;
-      /* Extension defines its own client requests? */
+      /* Skin defines its own client requests? */
       Bool client_requests;
 
-      /* Extension adds custom code for core UInstrs? */
+      /* Skin adds custom code for core UInstrs? */
       Bool augments_UInstrs;
-      /* Extension defines its own UInstrs? */
+      /* Skin defines its own UInstrs? */
       Bool extends_UCode;
+
+      /* Skin does stuff before and/or after system calls? */
+      Bool wrap_syscalls;
 
       /* Is shadow memory required? */
       Bool shadow_memory;
@@ -1452,27 +1455,149 @@ extern Bool VG_(eq_ExeContext_all) ( ExeContext* e1, ExeContext* e2 );
    Exports of vg_errcontext.c.
    ------------------------------------------------------------------ */
 
+/* Suppression is a type describing an error which we want to
+   suppress, ie, not show the user, usually because it is caused by a
+   problem in a library which we can't fix, replace or work around.
+   Suppressions are read from a file at startup time, specified by
+   vg_clo_suppressions, and placed in the vg_suppressions list.  This
+   gives flexibility so that new suppressions can be added to the file
+   as and when needed.
+*/
+
+typedef
+   enum {
+      /* Pthreading error */
+      PThread,
+      FinalDummySuppressionKind
+   }
+   SuppressionKind;
+
+/* For each caller specified for a suppression, record the nature of
+   the caller name. */
+typedef
+   enum { 
+      /* Name is of an shared object file. */
+      ObjName,
+      /* Name is of a function. */
+      FunName 
+   }
+   SuppressionLocTy;
+
+/* An extensible (via the 'extra' field) suppression record. */
+// SSS: void* extra isn't totally satisfactory... eg. it's a pain
+// initialising, copying, etc. the errcontext in two parts...
+typedef
+   struct _Suppression {
+      struct _Suppression* next;
+      /* The number of times this error has been suppressed. */
+      Int count;
+      /* The name by which the suppression is referred to. */
+      Char* sname;
+      /* What kind of suppression. */
+      SuppressionKind skind;           // ??
+      /* String -- can be used in skin-specific way*/
+      Char* string;
+      /* For any skin-specific extra */
+      void* extra;
+      /* Name of fn where err occurs, and immediate caller (mandatory). */
+      SuppressionLocTy caller0_ty;
+      Char*            caller0;
+      SuppressionLocTy caller1_ty;
+      Char*            caller1;
+      /* Optional extra callers. */
+      SuppressionLocTy caller2_ty;
+      Char*            caller2;
+      SuppressionLocTy caller3_ty;
+      Char*            caller3;
+   } 
+   Suppression;
+
+/* ErrContext is a type for recording just enough info to generate an
+   error report.  The idea is that (typically) the same few points in the
+   program generate thousands of illegal accesses, and we don't want to
+   spew out a fresh error message for each one.  Instead, we use these
+   structures to common up duplicates.
+*/
+
+/* What kind of error it is. */
+
+typedef
+   enum { PThreadErr,
+          FinalDummyErrKind
+   }
+   ErrKind;
+
+/* Top-level struct for recording errors. */
+typedef
+   struct _ErrContext {
+      /* ALL */
+      struct _ErrContext* next;
+      /* ALL */
+      /* NULL if unsuppressed; or ptr to suppression record. */
+      Suppression* supp;
+      /* ALL */
+      Int count;
+      /* ALL */
+      ErrKind ekind;       // necessary??
+      /* ALL */
+      ExeContext* where;
+      /* Used frequently */
+      Addr addr;
+      /* Used frequently */
+      Char* string;
+      /* For any skin-specific extras */
+      void* extra;
+      /* ALL */
+      ThreadId tid;
+      /* ALL */
+      /* These record %EIP, %ESP and %EBP at the error point.  They
+         are only used to make GDB-attaching convenient; there is no
+         other purpose; specifically they are not used to do
+         comparisons between errors. */
+      UInt m_eip;
+      UInt m_esp;
+      UInt m_ebp;
+   }
+   ErrContext;
+
+extern void VG_(construct_err_context) ( ErrContext* ec, ErrKind ekind, 
+                                         Addr a, Char* s, ThreadState* tst );
+
+extern Bool VG_(getLine) ( Int fd, Char* buf, Int nBuf );
+extern Char* VG_(copyStr) ( Char* str );
+
 extern void VG_(load_suppressions)    ( void );
 extern void VG_(show_all_errors)      ( void );
-extern void VG_(record_value_error)   ( Int size );
+
+extern Bool VG_(ignore_errors) ( void );
+extern void VG_(clear_ErrContext) ( ErrContext* ec );
+
+extern void VG_(maybe_add_context) ( ErrContext* ec );
+
+// SSS: shouldn't be here
 extern void VG_(record_free_error)    ( ThreadState* tst, Addr a );
 extern void VG_(record_freemismatch_error)    ( ThreadState* tst, Addr a );
-extern void VG_(record_address_error) ( Addr a, Int size, 
-                                        Bool isWrite );
 
+// SSS: shouldn't be here
 extern void VG_(record_jump_error) ( ThreadState* tst, Addr a );
 
+// SSS: shouldn't be here
 extern void VG_(record_param_err) ( ThreadState* tst,
                                     Addr a, 
                                     Bool isWriteLack, 
                                     Char* msg );
+
+// SSS: shouldn't be here
 extern void VG_(record_user_err) ( ThreadState* tst,
                                    Addr a, Bool isWriteLack );
 extern void VG_(record_pthread_err) ( ThreadId tid, Char* msg );
-extern void VG_(record_eraser_err) ( Addr a, ThreadId tid, Bool is_write );
+//extern void VG_(record_eraser_err) ( Addr a, ThreadId tid, Bool is_write );
+
+extern Bool VG_(eq_ExeContext) ( Bool top_2_only,
+                                 ExeContext* e1, ExeContext* e2 );
 
 
-
+// SSS: these two shouldn't be here, memcheck-specific
 /* The classification of a faulting address. */
 typedef 
    enum { Undescribed, /* as-yet unclassified */
@@ -1499,7 +1624,6 @@ typedef
       Bool maybe_gcc;
    }
    AddrInfo;
-
 
 /* ---------------------------------------------------------------------
    Exports of vg_clientperms.c
@@ -1940,94 +2064,88 @@ extern void        SK_(init)       ( void );
 extern UCodeBlock* SK_(instrument) ( UCodeBlock* cb, Addr a );
 extern void        SK_(fini)       ( void );
 
-#if 0
 /* ---------------------------------------------------------------------
    For skins reporting errors (VG_(needs).report_errors)
    ------------------------------------------------------------------ */
 
-// SSS: export getLine()
-
-typedef
-   enum { PThreadErr,
-          FinalDummyErrKind
-   }
-   ErrKind;
-
-typedef
-   enum {
-      /* Pthreading error */
-      PThread,
-      FinalDummySuppressionKind
-   }
-   SuppressionKind;
-
-typedef
-   struct _Suppression {
-      struct _Suppression* next;
-      /* The number of times this error has been suppressed. */
-      Int count;
-      /* The name by which the suppression is referred to. */
-      Char* sname;
-      /* What kind of suppression. */
-      SuppressionKind skind;           // ??
-      /* String -- can be used in skin-specific way*/
-      Char* string;
-      /* For any skin-specific extra */
-      void* extra;
-      /* Name of fn where err occurs, and immediate caller (mandatory). */
-      SuppressionLocTy caller0_ty;
-      Char*            caller0;
-      SuppressionLocTy caller1_ty;
-      Char*            caller1;
-      /* Optional extra callers. */
-      SuppressionLocTy caller2_ty;
-      Char*            caller2;
-      SuppressionLocTy caller3_ty;
-      Char*            caller3;
+// SSS: this should all be in vg_memcheck_errcontext.c...
+typedef 
+   enum { 
+      /* Bad syscall params */
+      Param = FinalDummySuppressionKind + 1,
+      /* Use of invalid values of given size */
+      Value0, Value1, Value2, Value4, Value8, 
+      /* Invalid read/write attempt at given size */
+      Addr1, Addr2, Addr4, Addr8,
+      /* Invalid or mismatching free */
+      FreeS
    } 
-   Suppression;
+   MemCheckSuppressionKind;
 
-typedef
-   struct _ErrContext {
-      /* ALL */
-      struct _ErrContext* next;
-      /* ALL */
-      /* NULL if unsuppressed; or ptr to suppression record. */
-      Suppression* supp;
-      /* ALL */
-      Int count;
-      /* ALL */
-      ErrKind ekind;       // necessary??
-      /* ALL */
-      ExeContext* where;
-      /* Used frequently */
-      Addr addr;
-      /* Used frequently */
-      Char* string;
-      /* For any skin-specific extras */
-      void* extra;
-      /* ALL */
-      ThreadId tid;
-      /* ALL */
-      /* These record %EIP, %ESP and %EBP at the error point.  They
-         are only used to make GDB-attaching convenient; there is no
-         other purpose; specifically they are not used to do
-         comparisons between errors. */
-      UInt m_eip;
-      UInt m_esp;
-      UInt m_ebp;
+/* What kind of error it is. */
+typedef 
+   enum { ValueErr = FinalDummyErrKind + 1,
+          AddrErr, 
+          ParamErr, UserErr, /* behaves like an anonymous ParamErr */
+          FreeErr, FreeMismatchErr
    }
-   ErrContext;
+   MemCheckErrKind;
 
+/* What kind of memory access is involved in the error? */
+typedef
+   enum { ReadAxs, WriteAxs, ExecAxs }
+   AxsKind;
+
+/* Top-level struct for recording errors. */
+typedef
+   struct {
+      /* Addr */
+      AxsKind axskind;
+      /* Addr, Value */
+      Int size;
+      /* Addr, Free, Param, User */
+      AddrInfo addrinfo;
+      /* Param, User */
+      Bool isWriteableLack;
+   }
+   MemCheckErrContext;
+
+// SSS: these should be local to vg_memcheck_errcontext.c...
+extern void clear_AddrInfo ( AddrInfo* ai );
+extern void clear_MemCheckErrContext ( MemCheckErrContext* ec_extra );
+
+
+
+
+
+
+/* Identify if two errors are equal, or equal enough.  Should not check the
+   ExeContext (e->where field) as it's checked separately */
 extern Bool SKN_(eq_ErrContext) ( Bool cheap_addr_cmp,
-                            ErrContext* e1, ErrContext* e2 );
+                                  ErrContext* e1, ErrContext* e2 );
+/* This should probably include a call to VG_(pp_ExeContext)(ec->where) */
+extern void SKN_(pp_ErrContext) ( ErrContext* ec );
+/* Copy the ec->extra part and replace ec->extra with the new copy.  This is
+ * necessary to move from a temporary stack copy to a permanent one.
+ *
+ * Then fill in any details that could be postponed until after the decision
+ * whether to ignore the error (ie. details not affecting the result of
+ * SKN_(eq_ErrContext).  This saves time when errors are ignored.
+ *
+ * Yuk.
+ */
+extern void SKN_(dup_extra_and_update)(ErrContext* ec);
 
-extern void SKN_(pp_ErrContext) ( ErrContext* ec, Bool printCount );
 /* Return value indicates recognition.  If recognised, type goes in skind. */
-extern Bool SKN_(recognised_suppression) ( char* name, SuppressionKind *skind );
-extern Bool SKN_(read_suppression_specific_info) ( Suppression *s );
+extern Bool SKN_(recognised_suppression) ( Char* name, SuppressionKind *skind );
+extern Bool SKN_(read_extra_suppression_info) ( Int fd, Char* buf, 
+                                                Int nBuf, Suppression *s );
+
+/* This should just check the kinds match and maybe some stuff in the
+   'extra' field if appropriate */
 extern Bool SKN_(error_matches_suppression)(ErrContext* ec, Suppression* su);
-#endif
+
+
 
 /* ---------------------------------------------------------------------
    For skins keeping basic block-level information 
@@ -2069,6 +2187,22 @@ extern void  SKN_(ppExtUInstr)    ( UInstr* u );
 extern Int   SKN_(getExtTempUsage)( UInstr* u, TempUse* arr );
 
 /* ---------------------------------------------------------------------
+   For wrapping system calls (VG_(needs).wrap_syscalls)
+   ------------------------------------------------------------------ */
+
+/* If either of the pre_ functions malloc's something to return, the post_
+ * function had better free it! 
+ */ 
+extern void* SKN_(pre_syscall)  ( ThreadId tid);
+extern void  SKN_(post_syscall) ( ThreadId tid, UInt syscallno,
+                                  void* pre_result, Int res );
+
+extern void* SKN_(pre_blocking_syscall_check)  ( ThreadId tid, Int syscallno,
+                                                 Int* res);
+extern void  SKN_(post_blocking_syscall_check) ( ThreadId tid, Int syscallno, 
+                                                 Int* res, void* pre_result);
+
+/* ---------------------------------------------------------------------
    For shadow memory (VG_(needs).shadow_memory)
    ------------------------------------------------------------------ */
 
@@ -2076,7 +2210,6 @@ extern Int   SKN_(getExtTempUsage)( UInstr* u, TempUse* arr );
 
 extern void SKN_(init_shadow_memory)(void);
 
-extern void SKN_(make_segment_noaccess) ( Addr a, UInt len );
 extern void SKN_(make_segment_readable) ( Addr a, UInt len );
 
 /* Set permissions for an address range.  Not speed-critical. */
@@ -2113,7 +2246,9 @@ extern void SKN_(expensive_shadow_memory_sanity_check) ( void );
 // screws up lib_pthread.so.
 void SKN_(thread_does_lock)  ( ThreadId tid, void* mutex );
 void SKN_(thread_does_unlock)( ThreadId tid, void* mutex );
-void SKN_(thread_dies)       ( void );
+
+// SSS: omitted because it run on sim'd CPU and is dangerous
+//void SKN_(thread_dies)       ( void );
 
 
 /* ---------------------------------------------------------------------

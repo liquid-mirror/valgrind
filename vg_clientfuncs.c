@@ -30,7 +30,6 @@
 */
 
 #include "vg_include.h"
-#include "vg_constants.h"
 
 #include "valgrind.h"   /* for VALGRIND_MAGIC_SEQUENCE */
 

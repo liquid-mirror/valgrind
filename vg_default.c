@@ -37,7 +37,7 @@
 #include "vg_include.h"
 
 /* ---------------------------------------------------------------------
-   Fundamental template functions
+   Error messages (for malformed skins)
    ------------------------------------------------------------------ */
 
 /* If the skin fails to define one or more of the required functions,
@@ -47,6 +47,16 @@ static char* fund_panic =
     "\nExtension error:\n"
     "  The skin you have selected is missing one or more of the\n"
     "  required fundamental functions.  Please check it and try again.\n";
+
+static char* nonfund_panic =
+    "\nExtension error:\n"
+    "  The skin you have selected is missing one or more of the\n"
+    "  functions required by the skin's needs.  Please check it and\n"
+    "  try again.\n";
+
+/* ---------------------------------------------------------------------
+   Fundamental template functions
+   ------------------------------------------------------------------ */
 
 void SK_(init)(void)
 {
@@ -73,24 +83,62 @@ void SK_(setup)(VgNeeds* needs)
 }
 
 /* ---------------------------------------------------------------------
+   For error reporting and suppression handling
+   ------------------------------------------------------------------ */
+
+Bool SKN_(eq_ErrContext) ( Bool cheap_addr_cmp,
+                           ErrContext* e1, ErrContext* e2 )
+{
+   VG_(printf)(nonfund_panic);
+   VG_(panic)("called SKN_(eq_ErrContext)");
+}
+
+void SKN_(pp_ErrContext) ( ErrContext* ec )
+{
+   VG_(printf)(nonfund_panic);
+   VG_(panic)("called SKN_(pp_ErrContext)");
+}
+
+void SKN_(dup_extra_and_update)(ErrContext* ec)
+{
+   VG_(printf)(nonfund_panic);
+   VG_(panic)("called SKN_(dup_extra_and_update)");
+}
+
+Bool SKN_(recognised_suppression) ( Char* name, SuppressionKind *skind )
+{
+   VG_(printf)(nonfund_panic);
+   VG_(panic)("called SKN_(recognised_suppression)");
+}
+
+Bool SKN_(read_extra_suppression_info) ( Int fd, Char* buf, 
+                                         Int nBuf, Suppression *s )
+{
+   VG_(printf)(nonfund_panic);
+   VG_(panic)("called SKN_(read_extra_suppression_info)");
+}
+
+Bool SKN_(error_matches_suppression)(ErrContext* ec, Suppression* su)
+{
+   VG_(printf)(nonfund_panic);
+   VG_(panic)("called SKN_(error_matches_suppression)");
+}
+
+
+/* ---------------------------------------------------------------------
    For throwing out basic block level info when code is invalidated
    ------------------------------------------------------------------ */
 
 void SK_(discard_basic_block_info)(TTEntry* tte)
 {
-   VG_(printf)(fund_panic);
+   VG_(printf)(nonfund_panic);
    VG_(panic)("called SK_(discard_basic_block_info)");
 }
+
 
 /* ---------------------------------------------------------------------
    Command line arg template function
    ------------------------------------------------------------------ */
-
-static char* nonfund_panic =
-    "\nExtension error:\n"
-    "  The skin you have selected is missing one or more of the\n"
-    "  functions required by the skin's needs.  Please check it and\n"
-    "  try again.\n";
 
 void SKN_(process_cmd_line_options)(UInt argc, UChar* argv[])
 {
@@ -153,14 +201,42 @@ Int SKN_(getExtTempUsage)(UInstr* u, TempUse* arr)
 }
 
 /* ---------------------------------------------------------------------
-   Shadow memory
+   Syscall wrapping
    ------------------------------------------------------------------ */
 
-void SKN_(make_segment_noaccess) ( Addr a, UInt len )
+void* SKN_(pre_syscall)  ( ThreadId tid)
 {
    VG_(printf)(nonfund_panic);
-   VG_(panic)("called SKN_(make_segment_noaccess)");
+   VG_(panic)("called SKN_(pre_syscall)");
 }
+
+void  SKN_(post_syscall) ( ThreadId tid, UInt syscallno,
+                           void* pre_result, Int res )
+{
+   VG_(printf)(nonfund_panic);
+   VG_(panic)("called SKN_(post_syscall)");
+}
+
+
+void* SKN_(pre_blocking_syscall_check)  ( ThreadId tid, Int syscallno,
+                                          Int* res)
+{
+   VG_(printf)(nonfund_panic);
+   VG_(panic)("called SKN_(pre_blocking_syscall_check)");
+}
+
+void  SKN_(post_blocking_syscall_check) ( ThreadId tid, Int syscallno,
+                                          Int* res, void* pre_result)
+{
+   VG_(printf)(nonfund_panic);
+   VG_(panic)("called SKN_(post_blocking_syscall_check)");
+}
+
+
+
+/* ---------------------------------------------------------------------
+   Shadow memory
+   ------------------------------------------------------------------ */
 
 void SKN_(make_segment_readable) ( Addr a, UInt len )
 {
@@ -270,11 +346,12 @@ void SKN_(thread_does_unlock)  ( ThreadId tid, void* mutex )
    VG_(panic)("called SKN_(thread_does_unlock)");
 }
 
-void SKN_(thread_dies) ( void )
-{
-   VG_(printf)(nonfund_panic);
-   VG_(panic)("called SKN_(thread_dies)");
-}
+// SSS: omitted because it run on sim'd CPU and is dangerous
+//void SKN_(thread_dies) ( void )
+//{
+//   VG_(printf)(nonfund_panic);
+//   VG_(panic)("called SKN_(thread_dies)");
+//}
 
 /*--------------------------------------------------------------------*/
 /*--- end                                            vg_defaults.c ---*/

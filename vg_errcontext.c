@@ -29,155 +29,10 @@
 */
 
 #include "vg_include.h"
-#include "vg_constants.h"
-
-// SSS: turn off for new version
-#define MYOLD 1
 
 /*------------------------------------------------------------*/
-/*--- Defns                                                ---*/
+/*--- Globals                                              ---*/
 /*------------------------------------------------------------*/
-
-/* Suppression is a type describing an error which we want to
-   suppress, ie, not show the user, usually because it is caused by a
-   problem in a library which we can't fix, replace or work around.
-   Suppressions are read from a file at startup time, specified by
-   vg_clo_suppressions, and placed in the vg_suppressions list.  This
-   gives flexibility so that new suppressions can be added to the file
-   as and when needed. 
-*/
-#if MYOLD
-typedef 
-   enum { 
-      /* Bad syscall params */
-      Param, 
-      /* Use of invalid values of given size */
-      Value0, Value1, Value2, Value4, Value8, 
-      /* Invalid read/write attempt at given size */
-      Addr1, Addr2, Addr4, Addr8,
-      /* Invalid or mismatching free */
-      FreeS,
-      /* Pthreading error */
-      PThread,
-      /* Data race */
-      Eraser
-   } 
-   SuppressionKind;
-#else
-#endif
-
-
-/* For each caller specified for a suppression, record the nature of
-   the caller name. */
-typedef
-   enum { 
-      /* Name is of an shared object file. */
-      ObjName,
-      /* Name is of a function. */
-      FunName 
-   }
-   SuppressionLocTy;
-
-
-/* A complete suppression record. */
-#if MYOLD
-typedef
-   struct _Suppression {
-      struct _Suppression* next;
-      /* The number of times this error has been suppressed. */
-      Int count;
-      /* The name by which the suppression is referred to. */
-      Char* sname;
-      /* What kind of suppression. */
-      SuppressionKind skind;
-      /* Name of syscall param if skind==Param */
-      Char* param;
-      /* Name of fn where err occurs, and immediate caller (mandatory). */
-      SuppressionLocTy caller0_ty;
-      Char*            caller0;
-      SuppressionLocTy caller1_ty;
-      Char*            caller1;
-      /* Optional extra callers. */
-      SuppressionLocTy caller2_ty;
-      Char*            caller2;
-      SuppressionLocTy caller3_ty;
-      Char*            caller3;
-   } 
-   Suppression;
-#else
-#endif
-
-/* ErrContext is a type for recording just enough info to generate an
-   error report for an illegal memory access.  The idea is that
-   (typically) the same few points in the program generate thousands
-   of illegal accesses, and we don't want to spew out a fresh error
-   message for each one.  Instead, we use these structures to common
-   up duplicates.  
-*/
-
-/* What kind of error it is. */
-#if MYOLD
-typedef 
-   enum { ValueErr, AddrErr, 
-          ParamErr, UserErr, /* behaves like an anonymous ParamErr */
-          FreeErr, FreeMismatchErr,
-          PThreadErr, /* pthread API error */
-          EraserErr   /* possible data race */
-   }
-   ErrKind;
-#else
-#endif
-
-/* What kind of memory access is involved in the error? */
-#if MYOLD
-typedef
-   enum { ReadAxs, WriteAxs, ExecAxs }
-   AxsKind;
-#else
-#endif
-
-/* Top-level struct for recording errors. */
-#if MYOLD
-typedef
-   struct _ErrContext {
-      /* ALL */
-      struct _ErrContext* next;
-      /* ALL */
-      /* NULL if unsuppressed; or ptr to suppression record. */
-      Suppression* supp;
-      /* ALL */
-      Int count;
-      /* ALL */
-      ErrKind ekind;
-      /* ALL */
-      ExeContext* where;
-      /* Addr */
-      AxsKind axskind;
-      /* Addr, Value */
-      Int size;
-      /* Addr, Free, Param, User, Eraser */
-      Addr addr;
-      /* Addr, Free, Param, User */
-      AddrInfo addrinfo;
-      /* Param; hijacked for PThread as a description; hijacked for Eraser
-       * to indicate "reading" or "writing" */
-      Char* syscall_param;
-      /* Param, User */
-      Bool isWriteableLack;
-      /* ALL */
-      ThreadId tid;
-      /* ALL */
-      /* These record %EIP, %ESP and %EBP at the error point.  They
-         are only used to make GDB-attaching convenient; there is no
-         other purpose; specifically they are not used to do
-         comparisons between errors. */
-      UInt m_eip;
-      UInt m_esp;
-      UInt m_ebp;
-   }
-   ErrContext;
-#else
-#endif
 
 /* The list of error contexts found, both suppressed and unsuppressed.
    Initially empty, and grows as errors are detected. */
@@ -205,9 +60,15 @@ static Suppression* is_suppressible_error ( ErrContext* ec );
 /*--- Helper fns                                           ---*/
 /*------------------------------------------------------------*/
 
-
-static void clear_AddrInfo ( AddrInfo* ai )
+Bool VG_(ignore_errors) ( void )
 {
+   return vg_ignore_errors;
+}
+
+// SSS: these two should not be here...
+__inline__
+void clear_AddrInfo ( AddrInfo* ai )
+{     
    ai->akind      = Unknown;
    ai->blksize    = 0;
    ai->rwoffset   = 0;
@@ -215,33 +76,21 @@ static void clear_AddrInfo ( AddrInfo* ai )
    ai->stack_tid  = VG_INVALID_THREADID;
    ai->maybe_gcc  = False;
 }
-
-#if MYOLD
-static void clear_ErrContext ( ErrContext* ec )
-{
-   ec->next    = NULL;
-   ec->supp    = NULL;
-   ec->count   = 0;
-   ec->ekind   = ValueErr;
-   ec->where   = NULL;
-   ec->axskind = ReadAxs;
-   ec->size    = 0;
-   ec->addr    = 0;
-   clear_AddrInfo ( &ec->addrinfo );
-   ec->syscall_param   = NULL;
-   ec->isWriteableLack = False;
-   ec->m_eip   = 0xDEADB00F;
-   ec->m_esp   = 0xDEADBE0F;
-   ec->m_ebp   = 0xDEADB0EF;
-   ec->tid     = VG_INVALID_THREADID;
+void clear_MemCheckErrContext ( MemCheckErrContext* ec_extra )
+{         
+   ec_extra->axskind         = ReadAxs;
+   ec_extra->size            = 0;
+   clear_AddrInfo ( &ec_extra->addrinfo );      
+   ec_extra->isWriteableLack = False;
 }
-#else
-static void clear_ErrContext ( ErrContext* ec )
+
+
+void VG_(clear_PThread_ErrContext) ( ErrContext* ec )
 {
    ec->next    = NULL;
    ec->supp    = NULL;
    ec->count   = 0;
-   ec->ekind   = ValueErr;
+   ec->ekind   = PThreadErr;
    ec->where   = NULL;
    ec->addr    = 0;
    ec->string  = NULL;
@@ -251,10 +100,9 @@ static void clear_ErrContext ( ErrContext* ec )
    ec->m_ebp   = 0xDEADB0EF;
    ec->tid     = VG_INVALID_THREADID;
 }
-#endif
 
-static __inline__
-Bool vg_eq_ExeContext ( Bool top_2_only,
+/* Inlined in this module, not in others */
+__inline__ Bool VG_(eq_ExeContext) ( Bool top_2_only,
                         ExeContext* e1, ExeContext* e2 )
 {
    /* Note that frames after the 4th are always ignored. */
@@ -266,91 +114,23 @@ Bool vg_eq_ExeContext ( Bool top_2_only,
 }
 
 
-#if MYOLD
-static Bool eq_AddrInfo ( Bool cheap_addr_cmp,
-                          AddrInfo* ai1, AddrInfo* ai2 )
-{
-   if (ai1->akind != Undescribed 
-       && ai2->akind != Undescribed
-       && ai1->akind != ai2->akind) 
-      return False;
-   if (ai1->akind == Freed || ai1->akind == Mallocd) {
-      if (ai1->blksize != ai2->blksize)
-         return False;
-      if (!vg_eq_ExeContext(cheap_addr_cmp, 
-                            ai1->lastchange, ai2->lastchange))
-         return False;
-   }
-   return True;
-}
-#else
-#endif
-
 /* Compare error contexts, to detect duplicates.  Note that if they
    are otherwise the same, the faulting addrs and associated rwoffsets
    are allowed to be different.  */
-#if MYOLD
 static Bool eq_ErrContext ( Bool cheap_addr_cmp,
                             ErrContext* e1, ErrContext* e2 )
 {
    if (e1->ekind != e2->ekind) 
       return False;
-   if (!vg_eq_ExeContext(cheap_addr_cmp, e1->where, e2->where))
-      return False;
-
-   switch (e1->ekind) {
-      case PThreadErr:
-         if (e1->syscall_param == e2->syscall_param) 
-            return True;
-         if (0 == VG_(strcmp)(e1->syscall_param, e2->syscall_param))
-            return True;
-         return False;
-      case EraserErr:
-         if (e1->syscall_param != e2->syscall_param) return False;
-         if (0 != VG_(strcmp)(e1->syscall_param, e2->syscall_param)) 
-            return False;
-         return True;
-      case UserErr:
-      case ParamErr:
-         if (e1->isWriteableLack != e2->isWriteableLack) return False;
-         if (e1->ekind == ParamErr 
-             && 0 != VG_(strcmp)(e1->syscall_param, e2->syscall_param))
-            return False;
-         return True;
-      case FreeErr:
-      case FreeMismatchErr:
-         if (e1->addr != e2->addr) return False;
-         if (!eq_AddrInfo(cheap_addr_cmp, &e1->addrinfo, &e2->addrinfo)) 
-            return False;
-         return True;
-      case AddrErr:
-         if (e1->axskind != e2->axskind) return False;
-         if (e1->size != e2->size) return False;
-         if (!eq_AddrInfo(cheap_addr_cmp, &e1->addrinfo, &e2->addrinfo)) 
-            return False;
-         return True;
-      case ValueErr:
-         if (e1->size != e2->size) return False;
-         return True;
-      default: 
-         VG_(panic)("eq_ErrContext");
-   }
-}
-#else
-static Bool eq_ErrContext ( Bool cheap_addr_cmp,
-                            ErrContext* e1, ErrContext* e2 )
-{
-   if (e1->ekind != e2->ekind) 
-      return False;
-   if (!vg_eq_ExeContext(cheap_addr_cmp, e1->where, e2->where))
+   if (!VG_(eq_ExeContext)(cheap_addr_cmp, e1->where, e2->where))
       return False;
 
    switch (e1->ekind) {
       case PThreadErr:
          vg_assert(VG_(needs).pthread_errors);
-         if (e1->syscall_param == e2->syscall_param) 
+         if (e1->string == e2->string) 
             return True;
-         if (0 == VG_(strcmp)(e1->syscall_param, e2->syscall_param))
+         if (0 == VG_(strcmp)(e1->string, e2->string))
             return True;
          return False;
       default: 
@@ -365,156 +145,7 @@ static Bool eq_ErrContext ( Bool cheap_addr_cmp,
          }
    }
 }
-#endif
 
-#if MYOLD
-static void pp_AddrInfo ( Addr a, AddrInfo* ai )
-{
-   switch (ai->akind) {
-      case Stack: 
-         VG_(message)(Vg_UserMsg, 
-                      "   Address 0x%x is on thread %d's stack", 
-                      a, ai->stack_tid);
-         break;
-      case Unknown:
-         if (ai->maybe_gcc) {
-            VG_(message)(Vg_UserMsg, 
-               "   Address 0x%x is just below %%esp.  Possibly a bug in GCC/G++",
-               a);
-            VG_(message)(Vg_UserMsg, 
-               "   v 2.96 or 3.0.X.  To suppress, use: --workaround-gcc296-bugs=yes");
-	 } else {
-            VG_(message)(Vg_UserMsg, 
-               "   Address 0x%x is not stack'd, malloc'd or free'd", a);
-         }
-         break;
-      case Freed: case Mallocd: case UserG: case UserS: {
-         UInt delta;
-         UChar* relative;
-         if (ai->rwoffset < 0) {
-            delta    = (UInt)(- ai->rwoffset);
-            relative = "before";
-         } else if (ai->rwoffset >= ai->blksize) {
-            delta    = ai->rwoffset - ai->blksize;
-            relative = "after";
-         } else {
-            delta    = ai->rwoffset;
-            relative = "inside";
-         }
-         if (ai->akind == UserS) {
-            VG_(message)(Vg_UserMsg, 
-               "   Address 0x%x is %d bytes %s a %d-byte stack red-zone created",
-               a, delta, relative, 
-               ai->blksize );
-	 } else {
-            VG_(message)(Vg_UserMsg, 
-               "   Address 0x%x is %d bytes %s a block of size %d %s",
-               a, delta, relative, 
-               ai->blksize,
-               ai->akind==Mallocd ? "alloc'd" 
-                  : ai->akind==Freed ? "free'd" 
-                                     : "client-defined");
-         }
-         VG_(pp_ExeContext)(ai->lastchange);
-         break;
-      }
-      default:
-         VG_(panic)("pp_AddrInfo");
-   }
-}
-#else
-#endif
-
-#if MYOLD
-static void pp_ErrContext ( ErrContext* ec, Bool printCount )
-{
-   if (printCount)
-      VG_(message)(Vg_UserMsg, "Observed %d times:", ec->count );
-   if (ec->tid > 1)
-      VG_(message)(Vg_UserMsg, "Thread %d:", ec->tid );
-   switch (ec->ekind) {
-      case ValueErr:
-         if (ec->size == 0) {
-             VG_(message)(
-                Vg_UserMsg,
-                "Conditional jump or move depends on uninitialised value(s)");
-         } else {
-             VG_(message)(Vg_UserMsg,
-                          "Use of uninitialised value of size %d",
-                          ec->size);
-         }
-         VG_(pp_ExeContext)(ec->where);
-         break;
-      case AddrErr:
-         switch (ec->axskind) {
-            case ReadAxs:
-               VG_(message)(Vg_UserMsg, "Invalid read of size %d", 
-                                        ec->size ); 
-               break;
-            case WriteAxs:
-               VG_(message)(Vg_UserMsg, "Invalid write of size %d", 
-                                        ec->size ); 
-               break;
-            case ExecAxs:
-               VG_(message)(Vg_UserMsg, "Jump to the invalid address "
-                                        "stated on the next line");
-               break;
-            default: 
-               VG_(panic)("pp_ErrContext(axskind)");
-         }
-         VG_(pp_ExeContext)(ec->where);
-         pp_AddrInfo(ec->addr, &ec->addrinfo);
-         break;
-      case FreeErr:
-         VG_(message)(Vg_UserMsg,"Invalid free() / delete / delete[]");
-         /* fall through */
-      case FreeMismatchErr:
-         if (ec->ekind == FreeMismatchErr)
-            VG_(message)(Vg_UserMsg, 
-                         "Mismatched free() / delete / delete []");
-         VG_(pp_ExeContext)(ec->where);
-         pp_AddrInfo(ec->addr, &ec->addrinfo);
-         break;
-      case ParamErr:
-         if (ec->isWriteableLack) {
-            VG_(message)(Vg_UserMsg, 
-               "Syscall param %s contains unaddressable byte(s)",
-                ec->syscall_param );
-         } else {
-            VG_(message)(Vg_UserMsg, 
-                "Syscall param %s contains uninitialised or "
-                "unaddressable byte(s)",
-            ec->syscall_param);
-         }
-         VG_(pp_ExeContext)(ec->where);
-         pp_AddrInfo(ec->addr, &ec->addrinfo);
-         break;
-      case UserErr:
-         if (ec->isWriteableLack) {
-            VG_(message)(Vg_UserMsg, 
-               "Unaddressable byte(s) found during client check request");
-         } else {
-            VG_(message)(Vg_UserMsg, 
-               "Uninitialised or "
-               "unaddressable byte(s) found during client check request");
-         }
-         VG_(pp_ExeContext)(ec->where);
-         pp_AddrInfo(ec->addr, &ec->addrinfo);
-         break;
-      case PThreadErr:
-         VG_(message)(Vg_UserMsg, "%s", ec->syscall_param );
-         VG_(pp_ExeContext)(ec->where);
-         break;
-      case EraserErr:
-         VG_(message)(Vg_UserMsg, "Possible data race %s variable at 0x%x", 
-                      ec->syscall_param, ec->addr );
-         VG_(pp_ExeContext)(ec->where);
-         break;
-      default: 
-         VG_(panic)("pp_ErrContext");
-   }
-}
-#else
 static void pp_ErrContext ( ErrContext* ec, Bool printCount )
 {
    if (printCount)
@@ -525,21 +156,21 @@ static void pp_ErrContext ( ErrContext* ec, Bool printCount )
    switch (ec->ekind) {
       case PThreadErr:
          vg_assert(VG_(needs).pthread_errors);
-         VG_(message)(Vg_UserMsg, "%s", ec->syscall_param );
+         VG_(message)(Vg_UserMsg, "%s", ec->string );
          VG_(pp_ExeContext)(ec->where);
          break;
       default: 
          if (VG_(needs).report_errors)
-            return SKN_(pp_ErrContext)(cheap_addr_cmp, e1, e2);
+            return SKN_(pp_ErrContext)( ec );
          else {
             VG_(printf)("Error:\n"
                         "  unhandled error type: %u.  Perhaps " 
                         "VG_(needs).report_errors should be set?\n",
-                        e1->ekind);
+                        ec->ekind);
             VG_(panic)("pp_ErrContext: unhandled error type");
+         }
    }
 }
-#endif
 
 /* Figure out if we want to attach for GDB for this error, possibly
    by asking the user. */
@@ -588,7 +219,7 @@ Bool vg_is_GDB_attach_requested ( void )
 /* Top-level entry point to the error management subsystem.  All
    detected errors are notified here; this routine decides if/when the
    user should see the error. */
-static void VG_(maybe_add_context) ( ErrContext* ec )
+void VG_(maybe_add_context) ( ErrContext* ec )
 {
    ErrContext* p;
    ErrContext* p_prev;
@@ -655,6 +286,10 @@ static void VG_(maybe_add_context) ( ErrContext* ec )
       }
    }
 
+   // SSS: we call eq_ErrContext here before we fill in the AddrInfo, and
+   // then fill in the AddrInfo afterwards... probably doesn't matter
+   // because no errors will have everything the same except different
+   // AddrInfo's.
 
    /* First, see if we've got an error record matching this one. */
    p      = vg_err_contexts;
@@ -687,13 +322,21 @@ static void VG_(maybe_add_context) ( ErrContext* ec )
 
    /* Didn't see it.  Copy and add. */
 
-   /* OK, we're really going to collect it.  First, describe any addr
-      info in the error. */
-   if (ec->addrinfo.akind == Undescribed)
-      VG_(describe_addr) ( ec->addr, &ec->addrinfo );
-
+   /* OK, we're really going to collect it.  First make a copy,
+      because the error context is on the stack and will disappear shortly.
+      We can duplicate the main part ourselves, but use
+      SKN_(dup_extra_and_update) to duplicate the 'extra' part.
+     
+      SKN_(dup_extra_and_update) can also update the ErrContext.  This is
+      for when there are more details to fill in which take time to work out
+      but don't affect our earlier decision to include the error -- by
+      postponing those details until now, we avoid the extra work in the
+      case where we ignore the error.
+    */
    p = VG_(malloc)(VG_AR_ERRCTXT, sizeof(ErrContext));
    *p = *ec;
+   SKN_(dup_extra_and_update)(p);
+
    p->next = vg_err_contexts;
    p->supp = is_suppressible_error(ec);
    vg_err_contexts = p;
@@ -716,209 +359,159 @@ static void VG_(maybe_add_context) ( ErrContext* ec )
 }
 
 
-
-
 /*------------------------------------------------------------*/
 /*--- Exported fns                                         ---*/
 /*------------------------------------------------------------*/
 
-/* These three are called from generated code, so that the %EIP/%EBP
+/* Initialisation depends on where the error comes from.
+
+   If from generated code, the %EIP/%EBP
    values that we need in order to create proper error messages are
    picked up out of VG_(baseBlock) rather than from the thread table
-   (vg_threads in vg_scheduler.c). */
+   (vg_threads in vg_scheduler.c).
 
-#if MYOLD
-void VG_(record_value_error) ( Int size )
+   If not from generated code but in response to requests passed back to the
+   scheduler, we pick up %EIP/%EBP values from the stored thread state, not
+   from VG_(baseBlock).  
+*/
+/* I've gone all object-oriented... */
+/* NULL tst indicates the error is called from generated code. non-NULL tst
+ * indicates the error is called from the scheduler. */
+void VG_(construct_err_context) ( ErrContext* ec, ErrKind ekind, Addr a,
+                                  Char* s, ThreadState* tst )
 {
-   ErrContext ec;
-   if (vg_ignore_errors) return;
-   clear_ErrContext( &ec );
-   ec.count = 1;
-   ec.next  = NULL;
-   ec.where = VG_(get_ExeContext)( False, VG_(baseBlock)[VGOFF_(m_eip)], 
-                                          VG_(baseBlock)[VGOFF_(m_ebp)] );
-   ec.ekind = ValueErr;
-   ec.size  = size;
-   ec.tid   = VG_(get_current_tid)();
-   ec.m_eip = VG_(baseBlock)[VGOFF_(m_eip)];
-   ec.m_esp = VG_(baseBlock)[VGOFF_(m_esp)];
-   ec.m_ebp = VG_(baseBlock)[VGOFF_(m_ebp)];
-   VG_(maybe_add_context) ( &ec );
+   ec->next   = NULL;
+   ec->supp   = NULL;
+   ec->count  = 1;
+   ec->ekind  = ekind;
+   ec->addr   = a;
+   ec->string = s;
+   ec->extra  = NULL;
+
+   if (NULL == tst) {
+      ec->where = VG_(get_ExeContext)( False, VG_(baseBlock)[VGOFF_(m_eip)], 
+                                             VG_(baseBlock)[VGOFF_(m_ebp)] );
+      ec->m_eip = VG_(baseBlock)[VGOFF_(m_eip)];
+      ec->m_esp = VG_(baseBlock)[VGOFF_(m_esp)];
+      ec->m_ebp = VG_(baseBlock)[VGOFF_(m_ebp)];
+      ec->tid   = VG_(get_current_tid)();
+   } else {
+      ec->where   = VG_(get_ExeContext)( False, tst->m_eip, tst->m_ebp );
+      ec->m_eip   = tst->m_eip;
+      ec->m_esp   = tst->m_esp;
+      ec->m_ebp   = tst->m_ebp;
+      ec->tid     = tst->tid;
+   }
 }
 
-void VG_(record_address_error) ( Addr a, Int size, Bool isWrite )
-{
-   ErrContext ec;
-   Bool       just_below_esp;
-   if (vg_ignore_errors) return;
-
-   just_below_esp 
-      = VG_(is_just_below_ESP)( VG_(baseBlock)[VGOFF_(m_esp)], a );
-
-   /* If this is caused by an access immediately below %ESP, and the
-      user asks nicely, we just ignore it. */
-   if (VG_(clo_workaround_gcc296_bugs) && just_below_esp)
-      return;
-
-   clear_ErrContext( &ec );
-   ec.count   = 1;
-   ec.next    = NULL;
-   ec.where   = VG_(get_ExeContext)( False, VG_(baseBlock)[VGOFF_(m_eip)], 
-                                            VG_(baseBlock)[VGOFF_(m_ebp)] );
-   ec.ekind   = AddrErr;
-   ec.axskind = isWrite ? WriteAxs : ReadAxs;
-   ec.size    = size;
-   ec.addr    = a;
-   ec.tid     = VG_(get_current_tid)();
-   ec.m_eip = VG_(baseBlock)[VGOFF_(m_eip)];
-   ec.m_esp = VG_(baseBlock)[VGOFF_(m_esp)];
-   ec.m_ebp = VG_(baseBlock)[VGOFF_(m_ebp)];
-   ec.addrinfo.akind     = Undescribed;
-   ec.addrinfo.maybe_gcc = just_below_esp;
-   VG_(maybe_add_context) ( &ec );
-}
-
-void VG_(record_eraser_err) ( ThreadId tid, Addr a, Bool is_write )
-{
-   ErrContext ec;
-   vg_assert(Vg_Eraser == VG_(clo_skin));
-   if (vg_ignore_errors) return;
-   clear_ErrContext( &ec );
-   ec.count   = 1;
-   ec.next    = NULL;
-   ec.where   = VG_(get_ExeContext)( False, VG_(baseBlock)[VGOFF_(m_eip)], 
-                                            VG_(baseBlock)[VGOFF_(m_ebp)] );
-   ec.ekind   = EraserErr;
-   ec.addr    = a;
-   ec.tid     = tid;
-   ec.syscall_param = is_write ? "writing" : "reading";
-   ec.m_eip = VG_(baseBlock)[VGOFF_(m_eip)];
-   ec.m_esp = VG_(baseBlock)[VGOFF_(m_esp)];
-   ec.m_ebp = VG_(baseBlock)[VGOFF_(m_ebp)];
-   VG_(maybe_add_context) ( &ec );
-}
-
-
-/* These five are called not from generated code but in response to
-   requests passed back to the scheduler.  So we pick up %EIP/%EBP
-   values from the stored thread state, not from VG_(baseBlock).  */
-
-void VG_(record_free_error) ( ThreadState* tst, Addr a )
-{
-   ErrContext ec;
-   if (vg_ignore_errors) return;
-   clear_ErrContext( &ec );
-   ec.count   = 1;
-   ec.next    = NULL;
-   ec.where   = VG_(get_ExeContext)( False, tst->m_eip, tst->m_ebp );
-   ec.ekind   = FreeErr;
-   ec.addr    = a;
-   ec.tid     = tst->tid;
-   ec.m_eip   = tst->m_eip;
-   ec.m_esp   = tst->m_esp;
-   ec.m_ebp   = tst->m_ebp;
-   ec.addrinfo.akind = Undescribed;
-   VG_(maybe_add_context) ( &ec );
-}
-
-void VG_(record_freemismatch_error) ( ThreadState* tst, Addr a )
-{
-   ErrContext ec;
-   if (vg_ignore_errors) return;
-   clear_ErrContext( &ec );
-   ec.count   = 1;
-   ec.next    = NULL;
-   ec.where   = VG_(get_ExeContext)( False, tst->m_eip, tst->m_ebp );
-   ec.ekind   = FreeMismatchErr;
-   ec.addr    = a;
-   ec.tid     = tst->tid;
-   ec.m_eip   = tst->m_eip;
-   ec.m_esp   = tst->m_esp;
-   ec.m_ebp   = tst->m_ebp;
-   ec.addrinfo.akind = Undescribed;
-   VG_(maybe_add_context) ( &ec );
-}
-
-void VG_(record_jump_error) ( ThreadState* tst, Addr a )
-{
-   ErrContext ec;
-   if (vg_ignore_errors) return;
-   clear_ErrContext( &ec );
-   ec.count   = 1;
-   ec.next    = NULL;
-   ec.where   = VG_(get_ExeContext)( False, tst->m_eip, tst->m_ebp );
-   ec.ekind   = AddrErr;
-   ec.axskind = ExecAxs;
-   ec.addr    = a;
-   ec.tid     = tst->tid;
-   ec.m_eip   = tst->m_eip;
-   ec.m_esp   = tst->m_esp;
-   ec.m_ebp   = tst->m_ebp;
-   ec.addrinfo.akind = Undescribed;
-   VG_(maybe_add_context) ( &ec );
-}
-
-void VG_(record_param_err) ( ThreadState* tst, Addr a, Bool isWriteLack, 
-                             Char* msg )
-{
-   ErrContext ec;
-   if (vg_ignore_errors) return;
-   clear_ErrContext( &ec );
-   ec.count   = 1;
-   ec.next    = NULL;
-   ec.where   = VG_(get_ExeContext)( False, tst->m_eip, tst->m_ebp );
-   ec.ekind   = ParamErr;
-   ec.addr    = a;
-   ec.tid     = tst->tid;
-   ec.m_eip   = tst->m_eip;
-   ec.m_esp   = tst->m_esp;
-   ec.m_ebp   = tst->m_ebp;
-   ec.addrinfo.akind = Undescribed;
-   ec.syscall_param = msg;
-   ec.isWriteableLack = isWriteLack;
-   VG_(maybe_add_context) ( &ec );
-}
-
-void VG_(record_user_err) ( ThreadState* tst, Addr a, Bool isWriteLack )
-{
-   ErrContext ec;
-   if (vg_ignore_errors) return;
-   clear_ErrContext( &ec );
-   ec.count   = 1;
-   ec.next    = NULL;
-   ec.where   = VG_(get_ExeContext)( False, tst->m_eip, tst->m_ebp );
-   ec.ekind   = UserErr;
-   ec.addr    = a;
-   ec.tid     = tst->tid;
-   ec.m_eip   = tst->m_eip;
-   ec.m_esp   = tst->m_esp;
-   ec.m_ebp   = tst->m_ebp;
-   ec.addrinfo.akind = Undescribed;
-   ec.isWriteableLack = isWriteLack;
-   VG_(maybe_add_context) ( &ec );
-}
-#else
-#endif
+/* This is called from generated code */
 
 void VG_(record_pthread_err) ( ThreadId tid, Char* msg )
 {
    ErrContext ec;
-   if (vg_ignore_errors) return;
+   if (VG_(ignore_errors)) return;
    if (! VG_(needs).pthread_errors) return;
-
-   clear_ErrContext( &ec );
-   ec.count   = 1;
-   ec.next    = NULL;
-   ec.where   = VG_(get_ExeContext)( False, VG_(threads)[tid].m_eip, 
-                                            VG_(threads)[tid].m_ebp );
-   ec.ekind   = PThreadErr;
-   ec.tid     = tid;
-   ec.syscall_param = msg;
-   ec.m_eip   = VG_(threads)[tid].m_eip;
-   ec.m_esp   = VG_(threads)[tid].m_esp;
-   ec.m_ebp   = VG_(threads)[tid].m_ebp;
+   /* No address to note: hence the '0' */
+   VG_(construct_err_context)( &ec, PThreadErr, 0, msg, NULL );
+   /* No need for the 'extra' part */
+   
    VG_(maybe_add_context) ( &ec );
 }
+
+/* These five are called not from generated code but in response to
+   requests passed back to the scheduler. */
+
+// SSS: they all shouldn't be here, either...
+
+// SSS: called from vg_clientmalloc.c
+void VG_(record_free_error) ( ThreadState* tst, Addr a )
+{
+   ErrContext ec;
+   MemCheckErrContext ec_extra;
+
+   if (VG_(ignore_errors)()) return;
+
+   vg_assert(NULL != tst);
+   VG_(construct_err_context)( &ec, FreeErr, a, NULL, tst );
+   clear_MemCheckErrContext( &ec_extra );
+   ec_extra.addrinfo.akind = Undescribed;
+   ec.extra = &ec_extra;
+
+   VG_(maybe_add_context) ( &ec );
+}
+
+// SSS: called from vg_clientmalloc.c
+void VG_(record_freemismatch_error) ( ThreadState* tst, Addr a )
+{
+   ErrContext ec;
+   MemCheckErrContext ec_extra;
+
+   if (VG_(ignore_errors)()) return;
+
+   vg_assert(NULL != tst);
+   VG_(construct_err_context)( &ec, FreeMismatchErr, a, NULL, tst );
+   clear_MemCheckErrContext( &ec_extra );
+   ec_extra.addrinfo.akind = Undescribed;
+   ec.extra = &ec_extra;
+
+   VG_(maybe_add_context) ( &ec );
+}
+
+// SSS: called from vg_translate.c
+void VG_(record_jump_error) ( ThreadState* tst, Addr a )
+{
+   ErrContext ec;
+   MemCheckErrContext ec_extra;
+
+   if (VG_(ignore_errors)()) return;
+
+   vg_assert(NULL != tst);
+   VG_(construct_err_context)( &ec, AddrErr, a, NULL, tst );
+   clear_MemCheckErrContext( &ec_extra );
+   ec_extra.axskind = ExecAxs;
+   ec_extra.addrinfo.akind = Undescribed;
+   ec.extra = &ec_extra;
+
+   VG_(maybe_add_context) ( &ec );
+}
+
+// SSS: called from vg_syscall_mem.c [fixed if we do before/after syscall stuff]
+void VG_(record_param_err) ( ThreadState* tst, Addr a, Bool isWriteLack, 
+                             Char* msg )
+{
+   ErrContext ec;
+   MemCheckErrContext ec_extra;
+
+   if (VG_(ignore_errors)()) return;
+
+   vg_assert(NULL != tst);
+   VG_(construct_err_context)( &ec, ParamErr, a, msg, tst );
+   clear_MemCheckErrContext( &ec_extra );
+   ec_extra.addrinfo.akind = Undescribed;
+   ec_extra.isWriteableLack = isWriteLack;
+   ec.extra = &ec_extra;
+
+   VG_(maybe_add_context) ( &ec );
+}
+
+// SSS: called from vg_clientperms.c [fixed by moving client requests out]
+void VG_(record_user_err) ( ThreadState* tst, Addr a, Bool isWriteLack )
+{
+   ErrContext ec;
+   MemCheckErrContext ec_extra;
+
+   if (VG_(ignore_errors)()) return;
+
+   vg_assert(NULL != tst);
+   VG_(construct_err_context)( &ec, UserErr, a, NULL, tst );
+   clear_MemCheckErrContext( &ec_extra );
+   ec_extra.addrinfo.akind = Undescribed;
+   ec_extra.isWriteableLack = isWriteLack;
+   ec.extra = &ec_extra;
+
+   VG_(maybe_add_context) ( &ec );
+}
+
 
 
 /*------------------------------*/
@@ -1016,8 +609,7 @@ void VG_(show_all_errors) ( void )
 
 #define VG_ISSPACE(ch) (((ch)==' ') || ((ch)=='\n') || ((ch)=='\t'))
 
-// SSS: export
-static Bool getLine ( Int fd, Char* buf, Int nBuf )
+Bool VG_(getLine) ( Int fd, Char* buf, Int nBuf )
 {
    Char ch;
    Int  n, i;
@@ -1082,7 +674,7 @@ static Bool setLocationTy ( Char** p_caller, SuppressionLocTy* p_ty )
 #define STREQ(s1,s2) (s1 != NULL && s2 != NULL \
                       && VG_(strcmp)((s1),(s2))==0)
 
-static Char* copyStr ( Char* str )
+Char* VG_(copyStr) ( Char* str )
 {
    Int   n, i;
    Char* str2;
@@ -1113,36 +705,22 @@ static void load_one_suppressions_file ( Char* filename )
       Suppression* supp;
       supp = VG_(malloc)(VG_AR_PRIVATE, sizeof(Suppression));
       supp->count = 0;
-      supp->param = supp->caller0 = supp->caller1 
-                  = supp->caller2 = supp->caller3 = NULL;
+      supp->string = supp->caller0 = supp->caller1 = supp->extra
+                   = supp->caller2 = supp->caller3 = NULL;
 
-      eof = getLine ( fd, buf, N_BUF );
+      eof = VG_(getLine) ( fd, buf, N_BUF );
       if (eof) break;
 
       if (!STREQ(buf, "{")) goto syntax_error;
       
-      eof = getLine ( fd, buf, N_BUF );
+      eof = VG_(getLine) ( fd, buf, N_BUF );
       if (eof || STREQ(buf, "}")) goto syntax_error;
-      supp->sname = copyStr(buf);
+      supp->sname = VG_(copyStr)(buf);
 
-      eof = getLine ( fd, buf, N_BUF );
+      eof = VG_(getLine) ( fd, buf, N_BUF );
+
       if (eof) goto syntax_error;
-#if MYOLD
-      else if (STREQ(buf, "Param"))  supp->skind = Param;
-      else if (STREQ(buf, "Value0")) supp->skind = Value0; /* backwards compat */
-      else if (STREQ(buf, "Cond"))   supp->skind = Value0;
-      else if (STREQ(buf, "Value1")) supp->skind = Value1;
-      else if (STREQ(buf, "Value2")) supp->skind = Value2;
-      else if (STREQ(buf, "Value4")) supp->skind = Value4;
-      else if (STREQ(buf, "Value8")) supp->skind = Value8;
-      else if (STREQ(buf, "Addr1"))  supp->skind = Addr1;
-      else if (STREQ(buf, "Addr2"))  supp->skind = Addr2;
-      else if (STREQ(buf, "Addr4"))  supp->skind = Addr4;
-      else if (STREQ(buf, "Addr8"))  supp->skind = Addr8;
-      else if (STREQ(buf, "Free"))   supp->skind = FreeS;
-      else if (STREQ(buf, "PThread")) supp->skind = PThread;
-      else if (STREQ(buf, "Eraser")) supp->skind = Eraser;
-#else
+
       else if (VG_(needs).pthread_errors && STREQ(buf, "PThread")) 
          supp->skind = PThread;
 
@@ -1150,48 +728,55 @@ static void load_one_suppressions_file ( Char* filename )
                SKN_(recognised_suppression)(buf, &supp->skind)) {
          /* do nothing, function fills in supp->skind */
       }
-      else goto syntax_error;
-#endif
-#if MYOLD
-      if (supp->skind == Param) {
-         eof = getLine ( fd, buf, N_BUF );
-         if (eof) goto syntax_error;
-         supp->param = copyStr(buf);
+      //else goto syntax_error;
+      else {
+         /* SSS: if we don't recognise the syscall name, ignore entire
+          * entry.  Not sure if this is a good long-term approach -- makes
+          * it impossible to spot incorrect suppression names?  (apart
+          * from the warning given) */
+         VG_(message)(Vg_DebugMsg, 
+                      "Didn't recognise suppression %s; ignoring", buf);
+         while (True) {
+            eof = VG_(getLine) ( fd, buf, N_BUF );
+            if (eof) goto syntax_error;
+            if (STREQ(buf, "}"))
+               break;
+         }
+         continue;
       }
-#else
-      if (VG_(needs).report_errors && 
-          !SKN_(read_suppression_specific_info)(fd, buf, N_BUF, supp)) 
-         goto syntax_error;
-#endif
 
-      eof = getLine ( fd, buf, N_BUF );
+      if (VG_(needs).report_errors && 
+          !SKN_(read_extra_suppression_info)(fd, buf, N_BUF, supp)) 
+         goto syntax_error;
+
+      eof = VG_(getLine) ( fd, buf, N_BUF );
       if (eof) goto syntax_error;
-      supp->caller0 = copyStr(buf);
+      supp->caller0 = VG_(copyStr)(buf);
       if (!setLocationTy(&(supp->caller0), &(supp->caller0_ty)))
          goto syntax_error;
 
-      eof = getLine ( fd, buf, N_BUF );
+      eof = VG_(getLine) ( fd, buf, N_BUF );
       if (eof) goto syntax_error;
       if (!STREQ(buf, "}")) {
-         supp->caller1 = copyStr(buf);
+         supp->caller1 = VG_(copyStr)(buf);
          if (!setLocationTy(&(supp->caller1), &(supp->caller1_ty)))
             goto syntax_error;
       
-         eof = getLine ( fd, buf, N_BUF );
+         eof = VG_(getLine) ( fd, buf, N_BUF );
          if (eof) goto syntax_error;
          if (!STREQ(buf, "}")) {
-            supp->caller2 = copyStr(buf);
+            supp->caller2 = VG_(copyStr)(buf);
             if (!setLocationTy(&(supp->caller2), &(supp->caller2_ty)))
                goto syntax_error;
 
-            eof = getLine ( fd, buf, N_BUF );
+            eof = VG_(getLine) ( fd, buf, N_BUF );
             if (eof) goto syntax_error;
             if (!STREQ(buf, "}")) {
-               supp->caller3 = copyStr(buf);
+               supp->caller3 = VG_(copyStr)(buf);
               if (!setLocationTy(&(supp->caller3), &(supp->caller3_ty)))
                  goto syntax_error;
 
-               eof = getLine ( fd, buf, N_BUF );
+               eof = VG_(getLine) ( fd, buf, N_BUF );
                if (eof || !STREQ(buf, "}")) goto syntax_error;
 	    }
          }
@@ -1257,10 +842,6 @@ static Suppression* is_suppressible_error ( ErrContext* ec )
    Char caller3_fun[M_VG_ERRTXT];
 
    Suppression* su;
-#if MYOLD
-   Int          su_size;
-#else
-#endif
 
    /* vg_what_fn_or_object_is_this returns:
          <function_name>      or
@@ -1295,44 +876,24 @@ static Suppression* is_suppressible_error ( ErrContext* ec )
 
    /* See if the error context matches any suppression. */
    for (su = vg_suppressions; su != NULL; su = su->next) {
-#if MYOLD
+
       switch (su->skind) {
-         case FreeS:  case PThread:  case Eraser:
-         case Param:  case Value0: su_size = 0; break;
-         case Value1: case Addr1:  su_size = 1; break;
-         case Value2: case Addr2:  su_size = 2; break;
-         case Value4: case Addr4:  su_size = 4; break;
-         case Value8: case Addr8:  su_size = 8; break;
-         default: VG_(panic)("errcontext_matches_suppression");
-      }
-      switch (su->skind) {
-         case Param:
-            if (ec->ekind != ParamErr) continue;
-            if (!STREQ(su->param, ec->syscall_param)) continue;
-            break;
-         case Value0: case Value1: case Value2: case Value4: case Value8:
-            if (ec->ekind != ValueErr) continue;
-            if (ec->size  != su_size)  continue;
-            break;
-         case Addr1: case Addr2: case Addr4: case Addr8:
-            if (ec->ekind != AddrErr) continue;
-            if (ec->size  != su_size) continue;
-            break;
-         case FreeS:
-            if (ec->ekind != FreeErr 
-                && ec->ekind != FreeMismatchErr) continue;
-            break;
          case PThread:
-            if (ec->ekind != PThreadErr) continue;
-            break;
-         case Eraser:
-            if (ec->ekind != EraserErr) continue;
-            break;
+            if (ec->ekind == PThreadErr) break;
+            continue;
+         default:
+            if (VG_(needs).report_errors)
+               if (SKN_(error_matches_suppression)(ec, su)) break; 
+               else continue;
+            else {
+               VG_(printf)("Error:\n"
+                           "  unhandled suppresion type: %u.  Perhaps " 
+                           "VG_(needs).report_errors should be set?\n",
+                           ec->ekind);
+               VG_(panic)("is_suppressible_error: unhandled error type");
+            }
       }
-#else
-      if (SKN_(error_matches_suppression)(ec, su)) break; 
-      else continue;
-#endif
+      
       switch (su->caller0_ty) {
          case ObjName: if (!VG_(stringMatch)(su->caller0, 
                                              caller0_obj)) continue;

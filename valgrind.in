@@ -114,13 +114,13 @@ if [ z"$doversion" = z1 ]; then
 fi
 
 # SSS: relying on 'sed' and 'tr' now...
-# Decide on the extension
+# Decide on the skin
 if [ z"$skin_arg" = z ]; then
    echo "Missing --skin option: defaulting to Valgrind"
-   extension=memcheck
+   skin=memcheck
 else
    # Hacky way to chop off the "--skin=" part.
-   extension=`echo $skin_arg | sed 's/--skin=//'`
+   skin=`echo $skin_arg | sed 's/--skin=//'`
 fi
 
 if [ $# = 0 ] || [ z"$dousage" = z1 ]; then
@@ -155,10 +155,10 @@ if [ $# = 0 ] || [ z"$dousage" = z1 ]; then
    echo "    --weird-hacks=hack1,hack2,...  [no hacks selected]"
    echo "         recognised hacks are: ioctl-VTIME truncate-writes"
    echo
-   echo "  $extension extension options for the user are:"
+   echo "  $skin skin options for the user are:"
 
-# search for extensions usage file, print if found
-usage_file=vgskin_${extension}.usage
+# search for skins usage file, print if found
+usage_file=vgskin_${skin}.usage
 
 if [ -r $VALGRIND/$usage_file ] ; then
    cat $VALGRIND/$usage_file
@@ -198,16 +198,14 @@ if [ z"$ext_spec_args" = z1 ]; then
    do
      arg=$1
      case "$arg" in
-       # extension specific options
+       # skin specific options
        -*) vgopts="$vgopts $arg"; shift;;
        *)  break;;
      esac
    done
 fi
 
-extension_so="vgskin_${extension}.so"
-
-
+skin_so="vgskin_${skin}.so"
 
 # A bit subtle.  The LD_PRELOAD added entry must be absolute
 # and not depend on LD_LIBRARY_PATH.  This is so that we can
@@ -220,19 +218,19 @@ export VG_ARGS
 LD_LIBRARY_PATH=$VALGRIND:$LD_LIBRARY_PATH
 export LD_LIBRARY_PATH
 
-if [ ! -r $VALGRIND/$extension_so ] ; then
+if [ ! -r $VALGRIND/$skin_so ] ; then
    echo
    echo "Extension error:"
-   echo "  The shared library \`$extension_so' for the chosen"
-   echo "  extension \`$extension' could not be found in"
+   echo "  The shared library \`$skin_so' for the chosen"
+   echo "  skin \`$skin' could not be found in"
    echo "  $VALGRIND"
    echo
    exit 1
 fi
 
-# Insert $extension.so before valgrind.so so it replaces the appropriate
+# Insert $skin.so before valgrind.so so it replaces the appropriate
 # default template functions.
-LD_PRELOAD=$VALGRIND/$extension_so:$VALGRIND/valgrind.so:$LD_PRELOAD
+LD_PRELOAD=$VALGRIND/$skin_so:$VALGRIND/valgrind.so:$LD_PRELOAD
 export LD_PRELOAD
 #LD_DEBUG=files
 #LD_DEBUG=symbols

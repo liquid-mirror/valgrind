@@ -30,6 +30,8 @@ typedef
    }
    ExtOpcode;
 
+extern Addr SK_(curr_dataseg_end);
+
 // Functions defined in vg_memcheck_helpers.S
 extern void SK_(helper_value_check4_fail) ( void );
 extern void SK_(helper_value_check2_fail) ( void );
@@ -47,6 +49,11 @@ extern UInt SK_(helperc_LOADV4) ( Addr );
 
 extern void SK_(fpu_write_check) ( Addr addr, Int size );
 extern void SK_(fpu_read_check)  ( Addr addr, Int size );
+
+// Functions defined in vg_memcheck_errcontext.c
+extern void VG_(record_value_error)   ( Int size );
+extern void VG_(record_address_error) ( Addr a, Int size, Bool isWrite );
+
 
 /*--------------------------------------------------------------------*/
 /*--- end                                    vg_memcheck_include.h ---*/
