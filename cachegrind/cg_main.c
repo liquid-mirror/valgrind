@@ -512,7 +512,7 @@ static void cachesim_mem_instr(idCC* cc, Addr data_addr)
 
 static UCodeBlock* cachesim_instrument(UCodeBlock* cb_in, Addr orig_addr)
 {
-/* Use this rather than eg. -1 because it's stored as a UInt. */
+/* Use this rather than eg. -1 because it's a UInt. */
 #define INVALID_DATA_SIZE   999999
 
    UCodeBlock* cb;
