@@ -275,6 +275,10 @@ extern cache_t VG_(clo_I1_cache);
 extern cache_t VG_(clo_D1_cache);
 /* L2 cache configuration.  default: undefined */
 extern cache_t VG_(clo_L2_cache);
+/* Dynamic invariant inference and checking?  default: NO*/
+extern Bool  VG_(clo_diduce);
+/* Confidence level for reporting violated invariants  default: 100 */
+extern Int   VG_(clo_confidence);
 /* SMC write checks?  default: SOME (1,2,4 byte movs to mem) */
 extern Int   VG_(clo_smc_check);
 /* DEBUG: print system calls?  default: NO */
@@ -1840,6 +1844,22 @@ extern void VG_(cachesim_log_mem_instr)    ( idCC* cc, Addr data_addr );
 
 extern void VG_(cachesim_notify_discard) ( TTEntry* tte );
 
+/* ---------------------------------------------------------------------
+   Exports of vg_diduce.c
+   ------------------------------------------------------------------ */
+
+extern UCodeBlock* VG_(diduce_instrument) ( UCodeBlock* cb_in, 
+                                            Addr orig_addr );
+
+typedef struct _invariant invariant;
+
+extern void VG_(init_diduce)      ( void );
+extern void VG_(do_diduce_results)( Int client_argc, Char** client_argv );
+
+extern void VG_(diduce_log_instr)    ( invariant* inv, Addr data_addr );
+
+extern void VG_(diduce_notify_discard) ( TTEntry* tte );
+
 
 /* ---------------------------------------------------------------------
    The state of the simulated CPU.
@@ -1979,6 +1999,8 @@ extern Int VGOFF_(fpu_read_check);        /* :: Addr -> Int -> void */
 
 extern Int VGOFF_(cachesim_log_non_mem_instr);
 extern Int VGOFF_(cachesim_log_mem_instr);
+
+extern Int VGOFF_(diduce_log_instr);
 
 #endif /* ndef __VG_INCLUDE_H */
 
