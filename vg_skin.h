@@ -1226,23 +1226,21 @@ extern Bool SK_(eq_SkinError) ( VgRes res,
 extern void SK_(pp_SkinError) ( SkinError* ec, void (*pp_ExeContext)(void) );
 
 /* Copy the ec->extra part and replace ec->extra with the new copy.  This is
-   necessary to move from a temporary stack copy to a permanent one.
+   necessary to move from a temporary stack copy to a permanent heap one.
   
    Then fill in any details that could be postponed until after the decision
    whether to ignore the error (ie. details not affecting the result of
    SK_(eq_SkinError)()).  This saves time when errors are ignored.
   
    Yuk.
-
-SSS: still not happy about this... could maybe do with a zero-length array?
- */
+*/
 extern void SK_(dup_extra_and_update)(SkinError* ec);
 
 /* Return value indicates recognition.  If recognised, type goes in `skind'. */
 extern Bool SK_(recognised_suppression) ( Char* name, SuppKind *skind );
 
 /* Read any extra info for this suppression kind.  For filling up the
- * `string' and `extra' fields in a `SkinSupp' struct if necessary. */
+   `string' and `extra' fields in a `SkinSupp' struct if necessary. */
 extern Bool SK_(read_extra_suppression_info) ( Int fd, Char* buf, 
                                                 Int nBuf, SkinSupp *s );
 

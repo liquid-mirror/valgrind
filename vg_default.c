@@ -43,16 +43,27 @@
 /* If the skin fails to define one or more of the required functions,
  * make it very clear what went wrong! */
 
-static char* fund_panic =
-    "\nSkin error:\n"
-    "  The skin you have selected is missing one or more of the\n"
-    "  required fundamental functions.  Please check it and try again.\n";
+static __attribute__ ((noreturn))
+void fund_panic ( Char* fn )
+{
+   VG_(printf)(
+      "\nSkin error:\n"
+      "  The skin you have selected is missing the function `%s',\n"
+      "  which is required.\n\n",
+      fn);
+   VG_(exit)(1);
+}
 
-static char* nonfund_panic =
-    "\nSkin error:\n"
-    "  The skin you have selected is missing one or more of the\n"
-    "  functions required by the skin's needs.  Please check it and\n"
-    "  try again.\n";
+static __attribute__ ((noreturn))
+void non_fund_panic ( Char* fn )
+{
+   VG_(printf)(
+      "\nSkin error:\n"
+      "  The skin you have selected is missing the function `%s'\n"
+      "  required by one of its needs.\n\n",
+      fn);
+   VG_(exit)(1);
+}
 
 /* ---------------------------------------------------------------------
    Fundamental template functions
@@ -60,26 +71,22 @@ static char* nonfund_panic =
 
 void SK_(pre_clo_init)(VgNeeds* needs, VgTrackEvents* track)
 {
-   VG_(printf)(fund_panic);
-   VG_(panic)("called SK_(pre_clo_init)");
+   fund_panic("SK_(pre_clo_init)");
 }
 
 void SK_(post_clo_init)(void)
 {
-   VG_(printf)(fund_panic);
-   VG_(panic)("called SK_(post_clo_init)");
+   fund_panic("SK_(post_clo_init)");
 }
 
 UCodeBlock* SK_(instrument)(UCodeBlock* cb, Addr not_used)
 {
-   VG_(printf)(fund_panic);
-   VG_(panic)("called SK_(instrument)");
+   fund_panic("SK_(instrument)");
 }
 
 void SK_(fini)(void)
 {
-   VG_(printf)(fund_panic);
-   VG_(panic)("called SK_(fini)");
+   fund_panic("SK_(fini)");
 }
 
 /* ---------------------------------------------------------------------
@@ -88,39 +95,33 @@ void SK_(fini)(void)
 
 Bool SK_(eq_SkinError)(VgRes res, SkinError* e1, SkinError* e2)
 {
-   VG_(printf)(nonfund_panic);
-   VG_(panic)("called SK_(eq_SkinError)");
+   non_fund_panic("SK_(eq_SkinError)");
 }
 
 void SK_(pp_SkinError)(SkinError* ec, void (*pp_ExeContext)(void))
 {
-   VG_(printf)(nonfund_panic);
-   VG_(panic)("called SK_(pp_SkinError)");
+   non_fund_panic("SK_(pp_SkinError)");
 }
 
 void SK_(dup_extra_and_update)(SkinError* ec)
 {
-   VG_(printf)(nonfund_panic);
-   VG_(panic)("called SK_(dup_extra_and_update)");
+   non_fund_panic("SK_(dup_extra_and_update)");
 }
 
 Bool SK_(recognised_suppression)(Char* name, SuppKind* skind)
 {
-   VG_(printf)(nonfund_panic);
-   VG_(panic)("called SK_(recognised_suppression)");
+   non_fund_panic("SK_(recognised_suppression)");
 }
 
 Bool SK_(read_extra_suppression_info)(Int fd, Char* buf, 
                                        Int nBuf, SkinSupp *s)
 {
-   VG_(printf)(nonfund_panic);
-   VG_(panic)("called SK_(read_extra_suppression_info)");
+   non_fund_panic("SK_(read_extra_suppression_info)");
 }
 
 Bool SK_(error_matches_suppression)(SkinError* ec, SkinSupp* su)
 {
-   VG_(printf)(nonfund_panic);
-   VG_(panic)("called SK_(error_matches_suppression)");
+   non_fund_panic("SK_(error_matches_suppression)");
 }
 
 
@@ -130,8 +131,7 @@ Bool SK_(error_matches_suppression)(SkinError* ec, SkinSupp* su)
 
 void SK_(discard_basic_block_info)(Addr a, UInt size)
 {
-   VG_(printf)(nonfund_panic);
-   VG_(panic)("called SK_(discard_basic_block_info)");
+   non_fund_panic("SK_(discard_basic_block_info)");
 }
 
 
@@ -141,8 +141,7 @@ void SK_(discard_basic_block_info)(Addr a, UInt size)
 
 void SK_(written_shadow_regs_values)(UInt* gen_reg, UInt* eflags)
 {
-   VG_(printf)(nonfund_panic);
-   VG_(panic)("called SK_(written_shadow_regs_values)");
+   non_fund_panic("SK_(written_shadow_regs_values)");
 }
 
 
@@ -152,14 +151,12 @@ void SK_(written_shadow_regs_values)(UInt* gen_reg, UInt* eflags)
 
 Bool SK_(process_cmd_line_option)(UChar* argv)
 {
-   VG_(printf)(nonfund_panic);
-   VG_(panic)("called SK_(process_cmd_line_option)");
+   non_fund_panic("SK_(process_cmd_line_option)");
 }
 
 Char* SK_(usage)(void)
 {
-   VG_(printf)(nonfund_panic);
-   VG_(panic)("called SK_(usage)");
+   non_fund_panic("SK_(usage)");
 }
 
 /* ---------------------------------------------------------------------
@@ -168,8 +165,7 @@ Char* SK_(usage)(void)
 
 UInt SK_(handle_client_request)(ThreadState* tst, UInt* arg_block)
 {
-   VG_(printf)(nonfund_panic);
-   VG_(panic)("called SK_(handle_client_request)");
+   non_fund_panic("SK_(handle_client_request)");
 }
 
 /* ---------------------------------------------------------------------
@@ -178,32 +174,27 @@ UInt SK_(handle_client_request)(ThreadState* tst, UInt* arg_block)
 
 void SK_(emitExtUInstr)(UInstr* u)
 {
-   VG_(printf)(nonfund_panic);
-   VG_(panic)("called SK_(emitExtUInstr)");
+   non_fund_panic("SK_(emitExtUInstr)");
 }
 
 Bool SK_(saneExtUInstr)(Bool beforeRA, Bool beforeLiveness, UInstr* u)
 {
-   VG_(printf)(nonfund_panic);
-   VG_(panic)("called SK_(saneExtUInstr)");
+   non_fund_panic("SK_(saneExtUInstr)");
 }
 
 Char* SK_(nameExtUOpcode)(Opcode opc)
 {
-   VG_(printf)(nonfund_panic);
-   VG_(panic)("called SK_(nameExtUOpcode)");
+   non_fund_panic("SK_(nameExtUOpcode)");
 }
 
 void SK_(ppExtUInstr)(UInstr* u)
 {
-   VG_(printf)(nonfund_panic);
-   VG_(panic)("called SK_(ppExtUInstr)");
+   non_fund_panic("SK_(ppExtUInstr)");
 }
 
 Int SK_(getExtRegUsage)(UInstr* u, Tag tag, RegUse* arr)
 {
-   VG_(printf)(nonfund_panic);
-   VG_(panic)("called SK_(getExtTempUsage)");
+   non_fund_panic("SK_(getExtTempUsage)");
 }
 
 /* ---------------------------------------------------------------------
@@ -212,15 +203,13 @@ Int SK_(getExtRegUsage)(UInstr* u, Tag tag, RegUse* arr)
 
 void* SK_(pre_syscall)(ThreadId tid, UInt syscallno, Bool is_blocking)
 {
-   VG_(printf)(nonfund_panic);
-   VG_(panic)("called SK_(pre_syscall)");
+   non_fund_panic("SK_(pre_syscall)");
 }
 
 void  SK_(post_syscall)(ThreadId tid, UInt syscallno,
                          void* pre_result, Int res, Bool is_blocking)
 {
-   VG_(printf)(nonfund_panic);
-   VG_(panic)("called SK_(post_syscall)");
+   non_fund_panic("SK_(post_syscall)");
 }
 
 /* ---------------------------------------------------------------------
@@ -229,8 +218,7 @@ void  SK_(post_syscall)(ThreadId tid, UInt syscallno,
 
 void SK_(complete_shadow_chunk)( ShadowChunk* sc, ThreadState* tst )
 {
-   VG_(printf)(nonfund_panic);
-   VG_(panic)("SK_(complete_shadow_chunk)");
+   non_fund_panic("SK_(complete_shadow_chunk)");
 }
 
 /* ---------------------------------------------------------------------
@@ -239,8 +227,7 @@ void SK_(complete_shadow_chunk)( ShadowChunk* sc, ThreadState* tst )
 
 void SK_(alt_free) ( ShadowChunk* sc, ThreadState* tst )
 {
-   VG_(printf)(nonfund_panic);
-   VG_(panic)("SK_(alt_free)");
+   non_fund_panic("SK_(alt_free)");
 }
 
 /* ---------------------------------------------------------------------
@@ -249,14 +236,12 @@ void SK_(alt_free) ( ShadowChunk* sc, ThreadState* tst )
 
 Bool SK_(cheap_sanity_check)(void)
 {
-   VG_(printf)(nonfund_panic);
-   VG_(panic)("SK_(cheap_sanity_check)");
+   non_fund_panic("SK_(cheap_sanity_check)");
 }
 
 Bool SK_(expensive_sanity_check)(void)
 {
-   VG_(printf)(nonfund_panic);
-   VG_(panic)("SK_(expensive_sanity_check)");
+   non_fund_panic("SK_(expensive_sanity_check)");
 }
 
 /*--------------------------------------------------------------------*/
