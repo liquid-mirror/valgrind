@@ -56,19 +56,18 @@
    the need for a higher number presents itself. */
 #define VG_N_THREAD_KEYS 50
 
-/* Total number of integer registers available for allocation.  That's
-   all of them except %esp, %edi and %ebp.  %edi is a general spare
-   temporary.  %ebp permanently points at VG_(baseBlock).
+/* Total number of integer registers available for allocation -- all of
+   them except %esp, %ebp.  %ebp permanently points at VG_(baseBlock).
    
    If you change this you'll have to also change at least these:
-     - rankToRealRegNum()
+     - VG_(rankToRealRegNum)()
      - VG_(realRegNumToRank)()
      - ppRegsLiveness()
      - the RegsLive type (maybe -- RegsLive type must have more than
                           VG_MAX_REALREGS bits)
    
    Do not change this unless you really know what you are doing!  */
-#define VG_MAX_REALREGS 5
+#define VG_MAX_REALREGS 6
 
 
 /*====================================================================*/
@@ -646,7 +645,10 @@ typedef
 
       /* RealReg liveness;  only sensical after reg alloc and liveness
          analysis done.  This info is a little bit arch-specific --
-         VG_MAX_REALREGS can vary on different architectures. */
+         VG_MAX_REALREGS can vary on different architectures.  Note that
+         to use this information requires converting between register ranks
+         and the Intel register numbers, using VG_(realRegNumToRank)()
+         and/or VG_(rankToRealRegNum)() */
       RegsLive regs_live_after:VG_MAX_REALREGS; 
    }
    UInstr;
@@ -802,6 +804,11 @@ extern void VG_(newEmit)( void );
 extern Int  VG_(helper_offset)     ( Addr a );
 extern Int  VG_(shadowRegOffset)   ( Int arch );
 extern Int  VG_(shadowFlagsOffset) ( void );
+
+/* Converting reg ranks <-> Intel register ordering, for using register
+   liveness info */
+extern Int VG_(realRegNumToRank) ( Int realReg );
+extern Int VG_(rankToRealRegNum) ( Int rank    );
 
 /* Subroutine calls */
 /* This one just calls it. */

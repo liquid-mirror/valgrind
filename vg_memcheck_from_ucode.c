@@ -350,7 +350,7 @@ static void synth_PUTVF ( UInt reg )
 }
 
 
-static void synth_TAG1_op ( TagOp op, Int reg )
+static void synth_TAG1_op ( TagOp op, Int reg, RegsLive regs_live_after )
 {
    switch (op) {
 
@@ -425,23 +425,43 @@ static void synth_TAG1_op ( TagOp op, Int reg )
          VG_(emit_nonshiftopv_lit_reg)(4, OR, 0xFFFFFF00, reg);
          break;
 
-      /* We steal %ebp (a non-allocable reg) as a temporary:
-            pushl %ebp
-            movl %reg, %ebp
-            negl %ebp
-            orl %ebp, %reg
-            popl %ebp
+      /* We use any non-live reg (except %reg) as a temporary,
+         or push/pop %ebp if none available:
+            (%dead_reg = any dead reg, else %ebp)
+            (pushl %ebp if all regs live)
+            movl %reg, %dead_reg
+            negl %dead_reg
+            orl %dead_reg, %reg
+            (popl %ebp if all regs live)
          This sequence turns out to be correct regardless of the 
          operation width.
       */
       case Tag_Left4:
       case Tag_Left2:
-      case Tag_Left1:
-         vg_assert(reg != R_EDI);
-         VG_(emit_movv_reg_reg)(4, reg, R_EDI);
-         VG_(emit_unaryopv_reg)(4, NEG, R_EDI);
-         VG_(emit_nonshiftopv_reg_reg)(4, OR, R_EDI, reg);
+      case Tag_Left1: {
+         UInt dead_reg = INVALID_REALREG;
+         Int i;
+
+         for (i = 0; i < VG_MAX_REALREGS; i++) {
+            if (! IS_REG_LIVE(i, regs_live_after) &&
+                reg != VG_(rankToRealRegNum)(i) )
+            {
+               dead_reg = VG_(rankToRealRegNum)(i);
+               break;
+            }
+         }
+         if (INVALID_REALREG == dead_reg)
+            dead_reg = R_EBP;
+
+         if (R_EBP == dead_reg)
+            VG_(emit_pushv_reg)(4, dead_reg);
+         VG_(emit_movv_reg_reg)(4, reg, dead_reg);
+         VG_(emit_unaryopv_reg)(4, NEG, dead_reg);
+         VG_(emit_nonshiftopv_reg_reg)(4, OR, dead_reg, reg);
+         if (R_EBP == dead_reg)
+            VG_(emit_popv_reg)(4, dead_reg);
          break;
+      }
 
       /* These are all fairly obvious; do the op and then, if
          necessary, invalidate unused bits. */
@@ -604,7 +624,7 @@ void SK_(emitExtUInstr) ( UInstr* u, RegsLive regs_live_before )
          break;
 
       case TAG1:
-         synth_TAG1_op ( u->val3, u->val1 );
+         synth_TAG1_op ( u->val3, u->val1, u->regs_live_after );
          break;
 
       case TAG2:
