@@ -13,11 +13,8 @@
 
 ## Need more tests:
 ## - more C++ ones
-## - more realloc ones
 ## - lots more mmap/munmap/mremap/mprotect ones
 ##---------------------------------------------------------------------------
-
-CXX = g++
 
 noinst_PROGRAMS = \
 	bitfield1 bt_everything bt_literal coolo_strlen \
@@ -25,25 +22,24 @@ noinst_PROGRAMS = \
 	rcrl readline1 sha1_test shortpush shorts smc1 \
 	pth_atfork1 pth_cancel1 pth_cancel2 pth_cvsimple pth_mutexspeed \
 	pth_once pth_semaphore1 pth_simple_mutex pth_simple_threads \
-	pth_specific pth_yield
+	pth_specific pth_yield \
+	coolo_sigaction gxx304
 
 # XXX: want to have this inherited from ../Makefile.am
-CFLAGS = $(WERROR) -Winline -Wall -Wshadow -g
+CFLAGS   = $(WERROR) -Winline -Wall -Wshadow -g
+CXXFLAGS = $(CFLAGS)
 
-# generic (--skin=none) ones, no errors
+# generic C ones
 bitfield1_SOURCES 	= bitfield1.c
 bt_everything_SOURCES 	= bt_everything.c
 bt_literal_SOURCES 	= bt_literal.c
 cpuid_SOURCES 		= cpuid_c.c cpuid_s.s
-# Not sure how to specify CXX in configure.in to compile C++ progs...
-#coolo_sigaction_SOURCES	= coolo_sigaction.cpp
 coolo_strlen_SOURCES 	= coolo_strlen.c
 dastest_SOURCES 	= dastest_c.c dastest_s.s
 floored_SOURCES 	= floored.c
 floored_LDADD 		= -lm
 fucomip_SOURCES 	= fucomip.c
 munmap_exe_SOURCES 	= munmap_exe.c
-#gxx304_SOURCES		= gxx304.cpp	(C++)
 rcl_assert_SOURCES 	= rcl_assert.S
 rcrl_SOURCES 		= rcrl.c
 readline1_SOURCES 	= readline1.c
@@ -52,7 +48,12 @@ sha1_test_SOURCES 	= sha1_test.c
 shortpush_SOURCES 	= shortpush.c
 shorts_SOURCES 		= shorts.c
 
-# generic pthreads ones, no errors(?)
+# generic C++ ones
+coolo_sigaction_SOURCES	= coolo_sigaction.cpp
+gxx304_SOURCES		= gxx304.cpp
+
+
+# generic pthreads ones (XXX: some should go in corecheck or memcheck?)
 ## XXX: _LDADD for every one sucks
 pth_atfork1_SOURCES		= pth_atfork1.c
 pth_atfork1_LDADD  		= -lpthread

@@ -25,6 +25,6 @@ int main(int argc, char *argv[]) {
     if (toto[i].a) {
       j++;
     }
-    printf("%d : %08x %08x %08x %08x\n", i, toto[i].a, toto[i].b, toto[i].c, toto[i].d);
+    //printf("%d : %08x %08x %08x %08x\n", i, toto[i].a, toto[i].b, toto[i].c, toto[i].d);
   }
 }
