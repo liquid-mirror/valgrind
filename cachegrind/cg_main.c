@@ -430,7 +430,7 @@ static Int compute_BBCC_array_size(UCodeBlock* cb)
    is_LOAD = is_STORE = is_FPU_R = is_FPU_W = False;
 
    for (i = 0; i < cb->used; i++) {
-      /* VG_(ppUInstr)(0, &cb->instrs[i]); */
+      /* VG_(ppUInstr)(i, &cb->instrs[i]); */
 
       u_in = &cb->instrs[i];
       switch(u_in->opcode) {
@@ -519,11 +519,11 @@ static UCodeBlock* cachesim_instrument(UCodeBlock* cb_in, Addr orig_addr)
    BBCC*       BBCC_node;
    Int         t_CC_addr, t_read_addr, t_write_addr, t_data_addr;
    Int         CC_size = -1;    /* Shut gcc warnings up */
-   Addr        instr_addr = orig_addr;
-   UInt        instr_size, data_size = INVALID_DATA_SIZE;
+   Addr        x86_instr_addr = orig_addr;
+   UInt        x86_instr_size, data_size = INVALID_DATA_SIZE;
    UInt        stack_used;
-   Bool        BB_seen_before       = False;
-   Bool        prev_instr_was_Jcond = False;
+   Bool        BB_seen_before     = False;
+   Bool        instrumented_Jcond = False;
    Addr        BBCC_ptr0, BBCC_ptr; 
 
    /* Get BBCC (creating if necessary -- requires a counting pass over the BB
@@ -540,7 +540,7 @@ static UCodeBlock* cachesim_instrument(UCodeBlock* cb_in, Addr orig_addr)
    for (i = 0; i < cb_in->used; i++) {
       u_in = &cb_in->instrs[i];
 
-      //VG_(ppUInstr)(0, u_in);
+      if (dis) VG_(ppUInstr)(i, u_in);
 
       /* What this is all about:  we want to instrument each x86 instruction 
        * translation.  The end of these are marked in three ways.  The three
@@ -550,17 +550,16 @@ static UCodeBlock* cachesim_instrument(UCodeBlock* cb_in, Addr orig_addr)
        * 2. UCode, Juncond        --> UCode, Instrumentation, Juncond
        * 3. UCode, Jcond, Juncond --> UCode, Instrumentation, Jcond, Juncond
        *
-       * We must put the instrumentation before the jumps so that it is always
+       * The last UInstr in a basic block is always a Juncond.  Jconds,
+       * when they appear, are always second last.  We check this with 
+       * various assertions.
+       *
+       * We must put the instrumentation before any jumps so that it is always
        * executed.  We don't have to put the instrumentation before the INCEIP
        * (it could go after) but we do so for consistency.
        *
-       * Junconds are always the last instruction in a basic block.  Jconds are
-       * always the 2nd last, and must be followed by a Jcond.  We check this
-       * with various assertions.
-       *
-       * Note that in VG_(disBB) we patched the `extra4b' field of the first
-       * occurring JMP in a block with the size of its x86 instruction.  This
-       * is used now.
+       * x86 instruction sizes are obtained from INCEIPs (for case 1) or
+       * from .extra4b field of the final JMP (for case 2 & 3).
        *
        * Note that we don't have to treat JIFZ specially;  unlike JMPs, JIFZ
        * occurs in the middle of a BB and gets an INCEIP after it.
@@ -568,51 +567,81 @@ static UCodeBlock* cachesim_instrument(UCodeBlock* cb_in, Addr orig_addr)
        * The instrumentation is just a call to the appropriate helper function,
        * passing it the address of the instruction's CC.
        */
-      if (prev_instr_was_Jcond) vg_assert(u_in->opcode == JMP);
+      if (instrumented_Jcond) vg_assert(u_in->opcode == JMP);
 
       switch (u_in->opcode) {
+         case NOP:  case CALLM_E:  case CALLM_S:
+            break;
 
+         /* For memory-ref instrs, copy the data_addr into a temporary to be
+          * passed to the cachesim_* helper at the end of the instruction.
+          */
+         case LOAD: 
+            t_read_addr = newTemp(cb);
+            uInstr2(cb, MOV, 4, TempReg, u_in->val1,  TempReg, t_read_addr);
+            data_size = u_in->size;
+            VG_(copyUInstr)(cb, u_in);
+            break;
+
+         case FPU_R:
+            t_read_addr = newTemp(cb);
+            uInstr2(cb, MOV, 4, TempReg, u_in->val2,  TempReg, t_read_addr);
+            data_size = u_in->size;
+            VG_(copyUInstr)(cb, u_in);
+            break;
+
+         /* Note that we must set t_write_addr even for mod instructions;
+          * That's how the code above determines whether it does a write.
+          * Without it, it would think a mod instruction is a read.
+          * As for the MOV, if it's a mod instruction it's redundant, but it's
+          * not expensive and mod instructions are rare anyway. */
+         case STORE:
+         case FPU_W:
+            t_write_addr = newTemp(cb);
+            uInstr2(cb, MOV, 4, TempReg, u_in->val2, TempReg, t_write_addr);
+            data_size = u_in->size;
+            VG_(copyUInstr)(cb, u_in);
+            break;
+
+         /* INCEIP: insert instrumentation */
          case INCEIP:
-            instr_size = u_in->val1;
-            goto case_for_end_of_x86_instr;
+            x86_instr_size = u_in->val1;
+            goto instrument_x86_instr;
 
+         /* JMP: insert instrumentation if the first JMP */
          case JMP:
-            if (u_in->cond == CondAlways) {
-               vg_assert(i+1 == cb_in->used); 
-
-               /* Don't instrument if previous instr was a Jcond. */
-               if (prev_instr_was_Jcond) {
-                  vg_assert(0 == u_in->extra4b);
-                  VG_(copyUInstr)(cb, u_in);
-                  break;
-               }
-               prev_instr_was_Jcond = False;
-
+            if (instrumented_Jcond) {
+               vg_assert(CondAlways == u_in->cond);
+               vg_assert(i+1 == cb_in->used);
+               VG_(copyUInstr)(cb, u_in);
+               instrumented_Jcond = False;    /* reset */
+               break;
+            }
+            /* The first JMP... instrument. */
+            if (CondAlways != u_in->cond) {
+               vg_assert(i+2 == cb_in->used);
+               instrumented_Jcond = True;
             } else {
-               vg_assert(i+2 == cb_in->used);  /* 2nd last instr in block */
-               prev_instr_was_Jcond = True;
+               vg_assert(i+1 == cb_in->used);
             }
 
-            /* Ah, the first JMP... instrument, please.  Size was patched
-             * into .extra4b during x86-->UCode translation. */
-            instr_size = u_in->extra4b;
-            goto case_for_end_of_x86_instr;
+            /* Get x86 instr size from final JMP. */
+            x86_instr_size = LAST_UINSTR(cb_in).extra4b;
+            goto instrument_x86_instr;
 
-            /* Shared code that is executed at the end of an x86 translation
-             * block, marked by either an INCEIP or an unconditional JMP. */
-            case_for_end_of_x86_instr:
 
-#define IS_(X)      (INVALID_TEMPREG != t_##X##_addr)
+            /* Code executed at the end of each x86 instruction. */
+            instrument_x86_instr:
              
-            /* Initialise the CC in the BBCC array appropriately if it hasn't
-             * been initialised before.
-             * Then call appropriate sim function, passing it the CC address.
-             * Note that CALLM_S/CALL_E aren't required here;  by this point,
-             * the checking related to them has already happened. */
+            /* Initialise the CC in the BBCC array appropriately if it
+             * hasn't been initialised before.  Then call appropriate sim
+             * function, passing it the CC address. */
             stack_used = 0;
 
-            vg_assert(instr_size >= 1 && instr_size <= MAX_x86_INSTR_SIZE);
-            vg_assert(0 != instr_addr);
+            vg_assert(x86_instr_size >= 1 && 
+                      x86_instr_size <= MAX_x86_INSTR_SIZE);
+
+#define IS_(X)      (INVALID_TEMPREG != t_##X##_addr)
 
             if (!IS_(read) && !IS_(write)) {
                iCC* CC_ptr = (iCC*)(BBCC_ptr);
@@ -621,7 +650,7 @@ static UCodeBlock* cachesim_instrument(UCodeBlock* cb_in, Addr orig_addr)
                          INVALID_TEMPREG == t_write_addr);
                CC_size = sizeof(iCC);
                if (!BB_seen_before)
-                   init_iCC(CC_ptr, instr_addr, instr_size);
+                   init_iCC(CC_ptr, x86_instr_addr, x86_instr_size);
 
                /* 1st arg: CC addr */
                t_CC_addr = newTemp(cb);
@@ -661,7 +690,8 @@ static UCodeBlock* cachesim_instrument(UCodeBlock* cb_in, Addr orig_addr)
                }
 #undef IS_
                if (!BB_seen_before)
-                  init_idCC(X_CC, CC_ptr, instr_addr, instr_size, data_size);
+                  init_idCC(X_CC, CC_ptr, x86_instr_addr, x86_instr_size,
+                            data_size);
 
                /* 1st arg: CC addr */
                t_CC_addr = newTemp(cb);
@@ -677,44 +707,10 @@ static UCodeBlock* cachesim_instrument(UCodeBlock* cb_in, Addr orig_addr)
 
             /* Update BBCC_ptr, EIP, de-init read/write temps for next instr */
             BBCC_ptr   += CC_size; 
-            instr_addr += instr_size;
+            x86_instr_addr += x86_instr_size;
             t_CC_addr = t_read_addr = t_write_addr = 
                                       t_data_addr  = INVALID_TEMPREG;
             data_size = INVALID_DATA_SIZE;
-            break;
-
-
-         /* For memory-ref instrs, copy the data_addr into a temporary to be
-          * passed to the cachesim_* helper at the end of the instruction.
-          */
-         case LOAD: 
-            t_read_addr = newTemp(cb);
-            uInstr2(cb, MOV, 4, TempReg, u_in->val1,  TempReg, t_read_addr);
-            data_size = u_in->size;
-            VG_(copyUInstr)(cb, u_in);
-            break;
-
-         case FPU_R:
-            t_read_addr = newTemp(cb);
-            uInstr2(cb, MOV, 4, TempReg, u_in->val2,  TempReg, t_read_addr);
-            data_size = u_in->size;
-            VG_(copyUInstr)(cb, u_in);
-            break;
-
-         /* Note that we must set t_write_addr even for mod instructions;
-          * that's how the code above determines whether it does a write;
-          * without it, it would think a mod instruction is a read.
-          * As for the MOV, if it's a mod instruction it's redundant, but it's
-          * not expensive and mod instructions are rare anyway. */
-         case STORE:
-         case FPU_W:
-            t_write_addr = newTemp(cb);
-            uInstr2(cb, MOV, 4, TempReg, u_in->val2, TempReg, t_write_addr);
-            data_size = u_in->size;
-            VG_(copyUInstr)(cb, u_in);
-            break;
-
-         case NOP:  case CALLM_E:  case CALLM_S:
             break;
 
          default:
@@ -1654,8 +1650,7 @@ void SK_(setup)(VgNeeds* needs, VgTrackEvents* not_used)
    needs->record_mem_exe_context  = False;
    needs->postpone_mem_reuse      = False;
    
-   needs->debug_info              = Vg_DebugPrecise;
-   needs->precise_x86_instr_sizes = True;
+   needs->debug_info              = True;
    needs->pthread_errors          = False;
    needs->report_errors           = False;
 

@@ -126,7 +126,7 @@ void VGM_(new_exe_segment) ( Addr a, UInt len )
 {
    add_exe_segment_to_list( a, len );
 
-   if (VG_(needs).debug_info != Vg_DebugNone)
+   if (VG_(needs).debug_info)
       VG_(read_symbols)();
 }
 
@@ -138,7 +138,7 @@ void VGM_(remove_if_exe_segment) ( Addr a, UInt len )
    if (vgm_remove_if_exe_segment_from_list( a, len )) {
       VG_(invalidate_translations) ( a, len );
 
-      if (VG_(needs).debug_info != Vg_DebugNone)
+      if (VG_(needs).debug_info)
          VG_(unload_symbols) ( a, len );
    }
 }
