@@ -1713,6 +1713,16 @@ void VG_(perform_assumed_nonblocking_syscall) ( ThreadId tid )
                                  sizeof(struct winsize) );
                KERNEL_DO_SYSCALL(tid,res);
                break;
+            case TIOCLINUX:
+               must_be_readable( tst, "ioctl(TIOCLINUX)", arg3, 
+                                 sizeof(char *) );
+               if (VGM_(check_readable)(arg3,1,NULL) && *(char *)arg3 == 11)
+                  must_be_readable( tst, "ioctl(TIOCLINUX, 11)", arg3, 
+                                    2 * sizeof(char *) );
+               KERNEL_DO_SYSCALL(tid,res);
+               if (!VG_(is_kerror)(res) && res == 0)
+                  make_readable ( arg3, sizeof(char *) );
+               break;
             case TIOCGPGRP:
                /* Get process group ID for foreground processing group. */
                must_be_writable( tst, "ioctl(TIOCGPGRP)", arg3,
