@@ -1344,7 +1344,7 @@ void vg_read_lib_symbols ( SegInfo* si )
    }
    n_oimage = stat_buf.st_size;
 
-   fd = VG_(open_read)(si->filename);
+   fd = VG_(open)(si->filename, VKI_O_RDONLY, 0);
    if (fd == -1) {
       vg_symerr("Can't open .so/.exe to read symbols?!");
       return;
