@@ -40,6 +40,7 @@ valgrind_so_SOURCES = \
 	vg_clientmalloc.c \
 	vg_clientperms.c \
 	vg_demangle.c \
+        vg_diduce.c \
 	vg_dispatch.S \
 	vg_errcontext.c \
 	vg_execontext.c \
