@@ -29,6 +29,7 @@ EXTRA_DIST = $(val_DATA) \
 	README_KDE3_FOLKS README_PACKAGERS \
 	README_MISSING_SYSCALL_OR_IOCTL TODO dosyms vg_libpthread.vs \
 	valgrind.spec valgrind.spec.in \
+	vg_profile.c \
 	vg_cachesim_I1.c vg_cachesim_D1.c vg_cachesim_L2.c vg_cachesim_gen.c
 
 val_PROGRAMS = \
@@ -69,7 +70,7 @@ valgrind_so_SOURCES = \
 	vg_messages.c \
 	vg_mylibc.c \
 	vg_procselfmaps.c \
-	vg_profile.c \
+	vg_dummy_profile.c \
 	vg_signals.c \
 	vg_startup.S \
 	vg_symtab2.c \
