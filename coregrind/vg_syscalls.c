@@ -1238,8 +1238,13 @@ void VG_(perform_assumed_nonblocking_syscall) ( ThreadId tid )
 
 #     if defined(__NR_rt_sigtimedwait)
       case __NR_rt_sigtimedwait: /* syscall 177 */
-          /* int sigtimedwait(const  sigset_t  *set,  siginfo_t  *info,
-                              const struct timespec timeout); */
+         /* int sigtimedwait(const  sigset_t  *set,  siginfo_t  *info,
+                             const struct timespec timeout); */
+         MAYBE_PRINTF("sigtimedwait ( %p, %p, timeout )\n", arg1, arg2);
+         if (arg1 != (UInt)NULL)
+            SYSCALL_TRACK( pre_mem_read,  tid, 
+                           "sigtimedwait(set)",  arg1,
+                           sizeof(vki_ksigset_t));
          if (arg2 != (UInt)NULL)
             SYSCALL_TRACK( pre_mem_write, tid, "sigtimedwait(info)", arg2,
                            sizeof(siginfo_t) );
