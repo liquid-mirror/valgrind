@@ -94,15 +94,15 @@ Int VGOFF_(helper_value_check4_fail) = INVALID_OFFSET;
 Int VGOFF_(helper_value_check2_fail) = INVALID_OFFSET;
 Int VGOFF_(helper_value_check1_fail) = INVALID_OFFSET;
 Int VGOFF_(helper_value_check0_fail) = INVALID_OFFSET;
-Int VGOFF_(helperc_LOADV4) = INVALID_OFFSET;
-Int VGOFF_(helperc_LOADV2) = INVALID_OFFSET;
-Int VGOFF_(helperc_LOADV1) = INVALID_OFFSET;
-Int VGOFF_(helperc_STOREV4) = INVALID_OFFSET;
-Int VGOFF_(helperc_STOREV2) = INVALID_OFFSET;
-Int VGOFF_(helperc_STOREV1) = INVALID_OFFSET;
+Int VGOFF_(helpers_LOADV4) = INVALID_OFFSET;
+Int VGOFF_(helpers_LOADV2) = INVALID_OFFSET;
+Int VGOFF_(helpers_LOADV1) = INVALID_OFFSET;
+Int VGOFF_(helpers_STOREV4) = INVALID_OFFSET;
+Int VGOFF_(helpers_STOREV2) = INVALID_OFFSET;
+Int VGOFF_(helpers_STOREV1) = INVALID_OFFSET;
 Int VGOFF_(handle_esp_assignment) = INVALID_OFFSET;
-Int VGOFF_(fpu_write_check) = INVALID_OFFSET;
-Int VGOFF_(fpu_read_check) = INVALID_OFFSET;
+Int VGOFF_(helperc_LOADV_FP) = INVALID_OFFSET;
+Int VGOFF_(helperc_STOREV_FP) = INVALID_OFFSET;
 Int VGOFF_(cachesim_log_non_mem_instr) = INVALID_OFFSET;
 Int VGOFF_(cachesim_log_mem_instr)     = INVALID_OFFSET;
 
@@ -181,18 +181,18 @@ static void vg_init_baseBlock ( void )
       = alloc_BaB_1_set( (Addr) & VG_(helper_value_check0_fail) );
 
    /* 20  */
-   VGOFF_(helperc_STOREV4)
-      = alloc_BaB_1_set( (Addr) & VG_(helperc_STOREV4) );
+   VGOFF_(helpers_STOREV4)
+      = alloc_BaB_1_set( (Addr) & VG_(helpers_STOREV4) );
    /* 21  */
-   VGOFF_(helperc_STOREV1)
-      = alloc_BaB_1_set( (Addr) & VG_(helperc_STOREV1) );
+   VGOFF_(helpers_STOREV1)
+      = alloc_BaB_1_set( (Addr) & VG_(helpers_STOREV1) );
 
    /* 22  */
-   VGOFF_(helperc_LOADV4)
-      = alloc_BaB_1_set( (Addr) & VG_(helperc_LOADV4) );
+   VGOFF_(helpers_LOADV4)
+      = alloc_BaB_1_set( (Addr) & VG_(helpers_LOADV4) );
    /* 23  */
-   VGOFF_(helperc_LOADV1)
-      = alloc_BaB_1_set( (Addr) & VG_(helperc_LOADV1) );
+   VGOFF_(helpers_LOADV1)
+      = alloc_BaB_1_set( (Addr) & VG_(helpers_LOADV1) );
 
    /* 24  */
    VGOFF_(handle_esp_assignment)
@@ -210,18 +210,18 @@ static void vg_init_baseBlock ( void )
    /* These two pushed beyond the boundary because 2-byte transactions
       are rare. */
    /* 50  */
-   VGOFF_(helperc_STOREV2)
-      = alloc_BaB_1_set( (Addr) & VG_(helperc_STOREV2) );
+   VGOFF_(helpers_STOREV2)
+      = alloc_BaB_1_set( (Addr) & VG_(helpers_STOREV2) );
    /* 51  */
-   VGOFF_(helperc_LOADV2)
-      = alloc_BaB_1_set( (Addr) & VG_(helperc_LOADV2) );
+   VGOFF_(helpers_LOADV2)
+      = alloc_BaB_1_set( (Addr) & VG_(helpers_LOADV2) );
 
    /* 52  */
-   VGOFF_(fpu_write_check)
-      = alloc_BaB_1_set( (Addr) & VGM_(fpu_write_check) );
+   VGOFF_(helperc_STOREV_FP)
+      = alloc_BaB_1_set( (Addr) & VG_(helperc_STOREV_FP) );
    /* 53  */
-   VGOFF_(fpu_read_check)
-      = alloc_BaB_1_set( (Addr) & VGM_(fpu_read_check) );
+   VGOFF_(helperc_LOADV_FP)
+      = alloc_BaB_1_set( (Addr) & VG_(helperc_LOADV_FP) );
 
    /* Actually I don't think these two are ever used. */
    /* 54  */ 
