@@ -15,4 +15,4 @@ bin
 lib
 include
 share
-cachegrind.out
+cachegrind.out.*
