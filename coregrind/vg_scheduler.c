@@ -618,6 +618,8 @@ void VG_(scheduler_init) ( void )
    VG_(threads)[tid_main].stack_highest_word 
       = VG_(threads)[tid_main].m_esp /* -4  ??? */;
 
+   VG_(printf)("setting stack_highest_word: %p\n", VG_(threads)[tid_main].stack_highest_word);
+
    /* So now ... */
    vg_assert(vg_tid_currently_in_baseBlock == VG_INVALID_THREADID);
 
@@ -1423,8 +1425,9 @@ VgSchedReturnCode VG_(scheduler) ( void )
                If not valgrinding (cachegrinding, etc) don't do this.
                __libc_freeres does some invalid frees which crash
                the unprotected malloc/free system. */
+            // JJJ: what to do about this?
             if (VG_(threads)[tid].m_eax == __NR_exit 
-                && Vg_MemCheck != VG_(clo_skin)) {
+                && ! VG_(needs).run_libc_freeres) {
                if (VG_(clo_trace_syscalls) || VG_(clo_trace_sched)) {
                   VG_(message)(Vg_DebugMsg, 
                      "Caught __NR_exit; quitting");
@@ -1433,7 +1436,7 @@ VgSchedReturnCode VG_(scheduler) ( void )
             }
 
             if (VG_(threads)[tid].m_eax == __NR_exit) {
-               vg_assert(Vg_MemCheck == VG_(clo_skin));
+               vg_assert(VG_(needs).run_libc_freeres);
                if (0 || VG_(clo_trace_syscalls) || VG_(clo_trace_sched)) {
                   VG_(message)(Vg_DebugMsg, 
                      "Caught __NR_exit; running __libc_freeres()");
@@ -1617,10 +1620,9 @@ void cleanup_after_thread_exited ( ThreadId tid )
    vki_ksigset_t irrelevant_sigmask;
    vg_assert(VG_(is_valid_or_empty_tid)(tid));
    vg_assert(VG_(threads)[tid].status == VgTs_Empty);
-   /* Mark its stack no-access */
-   if (VG_(needs).shadow_memory && tid != 1)
-      SKN_(make_noaccess)( VG_(threads)[tid].stack_base,
-                           VG_(threads)[tid].stack_size );
+   /* Its stack is now no-access */
+   VG_TRACK( die_mem_pthread, VG_(threads)[tid].stack_base,
+                                VG_(threads)[tid].stack_size );
 
    /* Forget about any pending signals directed specifically at this
       thread, and get rid of signal handlers specifically arranged for
@@ -1664,17 +1666,14 @@ void maybe_rendezvous_joiners_and_joinees ( void )
       thread_return = VG_(threads)[jnr].joiner_thread_return;
       if (thread_return != NULL) {
          /* CHECK thread_return writable */
-         if (Vg_MemCheck == VG_(clo_skin)
-             && !SKN_(check_writable)( (Addr)thread_return, 
-                                       sizeof(void*), NULL))
-            VG_(record_pthread_err)( jnr, 
-               "pthread_join: thread_return points to invalid location");
+         VG_TRACK( pre_mem_write, Vg_CorePThread, &VG_(threads)[jnr],
+                                  "pthread_join: thread_return",
+                                  (Addr)thread_return, sizeof(void*));
 
          *thread_return = VG_(threads)[jee].joinee_retval;
          /* Not really right, since it makes the thread's return value
             appear to be defined even if it isn't. */
-         if (VG_(needs).shadow_memory)   
-            SKN_(make_readable)( (Addr)thread_return, sizeof(void*) );
+         VG_TRACK( post_mem_write, (Addr)thread_return, sizeof(void*) );
       }
 
       /* Joinee is discarded */
@@ -1760,8 +1759,8 @@ void do__cleanup_pop ( ThreadId tid, CleanupEntry* cu )
    }
    sp--;
    *cu = VG_(threads)[tid].custack[sp];
-   if (VG_(needs).shadow_memory)   
-      SKN_(make_readable)( (Addr)cu, sizeof(CleanupEntry) );
+   // JJJ: no corresponding pre_mem_write check??
+   VG_TRACK( post_mem_write, (Addr)cu, sizeof(CleanupEntry) );
    VG_(threads)[tid].custack_used = sp;
    SET_EDX(tid, 0);
 }
@@ -2123,9 +2122,9 @@ void do__apply_in_new_thread ( ThreadId parent_tid,
         + VG_(threads)[tid].stack_size
         - VG_AR_CLIENT_STACKBASE_REDZONE_SZB;
 
-   if (VG_(needs).shadow_memory)
-      SKN_(make_noaccess)( VG_(threads)[tid].m_esp, 
-                           VG_AR_CLIENT_STACKBASE_REDZONE_SZB );
+   // SSS: not sure about this
+   VG_TRACK ( die_mem_stack_thread, VG_(threads)[tid].m_esp, 
+                                    VG_AR_CLIENT_STACKBASE_REDZONE_SZB );
    
    /* push arg */
    VG_(threads)[tid].m_esp -= 4;
@@ -2136,8 +2135,8 @@ void do__apply_in_new_thread ( ThreadId parent_tid,
    * (UInt*)(VG_(threads)[tid].m_esp) 
       = (UInt)&do__apply_in_new_thread_bogusRA;
 
-   if (VG_(needs).shadow_memory)   
-      SKN_(make_readable)( VG_(threads)[tid].m_esp, 2 * 4 );
+   // JJJ: no corresponding pre_mem_write check?
+   VG_TRACK ( post_mem_write, VG_(threads)[tid].m_esp, 2 * 4 );
 
    /* this is where we start */
    VG_(threads)[tid].m_eip = (UInt)fn;
@@ -2349,8 +2348,7 @@ void do_pthread_mutex_lock( ThreadId tid,
       mutex->__m_count = 1;
       mutex->__m_owner = (_pthread_descr)tid;
 
-      if (VG_(needs).track_threads)
-         SKN_(thread_does_lock)(tid, mutex);
+      VG_TRACK( post_mutex_lock, tid, mutex);
 
       /* return 0 (success). */
       SET_EDX(tid, 0);
@@ -2432,8 +2430,7 @@ void do_pthread_mutex_unlock ( ThreadId tid,
    vg_assert(mutex->__m_count == 1);
    vg_assert((ThreadId)mutex->__m_owner == tid);
 
-   if (VG_(needs).track_threads)
-      SKN_(thread_does_unlock)(tid, mutex);
+   VG_TRACK( post_mutex_unlock, tid, mutex);
 
    /* Release at max one thread waiting on this mutex. */
    release_one_thread_waiting_on_mutex ( mutex, "pthread_mutex_lock" );
@@ -2750,15 +2747,11 @@ void do_pthread_key_create ( ThreadId tid,
    vg_thread_keys[i].destructor = destructor;
 
    /* check key for addressibility */
-   if (Vg_MemCheck == VG_(clo_skin)
-       && !SKN_(check_writable)( (Addr)key, 
-                                 sizeof(pthread_key_t), NULL))
-      VG_(record_pthread_err)( tid, 
-         "pthread_key_create: key points to invalid location");
-
+   VG_TRACK( pre_mem_write, Vg_CorePThread, &VG_(threads)[tid], 
+                            "pthread_key_create: key",
+                            (Addr)key, sizeof(pthread_key_t));
    *key = i;
-   if (VG_(needs).shadow_memory)   
-      SKN_(make_readable)( (Addr)key, sizeof(pthread_key_t) );
+   VG_TRACK( post_mem_write, (Addr)key, sizeof(pthread_key_t) );
 
    SET_EDX(tid, 0);
 }
@@ -2866,14 +2859,16 @@ void do__get_key_destr_and_spec ( ThreadId tid,
    }
    vg_assert(VG_(is_valid_tid)(tid));
    vg_assert(key >= 0 && key < VG_N_THREAD_KEYS);
+
+   // JJJ: no pre_mem_write check??
+   
    if (!vg_thread_keys[key].inuse) {
       SET_EDX(tid, -1);
       return;
    }
    cu->fn = vg_thread_keys[key].destructor;
    cu->arg = VG_(threads)[tid].specifics[key];
-   if (VG_(needs).shadow_memory)   
-      SKN_(make_readable)( (Addr)cu, sizeof(CleanupEntry) );
+   VG_TRACK( post_mem_write, (Addr)cu, sizeof(CleanupEntry) );
    SET_EDX(tid, 0);
 }
 
@@ -2904,26 +2899,19 @@ void do_pthread_sigmask ( ThreadId tid,
    vg_assert(VG_(is_valid_tid)(tid) 
              && VG_(threads)[tid].status == VgTs_Runnable);
 
-   if (Vg_MemCheck == VG_(clo_skin)) {
-      /* check newmask/oldmask are addressible/defined */
-      if (newmask
-          && !SKN_(check_readable)( (Addr)newmask, 
-                                    sizeof(vki_ksigset_t), NULL))
-         VG_(record_pthread_err)( tid, 
-            "pthread_sigmask: newmask contains "
-            "unaddressible or undefined bytes");
-      if (oldmask
-          && !SKN_(check_writable)( (Addr)oldmask, 
-                                    sizeof(vki_ksigset_t), NULL))
-         VG_(record_pthread_err)( tid, 
-            "pthread_sigmask: oldmask contains "
-            "unaddressible bytes");
-   }
+   if (newmask)
+      VG_TRACK( pre_mem_read, Vg_CorePThread, &VG_(threads)[tid],
+                              "pthread_sigmask: newmask",
+                              (Addr)newmask, sizeof(vki_ksigset_t));
+   if (oldmask)
+      VG_TRACK( pre_mem_write, Vg_CorePThread, &VG_(threads)[tid],
+                               "pthread_sigmask: oldmask",
+                               (Addr)oldmask, sizeof(vki_ksigset_t));
 
    VG_(do_pthread_sigmask_SCSS_upd) ( tid, vki_how, newmask, oldmask );
 
-   if (oldmask && VG_(needs).shadow_memory) 
-      SKN_(make_readable)( (Addr)oldmask, sizeof(vki_ksigset_t) );
+   if (oldmask)
+      VG_TRACK( post_mem_write, (Addr)oldmask, sizeof(vki_ksigset_t) );
 
    /* Success. */
    SET_EDX(tid, 0);
@@ -3045,16 +3033,9 @@ void do__set_fhstack_entry ( ThreadId tid, Int n, ForkHandlerEntry* fh )
 
    vg_assert(VG_(is_valid_tid)(tid) 
              && VG_(threads)[tid].status == VgTs_Runnable);
-
-   if (Vg_MemCheck == VG_(clo_skin)) {
-      /* check fh is addressible/defined */
-      if (!SKN_(check_readable)( (Addr)fh,
-                                 sizeof(ForkHandlerEntry), NULL)) {
-         VG_(record_pthread_err)( tid, 
-            "pthread_atfork: prepare/parent/child contains "
-            "unaddressible or undefined bytes");
-      }
-   }
+   VG_TRACK( pre_mem_read, Vg_CorePThread, &VG_(threads)[tid],
+                           "pthread_atfork: prepare/parent/child",
+                           (Addr)fh, sizeof(ForkHandlerEntry));
 
    if (n < 0 && n >= VG_N_FORKHANDLERSTACK) {
       SET_EDX(tid, -1);
@@ -3078,16 +3059,9 @@ void do__get_fhstack_entry ( ThreadId tid, Int n, /*OUT*/
 
    vg_assert(VG_(is_valid_tid)(tid) 
              && VG_(threads)[tid].status == VgTs_Runnable);
-
-   if (Vg_MemCheck == VG_(clo_skin)) {
-      /* check fh is addressible/defined */
-      if (!SKN_(check_writable)( (Addr)fh,
-                                 sizeof(ForkHandlerEntry), NULL)) {
-         VG_(record_pthread_err)( tid, 
-            "fork: prepare/parent/child contains "
-            "unaddressible bytes");
-      }
-   }
+   VG_TRACK( pre_mem_write, Vg_CorePThread, &VG_(threads)[tid],
+                            "fork: prepare/parent/child",
+                            (Addr)fh, sizeof(ForkHandlerEntry));
 
    if (n < 0 && n >= VG_N_FORKHANDLERSTACK) {
       SET_EDX(tid, -1);
@@ -3097,8 +3071,7 @@ void do__get_fhstack_entry ( ThreadId tid, Int n, /*OUT*/
    *fh = vg_fhstack[n];
    SET_EDX(tid, 0);
 
-   if (VG_(needs).shadow_memory)   
-      SKN_(make_readable)( (Addr)fh, sizeof(ForkHandlerEntry) );
+   VG_TRACK( post_mem_write, (Addr)fh, sizeof(ForkHandlerEntry) );
 }
 
 
@@ -3361,13 +3334,13 @@ void do_client_request ( ThreadId tid )
                                      (ForkHandlerEntry*)(arg[2]) );
          break;
 
-      case VG_USERREQ__MAKE_NOACCESS:
-      case VG_USERREQ__MAKE_WRITABLE:
-      case VG_USERREQ__MAKE_READABLE:
-      case VG_USERREQ__DISCARD:
+//      case VG_USERREQ__MAKE_NOACCESS:
+//      case VG_USERREQ__MAKE_WRITABLE:
+//      case VG_USERREQ__MAKE_READABLE:
+//      case VG_USERREQ__DISCARD:
 //      case VG_USERREQ__CHECK_WRITABLE:
 //      case VG_USERREQ__CHECK_READABLE:
-      case VG_USERREQ__MAKE_NOACCESS_STACK:
+//      case VG_USERREQ__MAKE_NOACCESS_STACK:
 //      case VG_USERREQ__DO_LEAK_CHECK:
       case VG_USERREQ__DISCARD_TRANSLATIONS:
          SET_EDX(
