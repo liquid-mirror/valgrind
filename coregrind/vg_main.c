@@ -428,7 +428,6 @@ VgNeeds VG_(needs) = {
 
    .record_mem_exe_context  = INVALID_Bool,
    .postpone_mem_reuse      = INVALID_Bool,
-   .debug_info              = INVALID_Bool,
    .core_errors             = INVALID_Bool,
    .skin_errors             = INVALID_Bool,
    .run_libc_freeres        = INVALID_Bool,
@@ -490,7 +489,6 @@ static void sanity_check_needs ( void )
 
    CHECK_NOT(VG_(needs).record_mem_exe_context,  INVALID_Bool);
    CHECK_NOT(VG_(needs).postpone_mem_reuse,      INVALID_Bool);
-   CHECK_NOT(VG_(needs).debug_info,              INVALID_Bool);
    CHECK_NOT(VG_(needs).core_errors,             INVALID_Bool);
    CHECK_NOT(VG_(needs).skin_errors,             INVALID_Bool);
    CHECK_NOT(VG_(needs).run_libc_freeres,        INVALID_Bool);
@@ -1159,7 +1157,7 @@ void VG_(main) ( void )
       - vg_init_baseBlock(): to register helpers
       - process_cmd_line_options(): to register skin name and description,
         and turn on/off 'command_line_options' need
-      - init_memory_and_symbols() (to setup memory event trackers).
+      - init_memory() (to setup memory event trackers).
     */
    SK_(pre_clo_init) ( & VG_(needs), & VG_(track_events) );
    sanity_check_needs();
@@ -1203,7 +1201,7 @@ void VG_(main) ( void )
    /* Must come after SK_(init) so memory handler accompaniments (eg.
     * shadow memory) can be setup ok */
    VGP_PUSHCC(VgpInitMem);
-   VGM_(init_memory_and_symbols)();
+   VGM_(init_memory)();
    VGP_POPCC;
 
    /* Read the list of errors to suppress.  This should be found in
