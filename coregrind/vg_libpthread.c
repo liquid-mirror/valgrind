@@ -1566,6 +1566,16 @@ int __pthread_atfork ( void (*prepare)(void),
 }
 
 
+#ifdef GLIBC_2_3
+/* This seems to be a hook which appeared in glibc-2.3.2. */
+int __register_atfork ( void (*prepare)(void),
+                        void (*parent)(void),
+                        void (*child)(void) )
+{
+   return __pthread_atfork(prepare,parent,child);
+}
+#endif
+
 __attribute__((weak)) 
 void __pthread_initialize ( void )
 {
