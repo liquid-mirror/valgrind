@@ -280,7 +280,7 @@ extern Char* VG_(strcat)         ( Char* dest, const Char* src );
 extern Char* VG_(strncat)        ( Char* dest, const Char* src, Int n );
 extern Char* VG_(strpbrk)        ( const Char* s, const Char* accept );
 extern Char* VG_(strcpy)         ( Char* dest, const Char* src );
-extern void  VG_(strncpy)        ( Char* dest, const Char* src, Int ndest );
+extern Char* VG_(strncpy)        ( Char* dest, const Char* src, Int ndest );
 extern Int   VG_(strcmp)         ( const Char* s1, const Char* s2 );
 extern Int   VG_(strncmp)        ( const Char* s1, const Char* s2, Int nmax );
 extern Char* VG_(strstr)         ( const Char* haystack, Char* needle );
