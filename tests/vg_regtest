@@ -4,7 +4,8 @@
 #
 # Each test is defined in a file <test>.vgtest, containing one or more of the
 # following lines:
-#   - prog:   <prog to run and args>                (compulsory)
+#   - prog:   <prog to run>                         (compulsory)
+#   - args:   <args for prog>                       (default: none)
 #   - vgopts: <Valgrind options>                    (default: none)
 #   - stdout_filter: <filter to run stdout through> (default: none)
 #   - stderr_filter: <filter to run stderr through> (default: filter_stderr)
@@ -41,7 +42,8 @@ my $tmp="vg_regtest.tmp.$$";
 
 # Test variables
 my $vgopts;             # valgrind options
-my $prog;               # prog (and args)
+my $prog;               # test prog
+my $args;               # test prog args
 my $stdout_filter;      # filter program to run stdout results file through
 my $stderr_filter;      # filter program to run stderr results file through
 
@@ -65,8 +67,8 @@ sub read_vgtest_file($)
     my ($f) = @_;
 
     # Defaults.
-    ($vgopts, $prog, $stdout_filter, $stderr_filter) = 
-        ("", undef, undef, $default_stderr_filter);
+    ($vgopts, $prog, $args, $stdout_filter, $stderr_filter) = 
+        ("", undef, "", undef, $default_stderr_filter);
 
     open(INPUTFILE, "< $f") || die "File $f not openable\n";
 
@@ -74,11 +76,13 @@ sub read_vgtest_file($)
         if      ($line =~ /^\s*vgopts:\s*(.*)$/) {
             $vgopts = $1;
         } elsif ($line =~ /^\s*prog:\s*(.*)$/) {
-            $prog = $1;
+            $prog = validate_program(".", $1);
+        } elsif ($line =~ /^\s*args:\s*(.*)$/) {
+            $args = $1;
         } elsif ($line =~ /^\s*stdout_filter:\s*(.*)$/) {
-            $stdout_filter = $1;
+            $stdout_filter = validate_program(".", $1);
         } elsif ($line =~ /^\s*stderr_filter:\s*(.*)$/) {
-            $stderr_filter = $1;
+            $stderr_filter = validate_program(".", $1);
         } else {
             die "Bad line in $f: $line\n";
         }
@@ -108,12 +112,9 @@ sub do_one_test($$)
     my $fullname = "$dir/$name"; 
 
     read_vgtest_file($vgtest);
-    $prog =~ /^([^\w]+)/;   # strip away any args on "prog:" line
-    $prog = "./$prog" if ($prog !~ /^\//);  # allow for '.' not being in $PATH
-    (-x $1) or die "`$1' not found or not executable";
 
-    printf("%-30s valgrind $vgopts $prog\n", "$fullname:");
-    mysystem("$valgrind $vgopts $prog > $name.stdout.out 2> $name.stderr.out");
+    printf("%-30s valgrind $vgopts $prog $args\n", "$fullname:");
+    mysystem("$valgrind $vgopts $prog $args > $name.stdout.out 2> $name.stderr.out");
 
     if (defined $stdout_filter) {
         mysystem("$stdout_filter < $name.stdout.out > $tmp");
@@ -167,14 +168,23 @@ sub test_one_dir($)
 #----------------------------------------------------------------------------
 # Process command line, setup
 #----------------------------------------------------------------------------
-sub validate_program ($) 
+
+# If $prog is a relative path, it prepends $dir to it.  Useful for two reasons:
+#
+# 1. Can prepend "." onto programs to avoid trouble with users who don't have
+#    "." in their path (by making $dir = ".")
+# 2. Can prepend the current dir to make the command absolute to avoid
+#    subsequent trouble when we change directories.
+#
+# Also checks the program exists and is executable.
+sub validate_program ($$) 
 {
-    my ($prog) = @_;
+    my ($dir, $prog) = @_;
 
     # If absolute path, leave it alone.  If relative, make it
     # absolute -- by prepending current dir -- so we can change
     # dirs and still use it.
-    $prog = "$tests_dir/$prog" if ($prog !~ /^\//);
+    $prog = "$dir/$prog" if ($prog !~ /^\//);
     (-x $prog) or die "`$prog' not found or not executable\n";
 
     return $prog;
@@ -202,6 +212,7 @@ sub process_command_line()
             push(@fs, $arg);
         }
     }
+    $valgrind = validate_program($tests_dir, $valgrind);
 
     if ($alldirs) {
         @fs = ();
@@ -209,8 +220,6 @@ sub process_command_line()
             push(@fs, $f) if (-d $f);
         }
     }
-
-    $valgrind = validate_program($valgrind);
 
     (0 != @fs) or die "No test files or directories specified\n";
 
