@@ -918,6 +918,7 @@ static __inline__ UInt shiftRight16 ( UInt x )
    Under all other circumstances, it defers to the relevant _SLOWLY
    function, which can handle all situations.
 */
+__attribute__ ((regparm(1)))
 UInt SK_(helperc_LOADV4) ( Addr a )
 {
 #  ifdef VG_DEBUG_MEMORY
@@ -942,6 +943,7 @@ UInt SK_(helperc_LOADV4) ( Addr a )
 #  endif
 }
 
+__attribute__ ((regparm(2)))
 void SK_(helperc_STOREV4) ( Addr a, UInt vbytes )
 {
 #  ifdef VG_DEBUG_MEMORY
@@ -966,6 +968,7 @@ void SK_(helperc_STOREV4) ( Addr a, UInt vbytes )
 #  endif
 }
 
+__attribute__ ((regparm(1)))
 UInt SK_(helperc_LOADV2) ( Addr a )
 {
 #  ifdef VG_DEBUG_MEMORY
@@ -988,6 +991,7 @@ UInt SK_(helperc_LOADV2) ( Addr a )
 #  endif
 }
 
+__attribute__ ((regparm(2)))
 void SK_(helperc_STOREV2) ( Addr a, UInt vbytes )
 {
 #  ifdef VG_DEBUG_MEMORY
@@ -1008,6 +1012,7 @@ void SK_(helperc_STOREV2) ( Addr a, UInt vbytes )
 #  endif
 }
 
+__attribute__ ((regparm(1)))
 UInt SK_(helperc_LOADV1) ( Addr a )
 {
 #  ifdef VG_DEBUG_MEMORY
@@ -1030,6 +1035,7 @@ UInt SK_(helperc_LOADV1) ( Addr a )
 #  endif
 }
 
+__attribute__ ((regparm(2)))
 void SK_(helperc_STOREV1) ( Addr a, UInt vbytes )
 {
 #  ifdef VG_DEBUG_MEMORY
@@ -1257,6 +1263,7 @@ void SK_(helperc_value_check4_fail) ( void )
    FPU load and store checks, called from generated code.
    ------------------------------------------------------------------ */
 
+__attribute__ ((regparm(2)))
 void SK_(fpu_read_check) ( Addr addr, Int size )
 {
    /* Ensure the read area is both addressible and valid (ie,
@@ -1353,6 +1360,7 @@ void SK_(fpu_read_check) ( Addr addr, Int size )
 }
 
 
+__attribute__ ((regparm(2)))
 void SK_(fpu_write_check) ( Addr addr, Int size )
 {
    /* Ensure the written area is addressible, and moan if otherwise.

@@ -126,7 +126,7 @@ static void synth_LOADV ( Int sz, Int a_reg, Int tv_reg )
       case 1: helper = (Addr) & SK_(helperc_LOADV1); break;
       default: VG_(panic)("synth_LOADV");
    }
-   VG_(synth_ccall) ( helper, 1, argv, tagv, tv_reg );
+   VG_(synth_ccall) ( helper, 1, 1, argv, tagv, tv_reg );
 }
 
 
@@ -145,7 +145,7 @@ static void synth_STOREV ( Int sz,
       case 1: helper = (Addr) SK_(helperc_STOREV1); break;
       default: VG_(panic)("synth_STOREV");
    }
-   VG_(synth_ccall) ( helper, 2, argv, tagv, INVALID_REALREG );
+   VG_(synth_ccall) ( helper, 2, 2, argv, tagv, INVALID_REALREG );
 }
 
 
