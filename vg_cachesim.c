@@ -565,7 +565,7 @@ static Int compute_BBCC_array_size(UCodeBlock* cb)
    return BBCC_size;
 }
 
-__attribute__ ((regparm (1))) static 
+static __attribute__ ((regparm (1)))
 void log_1I_0D_cache_access(iCC* cc)
 {
    //VG_(printf)("1I_0D: CCaddr=0x%x, iaddr=0x%x, isize=%u\n",
@@ -573,6 +573,52 @@ void log_1I_0D_cache_access(iCC* cc)
    VGP_PUSHCC(VgpCacheSimulate);
    cachesim_I1_doref(cc->instr_addr, cc->instr_size, &cc->I.m1, &cc->I.m2);
    cc->I.a++;
+   VGP_POPCC(VgpCacheSimulate);
+}
+
+/* Difference between this function and log_1I_0D_cache_access() is that
+   this one can be passed any kind of CC, not just an iCC.  So we have to
+   be careful to make sure we don't make any assumptions about CC layout.
+   (As it stands, they would be safe, but this will avoid potential heartache
+   if anyone else changes CC layout.) */
+static __attribute__ ((regparm (1)))
+void log_1I_0D_cache_access_JIFZ(iCC* cc)
+{
+   UChar instr_size;
+   Addr instr_addr;
+   CC* I;
+
+   //VG_(printf)("1I_0D: CCaddr=0x%x, iaddr=0x%x, isize=%u\n",
+   //            cc, cc->instr_addr, cc->instr_size)
+   VGP_PUSHCC(VgpCacheSimulate);
+
+   switch(cc->tag) {
+       case InstrCC:
+           instr_size = cc->instr_size;
+           instr_addr = cc->instr_addr;
+           I = &(cc->I);
+           break;
+       case ReadCC:
+       case WriteCC:
+       case ModCC:
+           instr_size = ((idCC*)cc)->instr_size;
+           instr_addr = ((idCC*)cc)->instr_addr;
+           I = &( ((idCC*)cc)->I );
+           break;
+       case ReadWriteCC:
+           instr_size = ((iddCC*)cc)->instr_size;
+           instr_addr = ((iddCC*)cc)->instr_addr;
+           I = &( ((iddCC*)cc)->I );
+           break;
+       default:
+           VG_(panic)("Unknown CC type in log_1I_0D_cache_access_JIFZ()\n");
+           break;
+   }
+   
+   
+
+   cachesim_I1_doref(instr_addr, instr_size, &I->m1, &I->m2);
+   I->a++;
    VGP_POPCC(VgpCacheSimulate);
 }
 
@@ -751,7 +797,7 @@ UCodeBlock* SK_(instrument)(UCodeBlock* cb_in, Addr orig_addr)
 
             /* Call helper */
             uInstr1(cb, CCALL, 0, TempReg, t_CC_addr);
-            uCCall(cb, (Addr) & log_1I_0D_cache_access, 1, 1, False);
+            uCCall(cb, (Addr) & log_1I_0D_cache_access_JIFZ, 1, 1, False);
             VG_(copyUInstr)(cb, u_in);
             break;
 
@@ -1888,6 +1934,7 @@ void SK_(pre_clo_init)(VgNeeds* needs, VgTrackEvents* not_used)
    needs->command_line_options    = True;
 
    VG_(register_compact_helper)((Addr) & log_1I_0D_cache_access);
+   VG_(register_compact_helper)((Addr) & log_1I_0D_cache_access_JIFZ);
    VG_(register_compact_helper)((Addr) & log_0I_1D_cache_access);
    VG_(register_compact_helper)((Addr) & log_1I_1D_cache_access);
    VG_(register_compact_helper)((Addr) & log_0I_2D_cache_access);
