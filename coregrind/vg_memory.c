@@ -59,7 +59,7 @@ static ExeSeg* exeSegsHead = NULL;
    Also check no segments overlap, which would be very bad.  Check is linear
    for each seg added (quadratic overall) but the total number should be
    small (konqueror has around 50 --njn). */
-void add_exe_segment_to_list( a, len ) 
+static void add_exe_segment_to_list( a, len ) 
 {
    Addr lo = a;
    Addr hi = a + len - 1;
@@ -93,7 +93,7 @@ void add_exe_segment_to_list( a, len )
    }
 }
 
-Bool vgm_remove_if_exe_segment_from_list( Addr a, UInt len )
+static Bool remove_if_exe_segment_from_list( Addr a, UInt len )
 {
    ExeSeg **prev_next_ptr = & exeSegsHead, 
           *curr = exeSegsHead;
@@ -135,7 +135,7 @@ void VGM_(new_exe_segment) ( Addr a, UInt len )
    symbols. */
 void VGM_(remove_if_exe_segment) ( Addr a, UInt len )
 {
-   if (vgm_remove_if_exe_segment_from_list( a, len )) {
+   if (remove_if_exe_segment_from_list( a, len )) {
       VG_(invalidate_translations) ( a, len );
 
       if (VG_(needs).debug_info)
