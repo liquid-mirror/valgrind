@@ -210,31 +210,17 @@ Int SKN_(getExtRegUsage)(UInstr* u, Tag tag, RegUse* arr)
    Syscall wrapping
    ------------------------------------------------------------------ */
 
-void* SKN_(pre_syscall)(ThreadId tid)
+void* SKN_(pre_syscall)(ThreadId tid, UInt syscallno, Bool is_blocking)
 {
    VG_(printf)(nonfund_panic);
    VG_(panic)("called SKN_(pre_syscall)");
 }
 
 void  SKN_(post_syscall)(ThreadId tid, UInt syscallno,
-                         void* pre_result, Int res)
+                         void* pre_result, Int res, Bool is_blocking)
 {
    VG_(printf)(nonfund_panic);
    VG_(panic)("called SKN_(post_syscall)");
-}
-
-void* SKN_(pre_check_known_blocking_syscall)  
-          (ThreadId tid, Int syscallno, Int* res)
-{
-   VG_(printf)(nonfund_panic);
-   VG_(panic)("called SKN_(pre_check_known_blocking_syscall)");
-}
-
-void  SKN_(post_check_known_blocking_syscall) 
-          (ThreadId tid, Int syscallno, void* pre_result, Int* res)
-{
-   VG_(printf)(nonfund_panic);
-   VG_(panic)("called SKN_(post_check_known_blocking_syscall)");
 }
 
 /* ---------------------------------------------------------------------

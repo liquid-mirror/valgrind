@@ -1313,16 +1313,11 @@ extern void  SKN_(ppExtUInstr)    ( UInstr* u );
 /* If either of the pre_ functions malloc() something to return, the
  * corresponding post_ function had better free() it! 
  */ 
-extern void* SKN_(pre_syscall)  ( ThreadId tid);
+extern void* SKN_( pre_syscall) ( ThreadId tid, UInt syscallno,
+                                  Bool is_blocking );
 extern void  SKN_(post_syscall) ( ThreadId tid, UInt syscallno,
-                                  void* pre_result, Int res );
-
-// SSS: this is all messed up and ugly
-extern void* SKN_(pre_check_known_blocking_syscall)  
-                 ( ThreadId tid, Int syscallno, Int* res );
-extern void  SKN_(post_check_known_blocking_syscall) 
-                 ( ThreadId tid, Int syscallno, void* pre_result, Int* res );
-
+                                  void* pre_result, Int res,
+                                  Bool is_blocking );
 
 /* ------------------------------------------------------------------ */
 /* VG_(needs).sizeof_shadow_chunk > 0 */

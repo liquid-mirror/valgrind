@@ -2239,41 +2239,20 @@ void show_bb ( Addr eip_next )
 /*--- Syscall wrappers                                     ---*/
 /*------------------------------------------------------------*/
 
-void* SKN_(pre_syscall)  ( ThreadId tid )
+void* SKN_(pre_syscall)  ( ThreadId tid, UInt syscallno, Bool isBlocking )
 {
    Int sane = SKN_(cheap_sanity_check)();
    return (void*)sane;
 }
 
 void  SKN_(post_syscall) ( ThreadId tid, UInt syscallno,
-                           void* pre_result, Int res )
+                           void* pre_result, Int res, Bool isBlocking )
 {
    Int  sane_before_call = (Int)pre_result;
    Bool sane_after_call  = SKN_(cheap_sanity_check)();
 
    if ((Int)sane_before_call && (!sane_after_call)) {
-      VG_(message)(Vg_DebugMsg, "post_syscall: ");
-      VG_(message)(Vg_DebugMsg,
-                   "probable sanity check failure for syscall number %d\n",
-                   syscallno );
-      VG_(panic)("aborting due to the above ... bye!");
-   }
-}
-
-void* SKN_(pre_check_known_blocking_syscall)
-          ( ThreadId tid, Int syscallno, Int* res )
-{
-   return SKN_(pre_syscall) ( tid );
-}
-
-void  SKN_(post_check_known_blocking_syscall)
-          ( ThreadId tid, Int syscallno, void* pre_result, Int* res )
-{
-   Int  sane_before_call = (Int)pre_result;
-   Bool sane_after_call = SKN_(cheap_sanity_check)();
-
-   if ((Int)sane_before_call && (!sane_after_call)) {
-      VG_(message)(Vg_DebugMsg, "post_check_known_blocking_syscall: ");
+      VG_(message)(Vg_DebugMsg, "post-syscall: ");
       VG_(message)(Vg_DebugMsg,
                    "probable sanity check failure for syscall number %d\n",
                    syscallno );

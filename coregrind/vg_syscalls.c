@@ -363,7 +363,7 @@ void VG_(perform_assumed_nonblocking_syscall) ( ThreadId tid )
    UInt         syscallno, arg1, arg2, arg3, arg4, arg5;
    /* Do not make this unsigned! */
    Int res;
-   void* pre_result = 0;   /* shut gcc up */
+   void* pre_res = 0;   /* shut gcc up */
 
    VGP_PUSHCC(VgpCoreSysWrap);
 
@@ -379,7 +379,7 @@ void VG_(perform_assumed_nonblocking_syscall) ( ThreadId tid )
    /* Do any pre-syscall actions */
    if (VG_(needs).wrap_syscalls) {
       VGP_PUSHCC(VgpSkinSysWrap);
-      pre_result = SKN_(pre_syscall)(tid);
+      pre_res = SKN_(pre_syscall)(tid, syscallno, /*isBlocking*/False);
       VGP_POPCC(VgpSkinSysWrap);
    }
 
@@ -2986,7 +2986,7 @@ void VG_(perform_assumed_nonblocking_syscall) ( ThreadId tid )
    /* Do any post-syscall actions */
    if (VG_(needs).wrap_syscalls) {
       VGP_PUSHCC(VgpSkinSysWrap);
-      SKN_(post_syscall)(tid, syscallno, pre_result, res);
+      SKN_(post_syscall)(tid, syscallno, pre_res, res, /*isBlocking*/False);
       VGP_POPCC(VgpSkinSysWrap);
    }
 
@@ -2995,27 +2995,18 @@ void VG_(perform_assumed_nonblocking_syscall) ( ThreadId tid )
 
 
 
-/* Perform pre- and post- actions for a blocking syscall, but do not
-   do the syscall itself.  If res is NULL, the pre-syscall actions are
-   to be performed.  If res is non-NULL, the post-syscall actions are
-   to be performed, and *res is assumed to hold the result of the
-   syscall.  This slightly strange scheme makes it impossible to
-   mistakenly use the value of *res in the pre-syscall actions.  
-
-   This doesn't actually do the syscall itself, it is important to
-   observe.  
+/* Perform pre-actions for a blocking syscall, but do not do the
+   syscall itself.
 
    Because %eax is used both for the syscall number before the call
    and the result value afterwards, we can't reliably use it to get
    the syscall number.  So the caller has to pass it explicitly.  
 */
-void VG_(check_known_blocking_syscall) ( ThreadId tid,
-                                         Int syscallno,
-                                         Int* /*IN*/ res )
+void* VG_(pre_known_blocking_syscall) ( ThreadId tid, Int syscallno )
 {
    ThreadState* tst;
    UInt         arg1, arg2, arg3;
-   void*        pre_result = 0;  /* shut gcc up */
+   void*        pre_res = 0;
 
    VGP_PUSHCC(VgpCoreSysWrap);
 
@@ -3031,7 +3022,7 @@ void VG_(check_known_blocking_syscall) ( ThreadId tid,
 
    if (VG_(needs).wrap_syscalls) {
       VGP_PUSHCC(VgpSkinSysWrap);
-      pre_result = SKN_(pre_check_known_blocking_syscall)(tid, syscallno, res);
+      pre_res = SKN_(pre_syscall)(tid, syscallno, /*isBlocking*/True);
       VGP_POPCC(VgpSkinSysWrap);
    }
 
@@ -3039,54 +3030,92 @@ void VG_(check_known_blocking_syscall) ( ThreadId tid,
 
       case __NR_read: /* syscall 3 */
          /* size_t read(int fd, void *buf, size_t count); */
-         if (res == NULL) { 
-            /* PRE */
-            MAYBE_PRINTF(
-                  "SYSCALL--PRE[%d,%d]       read ( %d, %p, %d )\n", 
-                  VG_(getpid)(), tid,
-                  arg1, arg2, arg3);
-            SYSCALL_TRACK( pre_mem_write, tst, "read(buf)", arg2, arg3 );
-         } else {
-            /* POST */
-            MAYBE_PRINTF(
-                  "SYSCALL-POST[%d,%d]       read ( %d, %p, %d ) --> %d\n", 
-                  VG_(getpid)(), tid,
-                  arg1, arg2, arg3, *res);
-            if (!VG_(is_kerror)(*res) && *res > 0) {
-               VG_TRACK( post_mem_write, arg2, *res );
-            }
-	 }
+         MAYBE_PRINTF(
+               "SYSCALL--PRE[%d,%d]       read ( %d, %p, %d )\n", 
+               VG_(getpid)(), tid,
+               arg1, arg2, arg3);
+         SYSCALL_TRACK( pre_mem_write, tst, "read(buf)", arg2, arg3 );
          break;
 
       case __NR_write: /* syscall 4 */
          /* size_t write(int fd, const void *buf, size_t count); */
-         if (res == NULL) {
-            /* PRE */
-            MAYBE_PRINTF(
-                  "SYSCALL--PRE[%d,%d]       write ( %d, %p, %d )\n", 
-                  VG_(getpid)(), tid,
-                  arg1, arg2, arg3);
-            SYSCALL_TRACK( pre_mem_read, tst, "write(buf)", arg2, arg3 );
-	 } else {
-            /* POST */
-            MAYBE_PRINTF(
-                  "SYSCALL-POST[%d,%d]       write ( %d, %p, %d ) --> %d\n", 
-                  VG_(getpid)(), tid,
-                  arg1, arg2, arg3, *res);
-	 }
+         MAYBE_PRINTF(
+               "SYSCALL--PRE[%d,%d]       write ( %d, %p, %d )\n", 
+               VG_(getpid)(), tid,
+               arg1, arg2, arg3);
+         SYSCALL_TRACK( pre_mem_read, tst, "write(buf)", arg2, arg3 );
          break;
 
       default:
-         VG_(printf)("check_known_blocking_syscall: unexpected %d\n", 
+         VG_(printf)("pre_known_blocking_syscall: unexpected %d\n", syscallno);
+         VG_(panic)("pre_known_blocking_syscall");
+         /*NOTREACHED*/
+         break;
+   }
+   VGP_POPCC(VgpCoreSysWrap);
+
+   return pre_res;      /* 0 if SKN_(pre_syscall)() not called */
+}
+
+
+/* Perform post-actions for a blocking syscall, but do not do the
+   syscall itself.  
+
+   Because %eax is used both for the syscall number before the call
+   and the result value afterwards, we can't reliably use it to get
+   the syscall number.  So the caller has to pass it explicitly.  
+*/
+void VG_(post_known_blocking_syscall) ( ThreadId tid,
+                                        Int syscallno,
+                                        void* pre_res,
+                                        Int res )
+{
+   ThreadState* tst;
+   UInt         arg1, arg2, arg3;
+
+   VGP_PUSHCC(VgpCoreSysWrap);
+
+   vg_assert(VG_(is_valid_tid)(tid));
+   tst              = & VG_(threads)[tid];
+   arg1             = tst->m_ebx;
+   arg2             = tst->m_ecx;
+   arg3             = tst->m_edx;
+   /*
+   arg4             = tst->m_esi;
+   arg5             = tst->m_edi;
+   */
+
+   switch (syscallno) {
+
+      case __NR_read: /* syscall 3 */
+         /* size_t read(int fd, void *buf, size_t count); */
+         MAYBE_PRINTF(
+               "SYSCALL-POST[%d,%d]       read ( %d, %p, %d ) --> %d\n", 
+               VG_(getpid)(), tid,
+               arg1, arg2, arg3, res);
+         if (!VG_(is_kerror)(res) && res > 0)
+            VG_TRACK( post_mem_write, arg2, res );
+         break;
+
+      case __NR_write: /* syscall 4 */
+         /* size_t write(int fd, const void *buf, size_t count); */
+         MAYBE_PRINTF(
+               "SYSCALL-POST[%d,%d]       write ( %d, %p, %d ) --> %d\n", 
+               VG_(getpid)(), tid,
+               arg1, arg2, arg3, res);
+         break;
+
+      default:
+         VG_(printf)("post_known_blocking_syscall: unexpected %d\n", 
                      syscallno);
-         VG_(panic)("check_known_blocking_syscall");
+         VG_(panic)("post_known_blocking_syscall");
          /*NOTREACHED*/
          break;
    }
 
    if (VG_(needs).wrap_syscalls) {
       VGP_PUSHCC(VgpSkinSysWrap);
-      SKN_(post_check_known_blocking_syscall)(tid, syscallno, pre_result, res);
+      SKN_(post_syscall)(tid, syscallno, pre_res, res, /*isBlocking*/True);
       VGP_POPCC(VgpSkinSysWrap);
    }
 
