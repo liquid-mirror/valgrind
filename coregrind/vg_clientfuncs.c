@@ -250,7 +250,7 @@ void* realloc ( void* ptrV, Int new_size )
    if (VG_(running_on_simd_CPU)) {
       v = (void*)SIMPLE_REQUEST2(VG_USERREQ__REALLOC, ptrV, new_size);
    } else {
-      v = VG_(realloc)(VG_AR_CLIENT, ptrV, new_size);
+      v = VG_(realloc)(VG_AR_CLIENT, ptrV, /*alignment*/4, new_size);
    }
    if (VG_(clo_trace_malloc)) 
       VG_(printf)(" = %p\n", v );
