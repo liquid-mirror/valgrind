@@ -1,9 +1,0 @@
-Makefile.in
-Makefile
-acinclude.m4
-aclocal.m4
-configure
-config.h*
-stamp-h*
-valgrind
-valgrind.spec
