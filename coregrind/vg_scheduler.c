@@ -618,8 +618,6 @@ void VG_(scheduler_init) ( void )
    VG_(threads)[tid_main].stack_highest_word 
       = VG_(threads)[tid_main].m_esp /* -4  ??? */;
 
-   VG_(printf)("setting stack_highest_word: %p\n", VG_(threads)[tid_main].stack_highest_word);
-
    /* So now ... */
    vg_assert(vg_tid_currently_in_baseBlock == VG_INVALID_THREADID);
 
