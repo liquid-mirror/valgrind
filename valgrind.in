@@ -84,9 +84,6 @@ do
     --instrument=no)        vgopts="$vgopts $arg"; shift;;
     --cleanup=yes)          vgopts="$vgopts $arg"; shift;;
     --cleanup=no)           vgopts="$vgopts $arg"; shift;;
-    --smc-check=none)       vgopts="$vgopts $arg"; shift;;
-    --smc-check=some)       vgopts="$vgopts $arg"; shift;;
-    --smc-check=all)        vgopts="$vgopts $arg"; shift;;
     --trace-syscalls=yes)   vgopts="$vgopts $arg"; shift;;
     --trace-syscalls=no)    vgopts="$vgopts $arg"; shift;;
     --trace-signals=yes)    vgopts="$vgopts $arg"; shift;;
@@ -154,7 +151,6 @@ if [ $# = 0 ] || [ z"$dousage" = z1 ]; then
    echo "    --optimise=no|yes         improve intermediate code? [yes]"
    echo "    --instrument=no|yes       actually do memory checks? [yes]"
    echo "    --cleanup=no|yes          improve after instrumentation? [yes]"
-   echo "    --smc-check=none|some|all check writes for s-m-c? [some]"
    echo "    --trace-syscalls=no|yes   show all system calls? [no]"
    echo "    --trace-signals=no|yes    show signal handling details? [no]"
    echo "    --trace-symtab=no|yes     show symbol table details? [no]"

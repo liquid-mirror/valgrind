@@ -577,7 +577,7 @@ static void process_cmd_line_options ( void )
    VG_(clo_D1_cache)         = UNDEFINED_CACHE;
    VG_(clo_L2_cache)         = UNDEFINED_CACHE;
    VG_(clo_cleanup)          = True;
-   VG_(clo_smc_check)        = /* VG_CLO_SMC_SOME */ VG_CLO_SMC_NONE;
+   VG_(clo_smc_check)        = VG_CLO_SMC_NONE; /* note UNUSED ! */
    VG_(clo_trace_syscalls)   = False;
    VG_(clo_trace_signals)    = False;
    VG_(clo_trace_symtab)     = False;
@@ -861,13 +861,6 @@ static void process_cmd_line_options ( void )
          parse_cache_opt(&VG_(clo_D1_cache), argv[i], 5);
       else if (0 == VG_(strncmp)(argv[i], "--L2=",    5))
          parse_cache_opt(&VG_(clo_L2_cache), argv[i], 5);
-
-      else if (STREQ(argv[i], "--smc-check=none"))
-         VG_(clo_smc_check) = VG_CLO_SMC_NONE;
-      else if (STREQ(argv[i], "--smc-check=some"))
-         VG_(clo_smc_check) = VG_CLO_SMC_SOME;
-      else if (STREQ(argv[i], "--smc-check=all"))
-         VG_(clo_smc_check) = VG_CLO_SMC_ALL;
 
       else if (STREQ(argv[i], "--trace-syscalls=yes"))
          VG_(clo_trace_syscalls) = True;
