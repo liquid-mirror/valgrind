@@ -185,7 +185,7 @@ Bool VG_(is_valid_or_empty_tid) ( ThreadId tid )
    VG_INVALID_THREADID if it doesn't.  A small complication is dealing
    with any currently VG_(baseBlock)-resident thread. 
 */
-ThreadId VG_(identify_stack_addr)( Addr a )
+ThreadId VG_(get_thread_of_stack_addr)( Addr a )
 {
    ThreadId tid, tid_to_skip;
 
@@ -238,9 +238,9 @@ void VG_(pp_sched_status) ( void )
                   VG_(threads)[i].associated_mx,
                   VG_(threads)[i].associated_cv );
       VG_(pp_ExeContext)( 
-         VG_(get_ExeContext)( VG_(threads)[i].m_eip, VG_(threads)[i].m_ebp,
-                              VG_(threads)[i].m_esp, 
-                              VG_(threads)[i].stack_highest_word)
+         VG_(get_ExeContext2)( VG_(threads)[i].m_eip, VG_(threads)[i].m_ebp,
+                               VG_(threads)[i].m_esp, 
+                               VG_(threads)[i].stack_highest_word)
       );
    }
    VG_(printf)("\n");
@@ -356,6 +356,11 @@ ThreadId vg_alloc_ThreadState ( void )
    /*NOTREACHED*/
 }
 
+ThreadState* VG_(get_ThreadState)( ThreadId tid )
+{
+   vg_assert(tid >= 0 && tid < VG_N_THREADS);
+   return & VG_(threads)[tid];
+}
 
 ThreadState* VG_(get_current_thread_state) ( void )
 {
