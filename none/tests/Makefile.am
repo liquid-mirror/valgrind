@@ -46,6 +46,8 @@ EXTRA_DIST = $(noinst_SCRIPTS) \
 	munmap_exe.stderr.exp munmap_exe.vgtest \
 	pth_blockedsig.stderr.exp \
 	pth_blockedsig.stdout.exp pth_blockedsig.vgtest \
+	pth_stackalign.stderr.exp \
+	pth_stackalign.stdout.exp pth_stackalign.vgtest \
 	pushpopseg.stderr.exp pushpopseg.stdout.exp pushpopseg.vgtest \
 	rcl_assert.stderr.exp rcl_assert.vgtest \
 	rcrl.stderr.exp rcrl.stdout.exp rcrl.vgtest \
@@ -74,8 +76,8 @@ check_PROGRAMS = \
 	fpu_lazy_eflags fucomip $(INSN_TESTS) \
 	int munmap_exe map_unmap mq mremap rcl_assert rcrl readline1 \
 	resolv rlimit_nofile seg_override sem semlimit sha1_test \
-	shortpush shorts smc1 susphello pth_blockedsig pushpopseg \
-	syscall-restart1 syscall-restart2 system \
+	shortpush shorts smc1 susphello pth_blockedsig pth_stackalign \
+	pushpopseg syscall-restart1 syscall-restart2 system \
 	coolo_sigaction gxx304 yield
 
 AM_CFLAGS   = $(WERROR) -Winline -Wall -Wshadow -g -I$(top_srcdir)/include
@@ -155,6 +157,8 @@ yield_LDADD		= -lpthread
 # pthread C ones
 pth_blockedsig_SOURCES	= pth_blockedsig.c
 pth_blockedsig_LDADD	= -lpthread
+pth_stackalign_SOURCES	= pth_stackalign.c
+pth_stackalign_LDADD	= -lpthread
 
 # generic C++ ones
 coolo_sigaction_SOURCES	= coolo_sigaction.cpp

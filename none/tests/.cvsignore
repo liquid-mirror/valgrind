@@ -39,6 +39,7 @@ munmap_exe
 mremap
 pluto
 pth_blockedsig
+pth_stackalign
 rcl_assert
 rcrl
 readline1
