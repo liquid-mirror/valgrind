@@ -1918,8 +1918,8 @@ Bool VG_(get_fnname_nodemangle) ( Addr a, Char* buf, Int nbuf )
    return get_fnname ( /*demangle*/False, a, buf, nbuf);
 }
 
-/* Map a code address to the name of a shared object file.  Returns
-   False if no idea; otherwise False.  Caller supplies buf and
+/* Map a code address to the name of a shared object file or the executable.
+   Returns False if no idea; otherwise True.  Caller supplies buf and
    nbuf. */
 Bool VG_(get_objname) ( Addr a, Char* buf, Int nbuf )
 {
