@@ -296,6 +296,8 @@ AC_OUTPUT(
    Makefile 
    docs/Makefile 
    tests/Makefile 
+   tests/none/Makefile 
+   tests/memcheck/Makefile 
    demangle/Makefile)
 
 cat<<EOF
