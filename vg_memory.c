@@ -299,14 +299,16 @@ static Addr get_page_base ( Addr a )
    return a & ~(VKI_BYTES_PER_PAGE-1);
 }
 
-static void vg_handle_esp_assignment_SLOWLY ( Addr );
+static void vg_handle_esp_assignment_SLOWLY ( Addr old_esp, Addr new_esp );
 
 __attribute__ ((regparm (1)))
-void VGM_(handle_esp_assignment) ( Addr new_espA )
+void VGM_(handle_esp_assignment) ( Addr new_esp )
 {
    UInt old_esp = VG_(baseBlock)[VGOFF_(m_esp)];
-   UInt new_esp = (UInt)new_espA;
    Int  delta   = ((Int)new_esp) - ((Int)old_esp);
+
+   /* Update R_ESP */
+   VG_(baseBlock)[VGOFF_(m_esp)] = new_esp;
 
    //PROF_EVENT(101);   PPP
 
@@ -332,7 +334,8 @@ void VGM_(handle_esp_assignment) ( Addr new_espA )
       else if (delta = -20) PROF_EVENT(112);
       else if (delta =  24) PROF_EVENT(113);
       else if (delta = -24) PROF_EVENT(114);
-      else                  PROF_EVENT(115); // PPP: new event: aligned_other
+      else if (delta > 0)   PROF_EVENT(115); // PPP: new: aligned_big_pos
+      else                  PROF_EVENT(116); // PPP: new: aligned_big_neg
 #     endif
       
       if (delta < 0) {
@@ -350,14 +353,12 @@ void VGM_(handle_esp_assignment) ( Addr new_espA )
    /* The above special cases handle 90% to 95% of all the stack
       adjustments.  The rest we give to the slow-but-general
       mechanism. */
-   vg_handle_esp_assignment_SLOWLY ( new_espA );
+   vg_handle_esp_assignment_SLOWLY ( old_esp, new_esp );
 }
 
 
-static void vg_handle_esp_assignment_SLOWLY ( Addr new_espA )
+static void vg_handle_esp_assignment_SLOWLY ( Addr old_esp, Addr new_esp )
 {
-   UInt old_esp = VG_(baseBlock)[VGOFF_(m_esp)];
-   UInt new_esp = (UInt)new_espA;
    Int  delta   = ((Int)new_esp) - ((Int)old_esp);
    //VG_(printf)("delta %d (%x) %x --> %x\n", delta, delta, old_esp, new_esp);
    //PROF_EVENT(120);   PPP
