@@ -160,7 +160,7 @@ typedef
 
 /* Returns 1 if running on Valgrind, 0 if running on the real CPU. 
    Currently implemented but untested. */
-#define RUNNING_ON_VALGRIND                                        \
+#define RUNNING_ON_VALGRIND  __extension__                         \
    ({unsigned int _qzz_res;                                        \
     VALGRIND_MAGIC_SEQUENCE(_qzz_res, 0 /* returned if not */,     \
                             VG_USERREQ__RUNNING_ON_VALGRIND,       \
