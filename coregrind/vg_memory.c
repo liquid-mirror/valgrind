@@ -234,6 +234,10 @@ static void init_prof_mem ( void ) { }
    81   get_byte_A_and_V-HIT
    82   get_byte_A_and_V-MISS
 
+   85   get_aligned_word_A_and_V
+   86   get_aligned_word_A_and_V-HIT
+   87   get_aligned_word_A_and_V-MISS
+
    90   set_byte_V_and_get_A
    91   set_byte_V_and_get_A-HIT
    92   set_byte_V_and_get_A-MISS
@@ -254,13 +258,14 @@ static void init_prof_mem ( void ) { }
 
    119  vcache_sanity
 
-   120  helperc_LOADV4
+   120  helperc_LOADV4-FAST-REFILL-OK
    121  helperc_LOADV4-COMPLETELY-VALID
    122  helperc_LOADV4-COMPLETELY-INVALID
    123  helperc_LOADV4-PARTIALLY-VALID
 
-   130  helperc_LOADV2
-   131  helperc_LOADV1
+   130  helperc_LOADV4
+   131  helperc_LOADV2
+   132  helperc_LOADV1
 
    140  helperc_STOREV4
    141  helperc_STOREV2
@@ -287,14 +292,16 @@ static void init_prof_mem ( void ) { }
    168  helperc_STOREV_FP-SLOW-LOOP
 
    170  set_address_range_perms
-   171  set_address_range_perms(lower byte loop)
-   172  set_address_range_perms(dword loop)
-   173  set_address_range_perms(upper byte loop)
+   171  set_address_range_perms-LOOPLO
+   172  set_address_range_perms-LOOP-NOACCESS
+   173  set_address_range_perms-LOOP-WRITABLE
+   174  set_address_range_perms-LOOP-READABLE
+   175  set_address_range_perms-LOOPHI
 
-   175  make_noaccess
-   176  make_writable
-   177  make_readable
-   178  make_readwritable
+   176  make_noaccess
+   177  make_writable
+   178  make_readable
+   179  make_readwritable
 
    180  copy_address_range_perms
    181  copy_address_range_perms(byte loop)
@@ -730,7 +737,7 @@ void make_empty_vcache_line ( UInt lineno )
 
 /* Return the byte in the cache that would correspond to a, ignoring
    the _discr (tag) field. */
-static
+static __inline__
 UChar get_vcache_vbyte ( Addr a )
 {
    Addr   voffset = addr_to_voffset(a);
@@ -741,7 +748,7 @@ UChar get_vcache_vbyte ( Addr a )
 }
 
 /* ... and write it. */
-static
+static __inline__
 void set_vcache_vbyte ( Addr a, UChar v )
 {
    Addr   voffset = addr_to_voffset(a);
@@ -754,7 +761,7 @@ void set_vcache_vbyte ( Addr a, UChar v )
 
 /* Flush a line to the backing store.  Do not change the state of the
    line, though. */
-static
+static __inline__
 void writeback_vcache_line ( UInt lineno )
 {
    Addr addr;
@@ -850,7 +857,7 @@ void flush_and_invalidate_vcache ( void )
 /* Read the A and V bits for an arbitrary byte, first by consulting
    the cache, and, if that misses, by consulting the backing map.
    Does not change either. */
-static
+static __inline__
 void get_byte_A_and_V ( Addr addr, /*OUT*/ UChar* p_A, /*OUT*/ UInt* p_V )
 {
    UInt lineno = addr_to_lineno(addr);
@@ -866,6 +873,29 @@ void get_byte_A_and_V ( Addr addr, /*OUT*/ UChar* p_A, /*OUT*/ UInt* p_V )
       PROF_EVENT(82);
       *p_A = get_backing_abit(addr);
       *p_V = get_backing_vbyte(addr);
+   }
+}
+
+
+static
+void get_aligned_word_A_and_V ( Addr addr, /*OUT*/ UChar* p_A, 
+                                           /*OUT*/ UInt* p_V )
+{
+   UInt lno = addr_to_lineno(addr);
+#  if VG_DEBUG_MEM_LEVEL >= 2
+   vg_assert(IS_ALIGNED4(addr));
+#  endif
+   PROF_EVENT(85);
+   if (addr == VG_(vcache_discr)[lno]) {
+      /* Cache hit. */
+      PROF_EVENT(86);
+      *p_A = VGM_NIBBLE_VALID;
+      *p_V = VG_(vcache_vbits)[lno];
+   } else {
+      /* Cache miss.  Consult backing. */
+      PROF_EVENT(87);
+      *p_A = get_backing_abits4_ALIGNED(addr);
+      *p_V = get_backing_vbytes4_ALIGNED(addr);
    }
 }
 
@@ -933,7 +963,7 @@ void make_aligned_word_NOACCESS ( Addr addr )
    vg_assert(IS_ALIGNED4(addr));
 #  endif
    lno = addr_to_lineno(addr);
-   if (ALIGN4(addr) == VG_(vcache_discr)[lno]) {
+   if (addr == VG_(vcache_discr)[lno]) {
       /* Hit. */
       PROF_EVENT(111);
       make_empty_vcache_line ( lno );
@@ -952,10 +982,24 @@ void make_aligned_word_WRITABLE ( Addr addr )
    vg_assert(IS_ALIGNED4(addr));
 #  endif
    lno = addr_to_lineno(addr);
-   if (ALIGN4(addr) == VG_(vcache_discr)[lno]) {
+   if (addr == VG_(vcache_discr)[lno]) {
       /* Hit.  Set the V bits to invalid. */
       PROF_EVENT(113);
-      VG_(vcache_vbits)[lno] = VGM_WORD_INVALID;
+      VG_(vcache_vbits)[lno] = VG_(vcache_vorig)[lno] 
+                             = VGM_WORD_INVALID;
+   } else {
+      /* Miss.  Put this line into the cache.  This isn't needed for
+         correctness, but not doing so gives a huge number of write
+         misses later, so it seems better to speculatively load them
+         now.  This makes sense: pretty much all of these are caused
+         by either address space being made writable by malloc, or by
+         %esp moving down.  In both these cases it's likely that the
+         space will be written soon, so we might as well pre-load the
+         cache. */
+      writeback_vcache_line(lno);
+      VG_(vcache_vbits)[lno] = VG_(vcache_vorig)[lno] 
+                             = VGM_WORD_INVALID;
+      VG_(vcache_discr)[lno] = addr;      
    }
    /* In all cases ... */
    make_aligned_backing_word_WRITABLE ( addr );
@@ -971,10 +1015,18 @@ void make_aligned_word_READABLE ( Addr addr )
    vg_assert(IS_ALIGNED4(addr));
 #  endif
    lno = addr_to_lineno(addr);
-   if (ALIGN4(addr) == VG_(vcache_discr)[lno]) {
+   if (addr == VG_(vcache_discr)[lno]) {
       /* Hit.  Set the V bits to valid. */
       PROF_EVENT(115);
-      VG_(vcache_vbits)[lno] = VGM_WORD_VALID;
+      VG_(vcache_vbits)[lno] = VG_(vcache_vorig)[lno] 
+                             = VGM_WORD_VALID;
+   } else {
+      /* Miss.  Speculatively pre-load the cache (see comment
+         above). */
+      writeback_vcache_line(lno);
+      VG_(vcache_vbits)[lno] = VG_(vcache_vorig)[lno] 
+                             = VGM_WORD_VALID;
+      VG_(vcache_discr)[lno] = addr;
    }
    /* In all cases ... */
    make_aligned_backing_word_READABLE ( addr );
@@ -1045,7 +1097,7 @@ UInt VG_(helperc_LOADV4) ( Addr addr )
    UChar aa0, aa1, aa2, aa3;
    UInt  vv0, vv1, vv2, vv3, vw;
 
-   PROF_EVENT(120);
+   PROF_EVENT(130);
 
 #  if VG_DEBUG_MEM_LEVEL >= 10
    vcache_sanity();
@@ -1056,6 +1108,16 @@ UInt VG_(helperc_LOADV4) ( Addr addr )
 #  if VG_DEBUG_MEM_LEVEL >= 10
    vcache_sanity();
 #  endif
+
+   /* Handle most cases quickly .. not actually needed for
+      correctness. */
+   if (IS_ALIGNED4(addr)) {
+      get_aligned_word_A_and_V ( addr, &aa0, &vv0 );
+      if (aa0 == VGM_NIBBLE_VALID) {
+         PROF_EVENT(120);
+         return vv0;
+      }
+   }
 
    get_byte_A_and_V ( addr+0, &aa0, &vv0 );
    get_byte_A_and_V ( addr+1, &aa1, &vv1 );
@@ -1127,7 +1189,7 @@ UInt VG_(helperc_LOADV2) ( Addr addr )
    UChar aa0, aa1;
    UInt  vv0, vv1, vw;
 
-   PROF_EVENT(130);
+   PROF_EVENT(131);
 #  if VG_DEBUG_MEM_LEVEL >= 10
    vcache_sanity();
 #  endif
@@ -1160,7 +1222,7 @@ UInt VG_(helperc_LOADV1) ( Addr addr )
    UChar aa0;
    UInt  vv0, vw;
 
-   PROF_EVENT(131);
+   PROF_EVENT(132);
 #  if VG_DEBUG_MEM_LEVEL >= 10
    vcache_sanity();
 #  endif
@@ -1492,9 +1554,9 @@ static void set_address_range_perms ( Addr a, UInt len,
 
    /* Slowly do parts preceding 4-byte alignment. */
    while (True) {
-      PROF_EVENT(171);
       if (len == 0) break;
       if (IS_ALIGNED4(a)) break;
+      PROF_EVENT(171);
       set_byte_A_and_V ( a, example_a_bit, vbyte );
       a++;
       len--;
@@ -1527,7 +1589,7 @@ static void set_address_range_perms ( Addr a, UInt len,
        && example_v_bit == VGM_BIT_INVALID) {
       while (True) {
          if (len < 4) break;
-         PROF_EVENT(172);
+         PROF_EVENT(173);
          make_aligned_word_WRITABLE ( a );
          a += 4;
          len -= 4;
@@ -1538,7 +1600,7 @@ static void set_address_range_perms ( Addr a, UInt len,
        && example_v_bit == VGM_BIT_VALID) {
       while (True) {
          if (len < 4) break;
-         PROF_EVENT(172);
+         PROF_EVENT(174);
          make_aligned_word_READABLE ( a );
          a += 4;
          len -= 4;
@@ -1559,8 +1621,8 @@ static void set_address_range_perms ( Addr a, UInt len,
 
    /* Finish the upper fragment. */
    while (True) {
-      PROF_EVENT(173);
       if (len == 0) break;
+      PROF_EVENT(175);
       set_byte_A_and_V ( a, example_a_bit, vbyte );
       a++;
       len--;
@@ -1583,25 +1645,25 @@ static void set_address_range_perms ( Addr a, UInt len,
 
 void VGM_(make_noaccess) ( Addr a, UInt len )
 {
-   PROF_EVENT(175);
+   PROF_EVENT(176);
    set_address_range_perms ( a, len, VGM_BIT_INVALID, VGM_BIT_INVALID );
 }
 
 void VGM_(make_writable) ( Addr a, UInt len )
 {
-   PROF_EVENT(176);
+   PROF_EVENT(177);
    set_address_range_perms ( a, len, VGM_BIT_VALID, VGM_BIT_INVALID );
 }
 
 void VGM_(make_readable) ( Addr a, UInt len )
 {
-   PROF_EVENT(177);
+   PROF_EVENT(178);
    set_address_range_perms ( a, len, VGM_BIT_VALID, VGM_BIT_VALID );
 }
 
 void VGM_(make_readwritable) ( Addr a, UInt len )
 {
-   PROF_EVENT(178);
+   PROF_EVENT(179);
    set_address_range_perms ( a, len, VGM_BIT_VALID, VGM_BIT_VALID );
 }
 
