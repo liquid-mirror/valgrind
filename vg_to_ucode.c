@@ -4543,6 +4543,7 @@ Int VG_(disBB) ( UCodeBlock* cb, Addr eip0 )
          /* Print added JMP */
          if (dis) VG_(ppUInstr)(cb->used-1, &cb->instrs[cb->used-1]);
       }
+      if (dis) VG_(printf)("\n");
       delta = eip - eip0;
 
    } else {

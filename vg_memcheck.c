@@ -875,14 +875,17 @@ void memcheck_set_perms (Addr a, UInt len,
    else         VG_(make_noaccess)(a, len);
 }
 
-/* If a == NULL, 'size', 'alloc_free_kinds_match' are all meaningless */
+/* If size == 0xffffffff free'd block wasn't malloc'd in the first place,
+ * so 'alloc_free_kinds_match' is meaningless  */
 static
 void memcheck_die_mem_heap ( ThreadState* tst, Addr a, UInt size,
                              Bool alloc_free_kinds_match )
 {
    DEBUG("memcheck_die_mem_heap(%p, %u)\n", a, size);
-   if ((Addr)NULL == a)
+   if (0xffffffff == size) {
       SK_(record_free_error) ( tst, a );
+      return;
+   }
 
    if (! alloc_free_kinds_match)
       SK_(record_freemismatch_error) ( tst, a );

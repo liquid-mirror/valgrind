@@ -295,10 +295,6 @@ UInt SKN_(handle_client_request) ( ThreadState* tst, UInt* arg_block )
    Addr  bad_addr;
    UInt* arg = arg_block;
 
-   if (VG_(clo_verbosity) > 2)
-      VG_(printf)("client request: code %d,  addr %p,  len %d\n", 
-                  arg[0], (void*)arg[1], arg[2] );
-
    switch (arg[0]) {
       case VG_USERREQ__CHECK_WRITABLE: /* check writable */
          ok = VG_(check_writable) ( arg[1], arg[2], &bad_addr );

@@ -351,7 +351,6 @@ static void describe_addr ( Addr a, AddrInfo* ai )
       return VG_(addr_is_in_block) ( a, sh_ch->data, sh_ch->size );
    }
 
-
    /* Perhaps it's a user-def'd block ? */
    ok = SK_(client_perm_maybe_describe)( a, ai );
    if (ok)
@@ -366,12 +365,12 @@ static void describe_addr ( Addr a, AddrInfo* ai )
    /* Search for a recently freed block which might bracket it. */
    sc = VG_(any_matching_freed_ShadowChunks)(addr_is_in_block);
    if (NULL != sc) {
-      ai->akind      = Mallocd;
+      ai->akind      = Freed;
       ai->blksize    = sc->size;
       ai->rwoffset   = (Int)(a) - (Int)(sc->data);
       ai->lastchange = sc->where;
       return;
-   } 
+   }
    /* Search for a currently malloc'd block which might bracket it. */
    sc = VG_(any_matching_mallocd_ShadowChunks)(addr_is_in_block);
    if (NULL != sc) {
