@@ -13,7 +13,6 @@ default skin.
 
 <h3>3.1&nbsp; Kinds of bugs that memcheck can find</h3>
 
-Memcheck is Valgrind-1.0.X's checking mechanism bundled up into a skin.
     All reads and writes of memory are checked, and calls to
     malloc/new/free/delete are intercepted. As a result, memcheck can
     detect the following problems:
@@ -100,8 +99,8 @@ Memcheck is Valgrind-1.0.X's checking mechanism bundled up into a skin.
       assume that reads and writes some small distance below the stack
       pointer <code>%esp</code> are due to bugs in gcc 2.96, and does
       not report them.  The "small distance" is 256 bytes by default.
-      Note that gcc 2.96 is the default compiler on some popular Linux
-      distributions (RedHat 7.X, Mandrake) and so you may well need to
+      Note that gcc 2.96 is the default compiler on some older Linux
+      distributions (RedHat 7.X) and so you may well need to
       use this flag.  Do not use it if you do not have to, as it can
       cause real errors to be overlooked.  Another option is to use a
       gcc/g++ which does not generate accesses below the stack

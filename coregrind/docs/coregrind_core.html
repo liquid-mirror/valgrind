@@ -124,10 +124,11 @@ All other skins (as far as we know) are unaffected by optimisation
 level.
 
 <p>
-Valgrind understands both the older "stabs" debugging format, used by
-gcc versions prior to 3.1, and the newer DWARF2 format used by gcc 3.1
-and later.  We continue to refine and debug our debug-info readers,
-although the majority of effort will naturally enough go into the 
+Valgrind understands line number information in three formats: the old
+"stabs" debugging format, used by gcc versions prior to 3.1, the newer
+DWARF2 format used by gcc 3.1 and later, and the obsolete DWARF1
+format.  We continue to refine and debug our debug-info readers,
+although the majority of effort will naturally enough go into the
 newer DWARF2 reader.
 
 <p>
@@ -1022,6 +1023,10 @@ RedHat 7.2 box: Opera 6.0Beta2, KNode in KDE 3.0, Mozilla-0.9.2.1 and
 Galeon-0.11.3, both as supplied with RedHat 7.2.  Also Mozilla 1.0RC2.
 OpenOffice 1.0.  MySQL 3.something (the current stable release).
 
+<p>
+As at the 2.0.0 release (5 Nov 03), we have continued to refine and
+stabilise pthread support.  We've also increased the range of syscalls
+which are non-blocking.
 
 
 <a name="signals"></a>
@@ -1033,6 +1038,13 @@ are handled.  Signal handlers may return in the normal way or do
 longjmp(); both should work ok.  As specified by POSIX, a signal is
 blocked in its own handler.  Default actions for signals should work
 as before.  Etc, etc.
+
+<p>
+We only support signal handlers which take a single 
+argument -- the signal number.  Handlers which expect
+a second argument -- a pointer to signal context structure
+-- will probably segfault when they dereference that pointer.
+That's something we should fix properly in the future.
 
 <p>Under the hood, dealing with signals is a real pain, and Valgrind's
 simulation leaves much to be desired.  If your program does
@@ -1046,9 +1058,9 @@ it.
 <h3>2.10&nbsp; Building and installing</h3>
 
 We now use the standard Unix <code>./configure</code>,
-<code>make</code>, <code>make install</code> mechanism, and I have
-attempted to ensure that it works on machines with kernel 2.2 or 2.4
-and glibc 2.1.X or 2.2.X.  I don't think there is much else to say.
+<code>make</code>, <code>make install</code> mechanism, and have
+attempted to ensure that it works on machines with kernel 2.4
+and glibc2.2.X and 2.3.X.  I don't think there is much else to say.
 There are no options apart from the usual <code>--prefix</code> that
 you should give to <code>./configure</code>.
 
@@ -1083,13 +1095,6 @@ it.
 are permanently enabled, and I have no plans to disable them.  If one
 of these breaks, please mail me!
 
-<p>If you get an assertion failure on the expression
-<code>chunkSane(ch)</code> in <code>vg_free()</code> in
-<code>vg_malloc.c</code>, this may have happened because your program
-wrote off the end of a malloc'd block, or before its beginning.
-Valgrind should have emitted a proper message to that effect before
-dying in this way.  This is a known problem which I should fix.
-
 <p>
 Read the file <code>FAQ.txt</code> in the source distribution, for
 more advice about common problems, crashes, etc.
@@ -1101,16 +1106,13 @@ The following list of limitations seems depressingly long.  However,
 most programs actually work fine.
 
 <p>Valgrind will run x86-GNU/Linux ELF dynamically linked binaries, on
-a kernel 2.2.X or 2.4.X system, subject to the following constraints:
+a kernel 2.4.X system, subject to the following constraints:
 
 <ul>
-  <li>No MMX, SSE, SSE2, 3DNow instructions.  If the translator
-      encounters these, Valgrind will simply give up.  It may be
-      possible to add support for them at a later time. Intel added a
-      few instructions such as "cmov" to the integer instruction set
-      on Pentium and later processors, and these are supported.
-      Nevertheless it's safest to think of Valgrind as implementing
-      the 486 instruction set.</li>
+  <li>Imcomplete support for SSE and SSE2 instructions, and 
+      no support for 3DNow instructions.  If the translator
+      encounters these, Valgrind will simply give up.
+      </li>
       <p>
 
   <li>Pthreads support is improving, but there are still significant
@@ -1132,7 +1134,12 @@ a kernel 2.2.X or 2.4.X system, subject to the following constraints:
 
   <li>If your program does its own memory management, rather than
       using malloc/new/free/delete, it should still work, but
-      Valgrind's error checking won't be so effective.</li>
+      Valgrind's error checking won't be so effective.
+      If you describe your program's memory management scheme
+      using "client requests" (Section 3.7 of this manual), 
+      valgrind can do better.  Nevertheless, using malloc/new
+      and free/delete is still the best approach.
+      </li>
       <p>
 
   <li>Valgrind's signal simulation is not as robust as it could be.
@@ -1188,20 +1195,6 @@ Programs which are known not to work are:
       don't understand why this should interact so badly with
       Valgrind.  Emacs works fine if you build it to use the standard
       malloc/free routines.</li><br>
-      <p>
-</ul>
-
-Known platform-specific limitations, as of release 1.0.0:
-
-<ul>
-  <li>On Red Hat 7.3, there have been reports of link errors (at
-      program start time) for threaded programs using
-      <code>__pthread_clock_gettime</code> and
-      <code>__pthread_clock_settime</code>.  This appears to be due to
-      <code>/lib/librt-2.2.5.so</code> needing them.  Unfortunately I
-      do not understand enough about this problem to fix it properly,
-      and I can't reproduce it on my test RedHat 7.3 system.  Please
-      mail me if you have more information / understanding.  </li><br>
       <p>
 </ul>
 
