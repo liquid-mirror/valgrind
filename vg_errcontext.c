@@ -229,8 +229,9 @@ Bool vg_eq_ExeContext ( Bool top_2_only,
 }
 
 
-static Bool eq_AddrInfo ( Bool cheap_addr_cmp,
-                          AddrInfo* ai1, AddrInfo* ai2 )
+static __attribute__((unused))
+Bool eq_AddrInfo ( Bool cheap_addr_cmp,
+                   AddrInfo* ai1, AddrInfo* ai2 )
 {
    if (ai1->akind != Undescribed 
        && ai2->akind != Undescribed
