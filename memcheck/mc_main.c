@@ -30,8 +30,6 @@
    The GNU General Public License is contained in the file LICENSE.
 */
 
-#include "vg_include.h"
-
 #include "vg_memcheck_include.h"
 #include "vg_memcheck.h"   /* for client requests */
 
@@ -118,14 +116,14 @@ Bool VG_(clo_cleanup)                = True;
 
 static UInt event_ctr[N_PROF_EVENTS];
 
-//static void init_prof_mem ( void )
-//{
-//   Int i;
-//   for (i = 0; i < N_PROF_EVENTS; i++)
-//      event_ctr[i] = 0;
-//}
+static void init_prof_mem ( void )
+{
+   Int i;
+   for (i = 0; i < N_PROF_EVENTS; i++)
+      event_ctr[i] = 0;
+}
 
-void done_prof_mem ( void )
+static void done_prof_mem ( void )
 {
    Int i;
    for (i = 0; i < N_PROF_EVENTS; i++) {
@@ -144,10 +142,8 @@ void done_prof_mem ( void )
 
 #else
 
-// SSS: starting this at the right time is tricky... should be between
-// init() and setup()...
-// static void init_prof_mem ( void ) { }
-       void done_prof_mem ( void ) { }
+static void init_prof_mem ( void ) { }
+static void done_prof_mem ( void ) { }
 
 #define PROF_EVENT(ev) /* */
 
@@ -253,9 +249,6 @@ static void vgmext_wr_V1_SLOWLY ( Addr a, UInt vbytes );
 static void fpu_read_check_SLOWLY ( Addr addr, Int size );
 static void fpu_write_check_SLOWLY ( Addr addr, Int size );
 
-static void vg_detect_memory_leaks ( void );
-
-
 /*------------------------------------------------------------*/
 /*--- Data defns.                                          ---*/
 /*------------------------------------------------------------*/
@@ -309,6 +302,7 @@ static SecMap  distinguished_secondary_map;
 #define VGM_BYTE_VALID     0
 #define VGM_BYTE_INVALID   0xFF
 
+// SSS: to remove this requires a post_reg_write event... */
 /* Now in vg_include.h.
 #define VGM_WORD_VALID     0
 #define VGM_WORD_INVALID   0xFFFFFFFF
@@ -318,7 +312,7 @@ static SecMap  distinguished_secondary_map;
 #define VGM_EFLAGS_INVALID 0xFFFFFFFF
 
 
-void init_shadow_memory ( void )
+static void init_shadow_memory ( void )
 {
    Int i;
 
@@ -340,31 +334,10 @@ void init_shadow_memory ( void )
 
 void SK_(post_clo_init) ( void )
 {
-#if 0
-   init_shadow_memory();
-
-   /* Mark global variables touched from generated code */
-   VG_(track_events).post_mem_write ( (Addr)&VG_(clo_trace_malloc),  1 );
-   VG_(track_events).post_mem_write ( (Addr)&VG_(clo_sloppy_malloc), 1 );
-
-   /* Set up the shadow regs with reasonable (sic) values.  All regs are
-      claimed to have valid values.
-   */
-   VG_(baseBlock)[VGOFF_(sh_esp)]    = VGM_WORD_VALID;
-   VG_(baseBlock)[VGOFF_(sh_ebp)]    = VGM_WORD_VALID;
-   VG_(baseBlock)[VGOFF_(sh_eax)]    = VGM_WORD_VALID;
-   VG_(baseBlock)[VGOFF_(sh_ecx)]    = VGM_WORD_VALID;
-   VG_(baseBlock)[VGOFF_(sh_edx)]    = VGM_WORD_VALID;
-   VG_(baseBlock)[VGOFF_(sh_ebx)]    = VGM_WORD_VALID;
-   VG_(baseBlock)[VGOFF_(sh_esi)]    = VGM_WORD_VALID;
-   VG_(baseBlock)[VGOFF_(sh_edi)]    = VGM_WORD_VALID;
-   VG_(baseBlock)[VGOFF_(sh_eflags)] = VGM_EFLAGS_VALID;
-#endif
 }
 
 void SK_(fini) ( void )
 {
-   VG_(clientmalloc_done)();
    if (VG_(clo_verbosity) == 1) {
       if (!VG_(clo_leak_check))
          VG_(message)(Vg_UserMsg, 
@@ -373,9 +346,15 @@ void SK_(fini) ( void )
       VG_(message)(Vg_UserMsg, 
                    "For counts of detected errors, rerun with: -v");
    }
-   if (VG_(clo_leak_check)) vg_detect_memory_leaks();
+   if (VG_(clo_leak_check)) VG_(detect_memory_leaks)();
 
    done_prof_mem();
+
+   if (0) {
+      VG_(message)(Vg_DebugMsg, 
+        "------ Valgrind's client block stats follow ---------------" );
+      SK_(show_client_block_stats)();
+   }
 }
 
 /*------------------------------------------------------------*/
@@ -627,24 +606,24 @@ void make_noaccess##nnn ( Addr a, UInt len )\
 }
 #endif
 
-void make_noaccess ( Addr a, UInt len )
+void VG_(make_noaccess) ( Addr a, UInt len )
 {
    PROF_EVENT(35);
-   DEBUG("make_noaccess(%p, %x)\n", a, len);
+   DEBUG("VG_(make_noaccess)(%p, %x)\n", a, len);
    set_address_range_perms ( a, len, VGM_BIT_INVALID, VGM_BIT_INVALID );
 }
 
-void make_writable ( Addr a, UInt len )
+void VG_(make_writable) ( Addr a, UInt len )
 {
    PROF_EVENT(36);
-   DEBUG("make_writable(%p, %x)\n", a, len);
+   DEBUG("VG_(make_writable)(%p, %x)\n", a, len);
    set_address_range_perms ( a, len, VGM_BIT_VALID, VGM_BIT_INVALID );
 }
 
-void make_readable ( Addr a, UInt len )
+void VG_(make_readable) ( Addr a, UInt len )
 {
    PROF_EVENT(37);
-   DEBUG("make_readable(%p, 0x%x)\n", a, len);
+   DEBUG("VG_(make_readable)(%p, 0x%x)\n", a, len);
    set_address_range_perms ( a, len, VGM_BIT_VALID, VGM_BIT_VALID );
 }
 
@@ -656,7 +635,7 @@ void make_readable ( Addr a, UInt len )
 
 /* Block-copy permissions (needed for implementing realloc()). */
 
-void copy_address_range_state ( Addr src, Addr dst, UInt len )
+static void copy_address_range_state ( Addr src, Addr dst, UInt len )
 {
    UInt i;
 
@@ -677,7 +656,7 @@ void copy_address_range_state ( Addr src, Addr dst, UInt len )
    exist, *bad_addr is set to the offending address, so the caller can
    know what it is. */
 
-Bool check_writable ( Addr a, UInt len, Addr* bad_addr )
+Bool VG_(check_writable) ( Addr a, UInt len, Addr* bad_addr )
 {
    UInt  i;
    UChar abit;
@@ -694,14 +673,14 @@ Bool check_writable ( Addr a, UInt len, Addr* bad_addr )
    return True;
 }
 
-Bool check_readable ( Addr a, UInt len, Addr* bad_addr )
+Bool VG_(check_readable) ( Addr a, UInt len, Addr* bad_addr )
 {
    UInt  i;
    UChar abit;
    UChar vbyte;
 
    PROF_EVENT(44);
-   DEBUG("check_readable\n");
+   DEBUG("VG_(check_readable)\n");
    for (i = 0; i < len; i++) {
       abit  = get_abit(a);
       vbyte = get_vbyte(a);
@@ -720,12 +699,12 @@ Bool check_readable ( Addr a, UInt len, Addr* bad_addr )
    examine the actual bytes, to find the end, until we're sure it is
    safe to do so. */
 
-Bool check_readable_asciiz ( Addr a, Addr* bad_addr )
+Bool VG_(check_readable_asciiz) ( Addr a, Addr* bad_addr )
 {
    UChar abit;
    UChar vbyte;
    PROF_EVENT(46);
-   DEBUG("check_readable_asciiz\n");
+   DEBUG("VG_(check_readable_asciiz)\n");
    while (True) {
       PROF_EVENT(47);
       abit  = get_abit(a);
@@ -744,7 +723,7 @@ Bool check_readable_asciiz ( Addr a, Addr* bad_addr )
 /* Setting permissions for aligned words.  This supports fast stack
    operations. */
 
-void make_noaccess_aligned ( Addr a, UInt len )
+static void make_noaccess_aligned ( Addr a, UInt len )
 {
    SecMap* sm;
    UInt    sm_off;
@@ -770,7 +749,7 @@ void make_noaccess_aligned ( Addr a, UInt len )
    }
 }
 
-void make_writable_aligned ( Addr a, UInt len )
+static void make_writable_aligned ( Addr a, UInt len )
 {
    SecMap* sm;
    UInt    sm_off;
@@ -804,40 +783,44 @@ void make_writable_aligned ( Addr a, UInt len )
 /* SSS: This overrides the default definition which doesn't do anything */
 UInt VG_(dereference) ( Addr aa )
 {
-   if (check_readable(aa,4,NULL))
+   if (VG_(check_readable)(aa,4,NULL))
       return * (UInt*)aa;
    else
       return 0;
 }
 
+static
 void memcheck_new_mem_startup( Addr a, UInt len, Bool rr, Bool ww, Bool xx )
 {
    // JJJ: this ignores the permissions and just makes it readable, like the
    // old code did, AFAICT
    DEBUG("new_mem_startup(%p, %u, rr=%u, ww=%u, xx=%u)\n", a,len,rr,ww,xx);
-   make_readable(a, len);
+   VG_(make_readable)(a, len);
 }
 
+static
 void memcheck_new_mem_heap ( Addr a, UInt len, Bool is_inited )
 {
    if (is_inited) {
-      make_readable(a, len);
+      VG_(make_readable)(a, len);
    } else {
-      make_writable(a, len);
+      VG_(make_writable)(a, len);
    }
 }
 
+static
 void memcheck_set_perms (Addr a, UInt len, 
                          Bool nn, Bool rr, Bool ww, Bool xx)
 {
    DEBUG("memcheck_set_perms(%p, %u, nn=%u, rr=%u ww=%u, xx=%u)\n",
                              a, len, nn, rr, ww, xx);
-   if      (rr) make_readable(a, len);
-   else if (ww) make_writable(a, len);
-   else         make_noaccess(a, len);
+   if      (rr) VG_(make_readable)(a, len);
+   else if (ww) VG_(make_writable)(a, len);
+   else         VG_(make_noaccess)(a, len);
 }
 
 /* If a == NULL, 'size', 'alloc_free_kinds_match' are meaningless */
+static
 void memcheck_die_mem_heap ( ThreadState* tst, Addr a, UInt size,
                              Bool alloc_free_kinds_match )
 {
@@ -848,7 +831,7 @@ void memcheck_die_mem_heap ( ThreadState* tst, Addr a, UInt size,
    if (! alloc_free_kinds_match)
       SK_(record_freemismatch_error) ( tst, a );
 
-   make_noaccess(a, size);
+   VG_(make_noaccess)(a, size);
 }
 
 
@@ -1705,7 +1688,7 @@ static void sort_malloc_shadows ( ShadowChunk** shadows, UInt n_shadows )
    }
 }
 
-/* Globals, for the callback used by vg_detect_memory_leaks. */
+/* Globals, for the callback used by VG_(detect_memory_leaks). */
 
 static ShadowChunk** vglc_shadows;
 static Int           vglc_n_shadows;
@@ -1770,8 +1753,38 @@ void vg_detect_memory_leaks_notify_addr ( Addr a, UInt word_at_a )
    }
 }
 
+/* Allocate a suitably-sized array, copy all the malloc-d block
+   shadows into it, and return both the array and the size of it.
+   This is used by the memory-leak detector.
+*/
+ShadowChunk** VG_(get_malloc_shadows) ( /*OUT*/ UInt* n_shadows )
+{
+   UInt          i, scn;
+   ShadowChunk** arr;
+   ShadowChunk*  sc;
+   *n_shadows = 0;
+   for (scn = 0; scn < VG_N_MALLOCLISTS; scn++) {
+      for (sc = VG_(malloclist)[scn]; sc != NULL; sc = sc->next) {
+         (*n_shadows)++;
+      }
+   }
+   if (*n_shadows == 0) return NULL;
 
-void vg_detect_memory_leaks ( void )
+   arr = VG_(malloc)( VG_AR_PRIVATE, 
+                      *n_shadows * sizeof(ShadowChunk*) );
+
+   i = 0;
+   for (scn = 0; scn < VG_N_MALLOCLISTS; scn++) {
+      for (sc = VG_(malloclist)[scn]; sc != NULL; sc = sc->next) {
+         arr[i++] = sc;
+      }
+   }
+   vg_assert(i == *n_shadows);
+   return arr;
+}
+
+
+void VG_(detect_memory_leaks) ( void )
 {
    Int    i;
    Int    blocks_leaked, bytes_leaked;
@@ -1996,6 +2009,7 @@ Bool SKN_(expensive_sanity_check) ( void )
    Debugging machinery (turn on to debug).  Something of a mess.
    ------------------------------------------------------------------ */
 
+#if 0
 /* Print the value tags on the 8 integer registers & flag reg. */
 
 static void uint_to_bits ( UInt x, Char* str )
@@ -2015,7 +2029,7 @@ static void uint_to_bits ( UInt x, Char* str )
 /* Caution!  Not vthread-safe; looks in VG_(baseBlock), not the thread
    state table. */
 
-void vg_show_reg_tags ( void )
+static void vg_show_reg_tags ( void )
 {
    Char buf1[36];
    Char buf2[36];
@@ -2053,7 +2067,6 @@ void vg_show_reg_tags ( void )
 }
 
 
-#if 0
 /* For debugging only.  Scan the address space and touch all allegedly
    addressible words.  Useful for establishing where Valgrind's idea of
    addressibility has diverged from what the kernel believes. */
@@ -2133,41 +2146,6 @@ void  SKN_(post_check_known_blocking_syscall)
 
 
 /*------------------------------------------------------------*/
-/*--- MemCheck-specific client requests                    ---*/
-/*------------------------------------------------------------*/
-
-UInt SKN_(handle_client_request) ( ThreadState* tst, UInt* arg)
-{
-   Bool  ok;
-   Addr  bad_addr;
-
-   switch (arg[0]) {
-
-// SSS: this is all screwed up, because of the client blocks...
-      case VG_USERREQ__CHECK_WRITABLE: /* check writable */
-         ok = check_writable ( arg[1], arg[2], &bad_addr );
-         if (!ok)
-            SK_(record_user_error) ( tst, bad_addr, /*isWrite=*/True );
-         return ok ? (UInt)NULL : bad_addr;
-
-      case VG_USERREQ__CHECK_READABLE: /* check readable */
-         ok = check_readable ( arg[1], arg[2], &bad_addr );
-         if (!ok)
-            SK_(record_user_error) ( tst, bad_addr, /*isWrite=*/False );
-         return ok ? (UInt)NULL : bad_addr;
-
-      case VG_USERREQ__DO_LEAK_CHECK:
-         vg_detect_memory_leaks();
-         return 0; /* return value is meaningless */
-
-      default:
-         VG_(printf)("\nError:\n"
-                     "  unknown MemCheck client request: 0x%x\n", arg[0]);
-         VG_(panic)("SKN_(handle_client_request) unknown request");
-   }
-}
-
-/*------------------------------------------------------------*/
 /*--- Stuff (SSS: rename, reorder)                         ---*/
 /*------------------------------------------------------------*/
 
@@ -2179,7 +2157,7 @@ void check_is_writable ( CorePart part, ThreadState* tst,
    Addr bad_addr;
    /* VG_(message)(Vg_DebugMsg,"check is writable: %x .. %x",
                                base,base+size-1); */
-   ok = check_writable ( base, size, &bad_addr );
+   ok = VG_(check_writable) ( base, size, &bad_addr );
    if (!ok) {
       // SSS: fill in other cases
       switch (part) {
@@ -2205,7 +2183,7 @@ void check_is_readable ( CorePart part, ThreadState* tst,
    Addr bad_addr;
    /* VG_(message)(Vg_DebugMsg,"check is readable: %x .. %x",
                                base,base+size-1); */
-   ok = check_readable ( base, size, &bad_addr );
+   ok = VG_(check_readable) ( base, size, &bad_addr );
    if (!ok) {
       switch (part) {
       case Vg_CoreSysCall:
@@ -2237,7 +2215,7 @@ void check_is_readable_asciiz ( CorePart part, ThreadState* tst,
    /* VG_(message)(Vg_DebugMsg,"check is readable asciiz: 0x%x",str); */
 
    vg_assert(part == Vg_CoreSysCall);
-   ok = check_readable_asciiz ( (Addr)str, &bad_addr );
+   ok = VG_(check_readable_asciiz) ( (Addr)str, &bad_addr );
    if (!ok) {
       SK_(record_param_error) ( tst, bad_addr, /*is_writable =*/False, s );
    }
@@ -2329,9 +2307,9 @@ void SK_(pre_clo_init)(VgNeeds* needs, VgTrackEvents* track)
    needs->pthread_errors          = True;
    needs->report_errors           = True;
 
-   needs->identifies_basic_blocks = False;
-
    needs->run_libc_freeres        = True;
+
+   needs->identifies_basic_blocks = False;
 
    needs->command_line_options    = True;
    needs->client_requests         = True;
@@ -2360,29 +2338,29 @@ void SK_(pre_clo_init)(VgNeeds* needs, VgTrackEvents* track)
    /* Events to track */
    track->new_mem_startup       = & memcheck_new_mem_startup;
    track->new_mem_heap          = & memcheck_new_mem_heap;
-   track->new_mem_stack         = & make_writable;
+   track->new_mem_stack         = & VG_(make_writable);
    track->new_mem_stack_aligned = & make_writable_aligned;
-   track->new_mem_stack_signal  = & make_writable;
-   track->new_mem_brk           = & make_writable;
+   track->new_mem_stack_signal  = & VG_(make_writable);
+   track->new_mem_brk           = & VG_(make_writable);
    track->new_mem_mmap          = & memcheck_set_perms;
    
    track->copy_mem_heap         = & copy_address_range_state;
    track->change_mem_mprotect   = & memcheck_set_perms;
       
-   track->ban_mem_heap          = & make_noaccess;
-   track->ban_mem_stack         = & make_noaccess;
+   track->ban_mem_heap          = & VG_(make_noaccess);
+   track->ban_mem_stack         = & VG_(make_noaccess);
 
    track->die_mem_heap          = & memcheck_die_mem_heap;
-   track->die_mem_stack         = & make_noaccess;
+   track->die_mem_stack         = & VG_(make_noaccess);
    track->die_mem_stack_aligned = & make_noaccess_aligned; 
-   track->die_mem_stack_signal  = & make_noaccess; 
-   track->die_mem_brk           = & make_noaccess;
-   track->die_mem_munmap        = & make_noaccess; 
+   track->die_mem_stack_signal  = & VG_(make_noaccess); 
+   track->die_mem_brk           = & VG_(make_noaccess);
+   track->die_mem_munmap        = & VG_(make_noaccess); 
 
    track->pre_mem_read          = & check_is_readable;
    track->pre_mem_read_asciiz   = & check_is_readable_asciiz;
    track->pre_mem_write         = & check_is_writable;
-   track->post_mem_write        = & make_readable;
+   track->post_mem_write        = & VG_(make_readable);
 
    init_shadow_memory();
 
@@ -2402,6 +2380,8 @@ void SK_(pre_clo_init)(VgNeeds* needs, VgTrackEvents* track)
    VG_(baseBlock)[VGOFF_(sh_esi)]    = VGM_WORD_VALID;
    VG_(baseBlock)[VGOFF_(sh_edi)]    = VGM_WORD_VALID;
    VG_(baseBlock)[VGOFF_(sh_eflags)] = VGM_EFLAGS_VALID;
+
+   init_prof_mem();
 }
 
 /*--------------------------------------------------------------------*/
