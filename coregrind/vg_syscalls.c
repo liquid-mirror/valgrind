@@ -955,6 +955,18 @@ void VG_(perform_assumed_nonblocking_syscall) ( ThreadId tid )
          KERNEL_DO_SYSCALL(tid,res);
          break;
 
+#     if defined(__NR_adjtimex)
+      case __NR_adjtimex: /* syscall 124 */
+        /* int adjtimex(struct timex *buf) */
+         MAYBE_PRINTF("adjtimex ( %p )\n",arg1);
+         SYSCALL_TRACK( pre_mem_write, tid, "adjtimex(buf)",
+                        arg1, sizeof(struct timex) );
+         KERNEL_DO_SYSCALL(tid,res);
+         if (!VG_(is_kerror)(res))
+            VG_TRACK( post_mem_write, arg1, sizeof(struct timex) );
+        break;
+#     endif
+
       /* !!!!!!!!!! New, untested syscalls, 14 Mar 02 !!!!!!!!!! */
 
 #     if defined(__NR_setresgid32)
@@ -3341,6 +3353,21 @@ void VG_(perform_assumed_nonblocking_syscall) ( ThreadId tid )
                VG_TRACK( post_mem_write, arg2, sizeof(int) );
             if (arg4 != (Addr)NULL)
                VG_TRACK( post_mem_write, arg4, sizeof(struct rusage) );
+         }
+         break;
+
+      case __NR_waitpid: /* syscall 7 */
+         /* pid_t waitpid(pid_t pid, int *status, int options); */
+         
+         MAYBE_PRINTF("waitpid ( %d, %p, %d )\n",
+                        arg1,arg2,arg3);
+         if (arg2 != (Addr)NULL)
+            SYSCALL_TRACK( pre_mem_write, tid, "waitpid(status)",
+                                          arg2, sizeof(int) );
+         KERNEL_DO_SYSCALL(tid,res);
+         if (!VG_(is_kerror)(res)) {
+            if (arg2 != (Addr)NULL)
+               VG_TRACK( post_mem_write, arg2, sizeof(int) );
          }
          break;
 
