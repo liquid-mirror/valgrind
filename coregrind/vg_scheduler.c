@@ -148,11 +148,12 @@ static ThreadKeyState vg_thread_keys[VG_N_THREAD_KEYS];
 typedef UInt ThreadKey;
 
 
+UInt VG_(written_shadow_reg);
+
 /* Forwards */
 static void do_client_request ( ThreadId tid );
 static void scheduler_sanity ( void );
 static void do_pthread_cond_timedwait_TIMEOUT ( ThreadId tid );
-
 
 /* ---------------------------------------------------------------------
    Helper functions for the scheduler.
@@ -401,15 +402,31 @@ void VG_(load_thread_state) ( ThreadId tid )
    for (i = 0; i < VG_SIZE_OF_FPUSTATE_W; i++)
       VG_(baseBlock)[VGOFF_(m_fpustate) + i] = VG_(threads)[tid].m_fpu[i];
 
-   VG_(baseBlock)[VGOFF_(sh_eax)] = VG_(threads)[tid].sh_eax;
-   VG_(baseBlock)[VGOFF_(sh_ebx)] = VG_(threads)[tid].sh_ebx;
-   VG_(baseBlock)[VGOFF_(sh_ecx)] = VG_(threads)[tid].sh_ecx;
-   VG_(baseBlock)[VGOFF_(sh_edx)] = VG_(threads)[tid].sh_edx;
-   VG_(baseBlock)[VGOFF_(sh_esi)] = VG_(threads)[tid].sh_esi;
-   VG_(baseBlock)[VGOFF_(sh_edi)] = VG_(threads)[tid].sh_edi;
-   VG_(baseBlock)[VGOFF_(sh_ebp)] = VG_(threads)[tid].sh_ebp;
-   VG_(baseBlock)[VGOFF_(sh_esp)] = VG_(threads)[tid].sh_esp;
-   VG_(baseBlock)[VGOFF_(sh_eflags)] = VG_(threads)[tid].sh_eflags;
+   if (VG_(needs).shadow_regs) {
+      VG_(baseBlock)[VGOFF_(sh_eax)] = VG_(threads)[tid].sh_eax;
+      VG_(baseBlock)[VGOFF_(sh_ebx)] = VG_(threads)[tid].sh_ebx;
+      VG_(baseBlock)[VGOFF_(sh_ecx)] = VG_(threads)[tid].sh_ecx;
+      VG_(baseBlock)[VGOFF_(sh_edx)] = VG_(threads)[tid].sh_edx;
+      VG_(baseBlock)[VGOFF_(sh_esi)] = VG_(threads)[tid].sh_esi;
+      VG_(baseBlock)[VGOFF_(sh_edi)] = VG_(threads)[tid].sh_edi;
+      VG_(baseBlock)[VGOFF_(sh_ebp)] = VG_(threads)[tid].sh_ebp;
+      VG_(baseBlock)[VGOFF_(sh_esp)] = VG_(threads)[tid].sh_esp;
+      VG_(baseBlock)[VGOFF_(sh_eflags)] = VG_(threads)[tid].sh_eflags;
+   } else {
+      /* Fields shouldn't be used -- check their values haven't changed. */
+      /* Nb: they are written to by some macros like SET_EDX, but they
+       *     should just write VG_UNUSED_SHADOW_REG_VALUE. */
+      vg_assert(
+         VG_UNUSED_SHADOW_REG_VALUE == VG_(threads)[tid].sh_eax &&
+         VG_UNUSED_SHADOW_REG_VALUE == VG_(threads)[tid].sh_ebx &&
+         VG_UNUSED_SHADOW_REG_VALUE == VG_(threads)[tid].sh_ecx &&
+         VG_UNUSED_SHADOW_REG_VALUE == VG_(threads)[tid].sh_edx &&
+         VG_UNUSED_SHADOW_REG_VALUE == VG_(threads)[tid].sh_esi &&
+         VG_UNUSED_SHADOW_REG_VALUE == VG_(threads)[tid].sh_edi &&
+         VG_UNUSED_SHADOW_REG_VALUE == VG_(threads)[tid].sh_ebp &&
+         VG_UNUSED_SHADOW_REG_VALUE == VG_(threads)[tid].sh_esp &&
+         VG_UNUSED_SHADOW_REG_VALUE == VG_(threads)[tid].sh_eflags);
+   }
 
    vg_tid_currently_in_baseBlock = tid;
 }
@@ -443,15 +460,28 @@ void VG_(save_thread_state) ( ThreadId tid )
    for (i = 0; i < VG_SIZE_OF_FPUSTATE_W; i++)
       VG_(threads)[tid].m_fpu[i] = VG_(baseBlock)[VGOFF_(m_fpustate) + i];
 
-   VG_(threads)[tid].sh_eax = VG_(baseBlock)[VGOFF_(sh_eax)];
-   VG_(threads)[tid].sh_ebx = VG_(baseBlock)[VGOFF_(sh_ebx)];
-   VG_(threads)[tid].sh_ecx = VG_(baseBlock)[VGOFF_(sh_ecx)];
-   VG_(threads)[tid].sh_edx = VG_(baseBlock)[VGOFF_(sh_edx)];
-   VG_(threads)[tid].sh_esi = VG_(baseBlock)[VGOFF_(sh_esi)];
-   VG_(threads)[tid].sh_edi = VG_(baseBlock)[VGOFF_(sh_edi)];
-   VG_(threads)[tid].sh_ebp = VG_(baseBlock)[VGOFF_(sh_ebp)];
-   VG_(threads)[tid].sh_esp = VG_(baseBlock)[VGOFF_(sh_esp)];
-   VG_(threads)[tid].sh_eflags = VG_(baseBlock)[VGOFF_(sh_eflags)];
+   if (VG_(needs).shadow_regs) {
+      VG_(threads)[tid].sh_eax = VG_(baseBlock)[VGOFF_(sh_eax)];
+      VG_(threads)[tid].sh_ebx = VG_(baseBlock)[VGOFF_(sh_ebx)];
+      VG_(threads)[tid].sh_ecx = VG_(baseBlock)[VGOFF_(sh_ecx)];
+      VG_(threads)[tid].sh_edx = VG_(baseBlock)[VGOFF_(sh_edx)];
+      VG_(threads)[tid].sh_esi = VG_(baseBlock)[VGOFF_(sh_esi)];
+      VG_(threads)[tid].sh_edi = VG_(baseBlock)[VGOFF_(sh_edi)];
+      VG_(threads)[tid].sh_ebp = VG_(baseBlock)[VGOFF_(sh_ebp)];
+      VG_(threads)[tid].sh_esp = VG_(baseBlock)[VGOFF_(sh_esp)];
+      VG_(threads)[tid].sh_eflags = VG_(baseBlock)[VGOFF_(sh_eflags)];
+   } else {
+      /* Fill with recognisable junk */
+      VG_(threads)[tid].sh_eax =
+      VG_(threads)[tid].sh_ebx =
+      VG_(threads)[tid].sh_ecx =
+      VG_(threads)[tid].sh_edx =
+      VG_(threads)[tid].sh_esi =
+      VG_(threads)[tid].sh_edi =
+      VG_(threads)[tid].sh_ebp =
+      VG_(threads)[tid].sh_esp = 
+      VG_(threads)[tid].sh_eflags = VG_UNUSED_SHADOW_REG_VALUE;
+   }
 
    /* Fill it up with junk. */
    VG_(baseBlock)[VGOFF_(m_eax)] = junk;
@@ -3086,9 +3116,9 @@ void do__get_fhstack_entry ( ThreadId tid, Int n, /*OUT*/
 static
 void do_client_request ( ThreadId tid )
 {
-#  define RETURN_WITH(vvv)                        \
-       { tst->m_edx = (vvv);                      \
-         tst->sh_edx = VGM_WORD_VALID;            \
+#  define RETURN_WITH(vvv)                      \
+       { tst->m_edx = (vvv);                    \
+         tst->sh_edx = VG_(written_shadow_reg); \
        }
 
    ThreadState* tst    = &VG_(threads)[tid];
