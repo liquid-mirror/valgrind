@@ -250,11 +250,6 @@ void VG_(maybe_add_context) ( ErrContext* ec )
       }
    }
 
-   // SSS: we call eq_ErrContext here before we fill in the AddrInfo, and
-   // then fill in the AddrInfo afterwards... probably doesn't matter
-   // because no errors will have everything the same except different
-   // AddrInfo's.
-
    /* First, see if we've got an error record matching this one. */
    p      = vg_err_contexts;
    p_prev = NULL;
@@ -549,17 +544,6 @@ static Bool setLocationTy ( Char** p_caller, SuppressionLocTy* p_ty )
 #define STREQ(s1,s2) (s1 != NULL && s2 != NULL \
                       && VG_(strcmp)((s1),(s2))==0)
 
-Char* VG_(copyStr) ( Char* str )
-{
-   Int   n, i;
-   Char* str2;
-   n    = VG_(strlen)(str);
-   str2 = VG_(malloc)(VG_AR_PRIVATE, n+1);
-   vg_assert(n > 0);
-   for (i = 0; i < n+1; i++) str2[i] = str[i];
-   return str2;
-}
-
 // SSS: assuming at the moment that a suppression file will have only and
 // exactly the suppressions asked for by the needs.
 static void load_one_suppressions_file ( Char* filename )
@@ -590,7 +574,7 @@ static void load_one_suppressions_file ( Char* filename )
       
       eof = VG_(getLine) ( fd, buf, N_BUF );
       if (eof || STREQ(buf, "}")) goto syntax_error;
-      supp->sname = VG_(copyStr)(buf);
+      supp->sname = VG_(strdup)(VG_AR_PRIVATE, buf);
 
       eof = VG_(getLine) ( fd, buf, N_BUF );
 
@@ -626,28 +610,28 @@ static void load_one_suppressions_file ( Char* filename )
 
       eof = VG_(getLine) ( fd, buf, N_BUF );
       if (eof) goto syntax_error;
-      supp->caller0 = VG_(copyStr)(buf);
+      supp->caller0 = VG_(strdup)(VG_AR_PRIVATE, buf);
       if (!setLocationTy(&(supp->caller0), &(supp->caller0_ty)))
          goto syntax_error;
 
       eof = VG_(getLine) ( fd, buf, N_BUF );
       if (eof) goto syntax_error;
       if (!STREQ(buf, "}")) {
-         supp->caller1 = VG_(copyStr)(buf);
+         supp->caller1 = VG_(strdup)(VG_AR_PRIVATE, buf);
          if (!setLocationTy(&(supp->caller1), &(supp->caller1_ty)))
             goto syntax_error;
       
          eof = VG_(getLine) ( fd, buf, N_BUF );
          if (eof) goto syntax_error;
          if (!STREQ(buf, "}")) {
-            supp->caller2 = VG_(copyStr)(buf);
+            supp->caller2 = VG_(strdup)(VG_AR_PRIVATE, buf);
             if (!setLocationTy(&(supp->caller2), &(supp->caller2_ty)))
                goto syntax_error;
 
             eof = VG_(getLine) ( fd, buf, N_BUF );
             if (eof) goto syntax_error;
             if (!STREQ(buf, "}")) {
-               supp->caller3 = VG_(copyStr)(buf);
+               supp->caller3 = VG_(strdup)(VG_AR_PRIVATE, buf);
               if (!setLocationTy(&(supp->caller3), &(supp->caller3_ty)))
                  goto syntax_error;
 
