@@ -439,19 +439,18 @@ static void synth_TAG1_op ( TagOp op, Int reg, RegsLive regs_live_after )
       case Tag_Left4:
       case Tag_Left2:
       case Tag_Left1: {
-         UInt dead_reg = INVALID_REALREG;
-         Int i;
+         UInt dead_reg = R_EBP;
+         Int  i, reg_of_i;
 
          for (i = 0; i < VG_MAX_REALREGS; i++) {
-            if (! IS_REG_LIVE(i, regs_live_after) &&
-                reg != VG_(rankToRealRegNum)(i) )
-            {
-               dead_reg = VG_(rankToRealRegNum)(i);
-               break;
+            if (! IS_REG_LIVE(i, regs_live_after)) {
+               reg_of_i = VG_(rankToRealRegNum)(i);
+               if (reg != reg_of_i) {
+                  dead_reg = reg_of_i;
+                  break;
+               }
             }
          }
-         if (INVALID_REALREG == dead_reg)
-            dead_reg = R_EBP;
 
          if (R_EBP == dead_reg)
             VG_(emit_pushv_reg)(4, dead_reg);
