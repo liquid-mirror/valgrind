@@ -835,6 +835,7 @@ Bool VG_(is_empty_arena) ( ArenaId aid )
    Superblock* sb;
    WordF*      b;
    Int         b_bszW;
+
    ensure_mm_init();
    a = arenaId_to_ArenaP(aid);
    for (sb = a->sblocks; sb != NULL; sb = sb->next) {
@@ -953,7 +954,7 @@ void* VG_(arena_malloc) ( ArenaId aid, Int req_pszB )
    mallocSanityCheckArena(aid);
 #  endif
 
-   VGP_POPCC;
+   VGP_POPCC(VgpMalloc);
    return first_to_payload(a, b);
 }
 
@@ -973,8 +974,11 @@ void VG_(arena_free) ( ArenaId aid, void* ptr )
    ensure_mm_init();
    a = arenaId_to_ArenaP(aid);
 
-   if (ptr == NULL) return;
-
+   if (ptr == NULL) {
+      VGP_POPCC(VgpMalloc);
+      return;
+   }
+      
    ch = payload_to_first(a, ptr);
 
 #  ifdef DEBUG_MALLOC
@@ -1036,7 +1040,7 @@ void VG_(arena_free) ( ArenaId aid, void* ptr )
    mallocSanityCheckArena(aid);
 #  endif
 
-   VGP_POPCC;
+   VGP_POPCC(VgpMalloc);
 }
 
 
@@ -1078,6 +1082,8 @@ void* VG_(arena_malloc_aligned) ( ArenaId aid, Int req_alignB, Int req_pszB )
    Word   *base_b, *base_p, *align_p;
    UInt   saved_bytes_on_loan;
    Arena* a;
+
+   VGP_PUSHCC(VgpMalloc);
 
    ensure_mm_init();
    a = arenaId_to_ArenaP(aid);
@@ -1173,6 +1179,8 @@ void* VG_(arena_malloc_aligned) ( ArenaId aid, Int req_alignB, Int req_pszB )
    mallocSanityCheckArena(aid);
 #  endif
 
+   VGP_POPCC(VgpMalloc);
+
    return align_p;
 }
 
@@ -1185,10 +1193,16 @@ void* VG_(arena_calloc) ( ArenaId aid, Int nmemb, Int nbytes )
 {
    Int    i, size;
    UChar* p;
+
+   VGP_PUSHCC(VgpMalloc);
+
    size = nmemb * nbytes;
    vg_assert(size >= 0);
    p = VG_(arena_malloc) ( aid, size );
    for (i = 0; i < size; i++) p[i] = 0;
+
+   VGP_POPCC(VgpMalloc);
+   
    return p;
 }
 
@@ -1200,6 +1214,8 @@ void* VG_(arena_realloc) ( ArenaId aid, void* ptr,
    Int    old_bszW, old_pszW, old_pszB, i;
    UChar  *p_old, *p_new;
    UInt*  ch;
+
+   VGP_PUSHCC(VgpMalloc);
 
    ensure_mm_init();
    a = arenaId_to_ArenaP(aid);
@@ -1216,7 +1232,10 @@ void* VG_(arena_realloc) ( ArenaId aid, void* ptr,
    old_pszW = bszW_to_pszW(a, old_bszW);
    old_pszB = old_pszW * VKI_BYTES_PER_WORD;
 
-   if (req_pszB <= old_pszB) return ptr;
+   if (req_pszB <= old_pszB) {
+      VGP_POPCC(VgpMalloc);
+      return ptr;
+   }
 
    if (req_alignB == 4)
       p_new = VG_(arena_malloc) ( aid, req_pszB );
@@ -1228,6 +1247,8 @@ void* VG_(arena_realloc) ( ArenaId aid, void* ptr,
       p_new[i] = p_old[i];
 
    VG_(arena_free)(aid, p_old);
+
+   VGP_POPCC(VgpMalloc);
    return p_new;
 }
 
