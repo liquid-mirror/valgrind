@@ -1648,6 +1648,7 @@ void SK_(fini)(void)
 
    p = 100;
 
+   if (0 == Ir_total.a) Ir_total.a = 1;
    percentify(Ir_total.m1 * 100 * p / Ir_total.a, p, l1+1, buf1);
    VG_(message)(Vg_UserMsg, "I1  miss rate: %s", buf1);
                 
@@ -1681,6 +1682,9 @@ void SK_(fini)(void)
 
    p = 10;
    
+   if (0 == D_total.a)   D_total.a = 1;
+   if (0 == Dr_total.a) Dr_total.a = 1;
+   if (0 == Dw_total.a) Dw_total.a = 1;
    percentify( D_total.m1 * 100 * p / D_total.a,  p, l1+1, buf1);
    percentify(Dr_total.m1 * 100 * p / Dr_total.a, p, l2+1, buf2);
    percentify(Dw_total.m1 * 100 * p / Dw_total.a, p, l3+1, buf3);
