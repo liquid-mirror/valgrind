@@ -1859,7 +1859,7 @@ void VG_(translate) ( ThreadState* tst,
    Bool        debugging_translation;
    UChar*      final_code;
    UCodeBlock* cb;
-   //   if (is_x86_callee) VG_(printf)("X"); else VG_(printf)(".");
+//   if (is_x86_callee) VG_(printf)("X"); else VG_(printf)(".");
    VGP_PUSHCC(VgpTranslate);
    debugging_translation
       = orig_size == NULL || trans_addr == NULL || trans_size == NULL;
