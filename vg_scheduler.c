@@ -3075,7 +3075,7 @@ void do__set_fhstack_entry ( ThreadId tid, Int n, ForkHandlerEntry* fh )
                            "pthread_atfork: prepare/parent/child",
                            (Addr)fh, sizeof(ForkHandlerEntry));
 
-   if (n < 0 && n >= VG_N_FORKHANDLERSTACK) {
+   if (n < 0 || n >= VG_N_FORKHANDLERSTACK) {
       SET_EDX(tid, -1);
       return;
    } 
@@ -3101,7 +3101,7 @@ void do__get_fhstack_entry ( ThreadId tid, Int n, /*OUT*/
                             "fork: prepare/parent/child",
                             (Addr)fh, sizeof(ForkHandlerEntry));
 
-   if (n < 0 && n >= VG_N_FORKHANDLERSTACK) {
+   if (n < 0 || n >= VG_N_FORKHANDLERSTACK) {
       SET_EDX(tid, -1);
       return;
    } 

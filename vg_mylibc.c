@@ -177,7 +177,7 @@ Int VG_(ksigaddset)( vki_ksigset_t* set, Int signum )
 {
    if (set == NULL)
       return -1;
-   if (signum < 1 && signum > VKI_KNSIG)
+   if (signum < 1 || signum > VKI_KNSIG)
       return -1;
    signum--;
    set->ws[signum / VKI_KNSIG_BPW] |= (1 << (signum % VKI_KNSIG_BPW));
@@ -188,7 +188,7 @@ Int VG_(ksigdelset)( vki_ksigset_t* set, Int signum )
 {
    if (set == NULL)
       return -1;
-   if (signum < 1 && signum > VKI_KNSIG)
+   if (signum < 1 || signum > VKI_KNSIG)
       return -1;
    signum--;
    set->ws[signum / VKI_KNSIG_BPW] &= ~(1 << (signum % VKI_KNSIG_BPW));
@@ -199,7 +199,7 @@ Int VG_(ksigismember) ( vki_ksigset_t* set, Int signum )
 {
    if (set == NULL)
       return 0;
-   if (signum < 1 && signum > VKI_KNSIG)
+   if (signum < 1 || signum > VKI_KNSIG)
       return 0;
    signum--;
    if (1 & ((set->ws[signum / VKI_KNSIG_BPW]) >> (signum % VKI_KNSIG_BPW)))
