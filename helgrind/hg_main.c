@@ -243,7 +243,7 @@ static __inline__ void init_virgin_sword(Addr a)
  * really) */
 void make_writable_aligned ( Addr a, UInt size )
 {
-   Addr    a_past_end = a + size;
+   Addr a_past_end = a + size;
 
    //PROF_EVENT(??)  PPP
    vg_assert(IS_ALIGNED4_ADDR(a));
