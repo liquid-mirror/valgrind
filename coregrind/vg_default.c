@@ -182,7 +182,7 @@ void SKN_(emitExtUInstr)(UInstr* u)
    VG_(panic)("called SKN_(emitExtUInstr)");
 }
 
-Bool SKN_(saneExtUInstr)(Bool beforeRA, UInstr* u)
+Bool SKN_(saneExtUInstr)(Bool beforeRA, Bool beforeLiveness, UInstr* u)
 {
    VG_(printf)(nonfund_panic);
    VG_(panic)("called SKN_(saneExtUInstr)");

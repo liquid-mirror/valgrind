@@ -623,7 +623,7 @@ extern Int   VG_(getNewShadow)   ( UCodeBlock* cb );
 
 /* ------------------------------------------------------------------ */
 /* Low-level UInstr builders */
-extern void VG_(emptyUInstr)( UInstr* u );
+extern void VG_(newNOP)     ( UInstr* u );
 extern void VG_(newUInstr0) ( UCodeBlock* cb, Opcode opcode, Int sz );
 extern void VG_(newUInstr1) ( UCodeBlock* cb, Opcode opcode, Int sz,
                                Tag tag1, UInt val1 );
@@ -661,7 +661,7 @@ extern void VG_(callHelper_2_0) ( UCodeBlock* cb, Addr f, UInt arg1, UInt arg2,
 void VG_(set_global_var) ( UCodeBlock* cb, Addr globvar_ptr, UInt val);
 
 /* ------------------------------------------------------------------ */
-/* UCode pretty printing, to help debugging skins;  but only useful
+/* UCode pretty/ugly printing, to help debugging skins;  but only useful
    if VG_(needs).extends_UCode == True. */
 
 /* When True, all generated code is/should be printed. */
@@ -669,6 +669,7 @@ extern Bool  VG_(print_codegen);
 
 extern void  VG_(ppUCodeBlock)    ( UCodeBlock* cb, Char* title );
 extern void  VG_(ppUInstr)        ( Int instrNo, UInstr* u );
+extern void  VG_(upUInstr)        ( Int instrNo, UInstr* u );
 extern Char* VG_(nameUOpcode)     ( Bool upper, Opcode opc );
 extern void  VG_(ppUOperand)      ( UInstr* u, Int operandNo, 
                                     Int sz, Bool parens );
@@ -1242,7 +1243,8 @@ extern UInt SKN_(handle_client_request) ( ThreadState* tst, UInt* arg_block );
 
 extern Int   SKN_(getExtRegUsage) ( UInstr* u, Tag tag, RegUse* arr );
 extern void  SKN_(emitExtUInstr)  ( UInstr* u );
-extern Bool  SKN_(saneExtUInstr)  ( Bool beforeRA, UInstr* u );
+extern Bool  SKN_(saneExtUInstr)  ( Bool beforeRA, Bool beforeLiveness,
+                                    UInstr* u );
 extern Char* SKN_(nameExtUOpcode) ( Opcode opc );
 extern void  SKN_(ppExtUInstr)    ( UInstr* u );
 

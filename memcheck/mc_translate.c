@@ -34,29 +34,20 @@
    Template functions for extending UCode
    ------------------------------------------------------------------ */
 
-/* Restrictions on instrumentation insns are as follows: 
-
-      A=ArchReg   S=SpillNo   T=TempReg   L=Literal   R=RealReg
-      N=NoValue
-
-         LOADV      T       T       N
-         STOREV     T,L     T       N
-         GETV       A       T       N
-         PUTV       T,L     A       N
-         GETVF      T       N       N
-         PUTVF      T       N       N
-         WIDENV     T       N       N
-         TESTV      A,T     N       N
-         SETV       A,T     N       N
-         TAG1       T       N       N
-         TAG2       T       T       N
-
-   Compare this with the restrictions on core instructions in vg_translate.c.
-   Everything general said there applies here too.
+/* Compare this with the restrictions on core instructions in
+   vg_translate.c:VG_(saneUInstr)().  Everything general said there applies
+   here too.
 */
-Bool SKN_(saneExtUInstr)(Bool beforeRA, UInstr* u)
+Bool SKN_(saneExtUInstr)(Bool beforeRA, Bool beforeLiveness, UInstr* u)
 {
 // SSS: duplicating these macros really sucks
+#  define LIT0 (u->lit32 == 0)
+#  define LIT1 (!(LIT0))
+#  define LITm (u->tag1 == Literal ? True : LIT0 )
+#  define SZ0 (u->size == 0)
+#  define SZi (u->size == 4 || u->size == 2 || u->size == 1)
+#  define SZj (u->size == 4 || u->size == 2 || u->size == 1 || u->size == 0)
+#  define CC0 (u->flags_r == FlagsEmpty && u->flags_w == FlagsEmpty)
 #  define TR1 (beforeRA ? (u->tag1 == TempReg) : (u->tag1 == RealReg))
 #  define TR2 (beforeRA ? (u->tag2 == TempReg) : (u->tag2 == RealReg))
 #  define A1  (u->tag1 == ArchReg)
@@ -64,10 +55,21 @@ Bool SKN_(saneExtUInstr)(Bool beforeRA, UInstr* u)
 #  define L1  (u->tag1 == Literal && u->val1 == 0)
 #  define Ls1 (u->tag1 == Lit16)
 #  define Ls3 (u->tag3 == Lit16)
+#  define TRL1 (TR1 || L1)
+#  define TRA1 (TR1 || A1)
 #  define N2  (u->tag2 == NoValue)
 #  define N3  (u->tag3 == NoValue)
-#  define SZ0 (u->size == 0)
-#  define CC0 (u->flags_r == FlagsEmpty && u->flags_w == FlagsEmpty)
+#  define COND0    (u->cond         == 0)
+#  define EXTRA4b0 (u->extra4b      == 0)
+#  define SMC0     (u->smc_check    == 0)
+#  define SG_WD0   (u->signed_widen == 0)
+#  define JMPKIND0 (u->jmpkind      == 0)
+#  define CCALL0   (u->argc==0 && u->regparms_n==0 && u->has_ret_val==0 && \
+                    ( beforeLiveness                                       \
+                    ? u->save_eax==1 && u->save_ecx==1 && u->save_edx==1   \
+                    : True ))
+#  define XOTHER   (COND0 && EXTRA4b0 && SMC0 && SG_WD0 && JMPKIND0 && CCALL0)
+
    Int n_lits = 0;
    if (u->tag1 == Literal) n_lits++;
    if (u->tag2 == Literal) n_lits++;
@@ -75,23 +77,32 @@ Bool SKN_(saneExtUInstr)(Bool beforeRA, UInstr* u)
    if (n_lits > 1) 
       return False;
 
+   /* Fields not checked: val1, val2, val3 */
+
    switch (u->opcode) {
-      case LOADV:  return CC0 && TR1 && TR2 && N3;
-      case STOREV: return CC0 && (TR1 || L1) && TR2 && N3;
-      case GETV:   return CC0 && A1 && TR2 && N3;
-      case PUTV:   return CC0 && (TR1 || L1) && A2 && N3;
-      case GETVF:  return CC0 && TR1 && N2 && N3 && SZ0;
-      case PUTVF:  return CC0 && TR1 && N2 && N3 && SZ0;
-      case TESTV:  return CC0 && (A1 || TR1) && N2 && N3;
-      case SETV:   return CC0 && (A1 || TR1) && N2 && N3;
-      case TAG1:   return CC0 && TR1 && N2 && Ls3 && SZ0;
-      case TAG2:   return CC0 && TR1 && TR2 && Ls3 && SZ0;
-      default:
-         VG_(printf)("unhandled opcode: %u\n", u->opcode);
-         VG_(panic)("SKN_(saneUInstr): unhandled opcode");
+
+   /* Fields checked: lit32   size flags_r/w tag1   tag2   tag3    (rest) */
+   case LOADV:  return LIT0 && SZi && CC0 &&  TR1 && TR2 &&  N3 && XOTHER;
+   case STOREV: return LITm && SZi && CC0 && TRL1 && TR2 &&  N3 && XOTHER;
+   case GETV:   return LIT0 && SZi && CC0 &&   A1 && TR2 &&  N3 && XOTHER;
+   case PUTV:   return LITm && SZi && CC0 && TRL1 &&  A2 &&  N3 && XOTHER;
+   case GETVF: 
+   case PUTVF:  return LIT0 && SZ0 && CC0 &&  TR1 &&  N2 &&  N3 && XOTHER;
+   case TESTV: 
+   case SETV:   return LIT0 && SZj && CC0 && TRA1 &&  N2 &&  N3 && XOTHER;
+   case TAG1:   return LIT0 && SZ0 && CC0 &&  TR1 &&  N2 && Ls3 && XOTHER;
+   case TAG2:   return LIT0 && SZ0 && CC0 &&  TR1 && TR2 && Ls3 && XOTHER;
+   default:
+      VG_(printf)("unhandled opcode: %u\n", u->opcode);
+      VG_(panic)("SKN_(saneExtUInstr): unhandled opcode");
    }
-#  undef CC0
+#  undef LIT0
+#  undef LIT1
+#  undef LITm
 #  undef SZ0
+#  undef SZi
+#  undef SZj
+#  undef CC0
 #  undef TR1
 #  undef TR2
 #  undef A1
@@ -99,8 +110,16 @@ Bool SKN_(saneExtUInstr)(Bool beforeRA, UInstr* u)
 #  undef L1
 #  undef Ls1
 #  undef Ls3
+#  undef TRL1
+#  undef TRA1
 #  undef N2
 #  undef N3
+#  undef COND0
+#  undef EXTRA4b0
+#  undef SMC0
+#  undef JMPKIND0
+#  undef CCALL0
+#  undef XOTHER
 }
 
 static Char* nameOfTagOp ( VgTagOp h )
@@ -1040,10 +1059,10 @@ Bool VG_(clo_memcheck_codegen) = False;
 #define VGC_VALUE ((UChar)101)
 
 #define NOP_no_msg(uu)                                            \
-   do { uu->opcode = NOP; } while (False)
+   do { VG_(newNOP)(uu); } while (False)
 
 #define NOP_tag1_op(uu)                                           \
-   do { uu->opcode = NOP;                                         \
+   do { VG_(newNOP)(uu);                                          \
         if (dis)                                                  \
            VG_(printf)("   at %2d: delete %s due to defd arg\n",  \
                        i, nameOfTagOp(u->val3));                  \
@@ -1090,8 +1109,7 @@ static void vg_delete_redundant_SETVs ( UCodeBlock* cb )
       if (u->opcode == GETV && VGC_IS_SHADOW(u->val2) 
                             && next_is_write[u->val2]
                             && !VG_(clo_check_addrVs)) {
-         u->opcode = NOP;
-         u->size = 0;
+         VG_(newNOP)(u);
          if (dis) 
             VG_(printf)("   at %2d: delete GETV\n", i);
       } else
@@ -1099,8 +1117,7 @@ static void vg_delete_redundant_SETVs ( UCodeBlock* cb )
       if (u->opcode == TAG1 && VGC_IS_SHADOW(u->val1) 
                             && next_is_write[u->val1]
                             && !VG_(clo_check_addrVs)) {
-         u->opcode = NOP;
-         u->size = 0;
+         VG_(newNOP)(u);
          if (dis) 
             VG_(printf)("   at %2d: delete TAG1\n", i);
       } else
@@ -1108,8 +1125,7 @@ static void vg_delete_redundant_SETVs ( UCodeBlock* cb )
       if (u->opcode == TAG2 && VGC_IS_SHADOW(u->val2) 
                             && next_is_write[u->val2]
                             && !VG_(clo_check_addrVs)) {
-         u->opcode = NOP;
-         u->size = 0;
+         VG_(newNOP)(u);
          if (dis) 
             VG_(printf)("   at %2d: delete TAG2\n", i);
       } else
@@ -1121,8 +1137,7 @@ static void vg_delete_redundant_SETVs ( UCodeBlock* cb )
                            && next_is_write[u->val2]) {
          /* This MOV is pointless because the target is dead at this
             point.  Delete it. */
-         u->opcode = NOP;
-         u->size = 0;
+         VG_(newNOP)(u);
          if (dis) 
             VG_(printf)("   at %2d: delete MOV\n", i);
       } else
@@ -1132,8 +1147,7 @@ static void vg_delete_redundant_SETVs ( UCodeBlock* cb )
             vg_assert(VGC_IS_SHADOW(u->val1));
             if (next_is_write[u->val1]) {
                /* This write is pointless, so annul it. */
-               u->opcode = NOP;
-               u->size = 0;
+               VG_(newNOP)(u);
                if (dis) 
                   VG_(printf)("   at %2d: delete SETV\n", i);
             } else {
