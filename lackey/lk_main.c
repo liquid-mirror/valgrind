@@ -46,20 +46,6 @@ void SK_(pre_clo_init)(VgNeeds* needs, VgTrackEvents* not_used)
    needs->name                    = "lackey";
    needs->description             = "a UInstr counter";
 
-   needs->core_errors             = False;
-   needs->skin_errors             = False;
-   needs->run_libc_freeres        = False;
-
-   needs->identifies_basic_blocks = False;
-   needs->shadow_regs             = False;
-   needs->command_line_options    = False;
-   needs->client_requests         = False;
-   needs->extends_UCode           = False;
-   needs->wrap_syscalls           = False;
-   needs->sizeof_shadow_chunk     = 0;
-   needs->alternative_free        = False;
-   needs->sanity_checks           = False;
-
    VG_(register_compact_helper)((Addr) & add_one);
 }
 

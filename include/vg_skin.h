@@ -709,7 +709,7 @@ void VG_(set_global_var) ( UCodeBlock* cb, Addr globvar_ptr, UInt val);
 
 /* ------------------------------------------------------------------ */
 /* UCode pretty/ugly printing, to help debugging skins;  but only useful
-   if VG_(needs).extends_UCode == True. */
+   if VG_(needs).extended_UCode == True. */
 
 /* When True, all generated code is/should be printed. */
 extern Bool  VG_(print_codegen);
@@ -1062,11 +1062,10 @@ typedef
          basic block level.)  If so, it sometimes has to be discarded, because
          .so mmap/munmap-ping or self-modifying code (informed by the
          DISCARD_TRANSLATIONS user request) can cause one instruction address
-         to store information about two different instructions in one program
+         to store information about more than one instruction in one program
          run!  */
-      Bool identifies_basic_blocks;
+      Bool basic_block_discards;
 
-      // SSS: could do them as an array of user-specifiable size!
       /* Maintains information about each register? */
       Bool shadow_regs;
 
@@ -1076,15 +1075,14 @@ typedef
       Bool client_requests;
 
       /* Skin defines its own UInstrs? */
-      Bool extends_UCode;
+      Bool extended_UCode;
 
       /* Skin does stuff before and/or after system calls? */
-      Bool wrap_syscalls;
+      Bool syscall_wrapper;
 
       /* Size, in words, of extra info about malloc'd blocks recorded by
          skin.  Be careful to get this right or you'll get seg faults! */
-      // SSS: bad name
-      UInt sizeof_shadow_chunk;
+      UInt sizeof_shadow_block;
 
       /* Skin does free()s itself? */
       Bool alternative_free;
@@ -1163,8 +1161,6 @@ typedef
                                   void* /*pthread_mutex_t* */ mutex );
       
       /* Others... threads, condition variables, etc... */
-
-      // SSS: scheduler hook for Josef Wiedendorfer
 
       /* ... */
    }
@@ -1256,7 +1252,7 @@ extern Bool SK_(error_matches_suppression)(SkinError* ec, SkinSupp* su);
 
 
 /* ------------------------------------------------------------------ */
-/* VG_(needs).identifies_basic_blocks */
+/* VG_(needs).basic_block_discards */
 
 extern void SK_(discard_basic_block_info) ( Addr a, UInt size );
 
@@ -1313,7 +1309,7 @@ extern void  SK_(ppExtUInstr)    ( UInstr* u );
 
 
 /* ------------------------------------------------------------------ */
-/* VG_(needs).wrap_syscalls */
+/* VG_(needs).syscall_wrapper */
 
 /* If either of the pre_ functions malloc() something to return, the
  * corresponding post_ function had better free() it! 
