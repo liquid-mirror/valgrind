@@ -1647,11 +1647,11 @@ static void synth_WIDEN_signed ( Int sz_src, Int sz_dst, Int reg )
 
 static void synth_handle_esp_assignment ( Int reg )
 {
-   VG_(emit_pushal)();
-   VG_(emit_pushv_reg) ( 4, reg );
-   VG_(synth_call) ( False, VGOFF_(handle_esp_assignment) );
-   VG_(emit_add_lit_to_esp) ( 4 );
-   VG_(emit_popal)();
+   UInt argv[] = { reg };
+   Tag  tagv[] = { RealReg };
+
+   VG_(synth_ccall) ( (Addr) VGM_(handle_esp_assignment), 1, argv, tagv, 
+                      INVALID_REALREG );
 }
 
 
