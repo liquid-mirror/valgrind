@@ -1129,7 +1129,7 @@ void nanosleep_for_a_while ( void )
    struct vki_timespec req;
    struct vki_timespec rem;
    req.tv_sec = 0;
-   req.tv_nsec = 20 * 1000 * 1000;
+   req.tv_nsec = 10 * 1000 * 1000;
    res = VG_(nanosleep)( &req, &rem );   
    vg_assert(res == 0 /* ok */ || res == 1 /* interrupted by signal */);
 }
