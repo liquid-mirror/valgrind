@@ -67,7 +67,7 @@ void* VG_(jitmalloc) ( Int nbytes )
    jitstorage_initialise();
    if (nbytes > N_JITBLOCK_SZ) {
       /* VG_(printf)("too large: %d\n", nbytes); */
-      return VG_(malloc)(VG_AR_PRIVATE, nbytes);
+      return VG_(arena_malloc)(VG_AR_CORE, nbytes);
    }
    for (i = 0; i < N_JITBLOCKS; i++) {
       if (!jitstorage_inuse[i]) {
@@ -77,7 +77,7 @@ void* VG_(jitmalloc) ( Int nbytes )
       }
    }
    VG_(panic)("out of slots in vg_jitmalloc\n");
-   return VG_(malloc)(VG_AR_PRIVATE, nbytes);
+   return VG_(arena_malloc)(VG_AR_CORE, nbytes);
 }
 
 void VG_(jitfree) ( void* ptr )
@@ -91,7 +91,7 @@ void VG_(jitfree) ( void* ptr )
          return;
       }
    }
-   VG_(free)(VG_AR_PRIVATE, ptr);
+   VG_(arena_free)(VG_AR_CORE, ptr);
 }
 
 /*------------------------------------------------------------*/
@@ -100,7 +100,7 @@ void VG_(jitfree) ( void* ptr )
 
 UCodeBlock* VG_(allocCodeBlock) ( void )
 {
-   UCodeBlock* cb = VG_(malloc)(VG_AR_PRIVATE, sizeof(UCodeBlock));
+   UCodeBlock* cb = VG_(arena_malloc)(VG_AR_CORE, sizeof(UCodeBlock));
    cb->used = cb->size = cb->nextTemp = 0;
    cb->instrs = NULL;
    return cb;
@@ -109,8 +109,8 @@ UCodeBlock* VG_(allocCodeBlock) ( void )
 
 void VG_(freeCodeBlock) ( UCodeBlock* cb )
 {
-   if (cb->instrs) VG_(free)(VG_AR_PRIVATE, cb->instrs);
-   VG_(free)(VG_AR_PRIVATE, cb);
+   if (cb->instrs) VG_(arena_free)(VG_AR_CORE, cb->instrs);
+   VG_(arena_free)(VG_AR_CORE, cb);
 }
 
 
@@ -123,15 +123,15 @@ void ensureUInstr ( UCodeBlock* cb )
          vg_assert(cb->size == 0);
          vg_assert(cb->used == 0);
          cb->size = 8;
-         cb->instrs = VG_(malloc)(VG_AR_PRIVATE, 8 * sizeof(UInstr));
+         cb->instrs = VG_(arena_malloc)(VG_AR_CORE, 8 * sizeof(UInstr));
       } else {
          Int i;
-         UInstr* instrs2 = VG_(malloc)(VG_AR_PRIVATE, 
+         UInstr* instrs2 = VG_(arena_malloc)(VG_AR_CORE, 
                                        2 * sizeof(UInstr) * cb->size);
          for (i = 0; i < cb->used; i++)
             instrs2[i] = cb->instrs[i];
          cb->size *= 2;
-         VG_(free)(VG_AR_PRIVATE, cb->instrs);
+         VG_(arena_free)(VG_AR_CORE, cb->instrs);
          cb->instrs = instrs2;
       }
    }
@@ -1924,7 +1924,7 @@ void VG_(translate) ( ThreadState* tst,
    */
 
    VGP_PUSHCC(VgpFromUcode);
-   /* NB final_code is allocated with VG_(jitmalloc), not VG_(malloc)
+   /* NB final_code is allocated with VG_(jitmalloc), not VG_(arena_malloc)
       and so must be VG_(jitfree)'d. */
    //dis=True;
    final_code = VG_(emit_code)(cb, &final_code_size );
