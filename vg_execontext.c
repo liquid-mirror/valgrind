@@ -157,10 +157,11 @@ Bool VG_(eq_ExeContext) ( VgRes res, ExeContext* e1, ExeContext* e2 )
    In order to be thread-safe, we pass in the thread's %EIP and %EBP.
 */
 ExeContext* VG_(get_ExeContext2) ( Addr eip, Addr ebp,
-                                   Addr ebp_min, Addr ebp_max )
+                                   Addr ebp_min, Addr ebp_max_orig )
 {
    Int         i;
    Addr        eips[VG_DEEPEST_BACKTRACE];
+   Addr        ebp_max;
    Bool        same;
    UInt        hash;
    ExeContext* new_ec;
@@ -188,17 +189,29 @@ ExeContext* VG_(get_ExeContext2) ( Addr eip, Addr ebp,
    // most "normal" backtraces.
    // NJN 2002-sep-05: traces for pthreaded programs are particularly bad.
 
-   eips[0] = eip;
+   // JRS 2002-sep-17: hack, to round up ebp_max to the end of the
+   // current page, at least.  Dunno if it helps.
+   ebp_max = (ebp_max_orig + VKI_BYTES_PER_PAGE - 1) 
+                & ~(VKI_BYTES_PER_PAGE - 1);
+   ebp_max -= sizeof(Addr);
 
+   //   VG_(printf)("%p -> %p\n", ebp_max_orig, ebp_max);
+   eips[0] = eip;
+   //   VG_(printf)("\nSNAP: %p .. %p, EBP=%p\n", ebp_min, ebp_max, ebp  );
+   //   VG_(printf)("   : %p\n", eips[0]);
    /* Get whatever we safely can ... */
    for (i = 1; i < VG_(clo_backtrace_size); i++) {
-      if (!(ebp_min <= ebp && ebp <= ebp_max)) 
+      if (!(ebp_min <= ebp && ebp <= ebp_max)) {
+         //VG_(printf)("... out of range %p\n", ebp);
          break; /* ebp gone baaaad */
-      if (ebp >= ((UInt*)ebp)[0])
-         break; /* ebp gone nonmonotonic */
-
+      }
+      //     if (ebp >= ((UInt*)ebp)[0]) {
+      //   VG_(printf)("nonmonotonic\n");
+      //    break; /* ebp gone nonmonotonic */
+      // }
       eips[i] = ((UInt*)ebp)[1];  /* ret addr */
       ebp     = ((UInt*)ebp)[0];  /* old ebp */
+      //VG_(printf)("     %p\n", eips[i]);
    }
 
    /* Put zeroes in the rest. */
