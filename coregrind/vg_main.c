@@ -423,38 +423,32 @@ VgNeeds VG_(needs) = {
    .sanity_checks           = INVALID_Bool,
 };
 
-Bool   VG_(clo_error_limit);
-Bool   VG_(clo_check_addrVs);
-Bool   VG_(clo_GDB_attach);
-Int    VG_(sanity_level);
-Int    VG_(clo_verbosity);
-Bool   VG_(clo_demangle);
-Bool   VG_(clo_leak_check);
-Bool   VG_(clo_show_reachable);
-Int    VG_(clo_leak_resolution);
-Bool   VG_(clo_sloppy_malloc);
-Int    VG_(clo_alignment);
-Bool   VG_(clo_partial_loads_ok);
-Bool   VG_(clo_trace_children);
-Int    VG_(clo_logfile_fd);
-Int    VG_(clo_freelist_vol);
-Bool   VG_(clo_workaround_gcc296_bugs);
-Int    VG_(clo_n_suppressions);
+/* Define, and set defaults. */
+Bool   VG_(clo_error_limit)    = True;
+Bool   VG_(clo_GDB_attach)     = False;
+Int    VG_(sanity_level)       = 1;
+Int    VG_(clo_verbosity)      = 1;
+Bool   VG_(clo_demangle)       = True;
+Bool   VG_(clo_sloppy_malloc)  = False;
+Int    VG_(clo_alignment)      = 4;
+Bool   VG_(clo_trace_children) = False;
+Int    VG_(clo_logfile_fd)     = 2;
+Int    VG_(clo_freelist_vol)   = 1000000;
+Int    VG_(clo_n_suppressions) = 0;
 Char*  VG_(clo_suppressions)[VG_CLO_MAX_SFILES];
-Bool   VG_(clo_single_step);
-Bool   VG_(clo_optimise);
-Bool   VG_(clo_cleanup);
-Int    VG_(clo_smc_check);
-Bool   VG_(clo_trace_syscalls);
-Bool   VG_(clo_trace_signals);
-Bool   VG_(clo_trace_symtab);
-Bool   VG_(clo_trace_malloc);
-Bool   VG_(clo_trace_sched);
-Int    VG_(clo_trace_pthread_level);
-ULong  VG_(clo_stop_after);
-Int    VG_(clo_dump_error);
-Int    VG_(clo_backtrace_size);
-Char*  VG_(clo_weird_hacks);
+Bool   VG_(clo_single_step)    = False;
+Bool   VG_(clo_optimise)       = True;
+Int    VG_(clo_smc_check)      = /* VG_CLO_SMC_SOME */ VG_CLO_SMC_NONE;  
+Bool   VG_(clo_trace_syscalls) = False;
+Bool   VG_(clo_trace_signals)  = False;
+Bool   VG_(clo_trace_symtab)   = False;
+Bool   VG_(clo_trace_malloc)   = False;
+Bool   VG_(clo_trace_sched)    = False;
+Int    VG_(clo_trace_pthread_level) = 0;
+ULong  VG_(clo_stop_after)     = 1000000000000LL;
+Int    VG_(clo_dump_error)     = 0;
+Int    VG_(clo_backtrace_size) = 4;
+Char*  VG_(clo_weird_hacks)    = NULL;
 
 /* This Bool is needed by wrappers in vg_clientmalloc.c to decide how
    to behave.  Initially we say False. */
@@ -478,11 +472,11 @@ static Char vg_cmdline_copy[M_VG_CMDLINE_STRLEN];
    Processing of command-line options.
    ------------------------------------------------------------------ */
 
-void VG_(bad_option) ( Char* type, Char* opt )
+void VG_(bad_option) ( Char* opt )
 {
    VG_(shutdown_logging)();
    VG_(clo_logfile_fd) = 2; /* stderr */
-   VG_(printf)("valgrind.so: Bad %s option `%s'; aborting.\n", type, opt);
+   VG_(printf)("valgrind.so: Bad option `%s'; aborting.\n", opt);
    VG_(exit)(1);
 }
 
@@ -544,6 +538,73 @@ static void sanity_check_needs ( void )
 #undef INVALID_Bool
 }
 
+static void usage ( void )
+{
+   Char* usage1 = 
+"usage: valgrind [options] prog-and-args\n"
+"\n"
+"  core user options, with defaults in [ ], are:\n"
+"    --help                    show this message\n"
+"    --version                 show version\n"
+"    --skin=<name>             main task (skin to use) [Valgrind]\n"
+"    -q --quiet                run silently; only print error msgs\n"
+"    -v --verbose              be more verbose, incl counts of errors\n"
+"    --gdb-attach=no|yes       start GDB when errors detected? [no]\n"
+"    --demangle=no|yes         automatically demangle C++ names? [yes]\n"
+"    --num-callers=<number>    show <num> callers in stack traces [4]\n"
+"    --error-limit=no|yes      stop showing new errors if too many? [yes]\n"
+"    --sloppy-malloc=no|yes    round malloc sizes to next word? [no]\n"
+"    --alignment=<number>      set minimum alignment of allocations [4]\n"
+"    --trace-children=no|yes   Valgrind-ise child processes? [no]\n"
+"    --logfile-fd=<number>     file descriptor for messages [2=stderr]\n"
+"    --freelist-vol=<number>   volume of freed blocks queue [1000000]\n"
+"    --suppressions=<filename> suppress errors described in\n"
+"                              suppressions file <filename>\n"
+"    --weird-hacks=hack1,hack2,...  [no hacks selected]\n"
+"         recognised hacks are: ioctl-VTIME truncate-writes\n"
+"\n"
+"  %s skin user options:\n";
+
+
+   Char* usage2 = 
+"\n"
+"  core options for debugging Valgrind itself are:\n"
+"    --sanity-level=<number>   level of sanity checking to do [1]\n"
+"    --single-step=no|yes      translate each instr separately? [no]\n"
+"    --optimise=no|yes         improve intermediate code? [yes]\n"
+"    --smc-check=none|some|all check writes for s-m-c? [some]\n"
+"    --trace-syscalls=no|yes   show all system calls? [no]\n"
+"    --trace-signals=no|yes    show signal handling details? [no]\n"
+"    --trace-symtab=no|yes     show symbol table details? [no]\n"
+"    --trace-malloc=no|yes     show client malloc details? [no]\n"
+"    --trace-sched=no|yes      show thread scheduler details? [no]\n"
+"    --trace-pthread=none|some|all  show pthread event details? [no]\n"
+"    --stop-after=<number>     switch to real CPU after executing\n"
+"                              <number> basic blocks [infinity]\n"
+"    --dump-error=<number>     show translation for basic block\n"
+"                              associated with <number>'th\n"
+"                              error context [0=don't show any]\n"
+"\n"
+"  Extra options are read from env variable $VALGRIND_OPTS\n"
+"\n"
+"  Valgrind is Copyright (C) 2000-2002 Julian Seward\n"
+"  and licensed under the GNU General Public License, version 2.\n"
+"  Bug reports, feedback, admiration, abuse, etc, to: %s.\n"
+"\n";
+
+   VG_(printf)(usage1, VG_(needs).name);
+   /* Don't print skin string directly for security, ha! */
+   if (VG_(needs).command_line_options)
+      VG_(printf)("%s", SKN_(usage)());
+   else
+      VG_(printf)("    (none)\n");
+   VG_(printf)(usage2, VG_EMAIL_ADDR);
+
+   VG_(shutdown_logging)();
+   VG_(clo_logfile_fd) = 2; /* stderr */
+   VG_(exit)(1);
+}
+
 static void process_cmd_line_options ( void )
 {
    UChar* argv[M_VG_CMDLINE_OPTS];
@@ -555,39 +616,6 @@ static void process_cmd_line_options ( void )
 #  define ISSPACE(cc)      ((cc) == ' ' || (cc) == '\t' || (cc) == '\n')
 #  define STREQ(s1,s2)     (0==VG_(strcmp_ws)((s1),(s2)))
 #  define STREQN(nn,s1,s2) (0==VG_(strncmp_ws)((s1),(s2),(nn)))
-
-   /* Set defaults. */
-   VG_(clo_error_limit)      = True;
-   VG_(clo_check_addrVs)     = True;
-   VG_(clo_GDB_attach)       = False;
-   VG_(sanity_level)         = 1;
-   VG_(clo_verbosity)        = 1;
-   VG_(clo_demangle)         = True;
-   VG_(clo_leak_check)       = False;
-   VG_(clo_show_reachable)   = False;
-   VG_(clo_leak_resolution)  = 2;
-   VG_(clo_sloppy_malloc)    = False;
-   VG_(clo_alignment)        = 4;
-   VG_(clo_partial_loads_ok) = True;
-   VG_(clo_trace_children)   = False;
-   VG_(clo_logfile_fd)       = 2; /* stderr */
-   VG_(clo_freelist_vol)     = 1000000;
-   VG_(clo_workaround_gcc296_bugs) = False;
-   VG_(clo_n_suppressions)   = 0;
-   VG_(clo_single_step)      = False;
-   VG_(clo_optimise)         = True;
-   VG_(clo_cleanup)          = True;
-   VG_(clo_smc_check)        = /* VG_CLO_SMC_SOME */ VG_CLO_SMC_NONE;
-   VG_(clo_trace_syscalls)   = False;
-   VG_(clo_trace_signals)    = False;
-   VG_(clo_trace_symtab)     = False;
-   VG_(clo_trace_malloc)     = False;
-   VG_(clo_trace_sched)      = False;
-   VG_(clo_trace_pthread_level) = 0;
-   VG_(clo_stop_after)       = 1000000000000LL;
-   VG_(clo_dump_error)       = 0;
-   VG_(clo_backtrace_size)   = 4;
-   VG_(clo_weird_hacks)      = NULL;
 
    eventually_logfile_fd = VG_(clo_logfile_fd);
 
@@ -740,20 +768,7 @@ static void process_cmd_line_options ( void )
 
    for (i = 0; i < argc; i++) {
 
-      /* Once we hit "--" we assume all remaining options are
-       * skin-specific */
-      if (STREQ(argv[i], "--")) {
-         if (VG_(needs).command_line_options) {
-            SKN_(process_cmd_line_options)(argc - i - 1, &argv[i+1]);
-            break;
-
-         } else {
-            // SSS: better error msg
-            VG_(panic)("No skin-specific command-line options allowed");
-         }
-      }
-
-      else if (STREQ(argv[i], "-v") || STREQ(argv[i], "--verbose"))
+      if      (STREQ(argv[i], "-v") || STREQ(argv[i], "--verbose"))
          VG_(clo_verbosity)++;
       else if (STREQ(argv[i], "-q") || STREQ(argv[i], "--quiet"))
          VG_(clo_verbosity)--;
@@ -762,11 +777,6 @@ static void process_cmd_line_options ( void )
          VG_(clo_error_limit) = True;
       else if (STREQ(argv[i], "--error-limit=no"))
          VG_(clo_error_limit) = False;
-
-      else if (STREQ(argv[i], "--check-addrVs=yes"))
-         VG_(clo_check_addrVs) = True;
-      else if (STREQ(argv[i], "--check-addrVs=no"))
-         VG_(clo_check_addrVs) = False;
 
       else if (STREQ(argv[i], "--gdb-attach=yes"))
          VG_(clo_GDB_attach) = True;
@@ -777,28 +787,6 @@ static void process_cmd_line_options ( void )
          VG_(clo_demangle) = True;
       else if (STREQ(argv[i], "--demangle=no"))
          VG_(clo_demangle) = False;
-
-      else if (STREQ(argv[i], "--partial-loads-ok=yes"))
-         VG_(clo_partial_loads_ok) = True;
-      else if (STREQ(argv[i], "--partial-loads-ok=no"))
-         VG_(clo_partial_loads_ok) = False;
-
-      else if (STREQ(argv[i], "--leak-check=yes"))
-         VG_(clo_leak_check) = True;
-      else if (STREQ(argv[i], "--leak-check=no"))
-         VG_(clo_leak_check) = False;
-
-      else if (STREQ(argv[i], "--show-reachable=yes"))
-         VG_(clo_show_reachable) = True;
-      else if (STREQ(argv[i], "--show-reachable=no"))
-         VG_(clo_show_reachable) = False;
-
-      else if (STREQ(argv[i], "--leak-resolution=low"))
-         VG_(clo_leak_resolution) = 2;
-      else if (STREQ(argv[i], "--leak-resolution=med"))
-         VG_(clo_leak_resolution) = 4;
-      else if (STREQ(argv[i], "--leak-resolution=high"))
-         VG_(clo_leak_resolution) = VG_DEEPEST_BACKTRACE;
 
       else if (STREQ(argv[i], "--sloppy-malloc=yes"))
          VG_(clo_sloppy_malloc) = True;
@@ -812,11 +800,6 @@ static void process_cmd_line_options ( void )
          VG_(clo_trace_children) = True;
       else if (STREQ(argv[i], "--trace-children=no"))
          VG_(clo_trace_children) = False;
-
-      else if (STREQ(argv[i], "--workaround-gcc296-bugs=yes"))
-         VG_(clo_workaround_gcc296_bugs) = True;
-      else if (STREQ(argv[i], "--workaround-gcc296-bugs=no"))
-         VG_(clo_workaround_gcc296_bugs) = False;
 
       else if (STREQN(15, argv[i], "--sanity-level="))
          VG_(sanity_level) = (Int)VG_(atoll)(&argv[i][15]);
@@ -834,7 +817,7 @@ static void process_cmd_line_options ( void )
             VG_(message)(Vg_UserMsg, "Too many logfiles specified.");
             VG_(message)(Vg_UserMsg, 
                          "Increase VG_CLO_MAX_SFILES and recompile.");
-            VG_(bad_option)("core", argv[i]);
+            VG_(bad_option)(argv[i]);
          }
          VG_(clo_suppressions)[VG_(clo_n_suppressions)] = &argv[i][15];
          VG_(clo_n_suppressions)++;
@@ -848,11 +831,6 @@ static void process_cmd_line_options ( void )
          VG_(clo_optimise) = True;
       else if (STREQ(argv[i], "--optimise=no"))
          VG_(clo_optimise) = False;
-
-      else if (STREQ(argv[i], "--cleanup=yes"))
-         VG_(clo_cleanup) = True;
-      else if (STREQ(argv[i], "--cleanup=no"))
-         VG_(clo_cleanup) = False;
 
       else if (STREQ(argv[i], "--smc-check=none"))
          VG_(clo_smc_check) = VG_CLO_SMC_NONE;
@@ -911,8 +889,13 @@ static void process_cmd_line_options ( void )
             VG_(clo_backtrace_size) = VG_DEEPEST_BACKTRACE;
       }
 
+      else if (VG_(needs).command_line_options) {
+         Bool ok = SKN_(process_cmd_line_option)(argv[i]);
+         if (!ok)
+            usage();
+      }
       else
-         VG_(bad_option)("core", argv[i]);
+         usage();
    }
 
 #  undef ISSPACE
@@ -929,7 +912,7 @@ static void process_cmd_line_options ( void )
       VG_(message)(Vg_UserMsg, 
          "Invalid --alignment= setting.  "
          "Should be a power of 2, >= 4, <= 4096.");
-      VG_(bad_option)("core", "--alignment");
+      VG_(bad_option)("--alignment");
    }
 
    if (VG_(clo_GDB_attach) && VG_(clo_trace_children)) {
@@ -938,7 +921,7 @@ static void process_cmd_line_options ( void )
          "--gdb-attach=yes conflicts with --trace-children=yes");
       VG_(message)(Vg_UserMsg, 
          "Please choose one or the other, but not both.");
-      VG_(bad_option)("core", "--gdb-attach=yes and --trace-children=yes");
+      VG_(bad_option)("--gdb-attach=yes and --trace-children=yes");
    }
 
    VG_(clo_logfile_fd) = eventually_logfile_fd;
@@ -1072,9 +1055,11 @@ void VG_(main) ( void )
       VG_(stack)[10000-1-i] = (UInt)(&VG_(stack)[10000-i-1]) ^ 0xABCD4321;
    }
 
-   /* Setup stuff that depends on the skin.  Warning: Must be before
-    * vg_init_baseBlock(), process_cmd_line_options(),
-    * init_memory_and_symbols() */
+   /* Setup stuff that depends on the skin.  Must be before:
+      - vg_init_baseBlock(): to register helpers
+      - process_cmd_line_options(): to setup command line options processor
+      - init_memory_and_symbols() (to setup memory event trackers).
+    */
    SK_(setup) ( & VG_(needs), & VG_(track_events) );
    sanity_check_needs();
 
