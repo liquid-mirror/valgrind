@@ -1941,11 +1941,13 @@ Bool VG_(get_fnname_nodemangle) ( Addr a, Char* buf, Int nbuf )
 }
 
 /* Map a code address to the name of a shared object file or the executable.
-   Returns False if no idea; otherwise True.  Caller supplies buf and
-   nbuf. */
+   Returns False if no idea; otherwise True.  Doesn't require debug info.
+   Caller supplies buf and nbuf. */
 Bool VG_(get_objname) ( Addr a, Char* buf, Int nbuf )
 {
    SegInfo* si;
+
+   ensure_debug_info_inited();
    for (si = segInfo; si != NULL; si = si->next) {
       if (si->start <= a && a < si->start+si->size) {
          VG_(strncpy_safely)(buf, si->filename, nbuf);
@@ -2028,6 +2030,8 @@ void VG_(mini_stack_dump) ( ExeContext* ec )
    Int stop_at = VG_(clo_backtrace_size);
 
    n = 0;
+
+   // SSS: factor this repeated code out!
 
    know_fnname  = VG_(get_fnname) (ec->eips[0], buf_fn,  M_VG_ERRTXT);
    know_objname = VG_(get_objname)(ec->eips[0], buf_obj, M_VG_ERRTXT);
