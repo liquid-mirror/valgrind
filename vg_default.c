@@ -129,10 +129,21 @@ Bool SKN_(error_matches_suppression)(ErrContext* ec, Suppression* su)
    For throwing out basic block level info when code is invalidated
    ------------------------------------------------------------------ */
 
-void SKN_(discard_basic_block_info)( Addr a, UInt size)
+void SKN_(discard_basic_block_info)(Addr a, UInt size)
 {
    VG_(printf)(nonfund_panic);
    VG_(panic)("called SKN_(discard_basic_block_info)");
+}
+
+
+/* ---------------------------------------------------------------------
+   For throwing out basic block level info when code is invalidated
+   ------------------------------------------------------------------ */
+
+void SKN_(written_shadow_regs_values)(UInt* gen_reg, UInt* eflags)
+{
+   VG_(printf)(nonfund_panic);
+   VG_(panic)("called SKN_(written_shadow_regs_values)");
 }
 
 
@@ -146,7 +157,7 @@ Bool SKN_(process_cmd_line_option)(UChar* argv)
    VG_(panic)("called SKN_(process_cmd_line_option)");
 }
 
-Char* SKN_(usage)( void)
+Char* SKN_(usage)(void)
 {
    VG_(printf)(nonfund_panic);
    VG_(panic)("called SKN_(usage)");

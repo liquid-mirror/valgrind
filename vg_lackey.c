@@ -49,22 +49,17 @@ void SK_(pre_clo_init)(VgNeeds* needs, VgTrackEvents* not_used)
 
    needs->record_mem_exe_context  = False;
    needs->postpone_mem_reuse      = False;
-
    needs->debug_info              = False;
    needs->pthread_errors          = False;
    needs->report_errors           = False;
-
    needs->run_libc_freeres        = False;
 
    needs->identifies_basic_blocks = False;
-
+   needs->shadow_regs             = False;
    needs->command_line_options    = False;
    needs->client_requests         = False;
-
    needs->extends_UCode           = False;
-
    needs->wrap_syscalls           = False;
-
    needs->sanity_checks           = False;
 
    VG_(register_compact_helper)((Addr) & add_one);
@@ -115,7 +110,7 @@ UCodeBlock* SK_(instrument) ( UCodeBlock* cb, Addr not_used )
 
 void SK_(fini)(void)
 {
-    VG_(printf)("UInstrs counted: %u\n", n_uinstrs);
+    VG_(message)(Vg_UserMsg, "UInstrs counted: %u\n", n_uinstrs);
 }
 
 /*--------------------------------------------------------------------*/
