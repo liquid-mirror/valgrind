@@ -844,6 +844,8 @@ void sched_do_syscall ( ThreadId tid )
 
    /* Deal with error case immediately. */
    if (!fd_is_valid(fd)) {
+      // SSS: turn this off if VG_(needs).report_errors = False?
+      // SSS: and any like it?
       VG_(message)(Vg_UserMsg, 
          "Warning: invalid file descriptor %d in syscall %s",
          fd, syscall_no == __NR_read ? "read()" : "write()" );
