@@ -68,19 +68,19 @@ static Bool eq_CoreError ( VgRes res, CoreError* e1, CoreError* e2 )
 
    switch (e1->skin_err.ekind) {
       case PThreadErr:
-         vg_assert(VG_(needs).pthread_errors);
+         vg_assert(VG_(needs).core_errors);
          if (e1->skin_err.string == e2->skin_err.string) 
             return True;
          if (0 == VG_(strcmp)(e1->skin_err.string, e2->skin_err.string))
             return True;
          return False;
       default: 
-         if (VG_(needs).report_errors)
+         if (VG_(needs).skin_errors)
             return SKN_(eq_SkinError)(res, &e1->skin_err, &e2->skin_err);
          else {
             VG_(printf)("Error:\n"
                         "  unhandled error type: %u.  Perhaps " 
-                        "VG_(needs).report_errors should be set?\n",
+                        "VG_(needs).skin_errors should be set?\n",
                         e1->skin_err.ekind);
             VG_(panic)("eq_CoreError: unhandled error type");
          }
@@ -103,17 +103,17 @@ static void pp_CoreError ( CoreError* err, Bool printCount )
 
    switch (err->skin_err.ekind) {
       case PThreadErr:
-         vg_assert(VG_(needs).pthread_errors);
+         vg_assert(VG_(needs).core_errors);
          VG_(message)(Vg_UserMsg, "%s", err->skin_err.string );
          VG_(pp_ExeContext)(err->where);
          break;
       default: 
-         if (VG_(needs).report_errors)
+         if (VG_(needs).skin_errors)
             SKN_(pp_SkinError)( &err->skin_err, &pp_ExeContextClosure );
          else {
             VG_(printf)("Error:\n"
                         "  unhandled error type: %u.  Perhaps " 
-                        "VG_(needs).report_errors should be set?\n",
+                        "VG_(needs).skin_errors should be set?\n",
                         err->skin_err.ekind);
             VG_(panic)("pp_CoreErr: unhandled error type");
          }
@@ -362,7 +362,7 @@ void VG_(maybe_record_error) ( ThreadState* tst,
 
 void VG_(record_pthread_error) ( ThreadId tid, Char* msg )
 {
-   if (! VG_(needs).pthread_errors) return;
+   if (! VG_(needs).core_errors) return;
    VG_(maybe_record_error)( &VG_(threads)[tid], PThreadErr, /*addr*/0, msg, 
                             /*extra*/NULL );
 }
@@ -565,11 +565,11 @@ static void load_one_suppressions_file ( Char* filename )
       if (eof) goto syntax_error;
 
       /* Is it a core suppression? */
-      else if (VG_(needs).pthread_errors && STREQ(buf, "PThread")) 
+      else if (VG_(needs).core_errors && STREQ(buf, "PThread")) 
          supp->skin_supp.skind = PThreadSupp;
 
       /* Is it a skin suppression? */
-      else if (VG_(needs).report_errors && 
+      else if (VG_(needs).skin_errors && 
                SKN_(recognised_suppression)(buf, &(supp->skin_supp.skind))) {
          /* do nothing, function fills in supp->skin_supp.skind */
       }
@@ -596,7 +596,7 @@ static void load_one_suppressions_file ( Char* filename )
          continue;
       }
 
-      if (VG_(needs).report_errors && 
+      if (VG_(needs).skin_errors && 
           !SKN_(read_extra_suppression_info)(fd, buf, N_BUF, &supp->skin_supp)) 
          goto syntax_error;
 
@@ -616,7 +616,7 @@ static void load_one_suppressions_file ( Char* filename )
    }
    if (is_unrecognised_suppressions) {
       /* Print out warning about any ignored suppressions */
-      VG_(end_msg)();
+      //VG_(end_msg)();
    }
    VG_(close)(fd);
    return;
@@ -673,13 +673,13 @@ Bool supp_matches_error(CoreSupp* su, CoreError* err)
       case PThreadSupp:
          return (err->skin_err.ekind == PThreadErr);
       default:
-         if (VG_(needs).report_errors) {
+         if (VG_(needs).skin_errors) {
             return (SKN_(error_matches_suppression)(&err->skin_err, 
                                                     &su->skin_supp));
          } else {
             VG_(printf)("Error:\n"
                         "  unhandled suppression type: %u.  Perhaps " 
-                        "VG_(needs).report_errors should be set?\n",
+                        "VG_(needs).skin_errors should be set?\n",
                         err->skin_err.ekind);
             VG_(panic)("is_suppressible_error: unhandled suppression type");
          }
