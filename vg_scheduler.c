@@ -528,7 +528,6 @@ void increment_epoch ( void )
 static 
 void mostly_clear_thread_record ( ThreadId tid )
 {
-   Int j;
    vg_assert(tid >= 0 && tid < VG_N_THREADS);
    VG_(threads)[tid].tid                  = tid;
    VG_(threads)[tid].status               = VgTs_Empty;
@@ -546,8 +545,7 @@ void mostly_clear_thread_record ( ThreadId tid )
    VG_(threads)[tid].n_signals_returned = 0;
    VG_(ksigemptyset)(&VG_(threads)[tid].sig_mask);
    VG_(ksigemptyset)(&VG_(threads)[tid].sigs_waited_for);
-   for (j = 0; j < VG_N_THREAD_KEYS; j++)
-      VG_(threads)[tid].specifics[j] = NULL;
+   VG_(threads)[tid].specifics_ptr = NULL;
 }
 
 
@@ -2674,6 +2672,32 @@ Bool is_valid_key ( ThreadKey k )
    return True;
 }
 
+
+/* Return in %EDX a value of 1 if the key is valid, else 0. */
+static
+void do_pthread_key_validate ( ThreadId tid,
+                               pthread_key_t key )
+{
+   Char msg_buf[100];
+
+   if (VG_(clo_trace_pthread_level) >= 1) {
+      VG_(sprintf)(msg_buf, "pthread_key_validate    key %p", 
+                            key );
+      print_pthread_event(tid, msg_buf);
+   }
+
+   vg_assert(sizeof(pthread_key_t) == sizeof(ThreadKey));
+   vg_assert(VG_(is_valid_tid)(tid) 
+             && VG_(threads)[tid].status == VgTs_Runnable);
+
+   if (is_valid_key((ThreadKey)key)) {
+      SET_EDX(tid, 1);
+   } else {
+      SET_EDX(tid, 0);
+   }
+}
+
+
 static
 void do_pthread_key_create ( ThreadId tid,
                              pthread_key_t* key,
@@ -2742,66 +2766,57 @@ void do_pthread_key_delete ( ThreadId tid, pthread_key_t key )
    }
 
    vg_thread_keys[key].inuse = False;
-
-   /* Optional.  We're not required to do this, although it shouldn't
-      make any difference to programs which use the key/specifics
-      functions correctly.  */
-#  if 1
-   for (tid = 1; tid < VG_N_THREADS; tid++) {
-      if (VG_(threads)[tid].status != VgTs_Empty)
-         VG_(threads)[tid].specifics[key] = NULL;
-   }
-#  endif
+   SET_EDX(tid, 0);
 }
 
 
+/* Get the .specific_ptr for a thread.  Return 1 if the thread-slot
+   isn't in use, so that client-space can scan all thread slots.  1
+   cannot be confused with NULL or a legitimately-aligned specific_ptr
+   value. */
 static 
-void do_pthread_getspecific ( ThreadId tid, pthread_key_t key )
+void do_pthread_getspecific_ptr ( ThreadId tid )
 {
-   Char msg_buf[100];
+   void** specifics_ptr;
+   Char   msg_buf[100];
+
    if (VG_(clo_trace_pthread_level) >= 1) {
-      VG_(sprintf)(msg_buf, "pthread_getspecific      key %d", 
-                            key );
+      VG_(sprintf)(msg_buf, "pthread_getspecific_ptr" );
       print_pthread_event(tid, msg_buf);
    }
 
-   vg_assert(VG_(is_valid_tid)(tid) 
-             && VG_(threads)[tid].status == VgTs_Runnable);
+   vg_assert(VG_(is_valid_or_empty_tid)(tid));
 
-   if (!is_valid_key(key)) {
-      VG_(record_pthread_err)( tid, 
-         "pthread_getspecific: key is invalid");
-      SET_EDX(tid, (UInt)NULL);
+   if (VG_(threads)[tid].status == VgTs_Empty) {
+      SET_EDX(tid, 1);
       return;
    }
 
-   SET_EDX(tid, (UInt)VG_(threads)[tid].specifics[key]);
+   specifics_ptr = VG_(threads)[tid].specifics_ptr;
+
+#  define IS_ALIGNED4_ADDR(aaa_p) (0 == (((UInt)(aaa_p)) & 3))
+   vg_assert(specifics_ptr == NULL 
+             || IS_ALIGNED4_ADDR(specifics_ptr));
+#  undef IS_ALIGNED4_ADDR
+
+   SET_EDX(tid, (UInt)specifics_ptr);
 }
 
 
 static
-void do_pthread_setspecific ( ThreadId tid, 
-                              pthread_key_t key, 
-                              void *pointer )
+void do_pthread_setspecific_ptr ( ThreadId tid, void** ptr )
 {
    Char msg_buf[100];
    if (VG_(clo_trace_pthread_level) >= 1) {
-      VG_(sprintf)(msg_buf, "pthread_setspecific      key %d, ptr %p", 
-                            key, pointer );
+      VG_(sprintf)(msg_buf, "pthread_setspecific_ptr  ptr %p", 
+                            ptr );
       print_pthread_event(tid, msg_buf);
    }
 
    vg_assert(VG_(is_valid_tid)(tid) 
              && VG_(threads)[tid].status == VgTs_Runnable);
 
-   if (!is_valid_key(key)) {
-      VG_(record_pthread_err)( tid, 
-         "pthread_setspecific: key is invalid");
-      SET_EDX(tid, EINVAL);
-      return;
-   }
-
-   VG_(threads)[tid].specifics[key] = pointer;
+   VG_(threads)[tid].specifics_ptr = ptr;
    SET_EDX(tid, 0);
 }
 
@@ -2823,12 +2838,19 @@ void do__get_key_destr_and_spec ( ThreadId tid,
    }
    vg_assert(VG_(is_valid_tid)(tid));
    vg_assert(key >= 0 && key < VG_N_THREAD_KEYS);
+
    if (!vg_thread_keys[key].inuse) {
       SET_EDX(tid, -1);
       return;
    }
+
    cu->fn = vg_thread_keys[key].destructor;
-   cu->arg = VG_(threads)[tid].specifics[key];
+   if (VG_(threads)[tid].specifics_ptr == NULL) {
+      cu->arg = NULL;
+   } else {
+      cu->arg = VG_(threads)[tid].specifics_ptr[key];
+   }
+
    if (VG_(clo_instrument))
       VGM_(make_readable)( (Addr)cu, sizeof(CleanupEntry) );
    SET_EDX(tid, 0);
@@ -3165,8 +3187,8 @@ void do_client_request ( ThreadId tid )
          do_pthread_mutex_unlock( tid, (void *)(arg[1]) );
          break;
 
-      case VG_USERREQ__PTHREAD_GETSPECIFIC:
- 	 do_pthread_getspecific ( tid, (UInt)(arg[1]) );
+      case VG_USERREQ__PTHREAD_GETSPECIFIC_PTR:
+ 	 do_pthread_getspecific_ptr ( tid );
          break;
 
       case VG_USERREQ__SET_CANCELTYPE:
@@ -3221,6 +3243,11 @@ void do_client_request ( ThreadId tid )
             (pthread_cond_t *)(arg[1]) );
          break;
 
+      case VG_USERREQ__PTHREAD_KEY_VALIDATE:
+ 	 do_pthread_key_validate ( tid, 
+                                   (pthread_key_t)(arg[1]) );
+	 break;
+
       case VG_USERREQ__PTHREAD_KEY_CREATE:
  	 do_pthread_key_create ( tid, 
                                  (pthread_key_t*)(arg[1]),
@@ -3232,10 +3259,9 @@ void do_client_request ( ThreadId tid )
                                  (pthread_key_t)(arg[1]) );
  	 break;
 
-      case VG_USERREQ__PTHREAD_SETSPECIFIC:
- 	 do_pthread_setspecific ( tid, 
-                                  (pthread_key_t)(arg[1]),
-				  (void*)(arg[2]) );
+      case VG_USERREQ__PTHREAD_SETSPECIFIC_PTR:
+ 	 do_pthread_setspecific_ptr ( tid, 
+	                              (void**)(arg[1]) );
  	 break;
 
       case VG_USERREQ__PTHREAD_SIGMASK:
