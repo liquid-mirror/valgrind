@@ -71,7 +71,7 @@
    the real one, this is because the dynamic linker is running the
    static initialisers for C++, before starting up Valgrind itself.
    In this case it is safe to route calls through to
-   VG_(malloc)/vg_free, since that is self-initialising.
+   VG_(arena_malloc)/VG_(arena_free), since they are self-initialising.
 
    Once Valgrind is initialised, vg_running_on_simd_CPU becomes True.
    The call needs to be transferred from the simulated CPU back to the
@@ -98,7 +98,7 @@ void* malloc ( Int n )
       if (VG_(running_on_simd_CPU)) {
          v = (void*)SIMPLE_REQUEST1(VG_USERREQ__MALLOC, n);
       } else {
-         v = VG_(malloc)(VG_AR_CLIENT, n);
+         v = VG_(arena_malloc)(VG_AR_CLIENT, n);
       }
    }
    if (VG_(clo_trace_malloc)) 
@@ -124,7 +124,7 @@ void* __builtin_new ( Int n )
       if (VG_(running_on_simd_CPU)) {
          v = (void*)SIMPLE_REQUEST1(VG_USERREQ__BUILTIN_NEW, n);
       } else {
-         v = VG_(malloc)(VG_AR_CLIENT, n);
+         v = VG_(arena_malloc)(VG_AR_CLIENT, n);
       }
    }
    if (VG_(clo_trace_malloc)) 
@@ -150,7 +150,7 @@ void* __builtin_vec_new ( Int n )
       if (VG_(running_on_simd_CPU)) {
          v = (void*)SIMPLE_REQUEST1(VG_USERREQ__BUILTIN_VEC_NEW, n);
       } else {
-         v = VG_(malloc)(VG_AR_CLIENT, n);
+         v = VG_(arena_malloc)(VG_AR_CLIENT, n);
       }
    }
    if (VG_(clo_trace_malloc)) 
@@ -169,7 +169,7 @@ void free ( void* p )
    if (VG_(running_on_simd_CPU)) {
       (void)SIMPLE_REQUEST1(VG_USERREQ__FREE, p);
    } else {
-      VG_(free)(VG_AR_CLIENT, p);      
+      VG_(arena_free)(VG_AR_CLIENT, p);      
    }
 }
 
@@ -184,7 +184,7 @@ void __builtin_delete ( void* p )
    if (VG_(running_on_simd_CPU)) {
       (void)SIMPLE_REQUEST1(VG_USERREQ__BUILTIN_DELETE, p);
    } else {
-      VG_(free)(VG_AR_CLIENT, p);
+      VG_(arena_free)(VG_AR_CLIENT, p);
    }
 }
 
@@ -199,7 +199,7 @@ void __builtin_vec_delete ( void* p )
    if (VG_(running_on_simd_CPU)) {
       (void)SIMPLE_REQUEST1(VG_USERREQ__BUILTIN_VEC_DELETE, p);
    } else {
-      VG_(free)(VG_AR_CLIENT, p);
+      VG_(arena_free)(VG_AR_CLIENT, p);
    }
 }
 
@@ -219,7 +219,7 @@ void* calloc ( Int nmemb, Int size )
       if (VG_(running_on_simd_CPU)) {
          v = (void*)SIMPLE_REQUEST2(VG_USERREQ__CALLOC, nmemb, size);
       } else {
-         v = VG_(calloc)(VG_AR_CLIENT, nmemb, size);
+         v = VG_(arena_calloc)(VG_AR_CLIENT, nmemb, size);
       }
    }
    if (VG_(clo_trace_malloc)) 
@@ -250,7 +250,7 @@ void* realloc ( void* ptrV, Int new_size )
    if (VG_(running_on_simd_CPU)) {
       v = (void*)SIMPLE_REQUEST2(VG_USERREQ__REALLOC, ptrV, new_size);
    } else {
-      v = VG_(realloc)(VG_AR_CLIENT, ptrV, /*alignment*/4, new_size);
+      v = VG_(arena_realloc)(VG_AR_CLIENT, ptrV, /*alignment*/4, new_size);
    }
    if (VG_(clo_trace_malloc)) 
       VG_(printf)(" = %p\n", v );
@@ -273,7 +273,7 @@ void* memalign ( Int alignment, Int n )
       if (VG_(running_on_simd_CPU)) {
          v = (void*)SIMPLE_REQUEST2(VG_USERREQ__MEMALIGN, alignment, n);
       } else {
-         v = VG_(malloc_aligned)(VG_AR_CLIENT, alignment, n);
+         v = VG_(arena_malloc_aligned)(VG_AR_CLIENT, alignment, n);
       }
    }
    if (VG_(clo_trace_malloc)) 
