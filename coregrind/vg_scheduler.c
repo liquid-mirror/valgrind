@@ -1614,9 +1614,9 @@ void cleanup_after_thread_exited ( ThreadId tid )
    vki_ksigset_t irrelevant_sigmask;
    vg_assert(VG_(is_valid_or_empty_tid)(tid));
    vg_assert(VG_(threads)[tid].status == VgTs_Empty);
-   /* Its stack is now no-access */
-   VG_TRACK( die_mem_pthread, VG_(threads)[tid].stack_base,
-                                VG_(threads)[tid].stack_size );
+   /* Its stack is now off-limits */
+   VG_TRACK( die_mem_stack, VG_(threads)[tid].stack_base,
+                            VG_(threads)[tid].stack_size );
 
    /* Forget about any pending signals directed specifically at this
       thread, and get rid of signal handlers specifically arranged for
@@ -2111,33 +2111,39 @@ void do__apply_in_new_thread ( ThreadId parent_tid,
                      - VG_AR_CLIENT_STACKBASE_REDZONE_SZB; /* -4  ??? */;
    }
 
-   VG_(threads)[tid].m_esp 
-      = VG_(threads)[tid].stack_base 
-        + VG_(threads)[tid].stack_size
-        - VG_AR_CLIENT_STACKBASE_REDZONE_SZB;
+   /* Having got memory to hold the thread's stack:
+      - set %esp as base + size
+      - mark everything below %esp inaccessible
+      - mark redzone at stack end inaccessible
+    */
+   VG_(threads)[tid].m_esp = VG_(threads)[tid].stack_base 
+                           + VG_(threads)[tid].stack_size
+                           - VG_AR_CLIENT_STACKBASE_REDZONE_SZB;
 
-   // SSS: not sure about this
-   VG_TRACK ( die_mem_stack_thread, VG_(threads)[tid].m_esp, 
-                                    VG_AR_CLIENT_STACKBASE_REDZONE_SZB );
+   VG_TRACK ( die_mem_stack, VG_(threads)[tid].stack_base, 
+                           + new_stk_szb - VG_AR_CLIENT_STACKBASE_REDZONE_SZB);
+   VG_TRACK ( ban_mem_stack, VG_(threads)[tid].m_esp, 
+                             VG_AR_CLIENT_STACKBASE_REDZONE_SZB );
    
-   /* push arg */
-   VG_(threads)[tid].m_esp -= 4;
-   * (UInt*)(VG_(threads)[tid].m_esp) = (UInt)arg;
-
-   /* push (bogus) return address */
-   VG_(threads)[tid].m_esp -= 4;
+   /* push two args */
+   VG_(threads)[tid].m_esp -= 8;
+   VG_TRACK ( new_mem_stack, (Addr)VG_(threads)[tid].m_esp, 2 * 4 );
+   VG_TRACK ( pre_mem_write, Vg_CorePThread, & VG_(threads)[tid], 
+                             "new thread: stack",
+                             (Addr)VG_(threads)[tid].m_esp, 2 * 4 );
+ 
+   /* push arg and (bogus) return address */
+   * (UInt*)(VG_(threads)[tid].m_esp+4) = (UInt)arg;
    * (UInt*)(VG_(threads)[tid].m_esp) 
       = (UInt)&do__apply_in_new_thread_bogusRA;
 
-   // JJJ: no corresponding pre_mem_write check?
    VG_TRACK ( post_mem_write, VG_(threads)[tid].m_esp, 2 * 4 );
 
    /* this is where we start */
    VG_(threads)[tid].m_eip = (UInt)fn;
 
    if (VG_(clo_trace_sched)) {
-      VG_(sprintf)(msg_buf,
-         "new thread, created by %d", parent_tid );
+      VG_(sprintf)(msg_buf, "new thread, created by %d", parent_tid );
       print_sched_event(tid, msg_buf);
    }
 
