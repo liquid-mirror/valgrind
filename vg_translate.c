@@ -101,7 +101,6 @@ void VG_(emptyUInstr) ( UInstr* u )
    u->size     = 0;
    u->cond     = 0;
    u->extra4b  = 0;
-   u->extra5a  = 0;
    u->argc = u->regparms_n = 0;
 }
 
@@ -234,12 +233,6 @@ void  VG_(setCCallFields) ( UCodeBlock* cb, Addr fn, UChar argc, UChar
    LAST_UINSTR(cb).argc        = argc;
    LAST_UINSTR(cb).regparms_n  = regparms_n;
    LAST_UINSTR(cb).has_ret_val = has_ret_val;
-}
-
-/* Set the C call info fields of the most recent uinsn. */
-void  VG_(setExtra5a) ( UCodeBlock *cb, UChar val )
-{
-   LAST_UINSTR(cb).extra5a = val;
 }
 
 Bool VG_(anyFlagUse) ( UInstr* u )
