@@ -1,3 +1,5 @@
 #! /bin/sh
 
-./filter_stderr | ../filter_discards
+dir=`dirname $0`
+
+$dir/filter_stderr | $dir/../filter_discards
