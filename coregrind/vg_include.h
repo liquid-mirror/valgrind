@@ -207,7 +207,7 @@ typedef unsigned char Bool;
 // SSS: remove this eventually -- need something else for all the
 // if (clo_action==Vg_MemCheck) tests
 typedef 
-   enum { Vg_MemCheck, Vg_CacheSim, Vg_Other }
+   enum { Vg_MemCheck, Vg_Other }
    VgSkin;
 
 typedef
@@ -1438,8 +1438,8 @@ extern void VG_(show_ExeContext_stats) ( void );
 /* Take a snapshot of the client's stack.  Search our collection of
    ExeContexts to see if we already have it, and if not, allocate a
    new one.  Either way, return a pointer to the context. */
-extern ExeContext* VG_(get_ExeContext) ( Bool skip_top_frame,
-                                         Addr eip, Addr ebp );
+extern ExeContext* VG_(get_ExeContext) ( Addr eip, Addr ebp,
+                                         Addr ebp_min, Addr ebp_max );
 
 /* Print an ExeContext. */
 extern void VG_(pp_ExeContext) ( ExeContext* );
