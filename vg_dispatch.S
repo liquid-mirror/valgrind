@@ -76,13 +76,6 @@ VG_(run_innerloop):
 	movl	VGOFF_(m_eip), %esi
 	movl	(%ebp, %esi, 4), %eax
 	
-	/* Start off dispatching paranoically, since we no longer have
-	   any indication whether or not this might be a special call/ret
-	   transfer.
-	*/
-	jmp	dispatch_stkadj
-	
-	
 dispatch_main:
 	/* Jump here to do a new dispatch.
 	   %eax holds destination (original) address.
@@ -163,8 +156,6 @@ dispatch_exceptional:
 	/* this is jumped to only, not fallen-through from above */
 	cmpl	$VG_TRC_EBP_JMP_CALL, %ebp
 	jz	dispatch_call
-	cmpl	$VG_TRC_EBP_JMP_STKADJ, %ebp
-	jz	dispatch_stkadj
 	cmpl	$VG_TRC_EBP_JMP_SYSCALL, %ebp
 	jz	dispatch_syscall
 	cmpl	$VG_TRC_EBP_JMP_CLIENTREQ, %ebp
@@ -222,22 +213,6 @@ dispatch_call:
 	movl	%eax, (%ebp, %esi, 4)
 	movl	$VG_TRC_EBP_JMP_CALL, %eax
 	jmp	run_innerloop_exit
-
-dispatch_stkadj:
-	/* save %eax in %EIP */
-	movl	$VG_(baseBlock), %ebp
-	movl	VGOFF_(m_eip), %esi
-	movl	%eax, (%ebp, %esi, 4)
-
-	/* see if we need to mess with stack blocks */
-	pushl	%eax
-	call	VG_(delete_client_stack_blocks_following_ESP_change)
-	popl	%eax
-	movl	$VG_(baseBlock), %ebp
-		
-	/* ok, its not interesting.  Handle the normal way. */
-	jmp	dispatch_boring
-
 
 .data
 panic_msg_ebp:
