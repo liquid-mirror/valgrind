@@ -1647,22 +1647,17 @@ void SK_(pre_clo_init)(VgNeeds* needs, VgTrackEvents* not_used)
 
    needs->record_mem_exe_context  = False;
    needs->postpone_mem_reuse      = False;
-   
    needs->debug_info              = True;
    needs->pthread_errors          = False;
    needs->report_errors           = False;
-
    needs->run_libc_freeres        = False;
 
    needs->identifies_basic_blocks = True;
-
+   needs->shadow_regs             = False;
    needs->command_line_options    = True;
    needs->client_requests         = False;
-
    needs->extends_UCode           = False;
-
    needs->wrap_syscalls           = False;
-
    needs->sanity_checks           = False;
 
    VG_(register_compact_helper)((Addr) & cachesim_non_mem_instr);
