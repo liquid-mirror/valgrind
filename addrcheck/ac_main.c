@@ -1017,6 +1017,7 @@ UCodeBlock* SK_(instrument)(UCodeBlock* cb_in, Addr orig_addr)
          case SSE2a_MemRd:
          case SSE2a_MemWr:
 	 case SSE3a_MemWr:
+         case SSE3a1_MemRd:
 	    sk_assert(u_in->size == 4 || u_in->size == 8 
                       || u_in->size == 16);
 	    goto do_Access_ARG3;
@@ -1032,7 +1033,6 @@ UCodeBlock* SK_(instrument)(UCodeBlock* cb_in, Addr orig_addr)
             break;
 
          case SSE2a1_MemRd:
-         case SSE3a1_MemRd:
 	    VG_(pp_UInstr)(0,u_in);
 	    VG_(skin_panic)("AddrCheck: unhandled SSE uinstr");
 	    break;
