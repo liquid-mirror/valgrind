@@ -238,10 +238,10 @@ static ShadowChunk* client_malloc_shadow ( ThreadState* tst,
    sc->next  = vg_malloclist[ml_no];
    vg_malloclist[ml_no] = sc;
 
-   VGM_(make_writable)(p, size);
-   VGM_(make_noaccess)(p + size, 
+   SKN_(make_writable)(p, size);
+   SKN_(make_noaccess)(p + size, 
                        VG_AR_CLIENT_REDZONE_SZB);
-   VGM_(make_noaccess)(p - VG_AR_CLIENT_REDZONE_SZB, 
+   SKN_(make_noaccess)(p - VG_AR_CLIENT_REDZONE_SZB, 
                        VG_AR_CLIENT_REDZONE_SZB);
 
    return sc;
@@ -267,7 +267,6 @@ void* VG_(client_malloc) ( ThreadState* tst, UInt size, VgAllocKind kind )
    vg_cmalloc_n_mallocs ++;
    vg_cmalloc_bs_mallocd += size;
 
-   // ZZZ
    if (! VG_(needs).shadow_memory) {
       VGP_POPCC;
       return VG_(malloc) ( VG_AR_CLIENT, size );
@@ -295,7 +294,6 @@ void* VG_(client_memalign) ( ThreadState* tst, UInt align, UInt size )
    vg_cmalloc_n_mallocs ++;
    vg_cmalloc_bs_mallocd += size;
 
-   // ZZZ
    if (! VG_(needs).shadow_memory) {
       VGP_POPCC;
       return VG_(malloc_aligned) ( VG_AR_CLIENT, align, size );
@@ -338,16 +336,14 @@ void VG_(client_free) ( ThreadState* tst, void* ptrV, VgAllocKind kind )
    }
 
    if (sc == NULL) {
-      // ZZZ
-      if (Vg_MemCheck == VG_(clo_action))
+      if (Vg_MemCheck == VG_(clo_skin))
          VG_(record_free_error) ( tst, (Addr)ptrV );
       VGP_POPCC;
       return;
    }
 
    /* check if its a matching free() / delete / delete [] */
-   // ZZZ
-   if (Vg_MemCheck == VG_(clo_action))
+   if (Vg_MemCheck == VG_(clo_skin))
       if (kind != sc->allockind)
          VG_(record_freemismatch_error) ( tst, (Addr) ptrV );
 
@@ -355,10 +351,10 @@ void VG_(client_free) ( ThreadState* tst, void* ptrV, VgAllocKind kind )
    remove_from_malloclist ( ml_no, sc );
 
    /* Declare it inaccessible. */
-   VGM_(make_noaccess) ( sc->data - VG_AR_CLIENT_REDZONE_SZB, 
+   SKN_(make_noaccess) ( sc->data - VG_AR_CLIENT_REDZONE_SZB, 
                          sc->size + 2*VG_AR_CLIENT_REDZONE_SZB );
-   VGM_(make_noaccess) ( (Addr)sc, sizeof(ShadowChunk) );
-   // ZZZ: this could be skipped for Vg_Eraser
+   SKN_(make_noaccess) ( (Addr)sc, sizeof(ShadowChunk) );
+   // SSS: this could be skipped for Vg_Eraser
    sc->where = VG_(get_ExeContext)(False, tst->m_eip, tst->m_ebp);
 
    /* Put it out of harm's way for a while. */
@@ -387,7 +383,6 @@ void* VG_(client_calloc) ( ThreadState* tst, UInt nmemb, UInt size1 )
    vg_cmalloc_n_mallocs ++;
    vg_cmalloc_bs_mallocd += nmemb * size1;
 
-   // ZZZ
    if (! VG_(needs).shadow_memory) {
       VGP_POPCC;
       return VG_(calloc) ( VG_AR_CLIENT, nmemb, size1 );
@@ -404,10 +399,10 @@ void* VG_(client_calloc) ( ThreadState* tst, UInt nmemb, UInt size1 )
    sc->next  = vg_malloclist[ml_no];
    vg_malloclist[ml_no] = sc;
 
-   VGM_(make_readable)(p, size);
-   VGM_(make_noaccess)(p + size, 
+   SKN_(make_readable)(p, size);
+   SKN_(make_noaccess)(p + size, 
                        VG_AR_CLIENT_REDZONE_SZB);
-   VGM_(make_noaccess)(p - VG_AR_CLIENT_REDZONE_SZB, 
+   SKN_(make_noaccess)(p - VG_AR_CLIENT_REDZONE_SZB, 
                        VG_AR_CLIENT_REDZONE_SZB);
 
    for (i = 0; i < size; i++) ((UChar*)p)[i] = 0;
@@ -436,7 +431,6 @@ void* VG_(client_realloc) ( ThreadState* tst, void* ptrV, UInt size_new )
    vg_cmalloc_n_mallocs ++;
    vg_cmalloc_bs_mallocd += size_new;
 
-   // ZZZ
    if (! VG_(needs).shadow_memory) {
       vg_assert(ptrV != NULL && size_new != 0);
       VGP_POPCC;
@@ -451,8 +445,8 @@ void* VG_(client_realloc) ( ThreadState* tst, void* ptrV, UInt size_new )
    }
   
    if (sc == NULL) {
-      // ZZZ
-      if (Vg_MemCheck == VG_(clo_action))
+      // SSS: should be moved out of core
+      if (Vg_MemCheck == VG_(clo_skin))
          VG_(record_free_error) ( tst, (Addr)ptrV );
       /* Perhaps we should keep going regardless. */
       VGP_POPCC;
@@ -461,8 +455,8 @@ void* VG_(client_realloc) ( ThreadState* tst, void* ptrV, UInt size_new )
 
    if (sc->allockind != Vg_AllocMalloc) {
       /* can not realloc a range that was allocated with new or new [] */
-      // ZZZ
-      if (Vg_MemCheck == VG_(clo_action))
+      // SSS: should be moved out of core
+      if (Vg_MemCheck == VG_(clo_skin))
          VG_(record_freemismatch_error) ( tst, (Addr)ptrV );
       /* but keep going anyway */
    }
@@ -474,7 +468,7 @@ void* VG_(client_realloc) ( ThreadState* tst, void* ptrV, UInt size_new )
    }
    if (sc->size > size_new) {
       /* new size is smaller */
-      VGM_(make_noaccess)( sc->data + size_new, 
+      SKN_(make_noaccess)( sc->data + size_new, 
                            sc->size - size_new );
       sc->size = size_new;
       VGP_POPCC;
@@ -485,12 +479,12 @@ void* VG_(client_realloc) ( ThreadState* tst, void* ptrV, UInt size_new )
                                       size_new, Vg_AllocMalloc );
       for (i = 0; i < sc->size; i++)
          ((UChar*)(sc_new->data))[i] = ((UChar*)(sc->data))[i];
-      VGM_(copy_address_range_perms) ( 
+      SKN_(copy_address_range_state) ( 
          sc->data, sc_new->data, sc->size );
       remove_from_malloclist ( VG_MALLOCLIST_NO(sc->data), sc );
-      VGM_(make_noaccess) ( sc->data - VG_AR_CLIENT_REDZONE_SZB, 
+      SKN_(make_noaccess) ( sc->data - VG_AR_CLIENT_REDZONE_SZB, 
                             sc->size + 2*VG_AR_CLIENT_REDZONE_SZB );
-      VGM_(make_noaccess) ( (Addr)sc, sizeof(ShadowChunk) );
+      SKN_(make_noaccess) ( (Addr)sc, sizeof(ShadowChunk) );
       add_to_freed_queue ( sc );
       VGP_POPCC;
       return (void*)sc_new->data;

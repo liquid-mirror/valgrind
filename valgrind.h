@@ -95,7 +95,7 @@
 #define VG_USERREQ__CHECK_READABLE       0x1006
 #define VG_USERREQ__MAKE_NOACCESS_STACK  0x1007
 #define VG_USERREQ__RUNNING_ON_VALGRIND  0x1008
-#define VG_USERREQ__DO_LEAK_CHECK        0x1009 /* untested */
+//#define VG_USERREQ__DO_LEAK_CHECK        0x1009 /* untested */
 #define VG_USERREQ__DISCARD_TRANSLATIONS 0x100A
 
 
@@ -210,22 +210,6 @@
                             0, 0, 0, 0);                           \
     _qzz_res;                                                      \
    })
-
-
-/* Mark memory, intended to be on the client's stack, at _qzz_addr as
-   unaddressible and undefined for _qzz_len bytes.  Does not return a
-   value.  The record associated with this setting will be
-   automatically removed by Valgrind when the containing routine
-   exits.  
-
-   Currently implemented but untested.
-*/
-#define VALGRIND_DO_LEAK_CHECK                                     \
-   {unsigned int _qzz_res;                                         \
-    VALGRIND_MAGIC_SEQUENCE(_qzz_res, 0,                           \
-                            VG_USERREQ__DO_LEAK_CHECK,             \
-                            0, 0, 0, 0);                           \
-   }
 
 
 /* Discard translation of code in the range [_qzz_addr .. _qzz_addr +

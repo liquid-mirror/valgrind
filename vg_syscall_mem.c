@@ -55,30 +55,26 @@
 
 static void make_noaccess ( Addr a, UInt len )
 {
-   // ZZZ
-   if (Vg_MemCheck == VG_(clo_action))
-      VGM_(make_noaccess) ( a, len );
+   if (VG_(needs).shadow_memory)
+      SKN_(make_noaccess) ( a, len );
 }
 
 static void make_writable ( Addr a, UInt len )
 {
-   // ZZZ
    if (VG_(needs).shadow_memory)   
-      VGM_(make_writable) ( a, len );
+      SKN_(make_writable) ( a, len );
 }
 
 static void make_readable ( Addr a, UInt len )
 {
-   // ZZZ
    if (VG_(needs).shadow_memory)   
-      VGM_(make_readable) ( a, len );
+      SKN_(make_readable) ( a, len );
 }
 
 static void make_readwritable ( Addr a, UInt len )
 {
-   // ZZZ
    if (VG_(needs).shadow_memory)   
-      VGM_(make_readwritable) ( a, len );
+      SKN_(make_readwritable) ( a, len );
 }
 
 static
@@ -89,10 +85,9 @@ void must_be_writable ( ThreadState* tst,
    Addr bad_addr;
    /* VG_(message)(Vg_DebugMsg,"must be writable: %x .. %x",
                                base,base+size-1); */
-   // ZZZ
-   if (Vg_MemCheck != VG_(clo_action)) 
+   if (Vg_MemCheck != VG_(clo_skin)) 
       return;
-   ok = VGM_(check_writable) ( base, size, &bad_addr );
+   ok = SKN_(check_writable) ( base, size, &bad_addr );
    if (!ok)
       VG_(record_param_err) ( tst, bad_addr, True, syscall_name );
 }
@@ -105,10 +100,9 @@ void must_be_readable ( ThreadState* tst,
    Addr bad_addr;
    /* VG_(message)(Vg_DebugMsg,"must be readable: %x .. %x",
                                base,base+size-1); */
-   // ZZZ
-   if (Vg_MemCheck != VG_(clo_action)) 
+   if (Vg_MemCheck != VG_(clo_skin)) 
       return;
-   ok = VGM_(check_readable) ( base, size, &bad_addr );
+   ok = SKN_(check_readable) ( base, size, &bad_addr );
    if (!ok)
       VG_(record_param_err) ( tst, bad_addr, False, syscall_name );
 }
@@ -120,10 +114,9 @@ void must_be_readable_asciiz ( ThreadState* tst,
    Bool ok = True;
    Addr bad_addr;
    /* VG_(message)(Vg_DebugMsg,"must be readable asciiz: 0x%x",str); */
-   // ZZZ
-   if (Vg_MemCheck != VG_(clo_action)) 
+   if (Vg_MemCheck != VG_(clo_skin)) 
       return;
-   ok = VGM_(check_readable_asciiz) ( (Addr)str, &bad_addr );
+   ok = SKN_(check_readable_asciiz) ( (Addr)str, &bad_addr );
    if (!ok)
       VG_(record_param_err) ( tst, bad_addr, False, syscall_name );
 }
@@ -156,10 +149,9 @@ static void approximate_mmap_permissions ( Addr a, UInt len, UInt prot )
 static
 UInt safe_dereference ( Addr aa, UInt defawlt )
 {
-   // ZZZ
-   if (Vg_MemCheck != VG_(clo_action)) 
+   if (Vg_MemCheck != VG_(clo_skin)) 
       return * (UInt*)aa;
-   if (VGM_(check_readable)(aa,4,NULL))
+   if (SKN_(check_readable)(aa,4,NULL))
       return * (UInt*)aa;
    else
       return defawlt;
@@ -347,7 +339,7 @@ void must_be_readable_sockaddr ( ThreadState* tst,
 
 
 /* Records the current end of the data segment so we can make sense of
-   calls to brk().  Initial value set by hdm_init_memory_audit(). */
+   calls to brk().  Initial value set by VGM_(init_memory_audit)(). */
 Addr VGM_(curr_dataseg_end);
 
 
@@ -377,8 +369,13 @@ void VG_(perform_assumed_nonblocking_syscall) ( ThreadId tid )
 
    /* Since buggy syscall wrappers sometimes break this, we may as well 
       check ourselves. */
-   if (! VG_(first_and_last_secondaries_look_plausible)())
-      sane_before_call = False;
+   // JJJ: this makes sense for MemCheck... what about Eraser?  Ditto for
+   // check_known_blocking_syscall below.
+   if (VG_(needs).shadow_memory) {
+      if (! SKN_(first_and_last_secondaries_look_plausible)()) {
+         sane_before_call = False;
+      }
+   }
 
    /* the syscall no is in %eax.  For syscalls with <= 5 args,
       args 1 .. 5 to the syscall are in %ebx %ecx %edx %esi %edi.
@@ -2219,10 +2216,9 @@ void VG_(perform_assumed_nonblocking_syscall) ( ThreadId tid )
                        int flags, int fd, off_t offset); 
          */
          {
-         // ZZZ
          Bool arg_block_readable
-                 = Vg_MemCheck==VG_(clo_action)
-                 ? VGM_(check_readable)(arg1, 6*sizeof(UInt), NULL)
+                 = Vg_MemCheck==VG_(clo_skin)
+                 ? SKN_(check_readable)(arg1, 6*sizeof(UInt), NULL)
                  : True;
          must_be_readable( tst, "mmap(args)", arg1, 6*sizeof(UInt) );
          if (arg_block_readable) {
@@ -2477,10 +2473,9 @@ void VG_(perform_assumed_nonblocking_syscall) ( ThreadId tid )
             int old_select(struct sel_arg_struct *arg);
          */
          {
-         // ZZZ
          Bool arg_block_readable
-                 = Vg_MemCheck==VG_(clo_action)
-                 ? VGM_(check_readable)(arg1, 5*sizeof(UInt), NULL)
+                 = Vg_MemCheck==VG_(clo_skin)
+                 ? SKN_(check_readable)(arg1, 5*sizeof(UInt), NULL)
                  : True;
          must_be_readable ( tst, "select(args)", arg1, 5*sizeof(UInt) );
          if (arg_block_readable) {
@@ -3182,17 +3177,18 @@ void VG_(perform_assumed_nonblocking_syscall) ( ThreadId tid )
 
    /* { void zzzmemscan(void); zzzmemscan(); } */
 
-   if (! VG_(first_and_last_secondaries_look_plausible)())
-      sane_before_call = False;
+   if (VG_(needs).shadow_memory) {
+      if (! SKN_(first_and_last_secondaries_look_plausible)())
+         sane_before_call = False;
 
-   if (sane_before_call && (!sane_after_call)) {
-      VG_(message)(Vg_DebugMsg, "perform_assumed_nonblocking_syscall: ");
-      VG_(message)(Vg_DebugMsg,
-                   "probable sanity check failure for syscall number %d\n", 
-                   syscallno );
-      VG_(panic)("aborting due to the above ... bye!"); 
+      if (sane_before_call && (!sane_after_call)) {
+         VG_(message)(Vg_DebugMsg, "perform_assumed_nonblocking_syscall: ");
+         VG_(message)(Vg_DebugMsg,
+                      "probable sanity check failure for syscall number %d\n", 
+                      syscallno );
+         VG_(panic)("aborting due to the above ... bye!"); 
+      }
    }
-
    VGP_POPCC;
 }
 
@@ -3234,9 +3230,11 @@ void VG_(check_known_blocking_syscall) ( ThreadId tid,
    arg5             = tst->m_edi;
    */
 
-   if (res != NULL
-       && ! VG_(first_and_last_secondaries_look_plausible)())
-      sane_before_post = False;
+   if (VG_(needs).shadow_memory && res != NULL) {
+      if (! SKN_(first_and_last_secondaries_look_plausible)()) {
+         sane_before_post = False;
+      }
+   }
 
    switch (syscallno) {
 
@@ -3291,16 +3289,18 @@ void VG_(check_known_blocking_syscall) ( ThreadId tid,
          break;
    }
 
-   if (res != NULL) { /* only check after syscall */
-      if (! VG_(first_and_last_secondaries_look_plausible)())
-         sane_after_post = False;
+   if (VG_(needs).shadow_memory) {
+      if (res != NULL) { /* only check after syscall */
+         if (! SKN_(first_and_last_secondaries_look_plausible)())
+            sane_after_post = False;
 
-      if (sane_before_post && (!sane_after_post)) {
-         VG_(message)(Vg_DebugMsg, "perform_known_blocking_syscall: ");
-         VG_(message)(Vg_DebugMsg,
-                      "probable sanity check failure for syscall number %d\n", 
-                      syscallno );
-         VG_(panic)("aborting due to the above ... bye!"); 
+         if (sane_before_post && (!sane_after_post)) {
+            VG_(message)(Vg_DebugMsg, "perform_known_blocking_syscall: ");
+            VG_(message)(Vg_DebugMsg,
+                         "probable sanity check failure for syscall number %d\n", 
+                         syscallno );
+            VG_(panic)("aborting due to the above ... bye!"); 
+         }
       }
    }
 

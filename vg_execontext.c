@@ -178,8 +178,11 @@ ExeContext* VG_(get_ExeContext) ( Bool skip_top_frame,
    for (i = 0; i < VG_(clo_backtrace_size); i++)
       eips[i] = 0;
    
+   // JJJ: this call to check_readable is dodgy when not doing MemCheck.
+   // It's not a problem for --skin=none since it never calls get_ExeContext
+   // unless there's an internal error.  But for other skins...
 #  define GET_CALLER(lval)                                        \
-   if (ebp != 0 && VGM_(check_readable)(ebp, 8, NULL)) {          \
+   if (ebp != 0 && SKN_(check_readable)(ebp, 8, NULL)) {          \
       lval = ((UInt*)ebp)[1];  /* ret addr */                     \
       ebp  = ((UInt*)ebp)[0];  /* old ebp */                      \
    } else {                                                       \

@@ -190,7 +190,7 @@ void vg_add_client_stack_block ( ThreadState* tst, Addr aa, UInt sz )
    vg_assert(vg_csb_used <= vg_csb_size);
 
    /* VG_(printf)("acsb  %p %d\n", aa, sz); */
-   VGM_(make_noaccess) ( aa, sz );
+   SKN_(make_noaccess) ( aa, sz );
 
    /* And make sure that they are in descending order of address. */
    i = vg_csb_used;
@@ -306,9 +306,7 @@ UInt VG_(handle_client_request) ( ThreadState* tst, UInt* arg_block )
 
    switch (arg[0]) {
       case VG_USERREQ__MAKE_NOACCESS: /* make no access */
-         // ZZZ
-         if (Vg_MemCheck != VG_(clo_action))
-            return 0;
+         if (! VG_(needs).shadow_memory) return 0;
 
          i = vg_alloc_client_block();
          /* VG_(printf)("allocated %d %p\n", i, vg_cgbs); */
@@ -317,11 +315,10 @@ UInt VG_(handle_client_request) ( ThreadState* tst, UInt* arg_block )
          vg_cgbs[i].size  = arg[2];
          vg_cgbs[i].where 
             = VG_(get_ExeContext) ( False, tst->m_eip, tst->m_ebp );
-         VGM_(make_noaccess) ( arg[1], arg[2] );
+         SKN_(make_noaccess) ( arg[1], arg[2] );
          return i;
 
       case VG_USERREQ__MAKE_WRITABLE: /* make writable */
-         // ZZZ
          if (! VG_(needs).shadow_memory) return 0;
 
          i = vg_alloc_client_block();
@@ -330,11 +327,10 @@ UInt VG_(handle_client_request) ( ThreadState* tst, UInt* arg_block )
          vg_cgbs[i].size  = arg[2];
          vg_cgbs[i].where 
             = VG_(get_ExeContext) ( False, tst->m_eip, tst->m_ebp );
-         VGM_(make_writable) ( arg[1], arg[2] );
+         SKN_(make_writable) ( arg[1], arg[2] );
          return i;
 
       case VG_USERREQ__MAKE_READABLE: /* make readable */
-         // ZZZ
          if (! VG_(needs).shadow_memory) return 0;
  
          i = vg_alloc_client_block();
@@ -343,31 +339,29 @@ UInt VG_(handle_client_request) ( ThreadState* tst, UInt* arg_block )
          vg_cgbs[i].size  = arg[2];
          vg_cgbs[i].where 
             = VG_(get_ExeContext) ( False, tst->m_eip, tst->m_ebp );
-         VGM_(make_readable) ( arg[1], arg[2] );
+         SKN_(make_readable) ( arg[1], arg[2] );
          return i;
 
       case VG_USERREQ__CHECK_WRITABLE: /* check writable */
-         // ZZZ
-         if (Vg_MemCheck != VG_(clo_action))
+         if (Vg_MemCheck != VG_(clo_skin))
             return 0;
  
-         ok = VGM_(check_writable) ( arg[1], arg[2], &bad_addr );
+         ok = SKN_(check_writable) ( arg[1], arg[2], &bad_addr );
          if (!ok)
             VG_(record_user_err) ( tst, bad_addr, True );
          return ok ? (UInt)NULL : bad_addr;
+
       case VG_USERREQ__CHECK_READABLE: /* check readable */
-         // ZZZ
-         if (Vg_MemCheck != VG_(clo_action))
+         if (Vg_MemCheck != VG_(clo_skin))
             return 0;
  
-         ok = VGM_(check_readable) ( arg[1], arg[2], &bad_addr );
+         ok = SKN_(check_readable) ( arg[1], arg[2], &bad_addr );
          if (!ok)
             VG_(record_user_err) ( tst, bad_addr, False );
          return ok ? (UInt)NULL : bad_addr;
 
       case VG_USERREQ__DISCARD: /* discard */
-         // ZZZ
-         if (Vg_MemCheck != VG_(clo_action))
+         if (Vg_MemCheck != VG_(clo_skin))
             return 0;
  
          if (vg_cgbs == NULL 
@@ -379,9 +373,7 @@ UInt VG_(handle_client_request) ( ThreadState* tst, UInt* arg_block )
          return 0;
 
       case VG_USERREQ__MAKE_NOACCESS_STACK: /* make noaccess stack block */
-         // ZZZ
-         if (Vg_MemCheck != VG_(clo_action))
-            return 0;
+         if (! VG_(needs).shadow_memory) return 0;
  
          vg_add_client_stack_block ( tst, arg[1], arg[2] );
          return 0;
@@ -392,14 +384,6 @@ UInt VG_(handle_client_request) ( ThreadState* tst, UInt* arg_block )
       case VG_USERREQ__RUNNING_ON_VALGRIND:
          return 1;
       */
-
-      case VG_USERREQ__DO_LEAK_CHECK:
-         // ZZZ
-         if (Vg_MemCheck != VG_(clo_action))
-            return 0;
- 
-         VG_(detect_memory_leaks)();
-         return 0; /* return value is meaningless */
 
       case VG_USERREQ__DISCARD_TRANSLATIONS:
          VG_(invalidate_translations)( arg[1], arg[2] );

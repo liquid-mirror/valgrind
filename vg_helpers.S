@@ -86,7 +86,7 @@ signalreturn_bogusRA_panic_msg:
    and the incoming parameters can be modified, to return results.
 */
 
-
+/* SSS: moved to vg_memcheck_helpers.S
 .global VG_(helper_value_check0_fail)
 VG_(helper_value_check0_fail):
 	pushal
@@ -114,7 +114,7 @@ VG_(helper_value_check4_fail):
 	call	VG_(helperc_value_check4_fail)
 	popal
 	ret
-
+*/
 
 /* Fetch the time-stamp-ctr reg.
    On entry:

@@ -1,0 +1,19 @@
+#! /bin/sh
+
+CFLAGSX="-O2 -mpreferred-stack-boundary=2 -Winline -Wall -Wshadow -fomit-frame-pointer -g"
+CFLAGS="-O2 -mpreferred-stack-boundary=2 -Winline -Wall -Wshadow -fomit-frame-pointer -g"
+
+gcc $CFLAGSX -c vg_memcheck.c
+gcc $CFLAGS -c vg_memcheck_from_ucode.c
+gcc $CFLAGS -c vg_memcheck_helpers.S
+gcc $CFLAGS -c vg_memcheck_translate.c
+/usr/bin/gcc -shared \
+    vg_memcheck.o \
+    vg_memcheck_from_ucode.o \
+    vg_memcheck_helpers.o \
+    vg_memcheck_translate.o \
+    -o vgskin_memcheck.so
+
+cp vgskin_memcheck.so lib/valgrind
+
+

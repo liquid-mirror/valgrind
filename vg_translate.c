@@ -31,20 +31,14 @@
 
 #include "vg_include.h"
 
-
 /*------------------------------------------------------------*/
 /*--- Renamings of frequently-used global functions.       ---*/
 /*------------------------------------------------------------*/
 
-#define uInstr1   VG_(newUInstr1)
 #define uInstr2   VG_(newUInstr2)
-#define uInstr3   VG_(newUInstr3)
 #define dis       VG_(disassemble)
 #define nameIReg  VG_(nameOfIntReg)
 #define nameISize VG_(nameOfIntSize)
-#define uLiteral  VG_(setLiteralField)
-#define newTemp   VG_(getNewTemp)
-#define newShadow VG_(getNewShadow)
 
 
 /*------------------------------------------------------------*/
@@ -402,6 +396,8 @@ __inline__ Int VG_(rankToRealRegNo) ( Int rank )
          CALLM      L       N       N
          CALLM_S    N       N       N
          CALLM_E    N       N       N
+         CCALL_1_0  T       N       N
+         CCALL_2_0  T       T       N
          PUSH,POP   T       N       N
          CLEAR      L       N       N
 
@@ -521,6 +517,8 @@ Bool VG_(saneUInstr) ( Bool beforeRA, UInstr* u )
          return CC0 && Ls1 && N2 && SZ0 && N3;
       case CALLM:
          return SZ0 && Ls1 && N2 && N3;
+      case CCALL_0_0:
+         return SZ0 && CC0 && N1 && N2 && N3;
       case CCALL_1_0:
          return SZ0 && CC0 && TR1 && N2 && N3;
       case CCALL_2_0:
@@ -545,30 +543,17 @@ Bool VG_(saneUInstr) ( Bool beforeRA, UInstr* u )
          return CC0 && Ls1 && TR2 && N3;
       case FPU: 
          return SZ0 && FLG_RD_WR_MAYBE && Ls1 && N2 && N3;
-      case LOADV:
-         return CC0 && TR1 && TR2 && N3;
-      case STOREV:
-         return CC0 && (TR1 || L1) && TR2 && N3;
-      case GETV: 
-         return CC0 && A1 && TR2 && N3;
-      case PUTV: 
-         return CC0 && (TR1 || L1) && A2 && N3;
-      case GETVF: 
-         return CC0 && TR1 && N2 && N3 && SZ0;
-      case PUTVF: 
-         return CC0 && TR1 && N2 && N3 && SZ0;
       case WIDEN:
          return CC0 && TR1 && N2 && N3;
-      case TESTV: 
-         return CC0 && (A1 || TR1) && N2 && N3;
-      case SETV:
-         return CC0 && (A1 || TR1) && N2 && N3;
-      case TAG1:
-         return CC0 && TR1 && N2 && Ls3 && SZ0;
-      case TAG2:
-         return CC0 && TR1 && TR2 && Ls3 && SZ0;
       default: 
-         VG_(panic)("vg_saneUInstr: unhandled opcode");
+         if (VG_(needs).extends_UCode)
+            return SKN_(saneExtUInstr)(beforeRA, u);
+         else {
+            VG_(printf)("unhandled opcode: %u.  Perhaps " 
+                        "VG_(needs).extends_UCode should be set?",
+                        u->opcode);
+            VG_(panic)("vg_saneUInstr: unhandled opcode");
+         }
    }
 #  undef SZ4_IF_TR1
 #  undef CC0
@@ -732,14 +717,14 @@ static void ppTempReg ( Int tt )
 }
 
 
-static void ppUOperand ( UInstr* u, Int operandNo, Int sz, Bool parens )
+void VG_(ppUOperand) ( UInstr* u, Int operandNo, Int sz, Bool parens )
 {
    UInt tag, val;
    switch (operandNo) {
       case 1: tag = u->tag1; val = u->val1; break;
       case 2: tag = u->tag2; val = u->val2; break;
       case 3: tag = u->tag3; val = u->val3; break;
-      default: VG_(panic)("ppUOperand(1)");
+      default: VG_(panic)("VG_(ppUOperand)(1)");
    }
    if (tag == Literal) val = u->lit32;
 
@@ -752,7 +737,7 @@ static void ppUOperand ( UInstr* u, Int operandNo, Int sz, Bool parens )
       case NoValue: VG_(printf)("NoValue"); break;
       case ArchReg: VG_(printf)("%S",nameIReg(sz,val)); break;
       case SpillNo: VG_(printf)("spill%d", val); break;
-      default: VG_(panic)("ppUOperand(2)");
+      default: VG_(panic)("VG_(ppUOperand)(2)");
    }
    if (parens) VG_(printf)(")");
 }
@@ -784,10 +769,6 @@ Char* VG_(nameUOpcode) ( Bool upper, Opcode opc )
    }
    if (!upper) VG_(panic)("vg_nameUOpcode: invalid !upper");
    switch (opc) {
-      case GETVF:   return "GETVF";
-      case PUTVF:   return "PUTVF";
-      case TAG1:    return "TAG1";
-      case TAG2:    return "TAG2";
       case CALLM_S: return "CALLM_S";
       case CALLM_E: return "CALLM_E";
       case INCEIP:  return "INCEIP";
@@ -806,6 +787,7 @@ Char* VG_(nameUOpcode) ( Bool upper, Opcode opc )
       case JMP:     return "J"    ;
       case JIFZ:    return "JIFZ" ;
       case CALLM:   return "CALLM";
+      case CCALL_0_0: return "CCALL_0_0";
       case CCALL_1_0: return "CCALL_1_0";
       case CCALL_2_0: return "CCALL_2_0";
       case PUSH:    return "PUSH" ;
@@ -815,13 +797,15 @@ Char* VG_(nameUOpcode) ( Bool upper, Opcode opc )
       case FPU_R:   return "FPU_R";
       case FPU_W:   return "FPU_W";
       case FPU:     return "FPU"  ;
-      case LOADV:   return "LOADV";
-      case STOREV:  return "STOREV";
-      case GETV:    return "GETV";
-      case PUTV:    return "PUTV";
-      case TESTV:   return "TESTV";
-      case SETV:    return "SETV";
-      default:      VG_(panic)("nameUOpcode: unhandled case");
+      default:
+         if (VG_(needs).extends_UCode)
+            return SKN_(nameExtUOpcode)(opc);
+         else {
+            VG_(printf)("unhandled opcode: %u.  Perhaps " 
+                        "VG_(needs).extends_UCode should be set?",
+                        opc);
+            VG_(panic)("nameUOpcode: unhandled opcode");
+         }
    }
 }
 
@@ -844,24 +828,6 @@ void VG_(ppUInstr) ( Int instrNo, UInstr* u )
 
    switch (u->opcode) {
 
-      case TAG1:
-         VG_(printf)("\t");
-         ppUOperand(u, 1, 4, False);
-         VG_(printf)(" = %s ( ", VG_(nameOfTagOp)( u->val3 ));
-         ppUOperand(u, 1, 4, False);
-         VG_(printf)(" )");
-         break;
-
-      case TAG2:
-         VG_(printf)("\t");
-         ppUOperand(u, 2, 4, False);
-         VG_(printf)(" = %s ( ", VG_(nameOfTagOp)( u->val3 ));
-         ppUOperand(u, 1, 4, False);
-         VG_(printf)(", ");
-         ppUOperand(u, 2, 4, False);
-         VG_(printf)(" )");
-         break;
-
       case CALLM_S: case CALLM_E:
          break;
 
@@ -871,18 +837,18 @@ void VG_(ppUInstr) ( Int instrNo, UInstr* u )
 
       case LEA2:
          VG_(printf)("\t%d(" , u->lit32);
-         ppUOperand(u, 1, 4, False);
+         VG_(ppUOperand)(u, 1, 4, False);
          VG_(printf)(",");
-         ppUOperand(u, 2, 4, False);
+         VG_(ppUOperand)(u, 2, 4, False);
          VG_(printf)(",%d), ", (Int)u->extra4b);
-         ppUOperand(u, 3, 4, False);
+         VG_(ppUOperand)(u, 3, 4, False);
          break;
 
       case LEA1:
          VG_(printf)("\t%d" , u->lit32);
-         ppUOperand(u, 1, 4, True);
+         VG_(ppUOperand)(u, 1, 4, True);
          VG_(printf)(", ");
-         ppUOperand(u, 2, 4, False);
+         VG_(ppUOperand)(u, 2, 4, False);
          break;
 
       case NOP:
@@ -891,12 +857,12 @@ void VG_(ppUInstr) ( Int instrNo, UInstr* u )
       case FPU_W:
          VG_(printf)("\t0x%x:0x%x, ",
                      (u->val1 >> 8) & 0xFF, u->val1 & 0xFF );
-         ppUOperand(u, 2, 4, True);
+         VG_(ppUOperand)(u, 2, 4, True);
          break;
 
       case FPU_R:
          VG_(printf)("\t");
-         ppUOperand(u, 2, 4, True);
+         VG_(ppUOperand)(u, 2, 4, True);
          VG_(printf)(", 0x%x:0x%x",
                      (u->val1 >> 8) & 0xFF, u->val1 & 0xFF );
          break;
@@ -906,17 +872,16 @@ void VG_(ppUInstr) ( Int instrNo, UInstr* u )
                      (u->val1 >> 8) & 0xFF, u->val1 & 0xFF );
          break;
 
-      case STOREV: case LOADV:
       case GET: case PUT: case MOV: case LOAD: case STORE: case CMOV:
          VG_(printf)("\t");
-         ppUOperand(u, 1, u->size, u->opcode==LOAD || u->opcode==LOADV); 
+         VG_(ppUOperand)(u, 1, u->size, u->opcode==LOAD); 
          VG_(printf)(", ");
-         ppUOperand(u, 2, u->size, u->opcode==STORE || u->opcode==STOREV);
+         VG_(ppUOperand)(u, 2, u->size, u->opcode==STORE);
          break;
 
       case GETF: case PUTF:
          VG_(printf)("\t");
-         ppUOperand(u, 1, u->size, False);
+         VG_(ppUOperand)(u, 1, u->size, False);
          break;
 
       case JMP: case CC2VAL:
@@ -931,38 +896,37 @@ void VG_(ppUInstr) ( Int instrNo, UInstr* u )
             }
          }
          VG_(printf)("\t");
-         ppUOperand(u, 1, u->size, False);
+         VG_(ppUOperand)(u, 1, u->size, False);
+         break;
+
+      case CCALL_0_0:
+         VG_(printf)(" (%u)", u->lit32);
          break;
 
       case CCALL_1_0:
          VG_(printf)(" ");
-         ppUOperand(u, 1, 0, False);
+         VG_(ppUOperand)(u, 1, 0, False);
          VG_(printf)(" (%u)", u->lit32);
          break;
 
       case CCALL_2_0:
          VG_(printf)(" ");
-         ppUOperand(u, 1, 0, False);
+         VG_(ppUOperand)(u, 1, 0, False);
          VG_(printf)(", ");
-         ppUOperand(u, 2, 0, False);
+         VG_(ppUOperand)(u, 2, 0, False);
          VG_(printf)(" (%u)", u->lit32);
          break;
 
       case JIFZ:
          VG_(printf)("\t");
-         ppUOperand(u, 1, u->size, False);
+         VG_(ppUOperand)(u, 1, u->size, False);
          VG_(printf)(", ");
-         ppUOperand(u, 2, u->size, False);
-         break;
-
-      case PUTVF: case GETVF:
-         VG_(printf)("\t");
-         ppUOperand(u, 1, 0, False); 
+         VG_(ppUOperand)(u, 2, u->size, False);
          break;
 
       case NOT: case NEG: case INC: case DEC: case BSWAP:
          VG_(printf)("\t");
-         ppUOperand(u, 1, u->size, False); 
+         VG_(ppUOperand)(u, 1, u->size, False); 
          break;
 
       case ADD: case ADC: case AND: case OR:  
@@ -970,31 +934,27 @@ void VG_(ppUInstr) ( Int instrNo, UInstr* u )
       case SHL: case SHR: case SAR: 
       case ROL: case ROR: case RCL: case RCR:   
          VG_(printf)("\t");
-         ppUOperand(u, 1, u->size, False); 
+         VG_(ppUOperand)(u, 1, u->size, False); 
          VG_(printf)(", ");
-         ppUOperand(u, 2, u->size, False);
-         break;
-
-      case GETV: case PUTV:
-         VG_(printf)("\t");
-         ppUOperand(u, 1, u->opcode==PUTV ? 4 : u->size, False);
-         VG_(printf)(", ");
-         ppUOperand(u, 2, u->opcode==GETV ? 4 : u->size, False);
+         VG_(ppUOperand)(u, 2, u->size, False);
          break;
 
       case WIDEN:
          VG_(printf)("_%c%c", VG_(toupper)(nameISize(u->extra4b)),
                               u->signed_widen?'s':'z');
          VG_(printf)("\t");
-         ppUOperand(u, 1, u->size, False);
+         VG_(ppUOperand)(u, 1, u->size, False);
          break;
 
-      case TESTV: case SETV:
-         VG_(printf)("\t");
-         ppUOperand(u, 1, u->size, False);
-         break;
-
-      default: VG_(panic)("ppUInstr: unhandled opcode");
+      default: 
+         if (VG_(needs).extends_UCode)
+            SKN_(ppExtUInstr)(u);
+         else {
+            VG_(printf)("unhandled opcode: %u.  Perhaps " 
+                        "VG_(needs).extends_UCode should be set?",
+                        u->opcode);
+            VG_(panic)("ppUInstr: unhandled opcode");
+         }
    }
 
    if (u->flags_r != FlagsEmpty || u->flags_w != FlagsEmpty) {
@@ -1025,17 +985,6 @@ void VG_(ppUCodeBlock) ( UCodeBlock* cb, Char* title )
 /*--- and code improvement.                                ---*/
 /*------------------------------------------------------------*/
 
-/* A structure for communicating temp uses, and for indicating
-   temp->real register mappings for patchUInstr. */
-typedef
-   struct {
-      Int   realNo;
-      Int   tempNo;
-      Bool  isWrite;
-   }
-   TempUse;
-
-
 /* Get the temp use of a uinstr, parking them in an array supplied by
    the caller, which is assumed to be big enough.  Return the number
    of entries.  Insns which read _and_ write a register wind up
@@ -1043,8 +992,9 @@ typedef
    order, so that if a reg is read-modified-written, it appears first
    as a read and then as a write.  
 */
-static __inline__ 
-Int getTempUsage ( UInstr* u, TempUse* arr )
+
+/* Inlined locally but not in other modules */
+__inline__ Int VG_(getTempUsage) ( UInstr* u, TempUse* arr )
 {
 
 #  define RD(ono)                                  \
@@ -1061,7 +1011,9 @@ Int getTempUsage ( UInstr* u, TempUse* arr )
       case LEA1: RD(1); WR(2); break;
       case LEA2: RD(1); RD(2); WR(3); break;
 
-      case NOP: case FPU: case INCEIP: case CALLM_S: case CALLM_E: break;
+      case NOP: case FPU: case INCEIP: case CALLM_S: case CALLM_E: 
+      case CCALL_0_0:  break;
+
       case FPU_R: case FPU_W: RD(2); break;
 
       case GETF:  WR(1); break;
@@ -1079,7 +1031,7 @@ Int getTempUsage ( UInstr* u, TempUse* arr )
       case PUSH: case CCALL_1_0: RD(1); break;
       case POP:  WR(1); break;
 
-      case TAG2:
+      /*case TAG2:*/
       case CMOV:
       case ADD: case ADC: case AND: case OR:  
       case XOR: case SUB: case SBB:   
@@ -1089,7 +1041,7 @@ Int getTempUsage ( UInstr* u, TempUse* arr )
       case ROL: case ROR: case RCL: case RCR:
          RD(1); RD(2); WR(2); break;
 
-      case NOT: case NEG: case INC: case DEC: case TAG1: case BSWAP:
+      case NOT: case NEG: case INC: case DEC: /*case TAG1:*/ case BSWAP:
          RD(1); WR(1); break;
 
       case WIDEN: RD(1); WR(1); break;
@@ -1097,19 +1049,15 @@ Int getTempUsage ( UInstr* u, TempUse* arr )
       case CC2VAL: WR(1); break;
       case JIFZ: RD(1); break;
 
-      /* These sizes are only ever consulted when the instrumentation
-         code is being added, so the following can return
-         manifestly-bogus sizes. */
-      case LOADV:   RD(1); WR(2); break;
-      case STOREV:  RD(1); RD(2); break;
-      case GETV:    WR(2); break;
-      case PUTV:    RD(1); break;
-      case TESTV:   RD(1); break;
-      case SETV:    WR(1); break;
-      case PUTVF:   RD(1); break;
-      case GETVF:   WR(1); break;
-
-      default: VG_(panic)("getTempUsage: unhandled opcode");
+      default:
+         if (VG_(needs).extends_UCode)
+            return SKN_(getExtTempUsage)(u, arr);
+         else {
+            VG_(printf)("unhandled opcode: %u.  Perhaps " 
+                        "VG_(needs).extends_UCode should be set?",
+                        u->opcode);
+            VG_(panic)("VG_(getTempUsage): unhandled opcode");
+         }
    }
    return n;
 
@@ -1210,7 +1158,7 @@ Bool uInstrMentionsTempReg ( UInstr* u, Int tempreg )
 {
    Int i, k;
    TempUse tempUse[3];
-   k = getTempUsage ( u, &tempUse[0] );
+   k = VG_(getTempUsage) ( u, &tempUse[0] );
    for (i = 0; i < k; i++)
       if (tempUse[i].tempNo == tempreg)
          return True;
@@ -1257,7 +1205,7 @@ static void vg_improve ( UCodeBlock* cb )
    for (i = cb->used-1; i >= 0; i--) {
       u = &cb->instrs[i];
 
-      k = getTempUsage(u, &tempUse[0]);
+      k = VG_(getTempUsage)(u, &tempUse[0]);
 
       /* For each temp usage ... bwds in program order. */
       for (j = k-1; j >= 0; j--) {
@@ -1364,7 +1312,7 @@ static void vg_improve ( UCodeBlock* cb )
          }
 
          /* boring insn; invalidate any mappings to temps it writes */
-         k = getTempUsage(u, &tempUse[0]);
+         k = VG_(getTempUsage)(u, &tempUse[0]);
 
          for (j = 0; j < k; j++) {
             wr  = tempUse[j].isWrite;
@@ -1592,7 +1540,7 @@ UCodeBlock* vg_do_register_allocation ( UCodeBlock* c1 )
    /* Scan fwds to establish live ranges. */
 
    for (i = 0; i < c1->used; i++) {
-      k = getTempUsage(&c1->instrs[i], &tempUse[0]);
+      k = VG_(getTempUsage)(&c1->instrs[i], &tempUse[0]);
       vg_assert(k >= 0 && k <= 3);
 
       /* For each temp usage ... fwds in program order */
@@ -1726,7 +1674,7 @@ UCodeBlock* vg_do_register_allocation ( UCodeBlock* c1 )
          generate spill stores since we may have to evict some TempRegs
          currently in real regs.  Also generates spill loads. */
 
-      k = getTempUsage(&c1->instrs[i], &tempUse[0]);
+      k = VG_(getTempUsage)(&c1->instrs[i], &tempUse[0]);
       vg_assert(k >= 0 && k <= 3);
 
       /* For each ***different*** temp mentioned in the insn .... */
@@ -1894,1211 +1842,8 @@ UCodeBlock* vg_do_register_allocation ( UCodeBlock* c1 )
 
 
 /*------------------------------------------------------------*/
-/*--- New instrumentation machinery.                       ---*/
-/*------------------------------------------------------------*/
-
-static
-VgTagOp get_VgT_ImproveOR_TQ ( Int sz )
-{
-   switch (sz) {
-      case 4: return VgT_ImproveOR4_TQ;
-      case 2: return VgT_ImproveOR2_TQ;
-      case 1: return VgT_ImproveOR1_TQ;
-      default: VG_(panic)("get_VgT_ImproveOR_TQ");
-   }
-}
-
-
-static
-VgTagOp get_VgT_ImproveAND_TQ ( Int sz )
-{
-   switch (sz) {
-      case 4: return VgT_ImproveAND4_TQ;
-      case 2: return VgT_ImproveAND2_TQ;
-      case 1: return VgT_ImproveAND1_TQ;
-      default: VG_(panic)("get_VgT_ImproveAND_TQ");
-   }
-}
-
-
-static
-VgTagOp get_VgT_Left ( Int sz )
-{
-   switch (sz) {
-      case 4: return VgT_Left4;
-      case 2: return VgT_Left2;
-      case 1: return VgT_Left1;
-      default: VG_(panic)("get_VgT_Left");
-   }
-}
-
-
-static
-VgTagOp get_VgT_UifU ( Int sz )
-{
-   switch (sz) {
-      case 4: return VgT_UifU4;
-      case 2: return VgT_UifU2;
-      case 1: return VgT_UifU1;
-      case 0: return VgT_UifU0;
-      default: VG_(panic)("get_VgT_UifU");
-   }
-}
-
-
-static
-VgTagOp get_VgT_DifD ( Int sz )
-{
-   switch (sz) {
-      case 4: return VgT_DifD4;
-      case 2: return VgT_DifD2;
-      case 1: return VgT_DifD1;
-      default: VG_(panic)("get_VgT_DifD");
-   }
-}
-
-
-static 
-VgTagOp get_VgT_PCast ( Int szs, Int szd )
-{
-   if (szs == 4 && szd == 0) return VgT_PCast40;
-   if (szs == 2 && szd == 0) return VgT_PCast20;
-   if (szs == 1 && szd == 0) return VgT_PCast10;
-   if (szs == 0 && szd == 1) return VgT_PCast01;
-   if (szs == 0 && szd == 2) return VgT_PCast02;
-   if (szs == 0 && szd == 4) return VgT_PCast04;
-   if (szs == 1 && szd == 4) return VgT_PCast14;
-   if (szs == 1 && szd == 2) return VgT_PCast12;
-   if (szs == 1 && szd == 1) return VgT_PCast11;
-   VG_(printf)("get_VgT_PCast(%d,%d)\n", szs, szd);
-   VG_(panic)("get_VgT_PCast");
-}
-
-
-static 
-VgTagOp get_VgT_Widen ( Bool syned, Int szs, Int szd )
-{
-   if (szs == 1 && szd == 2 && syned)  return VgT_SWiden12;
-   if (szs == 1 && szd == 2 && !syned) return VgT_ZWiden12;
-
-   if (szs == 1 && szd == 4 && syned)  return VgT_SWiden14;
-   if (szs == 1 && szd == 4 && !syned) return VgT_ZWiden14;
-
-   if (szs == 2 && szd == 4 && syned)  return VgT_SWiden24;
-   if (szs == 2 && szd == 4 && !syned) return VgT_ZWiden24;
-
-   VG_(printf)("get_VgT_Widen(%d,%d,%d)\n", (Int)syned, szs, szd);
-   VG_(panic)("get_VgT_Widen");
-}
-
-/* Pessimally cast the spec'd shadow from one size to another. */
-static 
-void create_PCast ( UCodeBlock* cb, Int szs, Int szd, Int tempreg )
-{
-   if (szs == 0 && szd == 0)
-      return;
-   uInstr3(cb, TAG1, 0, TempReg, tempreg, 
-                        NoValue, 0, 
-                        Lit16,   get_VgT_PCast(szs,szd));
-}
-
-
-/* Create a signed or unsigned widen of the spec'd shadow from one
-   size to another.  The only allowed size transitions are 1->2, 1->4
-   and 2->4. */
-static 
-void create_Widen ( UCodeBlock* cb, Bool signed_widen,
-                    Int szs, Int szd, Int tempreg )
-{
-   if (szs == szd) return;
-   uInstr3(cb, TAG1, 0, TempReg, tempreg, 
-                        NoValue, 0, 
-                        Lit16,   get_VgT_Widen(signed_widen,szs,szd));
-}
-
-
-/* Get the condition codes into a new shadow, at the given size. */
-static
-Int create_GETVF ( UCodeBlock* cb, Int sz )
-{
-   Int tt = newShadow(cb);
-   uInstr1(cb, GETVF, 0, TempReg, tt);
-   create_PCast(cb, 0, sz, tt);
-   return tt;
-}
-
-
-/* Save the condition codes from the spec'd shadow. */
-static
-void create_PUTVF ( UCodeBlock* cb, Int sz, Int tempreg )
-{
-   if (sz == 0) {
-      uInstr1(cb, PUTVF, 0, TempReg, tempreg);
-   } else { 
-      Int tt = newShadow(cb);
-      uInstr2(cb, MOV, 4, TempReg, tempreg, TempReg, tt);
-      create_PCast(cb, sz, 0, tt);
-      uInstr1(cb, PUTVF, 0, TempReg, tt);
-   }
-}
-
-
-/* Do Left on the spec'd shadow. */
-static 
-void create_Left ( UCodeBlock* cb, Int sz, Int tempreg )
-{
-   uInstr3(cb, TAG1, 0, 
-               TempReg, tempreg,
-               NoValue, 0, 
-               Lit16, get_VgT_Left(sz));
-}
-
-
-/* Do UifU on ts and td, putting the result in td. */
-static 
-void create_UifU ( UCodeBlock* cb, Int sz, Int ts, Int td )
-{
-   uInstr3(cb, TAG2, 0, TempReg, ts, TempReg, td,
-               Lit16, get_VgT_UifU(sz));
-}
-
-
-/* Do DifD on ts and td, putting the result in td. */
-static 
-void create_DifD ( UCodeBlock* cb, Int sz, Int ts, Int td )
-{
-   uInstr3(cb, TAG2, 0, TempReg, ts, TempReg, td,
-               Lit16, get_VgT_DifD(sz));
-}
-
-
-/* Do HelpAND on value tval and tag tqqq, putting the result in
-   tqqq. */
-static 
-void create_ImproveAND_TQ ( UCodeBlock* cb, Int sz, Int tval, Int tqqq )
-{
-   uInstr3(cb, TAG2, 0, TempReg, tval, TempReg, tqqq,
-               Lit16, get_VgT_ImproveAND_TQ(sz));
-}
-
-
-/* Do HelpOR on value tval and tag tqqq, putting the result in
-   tqqq. */
-static 
-void create_ImproveOR_TQ ( UCodeBlock* cb, Int sz, Int tval, Int tqqq )
-{
-   uInstr3(cb, TAG2, 0, TempReg, tval, TempReg, tqqq,
-               Lit16, get_VgT_ImproveOR_TQ(sz));
-}
-
-
-/* Get the shadow for an operand described by (tag, val).  Emit code
-   to do this and return the identity of the shadow holding the
-   result.  The result tag is always copied into a new shadow, so it
-   can be modified without trashing the original.*/
-static
-Int /* TempReg */ getOperandShadow ( UCodeBlock* cb, 
-                                     Int sz, Int tag, Int val )
-{
-   Int sh;
-   sh = newShadow(cb);
-   if (tag == TempReg) {
-      uInstr2(cb, MOV, 4, TempReg, SHADOW(val), TempReg, sh);
-      return sh;
-   }
-   if (tag == Literal) {
-      uInstr1(cb, SETV, sz, TempReg, sh);
-      return sh;
-   }
-   if (tag == ArchReg) {
-      uInstr2(cb, GETV, sz, ArchReg, val, TempReg, sh);
-      return sh;
-   }
-   VG_(panic)("getOperandShadow");
-}
-
-
-
-/* Create and return an instrumented version of cb_in.  Free cb_in
-   before returning. */
-static UCodeBlock* vg_memcheck_instrument ( UCodeBlock* cb_in )
-{
-   UCodeBlock* cb;
-   Int         i, j;
-   UInstr*     u_in;
-   Int         qs, qd, qt, qtt;
-   cb = VG_(allocCodeBlock)();
-   cb->nextTemp = cb_in->nextTemp;
-
-   for (i = 0; i < cb_in->used; i++) {
-      qs = qd = qt = qtt = INVALID_TEMPREG;
-      u_in = &cb_in->instrs[i];
-
-      /* if (i > 0) uInstr1(cb, NOP, 0, NoValue, 0); */
-
-      /* VG_(ppUInstr)(0, u_in); */
-      switch (u_in->opcode) {
-
-         case NOP:
-            break;
-
-         case INCEIP:
-            VG_(copyUInstr)(cb, u_in);
-            break;
-
-         /* Loads and stores.  Test the V bits for the address.  24
-            Mar 02: since the address is A-checked anyway, there's not
-            really much point in doing the V-check too, unless you
-            think that you might use addresses which are undefined but
-            still addressible.  Hence the optionalisation of the V
-            check.
-
-            The LOADV/STOREV does an addressibility check for the
-            address. */
-
-         case LOAD: 
-            if (VG_(clo_check_addrVs)) {
-               uInstr1(cb, TESTV, 4, TempReg, SHADOW(u_in->val1));
-               uInstr1(cb, SETV,  4, TempReg, SHADOW(u_in->val1));
-            }
-            uInstr2(cb, LOADV, u_in->size, 
-                        TempReg, u_in->val1,
-                        TempReg, SHADOW(u_in->val2));
-            VG_(copyUInstr)(cb, u_in);
-            break;
-         case STORE:
-            if (VG_(clo_check_addrVs)) {
-               uInstr1(cb, TESTV,  4, TempReg, SHADOW(u_in->val2));
-               uInstr1(cb, SETV,   4, TempReg, SHADOW(u_in->val2));
-            }
-            uInstr2(cb, STOREV, u_in->size,
-                        TempReg, SHADOW(u_in->val1), 
-                        TempReg, u_in->val2);
-            VG_(copyUInstr)(cb, u_in);
-            break;
-
-         /* Moving stuff around.  Make the V bits follow accordingly,
-            but don't do anything else.  */
-
-         case GET:
-            uInstr2(cb, GETV, u_in->size,
-                        ArchReg, u_in->val1,
-                        TempReg, SHADOW(u_in->val2));
-            VG_(copyUInstr)(cb, u_in);
-            break;
-         case PUT:
-            uInstr2(cb, PUTV, u_in->size, 
-                        TempReg, SHADOW(u_in->val1),
-                        ArchReg, u_in->val2);
-            VG_(copyUInstr)(cb, u_in);
-            break;
-
-         case GETF:
-            /* This is not the smartest way to do it, but should work. */
-            qd = create_GETVF(cb, u_in->size);
-            uInstr2(cb, MOV, 4, TempReg, qd, TempReg, SHADOW(u_in->val1));
-            VG_(copyUInstr)(cb, u_in);
-            break;
-         case PUTF:
-            create_PUTVF(cb, u_in->size, SHADOW(u_in->val1));
-            VG_(copyUInstr)(cb, u_in);
-            break;
-
-         case MOV:
-            switch (u_in->tag1) {
-               case TempReg: 
-                  uInstr2(cb, MOV, 4,
-                              TempReg, SHADOW(u_in->val1),
-                              TempReg, SHADOW(u_in->val2));
-                  break;
-               case Literal: 
-                  uInstr1(cb, SETV, u_in->size, 
-                              TempReg, SHADOW(u_in->val2));
-                  break;
-               default: 
-                  VG_(panic)("vg_memcheck_instrument: MOV");
-            }
-            VG_(copyUInstr)(cb, u_in);
-            break;
-
-         /* Special case of add, where one of the operands is a literal.
-            lea1(t) = t + some literal.
-            Therefore: lea1#(qa) = left(qa) 
-         */
-         case LEA1:
-            vg_assert(u_in->size == 4 && !VG_(anyFlagUse)(u_in));
-            qs = SHADOW(u_in->val1);
-            qd = SHADOW(u_in->val2);
-            uInstr2(cb, MOV, 4, TempReg, qs, TempReg, qd);
-            create_Left(cb, u_in->size, qd);
-            VG_(copyUInstr)(cb, u_in);
-            break;
-
-         /* Another form of add.  
-            lea2(ts,tt,shift) = ts + (tt << shift); shift is a literal
-                                and is 0,1,2 or 3.
-            lea2#(qs,qt) = left(qs `UifU` (qt << shift)).
-            Note, subtly, that the shift puts zeroes at the bottom of qt,
-            meaning Valid, since the corresponding shift of tt puts 
-            zeroes at the bottom of tb.
-         */
-         case LEA2: {
-            Int shift;
-            vg_assert(u_in->size == 4 && !VG_(anyFlagUse)(u_in));
-            switch (u_in->extra4b) {
-               case 1: shift = 0; break;
-               case 2: shift = 1; break;
-               case 4: shift = 2; break;
-               case 8: shift = 3; break;
-               default: VG_(panic)( "vg_memcheck_instrument(LEA2)" );
-            }
-            qs = SHADOW(u_in->val1);
-            qt = SHADOW(u_in->val2);
-            qd = SHADOW(u_in->val3);
-            uInstr2(cb, MOV, 4, TempReg, qt, TempReg, qd);
-            if (shift > 0) {
-               uInstr2(cb, SHL, 4, Literal, 0, TempReg, qd);
-               uLiteral(cb, shift);
-            }
-            create_UifU(cb, 4, qs, qd);
-            create_Left(cb, u_in->size, qd);
-            VG_(copyUInstr)(cb, u_in);
-            break;
-         }
-
-         /* inc#/dec#(qd) = q `UifU` left(qd) = left(qd) */
-         case INC: case DEC:
-            qd = SHADOW(u_in->val1);
-            create_Left(cb, u_in->size, qd);
-            if (u_in->flags_w != FlagsEmpty)
-               create_PUTVF(cb, u_in->size, qd);
-            VG_(copyUInstr)(cb, u_in);
-            break;
-
-         /* This is a HACK (approximation :-) */
-         /* rcl#/rcr#(qs,qd) 
-               = let q0 = pcast-sz-0(qd) `UifU` pcast-sz-0(qs) `UifU` eflags#
-                 eflags# = q0
-                 qd =pcast-0-sz(q0)
-            Ie, cast everything down to a single bit, then back up.
-            This assumes that any bad bits infect the whole word and 
-            the eflags.
-         */
-         case RCL: case RCR:
-	    vg_assert(u_in->flags_r != FlagsEmpty);
-            /* The following assertion looks like it makes sense, but is
-               actually wrong.  Consider this:
-                  rcll    %eax
-                  imull   %eax, %eax
-               The rcll writes O and C but so does the imull, so the O and C 
-               write of the rcll is annulled by the prior improvement pass.
-               Noticed by Kevin Ryde <user42@zip.com.au>
-            */
-	    /* vg_assert(u_in->flags_w != FlagsEmpty); */
-            qs = getOperandShadow(cb, u_in->size, u_in->tag1, u_in->val1);
-            /* We can safely modify qs; cast it to 0-size. */
-            create_PCast(cb, u_in->size, 0, qs);
-            qd = SHADOW(u_in->val2);
-            create_PCast(cb, u_in->size, 0, qd);
-            /* qs is cast-to-0(shift count#), and qd is cast-to-0(value#). */
-            create_UifU(cb, 0, qs, qd);
-            /* qs is now free; reuse it for the flag definedness. */
-            qs = create_GETVF(cb, 0);
-            create_UifU(cb, 0, qs, qd);
-            create_PUTVF(cb, 0, qd);
-            create_PCast(cb, 0, u_in->size, qd);
-            VG_(copyUInstr)(cb, u_in);
-            break;
-
-         /* for OP in shl shr sar rol ror
-            (qs is shift count#, qd is value to be OP#d)
-            OP(ts,td)
-            OP#(qs,qd)
-               = pcast-1-sz(qs) `UifU` OP(ts,qd)
-            So we apply OP to the tag bits too, and then UifU with
-            the shift count# to take account of the possibility of it
-            being undefined.
-            
-            A bit subtle:
-               ROL/ROR rearrange the tag bits as per the value bits.
-               SHL/SHR shifts zeroes into the value, and corresponding 
-                  zeroes indicating Definedness into the tag.
-               SAR copies the top bit of the value downwards, and therefore
-                  SAR also copies the definedness of the top bit too.
-            So in all five cases, we just apply the same op to the tag 
-            bits as is applied to the value bits.  Neat!
-         */
-         case SHL:
-         case SHR: case SAR:
-         case ROL: case ROR: {
-            Int t_amount = INVALID_TEMPREG;
-            vg_assert(u_in->tag1 == TempReg || u_in->tag1 == Literal);
-            vg_assert(u_in->tag2 == TempReg);
-            qd = SHADOW(u_in->val2);
-
-            /* Make qs hold shift-count# and make
-               t_amount be a TempReg holding the shift count. */
-            if (u_in->tag1 == Literal) {
-               t_amount = newTemp(cb);
-               uInstr2(cb, MOV, 4, Literal, 0, TempReg, t_amount);
-               uLiteral(cb, u_in->lit32);
-               qs = SHADOW(t_amount);
-               uInstr1(cb, SETV, 1, TempReg, qs);
-            } else {
-               t_amount = u_in->val1;
-               qs = SHADOW(u_in->val1);
-            }
-
-            uInstr2(cb, u_in->opcode, 
-                        u_in->size, 
-                        TempReg, t_amount, 
-                        TempReg, qd);
-            qt = newShadow(cb);
-            uInstr2(cb, MOV, 4, TempReg, qs, TempReg, qt);
-            create_PCast(cb, 1, u_in->size, qt);
-            create_UifU(cb, u_in->size, qt, qd);
-            VG_(copyUInstr)(cb, u_in);
-            break;
-         }
-
-         /* One simple tag operation. */
-         case WIDEN:
-            vg_assert(u_in->tag1 == TempReg);
-            create_Widen(cb, u_in->signed_widen, u_in->extra4b, u_in->size, 
-                             SHADOW(u_in->val1));
-            VG_(copyUInstr)(cb, u_in);
-            break;
-
-         /* not#(x) = x (since bitwise independent) */
-         case NOT:
-            vg_assert(u_in->tag1 == TempReg);
-            VG_(copyUInstr)(cb, u_in);
-            break;
-
-         /* neg#(x) = left(x) (derivable from case for SUB) */
-         case NEG:
-            vg_assert(u_in->tag1 == TempReg);
-            create_Left(cb, u_in->size, SHADOW(u_in->val1));
-            VG_(copyUInstr)(cb, u_in);
-            break;
-
-         /* bswap#(x) = bswap(x) */
-         case BSWAP:
-            vg_assert(u_in->tag1 == TempReg);
-            vg_assert(u_in->size == 4);
-            qd = SHADOW(u_in->val1);
-            uInstr1(cb, BSWAP, 4, TempReg, qd);
-            VG_(copyUInstr)(cb, u_in);
-            break;
-
-         /* cc2val#(qd) = pcast-0-to-size(eflags#) */
-         case CC2VAL:
-            vg_assert(u_in->tag1 == TempReg);
-            vg_assert(u_in->flags_r != FlagsEmpty);
-            qt = create_GETVF(cb, u_in->size);
-            uInstr2(cb, MOV, 4, TempReg, qt, TempReg, SHADOW(u_in->val1));
-            VG_(copyUInstr)(cb, u_in);
-            break;
-
-         /* cmov#(qs,qd) = cmov(qs,qd)
-            That is, do the cmov of tags using the same flags as for
-            the data (obviously).  However, first do a test on the 
-            validity of the flags.
-         */
-         case CMOV:
-            vg_assert(u_in->size == 4);
-            vg_assert(u_in->tag1 == TempReg);
-            vg_assert(u_in->tag2 == TempReg);
-            vg_assert(u_in->flags_r != FlagsEmpty);
-            vg_assert(u_in->flags_w == FlagsEmpty);
-            qs = SHADOW(u_in->val1);
-            qd = SHADOW(u_in->val2);
-            qt = create_GETVF(cb, 0);
-            uInstr1(cb, TESTV, 0, TempReg, qt);
-            /* qt should never be referred to again.  Nevertheless
-               ... */
-            uInstr1(cb, SETV, 0, TempReg, qt);
-
-            uInstr2(cb, CMOV, 4, TempReg, qs, TempReg, qd);
-            LAST_UINSTR(cb).cond    = u_in->cond;
-            LAST_UINSTR(cb).flags_r = u_in->flags_r;
-
-            VG_(copyUInstr)(cb, u_in);
-            break;
-
-         /* add#/sub#(qs,qd) 
-               = qs `UifU` qd `UifU` left(qs) `UifU` left(qd)
-               = left(qs) `UifU` left(qd)
-               = left(qs `UifU` qd)
-            adc#/sbb#(qs,qd)
-               = left(qs `UifU` qd) `UifU` pcast(eflags#)
-            Second arg (dest) is TempReg.
-            First arg (src) is Literal or TempReg or ArchReg. 
-         */
-         case ADD: case SUB:
-         case ADC: case SBB:
-            qd = SHADOW(u_in->val2);
-            qs = getOperandShadow(cb, u_in->size, u_in->tag1, u_in->val1);
-            create_UifU(cb, u_in->size, qs, qd);
-            create_Left(cb, u_in->size, qd);
-            if (u_in->opcode == ADC || u_in->opcode == SBB) {
-               vg_assert(u_in->flags_r != FlagsEmpty);
-               qt = create_GETVF(cb, u_in->size);
-               create_UifU(cb, u_in->size, qt, qd);
-            }
-            if (u_in->flags_w != FlagsEmpty) {
-               create_PUTVF(cb, u_in->size, qd);
-            }
-            VG_(copyUInstr)(cb, u_in);
-            break;
-
-         /* xor#(qs,qd) = qs `UifU` qd */
-         case XOR:
-            qd = SHADOW(u_in->val2);
-            qs = getOperandShadow(cb, u_in->size, u_in->tag1, u_in->val1);
-            create_UifU(cb, u_in->size, qs, qd);
-            if (u_in->flags_w != FlagsEmpty) {
-               create_PUTVF(cb, u_in->size, qd);
-            }
-            VG_(copyUInstr)(cb, u_in);
-            break;
-
-         /* and#/or#(qs,qd) 
-               = (qs `UifU` qd) `DifD` improve(vs,qs) 
-                                `DifD` improve(vd,qd)
-            where improve is the relevant one of
-                Improve{AND,OR}_TQ
-            Use the following steps, with qt as a temp:
-               qt = improve(vd,qd)
-               qd = qs `UifU` qd
-               qd = qt `DifD` qd
-               qt = improve(vs,qs)
-               qd = qt `DifD` qd
-         */
-         case AND: case OR:
-            vg_assert(u_in->tag1 == TempReg);
-            vg_assert(u_in->tag2 == TempReg);
-            qd = SHADOW(u_in->val2);
-            qs = SHADOW(u_in->val1);
-            qt = newShadow(cb);
-
-            /* qt = improve(vd,qd) */
-            uInstr2(cb, MOV, 4, TempReg, qd, TempReg, qt);
-            if (u_in->opcode == AND)
-               create_ImproveAND_TQ(cb, u_in->size, u_in->val2, qt);
-            else
-               create_ImproveOR_TQ(cb, u_in->size, u_in->val2, qt);
-            /* qd = qs `UifU` qd */
-            create_UifU(cb, u_in->size, qs, qd);
-            /* qd = qt `DifD` qd */
-            create_DifD(cb, u_in->size, qt, qd);
-            /* qt = improve(vs,qs) */
-            uInstr2(cb, MOV, 4, TempReg, qs, TempReg, qt);
-            if (u_in->opcode == AND)
-               create_ImproveAND_TQ(cb, u_in->size, u_in->val1, qt);
-            else
-               create_ImproveOR_TQ(cb, u_in->size, u_in->val1, qt);
-            /* qd = qt `DifD` qd */
-               create_DifD(cb, u_in->size, qt, qd);
-            /* So, finally qd is the result tag. */
-            if (u_in->flags_w != FlagsEmpty) {
-               create_PUTVF(cb, u_in->size, qd);
-            }
-            VG_(copyUInstr)(cb, u_in);
-            break;
-
-         /* Machinery to do with supporting CALLM.  Copy the start and
-            end markers only to make the result easier to read
-            (debug); they generate no code and have no effect. 
-         */
-         case CALLM_S: case CALLM_E:
-            VG_(copyUInstr)(cb, u_in);
-            break;
-
-         /* Copy PUSH and POP verbatim.  Arg/result absval
-            calculations are done when the associated CALL is
-            processed.  CLEAR has no effect on absval calculations but
-            needs to be copied.  
-         */
-         case PUSH: case POP: case CLEAR:
-            VG_(copyUInstr)(cb, u_in);
-            break;
-
-         /* In short:
-               callm#(a1# ... an#) = (a1# `UifU` ... `UifU` an#)
-            We have to decide on a size to do the computation at,
-            although the choice doesn't affect correctness.  We will
-            do a pcast to the final size anyway, so the only important
-            factor is to choose a size which minimises the total
-            number of casts needed.  Valgrind: just use size 0,
-            regardless.  It may not be very good for performance
-            but does simplify matters, mainly by reducing the number
-            of different pessimising casts which have to be implemented.
-         */
-         case CALLM: {
-            UInstr* uu;
-            Bool res_used;
-
-            /* Now generate the code.  Get the final result absval
-               into qt. */
-            qt  = newShadow(cb);
-            qtt = newShadow(cb);
-            uInstr1(cb, SETV, 0, TempReg, qt);
-            for (j = i-1; cb_in->instrs[j].opcode != CALLM_S; j--) {
-               uu = & cb_in->instrs[j];
-               if (uu->opcode != PUSH) continue;
-               /* cast via a temporary */
-               uInstr2(cb, MOV, 4, TempReg, SHADOW(uu->val1),
-                                   TempReg, qtt);
-               create_PCast(cb, uu->size, 0, qtt);
-               create_UifU(cb, 0, qtt, qt);
-            }
-            /* Remembering also that flags read count as inputs. */
-            if (u_in->flags_r != FlagsEmpty) {
-               qtt = create_GETVF(cb, 0);
-               create_UifU(cb, 0, qtt, qt);
-            }
-
-            /* qt now holds the result tag.  If any results from the
-               call are used, either by fetching with POP or
-               implicitly by writing the flags, we copy the result
-               absval to the relevant location.  If not used, the call
-               must have been for its side effects, so we test qt here
-               and now.  Note that this assumes that all values
-               removed by POP continue to be live.  So dead args
-               *must* be removed with CLEAR, not by POPping them into
-               a dummy tempreg. 
-            */
-            res_used = False;
-            for (j = i+1; cb_in->instrs[j].opcode != CALLM_E; j++) {
-               uu = & cb_in->instrs[j];
-               if (uu->opcode != POP) continue;
-               /* Cast via a temp. */
-               uInstr2(cb, MOV, 4, TempReg, qt, TempReg, qtt);
-               create_PCast(cb, 0, uu->size, qtt);
-               uInstr2(cb, MOV, 4, TempReg, qtt, 
-                                   TempReg, SHADOW(uu->val1));
-               res_used = True;
-            }
-            if (u_in->flags_w != FlagsEmpty) {
-               create_PUTVF(cb, 0, qt);
-               res_used = True;
-            }
-            if (!res_used) {
-               uInstr1(cb, TESTV, 0, TempReg, qt);
-               /* qt should never be referred to again.  Nevertheless
-                  ... */
-               uInstr1(cb, SETV, 0, TempReg, qt);
-            }
-            VG_(copyUInstr)(cb, u_in);
-            break;
-         }
-         /* Whew ... */
-
-         case JMP:
-            if (u_in->tag1 == TempReg) {
-               uInstr1(cb, TESTV, 4, TempReg, SHADOW(u_in->val1));
-               uInstr1(cb, SETV,  4, TempReg, SHADOW(u_in->val1));
-            } else {
-               vg_assert(u_in->tag1 == Literal);
-            }
-            if (u_in->cond != CondAlways) {
-               vg_assert(u_in->flags_r != FlagsEmpty);
-               qt = create_GETVF(cb, 0);
-               uInstr1(cb, TESTV, 0, TempReg, qt);
-               /* qt should never be referred to again.  Nevertheless
-                  ... */
-               uInstr1(cb, SETV, 0, TempReg, qt);
-            }
-            VG_(copyUInstr)(cb, u_in);
-            break;
-
-         case JIFZ:
-            uInstr1(cb, TESTV, 4, TempReg, SHADOW(u_in->val1));
-            uInstr1(cb, SETV,  4, TempReg, SHADOW(u_in->val1));
-            VG_(copyUInstr)(cb, u_in);
-            break;
-
-         /* Emit a check on the address used.  For FPU_R, the value
-            loaded into the FPU is checked at the time it is read from
-            memory (see synth_fpu_mem_check_actions).  */
-         case FPU_R: case FPU_W:
-            vg_assert(u_in->tag2 == TempReg);
-            uInstr1(cb, TESTV, 4, TempReg, SHADOW(u_in->val2));
-            uInstr1(cb, SETV,  4, TempReg, SHADOW(u_in->val2));
-            VG_(copyUInstr)(cb, u_in);
-            break;
-
-         /* For FPU insns not referencing memory, just copy thru. */
-         case FPU: 
-            VG_(copyUInstr)(cb, u_in);
-            break;
-
-         default:
-            VG_(ppUInstr)(0, u_in);
-            VG_(panic)( "vg_memcheck_instrument: unhandled case");
-
-      } /* end of switch (u_in->opcode) */
-
-   } /* end of for loop */
-
-   VG_(freeCodeBlock)(cb_in);
-   return cb;
-}
-
-/*------------------------------------------------------------*/
-/*--- Clean up mem check instrumentation.                  ---*/
-/*------------------------------------------------------------*/
-
-#define VGC_IS_SHADOW(tempreg) ((tempreg % 2) == 1)
-#define VGC_UNDEF ((UChar)100)
-#define VGC_VALUE ((UChar)101)
-
-#define NOP_no_msg(uu)                                         \
-   do { uu->opcode = NOP; } while (False)
-
-#define NOP_tag1_op(uu)                                        \
-   do { uu->opcode = NOP;                                      \
-        if (VG_(disassemble))                                  \
-           VG_(printf)("at %d: delete %s due to defd arg\n",   \
-                       i, VG_(nameOfTagOp(u->val3)));          \
-   } while (False)
-
-#define SETV_tag1_op(uu,newsz)                                 \
-   do { uu->opcode = SETV;                                     \
-        uu->size = newsz;                                      \
-        uu->tag2 = uu->tag3 = NoValue;                         \
-        if (VG_(disassemble))                                  \
-           VG_(printf)("at %d: convert %s to SETV%d "          \
-                       "due to defd arg\n",                    \
-                       i, VG_(nameOfTagOp(u->val3)), newsz);   \
-   } while (False)
-
-
-
-/* Run backwards and delete SETVs on shadow temps for which the next
-   action is a write.  Needs an env saying whether or not the next
-   action is a write.  The supplied UCodeBlock is destructively
-   modified.
-*/
-static void vg_delete_redundant_SETVs ( UCodeBlock* cb )
-{
-   Bool*   next_is_write;
-   Int     i, j, k, n_temps;
-   UInstr* u;
-   TempUse tempUse[3];
-
-   n_temps = cb->nextTemp;
-   if (n_temps == 0) return;
-
-   next_is_write = VG_(jitmalloc)(n_temps * sizeof(Bool));
-
-   for (i = 0; i < n_temps; i++) next_is_write[i] = True;
-
-   for (i = cb->used-1; i >= 0; i--) {
-      u = &cb->instrs[i];
-
-      /* If we're not checking address V bits, there will be a lot of
-         GETVs, TAG1s and TAG2s calculating values which are never
-         used.  These first three cases get rid of them. */
-
-      if (u->opcode == GETV && VGC_IS_SHADOW(u->val2) 
-                            && next_is_write[u->val2]
-                            && !VG_(clo_check_addrVs)) {
-         u->opcode = NOP;
-         u->size = 0;
-         if (VG_(disassemble)) 
-            VG_(printf)("at %d: delete GETV\n", i);
-      } else
-
-      if (u->opcode == TAG1 && VGC_IS_SHADOW(u->val1) 
-                            && next_is_write[u->val1]
-                            && !VG_(clo_check_addrVs)) {
-         u->opcode = NOP;
-         u->size = 0;
-         if (VG_(disassemble)) 
-            VG_(printf)("at %d: delete TAG1\n", i);
-      } else
-
-      if (u->opcode == TAG2 && VGC_IS_SHADOW(u->val2) 
-                            && next_is_write[u->val2]
-                            && !VG_(clo_check_addrVs)) {
-         u->opcode = NOP;
-         u->size = 0;
-         if (VG_(disassemble)) 
-            VG_(printf)("at %d: delete TAG2\n", i);
-      } else
-
-      /* We do the rest of these regardless of whether or not
-         addresses are V-checked. */
-
-      if (u->opcode == MOV && VGC_IS_SHADOW(u->val2) 
-                           && next_is_write[u->val2]) {
-         /* This MOV is pointless because the target is dead at this
-            point.  Delete it. */
-         u->opcode = NOP;
-         u->size = 0;
-         if (VG_(disassemble)) 
-            VG_(printf)("at %d: delete MOV\n", i);
-      } else
-
-      if (u->opcode == SETV) {
-         if (u->tag1 == TempReg) {
-            vg_assert(VGC_IS_SHADOW(u->val1));
-            if (next_is_write[u->val1]) {
-               /* This write is pointless, so annul it. */
-               u->opcode = NOP;
-               u->size = 0;
-               if (VG_(disassemble)) 
-                  VG_(printf)("at %d: delete SETV\n", i);
-            } else {
-               /* This write has a purpose; don't annul it, but do
-                  notice that we did it. */
-               next_is_write[u->val1] = True;
-            }
-              
-         }
-
-      } else {
-         /* Find out what this insn does to the temps. */
-         k = getTempUsage(u, &tempUse[0]);
-         vg_assert(k <= 3);
-         for (j = k-1; j >= 0; j--) {
-            next_is_write[ tempUse[j].tempNo ]
-                         = tempUse[j].isWrite;
-         }
-      }
-
-   }
-
-   VG_(jitfree)(next_is_write);
-}
-
-
-/* Run forwards, propagating and using the is-completely-defined
-   property.  This removes a lot of redundant tag-munging code.
-   Unfortunately it requires intimate knowledge of how each uinstr and
-   tagop modifies its arguments.  This duplicates knowledge of uinstr
-   tempreg uses embodied in getTempUsage(), which is unfortunate. 
-   The supplied UCodeBlock* is modified in-place.
-
-   For each value temp, def[] should hold VGC_VALUE.
-
-   For each shadow temp, def[] may hold 4,2,1 or 0 iff that shadow is
-   definitely known to be fully defined at that size.  In all other
-   circumstances a shadow's def[] entry is VGC_UNDEF, meaning possibly
-   undefined.  In cases of doubt, VGC_UNDEF is always safe.
-*/
-static void vg_propagate_definedness ( UCodeBlock* cb )
-{
-   UChar*  def;
-   Int     i, j, k, t, n_temps;
-   UInstr* u;
-   TempUse tempUse[3];
-
-   n_temps = cb->nextTemp;
-   if (n_temps == 0) return;
-
-   def = VG_(jitmalloc)(n_temps * sizeof(UChar));
-   for (i = 0; i < n_temps; i++) 
-      def[i] = VGC_IS_SHADOW(i) ? VGC_UNDEF : VGC_VALUE;
-
-   /* Run forwards, detecting and using the all-defined property. */
-
-   for (i = 0; i < cb->used; i++) {
-      u = &cb->instrs[i];
-      switch (u->opcode) {
-
-      /* Tag-handling uinstrs. */
-
-         /* Deal with these quickly. */
-         case NOP:
-         case INCEIP:
-            break;
-
-         /* Make a tag defined. */
-         case SETV:
-            vg_assert(u->tag1 == TempReg && VGC_IS_SHADOW(u->val1));
-            def[u->val1] = u->size;
-            break;
-
-         /* Check definedness of a tag. */
-         case TESTV:
-            vg_assert(u->tag1 == TempReg && VGC_IS_SHADOW(u->val1));
-            if (def[u->val1] <= 4) { 
-               vg_assert(def[u->val1] == u->size); 
-               NOP_no_msg(u);
-               if (VG_(disassemble)) 
-                  VG_(printf)("at %d: delete TESTV on defd arg\n", i);
-            }
-            break;
-
-         /* Applies to both values and tags.  Propagate Definedness
-            property through copies.  Note that this isn't optional;
-            we *have* to do this to keep def[] correct. */
-         case MOV:
-            vg_assert(u->tag2 == TempReg);
-            if (u->tag1 == TempReg) {
-               if (VGC_IS_SHADOW(u->val1)) {
-                  vg_assert(VGC_IS_SHADOW(u->val2));
-                  def[u->val2] = def[u->val1];
-               }
-            }
-            break;
-
-         case PUTV:
-            vg_assert(u->tag1 == TempReg && VGC_IS_SHADOW(u->val1));
-            if (def[u->val1] <= 4) {
-               vg_assert(def[u->val1] == u->size);
-               u->tag1 = Literal;
-               u->val1 = 0;
-               switch (u->size) {
-                  case 4: u->lit32 = 0x00000000; break;
-                  case 2: u->lit32 = 0xFFFF0000; break;
-                  case 1: u->lit32 = 0xFFFFFF00; break;
-                  default: VG_(panic)("vg_cleanup(PUTV)");
-               }
-               if (VG_(disassemble)) 
-                  VG_(printf)(
-                     "at %d: propagate definedness into PUTV\n", i);
-            }
-            break;
-
-         case STOREV:
-            vg_assert(u->tag1 == TempReg && VGC_IS_SHADOW(u->val1));
-            if (def[u->val1] <= 4) {
-               vg_assert(def[u->val1] == u->size);
-               u->tag1 = Literal;
-               u->val1 = 0;
-               switch (u->size) {
-                  case 4: u->lit32 = 0x00000000; break;
-                  case 2: u->lit32 = 0xFFFF0000; break;
-                  case 1: u->lit32 = 0xFFFFFF00; break;
-                  default: VG_(panic)("vg_cleanup(STOREV)");
-               }
-               if (VG_(disassemble)) 
-                  VG_(printf)(
-                     "at %d: propagate definedness into STandV\n", i);
-            }
-            break;
-
-         /* Nothing interesting we can do with this, I think. */
-         case PUTVF:
-            break;
-
-         /* Tag handling operations. */
-         case TAG2:
-            vg_assert(u->tag2 == TempReg && VGC_IS_SHADOW(u->val2));
-            vg_assert(u->tag3 == Lit16);
-            /* Ultra-paranoid "type" checking. */
-            switch (u->val3) {
-               case VgT_ImproveAND4_TQ: case VgT_ImproveAND2_TQ:
-               case VgT_ImproveAND1_TQ: case VgT_ImproveOR4_TQ:
-               case VgT_ImproveOR2_TQ: case VgT_ImproveOR1_TQ:
-                  vg_assert(u->tag1 == TempReg && !VGC_IS_SHADOW(u->val1));
-                  break;
-               default:
-                  vg_assert(u->tag1 == TempReg && VGC_IS_SHADOW(u->val1));
-                  break;
-            }
-            switch (u->val3) {
-               Int sz;
-               case VgT_UifU4: 
-                  sz = 4; goto do_UifU;
-               case VgT_UifU2: 
-                  sz = 2; goto do_UifU;
-               case VgT_UifU1:
-                  sz = 1; goto do_UifU;
-               case VgT_UifU0:
-                  sz = 0; goto do_UifU;
-               do_UifU:
-                  vg_assert(u->tag1 == TempReg && VGC_IS_SHADOW(u->val1));
-                  vg_assert(u->tag2 == TempReg && VGC_IS_SHADOW(u->val2));
-                  if (def[u->val1] <= 4) {
-                     /* UifU.  The first arg is defined, so result is
-                        simply second arg.  Delete this operation. */
-                     vg_assert(def[u->val1] == sz);
-                     NOP_no_msg(u);
-                     if (VG_(disassemble)) 
-                        VG_(printf)(
-                           "at %d: delete UifU%d due to defd arg1\n", 
-                           i, sz);
-                  }
-                  else 
-                  if (def[u->val2] <= 4) {
-                     /* UifU.  The second arg is defined, so result is
-                        simply first arg.  Copy to second. */
-                     vg_assert(def[u->val2] == sz);
-                     u->opcode = MOV; 
-                     u->size = 4;
-                     u->tag3 = NoValue;
-                     def[u->val2] = def[u->val1];
-                     if (VG_(disassemble)) 
-                        VG_(printf)(
-                           "at %d: change UifU%d to MOV due to defd"
-                           " arg2\n", 
-                           i, sz);
-                  }
-                  break;
-               case VgT_ImproveAND4_TQ:
-                  sz = 4; goto do_ImproveAND;
-               case VgT_ImproveAND1_TQ:
-                  sz = 1; goto do_ImproveAND;
-               do_ImproveAND:
-                  /* Implements Q = T OR Q.  So if Q is entirely defined,
-                     ie all 0s, we get MOV T, Q. */
-		  if (def[u->val2] <= 4) {
-                     vg_assert(def[u->val2] == sz);
-                     u->size = 4; /* Regardless of sz */
-                     u->opcode = MOV;
-                     u->tag3 = NoValue;
-                     def[u->val2] = VGC_UNDEF;
-                     if (VG_(disassemble)) 
-                        VG_(printf)(
-                            "at %d: change ImproveAND%d_TQ to MOV due "
-                            "to defd arg2\n", 
-                            i, sz);
-                  }
-                  break;
-               default: 
-                  goto unhandled;
-            }
-            break;
-
-         case TAG1:
-            vg_assert(u->tag1 == TempReg && VGC_IS_SHADOW(u->val1));
-            if (def[u->val1] > 4) break;
-            /* We now know that the arg to the op is entirely defined.
-               If the op changes the size of the arg, we must replace
-               it with a SETV at the new size.  If it doesn't change
-               the size, we can delete it completely. */
-            switch (u->val3) {
-               /* Maintain the same size ... */
-               case VgT_Left4: 
-                  vg_assert(def[u->val1] == 4);
-                  NOP_tag1_op(u);
-                  break;
-               case VgT_PCast11: 
-                  vg_assert(def[u->val1] == 1);
-                  NOP_tag1_op(u);
-                  break;
-               /* Change size ... */
-               case VgT_PCast40: 
-                  vg_assert(def[u->val1] == 4);
-                  SETV_tag1_op(u,0);
-                  def[u->val1] = 0;
-                  break;
-               case VgT_PCast14: 
-                  vg_assert(def[u->val1] == 1);
-                  SETV_tag1_op(u,4);
-                  def[u->val1] = 4;
-                  break;
-               case VgT_PCast12: 
-                  vg_assert(def[u->val1] == 1);
-                  SETV_tag1_op(u,2);
-                  def[u->val1] = 2;
-                  break;
-               case VgT_PCast10: 
-                  vg_assert(def[u->val1] == 1);
-                  SETV_tag1_op(u,0);
-                  def[u->val1] = 0;
-                  break;
-               case VgT_PCast02: 
-                  vg_assert(def[u->val1] == 0);
-                  SETV_tag1_op(u,2);
-                  def[u->val1] = 2;
-                  break;
-               default: 
-                  goto unhandled;
-            }
-            if (VG_(disassemble)) 
-               VG_(printf)(
-                  "at %d: delete TAG1 %s due to defd arg\n",
-                  i, VG_(nameOfTagOp(u->val3)));
-            break;
-
-         default:
-         unhandled:
-            /* We don't know how to handle this uinstr.  Be safe, and 
-               set to VGC_VALUE or VGC_UNDEF all temps written by it. */
-            k = getTempUsage(u, &tempUse[0]);
-            vg_assert(k <= 3);
-            for (j = 0; j < k; j++) {
-               t = tempUse[j].tempNo;
-               vg_assert(t >= 0 && t < n_temps);
-               if (!tempUse[j].isWrite) {
-                  /* t is read; ignore it. */
-                  if (0&& VGC_IS_SHADOW(t) && def[t] <= 4)
-                     VG_(printf)("ignoring def %d at %s %s\n", 
-                                 def[t], 
-                                 VG_(nameUOpcode)(True, u->opcode),
-                                 (u->opcode == TAG1 || u->opcode == TAG2)
-                                    ? VG_(nameOfTagOp)(u->val3) 
-                                    : (Char*)"");
-               } else {
-                  /* t is written; better nullify it. */
-                  def[t] = VGC_IS_SHADOW(t) ? VGC_UNDEF : VGC_VALUE;
-               }
-            }
-      }
-   }
-
-   VG_(jitfree)(def);
-}
-
-
-/* Top level post-MemCheck-instrumentation cleanup function. */
-static void vg_cleanup ( UCodeBlock* cb )
-{
-   vg_propagate_definedness ( cb );
-   vg_delete_redundant_SETVs ( cb );
-}
-
-
-/*------------------------------------------------------------*/
 /*--- Main entry point for the JITter.                     ---*/
 /*------------------------------------------------------------*/
-
-// ZZZ: factored out of VG_(translate).
-static UCodeBlock* vg_instrument ( UCodeBlock* cb, Addr orig_addr ) {
-   
-   switch (VG_(clo_action)) {
-
-   case Vg_None:    break;
-
-   case Vg_MemCheck:
-      /* VGP_PUSHCC(VgpInstrument); */
-      cb = vg_memcheck_instrument(cb);
-      /* VGP_POPCC; */
-      if (VG_(disassemble)) 
-         VG_(ppUCodeBlock) ( cb, "Instrumented code:" );
-      if (VG_(clo_cleanup)) {
-         /* VGP_PUSHCC(VgpCleanup); */
-         vg_cleanup(cb);
-         /* VGP_POPCC; */
-         if (VG_(disassemble)) 
-            VG_(ppUCodeBlock) ( cb, "Cleaned-up instrumented code:" );
-      }
-      break;
-
-   case Vg_Eraser:
-      /* VGP_PUSHCC(VgpCacheInstrument); */
-      cb = VG_(eraser_instrument)(cb);
-      /* VGP_POPCC; */
-      if (VG_(disassemble)) 
-         VG_(ppUCodeBlock) ( cb, "Eraser instrumented code:" );
-      break;
-
-   case Vg_CacheSim:
-      /* VGP_PUSHCC(VgpCacheInstrument); */
-      cb = VG_(cachesim_instrument)(cb, orig_addr);
-      /* VGP_POPCC; */
-      if (VG_(disassemble)) 
-         VG_(ppUCodeBlock) ( cb, "Cachesim instrumented code:" );
-      break;
-   }
-   return cb;
-}
 
 /* Translate the basic block beginning at orig_addr, placing the
    translation in a vg_malloc'd block, the address and size of which
@@ -3130,10 +1875,9 @@ void VG_(translate) ( ThreadState* tst,
    /* Check if we're being asked to jump to a silly address, and if so
       record an error message before potentially crashing the entire
       system. */
-   // ZZZ
-   if (Vg_MemCheck == VG_(clo_action) && !debugging_translation && !dis) {
+   if (Vg_MemCheck == VG_(clo_skin) && !debugging_translation && !dis) {
       Addr bad_addr;
-      Bool ok = VGM_(check_readable) ( orig_addr, 1, &bad_addr );
+      Bool ok = SKN_(check_readable) ( orig_addr, 1, &bad_addr );
       if (!ok) {
          VG_(record_jump_error)(tst, bad_addr);
       }
@@ -3156,7 +1900,9 @@ void VG_(translate) ( ThreadState* tst,
    cb = VG_(allocCodeBlock)();
 
    /* Disassemble this basic block into cb. */
+   // JJJ: why is this VGP_PUSHCC/VGP_POPCC commented out?
    /* VGP_PUSHCC(VgpToUCode); */
+   //dis=True;
    n_disassembled_bytes = VG_(disBB) ( cb, orig_addr );
    /* VGP_POPCC; */
    /* dis=True; */
@@ -3172,10 +1918,9 @@ void VG_(translate) ( ThreadState* tst,
    }
    /* dis=False; */
 
-   // ZZZ
-   //VG_(disassemble) = True;
-   cb = vg_instrument ( cb, orig_addr );
-   //VG_(disassemble) = False;
+   //dis = True;
+   cb = SK_(instrument) ( cb, orig_addr );
+   //dis = False;
 
    /* Allocate registers. */
    /* VGP_PUSHCC(VgpRegAlloc); */
@@ -3187,10 +1932,12 @@ void VG_(translate) ( ThreadState* tst,
       VG_(ppUCodeBlock) ( cb, "After Register Allocation:");
    */
 
+   // JJJ: why is this VGP_PUSHCC/VGP_POPCC commented out too?
    /* VGP_PUSHCC(VgpFromUcode); */
    /* NB final_code is allocated with VG_(jitmalloc), not VG_(malloc)
       and so must be VG_(jitfree)'d. */
    final_code = VG_(emit_code)(cb, &final_code_size );
+   //dis=False;
    /* VGP_POPCC; */
    VG_(freeCodeBlock)(cb);
 
@@ -3199,6 +1946,7 @@ void VG_(translate) ( ThreadState* tst,
       VG_(jitfree)(final_code);
    } else {
       /* Doing it for real -- return values to caller. */
+      //VG_(printf)("%d %d\n", n_disassembled_bytes, final_code_size);
       *orig_size = n_disassembled_bytes;
       *trans_addr = (Addr)final_code;
       *trans_size = final_code_size;
