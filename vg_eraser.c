@@ -618,12 +618,10 @@ static void record_eraser_error ( ThreadId tid, Addr a, Bool is_write )
 
    if (VG_(ignore_errors)()) return;
 
+   /* Nothing required in 'extra' field;  hence the NULL */
    VG_(construct_err_context)(&ec, EraserErr, a, 
                               (is_write ? "writing" : "reading"),
-                              VG_(get_ThreadState)(tid));
-
-   /* Nothing required in 'extra' field */
-   VG_(maybe_add_context) ( &ec );
+                              NULL, VG_(get_ThreadState)(tid));
 }
 
 Bool SKN_(eq_ErrContext) ( ExeContextRes not_used,

@@ -394,6 +394,11 @@ static __inline__ UChar get_abit ( Addr a )
    SecMap* sm     = primary_map[a >> 16];
    UInt    sm_off = a & 0xFFFF;
    PROF_EVENT(20);
+#  if 0
+      if (IS_DISTINGUISHED_SM(sm))
+         VG_(message)(Vg_DebugMsg, 
+                      "accessed distinguished 2ndary (A)map! 0x%x\n", a);
+#  endif
    return BITARR_TEST(sm->abits, sm_off) 
              ? VGM_BIT_INVALID : VGM_BIT_VALID;
 }
@@ -403,12 +408,11 @@ static __inline__ UChar get_vbyte ( Addr a )
    SecMap* sm     = primary_map[a >> 16];
    UInt    sm_off = a & 0xFFFF;
    PROF_EVENT(21);
-
-   // SSS
-   if (IS_DISTINGUISHED_SM(sm))
-      VG_(message)(Vg_DebugMsg, 
-                   "accessed distinguished 2ndary map! 0x%x\n", a);
-
+#  if 0
+      if (IS_DISTINGUISHED_SM(sm))
+         VG_(message)(Vg_DebugMsg, 
+                      "accessed distinguished 2ndary (V)map! 0x%x\n", a);
+#  endif
    return sm->vbyte[sm_off];
 }
 
