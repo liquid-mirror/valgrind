@@ -206,7 +206,7 @@ static void vg_init_baseBlock ( void )
     * and on compact helpers registered */ 
 
    /* (9 or 18) + n_compact_helpers  */
-   /* Register VG_(handle_esp_assignment) if needed.
+   /* Register VG_(handle_esp_assignment) if needed. */
    if (VG_(track_events).new_mem_stack_aligned || 
        VG_(track_events).die_mem_stack_aligned) 
       VG_(register_compact_helper)( (Addr) & VGM_(handle_esp_assignment) );
