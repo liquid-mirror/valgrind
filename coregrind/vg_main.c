@@ -426,8 +426,6 @@ VgNeeds VG_(needs) = {
    .name                    = NULL,
    .description             = NULL,
 
-   .record_mem_exe_context  = INVALID_Bool,
-   .postpone_mem_reuse      = INVALID_Bool,
    .core_errors             = INVALID_Bool,
    .skin_errors             = INVALID_Bool,
    .run_libc_freeres        = INVALID_Bool,
@@ -438,6 +436,8 @@ VgNeeds VG_(needs) = {
    .client_requests         = INVALID_Bool,
    .extends_UCode           = INVALID_Bool,
    .wrap_syscalls           = INVALID_Bool,
+   .sizeof_shadow_chunk     = 0,
+   .alternative_free        = INVALID_Bool,
    .sanity_checks           = INVALID_Bool,
 };
 
@@ -464,6 +464,9 @@ VgTrackEvents VG_(track_events) = {
    .die_mem_brk           = NULL,
    .die_mem_munmap        = NULL,
 
+   .bad_free              = NULL,
+   .mismatched_free       = NULL,
+
    .pre_mem_read          = NULL,
    .pre_mem_read_asciiz   = NULL,
    .pre_mem_write         = NULL,
@@ -487,8 +490,6 @@ static void sanity_check_needs ( void )
    CHECK_NOT(VG_(needs).name,        NULL);
    CHECK_NOT(VG_(needs).description, NULL);
 
-   CHECK_NOT(VG_(needs).record_mem_exe_context,  INVALID_Bool);
-   CHECK_NOT(VG_(needs).postpone_mem_reuse,      INVALID_Bool);
    CHECK_NOT(VG_(needs).core_errors,             INVALID_Bool);
    CHECK_NOT(VG_(needs).skin_errors,             INVALID_Bool);
    CHECK_NOT(VG_(needs).run_libc_freeres,        INVALID_Bool);
@@ -499,6 +500,7 @@ static void sanity_check_needs ( void )
    CHECK_NOT(VG_(needs).client_requests,         INVALID_Bool);
    CHECK_NOT(VG_(needs).extends_UCode,           INVALID_Bool);
    CHECK_NOT(VG_(needs).wrap_syscalls,           INVALID_Bool);
+   CHECK_NOT(VG_(needs).alternative_free,        INVALID_Bool);
    CHECK_NOT(VG_(needs).sanity_checks,           INVALID_Bool);
 
 #undef CHECK_NOT
@@ -519,7 +521,6 @@ Bool   VG_(clo_sloppy_malloc)  = False;
 Int    VG_(clo_alignment)      = 4;
 Bool   VG_(clo_trace_children) = False;
 Int    VG_(clo_logfile_fd)     = 2;
-Int    VG_(clo_freelist_vol)   = 1000000;
 Int    VG_(clo_n_suppressions) = 0;
 Char*  VG_(clo_suppressions)[VG_CLO_MAX_SFILES];
 Bool   VG_(clo_single_step)    = False;
@@ -604,7 +605,6 @@ static void usage ( void )
 "    --alignment=<number>      set minimum alignment of allocations [4]\n"
 "    --trace-children=no|yes   Valgrind-ise child processes? [no]\n"
 "    --logfile-fd=<number>     file descriptor for messages [2=stderr]\n"
-"    --freelist-vol=<number>   volume of freed blocks queue [1000000]\n"
 "    --suppressions=<filename> suppress errors described in\n"
 "                              suppressions file <filename>\n"
 "    --weird-hacks=hack1,hack2,...  [no hacks selected]\n"
@@ -856,11 +856,6 @@ static void process_cmd_line_options ( void )
 
       else if (STREQN(13, argv[i], "--logfile-fd="))
          eventually_logfile_fd = (Int)VG_(atoll)(&argv[i][13]);
-
-      else if (STREQN(15, argv[i], "--freelist-vol=")) {
-         VG_(clo_freelist_vol) = (Int)VG_(atoll)(&argv[i][15]);
-         if (VG_(clo_freelist_vol) < 0) VG_(clo_freelist_vol) = 2;
-      }
 
       else if (STREQN(15, argv[i], "--suppressions=")) {
          if (VG_(clo_n_suppressions) >= VG_CLO_MAX_SFILES) {
