@@ -3721,8 +3721,8 @@ static Addr disInstr ( UCodeBlock* cb, Addr eip, Bool* isEnd )
     { Int   n_pops;
       Addr  eipS, eipE;
       UChar ch;
-      if (sz != 4)           goto normal_pop_case;
-      if (VG_(clo_cachesim)) goto normal_pop_case;
+      if (sz != 4)                        goto normal_pop_case;
+      if (Vg_CacheSim == VG_(clo_action)) goto normal_pop_case;
       /* eip points at first pop insn + 1.  Make eipS and eipE
          bracket the sequence. */
       eipE = eipS = eip - 1;
@@ -3866,8 +3866,8 @@ static Addr disInstr ( UCodeBlock* cb, Addr eip, Bool* isEnd )
     { Int   n_pushes;
       Addr  eipS, eipE;
       UChar ch;
-      if (sz != 4)           goto normal_push_case;
-      if (VG_(clo_cachesim)) goto normal_push_case;
+      if (sz != 4)                        goto normal_push_case;
+      if (Vg_CacheSim == VG_(clo_action)) goto normal_push_case;
       /* eip points at first push insn + 1.  Make eipS and eipE
          bracket the sequence. */
       eipE = eipS = eip - 1;
@@ -4593,22 +4593,22 @@ Int VG_(disBB) ( UCodeBlock* cb, Addr eip0 )
 
    if (dis) VG_(printf)("\n");
 
-   /* When cache simulating, to ensure cache misses are attributed to the
-    * correct line we ensure EIP is always correct.   This is done by:
+   /* If we need precise line numberings (eg. when cache simulating)
+    * we use eager INCEIP updating to ensure EIP is always correct.   
     *
-    * a) Using eager INCEIP updating to cope with all instructions except those
-    *    at the end of a basic block.
+    * If we need precise x86 instruction sizes, we do eager INCEIP updating
+    * (which gives us the size of all x86 instrs except for jumping ones;  for
+    * them we patch in the size of the original x86 instr in the `extra4b'
+    * field of JMPs at the end of a basic block.  Two cases:
     *
-    * b) Patching in the size of the original x86 instr in the `extra4b' field
-    *    of JMPs at the end of a basic block.  Two cases:
     *       - Jcond followed by Juncond:  patch the Jcond
     *       - Juncond alone:              patch the Juncond
     *
-    * See vg_cachesim_instrument() for how this is used. 
+    * See vg_cachesim_instrument() for an example of how this is used. 
     */
-   if (VG_(clo_cachesim)) {
-       INCEIP_allowed_lag = 0;
-   }
+   if (Vg_DebugPrecise == VG_(needs).debug_info || 
+       VG_(needs).precise_x86_instr_sizes) 
+      INCEIP_allowed_lag = 0;
 
    if (VG_(clo_single_step)) {
       eip = disInstr ( cb, eip, &isEnd );
@@ -4650,7 +4650,7 @@ Int VG_(disBB) ( UCodeBlock* cb, Addr eip0 )
          if (dis) VG_(printf)("\n");
       }
    }
-   if (VG_(clo_cachesim)) {
+   if (VG_(needs).precise_x86_instr_sizes) {
       /* Patch instruction size into earliest JMP. */
       if (cb->used >= 2 && JMP == cb->instrs[cb->used - 2].opcode) {
          cb->instrs[cb->used - 2].extra4b = delta;

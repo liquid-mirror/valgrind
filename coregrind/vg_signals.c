@@ -976,7 +976,8 @@ void vg_push_signal_frame ( ThreadId tid, int sigNo )
 
    /* Make retaddr, sigNo, psigInfo, puContext fields readable -- at
       0(%ESP) .. 12(%ESP) */
-   if (VG_(clo_instrument)) {
+   // ZZZ
+   if (VG_(needs).shadow_memory) {
       VGM_(make_readable) ( ((Addr)esp)+0,  4 );
       VGM_(make_readable) ( ((Addr)esp)+4,  4 );
       VGM_(make_readable) ( ((Addr)esp)+8,  4 );
@@ -1021,7 +1022,8 @@ Int vg_pop_signal_frame ( ThreadId tid )
       tst->m_fpu[i] = frame->fpustate[i];
 
    /* Mark the frame structure as nonaccessible. */
-   if (VG_(clo_instrument))
+   // ZZZ
+   if (Vg_MemCheck == VG_(clo_action))
       VGM_(make_noaccess)( (Addr)frame, sizeof(VgSigFrame) );
 
    /* Restore machine state from the saved context. */
@@ -1140,7 +1142,8 @@ Bool VG_(deliver_signals) ( void )
          sigwait_args = (UInt*)(tst->m_eax);
          if (NULL != (UInt*)(sigwait_args[2])) {
             *(Int*)(sigwait_args[2]) = sigNo;
-            if (VG_(clo_instrument))
+            // ZZZ
+            if (VG_(needs).shadow_memory)   
                VGM_(make_readable)( (Addr)(sigwait_args[2]), 
                                     sizeof(UInt));
          }
