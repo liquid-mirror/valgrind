@@ -422,30 +422,34 @@ VgNeeds VG_(needs) = {
 };
 
 VgTrackEvents VG_(track_events) = {
+   /* Memory events */
    .new_mem_startup       = NULL,
    .new_mem_heap          = NULL,
    .new_mem_stack         = NULL,
    .new_mem_stack_aligned = NULL,
+   .new_mem_stack_signal  = NULL,
    .new_mem_brk           = NULL,
    .new_mem_mmap          = NULL,
 
    .copy_mem_heap         = NULL,
    .change_mem_mprotect   = NULL,
 
+   .ban_mem_heap          = NULL,
+   .ban_mem_stack         = NULL,
+
    .die_mem_heap          = NULL,
    .die_mem_stack         = NULL,
    .die_mem_stack_aligned = NULL,
-   .die_mem_stack_thread  = NULL,
+   .die_mem_stack_signal  = NULL,
    .die_mem_brk           = NULL,
    .die_mem_munmap        = NULL,
-   .die_mem_pthread       = NULL,
-   .die_mem_signal        = NULL,
 
    .pre_mem_read          = NULL,
    .pre_mem_read_asciiz   = NULL,
    .pre_mem_write         = NULL,
    .post_mem_write        = NULL,
 
+   /* Mutex events */
    .post_mutex_lock       = NULL,
    .post_mutex_unlock     = NULL,
 };
@@ -1087,10 +1091,11 @@ void VG_(main) ( void )
 
    /* Setup stuff that depends on the skin.  Must be before:
       - vg_init_baseBlock(): to register helpers
-      - process_cmd_line_options(): to setup command line options processor
+      - process_cmd_line_options(): to register skin name and description,
+        and turn on/off 'command_line_options' need
       - init_memory_and_symbols() (to setup memory event trackers).
     */
-   SK_(setup) ( & VG_(needs), & VG_(track_events) );
+   SK_(pre_clo_init) ( & VG_(needs), & VG_(track_events) );
    sanity_check_needs();
 
    /* Set up baseBlock offsets and copy the saved machine's state into it. */
@@ -1125,14 +1130,14 @@ void VG_(main) ( void )
    /* Start calibration of our RDTSC-based clock. */
    VG_(start_rdtsc_calibration)();
 
-   SK_(init)();
+   /* Do this here just to give rdtsc calibration more time */
+   SK_(post_clo_init)();
 
    /* Must come after SK_(init) so memory handler accompaniments (eg.
     * shadow memory) can be setup ok */
    VGP_PUSHCC(VgpInitMem);
    VGM_(init_memory_and_symbols)();
    VGP_POPCC;
-
 
    /* Read the list of errors to suppress.  This should be found in
       the file specified by vg_clo_suppressions. */
