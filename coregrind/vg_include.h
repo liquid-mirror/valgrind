@@ -162,7 +162,6 @@
 
 #define VG_CLO_MAX_SFILES 10
 
-
 /* Should we stop collecting errors if too many appear?  default: YES */
 extern Bool  VG_(clo_error_limit);
 /* Enquire about whether to attach to GDB at errors?   default: NO */
@@ -195,6 +194,8 @@ extern Bool  VG_(clo_single_step);
 extern Bool  VG_(clo_optimise);
 /* SMC write checks?  default: SOME (1,2,4 byte movs to mem) */
 extern Int   VG_(clo_smc_check);
+/* DEBUG: print generated code?  default: 00000 ( == NO ) */
+extern Bool  VG_(clo_trace_codegen);
 /* DEBUG: print system calls?  default: NO */
 extern Bool  VG_(clo_trace_syscalls);
 /* DEBUG: print signal details?  default: NO */
