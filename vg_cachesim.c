@@ -1944,7 +1944,7 @@ void SK_(post_clo_init)(void)
    Int fd;
 
    /* Set output file name: cachegrind.<pid>.out */
-   VG_(sprintf)(cachegrind_out_file, "cachegrind.out.%5d", VG_(getpid)());
+   VG_(sprintf)(cachegrind_out_file, "cachegrind.out.%d", VG_(getpid)());
 
    /* Make sure the output file can be written. */
    fd = VG_(open)(cachegrind_out_file, VKI_O_WRONLY|VKI_O_TRUNC, 0);
