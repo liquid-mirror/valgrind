@@ -1944,7 +1944,7 @@ Bool VG_(get_fnname) ( Addr a, Char* buf, Int nbuf )
 
 /* This is available to skins... always demangle C++ names,
    only succeed if 'a' matches first instruction of function. */
-Bool VG_(get_fnname_if_start) ( Addr a, Char* buf, Int nbuf )
+Bool VG_(get_fnname_if_entry) ( Addr a, Char* buf, Int nbuf )
 {
    return get_fnname ( /*demangle*/True, a, buf, nbuf,
                        /*match_anywhere_in_fun*/False );

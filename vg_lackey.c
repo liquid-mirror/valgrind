@@ -34,10 +34,12 @@
 //#define uLiteral  VG_(setLiteralField)
 
 /* Nb: use ULongs because the numbers can get very big */
-static ULong n_dlrr_calls = 0;
-static ULong n_BBs        = 0;
-static ULong n_UInstrs    = 0;
-static ULong n_x86_instrs = 0;
+static ULong n_dlrr_calls   = 0;
+static ULong n_BBs          = 0;
+static ULong n_UInstrs      = 0;
+static ULong n_x86_instrs   = 0;
+static ULong n_Jccs         = 0;
+static ULong n_Jccs_untaken = 0;
 
 static void add_one_dlrr_call(void)
 {
@@ -62,6 +64,16 @@ static void add_one_x86_instr(void)
    n_x86_instrs++;
 }
 
+static void add_one_Jcc(void)
+{
+   n_Jccs++;
+}
+
+static void add_one_Jcc_untaken(void)
+{
+   n_Jccs_untaken++;
+}
+
 void SK_(pre_clo_init)(VgNeeds* needs, VgTrackEvents* not_used)
 {
    needs->name                    = "lackey";
@@ -71,6 +83,8 @@ void SK_(pre_clo_init)(VgNeeds* needs, VgTrackEvents* not_used)
    VG_(register_compact_helper)((Addr) & add_one_BB);
    VG_(register_compact_helper)((Addr) & add_one_x86_instr);
    VG_(register_compact_helper)((Addr) & add_one_UInstr);
+   VG_(register_compact_helper)((Addr) & add_one_Jcc);
+   VG_(register_compact_helper)((Addr) & add_one_Jcc_untaken);
 }
 
 void SK_(post_clo_init)(void)
@@ -151,6 +165,18 @@ UCodeBlock* SK_(instrument)(UCodeBlock* cb_in, Addr orig_addr)
             VG_(callHelper_0_0)(cb, (Addr) & add_one_x86_instr);
             VG_(copyUInstr)(cb, u);
             break;
+
+         case JMP:
+            if (u->cond != CondAlways) {
+               /* Count Jcc */
+               VG_(callHelper_0_0)(cb, (Addr) & add_one_Jcc);
+               VG_(copyUInstr)(cb, u);
+               /* Count non-taken Jcc */
+               VG_(callHelper_0_0)(cb, (Addr) & add_one_Jcc_untaken);
+            } else {
+               VG_(copyUInstr)(cb, u);
+            }
+            break;
             
          default:
             /* Count UInstr */
@@ -174,6 +200,12 @@ void SK_(fini)(void)
     VG_(message)(Vg_UserMsg, "  BBs:         %u", n_BBs);
     VG_(message)(Vg_UserMsg, "  x86 instrs:  %u", n_x86_instrs);
     VG_(message)(Vg_UserMsg, "  UInstrs:     %u", n_UInstrs);
+
+    VG_(message)(Vg_UserMsg, "");
+    VG_(message)(Vg_UserMsg, "Jccs:");
+    VG_(message)(Vg_UserMsg, "  total:       %u", n_Jccs);
+    VG_(message)(Vg_UserMsg, "  %% taken:     %u%%",
+                             (n_Jccs - n_Jccs_untaken)*100 / n_Jccs);
 
     VG_(message)(Vg_UserMsg, "");
     VG_(message)(Vg_UserMsg, "Ratios:");
