@@ -114,9 +114,8 @@ if [ z"$doversion" = z1 ]; then
 fi
 
 # SSS: relying on 'sed' and 'tr' now...
-# Decide on the skin
+# Decide on the skin.  Default to memory checking if not specified.
 if [ z"$skin_arg" = z ]; then
-   echo "Missing --skin option: defaulting to Valgrind"
    skin=memcheck
 else
    # Hacky way to chop off the "--skin=" part.
