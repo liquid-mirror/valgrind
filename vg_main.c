@@ -534,6 +534,55 @@ static void parse_cache_opt ( cache_t* cache, char* orig_opt, int opt_len )
    bad_option(orig_opt);
 }
 
+// ZZZ
+static void setup_action_dependent_behaviours ( void )
+{
+   switch (VG_(clo_action)) {
+   case Vg_None:
+       VG_(needs).name                    = "nulgrind";
+       VG_(needs).description             = "a binary JIT-compiler";
+       VG_(needs).debug_info              = Vg_DebugNone;
+       VG_(needs).precise_x86_instr_sizes = False;
+       VG_(needs).shadow_memory           = False;
+       VG_(needs).pthread_errors          = False;
+       VG_(needs).suppressions            = False;
+       break;
+
+   case Vg_MemCheck:
+       VG_(needs).name                    = "valgrind";
+       VG_(needs).description             = "a memory detector error";
+       VG_(needs).debug_info              = Vg_DebugImprecise;
+       VG_(needs).precise_x86_instr_sizes = False;
+       VG_(needs).shadow_memory           = True;
+       VG_(needs).pthread_errors          = True;
+       VG_(needs).suppressions            = True;
+       break;
+
+   case Vg_Eraser:
+       VG_(needs).name                    = "pthgrind";
+       VG_(needs).description             = "a data race detector";
+       VG_(needs).debug_info              = Vg_DebugPrecise;
+       VG_(needs).precise_x86_instr_sizes = False;
+       VG_(needs).shadow_memory           = True;
+       VG_(needs).pthread_errors          = True;
+       VG_(needs).suppressions            = True;
+       break;
+
+   case Vg_CacheSim:
+       VG_(needs).name                    = "cachegrind";
+       VG_(needs).description             = "an I1/D1/L2 cache profiler";
+       VG_(needs).debug_info              = Vg_DebugPrecise;
+       VG_(needs).precise_x86_instr_sizes = True;
+       VG_(needs).shadow_memory           = False;
+       VG_(needs).pthread_errors          = False;
+       VG_(needs).suppressions            = False;
+       break;
+
+   default:
+      VG_(panic)("unexpected clo_action");
+   }
+}
+
 static void process_cmd_line_options ( void )
 {
    UChar* argv[M_VG_CMDLINE_OPTS];
@@ -941,33 +990,12 @@ static void process_cmd_line_options ( void )
 
    VG_(clo_logfile_fd) = eventually_logfile_fd;
 
+   /* setup stuff that depends on the --action value */
+   setup_action_dependent_behaviours();
+
    if (VG_(clo_verbosity > 0)) {
-      switch (VG_(clo_action)) {
-      case Vg_None:
-         VG_(message)(Vg_UserMsg, 
-            "grind-%s, a binary JIT-compiler for x86 GNU/Linux.",
-            VERSION);
-         break;
-        
-      case Vg_MemCheck:
-         VG_(message)(Vg_UserMsg, 
-            "valgrind-%s, a memory error detector for x86 GNU/Linux.",
-            VERSION);
-
-         break;
-
-      case Vg_Eraser:
-         VG_(message)(Vg_UserMsg, 
-            "pthgrind-%s, a data race detector for x86 GNU/Linux.",
-            VERSION);
-         break;
-
-      case Vg_CacheSim:
-         VG_(message)(Vg_UserMsg, 
-            "cachegrind-%s, an I1/D1/L2 cache profiler for x86 GNU/Linux.",
-            VERSION);
-         break;
-      }
+      VG_(message)(Vg_UserMsg, "%s-%s, %s for x86 GNU/Linux.",
+         VG_(needs).name, VERSION, VG_(needs).description);
    }
 
    if (VG_(clo_verbosity > 0))
@@ -982,47 +1010,6 @@ static void process_cmd_line_options ( void )
 
    if (VG_(clo_n_suppressions) == 0 && VG_(needs).suppressions) {
       config_error("No error-suppression files were specified.");
-   }
-}
-
-// ZZZ
-static void determine_action_dependent_behaviours ( void )
-{
-   switch (VG_(clo_action)) {
-   case Vg_None:
-       VG_(needs).debug_info              = Vg_DebugNone;
-       VG_(needs).precise_x86_instr_sizes = False;
-       VG_(needs).shadow_memory           = False;
-       VG_(needs).pthread_errors          = False;
-       VG_(needs).suppressions            = False;
-       break;
-
-   case Vg_MemCheck:
-       VG_(needs).debug_info              = Vg_DebugImprecise;
-       VG_(needs).precise_x86_instr_sizes = False;
-       VG_(needs).shadow_memory           = True;
-       VG_(needs).pthread_errors          = True;
-       VG_(needs).suppressions            = True;
-       break;
-
-   case Vg_Eraser:
-       VG_(needs).debug_info              = Vg_DebugPrecise;
-       VG_(needs).precise_x86_instr_sizes = False;
-       VG_(needs).shadow_memory           = True;
-       VG_(needs).pthread_errors          = True;
-       VG_(needs).suppressions            = True;
-       break;
-
-   case Vg_CacheSim:
-       VG_(needs).debug_info              = Vg_DebugPrecise;
-       VG_(needs).precise_x86_instr_sizes = True;
-       VG_(needs).shadow_memory           = False;
-       VG_(needs).pthread_errors          = False;
-       VG_(needs).suppressions            = False;
-       break;
-
-   default:
-      VG_(panic)("unexpected clo_action");
    }
 }
 
@@ -1141,7 +1128,6 @@ void VG_(main) ( void )
 
    /* Process Valgrind's command-line opts (from env var VG_OPTS). */
    process_cmd_line_options();
-   determine_action_dependent_behaviours();
 
    /* Hook to delay things long enough so we can get the pid and
       attach GDB in another shell. */

@@ -225,6 +225,9 @@ typedef
 
 typedef
    struct {
+      /* name and description used in the startup message */
+      Char* name;
+      Char* description;
       /* Kind of debug info needed */
       VgDebugInfo debug_info;
       /* Needed if working at x86 instr level rather than UCode level, eg. 
