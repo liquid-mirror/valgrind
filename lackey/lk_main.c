@@ -34,6 +34,7 @@
 //#define uInstr0   VG_(newUInstr0)
 //#define uLiteral  VG_(setLiteralField)
 
+/* Note: could overflow fairly easily */
 static UInt n_uinstrs = 0;
 
 static void add_one(void)
@@ -59,6 +60,8 @@ void SK_(setup)(VgNeeds* needs)
    needs->extends_UCode           = False;
 
    needs->wrap_syscalls           = False;
+
+   needs->sanity_checks           = False;
 
    needs->shadow_memory           = False;
    needs->track_threads           = False;

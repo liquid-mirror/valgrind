@@ -356,7 +356,7 @@ void set_address_range_state ( Addr a, UInt len /* in bytes */,
       -- this could happen with buggy syscall wrappers.  Today
       (2001-04-26) had precisely such a problem with
       __NR_setitimer. */
-   vg_assert(SKN_(first_and_last_secondaries_look_plausible)());
+   vg_assert(SKN_(cheap_sanity_check)());
    VGP_POPCC;
 }
 
@@ -460,7 +460,7 @@ void SKN_(init_shadow_memory)(void)
 
 // SSS: can this be done mechanically and removed from the interface?  V.
 // similar to the vg_memcheck one.
-Bool SKN_(first_and_last_secondaries_look_plausible) ( void )
+Bool SKN_(cheap_sanity_check) ( void )
 {
    if (VGE_IS_DISTINGUISHED_SM(primary_map[0])
        && VGE_IS_DISTINGUISHED_SM(primary_map[65535]))
@@ -469,7 +469,7 @@ Bool SKN_(first_and_last_secondaries_look_plausible) ( void )
       return False;
 }
 
-void SKN_(expensive_shadow_memory_sanity_check)(void)
+void SKN_(expensive_sanity_check)(void)
 {
    Int i;
 
@@ -704,6 +704,8 @@ void SK_(setup)(VgNeeds* needs)
 
    needs->wrap_syscalls           = True;
 
+   needs->sanity_checks           = False;
+
    needs->shadow_memory           = True;
    needs->track_threads           = True;
 
@@ -711,7 +713,7 @@ void SK_(setup)(VgNeeds* needs)
    VG_(register_compact_helper)((Addr) & eraser_mem_write);
 
    // SSS: remove eventually
-   VG_(clo_skin) = Vg_Eraser;
+   VG_(clo_skin) = Vg_Other;
 }
 
 void SK_(init)(void)

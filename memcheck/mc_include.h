@@ -51,8 +51,10 @@ extern void SK_(fpu_write_check) ( Addr addr, Int size );
 extern void SK_(fpu_read_check)  ( Addr addr, Int size );
 
 // Functions defined in vg_memcheck_errcontext.c
-extern void VG_(record_value_error)   ( Int size );
-extern void VG_(record_address_error) ( Addr a, Int size, Bool isWrite );
+extern void SK_(record_value_error)   ( Int size );
+extern void SK_(record_address_error) ( Addr a, Int size, Bool isWrite );
+extern void SK_(record_param_err) ( ThreadState* tst, Addr a,   
+                                    Bool isWriteLack, Char* msg );
 
 
 /*--------------------------------------------------------------------*/

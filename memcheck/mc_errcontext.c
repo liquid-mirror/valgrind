@@ -288,7 +288,7 @@ void SKN_(dup_extra_and_update)(ErrContext* ec)
 }
 
 /* These two are called from generated code. */
-void VG_(record_value_error) ( Int size )
+void SK_(record_value_error) ( Int size )
 {
    ErrContext ec;
    MemCheckErrContext ec_extra;
@@ -304,7 +304,7 @@ void VG_(record_value_error) ( Int size )
    VG_(maybe_add_context) ( &ec );
 }
 
-void VG_(record_address_error) ( Addr a, Int size, Bool isWrite )
+void SK_(record_address_error) ( Addr a, Int size, Bool isWrite )
 {
    ErrContext ec;
    MemCheckErrContext ec_extra;
@@ -326,6 +326,25 @@ void VG_(record_address_error) ( Addr a, Int size, Bool isWrite )
    ec_extra.size    = size;
    ec_extra.addrinfo.akind     = Undescribed;
    ec_extra.addrinfo.maybe_gcc = just_below_esp;
+   ec.extra = &ec_extra;
+
+   VG_(maybe_add_context) ( &ec );
+}
+
+/* These ones are called from non-generated code */
+void SK_(record_param_err) ( ThreadState* tst, Addr a, Bool isWriteLack, 
+                             Char* msg )
+{
+   ErrContext ec;
+   MemCheckErrContext ec_extra;
+
+   if (VG_(ignore_errors)()) return;
+
+   vg_assert(NULL != tst);
+   VG_(construct_err_context)( &ec, ParamErr, a, msg, tst );
+   clear_MemCheckErrContext( &ec_extra );
+   ec_extra.addrinfo.akind = Undescribed;
+   ec_extra.isWriteableLack = isWriteLack;
    ec.extra = &ec_extra;
 
    VG_(maybe_add_context) ( &ec );

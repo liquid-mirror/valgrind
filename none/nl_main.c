@@ -69,6 +69,8 @@ void SK_(setup)(VgNeeds* needs)
 
    needs->wrap_syscalls           = False;
 
+   needs->sanity_checks           = False;
+
    needs->shadow_memory           = False;
    needs->track_threads           = False;
 
