@@ -39,6 +39,7 @@ val_PROGRAMS = \
 	vgskin_memcheck.so \
 	vgskin_cachesim.so \
 	vgskin_eraser.so \
+	vgskin_addrcheck.so \
 	vgskin_none.so \
 	vgskin_lackey.so \
 	vgskin_corecheck.so
@@ -100,6 +101,9 @@ vgskin_cachesim_so_LDFLAGS = -shared
 
 vgskin_eraser_so_SOURCES = vg_eraser.c
 vgskin_eraser_so_LDFLAGS = -shared
+
+vgskin_addrcheck_so_SOURCES = vg_addrcheck.c
+vgskin_addrcheck_so_LDFLAGS = -shared
 
 vgskin_none_so_SOURCES 	 = vg_none.c
 vgskin_none_so_LDFLAGS   = -shared
