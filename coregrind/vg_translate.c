@@ -879,22 +879,27 @@ void VG_(ppUInstr) ( Int instrNo, UInstr* u )
          VG_(ppUOperand)(u, 2, u->size, u->opcode==STORE);
          break;
 
-      case GETF: case PUTF:
+      case JMP:
+         switch (u->jmpkind) {
+            case JmpCall:      VG_(printf)("-c"); break;
+            case JmpRet:       VG_(printf)("-r"); break;
+            case JmpSyscall:   VG_(printf)("-sys"); break;
+            case JmpClientReq: VG_(printf)("-cli"); break;
+            default: break;
+         }
          VG_(printf)("\t");
          VG_(ppUOperand)(u, 1, u->size, False);
+         if (CondAlways == u->cond) {
+            if (0 == u->extra4b)
+               VG_(printf)("  (--)", u->extra4b);  /* Not filled in yet */
+            else 
+               VG_(printf)("  ($%u)", u->extra4b);
+         }
          break;
 
-      case JMP: case CC2VAL:
-      case PUSH: case POP: case CLEAR: case CALLM:
-         if (u->opcode == JMP) {
-            switch (u->jmpkind) {
-               case JmpCall:      VG_(printf)("-c"); break;
-               case JmpRet:       VG_(printf)("-r"); break;
-               case JmpSyscall:   VG_(printf)("-sys"); break;
-               case JmpClientReq: VG_(printf)("-cli"); break;
-               default: break;
-            }
-         }
+      case GETF: case PUTF:
+      case CC2VAL: case PUSH: case POP: case CLEAR: case CALLM:
+      case NOT: case NEG: case INC: case DEC: case BSWAP:
          VG_(printf)("\t");
          VG_(ppUOperand)(u, 1, u->size, False);
          break;
@@ -918,17 +923,6 @@ void VG_(ppUInstr) ( Int instrNo, UInstr* u )
          break;
 
       case JIFZ:
-         VG_(printf)("\t");
-         VG_(ppUOperand)(u, 1, u->size, False);
-         VG_(printf)(", ");
-         VG_(ppUOperand)(u, 2, u->size, False);
-         break;
-
-      case NOT: case NEG: case INC: case DEC: case BSWAP:
-         VG_(printf)("\t");
-         VG_(ppUOperand)(u, 1, u->size, False); 
-         break;
-
       case ADD: case ADC: case AND: case OR:  
       case XOR: case SUB: case SBB:   
       case SHL: case SHR: case SAR: 
