@@ -3261,6 +3261,8 @@ void VG_(perform_assumed_nonblocking_syscall) ( ThreadId tid )
          /* int statfs64(const char *path, struct statfs64 *buf); */
          MAYBE_PRINTF("statfs64 ( %s, %p )\n", arg1,arg2);
          SYSCALL_TRACK( pre_mem_read_asciiz, tid, "statfs64(path)", arg1 );
+         SYSCALL_TRACK(  pre_mem_write, tid, "statfs64(buf)",
+                         arg2, sizeof(struct statfs64));
          KERNEL_DO_SYSCALL(tid,res);
          if (!VG_(is_kerror)(res) && res == 0)
             VG_TRACK( post_mem_write,arg2, sizeof(struct statfs64) );
