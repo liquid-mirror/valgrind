@@ -31,7 +31,9 @@
 
 #include "vg_skin.h"
 
+
 static UInt n_eraser_warnings = 0;
+
 
 /*------------------------------------------------------------*/
 /*--- Debug guff                                           ---*/
@@ -43,29 +45,20 @@ static UInt n_eraser_warnings = 0;
 #define DEBUG_LOCKS         0   /* Print lock()/unlock() calls and locksets */
 #define DEBUG_NEW_LOCKSETS  0   /* Print new locksets when created */
 #define DEBUG_ACCESSES      0   /* Print reads, writes */
-#define DEBUG_MEM_LOCKSET_CHANGES 0   /* Print when an address's lockset changes;  only useful with DEBUG_ACCESSES */
+#define DEBUG_MEM_LOCKSET_CHANGES 0
+                                /* Print when an address's lockset
+                                   changes; only useful with
+                                   DEBUG_ACCESSES */
 
-#define DEBUG_VIRGIN_READS  1   /* Dump around address on VIRGIN reads */
+#define DEBUG_VIRGIN_READS  0   /* Dump around address on VIRGIN reads */
 
-/*------------------------------------------------------------*/
-/*--- Low-level support for memory tracking.               ---*/
-/*------------------------------------------------------------*/
+/* heavyweight LockSet sanity checking:
+   0 == never
+   1 == after important ops
+   2 == As 1 and also after pthread_mutex_* ops (excessively slow)
+ */
+#define LOCKSET_SANITY 0
 
-/*
-   All reads and writes are recorded in the memory map, which
-   records the state of all memory in the process.  The memory map is
-   organised like that for normal Valgrind, except each that everything
-   is done at word-level instead of byte-level, and each word has only
-   one word of shadow (instead of 36 bits).  
-
-   As for normal Valgrind there is a distinguished secondary map.  But we're
-   working at word-granularity, so it has 16k word entries instead of 64k byte
-   entries.  Lookup is done as follows:
-
-     bits 31..16:   primary map lookup
-     bits 15.. 2:   secondary map lookup
-     bits  1.. 0:   ignored
-*/
 
 /*------------------------------------------------------------*/
 /*--- Crude profiling machinery.                           ---*/
@@ -105,14 +98,15 @@ void VGE_(done_prof_mem) ( void )
 
 #define PROF_EVENT(ev) /* */
 
-#endif
+#endif /* VG_PROFILE_MEMORY */
 
 /* Event index.  If just the name of the fn is given, this means the
    number of calls to the fn.  Otherwise it is the specified event.
 
    [PPP: snip event numbers...]
 */
-#endif 
+#endif /* 0 */
+
 
 /*------------------------------------------------------------*/
 /*--- Data defns.                                          ---*/
@@ -157,13 +151,35 @@ static shadow_word virgin_sword = { 0, Vge_Virgin };
 #define VGE_IS_DISTINGUISHED_SM(smap) \
    ((smap) == &distinguished_secondary_map)
 
-#define ENSURE_MAPPABLE(addr,caller)                                   \
-   do {                                                                \
+#define ENSURE_MAPPABLE(addr,caller)                                  \
+   do {                                                               \
       if (VGE_IS_DISTINGUISHED_SM(primary_map[(addr) >> 16])) {       \
-         primary_map[(addr) >> 16] = alloc_secondary_map(caller); \
+         primary_map[(addr) >> 16] = alloc_secondary_map(caller);     \
          /*VG_(printf)("new 2map because of %p\n", addr);*/           \
       } \
    } while(0)
+
+
+/*------------------------------------------------------------*/
+/*--- Low-level support for memory tracking.               ---*/
+/*------------------------------------------------------------*/
+
+/*
+   All reads and writes are recorded in the memory map, which
+   records the state of all memory in the process.  The memory map is
+   organised like that for normal Valgrind, except each that everything
+   is done at word-level instead of byte-level, and each word has only
+   one word of shadow (instead of 36 bits).  
+
+   As for normal Valgrind there is a distinguished secondary map.  But we're
+   working at word-granularity, so it has 16k word entries instead of 64k byte
+   entries.  Lookup is done as follows:
+
+     bits 31..16:   primary map lookup
+     bits 15.. 2:   secondary map lookup
+     bits  1.. 0:   ignored
+*/
+
 
 /*------------------------------------------------------------*/
 /*--- Basic bitmap management, reading and writing.        ---*/
@@ -174,8 +190,9 @@ static shadow_word virgin_sword = { 0, Vge_Virgin };
 /* Just a value that isn't a real pointer */
 #define SEC_MAP_ACCESS  (shadow_word*)0x99    
 
-static ESecMap* alloc_secondary_map ( __attribute__ ((unused))
-                                     Char* caller )
+
+static 
+ESecMap* alloc_secondary_map ( __attribute__ ((unused)) Char* caller )
 {
    ESecMap* map;
    UInt  i;
@@ -193,9 +210,11 @@ static ESecMap* alloc_secondary_map ( __attribute__ ((unused))
    return map;
 }
 
+
 /* Set a word.  The byte give by 'a' could be anywhere in the word -- the whole
  * word gets set. */
-static __inline__ void set_sword ( Addr a, shadow_word sword )
+static __inline__ 
+void set_sword ( Addr a, shadow_word sword )
 {
    ESecMap* sm;
 
@@ -214,7 +233,9 @@ static __inline__ void set_sword ( Addr a, shadow_word sword )
    }
 }
 
-static __inline__ shadow_word* get_sword_addr ( Addr a )
+
+static __inline__ 
+shadow_word* get_sword_addr ( Addr a )
 {
    /* Use bits 31..16 for primary, 15..2 for secondary lookup */
    ESecMap* sm     = primary_map[a >> 16];
@@ -231,6 +252,7 @@ static __inline__ shadow_word* get_sword_addr ( Addr a )
    return & (sm->swords[sm_off]);
 }
 
+
 // SSS: rename these so they're not so similar to memcheck, unless it's
 // appropriate of course
 
@@ -238,6 +260,7 @@ static __inline__ void init_virgin_sword(Addr a)
 {
    set_sword(a, virgin_sword);
 }
+
 
 /* 'a' is guaranteed to be 4-byte aligned here (not that that's important,
  * really) */
@@ -262,11 +285,13 @@ static __inline__ void init_nonvirgin_sword(Addr a)
    set_sword(a, sword);
 }
 
+
 /* In this case, we treat it for Eraser's sake like virgin (it hasn't
  * been inited by a particular thread, it's just done automatically upon
  * startup), but we mark its .state specially so it doesn't look like an 
  * uninited read. */
-static __inline__ void init_magically_inited_sword(Addr a)
+static __inline__ 
+void init_magically_inited_sword(Addr a)
 {
    shadow_word sword;
 
@@ -275,6 +300,343 @@ static __inline__ void init_magically_inited_sword(Addr a)
    sword.state = Vge_Virgin;
    set_sword(a, virgin_sword);
 }
+
+
+/*------------------------------------------------------------*/
+/*--- Implementation of lock sets.                         ---*/
+/*------------------------------------------------------------*/
+
+#define M_LOCKSET_TABLE 1000
+
+#include <pthread.h>
+
+typedef 
+   struct _LockSet {
+       pthread_mutex_t* mutex;
+       struct _LockSet* next;
+   } LockSet;
+
+
+/* Each one is an index into the lockset table. */
+static UInt thread_locks[VG_N_THREADS];
+
+/* # lockset table entries used. */
+static Int n_lockset_table = 1; 
+
+/* lockset_table[0] is always NULL, representing the empty lockset */
+static LockSet* lockset_table[M_LOCKSET_TABLE];
+
+
+static __inline__
+Bool is_valid_lockset_id ( Int id )
+{
+   return id >= 0 && id < n_lockset_table;
+}
+
+
+static
+Int allocate_LockSet(LockSet* set)
+{
+   if (n_lockset_table >= M_LOCKSET_TABLE) 
+      VG_(panic)("lockset table full -- increase M_LOCKSET_TABLE");
+   lockset_table[n_lockset_table] = set;
+   n_lockset_table++;
+#  if DEBUG_MEM_LOCKSET_CHANGES || DEBUG_NEW_LOCKSETS
+   VG_(printf)("allocate LOCKSET VECTOR %p to %d\n", set, n_lockset_table-1);
+#  endif
+   return n_lockset_table-1;
+}
+
+
+static 
+void pp_LockSet(LockSet* p)
+{
+   VG_(printf)("{ ");
+   while (p != NULL) {
+      VG_(printf)("%x ", p->mutex);
+      p = p->next;
+   }
+   VG_(printf)("}\n");
+}
+
+
+static __attribute__((unused))
+void pp_all_LockSets ( void )
+{
+   Int i;
+   for (i = 0; i < n_lockset_table; i++) {
+      VG_(printf)("[%d] = ", i);
+      pp_LockSet(lockset_table[i]);
+   }
+}
+
+
+static 
+void free_LockSet(LockSet *p)
+{
+   LockSet* q;
+   while (NULL != p) {
+      q = p;
+      p = p->next;
+      VG_(free)(q);
+#     if DEBUG_MEM_LOCKSET_CHANGES
+      VG_(printf)("free'd   %x\n", q);
+#     endif
+   }
+}
+
+
+static 
+Bool structural_eq_LockSet(LockSet* a, LockSet* b)
+{
+   while (a && b) {
+      if (a->mutex != b->mutex) {
+         return False;
+      }
+      a = a->next;
+      b = b->next;
+   }
+   return (NULL == a && NULL == b);
+}
+
+
+#if LOCKSET_SANITY 
+/* Check invariants:
+   - all locksets are unique
+   - each set is a linked list in strictly increasing order of mutex addr 
+*/
+static
+void sanity_check_locksets ( Char* caller )
+{
+   Int              i, j, badness;
+   LockSet*         v;
+   pthread_mutex_t* mx_prev;
+
+   badness = 0;
+   i = j = -1;
+
+   //VG_(printf)("sanity %s\n", caller);
+   /* Check really simple things first */
+
+   if (n_lockset_table < 1 || n_lockset_table > M_LOCKSET_TABLE)
+      { badness = 1; goto baaad; }
+
+   if (lockset_table[0] != NULL)
+      { badness = 2; goto baaad; }
+
+   for (i = 1; i < n_lockset_table; i++)
+      if (lockset_table[i] == NULL)
+         { badness = 3; goto baaad; }
+
+   for (i = n_lockset_table; i < M_LOCKSET_TABLE; i++)
+      if (lockset_table[i] != NULL)
+         { badness = 4; goto baaad; }
+
+   /* Check the sanity of each individual set. */
+   for (i = 1; i < n_lockset_table; i++) {
+      v = lockset_table[i];
+      mx_prev = (pthread_mutex_t*)0;
+      while (True) {
+         if (v == NULL) break;
+         if (mx_prev >= v->mutex) 
+            { badness = 5; goto baaad; }
+         mx_prev = v->mutex;
+         v = v->next;
+      }
+   }
+
+   /* Ensure the sets are unique, both structurally and in respect of
+      the address of their first nodes. */
+   for (i = 1; i < n_lockset_table; i++) {
+      for (j = i+1; j < n_lockset_table; j++) {
+         if (lockset_table[i] == lockset_table[j]) 
+            { badness = 6; goto baaad; }
+         if (structural_eq_LockSet(lockset_table[i], lockset_table[j])) 
+            { badness = 7; goto baaad; }
+      }
+   }
+   return;
+
+  baaad:
+   VG_(printf)("sanity_check_locksets: "
+               "i = %d, j = %d, badness = %d, caller = %s\n", 
+               i, j, badness, caller);
+   pp_all_LockSets();
+   VG_(panic)("sanity_check_locksets");
+}
+#endif /* LOCKSET_SANITY */
+
+
+/* Builds ia with mx removed.  mx should actually be in ia! 
+   (a checked assertion).  Resulting set should not already
+   exist in the table (unchecked).
+*/
+static 
+UInt remove ( UInt ia, pthread_mutex_t* mx )
+{
+   Int       found, res;
+   LockSet*  new_vector = NULL;
+   LockSet*  new_node;
+   LockSet** prev_ptr = &new_vector;
+   LockSet*  a = lockset_table[ia];
+   vg_assert(is_valid_lockset_id(ia));
+
+#  if DEBUG_MEM_LOCKSET_CHANGES
+   VG_(printf)("Removing from %d mutex %p:\n", ia, mx);
+#  endif
+
+#  if DEBUG_MEM_LOCKSET_CHANGES
+   print_LockSet(a);
+#  endif
+
+#  if LOCKSET_SANITY 
+   sanity_check_locksets("remove-IN");
+#  endif
+
+   /* Build the intersection of the two lists */
+   found = 0;
+   while (a) {
+      if (a->mutex != mx) {
+         new_node = VG_(malloc)(sizeof(LockSet));
+#        if DEBUG_MEM_LOCKSET_CHANGES
+         VG_(printf)("malloc'd %x\n", new_node);
+#        endif
+         new_node->mutex = a->mutex;
+         *prev_ptr = new_node;
+         prev_ptr = &((*prev_ptr)->next);
+         a = a->next;
+      } else {
+         found++;
+      }
+      *prev_ptr = NULL;
+   }
+   vg_assert(found == 1 /* sigh .. if the client is buggy */ || found == 0 );
+
+   /* Preserve uniqueness invariants in face of client buggyness */
+   if (found == 0) {
+      free_LockSet(new_vector);
+      return ia;
+   }
+
+   /* Add to the table. */
+   res = allocate_LockSet(new_vector);
+
+#  if LOCKSET_SANITY 
+   sanity_check_locksets("remove-OUT");
+#  endif
+
+   return res;
+}
+
+
+/* Tricky: equivalent to (compare(insert(missing_elem, a), b)), but
+ * doesn't do the insertion.  Returns True if they match.
+ */
+static Bool 
+weird_LockSet_equals(LockSet* a, LockSet* b, 
+                     pthread_mutex_t* missing_mutex)
+{
+   /* Idea is to try and match each element of b against either an
+      element of a, or missing_mutex. */
+   while (True) {
+      if (b == NULL) 
+         break;
+      /* deal with missing already being in a */
+      if (a && a->mutex == missing_mutex) 
+         a = a->next;
+      /* match current b element either against a or missing */
+      if (b->mutex == missing_mutex) {
+         b = b->next;
+         continue;
+      }
+      /* wasn't == missing, so have to match from a, or fail */
+      if (a && b->mutex == a->mutex) {
+         a = a->next;
+         b = b->next;
+         continue;
+      }
+      break;
+   }
+   return (b==NULL ? True : False);
+}
+
+
+/* Builds the intersection, and then unbuilds it if it's already in the table.
+ */
+static UInt intersect(UInt ia, UInt ib)
+{
+   Int       i;
+   LockSet*  a = lockset_table[ia];
+   LockSet*  b = lockset_table[ib];
+   LockSet*  new_vector = NULL;
+   LockSet*  new_node;
+   LockSet** prev_ptr = &new_vector;
+
+#  if DEBUG_MEM_LOCKSET_CHANGES
+   VG_(printf)("Intersecting %d %d:\n", ia, ib);
+#  endif
+
+#  if LOCKSET_SANITY 
+   sanity_check_locksets("intersect-IN");
+#  endif
+
+   /* Fast case -- when the two are the same */
+   if (ia == ib) {
+#     if DEBUG_MEM_LOCKSET_CHANGES
+      VG_(printf)("Fast case -- both the same: %u\n", ia);
+      print_LockSet(a);
+#     endif
+      return ia;
+   }
+
+#  if DEBUG_MEM_LOCKSET_CHANGES
+   print_LockSet(a);
+   print_LockSet(b);
+#  endif
+
+   /* Build the intersection of the two lists */
+   while (a && b) {
+      if (a->mutex == b->mutex) {
+         new_node = VG_(malloc)(sizeof(LockSet));
+#        if DEBUG_MEM_LOCKSET_CHANGES
+         VG_(printf)("malloc'd %x\n", new_node);
+#        endif
+         new_node->mutex = a->mutex;
+         *prev_ptr = new_node;
+         prev_ptr = &((*prev_ptr)->next);
+         a = a->next;
+         b = b->next;
+      } else if (a->mutex < b->mutex) {
+         a = a->next;
+      } else if (a->mutex > b->mutex) {
+         b = b->next;
+      } else VG_(panic)("STOP PRESS: Laws of arithmetic broken");
+
+      *prev_ptr = NULL;
+   }
+
+   /* Now search for it in the table, adding it if not seen before */
+   for (i = 0; i < n_lockset_table; i++) {
+      if (structural_eq_LockSet(lockset_table[i], new_vector))
+         break;
+   }
+
+   if (i == n_lockset_table) {
+     i = allocate_LockSet(new_vector);
+   } else {
+     free_LockSet(new_vector);
+   }
+
+   /* Check we won't overflow the OTHER_BITS bits of sword->other */
+   vg_assert(i < (1 << OTHER_BITS));
+
+#  if LOCKSET_SANITY 
+   sanity_check_locksets("intersect-OUT");
+#  endif
+
+   return i;
+}
+
 
 /*------------------------------------------------------------*/
 /*--- Setting and checking permissions.                    ---*/
@@ -286,9 +648,9 @@ void set_address_range_state ( Addr a, UInt len /* in bytes */,
 {
    Addr aligned_a, end, aligned_end;
 
-#if DEBUG_MAKE_ACCESSES
+#  if DEBUG_MAKE_ACCESSES
    VG_(printf)("make_access: 0x%x, %u, status=%u\n", a, len, status);
-#endif
+#  endif
    //PROF_EVENT(30); PPP
 
    if (len == 0)
@@ -350,7 +712,6 @@ void set_address_range_state ( Addr a, UInt len /* in bytes */,
 }
 
 
-
 static void make_segment_readable ( Addr a, UInt len )
 {
    //PROF_EVENT(??);    PPP
@@ -377,7 +738,6 @@ static void copy_address_range_state(Addr src, Addr dst, UInt len)
    UInt i;
 
    //PROF_EVENT(40); PPP
-
    for (i = 0; i < len; i += 4) {
       shadow_word sword = *(get_sword_addr ( src+i ));
       //PROF_EVENT(41);  PPP
@@ -445,7 +805,8 @@ void eraser_set_perms (Addr a, UInt len,
 /*--- Initialise the memory audit system on program startup. ---*/
 /*--------------------------------------------------------------*/
 
-static void init_shadow_memory(void)
+static 
+void init_shadow_memory(void)
 {
    Int i;
 
@@ -457,6 +818,7 @@ static void init_shadow_memory(void)
    for (i = 0; i < 65536; i++)
       primary_map[i] = &distinguished_secondary_map;
 }
+
 
 /*--------------------------------------------------------------*/
 /*--- Machinery to support sanity checking                   ---*/
@@ -477,6 +839,7 @@ Bool SK_(cheap_sanity_check) ( void )
       return False;
 }
 
+
 Bool SK_(expensive_sanity_check)(void)
 {
    Int i;
@@ -489,6 +852,7 @@ Bool SK_(expensive_sanity_check)(void)
 
    return True;
 }
+
 
 /*--------------------------------------------------------------*/
 /*--- Instrumentation                                        ---*/
@@ -508,8 +872,6 @@ UCodeBlock* SK_(instrument) ( UCodeBlock* cb_in, Addr not_used )
    Int         i;
    UInstr*     u_in;
    Int         t_size = INVALID_TEMPREG;
-
-
 
    cb = VG_(allocCodeBlock)();
    cb->nextTemp = cb_in->nextTemp;
@@ -562,37 +924,6 @@ UCodeBlock* SK_(instrument) ( UCodeBlock* cb_in, Addr not_used )
    return cb;
 }
 
-/* ---------------------------------------------------------------------
-   Lock tracking machinery
-   ------------------------------------------------------------------ */
-
-#define LOCKSET_TABLE_SIZE  1000
-#define MAX_LOCKS           5
-#define INVALID_LOCKSET_ENTRY   (lock_vector*)0xFFFFFFFF
-
-#include <pthread.h>
-
-typedef 
-   struct _lock_vector {
-       pthread_mutex_t*     mutex;
-       struct _lock_vector* next;
-   } lock_vector;
-
-/* Each one is an index into the lockset table */
-static UInt thread_locks[VG_N_THREADS];
-
-/* lockset_table[0] is always NULL, representing the empty lockset */
-static lock_vector* lockset_table[LOCKSET_TABLE_SIZE];
-
-static void print_lock_vector(lock_vector* p)
-{
-   VG_(printf)("vector = ");
-   while (p != NULL) {
-      VG_(printf)("%x ", p->mutex);
-      p = p->next;
-   }
-   VG_(printf)("\n");
-}
 
 /*--------------------------------------------------------------------*/
 /*--- Error and suppression handling                               ---*/
@@ -620,6 +951,7 @@ static void record_eraser_error ( ThreadId tid, Addr a, Bool is_write )
                             /*extra*/NULL);
 }
 
+
 Bool SK_(eq_SkinError) ( VgRes not_used,
                           SkinError* e1, SkinError* e2 )
 {
@@ -629,6 +961,7 @@ Bool SK_(eq_SkinError) ( VgRes not_used,
    return True;
 }
 
+
 void SK_(pp_SkinError) ( SkinError* err, void (*pp_ExeContext)(void) )
 {
    vg_assert(EraserErr == err->ekind);
@@ -637,10 +970,12 @@ void SK_(pp_SkinError) ( SkinError* err, void (*pp_ExeContext)(void) )
    pp_ExeContext();
 }
 
+
 void SK_(dup_extra_and_update)(SkinError* err)
 {
    /* do nothing -- extra field not used, and no need to update */
 }
+
 
 Bool SK_(recognised_suppression) ( Char* name, SuppKind *skind )
 {
@@ -652,13 +987,15 @@ Bool SK_(recognised_suppression) ( Char* name, SuppKind *skind )
    }
 }
 
+
 Bool SK_(read_extra_suppression_info) ( Int fd, Char* buf, 
-                                         Int nBuf, SkinSupp* s )
+                                        Int nBuf, SkinSupp* s )
 {
    /* do nothing -- no extra suppression info present.  Return True to
       indicate nothing bad happened. */
    return True;
 }
+
 
 Bool SK_(error_matches_suppression)(SkinError* err, SkinSupp* su)
 {
@@ -668,88 +1005,40 @@ Bool SK_(error_matches_suppression)(SkinError* err, SkinSupp* su)
 }
 
 
-/*--------------------------------------------------------------------*/
-/*--- Locks n stuff                                                ---*/
-/*--------------------------------------------------------------------*/
-
-static Bool lock_vector_equals(lock_vector* a, lock_vector* b)
-{
-   while (a && b) {
-      if (a->mutex != b->mutex) {
-         return False;
-      }
-      a = a->next;
-      b = b->next;
-   }
-   return (NULL == a && NULL == b);
-}
-
-/* Tricky: equivalent to (compare(insert(missing_elem, a), b)), but
- * doesn't do the insertion.  Returns True if they match.
- */
-static Bool 
-weird_lock_vector_equals(lock_vector* a, lock_vector* b, 
-                         pthread_mutex_t* missing_mutex)
-{
-   while (True) {
-      if (NULL == a) {
-         return (b != NULL && b->mutex == missing_mutex && b->next == NULL);
-         
-      } else if (b == NULL) {
-         return False;
-      
-      } else if (a->mutex == b->mutex) { 
-         a = a->next; 
-         b = b->next; 
-
-      } else if (b->mutex == missing_mutex) { 
-         b = b->next; 
-         /* by now we've matched the missing element;  rest of lists
-          * should be identical */
-         while (True) {
-            if (NULL == a && NULL == b) return True;
-            else if (NULL == a || NULL == b) return False;
-            else if (a->mutex == b->mutex) {
-               a = a->next; 
-               b = b->next; 
-            } else 
-               return False;
-         }
-      }
-      else return False;
-   }
-}
-
 // SSS: copying mutex's pointer... is that ok?  Could they get deallocated?
 // (does that make sense, deallocating a mutex?)
 static void eraser_post_mutex_lock(ThreadId tid, void* void_mutex)
 {
    Int i = 1;
-   lock_vector*  new_node;
-   lock_vector*  p;
-   lock_vector** q;
+   LockSet*  new_node;
+   LockSet*  p;
+   LockSet** q;
    pthread_mutex_t* mutex = (pthread_mutex_t*)void_mutex;
    
-#if DEBUG_LOCKS
+#  if DEBUG_LOCKS
    VG_(printf)("lock  (%u, %x)\n", tid, mutex);
-#endif
+#  endif
 
    vg_assert(tid < VG_N_THREADS &&
-             thread_locks[tid] < LOCKSET_TABLE_SIZE);
+             thread_locks[tid] < M_LOCKSET_TABLE);
+   /* VG_(printf)("LOCK: held %d, new %p\n", thread_locks[tid], mutex); */
+#  if LOCKSET_SANITY > 1
+   sanity_check_locksets("eraser_post_mutex_lock-IN");
+#  endif
 
    while (True) {
-      if (i == LOCKSET_TABLE_SIZE) 
-         VG_(panic)("lockset table full -- increase LOCKSET_TABLE_SIZE");
+      if (i == M_LOCKSET_TABLE) 
+         VG_(panic)("lockset table full -- increase M_LOCKSET_TABLE");
 
       /* the lockset didn't already exist */
-      if (lockset_table[i] == INVALID_LOCKSET_ENTRY) {
+      if (i == n_lockset_table) {
 
          p = lockset_table[thread_locks[tid]];
          q = &lockset_table[i];
 
          /* copy the thread's lockset, creating a new list */
          while (p != NULL) {
-            new_node = VG_(malloc)(sizeof(lock_vector));
+            new_node = VG_(malloc)(sizeof(LockSet));
             new_node->mutex = p->mutex;
             *q = new_node;
             q = &((*q)->next);
@@ -765,18 +1054,20 @@ static void eraser_post_mutex_lock(ThreadId tid, void* void_mutex)
             q = &((*q)->next);
          }
 
-
          /* insert new mutex in new list */
-         new_node = VG_(malloc)(sizeof(lock_vector));
+         new_node = VG_(malloc)(sizeof(LockSet));
          new_node->mutex = mutex;
          new_node->next = p;
          (*q) = new_node;
 
          p = lockset_table[i];
-#if DEBUG_NEW_LOCKSETS
+         vg_assert(i == n_lockset_table);
+         n_lockset_table++;
+
+#        if DEBUG_NEW_LOCKSETS
          VG_(printf)("new lockset vector (%d): ", i);
-         print_lock_vector(p);
-#endif
+         print_LockSet(p);
+#        endif
          
          goto done;
 
@@ -784,8 +1075,8 @@ static void eraser_post_mutex_lock(ThreadId tid, void* void_mutex)
          /* If this succeeds, the required vector (with the new mutex added)
           * already exists in the table at position i.  Otherwise, keep
           * looking. */
-         if (weird_lock_vector_equals(lockset_table[thread_locks[tid]],
-                               lockset_table[i], mutex)) {
+         if (weird_LockSet_equals(lockset_table[thread_locks[tid]],
+                                  lockset_table[i], mutex)) {
             goto done;
          }
       }
@@ -794,12 +1085,17 @@ static void eraser_post_mutex_lock(ThreadId tid, void* void_mutex)
       i++;
    }
 
-   done:
-      /* Update the thread's lock vector */
-      thread_locks[tid] = i;
-#if DEBUG_LOCKS
-      VG_(printf)("tid %u now has lockset %d\n", tid, i);
-#endif
+  done:
+   /* Update the thread's lock vector */
+   thread_locks[tid] = i;
+#  if DEBUG_LOCKS
+   VG_(printf)("tid %u now has lockset %d\n", tid, i);
+#  endif
+
+#  if LOCKSET_SANITY > 1
+   sanity_check_locksets("eraser_post_mutex_lock-OUT");
+#  endif
+
 }
 
 
@@ -808,41 +1104,49 @@ static void eraser_post_mutex_unlock(ThreadId tid, void* void_mutex)
    Int i = 0;
    pthread_mutex_t* mutex = (pthread_mutex_t*)void_mutex;
    
-#if DEBUG_LOCKS
+#  if DEBUG_LOCKS
    VG_(printf)("unlock(%u, %x)\n", tid, mutex);
-#endif
+#  endif
+
+#  if LOCKSET_SANITY > 1
+   sanity_check_locksets("eraser_post_mutex_unlock-IN");
+#  endif
 
    // find the lockset that is the current one minus tid, change thread to use
    // that index.
-
-
-
-// SSS: this can easily happen, consider:
-//    lock a, lock b, lock c, unlock b
-//
-// sets seen are {a}, {a,b}, {a,b,c} -- {a,c} isn't there.  Code only
-// works if locks/unlocks are done entirely stack-style.
-
    
    while (True) {
-      if (lockset_table[i] == INVALID_LOCKSET_ENTRY || i == LOCKSET_TABLE_SIZE) 
-         VG_(panic)("couldn't find diminished lockset on unlock!");
+
+      if (i == n_lockset_table) {
+         /* We can't find a suitable pre-made set, so we'll have to
+            make one. */
+         i = remove ( thread_locks[tid], mutex );
+         break;
+      }
 
       /* Args are in opposite order to call above, for reverse effect */
-      if (weird_lock_vector_equals(lockset_table[i],
-                           lockset_table[thread_locks[tid]], mutex))
+      if (weird_LockSet_equals( lockset_table[i],
+                                lockset_table[thread_locks[tid]], mutex) ) {
+         /* found existing diminished set -- the best outcome. */
          break;
-      
+      }
+
       i++;
    }
 
    /* Update the thread's lock vector */
-#if DEBUG_LOCKS
+#  if DEBUG_LOCKS
    VG_(printf)("tid %u reverts from %d to lockset %d\n", 
                tid, thread_locks[tid], i);
-#endif
+#  endif
+
    thread_locks[tid] = i;
+
+#  if LOCKSET_SANITY > 1
+   sanity_check_locksets("eraser_post_mutex_unlock-OUT");
+#  endif
 }
+
 
 /* ---------------------------------------------------------------------
    Checking memory reads and writes
@@ -859,132 +1163,42 @@ static void eraser_post_mutex_unlock(ThreadId tid, void* void_mutex)
  * wr                |  EXCL         -           SH_MOD      SH_MOD
  * ----------------------------------------------------------------
  */
-static void dump_around_a(Addr a)
+
+#if 0
+static 
+void dump_around_a(Addr a)
 {
    UInt i;
    shadow_word* sword;
-
    VG_(printf)("NEARBY:\n");
    for (i = a - 12; i <= a + 12; i += 4) {
       sword = get_sword_addr(i); 
       VG_(printf)("    %x -- tid: %u, state: %u\n", i, sword->other, sword->state);
    }
 }
-
-static void free_lock_vector(lock_vector *p)
-{
-   lock_vector* q;
-   while (NULL != p) {
-      q = p;
-      p = p->next;
-      VG_(free)(q);
-#if DEBUG_MEM_LOCKSET_CHANGES
-      VG_(printf)("free'd   %x\n", q);
 #endif
-   }
-}
-
-/* Builds the intersection, and then unbuilds it if it's already in the table.
- */
-static UInt intersect(UInt ia, UInt ib)
-{
-   Int           i = 0;
-   lock_vector*  a = lockset_table[ia];
-   lock_vector*  b = lockset_table[ib];
-   lock_vector*  new_vector = NULL;
-   lock_vector*  new_node;
-   lock_vector** prev_ptr = &new_vector;
-
-#if DEBUG_MEM_LOCKSET_CHANGES
-   VG_(printf)("Intersecting %d %d:\n", ia, ib);
-#endif
-
-   /* Fast case -- when the two are the same */
-   if (ia == ib) {
-#if DEBUG_MEM_LOCKSET_CHANGES
-      VG_(printf)("Fast case -- both the same: %u\n", ia);
-      print_lock_vector(a);
-#endif
-      return ia;
-   }
-
-#if DEBUG_MEM_LOCKSET_CHANGES
-   print_lock_vector(a);
-   print_lock_vector(b);
-#endif
-
-   /* Build the intersection of the two lists */
-   while (a && b) {
-      if (a->mutex == b->mutex) {
-         new_node = VG_(malloc)(sizeof(lock_vector));
-#if DEBUG_MEM_LOCKSET_CHANGES
-         VG_(printf)("malloc'd %x\n", new_node);
-#endif
-         new_node->mutex = a->mutex;
-         *prev_ptr = new_node;
-         prev_ptr = &((*prev_ptr)->next);
-         a = a->next;
-         b = b->next;
-      } else if (a->mutex < b->mutex) {
-         a = a->next;
-      } else if (a->mutex > b->mutex) {
-         b = b->next;
-      } else VG_(panic)("STOP PRESS: Laws of arithmetic broken");
-
-      *prev_ptr = NULL;
-   }
-
-   /* Now search for it in the table, adding it if not seen before */
-   while (True) {
-      if (i == LOCKSET_TABLE_SIZE) 
-         VG_(panic)("lockset table full -- increase LOCKSET_TABLE_SIZE");
-
-      /* the lockset didn't already exist */
-      if (lockset_table[i] == INVALID_LOCKSET_ENTRY) {
-#if DEBUG_MEM_LOCKSET_CHANGES || DEBUG_NEW_LOCKSETS
-         VG_(printf)("intersection: NEW LOCKSET VECTOR (%d)...\n", i);
-#endif
-         lockset_table[i] = new_vector;
-         goto done;
-
-      } else {
-         if (lock_vector_equals(lockset_table[i], new_vector)) {
-            free_lock_vector(new_vector);
-            goto done;
-         }
-      }
-      i++;
-   }
-   done:
-
-#if DEBUG_MEM_LOCKSET_CHANGES
-   print_lock_vector(lockset_table[i]);
-#endif
-   /* Check we won't overflow the OTHER_BITS bits of sword->other */
-   vg_assert(i < (1 << OTHER_BITS));
-   return i;
-}
 
 /* Find which word the first and last bytes are in (by shifting out bottom 2
  * bits) then find the difference. */
-static __inline__ Int compute_num_words_accessed(Addr a, UInt size) {
+static __inline__ 
+Int compute_num_words_accessed(Addr a, UInt size) 
+{
    Int x, y, n_words;
-
    x =  a             >> 2;
    y = (a + size - 1) >> 2;
    n_words = y - x + 1;
-
    return n_words;
 }
+
 
 #if DEBUG_ACCESSES
    #define DEBUG_STATE(args...)   \
       VG_(printf)("(%u) ", size), \
       VG_(printf)(args)
-
 #else
    #define DEBUG_STATE(args...)
 #endif
+
 
 static void eraser_mem_read(Addr a, UInt size)
 {
@@ -1008,9 +1222,9 @@ static void eraser_mem_read(Addr a, UInt size)
       case Vge_Virgin:
          if (TID_INDICATING_NONVIRGIN == sword->other) {
             DEBUG_STATE("Read  VIRGIN --> EXCL:   %8x, %u\n", a, tid);
-#if DEBUG_VIRGIN_READS
+#           if DEBUG_VIRGIN_READS
             dump_around_a(a);
-#endif
+#           endif
          } else {
             DEBUG_STATE("Read  SPECIAL --> EXCL:  %8x, %u\n", a, tid);
          }
@@ -1026,9 +1240,9 @@ static void eraser_mem_read(Addr a, UInt size)
             DEBUG_STATE("Read  EXCL(%u) --> SHAR:  %8x, %u\n", sword->other, a, tid);
             sword->state = Vge_Shar;
             sword->other = thread_locks[tid];
-#if DEBUG_MEM_LOCKSET_CHANGES
-            print_lock_vector(lockset_table[sword->other]);
-#endif
+#           if DEBUG_MEM_LOCKSET_CHANGES
+            print_LockSet(lockset_table[sword->other]);
+#           endif
          }
          break;
 
@@ -1052,6 +1266,7 @@ static void eraser_mem_read(Addr a, UInt size)
       }
    }
 }
+
 
 static void eraser_mem_write(Addr a, UInt size)
 {
@@ -1086,9 +1301,9 @@ static void eraser_mem_write(Addr a, UInt size)
             DEBUG_STATE("Write EXCL(%u) --> SHAR_MOD: %8x, %u\n", sword->other, a, tid);
             sword->state = Vge_SharMod;
             sword->other = thread_locks[tid];
-#if DEBUG_MEM_LOCKSET_CHANGES
-            print_lock_vector(lockset_table[sword->other]);
-#endif
+#           if DEBUG_MEM_LOCKSET_CHANGES
+            print_LockSet(lockset_table[sword->other]);
+#           endif
             goto SHARED_MODIFIED;
          }
 
@@ -1115,6 +1330,7 @@ static void eraser_mem_write(Addr a, UInt size)
 }
 
 #undef DEBUG_STATE
+
 
 /*--------------------------------------------------------------------*/
 /*--- Setup                                                        ---*/
@@ -1165,29 +1381,30 @@ void SK_(pre_clo_init)(VgNeeds* needs, VgTrackEvents* track)
 
    /* Init lock table */
    for (i = 0; i < VG_N_THREADS; i++) 
-      thread_locks[i] = 0;
+      thread_locks[i] = 0 /* the empty lock set */;
 
    lockset_table[0] = NULL;
-   for (i = 1; i < LOCKSET_TABLE_SIZE; i++) 
-      lockset_table[i] = INVALID_LOCKSET_ENTRY;
+   for (i = 1; i < M_LOCKSET_TABLE; i++) 
+      lockset_table[i] = NULL;
 
    init_shadow_memory();
 }
+
 
 void SK_(post_clo_init)(void)
 {
 }
 
+
 void SK_(fini)(void)
 {
-#if DEBUG_LOCK_TABLE
-    Int i;
-    for (i = 0; lockset_table[i] != INVALID_LOCKSET_ENTRY; i++) {
-       VG_(printf)("[%2d] = ", i);
-       print_lock_vector(lockset_table[i]);
-    }
-#endif
-    VG_(message)(Vg_UserMsg, "%u possible data races found", n_eraser_warnings);
+#  if DEBUG_LOCK_TABLE
+   pp_all_LockSets();
+#  endif
+#  if LOCKSET_SANITY 
+   sanity_check_locksets("SK_(fini)");
+#  endif
+   VG_(message)(Vg_UserMsg, "%u possible data races found", n_eraser_warnings);
 }
 
 /*--------------------------------------------------------------------*/
