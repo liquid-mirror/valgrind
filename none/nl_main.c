@@ -55,8 +55,7 @@ void SK_(setup)(VgNeeds* needs, VgTrackEvents* track)
    needs->record_mem_exe_context  = False;
    needs->postpone_mem_reuse      = False;
    
-   needs->debug_info              = Vg_DebugNone;
-   needs->precise_x86_instr_sizes = False;
+   needs->debug_info              = False;
    needs->pthread_errors          = False;
    needs->report_errors           = False;
 
