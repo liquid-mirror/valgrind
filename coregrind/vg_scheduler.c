@@ -566,14 +566,18 @@ void VG_(scheduler_init) ( void )
 
    if (VG_STACK_MATCHES_BASE(startup_esp, VG_STARTUP_STACK_BASE_1)
        || VG_STACK_MATCHES_BASE(startup_esp, VG_STARTUP_STACK_BASE_2) 
-       || VG_STACK_MATCHES_BASE(startup_esp, VG_STARTUP_STACK_BASE_3)) {
+       || VG_STACK_MATCHES_BASE(startup_esp, VG_STARTUP_STACK_BASE_3)
+       || VG_STACK_MATCHES_BASE(startup_esp, VG_STARTUP_STACK_BASE_4)) {
       /* Jolly good! */
    } else {
-      VG_(printf)("%%esp at startup = %p is not near %p, %p or %p; aborting\n", 
-                  (void*)startup_esp, 
-                  (void*)VG_STARTUP_STACK_BASE_1,
-                  (void*)VG_STARTUP_STACK_BASE_2,
-                  (void*)VG_STARTUP_STACK_BASE_3 );
+      VG_(printf)(
+         "%%esp at startup = %p is not near %p, %p, %p or %p; aborting\n", 
+         (void*)startup_esp, 
+         (void*)VG_STARTUP_STACK_BASE_1,
+         (void*)VG_STARTUP_STACK_BASE_2,
+         (void*)VG_STARTUP_STACK_BASE_3,
+         (void*)VG_STARTUP_STACK_BASE_4 
+      );
       VG_(panic)("unexpected %esp at startup");
    }
 
