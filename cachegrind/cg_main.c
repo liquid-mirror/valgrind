@@ -1652,9 +1652,9 @@ void SK_(pre_clo_init)(VgNeeds* needs, VgTrackEvents* not_used)
    needs->pthread_errors          = False;
    needs->report_errors           = False;
 
-   needs->identifies_basic_blocks = True;
-
    needs->run_libc_freeres        = False;
+
+   needs->identifies_basic_blocks = True;
 
    needs->command_line_options    = True;
    needs->client_requests         = False;
