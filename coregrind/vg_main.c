@@ -209,7 +209,7 @@ static void vg_init_baseBlock ( void )
    /* Register VG_(handle_esp_assignment) if needed. */
    if (VG_(track_events).new_mem_stack_aligned || 
        VG_(track_events).die_mem_stack_aligned) 
-      VG_(register_compact_helper)( (Addr) & VGM_(handle_esp_assignment) );
+      VG_(register_compact_helper)( (Addr) & VG_(handle_esp_assignment) );
 
    /* Allocate slots for compact helpers */
    assign_helpers_in_baseBlock(VG_(n_compact_helpers), 
@@ -307,7 +307,7 @@ static void vg_init_shadow_regs ( void )
    if (VG_(needs).shadow_regs) {
       UInt eflags;
    
-      SKN_(written_shadow_regs_values) ( & VG_(written_shadow_reg), & eflags );
+      SK_(written_shadow_regs_values) ( & VG_(written_shadow_reg), & eflags );
       VG_(baseBlock)[VGOFF_(sh_esp)]    = 
       VG_(baseBlock)[VGOFF_(sh_ebp)]    =
       VG_(baseBlock)[VGOFF_(sh_eax)]    =
@@ -644,7 +644,7 @@ static void usage ( void )
    VG_(printf)(usage1, VG_(needs).name);
    /* Don't print skin string directly for security, ha! */
    if (VG_(needs).command_line_options)
-      VG_(printf)("%s", SKN_(usage)());
+      VG_(printf)("%s", SK_(usage)());
    else
       VG_(printf)("    (none)\n");
    VG_(printf)(usage2, VG_EMAIL_ADDR);
@@ -956,7 +956,7 @@ static void process_cmd_line_options ( void )
       }
 
       else if (VG_(needs).command_line_options) {
-         Bool ok = SKN_(process_cmd_line_option)(argv[i]);
+         Bool ok = SK_(process_cmd_line_option)(argv[i]);
          if (!ok)
             usage();
       }
@@ -1202,7 +1202,7 @@ void VG_(main) ( void )
    /* Must come after SK_(init) so memory handler accompaniments (eg.
     * shadow memory) can be setup ok */
    VGP_PUSHCC(VgpInitMem);
-   VGM_(init_memory)();
+   VG_(init_memory)();
    VGP_POPCC(VgpInitMem);
 
    /* Read the list of errors to suppress.  This should be found in
@@ -1538,7 +1538,7 @@ void VG_(do_sanity_checks) ( Bool force_expensive )
    /* Check that nobody has spuriously claimed that the first or
       last 16 pages of memory have become accessible [...] */
    if (VG_(needs).sanity_checks)
-      vg_assert(SKN_(cheap_sanity_check)());
+      vg_assert(SK_(cheap_sanity_check)());
 
    /* --- Now some more expensive checks. ---*/
 
@@ -1557,7 +1557,7 @@ void VG_(do_sanity_checks) ( Bool force_expensive )
          VG_(sanity_check_tc_tt)();
 
       if (VG_(needs).sanity_checks) {
-          vg_assert(SKN_(expensive_sanity_check)());
+          vg_assert(SK_(expensive_sanity_check)());
       }
       /* 
       if ((VG_(sanity_fast_count) % 500) == 0) VG_(mallocSanityCheckAll)(); 
