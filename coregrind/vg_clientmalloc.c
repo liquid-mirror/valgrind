@@ -185,9 +185,6 @@ static void add_to_freed_queue ( ShadowChunk* sc )
 }
 
 
-// SSS: not entirely satisfied with this... some of it is memcheck-specific
-// but some of it is core.  Hmm.
-
 /* Allocate a user-chunk of size bytes.  Also allocate its shadow
    block, make the shadow block point at the user block.  Put the
    shadow chunk on the appropriate list, and set all memory
@@ -230,8 +227,7 @@ static void track_new_heap_block( Addr p, UInt size, Bool is_inited )
 static void track_reused_heap_block( Addr old, Addr new, 
                                      UInt old_size, UInt new_size )
 {
-   /* First half is kept and copied, second half is new;  red zones as
-      normal */
+   /* First half kept and copied, second half new, red zones as normal */
    VG_TRACK( copy_mem_heap, old, new, old_size );
    VG_TRACK( new_mem_heap, new+old_size, new_size-old_size, /*inited=*/False );
    VG_TRACK( ban_mem_heap, new+new_size, VG_AR_CLIENT_REDZONE_SZB );
@@ -243,15 +239,35 @@ static void track_reused_heap_block( Addr old, Addr new,
 /* Allocate memory, noticing whether or not we are doing the full
    instrumentation thing. */
 
-// SSS: factor out commonality between client_{malloc,calloc,memalign}
-//      make a worker, inline it
-
-void* VG_(client_malloc) ( ThreadState* tst, UInt size, VgAllocKind kind )
+static __inline__
+void* client_malloc_worker ( ThreadState* tst, UInt size, UInt alignment,
+                             Bool is_zeroed, VgAllocKind kind )
 {
    void* p;
 
    VGP_PUSHCC(VgpCliMalloc);
    client_malloc_init();
+
+   vg_cmalloc_n_mallocs ++;
+   vg_cmalloc_bs_mallocd += size;
+
+   vg_assert(alignment >= 4);
+   if (alignment == 4)
+      p = VG_(malloc)(VG_AR_CLIENT, size);
+   else
+      p = VG_(malloc_aligned)(VG_AR_CLIENT, alignment, size);
+
+   if (vg_needs_shadow_chunks)
+      client_malloc_shadow ( tst, (Addr)p, size, kind );
+
+   track_new_heap_block ( (Addr)p, size, is_zeroed );
+
+   VGP_POPCC;
+   return p;
+}
+
+void* VG_(client_malloc) ( ThreadState* tst, UInt size, VgAllocKind kind )
+{
 #  ifdef DEBUG_CLIENTMALLOC
    VG_(printf)("[m %d, f %d (%d)] client_malloc ( %d, %x )\n", 
                count_malloclists(), 
@@ -259,34 +275,13 @@ void* VG_(client_malloc) ( ThreadState* tst, UInt size, VgAllocKind kind )
                size, raw_alloc_kind );
 #  endif
 
-   vg_cmalloc_n_mallocs ++;
-   vg_cmalloc_bs_mallocd += size;
-
-   // SSS: identical to client_memalign below
-   // JJJ: changed it so the --alignment option is always paid attention to;
-   // previously it wasn't for --instrument=none.
-   vg_assert(VG_(clo_alignment) >= 4);
-   if (VG_(clo_alignment) == 4)
-      p = VG_(malloc)(VG_AR_CLIENT, size);
-   else
-      p = VG_(malloc_aligned)(VG_AR_CLIENT, VG_(clo_alignment), size);
-
-   if (vg_needs_shadow_chunks)
-      client_malloc_shadow ( tst, (Addr)p, size, kind );
-
-   track_new_heap_block ( (Addr)p, size, /*is_inited = */False );
-
-   VGP_POPCC;
-   return p;
+   return client_malloc_worker ( tst, size, VG_(clo_alignment), 
+                                 /*is_zeroed*/False, kind );
 }
 
 
 void* VG_(client_memalign) ( ThreadState* tst, UInt align, UInt size )
 {
-   void* p;
-
-   VGP_PUSHCC(VgpCliMalloc);
-   client_malloc_init();
 #  ifdef DEBUG_CLIENTMALLOC
    VG_(printf)("[m %d, f %d (%d)] client_memalign ( al %d, sz %d )\n", 
                count_malloclists(), 
@@ -294,22 +289,8 @@ void* VG_(client_memalign) ( ThreadState* tst, UInt align, UInt size )
                align, size );
 #  endif
 
-   vg_cmalloc_n_mallocs ++;
-   vg_cmalloc_bs_mallocd += size;
-
-   vg_assert(VG_(clo_alignment) >= 4);
-   if (align == 4)
-      p = VG_(malloc)(VG_AR_CLIENT, size);
-   else
-      p = VG_(malloc_aligned)(VG_AR_CLIENT, VG_(clo_alignment), size);
-
-   if (vg_needs_shadow_chunks)
-      client_malloc_shadow ( tst, (Addr)p, size, Vg_AllocMalloc );
-
-   track_new_heap_block ( (Addr)p, size, /*is_inited = */False );
-
-   VGP_POPCC;
-   return p;
+   return client_malloc_worker ( tst, size, align, 
+                                 /*is_zeroed*/False, Vg_AllocMalloc );
 }
 
 
@@ -318,9 +299,6 @@ void* VG_(client_calloc) ( ThreadState* tst, UInt nmemb, UInt size1 )
    void*        p;
    UInt         size, i;
 
-   VGP_PUSHCC(VgpCliMalloc);
-   client_malloc_init();
-
 #  ifdef DEBUG_CLIENTMALLOC
    VG_(printf)("[m %d, f %d (%d)] client_calloc ( %d, %d )\n", 
                count_malloclists(), 
@@ -328,31 +306,38 @@ void* VG_(client_calloc) ( ThreadState* tst, UInt nmemb, UInt size1 )
                nmemb, size1 );
 #  endif
 
-   vg_cmalloc_n_mallocs ++;
-   vg_cmalloc_bs_mallocd += nmemb * size1;
-
    size = nmemb * size1;
 
-   // JJJ: changed it so the --alignment option is paid attention to for
-   // calloc, previously it wasn't even for --instrument=yes
-   vg_assert(VG_(clo_alignment) >= 4);
-   if (VG_(clo_alignment) == 4)
-      p = VG_(malloc)(VG_AR_CLIENT, size);
-   else
-      p = VG_(malloc_aligned)(VG_AR_CLIENT, VG_(clo_alignment), size);
-
+   p = client_malloc_worker ( tst, size, VG_(clo_alignment), 
+                              /*is_zeroed*/True, Vg_AllocMalloc );
    /* Must zero block for calloc! */
    for (i = 0; i < size; i++) ((UChar*)p)[i] = 0;
 
-   if (vg_needs_shadow_chunks)
-      client_malloc_shadow ( tst, (Addr)p, size, Vg_AllocMalloc );
-
-   track_new_heap_block ( (Addr)p, size, /*is_inited = */True );
-
-   VGP_POPCC;
    return p;
 }
 
+void client_free_worker ( ThreadState* tst, UInt ml_no, ShadowChunk* sc,
+                          Bool allocKindMatches)
+{
+   remove_from_malloclist ( ml_no, sc );
+   VG_TRACK( die_mem_heap, tst, sc->data - VG_AR_CLIENT_REDZONE_SZB, 
+                           sc->size + 2*VG_AR_CLIENT_REDZONE_SZB,
+                           allocKindMatches );
+
+   // JJJ: this seems to be more of a check for Valgrind itself?  Needed?
+   //VG_TRACK( die_mem_heap, (Addr)sc, sizeof(ShadowChunk) );
+
+   if (VG_(needs).record_mem_exe_context)
+      sc->where = VG_(get_ExeContext)(tst->m_eip, tst->m_ebp,
+                                      tst->m_esp, tst->stack_highest_word);
+   if (VG_(needs).postpone_mem_reuse) {
+      /* Put it out of harm's way for a while. */
+      add_to_freed_queue ( sc );
+   } else {
+      VG_(free) ( VG_AR_CLIENT, (void*)sc->data );
+      VG_(free) ( VG_AR_PRIVATE, sc );
+   }
+}
 
 void VG_(client_free) ( ThreadState* tst, void* p, VgAllocKind kind )
 {
@@ -370,9 +355,7 @@ void VG_(client_free) ( ThreadState* tst, void* p, VgAllocKind kind )
 
    vg_cmalloc_n_frees ++;
 
-   // SSS: still a bit icky
    if (! vg_needs_shadow_chunks) {
-      // JJJ: could use glibc free() here? (via 'ld --wrap')
       VG_(free) ( VG_AR_CLIENT, p );
 
    } else {
@@ -389,24 +372,8 @@ void VG_(client_free) ( ThreadState* tst, void* p, VgAllocKind kind )
          VG_TRACK( die_mem_heap, tst, (Addr)NULL, 0, True );
 
       } else {
-         remove_from_malloclist ( ml_no, sc );
-         VG_TRACK( die_mem_heap, tst, sc->data - VG_AR_CLIENT_REDZONE_SZB, 
-                                 sc->size + 2*VG_AR_CLIENT_REDZONE_SZB,
-                                 (sc->allockind==kind) ? True : False );
-
-         // JJJ: this seems to be more of a check for Valgrind itself?  Needed?
-         //VG_TRACK( die_mem_heap, (Addr)sc, sizeof(ShadowChunk) );
-
-         if (VG_(needs).record_mem_exe_context)
-            sc->where = VG_(get_ExeContext)(tst->m_eip, tst->m_ebp,
-                                       tst->m_esp, tst->stack_highest_word);
-         if (VG_(needs).postpone_mem_reuse) {
-            /* Put it out of harm's way for a while. */
-            add_to_freed_queue ( sc );
-         } else {
-            VG_(free) ( VG_AR_CLIENT, p );
-            VG_(free) ( VG_AR_PRIVATE, sc );
-         }
+         client_free_worker ( tst, ml_no, sc, 
+                              (sc->allockind==kind) ? True : False );
       }
    } 
    VGP_POPCC;
@@ -435,7 +402,7 @@ void* VG_(client_realloc) ( ThreadState* tst, void* p, UInt size_new )
    if (! vg_needs_shadow_chunks) {
       vg_assert(p != NULL && size_new != 0);
       VGP_POPCC;
-      return VG_(realloc) ( VG_AR_CLIENT, p, size_new );
+      return VG_(realloc) ( VG_AR_CLIENT, p, VG_(clo_alignment), size_new );
 
    } else {
       /* First try and find the block. */
@@ -472,9 +439,9 @@ void* VG_(client_realloc) ( ThreadState* tst, void* p, UInt size_new )
             return p;
 
          } else {
+            /* new size is bigger */
             void* p_new;
             
-            /* new size is bigger */
             /* Get new memory */
             vg_assert(VG_(clo_alignment) >= 4);
             if (VG_(clo_alignment) == 4)
@@ -491,18 +458,8 @@ void* VG_(client_realloc) ( ThreadState* tst, void* p, UInt size_new )
                ((UChar*)p_new)[i] = ((UChar*)p)[i];
 
             /* Free old memory */
-            remove_from_malloclist ( VG_MALLOCLIST_NO(p), sc );
-            VG_TRACK( die_mem_heap, tst, (Addr)(p - VG_AR_CLIENT_REDZONE_SZB), 
-                                    sc->size + 2*VG_AR_CLIENT_REDZONE_SZB,
-                                    alloc_matches );
-            // JJJ: just for Valgrind internals?
-            //VG_TRACK( die_mem_heap, (Addr)sc, sizeof(ShadowChunk) );
-            if (VG_(needs).postpone_mem_reuse) {
-               add_to_freed_queue ( sc );
-            } else {
-               VG_(free) ( VG_AR_CLIENT, p );
-               VG_(free) ( VG_AR_PRIVATE, sc );
-            }
+            client_free_worker ( tst, ml_no, sc, alloc_matches );
+
             VGP_POPCC;
             return p_new;
          }  
