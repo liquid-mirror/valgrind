@@ -178,26 +178,27 @@ ExeContext* VG_(get_ExeContext) ( Addr eip, Addr ebp,
       goes cold, which we guess to be when %ebp is not a reasonable
       stack location.  We also assert that %ebp increases down the chain. */
 
-// SSS: unnecessary, AFAICT --njn
-//   for (i = 0; i < VG_(clo_backtrace_size); i++)
-//      eips[i] = 0;
-
-// JJJ: gives shorter stack trace for tests/badjump.c
-
-#  define GET_CALLER(lval)                                        \
-/*   if (ebp != 0 && SKN_(check_readable)(ebp, 8, NULL)) {  */      \
-   if (ebp_min <= ebp && ebp <= ebp_max) {                        \
-      vg_assert(ebp < ((UInt*)ebp)[0]);                           \
-      lval = ((UInt*)ebp)[1];  /* ret addr */                     \
-      ebp  = ((UInt*)ebp)[0];  /* old ebp */                      \
-   } else {                                                       \
-      lval = ebp = 0;                                             \
-   }
+   // JJJ: gives shorter stack trace for tests/badjump.c
+   // JRS 2002-aug-16: I don't think this is a big deal; looks ok for
+   // most "normal" backtraces.
 
    eips[0] = eip;
-   for (i = 1; i < VG_(clo_backtrace_size); i++)
-      GET_CALLER(eips[i]);
-#  undef GET_CALLER
+
+   /* Get whatever we safely can ... */
+   for (i = 1; i < VG_(clo_backtrace_size); i++) {
+      if (!(ebp_min <= ebp && ebp <= ebp_max)) 
+         break; /* ebp gone baaaad */
+      if (ebp >= ((UInt*)ebp)[0])
+         break; /* ebp gone nonmonotonic */
+
+      eips[i] = ((UInt*)ebp)[1];  /* ret addr */
+      ebp     = ((UInt*)ebp)[0];  /* old ebp */
+   }
+
+   /* Put zeroes in the rest. */
+   for (;  i < VG_(clo_backtrace_size); i++) {
+      eips[i] = 0;
+   }
 
    /* Now figure out if we've seen this one before.  First hash it so
       as to determine the list number. */
