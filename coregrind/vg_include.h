@@ -107,6 +107,10 @@
    backtrace. */
 #define VG_DEEPEST_BACKTRACE 50
 
+/* Number of lists in which we keep track of malloc'd but not free'd
+   blocks.  Should be prime. */
+#define VG_N_MALLOCLISTS 997
+
 /* Number of lists in which we keep track of ExeContexts.  Should be
    prime. */
 #define VG_N_EC_LISTS /*997*/ 4999
@@ -355,6 +359,15 @@ extern void  VG_(mallocSanityCheckAll)   ( void );
 
 extern void  VG_(show_all_arena_stats) ( void );
 extern Bool  VG_(is_empty_arena) ( ArenaId aid );
+
+
+/* The red-zone size for the client.  This can be arbitrary, but
+   unfortunately must be set at compile time. */
+// SSS: why?
+#define VG_AR_CLIENT_REDZONE_SZW 4
+
+#define VG_AR_CLIENT_REDZONE_SZB \
+   (VG_AR_CLIENT_REDZONE_SZW * VKI_BYTES_PER_WORD)
 
 
 /* ---------------------------------------------------------------------
