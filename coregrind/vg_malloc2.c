@@ -194,25 +194,28 @@ void ensure_mm_init ( void )
       which merely checks at the time of freeing that the red zone
       words are unchanged. */
 
-   arena_init ( &vg_arena[VG_AR_CORE], "core ", 
+   arena_init ( &vg_arena[VG_AR_CORE],      "core    ", 
                 1, True, 262144 );
 
-   arena_init ( &vg_arena[VG_AR_SKIN], "skin ", 
+   arena_init ( &vg_arena[VG_AR_SKIN],      "skin    ", 
                 1, True, 262144 );
 
-   arena_init ( &vg_arena[VG_AR_SYMTAB],  "symtab  ", 
+   arena_init ( &vg_arena[VG_AR_SYMTAB],    "symtab  ", 
                 1, True, 262144 );
 
-   arena_init ( &vg_arena[VG_AR_CLIENT],  "client  ",  
+   arena_init ( &vg_arena[VG_AR_JITTER],    "JITter  ", 
+                1, True, 8192 );
+
+   arena_init ( &vg_arena[VG_AR_CLIENT],    "client  ",  
                 VG_AR_CLIENT_REDZONE_SZW, False, 262144 );
 
-   arena_init ( &vg_arena[VG_AR_DEMANGLE], "demangle",  
+   arena_init ( &vg_arena[VG_AR_DEMANGLE],  "demangle",  
                 4 /*paranoid*/, True, 16384 );
 
-   arena_init ( &vg_arena[VG_AR_EXECTXT],  "exectxt ",  
+   arena_init ( &vg_arena[VG_AR_EXECTXT],   "exectxt ",  
                 1, True, 16384 );
 
-   arena_init ( &vg_arena[VG_AR_ERRCTXT],  "errctxt ",  
+   arena_init ( &vg_arena[VG_AR_ERRCTXT],   "errctxt ",  
                 1, True, 16384 );
 
    arena_init ( &vg_arena[VG_AR_TRANSIENT], "transien",  
