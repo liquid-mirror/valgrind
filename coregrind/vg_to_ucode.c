@@ -3721,8 +3721,11 @@ static Addr disInstr ( UCodeBlock* cb, Addr eip, Bool* isEnd )
     { Int   n_pops;
       Addr  eipS, eipE;
       UChar ch;
-      if (sz != 4)                        goto normal_pop_case;
-      if (Vg_CacheSim == VG_(clo_action)) goto normal_pop_case;
+      // JJJ: why this special case?  Something to do with multiple pops in
+      // a row and self-modifying code...  since smc is no longer supported,
+      // can the non-normal_pop_case code be removed?
+      if (sz != 4)                      goto normal_pop_case;
+      if (Vg_CacheSim == VG_(clo_skin)) goto normal_pop_case;
       /* eip points at first pop insn + 1.  Make eipS and eipE
          bracket the sequence. */
       eipE = eipS = eip - 1;
@@ -3866,8 +3869,8 @@ static Addr disInstr ( UCodeBlock* cb, Addr eip, Bool* isEnd )
     { Int   n_pushes;
       Addr  eipS, eipE;
       UChar ch;
-      if (sz != 4)                        goto normal_push_case;
-      if (Vg_CacheSim == VG_(clo_action)) goto normal_push_case;
+      if (sz != 4)                      goto normal_push_case;
+      if (Vg_CacheSim == VG_(clo_skin)) goto normal_push_case;
       /* eip points at first push insn + 1.  Make eipS and eipE
          bracket the sequence. */
       eipE = eipS = eip - 1;
@@ -4588,7 +4591,7 @@ Int VG_(disBB) ( UCodeBlock* cb, Addr eip0 )
    Addr eip   = eip0;
    Bool isEnd = False;
    Bool block_sane;
-   Int INCEIP_allowed_lag = 4;
+   Int INCEIP_allowed_lag;
    Int delta = 0;
 
    if (dis) VG_(printf)("\n");
@@ -4606,9 +4609,10 @@ Int VG_(disBB) ( UCodeBlock* cb, Addr eip0 )
     *
     * See vg_cachesim_instrument() for an example of how this is used. 
     */
-   if (Vg_DebugPrecise == VG_(needs).debug_info || 
+   INCEIP_allowed_lag = 
+      (Vg_DebugPrecise == VG_(needs).debug_info || 
        VG_(needs).precise_x86_instr_sizes) 
-      INCEIP_allowed_lag = 0;
+      ? 0 : 4;
 
    if (VG_(clo_single_step)) {
       eip = disInstr ( cb, eip, &isEnd );
