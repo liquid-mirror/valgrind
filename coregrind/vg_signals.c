@@ -1194,7 +1194,11 @@ Bool VG_(deliver_signals) ( void )
             vg_dcss.dcss_sigpending[sigNo] = False;
             vg_dcss.dcss_destthread[sigNo] = VG_INVALID_THREADID;
             continue; /* for (sigNo = 1; ...) loop */
-	 }
+	 } else if (VG_(ksigismember)(&(tst->sig_mask), sigNo)) {
+            /* signal blocked in specific thread, so we can't
+               deliver it just now */
+            continue; /* for (sigNo = 1; ...) loop */
+         }
       } else {
          /* not directed to a specific thread, so search for a
             suitable candidate */
