@@ -1451,7 +1451,7 @@ extern Bool VG_(is_just_below_ESP)( Addr esp, Addr aa );
 
 /* ----------- New fast V cache stuff. ----------- */
 
-#define VG_N_VCACHE_BITS 10
+#define VG_N_VCACHE_BITS 12
 
 #define VG_N_VCACHE (1 << VG_N_VCACHE_BITS)
 extern Addr VG_(vcache_discr)[VG_N_VCACHE];

@@ -195,26 +195,24 @@ static void vg_init_baseBlock ( void )
       = alloc_BaB_1_set( (Addr) & VG_(helpers_LOADV1) );
 
    /* 24  */
+   VGOFF_(helpers_STOREV2)
+      = alloc_BaB_1_set( (Addr) & VG_(helpers_STOREV2) );
+   /* 25  */
+   VGOFF_(helpers_LOADV2)
+      = alloc_BaB_1_set( (Addr) & VG_(helpers_LOADV2) );
+
+   /* 26  */
    VGOFF_(handle_esp_assignment)
       = alloc_BaB_1_set( (Addr) & VGM_(handle_esp_assignment) );
 
-   /* 25 */
+   /* 27 */
    VGOFF_(m_eip) = alloc_BaB(1);
 
    /* There are currently 24 spill slots */
-   /* 26 .. 49  This overlaps the magic boundary at >= 32 words, but
+   /* 28 .. 51  This overlaps the magic boundary at >= 32 words, but
       most spills are to low numbered spill slots, so the ones above
       the boundary don't see much action. */
    VGOFF_(spillslots) = alloc_BaB(VG_MAX_SPILLSLOTS);
-
-   /* These two pushed beyond the boundary because 2-byte transactions
-      are rare. */
-   /* 50  */
-   VGOFF_(helpers_STOREV2)
-      = alloc_BaB_1_set( (Addr) & VG_(helpers_STOREV2) );
-   /* 51  */
-   VGOFF_(helpers_LOADV2)
-      = alloc_BaB_1_set( (Addr) & VG_(helpers_LOADV2) );
 
    /* 52  */
    VGOFF_(helperc_STOREV_FP)
@@ -1006,7 +1004,7 @@ void VG_(main) ( void )
 
    /* Hook to delay things long enough so we can get the pid and
       attach GDB in another shell. */
-   /* {extern unsigned int sleep(unsigned int seconds); sleep(10);} */
+   /* {extern unsigned int sleep(unsigned int seconds); sleep(5);} */
 
    if (VG_(clo_instrument) || VG_(clo_cachesim)) {
       VGP_PUSHCC(VgpInitAudit);
