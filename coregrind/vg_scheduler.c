@@ -848,11 +848,10 @@ void sched_do_syscall ( ThreadId tid )
 
    /* Deal with error case immediately. */
    if (!fd_is_valid(fd)) {
-      // SSS: turn this off if VG_(needs).report_errors = False?
-      // SSS: and any like it?
-      VG_(message)(Vg_UserMsg, 
-         "Warning: invalid file descriptor %d in syscall %s",
-         fd, syscall_no == __NR_read ? "read()" : "write()" );
+      if (VG_(needs).core_errors)
+         VG_(message)(Vg_UserMsg, 
+            "Warning: invalid file descriptor %d in syscall %s",
+            fd, syscall_no == __NR_read ? "read()" : "write()" );
       VG_(check_known_blocking_syscall)(tid, syscall_no, NULL /* PRE */);
       KERNEL_DO_SYSCALL(tid, res);
       VG_(check_known_blocking_syscall)(tid, syscall_no, &res /* POST */);
@@ -3472,7 +3471,7 @@ void scheduler_sanity ( void )
              && stack_used 
                 >= (VG_PTHREAD_STACK_MIN - 1000 /* paranoia */)) {
             VG_(message)(Vg_UserMsg,
-               "Warning: STACK OVERFLOW: "
+               "Error: STACK OVERFLOW: "
                "thread %d: stack used %d, available %d", 
                i, stack_used, VG_PTHREAD_STACK_MIN );
             VG_(message)(Vg_UserMsg,
