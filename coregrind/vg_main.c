@@ -1274,6 +1274,10 @@ void VG_(oynk) ( Int n )
    tracing into child processes.  To make this work the build system
    also supplies a dummy file, "valgrinq.so". 
 
+   Also replace "vgskin_<foo>.so" with whitespace, for the same reason;
+   without it, child processes try to find valgrind.so symbols in the 
+   skin .so.
+
    Also look for $(libdir)/lib/valgrind in LD_LIBRARY_PATH and change
    it to $(libdir)/lib/valgrinq, so as to make our libpthread.so
    disappear.  
@@ -1281,20 +1285,22 @@ void VG_(oynk) ( Int n )
 void VG_(mash_LD_PRELOAD_and_LD_LIBRARY_PATH) ( Char* ld_preload_str,
                                                 Char* ld_library_path_str )
 {
-   Char* p_prel = NULL;
-   Char* p_path = NULL;
-   Int   what = 0;
+   Char* p_prel  = NULL;
+   Char* sk_prel = NULL;
+   Char* p_path  = NULL;
+   Int   what    = 0;
    if (ld_preload_str == NULL || ld_library_path_str == NULL)
       goto mutancy;
 
    /* VG_(printf)("%s %s\n", ld_preload_str, ld_library_path_str); */
 
    p_prel = VG_(strstr)(ld_preload_str, "valgrind.so");
+   sk_prel = VG_(strstr)(ld_preload_str, "vgskin_");
    p_path = VG_(strstr)(ld_library_path_str, VG_LIBDIR);
 
+   what = 1;
    if (p_prel == NULL) {
       /* perhaps already happened? */
-      what = 1;
       if (VG_(strstr)(ld_preload_str, "valgrinq.so") == NULL)
          goto mutancy;
       if (VG_(strstr)(ld_library_path_str, "lib/valgrinq") == NULL)
@@ -1303,10 +1309,30 @@ void VG_(mash_LD_PRELOAD_and_LD_LIBRARY_PATH) ( Char* ld_preload_str,
    }
 
    what = 2;
+   if (sk_prel == NULL) goto mutancy;
+
+   what = 3;
    if (p_path == NULL) goto mutancy;
 
+   what = 4;
+   {  
+      /* Blank from "vgskin_" back to prev. LD_PRELOAD entry, or start */
+      Char* p = sk_prel;
+      while (*p != ':' && p > ld_preload_str) { 
+         *p = ' ';
+         p--;
+      }
+      /* Blank from "vgskin_" to next LD_PRELOAD entry */
+      while (*p != ':' && *p != '\0') { 
+         *p = ' ';
+         p++;
+      }
+      if (*p == '\0') goto mutancy;    /* valgrind.so has disappeared?! */
+      *p = ' ';                        /* blank ending ':' */
+   }
+
    /* in LD_PRELOAD, turn valgrind.so into valgrinq.so. */
-   what = 3;
+   what = 5;
    if (p_prel[7] != 'd') goto mutancy;
    p_prel[7] = 'q';
 
@@ -1314,10 +1340,10 @@ void VG_(mash_LD_PRELOAD_and_LD_LIBRARY_PATH) ( Char* ld_preload_str,
       .../lib/valgrind .../lib/valgrinq, which doesn't exist,
       so that our own libpthread.so goes out of scope. */
    p_path += VG_(strlen)(VG_LIBDIR);
-   what = 4;
+   what = 6;
    if (p_path[0] != '/') goto mutancy;
    p_path++; /* step over / */
-   what = 5;
+   what = 7;
    if (p_path[7] != 'd') goto mutancy;
    p_path[7] = 'q';
    return;
