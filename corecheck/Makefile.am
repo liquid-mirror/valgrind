@@ -69,7 +69,7 @@ valgrind_so_SOURCES = \
 	vg_signals.c \
 	vg_startup.S \
 	vg_symtab2.c \
-	vg_syscall_mem.c \
+	vg_syscalls.c \
 	vg_syscall.S \
 	vg_to_ucode.c \
 	vg_translate.c \
@@ -78,8 +78,6 @@ valgrind_so_SOURCES = \
 
 vgskin_memcheck_so_SOURCES = \
 	vg_memcheck.c \
-	vg_memcheck_pre.c \
-	vg_memcheck_post.c \
 	vg_memcheck_errcontext.c \
 	vg_memcheck_from_ucode.c \
 	vg_memcheck_translate.c \
