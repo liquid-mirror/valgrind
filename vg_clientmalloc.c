@@ -66,6 +66,7 @@ static UInt         vg_mlist_tries = 0;
 static void client_malloc_init ( void )
 {
    UInt ml_no;
+
    if (vg_client_malloc_init_done) return;
 
    /* Basically need to record shadow chunks if anything non-ordinary is
@@ -76,6 +77,7 @@ static void client_malloc_init ( void )
        VG_(track_events).copy_mem_heap   ||
        VG_(track_events).die_mem_heap);
 
+   // SSS: not even used if vg_needs_shadow_chunks==False...
    for (ml_no = 0; ml_no < VG_N_MALLOCLISTS; ml_no++)
       VG_(malloclist)[ml_no] = NULL;
 
@@ -179,8 +181,8 @@ static void add_to_freed_queue ( ShadowChunk* sc )
          VG_(freed_list_start) = sc1->next;
       }
       sc1->next = NULL; /* just paranoia */
-      VG_(free)(VG_AR_CLIENT,  (void*)(sc1->data));
-      VG_(free)(VG_AR_PRIVATE, sc1);
+      VG_(arena_free)(VG_AR_CLIENT, (void*)(sc1->data));
+      VG_(arena_free)(VG_AR_CORE, sc1);
    }
 }
 
@@ -203,10 +205,9 @@ static void client_malloc_shadow ( ThreadState* tst,
                align, size );
 #  endif
 
-   sc        = VG_(malloc)(VG_AR_PRIVATE, sizeof(ShadowChunk));
+   sc        = VG_(arena_malloc)(VG_AR_CORE, sizeof(ShadowChunk));
    sc->where = ( VG_(needs).record_mem_exe_context
-               ? VG_(get_ExeContext)(tst->m_eip, tst->m_ebp, 
-                                     tst->m_esp, tst->stack_highest_word)
+               ? VG_(get_ExeContext) ( tst )
                : NULL);
    sc->size  = size;
    sc->allockind = kind;
@@ -233,9 +234,9 @@ void* client_malloc_worker ( ThreadState* tst, UInt size, UInt alignment,
 
    vg_assert(alignment >= 4);
    if (alignment == 4)
-      p = (Addr)VG_(malloc)(VG_AR_CLIENT, size);
+      p = (Addr)VG_(arena_malloc)(VG_AR_CLIENT, size);
    else
-      p = (Addr)VG_(malloc_aligned)(VG_AR_CLIENT, alignment, size);
+      p = (Addr)VG_(arena_malloc_aligned)(VG_AR_CLIENT, alignment, size);
 
    if (vg_needs_shadow_chunks)
       client_malloc_shadow ( tst, p, size, kind );
@@ -311,14 +312,13 @@ void client_free_worker ( ThreadState* tst, UInt ml_no, ShadowChunk* sc,
    //VG_TRACK( die_mem_heap, (Addr)sc, sizeof(ShadowChunk) );
 
    if (VG_(needs).record_mem_exe_context)
-      sc->where = VG_(get_ExeContext)(tst->m_eip, tst->m_ebp,
-                                      tst->m_esp, tst->stack_highest_word);
+      sc->where = VG_(get_ExeContext)( tst );
    if (VG_(needs).postpone_mem_reuse) {
       /* Put it out of harm's way for a while. */
       add_to_freed_queue ( sc );
    } else {
-      VG_(free) ( VG_AR_CLIENT, (void*)sc->data );
-      VG_(free) ( VG_AR_PRIVATE, sc );
+      VG_(arena_free) ( VG_AR_CLIENT, (void*)sc->data );
+      VG_(arena_free) ( VG_AR_CORE, sc );
    }
 }
 
@@ -329,6 +329,7 @@ void VG_(client_free) ( ThreadState* tst, void* p, VgAllocKind kind )
 
    VGP_PUSHCC(VgpCliMalloc);
    client_malloc_init();
+
 #  ifdef DEBUG_CLIENTMALLOC
    VG_(printf)("[m %d, f %d (%d)] client_free ( %p, %x )\n", 
                count_malloclists(), 
@@ -339,7 +340,7 @@ void VG_(client_free) ( ThreadState* tst, void* p, VgAllocKind kind )
    vg_cmalloc_n_frees ++;
 
    if (! vg_needs_shadow_chunks) {
-      VG_(free) ( VG_AR_CLIENT, p );
+      VG_(arena_free) ( VG_AR_CLIENT, p );
 
    } else {
       /* first, see if p is one vg_client_malloc gave out. */
@@ -385,8 +386,8 @@ void* VG_(client_realloc) ( ThreadState* tst, void* p, UInt new_size )
    if (! vg_needs_shadow_chunks) {
       vg_assert(p != NULL && new_size != 0);
       VGP_POPCC;
-      return VG_(realloc) ( VG_AR_CLIENT, p, VG_(clo_alignment), new_size );
-
+      return VG_(arena_realloc) ( VG_AR_CLIENT, p, VG_(clo_alignment), 
+                                  new_size );
    } else {
       /* First try and find the block. */
       ml_no = VG_MALLOCLIST_NO(p);
@@ -428,10 +429,10 @@ void* VG_(client_realloc) ( ThreadState* tst, void* p, UInt new_size )
             /* Get new memory */
             vg_assert(VG_(clo_alignment) >= 4);
             if (VG_(clo_alignment) == 4)
-               p_new = (Addr)VG_(malloc)(VG_AR_CLIENT, new_size);
+               p_new = (Addr)VG_(arena_malloc)(VG_AR_CLIENT, new_size);
             else
-               p_new = (Addr)VG_(malloc_aligned)(VG_AR_CLIENT, 
-                                                 VG_(clo_alignment), new_size);
+               p_new = (Addr)VG_(arena_malloc_aligned)(VG_AR_CLIENT, 
+                                               VG_(clo_alignment), new_size);
             client_malloc_shadow ( tst, p_new, new_size, Vg_AllocMalloc );
 
             /* First half kept and copied, second half new, 
@@ -457,16 +458,18 @@ void* VG_(client_realloc) ( ThreadState* tst, void* p, UInt new_size )
    }
 }
 
-
-void VG_(clientmalloc_done) ( void )
+void VG_(client_malloc_done) ( void )
 {
    UInt         nblocks, nbytes, ml_no;
    ShadowChunk* sc;
 
+   if (VG_(clo_verbosity) == 0)
+      return;
+
    client_malloc_init();
 
-   if (VG_(clo_verbosity) == 0)
-     return;
+   if (!vg_needs_shadow_chunks)
+      return;
 
    nblocks = nbytes = 0;
 

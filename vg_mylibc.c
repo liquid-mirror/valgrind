@@ -675,22 +675,49 @@ Long VG_(atoll) ( Char* str )
 }
 
 
-Long VG_(atoll36) ( Char* str )
+Long VG_(atoll16) ( Char* str )
 {
    Bool neg = False;
    Long n = 0;
    if (*str == '-') { str++; neg = True; };
    while (True) {
       if (*str >= '0' && *str <= '9') {
-         n = 36*n + (Long)(*str - '0');
+         n = 16*n + (Long)(*str - '0');
       }
       else 
-      if (*str >= 'A' && *str <= 'Z') {
-         n = 36*n + (Long)((*str - 'A') + 10);
+      if (*str >= 'A' && *str <= 'F') {
+         n = 16*n + (Long)((*str - 'A') + 10);
       }
       else 
-      if (*str >= 'a' && *str <= 'z') {
-         n = 36*n + (Long)((*str - 'a') + 10);
+      if (*str >= 'a' && *str <= 'f') {
+         n = 16*n + (Long)((*str - 'a') + 10);
+      }
+      else {
+	break;
+      }
+      str++;
+   }
+   if (neg) n = -n;
+   return n;
+}
+
+Long VG_(atoll36) ( UInt base, Char* str )
+{
+   Bool neg = False;
+   Long n = 0;
+   vg_assert(base >= 2 && base <= 36);
+   if (*str == '-') { str++; neg = True; };
+   while (True) {
+      if (*str >= '0' && *str <=('9' - (10 - base))) {
+         n = base*n + (Long)(*str - '0');
+      }
+      else 
+      if (base > 10 && *str >= 'A' && *str <= ('Z' - (36 - base))) {
+         n = base*n + (Long)((*str - 'A') + 10);
+      }
+      else 
+      if (base > 10 && *str >= 'a' && *str <= ('z' - (36 - base))) {
+         n = base*n + (Long)((*str - 'a') + 10);
       }
       else {
 	break;
@@ -765,7 +792,14 @@ void VG_(strncpy_safely) ( Char* dest, const Char* src, Int ndest )
 
 void VG_(strncpy) ( Char* dest, const Char* src, Int ndest )
 {
-   VG_(strncpy_safely)( dest, src, ndest+1 ); 
+   Int i;
+   i = 0;
+   while (True) {
+      if (src[i] == 0) return;
+      if (i >= ndest) return;
+      dest[i] = src[i];
+      i++;
+   }
 }
 
 
@@ -868,16 +902,22 @@ Char VG_(toupper) ( Char c )
 }
 
 
-Char* VG_(strdup) ( ArenaId aid, const Char* s )
+/* Inline just for the wrapper VG_(strdup) below */
+__inline__ Char* VG_(arena_strdup) ( ArenaId aid, const Char* s )
 {
-    Int   i;
-    Int   len = VG_(strlen)(s) + 1;
-    Char* res = VG_(malloc) (aid, len);
-    for (i = 0; i < len; i++)
-       res[i] = s[i];
-    return res;
+   Int   i;
+   Int   len = VG_(strlen)(s) + 1;
+   Char* res = VG_(arena_malloc) (aid, len);
+   for (i = 0; i < len; i++)
+      res[i] = s[i];
+   return res;
 }
 
+/* Wrapper to avoid exposing skins to ArenaId's */
+Char* VG_(strdup) ( const Char* s )
+{
+   return VG_(arena_strdup) ( VG_AR_SKIN, s ); 
+}
 
 /* ---------------------------------------------------------------------
    A simple string matching routine, purloined from Hugs98.
@@ -1068,7 +1108,7 @@ Int VG_(stat) ( Char* file_name, struct vki_stat* buf )
 /* Misc functions looking for a proper home. */
 
 /* We do getenv without libc's help by snooping around in
-   VG_(client_env) as determined at startup time. */
+   VG_(client_envp) as determined at startup time. */
 Char* VG_(getenv) ( Char* varname )
 {
    Int i, n;

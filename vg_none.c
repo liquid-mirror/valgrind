@@ -28,7 +28,7 @@
    The GNU General Public License is contained in the file LICENSE.
 */
 
-#include "vg_include.h"
+#include "vg_skin.h"
 
 
 void SK_(pre_clo_init)(VgNeeds* needs, VgTrackEvents* track) 

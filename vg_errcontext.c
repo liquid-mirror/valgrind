@@ -292,7 +292,7 @@ void VG_(maybe_add_context) ( ErrContext* ec )
       postponing those details until now, we avoid the extra work in the
       case where we ignore the error.
     */
-   p = VG_(malloc)(VG_AR_ERRCTXT, sizeof(ErrContext));
+   p = VG_(arena_malloc)(VG_AR_ERRCTXT, sizeof(ErrContext));
    *p = *ec;
    SKN_(dup_extra_and_update)(p);
 
@@ -349,17 +349,16 @@ void VG_(construct_err_context) ( ErrContext* ec, ErrKind ekind, Addr a,
 
    if (NULL == tst) {
       ec->tid   = VG_(get_current_tid)();
-      ec->where = VG_(get_ExeContext)( VG_(baseBlock)[VGOFF_(m_eip)], 
-                                       VG_(baseBlock)[VGOFF_(m_ebp)],
-                                       VG_(baseBlock)[VGOFF_(m_esp)],
+      ec->where = VG_(get_ExeContext2)( VG_(baseBlock)[VGOFF_(m_eip)], 
+                                        VG_(baseBlock)[VGOFF_(m_ebp)],
+                                        VG_(baseBlock)[VGOFF_(m_esp)],
                                     VG_(threads)[ec->tid].stack_highest_word);
                
       ec->m_eip = VG_(baseBlock)[VGOFF_(m_eip)];
       ec->m_esp = VG_(baseBlock)[VGOFF_(m_esp)];
       ec->m_ebp = VG_(baseBlock)[VGOFF_(m_ebp)];
    } else {
-      ec->where   = VG_(get_ExeContext) ( tst->m_eip, tst->m_ebp, tst->m_esp,
-                                          tst->stack_highest_word );
+      ec->where   = VG_(get_ExeContext) ( tst );
       ec->tid     = tst->tid;
       ec->m_eip   = tst->m_eip;
       ec->m_esp   = tst->m_esp;
@@ -560,7 +559,7 @@ static void load_one_suppressions_file ( Char* filename )
 
    while (True) {
       Suppression* supp;
-      supp = VG_(malloc)(VG_AR_PRIVATE, sizeof(Suppression));
+      supp = VG_(arena_malloc)(VG_AR_CORE, sizeof(Suppression));
       supp->count = 0;
       supp->string = supp->caller0 = supp->caller1 = supp->extra
                    = supp->caller2 = supp->caller3 = NULL;
@@ -572,7 +571,7 @@ static void load_one_suppressions_file ( Char* filename )
       
       eof = VG_(getLine) ( fd, buf, N_BUF );
       if (eof || STREQ(buf, "}")) goto syntax_error;
-      supp->sname = VG_(strdup)(VG_AR_PRIVATE, buf);
+      supp->sname = VG_(arena_strdup)(VG_AR_CORE, buf);
 
       eof = VG_(getLine) ( fd, buf, N_BUF );
 
@@ -614,28 +613,28 @@ static void load_one_suppressions_file ( Char* filename )
 
       eof = VG_(getLine) ( fd, buf, N_BUF );
       if (eof) goto syntax_error;
-      supp->caller0 = VG_(strdup)(VG_AR_PRIVATE, buf);
+      supp->caller0 = VG_(arena_strdup)(VG_AR_CORE, buf);
       if (!setLocationTy(&(supp->caller0), &(supp->caller0_ty)))
          goto syntax_error;
 
       eof = VG_(getLine) ( fd, buf, N_BUF );
       if (eof) goto syntax_error;
       if (!STREQ(buf, "}")) {
-         supp->caller1 = VG_(strdup)(VG_AR_PRIVATE, buf);
+         supp->caller1 = VG_(arena_strdup)(VG_AR_CORE, buf);
          if (!setLocationTy(&(supp->caller1), &(supp->caller1_ty)))
             goto syntax_error;
       
          eof = VG_(getLine) ( fd, buf, N_BUF );
          if (eof) goto syntax_error;
          if (!STREQ(buf, "}")) {
-            supp->caller2 = VG_(strdup)(VG_AR_PRIVATE, buf);
+            supp->caller2 = VG_(arena_strdup)(VG_AR_CORE, buf);
             if (!setLocationTy(&(supp->caller2), &(supp->caller2_ty)))
                goto syntax_error;
 
             eof = VG_(getLine) ( fd, buf, N_BUF );
             if (eof) goto syntax_error;
             if (!STREQ(buf, "}")) {
-               supp->caller3 = VG_(strdup)(VG_AR_PRIVATE, buf);
+               supp->caller3 = VG_(arena_strdup)(VG_AR_CORE, buf);
               if (!setLocationTy(&(supp->caller3), &(supp->caller3_ty)))
                  goto syntax_error;
 

@@ -7,7 +7,7 @@
 #define __VG_MEMCHECK_INCLUDE_H
 
 
-#include "vg_include.h"
+#include "vg_skin.h"
 
 /* UCode extension for efficient memory checking operations */
 typedef
@@ -36,6 +36,31 @@ typedef
    }
    MemCheckOpcode;
 
+
+/* Lists the names of value-tag operations used in instrumented
+   code.  These are the third argument to TAG1 and TAG2 uinsns. */
+typedef
+   enum { 
+     /* Unary. */
+     VgT_PCast40, VgT_PCast20, VgT_PCast10,
+     VgT_PCast01, VgT_PCast02, VgT_PCast04,
+
+     VgT_PCast14, VgT_PCast12, VgT_PCast11,
+
+     VgT_Left4, VgT_Left2, VgT_Left1,
+
+     VgT_SWiden14, VgT_SWiden24, VgT_SWiden12,
+     VgT_ZWiden14, VgT_ZWiden24, VgT_ZWiden12,
+
+     /* Binary; 1st is rd; 2nd is rd+wr */
+     VgT_UifU4, VgT_UifU2, VgT_UifU1, VgT_UifU0,
+     VgT_DifD4, VgT_DifD2, VgT_DifD1,
+
+     VgT_ImproveAND4_TQ, VgT_ImproveAND2_TQ, VgT_ImproveAND1_TQ,
+     VgT_ImproveOR4_TQ, VgT_ImproveOR2_TQ, VgT_ImproveOR1_TQ,
+     VgT_DebugFn
+   }
+   VgTagOp;
 
 /* The classification of a faulting address. */
 typedef 

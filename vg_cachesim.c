@@ -30,7 +30,7 @@
    The GNU General Public License is contained in the file LICENSE.
 */
 
-#include "vg_include.h"
+#include "vg_skin.h"
 
 /* For cache simulation */
 typedef struct {
@@ -286,8 +286,8 @@ static __inline__
 file_node* new_file_node(Char filename[FILENAME_LEN], file_node* next)
 {
    Int i;
-   file_node* new = VG_(malloc)(VG_AR_PRIVATE, sizeof(file_node));
-   new->filename  = VG_(strdup)(VG_AR_PRIVATE, filename);
+   file_node* new = VG_(malloc)(sizeof(file_node));
+   new->filename  = VG_(strdup)(filename);
    for (i = 0; i < N_FN_ENTRIES; i++) {
       new->fns[i] = NULL;
    }
@@ -299,8 +299,8 @@ static __inline__
 fn_node* new_fn_node(Char fn_name[FILENAME_LEN], fn_node* next)
 {
    Int i;
-   fn_node* new = VG_(malloc)(VG_AR_PRIVATE, sizeof(fn_node));
-   new->fn_name = VG_(strdup)(VG_AR_PRIVATE, fn_name);
+   fn_node* new = VG_(malloc)(sizeof(fn_node));
+   new->fn_name = VG_(strdup)(fn_name);
    for (i = 0; i < N_BBCC_ENTRIES; i++) {
       new->BBCCs[i] = NULL;
    }
@@ -314,7 +314,7 @@ BBCC* new_BBCC(Addr bb_orig_addr, UCodeBlock* cb, BBCC* next)
    Int BBCC_array_size = compute_BBCC_array_size(cb);
    BBCC* new;
 
-   new = (BBCC*)VG_(malloc)(VG_AR_PRIVATE, sizeof(BBCC) + BBCC_array_size);
+   new = (BBCC*)VG_(malloc)(sizeof(BBCC) + BBCC_array_size);
    new->orig_addr  = bb_orig_addr;
    new->array_size = BBCC_array_size;
    new->next = next;
@@ -1213,7 +1213,7 @@ static void fprint_BBCC(Int fd, BBCC* BBCC_node, Char *first_instr_fl,
 
       /* If the function name for this instruction doesn't match that of the
        * first instruction in the BB, print warning. */
-      if (VG_(clo_trace_symtab) && 0 != VG_(strcmp)(fn_buf, first_instr_fn)) {
+      if (VG_(clo_verbosity > 2) && 0 != VG_(strcmp)(fn_buf, first_instr_fn)) {
          VG_(printf)("Mismatched function names\n");
          VG_(printf)("  filenames: BB:%s, instr:%s;"
                      "  fn_names:  BB:%s, instr:%s;"
@@ -1570,7 +1570,7 @@ void SKN_(discard_basic_block_info) ( Addr a, UInt size )
             break;
       }
    }
-   VG_(free)(VG_AR_PRIVATE, BBCC_node);
+   VG_(free)(BBCC_node);
 }
 
 /*--------------------------------------------------------------------*/
@@ -1581,7 +1581,7 @@ static void parse_cache_opt ( cache_t* cache, char* orig_opt, int opt_len )
 {
    int   i1, i2, i3;
    int   i;
-   char *opt = VG_(strdup)(VG_AR_PRIVATE, orig_opt);
+   char *opt = VG_(strdup)(orig_opt);
 
    i = i1 = opt_len;
 
@@ -1605,7 +1605,7 @@ static void parse_cache_opt ( cache_t* cache, char* orig_opt, int opt_len )
    cache->assoc     = (Int)VG_(atoll)(opt + i2);
    cache->line_size = (Int)VG_(atoll)(opt + i3);
 
-   VG_(free)(VG_AR_PRIVATE, opt);
+   VG_(free)(opt);
 
    return;
 

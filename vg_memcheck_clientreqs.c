@@ -95,12 +95,12 @@ Int vg_alloc_client_block ( void )
    vg_assert(vg_cgb_used == vg_cgb_size);
    sz_new = (vg_cgbs == NULL) ? 10 : (2 * vg_cgb_size);
 
-   cgbs_new = VG_(malloc)( VG_AR_PRIVATE, sz_new * sizeof(CGenBlock) );
+   cgbs_new = VG_(malloc)( sz_new * sizeof(CGenBlock) );
    for (i = 0; i < vg_cgb_used; i++) 
       cgbs_new[i] = vg_cgbs[i];
 
    if (vg_cgbs != NULL)
-      VG_(free)( VG_AR_PRIVATE, vg_cgbs );
+      VG_(free)( vg_cgbs );
    vg_cgbs = cgbs_new;
 
    vg_cgb_size = sz_new;
@@ -164,12 +164,12 @@ void vg_add_client_stack_block ( ThreadState* tst, Addr aa, UInt sz )
 
       sz_new = (vg_csbs == NULL) ? 10 : (2 * vg_csb_size);
 
-      csbs_new = VG_(malloc)( VG_AR_PRIVATE, sz_new * sizeof(CStackBlock) );
+      csbs_new = VG_(malloc)( sz_new * sizeof(CStackBlock) );
       for (i = 0; i < vg_csb_used; i++) 
         csbs_new[i] = vg_csbs[i];
 
       if (vg_csbs != NULL)
-         VG_(free)( VG_AR_PRIVATE, vg_csbs );
+         VG_(free)( vg_csbs );
       vg_csbs = csbs_new;
 
       vg_csb_size = sz_new;
@@ -179,9 +179,7 @@ void vg_add_client_stack_block ( ThreadState* tst, Addr aa, UInt sz )
    vg_csbs[vg_csb_used].start = aa;
    vg_csbs[vg_csb_used].size  = sz;
    /* Actually running a thread at this point. */
-   vg_csbs[vg_csb_used].where 
-      = VG_(get_ExeContext) ( tst->m_eip, tst->m_ebp,
-                              tst->m_esp, tst->stack_highest_word );
+   vg_csbs[vg_csb_used].where = VG_(get_ExeContext) ( tst );
    vg_csb_used++;
 
    if (vg_csb_used > vg_csb_used_MAX)
@@ -277,8 +275,8 @@ Bool SK_(client_perm_maybe_describe)( Addr a, AddrInfo* ai )
 
 void SK_(delete_client_stack_blocks_following_ESP_change) ( void )
 {
-   Addr newESP;
-   newESP = VG_(baseBlock)[VGOFF_(m_esp)];
+   Addr newESP = VG_(get_stack_pointer)();
+
    while (vg_csb_used > 0 
           && vg_csbs[vg_csb_used-1].start + vg_csbs[vg_csb_used-1].size 
              <= newESP) {
@@ -326,9 +324,7 @@ UInt SKN_(handle_client_request) ( ThreadState* tst, UInt* arg_block )
          vg_cgbs[i].kind  = CG_NoAccess;
          vg_cgbs[i].start = arg[1];
          vg_cgbs[i].size  = arg[2];
-         vg_cgbs[i].where 
-            = VG_(get_ExeContext) ( tst->m_eip, tst->m_ebp,
-                                    tst->m_esp, tst->stack_highest_word );
+         vg_cgbs[i].where = VG_(get_ExeContext) ( tst );
          VG_(make_noaccess) ( arg[1], arg[2] );
          return i;
 
@@ -337,9 +333,7 @@ UInt SKN_(handle_client_request) ( ThreadState* tst, UInt* arg_block )
          vg_cgbs[i].kind  = CG_Writable;
          vg_cgbs[i].start = arg[1];
          vg_cgbs[i].size  = arg[2];
-         vg_cgbs[i].where 
-            = VG_(get_ExeContext) ( tst->m_eip, tst->m_ebp,
-                                    tst->m_esp, tst->stack_highest_word );
+         vg_cgbs[i].where = VG_(get_ExeContext) ( tst );
          VG_(make_writable) ( arg[1], arg[2] );
          return i;
 
@@ -348,9 +342,7 @@ UInt SKN_(handle_client_request) ( ThreadState* tst, UInt* arg_block )
          vg_cgbs[i].kind  = CG_Readable;
          vg_cgbs[i].start = arg[1];
          vg_cgbs[i].size  = arg[2];
-         vg_cgbs[i].where 
-            = VG_(get_ExeContext) ( tst->m_eip, tst->m_ebp,
-                                    tst->m_esp, tst->stack_highest_word );
+         vg_cgbs[i].where = VG_(get_ExeContext) ( tst );
          VG_(make_readable) ( arg[1], arg[2] );
          return i;
          

@@ -78,8 +78,7 @@ static void cachesim_initcache(cache_t config, cache_t2* c)
                                  c->size, c->line_size, c->assoc);
    }
 
-   c->tags = VG_(malloc)(VG_AR_PRIVATE, 
-                         sizeof(UInt) * c->sets * c->assoc);
+   c->tags = VG_(malloc)(sizeof(UInt) * c->sets * c->assoc);
 
    for (i = 0; i < c->sets * c->assoc; i++)
       c->tags[i] = 0;

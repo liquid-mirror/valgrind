@@ -335,7 +335,7 @@ void SK_(post_clo_init) ( void )
 
 void SK_(fini) ( void )
 {
-   VG_(clientmalloc_done)();
+   VG_(client_malloc_done)();
 
    if (VG_(clo_verbosity) == 1) {
       if (!VG_(clo_leak_check))
@@ -1773,18 +1773,10 @@ void vg_detect_memory_leaks_notify_addr ( Addr a, UInt word_at_a )
       where the .bss segment has been put.  If you can, drop me a
       line.  
    */
-   if (a >= ((Addr)(&VG_(stack)))
-       && a <= ((Addr)(&VG_(stack))) + sizeof(VG_(stack))) {
-      return;
-   }
-   if (a >= ((Addr)(&VG_(m_state_static)))
-       && a <= ((Addr)(&VG_(m_state_static))) + sizeof(VG_(m_state_static))) {
-      return;
-   }
-   if (a == (Addr)(&vglc_min_mallocd_addr))
-      return;
-   if (a == (Addr)(&vglc_max_mallocd_addr))
-      return;
+   if (VG_(within_stack)(a))                return;
+   if (VG_(within_m_state_static)(a))       return;
+   if (a == (Addr)(&vglc_min_mallocd_addr)) return;
+   if (a == (Addr)(&vglc_max_mallocd_addr)) return;
 
    /* OK, let's get on and do something Useful for a change. */
 
@@ -1826,8 +1818,7 @@ ShadowChunk** VG_(get_malloc_shadows) ( /*OUT*/ UInt* n_shadows )
    }
    if (*n_shadows == 0) return NULL;
 
-   arr = VG_(malloc)( VG_AR_PRIVATE, 
-                      *n_shadows * sizeof(ShadowChunk*) );
+   arr = VG_(malloc)( *n_shadows * sizeof(ShadowChunk*) );
 
    i = 0;
    for (scn = 0; scn < VG_N_MALLOCLISTS; scn++) {
@@ -1901,7 +1892,7 @@ void VG_(detect_memory_leaks) ( void )
                          + vglc_shadows[vglc_n_shadows-1]->size - 1;
 
    vglc_reachedness 
-      = VG_(malloc)( VG_AR_PRIVATE, vglc_n_shadows * sizeof(Reachedness) );
+      = VG_(malloc)( vglc_n_shadows * sizeof(Reachedness) );
    for (i = 0; i < vglc_n_shadows; i++)
       vglc_reachedness[i] = Unreached;
 
@@ -1959,7 +1950,7 @@ void VG_(detect_memory_leaks) ( void )
          p->total_bytes += vglc_shadows[i]->size;
       } else {
          n_lossrecords ++;
-         p = VG_(malloc)(VG_AR_PRIVATE, sizeof(LossRecord));
+         p = VG_(malloc)(sizeof(LossRecord));
          p->loss_mode    = vglc_reachedness[i];
          p->allocated_at = vglc_shadows[i]->where;
          p->total_bytes  = vglc_shadows[i]->size;
@@ -2015,8 +2006,8 @@ void VG_(detect_memory_leaks) ( void )
    }
    VG_(message)(Vg_UserMsg, "");
 
-   VG_(free) ( VG_AR_PRIVATE, vglc_shadows );
-   VG_(free) ( VG_AR_PRIVATE, vglc_reachedness );
+   VG_(free) ( vglc_shadows );
+   VG_(free) ( vglc_reachedness );
 }
 
 

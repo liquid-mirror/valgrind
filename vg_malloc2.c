@@ -178,8 +178,8 @@ void VG_(show_all_arena_stats) ( void )
 /* It is important that this library is self-initialising, because it
    may get called very early on -- as a result of C++ static
    constructor initialisations -- before Valgrind itself is
-   initialised.  Hence vg_malloc() and vg_free() below always call
-   ensure_mm_init() to ensure things are correctly initialised.  */
+   initialised.  Hence VG_(arena_malloc)() and VG_(arena_free)() below always
+   call ensure_mm_init() to ensure things are correctly initialised.  */
 
 static
 void ensure_mm_init ( void )
@@ -194,7 +194,10 @@ void ensure_mm_init ( void )
       which merely checks at the time of freeing that the red zone
       words are unchanged. */
 
-   arena_init ( &vg_arena[VG_AR_PRIVATE], "private ", 
+   arena_init ( &vg_arena[VG_AR_CORE], "core ", 
+                1, True, 262144 );
+
+   arena_init ( &vg_arena[VG_AR_SKIN], "skin ", 
                 1, True, 262144 );
 
    arena_init ( &vg_arena[VG_AR_SYMTAB],  "symtab  ", 
@@ -845,10 +848,10 @@ Bool VG_(is_empty_arena) ( ArenaId aid )
 
 
 /*------------------------------------------------------------*/
-/*--- Externally-visible functions.                        ---*/
+/*--- Core-visible functions.                              ---*/
 /*------------------------------------------------------------*/
 
-void* VG_(malloc) ( ArenaId aid, Int req_pszB )
+void* VG_(arena_malloc) ( ArenaId aid, Int req_pszB )
 {
    Int         req_pszW, req_bszW, frag_bszW, b_bszW, lno;
    Superblock* new_sb;
@@ -951,7 +954,7 @@ void* VG_(malloc) ( ArenaId aid, Int req_pszB )
 }
 
  
-void VG_(free) ( ArenaId aid, void* ptr )
+void VG_(arena_free) ( ArenaId aid, void* ptr )
 {
    Superblock* sb;
    UInt*       sb_payl_firstw;
@@ -1065,7 +1068,7 @@ void VG_(free) ( ArenaId aid, void* ptr )
    .    .               .   .   .               .   .
 
 */
-void* VG_(malloc_aligned) ( ArenaId aid, Int req_alignB, Int req_pszB )
+void* VG_(arena_malloc_aligned) ( ArenaId aid, Int req_alignB, Int req_pszB )
 {
    Int    req_alignW, req_pszW, base_pszW_req, base_pszW_act, frag_bszW;
    Word   *base_b, *base_p, *align_p;
@@ -1112,7 +1115,7 @@ void* VG_(malloc_aligned) ( ArenaId aid, Int req_alignB, Int req_pszB )
    /* Payload ptr for the block we are going to split.  Note this
       changes a->bytes_on_loan; we save and restore it ourselves. */
    saved_bytes_on_loan = a->bytes_on_loan;
-   base_p = VG_(malloc) ( aid, base_pszW_req * VKI_BYTES_PER_WORD );
+   base_p = VG_(arena_malloc) ( aid, base_pszW_req * VKI_BYTES_PER_WORD );
    a->bytes_on_loan = saved_bytes_on_loan;
 
    /* Block ptr for the block we are going to split. */
@@ -1174,19 +1177,20 @@ void* VG_(malloc_aligned) ( ArenaId aid, Int req_alignB, Int req_pszB )
 /*--- Services layered on top of malloc/free.              ---*/
 /*------------------------------------------------------------*/
 
-void* VG_(calloc) ( ArenaId aid, Int nmemb, Int nbytes )
+void* VG_(arena_calloc) ( ArenaId aid, Int nmemb, Int nbytes )
 {
    Int    i, size;
    UChar* p;
    size = nmemb * nbytes;
    vg_assert(size >= 0);
-   p = VG_(malloc) ( aid, size );
+   p = VG_(arena_malloc) ( aid, size );
    for (i = 0; i < size; i++) p[i] = 0;
    return p;
 }
 
 
-void* VG_(realloc) ( ArenaId aid, void* ptr, Int req_alignB, Int req_pszB )
+void* VG_(arena_realloc) ( ArenaId aid, void* ptr, 
+                          Int req_alignB, Int req_pszB )
 {
    Arena* a;
    Int    old_bszW, old_pszW, old_pszB, i;
@@ -1211,16 +1215,48 @@ void* VG_(realloc) ( ArenaId aid, void* ptr, Int req_alignB, Int req_pszB )
    if (req_pszB <= old_pszB) return ptr;
 
    if (req_alignB == 4)
-      p_new = VG_(malloc) ( aid, req_pszB );
+      p_new = VG_(arena_malloc) ( aid, req_pszB );
    else
-      p_new = VG_(malloc_aligned) ( aid, req_alignB, req_pszB );
+      p_new = VG_(arena_malloc_aligned) ( aid, req_alignB, req_pszB );
 
    p_old = (UChar*)ptr;
    for (i = 0; i < old_pszB; i++)
       p_new[i] = p_old[i];
 
-   VG_(free)(aid, p_old);
+   VG_(arena_free)(aid, p_old);
    return p_new;
+}
+
+
+/*------------------------------------------------------------*/
+/*--- Skin-visible functions.                              ---*/
+/*------------------------------------------------------------*/
+
+/* All just wrappers to avoid exposing arenas to skins */
+
+void* VG_(malloc) ( Int nbytes )
+{
+   return VG_(arena_malloc) ( VG_AR_SKIN, nbytes );
+}
+
+void  VG_(free) ( void* ptr )
+{
+   VG_(arena_free) ( VG_AR_SKIN, ptr );
+}
+
+void* VG_(calloc) ( Int nmemb, Int nbytes )
+{
+   return VG_(arena_calloc) ( VG_AR_SKIN, nmemb, nbytes );
+}
+
+void* VG_(realloc) ( void* ptr, Int size )
+{
+   return VG_(arena_realloc) ( VG_AR_SKIN, ptr, /*alignment*/4, size );
+}
+
+void* VG_(malloc_aligned) ( Int req_alignB, Int req_pszB )
+{
+   return VG_(arena_malloc_aligned) ( VG_AR_SKIN, req_alignB, req_pszB );
 }
 
 
@@ -1247,7 +1283,7 @@ int main ( int argc, char** argv )
 {
    Int i, j, k, nbytes, qq;
    unsigned char* chp;
-   Arena* a = &arena[VG_AR_PRIVATE];
+   Arena* a = &arena[VG_AR_CORE];
    srandom(1);
    for (i = 0; i < N_TEST_ARR; i++)
       test_arr[i] = NULL;
