@@ -5,7 +5,7 @@ Release: 1
 Copyright: GPL
 Group: Development/Debuggers
 Packager: Frederic Gobry  <frederic.gobry@smartdata.ch>
-Source: @PACKAGE@-@VERSION@.tar.gz
+Source: @PACKAGE@-@VERSION@.tar.bz2
 
 Buildroot: %{_tmppath}/@PACKAGE@
 
