@@ -938,6 +938,9 @@ typedef
    }
    SuppLocTy;
 
+// SSS: could make the caller part an array reducing code size of
+// vg_errcontext.c
+   
 /* Suppressions.  Skin part `SkinSupp' (which is all skins have to deal
    with) is in vg_skin.h */
 typedef
@@ -1020,13 +1023,14 @@ void VG_(read_procselfmaps) (
 */
 #define VG_ASSUMED_EXE_BASE  (Addr)0x8048000
 
-extern void VG_(read_symbols) ( void );
-extern void VG_(read_symtab_callback)( Addr start, UInt size, 
-                                       Char rr, Char ww, Char xx,
-                                       UInt foffset, UChar* filename );
-extern void VG_(unload_symbols) ( Addr start, UInt length );
+extern void VG_(read_symbols)         ( void );
+extern void VG_(read_symtab_callback) ( Addr start, UInt size, 
+                                        Char rr, Char ww, Char xx,
+                                        UInt foffset, UChar* filename );
+extern void VG_(unload_symbols)       ( Addr start, UInt length );
 
-extern void VG_(mini_stack_dump) ( ExeContext* ec );
+extern Bool VG_(get_fnname_nodemangle)( Addr a, Char* fnname, Int n_fnname );
+extern void VG_(mini_stack_dump)      ( ExeContext* ec );
 
 
 /* ---------------------------------------------------------------------
