@@ -309,11 +309,11 @@ static void init_BBCC_table()
 static void get_debug_info(Addr instr_addr, Char filename[FILENAME_LEN],
                            Char fn_name[FN_NAME_LEN], Int* line_num)
 {
-   Bool found1, found2, no_demangle = False;
+   Bool found1, found2;
 
-   found1 = VG_(what_line_is_this)(instr_addr, filename,
-                                   FILENAME_LEN, line_num);
-   found2 = VG_(what_fn_is_this)(no_demangle, instr_addr, fn_name, FN_NAME_LEN);
+   found1 = VG_(get_filename_linenum)(instr_addr, filename,
+                                      FILENAME_LEN, line_num);
+   found2 = VG_(get_fnname)(instr_addr, fn_name, FN_NAME_LEN);
 
    if (!found1 && !found2) {
       no_debug_BBs++;
