@@ -370,6 +370,22 @@ void VG_(perform_assumed_nonblocking_syscall) ( ThreadId tid )
 
       /* !!!!!!!!!! New, untested syscalls !!!!!!!!!!!!!!!!!!!!! */
 
+#     if defined(__NR_vhangup)
+      case __NR_vhangup: /* syscall 111 */
+         /* int vhangup(void); */
+         MAYBE_PRINTF("vhangup()\n");
+         KERNEL_DO_SYSCALL(tid,res);
+         break;
+#     endif
+
+#     if defined(__NR_iopl)
+      case __NR_iopl: /* syscall 110 */
+         /* int iopl(int level); */
+         MAYBE_PRINTF("iopl ( %d )\n", arg1);
+         KERNEL_DO_SYSCALL(tid,res);
+         break;
+#     endif
+
 #     if defined(__NR_getxattr)
       case __NR_getxattr: /* syscall 229 */
          /* ssize_t getxattr (const char *path, const char* name,
