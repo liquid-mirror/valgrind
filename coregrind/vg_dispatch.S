@@ -96,8 +96,12 @@ dispatch_main:
 	# If ebp == VG_EBP_JMP_CLIENTREQ, do a client request before 
 	# continuing at eax.
 	#
+	# If ebp == VG_EBP_JMP_CALL, continue at eax but be aware that
+	# this transfer is due to an x86 CALL insn.  In this case we
+	# fall out to the scheduler -- not clever, but at least simple.
+	#
 	# If %ebp has any other value, we panic.
-	
+	#
 	cmpl	$VG_(baseBlock), %ebp
 	jnz	dispatch_exceptional
 
@@ -156,6 +160,8 @@ run_innerloop_exit:
 */
 dispatch_exceptional:
 	# this is jumped to only, not fallen-through from above
+	cmpl	$VG_TRC_EBP_JMP_CALL, %ebp
+	jz	dispatch_call
 	cmpl	$VG_TRC_EBP_JMP_STKADJ, %ebp
 	jz	dispatch_stkadj
 	cmpl	$VG_TRC_EBP_JMP_SYSCALL, %ebp
@@ -182,6 +188,14 @@ dispatch_clientreq:
 	movl	VGOFF_(m_eip), %esi
 	movl	%eax, (%ebp, %esi, 4)
 	movl	$VG_TRC_EBP_JMP_CLIENTREQ, %eax
+	jmp	run_innerloop_exit
+
+dispatch_call:
+	# save %eax in %EIP and defer to sched
+	movl	$VG_(baseBlock), %ebp
+	movl	VGOFF_(m_eip), %esi
+	movl	%eax, (%ebp, %esi, 4)
+	movl	$VG_TRC_EBP_JMP_CALL, %eax
 	jmp	run_innerloop_exit
 
 dispatch_stkadj:
