@@ -1929,7 +1929,6 @@ void VG_(translate) ( ThreadState* tst,
       VG_(ppUCodeBlock) ( cb, "After Register Allocation:");
    */
 
-   // JJJ: why is this VGP_PUSHCC/VGP_POPCC commented out too?
    VGP_PUSHCC(VgpFromUcode);
    /* NB final_code is allocated with VG_(jitmalloc), not VG_(malloc)
       and so must be VG_(jitfree)'d. */

@@ -970,7 +970,7 @@ void VG_(perform_assumed_nonblocking_syscall) ( ThreadId tid )
 
             // JJJ: this wasn't specified previously (don't know why gcc
             // wasn't catching it, though...)
-            res = 0;
+            res = -1;
          } else {
             KERNEL_DO_SYSCALL(tid,res);
          }

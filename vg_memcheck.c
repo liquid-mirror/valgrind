@@ -332,7 +332,6 @@ void SK_(init) ( void )
    init_shadow_memory();
 
    /* Mark global variables touched from generated code */
-   VG_(track_events).post_mem_write ( (Addr)&VG_(clo_skin),          1 );
    VG_(track_events).post_mem_write ( (Addr)&VG_(clo_trace_malloc),  1 );
    VG_(track_events).post_mem_write ( (Addr)&VG_(clo_sloppy_malloc), 1 );
 
@@ -2268,9 +2267,6 @@ void SK_(setup)(VgNeeds* needs, VgTrackEvents* track)
    VG_(register_noncompact_helper)((Addr) & SK_(fpu_read_check));
    VG_(register_noncompact_helper)((Addr) & SK_(helper_value_check2_fail));
    VG_(register_noncompact_helper)((Addr) & SK_(helper_value_check1_fail));
-
-   // SSS: eLiMiNaTe
-   VG_(clo_skin) = Vg_MemCheck;
 
    /* Events to track */
    track->new_mem_startup       = & memcheck_new_mem_startup;

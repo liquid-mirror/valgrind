@@ -69,9 +69,6 @@ void SK_(setup)(VgNeeds* needs, VgTrackEvents* not_used)
    needs->sanity_checks           = False;
 
    VG_(register_compact_helper)((Addr) & add_one);
-
-   // SSS: temporary
-   VG_(clo_skin) = Vg_Other;
 }
 
 void SK_(init)(void)

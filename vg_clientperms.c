@@ -364,33 +364,27 @@ UInt VG_(handle_client_request) ( ThreadState* tst, UInt* arg_block )
          
 #if 0
       case VG_USERREQ__CHECK_WRITABLE: /* check writable */
-         if (Vg_MemCheck != VG_(clo_skin))
-            return 0;
- 
          ok = SKN_(check_writable) ( arg[1], arg[2], &bad_addr );
          if (!ok)
             VG_(record_user_error) ( tst, bad_addr, /*isWrite=*/True );
          return ok ? (UInt)NULL : bad_addr;
 
       case VG_USERREQ__CHECK_READABLE: /* check readable */
-         if (Vg_MemCheck != VG_(clo_skin))
-            return 0;
- 
          ok = SKN_(check_readable) ( arg[1], arg[2], &bad_addr );
          if (!ok)
             VG_(record_user_error) ( tst, bad_addr, /*isWrite=*/False );
          return ok ? (UInt)NULL : bad_addr;
 #endif
       case VG_USERREQ__DISCARD: /* discard */
-         if (Vg_MemCheck != VG_(clo_skin))
-            return 0;
- 
+#if 0
          if (vg_cgbs == NULL 
              || arg[2] >= vg_cgb_used || vg_cgbs[arg[2]].kind == CG_NotInUse)
             return 1;
          vg_assert(arg[2] >= 0 && arg[2] < vg_cgb_used);
          vg_cgbs[arg[2]].kind = CG_NotInUse;
          vg_cgb_discards++;
+#endif
+         // SSS:
          return 0;
 
       case VG_USERREQ__MAKE_NOACCESS_STACK: /* make noaccess stack block */

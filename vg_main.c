@@ -397,7 +397,6 @@ UInt VG_(num_scheduling_events_MAJOR) = 0;
 
 /* Init with empty values so that we can later check all fields have been
  * initialised by the skin. */
-// JJJ: is gcc-specific initialiser syntax ok?
 VgNeeds VG_(needs) = {
    .name                    = NULL,
    .description             = NULL,
@@ -444,7 +443,6 @@ Int    VG_(clo_n_suppressions);
 Char*  VG_(clo_suppressions)[VG_CLO_MAX_SFILES];
 Bool   VG_(clo_single_step);
 Bool   VG_(clo_optimise);
-VgSkin VG_(clo_skin);
 Bool   VG_(clo_cleanup);
 Int    VG_(clo_smc_check);
 Bool   VG_(clo_trace_syscalls);
