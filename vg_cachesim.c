@@ -1611,6 +1611,7 @@ void percentify(Int n, Int pow, Int field_width, char buf[])
    VG_(sprintf)(buf, "%d.%d%%", n / pow, n % pow);
    len = VG_(strlen)(buf);
    space = field_width - len;
+   if (space < 0) space = 0;     /* Allow for v. small field_width */
    i = len;
 
    /* Right justify in field */
