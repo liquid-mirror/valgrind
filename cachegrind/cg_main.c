@@ -77,13 +77,13 @@ typedef
 /*--- Output file related stuff                            ---*/
 /*------------------------------------------------------------*/
 
-#define OUT_FILE        "cachegrind.out"
+Char cachegrind_out_file[FILENAME_LEN];
 
 static void file_err()
 {
    VG_(message)(Vg_UserMsg,
                 "error: can't open cache simulation output file `%s'",
-                OUT_FILE );
+                cachegrind_out_file );
    VG_(exit)(1);
 }
 
@@ -1478,7 +1478,7 @@ static void fprint_BBCC_table_and_calc_totals(void)
    Int        i,j,k;
 
    VGP_PUSHCC(VgpCacheResults);
-   fd = VG_(open)(OUT_FILE, VKI_O_WRONLY|VKI_O_TRUNC, 0);
+   fd = VG_(open)(cachegrind_out_file, VKI_O_WRONLY|VKI_O_TRUNC, 0);
    if (-1 == fd) { file_err(); }
 
    /* "desc:" lines (giving I1/D1/L2 cache configuration) */
@@ -1892,12 +1892,16 @@ void SK_(pre_clo_init)(VgNeeds* needs, VgTrackEvents* not_used)
 void SK_(post_clo_init)(void)
 {
    cache_t I1c, D1c, L2c; 
+   Int fd;
+
+   /* Set output file name: cachegrind.<pid>.out */
+   VG_(sprintf)(cachegrind_out_file, "cachegrind.out.%5d", VG_(getpid)());
 
    /* Make sure the output file can be written. */
-   Int fd = VG_(open)(OUT_FILE, VKI_O_WRONLY|VKI_O_TRUNC, 0);
+   fd = VG_(open)(cachegrind_out_file, VKI_O_WRONLY|VKI_O_TRUNC, 0);
    if (-1 == fd) { 
-      fd = VG_(open)(OUT_FILE, VKI_O_CREAT|VKI_O_WRONLY,
-                               VKI_S_IRUSR|VKI_S_IWUSR);
+      fd = VG_(open)(cachegrind_out_file, VKI_O_CREAT|VKI_O_WRONLY,
+                                          VKI_S_IRUSR|VKI_S_IWUSR);
       if (-1 == fd) {
          file_err(); 
       }
