@@ -1185,7 +1185,7 @@ int pause ( void )
       if (n_now != n_orig) break;
 
       nanosleep_interval.tv_sec  = 0;
-      nanosleep_interval.tv_nsec = 52 * 1000 * 1000; /* 52 milliseconds */
+      nanosleep_interval.tv_nsec = 12 * 1000 * 1000; /* 12 milliseconds */
       /* It's critical here that valgrind's nanosleep implementation
          is nonblocking. */
       (void)my_do_syscall2(__NR_nanosleep, 
@@ -1977,7 +1977,7 @@ int do_syscall_select( int n,
    Basic idea is: modify the timeout parameter to select so that it
    returns immediately.  Poll like this until select returns non-zero,
    indicating something interesting happened, or until our time is up.
-   Space out the polls with nanosleeps of say 20 milliseconds, which
+   Space out the polls with nanosleeps of say 11 milliseconds, which
    is required to be nonblocking; this allows other threads to run.  
 
    Assumes:
@@ -2095,7 +2095,7 @@ int select ( int n,
       /* fprintf(stderr, "MY_SELECT: nanosleep\n"); */
       /* nanosleep and go round again */
       nanosleep_interval.tv_sec  = 0;
-      nanosleep_interval.tv_nsec = 50 * 1000 * 1000; /* 50 milliseconds */
+      nanosleep_interval.tv_nsec = 11 * 1000 * 1000; /* 11 milliseconds */
       /* It's critical here that valgrind's nanosleep implementation
          is nonblocking. */
       res = my_do_syscall2(__NR_nanosleep, 
@@ -2205,7 +2205,7 @@ int poll (struct pollfd *__fds, nfds_t __nfds, int __timeout)
       /* fprintf(stderr, "MY_POLL: nanosleep\n"); */
       /* nanosleep and go round again */
       nanosleep_interval.tv_sec  = 0;
-      nanosleep_interval.tv_nsec = 51 * 1000 * 1000; /* 51 milliseconds */
+      nanosleep_interval.tv_nsec = 13 * 1000 * 1000; /* 13 milliseconds */
       /* It's critical here that valgrind's nanosleep implementation
          is nonblocking. */
       (void)my_do_syscall2(__NR_nanosleep, 
