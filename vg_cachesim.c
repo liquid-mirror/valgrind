@@ -588,7 +588,7 @@ void log_1I_1D_cache_access(idCC* cc, Addr data_addr)
    VGP_POPCC;
 }
 
-__attribute__ ((regparm (2))) static 
+__attribute__ ((regparm (3))) static 
 void log_0I_2D_cache_access(iddCC* cc, Addr data_addr1, Addr data_addr2)
 {
    //VG_(printf)("0I_2D: CCaddr=%p, iaddr=%p, isize=%u, daddr1=0x%x, daddr2=%p, size=%u\n",
@@ -601,7 +601,7 @@ void log_0I_2D_cache_access(iddCC* cc, Addr data_addr1, Addr data_addr2)
    VGP_POPCC;
 }
 
-__attribute__ ((regparm (2))) static
+__attribute__ ((regparm (3))) static
 void log_1I_2D_cache_access(iddCC* cc, Addr data_addr1, Addr data_addr2)
 {
    //VG_(printf)("1I_2D: CCaddr=%p, iaddr=%p, isize=%u, daddr1=%p, daddr2=%p, dsize=%u\n",
@@ -893,8 +893,7 @@ UCodeBlock* SK_(instrument)(UCodeBlock* cb_in, Addr orig_addr)
                else
                   VG_(panic)("argc... not 1 or 2 or 3?");
                
-               // SSS: ((regparm(3))) not yet supported.
-               uCCall(cb, helper, argc, (argc < 3 ? argc : 2), False);
+               uCCall(cb, helper, argc, argc, False);
             }
 
             /* Copy original UInstr (INCEIP or JMP) */
