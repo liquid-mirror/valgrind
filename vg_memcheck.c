@@ -568,9 +568,8 @@ static void set_address_range_perms ( Addr a, UInt len,
 
    /* Check that zero page and highest page have not been written to
       -- this could happen with buggy syscall wrappers.  Today
-      (2001-04-26) had precisely such a problem with
-      __NR_setitimer. */
-   vg_assert(SKN_(first_and_last_secondaries_look_plausible)());
+      (2001-04-26) had precisely such a problem with __NR_setitimer. */
+   vg_assert(SKN_(cheap_sanity_check)());
    VGP_POPCC;
 }
 
@@ -948,7 +947,7 @@ static UInt vgmext_rd_V4_SLOWLY ( Addr a )
    if (!VG_(clo_partial_loads_ok) 
        || ((a & 3) != 0)
        || (!a0ok && !a1ok && !a2ok && !a3ok)) {
-      VG_(record_address_error)( a, 4, False );
+      SK_(record_address_error)( a, 4, False );
       return (VGM_BYTE_VALID << 24) | (VGM_BYTE_VALID << 16) 
              | (VGM_BYTE_VALID << 8) | VGM_BYTE_VALID;
    }
@@ -991,7 +990,7 @@ static void vgmext_wr_V4_SLOWLY ( Addr a, UInt vbytes )
 
    /* If an address error has happened, report it. */
    if (aerr)
-      VG_(record_address_error)( a, 4, True );
+      SK_(record_address_error)( a, 4, True );
 }
 
 static UInt vgmext_rd_V2_SLOWLY ( Addr a )
@@ -1010,7 +1009,7 @@ static UInt vgmext_rd_V2_SLOWLY ( Addr a )
 
    /* If an address error has happened, report it. */
    if (aerr) {
-      VG_(record_address_error)( a, 2, False );
+      SK_(record_address_error)( a, 2, False );
       vw = (VGM_BYTE_INVALID << 24) | (VGM_BYTE_INVALID << 16) 
            | (VGM_BYTE_VALID << 8) | (VGM_BYTE_VALID);
    }
@@ -1032,7 +1031,7 @@ static void vgmext_wr_V2_SLOWLY ( Addr a, UInt vbytes )
 
    /* If an address error has happened, report it. */
    if (aerr)
-      VG_(record_address_error)( a, 2, True );
+      SK_(record_address_error)( a, 2, True );
 }
 
 static UInt vgmext_rd_V1_SLOWLY ( Addr a )
@@ -1049,7 +1048,7 @@ static UInt vgmext_rd_V1_SLOWLY ( Addr a )
 
    /* If an address error has happened, report it. */
    if (aerr) {
-      VG_(record_address_error)( a, 1, False );
+      SK_(record_address_error)( a, 1, False );
       vw = (VGM_BYTE_INVALID << 24) | (VGM_BYTE_INVALID << 16) 
            | (VGM_BYTE_INVALID << 8) | (VGM_BYTE_VALID);
    }
@@ -1068,7 +1067,7 @@ static void vgmext_wr_V1_SLOWLY ( Addr a, UInt vbytes )
 
    /* If an address error has happened, report it. */
    if (aerr)
-      VG_(record_address_error)( a, 1, True );
+      SK_(record_address_error)( a, 1, True );
 }
 
 
@@ -1079,22 +1078,22 @@ static void vgmext_wr_V1_SLOWLY ( Addr a, UInt vbytes )
 
 void SK_(helperc_value_check0_fail) ( void )
 {
-   VG_(record_value_error) ( 0 );
+   SK_(record_value_error) ( 0 );
 }
 
 void SK_(helperc_value_check1_fail) ( void )
 {
-   VG_(record_value_error) ( 1 );
+   SK_(record_value_error) ( 1 );
 }
 
 void SK_(helperc_value_check2_fail) ( void )
 {
-   VG_(record_value_error) ( 2 );
+   SK_(record_value_error) ( 2 );
 }
 
 void SK_(helperc_value_check4_fail) ( void )
 {
-   VG_(record_value_error) ( 4 );
+   SK_(record_value_error) ( 4 );
 }
 
 
@@ -1308,10 +1307,10 @@ void fpu_read_check_SLOWLY ( Addr addr, Int size )
    }
 
    if (aerr) {
-      VG_(record_address_error)( addr, size, False );
+      SK_(record_address_error)( addr, size, False );
    } else {
      if (verr)
-        VG_(record_value_error)( size );
+        SK_(record_value_error)( size );
    }
 }
 
@@ -1338,7 +1337,7 @@ void fpu_write_check_SLOWLY ( Addr addr, Int size )
       }
    }
    if (aerr) {
-      VG_(record_address_error)( addr, size, True );
+      SK_(record_address_error)( addr, size, True );
    }
 }
 
@@ -1875,7 +1874,7 @@ void VG_(detect_memory_leaks) ( void )
    problem, but they are so likely to that we really want to know
    about it if so. */
 
-Bool SKN_(first_and_last_secondaries_look_plausible) ( void )
+Bool SKN_(cheap_sanity_check) ( void )
 {
    if (VGM_IS_DISTINGUISHED_SM(primary_map[0])
        && VGM_IS_DISTINGUISHED_SM(primary_map[65535]))
@@ -1884,7 +1883,7 @@ Bool SKN_(first_and_last_secondaries_look_plausible) ( void )
       return False;
 }
 
-void SKN_(expensive_shadow_memory_sanity_check) ( void )
+void SKN_(expensive_sanity_check) ( void )
 {
    Int i;
 
@@ -2063,6 +2062,8 @@ void SK_(setup)(VgNeeds* needs)
    needs->extends_UCode           = True;
 
    needs->wrap_syscalls           = True;
+
+   needs->sanity_checks           = True;
 
    needs->shadow_memory           = True;
    needs->track_threads           = False;

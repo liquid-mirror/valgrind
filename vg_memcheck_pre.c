@@ -1,6 +1,7 @@
 
 #include "vg_include.h"
 #include "vg_unsafe.h"
+#include "vg_memcheck_include.h"
 
 static
 void must_be_writable ( ThreadState* tst, 
@@ -14,7 +15,7 @@ void must_be_writable ( ThreadState* tst,
       return;
    ok = SKN_(check_writable) ( base, size, &bad_addr );
    if (!ok)
-      VG_(record_param_err) ( tst, bad_addr, True, syscall_name );
+      SK_(record_param_err) ( tst, bad_addr, True, syscall_name );
 }
 
 static
@@ -29,7 +30,7 @@ void must_be_readable ( ThreadState* tst,
       return;
    ok = SKN_(check_readable) ( base, size, &bad_addr );
    if (!ok)
-      VG_(record_param_err) ( tst, bad_addr, False, syscall_name );
+      SK_(record_param_err) ( tst, bad_addr, False, syscall_name );
 }
 
 static
@@ -43,7 +44,7 @@ void must_be_readable_asciiz ( ThreadState* tst,
       return;
    ok = SKN_(check_readable_asciiz) ( (Addr)str, &bad_addr );
    if (!ok)
-      VG_(record_param_err) ( tst, bad_addr, False, syscall_name );
+      SK_(record_param_err) ( tst, bad_addr, False, syscall_name );
 }
 
 /* Dereference a pointer, but only after checking that it's
@@ -207,7 +208,7 @@ void* SKN_(pre_syscall) ( ThreadId tid )
 
    /* Since buggy syscall wrappers sometimes break this, we may as well 
       check ourselves. */
-   sane_before_call = SKN_(first_and_last_secondaries_look_plausible)();
+   sane_before_call = SKN_(cheap_sanity_check)();
 
    /* See vg_syscalls_mem.c:VG_(perform_assumed_nonblocking_syscall)()
     * for details on arguments and return values.
@@ -1895,7 +1896,7 @@ void* SKN_(pre_blocking_syscall_check) ( ThreadId tid,
    arg5             = tst->m_edi;
    */
 
-   sane_before_post = SKN_(first_and_last_secondaries_look_plausible)();
+   sane_before_post = SKN_(cheap_sanity_check)();
 
    switch (syscallno) {
 

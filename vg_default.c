@@ -232,7 +232,21 @@ void  SKN_(post_blocking_syscall_check) ( ThreadId tid, Int syscallno,
    VG_(panic)("called SKN_(post_blocking_syscall_check)");
 }
 
+/* ---------------------------------------------------------------------
+   Sanity checks
+   ------------------------------------------------------------------ */
 
+Bool SKN_(cheap_sanity_check)     ( void )
+{
+   VG_(printf)(nonfund_panic);
+   VG_(panic)("SKN_(cheap_sanity_check))");
+}
+
+void SKN_(expensive_sanity_check) ( void )
+{
+   VG_(printf)(nonfund_panic);
+   VG_(panic)("SKN_(expensive_sanity_check))");
+}
 
 /* ---------------------------------------------------------------------
    Shadow memory
@@ -316,19 +330,6 @@ void SKN_(init_shadow_memory)(void)
    VG_(printf)(nonfund_panic);
    VG_(panic)("called SKN_(init_shadow_memory)");
 }
-
-Bool SKN_(first_and_last_secondaries_look_plausible) ( void )
-{
-   VG_(printf)(nonfund_panic);
-   VG_(panic)("called SKN_(first_and_last_secondaries_look_plausible)");
-}
-
-void SKN_(expensive_shadow_memory_sanity_check) ( void )
-{
-   VG_(printf)(nonfund_panic);
-   VG_(panic)("called SKN_(expensive_shadow_memory_sanity_check)");
-}
-
 
 /* ---------------------------------------------------------------------
    Thread tracking

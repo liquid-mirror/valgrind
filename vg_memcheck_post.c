@@ -1568,7 +1568,7 @@ void SKN_(post_syscall) ( ThreadId tid, UInt syscallno,
 
    /* { void zzzmemscan(void); zzzmemscan(); } */
 
-   sane_after_call = SKN_(first_and_last_secondaries_look_plausible)();
+   sane_after_call = SKN_(cheap_sanity_check)();
 
    if ((Int)sane_before_call && (!sane_after_call)) {
       VG_(message)(Vg_DebugMsg, "post_syscall: ");
@@ -1654,7 +1654,7 @@ void SKN_(post_blocking_syscall_check) ( ThreadId tid,
    }
 
    if (res != NULL) { /* only check after syscall */
-      if (! SKN_(first_and_last_secondaries_look_plausible)())
+      if (! SKN_(cheap_sanity_check)())
          sane_after_post = False;
 
       if ((Int)sane_before_post && (!sane_after_post)) {
