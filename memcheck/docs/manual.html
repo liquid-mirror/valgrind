@@ -838,8 +838,8 @@ point that Valgrind complains.
   <li>The contents of malloc'd blocks, before you write something
       there.  In C++, the new operator is a wrapper round malloc, so
       if you create an object with new, its fields will be
-      uninitialised until you fill them in, which is only Right and
-      Proper.</li>
+      uninitialised until you (or the constructor) fill them in, which
+      is only Right and Proper.</li>
 </ul>
 
 
@@ -1617,11 +1617,11 @@ memalign, free, new and delete.  The behaviour you get is:
 
   <li>If the new size is smaller, the dropped-off section is marked as
       unaddressible.  You may only pass to realloc a pointer
-      previously issued to you by malloc/calloc/new/realloc.</li><br>
+      previously issued to you by malloc/calloc/realloc.</li><br>
       <p>
 
   <li>free/delete: you may only pass to free a pointer previously
-      issued to you by malloc/calloc/new/realloc, or the value
+      issued to you by malloc/calloc/realloc, or the value
       NULL. Otherwise, Valgrind complains.  If the pointer is indeed
       valid, Valgrind marks the entire area it points at as
       unaddressible, and places the block in the freed-blocks-queue.
