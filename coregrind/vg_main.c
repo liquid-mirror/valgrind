@@ -32,7 +32,6 @@
 #include "vg_include.h"
 #include "vg_constants.h"
 
-
 /* ---------------------------------------------------------------------
    Compute offsets into baseBlock.  See comments in vg_include.h.
    ------------------------------------------------------------------ */
@@ -62,6 +61,7 @@ Int VGOFF_(sh_ebp) = INVALID_OFFSET;
 Int VGOFF_(sh_esi) = INVALID_OFFSET;
 Int VGOFF_(sh_edi) = INVALID_OFFSET;
 Int VGOFF_(sh_eflags) = INVALID_OFFSET;
+
 Int VGOFF_(helper_idiv_64_32) = INVALID_OFFSET;
 Int VGOFF_(helper_div_64_32) = INVALID_OFFSET;
 Int VGOFF_(helper_idiv_32_16) = INVALID_OFFSET;
@@ -92,26 +92,24 @@ Int VGOFF_(helper_fstsw_AX) = INVALID_OFFSET;
 Int VGOFF_(helper_SAHF) = INVALID_OFFSET;
 Int VGOFF_(helper_DAS) = INVALID_OFFSET;
 Int VGOFF_(helper_DAA) = INVALID_OFFSET;
-Int VGOFF_(helper_value_check4_fail) = INVALID_OFFSET;
-Int VGOFF_(helper_value_check2_fail) = INVALID_OFFSET;
-Int VGOFF_(helper_value_check1_fail) = INVALID_OFFSET;
-Int VGOFF_(helper_value_check0_fail) = INVALID_OFFSET;
-Int VGOFF_(helperc_LOADV4) = INVALID_OFFSET;
-Int VGOFF_(helperc_LOADV2) = INVALID_OFFSET;
-Int VGOFF_(helperc_LOADV1) = INVALID_OFFSET;
-Int VGOFF_(helperc_STOREV4) = INVALID_OFFSET;
-Int VGOFF_(helperc_STOREV2) = INVALID_OFFSET;
-Int VGOFF_(helperc_STOREV1) = INVALID_OFFSET;
 Int VGOFF_(handle_esp_assignment) = INVALID_OFFSET;
-Int VGOFF_(fpu_write_check) = INVALID_OFFSET;
-Int VGOFF_(fpu_read_check) = INVALID_OFFSET;
-Int VGOFF_(cachesim_log_non_mem_instr) = INVALID_OFFSET;
-Int VGOFF_(cachesim_log_mem_instr)     = INVALID_OFFSET;
-Int VGOFF_(eraser_mem_read)  = INVALID_OFFSET;
-Int VGOFF_(eraser_mem_write) = INVALID_OFFSET;
+
+/* MAX_NONCOMPACT_HELPERS can be increased easily.  If MAX_COMPACT_HELPERS is
+ * increased too much, they won't really be compact any more... */
+#define  MAX_COMPACT_HELPERS     6
+#define  MAX_NONCOMPACT_HELPERS  6
+
+UInt VG_(n_compact_helpers)    = 0;
+UInt VG_(n_noncompact_helpers) = 0;
+
+Addr VG_(compact_helper_addrs)  [MAX_COMPACT_HELPERS];
+Int  VG_(compact_helper_offsets)[MAX_COMPACT_HELPERS];
+Addr VG_(noncompact_helper_addrs)  [MAX_NONCOMPACT_HELPERS];
+Int  VG_(noncompact_helper_offsets)[MAX_NONCOMPACT_HELPERS];
 
 /* This is the actual defn of baseblock. */
 UInt VG_(baseBlock)[VG_BASEBLOCK_WORDS];
+
 
 /* Words. */
 static Int baB_off = 0;
@@ -135,6 +133,41 @@ static Int alloc_BaB_1_set ( Addr a )
    return off;
 }
 
+/* Registers a function in compact_helper_addrs;  compact_helper_offsets is
+ * filled in later.
+ */
+void VG_(register_compact_helper)(Addr a)
+{
+   if (MAX_COMPACT_HELPERS <= VG_(n_compact_helpers)) {
+      VG_(printf)("Can only register %d compact helpers\n", 
+                  MAX_COMPACT_HELPERS);
+      VG_(panic)("Too many compact helpers registered");
+   }
+   VG_(compact_helper_addrs)[VG_(n_compact_helpers)] = a;
+   VG_(n_compact_helpers)++;
+}
+
+/* Registers a function in noncompact_helper_addrs;  noncompact_helper_offsets
+ * is filled in later.
+ */
+void VG_(register_noncompact_helper)(Addr a)
+{
+   if (MAX_NONCOMPACT_HELPERS <= VG_(n_noncompact_helpers)) {
+      VG_(printf)("Can only register %d non-compact helpers\n", 
+                  MAX_NONCOMPACT_HELPERS);
+      VG_(printf)("Try increasing MAX_NON_COMPACT_HELPERS\n");
+      VG_(panic)("Too many non-compact helpers registered");
+   }
+   VG_(noncompact_helper_addrs)[VG_(n_noncompact_helpers)] = a;
+   VG_(n_noncompact_helpers)++;
+}
+
+/* Allocate offsets in baseBlock for the skin helpers */
+void assign_helpers_in_baseBlock(UInt n, Int offsets[], Addr addrs[])
+{
+   Int i;
+   for (i = 0; i < n; i++) offsets[i] = alloc_BaB_1_set( addrs[i] );
+}
 
 /* Here we assign actual offsets.  It's important to get the most
    popular referents within 128 bytes of the start, so we can take
@@ -170,78 +203,24 @@ static void vg_init_baseBlock ( void )
    /* 16  */ VGOFF_(sh_edi)    = alloc_BaB(1);
    /* 17  */ VGOFF_(sh_eflags) = alloc_BaB(1);
 
-   /* 17a */ 
-   VGOFF_(cachesim_log_non_mem_instr)  
-      = alloc_BaB_1_set( (Addr) & VG_(cachesim_log_non_mem_instr) );
-   /* 17b */ 
-   VGOFF_(cachesim_log_mem_instr)  
-      = alloc_BaB_1_set( (Addr) & VG_(cachesim_log_mem_instr) );
+   /* 18, 19, 20... depends on number of compact helpers registered */ 
+   /* Allocate slots for compact helpers */
+   assign_helpers_in_baseBlock(VG_(n_compact_helpers), 
+                               VG_(compact_helper_offsets), 
+                               VG_(compact_helper_addrs));
 
-   /* 17c */ 
-   VGOFF_(eraser_mem_read)  
-      = alloc_BaB_1_set( (Addr) & VGE_(eraser_mem_read) );
-
-   /* 17d */ 
-   VGOFF_(eraser_mem_write)  
-      = alloc_BaB_1_set( (Addr) & VGE_(eraser_mem_write) );
-
-   /* 18  */ 
-   VGOFF_(helper_value_check4_fail) 
-      = alloc_BaB_1_set( (Addr) & VG_(helper_value_check4_fail) );
-   /* 19 */
-   VGOFF_(helper_value_check0_fail)
-      = alloc_BaB_1_set( (Addr) & VG_(helper_value_check0_fail) );
-
-   /* 20  */
-   VGOFF_(helperc_STOREV4)
-      = alloc_BaB_1_set( (Addr) & VG_(helperc_STOREV4) );
-   /* 21  */
-   VGOFF_(helperc_STOREV1)
-      = alloc_BaB_1_set( (Addr) & VG_(helperc_STOREV1) );
-
-   /* 22  */
-   VGOFF_(helperc_LOADV4)
-      = alloc_BaB_1_set( (Addr) & VG_(helperc_LOADV4) );
-   /* 23  */
-   VGOFF_(helperc_LOADV1)
-      = alloc_BaB_1_set( (Addr) & VG_(helperc_LOADV1) );
-
-   /* 24  */
+   /* 18 + n_compact_helpers  */
    VGOFF_(handle_esp_assignment)
       = alloc_BaB_1_set( (Addr) & VGM_(handle_esp_assignment) );
 
-   /* 25 */
+   /* 19 + n_compact_helpers */
    VGOFF_(m_eip) = alloc_BaB(1);
 
    /* There are currently 24 spill slots */
-   /* 26 .. 49  This overlaps the magic boundary at >= 32 words, but
-      most spills are to low numbered spill slots, so the ones above
-      the boundary don't see much action. */
+   /* (20 .. 43) + n_compact_helpers.  This overlaps the magic boundary at 
+    * >= 32 words, but most spills are to low numbered spill slots, so the 
+    * ones above the boundary don't see much action. */
    VGOFF_(spillslots) = alloc_BaB(VG_MAX_SPILLSLOTS);
-
-   /* These two pushed beyond the boundary because 2-byte transactions
-      are rare. */
-   /* 50  */
-   VGOFF_(helperc_STOREV2)
-      = alloc_BaB_1_set( (Addr) & VG_(helperc_STOREV2) );
-   /* 51  */
-   VGOFF_(helperc_LOADV2)
-      = alloc_BaB_1_set( (Addr) & VG_(helperc_LOADV2) );
-
-   /* 52  */
-   VGOFF_(fpu_write_check)
-      = alloc_BaB_1_set( (Addr) & VGM_(fpu_write_check) );
-   /* 53  */
-   VGOFF_(fpu_read_check)
-      = alloc_BaB_1_set( (Addr) & VGM_(fpu_read_check) );
-
-   /* Actually I don't think these two are ever used. */
-   /* 54  */ 
-   VGOFF_(helper_value_check2_fail)
-      = alloc_BaB_1_set( (Addr) & VG_(helper_value_check2_fail) );
-   /* 55  */ 
-   VGOFF_(helper_value_check1_fail)
-      = alloc_BaB_1_set( (Addr) & VG_(helper_value_check1_fail) );
 
    /* I gave up counting at this point.  Since they're way above the
       short-amode-boundary, there's no point. */
@@ -313,6 +292,12 @@ static void vg_init_baseBlock ( void )
       = alloc_BaB_1_set( (Addr) & VG_(helper_DAS) );
    VGOFF_(helper_DAA)
       = alloc_BaB_1_set( (Addr) & VG_(helper_DAA) );
+
+   /* Allocate slots for compact helpers */
+   assign_helpers_in_baseBlock(VG_(n_noncompact_helpers), 
+                               VG_(noncompact_helper_offsets), 
+                               VG_(noncompact_helper_addrs));
+
 }
 
 
@@ -409,7 +394,31 @@ UInt VG_(num_scheduling_events_MAJOR) = 0;
    Values derived from command-line options.
    ------------------------------------------------------------------ */
 
-VgNeeds VG_(needs);
+#define INVALID_Bool    ((Bool)999)    /* not 0 or 1 */
+
+/* Init with empty values so that we can later check all fields have been
+ * initialised by the skin. */
+// JJJ: is gcc-specific initialiser syntax ok?
+VgNeeds VG_(needs) = {
+   .name                    = NULL,
+   .description             = NULL,
+
+   .debug_info              = Vg_DebugUnknown,
+   .precise_x86_instr_sizes = INVALID_Bool,
+   .pthread_errors          = INVALID_Bool,
+   .report_errors           = INVALID_Bool,
+
+   .identifies_basic_blocks = INVALID_Bool,
+
+   .command_line_options    = INVALID_Bool,
+   .client_requests         = INVALID_Bool,
+
+   .augments_UInstrs        = INVALID_Bool,
+   .extends_UCode           = INVALID_Bool,
+
+   .shadow_memory           = INVALID_Bool,
+   .track_threads           = INVALID_Bool,
+};
 
 Bool   VG_(clo_error_limit);
 Bool   VG_(clo_check_addrVs);
@@ -431,11 +440,8 @@ Int    VG_(clo_n_suppressions);
 Char*  VG_(clo_suppressions)[VG_CLO_MAX_SFILES];
 Bool   VG_(clo_single_step);
 Bool   VG_(clo_optimise);
-VgAction VG_(clo_action);
+VgSkin VG_(clo_skin);
 Bool   VG_(clo_cleanup);
-cache_t VG_(clo_I1_cache);
-cache_t VG_(clo_D1_cache);
-cache_t VG_(clo_L2_cache);
 Int    VG_(clo_smc_check);
 Bool   VG_(clo_trace_syscalls);
 Bool   VG_(clo_trace_signals);
@@ -470,11 +476,11 @@ static Char vg_cmdline_copy[M_VG_CMDLINE_STRLEN];
    Processing of command-line options.
    ------------------------------------------------------------------ */
 
-static void bad_option ( Char* opt )
+void VG_(bad_option) ( Char* type, Char* opt )
 {
    VG_(shutdown_logging)();
    VG_(clo_logfile_fd) = 2; /* stderr */
-   VG_(printf)("valgrind.so: Bad option `%s'; aborting.\n", opt);
+   VG_(printf)("valgrind.so: Bad %s option `%s'; aborting.\n", type, opt);
    VG_(exit)(1);
 }
 
@@ -498,89 +504,37 @@ static void args_grok_error ( Char* msg )
    config_error("couldn't find client's argc/argc/envp");
 }   
 
-static void parse_cache_opt ( cache_t* cache, char* orig_opt, int opt_len )
+static void sanity_check_needs ( void )
 {
-   int   i1, i2, i3;
-   int   i;
-   char *opt = VG_(strdup)(VG_AR_PRIVATE, orig_opt);
-
-   i = i1 = opt_len;
-
-   /* Option looks like "--I1=65536,2,64".
-    * Find commas, replace with NULs to make three independent 
-    * strings, then extract numbers.  Yuck. */
-   while (VG_(isdigit)(opt[i])) i++;
-   if (',' == opt[i]) {
-      opt[i++] = '\0';
-      i2 = i;
-   } else goto bad;
-   while (VG_(isdigit)(opt[i])) i++;
-   if (',' == opt[i]) {
-      opt[i++] = '\0';
-      i3 = i;
-   } else goto bad;
-   while (VG_(isdigit)(opt[i])) i++;
-   if ('\0' != opt[i]) goto bad;
-
-   cache->size      = (Int)VG_(atoll)(opt + i1);
-   cache->assoc     = (Int)VG_(atoll)(opt + i2);
-   cache->line_size = (Int)VG_(atoll)(opt + i3);
-
-   VG_(free)(VG_AR_PRIVATE, opt);
-
-   return;
-
-  bad:    
-   bad_option(orig_opt);
-}
-
-// ZZZ
-static void setup_action_dependent_behaviours ( void )
-{
-   switch (VG_(clo_action)) {
-   case Vg_None:
-       VG_(needs).name                    = "nulgrind";
-       VG_(needs).description             = "a binary JIT-compiler";
-       VG_(needs).debug_info              = Vg_DebugNone;
-       VG_(needs).precise_x86_instr_sizes = False;
-       VG_(needs).shadow_memory           = False;
-       VG_(needs).pthread_errors          = False;
-       VG_(needs).suppressions            = False;
-       break;
-
-   case Vg_MemCheck:
-       VG_(needs).name                    = "valgrind";
-       VG_(needs).description             = "a memory detector error";
-       VG_(needs).debug_info              = Vg_DebugImprecise;
-       VG_(needs).precise_x86_instr_sizes = False;
-       VG_(needs).shadow_memory           = True;
-       VG_(needs).pthread_errors          = True;
-       VG_(needs).suppressions            = True;
-       break;
-
-   case Vg_Eraser:
-       VG_(needs).name                    = "pthgrind";
-       VG_(needs).description             = "a data race detector";
-       VG_(needs).debug_info              = Vg_DebugPrecise;
-       VG_(needs).precise_x86_instr_sizes = False;
-       VG_(needs).shadow_memory           = True;
-       VG_(needs).pthread_errors          = True;
-       VG_(needs).suppressions            = True;
-       break;
-
-   case Vg_CacheSim:
-       VG_(needs).name                    = "cachegrind";
-       VG_(needs).description             = "an I1/D1/L2 cache profiler";
-       VG_(needs).debug_info              = Vg_DebugPrecise;
-       VG_(needs).precise_x86_instr_sizes = True;
-       VG_(needs).shadow_memory           = False;
-       VG_(needs).pthread_errors          = False;
-       VG_(needs).suppressions            = False;
-       break;
-
-   default:
-      VG_(panic)("unexpected clo_action");
+#define CHECK_NOT(var, value)                                        \
+   if ((var)==(value)) {                                             \
+      VG_(printf)("\nNeeds error:\n"                                 \
+                  "  %s not initialised by VG_(setup)()\n", \
+                  VG__STRING(var));                                  \
+      VG_(panic)("Uninitialised needs field\n");                     \
    }
+   
+   CHECK_NOT(VG_(needs).name,        NULL);
+   CHECK_NOT(VG_(needs).description, NULL);
+
+   CHECK_NOT(VG_(needs).debug_info,              Vg_DebugUnknown);
+   CHECK_NOT(VG_(needs).precise_x86_instr_sizes, INVALID_Bool);
+   CHECK_NOT(VG_(needs).pthread_errors,          INVALID_Bool);
+   CHECK_NOT(VG_(needs).report_errors,           INVALID_Bool);
+
+   CHECK_NOT(VG_(needs).identifies_basic_blocks, INVALID_Bool);
+
+   CHECK_NOT(VG_(needs).command_line_options,    INVALID_Bool);
+   CHECK_NOT(VG_(needs).client_requests,         INVALID_Bool);
+
+   CHECK_NOT(VG_(needs).augments_UInstrs,        INVALID_Bool);
+   CHECK_NOT(VG_(needs).extends_UCode,           INVALID_Bool);
+
+   CHECK_NOT(VG_(needs).shadow_memory,           INVALID_Bool);
+   CHECK_NOT(VG_(needs).track_threads,           INVALID_Bool);
+
+#undef CHECK_NOT
+#undef INVALID_Bool
 }
 
 static void process_cmd_line_options ( void )
@@ -615,10 +569,6 @@ static void process_cmd_line_options ( void )
    VG_(clo_n_suppressions)   = 0;
    VG_(clo_single_step)      = False;
    VG_(clo_optimise)         = True;
-   VG_(clo_action)           = Vg_MemCheck;
-   VG_(clo_I1_cache)         = UNDEFINED_CACHE;
-   VG_(clo_D1_cache)         = UNDEFINED_CACHE;
-   VG_(clo_L2_cache)         = UNDEFINED_CACHE;
    VG_(clo_cleanup)          = True;
    VG_(clo_smc_check)        = /* VG_CLO_SMC_SOME */ VG_CLO_SMC_NONE;
    VG_(clo_trace_syscalls)   = False;
@@ -783,7 +733,20 @@ static void process_cmd_line_options ( void )
 
    for (i = 0; i < argc; i++) {
 
-      if (STREQ(argv[i], "-v") || STREQ(argv[i], "--verbose"))
+      /* Once we hit "--" we assume all remaining options are
+       * skin-specific */
+      if (STREQ(argv[i], "--")) {
+         if (VG_(needs).command_line_options) {
+            SKN_(process_cmd_line_options)(argc - i - 1, &argv[i+1]);
+            break;
+
+         } else {
+            // SSS: better error msg
+            VG_(panic)("No skin-specific command-line options allowed");
+         }
+      }
+
+      else if (STREQ(argv[i], "-v") || STREQ(argv[i], "--verbose"))
          VG_(clo_verbosity)++;
       else if (STREQ(argv[i], "-q") || STREQ(argv[i], "--quiet"))
          VG_(clo_verbosity)--;
@@ -864,7 +827,7 @@ static void process_cmd_line_options ( void )
             VG_(message)(Vg_UserMsg, "Too many logfiles specified.");
             VG_(message)(Vg_UserMsg, 
                          "Increase VG_CLO_MAX_SFILES and recompile.");
-            bad_option(argv[i]);
+            VG_(bad_option)("core", argv[i]);
          }
          VG_(clo_suppressions)[VG_(clo_n_suppressions)] = &argv[i][15];
          VG_(clo_n_suppressions)++;
@@ -883,23 +846,6 @@ static void process_cmd_line_options ( void )
          VG_(clo_cleanup) = True;
       else if (STREQ(argv[i], "--cleanup=no"))
          VG_(clo_cleanup) = False;
-
-      else if (STREQ(argv[i], "--action=none"))
-         VG_(clo_action) = Vg_None;
-      else if (STREQ(argv[i], "--action=memcheck"))
-         VG_(clo_action) = Vg_MemCheck;
-      else if (STREQ(argv[i], "--action=eraser"))
-         VG_(clo_action) = Vg_Eraser;
-      else if (STREQ(argv[i], "--action=cachesim"))
-         VG_(clo_action) = Vg_CacheSim;
-
-      /* 5 is length of "--I1=" */
-      else if (0 == VG_(strncmp)(argv[i], "--I1=",    5))
-         parse_cache_opt(&VG_(clo_I1_cache), argv[i], 5);
-      else if (0 == VG_(strncmp)(argv[i], "--D1=",    5))
-         parse_cache_opt(&VG_(clo_D1_cache), argv[i], 5);
-      else if (0 == VG_(strncmp)(argv[i], "--L2=",    5))
-         parse_cache_opt(&VG_(clo_L2_cache), argv[i], 5);
 
       else if (STREQ(argv[i], "--smc-check=none"))
          VG_(clo_smc_check) = VG_CLO_SMC_NONE;
@@ -959,7 +905,7 @@ static void process_cmd_line_options ( void )
       }
 
       else
-         bad_option(argv[i]);
+         VG_(bad_option)("core", argv[i]);
    }
 
 #  undef ISSPACE
@@ -976,7 +922,7 @@ static void process_cmd_line_options ( void )
       VG_(message)(Vg_UserMsg, 
          "Invalid --alignment= setting.  "
          "Should be a power of 2, >= 4, <= 4096.");
-      bad_option("--alignment");
+      VG_(bad_option)("core", "--alignment");
    }
 
    if (VG_(clo_GDB_attach) && VG_(clo_trace_children)) {
@@ -985,13 +931,10 @@ static void process_cmd_line_options ( void )
          "--gdb-attach=yes conflicts with --trace-children=yes");
       VG_(message)(Vg_UserMsg, 
          "Please choose one or the other, but not both.");
-      bad_option("--gdb-attach=yes and --trace-children=yes");
+      VG_(bad_option)("core", "--gdb-attach=yes and --trace-children=yes");
    }
 
    VG_(clo_logfile_fd) = eventually_logfile_fd;
-
-   /* setup stuff that depends on the --action value */
-   setup_action_dependent_behaviours();
 
    if (VG_(clo_verbosity > 0)) {
       VG_(message)(Vg_UserMsg, "%s-%s, %s for x86 GNU/Linux.",
@@ -1008,7 +951,8 @@ static void process_cmd_line_options ( void )
       }
    }
 
-   if (VG_(clo_n_suppressions) == 0 && VG_(needs).suppressions) {
+   if (VG_(clo_n_suppressions) == 0 && 
+       (VG_(needs).pthread_errors || VG_(needs).report_errors)) {
       config_error("No error-suppression files were specified.");
    }
 }
@@ -1121,8 +1065,12 @@ void VG_(main) ( void )
       VG_(stack)[10000-1-i] = (UInt)(&VG_(stack)[10000-i-1]) ^ 0xABCD4321;
    }
 
-   /* Set up baseBlock offsets and copy the saved machine's state into
-      it. */
+   /* Setup stuff that depends on the skin.  Warning: Must be before
+    * vg_init_baseBlock() and process_cmd_line_options() */
+   SK_(setup) ( & VG_(needs) );
+   sanity_check_needs();
+
+   /* Set up baseBlock offsets and copy the saved machine's state into it. */
    vg_init_baseBlock();
    VG_(copy_m_state_static_to_baseBlock)();
 
@@ -1154,13 +1102,17 @@ void VG_(main) ( void )
    /* Start calibration of our RDTSC-based clock. */
    VG_(start_rdtsc_calibration)();
 
-   // ZZZ
-   if (Vg_None != VG_(clo_action)) {
+   // JJJ: this condition surely isn't correct: should be either always
+   // done, or done only for shadow memory.  Also, loading suppressions in
+   // init_memory_audit is silly.
+
+//   if (Vg_None != VG_(clo_skin)) {
       VGP_PUSHCC(VgpInitAudit);
       VGM_(init_memory_audit)();
       VGP_POPCC;
-   }
+//   }
 
+   // JJJ: necessary for skins that don't use debug info?
    VGP_PUSHCC(VgpReadSyms);
    VG_(read_symbols)();
    VGP_POPCC;
@@ -1184,29 +1136,7 @@ void VG_(main) ( void )
       instrumented-ly. */
    VG_(running_on_simd_CPU) = True;
 
-   // ZZZ
-   switch (VG_(clo_action)) {
-   case Vg_None:    break;
-
-   case Vg_Eraser:
-      VGE_(init_eraser)();
-      VGM_(make_readable) ( (Addr)&VG_(running_on_simd_CPU), 1 );
-      VGM_(make_readable) ( (Addr)&VG_(clo_action),          1 );
-      VGM_(make_readable) ( (Addr)&VG_(clo_trace_malloc),    1 );
-      VGM_(make_readable) ( (Addr)&VG_(clo_sloppy_malloc),   1 );
-      break;
-
-   case Vg_MemCheck:  
-      VGM_(make_readable) ( (Addr)&VG_(running_on_simd_CPU), 1 );
-      VGM_(make_readable) ( (Addr)&VG_(clo_action),          1 );
-      VGM_(make_readable) ( (Addr)&VG_(clo_trace_malloc),    1 );
-      VGM_(make_readable) ( (Addr)&VG_(clo_sloppy_malloc),   1 );
-      break;
-
-   case Vg_CacheSim:
-      VG_(init_cachesim)();
-      break;
-   }
+   SK_(init)();
 
    if (VG_(clo_verbosity) > 0)
       VG_(message)(Vg_UserMsg, "");
@@ -1227,28 +1157,7 @@ void VG_(main) ( void )
         "Warning: pthread scheduler exited due to deadlock");
    }
 
-   // ZZZ
-   switch (VG_(clo_action)) {
-   case Vg_None:    break;
-   case Vg_MemCheck: 
-      VG_(show_all_errors)();
-      VG_(clientmalloc_done)();
-      if (VG_(clo_verbosity) == 1) {
-         VG_(message)(Vg_UserMsg, 
-                      "For counts of detected errors, rerun with: -v");
-      }
-      if (VG_(clo_leak_check)) VG_(detect_memory_leaks)();
-      break;
-
-   case Vg_Eraser:
-      VG_(show_all_errors)();
-      VGE_(end_eraser)();
-      break;
-
-   case Vg_CacheSim:
-      VG_(do_cachesim_results)(VG_(client_argc), VG_(client_argv));
-      break;
-   }
+   SK_(fini)();
 
    VG_(running_on_simd_CPU) = False;
 
@@ -1257,6 +1166,7 @@ void VG_(main) ( void )
    if (VG_(clo_verbosity) > 1)
       vg_show_counts();
 
+   // JJJ: where should this go?  which parts are MemCheck specific?
    if (0) {
       VG_(message)(Vg_DebugMsg, "");
       VG_(message)(Vg_DebugMsg, 
@@ -1274,8 +1184,6 @@ void VG_(main) ( void )
 #  ifdef VG_PROFILE
    VGP_(done_profiling)();
 #  endif
-
-   VG_(done_prof_mem)();
 
    VG_(shutdown_logging)();
 
