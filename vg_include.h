@@ -1993,11 +1993,6 @@ extern void VG_(signalreturn_bogusRA)( void );
    Settings relating to the used skin
    ------------------------------------------------------------------ */
 
-typedef
-   enum { Vg_DebugUnknown,    /* Just for checking it's been initialised */
-          Vg_DebugNone, Vg_DebugImprecise, Vg_DebugPrecise }
-   VgDebugInfo;
-
 /* If new fields are added to this type, update:
  *  - vg_main.c:VG_(needs) initialisation
  *  - vg_main.c:sanity_check_needs()
@@ -2017,16 +2012,8 @@ typedef
       /* Postpone dynamic memory use once free'd as long as possible? */
       Bool postpone_mem_reuse;
 
-      // SSS: can remove DebugPrecise/Imprecise distinction (using a Bool
-      // instead) if we move to strict EIP updating.  Can also remove
-      // precise_x86_instr_sizes and just always patch JMPs
-
-      /* Kind of debug info needed */
-      VgDebugInfo debug_info;
-      /* Needed if working at x86 instr level rather than UCode level, eg. 
-       * for cache simulation where we have to update state for every x86
-       * instruction */
-      Bool precise_x86_instr_sizes;
+      /* Debug info needed? */
+      Bool debug_info;
       /* Report pthread errors? */
       Bool pthread_errors;
       /* Want to report errors?  This implies includes handling of 

@@ -680,8 +680,7 @@ void SK_(setup)(VgNeeds* needs, VgTrackEvents* track)
    needs->record_mem_exe_context  = False;
    needs->postpone_mem_reuse      = False;
    
-   needs->debug_info              = Vg_DebugPrecise;
-   needs->precise_x86_instr_sizes = False;
+   needs->debug_info              = True;
    needs->pthread_errors          = True;
    needs->report_errors           = True;
 

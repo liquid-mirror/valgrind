@@ -4519,29 +4519,17 @@ Int VG_(disBB) ( UCodeBlock* cb, Addr eip0 )
    Addr eip   = eip0;
    Bool isEnd = False;
    Bool block_sane;
-   Int INCEIP_allowed_lag;
    Int delta = 0;
 
    if (dis) VG_(printf)("\n");
 
-   /* If we need precise line numberings (eg. when cache simulating)
-    * we use eager INCEIP updating to ensure EIP is always correct.   
+   /* After every x86 instruction do an INCEIP, except for the final one
+    * in the basic block.  For them we patch in the x86 instruction size 
+    * into the `extra4b' field of the basic-block-ending JMP. 
     *
-    * If we need precise x86 instruction sizes, we do eager INCEIP updating
-    * which gives us the size of all x86 instrs except for jumping ones;  for
-    * them we patch in the size of the original x86 instr in the `extra4b'
-    * field of JMPs at the end of a basic block.  Two cases:
-    *
-    *   - Jcond followed by Juncond:  patch the Jcond
-    *   - Juncond alone:              patch the Juncond
-    *
-    * See vg_cachesim_instrument() for an example of how this is used. 
+    * The INCEIPs and JMP.extra4b fields allows a skin to track x86
+    * instruction sizes, important for some skins (eg. cache simulation).
     */
-   INCEIP_allowed_lag = 
-      (Vg_DebugPrecise == VG_(needs).debug_info || 
-       VG_(needs).precise_x86_instr_sizes) 
-      ? 0 : 4;
-
    if (VG_(clo_single_step)) {
       eip = disInstr ( cb, eip, &isEnd );
 
@@ -4552,6 +4540,7 @@ Int VG_(disBB) ( UCodeBlock* cb, Addr eip0 )
          uInstr1(cb, JMP, 0, Literal, 0);
          uLiteral(cb, eip);
          uCond(cb, CondAlways);
+         /* Print added JMP */
          if (dis) VG_(ppUInstr)(cb->used-1, &cb->instrs[cb->used-1]);
       }
       delta = eip - eip0;
@@ -4560,7 +4549,7 @@ Int VG_(disBB) ( UCodeBlock* cb, Addr eip0 )
       Addr eip2;
       while (!isEnd) {
          eip2 = disInstr ( cb, eip, &isEnd );
-         delta += (eip2 - eip);
+         delta = (eip2 - eip);
          eip = eip2;
          /* Split up giant basic blocks into pieces, so the
             translations fall within 64k. */
@@ -4571,25 +4560,20 @@ Int VG_(disBB) ( UCodeBlock* cb, Addr eip0 )
             uInstr1(cb, JMP, 0, Literal, 0);
             uLiteral(cb, eip);
             uCond(cb, CondAlways);
+            /* Print added JMP */
             if (dis) VG_(ppUInstr)(cb->used-1, &cb->instrs[cb->used-1]);
             isEnd = True;
 
-         } else if (delta > INCEIP_allowed_lag && !isEnd) {
+         } else if (!isEnd) {
             uInstr1(cb, INCEIP, 0, Lit16, delta);
+            /* Print added INCEIP */
             if (dis) VG_(ppUInstr)(cb->used-1, &cb->instrs[cb->used-1]);
-            delta = 0;
          }
          if (dis) VG_(printf)("\n");
       }
    }
-   if (VG_(needs).precise_x86_instr_sizes) {
-      /* Patch instruction size into earliest JMP. */
-      if (cb->used >= 2 && JMP == cb->instrs[cb->used - 2].opcode) {
-         cb->instrs[cb->used - 2].extra4b = delta;
-      } else {
-         LAST_UINSTR(cb).extra4b = delta;
-      }
-   }
+   /* Patch instruction size into final JMP. */
+   LAST_UINSTR(cb).extra4b = delta;
 
    block_sane = VG_(saneUCodeBlock)(cb);
    if (!block_sane) {

@@ -614,7 +614,6 @@ static void set_address_range_perms ( Addr a, UInt len,
    VGP_POPCC;
 }
 
-
 /* Set permissions for address ranges ... */
 #if 0
 #define MAKE_NOACCESS(nnn) \
@@ -2325,8 +2324,7 @@ void SK_(setup)(VgNeeds* needs, VgTrackEvents* track)
    needs->record_mem_exe_context  = True;
    needs->postpone_mem_reuse      = True;
    
-   needs->debug_info              = Vg_DebugImprecise;
-   needs->precise_x86_instr_sizes = False;
+   needs->debug_info              = True;
    needs->pthread_errors          = True;
    needs->report_errors           = True;
 
