@@ -207,7 +207,7 @@ typedef unsigned char Bool;
 // SSS: remove this eventually -- need something else for all the
 // if (clo_action==Vg_MemCheck) tests
 typedef 
-   enum { Vg_MemCheck, Vg_Eraser, Vg_CacheSim, Vg_Other }
+   enum { Vg_MemCheck, Vg_CacheSim, Vg_Other }
    VgSkin;
 
 typedef
@@ -216,7 +216,8 @@ typedef
    VgDebugInfo;
 
 /* If new fields are added to this type, update:
- *  - vg_main.c:sanity_check_needs
+ *  - vg_main.c:VG_(needs) initialisation
+ *  - vg_main.c:sanity_check_needs()
  *
  * If the name of this type or any of its fields change, update:
  *  - dependent comments (just search for "VG_(needs)"). 
@@ -261,6 +262,9 @@ typedef
 
       /* Skin does stuff before and/or after system calls? */
       Bool wrap_syscalls;
+
+      /* Are skin-state sanity checks performed? */
+      Bool sanity_checks;
 
       /* Is shadow memory required? */
       Bool shadow_memory;
@@ -1582,16 +1586,9 @@ extern void VG_(record_freemismatch_error)    ( ThreadState* tst, Addr a );
 extern void VG_(record_jump_error) ( ThreadState* tst, Addr a );
 
 // SSS: shouldn't be here
-extern void VG_(record_param_err) ( ThreadState* tst,
-                                    Addr a, 
-                                    Bool isWriteLack, 
-                                    Char* msg );
-
-// SSS: shouldn't be here
 extern void VG_(record_user_err) ( ThreadState* tst,
                                    Addr a, Bool isWriteLack );
 extern void VG_(record_pthread_err) ( ThreadId tid, Char* msg );
-//extern void VG_(record_eraser_err) ( Addr a, ThreadId tid, Bool is_write );
 
 extern Bool VG_(eq_ExeContext) ( Bool top_2_only,
                                  ExeContext* e1, ExeContext* e2 );
@@ -1717,13 +1714,16 @@ extern void* VG_(client_realloc)  ( ThreadState* tst,
    Exports of vg_main.c
    ------------------------------------------------------------------ */
 
-/* A structure used as an intermediary when passing the simulated
-   CPU's state to some assembly fragments, particularly system calls.
-   Stuff is copied from baseBlock to here, the assembly magic runs,
-   and then the inverse copy is done. */
+/* Sanity checks which may be done at any time.  The scheduler decides when. */
+extern void VG_(do_sanity_checks) ( Bool force_expensive );
 
 extern void VG_(bad_option) ( Char* type, Char* opt );
 
+/* A structure used as an intermediary when passing the simulated
+   CPU's state to some assembly fragments, particularly system calls.
+   Stuff is copied from baseBlock to here, the assembly magic runs,
+   and then the inverse copy is done. 
+ */
 extern UInt VG_(m_state_static) [8 /* int regs, in Intel order */ 
                                  + 1 /* %eflags */ 
                                  + 1 /* %eip */
@@ -1857,10 +1857,6 @@ extern Addr VGM_(curr_dataseg_end);
 extern void VG_(show_reg_tags) ( void );
 
 extern void VG_(detect_memory_leaks) ( void );
-
-/* Sanity checks which may be done at any time.  The scheduler decides
-   when. */
-extern void VG_(do_sanity_checks) ( Bool force_expensive );
 
 /* Called from generated code. */
 extern void VGM_(handle_esp_assignment) ( Addr new_espA );
@@ -2201,6 +2197,13 @@ extern void* SKN_(pre_blocking_syscall_check)  ( ThreadId tid, Int syscallno,
                                                  Int* res);
 extern void  SKN_(post_blocking_syscall_check) ( ThreadId tid, Int syscallno, 
                                                  Int* res, void* pre_result);
+
+/* ---------------------------------------------------------------------
+   For sanity checks
+   ------------------------------------------------------------------ */
+
+extern Bool SKN_(cheap_sanity_check)     ( void );
+extern void SKN_(expensive_sanity_check) ( void );
 
 /* ---------------------------------------------------------------------
    For shadow memory (VG_(needs).shadow_memory)
