@@ -521,6 +521,10 @@ Bool VG_(saneUInstr) ( Bool beforeRA, UInstr* u )
          return CC0 && Ls1 && N2 && SZ0 && N3;
       case CALLM:
          return SZ0 && Ls1 && N2 && N3;
+      case CCALL_1_0:
+         return SZ0 && CC0 && TR1 && N2 && N3;
+      case CCALL_2_0:
+         return SZ0 && CC0 && TR1 && TR2 && N3;
       case PUSH: case POP:
          return CC0 && TR1 && N2 && N3;
       case AND: case OR:
@@ -802,6 +806,8 @@ Char* VG_(nameUOpcode) ( Bool upper, Opcode opc )
       case JMP:     return "J"    ;
       case JIFZ:    return "JIFZ" ;
       case CALLM:   return "CALLM";
+      case CCALL_1_0: return "CCALL_1_0";
+      case CCALL_2_0: return "CCALL_2_0";
       case PUSH:    return "PUSH" ;
       case POP:     return "POP"  ;
       case CLEAR:   return "CLEAR";
@@ -928,6 +934,20 @@ void VG_(ppUInstr) ( Int instrNo, UInstr* u )
          ppUOperand(u, 1, u->size, False);
          break;
 
+      case CCALL_1_0:
+         VG_(printf)(" ");
+         ppUOperand(u, 1, 0, False);
+         VG_(printf)(" (%u)", u->lit32);
+         break;
+
+      case CCALL_2_0:
+         VG_(printf)(" ");
+         ppUOperand(u, 1, 0, False);
+         VG_(printf)(", ");
+         ppUOperand(u, 2, 0, False);
+         VG_(printf)(" (%u)", u->lit32);
+         break;
+
       case JIFZ:
          VG_(printf)("\t");
          ppUOperand(u, 1, u->size, False);
@@ -1050,13 +1070,13 @@ Int getTempUsage ( UInstr* u, TempUse* arr )
       case GET:   WR(2); break;
       case PUT:   RD(1); break;
       case LOAD:  RD(1); WR(2); break;
-      case STORE: RD(1); RD(2); break;
+      case STORE: case CCALL_2_0: RD(1); RD(2); break;
       case MOV:   RD(1); WR(2); break;
 
       case JMP:   RD(1); break;
       case CLEAR: case CALLM: break;
 
-      case PUSH: RD(1); break;
+      case PUSH: case CCALL_1_0: RD(1); break;
       case POP:  WR(1); break;
 
       case TAG2:
@@ -2101,7 +2121,7 @@ Int /* TempReg */ getOperandShadow ( UCodeBlock* cb,
 
 /* Create and return an instrumented version of cb_in.  Free cb_in
    before returning. */
-static UCodeBlock* vg_instrument ( UCodeBlock* cb_in )
+static UCodeBlock* vg_memcheck_instrument ( UCodeBlock* cb_in )
 {
    UCodeBlock* cb;
    Int         i, j;
@@ -2196,7 +2216,7 @@ static UCodeBlock* vg_instrument ( UCodeBlock* cb_in )
                               TempReg, SHADOW(u_in->val2));
                   break;
                default: 
-                  VG_(panic)("vg_instrument: MOV");
+                  VG_(panic)("vg_memcheck_instrument: MOV");
             }
             VG_(copyUInstr)(cb, u_in);
             break;
@@ -2230,7 +2250,7 @@ static UCodeBlock* vg_instrument ( UCodeBlock* cb_in )
                case 2: shift = 1; break;
                case 4: shift = 2; break;
                case 8: shift = 3; break;
-               default: VG_(panic)( "vg_instrument(LEA2)" );
+               default: VG_(panic)( "vg_memcheck_instrument(LEA2)" );
             }
             qs = SHADOW(u_in->val1);
             qt = SHADOW(u_in->val2);
@@ -2616,7 +2636,7 @@ static UCodeBlock* vg_instrument ( UCodeBlock* cb_in )
 
          default:
             VG_(ppUInstr)(0, u_in);
-            VG_(panic)( "vg_instrument: unhandled case");
+            VG_(panic)( "vg_memcheck_instrument: unhandled case");
 
       } /* end of switch (u_in->opcode) */
 
@@ -3027,7 +3047,7 @@ static void vg_propagate_definedness ( UCodeBlock* cb )
 }
 
 
-/* Top level post-instrumentation cleanup function. */
+/* Top level post-MemCheck-instrumentation cleanup function. */
 static void vg_cleanup ( UCodeBlock* cb )
 {
    vg_propagate_definedness ( cb );
@@ -3038,6 +3058,47 @@ static void vg_cleanup ( UCodeBlock* cb )
 /*------------------------------------------------------------*/
 /*--- Main entry point for the JITter.                     ---*/
 /*------------------------------------------------------------*/
+
+// ZZZ: factored out of VG_(translate).
+static UCodeBlock* vg_instrument ( UCodeBlock* cb, Addr orig_addr ) {
+   
+   switch (VG_(clo_action)) {
+
+   case Vg_None:    break;
+
+   case Vg_MemCheck:
+      /* VGP_PUSHCC(VgpInstrument); */
+      cb = vg_memcheck_instrument(cb);
+      /* VGP_POPCC; */
+      if (VG_(disassemble)) 
+         VG_(ppUCodeBlock) ( cb, "Instrumented code:" );
+      if (VG_(clo_cleanup)) {
+         /* VGP_PUSHCC(VgpCleanup); */
+         vg_cleanup(cb);
+         /* VGP_POPCC; */
+         if (VG_(disassemble)) 
+            VG_(ppUCodeBlock) ( cb, "Cleaned-up instrumented code:" );
+      }
+      break;
+
+   case Vg_Eraser:
+      /* VGP_PUSHCC(VgpCacheInstrument); */
+      cb = VG_(eraser_instrument)(cb);
+      /* VGP_POPCC; */
+      if (VG_(disassemble)) 
+         VG_(ppUCodeBlock) ( cb, "Eraser instrumented code:" );
+      break;
+
+   case Vg_CacheSim:
+      /* VGP_PUSHCC(VgpCacheInstrument); */
+      cb = VG_(cachesim_instrument)(cb, orig_addr);
+      /* VGP_POPCC; */
+      if (VG_(disassemble)) 
+         VG_(ppUCodeBlock) ( cb, "Cachesim instrumented code:" );
+      break;
+   }
+   return cb;
+}
 
 /* Translate the basic block beginning at orig_addr, placing the
    translation in a vg_malloc'd block, the address and size of which
@@ -3069,7 +3130,8 @@ void VG_(translate) ( ThreadState* tst,
    /* Check if we're being asked to jump to a silly address, and if so
       record an error message before potentially crashing the entire
       system. */
-   if (VG_(clo_instrument) && !debugging_translation && !dis) {
+   // ZZZ
+   if (Vg_MemCheck == VG_(clo_action) && !debugging_translation && !dis) {
       Addr bad_addr;
       Bool ok = VGM_(check_readable) ( orig_addr, 1, &bad_addr );
       if (!ok) {
@@ -3109,35 +3171,12 @@ void VG_(translate) ( ThreadState* tst,
       /* VGP_POPCC; */
    }
    /* dis=False; */
-   /* Add instrumentation code. */
-   if (VG_(clo_instrument)) {
-      /* VGP_PUSHCC(VgpInstrument); */
-      cb = vg_instrument(cb);
-      /* VGP_POPCC; */
-      if (VG_(disassemble)) 
-         VG_(ppUCodeBlock) ( cb, "Instrumented code:" );
-      if (VG_(clo_cleanup)) {
-         /* VGP_PUSHCC(VgpCleanup); */
-         vg_cleanup(cb);
-         /* VGP_POPCC; */
-         if (VG_(disassemble)) 
-            VG_(ppUCodeBlock) ( cb, "Cleaned-up instrumented code:" );
-      }
-   }
 
+   // ZZZ
    //VG_(disassemble) = True;
-
-   /* Add cache simulation code. */
-   if (VG_(clo_cachesim)) {
-      /* VGP_PUSHCC(VgpCacheInstrument); */
-      cb = VG_(cachesim_instrument)(cb, orig_addr);
-      /* VGP_POPCC; */
-      if (VG_(disassemble)) 
-         VG_(ppUCodeBlock) ( cb, "Cachesim instrumented code:" );
-   }
-   
+   cb = vg_instrument ( cb, orig_addr );
    //VG_(disassemble) = False;
-   
+
    /* Allocate registers. */
    /* VGP_PUSHCC(VgpRegAlloc); */
    cb = vg_do_register_allocation ( cb );
