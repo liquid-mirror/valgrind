@@ -438,6 +438,7 @@ Bool   VG_(clo_single_step);
 Bool   VG_(clo_optimise);
 Bool   VG_(clo_instrument);
 Bool   VG_(clo_cleanup);
+Bool   VG_(clo_avoid_strlen_errors);
 Bool   VG_(clo_cachesim);
 cache_t VG_(clo_I1_cache);
 cache_t VG_(clo_D1_cache);
@@ -577,6 +578,7 @@ static void process_cmd_line_options ( void )
    VG_(clo_D1_cache)         = UNDEFINED_CACHE;
    VG_(clo_L2_cache)         = UNDEFINED_CACHE;
    VG_(clo_cleanup)          = True;
+   VG_(clo_avoid_strlen_errors) = True;
    VG_(clo_smc_check)        = VG_CLO_SMC_NONE; /* note UNUSED ! */
    VG_(clo_trace_syscalls)   = False;
    VG_(clo_trace_signals)    = False;
@@ -848,6 +850,11 @@ static void process_cmd_line_options ( void )
          VG_(clo_cleanup) = True;
       else if (STREQ(argv[i], "--cleanup=no"))
          VG_(clo_cleanup) = False;
+
+      else if (STREQ(argv[i], "--avoid-strlen-errors=yes"))
+         VG_(clo_avoid_strlen_errors) = True;
+      else if (STREQ(argv[i], "--avoid-strlen-errors=no"))
+         VG_(clo_avoid_strlen_errors) = False;
 
       else if (STREQ(argv[i], "--cachesim=yes"))
          VG_(clo_cachesim) = True;     

@@ -74,6 +74,8 @@ do
     --D1=*,*,*)             vgopts="$vgopts $arg"; shift;;
     --L2=*,*,*)             vgopts="$vgopts $arg"; shift;;
     --weird-hacks=*)        vgopts="$vgopts $arg"; shift;;
+    --avoid-strlen-errors=no)    vgopts="$vgopts $arg"; shift;;
+    --avoid-strlen-errors=yes)   vgopts="$vgopts $arg"; shift;;
 #   options for debugging Valgrind
     --sanity-level=*)       vgopts="$vgopts $arg"; shift;;
     --single-step=yes)      vgopts="$vgopts $arg"; shift;;
@@ -138,6 +140,7 @@ if [ $# = 0 ] || [ z"$dousage" = z1 ]; then
    echo "    --check-addrVs=no|yes     experimental lighterweight checking? [yes]"
    echo "                              yes == Valgrind's original behaviour"
    echo "    --cachesim=no|yes         do cache profiling? [no]"
+   echo "    --avoid-strlen-errors=no|yes  suppress errs from inlined strlen? [yes]\n"
    echo "    --I1=<size>,<assoc>,<line_size>  set I1 cache manually"
    echo "    --D1=<size>,<assoc>,<line_size>  set D1 cache manually"
    echo "    --L2=<size>,<assoc>,<line_size>  set L2 cache manually"

@@ -270,6 +270,9 @@ extern Bool  VG_(clo_optimise);
 extern Bool  VG_(clo_instrument);
 /* DEBUG: clean up instrumented code?  default: YES */
 extern Bool  VG_(clo_cleanup);
+/* When instrumenting, omit some checks if tell-tale literals for
+   inlined strlen() are visible in the basic block.  default: YES */
+extern Bool  VG_(clo_avoid_strlen_errors);
 /* Cache simulation instrumentation?  default: NO */
 extern Bool  VG_(clo_cachesim);
 /* I1 cache configuration.  default: undefined */
