@@ -107,6 +107,7 @@ Int VGOFF_(fpu_write_check) = INVALID_OFFSET;
 Int VGOFF_(fpu_read_check) = INVALID_OFFSET;
 Int VGOFF_(cachesim_log_non_mem_instr) = INVALID_OFFSET;
 Int VGOFF_(cachesim_log_mem_instr)     = INVALID_OFFSET;
+Int VGOFF_(diduce_log_instr)           = INVALID_OFFSET;
 
 /* This is the actual defn of baseblock. */
 UInt VG_(baseBlock)[VG_BASEBLOCK_WORDS];
@@ -174,6 +175,10 @@ static void vg_init_baseBlock ( void )
    /* 17b */ 
    VGOFF_(cachesim_log_mem_instr)  
       = alloc_BaB_1_set( (Addr) & VG_(cachesim_log_mem_instr) );
+
+   /* 17c */ 
+   VGOFF_(diduce_log_instr)  
+      = alloc_BaB_1_set( (Addr) & VG_(diduce_log_instr) );
 
    /* 18  */ 
    VGOFF_(helper_value_check4_fail) 
@@ -425,6 +430,8 @@ Bool   VG_(clo_cachesim);
 cache_t VG_(clo_I1_cache);
 cache_t VG_(clo_D1_cache);
 cache_t VG_(clo_L2_cache);
+Bool   VG_(clo_diduce);
+Int    VG_(clo_confidence);
 Int    VG_(clo_smc_check);
 Bool   VG_(clo_trace_syscalls);
 Bool   VG_(clo_trace_signals);
@@ -558,6 +565,8 @@ static void process_cmd_line_options ( void )
    VG_(clo_I1_cache)         = UNDEFINED_CACHE;
    VG_(clo_D1_cache)         = UNDEFINED_CACHE;
    VG_(clo_L2_cache)         = UNDEFINED_CACHE;
+   VG_(clo_diduce)           = False;
+   VG_(clo_confidence)       = 100;
    VG_(clo_cleanup)          = True;
    VG_(clo_smc_check)        = /* VG_CLO_SMC_SOME */ VG_CLO_SMC_NONE;
    VG_(clo_trace_syscalls)   = False;
@@ -826,6 +835,14 @@ static void process_cmd_line_options ( void )
       else if (0 == VG_(strncmp)(argv[i], "--L2=",    5))
          parse_cache_opt(&VG_(clo_L2_cache), argv[i], 5);
 
+      else if (STREQN(13, argv[i], "--confidence="))
+         VG_(clo_confidence) = VG_(atoll)(&argv[i][13]);
+
+      else if (STREQ(argv[i], "--diduce=yes"))
+         VG_(clo_diduce) = True;     
+      else if (STREQ(argv[i], "--diduce=no"))
+         VG_(clo_diduce) = False;
+
       else if (STREQ(argv[i], "--smc-check=none"))
          VG_(clo_smc_check) = VG_CLO_SMC_NONE;
       else if (STREQ(argv[i], "--smc-check=some"))
@@ -915,15 +932,27 @@ static void process_cmd_line_options ( void )
 
    VG_(clo_logfile_fd) = eventually_logfile_fd;
 
-   /* Don't do memory checking if simulating the cache. */
-   if (VG_(clo_cachesim)) {
+   /* Only do one of memory checking, cache simulation and invariant checking */
+   if (VG_(clo_cachesim) || VG_(clo_diduce)) {
        VG_(clo_instrument) = False;
+   }
+   if (VG_(clo_cachesim) && VG_(clo_diduce)) {
+      VG_(message)(Vg_UserMsg, "");
+      VG_(message)(Vg_UserMsg, 
+         "--cachesim=yes conflicts with --diduce=yes");
+      VG_(message)(Vg_UserMsg, 
+         "Please choose one or the other, but not both.");
+      bad_option("--cachesim=yes and --diduce=yes");
    }
 
    if (VG_(clo_verbosity > 0)) {
       if (VG_(clo_cachesim)) {
          VG_(message)(Vg_UserMsg, 
             "cachegrind-%s, an I1/D1/L2 cache profiler for x86 GNU/Linux.",
+            VERSION);
+      } else if (VG_(clo_diduce)) {
+         VG_(message)(Vg_UserMsg, 
+            "???grind-%s, a dynamic invariant tester for x86 GNU/Linux.",
             VERSION);
       } else {
          VG_(message)(Vg_UserMsg, 
@@ -942,7 +971,7 @@ static void process_cmd_line_options ( void )
       }
    }
 
-   if (VG_(clo_n_suppressions) == 0 && !VG_(clo_cachesim)) {
+   if (VG_(clo_n_suppressions) == 0 && !VG_(clo_cachesim) && !VG_(clo_diduce)) {
       config_error("No error-suppression files were specified.");
    }
 }
@@ -1089,7 +1118,7 @@ void VG_(main) ( void )
    /* Start calibration of our RDTSC-based clock. */
    VG_(start_rdtsc_calibration)();
 
-   if (VG_(clo_instrument) || VG_(clo_cachesim)) {
+   if (VG_(clo_instrument) || VG_(clo_cachesim) || VG_(clo_diduce)) {
       VGP_PUSHCC(VgpInitAudit);
       VGM_(init_memory_audit)();
       VGP_POPCC;
@@ -1126,6 +1155,8 @@ void VG_(main) ( void )
 
    if (VG_(clo_cachesim)) 
       VG_(init_cachesim)();
+   else if (VG_(clo_diduce)) 
+      VG_(init_diduce)();
 
    if (VG_(clo_verbosity) > 0)
       VG_(message)(Vg_UserMsg, "");
@@ -1158,6 +1189,8 @@ void VG_(main) ( void )
 
    if (VG_(clo_cachesim))
       VG_(do_cachesim_results)(VG_(client_argc), VG_(client_argv));
+   else if (VG_(clo_diduce))
+      VG_(do_diduce_results)(VG_(client_argc), VG_(client_argv));
 
    VG_(do_sanity_checks)( True /*include expensive checks*/ );
 
