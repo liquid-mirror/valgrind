@@ -49,6 +49,8 @@ void VG_(demangle) ( Char* orig, Char* result, Int result_size )
    Int   n_result  = 0;
    Char* demangled = NULL;
 
+   VGP_PUSHCC(VgpDemangle);
+
    if (VG_(clo_demangle))
       demangled = VG_(cplus_demangle) ( orig, DMGL_ANSI | DMGL_PARAMS );
 
@@ -65,6 +67,8 @@ void VG_(demangle) ( Char* orig, Char* result, Int result_size )
    vg_assert(VG_(is_empty_arena)(VG_AR_DEMANGLE));
 
    /* VG_(show_all_arena_stats)(); */
+
+   VGP_POPCC(VgpDemangle);
 }
 
 
