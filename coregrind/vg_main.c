@@ -107,7 +107,8 @@ Int VGOFF_(fpu_write_check) = INVALID_OFFSET;
 Int VGOFF_(fpu_read_check) = INVALID_OFFSET;
 Int VGOFF_(cachesim_log_non_mem_instr) = INVALID_OFFSET;
 Int VGOFF_(cachesim_log_mem_instr)     = INVALID_OFFSET;
-Int VGOFF_(diduce_log_instr)           = INVALID_OFFSET;
+Int VGOFF_(diduce_log_instr1)          = INVALID_OFFSET;
+Int VGOFF_(diduce_log_instr2)          = INVALID_OFFSET;
 
 /* This is the actual defn of baseblock. */
 UInt VG_(baseBlock)[VG_BASEBLOCK_WORDS];
@@ -177,8 +178,11 @@ static void vg_init_baseBlock ( void )
       = alloc_BaB_1_set( (Addr) & VG_(cachesim_log_mem_instr) );
 
    /* 17c */ 
-   VGOFF_(diduce_log_instr)  
-      = alloc_BaB_1_set( (Addr) & VG_(diduce_log_instr) );
+   VGOFF_(diduce_log_instr1)  
+      = alloc_BaB_1_set( (Addr) & VG_(diduce_log_instr1) );
+   /* 17d */ 
+   VGOFF_(diduce_log_instr2)  
+      = alloc_BaB_1_set( (Addr) & VG_(diduce_log_instr2) );
 
    /* 18  */ 
    VGOFF_(helper_value_check4_fail) 
@@ -521,6 +525,8 @@ static void parse_cache_opt ( cache_t* cache, char* orig_opt, int opt_len )
    cache->size      = (Int)VG_(atoll)(opt + i1);
    cache->assoc     = (Int)VG_(atoll)(opt + i2);
    cache->line_size = (Int)VG_(atoll)(opt + i3);
+
+   VG_(free)(VG_AR_PRIVATE, opt);
 
    return;
 
