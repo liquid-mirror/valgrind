@@ -4162,6 +4162,14 @@ static Addr disInstr ( UCodeBlock* cb, Addr eip, Bool* isEnd )
       eip   = dis_Grp2 ( cb, eip, modrm, am_sz, d_sz, sz, Literal, d32 );
       break;
 
+   case 0xD2: /* Grp2 CL,Eb */
+      modrm = getUChar(eip);
+      am_sz = lengthAMode(eip);
+      d_sz  = 0;
+      sz    = 1;
+      eip   = dis_Grp2 ( cb, eip, modrm, am_sz, d_sz, sz, ArchReg, R_ECX );
+      break;
+
    case 0xD3: /* Grp2 CL,Ev */
       modrm = getUChar(eip);
       am_sz = lengthAMode(eip);
