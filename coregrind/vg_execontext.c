@@ -169,8 +169,12 @@ ExeContext* VG_(get_ExeContext) ( Addr eip, Addr ebp,
 
    vg_assert(VG_(clo_backtrace_size) >= 2 
              && VG_(clo_backtrace_size) <= VG_DEEPEST_BACKTRACE);
-   /* Second assertion checks the stack isn't riduculously big */
-   vg_assert(ebp_min <= ebp_max);
+
+   /* Assertion broken before main() is reached in pthreaded programs;  the
+    * offending stack traces only have one item.  --njn, 2002-aug-16 */
+   /* vg_assert(ebp_min <= ebp_max);*/
+
+   /* Checks the stack isn't riduculously big */
    vg_assert(ebp_min + 4000000 > ebp_max);
 
    /* First snaffle %EIPs from the client's stack into eips[0
