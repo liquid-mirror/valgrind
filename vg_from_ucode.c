@@ -1947,10 +1947,12 @@ static Bool writeFlagUse ( UInstr* u )
    return (u->flags_w != FlagsEmpty); 
 }
 
-static void emitUInstr ( Int i, UInstr* u, RRegSet regs_live_before )
+static void emitUInstr ( UCodeBlock* cb, Int i, RRegSet regs_live_before )
 {
-   Int old_emitted_code_used;
-   
+   Int     old_emitted_code_used, j;
+   UInstr* u = &cb->instrs[i];
+   Bool    can_skip;
+
    if (dis)
       VG_(ppUInstrWithRegs)(i, u);
 
@@ -1969,8 +1971,71 @@ static void emitUInstr ( Int i, UInstr* u, RRegSet regs_live_before )
       case NOP: case CALLM_S: case CALLM_E: break;
 
       case INCEIP: {
-         vg_assert(u->tag1 == Lit16);
-         emit_addlit8_offregmem ( u->val1, R_EBP, 4 * VGOFF_(m_eip) );
+        /* Note: Redundant INCEIP merging.  A potentially useful
+           performance enhancementa, but currently disabled.  Reason
+           is that it needs a surefire way to know if a UInstr might
+           give rise to a stack snapshot being taken.  The logic below
+           is correct (hopefully ...) for the core UInstrs, but is
+           incorrect if a skin has its own UInstrs, since the logic
+           currently assumes that none of them can cause a stack
+           trace, and that's just wrong.  Note this isn't
+           mission-critical -- the system still functions -- but will
+           cause incorrect source locations in some situations,
+           specifically for the memcheck skin.  This is known to
+           confuse programmers, understandable.  */
+
+#        if 0
+         /* Scan forwards to see if this INCEIP dominates (in the
+            technical sense) a later one, AND there are no CCALLs in
+            between.  If so, skip this one and instead add its count
+            with the later one. */
+         can_skip = True;
+	 j = i+1;
+         while (True) {
+            if (cb->instrs[j].opcode == CCALL 
+                || cb->instrs[j].opcode == CALLM) {
+               /* CCALL -- we can't skip this INCEIP. */
+               can_skip = False; 
+               break;
+            }
+            if (cb->instrs[j].opcode == INCEIP) {
+               /* Another INCEIP.  Check that the sum will fit. */
+               if (cb->instrs[i].val1 + cb->instrs[j].val1 > 127)
+                  can_skip = False;
+               break;
+            }
+            if (cb->instrs[j].opcode == JMP || cb->instrs[j].opcode == JIFZ) {
+               /* Execution is not guaranteed to get beyond this
+                  point.  Give up. */
+               can_skip = False; 
+               break;
+            }
+            j++;
+            /* Assertion should hold because all blocks should end in an
+               unconditional JMP, so the above test should get us out of
+               the loop at the end of a block. */
+            vg_assert(j < cb->used);
+         }
+         if (can_skip) {
+            /* yay!  Accumulate the delta into the next INCEIP. */
+            // VG_(printf)("skip INCEIP %d\n", cb->instrs[i].val1);
+            vg_assert(j > i);
+            vg_assert(j < cb->used);
+            vg_assert(cb->instrs[j].opcode == INCEIP);
+            vg_assert(cb->instrs[i].opcode == INCEIP);
+            vg_assert(cb->instrs[j].tag1 == Lit16);
+            vg_assert(cb->instrs[i].tag1 == Lit16);
+            cb->instrs[j].val1 += cb->instrs[i].val1;
+            /* do nothing now */
+         } else 
+#        endif
+
+         {
+            /* no, we really have to do this, alas */
+            // VG_(printf)("  do INCEIP %d\n", cb->instrs[i].val1);
+            vg_assert(u->tag1 == Lit16);
+            emit_addlit8_offregmem ( u->val1, R_EBP, 4 * VGOFF_(m_eip) );
+         }
          break;
       }
 
@@ -2329,7 +2394,7 @@ UChar* VG_(emit_code) ( UCodeBlock* cb, Int* nbytes )
             VG_(upUInstr)( i, u );
 	 }
          vg_assert(sane);
-         emitUInstr( i, u, regs_live_before );
+         emitUInstr( cb, i, regs_live_before );
       }
       regs_live_before = u->regs_live_after;
    }
