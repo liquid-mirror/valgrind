@@ -42,6 +42,7 @@ valgrind_so_SOURCES = \
 	vg_clientperms.c \
 	vg_demangle.c \
 	vg_dispatch.S \
+	vg_eraser.c \
 	vg_errcontext.c \
 	vg_execontext.c \
 	vg_from_ucode.c \
@@ -84,6 +85,9 @@ noinst_HEADERS = \
 MANUAL_DEPS = $(noinst_HEADERS) $(include_HEADERS) 
 
 vg_memory.o: vg_memory.c $(MANUAL_DEPS)
+	$(COMPILE) -O2 @PREFERRED_STACK_BOUNDARY@ -c $<
+
+vg_eraser.o: vg_eraser.c $(MANUAL_DEPS)
 	$(COMPILE) -O2 @PREFERRED_STACK_BOUNDARY@ -c $<
 
 vg_clientfuncs.o: vg_clientfuncs.c $(MANUAL_DEPS)
