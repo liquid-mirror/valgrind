@@ -121,11 +121,11 @@ typedef
 static void freeSegInfo ( SegInfo* si )
 {
    vg_assert(si != NULL);
-   if (si->filename) VG_(free)(VG_AR_SYMTAB, si->filename);
-   if (si->symtab) VG_(free)(VG_AR_SYMTAB, si->symtab);
-   if (si->loctab) VG_(free)(VG_AR_SYMTAB, si->loctab);
-   if (si->strtab) VG_(free)(VG_AR_SYMTAB, si->strtab);
-   VG_(free)(VG_AR_SYMTAB, si);
+   if (si->filename) VG_(arena_free)(VG_AR_SYMTAB, si->filename);
+   if (si->symtab)   VG_(arena_free)(VG_AR_SYMTAB, si->symtab);
+   if (si->loctab)   VG_(arena_free)(VG_AR_SYMTAB, si->loctab);
+   if (si->strtab)   VG_(arena_free)(VG_AR_SYMTAB, si->strtab);
+   VG_(arena_free)(VG_AR_SYMTAB, si);
 }
 
 
@@ -146,11 +146,11 @@ Int addStr ( SegInfo* si, Char* str )
    if (si->strtab_used + space_needed > si->strtab_size) {
       new_sz = 2 * si->strtab_size;
       if (new_sz == 0) new_sz = 5000;
-      new_tab = VG_(malloc)(VG_AR_SYMTAB, new_sz);
+      new_tab = VG_(arena_malloc)(VG_AR_SYMTAB, new_sz);
       if (si->strtab != NULL) {
          for (i = 0; i < si->strtab_used; i++)
             new_tab[i] = si->strtab[i];
-         VG_(free)(VG_AR_SYMTAB, si->strtab);
+         VG_(arena_free)(VG_AR_SYMTAB, si->strtab);
       }
       si->strtab      = new_tab;
       si->strtab_size = new_sz;
@@ -178,11 +178,11 @@ void addSym ( SegInfo* si, RiSym* sym )
    if (si->symtab_used == si->symtab_size) {
       new_sz = 2 * si->symtab_size;
       if (new_sz == 0) new_sz = 500;
-      new_tab = VG_(malloc)(VG_AR_SYMTAB, new_sz * sizeof(RiSym) );
+      new_tab = VG_(arena_malloc)(VG_AR_SYMTAB, new_sz * sizeof(RiSym) );
       if (si->symtab != NULL) {
          for (i = 0; i < si->symtab_used; i++)
             new_tab[i] = si->symtab[i];
-         VG_(free)(VG_AR_SYMTAB, si->symtab);
+         VG_(arena_free)(VG_AR_SYMTAB, si->symtab);
       }
       si->symtab = new_tab;
       si->symtab_size = new_sz;
@@ -207,11 +207,11 @@ void addLoc ( SegInfo* si, RiLoc* loc )
    if (si->loctab_used == si->loctab_size) {
       new_sz = 2 * si->loctab_size;
       if (new_sz == 0) new_sz = 500;
-      new_tab = VG_(malloc)(VG_AR_SYMTAB, new_sz * sizeof(RiLoc) );
+      new_tab = VG_(arena_malloc)(VG_AR_SYMTAB, new_sz * sizeof(RiLoc) );
       if (si->loctab != NULL) {
          for (i = 0; i < si->loctab_used; i++)
             new_tab[i] = si->loctab[i];
-         VG_(free)(VG_AR_SYMTAB, si->loctab);
+         VG_(arena_free)(VG_AR_SYMTAB, si->loctab);
       }
       si->loctab = new_tab;
       si->loctab_size = new_sz;
@@ -989,9 +989,9 @@ int process_extended_line_op( SegInfo *si, UInt** fnames,
       ++ state_machine_regs.last_file_entry;
       name = data;
       if (*fnames == NULL)
-        *fnames = VG_(malloc)(VG_AR_SYMTAB, sizeof (UInt) * 2);
+        *fnames = VG_(arena_malloc)(VG_AR_SYMTAB, sizeof (UInt) * 2);
       else
-        *fnames = VG_(realloc)(
+        *fnames = VG_(arena_realloc)(
                      VG_AR_SYMTAB, *fnames, /*alignment*/4,
                      sizeof(UInt) 
                         * (state_machine_regs.last_file_entry + 1));
@@ -1119,9 +1119,9 @@ void read_debuginfo_dwarf2 ( SegInfo* si, UChar* dwarf2, Int dwarf2_sz )
 		semantics, we need to malloc the first time. */
 
              if (fnames == NULL)
-               fnames = VG_(malloc)(VG_AR_SYMTAB, sizeof (UInt) * 2);
+               fnames = VG_(arena_malloc)(VG_AR_SYMTAB, sizeof (UInt) * 2);
              else
-               fnames = VG_(realloc)(VG_AR_SYMTAB, fnames, /*alignment*/4,
+               fnames = VG_(arena_realloc)(VG_AR_SYMTAB, fnames, /*alignment*/4,
                            sizeof(UInt) 
                               * (state_machine_regs.last_file_entry + 1));
              data += VG_(strlen) ((Char *) data) + 1;
@@ -1264,7 +1264,7 @@ void read_debuginfo_dwarf2 ( SegInfo* si, UChar* dwarf2, Int dwarf2_sz )
              break;
            }
        }
-      VG_(free)(VG_AR_SYMTAB, fnames);
+      VG_(arena_free)(VG_AR_SYMTAB, fnames);
       fnames = NULL;
     }
 }
@@ -1668,14 +1668,14 @@ void VG_(read_symtab_callback) (
    }
 
    /* Get the record initialised right. */
-   si = VG_(malloc)(VG_AR_SYMTAB, sizeof(SegInfo));
+   si = VG_(arena_malloc)(VG_AR_SYMTAB, sizeof(SegInfo));
    si->next = segInfo;
    segInfo = si;
 
    si->start    = start;
    si->size     = size;
    si->foffset  = foffset;
-   si->filename = VG_(malloc)(VG_AR_SYMTAB, 1 + VG_(strlen)(filename));
+   si->filename = VG_(arena_malloc)(VG_AR_SYMTAB, 1 + VG_(strlen)(filename));
    VG_(strcpy)(si->filename, filename);
 
    si->symtab = NULL;
