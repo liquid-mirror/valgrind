@@ -100,9 +100,9 @@ static void print_cache(cache_t2* c)
 }
 #endif 
 
-/* XXX: This is done as a macro rather than by passing in the cache_t2 as
- * an arg because it slows things down by a small amount (3-5%) due to all that
- * extra indirection. */
+/* This is done as a macro rather than by passing in the cache_t2 as an 
+ * arg because it slows things down by a small amount (3-5%) due to all 
+ * that extra indirection. */
 
 #define CACHESIM(L, MISS_TREATMENT)                                         \
 /* The cache and associated bits and pieces. */                             \
