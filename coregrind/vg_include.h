@@ -548,7 +548,7 @@ typedef
      /* Address of the highest legitimate word in this stack.  This is
         used for error messages only -- not critical for execution
         correctness.  Is is set for all stacks, specifically including
-        ThreadId == 0 (the main thread). */
+        ThreadId == 1 (the main thread). */
       Addr stack_highest_word;
 
       /* Saved machine context. */
@@ -1426,18 +1426,8 @@ extern void VG_(do_sanity_checks) ( Bool force_expensive );
 /* Very cheap ... */
 extern Bool VG_(first_and_last_secondaries_look_plausible) ( void );
 
-/* These functions are called from generated code. */
-extern void VG_(helperc_STOREV4) ( UInt, Addr );
-extern void VG_(helperc_STOREV2) ( UInt, Addr );
-extern void VG_(helperc_STOREV1) ( UInt, Addr );
-
-extern UInt VG_(helperc_LOADV1) ( Addr );
-extern UInt VG_(helperc_LOADV2) ( Addr );
-extern UInt VG_(helperc_LOADV4) ( Addr );
-
 extern void VGM_(handle_esp_assignment) ( Addr new_espA );
-extern void VGM_(fpu_write_check) ( Addr addr, Int size );
-extern void VGM_(fpu_read_check)  ( Addr addr, Int size );
+
 
 /* Safely (avoiding SIGSEGV / SIGBUS) scan the entire valid address
    space and pass the addresses and values of all addressible,
@@ -1456,6 +1446,29 @@ extern Bool VG_(is_just_below_ESP)( Addr esp, Addr aa );
 /* Needed by the pthreads implementation. */
 #define VGM_WORD_VALID     0
 #define VGM_WORD_INVALID   0xFFFFFFFF
+
+
+
+/* ----------- New fast V cache stuff. ----------- */
+
+#define VG_N_VCACHE_BITS 10
+
+#define VG_N_VCACHE (1 << VG_N_VCACHE_BITS)
+extern Addr VG_(vcache_discr)[VG_N_VCACHE];
+extern UInt VG_(vcache_vbits)[VG_N_VCACHE];
+extern UInt VG_(vcache_vorig)[VG_N_VCACHE];
+
+#define VG_N_VCACHE_MASK (VG_N_VCACHE - 1)
+
+/* These functions are called from generated code, the first 8 via
+   similarly named functions in vg_helpers.S. */
+extern void VG_(helperc_STOREV4) ( UInt, Addr );
+extern void VG_(helperc_STOREV2) ( UInt, Addr );
+extern void VG_(helperc_STOREV1) ( UInt, Addr );
+
+extern UInt VG_(helperc_LOADV1) ( Addr );
+extern UInt VG_(helperc_LOADV2) ( Addr );
+extern UInt VG_(helperc_LOADV4) ( Addr );
 
 
 /* ---------------------------------------------------------------------
@@ -1626,6 +1639,7 @@ extern void VG_(helper_value_check0_fail);
 extern void VG_(signalreturn_bogusRA)( void );
 extern void VG_(pthreadreturn_bogusRA)( void );
 
+
 /* ---------------------------------------------------------------------
    Exports of vg_cachesim.c
    ------------------------------------------------------------------ */
@@ -1640,6 +1654,7 @@ extern void VG_(show_cachesim_results)( Int client_argc, Char** client_argv );
 
 extern void VG_(cachesim_log_non_mem_instr)(  iCC* cc );
 extern void VG_(cachesim_log_mem_instr)    ( idCC* cc, Addr data_addr );
+
 
 /* ---------------------------------------------------------------------
    The state of the simulated CPU.
@@ -1762,17 +1777,21 @@ extern Int VGOFF_(helper_value_check2_fail);
 extern Int VGOFF_(helper_value_check1_fail);
 extern Int VGOFF_(helper_value_check0_fail);
 
-extern Int VGOFF_(helperc_STOREV4); /* :: UInt -> Addr -> void */
-extern Int VGOFF_(helperc_STOREV2); /* :: UInt -> Addr -> void */
-extern Int VGOFF_(helperc_STOREV1); /* :: UInt -> Addr -> void */
+/* These next 8 are assembly stubs which merely pass the call along to
+   C functions of similar name in vg_memory.c.  */
+extern Int VGOFF_(helpers_STOREV4); /* :: UInt -> Addr -> void */
+extern Int VGOFF_(helpers_STOREV2); /* :: UInt -> Addr -> void */
+extern Int VGOFF_(helpers_STOREV1); /* :: UInt -> Addr -> void */
 
-extern Int VGOFF_(helperc_LOADV4); /* :: Addr -> UInt -> void */
-extern Int VGOFF_(helperc_LOADV2); /* :: Addr -> UInt -> void */
-extern Int VGOFF_(helperc_LOADV1); /* :: Addr -> UInt -> void */
+extern Int VGOFF_(helpers_LOADV4); /* :: Addr -> UInt -> void */
+extern Int VGOFF_(helpers_LOADV2); /* :: Addr -> UInt -> void */
+extern Int VGOFF_(helpers_LOADV1); /* :: Addr -> UInt -> void */
+
+extern Int VGOFF_(helperc_LOAD_FP);  /* :: Addr -> Int -> void */
+extern Int VGOFF_(helperc_STORE_FP); /* :: Addr -> Int -> void */
+
 
 extern Int VGOFF_(handle_esp_assignment); /* :: Addr -> void */
-extern Int VGOFF_(fpu_write_check);       /* :: Addr -> Int -> void */
-extern Int VGOFF_(fpu_read_check);        /* :: Addr -> Int -> void */
 
 extern Int VGOFF_(cachesim_log_non_mem_instr);
 extern Int VGOFF_(cachesim_log_mem_instr);
