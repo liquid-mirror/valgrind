@@ -24,13 +24,14 @@ noinst_PROGRAMS = \
 	manuel1 manuel2 manuel3 \
 	memalign_test memcmptest mmaptest nanoleak pushfpopf \
 	realloc1 realloc2 sigaltstack signal2 supp1 supp2 suppfree \
-	trivialleak tronical weirdioctl
+	trivialleak tronical weirdioctl	\
+	mismatches new_override
 
 # XXX: want to have this inherited from ../Makefile.am
-CFLAGS = $(WERROR) -Winline -Wall -Wshadow -g
+CFLAGS   = $(WERROR) -Winline -Wall -Wshadow -g
+CXXFLAGS = $(CFLAGS)
 
-
-# --skin=memcheck ones
+# C ones
 badaddrvalue_SOURCES 	= badaddrvalue.c
 badfree_SOURCES 	= badfree.c
 badjump_SOURCES 	= badjump.c
@@ -50,10 +51,7 @@ manuel3_SOURCES 	= manuel3.c
 mmaptest_SOURCES 	= mmaptest.c
 memalign_test_SOURCES 	= memalign_test.c
 memcmptest_SOURCES 	= memcmptest.c
-#memtests_SOURCES	= memtests.cpp		(C++)
 nanoleak_SOURCES 	= nanoleak.c
-# Not sure how to specify CXX in configure.in to compile C++ progs...
-#new_override_SOURCES 	= new_override.cpp
 pushfpopf_SOURCES 	= pushfpopf_c.c pushfpopf_s.s
 realloc1_SOURCES 	= realloc1.c
 realloc2_SOURCES 	= realloc2.c
@@ -65,4 +63,8 @@ sigaltstack_SOURCES 	= sigaltstack.c
 trivialleak_SOURCES 	= trivialleak.c
 tronical_SOURCES 	= tronical.S
 weirdioctl_SOURCES 	= weirdioctl.c
+
+# C++ ones
+mismatches_SOURCES	= mismatches.cpp
+new_override_SOURCES 	= new_override.cpp
 
