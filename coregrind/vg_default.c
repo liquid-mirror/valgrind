@@ -149,7 +149,7 @@ void SK_(written_shadow_regs_values)(UInt* gen_reg, UInt* eflags)
    Command line arg template function
    ------------------------------------------------------------------ */
 
-Bool SK_(process_cmd_line_option)(UChar* argv)
+Bool SK_(process_cmd_line_option)(Char* argv)
 {
    non_fund_panic("SK_(process_cmd_line_option)");
 }

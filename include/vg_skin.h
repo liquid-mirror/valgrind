@@ -1267,7 +1267,7 @@ extern void SK_(written_shadow_regs_values) ( UInt* gen_reg, UInt* eflags );
 /* VG_(needs).command_line_options */
 
 /* Return True if option was recognised */
-extern Bool SK_(process_cmd_line_option)( UChar* argv );
+extern Bool SK_(process_cmd_line_option)( Char* argv );
 
 /* Print out command line usage for skin options */
 extern Char* SK_(usage)                  ( void );
