@@ -402,6 +402,9 @@ VgNeeds VG_(needs) = {
    .name                    = NULL,
    .description             = NULL,
 
+   .record_mem_exe_context  = INVALID_Bool,
+   .postpone_mem_reuse      = INVALID_Bool,
+
    .debug_info              = Vg_DebugUnknown,
    .precise_x86_instr_sizes = INVALID_Bool,
    .pthread_errors          = INVALID_Bool,
@@ -409,18 +412,16 @@ VgNeeds VG_(needs) = {
 
    .identifies_basic_blocks = INVALID_Bool,
 
+   .run_libc_freeres        = INVALID_Bool,
+
    .command_line_options    = INVALID_Bool,
    .client_requests         = INVALID_Bool,
 
-   .augments_UInstrs        = INVALID_Bool,
    .extends_UCode           = INVALID_Bool,
 
    .wrap_syscalls           = INVALID_Bool,
 
    .sanity_checks           = INVALID_Bool,
-
-   .shadow_memory           = INVALID_Bool,
-   .track_threads           = INVALID_Bool,
 };
 
 Bool   VG_(clo_error_limit);
@@ -520,6 +521,9 @@ static void sanity_check_needs ( void )
    CHECK_NOT(VG_(needs).name,        NULL);
    CHECK_NOT(VG_(needs).description, NULL);
 
+   CHECK_NOT(VG_(needs).record_mem_exe_context,  INVALID_Bool);
+   CHECK_NOT(VG_(needs).postpone_mem_reuse,      INVALID_Bool);
+
    CHECK_NOT(VG_(needs).debug_info,              Vg_DebugUnknown);
    CHECK_NOT(VG_(needs).precise_x86_instr_sizes, INVALID_Bool);
    CHECK_NOT(VG_(needs).pthread_errors,          INVALID_Bool);
@@ -527,21 +531,16 @@ static void sanity_check_needs ( void )
 
    CHECK_NOT(VG_(needs).identifies_basic_blocks, INVALID_Bool);
 
+   CHECK_NOT(VG_(needs).run_libc_freeres,        INVALID_Bool);
+
    CHECK_NOT(VG_(needs).command_line_options,    INVALID_Bool);
    CHECK_NOT(VG_(needs).client_requests,         INVALID_Bool);
 
-   CHECK_NOT(VG_(needs).augments_UInstrs,        INVALID_Bool);
-   CHECK_NOT(VG_(needs).extends_UCode,           INVALID_Bool);
-
-   CHECK_NOT(VG_(needs).augments_UInstrs,        INVALID_Bool);
    CHECK_NOT(VG_(needs).extends_UCode,           INVALID_Bool);
 
    CHECK_NOT(VG_(needs).wrap_syscalls,           INVALID_Bool);
 
    CHECK_NOT(VG_(needs).sanity_checks,           INVALID_Bool);
-
-   CHECK_NOT(VG_(needs).shadow_memory,           INVALID_Bool);
-   CHECK_NOT(VG_(needs).track_threads,           INVALID_Bool);
 
 #undef CHECK_NOT
 #undef INVALID_Bool
@@ -1076,8 +1075,9 @@ void VG_(main) ( void )
    }
 
    /* Setup stuff that depends on the skin.  Warning: Must be before
-    * vg_init_baseBlock() and process_cmd_line_options() */
-   SK_(setup) ( & VG_(needs) );
+    * vg_init_baseBlock(), process_cmd_line_options(),
+    * init_memory_and_symbols() */
+   SK_(setup) ( & VG_(needs), & VG_(track_events) );
    sanity_check_needs();
 
    /* Set up baseBlock offsets and copy the saved machine's state into it. */
@@ -1112,36 +1112,28 @@ void VG_(main) ( void )
    /* Start calibration of our RDTSC-based clock. */
    VG_(start_rdtsc_calibration)();
 
-   /* Setup shadow memory, if needed */
-   if (VG_(needs).shadow_memory) {
-      VGP_PUSHCC(VgpInitAudit);
-      VGM_(init_memory_audit)();
-      VGP_POPCC;
-   }
+   SK_(init)();
+
+   /* Must come after SK_(init) so memory handler accompaniments (eg.
+    * shadow memory) can be setup ok */
+   VGP_PUSHCC(VgpInitMem);
+   VGM_(init_memory_and_symbols)();
+   VGP_POPCC;
+
 
    /* Read the list of errors to suppress.  This should be found in
       the file specified by vg_clo_suppressions. */
    if (VG_(needs).pthread_errors || VG_(needs).report_errors)
       VG_(load_suppressions)();
 
-   /* This does two things: 
-      1. Sets up segments (always necessary, because if they're munmap()ed
-         we need to know if they were executable in order to discard
-         translations.
-      2. Reads debug info, but only if VG_(needs).debug_info != * Vg_DebugNone.
-    */
-   VGP_PUSHCC(VgpReadSyms);
-   VG_(read_symbols)();
-   VGP_POPCC;
-
    /* End calibration of our RDTSC-based clock, leaving it as long as
       we can. */
    VG_(end_rdtsc_calibration)();
 
-   /* This should come after init_memory_audit; otherwise the latter
-      carefully sets up the permissions maps to cover the anonymous
-      mmaps for the translation table and translation cache, which
-      wastes > 20M of virtual address space. */
+   /* This should come after init_memory_and_symbols(); otherwise the 
+      latter carefully sets up the permissions maps to cover the 
+      anonymous mmaps for the translation table and translation cache, 
+      which wastes > 20M of virtual address space. */
    VG_(init_tt_tc)();
 
    if (VG_(clo_verbosity) == 1) {
@@ -1151,10 +1143,6 @@ void VG_(main) ( void )
 
    /* Now it is safe for malloc et al in vg_clientmalloc.c to act
       instrumented-ly. */
-   VG_(running_on_simd_CPU) = True;
-
-   SK_(init)();
-
    if (VG_(clo_verbosity) > 0)
       VG_(message)(Vg_UserMsg, "");
 
@@ -1162,9 +1150,11 @@ void VG_(main) ( void )
 
 
    /* Run! */
+   VG_(running_on_simd_CPU) = True;
    VGP_PUSHCC(VgpSched);
    src = VG_(scheduler)();
    VGP_POPCC;
+   VG_(running_on_simd_CPU) = False;
 
    if (VG_(clo_verbosity) > 0)
       VG_(message)(Vg_UserMsg, "");
@@ -1179,14 +1169,11 @@ void VG_(main) ( void )
 
    SK_(fini)();
 
-   VG_(running_on_simd_CPU) = False;
-
    VG_(do_sanity_checks)( True /*include expensive checks*/ );
 
    if (VG_(clo_verbosity) > 1)
       vg_show_counts();
 
-   // JJJ: where should this go?  which parts are MemCheck specific?
    if (0) {
       VG_(message)(Vg_DebugMsg, "");
       VG_(message)(Vg_DebugMsg, 
@@ -1198,7 +1185,7 @@ void VG_(main) ( void )
       VG_(show_ExeContext_stats)();
       VG_(message)(Vg_DebugMsg, 
          "------ Valgrind's client block stats follow ---------------" );
-      VG_(show_client_block_stats)();
+      VG_(show_client_block_stats)();     // SSS: memcheck specific
    }
  
 #  ifdef VG_PROFILE
