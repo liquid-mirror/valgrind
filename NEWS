@@ -1,4 +1,46 @@
 
+Snapshot 20031104 (4 Nov 2003)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+20031104 improves SSE/SSE2 support, fixes some minor bugs, and
+improves support for SuSE 9 and the Red Hat "Severn" beta.
+
+- Further improvements to SSE/SSE2 support.  The entire test suite of
+  the GNU Scientific Library (gsl-1.4) compiled with Intel Icc 7.1
+  20030307Z '-g -O -xW' now works.  I think this gives pretty good
+  coverage of SSE/SSE2 floating point instructions, or at least the
+  subset emitted by Icc.
+
+- Also added support for the following instructions:
+    MOVNTDQ UCOMISD UNPCKLPS UNPCKHPS SQRTSS
+    PUSH/POP %{FS,GS}, and PUSH %CS (Nb: there is no POP %CS).
+
+- CFI support for GDB version 6.  Needed to enable newer GDBs
+  to figure out where they are when using --gdb-attach=yes.
+
+- Fix this:
+      mc_translate.c:1091 (memcheck_instrument): Assertion
+      `u_in->size == 4 || u_in->size == 16' failed.
+
+- Return an error rather than panicing when given a bad socketcall.
+
+- Fix checking of syscall rt_sigtimedwait().
+
+- Implement __NR_clock_gettime (syscall 265).  Needed on Red Hat Severn.
+
+- Fixed bug in overlap check in strncpy() -- it was assuming the src was 'n'
+  bytes long, when it could be shorter, which could cause false
+  positives.
+
+- Support use of select() for very large numbers of file descriptors.
+
+- Don't fail silently if the executable is statically linked, or is
+  setuid/setgid. Print an error message instead.
+
+- Support for old DWARF-1 format line number info.
+
+
+
 Snapshot 20031012 (12 October 2003)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
