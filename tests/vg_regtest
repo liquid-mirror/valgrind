@@ -74,6 +74,68 @@ my $default_stderr_filter = "filter_stderr";
 
 
 #----------------------------------------------------------------------------
+# Process command line, setup
+#----------------------------------------------------------------------------
+
+# If $prog is a relative path, it prepends $dir to it.  Useful for two reasons:
+#
+# 1. Can prepend "." onto programs to avoid trouble with users who don't have
+#    "." in their path (by making $dir = ".")
+# 2. Can prepend the current dir to make the command absolute to avoid
+#    subsequent trouble when we change directories.
+#
+# Also checks the program exists and is executable.
+sub validate_program ($$) 
+{
+    my ($dir, $prog) = @_;
+
+    # If absolute path, leave it alone.  If relative, make it
+    # absolute -- by prepending current dir -- so we can change
+    # dirs and still use it.
+    $prog = "$dir/$prog" if ($prog !~ /^\//);
+    (-f $prog) or die "`$prog' not found or not a file ($dir)\n";
+    (-x $prog) or die "`$prog' not found or not executable ($dir)\n";
+
+    return $prog;
+}
+
+sub process_command_line() 
+{
+    my $alldirs = 0;
+    my @fs;
+    
+    for my $arg (@ARGV) {
+        if ($arg =~ /^-/) {
+            if      ($arg =~ /^--head$/) {
+                $exp = ".hd";
+            } elsif ($arg =~ /^--eraser$/) {
+                $exp = "";
+            } elsif ($arg =~ /^--all$/) {
+                $alldirs = 1;
+            } elsif ($arg =~ /^--valgrind=(.*)$/) {
+                $valgrind = $1;
+            } else {
+                die $usage;
+            }
+        } else {
+            push(@fs, $arg);
+        }
+    }
+    $valgrind = validate_program($tests_dir, $valgrind);
+
+    if ($alldirs) {
+        @fs = ();
+        foreach my $f (glob "*") {
+            push(@fs, $f) if (-d $f);
+        }
+    }
+
+    (0 != @fs) or die "No test files or directories specified\n";
+
+    return @fs;
+}
+
+#----------------------------------------------------------------------------
 # Read a .vgtest file
 #----------------------------------------------------------------------------
 sub read_vgtest_file($)
@@ -191,67 +253,6 @@ sub test_one_dir($)
     }
     chdir("..");
     print "\n";
-}
-
-#----------------------------------------------------------------------------
-# Process command line, setup
-#----------------------------------------------------------------------------
-
-# If $prog is a relative path, it prepends $dir to it.  Useful for two reasons:
-#
-# 1. Can prepend "." onto programs to avoid trouble with users who don't have
-#    "." in their path (by making $dir = ".")
-# 2. Can prepend the current dir to make the command absolute to avoid
-#    subsequent trouble when we change directories.
-#
-# Also checks the program exists and is executable.
-sub validate_program ($$) 
-{
-    my ($dir, $prog) = @_;
-
-    # If absolute path, leave it alone.  If relative, make it
-    # absolute -- by prepending current dir -- so we can change
-    # dirs and still use it.
-    $prog = "$dir/$prog" if ($prog !~ /^\//);
-    (-x $prog) or die "`$prog' not found or not executable ($dir)\n";
-
-    return $prog;
-}
-
-sub process_command_line() 
-{
-    my $alldirs = 0;
-    my @fs;
-    
-    for my $arg (@ARGV) {
-        if ($arg =~ /^-/) {
-            if      ($arg =~ /^--head$/) {
-                $exp = ".hd";
-            } elsif ($arg =~ /^--eraser$/) {
-                $exp = "";
-            } elsif ($arg =~ /^--all$/) {
-                $alldirs = 1;
-            } elsif ($arg =~ /^--valgrind=(.*)$/) {
-                $valgrind = $1;
-            } else {
-                die $usage;
-            }
-        } else {
-            push(@fs, $arg);
-        }
-    }
-    $valgrind = validate_program($tests_dir, $valgrind);
-
-    if ($alldirs) {
-        @fs = ();
-        foreach my $f (glob "*") {
-            push(@fs, $f) if (-d $f);
-        }
-    }
-
-    (0 != @fs) or die "No test files or directories specified\n";
-
-    return @fs;
 }
 
 #----------------------------------------------------------------------------
