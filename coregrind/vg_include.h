@@ -1101,10 +1101,6 @@ extern void VG_(handle_esp_assignment) ( Addr new_espA );
 
 extern void VG_(init_dataseg_end_for_brk) ( void );
 
-// SSS: relying on the skin to override this doesn't fit with
-//       all the other ways of calling hook functions.
-extern UInt VG_(dereference) ( Addr p );
-
 extern void VG_(perform_assumed_nonblocking_syscall) ( ThreadId tid );
 
 extern void* VG_(pre_known_blocking_syscall) ( ThreadId tid, Int syscallno );
