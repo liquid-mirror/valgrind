@@ -73,9 +73,10 @@ Int VG_(log2) ( Int x )
 static void file_err()
 {
    VG_(message)(Vg_UserMsg,
-                "error: can't open cache simulation output file `%s'",
-                OUT_FILE );
-   VG_(exit)(1);
+      "error: can't open cache simulation output file `%s'",
+      OUT_FILE );
+   VG_(message)(Vg_UserMsg,
+      "       ... so detailed simulation results will be missing.");
 }
 
 /*------------------------------------------------------------*/
@@ -1281,7 +1282,8 @@ void VG_(init_cachesim)(void)
          file_err(); 
       }
    }
-   VG_(close)(fd);
+   if (-1 != fd)
+      VG_(close)(fd);
 
    initCC(&Ir_total);
    initCC(&Dr_total);
@@ -1487,7 +1489,12 @@ static void fprint_BBCC_table_and_calc_totals(Int client_argc,
 
    VGP_PUSHCC(VgpCacheDump);
    fd = VG_(open_write)(OUT_FILE);
-   if (-1 == fd) { file_err(); }
+   if (-1 == fd) { 
+      /* If the file can't be opened for whatever reason (conflict
+         between multiple cachegrinded processes?), give up now. */
+      file_err(); 
+      return;
+   }
 
    /* "desc:" lines (giving I1/D1/L2 cache configuration) */
    VG_(sprintf)(buf, "desc: I1 cache:         %s\n", I1.desc_line);
