@@ -580,7 +580,9 @@ void log_1I_0D_cache_access(iCC* cc)
    this one can be passed any kind of CC, not just an iCC.  So we have to
    be careful to make sure we don't make any assumptions about CC layout.
    (As it stands, they would be safe, but this will avoid potential heartache
-   if anyone else changes CC layout.) */
+   if anyone else changes CC layout.)  
+   Note that we only do the switch for the JIFZ version because if we always
+   called this switching version, things would run about 5% slower. */
 static __attribute__ ((regparm (1)))
 void log_1I_0D_cache_access_JIFZ(iCC* cc)
 {
