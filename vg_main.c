@@ -526,7 +526,6 @@ Int    VG_(clo_n_suppressions) = 0;
 Char*  VG_(clo_suppressions)[VG_CLO_MAX_SFILES];
 Bool   VG_(clo_single_step)    = False;
 Bool   VG_(clo_optimise)       = True;
-Int    VG_(clo_smc_check)      = /* VG_CLO_SMC_SOME */ VG_CLO_SMC_NONE;  
 UChar  VG_(clo_trace_codegen)  = 0; // 00000000b
 Bool   VG_(clo_trace_syscalls) = False;
 Bool   VG_(clo_trace_signals)  = False;
@@ -622,7 +621,6 @@ static void usage ( void )
 "    --sanity-level=<number>   level of sanity checking to do [1]\n"
 "    --single-step=no|yes      translate each instr separately? [no]\n"
 "    --optimise=no|yes         improve intermediate code? [yes]\n"
-"    --smc-check=none|some|all check writes for s-m-c? [some]\n"
 "    --trace-codegen=<XXXXX>   show generated code? (X = 0|1) [00000]\n"
 "    --trace-syscalls=no|yes   show all system calls? [no]\n"
 "    --trace-signals=no|yes    show signal handling details? [no]\n"
@@ -885,13 +883,6 @@ static void process_cmd_line_options ( void )
          VG_(clo_optimise) = True;
       else if (STREQ(argv[i], "--optimise=no"))
          VG_(clo_optimise) = False;
-
-      else if (STREQ(argv[i], "--smc-check=none"))
-         VG_(clo_smc_check) = VG_CLO_SMC_NONE;
-      else if (STREQ(argv[i], "--smc-check=some"))
-         VG_(clo_smc_check) = VG_CLO_SMC_SOME;
-      else if (STREQ(argv[i], "--smc-check=all"))
-         VG_(clo_smc_check) = VG_CLO_SMC_ALL;
 
       /* "vwxyz" --> 000zyxwv (binary) */
       else if (STREQN(16, argv[i], "--trace-codegen=")) {

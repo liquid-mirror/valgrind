@@ -199,8 +199,6 @@ extern Char* VG_(clo_suppressions)[VG_CLO_MAX_SFILES];
 extern Bool  VG_(clo_single_step);
 /* Code improvement?  default: YES */
 extern Bool  VG_(clo_optimise);
-/* SMC write checks?  default: SOME (1,2,4 byte movs to mem) */
-extern Int   VG_(clo_smc_check);
 /* DEBUG: print generated code?  default: 00000 ( == NO ) */
 extern Bool  VG_(clo_trace_codegen);
 /* DEBUG: print system calls?  default: NO */

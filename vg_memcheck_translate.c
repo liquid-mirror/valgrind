@@ -61,14 +61,13 @@ Bool SKN_(saneExtUInstr)(Bool beforeRA, Bool beforeLiveness, UInstr* u)
 #  define N3  (u->tag3 == NoValue)
 #  define COND0    (u->cond         == 0)
 #  define EXTRA4b0 (u->extra4b      == 0)
-#  define SMC0     (u->smc_check    == 0)
 #  define SG_WD0   (u->signed_widen == 0)
 #  define JMPKIND0 (u->jmpkind      == 0)
 #  define CCALL0   (u->argc==0 && u->regparms_n==0 && u->has_ret_val==0 && \
                     ( beforeLiveness                                       \
                     ? u->save_eax==1 && u->save_ecx==1 && u->save_edx==1   \
                     : True ))
-#  define XOTHER   (COND0 && EXTRA4b0 && SMC0 && SG_WD0 && JMPKIND0 && CCALL0)
+#  define XOTHER   (COND0 && EXTRA4b0 && SG_WD0 && JMPKIND0 && CCALL0)
 
    Int n_lits = 0;
    if (u->tag1 == Literal) n_lits++;
