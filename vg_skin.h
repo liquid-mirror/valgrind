@@ -592,15 +592,16 @@ typedef UChar FlagSet;
    Reg rank order 0..N-1 corresponds to bits 0..N-1, ie. first
    reg's liveness in bit 0, last reg's in bit N-1.  Note that
    these rankings don't match the Intel register ordering. */
-typedef UChar RegsLive;
+typedef UInt RRegSet;
 
-#define ALL_REGS_LIVE   (1 << (VG_MAX_REALREGS-1))  /* 0011...11b */
-#define REG_LIVE(rank)  (1 << rank)
+#define ALL_RREGS_DEAD   0                           /* 0000...00b */
+#define ALL_RREGS_LIVE   (1 << (VG_MAX_REALREGS-1))  /* 0011...11b */
+#define RREG_LIVE(rank)  (1 << rank)
 
-#define IS_REG_LIVE(rank,regs_live) (regs_live & REG_LIVE(rank))
-#define SET_REG_LIVE(rank,regs_live,b)         \
-   do { if (b) regs_live |=   REG_LIVE(rank);  \
-        else   regs_live &= ~(REG_LIVE(rank)); \
+#define IS_RREG_LIVE(rank,rregs_live) (rregs_live & RREG_LIVE(rank))
+#define SET_RREG_LIVENESS(rank,rregs_live,b)       \
+   do { if (b) rregs_live |=   RREG_LIVE(rank);    \
+        else   rregs_live &= ~(RREG_LIVE(rank));   \
    } while(0)
 
 
@@ -649,7 +650,7 @@ typedef
          to use this information requires converting between register ranks
          and the Intel register numbers, using VG_(realRegNumToRank)()
          and/or VG_(rankToRealRegNum)() */
-      RegsLive regs_live_after:VG_MAX_REALREGS; 
+      RRegSet regs_live_after:VG_MAX_REALREGS; 
    }
    UInstr;
 
@@ -825,7 +826,7 @@ void VG_(synth_call) ( Bool ensure_shortform, Int word_offset );
 */
 void VG_(synth_ccall) ( Addr fn, Int argc, Int regparms_n, UInt argv[],
                         Tag tagv[], Int ret_reg, 
-                        UChar regs_live_before, UChar regs_live_after );
+                        RRegSet regs_live_before, RRegSet regs_live_after );
 
 /* Addressing modes */
 void VG_(emit_amode_offregmem_reg) ( Int off, Int regmem, Int reg );
@@ -1338,9 +1339,9 @@ extern UInt SK_(handle_client_request) ( ThreadState* tst, UInt* arg_block );
    }
 
 extern Int   SK_(getExtRegUsage) ( UInstr* u, Tag tag, RegUse* arr );
-extern void  SK_(emitExtUInstr)  ( UInstr* u, UChar regs_live_before );
+extern void  SK_(emitExtUInstr)  ( UInstr* u, RRegSet regs_live_before );
 extern Bool  SK_(saneExtUInstr)  ( Bool beforeRA, Bool beforeLiveness,
-                                    UInstr* u );
+                                   UInstr* u );
 extern Char* SK_(nameExtUOpcode) ( Opcode opc );
 extern void  SK_(ppExtUInstr)    ( UInstr* u );
 

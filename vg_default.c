@@ -172,7 +172,7 @@ UInt SK_(handle_client_request)(ThreadState* tst, UInt* arg_block)
    UCode extension
    ------------------------------------------------------------------ */
 
-void SK_(emitExtUInstr)(UInstr* u, UChar regs_live_before)
+void SK_(emitExtUInstr)(UInstr* u, RRegSet regs_live_before)
 {
    non_fund_panic("SK_(emitExtUInstr)");
 }

@@ -65,7 +65,7 @@ Bool SK_(saneExtUInstr)(Bool beforeRA, Bool beforeLiveness, UInstr* u)
 #  define JMPKIND0 (u->jmpkind      == 0)
 #  define CCALL0   (u->argc==0 && u->regparms_n==0 && u->has_ret_val==0 && \
                     ( beforeLiveness                                       \
-                    ? u->regs_live_after == ALL_REGS_LIVE                  \
+                    ? u->regs_live_after == ALL_RREGS_LIVE                 \
                     : True ))
 #  define XOTHER   (COND0 && EXTRA4b0 && SG_WD0 && JMPKIND0 && CCALL0)
 
