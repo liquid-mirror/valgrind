@@ -28,8 +28,7 @@
    The GNU General Public License is contained in the file LICENSE.
 */
 
-#include "vg_include.h"
-#include "vg_instrument.h"
+#include "vg_skin.h"
 
 //#define uInstr0   VG_(newUInstr0)
 //#define uLiteral  VG_(setLiteralField)
@@ -110,7 +109,7 @@ UCodeBlock* SK_(instrument) ( UCodeBlock* cb, Addr not_used )
 
 void SK_(fini)(void)
 {
-    VG_(message)(Vg_UserMsg, "UInstrs counted: %u\n", n_uinstrs);
+    VG_(message)(Vg_UserMsg, "UInstrs counted: %u", n_uinstrs);
 }
 
 /*--------------------------------------------------------------------*/

@@ -164,7 +164,7 @@ static
 Char *strdupcat ( const Char *s1, const Char *s2, ArenaId aid )
 {
    UInt len = VG_(strlen) ( s1 ) + VG_(strlen) ( s2 ) + 1;
-   Char *result = VG_(malloc) ( aid, len );
+   Char *result = VG_(arena_malloc) ( aid, len );
    VG_(strcpy) ( result, s1 );
    VG_(strcat) ( result, s2 );
    return result;
@@ -177,7 +177,7 @@ void pre_mem_read_sendmsg ( ThreadState* tst,
    Char *outmsg = strdupcat ( "socketcall.sendmsg", msg, VG_AR_TRANSIENT );
    SYSCALL_TRACK( pre_mem_read, tst, outmsg, base, size );
 
-   VG_(free) ( VG_AR_TRANSIENT, outmsg );
+   VG_(arena_free) ( VG_AR_TRANSIENT, outmsg );
 }
 
 static 
@@ -186,7 +186,7 @@ void pre_mem_write_recvmsg ( ThreadState* tst,
 {
    Char *outmsg = strdupcat ( "socketcall.recvmsg", msg, VG_AR_TRANSIENT );
    SYSCALL_TRACK( pre_mem_write, tst, outmsg, base, size );
-   VG_(free) ( VG_AR_TRANSIENT, outmsg );
+   VG_(arena_free) ( VG_AR_TRANSIENT, outmsg );
 }
 
 static
@@ -238,7 +238,8 @@ void pre_mem_read_sockaddr ( ThreadState* tst,
                                  Char *description,
                                  struct sockaddr *sa, UInt salen )
 {
-   Char *outmsg = VG_(malloc) ( VG_AR_TRANSIENT, strlen( description ) + 30 );
+   Char *outmsg = VG_(arena_malloc) ( VG_AR_TRANSIENT, 
+                                      strlen( description ) + 30 );
 
    VG_(sprintf) ( outmsg, description, ".sa_family" );
    SYSCALL_TRACK( pre_mem_read, tst, outmsg, (UInt) &sa->sa_family, sizeof (sa_family_t));
@@ -289,7 +290,7 @@ void pre_mem_read_sockaddr ( ThreadState* tst,
          break;
    }
    
-   VG_(free) ( VG_AR_TRANSIENT, outmsg );
+   VG_(arena_free) ( VG_AR_TRANSIENT, outmsg );
 }
 
 

@@ -50,6 +50,7 @@
 
 
 /* Is this a callee-save register, in the normal C calling convention?  */
+// SSS: get rid of this
 #define VG_CALLEE_SAVED(reg) (reg == R_EBX || reg == R_ESI || reg == R_EDI)
 
 
@@ -119,31 +120,6 @@ static void synth_minimal_test_lit_reg ( UInt lit, Int reg32 )
 /*--- Top level of the uinstr -> x86 translation.  ---*/
 /*----------------------------------------------------*/
 
-/* Return the byte offset from %ebp (ie, into baseBlock)
-   for the specified ArchReg or SpillNo. */
-
-static Int shadowOffset ( Int arch )
-{
-   switch (arch) {
-      case R_EAX: return 4 * VGOFF_(sh_eax);
-      case R_ECX: return 4 * VGOFF_(sh_ecx);
-      case R_EDX: return 4 * VGOFF_(sh_edx);
-      case R_EBX: return 4 * VGOFF_(sh_ebx);
-      case R_ESP: return 4 * VGOFF_(sh_esp);
-      case R_EBP: return 4 * VGOFF_(sh_ebp);
-      case R_ESI: return 4 * VGOFF_(sh_esi);
-      case R_EDI: return 4 * VGOFF_(sh_edi);
-      default:    VG_(panic)( "shadowOffset");
-   }
-}
-
-
-static Int shadowFlagsOffset ( void )
-{
-   return 4 * VGOFF_(sh_eflags);
-}
-
-
 static void synth_LOADV ( Int sz, Int a_reg, Int tv_reg )
 {
    Int i, j, helper_offw;
@@ -162,6 +138,11 @@ static void synth_LOADV ( Int sz, Int a_reg, Int tv_reg )
       default: VG_(panic)("synth_LOADV");
    }
    n_pushed = 0;
+
+
+// SSS: come up with a decent way to save/restore regs;  use it for
+// LOADV/STOREV/TAG2.  Will slim down vg_skin.h a bit.
+   
    for (i = 0; i < VG_MAX_REALREGS; i++) {
       j = VG_(rankToRealRegNo) ( i );
       if (VG_CALLEE_SAVED(j)) continue;
@@ -259,19 +240,19 @@ static void synth_TESTV ( Int sz, Int tag, Int val )
       switch (sz) {
          case 4: 
             emit_testv_lit_offregmem ( 
-               4, 0xFFFFFFFF, shadowOffset(val), R_EBP );
+               4, 0xFFFFFFFF, VG_(shadowRegOffset)(val), R_EBP );
             break;
          case 2: 
             emit_testv_lit_offregmem ( 
-               4, 0x0000FFFF, shadowOffset(val), R_EBP );
+               4, 0x0000FFFF, VG_(shadowRegOffset)(val), R_EBP );
             break;
          case 1:
             if (val < 4) {
                emit_testv_lit_offregmem ( 
-                  4, 0x000000FF, shadowOffset(val), R_EBP );
+                  4, 0x000000FF, VG_(shadowRegOffset)(val), R_EBP );
             } else {
                emit_testv_lit_offregmem ( 
-                  4, 0x0000FF00, shadowOffset(val-4), R_EBP );
+                  4, 0x0000FF00, VG_(shadowRegOffset)(val-4), R_EBP );
             }
             break;
          case 0: 
@@ -322,17 +303,21 @@ static void synth_GETV ( Int sz, Int arch, Int reg )
    /* VG_(printf)("synth_GETV %d of Arch %s\n", sz, nameIReg(sz, arch)); */
    switch (sz) {
       case 4: 
-         VG_(emit_movv_offregmem_reg) ( 4, shadowOffset(arch), R_EBP, reg );
+         VG_(emit_movv_offregmem_reg) ( 4, VG_(shadowRegOffset)(arch),
+                                        R_EBP, reg );
          break;
       case 2: 
-         VG_(emit_movzwl_offregmem_reg) ( shadowOffset(arch), R_EBP, reg );
+         VG_(emit_movzwl_offregmem_reg) ( VG_(shadowRegOffset)(arch),
+                                          R_EBP, reg );
          VG_(emit_nonshiftopv_lit_reg) ( 4, OR, 0xFFFF0000, reg );
          break;
       case 1: 
          if (arch < 4) {
-            VG_(emit_movzbl_offregmem_reg) ( shadowOffset(arch), R_EBP, reg );
+            VG_(emit_movzbl_offregmem_reg) ( VG_(shadowRegOffset)(arch),
+                                             R_EBP, reg );
          } else {
-            VG_(emit_movzbl_offregmem_reg) ( shadowOffset(arch-4)+1, R_EBP, reg );
+            VG_(emit_movzbl_offregmem_reg) ( VG_(shadowRegOffset)(arch-4)+1,
+                                             R_EBP, reg );
          }
          VG_(emit_nonshiftopv_lit_reg) ( 4, OR, 0xFFFFFF00, reg );
          break;
@@ -352,21 +337,22 @@ static void synth_PUTV ( Int sz, Int srcTag, UInt lit_or_reg, Int arch )
          case 4:
             vg_assert(lit == 0x00000000);
             VG_(emit_movv_lit_offregmem) ( 4, 0x00000000, 
-                                      shadowOffset(arch), R_EBP );
+                                      VG_(shadowRegOffset)(arch), R_EBP );
             break;
          case 2:
             vg_assert(lit == 0xFFFF0000);
             VG_(emit_movv_lit_offregmem) ( 2, 0x0000, 
-                                      shadowOffset(arch), R_EBP );
+                                      VG_(shadowRegOffset)(arch), R_EBP );
             break;
          case 1:
             vg_assert(lit == 0xFFFFFF00);
             if (arch < 4) {
                VG_(emit_movb_lit_offregmem) ( 0x00, 
-                                         shadowOffset(arch), R_EBP );
+                                         VG_(shadowRegOffset)(arch), R_EBP );
             } else {
                VG_(emit_movb_lit_offregmem) ( 0x00, 
-                                         shadowOffset(arch-4)+1, R_EBP );
+                                              VG_(shadowRegOffset)(arch-4)+1,
+                                              R_EBP );
             }
             break;
          default: 
@@ -390,19 +376,19 @@ static void synth_PUTV ( Int sz, Int srcTag, UInt lit_or_reg, Int arch )
       switch (sz) {
          case 4:
             VG_(emit_movv_reg_offregmem) ( 4, reg,
-                                      shadowOffset(arch), R_EBP );
+                                      VG_(shadowRegOffset)(arch), R_EBP );
             break;
          case 2:
             VG_(emit_movv_reg_offregmem) ( 2, reg,
-                                      shadowOffset(arch), R_EBP );
+                                      VG_(shadowRegOffset)(arch), R_EBP );
             break;
          case 1:
             if (arch < 4) {
                VG_(emit_movb_reg_offregmem) ( reg,
-                                         shadowOffset(arch), R_EBP );
+                                         VG_(shadowRegOffset)(arch), R_EBP );
 	    } else {
                VG_(emit_movb_reg_offregmem) ( reg,
-                                         shadowOffset(arch-4)+1, R_EBP );
+                                        VG_(shadowRegOffset)(arch-4)+1, R_EBP );
             }
             break;
          default: 
@@ -418,7 +404,7 @@ static void synth_PUTV ( Int sz, Int srcTag, UInt lit_or_reg, Int arch )
 
 static void synth_GETVF ( Int reg )
 {
-   VG_(emit_movv_offregmem_reg) ( 4, shadowFlagsOffset(), R_EBP, reg );
+   VG_(emit_movv_offregmem_reg) ( 4, VG_(shadowFlagsOffset)(), R_EBP, reg );
    /* paranoia only; should be unnecessary ... */
    /* VG_(emit_nonshiftopv_lit_reg) ( 4, OR, 0xFFFFFFFE, reg ); */
 }
@@ -426,7 +412,7 @@ static void synth_GETVF ( Int reg )
 
 static void synth_PUTVF ( UInt reg )
 {
-   VG_(emit_movv_reg_offregmem) ( 4, reg, shadowFlagsOffset(), R_EBP );
+   VG_(emit_movv_reg_offregmem) ( 4, reg, VG_(shadowFlagsOffset)(), R_EBP );
 }
 
 
@@ -621,12 +607,51 @@ static void synth_TAG2_op ( VgTagOp op, Int regs, Int regd )
    }
 }
 
+/* Implementation for checking tag values. */
+UInt VG_(DebugFn) ( UInt a1, UInt a2 )
+{
+   vg_assert(2+2 == 5);
+   return 0;
+}
+
 /*----------------------------------------------------*/
 /*--- Generate code for a single UInstr.           ---*/
 /*----------------------------------------------------*/
 
 void SKN_(emitExtUInstr) ( UInstr* u )
 {
+#  if 0
+   /* Pass args to TAG1/TAG2 to vg_DebugFn for sanity checking.
+      Requires a suitable definition of vg_DebugFn. */
+   if (u->opcode == TAG1) {
+      UInstr t1;
+      vg_assert(u->tag1 == RealReg);
+      VG_(emptyUInstr)( &t1 );
+      t1.opcode = TAG2;
+      t1.tag1 = t1.tag2 = RealReg;
+      t1.val1 = t1.val2 = u->val1;
+      t1.tag3 = Lit16;
+      t1.val3 = VgT_DebugFn;
+      emitUInstr( i, &t1 );
+   }
+   if (u->opcode == TAG2) {
+      UInstr t1;
+      vg_assert(u->tag1 == RealReg);
+      vg_assert(u->tag2 == RealReg);
+      VG_(emptyUInstr)( &t1 );
+      t1.opcode = TAG2;
+      t1.tag1 = t1.tag2 = RealReg;
+      t1.val1 = t1.val2 = u->val1;
+      t1.tag3 = Lit16;
+      t1.val3 = VgT_DebugFn;
+      if (u->val3 == VgT_UifU1 || u->val3 == VgT_UifU2 
+          || u->val3 == VgT_UifU4 || u->val3 == VgT_DifD1 
+          || u->val3 == VgT_DifD2 || u->val3 == VgT_DifD4)
+         emitUInstr( i, &t1 );
+      t1.val1 = t1.val2 = u->val2;
+      emitUInstr( i, &t1 );
+   }
+#  endif
    switch (u->opcode) {
 
       case SETV: {
@@ -701,7 +726,7 @@ void SKN_(emitExtUInstr) ( UInstr* u )
                and placing the result back in the second. */
             Int j, k;
             /* u->val2 is the reg into which the result is written.  So
-               don't save/restore it.  And it can be used at a temp for
+               don't save/restore it.  And it can be used as a temp for
                the call target, too.  Since %eax is used for the return
                value from the C procedure, it is preserved only by
                virtue of not being mentioned as a VG_CALLEE_SAVED reg. */

@@ -34,6 +34,11 @@
 /*--- Defns                                                ---*/
 /*------------------------------------------------------------*/
 
+/* These many bytes below %ESP are considered addressible if we're
+   doing the --workaround-gcc296-bugs hack. */
+#define VG_GCC296_BUG_STACK_SLOP 1024
+
+
 typedef 
    enum { 
       /* Bad syscall params */
@@ -136,7 +141,7 @@ static Bool eq_AddrInfo ( Bool cheap_addr_cmp,
    are allowed to be different.  */
 
 Bool SKN_(eq_ErrContext) ( Bool cheap_addr_cmp,
-                            ErrContext* e1, ErrContext* e2 )
+                           ErrContext* e1, ErrContext* e2 )
 {
    MemCheckErrContext* e1_extra = e1->extra;
    MemCheckErrContext* e2_extra = e2->extra;
@@ -354,7 +359,7 @@ static void describe_addr ( Addr a, AddrInfo* ai )
    if (ok)
       return;
    /* Perhaps it's on a thread's stack? */
-   tid = VG_(identify_stack_addr)(a);
+   tid = VG_(get_thread_of_stack_addr)(a);
    if (tid != VG_INVALID_THREADID) {
       ai->akind     = Stack;
       ai->stack_tid = tid;
@@ -396,7 +401,7 @@ void SKN_(dup_extra_and_update)(ErrContext* ec)
 {
    MemCheckErrContext* p_extra;
    
-   p_extra  = VG_(malloc)(VG_AR_ERRCTXT, sizeof(MemCheckErrContext));
+   p_extra  = VG_(malloc)(sizeof(MemCheckErrContext));
    *p_extra = *((MemCheckErrContext*)ec->extra);
 
    if (p_extra->addrinfo.akind == Undescribed)
@@ -442,7 +447,7 @@ void SK_(record_address_error) ( Addr a, Int size, Bool isWrite )
    if (VG_(ignore_errors)()) return;
 
    just_below_esp 
-      = VG_(is_just_below_ESP)( VG_(baseBlock)[VGOFF_(m_esp)], a );
+      = VG_(is_just_below_ESP)( VG_(get_stack_pointer)(), a );
 
    /* If this is caused by an access immediately below %ESP, and the
       user asks nicely, we just ignore it. */
@@ -507,10 +512,6 @@ void SK_(record_jump_error) ( ThreadState* tst, Addr a )
 
    vg_assert(NULL != tst);
 
-   VG_(printf)("jump error: ebp %p, stack_highest_word %p\n", tst->m_esp,
-         tst->stack_highest_word);
-
-   
    VG_(construct_err_context)( &ec, AddrErr, a, NULL, tst );
    clear_MemCheckErrContext( &ec_extra );
    ec_extra.axskind = ExecAxs;
@@ -606,7 +607,7 @@ Bool SKN_(read_extra_suppression_info) ( Int fd, Char* buf, Int nBuf,
    if (s->skind == Param) {
       eof = VG_(getLine) ( fd, buf, nBuf );
       if (eof) return False;
-      s->string = VG_(strdup)(VG_AR_PRIVATE, buf);
+      s->string = VG_(strdup)(buf);
    }
    return True;
 }

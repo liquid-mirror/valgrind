@@ -29,7 +29,7 @@
    The GNU General Public License is contained in the file LICENSE.
 */
 
-#include "vg_include.h"
+#include "vg_skin.h"
 
 static UInt n_eraser_warnings = 0;
 
@@ -627,7 +627,7 @@ void record_eraser_error ( ThreadId tid, Addr a, Bool is_write )
 
    VG_(construct_err_context)(&ec, EraserErr, a, 
                               (is_write ? "writing" : "reading"),
-                              &VG_(threads)[tid]);
+                              VG_(get_ThreadState)(tid));
 
    /* Nothing required in 'extra' field */
    VG_(maybe_add_context) ( &ec );
@@ -762,7 +762,7 @@ void eraser_post_mutex_lock(ThreadId tid, void* void_mutex)
 
          /* copy the thread's lockset, creating a new list */
          while (p != NULL) {
-            new_node = VG_(malloc)(VG_AR_PRIVATE, sizeof(lock_vector));
+            new_node = VG_(malloc)(sizeof(lock_vector));
             new_node->mutex = p->mutex;
             *q = new_node;
             q = &((*q)->next);
@@ -780,7 +780,7 @@ void eraser_post_mutex_lock(ThreadId tid, void* void_mutex)
 
 
          /* insert new mutex in new list */
-         new_node = VG_(malloc)(VG_AR_PRIVATE, sizeof(lock_vector));
+         new_node = VG_(malloc)(sizeof(lock_vector));
          new_node->mutex = mutex;
          new_node->next = p;
          (*q) = new_node;
@@ -890,7 +890,7 @@ static void free_lock_vector(lock_vector *p)
    while (NULL != p) {
       q = p;
       p = p->next;
-      VG_(free)(VG_AR_PRIVATE, q);
+      VG_(free)(q);
 #if DEBUG_MEM_LOCKSET_CHANGES
       VG_(printf)("free'd   %x\n", q);
 #endif
@@ -929,7 +929,7 @@ static UInt intersect(UInt ia, UInt ib)
    /* Build the intersection of the two lists */
    while (a && b) {
       if (a->mutex == b->mutex) {
-         new_node = VG_(malloc)(VG_AR_PRIVATE, sizeof(lock_vector));
+         new_node = VG_(malloc)(sizeof(lock_vector));
 #if DEBUG_MEM_LOCKSET_CHANGES
          VG_(printf)("malloc'd %x\n", new_node);
 #endif

@@ -1,5 +1,5 @@
 /*--------------------------------------------------------------------*/
-/*--- Functions to make writing instrumentation routines easier.   ---*/
+/*--- Higher-level UCode sequence builders                         ---*/
 /*---                                              vg_instrument.c ---*/
 /*--------------------------------------------------------------------*/
 
@@ -28,7 +28,11 @@
    The GNU General Public License is contained in the file LICENSE.
 */
 
-#include "vg_include.h"
+/* We only import vg_skin.h here, because this file only provides functions
+   for doing things that could be done directly by the skin -- it's just to
+   make skins' lives easier, rather than let them do something they
+   couldn't otherwise do. */
+#include "vg_skin.h"
 
 #define uInstr0   VG_(newUInstr0)
 #define uInstr1   VG_(newUInstr1)

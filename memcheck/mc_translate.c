@@ -104,6 +104,46 @@ Bool SKN_(saneExtUInstr)(Bool beforeRA, UInstr* u)
 #  undef N3
 }
 
+static Char* nameOfTagOp ( VgTagOp h )
+{
+   switch (h) {
+      case VgT_PCast40:        return "PCast40";
+      case VgT_PCast20:        return "PCast20";
+      case VgT_PCast10:        return "PCast10";
+      case VgT_PCast01:        return "PCast01";
+      case VgT_PCast02:        return "PCast02";
+      case VgT_PCast04:        return "PCast04";
+      case VgT_PCast14:        return "PCast14";
+      case VgT_PCast12:        return "PCast12";
+      case VgT_PCast11:        return "PCast11";
+      case VgT_Left4:          return "Left4";
+      case VgT_Left2:          return "Left2";
+      case VgT_Left1:          return "Left1";
+      case VgT_SWiden14:       return "SWiden14";
+      case VgT_SWiden24:       return "SWiden24";
+      case VgT_SWiden12:       return "SWiden12";
+      case VgT_ZWiden14:       return "ZWiden14";
+      case VgT_ZWiden24:       return "ZWiden24";
+      case VgT_ZWiden12:       return "ZWiden12";
+      case VgT_UifU4:          return "UifU4";
+      case VgT_UifU2:          return "UifU2";
+      case VgT_UifU1:          return "UifU1";
+      case VgT_UifU0:          return "UifU0";
+      case VgT_DifD4:          return "DifD4";
+      case VgT_DifD2:          return "DifD2";
+      case VgT_DifD1:          return "DifD1";
+      case VgT_ImproveAND4_TQ: return "ImproveAND4_TQ";
+      case VgT_ImproveAND2_TQ: return "ImproveAND2_TQ";
+      case VgT_ImproveAND1_TQ: return "ImproveAND1_TQ";
+      case VgT_ImproveOR4_TQ:  return "ImproveOR4_TQ";
+      case VgT_ImproveOR2_TQ:  return "ImproveOR2_TQ";
+      case VgT_ImproveOR1_TQ:  return "ImproveOR1_TQ";
+      case VgT_DebugFn:        return "DebugFn";
+      default: VG_(panic)("vg_nameOfTagOp");
+   }
+}
+
+
 Char* SKN_(nameExtUOpcode)(Opcode opc)
 {
    switch (opc) {
@@ -123,6 +163,10 @@ Char* SKN_(nameExtUOpcode)(Opcode opc)
    }
 }
 
+/* ---------------------------------------------------------------------
+   Debugging stuff.
+   ------------------------------------------------------------------ */
+
 void SKN_(ppExtUInstr)(UInstr* u)
 {
    switch (u->opcode) {
@@ -130,7 +174,7 @@ void SKN_(ppExtUInstr)(UInstr* u)
       case TAG1:
          VG_(printf)("\t");
          VG_(ppUOperand)(u, 1, 4, False);
-         VG_(printf)(" = %s ( ", VG_(nameOfTagOp)( u->val3 ));
+         VG_(printf)(" = %s ( ", nameOfTagOp( u->val3 ));
          VG_(ppUOperand)(u, 1, 4, False);
          VG_(printf)(" )");
          break;
@@ -138,7 +182,7 @@ void SKN_(ppExtUInstr)(UInstr* u)
       case TAG2:
          VG_(printf)("\t");
          VG_(ppUOperand)(u, 2, 4, False);
-         VG_(printf)(" = %s ( ", VG_(nameOfTagOp)( u->val3 ));
+         VG_(printf)(" = %s ( ", nameOfTagOp( u->val3 ));
          VG_(ppUOperand)(u, 1, 4, False);
          VG_(printf)(", ");
          VG_(ppUOperand)(u, 2, 4, False);
@@ -1001,7 +1045,7 @@ static UCodeBlock* memcheck_instrument ( UCodeBlock* cb_in )
    do { uu->opcode = NOP;                                      \
         if (VG_(disassemble))                                  \
            VG_(printf)("at %d: delete %s due to defd arg\n",   \
-                       i, VG_(nameOfTagOp(u->val3)));          \
+                       i, nameOfTagOp(u->val3));               \
    } while (False)
 
 #define SETV_tag1_op(uu,newsz)                                 \
@@ -1011,7 +1055,7 @@ static UCodeBlock* memcheck_instrument ( UCodeBlock* cb_in )
         if (VG_(disassemble))                                  \
            VG_(printf)("at %d: convert %s to SETV%d "          \
                        "due to defd arg\n",                    \
-                       i, VG_(nameOfTagOp(u->val3)), newsz);   \
+                       i, nameOfTagOp(u->val3), newsz);        \
    } while (False)
 
 
@@ -1354,7 +1398,7 @@ static void vg_propagate_definedness ( UCodeBlock* cb )
             if (VG_(disassemble)) 
                VG_(printf)(
                   "at %d: delete TAG1 %s due to defd arg\n",
-                  i, VG_(nameOfTagOp(u->val3)));
+                  i, nameOfTagOp(u->val3));
             break;
 
          default:
@@ -1373,7 +1417,7 @@ static void vg_propagate_definedness ( UCodeBlock* cb )
                                  def[t], 
                                  VG_(nameUOpcode)(True, u->opcode),
                                  (u->opcode == TAG1 || u->opcode == TAG2)
-                                    ? VG_(nameOfTagOp)(u->val3) 
+                                    ? nameOfTagOp(u->val3) 
                                     : (Char*)"");
                } else {
                   /* t is written; better nullify it. */
