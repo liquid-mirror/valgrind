@@ -1964,14 +1964,12 @@ static void vg_realreg_liveness_analysis ( UCodeBlock* cb )
    of debugging output. 
 
    'tst' is the identity of the thread needing this block.
-
-   SSS: note that is_x86_callee is totally bogus due to dynamic linking
-   and tail jumps and other trickiness...
 */
-void VG_(translate) ( /*IN*/ThreadState* tst, 
-                      Bool  is_x86_callee,
-                      Addr  orig_addr,  /*OUT*/UInt* orig_size,
-               /*OUT*/Addr* trans_addr, /*OUT*/UInt* trans_size )
+void VG_(translate) ( /*IN*/  ThreadState* tst, 
+		      /*IN*/  Addr  orig_addr,  
+                      /*OUT*/ UInt* orig_size,
+                      /*OUT*/ Addr* trans_addr, 
+                      /*OUT*/ UInt* trans_size )
 {
    Int         n_disassembled_bytes, final_code_size;
    Bool        debugging_translation;
@@ -1990,9 +1988,8 @@ void VG_(translate) ( /*IN*/ThreadState* tst,
    /* If doing any code printing, print a basic block start marker */
    if (VG_(clo_trace_codegen))
       VG_(printf)(
-              "==== BB %d (%p)%s in %dB, out %dB, BBs exec'd %lu ====\n\n",
+              "==== BB %d (%p) in %dB, out %dB, BBs exec'd %lu ====\n\n",
               VG_(overall_in_count), orig_addr, 
-              ( is_x86_callee ? "[fn]" : "" ),
               VG_(overall_in_osize), VG_(overall_in_tsize),
               VG_(bbs_done));
 
