@@ -109,6 +109,7 @@ sub do_one_test($$)
 
     read_vgtest_file($vgtest);
     $prog =~ /^([^\w]+)/;   # strip away any args on "prog:" line
+    $prog = "./$prog" if ($prog !~ /^\//);  # allow for '.' not being in $PATH
     (-x $1) or die "`$1' not found or not executable";
 
     printf("%-30s valgrind $vgopts $prog\n", "$fullname:");
@@ -135,7 +136,7 @@ sub do_one_test($$)
 
     for my $ext ("stdout", "stderr") {
         if (-s "$name.$ext.diff") {
-            print "*** $fullname $ext failed ***\n";
+            print "*** $fullname failed ($ext) ***\n";
             push(@failures, sprintf("%-30s $ext", "$fullname"));
         } else {
             unlink("$name.$ext.out", "$name.$ext.diff");
@@ -173,9 +174,7 @@ sub validate_program ($)
     # If absolute path, leave it alone.  If relative, make it
     # absolute -- by prepending current dir -- so we can change
     # dirs and still use it.
-    if ($prog !~ /^\//) {
-        $prog = "$tests_dir/$prog";
-    }
+    $prog = "$tests_dir/$prog" if ($prog !~ /^\//);
     (-x $prog) or die "`$prog' not found or not executable\n";
 
     return $prog;
