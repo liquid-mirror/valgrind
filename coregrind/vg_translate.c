@@ -94,7 +94,7 @@ void VG_(newNOP) ( UInstr* u )
    u->tag1 = u->tag2 = u->tag3 = NoValue;
    u->flags_r = u->flags_w = FlagsEmpty;
    u->jmpkind = JmpBoring;
-   u->smc_check = u->signed_widen = u->has_ret_val = False;
+   u->signed_widen = u->has_ret_val = False;
    u->save_eax = u->save_ecx = u->save_edx = True;
    u->lit32    = 0;
    u->opcode   = NOP;
@@ -197,7 +197,6 @@ void copyAuxInfoFromTo ( UInstr* src, UInstr* dst )
 {
    dst->cond          = src->cond;
    dst->extra4b       = src->extra4b;
-   dst->smc_check     = src->smc_check;
    dst->signed_widen  = src->signed_widen;
    dst->jmpkind       = src->jmpkind;
    dst->flags_r       = src->flags_r;
@@ -417,7 +416,6 @@ Bool VG_(saneUInstr) ( Bool beforeRA, Bool beforeLiveness, UInstr* u )
 
 #  define COND0    (u->cond         == 0)
 #  define EXTRA4b0 (u->extra4b      == 0)
-#  define SMC0     (u->smc_check    == 0)
 #  define SG_WD0   (u->signed_widen == 0)
 #  define JMPKIND0 (u->jmpkind      == 0)
 #  define CCALL0   (u->argc==0 && u->regparms_n==0 && u->has_ret_val==0 && \
@@ -425,12 +423,12 @@ Bool VG_(saneUInstr) ( Bool beforeRA, Bool beforeLiveness, UInstr* u )
                     ? u->save_eax==1 && u->save_ecx==1 && u->save_edx==1   \
                     : True ))
 
-#  define Xextra4b (COND0             && SMC0 && SG_WD0 && JMPKIND0 && CCALL0)
-#  define XWIDEN   (COND0             && SMC0           && JMPKIND0 && CCALL0)
-#  define XJMP     (                     SMC0 && SG_WD0             && CCALL0)
-#  define XCONDi   (         EXTRA4b0 && SMC0 && SG_WD0 && JMPKIND0 && CCALL0)
-#  define XCCALL   (COND0 && EXTRA4b0 && SMC0 && SG_WD0 && JMPKIND0          )
-#  define XOTHER   (COND0 && EXTRA4b0 && SMC0 && SG_WD0 && JMPKIND0 && CCALL0)
+#  define XCONDi   (         EXTRA4b0 && SG_WD0 && JMPKIND0 && CCALL0)
+#  define Xextra4b (COND0             && SG_WD0 && JMPKIND0 && CCALL0)
+#  define XWIDEN   (COND0                       && JMPKIND0 && CCALL0)
+#  define XJMP     (                     SG_WD0             && CCALL0)
+#  define XCCALL   (COND0 && EXTRA4b0 && SG_WD0 && JMPKIND0          )
+#  define XOTHER   (COND0 && EXTRA4b0 && SG_WD0 && JMPKIND0 && CCALL0)
 
    /* 0 or 1 Literal args per UInstr */
    Int n_lits = 0;
@@ -822,7 +820,6 @@ void VG_(upUInstr) ( Int i, UInstr* u )
    VG_(printf)("flags_w:        %x\n", u->flags_w);
    VG_(printf)("extra4b:        %x\n", u->extra4b);
    VG_(printf)("cond:           %x\n", u->cond);
-   VG_(printf)("smc_check:      %d\n", u->smc_check);
    VG_(printf)("signed_widen:   %d\n", u->signed_widen);
    VG_(printf)("jmpkind:        %d\n", u->jmpkind);
    VG_(printf)("argc,regparms_n:%d, %d\n", u->argc, u->regparms_n);
