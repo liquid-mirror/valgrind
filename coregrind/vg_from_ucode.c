@@ -1107,19 +1107,27 @@ Int VG_(helper_offset)(Addr a)
 {
    Int i;
 
-   for (i = 0; i < VG_(n_compact_helpers); i++) {
+   for (i = 0; i < VG_(n_compact_helpers); i++)
       if (VG_(compact_helper_addrs)[i] == a)
          return VG_(compact_helper_offsets)[i];
-   }
-   for (i = 0; i < VG_(n_noncompact_helpers); i++) {
+   for (i = 0; i < VG_(n_noncompact_helpers); i++)
       if (VG_(noncompact_helper_addrs)[i] == a)
          return VG_(noncompact_helper_offsets)[i];
-   }
 
    /* Shouldn't get here */
    VG_(printf)("\nHelper error:\n"
-               "  Couldn't find offset of helper from its address.\n"
-               "  Perhaps a helper used hasn't been registered?\n");
+               "  Couldn't find offset of helper from its address (%p).\n"
+               "  Perhaps a helper used hasn't been registered?\n\n", a);
+
+   VG_(printf)("  *     compact helpers: ");
+   for (i = 0; i < VG_(n_compact_helpers); i++)
+      VG_(printf)("%p ", VG_(compact_helper_addrs)[i]);
+
+   VG_(printf)("\n  * non-compact helpers: ");
+   for (i = 0; i < VG_(n_noncompact_helpers); i++)
+      VG_(printf)("%p ", VG_(noncompact_helper_addrs)[i]);
+
+   VG_(printf)("\n");
    VG_(panic)("Unfound helper");
 }
 
