@@ -730,6 +730,9 @@ extern void VG_(restore_all_host_signals)
    Exports of vg_mylibc.c
    ------------------------------------------------------------------ */
 
+__attribute__((noreturn))
+extern void VG_(skin_error) ( Char* s );
+
 /* VG_(brk) not public so skins cannot screw with curr_dataseg_end */
 extern void* VG_(brk) ( void* end_data_segment );
 
