@@ -23,8 +23,8 @@ noinst_PROGRAMS = \
 	doublefree errs1 exitprog fprw fwrite inline malloc1 malloc2 \
 	manuel1 manuel2 manuel3 \
 	memalign_test memcmptest mmaptest nanoleak pushfpopf \
-	realloc1 realloc2 sigaltstack signal2 suppfree trivialleak tronical \
-	weirdioctl
+	realloc1 realloc2 sigaltstack signal2 supp1 supp2 suppfree \
+	trivialleak tronical weirdioctl
 
 # XXX: want to have this inherited from ../Makefile.am
 CFLAGS = $(WERROR) -Winline -Wall -Wshadow -g
@@ -58,6 +58,8 @@ pushfpopf_SOURCES 	= pushfpopf_c.c pushfpopf_s.s
 realloc1_SOURCES 	= realloc1.c
 realloc2_SOURCES 	= realloc2.c
 signal2_SOURCES 	= signal2.c
+supp1_SOURCES 		= supp.c
+supp2_SOURCES 		= supp.c
 suppfree_SOURCES 	= suppfree.c
 sigaltstack_SOURCES 	= sigaltstack.c
 trivialleak_SOURCES 	= trivialleak.c

@@ -109,6 +109,7 @@ void clear_MemCheckError ( MemCheckError* err_extra )
    err_extra->isWrite   = False;
 }
 
+__attribute__ ((unused))
 static Bool eq_AddrInfo ( VgRes res, AddrInfo* ai1, AddrInfo* ai2 )
 {
    if (ai1->akind != Undescribed 
