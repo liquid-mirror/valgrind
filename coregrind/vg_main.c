@@ -353,6 +353,11 @@ UInt VG_(current_epoch) = 0;
 /* This is the ThreadId of the last thread the scheduler ran. */
 ThreadId VG_(last_run_tid) = 0;
 
+/* This is the argument to __NR_exit() supplied by the first thread to
+   call that syscall.  We eventually pass that to __NR_exit() for
+   real. */
+UInt VG_(exitcode) = 0;
+
 
 /* ---------------------------------------------------------------------
    Counters, for informational purposes only.
@@ -1298,9 +1303,10 @@ void VG_(main) ( void )
                    && VG_(last_run_tid) < VG_N_THREADS);
          tst = & VG_(threads)[VG_(last_run_tid)];
          vg_assert(tst->status == VgTs_Runnable);
-         /* The thread's %EBX will hold the arg to exit(), so we just
-            do exit with that arg. */
-         VG_(exit)( tst->m_ebx );
+         /* The thread's %EBX at the time it did __NR_exit() will hold
+            the arg to __NR_exit(), so we just do __NR_exit() with
+            that arg. */
+         VG_(exit)( VG_(exitcode) );
          /* NOT ALIVE HERE! */
          VG_(panic)("entered the afterlife in vg_main() -- ExitSyscall");
          break; /* what the hell :) */
