@@ -125,6 +125,10 @@ typedef
          happens, this entire record is marked as no longer in use, by
          making the fd field be -1.  */
       Bool     ready; 
+
+      /* The result from SKN_(pre_blocking_syscall)();  is passed to
+       * SKN_(post_blocking_syscall)(). */
+      void*    pre_result;
    }
    VgWaitedOnFd;
 
@@ -248,7 +252,7 @@ void VG_(pp_sched_status) ( void )
 }
 
 static
-void add_waiting_fd ( ThreadId tid, Int fd, Int syscall_no )
+void add_waiting_fd ( ThreadId tid, Int fd, Int syscall_no, void* pre_res )
 {
    Int i;
 
@@ -268,6 +272,7 @@ void add_waiting_fd ( ThreadId tid, Int fd, Int syscall_no )
    vg_waiting_fds[i].tid        = tid;
    vg_waiting_fds[i].ready      = False;
    vg_waiting_fds[i].syscall_no = syscall_no;
+   vg_waiting_fds[i].pre_result = pre_res;
 }
 
 
@@ -802,11 +807,12 @@ void handle_signal_return ( ThreadId tid )
 static
 void sched_do_syscall ( ThreadId tid )
 {
-   UInt saved_eax;
-   UInt res, syscall_no;
-   UInt fd;
-   Bool orig_fd_blockness;
-   Char msg_buf[100];
+   UInt  saved_eax;
+   UInt  res, syscall_no;
+   UInt  fd;
+   void* pre_res;
+   Bool  orig_fd_blockness;
+   Char  msg_buf[100];
 
    vg_assert(VG_(is_valid_tid)(tid));
    vg_assert(VG_(threads)[tid].status == VgTs_Runnable);
@@ -852,9 +858,9 @@ void sched_do_syscall ( ThreadId tid )
          VG_(message)(Vg_UserMsg, 
             "Warning: invalid file descriptor %d in syscall %s",
             fd, syscall_no == __NR_read ? "read()" : "write()" );
-      VG_(check_known_blocking_syscall)(tid, syscall_no, NULL /* PRE */);
+      pre_res = VG_(pre_known_blocking_syscall)(tid, syscall_no);
       KERNEL_DO_SYSCALL(tid, res);
-      VG_(check_known_blocking_syscall)(tid, syscall_no, &res /* POST */);
+      VG_(post_known_blocking_syscall)(tid, syscall_no, pre_res, res);
       /* We're still runnable. */
       vg_assert(VG_(threads)[tid].status == VgTs_Runnable);
       return;
@@ -865,7 +871,7 @@ void sched_do_syscall ( ThreadId tid )
    orig_fd_blockness = fd_is_blockful(fd);
    set_fd_nonblocking(fd);
    vg_assert(!fd_is_blockful(fd));
-   VG_(check_known_blocking_syscall)(tid, syscall_no, NULL /* PRE */);
+   pre_res = VG_(pre_known_blocking_syscall)(tid, syscall_no);
 
    /* This trashes the thread's %eax; we have to preserve it. */
    saved_eax = VG_(threads)[tid].m_eax;
@@ -886,7 +892,7 @@ void sched_do_syscall ( ThreadId tid )
              the I/O completion -- the client is.  So don't file a 
              completion-wait entry. 
       */
-      VG_(check_known_blocking_syscall)(tid, syscall_no, &res /* POST */);
+      VG_(post_known_blocking_syscall)(tid, syscall_no, pre_res, res);
       /* We're still runnable. */
       vg_assert(VG_(threads)[tid].status == VgTs_Runnable);
 
@@ -900,7 +906,8 @@ void sched_do_syscall ( ThreadId tid )
       /* Put this fd in a table of fds on which we are waiting for
          completion. The arguments for select() later are constructed
          from this table.  */
-      add_waiting_fd(tid, fd, saved_eax /* which holds the syscall # */);
+      add_waiting_fd(tid, fd, saved_eax /* which holds the syscall # */,
+                     pre_res);
       /* Deschedule thread until an I/O completion happens. */
       VG_(threads)[tid].status = VgTs_WaitFD;
       if (VG_(clo_trace_sched)) {
@@ -1094,6 +1101,7 @@ static
 void complete_blocked_syscalls ( void )
 {
    Int      fd, i, res, syscall_no;
+   void*    pre_res;
    ThreadId tid;
    Char     msg_buf[100];
 
@@ -1121,6 +1129,8 @@ void complete_blocked_syscalls ( void )
       syscall_no = vg_waiting_fds[i].syscall_no;
       vg_assert(syscall_no == VG_(threads)[tid].m_eax);
 
+      pre_res = vg_waiting_fds[i].pre_result;
+
       /* In a rare case pertaining to writing into a pipe, write()
          will block when asked to write > 4096 bytes even though the
          kernel claims, when asked via select(), that blocking will
@@ -1138,7 +1148,7 @@ void complete_blocked_syscalls ( void )
       }
 
       KERNEL_DO_SYSCALL(tid,res);
-      VG_(check_known_blocking_syscall)(tid, syscall_no, &res /* POST */);
+      VG_(post_known_blocking_syscall)(tid, syscall_no, pre_res, res);
 
       /* Reschedule. */
       VG_(threads)[tid].status = VgTs_Runnable;
