@@ -196,7 +196,7 @@ Addr VG_(do_useseg) ( UInt seg_selector, Addr virtual_addr )
    if (table == 0) {
       VgLdtEntry* the_tls;
 
-      vg_assert(seg_selector >= VKI_GDT_TLS_MIN && seg_selector < VKI_GDT_TLS_MAX);
+      vg_assert(seg_selector >= VKI_GDT_TLS_MIN && seg_selector <= VKI_GDT_TLS_MAX);
 
       /* Come up with a suitable GDT entry.  We look at the thread's TLS
 	 array, which is pointed to by a VG_(baseBlock) entry. */

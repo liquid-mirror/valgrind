@@ -665,7 +665,7 @@ typedef struct vki_modify_ldt_ldt_s {
 
 #define VKI_GDT_TLS_ENTRIES 3
 #define VKI_GDT_TLS_MIN     6
-#define VKI_GDT_TLS_MAX     (VKI_GDT_TLS_MIN + VKI_GDT_TLS_ENTRIES)
+#define VKI_GDT_TLS_MAX     (VKI_GDT_TLS_MIN + VKI_GDT_TLS_ENTRIES - 1)
 
 /* Flags for clone() */
 /* linux/sched.h */
