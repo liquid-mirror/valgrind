@@ -31,7 +31,6 @@
 
 
 #include "vg_include.h"
-#include "vg_constants.h"
 #include "vg_unsafe.h"
 #include "valgrind.h"  /* for VALGRIND_MAGIC_SEQUENCE */
 
