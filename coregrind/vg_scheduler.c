@@ -181,11 +181,12 @@ Bool VG_(is_valid_or_empty_tid) ( ThreadId tid )
 
 
 /* For constructing error messages only: try and identify a thread
-   whose stack this address currently falls within, or return
-   VG_INVALID_THREADID if it doesn't.  A small complication is dealing
-   with any currently VG_(baseBlock)-resident thread. 
+   whose stack satisfies the predicate p, or return VG_INVALID_THREADID
+   if none do.  A small complication is dealing with any currently
+   VG_(baseBlock)-resident thread. 
 */
-ThreadId VG_(get_thread_of_stack_addr)( Addr a )
+ThreadId VG_(any_matching_thread_stack)
+              ( Bool (*p) ( Addr stack_min, Addr stack_max ))
 {
    ThreadId tid, tid_to_skip;
 
@@ -195,8 +196,8 @@ ThreadId VG_(get_thread_of_stack_addr)( Addr a )
       VG_(baseBlock). */
    if (vg_tid_currently_in_baseBlock != VG_INVALID_THREADID) {
       tid = vg_tid_currently_in_baseBlock;
-      if (VG_(baseBlock)[VGOFF_(m_esp)] <= a
-          && a <= VG_(threads)[tid].stack_highest_word) 
+      if ( p ( VG_(baseBlock)[VGOFF_(m_esp)], 
+               VG_(threads)[tid].stack_highest_word) )
          return tid;
       else
          tid_to_skip = tid;
@@ -205,8 +206,8 @@ ThreadId VG_(get_thread_of_stack_addr)( Addr a )
    for (tid = 1; tid < VG_N_THREADS; tid++) {
       if (VG_(threads)[tid].status == VgTs_Empty) continue;
       if (tid == tid_to_skip) continue;
-      if (VG_(threads)[tid].m_esp <= a 
-          && a <= VG_(threads)[tid].stack_highest_word)
+      if ( p ( VG_(threads)[tid].m_esp,
+               VG_(threads)[tid].stack_highest_word) )
          return tid;
    }
    return VG_INVALID_THREADID;
