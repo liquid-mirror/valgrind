@@ -48,13 +48,13 @@
 /*--- Command line options                                 ---*/
 /*------------------------------------------------------------*/
 
-Bool VG_(clo_partial_loads_ok)       = True;
-Bool VG_(clo_leak_check)             = False;
-Int  VG_(clo_leak_resolution)        = 2;
-Bool VG_(clo_show_reachable)         = False;
-Bool VG_(clo_workaround_gcc296_bugs) = False;
-Bool VG_(clo_check_addrVs)           = True;
-Bool VG_(clo_cleanup)                = True;
+Bool          VG_(clo_partial_loads_ok)       = True;
+Bool          VG_(clo_leak_check)             = False;
+ExeContextRes VG_(clo_leak_resolution)        = LowRes;
+Bool          VG_(clo_show_reachable)         = False;
+Bool          VG_(clo_workaround_gcc296_bugs) = False;
+Bool          VG_(clo_check_addrVs)           = True;
+Bool          VG_(clo_cleanup)                = True;
 
 /*------------------------------------------------------------*/
 /*--- Low-level support for memory checking.               ---*/
@@ -875,7 +875,7 @@ void memcheck_set_perms (Addr a, UInt len,
    else         VG_(make_noaccess)(a, len);
 }
 
-/* If a == NULL, 'size', 'alloc_free_kinds_match' are meaningless */
+/* If a == NULL, 'size', 'alloc_free_kinds_match' are all meaningless */
 static
 void memcheck_die_mem_heap ( ThreadState* tst, Addr a, UInt size,
                              Bool alloc_free_kinds_match )
@@ -1843,26 +1843,7 @@ void VG_(detect_memory_leaks) ( void )
    LossRecord*  errlist;
    LossRecord*  p;
 
-   Bool (*ec_comparer_fn) ( ExeContext*, ExeContext* );
    PROF_EVENT(76);
-
-   /* Decide how closely we want to match ExeContexts in leak
-      records. */
-   switch (VG_(clo_leak_resolution)) {
-      case 2: 
-         ec_comparer_fn = VG_(eq_ExeContext_top2); 
-         break;
-      case 4: 
-         ec_comparer_fn = VG_(eq_ExeContext_top4); 
-         break;
-      case VG_DEEPEST_BACKTRACE: 
-         ec_comparer_fn = VG_(eq_ExeContext_all); 
-         break;
-      default: 
-         VG_(panic)("vg_detect_memory_leaks: "
-                    "bad VG_(clo_leak_resolution)");
-         break;
-   }
 
    /* vg_get_malloc_shadows allocates storage for shadows */
    vglc_shadows = VG_(get_malloc_shadows)( &vglc_n_shadows );
@@ -1939,9 +1920,9 @@ void VG_(detect_memory_leaks) ( void )
    for (i = 0; i < vglc_n_shadows; i++) {
       for (p = errlist; p != NULL; p = p->next) {
          if (p->loss_mode == vglc_reachedness[i]
-             && ec_comparer_fn (
-                   p->allocated_at, 
-                   vglc_shadows[i]->where) ) {
+             && VG_(eq_ExeContext) ( VG_(clo_leak_resolution),
+                                     p->allocated_at, 
+                                     vglc_shadows[i]->where) ) {
             break;
 	 }
       }
@@ -2217,11 +2198,11 @@ Bool SKN_(process_cmd_line_option)(UChar* arg)
       VG_(clo_leak_check) = False;
 
    else if (STREQ(arg, "--leak-resolution=low"))
-      VG_(clo_leak_resolution) = 2;
+      VG_(clo_leak_resolution) = LowRes;
    else if (STREQ(arg, "--leak-resolution=med"))
-      VG_(clo_leak_resolution) = 4;
+      VG_(clo_leak_resolution) = MedRes;
    else if (STREQ(arg, "--leak-resolution=high"))
-      VG_(clo_leak_resolution) = VG_DEEPEST_BACKTRACE;
+      VG_(clo_leak_resolution) = HighRes;
    
    else if (STREQ(arg, "--show-reachable=yes"))
       VG_(clo_show_reachable) = True;

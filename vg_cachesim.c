@@ -484,6 +484,7 @@ static Int compute_BBCC_array_size(UCodeBlock* cb)
    return BBCC_size;
 }
 
+//__attribute__ ((regparm (1)))
 static void cachesim_non_mem_instr(iCC* cc)
 {
    //VG_(printf)("sim  I: CCaddr=0x%x, iaddr=0x%x, isize=%u\n",
@@ -494,6 +495,7 @@ static void cachesim_non_mem_instr(iCC* cc)
    VGP_POPCC;
 }
 
+//__attribute__ ((regparm (2)))
 static void cachesim_mem_instr(idCC* cc, Addr data_addr)
 {
    //VG_(printf)("sim  D: CCaddr=0x%x, iaddr=0x%x, isize=%u, daddr=0x%x, dsize=%u\n",

@@ -103,6 +103,10 @@
    errors at all.  Counterpart to M_VG_COLLECT_NO_ERRORS_AFTER_SHOWN. */
 #define M_VG_COLLECT_NO_ERRORS_AFTER_FOUND 30000
 
+/* The maximum number of calls we're prepared to save in a
+   backtrace. */
+#define VG_DEEPEST_BACKTRACE 50
+
 /* Number of lists in which we keep track of ExeContexts.  Should be
    prime. */
 #define VG_N_EC_LISTS /*997*/ 4999
@@ -890,10 +894,6 @@ extern void VG_(show_all_errors)      ( void );
 extern void VG_(clear_ErrContext) ( ErrContext* ec );
 
 extern void VG_(record_pthread_error) ( ThreadId tid, Char* msg );
-
-extern Bool VG_(eq_ExeContext) ( Bool top_2_only,
-                                 ExeContext* e1, ExeContext* e2 );
-
 
 /* ---------------------------------------------------------------------
    Exports of vg_procselfmaps.c

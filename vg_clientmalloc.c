@@ -199,10 +199,10 @@ static void client_malloc_shadow ( ThreadState* tst,
    UInt         ml_no;
 
 #  ifdef DEBUG_CLIENTMALLOC
-   VG_(printf)("[m %d, f %d (%d)] client_malloc_shadow ( al %d, sz %d )\n", 
+   VG_(printf)("[m %d, f %d (%d)] client_malloc_shadow ( sz %d )\n", 
                count_malloclists(), 
                count_freelist(), vg_freed_list_volume,
-               align, size );
+               size );
 #  endif
 
    sc        = VG_(arena_malloc)(VG_AR_CORE, sizeof(ShadowChunk));
@@ -241,10 +241,10 @@ void* client_malloc_worker ( ThreadState* tst, UInt size, UInt alignment,
    if (vg_needs_shadow_chunks)
       client_malloc_shadow ( tst, p, size, kind );
 
-   VG_TRACK( new_mem_heap, p, size, is_zeroed );
-   VG_TRACK( ban_mem_heap, p+size, VG_AR_CLIENT_REDZONE_SZB );
    VG_TRACK( ban_mem_heap, p-VG_AR_CLIENT_REDZONE_SZB, 
                            VG_AR_CLIENT_REDZONE_SZB );
+   VG_TRACK( new_mem_heap, p, size, is_zeroed );
+   VG_TRACK( ban_mem_heap, p+size, VG_AR_CLIENT_REDZONE_SZB );
 
    VGP_POPCC;
    return (void*)p;
@@ -256,7 +256,7 @@ void* VG_(client_malloc) ( ThreadState* tst, UInt size, VgAllocKind kind )
    VG_(printf)("[m %d, f %d (%d)] client_malloc ( %d, %x )\n", 
                count_malloclists(), 
                count_freelist(), vg_freed_list_volume,
-               size, raw_alloc_kind );
+               size, kind );
 #  endif
 
    return client_malloc_worker ( tst, size, VG_(clo_alignment), 
@@ -303,10 +303,16 @@ void* VG_(client_calloc) ( ThreadState* tst, UInt nmemb, UInt size1 )
 void client_free_worker ( ThreadState* tst, UInt ml_no, ShadowChunk* sc,
                           Bool allocKindMatches)
 {
+   /* Note: ban redzones again -- just in case user de-banned them
+      with a client request... */
+   VG_TRACK( ban_mem_heap, sc->data-VG_AR_CLIENT_REDZONE_SZB, 
+                           VG_AR_CLIENT_REDZONE_SZB );
+   VG_TRACK( die_mem_heap, tst, sc->data, sc->size, allocKindMatches );
+   VG_TRACK( ban_mem_heap, sc->data+sc->size, VG_AR_CLIENT_REDZONE_SZB );
+
+   /* This must happen after die_mem_heap() is called, because any errors
+      triggered by die_mem_heap() may look for sc in malloclist. */
    remove_from_malloclist ( ml_no, sc );
-   VG_TRACK( die_mem_heap, tst, sc->data - VG_AR_CLIENT_REDZONE_SZB, 
-                           sc->size + 2*VG_AR_CLIENT_REDZONE_SZB,
-                           allocKindMatches );
 
    // JJJ: this seems to be more of a check for Valgrind itself?  Needed?
    //VG_TRACK( die_mem_heap, (Addr)sc, sizeof(ShadowChunk) );
@@ -334,7 +340,7 @@ void VG_(client_free) ( ThreadState* tst, void* p, VgAllocKind kind )
    VG_(printf)("[m %d, f %d (%d)] client_free ( %p, %x )\n", 
                count_malloclists(), 
                count_freelist(), vg_freed_list_volume,
-               p, raw_alloc_kind );
+               p, kind );
 #  endif
 
    vg_cmalloc_n_frees ++;
@@ -353,6 +359,7 @@ void VG_(client_free) ( ThreadState* tst, void* p, VgAllocKind kind )
       }
 
       if (sc == NULL) {
+         /* just there to allow reporting of free errors */
          VG_TRACK( die_mem_heap, tst, (Addr)NULL, 0, True );
 
       } else {
@@ -397,6 +404,7 @@ void* VG_(client_realloc) ( ThreadState* tst, void* p, UInt new_size )
       }
      
       if (sc == NULL) {
+         /* just there to allow reporting of free errors */
          VG_TRACK( die_mem_heap, tst, (Addr)NULL, 0, True );
          /* Perhaps we should keep going regardless. */
          VGP_POPCC;
@@ -409,6 +417,7 @@ void* VG_(client_realloc) ( ThreadState* tst, void* p, UInt new_size )
 
          if (sc->size == new_size) {
             /* size unchanged */
+            /* just there to allow reporting of freemismatch errors */
             VG_TRACK( die_mem_heap, tst, sc->data + new_size, 
                       0, alloc_matches );
             VGP_POPCC;
@@ -437,12 +446,12 @@ void* VG_(client_realloc) ( ThreadState* tst, void* p, UInt new_size )
 
             /* First half kept and copied, second half new, 
                red zones as normal */
+            VG_TRACK( ban_mem_heap, p_new-VG_AR_CLIENT_REDZONE_SZB, 
+                                    VG_AR_CLIENT_REDZONE_SZB );
             VG_TRACK( copy_mem_heap, (Addr)p, p_new, sc->size );
             VG_TRACK( new_mem_heap, p_new+sc->size, new_size-sc->size, 
                       /*inited=*/False );
             VG_TRACK( ban_mem_heap, p_new+new_size, VG_AR_CLIENT_REDZONE_SZB );
-            VG_TRACK( ban_mem_heap, p_new-VG_AR_CLIENT_REDZONE_SZB, 
-                                    VG_AR_CLIENT_REDZONE_SZB );
 
             /* Copy from old to new */
             for (i = 0; i < sc->size; i++)

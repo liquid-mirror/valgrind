@@ -108,39 +108,39 @@ void VG_(pp_ExeContext) ( ExeContext* e )
 
 
 /* Compare two ExeContexts, comparing all callers. */
-Bool VG_(eq_ExeContext_all) ( ExeContext* e1, ExeContext* e2 )
+Bool VG_(eq_ExeContext) ( ExeContextRes res, 
+                          ExeContext* e1, ExeContext* e2 )
 {
-   vg_ec_cmpAlls++;
-   /* Just do pointer comparison. */
-   if (e1 != e2) return False;
-   return True;
-}
+   switch (res) {
+   case LowRes:
+      /* Just compare the top two callers. */
+      vg_ec_cmp2s++;
+      if (e1->eips[0] != e2->eips[0]
+          || e1->eips[1] != e2->eips[1]) return False;
+      return True;
 
+   case MedRes:
+      /* Just compare the top four callers. */
+      vg_ec_cmp4s++;
+      if (e1->eips[0] != e2->eips[0]
+          || e1->eips[1] != e2->eips[1]) return False;
 
-/* Compare two ExeContexts, just comparing the top two callers. */
-Bool VG_(eq_ExeContext_top2) ( ExeContext* e1, ExeContext* e2 )
-{
-   vg_ec_cmp2s++;
-   if (e1->eips[0] != e2->eips[0]
-       || e1->eips[1] != e2->eips[1]) return False;
-   return True;
-}
+      if (VG_(clo_backtrace_size) < 3) return True;
+      if (e1->eips[2] != e2->eips[2]) return False;
 
+      if (VG_(clo_backtrace_size) < 4) return True;
+      if (e1->eips[3] != e2->eips[3]) return False;
+      return True;
 
-/* Compare two ExeContexts, just comparing the top four callers. */
-Bool VG_(eq_ExeContext_top4) ( ExeContext* e1, ExeContext* e2 )
-{
-   vg_ec_cmp4s++;
-   if (e1->eips[0] != e2->eips[0]
-       || e1->eips[1] != e2->eips[1]) return False;
+   case HighRes:
+      vg_ec_cmpAlls++;
+      /* Compare them all -- just do pointer comparison. */
+      if (e1 != e2) return False;
+      return True;
 
-   if (VG_(clo_backtrace_size) < 3) return True;
-   if (e1->eips[2] != e2->eips[2]) return False;
-
-   if (VG_(clo_backtrace_size) < 4) return True;
-   if (e1->eips[3] != e2->eips[3]) return False;
-
-   return True;
+   default:
+      VG_(panic)("VG_(eq_ExeContext): unrecognised ExeContextRes");
+   }
 }
 
 
