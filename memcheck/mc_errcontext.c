@@ -34,6 +34,53 @@
 /*--- Defns                                                ---*/
 /*------------------------------------------------------------*/
 
+typedef 
+   enum { 
+      /* Bad syscall params */
+      Param = FinalDummySuppressionKind + 1,
+      /* Memory errors in pthread ops */
+      PThreadMem,
+      /* Use of invalid values of given size */
+      Value0, Value1, Value2, Value4, Value8, 
+      /* Invalid read/write attempt at given size */
+      Addr1, Addr2, Addr4, Addr8,
+      /* Invalid or mismatching free */
+      FreeS
+   } 
+   MemCheckSuppressionKind;
+
+/* What kind of error it is. */
+typedef 
+   enum { ValueErr = FinalDummyErrKind + 1,
+          PThreadMemErr,
+          AddrErr, 
+          ParamErr, UserErr, /* behaves like an anonymous ParamErr */
+          FreeErr, FreeMismatchErr
+   }
+   MemCheckErrKind;
+
+/* What kind of memory access is involved in the error? */
+typedef
+   enum { ReadAxs, WriteAxs, ExecAxs }
+   AxsKind;
+
+/* Top-level struct for recording errors. */
+typedef
+   struct {
+      /* AddrErr */
+      AxsKind axskind;
+      /* AddrErr, ValueErr */
+      Int size;
+      /* AddrErr, FreeErr, FreeMismatchErr, ParamErr, UserErr */
+      AddrInfo addrinfo;
+      /* ParamErr, UserErr, PThreadMemErr */
+      Bool isWrite;
+   }
+   MemCheckErrContext;
+
+// SSS: these should be local to vg_memcheck_errcontext.c...
+extern void clear_MemCheckErrContext ( MemCheckErrContext* ec_extra );
+
 /*------------------------------------------------------------*/
 /*--- Comparing and printing errors                        ---*/
 /*------------------------------------------------------------*/
@@ -49,15 +96,15 @@ void clear_AddrInfo ( AddrInfo* ai )
    ai->stack_tid  = VG_INVALID_THREADID;
    ai->maybe_gcc  = False;
 }
+#endif
 
 void clear_MemCheckErrContext ( MemCheckErrContext* ec_extra )
 {
-   ec_extra->axskind         = ReadAxs;
-   ec_extra->size            = 0;
+   ec_extra->axskind = ReadAxs;
+   ec_extra->size    = 0;
    clear_AddrInfo ( &ec_extra->addrinfo );
-   ec_extra->isWriteableLack = False;
+   ec_extra->isWrite = False;
 }
-#endif
 
 static __inline__
 Bool vg_eq_ExeContext ( Bool top_2_only,
@@ -99,14 +146,22 @@ Bool SKN_(eq_ErrContext) ( Bool cheap_addr_cmp,
    MemCheckErrContext* e2_extra = e2->extra;
    
    switch (e1->ekind) {
+      case PThreadMemErr:
+         if (e1_extra->isWrite != e2_extra->isWrite)   return False;
+         if (e2->ekind != PThreadErr)                  return False; 
+         if (e1->string == e2->string)                 return True;
+         if (0 == VG_(strcmp)(e1->string, e2->string)) return True;
+         return False;
+
       case UserErr:
       case ParamErr:
-         if (e1_extra->isWriteableLack != e2_extra->isWriteableLack)
+         if (e1_extra->isWrite != e2_extra->isWrite)
             return False;
          if (e1->ekind == ParamErr 
              && 0 != VG_(strcmp)(e1->string, e2->string))
             return False;
          return True;
+
       case FreeErr:
       case FreeMismatchErr:
          if (e1->addr != e2->addr) return False;
@@ -114,6 +169,7 @@ Bool SKN_(eq_ErrContext) ( Bool cheap_addr_cmp,
                           &e1_extra->addrinfo, &e2_extra->addrinfo)) 
             return False;
          return True;
+
       case AddrErr:
          if (e1_extra->axskind != e2_extra->axskind) return False;
          if (e1_extra->size != e2_extra->size) return False;
@@ -121,9 +177,11 @@ Bool SKN_(eq_ErrContext) ( Bool cheap_addr_cmp,
                           &e1_extra->addrinfo, &e2_extra->addrinfo)) 
             return False;
          return True;
+
       case ValueErr:
          if (e1_extra->size != e2_extra->size) return False;
          return True;
+
       default: 
          VG_(printf)("Error:\n  unknown MemCheck error code %d\n", e1->ekind);
          VG_(panic)("unknown error code in SKN_(eq_ErrContext)");
@@ -190,6 +248,18 @@ void SKN_(pp_ErrContext) ( ErrContext* ec )
    MemCheckErrContext* ec_extra = ec->extra;
 
    switch (ec->ekind) {
+      case PThreadMemErr:
+         if (ec_extra->isWrite) {
+            VG_(message)(Vg_UserMsg, 
+               "%s contains unaddressable byte(s)", ec->string );
+         } else {
+            VG_(message)(Vg_UserMsg, 
+                "%s contains uninitialised or unaddressable byte(s)",
+                ec->string);
+         }
+         VG_(pp_ExeContext)(ec->where);
+         break;
+      
       case ValueErr:
          if (ec_extra->size == 0) {
              VG_(message)(
@@ -236,7 +306,7 @@ void SKN_(pp_ErrContext) ( ErrContext* ec )
          break;
 
       case ParamErr:
-         if (ec_extra->isWriteableLack) {
+         if (ec_extra->isWrite) {
             VG_(message)(Vg_UserMsg, 
                "Syscall param %s contains unaddressable byte(s)",
                 ec->string );
@@ -251,7 +321,7 @@ void SKN_(pp_ErrContext) ( ErrContext* ec )
          break;
 
       case UserErr:
-         if (ec_extra->isWriteableLack) {
+         if (ec_extra->isWrite) {
             VG_(message)(Vg_UserMsg, 
                "Unaddressable byte(s) found during client check request");
          } else {
@@ -262,6 +332,7 @@ void SKN_(pp_ErrContext) ( ErrContext* ec )
          VG_(pp_ExeContext)(ec->where);
          pp_AddrInfo(ec->addr, &ec_extra->addrinfo);
          break;
+
       default: 
          VG_(printf)("Error:\n  unknown MemCheck error code %d\n", ec->ekind);
          VG_(panic)("unknown error code in SKN_(pp_ErrContext)");
@@ -304,6 +375,17 @@ void SK_(record_value_error) ( Int size )
    VG_(maybe_add_context) ( &ec );
 }
 
+/* Is this address within some small distance below %ESP?  Used only
+   for the --workaround-gcc296-bugs kludge. */
+Bool VG_(is_just_below_ESP)( Addr esp, Addr aa )
+{
+   if ((UInt)esp > (UInt)aa
+       && ((UInt)esp - (UInt)aa) <= VG_GCC296_BUG_STACK_SLOP)
+      return True;
+   else
+      return False;
+}
+
 void SK_(record_address_error) ( Addr a, Int size, Bool isWrite )
 {
    ErrContext ec;
@@ -332,8 +414,27 @@ void SK_(record_address_error) ( Addr a, Int size, Bool isWrite )
 }
 
 /* These ones are called from non-generated code */
-void SK_(record_param_err) ( ThreadState* tst, Addr a, Bool isWriteLack, 
-                             Char* msg )
+
+/* This is for memory errors in pthread functions, as opposed to pthread API
+   errors which are found by the core. */
+void SK_(record_pthread_mem_error) ( ThreadId tid, Bool isWrite, Char* msg )
+{
+   ErrContext ec;
+   MemCheckErrContext ec_extra;
+
+   if (VG_(ignore_errors)) return;
+
+   /* No address to note: hence the '0' */
+   VG_(construct_err_context)( &ec, PThreadMemErr, 0, msg, NULL );
+   clear_MemCheckErrContext( &ec_extra );
+   ec_extra.isWrite = isWrite;
+   ec.extra = &ec_extra;
+
+   VG_(maybe_add_context) ( &ec );
+}
+
+void SK_(record_param_error) ( ThreadState* tst, Addr a, Bool isWrite, 
+                               Char* msg )
 {
    ErrContext ec;
    MemCheckErrContext ec_extra;
@@ -344,7 +445,78 @@ void SK_(record_param_err) ( ThreadState* tst, Addr a, Bool isWriteLack,
    VG_(construct_err_context)( &ec, ParamErr, a, msg, tst );
    clear_MemCheckErrContext( &ec_extra );
    ec_extra.addrinfo.akind = Undescribed;
-   ec_extra.isWriteableLack = isWriteLack;
+   ec_extra.isWrite = isWrite;
+   ec.extra = &ec_extra;
+
+   VG_(maybe_add_context) ( &ec );
+}
+
+void SK_(record_jump_error) ( ThreadState* tst, Addr a )
+{
+   ErrContext ec;
+   MemCheckErrContext ec_extra;
+
+   if (VG_(ignore_errors)()) return;
+
+   vg_assert(NULL != tst);
+
+   VG_(printf)("jump error: ebp %p, stack_highest_word %p\n", tst->m_esp,
+         tst->stack_highest_word);
+
+   
+   VG_(construct_err_context)( &ec, AddrErr, a, NULL, tst );
+   clear_MemCheckErrContext( &ec_extra );
+   ec_extra.axskind = ExecAxs;
+   ec_extra.addrinfo.akind = Undescribed;
+   ec.extra = &ec_extra;
+
+   VG_(maybe_add_context) ( &ec );
+}
+
+void SK_(record_free_error) ( ThreadState* tst, Addr a )
+{
+   ErrContext ec;
+   MemCheckErrContext ec_extra;
+
+   if (VG_(ignore_errors)()) return;
+
+   vg_assert(NULL != tst);
+   VG_(construct_err_context)( &ec, FreeErr, a, NULL, tst );
+   clear_MemCheckErrContext( &ec_extra );
+   ec_extra.addrinfo.akind = Undescribed;
+   ec.extra = &ec_extra;
+
+   VG_(maybe_add_context) ( &ec );
+}
+
+void SK_(record_freemismatch_error) ( ThreadState* tst, Addr a )
+{
+   ErrContext ec;
+   MemCheckErrContext ec_extra;
+
+   if (VG_(ignore_errors)()) return;
+
+   vg_assert(NULL != tst);
+   VG_(construct_err_context)( &ec, FreeMismatchErr, a, NULL, tst );
+   clear_MemCheckErrContext( &ec_extra );
+   ec_extra.addrinfo.akind = Undescribed;
+   ec.extra = &ec_extra;
+
+   VG_(maybe_add_context) ( &ec );
+}
+
+void SK_(record_user_error) ( ThreadState* tst, Addr a, Bool isWrite )
+{
+   ErrContext ec;
+   MemCheckErrContext ec_extra;
+
+   if (VG_(ignore_errors)()) return;
+
+   vg_assert(NULL != tst);
+   VG_(construct_err_context)( &ec, UserErr, a, NULL, tst );
+   clear_MemCheckErrContext( &ec_extra );
+   ec_extra.addrinfo.akind = Undescribed;
+   ec_extra.isWrite        = isWrite;
    ec.extra = &ec_extra;
 
    VG_(maybe_add_context) ( &ec );
@@ -360,18 +532,19 @@ void SK_(record_param_err) ( ThreadState* tst, Addr a, Bool isWriteLack,
 
 Bool SKN_(recognised_suppression) ( Char* name, SuppressionKind *skind )
 {
-   if      (STREQ(name, "Param"))  *skind = Param;
-   else if (STREQ(name, "Value0")) *skind = Value0; /* backwards compat */ 
-   else if (STREQ(name, "Cond"))   *skind = Value0;
-   else if (STREQ(name, "Value1")) *skind = Value1;
-   else if (STREQ(name, "Value2")) *skind = Value2;
-   else if (STREQ(name, "Value4")) *skind = Value4;
-   else if (STREQ(name, "Value8")) *skind = Value8;
-   else if (STREQ(name, "Addr1"))  *skind = Addr1;
-   else if (STREQ(name, "Addr2"))  *skind = Addr2;
-   else if (STREQ(name, "Addr4"))  *skind = Addr4;
-   else if (STREQ(name, "Addr8"))  *skind = Addr8;
-   else if (STREQ(name, "Free"))   *skind = FreeS;
+   if      (STREQ(name, "Param"))      *skind = Param;
+   else if (STREQ(name, "PThreadMem")) *skind = Value0;
+   else if (STREQ(name, "Value0"))     *skind = Value0; /* backwards compat */ 
+   else if (STREQ(name, "Cond"))       *skind = Value0;
+   else if (STREQ(name, "Value1"))     *skind = Value1;
+   else if (STREQ(name, "Value2"))     *skind = Value2;
+   else if (STREQ(name, "Value4"))     *skind = Value4;
+   else if (STREQ(name, "Value8"))     *skind = Value8;
+   else if (STREQ(name, "Addr1"))      *skind = Addr1;
+   else if (STREQ(name, "Addr2"))      *skind = Addr2;
+   else if (STREQ(name, "Addr4"))      *skind = Addr4;
+   else if (STREQ(name, "Addr8"))      *skind = Addr8;
+   else if (STREQ(name, "Free"))       *skind = FreeS;
    else 
       return False;
 
@@ -399,6 +572,9 @@ extern Bool SKN_(error_matches_suppression)(ErrContext* ec, Suppression* su)
    switch (su->skind) {
       case Param:
          return (ec->ekind == ParamErr && STREQ(su->string, ec->string));
+
+      case PThreadMem:
+         return (ec->ekind == PThreadMemErr && STREQ(su->string, ec->string));
 
       case Value0: su_size = 0; goto value_case;
       case Value1: su_size = 1; goto value_case;

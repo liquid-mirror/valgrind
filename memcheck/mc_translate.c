@@ -192,7 +192,7 @@ Int SKN_(getExtTempUsage)(UInstr* u, TempUse* arr)
    Int n = 0;
    switch (u->opcode) {        
 
-      // SSS: I don't understand this comment... what about reg alloc?  --njn
+      // JJJ: I don't understand this comment... what about reg alloc?  --njn
 
       /* These sizes are only ever consulted when the instrumentation
          code is being added, so the following can return
@@ -949,15 +949,26 @@ static UCodeBlock* memcheck_instrument ( UCodeBlock* cb_in )
             VG_(copyUInstr)(cb, u_in);
             break;
 
-         /* Emit a check on the address used.  For FPU_R, the value
-            loaded into the FPU is checked at the time it is read from
-            memory (see synth_fpu_mem_check_actions).  */
-         case FPU_R: case FPU_W:
+         /* Emit a check on the address used.  The value loaded into the 
+            FPU is checked by the call to fpu_{read/write}_check().  */
+         case FPU_R: case FPU_W: {
+            Int t_size = INVALID_TEMPREG;
+
             vg_assert(u_in->tag2 == TempReg);
             uInstr1(cb, TESTV, 4, TempReg, SHADOW(u_in->val2));
             uInstr1(cb, SETV,  4, TempReg, SHADOW(u_in->val2));
+
+            t_size = newTemp(cb);
+            uInstr2(cb, MOV,   4, Literal, 0, TempReg, t_size);
+            uLiteral(cb, u_in->size);
+            uInstr2(cb, CCALL_2_0, 0, TempReg, u_in->val2, TempReg, t_size);
+            uLiteral(cb, ( u_in->opcode==FPU_R 
+                         ? (Addr) & SK_(fpu_read_check) 
+                         : (Addr) & SK_(fpu_write_check)));
+
             VG_(copyUInstr)(cb, u_in);
             break;
+         }
 
          /* For FPU insns not referencing memory, just copy thru. */
          case FPU: 
@@ -1387,15 +1398,13 @@ static void vg_cleanup ( UCodeBlock* cb )
 
 UCodeBlock* SK_(instrument) ( UCodeBlock* cb, Addr not_used )
 {
-   /* VGP_PUSHCC(VgpInstrument); */
    cb = memcheck_instrument(cb);
-   /* VGP_POPCC; */
    if (VG_(disassemble)) 
       VG_(ppUCodeBlock) ( cb, "Instrumented code:" );
    if (VG_(clo_cleanup)) {
-      /* VGP_PUSHCC(VgpCleanup); */
+      //VGP_PUSHCC(VgpCleanup);
       vg_cleanup(cb);
-      /* VGP_POPCC; */
+      //VGP_POPCC;
       if (VG_(disassemble)) 
          VG_(ppUCodeBlock) ( cb, "Cleaned-up instrumented code:" );
    }

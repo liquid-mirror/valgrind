@@ -76,7 +76,7 @@ void SK_(fini)(void)
    VG_(panic)("called SK_(fini)");
 }
 
-void SK_(setup)(VgNeeds* needs)
+void SK_(setup)(VgNeeds* needs, VgTrackEvents* track)
 {
    VG_(printf)(fund_panic);
    VG_(panic)("called SK_(setup)");
@@ -157,16 +157,6 @@ UInt SKN_(handle_client_request) ( ThreadState* tst, UInt* arg_block )
 }
 
 /* ---------------------------------------------------------------------
-   UInstr augmentation
-   ------------------------------------------------------------------ */
-
-void SKN_(augmentUInstr)(UInstr* u)
-{
-   VG_(printf)(nonfund_panic);
-   VG_(panic)("called SKN_(augmentUInstr)");
-}
-
-/* ---------------------------------------------------------------------
    UCode extension
    ------------------------------------------------------------------ */
 
@@ -217,19 +207,18 @@ void  SKN_(post_syscall) ( ThreadId tid, UInt syscallno,
    VG_(panic)("called SKN_(post_syscall)");
 }
 
-
-void* SKN_(pre_blocking_syscall_check)  ( ThreadId tid, Int syscallno,
-                                          Int* res)
+void* SKN_(pre_check_known_blocking_syscall)  
+          ( ThreadId tid, Int syscallno, Int* res )
 {
    VG_(printf)(nonfund_panic);
-   VG_(panic)("called SKN_(pre_blocking_syscall_check)");
+   VG_(panic)("called SKN_(pre_check_known_blocking_syscall)");
 }
 
-void  SKN_(post_blocking_syscall_check) ( ThreadId tid, Int syscallno,
-                                          Int* res, void* pre_result)
+void  SKN_(post_check_known_blocking_syscall) 
+          ( ThreadId tid, Int syscallno, void* pre_result, Int* res )
 {
    VG_(printf)(nonfund_panic);
-   VG_(panic)("called SKN_(post_blocking_syscall_check)");
+   VG_(panic)("called SKN_(post_check_known_blocking_syscall)");
 }
 
 /* ---------------------------------------------------------------------
@@ -247,112 +236,6 @@ void SKN_(expensive_sanity_check) ( void )
    VG_(printf)(nonfund_panic);
    VG_(panic)("SKN_(expensive_sanity_check))");
 }
-
-/* ---------------------------------------------------------------------
-   Shadow memory
-   ------------------------------------------------------------------ */
-
-void SKN_(make_segment_readable) ( Addr a, UInt len )
-{
-   VG_(printf)(nonfund_panic);
-   VG_(panic)("called SKN_(make_segment_readable)");
-}
-
-void SKN_(make_noaccess) ( Addr a, UInt len )
-{
-   VG_(printf)(nonfund_panic);
-   VG_(panic)("called SKN_(make_noaccess)");
-}
-
-void SKN_(make_writable) ( Addr a, UInt len )
-{
-   VG_(printf)(nonfund_panic);
-   VG_(panic)("called SKN_(make_writable)");
-}
-
-void SKN_(make_readable) ( Addr a, UInt len )
-{
-   VG_(printf)(nonfund_panic);
-   VG_(panic)("called SKN_(make_readable)");
-}
-
-void SKN_(make_readwritable) ( Addr a, UInt len )
-{
-   VG_(printf)(nonfund_panic);
-   VG_(panic)("called SKN_(make_readwritable)");
-}
-
-void SKN_(copy_address_range_state) ( Addr src, Addr dst, UInt len )
-{
-   VG_(printf)(nonfund_panic);
-   VG_(panic)("called SKN_(copy_address_range_state)");
-}
-
-
-
-Bool SKN_(check_writable) ( Addr a, UInt len, Addr* bad_addr )
-{
-   VG_(printf)(nonfund_panic);
-   VG_(panic)("called SKN_(check_writable)");
-}
-
-// JJJ: a special one:  can be called (from vg_execontext.c) by any function
-// that asks for an execution context, even if shadow memory isn't needed.
-// So give a default definition (which may be bogus).
-Bool SKN_(check_readable) ( Addr a, UInt len, Addr* bad_addr )
-{
-   return True;
-}
-
-Bool SKN_(check_readable_asciiz) ( Addr a, Addr* bad_addr )
-{
-   VG_(printf)(nonfund_panic);
-   VG_(panic)("called SKN_(check_readable_asciiz)");
-}
-
-
-void SKN_(make_aligned_word_WRITABLE) ( Addr a )
-{
-   VG_(printf)(nonfund_panic);
-   VG_(panic)("called SKN_(make_aligned_word_WRITABLE)");
-}
-
-
-void SKN_(make_aligned_word_NOACCESS) ( Addr a )
-{
-   VG_(printf)(nonfund_panic);
-   VG_(panic)("called SKN_(make_aligned_word_WRITABLE)");
-}
-
-
-void SKN_(init_shadow_memory)(void)
-{
-   VG_(printf)(nonfund_panic);
-   VG_(panic)("called SKN_(init_shadow_memory)");
-}
-
-/* ---------------------------------------------------------------------
-   Thread tracking
-   ------------------------------------------------------------------ */
-
-void SKN_(thread_does_lock)  ( ThreadId tid, void* mutex )
-{
-   VG_(printf)(nonfund_panic);
-   VG_(panic)("called SKN_(thread_does_lock)");
-}
-
-void SKN_(thread_does_unlock)  ( ThreadId tid, void* mutex )
-{
-   VG_(printf)(nonfund_panic);
-   VG_(panic)("called SKN_(thread_does_unlock)");
-}
-
-// SSS: omitted because it run on sim'd CPU and is dangerous
-//void SKN_(thread_dies) ( void )
-//{
-//   VG_(printf)(nonfund_panic);
-//   VG_(panic)("called SKN_(thread_dies)");
-//}
 
 /*--------------------------------------------------------------------*/
 /*--- end                                            vg_defaults.c ---*/

@@ -1,8 +1,6 @@
 
 /*--------------------------------------------------------------------*/
-/*--- The cache simulation framework: instrumentation, recording   ---*/
-/*--- and results printing.                                        ---*/
-/*---                                                vg_cachesim.c ---*/
+/*--- The null skin.                                     vg_none.c ---*/
 /*--------------------------------------------------------------------*/
 
 /*
@@ -49,11 +47,14 @@ void SK_(fini)(void)
 /*--- Setup                                                        ---*/
 /*--------------------------------------------------------------------*/
 
-void SK_(setup)(VgNeeds* needs) 
+void SK_(setup)(VgNeeds* needs, VgTrackEvents* track) 
 {
    needs->name                    = "nulgrind";
    needs->description             = "an binary JIT-compiler";
 
+   needs->record_mem_exe_context  = False;
+   needs->postpone_mem_reuse      = False;
+   
    needs->debug_info              = Vg_DebugNone;
    needs->precise_x86_instr_sizes = False;
    needs->pthread_errors          = False;
@@ -61,23 +62,23 @@ void SK_(setup)(VgNeeds* needs)
 
    needs->identifies_basic_blocks = False;
 
+   needs->run_libc_freeres        = False;
+
    needs->command_line_options    = False;
    needs->client_requests         = False;
 
-   needs->augments_UInstrs        = False;
    needs->extends_UCode           = False;
 
    needs->wrap_syscalls           = False;
 
    needs->sanity_checks           = False;
 
-   needs->shadow_memory           = False;
-   needs->track_threads           = False;
-
    // SSS: eLiMiNaTe
    VG_(clo_skin) = Vg_Other;
+
+   /* No core events to track */
 }
 
 /*--------------------------------------------------------------------*/
-/*--- end                                            vg_cachesim.c ---*/
+/*--- end                                                vg_none.c ---*/
 /*--------------------------------------------------------------------*/
