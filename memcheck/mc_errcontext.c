@@ -38,8 +38,8 @@ typedef
    enum { 
       /* Bad syscall params */
       Param = FinalDummySuppressionKind + 1,
-      /* Memory errors in pthread ops */
-      PThreadMem,
+      /* Memory errors in core (pthread ops, signal handling) */
+      CoreMem,
       /* Use of invalid values of given size */
       Value0, Value1, Value2, Value4, Value8, 
       /* Invalid read/write attempt at given size */
@@ -52,7 +52,7 @@ typedef
 /* What kind of error it is. */
 typedef 
    enum { ValueErr = FinalDummyErrKind + 1,
-          PThreadMemErr,
+          CoreMemErr,
           AddrErr, 
           ParamErr, UserErr, /* behaves like an anonymous ParamErr */
           FreeErr, FreeMismatchErr
@@ -73,7 +73,7 @@ typedef
       Int size;
       /* AddrErr, FreeErr, FreeMismatchErr, ParamErr, UserErr */
       AddrInfo addrinfo;
-      /* ParamErr, UserErr, PThreadMemErr */
+      /* ParamErr, UserErr, CoreMemErr */
       Bool isWrite;
    }
    MemCheckErrContext;
@@ -142,7 +142,7 @@ Bool SKN_(eq_ErrContext) ( Bool cheap_addr_cmp,
    MemCheckErrContext* e2_extra = e2->extra;
    
    switch (e1->ekind) {
-      case PThreadMemErr:
+      case CoreMemErr:
          if (e1_extra->isWrite != e2_extra->isWrite)   return False;
          if (e2->ekind != PThreadErr)                  return False; 
          if (e1->string == e2->string)                 return True;
@@ -244,7 +244,7 @@ void SKN_(pp_ErrContext) ( ErrContext* ec )
    MemCheckErrContext* ec_extra = ec->extra;
 
    switch (ec->ekind) {
-      case PThreadMemErr:
+      case CoreMemErr:
          if (ec_extra->isWrite) {
             VG_(message)(Vg_UserMsg, 
                "%s contains unaddressable byte(s)", ec->string );
@@ -464,7 +464,7 @@ void SK_(record_address_error) ( Addr a, Int size, Bool isWrite )
 
 /* This is for memory errors in pthread functions, as opposed to pthread API
    errors which are found by the core. */
-void SK_(record_pthread_mem_error) ( ThreadState* tst, Bool isWrite, Char* msg )
+void SK_(record_core_mem_error) ( ThreadState* tst, Bool isWrite, Char* msg )
 {
    ErrContext ec;
    MemCheckErrContext ec_extra;
@@ -472,7 +472,7 @@ void SK_(record_pthread_mem_error) ( ThreadState* tst, Bool isWrite, Char* msg )
    if (VG_(ignore_errors)) return;
 
    /* No address to note: hence the '0' */
-   VG_(construct_err_context)( &ec, PThreadMemErr, 0, msg, tst );
+   VG_(construct_err_context)( &ec, CoreMemErr, 0, msg, tst );
    clear_MemCheckErrContext( &ec_extra );
    ec_extra.isWrite = isWrite;
    ec.extra = &ec_extra;
@@ -579,19 +579,19 @@ void SK_(record_user_error) ( ThreadState* tst, Addr a, Bool isWrite )
 
 Bool SKN_(recognised_suppression) ( Char* name, SuppressionKind *skind )
 {
-   if      (STREQ(name, "Param"))      *skind = Param;
-   else if (STREQ(name, "PThreadMem")) *skind = Value0;
-   else if (STREQ(name, "Value0"))     *skind = Value0; /* backwards compat */ 
-   else if (STREQ(name, "Cond"))       *skind = Value0;
-   else if (STREQ(name, "Value1"))     *skind = Value1;
-   else if (STREQ(name, "Value2"))     *skind = Value2;
-   else if (STREQ(name, "Value4"))     *skind = Value4;
-   else if (STREQ(name, "Value8"))     *skind = Value8;
-   else if (STREQ(name, "Addr1"))      *skind = Addr1;
-   else if (STREQ(name, "Addr2"))      *skind = Addr2;
-   else if (STREQ(name, "Addr4"))      *skind = Addr4;
-   else if (STREQ(name, "Addr8"))      *skind = Addr8;
-   else if (STREQ(name, "Free"))       *skind = FreeS;
+   if      (STREQ(name, "Param"))   *skind = Param;
+   else if (STREQ(name, "CoreMem")) *skind = Value0;
+   else if (STREQ(name, "Value0"))  *skind = Value0; /* backwards compat */ 
+   else if (STREQ(name, "Cond"))    *skind = Value0;
+   else if (STREQ(name, "Value1"))  *skind = Value1;
+   else if (STREQ(name, "Value2"))  *skind = Value2;
+   else if (STREQ(name, "Value4"))  *skind = Value4;
+   else if (STREQ(name, "Value8"))  *skind = Value8;
+   else if (STREQ(name, "Addr1"))   *skind = Addr1;
+   else if (STREQ(name, "Addr2"))   *skind = Addr2;
+   else if (STREQ(name, "Addr4"))   *skind = Addr4;
+   else if (STREQ(name, "Addr8"))   *skind = Addr8;
+   else if (STREQ(name, "Free"))    *skind = FreeS;
    else 
       return False;
 
@@ -620,8 +620,8 @@ extern Bool SKN_(error_matches_suppression)(ErrContext* ec, Suppression* su)
       case Param:
          return (ec->ekind == ParamErr && STREQ(su->string, ec->string));
 
-      case PThreadMem:
-         return (ec->ekind == PThreadMemErr && STREQ(su->string, ec->string));
+      case CoreMem:
+         return (ec->ekind == CoreMemErr && STREQ(su->string, ec->string));
 
       case Value0: su_size = 0; goto value_case;
       case Value1: su_size = 1; goto value_case;

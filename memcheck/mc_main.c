@@ -338,6 +338,8 @@ void SK_(post_clo_init) ( void )
 
 void SK_(fini) ( void )
 {
+   VG_(clientmalloc_done)();
+
    if (VG_(clo_verbosity) == 1) {
       if (!VG_(clo_leak_check))
          VG_(message)(Vg_UserMsg, 
@@ -407,7 +409,8 @@ static __inline__ UChar get_vbyte ( Addr a )
 
    // SSS
    if (IS_DISTINGUISHED_SM(sm))
-      VG_(printf)("accessed distinguished 2ndary map! 0x%x\n", a);
+      VG_(message)(Vg_DebugMsg, 
+                   "accessed distinguished 2ndary map! 0x%x\n", a);
 
    return sm->vbyte[sm_off];
 }
@@ -491,8 +494,6 @@ static void set_address_range_perms ( Addr a, UInt len,
                    "Warning: set address range perms: "
                    "large range %u, a %d, v %d",
                    len, example_a_bit, example_v_bit );
-      // SSS: temporary
-      VG_(panic)("too big, argh");
    }
 
    VGP_PUSHCC(VgpSARP);
@@ -595,16 +596,6 @@ static void set_address_range_perms ( Addr a, UInt len,
 }
 
 /* Set permissions for address ranges ... */
-#if 0
-#define MAKE_NOACCESS(nnn) \
-void make_noaccess##nnn ( Addr a, UInt len )\
-{\
-   PROF_EVENT(35);\
-     /* VG_(printf)(# nnn);*/\
-   DEBUG("make_noaccess(%p, %x)\n", a, len);\
-   set_address_range_perms ( a, len, VGM_BIT_INVALID, VGM_BIT_INVALID );\
-}
-#endif
 
 void VG_(make_noaccess) ( Addr a, UInt len )
 {
@@ -626,12 +617,6 @@ void VG_(make_readable) ( Addr a, UInt len )
    DEBUG("VG_(make_readable)(%p, 0x%x)\n", a, len);
    set_address_range_perms ( a, len, VGM_BIT_VALID, VGM_BIT_VALID );
 }
-
-//void SKN_(make_readwritable) ( Addr a, UInt len )
-//{
-//   PROF_EVENT(38);
-//   set_address_range_perms ( a, len, VGM_BIT_VALID, VGM_BIT_VALID );
-//}
 
 /* Block-copy permissions (needed for implementing realloc()). */
 
@@ -720,6 +705,10 @@ Bool VG_(check_readable_asciiz) ( Addr a, Addr* bad_addr )
 }
 
 
+/*------------------------------------------------------------*/
+/*--- Memory event handlers                                ---*/
+/*------------------------------------------------------------*/
+
 /* Setting permissions for aligned words.  This supports fast stack
    operations. */
 
@@ -776,11 +765,81 @@ static void make_writable_aligned ( Addr a, UInt len )
 }
 
 
-/*------------------------------------------------------------*/
-/*--- Memory event handlers                                ---*/
-/*------------------------------------------------------------*/
+static
+void check_is_writable ( CorePart part, ThreadState* tst,
+                         Char* s, UInt base, UInt size )
+{
+   Bool ok;
+   Addr bad_addr;
+   /* VG_(message)(Vg_DebugMsg,"check is writable: %x .. %x",
+                               base,base+size-1); */
+   ok = VG_(check_writable) ( base, size, &bad_addr );
+   if (!ok) {
+      switch (part) {
+      case Vg_CoreSysCall:
+         SK_(record_param_error) ( tst, bad_addr, /*isWrite =*/True, s );
+         break;
 
-/* SSS: This overrides the default definition which doesn't do anything */
+      case Vg_CorePThread:
+      case Vg_CoreSignal:
+         SK_(record_core_mem_error)( tst, /*isWrite=*/True, s );
+         break;
+
+      default:
+         VG_(panic)("check_is_readable: Unknown or unexpected CorePart");
+      }
+   }
+}
+
+static
+void check_is_readable ( CorePart part, ThreadState* tst,
+                         Char* s, UInt base, UInt size )
+{     
+   Bool ok;
+   Addr bad_addr;
+   /* VG_(message)(Vg_DebugMsg,"check is readable: %x .. %x",
+                               base,base+size-1); */
+   ok = VG_(check_readable) ( base, size, &bad_addr );
+   if (!ok) {
+      switch (part) {
+      case Vg_CoreSysCall:
+         SK_(record_param_error) ( tst, bad_addr, /*isWrite =*/False, s );
+         break;
+      
+      case Vg_CorePThread:
+         SK_(record_core_mem_error)( tst, /*isWrite=*/False, s );
+         break;
+
+      /* If we're being asked to jump to a silly address, record an error 
+         message before potentially crashing the entire system. */
+      case Vg_CoreTranslate:
+         SK_(record_jump_error)( tst, bad_addr );
+         break;
+
+      default:
+         VG_(panic)("check_is_readable: Unknown or unexpected CorePart");
+      }
+   }
+}
+
+static
+void check_is_readable_asciiz ( CorePart part, ThreadState* tst,
+                                Char* s, UInt str )
+{
+   Bool ok = True;
+   Addr bad_addr;
+   /* VG_(message)(Vg_DebugMsg,"check is readable asciiz: 0x%x",str); */
+
+   vg_assert(part == Vg_CoreSysCall);
+   ok = VG_(check_readable_asciiz) ( (Addr)str, &bad_addr );
+   if (!ok) {
+      SK_(record_param_error) ( tst, bad_addr, /*is_writable =*/False, s );
+   }
+}
+
+
+/* SSS: Overrides the default which doesn't do any checking */
+/*      Nb: Returning zero is sometimes bad! */
 UInt VG_(dereference) ( Addr aa )
 {
    if (VG_(check_readable)(aa,4,NULL))
@@ -2141,83 +2200,6 @@ void  SKN_(post_check_known_blocking_syscall)
                    "probable sanity check failure for syscall number %d\n",
                    syscallno );
       VG_(panic)("aborting due to the above ... bye!");
-   }
-}
-
-
-/*------------------------------------------------------------*/
-/*--- Stuff (SSS: rename, reorder)                         ---*/
-/*------------------------------------------------------------*/
-
-static
-void check_is_writable ( CorePart part, ThreadState* tst,
-                         Char* s, UInt base, UInt size )
-{
-   Bool ok;
-   Addr bad_addr;
-   /* VG_(message)(Vg_DebugMsg,"check is writable: %x .. %x",
-                               base,base+size-1); */
-   ok = VG_(check_writable) ( base, size, &bad_addr );
-   if (!ok) {
-      // SSS: fill in other cases
-      switch (part) {
-      case Vg_CoreSysCall:
-         SK_(record_param_error) ( tst, bad_addr, /*isWrite =*/True, s );
-         break;
-
-      case Vg_CorePThread:
-         SK_(record_pthread_mem_error)( tst, /*isWrite=*/True, s );
-         break;
-
-      default:
-         VG_(panic)("check_is_readable: Unknown or unexpected CorePart");
-      }
-   }
-}
-
-static
-void check_is_readable ( CorePart part, ThreadState* tst,
-                         Char* s, UInt base, UInt size )
-{     
-   Bool ok;
-   Addr bad_addr;
-   /* VG_(message)(Vg_DebugMsg,"check is readable: %x .. %x",
-                               base,base+size-1); */
-   ok = VG_(check_readable) ( base, size, &bad_addr );
-   if (!ok) {
-      switch (part) {
-      case Vg_CoreSysCall:
-         SK_(record_param_error) ( tst, bad_addr, /*isWrite =*/False, s );
-         break;
-      
-      case Vg_CorePThread:
-         SK_(record_pthread_mem_error)( tst, /*isWrite=*/False, s );
-         break;
-
-      /* If we're being asked to jump to a silly address, record an error 
-         message before potentially crashing the entire system. */
-      case Vg_CoreTranslate:
-         SK_(record_jump_error)( tst, bad_addr );
-         break;
-
-      default:
-         VG_(panic)("check_is_readable: Unknown or unexpected CorePart");
-      }
-   }
-}
-
-static
-void check_is_readable_asciiz ( CorePart part, ThreadState* tst,
-                                Char* s, UInt str )
-{
-   Bool ok = True;
-   Addr bad_addr;
-   /* VG_(message)(Vg_DebugMsg,"check is readable asciiz: 0x%x",str); */
-
-   vg_assert(part == Vg_CoreSysCall);
-   ok = VG_(check_readable_asciiz) ( (Addr)str, &bad_addr );
-   if (!ok) {
-      SK_(record_param_error) ( tst, bad_addr, /*is_writable =*/False, s );
    }
 }
 
