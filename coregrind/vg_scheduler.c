@@ -1284,7 +1284,7 @@ VgSchedReturnCode VG_(scheduler) ( void )
             VG_(message)(Vg_DebugMsg, "thread %d: running for %d bbs", 
                                       tid, VG_(dispatch_ctr) - 1 );
 #        if 0
-         if (VG_(bbs_done) > 31700000 + 0) {
+         if (1|| VG_(bbs_done) > 0 + 0) {
             dispatch_ctr_SAVED = VG_(dispatch_ctr) = 2;
             VG_(translate)(&vg_threads[tid], vg_threads[tid].m_eip,
                            NULL,NULL,NULL);
