@@ -76,10 +76,10 @@ static void add_one_Jcc_untaken(void)
 
 void SK_(pre_clo_init)(VgNeeds* needs, VgTrackEvents* not_used)
 {
-   needs->name                    = "lackey";
-   needs->description             = "a UInstr counter";
+   needs->name        = "lackey";
+   needs->description = "a UInstr counter";
 
-   VG_(register_compact_helper)((Addr) & add_one_dlrr_call);
+   //VG_(register_compact_helper)((Addr) & add_one_dlrr_call);
    VG_(register_compact_helper)((Addr) & add_one_BB);
    VG_(register_compact_helper)((Addr) & add_one_x86_instr);
    VG_(register_compact_helper)((Addr) & add_one_UInstr);
