@@ -318,7 +318,6 @@ void VG_(maybe_do_lru_pass) ( void )
          vg_tt_used, vg_tc_used / 1000
       );
 
-   /* Reconstruct the SMC detection structures. */
 #  ifdef DEBUG_TRANSTAB
    for (i = 0; i < VG_TT_SIZE; i++)
       vg_assert(vg_tt[i].orig_addr != VG_TTE_DELETED);

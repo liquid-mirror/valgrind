@@ -115,7 +115,6 @@ Bool SKN_(saneExtUInstr)(Bool beforeRA, Bool beforeLiveness, UInstr* u)
 #  undef N3
 #  undef COND0
 #  undef EXTRA4b0
-#  undef SMC0
 #  undef JMPKIND0
 #  undef CCALL0
 #  undef XOTHER

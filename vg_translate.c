@@ -545,7 +545,6 @@ Bool VG_(saneUInstr) ( Bool beforeRA, Bool beforeLiveness, UInstr* u )
 #  undef N3
 #  undef COND0
 #  undef EXTRA4b0
-#  undef SMC0
 #  undef SG_WD0
 #  undef JMPKIND0
 #  undef CCALL0
