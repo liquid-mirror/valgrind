@@ -14,6 +14,10 @@ cachegrind.  Hopefully this will mean that 1.0.2 is a more stable base
 for Josef Weidendorfer's kcachegrind visualisation tool and call-graph
 patch.  Specific fixes are:
 
+- Fix this: valgrind: vg_cachesim.c:389 (get_BBCC): 
+  Assertion `((Bool)0) == remove' failed.
+  which happened when cachegrind discards translations.
+
 - Do not abort execution if cache simulating entire trees of processes
   causes conflicts over the logfile cachegrind.out.  This will be
   fixed properly in future stable branches; this fix is a bit of a
