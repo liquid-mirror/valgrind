@@ -938,11 +938,19 @@ void vg_push_signal_frame ( ThreadId tid, int sigNo )
    esp = esp_top_of_frame;
    esp -= sizeof(VgSigFrame);
    frame = (VgSigFrame*)esp;
+
+   /* For tracking memory events, indicate the entire frame has been
+    * allocated, but pretend that only the first four words are written */
+   VG_TRACK( new_mem_stack_signal, (Addr)frame, sizeof(VgSigFrame) );
+
    /* Assert that the frame is placed correctly. */
    vg_assert( (sizeof(VgSigFrame) & 0x3) == 0 );
    vg_assert( ((Char*)(&frame->magicE)) + sizeof(UInt) 
               == ((Char*)(esp_top_of_frame)) );
 
+   /* retaddr, sigNo, psigInfo, puContext fields are to be written */
+   VG_TRACK( pre_mem_write, Vg_CoreSignal, tst, "signal handler frame", 
+                            (Addr)esp, 16 );
    frame->retaddr    = (UInt)(&VG_(signalreturn_bogusRA));
    frame->sigNo      = sigNo;
    frame->psigInfo   = (Addr)NULL;
@@ -973,8 +981,8 @@ void vg_push_signal_frame ( ThreadId tid, int sigNo )
    /* This thread needs to be marked runnable, but we leave that the
       caller to do. */
 
-   /* Make retaddr, sigNo, psigInfo, puContext fields readable -- at
-      0(%ESP) .. 12(%ESP) */
+   /* retaddr, sigNo, psigInfo, puContext fields have been written -- 
+      at 0(%ESP) .. 12(%ESP) */
    VG_TRACK( post_mem_write, (Addr)esp, 16 );
 
    /* 
@@ -1015,7 +1023,7 @@ Int vg_pop_signal_frame ( ThreadId tid )
       tst->m_fpu[i] = frame->fpustate[i];
 
    /* Mark the frame structure as nonaccessible. */
-   VG_TRACK( die_mem_signal, (Addr)frame, sizeof(VgSigFrame) );
+   VG_TRACK( die_mem_stack_signal, (Addr)frame, sizeof(VgSigFrame) );
 
    /* Restore machine state from the saved context. */
    tst->m_eax     = frame->eax;
