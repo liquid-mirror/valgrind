@@ -31,6 +31,8 @@
 #include "vg_include.h"
 #include "vg_constants.h"
 
+// SSS: turn off for new version
+#define MYOLD 1
 
 /*------------------------------------------------------------*/
 /*--- Defns                                                ---*/
@@ -44,6 +46,7 @@
    gives flexibility so that new suppressions can be added to the file
    as and when needed. 
 */
+#if MYOLD
 typedef 
    enum { 
       /* Bad syscall params */
@@ -60,6 +63,8 @@ typedef
       Eraser
    } 
    SuppressionKind;
+#else
+#endif
 
 
 /* For each caller specified for a suppression, record the nature of
@@ -75,6 +80,7 @@ typedef
 
 
 /* A complete suppression record. */
+#if MYOLD
 typedef
    struct _Suppression {
       struct _Suppression* next;
@@ -98,7 +104,8 @@ typedef
       Char*            caller3;
    } 
    Suppression;
-
+#else
+#endif
 
 /* ErrContext is a type for recording just enough info to generate an
    error report for an illegal memory access.  The idea is that
@@ -109,6 +116,7 @@ typedef
 */
 
 /* What kind of error it is. */
+#if MYOLD
 typedef 
    enum { ValueErr, AddrErr, 
           ParamErr, UserErr, /* behaves like an anonymous ParamErr */
@@ -117,14 +125,19 @@ typedef
           EraserErr   /* possible data race */
    }
    ErrKind;
+#else
+#endif
 
 /* What kind of memory access is involved in the error? */
+#if MYOLD
 typedef
    enum { ReadAxs, WriteAxs, ExecAxs }
    AxsKind;
+#else
+#endif
 
 /* Top-level struct for recording errors. */
-// ZZZ
+#if MYOLD
 typedef
    struct _ErrContext {
       /* ALL */
@@ -163,6 +176,8 @@ typedef
       UInt m_ebp;
    }
    ErrContext;
+#else
+#endif
 
 /* The list of error contexts found, both suppressed and unsuppressed.
    Initially empty, and grows as errors are detected. */
@@ -201,6 +216,7 @@ static void clear_AddrInfo ( AddrInfo* ai )
    ai->maybe_gcc  = False;
 }
 
+#if MYOLD
 static void clear_ErrContext ( ErrContext* ec )
 {
    ec->next    = NULL;
@@ -219,7 +235,23 @@ static void clear_ErrContext ( ErrContext* ec )
    ec->m_ebp   = 0xDEADB0EF;
    ec->tid     = VG_INVALID_THREADID;
 }
-
+#else
+static void clear_ErrContext ( ErrContext* ec )
+{
+   ec->next    = NULL;
+   ec->supp    = NULL;
+   ec->count   = 0;
+   ec->ekind   = ValueErr;
+   ec->where   = NULL;
+   ec->addr    = 0;
+   ec->string  = NULL;
+   ec->extra   = NULL;        // SSS: SKN_(clear_extra_errcontext)()??
+   ec->m_eip   = 0xDEADB00F;
+   ec->m_esp   = 0xDEADBE0F;
+   ec->m_ebp   = 0xDEADB0EF;
+   ec->tid     = VG_INVALID_THREADID;
+}
+#endif
 
 static __inline__
 Bool vg_eq_ExeContext ( Bool top_2_only,
@@ -234,6 +266,7 @@ Bool vg_eq_ExeContext ( Bool top_2_only,
 }
 
 
+#if MYOLD
 static Bool eq_AddrInfo ( Bool cheap_addr_cmp,
                           AddrInfo* ai1, AddrInfo* ai2 )
 {
@@ -250,11 +283,13 @@ static Bool eq_AddrInfo ( Bool cheap_addr_cmp,
    }
    return True;
 }
+#else
+#endif
 
 /* Compare error contexts, to detect duplicates.  Note that if they
    are otherwise the same, the faulting addrs and associated rwoffsets
    are allowed to be different.  */
-
+#if MYOLD
 static Bool eq_ErrContext ( Bool cheap_addr_cmp,
                             ErrContext* e1, ErrContext* e2 )
 {
@@ -270,7 +305,6 @@ static Bool eq_ErrContext ( Bool cheap_addr_cmp,
          if (0 == VG_(strcmp)(e1->syscall_param, e2->syscall_param))
             return True;
          return False;
-      // ZZZ
       case EraserErr:
          if (e1->syscall_param != e2->syscall_param) return False;
          if (0 != VG_(strcmp)(e1->syscall_param, e2->syscall_param)) 
@@ -302,7 +336,38 @@ static Bool eq_ErrContext ( Bool cheap_addr_cmp,
          VG_(panic)("eq_ErrContext");
    }
 }
+#else
+static Bool eq_ErrContext ( Bool cheap_addr_cmp,
+                            ErrContext* e1, ErrContext* e2 )
+{
+   if (e1->ekind != e2->ekind) 
+      return False;
+   if (!vg_eq_ExeContext(cheap_addr_cmp, e1->where, e2->where))
+      return False;
 
+   switch (e1->ekind) {
+      case PThreadErr:
+         vg_assert(VG_(needs).pthread_errors);
+         if (e1->syscall_param == e2->syscall_param) 
+            return True;
+         if (0 == VG_(strcmp)(e1->syscall_param, e2->syscall_param))
+            return True;
+         return False;
+      default: 
+         if (VG_(needs).report_errors)
+            return SKN_(eq_ErrContext)(cheap_addr_cmp, e1, e2);
+         else {
+            VG_(printf)("Error:\n"
+                        "  unhandled error type: %u.  Perhaps " 
+                        "VG_(needs).report_errors should be set?\n",
+                        e1->ekind);
+            VG_(panic)("eq_ErrContext: unhandled error type");
+         }
+   }
+}
+#endif
+
+#if MYOLD
 static void pp_AddrInfo ( Addr a, AddrInfo* ai )
 {
    switch (ai->akind) {
@@ -357,7 +422,10 @@ static void pp_AddrInfo ( Addr a, AddrInfo* ai )
          VG_(panic)("pp_AddrInfo");
    }
 }
+#else
+#endif
 
+#if MYOLD
 static void pp_ErrContext ( ErrContext* ec, Bool printCount )
 {
    if (printCount)
@@ -446,7 +514,32 @@ static void pp_ErrContext ( ErrContext* ec, Bool printCount )
          VG_(panic)("pp_ErrContext");
    }
 }
+#else
+static void pp_ErrContext ( ErrContext* ec, Bool printCount )
+{
+   if (printCount)
+      VG_(message)(Vg_UserMsg, "Observed %d times:", ec->count );
+   if (ec->tid > 1)
+      VG_(message)(Vg_UserMsg, "Thread %d:", ec->tid );
 
+   switch (ec->ekind) {
+      case PThreadErr:
+         vg_assert(VG_(needs).pthread_errors);
+         VG_(message)(Vg_UserMsg, "%s", ec->syscall_param );
+         VG_(pp_ExeContext)(ec->where);
+         break;
+      default: 
+         if (VG_(needs).report_errors)
+            return SKN_(pp_ErrContext)(cheap_addr_cmp, e1, e2);
+         else {
+            VG_(printf)("Error:\n"
+                        "  unhandled error type: %u.  Perhaps " 
+                        "VG_(needs).report_errors should be set?\n",
+                        e1->ekind);
+            VG_(panic)("pp_ErrContext: unhandled error type");
+   }
+}
+#endif
 
 /* Figure out if we want to attach for GDB for this error, possibly
    by asking the user. */
@@ -634,6 +727,7 @@ static void VG_(maybe_add_context) ( ErrContext* ec )
    picked up out of VG_(baseBlock) rather than from the thread table
    (vg_threads in vg_scheduler.c). */
 
+#if MYOLD
 void VG_(record_value_error) ( Int size )
 {
    ErrContext ec;
@@ -684,11 +778,10 @@ void VG_(record_address_error) ( Addr a, Int size, Bool isWrite )
    VG_(maybe_add_context) ( &ec );
 }
 
-// ZZZ
 void VG_(record_eraser_err) ( ThreadId tid, Addr a, Bool is_write )
 {
    ErrContext ec;
-   vg_assert(Vg_Eraser == VG_(clo_action));
+   vg_assert(Vg_Eraser == VG_(clo_skin));
    if (vg_ignore_errors) return;
    clear_ErrContext( &ec );
    ec.count   = 1;
@@ -804,12 +897,13 @@ void VG_(record_user_err) ( ThreadState* tst, Addr a, Bool isWriteLack )
    ec.isWriteableLack = isWriteLack;
    VG_(maybe_add_context) ( &ec );
 }
+#else
+#endif
 
 void VG_(record_pthread_err) ( ThreadId tid, Char* msg )
 {
    ErrContext ec;
    if (vg_ignore_errors) return;
-   // ZZZ
    if (! VG_(needs).pthread_errors) return;
 
    clear_ErrContext( &ec );
@@ -922,6 +1016,7 @@ void VG_(show_all_errors) ( void )
 
 #define VG_ISSPACE(ch) (((ch)==' ') || ((ch)=='\n') || ((ch)=='\t'))
 
+// SSS: export
 static Bool getLine ( Int fd, Char* buf, Int nBuf )
 {
    Char ch;
@@ -998,6 +1093,8 @@ static Char* copyStr ( Char* str )
    return str2;
 }
 
+// SSS: assuming at the moment that a suppression file will have only and
+// exactly the suppressions asked for by the needs.
 static void load_one_suppressions_file ( Char* filename )
 {
 #  define N_BUF 200
@@ -1030,6 +1127,7 @@ static void load_one_suppressions_file ( Char* filename )
 
       eof = getLine ( fd, buf, N_BUF );
       if (eof) goto syntax_error;
+#if MYOLD
       else if (STREQ(buf, "Param"))  supp->skind = Param;
       else if (STREQ(buf, "Value0")) supp->skind = Value0; /* backwards compat */
       else if (STREQ(buf, "Cond"))   supp->skind = Value0;
@@ -1043,15 +1141,28 @@ static void load_one_suppressions_file ( Char* filename )
       else if (STREQ(buf, "Addr8"))  supp->skind = Addr8;
       else if (STREQ(buf, "Free"))   supp->skind = FreeS;
       else if (STREQ(buf, "PThread")) supp->skind = PThread;
-      // ZZZ
       else if (STREQ(buf, "Eraser")) supp->skind = Eraser;
-      else goto syntax_error;
+#else
+      else if (VG_(needs).pthread_errors && STREQ(buf, "PThread")) 
+         supp->skind = PThread;
 
+      else if (VG_(needs).report_errors && 
+               SKN_(recognised_suppression)(buf, &supp->skind)) {
+         /* do nothing, function fills in supp->skind */
+      }
+      else goto syntax_error;
+#endif
+#if MYOLD
       if (supp->skind == Param) {
          eof = getLine ( fd, buf, N_BUF );
          if (eof) goto syntax_error;
          supp->param = copyStr(buf);
       }
+#else
+      if (VG_(needs).report_errors && 
+          !SKN_(read_suppression_specific_info)(fd, buf, N_BUF, supp)) 
+         goto syntax_error;
+#endif
 
       eof = getLine ( fd, buf, N_BUF );
       if (eof) goto syntax_error;
@@ -1146,7 +1257,10 @@ static Suppression* is_suppressible_error ( ErrContext* ec )
    Char caller3_fun[M_VG_ERRTXT];
 
    Suppression* su;
+#if MYOLD
    Int          su_size;
+#else
+#endif
 
    /* vg_what_fn_or_object_is_this returns:
          <function_name>      or
@@ -1181,8 +1295,9 @@ static Suppression* is_suppressible_error ( ErrContext* ec )
 
    /* See if the error context matches any suppression. */
    for (su = vg_suppressions; su != NULL; su = su->next) {
+#if MYOLD
       switch (su->skind) {
-         case FreeS:  case PThread:  case Eraser:   // ZZZ
+         case FreeS:  case PThread:  case Eraser:
          case Param:  case Value0: su_size = 0; break;
          case Value1: case Addr1:  su_size = 1; break;
          case Value2: case Addr2:  su_size = 2; break;
@@ -1214,7 +1329,10 @@ static Suppression* is_suppressible_error ( ErrContext* ec )
             if (ec->ekind != EraserErr) continue;
             break;
       }
-
+#else
+      if (SKN_(error_matches_suppression)(ec, su)) break; 
+      else continue;
+#endif
       switch (su->caller0_ty) {
          case ObjName: if (!VG_(stringMatch)(su->caller0, 
                                              caller0_obj)) continue;
