@@ -738,7 +738,7 @@ extern void VG_(restore_all_host_signals)
    Exports of vg_mylibc.c
    ------------------------------------------------------------------ */
 
-/* VG_(brk) not public so skins cannot screw with VG_(curr_dataseg_end) */
+/* VG_(brk) not public so skins cannot screw with curr_dataseg_end */
 extern void* VG_(brk) ( void* end_data_segment );
 
 /* Skins use VG_(strdup)() which doesn't expose ArenaId */
@@ -1097,8 +1097,6 @@ extern void VG_(init_memory)            ( void );
 extern void VG_(new_exe_segment)        ( Addr a, UInt len );
 extern void VG_(remove_if_exe_segment)  ( Addr a, UInt len );
 
-extern Addr VG_(curr_dataseg_end);
-
 /* Called from generated code. */
 extern void VG_(handle_esp_assignment) ( Addr new_espA );
 
@@ -1109,6 +1107,8 @@ extern void VG_(handle_esp_assignment) ( Addr new_espA );
 /* ---------------------------------------------------------------------
    Exports of vg_syscalls.c
    ------------------------------------------------------------------ */
+
+extern void VG_(init_dataseg_end_for_brk) ( void );
 
 // SSS: relying on the skin to override this doesn't fit with
 //       all the other ways of calling hook functions.

@@ -211,7 +211,7 @@ void startup_segment_callback ( Addr start, UInt size,
 
    2. Marks global variables that might be accessed from generated code;
 
-   3. Sets up the end of the data segment so that vg_syscall_mem.c can make
+   3. Sets up the end of the data segment so that vg_syscalls.c can make
       sense of calls to brk().
  */
 void VG_(init_memory) ( void )
@@ -225,11 +225,7 @@ void VG_(init_memory) ( void )
    VG_TRACK( post_mem_write, (Addr) & VG_(clo_sloppy_malloc),   1 );
 
    /* 4 */
-   VG_(curr_dataseg_end) = (Addr)VG_(brk)(0);
-   if (VG_(curr_dataseg_end) == (Addr)(-1))
-      VG_(panic)("init_memory_and_symbols: can't determine data-seg end");
-   if (0)
-      VG_(printf)("DS END is %p\n", (void*)VG_(curr_dataseg_end));
+   VG_(init_dataseg_end_for_brk)();
 }
 
 

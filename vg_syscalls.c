@@ -349,10 +349,22 @@ void pre_mem_read_sockaddr ( ThreadState* tst,
 }
 
 
-/* Records the current end of the data segment so we can make sense of
-   calls to brk().  Initial value set by VG_(init_memory_audit)(). */
-Addr VG_(curr_dataseg_end);
+/* ---------------------------------------------------------------------
+   Data seg end, for brk()
+   ------------------------------------------------------------------ */
 
+/* Records the current end of the data segment so we can make sense of
+   calls to brk(). */
+Addr curr_dataseg_end;
+
+void VG_(init_dataseg_end_for_brk) ( void )
+{
+   curr_dataseg_end = (Addr)VG_(brk)(0);
+   if (curr_dataseg_end == (Addr)(-1))
+      VG_(panic)("can't determine data-seg end for brk()");
+   if (0)
+      VG_(printf)("DS END is %p\n", (void*)curr_dataseg_end);
+}
 
 /* ---------------------------------------------------------------------
    The Main Entertainment ...
@@ -974,23 +986,23 @@ void VG_(perform_assumed_nonblocking_syscall) ( ThreadId tid )
          if (!VG_(is_kerror)(res)) {
             if (arg1 == 0) {
                /* Just asking where the current end is. (???) */
-               VG_(curr_dataseg_end) = res;
+               curr_dataseg_end = res;
             } else
-            if (arg1 < VG_(curr_dataseg_end)) {
+            if (arg1 < curr_dataseg_end) {
                /* shrinking the data segment. */
                VG_TRACK( die_mem_brk, (Addr)arg1, 
-                                      VG_(curr_dataseg_end)-arg1 );
-               VG_(curr_dataseg_end) = arg1;
+                                      curr_dataseg_end-arg1 );
+               curr_dataseg_end = arg1;
             } else
-            if (arg1 > VG_(curr_dataseg_end) && res != 0) {
+            if (arg1 > curr_dataseg_end && res != 0) {
                /* asked for more memory, and got it */
                /* 
                VG_(printf)("BRK: new area %x .. %x\n", 
                            VG_(curr_dataseg_end, arg1-1 );
                */
-               VG_TRACK( new_mem_brk, (Addr)VG_(curr_dataseg_end), 
-                                         arg1-VG_(curr_dataseg_end) );
-               VG_(curr_dataseg_end) = arg1;         
+               VG_TRACK( new_mem_brk, (Addr)curr_dataseg_end, 
+                                         arg1-curr_dataseg_end );
+               curr_dataseg_end = arg1;         
             }
          }
          break;
