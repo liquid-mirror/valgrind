@@ -1033,31 +1033,15 @@ Int VG_(open_read) ( Char* pathname )
 }
 
 /* Returns -1 on failure. */
-static Int VG_(chmod_u_rw) ( Int fd )
-{
-   Int res;
-   const int O_IRUSR_IWUSR = 000600; /* See /usr/include/cpio.h */
-   res = vg_do_syscall2(__NR_fchmod, fd, O_IRUSR_IWUSR);
-   if (VG_(is_kerror)(res)) res = -1;
-   return res;
-}
- 
-/* Returns -1 on failure. */
 Int VG_(create_and_write) ( Char* pathname )
 {
    Int fd;
-
-   const int O_CR_AND_WR_ONLY = 0101; /* See /usr/include/bits/fcntl.h */
-   fd = vg_do_syscall3(__NR_open, (UInt)pathname, O_CR_AND_WR_ONLY, 0);
+   const int O_CR_AND_WR_ONLY =   0101; /* See /usr/include/bits/fcntl.h */
+   const int O_IRUSR_IWUSR    = 000600; /* See /usr/include/cpio.h */
+   fd = vg_do_syscall3(__NR_open, (UInt)pathname, O_CR_AND_WR_ONLY,
+                                                  O_IRUSR_IWUSR);
    /* VG_(printf)("result = %d\n", fd); */
-   if (VG_(is_kerror)(fd)) {
-      fd = -1;
-   } else {
-      VG_(chmod_u_rw)(fd);
-      if (VG_(is_kerror)(fd)) {
-         fd = -1;
-      }
-   }
+   if (VG_(is_kerror)(fd)) fd = -1;
    return fd;
 }
  
