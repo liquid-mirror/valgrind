@@ -63,7 +63,6 @@
    returns to the dispatch loop.  TRC means that this value is a valid
    thread return code, which the dispatch loop may return to the
    scheduler.  */
-#define VG_TRC_EBP_JMP_STKADJ     17 /* EBP only; handled by dispatcher */
 #define VG_TRC_EBP_JMP_SYSCALL    19 /* EBP and TRC */
 #define VG_TRC_EBP_JMP_CLIENTREQ  23 /* EBP and TRC */
 #define VG_TRC_EBP_JMP_CALL       41 /* EBP and TRC */
