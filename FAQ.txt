@@ -206,14 +206,15 @@ Q12. My program dies like this (often at exit):
      VG_(mash_LD_PRELOAD_and_LD_LIBRARY_PATH): internal error:
      (loads of text)
 
-A12. We're not entirely sure about this, and would appreciate
-     someone sending a simple test case for us to look at.
-     One possible cause is that your program modifies its
+A12. One possible cause is that your program modifies its
      environment variables, possibly including zeroing them
-     all.  Avoid this if you can.
+     all.  Valgrind relies on the LD_PRELOAD, LD_LIBRARY_PATH and
+     VG_ARGS variables.  Zeroing them will break things.
 
-     1.9.6 contains a fix which hopefully reduces the chances
-     of your program bombing out like this.
+     As of 1.9.6, Valgrind only uses these variables with
+     --trace-children=no, when executing execve() or using the
+     --stop-after=yes flag.  This should reduce the potential for
+     problems.
 
 -----------------------------------------------------------------
 
@@ -325,6 +326,48 @@ A14.  First of all: relax, it's probably not a bug, but a feature.
             people went at great lengths to make it portable across
             platforms. Chances are good that your solution will work
             on your platform, but not on others.
+
+-----------------------------------------------------------------
+
+Q15.  My program dies with a segmentation fault, but Valgrind doesn't give
+      any error messages before it, or none that look related.
+
+A15.  The one kind of segmentation fault that Valgrind won't give any
+      warnings about is writes to read-only memory.  Maybe your program is
+      writing to a static string like this:
+
+        char* s = "hello";
+        s[0] = 'j';
+
+      or something similar.  Writing to read-only memory can also apparently
+      make LinuxThreads behave strangely.
+
+-----------------------------------------------------------------
+
+Q16.  When I trying building Valgrind, 'make' dies partway with an
+      assertion failure, something like this: make: expand.c:489:
+      
+        allocated_variable_append: Assertion 
+        `current_variable_set_list->next != 0' failed.
+      
+A16.  It's probably a bug in 'make'.  Some, but not all, instances of
+      version 3.79.1 have this bug, see 
+      www.mail-archive.com/bug-make@gnu.org/msg01658.html.  Try upgrading to a
+      more recent version of 'make'.
+
+-----------------------------------------------------------------
+
+Q17.  I tried writing a suppression but it didn't work.  Can you 
+      write my suppression for me?
+
+A17.  Yes!  Use the --gen-suppressions=yes feature to spit out
+      suppressions automatically for you.  You can then edit them
+      if you like, eg. combining similar automatically generated
+      suppressions using wildcards like '*'.
+
+      If you really want to write suppressions by hand, read the 
+      manual carefully.  Note particularly that C++ function names
+      must be _mangled_.
 
 -----------------------------------------------------------------
 
