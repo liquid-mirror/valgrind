@@ -172,6 +172,7 @@ void VG_(read_procselfmaps) (
        VG_(exit)(1);
 
     read_line_ok:
+
       /* Try and find the name of the file mapped to this segment, if
          it exists. */
       while (procmap_buf[i] != '\n' && i < M_PROCMAP_BUF-1) i++;
