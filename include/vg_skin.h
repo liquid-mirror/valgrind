@@ -681,13 +681,6 @@ extern void  VG_(ppSaveEaxEcxEdx) ( UInstr* u );
 extern UCodeBlock* VG_(allocCodeBlock) ( void );
 extern void  VG_(freeCodeBlock)        ( UCodeBlock* cb );
 
-/* ------------------------------------------------------------------ */
-/* Allocating/freeing small blocks during translation */
-// SSS: remove these
-extern void* VG_(jitmalloc) ( Int nbytes );
-extern void  VG_(jitfree)   ( void* ptr );
-
-
 /*====================================================================*/
 /*=== Functions for generating x86 code from UCode                 ===*/
 /*====================================================================*/
