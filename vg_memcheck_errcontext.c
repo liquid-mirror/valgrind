@@ -152,9 +152,14 @@ Bool SKN_(eq_ErrContext) ( ExeContextRes res, ErrContext* e1, ErrContext* e2 )
 
       case FreeErr:
       case FreeMismatchErr:
-         if (e1->addr != e2->addr) return False;
-         if (!eq_AddrInfo(res, &e1_extra->addrinfo, &e2_extra->addrinfo)) 
-            return False;
+         /* JRS 2002-Aug-26: comparing addrs seems overkill and can
+            cause excessive duplication of errors.  Not even AddrErr
+            below does that.  So don't compare either the .addr field
+            or the .addrinfo fields. */
+         /* if (e1->addr != e2->addr) return False; */
+         /* if (!eq_AddrInfo(res, &e1_extra->addrinfo, &e2_extra->addrinfo)) 
+               return False;
+         */
          return True;
 
       case AddrErr:
