@@ -193,6 +193,7 @@ void SKN_(ppExtUInstr)(UInstr* u)
          VG_(ppUOperand)(u, 1, u->size, u->opcode==LOADV);
          VG_(printf)(", ");
          VG_(ppUOperand)(u, 2, u->size, u->opcode==STOREV);
+         VG_(ppSaveEaxEcxEdx)(u);
          break;
 
       case PUTVF: case GETVF:
@@ -219,17 +220,10 @@ void SKN_(ppExtUInstr)(UInstr* u)
 
 }
 
-Int SKN_(getExtTempUsage)(UInstr* u, TempUse* arr)
+Int SKN_(getExtRegUsage)(UInstr* u, Tag tag, RegUse* arr)
 {
-// SSS: duplicating this macro sucks
-#  define RD(ono)                                  \
-      if (mycat(u->tag,ono) == TempReg)            \
-         { arr[n].tempNo  = mycat(u->val,ono);     \
-           arr[n].isWrite = False; n++; }
-#  define WR(ono)                                  \
-      if (mycat(u->tag,ono) == TempReg)            \
-         { arr[n].tempNo  = mycat(u->val,ono);     \
-           arr[n].isWrite = True; n++; }
+#  define RD(ono)    VG_UINSTR_READS_REG(ono)
+#  define WR(ono)    VG_UINSTR_WRITES_REG(ono)
 
    Int n = 0;
    switch (u->opcode) {        
@@ -253,9 +247,10 @@ Int SKN_(getExtTempUsage)(UInstr* u, TempUse* arr)
 
       default: 
          VG_(printf)("unhandled opcode: %u\n", u->opcode);
-         VG_(panic)("SKN_(getExtTempUsage): unhandled opcode");
+         VG_(panic)("SKN_(getExtRegUsage): unhandled opcode");
    }
    return n;
+
 #  undef RD
 #  undef WR
 }
@@ -1076,7 +1071,7 @@ static void vg_delete_redundant_SETVs ( UCodeBlock* cb )
    Bool*   next_is_write;
    Int     i, j, k, n_temps;
    UInstr* u;
-   TempUse tempUse[3];
+   RegUse  tempUse[3];
 
    n_temps = cb->nextTemp;
    if (n_temps == 0) return;
@@ -1151,16 +1146,14 @@ static void vg_delete_redundant_SETVs ( UCodeBlock* cb )
 
       } else {
          /* Find out what this insn does to the temps. */
-         k = VG_(getTempUsage)(u, &tempUse[0]);
+         k = VG_(getRegUsage)(u, TempReg, &tempUse[0]);
          vg_assert(k <= 3);
          for (j = k-1; j >= 0; j--) {
-            next_is_write[ tempUse[j].tempNo ]
+            next_is_write[ tempUse[j].num ]
                          = tempUse[j].isWrite;
          }
       }
-
    }
-
    VG_(jitfree)(next_is_write);
 }
 
@@ -1169,7 +1162,7 @@ static void vg_delete_redundant_SETVs ( UCodeBlock* cb )
    property.  This removes a lot of redundant tag-munging code.
    Unfortunately it requires intimate knowledge of how each uinstr and
    tagop modifies its arguments.  This duplicates knowledge of uinstr
-   tempreg uses embodied in VG_(getTempUsage)(), which is unfortunate. 
+   tempreg uses embodied in VG_(getRegUsage)(), which is unfortunate. 
    The supplied UCodeBlock* is modified in-place.
 
    For each value temp, def[] should hold VGC_VALUE.
@@ -1184,7 +1177,7 @@ static void vg_propagate_definedness ( UCodeBlock* cb )
    UChar*  def;
    Int     i, j, k, t, n_temps;
    UInstr* u;
-   TempUse tempUse[3];
+   RegUse  tempUse[3];
 
    n_temps = cb->nextTemp;
    if (n_temps == 0) return;
@@ -1411,10 +1404,10 @@ static void vg_propagate_definedness ( UCodeBlock* cb )
          unhandled:
             /* We don't know how to handle this uinstr.  Be safe, and 
                set to VGC_VALUE or VGC_UNDEF all temps written by it. */
-            k = VG_(getTempUsage)(u, &tempUse[0]);
+            k = VG_(getRegUsage)(u, TempReg, &tempUse[0]);
             vg_assert(k <= 3);
             for (j = 0; j < k; j++) {
-               t = tempUse[j].tempNo;
+               t = tempUse[j].num;
                vg_assert(t >= 0 && t < n_temps);
                if (!tempUse[j].isWrite) {
                   /* t is read; ignore it. */
@@ -1449,7 +1442,7 @@ static void vg_cleanup ( UCodeBlock* cb )
    print out intermediate instrumented code here if necessary. */
 UCodeBlock* SK_(instrument) ( UCodeBlock* cb, Addr not_used )
 {
-   cb = memcheck_instrument(cb);
+   cb = memcheck_instrument ( cb );
    if (VG_(clo_cleanup)) {
       if (dis) {
          VG_(ppUCodeBlock) ( cb, "Unimproved instrumented UCode:" );
