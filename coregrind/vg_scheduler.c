@@ -1350,18 +1350,15 @@ VgSchedReturnCode VG_(scheduler) ( void )
             UInt word;
             vg_assert(VG_(dispatch_ctr) > 0);
 
-	    /* Transfer for an x86 call.  First we have to look
-	       in the fast-cache. */
+	    /* Transfer for an x86 call.  Sanity check; assert the
+               target is not in the fast cache -- the dispatcher takes
+               care of that case. */
 	    word = VG_(threads)[tid].m_eip;
 	    word &= VG_TT_FAST_MASK;
-            if ( ((TTEntry*)(VG_(tt_fast)[word])) ->orig_addr 
-                 == VG_(threads)[tid].m_eip) {
-               /* tt_fast hit.  Don't actually need to do anything. Just .. */
-               continue; /* with this thread */
-	    }
+            vg_assert ( ((TTEntry*)(VG_(tt_fast)[word])) ->orig_addr 
+                        != VG_(threads)[tid].m_eip);
 
-            /* We missed in the fast-cache.  Do a full lookup for
-               it. */
+            /* Do a full lookup for the target. */
             trans_addr 
                = VG_(search_transtab) ( VG_(threads)[tid].m_eip );
             if (trans_addr == (Addr)0) {
