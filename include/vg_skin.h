@@ -648,12 +648,15 @@ extern Bool VG_(anyFlagUse) ( UInstr* u );
 
 /* ------------------------------------------------------------------ */
 /* Higher-level UInstr sequence builders */
-extern void VG_(callHelper_0_0)(UCodeBlock* cb, Addr f);
-extern void VG_(callHelper_1_0)(UCodeBlock* cb, Addr f, UInt arg1,
-                                UInt regparms_n);
-extern void VG_(callHelper_2_0)(UCodeBlock* cb, Addr f, UInt arg1, UInt arg2,
-                                UInt regparms_n);
+extern void VG_(callHelper_0_0) ( UCodeBlock* cb, Addr f);
+extern void VG_(callHelper_1_0) ( UCodeBlock* cb, Addr f, UInt arg1,
+                                  UInt regparms_n);
+extern void VG_(callHelper_2_0) ( UCodeBlock* cb, Addr f, UInt arg1, UInt arg2,
+                                  UInt regparms_n);
 
+/* One way around the 3-arg C function limit is to pass args via global
+ * variables... ugly, but it works. */
+void VG_(set_global_var) ( UCodeBlock* cb, Addr globvar_ptr, UInt val);
 
 /* ------------------------------------------------------------------ */
 /* UCode pretty printing, to help debugging skins;  but only useful
