@@ -95,7 +95,7 @@ void VG_(newNOP) ( UInstr* u )
    u->flags_r = u->flags_w = FlagsEmpty;
    u->jmpkind = JmpBoring;
    u->signed_widen = u->has_ret_val = False;
-   u->regs_live_after = ALL_REGS_LIVE;
+   u->regs_live_after = ALL_RREGS_LIVE;
    u->lit32    = 0;
    u->opcode   = NOP;
    u->size     = 0;
@@ -449,7 +449,7 @@ Bool VG_(saneUInstr) ( Bool beforeRA, Bool beforeLiveness, UInstr* u )
 #  define JMPKIND0 (u->jmpkind      == 0)
 #  define CCALL0   (u->argc==0 && u->regparms_n==0 && u->has_ret_val==0 && \
                     ( beforeLiveness                                       \
-                    ? u->regs_live_after == ALL_REGS_LIVE                  \
+                    ? u->regs_live_after == ALL_RREGS_LIVE                 \
                     : True ))
 
 #  define XCONDi   (         EXTRA4b0 && SG_WD0 && JMPKIND0 && CCALL0)
@@ -827,21 +827,21 @@ Char* VG_(nameUOpcode) ( Bool upper, Opcode opc )
 
 void ppRealRegsLiveness ( UInstr* u )
 {
-#define PRINT_REG_LIVENESS(realReg,s) \
-   VG_(printf)( IS_REG_LIVE(VG_(realRegNumToRank)(realReg), \
-                            u->regs_live_after)             \
-              ? s : "-");
+#  define PRINT_RREG_LIVENESS(realReg,s) \
+     VG_(printf)( IS_RREG_LIVE(VG_(realRegNumToRank)(realReg), \
+                               u->regs_live_after)             \
+                     ? s : "-");
 
    VG_(printf)("[");
-   PRINT_REG_LIVENESS(R_EAX, "a");
-   PRINT_REG_LIVENESS(R_EBX, "b");
-   PRINT_REG_LIVENESS(R_ECX, "c");
-   PRINT_REG_LIVENESS(R_EDX, "d");
-   PRINT_REG_LIVENESS(R_ESI, "S");
-   PRINT_REG_LIVENESS(R_EDI, "D");
+   PRINT_RREG_LIVENESS(R_EAX, "a");
+   PRINT_RREG_LIVENESS(R_EBX, "b");
+   PRINT_RREG_LIVENESS(R_ECX, "c");
+   PRINT_RREG_LIVENESS(R_EDX, "d");
+   PRINT_RREG_LIVENESS(R_ESI, "S");
+   PRINT_RREG_LIVENESS(R_EDI, "D");
    VG_(printf)("]");
 
-#undef PRINT_REG_LIVENESS
+#  undef PRINT_RREG_LIVENESS
 }
 
 /* Ugly-print UInstr :) */
@@ -1067,6 +1067,7 @@ void VG_(ppUCodeBlock) ( UCodeBlock* cb, Char* title )
    as a read and then as a write.  'tag' indicates whether we are looking at
    TempRegs or RealRegs.
 */
+__inline__
 Int VG_(getRegUsage) ( UInstr* u, Tag tag, RegUse* arr )
 {
 #  define RD(ono)    VG_UINSTR_READS_REG(ono)
@@ -1925,18 +1926,18 @@ UCodeBlock* vg_do_register_allocation ( UCodeBlock* c1 )
 /* Analysis records liveness of all general-use RealRegs in the UCode. */
 static void vg_realreg_liveness_analysis ( UCodeBlock* cb )
 {        
-   Int     i, j, k;
-   UChar   regs_live;
-   RegUse  regUse[3];
-   UInstr* u;
+   Int      i, j, k;
+   RRegSet  rregs_live;
+   RegUse   regUse[3];
+   UInstr*  u;
 
    /* All regs are dead at the end of the block */
-   regs_live = 0;
+   rregs_live = ALL_RREGS_DEAD;
             
    for (i = cb->used-1; i >= 0; i--) {
       u = &cb->instrs[i];
 
-      u->regs_live_after = regs_live;
+      u->regs_live_after = rregs_live;
 
       k = VG_(getRegUsage)(u, RealReg, regUse);
 
@@ -1945,9 +1946,9 @@ static void vg_realreg_liveness_analysis ( UCodeBlock* cb )
          Note that regUse[j].num holds the Intel reg number, so we must
          convert it to our rank number.  */
       for (j = k-1; j >= 0; j--)
-         SET_REG_LIVE ( VG_(realRegNumToRank)(regUse[j].num),
-                        regs_live,
-                        !regUse[j].isWrite );
+         SET_RREG_LIVENESS ( VG_(realRegNumToRank)(regUse[j].num),
+                             rregs_live,
+                             !regUse[j].isWrite );
    }
 }
 
