@@ -39,7 +39,6 @@
       A=ArchReg   S=SpillNo   T=TempReg   L=Literal   R=RealReg
       N=NoValue
 
-
          LOADV      T       T       N
          STOREV     T,L     T       N
          GETV       A       T       N

@@ -52,7 +52,7 @@
    do this, calls and jmps to fixed addresses must specify the address
    by first loading it into a register, and jump to/call that
    register.  Fortunately, the only jump to a literal is the jump back
-   to vg_dispatch, and only %eax is live then, conveniently.  Ucode
+   to vg_dispatch, and only %eax is live then, conveniently.  UCode
    call insns may only have a register as target anyway, so there's no
    need to do anything fancy for them.
 
@@ -997,6 +997,16 @@ static void emit_lea_sib_reg ( UInt lit, Int scale,
                        nameIReg(4,reg) );
 }
 
+void VG_(emit_AMD_prefetch_reg) ( Int reg )
+{
+   VG_(newEmit)();
+   VG_(emitB) ( 0x0F );
+   VG_(emitB) ( 0x0D );
+   emit_amode_regmem_reg ( reg, 1 /* 0 is prefetch; 1 is prefetchw */ );
+   if (dis)
+      VG_(printf)("\n\t\tamd-prefetch (%s)\n", nameIReg(4,reg) );
+}
+
 /*----------------------------------------------------*/
 /*--- Helper offset -> addr translation            ---*/
 /*----------------------------------------------------*/
@@ -1023,16 +1033,6 @@ Int VG_(helper_offset)(Addr a)
    VG_(panic)("Unfound helper");
 }
 
-void VG_(emit_AMD_prefetch_reg) ( Int reg )
-{
-   VG_(newEmit)();
-   VG_(emitB) ( 0x0F );
-   VG_(emitB) ( 0x0D );
-   emit_amode_regmem_reg ( reg, 1 /* 0 is prefetch; 1 is prefetchw */ );
-   if (dis)
-      VG_(printf)("\n\t\tamd-prefetch (%s)\n", nameIReg(4,reg) );
-}
-
 /*----------------------------------------------------*/
 /*--- Instruction synthesisers                     ---*/
 /*----------------------------------------------------*/
@@ -1046,8 +1046,7 @@ static Condcode invertCondition ( Condcode cond )
 /* Synthesise a call to *baseBlock[offset], ie,
    call * (4 x offset)(%ebp).
 */
-void VG_(synth_call_baseBlock_method) ( Bool ensure_shortform, 
-                                        Int word_offset )
+void VG_(synth_call) ( Bool ensure_shortform, Int word_offset )
 {
    vg_assert(word_offset >= 0);
    vg_assert(word_offset < VG_BASEBLOCK_WORDS);
@@ -1056,54 +1055,53 @@ void VG_(synth_call_baseBlock_method) ( Bool ensure_shortform,
    emit_call_star_EBP_off ( 4 * word_offset );
 }
 
-static void synth_ccall_saveRegs ( void )
+/* Synthesise a call to a C function `fn' (which must be registered in
+   baseBlock) doing all the reg saving and arg handling work. */
+void VG_(synth_ccall) ( Addr fn, UInt argc, UInt argv[], Tag tagv[],
+                        Int ret_reg )
 {
-   VG_(emit_pushv_reg) ( 4, R_EAX ); 
-   VG_(emit_pushv_reg) ( 4, R_ECX ); 
-   VG_(emit_pushv_reg) ( 4, R_EDX ); 
-}
+   Int i;
    
-static void synth_ccall_pushOneArg ( Int r1 )
-{
-   VG_(emit_pushv_reg) ( 4, r1 );
+   /* Save caller-save regs */
+   if (R_EAX != ret_reg) VG_(emit_pushv_reg) ( 4, R_EAX ); 
+   if (R_ECX != ret_reg) VG_(emit_pushv_reg) ( 4, R_ECX ); 
+   if (R_EDX != ret_reg) VG_(emit_pushv_reg) ( 4, R_EDX ); 
 
-   // (Use this if the called function has the ((regparms)) attribute)
-   //if (R_EAX != r1) VG_(emit_movv_reg_reg)(4, r1, R_EAX);
+   /* push args (RealRegs or Literals) in reverse order */
+   for (i = argc-1; i >= 0; i--) {
+      switch (tagv[i]) {
+      case RealReg:
+         VG_(emit_pushv_reg) ( 4, argv[i] );
+         break;
+      case Literal:
+        /* Use short form if possible */
+        if (argv[i] == VG_(extend_s_8to32) ( argv[i] ))
+           VG_(emit_pushl_lit8) ( VG_(extend_s_8to32)(argv[i]) );
+        else
+           VG_(emit_pushl_lit32)( argv[i] );
+        break;
+      default:
+        VG_(panic)("VG_(synth_ccall): bad tag");
+      }
+   }
+
+   /* Call the function */
+   VG_(synth_call) ( False, VG_(helper_offset) ( fn ) );
+
+   /* Clear args from stack */
+   if ( 0 != argc )
+      VG_(emit_add_lit_to_esp) ( 4*argc );
+
+   /* Move return value into ret_reg if necessary */
+   if (INVALID_REALREG != ret_reg)
+      if (R_EAX != ret_reg)
+         VG_(emit_movv_reg_reg) ( 4, R_EAX, ret_reg );
+
+   /* Restore caller-save regs */
+   if (R_EDX != ret_reg) VG_(emit_popv_reg) ( 4, R_EDX ); 
+   if (R_ECX != ret_reg) VG_(emit_popv_reg) ( 4, R_ECX ); 
+   if (R_EAX != ret_reg) VG_(emit_popv_reg) ( 4, R_EAX ); 
 }
-
-static void synth_ccall_pushTwoArgs ( Int r1, Int r2 )
-{
-   /* must push in reverse order */
-   VG_(emit_pushv_reg) ( 4, r2 );
-   VG_(emit_pushv_reg) ( 4, r1 );
-
-   // (Use this if the called function has the ((regparms)) attribute)
-   //if (R_EAX != r1) VG_(emit_movv_reg_reg)(4, r1, R_EAX);
-   //if (R_EDX != r1) VG_(emit_movv_reg_reg)(4, r1, R_EDX);
-}
-
-/* Synthesise a call to *baseBlock[offset], ie,
-   call * (4 x offset)(%ebp) with arguments
-*/
-static void synth_ccall_call_clearStack_restoreRegs ( Int word_offset, 
-                                                      UInt n_args_bytes )
-{
-   vg_assert(word_offset >= 0);
-   vg_assert(word_offset < VG_BASEBLOCK_WORDS);
-   vg_assert(n_args_bytes <= 12);           /* Max 3 word-sized args */
-   vg_assert(0 == (n_args_bytes & 0x3));    /* Divisible by four */
-
-   emit_call_star_EBP_off ( 4 * word_offset );
-
-   // (Skip this if the function has the ((regparms)) attribute)
-   if ( 0 != n_args_bytes )
-      VG_(emit_add_lit_to_esp) ( n_args_bytes );
-
-   VG_(emit_popv_reg) ( 4, R_EDX ); 
-   VG_(emit_popv_reg) ( 4, R_ECX ); 
-   VG_(emit_popv_reg) ( 4, R_EAX ); 
-}
-
 
 static void load_ebp_from_JmpKind ( JmpKind jmpkind )
 {
@@ -1651,7 +1649,7 @@ static void synth_handle_esp_assignment ( Int reg )
 {
    VG_(emit_pushal)();
    VG_(emit_pushv_reg) ( 4, reg );
-   VG_(synth_call_baseBlock_method) ( False, VGOFF_(handle_esp_assignment) );
+   VG_(synth_call) ( False, VGOFF_(handle_esp_assignment) );
    VG_(emit_add_lit_to_esp) ( 4 );
    VG_(emit_popal)();
 }
@@ -1950,7 +1948,7 @@ static void emitUInstr ( Int i, UInstr* u )
          vg_assert(u->size == 0);
          if (readFlagUse ( u )) 
             emit_get_eflags();
-         VG_(synth_call_baseBlock_method) ( False, u->val1 );
+         VG_(synth_call) ( False, u->val1 );
          if (writeFlagUse ( u )) 
             emit_put_eflags();
          break;
@@ -1961,35 +1959,33 @@ static void emitUInstr ( Int i, UInstr* u )
          vg_assert(u->tag3 == NoValue);
          vg_assert(u->size == 0);
 
-         synth_ccall_saveRegs();
-         synth_ccall_call_clearStack_restoreRegs ( 
-               VG_(helper_offset)(u->lit32), 0 );
+         VG_(synth_ccall) ( u->lit32, 0, NULL, NULL, INVALID_REALREG );
          break;
 
-      case CCALL_1_0:
+      case CCALL_1_0: {
+         UInt argv[] = { u->val1 };
+         UInt tagv[] = { RealReg };
+                         
          vg_assert(u->tag1 == RealReg);
          vg_assert(u->tag2 == NoValue);
          vg_assert(u->tag3 == NoValue);
          vg_assert(u->size == 0);
 
-         synth_ccall_saveRegs();
-         synth_ccall_pushOneArg ( u->val1 );
-         synth_ccall_call_clearStack_restoreRegs ( 
-               VG_(helper_offset)(u->lit32), 4 );
+         VG_(synth_ccall) ( u->lit32, 1, argv, tagv, INVALID_REALREG );
          break;
+      }
+      case CCALL_2_0: {
+         UInt argv[] = { u->val1, u->val2 };
+         UInt tagv[] = { RealReg, RealReg };
 
-      case CCALL_2_0:
          vg_assert(u->tag1 == RealReg);
          vg_assert(u->tag2 == RealReg);
          vg_assert(u->tag3 == NoValue);
          vg_assert(u->size == 0);
 
-         synth_ccall_saveRegs();
-         synth_ccall_pushTwoArgs ( u->val1, u->val2 );
-         synth_ccall_call_clearStack_restoreRegs ( 
-               VG_(helper_offset)(u->lit32), 8 );
+         VG_(synth_ccall) ( u->lit32, 2, argv, tagv, INVALID_REALREG );
          break;
-
+      }
       case CLEAR:
          vg_assert(u->tag1 == Lit16);
          vg_assert(u->tag2 == NoValue);
