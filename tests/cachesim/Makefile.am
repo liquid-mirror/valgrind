@@ -11,9 +11,10 @@ CC = /usr/bin/gcc
 dlclose_SOURCES		= dlclose.c
 dlclose_LDADD		= -ldl
 myprint_so_SOURCES	= myprint.c
+myprint_so_LDFLAGS	= -shared
 
-myprint.so$(EXEEXT): $(myprint_so_OBJECTS)
-	$(CC) $(CFLAGS) -shared -o myprint.so $(myprint_so_OBJECTS)
+#myprint.so$(EXEEXT): $(myprint_so_OBJECTS)
+#	$(CC) $(CFLAGS) -shared -o myprint.so $(myprint_so_OBJECTS)
 
 
 
