@@ -90,10 +90,6 @@ dispatch_main:
 	   If ebp == VG_EBP_JMP_CLIENTREQ, do a client request before 
 	   continuing at eax.
 	
-	   If ebp == VG_EBP_JMP_CALL, continue at eax but be aware that
-	   this transfer is due to an x86 CALL insn.  In this case we
-	   fall out to the scheduler -- not clever, but at least simple.
-	
 	   If %ebp has any other value, we panic.
 	*/
 	cmpl	$VG_(baseBlock), %ebp
@@ -154,8 +150,6 @@ run_innerloop_exit:
 */
 dispatch_exceptional:
 	/* this is jumped to only, not fallen-through from above */
-	cmpl	$VG_TRC_EBP_JMP_CALL, %ebp
-	jz	dispatch_call
 	cmpl	$VG_TRC_EBP_JMP_SYSCALL, %ebp
 	jz	dispatch_syscall
 	cmpl	$VG_TRC_EBP_JMP_CLIENTREQ, %ebp
@@ -180,38 +174,6 @@ dispatch_clientreq:
 	movl	VGOFF_(m_eip), %esi
 	movl	%eax, (%ebp, %esi, 4)
 	movl	$VG_TRC_EBP_JMP_CLIENTREQ, %eax
-	jmp	run_innerloop_exit
-
-dispatch_call:
-	/*
-	  the point of this is that the instrumenters would like to
-	  know when they are instrumenting the first bb of a function.
-	  Therefore we detect transfers which are as a result of x86
-	  call instructions.  If the bb is not found in the fast
-	  cache, fall out to the scheduler, telling it that this is a
-	  call transfer.  If it has to make a translation, the start-of-bb
-	  fact can be conveyed to the instrumenters.
-	 
-	  So we continue with a copy of the above fast-cache search code.
-	  try a fast lookup in the translation cache
-	*/
-	movl	%eax, %ebx
-	andl	$VG_TT_FAST_MASK, %ebx	
-	/* ebx = tt_fast index */
-	movl	VG_(tt_fast)(,%ebx,4), %ebx	
-	/* ebx points at a tt entry
-	   now compare target with the tte.orig_addr field (+0) */
-	cmpl	%eax, (%ebx)
-	/* if found, go to the standard handler */
-	movl	$VG_(baseBlock), %ebp	/* restore %ebp */
-	jz	dispatch_boring
-
-	/* not found in fast-cache.  defer to sched
-	   save %eax in %EIP and defer to sched */
-	movl	$VG_(baseBlock), %ebp
-	movl	VGOFF_(m_eip), %esi
-	movl	%eax, (%ebp, %esi, 4)
-	movl	$VG_TRC_EBP_JMP_CALL, %eax
 	jmp	run_innerloop_exit
 
 .data

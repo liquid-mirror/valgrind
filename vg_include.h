@@ -787,7 +787,6 @@ extern Int   VG_(disBB)          ( UCodeBlock* cb, Addr eip0 );
    ------------------------------------------------------------------ */
 
 extern void  VG_(translate)  ( ThreadState* tst,
-                               Bool is_x86_callee,
                                Addr  orig_addr,
                                UInt* orig_size,
                                Addr* trans_addr,

@@ -310,7 +310,7 @@ Char* name_of_sched_event ( UInt event )
    This probably doesn't really belong here, but, hey ... 
 */
 static
-void create_translation_for ( ThreadId tid, Addr orig_addr, Bool is_x86_callee )
+void create_translation_for ( ThreadId tid, Addr orig_addr )
 {
    Addr    trans_addr;
    TTEntry tte;
@@ -318,7 +318,6 @@ void create_translation_for ( ThreadId tid, Addr orig_addr, Bool is_x86_callee )
    /* Ensure there is space to hold a translation. */
    VG_(maybe_do_lru_pass)();
    VG_(translate)( &VG_(threads)[tid],
-                   is_x86_callee,
                    orig_addr, &orig_size, &trans_addr, &trans_size );
    /* Copy data at trans_addr into the translation cache.
       Returned pointer is to the code, not to the 4-byte
@@ -1391,36 +1390,10 @@ VgSchedReturnCode VG_(scheduler) ( void )
             if (trans_addr == (Addr)0) {
                /* Not found; we need to request a translation. */
                create_translation_for( 
-                  tid, VG_(threads)[tid].m_eip, False /* non x86-CALL xfer */ ); 
+                  tid, VG_(threads)[tid].m_eip ); 
                trans_addr = VG_(search_transtab) ( VG_(threads)[tid].m_eip ); 
                if (trans_addr == (Addr)0)
                   VG_(panic)("VG_TRC_INNER_FASTMISS: missing tt_fast entry");
-            }
-            continue; /* with this thread */
-         }
-
-         if (trc == VG_TRC_EBP_JMP_CALL) {
-            UInt word;
-            vg_assert(VG_(dispatch_ctr) > 0);
-
-	    /* Transfer for an x86 call.  Sanity check; assert the
-               target is not in the fast cache -- the dispatcher takes
-               care of that case. */
-	    word = VG_(threads)[tid].m_eip;
-	    word &= VG_TT_FAST_MASK;
-            vg_assert ( ((TTEntry*)(VG_(tt_fast)[word])) ->orig_addr 
-                        != VG_(threads)[tid].m_eip);
-
-            /* Do a full lookup for the target. */
-            trans_addr 
-               = VG_(search_transtab) ( VG_(threads)[tid].m_eip );
-            if (trans_addr == (Addr)0) {
-               /* Not found; we need to request a translation. */
-	       create_translation_for( 
-                  tid, VG_(threads)[tid].m_eip, True /* call xfer */ ); 
-               trans_addr = VG_(search_transtab) ( VG_(threads)[tid].m_eip ); 
-               if (trans_addr == (Addr)0)
-                  VG_(panic)("VG_TRC_DISPATCH_CALL: missing tt_fast entry");
             }
             continue; /* with this thread */
          }
@@ -1604,8 +1577,6 @@ VgSchedReturnCode VG_(scheduler) ( void )
    VG_(printf)(
       "======vvvvvvvv====== LAST TRANSLATION ======vvvvvvvv======\n");
    VG_(translate)( &VG_(threads)[tid], 
-                   False, /* BOGUS: we don't really know if is
-                             x86-callee or not */
                    VG_(threads)[tid].m_eip, NULL, NULL, NULL );
    VG_(printf)("\n");
    VG_(printf)(
