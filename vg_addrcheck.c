@@ -237,8 +237,7 @@ void SK_(pp_SkinError) ( SkinError* err, void (*pp_ExeContext)(void) )
                "%s contains unaddressable byte(s)", err->string );
          } else {
             VG_(message)(Vg_UserMsg, 
-                "%s contains uninitialised or unaddressable byte(s)",
-                err->string);
+               "%s contains unaddressable byte(s)", err->string );
          }
          pp_ExeContext();
          break;
