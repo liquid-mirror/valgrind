@@ -62,6 +62,8 @@
 #define VKI_KNSIG_BPW   32  /* since we're using UInts */
 #define VKI_KNSIG_WORDS (VKI_KNSIG / VKI_KNSIG_BPW)
 
+typedef unsigned long vki_old_ksigset_t;
+
 typedef 
    struct { 
       UInt ws[VKI_KNSIG_WORDS]; 

@@ -119,7 +119,7 @@ static void do_atfork_child(ThreadId tid)
 
 /* return true if address range entirely contained within client
    address space */
-static Bool valid_client_addr(Addr start, UInt size, ThreadId tid, const Char *syscall)
+static Bool valid_client_addr(Addr start, UInt size, ThreadId tid, const Char *syscallname)
 {
    Addr end = start+size;
    Addr cl_base = VG_(client_base);
@@ -138,11 +138,11 @@ static Bool valid_client_addr(Addr start, UInt size, ThreadId tid, const Char *s
 
    if (0)
       VG_(printf)("%s: test=%p-%p client=%p-%p ret=%d\n",
-		  syscall, start, end, cl_base, VG_(client_end), ret);
+		  syscallname, start, end, cl_base, VG_(client_end), ret);
 
-   if (!ret && syscall != NULL) {
+   if (!ret && syscallname != NULL) {
       VG_(message)(Vg_UserMsg, "Warning: client syscall %s tried to modify addresses %p-%p",
-		   syscall, start, end);
+		   syscallname, start, end);
 
       if (VG_(clo_verbosity) > 1) {
 	 ExeContext *ec = VG_(get_ExeContext)(tid);
@@ -971,12 +971,12 @@ static Addr do_brk(Addr newbrk)
    ------------------------------------------------------------------ */
 
 /* Return true if we're allowed to use or create this fd */
-static Bool fd_allowed(Int fd, const Char *syscall, ThreadId tid, Bool soft)
+static Bool fd_allowed(Int fd, const Char *syscallname, ThreadId tid, Bool soft)
 {
    if (fd < 0 || fd >= VG_(fd_hard_limit) || fd == VG_(clo_log_fd)) {
       VG_(message)(Vg_UserMsg, 
          "Warning: invalid file descriptor %d in syscall %s()",
-         fd, syscall);
+         fd, syscallname);
       if (fd == VG_(clo_log_fd))
 	 VG_(message)(Vg_UserMsg, 
             "   Use --log-fd=<number> to select an alternative log fd.");
@@ -5490,6 +5490,44 @@ PRE(sigprocmask)
       SYSCALL_TRACK( pre_mem_write, tid, "sigprocmask(oldset)", 
 		     arg3, sizeof(vki_ksigset_t));
 
+   if (SIGNAL_SIMULATION) {
+      // Nb: We must convert the smaller vki_old_ksigset_t params into bigger
+      // vki_ksigset_t params.
+      vki_old_ksigset_t* set    = (vki_old_ksigset_t*)arg2;
+      vki_old_ksigset_t* oldset = (vki_old_ksigset_t*)arg3;
+      vki_ksigset_t bigger_set;
+      vki_ksigset_t bigger_oldset;
+
+      VG_(memset)(&bigger_set, 0, sizeof(vki_ksigset_t));
+      bigger_set.ws[0] = *(vki_old_ksigset_t*)set;
+
+      VG_(do__NR_sigprocmask) ( tid, 
+                                arg1 /*how*/,
+                                &bigger_set,
+                                &bigger_oldset );
+
+      *oldset = bigger_oldset.ws[0];
+   }
+}
+
+POST(sigprocmask)
+{
+   if (res == 0 && arg3 != (UInt)NULL)
+      VG_TRACK( post_mem_write, arg3, sizeof(vki_old_ksigset_t));
+}
+
+PRE(rt_sigprocmask)
+{
+   /* int rt_sigprocmask(int how, k_sigset_t *set, 
+      k_sigset_t *oldset, size_t sigsetsize); */
+   MAYBE_PRINTF("rt_sigprocmask ( %d, %p, %p )\n",arg1,arg2,arg3);
+   if (arg2 != (UInt)NULL)
+      SYSCALL_TRACK( pre_mem_read, tid, "rt_sigprocmask(set)", 
+		     arg2, sizeof(vki_ksigset_t));
+   if (arg3 != (UInt)NULL)
+      SYSCALL_TRACK( pre_mem_write, tid, "rt_sigprocmask(oldset)", 
+		     arg3, sizeof(vki_ksigset_t));
+
    if (SIGNAL_SIMULATION)
       VG_(do__NR_sigprocmask) ( tid, 
 				arg1 /*how*/, 
@@ -5497,14 +5535,11 @@ PRE(sigprocmask)
 				(vki_ksigset_t*) arg3 );
 }
 
-POST(sigprocmask)
+POST(rt_sigprocmask)
 {
    if (res == 0 && arg3 != (UInt)NULL)
       VG_TRACK( post_mem_write, arg3, sizeof(vki_ksigset_t));
 }
-
-PREALIAS(rt_sigprocmask, sigprocmask);
-POSTALIAS(rt_sigprocmask, sigprocmask);
 
 PRE(sigpending)
 {
