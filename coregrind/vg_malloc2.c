@@ -1091,7 +1091,7 @@ void* VG_(malloc_aligned) ( ArenaId aid, Int req_alignB, Int req_pszB )
          break;
       default:
          VG_(printf)("vg_malloc_aligned(%p, %d, %d)\nbad alignment request", 
-                     a, req_pszB, req_alignB );
+                     a, req_alignB, req_pszB );
          VG_(panic)("vg_malloc_aligned");
          /*NOTREACHED*/
    }
@@ -1186,7 +1186,7 @@ void* VG_(calloc) ( ArenaId aid, Int nmemb, Int nbytes )
 }
 
 
-void* VG_(realloc) ( ArenaId aid, void* ptr, Int req_pszB )
+void* VG_(realloc) ( ArenaId aid, void* ptr, Int req_alignB, Int req_pszB )
 {
    Arena* a;
    Int    old_bszW, old_pszW, old_pszB, i;
@@ -1210,7 +1210,11 @@ void* VG_(realloc) ( ArenaId aid, void* ptr, Int req_pszB )
 
    if (req_pszB <= old_pszB) return ptr;
 
-   p_new = VG_(malloc) ( aid, req_pszB );
+   if (req_alignB == 4)
+      p_new = VG_(malloc) ( aid, req_pszB );
+   else
+      p_new = VG_(malloc_aligned) ( aid, req_alignB, req_pszB );
+
    p_old = (UChar*)ptr;
    for (i = 0; i < old_pszB; i++)
       p_new[i] = p_old[i];
