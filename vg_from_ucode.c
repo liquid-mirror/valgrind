@@ -1037,6 +1037,8 @@ static void load_ebp_from_JmpKind ( JmpKind jmpkind )
       case JmpBoring: 
          break;
       case JmpCall:
+         emit_movv_lit_reg ( 4, VG_TRC_EBP_JMP_CALL, R_EBP );
+         break;
       case JmpRet: 
          emit_movv_lit_reg ( 4, VG_TRC_EBP_JMP_STKADJ, R_EBP );
          break;

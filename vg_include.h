@@ -1366,6 +1366,7 @@ extern Int VG_(getTempUsage) ( UInstr* u, TempUse* arr );
 
 
 extern void  VG_(translate)  ( ThreadState* tst,
+                               Bool is_x86_callee,
                                Addr  orig_addr,
                                UInt* orig_size,
                                Addr* trans_addr,
@@ -1918,6 +1919,9 @@ typedef
 
 /* The number of basic blocks in an epoch (one age-step). */
 #define VG_BBS_PER_EPOCH 20000
+
+/* The fast-cache for tt-lookup. */
+extern Addr VG_(tt_fast)[VG_TT_FAST_SIZE];
 
 extern void VG_(get_tt_tc_used) ( UInt* tt_used, UInt* tc_used );
 extern void VG_(maybe_do_lru_pass) ( void );

@@ -66,10 +66,11 @@
 #define VG_TRC_EBP_JMP_STKADJ     17 /* EBP only; handled by dispatcher */
 #define VG_TRC_EBP_JMP_SYSCALL    19 /* EBP and TRC */
 #define VG_TRC_EBP_JMP_CLIENTREQ  23 /* EBP and TRC */
+#define VG_TRC_EBP_JMP_CALL       41 /* EBP and TRC */
 
-#define VG_TRC_INNER_COUNTERZERO  29  /* TRC only; means bb ctr == 0 */
-#define VG_TRC_INNER_FASTMISS     31  /* TRC only; means fast-cache miss. */
-#define VG_TRC_UNRESUMABLE_SIGNAL 37  /* TRC only; got sigsegv/sigbus */
+#define VG_TRC_INNER_FASTMISS     31 /* TRC only; means fast-cache miss. */
+#define VG_TRC_INNER_COUNTERZERO  29 /* TRC only; means bb ctr == 0 */
+#define VG_TRC_UNRESUMABLE_SIGNAL 37 /* TRC only; got sigsegv/sigbus */
 
 
 /* Debugging hack for assembly code ... sigh. */

@@ -1855,6 +1855,7 @@ UCodeBlock* vg_do_register_allocation ( UCodeBlock* c1 )
 */
 void VG_(translate) ( ThreadState* tst, 
                          /* Identity of thread needing this block */
+                      Bool  is_x86_callee,
                       Addr  orig_addr,
                       UInt* orig_size,
                       Addr* trans_addr,
@@ -1864,7 +1865,7 @@ void VG_(translate) ( ThreadState* tst,
    Bool        debugging_translation;
    UChar*      final_code;
    UCodeBlock* cb;
-
+   //   if (is_x86_callee) VG_(printf)("X"); else VG_(printf)(".");
    VGP_PUSHCC(VgpTranslate);
    debugging_translation
       = orig_size == NULL || trans_addr == NULL || trans_size == NULL;
