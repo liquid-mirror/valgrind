@@ -1144,7 +1144,7 @@ void VGM_(fpu_read_check) ( Addr addr, Int size )
 
    if (size == 28 || size == 108) {
       PROF_EVENT(84); /* XXX assign correct event number */
-      fpu_read_check_SLOWLY ( addr, 28 );
+      fpu_read_check_SLOWLY ( addr, size );
       return;
    }
 
@@ -1231,7 +1231,7 @@ void VGM_(fpu_write_check) ( Addr addr, Int size )
 
    if (size == 28 || size == 108) {
       PROF_EVENT(89); /* XXX assign correct event number */
-      fpu_write_check_SLOWLY ( addr, 28 );
+      fpu_write_check_SLOWLY ( addr, size );
       return;
    }
 
