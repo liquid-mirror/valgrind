@@ -493,11 +493,11 @@ Bool VG_(saneUInstr) ( Bool beforeRA, Bool beforeLiveness, UInstr* u )
                        (u->argc > 2 || u->has_ret_val ? TR3 : N3) &&
                        u->regparms_n <= u->argc && XCCALL;
    default: 
-      if (VG_(needs).extends_UCode)
+      if (VG_(needs).extended_UCode)
          return SK_(saneExtUInstr)(beforeRA, beforeLiveness, u);
       else {
          VG_(printf)("unhandled opcode: %u.  Perhaps " 
-                     "VG_(needs).extends_UCode should be set?",
+                     "VG_(needs).extended_UCode should be set?",
                      u->opcode);
          VG_(panic)("VG_(saneUInstr): unhandled opcode");
       }
@@ -785,11 +785,11 @@ Char* VG_(nameUOpcode) ( Bool upper, Opcode opc )
       case FPU_W:   return "FPU_W";
       case FPU:     return "FPU"  ;
       default:
-         if (VG_(needs).extends_UCode)
+         if (VG_(needs).extended_UCode)
             return SK_(nameExtUOpcode)(opc);
          else {
             VG_(printf)("unhandled opcode: %u.  Perhaps " 
-                        "VG_(needs).extends_UCode should be set?",
+                        "VG_(needs).extended_UCode should be set?",
                         opc);
             VG_(panic)("nameUOpcode: unhandled opcode");
          }
@@ -974,11 +974,11 @@ void VG_(ppUInstr) ( Int instrNo, UInstr* u )
          break;
 
       default: 
-         if (VG_(needs).extends_UCode)
+         if (VG_(needs).extended_UCode)
             SK_(ppExtUInstr)(u);
          else {
             VG_(printf)("unhandled opcode: %u.  Perhaps " 
-                        "VG_(needs).extends_UCode should be set?",
+                        "VG_(needs).extended_UCode should be set?",
                         u->opcode);
             VG_(panic)("ppUInstr: unhandled opcode");
          }
@@ -1075,11 +1075,11 @@ Int VG_(getRegUsage) ( UInstr* u, Tag tag, RegUse* arr )
       case JIFZ: RD(1); break;
 
       default:
-         if (VG_(needs).extends_UCode)
+         if (VG_(needs).extended_UCode)
             return SK_(getExtRegUsage)(u, tag, arr);
          else {
             VG_(printf)("unhandled opcode: %u.  Perhaps " 
-                        "VG_(needs).extends_UCode should be set?",
+                        "VG_(needs).extended_UCode should be set?",
                         u->opcode);
             VG_(panic)("VG_(getRegUsage): unhandled opcode");
          }
