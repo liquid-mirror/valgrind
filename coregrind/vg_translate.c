@@ -147,12 +147,15 @@ void VG_(emptyUInstr) ( UInstr* u )
    u->tag1 = u->tag2 = u->tag3 = NoValue;
    u->flags_r = u->flags_w = FlagsEmpty;
    u->jmpkind = JmpBoring;
-   u->smc_check = u->signed_widen = False;
+   u->smc_check = u->signed_widen = u->has_ret_val = False;
+   u->eax_dies = u->ecx_dies = u->edx_dies = False;
    u->lit32    = 0;
    u->opcode   = 0;
    u->size     = 0;
    u->cond     = 0;
    u->extra4b  = 0;
+   u->extra5a  = 0;
+   u->argc = u->regparms_n = 0;
 }
 
 
@@ -274,13 +277,29 @@ void VG_(setLiteralField) ( UCodeBlock* cb, UInt lit32 )
 }
 
 
+/* Set the C call info fields of the most recent uinsn. */
+void  VG_(setCCallFields) ( UCodeBlock* cb, Addr fn, UChar argc, UChar
+                            regparms_n, Bool has_ret_val )
+{
+   vg_assert(argc       <  4);
+   vg_assert(regparms_n <= argc);
+   LAST_UINSTR(cb).lit32       = fn;
+   LAST_UINSTR(cb).argc        = argc;
+   LAST_UINSTR(cb).regparms_n  = regparms_n;
+   LAST_UINSTR(cb).has_ret_val = has_ret_val;
+}
+
+/* Set the C call info fields of the most recent uinsn. */
+void  VG_(setExtra5a) ( UCodeBlock *cb, UChar val )
+{
+   LAST_UINSTR(cb).extra5a = val;
+}
+
 Bool VG_(anyFlagUse) ( UInstr* u )
 {
    return (u->flags_r != FlagsEmpty 
            || u->flags_w != FlagsEmpty);
 }
-
-
 
 
 /* Convert a rank in the range 0 .. VG_MAX_REALREGS-1 into an Intel
@@ -396,8 +415,6 @@ static __inline__ Int rankToRealRegNo ( Int rank )
          CALLM      L       N       N
          CALLM_S    N       N       N
          CALLM_E    N       N       N
-         CCALL_1_0  T       N       N
-         CCALL_2_0  T       T       N
          PUSH,POP   T       N       N
          CLEAR      L       N       N
 
@@ -423,6 +440,11 @@ static __inline__ Int rankToRealRegNo ( Int rank )
          LEA2       T       T       T   (const & shift ditto)
 
          INCEIP     L       N       N
+
+         CCALL      X       Y       Z
+            X == T if u->argc > 0, else N
+            Y == T if u->argc > 1, else N
+            Z == T if u->argc > 2 or u->has_ret_val, else N
  
    Before register allocation, S operands should not appear anywhere.
    After register allocation, all T operands should have been
@@ -503,12 +525,11 @@ Bool VG_(saneUInstr) ( Bool beforeRA, UInstr* u )
          return CC0 && Ls1 && N2 && SZ0 && N3;
       case CALLM:
          return SZ0 && Ls1 && N2 && N3;
-      case CCALL_0_0:
-         return SZ0 && CC0 && N1 && N2 && N3;
-      case CCALL_1_0:
-         return SZ0 && CC0 && TR1 && N2 && N3;
-      case CCALL_2_0:
-         return SZ0 && CC0 && TR1 && TR2 && N3;
+      case CCALL:
+         return SZ0 && CC0 && 
+                (u->argc > 0                   ? TR1 : N1) && 
+                (u->argc > 1                   ? TR2 : N2) && 
+                (u->argc > 2 || u->has_ret_val ? TR3 : N3);
       case PUSH: case POP:
          return CC0 && TR1 && N2 && N3;
       case AND: case OR:
@@ -776,9 +797,7 @@ Char* VG_(nameUOpcode) ( Bool upper, Opcode opc )
       case JMP:     return "J"    ;
       case JIFZ:    return "JIFZ" ;
       case CALLM:   return "CALLM";
-      case CCALL_0_0: return "CCALL_0_0";
-      case CCALL_1_0: return "CCALL_1_0";
-      case CCALL_2_0: return "CCALL_2_0";
+      case CCALL:   return "CCALL";
       case PUSH:    return "PUSH" ;
       case POP:     return "POP"  ;
       case CLEAR:   return "CLEAR";
@@ -892,21 +911,22 @@ void VG_(ppUInstr) ( Int instrNo, UInstr* u )
          VG_(ppUOperand)(u, 1, u->size, False);
          break;
 
-      case CCALL_0_0:
-         VG_(printf)(" %p()", u->lit32);
-         break;
-
-      case CCALL_1_0:
+      case CCALL:
+         if (u->has_ret_val) {
+            VG_(ppUOperand)(u, 3, 0, False);
+            VG_(printf)(" = ");
+         }
          VG_(printf)(" %p(", u->lit32);
-         VG_(ppUOperand)(u, 1, 0, False);
-         VG_(printf)(")");
-         break;
-
-      case CCALL_2_0:
-         VG_(printf)(" %p(", u->lit32);
-         VG_(ppUOperand)(u, 1, 0, False);
-         VG_(printf)(", ");
-         VG_(ppUOperand)(u, 2, 0, False);
+         if (u->argc > 0)
+            VG_(ppUOperand)(u, 1, 0, False);
+         if (u->argc > 1) {
+            VG_(printf)(", ");
+            VG_(ppUOperand)(u, 2, 0, False);
+         }
+         if (u->argc > 2) {
+            VG_(printf)(", ");
+            VG_(ppUOperand)(u, 3, 0, False);
+         }
          VG_(printf)(")");
          break;
 
@@ -993,8 +1013,14 @@ __inline__ Int VG_(getTempUsage) ( UInstr* u, TempUse* arr )
       case LEA1: RD(1); WR(2); break;
       case LEA2: RD(1); RD(2); WR(3); break;
 
-      case NOP: case FPU: case INCEIP: case CALLM_S: case CALLM_E: 
-      case CCALL_0_0:  break;
+      case NOP: case FPU: case INCEIP: case CALLM_S: case CALLM_E: break;
+
+      case CCALL:
+         if (u->argc > 0)    RD(1); 
+         if (u->argc > 1)    RD(2); 
+         if (u->argc > 2)    RD(3); 
+         if (u->has_ret_val) WR(3);
+         break;
 
       case FPU_R: case FPU_W: RD(2); break;
 
@@ -1004,13 +1030,13 @@ __inline__ Int VG_(getTempUsage) ( UInstr* u, TempUse* arr )
       case GET:   WR(2); break;
       case PUT:   RD(1); break;
       case LOAD:  RD(1); WR(2); break;
-      case STORE: case CCALL_2_0: RD(1); RD(2); break;
+      case STORE: RD(1); RD(2); break;
       case MOV:   RD(1); WR(2); break;
 
       case JMP:   RD(1); break;
       case CLEAR: case CALLM: break;
 
-      case PUSH: case CCALL_1_0: RD(1); break;
+      case PUSH: RD(1); break;
       case POP:  WR(1); break;
 
       /*case TAG2:*/
