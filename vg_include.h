@@ -213,8 +213,6 @@ typedef unsigned char Bool;
 
 /* Should we stop collecting errors if too many appear?  default: YES */
 extern Bool  VG_(clo_error_limit);
-/* Shall we V-check addrs (they are always A checked too): default: YES */
-extern Bool  VG_(clo_check_addrVs);
 /* Enquire about whether to attach to GDB at errors?   default: NO */
 extern Bool  VG_(clo_GDB_attach);
 /* Sanity-check level: 0 = none, 1 (default), > 1 = expensive. */
@@ -223,29 +221,18 @@ extern Int   VG_(sanity_level);
 extern Int   VG_(clo_verbosity);
 /* Automatically attempt to demangle C++ names?  default: YES */
 extern Bool  VG_(clo_demangle);
-/* Do leak check at exit?  default: NO */
-extern Bool  VG_(clo_leak_check);
-/* In leak check, show reachable-but-not-freed blocks?  default: NO */
-extern Bool  VG_(clo_show_reachable);
-/* How closely should we compare ExeContexts in leak records? default: 2 */
-extern Int   VG_(clo_leak_resolution);
 /* Round malloc sizes upwards to integral number of words? default:
    NO */
 extern Bool  VG_(clo_sloppy_malloc);
 /* Minimum alignment in functions that don't specify alignment explicitly.
    default: 0, i.e. use default of the machine (== 4) */
 extern Int   VG_(clo_alignment);
-/* Allow loads from partially-valid addresses?  default: YES */
-extern Bool  VG_(clo_partial_loads_ok);
 /* Simulate child processes? default: NO */
 extern Bool  VG_(clo_trace_children);
 /* The file id on which we send all messages.  default: 2 (stderr). */
 extern Int   VG_(clo_logfile_fd);
 /* Max volume of the freed blocks queue. */
 extern Int   VG_(clo_freelist_vol);
-/* Assume accesses immediately below %esp are due to gcc-2.96 bugs.
-   default: NO */
-extern Bool  VG_(clo_workaround_gcc296_bugs);
 
 /* The number of suppression files specified. */
 extern Int   VG_(clo_n_suppressions);
@@ -256,8 +243,6 @@ extern Char* VG_(clo_suppressions)[VG_CLO_MAX_SFILES];
 extern Bool  VG_(clo_single_step);
 /* Code improvement?  default: YES */
 extern Bool  VG_(clo_optimise);
-/* DEBUG: clean up instrumented code?  default: YES */
-extern Bool  VG_(clo_cleanup);
 /* SMC write checks?  default: SOME (1,2,4 byte movs to mem) */
 extern Int   VG_(clo_smc_check);
 /* DEBUG: print system calls?  default: NO */
@@ -1354,8 +1339,7 @@ typedef
    }
    TempUse;
 
-   // ZZZ: made global
-extern Int VG_(getTempUsage) ( UInstr* u, TempUse* arr );
+extern Int   VG_(getTempUsage) ( UInstr* u, TempUse* arr );
 
 
 extern void  VG_(translate)  ( ThreadState* tst,
@@ -1365,7 +1349,7 @@ extern void  VG_(translate)  ( ThreadState* tst,
                                Addr* trans_addr,
                                UInt* trans_size );
 
-extern void  VG_(emptyUInstr) ( UInstr* u );
+extern void  VG_(emptyUInstr)( UInstr* u );
 extern void  VG_(newUInstr0) ( UCodeBlock* cb, Opcode opcode, Int sz );
 extern void  VG_(newUInstr1) ( UCodeBlock* cb, Opcode opcode, Int sz,
                                Tag tag1, UInt val1 );
@@ -1709,7 +1693,7 @@ extern void* VG_(client_realloc)  ( ThreadState* tst,
 /* Sanity checks which may be done at any time.  The scheduler decides when. */
 extern void VG_(do_sanity_checks) ( Bool force_expensive );
 
-extern void VG_(bad_option) ( Char* type, Char* opt );
+extern void VG_(bad_option) ( Char* opt );
 
 /* A structure used as an intermediary when passing the simulated
    CPU's state to some assembly fragments, particularly system calls.
@@ -2256,14 +2240,17 @@ extern void SK_(discard_basic_block_info) ( TTEntry* tte );
    Skin-specific command line options (VG_(needs).command_line_options)
    ------------------------------------------------------------------ */
 
-extern void SKN_(process_cmd_line_options)(UInt argc, UChar* argv[]);
+/* Return True if option was recognised */
+extern Bool SKN_(process_cmd_line_option)( UChar* argv );
+
+/* Print out command line usage for skin options */
+extern Char* SKN_(usage)                  ( void );
 
 /* ---------------------------------------------------------------------
    Skin-specific client requests (VG_(needs).client_requests)
    ------------------------------------------------------------------ */
 
-extern UInt SKN_(handle_client_request) ( ThreadState* tst, 
-                                             UInt* arg_block );
+extern UInt SKN_(handle_client_request) ( ThreadState* tst, UInt* arg_block );
 
 /* ---------------------------------------------------------------------
    For augmenting UInstrs -- generating extra code for one or more core

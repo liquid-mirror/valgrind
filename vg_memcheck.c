@@ -47,11 +47,22 @@
 #define DEBUG(fmt, args...) //VG_(printf)(fmt, ## args)
 
 /*------------------------------------------------------------*/
+/*--- Command line options                                 ---*/
+/*------------------------------------------------------------*/
+
+Bool VG_(clo_partial_loads_ok)       = True;
+Bool VG_(clo_leak_check)             = False;
+Int  VG_(clo_leak_resolution)        = 2;
+Bool VG_(clo_show_reachable)         = False;
+Bool VG_(clo_workaround_gcc296_bugs) = False;
+Bool VG_(clo_check_addrVs)           = True;
+Bool VG_(clo_cleanup)                = True;
+
+/*------------------------------------------------------------*/
 /*--- Low-level support for memory checking.               ---*/
 /*------------------------------------------------------------*/
 
-/* 
-   All reads and writes are checked against a memory map, which
+/* All reads and writes are checked against a memory map, which
    records the state of all memory in the process.  The memory map is
    organised like this:
 
@@ -354,6 +365,10 @@ void SK_(fini) ( void )
 {
    VG_(clientmalloc_done)();
    if (VG_(clo_verbosity) == 1) {
+      if (!VG_(clo_leak_check))
+         VG_(message)(Vg_UserMsg, 
+             "For a detailed leak analysis,  rerun with: --leak-check=yes");
+
       VG_(message)(Vg_UserMsg, 
                    "For counts of detected errors, rerun with: -v");
    }
@@ -2227,6 +2242,75 @@ void check_is_readable_asciiz ( CorePart part, ThreadState* tst,
 /*--- Setup                                                ---*/
 /*------------------------------------------------------------*/
 
+Bool SKN_(process_cmd_line_option)(UChar* arg)
+{
+#  define STREQ(s1,s2)     (0==VG_(strcmp_ws)((s1),(s2)))
+
+   if      (STREQ(arg, "--partial-loads-ok=yes"))
+      VG_(clo_partial_loads_ok) = True;
+   else if (STREQ(arg, "--partial-loads-ok=no"))
+      VG_(clo_partial_loads_ok) = False;
+
+   else if (STREQ(arg, "--leak-check=yes"))
+      VG_(clo_leak_check) = True;
+   else if (STREQ(arg, "--leak-check=no"))
+      VG_(clo_leak_check) = False;
+
+   else if (STREQ(arg, "--leak-resolution=low"))
+      VG_(clo_leak_resolution) = 2;
+   else if (STREQ(arg, "--leak-resolution=med"))
+      VG_(clo_leak_resolution) = 4;
+   else if (STREQ(arg, "--leak-resolution=high"))
+      VG_(clo_leak_resolution) = VG_DEEPEST_BACKTRACE;
+   
+   else if (STREQ(arg, "--show-reachable=yes"))
+      VG_(clo_show_reachable) = True;
+   else if (STREQ(arg, "--show-reachable=no"))
+      VG_(clo_show_reachable) = False;
+
+   else if (STREQ(arg, "--workaround-gcc296-bugs=yes"))
+      VG_(clo_workaround_gcc296_bugs) = True;
+   else if (STREQ(arg, "--workaround-gcc296-bugs=no"))
+      VG_(clo_workaround_gcc296_bugs) = False;
+
+   else if (STREQ(arg, "--check-addrVs=yes"))
+      VG_(clo_check_addrVs) = True;
+   else if (STREQ(arg, "--check-addrVs=no"))
+      VG_(clo_check_addrVs) = False;
+
+   else if (STREQ(arg, "--cleanup=yes"))
+      VG_(clo_cleanup) = True;
+   else if (STREQ(arg, "--cleanup=no"))
+      VG_(clo_cleanup) = False;
+
+   else
+      return False;
+
+   return True;
+
+#undef STREQ
+}
+
+Char* SKN_(usage)(void)
+{  
+   return  
+"    --partial-loads-ok=no|yes too hard to explain here; see manual [yes]\n"
+"    --leak-check=no|yes       search for memory leaks at exit? [no]\n"
+"    --leak-resolution=low|med|high\n"
+"                              amount of bt merging in leak check [low]\n"
+"    --show-reachable=no|yes   show reachable blocks in leak check? [no]\n"
+"    --workaround-gcc296-bugs=no|yes  self explanatory [no]\n"
+"    --check-addrVs=no|yes     experimental lighterweight checking? [yes]\n"
+"                              yes == Valgrind's original behaviour\n"
+"\n"
+"    --cleanup=no|yes          improve after instrumentation? [yes]\n";
+}
+
+
+/*------------------------------------------------------------*/
+/*--- Setup                                                ---*/
+/*------------------------------------------------------------*/
+
 void SK_(setup)(VgNeeds* needs, VgTrackEvents* track)
 {
    needs->name                    = "valgrind";
@@ -2244,7 +2328,7 @@ void SK_(setup)(VgNeeds* needs, VgTrackEvents* track)
 
    needs->run_libc_freeres        = True;
 
-   needs->command_line_options    = False;  // SSS: will be true eventually
+   needs->command_line_options    = True;
    needs->client_requests         = True;
 
    needs->extends_UCode           = True;

@@ -30,8 +30,35 @@ typedef
    }
    ExtOpcode;
 
-// SSS: work this out
-//extern Addr SK_(curr_dataseg_end);
+/*------------------------------------------------------------*/
+/*--- Skin-specific command line options + defaults        ---*/
+/*------------------------------------------------------------*/
+
+/* Allow loads from partially-valid addresses?  default: YES */
+Bool VG_(clo_partial_loads_ok);
+
+/* Do leak check at exit?  default: NO */
+Bool VG_(clo_leak_check);
+
+/* How closely should we compare ExeContexts in leak records? default: 2 */
+Int  VG_(clo_leak_resolution);
+
+/* In leak check, show reachable-but-not-freed blocks?  default: NO */
+Bool VG_(clo_show_reachable);
+
+/* Assume accesses immediately below %esp are due to gcc-2.96 bugs.
+ * default: NO*/
+Bool VG_(clo_workaround_gcc296_bugs);
+
+/* Shall we V-check addrs? (they are always A checked too)   default: YES */
+Bool VG_(clo_check_addrVs);
+
+/* DEBUG: clean up instrumented code?  default: YES */
+Bool VG_(clo_cleanup);
+
+/*------------------------------------------------------------*/
+/*--- Functions                                            ---*/
+/*------------------------------------------------------------*/
 
 // Functions defined in vg_memcheck_helpers.S
 extern void SK_(helper_value_check4_fail) ( void );
@@ -63,7 +90,6 @@ extern void SK_(record_free_error)        ( ThreadState* tst, Addr a );
 extern void SK_(record_freemismatch_error)( ThreadState* tst, Addr a );
 extern void SK_(record_user_error)        ( ThreadState* tst, Addr a, 
                                             Bool isWrite );
-
 
 
 /*--------------------------------------------------------------------*/

@@ -392,7 +392,7 @@ void VG_(record_pthread_err) ( ThreadId tid, Char* msg )
    if (VG_(ignore_errors)) return;
    if (! VG_(needs).pthread_errors) return;
    /* No address to note: hence the '0' */
-   VG_(construct_err_context)( &ec, PThreadErr, 0, msg, NULL );
+   VG_(construct_err_context)( &ec, PThreadErr, 0, msg, &VG_(threads)[tid] );
    /* No need for the 'extra' part */
    
    VG_(maybe_add_context) ( &ec );
@@ -622,7 +622,7 @@ static void load_one_suppressions_file ( Char* filename )
           * it impossible to spot incorrect suppression names?  (apart
           * from the warning given) */
          VG_(message)(Vg_DebugMsg, 
-                      "Didn't recognise suppression %s; ignoring", buf);
+                      "Didn't recognise suppression '%s'; ignoring", buf);
          while (True) {
             eof = VG_(getLine) ( fd, buf, N_BUF );
             if (eof) goto syntax_error;

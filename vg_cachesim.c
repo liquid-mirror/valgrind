@@ -1580,7 +1580,7 @@ void SK_(discard_basic_block_info) ( TTEntry* tte )
 }
 
 /*--------------------------------------------------------------------*/
-/*--- Setup                                                        ---*/
+/*--- Command line processing                                      ---*/
 /*--------------------------------------------------------------------*/
 
 static void parse_cache_opt ( cache_t* cache, char* orig_opt, int opt_len )
@@ -1616,26 +1616,35 @@ static void parse_cache_opt ( cache_t* cache, char* orig_opt, int opt_len )
    return;
 
   bad:
-   VG_(bad_option)("skin", orig_opt);
+   VG_(bad_option)(orig_opt);
 }
 
-void SKN_(process_cmd_line_options)(UInt argc, UChar* argv[])
+Bool SKN_(process_cmd_line_option)(UChar* arg)
 {
-   Int i;
+   /* 5 is length of "--I1=" */
+   if      (0 == VG_(strncmp)(arg, "--I1=", 5))
+      parse_cache_opt(&clo_I1_cache, arg,   5);
+   else if (0 == VG_(strncmp)(arg, "--D1=", 5))
+      parse_cache_opt(&clo_D1_cache, arg,   5);
+   else if (0 == VG_(strncmp)(arg, "--L2=", 5))
+      parse_cache_opt(&clo_L2_cache, arg,   5);
+   else
+      return False;
 
-   for (i = 0; i < argc; i++) {
-      /* 5 is length of "--I1=" */
-      if      (0 == VG_(strncmp)(argv[i], "--I1=", 5))
-         parse_cache_opt(&clo_I1_cache, argv[i],   5);
-      else if (0 == VG_(strncmp)(argv[i], "--D1=", 5))
-         parse_cache_opt(&clo_D1_cache, argv[i],   5);
-      else if (0 == VG_(strncmp)(argv[i], "--L2=", 5))
-         parse_cache_opt(&clo_L2_cache, argv[i],   5);
-
-      else
-         VG_(bad_option)("skin", argv[i]);
-   }      
+   return True;
 }
+
+Char* SKN_(usage)(void)
+{
+   return 
+"    --I1=<size>,<assoc>,<line_size>  set I1 cache manually\n"
+"    --D1=<size>,<assoc>,<line_size>  set D1 cache manually\n"
+"    --L2=<size>,<assoc>,<line_size>  set L2 cache manually\n";
+}
+
+/*--------------------------------------------------------------------*/
+/*--- Setup                                                        ---*/
+/*--------------------------------------------------------------------*/
 
 void SK_(setup)(VgNeeds* needs, VgTrackEvents* not_used) 
 {

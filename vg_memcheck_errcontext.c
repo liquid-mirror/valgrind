@@ -29,6 +29,7 @@
 */
 
 #include "vg_include.h"
+#include "vg_memcheck_include.h"
 
 /*------------------------------------------------------------*/
 /*--- Defns                                                ---*/
@@ -417,7 +418,7 @@ void SK_(record_address_error) ( Addr a, Int size, Bool isWrite )
 
 /* This is for memory errors in pthread functions, as opposed to pthread API
    errors which are found by the core. */
-void SK_(record_pthread_mem_error) ( ThreadId tid, Bool isWrite, Char* msg )
+void SK_(record_pthread_mem_error) ( ThreadState* tst, Bool isWrite, Char* msg )
 {
    ErrContext ec;
    MemCheckErrContext ec_extra;
@@ -425,7 +426,7 @@ void SK_(record_pthread_mem_error) ( ThreadId tid, Bool isWrite, Char* msg )
    if (VG_(ignore_errors)) return;
 
    /* No address to note: hence the '0' */
-   VG_(construct_err_context)( &ec, PThreadMemErr, 0, msg, NULL );
+   VG_(construct_err_context)( &ec, PThreadMemErr, 0, msg, tst );
    clear_MemCheckErrContext( &ec_extra );
    ec_extra.isWrite = isWrite;
    ec.extra = &ec_extra;
