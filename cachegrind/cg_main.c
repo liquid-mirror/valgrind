@@ -502,8 +502,6 @@ static Int compute_BBCC_array_size(UCodeBlock* cb)
    t_read = t_write = INVALID_TEMPREG;
 
    for (i = 0; i < cb->used; i++) {
-      /* VG_(ppUInstr)(i, &cb->instrs[i]); */
-
       u_in = &cb->instrs[i];
       switch(u_in->opcode) {
 
@@ -616,9 +614,6 @@ void log_1I_0D_cache_access_JIFZ(iCC* cc)
            VG_(panic)("Unknown CC type in log_1I_0D_cache_access_JIFZ()\n");
            break;
    }
-   
-   
-
    cachesim_I1_doref(instr_addr, instr_size, &I->m1, &I->m2);
    I->a++;
    VGP_POPCC(VgpCacheSimulate);
