@@ -409,13 +409,10 @@ void SK_(record_value_error) ( Int size )
 
    if (VG_(ignore_errors)()) return;
 
-   /* No address to note: hence the '0' */
-   VG_(construct_err_context)( &ec, ValueErr, 0, NULL, NULL );
    clear_MemCheckErrContext( &ec_extra );
    ec_extra.size = size;
-   ec.extra = &ec_extra;
-
-   VG_(maybe_add_context) ( &ec );
+   /* No address to note: hence the '0' */
+   VG_(construct_err_context)( &ec, ValueErr, 0, NULL, &ec_extra, NULL );
 }
 
 /* Is this address within some small distance below %ESP?  Used only
@@ -445,15 +442,12 @@ void SK_(record_address_error) ( Addr a, Int size, Bool isWrite )
    if (VG_(clo_workaround_gcc296_bugs) && just_below_esp)
       return;
 
-   VG_(construct_err_context)( &ec, AddrErr, a, NULL, NULL );
    clear_MemCheckErrContext( &ec_extra );
    ec_extra.axskind = isWrite ? WriteAxs : ReadAxs;
    ec_extra.size    = size;
    ec_extra.addrinfo.akind     = Undescribed;
    ec_extra.addrinfo.maybe_gcc = just_below_esp;
-   ec.extra = &ec_extra;
-
-   VG_(maybe_add_context) ( &ec );
+   VG_(construct_err_context)( &ec, AddrErr, a, NULL, &ec_extra, NULL );
 }
 
 /* These ones are called from non-generated code */
@@ -467,13 +461,10 @@ void SK_(record_core_mem_error) ( ThreadState* tst, Bool isWrite, Char* msg )
 
    if (VG_(ignore_errors)) return;
 
-   /* No address to note: hence the '0' */
-   VG_(construct_err_context)( &ec, CoreMemErr, 0, msg, tst );
    clear_MemCheckErrContext( &ec_extra );
    ec_extra.isWrite = isWrite;
-   ec.extra = &ec_extra;
-
-   VG_(maybe_add_context) ( &ec );
+   /* No address to note: hence the '0' */
+   VG_(construct_err_context)( &ec, CoreMemErr, 0, msg, &ec_extra, tst );
 }
 
 void SK_(record_param_error) ( ThreadState* tst, Addr a, Bool isWrite, 
@@ -485,13 +476,10 @@ void SK_(record_param_error) ( ThreadState* tst, Addr a, Bool isWrite,
    if (VG_(ignore_errors)()) return;
 
    vg_assert(NULL != tst);
-   VG_(construct_err_context)( &ec, ParamErr, a, msg, tst );
    clear_MemCheckErrContext( &ec_extra );
    ec_extra.addrinfo.akind = Undescribed;
    ec_extra.isWrite = isWrite;
-   ec.extra = &ec_extra;
-
-   VG_(maybe_add_context) ( &ec );
+   VG_(construct_err_context)( &ec, ParamErr, a, msg, &ec_extra, tst );
 }
 
 void SK_(record_jump_error) ( ThreadState* tst, Addr a )
@@ -499,17 +487,13 @@ void SK_(record_jump_error) ( ThreadState* tst, Addr a )
    ErrContext ec;
    MemCheckErrContext ec_extra;
 
+   vg_assert(NULL != tst);
    if (VG_(ignore_errors)()) return;
 
-   vg_assert(NULL != tst);
-
-   VG_(construct_err_context)( &ec, AddrErr, a, NULL, tst );
    clear_MemCheckErrContext( &ec_extra );
    ec_extra.axskind = ExecAxs;
    ec_extra.addrinfo.akind = Undescribed;
-   ec.extra = &ec_extra;
-
-   VG_(maybe_add_context) ( &ec );
+   VG_(construct_err_context)( &ec, AddrErr, a, NULL, &ec_extra, tst );
 }
 
 void SK_(record_free_error) ( ThreadState* tst, Addr a )
@@ -517,15 +501,12 @@ void SK_(record_free_error) ( ThreadState* tst, Addr a )
    ErrContext ec;
    MemCheckErrContext ec_extra;
 
+   vg_assert(NULL != tst);
    if (VG_(ignore_errors)()) return;
 
-   vg_assert(NULL != tst);
-   VG_(construct_err_context)( &ec, FreeErr, a, NULL, tst );
    clear_MemCheckErrContext( &ec_extra );
    ec_extra.addrinfo.akind = Undescribed;
-   ec.extra = &ec_extra;
-
-   VG_(maybe_add_context) ( &ec );
+   VG_(construct_err_context)( &ec, FreeErr, a, NULL, &ec_extra, tst );
 }
 
 void SK_(record_freemismatch_error) ( ThreadState* tst, Addr a )
@@ -533,15 +514,13 @@ void SK_(record_freemismatch_error) ( ThreadState* tst, Addr a )
    ErrContext ec;
    MemCheckErrContext ec_extra;
 
+   vg_assert(NULL != tst);
    if (VG_(ignore_errors)()) return;
 
-   vg_assert(NULL != tst);
-   VG_(construct_err_context)( &ec, FreeMismatchErr, a, NULL, tst );
    clear_MemCheckErrContext( &ec_extra );
    ec_extra.addrinfo.akind = Undescribed;
-   ec.extra = &ec_extra;
-
-   VG_(maybe_add_context) ( &ec );
+   VG_(construct_err_context)( &ec, FreeMismatchErr, a, NULL, &ec_extra,
+                               tst );
 }
 
 void SK_(record_user_error) ( ThreadState* tst, Addr a, Bool isWrite )
@@ -549,16 +528,13 @@ void SK_(record_user_error) ( ThreadState* tst, Addr a, Bool isWrite )
    ErrContext ec;
    MemCheckErrContext ec_extra;
 
+   vg_assert(NULL != tst);
    if (VG_(ignore_errors)()) return;
 
-   vg_assert(NULL != tst);
-   VG_(construct_err_context)( &ec, UserErr, a, NULL, tst );
    clear_MemCheckErrContext( &ec_extra );
    ec_extra.addrinfo.akind = Undescribed;
    ec_extra.isWrite        = isWrite;
-   ec.extra = &ec_extra;
-
-   VG_(maybe_add_context) ( &ec );
+   VG_(construct_err_context)( &ec, UserErr, a, NULL, &ec_extra, tst );
 }
 
 

@@ -831,28 +831,24 @@ typedef
    SuppressionKind;
 
 /* For each caller specified for a suppression, record the nature of
-   the caller name. */
-   //SSS: when splitting upt two halves of suppression, hide this again
+   the caller name.  Not of interest to skins. */
+   // SSS: work out how to hide, short of a rest* pointer in Suppression
 typedef
    enum { 
-      /* Name is of an shared object file. */
-      ObjName,
-      /* Name is of a function. */
-      FunName 
+      ObjName,    /* Name is of an shared object file. */
+      FunName     /* Name is of a function. */
    }
    SuppressionLocTy;
 
 /* An extensible (via the 'extra' field) suppression record. */
 // SSS: void* extra isn't totally satisfactory... eg. it's a pain
-// initialising, copying, etc. the errcontext in two parts...
-//
-// SSS: can split this up into two halves -- only parts need to be exposed
-// to the skin
+// initialising, copying, etc. the suppression in two parts...
+// SSS: am I doing that at all for suppressions??
 typedef
    struct _Suppression {
       struct _Suppression* next;
       /* The number of times this error has been suppressed. */
-      Int count;
+      Int count;     // SSS: interesting to skins?
       /* The name by which the suppression is referred to. */
       Char* sname;
       /* What kind of suppression. */
@@ -861,6 +857,8 @@ typedef
       Char* string;
       /* For any skin-specific extra information */
       void* extra;
+
+      /* Rest not of interest to skins... */
       /* Name of fn where err occurs, and immediate caller (mandatory). */
       SuppressionLocTy caller0_ty;
       Char*            caller0;
@@ -890,6 +888,8 @@ typedef
    ErrKind;
 
 /* Top-level struct for recording errors. */
+// SSS: void* extra isn't totally satisfactory... eg. it's a pain
+// initialising, copying, etc. the errcontext in two parts...
 // SSS: split into public and private halves?
 typedef
    struct _ErrContext {
@@ -926,12 +926,16 @@ typedef
 /* Returns true if we've seen enough errors that no more should be issued */
 extern Bool VG_(ignore_errors) ( void );
 
-// SSS: blah blah blah
-extern void VG_(maybe_add_context) ( ErrContext* ec );
-
-// SSS: blah blah blah
+/* A constructor for ErrContexts.  Fills in all the fields with initial
+   values.  
+   
+   If the error occurs in generated code, 'tst' should be NULL.  If the
+   error occurs in non-generated code, 'tst' should be non-NULL.  The
+   'extra' field can be stack-allocated;  it will be copied if needed. 
+*/
 extern void VG_(construct_err_context) ( ErrContext* ec, ErrKind ekind, 
-                                         Addr a, Char* s, ThreadState* tst );
+                                         Addr a, Char* s, void* extra,
+                                         ThreadState* tst );
 
 /* Gets a non-blank, non-comment line of at most nBuf chars from fd.
    Skips leading spaces on the line.  Return Trues if EOF was hit instead. 
@@ -1046,6 +1050,9 @@ typedef
       /* Debug info needed? */
       Bool debug_info;
       /* Report pthread errors? */
+      // SSS: what about silly malloc arg errors?  SIGKILL/SIGSTOP event
+      // handler errors?  Other non-memcheck-specific errors?
+      // Maybe change these two to "core_errors" and "skin_errors"??
       Bool pthread_errors;
       /* Want to report errors?  This implies includes handling of 
        * suppressions, too. */
