@@ -1066,16 +1066,16 @@ You can ask to add suppressions from another file, by specifying
       <p>
 
   <li>The "immediate location" specification.  For Value and Addr
-      errors, is either the name of the function in which the error
-      occurred, or, failing that, the full path the the .so file
-      containing the error location.  For Param errors, is the name of
-      the offending system call parameter.  For Free errors, is the
-      name of the function doing the freeing (eg, <code>free</code>,
-      <code>__builtin_vec_delete</code>, etc)</li><br>
+      errors, it is either the name of the function in which the error
+      occurred, or, failing that, the full path of the .so file or
+      executable containing the error location.  For Param errors,
+      is the name of the offending system call parameter.  For Free
+      errors, is the name of the function doing the freeing (eg,
+      <code>free</code>, <code>__builtin_vec_delete</code>, etc)</li><br>
       <p>
 
   <li>The caller of the above "immediate location".  Again, either a
-      function or shared-object name.</li><br>
+      function or shared-object/executable name.</li><br>
       <p>
 
   <li>Optionally, one or two extra calling-function or object names,
@@ -1083,8 +1083,8 @@ You can ask to add suppressions from another file, by specifying
 </ul>
 
 <p>
-Locations may be either names of shared objects or wildcards matching
-function names.  They begin <code>obj:</code> and <code>fun:</code>
+Locations may be either names of shared objects/executables or wildcards
+matching function names.  They begin <code>obj:</code> and <code>fun:</code>
 respectively.  Function and object names to match against may use the 
 wildcard characters <code>*</code> and <code>?</code>.
 
