@@ -816,13 +816,26 @@ void VG_(diduce_log_instr)(invariant* inv, Addr data_addr)
 
                // ignore unless confidence threshold reached
                if (confidence1 - confidence2 > VG_(clo_confidence)) {
-                  VG_(printf)("V%c%3d: %u/%d, %u/%d, mask: %08x --> %08x, V: %08x, val = %08x"
+#                 if 0
+                  VG_(printf)("V%c%3d: %u/%d, %u/%d, vbits: %d -> %d, V: %08x, val = %08x"
                               " at %s:%s:%d\n", 
                               (inv->is_write ? 'w' : 'r'), violations, 
                               inv->accesses, range_of_values1,
                               inv->accesses+1, range_of_values2,
                               old_mask, inv->M, inv->V, W,
                               fl_buf, fn_buf, line_num);
+#                 else
+                  VG_(printf)("V%c%3d: conf loss %d, count %d, values %d, "
+                              "vbits %d->%d, value 0x%x"
+                              "  at %s:%s:%d\n", 
+                              (inv->is_write ? 'w' : 'r'), violations, 
+                              ((Int)confidence1) - ((Int)confidence2),
+                              inv->accesses+1, range_of_values2,
+                              num_of_zero_bits_in_UInt(old_mask), 
+                              num_of_zero_bits_in_UInt(inv->M), 
+                              W,
+                              fl_buf, fn_buf, line_num);
+#                 endif
                   violations++;
                }
             }
