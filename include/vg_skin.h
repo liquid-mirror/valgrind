@@ -994,7 +994,8 @@ extern Bool VG_(getLine) ( Int fd, Char* buf, Int nBuf );
 /*=== Obtaining debug information                                  ===*/
 /*====================================================================*/
 
-/* For these four, if debug info for the address is found, it copies the
+/* Get the file/function/line number of the instruction at address 'a'. 
+   For these four, if debug info for the address is found, it copies the
    info into the buffer/UInt and returns True.  If not, it returns False and
    nothing is copied.  VG_(get_fnname) always demangles C++ function names.
 */
@@ -1007,6 +1008,15 @@ extern Bool VG_(get_linenum)  ( Addr a, UInt* linenum );
 extern Bool VG_(get_filename_linenum) 
                               ( Addr a, Char* filename, Int n_filename,
                                         UInt* linenum );
+
+/* Succeeds only if we find from debug info that 'a' is the address of the
+   first instruction in a function -- as opposed to VG_(get_fnname) which
+   succeeds if we find from debug info that 'a' is the address of any
+   instruction in a function.  Use this to instrument the start of
+   a particular function.  Nb: if a executable/shared object is stripped
+   of its symbols, this function will not be able to recognise function
+   entry points within it. */
+extern Bool VG_(get_fnname_if_entry) ( Addr a, Char* filename, Int n_filename );
 
 /* Succeeds if the address is within a shared object or the main executable.
    It doesn't matter if debug info is present or not. */
@@ -1242,8 +1252,9 @@ extern void        SK_(post_clo_init)( void );
 
 /* Instrument a basic block.  Must be a true function, ie. the same input
    always results in the same output, because basic blocks can be
-   retranslated.  Unless you're doing something really strange... */
-extern UCodeBlock* SK_(instrument)   ( UCodeBlock* cb, Addr a );
+   retranslated.  Unless you're doing something really strange...
+   'orig_addr' is the address of the first instruction in the block. */
+extern UCodeBlock* SK_(instrument)   ( UCodeBlock* cb, Addr orig_addr );
 
 /* Finish up, print out any results, etc. */
 extern void        SK_(fini)         ( void );
