@@ -1845,8 +1845,6 @@ void SK_(pre_clo_init)(VgNeeds* needs, VgTrackEvents* not_used)
    needs->name                    = "cachegrind";
    needs->description             = "an I1/D1/L2 cache profiler";
 
-   needs->record_mem_exe_context  = False;
-   needs->postpone_mem_reuse      = False;
    needs->core_errors             = False;
    needs->skin_errors             = False;
    needs->run_libc_freeres        = False;
@@ -1857,6 +1855,8 @@ void SK_(pre_clo_init)(VgNeeds* needs, VgTrackEvents* not_used)
    needs->client_requests         = False;
    needs->extends_UCode           = False;
    needs->wrap_syscalls           = False;
+   needs->sizeof_shadow_chunk     = 0;
+   needs->alternative_free        = False;
    needs->sanity_checks           = False;
 
    VG_(register_compact_helper)((Addr) & log_1I_0D_cache_access);
