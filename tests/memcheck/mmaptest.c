@@ -8,7 +8,7 @@ int main()
 {
     int fd;
 
-    mkdir("dir", 0666);
+    mkdir("dir", 0777);
     fd = open("dir", O_RDONLY);
     mmap(NULL, 4711, PROT_READ, MAP_PRIVATE, fd, 0);
     return 0;
