@@ -175,7 +175,7 @@ __asm__ (
 
 static
 __attribute__((noreturn))
-void barf ( char* str )
+void barf ( const char* str )
 {
    char buf[1000];
    buf[0] = 0;
@@ -221,7 +221,7 @@ void vgPlain_unimp ( char* what )
 
 
 static
-void my_assert_fail ( Char* expr, Char* file, Int line, Char* fn )
+void my_assert_fail ( const Char* expr, const Char* file, UInt line, const Char* fn )
 {
    char buf[1000];
    static Bool entered = False;
