@@ -620,6 +620,7 @@ static void usage ( void )
 "    --sanity-level=<number>   level of sanity checking to do [1]\n"
 "    --single-step=no|yes      translate each instr separately? [no]\n"
 "    --optimise=no|yes         improve intermediate code? [yes]\n"
+"    --profile=no|yes          profile? (skin must be built for it) [no]\n"
 "    --trace-codegen=<XXXXX>   show generated code? (X = 0|1) [00000]\n"
 "    --trace-syscalls=no|yes   show all system calls? [no]\n"
 "    --trace-signals=no|yes    show signal handling details? [no]\n"
