@@ -905,18 +905,23 @@ extern Bool VG_(getLine) ( Int fd, Char* buf, Int nBuf );
 /*=== Obtaining debug information                                  ===*/
 /*====================================================================*/
 
-// SSS: don't necessarily export all these
-// SSS: give better names
-// SSS: make buf lengths safe
-// SSS: add get_debug_info()
-extern void VG_(what_obj_and_fun_is_this) ( Addr a,
-                                            Char* obj_buf, Int n_obj_buf,
-                                            Char* fun_buf, Int n_fun_buf );
-extern Bool VG_(what_line_is_this)        ( Addr a,
-                                            UChar* filename, Int n_filename,
-                                            UInt* lineno );
-extern Bool VG_(what_fn_is_this)          ( Bool no_demangle, Addr a,
-                                            Char* fn_name, Int n_fn_name);
+/* For these four, if debug info for the address is found, it copies the
+   info into the buffer/UInt and returns True.  If not, it returns False and
+   nothing is copied.  VG_(get_fnname) always demangles C++ function names.
+*/
+extern Bool VG_(get_filename) ( Addr a, Char* filename, Int n_filename );
+extern Bool VG_(get_fnname)   ( Addr a, Char* fnname,   Int n_fnname   );
+extern Bool VG_(get_linenum)  ( Addr a, UInt* linenum );
+
+/* This one is more efficient if getting both filename and line number,
+   because the two lookups are done together. */
+extern Bool VG_(get_filename_linenum) 
+                              ( Addr a, Char* filename, Int n_filename,
+                                        UInt* linenum );
+
+/* Succeeds if the address is within a shared object.  It doesn't matter
+   if debug info is present or not. */
+extern Bool VG_(get_objname)  ( Addr a, Char* objname,  Int n_objname  );
 
 
 /*====================================================================*/
