@@ -20,7 +20,7 @@
 ##     strict EIP updating
 
 noinst_PROGRAMS = \
-	badaddrvalue badfree badjump badloop \
+	badaddrvalue badfree badjump badloop buflen_check \
 	doublefree errs1 exitprog fprw fwrite inline malloc1 malloc2 \
 	manuel1 manuel2 manuel3 \
 	memalign_test memcmptest mmaptest nanoleak pushfpopf \
@@ -36,6 +36,7 @@ badaddrvalue_SOURCES 	= badaddrvalue.c
 badfree_SOURCES 	= badfree.c
 badjump_SOURCES 	= badjump.c
 badloop_SOURCES 	= badloop.c
+buflen_check_SOURCES	= buflen_check.c
 doublefree_SOURCES 	= doublefree.c
 errs1_SOURCES 		= errs1.c
 exitprog_SOURCES 	= exitprog.c
