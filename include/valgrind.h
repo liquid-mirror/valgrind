@@ -147,34 +147,6 @@
    })
 
 
-
-/* Client-code macros to check the state of memory. */
-#if 0
-/* Check that memory at _qzz_addr is addressible for _qzz_len bytes.
-   If suitable addressibility is not established, Valgrind prints an
-   error message and returns the address of the first offending byte.
-   Otherwise it returns zero. */
-#define VALGRIND_CHECK_WRITABLE(_qzz_addr,_qzz_len)                \
-   ({unsigned int _qzz_res;                                        \
-    VALGRIND_MAGIC_SEQUENCE(_qzz_res, 0,                           \
-                            VG_USERREQ__CHECK_WRITABLE,            \
-                            _qzz_addr, _qzz_len, 0, 0);            \
-    _qzz_res;                                                      \
-   })
-
-/* Check that memory at _qzz_addr is addressible and defined for
-   _qzz_len bytes.  If suitable addressibility and definedness are not
-   established, Valgrind prints an error message and returns the
-   address of the first offending byte.  Otherwise it returns zero. */
-#define VALGRIND_CHECK_READABLE(_qzz_addr,_qzz_len)                \
-   ({unsigned int _qzz_res;                                        \
-    VALGRIND_MAGIC_SEQUENCE(_qzz_res, 0,                           \
-                            VG_USERREQ__CHECK_READABLE,            \
-                            _qzz_addr, _qzz_len, 0, 0);            \
-    _qzz_res;                                                      \
-   })
-#endif
-
 // JJJ: this doesn't seem to be used any more?  Not mentioned in manual,
 // or in vg_clientperms.c??  Is it for backwards compatability?
 #if 0
