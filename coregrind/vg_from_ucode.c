@@ -1055,44 +1055,120 @@ void VG_(synth_call) ( Bool ensure_shortform, Int word_offset )
    emit_call_star_EBP_off ( 4 * word_offset );
 }
 
+/* 'maybe' because it is sometimes skipped eg. for "movl %eax,%eax" */
+void maybe_emit_movl_litOrReg_reg ( UInt litOrReg, Tag tag, UInt reg )
+{
+   if (RealReg == tag) {
+      if (litOrReg != reg) VG_(emit_movv_reg_reg) ( 4, litOrReg, reg );
+   } else if (Literal == tag) 
+      VG_(emit_movv_lit_reg) ( 4, litOrReg, reg );
+   else
+      VG_(panic)("emit_movl_litOrReg_reg: unexpected tag");
+}
+
 /* Synthesise a call to a C function `fn' (which must be registered in
    baseBlock) doing all the reg saving and arg handling work. */
-void VG_(synth_ccall) ( Addr fn, UInt argc, UInt argv[], Tag tagv[],
-                        Int ret_reg )
+void VG_(synth_ccall) ( Addr fn, Int argc, Int regparms_n, UInt argv[],
+                        Tag tagv[], Int ret_reg )
 {
    Int i;
+   Int stack_used = 0;
+
+   vg_assert(0 <= regparms_n && regparms_n <= 3);
+   if (regparms_n == 3) {
+      VG_(printf)("((regparms(3))) attribute not supported yet.\n"
+                  "Please use ((regparms(2))) instead.  Sorry\n");
+      VG_(panic)("((regparms(3)))");
+   }
    
    /* Save caller-save regs */
    if (R_EAX != ret_reg) VG_(emit_pushv_reg) ( 4, R_EAX ); 
    if (R_ECX != ret_reg) VG_(emit_pushv_reg) ( 4, R_ECX ); 
    if (R_EDX != ret_reg) VG_(emit_pushv_reg) ( 4, R_EDX ); 
 
-   /* push args (RealRegs or Literals) in reverse order */
-   for (i = argc-1; i >= 0; i--) {
+   /* Args are passed in two groups: (a) via stack (b) via regs.  regparms_n
+      is the number of args passed in regs (maximum 3 for GCC on x86). */
+   
+   /* First push stack args (RealRegs or Literals) in reverse order. */
+   for (i = argc-1; i >= regparms_n; i--) {
       switch (tagv[i]) {
       case RealReg:
          VG_(emit_pushv_reg) ( 4, argv[i] );
+         stack_used += 4;
          break;
       case Literal:
-        /* Use short form if possible */
-        if (argv[i] == VG_(extend_s_8to32) ( argv[i] ))
-           VG_(emit_pushl_lit8) ( VG_(extend_s_8to32)(argv[i]) );
-        else
-           VG_(emit_pushl_lit32)( argv[i] );
-        break;
+         /* Use short form of pushl if possible. */
+         if (argv[i] == VG_(extend_s_8to32) ( argv[i] ))
+            VG_(emit_pushl_lit8) ( VG_(extend_s_8to32)(argv[i]) );
+         else
+            VG_(emit_pushl_lit32)( argv[i] );
+         stack_used += 4;
+         break;
       default:
-        VG_(panic)("VG_(synth_ccall): bad tag");
+         VG_(printf)("tag=%d\n", tagv[i]);
+         VG_(panic)("VG_(synth_ccall): bad tag");
       }
    }
 
+   /* Then setup args in registers (arg[123] --> %e[adc]x;  note order!).
+      If moving values between registers, be careful not to clobber any on
+      the way.  And note that we don't have any spare registers by this
+      stage.  Happily we can use xchgl for this.
+   */
+   switch (regparms_n) {
+
+   /* Trickiest.  Args passed in %eax, %edx, and %ecx.  Lots of
+    * possibilities... */
+   case 3:
+      VG_(panic)("VG_(synth_call): regparms_n==3 as yet unhandled");
+      break;
+
+   /* Less-tricky.  Args passed in %eax and %ecx.  Possibilities:
+     
+      1. arg1 in %edx, arg2 in %eax (thus both RealRegs):
+            xchl %eax, %edx 
+
+      2. arg2 in %eax (and thus a RealReg; arg1 RealReg or Literal)
+         (Nb: order is important):
+            movl arg2,%edx
+            movl arg1,%eax
+
+      3. Otherwise (args RealRegs or Literals):
+            movl arg1,%eax    (if arg1 not already in %eax)
+            movl arg2,%edx    (if arg2 not already in %edx)
+   */
+   case 2:
+      if (RealReg == tagv[0] && RealReg == tagv[1] &&
+          R_EDX   == argv[0] && R_EAX   == argv[1]) {
+         VG_(emit_swapl_reg_EAX) ( R_EDX );
+      } else if (RealReg == tagv[1] && R_EAX == argv[1]) {
+         VG_(emit_movv_reg_reg) ( 4, R_EAX, R_EDX );
+         maybe_emit_movl_litOrReg_reg ( argv[0], tagv[0], R_EAX );
+      } else {
+         maybe_emit_movl_litOrReg_reg ( argv[0], tagv[0], R_EAX );
+         maybe_emit_movl_litOrReg_reg ( argv[1], tagv[1], R_EDX );
+      }
+      break;
+      
+   /* Easy.  Just move arg1 into %eax (if not already in there). */
+   case 1:  
+      maybe_emit_movl_litOrReg_reg ( argv[0], tagv[0], R_EAX );
+      break;
+
+   case 0:
+      break;
+
+   default:
+      VG_(panic)("VG_(synth_call): regparms_n value not in range 0..3");
+   }
+   
    /* Call the function */
    VG_(synth_call) ( False, VG_(helper_offset) ( fn ) );
 
    /* Clear args from stack */
-   if ( 0 != argc )
-      VG_(emit_add_lit_to_esp) ( 4*argc );
+   if (0 != stack_used) VG_(emit_add_lit_to_esp) ( stack_used );
 
-   /* Move return value into ret_reg if necessary */
+   /* Move return value into ret_reg if necessary and not already there */
    if (INVALID_REALREG != ret_reg)
       if (R_EAX != ret_reg)
          VG_(emit_movv_reg_reg) ( 4, R_EAX, ret_reg );
@@ -1650,7 +1726,7 @@ static void synth_handle_esp_assignment ( Int reg )
    UInt argv[] = { reg };
    Tag  tagv[] = { RealReg };
 
-   VG_(synth_ccall) ( (Addr) VGM_(handle_esp_assignment), 1, argv, tagv, 
+   VG_(synth_ccall) ( (Addr) VGM_(handle_esp_assignment), 1, 1, argv, tagv, 
                       INVALID_REALREG );
 }
 
@@ -1959,7 +2035,9 @@ static void emitUInstr ( Int i, UInstr* u )
          vg_assert(u->tag3 == NoValue);
          vg_assert(u->size == 0);
 
-         VG_(synth_ccall) ( u->lit32, 0, NULL, NULL, INVALID_REALREG );
+         // SSS:
+         // vg_assert(u->regparms_n == 0)
+         VG_(synth_ccall) ( u->lit32, 0, 0, NULL, NULL, INVALID_REALREG );
          break;
 
       case CCALL_1_0: {
@@ -1971,7 +2049,10 @@ static void emitUInstr ( Int i, UInstr* u )
          vg_assert(u->tag3 == NoValue);
          vg_assert(u->size == 0);
 
-         VG_(synth_ccall) ( u->lit32, 1, argv, tagv, INVALID_REALREG );
+         // SSS: 
+         // vg_assert(u->regparms_n <= 1);
+         VG_(synth_ccall) ( u->lit32, 1, /* u->regparms_n */1, argv, tagv,
+                            INVALID_REALREG );
          break;
       }
       case CCALL_2_0: {
@@ -1983,7 +2064,10 @@ static void emitUInstr ( Int i, UInstr* u )
          vg_assert(u->tag3 == NoValue);
          vg_assert(u->size == 0);
 
-         VG_(synth_ccall) ( u->lit32, 2, argv, tagv, INVALID_REALREG );
+         // SSS: 
+         // vg_assert(u->regparms_n <= 2);
+         VG_(synth_ccall) ( u->lit32, 2, /* u->regparms_n */2, argv, tagv,
+                            INVALID_REALREG );
          break;
       }
       case CLEAR:
