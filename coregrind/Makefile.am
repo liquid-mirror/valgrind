@@ -26,7 +26,9 @@ EXTRA_DIST = $(val_DATA) \
 	PATCHES_APPLIED ACKNOWLEDGEMENTS \
 	README_KDE3_FOLKS README_PACKAGERS \
 	README_MISSING_SYSCALL_OR_IOCTL TODO dosyms vg_libpthread.vs \
-	valgrind.spec valgrind.spec.in
+	valgrind.spec valgrind.spec.in \
+	vg_cachesim_I1.c vg_cachesim_D1.c vg_cachesim_L2.c vg_cachesim_gen.c \
+	vg_instrument.c
 
 val_PROGRAMS = \
 	valgrind.so \
@@ -107,7 +109,10 @@ noinst_HEADERS = \
         vg_kerneliface.h        \
         vg_include.h            \
         vg_constants.h          \
-        vg_unsafe.h
+        vg_unsafe.h		\
+	vg_memcheck_include.h	\
+	vg_memcheck.h		\
+	vg_instrument.h
 
 MANUAL_DEPS = $(noinst_HEADERS) $(include_HEADERS) 
 
