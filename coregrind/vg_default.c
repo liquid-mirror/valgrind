@@ -44,12 +44,12 @@
  * make it very clear what went wrong! */
 
 static char* fund_panic =
-    "\nExtension error:\n"
+    "\nSkin error:\n"
     "  The skin you have selected is missing one or more of the\n"
     "  required fundamental functions.  Please check it and try again.\n";
 
 static char* nonfund_panic =
-    "\nExtension error:\n"
+    "\nSkin error:\n"
     "  The skin you have selected is missing one or more of the\n"
     "  functions required by the skin's needs.  Please check it and\n"
     "  try again.\n";
@@ -140,10 +140,16 @@ void SK_(discard_basic_block_info)(TTEntry* tte)
    Command line arg template function
    ------------------------------------------------------------------ */
 
-void SKN_(process_cmd_line_options)(UInt argc, UChar* argv[])
+Bool SKN_(process_cmd_line_option)(UChar* argv)
 {
    VG_(printf)(nonfund_panic);
-   VG_(panic)("called SKN_(process_cmd_line_options)");
+   VG_(panic)("called SKN_(process_cmd_line_option)");
+}
+
+Char* SKN_(usage)( void )
+{
+   VG_(printf)(nonfund_panic);
+   VG_(panic)("called SKN_(usage)");
 }
 
 /* ---------------------------------------------------------------------
