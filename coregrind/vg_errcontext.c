@@ -535,7 +535,7 @@ static void load_one_suppressions_file ( Char* filename )
    Bool eof;
    Bool is_unrecognised_suppressions = False;
    Char buf[N_BUF+1];
-   fd = VG_(open_read)( filename );
+   fd = VG_(open)( filename, VKI_O_RDONLY, 0 );
    if (fd == -1) {
       VG_(message)(Vg_UserMsg, "FATAL: can't open suppressions file `%s'", 
                    filename );
