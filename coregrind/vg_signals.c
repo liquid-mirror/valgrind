@@ -597,16 +597,18 @@ void VG_(do__NR_sigaction) ( ThreadId tid )
    return;
 
   bad_signo:
-   VG_(message)(Vg_UserMsg,
-                "Warning: bad signal number %d in __NR_sigaction.", 
-                signo);
+   if (VG_(needs).core_errors)
+      VG_(message)(Vg_UserMsg,
+                   "Warning: bad signal number %d in __NR_sigaction.", 
+                   signo);
    SET_EAX(tid, -VKI_EINVAL);
    return;
 
   bad_sigkill_or_sigstop:
-   VG_(message)(Vg_UserMsg,
-      "Warning: attempt to set %s handler in __NR_sigaction.", 
-      signo == VKI_SIGKILL ? "SIGKILL" : "SIGSTOP" );
+   if (VG_(needs).core_errors)
+      VG_(message)(Vg_UserMsg,
+         "Warning: attempt to set %s handler in __NR_sigaction.", 
+         signo == VKI_SIGKILL ? "SIGKILL" : "SIGSTOP" );
 
    SET_EAX(tid, -VKI_EINVAL);
    return;
