@@ -107,6 +107,7 @@ void clear_AddrCheckError ( AddrCheckError* err_extra )
    err_extra->isWrite   = False;
 }
 
+__attribute__((unused))
 static Bool eq_AcAddrInfo ( VgRes res, AcAddrInfo* ai1, AcAddrInfo* ai2 )
 {
    if (ai1->akind != Undescribed 
