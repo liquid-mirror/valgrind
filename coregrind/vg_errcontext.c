@@ -588,7 +588,7 @@ static void load_one_suppressions_file ( Char* filename )
       }
       //else goto syntax_error;
       else {
-         /* SSS: if we don't recognise the syscall name, ignore entire
+         /* SSS: if we don't recognise the suppression name, ignore entire
           * entry.  Not sure if this is a good long-term approach -- makes
           * it impossible to spot incorrect suppression names?  (apart
           * from the warning given) */
@@ -649,10 +649,10 @@ static void load_one_suppressions_file ( Char* filename )
       supp->next = vg_suppressions;
       vg_suppressions = supp;
    }
-   /* Print out warning about any ignored suppressions */
-   VG_(add_to_msg)("\n");
-   VG_(end_msg)();
-
+   if (is_unrecognised_suppressions) {
+      /* Print out warning about any ignored suppressions */
+      VG_(end_msg)();
+   }
    VG_(close)(fd);
    return;
 
