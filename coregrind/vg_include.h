@@ -1460,8 +1460,12 @@ extern UInt VG_(vcache_vorig)[VG_N_VCACHE];
 
 #define VG_N_VCACHE_MASK (VG_N_VCACHE - 1)
 
-/* These functions are called from generated code, the first 8 via
-   similarly named functions in vg_helpers.S. */
+#define VG_N_VCACHE_LINES_PER_GROUP 2   /* must be a power of 2 */
+#define VG_N_VCACHE_BYTES_PER_GROUP (4 * VG_N_VCACHE_LINES_PER_GROUP)
+
+
+/* These functions are called from generated code, the first 6 via
+   similarly named functions in vg_helpers.S, the FP pair directly. */
 extern void VG_(helperc_STOREV4) ( UInt, Addr );
 extern void VG_(helperc_STOREV2) ( UInt, Addr );
 extern void VG_(helperc_STOREV1) ( UInt, Addr );
@@ -1469,6 +1473,12 @@ extern void VG_(helperc_STOREV1) ( UInt, Addr );
 extern UInt VG_(helperc_LOADV1) ( Addr );
 extern UInt VG_(helperc_LOADV2) ( Addr );
 extern UInt VG_(helperc_LOADV4) ( Addr );
+
+extern void VG_(helperc_LOADV_FP) ( Addr addr, Int size );
+extern void VG_(helperc_STOREV_FP) ( Addr addr, Int size );
+
+/* Generates masks useful for messing with the vcache. */
+extern UInt VG_(mkVCacheWord) ( UInt tagb, UInt entb, UInt a1, UInt a0 );
 
 
 /* ---------------------------------------------------------------------
@@ -1635,6 +1645,16 @@ extern void VG_(helper_value_check2_fail);
 extern void VG_(helper_value_check1_fail);
 extern void VG_(helper_value_check0_fail);
 
+/* Called from generated code using custom calling conventions.  Don't
+   call from C-land! */
+extern void VG_(helpers_STOREV4); /* ( UInt, Addr ) */
+extern void VG_(helpers_STOREV2); /* ( UInt, Addr ) */
+extern void VG_(helpers_STOREV1); /* ( UInt, Addr ) */
+
+extern UInt VG_(helpers_LOADV1); /* ( Addr ) */
+extern UInt VG_(helpers_LOADV2); /* ( Addr ) */
+extern UInt VG_(helpers_LOADV4); /* ( Addr ) */
+
 /* NOT FUNCTIONS; these are bogus RETURN ADDRESS. */
 extern void VG_(signalreturn_bogusRA)( void );
 extern void VG_(pthreadreturn_bogusRA)( void );
@@ -1787,8 +1807,8 @@ extern Int VGOFF_(helpers_LOADV4); /* :: Addr -> UInt -> void */
 extern Int VGOFF_(helpers_LOADV2); /* :: Addr -> UInt -> void */
 extern Int VGOFF_(helpers_LOADV1); /* :: Addr -> UInt -> void */
 
-extern Int VGOFF_(helperc_LOAD_FP);  /* :: Addr -> Int -> void */
-extern Int VGOFF_(helperc_STORE_FP); /* :: Addr -> Int -> void */
+extern Int VGOFF_(helperc_LOADV_FP);  /* :: Addr -> Int -> void */
+extern Int VGOFF_(helperc_STOREV_FP); /* :: Addr -> Int -> void */
 
 
 extern Int VGOFF_(handle_esp_assignment); /* :: Addr -> void */
