@@ -814,17 +814,24 @@ extern Int     VG_(longjmpd_on_signal);
 #define VG_AR_CLIENT_STACKBASE_REDZONE_SZB \
    (VG_AR_CLIENT_STACKBASE_REDZONE_SZW * VKI_BYTES_PER_WORD)
 
+/* Junk to fill up a thread's shadow regs with when shadow regs aren't
+ * being used. */
+#define VG_UNUSED_SHADOW_REG_VALUE  0x27182818
+
+/* What we set a shadow register to when written by SET_EAX and similar
+ * things. */
+extern UInt VG_(written_shadow_reg);
 
 /* Write a value to the client's %EDX (request return value register)
    and set the shadow to indicate it is defined. */
-#define SET_EDX(zztid, zzval)                          \
-   do { VG_(threads)[zztid].m_edx = (zzval);             \
-        VG_(threads)[zztid].sh_edx = VGM_WORD_VALID;     \
+#define SET_EDX(zztid, zzval)                                  \
+   do { VG_(threads)[zztid].m_edx = (zzval);                   \
+        VG_(threads)[zztid].sh_edx = VG_(written_shadow_reg);  \
    } while (0)
 
-#define SET_EAX(zztid, zzval)                          \
-   do { VG_(threads)[zztid].m_eax = (zzval);             \
-        VG_(threads)[zztid].sh_eax = VGM_WORD_VALID;     \
+#define SET_EAX(zztid, zzval)                                  \
+   do { VG_(threads)[zztid].m_eax = (zzval);                   \
+        VG_(threads)[zztid].sh_eax = VG_(written_shadow_reg);  \
    } while (0)
 
 
@@ -1773,10 +1780,6 @@ extern void VGM_(handle_esp_assignment) ( Addr new_espA );
    like netscape. */
 #define VG_PLAUSIBLE_STACK_SIZE 8000000
 
-/* Needed by the pthreads implementation. */
-#define VGM_WORD_VALID     0
-#define VGM_WORD_INVALID   0xFFFFFFFF
-
 /* ---------------------------------------------------------------------
    Exports of vg_syscall_mem.c
    ------------------------------------------------------------------ */
@@ -1793,13 +1796,13 @@ extern void VG_(check_known_blocking_syscall) ( ThreadId tid,
 
 extern Bool VG_(is_kerror) ( Int res );
 
-#define KERNEL_DO_SYSCALL(thread_id, result_lvalue)        \
-         VG_(load_thread_state)(thread_id);                \
-         VG_(copy_baseBlock_to_m_state_static)();          \
-         VG_(do_syscall)();                                \
-         VG_(copy_m_state_static_to_baseBlock)();          \
-         VG_(save_thread_state)(thread_id);                \
-         VG_(threads)[thread_id].sh_eax = VGM_WORD_VALID;  \
+#define KERNEL_DO_SYSCALL(thread_id, result_lvalue)               \
+         VG_(load_thread_state)(thread_id);                       \
+         VG_(copy_baseBlock_to_m_state_static)();                 \
+         VG_(do_syscall)();                                       \
+         VG_(copy_m_state_static_to_baseBlock)();                 \
+         VG_(save_thread_state)(thread_id);                       \
+         VG_(threads)[thread_id].sh_eax = VG_(written_shadow_reg);\
          result_lvalue = VG_(threads)[thread_id].m_eax;
 
 
@@ -1996,6 +1999,9 @@ typedef
        */
       Bool identifies_basic_blocks;
 
+      /* Maintains information about each register? */
+      Bool shadow_regs;
+
       /* Skin defines its own command line options? */
       Bool command_line_options;
       /* Skin defines its own client requests? */
@@ -2142,6 +2148,14 @@ extern Bool SKN_(error_matches_suppression)(ErrContext* ec, Suppression* su);
    ------------------------------------------------------------------ */
 
 extern void SKN_(discard_basic_block_info) ( Addr a, UInt size );
+
+/* ---------------------------------------------------------------------
+   For skins keeping information about registers (VG_(needs).shadow_regs)
+   ------------------------------------------------------------------ */
+
+/* Valid values for general registers and EFLAGS register, for initialising
+ * and updating registers when written in certain places in core. */
+extern void SKN_(written_shadow_regs_values) ( UInt* gen_reg, UInt* eflags );
 
 /* ---------------------------------------------------------------------
    Skin-specific command line options (VG_(needs).command_line_options)
