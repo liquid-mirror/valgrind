@@ -59,6 +59,17 @@ Bool  SK_(clo_check_addrVs)           = True;
 Bool  SK_(clo_cleanup)                = True;
 
 /*------------------------------------------------------------*/
+/*--- Profiling events                                     ---*/
+/*------------------------------------------------------------*/
+
+typedef 
+   enum { 
+      VgpCheckMem = VgpFini+1,
+      VgpSetMem
+   } 
+   VgpSkinCC;
+
+/*------------------------------------------------------------*/
 /*--- Low-level support for memory checking.               ---*/
 /*------------------------------------------------------------*/
 
@@ -2348,13 +2359,6 @@ Char* SK_(usage)(void)
 /*------------------------------------------------------------*/
 /*--- Setup                                                ---*/
 /*------------------------------------------------------------*/
-
-typedef 
-   enum { 
-      VgpCheckMem = VgpFini+1,
-      VgpSetMem
-   } 
-   VgpSkinCC;
 
 void SK_(pre_clo_init)(VgNeeds* needs, VgTrackEvents* track)
 {
