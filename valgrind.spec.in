@@ -40,6 +40,8 @@ make install prefix=$RPM_BUILD_ROOT/usr
 %defattr(-,root,root)
 /usr/include/valgrind.h
 /usr/bin/valgrind
+/usr/bin/cachegrind
+/usr/bin/vg_annotate
 /usr/lib/valgrind/*
 
 %doc
