@@ -417,6 +417,63 @@ void VG_(perform_assumed_nonblocking_syscall) ( ThreadId tid )
 
       /* !!!!!!!!!! New, untested syscalls !!!!!!!!!!!!!!!!!!!!! */
 
+#     if defined(__NR_ptrace)
+      case __NR_ptrace: /* syscall 26 */
+         /* long ptrace (enum __ptrace_request request, pid_t pid, 
+                         void *addr, void *data); ... sort of. */
+         switch (arg1) {
+             case 12:   /* PTRACE_GETREGS */
+                 must_be_writable (tst, "ptrace(getregs)", arg4, 
+                                   sizeof (struct user_regs_struct));
+                 break;
+             case 14:   /* PTRACE_GETFPREGS */
+                 must_be_writable (tst, "ptrace(getfpregs)", arg4, 
+                                   sizeof (struct user_fpregs_struct));
+                 break;
+             case 18:   /* PTRACE_GETFPXREGS */
+                 must_be_writable (tst, "ptrace(getfpxregs)", arg4, 
+                                   sizeof (struct user_fpxregs_struct));
+                 break;
+            case 1: case 2: case 3:    /* PTRACE_PEEK{TEXT,DATA,USER} */
+                 must_be_writable (tst, "ptrace(peek)", arg4, sizeof (long));
+                 break;
+             case 13:   /* PTRACE_SETREGS */
+                 must_be_readable (tst, "ptrace(setregs)", arg4, 
+                                   sizeof (struct user_regs_struct));
+                 break;
+             case 15:   /* PTRACE_SETFPREGS */
+                 must_be_readable (tst, "ptrace(setfpregs)", arg4, 
+                                   sizeof (struct user_fpregs_struct));
+                 break;
+             case 19:   /* PTRACE_SETFPXREGS */
+                 must_be_readable (tst, "ptrace(setfpxregs)", arg4, 
+                                   sizeof (struct user_fpxregs_struct));
+                 break;
+             default:
+                 break;
+         }
+         KERNEL_DO_SYSCALL(tid, res);
+         if (!VG_(is_kerror)(res)) {
+             switch (arg1) {
+                 case 12:  /* PTRACE_GETREGS */
+                     make_readable (arg4, sizeof (struct user_regs_struct));
+                     break;
+                 case 14:  /* PTRACE_GETFPREGS */
+                     make_readable (arg4, sizeof (struct user_fpregs_struct));
+                     break;
+                 case 18:  /* PTRACE_GETFPXREGS */
+                     make_readable (arg4, sizeof (struct user_fpxregs_struct));
+                     break;
+                case 1: case 2: case 3:    /* PTRACE_PEEK{TEXT,DATA,USER} */
+                     make_readable (arg4, sizeof (long));
+                     break;
+                 default:
+                     break;
+             }
+         }
+         break;
+#     endif
+
 #     if defined(__NR_setresgid)
       case __NR_setresgid: /* syscall 170 */
          /* int setresgid(gid_t rgid, gid_t egid, gid_t sgid); */
