@@ -209,8 +209,10 @@ static void vg_init_baseBlock ( void )
                                VG_(compact_helper_addrs));
 
    /* 18 + n_compact_helpers  */
-   VGOFF_(handle_esp_assignment)
-      = alloc_BaB_1_set( (Addr) & VGM_(handle_esp_assignment) );
+   if (VG_(track_events).new_mem_stack_aligned || 
+       VG_(track_events).die_mem_stack_aligned) 
+      VGOFF_(handle_esp_assignment)
+         = alloc_BaB_1_set( (Addr) & VGM_(handle_esp_assignment) );
 
    /* 19 + n_compact_helpers */
    VGOFF_(m_eip) = alloc_BaB(1);
@@ -1185,6 +1187,8 @@ void VG_(main) ( void )
    if (VG_(needs).pthread_errors || VG_(needs).report_errors)
       VG_(show_all_errors)();
 
+   VG_(clientmalloc_done)();
+
    SK_(fini)();
 
    VG_(do_sanity_checks)( True /*include expensive checks*/ );
@@ -1201,9 +1205,6 @@ void VG_(main) ( void )
       VG_(message)(Vg_DebugMsg, 
          "------ Valgrind's ExeContext management stats follow ------" );
       VG_(show_ExeContext_stats)();
-      VG_(message)(Vg_DebugMsg, 
-         "------ Valgrind's client block stats follow ---------------" );
-      VG_(show_client_block_stats)();     // SSS: memcheck specific
    }
  
 #  ifdef VG_PROFILE
