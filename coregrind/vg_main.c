@@ -641,11 +641,11 @@ static void usage ( void )
 
 static void process_cmd_line_options ( void )
 {
-   UChar* argv[M_VG_CMDLINE_OPTS];
-   UInt   argc;
-   UChar* p;
-   UChar* str;
-   Int    i, eventually_logfile_fd, ctr;
+   Char* argv[M_VG_CMDLINE_OPTS];
+   UInt  argc;
+   Char* p;
+   Char* str;
+   Int   i, eventually_logfile_fd, ctr;
 
 #  define ISSPACE(cc)      ((cc) == ' ' || (cc) == '\t' || (cc) == '\n')
 #  define STREQ(s1,s2)     (0==VG_(strcmp_ws)((s1),(s2)))
