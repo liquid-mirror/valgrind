@@ -1,5 +1,9 @@
 ## Process this file with automake to produce Makefile.in
 
+##---------------------------------------------------------------------------
+## Cachegrind ones.
+##---------------------------------------------------------------------------
+
 noinst_PROGRAMS = \
 	dlclose fpu-28-108 myprint.so
 

@@ -8,7 +8,8 @@
 
 noinst_PROGRAMS = \
 	erringfds malloc3 sigkill \
-	pth_cancel2 pth_cvsimple pth_empty pth_mutexspeed pth_once
+	pth_atfork1 pth_cancel2 pth_cvsimple pth_empty \
+	pth_mutexspeed pth_once
 
 CFLAGS   = $(WERROR) -Winline -Wall -Wshadow -g
 CXXFLAGS = $(CFLAGS)
@@ -19,6 +20,8 @@ malloc3_SOURCES 	= malloc3.c
 sigkill_SOURCES 	= sigkill.c
 
 # Pthread ones
+pth_atfork1_SOURCES	= pth_atfork1.c
+pth_atfork1_LDADD	= -lpthread
 pth_cancel2_SOURCES	= pth_cancel2.c
 pth_cancel2_LDADD	= -lpthread
 pth_cvsimple_SOURCES	= pth_cvsimple.c
