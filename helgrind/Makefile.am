@@ -1,9 +1,5 @@
 
 
-## I tried to get rid of the bogus warnings, but libpthread.so defeated me...
-## how to not use CFLAGS when doing linking?
-
-
 SUBDIRS = demangle . docs tests
 
 CFLAGS = $(WERROR) -DVG_LIBDIR="\"$(libdir)"\" \
@@ -132,37 +128,37 @@ vg_clientfuncs.o: vg_clientfuncs.c $(MANUAL_DEPS)
 vg_libpthread.o: vg_libpthread.c $(MANUAL_DEPS)
 	$(COMPILE) -fno-omit-frame-pointer -c $<
 
-#valgrind.so$(EXEEXT): $(valgrind_so_OBJECTS)
-#	$(CC) $(CFLAGS) $(LDFLAGS) -shared -o valgrind.so \
-#		$(valgrind_so_OBJECTS) $(valgrind_so_LDADD)
-#
-#valgrinq.so$(EXEEXT): $(valgrinq_so_OBJECTS)
-#	$(CC) $(CFLAGS) -shared -o valgrinq.so $(valgrinq_so_OBJECTS)
-#
-libpthread.so$(EXEEXT): $(libpthread_so_OBJECTS) $(srcdir)/vg_libpthread.vs
-	$(CC) -Wall -Werror -g -O -shared -fpic -o libpthread.so \
-		$(libpthread_so_OBJECTS) \
-		-Wl,-version-script $(srcdir)/vg_libpthread.vs
+##valgrind.so$(EXEEXT): $(valgrind_so_OBJECTS)
+##	$(CC) $(CFLAGS) $(LDFLAGS) -shared -o valgrind.so \
+##		$(valgrind_so_OBJECTS) $(valgrind_so_LDADD)
 
-#vgskin_memcheck.so$(EXEEXT): $(vgskin_memcheck_so_OBJECTS)
-#	$(CC) $(CFLAGS) $(LDFLAGS) -shared -o vgskin_memcheck.so \
-#		$(vgskin_memcheck_so_OBJECTS)
+##valgrinq.so$(EXEEXT): $(valgrinq_so_OBJECTS)
+##	$(CC) $(CFLAGS) -shared -o valgrinq.so $(valgrinq_so_OBJECTS)
 
-#vgskin_cachesim.so$(EXEEXT): $(vgskin_cachesim_so_OBJECTS)
-#	$(CC) $(CFLAGS) $(LDFLAGS) -shared -o vgskin_cachesim.so \
-#		$(vgskin_cachesim_so_OBJECTS)
+##libpthread.so$(EXEEXT): $(libpthread_so_OBJECTS) $(srcdir)/vg_libpthread.vs
+##	$(CC) -Wall -Werror -g -O -shared -fpic -o libpthread.so \
+##		$(libpthread_so_OBJECTS) \
+##		-Wl,-version-script $(srcdir)/vg_libpthread.vs
 
-#vgskin_eraser.so$(EXEEXT): $(vgskin_eraser_so_OBJECTS)
-#	$(CC) $(CFLAGS) $(LDFLAGS) -shared -o vgskin_eraser.so \
-#		$(vgskin_eraser_so_OBJECTS)
+##vgskin_memcheck.so$(EXEEXT): $(vgskin_memcheck_so_OBJECTS)
+##	$(CC) $(CFLAGS) $(LDFLAGS) -shared -o vgskin_memcheck.so \
+##		$(vgskin_memcheck_so_OBJECTS)
 
-#vgskin_none.so$(EXEEXT): $(vgskin_none_so_OBJECTS)
-#	$(CC) $(CFLAGS) $(LDFLAGS) -shared -o vgskin_none.so \
-#		$(vgskin_none_so_OBJECTS)
+##vgskin_cachesim.so$(EXEEXT): $(vgskin_cachesim_so_OBJECTS)
+##	$(CC) $(CFLAGS) $(LDFLAGS) -shared -o vgskin_cachesim.so \
+##		$(vgskin_cachesim_so_OBJECTS)
 
-#vgskin_lackey.so$(EXEEXT): $(vgskin_lackey_so_OBJECTS)
-#	$(CC) $(CFLAGS) $(LDFLAGS) -shared -o vgskin_lackey.so \
-#		$(vgskin_lackey_so_OBJECTS)
+##vgskin_eraser.so$(EXEEXT): $(vgskin_eraser_so_OBJECTS)
+##	$(CC) $(CFLAGS) $(LDFLAGS) -shared -o vgskin_eraser.so \
+##		$(vgskin_eraser_so_OBJECTS)
+
+##vgskin_none.so$(EXEEXT): $(vgskin_none_so_OBJECTS)
+##	$(CC) $(CFLAGS) $(LDFLAGS) -shared -o vgskin_none.so \
+##		$(vgskin_none_so_OBJECTS)
+
+##vgskin_lackey.so$(EXEEXT): $(vgskin_lackey_so_OBJECTS)
+##	$(CC) $(CFLAGS) $(LDFLAGS) -shared -o vgskin_lackey.so \
+##		$(vgskin_lackey_so_OBJECTS)
 
 install-exec-hook:
 	$(mkinstalldirs) $(DESTDIR)$(valdir)
