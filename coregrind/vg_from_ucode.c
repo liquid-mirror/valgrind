@@ -1269,7 +1269,7 @@ void emit_three_regs_or_lits_args_setup ( UInt argv[], Tag tagv[],
  */
 void VG_(synth_ccall) ( Addr fn, Int argc, Int regparms_n, UInt argv[],
                         Tag tagv[], Int ret_reg,
-                        RegsLive regs_live_before, RegsLive regs_live_after )
+                        RRegSet regs_live_before, RRegSet regs_live_after )
 {
    Int  i;
    Int  stack_used = 0;
@@ -1286,8 +1286,8 @@ void VG_(synth_ccall) ( Addr fn, Int argc, Int regparms_n, UInt argv[],
       ranges, but you miss this if you don't consider what happens during
       the UInstr.) */
 #  define PRESERVE_REG(realReg)   \
-   (IS_REG_LIVE(VG_(realRegNumToRank)(realReg), regs_live_before) &&   \
-    IS_REG_LIVE(VG_(realRegNumToRank)(realReg), regs_live_after)  &&   \
+   (IS_RREG_LIVE(VG_(realRegNumToRank)(realReg), regs_live_before) &&   \
+    IS_RREG_LIVE(VG_(realRegNumToRank)(realReg), regs_live_after)  &&   \
     ret_reg != realReg)
 
    preserve_eax = PRESERVE_REG(R_EAX);
@@ -1922,8 +1922,8 @@ static void synth_WIDEN_signed ( Int sz_src, Int sz_dst, Int reg )
 
 
 static void synth_handle_esp_assignment ( Int i, Int reg,
-                                          RegsLive regs_live_before,
-                                          RegsLive regs_live_after )
+                                          RRegSet regs_live_before,
+                                          RRegSet regs_live_after )
 {
    UInt argv[] = { reg };
    Tag  tagv[] = { RealReg };
@@ -1947,7 +1947,7 @@ static Bool writeFlagUse ( UInstr* u )
    return (u->flags_w != FlagsEmpty); 
 }
 
-static void emitUInstr ( Int i, UInstr* u, RegsLive regs_live_before )
+static void emitUInstr ( Int i, UInstr* u, RRegSet regs_live_before )
 {
    Int old_emitted_code_used;
    
