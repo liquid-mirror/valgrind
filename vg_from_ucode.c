@@ -951,6 +951,17 @@ static void emit_jcondshort_delta ( Condcode cond, Int delta )
                    VG_(nameCondcode)(cond), delta );
 }
 
+/* Same, but unconditional. */
+static void emit_jshort_delta ( Int delta )
+{
+   vg_assert(delta >= -128 && delta <= 127);
+   newEmit();
+   emitB ( 0xEB );
+   emitB ( (UChar)delta );
+   if (dis)
+      VG_(printf)( "\n\t\tjmp\t%%eip+%d\n", delta );
+}
+
 static void emit_get_eflags ( void )
 {
    Int off = 4 * VGOFF_(m_eflags);
@@ -1034,7 +1045,8 @@ static void emit_lea_sib_reg ( UInt lit, Int scale,
                        nameIReg(4,reg) );
 }
 
-static void emit_AMD_prefetch_reg ( Int reg )
+static __attribute__((unused))
+       void emit_AMD_prefetch_reg ( Int reg )
 {
    newEmit();
    emitB ( 0x0F );
@@ -1043,6 +1055,18 @@ static void emit_AMD_prefetch_reg ( Int reg )
    if (dis)
       VG_(printf)("\n\t\tamd-prefetch (%s)\n", nameIReg(4,reg) );
 }
+
+
+static void emit_cmpl_reg_offregmem ( Int reg, Int off, Int memreg )
+{
+   newEmit();
+   emitB ( 0x39 ); /* cmp Gv, Ev */
+   emit_amode_offregmem_reg ( off, memreg, reg );
+   if (dis)
+      VG_(printf)( "\n\t\tcmpl\t%s, 0x%x(%s)\n", 
+                   nameIReg(4,reg), off, nameIReg(4,memreg) );
+}
+
 
 /*----------------------------------------------------*/
 /*--- Instruction synthesisers                     ---*/
@@ -1663,6 +1687,192 @@ static Int shadowFlagsOffset ( void )
 }
 
 
+/* Make a word of the following form 
+      
+      30-N    N
+      A--A B--B CD
+
+      where: N = VG_N_VCACHE_BITS
+             A = tagb
+             B = entb
+             C = a1
+             D = a0
+*/
+static
+UInt mkVCacheWord ( UInt tagb, UInt entb, UInt a1, UInt a0 )
+{
+   UInt aaa, bbb, www;
+
+   vg_assert(tagb <= 1);
+   vg_assert(entb <= 1);
+   vg_assert(a1 <= 1);
+   vg_assert(a0 <= 1);
+
+   aaa = tagb==0 ? 0 : ((1 << (30 - VG_N_VCACHE_BITS)) - 1);
+   bbb = entb==0 ? 0 : ((1 << VG_N_VCACHE_BITS) - 1);
+   
+   www = (aaa << (VG_N_VCACHE_BITS+2));
+   www |= (bbb << 2);
+   www |= ((a1 & 1) << 1);
+   www |= (a0 & 1);
+
+   return www;
+}
+
+
+static 
+void synth_LOADV ( Int sz, Int a_reg, Int tv_reg )
+{
+   /* This assertion is completely critical for the code generation
+      scheme which follows.  It's also pretty much guaranteed because
+      in all cases I can think of, the a_reg will be kept live past
+      this point because its value is needed to do the real data load.
+      That means that tv_reg must be a different reg anyway (unless
+      the register allocator is b0rked).
+
+      If a_reg should ever == tv_reg for some reason, the plan is to
+      select a new temp reg equal to neither, preserve it with
+      push/pop round this whole code block, move a_reg into it
+      immediately following the push, and treat it as a_reg for this
+      exercise.  */
+   vg_assert(a_reg != tv_reg);
+
+   /* We use %edi as the one-and-only temporary. */
+
+   if (sz == 4) {
+      /* 
+         We generate: 
+                              30-N    N  2
+           D_offset = a_reg & 0--0 1--1 00
+           V_offset = D_offset
+           if (a_reg == vcache_discr[D_offset])
+              tv_reg = vcache_vbits[V_offset]
+           else 
+              tv_reg = helpers_LOADV4(a_reg)
+
+         Like this:
+
+           movl  a_reg,  %edi
+           andl  $0--0 1--1 00,  %edi         -- edi = D_offset
+           cmpl  a_reg, vcache_discr(%edi)    -- Z==1 if valid
+           movl  vcache_vbits(%edi), tv_reg   -- get V bits regardless
+           jz    VALID
+           -- invalid case follows
+           pushl a_reg
+           call  * off_helper_LOADV4(%ebp)
+           popl  tv_reg
+          VALID:
+
+         Which gets the V bits into tv_reg in 5 instructions in most cases. 
+      */
+      emit_movv_reg_reg ( 4, a_reg, R_EDI );
+      emit_nonshiftopv_lit_reg ( 4, AND, mkVCacheWord(0,1, 0,0), R_EDI );
+      emit_cmpl_reg_offregmem ( a_reg, (Int)&VG_(vcache_discr), R_EDI );
+      emit_movv_offregmem_reg ( 4, (Int)&VG_(vcache_vbits), R_EDI, tv_reg );
+      emit_jcondshort_delta ( CondZ, 1+3+1 /* length of the next 3 insns */);
+      /* 1 */ emit_pushv_reg ( 4, a_reg );
+      /* 3 */ synth_call_baseBlock_method ( True, VGOFF_(helpers_LOADV4) );
+      /* 1 */ emit_popv_reg ( 4, tv_reg );
+
+      return;
+   }
+
+   if (sz == 1) {
+      /* 
+         We generate: 
+                              30-N    N  2
+           D_offset = a_reg & 0--0 1--1 00
+           V_offset = a_reg & 0--0 1--1 11
+           if ((a_reg & 1--1 1--1 00) == vcache_discr[D_offset])
+              tv_reg = vcache_vbits[V_offset]
+           else 
+              tv_reg = helpers_LOADV1(a_reg)
+
+         Like this -- somewhat round the houses in order to only use a
+         single temporary reg.  More complex than the sz==4 case
+         because D_offset is not the same as V_offset, and because the
+         a_reg value has to be masked before it can be compared to the
+         D[] entry.
+
+           movl   a_reg,  %edi
+           andl   $0--0 1--1 11, %edi          -- edi = V_offset
+           movzbl vcache_vbits(%edi), tv_reg   -- get V bits regardless
+           andl   $1--1 1--1 00, %edi          -- edi = D_offset
+           movl   vcache_discr(%edi), %edi     -- edi = D[D_offset]
+           xorl   a_reg, %edi                  -- edi = D[D_offset] ^ a
+           andl   $1--1 1--1 00, %edi  -- mask off lowest 2 bits of xor
+                                               -- Z==1 if valid
+           jz    VALID
+           -- invalid case follows
+           pushl a_reg
+           call  * off_helper_LOADV1(%ebp)
+           popl  tv_reg
+          VALID:
+
+         Which gets the V bits into tv_reg in 8 instructions in most cases.  */
+      emit_movv_reg_reg ( 4, a_reg, R_EDI );
+      emit_nonshiftopv_lit_reg ( 4, AND, mkVCacheWord(0,1, 1,1), R_EDI );
+      emit_movzbl_offregmem_reg ( (Int)&VG_(vcache_vbits), R_EDI, tv_reg );
+      emit_nonshiftopv_lit_reg ( 4, AND, mkVCacheWord(1,1, 0,0), R_EDI );
+      emit_movv_offregmem_reg ( 4, (Int)&VG_(vcache_discr), R_EDI, R_EDI );
+      emit_nonshiftopv_reg_reg ( 4, XOR, a_reg, R_EDI );
+      emit_nonshiftopv_lit_reg ( 4, AND, mkVCacheWord(1,1, 0,0), R_EDI );
+      emit_jcondshort_delta ( CondZ, 1+3+1 /* length of the next 3 insns */);
+      /* 1 */ emit_pushv_reg ( 4, a_reg );
+      /* 3 */ synth_call_baseBlock_method ( True, VGOFF_(helpers_LOADV1) );
+      /* 1 */ emit_popv_reg ( 4, tv_reg );
+
+      return;
+   }
+
+   if (sz == 2) {
+      /* 
+         Identical to the sz==1 case, except for slightly different
+         values in the bit masks.  We generate:
+                              30-N    N  2
+           D_offset = a_reg & 0--0 1--1 00
+           V_offset = a_reg & 0--0 1--1 10
+           if ((a_reg & 1--1 1--1 01) == vcache_discr[D_offset])
+              tv_reg = vcache_vbits[V_offset]
+           else 
+              tv_reg = helpers_LOADV1(a_reg)
+
+         Like this:
+
+           movl   a_reg,  %edi
+           andl   $0--0 1--1 10, %edi          -- edi = V_offset
+           movzbl vcache_vbits(%edi), tv_reg   -- get V bits regardless
+           andl   $1--1 1--1 00, %edi          -- edi = D_offset
+           movl   vcache_discr(%edi), %edi     -- edi = D[D_offset]
+           xorl   a_reg, %edi                  -- edi = D[D_offset] ^ a
+           andl   $1--1 1--1 01, %edi  -- mask off lowest 2 bits of xor
+                                               -- Z==1 if valid
+           jz    VALID
+           -- invalid case follows
+           pushl a_reg
+           call  * off_helper_LOADV2(%ebp)
+           popl  tv_reg
+          VALID:
+      */
+      emit_movv_reg_reg ( 4, a_reg, R_EDI );
+      emit_nonshiftopv_lit_reg ( 4, AND, mkVCacheWord(0,1, 1,0), R_EDI );
+      emit_movzbl_offregmem_reg ( (Int)&VG_(vcache_vbits), R_EDI, tv_reg );
+      emit_nonshiftopv_lit_reg ( 4, AND, mkVCacheWord(1,1, 0,0), R_EDI );
+      emit_movv_offregmem_reg ( 4, (Int)&VG_(vcache_discr), R_EDI, R_EDI );
+      emit_nonshiftopv_reg_reg ( 4, XOR, a_reg, R_EDI );
+      emit_nonshiftopv_lit_reg ( 4, AND, mkVCacheWord(1,1, 0,1), R_EDI );
+      emit_jcondshort_delta ( CondZ, 1+3+1 /* length of the next 3 insns */);
+      /* 1 */ emit_pushv_reg ( 4, a_reg );
+      /* 3 */ synth_call_baseBlock_method ( True, VGOFF_(helpers_LOADV2) );
+      /* 1 */ emit_popv_reg ( 4, tv_reg );
+
+      return;
+   }
+
+   VG_(panic)("synth_LOADV");
+}
+
+#if 0
 static void synth_LOADV ( Int sz, Int a_reg, Int tv_reg )
 {
    Int i, j, helper_offw;
@@ -1700,8 +1910,238 @@ static void synth_LOADV ( Int sz, Int a_reg, Int tv_reg )
       }
    }
 }
+#endif
 
 
+static
+void synth_STOREV ( Int sz,
+                    Int tv_tag, Int tv_val,
+                    Int a_reg )
+{
+   /* Stay sane ... */
+   vg_assert(tv_tag == RealReg || tv_tag == Literal);
+   if (tv_tag == RealReg) 
+      vg_assert(tv_val != a_reg);
+
+   /* As with the LOADV cases, we use %edi as the one-and-only
+      temporary.  These cases are complicated by the fact that the
+      value to be stored (tv_val) can be either a literal or a
+      register number. */
+
+   if (sz == 4) {
+      /* 
+         We generate: 
+                              30-N    N  2
+           D_offset = a_reg & 0--0 1--1 00
+           V_offset = D_offset
+           if (a_reg == vcache_discr[D_offset])
+              vcache_vbits[V_offset] = tv_val
+           else 
+              helpers_LOADV4(a_reg, tv_val)
+
+         Like this:
+
+           movl  a_reg,  %edi
+           andl  $0--0 1--1 00, %edi          -- edi = D_offset
+           cmpl  a_reg, vcache_discr(%edi)    -- Z==1 if valid
+           jz    VALID
+           -- invalid case follows
+           pushl a_reg
+	   pushl tv_val
+           call  * off_helper_LOADV4(%ebp)
+           jmp   END
+         VALID:
+           movl  tv_val, vcache_vbits(%edi)
+         END:
+
+      */
+      emit_movv_reg_reg ( 4, a_reg, R_EDI );
+      emit_nonshiftopv_lit_reg ( 4, AND, mkVCacheWord(0,1, 0,0), R_EDI );
+      emit_cmpl_reg_offregmem ( a_reg, (Int)&VG_(vcache_discr), R_EDI );
+      emit_jcondshort_delta ( CondZ, 
+         1 /* push reg */
+         + (tv_tag == RealReg ? 1 /* reg */ : 5 /* lit32 */ )
+         + 3 /* call */
+         + 2 /* jmp short */ );
+
+      /* INVALID CASE FOLLOWS */
+      /* 1 */ emit_pushv_reg ( 4, a_reg );
+      /* 1 or 5 */ 
+      if (tv_tag == RealReg) 
+         emit_pushv_reg ( 4, tv_val );
+      else 
+         emit_pushl_lit32 ( tv_val );
+      /* 3 */ synth_call_baseBlock_method ( True, VGOFF_(helpers_STOREV4) );
+      /* 2 */ emit_jshort_delta ( tv_tag == RealReg ? 6 : 10 );
+
+      /* VALID: */
+      if (tv_tag == RealReg)
+         /* 6 */ emit_movv_reg_offregmem ( 
+                    4, tv_val, (Int)&VG_(vcache_vbits), R_EDI );
+      else
+         /* 10 */ emit_movv_lit_offregmem( 
+                    4, tv_val, (Int)&VG_(vcache_vbits), R_EDI );
+
+      /* END: */
+      return;
+   }
+
+   if (sz == 1) {
+      /* 
+         We generate: 
+                              30-N    N  2
+           D_offset = a_reg & 0--0 1--1 00
+           V_offset = a_reg & 0--0 1--1 11
+           if ((a_reg & 1--1 1--1 00) == vcache_discr[D_offset])
+              vcache_vbits[V_offset] = tv_val
+           else 
+              helpers_LOADV1(a_reg, tv_val)
+
+         Like this:
+
+           movl  a_reg,  %edi
+           andl  $0--0 1--1 00, %edi          -- edi = D_offset
+           movl  vcache_discr(%edi), %edi     -- edi = D[D_offset]
+           xorl  a_reg, %edi                  -- edi = D[D_offset] ^ a
+           andl  $1--1 1--1 00, %edi -- mask off lowest 2 bits of diff
+                                              -- Z==1 if valid
+           jz    VALID
+           -- invalid case follows
+           pushl a_reg
+	   pushl tv_val
+           call  * off_helper_LOADV1(%ebp)
+           jmp   END
+         VALID:
+           movl  a_reg, %edi
+           andl  $0--0 1--1 11, %edi          -- edi = V_offset
+           movb  tv_val, vcache_vbits(%edi)
+         END:
+
+      */
+      emit_movv_reg_reg ( 4, a_reg, R_EDI );
+      emit_nonshiftopv_lit_reg ( 4, AND, mkVCacheWord(0,1, 0,0), R_EDI );
+      emit_movv_offregmem_reg ( 4, (Int)&VG_(vcache_discr), R_EDI, R_EDI );
+      emit_nonshiftopv_reg_reg ( 4, XOR, a_reg, R_EDI );
+      emit_nonshiftopv_lit_reg ( 4, AND, mkVCacheWord(1,1, 0,0), R_EDI );
+      emit_jcondshort_delta ( CondZ, 
+         /* size of invalid section is ... */
+         1 /* push reg */
+         + (tv_tag == RealReg ? 1 /* reg */ : 5 /* lit32 */ )
+         + 3 /* call */
+         + 2 /* jmp short */ );
+
+      /* INVALID CASE FOLLOWS */
+      /* 1 */ emit_pushv_reg ( 4, a_reg );
+      /* 1 or 5 */ 
+      if (tv_tag == RealReg) 
+         emit_pushv_reg ( 4, tv_val );
+      else 
+         emit_pushl_lit32 ( tv_val );
+      /* 3 */ synth_call_baseBlock_method ( True, VGOFF_(helpers_STOREV1) );
+      /* 2 */ emit_jshort_delta ( 
+                 /* size of valid section is ... */
+                 2 /* movl reg,reg */
+                 + 6 /* andl lit32, reg */
+                 + (tv_tag == RealReg 
+                      ? (tv_val < 4 ? 6 : 7)
+                      : 10)
+              );
+
+      /* VALID: */
+      emit_movv_reg_reg ( 4, a_reg, R_EDI );
+      emit_nonshiftopv_lit_reg ( 4, AND, mkVCacheWord(0,1, 1,1), R_EDI );
+      if (tv_tag == RealReg)
+	/* 6 or 8 */
+        synth_mov_reg_offregmem ( 
+                    1, tv_val, (Int)&VG_(vcache_vbits), R_EDI );
+      else
+         /* 7 */ emit_movb_lit_offregmem( 
+                    tv_val, (Int)&VG_(vcache_vbits), R_EDI );
+
+      /* END: */
+      return;
+   }
+
+   if (sz == 2) {
+      /* 
+         Identical to sz==1 case, except with slightly different
+         bitmasks, and we don't have to use synth_mov_reg_offregmem to
+         avoid problems with byte stores.  We generate:
+
+                              30-N    N  2
+           D_offset = a_reg & 0--0 1--1 00
+           V_offset = a_reg & 0--0 1--1 10
+           if ((a_reg & 1--1 1--1 01) == vcache_discr[D_offset])
+              vcache_vbits[V_offset] = tv_val
+           else 
+              helpers_LOADV2(a_reg, tv_val)
+
+         Like this:
+
+           movl  a_reg,  %edi
+           andl  $0--0 1--1 00, %edi          -- edi = D_offset
+           movl  vcache_discr(%edi), %edi     -- edi = D[D_offset]
+           xorl  a_reg, %edi                  -- edi = D[D_offset] ^ a
+           andl  $1--1 1--1 01, %edi -- mask off lowest bit 1 of diff
+                                              -- Z==1 if valid
+           jz    VALID
+           -- invalid case follows
+           pushl a_reg
+	   pushl tv_val
+           call  * off_helper_LOADV2(%ebp)
+           jmp   END
+         VALID:
+           movl  a_reg, %edi
+           andl  $0--0 1--1 110, %edi          -- edi = V_offset
+           movw  tv_val, vcache_vbits(%edi)
+         END:
+
+      */
+      emit_movv_reg_reg ( 4, a_reg, R_EDI );
+      emit_nonshiftopv_lit_reg ( 4, AND, mkVCacheWord(0,1, 0,0), R_EDI );
+      emit_movv_offregmem_reg ( 4, (Int)&VG_(vcache_discr), R_EDI, R_EDI );
+      emit_nonshiftopv_reg_reg ( 4, XOR, a_reg, R_EDI );
+      emit_nonshiftopv_lit_reg ( 4, AND, mkVCacheWord(1,1, 0,1), R_EDI );
+      emit_jcondshort_delta ( CondZ, 
+         /* size of invalid section is ... */
+         1 /* push reg */
+         + (tv_tag == RealReg ? 1 /* reg */ : 5 /* lit32 */ )
+         + 3 /* call */
+         + 2 /* jmp short */ );
+
+      /* INVALID CASE FOLLOWS */
+      /* 1 */ emit_pushv_reg ( 4, a_reg );
+      /* 1 or 5 */ 
+      if (tv_tag == RealReg) 
+         emit_pushv_reg ( 4, tv_val );
+      else 
+         emit_pushl_lit32 ( tv_val );
+      /* 3 */ synth_call_baseBlock_method ( True, VGOFF_(helpers_STOREV2) );
+      /* 2 */ emit_jshort_delta ( 
+                 /* size of valid section is ... */
+                 2 /* movl reg,reg */
+                 + 6 /* andl lit32, reg */
+                 + (tv_tag == RealReg ? 7 : 9)
+              );
+
+      /* VALID: */
+      emit_movv_reg_reg ( 4, a_reg, R_EDI );
+      emit_nonshiftopv_lit_reg ( 4, AND, mkVCacheWord(0,1, 1,1), R_EDI );
+      if (tv_tag == RealReg)
+         /* 7 */ emit_movv_reg_offregmem ( 
+                    2, tv_val, (Int)&VG_(vcache_vbits), R_EDI );
+      else
+         /* 9 */ emit_movv_lit_offregmem( 
+                    2, tv_val, (Int)&VG_(vcache_vbits), R_EDI );
+
+      /* END: */
+      return;
+   }
+
+   VG_(panic)("synth_STOREV");
+}
+
+#if 0
 static void synth_STOREV ( Int sz,
                            Int tv_tag, Int tv_val,
                            Int a_reg )
@@ -1743,6 +2183,7 @@ static void synth_STOREV ( Int sz,
       emit_popv_reg ( 4, j );
    }
 }
+#endif
 
 
 static void synth_WIDEN_signed ( Int sz_src, Int sz_dst, Int reg )
@@ -1967,8 +2408,8 @@ static void synth_fpu_mem_check_actions ( Bool isWrite,
                                           Int size, Int a_reg )
 {
    Int helper_offw
-     = isWrite ? VGOFF_(fpu_write_check)
-               : VGOFF_(fpu_read_check);
+     = isWrite ? VGOFF_(helperc_STORE_FP)
+               : VGOFF_(helperc_LOAD_FP);
    emit_pushal();
    emit_pushl_lit8 ( size );
    emit_pushv_reg ( 4, a_reg );
@@ -2073,12 +2514,10 @@ static void synth_TAG1_op ( VgTagOp op, Int reg )
          emit_nonshiftopv_lit_reg(4, OR, 0xFFFFFF00, reg);
          break;
 
-      /* We steal %ebp (a non-allocable reg) as a temporary:
-            pushl %ebp
-            movl %reg, %ebp
-            negl %ebp
-            orl %ebp, %reg
-            popl %ebp
+      /* We use %edi, our one-and-only scratch register, as a temporary:
+            movl %reg, %edi
+            negl %edi
+            orl  %edi, %reg
          This sequence turns out to be correct regardless of the 
          operation width.
       */
@@ -2273,8 +2712,6 @@ static void emitUInstr ( Int i, UInstr* u )
          vg_assert(VG_(clo_instrument));
          vg_assert(u->tag1 == RealReg);
          vg_assert(u->tag2 == RealReg);
-         if (0 && VG_(clo_instrument))
-            emit_AMD_prefetch_reg ( u->val1 );
          synth_LOADV ( u->size, u->val1, u->val2 );
          break;
       }

@@ -31,7 +31,9 @@
 
 #include "vg_constants.h"
 
-/* ------------------ SIMULATED CPU HELPERS ------------------ */
+
+/* --------------------- SIMULATED CPU HELPERS --------------------- */
+
 /* A couple of stubs for returns which we want to catch: signal
    returns and pthread returns.  In the latter case, the thread's
    return value is in %EAX, so we pass this as the first argument
@@ -97,25 +99,96 @@ pthreadreturn_bogusRA_panic_msg:
 	
 
 
+/* ----------------------- REAL CPU HELPERS ----------------------- */
 
-	
-/* ------------------ REAL CPU HELPERS ------------------ */
-/* The rest of this lot run on the real CPU. */
-	
-/* Various helper routines, for instructions which are just too
-   darn tedious for the JITter to output code in-line:
-	
-	* integer division
-	* integer multiplication
-        * setting and getting obscure eflags
-	* double-length shifts
-	
-   All routines use a standard calling convention designed for
-   calling from translations, in which the incoming args are
-   underneath the return address, the callee saves _all_ registers,
-   and the incoming parameters can be modified, to return results.
+/* ------------------ VCACHE MISSES ------------------ */
+
+/* Front-line handlers for handling vcache misses in the inline vcache
+   handling code.  These just pass the call along to the relevant C
+   helper.  Their purpose is to minimise the size of the code
+   needed to call the C helper by using special calling
+   conventions.  Nothing terribly clever.
 */
 
+/* Pass LOADV calls through to C-land.
+   On entry:
+	addr, replaced by result
+	RA   <- %esp
+*/
+.global VG_(helpers_LOADV4)
+VG_(helpers_LOADV4):
+	pushal
+	movl	36(%esp), %eax
+	pushl	%eax
+	call	VG_(helperc_LOADV4)
+	addl	$4, %esp
+	movl	%eax, 36(%esp)
+	ret
+
+.global VG_(helpers_LOADV1)
+VG_(helpers_LOADV1):
+	pushal
+	movl	36(%esp), %eax
+	pushl	%eax
+	call	VG_(helperc_LOADV1)
+	addl	$4, %esp
+	movl	%eax, 36(%esp)
+	ret
+
+.global VG_(helpers_LOADV2)
+VG_(helpers_LOADV2):
+	pushal
+	movl	36(%esp), %eax
+	pushl	%eax
+	call	VG_(helperc_LOADV2)
+	addl	$4, %esp
+	movl	%eax, 36(%esp)
+	ret
+
+
+/* Pass STOREV calls through to C-land.
+   On entry:
+	addr to store at
+	vbits to store
+	RA   <- %esp
+   On exit we remove the two arg words from the stack, to avoid the
+   caller having to do so.
+*/
+.global VG_(helpers_STOREV4)
+VG_(helpers_STOREV4):
+	pushal
+	movl	40(%esp), %eax		# addr
+	pushl	%eax
+	movl	40(%esp), %eax		# value
+	call	VG_(helperc_STOREV4)
+	addl	$8, %esp
+	popal
+	ret	$8
+
+.global VG_(helpers_STOREV1)
+VG_(helpers_STOREV1):
+	pushal
+	movl	40(%esp), %eax		# addr
+	pushl	%eax
+	movl	40(%esp), %eax		# value
+	call	VG_(helperc_STOREV1)
+	addl	$8, %esp
+	popal
+	ret	$8
+
+.global VG_(helpers_STOREV2)
+VG_(helpers_STOREV2):
+	pushal
+	movl	40(%esp), %eax		# addr
+	pushl	%eax
+	movl	40(%esp), %eax		# value
+	call	VG_(helperc_STOREV2)
+	addl	$8, %esp
+	popal
+	ret	$8
+
+	
+/* ------------------ VALUE CHECK FAILURES ------------------ */
 
 .global VG_(helper_value_check0_fail)
 VG_(helper_value_check0_fail):
@@ -144,6 +217,13 @@ VG_(helper_value_check4_fail):
 	call	VG_(helperc_value_check4_fail)
 	popal
 	ret
+
+
+/* ------------------ SMC CHECKS ------------------ */
+
+/* NOTE (4 May 02): this stuff almost certainly doesnt work.  Dont
+   try to use it. 
+*/
 
 
 /* Do a original-code-write check for the address in %ebp. */
@@ -189,6 +269,25 @@ VG_(helper_smc_check4):
 	popal
 	ret
 #endif
+
+
+/* ------------------ ARITHMETIC ------------------ */
+	
+/* Various helper routines, for instructions which are just too
+   darn tedious for the JITter to output code in-line:
+	
+	* integer division
+	* integer multiplication
+        * setting and getting obscure eflags
+	* double-length shifts
+	* various bit operations
+	
+   All routines use a standard calling convention designed for
+   calling from translations, in which the incoming args are
+   underneath the return address, the callee saves _all_ registers,
+   and the incoming parameters can be modified, to return results.
+*/
+
 
 	
 /* Fetch the time-stamp-ctr reg.
