@@ -734,6 +734,7 @@ weird_lock_vector_equals(lock_vector* a, lock_vector* b,
 }
 
 // SSS: copying mutex's pointer... is that ok?  Could they get deallocated?
+// (does that make sense, deallocating a mutex?)
 void eraser_post_mutex_lock(ThreadId tid, void* void_mutex)
 {
    Int i = 1;
@@ -826,6 +827,16 @@ void eraser_post_mutex_unlock(ThreadId tid, void* void_mutex)
 
    // find the lockset that is the current one minus tid, change thread to use
    // that index.
+
+
+
+// SSS: this can easily happen, consider:
+//    lock a, lock b, lock c, unlock b
+//
+// sets seen are {a}, {a,b}, {a,b,c} -- {a,c} isn't there.  Code only
+// works if locks/unlocks are done entirely stack-style.
+
+   
    while (True) {
       if (lockset_table[i] == INVALID_LOCKSET_ENTRY || i == LOCKSET_TABLE_SIZE) 
          VG_(panic)("couldn't find diminished lockset on unlock!");
@@ -1131,22 +1142,17 @@ void SK_(pre_clo_init)(VgNeeds* needs, VgTrackEvents* track)
 
    needs->record_mem_exe_context  = False;
    needs->postpone_mem_reuse      = False;
-   
    needs->debug_info              = True;
    needs->pthread_errors          = True;
    needs->report_errors           = True;
-
    needs->run_libc_freeres        = False;
 
    needs->identifies_basic_blocks = False;
-
+   needs->shadow_regs             = False;
    needs->command_line_options    = False;
    needs->client_requests         = False;
-
    needs->extends_UCode           = False;
-
    needs->wrap_syscalls           = False;
-
    needs->sanity_checks           = False;
 
    VG_(register_compact_helper)((Addr) & eraser_mem_read);

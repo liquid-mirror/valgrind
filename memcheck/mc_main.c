@@ -302,14 +302,11 @@ static SecMap  distinguished_secondary_map;
 #define VGM_BYTE_VALID     0
 #define VGM_BYTE_INVALID   0xFF
 
-// SSS: to remove this requires a post_reg_write event... */
-/* Now in vg_include.h.
 #define VGM_WORD_VALID     0
 #define VGM_WORD_INVALID   0xFFFFFFFF
-*/
 
 #define VGM_EFLAGS_VALID   0xFFFFFFFE
-#define VGM_EFLAGS_INVALID 0xFFFFFFFF
+#define VGM_EFLAGS_INVALID 0xFFFFFFFF     /* not used */
 
 
 static void init_shadow_memory ( void )
@@ -2208,6 +2205,12 @@ void  SKN_(post_check_known_blocking_syscall)
 /*--- Setup                                                ---*/
 /*------------------------------------------------------------*/
 
+void SKN_(written_shadow_regs_values)( UInt* gen_reg_value, UInt* eflags_value )
+{
+   *gen_reg_value = VGM_WORD_VALID;
+   *eflags_value  = VGM_EFLAGS_VALID;
+}
+
 Bool SKN_(process_cmd_line_option)(UChar* arg)
 {
 #  define STREQ(s1,s2)     (0==VG_(strcmp_ws)((s1),(s2)))
@@ -2284,22 +2287,17 @@ void SK_(pre_clo_init)(VgNeeds* needs, VgTrackEvents* track)
 
    needs->record_mem_exe_context  = True;
    needs->postpone_mem_reuse      = True;
-   
    needs->debug_info              = True;
    needs->pthread_errors          = True;
    needs->report_errors           = True;
-
    needs->run_libc_freeres        = True;
 
    needs->identifies_basic_blocks = False;
-
+   needs->shadow_regs             = True;
    needs->command_line_options    = True;
    needs->client_requests         = True;
-
    needs->extends_UCode           = True;
-
    needs->wrap_syscalls           = True;
-
    needs->sanity_checks           = True;
 
    VG_(register_compact_helper)((Addr) & SK_(helper_value_check4_fail));
@@ -2345,19 +2343,6 @@ void SK_(pre_clo_init)(VgNeeds* needs, VgTrackEvents* track)
    track->post_mem_write        = & VG_(make_readable);
 
    init_shadow_memory();
-
-   /* Set up the shadow regs with reasonable (sic) values.  All regs are
-      claimed to have valid values.
-   */
-   VG_(baseBlock)[VGOFF_(sh_esp)]    = VGM_WORD_VALID;
-   VG_(baseBlock)[VGOFF_(sh_ebp)]    = VGM_WORD_VALID;
-   VG_(baseBlock)[VGOFF_(sh_eax)]    = VGM_WORD_VALID;
-   VG_(baseBlock)[VGOFF_(sh_ecx)]    = VGM_WORD_VALID;
-   VG_(baseBlock)[VGOFF_(sh_edx)]    = VGM_WORD_VALID;
-   VG_(baseBlock)[VGOFF_(sh_ebx)]    = VGM_WORD_VALID;
-   VG_(baseBlock)[VGOFF_(sh_esi)]    = VGM_WORD_VALID;
-   VG_(baseBlock)[VGOFF_(sh_edi)]    = VGM_WORD_VALID;
-   VG_(baseBlock)[VGOFF_(sh_eflags)] = VGM_EFLAGS_VALID;
 
    init_prof_mem();
 }
