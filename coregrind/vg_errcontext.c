@@ -55,7 +55,9 @@ typedef
       /* Invalid or mismatching free */
       FreeS,
       /* Pthreading error */
-      PThread
+      PThread,
+      /* Data race */
+      Eraser
    } 
    SuppressionKind;
 
@@ -111,7 +113,8 @@ typedef
    enum { ValueErr, AddrErr, 
           ParamErr, UserErr, /* behaves like an anonymous ParamErr */
           FreeErr, FreeMismatchErr,
-          PThreadErr /* pthread API error */
+          PThreadErr, /* pthread API error */
+          EraserErr   /* possible data race */
    }
    ErrKind;
 
@@ -121,6 +124,7 @@ typedef
    AxsKind;
 
 /* Top-level struct for recording errors. */
+// ZZZ
 typedef
    struct _ErrContext {
       /* ALL */
@@ -138,11 +142,12 @@ typedef
       AxsKind axskind;
       /* Addr, Value */
       Int size;
-      /* Addr, Free, Param, User */
+      /* Addr, Free, Param, User, Eraser */
       Addr addr;
       /* Addr, Free, Param, User */
       AddrInfo addrinfo;
-      /* Param; hijacked for PThread as a description */
+      /* Param; hijacked for PThread as a description; hijacked for Eraser
+       * to indicate "reading" or "writing" */
       Char* syscall_param;
       /* Param, User */
       Bool isWriteableLack;
@@ -156,7 +161,7 @@ typedef
       UInt m_eip;
       UInt m_esp;
       UInt m_ebp;
-   } 
+   }
    ErrContext;
 
 /* The list of error contexts found, both suppressed and unsuppressed.
@@ -265,6 +270,12 @@ static Bool eq_ErrContext ( Bool cheap_addr_cmp,
          if (0 == VG_(strcmp)(e1->syscall_param, e2->syscall_param))
             return True;
          return False;
+      // ZZZ
+      case EraserErr:
+         if (e1->syscall_param != e2->syscall_param) return False;
+         if (0 != VG_(strcmp)(e1->syscall_param, e2->syscall_param)) 
+            return False;
+         return True;
       case UserErr:
       case ParamErr:
          if (e1->isWriteableLack != e2->isWriteableLack) return False;
@@ -424,6 +435,11 @@ static void pp_ErrContext ( ErrContext* ec, Bool printCount )
          break;
       case PThreadErr:
          VG_(message)(Vg_UserMsg, "%s", ec->syscall_param );
+         VG_(pp_ExeContext)(ec->where);
+         break;
+      case EraserErr:
+         VG_(message)(Vg_UserMsg, "Possible data race %s variable at 0x%x", 
+                      ec->syscall_param, ec->addr );
          VG_(pp_ExeContext)(ec->where);
          break;
       default: 
@@ -613,7 +629,7 @@ static void VG_(maybe_add_context) ( ErrContext* ec )
 /*--- Exported fns                                         ---*/
 /*------------------------------------------------------------*/
 
-/* These two are called from generated code, so that the %EIP/%EBP
+/* These three are called from generated code, so that the %EIP/%EBP
    values that we need in order to create proper error messages are
    picked up out of VG_(baseBlock) rather than from the thread table
    (vg_threads in vg_scheduler.c). */
@@ -665,6 +681,27 @@ void VG_(record_address_error) ( Addr a, Int size, Bool isWrite )
    ec.m_ebp = VG_(baseBlock)[VGOFF_(m_ebp)];
    ec.addrinfo.akind     = Undescribed;
    ec.addrinfo.maybe_gcc = just_below_esp;
+   VG_(maybe_add_context) ( &ec );
+}
+
+// ZZZ
+void VG_(record_eraser_err) ( ThreadId tid, Addr a, Bool is_write )
+{
+   ErrContext ec;
+   vg_assert(Vg_Eraser == VG_(clo_action));
+   if (vg_ignore_errors) return;
+   clear_ErrContext( &ec );
+   ec.count   = 1;
+   ec.next    = NULL;
+   ec.where   = VG_(get_ExeContext)( False, VG_(baseBlock)[VGOFF_(m_eip)], 
+                                            VG_(baseBlock)[VGOFF_(m_ebp)] );
+   ec.ekind   = EraserErr;
+   ec.addr    = a;
+   ec.tid     = tid;
+   ec.syscall_param = is_write ? "writing" : "reading";
+   ec.m_eip = VG_(baseBlock)[VGOFF_(m_eip)];
+   ec.m_esp = VG_(baseBlock)[VGOFF_(m_esp)];
+   ec.m_ebp = VG_(baseBlock)[VGOFF_(m_ebp)];
    VG_(maybe_add_context) ( &ec );
 }
 
@@ -772,7 +809,9 @@ void VG_(record_pthread_err) ( ThreadId tid, Char* msg )
 {
    ErrContext ec;
    if (vg_ignore_errors) return;
-   if (!VG_(clo_instrument)) return;
+   // ZZZ
+   if (! VG_(needs).pthread_errors) return;
+
    clear_ErrContext( &ec );
    ec.count   = 1;
    ec.next    = NULL;
@@ -1004,6 +1043,8 @@ static void load_one_suppressions_file ( Char* filename )
       else if (STREQ(buf, "Addr8"))  supp->skind = Addr8;
       else if (STREQ(buf, "Free"))   supp->skind = FreeS;
       else if (STREQ(buf, "PThread")) supp->skind = PThread;
+      // ZZZ
+      else if (STREQ(buf, "Eraser")) supp->skind = Eraser;
       else goto syntax_error;
 
       if (supp->skind == Param) {
@@ -1141,7 +1182,7 @@ static Suppression* is_suppressible_error ( ErrContext* ec )
    /* See if the error context matches any suppression. */
    for (su = vg_suppressions; su != NULL; su = su->next) {
       switch (su->skind) {
-         case FreeS:  case PThread:
+         case FreeS:  case PThread:  case Eraser:   // ZZZ
          case Param:  case Value0: su_size = 0; break;
          case Value1: case Addr1:  su_size = 1; break;
          case Value2: case Addr2:  su_size = 2; break;
@@ -1168,6 +1209,9 @@ static Suppression* is_suppressible_error ( ErrContext* ec )
             break;
          case PThread:
             if (ec->ekind != PThreadErr) continue;
+            break;
+         case Eraser:
+            if (ec->ekind != EraserErr) continue;
             break;
       }
 
