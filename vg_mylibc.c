@@ -1275,9 +1275,23 @@ void* VG_(get_memory_from_mmap) ( Int nBytes, Char* who )
             tot_alloc, nBytes, p, ((char*)p) + nBytes - 1, who );
       return p;
    }
-   VG_(printf)("vg_get_memory_from_mmap failed on request of %d\n", 
+   VG_(printf)("\n");
+   VG_(printf)("VG_(get_memory_from_mmap): request for %d bytes failed.\n", 
                nBytes);
-   VG_(panic)("vg_get_memory_from_mmap: out of memory!  Fatal!  Bye!\n");
+   VG_(printf)("VG_(get_memory_from_mmap): %d bytes already allocated.\n", 
+               tot_alloc);
+   VG_(printf)("\n");
+   VG_(printf)("This may mean that you have run out of swap space,\n");
+   VG_(printf)("since running programs on valgrind increases their memory\n");
+   VG_(printf)("usage at least 3 times.  You might want to use 'top'\n");
+   VG_(printf)("to determine whether you really have run out of swap.\n");
+   VG_(printf)("If so, you may be able to work around it by adding a\n");
+   VG_(printf)("temporary swap file -- this is easier than finding a\n");
+   VG_(printf)("new swap partition.  Go ask your sysadmin(s) [politely!]\n");
+   VG_(printf)("\n");
+   VG_(printf)("VG_(get_memory_from_mmap): out of memory!  Fatal!  Bye!\n");
+   VG_(printf)("\n");
+   VG_(exit)(1);
 }
 
 
