@@ -76,30 +76,6 @@ void clear_AddrInfo ( AddrInfo* ai )
    ai->stack_tid  = VG_INVALID_THREADID;
    ai->maybe_gcc  = False;
 }
-void clear_MemCheckErrContext ( MemCheckErrContext* ec_extra )
-{         
-   ec_extra->axskind         = ReadAxs;
-   ec_extra->size            = 0;
-   clear_AddrInfo ( &ec_extra->addrinfo );      
-   ec_extra->isWriteableLack = False;
-}
-
-
-void VG_(clear_PThread_ErrContext) ( ErrContext* ec )
-{
-   ec->next    = NULL;
-   ec->supp    = NULL;
-   ec->count   = 0;
-   ec->ekind   = PThreadErr;
-   ec->where   = NULL;
-   ec->addr    = 0;
-   ec->string  = NULL;
-   ec->extra   = NULL;        // SSS: SKN_(clear_extra_errcontext)()??
-   ec->m_eip   = 0xDEADB00F;
-   ec->m_esp   = 0xDEADBE0F;
-   ec->m_ebp   = 0xDEADB0EF;
-   ec->tid     = VG_INVALID_THREADID;
-}
 
 /* Inlined in this module, not in others */
 __inline__ Bool VG_(eq_ExeContext) ( Bool top_2_only,
@@ -408,7 +384,7 @@ void VG_(construct_err_context) ( ErrContext* ec, ErrKind ekind, Addr a,
    }
 }
 
-/* This is called from generated code */
+/* This is called not from generated code but from the scheduler */
 
 void VG_(record_pthread_err) ( ThreadId tid, Char* msg )
 {
@@ -421,82 +397,6 @@ void VG_(record_pthread_err) ( ThreadId tid, Char* msg )
    
    VG_(maybe_add_context) ( &ec );
 }
-
-/* These five are called not from generated code but in response to
-   requests passed back to the scheduler. */
-
-// SSS: they all shouldn't be here, either...
-
-// SSS: called from vg_clientmalloc.c
-void VG_(record_free_error) ( ThreadState* tst, Addr a )
-{
-   ErrContext ec;
-   MemCheckErrContext ec_extra;
-
-   if (VG_(ignore_errors)()) return;
-
-   vg_assert(NULL != tst);
-   VG_(construct_err_context)( &ec, FreeErr, a, NULL, tst );
-   clear_MemCheckErrContext( &ec_extra );
-   ec_extra.addrinfo.akind = Undescribed;
-   ec.extra = &ec_extra;
-
-   VG_(maybe_add_context) ( &ec );
-}
-
-// SSS: called from vg_clientmalloc.c
-void VG_(record_freemismatch_error) ( ThreadState* tst, Addr a )
-{
-   ErrContext ec;
-   MemCheckErrContext ec_extra;
-
-   if (VG_(ignore_errors)()) return;
-
-   vg_assert(NULL != tst);
-   VG_(construct_err_context)( &ec, FreeMismatchErr, a, NULL, tst );
-   clear_MemCheckErrContext( &ec_extra );
-   ec_extra.addrinfo.akind = Undescribed;
-   ec.extra = &ec_extra;
-
-   VG_(maybe_add_context) ( &ec );
-}
-
-// SSS: called from vg_translate.c
-void VG_(record_jump_error) ( ThreadState* tst, Addr a )
-{
-   ErrContext ec;
-   MemCheckErrContext ec_extra;
-
-   if (VG_(ignore_errors)()) return;
-
-   vg_assert(NULL != tst);
-   VG_(construct_err_context)( &ec, AddrErr, a, NULL, tst );
-   clear_MemCheckErrContext( &ec_extra );
-   ec_extra.axskind = ExecAxs;
-   ec_extra.addrinfo.akind = Undescribed;
-   ec.extra = &ec_extra;
-
-   VG_(maybe_add_context) ( &ec );
-}
-
-// SSS: called from vg_clientperms.c [fixed by moving client requests out]
-void VG_(record_user_err) ( ThreadState* tst, Addr a, Bool isWriteLack )
-{
-   ErrContext ec;
-   MemCheckErrContext ec_extra;
-
-   if (VG_(ignore_errors)()) return;
-
-   vg_assert(NULL != tst);
-   VG_(construct_err_context)( &ec, UserErr, a, NULL, tst );
-   clear_MemCheckErrContext( &ec_extra );
-   ec_extra.addrinfo.akind = Undescribed;
-   ec_extra.isWriteableLack = isWriteLack;
-   ec.extra = &ec_extra;
-
-   VG_(maybe_add_context) ( &ec );
-}
-
 
 
 /*------------------------------*/
