@@ -569,8 +569,6 @@ typedef
       Bool    save_eax:1;      /* Save/restore %eax across C call? */
       Bool    save_ecx:1;      /* Save/restore %ecx across C call? */ 
       Bool    save_edx:1;      /* Save/restore %edx across C call? */ 
-      UChar   extra5a;         /* Spare 8-bit field, free to be used by skins
-                                  that use extended UCode */
    }
    UInstr;
 
@@ -641,7 +639,6 @@ extern void VG_(setFlagRW)  ( UInstr* u,
 extern void VG_(setLiteralField) ( UCodeBlock* cb, UInt lit32 );
 extern void VG_(setCCallFields)  ( UCodeBlock* cb, Addr fn, UChar argc,
                                    UChar regparms_n, Bool has_ret_val );
-extern void VG_(setExtra5a) ( UCodeBlock* cb, UChar val );
 
 extern void VG_(copyUInstr) ( UCodeBlock* cb, UInstr* instr );
 
