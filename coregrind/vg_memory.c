@@ -1,7 +1,7 @@
 
 /*--------------------------------------------------------------------*/
-/*--- Shadow memory framework: initialisation, stack tracking,     ---*/
-/*--- sanity checks.                                               ---*/
+/*--- Memory-related stuff: segment initialisation and tracking,   ---*/
+/*--- stack operations                                             ---*/
 /*---                                                  vg_memory.c ---*/
 /*--------------------------------------------------------------------*/
 
@@ -32,35 +32,6 @@
 
 #include "vg_include.h"
 
-
-VgTrackEvents VG_(track_events) = {
-   .new_mem_startup     = NULL,
-   .new_mem_heap        = NULL,
-   .new_mem_stack       = NULL,
-   .new_mem_stack_aligned = NULL,
-   .new_mem_brk         = NULL,
-   .new_mem_mmap        = NULL,
-
-   .copy_mem_heap       = NULL,
-   .change_mem_mprotect = NULL,
-
-   .die_mem_heap        = NULL,
-   .die_mem_stack       = NULL,
-   .die_mem_stack_aligned = NULL,
-   .die_mem_stack_thread = NULL,
-   .die_mem_brk         = NULL,
-   .die_mem_munmap      = NULL,
-   .die_mem_pthread     = NULL,
-   .die_mem_signal      = NULL,
-
-   .pre_mem_read        = NULL,
-   .pre_mem_read_asciiz = NULL,
-   .pre_mem_write       = NULL,
-   .post_mem_write      = NULL,
-
-   .post_mutex_lock     = NULL,
-   .post_mutex_unlock   = NULL,
-};
 
 /*--------------------------------------------------------------*/
 /*--- Initialise program data/text etc on program startup.   ---*/
