@@ -891,7 +891,8 @@ typedef
    If the error occurs in generated code, 'tst' should be NULL.  If the
    error occurs in non-generated code, 'tst' should be non-NULL.  The
    `extra' field can be stack-allocated;  it will be copied (using
-   SKN_(dup_extra_and_update)()) if needed. 
+   SKN_(dup_extra_and_update)()) if needed.  But it won't be copied
+   if it's NULL.
 */
 extern void VG_(maybe_record_error) ( ThreadState* tst, ErrorKind ekind, 
                                       Addr a, Char* s, void* extra );
