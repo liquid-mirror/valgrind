@@ -1147,20 +1147,117 @@ void VG_(synth_call) ( Bool ensure_shortform, Int word_offset )
    emit_call_star_EBP_off ( 4 * word_offset );
 }
 
+static void maybe_emit_movl_reg_reg ( UInt src, UInt dst )
+{
+   if (src != dst) {
+      VG_(emit_movv_reg_reg) ( 4, src, dst );
+      ccall_arg_setup_instrs++;
+   }
+}
+
 /* 'maybe' because it is sometimes skipped eg. for "movl %eax,%eax" */
 static void maybe_emit_movl_litOrReg_reg ( UInt litOrReg, Tag tag, UInt reg )
 {
    if (RealReg == tag) {
-      if (litOrReg != reg) {
-         VG_(emit_movv_reg_reg) ( 4, litOrReg, reg );
-         ccall_arg_setup_instrs++;
-      }
+      maybe_emit_movl_reg_reg ( litOrReg, reg );
    } else if (Literal == tag) {
       VG_(emit_movv_lit_reg) ( 4, litOrReg, reg );
       ccall_arg_setup_instrs++;
    }
    else
       VG_(panic)("emit_movl_litOrReg_reg: unexpected tag");
+}
+
+static
+void emit_swapl_arg_regs ( UInt reg1, UInt reg2 )
+{
+   if        (R_EAX == reg1) {
+      VG_(emit_swapl_reg_EAX) ( reg2 );
+   } else if (R_EAX == reg2) {
+      VG_(emit_swapl_reg_EAX) ( reg1 );
+   } else {
+      emit_swapl_reg_reg ( reg1, reg2 );
+   }
+   ccall_arg_setup_instrs++;
+}
+
+static
+void emit_two_regs_args_setup ( UInt src1, UInt src2, UInt dst1, UInt dst2)
+{
+   if        (dst1 != src2) {
+      maybe_emit_movl_reg_reg ( src1, dst1 );
+      maybe_emit_movl_reg_reg ( src2, dst2 );
+
+   } else if (dst2 != src1) {
+      maybe_emit_movl_reg_reg ( src2, dst2 );
+      maybe_emit_movl_reg_reg ( src1, dst1 );
+
+   } else {
+      /* swap to break cycle */
+      emit_swapl_arg_regs ( dst1, dst2 );
+   }
+}
+
+static
+void emit_three_regs_args_setup ( UInt src1, UInt src2, UInt src3,
+                                  UInt dst1, UInt dst2, UInt dst3)
+{
+   if        (dst1 != src2 && dst1 != src3) {
+      maybe_emit_movl_reg_reg ( src1, dst1 );
+      emit_two_regs_args_setup ( src2, src3, dst2, dst3 );
+
+   } else if (dst2 != src1 && dst2 != src3) {
+      maybe_emit_movl_reg_reg ( src2, dst2 );
+      emit_two_regs_args_setup ( src1, src3, dst1, dst3 );
+
+   } else if (dst3 != src1 && dst3 != src2) {
+      maybe_emit_movl_reg_reg ( src3, dst3 );
+      emit_two_regs_args_setup ( src1, src2, dst1, dst2 );
+      
+   } else {
+      /* break cycle */
+      if        (dst1 == src2 && dst2 == src3 && dst3 == src1) {
+         emit_swapl_arg_regs ( dst1, dst2 );
+         emit_swapl_arg_regs ( dst1, dst3 );
+
+      } else if (dst1 == src3 && dst2 == src1 && dst3 == src2) {
+         emit_swapl_arg_regs ( dst1, dst3 );
+         emit_swapl_arg_regs ( dst1, dst2 );
+
+      } else {
+         VG_(panic)("impossible 3-cycle");
+      }
+   }
+}
+
+static
+void emit_two_regs_or_lits_args_setup ( UInt argv[], Tag tagv[],
+                                        UInt src1, UInt src2,
+                                        UInt dst1, UInt dst2)
+{
+   /* If either are lits, order doesn't matter */
+   if (Literal == tagv[src1] || Literal == tagv[src2]) {
+      maybe_emit_movl_litOrReg_reg ( argv[src1], tagv[src1], dst1 );
+      maybe_emit_movl_litOrReg_reg ( argv[src2], tagv[src2], dst2 );
+
+   } else {
+      emit_two_regs_args_setup ( argv[src1], argv[src2], dst1, dst2 );
+   }
+}
+
+static
+void emit_three_regs_or_lits_args_setup ( UInt argv[], Tag tagv[],
+                                          UInt src1, UInt src2, UInt src3,
+                                          UInt dst1, UInt dst2, UInt dst3)
+{
+   // SSS: fix this eventually -- make STOREV use two RealRegs?
+   /* Not supporting literals for 3-arg C functions -- they're only used
+      by STOREV which has 2 args */
+   vg_assert(RealReg == tagv[src1] &&
+             RealReg == tagv[src2] &&
+             RealReg == tagv[src3]);
+   emit_three_regs_args_setup ( argv[src1], argv[src2], argv[src3],
+                                dst1, dst2, dst3 );
 }
 
 /* Synthesise a call to a C function `fn' (which must be registered in
@@ -1178,11 +1275,6 @@ void VG_(synth_ccall) ( Addr fn, Int argc, Int regparms_n, UInt argv[],
    Int stack_used = 0;
 
    vg_assert(0 <= regparms_n && regparms_n <= 3);
-   if (regparms_n == 3) {
-      VG_(printf)("((regparms(3))) attribute not supported yet.\n"
-                  "Please use ((regparms(2))) instead.  Sorry\n");
-      VG_(panic)("((regparms(3)))");
-   }
 
    ccalls++;
 
@@ -1219,44 +1311,19 @@ void VG_(synth_ccall) ( Addr fn, Int argc, Int regparms_n, UInt argv[],
 
    /* Then setup args in registers (arg[123] --> %e[adc]x;  note order!).
       If moving values between registers, be careful not to clobber any on
-      the way.  And note that we don't have any spare registers by this
-      stage.  Happily we can use xchgl to swap registers.
+      the way.  Happily we can use xchgl to swap registers.
    */
    switch (regparms_n) {
 
-   /* Trickiest.  Args passed in %eax, %edx, and %ecx.  Lots of
-    * possibilities... */
+   /* Trickiest.  Args passed in %eax, %edx, and %ecx. */
    case 3:
-      VG_(panic)("VG_(synth_call): regparms_n==3 as yet unhandled");
+      emit_three_regs_or_lits_args_setup ( argv, tagv, 0, 1, 2,
+                                           R_EAX, R_EDX, R_ECX );
       break;
 
-   /* Less-tricky.  Args passed in %eax and %ecx.  Possibilities:
-     
-      1. arg1 in %edx, arg2 in %eax (thus both RealRegs):
-            xchl %eax, %edx 
-
-      2. arg2 in %eax (and thus a RealReg; arg1 RealReg or Literal)
-         (Nb: order is important):
-            movl arg2,%edx
-            movl arg1,%eax
-
-      3. Otherwise (args RealRegs or Literals):
-            movl arg1,%eax    (if arg1 not already in %eax)
-            movl arg2,%edx    (if arg2 not already in %edx)
-   */
+   /* Less-tricky.  Args passed in %eax and %edx. */
    case 2:
-      if (RealReg == tagv[0] && RealReg == tagv[1] &&
-          R_EDX   == argv[0] && R_EAX   == argv[1]) {
-         VG_(emit_swapl_reg_EAX) ( R_EDX );
-         ccall_arg_setup_instrs++;
-      } else if (RealReg == tagv[1] && R_EAX == argv[1]) {
-         VG_(emit_movv_reg_reg) ( 4, R_EAX, R_EDX );
-         ccall_arg_setup_instrs++;
-         maybe_emit_movl_litOrReg_reg ( argv[0], tagv[0], R_EAX );
-      } else {
-         maybe_emit_movl_litOrReg_reg ( argv[0], tagv[0], R_EAX );
-         maybe_emit_movl_litOrReg_reg ( argv[1], tagv[1], R_EDX );
-      }
+      emit_two_regs_or_lits_args_setup ( argv, tagv, 0, 1, R_EAX, R_EDX );
       break;
       
    /* Easy.  Just move arg1 into %eax (if not already in there). */
