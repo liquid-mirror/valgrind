@@ -521,6 +521,12 @@ Bool VG_(saneUInstr) ( Bool beforeRA, UInstr* u )
          return CC0 && Ls1 && N2 && SZ0 && N3;
       case CALLM:
          return SZ0 && Ls1 && N2 && N3;
+      case CCALL_1_0:
+         return SZ0 && CC0 && TR1 && N2 && N3;
+      case CCALL_2_0:
+         return SZ0 && CC0 && TR1 && TR2 && N3;
+      case CCALL_3_0:
+         return SZ0 && CC0 && TR1 && TR2 && TR3;
       case PUSH: case POP:
          return CC0 && TR1 && N2 && N3;
       case AND: case OR:
@@ -802,6 +808,9 @@ Char* VG_(nameUOpcode) ( Bool upper, Opcode opc )
       case JMP:     return "J"    ;
       case JIFZ:    return "JIFZ" ;
       case CALLM:   return "CALLM";
+      case CCALL_1_0: return "CCALL_1_0";
+      case CCALL_2_0: return "CCALL_2_0";
+      case CCALL_3_0: return "CCALL_3_0";
       case PUSH:    return "PUSH" ;
       case POP:     return "POP"  ;
       case CLEAR:   return "CLEAR";
@@ -928,6 +937,30 @@ void VG_(ppUInstr) ( Int instrNo, UInstr* u )
          ppUOperand(u, 1, u->size, False);
          break;
 
+      case CCALL_1_0:
+         VG_(printf)(" ");
+         ppUOperand(u, 1, 0, False);
+         VG_(printf)(" (%u)", u->lit32);
+         break;
+
+      case CCALL_2_0:
+         VG_(printf)(" ");
+         ppUOperand(u, 1, 0, False);
+         VG_(printf)(", ");
+         ppUOperand(u, 2, 0, False);
+         VG_(printf)(" (%u)", u->lit32);
+         break;
+
+      case CCALL_3_0:
+         VG_(printf)(" ");
+         ppUOperand(u, 1, 0, False);
+         VG_(printf)(", ");
+         ppUOperand(u, 2, 0, False);
+         VG_(printf)(", ");
+         ppUOperand(u, 3, 0, False);
+         VG_(printf)(" (%u)", u->lit32);
+         break;
+
       case JIFZ:
          VG_(printf)("\t");
          ppUOperand(u, 1, u->size, False);
@@ -1050,13 +1083,13 @@ Int getTempUsage ( UInstr* u, TempUse* arr )
       case GET:   WR(2); break;
       case PUT:   RD(1); break;
       case LOAD:  RD(1); WR(2); break;
-      case STORE: RD(1); RD(2); break;
+      case STORE: case CCALL_2_0: RD(1); RD(2); break;
       case MOV:   RD(1); WR(2); break;
 
       case JMP:   RD(1); break;
       case CLEAR: case CALLM: break;
 
-      case PUSH: RD(1); break;
+      case PUSH: case CCALL_1_0: RD(1); break;
       case POP:  WR(1); break;
 
       case TAG2:
@@ -1076,6 +1109,8 @@ Int getTempUsage ( UInstr* u, TempUse* arr )
 
       case CC2VAL: WR(1); break;
       case JIFZ: RD(1); break;
+
+      case CCALL_3_0: RD(1); RD(2); RD(3); break;
 
       /* These sizes are only ever consulted when the instrumentation
          code is being added, so the following can return
@@ -3126,7 +3161,7 @@ void VG_(translate) ( ThreadState* tst,
       if (VG_(disassemble)) 
          VG_(ppUCodeBlock) ( cb, "Cachesim instrumented code:" );
    }
-   
+
    /* Add invariant inference/checking code. */
    if (VG_(clo_diduce)) {
       /* VGP_PUSHCC(VgpCacheInstrument); */
