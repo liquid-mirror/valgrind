@@ -1182,19 +1182,30 @@ extern VgTrackEvents VG_(track_events);
 /* ------------------------------------------------------------------ */
 /* Fundamental template functions */
 
-// SSS: explain what goes on in here
+/* Initialise skin.   Must do the following:
+     - initialise the 'needs' struct
+     - register any helpers called by generated code
+  
+   May do the following:
+     - indicate events to track by initialising part or all of the 'track'
+       struct
+     - register any skin-specific profiling events
+     - any other skin-specific initialisation
+*/
 extern void        SK_(pre_clo_init) ( VgNeeds* needs, VgTrackEvents* track );
+
+/* Do any initialisation that relies on the results of command line option
+   processing. */
 extern void        SK_(post_clo_init)( void );
 
 /* Instrument a basic block.  Must be a true function, ie. the same input
- * always results in the same output, because basic blocks can be
- * retranslated.  Unless you're doing something really strange... */
+   always results in the same output, because basic blocks can be
+   retranslated.  Unless you're doing something really strange... */
 extern UCodeBlock* SK_(instrument)   ( UCodeBlock* cb, Addr a );
 
+/* Finish up, print out any results, etc. */
 extern void        SK_(fini)         ( void );
 
-// SSS: perhaps change the following to structs of function pointers?
-//      want a way to make it clearer which ones go together...
 
 /* ------------------------------------------------------------------ */
 /* VG_(needs).report_errors */
