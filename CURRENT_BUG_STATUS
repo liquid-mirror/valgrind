@@ -5,6 +5,40 @@ the end of this file, which has a list of the bugs known in, but not
 fixed in, the current release.
 
 
+Release 1.0.3 (17 Sept 02)
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+Fairly minor things -- stability fixes and a few new syscalls.
+Note that new functionality will appear in development snapshots,
+not this stable branch.
+
+- improvements to valgrind.spec.in, of interest to RPM builders
+
+- cachesim: fix cache auto-detection on Pentium 4s
+
+- valgrind: fix longstanding bug in handling of 108 byte
+  FPU loads/storesd (FSAVE/FRSTOR)
+
+- Reduce polling delays in poll(), select(), pause() and in the
+  scheduler idle loop.  This reduces some strange non-CPU-bound delays
+  under certain circumstances.
+
+- Give correct return code ("success!") if client tries to close
+  the file descriptor Valgrind is using for error logging
+  (we tell it "success", which is a lie, and ignore the close request)
+
+- Implement primary opcode 0x15 (ADC Iv, eAX)
+
+- Fix some segfaults apparently caused by the duplicate-error-merging
+  machinery.  This is a potentially important stability fix.
+
+- Merge invalid-addressing errors more aggressively.
+
+- Implement syscalls: __NR_setresgid, __NR_ptrace, __NR_mount, __NR_umount.
+
+- Increase number of reader/writer locks supported from 50 to 500.
+
+
+
 Release 1.0.2 (6 Sept 02)
 ~~~~~~~~~~~~~~~~~~~~~~~~~
 The main emphasis of 1.0.2 is to fix stability problems in the cache
