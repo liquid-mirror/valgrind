@@ -429,8 +429,8 @@ VgNeeds VG_(needs) = {
    .record_mem_exe_context  = INVALID_Bool,
    .postpone_mem_reuse      = INVALID_Bool,
    .debug_info              = INVALID_Bool,
-   .pthread_errors          = INVALID_Bool,
-   .report_errors           = INVALID_Bool,
+   .core_errors             = INVALID_Bool,
+   .skin_errors             = INVALID_Bool,
    .run_libc_freeres        = INVALID_Bool,
 
    .identifies_basic_blocks = INVALID_Bool,
@@ -491,8 +491,8 @@ static void sanity_check_needs ( void )
    CHECK_NOT(VG_(needs).record_mem_exe_context,  INVALID_Bool);
    CHECK_NOT(VG_(needs).postpone_mem_reuse,      INVALID_Bool);
    CHECK_NOT(VG_(needs).debug_info,              INVALID_Bool);
-   CHECK_NOT(VG_(needs).pthread_errors,          INVALID_Bool);
-   CHECK_NOT(VG_(needs).report_errors,           INVALID_Bool);
+   CHECK_NOT(VG_(needs).core_errors,             INVALID_Bool);
+   CHECK_NOT(VG_(needs).skin_errors,             INVALID_Bool);
    CHECK_NOT(VG_(needs).run_libc_freeres,        INVALID_Bool);
 
    CHECK_NOT(VG_(needs).identifies_basic_blocks, INVALID_Bool);
@@ -1008,7 +1008,7 @@ static void process_cmd_line_options ( void )
    }
 
    if (VG_(clo_n_suppressions) == 0 && 
-       (VG_(needs).pthread_errors || VG_(needs).report_errors)) {
+       (VG_(needs).core_errors || VG_(needs).skin_errors)) {
       config_error("No error-suppression files were specified.");
    }
 }
@@ -1208,7 +1208,7 @@ void VG_(main) ( void )
 
    /* Read the list of errors to suppress.  This should be found in
       the file specified by vg_clo_suppressions. */
-   if (VG_(needs).pthread_errors || VG_(needs).report_errors)
+   if (VG_(needs).core_errors || VG_(needs).skin_errors)
       VG_(load_suppressions)();
 
    /* End calibration of our RDTSC-based clock, leaving it as long as
@@ -1249,7 +1249,7 @@ void VG_(main) ( void )
         "Warning: pthread scheduler exited due to deadlock");
    }
 
-   if (VG_(needs).pthread_errors || VG_(needs).report_errors)
+   if (VG_(needs).core_errors || VG_(needs).skin_errors)
       VG_(show_all_errors)();
 
    SK_(fini)();
