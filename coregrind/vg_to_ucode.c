@@ -3718,7 +3718,7 @@ static Addr disInstr ( UCodeBlock* cb, Addr eip, Bool* isEnd )
       Addr  eipS, eipE;
       UChar ch;
       if (sz != 4)           goto normal_pop_case;
-      if (VG_(clo_cachesim)) goto normal_pop_case;
+      if (VG_(clo_cachesim) || VG_(clo_diduce)) goto normal_pop_case;
       /* eip points at first pop insn + 1.  Make eipS and eipE
          bracket the sequence. */
       eipE = eipS = eip - 1;
@@ -3863,7 +3863,7 @@ static Addr disInstr ( UCodeBlock* cb, Addr eip, Bool* isEnd )
       Addr  eipS, eipE;
       UChar ch;
       if (sz != 4)           goto normal_push_case;
-      if (VG_(clo_cachesim)) goto normal_push_case;
+      if (VG_(clo_cachesim) || VG_(clo_diduce)) goto normal_push_case;
       /* eip points at first push insn + 1.  Make eipS and eipE
          bracket the sequence. */
       eipE = eipS = eip - 1;
@@ -4593,7 +4593,7 @@ Int VG_(disBB) ( UCodeBlock* cb, Addr eip0 )
     *
     * See vg_cachesim_instrument() for how this is used. 
     */
-   if (VG_(clo_cachesim)) {
+   if (VG_(clo_cachesim) || VG_(clo_diduce)) {
        INCEIP_allowed_lag = 0;
    }
 
@@ -4637,7 +4637,7 @@ Int VG_(disBB) ( UCodeBlock* cb, Addr eip0 )
          if (dis) VG_(printf)("\n");
       }
    }
-   if (VG_(clo_cachesim)) {
+   if (VG_(clo_cachesim) || VG_(clo_diduce)) {
       /* Patch instruction size into earliest JMP. */
       if (cb->used >= 2 && JMP == cb->instrs[cb->used - 2].opcode) {
          cb->instrs[cb->used - 2].extra4b = delta;
