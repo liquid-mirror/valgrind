@@ -1,6 +1,7 @@
 
 /*--------------------------------------------------------------------*/
-/*--- For when the client advises Valgrind about permissions.      ---*/
+/*--- Part of the MemCheck skin: for when the client advises       ---*/
+/*--- Valgrind about memory permissions.                           ---*/
 /*---                                     vg_memcheck_clientreqs.c ---*/
 /*--------------------------------------------------------------------*/
 
@@ -258,10 +259,7 @@ Bool SK_(client_perm_maybe_describe)( Addr a, AddrInfo* ai )
    for (i = 0; i < vg_cgb_used; i++) {
       if (vg_cgbs[i].kind == CG_NotInUse) 
          continue;
-      if (vg_cgbs[i].start - VG_AR_CLIENT_REDZONE_SZB <= a
-          && a < vg_cgbs[i].start 
-                 + vg_cgbs[i].size 
-                 + VG_AR_CLIENT_REDZONE_SZB) {
+      if (VG_(addr_is_in_block)(a, vg_cgbs[i].start, vg_cgbs[i].size)) {
          ai->akind = UserG;
          ai->blksize = vg_cgbs[i].size;
          ai->rwoffset  = (Int)(a) - (Int)(vg_cgbs[i].start);

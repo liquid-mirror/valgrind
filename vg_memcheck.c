@@ -1801,35 +1801,6 @@ void vg_detect_memory_leaks_notify_addr ( Addr a, UInt word_at_a )
    }
 }
 
-/* Allocate a suitably-sized array, copy all the malloc-d block
-   shadows into it, and return both the array and the size of it.
-   This is used by the memory-leak detector.
-*/
-ShadowChunk** VG_(get_malloc_shadows) ( /*OUT*/ UInt* n_shadows )
-{
-   UInt          i, scn;
-   ShadowChunk** arr;
-   ShadowChunk*  sc;
-   *n_shadows = 0;
-   for (scn = 0; scn < VG_N_MALLOCLISTS; scn++) {
-      for (sc = VG_(malloclist)[scn]; sc != NULL; sc = sc->next) {
-         (*n_shadows)++;
-      }
-   }
-   if (*n_shadows == 0) return NULL;
-
-   arr = VG_(malloc)( *n_shadows * sizeof(ShadowChunk*) );
-
-   i = 0;
-   for (scn = 0; scn < VG_N_MALLOCLISTS; scn++) {
-      for (sc = VG_(malloclist)[scn]; sc != NULL; sc = sc->next) {
-         arr[i++] = sc;
-      }
-   }
-   vg_assert(i == *n_shadows);
-   return arr;
-}
-
 
 void VG_(detect_memory_leaks) ( void )
 {
@@ -1845,7 +1816,7 @@ void VG_(detect_memory_leaks) ( void )
 
    PROF_EVENT(76);
 
-   /* vg_get_malloc_shadows allocates storage for shadows */
+   /* VG_(get_malloc_shadows) allocates storage for shadows */
    vglc_shadows = VG_(get_malloc_shadows)( &vglc_n_shadows );
    if (vglc_n_shadows == 0) {
       vg_assert(vglc_shadows == NULL);
