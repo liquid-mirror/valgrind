@@ -502,62 +502,62 @@ UCodeBlock* VG_(diduce_instrument)(UCodeBlock* cb_in, Addr orig_addr)
 
 #define SAVE_REGS                               \
    uInstr1(cb, PUSH, 4, RealReg, R_EAX);        \
-   /*uInstr1(cb, PUSH, 4, RealReg, R_ECX);*/        \
-   /*uInstr1(cb, PUSH, 4, RealReg, R_EDX)*/
+   uInstr1(cb, PUSH, 4, RealReg, R_ECX);        \
+   uInstr1(cb, PUSH, 4, RealReg, R_EDX)
 
 #define PUSH_3RD_ARG                            \
    uInstr1(cb, PUSH, 4, TempReg, u_in->val2);   \
    stack_used += 4
 
 #define PUSH_2ND_AND_1ST_ARGS_CALL_HELPER_AND_RESTORE_REGS              \
-   /*t_2nd_addr = newTemp(cb);                                          */  \
-   /*if (TempReg == u_in->tag1) {                                       */  \
-   /*   uInstr2(cb, MOV, 4, TempReg, u_in->val1, TempReg, t_2nd_addr);  */  \
-   /*} else if (Literal == u_in->tag1) {                                */  \
-   /*   uInstr2(cb, MOV,  4, Literal, 0, TempReg, t_2nd_addr);          */  \
-   /*   uLiteral(cb, u_in->val1);                                       */  \
-   /*} else if (ArchReg == u_in->tag1) {                                */  \
-   /*   uInstr2(cb, GET,  4, ArchReg, u_in->val1, TempReg, t_2nd_addr); */  \
-   /*} else {                                                           */  \
-   /*   VG_(panic)("Unknown tag type!");                                */  \
-   /*}                                                                  */  \
-   /*uInstr1(cb, PUSH, 4, TempReg, t_2nd_addr);                         */  \
-   /*stack_used += 4;                                                   */  \
-   /*t_CC_addr = newTemp(cb);                  */                           \
-   /*uInstr2(cb, MOV,  4, Literal, 0, TempReg, t_CC_addr);  */              \
-   /*uLiteral(cb, BBinvs_ptr);               */                             \
-   /*uInstr1(cb, PUSH, 4, TempReg, t_CC_addr);*/                            \
-   /*stack_used += 4;*/                                                     \
-   /*uInstr1(cb, CALLM, 0, Lit16,   helper);*/                            \
+   t_2nd_addr = newTemp(cb);                                            \
+   if (TempReg == u_in->tag1) {                                         \
+      uInstr2(cb, MOV, 4, TempReg, u_in->val1, TempReg, t_2nd_addr);    \
+   } else if (Literal == u_in->tag1) {                                  \
+      uInstr2(cb, MOV,  4, Literal, 0, TempReg, t_2nd_addr);            \
+      uLiteral(cb, u_in->val1);                                         \
+   } else if (ArchReg == u_in->tag1) {                                  \
+      uInstr2(cb, GET,  4, ArchReg, u_in->val1, TempReg, t_2nd_addr);   \
+   } else {                                                             \
+      VG_(panic)("Unknown tag type!");                                  \
+   }                                                                    \
+   uInstr1(cb, PUSH, 4, TempReg, t_2nd_addr);                           \
+   stack_used += 4;                                                     \
+   t_CC_addr = newTemp(cb);                                             \
+   uInstr2(cb, MOV,  4, Literal, 0, TempReg, t_CC_addr);                \
+   uLiteral(cb, BBinvs_ptr);                                            \
+   uInstr1(cb, PUSH, 4, TempReg, t_CC_addr);                            \
+   stack_used += 4;                                                     \
+   uInstr1(cb, CALLM, 0, Lit16,   helper);                              \
    uInstr1(cb, CLEAR, 0, Lit16,   stack_used);                          \
-   /*uInstr1(cb, POP, 4, RealReg, R_EDX);*/                                 \
-   /*uInstr1(cb, POP, 4, RealReg, R_ECX);*/                               \
+   uInstr1(cb, POP, 4, RealReg, R_EDX);                                 \
+   uInstr1(cb, POP, 4, RealReg, R_ECX);                                 \
    uInstr1(cb, POP, 4, RealReg, R_EAX)
 
       } else if (is_ok_binary_op(u_in, instr_addr)) {
 
-            invariant2* CC_ptr = (invariant2*)(BBinvs_ptr);
-            stack_used = 0;
-            helper = VGOFF_(diduce_log_instr2);
-            if (!BB_seen_before)
-               init_invariant2(u_in->opcode, CC_ptr, instr_addr, u_in->size);
-            SAVE_REGS;
-            PUSH_3RD_ARG;
-            PUSH_2ND_AND_1ST_ARGS_CALL_HELPER_AND_RESTORE_REGS;
-            VG_(copyUInstr)(cb, u_in);
-            BBinvs_ptr += sizeof(invariant2);
+         invariant2* CC_ptr = (invariant2*)(BBinvs_ptr);
+         stack_used = 0;
+         helper = VGOFF_(diduce_log_instr2);
+         if (!BB_seen_before)
+            init_invariant2(u_in->opcode, CC_ptr, instr_addr, u_in->size);
+         SAVE_REGS;
+         PUSH_3RD_ARG;
+         PUSH_2ND_AND_1ST_ARGS_CALL_HELPER_AND_RESTORE_REGS;
+         VG_(copyUInstr)(cb, u_in);
+         BBinvs_ptr += sizeof(invariant2);
 
       } else if (is_ok_unary_op(u_in, instr_addr)) {
 
-            invariant1* CC_ptr = (invariant1*)(BBinvs_ptr);
-            stack_used = 0;
-            helper = VGOFF_(diduce_log_instr1);
-            if (!BB_seen_before)
-               init_invariant1(u_in->opcode, CC_ptr, instr_addr, u_in->size);
-            SAVE_REGS;
-            PUSH_2ND_AND_1ST_ARGS_CALL_HELPER_AND_RESTORE_REGS;
-            VG_(copyUInstr)(cb, u_in);
-            BBinvs_ptr += sizeof(invariant1);
+         invariant1* CC_ptr = (invariant1*)(BBinvs_ptr);
+         stack_used = 0;
+         helper = VGOFF_(diduce_log_instr1);
+         if (!BB_seen_before)
+            init_invariant1(u_in->opcode, CC_ptr, instr_addr, u_in->size);
+         SAVE_REGS;
+         PUSH_2ND_AND_1ST_ARGS_CALL_HELPER_AND_RESTORE_REGS;
+         VG_(copyUInstr)(cb, u_in);
+         BBinvs_ptr += sizeof(invariant1);
 
 #undef SAVE_REGS
 #undef PUSH_3RD_ARG
@@ -569,7 +569,7 @@ UCodeBlock* VG_(diduce_instrument)(UCodeBlock* cb_in, Addr orig_addr)
          /* do nothing */          
 
       } else {
-            VG_(copyUInstr)(cb, u_in);
+         VG_(copyUInstr)(cb, u_in);
       }
    }
 
@@ -578,7 +578,7 @@ UCodeBlock* VG_(diduce_instrument)(UCodeBlock* cb_in, Addr orig_addr)
    //if (BBinvs_ptr - BBinvs_ptr0 != BBinvs_node->array_size) {
    //   VG_(printf)("%x %x diff is %x, should be %x\n", BBinvs_ptr, BBinvs_ptr0, BBinvs_ptr - BBinvs_ptr0, BBinvs_node->array_size);
    //   VG_(panic)("everything doesn't look ok!");
-  // }
+   //}
 
    VG_(freeCodeBlock)(cb_in);
    return cb;
@@ -1090,24 +1090,17 @@ void VG_(diduce_log_instr1)(invariant1* inv, UInt arg2)
    vg_assert(res == 0);
    if (__builtin_setjmp(sigsegv_jmpbuf) == 0) {
 
-      switch (inv->data_size) {
-         case 1:  W = *(UChar*) data_addr;  break;
-         case 2:  W = *(UShort*)data_addr;  break;
-         case 4: case 8: case 10:
-                  W = *(UInt*)  data_addr;  break;
-         default: VG_(printf)("inv->data_size = %u\n", inv->data_size);
-                  VG_(panic)("inv->data_size not 1, 2, 4, 8 or 10");
-      }
+      // Do stuff that might seg fault here
 
       /* Restore old SIGILL handler */
-      res = VG_(ksigaction)( VKI_SIGSEGV, &sigsegv_saved, NULL );
-      vg_assert(res == 0);
+      //res = VG_(ksigaction)( VKI_SIGSEGV, &sigsegv_saved, NULL );
+      //vg_assert(res == 0);
 
    } else  {
-      VG_(printf)("SEGMENTATION FAULT!!!: (%c) data_addr=%x, data_size=%u", 
-            (inv->is_write ? 'w' : 'r'), data_addr, inv->data_size);
-      get_debug_info(inv->instr_addr, fl_buf, fn_buf, &line_num);
-      VG_(printf)(" at %s:%s:%d (%x)\n",  fl_buf, fn_buf, line_num, inv->instr_addr);
+      VG_(printf)("SEGMENTATION FAULT!!!: data_size=%u", 
+            inv->data_size);
+      //get_debug_info(inv->instr_addr, fl_buf, fn_buf, &line_num);
+      //VG_(printf)(" at %s:%s:%d (%x)\n",  fl_buf, fn_buf, line_num, inv->instr_addr);
       /* Restore old SIGILL handler */
       res = VG_(ksigaction)( VKI_SIGSEGV, &sigsegv_saved, NULL );
       vg_assert(res == 0);
