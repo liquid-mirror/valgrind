@@ -1,5 +1,7 @@
 
 /*--------------------------------------------------------------------*/
+/*--- Part of the MemCheck skin: management of memory error        ---*/
+/*--- messages.                                                    ---*/
 /*---                                     vg_memcheck_errcontext.c ---*/
 /*--------------------------------------------------------------------*/
 
@@ -333,45 +335,52 @@ void SKN_(pp_ErrContext) ( ErrContext* ec )
 static void describe_addr ( Addr a, AddrInfo* ai )
 {
    ShadowChunk* sc;
-   UInt         ml_no;
    Bool         ok;
    ThreadId     tid;
+
+   /* Nested functions, yeah.  Need the lexical scoping of 'a'. */ 
+
+   /* Closure for searching thread stacks */
+   Bool addr_is_in_bounds(Addr stack_min, Addr stack_max)
+   {
+      return (stack_min <= a && a <= stack_max);
+   }
+   /* Closure for searching malloc'd and free'd lists */
+   Bool addr_is_in_block(ShadowChunk *sh_ch)
+   {
+      return VG_(addr_is_in_block) ( a, sh_ch->data, sh_ch->size );
+   }
+
 
    /* Perhaps it's a user-def'd block ? */
    ok = SK_(client_perm_maybe_describe)( a, ai );
    if (ok)
       return;
    /* Perhaps it's on a thread's stack? */
-   tid = VG_(get_thread_of_stack_addr)(a);
+   tid = VG_(any_matching_thread_stack)(addr_is_in_bounds);
    if (tid != VG_INVALID_THREADID) {
       ai->akind     = Stack;
       ai->stack_tid = tid;
       return;
    }
-   /* Search for a freed block which might bracket it. */
-   for (sc = VG_(freed_list_start); sc != NULL; sc = sc->next) {
-      if (sc->data - VG_AR_CLIENT_REDZONE_SZB <= a
-          && a < sc->data + sc->size + VG_AR_CLIENT_REDZONE_SZB) {
-         ai->akind      = Freed;
-         ai->blksize    = sc->size;
-         ai->rwoffset   = (Int)(a) - (Int)(sc->data);
-         ai->lastchange = sc->where;
-         return;
-      }
-   }
-   /* Search for a mallocd block which might bracket it. */
-   for (ml_no = 0; ml_no < VG_N_MALLOCLISTS; ml_no++) {
-      for (sc = VG_(malloclist)[ml_no]; sc != NULL; sc = sc->next) {
-         if (sc->data - VG_AR_CLIENT_REDZONE_SZB <= a
-             && a < sc->data + sc->size + VG_AR_CLIENT_REDZONE_SZB) {
-            ai->akind      = Mallocd;
-            ai->blksize    = sc->size;
-            ai->rwoffset   = (Int)(a) - (Int)(sc->data);
-            ai->lastchange = sc->where;
-            return;
-         }
-      }
-   }
+   /* Search for a recently freed block which might bracket it. */
+   sc = VG_(any_matching_freed_ShadowChunks)(addr_is_in_block);
+   if (NULL != sc) {
+      ai->akind      = Mallocd;
+      ai->blksize    = sc->size;
+      ai->rwoffset   = (Int)(a) - (Int)(sc->data);
+      ai->lastchange = sc->where;
+      return;
+   } 
+   /* Search for a currently malloc'd block which might bracket it. */
+   sc = VG_(any_matching_mallocd_ShadowChunks)(addr_is_in_block);
+   if (NULL != sc) {
+      ai->akind      = Mallocd;
+      ai->blksize    = sc->size;
+      ai->rwoffset   = (Int)(a) - (Int)(sc->data);
+      ai->lastchange = sc->where;
+      return;
+   } 
    /* Clueless ... */
    ai->akind = Unknown;
    return;

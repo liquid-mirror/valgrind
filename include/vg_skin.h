@@ -52,11 +52,6 @@
    DO NOT CHANGE THIS VALUE FROM 5. !  */
 #define VG_MAX_REALREGS 5
 
-// SSS: for leak checks, hmm
-/* Number of lists in which we keep track of malloc'd but not free'd
-   blocks.  Should be prime. */
-#define VG_N_MALLOCLISTS 997
-
 /* The maximum number of pthreads that we support.  This is
    deliberately not very high since our implementation of some of the
    scheduler algorithms is surely O(N) in the number of threads, since
@@ -191,11 +186,6 @@ typedef
 extern ThreadId     VG_(get_current_tid_1_if_root) ( void );
 extern ThreadState* VG_(get_ThreadState)           ( ThreadId tid );
 
-/* Which thread is this address in the stack of, if any?  Returns
-   VG_INVALID_THREADID if none.  Used for error message generation. */
-extern ThreadId VG_(get_thread_of_stack_addr)( Addr a );
-
-
 /*====================================================================*/
 /*=== Valgrind's version of libc                                   ===*/
 /*====================================================================*/
@@ -228,14 +218,6 @@ extern void VG_(vprintf) ( void(*send)(Char),
 
 /* ------------------------------------------------------------------ */
 /* stdlib.h */
-
-// SSS: needed for memcheck client requests...
-/* The red-zone size for the client.  This can be arbitrary, but
-   unfortunately must be set at compile time. */
-#define VG_AR_CLIENT_REDZONE_SZW 4
-
-#define VG_AR_CLIENT_REDZONE_SZB \
-   (VG_AR_CLIENT_REDZONE_SZW * VKI_BYTES_PER_WORD)
 
 extern void* VG_(malloc)         ( Int nbytes );
 extern void  VG_(free)           ( void* ptr );
@@ -954,11 +936,11 @@ extern Bool VG_(what_fn_is_this)          ( Bool no_demangle, Addr a,
                                             Char* fn_name, Int n_fn_name);
 
 
-/* ---------------------------------------------------------------------
-   Exports of vg_clientmalloc.c
-   ------------------------------------------------------------------ */
+/*====================================================================*/
+/*=== Shadow chunks and block-finding                              ===*/
+/*====================================================================*/
 
-// SSS: not sure about this...
+// SSS: not sure about all this...
 typedef
    enum { 
       Vg_AllocMalloc = 0,
@@ -980,10 +962,33 @@ typedef
    ShadowChunk;
 
 
-// SSS: needed because of describe_addr() and get_malloc_shadows() in
-// memcheck skin...
-extern ShadowChunk* VG_(freed_list_start);
-extern ShadowChunk* VG_(malloclist)[VG_N_MALLOCLISTS];
+/* Makes an array of pointers to all the shadow chunks of malloc'd blocks */
+extern ShadowChunk** VG_(get_malloc_shadows) ( /*OUT*/ UInt* n_shadows );
+
+/* Determines if address 'a' is within the bounds of the block at start.
+   Allows a little 'slop' round the edges. */
+extern Bool VG_(addr_is_in_block) ( Addr a, Addr start, UInt size );
+
+/* Searches through currently malloc'd blocks until a matching one is found.
+   Returns NULL if none match.
+
+   Extra arguments can be implicitly passed to p using nested functions;
+   see vg_memcheck_errcontext.c for an example. */
+extern ShadowChunk* VG_(any_matching_mallocd_ShadowChunks) 
+                        ( Bool (*p) ( ShadowChunk* ));
+
+/* Searches through recently free'd blocks until a matching one is found.
+   Returns NULL if none match.
+
+   Don't call this unless VG_(needs).postpone_mem_reuse == True, or you'll
+   get an assertion failure. */
+extern ShadowChunk* VG_(any_matching_freed_ShadowChunks) 
+                        ( Bool (*p) ( ShadowChunk* ));
+
+/* Searches through all thread's stacks to see if any match.  Returns
+ * VG_INVALID_THREADID if none match. */
+extern ThreadId VG_(any_matching_thread_stack)
+                        ( Bool (*p) ( Addr stack_min, Addr stack_max ));
 
 // SSS: not sure about this...
 extern void  VG_(client_malloc_done) ( void );
