@@ -256,7 +256,8 @@ shadow_word* get_sword_addr ( Addr a )
 // SSS: rename these so they're not so similar to memcheck, unless it's
 // appropriate of course
 
-static __inline__ void init_virgin_sword(Addr a)
+static __inline__ 
+void init_virgin_sword(Addr a)
 {
    set_sword(a, virgin_sword);
 }
@@ -264,7 +265,8 @@ static __inline__ void init_virgin_sword(Addr a)
 
 /* 'a' is guaranteed to be 4-byte aligned here (not that that's important,
  * really) */
-static void make_writable_aligned ( Addr a, UInt size )
+static 
+void make_writable_aligned ( Addr a, UInt size )
 {
    Addr a_past_end = a + size;
 
@@ -276,7 +278,8 @@ static void make_writable_aligned ( Addr a, UInt size )
    }
 }
 
-static __inline__ void init_nonvirgin_sword(Addr a)
+static __inline__ 
+void init_nonvirgin_sword(Addr a)
 {
    shadow_word sword;
 
@@ -658,7 +661,7 @@ void set_address_range_state ( Addr a, UInt len /* in bytes */,
 
    if (len > 100 * 1000 * 1000)
       VG_(message)(Vg_UserMsg,
-                   "Warning: set address range perms: large range %d",
+                   "Warning: set address range state: large range %d",
                    len);
 
    VGP_PUSHCC(VgpSARP);
