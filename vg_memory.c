@@ -301,6 +301,7 @@ static Addr get_page_base ( Addr a )
 
 static void vg_handle_esp_assignment_SLOWLY ( Addr );
 
+__attribute__ ((regparm (1)))
 void VGM_(handle_esp_assignment) ( Addr new_espA )
 {
    UInt old_esp = VG_(baseBlock)[VGOFF_(m_esp)];

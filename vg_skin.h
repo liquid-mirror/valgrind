@@ -416,7 +416,8 @@ typedef
       CALLM,  /* call to a machine-code helper */
 
       /* for calling C functions -- CCALL_M_N passes M arguments and returns N
-       * (0 or 1) return values */
+       * (0 or 1) return values, where M+N <= 3.  If you want to pass more
+       * arguments than this allows to a C function, */
       CCALL_0_0, CCALL_1_0, CCALL_2_0,
 
       /* Hack for translating string (REP-) insns.  Jump to literal if
@@ -705,8 +706,8 @@ void VG_(synth_call) ( Bool ensure_shortform, Int word_offset );
    Acceptable tags are RealReg and Literal.  `fn' must be registered
    in the baseBlock first. */
 // SSS: Lit16 args too?
-void VG_(synth_ccall) ( Addr fn, UInt argc, UInt argv[], Tag tagv[],
-                        Int ret_reg );
+void VG_(synth_ccall) ( Addr fn, Int argc, Int regparms, UInt argv[],
+                        Tag tagv[], Int ret_reg );
 
 /* Addressing modes */
 void VG_(emit_amode_offregmem_reg) ( Int off, Int regmem, Int reg );
@@ -1145,6 +1146,8 @@ extern void        SK_(post_clo_init)( void );
 extern UCodeBlock* SK_(instrument)   ( UCodeBlock* cb, Addr a );
 extern void        SK_(fini)         ( void );
 
+// SSS: perhaps change the following to structs of function pointers?
+//      want a way to make it clearer which ones go together...
 
 /* ------------------------------------------------------------------ */
 /* VG_(needs).report_errors */
