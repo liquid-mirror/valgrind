@@ -415,10 +415,23 @@ typedef
       PUSH, POP, CLEAR, /* Add/remove/zap args for helpers. */
       CALLM,  /* call to a machine-code helper */
 
-      /* for calling C functions -- CCALL_M_N passes M arguments and returns N
-       * (0 or 1) return values, where M+N <= 3.  If you want to pass more
-       * arguments than this allows to a C function, */
-      CCALL_0_0, CCALL_1_0, CCALL_2_0,
+      /* for calling C functions of up to three arguments (or two if the
+         functions has a return value).  Arguments and return value must be
+         word-sized.  If you want to pass more arguments than this to a C
+         function (SSS: baseBlock global...) 
+        
+         Seven possibilities: 'arg1..3' show where args go, 'ret' shows
+         where return values go.
+        
+         CCALL(-,    -,    -   )    void f(void)
+         CCALL(arg1, -,    -   )    void f(UInt arg1)
+         CCALL(arg1, arg2, -   )    void f(UInt arg1, UInt arg2)
+         CCALL(arg1, arg2, arg3)    void f(UInt arg1, UInt arg2, UInt arg3)
+         CCALL(-,    -,    ret )    UInt f(UInt)
+         CCALL(arg1, -,    ret )    UInt f(UInt arg1)
+         CCALL(arg1, arg2, ret )    UInt f(UInt arg1, UInt arg2)
+       */
+      CCALL,
 
       /* Hack for translating string (REP-) insns.  Jump to literal if
          TempReg/RealReg is zero. */
@@ -542,7 +555,17 @@ typedef
       Bool    smc_check:1;     /* do a smc test, if writes memory. */
       Bool    signed_widen:1;  /* signed or unsigned WIDEN ? */
       JmpKind jmpkind:3;       /* additional properties of unconditional JMP */
-   }
+
+      /* Additional properties for UInstrs that call C functions */
+      UChar   argc:2;          /* Number of args, max 3 */
+      UChar   regparms_n:2;    /* Number of args passed in registers */
+      Bool    has_ret_val:1;   /* Function has return value? */
+      Bool    eax_dies:1;      /* Is %eax dead after call? */
+      Bool    ecx_dies:1;      /* Is %ecx dead after call? */
+      Bool    edx_dies:1;      /* Is %edx dead after call? */
+      UChar   extra5a;         /* Spare 8-bit field, free to be used by skins
+                                  that use extended UCode */
+}
    UInstr;
 
 
@@ -597,22 +620,25 @@ extern Int   VG_(getNewShadow)   ( UCodeBlock* cb );
 
 /* ------------------------------------------------------------------ */
 /* Low-level UInstr builders */
-extern void  VG_(emptyUInstr)( UInstr* u );
-extern void  VG_(newUInstr0) ( UCodeBlock* cb, Opcode opcode, Int sz );
-extern void  VG_(newUInstr1) ( UCodeBlock* cb, Opcode opcode, Int sz,
+extern void VG_(emptyUInstr)( UInstr* u );
+extern void VG_(newUInstr0) ( UCodeBlock* cb, Opcode opcode, Int sz );
+extern void VG_(newUInstr1) ( UCodeBlock* cb, Opcode opcode, Int sz,
                                Tag tag1, UInt val1 );
-extern void  VG_(newUInstr2) ( UCodeBlock* cb, Opcode opcode, Int sz,
-                               Tag tag1, UInt val1,
-                               Tag tag2, UInt val2 );
-extern void  VG_(newUInstr3) ( UCodeBlock* cb, Opcode opcode, Int sz,
-                               Tag tag1, UInt val1,
-                               Tag tag2, UInt val2,
-                               Tag tag3, UInt val3 );
-extern void  VG_(setFlagRW)  ( UInstr* u, 
+extern void VG_(newUInstr2) ( UCodeBlock* cb, Opcode opcode, Int sz,
+                              Tag tag1, UInt val1,
+                              Tag tag2, UInt val2 );
+extern void VG_(newUInstr3) ( UCodeBlock* cb, Opcode opcode, Int sz,
+                              Tag tag1, UInt val1,
+                              Tag tag2, UInt val2,
+                              Tag tag3, UInt val3 );
+extern void VG_(setFlagRW)  ( UInstr* u, 
                                FlagSet fr, FlagSet fw );
-extern void  VG_(setLiteralField) ( UCodeBlock* cb, UInt lit32 );
+extern void VG_(setLiteralField) ( UCodeBlock* cb, UInt lit32 );
+extern void VG_(setCCallFields)  ( UCodeBlock* cb, Addr fn, UChar argc,
+                                   UChar regparms_n, Bool has_ret_val );
+extern void VG_(setExtra5a) ( UCodeBlock* cb, UChar val );
 
-extern void  VG_(copyUInstr)  ( UCodeBlock* cb, UInstr* instr );
+extern void VG_(copyUInstr) ( UCodeBlock* cb, UInstr* instr );
 
 extern Bool VG_(anyFlagUse) ( UInstr* u );
 
@@ -623,8 +649,10 @@ extern Bool VG_(anyFlagUse) ( UInstr* u );
 /* ------------------------------------------------------------------ */
 /* Higher-level UInstr sequence builders */
 extern void VG_(callHelper_0_0)(UCodeBlock* cb, Addr f);
-extern void VG_(callHelper_1_0)(UCodeBlock* cb, Addr f, UInt arg1);
-extern void VG_(callHelper_2_0)(UCodeBlock* cb, Addr f, UInt arg1, UInt arg2);
+extern void VG_(callHelper_1_0)(UCodeBlock* cb, Addr f, UInt arg1,
+                                UInt regparms_n);
+extern void VG_(callHelper_2_0)(UCodeBlock* cb, Addr f, UInt arg1, UInt arg2,
+                                UInt regparms_n);
 
 
 /* ------------------------------------------------------------------ */
@@ -704,10 +732,11 @@ void VG_(synth_call) ( Bool ensure_shortform, Int word_offset );
 /* This one is good for calling C functions -- saves caller save regs,
    pushes args, calls, clears the stack, restores caller save regs.
    Acceptable tags are RealReg and Literal.  `fn' must be registered
-   in the baseBlock first. */
-// SSS: Lit16 args too?
-void VG_(synth_ccall) ( Addr fn, Int argc, Int regparms, UInt argv[],
-                        Tag tagv[], Int ret_reg );
+   in the baseBlock first.
+*/
+void VG_(synth_ccall) ( Addr fn, Int argc, Int regparms_n, UInt argv[],
+                        Tag tagv[], Int ret_reg, 
+                        Bool eax_dies, Bool ecx_dies, Bool edx_dies );
 
 /* Addressing modes */
 void VG_(emit_amode_offregmem_reg) ( Int off, Int regmem, Int reg );

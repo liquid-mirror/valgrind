@@ -497,6 +497,7 @@ Bool SKN_(expensive_sanity_check)(void)
 #define uInstr1   VG_(newUInstr1)
 #define uInstr2   VG_(newUInstr2)
 #define uLiteral  VG_(setLiteralField)
+#define uCCall    VG_(setCCallFields)
 #define newTemp   VG_(getNewTemp)
 
 /* Create and return an instrumented version of cb_in.  Free cb_in
@@ -530,8 +531,9 @@ UCodeBlock* SK_(instrument) ( UCodeBlock* cb_in, Addr not_used )
 
             vg_assert(1 == u_in->size || 2 == u_in->size || 4 == u_in->size || 
                       8 == u_in->size || 10 == u_in->size);
-            uInstr2(cb, CCALL_2_0, 0, TempReg, u_in->val1, TempReg, t_size);
-            uLiteral(cb, (Addr) & eraser_mem_read);
+            uInstr2(cb, CCALL, 0, TempReg, u_in->val1, TempReg, t_size);
+            // SSS: make regparms(2) eventually...
+            uCCall(cb, (Addr) & eraser_mem_read, 2, 0, False);
             VG_(copyUInstr)(cb, u_in);
             t_size = INVALID_TEMPREG;
             break;
@@ -544,8 +546,8 @@ UCodeBlock* SK_(instrument) ( UCodeBlock* cb_in, Addr not_used )
 
             vg_assert(1 == u_in->size || 2 == u_in->size || 4 == u_in->size || 
                       8 == u_in->size || 10 == u_in->size);
-            uInstr2(cb, CCALL_2_0, 0, TempReg, u_in->val2, TempReg, t_size);
-            uLiteral(cb, (Addr) & eraser_mem_write);
+            uInstr2(cb, CCALL, 0, TempReg, u_in->val2, TempReg, t_size);
+            uCCall(cb, (Addr) & eraser_mem_write, 2, 0, False);
             VG_(copyUInstr)(cb, u_in);
             t_size = INVALID_TEMPREG;
             break;
