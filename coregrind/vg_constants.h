@@ -46,6 +46,7 @@
    name can safely be used across different macros. */
 #define VG_(str)    VGAPPEND(vgPlain_,str)
 #define VGM_(str)   VGAPPEND(vgMem_,str)
+#define VGE_(str)   VGAPPEND(vgEraser_,str)
 #define VGP_(str)   VGAPPEND(vgProf_,str)
 #define VGOFF_(str) VGAPPEND(vgOff_,str)
 

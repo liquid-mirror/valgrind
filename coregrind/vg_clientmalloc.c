@@ -267,11 +267,12 @@ void* VG_(client_malloc) ( ThreadState* tst, UInt size, VgAllocKind kind )
    vg_cmalloc_n_mallocs ++;
    vg_cmalloc_bs_mallocd += size;
 
-   if (!VG_(clo_instrument)) {
+   // ZZZ
+   if (! VG_(needs).shadow_memory) {
       VGP_POPCC;
       return VG_(malloc) ( VG_AR_CLIENT, size );
    }
-
+      
    sc = client_malloc_shadow ( tst, VG_(clo_alignment), size, kind );
    VGP_POPCC;
    return (void*)(sc->data);
@@ -281,6 +282,7 @@ void* VG_(client_malloc) ( ThreadState* tst, UInt size, VgAllocKind kind )
 void* VG_(client_memalign) ( ThreadState* tst, UInt align, UInt size )
 {
    ShadowChunk* sc;
+
    VGP_PUSHCC(VgpCliMalloc);
    client_malloc_init();
 #  ifdef DEBUG_CLIENTMALLOC
@@ -293,7 +295,8 @@ void* VG_(client_memalign) ( ThreadState* tst, UInt align, UInt size )
    vg_cmalloc_n_mallocs ++;
    vg_cmalloc_bs_mallocd += size;
 
-   if (!VG_(clo_instrument)) {
+   // ZZZ
+   if (! VG_(needs).shadow_memory) {
       VGP_POPCC;
       return VG_(malloc_aligned) ( VG_AR_CLIENT, align, size );
    }
@@ -319,7 +322,7 @@ void VG_(client_free) ( ThreadState* tst, void* ptrV, VgAllocKind kind )
 
    vg_cmalloc_n_frees ++;
 
-   if (!VG_(clo_instrument)) {
+   if (! VG_(needs).shadow_memory) {
       VGP_POPCC;
       VG_(free) ( VG_AR_CLIENT, ptrV );
       return;
@@ -335,14 +338,18 @@ void VG_(client_free) ( ThreadState* tst, void* ptrV, VgAllocKind kind )
    }
 
    if (sc == NULL) {
-      VG_(record_free_error) ( tst, (Addr)ptrV );
+      // ZZZ
+      if (Vg_MemCheck == VG_(clo_action))
+         VG_(record_free_error) ( tst, (Addr)ptrV );
       VGP_POPCC;
       return;
    }
 
    /* check if its a matching free() / delete / delete [] */
-   if (kind != sc->allockind)
-      VG_(record_freemismatch_error) ( tst, (Addr) ptrV );
+   // ZZZ
+   if (Vg_MemCheck == VG_(clo_action))
+      if (kind != sc->allockind)
+         VG_(record_freemismatch_error) ( tst, (Addr) ptrV );
 
    /* Remove the shadow chunk from the mallocd list. */
    remove_from_malloclist ( ml_no, sc );
@@ -351,6 +358,7 @@ void VG_(client_free) ( ThreadState* tst, void* ptrV, VgAllocKind kind )
    VGM_(make_noaccess) ( sc->data - VG_AR_CLIENT_REDZONE_SZB, 
                          sc->size + 2*VG_AR_CLIENT_REDZONE_SZB );
    VGM_(make_noaccess) ( (Addr)sc, sizeof(ShadowChunk) );
+   // ZZZ: this could be skipped for Vg_Eraser
    sc->where = VG_(get_ExeContext)(False, tst->m_eip, tst->m_ebp);
 
    /* Put it out of harm's way for a while. */
@@ -379,7 +387,8 @@ void* VG_(client_calloc) ( ThreadState* tst, UInt nmemb, UInt size1 )
    vg_cmalloc_n_mallocs ++;
    vg_cmalloc_bs_mallocd += nmemb * size1;
 
-   if (!VG_(clo_instrument)) {
+   // ZZZ
+   if (! VG_(needs).shadow_memory) {
       VGP_POPCC;
       return VG_(calloc) ( VG_AR_CLIENT, nmemb, size1 );
    }
@@ -427,12 +436,13 @@ void* VG_(client_realloc) ( ThreadState* tst, void* ptrV, UInt size_new )
    vg_cmalloc_n_mallocs ++;
    vg_cmalloc_bs_mallocd += size_new;
 
-   if (!VG_(clo_instrument)) {
+   // ZZZ
+   if (! VG_(needs).shadow_memory) {
       vg_assert(ptrV != NULL && size_new != 0);
       VGP_POPCC;
       return VG_(realloc) ( VG_AR_CLIENT, ptrV, size_new );
    }
-
+   
    /* First try and find the block. */
    ml_no = VG_MALLOCLIST_NO(ptrV);
    for (sc = vg_malloclist[ml_no]; sc != NULL; sc = sc->next) {
@@ -441,7 +451,9 @@ void* VG_(client_realloc) ( ThreadState* tst, void* ptrV, UInt size_new )
    }
   
    if (sc == NULL) {
-      VG_(record_free_error) ( tst, (Addr)ptrV );
+      // ZZZ
+      if (Vg_MemCheck == VG_(clo_action))
+         VG_(record_free_error) ( tst, (Addr)ptrV );
       /* Perhaps we should keep going regardless. */
       VGP_POPCC;
       return NULL;
@@ -449,7 +461,9 @@ void* VG_(client_realloc) ( ThreadState* tst, void* ptrV, UInt size_new )
 
    if (sc->allockind != Vg_AllocMalloc) {
       /* can not realloc a range that was allocated with new or new [] */
-      VG_(record_freemismatch_error) ( tst, (Addr)ptrV );
+      // ZZZ
+      if (Vg_MemCheck == VG_(clo_action))
+         VG_(record_freemismatch_error) ( tst, (Addr)ptrV );
       /* but keep going anyway */
    }
 
