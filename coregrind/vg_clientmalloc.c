@@ -230,7 +230,8 @@ static ShadowChunk* client_malloc_shadow ( ThreadState* tst,
       p = (Addr)VG_(malloc_aligned)(VG_AR_CLIENT, align, size);
 
    sc        = VG_(malloc)(VG_AR_PRIVATE, sizeof(ShadowChunk));
-   sc->where = VG_(get_ExeContext)(False, tst->m_eip, tst->m_ebp);
+   sc->where = VG_(get_ExeContext)(tst->m_eip, tst->m_ebp, 
+                                   tst->m_esp, tst->stack_highest_word);
    sc->size  = size;
    sc->allockind = kind;
    sc->data  = p;
@@ -355,7 +356,8 @@ void VG_(client_free) ( ThreadState* tst, void* ptrV, VgAllocKind kind )
                          sc->size + 2*VG_AR_CLIENT_REDZONE_SZB );
    SKN_(make_noaccess) ( (Addr)sc, sizeof(ShadowChunk) );
    // SSS: this could be skipped for Vg_Eraser
-   sc->where = VG_(get_ExeContext)(False, tst->m_eip, tst->m_ebp);
+   sc->where = VG_(get_ExeContext)(tst->m_eip, tst->m_ebp,
+                                   tst->m_esp, tst->stack_highest_word);
 
    /* Put it out of harm's way for a while. */
    add_to_freed_queue ( sc );
@@ -391,7 +393,8 @@ void* VG_(client_calloc) ( ThreadState* tst, UInt nmemb, UInt size1 )
    size      = nmemb * size1;
    p         = (Addr)VG_(malloc)(VG_AR_CLIENT, size);
    sc        = VG_(malloc)(VG_AR_PRIVATE, sizeof(ShadowChunk));
-   sc->where = VG_(get_ExeContext)(False, tst->m_eip, tst->m_ebp);
+   sc->where = VG_(get_ExeContext)(tst->m_eip, tst->m_ebp,
+                                   tst->m_esp, tst->stack_highest_word);
    sc->size  = size;
    sc->allockind = Vg_AllocMalloc; /* its a lie - but true. eat this :) */
    sc->data  = p;
