@@ -68,7 +68,8 @@ typedef
           Stack, 
           Unknown, /* classification yielded nothing useful */
           Freed, Mallocd, 
-          UserG, UserS }
+          UserG, UserS 
+   }
    AddrKind;
 
 /* Records info about a faulting address. */
@@ -95,26 +96,30 @@ typedef
 /*------------------------------------------------------------*/
 
 /* Allow loads from partially-valid addresses?  default: YES */
-Bool VG_(clo_partial_loads_ok);
+extern Bool VG_(clo_partial_loads_ok);
+
+/* Max volume of the freed blocks queue. */
+extern Int   VG_(clo_freelist_vol);
 
 /* Do leak check at exit?  default: NO */
-Bool VG_(clo_leak_check);
+extern Bool VG_(clo_leak_check);
 
 /* How closely should we compare ExeContexts in leak records? default: 2 */
-VgRes VG_(clo_leak_resolution);
+extern VgRes VG_(clo_leak_resolution);
 
 /* In leak check, show reachable-but-not-freed blocks?  default: NO */
-Bool VG_(clo_show_reachable);
+extern Bool VG_(clo_show_reachable);
 
 /* Assume accesses immediately below %esp are due to gcc-2.96 bugs.
  * default: NO*/
-Bool VG_(clo_workaround_gcc296_bugs);
+extern Bool VG_(clo_workaround_gcc296_bugs);
 
 /* Shall we V-check addrs? (they are always A checked too)   default: YES */
-Bool VG_(clo_check_addrVs);
+extern Bool VG_(clo_check_addrVs);
 
 /* DEBUG: clean up instrumented code?  default: YES */
-Bool VG_(clo_cleanup);
+extern Bool VG_(clo_cleanup);
+
 
 /*------------------------------------------------------------*/
 /*--- Functions                                            ---*/
@@ -139,6 +144,9 @@ extern UInt SK_(helperc_LOADV4) ( Addr );
 
 extern void SK_(fpu_write_check) ( Addr addr, Int size );
 extern void SK_(fpu_read_check)  ( Addr addr, Int size );
+
+extern ShadowChunk* VG_(any_matching_freed_ShadowChunks) 
+                        ( Bool (*p) ( ShadowChunk* ) );
 
 /* For client requests */
 extern void VG_(make_noaccess) ( Addr a, UInt len );

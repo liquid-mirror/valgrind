@@ -88,7 +88,7 @@ typedef
    } Histogram;
 
 /* Automatically zeroed because it's static. */
-Histogram histogram[100];     
+static Histogram histogram[100];     
 
 void VG_(print_ccall_stats)(void)
 {
@@ -1148,7 +1148,7 @@ void VG_(synth_call) ( Bool ensure_shortform, Int word_offset )
 }
 
 /* 'maybe' because it is sometimes skipped eg. for "movl %eax,%eax" */
-void maybe_emit_movl_litOrReg_reg ( UInt litOrReg, Tag tag, UInt reg )
+static void maybe_emit_movl_litOrReg_reg ( UInt litOrReg, Tag tag, UInt reg )
 {
    if (RealReg == tag) {
       if (litOrReg != reg) {

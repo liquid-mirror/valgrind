@@ -61,7 +61,7 @@ typedef
    enum { ValueErr,
           CoreMemErr,
           AddrErr, 
-          ParamErr, UserErr, /* behaves like an anonymous ParamErr */
+          ParamErr, UserErr,  /* behaves like an anonymous ParamErr */
           FreeErr, FreeMismatchErr
    }
    MemCheckErrorKind;
@@ -103,10 +103,10 @@ void clear_AddrInfo ( AddrInfo* ai )
 static __inline__
 void clear_MemCheckError ( MemCheckError* err_extra )
 {
-   err_extra->axskind = ReadAxs;
-   err_extra->size    = 0;
+   err_extra->axskind   = ReadAxs;
+   err_extra->size      = 0;
    clear_AddrInfo ( &err_extra->addrinfo );
-   err_extra->isWrite = False;
+   err_extra->isWrite   = False;
 }
 
 static Bool eq_AddrInfo ( VgRes res, AddrInfo* ai1, AddrInfo* ai2 )
@@ -374,7 +374,7 @@ static void describe_addr ( Addr a, AddrInfo* ai )
       ai->akind      = Freed;
       ai->blksize    = sc->size;
       ai->rwoffset   = (Int)(a) - (Int)(sc->data);
-      ai->lastchange = sc->where;
+      ai->lastchange = (ExeContext*)sc->skin_extra[0];
       return;
    }
    /* Search for a currently malloc'd block which might bracket it. */
@@ -383,7 +383,7 @@ static void describe_addr ( Addr a, AddrInfo* ai )
       ai->akind      = Mallocd;
       ai->blksize    = sc->size;
       ai->rwoffset   = (Int)(a) - (Int)(sc->data);
-      ai->lastchange = sc->where;
+      ai->lastchange = (ExeContext*)sc->skin_extra[0];
       return;
    } 
    /* Clueless ... */
@@ -486,7 +486,7 @@ void SK_(record_jump_error) ( ThreadState* tst, Addr a )
    VG_(maybe_record_error)( tst, AddrErr, a, /*s*/NULL, &err_extra );
 }
 
-void SK_(record_free_error) ( ThreadState* tst, Addr a )
+void SK_(record_free_error) ( ThreadState* tst, Addr a ) 
 {
    MemCheckError err_extra;
 

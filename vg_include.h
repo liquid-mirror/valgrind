@@ -186,8 +186,6 @@ extern Int   VG_(clo_alignment);
 extern Bool  VG_(clo_trace_children);
 /* The file id on which we send all messages.  default: 2 (stderr). */
 extern Int   VG_(clo_logfile_fd);
-/* Max volume of the freed blocks queue. */
-extern Int   VG_(clo_freelist_vol);
 
 /* The number of suppression files specified. */
 extern Int   VG_(clo_n_suppressions);
@@ -365,11 +363,6 @@ extern void* VG_(arena_realloc) ( ArenaId arena, void* ptr, Int alignment,
                                   Int size );
 extern void* VG_(arena_malloc_aligned) ( ArenaId aid, Int req_alignB, 
                                                 Int req_pszB );
-
-/* Only use these on blocks in the VG_AR_CLIENT arena -- otherwise you will
-   get `bszW != 0' assertion failures. */
-extern UInt  VG_(get_clientblock_req_pszB) ( void* p );
-extern void  VG_(set_clientblock_req_pszB) ( void* p, UInt req_szB );
 
 extern void  VG_(mallocSanityCheckAll)   ( void );
 
@@ -927,8 +920,7 @@ extern ExeContext* VG_(get_ExeContext2) ( Addr eip, Addr ebp,
  * effectively extend it by defining their own enums in the (0..) range. */
 typedef
    enum {
-      /* Pthreading error */
-      PThreadSupp = -1
+      PThreadSupp = -1,    /* Matches PThreadErr */
    }
    CoreSuppKind;
 
@@ -963,8 +955,7 @@ typedef
  * effectively extend it by defining their own enums in the (0..) range. */
 typedef
    enum { 
-      /* Pthreading error */
-      PThreadErr = -1
+      PThreadErr      = -1,   /* Pthreading error */
    }
    CoreErrorKind;
 

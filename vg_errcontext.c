@@ -358,7 +358,7 @@ void VG_(maybe_record_error) ( ThreadState* tst,
 /*--- Exported fns                                         ---*/
 /*------------------------------------------------------------*/
 
-/* This is called not from generated code but from the scheduler */
+/* These are called not from generated code but from the scheduler */
 
 void VG_(record_pthread_error) ( ThreadId tid, Char* msg )
 {
@@ -366,7 +366,6 @@ void VG_(record_pthread_error) ( ThreadId tid, Char* msg )
    VG_(maybe_record_error)( &VG_(threads)[tid], PThreadErr, /*addr*/0, msg, 
                             /*extra*/NULL );
 }
-
 
 /*------------------------------*/
 

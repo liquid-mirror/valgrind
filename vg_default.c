@@ -238,19 +238,39 @@ void  SKN_(post_check_known_blocking_syscall)
 }
 
 /* ---------------------------------------------------------------------
+   Shadow chunks
+   ------------------------------------------------------------------ */
+
+void SKN_(complete_shadow_chunk)( ShadowChunk* sc, ThreadState* tst )
+{
+   VG_(printf)(nonfund_panic);
+   VG_(panic)("SKN_(complete_shadow_chunk)");
+}
+
+/* ---------------------------------------------------------------------
+   Alternative free()
+   ------------------------------------------------------------------ */
+
+void SKN_(alt_free) ( ShadowChunk* sc, ThreadState* tst )
+{
+   VG_(printf)(nonfund_panic);
+   VG_(panic)("SKN_(alt_free)");
+}
+
+/* ---------------------------------------------------------------------
    Sanity checks
    ------------------------------------------------------------------ */
 
 Bool SKN_(cheap_sanity_check)(void)
 {
    VG_(printf)(nonfund_panic);
-   VG_(panic)("SKN_(cheap_sanity_check))");
+   VG_(panic)("SKN_(cheap_sanity_check)");
 }
 
 Bool SKN_(expensive_sanity_check)(void)
 {
    VG_(printf)(nonfund_panic);
-   VG_(panic)("SKN_(expensive_sanity_check))");
+   VG_(panic)("SKN_(expensive_sanity_check)");
 }
 
 /*--------------------------------------------------------------------*/

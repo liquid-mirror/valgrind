@@ -66,9 +66,8 @@ typedef
 typedef 
    struct {
       Char*       name;
-      Int         extra_szW;   /* 'extra' field size in words */
-      Int         rz_szW;      /* Red zone size in words */
-      Bool        rz_check;    /* Check red-zone on free? */
+      Int         rz_szW; /* Red zone size in words */
+      Bool        rz_check; /* Check red-zone on free? */
       Int         min_sblockW; /* Minimum superblock size */
       WordF*      freelist[VG_N_MALLOC_LISTS];
       Superblock* sblocks;
@@ -85,25 +84,29 @@ typedef
      this block total sizeW   (1 word)
      freelist previous ptr    (1 word)
      freelist next  ptr       (1 word)
-     'extra' words            (depends on .extra_szW field of Arena)
-     red zone words           (depends on .rz_szW field of Arena)
+     red zone words (depends on .rz_szW field of Arena)
      (payload words)
-     red zone words           (depends on .rz_szW field of Arena)
-     this block total sizeW   (1 word)
+     red zone words (depends on .rz_szW field of Arena)
+     this block total sizeW  (1 word)
 
-   Total size in words (bszW) and payload size in words (pszW)
-   are related by:
+     Total size in words (bszW) and payload size in words (pszW)
+     are related by
+        bszW == pszW + 4 + 2 * a->rz_szW
 
-        bszW == pszW + 4 + arena->extra_szW + 2 * arena->rz_szW
-
-   Furthermore, both size fields in the block are negative if it is
-   not in use, and positive if it is in use.  A block size of zero
-   is not possible, because a block always has at least four words
-   of overhead.  
-
-   Because of the variable structure, this is not done as a struct
-   but using hard-wired offsets.  How hardcore.
+     Furthermore, both size fields in the block are negative if it is
+     not in use, and positive if it is in use.  A block size of zero
+     is not possible, because a block always has at least four words
+     of overhead.  
 */
+typedef
+   struct {
+      Int   bszW_lo;
+      Word* prev;
+      Word* next;
+      Word  redzone[0];
+   } 
+   BlockHeader;
+
 
 /*------------------------------------------------------------*/
 /*--- Forwardses ... and misc ...                          ---*/
@@ -140,14 +143,13 @@ static Arena* arenaId_to_ArenaP ( ArenaId arena )
 /* Initialise an arena. */
 static
 void arena_init ( Arena* a, Char* name, 
-                  Int extra_szW, Int rz_szW, Bool rz_check, Int min_sblockW )
+                  Int rz_szW, Bool rz_check, Int min_sblockW )
 {
    Int i;
    vg_assert((min_sblockW % VKI_WORDS_PER_PAGE) == 0);
-   a->name        = name;
-   a->extra_szW   = extra_szW;
-   a->rz_szW      = rz_szW;
-   a->rz_check    = rz_check;
+   a->name = name;
+   a->rz_szW = rz_szW;
+   a->rz_check = rz_check;
    a->min_sblockW = min_sblockW;
    for (i = 0; i < VG_N_MALLOC_LISTS; i++) a->freelist[i] = NULL;
    a->sblocks = NULL;
@@ -183,6 +185,7 @@ static
 void ensure_mm_init ( void )
 {
    static Bool init_done = False;
+
    if (init_done) return;
 
    /* Use a checked red zone size of 1 word for our internal stuff,
@@ -193,32 +196,31 @@ void ensure_mm_init ( void )
       words are unchanged. */
 
    arena_init ( &vg_arena[VG_AR_CORE],      "core    ", 
-                0, 1, True, 262144 );
+                1, True, 262144 );
 
    arena_init ( &vg_arena[VG_AR_SKIN],      "skin    ", 
-                0, 1, True, 262144 );
+                1, True, 262144 );
 
    arena_init ( &vg_arena[VG_AR_SYMTAB],    "symtab  ", 
-                0, 1, True, 262144 );
+                1, True, 262144 );
 
    arena_init ( &vg_arena[VG_AR_JITTER],    "JITter  ", 
-                0, 1, True, 8192 );
+                1, True, 8192 );
 
-   /* CLIENT arena has one extra word for req_pszB */
    arena_init ( &vg_arena[VG_AR_CLIENT],    "client  ",  
-                1, VG_AR_CLIENT_REDZONE_SZW, False, 262144 );
+                VG_AR_CLIENT_REDZONE_SZW, False, 262144 );
 
    arena_init ( &vg_arena[VG_AR_DEMANGLE],  "demangle",  
-                0, 4 /*paranoid*/, True, 16384 );
+                4 /*paranoid*/, True, 16384 );
 
    arena_init ( &vg_arena[VG_AR_EXECTXT],   "exectxt ",  
-                0, 1, True, 16384 );
+                1, True, 16384 );
 
    arena_init ( &vg_arena[VG_AR_ERRORS],    "errors  ",  
-                0, 1, True, 16384 );
+                1, True, 16384 );
 
    arena_init ( &vg_arena[VG_AR_TRANSIENT], "transien",  
-                0, 2, True, 16384 );
+                2, True, 16384 );
 
    init_done = True;
 #  ifdef DEBUG_MALLOC
@@ -303,25 +305,6 @@ Bool is_inuse_bszW ( Int bszW )
 }
 
 
-/* Return the lower, upper and total overhead in words for a block.
-   These are determined purely by which arena the block lives in. */
-static __inline__
-Int overhead_szW_lo ( Arena* a )
-{
-   return 3 + a->extra_szW + a->rz_szW;
-}
-static __inline__
-Int overhead_szW_hi ( Arena* a )
-{
-   return 1 + a->rz_szW;
-}
-static __inline__
-Int overhead_szW ( Arena* a )
-{
-   return overhead_szW_lo(a) + overhead_szW_hi(a);
-}
-
-
 /* Given the addr of the first word of a block, return the addr of the
    last word. */
 static __inline__
@@ -344,7 +327,7 @@ WordF* last_to_first ( WordL* lw )
 static __inline__
 Word* first_to_payload ( Arena* a, WordF* fw )
 {
-   return & fw[overhead_szW_lo(a)];
+   return & fw[3 + a->rz_szW];
 }
 
 /* Given the addr of the first word of a the payload of a block,
@@ -352,7 +335,7 @@ Word* first_to_payload ( Arena* a, WordF* fw )
 static __inline__
 Word* payload_to_first ( Arena* a, WordF* payload )
 {
-   return & payload[-overhead_szW_lo(a)];
+   return & payload[- 3 - a->rz_szW];
 }
 
 /* Set and get the lower size field of a block. */
@@ -369,23 +352,19 @@ Int get_bszW_lo ( WordF* fw )
 
 /* Set and get the next and previous link fields of a block. */
 static __inline__
-void set_prev_p  ( WordF* fw, Word* prev_p ) 
-{
+void set_prev_p  ( WordF* fw, Word* prev_p ) { 
    fw[1] = (Word)prev_p; 
 }
 static __inline__
-void set_next_p  ( WordF* fw, Word* next_p ) 
-{
+void set_next_p  ( WordF* fw, Word* next_p ) { 
    fw[2] = (Word)next_p; 
 }
 static __inline__
-Word* get_prev_p  ( WordF* fw ) 
-{
+Word* get_prev_p  ( WordF* fw ) { 
    return (Word*)(fw[1]);
 }
 static __inline__
-Word* get_next_p  ( WordF* fw ) 
-{
+Word* get_next_p  ( WordF* fw ) { 
    return (Word*)(fw[2]);
 }
 
@@ -411,21 +390,12 @@ Int get_bszW_hi_from_last_word ( WordL* lw ) {
    return get_bszW_lo(fw);
 }
 
-/* Get/set the ith word of the 'extra' field of a block */
-static __inline__
-UInt get_extra_word ( WordF* fw, Int extra_wordno ) {
-   return fw[3 + extra_wordno];
-}
-static __inline__
-void set_extra_word ( WordF* fw, Int extra_wordno, Word w ) {
-   fw[3 + extra_wordno] = w;
-}
 
 /* Read and write the lower and upper red-zone words of a block. */
 static __inline__
 void set_rz_lo_word ( Arena* a, WordF* fw, Int rz_wordno, Word w )
 {
-   fw[3 + a->extra_szW + rz_wordno] = w;
+   fw[3 + rz_wordno] = w;
 }
 static __inline__
 void set_rz_hi_word ( Arena* a, WordF* fw, Int rz_wordno, Word w )
@@ -436,13 +406,32 @@ void set_rz_hi_word ( Arena* a, WordF* fw, Int rz_wordno, Word w )
 static __inline__
 Word get_rz_lo_word ( Arena* a, WordF* fw, Int rz_wordno )
 {
-   return fw[3 + a->extra_szW + rz_wordno];
+   return fw[3 + rz_wordno];
 }
 static __inline__
 Word get_rz_hi_word ( Arena* a, WordF* fw, Int rz_wordno )
 {
    WordL* lw = first_to_last(fw);
    return lw[-1-rz_wordno];
+}
+
+
+/* Return the lower, upper and total overhead in words for a block.
+   These are determined purely by which arena the block lives in. */
+static __inline__
+Int overhead_szW_lo ( Arena* a )
+{
+   return 3 + a->rz_szW;
+}
+static __inline__
+Int overhead_szW_hi ( Arena* a )
+{
+   return 1 + a->rz_szW;
+}
+static __inline__
+Int overhead_szW ( Arena* a )
+{
+   return overhead_szW_lo(a) + overhead_szW_hi(a);
 }
 
 
@@ -460,41 +449,6 @@ Int bszW_to_pszW ( Arena* a, Int bszW )
    vg_assert(pszW >= 0);
    return pszW;
 }
-
-
-/* Set req_pszB from the 'extra' field of a VG_AR_CLIENT block */
-void VG_(set_clientblock_req_pszB) ( void* p, UInt req_pszB ) {
-   Arena* a;
-   Word*  b;
-   UInt   pszW;
-
-   ensure_mm_init();
-   a = arenaId_to_ArenaP(VG_AR_CLIENT);
-   b = payload_to_first(a, p);
-   vg_assert(blockSane(a, b));
-   set_extra_word( b, 0, req_pszB );
-   pszW = bszW_to_pszW(a, mk_plain_bszW(get_bszW_lo(b)));
-   vg_assert(req_pszB <= VKI_BYTES_PER_WORD * pszW);
-}
-
-/* Get req_pszB from the 'extra' field of a VG_AR_CLIENT block */
-UInt VG_(get_clientblock_req_pszB) ( void* p ) {
-   Arena* a;
-   Word*  b;
-   UInt   req_pszB, pszW;
-
-   ensure_mm_init();
-   a = arenaId_to_ArenaP(VG_AR_CLIENT);
-   b = payload_to_first(a, p);
-   VG_(printf)("X\n");
-   vg_assert(blockSane(a, b));
-   req_pszB = get_extra_word( b, 0 );
-   pszW = bszW_to_pszW(a, mk_plain_bszW(get_bszW_lo(b)));
-   vg_assert(req_pszB <= VKI_BYTES_PER_WORD * pszW);
-         
-   return req_pszB;
-}
-
 
 /*------------------------------------------------------------*/
 /*--- Functions for working with freelists.                ---*/
@@ -623,16 +577,13 @@ void mkFreeBlock ( Arena* a, Word* b, Int bszW, Int b_lno )
 /* Mark the words at b .. b+bszW-1 as in use, and set up the block
    appropriately. */
 static
-void mkInuseBlock ( Arena* a, UInt* b, UInt bszW, UInt extra[] )
+void mkInuseBlock ( Arena* a, UInt* b, UInt bszW )
 {
    Int i;
    set_bszW_lo(b, mk_inuse_bszW(bszW));
    set_bszW_hi(b, mk_inuse_bszW(bszW));
    set_prev_p(b, NULL);
    set_next_p(b, NULL);
-   for (i = 0; i < a->extra_szW; i++) {
-      set_extra_word(b, i, extra[i]);
-   }
    if (a->rz_check) {
       for (i = 0; i < a->rz_szW; i++) {
          set_rz_lo_word(a, b, i, (UInt)b ^ VG_REDZONE_LO_MASK);
@@ -672,8 +623,7 @@ void unlinkBlock ( Arena* a, UInt* b, Int listno )
    req_bszW is the required size of the block which isn't the
    fragment. */
 static
-void splitChunk ( Arena* a, UInt* b, Int b_listno,
-                  UInt req_bszW, UInt extra[] )
+void splitChunk ( Arena* a, UInt* b, Int b_listno, UInt req_bszW )
 {
    Int b_bszW, frag_bszW;
    b_bszW = mk_plain_bszW(get_bszW_lo(b));
@@ -686,7 +636,7 @@ void splitChunk ( Arena* a, UInt* b, Int b_listno,
    */
    vg_assert(bszW_to_pszW(a, frag_bszW) > 0);
    unlinkBlock(a, b, b_listno);
-   mkInuseBlock(a, b, req_bszW, extra);
+   mkInuseBlock(a, b, req_bszW);
    mkFreeBlock(a, &b[req_bszW], frag_bszW, 
                   pszW_to_listNo(bszW_to_pszW(a, frag_bszW)));
 }
@@ -911,7 +861,6 @@ void* VG_(arena_malloc) ( ArenaId aid, Int req_pszB )
    Superblock* new_sb;
    Word*       b;
    Arena*      a;
-   UInt*       extra;
 
    VGP_PUSHCC(VgpMalloc);
 
@@ -981,19 +930,8 @@ void* VG_(arena_malloc) ( ArenaId aid, Int req_pszB )
       Where "useful" means that the payload size of the frag is at
       least one word.  */
    frag_bszW = b_bszW - req_bszW;
-
-   /* For client blocks, record requested size in 'extra' field */
-   switch (aid) {
-      case VG_AR_CLIENT:
-         extra = &req_pszB;
-         break;
-      default:
-         extra = NULL;
-         break;
-   }
-
    if (frag_bszW > overhead_szW(a)) {
-      splitChunk(a, b, lno, req_bszW, extra);
+      splitChunk(a, b, lno, req_bszW);
    } else {
       /* No, mark as in use and use as-is. */
       unlinkBlock(a, b, lno);
@@ -1001,7 +939,7 @@ void* VG_(arena_malloc) ( ArenaId aid, Int req_pszB )
       set_bszW_lo(b, mk_inuse_bszW(b_bszW));
       set_bszW_hi(b, mk_inuse_bszW(b_bszW));
       */
-      mkInuseBlock(a, b, b_bszW, &req_pszB);
+      mkInuseBlock(a, b, b_bszW);
    }
    vg_assert(req_bszW <= mk_plain_bszW(get_bszW_lo(b)));
 
@@ -1139,7 +1077,6 @@ void* VG_(arena_malloc_aligned) ( ArenaId aid, Int req_alignB, Int req_pszB )
    Int    req_alignW, req_pszW, base_pszW_req, base_pszW_act, frag_bszW;
    Word   *base_b, *base_p, *align_p;
    UInt   saved_bytes_on_loan;
-   UInt*  extra;
    Arena* a;
 
    ensure_mm_init();
@@ -1207,24 +1144,12 @@ void* VG_(arena_malloc_aligned) ( ArenaId aid, Int req_alignB, Int req_pszB )
    mkFreeBlock ( a, base_b, frag_bszW, 
                  pszW_to_listNo(bszW_to_pszW(a, frag_bszW)) );
 
-   /* For client blocks, record requested size in 'extra' field */
-   switch (aid) {
-      case VG_AR_CLIENT:
-         extra = &req_pszB;
-         break;
-      default:
-         extra = NULL;
-         break;
-   }
-
    /* Create the aligned block. */
    mkInuseBlock ( a,
                   align_p - overhead_szW_lo(a), 
                   base_p + base_pszW_act 
                          + overhead_szW_hi(a) 
-                         - (align_p - overhead_szW_lo(a)),
-                  extra
-                );
+                         - (align_p - overhead_szW_lo(a)) );
 
    /* Final sanity checks. */
    vg_assert(( (UInt)align_p % req_alignB) == 0);
@@ -1269,7 +1194,7 @@ void* VG_(arena_calloc) ( ArenaId aid, Int nmemb, Int nbytes )
 
 
 void* VG_(arena_realloc) ( ArenaId aid, void* ptr, 
-                           Int req_alignB, Int req_pszB )
+                          Int req_alignB, Int req_pszB )
 {
    Arena* a;
    Int    old_bszW, old_pszW, old_pszB, i;
