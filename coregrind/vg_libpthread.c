@@ -1050,6 +1050,7 @@ static __inline__
 void __my_pthread_testcancel(void)
 {
    int res;
+   ensure_valgrind("__my_pthread_testcancel");
    VALGRIND_MAGIC_SEQUENCE(res, (-1) /* default */,
                            VG_USERREQ__TESTCANCEL,
                            0, 0, 0, 0);
