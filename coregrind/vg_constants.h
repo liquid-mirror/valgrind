@@ -32,27 +32,10 @@
 #ifndef __VG_CONSTANTS_H
 #define __VG_CONSTANTS_H
 
+#include "vg_constants_skin.h"
 
 /* This file is included in all Valgrind source files, including
    assembly ones. */
-
-/* All symbols externally visible from valgrind.so are prefixed
-   as specified here.  The prefix can be changed, so as to avoid
-   namespace conflict problems.
-*/
-#define VGAPPEND(str1,str2) str1##str2
-
-/* These macros should add different prefixes so the same base
-   name can safely be used across different macros. */
-#define VG_(str)    VGAPPEND(vgPlain_,str)
-#define VGM_(str)   VGAPPEND(vgMem_,str)
-#define VGE_(str)   VGAPPEND(vgEraser_,str)
-#define VGP_(str)   VGAPPEND(vgProf_,str)
-#define VGOFF_(str) VGAPPEND(vgOff_,str)
-
-/* Skin specific ones.  Note that final name still starts with "vg". */
-#define SK_(str)  VGAPPEND(vgSkin_,str)
-#define SKN_(str) VGAPPEND(vgSkinNeed_,str)
 
 /* Magic values that %ebp might be set to when returning to the
    dispatcher.  The only other legitimate value is to point to the
@@ -97,7 +80,7 @@
 /* Assembly code stubs make this request */
 #define VG_USERREQ__SIGNAL_RETURNS          0x4001
 
-#endif /* ndef __VG_INCLUDE_H */
+#endif /* ndef __VG_CONSTANTS_H */
 
 /*--------------------------------------------------------------------*/
 /*--- end                                           vg_constants.h ---*/
