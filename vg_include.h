@@ -1078,32 +1078,6 @@ typedef
       /* Advance the simulated %eip by some small (< 128) number. */
       INCEIP,
 
-#if 0
-      /* uinstrs which are not needed for mere translation of x86 code,
-         only for instrumentation of it. */
-      LOADV,
-      STOREV,
-      GETV,
-      PUTV,
-      TESTV,
-      SETV,
-      /* Get/set the v-bit (and it is only one bit) for the simulated
-         %eflags register. */
-      GETVF,
-      PUTVF,
-#endif
-
-#if 0
-      /* Do a unary or binary tag op.  Only for post-instrumented
-         code.  For TAG1, first and only arg is a TempReg, and is both
-         arg and result reg.  For TAG2, first arg is src, second is
-         dst, in the normal way; both are TempRegs.  In both cases,
-         3rd arg is a RiCHelper with a Lit16 tag.  This indicates
-         which tag op to do. */
-      TAG1,
-      TAG2,
-#endif
-
       /* Makes it easy for extended-UCode ops by doing:
 
            enum { EU_OP1 = DUMMY_FINAL_OP + 1, ... } 
@@ -1213,11 +1187,8 @@ typedef
       UChar   tag2:4;     /* second operand tag */
       UChar   tag3:4;     /* third  operand tag */
       UChar   extra4b:4;  /* Spare field, used by WIDEN for src
-                             -size, and by LEA2 for scale 
-                             (1,2,4 or 8), and by unconditional JMPs for
-                             orig x86 instr size if precise_x86_instr_sizes
-                             needed */
-
+                             -size, and by LEA2 for scale (1,2,4 or 8),
+                             and by JMPs for original x86 instr size */
 
       /* word 5 */
       UChar   cond;            /* condition, for jumps */
@@ -2227,14 +2198,13 @@ extern Bool SKN_(read_extra_suppression_info) ( Int fd, Char* buf,
 extern Bool SKN_(error_matches_suppression)(ErrContext* ec, Suppression* su);
 
 
-
 /* ---------------------------------------------------------------------
    For skins keeping basic block-level information 
    (VG_(needs).identifies_basic_blocks)
    ------------------------------------------------------------------ */
 
 // SSS: different prefix
-extern void SK_(discard_basic_block_info) ( TTEntry* tte );
+extern void SKN_(discard_basic_block_info) ( TTEntry* tte );
 
 /* ---------------------------------------------------------------------
    Skin-specific command line options (VG_(needs).command_line_options)
@@ -2251,13 +2221,6 @@ extern Char* SKN_(usage)                  ( void );
    ------------------------------------------------------------------ */
 
 extern UInt SKN_(handle_client_request) ( ThreadState* tst, UInt* arg_block );
-
-/* ---------------------------------------------------------------------
-   For augmenting UInstrs -- generating extra code for one or more core
-   UInstrs (VG_(needs).augments_UInstrs)
-   ------------------------------------------------------------------ */
-
-extern void  SKN_(augmentUInstr)  ( UInstr* u );
 
 /* ---------------------------------------------------------------------
    Template functions extending UCode -- adding new UInstrs
@@ -2291,50 +2254,8 @@ extern void  SKN_(post_check_known_blocking_syscall)
    For sanity checks
    ------------------------------------------------------------------ */
 
-// SSS: return values inconsistent
 extern Bool SKN_(cheap_sanity_check)     ( void );
-extern void SKN_(expensive_sanity_check) ( void );
-
-#if 0
-/* ---------------------------------------------------------------------
-   For shadow memory (VG_(needs).shadow_memory)
-   ------------------------------------------------------------------ */
-
-// SSS: can any of these be removed/merged? (esp the checking ones)
-
-extern void SKN_(make_segment_readable) ( Addr a, UInt len );
-
-/* Set permissions for an address range.  Not speed-critical. */
-extern void SKN_(make_noaccess) ( Addr a, UInt len );
-extern void SKN_(make_writable) ( Addr a, UInt len );
-extern void SKN_(make_readable) ( Addr a, UInt len );
-/* Use with care! (read: use for shmat only) */
-extern void SKN_(make_readwritable) ( Addr a, UInt len );
-
-extern void SKN_(make_aligned_word_NOACCESS) ( Addr a );
-extern void SKN_(make_aligned_word_WRITABLE) ( Addr a );
-
-extern void SKN_(copy_address_range_state) ( Addr src, Addr dst, UInt len );
-
-/* Check permissions for an address range.  Not speed-critical. */
-// SSS: these are a bit MemCheck-specific, really...
-extern Bool SKN_(check_writable) ( Addr a, UInt len, Addr* bad_addr );
-extern Bool SKN_(check_readable) ( Addr a, UInt len, Addr* bad_addr );
-extern Bool SKN_(check_readable_asciiz) ( Addr a, Addr* bad_addr );
-#endif
-
-/* ---------------------------------------------------------------------
-   Thread-related exports of vgext_default.c, which are replaced by
-   definitions from the chosen extension by LD_PRELOADing
-   ------------------------------------------------------------------ */
-
-// JJJ: use of void* ugly but necessary to avoid importing pthread.h, which
-// screws up lib_pthread.so.
-void SKN_(thread_does_lock)  ( ThreadId tid, void* mutex );
-void SKN_(thread_does_unlock)( ThreadId tid, void* mutex );
-
-// SSS: omitted because it run on sim'd CPU and is dangerous
-//void SKN_(thread_dies)       ( void );
+extern Bool SKN_(expensive_sanity_check) ( void );
 
 
 /* ---------------------------------------------------------------------

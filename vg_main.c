@@ -388,9 +388,8 @@ UInt VG_(sanity_slow_count) = 0;
 UInt VG_(num_scheduling_events_MINOR) = 0;
 UInt VG_(num_scheduling_events_MAJOR) = 0;
 
-
 /* ---------------------------------------------------------------------
-   Values derived from command-line options.
+   Skin data structure initialisation
    ------------------------------------------------------------------ */
 
 #define INVALID_Bool    ((Bool)999)    /* not 0 or 1 */
@@ -422,6 +421,77 @@ VgNeeds VG_(needs) = {
 
    .sanity_checks           = INVALID_Bool,
 };
+
+VgTrackEvents VG_(track_events) = {
+   .new_mem_startup       = NULL,
+   .new_mem_heap          = NULL,
+   .new_mem_stack         = NULL,
+   .new_mem_stack_aligned = NULL,
+   .new_mem_brk           = NULL,
+   .new_mem_mmap          = NULL,
+
+   .copy_mem_heap         = NULL,
+   .change_mem_mprotect   = NULL,
+
+   .die_mem_heap          = NULL,
+   .die_mem_stack         = NULL,
+   .die_mem_stack_aligned = NULL,
+   .die_mem_stack_thread  = NULL,
+   .die_mem_brk           = NULL,
+   .die_mem_munmap        = NULL,
+   .die_mem_pthread       = NULL,
+   .die_mem_signal        = NULL,
+
+   .pre_mem_read          = NULL,
+   .pre_mem_read_asciiz   = NULL,
+   .pre_mem_write         = NULL,
+   .post_mem_write        = NULL,
+
+   .post_mutex_lock       = NULL,
+   .post_mutex_unlock     = NULL,
+};
+
+static void sanity_check_needs ( void )
+{
+#define CHECK_NOT(var, value)                                        \
+   if ((var)==(value)) {                                             \
+      VG_(printf)("\nNeeds error:\n"                                 \
+                  "  %s not initialised by VG_(setup)()\n", \
+                  VG__STRING(var));                                  \
+      VG_(panic)("Uninitialised needs field\n");                     \
+   }
+   
+   CHECK_NOT(VG_(needs).name,        NULL);
+   CHECK_NOT(VG_(needs).description, NULL);
+
+   CHECK_NOT(VG_(needs).record_mem_exe_context,  INVALID_Bool);
+   CHECK_NOT(VG_(needs).postpone_mem_reuse,      INVALID_Bool);
+
+   CHECK_NOT(VG_(needs).debug_info,              Vg_DebugUnknown);
+   CHECK_NOT(VG_(needs).precise_x86_instr_sizes, INVALID_Bool);
+   CHECK_NOT(VG_(needs).pthread_errors,          INVALID_Bool);
+   CHECK_NOT(VG_(needs).report_errors,           INVALID_Bool);
+
+   CHECK_NOT(VG_(needs).identifies_basic_blocks, INVALID_Bool);
+
+   CHECK_NOT(VG_(needs).run_libc_freeres,        INVALID_Bool);
+
+   CHECK_NOT(VG_(needs).command_line_options,    INVALID_Bool);
+   CHECK_NOT(VG_(needs).client_requests,         INVALID_Bool);
+
+   CHECK_NOT(VG_(needs).extends_UCode,           INVALID_Bool);
+
+   CHECK_NOT(VG_(needs).wrap_syscalls,           INVALID_Bool);
+
+   CHECK_NOT(VG_(needs).sanity_checks,           INVALID_Bool);
+
+#undef CHECK_NOT
+#undef INVALID_Bool
+}
+
+/* ---------------------------------------------------------------------
+   Values derived from command-line options.
+   ------------------------------------------------------------------ */
 
 /* Define, and set defaults. */
 Bool   VG_(clo_error_limit)    = True;
@@ -499,44 +569,6 @@ static void args_grok_error ( Char* msg )
                "client's argc/argc/envp:\n\t%s\n", msg);
    config_error("couldn't find client's argc/argc/envp");
 }   
-
-static void sanity_check_needs ( void )
-{
-#define CHECK_NOT(var, value)                                        \
-   if ((var)==(value)) {                                             \
-      VG_(printf)("\nNeeds error:\n"                                 \
-                  "  %s not initialised by VG_(setup)()\n", \
-                  VG__STRING(var));                                  \
-      VG_(panic)("Uninitialised needs field\n");                     \
-   }
-   
-   CHECK_NOT(VG_(needs).name,        NULL);
-   CHECK_NOT(VG_(needs).description, NULL);
-
-   CHECK_NOT(VG_(needs).record_mem_exe_context,  INVALID_Bool);
-   CHECK_NOT(VG_(needs).postpone_mem_reuse,      INVALID_Bool);
-
-   CHECK_NOT(VG_(needs).debug_info,              Vg_DebugUnknown);
-   CHECK_NOT(VG_(needs).precise_x86_instr_sizes, INVALID_Bool);
-   CHECK_NOT(VG_(needs).pthread_errors,          INVALID_Bool);
-   CHECK_NOT(VG_(needs).report_errors,           INVALID_Bool);
-
-   CHECK_NOT(VG_(needs).identifies_basic_blocks, INVALID_Bool);
-
-   CHECK_NOT(VG_(needs).run_libc_freeres,        INVALID_Bool);
-
-   CHECK_NOT(VG_(needs).command_line_options,    INVALID_Bool);
-   CHECK_NOT(VG_(needs).client_requests,         INVALID_Bool);
-
-   CHECK_NOT(VG_(needs).extends_UCode,           INVALID_Bool);
-
-   CHECK_NOT(VG_(needs).wrap_syscalls,           INVALID_Bool);
-
-   CHECK_NOT(VG_(needs).sanity_checks,           INVALID_Bool);
-
-#undef CHECK_NOT
-#undef INVALID_Bool
-}
 
 static void usage ( void )
 {
@@ -1430,7 +1462,7 @@ void VG_(do_sanity_checks) ( Bool force_expensive )
          VG_(sanity_check_tc_tt)();
 
       if (VG_(needs).sanity_checks) {
-          SKN_(expensive_sanity_check)();
+          vg_assert(SKN_(expensive_sanity_check)());
       }
       /* 
       if ((VG_(sanity_fast_count) % 500) == 0) VG_(mallocSanityCheckAll)(); 

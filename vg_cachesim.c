@@ -1527,7 +1527,7 @@ void SK_(fini)(void)
  *
  * Finds the BBCC in the table, removes it, adds the counts to the discard
  * counters, and then frees the BBCC. */
-void SK_(discard_basic_block_info) ( TTEntry* tte )
+void SKN_(discard_basic_block_info) ( TTEntry* tte )
 {
    BBCC *BBCC_node;
    Addr BBCC_ptr0, BBCC_ptr;

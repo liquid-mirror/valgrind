@@ -129,10 +129,10 @@ Bool SKN_(error_matches_suppression)(ErrContext* ec, Suppression* su)
    For throwing out basic block level info when code is invalidated
    ------------------------------------------------------------------ */
 
-void SK_(discard_basic_block_info)(TTEntry* tte)
+void SKN_(discard_basic_block_info)(TTEntry* tte)
 {
    VG_(printf)(nonfund_panic);
-   VG_(panic)("called SK_(discard_basic_block_info)");
+   VG_(panic)("called SKN_(discard_basic_block_info)");
 }
 
 
@@ -237,7 +237,7 @@ Bool SKN_(cheap_sanity_check)     ( void )
    VG_(panic)("SKN_(cheap_sanity_check))");
 }
 
-void SKN_(expensive_sanity_check) ( void )
+Bool SKN_(expensive_sanity_check) ( void )
 {
    VG_(printf)(nonfund_panic);
    VG_(panic)("SKN_(expensive_sanity_check))");
