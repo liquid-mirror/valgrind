@@ -218,6 +218,9 @@ extern void* VG_(calloc)         ( Int nmemb, Int nbytes );
 extern void* VG_(realloc)        ( void* ptr, Int size );
 extern void* VG_(malloc_aligned) ( Int req_alignB, Int req_pszB );
 
+extern void  VG_(print_malloc_stats) ( void );
+
+
 extern void  VG_(exit)( Int status )
              __attribute__ ((__noreturn__));
 /* Print a (panic) message (constant string) appending newline, and abort. */
@@ -868,13 +871,13 @@ typedef
 */
 typedef
    struct {
-      /* ALL */
+      /* Used by ALL */
       Int ekind;
       /* Used frequently */
       Addr addr;
       /* Used frequently */
       Char* string;
-      /* For any skin-specific extras */
+      /* For any skin-specific extras: size and the extra fields */
       void* extra;
    }
    SkinError;
@@ -928,7 +931,6 @@ extern Bool VG_(get_objname)  ( Addr a, Char* objname,  Int n_objname  );
 /*=== Shadow chunks and block-finding                              ===*/
 /*====================================================================*/
 
-// SSS: not sure about all this...
 typedef
    enum { 
       Vg_AllocMalloc = 0,
@@ -937,18 +939,21 @@ typedef
    }
    VgAllocKind;
 
-// SSS: not sure about this...
-/* Description of a malloc'd chunk. */
+/* Description of a malloc'd chunk.  skin_extra[] part can be used by
+   the skin;  size of array is given by VG_(needs).sizeof_shadow_chunk. */
 typedef 
    struct _ShadowChunk {
       struct _ShadowChunk* next;
-      ExeContext*   where;          /* where malloc'd/free'd */
-      UInt          size : 30;      /* size requested.       */
+      UInt          size : 30;      /* size requested                   */
       VgAllocKind   allockind : 2;  /* which wrapper did the allocation */
-      Addr          data;           /* ptr to actual block.  */
+      Addr          data;           /* ptr to actual block              */
+      UInt          skin_extra[0];  /* extra skin-specific info         */
    } 
    ShadowChunk;
 
+/* Use this to free blocks if VG_(needs).alternative_free == True. 
+   It frees the ShadowChunk and the malloc'd block it points to. */
+extern void VG_(freeShadowChunk) ( ShadowChunk* sc );
 
 /* Makes an array of pointers to all the shadow chunks of malloc'd blocks */
 extern ShadowChunk** VG_(get_malloc_shadows) ( /*OUT*/ UInt* n_shadows );
@@ -958,29 +963,15 @@ extern ShadowChunk** VG_(get_malloc_shadows) ( /*OUT*/ UInt* n_shadows );
 extern Bool VG_(addr_is_in_block) ( Addr a, Addr start, UInt size );
 
 /* Searches through currently malloc'd blocks until a matching one is found.
-   Returns NULL if none match.
-
-   Extra arguments can be implicitly passed to p using nested functions;
-   see vg_memcheck_errcontext.c for an example. */
+   Returns NULL if none match.  Extra arguments can be implicitly passed to
+   p using nested functions; see vg_memcheck_errcontext.c for an example. */
 extern ShadowChunk* VG_(any_matching_mallocd_ShadowChunks) 
-                        ( Bool (*p) ( ShadowChunk* ));
-
-/* Searches through recently free'd blocks until a matching one is found.
-   Returns NULL if none match.
-
-   Don't call this unless VG_(needs).postpone_mem_reuse == True, or you'll
-   get an assertion failure. */
-extern ShadowChunk* VG_(any_matching_freed_ShadowChunks) 
                         ( Bool (*p) ( ShadowChunk* ));
 
 /* Searches through all thread's stacks to see if any match.  Returns
  * VG_INVALID_THREADID if none match. */
 extern ThreadId VG_(any_matching_thread_stack)
                         ( Bool (*p) ( Addr stack_min, Addr stack_max ));
-
-// SSS: not sure about this...
-extern void  VG_(client_malloc_done) ( void );
-
 
 /*====================================================================*/
 /*=== Skin-specific stuff                                          ===*/
@@ -1002,12 +993,6 @@ typedef
       Char* description;
 
       /* Booleans that decide core behaviour */
-
-      /* Need to record exe contexts on malloc'd/free'd/etc blocks? */
-      // SSS: these two are pretty gruesome
-      Bool record_mem_exe_context;
-      /* Postpone dynamic memory use once free'd as long as possible? */
-      Bool postpone_mem_reuse;
 
       /* Want to have errors detected by Valgrind's core reported?  Includes:
          - pthread API errors (many;  eg. unlocking a non-locked mutex)
@@ -1036,6 +1021,7 @@ typedef
          run!  */
       Bool identifies_basic_blocks;
 
+      // SSS: could do them as an array of user-specifiable size!
       /* Maintains information about each register? */
       Bool shadow_regs;
 
@@ -1049,6 +1035,14 @@ typedef
 
       /* Skin does stuff before and/or after system calls? */
       Bool wrap_syscalls;
+
+      /* Size, in words, of extra info about malloc'd blocks recorded by
+         skin.  Be careful to get this right or you'll get seg faults! */
+      // SSS: bad name
+      UInt sizeof_shadow_chunk;
+
+      /* Skin does free()s itself? */
+      Bool alternative_free;
 
       /* Are skin-state sanity checks performed? */
       Bool sanity_checks;
@@ -1090,17 +1084,15 @@ typedef
       void (*ban_mem_heap)   ( Addr a, UInt len );
       void (*ban_mem_stack)  ( Addr a, UInt len );
 
-      /* If len==0xffffffff, indicates the block wasn't malloc'd in the
-         first place and thus isn't really being freed */
-      // SSS: that's a hack
-      // SSS: and alloc_free_kinds_match isn't good.
-      void (*die_mem_heap)   ( ThreadState* tst, Addr a, UInt len,
-                               Bool alloc_free_kinds_match );
-      void (*die_mem_stack) ( Addr a, UInt len );
+      void (*die_mem_heap)   ( Addr a, UInt len );
+      void (*die_mem_stack)  ( Addr a, UInt len );
       void (*die_mem_stack_aligned) ( Addr a, UInt len );
       void (*die_mem_stack_signal)  ( Addr a, UInt len );
       void (*die_mem_brk)    ( Addr a, UInt len );
       void (*die_mem_munmap) ( Addr a, UInt len );
+
+      void (*bad_free)        ( ThreadState* tst, Addr a );
+      void (*mismatched_free) ( ThreadState* tst, Addr a );
 
       void (*pre_mem_read)   ( CorePart part, ThreadState* tst,
                                Char* s, Addr a, UInt size );
@@ -1184,7 +1176,7 @@ extern void SKN_(pp_SkinError) ( SkinError* ec, void (*pp_ExeContext)(void) );
   
    Yuk.
 
-SSS: still not happy about this
+SSS: still not happy about this... could maybe do with a zero-length array?
  */
 extern void SKN_(dup_extra_and_update)(SkinError* ec);
 
@@ -1274,6 +1266,17 @@ extern void* SKN_(pre_check_known_blocking_syscall)
 extern void  SKN_(post_check_known_blocking_syscall) 
                  ( ThreadId tid, Int syscallno, void* pre_result, Int* res );
 
+
+/* ------------------------------------------------------------------ */
+/* VG_(needs).sizeof_shadow_chunk > 0 */
+
+extern void SKN_(complete_shadow_chunk) ( ShadowChunk* sc, ThreadState* tst );
+
+
+/* ------------------------------------------------------------------ */
+/* VG_(needs).alternative_free */
+
+extern void SKN_(alt_free) ( ShadowChunk* sc, ThreadState* tst );
 
 /* ---------------------------------------------------------------------
    VG_(needs).sanity_checks */

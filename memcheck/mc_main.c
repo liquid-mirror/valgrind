@@ -49,6 +49,7 @@
 /*------------------------------------------------------------*/
 
 Bool  VG_(clo_partial_loads_ok)       = True;
+Int   VG_(clo_freelist_vol)           = 1000000;
 Bool  VG_(clo_leak_check)             = False;
 VgRes VG_(clo_leak_resolution)        = Vg_LowRes;
 Bool  VG_(clo_show_reachable)         = False;
@@ -335,7 +336,7 @@ void SK_(post_clo_init) ( void )
 
 void SK_(fini) ( void )
 {
-   VG_(client_malloc_done)();
+   VG_(print_malloc_stats)();
 
    if (VG_(clo_verbosity) == 1) {
       if (!VG_(clo_leak_check))
@@ -877,24 +878,6 @@ void memcheck_set_perms (Addr a, UInt len,
    if      (rr) VG_(make_readable)(a, len);
    else if (ww) VG_(make_writable)(a, len);
    else         VG_(make_noaccess)(a, len);
-}
-
-/* If size == 0xffffffff free'd block wasn't malloc'd in the first place,
- * so 'alloc_free_kinds_match' is meaningless  */
-static
-void memcheck_die_mem_heap ( ThreadState* tst, Addr a, UInt size,
-                             Bool alloc_free_kinds_match )
-{
-   DEBUG("memcheck_die_mem_heap(%p, %u)\n", a, size);
-   if (0xffffffff == size) {
-      SK_(record_free_error) ( tst, a );
-      return;
-   }
-
-   if (! alloc_free_kinds_match)
-      SK_(record_freemismatch_error) ( tst, a );
-
-   VG_(make_noaccess)(a, size);
 }
 
 
@@ -1510,6 +1493,123 @@ void fpu_write_check_SLOWLY ( Addr addr, Int size )
 }
 
 /*------------------------------------------------------------*/
+/*--- Shadow chunks info                                   ---*/
+/*------------------------------------------------------------*/
+
+static __inline__
+void set_where( ShadowChunk* sc, ExeContext* ec )
+{
+   sc->skin_extra[0] = (UInt)ec;
+}
+
+static __inline__
+ExeContext *get_where( ShadowChunk* sc )
+{
+   return (ExeContext*)sc->skin_extra[0];
+}
+
+void SKN_(complete_shadow_chunk) ( ShadowChunk* sc, ThreadState* tst )
+{
+   set_where( sc, VG_(get_ExeContext) ( tst ) );
+}
+
+/*------------------------------------------------------------*/
+/*--- Postponing free()ing                                 ---*/
+/*------------------------------------------------------------*/
+
+/* Holds blocks after freeing. */
+static ShadowChunk* vg_freed_list_start   = NULL;
+static ShadowChunk* vg_freed_list_end     = NULL;
+static Int          vg_freed_list_volume  = 0;
+
+static __attribute__ ((unused))
+       Int count_freelist ( void )
+{
+   ShadowChunk* sc;
+   Int n = 0;
+   for (sc = vg_freed_list_start; sc != NULL; sc = sc->next)
+      n++;
+   return n;
+}
+
+static __attribute__ ((unused))
+       void freelist_sanity ( void )
+{
+   ShadowChunk* sc;
+   Int n = 0;
+   /* VG_(printf)("freelist sanity\n"); */
+   for (sc = vg_freed_list_start; sc != NULL; sc = sc->next)
+      n += sc->size;
+   vg_assert(n == vg_freed_list_volume);
+}
+
+/* Put a shadow chunk on the freed blocks queue, possibly freeing up
+   some of the oldest blocks in the queue at the same time. */
+static void add_to_freed_queue ( ShadowChunk* sc )
+{
+   ShadowChunk* sc1;
+
+   /* Put it at the end of the freed list */
+   if (vg_freed_list_end == NULL) {
+      vg_assert(vg_freed_list_start == NULL);
+      vg_freed_list_end = vg_freed_list_start = sc;
+      vg_freed_list_volume = sc->size;
+   } else {    
+      vg_assert(vg_freed_list_end->next == NULL);
+      vg_freed_list_end->next = sc;
+      vg_freed_list_end = sc;
+      vg_freed_list_volume += sc->size;
+   }
+   sc->next = NULL;
+
+   /* Release enough of the oldest blocks to bring the free queue
+      volume below vg_clo_freelist_vol. */
+   
+   while (vg_freed_list_volume > VG_(clo_freelist_vol)) {
+      /* freelist_sanity(); */
+      vg_assert(vg_freed_list_start != NULL);
+      vg_assert(vg_freed_list_end != NULL);
+
+      sc1 = vg_freed_list_start;
+      vg_freed_list_volume -= sc1->size;
+      /* VG_(printf)("volume now %d\n", vg_freed_list_volume); */
+      vg_assert(vg_freed_list_volume >= 0);
+
+      if (vg_freed_list_start == vg_freed_list_end) {
+         vg_freed_list_start = vg_freed_list_end = NULL;
+      } else {
+         vg_freed_list_start = sc1->next;
+      }
+      sc1->next = NULL; /* just paranoia */
+      VG_(freeShadowChunk) ( sc1 );
+   }
+}
+
+/* Return the first shadow chunk satisfying the predicate p. */
+ShadowChunk* VG_(any_matching_freed_ShadowChunks)
+                        ( Bool (*p) ( ShadowChunk* ))
+{
+   ShadowChunk* sc;
+
+   /* No point looking through freed blocks if we're not keeping
+      them around for a while... */
+   for (sc = vg_freed_list_start; sc != NULL; sc = sc->next)
+      if (p(sc))
+         return sc;
+
+   return NULL;
+}
+
+void SKN_(alt_free) ( ShadowChunk* sc, ThreadState* tst )
+{
+   /* Record where freed */
+   set_where( sc, VG_(get_ExeContext) ( tst ) );
+
+   /* Put it out of harm's way for a while. */
+   add_to_freed_queue ( sc );
+}
+
+/*------------------------------------------------------------*/
 /*--- Low-level address-space scanning, for the leak       ---*/
 /*--- detector.                                            ---*/
 /*------------------------------------------------------------*/
@@ -1904,11 +2004,15 @@ void VG_(detect_memory_leaks) ( void )
    n_lossrecords = 0;
    errlist       = NULL;
    for (i = 0; i < vglc_n_shadows; i++) {
+     
+      /* 'where' stored in 'skin_extra' field */
+      ExeContext* where = get_where ( vglc_shadows[i] );
+
       for (p = errlist; p != NULL; p = p->next) {
          if (p->loss_mode == vglc_reachedness[i]
              && VG_(eq_ExeContext) ( VG_(clo_leak_resolution),
                                      p->allocated_at, 
-                                     vglc_shadows[i]->where) ) {
+                                     where) ) {
             break;
 	 }
       }
@@ -1919,7 +2023,7 @@ void VG_(detect_memory_leaks) ( void )
          n_lossrecords ++;
          p = VG_(malloc)(sizeof(LossRecord));
          p->loss_mode    = vglc_reachedness[i];
-         p->allocated_at = vglc_shadows[i]->where;
+         p->allocated_at = where;
          p->total_bytes  = vglc_shadows[i]->size;
          p->num_blocks   = 1;
          p->next         = errlist;
@@ -2172,11 +2276,18 @@ void SKN_(written_shadow_regs_values)( UInt* gen_reg_value, UInt* eflags_value )
 Bool SKN_(process_cmd_line_option)(UChar* arg)
 {
 #  define STREQ(s1,s2)     (0==VG_(strcmp_ws)((s1),(s2)))
+#  define STREQN(nn,s1,s2) (0==VG_(strncmp_ws)((s1),(s2),(nn)))
 
    if      (STREQ(arg, "--partial-loads-ok=yes"))
       VG_(clo_partial_loads_ok) = True;
    else if (STREQ(arg, "--partial-loads-ok=no"))
       VG_(clo_partial_loads_ok) = False;
+
+   else if (STREQN(15, arg, "--freelist-vol=")) {
+      VG_(clo_freelist_vol) = (Int)VG_(atoll)(&arg[15]);
+      // SSS: default size of 2 bytes??
+      if (VG_(clo_freelist_vol) < 0) VG_(clo_freelist_vol) = 2;
+   }
 
    else if (STREQ(arg, "--leak-check=yes"))
       VG_(clo_leak_check) = True;
@@ -2216,12 +2327,14 @@ Bool SKN_(process_cmd_line_option)(UChar* arg)
    return True;
 
 #undef STREQ
+#undef STREQN
 }
 
 Char* SKN_(usage)(void)
 {  
    return  
 "    --partial-loads-ok=no|yes too hard to explain here; see manual [yes]\n"
+"    --freelist-vol=<number>   volume of freed blocks queue [1000000]\n"
 "    --leak-check=no|yes       search for memory leaks at exit? [no]\n"
 "    --leak-resolution=low|med|high\n"
 "                              amount of bt merging in leak check [low]\n"
@@ -2243,8 +2356,6 @@ void SK_(pre_clo_init)(VgNeeds* needs, VgTrackEvents* track)
    needs->name                    = "valgrind";
    needs->description             = "a memory error detector";
 
-   needs->record_mem_exe_context  = True;
-   needs->postpone_mem_reuse      = True;
    needs->core_errors             = True;
    needs->skin_errors             = True;
    needs->run_libc_freeres        = True;
@@ -2255,6 +2366,8 @@ void SK_(pre_clo_init)(VgNeeds* needs, VgTrackEvents* track)
    needs->client_requests         = True;
    needs->extends_UCode           = True;
    needs->wrap_syscalls           = True;
+   needs->sizeof_shadow_chunk     = 1;
+   needs->alternative_free        = True;
    needs->sanity_checks           = True;
 
    VG_(register_compact_helper)((Addr) & SK_(helper_value_check4_fail));
@@ -2287,12 +2400,15 @@ void SK_(pre_clo_init)(VgNeeds* needs, VgTrackEvents* track)
    track->ban_mem_heap          = & VG_(make_noaccess);
    track->ban_mem_stack         = & VG_(make_noaccess);
 
-   track->die_mem_heap          = & memcheck_die_mem_heap;
+   track->die_mem_heap          = & VG_(make_noaccess);
    track->die_mem_stack         = & VG_(make_noaccess);
    track->die_mem_stack_aligned = & make_noaccess_aligned; 
    track->die_mem_stack_signal  = & VG_(make_noaccess); 
    track->die_mem_brk           = & VG_(make_noaccess);
    track->die_mem_munmap        = & VG_(make_noaccess); 
+
+   track->bad_free              = & SK_(record_free_error);
+   track->mismatched_free       = & SK_(record_freemismatch_error);
 
    track->pre_mem_read          = & check_is_readable;
    track->pre_mem_read_asciiz   = & check_is_readable_asciiz;

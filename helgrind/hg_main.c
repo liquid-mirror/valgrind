@@ -1127,8 +1127,6 @@ void SK_(pre_clo_init)(VgNeeds* needs, VgTrackEvents* track)
    needs->name                    = "helgrind";
    needs->description             = "a data race detector";
 
-   needs->record_mem_exe_context  = False;
-   needs->postpone_mem_reuse      = False;
    needs->core_errors             = True;
    needs->skin_errors             = True;
    needs->run_libc_freeres        = False;
@@ -1139,6 +1137,8 @@ void SK_(pre_clo_init)(VgNeeds* needs, VgTrackEvents* track)
    needs->client_requests         = False;
    needs->extends_UCode           = False;
    needs->wrap_syscalls           = False;
+   needs->sizeof_shadow_chunk     = 0;
+   needs->alternative_free        = False;
    needs->sanity_checks           = False;
 
    VG_(register_compact_helper)((Addr) & eraser_mem_read);
