@@ -216,26 +216,6 @@ static void client_malloc_shadow ( ThreadState* tst,
    VG_(malloclist)[ml_no] = sc;
 }
 
-static void track_new_heap_block( Addr p, UInt size, Bool is_inited )
-{
-   VG_TRACK( new_mem_heap, p, size, is_inited );
-   VG_TRACK( ban_mem_heap, p+size, VG_AR_CLIENT_REDZONE_SZB );
-   VG_TRACK( ban_mem_heap, p-VG_AR_CLIENT_REDZONE_SZB, 
-                           VG_AR_CLIENT_REDZONE_SZB );
-}
-
-static void track_reused_heap_block( Addr old, Addr new, 
-                                     UInt old_size, UInt new_size )
-{
-   /* First half kept and copied, second half new, red zones as normal */
-   VG_TRACK( copy_mem_heap, old, new, old_size );
-   VG_TRACK( new_mem_heap, new+old_size, new_size-old_size, /*inited=*/False );
-   VG_TRACK( ban_mem_heap, new+new_size, VG_AR_CLIENT_REDZONE_SZB );
-   VG_TRACK( ban_mem_heap, new-VG_AR_CLIENT_REDZONE_SZB, 
-                           VG_AR_CLIENT_REDZONE_SZB );
-}
-
-
 /* Allocate memory, noticing whether or not we are doing the full
    instrumentation thing. */
 
@@ -243,7 +223,7 @@ static __inline__
 void* client_malloc_worker ( ThreadState* tst, UInt size, UInt alignment,
                              Bool is_zeroed, VgAllocKind kind )
 {
-   void* p;
+   Addr p;
 
    VGP_PUSHCC(VgpCliMalloc);
    client_malloc_init();
@@ -253,17 +233,20 @@ void* client_malloc_worker ( ThreadState* tst, UInt size, UInt alignment,
 
    vg_assert(alignment >= 4);
    if (alignment == 4)
-      p = VG_(malloc)(VG_AR_CLIENT, size);
+      p = (Addr)VG_(malloc)(VG_AR_CLIENT, size);
    else
-      p = VG_(malloc_aligned)(VG_AR_CLIENT, alignment, size);
+      p = (Addr)VG_(malloc_aligned)(VG_AR_CLIENT, alignment, size);
 
    if (vg_needs_shadow_chunks)
-      client_malloc_shadow ( tst, (Addr)p, size, kind );
+      client_malloc_shadow ( tst, p, size, kind );
 
-   track_new_heap_block ( (Addr)p, size, is_zeroed );
+   VG_TRACK( new_mem_heap, p, size, is_zeroed );
+   VG_TRACK( ban_mem_heap, p+size, VG_AR_CLIENT_REDZONE_SZB );
+   VG_TRACK( ban_mem_heap, p-VG_AR_CLIENT_REDZONE_SZB, 
+                           VG_AR_CLIENT_REDZONE_SZB );
 
    VGP_POPCC;
-   return p;
+   return (void*)p;
 }
 
 void* VG_(client_malloc) ( ThreadState* tst, UInt size, VgAllocKind kind )
@@ -380,7 +363,7 @@ void VG_(client_free) ( ThreadState* tst, void* p, VgAllocKind kind )
 }
 
 
-void* VG_(client_realloc) ( ThreadState* tst, void* p, UInt size_new )
+void* VG_(client_realloc) ( ThreadState* tst, void* p, UInt new_size )
 {
    ShadowChunk *sc;
    UInt         i, ml_no;
@@ -392,17 +375,17 @@ void* VG_(client_realloc) ( ThreadState* tst, void* p, UInt size_new )
    VG_(printf)("[m %d, f %d (%d)] client_realloc ( %p, %d )\n", 
                count_malloclists(), 
                count_freelist(), vg_freed_list_volume,
-               p, size_new );
+               p, new_size );
 #  endif
 
    vg_cmalloc_n_frees ++;
    vg_cmalloc_n_mallocs ++;
-   vg_cmalloc_bs_mallocd += size_new;
+   vg_cmalloc_bs_mallocd += new_size;
 
    if (! vg_needs_shadow_chunks) {
-      vg_assert(p != NULL && size_new != 0);
+      vg_assert(p != NULL && new_size != 0);
       VGP_POPCC;
-      return VG_(realloc) ( VG_AR_CLIENT, p, VG_(clo_alignment), size_new );
+      return VG_(realloc) ( VG_AR_CLIENT, p, VG_(clo_alignment), new_size );
 
    } else {
       /* First try and find the block. */
@@ -423,36 +406,43 @@ void* VG_(client_realloc) ( ThreadState* tst, void* p, UInt size_new )
             but keep going anyway */
          Bool alloc_matches = (sc->allockind==Vg_AllocMalloc ? True : False);
 
-         if (sc->size == size_new) {
+         if (sc->size == new_size) {
             /* size unchanged */
-            VG_TRACK( die_mem_heap, tst, sc->data + size_new, 
+            VG_TRACK( die_mem_heap, tst, sc->data + new_size, 
                       0, alloc_matches );
             VGP_POPCC;
             return p;
             
-         } else if (sc->size > size_new) {
+         } else if (sc->size > new_size) {
             /* new size is smaller */
-            VG_TRACK( die_mem_heap, tst, sc->data + size_new, 
-                                         sc->size - size_new, alloc_matches );
-            sc->size = size_new;
+            VG_TRACK( die_mem_heap, tst, sc->data + new_size, 
+                                         sc->size - new_size, alloc_matches );
+            sc->size = new_size;
             VGP_POPCC;
             return p;
 
          } else {
             /* new size is bigger */
-            void* p_new;
+            Addr p_new;
             
             /* Get new memory */
             vg_assert(VG_(clo_alignment) >= 4);
             if (VG_(clo_alignment) == 4)
-               p_new = VG_(malloc)(VG_AR_CLIENT, size_new);
+               p_new = (Addr)VG_(malloc)(VG_AR_CLIENT, new_size);
             else
-               p_new = VG_(malloc_aligned)(VG_AR_CLIENT, VG_(clo_alignment),
-                                           size_new);
-            client_malloc_shadow ( tst, (Addr)p_new, size_new, Vg_AllocMalloc );
+               p_new = (Addr)VG_(malloc_aligned)(VG_AR_CLIENT, 
+                                                 VG_(clo_alignment), new_size);
+            client_malloc_shadow ( tst, p_new, new_size, Vg_AllocMalloc );
 
-            track_reused_heap_block ( (Addr)p, (Addr)p_new, 
-                                      sc->size, size_new );
+            /* First half kept and copied, second half new, 
+               red zones as normal */
+            VG_TRACK( copy_mem_heap, (Addr)p, p_new, sc->size );
+            VG_TRACK( new_mem_heap, p_new+sc->size, new_size-sc->size, 
+                      /*inited=*/False );
+            VG_TRACK( ban_mem_heap, p_new+new_size, VG_AR_CLIENT_REDZONE_SZB );
+            VG_TRACK( ban_mem_heap, p_new-VG_AR_CLIENT_REDZONE_SZB, 
+                                    VG_AR_CLIENT_REDZONE_SZB );
+
             /* Copy from old to new */
             for (i = 0; i < sc->size; i++)
                ((UChar*)p_new)[i] = ((UChar*)p)[i];
@@ -461,7 +451,7 @@ void* VG_(client_realloc) ( ThreadState* tst, void* p, UInt size_new )
             client_free_worker ( tst, ml_no, sc, alloc_matches );
 
             VGP_POPCC;
-            return p_new;
+            return (void*)p_new;
          }  
       }
    }
