@@ -51,14 +51,6 @@
  * to core but private to skins go here. */
 #include "vg_skin.h"
 
-
-/* Total number of integer registers available for allocation.  That's
-   all of them except %esp, %edi and %ebp.  %edi is a general spare
-   temporary.  %ebp permanently points at VG_(baseBlock).  Note that
-   it's important that this tie in with what rankToRealRegNo() says.
-   DO NOT CHANGE THIS VALUE FROM 5. !  */
-#define VG_MAX_REALREGS 5
-
 /* Total number of spill slots available for allocation, if a TempReg
    doesn't make it into a RealReg.  Just bomb the entire system if
    this value is too small; we don't expect it will ever get
@@ -800,6 +792,8 @@ extern void  VG_(translate)  ( ThreadState* tst,
                                UInt* orig_size,
                                Addr* trans_addr,
                                UInt* trans_size );
+
+extern Int   VG_(realRegNumToRank)    ( Int realReg );
 
 extern Char* VG_(nameCondcode)        ( Condcode cond );
 extern Bool  VG_(saneUInstr)          ( Bool beforeRA, Bool beforeLiveness,

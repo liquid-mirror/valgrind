@@ -1264,24 +1264,42 @@ void emit_three_regs_or_lits_args_setup ( UInt argv[], Tag tagv[],
    baseBlock) doing all the reg saving and arg handling work.
  
    WARNING:  a UInstr should *not* be translated with synth_ccall followed
-   by some other x86 assembly code;  this will confuse
-   vg_ccall_reg_save_analysis() and everything will fall over.
+   by some other x86 assembly code;  vg_liveness_analysis() doesn't expect
+   such behaviour and everything will fall over.
  */
 void VG_(synth_ccall) ( Addr fn, Int argc, Int regparms_n, UInt argv[],
                         Tag tagv[], Int ret_reg,
-                        Bool save_eax, Bool save_ecx, Bool save_edx )
+                        RegsLive regs_live_before, RegsLive regs_live_after )
 {
-   Int i;
-   Int stack_used = 0;
+   Int  i;
+   Int  stack_used = 0;
+   Bool preserve_eax, preserve_ecx, preserve_edx;
 
    vg_assert(0 <= regparms_n && regparms_n <= 3);
 
    ccalls++;
 
+   /* If %e[acd]x is live before and after the C call, save/restore it.
+      Unless the return values clobbers the reg;  in this case we must not
+      save/restore the reg, because the restore would clobber the return
+      value.  (Before and after the UInstr really constitute separate live
+      ranges, but you miss this if you don't consider what happens during
+      the UInstr.) */
+#  define PRESERVE_REG(realReg)   \
+   (IS_REG_LIVE(VG_(realRegNumToRank)(realReg), regs_live_before) &&   \
+    IS_REG_LIVE(VG_(realRegNumToRank)(realReg), regs_live_after)  &&   \
+    ret_reg != realReg)
+
+   preserve_eax = PRESERVE_REG(R_EAX);
+   preserve_ecx = PRESERVE_REG(R_ECX);
+   preserve_edx = PRESERVE_REG(R_EDX);
+
+#  undef PRESERVE_REG
+
    /* Save caller-save regs as required */
-   if (save_eax) { VG_(emit_pushv_reg) ( 4, R_EAX ); ccall_reg_saves++; }
-   if (save_ecx) { VG_(emit_pushv_reg) ( 4, R_ECX ); ccall_reg_saves++; }
-   if (save_edx) { VG_(emit_pushv_reg) ( 4, R_EDX ); ccall_reg_saves++; }
+   if (preserve_eax) { VG_(emit_pushv_reg) ( 4, R_EAX ); ccall_reg_saves++; }
+   if (preserve_ecx) { VG_(emit_pushv_reg) ( 4, R_ECX ); ccall_reg_saves++; }
+   if (preserve_edx) { VG_(emit_pushv_reg) ( 4, R_EDX ); ccall_reg_saves++; }
 
    /* Args are passed in two groups: (a) via stack (b) via regs.  regparms_n
       is the number of args passed in regs (maximum 3 for GCC on x86). */
@@ -1357,9 +1375,9 @@ void VG_(synth_ccall) ( Addr fn, Int argc, Int regparms_n, UInt argv[],
    }
 
    /* Restore live caller-save regs as required */
-   if (save_edx) VG_(emit_popv_reg) ( 4, R_EDX ); 
-   if (save_ecx) VG_(emit_popv_reg) ( 4, R_ECX ); 
-   if (save_eax) VG_(emit_popv_reg) ( 4, R_EAX ); 
+   if (preserve_edx) VG_(emit_popv_reg) ( 4, R_EDX ); 
+   if (preserve_ecx) VG_(emit_popv_reg) ( 4, R_ECX ); 
+   if (preserve_eax) VG_(emit_popv_reg) ( 4, R_EAX ); 
 }
 
 static void load_ebp_from_JmpKind ( JmpKind jmpkind )
@@ -1904,14 +1922,15 @@ static void synth_WIDEN_signed ( Int sz_src, Int sz_dst, Int reg )
 }
 
 
-static void synth_handle_esp_assignment ( Int i, Int reg, Bool save_eax,
-                                          Bool save_ecx, Bool save_edx )
+static void synth_handle_esp_assignment ( Int i, Int reg,
+                                          RegsLive regs_live_before,
+                                          RegsLive regs_live_after )
 {
    UInt argv[] = { reg };
    Tag  tagv[] = { RealReg };
 
    VG_(synth_ccall) ( (Addr) VG_(handle_esp_assignment), 1, 1, argv, tagv, 
-                      INVALID_REALREG, save_eax, save_ecx, save_edx );
+                      INVALID_REALREG, regs_live_before, regs_live_after);
 }
 
 
@@ -1929,12 +1948,12 @@ static Bool writeFlagUse ( UInstr* u )
    return (u->flags_w != FlagsEmpty); 
 }
 
-static void emitUInstr ( Int i, UInstr* u )
+static void emitUInstr ( Int i, UInstr* u, RegsLive regs_live_before )
 {
    Int old_emitted_code_used;
    
    if (dis)
-      VG_(ppUInstr)(i, u);
+      VG_(ppUInstrWithRegs)(i, u);
 
 #  if 0
    if (0&& VG_(translations_done) >= 600) {
@@ -2020,8 +2039,8 @@ static void emitUInstr ( Int i, UInstr* u )
                  VG_(track_events).die_mem_stack_aligned ||
                  VG_(track_events).post_mem_write))
          {
-            synth_handle_esp_assignment ( i, u->val1, u->save_eax, u->save_ecx,
-                                          u->save_edx );
+            synth_handle_esp_assignment ( i, u->val1, regs_live_before,
+                                          u->regs_live_after );
 	 }
          else {
             synth_mov_reg_offregmem ( 
@@ -2231,7 +2250,7 @@ static void emitUInstr ( Int i, UInstr* u )
          vg_assert(u->size == 0);
 
          VG_(synth_ccall) ( u->lit32, u->argc, u->regparms_n, argv, tagv,
-                            ret_reg, u->save_eax, u->save_ecx, u->save_edx );
+                            ret_reg, regs_live_before, u->regs_live_after );
          break;
       }
       case CLEAR:
@@ -2269,7 +2288,7 @@ static void emitUInstr ( Int i, UInstr* u )
 
       default: 
          if (VG_(needs).extended_UCode)
-            SK_(emitExtUInstr)(u);
+            SK_(emitExtUInstr)(u, regs_live_before);
          else {
             VG_(printf)("\nError:\n"
                         "  unhandled opcode: %u.  Perhaps "
@@ -2292,6 +2311,8 @@ static void emitUInstr ( Int i, UInstr* u )
 UChar* VG_(emit_code) ( UCodeBlock* cb, Int* nbytes )
 {
    Int i;
+   UChar regs_live_before = 0;   /* No regs live at BB start */
+   
    emitted_code_used = 0;
    emitted_code_size = 500; /* reasonable initial size */
    emitted_code = VG_(arena_malloc)(VG_AR_JITTER, emitted_code_size);
@@ -2299,8 +2320,8 @@ UChar* VG_(emit_code) ( UCodeBlock* cb, Int* nbytes )
    if (dis) VG_(printf)("Generated x86 code:\n");
 
    for (i = 0; i < cb->used; i++) {
+      UInstr* u = &cb->instrs[i];
       if (cb->instrs[i].opcode != NOP) {
-         UInstr* u = &cb->instrs[i];
 
          /* Check on the sanity of this insn. */
          Bool sane = VG_(saneUInstr)( False, False, u );
@@ -2309,8 +2330,9 @@ UChar* VG_(emit_code) ( UCodeBlock* cb, Int* nbytes )
             VG_(upUInstr)( i, u );
 	 }
          vg_assert(sane);
-         emitUInstr( i, u );
+         emitUInstr( i, u, regs_live_before );
       }
+      regs_live_before = u->regs_live_after;
    }
    if (dis) VG_(printf)("\n");
 

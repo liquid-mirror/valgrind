@@ -95,7 +95,7 @@ void VG_(newNOP) ( UInstr* u )
    u->flags_r = u->flags_w = FlagsEmpty;
    u->jmpkind = JmpBoring;
    u->signed_widen = u->has_ret_val = False;
-   u->save_eax = u->save_ecx = u->save_edx = True;
+   u->regs_live_after = ALL_REGS_LIVE;
    u->lit32    = 0;
    u->opcode   = NOP;
    u->size     = 0;
@@ -195,18 +195,16 @@ void VG_(copyUInstr) ( UCodeBlock* cb, UInstr* instr )
 static __inline__ 
 void copyAuxInfoFromTo ( UInstr* src, UInstr* dst )
 {
-   dst->cond          = src->cond;
-   dst->extra4b       = src->extra4b;
-   dst->signed_widen  = src->signed_widen;
-   dst->jmpkind       = src->jmpkind;
-   dst->flags_r       = src->flags_r;
-   dst->flags_w       = src->flags_w;
-   dst->argc          = src->argc;
-   dst->regparms_n    = src->regparms_n;
-   dst->has_ret_val   = src->has_ret_val;
-   dst->save_eax      = src->save_eax;
-   dst->save_ecx      = src->save_ecx;
-   dst->save_edx      = src->save_edx;
+   dst->cond            = src->cond;
+   dst->extra4b         = src->extra4b;
+   dst->signed_widen    = src->signed_widen;
+   dst->jmpkind         = src->jmpkind;
+   dst->flags_r         = src->flags_r;
+   dst->flags_w         = src->flags_w;
+   dst->argc            = src->argc;
+   dst->regparms_n      = src->regparms_n;
+   dst->has_ret_val     = src->has_ret_val;
+   dst->regs_live_after = src->regs_live_after;
 }
 
 
@@ -246,6 +244,9 @@ Bool VG_(anyFlagUse) ( UInstr* u )
            || u->flags_w != FlagsEmpty);
 }
 
+#if 1
+#  define BEST_ALLOC_ORDER
+#endif
 
 /* Convert a rank in the range 0 .. VG_MAX_REALREGS-1 into an Intel
    register number.  This effectively defines the order in which real
@@ -257,10 +258,10 @@ Bool VG_(anyFlagUse) ( UInstr* u )
    %eax, %ebx, %ecx, %edx, %esi you must change the
    save/restore sequences in various places to match!  
 */
-static __inline__ Int rankToRealRegNo ( Int rank )
+static __inline__ Int rankToRealRegNum ( Int rank )
 {
    switch (rank) {
-#     if 1
+#     ifdef BEST_ALLOC_ORDER
       /* Probably the best allocation ordering. */
       case 0: return R_EAX;
       case 1: return R_EBX;
@@ -275,7 +276,31 @@ static __inline__ Int rankToRealRegNo ( Int rank )
       case 1: return R_EDX;
       case 0: return R_ESI;
 #     endif
-      default: VG_(panic)("rankToRealRegNo");
+      default: VG_(panic)("rankToRealRegNum");
+   }
+}
+
+/* Convert an Intel register number into a rank in the range 0 ..
+   VG_MAX_REALREGS-1.  See related comments for rankToRealRegNum()
+   above.  */
+__inline__
+Int VG_(realRegNumToRank) ( Int realReg )
+{
+   switch (realReg) {
+#     ifdef BEST_ALLOC_ORDER
+      case R_EAX: return 0;
+      case R_EBX: return 1;
+      case R_ECX: return 2;
+      case R_EDX: return 3;
+      case R_ESI: return 4;
+#     else
+      case R_EAX: return 4;
+      case R_EBX: return 3;
+      case R_ECX: return 2;
+      case R_EDX: return 1;
+      case R_ESI: return 0;
+#     endif
+      default: VG_(panic)("VG_(realRegNumToRank)");
    }
 }
 
@@ -420,7 +445,7 @@ Bool VG_(saneUInstr) ( Bool beforeRA, Bool beforeLiveness, UInstr* u )
 #  define JMPKIND0 (u->jmpkind      == 0)
 #  define CCALL0   (u->argc==0 && u->regparms_n==0 && u->has_ret_val==0 && \
                     ( beforeLiveness                                       \
-                    ? u->save_eax==1 && u->save_ecx==1 && u->save_edx==1   \
+                    ? u->regs_live_after == ALL_REGS_LIVE                  \
                     : True ))
 
 #  define XCONDi   (         EXTRA4b0 && SG_WD0 && JMPKIND0 && CCALL0)
@@ -796,38 +821,49 @@ Char* VG_(nameUOpcode) ( Bool upper, Opcode opc )
    }
 }
 
-void VG_(ppSaveEaxEcxEdx) ( UInstr* u )
+void ppRealRegsLiveness ( UInstr* u )
 {
-   VG_(printf)("  [");
-   if (u->save_eax) VG_(printf)("a");
-   if (u->save_ecx) VG_(printf)("c");
-   if (u->save_edx) VG_(printf)("d");
+#define PRINT_REG_LIVENESS(realReg,s) \
+   VG_(printf)( IS_REG_LIVE(VG_(realRegNumToRank)(realReg), \
+                            u->regs_live_after)             \
+              ? s : "-");
+
+   VG_(printf)("[");
+   PRINT_REG_LIVENESS(R_EAX, "a");
+   PRINT_REG_LIVENESS(R_EBX, "b");
+   PRINT_REG_LIVENESS(R_ECX, "c");
+   PRINT_REG_LIVENESS(R_EDX, "d");
+   PRINT_REG_LIVENESS(R_ESI, "s");
+   //PRINT_REG_LIVENESS(R_EDI, "i");
    VG_(printf)("]");
+
+#undef PRINT_REG_LIVENESS
 }
 
 /* Ugly-print UInstr :) */
 void VG_(upUInstr) ( Int i, UInstr* u )
 {
-   VG_(ppUInstr)(i, u);
+   VG_(ppUInstrWithRegs)(i, u);
    
-   VG_(printf)("opcode:         %d\n", u->opcode);
-   VG_(printf)("lit32:          %x\n", u->lit32);
-   VG_(printf)("size:           %d\n", u->size);
-   VG_(printf)("val1,val2,val3: %d, %d, %d\n", u->val1, u->val2, u->val3);
-   VG_(printf)("tag1,tag2,tag3: %d, %d, %d\n", u->tag1, u->tag2, u->tag3);
-   VG_(printf)("flags_r:        %x\n", u->flags_r);
-   VG_(printf)("flags_w:        %x\n", u->flags_w);
-   VG_(printf)("extra4b:        %x\n", u->extra4b);
-   VG_(printf)("cond:           %x\n", u->cond);
-   VG_(printf)("signed_widen:   %d\n", u->signed_widen);
-   VG_(printf)("jmpkind:        %d\n", u->jmpkind);
-   VG_(printf)("argc,regparms_n:%d, %d\n", u->argc, u->regparms_n);
-   VG_(printf)("has_ret_val:    %d\n", u->has_ret_val);
-   VG_(printf)("save e[acd]x:   [%d%d%d]\n", u->save_eax, u->save_ecx,
-                                             u->save_edx);
+   VG_(printf)("opcode:          %d\n", u->opcode);
+   VG_(printf)("lit32:           %x\n", u->lit32);
+   VG_(printf)("size:            %d\n", u->size);
+   VG_(printf)("val1,val2,val3:  %d, %d, %d\n", u->val1, u->val2, u->val3);
+   VG_(printf)("tag1,tag2,tag3:  %d, %d, %d\n", u->tag1, u->tag2, u->tag3);
+   VG_(printf)("flags_r:         %x\n", u->flags_r);
+   VG_(printf)("flags_w:         %x\n", u->flags_w);
+   VG_(printf)("extra4b:         %x\n", u->extra4b);
+   VG_(printf)("cond:            %x\n", u->cond);
+   VG_(printf)("signed_widen:    %d\n", u->signed_widen);
+   VG_(printf)("jmpkind:         %d\n", u->jmpkind);
+   VG_(printf)("argc,regparms_n: %d, %d\n", u->argc, u->regparms_n);
+   VG_(printf)("has_ret_val:     %d\n", u->has_ret_val);
+   VG_(printf)("regs_live_after: ");
+   ppRealRegsLiveness(u);
+   VG_(printf)("\n");
 }
 
-void VG_(ppUInstr) ( Int instrNo, UInstr* u )
+void ppUInstrWorker ( Int instrNo, UInstr* u, Bool ppRegsLiveness )
 {
    VG_(printf)("\t%4d: %s", instrNo, 
                             VG_(nameUOpcode)(True, u->opcode));
@@ -894,12 +930,6 @@ void VG_(ppUInstr) ( Int instrNo, UInstr* u )
          VG_(ppUOperand)(u, 1, u->size, u->opcode==LOAD); 
          VG_(printf)(", ");
          VG_(ppUOperand)(u, 2, u->size, u->opcode==STORE);
-
-         if (PUT == u->opcode && u->tag2 == ArchReg && 
-             u->val2 == R_ESP && u->size == 4)
-         {
-            VG_(ppSaveEaxEcxEdx)(u);
-         }
          break;
 
       case JMP:
@@ -952,7 +982,6 @@ void VG_(ppUInstr) ( Int instrNo, UInstr* u )
                VG_(printf)("(s)");
          }
          VG_(printf)(") ");
-         VG_(ppSaveEaxEcxEdx)(u);
          break;
 
       case JIFZ:
@@ -992,10 +1021,23 @@ void VG_(ppUInstr) ( Int instrNo, UInstr* u )
       VG_(printf)(")");
    }
 
+   if (ppRegsLiveness) {
+      VG_(printf)("\t\t");
+      ppRealRegsLiveness ( u );
+   }
+
    VG_(printf)("\n");
-         
 }
 
+void VG_(ppUInstr) ( Int instrNo, UInstr* u )
+{
+   ppUInstrWorker ( instrNo, u, /*ppRegsLiveness*/False );
+}
+
+void VG_(ppUInstrWithRegs) ( Int instrNo, UInstr* u )
+{
+   ppUInstrWorker ( instrNo, u, /*ppRegsLiveness*/True );
+}
 
 void VG_(ppUCodeBlock) ( UCodeBlock* cb, Char* title )
 {
@@ -1817,7 +1859,7 @@ UCodeBlock* vg_do_register_allocation ( UCodeBlock* c1 )
          temp_info[real_to_temp[r]].real_no = VG_NOTHING;
          if (temp_info[real_to_temp[r]].dead_before > i) {
             uInstr2(c2, PUT, 4, 
-                        RealReg, rankToRealRegNo(r), 
+                        RealReg, rankToRealRegNum(r), 
                         SpillNo, temp_info[real_to_temp[r]].spill_no);
             VG_(uinstrs_spill)++;
             spill_reqd = True;
@@ -1835,7 +1877,7 @@ UCodeBlock* vg_do_register_allocation ( UCodeBlock* c1 )
          if (isRead) {
             uInstr2(c2, GET, 4, 
                         SpillNo, temp_info[tno].spill_no, 
-                        RealReg, rankToRealRegNo(r) );
+                        RealReg, rankToRealRegNum(r) );
             VG_(uinstrs_spill)++;
             spill_reqd = True;
             if (dis)
@@ -1852,7 +1894,7 @@ UCodeBlock* vg_do_register_allocation ( UCodeBlock* c1 )
          and use patchUInstr to convert its rTempRegs into
          realregs. */
       for (j = 0; j < k; j++)
-         realUse[j] = rankToRealRegNo(temp_info[tempUse[j].num].real_no);
+         realUse[j] = rankToRealRegNum(temp_info[tempUse[j].num].real_no);
       VG_(copyUInstr)(c2, &c1->instrs[i]);
       patchUInstr(&LAST_UINSTR(c2), &tempUse[0], &realUse[0], k);
 
@@ -1876,61 +1918,32 @@ UCodeBlock* vg_do_register_allocation ( UCodeBlock* c1 )
 
 }
 
-/* Analysis tracks liveness of all RealRegs, which it uses to determine 
- * whether %e[acd]x need to be saved/restored across C function calls. */
-static void vg_ccall_reg_save_analysis ( UCodeBlock* cb )
+/* Analysis records liveness of all general-use RealRegs in the UCode. */
+static void vg_realreg_liveness_analysis ( UCodeBlock* cb )
 {        
-   Int i, j, k;
-   Bool live_regs[8];
-   Bool eax_live_pre,  ecx_live_pre,  edx_live_pre;
-   Bool eax_live_post, ecx_live_post, edx_live_post;
-   Bool eax_written, ecx_written, edx_written;
-   RegUse regUse[3];
+   Int     i, j, k;
+   UChar   regs_live;
+   RegUse  regUse[3];
    UInstr* u;
 
    /* All regs are dead at the end of the block */
-   for (i = 0; i < 8; i++) live_regs[i] = False;
+   regs_live = 0;
             
    for (i = cb->used-1; i >= 0; i--) {
       u = &cb->instrs[i];
 
-      eax_live_post = live_regs[R_EAX];
-      ecx_live_post = live_regs[R_ECX];
-      edx_live_post = live_regs[R_EDX];
+      u->regs_live_after = regs_live;
 
       k = VG_(getRegUsage)(u, RealReg, regUse);
 
-      /* For each temp usage ... bwds in program order.  Variable is live
-         before this UInstr if it is read by this UInstr.   Also record
-         which of %e[acd]x are written. 
-       */
-      eax_written = ecx_written = edx_written = False;
-      for (j = k-1; j >= 0; j--) {
-         live_regs[regUse[j].num] = !regUse[j].isWrite;
-
-         if (regUse[j].isWrite) {
-             if      (R_EAX == regUse[j].num) eax_written = True;
-             else if (R_ECX == regUse[j].num) ecx_written = True;
-             else if (R_EDX == regUse[j].num) edx_written = True;
-         }    
-      }
-      eax_live_pre = live_regs[R_EAX];
-      ecx_live_pre = live_regs[R_ECX];
-      edx_live_pre = live_regs[R_EDX];
-
-      /* If reg is live before and after the UInstr, we must save/restore it
-         across any function call.  Unless the UInstr modifies (reads then
-         writes) the reg.  In this case we must not save/restore the reg,
-         because the restore would clobber the written value.  (Before and
-         after the UInstr really constitute separate live ranges, but you
-         miss this if you don't consider what happens during the instruction.
-       
-         Note that we record this info for all instructions, even though
-         most don't call C functions -- it doesn't hurt.
-       */
-      u->save_eax = ( !eax_written && eax_live_pre && eax_live_post);
-      u->save_ecx = ( !ecx_written && ecx_live_pre && ecx_live_post);
-      u->save_edx = ( !edx_written && edx_live_pre && edx_live_post);
+      /* For each reg usage ... bwds in program order.  Variable is live
+         before this UInstr if it is read by this UInstr.
+         Note that regUse[j].num holds the Intel reg number, so we must
+         convert it to our rank number.  */
+      for (j = k-1; j >= 0; j--)
+         SET_REG_LIVE ( VG_(realRegNumToRank)(regUse[j].num),
+                        regs_live,
+                        !regUse[j].isWrite );
    }
 }
 
@@ -2016,7 +2029,7 @@ void VG_(translate) ( /*IN*/ThreadState* tst,
    /* Do post reg-alloc %e[acd]x liveness analysis (too boring to print
     * anything;  results can be seen when emitting final code). */
    VGP_PUSHCC(VgpLiveness);
-   vg_ccall_reg_save_analysis ( cb );
+   vg_realreg_liveness_analysis ( cb );
    VGP_POPCC(VgpLiveness);
 
    /* Emit final code */

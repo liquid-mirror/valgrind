@@ -65,7 +65,7 @@ Bool SK_(saneExtUInstr)(Bool beforeRA, Bool beforeLiveness, UInstr* u)
 #  define JMPKIND0 (u->jmpkind      == 0)
 #  define CCALL0   (u->argc==0 && u->regparms_n==0 && u->has_ret_val==0 && \
                     ( beforeLiveness                                       \
-                    ? u->save_eax==1 && u->save_ecx==1 && u->save_edx==1   \
+                    ? u->regs_live_after == ALL_REGS_LIVE                  \
                     : True ))
 #  define XOTHER   (COND0 && EXTRA4b0 && SG_WD0 && JMPKIND0 && CCALL0)
 
@@ -210,7 +210,6 @@ void SK_(ppExtUInstr)(UInstr* u)
          VG_(ppUOperand)(u, 1, u->size, u->opcode==LOADV);
          VG_(printf)(", ");
          VG_(ppUOperand)(u, 2, u->size, u->opcode==STOREV);
-         VG_(ppSaveEaxEcxEdx)(u);
          break;
 
       case PUTVF: case GETVF:
