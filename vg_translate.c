@@ -912,11 +912,12 @@ void VG_(ppUInstr) ( Int instrNo, UInstr* u )
          break;
 
       case CCALL:
+         VG_(printf)("\t");
          if (u->has_ret_val) {
             VG_(ppUOperand)(u, 3, 0, False);
             VG_(printf)(" = ");
          }
-         VG_(printf)(" %p(", u->lit32);
+         VG_(printf)("%p(", u->lit32);
          if (u->argc > 0)
             VG_(ppUOperand)(u, 1, 0, False);
          if (u->argc > 1) {

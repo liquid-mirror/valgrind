@@ -76,6 +76,18 @@ void VG_(callHelper_2_0)(UCodeBlock* cb, Addr f, UInt arg1, UInt arg2,
    uCCall(cb, f, 2, regparms_n, 0);
 }
 
+void VG_(set_global_var)(UCodeBlock* cb, Addr globvar_ptr, UInt val)
+{
+   Int t_gv  = newTemp(cb);        
+   Int t_val = newTemp(cb);        
+
+   uInstr2(cb, MOV,   4, Literal, 0, TempReg, t_val);
+   uLiteral(cb, val);
+   uInstr2(cb, MOV,   4, Literal, 0, TempReg, t_gv);
+   uLiteral(cb, globvar_ptr);
+   uInstr2(cb, STORE, 4, TempReg, t_val, TempReg, t_gv);
+}
+
 /*--------------------------------------------------------------------*/
 /*--- end                                          vg_instrument.c ---*/
 /*--------------------------------------------------------------------*/
