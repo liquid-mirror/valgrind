@@ -6,8 +6,7 @@ bug reports for version 1.0.0.  I have fixed the following bugs
 (somewhat over half the total reported):
 
 - A bug in handling resolver (DNS-lookup) state in threaded programs,
-  which caused domain-name-to-IP-addr lookups to fail in some
-  circumstances.
+  which caused name-to-IP-addr lookups to fail in some circumstances.
 
 - Add support for C++ ABI for gccs > 3.1.
 
