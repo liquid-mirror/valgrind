@@ -523,6 +523,7 @@ Bool   VG_(clo_trace_children) = False;
 Int    VG_(clo_logfile_fd)     = 2;
 Int    VG_(clo_n_suppressions) = 0;
 Char*  VG_(clo_suppressions)[VG_CLO_MAX_SFILES];
+Bool   VG_(clo_profile)        = False;
 Bool   VG_(clo_single_step)    = False;
 Bool   VG_(clo_optimise)       = True;
 UChar  VG_(clo_trace_codegen)  = 0; // 00000000b
@@ -867,6 +868,11 @@ static void process_cmd_line_options ( void )
          VG_(clo_suppressions)[VG_(clo_n_suppressions)] = &argv[i][15];
          VG_(clo_n_suppressions)++;
       }
+      else if (STREQ(argv[i], "--profile=yes"))
+         VG_(clo_profile) = True;
+      else if (STREQ(argv[i], "--profile=no"))
+         VG_(clo_profile) = False;
+
       else if (STREQ(argv[i], "--single-step=yes"))
          VG_(clo_single_step) = True;
       else if (STREQ(argv[i], "--single-step=no"))
@@ -1183,9 +1189,8 @@ void VG_(main) ( void )
    VG_(sigstartup_actions)();
 
    /* Perhaps we're profiling Valgrind? */
-#  ifdef VG_PROFILE
-   VGP_(init_profiling)();
-#  endif
+   if (VG_(clo_profile))
+      VGP_(init_profiling)();
 
    /* Start calibration of our RDTSC-based clock. */
    VG_(start_rdtsc_calibration)();
@@ -1197,7 +1202,7 @@ void VG_(main) ( void )
     * shadow memory) can be setup ok */
    VGP_PUSHCC(VgpInitMem);
    VGM_(init_memory)();
-   VGP_POPCC;
+   VGP_POPCC(VgpInitMem);
 
    /* Read the list of errors to suppress.  This should be found in
       the file specified by vg_clo_suppressions. */
@@ -1231,7 +1236,7 @@ void VG_(main) ( void )
    VG_(running_on_simd_CPU) = True;
    VGP_PUSHCC(VgpSched);
    src = VG_(scheduler)();
-   VGP_POPCC;
+   VGP_POPCC(VgpSched);
    VG_(running_on_simd_CPU) = False;
 
    if (VG_(clo_verbosity) > 0)
@@ -1266,9 +1271,8 @@ void VG_(main) ( void )
       VG_(show_ExeContext_stats)();
    }
  
-#  ifdef VG_PROFILE
-   VGP_(done_profiling)();
-#  endif
+   if (VG_(clo_profile))
+      VGP_(done_profiling)();
 
    VG_(shutdown_logging)();
 
