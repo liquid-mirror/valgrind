@@ -417,6 +417,30 @@ void VG_(perform_assumed_nonblocking_syscall) ( ThreadId tid )
 
       /* !!!!!!!!!! New, untested syscalls !!!!!!!!!!!!!!!!!!!!! */
 
+#     if defined(__NR_mount)
+      case __NR_mount:
+         /* int mount(const char *specialfile, const char *dir,
+            const char *filesystemtype, unsigned long rwflag,
+            const void *data); */
+         if (VG_(clo_trace_syscalls))
+            VG_(printf)("mount()\n");
+         must_be_readable_asciiz(tst,"mount(specialfile)",arg1);
+         must_be_readable_asciiz(tst,"mount(dir)",arg2);
+         must_be_readable_asciiz(tst,"mount(filesystemtype)",arg3);
+         KERNEL_DO_SYSCALL(tid,res);
+         break;
+#     endif
+
+#     if defined(__NR_umount)
+      case __NR_umount:
+         /* int umount(const char *path) */
+         if (VG_(clo_trace_syscalls))
+            VG_(printf)("umount()\n");
+         must_be_readable_asciiz(tst,"umount(path)",arg1);
+         KERNEL_DO_SYSCALL(tid,res);
+         break;
+#     endif
+
 #     if defined(__NR_ptrace)
       case __NR_ptrace: /* syscall 26 */
          /* long ptrace (enum __ptrace_request request, pid_t pid, 
