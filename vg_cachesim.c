@@ -910,7 +910,7 @@ static __inline__ void cpuid(Int n, Int *a, Int *b, Int *c, Int *d)
 static void micro_ops_warn(Int actual_size, Int used_size, Int line_size)
 {
     VG_(message)(Vg_DebugMsg, 
-       "warning: Pentium with %d K micro_op instruction trace cache", 
+       "warning: Pentium with %d K micro-op instruction trace cache", 
        actual_size);
     VG_(message)(Vg_DebugMsg, 
        "         Simulating a %d KB cache with %d B lines", 
@@ -926,6 +926,7 @@ Int Intel_cache_info(Int level, cache_t* I1c, cache_t* D1c, cache_t* L2c)
 {
    UChar info[16];
    Int   i, trials;
+   Bool  L2_found = False;
 
    if (level < 2) {
       VG_(message)(Vg_DebugMsg, 
@@ -953,8 +954,9 @@ Int Intel_cache_info(Int level, cache_t* I1c, cache_t* D1c, cache_t* L2c)
       case 0x0:       /* ignore zeros */
           break;
           
-      case 0x01: case 0x02: case 0x03: case 0x04:     /* TLB info, ignore */
-      case 0x90: case 0x96: case 0x9b:
+      /* TLB info, ignore */
+      case 0x01: case 0x02: case 0x03: case 0x04:
+      case 0x50: case 0x51: case 0x52: case 0x5b: case 0x5c: case 0x5d:
           break;      
 
       case 0x06: *I1c = (cache_t) {  8, 4, 32 }; break;
@@ -963,22 +965,35 @@ Int Intel_cache_info(Int level, cache_t* I1c, cache_t* D1c, cache_t* L2c)
       case 0x0a: *D1c = (cache_t) {  8, 2, 32 }; break;
       case 0x0c: *D1c = (cache_t) { 16, 4, 32 }; break;
 
+      /* IA-64 info -- panic! */
+      case 0x10: case 0x15: case 0x1a: 
+      case 0x88: case 0x89: case 0x8a: case 0x8d:
+      case 0x90: case 0x96: case 0x9b:
+         VG_(message)(Vg_DebugMsg,
+            "error: IA-64 cache stats!  Cachegrind doesn't run on IA-64...");
+         VG_(panic)("IA-64 detected");
+
       case 0x22: case 0x23: case 0x25: case 0x29: 
-      case 0x88: case 0x89: case 0x8a:
           VG_(message)(Vg_DebugMsg, 
              "warning: L3 cache detected but ignored\n");
           break;
 
-      case 0x40: 
-          VG_(message)(Vg_DebugMsg, 
-             "warning: L2 cache not installed, ignore L2 results.");
+      /* These are sectored, whatever that means */
+      case 0x39: *L2c = (cache_t) {  128, 4, 64 }; L2_found = True; break;
+      case 0x3c: *L2c = (cache_t) {  256, 4, 64 }; L2_found = True; break;
+
+      /* If a P6 core, this means "no L2 cache".  
+         If a P4 core, this means "no L3 cache".
+         We don't know what core it is, so don't issue a warning.  To detect
+         a missing L2 cache, we use 'L2_found'. */
+      case 0x40:
           break;
 
-      case 0x41: *L2c = (cache_t) {  128, 4, 32 };    break;
-      case 0x42: *L2c = (cache_t) {  256, 4, 32 };    break;
-      case 0x43: *L2c = (cache_t) {  512, 4, 32 };    break;
-      case 0x44: *L2c = (cache_t) { 1024, 4, 32 };    break;
-      case 0x45: *L2c = (cache_t) { 2048, 4, 32 };    break;
+      case 0x41: *L2c = (cache_t) {  128, 4, 32 }; L2_found = True; break;
+      case 0x42: *L2c = (cache_t) {  256, 4, 32 }; L2_found = True; break;
+      case 0x43: *L2c = (cache_t) {  512, 4, 32 }; L2_found = True; break;
+      case 0x44: *L2c = (cache_t) { 1024, 4, 32 }; L2_found = True; break;
+      case 0x45: *L2c = (cache_t) { 2048, 4, 32 }; L2_found = True; break;
 
       /* These are sectored, whatever that means */
       case 0x66: *D1c = (cache_t) {  8, 4, 64 };  break;      /* sectored */
@@ -1003,24 +1018,31 @@ Int Intel_cache_info(Int level, cache_t* I1c, cache_t* D1c, cache_t* L2c)
          micro_ops_warn(32, 32, 32); 
          break;  
 
-      case 0x79: *L2c = (cache_t) {  128, 8, 64 };    break;  /* sectored */
-      case 0x7a: *L2c = (cache_t) {  256, 8, 64 };    break;  /* sectored */
-      case 0x7b: *L2c = (cache_t) {  512, 8, 64 };    break;  /* sectored */
-      case 0x7c: *L2c = (cache_t) { 1024, 8, 64 };    break;  /* sectored */
+      /* These are sectored, whatever that means */
+      case 0x79: *L2c = (cache_t) {  128, 8,  64 }; L2_found = True;  break;
+      case 0x7a: *L2c = (cache_t) {  256, 8,  64 }; L2_found = True;  break;
+      case 0x7b: *L2c = (cache_t) {  512, 8,  64 }; L2_found = True;  break;
+      case 0x7c: *L2c = (cache_t) { 1024, 8,  64 }; L2_found = True;  break;
+      case 0x7e: *L2c = (cache_t) {  256, 8, 128 }; L2_found = True;  break;
 
-      case 0x81: *L2c = (cache_t) {  128, 8, 32 };    break;
-      case 0x82: *L2c = (cache_t) {  256, 8, 32 };    break;
-      case 0x83: *L2c = (cache_t) {  512, 8, 32 };    break;
-      case 0x84: *L2c = (cache_t) { 1024, 8, 32 };    break;
-      case 0x85: *L2c = (cache_t) { 2048, 8, 32 };    break;
+      case 0x81: *L2c = (cache_t) {  128, 8, 32 };  L2_found = True;  break;
+      case 0x82: *L2c = (cache_t) {  256, 8, 32 };  L2_found = True;  break;
+      case 0x83: *L2c = (cache_t) {  512, 8, 32 };  L2_found = True;  break;
+      case 0x84: *L2c = (cache_t) { 1024, 8, 32 };  L2_found = True;  break;
+      case 0x85: *L2c = (cache_t) { 2048, 8, 32 };  L2_found = True;  break;
 
       default:
           VG_(message)(Vg_DebugMsg, 
              "warning: Unknown Intel cache config value "
-             "(0x%x), ignoring\n", info[i]);
+             "(0x%x), ignoring", info[i]);
           break;
       }
    }
+
+   if (!L2_found)
+      VG_(message)(Vg_DebugMsg, 
+         "warning: L2 cache not installed, ignore L2 results.");
+
    return 0;
 }
 
