@@ -417,6 +417,8 @@ VgNeeds VG_(needs) = {
 
    .wrap_syscalls           = INVALID_Bool,
 
+   .sanity_checks           = INVALID_Bool,
+
    .shadow_memory           = INVALID_Bool,
    .track_threads           = INVALID_Bool,
 };
@@ -530,6 +532,13 @@ static void sanity_check_needs ( void )
 
    CHECK_NOT(VG_(needs).augments_UInstrs,        INVALID_Bool);
    CHECK_NOT(VG_(needs).extends_UCode,           INVALID_Bool);
+
+   CHECK_NOT(VG_(needs).augments_UInstrs,        INVALID_Bool);
+   CHECK_NOT(VG_(needs).extends_UCode,           INVALID_Bool);
+
+   CHECK_NOT(VG_(needs).wrap_syscalls,           INVALID_Bool);
+
+   CHECK_NOT(VG_(needs).sanity_checks,           INVALID_Bool);
 
    CHECK_NOT(VG_(needs).shadow_memory,           INVALID_Bool);
    CHECK_NOT(VG_(needs).track_threads,           INVALID_Bool);
@@ -1402,6 +1411,70 @@ void VG_(nvidia_moan) ( void)
 }
 
 
+/* ---------------------------------------------------------------------
+   Sanity check machinery (permanently engaged).
+   ------------------------------------------------------------------ */
+
+/* A fast sanity check -- suitable for calling circa once per
+   millisecond. */
+
+void VG_(do_sanity_checks) ( Bool force_expensive )
+{
+   Int          i;
+
+   if (VG_(sanity_level) < 1) return;
+
+   /* --- First do all the tests that we can do quickly. ---*/
+
+   VG_(sanity_fast_count)++;
+
+   /* Check that we haven't overrun our private stack. */
+   for (i = 0; i < 10; i++) {
+      vg_assert(VG_(stack)[i]
+                == ((UInt)(&VG_(stack)[i]) ^ 0xA4B3C2D1));
+      vg_assert(VG_(stack)[10000-1-i] 
+                == ((UInt)(&VG_(stack)[10000-i-1]) ^ 0xABCD4321));
+   }
+
+   /* Check stuff pertaining to the memory check system. */
+
+   /* Check that nobody has spuriously claimed that the first or
+      last 16 pages of memory have become accessible [...] */
+   if (VG_(needs).sanity_checks)
+      vg_assert(SKN_(cheap_sanity_check)());
+
+   /* --- Now some more expensive checks. ---*/
+
+   /* Once every 25 times, check some more expensive stuff. */
+   if ( force_expensive
+     || VG_(sanity_level) > 1
+     || (VG_(sanity_level) == 1 && (VG_(sanity_fast_count) % 25) == 0)) {
+
+      VG_(sanity_slow_count)++;
+
+#     if 0
+      { void zzzmemscan(void); zzzmemscan(); }
+#     endif
+
+      if ((VG_(sanity_fast_count) % 250) == 0)
+         VG_(sanity_check_tc_tt)();
+
+      if (VG_(needs).sanity_checks) {
+          SKN_(expensive_sanity_check)();
+      }
+      /* 
+      if ((VG_(sanity_fast_count) % 500) == 0) VG_(mallocSanityCheckAll)(); 
+      */
+   }
+
+   if (VG_(sanity_level) > 1) {
+      /* Check sanity of the low-level memory manager.  Note that bugs
+         in the client's code can cause this to fail, so we don't do
+         this check unless specially asked for.  And because it's
+         potentially very expensive. */
+      VG_(mallocSanityCheckAll)();
+   }
+}
 /*--------------------------------------------------------------------*/
 /*--- end                                                vg_main.c ---*/
 /*--------------------------------------------------------------------*/
