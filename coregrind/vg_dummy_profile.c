@@ -42,7 +42,7 @@ void VGP_(init_profiling) ( void )
    VG_(printf)(
       "\nProfiling error:\n"
       "  The --profile=yes option was specified, but the skin\n"
-      "  wasn't built for profiling.  #include \"vg_profile_skin.c\"\n"
+      "  wasn't built for profiling.  #include \"vg_profile.c\"\n"
       "  into the skin and rebuild to allow profiling.\n\n");
    VG_(exit)(1);
 }
