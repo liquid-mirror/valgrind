@@ -170,7 +170,7 @@ Int addStr ( SegInfo* si, Char* str )
    for (i = NN-1; i > 0; i--) prevN[i] = prevN[i-1];
    prevN[0] = si->strtab_used;
 
-#  undef UNINITED
+#  undef EMPTY
 
    space_needed = 1 + VG_(strlen)(str);
 
