@@ -52,7 +52,7 @@
 
 /* Skin specific ones.  Note that final name still starts with "vg". */
 #define SK_(str)  VGAPPEND(vgSkin_,str)
-#define SKN_(str) VGAPPEND(vgSkinNeed,str)
+#define SKN_(str) VGAPPEND(vgSkinNeed_,str)
 
 /* Magic values that %ebp might be set to when returning to the
    dispatcher.  The only other legitimate value is to point to the
