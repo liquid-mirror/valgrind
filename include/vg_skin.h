@@ -1089,7 +1089,10 @@ typedef
       void (*ban_mem_heap)   ( Addr a, UInt len );
       void (*ban_mem_stack)  ( Addr a, UInt len );
 
-      // SSS: alloc_free_kinds_match isn't good.
+      /* If len==0xffffffff, indicates the block wasn't malloc'd in the
+         first place and thus isn't really being freed */
+      // SSS: that's a hack
+      // SSS: and alloc_free_kinds_match isn't good.
       void (*die_mem_heap)   ( ThreadState* tst, Addr a, UInt len,
                                Bool alloc_free_kinds_match );
       void (*die_mem_stack) ( Addr a, UInt len );
