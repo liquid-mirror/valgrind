@@ -529,7 +529,7 @@ static UCodeBlock* cachesim_instrument(UCodeBlock* cb_in, Addr orig_addr)
    /* Get BBCC (creating if necessary -- requires a counting pass over the BB
     * if it's the first time it's been seen), and point to start of the 
     * BBCC array.  */
-   BBCC_node = get_BBCC(orig_addr, cb_in, False, &BB_seen_before);
+   BBCC_node = get_BBCC(orig_addr, cb_in, /*remove=*/False, &BB_seen_before);
    BBCC_ptr0 = BBCC_ptr = (Addr)(BBCC_node->array);
 
    cb = VG_(allocCodeBlock)();
@@ -1141,7 +1141,7 @@ void get_caches(cache_t* I1c, cache_t* D1c, cache_t* L2c)
 }
 
 /*------------------------------------------------------------*/
-/*--- Printing of output file and summary stats            ---*/
+/*--- SK_(fini)() and related function                     ---*/
 /*------------------------------------------------------------*/
 
 static void fprint_BBCC(Int fd, BBCC* BBCC_node, Char *first_instr_fl, 
@@ -1523,19 +1523,18 @@ void SK_(fini)(void)
  *
  * Finds the BBCC in the table, removes it, adds the counts to the discard
  * counters, and then frees the BBCC. */
-void SKN_(discard_basic_block_info) ( TTEntry* tte )
+void SKN_(discard_basic_block_info) ( Addr a, UInt size )
 {
    BBCC *BBCC_node;
    Addr BBCC_ptr0, BBCC_ptr;
    Bool BB_seen_before;
     
    if (0)
-   VG_(printf)( "discard_basic_block_info: %p for %d\n", 
-                tte->orig_addr, (Int)tte->orig_size);
+      VG_(printf)( "discard_basic_block_info: addr %p, size %u\n", a, size);
 
    /* 2nd arg won't be used since BB should have been seen before (assertions
     * ensure this). */
-   BBCC_node = get_BBCC(tte->orig_addr, NULL, True, &BB_seen_before);
+   BBCC_node = get_BBCC(a, NULL, /*remove=*/True, &BB_seen_before);
    BBCC_ptr0 = BBCC_ptr = (Addr)(BBCC_node->array);
 
    vg_assert(True == BB_seen_before);
@@ -1571,7 +1570,6 @@ void SKN_(discard_basic_block_info) ( TTEntry* tte )
             break;
       }
    }
-
    VG_(free)(VG_AR_PRIVATE, BBCC_node);
 }
 
@@ -1642,7 +1640,7 @@ Char* SKN_(usage)(void)
 /*--- Setup                                                        ---*/
 /*--------------------------------------------------------------------*/
 
-void SK_(setup)(VgNeeds* needs, VgTrackEvents* not_used) 
+void SK_(pre_clo_init)(VgNeeds* needs, VgTrackEvents* not_used) 
 {
    needs->name                    = "cachegrind";
    needs->description             = "an I1/D1/L2 cache profiler";
@@ -1671,7 +1669,7 @@ void SK_(setup)(VgNeeds* needs, VgTrackEvents* not_used)
    VG_(register_compact_helper)((Addr) & cachesim_mem_instr);
 }
 
-void SK_(init)(void)
+void SK_(post_clo_init)(void)
 {
    cache_t I1c, D1c, L2c; 
 
@@ -1701,6 +1699,26 @@ void SK_(init)(void)
 
    init_BBCC_table();
 }
+
+#if 0
+Bool SKN_(cheap_sanity_check)(void) { return True; }
+
+extern TTEntry* vg_tt;
+
+Bool SKN_(expensive_sanity_check)(void)
+{ 
+   Int i;
+   Bool dummy;
+   for (i = 0; i < 200191; i++) {
+      if (vg_tt[i].orig_addr != (Addr)1 &&
+          vg_tt[i].orig_addr != (Addr)3) {
+         VG_(printf)(".");
+         get_BBCC(vg_tt[i].orig_addr, NULL, /*remove=*/True, &dummy);
+      }
+   }
+   return True;
+}
+#endif
 
 /*--------------------------------------------------------------------*/
 /*--- end                                            vg_cachesim.c ---*/
