@@ -67,17 +67,20 @@ Bool needs_shadow_chunks ( void )
           VG_(track_events).die_mem_heap;
 }
 
-static __attribute__ ((unused))
-       Int count_malloclists ( void )
+#ifdef DEBUG_CLIENTMALLOC
+static 
+Int count_malloclists ( void )
 {
    ShadowChunk* sc;
    UInt ml_no;
    Int  n = 0;
+
    for (ml_no = 0; ml_no < VG_N_MALLOCLISTS; ml_no++) 
       for (sc = vg_malloclist[ml_no]; sc != NULL; sc = sc->next)
          n++;
    return n;
 }
+#endif
 
 /*------------------------------------------------------------*/
 /*--- Shadow chunks, etc                                   ---*/
@@ -91,13 +94,14 @@ static void addShadowChunk ( ThreadState* tst,
                              Addr p, UInt size, VgAllocKind kind )
 {
    ShadowChunk* sc;
-   UInt         ml_no;
+   UInt         ml_no = VG_MALLOCLIST_NO(p);
 
 #  ifdef DEBUG_CLIENTMALLOC
-   VG_(printf)("[m %d, f %d (%d)] addShadowChunk ( sz %d )\n", 
+   VG_(printf)("[m %d, f %d (%d)] addShadowChunk "
+               "( sz %d, addr %p, list %d )\n", 
                count_malloclists(), 
                0/*count_freelist()*/, 0/*vg_freed_list_volume*/,
-               size );
+               size, p, ml_no );
 #  endif
 
    sc = VG_(arena_malloc)(VG_AR_CORE, 
@@ -110,7 +114,6 @@ static void addShadowChunk ( ThreadState* tst,
    if (VG_(needs).sizeof_shadow_block > 0)
       SK_(complete_shadow_chunk) ( sc, tst );
 
-   ml_no     = VG_MALLOCLIST_NO(p);
    sc->next  = vg_malloclist[ml_no];
    vg_malloclist[ml_no] = sc;
 }
@@ -125,13 +128,17 @@ static ShadowChunk* getShadowChunk ( Addr a, /*OUT*/ShadowChunk*** next_ptr )
    
    ml_no = VG_MALLOCLIST_NO(a);
 
-   for (prev = NULL, curr = vg_malloclist[ml_no];
-        curr != NULL;
-        prev = curr, curr = curr->next)
-   {
+   prev = NULL;
+   curr = vg_malloclist[ml_no];
+   while (True) {
+      if (curr == NULL) 
+         break;
       if (a == curr->data)
          break;
+      prev = curr;
+      curr = curr->next;
    }
+
    if (NULL == prev)
       *next_ptr = &vg_malloclist[ml_no];
    else
@@ -235,29 +242,29 @@ void* alloc_and_new_mem ( ThreadState* tst, UInt size, UInt alignment,
 
 void* VG_(client_malloc) ( ThreadState* tst, UInt size, VgAllocKind kind )
 {
+   void* p = alloc_and_new_mem ( tst, size, VG_(clo_alignment), 
+                                 /*is_zeroed*/False, kind );
 #  ifdef DEBUG_CLIENTMALLOC
-   VG_(printf)("[m %d, f %d (%d)] client_malloc ( %d, %x )\n", 
+   VG_(printf)("[m %d, f %d (%d)] client_malloc ( %d, %x ) = %p\n", 
                count_malloclists(), 
                0/*count_freelist()*/, 0/*vg_freed_list_volume*/,
-               size, kind );
+               size, kind, p );
 #  endif
-
-   return alloc_and_new_mem ( tst, size, VG_(clo_alignment), 
-                              /*is_zeroed*/False, kind );
+   return p;
 }
 
 
 void* VG_(client_memalign) ( ThreadState* tst, UInt align, UInt size )
 {
+   void* p = alloc_and_new_mem ( tst, size, align, 
+                                 /*is_zeroed*/False, Vg_AllocMalloc );
 #  ifdef DEBUG_CLIENTMALLOC
-   VG_(printf)("[m %d, f %d (%d)] client_memalign ( al %d, sz %d )\n", 
+   VG_(printf)("[m %d, f %d (%d)] client_memalign ( al %d, sz %d ) = %p\n", 
                count_malloclists(), 
                0/*count_freelist()*/, 0/*vg_freed_list_volume*/,
-               align, size );
+               align, size, p );
 #  endif
-
-   return alloc_and_new_mem ( tst, size, align, 
-                                 /*is_zeroed*/False, Vg_AllocMalloc );
+   return p;
 }
 
 
@@ -266,19 +273,19 @@ void* VG_(client_calloc) ( ThreadState* tst, UInt nmemb, UInt size1 )
    void*        p;
    UInt         size, i;
 
-#  ifdef DEBUG_CLIENTMALLOC
-   VG_(printf)("[m %d, f %d (%d)] client_calloc ( %d, %d )\n", 
-               count_malloclists(), 
-               0/*count_freelist()*/, 0/*vg_freed_list_volume*/,
-               nmemb, size1 );
-#  endif
-
    size = nmemb * size1;
 
    p = alloc_and_new_mem ( tst, size, VG_(clo_alignment), 
                               /*is_zeroed*/True, Vg_AllocMalloc );
    /* Must zero block for calloc! */
    for (i = 0; i < size; i++) ((UChar*)p)[i] = 0;
+
+#  ifdef DEBUG_CLIENTMALLOC
+   VG_(printf)("[m %d, f %d (%d)] client_calloc ( %d, %d ) = %p\n", 
+               count_malloclists(), 
+               0/*count_freelist()*/, 0/*vg_freed_list_volume*/,
+               nmemb, size1, p );
+#  endif
 
    return p;
 }
@@ -353,13 +360,6 @@ void* VG_(client_realloc) ( ThreadState* tst, void* p, UInt new_size )
 
    VGP_PUSHCC(VgpCliMalloc);
 
-#  ifdef DEBUG_CLIENTMALLOC
-   VG_(printf)("[m %d, f %d (%d)] client_realloc ( %p, %d )\n", 
-               count_malloclists(), 
-               0/*count_freelist()*/, 0/*vg_freed_list_volume*/,
-               p, new_size );
-#  endif
-
    vg_cmalloc_n_frees ++;
    vg_cmalloc_n_mallocs ++;
    vg_cmalloc_bs_mallocd += new_size;
@@ -399,6 +399,12 @@ void* VG_(client_realloc) ( ThreadState* tst, void* p, UInt new_size )
          VG_TRACK( die_mem_heap, sc->data+new_size, sc->size-new_size );
          sc->size = new_size;
          VGP_POPCC(VgpCliMalloc);
+#        ifdef DEBUG_CLIENTMALLOC
+         VG_(printf)("[m %d, f %d (%d)] client_realloc_smaller ( %p, %d ) = %p\n", 
+                     count_malloclists(), 
+                     0/*count_freelist()*/, 0/*vg_freed_list_volume*/,
+                     p, new_size, p );
+#        endif
          return p;
 
       } else {
@@ -412,7 +418,6 @@ void* VG_(client_realloc) ( ThreadState* tst, void* p, UInt new_size )
          else
             p_new = (Addr)VG_(arena_malloc_aligned)(VG_AR_CLIENT, 
                                             VG_(clo_alignment), new_size);
-         addShadowChunk ( tst, p_new, new_size, Vg_AllocMalloc );
 
          /* First half kept and copied, second half new, 
             red zones as normal */
@@ -430,7 +435,18 @@ void* VG_(client_realloc) ( ThreadState* tst, void* p, UInt new_size )
          /* Free old memory */
          die_and_free_mem ( tst, sc, prev_chunks_next_ptr );
 
+         /* this has to be after die_and_free_mem, otherwise the
+            former succeeds in shorting out the new block, not the
+            old, in the case when both are on the same list.  */
+         addShadowChunk ( tst, p_new, new_size, Vg_AllocMalloc );
+
          VGP_POPCC(VgpCliMalloc);
+#        ifdef DEBUG_CLIENTMALLOC
+         VG_(printf)("[m %d, f %d (%d)] client_realloc_bigger ( %p, %d ) = %p\n", 
+                     count_malloclists(), 
+                     0/*count_freelist()*/, 0/*vg_freed_list_volume*/,
+                     p, new_size, (void*)p_new );
+#        endif
          return (void*)p_new;
       }  
    }
