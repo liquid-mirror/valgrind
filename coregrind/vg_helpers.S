@@ -67,7 +67,7 @@ signalreturn_bogusRA_panic_msg:
 .ascii	"vg_signalreturn_bogusRA: VG_USERREQ__SIGNAL_RETURNS was missed"
 .byte	0
 .text	
-	
+
 
 
 .global VG_(pthreadreturn_bogusRA)
@@ -123,6 +123,7 @@ VG_(helpers_LOADV4):
 	call	VG_(helperc_LOADV4)
 	addl	$4, %esp
 	movl	%eax, 36(%esp)
+	popal
 	ret
 
 .global VG_(helpers_LOADV1)
@@ -133,6 +134,7 @@ VG_(helpers_LOADV1):
 	call	VG_(helperc_LOADV1)
 	addl	$4, %esp
 	movl	%eax, 36(%esp)
+	popal
 	ret
 
 .global VG_(helpers_LOADV2)
@@ -143,6 +145,7 @@ VG_(helpers_LOADV2):
 	call	VG_(helperc_LOADV2)
 	addl	$4, %esp
 	movl	%eax, 36(%esp)
+	popal
 	ret
 
 
@@ -160,6 +163,7 @@ VG_(helpers_STOREV4):
 	movl	40(%esp), %eax		# addr
 	pushl	%eax
 	movl	40(%esp), %eax		# value
+	pushl	%eax
 	call	VG_(helperc_STOREV4)
 	addl	$8, %esp
 	popal
@@ -171,6 +175,7 @@ VG_(helpers_STOREV1):
 	movl	40(%esp), %eax		# addr
 	pushl	%eax
 	movl	40(%esp), %eax		# value
+	pushl	%eax
 	call	VG_(helperc_STOREV1)
 	addl	$8, %esp
 	popal
@@ -182,6 +187,7 @@ VG_(helpers_STOREV2):
 	movl	40(%esp), %eax		# addr
 	pushl	%eax
 	movl	40(%esp), %eax		# value
+	pushl	%eax
 	call	VG_(helperc_STOREV2)
 	addl	$8, %esp
 	popal
