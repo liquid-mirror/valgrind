@@ -172,13 +172,6 @@ ExeContext* VG_(get_ExeContext2) ( Addr eip, Addr ebp,
    vg_assert(VG_(clo_backtrace_size) >= 2 
              && VG_(clo_backtrace_size) <= VG_DEEPEST_BACKTRACE);
 
-   /* Assertion broken before main() is reached in pthreaded programs;  the
-    * offending stack traces only have one item.  --njn, 2002-aug-16 */
-   /* vg_assert(ebp_min <= ebp_max);*/
-
-   /* Checks the stack isn't riduculously big */
-   vg_assert(ebp_min + 4000000 > ebp_max);
-
    /* First snaffle %EIPs from the client's stack into eips[0
       .. VG_(clo_backtrace_size)-1], putting zeroes in when the trail
       goes cold, which we guess to be when %ebp is not a reasonable
@@ -191,9 +184,17 @@ ExeContext* VG_(get_ExeContext2) ( Addr eip, Addr ebp,
 
    // JRS 2002-sep-17: hack, to round up ebp_max to the end of the
    // current page, at least.  Dunno if it helps.
+   // NJN 2002-sep-17: seems to -- stack traces look like 1.0.X again
    ebp_max = (ebp_max_orig + VKI_BYTES_PER_PAGE - 1) 
                 & ~(VKI_BYTES_PER_PAGE - 1);
    ebp_max -= sizeof(Addr);
+
+   /* Assertion broken before main() is reached in pthreaded programs;  the
+    * offending stack traces only have one item.  --njn, 2002-aug-16 */
+   /* vg_assert(ebp_min <= ebp_max);*/
+
+   /* Checks the stack isn't riduculously big */
+   vg_assert(ebp_min + 4000000 > ebp_max);
 
    //   VG_(printf)("%p -> %p\n", ebp_max_orig, ebp_max);
    eips[0] = eip;
@@ -205,6 +206,7 @@ ExeContext* VG_(get_ExeContext2) ( Addr eip, Addr ebp,
          //VG_(printf)("... out of range %p\n", ebp);
          break; /* ebp gone baaaad */
       }
+      // NJN 2002-sep-17: monotonicity doesn't work -- gives wrong traces...
       //     if (ebp >= ((UInt*)ebp)[0]) {
       //   VG_(printf)("nonmonotonic\n");
       //    break; /* ebp gone nonmonotonic */
