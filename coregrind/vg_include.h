@@ -291,7 +291,7 @@ extern void VG_(shutdown_logging) ( void );
    VGP_PAIR(VgpReadSyms,    "read-syms"),             \
    VGP_PAIR(VgpSearchSyms,  "search-syms"),           \
    VGP_PAIR(VgpAddToT,      "add-to-transtab"),       \
-   VGP_PAIR(VgpSyscall,     "core syscall wrapper"),  \
+   VGP_PAIR(VgpSyscall,     "core syscall wrapper"),  /*covers skin too*/\
    /* SSS: genericise this */                         \
    VGP_PAIR(VgpPreCloInit,  "pre-clo-init"),          \
    VGP_PAIR(VgpPostCloInit, "post-clo-init"),         \
@@ -1008,16 +1008,16 @@ void VG_(read_procselfmaps) (
    ------------------------------------------------------------------ */
 
 /* We assume the executable is loaded here ... can't really find
-   out.  There is a hacky sanity check in VG_(init_memory_and_symbols)()
+   out.  There is a hacky sanity check in VG_(init_memory)()
    which should trip up most stupidities.
 */
 #define VG_ASSUMED_EXE_BASE  (Addr)0x8048000
 
-extern void VG_(read_symbols)         ( void );
+extern void VG_(maybe_read_symbols)   ( void );
 extern void VG_(read_symtab_callback) ( Addr start, UInt size, 
                                         Char rr, Char ww, Char xx,
                                         UInt foffset, UChar* filename );
-extern void VG_(unload_symbols)       ( Addr start, UInt length );
+extern void VG_(maybe_unload_symbols) ( Addr start, UInt length );
 
 extern Bool VG_(get_fnname_nodemangle)( Addr a, Char* fnname, Int n_fnname );
 extern void VG_(mini_stack_dump)      ( ExeContext* ec );
@@ -1174,7 +1174,7 @@ extern UInt VG_(num_scheduling_events_MAJOR);
    Exports of vg_memory.c
    ------------------------------------------------------------------ */
 
-extern void VGM_(init_memory_and_symbols)( void );
+extern void VGM_(init_memory)            ( void );
 extern void VGM_(new_exe_segment)        ( Addr a, UInt len );
 extern void VGM_(remove_if_exe_segment)  ( Addr a, UInt len );
 
