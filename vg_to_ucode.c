@@ -4089,7 +4089,7 @@ static Addr disInstr ( UCodeBlock* cb, Addr eip, Bool* isEnd )
       abyte = getUChar(eip); eip++;
       if (abyte == 0x66) { sz = 2; abyte = getUChar(eip); eip++; }
 
-      if (abyte == 0xAE || 0xAF) { /* REPNE SCAS<sz> */
+      if (abyte == 0xAE || abyte == 0xAF) { /* REPNE SCAS<sz> */
          if (abyte == 0xAE) sz = 1;
          codegen_REPNE_SCAS ( cb, sz, eip_orig, eip );
          *isEnd = True;         
