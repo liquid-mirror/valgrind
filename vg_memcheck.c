@@ -2405,6 +2405,7 @@ void SK_(pre_clo_init)(VgNeeds* needs, VgTrackEvents* track)
    track->new_mem_mmap          = & memcheck_set_perms;
    
    track->copy_mem_heap         = & copy_address_range_state;
+   track->copy_mem_remap        = & copy_address_range_state;
    track->change_mem_mprotect   = & memcheck_set_perms;
       
    track->ban_mem_heap          = & SK_(make_noaccess);
