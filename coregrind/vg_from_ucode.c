@@ -1925,10 +1925,6 @@ static void emitUInstr ( Int i, UInstr* u )
          vg_assert(u->tag1 == RealReg);
          vg_assert(u->tag2 == RealReg);
          synth_mov_reg_memreg ( u->size, u->val1, u->val2 );
-	 /* No longer possible, but retained for illustrative purposes.
-         if (u->smc_check) 
-            synth_orig_code_write_check ( u->size, u->val2 );
-	 */
          break;
       }
 
@@ -2197,10 +2193,6 @@ static void emitUInstr ( Int i, UInstr* u )
          synth_fpu_regmem ( (u->val1 >> 8) & 0xFF,
                             u->val1 & 0xFF,
                             u->val2 );
-         /* No longer possible, but retained for illustrative purposes.
-         if (u->opcode == FPU_W && u->smc_check) 
-            synth_orig_code_write_check ( u->size, u->val2 );
-         */
          break;
 
       case FPU:
