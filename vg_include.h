@@ -883,9 +883,11 @@ extern void  VG_(translate)  ( ThreadState* tst,
                                Addr* trans_addr,
                                UInt* trans_size );
 
-extern Char* VG_(nameCondcode)    ( Condcode cond );
-extern Bool  VG_(saneUInstr)      ( Bool beforeRA, UInstr* u );
-extern Bool  VG_(saneUCodeBlock)  ( UCodeBlock* cb );
+extern Char* VG_(nameCondcode)        ( Condcode cond );
+extern Bool  VG_(saneUInstr)          ( Bool beforeRA, Bool beforeLiveness,
+                                        UInstr* u );
+extern void  VG_(saneUCodeBlock)      ( UCodeBlock* cb );
+extern Bool  VG_(saneUCodeBlockCalls) ( UCodeBlock* cb );
 
 /* ---------------------------------------------------------------------
    Exports of vg_execontext.c.

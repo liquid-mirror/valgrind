@@ -4517,10 +4517,11 @@ static Addr disInstr ( UCodeBlock* cb, Addr eip, Bool* isEnd )
    if (dis)
       VG_(printf)("\n");
    for (; first_uinstr < cb->used; first_uinstr++) {
-      Bool sane = VG_(saneUInstr)(True, &cb->instrs[first_uinstr]);
-      if (dis || !sane) 
-         VG_(ppUInstr)(sane ? first_uinstr : -1,
-                       &cb->instrs[first_uinstr]);
+      Bool sane = VG_(saneUInstr)(True, True, &cb->instrs[first_uinstr]);
+      if (dis) 
+         VG_(ppUInstr)(first_uinstr, &cb->instrs[first_uinstr]);
+      else if (!sane)
+         VG_(upUInstr)(-1, &cb->instrs[first_uinstr]);
       vg_assert(sane);
    }
 
@@ -4595,7 +4596,7 @@ Int VG_(disBB) ( UCodeBlock* cb, Addr eip0 )
    /* Patch instruction size into final JMP. */
    LAST_UINSTR(cb).extra4b = delta;
 
-   block_sane = VG_(saneUCodeBlock)(cb);
+   block_sane = VG_(saneUCodeBlockCalls)(cb);
    if (!block_sane) {
       VG_(ppUCodeBlock)(cb, "block failing sanity check");
       vg_assert(block_sane);

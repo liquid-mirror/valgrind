@@ -2250,10 +2250,10 @@ UChar* VG_(emit_code) ( UCodeBlock* cb, Int* nbytes )
          UInstr* u = &cb->instrs[i];
 
          /* Check on the sanity of this insn. */
-         Bool sane = VG_(saneUInstr)( False, u );
+         Bool sane = VG_(saneUInstr)( False, False, u );
          if (!sane) {
             VG_(printf)("\ninsane instruction\n");
-            VG_(ppUInstr)( i, u );
+            VG_(upUInstr)( i, u );
 	 }
          vg_assert(sane);
          emitUInstr( i, u );
