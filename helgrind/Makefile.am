@@ -28,11 +28,22 @@ EXTRA_DIST = $(val_DATA) \
 	README_MISSING_SYSCALL_OR_IOCTL TODO dosyms vg_libpthread.vs \
 	valgrind.spec valgrind.spec.in
 
-val_PROGRAMS = valgrind.so valgrinq.so libpthread.so
+val_PROGRAMS = \
+	valgrind.so \
+	valgrinq.so \
+	libpthread.so \
+	vgskin_memcheck.so \
+	vgskin_cachesim.so \
+	vgskin_eraser.so \
+	vgskin_none.so \
+	vgskin_lackey.so
 
-libpthread_so_SOURCES = vg_libpthread.c vg_libpthread_unimp.c
+libpthread_so_SOURCES = \
+	vg_libpthread.c \
+	vg_libpthread_unimp.c
 
-valgrinq_so_SOURCES = vg_valgrinq_dummy.c
+valgrinq_so_SOURCES = \
+	vg_valgrinq_dummy.c
 
 valgrind_so_SOURCES = \
 	vg_clientfuncs.c \
@@ -62,6 +73,27 @@ valgrind_so_SOURCES = \
 	vg_translate.c \
 	vg_transtab.c \
 	vg_vtagops.c
+
+vgskin_memcheck_so_SOURCES = \
+	vg_memcheck.c \
+	vg_memcheck_pre.c \
+	vg_memcheck_post.c \
+	vg_memcheck_errcontext.c \
+	vg_memcheck_from_ucode.c \
+	vg_memcheck_translate.c \
+	vg_memcheck_helpers.S
+
+vgskin_cachesim_so_SOURCES = \
+	vg_cachesim.c
+
+vgskin_eraser_so_SOURCES = \
+	vg_eraser.c
+
+vgskin_none_so_SOURCES = \
+	vg_none.c
+
+vgskin_lackey_so_SOURCES = \
+	vg_lackey.c
 
 valgrind_so_LDADD = \
 	demangle/cp-demangle.o \
@@ -100,7 +132,28 @@ libpthread.so$(EXEEXT): $(libpthread_so_OBJECTS) $(srcdir)/vg_libpthread.vs
 		$(libpthread_so_OBJECTS) \
 		-Wl,-version-script $(srcdir)/vg_libpthread.vs
 
+vgskin_memcheck.so$(EXEEXT): $(vgskin_memcheck_so_OBJECTS)
+	$(CC) $(CFLAGS) $(LDFLAGS) -shared -o vgskin_memcheck.so \
+		$(vgskin_memcheck_so_OBJECTS)
+
+vgskin_cachesim.so$(EXEEXT): $(vgskin_cachesim_so_OBJECTS)
+	$(CC) $(CFLAGS) $(LDFLAGS) -shared -o vgskin_cachesim.so \
+		$(vgskin_cachesim_so_OBJECTS)
+
+vgskin_eraser.so$(EXEEXT): $(vgskin_eraser_so_OBJECTS)
+	$(CC) $(CFLAGS) $(LDFLAGS) -shared -o vgskin_eraser.so \
+		$(vgskin_eraser_so_OBJECTS)
+
+vgskin_none.so$(EXEEXT): $(vgskin_none_so_OBJECTS)
+	$(CC) $(CFLAGS) $(LDFLAGS) -shared -o vgskin_none.so \
+		$(vgskin_none_so_OBJECTS)
+
+vgskin_lackey.so$(EXEEXT): $(vgskin_lackey_so_OBJECTS) vg_instrument.o
+	$(CC) $(CFLAGS) $(LDFLAGS) -shared -o vgskin_lackey.so \
+		$(vgskin_lackey_so_OBJECTS) vg_instrument.o
+
 install-exec-hook:
 	$(mkinstalldirs) $(DESTDIR)$(valdir)
 	rm -f $(DESTDIR)$(valdir)/libpthread.so.0
 	$(LN_S) libpthread.so $(DESTDIR)$(valdir)/libpthread.so.0
+
