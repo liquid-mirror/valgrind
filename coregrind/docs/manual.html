@@ -2677,6 +2677,13 @@ Valgrind's cache profiling has a number of shortcomings:
       <blockquote><code>btsl %eax, %edx</code></blockquote>
 
       This should only happen rarely.
+      </li><p>
+
+  <li>FPU instructions with data sizes of 28 and 108 bytes (e.g.
+      <code>fsave</code>) are treated as though they only access 16 bytes.
+      These instructions seem to be rare so hopefully this won't affect
+      accuracy much.
+      </li><p>
 </ul>
 
 Another thing worth nothing is that results are very sensitive.  Changing the
