@@ -674,6 +674,19 @@ void VG_(load_suppressions) ( void )
    }
 }
 
+/* Return the name of an erring fn in a way which is useful
+   for comparing against the contents of a suppressions file. 
+   Doesn't demangle the fn name, because we want to refer to 
+   mangled names in the suppressions file.
+*/    
+static
+void get_objname_fnname ( Addr a,
+                          Char* obj_buf, Int n_obj_buf,
+                          Char* fun_buf, Int n_fun_buf )
+{     
+   (void)VG_(get_objname)          ( a, obj_buf, n_obj_buf );
+   (void)VG_(get_fnname_nodemangle)( a, fun_buf, n_fun_buf );
+}     
 
 /* Does an error context match a suppression?  ie is this a
    suppressible error?  If so, return a pointer to the CoreSupp
@@ -696,34 +709,28 @@ static CoreSupp* is_suppressible_error ( CoreError* err )
 
    CoreSupp* su;
 
-   /* vg_what_fn_or_object_is_this returns:
-         <function_name>      or
-         <object_name>        or
-         ???
-      so the strings in the suppression file should match these.
+   /* get_objname_fnname() writes the function name and object name if
+      it finds them in the debug info.  so the strings in the suppression
+      file should match these.
    */
 
    /* Initialise these strs so they are always safe to compare, even
-      if what_fn_or_object_is_this doesn't write anything to them. */
+      if get_objname_fnname doesn't write anything to them. */
    caller0_obj[0] = caller1_obj[0] = caller2_obj[0] = caller3_obj[0] = 0;
    caller0_fun[0] = caller1_fun[0] = caller2_obj[0] = caller3_obj[0] = 0;
 
-   VG_(what_obj_and_fun_is_this)
-      ( err->where->eips[0], caller0_obj, M_VG_ERRTXT,
-                             caller0_fun, M_VG_ERRTXT );
-   VG_(what_obj_and_fun_is_this)
-      ( err->where->eips[1], caller1_obj, M_VG_ERRTXT,
-                             caller1_fun, M_VG_ERRTXT );
+   get_objname_fnname ( err->where->eips[0], caller0_obj, M_VG_ERRTXT,
+                                             caller0_fun, M_VG_ERRTXT );
+   get_objname_fnname ( err->where->eips[1], caller1_obj, M_VG_ERRTXT,
+                                             caller1_fun, M_VG_ERRTXT );
 
    if (VG_(clo_backtrace_size) > 2) {
-      VG_(what_obj_and_fun_is_this)
-         ( err->where->eips[2], caller2_obj, M_VG_ERRTXT,
-                                caller2_fun, M_VG_ERRTXT );
+      get_objname_fnname ( err->where->eips[2], caller2_obj, M_VG_ERRTXT,
+                                                caller2_fun, M_VG_ERRTXT );
 
       if (VG_(clo_backtrace_size) > 3) {
-         VG_(what_obj_and_fun_is_this)
-            ( err->where->eips[3], caller3_obj, M_VG_ERRTXT,
-                                   caller3_fun, M_VG_ERRTXT );
+         get_objname_fnname ( err->where->eips[3], caller3_obj, M_VG_ERRTXT,
+                                                   caller3_fun, M_VG_ERRTXT );
       }
    }
 
