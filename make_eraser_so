@@ -1,9 +1,0 @@
-#! /bin/sh
-
-CFLAGS="-O2 -mpreferred-stack-boundary=2 -Winline -Wall -Wshadow -fomit-frame-pointer -g"
-
-gcc $CFLAGS -c vg_eraser.c
-/usr/bin/gcc -shared vg_eraser.o -o vgskin_eraser.so
-
-cp vgskin_eraser.so lib/valgrind
-
