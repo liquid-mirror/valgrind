@@ -219,7 +219,14 @@ sub do_one_test($$)
     my $stdout_exp = ( -r "$name.stdout.exp" 
                      ? "$name.stdout.exp" 
                      : "/dev/null" );
+
+    # If 1.0.X/HEAD and ERASER versions have the same expected stderr output,
+    # foo.stderr.exp.hd might be missing, so use foo.stderr.exp instead if
+    # --head is true.
     my $stderr_exp = "$name.stderr.exp$exp";
+    if ($exp eq ".hd" && not -r $stderr_exp) {
+       $stderr_exp = "$name.stderr.exp";
+    }
     (-r $stderr_exp) or die "Could not read `$stderr_exp'\n";
 
     mysystem("diff -C0 $stdout_exp $name.stdout.out > $name.stdout.diff");
