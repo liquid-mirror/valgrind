@@ -929,7 +929,7 @@ extern Char VG_(toupper) ( Char c );
 
 extern void VG_(strncpy_safely) ( Char* dest, const Char* src, Int ndest );
 
-extern void VG_(strncpy) ( Char* dest, const Char* src, Int ndest );
+extern Char* VG_(strncpy) ( Char* dest, const Char* src, Int ndest );
 
 extern Bool VG_(stringMatch) ( Char* pat, Char* str );
 
