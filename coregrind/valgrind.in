@@ -28,6 +28,9 @@ dousage=0
 # show version info?
 doversion=0
 
+# --skin=<foo> arg, specifying skin used
+skin_arg=
+
 # Collect up args for Valgrind
 while [ $+ != 0 ]
 do
@@ -41,7 +44,7 @@ do
     --verbose)              vgopts="$vgopts -v"; shift;;
     -q)                     vgopts="$vgopts $arg"; shift;;
     --quiet)                vgopts="$vgopts $arg"; shift;;
-    --action=*)             vgopts="$vgopts $arg"; shift;;
+    --skin=*)               skin_arg=$arg;         shift;;
     --error-limit=no)       vgopts="$vgopts $arg"; shift;;
     --error-limit=yes)      vgopts="$vgopts $arg"; shift;;
     --check-addrVs=no)      vgopts="$vgopts $arg"; shift;;
@@ -69,9 +72,6 @@ do
     --workaround-gcc296-bugs=yes)   vgopts="$vgopts $arg"; shift;;
     --freelist-vol=*)       vgopts="$vgopts $arg"; shift;;
     --suppressions=*)       vgopts="$vgopts $arg"; shift;;
-    --I1=*,*,*)             vgopts="$vgopts $arg"; shift;;
-    --D1=*,*,*)             vgopts="$vgopts $arg"; shift;;
-    --L2=*,*,*)             vgopts="$vgopts $arg"; shift;;
     --weird-hacks=*)        vgopts="$vgopts $arg"; shift;;
 #   options for debugging Valgrind
     --sanity-level=*)       vgopts="$vgopts $arg"; shift;;
@@ -101,6 +101,8 @@ do
     --trace-pthread=all)    vgopts="$vgopts $arg"; shift;;
     --stop-after=*)         vgopts="$vgopts $arg"; shift;;
     --dump-error=*)         vgopts="$vgopts $arg"; shift;;
+    --)                     vgopts="$vgopts $arg"; 
+                            ext_spec_args=1; shift; break;;
     -*)                     dousage=1; break;;
     *)                      break;;
   esac
@@ -111,14 +113,24 @@ if [ z"$doversion" = z1 ]; then
    exit 1
 fi
 
+# SSS: relying on 'sed' and 'tr' now...
+# Decide on the extension
+if [ z"$skin_arg" = z ]; then
+   echo "Missing --skin option: defaulting to Valgrind"
+   extension=memcheck
+else
+   # Hacky way to chop off the "--skin=" part.
+   extension=`echo $skin_arg | sed 's/--skin=//'`
+fi
+
 if [ $# = 0 ] || [ z"$dousage" = z1 ]; then
    echo
    echo "usage: $vgname [options] prog-and-args"
    echo
-   echo "  options for the user, with defaults in [ ], are:"
+   echo "  core options for the user, with defaults in [ ], are:"
    echo "    --help                    show this message"
    echo "    --version                 show version"
-   echo "    --action=none|memcheck|eraser|cachesim  main task?  [memcheck]"
+   echo "    --skin=<name>             main task (skin to use) [Valgrind]"
    echo "    -q --quiet                run silently; only print error msgs"
    echo "    -v --verbose              be more verbose, incl counts of errors"
    echo "    --gdb-attach=no|yes       start GDB when errors detected? [no]"
@@ -140,14 +152,21 @@ if [ $# = 0 ] || [ z"$dousage" = z1 ]; then
    echo "                              suppressions file <filename>"
    echo "    --check-addrVs=no|yes     experimental lighterweight checking? [yes]"
    echo "                              yes == Valgrind's original behaviour"
-   echo "    --I1=<size>,<assoc>,<line_size>  set I1 cache manually"
-   echo "    --D1=<size>,<assoc>,<line_size>  set D1 cache manually"
-   echo "    --L2=<size>,<assoc>,<line_size>  set L2 cache manually"
    echo "    --weird-hacks=hack1,hack2,...  [no hacks selected]"
    echo "         recognised hacks are: ioctl-VTIME truncate-writes"
-   echo ""
    echo
-   echo "  options for debugging Valgrind itself are:"
+   echo "  $extension extension options for the user are:"
+
+# search for extensions usage file, print if found
+usage_file=vgskin_${extension}.usage
+
+if [ -r $VALGRIND/$usage_file ] ; then
+   cat $VALGRIND/$usage_file
+else
+   echo "    (none)"
+fi
+   echo
+   echo "  core options for debugging Valgrind itself are:"
    echo "    --sanity-level=<number>   level of sanity checking to do [1]"
    echo "    --single-step=no|yes      translate each instr separately? [no]"
    echo "    --optimise=no|yes         improve intermediate code? [yes]"
@@ -174,6 +193,22 @@ if [ $# = 0 ] || [ z"$dousage" = z1 ]; then
    exit 1
 fi
 
+if [ z"$ext_spec_args" = z1 ]; then
+   while [ $+ != 0 ]
+   do
+     arg=$1
+     case "$arg" in
+       # extension specific options
+       -*) vgopts="$vgopts $arg"; shift;;
+       *)  break;;
+     esac
+   done
+fi
+
+extension_so="vgskin_${extension}.so"
+
+
+
 # A bit subtle.  The LD_PRELOAD added entry must be absolute
 # and not depend on LD_LIBRARY_PATH.  This is so that we can
 # mess with LD_LIBRARY_PATH for child processes, which makes
@@ -184,7 +219,20 @@ VG_ARGS="$VALGRIND_OPTS $vgsupp $vgopts"
 export VG_ARGS
 LD_LIBRARY_PATH=$VALGRIND:$LD_LIBRARY_PATH
 export LD_LIBRARY_PATH
-LD_PRELOAD=$VALGRIND/valgrind.so:$LD_PRELOAD
+
+if [ ! -r $VALGRIND/$extension_so ] ; then
+   echo
+   echo "Extension error:"
+   echo "  The shared library \`$extension_so' for the chosen"
+   echo "  extension \`$extension' could not be found in"
+   echo "  $VALGRIND"
+   echo
+   exit 1
+fi
+
+# Insert $extension.so before valgrind.so so it replaces the appropriate
+# default template functions.
+LD_PRELOAD=$VALGRIND/$extension_so:$VALGRIND/valgrind.so:$LD_PRELOAD
 export LD_PRELOAD
 #LD_DEBUG=files
 #LD_DEBUG=symbols
