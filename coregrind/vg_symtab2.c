@@ -40,6 +40,9 @@
    Stabs reader greatly improved by Nick Nethercote, Apr 02.
 */
 
+/* Set to True when first debug info search is performed */
+Bool VG_(using_debug_info) = False;
+
 /*------------------------------------------------------------*/
 /*--- Structs n stuff                                      ---*/
 /*------------------------------------------------------------*/
@@ -1734,10 +1737,13 @@ void VG_(read_symtab_callback) (
    libraries as they are dlopen'd.  Conversely, when the client does
    munmap(), vg_symtab_notify_munmap() throws away any symbol tables
    which happen to correspond to the munmap()d area.  */
-void VG_(read_symbols) ( void )
+void VG_(maybe_read_symbols) ( void )
 {
+   if (!VG_(using_debug_info))
+      return;
+
    VGP_PUSHCC(VgpReadSyms);
-   VG_(read_procselfmaps) ( VG_(read_symtab_callback) );
+      VG_(read_procselfmaps) ( VG_(read_symtab_callback) );
    VGP_POPCC;
 }
 
@@ -1747,9 +1753,12 @@ void VG_(read_symbols) ( void )
    accuracy of error messages, but we need to do it in order to
    maintain the no-overlapping invariant.
 */
-void VG_(unload_symbols) ( Addr start, UInt length )
+void VG_(maybe_unload_symbols) ( Addr start, UInt length )
 {
    SegInfo *prev, *curr;
+
+   if (!VG_(using_debug_info))
+      return;
 
    prev = NULL;
    curr = segInfo;
@@ -1784,6 +1793,14 @@ void VG_(unload_symbols) ( Addr start, UInt length )
 /*--- plausible-looking stack dumps.                       ---*/
 /*------------------------------------------------------------*/
 
+static __inline__ void ensure_debug_info_inited ( void )
+{
+   if (!VG_(using_debug_info)) {
+      VG_(using_debug_info) = True;
+      VG_(maybe_read_symbols)();
+   }
+}
+
 /* Find a symbol-table index containing the specified pointer, or -1
    if not found.  Binary search.  */
 
@@ -1817,6 +1834,8 @@ static void search_all_symtabs ( Addr ptr, /*OUT*/SegInfo** psi,
 {
    Int      sno;
    SegInfo* si;
+
+   ensure_debug_info_inited();
    VGP_PUSHCC(VgpSearchSyms);
    for (si = segInfo; si != NULL; si = si->next) {
       if (si->start <= ptr && ptr < si->start+si->size) {
@@ -1867,7 +1886,10 @@ static void search_all_loctabs ( Addr ptr, /*OUT*/SegInfo** psi,
 {
    Int      lno;
    SegInfo* si;
+
    VGP_PUSHCC(VgpSearchSyms);
+
+   ensure_debug_info_inited();
    for (si = segInfo; si != NULL; si = si->next) {
       if (si->start <= ptr && ptr < si->start+si->size) {
          lno = search_one_loctab ( si, ptr );
