@@ -3256,6 +3256,29 @@ void VG_(perform_assumed_nonblocking_syscall) ( ThreadId tid )
             VG_TRACK( post_mem_write, arg2, sizeof(struct statfs) );
          break;
 
+#     if defined(__NR_statfs64)
+      case __NR_statfs64: /* syscall 268 */
+         /* int statfs64(const char *path, struct statfs64 *buf); */
+         MAYBE_PRINTF("statfs64 ( %s, %p )\n", arg1,arg2);
+         SYSCALL_TRACK( pre_mem_read_asciiz, tid, "statfs64(path)", arg1 );
+         KERNEL_DO_SYSCALL(tid,res);
+         if (!VG_(is_kerror)(res) && res == 0)
+            VG_TRACK( post_mem_write,arg2, sizeof(struct statfs64) );
+         break;
+#     endif
+
+#     if defined(__NR_utimes)
+      case __NR_utimes: /* syscall 271 */
+         /* int utimes(const char *filename, struct timeval *tvp); */
+         MAYBE_PRINTF("utimes ( %p, %p )\n", arg1,arg2);
+         SYSCALL_TRACK( pre_mem_read_asciiz, tid, "utimes(filename)", arg1 );
+         if (arg2 != (UInt)NULL)
+            SYSCALL_TRACK( pre_mem_read, tid, "utimes(tvp)", arg2,
+                          sizeof(struct timeval) );
+         KERNEL_DO_SYSCALL(tid,res);
+         break;
+#     endif
+
       case __NR_symlink: /* syscall 83 */
          /* int symlink(const char *oldpath, const char *newpath); */
          MAYBE_PRINTF("symlink ( %p, %p )\n",arg1,arg2);
