@@ -177,8 +177,6 @@ static void assign_helpers_in_baseBlock(UInt n, Int offsets[], Addr addrs[])
 
 static void vg_init_baseBlock ( void )
 {
-   baB_off = 0;
-
    /* Those with offsets under 128 are carefully chosen. */
 
    /* WORD offsets in this column */
@@ -192,38 +190,42 @@ static void vg_init_baseBlock ( void )
    /* 7   */ VGOFF_(m_edi)     = alloc_BaB(1);
    /* 8   */ VGOFF_(m_eflags)  = alloc_BaB(1);
 
-   /* 9   */ VGOFF_(sh_eax)    = alloc_BaB(1);
-   /* 10  */ VGOFF_(sh_ecx)    = alloc_BaB(1);
-   /* 11  */ VGOFF_(sh_edx)    = alloc_BaB(1);
-   /* 12  */ VGOFF_(sh_ebx)    = alloc_BaB(1);
-   /* 13  */ VGOFF_(sh_esp)    = alloc_BaB(1);
-   /* 14  */ VGOFF_(sh_ebp)    = alloc_BaB(1);
-   /* 15  */ VGOFF_(sh_esi)    = alloc_BaB(1);
-   /* 16  */ VGOFF_(sh_edi)    = alloc_BaB(1);
-   /* 17  */ VGOFF_(sh_eflags) = alloc_BaB(1);
+   if (VG_(needs).shadow_regs) {
+      /* 9   */ VGOFF_(sh_eax)    = alloc_BaB(1);
+      /* 10  */ VGOFF_(sh_ecx)    = alloc_BaB(1);
+      /* 11  */ VGOFF_(sh_edx)    = alloc_BaB(1);
+      /* 12  */ VGOFF_(sh_ebx)    = alloc_BaB(1);
+      /* 13  */ VGOFF_(sh_esp)    = alloc_BaB(1);
+      /* 14  */ VGOFF_(sh_ebp)    = alloc_BaB(1);
+      /* 15  */ VGOFF_(sh_esi)    = alloc_BaB(1);
+      /* 16  */ VGOFF_(sh_edi)    = alloc_BaB(1);
+      /* 17  */ VGOFF_(sh_eflags) = alloc_BaB(1);
+   }
 
-   /* 18, 19, 20... depends on number of compact helpers registered */ 
+   /* 9,10,11 or 18,19,20... depends on number whether shadow regs are used
+    * and on compact helpers registered */ 
+
    /* Allocate slots for compact helpers */
    assign_helpers_in_baseBlock(VG_(n_compact_helpers), 
                                VG_(compact_helper_offsets), 
                                VG_(compact_helper_addrs));
 
-   /* 18 + n_compact_helpers  */
+   /* (9 or 18) + n_compact_helpers  */
    if (VG_(track_events).new_mem_stack_aligned || 
        VG_(track_events).die_mem_stack_aligned) 
       VGOFF_(handle_esp_assignment)
          = alloc_BaB_1_set( (Addr) & VGM_(handle_esp_assignment) );
 
-   /* 19 + n_compact_helpers */
+   /* (10 or 19) + n_compact_helpers */
    VGOFF_(m_eip) = alloc_BaB(1);
 
    /* There are currently 24 spill slots */
-   /* (20 .. 43) + n_compact_helpers.  This overlaps the magic boundary at 
-    * >= 32 words, but most spills are to low numbered spill slots, so the 
-    * ones above the boundary don't see much action. */
+   /* (11+/20+ .. 32+/43+) + n_compact_helpers.  This can overlap the magic
+    * boundary at >= 32 words, but most spills are to low numbered spill
+    * slots, so the ones above the boundary don't see much action. */
    VGOFF_(spillslots) = alloc_BaB(VG_MAX_SPILLSLOTS);
 
-   /* I gave up counting at this point.  Since they're way above the
+   /* I gave up counting at this point.  Since they're above the
       short-amode-boundary, there's no point. */
 
    VGOFF_(m_fpustate) = alloc_BaB(VG_SIZE_OF_FPUSTATE_W);
@@ -298,7 +300,26 @@ static void vg_init_baseBlock ( void )
    assign_helpers_in_baseBlock(VG_(n_noncompact_helpers), 
                                VG_(noncompact_helper_offsets), 
                                VG_(noncompact_helper_addrs));
+}
 
+static void vg_init_shadow_regs ( void )
+{
+   if (VG_(needs).shadow_regs) {
+      UInt eflags;
+   
+      SKN_(written_shadow_regs_values) ( & VG_(written_shadow_reg), & eflags );
+      VG_(baseBlock)[VGOFF_(sh_esp)]    = 
+      VG_(baseBlock)[VGOFF_(sh_ebp)]    =
+      VG_(baseBlock)[VGOFF_(sh_eax)]    =
+      VG_(baseBlock)[VGOFF_(sh_ecx)]    =
+      VG_(baseBlock)[VGOFF_(sh_edx)]    =
+      VG_(baseBlock)[VGOFF_(sh_ebx)]    =
+      VG_(baseBlock)[VGOFF_(sh_esi)]    =
+      VG_(baseBlock)[VGOFF_(sh_edi)]    = VG_(written_shadow_reg);
+      VG_(baseBlock)[VGOFF_(sh_eflags)] = eflags;
+
+   } else
+      VG_(written_shadow_reg) = VG_UNUSED_SHADOW_REG_VALUE;
 }
 
 
@@ -404,22 +425,17 @@ VgNeeds VG_(needs) = {
 
    .record_mem_exe_context  = INVALID_Bool,
    .postpone_mem_reuse      = INVALID_Bool,
-
    .debug_info              = INVALID_Bool,
    .pthread_errors          = INVALID_Bool,
    .report_errors           = INVALID_Bool,
-
-   .identifies_basic_blocks = INVALID_Bool,
-
    .run_libc_freeres        = INVALID_Bool,
 
+   .identifies_basic_blocks = INVALID_Bool,
+   .shadow_regs             = INVALID_Bool,
    .command_line_options    = INVALID_Bool,
    .client_requests         = INVALID_Bool,
-
    .extends_UCode           = INVALID_Bool,
-
    .wrap_syscalls           = INVALID_Bool,
-
    .sanity_checks           = INVALID_Bool,
 };
 
@@ -471,22 +487,17 @@ static void sanity_check_needs ( void )
 
    CHECK_NOT(VG_(needs).record_mem_exe_context,  INVALID_Bool);
    CHECK_NOT(VG_(needs).postpone_mem_reuse,      INVALID_Bool);
-
    CHECK_NOT(VG_(needs).debug_info,              INVALID_Bool);
    CHECK_NOT(VG_(needs).pthread_errors,          INVALID_Bool);
    CHECK_NOT(VG_(needs).report_errors,           INVALID_Bool);
-
-   CHECK_NOT(VG_(needs).identifies_basic_blocks, INVALID_Bool);
-
    CHECK_NOT(VG_(needs).run_libc_freeres,        INVALID_Bool);
 
+   CHECK_NOT(VG_(needs).identifies_basic_blocks, INVALID_Bool);
+   CHECK_NOT(VG_(needs).shadow_regs,             INVALID_Bool);
    CHECK_NOT(VG_(needs).command_line_options,    INVALID_Bool);
    CHECK_NOT(VG_(needs).client_requests,         INVALID_Bool);
-
    CHECK_NOT(VG_(needs).extends_UCode,           INVALID_Bool);
-
    CHECK_NOT(VG_(needs).wrap_syscalls,           INVALID_Bool);
-
    CHECK_NOT(VG_(needs).sanity_checks,           INVALID_Bool);
 
 #undef CHECK_NOT
@@ -1103,6 +1114,7 @@ void VG_(main) ( void )
    /* Set up baseBlock offsets and copy the saved machine's state into it. */
    vg_init_baseBlock();
    VG_(copy_m_state_static_to_baseBlock)();
+   vg_init_shadow_regs();
 
    /* Process Valgrind's command-line opts (from env var VG_OPTS). */
    process_cmd_line_options();
