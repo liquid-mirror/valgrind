@@ -56,6 +56,20 @@
    the need for a higher number presents itself. */
 #define VG_N_THREAD_KEYS 50
 
+/* Total number of integer registers available for allocation.  That's
+   all of them except %esp, %edi and %ebp.  %edi is a general spare
+   temporary.  %ebp permanently points at VG_(baseBlock).
+   
+   If you change this you'll have to also change at least these:
+     - rankToRealRegNum()
+     - VG_(realRegNumToRank)()
+     - ppRegsLiveness()
+     - the RegsLive type (maybe -- RegsLive type must have more than
+                          VG_MAX_REALREGS bits)
+   
+   Do not change this unless you really know what you are doing!  */
+#define VG_MAX_REALREGS 5
+
 
 /*====================================================================*/
 /*=== Basic types                                                  ===*/
@@ -575,6 +589,22 @@ typedef UChar FlagSet;
 #define FlagsEmpty  (FlagSet)0
 
 
+/* Liveness of general purpose registers, useful for code generation.
+   Reg rank order 0..N-1 corresponds to bits 0..N-1, ie. first
+   reg's liveness in bit 0, last reg's in bit N-1.  Note that
+   these rankings don't match the Intel register ordering. */
+typedef UChar RegsLive;
+
+#define ALL_REGS_LIVE   (1 << (VG_MAX_REALREGS-1))  /* 0011...11b */
+#define REG_LIVE(rank)  (1 << rank)
+
+#define IS_REG_LIVE(rank,regs_live) (regs_live & REG_LIVE(rank))
+#define SET_REG_LIVE(rank,regs_live,b)         \
+   do { if (b) regs_live |=   REG_LIVE(rank);  \
+        else   regs_live &= ~(REG_LIVE(rank)); \
+   } while(0)
+
+
 /* A Micro (u)-instruction. */
 typedef
    struct {
@@ -606,16 +636,18 @@ typedef
       JmpKind jmpkind:3;       /* additional properties of unconditional JMP */
 
       /* Additional properties for UInstrs that call C functions:  
-       *   - CCALL
-       *   - PUT (when %ESP is the target)
-       *   - possibly skin-specific UInstrs
-       */
+           - CCALL
+           - PUT (when %ESP is the target)
+           - possibly skin-specific UInstrs
+      */
       UChar   argc:2;          /* Number of args, max 3 */
       UChar   regparms_n:2;    /* Number of args passed in registers */
       Bool    has_ret_val:1;   /* Function has return value? */
-      Bool    save_eax:1;      /* Save/restore %eax across C call? */
-      Bool    save_ecx:1;      /* Save/restore %ecx across C call? */ 
-      Bool    save_edx:1;      /* Save/restore %edx across C call? */ 
+
+      /* RealReg liveness;  only sensical after reg alloc and liveness
+         analysis done.  This info is a little bit arch-specific --
+         VG_MAX_REALREGS can vary on different architectures. */
+      RegsLive regs_live_after:VG_MAX_REALREGS; 
    }
    UInstr;
 
@@ -714,13 +746,13 @@ void VG_(set_global_var) ( UCodeBlock* cb, Addr globvar_ptr, UInt val);
 /* When True, all generated code is/should be printed. */
 extern Bool  VG_(print_codegen);
 
-extern void  VG_(ppUCodeBlock)    ( UCodeBlock* cb, Char* title );
-extern void  VG_(ppUInstr)        ( Int instrNo, UInstr* u );
-extern void  VG_(upUInstr)        ( Int instrNo, UInstr* u );
-extern Char* VG_(nameUOpcode)     ( Bool upper, Opcode opc );
-extern void  VG_(ppUOperand)      ( UInstr* u, Int operandNo, 
-                                    Int sz, Bool parens );
-extern void  VG_(ppSaveEaxEcxEdx) ( UInstr* u );
+extern void  VG_(ppUCodeBlock)     ( UCodeBlock* cb, Char* title );
+extern void  VG_(ppUInstr)         ( Int instrNo, UInstr* u );
+extern void  VG_(ppUInstrWithRegs) ( Int instrNo, UInstr* u );
+extern void  VG_(upUInstr)         ( Int instrNo, UInstr* u );
+extern Char* VG_(nameUOpcode)      ( Bool upper, Opcode opc );
+extern void  VG_(ppUOperand)       ( UInstr* u, Int operandNo, 
+                                     Int sz, Bool parens );
 
 /* ------------------------------------------------------------------ */
 /* Allocating/freeing basic blocks of UCode */
@@ -786,7 +818,7 @@ void VG_(synth_call) ( Bool ensure_shortform, Int word_offset );
 */
 void VG_(synth_ccall) ( Addr fn, Int argc, Int regparms_n, UInt argv[],
                         Tag tagv[], Int ret_reg, 
-                        Bool eax_dies, Bool ecx_dies, Bool edx_dies );
+                        UChar regs_live_before, UChar regs_live_after );
 
 /* Addressing modes */
 void VG_(emit_amode_offregmem_reg) ( Int off, Int regmem, Int reg );
@@ -1299,7 +1331,7 @@ extern UInt SK_(handle_client_request) ( ThreadState* tst, UInt* arg_block );
    }
 
 extern Int   SK_(getExtRegUsage) ( UInstr* u, Tag tag, RegUse* arr );
-extern void  SK_(emitExtUInstr)  ( UInstr* u );
+extern void  SK_(emitExtUInstr)  ( UInstr* u, UChar regs_live_before );
 extern Bool  SK_(saneExtUInstr)  ( Bool beforeRA, Bool beforeLiveness,
                                     UInstr* u );
 extern Char* SK_(nameExtUOpcode) ( Opcode opc );
