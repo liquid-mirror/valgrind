@@ -338,8 +338,9 @@ void init_shadow_memory ( void )
 }
 
 
-void SK_(init) ( void )
+void SK_(post_clo_init) ( void )
 {
+#if 0
    init_shadow_memory();
 
    /* Mark global variables touched from generated code */
@@ -358,7 +359,7 @@ void SK_(init) ( void )
    VG_(baseBlock)[VGOFF_(sh_esi)]    = VGM_WORD_VALID;
    VG_(baseBlock)[VGOFF_(sh_edi)]    = VGM_WORD_VALID;
    VG_(baseBlock)[VGOFF_(sh_eflags)] = VGM_EFLAGS_VALID;
-
+#endif
 }
 
 void SK_(fini) ( void )
@@ -2316,7 +2317,7 @@ Char* SKN_(usage)(void)
 /*--- Setup                                                ---*/
 /*------------------------------------------------------------*/
 
-void SK_(setup)(VgNeeds* needs, VgTrackEvents* track)
+void SK_(pre_clo_init)(VgNeeds* needs, VgTrackEvents* track)
 {
    needs->name                    = "valgrind";
    needs->description             = "a memory error detector";
@@ -2361,6 +2362,7 @@ void SK_(setup)(VgNeeds* needs, VgTrackEvents* track)
    track->new_mem_heap          = & memcheck_new_mem_heap;
    track->new_mem_stack         = & make_writable;
    track->new_mem_stack_aligned = & make_writable_aligned;
+   track->new_mem_stack_signal  = & make_writable;
    track->new_mem_brk           = & make_writable;
    track->new_mem_mmap          = & memcheck_set_perms;
    
@@ -2368,20 +2370,38 @@ void SK_(setup)(VgNeeds* needs, VgTrackEvents* track)
    track->change_mem_mprotect   = & memcheck_set_perms;
       
    track->ban_mem_heap          = & make_noaccess;
+   track->ban_mem_stack         = & make_noaccess;
 
    track->die_mem_heap          = & memcheck_die_mem_heap;
    track->die_mem_stack         = & make_noaccess;
    track->die_mem_stack_aligned = & make_noaccess_aligned; 
-   track->die_mem_stack_thread  = & make_noaccess;
+   track->die_mem_stack_signal  = & make_noaccess; 
    track->die_mem_brk           = & make_noaccess;
    track->die_mem_munmap        = & make_noaccess; 
-   track->die_mem_pthread       = & make_noaccess;
-   track->die_mem_signal        = & make_noaccess; 
 
    track->pre_mem_read          = & check_is_readable;
    track->pre_mem_read_asciiz   = & check_is_readable_asciiz;
    track->pre_mem_write         = & check_is_writable;
    track->post_mem_write        = & make_readable;
+
+   init_shadow_memory();
+
+   /* Mark global variables touched from generated code */
+   VG_(track_events).post_mem_write ( (Addr)&VG_(clo_trace_malloc),  1 );
+   VG_(track_events).post_mem_write ( (Addr)&VG_(clo_sloppy_malloc), 1 );
+
+   /* Set up the shadow regs with reasonable (sic) values.  All regs are
+      claimed to have valid values.
+   */
+   VG_(baseBlock)[VGOFF_(sh_esp)]    = VGM_WORD_VALID;
+   VG_(baseBlock)[VGOFF_(sh_ebp)]    = VGM_WORD_VALID;
+   VG_(baseBlock)[VGOFF_(sh_eax)]    = VGM_WORD_VALID;
+   VG_(baseBlock)[VGOFF_(sh_ecx)]    = VGM_WORD_VALID;
+   VG_(baseBlock)[VGOFF_(sh_edx)]    = VGM_WORD_VALID;
+   VG_(baseBlock)[VGOFF_(sh_ebx)]    = VGM_WORD_VALID;
+   VG_(baseBlock)[VGOFF_(sh_esi)]    = VGM_WORD_VALID;
+   VG_(baseBlock)[VGOFF_(sh_edi)]    = VGM_WORD_VALID;
+   VG_(baseBlock)[VGOFF_(sh_eflags)] = VGM_EFLAGS_VALID;
 }
 
 /*--------------------------------------------------------------------*/
