@@ -128,6 +128,7 @@ sub do_one_test($$)
                      ? "$name.stdout.exp" 
                      : "/dev/null" );
     my $stderr_exp = "$name.stderr.exp$exp";
+    (-r $stderr_exp) or die "Could not read `$stderr_exp'\n";
 
     mysystem("diff -C0 $stdout_exp $name.stdout.out > $name.stdout.diff");
     mysystem("diff -C0 $stderr_exp $name.stderr.out > $name.stderr.diff");
@@ -148,6 +149,7 @@ sub do_one_test($$)
 sub test_one_dir($) 
 {
     my ($dir) = @_;
+    $dir =~ s/\/$//;    # trim a trailing '/'
 
     print "-- Running tests in $dir ----------------------------------\n";
     chdir($dir) or die "Could not change into $dir\n";
