@@ -417,6 +417,15 @@ void VG_(perform_assumed_nonblocking_syscall) ( ThreadId tid )
 
       /* !!!!!!!!!! New, untested syscalls !!!!!!!!!!!!!!!!!!!!! */
 
+#     if defined(__NR_setresgid)
+      case __NR_setresgid: /* syscall 170 */
+         /* int setresgid(gid_t rgid, gid_t egid, gid_t sgid); */
+         if (VG_(clo_trace_syscalls))
+            VG_(printf)("setresgid ( %d, %d, %d )\n", arg1, arg2, arg3);
+         KERNEL_DO_SYSCALL(tid,res);
+         break;
+#     endif
+
 #     if defined(__NR_vhangup)
       case __NR_vhangup: /* syscall 111 */
          /* int vhangup(void); */
