@@ -167,10 +167,10 @@ Bool vg_is_GDB_attach_requested ( void )
 }
 
 
-/* Top-level entry point to the error management subsystem.  All
-   detected errors are notified here; this routine decides if/when the
+/* 
+   All detected errors are notified here; this routine decides if/when the
    user should see the error. */
-void VG_(maybe_add_context) ( ErrContext* ec )
+static void maybe_add_context ( ErrContext* ec )
 {
    ErrContext*   p;
    ErrContext*   p_prev;
@@ -320,11 +320,13 @@ void VG_(maybe_add_context) ( ErrContext* ec )
    scheduler, we pick up %EIP/%EBP values from the stored thread state, not
    from VG_(baseBlock).  
 */
+
+/* Top-level entry point to the error management subsystem. */
 /* I've gone all object-oriented... */
 /* NULL tst indicates the error is called from generated code. non-NULL tst
  * indicates the error is called from the core or skin. */
 void VG_(construct_err_context) ( ErrContext* ec, ErrKind ekind, Addr a,
-                                  Char* s, ThreadState* tst )
+                                  Char* s, void* extra, ThreadState* tst )
 {
    ec->next   = NULL;
    ec->supp   = NULL;
@@ -332,7 +334,7 @@ void VG_(construct_err_context) ( ErrContext* ec, ErrKind ekind, Addr a,
    ec->ekind  = ekind;
    ec->addr   = a;
    ec->string = s;
-   ec->extra  = NULL;
+   ec->extra  = extra;
 
    if (NULL == tst) {
       ec->tid   = VG_(get_current_tid)();
@@ -351,6 +353,7 @@ void VG_(construct_err_context) ( ErrContext* ec, ErrKind ekind, Addr a,
       ec->m_esp   = tst->m_esp;
       ec->m_ebp   = tst->m_ebp;
    }
+   maybe_add_context ( ec );
 }
 
 /* This is called not from generated code but from the scheduler */
@@ -361,10 +364,9 @@ void VG_(record_pthread_error) ( ThreadId tid, Char* msg )
    if (VG_(ignore_errors)) return;
    if (! VG_(needs).pthread_errors) return;
    /* No address to note: hence the '0' */
-   VG_(construct_err_context)( &ec, PThreadErr, 0, msg, &VG_(threads)[tid] );
-   /* No need for the 'extra' part */
-   
-   VG_(maybe_add_context) ( &ec );
+   /* No need for the 'extra' part, hence the NULL */
+   VG_(construct_err_context)( &ec, PThreadErr, 0, msg, NULL,
+                               &VG_(threads)[tid] );
 }
 
 
