@@ -50,6 +50,8 @@ typedef struct {
 /* According to IA-32 Intel Architecture Software Developer's Manual: Vol 2 */
 #define MAX_x86_INSTR_SIZE              16
 
+#define MIN_LINE_SIZE   16
+
 /* Size of various buffers used for storing strings */
 #define FILENAME_LEN                    256
 #define FN_NAME_LEN                     256
@@ -697,7 +699,9 @@ UCodeBlock* SK_(instrument)(UCodeBlock* cb_in, Addr orig_addr)
             t_read      = u_in->val2;
             t_read_addr = newTemp(cb);
             uInstr2(cb, MOV, 4, TempReg, u_in->val2,  TempReg, t_read_addr);
-            data_size = u_in->size;
+            data_size = ( u_in->size <= MIN_LINE_SIZE
+                        ? u_in->size
+                        : MIN_LINE_SIZE);
             VG_(copyUInstr)(cb, u_in);
             break;
 
@@ -711,7 +715,12 @@ UCodeBlock* SK_(instrument)(UCodeBlock* cb_in, Addr orig_addr)
             t_write      = u_in->val2;
             t_write_addr = newTemp(cb);
             uInstr2(cb, MOV, 4, TempReg, u_in->val2, TempReg, t_write_addr);
-            data_size = u_in->size;
+            /* 28 and 108 B data-sized instructions will be done
+             * inaccurately but they're very rare and this avoids errors
+             * from hitting more than two cache lines in the simulation. */
+            data_size = ( u_in->size <= MIN_LINE_SIZE
+                        ? u_in->size
+                        : MIN_LINE_SIZE);
             VG_(copyUInstr)(cb, u_in);
             break;
 
@@ -791,7 +800,8 @@ UCodeBlock* SK_(instrument)(UCodeBlock* cb_in, Addr orig_addr)
 
             } else { 
                vg_assert(4 == data_size || 2  == data_size || 1 == data_size || 
-                         8 == data_size || 10 == data_size);
+                         8 == data_size || 10 == data_size ||
+                         MIN_LINE_SIZE == data_size);
                
                if (IS_(read) && !IS_(write)) {
                   CC_size = sizeof(idCC);
@@ -917,8 +927,6 @@ UCodeBlock* SK_(instrument)(UCodeBlock* cb_in, Addr orig_addr)
 /*------------------------------------------------------------*/
 /*--- Automagic cache initialisation stuff                 ---*/
 /*------------------------------------------------------------*/
-
-#define MIN_LINE_SIZE   16
 
 /* Total reads/writes/misses.  Calculated during CC traversal at the end. */
 static CC Ir_total;
