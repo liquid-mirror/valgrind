@@ -790,15 +790,17 @@ void VG_(strncpy_safely) ( Char* dest, const Char* src, Int ndest )
 }
 
 
-void VG_(strncpy) ( Char* dest, const Char* src, Int ndest )
+Char* VG_(strncpy) ( Char* dest, const Char* src, Int ndest )
 {
-   Int i;
-   i = 0;
+   Int i = 0;
    while (True) {
-      if (i >= ndest) return;
+      if (i >= ndest) return dest;     /* reached limit */
       dest[i] = src[i];
-      if (src[i] == 0) return;
-      i++;
+      if (src[i++] == 0) {
+         /* reached NUL;  pad rest with zeroes as required */
+         while (i < ndest) dest[i++] = 0;
+         return dest;
+      }
    }
 }
 
