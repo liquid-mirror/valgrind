@@ -793,8 +793,6 @@ extern void  VG_(translate)  ( ThreadState* tst,
                                Addr* trans_addr,
                                UInt* trans_size );
 
-extern Int   VG_(realRegNumToRank)    ( Int realReg );
-
 extern Char* VG_(nameCondcode)        ( Condcode cond );
 extern Bool  VG_(saneUInstr)          ( Bool beforeRA, Bool beforeLiveness,
                                         UInstr* u );
