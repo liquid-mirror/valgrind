@@ -257,6 +257,12 @@ int pthread_attr_setdetachstate(pthread_attr_t *attr, int detachstate)
    return 0;
 }
 
+int pthread_attr_getdetachstate(const pthread_attr_t *attr, int *detachstate)
+{
+   *detachstate = attr->__detachstate;
+   return 0;
+}
+
 int pthread_attr_setinheritsched(pthread_attr_t *attr, int inherit)
 {
    static int moans = N_MOANS;
