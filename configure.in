@@ -320,6 +320,8 @@ else
   fi
 fi
 
+rm -f nptltest nptltest.c
+
 AC_SUBST(NPTL_THREADING)
 
 
