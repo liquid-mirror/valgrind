@@ -3127,6 +3127,15 @@ void VG_(translate) ( ThreadState* tst,
          VG_(ppUCodeBlock) ( cb, "Cachesim instrumented code:" );
    }
    
+   /* Add invariant inference/checking code. */
+   if (VG_(clo_diduce)) {
+      /* VGP_PUSHCC(VgpCacheInstrument); */
+      cb = VG_(diduce_instrument)(cb, orig_addr);
+      /* VGP_POPCC; */
+      if (VG_(disassemble)) 
+         VG_(ppUCodeBlock) ( cb, "Invariant instrumented code:" );
+   }
+   
    //VG_(disassemble) = False;
    
    /* Allocate registers. */
