@@ -498,7 +498,7 @@ void VG_(invalidate_translations) ( Addr start, UInt range )
          continue;
 
       if (VG_(needs).identifies_basic_blocks)
-         SKN_(discard_basic_block_info)( vg_tt[i].orig_addr, 
+         SK_(discard_basic_block_info)( vg_tt[i].orig_addr, 
                                          vg_tt[i].orig_size );
 
       vg_tt[i].orig_addr = VG_TTE_DELETED;
