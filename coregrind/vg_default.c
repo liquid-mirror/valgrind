@@ -86,38 +86,38 @@ void SK_(fini)(void)
    For error reporting and suppression handling
    ------------------------------------------------------------------ */
 
-Bool SKN_(eq_ErrContext)(ExeContextRes res, ErrContext* e1, ErrContext* e2)
+Bool SKN_(eq_SkinError)(VgRes res, SkinError* e1, SkinError* e2)
 {
    VG_(printf)(nonfund_panic);
-   VG_(panic)("called SKN_(eq_ErrContext)");
+   VG_(panic)("called SKN_(eq_SkinError)");
 }
 
-void SKN_(pp_ErrContext)(ErrContext* ec)
+void SKN_(pp_SkinError)(SkinError* ec, void (*pp_ExeContext)(void))
 {
    VG_(printf)(nonfund_panic);
-   VG_(panic)("called SKN_(pp_ErrContext)");
+   VG_(panic)("called SKN_(pp_SkinError)");
 }
 
-void SKN_(dup_extra_and_update)(ErrContext* ec)
+void SKN_(dup_extra_and_update)(SkinError* ec)
 {
    VG_(printf)(nonfund_panic);
    VG_(panic)("called SKN_(dup_extra_and_update)");
 }
 
-Bool SKN_(recognised_suppression)(Char* name, SuppressionKind *skind)
+Bool SKN_(recognised_suppression)(Char* name, SuppKind* skind)
 {
    VG_(printf)(nonfund_panic);
    VG_(panic)("called SKN_(recognised_suppression)");
 }
 
 Bool SKN_(read_extra_suppression_info)(Int fd, Char* buf, 
-                                         Int nBuf, Suppression *s)
+                                       Int nBuf, SkinSupp *s)
 {
    VG_(printf)(nonfund_panic);
    VG_(panic)("called SKN_(read_extra_suppression_info)");
 }
 
-Bool SKN_(error_matches_suppression)(ErrContext* ec, Suppression* su)
+Bool SKN_(error_matches_suppression)(SkinError* ec, SkinSupp* su)
 {
    VG_(printf)(nonfund_panic);
    VG_(panic)("called SKN_(error_matches_suppression)");

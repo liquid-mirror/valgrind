@@ -601,31 +601,27 @@ static void print_lock_vector(lock_vector* p)
 typedef
    enum {
       /* Possible data race */
-      Eraser = FinalDummySuppressionKind + 1
+      EraserSupp
    }
-   EraserSuppressionKind;
+   EraserSuppKind;
 
 /* What kind of error it is. */
 typedef
-   enum { EraserErr = FinalDummyErrKind + 1
+   enum { 
+      EraserErr 
    }
-   EraserErrKind;
+   EraserErrorKind;
 
 
 static void record_eraser_error ( ThreadId tid, Addr a, Bool is_write )
 {
-   ErrContext ec;
-
-   if (VG_(ignore_errors)()) return;
-
-   /* Nothing required in 'extra' field;  hence the NULL */
-   VG_(construct_err_context)(&ec, EraserErr, a, 
-                              (is_write ? "writing" : "reading"),
-                              NULL, VG_(get_ThreadState)(tid));
+   VG_(maybe_record_error)( VG_(get_ThreadState)(tid), EraserErr, a, 
+                            (is_write ? "writing" : "reading"),
+                            /*extra*/NULL);
 }
 
-Bool SKN_(eq_ErrContext) ( ExeContextRes not_used,
-                           ErrContext* e1, ErrContext* e2 )
+Bool SKN_(eq_SkinError) ( VgRes not_used,
+                          SkinError* e1, SkinError* e2 )
 {
    vg_assert(EraserErr == e1->ekind && EraserErr == e2->ekind);
    if (e1->string != e2->string) return False;
@@ -633,23 +629,23 @@ Bool SKN_(eq_ErrContext) ( ExeContextRes not_used,
    return True;
 }
 
-void SKN_(pp_ErrContext) ( ErrContext* ec )
+void SKN_(pp_SkinError) ( SkinError* err, void (*pp_ExeContext)(void) )
 {
-   vg_assert(EraserErr == ec->ekind);
+   vg_assert(EraserErr == err->ekind);
    VG_(message)(Vg_UserMsg, "Possible data race %s variable at 0x%x",
-                ec->string, ec->addr );
-   VG_(pp_ExeContext)(ec->where);
+                err->string, err->addr );
+   pp_ExeContext();
 }
 
-void SKN_(dup_extra_and_update)(ErrContext* ec)
+void SKN_(dup_extra_and_update)(SkinError* err)
 {
-   /* do nothing -- extra field not used */
+   /* do nothing -- extra field not used, and no need to update */
 }
 
-Bool SKN_(recognised_suppression) ( Char* name, SuppressionKind *skind )
+Bool SKN_(recognised_suppression) ( Char* name, SuppKind *skind )
 {
    if (0 == VG_(strcmp)(name, "Eraser")) {
-      *skind = Eraser;
+      *skind = EraserSupp;
       return True;
    } else {
       return False;
@@ -657,17 +653,17 @@ Bool SKN_(recognised_suppression) ( Char* name, SuppressionKind *skind )
 }
 
 Bool SKN_(read_extra_suppression_info) ( Int fd, Char* buf, 
-                                         Int nBuf, Suppression *s )
+                                         Int nBuf, SkinSupp* s )
 {
    /* do nothing -- no extra suppression info present.  Return True to
       indicate nothing bad happened. */
    return True;
 }
 
-Bool SKN_(error_matches_suppression)(ErrContext* ec, Suppression* su)
+Bool SKN_(error_matches_suppression)(SkinError* err, SkinSupp* su)
 {
-   vg_assert(su->skind == Eraser);
-   vg_assert(ec->ekind == EraserErr);
+   vg_assert( su->skind == EraserSupp);
+   vg_assert(err->ekind == EraserErr);
    return True;
 }
 

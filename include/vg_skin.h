@@ -178,6 +178,7 @@ typedef
 extern ThreadId     VG_(get_current_tid_1_if_root) ( void );
 extern ThreadState* VG_(get_ThreadState)           ( ThreadId tid );
 
+
 /*====================================================================*/
 /*=== Valgrind's version of libc                                   ===*/
 /*====================================================================*/
@@ -787,17 +788,18 @@ void VG_(emit_AMD_prefetch_reg) ( Int reg );
 /*=== Execution contexts                                           ===*/
 /*====================================================================*/
 
+/* Generic resolution type used in a few different ways, such as deciding
+   how closely to compare two errors for equality. */
+typedef 
+   enum { Vg_LowRes, Vg_MedRes, Vg_HighRes } 
+   VgRes;
+
 typedef
-   struct _ExeContextRec
+   struct _ExeContext
    ExeContext;
 
-/* Depth of the stack to consider when comparing contexts, etc. */
-typedef 
-   enum { LowRes, MedRes, HighRes } 
-   ExeContextRes;
-
 /* Compare two ExeContexts, just comparing the top two callers. */
-extern Bool VG_(eq_ExeContext) ( ExeContextRes res,
+extern Bool VG_(eq_ExeContext) ( VgRes res,
                                  ExeContext* e1, ExeContext* e2 );
 
 /* Print an ExeContext. */
@@ -813,132 +815,90 @@ extern ExeContext* VG_(get_ExeContext) ( ThreadState *tst );
 /*=== Error reporting                                              ===*/
 /*====================================================================*/
 
-/* Suppression is a type describing an error which we want to
-   suppress, ie, not show the user, usually because it is caused by a
-   problem in a library which we can't fix, replace or work around.
-   Suppressions are read from a file at startup time, specified by
-   vg_clo_suppressions, and placed in the vg_suppressions list.  This
-   gives flexibility so that new suppressions can be added to the file
-   as and when needed.
+/* ------------------------------------------------------------------ */
+/* Suppressions describe errors which we want to suppress, ie, not 
+   show the user, usually because it is caused by a problem in a library
+   which we can't fix, replace or work around.  Suppressions are read from 
+   a file at startup time, specified by vg_clo_suppressions, and placed in
+   the vg_suppressions list.  This gives flexibility so that new
+   suppressions can be added to the file as and when needed.
 */
 
 typedef
-   enum {
-      /* Pthreading error */
-      PThread,
-      FinalDummySuppressionKind
-   }
-   SuppressionKind;
+   Int         /* Do not make this unsigned! */
+   SuppKind;
 
-/* For each caller specified for a suppression, record the nature of
-   the caller name.  Not of interest to skins. */
-   // SSS: work out how to hide, short of a rest* pointer in Suppression
-typedef
-   enum { 
-      ObjName,    /* Name is of an shared object file. */
-      FunName     /* Name is of a function. */
-   }
-   SuppressionLocTy;
+/* An extensible (via the 'extra' field) suppression record.  This holds
+   the suppression details of interest to a skin.  Skins can use a normal
+   enum (with element values in the normal range (0..)) for `skind'. 
 
-/* An extensible (via the 'extra' field) suppression record. */
-// SSS: void* extra isn't totally satisfactory... eg. it's a pain
-// initialising, copying, etc. the suppression in two parts...
-// SSS: am I doing that at all for suppressions??
+   If VG_(needs).report_errors==True, for each suppression read in by core
+   SKN_(recognised_suppression)() and SKN_(read_extra_suppression_info) will
+   be called.  The `skind' field is filled in by the value returned in the
+   argument of the first function;  the second function can fill in the
+   `string' and `extra' fields if it wants. 
+*/
 typedef
-   struct _Suppression {
-      struct _Suppression* next;
-      /* The number of times this error has been suppressed. */
-      Int count;     // SSS: interesting to skins?
-      /* The name by which the suppression is referred to. */
-      Char* sname;
-      /* What kind of suppression. */
-      SuppressionKind skind;
-      /* String -- can be used in skin-specific way */
+   struct {
+      /* What kind of suppression.  Must use the range (0..) */
+      SuppKind skind;
+      /* String -- use is optional.  NULL by default. */
       Char* string;
-      /* For any skin-specific extra information */
+      /* Anything else -- use is optional.  NULL by default. */
       void* extra;
+   }
+   SkinSupp;
 
-      /* Rest not of interest to skins... */
-      /* Name of fn where err occurs, and immediate caller (mandatory). */
-      SuppressionLocTy caller0_ty;
-      Char*            caller0;
-      SuppressionLocTy caller1_ty;
-      Char*            caller1;
-      /* Optional extra callers. */
-      SuppressionLocTy caller2_ty;
-      Char*            caller2;
-      SuppressionLocTy caller3_ty;
-      Char*            caller3;
-   } 
-   Suppression;
 
-/* ErrContext is a type for recording just enough info to generate an
-   error report.  The idea is that (typically) the same few points in the
-   program generate thousands of illegal accesses, and we don't want to
-   spew out a fresh error message for each one.  Instead, we use these
-   structures to common up duplicates.
+/* ------------------------------------------------------------------ */
+/* Error records contain enough info to generate an error report.  The idea
+   is that (typically) the same few points in the program generate thousands
+   of illegal accesses, and we don't want to spew out a fresh error message
+   for each one.  Instead, we use these structures to common up duplicates.
 */
 
-/* What kind of error it is. */
-
 typedef
-   enum { PThreadErr,
-          FinalDummyErrKind
-   }
-   ErrKind;
+   Int         /* Do not make this unsigned! */
+   ErrorKind;
 
-/* Top-level struct for recording errors. */
-// SSS: void* extra isn't totally satisfactory... eg. it's a pain
-// initialising, copying, etc. the errcontext in two parts...
-// SSS: split into public and private halves?
+/* An extensible (via the 'extra' field) error record.  This holds
+   the error details of interest to a skin.  Skins can use a normal
+   enum (with element values in the normal range (0..)) for `ekind'. 
+
+   When errors are found and recorded with VG_(maybe_record_error)(), all
+   the skin must do is pass in the four parameters;  core will
+   allocate/initialise the error record.
+*/
 typedef
-   struct _ErrContext {
+   struct {
       /* ALL */
-      struct _ErrContext* next;
-      /* ALL */
-      /* NULL if unsuppressed; or ptr to suppression record. */
-      Suppression* supp;
-      /* ALL */
-      Int count;
-      /* ALL */
-      ErrKind ekind;
-      /* ALL */
-      ExeContext* where;
+      Int ekind;
       /* Used frequently */
       Addr addr;
       /* Used frequently */
       Char* string;
       /* For any skin-specific extras */
       void* extra;
-      /* ALL */
-      ThreadId tid;
-      /* ALL */
-      /* These record %EIP, %ESP and %EBP at the error point.  They
-         are only used to make GDB-attaching convenient; there is no
-         other purpose; specifically they are not used to do
-         comparisons between errors. */
-      UInt m_eip;
-      UInt m_esp;
-      UInt m_ebp;
    }
-   ErrContext;
+   SkinError;
 
-/* Returns true if we've seen enough errors that no more should be issued */
-extern Bool VG_(ignore_errors) ( void );
 
-/* A constructor for ErrContexts.  Fills in all the fields with initial
-   values.  
+/* ------------------------------------------------------------------ */
+/* Call this when an error occurs.  It will be recorded if it's not been
+   seen before.  If it has, the existing error record will have its count
+   incremented.  
    
    If the error occurs in generated code, 'tst' should be NULL.  If the
    error occurs in non-generated code, 'tst' should be non-NULL.  The
-   'extra' field can be stack-allocated;  it will be copied if needed. 
+   `extra' field can be stack-allocated;  it will be copied (using
+   SKN_(dup_extra_and_update)()) if needed. 
 */
-extern void VG_(construct_err_context) ( ErrContext* ec, ErrKind ekind, 
-                                         Addr a, Char* s, void* extra,
-                                         ThreadState* tst );
+extern void VG_(maybe_record_error) ( ThreadState* tst, ErrorKind ekind, 
+                                      Addr a, Char* s, void* extra );
 
 /* Gets a non-blank, non-comment line of at most nBuf chars from fd.
-   Skips leading spaces on the line.  Return Trues if EOF was hit instead. 
+   Skips leading spaces on the line.  Returns True if EOF was hit instead. 
+   Useful for reading in extra skin-specific suppression lines.
 */
 extern Bool VG_(getLine) ( Int fd, Char* buf, Int nBuf );
 
@@ -951,8 +911,7 @@ extern Bool VG_(getLine) ( Int fd, Char* buf, Int nBuf );
 // SSS: give better names
 // SSS: make buf lengths safe
 // SSS: add get_debug_info()
-extern void VG_(what_obj_and_fun_is_this)
-                                          ( Addr a,
+extern void VG_(what_obj_and_fun_is_this) ( Addr a,
                                             Char* obj_buf, Int n_obj_buf,
                                             Char* fun_buf, Int n_fun_buf );
 extern Bool VG_(what_line_is_this)        ( Addr a,
@@ -1192,41 +1151,44 @@ extern void        SK_(fini)         ( void );
 /* ------------------------------------------------------------------ */
 /* VG_(needs).report_errors */
 
-/* Identify if two errors are equal, or equal enough.  Should not check the
-   ExeContext (e->where field) as it's checked separately.  But if
-   the ErrContext's extra field contains an ExeContext, 'res' should be
-   passed to VG_(eq_ExeContext) if it's looked at.
-
-   (SSS: yuk)
+/* Identify if two errors are equal, or equal enough.  `res' indicates how
+   close is "close enough".  `res' should be passed on as necessary, eg. if
+   the SkinError's extra field contains an ExeContext, `res' should be
+   passed to VG_(eq_ExeContext)() if the ExeContexts are considered.  Other
+   than that, probably don't worry about it unless you have lots of very
+   similar errors occurring.
  */
-extern Bool SKN_(eq_ErrContext) ( ExeContextRes res,
-                                  ErrContext* e1, ErrContext* e2 );
+extern Bool SKN_(eq_SkinError) ( VgRes res,
+                                 SkinError* e1, SkinError* e2 );
 
-/* Print error context.  It should include a call to
-   VG_(pp_ExeContext)(ec->where). */
-extern void SKN_(pp_ErrContext) ( ErrContext* ec );
+/* Print error context.  The passed function pp_ExeContext() can be (and
+   probably should be) used to print the location of the error. */
+extern void SKN_(pp_SkinError) ( SkinError* ec, void (*pp_ExeContext)(void) );
 
 /* Copy the ec->extra part and replace ec->extra with the new copy.  This is
    necessary to move from a temporary stack copy to a permanent one.
   
    Then fill in any details that could be postponed until after the decision
    whether to ignore the error (ie. details not affecting the result of
-   SKN_(eq_ErrContext)).  This saves time when errors are ignored.
+   SKN_(eq_SkinError)()).  This saves time when errors are ignored.
   
    Yuk.
+
+SSS: still not happy about this
  */
-extern void SKN_(dup_extra_and_update)(ErrContext* ec);
+extern void SKN_(dup_extra_and_update)(SkinError* ec);
 
-/* Return value indicates recognition.  If recognised, type goes in skind. */
-extern Bool SKN_(recognised_suppression) ( Char* name, SuppressionKind *skind );
+/* Return value indicates recognition.  If recognised, type goes in `skind'. */
+extern Bool SKN_(recognised_suppression) ( Char* name, SuppKind *skind );
 
-/* Read any extra info for this suppression kind */
+/* Read any extra info for this suppression kind.  For filling up the
+ * `string' and `extra' fields in a `SkinSupp' struct if necessary. */
 extern Bool SKN_(read_extra_suppression_info) ( Int fd, Char* buf, 
-                                                Int nBuf, Suppression *s );
+                                                Int nBuf, SkinSupp *s );
 
 /* This should just check the kinds match and maybe some stuff in the
    'extra' field if appropriate */
-extern Bool SKN_(error_matches_suppression)(ErrContext* ec, Suppression* su);
+extern Bool SKN_(error_matches_suppression)(SkinError* ec, SkinSupp* su);
 
 
 /* ------------------------------------------------------------------ */
