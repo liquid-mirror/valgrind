@@ -117,17 +117,17 @@ static Bool remove_if_exe_segment_from_list( Addr a, UInt len )
 
 /* Records the exe segment in the ExeSeg list (checking for overlaps), and
    reads debug info if required.  Note the entire /proc/pid/maps file is 
-   read for the debug info -- it just reads symbols for new exe segments.
-   This is required to find out their names if they have one.  So we don't
-   use this at startup because it's overkill and can screw reading of
-   /proc/pid/maps.
+   read for the debug info, but it just reads symbols for newly added exe
+   segments.  This is required to find out their names if they have one.  So
+   we don't use this at startup because it's overkill and can screw reading
+   of /proc/pid/maps.
  */
 void VGM_(new_exe_segment) ( Addr a, UInt len )
 {
-   add_exe_segment_to_list( a, len );
+   // SSS: only bother if size != 0?  Does that happen? (probably can)
 
-   if (VG_(needs).debug_info)
-      VG_(read_symbols)();
+   add_exe_segment_to_list( a, len );
+   VG_(maybe_read_symbols)();
 }
 
 /* Invalidate translations as necessary (also discarding any basic
@@ -137,9 +137,7 @@ void VGM_(remove_if_exe_segment) ( Addr a, UInt len )
 {
    if (remove_if_exe_segment_from_list( a, len )) {
       VG_(invalidate_translations) ( a, len );
-
-      if (VG_(needs).debug_info)
-         VG_(unload_symbols) ( a, len );
+      VG_(maybe_unload_symbols)    ( a, len );
    }
 }
 
@@ -189,13 +187,10 @@ void startup_segment_callback ( Addr start, UInt size,
       VG_(panic)("Non-readable, writable, executable segment at startup");
    }
 
-   if (xx == 'x') { 
-      add_exe_segment_to_list( start, size );
-      if (VG_(needs).debug_info)
-         VG_(read_symtab_callback)( start, size, rr, ww, xx, 
-                                    foffset, filename );
+   /* This parallels what happens when we mmap some new memory */
+   if (xx == 'x') {
+      VGM_(new_exe_segment)( start, size );
    }
-
    VG_TRACK( new_mem_startup, start, size, rr=='r', ww=='w', xx=='x' );
 
    /* If this is the stack segment mark all below %esp as noaccess. */
@@ -214,14 +209,12 @@ void startup_segment_callback ( Addr start, UInt size,
       if they're munmap()ed we need to know if they were executable in order
       to discard translations.  Also checks there's no exe segment overlaps.
 
-   2. Reads debug info (also from /proc/pid/maps) if needed by the skin;
+   2. Marks global variables that might be accessed from generated code;
 
-   3. Marks global variables that might be accessed from generated code;
-
-   4. Sets up the end of the data segment so that vg_syscall_mem.c can make
+   3. Sets up the end of the data segment so that vg_syscall_mem.c can make
       sense of calls to brk().
  */
-void VGM_(init_memory_and_symbols) ( void )
+void VGM_(init_memory) ( void )
 {
    /* 1 and 2 */
    VG_(read_procselfmaps) ( startup_segment_callback );

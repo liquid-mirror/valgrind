@@ -1947,6 +1947,9 @@ static void vg_ccall_reg_save_analysis ( UCodeBlock* cb )
    of debugging output. 
 
    'tst' is the identity of the thread needing this block.
+
+   SSS: note that is_x86_callee is totally bogus due to dynamic linking
+   and tail jumps and other trickiness...
 */
 void VG_(translate) ( /*IN*/ThreadState* tst, 
                       Bool  is_x86_callee,
@@ -1968,9 +1971,6 @@ void VG_(translate) ( /*IN*/ThreadState* tst,
    cb = VG_(allocCodeBlock)();
 
    /* If doing any code printing, print a basic block start marker */
-   // SSS: a lot of the [fn] blocks don't look like the start of
-   // functions.  And some that do look like the start of functions aren't
-   // marked as [fn]...
    if (VG_(clo_trace_codegen))
       VG_(printf)(
               "==== BB %d (%p)%s in %dB, out %dB, BBs exec'd %lu ====\n\n",

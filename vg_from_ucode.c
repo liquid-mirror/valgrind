@@ -35,10 +35,6 @@
 /*--- Renamings of frequently-used global functions.       ---*/
 /*------------------------------------------------------------*/
 
-/*------------------------------------------------------------*/
-/*--- Renamings of frequently-used global functions.       ---*/
-/*------------------------------------------------------------*/
-
 #define nameIReg  VG_(nameOfIntReg)
 #define nameISize VG_(nameOfIntSize)
 
@@ -91,7 +87,7 @@ typedef
       UInt size;
    } Histogram;
 
-/* SSS: automatically zeroed because it's static?? */
+/* Automatically zeroed because it's static. */
 Histogram histogram[100];     
 
 void VG_(print_ccall_stats)(void)
@@ -131,8 +127,6 @@ void VG_(print_UInstr_histogram)(void)
       total_counts += histogram[i].counts;
       total_size   += histogram[i].size;
    }
-
-   // SSS: sort the list
 
    VG_(printf)("-- UInstr frequencies -----------\n");
    for (i = 0; i < 100; i++) {

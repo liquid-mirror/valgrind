@@ -315,9 +315,6 @@ void client_free_worker ( ThreadState* tst, UInt ml_no, ShadowChunk* sc,
       triggered by die_mem_heap() may look for sc in malloclist. */
    remove_from_malloclist ( ml_no, sc );
 
-   // JJJ: this seems to be more of a check for Valgrind itself?  Needed?
-   //VG_TRACK( die_mem_heap, (Addr)sc, sizeof(ShadowChunk) );
-
    if (VG_(needs).record_mem_exe_context)
       sc->where = VG_(get_ExeContext)( tst );
    if (VG_(needs).postpone_mem_reuse) {

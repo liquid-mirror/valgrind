@@ -1009,8 +1009,6 @@ typedef
       /* Postpone dynamic memory use once free'd as long as possible? */
       Bool postpone_mem_reuse;
 
-      /* Debug info needed? */
-      Bool debug_info;
       /* Want to have errors detected by Valgrind's core reported?  Includes:
          - pthread API errors (many;  eg. unlocking a non-locked mutex)
          - silly arguments to malloc() et al (eg. negative size)
@@ -1085,6 +1083,7 @@ typedef
                                Bool nn, Bool rr, Bool ww, Bool xx );
 
       void (*copy_mem_heap)  ( Addr from, Addr to, UInt len );
+      void (*copy_mem_remap) ( Addr from, Addr to, UInt len );
       void (*change_mem_mprotect) ( Addr a, UInt len,  
                                     Bool nn, Bool rr, Bool ww, Bool xx );
       
@@ -1148,7 +1147,12 @@ extern VgTrackEvents VG_(track_events);
 
 extern void        SK_(pre_clo_init) ( VgNeeds* needs, VgTrackEvents* track );
 extern void        SK_(post_clo_init)( void );
+
+/* Instrument a basic block.  Must be a true function, ie. the same input
+ * always results in the same output, because basic blocks can be
+ * retranslated.  Unless you're doing something really strange... */
 extern UCodeBlock* SK_(instrument)   ( UCodeBlock* cb, Addr a );
+
 extern void        SK_(fini)         ( void );
 
 // SSS: perhaps change the following to structs of function pointers?
