@@ -475,25 +475,6 @@ void VG_(record_jump_error) ( ThreadState* tst, Addr a )
    VG_(maybe_add_context) ( &ec );
 }
 
-// SSS: called from vg_syscall_mem.c [fixed if we do before/after syscall stuff]
-void VG_(record_param_err) ( ThreadState* tst, Addr a, Bool isWriteLack, 
-                             Char* msg )
-{
-   ErrContext ec;
-   MemCheckErrContext ec_extra;
-
-   if (VG_(ignore_errors)()) return;
-
-   vg_assert(NULL != tst);
-   VG_(construct_err_context)( &ec, ParamErr, a, msg, tst );
-   clear_MemCheckErrContext( &ec_extra );
-   ec_extra.addrinfo.akind = Undescribed;
-   ec_extra.isWriteableLack = isWriteLack;
-   ec.extra = &ec_extra;
-
-   VG_(maybe_add_context) ( &ec );
-}
-
 // SSS: called from vg_clientperms.c [fixed by moving client requests out]
 void VG_(record_user_err) ( ThreadState* tst, Addr a, Bool isWriteLack )
 {
