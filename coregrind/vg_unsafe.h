@@ -46,9 +46,6 @@
 #include <net/if.h>       /* for struct ifreq et al */
 #include <net/if_arp.h>   /* for struct arpreq */
 #include <net/route.h>    /* for struct rtentry */
-#ifdef KERNEL_2_6
-#include <linux/compiler.h>
-#endif
 #include <asm/ipc.h>      /* for struct ipc_kludge */
 #include <linux/msg.h>    /* for struct msgbuf */
 #include <linux/sem.h>    /* for struct sembuf */
