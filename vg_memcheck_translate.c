@@ -268,6 +268,7 @@ Int SKN_(getExtTempUsage)(UInstr* u, TempUse* arr)
 #define uInstr2   VG_(newUInstr2)
 #define uInstr3   VG_(newUInstr3)
 #define uLiteral  VG_(setLiteralField)
+#define uCCall    VG_(setCCallFields)
 #define newTemp   VG_(getNewTemp)
 #define newShadow VG_(getNewShadow)
 
@@ -535,6 +536,7 @@ static UCodeBlock* memcheck_instrument ( UCodeBlock* cb_in )
                         TempReg, SHADOW(u_in->val2));
             VG_(copyUInstr)(cb, u_in);
             break;
+
          case STORE:
             if (VG_(clo_check_addrVs)) {
                uInstr1(cb, TESTV,  4, TempReg, SHADOW(u_in->val2));
@@ -555,6 +557,7 @@ static UCodeBlock* memcheck_instrument ( UCodeBlock* cb_in )
                         TempReg, SHADOW(u_in->val2));
             VG_(copyUInstr)(cb, u_in);
             break;
+
          case PUT:
             uInstr2(cb, PUTV, u_in->size, 
                         TempReg, SHADOW(u_in->val1),
@@ -568,6 +571,7 @@ static UCodeBlock* memcheck_instrument ( UCodeBlock* cb_in )
             uInstr2(cb, MOV, 4, TempReg, qd, TempReg, SHADOW(u_in->val1));
             VG_(copyUInstr)(cb, u_in);
             break;
+
          case PUTF:
             create_PUTVF(cb, u_in->size, SHADOW(u_in->val1));
             VG_(copyUInstr)(cb, u_in);
@@ -1000,10 +1004,11 @@ static UCodeBlock* memcheck_instrument ( UCodeBlock* cb_in )
             t_size = newTemp(cb);
             uInstr2(cb, MOV,   4, Literal, 0, TempReg, t_size);
             uLiteral(cb, u_in->size);
-            uInstr2(cb, CCALL_2_0, 0, TempReg, u_in->val2, TempReg, t_size);
-            uLiteral(cb, ( u_in->opcode==FPU_R 
-                         ? (Addr) & SK_(fpu_read_check) 
-                         : (Addr) & SK_(fpu_write_check)));
+            uInstr2(cb, CCALL, 0, TempReg, u_in->val2, TempReg, t_size);
+            uCCall(cb, 
+                   u_in->opcode==FPU_R ? (Addr) & SK_(fpu_read_check) 
+                                       : (Addr) & SK_(fpu_write_check),
+                   2, 2, False);
 
             VG_(copyUInstr)(cb, u_in);
             break;

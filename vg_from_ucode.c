@@ -1069,7 +1069,8 @@ void maybe_emit_movl_litOrReg_reg ( UInt litOrReg, Tag tag, UInt reg )
 /* Synthesise a call to a C function `fn' (which must be registered in
    baseBlock) doing all the reg saving and arg handling work. */
 void VG_(synth_ccall) ( Addr fn, Int argc, Int regparms_n, UInt argv[],
-                        Tag tagv[], Int ret_reg )
+                        Tag tagv[], Int ret_reg,
+                        Bool eax_dies, Bool ecx_dies, Bool edx_dies )
 {
    Int i;
    Int stack_used = 0;
@@ -1080,11 +1081,16 @@ void VG_(synth_ccall) ( Addr fn, Int argc, Int regparms_n, UInt argv[],
                   "Please use ((regparms(2))) instead.  Sorry\n");
       VG_(panic)("((regparms(3)))");
    }
+
+   // SSS: temp while liveness analysis not done
+   if (R_EAX == ret_reg) eax_dies = True;
+   if (R_ECX == ret_reg) ecx_dies = True;
+   if (R_EDX == ret_reg) edx_dies = True;
    
-   /* Save caller-save regs */
-   if (R_EAX != ret_reg) VG_(emit_pushv_reg) ( 4, R_EAX ); 
-   if (R_ECX != ret_reg) VG_(emit_pushv_reg) ( 4, R_ECX ); 
-   if (R_EDX != ret_reg) VG_(emit_pushv_reg) ( 4, R_EDX ); 
+   /* Save live caller-save regs */
+   if (! eax_dies) VG_(emit_pushv_reg) ( 4, R_EAX ); 
+   if (! ecx_dies) VG_(emit_pushv_reg) ( 4, R_ECX ); 
+   if (! edx_dies) VG_(emit_pushv_reg) ( 4, R_EDX ); 
 
    /* Args are passed in two groups: (a) via stack (b) via regs.  regparms_n
       is the number of args passed in regs (maximum 3 for GCC on x86). */
@@ -1173,10 +1179,10 @@ void VG_(synth_ccall) ( Addr fn, Int argc, Int regparms_n, UInt argv[],
       if (R_EAX != ret_reg)
          VG_(emit_movv_reg_reg) ( 4, R_EAX, ret_reg );
 
-   /* Restore caller-save regs */
-   if (R_EDX != ret_reg) VG_(emit_popv_reg) ( 4, R_EDX ); 
-   if (R_ECX != ret_reg) VG_(emit_popv_reg) ( 4, R_ECX ); 
-   if (R_EAX != ret_reg) VG_(emit_popv_reg) ( 4, R_EAX ); 
+   /* Restore live caller-save regs */
+   if (! edx_dies) VG_(emit_popv_reg) ( 4, R_EDX ); 
+   if (! ecx_dies) VG_(emit_popv_reg) ( 4, R_ECX ); 
+   if (! eax_dies) VG_(emit_popv_reg) ( 4, R_EAX ); 
 }
 
 static void load_ebp_from_JmpKind ( JmpKind jmpkind )
@@ -1721,13 +1727,14 @@ static void synth_WIDEN_signed ( Int sz_src, Int sz_dst, Int reg )
 }
 
 
-static void synth_handle_esp_assignment ( Int reg )
+static void synth_handle_esp_assignment ( Int reg, Bool eax_dies,
+                                          Bool ecx_dies, Bool edx_dies )
 {
    UInt argv[] = { reg };
    Tag  tagv[] = { RealReg };
 
    VG_(synth_ccall) ( (Addr) VGM_(handle_esp_assignment), 1, 1, argv, tagv, 
-                      INVALID_REALREG );
+                      INVALID_REALREG, eax_dies, ecx_dies, edx_dies );
 }
 
 
@@ -1836,7 +1843,8 @@ static void emitUInstr ( Int i, UInstr* u )
                  VG_(track_events).die_mem_stack_aligned ||
                  VG_(track_events).post_mem_write))
          {
-            synth_handle_esp_assignment ( u->val1 );
+            synth_handle_esp_assignment ( u->val1, u->eax_dies, u->ecx_dies,
+                                          u->edx_dies );
 	 }
          synth_mov_reg_offregmem ( 
             u->size, 
@@ -2029,45 +2037,23 @@ static void emitUInstr ( Int i, UInstr* u )
             emit_put_eflags();
          break;
 
-      case CCALL_0_0:
-         vg_assert(u->tag1 == NoValue);
-         vg_assert(u->tag2 == NoValue);
-         vg_assert(u->tag3 == NoValue);
+      case CCALL: {
+         /* Lazy: copy all three vals;  synth_ccall ignores any unnecessary
+            ones. */
+         UInt argv[]  = { u->val1, u->val2, u->val3 };
+         UInt tagv[]  = { RealReg, RealReg, RealReg };
+         UInt ret_reg = ( u->has_ret_val ? u->val3 : INVALID_REALREG );
+
+         if (u->argc >= 1)                   vg_assert(u->tag1 == RealReg);
+         else                                vg_assert(u->tag1 == NoValue);
+         if (u->argc >= 2)                   vg_assert(u->tag2 == RealReg);
+         else                                vg_assert(u->tag2 == NoValue);
+         if (u->argc == 3 || u->has_ret_val) vg_assert(u->tag3 == RealReg);
+         else                                vg_assert(u->tag3 == NoValue);
          vg_assert(u->size == 0);
 
-         // SSS:
-         // vg_assert(u->regparms_n == 0)
-         VG_(synth_ccall) ( u->lit32, 0, 0, NULL, NULL, INVALID_REALREG );
-         break;
-
-      case CCALL_1_0: {
-         UInt argv[] = { u->val1 };
-         UInt tagv[] = { RealReg };
-                         
-         vg_assert(u->tag1 == RealReg);
-         vg_assert(u->tag2 == NoValue);
-         vg_assert(u->tag3 == NoValue);
-         vg_assert(u->size == 0);
-
-         // SSS: 
-         // vg_assert(u->regparms_n <= 1);
-         VG_(synth_ccall) ( u->lit32, 1, /* u->regparms_n */1, argv, tagv,
-                            INVALID_REALREG );
-         break;
-      }
-      case CCALL_2_0: {
-         UInt argv[] = { u->val1, u->val2 };
-         UInt tagv[] = { RealReg, RealReg };
-
-         vg_assert(u->tag1 == RealReg);
-         vg_assert(u->tag2 == RealReg);
-         vg_assert(u->tag3 == NoValue);
-         vg_assert(u->size == 0);
-
-         // SSS: 
-         // vg_assert(u->regparms_n <= 2);
-         VG_(synth_ccall) ( u->lit32, 2, /* u->regparms_n */2, argv, tagv,
-                            INVALID_REALREG );
+         VG_(synth_ccall) ( u->lit32, u->argc, u->regparms_n, argv, tagv,
+                            ret_reg, u->eax_dies, u->ecx_dies, u->edx_dies );
          break;
       }
       case CLEAR:

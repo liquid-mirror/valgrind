@@ -38,6 +38,7 @@
 #define uInstr1   VG_(newUInstr1)
 #define uInstr2   VG_(newUInstr2)
 #define uLiteral  VG_(setLiteralField)
+#define uCCall    VG_(setCCallFields)
 #define newTemp   VG_(getNewTemp)
 
 
@@ -45,31 +46,34 @@
 // cb (assuming cb was the name used by the programmer)
 void VG_(callHelper_0_0)(UCodeBlock* cb, Addr f)
 {
-   uInstr0(cb, CCALL_0_0, 0);
-   uLiteral(cb, f);
+   uInstr0(cb, CCALL, 0);
+   uCCall(cb, f, 0, 0, 0);
 }
 
-void VG_(callHelper_1_0)(UCodeBlock* cb, Addr f, UInt arg1)
+void VG_(callHelper_1_0)(UCodeBlock* cb, Addr f, UInt arg1, UInt regparms_n)
 {
    UInt t1 = newTemp(cb);
 
+   vg_assert(regparms_n <= 1);
    uInstr2(cb, MOV,   4, Literal, 0, TempReg, t1);
    uLiteral(cb, arg1);
-   uInstr1(cb, CCALL_1_0, 0, TempReg, t1);
-   uLiteral(cb, f);
+   uInstr1(cb, CCALL, 0, TempReg, t1);
+   uCCall(cb, f, 1, regparms_n, 0);
 }
 
-void VG_(callHelper_2_0)(UCodeBlock* cb, Addr f, UInt arg1, UInt arg2)
+void VG_(callHelper_2_0)(UCodeBlock* cb, Addr f, UInt arg1, UInt arg2,
+                         UInt regparms_n)
 {
    UInt t1 = newTemp(cb);
    UInt t2 = newTemp(cb);
 
+   vg_assert(regparms_n <= 2);
    uInstr2(cb, MOV,   4, Literal, 0, TempReg, t1);
    uLiteral(cb, arg1);
    uInstr2(cb, MOV,   4, Literal, 0, TempReg, t2);
    uLiteral(cb, arg2);
-   uInstr2(cb, CCALL_2_0, 0, TempReg, t1, TempReg, t2);
-   uLiteral(cb, f);
+   uInstr2(cb, CCALL, 0, TempReg, t1, TempReg, t2);
+   uCCall(cb, f, 2, regparms_n, 0);
 }
 
 /*--------------------------------------------------------------------*/
