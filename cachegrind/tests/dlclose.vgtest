@@ -1,2 +1,0 @@
-prog: dlclose
-stderr_filter: filter_cachesim_discards
