@@ -1995,7 +1995,6 @@ static void emitUInstr ( Int i, UInstr* u )
       case RCR:
       case RCL:
          vg_assert(u->tag2 == RealReg);
-         vg_assert(! readFlagUse ( u ));
          switch (u->tag1) {
             case Literal: synth_shiftop_lit_reg (
                              readFlagUse(u), writeFlagUse(u),
