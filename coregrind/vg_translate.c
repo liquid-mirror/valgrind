@@ -42,59 +42,6 @@
 #define dis       VG_(print_codegen)
 
 /*------------------------------------------------------------*/
-/*--- Memory management for the translater.                ---*/
-/*------------------------------------------------------------*/
-
-#define N_JITBLOCKS    4
-#define N_JITBLOCK_SZ  5000
-
-static UChar jitstorage[N_JITBLOCKS][N_JITBLOCK_SZ];
-static Bool  jitstorage_inuse[N_JITBLOCKS];
-static Bool  jitstorage_initdone = False;
-
-static __inline__ void jitstorage_initialise ( void )
-{
-   Int i;
-   if (jitstorage_initdone) return;
-   jitstorage_initdone = True;
-   for (i = 0; i < N_JITBLOCKS; i++)
-      jitstorage_inuse[i] = False; 
-}
-
-void* VG_(jitmalloc) ( Int nbytes )
-{
-   Int i;
-   jitstorage_initialise();
-   if (nbytes > N_JITBLOCK_SZ) {
-      /* VG_(printf)("too large: %d\n", nbytes); */
-      return VG_(arena_malloc)(VG_AR_CORE, nbytes);
-   }
-   for (i = 0; i < N_JITBLOCKS; i++) {
-      if (!jitstorage_inuse[i]) {
-         jitstorage_inuse[i] = True;
-         /* VG_(printf)("alloc %d -> %d\n", nbytes, i ); */
-         return & jitstorage[i][0];
-      }
-   }
-   VG_(panic)("out of slots in vg_jitmalloc\n");
-   return VG_(arena_malloc)(VG_AR_CORE, nbytes);
-}
-
-void VG_(jitfree) ( void* ptr )
-{
-   Int i;
-   jitstorage_initialise();
-   for (i = 0; i < N_JITBLOCKS; i++) {
-      if (ptr == & jitstorage[i][0]) {
-         vg_assert(jitstorage_inuse[i]);
-         jitstorage_inuse[i] = False;
-         return;
-      }
-   }
-   VG_(arena_free)(VG_AR_CORE, ptr);
-}
-
-/*------------------------------------------------------------*/
 /*--- Basics                                               ---*/
 /*------------------------------------------------------------*/
 
@@ -1217,7 +1164,8 @@ static void vg_improve ( UCodeBlock* cb )
       VG_(printf) ("Improvements:\n");
 
    if (cb->nextTemp > 0)
-      last_live_before = VG_(jitmalloc) ( cb->nextTemp * sizeof(Int) );
+      last_live_before = VG_(arena_malloc) ( VG_AR_JITTER, 
+                                             cb->nextTemp * sizeof(Int) );
    else
       last_live_before = NULL;
 
@@ -1489,7 +1437,7 @@ static void vg_improve ( UCodeBlock* cb )
    }
 
    if (last_live_before) 
-      VG_(jitfree) ( last_live_before );
+      VG_(arena_free) ( VG_AR_JITTER, last_live_before );
 
    if (dis) {
       VG_(printf)("\n");
@@ -1558,7 +1506,8 @@ UCodeBlock* vg_do_register_allocation ( UCodeBlock* c1 )
 
    /* Initialise the TempReg info.  */
    if (c1->nextTemp > 0)
-      temp_info = VG_(jitmalloc)(c1->nextTemp * sizeof(TempInfo) );
+      temp_info = VG_(arena_malloc)(VG_AR_JITTER,
+                                    c1->nextTemp * sizeof(TempInfo) );
    else
       temp_info = NULL;
 
@@ -1861,7 +1810,7 @@ UCodeBlock* vg_do_register_allocation ( UCodeBlock* c1 )
    }
 
    if (temp_info != NULL)
-      VG_(jitfree)(temp_info);
+      VG_(arena_free)(VG_AR_JITTER, temp_info);
 
    VG_(freeCodeBlock)(c1);
 
@@ -2020,8 +1969,6 @@ void VG_(translate) ( /*IN*/ThreadState* tst,
    VG_(print_codegen) = DECIDE_IF_PRINTING_CODEGEN_FOR_PHASE(5);
 
    VGP_PUSHCC(VgpFromUcode);
-   /* NB final_code is allocated with VG_(jitmalloc), not VG_(arena_malloc)
-      and so must be VG_(jitfree)'d. */
    final_code = VG_(emit_code)(cb, &final_code_size );
    VGP_POPCC;
    VG_(freeCodeBlock)(cb);
@@ -2030,7 +1977,7 @@ void VG_(translate) ( /*IN*/ThreadState* tst,
 
    if (debugging_translation) {
       /* Only done for debugging -- throw away final result. */
-      VG_(jitfree)(final_code);
+      VG_(arena_free)(VG_AR_JITTER, final_code);
    } else {
       /* Doing it for real -- return values to caller. */
       *orig_size = n_disassembled_bytes;
