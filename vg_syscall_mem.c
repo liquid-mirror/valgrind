@@ -648,9 +648,11 @@ void VG_(perform_assumed_nonblocking_syscall) ( ThreadId tid )
             while ((start % VKI_BYTES_PER_PAGE) > 0) { start--; length++; }
             while (((start+length) % VKI_BYTES_PER_PAGE) > 0) { length++; }
             make_noaccess( start, length );
-            munmap_exe = VG_(symtab_notify_munmap) ( start, length );
-            if (munmap_exe)
+            munmap_exe = VG_(is_munmap_exe) ( start, length );
+            if (munmap_exe) {
+               VG_(symtab_notify_munmap)    ( start, length );
                VG_(invalidate_translations) ( start, length );
+            }
             approximate_mmap_permissions( (Addr)res, arg3, arg4 );
          }
          break;         
@@ -2298,9 +2300,11 @@ void VG_(perform_assumed_nonblocking_syscall) ( ThreadId tid )
             /* Tell our symbol table machinery about this, so that if
                this happens to be a .so being unloaded, the relevant
                symbols are removed too. */
-            munmap_exe = VG_(symtab_notify_munmap) ( start, length );
-            if (munmap_exe)
+            munmap_exe = VG_(is_munmap_exe) ( start, length );
+            if (munmap_exe) {
                VG_(invalidate_translations) ( start, length );
+               VG_(symtab_notify_munmap)    ( start, length );
+            }
          }
          break;
 
