@@ -244,7 +244,7 @@ extern void VG_(shutdown_logging) ( void );
 
 #define VGP_M_STACK 10
 
-#define VGP_M_CCS 25  /* == the # of elems in VGP_LIST */
+#define VGP_M_CCS 27  /* == the # of elems in VGP_LIST */
 #if 0
 #define VGP_LIST \
    VGP_PAIR(VgpUnc=0,      "unclassified"),           \
@@ -286,11 +286,13 @@ extern void VG_(shutdown_logging) ( void );
    VGP_PAIR(VgpFromUcode,   "from-ucode"),            \
    VGP_PAIR(VgpImprove,     "improve"),               \
    VGP_PAIR(VgpRegAlloc,    "reg-alloc"),             \
+   VGP_PAIR(VgpCCallAnal,   "ccall-analysis"),        \
    VGP_PAIR(VgpDoLRU,       "do-lru"),                \
    VGP_PAIR(VgpSlowFindT,   "slow-search-transtab"),  \
    VGP_PAIR(VgpInitMem,     "init-memory"),           \
    VGP_PAIR(VgpExeContext,  "exe-context"),           \
    VGP_PAIR(VgpReadSyms,    "read-syms"),             \
+   VGP_PAIR(VgpSearchSyms,  "search-syms"),           \
    VGP_PAIR(VgpAddToT,      "add-to-transtab"),       \
    VGP_PAIR(VgpSyscall,     "core syscall wrapper"),  \
    /* SSS: genericise this */                         \

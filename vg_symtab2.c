@@ -37,7 +37,7 @@
 /* Majorly rewritten Sun 3 Feb 02 to enable loading symbols from
    dlopen()ed libraries, which is something that KDE3 does a lot.
 
-   Stabs reader greatly improved by Nick Nethercode, Apr 02.
+   Stabs reader greatly improved by Nick Nethercote, Apr 02.
 */
 
 /*------------------------------------------------------------*/
@@ -134,15 +134,46 @@ static void freeSegInfo ( SegInfo* si )
 /*------------------------------------------------------------*/
 
 /* Add a str to the string table, including terminating zero, and
-   return offset of the string in vg_strtab. */
+   return offset of the string in vg_strtab.  Unless it's been seen
+   recently, in which case we find the old index and return that.
+   This avoids the most egregious duplications. */
 
 static __inline__
 Int addStr ( SegInfo* si, Char* str )
 {
+#  define EMPTY    0xffffffff
+#  define NN       5
+   
+   /* prevN[0] has the most recent, prevN[NN-1] the least recent */
+   static UInt     prevN[] = { EMPTY, EMPTY, EMPTY, EMPTY, EMPTY };
+   static SegInfo* curr_si = NULL;
+                           
    Char* new_tab;
    Int   new_sz, i, space_needed;
-   
+
+   /* Avoid gratuitous duplication:  if we saw `str' within the last NN,
+    * within this segment, return that index.  Saves about 200KB in glibc,
+    * extra time taken is too small to measure.  --NJN 2002-Aug-30 */
+   if (curr_si == si) {
+      for (i = NN-1; i >= 0; i--) {
+         if (EMPTY != prevN[i] &&
+             (0 == VG_(strcmp)(str, &si->strtab[prevN[i]]))) {
+            return prevN[i];
+         }
+      }
+   } else {
+      /* New segment */
+      curr_si = si;
+      for (i = 0; i < 5; i++) prevN[i] = EMPTY;
+   }
+   /* Shuffle prevous ones along, put new one in. */
+   for (i = NN-1; i > 0; i--) prevN[i] = prevN[i-1];
+   prevN[0] = si->strtab_used;
+
+#  undef UNINITED
+
    space_needed = 1 + VG_(strlen)(str);
+
    if (si->strtab_used + space_needed > si->strtab_size) {
       new_sz = 2 * si->strtab_size;
       if (new_sz == 0) new_sz = 5000;
@@ -161,6 +192,7 @@ Int addStr ( SegInfo* si, Char* str )
 
    si->strtab_used += space_needed;
    vg_assert(si->strtab_used <= si->strtab_size);
+
    return si->strtab_used - space_needed;
 }
 
@@ -715,8 +747,7 @@ void read_debuginfo_stabs ( SegInfo* si,
                      next_addr = (UInt)stab[i+1].n_value;
                      break;
 
-                  /* Boring one: skip, look for something more
-                     useful. */
+                  /* Boring one: skip, look for something more useful. */
                   case N_RSYM: case N_LSYM: case N_LBRAC: case N_RBRAC: 
                   case N_STSYM: case N_LCSYM: case N_GSYM:
                      i++;
@@ -1781,21 +1812,25 @@ static Int search_one_symtab ( SegInfo* si, Addr ptr )
    *psi to the relevant SegInfo, and *symno to the symtab entry number
    within that.  If not found, *psi is set to NULL.  */
 
-static void search_all_symtabs ( Addr ptr, SegInfo** psi, Int* symno )
+static void search_all_symtabs ( Addr ptr, /*OUT*/SegInfo** psi, 
+                                           /*OUT*/Int* symno )
 {
    Int      sno;
    SegInfo* si;
+   VGP_PUSHCC(VgpSearchSyms);
    for (si = segInfo; si != NULL; si = si->next) {
       if (si->start <= ptr && ptr < si->start+si->size) {
          sno = search_one_symtab ( si, ptr );
          if (sno == -1) goto not_found;
          *symno = sno;
          *psi = si;
+         VGP_POPCC;
          return;
       }
    }
   not_found:
    *psi = NULL;
+   VGP_POPCC;
 }
 
 
@@ -1827,21 +1862,25 @@ static Int search_one_loctab ( SegInfo* si, Addr ptr )
    *psi to the relevant SegInfo, and *locno to the loctab entry number
    within that.  If not found, *psi is set to NULL.
 */
-static void search_all_loctabs ( Addr ptr, SegInfo** psi, Int* locno )
+static void search_all_loctabs ( Addr ptr, /*OUT*/SegInfo** psi,
+                                           /*OUT*/Int* locno )
 {
    Int      lno;
    SegInfo* si;
+   VGP_PUSHCC(VgpSearchSyms);
    for (si = segInfo; si != NULL; si = si->next) {
       if (si->start <= ptr && ptr < si->start+si->size) {
          lno = search_one_loctab ( si, ptr );
          if (lno == -1) goto not_found;
          *locno = lno;
          *psi = si;
+         VGP_POPCC;
          return;
       }
    }
   not_found:
    *psi = NULL;
+   VGP_POPCC;
 }
 
 
