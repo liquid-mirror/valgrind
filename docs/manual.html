@@ -670,8 +670,18 @@ follows:
           unexpectedly in the <code>write()</code> system call, you
           may find the <code>--trace-syscalls=yes
           --trace-sched=yes</code> flags useful.
+      <p>
+      <li><code>lax-ioctls</code> Reduce accuracy of ioctl checking.
+          Doesn't require the full buffer to be initialized when
+          writing.  Without this, using some device drivers with a
+          large number of strange ioctl commands becomes very
+          tiresome.  You can use this as a quick hack to workaround
+          unimplemented ioctls.  A better long-term solution is to
+          write a proper wrapper for the ioctl.  This is quite easy
+          - for details read
+          <code>README_MISSING_SYSCALL_OR_IOCTL</code> in the
+          source distribution.
       </ul>
-
       </li><p>
 </ul>
 
