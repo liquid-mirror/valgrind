@@ -1107,7 +1107,7 @@ extern void VGM_(handle_esp_assignment) ( Addr new_espA );
 #define VG_PLAUSIBLE_STACK_SIZE 8000000
 
 /* ---------------------------------------------------------------------
-   Exports of vg_syscall_mem.c
+   Exports of vg_syscalls.c
    ------------------------------------------------------------------ */
 
 // SSS: relying on the skin to override this doesn't fit with
@@ -1116,9 +1116,9 @@ extern UInt VG_(dereference) ( Addr p );
 
 extern void VG_(perform_assumed_nonblocking_syscall) ( ThreadId tid );
 
-extern void VG_(check_known_blocking_syscall) ( ThreadId tid, 
-                                                Int syscallno,
-                                                Int* /*IN*/ res );
+extern void* VG_(pre_known_blocking_syscall) ( ThreadId tid, Int syscallno );
+extern void  VG_(post_known_blocking_syscall)( ThreadId tid, Int syscallno,
+                                               void* pre_res, Int res );
 
 extern Bool VG_(is_kerror) ( Int res );
 
