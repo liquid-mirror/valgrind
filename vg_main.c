@@ -1260,6 +1260,9 @@ void VG_(main) ( void )
    if (VG_(clo_verbosity) > 1)
       vg_show_counts();
 
+   if (VG_(clo_verbosity) > 2)
+      VG_(print_UInstr_histogram)();
+
    if (0) {
       VG_(message)(Vg_DebugMsg, "");
       VG_(message)(Vg_DebugMsg, 

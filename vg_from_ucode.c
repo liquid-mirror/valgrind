@@ -76,39 +76,89 @@ static Int    emitted_code_used;
 static Int    emitted_code_size;
 
 /* Statistics about C functions called from generated code. */
-UInt VG_(ccalls)                 = 0;
-UInt VG_(ccall_reg_saves)        = 0;
-UInt VG_(ccall_args)             = 0;
-UInt VG_(ccall_arg_setup_instrs) = 0;
-UInt VG_(ccall_stack_clears)     = 0;
-UInt VG_(ccall_retvals)          = 0;
-UInt VG_(ccall_retval_movs)      = 0;
+static UInt ccalls                 = 0;
+static UInt ccall_reg_saves        = 0;
+static UInt ccall_args             = 0;
+static UInt ccall_arg_setup_instrs = 0;
+static UInt ccall_stack_clears     = 0;
+static UInt ccall_retvals          = 0;
+static UInt ccall_retval_movs      = 0;
+
+/* Statistics about frequency of each UInstr */
+typedef
+   struct {
+      UInt counts;
+      UInt size;
+   } Histogram;
+
+/* SSS: automatically zeroed because it's static?? */
+Histogram histogram[100];     
 
 void VG_(print_ccall_stats)(void)
 {
    VG_(message)(Vg_DebugMsg,
                 "   ccalls: %u C calls, %u%% saves+restores avoided"
                 " (%d bytes)",
-                VG_(ccalls), 
-                100-(UInt)(VG_(ccall_reg_saves)/(double)(VG_(ccalls)*3)*100),
-                ((VG_(ccalls)*3) - VG_(ccall_reg_saves))*2);
+                ccalls, 
+                100-(UInt)(ccall_reg_saves/(double)(ccalls*3)*100),
+                ((ccalls*3) - ccall_reg_saves)*2);
    VG_(message)(Vg_DebugMsg,
                 "           %u args, avg 0.%d setup instrs each (%d bytes)", 
-                VG_(ccall_args), 
-               (UInt)(VG_(ccall_arg_setup_instrs)/(double)VG_(ccall_args)*100),
-               (VG_(ccall_args) - VG_(ccall_arg_setup_instrs))*2);
+                ccall_args, 
+               (UInt)(ccall_arg_setup_instrs/(double)ccall_args*100),
+               (ccall_args - ccall_arg_setup_instrs)*2);
    VG_(message)(Vg_DebugMsg,
                 "           %d%% clear the stack (%d bytes)", 
-               (UInt)(VG_(ccall_stack_clears)/(double)VG_(ccalls)*100),
-               (VG_(ccalls) - VG_(ccall_stack_clears))*3);
+               (UInt)(ccall_stack_clears/(double)ccalls*100),
+               (ccalls - ccall_stack_clears)*3);
    VG_(message)(Vg_DebugMsg,
                 "           %u retvals, %u%% of reg-reg movs avoided (%d bytes)",
-                VG_(ccall_retvals),
-                ( VG_(ccall_retvals) == 0 
+                ccall_retvals,
+                ( ccall_retvals == 0 
                 ? 100
-                : 100-(UInt)(VG_(ccall_retval_movs) / 
-                             (double)VG_(ccall_retvals)*100)),
-                (VG_(ccall_retvals)-VG_(ccall_retval_movs))*2);
+                : 100-(UInt)(ccall_retval_movs / 
+                             (double)ccall_retvals*100)),
+                (ccall_retvals-ccall_retval_movs)*2);
+}
+
+void VG_(print_UInstr_histogram)(void)
+{
+   Int i, j;
+   UInt total_counts = 0;
+   UInt total_size   = 0;
+   
+   for (i = 0; i < 100; i++) {
+      total_counts += histogram[i].counts;
+      total_size   += histogram[i].size;
+   }
+
+   // SSS: sort the list
+
+   VG_(printf)("-- UInstr frequencies -----------\n");
+   for (i = 0; i < 100; i++) {
+      if (0 != histogram[i].counts) {
+
+         UInt count_pc = 
+            (UInt)(histogram[i].counts/(double)total_counts*100 + 0.5);
+         UInt size_pc  = 
+            (UInt)(histogram[i].size  /(double)total_size  *100 + 0.5);
+         UInt avg_size =
+            (UInt)(histogram[i].size / (double)histogram[i].counts + 0.5);
+
+         VG_(printf)("%-7s:%8u (%2u%%), avg %2dB (%2u%%) |", 
+                     VG_(nameUOpcode)(True, i), 
+                     histogram[i].counts, count_pc, 
+                     avg_size, size_pc);
+
+         for (j = 0; j < size_pc; j++) VG_(printf)("O");
+         VG_(printf)("\n");
+
+      } else {
+         vg_assert(0 == histogram[i].size);
+      }
+   }
+
+   VG_(printf)("total UInstrs %u, total size %u\n", total_counts, total_size);
 }
 
 static void expandEmittedCode ( void )
@@ -1101,11 +1151,11 @@ void maybe_emit_movl_litOrReg_reg ( UInt litOrReg, Tag tag, UInt reg )
    if (RealReg == tag) {
       if (litOrReg != reg) {
          VG_(emit_movv_reg_reg) ( 4, litOrReg, reg );
-         VG_(ccall_arg_setup_instrs)++;
+         ccall_arg_setup_instrs++;
       }
    } else if (Literal == tag) {
       VG_(emit_movv_lit_reg) ( 4, litOrReg, reg );
-      VG_(ccall_arg_setup_instrs)++;
+      ccall_arg_setup_instrs++;
    }
    else
       VG_(panic)("emit_movl_litOrReg_reg: unexpected tag");
@@ -1132,17 +1182,17 @@ void VG_(synth_ccall) ( Addr fn, Int argc, Int regparms_n, UInt argv[],
       VG_(panic)("((regparms(3)))");
    }
 
-   VG_(ccalls)++;
+   ccalls++;
 
    /* Save caller-save regs as required */
-   if (save_eax) { VG_(emit_pushv_reg) ( 4, R_EAX ); VG_(ccall_reg_saves)++; }
-   if (save_ecx) { VG_(emit_pushv_reg) ( 4, R_ECX ); VG_(ccall_reg_saves)++; }
-   if (save_edx) { VG_(emit_pushv_reg) ( 4, R_EDX ); VG_(ccall_reg_saves)++; }
+   if (save_eax) { VG_(emit_pushv_reg) ( 4, R_EAX ); ccall_reg_saves++; }
+   if (save_ecx) { VG_(emit_pushv_reg) ( 4, R_ECX ); ccall_reg_saves++; }
+   if (save_edx) { VG_(emit_pushv_reg) ( 4, R_EDX ); ccall_reg_saves++; }
 
    /* Args are passed in two groups: (a) via stack (b) via regs.  regparms_n
       is the number of args passed in regs (maximum 3 for GCC on x86). */
 
-   VG_(ccall_args) += argc;
+   ccall_args += argc;
    
    /* First push stack args (RealRegs or Literals) in reverse order. */
    for (i = argc-1; i >= regparms_n; i--) {
@@ -1162,7 +1212,7 @@ void VG_(synth_ccall) ( Addr fn, Int argc, Int regparms_n, UInt argv[],
          VG_(panic)("VG_(synth_ccall): bad tag");
       }
       stack_used += 4;
-      VG_(ccall_arg_setup_instrs)++;
+      ccall_arg_setup_instrs++;
    }
 
    /* Then setup args in registers (arg[123] --> %e[adc]x;  note order!).
@@ -1196,10 +1246,10 @@ void VG_(synth_ccall) ( Addr fn, Int argc, Int regparms_n, UInt argv[],
       if (RealReg == tagv[0] && RealReg == tagv[1] &&
           R_EDX   == argv[0] && R_EAX   == argv[1]) {
          VG_(emit_swapl_reg_EAX) ( R_EDX );
-         VG_(ccall_arg_setup_instrs)++;
+         ccall_arg_setup_instrs++;
       } else if (RealReg == tagv[1] && R_EAX == argv[1]) {
          VG_(emit_movv_reg_reg) ( 4, R_EAX, R_EDX );
-         VG_(ccall_arg_setup_instrs)++;
+         ccall_arg_setup_instrs++;
          maybe_emit_movl_litOrReg_reg ( argv[0], tagv[0], R_EAX );
       } else {
          maybe_emit_movl_litOrReg_reg ( argv[0], tagv[0], R_EAX );
@@ -1225,15 +1275,15 @@ void VG_(synth_ccall) ( Addr fn, Int argc, Int regparms_n, UInt argv[],
    /* Clear any args from stack */
    if (0 != stack_used) {
       VG_(emit_add_lit_to_esp) ( stack_used );
-      VG_(ccall_stack_clears)++;
+      ccall_stack_clears++;
    }
 
    /* Move return value into ret_reg if necessary and not already there */
    if (INVALID_REALREG != ret_reg) {
-      VG_(ccall_retvals)++;
+      ccall_retvals++;
       if (R_EAX != ret_reg) {
          VG_(emit_movv_reg_reg) ( 4, R_EAX, ret_reg );
-         VG_(ccall_retval_movs)++;
+         ccall_retval_movs++;
       }
    }
 
@@ -1812,6 +1862,8 @@ static Bool writeFlagUse ( UInstr* u )
 
 static void emitUInstr ( Int i, UInstr* u )
 {
+   Int old_emitted_code_used;
+   
    if (dis)
       VG_(ppUInstr)(i, u);
 
@@ -1824,6 +1876,8 @@ static void emitUInstr ( Int i, UInstr* u )
    }
 #  endif
 
+   old_emitted_code_used = emitted_code_used;
+   
    switch (u->opcode) {
       case NOP: case CALLM_S: case CALLM_E: break;
 
@@ -2164,6 +2218,11 @@ static void emitUInstr ( Int i, UInstr* u )
             VG_(panic)("emitUInstr: unimplemented opcode");
          }
    }
+
+   /* Update UInstr histogram */
+   vg_assert(u->opcode < 100);
+   histogram[u->opcode].counts++;
+   histogram[u->opcode].size += (emitted_code_used - old_emitted_code_used);
 }
 
 

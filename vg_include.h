@@ -859,7 +859,8 @@ extern void VG_(demangle) ( Char* orig, Char* result, Int result_size );
 
 extern UChar* VG_(emit_code) ( UCodeBlock* cb, Int* nbytes );
 
-extern void   VG_(print_ccall_stats) ( void );
+extern void   VG_(print_ccall_stats)      ( void );
+extern void   VG_(print_UInstr_histogram) ( void );
 
 /* ---------------------------------------------------------------------
    Exports of vg_to_ucode.c
