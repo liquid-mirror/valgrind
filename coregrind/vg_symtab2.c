@@ -1886,32 +1886,42 @@ static void search_all_loctabs ( Addr ptr, /*OUT*/SegInfo** psi,
 
 /* The whole point of this whole big deal: map a code address to a
    plausible symbol name.  Returns False if no idea; otherwise True.
-   Caller supplies buf and nbuf.  If no_demangle is True, don't do
+   Caller supplies buf and nbuf.  If demangle is False, don't do
    demangling, regardless of vg_clo_demangle -- probably because the
    call has come from vg_what_fn_or_object_is_this. */
-Bool VG_(what_fn_is_this) ( Bool no_demangle, Addr a, 
-                            Char* buf, Int nbuf )
+static __inline__
+Bool get_fnname ( Bool demangle, Addr a, Char* buf, Int nbuf )
 {
    SegInfo* si;
    Int      sno;
    search_all_symtabs ( a, &si, &sno );
    if (si == NULL) 
       return False;
-   if (no_demangle) {
+   if (demangle) {
+      VG_(demangle) ( & si->strtab[si->symtab[sno].nmoff], buf, nbuf );
+   } else {
       VG_(strncpy_safely) 
          ( buf, & si->strtab[si->symtab[sno].nmoff], nbuf );
-   } else {
-      VG_(demangle) ( & si->strtab[si->symtab[sno].nmoff], buf, nbuf );
    }
    return True;
 }
 
+/* This is available to skins... always demangle C++ names */
+Bool VG_(get_fnname) ( Addr a, Char* buf, Int nbuf )
+{
+   return get_fnname ( /*demangle*/True, a, buf, nbuf);
+}
+
+/* This is only available to core... don't demangle C++ names */
+Bool VG_(get_fnname_nodemangle) ( Addr a, Char* buf, Int nbuf )
+{
+   return get_fnname ( /*demangle*/False, a, buf, nbuf);
+}
 
 /* Map a code address to the name of a shared object file.  Returns
    False if no idea; otherwise False.  Caller supplies buf and
    nbuf. */
-static
-Bool vg_what_object_is_this ( Addr a, Char* buf, Int nbuf )
+Bool VG_(get_objname) ( Addr a, Char* buf, Int nbuf )
 {
    SegInfo* si;
    for (si = segInfo; si != NULL; si = si->next) {
@@ -1923,27 +1933,39 @@ Bool vg_what_object_is_this ( Addr a, Char* buf, Int nbuf )
    return False;
 }
 
-/* Return the name of an erring fn in a way which is useful
-   for comparing against the contents of a suppressions file. 
-   Always writes something to buf.  Also, doesn't demangle the
-   name, because we want to refer to mangled names in the 
-   suppressions file.
-*/
-void VG_(what_obj_and_fun_is_this) ( Addr a,
-                                     Char* obj_buf, Int n_obj_buf,
-                                     Char* fun_buf, Int n_fun_buf )
+
+/* Map a code address to a filename.  Returns True if successful.  */
+Bool VG_(get_filename)( Addr a, Char* filename, Int n_filename )
 {
-   (void)vg_what_object_is_this ( a, obj_buf, n_obj_buf );
-   (void)VG_(what_fn_is_this) ( True, a, fun_buf, n_fun_buf );
+   SegInfo* si;
+   Int      locno;
+   search_all_loctabs ( a, &si, &locno );
+   if (si == NULL) 
+      return False;
+   VG_(strncpy_safely)(filename, & si->strtab[si->loctab[locno].fnmoff], 
+                       n_filename);
+   return True;
 }
 
+/* Map a code address to a line number.  Returns True if successful. */
+Bool VG_(get_linenum)( Addr a, UInt* lineno )
+{
+   SegInfo* si;
+   Int      locno;
+   search_all_loctabs ( a, &si, &locno );
+   if (si == NULL) 
+      return False;
+   *lineno = si->loctab[locno].lineno;
+
+   return True;
+}
 
 /* Map a code address to a (filename, line number) pair.  
    Returns True if successful.
 */
-Bool VG_(what_line_is_this)( Addr a, 
-                             UChar* filename, Int n_filename, 
-                             UInt* lineno )
+Bool VG_(get_filename_linenum)( Addr a, 
+                                Char* filename, Int n_filename, 
+                                UInt* lineno )
 {
    SegInfo* si;
    Int      locno;
@@ -1985,11 +2007,11 @@ void VG_(mini_stack_dump) ( ExeContext* ec )
 
    n = 0;
 
-   know_fnname  = VG_(what_fn_is_this)(False,ec->eips[0], buf_fn, M_VG_ERRTXT);
-   know_objname = vg_what_object_is_this(ec->eips[0], buf_obj, M_VG_ERRTXT);
-   know_srcloc  = VG_(what_line_is_this)(ec->eips[0], 
-                                         buf_srcloc, M_VG_ERRTXT, 
-                                         &lineno);
+   know_fnname  = VG_(get_fnname) (ec->eips[0], buf_fn,  M_VG_ERRTXT);
+   know_objname = VG_(get_objname)(ec->eips[0], buf_obj, M_VG_ERRTXT);
+   know_srcloc  = VG_(get_filename_linenum)(ec->eips[0], 
+                                            buf_srcloc, M_VG_ERRTXT, 
+                                            &lineno);
 
    APPEND("   at ");
    VG_(sprintf)(ibuf,"0x%x: ", ec->eips[0]);
@@ -2019,11 +2041,11 @@ void VG_(mini_stack_dump) ( ExeContext* ec )
    VG_(message)(Vg_UserMsg, "%s", buf);
 
    for (i = 1; i < stop_at && ec->eips[i] != 0; i++) {
-      know_fnname  = VG_(what_fn_is_this)(False,ec->eips[i], buf_fn, M_VG_ERRTXT);
-      know_objname = vg_what_object_is_this(ec->eips[i],buf_obj, M_VG_ERRTXT);
-      know_srcloc  = VG_(what_line_is_this)(ec->eips[i], 
-                                          buf_srcloc, M_VG_ERRTXT, 
-                                          &lineno);
+      know_fnname  = VG_(get_fnname) (ec->eips[i], buf_fn,  M_VG_ERRTXT);
+      know_objname = VG_(get_objname)(ec->eips[i], buf_obj, M_VG_ERRTXT);
+      know_srcloc  = VG_(get_filename_linenum)(ec->eips[i], 
+                                               buf_srcloc, M_VG_ERRTXT, 
+                                               &lineno);
       n = 0;
       APPEND("   by ");
       VG_(sprintf)(ibuf,"0x%x: ",ec->eips[i]);
