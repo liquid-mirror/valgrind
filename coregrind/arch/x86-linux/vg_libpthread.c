@@ -453,10 +453,6 @@ void thread_exit_wrapper ( void* ret_val )
                            2 /* get */, pthread_self(), 0, 0);
    my_assert(detached == 0 || detached == 1);
 
-// SSS: dangerous, because this is running on the simulated CPU...
-//   if (VG_(needs).track_threads)
-//      SKN_(thread_dies)();
-
    if (detached) {
       /* Detached; I just quit right now. */
       VALGRIND_MAGIC_SEQUENCE(res, 0 /* default */,
