@@ -1,8 +1,8 @@
 
-Snapshot 20031104 (4 Nov 2003)
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Stable release 2.0.0 (5 Nov 2003)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-20031104 improves SSE/SSE2 support, fixes some minor bugs, and
+2.0.0 improves SSE/SSE2 support, fixes some minor bugs, and
 improves support for SuSE 9 and the Red Hat "Severn" beta.
 
 - Further improvements to SSE/SSE2 support.  The entire test suite of
