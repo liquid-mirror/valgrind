@@ -215,7 +215,7 @@ void ensure_mm_init ( void )
    arena_init ( &vg_arena[VG_AR_EXECTXT],   "exectxt ",  
                 1, True, 16384 );
 
-   arena_init ( &vg_arena[VG_AR_ERRCTXT],   "errctxt ",  
+   arena_init ( &vg_arena[VG_AR_ERRORS],    "errors  ",  
                 1, True, 16384 );
 
    arena_init ( &vg_arena[VG_AR_TRANSIENT], "transien",  
