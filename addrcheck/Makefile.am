@@ -27,8 +27,7 @@ EXTRA_DIST = $(val_DATA) \
 	README_KDE3_FOLKS README_PACKAGERS \
 	README_MISSING_SYSCALL_OR_IOCTL TODO dosyms vg_libpthread.vs \
 	valgrind.spec valgrind.spec.in \
-	vg_cachesim_I1.c vg_cachesim_D1.c vg_cachesim_L2.c vg_cachesim_gen.c \
-	vg_instrument.c
+	vg_cachesim_I1.c vg_cachesim_D1.c vg_cachesim_L2.c vg_cachesim_gen.c
 
 val_PROGRAMS = \
 	valgrind.so \
@@ -51,13 +50,14 @@ valgrind_so_SOURCES = \
 	vg_clientfuncs.c \
 	vg_scheduler.c \
 	vg_clientmalloc.c \
-        vg_default.c \
+	vg_default.c \
 	vg_demangle.c \
 	vg_dispatch.S \
 	vg_errcontext.c \
 	vg_execontext.c \
 	vg_from_ucode.c \
 	vg_helpers.S \
+	vg_instrument.c \
 	vg_main.c \
 	vg_malloc2.c \
 	vg_memory.c \
@@ -72,8 +72,7 @@ valgrind_so_SOURCES = \
 	vg_syscall.S \
 	vg_to_ucode.c \
 	vg_translate.c \
-	vg_transtab.c \
-	vg_vtagops.c
+	vg_transtab.c
 
 vgskin_memcheck_so_SOURCES = \
 	vg_memcheck.c \
@@ -106,11 +105,12 @@ include_HEADERS = valgrind.h
 noinst_HEADERS = \
         vg_kerneliface.h        \
         vg_include.h            \
+        vg_skin.h               \
         vg_constants.h          \
+        vg_constants_skin.h     \
         vg_unsafe.h		\
 	vg_memcheck_include.h	\
-	vg_memcheck.h		\
-	vg_instrument.h
+	vg_memcheck.h
 
 MANUAL_DEPS = $(noinst_HEADERS) $(include_HEADERS) 
 
@@ -151,9 +151,9 @@ vgskin_none.so$(EXEEXT): $(vgskin_none_so_OBJECTS)
 	$(CC) $(CFLAGS) $(LDFLAGS) -shared -o vgskin_none.so \
 		$(vgskin_none_so_OBJECTS)
 
-vgskin_lackey.so$(EXEEXT): $(vgskin_lackey_so_OBJECTS) vg_instrument.o
+vgskin_lackey.so$(EXEEXT): $(vgskin_lackey_so_OBJECTS)
 	$(CC) $(CFLAGS) $(LDFLAGS) -shared -o vgskin_lackey.so \
-		$(vgskin_lackey_so_OBJECTS) vg_instrument.o
+		$(vgskin_lackey_so_OBJECTS)
 
 install-exec-hook:
 	$(mkinstalldirs) $(DESTDIR)$(valdir)
