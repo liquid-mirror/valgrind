@@ -1095,6 +1095,8 @@ void VG_(perform_assumed_nonblocking_syscall) ( ThreadId tid )
             VG_(message)(Vg_UserMsg, 
               "   Use --logfile-fd=<number> to select an "
               "alternative logfile fd." );
+            /* Pretend the close succeeded, regardless.  (0 == success) */
+            SET_EAX(tid, 0);
          } else {
             KERNEL_DO_SYSCALL(tid,res);
          }
