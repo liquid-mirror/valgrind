@@ -3373,7 +3373,7 @@ void do_client_request ( ThreadId tid )
          if (VG_(clo_verbosity) > 2)
             VG_(printf)( "client request: DISCARD_TRANSLATIONS,"
                          " addr %p,  len %d\n",
-                         arg[0], (void*)arg[1], arg[2] );
+                         (void*)arg[1], arg[2] );
 
          VG_(invalidate_translations)( arg[1], arg[2] );
 
