@@ -846,7 +846,7 @@ static void process_cmd_line_options ( void )
 
       else if (STREQN(15, argv[i], "--suppressions=")) {
          if (VG_(clo_n_suppressions) >= VG_CLO_MAX_SFILES) {
-            VG_(message)(Vg_UserMsg, "Too many logfiles specified.");
+            VG_(message)(Vg_UserMsg, "Too many suppression files specified.");
             VG_(message)(Vg_UserMsg, 
                          "Increase VG_CLO_MAX_SFILES and recompile.");
             VG_(bad_option)(argv[i]);
