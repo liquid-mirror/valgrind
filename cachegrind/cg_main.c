@@ -1443,7 +1443,7 @@ static void fprint_BBCC_table_and_calc_totals(void)
    Int        i,j,k;
 
    VGP_PUSHCC(VgpSpare3);
-   fd = VG_(open_write)(OUT_FILE);
+   fd = VG_(open)(OUT_FILE, VKI_O_WRONLY|VKI_O_TRUNC, 0);
    if (-1 == fd) { file_err(); }
 
    /* "desc:" lines (giving I1/D1/L2 cache configuration) */
@@ -1870,9 +1870,10 @@ void SK_(post_clo_init)(void)
    cache_t I1c, D1c, L2c; 
 
    /* Make sure the output file can be written. */
-   Int fd = VG_(open_write)(OUT_FILE);
+   Int fd = VG_(open)(OUT_FILE, VKI_O_WRONLY|VKI_O_TRUNC, 0);
    if (-1 == fd) { 
-      fd = VG_(create_and_write)(OUT_FILE);
+      fd = VG_(open)(OUT_FILE, VKI_O_CREAT|VKI_O_WRONLY,
+                               VKI_S_IRUSR|VKI_S_IWUSR);
       if (-1 == fd) {
          file_err(); 
       }
