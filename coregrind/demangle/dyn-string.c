@@ -38,7 +38,7 @@ Boston, MA 02111-1307, USA.  */
 #ifndef STANDALONE
 #define malloc(s) VG_(malloc)(VG_AR_DEMANGLE, s)
 #define free(p) VG_(free)(VG_AR_DEMANGLE, p)
-#define realloc(p,s) VG_(realloc)(VG_AR_DEMANGLE, p, s)
+#define realloc(p,s) VG_(realloc)(VG_AR_DEMANGLE, p, /*alignment*/4, s)
 #endif
 
 /* If this file is being compiled for inclusion in the C++ runtime
