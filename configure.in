@@ -293,7 +293,6 @@ AC_OUTPUT(
    vg_annotate
    valgrind
    valgrind.spec
-   cachegrind
    Makefile 
    docs/Makefile 
    tests/Makefile 
