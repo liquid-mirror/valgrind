@@ -293,7 +293,7 @@ Bool VG_(anyFlagUse) ( UInstr* u )
    %eax, %ebx, %ecx, %edx, %esi you must change the
    save/restore sequences in various places to match!  
 */
-__inline__ Int VG_(rankToRealRegNo) ( Int rank )
+static __inline__ Int rankToRealRegNo ( Int rank )
 {
    switch (rank) {
 #     if 1
@@ -424,20 +424,6 @@ __inline__ Int VG_(rankToRealRegNo) ( Int rank )
 
          INCEIP     L       N       N
  
-   and for instrumentation insns:
-
-         LOADV      T       T       N
-         STOREV     T,L     T       N
-         GETV       A       T       N
-         PUTV       T,L     A       N
-         GETVF      T       N       N
-         PUTVF      T       N       N
-         WIDENV     T       N       N
-         TESTV      A,T     N       N
-         SETV       A,T     N       N
-         TAG1       T       N       N
-         TAG2       T       T       N
-
    Before register allocation, S operands should not appear anywhere.
    After register allocation, all T operands should have been
    converted into Rs, and S operands are allowed in GET and PUT --
@@ -1785,7 +1771,7 @@ UCodeBlock* vg_do_register_allocation ( UCodeBlock* c1 )
          temp_info[real_to_temp[r]].real_no = VG_NOTHING;
          if (temp_info[real_to_temp[r]].dead_before > i) {
             uInstr2(c2, PUT, 4, 
-                        RealReg, VG_(rankToRealRegNo)(r), 
+                        RealReg, rankToRealRegNo(r), 
                         SpillNo, temp_info[real_to_temp[r]].spill_no);
             VG_(uinstrs_spill)++;
             spill_reqd = True;
@@ -1803,7 +1789,7 @@ UCodeBlock* vg_do_register_allocation ( UCodeBlock* c1 )
          if (isRead) {
             uInstr2(c2, GET, 4, 
                         SpillNo, temp_info[tno].spill_no, 
-                        RealReg, VG_(rankToRealRegNo)(r) );
+                        RealReg, rankToRealRegNo(r) );
             VG_(uinstrs_spill)++;
             spill_reqd = True;
             if (dis)
@@ -1821,7 +1807,7 @@ UCodeBlock* vg_do_register_allocation ( UCodeBlock* c1 )
          realregs. */
       for (j = 0; j < k; j++)
          tempUse[j].realNo 
-            = VG_(rankToRealRegNo)(temp_info[tempUse[j].tempNo].real_no);
+            = rankToRealRegNo(temp_info[tempUse[j].tempNo].real_no);
       VG_(copyUInstr)(c2, &c1->instrs[i]);
       patchUInstr(&LAST_UINSTR(c2), &tempUse[0], k);
 
