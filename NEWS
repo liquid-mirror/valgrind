@@ -1,4 +1,53 @@
-Snapshot 2003XXXX (XX XXXX 2003)
+
+Snapshot 20031012 (12 October 2003)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Three month's worth of bug fixes, roughly.  Most significant single
+change is improved SSE/SSE2 support, mostly thanks to Dirk Mueller.
+
+20031012 builds on Red Hat Fedora ("Severn") but doesn't really work
+(curiosly, mozilla runs OK, but a modest "ls -l" bombs).  I hope to
+get a working version out soon.  It may or may not work ok on the
+forthcoming SuSE 9; I hear positive noises about it but haven't been
+able to verify this myself (not until I get hold of a copy of 9).
+
+A detailed list of changes, in no particular order:
+
+- Describe --gen-suppressions in the FAQ.
+
+- Syscall __NR_waitpid supported.
+
+- Minor MMX bug fix.
+
+- -v prints program's argv[] at startup.
+
+- More glibc-2.3 suppressions.
+
+- Suppressions for stack underrun bug(s) in the c++ support library
+  distributed with Intel Icc 7.0.
+
+- Fix problems reading /proc/self/maps.
+
+- Fix a couple of messages that should have been suppressed by -q, 
+  but weren't.
+
+- Make Addrcheck understand "Overlap" suppressions.
+
+- At startup, check if program is statically linked and bail out if so.
+
+- Cachegrind: Auto-detect Intel Pentium-M, also VIA Nehemiah
+
+- Memcheck/addrcheck: minor speed optimisations
+
+- Handle syscall __NR_brk more correctly than before.
+
+- Fixed incorrect allocate/free mismatch errors when using
+  operator new(unsigned, std::nothrow_t const&)
+  operator new[](unsigned, std::nothrow_t const&)
+
+- Support POSIX pthread spinlocks.
+
+- Fixups for clean compilation with gcc-3.3.1.
 
 - Implemented more opcodes: 
     - push %es
@@ -14,8 +63,10 @@ Snapshot 2003XXXX (XX XXXX 2003)
     - mov imm32, %esp
     - all "in" and "out" opcodes
     - inc/dec %esp
+    - A whole bunch of SSE/SSE2 instructions
 
-- Memcheck: Implemented handling of more SSE(2) constructs
+- Memcheck: don't bomb on SSE/SSE2 code.
+
 
 
 Snapshot 20030725 (25 July 2003)
