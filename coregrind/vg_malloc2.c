@@ -692,7 +692,7 @@ void ppSuperblocks ( Arena* a )
 
 
 /* Sanity check both the superblocks and the chains. */
-void VG_(mallocSanityCheckArena) ( ArenaId aid )
+void vg_mallocSanityCheckArena ( ArenaId aid )
 {
    Int         i, superblockctr, b_bszW, b_pszW, blockctr_sb, blockctr_li;
    Int         blockctr_sb_free, listno, list_min_pszW, list_max_pszW;
@@ -722,15 +722,15 @@ void VG_(mallocSanityCheckArena) ( ArenaId aid )
          b     = &sb->payload_words[i];
          b_bszW = get_bszW_lo(b);
          if (!blockSane(a, b)) {
-            VG_(printf)( "mallocSanityCheck: sb %p, block %d (bszW %d): "
-                         "BAD\n",
+            VG_(printf)("vg_mallocSanityCheckArena: sb %p, block %d (bszW %d): "
+                        " BAD\n",
                          sb, i, b_bszW );
             BOMB;
          }
          thisFree = !is_inuse_bszW(b_bszW);
          if (thisFree && lastWasFree) {
-            VG_(printf)( "mallocSanityCheck: sb %p, block %d (bszW %d): "
-                         "UNMERGED FREES\n",
+            VG_(printf)("vg_mallocSanityCheckArena: sb %p, block %d (bszW %d): "
+                        "UNMERGED FREES\n",
                          sb, i, b_bszW );
             BOMB;
          }
@@ -741,7 +741,7 @@ void VG_(mallocSanityCheckArena) ( ArenaId aid )
          i += mk_plain_bszW(b_bszW);
       }
       if (i > sb->n_payload_words) {
-         VG_(printf)( "mallocSanityCheck: sb %p: last block "
+         VG_(printf)( "vg_mallocSanityCheckArena: sb %p: last block "
                       "overshoots end\n", sb);
          BOMB;
       }
@@ -750,7 +750,7 @@ void VG_(mallocSanityCheckArena) ( ArenaId aid )
 
    if (arena_bytes_on_loan != a->bytes_on_loan) {
             VG_(printf)( 
-                    "mallocSanityCheck: a->bytes_on_loan %d, "
+                    "vg_mallocSanityCheckArena: a->bytes_on_loan %d, "
                     "arena_bytes_on_loan %d: "
                     "MISMATCH\n", a->bytes_on_loan, arena_bytes_on_loan);
       ppSuperblocks(a);
@@ -770,7 +770,7 @@ void VG_(mallocSanityCheckArena) ( ArenaId aid )
          b_prev = b;
          b = get_next_p(b);
          if (get_prev_p(b) != b_prev) {
-            VG_(printf)( "mallocSanityCheck: list %d at %p: "
+            VG_(printf)( "vg_mallocSanityCheckArena: list %d at %p: "
                          "BAD LINKAGE\n", 
                          listno, b );
             BOMB;
@@ -778,7 +778,7 @@ void VG_(mallocSanityCheckArena) ( ArenaId aid )
          b_pszW = bszW_to_pszW(a, mk_plain_bszW(get_bszW_lo(b)));
          if (b_pszW < list_min_pszW || b_pszW > list_max_pszW) {
             VG_(printf)( 
-               "mallocSanityCheck: list %d at %p: "
+               "vg_mallocSanityCheckArena: list %d at %p: "
                "WRONG CHAIN SIZE %d (%d, %d)\n", 
                listno, b, b_pszW, list_min_pszW, list_max_pszW );
             BOMB;
@@ -790,7 +790,7 @@ void VG_(mallocSanityCheckArena) ( ArenaId aid )
 
    if (blockctr_sb_free != blockctr_li) {
       VG_(printf)( 
-         "mallocSanityCheck: BLOCK COUNT MISMATCH "
+         "vg_mallocSanityCheckArena: BLOCK COUNT MISMATCH "
          "(via sbs %d, via lists %d)\n",
          blockctr_sb_free, blockctr_li );
       ppSuperblocks(a);
@@ -813,7 +813,7 @@ void VG_(mallocSanityCheckAll) ( void )
 {
    Int i;
    for (i = 0; i < VG_N_ARENAS; i++)
-      VG_(mallocSanityCheckArena) ( i );
+      vg_mallocSanityCheckArena ( i );
 }
 
 
@@ -943,7 +943,7 @@ void* VG_(malloc) ( ArenaId aid, Int req_pszB )
       a->bytes_on_loan_max = a->bytes_on_loan;
 
 #  ifdef DEBUG_MALLOC
-   VG_(mallocSanityCheckArena)(aid);
+   vg_mallocSanityCheckArena(aid);
 #  endif
 
    VGP_POPCC;
@@ -1026,7 +1026,7 @@ void VG_(free) ( ArenaId aid, void* ptr )
    }
 
 #  ifdef DEBUG_MALLOC
-   VG_(mallocSanityCheckArena)(aid);
+   vg_mallocSanityCheckArena(aid);
 #  endif
 
    VGP_POPCC;
@@ -1163,7 +1163,7 @@ void* VG_(malloc_aligned) ( ArenaId aid, Int req_alignB, Int req_pszB )
       a->bytes_on_loan_max = a->bytes_on_loan;
 
 #  ifdef DEBUG_MALLOC
-   VG_(mallocSanityCheckArena)(aid);
+   vg_mallocSanityCheckArena(aid);
 #  endif
 
    return align_p;
