@@ -380,7 +380,7 @@ void SKN_(make_writable) ( Addr a, UInt len )
    set_address_range_state( a, len, Vge_VirginInit );
 }
 
-void SKN_(make_readable) ( Addr a, UInt len )
+void make_readable ( Addr a, UInt len )
 {
    //PROF_EVENT(37);  PPP
    set_address_range_state( a, len, Vge_NonVirginInit );
@@ -701,9 +701,6 @@ void SK_(setup)(VgNeeds* needs, VgTrackEvents* track)
    VG_(register_compact_helper)((Addr) & eraser_mem_read);
    VG_(register_compact_helper)((Addr) & eraser_mem_write);
 
-   // SSS: remove eventually
-   VG_(clo_skin) = Vg_Other;
-
    /* Events to track */
 #if 0
    track->new_mem_startup       = & memcheck_new_mem_startup;
@@ -730,8 +727,8 @@ void SK_(setup)(VgNeeds* needs, VgTrackEvents* track)
    track->pre_mem_read          = & check_is_readable;
    track->pre_mem_read_asciiz   = & check_is_readable_asciiz;
    track->pre_mem_write         = & check_is_writable;
-   track->post_mem_write        = & make_readable;
 #endif
+   track->post_mem_write        = & make_readable;
 }
 
 void SK_(init)(void)
@@ -746,9 +743,10 @@ void SK_(init)(void)
 
    init_shadow_memory();
 
-   SKN_(make_readable) ( (Addr)&VG_(clo_skin),          1 );
-   SKN_(make_readable) ( (Addr)&VG_(clo_trace_malloc),  1 );
-   SKN_(make_readable) ( (Addr)&VG_(clo_sloppy_malloc), 1 );
+   /* Mark global variables touched from generated code */
+   VG_(track_events).post_mem_write ( (Addr)&VG_(clo_trace_malloc),  1 );
+   VG_(track_events).post_mem_write ( (Addr)&VG_(clo_sloppy_malloc), 1 );
+
 }
 
 void SK_(fini)(void)

@@ -73,9 +73,6 @@ void SK_(setup)(VgNeeds* needs, VgTrackEvents* track)
 
    needs->sanity_checks           = False;
 
-   // SSS: eLiMiNaTe
-   VG_(clo_skin) = Vg_Other;
-
    /* No core events to track */
 }
 
