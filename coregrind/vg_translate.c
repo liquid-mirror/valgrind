@@ -1922,7 +1922,7 @@ UCodeBlock* vg_do_register_allocation ( UCodeBlock* c1 )
 #  undef VG_NOTHING
 
 }
-
+extern void fooble(int);
 /* Analysis records liveness of all general-use RealRegs in the UCode. */
 static void vg_realreg_liveness_analysis ( UCodeBlock* cb )
 {        
@@ -1945,10 +1945,11 @@ static void vg_realreg_liveness_analysis ( UCodeBlock* cb )
          before this UInstr if it is read by this UInstr.
          Note that regUse[j].num holds the Intel reg number, so we must
          convert it to our rank number.  */
-      for (j = k-1; j >= 0; j--)
+      for (j = k-1; j >= 0; j--) {
          SET_RREG_LIVENESS ( VG_(realRegNumToRank)(regUse[j].num),
                              rregs_live,
                              !regUse[j].isWrite );
+      }
    }
 }
 
