@@ -1070,11 +1070,13 @@ static void vg_delete_redundant_SETVs ( UCodeBlock* cb )
 {
    Int     i, j, k;
    Int     n_temps = cb->nextTemp;
-   Bool    next_is_write[n_temps];
+   Bool*   next_is_write;
    UInstr* u;
    RegUse  tempUse[3];
 
    if (n_temps == 0) return;
+
+   next_is_write = VG_(malloc)(n_temps * sizeof(Bool));
 
    for (i = 0; i < n_temps; i++) next_is_write[i] = True;
 
@@ -1173,11 +1175,13 @@ static void vg_propagate_definedness ( UCodeBlock* cb )
 {
    Int     i, j, k, t;
    Int     n_temps = cb->nextTemp;
-   UChar   def[n_temps];
+   UChar*  def;
    UInstr* u;
    RegUse  tempUse[3];
 
    if (n_temps == 0) return;
+
+   def = VG_(malloc)(n_temps * sizeof(UChar));
 
    for (i = 0; i < n_temps; i++) 
       def[i] = VGC_IS_SHADOW(i) ? VGC_UNDEF : VGC_VALUE;
