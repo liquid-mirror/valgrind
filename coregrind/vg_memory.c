@@ -32,20 +32,154 @@
 
 #include "vg_include.h"
 
+
+VgTrackEvents VG_(track_events) = {
+   .new_mem_startup     = NULL,
+   .new_mem_heap        = NULL,
+   .new_mem_stack       = NULL,
+   .new_mem_stack_aligned = NULL,
+   .new_mem_brk         = NULL,
+   .new_mem_mmap        = NULL,
+
+   .copy_mem_heap       = NULL,
+   .change_mem_mprotect = NULL,
+
+   .die_mem_heap        = NULL,
+   .die_mem_stack       = NULL,
+   .die_mem_stack_aligned = NULL,
+   .die_mem_stack_thread = NULL,
+   .die_mem_brk         = NULL,
+   .die_mem_munmap      = NULL,
+   .die_mem_pthread     = NULL,
+   .die_mem_signal      = NULL,
+
+   .pre_mem_read        = NULL,
+   .pre_mem_read_asciiz = NULL,
+   .pre_mem_write       = NULL,
+   .post_mem_write      = NULL,
+
+   .post_mutex_lock     = NULL,
+   .post_mutex_unlock   = NULL,
+};
+
 /*--------------------------------------------------------------*/
-/*--- Initialise the memory audit system on program startup. ---*/
+/*--- Initialise program data/text etc on program startup.   ---*/
 /*--------------------------------------------------------------*/
 
-/* Handle one entry derived from /proc/self/maps. */
+typedef
+   struct _ExeSeg {
+      Addr start;
+      UInt size;
+      struct _ExeSeg* next;
+   }
+   ExeSeg;
+
+/* The list of current executable segments loaded.  Required so that when a
+   segment is munmap'd, if it's executable we can recognise it as such and
+   invalidate translations for it, and drop any basic-block specific
+   information being stored.  If symbols are being used, this list will have
+   the same segments recorded in it as the SegInfo symbols list (but much
+   less information about each segment).
+*/
+static ExeSeg* exeSegsHead = NULL;
+
+/* Prepend it -- mmaps/munmaps likely to follow a stack pattern(?) so this
+   is good.
+   Also check no segments overlap, which would be very bad.  Check is linear
+   for each seg added (quadratic overall) but the total number should be
+   small (konqueror has around 50 --njn). */
+void add_exe_segment_to_list( a, len ) 
+{
+   Addr lo = a;
+   Addr hi = a + len - 1;
+   ExeSeg* es;
+   ExeSeg* es2;
+   
+   /* Prepend it */
+   es        = (ExeSeg*)VG_(malloc)(VG_AR_SYMTAB, sizeof(ExeSeg));
+   es->start = a;
+   es->size  = len;
+   es->next  = exeSegsHead;
+   exeSegsHead = es;
+
+   /* Check there's no overlap with the rest of the list */
+   for (es2 = es->next; es2 != NULL; es2 = es2->next) {
+      Addr lo2 = es2->start;
+      Addr hi2 = es2->start + es2->size - 1;
+      Bool overlap;
+      vg_assert(lo < hi);
+      vg_assert(lo2 < hi2);
+      /* the main assertion */
+      overlap = (lo <= lo2 && lo2 <= hi)
+                 || (lo <= hi2 && hi2 <= hi);
+      if (overlap) {
+         VG_(printf)("\n\nOVERLAPPING EXE SEGMENTS\n"
+                     "  new: start %p, size %d\n"
+                     "  old: start %p, size %d\n\n",
+                     es->start, es->size, es2->start, es2->size );
+         vg_assert(! overlap);
+      }
+   }
+}
+
+Bool vgm_remove_if_exe_segment_from_list( Addr a, UInt len )
+{
+   ExeSeg **prev_next_ptr = & exeSegsHead, 
+          *curr = exeSegsHead;
+
+   while (True) {
+      if (curr == NULL) break;
+      if (a == curr->start) break;
+      prev_next_ptr = &curr->next;
+      curr = curr->next;
+   }
+   if (curr == NULL)
+      return False;
+
+   vg_assert(*prev_next_ptr == curr);
+
+   *prev_next_ptr = curr->next;
+
+   VG_(free)(VG_AR_SYMTAB, curr);
+   return True;
+}
+
+/* Records the exe segment in the ExeSeg list (checking for overlaps), and
+   reads debug info if required.  Note the entire /proc/pid/maps file is 
+   read for the debug info -- it just reads symbols for new exe segments.
+   This is required to find out their names if they have one.  So we don't
+   use this at startup because it's overkill and can screw reading of
+   /proc/pid/maps.
+ */
+void VGM_(new_exe_segment) ( Addr a, UInt len )
+{
+   add_exe_segment_to_list( a, len );
+
+   if (VG_(needs).debug_info != Vg_DebugNone)
+      VG_(read_symbols)();
+}
+
+/* Invalidate translations as necessary (also discarding any basic
+   block-specific info retained by the skin) and unload any debug
+   symbols. */
+void VGM_(remove_if_exe_segment) ( Addr a, UInt len )
+{
+   if (vgm_remove_if_exe_segment_from_list( a, len )) {
+      VG_(invalidate_translations) ( a, len );
+
+      if (VG_(needs).debug_info != Vg_DebugNone)
+         VG_(unload_symbols) ( a, len );
+   }
+}
+
 
 static
-void init_memory_audit_callback ( 
-        Addr start, UInt size, 
-        Char rr, Char ww, Char xx, 
-        UInt foffset, UChar* filename )
+void startup_segment_callback ( Addr start, UInt size, 
+                                Char rr, Char ww, Char xx, 
+                                UInt foffset, UChar* filename )
 {
-   UInt  r_esp;
-   Bool  is_stack_segment;
+   UInt r_esp;
+   Bool is_stack_segment;
 
    /* Sanity check ... if this is the executable's text segment,
       ensure it is loaded where we think it ought to be.  Any file
@@ -72,71 +206,62 @@ void init_memory_audit_callback (
          VG_(panic)("VG_ASSUMED_EXE_BASE doesn't match reality");
       }
    }
-    
+
    if (0)
-      VG_(message)(Vg_DebugMsg, 
+      VG_(message)(Vg_DebugMsg,
                    "initial map %8x-%8x %c%c%c? %8x (%d) (%s)",
                    start,start+size,rr,ww,xx,foffset,
                    size, filename?filename:(UChar*)"NULL");
 
-   /* Figure out the segment's permissions.
-
-      All segments are addressible -- since a process can read its
-      own text segment.
-
-      [this comment looks wrong --njn]
-      A read-but-not-write segment presumably contains initialised
-      data, so is all valid.  Read-write segments presumably contains
-      uninitialised data, so is all invalid.  */
-
-   /* ToDo: make this less bogus. */
    if (rr != 'r' && xx != 'x' && ww != 'w') {
-      /* Very bogus; this path never gets taken. */
-      /* A no, V no */
-      //SKN_(make_segment_noaccess) ( start, size );
-      VG_(panic)("non-readable, writable, executable segment");
-       
-   } else {
-      /* A yes, V yes */
-      SKN_(make_segment_readable) ( start, size );
-
-      /* This is an old comment --njn */
-      /* Causes a lot of errs for unknown reasons. 
-         if (filename is valgrind.so 
-               [careful about end conditions on filename]) {
-            example_a_bit = VGM_BIT_INVALID;
-            example_v_bit = VGM_BIT_INVALID;
-         }
-      */
+      VG_(printf)("No permissions on the segment named %s\n", filename);
+      VG_(panic)("Non-readable, writable, executable segment at startup");
    }
 
+   if (xx == 'x') { 
+      add_exe_segment_to_list( start, size );
+      VG_(read_symtab_callback)( start, size, rr, ww, xx, foffset, filename );
+   }
+
+   VG_TRACK( new_mem_startup, start, size, rr=='r', ww=='w', xx=='x' );
+
+   /* If this is the stack segment mark all below %esp as noaccess. */
    r_esp = VG_(baseBlock)[VGOFF_(m_esp)];
    is_stack_segment = start <= r_esp && r_esp < start+size;
-
    if (is_stack_segment) {
-      /* This is the stack segment.  Mark all below %esp as
-         noaccess. */
       if (0)
-         VG_(message)(Vg_DebugMsg, 
-                      "invalidating stack area: %x .. %x",
+         VG_(message)(Vg_DebugMsg, "invalidating stack area: %x .. %x",
                       start,r_esp);
-      SKN_(make_noaccess)( start, r_esp-start );
+      VG_TRACK( die_mem_stack, start, r_esp-start );
    }
 }
 
-/* Initialise the memory audit system. */
-void VGM_(init_memory_audit) ( void )
+
+/* 1. Records exe segments from /proc/pid/maps -- always necessary, because 
+      if they're munmap()ed we need to know if they were executable in order
+      to discard translations.  Also checks there's no exe segment overlaps.
+
+   2. Reads debug info (also from /proc/pid/maps) if needed by the skin;
+
+   3. Marks global variables that might be accessed from generated code;
+
+   4. Sets up the end of the data segment so that vg_syscall_mem.c can make
+      sense of calls to brk().
+ */
+void VGM_(init_memory_and_symbols) ( void )
 {
-   SKN_(init_shadow_memory)();
+   /* 1 and 2 */
+   VG_(read_procselfmaps) ( startup_segment_callback );
 
-   // JJJ: is VG_(read_procselfmaps) necessary if not using shadow memory?
-   // (currently I'm cutting init_memory_audit_callback() short halfway if
-   // not using shadow memory)
+   /* 3 */
+   VG_TRACK( post_mem_write, (Addr) & VG_(running_on_simd_CPU), 1 );
 
-   /* Read the initial memory mapping from the /proc filesystem, and
-      set up our own maps accordingly. */
-   VG_(read_procselfmaps) ( init_memory_audit_callback );
-
+   /* 4 */
+   VGM_(curr_dataseg_end) = (Addr)VG_(brk)(0);
+   if (VGM_(curr_dataseg_end) == (Addr)(-1))
+      VG_(panic)("init_memory_and_symbols: can't determine data-seg end");
+   if (0)
+      VG_(printf)("DS END is %p\n", (void*)VGM_(curr_dataseg_end));
 }
 
 
@@ -190,18 +315,6 @@ Bool is_plausible_stack_addr ( ThreadState* tst, Addr aa )
 }
 
 
-/* Is this address within some small distance below %ESP?  Used only
-   for the --workaround-gcc296-bugs kludge. */
-Bool VG_(is_just_below_ESP)( Addr esp, Addr aa )
-{
-   if ((UInt)esp > (UInt)aa
-       && ((UInt)esp - (UInt)aa) <= VG_GCC296_BUG_STACK_SLOP)
-      return True;
-   else
-      return False;
-}
-
-
 /* Kludgey ... how much does %esp have to change before we reckon that
    the application is switching stacks ? */
 #define VG_HUGE_DELTA (VG_PLAUSIBLE_STACK_SIZE / 4)
@@ -228,115 +341,32 @@ void VGM_(handle_esp_assignment) ( Addr new_espA )
       /* Deal with the most common cases fast.  These are ordered in
          the sequence most common first. */
 
-      if (delta == -4) {
-         /* Moving down by 4 and properly aligned.. */
-         //PROF_EVENT(102); PPP
-         SKN_(make_aligned_word_WRITABLE)(new_esp);
-         return;
+#     ifdef VG_PROFILE_MEMORY
+      // PPP
+      if      (delta = - 4) PROF_EVENT(102);
+      else if (delta =   4) PROF_EVENT(103);
+      else if (delta = -12) PROF_EVENT(104);
+      else if (delta = - 8) PROF_EVENT(105);
+      else if (delta =  16) PROF_EVENT(106);
+      else if (delta =  12) PROF_EVENT(107);
+      else if (delta =   0) PROF_EVENT(108);
+      else if (delta =   8) PROF_EVENT(109);
+      else if (delta = -16) PROF_EVENT(110);
+      else if (delta =  20) PROF_EVENT(111);
+      else if (delta = -20) PROF_EVENT(112);
+      else if (delta =  24) PROF_EVENT(113);
+      else if (delta = -24) PROF_EVENT(114);
+      else                  PROF_EVENT(115); // PPP: new event: aligned_other
+#     endif
+      
+      if (delta < 0) {
+         VG_TRACK(new_mem_stack_aligned, new_esp, -delta);
+      } else if (delta > 0) {
+         VG_TRACK(die_mem_stack_aligned, old_esp, delta);
       }
+      /* Do nothing if (delta==0) */
 
-      if (delta == 4) {
-         /* Moving up by 4 and properly aligned. */
-         //PROF_EVENT(103); PPP
-         SKN_(make_aligned_word_NOACCESS)(old_esp);
-         return;
-      }
-
-      if (delta == -12) {
-         //PROF_EVENT(104); PPP
-         SKN_(make_aligned_word_WRITABLE)(new_esp);
-         SKN_(make_aligned_word_WRITABLE)(new_esp+4);
-         SKN_(make_aligned_word_WRITABLE)(new_esp+8);
-         return;
-      }
-
-      if (delta == -8) {
-         //PROF_EVENT(105); PPP
-         SKN_(make_aligned_word_WRITABLE)(new_esp);
-         SKN_(make_aligned_word_WRITABLE)(new_esp+4);
-         return;
-      }
-
-      if (delta == 16) {
-         //PROF_EVENT(106); PPP
-         SKN_(make_aligned_word_NOACCESS)(old_esp);
-         SKN_(make_aligned_word_NOACCESS)(old_esp+4);
-         SKN_(make_aligned_word_NOACCESS)(old_esp+8);
-         SKN_(make_aligned_word_NOACCESS)(old_esp+12);
-         return;
-      }
-
-      if (delta == 12) {
-         //PROF_EVENT(107); PPP
-         SKN_(make_aligned_word_NOACCESS)(old_esp);
-         SKN_(make_aligned_word_NOACCESS)(old_esp+4);
-         SKN_(make_aligned_word_NOACCESS)(old_esp+8);
-         return;
-      }
-
-      if (delta == 0) {
-         //PROF_EVENT(108); PPP
-         return;
-      }
-
-      if (delta == 8) {
-         //PROF_EVENT(109); PPP
-         SKN_(make_aligned_word_NOACCESS)(old_esp);
-         SKN_(make_aligned_word_NOACCESS)(old_esp+4);
-         return;
-      }
-
-      if (delta == -16) {
-         //PROF_EVENT(110); PPP
-         SKN_(make_aligned_word_WRITABLE)(new_esp);
-         SKN_(make_aligned_word_WRITABLE)(new_esp+4);
-         SKN_(make_aligned_word_WRITABLE)(new_esp+8);
-         SKN_(make_aligned_word_WRITABLE)(new_esp+12);
-         return;
-      }
-
-      if (delta == 20) {
-         //PROF_EVENT(111); PPP
-         SKN_(make_aligned_word_NOACCESS)(old_esp);
-         SKN_(make_aligned_word_NOACCESS)(old_esp+4);
-         SKN_(make_aligned_word_NOACCESS)(old_esp+8);
-         SKN_(make_aligned_word_NOACCESS)(old_esp+12);
-         SKN_(make_aligned_word_NOACCESS)(old_esp+16);
-         return;
-      }
-
-      if (delta == -20) {
-         //PROF_EVENT(112); PPP
-         SKN_(make_aligned_word_WRITABLE)(new_esp);
-         SKN_(make_aligned_word_WRITABLE)(new_esp+4);
-         SKN_(make_aligned_word_WRITABLE)(new_esp+8);
-         SKN_(make_aligned_word_WRITABLE)(new_esp+12);
-         SKN_(make_aligned_word_WRITABLE)(new_esp+16);
-         return;
-      }
-
-      if (delta == 24) {
-         //PROF_EVENT(113); PPP
-         SKN_(make_aligned_word_NOACCESS)(old_esp);
-         SKN_(make_aligned_word_NOACCESS)(old_esp+4);
-         SKN_(make_aligned_word_NOACCESS)(old_esp+8);
-         SKN_(make_aligned_word_NOACCESS)(old_esp+12);
-         SKN_(make_aligned_word_NOACCESS)(old_esp+16);
-         SKN_(make_aligned_word_NOACCESS)(old_esp+20);
-         return;
-      }
-
-      if (delta == -24) {
-         //PROF_EVENT(114); PPP
-         SKN_(make_aligned_word_WRITABLE)(new_esp);
-         SKN_(make_aligned_word_WRITABLE)(new_esp+4);
-         SKN_(make_aligned_word_WRITABLE)(new_esp+8);
-         SKN_(make_aligned_word_WRITABLE)(new_esp+12);
-         SKN_(make_aligned_word_WRITABLE)(new_esp+16);
-         SKN_(make_aligned_word_WRITABLE)(new_esp+20);
-         return;
-      }
-
+      return;
    }
 
 #  endif
@@ -353,20 +383,20 @@ static void vg_handle_esp_assignment_SLOWLY ( Addr new_espA )
    UInt old_esp = VG_(baseBlock)[VGOFF_(m_esp)];
    UInt new_esp = (UInt)new_espA;
    Int  delta   = ((Int)new_esp) - ((Int)old_esp);
-   //   VG_(printf)("%d ", delta);
+   //VG_(printf)("delta %d (%x) %x --> %x\n", delta, delta, old_esp, new_esp);
    //PROF_EVENT(120);   PPP
    if (-(VG_HUGE_DELTA) < delta && delta < VG_HUGE_DELTA) {
       /* "Ordinary" stack change. */
       if (new_esp < old_esp) {
          /* Moving down; the stack is growing. */
          //PROF_EVENT(121); PPP
-         SKN_(make_writable) ( new_esp, old_esp - new_esp );
+         VG_TRACK( new_mem_stack, new_esp, -delta );
          return;
       }
       if (new_esp > old_esp) {
          /* Moving up; the stack is shrinking. */
          //PROF_EVENT(122); PPP
-         SKN_(make_noaccess) ( old_esp, new_esp - old_esp );
+         VG_TRACK( die_mem_stack, old_esp, delta );
          return;
       }
       //PROF_EVENT(123);    PPP
@@ -395,13 +425,12 @@ static void vg_handle_esp_assignment_SLOWLY ( Addr new_espA )
      //PROF_EVENT(124); PPP
      if (VG_(clo_verbosity) > 1)
         VG_(message)(Vg_UserMsg, "Warning: client switching stacks?  "
-                                 "%%esp: %p --> %p",
-                                  old_esp, new_esp);
+                                 "%%esp: %p --> %p", old_esp, new_esp);
      /* VG_(printf)("na %p,   %%esp %p,   wr %p\n",
                     invalid_down_to, new_esp, valid_up_to ); */
-     SKN_(make_noaccess) ( invalid_down_to, new_esp - invalid_down_to );
+     VG_TRACK( die_mem_stack, invalid_down_to, new_esp - invalid_down_to );
      if (!is_plausible_stack_addr(tst, new_esp)) {
-        SKN_(make_readable) ( new_esp, valid_up_to - new_esp );
+        VG_TRACK( post_mem_write, new_esp, valid_up_to - new_esp );
      }
    }
 }
