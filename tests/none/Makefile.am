@@ -21,7 +21,7 @@ CXX = g++
 
 noinst_PROGRAMS = \
 	bitfield1 bt_everything bt_literal coolo_strlen \
-	cpuid dastest floored fucomip rcl_assert \
+	cpuid dastest floored fucomip munmap_exe rcl_assert \
 	rcrl readline1 sha1_test shortpush shorts smc1 \
 	pth_atfork1 pth_cancel1 pth_cancel2 pth_cvsimple pth_mutexspeed \
 	pth_once pth_semaphore1 pth_simple_mutex pth_simple_threads \
@@ -42,6 +42,7 @@ dastest_SOURCES 	= dastest_c.c dastest_s.s
 floored_SOURCES 	= floored.c
 floored_LDADD 		= -lm
 fucomip_SOURCES 	= fucomip.c
+munmap_exe_SOURCES 	= munmap_exe.c
 #gxx304_SOURCES		= gxx304.cpp	(C++)
 rcl_assert_SOURCES 	= rcl_assert.S
 rcrl_SOURCES 		= rcrl.c

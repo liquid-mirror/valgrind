@@ -188,7 +188,7 @@ void startup_segment_callback ( Addr start, UInt size,
    }
 
    /* This parallels what happens when we mmap some new memory */
-   if (xx == 'x') {
+   if (filename != NULL && xx == 'x') {
       VGM_(new_exe_segment)( start, size );
    }
    VG_TRACK( new_mem_startup, start, size, rr=='r', ww=='w', xx=='x' );
