@@ -1528,7 +1528,7 @@ extern void VG_(clear_ErrContext) ( ErrContext* ec );
 extern void VG_(maybe_add_context) ( ErrContext* ec );
 
 
-extern void VG_(record_pthread_err) ( ThreadId tid, Char* msg );
+extern void VG_(record_pthread_error) ( ThreadId tid, Char* msg );
 
 extern Bool VG_(eq_ExeContext) ( Bool top_2_only,
                                  ExeContext* e1, ExeContext* e2 );

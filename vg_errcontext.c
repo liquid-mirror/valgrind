@@ -369,7 +369,7 @@ void VG_(construct_err_context) ( ErrContext* ec, ErrKind ekind, Addr a,
 
 /* This is called not from generated code but from the scheduler */
 
-void VG_(record_pthread_err) ( ThreadId tid, Char* msg )
+void VG_(record_pthread_error) ( ThreadId tid, Char* msg )
 {
    ErrContext ec;
    if (VG_(ignore_errors)) return;
@@ -544,7 +544,6 @@ static Bool setLocationTy ( Char** p_caller, SuppressionLocTy* p_ty )
 #define STREQ(s1,s2) (s1 != NULL && s2 != NULL \
                       && VG_(strcmp)((s1),(s2))==0)
 
-// SSS: currently ignoring unrecognised suppresions, but printing a warning.
 static void load_one_suppressions_file ( Char* filename )
 {
 #  define N_BUF 200

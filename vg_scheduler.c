@@ -1921,7 +1921,7 @@ void do__set_cancelpend ( ThreadId tid,
             "set_cancelpend for invalid tid %d", cee);
          print_sched_event(tid, msg_buf);
       }
-      VG_(record_pthread_err)( tid, 
+      VG_(record_pthread_error)( tid, 
          "pthread_cancel: target thread does not exist, or invalid");
       SET_EDX(tid, -VKI_ESRCH);
       return;
@@ -1956,7 +1956,7 @@ void do_pthread_join ( ThreadId tid,
    vg_assert(VG_(threads)[tid].status == VgTs_Runnable);
 
    if (jee == tid) {
-      VG_(record_pthread_err)( tid, 
+      VG_(record_pthread_error)( tid, 
          "pthread_join: attempt to join to self");
       SET_EDX(tid, EDEADLK); /* libc constant, not a kernel one */
       VG_(threads)[tid].status = VgTs_Runnable;
@@ -1972,7 +1972,7 @@ void do_pthread_join ( ThreadId tid,
        || jee >= VG_N_THREADS
        || VG_(threads)[jee].status == VgTs_Empty) {
       /* Invalid thread to join to. */
-      VG_(record_pthread_err)( tid, 
+      VG_(record_pthread_error)( tid, 
          "pthread_join: target thread does not exist, or invalid");
       SET_EDX(tid, EINVAL);
       VG_(threads)[tid].status = VgTs_Runnable;
@@ -1985,7 +1985,7 @@ void do_pthread_join ( ThreadId tid,
       if (VG_(threads)[i].status == VgTs_WaitJoinee
           && VG_(threads)[i].joiner_jee_tid == jee) {
          /* Someone already did join on this thread */
-         VG_(record_pthread_err)( tid, 
+         VG_(record_pthread_error)( tid, 
             "pthread_join: another thread already "
             "in join-wait for target thread");
          SET_EDX(tid, EINVAL);
@@ -2273,7 +2273,7 @@ void do_pthread_mutex_lock( ThreadId tid,
 
    /* POSIX doesn't mandate this, but for sanity ... */
    if (mutex == NULL) {
-      VG_(record_pthread_err)( tid, 
+      VG_(record_pthread_error)( tid, 
          "pthread_mutex_lock/trylock: mutex is NULL");
       SET_EDX(tid, EINVAL);
       return;
@@ -2293,7 +2293,7 @@ void do_pthread_mutex_lock( ThreadId tid,
          if (mutex->__m_count >= 0) break;
          /* else fall thru */
       default:
-         VG_(record_pthread_err)( tid, 
+         VG_(record_pthread_error)( tid, 
             "pthread_mutex_lock/trylock: mutex is invalid");
          SET_EDX(tid, EINVAL);
          return;
@@ -2373,7 +2373,7 @@ void do_pthread_mutex_unlock ( ThreadId tid,
              && VG_(threads)[tid].status == VgTs_Runnable);
 
    if (mutex == NULL) {
-      VG_(record_pthread_err)( tid, 
+      VG_(record_pthread_error)( tid, 
          "pthread_mutex_unlock: mutex is NULL");
       SET_EDX(tid, EINVAL);
       return;
@@ -2393,7 +2393,7 @@ void do_pthread_mutex_unlock ( ThreadId tid,
          if (mutex->__m_count >= 0) break;
          /* else fall thru */
       default:
-         VG_(record_pthread_err)( tid, 
+         VG_(record_pthread_error)( tid, 
             "pthread_mutex_unlock: mutex is invalid");
          SET_EDX(tid, EINVAL);
          return;
@@ -2402,7 +2402,7 @@ void do_pthread_mutex_unlock ( ThreadId tid,
    /* Barf if we don't currently hold the mutex. */
    if (mutex->__m_count == 0) {
       /* nobody holds it */
-      VG_(record_pthread_err)( tid, 
+      VG_(record_pthread_error)( tid, 
          "pthread_mutex_unlock: mutex is not locked");
       SET_EDX(tid, EPERM);
       return;
@@ -2410,7 +2410,7 @@ void do_pthread_mutex_unlock ( ThreadId tid,
 
    if ((ThreadId)mutex->__m_owner != tid) {
       /* we don't hold it */
-      VG_(record_pthread_err)( tid, 
+      VG_(record_pthread_error)( tid, 
          "pthread_mutex_unlock: mutex is locked by a different thread");
       SET_EDX(tid, EPERM);
       return;
@@ -2609,7 +2609,7 @@ void do_pthread_cond_wait ( ThreadId tid,
              && VG_(threads)[tid].status == VgTs_Runnable);
 
    if (mutex == NULL || cond == NULL) {
-      VG_(record_pthread_err)( tid, 
+      VG_(record_pthread_error)( tid, 
          "pthread_cond_wait/timedwait: cond or mutex is NULL");
       SET_EDX(tid, EINVAL);
       return;
@@ -2629,7 +2629,7 @@ void do_pthread_cond_wait ( ThreadId tid,
          if (mutex->__m_count >= 0) break;
          /* else fall thru */
       default:
-         VG_(record_pthread_err)( tid, 
+         VG_(record_pthread_error)( tid, 
             "pthread_cond_wait/timedwait: mutex is invalid");
          SET_EDX(tid, EINVAL);
          return;
@@ -2638,7 +2638,7 @@ void do_pthread_cond_wait ( ThreadId tid,
    /* Barf if we don't currently hold the mutex. */
    if (mutex->__m_count == 0 /* nobody holds it */
        || (ThreadId)mutex->__m_owner != tid /* we don't hold it */) {
-         VG_(record_pthread_err)( tid, 
+         VG_(record_pthread_error)( tid, 
             "pthread_cond_wait/timedwait: mutex is unlocked "
             "or is locked but not owned by thread");
       SET_EDX(tid, EINVAL);
@@ -2684,7 +2684,7 @@ void do_pthread_cond_signal_or_broadcast ( ThreadId tid,
              && VG_(threads)[tid].status == VgTs_Runnable);
 
    if (cond == NULL) {
-      VG_(record_pthread_err)( tid, 
+      VG_(record_pthread_error)( tid, 
          "pthread_cond_signal/broadcast: cond is NULL");
       SET_EDX(tid, EINVAL);
       return;
@@ -2771,7 +2771,7 @@ void do_pthread_key_delete ( ThreadId tid, pthread_key_t key )
              && VG_(threads)[tid].status == VgTs_Runnable);
    
    if (!is_valid_key(key)) {
-      VG_(record_pthread_err)( tid, 
+      VG_(record_pthread_error)( tid, 
          "pthread_key_delete: key is invalid");
       SET_EDX(tid, EINVAL);
       return;
@@ -2805,7 +2805,7 @@ void do_pthread_getspecific ( ThreadId tid, pthread_key_t key )
              && VG_(threads)[tid].status == VgTs_Runnable);
 
    if (!is_valid_key(key)) {
-      VG_(record_pthread_err)( tid, 
+      VG_(record_pthread_error)( tid, 
          "pthread_getspecific: key is invalid");
       SET_EDX(tid, (UInt)NULL);
       return;
@@ -2831,7 +2831,7 @@ void do_pthread_setspecific ( ThreadId tid,
              && VG_(threads)[tid].status == VgTs_Runnable);
 
    if (!is_valid_key(key)) {
-      VG_(record_pthread_err)( tid, 
+      VG_(record_pthread_error)( tid, 
          "pthread_setspecific: key is invalid");
       SET_EDX(tid, EINVAL);
       return;
@@ -2963,7 +2963,7 @@ void do_pthread_kill ( ThreadId tid, /* me */
              && VG_(threads)[tid].status == VgTs_Runnable);
 
    if (!VG_(is_valid_tid)(thread)) {
-      VG_(record_pthread_err)( tid, 
+      VG_(record_pthread_error)( tid, 
          "pthread_kill: invalid target thread");
       SET_EDX(tid, -VKI_ESRCH);
       return;
@@ -3312,7 +3312,7 @@ void do_client_request ( ThreadId tid )
          break;
 
       case VG_USERREQ__PTHREAD_ERROR:
-         VG_(record_pthread_err)( tid, (Char*)(arg[1]) );
+         VG_(record_pthread_error)( tid, (Char*)(arg[1]) );
          SET_EDX(tid, 0);
          break;
 
