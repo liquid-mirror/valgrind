@@ -79,9 +79,6 @@ void init_memory_audit_callback (
                    start,start+size,rr,ww,xx,foffset,
                    size, filename?filename:(UChar*)"NULL");
 
-   r_esp = VG_(baseBlock)[VGOFF_(m_esp)];
-   is_stack_segment = start <= r_esp && r_esp < start+size;
-
    /* Figure out the segment's permissions.
 
       All segments are addressible -- since a process can read its
@@ -112,6 +109,9 @@ void init_memory_audit_callback (
          }
       */
    }
+
+   r_esp = VG_(baseBlock)[VGOFF_(m_esp)];
+   is_stack_segment = start <= r_esp && r_esp < start+size;
 
    if (is_stack_segment) {
       /* This is the stack segment.  Mark all below %esp as

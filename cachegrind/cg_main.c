@@ -1652,7 +1652,7 @@ void SK_(setup)(VgNeeds* needs)
    VG_(register_compact_helper)((Addr) & cachesim_mem_instr);
 
    // SSS: needed for the normal_pop_case wretchery
-   VG_(clo_skin) = Vg_CacheSim;
+   VG_(clo_skin) = Vg_Other;
 }
 
 void SK_(init)(void)
