@@ -1045,6 +1045,30 @@ void VG_(copy_m_state_static_to_baseBlock) ( void )
          = VG_(m_state_static)[40/4 + i];
 }
 
+Addr VG_(get_stack_pointer) ( void )
+{
+   return VG_(baseBlock)[VGOFF_(m_esp)];
+}
+
+/* Some random tests needed for leak checking */
+
+Bool VG_(within_stack)(Addr a)
+{
+   if (a >= ((Addr)(&VG_(stack)))
+       && a <= ((Addr)(&VG_(stack))) + sizeof(VG_(stack)))
+      return True;
+   else
+      return False;
+}
+
+Bool VG_(within_m_state_static)(Addr a)
+{
+   if (a >= ((Addr)(&VG_(m_state_static)))
+       && a <= ((Addr)(&VG_(m_state_static))) + sizeof(VG_(m_state_static)))
+      return True;
+   else
+      return False;
+}
 
 /* ---------------------------------------------------------------------
    Show accumulated counts.
