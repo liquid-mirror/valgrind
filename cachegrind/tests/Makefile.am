@@ -3,11 +3,10 @@
 noinst_PROGRAMS = \
 	dlclose fpu-28-108 myprint.so
 
-# XXX: want to have this inherited from ../Makefile.am
 CFLAGS   = $(WERROR) -Winline -Wall -Wshadow -g
 CXXFLAGS = $(CFLAGS) 
 
-# --skin=cachesim ones
+# C ones
 dlclose_SOURCES		= dlclose.c
 dlclose_LDADD		= -ldl
 myprint_so_SOURCES	= myprint.c
