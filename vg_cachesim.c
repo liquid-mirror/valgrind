@@ -1847,7 +1847,7 @@ static void parse_cache_opt ( cache_t* cache, char* orig_opt, int opt_len )
    VG_(bad_option)(orig_opt);
 }
 
-Bool SK_(process_cmd_line_option)(UChar* arg)
+Bool SK_(process_cmd_line_option)(Char* arg)
 {
    /* 5 is length of "--I1=" */
    if      (0 == VG_(strncmp)(arg, "--I1=", 5))

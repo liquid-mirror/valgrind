@@ -2271,7 +2271,7 @@ void SK_(written_shadow_regs_values)( UInt* gen_reg_value, UInt* eflags_value )
    *eflags_value  = VGM_EFLAGS_VALID;
 }
 
-Bool SK_(process_cmd_line_option)(UChar* arg)
+Bool SK_(process_cmd_line_option)(Char* arg)
 {
 #  define STREQ(s1,s2)     (0==VG_(strcmp_ws)((s1),(s2)))
 #  define STREQN(nn,s1,s2) (0==VG_(strncmp_ws)((s1),(s2),(nn)))
