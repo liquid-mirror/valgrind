@@ -765,7 +765,13 @@ void VG_(strncpy_safely) ( Char* dest, const Char* src, Int ndest )
 
 void VG_(strncpy) ( Char* dest, const Char* src, Int ndest )
 {
-   VG_(strncpy_safely)( dest, src, ndest+1 ); 
+   Int i = 0;
+   while (True) {
+      if (src[i] == 0) return;
+      if (i >= ndest) return;
+      dest[i] = src[i];
+      i++;
+   }
 }
 
 
