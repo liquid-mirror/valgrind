@@ -65,28 +65,15 @@ Bool VG_(ignore_errors) ( void )
    return vg_ignore_errors;
 }
 
-/* Inlined in this module, not in others */
-__inline__ Bool VG_(eq_ExeContext) ( Bool top_2_only,
-                        ExeContext* e1, ExeContext* e2 )
-{
-   /* Note that frames after the 4th are always ignored. */
-   if (top_2_only) {
-      return VG_(eq_ExeContext_top2(e1, e2));
-   } else {
-      return VG_(eq_ExeContext_top4(e1, e2));
-   }
-}
-
-
 /* Compare error contexts, to detect duplicates.  Note that if they
    are otherwise the same, the faulting addrs and associated rwoffsets
    are allowed to be different.  */
-static Bool eq_ErrContext ( Bool cheap_addr_cmp,
+static Bool eq_ErrContext ( ExeContextRes res, 
                             ErrContext* e1, ErrContext* e2 )
 {
    if (e1->ekind != e2->ekind) 
       return False;
-   if (!VG_(eq_ExeContext)(cheap_addr_cmp, e1->where, e2->where))
+   if (!VG_(eq_ExeContext)(res, e1->where, e2->where))
       return False;
 
    switch (e1->ekind) {
@@ -99,7 +86,7 @@ static Bool eq_ErrContext ( Bool cheap_addr_cmp,
          return False;
       default: 
          if (VG_(needs).report_errors)
-            return SKN_(eq_ErrContext)(cheap_addr_cmp, e1, e2);
+            return SKN_(eq_ErrContext)(res, e1, e2);
          else {
             VG_(printf)("Error:\n"
                         "  unhandled error type: %u.  Perhaps " 
@@ -185,13 +172,13 @@ Bool vg_is_GDB_attach_requested ( void )
    user should see the error. */
 void VG_(maybe_add_context) ( ErrContext* ec )
 {
-   ErrContext* p;
-   ErrContext* p_prev;
-   Bool        cheap_addr_cmp         = False;
-   static Bool is_first_shown_context = True;
-   static Bool stopping_message       = False;
-   static Bool slowdown_message       = False;
-   static Int  vg_n_errs_shown        = 0;
+   ErrContext*   p;
+   ErrContext*   p_prev;
+   ExeContextRes exe_res                = MedRes;
+   static Bool   is_first_shown_context = True;
+   static Bool   stopping_message       = False;
+   static Bool   slowdown_message       = False;
+   static Int    vg_n_errs_shown        = 0;
 
    vg_assert(ec->tid >= 0 && ec->tid < VG_N_THREADS);
 
@@ -238,7 +225,7 @@ void VG_(maybe_add_context) ( ErrContext* ec )
       been found, be much more conservative about collecting new
       ones. */
    if (vg_n_errs_shown >= M_VG_COLLECT_ERRORS_SLOWLY_AFTER) {
-      cheap_addr_cmp = True;
+      exe_res = LowRes;
       if (!slowdown_message) {
          VG_(message)(Vg_UserMsg, "");
          VG_(message)(Vg_UserMsg, 
@@ -254,7 +241,7 @@ void VG_(maybe_add_context) ( ErrContext* ec )
    p      = vg_err_contexts;
    p_prev = NULL;
    while (p != NULL) {
-      if (eq_ErrContext(cheap_addr_cmp, p, ec)) {
+      if (eq_ErrContext(exe_res, p, ec)) {
          /* Found it. */
          p->count++;
 	 if (p->supp != NULL) {
