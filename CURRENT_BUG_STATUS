@@ -5,7 +5,7 @@ the end of this file, which has a list of the bugs known in, but not
 fixed in, the current release.
 
 
-Release 1.0.3 (17 Sept 02)
+Release 1.0.3 (18 Sept 02)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
 Fairly minor things -- stability fixes and a few new syscalls.
 Note that new functionality will appear in development snapshots,
@@ -14,10 +14,16 @@ not this stable branch.
 - Fix some segfaults apparently caused by the duplicate-error-merging
   machinery.  This is a potentially important stability fix.
 
-- pthread_kill would incorrectly deliver a signal to a thread even
-  if the thread currently had the signal blocked.  Fixed.  It _may_
-  also fix some assertion failures in scheduler_sanity() in
-  vg_scheduler.c.
+- Signal handling fix: pthread_kill would incorrectly deliver a signal
+  to a thread even if the thread currently had the signal blocked.
+  Fixed.  It _may_ also fix some assertion failures in scheduler_sanity()
+  in vg_scheduler.c.
+
+- Signal handling fix: fix stupid bug causing this:
+    vg_signals.c:1065 (vgPlain_signal_returns): 
+       Assertion `sigNo >= 1 && sigNo <= 64' failed.
+  This bug could also have caused arbitrary other weird failures
+  in signal handling.
 
 - Add suppressions for SuSE 8.1.
 
