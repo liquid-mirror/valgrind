@@ -115,8 +115,8 @@ static void synth_minimal_test_lit_reg ( UInt lit, Int reg32 )
 /*----------------------------------------------------*/
 
 static void synth_LOADV ( Int sz, Int a_reg, Int tv_reg,
-                          RegsLive regs_live_before,
-                          RegsLive regs_live_after )
+                          RRegSet regs_live_before,
+                          RRegSet regs_live_after )
 {
    Addr helper;
    UInt argv[] = { a_reg };
@@ -134,8 +134,8 @@ static void synth_LOADV ( Int sz, Int a_reg, Int tv_reg,
 
 
 static void synth_STOREV ( Int sz, Int tv_tag, Int tv_val, Int a_reg,
-                           RegsLive regs_live_before,
-                           RegsLive regs_live_after )
+                           RRegSet regs_live_before,
+                           RRegSet regs_live_after )
 {
    Addr helper;
    UInt argv[] = { a_reg,   tv_val };
@@ -350,7 +350,7 @@ static void synth_PUTVF ( UInt reg )
 }
 
 
-static void synth_TAG1_op ( TagOp op, Int reg, RegsLive regs_live_after )
+static void synth_TAG1_op ( TagOp op, Int reg, RRegSet regs_live_after )
 {
    switch (op) {
 
@@ -443,7 +443,7 @@ static void synth_TAG1_op ( TagOp op, Int reg, RegsLive regs_live_after )
          Int  i, reg_of_i;
 
          for (i = 0; i < VG_MAX_REALREGS; i++) {
-            if (! IS_REG_LIVE(i, regs_live_after)) {
+            if (! IS_RREG_LIVE(i, regs_live_after)) {
                reg_of_i = VG_(rankToRealRegNum)(i);
                if (reg != reg_of_i) {
                   dead_reg = reg_of_i;
@@ -564,7 +564,7 @@ static void synth_TAG2_op ( TagOp op, Int regs, Int regd )
 /*--- Generate code for a single UInstr.           ---*/
 /*----------------------------------------------------*/
 
-void SK_(emitExtUInstr) ( UInstr* u, RegsLive regs_live_before )
+void SK_(emitExtUInstr) ( UInstr* u, RRegSet regs_live_before )
 {
    switch (u->opcode) {
 
