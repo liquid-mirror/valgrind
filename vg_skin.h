@@ -100,7 +100,6 @@ typedef unsigned char          Bool;
 /*=== Command-line options                                         ===*/
 /*====================================================================*/
 
-// SSS: should be lumped with pretty printing stuff?
 /* Verbosity level: 0 = silent, 1 (default), > 1 = more verbose. */
 extern Int   VG_(clo_verbosity);
 
@@ -620,11 +619,9 @@ extern void  VG_(setLiteralField) ( UCodeBlock* cb, UInt lit32 );
 
 extern void  VG_(copyUInstr)  ( UCodeBlock* cb, UInstr* instr );
 
-
 extern Bool VG_(anyFlagUse) ( UInstr* u );
 
-/* Refer to `the last instruction stuffed in', including as an
-   lvalue. */
+/* Refer to `the last instruction stuffed in' (can be lvalue). */
 #define LAST_UINSTR(cb) (cb)->instrs[(cb)->used-1]
 
 
@@ -636,24 +633,17 @@ extern void VG_(callHelper_2_0)(UCodeBlock* cb, Addr f, UInt arg1, UInt arg2);
 
 
 /* ------------------------------------------------------------------ */
-/* Pretty printing, for debugging */
+/* UCode pretty printing, to help debugging skins;  but only useful
+   if VG_(needs).extends_UCode == True. */
+
+/* When True, all generated code is/should be printed. */
+extern Bool  VG_(print_codegen);
+
+extern void  VG_(ppUCodeBlock)    ( UCodeBlock* cb, Char* title );
+extern void  VG_(ppUInstr)        ( Int instrNo, UInstr* u );
 extern Char* VG_(nameUOpcode)     ( Bool upper, Opcode opc );
 extern void  VG_(ppUOperand)      ( UInstr* u, Int operandNo, 
                                     Int sz, Bool parens );
-extern void  VG_(ppUInstr)        ( Int instrNo, UInstr* u );
-extern void  VG_(ppUCodeBlock)    ( UCodeBlock* cb, Char* title );
-
-/* When true, pretty print code during instrumentation, and also during
-   code generation if VG_(needs).extends_UCode == True. */
-// SSS: if I do this:
-//   if (VG_(disassemble)) 
-//      VG_(ppUCodeBlock) ( cb, "Cachesim instrumented code:" );
-//
-// before calling instrument, is it necessary?
-// SSS: can only be turned on from within core anyway... make it a 
-//      command-line option? (want to be able to do it for separate stages, 
-//      though (maybe a bit mask for different parts?)
-extern Bool  VG_(disassemble);
 
 
 /* ------------------------------------------------------------------ */

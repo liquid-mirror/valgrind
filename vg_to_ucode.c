@@ -40,12 +40,12 @@
 #define uInstr1   VG_(newUInstr1)
 #define uInstr2   VG_(newUInstr2)
 #define uInstr3   VG_(newUInstr3)
-#define dis       VG_(disassemble)
 #define nameIReg  VG_(nameOfIntReg)
 #define nameISize VG_(nameOfIntSize)
 #define newTemp   VG_(getNewTemp)
 #define uLiteral  VG_(setLiteralField)
 
+#define dis       VG_(print_codegen)
 
 /*------------------------------------------------------------*/
 /*--- Here so it can be inlined everywhere.                ---*/
@@ -4521,7 +4521,7 @@ Int VG_(disBB) ( UCodeBlock* cb, Addr eip0 )
    Bool block_sane;
    Int delta = 0;
 
-   if (dis) VG_(printf)("\n");
+   if (dis) VG_(printf)("Original x86 code to UCode:\n\n");
 
    /* After every x86 instruction do an INCEIP, except for the final one
     * in the basic block.  For them we patch in the x86 instruction size 
@@ -4572,6 +4572,7 @@ Int VG_(disBB) ( UCodeBlock* cb, Addr eip0 )
          if (dis) VG_(printf)("\n");
       }
    }
+
    /* Patch instruction size into final JMP. */
    LAST_UINSTR(cb).extra4b = delta;
 
@@ -4584,6 +4585,7 @@ Int VG_(disBB) ( UCodeBlock* cb, Addr eip0 )
    return eip - eip0;
 }
 
+#undef dis
 
 /*--------------------------------------------------------------------*/
 /*--- end                                            vg_to_ucode.c ---*/

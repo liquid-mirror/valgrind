@@ -35,10 +35,10 @@
 /*--- Renamings of frequently-used global functions.       ---*/
 /*------------------------------------------------------------*/
 
-#define dis       VG_(disassemble)
 #define nameIReg  VG_(nameOfIntReg)
 #define nameISize VG_(nameOfIntSize)
 
+#define dis       VG_(print_codegen)
 
 /*------------------------------------------------------------*/
 /*--- Instruction emission -- turning final uinstrs back   ---*/
@@ -758,7 +758,6 @@ void SKN_(emitExtUInstr) ( UInstr* u )
          VG_(ppUInstr)(0,u);
          VG_(panic)("emitExtUInstr: unhandled extension opcode");
    }
-
 }
 
 /*--------------------------------------------------------------------*/

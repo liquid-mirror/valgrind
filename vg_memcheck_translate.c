@@ -507,9 +507,6 @@ static UCodeBlock* memcheck_instrument ( UCodeBlock* cb_in )
       qs = qd = qt = qtt = INVALID_TEMPREG;
       u_in = &cb_in->instrs[i];
 
-      /* if (i > 0) uInstr1(cb, NOP, 0, NoValue, 0); */
-
-      /* VG_(ppUInstr)(0, u_in); */
       switch (u_in->opcode) {
 
          case NOP:
@@ -1034,28 +1031,33 @@ static UCodeBlock* memcheck_instrument ( UCodeBlock* cb_in )
 /*--- Clean up mem check instrumentation.                  ---*/
 /*------------------------------------------------------------*/
 
+Bool VG_(clo_memcheck_codegen) = False;
+
+#define dis    VG_(print_codegen)
+
+
 #define VGC_IS_SHADOW(tempreg) ((tempreg % 2) == 1)
 #define VGC_UNDEF ((UChar)100)
 #define VGC_VALUE ((UChar)101)
 
-#define NOP_no_msg(uu)                                         \
+#define NOP_no_msg(uu)                                            \
    do { uu->opcode = NOP; } while (False)
 
-#define NOP_tag1_op(uu)                                        \
-   do { uu->opcode = NOP;                                      \
-        if (VG_(disassemble))                                  \
-           VG_(printf)("at %d: delete %s due to defd arg\n",   \
-                       i, nameOfTagOp(u->val3));               \
+#define NOP_tag1_op(uu)                                           \
+   do { uu->opcode = NOP;                                         \
+        if (dis)                                                  \
+           VG_(printf)("   at %2d: delete %s due to defd arg\n",  \
+                       i, nameOfTagOp(u->val3));                  \
    } while (False)
 
-#define SETV_tag1_op(uu,newsz)                                 \
-   do { uu->opcode = SETV;                                     \
-        uu->size = newsz;                                      \
-        uu->tag2 = uu->tag3 = NoValue;                         \
-        if (VG_(disassemble))                                  \
-           VG_(printf)("at %d: convert %s to SETV%d "          \
-                       "due to defd arg\n",                    \
-                       i, nameOfTagOp(u->val3), newsz);        \
+#define SETV_tag1_op(uu,newsz)                                    \
+   do { uu->opcode = SETV;                                        \
+        uu->size = newsz;                                         \
+        uu->tag2 = uu->tag3 = NoValue;                            \
+        if (dis)                                                  \
+           VG_(printf)("   at %2d: convert %s to SETV%d "         \
+                       "due to defd arg\n",                       \
+                       i, nameOfTagOp(u->val3), newsz);           \
    } while (False)
 
 
@@ -1091,8 +1093,8 @@ static void vg_delete_redundant_SETVs ( UCodeBlock* cb )
                             && !VG_(clo_check_addrVs)) {
          u->opcode = NOP;
          u->size = 0;
-         if (VG_(disassemble)) 
-            VG_(printf)("at %d: delete GETV\n", i);
+         if (dis) 
+            VG_(printf)("   at %2d: delete GETV\n", i);
       } else
 
       if (u->opcode == TAG1 && VGC_IS_SHADOW(u->val1) 
@@ -1100,8 +1102,8 @@ static void vg_delete_redundant_SETVs ( UCodeBlock* cb )
                             && !VG_(clo_check_addrVs)) {
          u->opcode = NOP;
          u->size = 0;
-         if (VG_(disassemble)) 
-            VG_(printf)("at %d: delete TAG1\n", i);
+         if (dis) 
+            VG_(printf)("   at %2d: delete TAG1\n", i);
       } else
 
       if (u->opcode == TAG2 && VGC_IS_SHADOW(u->val2) 
@@ -1109,8 +1111,8 @@ static void vg_delete_redundant_SETVs ( UCodeBlock* cb )
                             && !VG_(clo_check_addrVs)) {
          u->opcode = NOP;
          u->size = 0;
-         if (VG_(disassemble)) 
-            VG_(printf)("at %d: delete TAG2\n", i);
+         if (dis) 
+            VG_(printf)("   at %2d: delete TAG2\n", i);
       } else
 
       /* We do the rest of these regardless of whether or not
@@ -1122,8 +1124,8 @@ static void vg_delete_redundant_SETVs ( UCodeBlock* cb )
             point.  Delete it. */
          u->opcode = NOP;
          u->size = 0;
-         if (VG_(disassemble)) 
-            VG_(printf)("at %d: delete MOV\n", i);
+         if (dis) 
+            VG_(printf)("   at %2d: delete MOV\n", i);
       } else
 
       if (u->opcode == SETV) {
@@ -1133,8 +1135,8 @@ static void vg_delete_redundant_SETVs ( UCodeBlock* cb )
                /* This write is pointless, so annul it. */
                u->opcode = NOP;
                u->size = 0;
-               if (VG_(disassemble)) 
-                  VG_(printf)("at %d: delete SETV\n", i);
+               if (dis) 
+                  VG_(printf)("   at %2d: delete SETV\n", i);
             } else {
                /* This write has a purpose; don't annul it, but do
                   notice that we did it. */
@@ -1212,8 +1214,8 @@ static void vg_propagate_definedness ( UCodeBlock* cb )
             if (def[u->val1] <= 4) { 
                vg_assert(def[u->val1] == u->size); 
                NOP_no_msg(u);
-               if (VG_(disassemble)) 
-                  VG_(printf)("at %d: delete TESTV on defd arg\n", i);
+               if (dis) 
+                  VG_(printf)("   at %2d: delete TESTV on defd arg\n", i);
             }
             break;
 
@@ -1242,9 +1244,9 @@ static void vg_propagate_definedness ( UCodeBlock* cb )
                   case 1: u->lit32 = 0xFFFFFF00; break;
                   default: VG_(panic)("vg_cleanup(PUTV)");
                }
-               if (VG_(disassemble)) 
+               if (dis) 
                   VG_(printf)(
-                     "at %d: propagate definedness into PUTV\n", i);
+                     "   at %2d: propagate definedness into PUTV\n", i);
             }
             break;
 
@@ -1260,9 +1262,9 @@ static void vg_propagate_definedness ( UCodeBlock* cb )
                   case 1: u->lit32 = 0xFFFFFF00; break;
                   default: VG_(panic)("vg_cleanup(STOREV)");
                }
-               if (VG_(disassemble)) 
+               if (dis) 
                   VG_(printf)(
-                     "at %d: propagate definedness into STandV\n", i);
+                     "   at %2d: propagate definedness into STandV\n", i);
             }
             break;
 
@@ -1303,9 +1305,9 @@ static void vg_propagate_definedness ( UCodeBlock* cb )
                         simply second arg.  Delete this operation. */
                      vg_assert(def[u->val1] == sz);
                      NOP_no_msg(u);
-                     if (VG_(disassemble)) 
+                     if (dis) 
                         VG_(printf)(
-                           "at %d: delete UifU%d due to defd arg1\n", 
+                           "   at %2d: delete UifU%d due to defd arg1\n", 
                            i, sz);
                   }
                   else 
@@ -1317,9 +1319,9 @@ static void vg_propagate_definedness ( UCodeBlock* cb )
                      u->size = 4;
                      u->tag3 = NoValue;
                      def[u->val2] = def[u->val1];
-                     if (VG_(disassemble)) 
+                     if (dis) 
                         VG_(printf)(
-                           "at %d: change UifU%d to MOV due to defd"
+                           "   at %2d: change UifU%d to MOV due to defd"
                            " arg2\n", 
                            i, sz);
                   }
@@ -1337,9 +1339,9 @@ static void vg_propagate_definedness ( UCodeBlock* cb )
                      u->opcode = MOV;
                      u->tag3 = NoValue;
                      def[u->val2] = VGC_UNDEF;
-                     if (VG_(disassemble)) 
+                     if (dis) 
                         VG_(printf)(
-                            "at %d: change ImproveAND%d_TQ to MOV due "
+                            "   at %2d: change ImproveAND%d_TQ to MOV due "
                             "to defd arg2\n", 
                             i, sz);
                   }
@@ -1395,9 +1397,9 @@ static void vg_propagate_definedness ( UCodeBlock* cb )
                default: 
                   goto unhandled;
             }
-            if (VG_(disassemble)) 
+            if (dis) 
                VG_(printf)(
-                  "at %d: delete TAG1 %s due to defd arg\n",
+                  "   at %2d: delete TAG1 %s due to defd arg\n",
                   i, nameOfTagOp(u->val3));
             break;
 
@@ -1439,20 +1441,23 @@ static void vg_cleanup ( UCodeBlock* cb )
 }
 
 
+/* Caller will print out final instrumented code if necessary;  we
+   print out intermediate instrumented code here if necessary. */
 UCodeBlock* SK_(instrument) ( UCodeBlock* cb, Addr not_used )
 {
    cb = memcheck_instrument(cb);
-   if (VG_(disassemble)) 
-      VG_(ppUCodeBlock) ( cb, "Instrumented code:" );
    if (VG_(clo_cleanup)) {
-      //VGP_PUSHCC(VgpCleanup);
+      if (dis) {
+         VG_(ppUCodeBlock) ( cb, "Unimproved instrumented UCode:" );
+         VG_(printf)("Instrumentation improvements:\n");
+      }
       vg_cleanup(cb);
-      //VGP_POPCC;
-      if (VG_(disassemble)) 
-         VG_(ppUCodeBlock) ( cb, "Cleaned-up instrumented code:" );
+      if (dis) VG_(printf)("\n");
    }
    return cb;
 }
+
+#undef dis
 
 /*--------------------------------------------------------------------*/
 /*--- end                                  vg_memcheck_translate.c ---*/

@@ -300,6 +300,7 @@ void* VG_(client_calloc) ( ThreadState* tst, UInt nmemb, UInt size1 )
    return p;
 }
 
+static
 void client_free_worker ( ThreadState* tst, UInt ml_no, ShadowChunk* sc,
                           Bool allocKindMatches)
 {

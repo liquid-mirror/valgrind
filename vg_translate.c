@@ -36,10 +36,10 @@
 /*------------------------------------------------------------*/
 
 #define uInstr2   VG_(newUInstr2)
-#define dis       VG_(disassemble)
 #define nameIReg  VG_(nameOfIntReg)
 #define nameISize VG_(nameOfIntSize)
 
+#define dis       VG_(print_codegen)
 
 /*------------------------------------------------------------*/
 /*--- Memory management for the translater.                ---*/
@@ -670,6 +670,9 @@ Bool VG_(saneUCodeBlock) ( UCodeBlock* cb )
 /*--- Printing uinstrs.                                    ---*/
 /*------------------------------------------------------------*/
 
+/* Global that dictates whether to print generated code at all stages */
+Bool VG_(print_codegen);
+
 Char* VG_(nameCondcode) ( Condcode cond )
 {
    switch (cond) {
@@ -890,9 +893,8 @@ void VG_(ppUInstr) ( Int instrNo, UInstr* u )
          VG_(printf)("\t");
          VG_(ppUOperand)(u, 1, u->size, False);
          if (CondAlways == u->cond) {
-            if (0 == u->extra4b)
-               VG_(printf)("  (--)", u->extra4b);  /* Not filled in yet */
-            else 
+            /* Print x86 instruction size if filled in */
+            if (0 != u->extra4b)
                VG_(printf)("  ($%u)", u->extra4b);
          }
          break;
@@ -905,21 +907,21 @@ void VG_(ppUInstr) ( Int instrNo, UInstr* u )
          break;
 
       case CCALL_0_0:
-         VG_(printf)(" (%u)", u->lit32);
+         VG_(printf)(" %p()", u->lit32);
          break;
 
       case CCALL_1_0:
-         VG_(printf)(" ");
+         VG_(printf)(" %p(", u->lit32);
          VG_(ppUOperand)(u, 1, 0, False);
-         VG_(printf)(" (%u)", u->lit32);
+         VG_(printf)(")");
          break;
 
       case CCALL_2_0:
-         VG_(printf)(" ");
+         VG_(printf)(" %p(", u->lit32);
          VG_(ppUOperand)(u, 1, 0, False);
          VG_(printf)(", ");
          VG_(ppUOperand)(u, 2, 0, False);
-         VG_(printf)(" (%u)", u->lit32);
+         VG_(printf)(")");
          break;
 
       case JIFZ:
@@ -966,7 +968,7 @@ void VG_(ppUInstr) ( Int instrNo, UInstr* u )
 void VG_(ppUCodeBlock) ( UCodeBlock* cb, Char* title )
 {
    Int i;
-   VG_(printf)("\n%s\n", title);
+   VG_(printf)("%s\n", title);
    for (i = 0; i < cb->used; i++)
       if (0 || cb->instrs[i].opcode != NOP)
          VG_(ppUInstr) ( i, &cb->instrs[i] );
@@ -1182,6 +1184,9 @@ static void vg_improve ( UCodeBlock* cb )
    Int*    last_live_before;
    FlagSet future_dead_flags;
 
+   if (dis) 
+      VG_(printf) ("Improvements:\n");
+
    if (cb->nextTemp > 0)
       last_live_before = VG_(jitmalloc) ( cb->nextTemp * sizeof(Int) );
    else
@@ -1246,9 +1251,9 @@ static void vg_improve ( UCodeBlock* cb )
             if (n > cb->used) n = cb->used;
             last_live_before[told] = last_live_before[tr];
             last_live_before[tr] = i-1;
-            if (VG_(disassemble))
+            if (dis)
                VG_(printf)(
-                  "at %d: delete GET, rename t%d to t%d in (%d .. %d)\n", 
+                  "   at %2d: delete GET, rename t%d to t%d in (%d .. %d)\n", 
                   i, tr, told,i+1, n-1);
             for (m = i+1; m < n; m++) {
                if (cb->instrs[m].tag1 == TempReg 
@@ -1289,9 +1294,9 @@ static void vg_improve ( UCodeBlock* cb )
                case ADC: case SBB:
                case SHL: case SHR: case SAR: case ROL: case ROR:
                case RCL: case RCR:
-                  if (VG_(disassemble)) 
+                  if (dis) 
                      VG_(printf)(
-                        "at %d: change ArchReg %S to TempReg t%d\n", 
+                        "   at %2d: change ArchReg %S to TempReg t%d\n", 
                         i, nameIReg(4,u->val1), areg_map[u->val1]);
                   u->tag1 = TempReg;
                   u->val1 = areg_map[u->val1];
@@ -1340,8 +1345,8 @@ static void vg_improve ( UCodeBlock* cb )
             vg_assert(actual_areg != R_ESP);
             u->opcode = NOP;
             u->tag1 = u->tag2 = NoValue;
-            if (VG_(disassemble)) 
-               VG_(printf)("at %d: delete PUT\n", i );
+            if (dis) 
+               VG_(printf)("   at %2d: delete PUT\n", i );
          } else {
             if (actual_areg != R_ESP)
                annul_put[actual_areg] = True;
@@ -1383,9 +1388,9 @@ static void vg_improve ( UCodeBlock* cb )
       vg_assert(u->tag1 == TempReg);
       vg_assert(u->tag2 == TempReg);
       if (last_live_before[u->val1] == i) {
-         if (VG_(disassemble))
+         if (dis)
             VG_(printf)(
-               "at %d: delete MOV, rename t%d to t%d in (%d .. %d)\n",
+               "   at %2d: delete MOV, rename t%d to t%d in (%d .. %d)\n",
                i, u->val2, u->val1, i+1, last_live_before[u->val2] );
          for (j = i+1; j <= last_live_before[u->val2]; j++) {
             if (cb->instrs[j].tag1 == TempReg 
@@ -1435,8 +1440,8 @@ static void vg_improve ( UCodeBlock* cb )
          this insn.*/
       if (u->flags_w != FlagsEmpty
           && VG_IS_FLAG_SUBSET(u->flags_w, future_dead_flags)) {
-         if (VG_(disassemble)) {
-            VG_(printf)("at %d: annul flag write ", i);
+         if (dis) {
+            VG_(printf)("   at %2d: annul flag write ", i);
             vg_ppFlagSet("", u->flags_w);
             VG_(printf)(" due to later ");
             vg_ppFlagSet("", future_dead_flags);
@@ -1456,6 +1461,11 @@ static void vg_improve ( UCodeBlock* cb )
 
    if (last_live_before) 
       VG_(jitfree) ( last_live_before );
+
+   if (dis) {
+      VG_(printf)("\n");
+      VG_(ppUCodeBlock) ( cb, "Improved UCode:" );
+   }
 }
 
 
@@ -1602,25 +1612,29 @@ UCodeBlock* vg_do_register_allocation ( UCodeBlock* c1 )
 
    /* Show live ranges and assigned spill slot nos. */
 
-   if (VG_(disassemble)) {
-      VG_(printf)("Live Range Assignments\n");
+   if (dis) {
+      VG_(printf)("Live range assignments:\n");
 
       for (i = 0; i < c1->nextTemp; i++) {
          if (temp_info[i].live_after == VG_NOTHING) 
             continue;
          VG_(printf)(
-            "   LR %d is   after %d to before %d   spillno %d\n",
+            "   LR %d is  after %d to before %d\tspillno %d\n",
             i,
             temp_info[i].live_after,
             temp_info[i].dead_before,
             temp_info[i].spill_no
          );
       }
+      VG_(printf)("\n");
    }
 
    /* Now that we've established a spill slot number for each used
       temporary, we can go ahead and do the core of the "Second-chance
       binpacking" allocation algorithm. */
+
+   if (dis) VG_(printf)("Register allocated UCode:\n");
+      
 
    /* Resulting code goes here.  We generate it all in a forwards
       pass. */
@@ -1633,9 +1647,6 @@ UCodeBlock* vg_do_register_allocation ( UCodeBlock* c1 )
       real_to_temp[i] = VG_NOTHING;
    for (i = 0; i < c1->nextTemp; i++)
       temp_info[i].real_no = VG_NOTHING;
-
-   if (VG_(disassemble))
-      VG_(printf)("\n");
 
    /* Process each insn in turn. */
    for (i = 0; i < c1->used; i++) {
@@ -1661,7 +1672,7 @@ UCodeBlock* vg_do_register_allocation ( UCodeBlock* c1 )
       }
 #     endif
 
-      if (VG_(disassemble))
+      if (dis)
          VG_(ppUInstr)(i, &c1->instrs[i]);
 
       /* First, free up enough real regs for this insn.  This may
@@ -1778,7 +1789,7 @@ UCodeBlock* vg_do_register_allocation ( UCodeBlock* c1 )
                         SpillNo, temp_info[real_to_temp[r]].spill_no);
             VG_(uinstrs_spill)++;
             spill_reqd = True;
-            if (VG_(disassemble))
+            if (dis)
                VG_(ppUInstr)(c2->used-1, &LAST_UINSTR(c2));
          }
 
@@ -1795,7 +1806,7 @@ UCodeBlock* vg_do_register_allocation ( UCodeBlock* c1 )
                         RealReg, VG_(rankToRealRegNo)(r) );
             VG_(uinstrs_spill)++;
             spill_reqd = True;
-            if (VG_(disassemble))
+            if (dis)
                VG_(ppUInstr)(c2->used-1, &LAST_UINSTR(c2));
          }
 
@@ -1814,7 +1825,7 @@ UCodeBlock* vg_do_register_allocation ( UCodeBlock* c1 )
       VG_(copyUInstr)(c2, &c1->instrs[i]);
       patchUInstr(&LAST_UINSTR(c2), &tempUse[0], k);
 
-      if (VG_(disassemble)) {
+      if (dis) {
          VG_(ppUInstr)(c2->used-1, &LAST_UINSTR(c2));
          VG_(printf)("\n");
       }
@@ -1846,98 +1857,89 @@ UCodeBlock* vg_do_register_allocation ( UCodeBlock* c1 )
    this call is being done for debugging purposes, in which case (a)
    throw away the translation once it is made, and (b) produce a load
    of debugging output. 
+
+   'tst' is the identity of the thread needing this block.
 */
-void VG_(translate) ( ThreadState* tst, 
-                         /* Identity of thread needing this block */
+void VG_(translate) ( /*IN*/ThreadState* tst, 
                       Bool  is_x86_callee,
-                      Addr  orig_addr,
-                      UInt* orig_size,
-                      Addr* trans_addr,
-                      UInt* trans_size )
+                      Addr  orig_addr,  /*OUT*/UInt* orig_size,
+               /*OUT*/Addr* trans_addr, /*OUT*/UInt* trans_size )
 {
    Int         n_disassembled_bytes, final_code_size;
    Bool        debugging_translation;
    UChar*      final_code;
    UCodeBlock* cb;
-//   if (is_x86_callee) VG_(printf)("X"); else VG_(printf)(".");
+
    VGP_PUSHCC(VgpTranslate);
    debugging_translation
       = orig_size == NULL || trans_addr == NULL || trans_size == NULL;
 
-   dis = True;
-   dis = debugging_translation;
-
-   if (!debugging_translation && !dis) {
+   if (!debugging_translation)
       VG_TRACK( pre_mem_read, Vg_CoreTranslate, tst, "", orig_addr, 1 );
-   }
 
-   /* if (VG_(overall_in_count) >= 4800) dis=True; */
-   if (VG_(disassemble))
-      VG_(printf)("\n");
-   if (0 || dis 
-       || (VG_(overall_in_count) > 0 &&
-           (VG_(overall_in_count) % 1000 == 0))) {
-      if (0&& (VG_(clo_verbosity) > 1 || dis))
-         VG_(message)(Vg_UserMsg,
-              "trans# %d, bb# %lu, in %d, out %d",
-              VG_(overall_in_count), 
-              VG_(bbs_done),
-              VG_(overall_in_osize), VG_(overall_in_tsize),
-              orig_addr );
-   }
    cb = VG_(allocCodeBlock)();
 
+   /* If doing any code printing, print a basic block start marker */
+   // SSS: a lot of the [fn] blocks don't look like the start of
+   // functions.  And some that do look like the start of functions aren't
+   // marked as [fn]...
+   if (VG_(clo_trace_codegen))
+      VG_(printf)(
+              "==== BB %d (%p)%s in %dB, out %dB, BBs exec'd %lu ====\n\n",
+              VG_(overall_in_count), orig_addr, 
+              ( is_x86_callee ? "[fn]" : "" ),
+              VG_(overall_in_osize), VG_(overall_in_tsize),
+              VG_(bbs_done));
+
+   /* True if a debug trans., or if bit N set in VG_(clo_trace_codegen). */
+#  define DECIDE_IF_PRINTING_CODEGEN_FOR_PHASE(n) \
+      ( debugging_translation || (VG_(clo_trace_codegen) & (1 << (n-1))) )
+
    /* Disassemble this basic block into cb. */
-   //dis=True;
+   VG_(print_codegen) = DECIDE_IF_PRINTING_CODEGEN_FOR_PHASE(1);
    VGP_PUSHCC(VgpToUCode);
    n_disassembled_bytes = VG_(disBB) ( cb, orig_addr );
    VGP_POPCC;
-   //dis=False;
-   /* dis=True; */
-   /* if (0&& VG_(translations_done) < 617)  */
-   /*    dis=False; */
+
    /* Try and improve the code a bit. */
    if (VG_(clo_optimise)) {
+      VG_(print_codegen) = DECIDE_IF_PRINTING_CODEGEN_FOR_PHASE(2);
       VGP_PUSHCC(VgpImprove);
       vg_improve ( cb );
-      if (VG_(disassemble)) 
-         VG_(ppUCodeBlock) ( cb, "Improved code:" );
       VGP_POPCC;
    }
-   /* dis=False; */
 
-   /* Skin's instrumentation */
-   //dis = True;
+   /* Skin's instrumentation (Nb: must set VG_(print_codegen) in case
+      SK_(instrument) looks at it. */
+   VG_(print_codegen) = DECIDE_IF_PRINTING_CODEGEN_FOR_PHASE(3);
    VGP_PUSHCC(VgpInstrument);
    cb = SK_(instrument) ( cb, orig_addr );
+   if (VG_(print_codegen))
+      VG_(ppUCodeBlock) ( cb, "Instrumented UCode:" );
    VGP_POPCC;
-   //dis = False;
 
    /* Allocate registers. */
+   VG_(print_codegen) = DECIDE_IF_PRINTING_CODEGEN_FOR_PHASE(4);
    VGP_PUSHCC(VgpRegAlloc);
    cb = vg_do_register_allocation ( cb );
    VGP_POPCC;
-   /* dis=False; */
-   /* 
-   if (VG_(disassemble))
-      VG_(ppUCodeBlock) ( cb, "After Register Allocation:");
-   */
 
+   /* Emit final code */
+   VG_(print_codegen) = DECIDE_IF_PRINTING_CODEGEN_FOR_PHASE(5);
    VGP_PUSHCC(VgpFromUcode);
    /* NB final_code is allocated with VG_(jitmalloc), not VG_(arena_malloc)
       and so must be VG_(jitfree)'d. */
-   //dis=True;
    final_code = VG_(emit_code)(cb, &final_code_size );
-   //dis=False;
    VGP_POPCC;
    VG_(freeCodeBlock)(cb);
+
+#undef DECIDE_IF_PRINTING_CODEGEN_FOR_PHASE
 
    if (debugging_translation) {
       /* Only done for debugging -- throw away final result. */
       VG_(jitfree)(final_code);
    } else {
       /* Doing it for real -- return values to caller. */
-      //VG_(printf)("%d %d\n", n_disassembled_bytes, final_code_size);
       *orig_size = n_disassembled_bytes;
       *trans_addr = (Addr)final_code;
       *trans_size = final_code_size;

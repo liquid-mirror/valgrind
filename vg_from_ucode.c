@@ -35,10 +35,10 @@
 /*--- Renamings of frequently-used global functions.       ---*/
 /*------------------------------------------------------------*/
 
-#define dis       VG_(disassemble)
 #define nameIReg  VG_(nameOfIntReg)
 #define nameISize VG_(nameOfIntSize)
 
+#define dis       VG_(print_codegen)
 
 /*------------------------------------------------------------*/
 /*--- Instruction emission -- turning final uinstrs back   ---*/
@@ -2051,7 +2051,7 @@ UChar* VG_(emit_code) ( UCodeBlock* cb, Int* nbytes )
    emitted_code_size = 500; /* reasonable initial size */
    emitted_code = VG_(jitmalloc)(emitted_code_size);
 
-   if (dis) VG_(printf)("Generated code:\n");
+   if (dis) VG_(printf)("Generated x86 code:\n");
 
    for (i = 0; i < cb->used; i++) {
       if (cb->instrs[i].opcode != NOP) {
@@ -2067,6 +2067,7 @@ UChar* VG_(emit_code) ( UCodeBlock* cb, Int* nbytes )
          emitUInstr( i, u );
       }
    }
+   if (dis) VG_(printf)("\n");
 
    /* Returns a pointer to the emitted code.  This will have to be
       copied by the caller into the translation cache, and then freed
@@ -2074,6 +2075,8 @@ UChar* VG_(emit_code) ( UCodeBlock* cb, Int* nbytes )
    *nbytes = emitted_code_used;
    return emitted_code;
 }
+
+#undef dis
 
 /*--------------------------------------------------------------------*/
 /*--- end                                          vg_from_ucode.c ---*/
