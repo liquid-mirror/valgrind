@@ -2299,9 +2299,10 @@ void VG_(unload_symbols) ( Addr start, UInt length )
    if (curr == NULL) 
       return;
 
-   VG_(message)(Vg_UserMsg, 
-                "discard syms in %s due to munmap()", 
-                curr->filename ? curr->filename : (UChar*)"???");
+   if (VG_(clo_verbosity) > 0)
+      VG_(message)(Vg_UserMsg, 
+                   "discard syms in %s due to munmap()", 
+                  curr->filename ? curr->filename : (UChar*)"???");
 
    vg_assert(prev == NULL || prev->next == curr);
 
