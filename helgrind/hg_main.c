@@ -346,7 +346,7 @@ void set_address_range_state ( Addr a, UInt len /* in bytes */,
       (2001-04-26) had precisely such a problem with
       __NR_setitimer. */
    vg_assert(SKN_(cheap_sanity_check)());
-   VGP_POPCC;
+   VGP_POPCC(VgpSARP);
 }
 
 

@@ -32,6 +32,7 @@
 
 #include "vg_memcheck_include.h"
 #include "vg_memcheck.h"   /* for client requests */
+//#include "vg_profile.c"
 
 /* Define to debug the mem audit system. */
 /* #define VG_DEBUG_MEMORY */
@@ -329,7 +330,6 @@ static void init_shadow_memory ( void )
       primary_map[i] = &distinguished_secondary_map;
 }
 
-
 void SK_(post_clo_init) ( void )
 {
 }
@@ -498,7 +498,7 @@ static void set_address_range_perms ( Addr a, UInt len,
                    len, example_a_bit, example_v_bit );
    }
 
-   VGP_PUSHCC(VgpSARP);
+   VGP_PUSHCC(VgpSetMem);
 
    /* Requests to change permissions of huge address ranges may
       indicate bugs in our machinery.  30,000,000 is arbitrary, but so
@@ -554,7 +554,7 @@ static void set_address_range_perms ( Addr a, UInt len,
    }   
 
    if (len == 0) {
-      VGP_POPCC;
+      VGP_POPCC(VgpSetMem);
       return;
    }
    vg_assert((a % 8) == 0 && len > 0);
@@ -574,7 +574,7 @@ static void set_address_range_perms ( Addr a, UInt len,
    }
 
    if (len == 0) {
-      VGP_POPCC;
+      VGP_POPCC(VgpSetMem);
       return;
    }
    vg_assert((a % 8) == 0 && len > 0 && len < 8);
@@ -594,7 +594,7 @@ static void set_address_range_perms ( Addr a, UInt len,
       -- this could happen with buggy syscall wrappers.  Today
       (2001-04-26) had precisely such a problem with __NR_setitimer. */
    vg_assert(SKN_(cheap_sanity_check)());
-   VGP_POPCC;
+   VGP_POPCC(VgpSetMem);
 }
 
 /* Set permissions for address ranges ... */
@@ -721,6 +721,8 @@ static void make_noaccess_aligned ( Addr a, UInt len )
    UChar   mask;
    Addr    a_past_end = a + len;
 
+   VGP_PUSHCC(VgpSetMem);
+
    PROF_EVENT(50);
 #  ifdef VG_DEBUG_MEMORY
    vg_assert(IS_ALIGNED4_ADDR(a));
@@ -738,6 +740,7 @@ static void make_noaccess_aligned ( Addr a, UInt len )
          invalid (1s). */
       sm->abits[sm_off >> 3] |= mask;
    }
+   VGP_POPCC(VgpSetMem);
 }
 
 static void make_writable_aligned ( Addr a, UInt len )
@@ -746,6 +749,8 @@ static void make_writable_aligned ( Addr a, UInt len )
    UInt    sm_off;
    UChar   mask;
    Addr    a_past_end = a + len;
+
+   VGP_PUSHCC(VgpSetMem);
 
    PROF_EVENT(51);
 #  ifdef VG_DEBUG_MEMORY
@@ -764,6 +769,7 @@ static void make_writable_aligned ( Addr a, UInt len )
          invalid (0s). */
       sm->abits[sm_off >> 3] &= ~mask;
    }
+   VGP_POPCC(VgpSetMem);
 }
 
 
@@ -773,6 +779,9 @@ void check_is_writable ( CorePart part, ThreadState* tst,
 {
    Bool ok;
    Addr bad_addr;
+
+   VGP_PUSHCC(VgpCheckMem);
+
    /* VG_(message)(Vg_DebugMsg,"check is writable: %x .. %x",
                                base,base+size-1); */
    ok = VG_(check_writable) ( base, size, &bad_addr );
@@ -791,6 +800,8 @@ void check_is_writable ( CorePart part, ThreadState* tst,
          VG_(panic)("check_is_readable: Unknown or unexpected CorePart");
       }
    }
+
+   VGP_POPCC(VgpCheckMem);
 }
 
 static
@@ -799,6 +810,9 @@ void check_is_readable ( CorePart part, ThreadState* tst,
 {     
    Bool ok;
    Addr bad_addr;
+
+   VGP_PUSHCC(VgpCheckMem);
+   
    /* VG_(message)(Vg_DebugMsg,"check is readable: %x .. %x",
                                base,base+size-1); */
    ok = VG_(check_readable) ( base, size, &bad_addr );
@@ -822,6 +836,7 @@ void check_is_readable ( CorePart part, ThreadState* tst,
          VG_(panic)("check_is_readable: Unknown or unexpected CorePart");
       }
    }
+   VGP_POPCC(VgpCheckMem);
 }
 
 static
@@ -832,11 +847,15 @@ void check_is_readable_asciiz ( CorePart part, ThreadState* tst,
    Addr bad_addr;
    /* VG_(message)(Vg_DebugMsg,"check is readable asciiz: 0x%x",str); */
 
+   VGP_PUSHCC(VgpCheckMem);
+
    vg_assert(part == Vg_CoreSysCall);
    ok = VG_(check_readable_asciiz) ( (Addr)str, &bad_addr );
    if (!ok) {
       SK_(record_param_error) ( tst, bad_addr, /*is_writable =*/False, s );
    }
+
+   VGP_POPCC(VgpCheckMem);
 }
 
 
@@ -2351,6 +2370,12 @@ Char* SKN_(usage)(void)
 /*--- Setup                                                ---*/
 /*------------------------------------------------------------*/
 
+typedef 
+   enum { 
+      VgpCheckMem = VgpFini+1,
+      VgpSetMem
+   } VgpSkinCC;
+
 void SK_(pre_clo_init)(VgNeeds* needs, VgTrackEvents* track)
 {
    needs->name                    = "valgrind";
@@ -2418,6 +2443,9 @@ void SK_(pre_clo_init)(VgNeeds* needs, VgTrackEvents* track)
    init_shadow_memory();
 
    init_prof_mem();
+
+   VGP_(register_profile_event) ( VgpSetMem,   "set-mem-perms" );
+   VGP_(register_profile_event) ( VgpCheckMem, "check-mem-perms" );
 }
 
 /*--------------------------------------------------------------------*/
