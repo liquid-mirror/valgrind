@@ -2246,8 +2246,8 @@ void SK_(pre_clo_init)(VgNeeds* needs, VgTrackEvents* track)
    needs->record_mem_exe_context  = True;
    needs->postpone_mem_reuse      = True;
    needs->debug_info              = True;
-   needs->pthread_errors          = True;
-   needs->report_errors           = True;
+   needs->core_errors             = True;
+   needs->skin_errors             = True;
    needs->run_libc_freeres        = True;
 
    needs->identifies_basic_blocks = False;
