@@ -1066,6 +1066,9 @@ static void synth_ccall_saveRegs ( void )
 static void synth_ccall_pushOneArg ( Int r1 )
 {
    VG_(emit_pushv_reg) ( 4, r1 );
+
+   // (Use this if the called function has the ((regparms)) attribute)
+   //if (R_EAX != r1) VG_(emit_movv_reg_reg)(4, r1, R_EAX);
 }
 
 static void synth_ccall_pushTwoArgs ( Int r1, Int r2 )
@@ -1073,6 +1076,10 @@ static void synth_ccall_pushTwoArgs ( Int r1, Int r2 )
    /* must push in reverse order */
    VG_(emit_pushv_reg) ( 4, r2 );
    VG_(emit_pushv_reg) ( 4, r1 );
+
+   // (Use this if the called function has the ((regparms)) attribute)
+   //if (R_EAX != r1) VG_(emit_movv_reg_reg)(4, r1, R_EAX);
+   //if (R_EDX != r1) VG_(emit_movv_reg_reg)(4, r1, R_EDX);
 }
 
 /* Synthesise a call to *baseBlock[offset], ie,
@@ -1087,8 +1094,11 @@ static void synth_ccall_call_clearStack_restoreRegs ( Int word_offset,
    vg_assert(0 == (n_args_bytes & 0x3));    /* Divisible by four */
 
    emit_call_star_EBP_off ( 4 * word_offset );
+
+   // (Skip this if the function has the ((regparms)) attribute)
    if ( 0 != n_args_bytes )
       VG_(emit_add_lit_to_esp) ( n_args_bytes );
+
    VG_(emit_popv_reg) ( 4, R_EDX ); 
    VG_(emit_popv_reg) ( 4, R_ECX ); 
    VG_(emit_popv_reg) ( 4, R_EAX ); 
