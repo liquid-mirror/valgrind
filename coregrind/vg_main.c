@@ -403,8 +403,7 @@ VgNeeds VG_(needs) = {
    .record_mem_exe_context  = INVALID_Bool,
    .postpone_mem_reuse      = INVALID_Bool,
 
-   .debug_info              = Vg_DebugUnknown,
-   .precise_x86_instr_sizes = INVALID_Bool,
+   .debug_info              = INVALID_Bool,
    .pthread_errors          = INVALID_Bool,
    .report_errors           = INVALID_Bool,
 
@@ -467,8 +466,7 @@ static void sanity_check_needs ( void )
    CHECK_NOT(VG_(needs).record_mem_exe_context,  INVALID_Bool);
    CHECK_NOT(VG_(needs).postpone_mem_reuse,      INVALID_Bool);
 
-   CHECK_NOT(VG_(needs).debug_info,              Vg_DebugUnknown);
-   CHECK_NOT(VG_(needs).precise_x86_instr_sizes, INVALID_Bool);
+   CHECK_NOT(VG_(needs).debug_info,              INVALID_Bool);
    CHECK_NOT(VG_(needs).pthread_errors,          INVALID_Bool);
    CHECK_NOT(VG_(needs).report_errors,           INVALID_Bool);
 
