@@ -1883,6 +1883,10 @@ pid_t __fork(void)
 }
 
 
+pid_t __vfork(void)
+{
+   return __fork();
+}
 
 
 /* ---------------------------------------------------------------------
@@ -2816,6 +2820,7 @@ strong_alias(send, __send)
 weak_alias (__pread64, pread64)
 weak_alias (__pwrite64, pwrite64)
 weak_alias(__fork, fork)
+weak_alias(__vfork, vfork)
 
 weak_alias (__pthread_kill_other_threads_np, pthread_kill_other_threads_np)
 
