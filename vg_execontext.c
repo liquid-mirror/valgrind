@@ -110,6 +110,8 @@ void VG_(pp_ExeContext) ( ExeContext* e )
 /* Compare two ExeContexts, comparing all callers. */
 Bool VG_(eq_ExeContext) ( VgRes res, ExeContext* e1, ExeContext* e2 )
 {
+   if (e1 == NULL || e2 == NULL) 
+      return False;
    switch (res) {
    case Vg_LowRes:
       /* Just compare the top two callers. */
