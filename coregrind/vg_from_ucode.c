@@ -2010,8 +2010,8 @@ void synth_STOREV ( Int sz,
                  2 /* movl reg,reg */
                  + 6 /* andl lit32, reg */
                  + (tv_tag == RealReg 
-                      ? (tv_val < 4 ? 6 : 7)
-                      : 10)
+                      ? (tv_val < 4 ? 6 : 8)
+                      : 7)
               );
 
       /* VALID: */
@@ -2023,7 +2023,7 @@ void synth_STOREV ( Int sz,
                     1, tv_val, (Int)&VG_(vcache_vbits), R_EDI );
       else
          /* 7 */ emit_movb_lit_offregmem( 
-                    tv_val, (Int)&VG_(vcache_vbits), R_EDI );
+                    tv_val & 0xFF, (Int)&VG_(vcache_vbits), R_EDI );
 
       /* END: */
       return;
@@ -2099,7 +2099,7 @@ void synth_STOREV ( Int sz,
                     2, tv_val, (Int)&VG_(vcache_vbits), R_EDI );
       else
          /* 9 */ emit_movv_lit_offregmem( 
-                    2, tv_val, (Int)&VG_(vcache_vbits), R_EDI );
+                    2, tv_val & 0xFFFF, (Int)&VG_(vcache_vbits), R_EDI );
 
       /* END: */
       return;
