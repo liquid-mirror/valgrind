@@ -2485,7 +2485,13 @@ Addr dis_fpu ( UCodeBlock* cb, UChar first_byte, Addr eip )
                return dis_fpu_mem(cb, 8, rd, eip, first_byte); 
             case 2: /* FST double-real */
             case 3: /* FSTP double-real */
-               return dis_fpu_mem(cb, 8, wr, eip, first_byte); 
+               return dis_fpu_mem(cb, 8, wr, eip, first_byte);
+            case 4: /* FRSTOR */
+               return dis_fpu_mem(cb, 108, rd, eip, first_byte);
+            case 6: /* FSAVE */
+               return dis_fpu_mem(cb, 108, wr, eip, first_byte);
+            case 7: /* FSTSW */
+               return dis_fpu_mem(cb, 2, wr, eip, first_byte);
             default: 
                goto unhandled;
          }
