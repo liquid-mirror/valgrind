@@ -5135,7 +5135,9 @@ static Addr disInstr ( UCodeBlock* cb, Addr eip, Bool* isEnd )
          VG_(printf)("j%sz 0x%x\n", nameIReg(sz, R_ECX), d32);
       break;
 
-   case 0xE2: /* LOOP disp8 */
+   case 0xE0: /* LOOPNE disp8 */
+   case 0xE1: /* LOOPE  disp8 */
+   case 0xE2: /* LOOP   disp8 */
       /* Again, the docs say this uses ECX/CX as a count depending on
          the address size override, not the operand one.  Since we
          don't handle address size overrides, I guess that means
@@ -5147,6 +5149,12 @@ static Addr disInstr ( UCodeBlock* cb, Addr eip, Bool* isEnd )
       uInstr2(cb, PUT,  4, TempReg, t1,    ArchReg, R_ECX);
       uInstr2(cb, JIFZ, 4, TempReg, t1,    Literal, 0);
       uLiteral(cb, eip);
+      if (opc == 0xE0 || opc == 0xE1) {   /* LOOPE/LOOPNE */
+         uInstr1(cb, JMP,  0, Literal, 0);
+         uLiteral(cb, eip);
+         uCond(cb, (opc == 0xE1 ? CondNZ : CondZ));
+         uFlagsRWU(cb, FlagsOSZACP, FlagsEmpty, FlagsEmpty);
+      }
       uInstr1(cb, JMP,  0, Literal, 0);
       uLiteral(cb, d32);
       uCond(cb, CondAlways);
