@@ -492,7 +492,7 @@ void VG_(perform_assumed_nonblocking_syscall) ( ThreadId tid )
          SYSCALL_TRACK( pre_mem_write, tid, "clock_gettime(tp)", 
                         arg2, sizeof(struct timespec) );
          KERNEL_DO_SYSCALL(tid,res);
-         if (!VG_(is_kerror)(res) && res > 0)
+         if (!VG_(is_kerror)(res) && res == 0)
             VG_TRACK( post_mem_write, arg2, sizeof(struct timespec) );
          break;
 #     endif
