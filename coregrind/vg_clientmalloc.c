@@ -548,6 +548,9 @@ void VG_(clientmalloc_done) ( void )
 
    client_malloc_init();
 
+   if (VG_(clo_verbosity) == 0)
+     return;
+
    nblocks = nbytes = 0;
 
    for (ml_no = 0; ml_no < VG_N_MALLOCLISTS; ml_no++) {
@@ -557,9 +560,6 @@ void VG_(clientmalloc_done) ( void )
       }
    }
 
-   if (VG_(clo_verbosity) == 0)
-     return;
-
    VG_(message)(Vg_UserMsg, 
                 "malloc/free: in use at exit: %d bytes in %d blocks.",
                 nbytes, nblocks);
@@ -567,9 +567,6 @@ void VG_(clientmalloc_done) ( void )
                 "malloc/free: %d allocs, %d frees, %d bytes allocated.",
                 vg_cmalloc_n_mallocs,
                 vg_cmalloc_n_frees, vg_cmalloc_bs_mallocd);
-   if (!VG_(clo_leak_check))
-      VG_(message)(Vg_UserMsg, 
-                   "For a detailed leak analysis,  rerun with: --leak-check=yes");
    if (0)
       VG_(message)(Vg_DebugMsg,
                    "free search: %d tries, %d frees", 
