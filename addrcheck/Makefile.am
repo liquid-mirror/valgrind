@@ -39,7 +39,8 @@ val_PROGRAMS = \
 	vgskin_cachesim.so \
 	vgskin_eraser.so \
 	vgskin_none.so \
-	vgskin_lackey.so
+	vgskin_lackey.so \
+	vgskin_corecheck.so
 
 libpthread_so_SOURCES = \
 	vg_libpthread.c \
@@ -104,6 +105,9 @@ vgskin_none_so_LDFLAGS   = -shared
 
 vgskin_lackey_so_SOURCES = vg_lackey.c
 vgskin_lackey_so_LDFLAGS = -shared
+
+vgskin_corecheck_so_SOURCES = vg_corecheck.c
+vgskin_corecheck_so_LDFLAGS = -shared
 
 include_HEADERS = valgrind.h
 
