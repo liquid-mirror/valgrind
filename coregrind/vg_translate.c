@@ -1988,12 +1988,15 @@ void VG_(translate) ( /*IN*/  ThreadState* tst,
    cb = VG_(allocCodeBlock)();
 
    /* If doing any code printing, print a basic block start marker */
-   if (VG_(clo_trace_codegen))
+   if (VG_(clo_trace_codegen)) {
+      Char fnname[64] = "";
+      VG_(get_fnname_if_start)(orig_addr, fnname, 64);
       VG_(printf)(
-              "==== BB %d (%p) in %dB, out %dB, BBs exec'd %lu ====\n\n",
-              VG_(overall_in_count), orig_addr, 
+              "==== BB %d %s(%p) in %dB, out %dB, BBs exec'd %lu ====\n\n",
+              VG_(overall_in_count), fnname, orig_addr, 
               VG_(overall_in_osize), VG_(overall_in_tsize),
               VG_(bbs_done));
+   }
 
    /* True if a debug trans., or if bit N set in VG_(clo_trace_codegen). */
 #  define DECIDE_IF_PRINTING_CODEGEN_FOR_PHASE(n) \
