@@ -36,6 +36,9 @@
 #include <stdarg.h>       /* ANSI varargs stuff  */
 #include <setjmp.h>       /* for jmp_buf         */
 
+//#define __USE_UNIX98
+//#include <sys/types.h>
+//#undef  __USE_UNIX98
 
 /* ---------------------------------------------------------------------
    Where to send bug reports to.
@@ -610,11 +613,11 @@ typedef
          When .status == WaitCV, points to the mutex associated with
          the condition variable indicated by the .associated_cv field.
          In all other cases, should be NULL. */
-      void* /* pthread_mutex_t* */ associated_mx;
+      void* /*pthread_mutex_t**/ associated_mx;
 
       /* When .status == WaitCV, points to the condition variable I am
          waiting for.  In all other cases, should be NULL. */
-      void* /* pthread_cond_t* */ associated_cv;
+      void* /*pthread_cond_t**/ associated_cv;
 
       /* If VgTs_Sleeping, this is when we should wake up, measured in
          milliseconds as supplied by VG_(read_millisecond_counter). 
@@ -1993,7 +1996,9 @@ extern void VG_(signalreturn_bogusRA)( void );
    Settings relating to the used skin
    ------------------------------------------------------------------ */
 
-/* If new fields are added to this type, update:
+/* 
+ *
+ * If new fields are added to this type, update:
  *  - vg_main.c:VG_(needs) initialisation
  *  - vg_main.c:sanity_check_needs()
  *
@@ -2005,6 +2010,8 @@ typedef
       /* name and description used in the startup message */
       Char* name;
       Char* description;
+
+      /* Booleans that decide core behaviour */
 
       /* Need to record exe contexts on malloc'd/free'd/etc blocks? */
       // SSS: these two are pretty gruesome
@@ -2020,6 +2027,10 @@ typedef
        * suppressions, too. */
       Bool report_errors;
 
+      /* Booleans that indicate extra operations are defined;  if these are
+       * True, corresponding functions must be defined.  A lot like being
+       * a member of a type class. */
+
       /* Is information kept about specific individual basic blocks?  (Eg. for
        * cachesim there are cost-centres for every instruction, stored at a
        * basic block level.)  If so, it sometimes has to be discarded, because
@@ -2030,7 +2041,7 @@ typedef
        */
       Bool identifies_basic_blocks;
 
-      /* Should __libc_freeres() be run?  Bugs in it can cause skin to crash */
+      /* Should __libc_freeres() be run?  Bugs in it crash the skin. */
       Bool run_libc_freeres;
 
       /* Skin defines its own command line options? */
@@ -2063,8 +2074,8 @@ typedef
       void (*new_mem_startup)( Addr a, UInt len, Bool rr, Bool ww, Bool xx );
       void (*new_mem_heap)   ( Addr a, UInt len, Bool is_inited );
       void (*new_mem_stack)  ( Addr a, UInt len );
-      void (*new_mem_stack_aligned)  ( Addr a, UInt len );
-      // SSS: can this be done better?
+      void (*new_mem_stack_aligned) ( Addr a, UInt len );
+      void (*new_mem_stack_signal)  ( Addr a, UInt len );
       void (*new_mem_brk)    ( Addr a, UInt len );
       void (*new_mem_mmap)   ( Addr a, UInt len, 
                                Bool nn, Bool rr, Bool ww, Bool xx );
@@ -2074,31 +2085,26 @@ typedef
                                     Bool nn, Bool rr, Bool ww, Bool xx );
       
       void (*ban_mem_heap)   ( Addr a, UInt len );
+      void (*ban_mem_stack)  ( Addr a, UInt len );
 
       void (*die_mem_heap)   ( ThreadState* tst, Addr a, UInt len,
                                Bool alloc_free_kinds_match );
       void (*die_mem_stack) ( Addr a, UInt len );
       void (*die_mem_stack_aligned) ( Addr a, UInt len );
-      void (*die_mem_stack_thread)  ( Addr a, UInt len );
-      // SSS: can this be done better?
+      void (*die_mem_stack_signal)  ( Addr a, UInt len );
       void (*die_mem_brk)    ( Addr a, UInt len );
       void (*die_mem_munmap) ( Addr a, UInt len );
-      void (*die_mem_pthread)( Addr a, UInt len );
-      void (*die_mem_signal) ( Addr a, UInt len );
 
-      // SSS: tst necessary?  would tid do?
       void (*pre_mem_read)   ( CorePart part, ThreadState* tst,
                                Char* s, Addr a, UInt size );
-      // SSS: part necessary?  always CoreSysCall
       void (*pre_mem_read_asciiz) ( CorePart part, ThreadState* tst,
                                     Char* s, Addr a );
       void (*pre_mem_write)  ( CorePart part, ThreadState* tst,
                                Char* s, Addr a, UInt size );
-
-      /* Not implemented yet -- have to add to syscalls, which is a pain.
-         Won't bother unless there's a need. */
-      /*void (*post_mem_read)  ( ThreadState* tst, Char* s, 
-                                 Addr a, UInt size );*/
+      /* Not implemented yet -- have to add in lots of places, which is a
+         pain.  Won't bother unless/until there's a need. */
+      /* void (*post_mem_read)  ( ThreadState* tst, Char* s, 
+                                  Addr a, UInt size ); */
       void (*post_mem_write) ( Addr a, UInt size );
 
       /* Mutex events */
@@ -2109,8 +2115,8 @@ typedef
       //   #include <sys/types.h>
       //   #undef  __USE_UNIX98
 
-      void (*post_mutex_lock)   ( ThreadId tid, void* mutex );
-      void (*post_mutex_unlock) ( ThreadId tid, void* mutex );
+      void (*post_mutex_lock)   ( ThreadId tid, pthread_mutex_t* mutex );
+      void (*post_mutex_unlock) ( ThreadId tid, pthread_mutex_t* mutex );
       
       /* Others... threads, condition variables, etc... */
 
@@ -2141,10 +2147,11 @@ extern VgTrackEvents VG_(track_events);
    Fundamental template functions
    ------------------------------------------------------------------ */
 
-extern void        SK_(setup)      ( VgNeeds* needs, VgTrackEvents* track );
-extern void        SK_(init)       ( void );
-extern UCodeBlock* SK_(instrument) ( UCodeBlock* cb, Addr a );
-extern void        SK_(fini)       ( void );
+// SSS: rename to SK_({pre,post}_init_clo)
+extern void        SK_(pre_clo_init) ( VgNeeds* needs, VgTrackEvents* track );
+extern void        SK_(post_clo_init)( void );
+extern UCodeBlock* SK_(instrument)   ( UCodeBlock* cb, Addr a );
+extern void        SK_(fini)         ( void );
 
 /* ---------------------------------------------------------------------
    For skins reporting errors (VG_(needs).report_errors)
@@ -2190,8 +2197,7 @@ extern Bool SKN_(error_matches_suppression)(ErrContext* ec, Suppression* su);
    (VG_(needs).identifies_basic_blocks)
    ------------------------------------------------------------------ */
 
-// SSS: different prefix
-extern void SKN_(discard_basic_block_info) ( TTEntry* tte );
+extern void SKN_(discard_basic_block_info) ( Addr a, UInt size );
 
 /* ---------------------------------------------------------------------
    Skin-specific command line options (VG_(needs).command_line_options)

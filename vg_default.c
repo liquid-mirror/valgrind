@@ -64,7 +64,7 @@ void SK_(init)(void)
    VG_(panic)("called SK_(init)");
 }
 
-UCodeBlock* SK_(instrument) ( UCodeBlock* cb, Addr not_used )
+UCodeBlock* SK_(instrument)(UCodeBlock* cb, Addr not_used)
 {
    VG_(printf)(fund_panic);
    VG_(panic)("called SK_(instrument)");
@@ -86,14 +86,14 @@ void SK_(setup)(VgNeeds* needs, VgTrackEvents* track)
    For error reporting and suppression handling
    ------------------------------------------------------------------ */
 
-Bool SKN_(eq_ErrContext) ( Bool cheap_addr_cmp,
-                           ErrContext* e1, ErrContext* e2 )
+Bool SKN_(eq_ErrContext)(Bool cheap_addr_cmp,
+                           ErrContext* e1, ErrContext* e2)
 {
    VG_(printf)(nonfund_panic);
    VG_(panic)("called SKN_(eq_ErrContext)");
 }
 
-void SKN_(pp_ErrContext) ( ErrContext* ec )
+void SKN_(pp_ErrContext)(ErrContext* ec)
 {
    VG_(printf)(nonfund_panic);
    VG_(panic)("called SKN_(pp_ErrContext)");
@@ -105,14 +105,14 @@ void SKN_(dup_extra_and_update)(ErrContext* ec)
    VG_(panic)("called SKN_(dup_extra_and_update)");
 }
 
-Bool SKN_(recognised_suppression) ( Char* name, SuppressionKind *skind )
+Bool SKN_(recognised_suppression)(Char* name, SuppressionKind *skind)
 {
    VG_(printf)(nonfund_panic);
    VG_(panic)("called SKN_(recognised_suppression)");
 }
 
-Bool SKN_(read_extra_suppression_info) ( Int fd, Char* buf, 
-                                         Int nBuf, Suppression *s )
+Bool SKN_(read_extra_suppression_info)(Int fd, Char* buf, 
+                                         Int nBuf, Suppression *s)
 {
    VG_(printf)(nonfund_panic);
    VG_(panic)("called SKN_(read_extra_suppression_info)");
@@ -129,7 +129,7 @@ Bool SKN_(error_matches_suppression)(ErrContext* ec, Suppression* su)
    For throwing out basic block level info when code is invalidated
    ------------------------------------------------------------------ */
 
-void SKN_(discard_basic_block_info)(TTEntry* tte)
+void SKN_(discard_basic_block_info)( Addr a, UInt size)
 {
    VG_(printf)(nonfund_panic);
    VG_(panic)("called SKN_(discard_basic_block_info)");
@@ -146,7 +146,7 @@ Bool SKN_(process_cmd_line_option)(UChar* argv)
    VG_(panic)("called SKN_(process_cmd_line_option)");
 }
 
-Char* SKN_(usage)( void )
+Char* SKN_(usage)( void)
 {
    VG_(printf)(nonfund_panic);
    VG_(panic)("called SKN_(usage)");
@@ -156,7 +156,7 @@ Char* SKN_(usage)( void )
    Client request template function
    ------------------------------------------------------------------ */
 
-UInt SKN_(handle_client_request) ( ThreadState* tst, UInt* arg_block )
+UInt SKN_(handle_client_request)(ThreadState* tst, UInt* arg_block)
 {
    VG_(printf)(nonfund_panic);
    VG_(panic)("called SKN_(handle_client_request)");
@@ -200,28 +200,28 @@ Int SKN_(getExtTempUsage)(UInstr* u, TempUse* arr)
    Syscall wrapping
    ------------------------------------------------------------------ */
 
-void* SKN_(pre_syscall)  ( ThreadId tid)
+void* SKN_(pre_syscall)(ThreadId tid)
 {
    VG_(printf)(nonfund_panic);
    VG_(panic)("called SKN_(pre_syscall)");
 }
 
-void  SKN_(post_syscall) ( ThreadId tid, UInt syscallno,
-                           void* pre_result, Int res )
+void  SKN_(post_syscall)(ThreadId tid, UInt syscallno,
+                         void* pre_result, Int res)
 {
    VG_(printf)(nonfund_panic);
    VG_(panic)("called SKN_(post_syscall)");
 }
 
 void* SKN_(pre_check_known_blocking_syscall)  
-          ( ThreadId tid, Int syscallno, Int* res )
+          (ThreadId tid, Int syscallno, Int* res)
 {
    VG_(printf)(nonfund_panic);
    VG_(panic)("called SKN_(pre_check_known_blocking_syscall)");
 }
 
 void  SKN_(post_check_known_blocking_syscall) 
-          ( ThreadId tid, Int syscallno, void* pre_result, Int* res )
+          (ThreadId tid, Int syscallno, void* pre_result, Int* res)
 {
    VG_(printf)(nonfund_panic);
    VG_(panic)("called SKN_(post_check_known_blocking_syscall)");
@@ -231,13 +231,13 @@ void  SKN_(post_check_known_blocking_syscall)
    Sanity checks
    ------------------------------------------------------------------ */
 
-Bool SKN_(cheap_sanity_check)     ( void )
+Bool SKN_(cheap_sanity_check)(void)
 {
    VG_(printf)(nonfund_panic);
    VG_(panic)("SKN_(cheap_sanity_check))");
 }
 
-Bool SKN_(expensive_sanity_check) ( void )
+Bool SKN_(expensive_sanity_check)(void)
 {
    VG_(printf)(nonfund_panic);
    VG_(panic)("SKN_(expensive_sanity_check))");

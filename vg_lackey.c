@@ -42,7 +42,7 @@ static void add_one(void)
    n_uinstrs++;
 }
 
-void SK_(setup)(VgNeeds* needs, VgTrackEvents* not_used)
+void SK_(pre_clo_init)(VgNeeds* needs, VgTrackEvents* not_used)
 {
    needs->name                    = "lackey";
    needs->description             = "a UInstr counter";
@@ -70,7 +70,7 @@ void SK_(setup)(VgNeeds* needs, VgTrackEvents* not_used)
    VG_(register_compact_helper)((Addr) & add_one);
 }
 
-void SK_(init)(void)
+void SK_(post_clo_init)(void)
 {
 }
 

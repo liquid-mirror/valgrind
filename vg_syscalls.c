@@ -566,6 +566,21 @@ void VG_(perform_assumed_nonblocking_syscall) ( ThreadId tid )
             // Or have a routine that sets up a sig handler and tries to
             // read and write (and exec can be determined from ExeSeg... ugh)
             mmap_segment( (Addr)res, arg3, PROT_READ | PROT_WRITE | PROT_EXEC );
+/* SSS: Should be something like:
+            old_addr = arg1;
+            old_size = arg2;
+            new_size = arg3;
+
+            dup = dup_mem_remap(old_addr, old_size);
+            die_mem_remap(old_addr, old_size);     [die_mem_munmap];
+            if (new_size < old_size) {
+               copy_mem_remap(dup, new_addr, new_size);  [copy_mem_heap];
+            } else {
+               copy_mem_remap(dup, new_addr, old_size);
+               new_mem_remap(new_addr+old_size, new_size-old_size); [new_mem_mmap]
+            }
+            free_dup(dup);
+*/
          }
          break;         
 #     endif
@@ -911,7 +926,7 @@ void VG_(perform_assumed_nonblocking_syscall) ( ThreadId tid )
             if (arg1 < VGM_(curr_dataseg_end)) {
                /* shrinking the data segment. */
                VG_TRACK( die_mem_brk, (Addr)arg1, 
-                                         VGM_(curr_dataseg_end)-arg1 );
+                                      VGM_(curr_dataseg_end)-arg1 );
                VGM_(curr_dataseg_end) = arg1;
             } else
             if (arg1 > VGM_(curr_dataseg_end) && res != 0) {

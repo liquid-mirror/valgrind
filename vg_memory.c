@@ -191,7 +191,9 @@ void startup_segment_callback ( Addr start, UInt size,
 
    if (xx == 'x') { 
       add_exe_segment_to_list( start, size );
-      VG_(read_symtab_callback)( start, size, rr, ww, xx, foffset, filename );
+      if (VG_(needs).debug_info)
+         VG_(read_symtab_callback)( start, size, rr, ww, xx, 
+                                    foffset, filename );
    }
 
    VG_TRACK( new_mem_startup, start, size, rr=='r', ww=='w', xx=='x' );

@@ -30,24 +30,8 @@
 
 #include "vg_include.h"
 
-void SK_(init)(void)
-{
-}
 
-UCodeBlock* SK_(instrument)(UCodeBlock* cb, Addr a)
-{
-    return cb;
-}
-
-void SK_(fini)(void)
-{
-}
-
-/*--------------------------------------------------------------------*/
-/*--- Setup                                                        ---*/
-/*--------------------------------------------------------------------*/
-
-void SK_(setup)(VgNeeds* needs, VgTrackEvents* track) 
+void SK_(pre_clo_init)(VgNeeds* needs, VgTrackEvents* track) 
 {
    needs->name                    = "nulgrind";
    needs->description             = "an binary JIT-compiler";
@@ -73,6 +57,19 @@ void SK_(setup)(VgNeeds* needs, VgTrackEvents* track)
    needs->sanity_checks           = False;
 
    /* No core events to track */
+}
+
+void SK_(post_clo_init)(void)
+{
+}
+
+UCodeBlock* SK_(instrument)(UCodeBlock* cb, Addr a)
+{
+    return cb;
+}
+
+void SK_(fini)(void)
+{
 }
 
 /*--------------------------------------------------------------------*/

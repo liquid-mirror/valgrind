@@ -806,6 +806,7 @@ weird_lock_vector_equals(lock_vector* a, lock_vector* b,
    }
 }
 
+// SSS: copying mutex's pointer... is that ok?  Could they get deallocated?
 void SKN_(thread_does_lock)(ThreadId tid, void* void_mutex)
 {
    Int i = 1;
