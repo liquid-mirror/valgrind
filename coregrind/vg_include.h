@@ -149,6 +149,9 @@
 /* Number of entries in each thread's fork-handler stack. */
 #define VG_N_FORKHANDLERSTACK 2
 
+/* Max number of callers for context in a suppression. */
+#define VG_N_SUPP_CALLERS  4
+   
 
 /* ---------------------------------------------------------------------
    Basic types
@@ -162,10 +165,6 @@
 /* ---------------------------------------------------------------------
    Command-line-settable options
    ------------------------------------------------------------------ */
-
-#define VG_CLO_SMC_NONE 0
-#define VG_CLO_SMC_SOME 1
-#define VG_CLO_SMC_ALL  2
 
 #define VG_CLO_MAX_SFILES 10
 
@@ -938,9 +937,6 @@ typedef
    }
    SuppLocTy;
 
-// SSS: could make the caller part an array reducing code size of
-// vg_errcontext.c
-   
 /* Suppressions.  Skin part `SkinSupp' (which is all skins have to deal
    with) is in vg_skin.h */
 typedef
@@ -950,16 +946,10 @@ typedef
       Int count;
       /* The name by which the suppression is referred to. */
       Char* sname;
-      /* Name of fn where err occurs, and immediate caller (mandatory). */
-      SuppLocTy caller0_ty;
-      Char*     caller0;
-      SuppLocTy caller1_ty;
-      Char*     caller1;
-      /* Optional extra callers. */
-      SuppLocTy caller2_ty;
-      Char*     caller2;
-      SuppLocTy caller3_ty;
-      Char*     caller3;
+      /* First two (name of fn where err occurs, and immediate caller)
+       * are mandatory;  extra two are optional. */
+      SuppLocTy caller_ty[VG_N_SUPP_CALLERS];
+      Char*     caller   [VG_N_SUPP_CALLERS];
       /* The skin-specific part */
       SkinSupp  skin_supp;
    } 
