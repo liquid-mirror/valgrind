@@ -29,7 +29,6 @@
 */
 
 #include "vg_include.h"
-#include "vg_constants.h"
 #include "valgrind.h" /* for VG_USERREQ__MAKE_NOACCESS and
                          VG_USERREQ__DO_LEAK_CHECK */
 
@@ -3331,8 +3330,8 @@ void do_client_request ( ThreadId tid )
       case VG_USERREQ__MAKE_WRITABLE:
       case VG_USERREQ__MAKE_READABLE:
       case VG_USERREQ__DISCARD:
-      case VG_USERREQ__CHECK_WRITABLE:
-      case VG_USERREQ__CHECK_READABLE:
+//      case VG_USERREQ__CHECK_WRITABLE:
+//      case VG_USERREQ__CHECK_READABLE:
       case VG_USERREQ__MAKE_NOACCESS_STACK:
 //      case VG_USERREQ__DO_LEAK_CHECK:
       case VG_USERREQ__DISCARD_TRANSLATIONS:
@@ -3353,8 +3352,8 @@ void do_client_request ( ThreadId tid )
             );
          } else {
             VG_(printf)("\nError:\n"
-                        "  unhandled client request: %u.  Perhaps\n" 
-                        "  VG_(needs).client_requests should be set?",
+                        "  unhandled client request: 0x%x.  Perhaps\n" 
+                        "  VG_(needs).client_requests should be set?\n",
                         arg[0]);
             VG_(panic)("do_client_request: unknown request");
             /*NOTREACHED*/
