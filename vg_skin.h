@@ -594,14 +594,15 @@ typedef UChar FlagSet;
    these rankings don't match the Intel register ordering. */
 typedef UInt RRegSet;
 
-#define ALL_RREGS_DEAD   0                           /* 0000...00b */
-#define ALL_RREGS_LIVE   (1 << (VG_MAX_REALREGS-1))  /* 0011...11b */
-#define RREG_LIVE(rank)  (1 << rank)
+#define ALL_RREGS_DEAD      0                           /* 0000...00b */
+#define ALL_RREGS_LIVE      (1 << (VG_MAX_REALREGS-1))  /* 0011...11b */
+#define UNIT_RREGSET(rank)  (1 << (rank))
 
-#define IS_RREG_LIVE(rank,rregs_live) (rregs_live & RREG_LIVE(rank))
+#define IS_RREG_LIVE(rank,rregs_live) (rregs_live & UNIT_RREGSET(rank))
 #define SET_RREG_LIVENESS(rank,rregs_live,b)       \
-   do { if (b) rregs_live |=   RREG_LIVE(rank);    \
-        else   rregs_live &= ~(RREG_LIVE(rank));   \
+   do { RRegSet unit = UNIT_RREGSET(rank);         \
+        if (b) rregs_live |= unit;                 \
+        else   rregs_live &= ~unit;                \
    } while(0)
 
 
