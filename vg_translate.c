@@ -494,7 +494,7 @@ Bool VG_(saneUInstr) ( Bool beforeRA, Bool beforeLiveness, UInstr* u )
                        u->regparms_n <= u->argc && XCCALL;
    default: 
       if (VG_(needs).extends_UCode)
-         return SKN_(saneExtUInstr)(beforeRA, beforeLiveness, u);
+         return SK_(saneExtUInstr)(beforeRA, beforeLiveness, u);
       else {
          VG_(printf)("unhandled opcode: %u.  Perhaps " 
                      "VG_(needs).extends_UCode should be set?",
@@ -786,7 +786,7 @@ Char* VG_(nameUOpcode) ( Bool upper, Opcode opc )
       case FPU:     return "FPU"  ;
       default:
          if (VG_(needs).extends_UCode)
-            return SKN_(nameExtUOpcode)(opc);
+            return SK_(nameExtUOpcode)(opc);
          else {
             VG_(printf)("unhandled opcode: %u.  Perhaps " 
                         "VG_(needs).extends_UCode should be set?",
@@ -975,7 +975,7 @@ void VG_(ppUInstr) ( Int instrNo, UInstr* u )
 
       default: 
          if (VG_(needs).extends_UCode)
-            SKN_(ppExtUInstr)(u);
+            SK_(ppExtUInstr)(u);
          else {
             VG_(printf)("unhandled opcode: %u.  Perhaps " 
                         "VG_(needs).extends_UCode should be set?",
@@ -1076,7 +1076,7 @@ Int VG_(getRegUsage) ( UInstr* u, Tag tag, RegUse* arr )
 
       default:
          if (VG_(needs).extends_UCode)
-            return SKN_(getExtRegUsage)(u, tag, arr);
+            return SK_(getExtRegUsage)(u, tag, arr);
          else {
             VG_(printf)("unhandled opcode: %u.  Perhaps " 
                         "VG_(needs).extends_UCode should be set?",

@@ -126,8 +126,8 @@ typedef
          making the fd field be -1.  */
       Bool     ready; 
 
-      /* The result from SKN_(pre_blocking_syscall)();  is passed to
-       * SKN_(post_blocking_syscall)(). */
+      /* The result from SK_(pre_blocking_syscall)();  is passed to
+       * SK_(post_blocking_syscall)(). */
       void*    pre_result;
    }
    VgWaitedOnFd;
@@ -3416,7 +3416,7 @@ void do_client_request ( ThreadId tid )
                            arg[0], (void*)arg[1], arg[2] );
 
             SET_EDX(tid,
-                    SKN_(handle_client_request) ( &VG_(threads)[tid], arg )
+                    SK_(handle_client_request) ( &VG_(threads)[tid], arg )
             );
          } else {
             VG_(printf)("\nError:\n"

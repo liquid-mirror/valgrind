@@ -350,7 +350,7 @@ static void synth_PUTVF ( UInt reg )
 }
 
 
-static void synth_TAG1_op ( VgTagOp op, Int reg )
+static void synth_TAG1_op ( TagOp op, Int reg )
 {
    switch (op) {
 
@@ -359,17 +359,17 @@ static void synth_TAG1_op ( VgTagOp op, Int reg )
             sbbl %reg, %reg       -- %reg = -CF
             or 0xFFFFFFFE, %reg   -- invalidate all bits except lowest
       */
-      case VgT_PCast40:
+      case Tag_PCast40:
          VG_(emit_unaryopv_reg)(4, NEG, reg);
          VG_(emit_nonshiftopv_reg_reg)(4, SBB, reg, reg);
          VG_(emit_nonshiftopv_lit_reg)(4, OR, 0xFFFFFFFE, reg);
          break;
-      case VgT_PCast20:
+      case Tag_PCast20:
          VG_(emit_unaryopv_reg)(2, NEG, reg);
          VG_(emit_nonshiftopv_reg_reg)(4, SBB, reg, reg);
          VG_(emit_nonshiftopv_lit_reg)(4, OR, 0xFFFFFFFE, reg);
          break;
-      case VgT_PCast10:
+      case Tag_PCast10:
          if (reg >= 4) {
             VG_(emit_swapl_reg_EAX)(reg);
             VG_(emit_unaryopb_reg)(NEG, R_EAX);
@@ -386,16 +386,16 @@ static void synth_TAG1_op ( VgTagOp op, Int reg )
             negl %reg -- %reg is 0 or 0xFFFFFFFF
             and possibly an OR to invalidate unused bits.
       */
-      case VgT_PCast04:
+      case Tag_PCast04:
          VG_(emit_nonshiftopv_lit_reg)(4, AND, 0x00000001, reg);
          VG_(emit_unaryopv_reg)(4, NEG, reg);
          break;
-      case VgT_PCast02:
+      case Tag_PCast02:
          VG_(emit_nonshiftopv_lit_reg)(4, AND, 0x00000001, reg);
          VG_(emit_unaryopv_reg)(4, NEG, reg);
          VG_(emit_nonshiftopv_lit_reg)(4, OR, 0xFFFF0000, reg);
          break;
-      case VgT_PCast01:
+      case Tag_PCast01:
          VG_(emit_nonshiftopv_lit_reg)(4, AND, 0x00000001, reg);
          VG_(emit_unaryopv_reg)(4, NEG, reg);
          VG_(emit_nonshiftopv_lit_reg)(4, OR, 0xFFFFFF00, reg);
@@ -407,18 +407,18 @@ static void synth_TAG1_op ( VgTagOp op, Int reg )
             sbbl %reg, %reg       -- %reg = -CF
             and possibly an OR to invalidate unused bits.
       */
-      case VgT_PCast14:
+      case Tag_PCast14:
          VG_(emit_shiftopv_lit_reg)(4, SHL, 24, reg);
          VG_(emit_unaryopv_reg)(4, NEG, reg);
          VG_(emit_nonshiftopv_reg_reg)(4, SBB, reg, reg);
          break;
-      case VgT_PCast12:
+      case Tag_PCast12:
          VG_(emit_shiftopv_lit_reg)(4, SHL, 24, reg);
          VG_(emit_unaryopv_reg)(4, NEG, reg);
          VG_(emit_nonshiftopv_reg_reg)(4, SBB, reg, reg);
          VG_(emit_nonshiftopv_lit_reg)(4, OR, 0xFFFF0000, reg);
          break;
-      case VgT_PCast11:
+      case Tag_PCast11:
          VG_(emit_shiftopv_lit_reg)(4, SHL, 24, reg);
          VG_(emit_unaryopv_reg)(4, NEG, reg);
          VG_(emit_nonshiftopv_reg_reg)(4, SBB, reg, reg);
@@ -434,9 +434,9 @@ static void synth_TAG1_op ( VgTagOp op, Int reg )
          This sequence turns out to be correct regardless of the 
          operation width.
       */
-      case VgT_Left4:
-      case VgT_Left2:
-      case VgT_Left1:
+      case Tag_Left4:
+      case Tag_Left2:
+      case Tag_Left1:
          vg_assert(reg != R_EDI);
          VG_(emit_movv_reg_reg)(4, reg, R_EDI);
          VG_(emit_unaryopv_reg)(4, NEG, R_EDI);
@@ -445,26 +445,26 @@ static void synth_TAG1_op ( VgTagOp op, Int reg )
 
       /* These are all fairly obvious; do the op and then, if
          necessary, invalidate unused bits. */
-      case VgT_SWiden14:
+      case Tag_SWiden14:
          VG_(emit_shiftopv_lit_reg)(4, SHL, 24, reg);
          VG_(emit_shiftopv_lit_reg)(4, SAR, 24, reg);
          break;
-      case VgT_SWiden24:
+      case Tag_SWiden24:
          VG_(emit_shiftopv_lit_reg)(4, SHL, 16, reg);
          VG_(emit_shiftopv_lit_reg)(4, SAR, 16, reg);
          break;
-      case VgT_SWiden12:
+      case Tag_SWiden12:
          VG_(emit_shiftopv_lit_reg)(4, SHL, 24, reg);
          VG_(emit_shiftopv_lit_reg)(4, SAR, 24, reg);
          VG_(emit_nonshiftopv_lit_reg)(4, OR, 0xFFFF0000, reg);
          break;
-      case VgT_ZWiden14:
+      case Tag_ZWiden14:
          VG_(emit_nonshiftopv_lit_reg)(4, AND, 0x000000FF, reg);
          break;
-      case VgT_ZWiden24:
+      case Tag_ZWiden24:
          VG_(emit_nonshiftopv_lit_reg)(4, AND, 0x0000FFFF, reg);
          break;
-      case VgT_ZWiden12:
+      case Tag_ZWiden12:
          VG_(emit_nonshiftopv_lit_reg)(4, AND, 0x000000FF, reg);
          VG_(emit_nonshiftopv_lit_reg)(4, OR, 0xFFFF0000, reg);
          break;
@@ -475,22 +475,22 @@ static void synth_TAG1_op ( VgTagOp op, Int reg )
 }
 
 
-static void synth_TAG2_op ( VgTagOp op, Int regs, Int regd )
+static void synth_TAG2_op ( TagOp op, Int regs, Int regd )
 {
    switch (op) {
 
       /* UifU is implemented by OR, since 1 means Undefined. */
-      case VgT_UifU4:
-      case VgT_UifU2:
-      case VgT_UifU1:
-      case VgT_UifU0:
+      case Tag_UifU4:
+      case Tag_UifU2:
+      case Tag_UifU1:
+      case Tag_UifU0:
          VG_(emit_nonshiftopv_reg_reg)(4, OR, regs, regd);
          break;
 
       /* DifD is implemented by AND, since 0 means Defined. */
-      case VgT_DifD4:
-      case VgT_DifD2:
-      case VgT_DifD1:
+      case Tag_DifD4:
+      case Tag_DifD2:
+      case Tag_DifD1:
          VG_(emit_nonshiftopv_reg_reg)(4, AND, regs, regd);
          break;
 
@@ -499,14 +499,14 @@ static void synth_TAG2_op ( VgTagOp op, Int regs, Int regd )
          value is in regs; tags is in regd. 
          Be paranoid and invalidate unused bits; I don't know whether 
          or not this is actually necessary. */
-      case VgT_ImproveAND4_TQ:
+      case Tag_ImproveAND4_TQ:
          VG_(emit_nonshiftopv_reg_reg)(4, OR, regs, regd);
          break;
-      case VgT_ImproveAND2_TQ:
+      case Tag_ImproveAND2_TQ:
          VG_(emit_nonshiftopv_reg_reg)(4, OR, regs, regd);
          VG_(emit_nonshiftopv_lit_reg)(4, OR, 0xFFFF0000, regd);
          break;
-      case VgT_ImproveAND1_TQ:
+      case Tag_ImproveAND1_TQ:
          VG_(emit_nonshiftopv_reg_reg)(4, OR, regs, regd);
          VG_(emit_nonshiftopv_lit_reg)(4, OR, 0xFFFFFF00, regd);
          break;
@@ -518,18 +518,18 @@ static void synth_TAG2_op ( VgTagOp op, Int regs, Int regd )
                not (value AND (not tags))
          Be paranoid and invalidate unused bits; I don't know whether 
          or not this is actually necessary. */
-      case VgT_ImproveOR4_TQ:
+      case Tag_ImproveOR4_TQ:
          VG_(emit_unaryopv_reg)(4, NOT, regd);
          VG_(emit_nonshiftopv_reg_reg)(4, AND, regs, regd);
          VG_(emit_unaryopv_reg)(4, NOT, regd);
          break;
-      case VgT_ImproveOR2_TQ:
+      case Tag_ImproveOR2_TQ:
          VG_(emit_unaryopv_reg)(4, NOT, regd);
          VG_(emit_nonshiftopv_reg_reg)(4, AND, regs, regd);
          VG_(emit_unaryopv_reg)(4, NOT, regd);
          VG_(emit_nonshiftopv_lit_reg)(4, OR, 0xFFFF0000, regd);
          break;
-      case VgT_ImproveOR1_TQ:
+      case Tag_ImproveOR1_TQ:
          VG_(emit_unaryopv_reg)(4, NOT, regd);
          VG_(emit_nonshiftopv_reg_reg)(4, AND, regs, regd);
          VG_(emit_unaryopv_reg)(4, NOT, regd);
@@ -545,7 +545,7 @@ static void synth_TAG2_op ( VgTagOp op, Int regs, Int regd )
 /*--- Generate code for a single UInstr.           ---*/
 /*----------------------------------------------------*/
 
-void SKN_(emitExtUInstr) ( UInstr* u )
+void SK_(emitExtUInstr) ( UInstr* u )
 {
    switch (u->opcode) {
 

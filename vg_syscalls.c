@@ -92,7 +92,7 @@ void mmap_segment ( Addr a, UInt len, UInt prot, Int fd )
 
    /* Records segment, reads debug symbols if necessary */
    if (prot & PROT_EXEC && fd != -1)
-      VGM_(new_exe_segment) ( a, len );
+      VG_(new_exe_segment) ( a, len );
 
    nn = prot & PROT_NONE;
    rr = prot & PROT_READ;
@@ -118,7 +118,7 @@ void munmap_segment ( Addr a, UInt len )
    /* Invalidate translations as necessary (also discarding any basic
       block-specific info retained by the skin) and unload any debug
       symbols. */
-   VGM_(remove_if_exe_segment) ( a, len );
+   VG_(remove_if_exe_segment) ( a, len );
 
    VG_TRACK( die_mem_munmap, a, len );
 }
@@ -350,8 +350,8 @@ void pre_mem_read_sockaddr ( ThreadState* tst,
 
 
 /* Records the current end of the data segment so we can make sense of
-   calls to brk().  Initial value set by VGM_(init_memory_audit)(). */
-Addr VGM_(curr_dataseg_end);
+   calls to brk().  Initial value set by VG_(init_memory_audit)(). */
+Addr VG_(curr_dataseg_end);
 
 
 /* ---------------------------------------------------------------------
@@ -380,7 +380,7 @@ void VG_(perform_assumed_nonblocking_syscall) ( ThreadId tid )
    /* Do any pre-syscall actions */
    if (VG_(needs).wrap_syscalls) {
       VGP_PUSHCC(VgpSkinSysWrap);
-      pre_res = SKN_(pre_syscall)(tid, syscallno, /*isBlocking*/False);
+      pre_res = SK_(pre_syscall)(tid, syscallno, /*isBlocking*/False);
       VGP_POPCC(VgpSkinSysWrap);
    }
 
@@ -974,23 +974,23 @@ void VG_(perform_assumed_nonblocking_syscall) ( ThreadId tid )
          if (!VG_(is_kerror)(res)) {
             if (arg1 == 0) {
                /* Just asking where the current end is. (???) */
-               VGM_(curr_dataseg_end) = res;
+               VG_(curr_dataseg_end) = res;
             } else
-            if (arg1 < VGM_(curr_dataseg_end)) {
+            if (arg1 < VG_(curr_dataseg_end)) {
                /* shrinking the data segment. */
                VG_TRACK( die_mem_brk, (Addr)arg1, 
-                                      VGM_(curr_dataseg_end)-arg1 );
-               VGM_(curr_dataseg_end) = arg1;
+                                      VG_(curr_dataseg_end)-arg1 );
+               VG_(curr_dataseg_end) = arg1;
             } else
-            if (arg1 > VGM_(curr_dataseg_end) && res != 0) {
+            if (arg1 > VG_(curr_dataseg_end) && res != 0) {
                /* asked for more memory, and got it */
                /* 
                VG_(printf)("BRK: new area %x .. %x\n", 
-                           VGM_(curr_dataseg_end, arg1-1 );
+                           VG_(curr_dataseg_end, arg1-1 );
                */
-               VG_TRACK( new_mem_brk, (Addr)VGM_(curr_dataseg_end), 
-                                         arg1-VGM_(curr_dataseg_end) );
-               VGM_(curr_dataseg_end) = arg1;         
+               VG_TRACK( new_mem_brk, (Addr)VG_(curr_dataseg_end), 
+                                         arg1-VG_(curr_dataseg_end) );
+               VG_(curr_dataseg_end) = arg1;         
             }
          }
          break;
@@ -2987,7 +2987,7 @@ void VG_(perform_assumed_nonblocking_syscall) ( ThreadId tid )
    /* Do any post-syscall actions */
    if (VG_(needs).wrap_syscalls) {
       VGP_PUSHCC(VgpSkinSysWrap);
-      SKN_(post_syscall)(tid, syscallno, pre_res, res, /*isBlocking*/False);
+      SK_(post_syscall)(tid, syscallno, pre_res, res, /*isBlocking*/False);
       VGP_POPCC(VgpSkinSysWrap);
    }
 
@@ -3023,7 +3023,7 @@ void* VG_(pre_known_blocking_syscall) ( ThreadId tid, Int syscallno )
 
    if (VG_(needs).wrap_syscalls) {
       VGP_PUSHCC(VgpSkinSysWrap);
-      pre_res = SKN_(pre_syscall)(tid, syscallno, /*isBlocking*/True);
+      pre_res = SK_(pre_syscall)(tid, syscallno, /*isBlocking*/True);
       VGP_POPCC(VgpSkinSysWrap);
    }
 
@@ -3055,7 +3055,7 @@ void* VG_(pre_known_blocking_syscall) ( ThreadId tid, Int syscallno )
    }
    VGP_POPCC(VgpCoreSysWrap);
 
-   return pre_res;      /* 0 if SKN_(pre_syscall)() not called */
+   return pre_res;      /* 0 if SK_(pre_syscall)() not called */
 }
 
 
@@ -3116,7 +3116,7 @@ void VG_(post_known_blocking_syscall) ( ThreadId tid,
 
    if (VG_(needs).wrap_syscalls) {
       VGP_PUSHCC(VgpSkinSysWrap);
-      SKN_(post_syscall)(tid, syscallno, pre_res, res, /*isBlocking*/True);
+      SK_(post_syscall)(tid, syscallno, pre_res, res, /*isBlocking*/True);
       VGP_POPCC(VgpSkinSysWrap);
    }
 

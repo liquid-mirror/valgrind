@@ -1093,14 +1093,14 @@ extern UInt VG_(num_scheduling_events_MAJOR);
    Exports of vg_memory.c
    ------------------------------------------------------------------ */
 
-extern void VGM_(init_memory)            ( void );
-extern void VGM_(new_exe_segment)        ( Addr a, UInt len );
-extern void VGM_(remove_if_exe_segment)  ( Addr a, UInt len );
+extern void VG_(init_memory)            ( void );
+extern void VG_(new_exe_segment)        ( Addr a, UInt len );
+extern void VG_(remove_if_exe_segment)  ( Addr a, UInt len );
 
-extern Addr VGM_(curr_dataseg_end);
+extern Addr VG_(curr_dataseg_end);
 
 /* Called from generated code. */
-extern void VGM_(handle_esp_assignment) ( Addr new_espA );
+extern void VG_(handle_esp_assignment) ( Addr new_espA );
 
 /* Nasty kludgery to deal with applications which switch stacks,
    like netscape. */

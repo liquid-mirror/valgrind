@@ -76,7 +76,7 @@ static Bool eq_CoreError ( VgRes res, CoreError* e1, CoreError* e2 )
          return False;
       default: 
          if (VG_(needs).skin_errors)
-            return SKN_(eq_SkinError)(res, &e1->skin_err, &e2->skin_err);
+            return SK_(eq_SkinError)(res, &e1->skin_err, &e2->skin_err);
          else {
             VG_(printf)("Error:\n"
                         "  unhandled error type: %u.  Perhaps " 
@@ -109,7 +109,7 @@ static void pp_CoreError ( CoreError* err, Bool printCount )
          break;
       default: 
          if (VG_(needs).skin_errors)
-            SKN_(pp_SkinError)( &err->skin_err, &pp_ExeContextClosure );
+            SK_(pp_SkinError)( &err->skin_err, &pp_ExeContextClosure );
          else {
             VG_(printf)("Error:\n"
                         "  unhandled error type: %u.  Perhaps " 
@@ -318,10 +318,10 @@ void VG_(maybe_record_error) ( ThreadState* tst,
    /* OK, we're really going to collect it.  First make a copy,
       because the error context is on the stack and will disappear shortly.
       We can duplicate the main part ourselves, but use
-      SKN_(dup_extra_and_update) to duplicate the 'extra' part (unless it's
+      SK_(dup_extra_and_update) to duplicate the 'extra' part (unless it's
       NULL).
      
-      SKN_(dup_extra_and_update) can also update the SkinError.  This is
+      SK_(dup_extra_and_update) can also update the SkinError.  This is
       for when there are more details to fill in which take time to work out
       but don't affect our earlier decision to include the error -- by
       postponing those details until now, we avoid the extra work in the
@@ -330,7 +330,7 @@ void VG_(maybe_record_error) ( ThreadState* tst,
    p = VG_(arena_malloc)(VG_AR_ERRORS, sizeof(CoreError));
    *p = err;
    if (NULL != err.skin_err.extra)
-      SKN_(dup_extra_and_update)(&p->skin_err);
+      SK_(dup_extra_and_update)(&p->skin_err);
 
    p->next = vg_errors;
    p->supp = is_suppressible_error(&err);
@@ -569,7 +569,7 @@ static void load_one_suppressions_file ( Char* filename )
 
       /* Is it a skin suppression? */
       else if (VG_(needs).skin_errors && 
-               SKN_(recognised_suppression)(buf, &(supp->skin_supp.skind))) {
+               SK_(recognised_suppression)(buf, &(supp->skin_supp.skind))) {
          /* do nothing, function fills in supp->skin_supp.skind */
       }
       //else goto syntax_error;
@@ -596,7 +596,7 @@ static void load_one_suppressions_file ( Char* filename )
       }
 
       if (VG_(needs).skin_errors && 
-          !SKN_(read_extra_suppression_info)(fd, buf, N_BUF, &supp->skin_supp)) 
+          !SK_(read_extra_suppression_info)(fd, buf, N_BUF, &supp->skin_supp)) 
          goto syntax_error;
 
       /* "i > 0" ensures at least one caller read. */
@@ -673,7 +673,7 @@ Bool supp_matches_error(CoreSupp* su, CoreError* err)
          return (err->skin_err.ekind == PThreadErr);
       default:
          if (VG_(needs).skin_errors) {
-            return (SKN_(error_matches_suppression)(&err->skin_err, 
+            return (SK_(error_matches_suppression)(&err->skin_err, 
                                                     &su->skin_supp));
          } else {
             VG_(printf)("Error:\n"

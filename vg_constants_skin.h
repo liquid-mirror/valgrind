@@ -42,14 +42,11 @@
 /* These macros should add different prefixes so the same base
    name can safely be used across different macros. */
 #define VG_(str)    VGAPPEND(vgPlain_,str)
-#define VGM_(str)   VGAPPEND(vgMem_,str)
-#define VGE_(str)   VGAPPEND(vgEraser_,str)
 #define VGP_(str)   VGAPPEND(vgProf_,str)
 #define VGOFF_(str) VGAPPEND(vgOff_,str)
 
 /* Skin specific ones.  Note that final name still starts with "vg". */
-#define SK_(str)  VGAPPEND(vgSkin_,str)
-#define SKN_(str) VGAPPEND(vgSkinNeed_,str)
+#define SK_(str)    VGAPPEND(vgSkin_,str)
 
 #endif /* ndef __VG_CONSTANTS_SKIN_H */
 

@@ -66,25 +66,25 @@ typedef
 typedef
    enum { 
      /* Unary. */
-     VgT_PCast40, VgT_PCast20, VgT_PCast10,
-     VgT_PCast01, VgT_PCast02, VgT_PCast04,
+     Tag_PCast40, Tag_PCast20, Tag_PCast10,
+     Tag_PCast01, Tag_PCast02, Tag_PCast04,
 
-     VgT_PCast14, VgT_PCast12, VgT_PCast11,
+     Tag_PCast14, Tag_PCast12, Tag_PCast11,
 
-     VgT_Left4, VgT_Left2, VgT_Left1,
+     Tag_Left4, Tag_Left2, Tag_Left1,
 
-     VgT_SWiden14, VgT_SWiden24, VgT_SWiden12,
-     VgT_ZWiden14, VgT_ZWiden24, VgT_ZWiden12,
+     Tag_SWiden14, Tag_SWiden24, Tag_SWiden12,
+     Tag_ZWiden14, Tag_ZWiden24, Tag_ZWiden12,
 
      /* Binary; 1st is rd; 2nd is rd+wr */
-     VgT_UifU4, VgT_UifU2, VgT_UifU1, VgT_UifU0,
-     VgT_DifD4, VgT_DifD2, VgT_DifD1,
+     Tag_UifU4, Tag_UifU2, Tag_UifU1, Tag_UifU0,
+     Tag_DifD4, Tag_DifD2, Tag_DifD1,
 
-     VgT_ImproveAND4_TQ, VgT_ImproveAND2_TQ, VgT_ImproveAND1_TQ,
-     VgT_ImproveOR4_TQ, VgT_ImproveOR2_TQ, VgT_ImproveOR1_TQ,
-     VgT_DebugFn
+     Tag_ImproveAND4_TQ, Tag_ImproveAND2_TQ, Tag_ImproveAND1_TQ,
+     Tag_ImproveOR4_TQ, Tag_ImproveOR2_TQ, Tag_ImproveOR1_TQ,
+     Tag_DebugFn
    }
-   VgTagOp;
+   TagOp;
 
 /* The classification of a faulting address. */
 typedef 
@@ -120,29 +120,29 @@ typedef
 /*------------------------------------------------------------*/
 
 /* Allow loads from partially-valid addresses?  default: YES */
-extern Bool VG_(clo_partial_loads_ok);
+extern Bool SK_(clo_partial_loads_ok);
 
 /* Max volume of the freed blocks queue. */
-extern Int   VG_(clo_freelist_vol);
+extern Int SK_(clo_freelist_vol);
 
 /* Do leak check at exit?  default: NO */
-extern Bool VG_(clo_leak_check);
+extern Bool SK_(clo_leak_check);
 
 /* How closely should we compare ExeContexts in leak records? default: 2 */
-extern VgRes VG_(clo_leak_resolution);
+extern VgRes SK_(clo_leak_resolution);
 
 /* In leak check, show reachable-but-not-freed blocks?  default: NO */
-extern Bool VG_(clo_show_reachable);
+extern Bool SK_(clo_show_reachable);
 
 /* Assume accesses immediately below %esp are due to gcc-2.96 bugs.
  * default: NO*/
-extern Bool VG_(clo_workaround_gcc296_bugs);
+extern Bool SK_(clo_workaround_gcc296_bugs);
 
 /* Shall we V-check addrs? (they are always A checked too)   default: YES */
-extern Bool VG_(clo_check_addrVs);
+extern Bool SK_(clo_check_addrVs);
 
 /* DEBUG: clean up instrumented code?  default: YES */
-extern Bool VG_(clo_cleanup);
+extern Bool SK_(clo_cleanup);
 
 
 /*------------------------------------------------------------*/
@@ -169,18 +169,18 @@ extern UInt SK_(helperc_LOADV4) ( Addr );
 extern void SK_(fpu_write_check) ( Addr addr, Int size );
 extern void SK_(fpu_read_check)  ( Addr addr, Int size );
 
-extern ShadowChunk* VG_(any_matching_freed_ShadowChunks) 
+extern ShadowChunk* SK_(any_matching_freed_ShadowChunks) 
                         ( Bool (*p) ( ShadowChunk* ) );
 
 /* For client requests */
-extern void VG_(make_noaccess) ( Addr a, UInt len );
-extern void VG_(make_readable) ( Addr a, UInt len );
-extern void VG_(make_writable) ( Addr a, UInt len );
+extern void SK_(make_noaccess) ( Addr a, UInt len );
+extern void SK_(make_readable) ( Addr a, UInt len );
+extern void SK_(make_writable) ( Addr a, UInt len );
 
-extern Bool VG_(check_writable) ( Addr a, UInt len, Addr* bad_addr );
-extern Bool VG_(check_readable) ( Addr a, UInt len, Addr* bad_addr );
+extern Bool SK_(check_writable) ( Addr a, UInt len, Addr* bad_addr );
+extern Bool SK_(check_readable) ( Addr a, UInt len, Addr* bad_addr );
 
-extern void VG_(detect_memory_leaks) ( void );
+extern void SK_(detect_memory_leaks) ( void );
 
 
 /* Functions defined in vg_memcheck_clientreqs.c */

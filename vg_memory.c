@@ -122,7 +122,7 @@ static Bool remove_if_exe_segment_from_list( Addr a, UInt len )
    we don't use this at startup because it's overkill and can screw reading
    of /proc/pid/maps.
  */
-void VGM_(new_exe_segment) ( Addr a, UInt len )
+void VG_(new_exe_segment) ( Addr a, UInt len )
 {
    // SSS: only bother if size != 0?  Does that happen? (probably can)
 
@@ -133,7 +133,7 @@ void VGM_(new_exe_segment) ( Addr a, UInt len )
 /* Invalidate translations as necessary (also discarding any basic
    block-specific info retained by the skin) and unload any debug
    symbols. */
-void VGM_(remove_if_exe_segment) ( Addr a, UInt len )
+void VG_(remove_if_exe_segment) ( Addr a, UInt len )
 {
    if (remove_if_exe_segment_from_list( a, len )) {
       VG_(invalidate_translations) ( a, len );
@@ -189,7 +189,7 @@ void startup_segment_callback ( Addr start, UInt size,
 
    /* This parallels what happens when we mmap some new memory */
    if (filename != NULL && xx == 'x') {
-      VGM_(new_exe_segment)( start, size );
+      VG_(new_exe_segment)( start, size );
    }
    VG_TRACK( new_mem_startup, start, size, rr=='r', ww=='w', xx=='x' );
 
@@ -214,7 +214,7 @@ void startup_segment_callback ( Addr start, UInt size,
    3. Sets up the end of the data segment so that vg_syscall_mem.c can make
       sense of calls to brk().
  */
-void VGM_(init_memory) ( void )
+void VG_(init_memory) ( void )
 {
    /* 1 and 2 */
    VG_(read_procselfmaps) ( startup_segment_callback );
@@ -225,11 +225,11 @@ void VGM_(init_memory) ( void )
    VG_TRACK( post_mem_write, (Addr) & VG_(clo_sloppy_malloc),   1 );
 
    /* 4 */
-   VGM_(curr_dataseg_end) = (Addr)VG_(brk)(0);
-   if (VGM_(curr_dataseg_end) == (Addr)(-1))
+   VG_(curr_dataseg_end) = (Addr)VG_(brk)(0);
+   if (VG_(curr_dataseg_end) == (Addr)(-1))
       VG_(panic)("init_memory_and_symbols: can't determine data-seg end");
    if (0)
-      VG_(printf)("DS END is %p\n", (void*)VGM_(curr_dataseg_end));
+      VG_(printf)("DS END is %p\n", (void*)VG_(curr_dataseg_end));
 }
 
 
@@ -295,7 +295,7 @@ static Addr get_page_base ( Addr a )
 static void vg_handle_esp_assignment_SLOWLY ( Addr old_esp, Addr new_esp );
 
 __attribute__ ((regparm (1)))
-void VGM_(handle_esp_assignment) ( Addr new_esp )
+void VG_(handle_esp_assignment) ( Addr new_esp )
 {
    UInt old_esp;
    Int  delta;

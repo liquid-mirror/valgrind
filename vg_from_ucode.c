@@ -1910,7 +1910,7 @@ static void synth_handle_esp_assignment ( Int i, Int reg, Bool save_eax,
    UInt argv[] = { reg };
    Tag  tagv[] = { RealReg };
 
-   VG_(synth_ccall) ( (Addr) VGM_(handle_esp_assignment), 1, 1, argv, tagv, 
+   VG_(synth_ccall) ( (Addr) VG_(handle_esp_assignment), 1, 1, argv, tagv, 
                       INVALID_REALREG, save_eax, save_ecx, save_edx );
 }
 
@@ -2269,7 +2269,7 @@ static void emitUInstr ( Int i, UInstr* u )
 
       default: 
          if (VG_(needs).extends_UCode)
-            SKN_(emitExtUInstr)(u);
+            SK_(emitExtUInstr)(u);
          else {
             VG_(printf)("\nError:\n"
                         "  unhandled opcode: %u.  Perhaps "

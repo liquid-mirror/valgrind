@@ -128,7 +128,7 @@ static Bool eq_AddrInfo ( VgRes res, AddrInfo* ai1, AddrInfo* ai2 )
    are otherwise the same, the faulting addrs and associated rwoffsets
    are allowed to be different.  */
 
-Bool SKN_(eq_SkinError) ( VgRes res,
+Bool SK_(eq_SkinError) ( VgRes res,
                           SkinError* e1, SkinError* e2 )
 {
    MemCheckError* e1_extra = e1->extra;
@@ -176,7 +176,7 @@ Bool SKN_(eq_SkinError) ( VgRes res,
 
       default: 
          VG_(printf)("Error:\n  unknown MemCheck error code %d\n", e1->ekind);
-         VG_(panic)("unknown error code in SKN_(eq_SkinError)");
+         VG_(panic)("unknown error code in SK_(eq_SkinError)");
    }
 }
 
@@ -235,7 +235,7 @@ static void pp_AddrInfo ( Addr a, AddrInfo* ai )
    }
 }
 
-void SKN_(pp_SkinError) ( SkinError* err, void (*pp_ExeContext)(void) )
+void SK_(pp_SkinError) ( SkinError* err, void (*pp_ExeContext)(void) )
 {
    MemCheckError* err_extra = err->extra;
 
@@ -327,7 +327,7 @@ void SKN_(pp_SkinError) ( SkinError* err, void (*pp_ExeContext)(void) )
 
       default: 
          VG_(printf)("Error:\n  unknown MemCheck error code %d\n", err->ekind);
-         VG_(panic)("unknown error code in SKN_(pp_SkinError)");
+         VG_(panic)("unknown error code in SK_(pp_SkinError)");
    }
 }
 
@@ -369,7 +369,7 @@ static void describe_addr ( Addr a, AddrInfo* ai )
       return;
    }
    /* Search for a recently freed block which might bracket it. */
-   sc = VG_(any_matching_freed_ShadowChunks)(addr_is_in_block);
+   sc = SK_(any_matching_freed_ShadowChunks)(addr_is_in_block);
    if (NULL != sc) {
       ai->akind      = Freed;
       ai->blksize    = sc->size;
@@ -394,7 +394,7 @@ static void describe_addr ( Addr a, AddrInfo* ai )
 
 /* Creates a copy of the err_extra, updates the copy with address info if
    necessary, sticks the copy into the SkinError. */
-void SKN_(dup_extra_and_update)(SkinError* err)
+void SK_(dup_extra_and_update)(SkinError* err)
 {
    MemCheckError* err_extra;
 
@@ -438,7 +438,7 @@ void SK_(record_address_error) ( Addr a, Int size, Bool isWrite )
 
    /* If this is caused by an access immediately below %ESP, and the
       user asks nicely, we just ignore it. */
-   if (VG_(clo_workaround_gcc296_bugs) && just_below_esp)
+   if (SK_(clo_workaround_gcc296_bugs) && just_below_esp)
       return;
 
    clear_MemCheckError( &err_extra );
@@ -528,7 +528,7 @@ void SK_(record_user_error) ( ThreadState* tst, Addr a, Bool isWrite )
 #define STREQ(s1,s2) (s1 != NULL && s2 != NULL \
                       && VG_(strcmp)((s1),(s2))==0)
 
-Bool SKN_(recognised_suppression) ( Char* name, SuppKind *skind )
+Bool SK_(recognised_suppression) ( Char* name, SuppKind *skind )
 {
    if      (STREQ(name, "Param"))   *skind = ParamSupp;
    else if (STREQ(name, "CoreMem")) *skind = CoreMemSupp;
@@ -549,7 +549,7 @@ Bool SKN_(recognised_suppression) ( Char* name, SuppKind *skind )
    return True;
 }
 
-Bool SKN_(read_extra_suppression_info) ( Int fd, Char* buf, Int nBuf, 
+Bool SK_(read_extra_suppression_info) ( Int fd, Char* buf, Int nBuf, 
                                          SkinSupp *s )
 {
    Bool eof;
@@ -562,7 +562,7 @@ Bool SKN_(read_extra_suppression_info) ( Int fd, Char* buf, Int nBuf,
    return True;
 }
 
-extern Bool SKN_(error_matches_suppression)(SkinError* err, SkinSupp* su)
+extern Bool SK_(error_matches_suppression)(SkinError* err, SkinSupp* su)
 {
    UInt su_size;
    MemCheckError* err_extra = err->extra;
@@ -596,7 +596,7 @@ extern Bool SKN_(error_matches_suppression)(SkinError* err, SkinSupp* su)
          VG_(printf)("Error:\n"
                      "  unknown MemCheck suppression type %d\n", su->skind);
          VG_(panic)("unknown suppression type in "
-                    "SKN_(error_matches_suppression)");
+                    "SK_(error_matches_suppression)");
    }
 }
 

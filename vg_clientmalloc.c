@@ -108,7 +108,7 @@ static void addShadowChunk ( ThreadState* tst,
    sc->data      = p;
    /* Fill in any skin-specific shadow chunk stuff */
    if (VG_(needs).sizeof_shadow_chunk > 0)
-      SKN_(complete_shadow_chunk) ( sc, tst );
+      SK_(complete_shadow_chunk) ( sc, tst );
 
    ml_no     = VG_MALLOCLIST_NO(p);
    sc->next  = vg_malloclist[ml_no];
@@ -301,7 +301,7 @@ void die_and_free_mem ( ThreadState* tst, ShadowChunk* sc,
    *prev_chunks_next_ptr = sc->next;
 
    if (VG_(needs).alternative_free)
-      SKN_(alt_free) ( sc, tst );
+      SK_(alt_free) ( sc, tst );
    else
       VG_(freeShadowChunk) ( sc );
 }

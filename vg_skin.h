@@ -1222,43 +1222,43 @@ extern void        SK_(fini)         ( void );
    than that, probably don't worry about it unless you have lots of very
    similar errors occurring.
  */
-extern Bool SKN_(eq_SkinError) ( VgRes res,
-                                 SkinError* e1, SkinError* e2 );
+extern Bool SK_(eq_SkinError) ( VgRes res,
+                                SkinError* e1, SkinError* e2 );
 
 /* Print error context.  The passed function pp_ExeContext() can be (and
    probably should be) used to print the location of the error. */
-extern void SKN_(pp_SkinError) ( SkinError* ec, void (*pp_ExeContext)(void) );
+extern void SK_(pp_SkinError) ( SkinError* ec, void (*pp_ExeContext)(void) );
 
 /* Copy the ec->extra part and replace ec->extra with the new copy.  This is
    necessary to move from a temporary stack copy to a permanent one.
   
    Then fill in any details that could be postponed until after the decision
    whether to ignore the error (ie. details not affecting the result of
-   SKN_(eq_SkinError)()).  This saves time when errors are ignored.
+   SK_(eq_SkinError)()).  This saves time when errors are ignored.
   
    Yuk.
 
 SSS: still not happy about this... could maybe do with a zero-length array?
  */
-extern void SKN_(dup_extra_and_update)(SkinError* ec);
+extern void SK_(dup_extra_and_update)(SkinError* ec);
 
 /* Return value indicates recognition.  If recognised, type goes in `skind'. */
-extern Bool SKN_(recognised_suppression) ( Char* name, SuppKind *skind );
+extern Bool SK_(recognised_suppression) ( Char* name, SuppKind *skind );
 
 /* Read any extra info for this suppression kind.  For filling up the
  * `string' and `extra' fields in a `SkinSupp' struct if necessary. */
-extern Bool SKN_(read_extra_suppression_info) ( Int fd, Char* buf, 
+extern Bool SK_(read_extra_suppression_info) ( Int fd, Char* buf, 
                                                 Int nBuf, SkinSupp *s );
 
 /* This should just check the kinds match and maybe some stuff in the
    'extra' field if appropriate */
-extern Bool SKN_(error_matches_suppression)(SkinError* ec, SkinSupp* su);
+extern Bool SK_(error_matches_suppression)(SkinError* ec, SkinSupp* su);
 
 
 /* ------------------------------------------------------------------ */
 /* VG_(needs).identifies_basic_blocks */
 
-extern void SKN_(discard_basic_block_info) ( Addr a, UInt size );
+extern void SK_(discard_basic_block_info) ( Addr a, UInt size );
 
 
 /* ------------------------------------------------------------------ */
@@ -1266,23 +1266,23 @@ extern void SKN_(discard_basic_block_info) ( Addr a, UInt size );
 
 /* Valid values for general registers and EFLAGS register, for initialising
    and updating registers when written in certain places in core. */
-extern void SKN_(written_shadow_regs_values) ( UInt* gen_reg, UInt* eflags );
+extern void SK_(written_shadow_regs_values) ( UInt* gen_reg, UInt* eflags );
 
 
 /* ------------------------------------------------------------------ */
 /* VG_(needs).command_line_options */
 
 /* Return True if option was recognised */
-extern Bool SKN_(process_cmd_line_option)( UChar* argv );
+extern Bool SK_(process_cmd_line_option)( UChar* argv );
 
 /* Print out command line usage for skin options */
-extern Char* SKN_(usage)                  ( void );
+extern Char* SK_(usage)                  ( void );
 
 
 /* ------------------------------------------------------------------ */
 /* VG_(needs).client_requests */
 
-extern UInt SKN_(handle_client_request) ( ThreadState* tst, UInt* arg_block );
+extern UInt SK_(handle_client_request) ( ThreadState* tst, UInt* arg_block );
 
 
 /* ------------------------------------------------------------------ */
@@ -1304,12 +1304,12 @@ extern UInt SKN_(handle_client_request) ( ThreadState* tst, UInt* arg_block );
          }                                      \
    }
 
-extern Int   SKN_(getExtRegUsage) ( UInstr* u, Tag tag, RegUse* arr );
-extern void  SKN_(emitExtUInstr)  ( UInstr* u );
-extern Bool  SKN_(saneExtUInstr)  ( Bool beforeRA, Bool beforeLiveness,
+extern Int   SK_(getExtRegUsage) ( UInstr* u, Tag tag, RegUse* arr );
+extern void  SK_(emitExtUInstr)  ( UInstr* u );
+extern Bool  SK_(saneExtUInstr)  ( Bool beforeRA, Bool beforeLiveness,
                                     UInstr* u );
-extern Char* SKN_(nameExtUOpcode) ( Opcode opc );
-extern void  SKN_(ppExtUInstr)    ( UInstr* u );
+extern Char* SK_(nameExtUOpcode) ( Opcode opc );
+extern void  SK_(ppExtUInstr)    ( UInstr* u );
 
 
 /* ------------------------------------------------------------------ */
@@ -1318,28 +1318,28 @@ extern void  SKN_(ppExtUInstr)    ( UInstr* u );
 /* If either of the pre_ functions malloc() something to return, the
  * corresponding post_ function had better free() it! 
  */ 
-extern void* SKN_( pre_syscall) ( ThreadId tid, UInt syscallno,
-                                  Bool is_blocking );
-extern void  SKN_(post_syscall) ( ThreadId tid, UInt syscallno,
-                                  void* pre_result, Int res,
-                                  Bool is_blocking );
+extern void* SK_( pre_syscall) ( ThreadId tid, UInt syscallno,
+                                 Bool is_blocking );
+extern void  SK_(post_syscall) ( ThreadId tid, UInt syscallno,
+                                 void* pre_result, Int res,
+                                 Bool is_blocking );
 
 /* ------------------------------------------------------------------ */
 /* VG_(needs).sizeof_shadow_chunk > 0 */
 
-extern void SKN_(complete_shadow_chunk) ( ShadowChunk* sc, ThreadState* tst );
+extern void SK_(complete_shadow_chunk) ( ShadowChunk* sc, ThreadState* tst );
 
 
 /* ------------------------------------------------------------------ */
 /* VG_(needs).alternative_free */
 
-extern void SKN_(alt_free) ( ShadowChunk* sc, ThreadState* tst );
+extern void SK_(alt_free) ( ShadowChunk* sc, ThreadState* tst );
 
 /* ---------------------------------------------------------------------
    VG_(needs).sanity_checks */
 
-extern Bool SKN_(cheap_sanity_check)     ( void );
-extern Bool SKN_(expensive_sanity_check) ( void );
+extern Bool SK_(cheap_sanity_check)     ( void );
+extern Bool SK_(expensive_sanity_check) ( void );
 
 
 #endif   /* NDEF __VG_SKIN_H */
