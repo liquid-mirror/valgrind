@@ -442,9 +442,35 @@ void VG_(perform_assumed_nonblocking_syscall) ( ThreadId tid )
 #     endif
 
 #     if defined(__NR_ptrace)
-      case __NR_ptrace: /* syscall 26 */
+      case __NR_ptrace: { /* syscall 26 */
          /* long ptrace (enum __ptrace_request request, pid_t pid, 
                          void *addr, void *data); ... sort of. */
+         /* Sigh ... the /usr/include/sys/user.h on R H 6.2 doesn't 
+            define struct user_fpxregs_struct.  On the basis that it 
+            is defined as follows on my R H 7.2 (glibc-2.2.4) box, 
+            I kludge it.
+
+            struct user_fpxregs_struct
+            {
+               unsigned short int cwd;
+               unsigned short int swd;
+               unsigned short int twd;
+               unsigned short int fop;
+               long int fip;
+               long int fcs;
+               long int foo;
+               long int fos;
+               long int mxcsr;
+               long int reserved;
+               long int st_space[32];  8*16 bytes for each FP-reg = 128 bytes
+               long int xmm_space[32]; 8*16 bytes for each XMM-reg = 128 bytes
+               long int padding[56];
+            };
+         */
+         const Int sizeof_struct_user_fpxregs_struct
+            = sizeof(unsigned short) * (1 + 1 + 1 + 1) 
+              + sizeof(long int) * (1 + 1 + 1 + 1 + 1 + 1 + 32 + 32 + 56);
+
          switch (arg1) {
              case 12:   /* PTRACE_GETREGS */
                  must_be_writable (tst, "ptrace(getregs)", arg4, 
@@ -456,9 +482,9 @@ void VG_(perform_assumed_nonblocking_syscall) ( ThreadId tid )
                  break;
              case 18:   /* PTRACE_GETFPXREGS */
                  must_be_writable (tst, "ptrace(getfpxregs)", arg4, 
-                                   sizeof (struct user_fpxregs_struct));
+                                   sizeof_struct_user_fpxregs_struct);
                  break;
-            case 1: case 2: case 3:    /* PTRACE_PEEK{TEXT,DATA,USER} */
+             case 1: case 2: case 3:    /* PTRACE_PEEK{TEXT,DATA,USER} */
                  must_be_writable (tst, "ptrace(peek)", arg4, sizeof (long));
                  break;
              case 13:   /* PTRACE_SETREGS */
@@ -471,7 +497,7 @@ void VG_(perform_assumed_nonblocking_syscall) ( ThreadId tid )
                  break;
              case 19:   /* PTRACE_SETFPXREGS */
                  must_be_readable (tst, "ptrace(setfpxregs)", arg4, 
-                                   sizeof (struct user_fpxregs_struct));
+                                   sizeof_struct_user_fpxregs_struct);
                  break;
              default:
                  break;
@@ -486,14 +512,15 @@ void VG_(perform_assumed_nonblocking_syscall) ( ThreadId tid )
                      make_readable (arg4, sizeof (struct user_fpregs_struct));
                      break;
                  case 18:  /* PTRACE_GETFPXREGS */
-                     make_readable (arg4, sizeof (struct user_fpxregs_struct));
+                     make_readable (arg4, sizeof_struct_user_fpxregs_struct);
                      break;
-                case 1: case 2: case 3:    /* PTRACE_PEEK{TEXT,DATA,USER} */
+                 case 1: case 2: case 3:    /* PTRACE_PEEK{TEXT,DATA,USER} */
                      make_readable (arg4, sizeof (long));
                      break;
                  default:
                      break;
              }
+         }
          }
          break;
 #     endif
