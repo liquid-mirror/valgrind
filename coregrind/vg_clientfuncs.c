@@ -90,8 +90,9 @@ void* malloc ( Int n )
                   (UInt)VG_(running_on_simd_CPU), n );
    if (n < 0) {
       v = NULL;
-      VG_(message)(Vg_UserMsg, 
-         "Warning: silly arg (%d) to malloc()", n );
+      if (VG_(needs).core_errors)
+         VG_(message)(Vg_UserMsg, 
+                      "Warning: silly arg (%d) to malloc()", n );
    } else {
       if (VG_(clo_sloppy_malloc)) { while ((n % 4) > 0) n++; }
 
@@ -115,8 +116,9 @@ void* __builtin_new ( Int n )
                   (UInt)VG_(running_on_simd_CPU), n );
    if (n < 0) {
       v = NULL;
-      VG_(message)(Vg_UserMsg, 
-         "Warning: silly arg (%d) to __builtin_new()", n );
+      if (VG_(needs).core_errors)
+         VG_(message)(Vg_UserMsg, 
+                      "Warning: silly arg (%d) to __builtin_new()", n );
    } else {
       if (VG_(clo_sloppy_malloc)) { while ((n % 4) > 0) n++; }
 
@@ -146,8 +148,9 @@ void* __builtin_vec_new ( Int n )
                   (UInt)VG_(running_on_simd_CPU), n );
    if (n < 0) {
       v = NULL;
-      VG_(message)(Vg_UserMsg, 
-         "Warning: silly arg (%d) to __builtin_vec_new()", n );
+      if (VG_(needs).core_errors)
+         VG_(message)(Vg_UserMsg, 
+                      "Warning: silly arg (%d) to __builtin_vec_new()", n );
    } else {
       if (VG_(clo_sloppy_malloc)) { while ((n % 4) > 0) n++; }
 
@@ -231,8 +234,9 @@ void* calloc ( Int nmemb, Int size )
                   (UInt)VG_(running_on_simd_CPU), nmemb, size );
    if (nmemb < 0 || size < 0) {
       v = NULL;
-      VG_(message)(Vg_UserMsg, "Warning: silly args (%d,%d) to calloc()", 
-                               nmemb, size );
+      if (VG_(needs).core_errors)
+         VG_(message)(Vg_UserMsg, "Warning: silly args (%d,%d) to calloc()", 
+                                  nmemb, size );
    } else {
       if (VG_(running_on_simd_CPU)) {
          v = (void*)SIMPLE_REQUEST2(VG_USERREQ__CALLOC, nmemb, size);
