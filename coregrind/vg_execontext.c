@@ -181,9 +181,10 @@ ExeContext* VG_(get_ExeContext2) ( Addr eip, Addr ebp,
       goes cold, which we guess to be when %ebp is not a reasonable
       stack location.  We also assert that %ebp increases down the chain. */
 
-   // JJJ: gives shorter stack trace for tests/badjump.c
+   // Gives shorter stack trace for tests/badjump.c
    // JRS 2002-aug-16: I don't think this is a big deal; looks ok for
    // most "normal" backtraces.
+   // NJN 2002-sep-05: traces for pthreaded programs are particularly bad.
 
    eips[0] = eip;
 
