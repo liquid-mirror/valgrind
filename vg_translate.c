@@ -3088,8 +3088,7 @@ void VG_(translate) ( ThreadState* tst,
               "trans# %d, bb# %lu, in %d, out %d",
               VG_(overall_in_count), 
               VG_(bbs_done),
-              VG_(overall_in_osize), VG_(overall_in_tsize),
-              orig_addr );
+              VG_(overall_in_osize), VG_(overall_in_tsize) );
    }
    cb = VG_(allocCodeBlock)();
 
