@@ -86,12 +86,12 @@ void mash_addr_and_len( Addr* a, UInt* len)
 }
 
 static
-void mmap_segment ( Addr a, UInt len, UInt prot )
+void mmap_segment ( Addr a, UInt len, UInt prot, Int fd )
 {
    Bool nn, rr, ww, xx;
 
    /* Records segment, reads debug symbols if necessary */
-   if (prot & PROT_EXEC)
+   if (prot & PROT_EXEC && fd != -1)
       VGM_(new_exe_segment) ( a, len );
 
    nn = prot & PROT_NONE;
@@ -132,6 +132,7 @@ void mprotect_segment ( Addr a, UInt len, Int prot )
    ww = prot & PROT_WRITE;
    xx = prot & PROT_EXEC;
 
+   // if removing exe permission, should check and remove from exe_seg list
    mash_addr_and_len(&a, &len);
    VG_TRACK( change_mem_mprotect, a, len, nn, rr, ww, xx );
 }
@@ -2102,7 +2103,7 @@ void VG_(perform_assumed_nonblocking_syscall) ( ThreadId tid )
          }
          KERNEL_DO_SYSCALL(tid,res);
          if (!VG_(is_kerror)(res)) {
-            mmap_segment( (Addr)res, arg2, arg3 );
+            mmap_segment( (Addr)res, arg2, arg3, arg5 );
          }
          break;
 #     endif
@@ -2126,7 +2127,7 @@ void VG_(perform_assumed_nonblocking_syscall) ( ThreadId tid )
          }
          KERNEL_DO_SYSCALL(tid,res);
          if (!VG_(is_kerror)(res)) {
-            mmap_segment( (Addr)res, arg2, arg3 );
+            mmap_segment( (Addr)res, arg2, arg3, arg5 );
          }
          break;
 
