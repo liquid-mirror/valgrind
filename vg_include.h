@@ -366,6 +366,11 @@ extern void* VG_(arena_realloc) ( ArenaId arena, void* ptr, Int alignment,
 extern void* VG_(arena_malloc_aligned) ( ArenaId aid, Int req_alignB, 
                                                 Int req_pszB );
 
+/* Only use these on blocks in the VG_AR_CLIENT arena -- otherwise you will
+   get `bszW != 0' assertion failures. */
+extern UInt  VG_(get_clientblock_req_pszB) ( void* p );
+extern void  VG_(set_clientblock_req_pszB) ( void* p, UInt req_szB );
+
 extern void  VG_(mallocSanityCheckAll)   ( void );
 
 extern void  VG_(show_all_arena_stats) ( void );
@@ -374,7 +379,6 @@ extern Bool  VG_(is_empty_arena) ( ArenaId aid );
 
 /* The red-zone size for the client.  This can be arbitrary, but
    unfortunately must be set at compile time. */
-// JJJ: why?
 #define VG_AR_CLIENT_REDZONE_SZW 4
 
 #define VG_AR_CLIENT_REDZONE_SZB \
