@@ -1,6 +1,8 @@
+
 /*--------------------------------------------------------------------*/
-/*--- Simple skin for counting UInstrs, using a C helper.          ---*/
-/*---                                                  vg_lackey.c ---*/
+/*--- The cache simulation framework: instrumentation, recording   ---*/
+/*--- and results printing.                                        ---*/
+/*---                                                vg_cachesim.c ---*/
 /*--------------------------------------------------------------------*/
 
 /*
@@ -29,22 +31,29 @@
 */
 
 #include "vg_include.h"
-#include "vg_instrument.h"
 
-//#define uInstr0   VG_(newUInstr0)
-//#define uLiteral  VG_(setLiteralField)
-
-static UInt n_uinstrs = 0;
-
-static void add_one(void)
+void SK_(init)(void)
 {
-   n_uinstrs++;
 }
 
-void SK_(setup)(VgNeeds* needs)
+UCodeBlock* SK_(instrument)(UCodeBlock* cb, Addr a)
 {
-   needs->name                    = "lackey";
-   needs->description             = "a UInstr counter";
+    return cb;
+}
+
+void SK_(fini)(void)
+{
+}
+
+/*--------------------------------------------------------------------*/
+/*--- Setup                                                        ---*/
+/*--------------------------------------------------------------------*/
+
+void SK_(setup)(VgNeeds* needs) 
+{
+   needs->name                    = "nulgrind";
+   needs->description             = "an binary JIT-compiler";
+
    needs->debug_info              = Vg_DebugNone;
    needs->precise_x86_instr_sizes = False;
    needs->pthread_errors          = False;
@@ -63,61 +72,10 @@ void SK_(setup)(VgNeeds* needs)
    needs->shadow_memory           = False;
    needs->track_threads           = False;
 
-   VG_(register_compact_helper)((Addr) & add_one);
-
-   // SSS: temporary
+   // SSS: eLiMiNaTe
    VG_(clo_skin) = Vg_Other;
 }
 
-void SK_(init)(void)
-{
-}
-
-static UCodeBlock* lackey_instrument(UCodeBlock* cb_in)
-{
-   UCodeBlock* cb;
-   Int         i;
-   UInstr*     u_in;
-
-   cb = VG_(allocCodeBlock)();
-   cb->nextTemp = cb_in->nextTemp;
-
-   for (i = 0; i < cb_in->used; i++) {
-      u_in = &cb_in->instrs[i];
-
-      switch (u_in->opcode) {
-         case NOP: case CALLM_S: case CALLM_E:
-            break;
-   
-         default:
-            //uInstr0(cb, CCALL_0_0, 0);
-            //uLiteral(cb, (Addr) & add_one);
-            VG_(callHelper_0_0)(cb, (Addr) & add_one);
-            VG_(copyUInstr)(cb, u_in);
-            break;
-      }
-   }
-
-   VG_(freeCodeBlock)(cb_in);
-   return cb;
-}
-
-UCodeBlock* SK_(instrument) ( UCodeBlock* cb, Addr not_used )
-{
-   /* VGP_PUSHCC(VgpInstrument); */
-   cb = lackey_instrument(cb);
-   /* VGP_POPCC; */
-   if (VG_(disassemble)) 
-      VG_(ppUCodeBlock) ( cb, "Lackey instrumented code:" );
-   return cb;
-}
-
-void SK_(fini)(void)
-{
-    VG_(printf)("UInstrs counted: %u\n", n_uinstrs);
-}
-
 /*--------------------------------------------------------------------*/
-/*--- end                                              vg_lackey.c ---*/
+/*--- end                                            vg_cachesim.c ---*/
 /*--------------------------------------------------------------------*/
-
