@@ -1,6 +1,5 @@
-
 /*--------------------------------------------------------------------*/
-/*--- A header file for all parts of Valgrind.                     ---*/
+/*--- A header file for all parts of Valgrind's core.              ---*/
 /*--- Include no other!                                            ---*/
 /*---                                                 vg_include.h ---*/
 /*--------------------------------------------------------------------*/
@@ -194,15 +193,6 @@ typedef unsigned char Bool;
    ( ((bit7) << 7) | ((bit6) << 6) | ((bit5) << 5) | ((bit4) << 4)  \
      | ((bit3) << 3) | ((bit2) << 2) | ((bit1) << 1) | (bit0))
 
-/* For cache simulation */
-typedef struct { 
-    int size;       /* bytes */
-    int assoc;
-    int line_size;  /* bytes */
-} cache_t;
-
-#define UNDEFINED_CACHE     ((cache_t) { -1, -1, -1 })
-
 /* ---------------------------------------------------------------------
    Now the basic types are set up, we can haul in the kernel-interface
    definitions.
@@ -210,36 +200,70 @@ typedef struct {
 
 #include "./vg_kerneliface.h"
 
-
 /* ---------------------------------------------------------------------
-   Settings derived from the chosen main task (ZZZ)
+   Settings relating to the used skin
    ------------------------------------------------------------------ */
 
+// SSS: remove this eventually -- need something else for all the
+// if (clo_action==Vg_MemCheck) tests
 typedef 
-   enum { Vg_None, Vg_MemCheck, Vg_Eraser, Vg_CacheSim }
-   VgAction;
+   enum { Vg_None, Vg_MemCheck, Vg_Eraser, Vg_CacheSim, Vg_Other }
+   VgSkin;
 
 typedef
-   enum { Vg_DebugNone, Vg_DebugImprecise, Vg_DebugPrecise }
+   enum { Vg_DebugUnknown,    /* Just for checking it's been initialised */
+          Vg_DebugNone, Vg_DebugImprecise, Vg_DebugPrecise }
    VgDebugInfo;
 
+/* If new fields are added to this type, update:
+ *  - vg_main.c:sanity_check_needs
+ *
+ * If the name of this type or any of its fields change, update:
+ *  - dependent comments (just search for "VG_(needs)"). 
+ */
 typedef
    struct {
       /* name and description used in the startup message */
       Char* name;
       Char* description;
+
       /* Kind of debug info needed */
       VgDebugInfo debug_info;
       /* Needed if working at x86 instr level rather than UCode level, eg. 
        * for cache simulation where we have to update state for every x86
        * instruction */
       Bool precise_x86_instr_sizes;
-      /* Is shadow memory required? */
-      Bool shadow_memory;
       /* Report pthread errors? */
       Bool pthread_errors;
-      /* Want to support error suppressions? */
-      Bool suppressions;
+      /* Want to report errors?  This implies includes handling of 
+       * suppressions, too. */
+      Bool report_errors;
+
+      /* Is information kept about specific individual basic blocks?  (Eg. for
+       * cachesim there are cost-centres for every instruction, stored at a
+       * basic block level.)  If so, it sometimes has to be discarded, because
+       * .so mmap/munmap-ping or self-modifying code (informed by the
+       * DISCARD_TRANSLATIONS user request) can cause one instruction address
+       * to store information about two different instructions in one program
+       * run!
+       */
+      Bool identifies_basic_blocks;
+
+      /* Extension defines its own command line options? */
+      Bool command_line_options;
+      /* Extension defines its own client requests? */
+      Bool client_requests;
+
+      /* Extension adds custom code for core UInstrs? */
+      Bool augments_UInstrs;
+      /* Extension defines its own UInstrs? */
+      Bool extends_UCode;
+
+      /* Is shadow memory required? */
+      Bool shadow_memory;
+      /* Should threads be tracked? */
+      Bool track_threads;
+
    } VgNeeds;
 
 extern VgNeeds VG_(needs);
@@ -300,15 +324,9 @@ extern Bool  VG_(clo_single_step);
 /* Code improvement?  default: YES */
 extern Bool  VG_(clo_optimise);
 /* Action being performed.  default: Vg_MemCheck */
-extern VgAction VG_(clo_action);
+extern VgSkin VG_(clo_skin);
 /* DEBUG: clean up instrumented code?  default: YES */
 extern Bool  VG_(clo_cleanup);
-/* I1 cache configuration.  default: undefined */
-extern cache_t VG_(clo_I1_cache);
-/* D1 cache configuration.  default: undefined */
-extern cache_t VG_(clo_D1_cache);
-/* L2 cache configuration.  default: undefined */
-extern cache_t VG_(clo_L2_cache);
 /* SMC write checks?  default: SOME (1,2,4 byte movs to mem) */
 extern Int   VG_(clo_smc_check);
 /* DEBUG: print system calls?  default: NO */
@@ -386,7 +404,7 @@ extern void VG_(shutdown_logging) ( void );
    VGP_PAIR(VgpAddToT,     "add-to-transtab"),        \
    VGP_PAIR(VgpSARP,       "set-addr-range-perms"),   \
    VGP_PAIR(VgpSyscall,    "syscall wrapper"),        \
-   VGP_PAIR(VgpCacheInstrument, "cache instrument"),  \
+   /* SSS: genericise this */                         \
    VGP_PAIR(VgpCacheGetBBCC,"cache get BBCC"),        \
    VGP_PAIR(VgpCacheSimulate, "cache simulate"),      \
    VGP_PAIR(VgpCacheDump,  "cache stats dump"),       \
@@ -464,7 +482,7 @@ extern Bool  VG_(is_empty_arena) ( ArenaId aid );
 
 
 /* ---------------------------------------------------------------------
-   Exports of vg_clientfuns.c
+   Exports of vg_clientfuncs.c
    ------------------------------------------------------------------ */
 
 /* This doesn't export code or data that valgrind.so needs to link
@@ -912,6 +930,8 @@ extern void VG_(restore_all_host_signals)
 #  define NULL ((void*)0)
 #endif
 
+extern Int VG_(log2) ( Int x );
+
 extern void VG_(exit)( Int status )
             __attribute__ ((__noreturn__));
 
@@ -1100,7 +1120,7 @@ typedef
 
       /* for calling C functions -- CCALL_M_N passes M arguments and returns N
        * (0 or 1) return values */
-      CCALL_1_0, CCALL_2_0,
+      CCALL_0_0, CCALL_1_0, CCALL_2_0,
 
       /* Hack for translating string (REP-) insns.  Jump to literal if
          TempReg/RealReg is zero. */
@@ -1114,6 +1134,7 @@ typedef
       /* Advance the simulated %eip by some small (< 128) number. */
       INCEIP,
 
+#if 0
       /* uinstrs which are not needed for mere translation of x86 code,
          only for instrumentation of it. */
       LOADV,
@@ -1126,7 +1147,9 @@ typedef
          %eflags register. */
       GETVF,
       PUTVF,
+#endif
 
+#if 0
       /* Do a unary or binary tag op.  Only for post-instrumented
          code.  For TAG1, first and only arg is a TempReg, and is both
          arg and result reg.  For TAG2, first arg is src, second is
@@ -1134,7 +1157,16 @@ typedef
          3rd arg is a RiCHelper with a Lit16 tag.  This indicates
          which tag op to do. */
       TAG1,
-      TAG2
+      TAG2,
+#endif
+
+      /* Makes it easy for extended-UCode ops by doing:
+
+           enum { EU_OP1 = DUMMY_FINAL_OP + 1, ... } 
+   
+         WARNING: Do not add new opcodes after this one!  They can be added
+         before, though. */
+      DUMMY_FINAL_UOPCODE
    }
    Opcode;
 
@@ -1239,7 +1271,8 @@ typedef
       UChar   extra4b:4;  /* Spare field, used by WIDEN for src
                              -size, and by LEA2 for scale 
                              (1,2,4 or 8), and by unconditional JMPs for
-                             orig x86 instr size if --cachesim=yes */
+                             orig x86 instr size if precise_x86_instr_sizes
+                             needed */
 
 
       /* word 5 */
@@ -1261,13 +1294,13 @@ typedef
    }
    UCodeBlock;
 
+
 /* Refer to `the last instruction stuffed in', including as an
    lvalue. */
 #define LAST_UINSTR(cb) (cb)->instrs[(cb)->used-1]
 
 /* An invalid temporary number :-) */
 #define INVALID_TEMPREG 999999999
-
 
 /* ---------------------------------------------------------------------
    Exports of vg_demangle.c
@@ -1282,6 +1315,16 @@ extern void VG_(demangle) ( Char* orig, Char* result, Int result_size );
 
 extern UChar* VG_(emit_code) ( UCodeBlock* cb, Int* nbytes );
 
+extern void   VG_(emitB)  ( UInt b );
+extern void   VG_(emitW)  ( UInt w );
+extern void   VG_(emitL)  ( UInt l );
+extern void   VG_(newEmit)( void );
+
+extern Int    VG_(helper_offset) ( Addr a );
+
+// SSS: continue with this...
+void VG_(synth_call_baseBlock_method) ( Bool ensure_shortform, 
+                                        Int word_offset );
 
 /* ---------------------------------------------------------------------
    Exports of vg_to_ucode.c
@@ -1300,6 +1343,20 @@ extern Int   VG_(getNewShadow)   ( UCodeBlock* cb );
 /* ---------------------------------------------------------------------
    Exports of vg_translate.c
    ------------------------------------------------------------------ */
+
+/* A structure for communicating temp uses, and for indicating
+   temp->real register mappings for patchUInstr. */
+typedef
+   struct {
+      Int   realNo;
+      Int   tempNo;
+      Bool  isWrite;
+   }
+   TempUse;
+
+   // ZZZ: made global
+extern Int VG_(getTempUsage) ( UInstr* u, TempUse* arr );
+
 
 extern void  VG_(translate)  ( ThreadState* tst,
                                Addr  orig_addr,
@@ -1325,7 +1382,8 @@ extern void VG_(setLiteralField) ( UCodeBlock* cb, UInt lit32 );
 extern Bool VG_(anyFlagUse) ( UInstr* u );
 
 
-
+extern void VG_(ppUOperand)       ( UInstr* u, Int operandNo, 
+                                    Int sz, Bool parens );
 extern void  VG_(ppUInstr)        ( Int instrNo, UInstr* u );
 extern void  VG_(ppUCodeBlock)    ( UCodeBlock* cb, Char* title );
 
@@ -1455,7 +1513,6 @@ extern void VG_(delete_client_stack_blocks_following_ESP_change) ( void );
 
 extern void VG_(show_client_block_stats) ( void );
 
-
 /* ---------------------------------------------------------------------
    Exports of vg_procselfmaps.c
    ------------------------------------------------------------------ */
@@ -1541,11 +1598,17 @@ extern void* VG_(client_realloc)  ( ThreadState* tst,
    Stuff is copied from baseBlock to here, the assembly magic runs,
    and then the inverse copy is done. */
 
+extern void VG_(bad_option) ( Char* type, Char* opt );
+
 extern UInt VG_(m_state_static) [8 /* int regs, in Intel order */ 
                                  + 1 /* %eflags */ 
                                  + 1 /* %eip */
                                  + VG_SIZE_OF_FPUSTATE_W /* FPU state */
                                 ];
+
+/* Used by extensions to declare which helpers they use */
+extern void VG_(register_compact_helper)    ( Addr a );
+extern void VG_(register_noncompact_helper) ( Addr a );
 
 /* Handy fns for doing the copy back and forth. */
 extern void VG_(copy_baseBlock_to_m_state_static) ( void );
@@ -1661,44 +1724,22 @@ extern UInt VG_(num_scheduling_events_MAJOR);
    Exports of vg_memory.c
    ------------------------------------------------------------------ */
 
+/* Generally useful */
+#define IS_ALIGNED4_ADDR(aaa_p) (0 == (((UInt)(aaa_p)) & 3))
+
+// JJJ: what is the exact meaning of the VGM_ prefix?
 extern void VGM_(init_memory_audit) ( void );
 extern Addr VGM_(curr_dataseg_end);
 extern void VG_(show_reg_tags) ( void );
+
 extern void VG_(detect_memory_leaks) ( void );
-extern void VG_(done_prof_mem) ( void );
-
-/* Set permissions for an address range.  Not speed-critical. */
-extern void VGM_(make_noaccess) ( Addr a, UInt len );
-extern void VGM_(make_writable) ( Addr a, UInt len );
-extern void VGM_(make_readable) ( Addr a, UInt len );
-/* Use with care! (read: use for shmat only) */
-extern void VGM_(make_readwritable) ( Addr a, UInt len );
-extern void VGM_(copy_address_range_perms) ( Addr src, Addr dst,
-                                             UInt len );
-
-/* Check permissions for an address range.  Not speed-critical. */
-extern Bool VGM_(check_writable) ( Addr a, UInt len, Addr* bad_addr );
-extern Bool VGM_(check_readable) ( Addr a, UInt len, Addr* bad_addr );
-extern Bool VGM_(check_readable_asciiz) ( Addr a, Addr* bad_addr );
 
 /* Sanity checks which may be done at any time.  The scheduler decides
    when. */
 extern void VG_(do_sanity_checks) ( Bool force_expensive );
-/* Very cheap ... */
-extern Bool VG_(first_and_last_secondaries_look_plausible) ( void );
 
-/* These functions are called from generated code. */
-extern void VG_(helperc_STOREV4) ( UInt, Addr );
-extern void VG_(helperc_STOREV2) ( UInt, Addr );
-extern void VG_(helperc_STOREV1) ( UInt, Addr );
-
-extern UInt VG_(helperc_LOADV1) ( Addr );
-extern UInt VG_(helperc_LOADV2) ( Addr );
-extern UInt VG_(helperc_LOADV4) ( Addr );
-
+/* Called from generated code. */
 extern void VGM_(handle_esp_assignment) ( Addr new_espA );
-extern void VGM_(fpu_write_check) ( Addr addr, Int size );
-extern void VGM_(fpu_read_check)  ( Addr addr, Int size );
 
 /* Safely (avoiding SIGSEGV / SIGBUS) scan the entire valid address
    space and pass the addresses and values of all addressible,
@@ -1717,43 +1758,6 @@ extern Bool VG_(is_just_below_ESP)( Addr esp, Addr aa );
 /* Needed by the pthreads implementation. */
 #define VGM_WORD_VALID     0
 #define VGM_WORD_INVALID   0xFFFFFFFF
-
-/* ---------------------------------------------------------------------
-   Exports of vg_eraser.c
-   ------------------------------------------------------------------ */
-
-typedef enum 
-   { Vge_VirginInit, Vge_NonVirginInit, Vge_SegmentInit } 
-   VgeInitStatus;
-
-void VGE_(init_eraser) ( void );
-void VGE_(end_eraser ) ( void );
-
-void VGE_(eraser_mem_read)  ( Addr a, UInt data_size );
-void VGE_(eraser_mem_write) ( Addr a, UInt data_size );
-
-UCodeBlock* VG_(eraser_instrument) ( UCodeBlock* cb_in );
-
-// XXX: using void* to avoid importing pthread.h for pthread_mutex_t, yuck
-void VGE_(thread_does_lock)  ( ThreadId tid, void* mutex );
-void VGE_(thread_does_unlock)( ThreadId tid, void* mutex );
-void VGE_(thread_dies)       ( void );
-
-void VGE_(init_primary_and_distinguished_secondary_maps)(void);
-Bool VGE_(first_and_last_secondaries_look_plausible) ( void );
-
-void VGE_(check_distinguished_secondary) ( void );
-
-/* Set permissions for an address range.  Not speed-critical. */
-extern void VGE_(make_access) ( Addr a, UInt len /* in bytes */, 
-                                UInt init_status );
-extern void VGE_(make_aligned_word_WRITABLE) ( Addr a );
-extern Bool VGE_(check_readable) ( Addr a, UInt len, Addr* bad_addr );
-extern void VGE_(copy_address_range_states) ( Addr src, Addr dst,
-                                              UInt len );
-
-//extern void VGE_(init_noaccess_sword) ( Addr a );
-
 
 /* ---------------------------------------------------------------------
    Exports of vg_syscall_mem.c
@@ -1913,34 +1917,204 @@ extern void VG_(helper_SAHF);
 extern void VG_(helper_DAS);
 extern void VG_(helper_DAA);
 
-extern void VG_(helper_value_check4_fail);
-extern void VG_(helper_value_check2_fail);
-extern void VG_(helper_value_check1_fail);
-extern void VG_(helper_value_check0_fail);
-
 /* NOT A FUNCTION; this is a bogus RETURN ADDRESS. */
 extern void VG_(signalreturn_bogusRA)( void );
 
 
 /* ---------------------------------------------------------------------
-   Exports of vg_cachesim.c
+   Template functions
    ------------------------------------------------------------------ */
 
-extern Int VG_(log2) ( Int x );
+/* These are the parameterised functions in the core.  The default definitions
+ * are replaced by LD_PRELOADing skin substitutes.  At the very least, a skin
+ * must define the fundamental template functions.  Depending on what needs
+ * boolean variables are set, extra templates will be used too.  For each
+ * group, the need governing its use is mentioned. */
 
-extern UCodeBlock* VG_(cachesim_instrument) ( UCodeBlock* cb_in, 
-                                              Addr orig_addr );
+/* ---------------------------------------------------------------------
+   Fundamental template functions
+   ------------------------------------------------------------------ */
 
-typedef struct  _iCC  iCC;
-typedef struct _idCC idCC;
+extern void        SK_(setup)      ( VgNeeds* needs );
+extern void        SK_(init)       ( void );
+extern UCodeBlock* SK_(instrument) ( UCodeBlock* cb, Addr a );
+extern void        SK_(fini)       ( void );
 
-extern void VG_(init_cachesim)      ( void );
-extern void VG_(do_cachesim_results)( Int client_argc, Char** client_argv );
+#if 0
+/* ---------------------------------------------------------------------
+   For skins reporting errors (VG_(needs).report_errors)
+   ------------------------------------------------------------------ */
 
-extern void VG_(cachesim_log_non_mem_instr)(  iCC* cc );
-extern void VG_(cachesim_log_mem_instr)    ( idCC* cc, Addr data_addr );
+// SSS: export getLine()
 
-extern void VG_(cachesim_notify_discard) ( TTEntry* tte );
+typedef
+   enum { PThreadErr,
+          FinalDummyErrKind
+   }
+   ErrKind;
+
+typedef
+   enum {
+      /* Pthreading error */
+      PThread,
+      FinalDummySuppressionKind
+   }
+   SuppressionKind;
+
+typedef
+   struct _Suppression {
+      struct _Suppression* next;
+      /* The number of times this error has been suppressed. */
+      Int count;
+      /* The name by which the suppression is referred to. */
+      Char* sname;
+      /* What kind of suppression. */
+      SuppressionKind skind;           // ??
+      /* String -- can be used in skin-specific way*/
+      Char* string;
+      /* For any skin-specific extra */
+      void* extra;
+      /* Name of fn where err occurs, and immediate caller (mandatory). */
+      SuppressionLocTy caller0_ty;
+      Char*            caller0;
+      SuppressionLocTy caller1_ty;
+      Char*            caller1;
+      /* Optional extra callers. */
+      SuppressionLocTy caller2_ty;
+      Char*            caller2;
+      SuppressionLocTy caller3_ty;
+      Char*            caller3;
+   } 
+   Suppression;
+
+typedef
+   struct _ErrContext {
+      /* ALL */
+      struct _ErrContext* next;
+      /* ALL */
+      /* NULL if unsuppressed; or ptr to suppression record. */
+      Suppression* supp;
+      /* ALL */
+      Int count;
+      /* ALL */
+      ErrKind ekind;       // necessary??
+      /* ALL */
+      ExeContext* where;
+      /* Used frequently */
+      Addr addr;
+      /* Used frequently */
+      Char* string;
+      /* For any skin-specific extras */
+      void* extra;
+      /* ALL */
+      ThreadId tid;
+      /* ALL */
+      /* These record %EIP, %ESP and %EBP at the error point.  They
+         are only used to make GDB-attaching convenient; there is no
+         other purpose; specifically they are not used to do
+         comparisons between errors. */
+      UInt m_eip;
+      UInt m_esp;
+      UInt m_ebp;
+   }
+   ErrContext;
+
+extern Bool SKN_(eq_ErrContext) ( Bool cheap_addr_cmp,
+                            ErrContext* e1, ErrContext* e2 );
+
+extern void SKN_(pp_ErrContext) ( ErrContext* ec, Bool printCount );
+/* Return value indicates recognition.  If recognised, type goes in skind. */
+extern Bool SKN_(recognised_suppression) ( char* name, SuppressionKind *skind );
+extern Bool SKN_(read_suppression_specific_info) ( Suppression *s );
+extern Bool SKN_(error_matches_suppression)(ErrContext* ec, Suppression* su);
+#endif
+
+/* ---------------------------------------------------------------------
+   For skins keeping basic block-level information 
+   (VG_(needs).identifies_basic_blocks)
+   ------------------------------------------------------------------ */
+
+// SSS: different prefix
+extern void SK_(discard_basic_block_info) ( TTEntry* tte );
+
+/* ---------------------------------------------------------------------
+   Skin-specific command line options (VG_(needs).command_line_options)
+   ------------------------------------------------------------------ */
+
+extern void SKN_(process_cmd_line_options)(UInt argc, UChar* argv[]);
+
+/* ---------------------------------------------------------------------
+   Skin-specific client requests (VG_(needs).client_requests)
+   ------------------------------------------------------------------ */
+
+extern UInt SKN_(handle_client_request) ( ThreadState* tst, 
+                                             UInt* arg_block );
+
+/* ---------------------------------------------------------------------
+   For augmenting UInstrs -- generating extra code for one or more core
+   UInstrs (VG_(needs).augments_UInstrs)
+   ------------------------------------------------------------------ */
+
+extern void  SKN_(augmentUInstr)  ( UInstr* u );
+
+/* ---------------------------------------------------------------------
+   Template functions extending UCode -- adding new UInstrs
+   (VG_(needs).extends_UCode)
+   ------------------------------------------------------------------ */
+
+extern void  SKN_(emitExtUInstr)  ( UInstr* u );
+extern Bool  SKN_(saneExtUInstr)  ( Bool beforeRA, UInstr* u );
+extern Char* SKN_(nameExtUOpcode) ( Opcode opc );
+extern void  SKN_(ppExtUInstr)    ( UInstr* u );
+extern Int   SKN_(getExtTempUsage)( UInstr* u, TempUse* arr );
+
+/* ---------------------------------------------------------------------
+   For shadow memory (VG_(needs).shadow_memory)
+   ------------------------------------------------------------------ */
+
+// SSS: can any of these be removed/merged? (esp the checking ones)
+
+extern void SKN_(init_shadow_memory)(void);
+
+extern void SKN_(make_segment_noaccess) ( Addr a, UInt len );
+extern void SKN_(make_segment_readable) ( Addr a, UInt len );
+
+/* Set permissions for an address range.  Not speed-critical. */
+extern void SKN_(make_noaccess) ( Addr a, UInt len );
+extern void SKN_(make_writable) ( Addr a, UInt len );
+extern void SKN_(make_readable) ( Addr a, UInt len );
+/* Use with care! (read: use for shmat only) */
+extern void SKN_(make_readwritable) ( Addr a, UInt len );
+
+extern void SKN_(make_aligned_word_NOACCESS) ( Addr a );
+extern void SKN_(make_aligned_word_WRITABLE) ( Addr a );
+
+extern void SKN_(copy_address_range_state) ( Addr src, Addr dst, UInt len );
+
+/* Check permissions for an address range.  Not speed-critical. */
+// SSS: these are a bit MemCheck-specific, really...
+extern Bool SKN_(check_writable) ( Addr a, UInt len, Addr* bad_addr );
+extern Bool SKN_(check_readable) ( Addr a, UInt len, Addr* bad_addr );
+extern Bool SKN_(check_readable_asciiz) ( Addr a, Addr* bad_addr );
+
+// JJJ: does this need to be called after set_address_range_perms?  The
+// comment says its for buggy syscall wrappers, but the syscall functions
+// do this check themselves too.  would be nice if I could get rid of it
+// from set_address_range_perms...
+extern Bool SKN_(first_and_last_secondaries_look_plausible) ( void );
+extern void SKN_(expensive_shadow_memory_sanity_check) ( void );
+
+/* ---------------------------------------------------------------------
+   Thread-related exports of vgext_default.c, which are replaced by
+   definitions from the chosen extension by LD_PRELOADing
+   ------------------------------------------------------------------ */
+
+// JJJ: use of void* ugly but necessary to avoid importing pthread.h, which
+// screws up lib_pthread.so.
+void SKN_(thread_does_lock)  ( ThreadId tid, void* mutex );
+void SKN_(thread_does_unlock)( ThreadId tid, void* mutex );
+void SKN_(thread_dies)       ( void );
+
 
 /* ---------------------------------------------------------------------
    The state of the simulated CPU.
@@ -2016,7 +2190,6 @@ extern Int VGOFF_(sh_esi);
 extern Int VGOFF_(sh_edi);
 extern Int VGOFF_(sh_eflags);
 
-
 /* -----------------------------------------------------
    Read-only parts of baseBlock.
    -------------------------------------------------- */
@@ -2061,28 +2234,22 @@ extern Int VGOFF_(helper_SAHF);
 extern Int VGOFF_(helper_DAS);
 extern Int VGOFF_(helper_DAA);
 
-extern Int VGOFF_(helper_value_check4_fail);
-extern Int VGOFF_(helper_value_check2_fail);
-extern Int VGOFF_(helper_value_check1_fail);
-extern Int VGOFF_(helper_value_check0_fail);
-
-extern Int VGOFF_(helperc_STOREV4); /* :: UInt -> Addr -> void */
-extern Int VGOFF_(helperc_STOREV2); /* :: UInt -> Addr -> void */
-extern Int VGOFF_(helperc_STOREV1); /* :: UInt -> Addr -> void */
-
-extern Int VGOFF_(helperc_LOADV4); /* :: Addr -> UInt -> void */
-extern Int VGOFF_(helperc_LOADV2); /* :: Addr -> UInt -> void */
-extern Int VGOFF_(helperc_LOADV1); /* :: Addr -> UInt -> void */
-
 extern Int VGOFF_(handle_esp_assignment); /* :: Addr -> void */
-extern Int VGOFF_(fpu_write_check);       /* :: Addr -> Int -> void */
-extern Int VGOFF_(fpu_read_check);        /* :: Addr -> Int -> void */
 
-extern Int VGOFF_(cachesim_log_non_mem_instr);
-extern Int VGOFF_(cachesim_log_mem_instr);
+/* For storing extension-specific helpers, determined at runtime.  The addr 
+ * and offset arrays together form a (addr, offset) map that allows a 
+ * helper's baseBlock offset to be computed from its address.  It's done 
+ * like this so CCALL_M_Ns and other helper calls can use the function 
+ * address rather than having to much around with offsets. */
+extern UInt VG_(n_compact_helpers);
+extern UInt VG_(n_noncompact_helpers);
 
-extern Int VGOFF_(eraser_mem_read);
-extern Int VGOFF_(eraser_mem_write);
+extern Addr VG_(compact_helper_addrs)  [];
+extern Int  VG_(compact_helper_offsets)[];
+
+extern Addr VG_(noncompact_helper_addrs)  [];
+extern Int  VG_(noncompact_helper_offsets)[];
+
 
 #endif /* ndef __VG_INCLUDE_H */
 
