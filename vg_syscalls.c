@@ -60,8 +60,13 @@
    Doing mmap, munmap, mremap, mprotect
    ------------------------------------------------------------------ */
 
+// Nb: this isn't done as precisely as possible, but it seems that programs
+// are usually sufficiently well-behaved that the more obscure corner cases
+// aren't important.  Various comments in the few functions below give more
+// details... njn 2002-Sep-17
+
 /* AFAICT from kernel sources (mm/mprotect.c) and general experimentation,
-   munmap, mprotect (SSS: and mremap??) work at the page level.  So addresses
+   munmap, mprotect (and mremap??) work at the page level.  So addresses
    and lengths must be adjusted for this. */
 
 /* Mash around start and length so that the area exactly covers
@@ -108,6 +113,8 @@ void munmap_segment ( Addr a, UInt len )
    /* Invalidate translations as necessary (also discarding any basic
       block-specific info retained by the skin) and unload any debug
       symbols. */
+   // This doesn't handle partial unmapping of exe segs correctly, if that
+   // ever happens...
    VG_(remove_if_exe_segment) ( a, len );
 
    VG_TRACK( die_mem_munmap, a, len );
@@ -123,6 +130,8 @@ void mprotect_segment ( Addr a, UInt len, Int prot )
    xx = prot & PROT_EXEC;
 
    // if removing exe permission, should check and remove from exe_seg list
+   // if adding, should check and add to exe_seg list
+   // easier to ignore both cases -- both v. unlikely?
    mash_addr_and_len(&a, &len);
    VG_TRACK( change_mem_mprotect, a, len, nn, rr, ww, xx );
 }
@@ -138,19 +147,20 @@ void mremap_segment ( old_addr, old_size, new_addr, new_size )
 
    if (new_size < old_size) {
       // if exe_seg
-      // unmap old symbols from old_addr+new_size..old_addr+new_size
-      // update exe_seg size = new_size
-      // update exe_seg addr = new_addr...
+      //    unmap old symbols from old_addr+new_size..old_addr+new_size
+      //    update exe_seg size = new_size
+      //    update exe_seg addr = new_addr...
       VG_TRACK( copy_mem_remap, old_addr, new_addr, new_size );
       VG_TRACK( die_mem_munmap, old_addr+new_size, old_size-new_size );
 
    } else {
       // if exe_seg
-      // map new symbols from new_addr+old_size..new_addr+new_size
-      // update exe_seg size = new_size
-      // update exe_seg addr = new_addr...
+      //    map new symbols from new_addr+old_size..new_addr+new_size
+      //    update exe_seg size = new_size
+      //    update exe_seg addr = new_addr...
       VG_TRACK( copy_mem_remap, old_addr, new_addr, old_size );
-      // SSS: what should the permissions on the new extended part be??
+      // what should the permissions on the new extended part be??
+      // using 'rwx'
       VG_TRACK( new_mem_mmap,   new_addr+old_size, new_size-old_size,
                                 False, True, True, True );
    }
