@@ -335,7 +335,7 @@ void VG_(maybe_add_context) ( ErrContext* ec )
 */
 /* I've gone all object-oriented... */
 /* NULL tst indicates the error is called from generated code. non-NULL tst
- * indicates the error is called from the scheduler. */
+ * indicates the error is called from the core or skin. */
 void VG_(construct_err_context) ( ErrContext* ec, ErrKind ekind, Addr a,
                                   Char* s, ThreadState* tst )
 {
@@ -544,18 +544,17 @@ static Bool setLocationTy ( Char** p_caller, SuppressionLocTy* p_ty )
 #define STREQ(s1,s2) (s1 != NULL && s2 != NULL \
                       && VG_(strcmp)((s1),(s2))==0)
 
-// SSS: assuming at the moment that a suppression file will have only and
-// exactly the suppressions asked for by the needs.
+// SSS: currently ignoring unrecognised suppresions, but printing a warning.
 static void load_one_suppressions_file ( Char* filename )
 {
 #  define N_BUF 200
    Int  fd;
    Bool eof;
+   Bool is_unrecognised_suppressions = False;
    Char buf[N_BUF+1];
    fd = VG_(open_read)( filename );
    if (fd == -1) {
-      VG_(message)(Vg_UserMsg, 
-                   "FATAL: can't open suppressions file `%s'", 
+      VG_(message)(Vg_UserMsg, "FATAL: can't open suppressions file `%s'", 
                    filename );
       VG_(exit)(1);
    }
@@ -593,8 +592,14 @@ static void load_one_suppressions_file ( Char* filename )
           * entry.  Not sure if this is a good long-term approach -- makes
           * it impossible to spot incorrect suppression names?  (apart
           * from the warning given) */
-         VG_(message)(Vg_DebugMsg, 
-                      "Didn't recognise suppression '%s'; ignoring", buf);
+         if (! is_unrecognised_suppressions) {
+            is_unrecognised_suppressions = True;
+            VG_(start_msg)(Vg_DebugMsg);
+            VG_(add_to_msg)("Ignoring unrecognised suppressions: ");
+            VG_(add_to_msg)("'%s'", buf);
+         } else {
+            VG_(add_to_msg)(", '%s'", buf);
+         }
          while (True) {
             eof = VG_(getLine) ( fd, buf, N_BUF );
             if (eof) goto syntax_error;
@@ -644,6 +649,9 @@ static void load_one_suppressions_file ( Char* filename )
       supp->next = vg_suppressions;
       vg_suppressions = supp;
    }
+   /* Print out warning about any ignored suppressions */
+   VG_(add_to_msg)("\n");
+   VG_(end_msg)();
 
    VG_(close)(fd);
    return;

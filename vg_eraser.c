@@ -45,17 +45,7 @@ static UInt n_eraser_warnings = 0;
 #define DEBUG_ACCESSES      0   /* Print reads, writes */
 #define DEBUG_MEM_LOCKSET_CHANGES 0   /* Print when an address's lockset changes;  only useful with DEBUG_ACCESSES */
 
-#define DEBUG_OVERLAPS      0   /* Warn on read/write word overlaps */ 
 #define DEBUG_VIRGIN_READS  1   /* Dump around address on VIRGIN reads */
-
-#if DEBUG_ACCESSES
-   #define DEBUG_STATE2(x,y,z) VG_(printf)("(%u) ", data_size), VG_(printf)((x),(y),(z))
-   #define DEBUG_STATE3(x,y,z,a) VG_(printf)("(%u) ", data_size), VG_(printf)((x),(y),(z),(a))
-
-#else
-   #define DEBUG_STATE2(x,y,z)
-   #define DEBUG_STATE3(x,y,z,a)
-#endif
 
 /*------------------------------------------------------------*/
 /*--- Low-level support for memory tracking.               ---*/
@@ -241,6 +231,9 @@ static __inline__ shadow_word* get_sword_addr ( Addr a )
    return & (sm->swords[sm_off]);
 }
 
+// SSS: rename these so they're not so similar to memcheck, unless it's
+// appropriate of course
+
 static __inline__ void init_virgin_sword(Addr a)
 {
    set_sword(a, virgin_sword);
@@ -248,20 +241,16 @@ static __inline__ void init_virgin_sword(Addr a)
 
 /* 'a' is guaranteed to be 4-byte aligned here (not that that's important,
  * really) */
-void SKN_(make_aligned_word_NOACCESS) ( Addr a )
+void make_writable_aligned ( Addr a, UInt size )
 {
-   //PROF_EVENT(??)  PPP
-   vg_assert(IS_ALIGNED4_ADDR(a));
-   /* do nothing */
-}
+   Addr    a_past_end = a + size;
 
-/* 'a' is guaranteed to be 4-byte aligned here (not that that's important,
- * really) */
-void SKN_(make_aligned_word_WRITABLE) ( Addr a )
-{
    //PROF_EVENT(??)  PPP
    vg_assert(IS_ALIGNED4_ADDR(a));
-   set_sword(a, virgin_sword);
+
+   for ( ; a < a_past_end; a += 4) {
+      set_sword(a, virgin_sword);
+   }
 }
 
 static __inline__ void init_nonvirgin_sword(Addr a)
@@ -297,7 +286,7 @@ void set_address_range_state ( Addr a, UInt len /* in bytes */,
    Addr aligned_a, end, aligned_end;
 
 #if DEBUG_MAKE_ACCESSES
-   VG_(printf)("make_access: 0x%x, %u, init_status=%u\n", a, len, init_status);
+   VG_(printf)("make_access: 0x%x, %u, status=%u\n", a, len, status);
 #endif
    //PROF_EVENT(30); PPP
 
@@ -361,19 +350,13 @@ void set_address_range_state ( Addr a, UInt len /* in bytes */,
 
 
 
-void SKN_(make_segment_readable) ( Addr a, UInt len )
+void make_segment_readable ( Addr a, UInt len )
 {
    //PROF_EVENT(??);    PPP
    set_address_range_state ( a, len, Vge_SegmentInit );
 }
 
-void SKN_(make_noaccess) ( Addr a, UInt len )
-{
-   //PROF_EVENT(35);  PPP
-   /* do nothing */
-}  
-
-void SKN_(make_writable) ( Addr a, UInt len )
+void make_writable ( Addr a, UInt len )
 {
    //PROF_EVENT(36);  PPP
    set_address_range_state( a, len, Vge_VirginInit );
@@ -385,15 +368,10 @@ void make_readable ( Addr a, UInt len )
    set_address_range_state( a, len, Vge_NonVirginInit );
 }
 
-void SKN_(make_readwritable) ( Addr a, UInt len )
-{
-   //PROF_EVENT(38); PPP
-   set_address_range_state( a, len, Vge_NonVirginInit );
-}
 
-
+// SSS: change name
 /* Block-copy states (needed for implementing realloc()). */
-void SKN_(copy_address_range_state) ( Addr src, Addr dst, UInt len )
+void copy_address_range_state(Addr src, Addr dst, UInt len)
 {
    UInt i;
 
@@ -406,24 +384,61 @@ void SKN_(copy_address_range_state) ( Addr src, Addr dst, UInt len )
    }
 }
 
-// SSS: not certain about this
-Bool VGE_(check_readable) ( Addr a, UInt len, Addr* bad_addr )
-{
-   UInt  i;
-   shadow_word sword;
+// SSS: put these somewhere better
+static void eraser_mem_read (Addr a, UInt data_size);
+static void eraser_mem_write(Addr a, UInt data_size);
 
-   for (i = 0; i < len; i++) {
-      sword = *(get_sword_addr(a));
-      //PROF_EVENT(??); PPP
-      if (Vge_Virgin == sword.state && 
-          TID_INDICATING_NONVIRGIN != sword.other) {
-         if (bad_addr != NULL) *bad_addr = a;
-         return False;
-      }
-      a++;
-   }
-   return True;
+static
+void eraser_pre_mem_read(CorePart part, ThreadState* tst,
+                         Char* s, UInt base, UInt size )
+{
+   eraser_mem_read(base, size);
 }
+
+static
+void eraser_pre_mem_read_asciiz(CorePart part, ThreadState* tst,
+                                Char* s, UInt base )
+{
+   eraser_mem_read(base, VG_(strlen)((Char*)base));
+}
+
+static
+void eraser_pre_mem_write(CorePart part, ThreadState* tst,
+                          Char* s, UInt base, UInt size )
+{
+   eraser_mem_write(base, size);
+}
+
+
+
+static
+void eraser_new_mem_startup( Addr a, UInt len, Bool rr, Bool ww, Bool xx )
+{
+   // JJJ: this ignores the permissions and just makes it readable, like the
+   // old code did, AFAICT
+   make_segment_readable(a, len);
+}
+
+
+static
+void eraser_new_mem_heap ( Addr a, UInt len, Bool is_inited )
+{
+   if (is_inited) {
+      make_readable(a, len);
+   } else {
+      make_writable(a, len);
+   }
+}
+
+static
+void eraser_set_perms (Addr a, UInt len,
+                       Bool nn, Bool rr, Bool ww, Bool xx)
+{
+   if      (rr) make_readable(a, len);
+   else if (ww) make_writable(a, len);
+   /* else do nothing */
+}
+
 
 /*--------------------------------------------------------------*/
 /*--- Initialise the memory audit system on program startup. ---*/
@@ -477,9 +492,6 @@ Bool SKN_(expensive_sanity_check)(void)
 /*--------------------------------------------------------------*/
 /*--- Instrumentation                                        ---*/
 /*--------------------------------------------------------------*/
-
-static void eraser_mem_read (Addr a, UInt data_size);
-static void eraser_mem_write(Addr a, UInt data_size);
 
 #define uInstr1   VG_(newUInstr1)
 #define uInstr2   VG_(newUInstr2)
@@ -607,15 +619,16 @@ typedef
    EraserErrKind;
 
 
-void record_eraser_err ( ThreadId tid, Addr a, Bool is_write )
+void record_eraser_error ( ThreadId tid, Addr a, Bool is_write )
 {
    ErrContext ec;
 
    if (VG_(ignore_errors)()) return;
 
-   // SSS: probably gets the tid wrong sometimes...
    VG_(construct_err_context)(&ec, EraserErr, a, 
-                              (is_write ? "writing" : "reading"), NULL);
+                              (is_write ? "writing" : "reading"),
+                              &VG_(threads)[tid]);
+
    /* Nothing required in 'extra' field */
    VG_(maybe_add_context) ( &ec );
 }
@@ -669,94 +682,8 @@ Bool SKN_(error_matches_suppression)(ErrContext* ec, Suppression* su)
 
 
 /*--------------------------------------------------------------------*/
-/*--- Setup                                                        ---*/
+/*--- Locks n stuff                                                ---*/
 /*--------------------------------------------------------------------*/
-
-void SK_(setup)(VgNeeds* needs, VgTrackEvents* track)
-{
-   needs->name                    = "helgrind";
-   needs->description             = "a data race detector";
-
-   needs->record_mem_exe_context  = False;
-   needs->postpone_mem_reuse      = False;
-   
-   needs->debug_info              = True;
-   needs->pthread_errors          = True;
-   needs->report_errors           = True;
-
-   needs->identifies_basic_blocks = False;
-
-   needs->command_line_options    = False;
-   needs->client_requests         = False;
-
-   needs->extends_UCode           = False;
-
-   needs->wrap_syscalls           = True;
-
-   needs->sanity_checks           = False;
-
-   VG_(register_compact_helper)((Addr) & eraser_mem_read);
-   VG_(register_compact_helper)((Addr) & eraser_mem_write);
-
-   /* Events to track */
-#if 0
-   track->new_mem_startup       = & memcheck_new_mem_startup;
-   track->new_mem_heap          = & memcheck_new_mem_heap;
-   track->new_mem_stack         = & make_writable;
-   track->new_mem_stack_aligned = & make_aligned_word_WRITABLE;
-   track->new_mem_brk           = & make_writable;
-   track->new_mem_mmap          = & memcheck_set_perms;
-
-   track->copy_mem_heap         = & copy_address_range_state;
-   track->change_mem_mprotect   = & memcheck_set_perms;
-
-   track->ban_mem_heap          = & make_noaccess2;
-
-   track->die_mem_heap          = & memcheck_die_mem_heap;
-   track->die_mem_stack         = & make_noaccess3;
-   track->die_mem_stack_aligned = & make_aligned_word_NOACCESS;
-   track->die_mem_stack_thread  = & make_noaccess4;
-   track->die_mem_brk           = & make_noaccess5;
-   track->die_mem_munmap        = & make_noaccess6;
-   track->die_mem_pthread       = & make_noaccess7;
-   track->die_mem_signal        = & make_noaccess8;
-
-   track->pre_mem_read          = & check_is_readable;
-   track->pre_mem_read_asciiz   = & check_is_readable_asciiz;
-   track->pre_mem_write         = & check_is_writable;
-#endif
-   track->post_mem_write        = & make_readable;
-}
-
-void SK_(init)(void)
-{
-   Int i;
-   for (i = 0; i < VG_N_THREADS;       i++) 
-      thread_locks [i] = 0;
-
-   lockset_table[0] = NULL;
-   for (i = 1; i < LOCKSET_TABLE_SIZE; i++) 
-      lockset_table[i] = INVALID_LOCKSET_ENTRY;
-
-   init_shadow_memory();
-
-   /* Mark global variables touched from generated code */
-   VG_(track_events).post_mem_write ( (Addr)&VG_(clo_trace_malloc),  1 );
-   VG_(track_events).post_mem_write ( (Addr)&VG_(clo_sloppy_malloc), 1 );
-
-}
-
-void SK_(fini)(void)
-{
-#if DEBUG_LOCK_TABLE
-    {Int i;
-    for (i = 0; lockset_table[i] != INVALID_LOCKSET_ENTRY; i++) {
-       VG_(printf)("[%2d] = ", i);
-       print_lock_vector(lockset_table[i]);
-    }}
-#endif
-    VG_(message)(Vg_UserMsg, "%u possible data races found", n_eraser_warnings);
-}
 
 static Bool lock_vector_equals(lock_vector* a, lock_vector* b)
 {
@@ -807,7 +734,7 @@ weird_lock_vector_equals(lock_vector* a, lock_vector* b,
 }
 
 // SSS: copying mutex's pointer... is that ok?  Could they get deallocated?
-void SKN_(thread_does_lock)(ThreadId tid, void* void_mutex)
+void eraser_post_mutex_lock(ThreadId tid, void* void_mutex)
 {
    Int i = 1;
    lock_vector*  new_node;
@@ -888,7 +815,7 @@ void SKN_(thread_does_lock)(ThreadId tid, void* void_mutex)
 }
 
 
-void SKN_(thread_does_unlock)(ThreadId tid, void* void_mutex)
+void eraser_post_mutex_unlock(ThreadId tid, void* void_mutex)
 {
    Int i = 0;
    pthread_mutex_t* mutex = (pthread_mutex_t*)void_mutex;
@@ -1049,21 +976,23 @@ static __inline__ Int compute_num_words_accessed(Addr a, UInt size) {
    y = (a + size - 1) >> 2;
    n_words = y - x + 1;
 
-   /* Must read at least one word, could be up to four if 10 byte read and
-    * awkwardly aligned(?) */
-   vg_assert(n_words >= 1 && n_words <= 4);
    return n_words;
 }
 
-static void eraser_mem_read(Addr a, UInt data_size)
+#if DEBUG_ACCESSES
+   #define DEBUG_STATE(args...)   \
+      VG_(printf)("(%u) ", size), \
+      VG_(printf)(args)
+
+#else
+   #define DEBUG_STATE(args...)
+#endif
+
+static void eraser_mem_read(Addr a, UInt size)
 {
    shadow_word* sword;
    ThreadId tid = VG_(get_current_tid_1_if_root)();
-   Addr     end = a + 4*compute_num_words_accessed(a, data_size);
-
-   if (data_size > 4) {
-      VG_(printf)("big read: a = %x, size = %u, end = %x\n");
-   }
+   Addr     end = a + 4*compute_num_words_accessed(a, size);
 
    for ( ; a < end; a += 4) {
 
@@ -1080,12 +1009,12 @@ static void eraser_mem_read(Addr a, UInt data_size)
        * initialised.   Leave that stuff to Valgrind.  */
       case Vge_Virgin:
          if (TID_INDICATING_NONVIRGIN == sword->other) {
-            DEBUG_STATE2("Read  VIRGIN --> EXCL:   %8x, %u\n", a, tid);
+            DEBUG_STATE("Read  VIRGIN --> EXCL:   %8x, %u\n", a, tid);
 #if DEBUG_VIRGIN_READS
             dump_around_a(a);
 #endif
          } else {
-            DEBUG_STATE2("Read  SPECIAL --> EXCL:  %8x, %u\n", a, tid);
+            DEBUG_STATE("Read  SPECIAL --> EXCL:  %8x, %u\n", a, tid);
          }
          sword->state = Vge_Excl;
          sword->other = tid;       /* remember exclusive owner */
@@ -1093,10 +1022,10 @@ static void eraser_mem_read(Addr a, UInt data_size)
 
       case Vge_Excl:
          if (tid == sword->other) {
-            DEBUG_STATE2("Read  EXCL:              %8x, %u\n", a, tid);
+            DEBUG_STATE("Read  EXCL:              %8x, %u\n", a, tid);
 
          } else {
-            DEBUG_STATE3("Read  EXCL(%u) --> SHAR:  %8x, %u\n", sword->other, a, tid);
+            DEBUG_STATE("Read  EXCL(%u) --> SHAR:  %8x, %u\n", sword->other, a, tid);
             sword->state = Vge_Shar;
             sword->other = thread_locks[tid];
 #if DEBUG_MEM_LOCKSET_CHANGES
@@ -1106,16 +1035,16 @@ static void eraser_mem_read(Addr a, UInt data_size)
          break;
 
       case Vge_Shar:
-         DEBUG_STATE2("Read  SHAR:              %8x, %u\n", a, tid);
+         DEBUG_STATE("Read  SHAR:              %8x, %u\n", a, tid);
          sword->other = intersect(sword->other, thread_locks[tid]);
          break;
 
       case Vge_SharMod:
-         DEBUG_STATE2("Read  SHAR_MOD:          %8x, %u\n", a, tid);
+         DEBUG_STATE("Read  SHAR_MOD:          %8x, %u\n", a, tid);
          sword->other = intersect(sword->other, thread_locks[tid]);
 
          if (lockset_table[sword->other] == NULL) {
-            record_eraser_err(tid, a, False /* !is_write */);
+            record_eraser_error(tid, a, False /* !is_write */);
             n_eraser_warnings++;
          }
          break;
@@ -1126,11 +1055,11 @@ static void eraser_mem_read(Addr a, UInt data_size)
    }
 }
 
-static void eraser_mem_write(Addr a, UInt data_size)
+static void eraser_mem_write(Addr a, UInt size)
 {
    shadow_word* sword;
    ThreadId tid = VG_(get_current_tid_1_if_root)();
-   Addr     end = a + 4*compute_num_words_accessed(a, data_size);
+   Addr     end = a + 4*compute_num_words_accessed(a, size);
 
    for ( ; a < end; a += 4) {
 
@@ -1143,20 +1072,20 @@ static void eraser_mem_write(Addr a, UInt data_size)
       switch (sword->state) {
       case Vge_Virgin:
          if (TID_INDICATING_NONVIRGIN == sword->other)
-            DEBUG_STATE2("Write VIRGIN --> EXCL:   %8x, %u\n", a, tid);
+            DEBUG_STATE("Write VIRGIN --> EXCL:   %8x, %u\n", a, tid);
          else
-            DEBUG_STATE2("Write SPECIAL --> EXCL:  %8x, %u\n", a, tid);
+            DEBUG_STATE("Write SPECIAL --> EXCL:  %8x, %u\n", a, tid);
          sword->state = Vge_Excl;
          sword->other = tid;       /* remember exclusive owner */
          break;
 
       case Vge_Excl:
          if (tid == sword->other) {
-            DEBUG_STATE2("Write EXCL:              %8x, %u\n", a, tid);
+            DEBUG_STATE("Write EXCL:              %8x, %u\n", a, tid);
             break;
 
          } else {
-            DEBUG_STATE3("Write EXCL(%u) --> SHAR_MOD: %8x, %u\n", sword->other, a, tid);
+            DEBUG_STATE("Write EXCL(%u) --> SHAR_MOD: %8x, %u\n", sword->other, a, tid);
             sword->state = Vge_SharMod;
             sword->other = thread_locks[tid];
 #if DEBUG_MEM_LOCKSET_CHANGES
@@ -1166,17 +1095,17 @@ static void eraser_mem_write(Addr a, UInt data_size)
          }
 
       case Vge_Shar:
-         DEBUG_STATE2("Write SHAR --> SHAR_MOD: %8x, %u\n", a, tid);
+         DEBUG_STATE("Write SHAR --> SHAR_MOD: %8x, %u\n", a, tid);
          sword->state = Vge_SharMod;
          sword->other = intersect(sword->other, thread_locks[tid]);
          goto SHARED_MODIFIED;
 
       case Vge_SharMod:
-         DEBUG_STATE2("Write SHAR_MOD:          %8x, %u\n", a, tid);
+         DEBUG_STATE("Write SHAR_MOD:          %8x, %u\n", a, tid);
          sword->other = intersect(sword->other, thread_locks[tid]);
          SHARED_MODIFIED:
          if (lockset_table[sword->other] == NULL) {
-            record_eraser_err(tid, a, True /* is_write */);
+            record_eraser_error(tid, a, True /* is_write */);
             n_eraser_warnings++;
          }
          break;
@@ -1185,6 +1114,99 @@ static void eraser_mem_write(Addr a, UInt data_size)
          VG_(panic)("Unknown eraser state");
       }
    }
+}
+
+#undef DEBUG_STATE
+
+/*--------------------------------------------------------------------*/
+/*--- Setup                                                        ---*/
+/*--------------------------------------------------------------------*/
+
+void SK_(pre_clo_init)(VgNeeds* needs, VgTrackEvents* track)
+{
+   Int i;
+
+   needs->name                    = "helgrind";
+   needs->description             = "a data race detector";
+
+   needs->record_mem_exe_context  = False;
+   needs->postpone_mem_reuse      = False;
+   
+   needs->debug_info              = True;
+   needs->pthread_errors          = True;
+   needs->report_errors           = True;
+
+   needs->run_libc_freeres        = False;
+
+   needs->identifies_basic_blocks = False;
+
+   needs->command_line_options    = False;
+   needs->client_requests         = False;
+
+   needs->extends_UCode           = False;
+
+   needs->wrap_syscalls           = False;
+
+   needs->sanity_checks           = False;
+
+   VG_(register_compact_helper)((Addr) & eraser_mem_read);
+   VG_(register_compact_helper)((Addr) & eraser_mem_write);
+
+   /* Events to track */
+   track->new_mem_startup       = & eraser_new_mem_startup;
+   track->new_mem_heap          = & eraser_new_mem_heap;
+   track->new_mem_stack         = & make_writable;
+   track->new_mem_stack_aligned = & make_writable_aligned;
+   track->new_mem_stack_signal  = & make_writable;
+   track->new_mem_brk           = & make_writable;
+   track->new_mem_mmap          = & eraser_set_perms;
+
+   track->copy_mem_heap         = & copy_address_range_state;
+   track->change_mem_mprotect   = & eraser_set_perms;
+
+   track->ban_mem_heap          = NULL;
+   track->ban_mem_stack         = NULL;
+
+   track->die_mem_heap          = NULL;
+   track->die_mem_stack         = NULL;
+   track->die_mem_stack_aligned = NULL;
+   track->die_mem_stack_signal  = NULL;
+   track->die_mem_brk           = NULL;
+   track->die_mem_munmap        = NULL;
+
+   track->pre_mem_read          = & eraser_pre_mem_read;
+   track->pre_mem_read_asciiz   = & eraser_pre_mem_read_asciiz;
+   track->pre_mem_write         = & eraser_pre_mem_write;
+   track->post_mem_write        = NULL;
+
+   track->post_mutex_lock       = & eraser_post_mutex_lock;
+   track->post_mutex_unlock     = & eraser_post_mutex_unlock;
+
+   /* Init lock table */
+   for (i = 0; i < VG_N_THREADS; i++) 
+      thread_locks[i] = 0;
+
+   lockset_table[0] = NULL;
+   for (i = 1; i < LOCKSET_TABLE_SIZE; i++) 
+      lockset_table[i] = INVALID_LOCKSET_ENTRY;
+
+   init_shadow_memory();
+}
+
+void SK_(post_clo_init)(void)
+{
+}
+
+void SK_(fini)(void)
+{
+#if DEBUG_LOCK_TABLE
+    Int i;
+    for (i = 0; lockset_table[i] != INVALID_LOCKSET_ENTRY; i++) {
+       VG_(printf)("[%2d] = ", i);
+       print_lock_vector(lockset_table[i]);
+    }
+#endif
+    VG_(message)(Vg_UserMsg, "%u possible data races found", n_eraser_warnings);
 }
 
 /*--------------------------------------------------------------------*/

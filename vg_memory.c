@@ -228,6 +228,8 @@ void VGM_(init_memory_and_symbols) ( void )
 
    /* 3 */
    VG_TRACK( post_mem_write, (Addr) & VG_(running_on_simd_CPU), 1 );
+   VG_TRACK( post_mem_write, (Addr) & VG_(clo_trace_malloc),    1 );
+   VG_TRACK( post_mem_write, (Addr) & VG_(clo_sloppy_malloc),   1 );
 
    /* 4 */
    VGM_(curr_dataseg_end) = (Addr)VG_(brk)(0);

@@ -297,7 +297,7 @@ extern void VG_(shutdown_logging) ( void );
 
 #define VGP_M_STACK 10
 
-#define VGP_M_CCS 24  /* == the # of elems in VGP_LIST */
+#define VGP_M_CCS 25  /* == the # of elems in VGP_LIST */
 #if 0
 #define VGP_LIST \
    VGP_PAIR(VgpUnc=0,      "unclassified"),           \
@@ -328,31 +328,33 @@ extern void VG_(shutdown_logging) ( void );
    VGP_PAIR(VgpSpare2,     "spare 2")
 #endif
 #define VGP_LIST \
-   VGP_PAIR(VgpUnc=0,      "unclassified"),           \
-   VGP_PAIR(VgpRun,        "running"),                \
-   VGP_PAIR(VgpSched,      "scheduler"),              \
-   VGP_PAIR(VgpMalloc,     "low-lev malloc/free"),    \
-   VGP_PAIR(VgpCliMalloc,  "client  malloc/free"),    \
-   VGP_PAIR(VgpTranslate,  "translate-main"),         \
-   VGP_PAIR(VgpToUCode,    "to-ucode"),               \
-   VGP_PAIR(VgpFromUcode,  "from-ucode"),             \
-   VGP_PAIR(VgpImprove,    "improve"),                \
-   VGP_PAIR(VgpInstrument, "instrument"),             \
-   VGP_PAIR(VgpRegAlloc,   "reg-alloc"),              \
-   VGP_PAIR(VgpDoLRU,      "do-lru"),                 \
-   VGP_PAIR(VgpSlowFindT,  "slow-search-transtab"),   \
-   VGP_PAIR(VgpInitMem,    "init-memory"),            \
-   VGP_PAIR(VgpExeContext, "exe-context"),            \
-   VGP_PAIR(VgpReadSyms,   "read-syms"),              \
-   VGP_PAIR(VgpAddToT,     "add-to-transtab"),        \
-   VGP_PAIR(VgpSyscall,    "core syscall wrapper"),   \
+   VGP_PAIR(VgpUnc=0,       "unclassified"),          \
+   VGP_PAIR(VgpRun,         "running"),               \
+   VGP_PAIR(VgpSched,       "scheduler"),             \
+   VGP_PAIR(VgpMalloc,      "low-lev malloc/free"),   \
+   VGP_PAIR(VgpCliMalloc,   "client  malloc/free"),   \
+   VGP_PAIR(VgpTranslate,   "translate-main"),        \
+   VGP_PAIR(VgpToUCode,     "to-ucode"),              \
+   VGP_PAIR(VgpFromUcode,   "from-ucode"),            \
+   VGP_PAIR(VgpImprove,     "improve"),               \
+   VGP_PAIR(VgpRegAlloc,    "reg-alloc"),             \
+   VGP_PAIR(VgpDoLRU,       "do-lru"),                \
+   VGP_PAIR(VgpSlowFindT,   "slow-search-transtab"),  \
+   VGP_PAIR(VgpInitMem,     "init-memory"),           \
+   VGP_PAIR(VgpExeContext,  "exe-context"),           \
+   VGP_PAIR(VgpReadSyms,    "read-syms"),             \
+   VGP_PAIR(VgpAddToT,      "add-to-transtab"),       \
+   VGP_PAIR(VgpSyscall,     "core syscall wrapper"),  \
    /* SSS: genericise this */                         \
-   VGP_PAIR(VgpSARP,       "set-addr-range-perms"),   \
-   VGP_PAIR(VgpSpare1,     "spare 1"),                \
-   VGP_PAIR(VgpSpare2,     "spare 2"),                \
-   VGP_PAIR(VgpSpare3,     "spare 3"),                \
-   VGP_PAIR(VgpSpare4,     "spare 4"),                \
-   VGP_PAIR(VgpSpare5,     "spare 5")
+   VGP_PAIR(VgpPreCloInit,  "pre-clo-init"),          \
+   VGP_PAIR(VgpPostCloInit, "post-clo-init"),         \
+   VGP_PAIR(VgpInstrument,  "instrument"),            \
+   VGP_PAIR(VgpFini,        "fini"),                  \
+   /* */                                              \
+   VGP_PAIR(VgpSARP,        "set-addr-range-perms"),  \
+   VGP_PAIR(VgpSpare2,      "spare 2"),               \
+   VGP_PAIR(VgpSpare3,      "spare 3"),               \
+   VGP_PAIR(VgpSpare4,      "spare 4")
 
 #define VGP_PAIR(enumname,str) enumname
 typedef enum { VGP_LIST } VgpCC;
