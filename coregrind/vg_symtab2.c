@@ -1708,7 +1708,7 @@ void read_symtab_callback (
       = si->start==VG_ASSUMED_EXE_BASE ? 0 : si->start;
 
    /* And actually fill it up. */
-   if (VG_(clo_instrument) || VG_(clo_cachesim)) {
+   if (VG_(clo_instrument) || VG_(clo_cachesim) || VG_(clo_diduce)) {
       vg_read_lib_symbols ( si );
       canonicaliseSymtab ( si );
       canonicaliseLoctab ( si );
