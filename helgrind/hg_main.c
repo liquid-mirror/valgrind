@@ -241,7 +241,7 @@ static __inline__ void init_virgin_sword(Addr a)
 
 /* 'a' is guaranteed to be 4-byte aligned here (not that that's important,
  * really) */
-void make_writable_aligned ( Addr a, UInt size )
+static void make_writable_aligned ( Addr a, UInt size )
 {
    Addr a_past_end = a + size;
 
@@ -280,6 +280,7 @@ static __inline__ void init_magically_inited_sword(Addr a)
 /*--- Setting and checking permissions.                    ---*/
 /*------------------------------------------------------------*/
 
+static
 void set_address_range_state ( Addr a, UInt len /* in bytes */, 
                                VgeInitStatus status )
 {
@@ -350,19 +351,19 @@ void set_address_range_state ( Addr a, UInt len /* in bytes */,
 
 
 
-void make_segment_readable ( Addr a, UInt len )
+static void make_segment_readable ( Addr a, UInt len )
 {
    //PROF_EVENT(??);    PPP
    set_address_range_state ( a, len, Vge_SegmentInit );
 }
 
-void make_writable ( Addr a, UInt len )
+static void make_writable ( Addr a, UInt len )
 {
    //PROF_EVENT(36);  PPP
    set_address_range_state( a, len, Vge_VirginInit );
 }
 
-void make_readable ( Addr a, UInt len )
+static void make_readable ( Addr a, UInt len )
 {
    //PROF_EVENT(37);  PPP
    set_address_range_state( a, len, Vge_NonVirginInit );
@@ -371,7 +372,7 @@ void make_readable ( Addr a, UInt len )
 
 // SSS: change name
 /* Block-copy states (needed for implementing realloc()). */
-void copy_address_range_state(Addr src, Addr dst, UInt len)
+static void copy_address_range_state(Addr src, Addr dst, UInt len)
 {
    UInt i;
 
@@ -444,7 +445,7 @@ void eraser_set_perms (Addr a, UInt len,
 /*--- Initialise the memory audit system on program startup. ---*/
 /*--------------------------------------------------------------*/
 
-void init_shadow_memory(void)
+static void init_shadow_memory(void)
 {
    Int i;
 
@@ -500,7 +501,7 @@ Bool SKN_(expensive_sanity_check)(void)
 
 /* Create and return an instrumented version of cb_in.  Free cb_in
    before returning. */
-static UCodeBlock* eraser_instrument ( UCodeBlock* cb_in )
+UCodeBlock* SK_(instrument) ( UCodeBlock* cb_in, Addr not_used )
 {
    UCodeBlock* cb;
    Int         i;
@@ -559,16 +560,6 @@ static UCodeBlock* eraser_instrument ( UCodeBlock* cb_in )
    return cb;
 }
 
-UCodeBlock* SK_(instrument)(UCodeBlock* cb, Addr not_used)
-{
-   /* VGP_PUSHCC(VgpInstrument); */
-   cb = eraser_instrument(cb);
-   /* VGP_POPCC; */
-   if (VG_(disassemble)) 
-      VG_(ppUCodeBlock) ( cb, "Eraser instrumented code:" );
-   return cb;
-}
-
 /* ---------------------------------------------------------------------
    Lock tracking machinery
    ------------------------------------------------------------------ */
@@ -586,10 +577,10 @@ typedef
    } lock_vector;
 
 /* Each one is an index into the lockset table */
-UInt thread_locks[VG_N_THREADS];
+static UInt thread_locks[VG_N_THREADS];
 
 /* lockset_table[0] is always NULL, representing the empty lockset */
-lock_vector* lockset_table[LOCKSET_TABLE_SIZE];
+static lock_vector* lockset_table[LOCKSET_TABLE_SIZE];
 
 static void print_lock_vector(lock_vector* p)
 {
@@ -619,7 +610,7 @@ typedef
    EraserErrKind;
 
 
-void record_eraser_error ( ThreadId tid, Addr a, Bool is_write )
+static void record_eraser_error ( ThreadId tid, Addr a, Bool is_write )
 {
    ErrContext ec;
 
@@ -735,7 +726,7 @@ weird_lock_vector_equals(lock_vector* a, lock_vector* b,
 
 // SSS: copying mutex's pointer... is that ok?  Could they get deallocated?
 // (does that make sense, deallocating a mutex?)
-void eraser_post_mutex_lock(ThreadId tid, void* void_mutex)
+static void eraser_post_mutex_lock(ThreadId tid, void* void_mutex)
 {
    Int i = 1;
    lock_vector*  new_node;
@@ -816,7 +807,7 @@ void eraser_post_mutex_lock(ThreadId tid, void* void_mutex)
 }
 
 
-void eraser_post_mutex_unlock(ThreadId tid, void* void_mutex)
+static void eraser_post_mutex_unlock(ThreadId tid, void* void_mutex)
 {
    Int i = 0;
    pthread_mutex_t* mutex = (pthread_mutex_t*)void_mutex;

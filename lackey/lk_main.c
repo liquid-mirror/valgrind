@@ -68,7 +68,7 @@ void SK_(post_clo_init)(void)
 {
 }
 
-static UCodeBlock* lackey_instrument(UCodeBlock* cb_in)
+UCodeBlock* SK_(instrument)(UCodeBlock* cb_in, Addr not_used)
 {
    UCodeBlock* cb;
    Int         i;
@@ -94,16 +94,6 @@ static UCodeBlock* lackey_instrument(UCodeBlock* cb_in)
    }
 
    VG_(freeCodeBlock)(cb_in);
-   return cb;
-}
-
-UCodeBlock* SK_(instrument) ( UCodeBlock* cb, Addr not_used )
-{
-   /* VGP_PUSHCC(VgpInstrument); */
-   cb = lackey_instrument(cb);
-   /* VGP_POPCC; */
-   if (VG_(disassemble)) 
-      VG_(ppUCodeBlock) ( cb, "Lackey instrumented code:" );
    return cb;
 }
 
