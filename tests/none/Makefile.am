@@ -1,9 +1,6 @@
 ## Process this file with automake to produce Makefile.in
 
 ##---------------------------------------------------------------------------
-## Some of them test non-memcheck error checking, eg. "silly values" for
-## malloc/calloc, 'sigkill'
-
 ## Some of them user client requests which are now totally different for
 ## HEAD vs. ERASER due to changed client request codes.
 
@@ -24,12 +21,11 @@ CXX = g++
 
 noinst_PROGRAMS = \
 	bitfield1 bt_everything bt_literal coolo_strlen \
-	cpuid dastest erringfds floored fucomip rcl_assert \
+	cpuid dastest floored fucomip rcl_assert \
 	rcrl readline1 sha1_test shortpush shorts smc1 \
 	pth_atfork1 pth_cancel1 pth_cancel2 pth_cvsimple pth_mutexspeed \
 	pth_once pth_semaphore1 pth_simple_mutex pth_simple_threads \
-	pth_specific pth_yield \
-	malloc3 sigkill
+	pth_specific pth_yield
 
 # XXX: want to have this inherited from ../Makefile.am
 CFLAGS = $(WERROR) -Winline -Wall -Wshadow -g
@@ -43,7 +39,6 @@ cpuid_SOURCES 		= cpuid_c.c cpuid_s.s
 #coolo_sigaction_SOURCES	= coolo_sigaction.cpp
 coolo_strlen_SOURCES 	= coolo_strlen.c
 dastest_SOURCES 	= dastest_c.c dastest_s.s
-erringfds_SOURCES 	= erringfds.c
 floored_SOURCES 	= floored.c
 floored_LDADD 		= -lm
 fucomip_SOURCES 	= fucomip.c
@@ -80,9 +75,5 @@ pth_specific_SOURCES		= pth_specific.c
 pth_specific_LDADD		= -lpthread
 pth_yield_SOURCES		= pth_yield.c
 pth_yield_LDADD			= -lpthread
-
-# generic ones, with errors
-sigkill_SOURCES 	= sigkill.c
-malloc3_SOURCES 	= malloc3.c
 
 

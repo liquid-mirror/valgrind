@@ -17,7 +17,7 @@ main (void)
   struct sigaction  sa;
 
   int i;
-  for (i = 1; i <= 64; i++) {
+  for (i = 1; i <= 65; i++) {
      sa.sa_flags   = 0;
      sigemptyset( &sa.sa_mask );
      sa.sa_handler = abend;

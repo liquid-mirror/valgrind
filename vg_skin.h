@@ -1011,30 +1011,31 @@ typedef
 
       /* Debug info needed? */
       Bool debug_info;
-      /* Report pthread errors? */
-      // SSS: what about silly malloc arg errors?  SIGKILL/SIGSTOP event
-      // handler errors?  Other non-memcheck-specific errors?
-      // Maybe change these two to "core_errors" and "skin_errors"??
-      Bool pthread_errors;
-      /* Want to report errors?  This implies includes handling of 
-       * suppressions, too. */
-      Bool report_errors;
+      /* Want to have errors detected by Valgrind's core reported?  Includes:
+         - pthread API errors (many;  eg. unlocking a non-locked mutex)
+         - silly arguments to malloc() et al (eg. negative size)
+         - invalid file descriptors to blocking syscalls read() and write()
+         - bad signal numbers passed to sigaction()
+         - attempt to install signal handler for SIGKILL or SIGSTOP */  
+      Bool core_errors;
+      /* Want to report errors from the skin?  This implies use of
+         suppressions, too. */
+      Bool skin_errors;
 
       /* Should __libc_freeres() be run?  Bugs in it crash the skin. */
       Bool run_libc_freeres;
 
       /* Booleans that indicate extra operations are defined;  if these are
-       * True, the corresponding template functions (given below) must be
-       * defined.  A lot like being a member of a type class. */
+         True, the corresponding template functions (given below) must be
+         defined.  A lot like being a member of a type class. */
 
       /* Is information kept about specific individual basic blocks?  (Eg. for
-       * cachesim there are cost-centres for every instruction, stored at a
-       * basic block level.)  If so, it sometimes has to be discarded, because
-       * .so mmap/munmap-ping or self-modifying code (informed by the
-       * DISCARD_TRANSLATIONS user request) can cause one instruction address
-       * to store information about two different instructions in one program
-       * run!
-       */
+         cachesim there are cost-centres for every instruction, stored at a
+         basic block level.)  If so, it sometimes has to be discarded, because
+         .so mmap/munmap-ping or self-modifying code (informed by the
+         DISCARD_TRANSLATIONS user request) can cause one instruction address
+         to store information about two different instructions in one program
+         run!  */
       Bool identifies_basic_blocks;
 
       /* Maintains information about each register? */

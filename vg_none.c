@@ -34,13 +34,13 @@
 void SK_(pre_clo_init)(VgNeeds* needs, VgTrackEvents* track) 
 {
    needs->name                    = "nulgrind";
-   needs->description             = "an binary JIT-compiler";
+   needs->description             = "a binary JIT-compiler";
 
    needs->record_mem_exe_context  = False;
    needs->postpone_mem_reuse      = False;
    needs->debug_info              = False;
-   needs->pthread_errors          = False;
-   needs->report_errors           = False;
+   needs->core_errors             = False;
+   needs->skin_errors             = False;
    needs->run_libc_freeres        = False;
 
    needs->identifies_basic_blocks = False;

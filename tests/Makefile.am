@@ -6,5 +6,5 @@ CFLAGS = $(WERROR) -Winline -Wall -Wshadow -g
 # XXX: Undoubtedly a bad way to do this...
 #CXX = g++	(doesn't work anyway)
 
-SUBDIRS = none memcheck cachesim # eraser lackey
+SUBDIRS = cachesim corecheck memcheck none # eraser lackey
 
