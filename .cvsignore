@@ -11,3 +11,4 @@ cachegrind
 vg_annotate
 vg_cachegen
 default.supp
+autom4te.cache
