@@ -164,6 +164,10 @@ Addr VG_(do_useseg) ( UInt seg_selector, Addr virtual_addr )
    /* Sanity check the segment selector.  Ensure that TI=1 (LDT) and
       that RPL=11b (least privilege).  These form the bottom 3 bits
       of the selector. */
+   if ((seg_selector & 7) != 7) {
+      VG_(message)(Vg_UserMsg, "Warning: NPTL active. did you forget to "
+              "export LD_ASSUME_KERNEL=2.2.5 ?" );
+   }
    vg_assert((seg_selector & 7) == 7);
 
    /* convert it onto a table index */
