@@ -286,8 +286,10 @@ static Bool eq_ErrContext ( Bool cheap_addr_cmp,
       case AddrErr:
          if (e1->axskind != e2->axskind) return False;
          if (e1->size != e2->size) return False;
+         /*
          if (!eq_AddrInfo(cheap_addr_cmp, &e1->addrinfo, &e2->addrinfo)) 
             return False;
+         */
          return True;
       case ValueErr:
          if (e1->size != e2->size) return False;
