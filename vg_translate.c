@@ -1987,14 +1987,14 @@ void VG_(translate) ( /*IN*/ThreadState* tst,
    VG_(print_codegen) = DECIDE_IF_PRINTING_CODEGEN_FOR_PHASE(1);
    VGP_PUSHCC(VgpToUCode);
    n_disassembled_bytes = VG_(disBB) ( cb, orig_addr );
-   VGP_POPCC;
+   VGP_POPCC(VgpToUCode);
 
    /* Try and improve the code a bit. */
    if (VG_(clo_optimise)) {
       VG_(print_codegen) = DECIDE_IF_PRINTING_CODEGEN_FOR_PHASE(2);
       VGP_PUSHCC(VgpImprove);
       vg_improve ( cb );
-      VGP_POPCC;
+      VGP_POPCC(VgpImprove);
    }
 
    /* Skin's instrumentation (Nb: must set VG_(print_codegen) in case
@@ -2005,26 +2005,26 @@ void VG_(translate) ( /*IN*/ThreadState* tst,
    if (VG_(print_codegen))
       VG_(ppUCodeBlock) ( cb, "Instrumented UCode:" );
    VG_(saneUCodeBlock)( cb );
-   VGP_POPCC;
+   VGP_POPCC(VgpInstrument);
 
    /* Allocate registers. */
    VG_(print_codegen) = DECIDE_IF_PRINTING_CODEGEN_FOR_PHASE(4);
    VGP_PUSHCC(VgpRegAlloc);
    cb = vg_do_register_allocation ( cb );
-   VGP_POPCC;
+   VGP_POPCC(VgpRegAlloc);
 
    /* Do post reg-alloc %e[acd]x liveness analysis (too boring to print
     * anything;  results can be seen when emitting final code). */
-   VGP_PUSHCC(VgpCCallAnal);
+   VGP_PUSHCC(VgpLiveness);
    vg_ccall_reg_save_analysis ( cb );
-   VGP_POPCC;
+   VGP_POPCC(VgpLiveness);
 
    /* Emit final code */
    VG_(print_codegen) = DECIDE_IF_PRINTING_CODEGEN_FOR_PHASE(5);
 
    VGP_PUSHCC(VgpFromUcode);
    final_code = VG_(emit_code)(cb, &final_code_size );
-   VGP_POPCC;
+   VGP_POPCC(VgpFromUcode);
    VG_(freeCodeBlock)(cb);
 
 #undef DECIDE_IF_PRINTING_CODEGEN_FOR_PHASE
@@ -2038,7 +2038,7 @@ void VG_(translate) ( /*IN*/ThreadState* tst,
       *trans_addr = (Addr)final_code;
       *trans_size = final_code_size;
    }
-   VGP_POPCC;
+   VGP_POPCC(VgpTranslate);
 }
 
 /*--------------------------------------------------------------------*/

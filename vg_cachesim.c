@@ -31,6 +31,7 @@
 */
 
 #include "vg_skin.h"
+//#include "vg_profile.c"
 
 /* For cache simulation */
 typedef struct {
@@ -59,6 +60,18 @@ typedef struct {
 #define COMMIFY_BUF_LEN                 128
 #define RESULTS_BUF_LEN                 128
 #define LINE_BUF_LEN                     64
+
+/*------------------------------------------------------------*/
+/*--- Profiling events                                     ---*/
+/*------------------------------------------------------------*/
+
+typedef 
+   enum { 
+      VgpGetBBCC = VgpFini+1,
+      VgpCacheSimulate,
+      VgpCacheResults
+   } 
+   VgpSkinCC;
 
 /*------------------------------------------------------------*/
 /*--- Output file related stuff                            ---*/
@@ -404,7 +417,7 @@ static __inline__ BBCC* get_BBCC(Addr bb_orig_addr, UCodeBlock* cb,
 
    get_debug_info(bb_orig_addr, filename, fn_name, &dummy_line_num);
 
-   VGP_PUSHCC(VgpSpare1);
+   VGP_PUSHCC(VgpGetBBCC);
    filename_hash = hash(filename, N_FILE_ENTRIES);
    curr_file_node = BBCC_table[filename_hash];
    while (NULL != curr_file_node && 
@@ -462,7 +475,7 @@ static __inline__ BBCC* get_BBCC(Addr bb_orig_addr, UCodeBlock* cb,
           BB_retranslations++;
       }
    }
-   VGP_POPCC;
+   VGP_POPCC(VgpGetBBCC);
    return curr_BBCC;
 }
 
@@ -560,7 +573,7 @@ void log_1I_0D_cache_access(iCC* cc)
    VGP_PUSHCC(VgpCacheSimulate);
    cachesim_I1_doref(cc->instr_addr, cc->instr_size, &cc->I.m1, &cc->I.m2);
    cc->I.a++;
-   VGP_POPCC;
+   VGP_POPCC(VgpCacheSimulate);
 }
 
 __attribute__ ((regparm (2))) static 
@@ -571,7 +584,7 @@ void log_0I_1D_cache_access(idCC* cc, Addr data_addr)
    VGP_PUSHCC(VgpCacheSimulate);
    cachesim_D1_doref(data_addr,      cc->data_size,  &cc->D.m1, &cc->D.m2);
    cc->D.a++;
-   VGP_POPCC;
+   VGP_POPCC(VgpCacheSimulate);
 }
 
 __attribute__ ((regparm (2))) static
@@ -585,7 +598,7 @@ void log_1I_1D_cache_access(idCC* cc, Addr data_addr)
 
    cachesim_D1_doref(data_addr,      cc->data_size,  &cc->D.m1, &cc->D.m2);
    cc->D.a++;
-   VGP_POPCC;
+   VGP_POPCC(VgpCacheSimulate);
 }
 
 __attribute__ ((regparm (3))) static 
@@ -598,7 +611,7 @@ void log_0I_2D_cache_access(iddCC* cc, Addr data_addr1, Addr data_addr2)
    cc->Da.a++;
    cachesim_D1_doref(data_addr2, cc->data_size,  &cc->Db.m1, &cc->Db.m2);
    cc->Db.a++;
-   VGP_POPCC;
+   VGP_POPCC(VgpCacheSimulate);
 }
 
 __attribute__ ((regparm (3))) static
@@ -614,7 +627,7 @@ void log_1I_2D_cache_access(iddCC* cc, Addr data_addr1, Addr data_addr2)
    cc->Da.a++;
    cachesim_D1_doref(data_addr2,     cc->data_size,  &cc->Db.m1, &cc->Db.m2);
    cc->Db.a++;
-   VGP_POPCC;
+   VGP_POPCC(VgpCacheSimulate);
 }
 
 UCodeBlock* SK_(instrument)(UCodeBlock* cb_in, Addr orig_addr)
@@ -1442,7 +1455,7 @@ static void fprint_BBCC_table_and_calc_totals(void)
    BBCC      *curr_BBCC;
    Int        i,j,k;
 
-   VGP_PUSHCC(VgpSpare3);
+   VGP_PUSHCC(VgpCacheResults);
    fd = VG_(open)(OUT_FILE, VKI_O_WRONLY|VKI_O_TRUNC, 0);
    if (-1 == fd) { file_err(); }
 
@@ -1706,7 +1719,7 @@ void SK_(fini)(void)
        VG_(message)(Vg_DebugMsg, "BBs Retranslated: %d", BB_retranslations);
        VG_(message)(Vg_DebugMsg, "Distinct instrs:  %d", distinct_instrs);
    }
-   VGP_POPCC;
+   VGP_POPCC(VgpCacheResults);
 }
 
 
@@ -1894,6 +1907,10 @@ void SK_(post_clo_init)(void)
    cachesim_D1_initcache(D1c);
    cachesim_L2_initcache(L2c);
 
+   VGP_(register_profile_event)(VgpGetBBCC,       "get-BBCC");
+   VGP_(register_profile_event)(VgpCacheSimulate, "cache-simulate");
+   VGP_(register_profile_event)(VgpCacheResults,  "cache-results");
+   
    init_BBCC_table();
 }
 

@@ -297,8 +297,13 @@ static void vg_handle_esp_assignment_SLOWLY ( Addr old_esp, Addr new_esp );
 __attribute__ ((regparm (1)))
 void VGM_(handle_esp_assignment) ( Addr new_esp )
 {
-   UInt old_esp = VG_(baseBlock)[VGOFF_(m_esp)];
-   Int  delta   = ((Int)new_esp) - ((Int)old_esp);
+   UInt old_esp;
+   Int  delta;
+
+   VGP_MAYBE_PUSHCC(VgpStack);
+
+   old_esp = VG_(baseBlock)[VGOFF_(m_esp)];
+   delta = ((Int)new_esp) - ((Int)old_esp);
 
    /* Update R_ESP */
    VG_(baseBlock)[VGOFF_(m_esp)] = new_esp;
@@ -338,6 +343,7 @@ void VGM_(handle_esp_assignment) ( Addr new_esp )
       }
       /* Do nothing if (delta==0) */
 
+      VGP_MAYBE_POPCC(VgpStack);
       return;
    }
 
@@ -347,12 +353,15 @@ void VGM_(handle_esp_assignment) ( Addr new_esp )
       adjustments.  The rest we give to the slow-but-general
       mechanism. */
    vg_handle_esp_assignment_SLOWLY ( old_esp, new_esp );
+   VGP_MAYBE_POPCC(VgpStack);
 }
 
 
 static void vg_handle_esp_assignment_SLOWLY ( Addr old_esp, Addr new_esp )
 {
-   Int  delta   = ((Int)new_esp) - ((Int)old_esp);
+   Int  delta;
+   
+   delta = ((Int)new_esp) - ((Int)old_esp);
    //VG_(printf)("delta %d (%x) %x --> %x\n", delta, delta, old_esp, new_esp);
    //PROF_EVENT(120);   PPP
    if (-(VG_HUGE_DELTA) < delta && delta < VG_HUGE_DELTA) {
@@ -361,16 +370,17 @@ static void vg_handle_esp_assignment_SLOWLY ( Addr old_esp, Addr new_esp )
          /* Moving down; the stack is growing. */
          //PROF_EVENT(121); PPP
          VG_TRACK( new_mem_stack, new_esp, -delta );
-         return;
-      }
-      if (new_esp > old_esp) {
+      
+      } else if (new_esp > old_esp) {
          /* Moving up; the stack is shrinking. */
          //PROF_EVENT(122); PPP
          VG_TRACK( die_mem_stack, old_esp, delta );
-         return;
+
+      } else {
+         /* when old_esp == new_esp */
+         //PROF_EVENT(123);    PPP
       }
-      //PROF_EVENT(123);    PPP
-      return; /* when old_esp == new_esp */
+      return;
    }
 
    /* %esp has changed by more than HUGE_DELTA.  We take this to mean

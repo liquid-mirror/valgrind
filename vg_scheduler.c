@@ -538,7 +538,7 @@ UInt run_thread_for_a_while ( ThreadId tid )
    vg_assert(!VG_(scheduler_jmpbuf_valid));
 
    VG_(save_thread_state) ( tid );
-   VGP_POPCC;
+   VGP_POPCC(VgpRun);
    return trc;
 }
 

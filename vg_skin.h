@@ -96,6 +96,10 @@ typedef unsigned char          Bool;
 /* Verbosity level: 0 = silent, 1 (default), > 1 = more verbose. */
 extern Int   VG_(clo_verbosity);
 
+/* Profile? */
+extern Bool  VG_(clo_profile);
+
+
 /* Call this if a recognised option was bad for some reason.
    Note: don't use it just because an option was unrecognised -- return 'False'
    from SKN_(process_cmd_line_option) to indicate that. */
@@ -113,7 +117,7 @@ extern Char** VG_(client_envp);
 /*=== Printing messages for the user                               ===*/
 /*====================================================================*/
 
-/* Print a message prefixed by "xx<pid>xx "; '?' depends on the VgMsgKind.
+/* Print a message prefixed by "??<pid>?? "; '?' depends on the VgMsgKind.
    Should be used for all user output. */
 
 typedef
@@ -133,9 +137,59 @@ extern void VG_(end_msg)    ( void );
 extern void VG_(message)    ( VgMsgKind kind, Char* format, ... );
 
 
-// SSS: hmm...
-#define VGP_PUSHCC(x)
-#define VGP_POPCC
+/*====================================================================*/
+/*=== Profiling                                                    ===*/
+/*====================================================================*/
+
+/* Nb: VGP_(register_profile_event)() relies on VgpUnc being the first one */
+#define VGP_CORE_LIST \
+   /* These ones depend on the core */                \
+   VGP_PAIR(VgpUnc,         "unclassified"),          \
+   VGP_PAIR(VgpRun,         "running"),               \
+   VGP_PAIR(VgpSched,       "scheduler"),             \
+   VGP_PAIR(VgpMalloc,      "low-lev malloc/free"),   \
+   VGP_PAIR(VgpCliMalloc,   "client  malloc/free"),   \
+   VGP_PAIR(VgpStack,       "adjust-stack"),          \
+   VGP_PAIR(VgpTranslate,   "translate-main"),        \
+   VGP_PAIR(VgpToUCode,     "to-ucode"),              \
+   VGP_PAIR(VgpFromUcode,   "from-ucode"),            \
+   VGP_PAIR(VgpImprove,     "improve"),               \
+   VGP_PAIR(VgpRegAlloc,    "reg-alloc"),             \
+   VGP_PAIR(VgpLiveness,    "liveness-analysis"),     \
+   VGP_PAIR(VgpDoLRU,       "do-lru"),                \
+   VGP_PAIR(VgpSlowFindT,   "slow-search-transtab"),  \
+   VGP_PAIR(VgpInitMem,     "init-memory"),           \
+   VGP_PAIR(VgpExeContext,  "exe-context"),           \
+   VGP_PAIR(VgpReadSyms,    "read-syms"),             \
+   VGP_PAIR(VgpSearchSyms,  "search-syms"),           \
+   VGP_PAIR(VgpAddToT,      "add-to-transtab"),       \
+   VGP_PAIR(VgpCoreSysWrap, "core-syscall-wrapper"),  \
+   VGP_PAIR(VgpDemangle,    "demangle"),              \
+   /* These ones depend on the skin */                \
+   VGP_PAIR(VgpPreCloInit,  "pre-clo-init"),          \
+   VGP_PAIR(VgpPostCloInit, "post-clo-init"),         \
+   VGP_PAIR(VgpInstrument,  "instrument"),            \
+   VGP_PAIR(VgpSkinSysWrap, "skin-syscall-wrapper"),  \
+   VGP_PAIR(VgpFini,        "fini")
+
+#define VGP_PAIR(n,name) n
+typedef enum { VGP_CORE_LIST } VgpCoreCC;
+#undef  VGP_PAIR
+
+/* When registering skin profiling events, ensure that the 'n' value is in
+ * the range (VgpFini+1..) */
+extern void VGP_(register_profile_event) ( Int n, Char* name );
+
+extern void VGP_(pushcc) ( UInt cc );
+extern void VGP_(popcc)  ( UInt cc );
+
+/* Define them only if they haven't already been defined by vg_profile.c */
+#ifndef VGP_PUSHCC
+#  define VGP_PUSHCC(x)
+#endif
+#ifndef VGP_POPCC
+#  define VGP_POPCC(x)
+#endif
 
 
 /*====================================================================*/
@@ -862,7 +916,7 @@ typedef
 */
 typedef
    struct {
-      /* Used by ALL */
+      /* Used by ALL.  Must be in the range (0..) */
       Int ekind;
       /* Used frequently */
       Addr addr;
@@ -1128,6 +1182,7 @@ extern VgTrackEvents VG_(track_events);
 /* ------------------------------------------------------------------ */
 /* Fundamental template functions */
 
+// SSS: explain what goes on in here
 extern void        SK_(pre_clo_init) ( VgNeeds* needs, VgTrackEvents* track );
 extern void        SK_(post_clo_init)( void );
 

@@ -236,7 +236,7 @@ ExeContext* VG_(get_ExeContext2) ( Addr eip, Addr ebp,
 
    if (list != NULL) {
       /* Yay!  We found it.  */
-      VGP_POPCC;
+      VGP_POPCC(VgpExeContext);
       return list;
    }
 
@@ -253,7 +253,7 @@ ExeContext* VG_(get_ExeContext2) ( Addr eip, Addr ebp,
    new_ec->next = vg_ec_list[hash];
    vg_ec_list[hash] = new_ec;
 
-   VGP_POPCC;
+   VGP_POPCC(VgpExeContext);
    return new_ec;
 }
 

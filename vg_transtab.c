@@ -324,7 +324,7 @@ void VG_(maybe_do_lru_pass) ( void )
 #  endif
    VG_(sanity_check_tc_tt)();
 
-   VGP_POPCC;
+   VGP_POPCC(VgpDoLRU);
 }
 
 
@@ -458,7 +458,7 @@ Addr VG_(search_transtab) ( Addr original_addr )
    if (tte == NULL) {
       /* We didn't find it.  vg_run_innerloop will have to request a
          translation. */
-      VGP_POPCC;
+      VGP_POPCC(VgpSlowFindT);
       return (Addr)0;
    } else {
       /* Found it.  Put the search result into the fast cache now.
@@ -467,7 +467,7 @@ Addr VG_(search_transtab) ( Addr original_addr )
       VG_(tt_fast)[cno] = (Addr)tte;
       VG_(tt_fast_misses)++;
       tte->mru_epoch = VG_(current_epoch);
-      VGP_POPCC;
+      VGP_POPCC(VgpSlowFindT);
       return tte->trans_addr;
    }
 }

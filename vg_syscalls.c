@@ -365,7 +365,7 @@ void VG_(perform_assumed_nonblocking_syscall) ( ThreadId tid )
    Int res;
    void* pre_result = 0;   /* shut gcc up */
 
-   VGP_PUSHCC(VgpSyscall);
+   VGP_PUSHCC(VgpCoreSysWrap);
 
    vg_assert(VG_(is_valid_tid)(tid));
    tst              = & VG_(threads)[tid];
@@ -378,7 +378,9 @@ void VG_(perform_assumed_nonblocking_syscall) ( ThreadId tid )
 
    /* Do any pre-syscall actions */
    if (VG_(needs).wrap_syscalls) {
+      VGP_PUSHCC(VgpSkinSysWrap);
       pre_result = SKN_(pre_syscall)(tid);
+      VGP_POPCC(VgpSkinSysWrap);
    }
 
    /* the syscall no is in %eax.  For syscalls with <= 5 args,
@@ -2983,10 +2985,12 @@ void VG_(perform_assumed_nonblocking_syscall) ( ThreadId tid )
 
    /* Do any post-syscall actions */
    if (VG_(needs).wrap_syscalls) {
+      VGP_PUSHCC(VgpSkinSysWrap);
       SKN_(post_syscall)(tid, syscallno, pre_result, res);
+      VGP_POPCC(VgpSkinSysWrap);
    }
 
-   VGP_POPCC;
+   VGP_POPCC(VgpCoreSysWrap);
 }
 
 
@@ -3013,7 +3017,7 @@ void VG_(check_known_blocking_syscall) ( ThreadId tid,
    UInt         arg1, arg2, arg3;
    void*        pre_result = 0;  /* shut gcc up */
 
-   VGP_PUSHCC(VgpSyscall);
+   VGP_PUSHCC(VgpCoreSysWrap);
 
    vg_assert(VG_(is_valid_tid)(tid));
    tst              = & VG_(threads)[tid];
@@ -3026,7 +3030,9 @@ void VG_(check_known_blocking_syscall) ( ThreadId tid,
    */
 
    if (VG_(needs).wrap_syscalls) {
+      VGP_PUSHCC(VgpSkinSysWrap);
       pre_result = SKN_(pre_check_known_blocking_syscall)(tid, syscallno, res);
+      VGP_POPCC(VgpSkinSysWrap);
    }
 
    switch (syscallno) {
@@ -3079,10 +3085,12 @@ void VG_(check_known_blocking_syscall) ( ThreadId tid,
    }
 
    if (VG_(needs).wrap_syscalls) {
+      VGP_PUSHCC(VgpSkinSysWrap);
       SKN_(post_check_known_blocking_syscall)(tid, syscallno, pre_result, res);
+      VGP_POPCC(VgpSkinSysWrap);
    }
 
-   VGP_POPCC;
+   VGP_POPCC(VgpCoreSysWrap);
 }
 
 
