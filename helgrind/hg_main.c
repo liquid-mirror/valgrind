@@ -351,7 +351,6 @@ void set_address_range_state ( Addr a, UInt len /* in bytes */,
       VG_(panic)("Unexpected Vge_InitStatus");
    }
       
-   // SSS: same thing is done in vg_memcheck's version too...
    /* Check that zero page and highest page have not been written to
       -- this could happen with buggy syscall wrappers.  Today
       (2001-04-26) had precisely such a problem with
@@ -453,27 +452,26 @@ void init_shadow_memory(void)
    problem, but they are so likely to that we really want to know
    about it if so. */
 
-// SSS: can this be done mechanically and removed from the interface?  V.
-// similar to the vg_memcheck one.
 Bool SKN_(cheap_sanity_check) ( void )
 {
-   if (VGE_IS_DISTINGUISHED_SM(primary_map[0])
-       && VGE_IS_DISTINGUISHED_SM(primary_map[65535]))
+   if (VGE_IS_DISTINGUISHED_SM(primary_map[0]) && 
+       VGE_IS_DISTINGUISHED_SM(primary_map[65535]))
       return True;
    else
       return False;
 }
 
-void SKN_(expensive_sanity_check)(void)
+Bool SKN_(expensive_sanity_check)(void)
 {
    Int i;
 
    /* Make sure nobody changed the distinguished secondary. */
    for (i = 0; i < ESEC_MAP_WORDS; i++)
-      vg_assert(distinguished_secondary_map.swords[i].other ==
-                virgin_sword.other &&
-                distinguished_secondary_map.swords[i].state ==
-                virgin_sword.state);
+      if (distinguished_secondary_map.swords[i].other != virgin_sword.other ||
+          distinguished_secondary_map.swords[i].state != virgin_sword.state)
+         return False;
+
+   return True;
 }
 
 /*--------------------------------------------------------------*/
@@ -920,13 +918,6 @@ void SKN_(thread_does_unlock)(ThreadId tid, void* void_mutex)
 #endif
    thread_locks[tid] = i;
 }
-
-// SSS: omitted for the moment because it's dangerous...
-//void SKN_(thread_dies)(void)
-//{
-//   VG_(printf)("thread died!\n");
-//   VG_(exit)(1);
-//}
 
 /* ---------------------------------------------------------------------
    Checking memory reads and writes

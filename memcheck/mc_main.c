@@ -758,7 +758,7 @@ void make_noaccess_aligned ( Addr a, UInt len )
 #  endif
 
    for ( ; a < a_past_end; a += 4) {
-      ENSURE_MAPPABLE(a, "make_aligned_word_NOACCESS");
+      ENSURE_MAPPABLE(a, "make_noaccess_aligned");
       sm     = primary_map[a >> 16];
       sm_off = a & 0xFFFF;
       ((UInt*)(sm->vbyte))[sm_off >> 2] = VGM_WORD_INVALID;
@@ -784,7 +784,7 @@ void make_writable_aligned ( Addr a, UInt len )
 #  endif
 
    for ( ; a < a_past_end; a += 4) {
-      ENSURE_MAPPABLE(a, "make_aligned_word_WRITABLE");
+      ENSURE_MAPPABLE(a, "make_writable_aligned");
       sm     = primary_map[a >> 16];
       sm_off = a & 0xFFFF;
       ((UInt*)(sm->vbyte))[sm_off >> 2] = VGM_WORD_INVALID;
@@ -1963,27 +1963,33 @@ void vg_detect_memory_leaks ( void )
 
 Bool SKN_(cheap_sanity_check) ( void )
 {
-   if (IS_DISTINGUISHED_SM(primary_map[0])
-       && IS_DISTINGUISHED_SM(primary_map[65535]))
+   if (IS_DISTINGUISHED_SM(primary_map[0]) && 
+       IS_DISTINGUISHED_SM(primary_map[65535]))
       return True;
    else
       return False;
 }
 
-void SKN_(expensive_sanity_check) ( void )
+Bool SKN_(expensive_sanity_check) ( void )
 {
    Int i;
 
    /* Make sure nobody changed the distinguished secondary. */
    for (i = 0; i < 8192; i++)
-      vg_assert(distinguished_secondary_map.abits[i] == VGM_BYTE_INVALID);
+      if (distinguished_secondary_map.abits[i] != VGM_BYTE_INVALID)
+         return False;
+
    for (i = 0; i < 65536; i++)
-      vg_assert(distinguished_secondary_map.vbyte[i] == VGM_BYTE_INVALID);
+      if (distinguished_secondary_map.vbyte[i] != VGM_BYTE_INVALID)
+         return False;
 
    /* Make sure that the upper 3/4 of the primary map hasn't
       been messed with. */
    for (i = 65536; i < 262144; i++)
-      vg_assert(primary_map[i] == & distinguished_secondary_map);
+      if (primary_map[i] != & distinguished_secondary_map)
+         return False;
+
+   return True;
 }
       
 /* ---------------------------------------------------------------------
