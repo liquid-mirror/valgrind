@@ -532,7 +532,7 @@ static Bool setLocationTy ( Char** p_caller, SuppLocTy* p_ty )
 static void load_one_suppressions_file ( Char* filename )
 {
 #  define N_BUF 200
-   Int  fd;
+   Int  fd, i;
    Bool eof;
    Bool is_unrecognised_suppressions = False;
    Char buf[N_BUF+1];
@@ -548,7 +548,7 @@ static void load_one_suppressions_file ( Char* filename )
       CoreSupp* supp;
       supp            = VG_(arena_malloc)(VG_AR_CORE, sizeof(CoreSupp));
       supp->count = 0;
-      supp->caller0 = supp->caller1 = supp->caller2 = supp->caller3 = NULL;
+      for (i = 0; i < VG_N_SUPP_CALLERS; i++) supp->caller[i] = NULL;
       supp->skin_supp.string = supp->skin_supp.extra = NULL;
 
       eof = VG_(getLine) ( fd, buf, N_BUF );
@@ -600,37 +600,15 @@ static void load_one_suppressions_file ( Char* filename )
           !SKN_(read_extra_suppression_info)(fd, buf, N_BUF, &supp->skin_supp)) 
          goto syntax_error;
 
-      eof = VG_(getLine) ( fd, buf, N_BUF );
-      if (eof) goto syntax_error;
-      supp->caller0 = VG_(arena_strdup)(VG_AR_CORE, buf);
-      if (!setLocationTy(&(supp->caller0), &(supp->caller0_ty)))
-         goto syntax_error;
-
-      eof = VG_(getLine) ( fd, buf, N_BUF );
-      if (eof) goto syntax_error;
-      if (!STREQ(buf, "}")) {
-         supp->caller1 = VG_(arena_strdup)(VG_AR_CORE, buf);
-         if (!setLocationTy(&(supp->caller1), &(supp->caller1_ty)))
-            goto syntax_error;
-      
+      /* "i > 0" ensures at least one caller read. */
+      for (i = 0; i < VG_N_SUPP_CALLERS; i++) {
          eof = VG_(getLine) ( fd, buf, N_BUF );
          if (eof) goto syntax_error;
-         if (!STREQ(buf, "}")) {
-            supp->caller2 = VG_(arena_strdup)(VG_AR_CORE, buf);
-            if (!setLocationTy(&(supp->caller2), &(supp->caller2_ty)))
-               goto syntax_error;
-
-            eof = VG_(getLine) ( fd, buf, N_BUF );
-            if (eof) goto syntax_error;
-            if (!STREQ(buf, "}")) {
-               supp->caller3 = VG_(arena_strdup)(VG_AR_CORE, buf);
-              if (!setLocationTy(&(supp->caller3), &(supp->caller3_ty)))
-                 goto syntax_error;
-
-               eof = VG_(getLine) ( fd, buf, N_BUF );
-               if (eof || !STREQ(buf, "}")) goto syntax_error;
-	    }
-         }
+         if (i > 0 && STREQ(buf, "}")) 
+            break;
+         supp->caller[i] = VG_(arena_strdup)(VG_AR_CORE, buf);
+         if (!setLocationTy(&(supp->caller[i]), &(supp->caller_ty[i])))
+            goto syntax_error;
       }
 
       supp->next = vg_suppressions;
@@ -688,6 +666,48 @@ void get_objname_fnname ( Addr a,
    (void)VG_(get_fnname_nodemangle)( a, fun_buf, n_fun_buf );
 }     
 
+static __inline__
+Bool supp_matches_error(CoreSupp* su, CoreError* err)
+{
+   switch (su->skin_supp.skind) {
+      case PThreadSupp:
+         return (err->skin_err.ekind == PThreadErr);
+      default:
+         if (VG_(needs).report_errors) {
+            return (SKN_(error_matches_suppression)(&err->skin_err, 
+                                                    &su->skin_supp));
+         } else {
+            VG_(printf)("Error:\n"
+                        "  unhandled suppression type: %u.  Perhaps " 
+                        "VG_(needs).report_errors should be set?\n",
+                        err->skin_err.ekind);
+            VG_(panic)("is_suppressible_error: unhandled suppression type");
+         }
+   }
+}
+
+static __inline__
+Bool supp_matches_callers(CoreSupp* su, Char caller_obj[][M_VG_ERRTXT], 
+                                        Char caller_fun[][M_VG_ERRTXT])
+{
+   Int i;
+
+   for (i = 0; su->caller[i] != NULL; i++) {
+      switch (su->caller_ty[i]) {
+         case ObjName: if (VG_(stringMatch)(su->caller[i],
+                                            caller_obj[i])) break;
+                       return False;
+         case FunName: if (VG_(stringMatch)(su->caller[i], 
+                                            caller_fun[i])) break;
+                       return False;
+         default: VG_(panic)("is_suppressible_error");
+      }
+   }
+
+   /* If we reach here, it's a match */
+   return True;
+}
+
 /* Does an error context match a suppression?  ie is this a
    suppressible error?  If so, return a pointer to the CoreSupp
    record, otherwise NULL.
@@ -697,15 +717,10 @@ static CoreSupp* is_suppressible_error ( CoreError* err )
 {
 #  define STREQ(s1,s2) (s1 != NULL && s2 != NULL \
                         && VG_(strcmp)((s1),(s2))==0)
+   Int i;
 
-   Char caller0_obj[M_VG_ERRTXT];
-   Char caller0_fun[M_VG_ERRTXT];
-   Char caller1_obj[M_VG_ERRTXT];
-   Char caller1_fun[M_VG_ERRTXT];
-   Char caller2_obj[M_VG_ERRTXT];
-   Char caller2_fun[M_VG_ERRTXT];
-   Char caller3_obj[M_VG_ERRTXT];
-   Char caller3_fun[M_VG_ERRTXT];
+   Char caller_obj[VG_N_SUPP_CALLERS][M_VG_ERRTXT];
+   Char caller_fun[VG_N_SUPP_CALLERS][M_VG_ERRTXT];
 
    CoreSupp* su;
 
@@ -716,102 +731,23 @@ static CoreSupp* is_suppressible_error ( CoreError* err )
 
    /* Initialise these strs so they are always safe to compare, even
       if get_objname_fnname doesn't write anything to them. */
-   caller0_obj[0] = caller1_obj[0] = caller2_obj[0] = caller3_obj[0] = 0;
-   caller0_fun[0] = caller1_fun[0] = caller2_obj[0] = caller3_obj[0] = 0;
+   for (i = 0; i < VG_N_SUPP_CALLERS; i++)
+      caller_obj[i][0] = caller_fun[i][0] = 0;
 
-   get_objname_fnname ( err->where->eips[0], caller0_obj, M_VG_ERRTXT,
-                                             caller0_fun, M_VG_ERRTXT );
-   get_objname_fnname ( err->where->eips[1], caller1_obj, M_VG_ERRTXT,
-                                             caller1_fun, M_VG_ERRTXT );
-
-   if (VG_(clo_backtrace_size) > 2) {
-      get_objname_fnname ( err->where->eips[2], caller2_obj, M_VG_ERRTXT,
-                                                caller2_fun, M_VG_ERRTXT );
-
-      if (VG_(clo_backtrace_size) > 3) {
-         get_objname_fnname ( err->where->eips[3], caller3_obj, M_VG_ERRTXT,
-                                                   caller3_fun, M_VG_ERRTXT );
-      }
+   for (i = 0; i < VG_N_SUPP_CALLERS && i < VG_(clo_backtrace_size); i++) {
+      get_objname_fnname ( err->where->eips[i], 
+                           caller_obj[i], M_VG_ERRTXT,
+                           caller_fun[i], M_VG_ERRTXT );
    }
 
    /* See if the error context matches any suppression. */
    for (su = vg_suppressions; su != NULL; su = su->next) {
-
-      switch (su->skin_supp.skind) {
-         case PThreadSupp:
-            if (err->skin_err.ekind == PThreadErr) break;
-            continue;
-         default:
-            if (VG_(needs).report_errors) {
-               if (SKN_(error_matches_suppression)(&err->skin_err, 
-                                                   &su->skin_supp)) {
-                  break; 
-               } else {
-                  continue;
-               }
-            } else {
-               VG_(printf)("Error:\n"
-                           "  unhandled suppresion type: %u.  Perhaps " 
-                           "VG_(needs).report_errors should be set?\n",
-                           err->skin_err.ekind);
-               VG_(panic)("is_suppressible_error: unhandled error type");
-            }
+      if (supp_matches_error(su, err) &&
+          supp_matches_callers(su, caller_obj, caller_fun)) {
+         return su;
       }
-      
-      switch (su->caller0_ty) {
-         case ObjName: if (!VG_(stringMatch)(su->caller0, 
-                                             caller0_obj)) continue;
-                       break;
-         case FunName: if (!VG_(stringMatch)(su->caller0, 
-                                             caller0_fun)) continue;
-                       break;
-         default: goto baaaad;
-      }
-
-      if (su->caller1 != NULL) {
-         vg_assert(VG_(clo_backtrace_size) >= 2);
-         switch (su->caller1_ty) {
-            case ObjName: if (!VG_(stringMatch)(su->caller1, 
-                                                caller1_obj)) continue;
-                          break;
-            case FunName: if (!VG_(stringMatch)(su->caller1, 
-                                                caller1_fun)) continue;
-                          break;
-            default: goto baaaad;
-         }
-      }
-
-      if (VG_(clo_backtrace_size) > 2 && su->caller2 != NULL) {
-         switch (su->caller2_ty) {
-            case ObjName: if (!VG_(stringMatch)(su->caller2, 
-                                                caller2_obj)) continue;
-                          break;
-            case FunName: if (!VG_(stringMatch)(su->caller2, 
-                                                caller2_fun)) continue;
-                          break;
-            default: goto baaaad;
-         }
-      }
-
-      if (VG_(clo_backtrace_size) > 3 && su->caller3 != NULL) {
-         switch (su->caller3_ty) {
-            case ObjName: if (!VG_(stringMatch)(su->caller3,
-                                                caller3_obj)) continue;
-                          break;
-            case FunName: if (!VG_(stringMatch)(su->caller3, 
-                                                caller3_fun)) continue;
-                          break;
-            default: goto baaaad;
-         }
-      }
-
-      return su;
    }
-
-   return NULL;
-
-  baaaad:
-   VG_(panic)("is_suppressible_error");
+   return NULL;      /* no matches */
 
 #  undef STREQ
 }
