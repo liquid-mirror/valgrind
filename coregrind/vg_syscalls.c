@@ -2389,7 +2389,7 @@ void VG_(perform_assumed_nonblocking_syscall) ( ThreadId tid )
                SYSCALL_TRACK( pre_mem_write, tid, "ioctl(RTC_RD_TIME/ALM_READ)", 
                               arg3, sizeof(struct rtc_time));
                KERNEL_DO_SYSCALL(tid,res);
-               if (!VG_(is_kerror) && res == 0)
+               if (!VG_(is_kerror)(res) && res == 0)
                   VG_TRACK( post_mem_write,arg3, sizeof(struct rtc_time));
                break;
             case RTC_ALM_SET:
@@ -2401,7 +2401,7 @@ void VG_(perform_assumed_nonblocking_syscall) ( ThreadId tid )
                SYSCALL_TRACK( pre_mem_write, tid, "ioctl(RTC_IRQP_READ)", arg3,
                                 sizeof(unsigned long));
                KERNEL_DO_SYSCALL(tid,res);
-               if(!VG_(is_kerror) && res == 0)
+               if(!VG_(is_kerror)(res) && res == 0)
                    VG_TRACK( post_mem_write,arg3, sizeof(unsigned long));
                break;
 #           endif /* GLIBC_2_1 */
