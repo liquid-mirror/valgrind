@@ -1,19 +1,13 @@
 ## Process this file with automake to produce Makefile.in
 
 ##---------------------------------------------------------------------------
-## Some of them user client requests which are now totally different for
-## HEAD vs. ERASER due to changed client request codes.
-
-## Need more tests:
-## - more C++ ones
-## - lots more mmap/munmap/mremap/mprotect ones
+## These ones all work fine without producing errors in any skin.
 ##---------------------------------------------------------------------------
 
 noinst_PROGRAMS = \
 	bitfield1 bt_everything bt_literal coolo_strlen \
-	cpuid dastest floored fucomip munmap_exe rcl_assert \
+	cpuid dastest floored fork fucomip munmap_exe rcl_assert \
 	rcrl readline1 sha1_test shortpush shorts smc1 \
-	pth_atfork1 \
 	coolo_sigaction gxx304
 
 CFLAGS   = $(WERROR) -Winline -Wall -Wshadow -g
@@ -26,6 +20,7 @@ bt_literal_SOURCES 	= bt_literal.c
 cpuid_SOURCES 		= cpuid_c.c cpuid_s.s
 coolo_strlen_SOURCES 	= coolo_strlen.c
 dastest_SOURCES 	= dastest_c.c dastest_s.s
+fork_SOURCES 		= fork.c
 floored_SOURCES 	= floored.c
 floored_LDADD 		= -lm
 fucomip_SOURCES 	= fucomip.c
@@ -42,9 +37,4 @@ shorts_SOURCES 		= shorts.c
 coolo_sigaction_SOURCES	= coolo_sigaction.cpp
 gxx304_SOURCES		= gxx304.cpp
 
-
-# generic pthreads ones
-# XXX: is output right for pth_atfork1?
-pth_atfork1_SOURCES		= pth_atfork1.c
-pth_atfork1_LDADD  		= -lpthread
 

@@ -1,11 +1,7 @@
 ## Process this file with automake to produce Makefile.in
 
 ##---------------------------------------------------------------------------
-## Some of them user client requests which are now totally different for
-## HEAD vs. ERASER due to changed client request codes.
-
 ## Need more tests:
-## - more C++ ones
 ## - lots more mmap/munmap/mremap/mprotect ones
 
 ## Notes:
