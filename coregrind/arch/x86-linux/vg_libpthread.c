@@ -453,9 +453,8 @@ void thread_exit_wrapper ( void* ret_val )
                            2 /* get */, pthread_self(), 0, 0);
    my_assert(detached == 0 || detached == 1);
 
-   // ZZZ
-   //if (Vg_Eraser == VG_(clo_action))
-   //   VGE_(thread_dies)();
+   if (VG_(needs).track_threads)
+      SKN_(thread_dies)();
 
    if (detached) {
       /* Detached; I just quit right now. */
