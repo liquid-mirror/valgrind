@@ -48,3 +48,6 @@ weirdioctl
 *.stderr.diff
 *.stdout.out
 *.stderr.out
+metadata
+realloc3
+threadederrno
