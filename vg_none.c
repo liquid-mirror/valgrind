@@ -36,21 +36,7 @@ void SK_(pre_clo_init)(VgNeeds* needs, VgTrackEvents* track)
    needs->name                    = "nulgrind";
    needs->description             = "a binary JIT-compiler";
 
-   needs->core_errors             = False;
-   needs->skin_errors             = False;
-   needs->run_libc_freeres        = False;
-
-   needs->identifies_basic_blocks = False;
-   needs->shadow_regs             = False;
-   needs->command_line_options    = False;
-   needs->client_requests         = False;
-   needs->extends_UCode           = False;
-   needs->wrap_syscalls           = False;
-   needs->sizeof_shadow_chunk     = 0;
-   needs->alternative_free        = False;
-   needs->sanity_checks           = False;
-
-   /* No core events to track */
+   /* No needs, no core events to track */
 }
 
 void SK_(post_clo_init)(void)

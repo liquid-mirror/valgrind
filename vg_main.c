@@ -418,27 +418,25 @@ UInt VG_(num_scheduling_events_MAJOR) = 0;
    Skin data structure initialisation
    ------------------------------------------------------------------ */
 
-#define INVALID_Bool    ((Bool)999)    /* not 0 or 1 */
-
-/* Init with empty values so that we can later check all fields have been
- * initialised by the skin. */
+/* Init with default values. */
 VgNeeds VG_(needs) = {
    .name                    = NULL,
    .description             = NULL,
 
-   .core_errors             = INVALID_Bool,
-   .skin_errors             = INVALID_Bool,
-   .run_libc_freeres        = INVALID_Bool,
+   .core_errors             = False,
+   .skin_errors             = False,
+   .run_libc_freeres        = False,
 
-   .identifies_basic_blocks = INVALID_Bool,
-   .shadow_regs             = INVALID_Bool,
-   .command_line_options    = INVALID_Bool,
-   .client_requests         = INVALID_Bool,
-   .extends_UCode           = INVALID_Bool,
-   .wrap_syscalls           = INVALID_Bool,
-   .sizeof_shadow_chunk     = 0,
-   .alternative_free        = INVALID_Bool,
-   .sanity_checks           = INVALID_Bool,
+   .sizeof_shadow_block     = 0,
+
+   .basic_block_discards    = False,
+   .shadow_regs             = False,
+   .command_line_options    = False,
+   .client_requests         = False,
+   .extended_UCode          = False,
+   .syscall_wrapper         = False,
+   .alternative_free        = False,
+   .sanity_checks           = False,
 };
 
 VgTrackEvents VG_(track_events) = {
@@ -489,19 +487,6 @@ static void sanity_check_needs ( void )
    
    CHECK_NOT(VG_(needs).name,        NULL);
    CHECK_NOT(VG_(needs).description, NULL);
-
-   CHECK_NOT(VG_(needs).core_errors,             INVALID_Bool);
-   CHECK_NOT(VG_(needs).skin_errors,             INVALID_Bool);
-   CHECK_NOT(VG_(needs).run_libc_freeres,        INVALID_Bool);
-
-   CHECK_NOT(VG_(needs).identifies_basic_blocks, INVALID_Bool);
-   CHECK_NOT(VG_(needs).shadow_regs,             INVALID_Bool);
-   CHECK_NOT(VG_(needs).command_line_options,    INVALID_Bool);
-   CHECK_NOT(VG_(needs).client_requests,         INVALID_Bool);
-   CHECK_NOT(VG_(needs).extends_UCode,           INVALID_Bool);
-   CHECK_NOT(VG_(needs).wrap_syscalls,           INVALID_Bool);
-   CHECK_NOT(VG_(needs).alternative_free,        INVALID_Bool);
-   CHECK_NOT(VG_(needs).sanity_checks,           INVALID_Bool);
 
 #undef CHECK_NOT
 #undef INVALID_Bool

@@ -36,17 +36,14 @@
 #include "vg_unsafe.h"
 
 
-/* All system calls are channelled through vg_wrap_syscall.  It does
-   three things:
+/* All system calls are channelled through here, doing two things:
 
-   * optionally, checks the permissions for the args to the call
+   * notify the skin of the memory events (reads, writes) happening
 
    * perform the syscall, usually by passing it along to the kernel
      unmodified.  However, because we simulate signals ourselves,
      signal-related syscalls are routed to vg_signal.c, and are not
      delivered to the kernel.
-
-   * Update the permission maps following the syscall.
 
    A magical piece of assembly code, vg_do_syscall(), in vg_syscall.S
    does the tricky bit of passing a syscall to the kernel, whilst
@@ -390,7 +387,7 @@ void VG_(perform_assumed_nonblocking_syscall) ( ThreadId tid )
    arg5             = tst->m_edi;
 
    /* Do any pre-syscall actions */
-   if (VG_(needs).wrap_syscalls) {
+   if (VG_(needs).syscall_wrapper) {
       VGP_PUSHCC(VgpSkinSysWrap);
       pre_res = SK_(pre_syscall)(tid, syscallno, /*isBlocking*/False);
       VGP_POPCC(VgpSkinSysWrap);
@@ -2275,7 +2272,7 @@ void VG_(perform_assumed_nonblocking_syscall) ( ThreadId tid )
                if (nReadThisBuf > res) nReadThisBuf = res;
                VG_TRACK( post_mem_write, (UInt)vec[i].iov_base, nReadThisBuf );
                res -= nReadThisBuf;
-               if (res < 0) VG_(panic)("vg_wrap_syscall: readv: res < 0");
+               if (res < 0) VG_(panic)("readv: res < 0");
             }
          }
          break;
@@ -2997,7 +2994,7 @@ void VG_(perform_assumed_nonblocking_syscall) ( ThreadId tid )
    /* { void zzzmemscan(void); zzzmemscan(); } */
 
    /* Do any post-syscall actions */
-   if (VG_(needs).wrap_syscalls) {
+   if (VG_(needs).syscall_wrapper) {
       VGP_PUSHCC(VgpSkinSysWrap);
       SK_(post_syscall)(tid, syscallno, pre_res, res, /*isBlocking*/False);
       VGP_POPCC(VgpSkinSysWrap);
@@ -3033,7 +3030,7 @@ void* VG_(pre_known_blocking_syscall) ( ThreadId tid, Int syscallno )
    arg5             = tst->m_edi;
    */
 
-   if (VG_(needs).wrap_syscalls) {
+   if (VG_(needs).syscall_wrapper) {
       VGP_PUSHCC(VgpSkinSysWrap);
       pre_res = SK_(pre_syscall)(tid, syscallno, /*isBlocking*/True);
       VGP_POPCC(VgpSkinSysWrap);
@@ -3126,7 +3123,7 @@ void VG_(post_known_blocking_syscall) ( ThreadId tid,
          break;
    }
 
-   if (VG_(needs).wrap_syscalls) {
+   if (VG_(needs).syscall_wrapper) {
       VGP_PUSHCC(VgpSkinSysWrap);
       SK_(post_syscall)(tid, syscallno, pre_res, res, /*isBlocking*/True);
       VGP_POPCC(VgpSkinSysWrap);

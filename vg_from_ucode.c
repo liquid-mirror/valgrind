@@ -2268,12 +2268,12 @@ static void emitUInstr ( Int i, UInstr* u )
          break;
 
       default: 
-         if (VG_(needs).extends_UCode)
+         if (VG_(needs).extended_UCode)
             SK_(emitExtUInstr)(u);
          else {
             VG_(printf)("\nError:\n"
                         "  unhandled opcode: %u.  Perhaps "
-                        " VG_(needs).extends_UCode should be set?\n",
+                        " VG_(needs).extended_UCode should be set?\n",
                         u->opcode);
             VG_(ppUInstr)(0,u);
             VG_(panic)("emitUInstr: unimplemented opcode");

@@ -2353,7 +2353,8 @@ typedef
    enum { 
       VgpCheckMem = VgpFini+1,
       VgpSetMem
-   } VgpSkinCC;
+   } 
+   VgpSkinCC;
 
 void SK_(pre_clo_init)(VgNeeds* needs, VgTrackEvents* track)
 {
@@ -2364,13 +2365,14 @@ void SK_(pre_clo_init)(VgNeeds* needs, VgTrackEvents* track)
    needs->skin_errors             = True;
    needs->run_libc_freeres        = True;
 
-   needs->identifies_basic_blocks = False;
+   needs->sizeof_shadow_block     = 1;
+
+   needs->basic_block_discards    = False;
    needs->shadow_regs             = True;
    needs->command_line_options    = True;
    needs->client_requests         = True;
-   needs->extends_UCode           = True;
-   needs->wrap_syscalls           = True;
-   needs->sizeof_shadow_chunk     = 1;
+   needs->extended_UCode          = True;
+   needs->syscall_wrapper         = True;
    needs->alternative_free        = True;
    needs->sanity_checks           = True;
 

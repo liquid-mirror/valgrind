@@ -60,7 +60,7 @@ Bool needs_shadow_chunks ( void )
 {
    return VG_(needs).core_errors             ||
           VG_(needs).alternative_free        ||
-          VG_(needs).sizeof_shadow_chunk > 0 ||
+          VG_(needs).sizeof_shadow_block > 0 ||
           VG_(track_events).bad_free         ||
           VG_(track_events).mismatched_free  ||
           VG_(track_events).copy_mem_heap    ||
@@ -102,12 +102,12 @@ static void addShadowChunk ( ThreadState* tst,
 
    sc = VG_(arena_malloc)(VG_AR_CORE, 
                           sizeof(ShadowChunk)
-                           + VG_(needs).sizeof_shadow_chunk);
+                           + VG_(needs).sizeof_shadow_block);
    sc->size      = size;
    sc->allockind = kind;
    sc->data      = p;
    /* Fill in any skin-specific shadow chunk stuff */
-   if (VG_(needs).sizeof_shadow_chunk > 0)
+   if (VG_(needs).sizeof_shadow_block > 0)
       SK_(complete_shadow_chunk) ( sc, tst );
 
    ml_no     = VG_MALLOCLIST_NO(p);
