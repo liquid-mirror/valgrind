@@ -676,8 +676,7 @@ void VG_(load_suppressions) ( void )
 /* Does an error context match a suppression?  ie is this a
    suppressible error?  If so, return a pointer to the CoreSupp
    record, otherwise NULL.
-   Tries to minimise the number of calls to what_fn_is_this since they
-   are expensive.  
+   Tries to minimise the number symbol searches since they are expensive.  
 */
 static CoreSupp* is_suppressible_error ( CoreError* err )
 {
