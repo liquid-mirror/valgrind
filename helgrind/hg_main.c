@@ -573,7 +573,7 @@ UCodeBlock* SK_(instrument)(UCodeBlock* cb, Addr not_used)
    Lock tracking machinery
    ------------------------------------------------------------------ */
 
-#define LOCKSET_TABLE_SIZE  100
+#define LOCKSET_TABLE_SIZE  1000
 #define MAX_LOCKS           5
 #define INVALID_LOCKSET_ENTRY   (lock_vector*)0xFFFFFFFF
 
@@ -721,7 +721,7 @@ weird_lock_vector_equals(lock_vector* a, lock_vector* b,
           * should be identical */
          while (True) {
             if (NULL == a && NULL == b) return True;
-            else if (NULL == b) return False;
+            else if (NULL == a || NULL == b) return False;
             else if (a->mutex == b->mutex) {
                a = a->next; 
                b = b->next; 
