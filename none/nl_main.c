@@ -38,7 +38,6 @@ void SK_(pre_clo_init)(VgNeeds* needs, VgTrackEvents* track)
 
    needs->record_mem_exe_context  = False;
    needs->postpone_mem_reuse      = False;
-   needs->debug_info              = False;
    needs->core_errors             = False;
    needs->skin_errors             = False;
    needs->run_libc_freeres        = False;

@@ -66,6 +66,25 @@ UInt VG_(dereference) ( Addr a )
    return * (UInt*)a;
 }
 
+/* ---------------------------------------------------------------------
+   Doing mmap, munmap, mremap, mprotect
+   ------------------------------------------------------------------ */
+
+/* AFAICT from kernel sources (mm/mprotect.c) and general experimentation,
+   munmap, mprotect (SSS: and mremap??) work at the page level.  So addresses
+   and lengths must be adjusted for this. */
+
+/* Mash around start and length so that the area exactly covers
+   an integral number of pages.  If we don't do that, memcheck's
+   idea of addressible memory diverges from that of the
+   kernel's, which causes the leak detector to crash. */
+static 
+void mash_addr_and_len( Addr* a, UInt* len)
+{
+   while (( *a         % VKI_BYTES_PER_PAGE) > 0) { (*a)--; (*len)++; }
+   while (((*a + *len) % VKI_BYTES_PER_PAGE) > 0) {         (*len)++; }
+}
+
 static
 void mmap_segment ( Addr a, UInt len, UInt prot )
 {
@@ -75,28 +94,21 @@ void mmap_segment ( Addr a, UInt len, UInt prot )
    if (prot & PROT_EXEC)
       VGM_(new_exe_segment) ( a, len );
 
-   // SSS: maybe merge this with mprotect
-   nn = (prot & PROT_NONE)  ? True : False;
-   rr = (prot & PROT_READ)  ? True : False;
-   ww = (prot & PROT_WRITE) ? True : False;
-   xx = (prot & PROT_EXEC)  ? True : False;
+   nn = prot & PROT_NONE;
+   rr = prot & PROT_READ;
+   ww = prot & PROT_WRITE;
+   xx = prot & PROT_EXEC;
 
    VG_TRACK( new_mem_mmap, a, len, nn, rr, ww, xx );
 }
 
-/* Side effects include updating the args */
 static
 void munmap_segment ( Addr a, UInt len )
 {
    /* Addr orig_a   = a;
       Addr orig_len = len; */
 
-   /* Mash around start and length so that the area exactly covers
-      an integral number of pages.  If we don't do that, memcheck's
-      idea of addressible memory diverges from that of the
-      kernel's, which causes the leak detector to crash. */
-   while ((a % VKI_BYTES_PER_PAGE) > 0)       { a--; len++; }
-   while (((a + len) % VKI_BYTES_PER_PAGE) > 0) { len++; }
+   mash_addr_and_len(&a, &len);
    /*
    VG_(printf)("MUNMAP: correct (%p for %d) to (%p for %d) %s\n", 
       orig_a, orig_len, a, len, (orig_a!=start || orig_len!=length) 
@@ -109,6 +121,48 @@ void munmap_segment ( Addr a, UInt len )
    VGM_(remove_if_exe_segment) ( a, len );
 
    VG_TRACK( die_mem_munmap, a, len );
+}
+
+static 
+void mprotect_segment ( Addr a, UInt len, Int prot )
+{
+   Bool nn, rr, ww, xx;
+   nn = prot & PROT_NONE;
+   rr = prot & PROT_READ;
+   ww = prot & PROT_WRITE;
+   xx = prot & PROT_EXEC;
+
+   mash_addr_and_len(&a, &len);
+   VG_TRACK( change_mem_mprotect, a, len, nn, rr, ww, xx );
+}
+
+static 
+void mremap_segment ( old_addr, old_size, new_addr, new_size )
+{
+   /* If the block moves, assume new and old blocks can't overlap; seems to
+    * be valid judging from Linux kernel code in mm/mremap.c */
+   vg_assert(old_addr == new_addr         ||
+             old_addr+old_size < new_addr ||
+             new_addr+new_size < old_addr);
+
+   if (new_size < old_size) {
+      // if exe_seg
+      // unmap old symbols from old_addr+new_size..old_addr+new_size
+      // update exe_seg size = new_size
+      // update exe_seg addr = new_addr...
+      VG_TRACK( copy_mem_remap, old_addr, new_addr, new_size );
+      VG_TRACK( die_mem_munmap, old_addr+new_size, old_size-new_size );
+
+   } else {
+      // if exe_seg
+      // map new symbols from new_addr+old_size..new_addr+new_size
+      // update exe_seg size = new_size
+      // update exe_seg addr = new_addr...
+      VG_TRACK( copy_mem_remap, old_addr, new_addr, old_size );
+      // SSS: what should the permissions on the new extended part be??
+      VG_TRACK( new_mem_mmap,   new_addr+old_size, new_size-old_size,
+                                False, True, True, True );
+   }
 }
 
 
@@ -299,8 +353,9 @@ void pre_mem_read_sockaddr ( ThreadState* tst,
 Addr VGM_(curr_dataseg_end);
 
 
-
-/* The Main Entertainment ... */
+/* ---------------------------------------------------------------------
+   The Main Entertainment ...
+   ------------------------------------------------------------------ */
 
 void VG_(perform_assumed_nonblocking_syscall) ( ThreadId tid )
 {
@@ -575,29 +630,7 @@ void VG_(perform_assumed_nonblocking_syscall) ( ThreadId tid )
          SYSCALL_TRACK( pre_mem_write, tst, "mremap(old_address)", arg1, arg2 );
          KERNEL_DO_SYSCALL(tid,res);
          if (!VG_(is_kerror)(res)) {
-            /* First do a munmap(), then do a mmap() */
-            munmap_segment( arg1, arg2 );
-
-            // JJJ: find out PROT.  May have to maintain it ourselves, ugh.
-            // Or could look up /proc/pid/maps if feeling lazy.
-            // Or have a routine that sets up a sig handler and tries to
-            // read and write (and exec can be determined from ExeSeg... ugh)
-            mmap_segment( (Addr)res, arg3, PROT_READ | PROT_WRITE | PROT_EXEC );
-/* SSS: Should be something like:
-            old_addr = arg1;
-            old_size = arg2;
-            new_size = arg3;
-
-            dup = dup_mem_remap(old_addr, old_size);
-            die_mem_remap(old_addr, old_size);     [die_mem_munmap];
-            if (new_size < old_size) {
-               copy_mem_remap(dup, new_addr, new_size);  [copy_mem_heap];
-            } else {
-               copy_mem_remap(dup, new_addr, old_size);
-               new_mem_remap(new_addr+old_size, new_size-old_size); [new_mem_mmap]
-            }
-            free_dup(dup);
-*/
+            mremap_segment( arg1, arg2, (Addr)res, arg3 );
          }
          break;         
 #     endif
@@ -999,9 +1032,6 @@ void VG_(perform_assumed_nonblocking_syscall) ( ThreadId tid )
             VG_(message)(Vg_UserMsg, 
               "   Use --logfile-fd=<number> to select an "
               "alternative logfile fd." );
-
-            // JJJ: this wasn't specified previously (don't know why gcc
-            // wasn't catching it, though...)
             res = -1;
          } else {
             KERNEL_DO_SYSCALL(tid,res);
@@ -2104,12 +2134,7 @@ void VG_(perform_assumed_nonblocking_syscall) ( ThreadId tid )
          MAYBE_PRINTF("mprotect ( %p, %d, %d )\n", arg1,arg2,arg3);
          KERNEL_DO_SYSCALL(tid,res);
          if (!VG_(is_kerror)(res)) {
-            Bool nn, rr, ww, xx;
-            nn = arg3 & PROT_NONE;
-            rr = arg3 & PROT_READ;
-            ww = arg3 & PROT_WRITE;
-            xx = arg3 & PROT_EXEC;
-            VG_TRACK( change_mem_mprotect, arg1, arg2, nn, rr, ww, xx );
+            mprotect_segment( arg1, arg2, arg3 );
          }
          break;
 

@@ -46,8 +46,6 @@
 #define newTemp   VG_(getNewTemp)
 
 
-// SSS: would these be better as macros?  No extra code, no need to pass in
-// cb (assuming cb was the name used by the programmer)
 void VG_(callHelper_0_0)(UCodeBlock* cb, Addr f)
 {
    uInstr0(cb, CCALL, 0);
