@@ -86,7 +86,6 @@ extern void clear_MemCheckErrContext ( MemCheckErrContext* ec_extra );
 /*--- Comparing and printing errors                        ---*/
 /*------------------------------------------------------------*/
 
-#if 0
 __inline__
 void clear_AddrInfo ( AddrInfo* ai )
 {
@@ -97,7 +96,6 @@ void clear_AddrInfo ( AddrInfo* ai )
    ai->stack_tid  = VG_INVALID_THREADID;
    ai->maybe_gcc  = False;
 }
-#endif
 
 void clear_MemCheckErrContext ( MemCheckErrContext* ec_extra )
 {
