@@ -10,6 +10,9 @@
 #   - stdout_filter: <filter to run stdout through> (default: none)
 #   - stderr_filter: <filter to run stderr through> (default: filter_stderr)
 #
+# Also have "vgopts.hd:" for options to be only passed if --head true, and
+# corresponding "vgopts.er" for --eraser.
+#
 # Expected results (filtered) are kept in <test>.stderr.exp and
 # <test>.stdout.exp.  The latter can be missing if it would be empty.
 #
@@ -29,6 +32,16 @@
 # The difference between the 1.0.X and ERASER results is that ERASER gives
 # shorter stack traces.  The ERASER stderr results are kept in 
 # <test>.stderr.er.
+#----------------------------------------------------------------------------
+# Adding a new tests subdirectory:
+# - Add directory to valgrind/configure.in
+# - Write a Makefile.am for it
+# - Write a filter_stderr for it;  it should always call
+#   ../filter_stderr_basic as its first step
+# - Add test programs, .vgtest, .stderr.exp{,.hd}, .stdout.exp files
+#
+# Note that if you add new basis filters in tests/, if they call other basic
+# filters, use the $dir trick to get the directory right as in filter_discards.
 #----------------------------------------------------------------------------
 
 use strict;
@@ -56,7 +69,8 @@ my $valgrind = "../bin/valgrind";
 
 chomp(my $tests_dir = `pwd`);
 
-my $default_stderr_filter = "$tests_dir/filter_stderr";
+# default filter is the one named "filter_stderr" in the test's directory
+my $default_stderr_filter = "filter_stderr";
 
 
 #----------------------------------------------------------------------------
@@ -68,7 +82,10 @@ sub read_vgtest_file($)
 
     # Defaults.
     ($vgopts, $prog, $args, $stdout_filter, $stderr_filter) = 
-        ("", undef, "", undef, $default_stderr_filter);
+        ("", undef, "", undef, undef);
+
+    # Every test directory must have a "filter_stderr"
+    $stderr_filter = validate_program(".", $default_stderr_filter);
 
     open(INPUTFILE, "< $f") || die "File $f not openable\n";
 
@@ -79,6 +96,10 @@ sub read_vgtest_file($)
             $prog = validate_program(".", $1);
         } elsif ($line =~ /^\s*args:\s*(.*)$/) {
             $args = $1;
+        } elsif ($line =~ /^\s*vgopts\.hd:\s*(.*)$/) {
+            $vgopts = $1 if ($exp eq ".hd");
+        } elsif ($line =~ /^\s*vgopts\.er:\s*(.*)$/) {
+            $vgopts = $1 if ($exp eq "");
         } elsif ($line =~ /^\s*stdout_filter:\s*(.*)$/) {
             $stdout_filter = validate_program(".", $1);
         } elsif ($line =~ /^\s*stderr_filter:\s*(.*)$/) {
@@ -114,7 +135,14 @@ sub do_one_test($$)
     read_vgtest_file($vgtest);
 
     printf("%-30s valgrind $vgopts $prog $args\n", "$fullname:");
-    mysystem("$valgrind $vgopts $prog $args > $name.stdout.out 2> $name.stderr.out");
+
+    # If --eraser, pass the apt. --skin option for the directory (can be
+    # overridden by an "args:" or "args.er:" line, though)
+    if ($exp eq ".hd") {
+        mysystem("$valgrind $vgopts $prog $args > $name.stdout.out 2> $name.stderr.out");
+    } else {
+        mysystem("$valgrind --skin=$dir $vgopts $prog $args > $name.stdout.out 2> $name.stderr.out");
+    }
 
     if (defined $stdout_filter) {
         mysystem("$stdout_filter < $name.stdout.out > $tmp");
@@ -185,7 +213,7 @@ sub validate_program ($$)
     # absolute -- by prepending current dir -- so we can change
     # dirs and still use it.
     $prog = "$dir/$prog" if ($prog !~ /^\//);
-    (-x $prog) or die "`$prog' not found or not executable\n";
+    (-x $prog) or die "`$prog' not found or not executable ($dir)\n";
 
     return $prog;
 }

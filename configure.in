@@ -298,6 +298,7 @@ AC_OUTPUT(
    tests/Makefile 
    tests/none/Makefile 
    tests/memcheck/Makefile 
+   tests/cachesim/Makefile 
    demangle/Makefile)
 
 cat<<EOF
