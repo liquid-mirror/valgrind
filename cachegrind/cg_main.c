@@ -419,6 +419,7 @@ static __inline__ BBCC* get_BBCC(Addr bb_orig_addr, UCodeBlock* cb,
 #define uInstr2   VG_(newUInstr2)
 #define uInstr3   VG_(newUInstr3)
 #define uLiteral  VG_(setLiteralField)
+#define uCCall    VG_(setCCallFields)
 #define newTemp   VG_(getNewTemp)
 
 static Int compute_BBCC_array_size(UCodeBlock* cb)
@@ -657,8 +658,8 @@ UCodeBlock* SK_(instrument)(UCodeBlock* cb_in, Addr orig_addr)
                uInstr2(cb, MOV,   4, Literal, 0, TempReg, t_CC_addr);
                uLiteral(cb, BBCC_ptr);
 
-               uInstr1(cb, CCALL_1_0, 0, TempReg, t_CC_addr);
-               uLiteral(cb, (Addr) & cachesim_non_mem_instr);
+               uInstr1(cb, CCALL, 0, TempReg, t_CC_addr);
+               uCCall(cb, (Addr) & cachesim_non_mem_instr, 1, 1, False);
 
             } else { 
                CC_type X_CC;
@@ -698,9 +699,8 @@ UCodeBlock* SK_(instrument)(UCodeBlock* cb_in, Addr orig_addr)
                uInstr2(cb, MOV,   4, Literal, 0, TempReg, t_CC_addr);
                uLiteral(cb, BBCC_ptr);
 
-               uInstr2(cb, CCALL_2_0, 0, TempReg, t_CC_addr, 
-                                         TempReg, t_data_addr);
-               uLiteral(cb, (Addr) & cachesim_mem_instr);
+               uInstr2(cb, CCALL, 0, TempReg, t_CC_addr, TempReg, t_data_addr);
+               uCCall(cb, (Addr) & cachesim_mem_instr, 2, 2, False);
             }
 
             VG_(copyUInstr)(cb, u_in);
