@@ -30,7 +30,7 @@
 */
 
 /* For the rationale behind this file, look at
-   VG_(mash_LD_PRELOAD_string) in vg_main.c. */
+   VG_(mash_LD_PRELOAD_and_LD_LIBRARY_PATH) in vg_main.c. */
 
 /* Remember not to use a variable of this name in any program you want
    to debug :-) */
