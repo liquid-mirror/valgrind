@@ -65,18 +65,6 @@ Bool VG_(ignore_errors) ( void )
    return vg_ignore_errors;
 }
 
-// SSS: these two should not be here...
-__inline__
-void clear_AddrInfo ( AddrInfo* ai )
-{     
-   ai->akind      = Unknown;
-   ai->blksize    = 0;
-   ai->rwoffset   = 0;
-   ai->lastchange = NULL;
-   ai->stack_tid  = VG_INVALID_THREADID;
-   ai->maybe_gcc  = False;
-}
-
 /* Inlined in this module, not in others */
 __inline__ Bool VG_(eq_ExeContext) ( Bool top_2_only,
                         ExeContext* e1, ExeContext* e2 )

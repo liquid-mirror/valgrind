@@ -318,7 +318,7 @@ static void emit_movv_regmem_reg ( Int sz, Int reg1, Int reg2 )
                    nameISize(sz),  nameIReg(4,reg1), nameIReg(sz,reg2));
 }
 
-void emit_movv_reg_regmem ( Int sz, Int reg1, Int reg2 )
+static void emit_movv_reg_regmem ( Int sz, Int reg1, Int reg2 )
 {
    VG_(newEmit)();
    if (sz == 2) VG_(emitB) ( 0x66 );
