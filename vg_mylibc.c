@@ -1008,6 +1008,14 @@ void VG_(panic) ( Char* str )
    VG_(exit)(1);
 }
 
+void VG_(skin_error) ( Char* str )
+{
+   VG_(printf)("\n%s: misconfigured skin:\n   %s\n\n", VG_(needs).name, str);
+   //VG_(printf)("Please report this bug to me at: %s\n\n", VG_EMAIL_ADDR);
+   VG_(shutdown_logging)();
+   VG_(exit)(1);
+}
+
 
 /* ---------------------------------------------------------------------
    Primitive support for reading files.

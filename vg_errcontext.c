@@ -78,11 +78,10 @@ static Bool eq_CoreError ( VgRes res, CoreError* e1, CoreError* e2 )
          if (VG_(needs).skin_errors)
             return SK_(eq_SkinError)(res, &e1->skin_err, &e2->skin_err);
          else {
-            VG_(printf)("Error:\n"
-                        "  unhandled error type: %u.  Perhaps " 
-                        "VG_(needs).skin_errors should be set?\n",
+            VG_(printf)("\nUnhandled error type: %u. VG_(needs).skin_errors\n"
+                        "probably needs to be set.\n",
                         e1->skin_err.ekind);
-            VG_(panic)("eq_CoreError: unhandled error type");
+            VG_(skin_error)("unhandled error type");
          }
    }
 }
@@ -111,11 +110,10 @@ static void pp_CoreError ( CoreError* err, Bool printCount )
          if (VG_(needs).skin_errors)
             SK_(pp_SkinError)( &err->skin_err, &pp_ExeContextClosure );
          else {
-            VG_(printf)("Error:\n"
-                        "  unhandled error type: %u.  Perhaps " 
-                        "VG_(needs).skin_errors should be set?\n",
+            VG_(printf)("\nUnhandled error type: %u.  VG_(needs).skin_errors\n"
+                        "probably needs to be set?\n",
                         err->skin_err.ekind);
-            VG_(panic)("pp_CoreErr: unhandled error type");
+            VG_(skin_error)("unhandled error type");
          }
    }
 }
@@ -674,11 +672,11 @@ Bool supp_matches_error(CoreSupp* su, CoreError* err)
             return (SK_(error_matches_suppression)(&err->skin_err, 
                                                     &su->skin_supp));
          } else {
-            VG_(printf)("Error:\n"
-                        "  unhandled suppression type: %u.  Perhaps " 
-                        "VG_(needs).skin_errors should be set?\n",
-                        err->skin_err.ekind);
-            VG_(panic)("is_suppressible_error: unhandled suppression type");
+            VG_(printf)(
+               "\nUnhandled suppression type: %u.  VG_(needs).skin_errors\n"
+               "probably needs to be set.\n",
+               err->skin_err.ekind);
+            VG_(skin_error)("unhandled suppression type");
          }
    }
 }

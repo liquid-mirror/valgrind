@@ -477,12 +477,10 @@ VgTrackEvents VG_(track_events) = {
 
 static void sanity_check_needs ( void )
 {
-#define CHECK_NOT(var, value)                                        \
-   if ((var)==(value)) {                                             \
-      VG_(printf)("\nNeeds error:\n"                                 \
-                  "  %s not initialised by VG_(setup)()\n", \
-                  VG__STRING(var));                                  \
-      VG_(panic)("Uninitialised needs field\n");                     \
+#define CHECK_NOT(var, value)                                     \
+   if ((var)==(value)) {                                          \
+      VG_(printf)("\n`%s' not initialised\n", VG__STRING(var));   \
+      VG_(skin_error)("Uninitialised needs field\n");             \
    }
    
    CHECK_NOT(VG_(needs).name,        NULL);

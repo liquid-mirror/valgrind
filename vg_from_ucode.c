@@ -1109,20 +1109,20 @@ Int VG_(helper_offset)(Addr a)
          return VG_(noncompact_helper_offsets)[i];
 
    /* Shouldn't get here */
-   VG_(printf)("\nHelper error:\n"
-               "  Couldn't find offset of helper from its address (%p).\n"
-               "  Perhaps a helper used hasn't been registered?\n\n", a);
+   VG_(printf)(
+      "\nCouldn't find offset of helper from its address (%p).\n"
+      "A helper function probably used hasn't been registered?\n\n", a);
 
-   VG_(printf)("  *     compact helpers: ");
+   VG_(printf)("      compact helpers: ");
    for (i = 0; i < VG_(n_compact_helpers); i++)
       VG_(printf)("%p ", VG_(compact_helper_addrs)[i]);
 
-   VG_(printf)("\n  * non-compact helpers: ");
+   VG_(printf)("\n  non-compact helpers: ");
    for (i = 0; i < VG_(n_noncompact_helpers); i++)
       VG_(printf)("%p ", VG_(noncompact_helper_addrs)[i]);
 
    VG_(printf)("\n");
-   VG_(panic)("Unfound helper");
+   VG_(skin_error)("Unfound helper");
 }
 
 /*----------------------------------------------------*/
@@ -1949,9 +1949,8 @@ static Bool writeFlagUse ( UInstr* u )
 
 static void emitUInstr ( UCodeBlock* cb, Int i, RRegSet regs_live_before )
 {
-   Int     old_emitted_code_used, j;
+   Int     old_emitted_code_used;
    UInstr* u = &cb->instrs[i];
-   Bool    can_skip;
 
    if (dis)
       VG_(ppUInstrWithRegs)(i, u);
@@ -1983,8 +1982,10 @@ static void emitUInstr ( UCodeBlock* cb, Int i, RRegSet regs_live_before )
            cause incorrect source locations in some situations,
            specifically for the memcheck skin.  This is known to
            confuse programmers, understandable.  */
-
 #        if 0
+         Bool    can_skip;
+         Int     j;
+
          /* Scan forwards to see if this INCEIP dominates (in the
             technical sense) a later one, AND there are no CCALLs in
             between.  If so, skip this one and instead add its count
