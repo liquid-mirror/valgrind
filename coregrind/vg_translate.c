@@ -1990,7 +1990,7 @@ void VG_(translate) ( /*IN*/  ThreadState* tst,
    /* If doing any code printing, print a basic block start marker */
    if (VG_(clo_trace_codegen)) {
       Char fnname[64] = "";
-      VG_(get_fnname_if_start)(orig_addr, fnname, 64);
+      VG_(get_fnname_if_entry)(orig_addr, fnname, 64);
       VG_(printf)(
               "==== BB %d %s(%p) in %dB, out %dB, BBs exec'd %lu ====\n\n",
               VG_(overall_in_count), fnname, orig_addr, 
