@@ -1077,7 +1077,7 @@ Bool VG_(string_match) ( Char* pat, Char* str )
    ------------------------------------------------------------------ */
 
 __attribute__ ((noreturn))
-static void report_and_quit ( Char* report )
+static void report_and_quit ( const Char* report )
 {
    VG_(pp_sched_status)();
    VG_(printf)("\n");
@@ -1093,8 +1093,8 @@ static void report_and_quit ( Char* report )
 }
 
 __attribute__ ((noreturn))
-static void assert_fail ( Char* expr, Char* name, Char* report,
-                          Char* file, Int line,   Char* fn )
+static void assert_fail ( const Char* expr, const Char* name, const Char* report,
+                          const Char* file, UInt line, const Char* fn )
 {
    static Bool entered = False;
    if (entered) 
@@ -1105,31 +1105,31 @@ static void assert_fail ( Char* expr, Char* name, Char* report,
    report_and_quit(report);
 }
 
-void VG_(skin_assert_fail) ( Char* expr, Char* file, Int line, Char* fn )
+void VG_(skin_assert_fail) ( const Char* expr, const Char* file, UInt line, const Char* fn )
 {
    assert_fail(expr, VG_(details).name, VG_(details).bug_reports_to, 
                file, line, fn);
 }
 
-void VG_(core_assert_fail) ( Char* expr, Char* file, Int line, Char* fn )
+void VG_(core_assert_fail) ( const Char* expr, const Char* file, UInt line, const Char* fn )
 {
    assert_fail(expr, "valgrind", VG_EMAIL_ADDR, file, line, fn);
 }
 
 __attribute__ ((noreturn))
-static void panic ( Char* name, Char* report, Char* str )
+static void panic ( const Char* name, const Char* report, const Char* str )
 {
    VG_(printf)("\n%s: the `impossible' happened:\n   %s\n", name, str);
    VG_(printf)("Basic block ctr is approximately %llu\n", VG_(bbs_done) );
    report_and_quit(report);
 }
 
-void VG_(core_panic) ( Char* str )
+void VG_(core_panic) ( const Char* str )
 {
    panic("valgrind", VG_EMAIL_ADDR, str);
 }
 
-void VG_(skin_panic) ( Char* str )
+void VG_(skin_panic) ( const Char* str )
 {
    panic(VG_(details).name, VG_(details).bug_reports_to, str);
 }

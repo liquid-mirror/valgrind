@@ -355,7 +355,7 @@ extern void  VG_(exit)( Int status )
 /* Prints a panic message (a constant string), appends newline and bug
    reporting info, aborts. */
 __attribute__ ((__noreturn__))
-extern void  VG_(skin_panic) ( Char* str );
+extern void  VG_(skin_panic) ( const Char* str );
 
 /* Looks up VG_(client_envp) */
 extern Char* VG_(getenv) ( Char* name );
@@ -441,8 +441,8 @@ extern Char* VG_(getcwd) ( Char* buf, Int size );
                                    __PRETTY_FUNCTION__), 0)))
 
 __attribute__ ((__noreturn__))
-extern void VG_(skin_assert_fail) ( Char* expr, Char* file,
-                                    Int line, Char* fn );
+extern void VG_(skin_assert_fail) ( const Char* expr, const Char* file,
+                                    UInt line, const Char* fn );
 
 
 /* ------------------------------------------------------------------ */

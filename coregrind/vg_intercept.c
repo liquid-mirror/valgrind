@@ -217,7 +217,7 @@ void my_exit ( int arg )
 }
 
 static
-void my_assert_fail ( Char* expr, Char* file, Int line, Char* fn )
+void my_assert_fail ( const Char* expr, const Char* file, UInt line, const Char* fn )
 {
    char buf[1000];
    static Bool entered = False;
