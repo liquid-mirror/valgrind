@@ -1151,6 +1151,11 @@ typedef
                                   Addr a, UInt size ); */
       void (*post_mem_write) ( Addr a, UInt size );
 
+
+      /* Scheduler events */
+      void (*thread_run) ( ThreadId tid );
+
+
       /* Mutex events */
       void (*post_mutex_lock)   ( ThreadId tid, 
                                   void* /*pthread_mutex_t* */ mutex );
