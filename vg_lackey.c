@@ -42,10 +42,14 @@ static void add_one(void)
    n_uinstrs++;
 }
 
-void SK_(setup)(VgNeeds* needs)
+void SK_(setup)(VgNeeds* needs, VgTrackEvents* not_used)
 {
    needs->name                    = "lackey";
    needs->description             = "a UInstr counter";
+
+   needs->record_mem_exe_context  = False;
+   needs->postpone_mem_reuse      = False;
+
    needs->debug_info              = Vg_DebugNone;
    needs->precise_x86_instr_sizes = False;
    needs->pthread_errors          = False;
@@ -53,18 +57,16 @@ void SK_(setup)(VgNeeds* needs)
 
    needs->identifies_basic_blocks = False;
 
+   needs->run_libc_freeres        = False;
+
    needs->command_line_options    = False;
    needs->client_requests         = False;
 
-   needs->augments_UInstrs        = False;
    needs->extends_UCode           = False;
 
    needs->wrap_syscalls           = False;
 
    needs->sanity_checks           = False;
-
-   needs->shadow_memory           = False;
-   needs->track_threads           = False;
 
    VG_(register_compact_helper)((Addr) & add_one);
 

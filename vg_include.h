@@ -201,81 +201,6 @@ typedef unsigned char Bool;
 #include "./vg_kerneliface.h"
 
 /* ---------------------------------------------------------------------
-   Settings relating to the used skin
-   ------------------------------------------------------------------ */
-
-// SSS: remove this eventually -- need something else for all the
-// if (clo_action==Vg_MemCheck) tests
-typedef 
-   enum { Vg_MemCheck, Vg_Other }
-   VgSkin;
-
-typedef
-   enum { Vg_DebugUnknown,    /* Just for checking it's been initialised */
-          Vg_DebugNone, Vg_DebugImprecise, Vg_DebugPrecise }
-   VgDebugInfo;
-
-/* If new fields are added to this type, update:
- *  - vg_main.c:VG_(needs) initialisation
- *  - vg_main.c:sanity_check_needs()
- *
- * If the name of this type or any of its fields change, update:
- *  - dependent comments (just search for "VG_(needs)"). 
- */
-typedef
-   struct {
-      /* name and description used in the startup message */
-      Char* name;
-      Char* description;
-
-      /* Kind of debug info needed */
-      VgDebugInfo debug_info;
-      /* Needed if working at x86 instr level rather than UCode level, eg. 
-       * for cache simulation where we have to update state for every x86
-       * instruction */
-      Bool precise_x86_instr_sizes;
-      /* Report pthread errors? */
-      Bool pthread_errors;
-      /* Want to report errors?  This implies includes handling of 
-       * suppressions, too. */
-      Bool report_errors;
-
-      /* Is information kept about specific individual basic blocks?  (Eg. for
-       * cachesim there are cost-centres for every instruction, stored at a
-       * basic block level.)  If so, it sometimes has to be discarded, because
-       * .so mmap/munmap-ping or self-modifying code (informed by the
-       * DISCARD_TRANSLATIONS user request) can cause one instruction address
-       * to store information about two different instructions in one program
-       * run!
-       */
-      Bool identifies_basic_blocks;
-
-      /* Skin defines its own command line options? */
-      Bool command_line_options;
-      /* Skin defines its own client requests? */
-      Bool client_requests;
-
-      /* Skin adds custom code for core UInstrs? */
-      Bool augments_UInstrs;
-      /* Skin defines its own UInstrs? */
-      Bool extends_UCode;
-
-      /* Skin does stuff before and/or after system calls? */
-      Bool wrap_syscalls;
-
-      /* Are skin-state sanity checks performed? */
-      Bool sanity_checks;
-
-      /* Is shadow memory required? */
-      Bool shadow_memory;
-      /* Should threads be tracked? */
-      Bool track_threads;
-
-   } VgNeeds;
-
-extern VgNeeds VG_(needs);
-   
-/* ---------------------------------------------------------------------
    Command-line-settable options
    ------------------------------------------------------------------ */
 
@@ -284,6 +209,14 @@ extern VgNeeds VG_(needs);
 #define VG_CLO_SMC_ALL  2
 
 #define VG_CLO_MAX_SFILES 10
+
+// SSS: remove this eventually -- need something else for all the
+// if (clo_action==Vg_MemCheck) tests
+typedef 
+   enum { Vg_MemCheck, Vg_Other }
+   VgSkin;
+
+
 
 /* Should we stop collecting errors if too many appear?  default: YES */
 extern Bool  VG_(clo_error_limit);
@@ -389,7 +322,8 @@ extern void VG_(shutdown_logging) ( void );
 
 #define VGP_M_STACK 10
 
-#define VGP_M_CCS 26  /* == the # of elems in VGP_LIST */
+#define VGP_M_CCS 24  /* == the # of elems in VGP_LIST */
+#if 0
 #define VGP_LIST \
    VGP_PAIR(VgpUnc=0,      "unclassified"),           \
    VGP_PAIR(VgpRun,        "running"),                \
@@ -417,6 +351,33 @@ extern void VG_(shutdown_logging) ( void );
    VGP_PAIR(VgpCacheDump,  "cache stats dump"),       \
    VGP_PAIR(VgpSpare1,     "spare 1"),                \
    VGP_PAIR(VgpSpare2,     "spare 2")
+#endif
+#define VGP_LIST \
+   VGP_PAIR(VgpUnc=0,      "unclassified"),           \
+   VGP_PAIR(VgpRun,        "running"),                \
+   VGP_PAIR(VgpSched,      "scheduler"),              \
+   VGP_PAIR(VgpMalloc,     "low-lev malloc/free"),    \
+   VGP_PAIR(VgpCliMalloc,  "client  malloc/free"),    \
+   VGP_PAIR(VgpTranslate,  "translate-main"),         \
+   VGP_PAIR(VgpToUCode,    "to-ucode"),               \
+   VGP_PAIR(VgpFromUcode,  "from-ucode"),             \
+   VGP_PAIR(VgpImprove,    "improve"),                \
+   VGP_PAIR(VgpInstrument, "instrument"),             \
+   VGP_PAIR(VgpRegAlloc,   "reg-alloc"),              \
+   VGP_PAIR(VgpDoLRU,      "do-lru"),                 \
+   VGP_PAIR(VgpSlowFindT,  "slow-search-transtab"),   \
+   VGP_PAIR(VgpInitMem,    "init-memory"),            \
+   VGP_PAIR(VgpExeContext, "exe-context"),            \
+   VGP_PAIR(VgpReadSyms,   "read-syms"),              \
+   VGP_PAIR(VgpAddToT,     "add-to-transtab"),        \
+   VGP_PAIR(VgpSyscall,    "core syscall wrapper"),   \
+   /* SSS: genericise this */                         \
+   VGP_PAIR(VgpSARP,       "set-addr-range-perms"),   \
+   VGP_PAIR(VgpSpare1,     "spare 1"),                \
+   VGP_PAIR(VgpSpare2,     "spare 2"),                \
+   VGP_PAIR(VgpSpare3,     "spare 3"),                \
+   VGP_PAIR(VgpSpare4,     "spare 4"),                \
+   VGP_PAIR(VgpSpare5,     "spare 5")
 
 #define VGP_PAIR(enumname,str) enumname
 typedef enum { VGP_LIST } VgpCC;
@@ -1329,9 +1290,50 @@ extern void   VG_(newEmit)( void );
 
 extern Int    VG_(helper_offset) ( Addr a );
 
-// SSS: continue with this...
+
+/* Subroutine calls */
 void VG_(synth_call_baseBlock_method) ( Bool ensure_shortform, 
                                         Int word_offset );
+/* Addressing modes */
+void VG_(emit_amode_offregmem_reg) ( Int off, Int regmem, Int reg );
+void VG_(emit_amode_ereg_greg)     ( Int e_reg, Int g_reg );
+
+/* v-size (4, or 2 with OSO) insn emitters */
+void VG_(emit_movv_offregmem_reg) ( Int sz, Int off, Int areg, Int reg );
+void VG_(emit_movv_reg_offregmem) ( Int sz, Int reg, Int off, Int areg );
+void VG_(emit_movv_reg_reg)       ( Int sz, Int reg1, Int reg2 );
+void VG_(emit_nonshiftopv_lit_reg)( Int sz, Opcode opc, UInt lit, Int reg );
+void VG_(emit_shiftopv_lit_reg)   ( Int sz, Opcode opc, UInt lit, Int reg );
+void VG_(emit_nonshiftopv_reg_reg)( Int sz, Opcode opc, Int reg1, Int reg2 );
+void VG_(emit_movv_lit_reg)       ( Int sz, UInt lit, Int reg );
+void VG_(emit_unaryopv_reg)       ( Int sz, Opcode opc, Int reg );
+void VG_(emit_pushv_reg)          ( Int sz, Int reg );
+void VG_(emit_popv_reg)           ( Int sz, Int reg );
+
+void VG_(emit_pushl_lit32)        ( UInt int32 );
+void VG_(emit_pushl_lit8)         ( Int lit8 );
+void VG_(emit_cmpl_zero_reg)      ( Int reg );
+void VG_(emit_swapl_reg_EAX)      ( Int reg );
+void VG_(emit_movv_lit_offregmem) ( Int sz, UInt lit, Int off, Int memreg );
+
+/* b-size (1 byte) instruction emitters */
+void VG_(emit_movb_lit_offregmem) ( UInt lit, Int off, Int memreg );
+void VG_(emit_movb_reg_offregmem) ( Int reg, Int off, Int areg );
+void VG_(emit_unaryopb_reg)       ( Opcode opc, Int reg );
+void VG_(emit_testb_lit_reg)      ( UInt lit, Int reg );
+
+/* zero-extended load emitters */
+void VG_(emit_movzbl_offregmem_reg) ( Int off, Int regmem, Int reg );
+void VG_(emit_movzwl_offregmem_reg) ( Int off, Int areg, Int reg );
+
+/* misc instruction emitters */
+void VG_(emit_call_reg)         ( Int reg );
+void VG_(emit_add_lit_to_esp)   ( Int lit );
+void VG_(emit_jcondshort_delta) ( Condcode cond, Int delta );
+void VG_(emit_pushal)           ( void );
+void VG_(emit_popal)            ( void );
+void VG_(emit_AMD_prefetch_reg) ( Int reg );
+
 
 /* ---------------------------------------------------------------------
    Exports of vg_to_ucode.c
@@ -1543,7 +1545,7 @@ typedef
       /* ALL */
       Int count;
       /* ALL */
-      ErrKind ekind;       // necessary??
+      ErrKind ekind;
       /* ALL */
       ExeContext* where;
       /* Used frequently */
@@ -1579,23 +1581,14 @@ extern void VG_(clear_ErrContext) ( ErrContext* ec );
 
 extern void VG_(maybe_add_context) ( ErrContext* ec );
 
-// SSS: shouldn't be here
-extern void VG_(record_free_error)    ( ThreadState* tst, Addr a );
-extern void VG_(record_freemismatch_error)    ( ThreadState* tst, Addr a );
 
-// SSS: shouldn't be here
-extern void VG_(record_jump_error) ( ThreadState* tst, Addr a );
-
-// SSS: shouldn't be here
-extern void VG_(record_user_err) ( ThreadState* tst,
-                                   Addr a, Bool isWriteLack );
 extern void VG_(record_pthread_err) ( ThreadId tid, Char* msg );
 
 extern Bool VG_(eq_ExeContext) ( Bool top_2_only,
                                  ExeContext* e1, ExeContext* e2 );
 
 
-// SSS: these two shouldn't be here, memcheck-specific
+// SSS: these two memcheck/client block-specific
 /* The classification of a faulting address. */
 typedef 
    enum { Undescribed, /* as-yet unclassified */
@@ -1627,9 +1620,9 @@ typedef
    Exports of vg_clientperms.c
    ------------------------------------------------------------------ */
 
-extern Bool VG_(client_perm_maybe_describe)( Addr a, AddrInfo* ai );
-
 extern UInt VG_(handle_client_request) ( ThreadState* tst, UInt* arg_block );
+
+extern Bool VG_(client_perm_maybe_describe)( Addr a, AddrInfo* ai );
 
 extern void VG_(delete_client_stack_blocks_following_ESP_change) ( void );
 
@@ -1650,12 +1643,17 @@ void VG_(read_procselfmaps) (
    ------------------------------------------------------------------ */
 
 /* We assume the executable is loaded here ... can't really find
-   out.  There is a hacky sanity check in vg_init_memory_audit()
+   out.  There is a hacky sanity check in VG_(init_memory_and_symbols)()
    which should trip up most stupidities.
 */
 #define VG_ASSUMED_EXE_BASE  (Addr)0x8048000
 
 extern void VG_(read_symbols) ( void );
+extern void VG_(read_symtab_callback)( Addr start, UInt size, 
+                                       Char rr, Char ww, Char xx,
+                                       UInt foffset, UChar* filename );
+extern void VG_(unload_symbols) ( Addr start, UInt length );
+
 extern void VG_(mini_stack_dump) ( ExeContext* ec );
 extern void VG_(what_obj_and_fun_is_this)
                                      ( Addr a,
@@ -1666,8 +1664,6 @@ extern Bool VG_(what_line_is_this) ( Addr a,
                                      UInt* lineno );
 extern Bool VG_(what_fn_is_this) ( Bool no_demangle, Addr a,
                                      Char* fn_name, Int n_fn_name);
-
-extern Bool VG_(symtab_notify_munmap) ( Addr start, UInt length );
 
 
 /* ---------------------------------------------------------------------
@@ -1694,7 +1690,11 @@ typedef
    ShadowChunk;
 
 extern void          VG_(clientmalloc_done) ( void );
+
+// SSS: currently for memcheck errors only, but useful to have in core?
 extern void          VG_(describe_addr) ( Addr a, AddrInfo* ai );
+
+// SSS: for leak checking only, but useful to have in core?
 extern ShadowChunk** VG_(get_malloc_shadows) ( /*OUT*/ UInt* n_shadows );
 
 /* These are called from the scheduler, when it intercepts a user
@@ -1741,7 +1741,9 @@ extern void VG_(copy_m_state_static_to_baseBlock) ( void );
 
 /* Called when some unhandleable client behaviour is detected.
    Prints a msg and aborts. */
-extern void VG_(unimplemented) ( Char* msg );
+// JJJ: started not realising this was noreturn for vg_scheduler suddenly...
+extern void VG_(unimplemented) ( Char* msg )
+            __attribute__((__noreturn__));
 extern void VG_(nvidia_moan) ( void );
 
 /* The stack on which Valgrind runs.  We can't use the same stack as the
@@ -1853,24 +1855,16 @@ extern UInt VG_(num_scheduling_events_MAJOR);
 #define IS_ALIGNED4_ADDR(aaa_p) (0 == (((UInt)(aaa_p)) & 3))
 
 // JJJ: what is the exact meaning of the VGM_ prefix?
-extern void VGM_(init_memory_audit) ( void );
-extern Addr VGM_(curr_dataseg_end);
-extern void VG_(show_reg_tags) ( void );
+extern void VGM_(init_memory_and_symbols)( void );
+extern void VGM_(new_exe_segment)        ( Addr a, UInt len );
+extern void VGM_(remove_if_exe_segment)  ( Addr a, UInt len );
 
-extern void VG_(detect_memory_leaks) ( void );
+extern Addr VGM_(curr_dataseg_end);
 
 /* Called from generated code. */
+// SSS: should this be core or mantle... (probably mantle, like the debug
+//      info reader)
 extern void VGM_(handle_esp_assignment) ( Addr new_espA );
-
-/* Safely (avoiding SIGSEGV / SIGBUS) scan the entire valid address
-   space and pass the addresses and values of all addressible,
-   defined, aligned words to notify_word.  This is the basis for the
-   leak detector.  Returns the number of calls made to notify_word.  */
-UInt VG_(scan_all_valid_memory) ( void (*notify_word)( Addr, UInt ) );
-
-/* Is this address within some small distance below %ESP?  Used only
-   for the --workaround-gcc296-bugs kludge. */
-extern Bool VG_(is_just_below_ESP)( Addr esp, Addr aa );
 
 /* Nasty kludgery to deal with applications which switch stacks,
    like netscape. */
@@ -1883,6 +1877,10 @@ extern Bool VG_(is_just_below_ESP)( Addr esp, Addr aa );
 /* ---------------------------------------------------------------------
    Exports of vg_syscall_mem.c
    ------------------------------------------------------------------ */
+
+// SSS: relying on the skin to override this doesn't fit with
+//       all the other ways of calling hook functions.
+extern UInt VG_(dereference) ( Addr p );
 
 extern void VG_(perform_assumed_nonblocking_syscall) ( ThreadId tid );
 
@@ -2046,6 +2044,157 @@ extern void VG_(signalreturn_bogusRA)( void );
 
 
 /* ---------------------------------------------------------------------
+   Settings relating to the used skin
+   ------------------------------------------------------------------ */
+
+typedef
+   enum { Vg_DebugUnknown,    /* Just for checking it's been initialised */
+          Vg_DebugNone, Vg_DebugImprecise, Vg_DebugPrecise }
+   VgDebugInfo;
+
+/* If new fields are added to this type, update:
+ *  - vg_main.c:VG_(needs) initialisation
+ *  - vg_main.c:sanity_check_needs()
+ *
+ * If the name of this type or any of its fields change, update:
+ *  - dependent comments (just search for "VG_(needs)"). 
+ */
+typedef
+   struct {
+      /* name and description used in the startup message */
+      Char* name;
+      Char* description;
+
+      /* Need to record exe contexts on malloc'd/free'd/etc blocks? */
+      // SSS: these two are pretty gruesome
+      Bool record_mem_exe_context;
+      /* Postpone dynamic memory use once free'd as long as possible? */
+      Bool postpone_mem_reuse;
+
+      // SSS: can remove DebugPrecise/Imprecise distinction (using a Bool
+      // instead) if we move to strict EIP updating.  Can also remove
+      // precise_x86_instr_sizes and just always patch JMPs
+
+      /* Kind of debug info needed */
+      VgDebugInfo debug_info;
+      /* Needed if working at x86 instr level rather than UCode level, eg. 
+       * for cache simulation where we have to update state for every x86
+       * instruction */
+      Bool precise_x86_instr_sizes;
+      /* Report pthread errors? */
+      Bool pthread_errors;
+      /* Want to report errors?  This implies includes handling of 
+       * suppressions, too. */
+      Bool report_errors;
+
+      /* Is information kept about specific individual basic blocks?  (Eg. for
+       * cachesim there are cost-centres for every instruction, stored at a
+       * basic block level.)  If so, it sometimes has to be discarded, because
+       * .so mmap/munmap-ping or self-modifying code (informed by the
+       * DISCARD_TRANSLATIONS user request) can cause one instruction address
+       * to store information about two different instructions in one program
+       * run!
+       */
+      Bool identifies_basic_blocks;
+
+      /* Should __libc_freeres() be run?  Bugs in it can cause skin to crash */
+      Bool run_libc_freeres;
+
+      /* Skin defines its own command line options? */
+      Bool command_line_options;
+      /* Skin defines its own client requests? */
+      Bool client_requests;
+
+      /* Skin defines its own UInstrs? */
+      Bool extends_UCode;
+
+      /* Skin does stuff before and/or after system calls? */
+      Bool wrap_syscalls;
+
+      /* Are skin-state sanity checks performed? */
+      Bool sanity_checks;
+   } 
+   VgNeeds;
+
+extern VgNeeds VG_(needs);
+
+/* Part of the core from which this call was made.  Useful for determining
+ * what kind of error message should be emitted. */
+typedef 
+   enum { Vg_CorePThread, Vg_CoreSignal, Vg_CoreSysCall, Vg_CoreTranslate }
+   CorePart;
+
+typedef
+   struct {
+      /* Memory events */
+      void (*new_mem_startup)( Addr a, UInt len, Bool rr, Bool ww, Bool xx );
+      void (*new_mem_heap)   ( Addr a, UInt len, Bool is_inited );
+      void (*new_mem_stack)  ( Addr a, UInt len );
+      void (*new_mem_stack_aligned)  ( Addr a, UInt len );
+      // SSS: can this be done better?
+      void (*new_mem_brk)    ( Addr a, UInt len );
+      void (*new_mem_mmap)   ( Addr a, UInt len, 
+                               Bool nn, Bool rr, Bool ww, Bool xx );
+
+      void (*copy_mem_heap)  ( Addr from, Addr to, UInt len );
+      void (*change_mem_mprotect) ( Addr a, UInt len,  
+                                    Bool nn, Bool rr, Bool ww, Bool xx );
+      
+      void (*ban_mem_heap)   ( Addr a, UInt len );
+
+      void (*die_mem_heap)   ( ThreadState* tst, Addr a, UInt len,
+                               Bool alloc_free_kinds_match );
+      void (*die_mem_stack) ( Addr a, UInt len );
+      void (*die_mem_stack_aligned) ( Addr a, UInt len );
+      void (*die_mem_stack_thread)  ( Addr a, UInt len );
+      // SSS: can this be done better?
+      void (*die_mem_brk)    ( Addr a, UInt len );
+      void (*die_mem_munmap) ( Addr a, UInt len );
+      void (*die_mem_pthread)( Addr a, UInt len );
+      void (*die_mem_signal) ( Addr a, UInt len );
+
+      // SSS: tst necessary?  would tid do?
+      void (*pre_mem_read)   ( CorePart part, ThreadState* tst,
+                               Char* s, Addr a, UInt size );
+      // SSS: part necessary?  always CoreSysCall
+      void (*pre_mem_read_asciiz) ( CorePart part, ThreadState* tst,
+                                    Char* s, Addr a );
+      void (*pre_mem_write)  ( CorePart part, ThreadState* tst,
+                               Char* s, Addr a, UInt size );
+
+      /* Not implemented yet -- have to add to syscalls, which is a pain.
+         Won't bother unless there's a need. */
+      /*void (*post_mem_read)  ( ThreadState* tst, Char* s, 
+                                 Addr a, UInt size );*/
+      void (*post_mem_write) ( Addr a, UInt size );
+
+      /* Mutex events */
+      // JJJ: crappy void* pthread_ type avoidance, as above... could avoid
+      // with:
+      // 
+      //   #define __USE_UNIX98
+      //   #include <sys/types.h>
+      //   #undef  __USE_UNIX98
+
+      void (*post_mutex_lock)   ( ThreadId tid, void* mutex );
+      void (*post_mutex_unlock) ( ThreadId tid, void* mutex );
+      
+      /* Others... threads, condition variables, etc... */
+
+      /* ... */
+   }
+   VgTrackEvents;
+
+/* Declare the struct instance */
+extern VgTrackEvents VG_(track_events);
+
+#define VG_TRACK(fn, args...)          \
+   do {                                \
+      if (VG_(track_events).fn)        \
+         VG_(track_events).fn(args);   \
+   } while (0)
+
+/* ---------------------------------------------------------------------
    Template functions
    ------------------------------------------------------------------ */
 
@@ -2059,7 +2208,7 @@ extern void VG_(signalreturn_bogusRA)( void );
    Fundamental template functions
    ------------------------------------------------------------------ */
 
-extern void        SK_(setup)      ( VgNeeds* needs );
+extern void        SK_(setup)      ( VgNeeds* needs, VgTrackEvents* track );
 extern void        SK_(init)       ( void );
 extern UCodeBlock* SK_(instrument) ( UCodeBlock* cb, Addr a );
 extern void        SK_(fini)       ( void );
@@ -2068,51 +2217,8 @@ extern void        SK_(fini)       ( void );
    For skins reporting errors (VG_(needs).report_errors)
    ------------------------------------------------------------------ */
 
-// SSS: this should all be in vg_memcheck_errcontext.c...
-typedef 
-   enum { 
-      /* Bad syscall params */
-      Param = FinalDummySuppressionKind + 1,
-      /* Use of invalid values of given size */
-      Value0, Value1, Value2, Value4, Value8, 
-      /* Invalid read/write attempt at given size */
-      Addr1, Addr2, Addr4, Addr8,
-      /* Invalid or mismatching free */
-      FreeS
-   } 
-   MemCheckSuppressionKind;
-
-/* What kind of error it is. */
-typedef 
-   enum { ValueErr = FinalDummyErrKind + 1,
-          AddrErr, 
-          ParamErr, UserErr, /* behaves like an anonymous ParamErr */
-          FreeErr, FreeMismatchErr
-   }
-   MemCheckErrKind;
-
-/* What kind of memory access is involved in the error? */
-typedef
-   enum { ReadAxs, WriteAxs, ExecAxs }
-   AxsKind;
-
-/* Top-level struct for recording errors. */
-typedef
-   struct {
-      /* Addr */
-      AxsKind axskind;
-      /* Addr, Value */
-      Int size;
-      /* Addr, Free, Param, User */
-      AddrInfo addrinfo;
-      /* Param, User */
-      Bool isWriteableLack;
-   }
-   MemCheckErrContext;
-
-// SSS: these should be local to vg_memcheck_errcontext.c...
+// SSS: memcheck/client block-specific
 extern void clear_AddrInfo ( AddrInfo* ai );
-extern void clear_MemCheckErrContext ( MemCheckErrContext* ec_extra );
 
 
 
@@ -2190,32 +2296,33 @@ extern Int   SKN_(getExtTempUsage)( UInstr* u, TempUse* arr );
    For wrapping system calls (VG_(needs).wrap_syscalls)
    ------------------------------------------------------------------ */
 
-/* If either of the pre_ functions malloc's something to return, the post_
- * function had better free it! 
+/* If either of the pre_ functions malloc something to return, the post_
+ * corresponding post_ function had better free it! 
  */ 
 extern void* SKN_(pre_syscall)  ( ThreadId tid);
 extern void  SKN_(post_syscall) ( ThreadId tid, UInt syscallno,
                                   void* pre_result, Int res );
 
-extern void* SKN_(pre_blocking_syscall_check)  ( ThreadId tid, Int syscallno,
-                                                 Int* res);
-extern void  SKN_(post_blocking_syscall_check) ( ThreadId tid, Int syscallno, 
-                                                 Int* res, void* pre_result);
+// SSS: this is all messed up and ugly
+extern void* SKN_(pre_check_known_blocking_syscall)  
+                 ( ThreadId tid, Int syscallno, Int* res );
+extern void  SKN_(post_check_known_blocking_syscall) 
+                 ( ThreadId tid, Int syscallno, void* pre_result, Int* res );
 
 /* ---------------------------------------------------------------------
    For sanity checks
    ------------------------------------------------------------------ */
 
+// SSS: return values inconsistent
 extern Bool SKN_(cheap_sanity_check)     ( void );
 extern void SKN_(expensive_sanity_check) ( void );
 
+#if 0
 /* ---------------------------------------------------------------------
    For shadow memory (VG_(needs).shadow_memory)
    ------------------------------------------------------------------ */
 
 // SSS: can any of these be removed/merged? (esp the checking ones)
-
-extern void SKN_(init_shadow_memory)(void);
 
 extern void SKN_(make_segment_readable) ( Addr a, UInt len );
 
@@ -2236,13 +2343,7 @@ extern void SKN_(copy_address_range_state) ( Addr src, Addr dst, UInt len );
 extern Bool SKN_(check_writable) ( Addr a, UInt len, Addr* bad_addr );
 extern Bool SKN_(check_readable) ( Addr a, UInt len, Addr* bad_addr );
 extern Bool SKN_(check_readable_asciiz) ( Addr a, Addr* bad_addr );
-
-// JJJ: does this need to be called after set_address_range_perms?  The
-// comment says its for buggy syscall wrappers, but the syscall functions
-// do this check themselves too.  would be nice if I could get rid of it
-// from set_address_range_perms...
-extern Bool SKN_(first_and_last_secondaries_look_plausible) ( void );
-extern void SKN_(expensive_shadow_memory_sanity_check) ( void );
+#endif
 
 /* ---------------------------------------------------------------------
    Thread-related exports of vgext_default.c, which are replaced by

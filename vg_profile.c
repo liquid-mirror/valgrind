@@ -92,7 +92,7 @@ void VGP_(done_profiling) ( void )
 
 void VGP_(pushcc) ( VgpCC cc )
 {
-   if (vgp_sp >= VGP_M_STACK-1) VG_(panic)("vgp_pushcc");
+   if (vgp_sp >= VGP_M_STACK-1) { VG_(printf)("cc = %s\n", vgp_names[cc]); VG_(exit)(1); }
    vgp_sp++;
    vgp_stack[vgp_sp] = cc;
    vgp_entries[ cc ] ++;

@@ -4528,12 +4528,12 @@ Int VG_(disBB) ( UCodeBlock* cb, Addr eip0 )
     * we use eager INCEIP updating to ensure EIP is always correct.   
     *
     * If we need precise x86 instruction sizes, we do eager INCEIP updating
-    * (which gives us the size of all x86 instrs except for jumping ones;  for
+    * which gives us the size of all x86 instrs except for jumping ones;  for
     * them we patch in the size of the original x86 instr in the `extra4b'
     * field of JMPs at the end of a basic block.  Two cases:
     *
-    *       - Jcond followed by Juncond:  patch the Jcond
-    *       - Juncond alone:              patch the Juncond
+    *   - Jcond followed by Juncond:  patch the Jcond
+    *   - Juncond alone:              patch the Juncond
     *
     * See vg_cachesim_instrument() for an example of how this is used. 
     */

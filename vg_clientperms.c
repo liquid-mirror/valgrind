@@ -60,7 +60,7 @@ typedef
    CGenBlock;
 
 /* This subsystem is self-initialising. */
-static UInt       vg_cgb_size = 0;
+//static UInt       vg_cgb_size = 0;
 static UInt       vg_cgb_used = 0;
 static CGenBlock* vg_cgbs     = NULL;
 
@@ -71,6 +71,7 @@ static UInt vg_cgb_discards = 0;   /* Number of discards. */
 static UInt vg_cgb_search   = 0;   /* Number of searches. */
 
 
+#if 0
 static
 Int vg_alloc_client_block ( void )
 {
@@ -109,6 +110,7 @@ Int vg_alloc_client_block ( void )
       vg_cgb_used_MAX = vg_cgb_used;
    return vg_cgb_used-1;
 }
+#endif
 
 
 /*------------------------------------------------------------*/
@@ -138,7 +140,7 @@ typedef
    CStackBlock;
 
 /* This subsystem is self-initialising. */
-static UInt         vg_csb_size = 0;
+//static UInt         vg_csb_size = 0;
 static UInt         vg_csb_used = 0;
 static CStackBlock* vg_csbs     = NULL;
 
@@ -148,6 +150,7 @@ static UInt vg_csb_allocs   = 0;   /* Number of allocs. */
 static UInt vg_csb_discards = 0;   /* Number of discards. */
 static UInt vg_csb_swaps    = 0;   /* Number of searches. */
 
+#if 0
 static
 void vg_add_client_stack_block ( ThreadState* tst, Addr aa, UInt sz )
 {
@@ -206,6 +209,7 @@ void vg_add_client_stack_block ( ThreadState* tst, Addr aa, UInt sz )
       vg_assert(vg_csbs[i-1].start >= vg_csbs[i].start);
 #  endif
 }
+#endif
 
 
 /*------------------------------------------------------------*/
@@ -296,7 +300,7 @@ void VG_(delete_client_stack_blocks_following_ESP_change) ( void )
 
 UInt VG_(handle_client_request) ( ThreadState* tst, UInt* arg_block )
 {
-   Int   i;
+   //Int   i;
 //   Bool  ok;
 //   Addr  bad_addr;
    UInt* arg = arg_block;
@@ -307,6 +311,8 @@ UInt VG_(handle_client_request) ( ThreadState* tst, UInt* arg_block )
 
    switch (arg[0]) {
       case VG_USERREQ__MAKE_NOACCESS: /* make no access */
+         // SSS
+#if 0
          if (! VG_(needs).shadow_memory) return 0;
 
          i = vg_alloc_client_block();
@@ -319,8 +325,11 @@ UInt VG_(handle_client_request) ( ThreadState* tst, UInt* arg_block )
                                     tst->m_esp, tst->stack_highest_word );
          SKN_(make_noaccess) ( arg[1], arg[2] );
          return i;
+#endif
+         return 0;
 
       case VG_USERREQ__MAKE_WRITABLE: /* make writable */
+#if 0
          if (! VG_(needs).shadow_memory) return 0;
 
          i = vg_alloc_client_block();
@@ -332,8 +341,12 @@ UInt VG_(handle_client_request) ( ThreadState* tst, UInt* arg_block )
                                     tst->m_esp, tst->stack_highest_word );
          SKN_(make_writable) ( arg[1], arg[2] );
          return i;
+#endif
+         // SSS
+         return 0;
 
       case VG_USERREQ__MAKE_READABLE: /* make readable */
+#if 0
          if (! VG_(needs).shadow_memory) return 0;
  
          i = vg_alloc_client_block();
@@ -345,6 +358,10 @@ UInt VG_(handle_client_request) ( ThreadState* tst, UInt* arg_block )
                                     tst->m_esp, tst->stack_highest_word );
          SKN_(make_readable) ( arg[1], arg[2] );
          return i;
+#endif
+         // SSS
+         return 0;
+         
 #if 0
       case VG_USERREQ__CHECK_WRITABLE: /* check writable */
          if (Vg_MemCheck != VG_(clo_skin))
@@ -352,7 +369,7 @@ UInt VG_(handle_client_request) ( ThreadState* tst, UInt* arg_block )
  
          ok = SKN_(check_writable) ( arg[1], arg[2], &bad_addr );
          if (!ok)
-            VG_(record_user_err) ( tst, bad_addr, True );
+            VG_(record_user_error) ( tst, bad_addr, /*isWrite=*/True );
          return ok ? (UInt)NULL : bad_addr;
 
       case VG_USERREQ__CHECK_READABLE: /* check readable */
@@ -361,7 +378,7 @@ UInt VG_(handle_client_request) ( ThreadState* tst, UInt* arg_block )
  
          ok = SKN_(check_readable) ( arg[1], arg[2], &bad_addr );
          if (!ok)
-            VG_(record_user_err) ( tst, bad_addr, False );
+            VG_(record_user_error) ( tst, bad_addr, /*isWrite=*/False );
          return ok ? (UInt)NULL : bad_addr;
 #endif
       case VG_USERREQ__DISCARD: /* discard */
@@ -377,9 +394,10 @@ UInt VG_(handle_client_request) ( ThreadState* tst, UInt* arg_block )
          return 0;
 
       case VG_USERREQ__MAKE_NOACCESS_STACK: /* make noaccess stack block */
-         if (! VG_(needs).shadow_memory) return 0;
+         // SSS
+         //if (! VG_(needs).shadow_memory) return 0;
  
-         vg_add_client_stack_block ( tst, arg[1], arg[2] );
+         //vg_add_client_stack_block ( tst, arg[1], arg[2] );
          return 0;
 
       /* Is handled by the scheduler as a trivial request, for

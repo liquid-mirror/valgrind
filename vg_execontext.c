@@ -169,8 +169,9 @@ ExeContext* VG_(get_ExeContext) ( Addr eip, Addr ebp,
 
    vg_assert(VG_(clo_backtrace_size) >= 2 
              && VG_(clo_backtrace_size) <= VG_DEEPEST_BACKTRACE);
-   /* Second part basically checks the stack isn't riduculously big */
-   vg_assert(ebp_min <= ebp_max && ebp_min + 4000000 > ebp_max);
+   /* Second assertion checks the stack isn't riduculously big */
+   vg_assert(ebp_min <= ebp_max);
+   vg_assert(ebp_min + 4000000 > ebp_max);
 
    /* First snaffle %EIPs from the client's stack into eips[0
       .. VG_(clo_backtrace_size)-1], putting zeroes in when the trail
@@ -180,6 +181,8 @@ ExeContext* VG_(get_ExeContext) ( Addr eip, Addr ebp,
 // SSS: unnecessary, AFAICT --njn
 //   for (i = 0; i < VG_(clo_backtrace_size); i++)
 //      eips[i] = 0;
+
+// JJJ: gives shorter stack trace for tests/badjump.c
 
 #  define GET_CALLER(lval)                                        \
 /*   if (ebp != 0 && SKN_(check_readable)(ebp, 8, NULL)) {  */      \

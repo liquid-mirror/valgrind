@@ -348,7 +348,7 @@ static __inline__ BBCC* get_BBCC(Addr bb_orig_addr, UCodeBlock* cb,
 
    get_debug_info(bb_orig_addr, filename, fn_name, &dummy_line_num);
 
-   VGP_PUSHCC(VgpCacheGetBBCC);
+   VGP_PUSHCC(VgpSpare1);
    filename_hash = hash(filename, N_FILE_ENTRIES);
    curr_file_node = BBCC_table[filename_hash];
    while (NULL != curr_file_node && 
@@ -488,7 +488,7 @@ static void cachesim_non_mem_instr(iCC* cc)
 {
    //VG_(printf)("sim  I: CCaddr=0x%x, iaddr=0x%x, isize=%u\n",
    //            cc, cc->instr_addr, cc->instr_size)
-   VGP_PUSHCC(VgpCacheSimulate);
+   VGP_PUSHCC(VgpSpare2);
    cachesim_I1_doref(cc->instr_addr, cc->instr_size, &cc->I.m1, &cc->I.m2);
    cc->I.a++;
    VGP_POPCC;
@@ -498,7 +498,7 @@ static void cachesim_mem_instr(idCC* cc, Addr data_addr)
 {
    //VG_(printf)("sim  D: CCaddr=0x%x, iaddr=0x%x, isize=%u, daddr=0x%x, dsize=%u\n",
    //            cc, cc->instr_addr, cc->instr_size, data_addr, cc->data_size)
-   VGP_PUSHCC(VgpCacheSimulate);
+   VGP_PUSHCC(VgpSpare2);
    cachesim_I1_doref(cc->instr_addr, cc->instr_size, &cc->I.m1, &cc->I.m2);
    cc->I.a++;
 
@@ -1240,7 +1240,7 @@ static void fprint_BBCC_table_and_calc_totals(void)
    BBCC      *curr_BBCC;
    Int        i,j,k;
 
-   VGP_PUSHCC(VgpCacheDump);
+   VGP_PUSHCC(VgpSpare3);
    fd = VG_(open_write)(OUT_FILE);
    if (-1 == fd) { file_err(); }
 
@@ -1623,11 +1623,14 @@ void SKN_(process_cmd_line_options)(UInt argc, UChar* argv[])
    }      
 }
 
-void SK_(setup)(VgNeeds* needs) 
+void SK_(setup)(VgNeeds* needs, VgTrackEvents* not_used) 
 {
    needs->name                    = "cachegrind";
    needs->description             = "an I1/D1/L2 cache profiler";
 
+   needs->record_mem_exe_context  = False;
+   needs->postpone_mem_reuse      = False;
+   
    needs->debug_info              = Vg_DebugPrecise;
    needs->precise_x86_instr_sizes = True;
    needs->pthread_errors          = False;
@@ -1635,18 +1638,16 @@ void SK_(setup)(VgNeeds* needs)
 
    needs->identifies_basic_blocks = True;
 
+   needs->run_libc_freeres        = False;
+
    needs->command_line_options    = True;
    needs->client_requests         = False;
 
-   needs->augments_UInstrs        = False;
    needs->extends_UCode           = False;
 
    needs->wrap_syscalls           = False;
 
    needs->sanity_checks           = False;
-
-   needs->shadow_memory           = False;
-   needs->track_threads           = False;
 
    VG_(register_compact_helper)((Addr) & cachesim_non_mem_instr);
    VG_(register_compact_helper)((Addr) & cachesim_mem_instr);

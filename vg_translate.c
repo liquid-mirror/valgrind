@@ -1873,15 +1873,8 @@ void VG_(translate) ( ThreadState* tst,
    dis = True;
    dis = debugging_translation;
 
-   /* Check if we're being asked to jump to a silly address, and if so
-      record an error message before potentially crashing the entire
-      system. */
-   if (Vg_MemCheck == VG_(clo_skin) && !debugging_translation && !dis) {
-      Addr bad_addr;
-      Bool ok = SKN_(check_readable) ( orig_addr, 1, &bad_addr );
-      if (!ok) {
-         VG_(record_jump_error)(tst, bad_addr);
-      }
+   if (!debugging_translation && !dis) {
+      VG_TRACK( pre_mem_read, Vg_CoreTranslate, tst, "", orig_addr, 1 );
    }
 
    /* if (VG_(overall_in_count) >= 4800) dis=True; */
@@ -1901,32 +1894,35 @@ void VG_(translate) ( ThreadState* tst,
    cb = VG_(allocCodeBlock)();
 
    /* Disassemble this basic block into cb. */
-   // JJJ: why is this VGP_PUSHCC/VGP_POPCC commented out?
-   /* VGP_PUSHCC(VgpToUCode); */
    //dis=True;
+   VGP_PUSHCC(VgpToUCode);
    n_disassembled_bytes = VG_(disBB) ( cb, orig_addr );
-   /* VGP_POPCC; */
+   VGP_POPCC;
+   //dis=False;
    /* dis=True; */
    /* if (0&& VG_(translations_done) < 617)  */
    /*    dis=False; */
    /* Try and improve the code a bit. */
    if (VG_(clo_optimise)) {
-      /* VGP_PUSHCC(VgpImprove); */
+      VGP_PUSHCC(VgpImprove);
       vg_improve ( cb );
       if (VG_(disassemble)) 
          VG_(ppUCodeBlock) ( cb, "Improved code:" );
-      /* VGP_POPCC; */
+      VGP_POPCC;
    }
    /* dis=False; */
 
+   /* Skin's instrumentation */
    //dis = True;
+   VGP_PUSHCC(VgpInstrument);
    cb = SK_(instrument) ( cb, orig_addr );
+   VGP_POPCC;
    //dis = False;
 
    /* Allocate registers. */
-   /* VGP_PUSHCC(VgpRegAlloc); */
+   VGP_PUSHCC(VgpRegAlloc);
    cb = vg_do_register_allocation ( cb );
-   /* VGP_POPCC; */
+   VGP_POPCC;
    /* dis=False; */
    /* 
    if (VG_(disassemble))
@@ -1934,12 +1930,13 @@ void VG_(translate) ( ThreadState* tst,
    */
 
    // JJJ: why is this VGP_PUSHCC/VGP_POPCC commented out too?
-   /* VGP_PUSHCC(VgpFromUcode); */
+   VGP_PUSHCC(VgpFromUcode);
    /* NB final_code is allocated with VG_(jitmalloc), not VG_(malloc)
       and so must be VG_(jitfree)'d. */
+   //dis=True;
    final_code = VG_(emit_code)(cb, &final_code_size );
    //dis=False;
-   /* VGP_POPCC; */
+   VGP_POPCC;
    VG_(freeCodeBlock)(cb);
 
    if (debugging_translation) {

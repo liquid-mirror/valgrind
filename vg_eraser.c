@@ -159,7 +159,7 @@ typedef
    }
    ESecMap;
 
-static ESecMap* primary_map[ /*65536*/ 262144 ];
+static ESecMap* primary_map[ 65536 ];
 static ESecMap  distinguished_secondary_map;
 
 static shadow_word virgin_sword = { 0, Vge_Virgin };
@@ -430,7 +430,7 @@ Bool VGE_(check_readable) ( Addr a, UInt len, Addr* bad_addr )
 /*--- Initialise the memory audit system on program startup. ---*/
 /*--------------------------------------------------------------*/
 
-void SKN_(init_shadow_memory)(void)
+void init_shadow_memory(void)
 {
    Int i;
 
@@ -440,11 +440,6 @@ void SKN_(init_shadow_memory)(void)
    /* These entries gradually get overwritten as the used address
       space expands. */
    for (i = 0; i < 65536; i++)
-      primary_map[i] = &distinguished_secondary_map;
-
-   /* These ones should never change; it's a bug in Valgrind if they
-      do. */
-   for (i = 65536; i < 262144; i++)
       primary_map[i] = &distinguished_secondary_map;
 }
 
@@ -479,11 +474,6 @@ void SKN_(expensive_sanity_check)(void)
                 virgin_sword.other &&
                 distinguished_secondary_map.swords[i].state ==
                 virgin_sword.state);
-
-   /* Make sure that the upper 3/4 of the primary map hasn't
-      been messed with. */
-   for (i = 65536; i < 262144; i++)
-      vg_assert(primary_map[i] == & distinguished_secondary_map);
 }
 
 /*--------------------------------------------------------------*/
@@ -684,11 +674,14 @@ Bool SKN_(error_matches_suppression)(ErrContext* ec, Suppression* su)
 /*--- Setup                                                        ---*/
 /*--------------------------------------------------------------------*/
 
-void SK_(setup)(VgNeeds* needs)
+void SK_(setup)(VgNeeds* needs, VgTrackEvents* track)
 {
-   needs->name                    = "pthgrind";
+   needs->name                    = "helgrind";
    needs->description             = "a data race detector";
 
+   needs->record_mem_exe_context  = False;
+   needs->postpone_mem_reuse      = False;
+   
    needs->debug_info              = Vg_DebugPrecise;
    needs->precise_x86_instr_sizes = False;
    needs->pthread_errors          = True;
@@ -699,21 +692,46 @@ void SK_(setup)(VgNeeds* needs)
    needs->command_line_options    = False;
    needs->client_requests         = False;
 
-   needs->augments_UInstrs        = False;
    needs->extends_UCode           = False;
 
    needs->wrap_syscalls           = True;
 
    needs->sanity_checks           = False;
 
-   needs->shadow_memory           = True;
-   needs->track_threads           = True;
-
    VG_(register_compact_helper)((Addr) & eraser_mem_read);
    VG_(register_compact_helper)((Addr) & eraser_mem_write);
 
    // SSS: remove eventually
    VG_(clo_skin) = Vg_Other;
+
+   /* Events to track */
+#if 0
+   track->new_mem_startup       = & memcheck_new_mem_startup;
+   track->new_mem_heap          = & memcheck_new_mem_heap;
+   track->new_mem_stack         = & make_writable;
+   track->new_mem_stack_aligned = & make_aligned_word_WRITABLE;
+   track->new_mem_brk           = & make_writable;
+   track->new_mem_mmap          = & memcheck_set_perms;
+
+   track->copy_mem_heap         = & copy_address_range_state;
+   track->change_mem_mprotect   = & memcheck_set_perms;
+
+   track->ban_mem_heap          = & make_noaccess2;
+
+   track->die_mem_heap          = & memcheck_die_mem_heap;
+   track->die_mem_stack         = & make_noaccess3;
+   track->die_mem_stack_aligned = & make_aligned_word_NOACCESS;
+   track->die_mem_stack_thread  = & make_noaccess4;
+   track->die_mem_brk           = & make_noaccess5;
+   track->die_mem_munmap        = & make_noaccess6;
+   track->die_mem_pthread       = & make_noaccess7;
+   track->die_mem_signal        = & make_noaccess8;
+
+   track->pre_mem_read          = & check_is_readable;
+   track->pre_mem_read_asciiz   = & check_is_readable_asciiz;
+   track->pre_mem_write         = & check_is_writable;
+   track->post_mem_write        = & make_readable;
+#endif
 }
 
 void SK_(init)(void)
@@ -726,10 +744,11 @@ void SK_(init)(void)
    for (i = 1; i < LOCKSET_TABLE_SIZE; i++) 
       lockset_table[i] = INVALID_LOCKSET_ENTRY;
 
-   SKN_(make_readable) ( (Addr)&VG_(running_on_simd_CPU), 1 );
+   init_shadow_memory();
+
    SKN_(make_readable) ( (Addr)&VG_(clo_skin),          1 );
-   SKN_(make_readable) ( (Addr)&VG_(clo_trace_malloc),    1 );
-   SKN_(make_readable) ( (Addr)&VG_(clo_sloppy_malloc),   1 );
+   SKN_(make_readable) ( (Addr)&VG_(clo_trace_malloc),  1 );
+   SKN_(make_readable) ( (Addr)&VG_(clo_sloppy_malloc), 1 );
 }
 
 void SK_(fini)(void)

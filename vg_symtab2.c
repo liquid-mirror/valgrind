@@ -38,14 +38,6 @@
    dlopen()ed libraries, which is something that KDE3 does a lot.
 
    Stabs reader greatly improved by Nick Nethercode, Apr 02.
-
-   16 May 02: when notified about munmap, return a Bool indicating
-   whether or not the area being munmapped had executable permissions.
-   This is then used to determine whether or not
-   VG_(invalid_translations) should be called for that area.  In order
-   that this work even if VG_(needs).debug_info == False, in this case we
-   still keep track of the mapped executable segments, but do not load
-   any debug info or symbols.
 */
 
 /*------------------------------------------------------------*/
@@ -125,15 +117,6 @@ typedef
    } 
    SegInfo;
 
-
-/* -- debug helper -- */
-static void ppSegInfo ( SegInfo* si )
-{
-   VG_(printf)("name: %s\n"
-               "start %p, size %d, foffset %d\n",
-               si->filename?si->filename : (UChar*)"NULL",
-               si->start, si->size, si->foffset );
-}
 
 static void freeSegInfo ( SegInfo* si )
 {
@@ -1650,8 +1633,7 @@ void vg_read_lib_symbols ( SegInfo* si )
 static SegInfo* segInfo = NULL;
 
 
-static
-void read_symtab_callback ( 
+void VG_(read_symtab_callback) ( 
         Addr start, UInt size, 
         Char rr, Char ww, Char xx, 
         UInt foffset, UChar* filename )
@@ -1704,15 +1686,12 @@ void read_symtab_callback (
    si->strtab_size = si->strtab_used = 0;
 
    /* Kludge ... */
-   si->offset 
-      = si->start==VG_ASSUMED_EXE_BASE ? 0 : si->start;
+   si->offset = si->start==VG_ASSUMED_EXE_BASE ? 0 : si->start;
 
    /* And actually fill it up. */
-   if (Vg_DebugNone != VG_(needs).debug_info) {
-      vg_read_lib_symbols ( si );
-      canonicaliseSymtab ( si );
-      canonicaliseLoctab ( si );
-   }
+   vg_read_lib_symbols ( si );
+   canonicaliseSymtab ( si );
+   canonicaliseLoctab ( si );
 }
 
 
@@ -1726,52 +1705,18 @@ void read_symtab_callback (
    which happen to correspond to the munmap()d area.  */
 void VG_(read_symbols) ( void )
 {
-   VG_(read_procselfmaps) ( read_symtab_callback );
-
-   /* Do a sanity check on the symbol tables: ensure that the address
-      space pieces they cover do not overlap (otherwise we are severely
-      hosed).  This is a quadratic algorithm, but there shouldn't be
-      many of them.  
-   */
-   { SegInfo *si, *si2;
-     for (si = segInfo; si != NULL; si = si->next) {
-        /* Check no overlap between *si and those in the rest of the
-           list. */
-        for (si2 = si->next; si2 != NULL; si2 = si2->next) {
-           Addr lo = si->start;
-           Addr hi = si->start + si->size - 1;
-           Addr lo2 = si2->start;
-           Addr hi2 = si2->start + si2->size - 1;
-           Bool overlap;
-           vg_assert(lo < hi);
-	   vg_assert(lo2 < hi2);
-           /* the main assertion */
-           overlap = (lo <= lo2 && lo2 <= hi)
-                      || (lo <= hi2 && hi2 <= hi);
-	   if (overlap) {
-              VG_(printf)("\n\nOVERLAPPING SEGMENTS\n" );
-              ppSegInfo ( si );
-              ppSegInfo ( si2 );
-              VG_(printf)("\n\n"); 
-              vg_assert(! overlap);
-	   }
-        }
-     }
-   }    
+   VGP_PUSHCC(VgpReadSyms);
+   VG_(read_procselfmaps) ( VG_(read_symtab_callback) );
+   VGP_POPCC;
 }
-
 
 /* When an munmap() call happens, check to see whether it corresponds
    to a segment for a .so, and if so discard the relevant SegInfo.
    This might not be a very clever idea from the point of view of
    accuracy of error messages, but we need to do it in order to
    maintain the no-overlapping invariant.
-
-   16 May 02: Returns a Bool indicating whether or not the discarded
-   range falls inside a known executable segment.  See comment at top
-   of file for why.
 */
-Bool VG_(symtab_notify_munmap) ( Addr start, UInt length )
+void VG_(unload_symbols) ( Addr start, UInt length )
 {
    SegInfo *prev, *curr;
 
@@ -1784,7 +1729,7 @@ Bool VG_(symtab_notify_munmap) ( Addr start, UInt length )
       curr = curr->next;
    }
    if (curr == NULL) 
-      return False;
+      return;
 
    VG_(message)(Vg_UserMsg, 
                 "discard syms in %s due to munmap()", 
@@ -1799,7 +1744,7 @@ Bool VG_(symtab_notify_munmap) ( Addr start, UInt length )
    }
 
    freeSegInfo(curr);
-   return True;
+   return;
 }
 
 

@@ -30,7 +30,8 @@ typedef
    }
    ExtOpcode;
 
-extern Addr SK_(curr_dataseg_end);
+// SSS: work this out
+//extern Addr SK_(curr_dataseg_end);
 
 // Functions defined in vg_memcheck_helpers.S
 extern void SK_(helper_value_check4_fail) ( void );
@@ -51,10 +52,18 @@ extern void SK_(fpu_write_check) ( Addr addr, Int size );
 extern void SK_(fpu_read_check)  ( Addr addr, Int size );
 
 // Functions defined in vg_memcheck_errcontext.c
-extern void SK_(record_value_error)   ( Int size );
-extern void SK_(record_address_error) ( Addr a, Int size, Bool isWrite );
-extern void SK_(record_param_err) ( ThreadState* tst, Addr a,   
-                                    Bool isWriteLack, Char* msg );
+extern void SK_(record_value_error)       ( Int size );
+extern void SK_(record_address_error)     ( Addr a, Int size, Bool isWrite );
+extern void SK_(record_pthread_mem_error) ( ThreadState* tst, Bool isWrite,
+                                            Char* s );
+extern void SK_(record_param_error)       ( ThreadState* tst, Addr a,   
+                                            Bool isWriteLack, Char* msg );
+extern void SK_(record_jump_error)        ( ThreadState* tst, Addr a );
+extern void SK_(record_free_error)        ( ThreadState* tst, Addr a );
+extern void SK_(record_freemismatch_error)( ThreadState* tst, Addr a );
+extern void SK_(record_user_error)        ( ThreadState* tst, Addr a, 
+                                            Bool isWrite );
+
 
 
 /*--------------------------------------------------------------------*/
