@@ -55,25 +55,29 @@
 
 static void make_noaccess ( Addr a, UInt len )
 {
-   if (VG_(clo_instrument))
+   // ZZZ
+   if (Vg_MemCheck == VG_(clo_action))
       VGM_(make_noaccess) ( a, len );
 }
 
 static void make_writable ( Addr a, UInt len )
 {
-   if (VG_(clo_instrument))
+   // ZZZ
+   if (VG_(needs).shadow_memory)   
       VGM_(make_writable) ( a, len );
 }
 
 static void make_readable ( Addr a, UInt len )
 {
-   if (VG_(clo_instrument))
+   // ZZZ
+   if (VG_(needs).shadow_memory)   
       VGM_(make_readable) ( a, len );
 }
 
 static void make_readwritable ( Addr a, UInt len )
 {
-   if (VG_(clo_instrument))
+   // ZZZ
+   if (VG_(needs).shadow_memory)   
       VGM_(make_readwritable) ( a, len );
 }
 
@@ -85,7 +89,8 @@ void must_be_writable ( ThreadState* tst,
    Addr bad_addr;
    /* VG_(message)(Vg_DebugMsg,"must be writable: %x .. %x",
                                base,base+size-1); */
-   if (!VG_(clo_instrument)) 
+   // ZZZ
+   if (Vg_MemCheck != VG_(clo_action)) 
       return;
    ok = VGM_(check_writable) ( base, size, &bad_addr );
    if (!ok)
@@ -100,7 +105,8 @@ void must_be_readable ( ThreadState* tst,
    Addr bad_addr;
    /* VG_(message)(Vg_DebugMsg,"must be readable: %x .. %x",
                                base,base+size-1); */
-   if (!VG_(clo_instrument)) 
+   // ZZZ
+   if (Vg_MemCheck != VG_(clo_action)) 
       return;
    ok = VGM_(check_readable) ( base, size, &bad_addr );
    if (!ok)
@@ -114,7 +120,8 @@ void must_be_readable_asciiz ( ThreadState* tst,
    Bool ok = True;
    Addr bad_addr;
    /* VG_(message)(Vg_DebugMsg,"must be readable asciiz: 0x%x",str); */
-   if (!VG_(clo_instrument)) 
+   // ZZZ
+   if (Vg_MemCheck != VG_(clo_action)) 
       return;
    ok = VGM_(check_readable_asciiz) ( (Addr)str, &bad_addr );
    if (!ok)
@@ -149,7 +156,8 @@ static void approximate_mmap_permissions ( Addr a, UInt len, UInt prot )
 static
 UInt safe_dereference ( Addr aa, UInt defawlt )
 {
-   if (!VG_(clo_instrument)) 
+   // ZZZ
+   if (Vg_MemCheck != VG_(clo_action)) 
       return * (UInt*)aa;
    if (VGM_(check_readable)(aa,4,NULL))
       return * (UInt*)aa;
@@ -1026,6 +1034,7 @@ void VG_(perform_assumed_nonblocking_syscall) ( ThreadId tid )
                */
                make_writable ( (Addr)VGM_(curr_dataseg_end), 
                                arg1-VGM_(curr_dataseg_end) );
+
                VGM_(curr_dataseg_end) = arg1;         
             }
          }
@@ -2210,8 +2219,9 @@ void VG_(perform_assumed_nonblocking_syscall) ( ThreadId tid )
                        int flags, int fd, off_t offset); 
          */
          {
+         // ZZZ
          Bool arg_block_readable
-                 = VG_(clo_instrument)
+                 = Vg_MemCheck==VG_(clo_action)
                  ? VGM_(check_readable)(arg1, 6*sizeof(UInt), NULL)
                  : True;
          must_be_readable( tst, "mmap(args)", arg1, 6*sizeof(UInt) );
@@ -2467,8 +2477,9 @@ void VG_(perform_assumed_nonblocking_syscall) ( ThreadId tid )
             int old_select(struct sel_arg_struct *arg);
          */
          {
+         // ZZZ
          Bool arg_block_readable
-                 = VG_(clo_instrument)
+                 = Vg_MemCheck==VG_(clo_action)
                  ? VGM_(check_readable)(arg1, 5*sizeof(UInt), NULL)
                  : True;
          must_be_readable ( tst, "select(args)", arg1, 5*sizeof(UInt) );

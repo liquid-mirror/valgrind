@@ -498,7 +498,7 @@ void VG_(invalidate_translations) ( Addr start, UInt range )
       o_end = o_start + vg_tt[i].orig_size - 1;
       if (o_end < i_start || o_start > i_end)
          continue;
-      if (VG_(clo_cachesim))
+      if (Vg_CacheSim == VG_(clo_action))
          VG_(cachesim_notify_discard)( & vg_tt[i] );
       vg_tt[i].orig_addr = VG_TTE_DELETED;
       VG_(this_epoch_out_count) ++;

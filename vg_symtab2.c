@@ -43,9 +43,9 @@
    whether or not the area being munmapped had executable permissions.
    This is then used to determine whether or not
    VG_(invalid_translations) should be called for that area.  In order
-   that this work even if --instrument=no, in this case we still keep
-   track of the mapped executable segments, but do not load any debug
-   info or symbols.
+   that this work even if VG_(needs).debug_info == False, in this case we
+   still keep track of the mapped executable segments, but do not load
+   any debug info or symbols.
 */
 
 /*------------------------------------------------------------*/
@@ -1708,7 +1708,8 @@ void read_symtab_callback (
       = si->start==VG_ASSUMED_EXE_BASE ? 0 : si->start;
 
    /* And actually fill it up. */
-   if (VG_(clo_instrument) || VG_(clo_cachesim)) {
+   // ZZZ
+   if (Vg_DebugNone != VG_(needs).debug_info) {
       vg_read_lib_symbols ( si );
       canonicaliseSymtab ( si );
       canonicaliseLoctab ( si );

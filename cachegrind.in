@@ -37,6 +37,7 @@ do
     --verbose)              vgopts="$vgopts -v"; shift;;
     -q)                     vgopts="$vgopts $arg"; shift;;
     --quiet)                vgopts="$vgopts $arg"; shift;;
+    --action=*)             vgopts="$vgopts $arg"; shift;;
     --demangle=no)          vgopts="$vgopts $arg"; shift;;
     --demangle=yes)         vgopts="$vgopts $arg"; shift;;
     --trace-children=no)    vgopts="$vgopts $arg"; shift;;
@@ -51,8 +52,6 @@ do
     --single-step=no)       vgopts="$vgopts $arg"; shift;;
     --optimise=yes)         vgopts="$vgopts $arg"; shift;;
     --optimise=no)          vgopts="$vgopts $arg"; shift;;
-    --instrument=yes)       vgopts="$vgopts $arg"; shift;;
-    --instrument=no)        vgopts="$vgopts $arg"; shift;;
     --cleanup=yes)          vgopts="$vgopts $arg"; shift;;
     --cleanup=no)           vgopts="$vgopts $arg"; shift;;
     --smc-check=none)       vgopts="$vgopts $arg"; shift;;
@@ -104,7 +103,6 @@ if [ $# = 0 ] || [ z"$dousage" = z1 ]; then
    echo "    --sanity-level=<number>   level of sanity checking to do [1]"
    echo "    --single-step=no|yes      translate each instr separately? [no]"
    echo "    --optimise=no|yes         improve intermediate code? [yes]"
-   echo "    --instrument=no|yes       actually do memory checks? [yes]"
    echo "    --cleanup=no|yes          improve after instrumentation? [yes]"
    echo "    --smc-check=none|some|all check writes for s-m-c? [some]"
    echo "    --trace-syscalls=no|yes   show all system calls? [no]"
@@ -134,7 +132,7 @@ fi
 # libpthread.so fall out of visibility, independently of
 # whether valgrind.so is visible.
 
-VG_ARGS="$CACHEGRIND_OPTS $vgsupp $vgopts --cachesim=yes"
+VG_ARGS="$CACHEGRIND_OPTS $vgsupp $vgopts --action=cachesim"
 export VG_ARGS
 LD_LIBRARY_PATH=$VALGRIND:$LD_LIBRARY_PATH
 export LD_LIBRARY_PATH

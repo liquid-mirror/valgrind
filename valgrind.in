@@ -41,6 +41,7 @@ do
     --verbose)              vgopts="$vgopts -v"; shift;;
     -q)                     vgopts="$vgopts $arg"; shift;;
     --quiet)                vgopts="$vgopts $arg"; shift;;
+    --action=*)             vgopts="$vgopts $arg"; shift;;
     --error-limit=no)       vgopts="$vgopts $arg"; shift;;
     --error-limit=yes)      vgopts="$vgopts $arg"; shift;;
     --check-addrVs=no)      vgopts="$vgopts $arg"; shift;;
@@ -68,8 +69,6 @@ do
     --workaround-gcc296-bugs=yes)   vgopts="$vgopts $arg"; shift;;
     --freelist-vol=*)       vgopts="$vgopts $arg"; shift;;
     --suppressions=*)       vgopts="$vgopts $arg"; shift;;
-    --cachesim=yes)         vgopts="$vgopts $arg"; shift;;
-    --cachesim=no)          vgopts="$vgopts $arg"; shift;;
     --I1=*,*,*)             vgopts="$vgopts $arg"; shift;;
     --D1=*,*,*)             vgopts="$vgopts $arg"; shift;;
     --L2=*,*,*)             vgopts="$vgopts $arg"; shift;;
@@ -119,6 +118,7 @@ if [ $# = 0 ] || [ z"$dousage" = z1 ]; then
    echo "  options for the user, with defaults in [ ], are:"
    echo "    --help                    show this message"
    echo "    --version                 show version"
+   echo "    --action=none|memcheck|eraser|cachesim  main task?  [memcheck]"
    echo "    -q --quiet                run silently; only print error msgs"
    echo "    -v --verbose              be more verbose, incl counts of errors"
    echo "    --gdb-attach=no|yes       start GDB when errors detected? [no]"
@@ -140,7 +140,6 @@ if [ $# = 0 ] || [ z"$dousage" = z1 ]; then
    echo "                              suppressions file <filename>"
    echo "    --check-addrVs=no|yes     experimental lighterweight checking? [yes]"
    echo "                              yes == Valgrind's original behaviour"
-   echo "    --cachesim=no|yes         do cache profiling? [no]"
    echo "    --I1=<size>,<assoc>,<line_size>  set I1 cache manually"
    echo "    --D1=<size>,<assoc>,<line_size>  set D1 cache manually"
    echo "    --L2=<size>,<assoc>,<line_size>  set L2 cache manually"
@@ -152,7 +151,6 @@ if [ $# = 0 ] || [ z"$dousage" = z1 ]; then
    echo "    --sanity-level=<number>   level of sanity checking to do [1]"
    echo "    --single-step=no|yes      translate each instr separately? [no]"
    echo "    --optimise=no|yes         improve intermediate code? [yes]"
-   echo "    --instrument=no|yes       actually do memory checks? [yes]"
    echo "    --cleanup=no|yes          improve after instrumentation? [yes]"
    echo "    --smc-check=none|some|all check writes for s-m-c? [some]"
    echo "    --trace-syscalls=no|yes   show all system calls? [no]"

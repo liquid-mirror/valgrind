@@ -306,8 +306,10 @@ UInt VG_(handle_client_request) ( ThreadState* tst, UInt* arg_block )
 
    switch (arg[0]) {
       case VG_USERREQ__MAKE_NOACCESS: /* make no access */
-         if (!VG_(clo_instrument))
+         // ZZZ
+         if (Vg_MemCheck != VG_(clo_action))
             return 0;
+
          i = vg_alloc_client_block();
          /* VG_(printf)("allocated %d %p\n", i, vg_cgbs); */
          vg_cgbs[i].kind  = CG_NoAccess;
@@ -317,9 +319,11 @@ UInt VG_(handle_client_request) ( ThreadState* tst, UInt* arg_block )
             = VG_(get_ExeContext) ( False, tst->m_eip, tst->m_ebp );
          VGM_(make_noaccess) ( arg[1], arg[2] );
          return i;
+
       case VG_USERREQ__MAKE_WRITABLE: /* make writable */
-         if (!VG_(clo_instrument))
-            return 0;
+         // ZZZ
+         if (! VG_(needs).shadow_memory) return 0;
+
          i = vg_alloc_client_block();
          vg_cgbs[i].kind  = CG_Writable;
          vg_cgbs[i].start = arg[1];
@@ -328,9 +332,11 @@ UInt VG_(handle_client_request) ( ThreadState* tst, UInt* arg_block )
             = VG_(get_ExeContext) ( False, tst->m_eip, tst->m_ebp );
          VGM_(make_writable) ( arg[1], arg[2] );
          return i;
+
       case VG_USERREQ__MAKE_READABLE: /* make readable */
-         if (!VG_(clo_instrument))
-            return 0;
+         // ZZZ
+         if (! VG_(needs).shadow_memory) return 0;
+ 
          i = vg_alloc_client_block();
          vg_cgbs[i].kind  = CG_Readable;
          vg_cgbs[i].start = arg[1];
@@ -341,23 +347,29 @@ UInt VG_(handle_client_request) ( ThreadState* tst, UInt* arg_block )
          return i;
 
       case VG_USERREQ__CHECK_WRITABLE: /* check writable */
-         if (!VG_(clo_instrument))
+         // ZZZ
+         if (Vg_MemCheck != VG_(clo_action))
             return 0;
+ 
          ok = VGM_(check_writable) ( arg[1], arg[2], &bad_addr );
          if (!ok)
             VG_(record_user_err) ( tst, bad_addr, True );
          return ok ? (UInt)NULL : bad_addr;
       case VG_USERREQ__CHECK_READABLE: /* check readable */
-         if (!VG_(clo_instrument))
+         // ZZZ
+         if (Vg_MemCheck != VG_(clo_action))
             return 0;
+ 
          ok = VGM_(check_readable) ( arg[1], arg[2], &bad_addr );
          if (!ok)
             VG_(record_user_err) ( tst, bad_addr, False );
          return ok ? (UInt)NULL : bad_addr;
 
       case VG_USERREQ__DISCARD: /* discard */
-         if (!VG_(clo_instrument))
+         // ZZZ
+         if (Vg_MemCheck != VG_(clo_action))
             return 0;
+ 
          if (vg_cgbs == NULL 
              || arg[2] >= vg_cgb_used || vg_cgbs[arg[2]].kind == CG_NotInUse)
             return 1;
@@ -367,8 +379,10 @@ UInt VG_(handle_client_request) ( ThreadState* tst, UInt* arg_block )
          return 0;
 
       case VG_USERREQ__MAKE_NOACCESS_STACK: /* make noaccess stack block */
-         if (!VG_(clo_instrument))
+         // ZZZ
+         if (Vg_MemCheck != VG_(clo_action))
             return 0;
+ 
          vg_add_client_stack_block ( tst, arg[1], arg[2] );
          return 0;
 
@@ -380,8 +394,10 @@ UInt VG_(handle_client_request) ( ThreadState* tst, UInt* arg_block )
       */
 
       case VG_USERREQ__DO_LEAK_CHECK:
-         if (!VG_(clo_instrument))
+         // ZZZ
+         if (Vg_MemCheck != VG_(clo_action))
             return 0;
+ 
          VG_(detect_memory_leaks)();
          return 0; /* return value is meaningless */
 

@@ -259,17 +259,17 @@ typedef
    SecMap;
 
 /* These two are statically allocated.  Should they be non-public? */
-SecMap* VG_(primary_map)[ /*65536*/ 262144 ];
-static SecMap  vg_distinguished_secondary_map;
+SecMap* VGM_(primary_map)[ /*65536*/ 262144 ];
+static SecMap  vgm_distinguished_secondary_map;
 
-#define IS_DISTINGUISHED_SM(smap) \
-   ((smap) == &vg_distinguished_secondary_map)
+#define VGM_IS_DISTINGUISHED_SM(smap) \
+   ((smap) == &vgm_distinguished_secondary_map)
 
 #define ENSURE_MAPPABLE(addr,caller)                                   \
    do {                                                                \
-      if (IS_DISTINGUISHED_SM(VG_(primary_map)[(addr) >> 16])) {       \
-         VG_(primary_map)[(addr) >> 16] = alloc_secondary_map(caller); \
-         /* VG_(printf)("new 2map because of %p\n", addr);   */       \
+      if (VGM_IS_DISTINGUISHED_SM(VGM_(primary_map)[(addr) >> 16])) {       \
+         VGM_(primary_map)[(addr) >> 16] = alloc_secondary_map(caller); \
+         /* VG_(printf)("new 2map because of %p\n", addr); */          \
       }                                                                \
    } while(0)
 
@@ -348,7 +348,7 @@ static SecMap* alloc_secondary_map ( __attribute__ ((unused))
 
 static __inline__ UChar get_abit ( Addr a )
 {
-   SecMap* sm     = VG_(primary_map)[a >> 16];
+   SecMap* sm     = VGM_(primary_map)[a >> 16];
    UInt    sm_off = a & 0xFFFF;
    PROF_EVENT(20);
    return BITARR_TEST(sm->abits, sm_off) 
@@ -357,7 +357,7 @@ static __inline__ UChar get_abit ( Addr a )
 
 static __inline__ UChar get_vbyte ( Addr a )
 {
-   SecMap* sm     = VG_(primary_map)[a >> 16];
+   SecMap* sm     = VGM_(primary_map)[a >> 16];
    UInt    sm_off = a & 0xFFFF;
    PROF_EVENT(21);
    return sm->vbyte[sm_off];
@@ -369,7 +369,7 @@ static __inline__ void set_abit ( Addr a, UChar abit )
    UInt    sm_off;
    PROF_EVENT(22);
    ENSURE_MAPPABLE(a, "set_abit");
-   sm     = VG_(primary_map)[a >> 16];
+   sm     = VGM_(primary_map)[a >> 16];
    sm_off = a & 0xFFFF;
    if (abit) 
       BITARR_SET(sm->abits, sm_off);
@@ -383,7 +383,7 @@ static __inline__ void set_vbyte ( Addr a, UChar vbyte )
    UInt    sm_off;
    PROF_EVENT(23);
    ENSURE_MAPPABLE(a, "set_vbyte");
-   sm     = VG_(primary_map)[a >> 16];
+   sm     = VGM_(primary_map)[a >> 16];
    sm_off = a & 0xFFFF;
    sm->vbyte[sm_off] = vbyte;
 }
@@ -400,7 +400,7 @@ static __inline__ UChar get_abits4_ALIGNED ( Addr a )
 #  ifdef VG_DEBUG_MEMORY
    vg_assert(IS_ALIGNED4_ADDR(a));
 #  endif
-   sm     = VG_(primary_map)[a >> 16];
+   sm     = VGM_(primary_map)[a >> 16];
    sm_off = a & 0xFFFF;
    abits8 = sm->abits[sm_off >> 3];
    abits8 >>= (a & 4 /* 100b */);   /* a & 4 is either 0 or 4 */
@@ -410,7 +410,7 @@ static __inline__ UChar get_abits4_ALIGNED ( Addr a )
 
 static UInt __inline__ get_vbytes4_ALIGNED ( Addr a )
 {
-   SecMap* sm     = VG_(primary_map)[a >> 16];
+   SecMap* sm     = VGM_(primary_map)[a >> 16];
    UInt    sm_off = a & 0xFFFF;
    PROF_EVENT(25);
 #  ifdef VG_DEBUG_MEMORY
@@ -509,7 +509,7 @@ static void set_address_range_perms ( Addr a, UInt len,
       PROF_EVENT(32);
       if (len < 8) break;
       ENSURE_MAPPABLE(a, "set_address_range_perms(fast)");
-      sm = VG_(primary_map)[a >> 16];
+      sm = VGM_(primary_map)[a >> 16];
       sm_off = a & 0xFFFF;
       sm->abits[sm_off >> 3] = abyte8;
       ((UInt*)(sm->vbyte))[(sm_off >> 2) + 0] = vword4;
@@ -546,36 +546,81 @@ static void set_address_range_perms ( Addr a, UInt len,
 
 /* Set permissions for address ranges ... */
 
+// ZZZ: just for initialising text/data segments
+void VGM_(make_segment_noaccess) ( Addr a, UInt len )
+{
+   //PROF_EVENT(??);    PPP
+   if (Vg_MemCheck == VG_(clo_action))
+      set_address_range_perms ( a, len, VGM_BIT_INVALID, VGM_BIT_INVALID );
+   else if (Vg_Eraser == VG_(clo_action))
+      VGE_(make_access) ( a, len, Vge_SegmentInit );
+   else
+      VG_(panic)("make_segment_noaccess");
+}
+
 void VGM_(make_noaccess) ( Addr a, UInt len )
 {
    PROF_EVENT(35);
-   set_address_range_perms ( a, len, VGM_BIT_INVALID, VGM_BIT_INVALID );
+   if (Vg_MemCheck == VG_(clo_action))
+      set_address_range_perms ( a, len, VGM_BIT_INVALID, VGM_BIT_INVALID );
+   else if (Vg_Eraser == VG_(clo_action))
+      { /* nothing for Vg_Eraser */ }
+   else
+      VG_(panic)("make_noaccess");
 }
 
 void VGM_(make_writable) ( Addr a, UInt len )
 {
    PROF_EVENT(36);
-   set_address_range_perms ( a, len, VGM_BIT_VALID, VGM_BIT_INVALID );
+   if (Vg_MemCheck == VG_(clo_action))
+      set_address_range_perms ( a, len, VGM_BIT_VALID, VGM_BIT_INVALID );
+   else if (Vg_Eraser == VG_(clo_action))
+      VGE_(make_access) ( a, len, Vge_VirginInit );
+   else
+      VG_(panic)("make_writable");
+}
+
+// ZZZ: just for initialising text/data segments
+void VGM_(make_segment_readable) ( Addr a, UInt len )
+{
+   //PROF_EVENT(??);    PPP
+   if (Vg_MemCheck == VG_(clo_action))
+      set_address_range_perms ( a, len, VGM_BIT_VALID, VGM_BIT_VALID );
+   else if (Vg_Eraser == VG_(clo_action))
+      VGE_(make_access) ( a, len, Vge_SegmentInit );
+   else
+      VG_(panic)("make_segment_readable");
 }
 
 void VGM_(make_readable) ( Addr a, UInt len )
 {
    PROF_EVENT(37);
-   set_address_range_perms ( a, len, VGM_BIT_VALID, VGM_BIT_VALID );
+   if (Vg_MemCheck == VG_(clo_action))
+      set_address_range_perms ( a, len, VGM_BIT_VALID, VGM_BIT_VALID );
+   else if (Vg_Eraser == VG_(clo_action))
+      VGE_(make_access) ( a, len, Vge_NonVirginInit );
+   else
+      VG_(panic)("make_readable");
 }
 
 void VGM_(make_readwritable) ( Addr a, UInt len )
 {
    PROF_EVENT(38);
-   set_address_range_perms ( a, len, VGM_BIT_VALID, VGM_BIT_VALID );
+   if (Vg_MemCheck == VG_(clo_action))
+      set_address_range_perms ( a, len, VGM_BIT_VALID, VGM_BIT_VALID );
+   else if (Vg_Eraser == VG_(clo_action))
+      VGE_(make_access) ( a, len, Vge_NonVirginInit );
+   else
+      VG_(panic)("make_readwritable");
 }
 
 /* Block-copy permissions (needed for implementing realloc()). */
 
-void VGM_(copy_address_range_perms) ( Addr src, Addr dst, UInt len )
+// ZZZ: factored out of VGM_(copy_address_range_perms)() below 
+static __inline__ 
+void vgm_copy_address_range_perms ( Addr src, Addr dst, UInt len )
 {
    UInt i;
-   PROF_EVENT(40);
    for (i = 0; i < len; i++) {
       UChar abit  = get_abit ( src+i );
       UChar vbyte = get_vbyte ( src+i );
@@ -583,6 +628,18 @@ void VGM_(copy_address_range_perms) ( Addr src, Addr dst, UInt len )
       set_abit ( dst+i, abit );
       set_vbyte ( dst+i, vbyte );
    }
+}
+
+void VGM_(copy_address_range_perms) ( Addr src, Addr dst, UInt len )
+{
+   PROF_EVENT(40);
+
+   if (Vg_MemCheck == VG_(clo_action))
+      vgm_copy_address_range_perms ( src, dst, len );
+   else if (Vg_Eraser == VG_(clo_action))
+      VGE_(copy_address_range_states) ( src, dst, len );
+   else
+      VG_(panic)("copy_address_range_perms");
 }
 
 
@@ -607,12 +664,12 @@ Bool VGM_(check_writable) ( Addr a, UInt len, Addr* bad_addr )
    return True;
 }
 
-Bool VGM_(check_readable) ( Addr a, UInt len, Addr* bad_addr )
+// ZZZ: factored this out of VGM_(check_readable) below
+static __inline Bool vgm_check_readable ( Addr a, UInt len, Addr* bad_addr )
 {
    UInt  i;
    UChar abit;
    UChar vbyte;
-   PROF_EVENT(44);
    for (i = 0; i < len; i++) {
       abit  = get_abit(a);
       vbyte = get_vbyte(a);
@@ -624,6 +681,19 @@ Bool VGM_(check_readable) ( Addr a, UInt len, Addr* bad_addr )
       a++;
    }
    return True;
+}
+
+Bool VGM_(check_readable) ( Addr a, UInt len, Addr* bad_addr )
+{
+   PROF_EVENT(44);
+
+   // ZZZ
+   if (Vg_MemCheck == VG_(clo_action))
+      return vgm_check_readable ( a, len, bad_addr );
+   else if (Vg_Eraser == VG_(clo_action))
+      return VGE_(check_readable) ( a, len, bad_addr );
+   else
+      return True;  /* needed for get_ExeContext() if panic() called */
 }
 
 
@@ -654,17 +724,18 @@ Bool VGM_(check_readable_asciiz) ( Addr a, Addr* bad_addr )
 /* Setting permissions for aligned words.  This supports fast stack
    operations. */
 
-static __inline__ void make_aligned_word_NOACCESS ( Addr a )
+static __inline__ void vgm_make_aligned_word_NOACCESS ( Addr a )
 {
    SecMap* sm;
    UInt    sm_off;
    UChar   mask;
+
    PROF_EVENT(50);
 #  ifdef VG_DEBUG_MEMORY
    vg_assert(IS_ALIGNED4_ADDR(a));
 #  endif
    ENSURE_MAPPABLE(a, "make_aligned_word_NOACCESS");
-   sm     = VG_(primary_map)[a >> 16];
+   sm     = VGM_(primary_map)[a >> 16];
    sm_off = a & 0xFFFF;
    ((UInt*)(sm->vbyte))[sm_off >> 2] = VGM_WORD_INVALID;
    mask = 0x0F;
@@ -674,17 +745,33 @@ static __inline__ void make_aligned_word_NOACCESS ( Addr a )
    sm->abits[sm_off >> 3] |= mask;
 }
 
-static __inline__ void make_aligned_word_WRITABLE ( Addr a )
+static __inline__ void make_aligned_word_NOACCESS ( Addr a )
+{
+   PROF_EVENT(50);
+
+   // ZZZ
+   if (Vg_MemCheck == VG_(clo_action)) {
+       vgm_make_aligned_word_NOACCESS(a);
+   } else if (Vg_Eraser == VG_(clo_action)) {
+       vg_assert(IS_ALIGNED4_ADDR(a));
+       /* no function to call */
+   }
+   else
+      VG_(panic)("make_aligned_word_NOACCESS");
+}
+
+
+static __inline__ void vgm_make_aligned_word_WRITABLE ( Addr a )
 {
    SecMap* sm;
    UInt    sm_off;
    UChar   mask;
-   PROF_EVENT(51);
+
 #  ifdef VG_DEBUG_MEMORY
    vg_assert(IS_ALIGNED4_ADDR(a));
 #  endif
    ENSURE_MAPPABLE(a, "make_aligned_word_WRITABLE");
-   sm     = VG_(primary_map)[a >> 16];
+   sm     = VGM_(primary_map)[a >> 16];
    sm_off = a & 0xFFFF;
    ((UInt*)(sm->vbyte))[sm_off >> 2] = VGM_WORD_INVALID;
    mask = 0x0F;
@@ -692,6 +779,21 @@ static __inline__ void make_aligned_word_WRITABLE ( Addr a )
    /* mask now contains 1s where we wish to make address bits
       invalid (0s). */
    sm->abits[sm_off >> 3] &= ~mask;
+}
+
+static __inline__ void make_aligned_word_WRITABLE ( Addr a )
+{
+   PROF_EVENT(51);
+
+   // ZZZ
+   if (Vg_MemCheck == VG_(clo_action)) {
+       vgm_make_aligned_word_WRITABLE(a);
+   } else if (Vg_Eraser == VG_(clo_action)) {
+       vg_assert(IS_ALIGNED4_ADDR(a));
+       VGE_(make_aligned_word_WRITABLE)(a);
+   }
+   else
+      VG_(panic)("make_aligned_word_WRITABLE");
 }
 
 
@@ -725,7 +827,7 @@ UInt VG_(helperc_LOADV4) ( Addr a )
    return vgm_rd_V4_SLOWLY(a);
 #  else
    UInt    sec_no = rotateRight16(a) & 0x3FFFF;
-   SecMap* sm     = VG_(primary_map)[sec_no];
+   SecMap* sm     = VGM_(primary_map)[sec_no];
    UInt    a_off  = (a & 0xFFFF) >> 3;
    UChar   abits  = sm->abits[a_off];
    abits >>= (a & 4);
@@ -749,7 +851,7 @@ void VG_(helperc_STOREV4) ( Addr a, UInt vbytes )
    vgm_wr_V4_SLOWLY(a, vbytes);
 #  else
    UInt    sec_no = rotateRight16(a) & 0x3FFFF;
-   SecMap* sm     = VG_(primary_map)[sec_no];
+   SecMap* sm     = VGM_(primary_map)[sec_no];
    UInt    a_off  = (a & 0xFFFF) >> 3;
    UChar   abits  = sm->abits[a_off];
    abits >>= (a & 4);
@@ -773,7 +875,7 @@ UInt VG_(helperc_LOADV2) ( Addr a )
    return vgm_rd_V2_SLOWLY(a);
 #  else
    UInt    sec_no = rotateRight16(a) & 0x1FFFF;
-   SecMap* sm     = VG_(primary_map)[sec_no];
+   SecMap* sm     = VGM_(primary_map)[sec_no];
    UInt    a_off  = (a & 0xFFFF) >> 3;
    PROF_EVENT(62);
    if (sm->abits[a_off] == VGM_BYTE_VALID) {
@@ -795,7 +897,7 @@ void VG_(helperc_STOREV2) ( Addr a, UInt vbytes )
    vgm_wr_V2_SLOWLY(a, vbytes);
 #  else
    UInt    sec_no = rotateRight16(a) & 0x1FFFF;
-   SecMap* sm     = VG_(primary_map)[sec_no];
+   SecMap* sm     = VGM_(primary_map)[sec_no];
    UInt    a_off  = (a & 0xFFFF) >> 3;
    PROF_EVENT(63);
    if (sm->abits[a_off] == VGM_BYTE_VALID) {
@@ -815,7 +917,7 @@ UInt VG_(helperc_LOADV1) ( Addr a )
    return vgm_rd_V1_SLOWLY(a);
 #  else
    UInt    sec_no = shiftRight16(a);
-   SecMap* sm     = VG_(primary_map)[sec_no];
+   SecMap* sm     = VGM_(primary_map)[sec_no];
    UInt    a_off  = (a & 0xFFFF) >> 3;
    PROF_EVENT(64);
    if (sm->abits[a_off] == VGM_BYTE_VALID) {
@@ -837,7 +939,7 @@ void VG_(helperc_STOREV1) ( Addr a, UInt vbytes )
    vgm_wr_V1_SLOWLY(a, vbytes);
 #  else
    UInt    sec_no = shiftRight16(a);
-   SecMap* sm     = VG_(primary_map)[sec_no];
+   SecMap* sm     = VGM_(primary_map)[sec_no];
    UInt    a_off  = (a & 0xFFFF) >> 3;
    PROF_EVENT(65);
    if (sm->abits[a_off] == VGM_BYTE_VALID) {
@@ -1082,7 +1184,7 @@ void VGM_(fpu_read_check) ( Addr addr, Int size )
       if (!IS_ALIGNED4_ADDR(addr)) goto slow4;
       PROF_EVENT(81);
       /* Properly aligned. */
-      sm     = VG_(primary_map)[addr >> 16];
+      sm     = VGM_(primary_map)[addr >> 16];
       sm_off = addr & 0xFFFF;
       a_off  = sm_off >> 3;
       if (sm->abits[a_off] != VGM_BYTE_VALID) goto slow4;
@@ -1103,7 +1205,7 @@ void VGM_(fpu_read_check) ( Addr addr, Int size )
       /* Properly aligned.  Do it in two halves. */
       addr4 = addr + 4;
       /* First half. */
-      sm     = VG_(primary_map)[addr >> 16];
+      sm     = VGM_(primary_map)[addr >> 16];
       sm_off = addr & 0xFFFF;
       a_off  = sm_off >> 3;
       if (sm->abits[a_off] != VGM_BYTE_VALID) goto slow8;
@@ -1112,7 +1214,7 @@ void VGM_(fpu_read_check) ( Addr addr, Int size )
       if (((UInt*)(sm->vbyte))[ v_off >> 2 ] != VGM_WORD_VALID) 
          goto slow8;
       /* Second half. */
-      sm     = VG_(primary_map)[addr4 >> 16];
+      sm     = VGM_(primary_map)[addr4 >> 16];
       sm_off = addr4 & 0xFFFF;
       a_off  = sm_off >> 3;
       if (sm->abits[a_off] != VGM_BYTE_VALID) goto slow8;
@@ -1174,7 +1276,7 @@ void VGM_(fpu_write_check) ( Addr addr, Int size )
       if (!IS_ALIGNED4_ADDR(addr)) goto slow4;
       PROF_EVENT(86);
       /* Properly aligned. */
-      sm     = VG_(primary_map)[addr >> 16];
+      sm     = VGM_(primary_map)[addr >> 16];
       sm_off = addr & 0xFFFF;
       a_off  = sm_off >> 3;
       if (sm->abits[a_off] != VGM_BYTE_VALID) goto slow4;
@@ -1193,7 +1295,7 @@ void VGM_(fpu_write_check) ( Addr addr, Int size )
       /* Properly aligned.  Do it in two halves. */
       addr4 = addr + 4;
       /* First half. */
-      sm     = VG_(primary_map)[addr >> 16];
+      sm     = VGM_(primary_map)[addr >> 16];
       sm_off = addr & 0xFFFF;
       a_off  = sm_off >> 3;
       if (sm->abits[a_off] != VGM_BYTE_VALID) goto slow8;
@@ -1201,7 +1303,7 @@ void VGM_(fpu_write_check) ( Addr addr, Int size )
       v_off = addr & 0xFFFF;
       ((UInt*)(sm->vbyte))[ v_off >> 2 ] = VGM_WORD_VALID;
       /* Second half. */
-      sm     = VG_(primary_map)[addr4 >> 16];
+      sm     = VGM_(primary_map)[addr4 >> 16];
       sm_off = addr4 & 0xFFFF;
       a_off  = sm_off >> 3;
       if (sm->abits[a_off] != VGM_BYTE_VALID) goto slow8;
@@ -1380,6 +1482,9 @@ void VGM_(handle_esp_assignment) ( Addr new_espA )
    Int  delta   = ((Int)new_esp) - ((Int)old_esp);
 
    PROF_EVENT(101);
+
+   //if (Vg_Eraser == VG_(clo_action))
+   //   VG_(printf)("esp: %x, %x, %d\n", old_esp, new_esp, delta);
 
 #  ifndef VG_DEBUG_MEMORY
 
@@ -1579,8 +1684,9 @@ void init_memory_audit_callback (
         Char rr, Char ww, Char xx, 
         UInt foffset, UChar* filename )
 {
-   UChar example_a_bit;
-   UChar example_v_bit;
+   //ZZZ
+   //UChar example_a_bit;
+   //UChar example_v_bit;
    UInt  r_esp;
    Bool  is_stack_segment;
 
@@ -1619,6 +1725,10 @@ void init_memory_audit_callback (
    r_esp = VG_(baseBlock)[VGOFF_(m_esp)];
    is_stack_segment = start <= r_esp && r_esp < start+size;
 
+   // ZZZ: added this
+   if (! VG_(needs).shadow_memory) 
+      return;
+   
    /* Figure out the segment's permissions.
 
       All segments are addressible -- since a process can read its
@@ -1632,12 +1742,17 @@ void init_memory_audit_callback (
    if (rr != 'r' && xx != 'x' && ww != 'w') {
       /* Very bogus; this path never gets taken. */
       /* A no, V no */
-      example_a_bit = VGM_BIT_INVALID;
-      example_v_bit = VGM_BIT_INVALID;
+      // ZZZ
+      //example_a_bit = VGM_BIT_INVALID;
+      //example_v_bit = VGM_BIT_INVALID;
+      VGM_(make_segment_noaccess) ( start, size );
+       
    } else {
       /* A yes, V yes */
-      example_a_bit = VGM_BIT_VALID;
-      example_v_bit = VGM_BIT_VALID;
+      // ZZZ
+      //example_a_bit = VGM_BIT_VALID;
+      //example_v_bit = VGM_BIT_VALID;
+      VGM_(make_segment_readable) ( start, size );
       /* Causes a lot of errs for unknown reasons. 
          if (filename is valgrind.so 
                [careful about end conditions on filename]) {
@@ -1646,9 +1761,6 @@ void init_memory_audit_callback (
          }
       */
    }
-
-   set_address_range_perms ( start, size, 
-                             example_a_bit, example_v_bit );
 
    if (is_stack_segment) {
       /* This is the stack segment.  Mark all below %esp as
@@ -1661,29 +1773,47 @@ void init_memory_audit_callback (
    }
 }
 
-
-/* Initialise the memory audit system. */
-void VGM_(init_memory_audit) ( void )
+// ZZZ: moved this out of VGM_(memory_audit)()
+static void vgm_init_primary_and_distinguished_secondary_maps ( void )
 {
    Int i;
 
-   init_prof_mem();
-
    for (i = 0; i < 8192; i++)
-      vg_distinguished_secondary_map.abits[i] 
+      vgm_distinguished_secondary_map.abits[i] 
          = VGM_BYTE_INVALID; /* Invalid address */
    for (i = 0; i < 65536; i++)
-      vg_distinguished_secondary_map.vbyte[i] 
+      vgm_distinguished_secondary_map.vbyte[i] 
          = VGM_BYTE_INVALID; /* Invalid Value */
 
    /* These entries gradually get overwritten as the used address
       space expands. */
    for (i = 0; i < 65536; i++)
-      VG_(primary_map)[i] = &vg_distinguished_secondary_map;
-   /* These ones should never change; it's a bug in Valgrind if they
-      do. */
+      VGM_(primary_map)[i] = &vgm_distinguished_secondary_map;
+
+   /* These ones should never change; it's a bug in Valgrind if they do. */
    for (i = 65536; i < 262144; i++)
-      VG_(primary_map)[i] = &vg_distinguished_secondary_map;
+      VGM_(primary_map)[i] = &vgm_distinguished_secondary_map;
+}
+
+void init_primary_and_distinguished_secondary_maps ( void )
+{
+   if (Vg_MemCheck == VG_(clo_action))
+      vgm_init_primary_and_distinguished_secondary_maps();
+   else if (Vg_Eraser == VG_(clo_action))
+      VGE_(init_primary_and_distinguished_secondary_maps)();
+   else
+      VG_(panic)("init_primary_and_distinguished_secondary_maps");
+}
+
+
+/* Initialise the memory audit system. */
+void VGM_(init_memory_audit) ( void )
+{
+   init_prof_mem();
+
+   // ZZZ
+   if (VG_(needs).shadow_memory)
+      init_primary_and_distinguished_secondary_maps();
 
    /* Read the initial memory mapping from the /proc filesystem, and
       set up our own maps accordingly. */
@@ -1789,8 +1919,8 @@ UInt VG_(scan_all_valid_memory) ( void (*notify_word)( Addr, UInt ) )
    for (page = 0; page < numPages; page++) {
       pageBase = page << VKI_BYTES_PER_PAGE_BITS;
       primaryMapNo = pageBase >> 16;
-      sm = VG_(primary_map)[primaryMapNo];
-      if (IS_DISTINGUISHED_SM(sm)) continue;
+      sm = VGM_(primary_map)[primaryMapNo];
+      if (VGM_IS_DISTINGUISHED_SM(sm)) continue;
       if (__builtin_setjmp(memscan_jmpbuf) == 0) {
          /* try this ... */
          page_first_word = * (volatile UInt*)pageBase;
@@ -2044,7 +2174,7 @@ void VG_(detect_memory_leaks) ( void )
 
    Bool (*ec_comparer_fn) ( ExeContext*, ExeContext* );
    PROF_EVENT(76);
-   vg_assert(VG_(clo_instrument));
+   vg_assert(Vg_MemCheck == VG_(clo_action));
 
    /* Decide how closely we want to match ExeContexts in leak
       records. */
@@ -2221,17 +2351,54 @@ void VG_(detect_memory_leaks) ( void )
    problem, but they are so likely to that we really want to know
    about it if so. */
 
-Bool VG_(first_and_last_secondaries_look_plausible) ( void )
+// ZZZ: factored this out...
+static Bool vgm_first_and_last_secondaries_look_plausible ( void )
 {
-   if (IS_DISTINGUISHED_SM(VG_(primary_map)[0])
-       && IS_DISTINGUISHED_SM(VG_(primary_map)[65535])) {
+   if (VGM_IS_DISTINGUISHED_SM(VGM_(primary_map)[0])
+       && VGM_IS_DISTINGUISHED_SM(VGM_(primary_map)[65535]))
       return True;
-   } else {
+   else
       return False;
-   }
 }
 
+Bool VG_(first_and_last_secondaries_look_plausible) ( void )
+{
+   if (Vg_MemCheck == VG_(clo_action))
+      return vgm_first_and_last_secondaries_look_plausible();
+   else if (Vg_Eraser == VG_(clo_action)) 
+      return VGE_(first_and_last_secondaries_look_plausible)();
+   else
+      return True;  /* XXX: needed for checking syscall args */
+}
 
+static void vgm_check_distinguished_secondary ( void )
+{
+   Int i;
+   
+   /* Make sure nobody changed the distinguished secondary. */
+   for (i = 0; i < 8192; i++)
+      vg_assert(vgm_distinguished_secondary_map.abits[i] 
+                == VGM_BYTE_INVALID);
+   for (i = 0; i < 65536; i++)
+      vg_assert(vgm_distinguished_secondary_map.vbyte[i] 
+                == VGM_BYTE_INVALID);
+
+   /* Make sure that the upper 3/4 of the primary map hasn't
+      been messed with. */
+   for (i = 65536; i < 262144; i++)
+      vg_assert(VGM_(primary_map)[i] == & vgm_distinguished_secondary_map);
+}
+
+static void check_distinguished_secondary ( void )
+{
+   if (Vg_MemCheck == VG_(clo_action)) 
+      vgm_check_distinguished_secondary();
+   else if (Vg_Eraser == VG_(clo_action))
+      VGE_(check_distinguished_secondary)();
+   else
+      VG_(panic)("check_distinguished_secondary");
+}
+      
 /* A fast sanity check -- suitable for calling circa once per
    millisecond. */
 
@@ -2256,12 +2423,9 @@ void VG_(do_sanity_checks) ( Bool force_expensive )
 
    /* Check stuff pertaining to the memory check system. */
 
-   if (VG_(clo_instrument)) {
-
-      /* Check that nobody has spuriously claimed that the first or
-         last 16 pages of memory have become accessible [...] */
-      vg_assert(VG_(first_and_last_secondaries_look_plausible)());
-   }
+   /* Check that nobody has spuriously claimed that the first or
+      last 16 pages of memory have become accessible [...] */
+   vg_assert(VG_(first_and_last_secondaries_look_plausible)());
 
    /* --- Now some more expensive checks. ---*/
 
@@ -2286,20 +2450,8 @@ void VG_(do_sanity_checks) ( Bool force_expensive )
       if ((VG_(sanity_fast_count) % 250) == 0)
          VG_(sanity_check_tc_tt)();
 
-      if (VG_(clo_instrument)) {
-         /* Make sure nobody changed the distinguished secondary. */
-         for (i = 0; i < 8192; i++)
-            vg_assert(vg_distinguished_secondary_map.abits[i] 
-                      == VGM_BYTE_INVALID);
-         for (i = 0; i < 65536; i++)
-            vg_assert(vg_distinguished_secondary_map.vbyte[i] 
-                      == VGM_BYTE_INVALID);
-
-         /* Make sure that the upper 3/4 of the primary map hasn't
-            been messed with. */
-         for (i = 65536; i < 262144; i++)
-            vg_assert(VG_(primary_map)[i] 
-                      == & vg_distinguished_secondary_map);
+      if (VG_(needs).shadow_memory) {
+          check_distinguished_secondary();
       }
       /* 
       if ((VG_(sanity_fast_count) % 500) == 0) VG_(mallocSanityCheckAll)(); 
