@@ -1,0 +1,63 @@
+## Process this file with automake to produce Makefile.in
+
+##---------------------------------------------------------------------------
+## malloc2 is very slow
+
+## Some of them user client requests which are now totally different for
+## HEAD vs. ERASER due to changed client request codes.
+
+## Some of them are hard to test because they require signals or something:
+## blocked_syscall, signal1, signal3, sigwait_all, pth_pause, pth_sig*
+
+## Need more tests:
+## - more C++ ones
+## - more realloc ones
+## - lots more mmap/munmap/mremap/mprotect ones
+##---------------------------------------------------------------------------
+
+## Notes:
+##   - HEAD and ERASER stderr.exp are different for signal2 due to lazy vs.
+##     strict EIP updating
+
+noinst_PROGRAMS = \
+	badaddrvalue badfree badjump badloop \
+	doublefree errs1 exitprog fprw fwrite inline malloc1 malloc2 \
+	manuel1 manuel2 manuel3 \
+	memalign_test memcmptest mmaptest nanoleak pushfpopf \
+	realloc1 sigaltstack signal2 suppfree trivialleak weirdioctl
+
+# XXX: want to have this inherited from ../Makefile.am
+CFLAGS = $(WERROR) -Winline -Wall -Wshadow -g
+
+
+# --skin=memcheck ones
+badaddrvalue_SOURCES 	= badaddrvalue.c
+badfree_SOURCES 	= badfree.c
+badjump_SOURCES 	= badjump.c
+badloop_SOURCES 	= badloop.c
+doublefree_SOURCES 	= doublefree.c
+errs1_SOURCES 		= errs1.c
+exitprog_SOURCES 	= exitprog.c
+fprw_SOURCES 		= fprw.c
+fwrite_SOURCES 		= fwrite.c
+inline_SOURCES 	        = inline.c
+malloc1_SOURCES 	= malloc1.c
+malloc2_SOURCES 	= malloc2.c
+manuel1_SOURCES 	= manuel1.c
+manuel2_SOURCES 	= manuel2.c
+manuel3_SOURCES 	= manuel3.c
+mmaptest_SOURCES 	= mmaptest.c
+memalign_test_SOURCES 	= memalign_test.c
+memcmptest_SOURCES 	= memcmptest.c
+#memtests_SOURCES	= memtests.cpp		(C++)
+nanoleak_SOURCES 	= nanoleak.c
+# Not sure how to specify CXX in configure.in to compile C++ progs...
+#new_override_SOURCES 	= new_override.cpp
+pushfpopf_SOURCES 	= pushfpopf_c.c pushfpopf_s.s
+realloc1_SOURCES 	= realloc1.c		# belong here?
+signal2_SOURCES 	= signal2.c
+suppfree_SOURCES 	= suppfree.c
+sigaltstack_SOURCES 	= sigaltstack.c
+trivialleak_SOURCES 	= trivialleak.c
+weirdioctl_SOURCES 	= weirdioctl.c
+
