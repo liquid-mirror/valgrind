@@ -1425,7 +1425,6 @@ VgSchedReturnCode VG_(scheduler) ( void )
                If not valgrinding (cachegrinding, etc) don't do this.
                __libc_freeres does some invalid frees which crash
                the unprotected malloc/free system. */
-            // JJJ: what to do about this?
             if (VG_(threads)[tid].m_eax == __NR_exit 
                 && ! VG_(needs).run_libc_freeres) {
                if (VG_(clo_trace_syscalls) || VG_(clo_trace_sched)) {
