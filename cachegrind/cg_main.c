@@ -1728,7 +1728,7 @@ void SK_(fini)(void)
  *
  * Finds the BBCC in the table, removes it, adds the counts to the discard
  * counters, and then frees the BBCC. */
-void SKN_(discard_basic_block_info) ( Addr a, UInt size )
+void SK_(discard_basic_block_info) ( Addr a, UInt size )
 {
    BBCC *BBCC_node;
    Addr BBCC_ptr0, BBCC_ptr;
@@ -1825,7 +1825,7 @@ static void parse_cache_opt ( cache_t* cache, char* orig_opt, int opt_len )
    VG_(bad_option)(orig_opt);
 }
 
-Bool SKN_(process_cmd_line_option)(UChar* arg)
+Bool SK_(process_cmd_line_option)(UChar* arg)
 {
    /* 5 is length of "--I1=" */
    if      (0 == VG_(strncmp)(arg, "--I1=", 5))
@@ -1840,7 +1840,7 @@ Bool SKN_(process_cmd_line_option)(UChar* arg)
    return True;
 }
 
-Char* SKN_(usage)(void)
+Char* SK_(usage)(void)
 {
    return 
 "    --I1=<size>,<assoc>,<line_size>  set I1 cache manually\n"
@@ -1915,11 +1915,11 @@ void SK_(post_clo_init)(void)
 }
 
 #if 0
-Bool SKN_(cheap_sanity_check)(void) { return True; }
+Bool SK_(cheap_sanity_check)(void) { return True; }
 
 extern TTEntry* vg_tt;
 
-Bool SKN_(expensive_sanity_check)(void)
+Bool SK_(expensive_sanity_check)(void)
 { 
    Int i;
    Bool dummy;
