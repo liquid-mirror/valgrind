@@ -229,7 +229,7 @@ void* alloc_and_new_mem ( ThreadState* tst, UInt size, UInt alignment,
    VG_TRACK( new_mem_heap, p, size, is_zeroed );
    VG_TRACK( ban_mem_heap, p+size, VG_AR_CLIENT_REDZONE_SZB );
 
-   VGP_POPCC;
+   VGP_POPCC(VgpCliMalloc);
    return (void*)p;
 }
 
@@ -331,7 +331,7 @@ void VG_(client_free) ( ThreadState* tst, void* p, VgAllocKind kind )
 
       if (sc == NULL) {
          VG_TRACK( bad_free, tst, (Addr)p );
-         VGP_POPCC;
+         VGP_POPCC(VgpCliMalloc);
          return;
       }
 
@@ -341,7 +341,7 @@ void VG_(client_free) ( ThreadState* tst, void* p, VgAllocKind kind )
 
       die_and_free_mem ( tst, sc, prev_chunks_next_ptr );
    } 
-   VGP_POPCC;
+   VGP_POPCC(VgpCliMalloc);
 }
 
 
@@ -366,9 +366,11 @@ void* VG_(client_realloc) ( ThreadState* tst, void* p, UInt new_size )
 
    if (! needs_shadow_chunks()) {
       vg_assert(p != NULL && new_size != 0);
-      VGP_POPCC;
-      return VG_(arena_realloc) ( VG_AR_CLIENT, p, VG_(clo_alignment), 
-                                  new_size );
+      p = VG_(arena_realloc) ( VG_AR_CLIENT, p, VG_(clo_alignment), 
+                               new_size );
+      VGP_POPCC(VgpCliMalloc);
+      return p;
+
    } else {
       /* First try and find the block. */
       sc = getShadowChunk ( (Addr)p, &prev_chunks_next_ptr );
@@ -376,7 +378,7 @@ void* VG_(client_realloc) ( ThreadState* tst, void* p, UInt new_size )
       if (sc == NULL) {
          VG_TRACK( bad_free, tst, (Addr)p );
          /* Perhaps we should return to the program regardless. */
-         VGP_POPCC;
+         VGP_POPCC(VgpCliMalloc);
          return NULL;
       }
      
@@ -389,14 +391,14 @@ void* VG_(client_realloc) ( ThreadState* tst, void* p, UInt new_size )
 
       if (sc->size == new_size) {
          /* size unchanged */
-         VGP_POPCC;
+         VGP_POPCC(VgpCliMalloc);
          return p;
          
       } else if (sc->size > new_size) {
          /* new size is smaller */
          VG_TRACK( die_mem_heap, sc->data+new_size, sc->size-new_size );
          sc->size = new_size;
-         VGP_POPCC;
+         VGP_POPCC(VgpCliMalloc);
          return p;
 
       } else {
@@ -428,7 +430,7 @@ void* VG_(client_realloc) ( ThreadState* tst, void* p, UInt new_size )
          /* Free old memory */
          die_and_free_mem ( tst, sc, prev_chunks_next_ptr );
 
-         VGP_POPCC;
+         VGP_POPCC(VgpCliMalloc);
          return (void*)p_new;
       }  
    }
