@@ -795,9 +795,9 @@ void VG_(strncpy) ( Char* dest, const Char* src, Int ndest )
    Int i;
    i = 0;
    while (True) {
-      if (src[i] == 0) return;
       if (i >= ndest) return;
       dest[i] = src[i];
+      if (src[i] == 0) return;
       i++;
    }
 }
