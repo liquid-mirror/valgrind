@@ -52,14 +52,6 @@
 #include "vg_skin.h"
 
 
-/* Set to 1 to enable time profiling.  Since this uses SIGPROF, we
-   don't want this permanently enabled -- only for profiling
-   builds. */
-#if 0
-#  define VG_PROFILE
-#endif
-
-
 /* Total number of integer registers available for allocation.  That's
    all of them except %esp, %edi and %ebp.  %edi is a general spare
    temporary.  %ebp permanently points at VG_(baseBlock).  Note that
@@ -226,103 +218,35 @@ extern Char* VG_(clo_weird_hacks);
    Debugging and profiling stuff
    ------------------------------------------------------------------ */
 
+/* Change to 1 to get more accurate but more expensive core profiling. */
+#if 0
+#  define VGP_ACCURATE_PROFILING
+#endif
+
 /* No, really.  I _am_ that strange. */
 #define OINK(nnn) VG_(message)(Vg_DebugMsg, "OINK %d",nnn)
 
 /* Create a logfile into which messages can be dumped. */
 extern void VG_(startup_logging) ( void );
-extern void VG_(shutdown_logging) ( void );
-
-
-/* Profiling stuff */
-#ifdef VG_PROFILE
-
-#define VGP_M_STACK 10
-
-#define VGP_M_CCS 27  /* == the # of elems in VGP_LIST */
-#if 0
-#define VGP_LIST \
-   VGP_PAIR(VgpUnc=0,      "unclassified"),           \
-   VGP_PAIR(VgpRun,        "running"),                \
-   VGP_PAIR(VgpSched,      "scheduler"),              \
-   VGP_PAIR(VgpMalloc,     "low-lev malloc/free"),    \
-   VGP_PAIR(VgpCliMalloc,  "client  malloc/free"),    \
-   VGP_PAIR(VgpTranslate,  "translate-main"),         \
-   VGP_PAIR(VgpToUCode,    "to-ucode"),               \
-   VGP_PAIR(VgpFromUcode,  "from-ucode"),             \
-   VGP_PAIR(VgpImprove,    "improve"),                \
-   VGP_PAIR(VgpInstrument, "instrument"),             \
-   VGP_PAIR(VgpCleanup,    "cleanup"),                \
-   VGP_PAIR(VgpRegAlloc,   "reg-alloc"),              \
-   VGP_PAIR(VgpCCallAnal,  "C-call-analysis"),        \
-   VGP_PAIR(VgpDoLRU,      "do-lru"),                 \
-   VGP_PAIR(VgpSlowFindT,  "slow-search-transtab"),   \
-   VGP_PAIR(VgpInitAudit,  "init-mem-audit"),         \
-   VGP_PAIR(VgpExeContext, "exe-context"),            \
-   VGP_PAIR(VgpReadSyms,   "read-syms"),              \
-   VGP_PAIR(VgpAddToT,     "add-to-transtab"),        \
-   VGP_PAIR(VgpSARP,       "set-addr-range-perms"),   \
-   VGP_PAIR(VgpSyscall,    "syscall wrapper"),        \
-   /* SSS: genericise this */                         \
-   VGP_PAIR(VgpCacheGetBBCC,"cache get BBCC"),        \
-   VGP_PAIR(VgpCacheSimulate, "cache simulate"),      \
-   VGP_PAIR(VgpCacheDump,  "cache stats dump"),       \
-   VGP_PAIR(VgpSpare1,     "spare 1"),                \
-   VGP_PAIR(VgpSpare2,     "spare 2")
-#endif
-#define VGP_LIST \
-   VGP_PAIR(VgpUnc=0,       "unclassified"),          \
-   VGP_PAIR(VgpRun,         "running"),               \
-   VGP_PAIR(VgpSched,       "scheduler"),             \
-   VGP_PAIR(VgpMalloc,      "low-lev malloc/free"),   \
-   VGP_PAIR(VgpCliMalloc,   "client  malloc/free"),   \
-   VGP_PAIR(VgpTranslate,   "translate-main"),        \
-   VGP_PAIR(VgpToUCode,     "to-ucode"),              \
-   VGP_PAIR(VgpFromUcode,   "from-ucode"),            \
-   VGP_PAIR(VgpImprove,     "improve"),               \
-   VGP_PAIR(VgpRegAlloc,    "reg-alloc"),             \
-   VGP_PAIR(VgpCCallAnal,   "ccall-analysis"),        \
-   VGP_PAIR(VgpDoLRU,       "do-lru"),                \
-   VGP_PAIR(VgpSlowFindT,   "slow-search-transtab"),  \
-   VGP_PAIR(VgpInitMem,     "init-memory"),           \
-   VGP_PAIR(VgpExeContext,  "exe-context"),           \
-   VGP_PAIR(VgpReadSyms,    "read-syms"),             \
-   VGP_PAIR(VgpSearchSyms,  "search-syms"),           \
-   VGP_PAIR(VgpAddToT,      "add-to-transtab"),       \
-   VGP_PAIR(VgpSyscall,     "core syscall wrapper"),  /*covers skin too*/\
-   /* SSS: genericise this */                         \
-   VGP_PAIR(VgpPreCloInit,  "pre-clo-init"),          \
-   VGP_PAIR(VgpPostCloInit, "post-clo-init"),         \
-   VGP_PAIR(VgpInstrument,  "instrument"),            \
-   VGP_PAIR(VgpFini,        "fini"),                  \
-   /* */                                              \
-   VGP_PAIR(VgpSARP,        "set-addr-range-perms"),  \
-   VGP_PAIR(VgpSpare2,      "spare 2"),               \
-   VGP_PAIR(VgpSpare3,      "spare 3"),               \
-   VGP_PAIR(VgpSpare4,      "spare 4")
-
-#define VGP_PAIR(enumname,str) enumname
-typedef enum { VGP_LIST } VgpCC;
-#undef VGP_PAIR
+extern void VG_(shutdown_logging)( void );
 
 extern void VGP_(init_profiling) ( void );
 extern void VGP_(done_profiling) ( void );
-extern void VGP_(pushcc) ( VgpCC );
-extern void VGP_(popcc) ( void );
 
-#undef VGP_PUSHCC    /* SSS: hmm... */
-#undef VGP_POPCC
-#define VGP_PUSHCC(cc) VGP_(pushcc)(cc)
-#define VGP_POPCC      VGP_(popcc)()
+#undef  VGP_PUSHCC
+#undef  VGP_POPCC
+#define VGP_PUSHCC(x)   if (VG_(clo_profile)) VGP_(pushcc)(x)
+#define VGP_POPCC(x)    if (VG_(clo_profile)) VGP_(popcc)(x)
 
+/* Use this for ones that happen a lot and thus we don't want to put in
+   all the time, eg. for %esp assignment. */
+#ifdef VGP_ACCURATE_PROFILING
+#  define VGP_MAYBE_PUSHCC(x)   if (VG_(clo_profile)) VGP_(pushcc)(x)
+#  define VGP_MAYBE_POPCC(x)    if (VG_(clo_profile)) VGP_(popcc)(x)
 #else
-
-#undef VGP_PUSHCC    /* SSS: hmm... */
-#undef VGP_POPCC
-#define VGP_PUSHCC(cc) /* */
-#define VGP_POPCC      /* */
-
-#endif /* VG_PROFILE */
+#  define VGP_MAYBE_PUSHCC(x)
+#  define VGP_MAYBE_POPCC(x)
+#endif
 
 
 /* ---------------------------------------------------------------------
