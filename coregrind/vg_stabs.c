@@ -170,12 +170,22 @@ static SymType *structDef(StabTypeTab *tab, SymType *def, Bool isstruct, Char *n
    static const Bool debug = False;
    SymType *ref = structRef(tab, NULL, isstruct, name);
 
-   if (debug)
-      VG_(printf)("defining %s ref for %s %p -> %p\n",
-		  isstruct ? "struct" : "union", name, ref, def);
-
-   def = VG_(st_mktypedef)(ref, name, VG_(st_basetype)(def, False));
-   VG_(st_setname)(def, name);
+   /* it seems that GNAT likes to declare names as both struct tags
+      and typedefs so check we aren't about to make a structure a
+      reference to itself as that will create a loop */
+   if (ref == def) {
+      if (debug)
+         VG_(printf)("ignoring %s self ref for %s %p -> %p\n",
+		     isstruct ? "struct" : "union", name, ref, def);
+   }
+   else {
+      if (debug)
+         VG_(printf)("defining %s ref for %s %p -> %p\n",
+ 		     isstruct ? "struct" : "union", name, ref, def);
+ 
+      def = VG_(st_mktypedef)(ref, name, VG_(st_basetype)(def, False));
+      VG_(st_setname)(def, name);
+   }
    return def;
 }
 
@@ -939,7 +949,10 @@ static SymType *stabtype_parser(SegInfo *si, SymType *def, Char **pp)
 	    } else {
 	       EXPECT(',', "struct TYPE");
 
-	       off = atou(&p, 0);
+               /* logic dictates that the offset would always be
+	          positive and that atou would work here but GNAT has
+	          has other ideas - see bug 90128 for more details */
+	       off = atoi(&p, 0);
 
 	       if (*p == ',') {
 		  EXPECT(',', "struct OFFSET");
