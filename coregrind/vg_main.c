@@ -1187,8 +1187,6 @@ void VG_(main) ( void )
    if (VG_(needs).pthread_errors || VG_(needs).report_errors)
       VG_(show_all_errors)();
 
-   VG_(clientmalloc_done)();
-
    SK_(fini)();
 
    VG_(do_sanity_checks)( True /*include expensive checks*/ );
