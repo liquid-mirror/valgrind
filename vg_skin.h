@@ -1339,6 +1339,7 @@ extern UInt SK_(handle_client_request) ( ThreadState* tst, UInt* arg_block );
          }                                      \
    }
 
+// SSS: only ones using camel caps
 extern Int   SK_(getExtRegUsage) ( UInstr* u, Tag tag, RegUse* arr );
 extern void  SK_(emitExtUInstr)  ( UInstr* u, RRegSet regs_live_before );
 extern Bool  SK_(saneExtUInstr)  ( Bool beforeRA, Bool beforeLiveness,
