@@ -360,8 +360,9 @@ void VG_(client_free) ( ThreadState* tst, void* p, VgAllocKind kind )
       }
 
       if (sc == NULL) {
-         /* just there to allow reporting of free errors */
-         VG_TRACK( die_mem_heap, tst, (Addr)NULL, 0, True );
+         /* just there to allow reporting of free errors -- size=0xffffffff
+          * indicates it wasn't malloc'd in the first place */
+         VG_TRACK( die_mem_heap, tst, (Addr)p, 0xffffffff, True );
 
       } else {
          client_free_worker ( tst, ml_no, sc, 
@@ -405,8 +406,9 @@ void* VG_(client_realloc) ( ThreadState* tst, void* p, UInt new_size )
       }
      
       if (sc == NULL) {
-         /* just there to allow reporting of free errors */
-         VG_TRACK( die_mem_heap, tst, (Addr)NULL, 0, True );
+         /* just there to allow reporting of free errors -- size=0xffffffff
+          * indicates it wasn't malloc'd in the first place */
+         VG_TRACK( die_mem_heap, tst, (Addr)p, 0xffffffff, True );
          /* Perhaps we should keep going regardless. */
          VGP_POPCC;
          return NULL;
