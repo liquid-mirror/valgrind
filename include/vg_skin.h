@@ -554,7 +554,6 @@ typedef
 
       /* word 5 */
       UChar   cond;            /* condition, for jumps */
-      Bool    smc_check:1;     /* do a smc test, if writes memory. */
       Bool    signed_widen:1;  /* signed or unsigned WIDEN ? */
       JmpKind jmpkind:3;       /* additional properties of unconditional JMP */
 
