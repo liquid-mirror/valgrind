@@ -10,6 +10,7 @@ valgrind.spec
 cachegrind
 vg_annotate
 vg_cachegen
+valgrind.pc
 default.supp
 bin
 lib
