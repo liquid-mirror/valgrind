@@ -107,6 +107,8 @@ Int VGOFF_(fpu_write_check) = INVALID_OFFSET;
 Int VGOFF_(fpu_read_check) = INVALID_OFFSET;
 Int VGOFF_(cachesim_log_non_mem_instr) = INVALID_OFFSET;
 Int VGOFF_(cachesim_log_mem_instr)     = INVALID_OFFSET;
+Int VGOFF_(eraser_mem_read)  = INVALID_OFFSET;
+Int VGOFF_(eraser_mem_write) = INVALID_OFFSET;
 
 /* This is the actual defn of baseblock. */
 UInt VG_(baseBlock)[VG_BASEBLOCK_WORDS];
@@ -174,6 +176,14 @@ static void vg_init_baseBlock ( void )
    /* 17b */ 
    VGOFF_(cachesim_log_mem_instr)  
       = alloc_BaB_1_set( (Addr) & VG_(cachesim_log_mem_instr) );
+
+   /* 17c */ 
+   VGOFF_(eraser_mem_read)  
+      = alloc_BaB_1_set( (Addr) & VGE_(eraser_mem_read) );
+
+   /* 17d */ 
+   VGOFF_(eraser_mem_write)  
+      = alloc_BaB_1_set( (Addr) & VGE_(eraser_mem_write) );
 
    /* 18  */ 
    VGOFF_(helper_value_check4_fail) 
@@ -399,6 +409,8 @@ UInt VG_(num_scheduling_events_MAJOR) = 0;
    Values derived from command-line options.
    ------------------------------------------------------------------ */
 
+VgNeeds VG_(needs);
+
 Bool   VG_(clo_error_limit);
 Bool   VG_(clo_check_addrVs);
 Bool   VG_(clo_GDB_attach);
@@ -419,9 +431,8 @@ Int    VG_(clo_n_suppressions);
 Char*  VG_(clo_suppressions)[VG_CLO_MAX_SFILES];
 Bool   VG_(clo_single_step);
 Bool   VG_(clo_optimise);
-Bool   VG_(clo_instrument);
+VgAction VG_(clo_action);
 Bool   VG_(clo_cleanup);
-Bool   VG_(clo_cachesim);
 cache_t VG_(clo_I1_cache);
 cache_t VG_(clo_D1_cache);
 cache_t VG_(clo_L2_cache);
@@ -516,6 +527,7 @@ static void parse_cache_opt ( cache_t* cache, char* orig_opt, int opt_len )
    cache->line_size = (Int)VG_(atoll)(opt + i3);
 
    VG_(free)(VG_AR_PRIVATE, opt);
+
    return;
 
   bad:    
@@ -554,8 +566,7 @@ static void process_cmd_line_options ( void )
    VG_(clo_n_suppressions)   = 0;
    VG_(clo_single_step)      = False;
    VG_(clo_optimise)         = True;
-   VG_(clo_instrument)       = True;
-   VG_(clo_cachesim)         = False;
+   VG_(clo_action)           = Vg_MemCheck;
    VG_(clo_I1_cache)         = UNDEFINED_CACHE;
    VG_(clo_D1_cache)         = UNDEFINED_CACHE;
    VG_(clo_L2_cache)         = UNDEFINED_CACHE;
@@ -819,20 +830,19 @@ static void process_cmd_line_options ( void )
       else if (STREQ(argv[i], "--optimise=no"))
          VG_(clo_optimise) = False;
 
-      else if (STREQ(argv[i], "--instrument=yes"))
-         VG_(clo_instrument) = True;
-      else if (STREQ(argv[i], "--instrument=no"))
-         VG_(clo_instrument) = False;
-
       else if (STREQ(argv[i], "--cleanup=yes"))
          VG_(clo_cleanup) = True;
       else if (STREQ(argv[i], "--cleanup=no"))
          VG_(clo_cleanup) = False;
 
-      else if (STREQ(argv[i], "--cachesim=yes"))
-         VG_(clo_cachesim) = True;     
-      else if (STREQ(argv[i], "--cachesim=no"))
-         VG_(clo_cachesim) = False;
+      else if (STREQ(argv[i], "--action=none"))
+         VG_(clo_action) = Vg_None;
+      else if (STREQ(argv[i], "--action=memcheck"))
+         VG_(clo_action) = Vg_MemCheck;
+      else if (STREQ(argv[i], "--action=eraser"))
+         VG_(clo_action) = Vg_Eraser;
+      else if (STREQ(argv[i], "--action=cachesim"))
+         VG_(clo_action) = Vg_CacheSim;
 
       /* 5 is length of "--I1=" */
       else if (0 == VG_(strncmp)(argv[i], "--I1=",    5))
@@ -931,20 +941,32 @@ static void process_cmd_line_options ( void )
 
    VG_(clo_logfile_fd) = eventually_logfile_fd;
 
-   /* Don't do memory checking if simulating the cache. */
-   if (VG_(clo_cachesim)) {
-       VG_(clo_instrument) = False;
-   }
-
    if (VG_(clo_verbosity > 0)) {
-      if (VG_(clo_cachesim)) {
+      switch (VG_(clo_action)) {
+      case Vg_None:
          VG_(message)(Vg_UserMsg, 
-            "cachegrind-%s, an I1/D1/L2 cache profiler for x86 GNU/Linux.",
+            "grind-%s, a binary JIT-compiler for x86 GNU/Linux.",
             VERSION);
-      } else {
+         break;
+        
+      case Vg_MemCheck:
          VG_(message)(Vg_UserMsg, 
             "valgrind-%s, a memory error detector for x86 GNU/Linux.",
             VERSION);
+
+         break;
+
+      case Vg_Eraser:
+         VG_(message)(Vg_UserMsg, 
+            "pthgrind-%s, a data race detector for x86 GNU/Linux.",
+            VERSION);
+         break;
+
+      case Vg_CacheSim:
+         VG_(message)(Vg_UserMsg, 
+            "cachegrind-%s, an I1/D1/L2 cache profiler for x86 GNU/Linux.",
+            VERSION);
+         break;
       }
    }
 
@@ -958,11 +980,51 @@ static void process_cmd_line_options ( void )
       }
    }
 
-   if (VG_(clo_n_suppressions) == 0 && !VG_(clo_cachesim)) {
+   if (VG_(clo_n_suppressions) == 0 && VG_(needs).suppressions) {
       config_error("No error-suppression files were specified.");
    }
 }
 
+// ZZZ
+static void determine_action_dependent_behaviours ( void )
+{
+   switch (VG_(clo_action)) {
+   case Vg_None:
+       VG_(needs).debug_info              = Vg_DebugNone;
+       VG_(needs).precise_x86_instr_sizes = False;
+       VG_(needs).shadow_memory           = False;
+       VG_(needs).pthread_errors          = False;
+       VG_(needs).suppressions            = False;
+       break;
+
+   case Vg_MemCheck:
+       VG_(needs).debug_info              = Vg_DebugImprecise;
+       VG_(needs).precise_x86_instr_sizes = False;
+       VG_(needs).shadow_memory           = True;
+       VG_(needs).pthread_errors          = True;
+       VG_(needs).suppressions            = True;
+       break;
+
+   case Vg_Eraser:
+       VG_(needs).debug_info              = Vg_DebugPrecise;
+       VG_(needs).precise_x86_instr_sizes = False;
+       VG_(needs).shadow_memory           = True;
+       VG_(needs).pthread_errors          = True;
+       VG_(needs).suppressions            = True;
+       break;
+
+   case Vg_CacheSim:
+       VG_(needs).debug_info              = Vg_DebugPrecise;
+       VG_(needs).precise_x86_instr_sizes = True;
+       VG_(needs).shadow_memory           = False;
+       VG_(needs).pthread_errors          = False;
+       VG_(needs).suppressions            = False;
+       break;
+
+   default:
+      VG_(panic)("unexpected clo_action");
+   }
+}
 
 /* ---------------------------------------------------------------------
    Copying to/from m_state_static.
@@ -1079,6 +1141,7 @@ void VG_(main) ( void )
 
    /* Process Valgrind's command-line opts (from env var VG_OPTS). */
    process_cmd_line_options();
+   determine_action_dependent_behaviours();
 
    /* Hook to delay things long enough so we can get the pid and
       attach GDB in another shell. */
@@ -1105,7 +1168,8 @@ void VG_(main) ( void )
    /* Start calibration of our RDTSC-based clock. */
    VG_(start_rdtsc_calibration)();
 
-   if (VG_(clo_instrument) || VG_(clo_cachesim)) {
+   // ZZZ
+   if (Vg_None != VG_(clo_action)) {
       VGP_PUSHCC(VgpInitAudit);
       VGM_(init_memory_audit)();
       VGP_POPCC;
@@ -1133,20 +1197,36 @@ void VG_(main) ( void )
    /* Now it is safe for malloc et al in vg_clientmalloc.c to act
       instrumented-ly. */
    VG_(running_on_simd_CPU) = True;
-   if (VG_(clo_instrument)) {
-      VGM_(make_readable) ( (Addr)&VG_(running_on_simd_CPU), 1 );
-      VGM_(make_readable) ( (Addr)&VG_(clo_instrument), 1 );
-      VGM_(make_readable) ( (Addr)&VG_(clo_trace_malloc), 1 );
-      VGM_(make_readable) ( (Addr)&VG_(clo_sloppy_malloc), 1 );
-   }
 
-   if (VG_(clo_cachesim)) 
+   // ZZZ
+   switch (VG_(clo_action)) {
+   case Vg_None:    break;
+
+   case Vg_Eraser:
+      VGE_(init_eraser)();
+      VGM_(make_readable) ( (Addr)&VG_(running_on_simd_CPU), 1 );
+      VGM_(make_readable) ( (Addr)&VG_(clo_action),          1 );
+      VGM_(make_readable) ( (Addr)&VG_(clo_trace_malloc),    1 );
+      VGM_(make_readable) ( (Addr)&VG_(clo_sloppy_malloc),   1 );
+      break;
+
+   case Vg_MemCheck:  
+      VGM_(make_readable) ( (Addr)&VG_(running_on_simd_CPU), 1 );
+      VGM_(make_readable) ( (Addr)&VG_(clo_action),          1 );
+      VGM_(make_readable) ( (Addr)&VG_(clo_trace_malloc),    1 );
+      VGM_(make_readable) ( (Addr)&VG_(clo_sloppy_malloc),   1 );
+      break;
+
+   case Vg_CacheSim:
       VG_(init_cachesim)();
+      break;
+   }
 
    if (VG_(clo_verbosity) > 0)
       VG_(message)(Vg_UserMsg, "");
 
    VG_(bbs_to_go) = VG_(clo_stop_after);
+
 
    /* Run! */
    VGP_PUSHCC(VgpSched);
@@ -1161,7 +1241,10 @@ void VG_(main) ( void )
         "Warning: pthread scheduler exited due to deadlock");
    }
 
-   if (VG_(clo_instrument)) {
+   // ZZZ
+   switch (VG_(clo_action)) {
+   case Vg_None:    break;
+   case Vg_MemCheck: 
       VG_(show_all_errors)();
       VG_(clientmalloc_done)();
       if (VG_(clo_verbosity) == 1) {
@@ -1169,11 +1252,19 @@ void VG_(main) ( void )
                       "For counts of detected errors, rerun with: -v");
       }
       if (VG_(clo_leak_check)) VG_(detect_memory_leaks)();
-   }
-   VG_(running_on_simd_CPU) = False;
+      break;
 
-   if (VG_(clo_cachesim))
+   case Vg_Eraser:
+      VG_(show_all_errors)();
+      VGE_(end_eraser)();
+      break;
+
+   case Vg_CacheSim:
       VG_(do_cachesim_results)(VG_(client_argc), VG_(client_argv));
+      break;
+   }
+
+   VG_(running_on_simd_CPU) = False;
 
    VG_(do_sanity_checks)( True /*include expensive checks*/ );
 
