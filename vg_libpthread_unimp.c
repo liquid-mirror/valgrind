@@ -82,7 +82,7 @@ void __libc_current_sigrtmin ( void )  { unimp("__libc_current_sigrtmin"); }
 //void longjmp ( void )  { unimp("longjmp"); }
 //void pthread_atfork ( void )  { unimp("pthread_atfork"); }
 //void pthread_attr_destroy ( void )  { unimp("pthread_attr_destroy"); }
-void pthread_attr_getdetachstate ( void )  { unimp("pthread_attr_getdetachstate"); }
+//void pthread_attr_getdetachstate ( void )  { unimp("pthread_attr_getdetachstate"); }
 void pthread_attr_getinheritsched ( void )  { unimp("pthread_attr_getinheritsched"); }
 //void pthread_attr_getschedparam ( void )  { unimp("pthread_attr_getschedparam"); }
 //void pthread_attr_getschedpolicy ( void )  { unimp("pthread_attr_getschedpolicy"); }
