@@ -23,7 +23,7 @@ bzdist: dist
 	gunzip -c $(PACKAGE)-$(VERSION).tar.gz | bzip2 > $(PACKAGE)-$(VERSION).tar.bz2
 
 EXTRA_DIST = $(val_DATA) \
-	PATCHES_APPLIED ACKNOWLEDGEMENTS \
+	PATCHES_APPLIED ACKNOWLEDGEMENTS FAQ.txt \
 	README_KDE3_FOLKS README_PACKAGERS CURRENT_BUG_STATUS \
 	README_MISSING_SYSCALL_OR_IOCTL TODO dosyms vg_libpthread.vs \
 	valgrind.spec valgrind.spec.in
