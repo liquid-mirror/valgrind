@@ -35,6 +35,10 @@
 /*--- Renamings of frequently-used global functions.       ---*/
 /*------------------------------------------------------------*/
 
+/*------------------------------------------------------------*/
+/*--- Renamings of frequently-used global functions.       ---*/
+/*------------------------------------------------------------*/
+
 #define nameIReg  VG_(nameOfIntReg)
 #define nameISize VG_(nameOfIntSize)
 
@@ -70,6 +74,42 @@
 static UChar* emitted_code;
 static Int    emitted_code_used;
 static Int    emitted_code_size;
+
+/* Statistics about C functions called from generated code. */
+UInt VG_(ccalls)                 = 0;
+UInt VG_(ccall_reg_saves)        = 0;
+UInt VG_(ccall_args)             = 0;
+UInt VG_(ccall_arg_setup_instrs) = 0;
+UInt VG_(ccall_stack_clears)     = 0;
+UInt VG_(ccall_retvals)          = 0;
+UInt VG_(ccall_retval_movs)      = 0;
+
+void VG_(print_ccall_stats)(void)
+{
+   VG_(message)(Vg_DebugMsg,
+                "   ccalls: %u C calls, %u%% saves+restores avoided"
+                " (%d bytes)",
+                VG_(ccalls), 
+                100-(UInt)(VG_(ccall_reg_saves)/(double)(VG_(ccalls)*3)*100),
+                ((VG_(ccalls)*3) - VG_(ccall_reg_saves))*2);
+   VG_(message)(Vg_DebugMsg,
+                "           %u args, avg 0.%d setup instrs each (%d bytes)", 
+                VG_(ccall_args), 
+               (UInt)(VG_(ccall_arg_setup_instrs)/(double)VG_(ccall_args)*100),
+               (VG_(ccall_args) - VG_(ccall_arg_setup_instrs))*2);
+   VG_(message)(Vg_DebugMsg,
+                "           %d%% clear the stack (%d bytes)", 
+               (UInt)(VG_(ccall_stack_clears)/(double)VG_(ccalls)*100),
+               (VG_(ccalls) - VG_(ccall_stack_clears))*3);
+   VG_(message)(Vg_DebugMsg,
+                "           %u retvals, %u%% of reg-reg movs avoided (%d bytes)",
+                VG_(ccall_retvals),
+                ( VG_(ccall_retvals) == 0 
+                ? 100
+                : 100-(UInt)(VG_(ccall_retval_movs) / 
+                             (double)VG_(ccall_retvals)*100)),
+                (VG_(ccall_retvals)-VG_(ccall_retval_movs))*2);
+}
 
 static void expandEmittedCode ( void )
 {
@@ -1059,18 +1099,28 @@ void VG_(synth_call) ( Bool ensure_shortform, Int word_offset )
 void maybe_emit_movl_litOrReg_reg ( UInt litOrReg, Tag tag, UInt reg )
 {
    if (RealReg == tag) {
-      if (litOrReg != reg) VG_(emit_movv_reg_reg) ( 4, litOrReg, reg );
-   } else if (Literal == tag) 
+      if (litOrReg != reg) {
+         VG_(emit_movv_reg_reg) ( 4, litOrReg, reg );
+         VG_(ccall_arg_setup_instrs)++;
+      }
+   } else if (Literal == tag) {
       VG_(emit_movv_lit_reg) ( 4, litOrReg, reg );
+      VG_(ccall_arg_setup_instrs)++;
+   }
    else
       VG_(panic)("emit_movl_litOrReg_reg: unexpected tag");
 }
 
 /* Synthesise a call to a C function `fn' (which must be registered in
-   baseBlock) doing all the reg saving and arg handling work. */
+   baseBlock) doing all the reg saving and arg handling work.
+ 
+   WARNING:  a UInstr should *not* be translated with synth_ccall followed
+   by some other x86 assembly code;  this will confuse
+   vg_ccall_reg_save_analysis() and everything will fall over.
+ */
 void VG_(synth_ccall) ( Addr fn, Int argc, Int regparms_n, UInt argv[],
                         Tag tagv[], Int ret_reg,
-                        Bool eax_dies, Bool ecx_dies, Bool edx_dies )
+                        Bool save_eax, Bool save_ecx, Bool save_edx )
 {
    Int i;
    Int stack_used = 0;
@@ -1082,25 +1132,23 @@ void VG_(synth_ccall) ( Addr fn, Int argc, Int regparms_n, UInt argv[],
       VG_(panic)("((regparms(3)))");
    }
 
-   // SSS: temp while liveness analysis not done
-   if (R_EAX == ret_reg) eax_dies = True;
-   if (R_ECX == ret_reg) ecx_dies = True;
-   if (R_EDX == ret_reg) edx_dies = True;
-   
-   /* Save live caller-save regs */
-   if (! eax_dies) VG_(emit_pushv_reg) ( 4, R_EAX ); 
-   if (! ecx_dies) VG_(emit_pushv_reg) ( 4, R_ECX ); 
-   if (! edx_dies) VG_(emit_pushv_reg) ( 4, R_EDX ); 
+   VG_(ccalls)++;
+
+   /* Save caller-save regs as required */
+   if (save_eax) { VG_(emit_pushv_reg) ( 4, R_EAX ); VG_(ccall_reg_saves)++; }
+   if (save_ecx) { VG_(emit_pushv_reg) ( 4, R_ECX ); VG_(ccall_reg_saves)++; }
+   if (save_edx) { VG_(emit_pushv_reg) ( 4, R_EDX ); VG_(ccall_reg_saves)++; }
 
    /* Args are passed in two groups: (a) via stack (b) via regs.  regparms_n
       is the number of args passed in regs (maximum 3 for GCC on x86). */
+
+   VG_(ccall_args) += argc;
    
    /* First push stack args (RealRegs or Literals) in reverse order. */
    for (i = argc-1; i >= regparms_n; i--) {
       switch (tagv[i]) {
       case RealReg:
          VG_(emit_pushv_reg) ( 4, argv[i] );
-         stack_used += 4;
          break;
       case Literal:
          /* Use short form of pushl if possible. */
@@ -1108,18 +1156,19 @@ void VG_(synth_ccall) ( Addr fn, Int argc, Int regparms_n, UInt argv[],
             VG_(emit_pushl_lit8) ( VG_(extend_s_8to32)(argv[i]) );
          else
             VG_(emit_pushl_lit32)( argv[i] );
-         stack_used += 4;
          break;
       default:
          VG_(printf)("tag=%d\n", tagv[i]);
          VG_(panic)("VG_(synth_ccall): bad tag");
       }
+      stack_used += 4;
+      VG_(ccall_arg_setup_instrs)++;
    }
 
    /* Then setup args in registers (arg[123] --> %e[adc]x;  note order!).
       If moving values between registers, be careful not to clobber any on
       the way.  And note that we don't have any spare registers by this
-      stage.  Happily we can use xchgl for this.
+      stage.  Happily we can use xchgl to swap registers.
    */
    switch (regparms_n) {
 
@@ -1147,8 +1196,10 @@ void VG_(synth_ccall) ( Addr fn, Int argc, Int regparms_n, UInt argv[],
       if (RealReg == tagv[0] && RealReg == tagv[1] &&
           R_EDX   == argv[0] && R_EAX   == argv[1]) {
          VG_(emit_swapl_reg_EAX) ( R_EDX );
+         VG_(ccall_arg_setup_instrs)++;
       } else if (RealReg == tagv[1] && R_EAX == argv[1]) {
          VG_(emit_movv_reg_reg) ( 4, R_EAX, R_EDX );
+         VG_(ccall_arg_setup_instrs)++;
          maybe_emit_movl_litOrReg_reg ( argv[0], tagv[0], R_EAX );
       } else {
          maybe_emit_movl_litOrReg_reg ( argv[0], tagv[0], R_EAX );
@@ -1171,18 +1222,25 @@ void VG_(synth_ccall) ( Addr fn, Int argc, Int regparms_n, UInt argv[],
    /* Call the function */
    VG_(synth_call) ( False, VG_(helper_offset) ( fn ) );
 
-   /* Clear args from stack */
-   if (0 != stack_used) VG_(emit_add_lit_to_esp) ( stack_used );
+   /* Clear any args from stack */
+   if (0 != stack_used) {
+      VG_(emit_add_lit_to_esp) ( stack_used );
+      VG_(ccall_stack_clears)++;
+   }
 
    /* Move return value into ret_reg if necessary and not already there */
-   if (INVALID_REALREG != ret_reg)
-      if (R_EAX != ret_reg)
+   if (INVALID_REALREG != ret_reg) {
+      VG_(ccall_retvals)++;
+      if (R_EAX != ret_reg) {
          VG_(emit_movv_reg_reg) ( 4, R_EAX, ret_reg );
+         VG_(ccall_retval_movs)++;
+      }
+   }
 
-   /* Restore live caller-save regs */
-   if (! edx_dies) VG_(emit_popv_reg) ( 4, R_EDX ); 
-   if (! ecx_dies) VG_(emit_popv_reg) ( 4, R_ECX ); 
-   if (! eax_dies) VG_(emit_popv_reg) ( 4, R_EAX ); 
+   /* Restore live caller-save regs as required */
+   if (save_edx) VG_(emit_popv_reg) ( 4, R_EDX ); 
+   if (save_ecx) VG_(emit_popv_reg) ( 4, R_ECX ); 
+   if (save_eax) VG_(emit_popv_reg) ( 4, R_EAX ); 
 }
 
 static void load_ebp_from_JmpKind ( JmpKind jmpkind )
@@ -1727,14 +1785,14 @@ static void synth_WIDEN_signed ( Int sz_src, Int sz_dst, Int reg )
 }
 
 
-static void synth_handle_esp_assignment ( Int reg, Bool eax_dies,
-                                          Bool ecx_dies, Bool edx_dies )
+static void synth_handle_esp_assignment ( Int i, Int reg, Bool save_eax,
+                                          Bool save_ecx, Bool save_edx )
 {
    UInt argv[] = { reg };
    Tag  tagv[] = { RealReg };
 
    VG_(synth_ccall) ( (Addr) VGM_(handle_esp_assignment), 1, 1, argv, tagv, 
-                      INVALID_REALREG, eax_dies, ecx_dies, edx_dies );
+                      INVALID_REALREG, save_eax, save_ecx, save_edx );
 }
 
 
@@ -1843,15 +1901,17 @@ static void emitUInstr ( Int i, UInstr* u )
                  VG_(track_events).die_mem_stack_aligned ||
                  VG_(track_events).post_mem_write))
          {
-            synth_handle_esp_assignment ( u->val1, u->eax_dies, u->ecx_dies,
-                                          u->edx_dies );
+            synth_handle_esp_assignment ( i, u->val1, u->save_eax, u->save_ecx,
+                                          u->save_edx );
 	 }
-         synth_mov_reg_offregmem ( 
-            u->size, 
-            u->val1, 
-            spillOrArchOffset( u->size, u->tag2, u->val2 ),
-            R_EBP
-         );
+         else {
+            synth_mov_reg_offregmem ( 
+               u->size, 
+               u->val1, 
+               spillOrArchOffset( u->size, u->tag2, u->val2 ),
+               R_EBP
+            );
+         }
          break;
       }
 
@@ -2053,7 +2113,7 @@ static void emitUInstr ( Int i, UInstr* u )
          vg_assert(u->size == 0);
 
          VG_(synth_ccall) ( u->lit32, u->argc, u->regparms_n, argv, tagv,
-                            ret_reg, u->eax_dies, u->ecx_dies, u->edx_dies );
+                            ret_reg, u->save_eax, u->save_ecx, u->save_edx );
          break;
       }
       case CLEAR:
