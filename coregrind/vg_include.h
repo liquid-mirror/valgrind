@@ -868,10 +868,12 @@ extern void VG_(vprintf) ( void(*send)(Char),
 
 extern Bool VG_(isspace) ( Char c );
 extern Bool VG_(isdigit) ( Char c );
+extern Bool VG_(isxdigit) ( Char c );
 
 extern Int VG_(strlen) ( const Char* str );
 
 extern Long VG_(atoll) ( Char* str );
+extern Long VG_(atoll16) ( Char* str );
 extern Long VG_(atoll36) ( Char* str );
 
 extern Char* VG_(strcat) ( Char* dest, const Char* src );
@@ -1332,6 +1334,8 @@ extern Bool VG_(eq_ExeContext_all) ( ExeContext* e1, ExeContext* e2 );
 /* ---------------------------------------------------------------------
    Exports of vg_errcontext.c.
    ------------------------------------------------------------------ */
+
+extern Bool VG_(getLine) ( Int fd, Char* buf, Int nBuf );
 
 extern void VG_(load_suppressions)    ( void );
 extern void VG_(show_all_errors)      ( void );
@@ -1851,12 +1855,14 @@ extern void VG_(cachesim_notify_discard) ( TTEntry* tte );
 extern UCodeBlock* VG_(diduce_instrument) ( UCodeBlock* cb_in, 
                                             Addr orig_addr );
 
-typedef struct _invariant invariant;
+typedef struct _invariant1 invariant1;
+typedef struct _invariant2 invariant2;
 
 extern void VG_(init_diduce)      ( void );
 extern void VG_(do_diduce_results)( Int client_argc, Char** client_argv );
 
-extern void VG_(diduce_log_instr)    ( invariant* inv, Addr data_addr );
+extern void VG_(diduce_log_instr1)( invariant1* inv, UInt );
+extern void VG_(diduce_log_instr2)( invariant2* inv, UInt, UInt );
 
 extern void VG_(diduce_notify_discard) ( TTEntry* tte );
 
@@ -2000,7 +2006,8 @@ extern Int VGOFF_(fpu_read_check);        /* :: Addr -> Int -> void */
 extern Int VGOFF_(cachesim_log_non_mem_instr);
 extern Int VGOFF_(cachesim_log_mem_instr);
 
-extern Int VGOFF_(diduce_log_instr);
+extern Int VGOFF_(diduce_log_instr1);
+extern Int VGOFF_(diduce_log_instr2);
 
 #endif /* ndef __VG_INCLUDE_H */
 
