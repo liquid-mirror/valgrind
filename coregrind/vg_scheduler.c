@@ -1328,6 +1328,8 @@ VgSchedReturnCode VG_(scheduler) ( void )
       if (0)
          VG_(printf)("SCHED: tid %d\n", tid);
 
+      VG_TRACK( thread_run, tid );
+
       /* Figure out how many bbs to ask vg_run_innerloop to do.  Note
          that it decrements the counter before testing it for zero, so
          that if VG_(dispatch_ctr) is set to N you get at most N-1
