@@ -2364,10 +2364,6 @@ void SK_(pre_clo_init)(VgNeeds* needs, VgTrackEvents* track)
 
    init_shadow_memory();
 
-   /* Mark global variables touched from generated code */
-   VG_(track_events).post_mem_write ( (Addr)&VG_(clo_trace_malloc),  1 );
-   VG_(track_events).post_mem_write ( (Addr)&VG_(clo_sloppy_malloc), 1 );
-
    /* Set up the shadow regs with reasonable (sic) values.  All regs are
       claimed to have valid values.
    */
