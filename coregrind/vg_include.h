@@ -212,6 +212,36 @@ typedef struct {
 
 
 /* ---------------------------------------------------------------------
+   Settings derived from the chosen main task (ZZZ)
+   ------------------------------------------------------------------ */
+
+typedef 
+   enum { Vg_None, Vg_MemCheck, Vg_Eraser, Vg_CacheSim }
+   VgAction;
+
+typedef
+   enum { Vg_DebugNone, Vg_DebugImprecise, Vg_DebugPrecise }
+   VgDebugInfo;
+
+typedef
+   struct {
+      /* Kind of debug info needed */
+      VgDebugInfo debug_info;
+      /* Needed if working at x86 instr level rather than UCode level, eg. 
+       * for cache simulation where we have to update state for every x86
+       * instruction */
+      Bool precise_x86_instr_sizes;
+      /* Is shadow memory required? */
+      Bool shadow_memory;
+      /* Report pthread errors? */
+      Bool pthread_errors;
+      /* Want to support error suppressions? */
+      Bool suppressions;
+   } VgNeeds;
+
+extern VgNeeds VG_(needs);
+   
+/* ---------------------------------------------------------------------
    Command-line-settable options
    ------------------------------------------------------------------ */
 
@@ -266,12 +296,10 @@ extern Char* VG_(clo_suppressions)[VG_CLO_MAX_SFILES];
 extern Bool  VG_(clo_single_step);
 /* Code improvement?  default: YES */
 extern Bool  VG_(clo_optimise);
-/* Memory-check instrumentation?  default: YES */
-extern Bool  VG_(clo_instrument);
+/* Action being performed.  default: Vg_MemCheck */
+extern VgAction VG_(clo_action);
 /* DEBUG: clean up instrumented code?  default: YES */
 extern Bool  VG_(clo_cleanup);
-/* Cache simulation instrumentation?  default: NO */
-extern Bool  VG_(clo_cachesim);
 /* I1 cache configuration.  default: undefined */
 extern cache_t VG_(clo_I1_cache);
 /* D1 cache configuration.  default: undefined */
@@ -752,6 +780,7 @@ extern ThreadState* VG_(get_current_thread_state) ( void );
 
 /* Similarly ... */
 extern ThreadId VG_(get_current_tid) ( void );
+extern ThreadId VG_(get_current_tid_1_if_root) ( void );
 
 /* Which thread is this address in the stack of, if any?  Used for
    error message generation. */
@@ -1066,6 +1095,10 @@ typedef
       PUSH, POP, CLEAR, /* Add/remove/zap args for helpers. */
       CALLM,  /* call to a machine-code helper */
 
+      /* for calling C functions -- CCALL_M_N passes M arguments and returns N
+       * (0 or 1) return values */
+      CCALL_1_0, CCALL_2_0,
+
       /* Hack for translating string (REP-) insns.  Jump to literal if
          TempReg/RealReg is zero. */
       JIFZ,
@@ -1375,6 +1408,7 @@ extern void VG_(record_param_err) ( ThreadState* tst,
 extern void VG_(record_user_err) ( ThreadState* tst,
                                    Addr a, Bool isWriteLack );
 extern void VG_(record_pthread_err) ( ThreadId tid, Char* msg );
+extern void VG_(record_eraser_err) ( Addr a, ThreadId tid, Bool is_write );
 
 
 
@@ -1681,6 +1715,42 @@ extern Bool VG_(is_just_below_ESP)( Addr esp, Addr aa );
 #define VGM_WORD_VALID     0
 #define VGM_WORD_INVALID   0xFFFFFFFF
 
+/* ---------------------------------------------------------------------
+   Exports of vg_eraser.c
+   ------------------------------------------------------------------ */
+
+typedef enum 
+   { Vge_VirginInit, Vge_NonVirginInit, Vge_SegmentInit } 
+   VgeInitStatus;
+
+void VGE_(init_eraser) ( void );
+void VGE_(end_eraser ) ( void );
+
+void VGE_(eraser_mem_read)  ( Addr a, UInt data_size );
+void VGE_(eraser_mem_write) ( Addr a, UInt data_size );
+
+UCodeBlock* VG_(eraser_instrument) ( UCodeBlock* cb_in );
+
+// XXX: using void* to avoid importing pthread.h for pthread_mutex_t, yuck
+void VGE_(thread_does_lock)  ( ThreadId tid, void* mutex );
+void VGE_(thread_does_unlock)( ThreadId tid, void* mutex );
+void VGE_(thread_dies)       ( void );
+
+void VGE_(init_primary_and_distinguished_secondary_maps)(void);
+Bool VGE_(first_and_last_secondaries_look_plausible) ( void );
+
+void VGE_(check_distinguished_secondary) ( void );
+
+/* Set permissions for an address range.  Not speed-critical. */
+extern void VGE_(make_access) ( Addr a, UInt len /* in bytes */, 
+                                UInt init_status );
+extern void VGE_(make_aligned_word_WRITABLE) ( Addr a );
+extern Bool VGE_(check_readable) ( Addr a, UInt len, Addr* bad_addr );
+extern void VGE_(copy_address_range_states) ( Addr src, Addr dst,
+                                              UInt len );
+
+//extern void VGE_(init_noaccess_sword) ( Addr a );
+
 
 /* ---------------------------------------------------------------------
    Exports of vg_syscall_mem.c
@@ -1869,7 +1939,6 @@ extern void VG_(cachesim_log_mem_instr)    ( idCC* cc, Addr data_addr );
 
 extern void VG_(cachesim_notify_discard) ( TTEntry* tte );
 
-
 /* ---------------------------------------------------------------------
    The state of the simulated CPU.
    ------------------------------------------------------------------ */
@@ -2008,6 +2077,9 @@ extern Int VGOFF_(fpu_read_check);        /* :: Addr -> Int -> void */
 
 extern Int VGOFF_(cachesim_log_non_mem_instr);
 extern Int VGOFF_(cachesim_log_mem_instr);
+
+extern Int VGOFF_(eraser_mem_read);
+extern Int VGOFF_(eraser_mem_write);
 
 #endif /* ndef __VG_INCLUDE_H */
 
