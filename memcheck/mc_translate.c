@@ -1081,18 +1081,30 @@ static UCodeBlock* memcheck_instrument ( UCodeBlock* cb_in )
             break;
          }
 
-	 /* SSE ins referencing registers */
+	 /* SSE ins referencing scalar integer registers */
 	 case SSE3g_RegWr:
          case SSE3e_RegRd:
          case SSE3e_RegWr: 
-            sk_assert(u_in->size == 4 || u_in->size == 8 || u_in->size == 16);
+         case SSE3g1_RegWr:
+         case SSE3e1_RegRd:
             sk_assert(u_in->tag3 == TempReg);
 
-            /* is it a read ? Test for V */
-            if( u_in->opcode == SSE3e_RegRd )
-	       uInstr1(cb, TESTV, 4, TempReg, SHADOW(u_in->val3));
+            if (u_in->opcode == SSE3e1_RegRd) {
+               sk_assert(u_in->size == 2);
+            } else {
+               sk_assert(u_in->size == 4);
+            }
 
-	    uInstr1(cb, SETV,  4, TempReg, SHADOW(u_in->val3));
+            /* Is it a read ?  Better check the V bits right now. */
+            if ( u_in->opcode == SSE3e_RegRd
+                 || u_in->opcode == SSE3e1_RegRd )
+	       uInstr1(cb, TESTV, u_in->size, 
+                           TempReg, SHADOW(u_in->val3));
+
+	    /* And for both read and write, set the register to be
+	       defined. */
+	    uInstr1(cb, SETV, u_in->size, 
+                        TempReg, SHADOW(u_in->val3));
 
             VG_(copy_UInstr)(cb, u_in);
             break;
@@ -1101,14 +1113,18 @@ static UCodeBlock* memcheck_instrument ( UCodeBlock* cb_in )
          case SSE3a_MemRd:
          case SSE3a_MemWr:
          case SSE2a_MemWr:
-         case SSE2a_MemRd: { 
+         case SSE2a_MemRd:
+         case SSE3a1_MemRd: { 
             Bool is_load;
             Int t_size;
 
-            sk_assert(u_in->size == 4 || u_in->size == 8 || u_in->size == 16);
+            sk_assert(u_in->size == 4 
+                      || u_in->size == 8 || u_in->size == 16);
 
             t_size = INVALID_TEMPREG;
-            is_load = u_in->opcode==SSE2a_MemRd || u_in->opcode==SSE3a_MemRd;
+            is_load = u_in->opcode==SSE2a_MemRd 
+                      || u_in->opcode==SSE3a_MemRd
+                      || u_in->opcode==SSE3a1_MemRd;
 
             sk_assert(u_in->tag3 == TempReg);
 
@@ -1125,6 +1141,7 @@ static UCodeBlock* memcheck_instrument ( UCodeBlock* cb_in )
             VG_(copy_UInstr)(cb, u_in);
             break;
          }
+
 	 case SSE3ag_MemRd_RegWr:
 	 {
 	    Int t_size;

@@ -405,6 +405,7 @@ Bool VG_(saneUInstr) ( Bool beforeRA, Bool beforeLiveness, UInstr* u )
 #  define LIT8 (((u->lit32) & 0xFFFFFF00) == 0)
 #  define LIT1 (!(LIT0))
 #  define LITm (u->tag1 == Literal ? True : LIT0 )
+#  define SZ16 (u->size == 16)
 #  define SZ8  (u->size == 8)
 #  define SZ4  (u->size == 4)
 #  define SZ2  (u->size == 2)
@@ -566,10 +567,11 @@ Bool VG_(saneUInstr) ( Bool beforeRA, Bool beforeLiveness, UInstr* u )
    case SSE3a_MemRd:  return LIT0 && SZsse && CCa  && Ls1 && Ls2 && TR3 && XOTHER;
    case SSE3e_RegRd:  return LIT0 && SZ4   && CC0  && Ls1 && Ls2 && TR3 && XOTHER;
    case SSE3e_RegWr:  return LIT0 && SZ4   && CC0  && Ls1 && Ls2 && TR3 && XOTHER;
+   case SSE3a1_MemRd: return LIT8 && SZ16  && CC0  && Ls1 && Ls2 && TR3 && XOTHER;
    case SSE3g_RegWr:  return LIT0 && SZ4   && CC0  && Ls1 && Ls2 && TR3 && XOTHER;
    case SSE3g1_RegWr: return LIT8 && SZ4   && CC0  && Ls1 && Ls2 && TR3 && XOTHER;
    case SSE3e1_RegRd: return LIT8 && SZ2   && CC0  && Ls1 && Ls2 && TR3 && XOTHER;
-   case SSE3:         return LIT0 && SZ0   && CC0  && Ls1 && Ls2 && N3  && XOTHER;
+   case SSE3:         return LIT0 && SZ0   && CCa  && Ls1 && Ls2 && N3  && XOTHER;
    case SSE4:         return LIT0 && SZ0   && CCa  && Ls1 && Ls2 && N3  && XOTHER;
    case SSE5:         return LIT0 && SZ0   && CC0  && Ls1 && Ls2 && Ls3 && XOTHER;
    case SSE3ag_MemRd_RegWr:
@@ -588,6 +590,7 @@ Bool VG_(saneUInstr) ( Bool beforeRA, Bool beforeLiveness, UInstr* u )
 #  undef LIT1
 #  undef LIT8
 #  undef LITm
+#  undef SZ16
 #  undef SZ8
 #  undef SZ4
 #  undef SZ2
@@ -892,6 +895,7 @@ Char* VG_(name_UOpcode) ( Bool upper, Opcode opc )
       case SSE3e_RegRd: return "SSE3e_RRd";
       case SSE3e_RegWr: return "SSE3e_RWr";
       case SSE3g_RegWr: return "SSE3g_RWr";
+      case SSE3a1_MemRd: return "SSE3a1_MRd";
       case SSE3g1_RegWr: return "SSE3g1_RWr";
       case SSE3e1_RegRd: return "SSE3e1_RRd";
       case SSE3:        return "SSE3";
@@ -1077,6 +1081,7 @@ void pp_UInstrWorker ( Int instrNo, UInstr* u, Bool ppRegsLiveness )
 
       case SSE3g1_RegWr:
       case SSE3e1_RegRd:
+      case SSE3a1_MemRd:
          VG_(printf)("0x%x:0x%x:0x%x:0x%x:0x%x",
                      (u->val1 >> 8) & 0xFF, u->val1 & 0xFF, 
                      (u->val2 >> 8) & 0xFF, u->val2 & 0xFF,
@@ -1256,6 +1261,7 @@ Int VG_(get_reg_usage) ( UInstr* u, Tag tag, Int* regs, Bool* isWrites )
       case LEA1: RD(1); WR(2); break;
       case LEA2: RD(1); RD(2); WR(3); break;
 
+      case SSE3a1_MemRd:
       case SSE2a1_MemRd:
       case SSE3e_RegRd:
       case SSE3a_MemWr:
@@ -1426,7 +1432,7 @@ Int maybe_uinstrReadsArchReg ( UInstr* u )
       case MMX2_MemRd: case MMX2_MemWr:
       case MMX2_ERegRd: case MMX2_ERegWr:
       case SSE2a_MemWr: case SSE2a_MemRd: case SSE2a1_MemRd:
-      case SSE3a_MemWr: case SSE3a_MemRd:
+      case SSE3a_MemWr: case SSE3a_MemRd: case SSE3a1_MemRd:
       case SSE3e_RegRd: case SSE3g_RegWr: case SSE3e_RegWr:
       case SSE3g1_RegWr: case SSE3e1_RegRd:
       case SSE4: case SSE3: case SSE5: case SSE3ag_MemRd_RegWr:
