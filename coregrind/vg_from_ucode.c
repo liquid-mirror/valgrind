@@ -1558,7 +1558,6 @@ static void synth_cmovl_reg_reg ( Condcode cond, Int src, Int dst )
 
 /* Return the byte offset from %ebp (ie, into baseBlock)
    for the specified ArchReg or SpillNo. */
-
 static Int spillOrArchOffset ( Int size, Tag tag, UInt value )
 {
    if (tag == SpillNo) {
@@ -1589,11 +1588,34 @@ static Int spillOrArchOffset ( Int size, Tag tag, UInt value )
    VG_(panic)("spillOrArchOffset");
 }
 
-
 static Int eflagsOffset ( void )
 {
    return 4 * VGOFF_(m_eflags);
 }
+
+
+/* Return the byte offset from %ebp (ie, into baseBlock)
+   for the specified shadow register */
+Int VG_(shadowRegOffset) ( Int arch )
+{
+   switch (arch) {
+      case R_EAX: return 4 * VGOFF_(sh_eax);
+      case R_ECX: return 4 * VGOFF_(sh_ecx);
+      case R_EDX: return 4 * VGOFF_(sh_edx);
+      case R_EBX: return 4 * VGOFF_(sh_ebx);
+      case R_ESP: return 4 * VGOFF_(sh_esp);
+      case R_EBP: return 4 * VGOFF_(sh_ebp);
+      case R_ESI: return 4 * VGOFF_(sh_esi);
+      case R_EDI: return 4 * VGOFF_(sh_edi);
+      default:    VG_(panic)( "shadowOffset");
+   }
+}
+
+Int VG_(shadowFlagsOffset) ( void )
+{
+   return 4 * VGOFF_(sh_eflags);
+}
+
 
 
 static void synth_WIDEN_signed ( Int sz_src, Int sz_dst, Int reg )
@@ -1724,8 +1746,11 @@ static void emitUInstr ( Int i, UInstr* u )
          if (u->tag2 == ArchReg 
              && u->val2 == R_ESP
              && u->size == 4
-             && (VG_(track_events).new_mem_stack_aligned || 
-                 VG_(track_events).die_mem_stack_aligned)) 
+             && (VG_(track_events).new_mem_stack         || 
+                 VG_(track_events).new_mem_stack_aligned ||
+                 VG_(track_events).die_mem_stack         ||
+                 VG_(track_events).die_mem_stack_aligned ||
+                 VG_(track_events).post_mem_write))
          {
             synth_handle_esp_assignment ( u->val1 );
 	 }
@@ -2021,7 +2046,7 @@ UChar* VG_(emit_code) ( UCodeBlock* cb, Int* nbytes )
    for (i = 0; i < cb->used; i++) {
       if (cb->instrs[i].opcode != NOP) {
          UInstr* u = &cb->instrs[i];
-#        if 1
+
          /* Check on the sanity of this insn. */
          Bool sane = VG_(saneUInstr)( False, u );
          if (!sane) {
@@ -2029,39 +2054,6 @@ UChar* VG_(emit_code) ( UCodeBlock* cb, Int* nbytes )
             VG_(ppUInstr)( i, u );
 	 }
          vg_assert(sane);
-#        endif
-#        if 0
-         /* Pass args to TAG1/TAG2 to vg_DebugFn for sanity checking.
-            Requires a suitable definition of vg_DebugFn. */
-	 if (u->opcode == TAG1) {
-            UInstr t1;
-            vg_assert(u->tag1 == RealReg);
-            VG_(emptyUInstr)( &t1 );
-            t1.opcode = TAG2;
-            t1.tag1 = t1.tag2 = RealReg;
-            t1.val1 = t1.val2 = u->val1;
-            t1.tag3 = Lit16;
-            t1.val3 = VgT_DebugFn;
-            emitUInstr( i, &t1 );
-	 }
-	 if (u->opcode == TAG2) {
-            UInstr t1;
-            vg_assert(u->tag1 == RealReg);
-            vg_assert(u->tag2 == RealReg);
-            VG_(emptyUInstr)( &t1 );
-            t1.opcode = TAG2;
-            t1.tag1 = t1.tag2 = RealReg;
-            t1.val1 = t1.val2 = u->val1;
-            t1.tag3 = Lit16;
-            t1.val3 = VgT_DebugFn;
-            if (u->val3 == VgT_UifU1 || u->val3 == VgT_UifU2 
-                || u->val3 == VgT_UifU4 || u->val3 == VgT_DifD1 
-                || u->val3 == VgT_DifD2 || u->val3 == VgT_DifD4)
-               emitUInstr( i, &t1 );
-            t1.val1 = t1.val2 = u->val2;
-            emitUInstr( i, &t1 );
-	 }
-#        endif
          emitUInstr( i, u );
       }
    }
