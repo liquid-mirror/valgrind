@@ -67,7 +67,7 @@ static void add_exe_segment_to_list( a, len )
    ExeSeg* es2;
    
    /* Prepend it */
-   es        = (ExeSeg*)VG_(malloc)(VG_AR_SYMTAB, sizeof(ExeSeg));
+   es        = (ExeSeg*)VG_(arena_malloc)(VG_AR_SYMTAB, sizeof(ExeSeg));
    es->start = a;
    es->size  = len;
    es->next  = exeSegsHead;
@@ -111,7 +111,7 @@ static Bool remove_if_exe_segment_from_list( Addr a, UInt len )
 
    *prev_next_ptr = curr->next;
 
-   VG_(free)(VG_AR_SYMTAB, curr);
+   VG_(arena_free)(VG_AR_SYMTAB, curr);
    return True;
 }
 
