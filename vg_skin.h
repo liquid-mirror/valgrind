@@ -556,16 +556,20 @@ typedef
       Bool    signed_widen:1;  /* signed or unsigned WIDEN ? */
       JmpKind jmpkind:3;       /* additional properties of unconditional JMP */
 
-      /* Additional properties for UInstrs that call C functions */
+      /* Additional properties for UInstrs that call C functions:  
+       *   - CCALL
+       *   - PUT (when %ESP is the target)
+       *   - possibly skin-specific UInstrs
+       */
       UChar   argc:2;          /* Number of args, max 3 */
       UChar   regparms_n:2;    /* Number of args passed in registers */
       Bool    has_ret_val:1;   /* Function has return value? */
-      Bool    eax_dies:1;      /* Is %eax dead after call? */
-      Bool    ecx_dies:1;      /* Is %ecx dead after call? */
-      Bool    edx_dies:1;      /* Is %edx dead after call? */
+      Bool    save_eax:1;      /* Save/restore %eax across C call? */
+      Bool    save_ecx:1;      /* Save/restore %ecx across C call? */ 
+      Bool    save_edx:1;      /* Save/restore %edx across C call? */ 
       UChar   extra5a;         /* Spare 8-bit field, free to be used by skins
                                   that use extended UCode */
-}
+   }
    UInstr;
 
 
@@ -584,19 +588,18 @@ typedef
 /*=== Instrumenting UCode                                          ===*/
 /*====================================================================*/
 
-/* A structure for communicating temp uses (and for indicating
-   temp->real register mappings for patchUInstr in core). */
+/* A structure for communicating TempReg and RealReg uses of UInstrs. */
 typedef
    struct {
-      Int   realNo;
-      Int   tempNo;
+      Int   num;
       Bool  isWrite;
    }
-   TempUse;
+   RegUse;
 
-/* Find what this instruction does to the temps.  Useful for
-   optimisation/analysis passes */
-extern Int   VG_(getTempUsage) ( UInstr* u, TempUse* arr );
+/* Find what this instruction does to its regs.  Tag indicates whether we're
+ * considering TempRegs (pre-reg-alloc) or RealRegs (post-reg-alloc).
+ * Useful for analysis/optimisation passes. */
+extern Int  VG_(getRegUsage) ( UInstr* u, Tag tag, RegUse* arr );
 
 
 /* ------------------------------------------------------------------ */
@@ -670,7 +673,7 @@ extern void  VG_(ppUInstr)        ( Int instrNo, UInstr* u );
 extern Char* VG_(nameUOpcode)     ( Bool upper, Opcode opc );
 extern void  VG_(ppUOperand)      ( UInstr* u, Int operandNo, 
                                     Int sz, Bool parens );
-
+extern void  VG_(ppSaveEaxEcxEdx) ( UInstr* u );
 
 /* ------------------------------------------------------------------ */
 /* Allocating/freeing basic blocks of UCode */
@@ -734,8 +737,12 @@ void VG_(synth_call) ( Bool ensure_shortform, Int word_offset );
 
 /* This one is good for calling C functions -- saves caller save regs,
    pushes args, calls, clears the stack, restores caller save regs.
-   Acceptable tags are RealReg and Literal.  `fn' must be registered
-   in the baseBlock first.
+   `fn' must be registered in the baseBlock first.  Acceptable tags are
+   RealReg and Literal.  
+
+   WARNING:  a UInstr should *not* be translated with synth_ccall followed
+   by some other x86 assembly code;  this will confuse
+   vg_ccall_reg_save_analysis() and everything will fall over.
 */
 void VG_(synth_ccall) ( Addr fn, Int argc, Int regparms_n, UInt argv[],
                         Tag tagv[], Int ret_reg, 
@@ -1254,11 +1261,27 @@ extern UInt SKN_(handle_client_request) ( ThreadState* tst, UInt* arg_block );
 /* ------------------------------------------------------------------ */
 /* VG_(needs).extends_UCode */
 
+/* Used in VG_(getExtRegUsage)() */
+#  define VG_UINSTR_READS_REG(ono)              \
+   { if (mycat(u->tag,ono) == tag)              \
+        { arr[n].num     = mycat(u->val,ono);   \
+          arr[n].isWrite = False;               \
+          n++;                                  \
+        }                                       \
+   }
+#  define VG_UINSTR_WRITES_REG(ono)             \
+   {  if (mycat(u->tag,ono) == tag)             \
+         { arr[n].num     = mycat(u->val,ono);  \
+           arr[n].isWrite = True;               \
+           n++;                                 \
+         }                                      \
+   }
+
+extern Int   SKN_(getExtRegUsage) ( UInstr* u, Tag tag, RegUse* arr );
 extern void  SKN_(emitExtUInstr)  ( UInstr* u );
 extern Bool  SKN_(saneExtUInstr)  ( Bool beforeRA, UInstr* u );
 extern Char* SKN_(nameExtUOpcode) ( Opcode opc );
 extern void  SKN_(ppExtUInstr)    ( UInstr* u );
-extern Int   SKN_(getExtTempUsage)( UInstr* u, TempUse* arr );
 
 
 /* ------------------------------------------------------------------ */

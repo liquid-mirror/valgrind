@@ -115,7 +115,7 @@ static void synth_minimal_test_lit_reg ( UInt lit, Int reg32 )
 /*----------------------------------------------------*/
 
 static void synth_LOADV ( Int sz, Int a_reg, Int tv_reg,
-                          Bool eax_dies, Bool ecx_dies, Bool edx_dies )
+                          Bool save_eax, Bool save_ecx, Bool save_edx )
 {
    Addr helper;
    UInt argv[] = { a_reg };
@@ -128,14 +128,14 @@ static void synth_LOADV ( Int sz, Int a_reg, Int tv_reg,
       default: VG_(panic)("synth_LOADV");
    }
    VG_(synth_ccall) ( helper, 1, 1, argv, tagv, tv_reg,
-                      eax_dies, ecx_dies, edx_dies );
+                      save_eax, save_ecx, save_edx );
 }
 
 
 static void synth_STOREV ( Int sz,
                            Int tv_tag, Int tv_val,
                            Int a_reg,
-                           Bool eax_dies, Bool ecx_dies, Bool edx_dies )
+                           Bool save_eax, Bool save_ecx, Bool save_edx )
 {
    Addr helper;
    UInt argv[] = { a_reg,   tv_val };
@@ -149,7 +149,7 @@ static void synth_STOREV ( Int sz,
       default: VG_(panic)("synth_STOREV");
    }
    VG_(synth_ccall) ( helper, 2, 2, argv, tagv, INVALID_REALREG,
-                      eax_dies, ecx_dies, edx_dies );
+                      save_eax, save_ecx, save_edx );
 }
 
 
@@ -560,7 +560,7 @@ void SKN_(emitExtUInstr) ( UInstr* u )
          synth_STOREV ( u->size, u->tag1, 
                                  u->tag1==Literal ? u->lit32 : u->val1, 
                                  u->val2,
-                        u->eax_dies, u->ecx_dies, u->edx_dies );
+                        u->save_eax, u->save_ecx, u->save_edx );
          break;
 
       case LOADV:
@@ -569,7 +569,7 @@ void SKN_(emitExtUInstr) ( UInstr* u )
          if (0)
             VG_(emit_AMD_prefetch_reg) ( u->val1 );
          synth_LOADV ( u->size, u->val1, u->val2,
-                       u->eax_dies, u->ecx_dies, u->edx_dies );
+                       u->save_eax, u->save_ecx, u->save_edx );
          break;
 
       case TESTV:

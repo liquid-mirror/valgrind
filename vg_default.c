@@ -200,7 +200,7 @@ void SKN_(ppExtUInstr)(UInstr* u)
    VG_(panic)("called SKN_(ppExtUInstr)");
 }
 
-Int SKN_(getExtTempUsage)(UInstr* u, TempUse* arr)
+Int SKN_(getExtRegUsage)(UInstr* u, Tag tag, RegUse* arr)
 {
    VG_(printf)(nonfund_panic);
    VG_(panic)("called SKN_(getExtTempUsage)");

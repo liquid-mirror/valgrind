@@ -259,6 +259,7 @@ extern void VG_(shutdown_logging) ( void );
    VGP_PAIR(VgpInstrument, "instrument"),             \
    VGP_PAIR(VgpCleanup,    "cleanup"),                \
    VGP_PAIR(VgpRegAlloc,   "reg-alloc"),              \
+   VGP_PAIR(VgpCCallAnal,  "C-call-analysis"),        \
    VGP_PAIR(VgpDoLRU,      "do-lru"),                 \
    VGP_PAIR(VgpSlowFindT,  "slow-search-transtab"),   \
    VGP_PAIR(VgpInitAudit,  "init-mem-audit"),         \
@@ -854,6 +855,8 @@ extern void VG_(demangle) ( Char* orig, Char* result, Int result_size );
    ------------------------------------------------------------------ */
 
 extern UChar* VG_(emit_code) ( UCodeBlock* cb, Int* nbytes );
+
+extern void   VG_(print_ccall_stats) ( void );
 
 /* ---------------------------------------------------------------------
    Exports of vg_to_ucode.c

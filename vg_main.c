@@ -408,6 +408,7 @@ UInt VG_(sanity_slow_count) = 0;
 UInt VG_(num_scheduling_events_MINOR) = 0;
 UInt VG_(num_scheduling_events_MAJOR) = 0;
 
+
 /* ---------------------------------------------------------------------
    Skin data structure initialisation
    ------------------------------------------------------------------ */
@@ -1132,6 +1133,7 @@ static void vg_show_counts ( void )
                 "   sanity: %d cheap, %d expensive checks.",
                 VG_(sanity_fast_count), 
                 VG_(sanity_slow_count) );
+   VG_(print_ccall_stats)();
 }
 
 
