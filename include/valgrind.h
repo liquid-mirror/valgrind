@@ -91,8 +91,8 @@
 #define VG_USERREQ__MAKE_WRITABLE        0x1002
 #define VG_USERREQ__MAKE_READABLE        0x1003
 #define VG_USERREQ__DISCARD              0x1004
-#define VG_USERREQ__CHECK_WRITABLE       0x1005
-#define VG_USERREQ__CHECK_READABLE       0x1006
+//#define VG_USERREQ__CHECK_WRITABLE       0x1005
+//#define VG_USERREQ__CHECK_READABLE       0x1006
 #define VG_USERREQ__MAKE_NOACCESS_STACK  0x1007
 #define VG_USERREQ__RUNNING_ON_VALGRIND  0x1008
 //#define VG_USERREQ__DO_LEAK_CHECK        0x1009 /* untested */
@@ -149,7 +149,7 @@
 
 
 /* Client-code macros to check the state of memory. */
-
+#if 0
 /* Check that memory at _qzz_addr is addressible for _qzz_len bytes.
    If suitable addressibility is not established, Valgrind prints an
    error message and returns the address of the first offending byte.
@@ -173,8 +173,11 @@
                             _qzz_addr, _qzz_len, 0, 0);            \
     _qzz_res;                                                      \
    })
+#endif
 
-
+// JJJ: this doesn't seem to be used any more?  Not mentioned in manual,
+// or in vg_clientperms.c??  Is it for backwards compatability?
+#if 0
 /* Use this macro to force the definedness and addressibility of a
    value to be checked.  If suitable addressibility and definedness
    are not established, Valgrind prints an error message and returns
@@ -185,7 +188,7 @@
    VALGRIND_CHECK_READABLE(                                        \
       (volatile unsigned char *)&(__lvalue),                       \
                       (unsigned int)(sizeof (__lvalue)))
-
+#endif
 
 
 /* Mark memory, intended to be on the client's stack, at _qzz_addr as
