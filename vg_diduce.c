@@ -35,141 +35,125 @@
 #define MAX_x86_INSTR_SIZE              16
 
 /* Size of various buffers used for storing strings */
+
+/* XXX check and clean these up */
 #define FILENAME_LEN                    256
 #define FN_NAME_LEN                     256
 #define BUF_LEN                         512
 #define COMMIFY_BUF_LEN                 128
 #define RESULTS_BUF_LEN                 128
-#define LINE_BUF_LEN                     64
+#define LINE_BUF_LEN                    128
 
+#define BB_MARKER                       "BB "
 
 /*------------------------------------------------------------*/
 /*--- Output file related stuff                            ---*/
 /*------------------------------------------------------------*/
 
-#define OUT_FILE        "cachegrind.out"
+#define  IN_FILE        "diduce.in"
+#define OUT_FILE        "diduce.out"
 
-#if 0
 static void file_err()
 {
    VG_(message)(Vg_UserMsg,
-                "error: can't open cache simulation output file `%s'",
+                "error: can't open invariants output file `%s'",
                 OUT_FILE );
    VG_(exit)(1);
 }
-#endif
 
 /*------------------------------------------------------------*/
 /*--- Invariant types, operations                          ---*/
 /*------------------------------------------------------------*/
 
-struct _invariant {
-   Addr instr_addr;
+typedef enum { INV1, INV2 } CC_type;
+
+/* WARNING: the 'tag' field must be in same place for both types, since we
+ * distinguish different invariants using it. */
+struct _invariant1 {
+   UChar tag;           /* Word 1  */
+   UChar opcode;
+   UChar data_size;
+
+   Addr instr_addr;     /* Words 2+ */
+   UInt accesses;
    UInt V;
    UInt M;
-   UInt accesses;
-   Bool is_set;
-   Bool is_write;
-   UChar data_size;
 };
 
-static void init_iCC(Bool is_write, invariant* cc, Addr instr_addr, UInt instr_size, UInt data_size)
+struct _invariant2 {
+   UChar tag;           /* Words 1  */
+   UChar opcode;
+   UChar data_size;
+   
+   Addr instr_addr;     /* Words 2+ */
+   UInt accesses;
+   UInt V1, M1;
+   UInt V2, M2;
+};
+
+static void init_invariant1(UChar opcode, invariant1* inv, Addr instr_addr, 
+                            UInt data_size)
 {
-   cc->instr_addr = instr_addr;
-   cc->V          = 0;
-   cc->M          = 0xffffffff;
-   cc->accesses   = 0;
-   cc->is_set     = False;
-   cc->is_write   = is_write;
-   cc->data_size  = data_size;
+   inv->tag        = INV1;
+   inv->opcode     = opcode;
+   inv->data_size  = data_size;
+
+   inv->instr_addr = instr_addr;
+   inv->accesses   = 0;
+   inv->V          = 0;
+   inv->M          = 0xffffffff;
 }
 
-/* If 1, address of each instruction is printed as a comment after its counts
- * in cachegrind.out */
-#define PRINT_INSTR_ADDRS 0
-
-#if 0
-static __inline__ void sprint_iCC(Char buf[BUF_LEN], invariant* cc)
+static void init_invariant2(UChar opcode, invariant2* inv, Addr instr_addr, 
+                            UInt data_size)
 {
-#if PRINT_INSTR_ADDRS
-   VG_(sprintf)(buf, "%llu %llu %llu # %x\n",
-                      cc->I.a, cc->I.m1, cc->I.m2, cc->instr_addr);
-#else
-   VG_(sprintf)(buf, "%llu %llu %llu\n",
-                      cc->I.a, cc->I.m1, cc->I.m2);
-#endif
+   inv->tag        = INV2;
+   inv->opcode     = opcode;
+   inv->data_size  = data_size;
+
+   inv->instr_addr = instr_addr;
+   inv->accesses   = 0;
+   inv->V1         = inv->V2 = 0;
+   inv->M1         = inv->M2 = 0xffffffff;
 }
 
-static __inline__ void sprint_read_or_mod_CC(Char buf[BUF_LEN], idCC* cc)
+static __inline__ void sprint_invariant1(Char buf[], invariant1* inv)
 {
-#if PRINT_INSTR_ADDRS
-   VG_(sprintf)(buf, "%llu %llu %llu %llu %llu %llu # %x\n",
-                      cc->I.a, cc->I.m1, cc->I.m2, 
-                      cc->D.a, cc->D.m1, cc->D.m2, cc->instr_addr);
-#else
-   VG_(sprintf)(buf, "%llu %llu %llu %llu %llu %llu\n",
-                      cc->I.a, cc->I.m1, cc->I.m2, 
-                      cc->D.a, cc->D.m1, cc->D.m2);
-#endif
+   VG_(sprintf)(buf, "%x %u %u %u %x %x\n",
+                      inv->instr_addr, inv->opcode, inv->data_size, 
+                      inv->accesses, inv->V, inv->M);
 }
 
-static __inline__ void sprint_write_CC(Char buf[BUF_LEN], idCC* cc)
+static __inline__ void sprint_invariant2(Char buf[], invariant2* inv)
 {
-#if PRINT_INSTR_ADDRS
-   VG_(sprintf)(buf, "%llu %llu %llu . . . %llu %llu %llu # %x\n",
-                      cc->I.a, cc->I.m1, cc->I.m2, 
-                      cc->D.a, cc->D.m1, cc->D.m2, cc->instr_addr);
-#else
-   VG_(sprintf)(buf, "%llu %llu %llu . . . %llu %llu %llu\n",
-                      cc->I.a, cc->I.m1, cc->I.m2, 
-                      cc->D.a, cc->D.m1, cc->D.m2);
-#endif
+   VG_(sprintf)(buf, "%x %u %u %u %x %x %x %x\n",
+                      inv->instr_addr, inv->opcode, inv->data_size, 
+                      inv->accesses, inv->V1, inv->M1, inv->M2, inv->V2);
 }
-#endif
 
 /*------------------------------------------------------------*/
-/*--- BBCC hash table stuff                                ---*/
+/*--- BBinvs hash table stuff                                ---*/
 /*------------------------------------------------------------*/
 
-/* The table of BBCCs is of the form hash(filename, hash(fn_name,
- * hash(BBCCs))).  Each hash table is separately chained.  The sizes below work
- * fairly well for Konqueror. */
-
-#define N_FILE_ENTRIES        251
-#define   N_FN_ENTRIES         53
-#define N_BBCC_ENTRIES         37
+#define N_ENTRIES        19997
 
 /* The cost centres for a basic block are stored in a contiguous array.
  * They are distinguishable by their tag field. */
-typedef struct _BBCC BBCC;
-struct _BBCC {
+typedef struct _BBinvs BBinvs;
+struct _BBinvs {
    Addr  orig_addr;
    UInt  array_size;    /* byte-size of variable length array */
-   BBCC* next;
+   BBinvs* next;
    Addr  array[0];      /* variable length array */
 };
 
-typedef struct _fn_node fn_node;
-struct _fn_node {
-   Char*    fn_name;
-   BBCC*    BBCCs[N_BBCC_ENTRIES];
-   fn_node* next;
-};
+/* BBinvs_table structure:  list(filename, list(fn_name, list(BBinvs))) */
+static BBinvs *BBinvs_table[N_ENTRIES];
 
-typedef struct _file_node file_node;
-struct _file_node {
-   Char*      filename;
-   fn_node*   fns[N_FN_ENTRIES];
-   file_node* next;
-};
+//static Int  distinct_files      = 0;
+//static Int  distinct_fns        = 0;
 
-/* BBCC_table structure:  list(filename, list(fn_name, list(BBCC))) */
-static file_node *BBCC_table[N_FILE_ENTRIES];
-
-static Int  distinct_files      = 0;
-static Int  distinct_fns        = 0;
-
-//static Int  distinct_instrs     = 0;
+static Int  distinct_invs       = 0;
 static Int  full_debug_BBs      = 0;
 static Int  file_line_debug_BBs = 0;
 static Int  fn_name_debug_BBs   = 0;
@@ -177,11 +161,11 @@ static Int  no_debug_BBs        = 0;
 
 static Int  BB_retranslations   = 0;
 
-static void init_BBCC_table()
+static void init_BBinvs_table()
 {
    Int i;
-   for (i = 0; i < N_FILE_ENTRIES; i++)
-      BBCC_table[i] = NULL;
+   for (i = 0; i < N_ENTRIES; i++)
+      BBinvs_table[i] = NULL;
 }
 
 static void get_debug_info(Addr instr_addr, Char filename[FILENAME_LEN],
@@ -214,43 +198,20 @@ static void get_debug_info(Addr instr_addr, Char filename[FILENAME_LEN],
 }
 
 /* Forward declaration. */
-static Int compute_BBCC_array_size(UCodeBlock* cb);
+static Int compute_BBinvs_array_size(UCodeBlock* cb, Addr orig_addr);
 
+/* If no invariants needed for block, return NULL */
 static __inline__ 
-file_node* new_file_node(Char filename[FILENAME_LEN], file_node* next)
+BBinvs* new_BBinvs(Addr bb_orig_addr, UCodeBlock* cb, BBinvs* next)
 {
-   Int i;
-   file_node* new = VG_(malloc)(VG_AR_PRIVATE, sizeof(file_node));
-   new->filename  = VG_(strdup)(VG_AR_PRIVATE, filename);
-   for (i = 0; i < N_FN_ENTRIES; i++) {
-      new->fns[i] = NULL;
-   }
-   new->next      = next;
-   return new;
-}
+   Int BBinvs_array_size = compute_BBinvs_array_size(cb, bb_orig_addr);
+   BBinvs* new;
 
-static __inline__ 
-fn_node* new_fn_node(Char fn_name[FILENAME_LEN], fn_node* next)
-{
-   Int i;
-   fn_node* new = VG_(malloc)(VG_AR_PRIVATE, sizeof(fn_node));
-   new->fn_name = VG_(strdup)(VG_AR_PRIVATE, fn_name);
-   for (i = 0; i < N_BBCC_ENTRIES; i++) {
-      new->BBCCs[i] = NULL;
-   }
-   new->next    = next;
-   return new;
-}
+   if (0 == BBinvs_array_size) return NULL;
 
-static __inline__ 
-BBCC* new_BBCC(Addr bb_orig_addr, UCodeBlock* cb, BBCC* next)
-{
-   Int BBCC_array_size = compute_BBCC_array_size(cb);
-   BBCC* new;
-
-   new = (BBCC*)VG_(malloc)(VG_AR_PRIVATE, sizeof(BBCC) + BBCC_array_size);
+   new = (BBinvs*)VG_(malloc)(VG_AR_PRIVATE, sizeof(BBinvs) + BBinvs_array_size);
    new->orig_addr  = bb_orig_addr;
-   new->array_size = BBCC_array_size;
+   new->array_size = BBinvs_array_size;
    new->next = next;
 
    return new;
@@ -258,90 +219,63 @@ BBCC* new_BBCC(Addr bb_orig_addr, UCodeBlock* cb, BBCC* next)
 
 #define HASH_CONSTANT   256
 
-static UInt hash(Char *s, UInt table_size)
-{
-    int hash_value = 0;
-    for ( ; *s; s++)
-        hash_value = (HASH_CONSTANT * hash_value + *s) % table_size;
-    return hash_value;
-}
+//static UInt hash(Char *s, UInt table_size)
+//{
+//    int hash_value = 0;
+//    for ( ; *s; s++)
+//        hash_value = (HASH_CONSTANT * hash_value + *s) % table_size;
+//    return hash_value;
+//}
 
-/* Do a three step traversal: by filename, then fn_name, then instr_addr.
- * In all cases prepends new nodes to their chain.  Returns a pointer to the
- * cost centre.  Also sets BB_seen_before by reference. 
+/* Prepends new nodes to their chain.  Returns a pointer to the cost centre (or
+ * NULL if no instructions have invariants).  Also sets BB_seen_before by
+ * reference. 
  */ 
-static __inline__ BBCC* get_BBCC(Addr bb_orig_addr, UCodeBlock* cb, 
+static __inline__ BBinvs* get_BBinvs(Addr bb_orig_addr, UCodeBlock* cb, 
                                  Bool remove, Bool *BB_seen_before)
 {
-   file_node *curr_file_node;
-   fn_node   *curr_fn_node;
-   BBCC     **prev_BBCC_next_ptr, *curr_BBCC;
-   Char       filename[FILENAME_LEN], fn_name[FN_NAME_LEN];
-   UInt       filename_hash, fnname_hash, BBCC_hash;
-   Int        dummy_line_num;
+   BBinvs   **prev_next_ptr, *curr;
+   UInt       pos;
 
-   get_debug_info(bb_orig_addr, filename, fn_name, &dummy_line_num);
-
-   VGP_PUSHCC(VgpCacheGetBBCC);
-   filename_hash = hash(filename, N_FILE_ENTRIES);
-   curr_file_node = BBCC_table[filename_hash];
-   while (NULL != curr_file_node && 
-          VG_(strcmp)(filename, curr_file_node->filename) != 0) {
-      curr_file_node = curr_file_node->next;
+   pos = bb_orig_addr % N_ENTRIES;
+   prev_next_ptr = &(BBinvs_table[pos]);
+   curr = BBinvs_table[pos];
+   while (NULL != curr && bb_orig_addr != curr->orig_addr) {
+      prev_next_ptr = &(curr->next);
+      curr = curr->next;
    }
-   if (NULL == curr_file_node) {
-      BBCC_table[filename_hash] = curr_file_node = 
-         new_file_node(filename, BBCC_table[filename_hash]);
-      distinct_files++;
-   }
-
-   fnname_hash = hash(fn_name, N_FN_ENTRIES);
-   curr_fn_node = curr_file_node->fns[fnname_hash];
-   while (NULL != curr_fn_node && 
-          VG_(strcmp)(fn_name, curr_fn_node->fn_name) != 0) {
-      curr_fn_node = curr_fn_node->next;
-   }
-   if (NULL == curr_fn_node) {
-      curr_file_node->fns[fnname_hash] = curr_fn_node = 
-         new_fn_node(fn_name, curr_file_node->fns[fnname_hash]);
-      distinct_fns++;
-   }
-
-   BBCC_hash = bb_orig_addr % N_BBCC_ENTRIES;
-   prev_BBCC_next_ptr = &(curr_fn_node->BBCCs[BBCC_hash]);
-   curr_BBCC = curr_fn_node->BBCCs[BBCC_hash];
-   while (NULL != curr_BBCC && bb_orig_addr != curr_BBCC->orig_addr) {
-      prev_BBCC_next_ptr = &(curr_BBCC->next);
-      curr_BBCC = curr_BBCC->next;
-   }
-   if (curr_BBCC == NULL) {
-
+   if (NULL == curr) {
       vg_assert(False == remove);
-
-      curr_fn_node->BBCCs[BBCC_hash] = curr_BBCC = 
-         new_BBCC(bb_orig_addr, cb, curr_fn_node->BBCCs[BBCC_hash]);
       *BB_seen_before = False;
+      curr = new_BBinvs(bb_orig_addr, cb, BBinvs_table[pos]);
+      if (NULL == curr) 
+          return NULL;
+      BBinvs_table[pos] = curr;
 
    } else {
-      vg_assert(bb_orig_addr == curr_BBCC->orig_addr);
-      vg_assert(curr_BBCC->array_size > 0 && curr_BBCC->array_size < 1000000);
+      vg_assert(bb_orig_addr == curr->orig_addr);
+      vg_assert(curr->array_size > 0 && curr->array_size < 1000000);
       if (VG_(clo_verbosity) > 2) {
           VG_(message)(Vg_DebugMsg, 
-            "BB retranslation, retrieving from BBCC table");
+            "BB retranslation or loaded from training file");
       }
       *BB_seen_before = True;
 
+      // XXX: this will screw up removals of self-modifying code because BBinvs
+      // can be put in the table from the diduce.in file without having
+      // encountered and translated the code block.
+
       if (True == remove) {
-          // Remove curr_BBCC from chain;  it will be used and free'd by the
+          // Remove curr from chain;  it will be used and free'd by the
           // caller.
-          *prev_BBCC_next_ptr = curr_BBCC->next;
+          *prev_next_ptr = curr->next;
 
       } else {
           BB_retranslations++;
       }
    }
    VGP_POPCC;
-   return curr_BBCC;
+   return curr;
 }
 
 /*------------------------------------------------------------*/
@@ -355,69 +289,117 @@ static __inline__ BBCC* get_BBCC(Addr bb_orig_addr, UCodeBlock* cb,
 #define uLiteral  VG_(setLiteralField)
 #define newTemp   VG_(getNewTemp)
 
-static Int compute_BBCC_array_size(UCodeBlock* cb)
+static __inline__ Bool is_crud(Addr instr_addr)
 {
-   UInstr* u_in;
-   Int     i, CC_size, BBCC_size = 0;
-   Bool    is_LOAD, is_STORE, is_FPU_R, is_FPU_W;
-    
-   is_LOAD = is_STORE = is_FPU_R = is_FPU_W = False;
+   Char fl[FILENAME_LEN], fn[FN_NAME_LEN];
+   Int line_num = 0;
+#if 0
+   Int res;
+
+   /* One way of avoiding crud -- only print if a source file in current
+    * directory.  Means you must be in the current directory, though. */
+   if (-1 != (res = VG_(open_read)(fl))) {
+       VG_(close)(res);
+       return 0;
+   } else {
+       return 1;
+   }
+#endif
+   get_debug_info(instr_addr, fl, fn, &line_num);
+
+   return (
+           0 == VG_(strcmp)(fl, "???"                           ) ||
+           0 == VG_(strcmp)(fn, "???"                           ) ||
+           0 == VG_(strcmp)(fl, "do-lookup.h"                   ) ||
+           0 == VG_(strcmp)(fl, "dl-lookup.c"                   ) ||
+           0 == VG_(strcmp)(fl, "dl-runtime.c"                  ) ||
+           0 == VG_(strcmp)(fl, "dl-init.c"                     ) ||
+           0 == VG_(strcmp)(fl, "dl-fini.c"                     ) ||
+           0 == VG_(strcmp)(fl, "dl-debug.c"                    ) ||
+           0 == VG_(strcmp)(fl, "cxa_atexit.c"                  ) ||
+           0 == VG_(strcmp)(fl, "exit.c"                        ) ||
+           0 == VG_(strcmp)(fl, "genops.c"                      ) ||
+           0 == VG_(strcmp)(fl, "getopt_init.c"                 ) ||
+           0 == VG_(strcmp)(fn, "set_progname"                  ) ||
+           0 == VG_(strcmp)(fn, "fixup"                         ) ||
+           0 == VG_(strcmp)(fn, "__libc_init"                   ) ||
+           0 == VG_(strcmp)(fn, "_dl_runtime_resolve"           ) ||
+           0 == VG_(strcmp)(fn, "_dl_lookup_versioned_symbol"   ) ||
+           0 == VG_(strcmp)(fn, "__getopt_clean_environment"    ) ||
+           0 == VG_(strcmp)(fn, "__deregister_frame_info"       ) ||
+           False);
+}
+
+static __inline__ Bool is_ok_unary_op(UInstr *u, Addr instr_addr)
+{
+    Bool ok1, ok2;
+   
+    ok1  = (FlagsEmpty != u->flags_w && (
+            INC   == u->opcode ||
+            DEC   == u->opcode ||
+            NOT   == u->opcode ||
+            NEG   == u->opcode ||
+            BSWAP == u->opcode ||
+            WIDEN == u->opcode ||
+            False)  /* just allows easy commenting out of lines */
+           );
+
+    ok2 = !is_crud(instr_addr);
+
+    return (ok1 && ok2);
+}
+
+static __inline__ Bool is_ok_binary_op(UInstr *u, Addr instr_addr)
+{
+    Bool ok1, ok2;
+   
+    ok1  =  (FlagsEmpty != u->flags_w && (
+            //ADD   == u->opcode ||
+            //ADC   == u->opcode ||
+            SUB   == u->opcode ||
+            //AND   == u->opcode ||
+            //OR    == u->opcode ||
+            //XOR   == u->opcode ||
+            //SBB   == u->opcode ||
+            //SHL   == u->opcode ||
+            //SHR   == u->opcode ||
+            //SAR   == u->opcode ||
+            //ROL   == u->opcode ||
+            //ROR   == u->opcode ||
+            //RCL   == u->opcode ||
+            //RCR   == u->opcode ||
+            False)  /* just allows easy commenting out of lines */
+           );
+
+    ok2 = !is_crud(instr_addr);
+
+    return (ok1 && ok2);
+}
+
+static Int compute_BBinvs_array_size(UCodeBlock* cb, Addr orig_addr)
+{
+   Int  i, BBinvs_size = 0;
+   Addr instr_addr = orig_addr;
 
    for (i = 0; i < cb->used; i++) {
-      /* VG_(ppUInstr)(0, &cb->instrs[i]); */
+      UInstr* u = &cb->instrs[i];
+      
+      if (INCEIP == u->opcode) {
+         instr_addr += u->val1;
 
-      u_in = &cb->instrs[i];
-      switch(u_in->opcode) {
+      } else if (JMP == u->opcode) {
+         /* This will be zero when necessary... works itself out */
+         instr_addr += u->extra4b;
+      
+      } else if (is_ok_unary_op(u, instr_addr)) {
+         BBinvs_size += sizeof(invariant1);
 
-         case INCEIP: 
-            goto case_for_end_of_instr;
-         
-         case JMP:
-            if (u_in->cond != CondAlways) break;
-
-            goto case_for_end_of_instr;
-
-            case_for_end_of_instr:
-
-            CC_size = //(is_LOAD || is_STORE || is_FPU_R || is_FPU_W 
-                      //? sizeof(invariant) : sizeof(invariant));
-                      sizeof(invariant);
-
-            BBCC_size += CC_size;
-            is_LOAD = is_STORE = is_FPU_R = is_FPU_W = False;
-            break;
-
-         case LOAD:
-            /* Two LDBs are possible for a single instruction */
-            /* Also, a STORE can come after a LOAD for bts/btr/btc */
-            vg_assert(/*!is_LOAD &&*/ /* !is_STORE && */ 
-                      !is_FPU_R && !is_FPU_W);
-            is_LOAD = True;
-            break;
-
-         case STORE:
-            /* Multiple STOREs are possible for 'pushal' */
-            vg_assert(            /*!is_STORE &&*/ !is_FPU_R && !is_FPU_W);
-            is_STORE = True;
-            break;
-
-         case FPU_R:
-            vg_assert(!is_LOAD && !is_STORE && !is_FPU_R && !is_FPU_W);
-            is_FPU_R = True;
-            break;
-
-         case FPU_W:
-            vg_assert(!is_LOAD && !is_STORE && !is_FPU_R && !is_FPU_W);
-            is_FPU_W = True;
-            break;
-
-         default:
-            break;
+      } else if (is_ok_binary_op(u, instr_addr)) {
+         BBinvs_size += sizeof(invariant2);
       }
    }
-//VG_(printf)("END OF BB\n");
 
-   return BBCC_size;
+   return BBinvs_size;
 }
 
 /* Use this rather than eg. -1 because it's stored as a UInt. */
@@ -428,27 +410,31 @@ UCodeBlock* VG_(diduce_instrument)(UCodeBlock* cb_in, Addr orig_addr)
    UCodeBlock* cb;
    Int         i;
    UInstr*     u_in;
-   BBCC*       BBCC_node;
-   Int         t_CC_addr, t_read_addr, t_write_addr, t_data_addr;
-   Int         CC_size = -1;    /* Shut gcc warnings up */
+   BBinvs*       BBinvs_node;
+   Int         t_CC_addr, t_2nd_addr;
    Addr        instr_addr = orig_addr;
-   UInt        instr_size, data_size = INVALID_DATA_SIZE;
+   UInt        instr_size = INVALID_DATA_SIZE;
    Int         helper = -1;     /* Shut gcc warnings up */
    UInt        stack_used;
    Bool        BB_seen_before       = False;
    Bool        prev_instr_was_Jcond = False;
-   Addr        BBCC_ptr0, BBCC_ptr; 
 
-   /* Get BBCC (creating if necessary -- requires a counting pass over the BB
+   Addr        BBinvs_ptr0, BBinvs_ptr; 
+
+   /* Get BBinvs (creating if necessary -- requires a counting pass over the BB
     * if it's the first time it's been seen), and point to start of the 
-    * BBCC array.  */
-   BBCC_node = get_BBCC(orig_addr, cb_in, False, &BB_seen_before);
-   BBCC_ptr0 = BBCC_ptr = (Addr)(BBCC_node->array);
+    * BBinvs array.  If no instructions need invariants for the basic block,
+    * skip instrumentation also (by returning cb unchanged). */
+   BBinvs_node = get_BBinvs(orig_addr, cb_in, False, &BB_seen_before);
+   if (NULL == BBinvs_node) {
+       return cb_in;
+   }
+   BBinvs_ptr0 = BBinvs_ptr = (Addr)(BBinvs_node->array);
 
    cb = VG_(allocCodeBlock)();
    cb->nextTemp = cb_in->nextTemp;
 
-   t_CC_addr = t_read_addr = t_write_addr = t_data_addr = INVALID_TEMPREG;
+   t_CC_addr = t_2nd_addr = INVALID_TEMPREG;
 
    for (i = 0; i < cb_in->used; i++) {
       u_in = &cb_in->instrs[i];
@@ -477,19 +463,14 @@ UCodeBlock* VG_(diduce_instrument)(UCodeBlock* cb_in, Addr orig_addr)
        *
        * Note that we don't have to treat JIFZ specially;  unlike JMPs, JIFZ
        * occurs in the middle of a BB and gets an INCEIP after it.
-       *
-       * The instrumentation is just a call to the appropriate helper function,
-       * passing it the address of the instruction's CC.
        */
       if (prev_instr_was_Jcond) vg_assert(u_in->opcode == JMP);
 
-      switch (u_in->opcode) {
-
-         case INCEIP:
+      if (INCEIP == u_in->opcode) {
             instr_size = u_in->val1;
             goto case_for_end_of_x86_instr;
 
-         case JMP:
+      } else if (JMP == u_in->opcode) {
             if (u_in->cond == CondAlways) {
                vg_assert(i+1 == cb_in->used); 
 
@@ -497,7 +478,7 @@ UCodeBlock* VG_(diduce_instrument)(UCodeBlock* cb_in, Addr orig_addr)
                if (prev_instr_was_Jcond) {
                   vg_assert(0 == u_in->extra4b);
                   VG_(copyUInstr)(cb, u_in);
-                  break;
+                  goto end_case;
                }
                prev_instr_was_Jcond = False;
 
@@ -505,187 +486,533 @@ UCodeBlock* VG_(diduce_instrument)(UCodeBlock* cb_in, Addr orig_addr)
                vg_assert(i+2 == cb_in->used);  /* 2nd last instr in block */
                prev_instr_was_Jcond = True;
             }
-
-            /* Ah, the first JMP... instrument, please. */
+            /* Ah, the first JMP... */
             instr_size = u_in->extra4b;
+
             goto case_for_end_of_x86_instr;
 
-            /* Shared code that is executed at the end of an x86 translation
-             * block, marked by either an INCEIP or an unconditional JMP. */
-            case_for_end_of_x86_instr:
-
-#define IS_(X)      (INVALID_TEMPREG != t_##X##_addr)
-             
-            /* Initialise the CC in the BBCC array appropriately if it hasn't
-             * been initialised before.
-             * Then call appropriate sim function, passing it the CC address.
-             * Note that CALLM_S/CALL_E aren't required here;  by this point,
-             * the checking related to them has already happened. */
-            stack_used = 0;
-
-//            vg_assert(instr_size >= 1 && instr_size <= MAX_x86_INSTR_SIZE);
-            if (instr_size < 1 || instr_size > MAX_x86_INSTR_SIZE) {
-               VG_(printf)("instr_size = %d", instr_size);
-               VG_(panic)("X");
-            }
+           case_for_end_of_x86_instr:
+            VG_(copyUInstr)(cb, u_in);
+            instr_addr += instr_size;
+            vg_assert(instr_size >= 1 && instr_size <= MAX_x86_INSTR_SIZE);
             vg_assert(0 != instr_addr);
 
-            CC_size = sizeof(invariant);
-            if (!IS_(read) && !IS_(write)) {
-//               invariant* CC_ptr = (invariant*)(BBCC_ptr);
-               vg_assert(INVALID_DATA_SIZE == data_size);
-               vg_assert(INVALID_TEMPREG == t_read_addr && 
-                         INVALID_TEMPREG == t_write_addr);
-#if 0
-               if (!BB_seen_before)
-                   init_iCC(CC_ptr, instr_addr, instr_size);
+           end_case:
+            /* do nothing */
 
-               helper = VGOFF_(cachesim_log_non_mem_instr);
-#endif
-            } else { 
-               Bool is_write;
-               invariant* CC_ptr = (invariant*)(BBCC_ptr);
-                
-               vg_assert(4 == data_size || 2  == data_size || 1 == data_size || 
-                         8 == data_size || 10 == data_size);
-               
-               //CC_size = sizeof(invariant);
-               helper = VGOFF_(diduce_log_instr);
+#define SAVE_REGS                               \
+   uInstr1(cb, PUSH, 4, RealReg, R_EAX);        \
+   /*uInstr1(cb, PUSH, 4, RealReg, R_ECX);*/        \
+   /*uInstr1(cb, PUSH, 4, RealReg, R_EDX)*/
 
-               if (IS_(read) && !IS_(write)) {
-                  is_write = False;
-                  vg_assert(INVALID_TEMPREG != t_read_addr && 
-                            INVALID_TEMPREG == t_write_addr);
-                  t_data_addr = t_read_addr;
+#define PUSH_3RD_ARG                            \
+   uInstr1(cb, PUSH, 4, TempReg, u_in->val2);   \
+   stack_used += 4
 
-               } else if (!IS_(read) && IS_(write)) {
-                  is_write = True;
-                  vg_assert(INVALID_TEMPREG == t_read_addr && 
-                            INVALID_TEMPREG != t_write_addr);
-                  t_data_addr = t_write_addr;
+#define PUSH_2ND_AND_1ST_ARGS_CALL_HELPER_AND_RESTORE_REGS              \
+   /*t_2nd_addr = newTemp(cb);                                          */  \
+   /*if (TempReg == u_in->tag1) {                                       */  \
+   /*   uInstr2(cb, MOV, 4, TempReg, u_in->val1, TempReg, t_2nd_addr);  */  \
+   /*} else if (Literal == u_in->tag1) {                                */  \
+   /*   uInstr2(cb, MOV,  4, Literal, 0, TempReg, t_2nd_addr);          */  \
+   /*   uLiteral(cb, u_in->val1);                                       */  \
+   /*} else if (ArchReg == u_in->tag1) {                                */  \
+   /*   uInstr2(cb, GET,  4, ArchReg, u_in->val1, TempReg, t_2nd_addr); */  \
+   /*} else {                                                           */  \
+   /*   VG_(panic)("Unknown tag type!");                                */  \
+   /*}                                                                  */  \
+   /*uInstr1(cb, PUSH, 4, TempReg, t_2nd_addr);                         */  \
+   /*stack_used += 4;                                                   */  \
+   /*t_CC_addr = newTemp(cb);                  */                           \
+   /*uInstr2(cb, MOV,  4, Literal, 0, TempReg, t_CC_addr);  */              \
+   /*uLiteral(cb, BBinvs_ptr);               */                             \
+   /*uInstr1(cb, PUSH, 4, TempReg, t_CC_addr);*/                            \
+   /*stack_used += 4;*/                                                     \
+   /*uInstr1(cb, CALLM, 0, Lit16,   helper);*/                            \
+   uInstr1(cb, CLEAR, 0, Lit16,   stack_used);                          \
+   /*uInstr1(cb, POP, 4, RealReg, R_EDX);*/                                 \
+   /*uInstr1(cb, POP, 4, RealReg, R_ECX);*/                               \
+   uInstr1(cb, POP, 4, RealReg, R_EAX)
 
-               } else {
-                  vg_assert(IS_(read) && IS_(write));
-                  is_write = True;
-                  vg_assert(INVALID_TEMPREG != t_read_addr && 
-                            INVALID_TEMPREG != t_write_addr);
-                  t_data_addr = t_read_addr;
-               }
+      } else if (is_ok_binary_op(u_in, instr_addr)) {
 
-               if (!BB_seen_before)
-                  init_iCC(is_write, CC_ptr, instr_addr, instr_size, data_size);
-
-               /* Save the caller-save registers before we push our args */
-               uInstr1(cb, PUSH, 4, RealReg, R_EAX);
-               uInstr1(cb, PUSH, 4, RealReg, R_ECX);
-               uInstr1(cb, PUSH, 4, RealReg, R_EDX);
-
-               /* 2nd arg: data addr */
-               uInstr1(cb, PUSH,  4, TempReg, t_data_addr);
-               stack_used += 4;
-
-               /* 1st arg: CC addr */
-               t_CC_addr = newTemp(cb);
-               uInstr2(cb, MOV,   4, Literal, 0, TempReg, t_CC_addr);
-               uLiteral(cb, BBCC_ptr);
-               uInstr1(cb, PUSH,  4, TempReg, t_CC_addr);
-               stack_used += 4;
-
-               /* Call function and return. */
-               uInstr1(cb, CALLM, 0, Lit16,   helper);
-               uInstr1(cb, CLEAR, 0, Lit16,   stack_used);
-
-               /* Restore the caller-save registers now the call is done */
-               uInstr1(cb, POP, 4, RealReg, R_EDX);
-               uInstr1(cb, POP, 4, RealReg, R_ECX);
-               uInstr1(cb, POP, 4, RealReg, R_EAX);
-            }
-
+            invariant2* CC_ptr = (invariant2*)(BBinvs_ptr);
+            stack_used = 0;
+            helper = VGOFF_(diduce_log_instr2);
+            if (!BB_seen_before)
+               init_invariant2(u_in->opcode, CC_ptr, instr_addr, u_in->size);
+            SAVE_REGS;
+            PUSH_3RD_ARG;
+            PUSH_2ND_AND_1ST_ARGS_CALL_HELPER_AND_RESTORE_REGS;
             VG_(copyUInstr)(cb, u_in);
+            BBinvs_ptr += sizeof(invariant2);
 
-            /* Update BBCC_ptr, EIP, de-init read/write temps for next instr */
-            BBCC_ptr   += CC_size; 
-            instr_addr += instr_size;
-            t_CC_addr = t_read_addr = t_write_addr = 
-                                      t_data_addr  = INVALID_TEMPREG;
-            data_size = INVALID_DATA_SIZE;
-#undef IS_
+      } else if (is_ok_unary_op(u_in, instr_addr)) {
 
-            break;
-
-
-         /* For memory-ref instrs, copy the data_addr into a temporary to be
-          * passed to the cachesim_log_function at the end of the instruction.
-          */
-         case LOAD: 
-            t_read_addr = newTemp(cb);
-            uInstr2(cb, MOV, 4, TempReg, u_in->val1,  TempReg, t_read_addr);
-            data_size = u_in->size;
+            invariant1* CC_ptr = (invariant1*)(BBinvs_ptr);
+            stack_used = 0;
+            helper = VGOFF_(diduce_log_instr1);
+            if (!BB_seen_before)
+               init_invariant1(u_in->opcode, CC_ptr, instr_addr, u_in->size);
+            SAVE_REGS;
+            PUSH_2ND_AND_1ST_ARGS_CALL_HELPER_AND_RESTORE_REGS;
             VG_(copyUInstr)(cb, u_in);
-            break;
+            BBinvs_ptr += sizeof(invariant1);
 
-         case FPU_R:
-            t_read_addr = newTemp(cb);
-            uInstr2(cb, MOV, 4, TempReg, u_in->val2,  TempReg, t_read_addr);
-            data_size = u_in->size;
+#undef SAVE_REGS
+#undef PUSH_3RD_ARG
+#undef PUSH_2ND_AND_1ST_ARGS_CALL_HELPER_AND_RESTORE_REGS
+
+      } else if (NOP     == u_in->opcode ||
+                 CALLM_E == u_in->opcode ||
+                 CALLM_S == u_in->opcode) {
+         /* do nothing */          
+
+      } else {
             VG_(copyUInstr)(cb, u_in);
-            break;
-
-         /* Note that we must set t_write_addr even for mod instructions;
-          * that's how the code above determines whether it does a write;
-          * without it, it would think a mod instruction is a read.
-          * As for the MOV, if it's a mod instruction it's redundant, but it's
-          * not expensive and mod instructions are rare anyway. */
-         case STORE:
-         case FPU_W:
-            t_write_addr = newTemp(cb);
-            uInstr2(cb, MOV, 4, TempReg, u_in->val2, TempReg, t_write_addr);
-            data_size = u_in->size;
-            VG_(copyUInstr)(cb, u_in);
-            break;
-
-         case NOP:  case CALLM_E:  case CALLM_S:
-            break;
-
-         default:
-            VG_(copyUInstr)(cb, u_in);
-            break;
       }
    }
 
    /* Just check everything looks ok */
-   vg_assert(BBCC_ptr - BBCC_ptr0 == BBCC_node->array_size);
+   vg_assert(BBinvs_ptr - BBinvs_ptr0 == BBinvs_node->array_size);
+   //if (BBinvs_ptr - BBinvs_ptr0 != BBinvs_node->array_size) {
+   //   VG_(printf)("%x %x diff is %x, should be %x\n", BBinvs_ptr, BBinvs_ptr0, BBinvs_ptr - BBinvs_ptr0, BBinvs_node->array_size);
+   //   VG_(panic)("everything doesn't look ok!");
+  // }
 
    VG_(freeCodeBlock)(cb_in);
    return cb;
 }
 
-void VG_(init_diduce)(void)
-{
-   /* Make sure the output file can be written. */
-//   Int fd = VG_(open_write)(OUT_FILE);
-//   if (-1 == fd) { 
-//      fd = VG_(create_and_write)(OUT_FILE);
-//      if (-1 == fd) {
-//         file_err(); 
+//UCodeBlock* VG_(diduce_instrument)(UCodeBlock* cb_in, Addr orig_addr)
+//{
+//   UCodeBlock* cb;
+//   Int         i;
+//   UInstr*     u_in;
+//   BBinvs*       BBinvs_node;
+//   Int         t_CC_addr, t_read_addr, t_write_addr, t_data_addr;
+//   Int         CC_size = -1;    /* Shut gcc warnings up */
+//   Addr        instr_addr = orig_addr;
+//   UInt        instr_size, data_size = INVALID_DATA_SIZE;
+//   Int         helper = -1;     /* Shut gcc warnings up */
+//   UInt        stack_used;
+//   Bool        BB_seen_before       = False;
+//   Bool        prev_instr_was_Jcond = False;
+//   Addr        BBinvs_ptr0, BBinvs_ptr; 
+//
+//   /* Get BBinvs (creating if necessary -- requires a counting pass over the BB
+//    * if it's the first time it's been seen), and point to start of the 
+//    * BBinvs array.  */
+//   BBinvs_node = get_BBinvs(orig_addr, cb_in, False, &BB_seen_before);
+//   BBinvs_ptr0 = BBinvs_ptr = (Addr)(BBinvs_node->array);
+//
+//   cb = VG_(allocCodeBlock)();
+//   cb->nextTemp = cb_in->nextTemp;
+//
+//   t_CC_addr = t_read_addr = t_write_addr = t_data_addr = INVALID_TEMPREG;
+//
+//   for (i = 0; i < cb_in->used; i++) {
+//      u_in = &cb_in->instrs[i];
+//
+//      //VG_(ppUInstr)(0, u_in);
+//
+//      if (prev_instr_was_Jcond) vg_assert(u_in->opcode == JMP);
+//
+//      switch (u_in->opcode) {
+//
+//         case INCEIP:
+//            instr_size = u_in->val1;
+//            goto case_for_end_of_x86_instr;
+//
+//         case JMP:
+//            if (u_in->cond == CondAlways) {
+//               vg_assert(i+1 == cb_in->used); 
+//
+//               /* Don't instrument if previous instr was a Jcond. */
+//               if (prev_instr_was_Jcond) {
+//                  vg_assert(0 == u_in->extra4b);
+//                  VG_(copyUInstr)(cb, u_in);
+//                  break;
+//               }
+//               prev_instr_was_Jcond = False;
+//
+//            } else {
+//               vg_assert(i+2 == cb_in->used);  /* 2nd last instr in block */
+//               prev_instr_was_Jcond = True;
+//            }
+//
+//            /* Ah, the first JMP... instrument, please. */
+//            instr_size = u_in->extra4b;
+//            goto case_for_end_of_x86_instr;
+//
+//            /* Shared code that is executed at the end of an x86 translation
+//             * block, marked by either an INCEIP or an unconditional JMP. */
+//            case_for_end_of_x86_instr:
+//
+//#define IS_(X)      (INVALID_TEMPREG != t_##X##_addr)
+//             
+//            /* Initialise the CC in the BBinvs array appropriately if it hasn't
+//             * been initialised before.
+//             * Then call appropriate sim function, passing it the CC address.
+//             * Note that CALLM_S/CALL_E aren't required here;  by this point,
+//             * the checking related to them has already happened. */
+//            stack_used = 0;
+//
+//            vg_assert(instr_size >= 1 && instr_size <= MAX_x86_INSTR_SIZE);
+//            vg_assert(0 != instr_addr);
+//
+//            CC_size = sizeof(invariant);
+//            if (!IS_(read) && !IS_(write)) {
+////               invariant* CC_ptr = (invariant*)(BBinvs_ptr);
+//               vg_assert(INVALID_DATA_SIZE == data_size);
+//               vg_assert(INVALID_TEMPREG == t_read_addr && 
+//                         INVALID_TEMPREG == t_write_addr);
+//#if 0
+//               if (!BB_seen_before)
+//                   init_invariant(CC_ptr, instr_addr, instr_size);
+//
+//               helper = VGOFF_(cachesim_log_non_mem_instr);
+//#endif
+//            } else { 
+//               Bool is_write;
+//               invariant* CC_ptr = (invariant*)(BBinvs_ptr);
+//                
+//               vg_assert(4 == data_size || 2  == data_size || 1 == data_size || 
+//                         8 == data_size || 10 == data_size);
+//               
+//               //CC_size = sizeof(invariant);
+//               helper = VGOFF_(diduce_log_instr);
+//
+//               if (IS_(read) && !IS_(write)) {
+//                  is_write = False;
+//                  vg_assert(INVALID_TEMPREG != t_read_addr && 
+//                            INVALID_TEMPREG == t_write_addr);
+//                  t_data_addr = t_read_addr;
+//
+//               } else if (!IS_(read) && IS_(write)) {
+//                  is_write = True;
+//                  vg_assert(INVALID_TEMPREG == t_read_addr && 
+//                            INVALID_TEMPREG != t_write_addr);
+//                  t_data_addr = t_write_addr;
+//
+//               } else {
+//                  vg_assert(IS_(read) && IS_(write));
+//                  is_write = True;
+//                  vg_assert(INVALID_TEMPREG != t_read_addr && 
+//                            INVALID_TEMPREG != t_write_addr);
+//                  t_data_addr = t_read_addr;
+//               }
+//
+//               if (!BB_seen_before)
+//                  init_invariant(is_write, CC_ptr, instr_addr, instr_size, data_size);
+//
+//               /* Save the caller-save registers before we push our args */
+//               uInstr1(cb, PUSH, 4, RealReg, R_EAX);
+//               uInstr1(cb, PUSH, 4, RealReg, R_ECX);
+//               uInstr1(cb, PUSH, 4, RealReg, R_EDX);
+//
+//               /* 2nd arg: data addr */
+//               uInstr1(cb, PUSH,  4, TempReg, t_data_addr);
+//               stack_used += 4;
+//
+//               /* 1st arg: CC addr */
+//               t_CC_addr = newTemp(cb);
+//               uInstr2(cb, MOV,   4, Literal, 0, TempReg, t_CC_addr);
+//               uLiteral(cb, BBinvs_ptr);
+//               uInstr1(cb, PUSH,  4, TempReg, t_CC_addr);
+//               stack_used += 4;
+//
+//               /* Call function and return. */
+//               uInstr1(cb, CALLM, 0, Lit16,   helper);
+//               uInstr1(cb, CLEAR, 0, Lit16,   stack_used);
+//
+//               /* Restore the caller-save registers now the call is done */
+//               uInstr1(cb, POP, 4, RealReg, R_EDX);
+//               uInstr1(cb, POP, 4, RealReg, R_ECX);
+//               uInstr1(cb, POP, 4, RealReg, R_EAX);
+//            }
+//
+//            VG_(copyUInstr)(cb, u_in);
+//
+//            /* Update BBinvs_ptr, EIP, de-init read/write temps for next instr */
+//            BBinvs_ptr   += CC_size; 
+//            instr_addr += instr_size;
+//            t_CC_addr = t_read_addr = t_write_addr = 
+//                                      t_data_addr  = INVALID_TEMPREG;
+//            data_size = INVALID_DATA_SIZE;
+//#undef IS_
+//
+//            break;
+//
+//
+//         /* For memory-ref instrs, copy the data_addr into a temporary to be
+//          * passed to the cachesim_log_function at the end of the instruction.
+//          */
+//         case LOAD: 
+//            t_read_addr = newTemp(cb);
+//            uInstr2(cb, MOV, 4, TempReg, u_in->val1,  TempReg, t_read_addr);
+//            data_size = u_in->size;
+//            VG_(copyUInstr)(cb, u_in);
+//            break;
+//
+//         case FPU_R:
+//            t_read_addr = newTemp(cb);
+//            uInstr2(cb, MOV, 4, TempReg, u_in->val2,  TempReg, t_read_addr);
+//            data_size = u_in->size;
+//            VG_(copyUInstr)(cb, u_in);
+//            break;
+//
+//         /* Note that we must set t_write_addr even for mod instructions;
+//          * that's how the code above determines whether it does a write;
+//          * without it, it would think a mod instruction is a read.
+//          * As for the MOV, if it's a mod instruction it's redundant, but it's
+//          * not expensive and mod instructions are rare anyway. */
+//         case STORE:
+//         case FPU_W:
+//            t_write_addr = newTemp(cb);
+//            uInstr2(cb, MOV, 4, TempReg, u_in->val2, TempReg, t_write_addr);
+//            data_size = u_in->size;
+//            VG_(copyUInstr)(cb, u_in);
+//            break;
+//
+//         case NOP:  case CALLM_E:  case CALLM_S:
+//            break;
+//
+//         default:
+//            VG_(copyUInstr)(cb, u_in);
+//            break;
 //      }
 //   }
-//   VG_(close)(fd);
+//
+//   /* Just check everything looks ok */
+//   vg_assert(BBinvs_ptr - BBinvs_ptr0 == BBinvs_node->array_size);
+//
+//   VG_(freeCodeBlock)(cb_in);
+//   return cb;
+//}
 
-//   cachesim_I1_initcache(I1c);
-//   cachesim_D1_initcache(D1c);
-//   cachesim_L2_initcache(L2c);
+/* Returns size of the invariant read into the space pointed to by blk */
+static Int read_invariant_line ( Int fd, void* blk, Int line_num )
+{
+#define N_COMMON_PARTS  6
+    
+   Int   i, j;
+   Int   nums[N_COMMON_PARTS];
+   Char *l;
+   Char  buf[LINE_BUF_LEN];
+   invariant1* inv1;
+   invariant2* inv2;
 
-   VG_(printf)("DIDUCE INIT\n");
+   Bool eof = VG_(getLine) ( fd, buf, LINE_BUF_LEN );
+   if (eof) { 
+      VG_(printf)("%d: unexpected end of file\n", line_num);
+      VG_(exit)(1);
+   }
+   l = VG_(strdup)(VG_AR_PRIVATE, buf);
 
-   init_BBCC_table();
+   /* Option looks like one of (ie. 6/8 fields for unary/binary op):
+    *   "<addr> <opcode> <data_size> <occs> <V> <M>".
+    *   "<addr> <opcode> <data_size> <occs> <V1> <M1> <V2> <M2>".
+    * Find spaces, replace with NULs to make several independent 
+    * strings, then extract numbers.  Yuck. */
+   i = nums[0] = 0;
+   for (j = 1; j < N_COMMON_PARTS; j++) {
+       while (VG_(isxdigit)(l[i])) i++;
+       if (' ' == l[i]) {
+          l[i++] = '\0';
+          nums[j] = i;
+       } else goto bad;
+   }
+   while (VG_(isxdigit)(l[i])) i++;
+
+   if ('\0' == l[i]) {
+      /* only 6 present */
+      inv1             = (invariant1*)blk;
+      inv1->tag        = INV1;
+      inv1->instr_addr = (UInt)VG_(atoll16)(l + nums[0]);
+      inv1->opcode     = (UChar)VG_(atoll) (l + nums[1]);
+      inv1->data_size  = (UChar)VG_(atoll) (l + nums[2]);
+      inv1->accesses   = (UInt)VG_(atoll)  (l + nums[3]);
+      inv1->V          = (UInt)VG_(atoll16)(l + nums[4]);
+      inv1->M          = (UInt)VG_(atoll16)(l + nums[5]);
+
+      vg_assert(1  == inv1->data_size || 2 == inv1->data_size ||
+                4  == inv1->data_size || 8 == inv1->data_size ||
+                10 == inv1->data_size);
+      vg_assert(inv1->accesses > 0);
+
+      //VG_(printf)("inv(%x): %s, %dB %dx (%x,%x)\n", 
+      //        inv1->instr_addr,
+      //        VG_(nameUOpcode)(False, inv1->opcode),
+      //        inv1->data_size, inv1->accesses, inv1->V, inv1->M);
+      VG_(printf)(".");
+      return sizeof(invariant1);
+
+   } else if (' ' == l[i]) {
+      /* must be 8 present */
+      l[i++] = '\0';
+      nums[6] = i;
+      while (VG_(isxdigit)(l[i])) i++;
+      if (' ' == l[i]) {
+         l[i++] = '\0';
+         nums[7] = i;
+      } else goto bad;
+      while (VG_(isxdigit)(l[i])) i++;
+      if ('\0' != l[i]) goto bad;
+
+      inv2             = (invariant2*)blk;
+      inv2->tag        = INV2;
+      inv2->instr_addr = (UInt)VG_(atoll16)(l + nums[0]);
+      inv2->opcode     = (UChar)VG_(atoll) (l + nums[1]);
+      inv2->data_size  = (UChar)VG_(atoll) (l + nums[2]);
+      inv2->accesses   = (UInt)VG_(atoll)  (l + nums[3]);
+      inv2->V1         = (UInt)VG_(atoll16)(l + nums[4]);
+      inv2->M1         = (UInt)VG_(atoll16)(l + nums[5]);
+      inv2->V2         = (UInt)VG_(atoll16)(l + nums[6]);
+      inv2->M2         = (UInt)VG_(atoll16)(l + nums[7]);
+
+      vg_assert(1  == inv2->data_size || 2 == inv2->data_size ||
+                4  == inv2->data_size || 8 == inv2->data_size ||
+                10 == inv2->data_size);
+      vg_assert(inv2->accesses > 0);
+
+      //VG_(printf)("inv(%x): %s, %dB %dx (%x,%x)(%x,%x)\n", 
+      //        inv2->instr_addr,
+      //        VG_(nameUOpcode)(False, inv2->opcode),
+      //        inv2->data_size, inv2->accesses, inv2->V1, inv2->M1,
+      //        inv2->V2, inv2->M2);
+      VG_(printf)(".");
+      return sizeof(invariant2);
+
+   } else goto bad;
+
+bad:    
+   VG_(printf)("%d: bad invariant line: '%s'\n", line_num, l);
+   VG_(exit)(1);
+}
+
+static Bool read_BB_line(Int fd, Int* line_num)
+{
+   Bool eof;
+   Char buf[LINE_BUF_LEN];
+   Int i, i1, i2, j;
+   Int array_size;
+   BBinvs* new;
+   UInt pos;
+   
+   eof = VG_(getLine) ( fd, buf, LINE_BUF_LEN );
+   if (!eof) {
+      if (0 == VG_(strncmp)(buf, BB_MARKER, VG_(strlen)(BB_MARKER))) {
+
+         i = i1 = VG_(strlen)(BB_MARKER);
+
+         (*line_num)++;         /* For the BB line */
+         while (VG_(isxdigit)(buf[i])) i++;
+         if (' ' == buf[i]) {
+            buf[i++] = '\0';
+            i2 = i; 
+         } else goto bad;
+         while (VG_(isxdigit)(buf[i])) i++;
+         if ('\0' != buf[i]) goto bad;
+
+         /* Nb: need array_size pre-malloc, but orig_addr can be set after */
+         array_size = (UInt)VG_(atoll)(buf + i2);
+         new = (BBinvs*)VG_(malloc)(VG_AR_PRIVATE, sizeof(BBinvs) + array_size);
+         new->orig_addr  = (UInt)VG_(atoll16)(buf + i1);
+         new->array_size = array_size;
+
+         //VG_(printf)("Allocated BBinvs at %x(%x)\n", new, &(new->array[0]));
+
+         j = 0;
+         while (j < array_size) {
+            //VG_(printf)("j = %x(%x)\n", j, &(new->array[j/sizeof(Addr)]));
+            j += read_invariant_line(fd, (void*)&(new->array[j/sizeof(Addr)]), 
+                                     *line_num);
+            (*line_num)++;      /* For the invariant line */
+         }
+
+         /* Stick array in table, prepending to the relevant chain */
+         pos = new->orig_addr % N_ENTRIES;
+         new->next = BBinvs_table[pos];
+         BBinvs_table[pos] = new;
+
+         return True;
+         
+      } else {
+         VG_(printf)("%d: bad line\n", *line_num);
+         VG_(exit)(1);
+      }
+
+   } else {
+       return False;
+   }
+
+bad:
+   VG_(printf)("%d: bad BB line: '%s'\n", *line_num, buf);
+   VG_(exit)(1);
+}
+
+/* Sticks any invariants found in file into BBinvs_table */
+static void read_invariants_file(char *filename) {
+   Int fd, eof, line_num = 1;
+   Char buf[LINE_BUF_LEN];
+
+   fd = VG_(open_read)( filename );
+   if (fd == -1) {
+      VG_(message)(Vg_UserMsg, 
+                   "WARNING: can't open diduce training file `%s'", 
+                   filename );
+      return;
+   }
+
+   /* XXX: check if the current command is the same, warn if not 
+    * (could even record executable name/timestamp/size for really careful
+    * check?)
+    */
+   eof = VG_(getLine) ( fd, buf, LINE_BUF_LEN );
+   if (eof || 0 != VG_(strncmp)("cmd: ", buf, 5)) {
+      VG_(printf)("bad first line: '%s'\n", buf);
+      VG_(exit)(1);
+   }
+   VG_(message)(Vg_UserMsg, "Training file %s is for cmd: '%s'", filename, buf+5);
+   line_num++;
+
+   while (read_BB_line(fd, &line_num)) { }
+
+   VG_(close)(fd);
+   return;
+}
+
+void VG_(init_diduce)(void)
+{
+   Int fd;
+
+   init_BBinvs_table();
+   read_invariants_file(IN_FILE);
+
+   VG_(printf)("DIDUCE INIT (finished reading input file)\n");
+
+   /* Make sure the output file can be written.  This zeroes the file, so must
+    * happen after reading training file (in case reading doesn't work). */
+   /* XXX: only do this when training */
+   fd = VG_(open_write)(OUT_FILE);
+   if (-1 == fd) { 
+      fd = VG_(create_and_write)(OUT_FILE);
+      if (-1 == fd) {
+         file_err(); 
+      }
+   }
+   VG_(close)(fd);
+   //fprint_BBinvs_table_and_calc_totals(0, NULL);
+
 }
 
 static Int violations = 0;
 
-static Int num_of_zero_bits_in_UInt(UInt x) 
+static UInt num_of_zero_bits(UInt x) 
 {
-   Int i, n = 0;
+    Int i;
+   UInt n = 0;
 
    for (i = 0; i < sizeof(UInt)*8; i++) {
       if (0 == (x & 0x1)) n++;
@@ -695,230 +1022,217 @@ static Int num_of_zero_bits_in_UInt(UInt x)
    return n;
 }
 
-static __inline__ Bool is_crud(char* fl, char* fn)
+/* 'which' indicates if it was a unary or binary op, and if binary, whether the
+ * first or second arg caused the violation. */
+static __inline__ 
+void print_if_violation(Int which, Addr instr_addr, UInt old_mask, 
+                        UInt M, UInt W, UInt accesses, UChar opcode) 
 {
-   return (0 == VG_(strcmp)(fl, "do-lookup.h"                   ) ||
-           0 == VG_(strcmp)(fl, "dl-lookup.c"                   ) ||
-           0 == VG_(strcmp)(fl, "dl-runtime.c"                  ) ||
-           0 == VG_(strcmp)(fl, "dl-init.c"                     ) ||
-           0 == VG_(strcmp)(fl, "dl-fini.c"                     ) ||
-           0 == VG_(strcmp)(fl, "dl-debug.c"                    ) ||
-           0 == VG_(strcmp)(fl, "cxa_atexit.c"                  ) ||
-           0 == VG_(strcmp)(fl, "exit.c"                        ) ||
-           0 == VG_(strcmp)(fl, "genops.c"                      ) ||
-           0 == VG_(strcmp)(fl, "getopt_init.c"                 ) ||
-           0 == VG_(strcmp)(fl, "???"                           ) ||
-           0 == VG_(strcmp)(fn, "???"                           ) ||
-           0 == VG_(strcmp)(fn, "set_progname"                  ) ||
-           0 == VG_(strcmp)(fn, "fixup"                         ) ||
-           0 == VG_(strcmp)(fn, "__libc_init"                   ) ||
-           0 == VG_(strcmp)(fn, "_dl_runtime_resolve"           ) ||
-           0 == VG_(strcmp)(fn, "_dl_lookup_versioned_symbol"   ) ||
-           0 == VG_(strcmp)(fn, "__getopt_clean_environment"    ) ||
-           0 == VG_(strcmp)(fn, "__deregister_frame_info"       ));
+   Char fl_buf[FILENAME_LEN], fn_buf[FN_NAME_LEN];
+   Int line_num         = 0;
+
+   /* Use ULongs because (1 << 32) (which is possible) overflows a UInt.
+    * The "ULL" suffix is necessary! */
+   ULong range_of_values1 = (1ULL << num_of_zero_bits(old_mask));
+   ULong range_of_values2 = (1ULL << num_of_zero_bits(M));
+   double confidence1    =  accesses    / (double)range_of_values1;
+   double confidence2    = (accesses+1) / (double)range_of_values2;
+
+   get_debug_info(instr_addr, fl_buf, fn_buf, &line_num);
+
+//VG_(printf)("a = %u, Mold = %x, M = %x, r1 = %llu, r2 = %llu\n", accesses, old_mask, M, range_of_values1, range_of_values2);
+
+   if (confidence1 - confidence2 < 0) {
+      VG_(printf)("confidence difference negative: c1=%llu, c2=%llu, diff=%llu  \n", (ULong)confidence1, (ULong)confidence2, (ULong)(confidence1 - confidence2));
+      VG_(panic)("confidence difference negative");
+   }
+   
+   if (confidence1 - confidence2 >= VG_(clo_confidence)) {
+      VG_(printf)("V%3d(%s-%d): conf loss %d, count %d, values %llu, "
+                  "vbits %d->%d, value 0x%x at %s:%s:%d (%x)\n", 
+                  violations, 
+                  VG_(nameUOpcode)(False, opcode), which,
+                  (Int)(confidence1 - confidence2),
+                  accesses+1, range_of_values2,
+                  num_of_zero_bits(old_mask), 
+                  num_of_zero_bits(M), 
+                  W,
+                  fl_buf, fn_buf, line_num,
+                  instr_addr);
+      violations++;
+   }
 }
 
-
-//static jmp_buf sigsegv_jmpbuf;
-//
-//static
-//void SIGSEGV_handler(int signum)
-//{
-//   __builtin_longjmp(sigsegv_jmpbuf, 1);
-//}
-
-
-void VG_(diduce_log_instr)(invariant* inv, Addr data_addr)
-{
-   //VG_(printf)("sim  D: CCaddr=0x%x, iaddr=0x%x, isize=%u, daddr=0x%x, dsize=%u\n",
-   //            inv, inv->instr_addr, inv->instr_size, data_addr, inv->data_size)
 #if 0
-   VGP_PUSHCC(VgpCacheSimulate);
-   cachesim_I1_doref(inv->instr_addr, inv->instr_size, &inv->I.m1, &inv->I.m2);
-   inv->I.a++;
+static jmp_buf sigsegv_jmpbuf;
 
-   cachesim_D1_doref(data_addr,      inv->data_size,  &inv->D.m1, &inv->D.m2);
-   inv->D.a++;
-   VGP_POPCC;
+static
+void SIGSEGV_handler(int signum)
+{
+   __builtin_longjmp(sigsegv_jmpbuf, 1);
+}
 #endif
 
+void VG_(diduce_log_instr1)(invariant1* inv, UInt arg2)
+{
    UInt x, W;
 
-   Char fl_buf[256], fn_buf[256];
-   Int line_num = 0;
-
-//   VG_(printf)("%x...", data_addr);
-   
-//   W = *(UInt*)data_addr;
-
-   /* Install own SIGSEGV handler */
 #if 0
+   /* Install own SIGSEGV handler */
    Int res = 0;
    vki_ksigaction sigsegv_new, sigsegv_saved;
-
    sigsegv_new.ksa_handler  = SIGSEGV_handler;
    sigsegv_new.ksa_flags    = 0;
    sigsegv_new.ksa_restorer = NULL;
    res = VG_(ksigemptyset)( &sigsegv_new.ksa_mask );
    vg_assert(res == 0);
-
    res = VG_(ksigaction)( VKI_SIGSEGV, &sigsegv_new, &sigsegv_saved );
    vg_assert(res == 0);
-
    if (__builtin_setjmp(sigsegv_jmpbuf) == 0) {
-      W = *(UInt*)data_addr;
+
+      switch (inv->data_size) {
+         case 1:  W = *(UChar*) data_addr;  break;
+         case 2:  W = *(UShort*)data_addr;  break;
+         case 4: case 8: case 10:
+                  W = *(UInt*)  data_addr;  break;
+         default: VG_(printf)("inv->data_size = %u\n", inv->data_size);
+                  VG_(panic)("inv->data_size not 1, 2, 4, 8 or 10");
+      }
 
       /* Restore old SIGILL handler */
       res = VG_(ksigaction)( VKI_SIGSEGV, &sigsegv_saved, NULL );
       vg_assert(res == 0);
 
    } else  {
-      //VG_(message)(Vg_UserMsg, "SEGMENTATION FAULT!!!");
-      VG_(printf)("SEGMENTATION FAULT!!!: (%c)deref'd %x, data_size=%u", 
-            (inv->is_write ? 'w' : 'r'), W, inv->data_size);
+      VG_(printf)("SEGMENTATION FAULT!!!: (%c) data_addr=%x, data_size=%u", 
+            (inv->is_write ? 'w' : 'r'), data_addr, inv->data_size);
       get_debug_info(inv->instr_addr, fl_buf, fn_buf, &line_num);
       VG_(printf)(" at %s:%s:%d (%x)\n",  fl_buf, fn_buf, line_num, inv->instr_addr);
-
       /* Restore old SIGILL handler */
       res = VG_(ksigaction)( VKI_SIGSEGV, &sigsegv_saved, NULL );
       vg_assert(res == 0);
-
       W = 999;
    }
 #endif
-   switch (inv->data_size) {
-      case 1:  W = *(UChar*) data_addr;  break;
-      case 2:  W = *(UShort*)data_addr;  break;
-      case 4: case 8: case 10:
-               W = *(UInt*)  data_addr;  break;
-      default: VG_(panic)("inv->data size not 1, 2, 4, 8 or 10");
-   }
    
-//   if (inv->is_write) {
-      if (inv->is_set) {
+   switch (inv->data_size) {
+      case 1:  W = (UChar) arg2;  break;
+      case 2:  W = (UShort)arg2;  break;
+      case 4: case 8: case 10:
+               W = (UInt)  arg2;  break;
+      default: VG_(printf)("inv->data_size = %u\n", inv->data_size);
+               VG_(panic)("inv->data_size(1) not 1, 2, 4, 8 or 10");
+   }
 
-         x = inv->V ^ W;
-         //VG_(printf)("V(%8x): %8x, W: %8x, V^W = %8x, old mask = %8x, change? = %x\n",
-         //    data_addr, inv->V, W, x, inv->M, x & inv->M);
-         if (0 != (x & inv->M)) {
-            UInt old_mask = inv->M;
-            get_debug_info(inv->instr_addr, fl_buf, fn_buf, &line_num);
-            
-            inv->M &= ~x;            /* Relax inv */
+   if (0 != inv->accesses) {
+      x = inv->V ^ W;
 
-            if (! is_crud(fl_buf, fn_buf)) {
-            
-               Int range_of_values1 = (1 << num_of_zero_bits_in_UInt(old_mask));
-               Int range_of_values2 = (1 << num_of_zero_bits_in_UInt(inv->M));
-               //float confidence_threshold = 5;
-               float confidence1 =  inv->accesses    / (float)range_of_values1;
-               float confidence2 = (inv->accesses+1) / (float)range_of_values2;
-
-               // ignore unless confidence threshold reached
-               if (confidence1 - confidence2 > VG_(clo_confidence)) {
-#                 if 0
-                  VG_(printf)("V%c%3d: %u/%d, %u/%d, vbits: %d -> %d, V: %08x, val = %08x"
-                              " at %s:%s:%d\n", 
-                              (inv->is_write ? 'w' : 'r'), violations, 
-                              inv->accesses, range_of_values1,
-                              inv->accesses+1, range_of_values2,
-                              old_mask, inv->M, inv->V, W,
-                              fl_buf, fn_buf, line_num);
-#                 else
-                  VG_(printf)("V%c%3d: conf loss %d, count %d, values %d, "
-                              "vbits %d->%d, value 0x%x"
-                              "  at %s:%s:%d\n", 
-                              (inv->is_write ? 'w' : 'r'), violations, 
-                              ((Int)confidence1) - ((Int)confidence2),
-                              inv->accesses+1, range_of_values2,
-                              num_of_zero_bits_in_UInt(old_mask), 
-                              num_of_zero_bits_in_UInt(inv->M), 
-                              W,
-                              fl_buf, fn_buf, line_num);
-#                 endif
-                  violations++;
-               }
-            }
-         }
-
-      } else {
-         //VG_(printf)("unset_%c(%8x, %8x) ---> %x\n", 
-         //      (inv->is_write ? 'w' : 'r'), data_addr, inv, W);
-         inv->V = W;
-         inv->is_set = True;
+      if (0 != (x & inv->M)) {
+         UInt old_mask = inv->M;
+         inv->M &= ~x;            /* Relax invariant */
+         print_if_violation(0, inv->instr_addr, old_mask, inv->M, W, 
+                            inv->accesses, inv->opcode);
       }
-      inv->accesses++;
 
-//   } else {
-//      //VG_(printf)("read (%x)\n", W);
-//      if (! cc->is_set) {
-//         VG_(printf)("Reading unitialised value at address 0x%x\n", data_addr);
-//      }
-//   }
+   } else {
+      inv->V = W;
+   }
+   inv->accesses++;
+}
+
+void VG_(diduce_log_instr2)(invariant2* inv, Addr arg2, UInt arg3)
+{
+   UInt x1, x2;
+   UInt W1, W2;
+   UInt old_mask;
+   
+   switch (inv->data_size) {
+      case 1:  W1 = (UChar) arg2; W2 = (UChar) arg3; break;
+      case 2:  W1 = (UShort)arg2; W2 = (UShort)arg3; break;
+      case 4: case 8: case 10:
+               W1 = (UInt)  arg2; W2 = (UShort)arg3; break;
+      default: VG_(printf)("---\ninv->data_size = %u\n", inv->data_size);
+               VG_(printf)("address = %x\n", inv);
+               VG_(printf)("inv(%x): %d, %dB %dx (%x,%x)(%x,%x)\n", 
+               inv->instr_addr, inv->opcode, inv->data_size, inv->accesses, 
+               inv->V1, inv->M1, inv->V2, inv->M2);
+
+               VG_(panic)("inv->data_size(2) not 1, 2, 4, 8 or 10");
+   }
+
+   if (0 != inv->accesses) {
+      x1 = inv->V1 ^ W1;
+      x2 = inv->V2 ^ W2;
+
+      if (0 != (x1 & inv->M1)) {
+         old_mask = inv->M1;
+         inv->M1 &= ~x1;            /* Relax invariant */
+         print_if_violation(1, inv->instr_addr, old_mask, inv->M1, W1,
+                            inv->accesses, inv->opcode);
+      }
+      if (0 != (x2 & inv->M2)) {
+         old_mask = inv->M2;
+         inv->M2 &= ~x2;            /* Relax invariant */
+         print_if_violation(2, inv->instr_addr, old_mask, inv->M2, W2,
+                            inv->accesses, inv->opcode);
+      }
+
+   } else {
+      inv->V1 = W1;
+      inv->V2 = W2;
+   }
+   inv->accesses++;
 }
 
 /*------------------------------------------------------------*/
 /*--- Printing of output file and summary stats            ---*/
 /*------------------------------------------------------------*/
 
-#if 0
-static void fprint_BBCC(Int fd, BBCC* BBCC_node, Char *first_instr_fl, 
-                                                 Char *first_instr_fn)
+static void fprint_BBinvs(Int fd, BBinvs* BBinvs_node)
 {
-   Addr BBCC_ptr0, BBCC_ptr;
-   Char buf[BUF_LEN], curr_file[BUF_LEN], 
-        fbuf[BUF_LEN+4], lbuf[LINE_BUF_LEN];
-   UInt line_num;
+   Addr BBinvs_ptr0, BBinvs_ptr;
+   Char buf[LINE_BUF_LEN];     
 
-   BBCC_ptr0 = BBCC_ptr = (Addr)(BBCC_node->array);
+   BBinvs_ptr0 = BBinvs_ptr = (Addr)(BBinvs_node->array);
 
    /* Mark start of basic block in output, just to ease debugging */
-   VG_(write)(fd, (void*)"\n", 1);  
+   VG_(sprintf)(buf, "%s%x %d\n", BB_MARKER, BBinvs_node->orig_addr, 
+                                             BBinvs_node->array_size);
+   VG_(write)(fd, (void*)buf, VG_(strlen)(buf));  
 
-   VG_(strcpy)(curr_file, first_instr_fl);
-   
-   while (BBCC_ptr - BBCC_ptr0 < BBCC_node->array_size) {
+   while (BBinvs_ptr - BBinvs_ptr0 < BBinvs_node->array_size) {
 
-      /* We pretend the CC is an invariant for getting the tag.  This is ok
-       * because both CC types have tag as their first byte.  Once we know
-       * the type, we can cast and act appropriately. */
+      /* We pretend the invariant is an invariant1 for getting the tag.  This
+       * is ok because both invariant types have tag as their first byte.  Once
+       * we know the type, we can cast and act appropriately. */
 
-      Char fl_buf[FILENAME_LEN];
-      Char fn_buf[FN_NAME_LEN];
+      //Char fl_buf[FILENAME_LEN];
+      //Char fn_buf[FN_NAME_LEN];
 
       Addr instr_addr;
-      switch ( ((invariant*)BBCC_ptr)->tag ) {
+      switch ( ((invariant1*)BBinvs_ptr)->tag ) {
 
-         case INSTR_CC:
-            instr_addr = ((invariant*)BBCC_ptr)->instr_addr;
-            sprint_iCC(buf, (invariant*)BBCC_ptr);
-            ADD_CC_TO(invariant, I, Ir_total);
-            BBCC_ptr += sizeof(invariant);
+         case INV1:
+            instr_addr = ((invariant1*)BBinvs_ptr)->instr_addr;
+            sprint_invariant1(buf, (invariant1*)BBinvs_ptr);
+            BBinvs_ptr += sizeof(invariant1);
             break;
 
-         case READ_CC:
-         case  MOD_CC:
-            instr_addr = ((idCC*)BBCC_ptr)->instr_addr;
-            sprint_read_or_mod_CC(buf, (idCC*)BBCC_ptr);
-            ADD_CC_TO(idCC, I, Ir_total);
-            ADD_CC_TO(idCC, D, Dr_total);
-            BBCC_ptr += sizeof(idCC);
-            break;
-
-         case WRITE_CC:
-            instr_addr = ((idCC*)BBCC_ptr)->instr_addr;
-            sprint_write_CC(buf, (idCC*)BBCC_ptr);
-            ADD_CC_TO(idCC, I, Ir_total);
-            ADD_CC_TO(idCC, D, Dw_total);
-            BBCC_ptr += sizeof(idCC);
+         case INV2:
+            instr_addr = ((invariant2*)BBinvs_ptr)->instr_addr;
+            sprint_invariant2(buf, (invariant2*)BBinvs_ptr);
+            BBinvs_ptr += sizeof(invariant2);
             break;
 
          default:
-            VG_(panic)("Unknown CC type in fprint_BBCC()\n");
+            VG_(panic)("Unknown invariant type in fprint_BBinvs()\n");
             break;
       }
-      distinct_instrs++;
-      
+      VG_(write)(fd, (void*)buf, VG_(strlen)(buf));
+
+      distinct_invs++;
+   }
+#if 0
       get_debug_info(instr_addr, fl_buf, fn_buf, &line_num);
 
       /* Allow for filename switching in the middle of a BB;  if this happens,
@@ -955,33 +1269,22 @@ static void fprint_BBCC(Int fd, BBCC* BBCC_node, Char *first_instr_fl,
 
    /* Mark end of basic block */
    /* VG_(write)(fd, (void*)"#}\n", 3); */
-
-   vg_assert(BBCC_ptr - BBCC_ptr0 == BBCC_node->array_size);
-}
 #endif
 
-#if 0
-static void fprint_BBCC_table_and_calc_totals(Int client_argc, 
+   vg_assert(BBinvs_ptr - BBinvs_ptr0 == BBinvs_node->array_size);
+}
+
+static void fprint_BBinvs_table_and_calc_totals(Int client_argc, 
                                               Char** client_argv)
 {
    Int        fd;
    Char       buf[BUF_LEN];
-   file_node *curr_file_node;
-   fn_node   *curr_fn_node;
-   BBCC      *curr_BBCC;
-   Int        i,j,k;
+   BBinvs    *curr;
+   Int        i;
 
    VGP_PUSHCC(VgpCacheDump);
    fd = VG_(open_write)(OUT_FILE);
    if (-1 == fd) { file_err(); }
-
-   /* "desc:" lines (giving I1/D1/L2 cache configuration) */
-   VG_(sprintf)(buf, "desc: I1 cache:         %s\n", I1.desc_line);
-   VG_(write)(fd, (void*)buf, VG_(strlen)(buf));
-   VG_(sprintf)(buf, "desc: D1 cache:         %s\n", D1.desc_line);
-   VG_(write)(fd, (void*)buf, VG_(strlen)(buf));
-   VG_(sprintf)(buf, "desc: L2 cache:         %s\n", L2.desc_line);
-   VG_(write)(fd, (void*)buf, VG_(strlen)(buf));
 
    /* "cmd:" line */
    VG_(strcpy)(buf, "cmd:");
@@ -990,130 +1293,20 @@ static void fprint_BBCC_table_and_calc_totals(Int client_argc,
        VG_(sprintf)(buf, " %s", client_argv[i]);
        VG_(write)(fd, (void*)buf, VG_(strlen)(buf));
    }
-   /* "events:" line */
-   VG_(sprintf)(buf, "\nevents: Ir I1mr I2mr Dr D1mr D2mr Dw D1mw D2mw\n");
+   VG_(sprintf)(buf, "\n");
    VG_(write)(fd, (void*)buf, VG_(strlen)(buf));
 
-   /* Six loops here:  three for the hash table arrays, and three for the
-    * chains hanging off the hash table arrays. */
-   for (i = 0; i < N_FILE_ENTRIES; i++) {
-      curr_file_node = BBCC_table[i];
-      while (curr_file_node != NULL) {
-         VG_(sprintf)(buf, "fl=%s\n", curr_file_node->filename);
-         VG_(write)(fd, (void*)buf, VG_(strlen)(buf));
-
-         for (j = 0; j < N_FN_ENTRIES; j++) {
-            curr_fn_node = curr_file_node->fns[j];
-            while (curr_fn_node != NULL) {
-               VG_(sprintf)(buf, "fn=%s\n", curr_fn_node->fn_name);
-               VG_(write)(fd, (void*)buf, VG_(strlen)(buf));
-
-               for (k = 0; k < N_BBCC_ENTRIES; k++) {
-                  curr_BBCC = curr_fn_node->BBCCs[k];
-                  while (curr_BBCC != NULL) {
-                     fprint_BBCC(fd, curr_BBCC, 
-                             
-                             curr_file_node->filename,
-                             curr_fn_node->fn_name);
-
-                     curr_BBCC = curr_BBCC->next;
-                  }
-               }
-               curr_fn_node = curr_fn_node->next;
-            }
-         }
-         curr_file_node = curr_file_node->next;
+   /* Invariants, printed flat */
+   for (i = 0; i < N_ENTRIES; i++) {
+      curr = BBinvs_table[i];
+      while (curr != NULL) {
+         fprint_BBinvs(fd, curr);
+         curr = curr->next;
       }
    }
-
-   /* Print stats from any discarded basic blocks */
-   if (0 != Ir_discards.a) {
-
-      VG_(sprintf)(buf, "fl=(discarded)\n");
-      VG_(write)(fd, (void*)buf, VG_(strlen)(buf));
-      VG_(sprintf)(buf, "fn=(discarded)\n");
-      VG_(write)(fd, (void*)buf, VG_(strlen)(buf));
-
-      /* Use 0 as line number */
-      VG_(sprintf)(buf, "0 %llu %llu %llu %llu %llu %llu %llu %llu %llu\n",
-                   Ir_discards.a, Ir_discards.m1, Ir_discards.m2, 
-                   Dr_discards.a, Dr_discards.m1, Dr_discards.m2, 
-                   Dw_discards.a, Dw_discards.m1, Dw_discards.m2);
-      VG_(write)(fd, (void*)buf, VG_(strlen)(buf));
-
-      Ir_total.a  += Ir_discards.a;
-      Ir_total.m1 += Ir_discards.m1;
-      Ir_total.m2 += Ir_discards.m2;
-      Dr_total.a  += Dr_discards.a;
-      Dr_total.m1 += Dr_discards.m1;
-      Dr_total.m2 += Dr_discards.m2;
-      Dw_total.a  += Dw_discards.a;
-      Dw_total.m1 += Dw_discards.m1;
-      Dw_total.m2 += Dw_discards.m2;
-   }
-
-   /* Summary stats must come after rest of table, since we calculate them
-    * during traversal.  */ 
-   VG_(sprintf)(buf, "summary: "
-                     "%llu %llu %llu "
-                     "%llu %llu %llu "
-                     "%llu %llu %llu\n", 
-                     Ir_total.a, Ir_total.m1, Ir_total.m2,
-                     Dr_total.a, Dr_total.m1, Dr_total.m2,
-                     Dw_total.a, Dw_total.m1, Dw_total.m2);
-   VG_(write)(fd, (void*)buf, VG_(strlen)(buf));
    VG_(close)(fd);
 }
-#endif
 
-#if 0
-/* Adds commas to ULong, right justifying in a field field_width wide, returns
- * the string in buf. */
-static
-Int commify(ULong n, int field_width, char buf[COMMIFY_BUF_LEN])
-{
-   int len, n_commas, i, j, new_len, space;
-
-   VG_(sprintf)(buf, "%lu", n);
-   len = VG_(strlen)(buf);
-   n_commas = (len - 1) / 3;
-   new_len = len + n_commas;
-   space = field_width - new_len;
-
-   /* Allow for printing a number in a field_width smaller than it's size */
-   if (space < 0) space = 0;    
-
-   /* Make j = -1 because we copy the '\0' before doing the numbers in groups
-    * of three. */
-   for (j = -1, i = len ; i >= 0; i--) {
-      buf[i + n_commas + space] = buf[i];
-
-      if (3 == ++j) {
-         j = 0;
-         n_commas--;
-         buf[i + n_commas + space] = ',';
-      }
-   }
-   /* Right justify in field. */
-   for (i = 0; i < space; i++)  buf[i] = ' ';
-   return new_len;
-}
-
-static
-void percentify(Int n, Int pow, Int field_width, char buf[]) 
-{
-   int i, len, space;
-    
-   VG_(sprintf)(buf, "%d.%d%%", n / pow, n % pow);
-   len = VG_(strlen)(buf);
-   space = field_width - len;
-   i = len;
-
-   /* Right justify in field */
-   for (     ; i >= 0;    i--)  buf[i + space] = buf[i];
-   for (i = 0; i < space; i++)  buf[i] = ' ';
-}
-#endif
 void VG_(do_diduce_results)(Int client_argc, Char** client_argv)
 {
    VG_(printf)("DIDUCE RESULTS\n");
@@ -1126,9 +1319,9 @@ void VG_(do_diduce_results)(Int client_argc, Char** client_argv)
         buf3[RESULTS_BUF_LEN];
    Int l1, l2, l3;
    Int p;
-
-   fprint_BBCC_table_and_calc_totals(client_argc, client_argv);
-
+#endif
+   fprint_BBinvs_table_and_calc_totals(client_argc, client_argv);
+#if 0
    if (VG_(clo_verbosity) == 0) 
       return;
 
@@ -1247,13 +1440,13 @@ void VG_(do_diduce_results)(Int client_argc, Char** client_argv)
 /* Called when a translation is invalidated due to self-modifying code or
  * unloaded of a shared object.
  *
- * Finds the BBCC in the table, removes it, adds the counts to the discard
- * counters, and then frees the BBCC. */
+ * Finds the BBinvs in the table, removes it, adds the counts to the discard
+ * counters, and then frees the BBinvs. */
 void VG_(diduce_notify_discard) ( TTEntry* tte )
 {
 #if 0
-   BBCC *BBCC_node;
-   Addr BBCC_ptr0, BBCC_ptr;
+   BBinvs *BBinvs_node;
+   Addr BBinvs_ptr0, BBinvs_ptr;
    Bool BB_seen_before;
 #endif
     
@@ -1263,35 +1456,35 @@ void VG_(diduce_notify_discard) ( TTEntry* tte )
 #if 0
    /* 2nd arg won't be used since BB should have been seen before (assertions
     * ensure this). */
-   BBCC_node = get_BBCC(tte->orig_addr, NULL, True, &BB_seen_before);
-   BBCC_ptr0 = BBCC_ptr = (Addr)(BBCC_node->array);
+   BBinvs_node = get_BBinvs(tte->orig_addr, NULL, True, &BB_seen_before);
+   BBinvs_ptr0 = BBinvs_ptr = (Addr)(BBinvs_node->array);
 
    vg_assert(True == BB_seen_before);
 
-   while (BBCC_ptr - BBCC_ptr0 < BBCC_node->array_size) {
+   while (BBinvs_ptr - BBinvs_ptr0 < BBinvs_node->array_size) {
 
       /* We pretend the CC is an invariant for getting the tag.  This is ok
        * because both CC types have tag as their first byte.  Once we know
        * the type, we can cast and act appropriately. */
 
-      switch ( ((invariant*)BBCC_ptr)->tag ) {
+      switch ( ((invariant*)BBinvs_ptr)->tag ) {
 
          case INSTR_CC:
             ADD_CC_TO(invariant, I, Ir_discards);
-            BBCC_ptr += sizeof(invariant);
+            BBinvs_ptr += sizeof(invariant);
             break;
 
          case READ_CC:
          case  MOD_CC:
             ADD_CC_TO(idCC, I, Ir_discards);
             ADD_CC_TO(idCC, D, Dr_discards);
-            BBCC_ptr += sizeof(idCC);
+            BBinvs_ptr += sizeof(idCC);
             break;
 
          case WRITE_CC:
             ADD_CC_TO(idCC, I, Ir_discards);
             ADD_CC_TO(idCC, D, Dw_discards);
-            BBCC_ptr += sizeof(idCC);
+            BBinvs_ptr += sizeof(idCC);
             break;
 
          default:
@@ -1300,7 +1493,7 @@ void VG_(diduce_notify_discard) ( TTEntry* tte )
       }
    }
 
-   VG_(free)(VG_AR_PRIVATE, BBCC_node);
+   VG_(free)(VG_AR_PRIVATE, BBinvs_node);
 #endif
 }
 

@@ -883,7 +883,7 @@ void VG_(show_all_errors) ( void )
 
 #define VG_ISSPACE(ch) (((ch)==' ') || ((ch)=='\n') || ((ch)=='\t'))
 
-static Bool getLine ( Int fd, Char* buf, Int nBuf )
+Bool VG_(getLine) ( Int fd, Char* buf, Int nBuf )
 {
    Char ch;
    Int  n, i;
@@ -980,16 +980,16 @@ static void load_one_suppressions_file ( Char* filename )
       supp->param = supp->caller0 = supp->caller1 
                   = supp->caller2 = supp->caller3 = NULL;
 
-      eof = getLine ( fd, buf, N_BUF );
+      eof = VG_(getLine) ( fd, buf, N_BUF );
       if (eof) break;
 
       if (!STREQ(buf, "{")) goto syntax_error;
       
-      eof = getLine ( fd, buf, N_BUF );
+      eof = VG_(getLine) ( fd, buf, N_BUF );
       if (eof || STREQ(buf, "}")) goto syntax_error;
       supp->sname = copyStr(buf);
 
-      eof = getLine ( fd, buf, N_BUF );
+      eof = VG_(getLine) ( fd, buf, N_BUF );
       if (eof) goto syntax_error;
       else if (STREQ(buf, "Param"))  supp->skind = Param;
       else if (STREQ(buf, "Value0")) supp->skind = Value0; /* backwards compat */
@@ -1007,39 +1007,39 @@ static void load_one_suppressions_file ( Char* filename )
       else goto syntax_error;
 
       if (supp->skind == Param) {
-         eof = getLine ( fd, buf, N_BUF );
+         eof = VG_(getLine) ( fd, buf, N_BUF );
          if (eof) goto syntax_error;
          supp->param = copyStr(buf);
       }
 
-      eof = getLine ( fd, buf, N_BUF );
+      eof = VG_(getLine) ( fd, buf, N_BUF );
       if (eof) goto syntax_error;
       supp->caller0 = copyStr(buf);
       if (!setLocationTy(&(supp->caller0), &(supp->caller0_ty)))
          goto syntax_error;
 
-      eof = getLine ( fd, buf, N_BUF );
+      eof = VG_(getLine) ( fd, buf, N_BUF );
       if (eof) goto syntax_error;
       if (!STREQ(buf, "}")) {
          supp->caller1 = copyStr(buf);
          if (!setLocationTy(&(supp->caller1), &(supp->caller1_ty)))
             goto syntax_error;
       
-         eof = getLine ( fd, buf, N_BUF );
+         eof = VG_(getLine) ( fd, buf, N_BUF );
          if (eof) goto syntax_error;
          if (!STREQ(buf, "}")) {
             supp->caller2 = copyStr(buf);
             if (!setLocationTy(&(supp->caller2), &(supp->caller2_ty)))
                goto syntax_error;
 
-            eof = getLine ( fd, buf, N_BUF );
+            eof = VG_(getLine) ( fd, buf, N_BUF );
             if (eof) goto syntax_error;
             if (!STREQ(buf, "}")) {
                supp->caller3 = copyStr(buf);
               if (!setLocationTy(&(supp->caller3), &(supp->caller3_ty)))
                  goto syntax_error;
 
-               eof = getLine ( fd, buf, N_BUF );
+               eof = VG_(getLine) ( fd, buf, N_BUF );
                if (eof || !STREQ(buf, "}")) goto syntax_error;
 	    }
          }

@@ -653,6 +653,13 @@ Bool VG_(isdigit) ( Char c )
    return (c >= '0' && c <= '9');
 }
 
+Bool VG_(isxdigit) ( Char c )
+{
+   return ((c >= '0' && c <= '9') ||
+           (c >= 'a' && c <= 'f') ||
+           (c >= 'A' && c <= 'F'));
+}
+
 Int VG_(strlen) ( const Char* str )
 {
    Int i = 0;
@@ -668,6 +675,33 @@ Long VG_(atoll) ( Char* str )
    if (*str == '-') { str++; neg = True; };
    while (*str >= '0' && *str <= '9') {
       n = 10*n + (Long)(*str - '0');
+      str++;
+   }
+   if (neg) n = -n;
+   return n;
+}
+
+
+Long VG_(atoll16) ( Char* str )
+{
+   Bool neg = False;
+   Long n = 0;
+   if (*str == '-') { str++; neg = True; };
+   while (True) {
+      if (*str >= '0' && *str <= '9') {
+         n = 16*n + (Long)(*str - '0');
+      }
+      else 
+      if (*str >= 'A' && *str <= 'Z') {
+         n = 16*n + (Long)((*str - 'A') + 10);
+      }
+      else 
+      if (*str >= 'a' && *str <= 'z') {
+         n = 16*n + (Long)((*str - 'a') + 10);
+      }
+      else {
+	break;
+      }
       str++;
    }
    if (neg) n = -n;
