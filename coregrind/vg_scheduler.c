@@ -1420,9 +1420,12 @@ void cleanup_after_thread_exited ( ThreadId tid, Bool forcekill )
 {
    vg_assert(is_valid_or_empty_tid(tid));
    vg_assert(VG_(threads)[tid].status == VgTs_Empty);
+
    /* Its stack is now off-limits */
-   VG_TRACK( die_mem_stack, VG_(threads)[tid].stack_base,
-                            VG_(threads)[tid].stack_size );
+   if (VG_(threads)[tid].stack_base) {
+     VG_TRACK( die_mem_stack, VG_(threads)[tid].stack_base,
+                              VG_(threads)[tid].stack_size );
+   }
 
    /* Deallocate its LDT, if it ever had one. */
    VG_(deallocate_LDT_for_thread)( VG_(threads)[tid].ldt );
@@ -1519,6 +1522,8 @@ void VG_(nuke_all_threads_except) ( ThreadId me )
             "VG_(nuke_all_threads_except): nuking tid %d\n", tid);
       VG_(proxy_delete)(tid, True);
       VG_(threads)[tid].status = VgTs_Empty;
+      VG_(threads)[tid].stack_base = (Addr)NULL;
+      VG_(threads)[tid].stack_size = 0;
       cleanup_after_thread_exited( tid, True );
    }
 }
