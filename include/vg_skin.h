@@ -1120,6 +1120,8 @@ typedef
       
       /* Others... threads, condition variables, etc... */
 
+      // SSS: scheduler hook for Josef Wiedendorfer
+
       /* ... */
    }
    VgTrackEvents;
