@@ -102,7 +102,7 @@ void VG_(read_procselfmaps) (
    UChar  rr, ww, xx, pp, ch;
 
    /* Read the initial memory mapping from the /proc filesystem. */
-   fd = VG_(open_read) ( "/proc/self/maps" );
+   fd = VG_(open) ( "/proc/self/maps", VKI_O_RDONLY, 0 );
    if (fd == -1) {
       VG_(message)(Vg_UserMsg, "FATAL: can't open /proc/self/maps");
       VG_(exit)(1);

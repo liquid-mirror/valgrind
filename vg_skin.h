@@ -304,23 +304,14 @@ extern void VG_(assert_fail) ( Char* expr, Char* file,
 
 /* ------------------------------------------------------------------ */
 /* Reading and writing files. */
-// SSS: this is all a bit shabby... could the flags be specified in
-//      vg_kerneliface.h and revert to normal open()?
-/* Equivalent to open(pathname, O_RDONLY). */
-extern Int  VG_(open_read) ( Char* pathname );
-
-/* Equivalent to open(pathname, O_WRONLY | O_TRUNC). */
-extern Int  VG_(open_write)       ( Char* pathname );
-
-/* Equivalent to open(pathname, O_WRONLY | O_CREAT). */
-extern Int  VG_(create_and_write) ( Char* pathname );
 
 /* As per the system calls */
-extern Int  VG_(read)      ( Int fd, void* buf, Int count);
-extern Int  VG_(write)     ( Int fd, void* buf, Int count);
-extern void VG_(close)     ( Int fd );
+extern Int  VG_(open)  ( const Char* pathname, Int flags, Int mode );
+extern Int  VG_(read)  ( Int fd, void* buf, Int count);
+extern Int  VG_(write) ( Int fd, void* buf, Int count);
+extern void VG_(close) ( Int fd );
 
-extern Int  VG_(stat) ( Char* file_name, struct vki_stat* buf );
+extern Int  VG_(stat)  ( Char* file_name, struct vki_stat* buf );
 
 
 /* ------------------------------------------------------------------ */

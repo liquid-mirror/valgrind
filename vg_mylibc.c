@@ -1014,44 +1014,18 @@ void VG_(panic) ( Char* str )
    ------------------------------------------------------------------ */
 
 /* Returns -1 on failure. */
-Int VG_(open_read) ( Char* pathname )
-{
+Int VG_(open) ( const Char* pathname, Int flags, Int mode )
+{  
    Int fd;
-   /* VG_(printf)("vg_open_read %s\n", pathname ); */
 
+   /* (old comment, not sure if it still applies  NJN 2002-sep-09) */
    /* This gets a segmentation fault if pathname isn't a valid file.
       I don't know why.  It seems like the call to open is getting
       intercepted and messed with by glibc ... */
    /* fd = open( pathname, O_RDONLY ); */
    /* ... so we go direct to the horse's mouth, which seems to work
       ok: */
-   const int O_RDONLY = 0; /* See /usr/include/bits/fcntl.h */
-   fd = vg_do_syscall3(__NR_open, (UInt)pathname, O_RDONLY, 0);
-   /* VG_(printf)("result = %d\n", fd); */
-   if (VG_(is_kerror)(fd)) fd = -1;
-   return fd;
-}
-
-/* Returns -1 on failure. */
-Int VG_(create_and_write) ( Char* pathname )
-{
-   Int fd;
-   const int O_CR_AND_WR_ONLY =   0101; /* See /usr/include/bits/fcntl.h */
-   const int O_IRUSR_IWUSR    = 000600; /* See /usr/include/cpio.h */
-   fd = vg_do_syscall3(__NR_open, (UInt)pathname, O_CR_AND_WR_ONLY,
-                                                  O_IRUSR_IWUSR);
-   /* VG_(printf)("result = %d\n", fd); */
-   if (VG_(is_kerror)(fd)) fd = -1;
-   return fd;
-}
- 
-/* Returns -1 on failure. */
-Int VG_(open_write) ( Char* pathname )
-{  
-   Int fd;
-
-   const int O_WRONLY_AND_TRUNC = 01001; /* See /usr/include/bits/fcntl.h */
-   fd = vg_do_syscall3(__NR_open, (UInt)pathname, O_WRONLY_AND_TRUNC, 0);
+   fd = vg_do_syscall3(__NR_open, (UInt)pathname, flags, mode);
    /* VG_(printf)("result = %d\n", fd); */
    if (VG_(is_kerror)(fd)) {
       fd = -1;
