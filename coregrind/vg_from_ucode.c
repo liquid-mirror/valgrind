@@ -159,7 +159,6 @@ static __inline__ void emit_amode_regmem_reg ( Int regmem, Int reg )
    }
 }
 
-// SSS __inline__ 
 void VG_(emit_amode_offregmem_reg) ( Int off, Int regmem, Int reg )
 {
    if (regmem == R_ESP)
@@ -194,7 +193,6 @@ static __inline__ void emit_amode_sib_reg ( Int off, Int scale, Int regbase,
    }
 }
 
-// SSS: __inline__ 
 void VG_(emit_amode_ereg_greg) ( Int e_reg, Int g_reg )
 {
    /* other_reg, reg */
