@@ -414,10 +414,10 @@ static __inline__ BBCC* get_BBCC(Addr bb_orig_addr, UCodeBlock* cb,
 /*--- Cache simulation instrumentation phase               ---*/
 /*------------------------------------------------------------*/
 
+// SSS: do something about all these...
 #define uInstr1   VG_(newUInstr1)
 #define uInstr2   VG_(newUInstr2)
 #define uInstr3   VG_(newUInstr3)
-#define dis       VG_(disassemble)
 #define uLiteral  VG_(setLiteralField)
 #define newTemp   VG_(getNewTemp)
 
@@ -510,7 +510,7 @@ static void cachesim_mem_instr(idCC* cc, Addr data_addr)
 }
 
 
-static UCodeBlock* cachesim_instrument(UCodeBlock* cb_in, Addr orig_addr)
+UCodeBlock* SK_(instrument)(UCodeBlock* cb_in, Addr orig_addr)
 {
 /* Use this rather than eg. -1 because it's a UInt. */
 #define INVALID_DATA_SIZE   999999
@@ -541,8 +541,6 @@ static UCodeBlock* cachesim_instrument(UCodeBlock* cb_in, Addr orig_addr)
 
    for (i = 0; i < cb_in->used; i++) {
       u_in = &cb_in->instrs[i];
-
-      if (dis) VG_(ppUInstr)(i, u_in);
 
       /* What this is all about:  we want to instrument each x86 instruction 
        * translation.  The end of these are marked in three ways.  The three
@@ -730,16 +728,6 @@ static UCodeBlock* cachesim_instrument(UCodeBlock* cb_in, Addr orig_addr)
 #undef INVALID_DATA_SIZE
 }
 
-UCodeBlock* SK_(instrument)(UCodeBlock* cb, Addr orig_addr)
-{
-   /* VGP_PUSHCC(VgpInstrument); */
-   cb = cachesim_instrument(cb, orig_addr);
-   /* VGP_POPCC; */
-   if (VG_(disassemble)) 
-      VG_(ppUCodeBlock) ( cb, "Cachesim instrumented code:" );
-   return cb;
-}
-
 /*------------------------------------------------------------*/
 /*--- Automagic cache initialisation stuff                 ---*/
 /*------------------------------------------------------------*/
@@ -753,9 +741,9 @@ static CC Dw_total;
 
 #define UNDEFINED_CACHE     ((cache_t) { -1, -1, -1 }) 
 
-cache_t clo_I1_cache = UNDEFINED_CACHE;
-cache_t clo_D1_cache = UNDEFINED_CACHE;
-cache_t clo_L2_cache = UNDEFINED_CACHE;
+static cache_t clo_I1_cache = UNDEFINED_CACHE;
+static cache_t clo_D1_cache = UNDEFINED_CACHE;
+static cache_t clo_L2_cache = UNDEFINED_CACHE;
 
 /* All CPUID info taken from sandpile.org/a32/cpuid.htm */
 /* Probably only works for Intel and AMD chips, and probably only for some of
