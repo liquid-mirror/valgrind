@@ -95,7 +95,16 @@ static __inline__ void initCC(CC* cc) {
     cc->m2 = 0;
 }
 
-typedef enum { INSTR_CC, READ_CC, WRITE_CC, MOD_CC } CC_type;
+typedef 
+   enum {
+      INSTR_CC,         /* eg. mov %eax,   %ebx                      */
+      READ_CC,          /* eg. mov (%ecx), %esi                      */
+      WRITE_CC,         /* eg. mov %eax,   (%edx)                    */
+      MOD_CC,           /* eg. incl (%eax) (read+write one addr)     */
+      READ_WRITE_CC,    /* eg. call*l (%esi), pushl 0x4(%ebx), movsw 
+                               (read+write two different addrs)      */
+   } CC_type;
+
 
 /* Instruction-level cost-centres.  The typedefs for these structs are in
  * vg_include.c 
@@ -128,6 +137,20 @@ struct _idCC {
    CC D;
 };
 
+struct _iddCC {
+   /* word 1 */
+   UChar tag;
+   UChar instr_size;
+   UChar data_size;
+   /* 1 byte padding */
+
+   /* words 2+ */
+   Addr instr_addr;
+   CC I;
+   CC Da;
+   CC Db;
+};
+
 static void init_iCC(iCC* cc, Addr instr_addr, UInt instr_size)
 {
    cc->tag        = INSTR_CC;
@@ -145,6 +168,18 @@ static void init_idCC(CC_type X_CC, idCC* cc, Addr instr_addr,
    cc->instr_addr = instr_addr;
    initCC(&cc->I);
    initCC(&cc->D);
+}
+
+static void init_iddCC(iddCC* cc, Addr instr_addr,
+                       UInt instr_size, UInt data_size)
+{
+   cc->tag        = READ_WRITE_CC;
+   cc->instr_size = instr_size;
+   cc->data_size  = data_size;
+   cc->instr_addr = instr_addr;
+   initCC(&cc->I);
+   initCC(&cc->Da);
+   initCC(&cc->Db);
 }
 
 #define ADD_CC_TO(CC_type, cc, total)           \
@@ -190,6 +225,21 @@ static __inline__ void sprint_write_CC(Char buf[BUF_LEN], idCC* cc)
    VG_(sprintf)(buf, "%llu %llu %llu . . . %llu %llu %llu\n",
                       cc->I.a, cc->I.m1, cc->I.m2, 
                       cc->D.a, cc->D.m1, cc->D.m2);
+#endif
+}
+
+static __inline__ void sprint_read_write_CC(Char buf[BUF_LEN], iddCC* cc)
+{
+#if PRINT_INSTR_ADDRS
+   VG_(sprintf)(buf, "%llu %llu %llu %llu %llu %llu # %x\n",
+                      cc->I.a,  cc->I.m1,  cc->I.m2, 
+                      cc->Da.a, cc->Da.m1, cc->Da.m2,
+                      cc->Db.a, cc->Db.m1, cc->Db.m2, cc->instr_addr);
+#else
+   VG_(sprintf)(buf, "%llu %llu %llu %llu %llu %llu %llu %llu %llu\n",
+                      cc->I.a,  cc->I.m1,  cc->I.m2, 
+                      cc->Da.a, cc->Da.m1, cc->Da.m2,
+                      cc->Db.a, cc->Db.m1, cc->Db.m2);
 #endif
 }
 
@@ -430,8 +480,10 @@ static Int compute_BBCC_array_size(UCodeBlock* cb)
    UInstr* u_in;
    Int     i, CC_size, BBCC_size = 0;
    Bool    is_LOAD, is_STORE, is_FPU_R, is_FPU_W;
+   Int     t_read, t_write;
     
    is_LOAD = is_STORE = is_FPU_R = is_FPU_W = False;
+   t_read = t_write = INVALID_TEMPREG;
 
    for (i = 0; i < cb->used; i++) {
       /* VG_(ppUInstr)(0, &cb->instrs[i]); */
@@ -449,11 +501,17 @@ static Int compute_BBCC_array_size(UCodeBlock* cb)
 
             case_for_end_of_instr:
 
-            CC_size = (is_LOAD || is_STORE || is_FPU_R || is_FPU_W 
-                      ? sizeof(idCC) : sizeof(iCC));
+            if (((is_LOAD && is_STORE) || (is_FPU_R && is_FPU_W)) && 
+                 t_read != t_write)
+               CC_size = sizeof(iddCC);
+            else if (is_LOAD || is_STORE || is_FPU_R || is_FPU_W)
+               CC_size = sizeof(idCC);
+            else
+               CC_size = sizeof(iCC);
 
             BBCC_size += CC_size;
             is_LOAD = is_STORE = is_FPU_R = is_FPU_W = False;
+            t_read = t_write = INVALID_TEMPREG;
             break;
 
          case LOAD:
@@ -461,22 +519,26 @@ static Int compute_BBCC_array_size(UCodeBlock* cb)
             /* Also, a STORE can come after a LOAD for bts/btr/btc */
             vg_assert(/*!is_LOAD &&*/ /* !is_STORE && */ 
                       !is_FPU_R && !is_FPU_W);
+            t_read = u_in->val1;
             is_LOAD = True;
             break;
 
          case STORE:
             /* Multiple STOREs are possible for 'pushal' */
             vg_assert(            /*!is_STORE &&*/ !is_FPU_R && !is_FPU_W);
+            t_write = u_in->val2;
             is_STORE = True;
             break;
 
          case FPU_R:
             vg_assert(!is_LOAD && !is_STORE && !is_FPU_R && !is_FPU_W);
+            t_read = u_in->val2;
             is_FPU_R = True;
             break;
 
          case FPU_W:
             vg_assert(!is_LOAD && !is_STORE && !is_FPU_R && !is_FPU_W);
+            t_write = u_in->val2;
             is_FPU_W = True;
             break;
 
@@ -497,7 +559,8 @@ UCodeBlock* VG_(cachesim_instrument)(UCodeBlock* cb_in, Addr orig_addr)
    Int         i;
    UInstr*     u_in;
    BBCC*       BBCC_node;
-   Int         t_CC_addr, t_read_addr, t_write_addr, t_data_addr;
+   Int         t_CC_addr, t_read_addr, t_write_addr, t_data_addr1,
+               t_data_addr2, t_read, t_write;
    Int         CC_size = -1;    /* Shut gcc warnings up */
    Addr        instr_addr = orig_addr;
    UInt        instr_size, data_size = INVALID_DATA_SIZE;
@@ -505,6 +568,7 @@ UCodeBlock* VG_(cachesim_instrument)(UCodeBlock* cb_in, Addr orig_addr)
    UInt        stack_used;
    Bool        BB_seen_before       = False;
    Bool        prev_instr_was_Jcond = False;
+   Bool        has_rep_prefix       = False;
    Addr        BBCC_ptr0, BBCC_ptr; 
 
    /* Get BBCC (creating if necessary -- requires a counting pass over the BB
@@ -516,7 +580,8 @@ UCodeBlock* VG_(cachesim_instrument)(UCodeBlock* cb_in, Addr orig_addr)
    cb = VG_(allocCodeBlock)();
    cb->nextTemp = cb_in->nextTemp;
 
-   t_CC_addr = t_read_addr = t_write_addr = t_data_addr = INVALID_TEMPREG;
+   t_CC_addr = t_read_addr = t_write_addr = t_data_addr1 = t_data_addr2 =
+               t_read = t_write = INVALID_TEMPREG;
 
    for (i = 0; i < cb_in->used; i++) {
       u_in = &cb_in->instrs[i];
@@ -543,8 +608,7 @@ UCodeBlock* VG_(cachesim_instrument)(UCodeBlock* cb_in, Addr orig_addr)
        * occurring JMP in a block with the size of its x86 instruction.  This
        * is used now.
        *
-       * Note that we don't have to treat JIFZ specially;  unlike JMPs, JIFZ
-       * occurs in the middle of a BB and gets an INCEIP after it.
+       * Note that JIFZ is treated differently.
        *
        * The instrumentation is just a call to the appropriate helper function,
        * passing it the address of the instruction's CC.
@@ -587,78 +651,170 @@ UCodeBlock* VG_(cachesim_instrument)(UCodeBlock* cb_in, Addr orig_addr)
             /* Initialise the CC in the BBCC array appropriately if it hasn't
              * been initialised before.
              * Then call appropriate sim function, passing it the CC address.
-             * Note that CALLM_S/CALL_E aren't required here;  by this point,
+             * Note that CALLM_S/CALLM_E aren't required here;  by this point,
              * the checking related to them has already happened. */
             stack_used = 0;
 
             vg_assert(instr_size >= 1 && instr_size <= MAX_x86_INSTR_SIZE);
             vg_assert(0 != instr_addr);
 
+            if (!IS_(read) && !IS_(write)) {
+//VG_(printf)("INSTR      [rep=%d]\n", has_rep_prefix);
+               vg_assert(INVALID_DATA_SIZE == data_size);
+               vg_assert(INVALID_TEMPREG == t_read_addr  && 
+                         INVALID_TEMPREG == t_read       && 
+                         INVALID_TEMPREG == t_write_addr &&
+                         INVALID_TEMPREG == t_write);
+               CC_size = sizeof(iCC);
+               if (!BB_seen_before)
+                   init_iCC((iCC*)BBCC_ptr, instr_addr, instr_size);
+
+               helper = ( has_rep_prefix 
+                        ? (Addr)0      /* no extra log needed */
+                        : VGOFF_(log_1I_0D_cache_access)
+                        );
+
+            } else { 
+               vg_assert(4 == data_size || 2  == data_size || 1 == data_size || 
+                         8 == data_size || 10 == data_size);
+               
+               if (IS_(read) && !IS_(write)) {
+                  CC_size = sizeof(idCC);
+                  /* If it uses 'rep', we've already logged the I-cache 
+                   * access at the JIFZ UInstr (see JIFZ case below) so
+                   * don't do it here */
+                  helper = ( has_rep_prefix 
+                           ? VGOFF_(log_0I_1D_cache_access)
+                           : VGOFF_(log_1I_1D_cache_access)
+                           );
+//VG_(printf)("READ       [rep=%d]\n", has_rep_prefix);
+                  if (!BB_seen_before)
+                     init_idCC(READ_CC, (idCC*)BBCC_ptr, instr_addr,
+                               instr_size, data_size);
+                  vg_assert(INVALID_TEMPREG != t_read_addr  && 
+                            INVALID_TEMPREG != t_read       && 
+                            INVALID_TEMPREG == t_write_addr &&
+                            INVALID_TEMPREG == t_write);
+                  t_data_addr1 = t_read_addr;
+
+               } else if (!IS_(read) && IS_(write)) {
+                  CC_size = sizeof(idCC);
+                  helper = ( has_rep_prefix 
+                           ? VGOFF_(log_0I_1D_cache_access)
+                           : VGOFF_(log_1I_1D_cache_access)
+                           );
+//VG_(printf)("WRITE      [rep=%d]\n", has_rep_prefix);
+                  if (!BB_seen_before)
+                     init_idCC(WRITE_CC, (idCC*)BBCC_ptr, instr_addr,
+                               instr_size, data_size);
+                  vg_assert(INVALID_TEMPREG == t_read_addr  && 
+                            INVALID_TEMPREG == t_read       && 
+                            INVALID_TEMPREG != t_write_addr &&
+                            INVALID_TEMPREG != t_write);
+                  t_data_addr1 = t_write_addr;
+
+               } else {
+                  vg_assert(IS_(read) && IS_(write));
+                  vg_assert(INVALID_TEMPREG != t_read_addr  && 
+                            INVALID_TEMPREG != t_read       && 
+                            INVALID_TEMPREG != t_write_addr &&
+                            INVALID_TEMPREG != t_write);
+                  if (t_read == t_write) {
+                     CC_size = sizeof(idCC);
+                     helper = ( has_rep_prefix 
+                              ? VGOFF_(log_0I_1D_cache_access)
+                              : VGOFF_(log_1I_1D_cache_access)
+                              );
+//VG_(printf)("MOD        [rep=%d]\n", has_rep_prefix);
+                     if (!BB_seen_before)
+                        init_idCC(MOD_CC, (idCC*)BBCC_ptr, instr_addr,
+                                  instr_size, data_size);
+                     t_data_addr1 = t_read_addr;
+                  } else {
+                     CC_size = sizeof(iddCC);
+                     helper = ( has_rep_prefix 
+                              ? VGOFF_(log_0I_2D_cache_access)
+                              : VGOFF_(log_1I_2D_cache_access)
+                              );
+//VG_(printf)("READ_WRITE [rep=%d]\n", has_rep_prefix);
+                     if (!BB_seen_before)
+                        init_iddCC((iddCC*)BBCC_ptr, instr_addr, instr_size,
+                                   data_size);
+                     t_data_addr1 = t_read_addr;
+                     t_data_addr2 = t_write_addr;
+                  }
+               }
+            }
+#undef IS_
+            /* Call the helper, if necessary */
+            if ((Addr)0 != helper) {
+
+               /* Save the caller-save registers before we push our args */
+               uInstr1(cb, PUSH, 4, RealReg, R_EAX);
+               uInstr1(cb, PUSH, 4, RealReg, R_ECX);
+               uInstr1(cb, PUSH, 4, RealReg, R_EDX);
+
+               /* 3nd arg: data addr 2 (if needed) */
+               if (INVALID_TEMPREG != t_data_addr2) {
+                  uInstr1(cb, PUSH,  4, TempReg, t_data_addr2);
+                  stack_used += 4;
+               }
+
+               /* 2nd arg: data addr 1 (if needed) */
+               if (INVALID_TEMPREG != t_data_addr1) {
+                  uInstr1(cb, PUSH,  4, TempReg, t_data_addr1);
+                  stack_used += 4;
+               }
+
+               /* 1st arg: CC addr */
+               t_CC_addr = newTemp(cb);
+               uInstr2(cb, MOV,   4, Literal, 0, TempReg, t_CC_addr);
+               uLiteral(cb, BBCC_ptr);
+               uInstr1(cb, PUSH,  4, TempReg, t_CC_addr);
+               stack_used += 4;
+
+               /* Call function and return. */
+               uInstr1(cb, CALLM, 0, Lit16,   helper);
+               uInstr1(cb, CLEAR, 0, Lit16,   stack_used);
+
+               /* Restore the caller-save registers now the call is done */
+               uInstr1(cb, POP, 4, RealReg, R_EDX);
+               uInstr1(cb, POP, 4, RealReg, R_ECX);
+               uInstr1(cb, POP, 4, RealReg, R_EAX);
+            }
+
+            VG_(copyUInstr)(cb, u_in);
+
+            /* Update BBCC_ptr, EIP, de-init read/write temps for next instr */
+            BBCC_ptr   += CC_size; 
+            instr_addr += instr_size;
+            t_CC_addr = t_read_addr = t_write_addr = t_data_addr1 =
+                        t_data_addr2 = t_read = t_write = INVALID_TEMPREG;
+            data_size = INVALID_DATA_SIZE;
+            has_rep_prefix = False;
+            break;
+
+
+         /* For rep-prefixed instructions, log a single I-cache access
+          * before the UCode loop that implements the repeated part, which
+          * is where the multiple D-cache accesses are logged. */
+         case JIFZ:
+            has_rep_prefix = True;
+            
             /* Save the caller-save registers before we push our args */
             uInstr1(cb, PUSH, 4, RealReg, R_EAX);
             uInstr1(cb, PUSH, 4, RealReg, R_ECX);
             uInstr1(cb, PUSH, 4, RealReg, R_EDX);
 
-            if (!IS_(read) && !IS_(write)) {
-               iCC* CC_ptr = (iCC*)(BBCC_ptr);
-               vg_assert(INVALID_DATA_SIZE == data_size);
-               vg_assert(INVALID_TEMPREG == t_read_addr && 
-                         INVALID_TEMPREG == t_write_addr);
-               CC_size = sizeof(iCC);
-               if (!BB_seen_before)
-                   init_iCC(CC_ptr, instr_addr, instr_size);
-
-               helper = VGOFF_(cachesim_log_non_mem_instr);
-
-            } else { 
-               CC_type X_CC;
-               idCC* CC_ptr = (idCC*)(BBCC_ptr);
-                
-               vg_assert(4 == data_size || 2  == data_size || 1 == data_size || 
-                         8 == data_size || 10 == data_size);
-               
-               CC_size = sizeof(idCC);
-               helper = VGOFF_(cachesim_log_mem_instr);
-
-               if (IS_(read) && !IS_(write)) {
-                  X_CC = READ_CC;
-                  vg_assert(INVALID_TEMPREG != t_read_addr && 
-                            INVALID_TEMPREG == t_write_addr);
-                  t_data_addr = t_read_addr;
-
-               } else if (!IS_(read) && IS_(write)) {
-                  X_CC = WRITE_CC;
-                  vg_assert(INVALID_TEMPREG == t_read_addr && 
-                            INVALID_TEMPREG != t_write_addr);
-                  t_data_addr = t_write_addr;
-
-               } else {
-                  vg_assert(IS_(read) && IS_(write));
-                  X_CC = MOD_CC;
-                  vg_assert(INVALID_TEMPREG != t_read_addr && 
-                            INVALID_TEMPREG != t_write_addr);
-                  t_data_addr = t_read_addr;
-               }
-
-               if (!BB_seen_before)
-                  init_idCC(X_CC, CC_ptr, instr_addr, instr_size, data_size);
-
-               /* 2nd arg: data addr */
-               uInstr1(cb, PUSH,  4, TempReg, t_data_addr);
-               stack_used += 4;
-            }
-#undef IS_
-
-            /* 1st arg: CC addr */
+            /* 1st and only arg: CC addr */
             t_CC_addr = newTemp(cb);
             uInstr2(cb, MOV,   4, Literal, 0, TempReg, t_CC_addr);
             uLiteral(cb, BBCC_ptr);
             uInstr1(cb, PUSH,  4, TempReg, t_CC_addr);
-            stack_used += 4;
 
-            /* Call function and return. */
-            uInstr1(cb, CALLM, 0, Lit16,   helper);
-            uInstr1(cb, CLEAR, 0, Lit16,   stack_used);
+            /* Call log function and return. */
+            uInstr1(cb, CALLM, 0, Lit16,   VGOFF_(log_1I_0D_cache_access));
+            uInstr1(cb, CLEAR, 0, Lit16,   4);
 
             /* Restore the caller-save registers now the call is done */
             uInstr1(cb, POP, 4, RealReg, R_EDX);
@@ -666,20 +822,13 @@ UCodeBlock* VG_(cachesim_instrument)(UCodeBlock* cb_in, Addr orig_addr)
             uInstr1(cb, POP, 4, RealReg, R_EAX);
 
             VG_(copyUInstr)(cb, u_in);
-
-            /* Update BBCC_ptr, EIP, de-init read/write temps for next instr */
-            BBCC_ptr   += CC_size; 
-            instr_addr += instr_size;
-            t_CC_addr = t_read_addr = t_write_addr = 
-                                      t_data_addr  = INVALID_TEMPREG;
-            data_size = INVALID_DATA_SIZE;
             break;
 
 
          /* For memory-ref instrs, copy the data_addr into a temporary to be
-          * passed to the cachesim_log_function at the end of the instruction.
-          */
+          * passed to the log function at the end of the instruction. */
          case LOAD: 
+            t_read      = u_in->val1;
             t_read_addr = newTemp(cb);
             uInstr2(cb, MOV, 4, TempReg, u_in->val1,  TempReg, t_read_addr);
             data_size = u_in->size;
@@ -687,6 +836,7 @@ UCodeBlock* VG_(cachesim_instrument)(UCodeBlock* cb_in, Addr orig_addr)
             break;
 
          case FPU_R:
+            t_read      = u_in->val2;
             t_read_addr = newTemp(cb);
             uInstr2(cb, MOV, 4, TempReg, u_in->val2,  TempReg, t_read_addr);
             data_size = u_in->size;
@@ -700,6 +850,7 @@ UCodeBlock* VG_(cachesim_instrument)(UCodeBlock* cb_in, Addr orig_addr)
           * not expensive and mod instructions are rare anyway. */
          case STORE:
          case FPU_W:
+            t_write      = u_in->val2;
             t_write_addr = newTemp(cb);
             uInstr2(cb, MOV, 4, TempReg, u_in->val2, TempReg, t_write_addr);
             data_size = u_in->size;
@@ -1152,28 +1303,67 @@ void VG_(init_cachesim)(void)
    init_BBCC_table();
 }
 
-void VG_(cachesim_log_non_mem_instr)(iCC* cc)
+void VG_(log_1I_0D_cache_access)(iCC* cc)
 {
-   //VG_(printf)("sim  I: CCaddr=0x%x, iaddr=0x%x, isize=%u\n",
+   //VG_(printf)("1I_0D: CCaddr=0x%x, iaddr=0x%x, isize=%u\n",
    //            cc, cc->instr_addr, cc->instr_size)
    VGP_PUSHCC(VgpCacheSimulate);
    cachesim_I1_doref(cc->instr_addr, cc->instr_size, &cc->I.m1, &cc->I.m2);
    cc->I.a++;
    VGP_POPCC;
-}
+}  
 
-void VG_(cachesim_log_mem_instr)(idCC* cc, Addr data_addr)
-{
-   //VG_(printf)("sim  D: CCaddr=0x%x, iaddr=0x%x, isize=%u, daddr=0x%x, dsize=%u\n",
+void VG_(log_0I_1D_cache_access)(idCC* cc, Addr data_addr)
+{  
+   //VG_(printf)("0I_1D: CCaddr=%p, iaddr=%p, isize=%u, daddr=%p, dsize=%u\n",
+   //            cc, cc->instr_addr, cc->instr_size, data_addr, cc->data_size)
+   VGP_PUSHCC(VgpCacheSimulate);
+   cachesim_D1_doref(data_addr,      cc->data_size,  &cc->D.m1, &cc->D.m2);
+   cc->D.a++;
+   VGP_POPCC;
+}  
+   
+void VG_(log_1I_1D_cache_access)(idCC* cc, Addr data_addr)
+{  
+   //VG_(printf)("1I_1D: CCaddr=%p, iaddr=%p, isize=%u, daddr=%p, dsize=%u\n",
    //            cc, cc->instr_addr, cc->instr_size, data_addr, cc->data_size)
    VGP_PUSHCC(VgpCacheSimulate);
    cachesim_I1_doref(cc->instr_addr, cc->instr_size, &cc->I.m1, &cc->I.m2);
    cc->I.a++;
-
+   
    cachesim_D1_doref(data_addr,      cc->data_size,  &cc->D.m1, &cc->D.m2);
    cc->D.a++;
    VGP_POPCC;
+}  
+   
+void VG_(log_0I_2D_cache_access)(iddCC* cc, Addr data_addr1, Addr data_addr2)
+{
+   //VG_(printf)("0I_2D: CCaddr=%p, iaddr=%p, isize=%u, daddr1=0x%x, daddr2=%p, dsize=%u\n",
+   //            cc, cc->instr_addr, cc->instr_size, data_addr1, data_addr2, cc->data_size)
+   VGP_PUSHCC(VgpCacheSimulate);
+   cachesim_D1_doref(data_addr1, cc->data_size,  &cc->Da.m1, &cc->Da.m2);
+   cc->Da.a++;
+   cachesim_D1_doref(data_addr2, cc->data_size,  &cc->Db.m1, &cc->Db.m2);
+   cc->Db.a++;
+   VGP_POPCC;
 }
+
+void VG_(log_1I_2D_cache_access)(iddCC* cc, Addr data_addr1, Addr data_addr2)
+{
+   //VG_(printf)("1I_2D: CCaddr=%p, iaddr=%p, isize=%u, daddr1=%p, daddr2=%p, dsize=%u\n",
+   //            cc, cc->instr_addr, cc->instr_size, data_addr1, data_addr2, cc->data_size)
+   VGP_PUSHCC(VgpCacheSimulate);
+   cachesim_I1_doref(cc->instr_addr, cc->instr_size, &cc->I.m1,  &cc->I.m2);
+   cc->I.a++;
+
+   cachesim_D1_doref(data_addr1,     cc->data_size,  &cc->Da.m1, &cc->Da.m2);
+   cc->Da.a++;
+   cachesim_D1_doref(data_addr2,     cc->data_size,  &cc->Db.m1, &cc->Db.m2);
+   cc->Db.a++;
+   VGP_POPCC;
+}
+
+
 
 /*------------------------------------------------------------*/
 /*--- Printing of output file and summary stats            ---*/
@@ -1228,6 +1418,15 @@ static void fprint_BBCC(Int fd, BBCC* BBCC_node, Char *first_instr_fl,
             ADD_CC_TO(idCC, I, Ir_total);
             ADD_CC_TO(idCC, D, Dw_total);
             BBCC_ptr += sizeof(idCC);
+            break;
+
+         case READ_WRITE_CC:
+            instr_addr = ((iddCC*)BBCC_ptr)->instr_addr;
+            sprint_read_write_CC(buf, (iddCC*)BBCC_ptr);
+            ADD_CC_TO(iddCC, I,  Ir_total);
+            ADD_CC_TO(iddCC, Da, Dr_total);
+            ADD_CC_TO(iddCC, Db, Dw_total);
+            BBCC_ptr += sizeof(iddCC);
             break;
 
          default:
@@ -1600,6 +1799,13 @@ void VG_(cachesim_notify_discard) ( TTEntry* tte )
             ADD_CC_TO(idCC, I, Ir_discards);
             ADD_CC_TO(idCC, D, Dw_discards);
             BBCC_ptr += sizeof(idCC);
+            break;
+
+         case READ_WRITE_CC:
+            ADD_CC_TO(iddCC, I, Ir_discards);
+            ADD_CC_TO(iddCC, Da, Dr_discards);
+            ADD_CC_TO(iddCC, Db, Dw_discards);
+            BBCC_ptr += sizeof(iddCC);
             break;
 
          default:

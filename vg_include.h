@@ -1867,14 +1867,20 @@ extern Int VG_(log2) ( Int x );
 extern UCodeBlock* VG_(cachesim_instrument) ( UCodeBlock* cb_in, 
                                               Addr orig_addr );
 
-typedef struct  _iCC  iCC;
-typedef struct _idCC idCC;
+typedef struct   _iCC   iCC;
+typedef struct  _idCC  idCC;
+typedef struct _iddCC iddCC;
 
 extern void VG_(init_cachesim)      ( void );
 extern void VG_(do_cachesim_results)( Int client_argc, Char** client_argv );
 
-extern void VG_(cachesim_log_non_mem_instr)(  iCC* cc );
-extern void VG_(cachesim_log_mem_instr)    ( idCC* cc, Addr data_addr );
+extern void VG_(log_1I_0D_cache_access)( iCC*   cc );
+extern void VG_(log_0I_1D_cache_access)( idCC*  cc, Addr data_addr );
+extern void VG_(log_1I_1D_cache_access)( idCC*  cc, Addr data_addr );
+extern void VG_(log_0I_2D_cache_access)( iddCC* cc, Addr data_addr1, 
+                                                    Addr data_addr2 );
+extern void VG_(log_1I_2D_cache_access)( iddCC* cc, Addr data_addr1,
+                                                    Addr data_addr2 );
 
 extern void VG_(cachesim_notify_discard) ( TTEntry* tte );
 
@@ -2015,8 +2021,11 @@ extern Int VGOFF_(handle_esp_assignment); /* :: Addr -> void */
 extern Int VGOFF_(fpu_write_check);       /* :: Addr -> Int -> void */
 extern Int VGOFF_(fpu_read_check);        /* :: Addr -> Int -> void */
 
-extern Int VGOFF_(cachesim_log_non_mem_instr);
-extern Int VGOFF_(cachesim_log_mem_instr);
+extern Int VGOFF_(log_1I_0D_cache_access);
+extern Int VGOFF_(log_0I_1D_cache_access);
+extern Int VGOFF_(log_1I_1D_cache_access);
+extern Int VGOFF_(log_0I_2D_cache_access);
+extern Int VGOFF_(log_1I_2D_cache_access);
 
 #endif /* ndef __VG_INCLUDE_H */
 

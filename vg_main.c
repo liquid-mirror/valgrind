@@ -105,8 +105,11 @@ Int VGOFF_(helperc_STOREV1) = INVALID_OFFSET;
 Int VGOFF_(handle_esp_assignment) = INVALID_OFFSET;
 Int VGOFF_(fpu_write_check) = INVALID_OFFSET;
 Int VGOFF_(fpu_read_check) = INVALID_OFFSET;
-Int VGOFF_(cachesim_log_non_mem_instr) = INVALID_OFFSET;
-Int VGOFF_(cachesim_log_mem_instr)     = INVALID_OFFSET;
+Int VGOFF_(log_1I_0D_cache_access) = INVALID_OFFSET;
+Int VGOFF_(log_0I_1D_cache_access) = INVALID_OFFSET;
+Int VGOFF_(log_1I_1D_cache_access) = INVALID_OFFSET;
+Int VGOFF_(log_0I_2D_cache_access) = INVALID_OFFSET;
+Int VGOFF_(log_1I_2D_cache_access) = INVALID_OFFSET;
 
 /* This is the actual defn of baseblock. */
 UInt VG_(baseBlock)[VG_BASEBLOCK_WORDS];
@@ -169,11 +172,20 @@ static void vg_init_baseBlock ( void )
    /* 17  */ VGOFF_(sh_eflags) = alloc_BaB(1);
 
    /* 17a */ 
-   VGOFF_(cachesim_log_non_mem_instr)  
-      = alloc_BaB_1_set( (Addr) & VG_(cachesim_log_non_mem_instr) );
+   VGOFF_(log_1I_0D_cache_access)  
+      = alloc_BaB_1_set( (Addr) & VG_(log_1I_0D_cache_access) );
    /* 17b */ 
-   VGOFF_(cachesim_log_mem_instr)  
-      = alloc_BaB_1_set( (Addr) & VG_(cachesim_log_mem_instr) );
+   VGOFF_(log_0I_1D_cache_access)  
+      = alloc_BaB_1_set( (Addr) & VG_(log_0I_1D_cache_access) );
+   /* 17c */ 
+   VGOFF_(log_1I_1D_cache_access)  
+      = alloc_BaB_1_set( (Addr) & VG_(log_1I_1D_cache_access) );
+   /* 17d */ 
+   VGOFF_(log_0I_2D_cache_access)  
+      = alloc_BaB_1_set( (Addr) & VG_(log_0I_2D_cache_access) );
+   /* 17e */ 
+   VGOFF_(log_1I_2D_cache_access)  
+      = alloc_BaB_1_set( (Addr) & VG_(log_1I_2D_cache_access) );
 
    /* 18  */ 
    VGOFF_(helper_value_check4_fail) 
