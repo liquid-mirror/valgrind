@@ -92,8 +92,7 @@ dispatch_main:
 	
 	   If %ebp has any other value, we panic.
 	*/
-	cmpl	$VG_(baseBlock), %ebp
-	jnz	dispatch_exceptional
+	jmp	post_translation
 
 dispatch_boring:
 	/* save the jump address at VG_(baseBlock)[VGOFF_(m_eip)] */
@@ -122,7 +121,12 @@ dispatch_boring:
 	movl	VG_(current_epoch), %ecx
 	movl	%ecx, 8(%ebx)
 	call	*4(%ebx)
-	jmp	dispatch_main
+post_translation:	
+	cmpl	$VG_(baseBlock), %ebp
+	jz	dispatch_boring
+
+	jmp	dispatch_exceptional
+
 	
 fast_lookup_failed:
 	/* %EIP is up to date here since dispatch_boring dominates */
