@@ -1453,7 +1453,9 @@ extern Bool VG_(what_line_is_this) ( Addr a,
 extern Bool VG_(what_fn_is_this) ( Bool no_demangle, Addr a,
                                      Char* fn_name, Int n_fn_name);
 
-extern Bool VG_(symtab_notify_munmap) ( Addr start, UInt length );
+extern Bool VG_(is_munmap_exe) ( Addr start, UInt length );
+
+extern void VG_(symtab_notify_munmap) ( Addr start, UInt length );
 
 
 /* ---------------------------------------------------------------------
