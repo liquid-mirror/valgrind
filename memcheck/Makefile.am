@@ -9,7 +9,7 @@ LDFLAGS = -Wl,-z -Wl,initfirst
 
 INCLUDES = -I$(srcdir)/demangle
 
-bin_SCRIPTS = valgrind cachegrind vg_annotate
+bin_SCRIPTS = valgrind vg_annotate
 
 SUPP_FILES = glibc-2.1.supp glibc-2.2.supp xfree-3.supp xfree-4.supp
 
@@ -37,12 +37,11 @@ valgrinq_so_SOURCES = vg_valgrinq_dummy.c
 valgrind_so_SOURCES = \
 	vg_clientfuncs.c \
 	vg_scheduler.c \
-        vg_cachesim.c \
 	vg_clientmalloc.c \
 	vg_clientperms.c \
+        vg_default.c \
 	vg_demangle.c \
 	vg_dispatch.S \
-	vg_eraser.c \
 	vg_errcontext.c \
 	vg_execontext.c \
 	vg_from_ucode.c \
@@ -73,10 +72,6 @@ valgrind_so_LDADD = \
 include_HEADERS = valgrind.h
 
 noinst_HEADERS = \
-        vg_cachesim_gen.c       \
-        vg_cachesim_I1.c        \
-        vg_cachesim_D1.c        \
-        vg_cachesim_L2.c        \
         vg_kerneliface.h        \
         vg_include.h            \
         vg_constants.h          \
@@ -85,9 +80,6 @@ noinst_HEADERS = \
 MANUAL_DEPS = $(noinst_HEADERS) $(include_HEADERS) 
 
 vg_memory.o: vg_memory.c $(MANUAL_DEPS)
-	$(COMPILE) -O2 @PREFERRED_STACK_BOUNDARY@ -c $<
-
-vg_eraser.o: vg_eraser.c $(MANUAL_DEPS)
 	$(COMPILE) -O2 @PREFERRED_STACK_BOUNDARY@ -c $<
 
 vg_clientfuncs.o: vg_clientfuncs.c $(MANUAL_DEPS)
