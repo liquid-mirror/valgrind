@@ -2,7 +2,7 @@
 Snapshot 20031012 (12 October 2003)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Three month's worth of bug fixes, roughly.  Most significant single
+Three months worth of bug fixes, roughly.  Most significant single
 change is improved SSE/SSE2 support, mostly thanks to Dirk Mueller.
 
 20031012 builds on Red Hat Fedora ("Severn") but doesn't really work
