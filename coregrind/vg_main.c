@@ -347,9 +347,6 @@ ULong VG_(bbs_done);
 /* 64-bit counter for the number of bbs to go before a debug exit. */
 ULong VG_(bbs_to_go);
 
-/* Produce debugging output? */
-Bool VG_(disassemble) = False;
-
 /* The current LRU epoch. */
 UInt VG_(current_epoch) = 0;
 
@@ -524,6 +521,7 @@ Char*  VG_(clo_suppressions)[VG_CLO_MAX_SFILES];
 Bool   VG_(clo_single_step)    = False;
 Bool   VG_(clo_optimise)       = True;
 Int    VG_(clo_smc_check)      = /* VG_CLO_SMC_SOME */ VG_CLO_SMC_NONE;  
+UChar  VG_(clo_trace_codegen)  = 0; // 00000000b
 Bool   VG_(clo_trace_syscalls) = False;
 Bool   VG_(clo_trace_signals)  = False;
 Bool   VG_(clo_trace_symtab)   = False;
@@ -551,7 +549,6 @@ Char** VG_(client_envp);
 /* A place into which to copy the value of env var VG_ARGS, so we
    don't have to modify the original. */
 static Char vg_cmdline_copy[M_VG_CMDLINE_STRLEN];
-
 
 /* ---------------------------------------------------------------------
    Processing of command-line options.
@@ -620,6 +617,7 @@ static void usage ( void )
 "    --single-step=no|yes      translate each instr separately? [no]\n"
 "    --optimise=no|yes         improve intermediate code? [yes]\n"
 "    --smc-check=none|some|all check writes for s-m-c? [some]\n"
+"    --trace-codegen=<XXXXX>   show generated code? (X = 0|1) [00000]\n"
 "    --trace-syscalls=no|yes   show all system calls? [no]\n"
 "    --trace-signals=no|yes    show signal handling details? [no]\n"
 "    --trace-symtab=no|yes     show symbol table details? [no]\n"
@@ -886,6 +884,27 @@ static void process_cmd_line_options ( void )
       else if (STREQ(argv[i], "--smc-check=all"))
          VG_(clo_smc_check) = VG_CLO_SMC_ALL;
 
+      /* "vwxyz" --> 000zyxwv (binary) */
+      else if (STREQN(16, argv[i], "--trace-codegen=")) {
+         Int j;
+         char* opt = & argv[i][16];
+   
+         if (5 != VG_(strlen)(opt)) {
+            VG_(message)(Vg_UserMsg, 
+                         "--trace-codegen argument must have 5 digits");
+            VG_(bad_option)(argv[i]);
+         }
+         for (j = 0; j < 5; j++) {
+            if      ('0' == opt[j]) { /* do nothing */ }
+            else if ('1' == opt[j]) VG_(clo_trace_codegen) |= (1 << j);
+            else {
+               VG_(message)(Vg_UserMsg, "--trace-codegen argument can only "
+                                        "contain 0s and 1s");
+               VG_(bad_option)(argv[i]);
+            }
+         }
+      }
+
       else if (STREQ(argv[i], "--trace-syscalls=yes"))
          VG_(clo_trace_syscalls) = True;
       else if (STREQ(argv[i], "--trace-syscalls=no"))
@@ -1074,6 +1093,11 @@ Bool VG_(within_m_state_static)(Addr a)
    Show accumulated counts.
    ------------------------------------------------------------------ */
 
+static __inline__ Int safe_idiv(Int a, Int b)
+{
+   return (b == 0 ? 0 : a / b);
+}
+
 static void vg_show_counts ( void )
 {
    VG_(message)(Vg_DebugMsg,
@@ -1081,13 +1105,17 @@ static void vg_show_counts ( void )
 		VG_(current_epoch),
                 VG_(number_of_lrus) );
    VG_(message)(Vg_DebugMsg,
-                "translate: new %d (%d -> %d), discard %d (%d -> %d).",
+                "translate: new     %d (%d -> %d; ratio %d:10)",
                 VG_(overall_in_count),
                 VG_(overall_in_osize),
                 VG_(overall_in_tsize),
+                safe_idiv(10*VG_(overall_in_tsize), VG_(overall_in_osize)));
+   VG_(message)(Vg_DebugMsg,
+                "           discard %d (%d -> %d; ratio %d:10).",
                 VG_(overall_out_count),
                 VG_(overall_out_osize),
-                VG_(overall_out_tsize) );
+                VG_(overall_out_tsize),
+                safe_idiv(10*VG_(overall_out_tsize), VG_(overall_out_osize)));
    VG_(message)(Vg_DebugMsg,
       " dispatch: %lu basic blocks, %d/%d sched events, %d tt_fast misses.", 
       VG_(bbs_done), VG_(num_scheduling_events_MAJOR), 
