@@ -31,7 +31,7 @@
 */
 
 #include "vg_addrcheck_include.h"
-
+//#include "vg_profile.c"
 
 /*------------------------------------------------------------*/
 /*--- Defns                                                ---*/
@@ -162,10 +162,12 @@ Bool SK_(eq_SkinError) ( VgRes res,
          return True;
 
       case AddrErr:
-         if (e1_extra->axskind != e2_extra->axskind) return False;
+         /* if (e1_extra->axskind != e2_extra->axskind) return False; */
          if (e1_extra->size != e2_extra->size) return False;
+         /*
          if (!eq_AcAddrInfo(res, &e1_extra->addrinfo, &e2_extra->addrinfo)) 
             return False;
+         */
          return True;
 
       default: 
@@ -244,11 +246,9 @@ void SK_(pp_SkinError) ( SkinError* err, void (*pp_ExeContext)(void) )
       case AddrErr:
          switch (err_extra->axskind) {
             case ReadAxs:
-               VG_(message)(Vg_UserMsg, "Invalid read of size %d", 
-                                        err_extra->size ); 
-               break;
             case WriteAxs:
-               VG_(message)(Vg_UserMsg, "Invalid write of size %d", 
+               /* These two aren't actually differentiated ever. */
+               VG_(message)(Vg_UserMsg, "Invalid memory access of size %d", 
                                         err_extra->size ); 
                break;
             case ExecAxs:
