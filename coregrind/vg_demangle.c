@@ -54,7 +54,7 @@ void VG_(demangle) ( Char* orig, Char* result, Int result_size )
 
    if (demangled) {
       ADD_TO_RESULT(demangled, VG_(strlen)(demangled));
-      VG_(free) (VG_AR_DEMANGLE, demangled);
+      VG_(arena_free) (VG_AR_DEMANGLE, demangled);
    } else {
       ADD_TO_RESULT(orig, VG_(strlen)(orig));
    }

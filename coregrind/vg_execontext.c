@@ -155,8 +155,8 @@ Bool VG_(eq_ExeContext_top4) ( ExeContext* e1, ExeContext* e2 )
 
    In order to be thread-safe, we pass in the thread's %EIP and %EBP.
 */
-ExeContext* VG_(get_ExeContext) ( Addr eip, Addr ebp,
-                                  Addr ebp_min, Addr ebp_max )
+ExeContext* VG_(get_ExeContext2) ( Addr eip, Addr ebp,
+                                   Addr ebp_min, Addr ebp_max )
 {
    Int         i;
    Addr        eips[VG_DEEPEST_BACKTRACE];
@@ -243,11 +243,9 @@ ExeContext* VG_(get_ExeContext) ( Addr eip, Addr ebp,
    /* Bummer.  We have to allocate a new context record. */
    vg_ec_totstored++;
 
-   new_ec = VG_(malloc)( 
-               VG_AR_EXECTXT, 
-               sizeof(struct _ExeContextRec *) 
-                  + VG_(clo_backtrace_size) * sizeof(Addr) 
-            );
+   new_ec = VG_(arena_malloc)( VG_AR_EXECTXT, 
+                               sizeof(struct _ExeContextRec *) 
+                               + VG_(clo_backtrace_size) * sizeof(Addr) );
 
    for (i = 0; i < VG_(clo_backtrace_size); i++)
       new_ec->eips[i] = eips[i];
@@ -257,6 +255,12 @@ ExeContext* VG_(get_ExeContext) ( Addr eip, Addr ebp,
 
    VGP_POPCC;
    return new_ec;
+}
+
+ExeContext* VG_(get_ExeContext) ( ThreadState *tst )
+{
+   return VG_(get_ExeContext2)( tst->m_eip, tst->m_ebp, tst->m_esp, 
+                                tst->stack_highest_word );
 }
 
 
