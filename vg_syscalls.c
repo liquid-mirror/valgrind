@@ -1044,11 +1044,14 @@ void VG_(perform_assumed_nonblocking_syscall) ( ThreadId tid )
             VG_(message)(Vg_UserMsg, 
               "   Use --logfile-fd=<number> to select an "
               "alternative logfile fd." );
-            res = -1;
+            /* Pretend the close succeeded, regardless.  (0 == success) */
+            res = 0;
+            SET_EAX(tid, res);
          } else {
             KERNEL_DO_SYSCALL(tid,res);
          }
          break;
+
       case __NR_dup: /* syscall 41 */
          /* int dup(int oldfd); */
          MAYBE_PRINTF("dup ( %d ) --> ", arg1);
