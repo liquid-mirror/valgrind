@@ -28,7 +28,6 @@
    The GNU General Public License is contained in the file LICENSE.
 */
 
-#include "vg_include.h"
 #include "vg_memcheck_include.h"
 
 /*------------------------------------------------------------*/
@@ -79,14 +78,11 @@ typedef
    }
    MemCheckErrContext;
 
-// SSS: these should be local to vg_memcheck_errcontext.c...
-extern void clear_MemCheckErrContext ( MemCheckErrContext* ec_extra );
-
 /*------------------------------------------------------------*/
 /*--- Comparing and printing errors                        ---*/
 /*------------------------------------------------------------*/
 
-__inline__
+static __inline__
 void clear_AddrInfo ( AddrInfo* ai )
 {
    ai->akind      = Unknown;
@@ -97,6 +93,7 @@ void clear_AddrInfo ( AddrInfo* ai )
    ai->maybe_gcc  = False;
 }
 
+static __inline__
 void clear_MemCheckErrContext ( MemCheckErrContext* ec_extra )
 {
    ec_extra->axskind = ReadAxs;
@@ -342,6 +339,57 @@ void SKN_(pp_ErrContext) ( ErrContext* ec )
 /*--- Recording errors                                     ---*/
 /*------------------------------------------------------------*/
 
+/* Describe an address as best you can, for error messages,
+   putting the result in ai. */
+
+static void describe_addr ( Addr a, AddrInfo* ai )
+{
+   ShadowChunk* sc;
+   UInt         ml_no;
+   Bool         ok;
+   ThreadId     tid;
+
+   /* Perhaps it's a user-def'd block ? */
+   ok = SK_(client_perm_maybe_describe)( a, ai );
+   if (ok)
+      return;
+   /* Perhaps it's on a thread's stack? */
+   tid = VG_(identify_stack_addr)(a);
+   if (tid != VG_INVALID_THREADID) {
+      ai->akind     = Stack;
+      ai->stack_tid = tid;
+      return;
+   }
+   /* Search for a freed block which might bracket it. */
+   for (sc = VG_(freed_list_start); sc != NULL; sc = sc->next) {
+      if (sc->data - VG_AR_CLIENT_REDZONE_SZB <= a
+          && a < sc->data + sc->size + VG_AR_CLIENT_REDZONE_SZB) {
+         ai->akind      = Freed;
+         ai->blksize    = sc->size;
+         ai->rwoffset   = (Int)(a) - (Int)(sc->data);
+         ai->lastchange = sc->where;
+         return;
+      }
+   }
+   /* Search for a mallocd block which might bracket it. */
+   for (ml_no = 0; ml_no < VG_N_MALLOCLISTS; ml_no++) {
+      for (sc = VG_(malloclist)[ml_no]; sc != NULL; sc = sc->next) {
+         if (sc->data - VG_AR_CLIENT_REDZONE_SZB <= a
+             && a < sc->data + sc->size + VG_AR_CLIENT_REDZONE_SZB) {
+            ai->akind      = Mallocd;
+            ai->blksize    = sc->size;
+            ai->rwoffset   = (Int)(a) - (Int)(sc->data);
+            ai->lastchange = sc->where;
+            return;
+         }
+      }
+   }
+   /* Clueless ... */
+   ai->akind = Unknown;
+   return;
+}
+
+
 /* Creates a copy of the ec_extra, updates the copy with address info if
    necessary, sticks the copy into the ErrContext. */
 void SKN_(dup_extra_and_update)(ErrContext* ec)
@@ -352,7 +400,7 @@ void SKN_(dup_extra_and_update)(ErrContext* ec)
    *p_extra = *((MemCheckErrContext*)ec->extra);
 
    if (p_extra->addrinfo.akind == Undescribed)
-      VG_(describe_addr) ( ec->addr, &(p_extra->addrinfo) );
+      describe_addr ( ec->addr, &(p_extra->addrinfo) );
 
    ec->extra = p_extra;
 }
@@ -558,7 +606,7 @@ Bool SKN_(read_extra_suppression_info) ( Int fd, Char* buf, Int nBuf,
    if (s->skind == Param) {
       eof = VG_(getLine) ( fd, buf, nBuf );
       if (eof) return False;
-      s->string = VG_(copyStr)(buf);
+      s->string = VG_(strdup)(VG_AR_PRIVATE, buf);
    }
    return True;
 }

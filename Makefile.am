@@ -51,7 +51,6 @@ valgrind_so_SOURCES = \
 	vg_clientfuncs.c \
 	vg_scheduler.c \
 	vg_clientmalloc.c \
-	vg_clientperms.c \
         vg_default.c \
 	vg_demangle.c \
 	vg_dispatch.S \
@@ -78,6 +77,7 @@ valgrind_so_SOURCES = \
 
 vgskin_memcheck_so_SOURCES = \
 	vg_memcheck.c \
+	vg_memcheck_clientreqs.c \
 	vg_memcheck_errcontext.c \
 	vg_memcheck_from_ucode.c \
 	vg_memcheck_translate.c \

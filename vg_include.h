@@ -36,10 +36,6 @@
 #include <stdarg.h>       /* ANSI varargs stuff  */
 #include <setjmp.h>       /* for jmp_buf         */
 
-//#define __USE_UNIX98
-//#include <sys/types.h>
-//#undef  __USE_UNIX98
-
 /* ---------------------------------------------------------------------
    Where to send bug reports to.
    ------------------------------------------------------------------ */
@@ -413,7 +409,6 @@ extern void* VG_(realloc) ( ArenaId arena, void* ptr, Int size );
 extern void* VG_(malloc_aligned) ( ArenaId aid, Int req_alignB, 
                                                 Int req_pszB );
 
-extern void  VG_(mallocSanityCheckArena) ( ArenaId arena );
 extern void  VG_(mallocSanityCheckAll)   ( void );
 
 extern void  VG_(show_all_arena_stats) ( void );
@@ -435,7 +430,7 @@ extern Bool  VG_(is_empty_arena) ( ArenaId aid );
 /* This doesn't export code or data that valgrind.so needs to link
    against.  However, the scheduler does need to know the following
    request codes.  A few, publically-visible, request codes are also
-   defined in valgrind.h. */
+   defined in valgrind.h, and similar headers for some skins. */
 
 #define VG_USERREQ__MALLOC              0x2001
 #define VG_USERREQ__BUILTIN_NEW         0x2002
@@ -613,11 +608,11 @@ typedef
          When .status == WaitCV, points to the mutex associated with
          the condition variable indicated by the .associated_cv field.
          In all other cases, should be NULL. */
-      void* /*pthread_mutex_t**/ associated_mx;
+      void* /*pthread_mutex_t* */ associated_mx;
 
       /* When .status == WaitCV, points to the condition variable I am
          waiting for.  In all other cases, should be NULL. */
-      void* /*pthread_cond_t**/ associated_cv;
+      void* /*pthread_cond_t* */ associated_cv;
 
       /* If VgTs_Sleeping, this is when we should wake up, measured in
          milliseconds as supplied by VG_(read_millisecond_counter). 
@@ -1450,10 +1445,10 @@ typedef
       /* The name by which the suppression is referred to. */
       Char* sname;
       /* What kind of suppression. */
-      SuppressionKind skind;           // ??
-      /* String -- can be used in skin-specific way*/
+      SuppressionKind skind;
+      /* String -- can be used in skin-specific way */
       Char* string;
-      /* For any skin-specific extra */
+      /* For any skin-specific extra information */
       void* extra;
       /* Name of fn where err occurs, and immediate caller (mandatory). */
       SuppressionLocTy caller0_ty;
@@ -1520,7 +1515,6 @@ extern void VG_(construct_err_context) ( ErrContext* ec, ErrKind ekind,
                                          Addr a, Char* s, ThreadState* tst );
 
 extern Bool VG_(getLine) ( Int fd, Char* buf, Int nBuf );
-extern Char* VG_(copyStr) ( Char* str );
 
 extern void VG_(load_suppressions)    ( void );
 extern void VG_(show_all_errors)      ( void );
@@ -1536,46 +1530,6 @@ extern void VG_(record_pthread_err) ( ThreadId tid, Char* msg );
 extern Bool VG_(eq_ExeContext) ( Bool top_2_only,
                                  ExeContext* e1, ExeContext* e2 );
 
-
-// SSS: these two memcheck/client block-specific
-/* The classification of a faulting address. */
-typedef 
-   enum { Undescribed, /* as-yet unclassified */
-          Stack, 
-          Unknown, /* classification yielded nothing useful */
-          Freed, Mallocd, 
-          UserG, UserS }
-   AddrKind;
-
-/* Records info about a faulting address. */
-typedef
-   struct {
-      /* ALL */
-      AddrKind akind;
-      /* Freed, Mallocd */
-      Int blksize;
-      /* Freed, Mallocd */
-      Int rwoffset;
-      /* Freed, Mallocd */
-      ExeContext* lastchange;
-      /* Stack */
-      ThreadId stack_tid;
-      /* True if is just-below %esp -- could be a gcc bug. */
-      Bool maybe_gcc;
-   }
-   AddrInfo;
-
-/* ---------------------------------------------------------------------
-   Exports of vg_clientperms.c
-   ------------------------------------------------------------------ */
-
-extern UInt VG_(handle_client_request) ( ThreadState* tst, UInt* arg_block );
-
-extern Bool VG_(client_perm_maybe_describe)( Addr a, AddrInfo* ai );
-
-extern void VG_(delete_client_stack_blocks_following_ESP_change) ( void );
-
-extern void VG_(show_client_block_stats) ( void );
 
 /* ---------------------------------------------------------------------
    Exports of vg_procselfmaps.c
@@ -1638,13 +1592,12 @@ typedef
    } 
    ShadowChunk;
 
-extern void          VG_(clientmalloc_done) ( void );
 
-// SSS: currently for memcheck errors only, but useful to have in core?
-extern void          VG_(describe_addr) ( Addr a, AddrInfo* ai );
+// SSS: needed because of describe_addr() and get_malloc_shadows() in
+// memcheck skin...
+extern ShadowChunk* VG_(freed_list_start);
+extern ShadowChunk* VG_(malloclist)[VG_N_MALLOCLISTS];
 
-// SSS: for leak checking only, but useful to have in core?
-extern ShadowChunk** VG_(get_malloc_shadows) ( /*OUT*/ UInt* n_shadows );
 
 /* These are called from the scheduler, when it intercepts a user
    request. */
@@ -1658,6 +1611,8 @@ extern void* VG_(client_calloc)   ( ThreadState* tst,
                                     UInt nmemb, UInt size1 );
 extern void* VG_(client_realloc)  ( ThreadState* tst, 
                                     void* ptrV, UInt size_new );
+
+extern void  VG_(clientmalloc_done) ( void );
 
 
 /* ---------------------------------------------------------------------
@@ -1690,7 +1645,6 @@ extern void VG_(copy_m_state_static_to_baseBlock) ( void );
 
 /* Called when some unhandleable client behaviour is detected.
    Prints a msg and aborts. */
-// JJJ: started not realising this was noreturn for vg_scheduler suddenly...
 extern void VG_(unimplemented) ( Char* msg )
             __attribute__((__noreturn__));
 extern void VG_(nvidia_moan) ( void );
@@ -1713,9 +1667,9 @@ extern Int    VG_(client_argc);
 extern Char** VG_(client_argv);
 extern Char** VG_(client_envp);
 
-/* Remove valgrind.so from a LD_PRELOAD=... string so child processes
-   don't get traced into.  Also mess up $libdir/valgrind so that our
-   libpthread.so disappears from view. */
+/* Remove valgrind.so and skin's .so from a LD_PRELOAD=... string so child
+   processes don't get traced into.  Also mess up $libdir/valgrind so that
+   our libpthread.so disappears from view. */
 void VG_(mash_LD_PRELOAD_and_LD_LIBRARY_PATH) ( Char* ld_preload_str,
                                                 Char* ld_library_path_str );
 
@@ -1803,7 +1757,6 @@ extern UInt VG_(num_scheduling_events_MAJOR);
 /* Generally useful */
 #define IS_ALIGNED4_ADDR(aaa_p) (0 == (((UInt)(aaa_p)) & 3))
 
-// JJJ: what is the exact meaning of the VGM_ prefix?
 extern void VGM_(init_memory_and_symbols)( void );
 extern void VGM_(new_exe_segment)        ( Addr a, UInt len );
 extern void VGM_(remove_if_exe_segment)  ( Addr a, UInt len );
@@ -1811,8 +1764,6 @@ extern void VGM_(remove_if_exe_segment)  ( Addr a, UInt len );
 extern Addr VGM_(curr_dataseg_end);
 
 /* Called from generated code. */
-// SSS: should this be core or mantle... (probably mantle, like the debug
-//      info reader)
 extern void VGM_(handle_esp_assignment) ( Addr new_espA );
 
 /* Nasty kludgery to deal with applications which switch stacks,
@@ -1996,9 +1947,7 @@ extern void VG_(signalreturn_bogusRA)( void );
    Settings relating to the used skin
    ------------------------------------------------------------------ */
 
-/* 
- *
- * If new fields are added to this type, update:
+/* If new fields are added to this type, update:
  *  - vg_main.c:VG_(needs) initialisation
  *  - vg_main.c:sanity_check_needs()
  *
@@ -2027,6 +1976,9 @@ typedef
        * suppressions, too. */
       Bool report_errors;
 
+      /* Should __libc_freeres() be run?  Bugs in it crash the skin. */
+      Bool run_libc_freeres;
+
       /* Booleans that indicate extra operations are defined;  if these are
        * True, corresponding functions must be defined.  A lot like being
        * a member of a type class. */
@@ -2040,9 +1992,6 @@ typedef
        * run!
        */
       Bool identifies_basic_blocks;
-
-      /* Should __libc_freeres() be run?  Bugs in it crash the skin. */
-      Bool run_libc_freeres;
 
       /* Skin defines its own command line options? */
       Bool command_line_options;
@@ -2108,15 +2057,10 @@ typedef
       void (*post_mem_write) ( Addr a, UInt size );
 
       /* Mutex events */
-      // JJJ: crappy void* pthread_ type avoidance, as above... could avoid
-      // with:
-      // 
-      //   #define __USE_UNIX98
-      //   #include <sys/types.h>
-      //   #undef  __USE_UNIX98
-
-      void (*post_mutex_lock)   ( ThreadId tid, pthread_mutex_t* mutex );
-      void (*post_mutex_unlock) ( ThreadId tid, pthread_mutex_t* mutex );
+      void (*post_mutex_lock)   ( ThreadId tid, 
+                                  void* /*pthread_mutex_t* */ mutex );
+      void (*post_mutex_unlock) ( ThreadId tid, 
+                                  void* /*pthread_mutex_t* */ mutex );
       
       /* Others... threads, condition variables, etc... */
 
@@ -2157,26 +2101,21 @@ extern void        SK_(fini)         ( void );
    For skins reporting errors (VG_(needs).report_errors)
    ------------------------------------------------------------------ */
 
-// SSS: memcheck/client block-specific
-extern void clear_AddrInfo ( AddrInfo* ai );
-
-
-
-
-
-
 /* Identify if two errors are equal, or equal enough.  Should not check the
    ExeContext (e->where field) as it's checked separately */
 extern Bool SKN_(eq_ErrContext) ( Bool cheap_addr_cmp,
                                   ErrContext* e1, ErrContext* e2 );
-/* This should probably include a call to VG_(pp_ExeContext)(ec->where) */
+
+/* Print error context.  It should include a call to
+ * VG_(pp_ExeContext)(ec->where). */
 extern void SKN_(pp_ErrContext) ( ErrContext* ec );
+
 /* Copy the ec->extra part and replace ec->extra with the new copy.  This is
  * necessary to move from a temporary stack copy to a permanent one.
  *
  * Then fill in any details that could be postponed until after the decision
  * whether to ignore the error (ie. details not affecting the result of
- * SKN_(eq_ErrContext).  This saves time when errors are ignored.
+ * SKN_(eq_ErrContext)).  This saves time when errors are ignored.
  *
  * Yuk.
  */
@@ -2184,6 +2123,8 @@ extern void SKN_(dup_extra_and_update)(ErrContext* ec);
 
 /* Return value indicates recognition.  If recognised, type goes in skind. */
 extern Bool SKN_(recognised_suppression) ( Char* name, SuppressionKind *skind );
+
+/* Read any extra info for this suppression kind */
 extern Bool SKN_(read_extra_suppression_info) ( Int fd, Char* buf, 
                                                 Int nBuf, Suppression *s );
 

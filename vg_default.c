@@ -58,10 +58,16 @@ static char* nonfund_panic =
    Fundamental template functions
    ------------------------------------------------------------------ */
 
-void SK_(init)(void)
+void SK_(pre_clo_init)(VgNeeds* needs, VgTrackEvents* track)
 {
    VG_(printf)(fund_panic);
-   VG_(panic)("called SK_(init)");
+   VG_(panic)("called SK_(pre_clo_init)");
+}
+
+void SK_(post_clo_init)(void)
+{
+   VG_(printf)(fund_panic);
+   VG_(panic)("called SK_(post_clo_init)");
 }
 
 UCodeBlock* SK_(instrument)(UCodeBlock* cb, Addr not_used)
@@ -74,12 +80,6 @@ void SK_(fini)(void)
 {
    VG_(printf)(fund_panic);
    VG_(panic)("called SK_(fini)");
-}
-
-void SK_(setup)(VgNeeds* needs, VgTrackEvents* track)
-{
-   VG_(printf)(fund_panic);
-   VG_(panic)("called SK_(setup)");
 }
 
 /* ---------------------------------------------------------------------

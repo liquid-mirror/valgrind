@@ -29,8 +29,8 @@
 */
 
 #include "vg_include.h"
-#include "valgrind.h" /* for VG_USERREQ__MAKE_NOACCESS and
-                         VG_USERREQ__DO_LEAK_CHECK */
+#include "valgrind.h" /* for VG_USERREQ__RUNNING_ON_VALGRIND and
+                             VG_USERREQ__DISCARD_TRANSLATIONS */
 
 /* BORKAGE/ISSUES as of 29 May 02
 
@@ -3334,27 +3334,29 @@ void do_client_request ( ThreadId tid )
                                      (ForkHandlerEntry*)(arg[2]) );
          break;
 
-//      case VG_USERREQ__MAKE_NOACCESS:
-//      case VG_USERREQ__MAKE_WRITABLE:
-//      case VG_USERREQ__MAKE_READABLE:
-//      case VG_USERREQ__DISCARD:
-//      case VG_USERREQ__CHECK_WRITABLE:
-//      case VG_USERREQ__CHECK_READABLE:
-//      case VG_USERREQ__MAKE_NOACCESS_STACK:
-//      case VG_USERREQ__DO_LEAK_CHECK:
-      case VG_USERREQ__DISCARD_TRANSLATIONS:
-         SET_EDX(
-            tid, 
-            VG_(handle_client_request) ( &VG_(threads)[tid], arg )
-         );
-	 break;
-
       case VG_USERREQ__SIGNAL_RETURNS: 
          handle_signal_return(tid);
 	 break;
 
+      /* Requests from the client program */
+
+      case VG_USERREQ__DISCARD_TRANSLATIONS:
+         if (VG_(clo_verbosity) > 2)
+            VG_(printf)( "client request: DISCARD_TRANSLATIONS,"
+                         " addr %p,  len %d\n",
+                         arg[0], (void*)arg[1], arg[2] );
+
+         VG_(invalidate_translations)( arg[1], arg[2] );
+
+         SET_EDX( tid, 0 );     /* return value is meaningless */
+	 break;
+
       default:
          if (VG_(needs).client_requests) {
+            if (VG_(clo_verbosity) > 2)
+               VG_(printf)("client request: code %d,  addr %p,  len %d\n",
+                           arg[0], (void*)arg[1], arg[2] );
+
             SET_EDX(tid,
                     SKN_(handle_client_request) ( &VG_(threads)[tid], arg )
             );

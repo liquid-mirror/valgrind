@@ -31,8 +31,8 @@
 
 /* This file is for inclusion into client (your!) code.
 
-   You can use these macros to manipulate and query memory permissions
-   inside your own programs.
+   You can use these macros to manipulate and query Valgrind's 
+   execution inside your own programs.
 
    The resulting executables will still run without Valgrind, just a
    little bit more slowly than they otherwise would, but otherwise
@@ -84,96 +84,14 @@
 
 /* Some request codes.  There are many more of these, but most are not
    exposed to end-user view.  These are the public ones, all of the
-   form 0x1000 + small_number. 
+   form 0x1000 + small_number.
 */
 
-#define VG_USERREQ__MAKE_NOACCESS        0x1001
-#define VG_USERREQ__MAKE_WRITABLE        0x1002
-#define VG_USERREQ__MAKE_READABLE        0x1003
-#define VG_USERREQ__DISCARD              0x1004
-//#define VG_USERREQ__CHECK_WRITABLE       0x1005
-//#define VG_USERREQ__CHECK_READABLE       0x1006
-#define VG_USERREQ__MAKE_NOACCESS_STACK  0x1007
-#define VG_USERREQ__RUNNING_ON_VALGRIND  0x1008
-//#define VG_USERREQ__DO_LEAK_CHECK        0x1009 /* untested */
-#define VG_USERREQ__DISCARD_TRANSLATIONS 0x100A
-
-
-/* Client-code macros to manipulate the state of memory. */
-
-/* Mark memory at _qzz_addr as unaddressible and undefined for
-   _qzz_len bytes.  Returns an int handle pertaining to the block
-   descriptions Valgrind will use in subsequent error messages. */
-#define VALGRIND_MAKE_NOACCESS(_qzz_addr,_qzz_len)               \
-   ({unsigned int _qzz_res;                                      \
-    VALGRIND_MAGIC_SEQUENCE(_qzz_res, 0 /* default return */,    \
-                            VG_USERREQ__MAKE_NOACCESS,           \
-                            _qzz_addr, _qzz_len, 0, 0);          \
-    _qzz_res;                                                    \
-   })
-
-/* Similarly, mark memory at _qzz_addr as addressible but undefined
-   for _qzz_len bytes. */
-#define VALGRIND_MAKE_WRITABLE(_qzz_addr,_qzz_len)               \
-   ({unsigned int _qzz_res;                                      \
-    VALGRIND_MAGIC_SEQUENCE(_qzz_res, 0 /* default return */,    \
-                            VG_USERREQ__MAKE_WRITABLE,           \
-                            _qzz_addr, _qzz_len, 0, 0);          \
-    _qzz_res;                                                    \
-   })
-
-/* Similarly, mark memory at _qzz_addr as addressible and defined
-   for _qzz_len bytes. */
-#define VALGRIND_MAKE_READABLE(_qzz_addr,_qzz_len)               \
-   ({unsigned int _qzz_res;                                      \
-    VALGRIND_MAGIC_SEQUENCE(_qzz_res, 0 /* default return */,    \
-                            VG_USERREQ__MAKE_READABLE,           \
-                            _qzz_addr, _qzz_len, 0, 0);          \
-    _qzz_res;                                                    \
-   })
-
-/* Discard a block-description-handle obtained from the above three
-   macros.  After this, Valgrind will no longer be able to relate
-   addressing errors to the user-defined block associated with the
-   handle.  The permissions settings associated with the handle remain
-   in place.  Returns 1 for an invalid handle, 0 for a valid
-   handle. */
-#define VALGRIND_DISCARD(_qzz_blkindex)                          \
-   ({unsigned int _qzz_res;                                      \
-    VALGRIND_MAGIC_SEQUENCE(_qzz_res, 0 /* default return */,    \
-                            VG_USERREQ__DISCARD,                 \
-                            0, _qzz_blkindex, 0, 0);             \
-    _qzz_res;                                                    \
-   })
-
-
-// JJJ: this doesn't seem to be used any more?  Not mentioned in manual,
-// or in vg_clientperms.c??  Is it for backwards compatability?
-#if 0
-/* Use this macro to force the definedness and addressibility of a
-   value to be checked.  If suitable addressibility and definedness
-   are not established, Valgrind prints an error message and returns
-   the address of the first offending byte.  Otherwise it returns
-   zero. */
-#define VALGRIND_CHECK_DEFINED(__lvalue)                           \
-   (void)                                                          \
-   VALGRIND_CHECK_READABLE(                                        \
-      (volatile unsigned char *)&(__lvalue),                       \
-                      (unsigned int)(sizeof (__lvalue)))
-#endif
-
-
-/* Mark memory, intended to be on the client's stack, at _qzz_addr as
-   unaddressible and undefined for _qzz_len bytes.  Does not return a
-   value.  The record associated with this setting will be
-   automatically removed by Valgrind when the containing routine
-   exits. */
-#define VALGRIND_MAKE_NOACCESS_STACK(_qzz_addr,_qzz_len)           \
-   {unsigned int _qzz_res;                                         \
-    VALGRIND_MAGIC_SEQUENCE(_qzz_res, 0,                           \
-                            VG_USERREQ__MAKE_NOACCESS_STACK,       \
-                            _qzz_addr, _qzz_len, 0, 0);            \
-   }
+typedef
+   enum { VG_USERREQ__RUNNING_ON_VALGRIND = 0x1001,
+          VG_USERREQ__DISCARD_TRANSLATIONS,
+          VG_USERREQ__FINAL_DUMMY_CLIENT_REQUEST,
+   } Vg_ClientRequest;
 
 
 /* Returns 1 if running on Valgrind, 0 if running on the real CPU. 
