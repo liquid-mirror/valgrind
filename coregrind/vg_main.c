@@ -162,7 +162,7 @@ void VG_(register_noncompact_helper)(Addr a)
 }
 
 /* Allocate offsets in baseBlock for the skin helpers */
-void assign_helpers_in_baseBlock(UInt n, Int offsets[], Addr addrs[])
+static void assign_helpers_in_baseBlock(UInt n, Int offsets[], Addr addrs[])
 {
    Int i;
    for (i = 0; i < n; i++) offsets[i] = alloc_BaB_1_set( addrs[i] );
