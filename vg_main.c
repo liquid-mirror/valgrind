@@ -1159,11 +1159,13 @@ void VG_(main) ( void )
 
    /* Hook to delay things long enough so we can get the pid and
       attach GDB in another shell. */
-   if (0) { 
+#if 0
+   { 
       Int p, q;
       for (p = 0; p < 50000; p++)
          for (q = 0; q < 50000; q++) ;
    }
+#endif
 
    /* Initialise the scheduler, and copy the client's state from
       baseBlock into VG_(threads)[1].  This has to come before signal

@@ -4,6 +4,7 @@ badaddrvalue
 badfree
 badjump
 badloop
+buflen_check
 dir
 doublefree
 errs1

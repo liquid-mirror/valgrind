@@ -56,13 +56,6 @@
    if (VG_(clo_trace_syscalls))        \
       VG_(printf)(format, ## args)
 
-/* Dereference a pointer.  Designed to be overridden for skins that can
-   check if the dereference is safe. */
-UInt VG_(dereference) ( Addr a )
-{
-   return * (UInt*)a;
-}
-
 /* ---------------------------------------------------------------------
    Doing mmap, munmap, mremap, mprotect
    ------------------------------------------------------------------ */
@@ -345,6 +338,49 @@ void pre_mem_read_sockaddr ( ThreadState* tst,
    VG_(arena_free) ( VG_AR_TRANSIENT, outmsg );
 }
 
+/* Dereference a pointer to a UInt. */
+static UInt deref_UInt ( ThreadState* tst, Addr a, Char* s )
+{
+   UInt* a_p = (UInt*)a;
+   SYSCALL_TRACK( pre_mem_read, tst, s, (Addr)a_p, sizeof(UInt) );
+   if (a_p == NULL)
+      return 0;
+   else
+      return *a_p;
+}
+
+/* Dereference a pointer to a pointer. */
+static Addr deref_Addr ( ThreadState* tst, Addr a, Char* s )
+{
+   Addr* a_p = (Addr*)a;
+   SYSCALL_TRACK( pre_mem_read, tst, s, (Addr)a_p, sizeof(Addr) );
+   return *a_p;
+}
+
+static 
+void buf_and_len_pre_check( ThreadState* tst, Addr buf_p, Addr buflen_p,
+                            Char* buf_s, Char* buflen_s )
+{
+   if (VG_(track_events).pre_mem_write) {
+      UInt buflen_in = deref_UInt( tst, buflen_p, buflen_s);
+      if (buflen_in > 0) {
+         VG_(track_events).pre_mem_write ( Vg_CoreSysCall,
+                                           tst, buf_s, buf_p, buflen_in );
+      }
+   }
+}
+
+static 
+void buf_and_len_post_check( ThreadState* tst, Int res,
+                             Addr buf_p, Addr buflen_p, Char* s )
+{
+   if (!VG_(is_kerror)(res) && VG_(track_events).post_mem_write) {
+      UInt buflen_out = deref_UInt( tst, buflen_p, s);
+      if (buflen_out > 0 && buf_p != (Addr)NULL) {
+         VG_(track_events).post_mem_write ( buf_p, buflen_out );
+      }
+   }
+}
 
 /* ---------------------------------------------------------------------
    Data seg end, for brk()
@@ -1416,8 +1452,9 @@ void VG_(perform_assumed_nonblocking_syscall) ( ThreadId tid )
                   struct msgbuf *msgp;
                   Int msgsz = arg3;
  
-                  msgp = (struct msgbuf *)VG_(dereference)( 
-                            (Addr) (&((struct ipc_kludge *)arg5)->msgp));
+                  msgp = (struct msgbuf *)deref_Addr( tst,
+                            (Addr) (&((struct ipc_kludge *)arg5)->msgp),
+                            "msgrcv(msgp)" );
 
                   SYSCALL_TRACK( pre_mem_write, tst, "msgrcv(msgp->mtype)", 
                                      (UInt)&msgp->mtype, sizeof(msgp->mtype) );
@@ -1478,7 +1515,7 @@ void VG_(perform_assumed_nonblocking_syscall) ( ThreadId tid )
                {
                   Int shmid = arg2;
                   /*Int shmflag = arg3;*/
-                  UInt addr;
+                  Addr addr;
 
                   KERNEL_DO_SYSCALL(tid,res);
 
@@ -1490,7 +1527,7 @@ void VG_(perform_assumed_nonblocking_syscall) ( ThreadId tid )
                    * glibc/sysdeps/unix/sysv/linux/shmat.c */
                   VG_TRACK( post_mem_write, arg4, sizeof( ULong ) );
 
-                  addr = VG_(dereference) ( arg4 );
+                  addr = deref_Addr ( tst, arg4, "shmat(addr)" );
                   if ( addr > 0 ) { 
                      UInt segmentSize = get_shm_size ( shmid );
                      if ( segmentSize > 0 ) {
@@ -2496,26 +2533,18 @@ void VG_(perform_assumed_nonblocking_syscall) ( ThreadId tid )
                break;
 
             case SYS_ACCEPT: {
-               /* int accept(int s, struct sockaddr *addr, int *p_addrlen); */
-               Addr addr;
-               Addr p_addrlen;
-               UInt addrlen_in, addrlen_out;
+               /* int accept(int s, struct sockaddr *addr, int *addrlen); */
                SYSCALL_TRACK( pre_mem_read, tst, "socketcall.accept(args)", 
                                  arg2, 3*sizeof(Addr) );
-               addr      = ((UInt*)arg2)[1];
-               p_addrlen = ((UInt*)arg2)[2];
-               if (p_addrlen != (Addr)NULL) {
-                  SYSCALL_TRACK( pre_mem_read, tst, "socketcall.accept(addrlen)", 
-                                     p_addrlen, sizeof(int) );
-                  addrlen_in = VG_(dereference)( p_addrlen );
-                  SYSCALL_TRACK( pre_mem_write, tst, "socketcall.accept(addr)", 
-                                     addr, addrlen_in );
-               }
+               {
+               Addr addr_p     = ((UInt*)arg2)[1];
+               Addr addrlen_p  = ((UInt*)arg2)[2];
+               buf_and_len_pre_check ( tst, addr_p, addrlen_p,
+                                       "socketcall.accept(addr)",
+                                       "socketcall.accept(addrlen_in)" );
                KERNEL_DO_SYSCALL(tid,res);
-               if (!VG_(is_kerror)(res) && res >= 0 && p_addrlen != (Addr)NULL) {
-                  addrlen_out = VG_(dereference)( p_addrlen );
-                  if (addrlen_out > 0)
-                     VG_TRACK( post_mem_write, addr, addrlen_out );
+               buf_and_len_post_check ( tst, res, addr_p, addrlen_p,
+                                        "socketcall.accept(addrlen_out)" );
                }
                break;
             }
@@ -2540,7 +2569,7 @@ void VG_(perform_assumed_nonblocking_syscall) ( ThreadId tid )
                                  4*sizeof(Addr) );
                SYSCALL_TRACK( pre_mem_read, tst, "socketcall.send(msg)",
                                  ((UInt*)arg2)[1], /* msg */
-                                  ((UInt*)arg2)[2]  /* len */ );
+                                 ((UInt*)arg2)[2]  /* len */ );
                KERNEL_DO_SYSCALL(tid,res);
                break;
 
@@ -2549,29 +2578,23 @@ void VG_(perform_assumed_nonblocking_syscall) ( ThreadId tid )
                                struct sockaddr *from, int *fromlen); */
                SYSCALL_TRACK( pre_mem_read, tst, "socketcall.recvfrom(args)", 
                                  arg2, 6*sizeof(Addr) );
-               if ( ((UInt*)arg2)[4] /* from */ != 0) {
-                  SYSCALL_TRACK( pre_mem_read, tst, "socketcall.recvfrom(fromlen)",
-                                    ((UInt*)arg2)[5] /* fromlen */, 
-                                    sizeof(int) );
-                  SYSCALL_TRACK( pre_mem_write, tst, "socketcall.recvfrom(from)",
-                                    ((UInt*)arg2)[4], /*from*/
-                                    VG_(dereference)( (Addr)
-                                                      ((UInt*)arg2)[5] ) );
-               }
+               {
+               Addr buf_p      = ((UInt*)arg2)[1];
+               Int  len        = ((UInt*)arg2)[2];
+               Addr from_p     = ((UInt*)arg2)[4];
+               Addr fromlen_p  = ((UInt*)arg2)[5];
+
                SYSCALL_TRACK( pre_mem_write, tst, "socketcall.recvfrom(buf)", 
-                                 ((UInt*)arg2)[1], /* buf */
-                                 ((UInt*)arg2)[2]  /* len */ );
+                                             buf_p, len );
+               buf_and_len_pre_check ( tst, from_p, fromlen_p, 
+                                       "socketcall.recvfrom(from)",
+                                       "socketcall.recvfrom(fromlen_in)" );
                KERNEL_DO_SYSCALL(tid,res);
-               if (!VG_(is_kerror)(res) && res >= 0) {
-                  VG_TRACK( post_mem_write, ((UInt*)arg2)[1], /* buf */
-                                 ((UInt*)arg2)[2]  /* len */ );
-                  if ( ((UInt*)arg2)[4] /* from */ != 0) {
-                     VG_TRACK( post_mem_write, 
-                        ((UInt*)arg2)[4], /*from*/
-                        VG_(dereference)( (Addr) ((UInt*)arg2)[5] ) );
-                  }
+               buf_and_len_post_check ( tst, res, from_p, fromlen_p,
+                                        "socketcall.recvfrom(fromlen_out)" );
+               if (!VG_(is_kerror)(res))
+                  VG_TRACK( post_mem_write, buf_p, len );
                }
-               /* phew! */
                break;
 
             case SYS_RECV:
@@ -2625,65 +2648,55 @@ void VG_(perform_assumed_nonblocking_syscall) ( ThreadId tid )
                SYSCALL_TRACK( pre_mem_read, tst, "socketcall.getsockopt(args)", 
                                  arg2, 5*sizeof(Addr) );
                {
-               Addr optval_p = ((UInt*)arg2)[3];
-               Addr optlen_p = ((UInt*)arg2)[4];
+               Addr optval_p  = ((UInt*)arg2)[3];
+               Addr optlen_p  = ((UInt*)arg2)[4];
                /* vg_assert(sizeof(socklen_t) == sizeof(UInt)); */
-               UInt optlen_after;
-               UInt optlen = VG_(dereference) ( optlen_p );
-               if (optlen > 0) 
-                  SYSCALL_TRACK( pre_mem_write, tst, "socketcall.getsockopt(optval)", 
-                                    optval_p, optlen );
+               buf_and_len_pre_check ( tst, optval_p, optlen_p,
+                                       "socketcall.getsockopt(optval)",
+                                       "socketcall.getsockopt(optlen)" );
                KERNEL_DO_SYSCALL(tid,res);
-               optlen_after = VG_(dereference) ( optlen_p );
-               if (!VG_(is_kerror)(res) && optlen > 0 && optlen_after > 0) 
-                  VG_TRACK( post_mem_write, optval_p, optlen_after );
+               buf_and_len_post_check ( tst, res, optval_p, optlen_p,
+                                        "socketcall.getsockopt(optlen_out)" );
                }
                break;
 
             case SYS_GETSOCKNAME:
-               /* int getsockname(int s, struct sockaddr* name, 
-                                  int* namelen) */
-               SYSCALL_TRACK( pre_mem_read, tst, "socketcall.getsockname(args)", 
-                                 arg2, 3*sizeof(Addr) );
+               /* int getsockname(int s, struct sockaddr* name, int* namelen) */
+               SYSCALL_TRACK( pre_mem_read, tst, "socketcall.getsockname(args)",
+                                            arg2, 3*sizeof(Addr) );
                {
-               UInt namelen = VG_(dereference)( (Addr) ((UInt*)arg2)[2]);
-               if (namelen > 0)
-                  SYSCALL_TRACK( pre_mem_write, tst, "socketcall.getsockname(name)", 
-                                    ((UInt*)arg2)[1], namelen );
+               Addr name_p     = ((UInt*)arg2)[1];
+               Addr namelen_p  = ((UInt*)arg2)[2];
+
+               buf_and_len_pre_check ( tst, name_p, namelen_p,
+                                       "socketcall.getsockname(name)",
+                                       "socketcall.getsockname(namelen_in)" );
                KERNEL_DO_SYSCALL(tid,res);
-               if (!VG_(is_kerror)(res)) {
-                  namelen = VG_(dereference)( (Addr) ((UInt*)arg2)[2]);
-                  if (namelen > 0 
-                      && ((UInt*)arg2)[1] != (UInt)NULL)
-                     VG_TRACK( post_mem_write, ((UInt*)arg2)[1], namelen );
-               }
+               buf_and_len_post_check ( tst, res, name_p, namelen_p,
+                                        "socketcall.getsockname(namelen_out)" );
                }
                break;
 
             case SYS_GETPEERNAME:
-               /* int getpeername(int s, struct sockaddr* name, 
-                                  int* namelen) */
-               SYSCALL_TRACK( pre_mem_read, tst, "socketcall.getpeername(args)", 
-                                 arg2, 3*sizeof(Addr) );
+               /* int getpeername(int s, struct sockaddr* name, int* namelen) */
+               SYSCALL_TRACK( pre_mem_read, tst, "socketcall.getpeername(args)",
+                                            arg2, 3*sizeof(Addr) );
                {
-               UInt namelen = VG_(dereference)( (Addr) ((UInt*)arg2)[2]);
-               if (namelen > 0)
-                  SYSCALL_TRACK( pre_mem_write, tst, "socketcall.getpeername(name)", 
-                                    ((UInt*)arg2)[1], namelen );
+               Addr name_p     = ((UInt*)arg2)[1];
+               Addr namelen_p  = ((UInt*)arg2)[2];
+               buf_and_len_pre_check ( tst, name_p, namelen_p,
+                                       "socketcall.getpeername(name)",
+                                       "socketcall.getpeername(namelen_in)" );
                KERNEL_DO_SYSCALL(tid,res);
-               if (!VG_(is_kerror)(res)) {
-                  namelen = VG_(dereference)( (Addr) ((UInt*)arg2)[2]);
-                  if (namelen > 0 
-                      && ((UInt*)arg2)[1] != (UInt)NULL)
-                     VG_TRACK( post_mem_write, ((UInt*)arg2)[1], namelen );
-               }
+               buf_and_len_post_check ( tst, res, name_p, namelen_p,
+                                        "socketcall.getpeername(namelen_out)" );
                }
                break;
 
             case SYS_SHUTDOWN:
                /* int shutdown(int s, int how); */
                SYSCALL_TRACK( pre_mem_read, tst, "socketcall.shutdown(args)", 
-                                 arg2, 2*sizeof(Addr) );
+                                            arg2, 2*sizeof(Addr) );
                KERNEL_DO_SYSCALL(tid,res);
                break;
 

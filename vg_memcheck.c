@@ -870,16 +870,6 @@ void check_is_readable_asciiz ( CorePart part, ThreadState* tst,
 }
 
 
-/* SSS: Overrides the default which doesn't do any checking */
-/*      Nb: Returning zero is sometimes bad! */
-UInt VG_(dereference) ( Addr aa )
-{
-   if (SK_(check_readable)(aa,4,NULL))
-      return * (UInt*)aa;
-   else
-      return 0;
-}
-
 static
 void memcheck_new_mem_startup( Addr a, UInt len, Bool rr, Bool ww, Bool xx )
 {
