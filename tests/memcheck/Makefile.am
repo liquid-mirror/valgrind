@@ -25,7 +25,8 @@ noinst_PROGRAMS = \
 	manuel1 manuel2 manuel3 \
 	memalign_test memcmptest mmaptest nanoleak pushfpopf \
 	realloc1 sigaltstack signal2 suppfree trivialleak tronical \
-	weirdioctl
+	weirdioctl \
+	pth_empty
 
 # XXX: want to have this inherited from ../Makefile.am
 CFLAGS = $(WERROR) -Winline -Wall -Wshadow -g
@@ -62,4 +63,9 @@ sigaltstack_SOURCES 	= sigaltstack.c
 trivialleak_SOURCES 	= trivialleak.c
 tronical_SOURCES 	= tronical.S
 weirdioctl_SOURCES 	= weirdioctl.c
+
+# Should probably go eventually with Eraser.
+pth_empty_SOURCES	= pth_empty.c
+pth_empty_LDADD		= -lpthread
+
 

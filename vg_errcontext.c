@@ -318,7 +318,8 @@ void VG_(maybe_record_error) ( ThreadState* tst,
    /* OK, we're really going to collect it.  First make a copy,
       because the error context is on the stack and will disappear shortly.
       We can duplicate the main part ourselves, but use
-      SKN_(dup_extra_and_update) to duplicate the 'extra' part.
+      SKN_(dup_extra_and_update) to duplicate the 'extra' part (unless it's
+      NULL).
      
       SKN_(dup_extra_and_update) can also update the SkinError.  This is
       for when there are more details to fill in which take time to work out
@@ -328,7 +329,8 @@ void VG_(maybe_record_error) ( ThreadState* tst,
     */
    p = VG_(arena_malloc)(VG_AR_ERRORS, sizeof(CoreError));
    *p = err;
-   SKN_(dup_extra_and_update)(&p->skin_err);
+   if (NULL != err.skin_err.extra)
+      SKN_(dup_extra_and_update)(&p->skin_err);
 
    p->next = vg_errors;
    p->supp = is_suppressible_error(&err);
