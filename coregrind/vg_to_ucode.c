@@ -4167,14 +4167,33 @@ static Addr disInstr ( UCodeBlock* cb, Addr eip, Bool* isEnd )
       goto decode_success;
    }
 
-   /* 0x14: UNPCKLPD (src)xmmreg-or-mem, (dst)xmmreg */
-   /* 0x15: UNPCKHPD (src)xmmreg-or-mem, (dst)xmmreg */
+   /* 0x14: UNPCKLPD (src)xmmreg-or-mem, (dst)xmmreg.  Reads a+0
+      .. a+7, so we can say size 8 */
+   /* 0x15: UNPCKHPD (src)xmmreg-or-mem, (dst)xmmreg.  Reads a+8
+      .. a+15, but we have no way to express this, so better say size
+      16.  Sigh. */
    if (sz == 2
        && insn[0] == 0x0F 
        && (insn[1] == 0x14 || insn[1] == 0x15)) {
-      eip = dis_SSE3_reg_or_mem ( cb, sorb, eip+2, 16, 
+      eip = dis_SSE3_reg_or_mem ( cb, sorb, eip+2, 
+                                      insn[1]==0x14 ? 8 : 16, 
                                       "unpck{l,h}pd",
                                       0x66, insn[0], insn[1] );
+      goto decode_success;
+   }
+
+   /* 0x14: UNPCKLPS (src)xmmreg-or-mem, (dst)xmmreg  Reads a+0
+      .. a+7, so we can say size 8 */
+   /* 0x15: UNPCKHPS (src)xmmreg-or-mem, (dst)xmmreg  Reads a+8
+      .. a+15, but we have no way to express this, so better say size
+      16.  Sigh.  */
+   if (sz == 4
+       && insn[0] == 0x0F
+       && (insn[1] == 0x14 || insn[1] == 0x15)) {
+      eip = dis_SSE2_reg_or_mem ( cb, sorb, eip+2, 
+                                      insn[1]==0x14 ? 8 : 16, 
+                                      "unpck{l,h}ps",
+                                      insn[0], insn[1] );
       goto decode_success;
    }
 
@@ -4581,6 +4600,15 @@ static Addr disInstr ( UCodeBlock* cb, Addr eip, Bool* isEnd )
       vg_assert(sz == 4);
       eip = dis_SSE3_reg_or_mem ( cb, sorb, eip+3, 8, 
                                       "sqrtsd",
+                                      insn[0], insn[1], insn[2] );
+      goto decode_success;
+   }
+
+   /* SQRTSS: square root of scalar float. */
+   if (insn[0] == 0xF3 && insn[1] == 0x0F && insn[2] == 0x51) {
+      vg_assert(sz == 4);
+      eip = dis_SSE3_reg_or_mem ( cb, sorb, eip+3, 4,
+                                      "sqrtss",
                                       insn[0], insn[1], insn[2] );
       goto decode_success;
    }
