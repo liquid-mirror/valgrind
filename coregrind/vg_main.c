@@ -205,18 +205,18 @@ static void vg_init_baseBlock ( void )
    /* 9,10,11 or 18,19,20... depends on number whether shadow regs are used
     * and on compact helpers registered */ 
 
+   /* (9 or 18) + n_compact_helpers  */
+   /* Register VG_(handle_esp_assignment) if needed.
+   if (VG_(track_events).new_mem_stack_aligned || 
+       VG_(track_events).die_mem_stack_aligned) 
+      VG_(register_compact_helper)( (Addr) & VGM_(handle_esp_assignment) );
+
    /* Allocate slots for compact helpers */
    assign_helpers_in_baseBlock(VG_(n_compact_helpers), 
                                VG_(compact_helper_offsets), 
                                VG_(compact_helper_addrs));
 
-   /* (9 or 18) + n_compact_helpers  */
-   if (VG_(track_events).new_mem_stack_aligned || 
-       VG_(track_events).die_mem_stack_aligned) 
-      VGOFF_(handle_esp_assignment)
-         = alloc_BaB_1_set( (Addr) & VGM_(handle_esp_assignment) );
-
-   /* (10 or 19) + n_compact_helpers */
+   /* (9/10 or 18/19) + n_compact_helpers */
    VGOFF_(m_eip) = alloc_BaB(1);
 
    /* There are currently 24 spill slots */
