@@ -1578,6 +1578,8 @@ extern void VG_(helper_LAHF);
 extern void VG_(helper_DAS);
 extern void VG_(helper_DAA);
 
+extern void VG_(helper_cmpxchg8b);
+
 extern void VG_(helper_undefined_instruction);
 
 /* NOT A FUNCTION; this is a bogus RETURN ADDRESS. */
