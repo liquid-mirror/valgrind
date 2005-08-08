@@ -151,56 +151,39 @@ static void print_all_stats ( void )
 /*====================================================================*/
 
 /* Look for our AUXV table */
-static int scan_auxv(void* init_sp)
+static void scan_auxv(void* init_sp)
 {
    struct ume_auxv *auxv = VG_(find_auxv)((UWord*)init_sp);
-   int padfile = -1, found = 0;
 
-   for (; auxv->a_type != AT_NULL; auxv++)
+   for (; auxv->a_type != AT_NULL; auxv++) {
       switch(auxv->a_type) {
-      case AT_UME_PADFD:
-	 padfile = auxv->u.a_val;
-	 found |= 1;
-	 break;
-
-      case AT_UME_EXECFD:
-	 vgexecfd = auxv->u.a_val;
-	 found |= 2;
-	 break;
-
 #     if defined(VGP_ppc32_linux)
-      case AT_DCACHEBSIZE:
-      case AT_ICACHEBSIZE:
-      case AT_UCACHEBSIZE:
-         if (auxv->u.a_val > 0) {
-            VG_(cache_line_size_ppc32) = auxv->u.a_val;
-            VG_(debugLog)(1, "main", 
-                             "PPC32 cache line size %u (type %u)\n", 
-                             (UInt)auxv->u.a_val, (UInt)auxv->a_type );
-         }
-         break;
+         case AT_DCACHEBSIZE:
+         case AT_ICACHEBSIZE:
+         case AT_UCACHEBSIZE:
+            if (auxv->u.a_val > 0) {
+               VG_(cache_line_size_ppc32) = auxv->u.a_val;
+               VG_(debugLog)(1, "main", 
+                                "PPC32 cache line size %u (type %u)\n", 
+                                (UInt)auxv->u.a_val, (UInt)auxv->a_type );
+            }
+            break;
 
-      case AT_HWCAP:
-         VG_(debugLog)(1, "main", "PPC32 hwcaps(1): 0x%x\n", (UInt)auxv->u.a_val);
-         auxv->u.a_val &= ~0x10000000; /* claim there is no Altivec support */
-         VG_(debugLog)(1, "main", "PPC32 hwcaps(2): 0x%x\n", (UInt)auxv->u.a_val);
-         break;
-#     endif
+         case AT_HWCAP:
+            VG_(debugLog)(1, "main", "PPC32 hwcaps(1): 0x%x\n", (UInt)auxv->u.a_val);
+            auxv->u.a_val &= ~0x10000000; /* claim there is no Altivec support */
+            VG_(debugLog)(1, "main", "PPC32 hwcaps(2): 0x%x\n", (UInt)auxv->u.a_val);
+            break;
+#        endif
 
-      case AT_PHDR:
-         VG_(valgrind_base) = VG_PGROUNDDN(auxv->u.a_val);
-         break;
+         case AT_PHDR:
+            VG_(valgrind_base) = VG_PGROUNDDN(auxv->u.a_val);
+            break;
 
-      default:
-         break;
+         default:
+            break;
       }
-
-   if ( found != (1|2) ) {
-      fprintf(stderr, "valgrind: stage2 must be launched by stage1\n");
-      exit(127);
    }
-   vg_assert(padfile >= 0);
-   return padfile;
 }
 
 
@@ -1029,7 +1012,7 @@ static void load_tool( const char *toolname,
    extern ToolInfo VG_(tool_info);
    *toolinfo_out = &VG_(tool_info);
    /* HHHHHHHHACCCCCCCCCCK */
-   *preloadpath_out = "/home/sewardj/VgASPACE/aspace/coregrind/vg_preload_core.so";
+   *preloadpath_out = "/home/sewardj/VgASPACEM/aspacem/Inst/lib/valgrind/vg_preload_core.so";
 
 //zz    Bool      ok;
 //zz    int       len = strlen(VG_(libdir)) + strlen(toolname) + 16;
@@ -2504,7 +2487,7 @@ int main(int argc, char **argv, char **envp)
    VG_(debugLog)(1, "main", "Doing scan_auxv()\n");
    {
    void* init_sp = argv - 1;
-   padfile = scan_auxv(init_sp);
+   scan_auxv(init_sp);
    }
 
    //--------------------------------------------------------------
@@ -2579,8 +2562,8 @@ int main(int argc, char **argv, char **envp)
    //   p: layout_remaining_space()  [everything must be mapped in before now]  
    //   p: load_client()             [ditto] 
    //--------------------------------------------------------------
-   as_unpad((void *)VG_(shadow_end), (void *)~0, padfile);
-   as_closepadfile(padfile);  // no more padding
+   //as_unpad((void *)VG_(shadow_end), (void *)~0, padfile);
+   //as_closepadfile(padfile);  // no more padding
 
    //--------------------------------------------------------------
    // Set up client's environment

@@ -23,11 +23,10 @@ valgrind_memcheck_SOURCES = \
 	mac_shared.c \
 	mc_translate.c
 valgrind_memcheck_LDFLAGS = \
-	$(top_srcdir)/coregrind/libcoregrind.a
-
-# \
-#	-Wl,-T,$(top_srcdir)/valt_load_address.lds \
-#	-Wl,-defsym,valt_load_address=@VALT_LOAD_ADDRESS@
+	-static \
+	$(top_srcdir)/coregrind/libcoregrind.a \
+	-Wl,-defsym,valt_load_address=@VALT_LOAD_ADDRESS@ \
+	-Wl,-T,$(top_srcdir)/valt_load_address.lds
 
 mcincludedir = $(includedir)/valgrind
 
