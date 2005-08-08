@@ -61,7 +61,7 @@
 #include "pub_core_ume.h"
 
 #include <dirent.h>
-#include <dlfcn.h>
+//#include <dlfcn.h>
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -1184,70 +1184,6 @@ static void load_client(char* cl_argv[], const char* exec, Int need_help,
    VG_(brk_base) = VG_(brk_limit) = info->brkbase;
 }
 
-/*====================================================================*/
-/*=== Address space unpadding                                      ===*/
-/*====================================================================*/
-
-typedef struct {
-   char*            killpad_start;
-   char*            killpad_end;
-   struct vki_stat* killpad_padstat;
-} killpad_extra;
-
-static int killpad(char *segstart, char *segend, const char *perm, off_t off, 
-                   int maj, int min, int ino, void* ex)
-{
-   killpad_extra* extra = ex;
-   void *b, *e;
-   SysRes res;
-
-   vg_assert(NULL != extra->killpad_padstat);
-
-   if (extra->killpad_padstat->st_dev != makedev(maj, min) || 
-       extra->killpad_padstat->st_ino != ino)
-      return 1;
-   
-   if (segend <= extra->killpad_start || segstart >= extra->killpad_end)
-      return 1;
-   
-   if (segstart <= extra->killpad_start)
-      b = extra->killpad_start;
-   else
-      b = segstart;
-   
-   if (segend >= extra->killpad_end)
-      e = extra->killpad_end;
-   else
-      e = segend;
-   
-   res = VG_(munmap_native)(b, (char *)e-(char *)b);
-   vg_assert(!res.isError);
-   
-   return 1;
-}
-
-// Remove padding of 'padfile' from a range of address space.
-static void as_unpad(void *start, void *end, int padfile)
-{
-   static struct vki_stat padstat;
-   killpad_extra extra;
-   int res;
-
-   vg_assert(padfile >= 0);
-   
-   res = VG_(fstat)(padfile, &padstat);
-   vg_assert(0 == res);
-   extra.killpad_padstat = &padstat;
-   extra.killpad_start   = start;
-   extra.killpad_end     = end;
-   VG_(foreach_map)(killpad, &extra);
-}
-
-static void as_closepadfile(int padfile)
-{
-   int res = close(padfile);
-   vg_assert(0 == res);
-}
 
 /*====================================================================*/
 /*=== Command-line: variables, processing, etc                     ===*/
@@ -2431,13 +2367,13 @@ static Int local_strcmp ( const HChar* s1, const HChar* s2 )
 }
 
 
-int main(int argc, char **argv, char **envp)
+Int main(Int argc, HChar **argv, HChar **envp)
 {
-   char **cl_argv;
-   const char *tool = "memcheck";   // default to Memcheck
-   const char *exec = NULL;
-   char *preload;          /* tool-specific LD_PRELOAD .so */
-   char **env;
+   HChar **cl_argv;
+   const HChar *tool = "memcheck";   // default to Memcheck
+   const HChar *exec = NULL;
+   HChar *preload;          /* tool-specific LD_PRELOAD .so */
+   HChar **env;
    Int need_help = 0;      // 0 = no, 1 = --help, 2 = --help-debug
    struct exeinfo info;
    ToolInfo *toolinfo = NULL;
@@ -2445,7 +2381,7 @@ int main(int argc, char **argv, char **envp)
    Addr sp_at_startup;     /* client's SP at the point we gained control. */
    UInt * client_auxv;
    struct vki_rlimit zero = { 0, 0 };
-   Int padfile, loglevel, i;
+   Int loglevel, i;
 
    //============================================================
    // Nb: startup is complex.  Prerequisites are shown at every step.
