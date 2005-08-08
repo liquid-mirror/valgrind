@@ -1012,7 +1012,7 @@ static void load_tool( const char *toolname,
    extern ToolInfo VG_(tool_info);
    *toolinfo_out = &VG_(tool_info);
    /* HHHHHHHHACCCCCCCCCCK */
-   *preloadpath_out = "/home/sewardj/VgASPACEM/aspacem/Inst/lib/valgrind/vg_preload_core.so";
+   *preloadpath_out = "/home/sewardj/VgASPACEM/aspacem/Inst/lib/valgrind/vgpreload_memcheck.so";
 
 //zz    Bool      ok;
 //zz    int       len = strlen(VG_(libdir)) + strlen(toolname) + 16;
