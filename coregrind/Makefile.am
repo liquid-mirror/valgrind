@@ -23,11 +23,17 @@ AM_CPPFLAGS += -DVG_LIBDIR="\"$(valdir)"\" \
 
 default.supp: $(SUPP_FILES)
 
-bin_PROGRAMS = \
-	valgrind
+## XXXXXXXXXXXXX JRS 8 Aug 05: the next three lines constitute an
+## appalling hack.  Although we purportedly create a .a file, in fact
+## it is really a .o (relocatable ELF object) file.  The root reason
+## is that some of the inputs to libcoregrind.a are themselves .a files,
+## and I don't know how to get /usr/bin/ar to accept .a files as inputs.
+noinst_LIBRARIES = libcoregrind.a
+libcoregrind_a_AR = $(LD) --whole-archive -r -o
+RANLIB = echo "Not really ranlib-ing"
+## end of hack
 
 val_PROGRAMS = \
-	stage2 \
 	vg_preload_core.so
 
 noinst_HEADERS = \
@@ -80,18 +86,10 @@ noinst_HEADERS = \
 	vki_unistd-ppc32-linux.h\
 	vki_unistd-x86-linux.h
 
-BUILT_SOURCES = stage2.lds
-CLEANFILES = stage2.lds
+BUILT_SOURCES = 
+CLEANFILES = 
 
-valgrind_SOURCES = \
-	stage1.c \
-	m_debuglog.c \
-	m_ume.c
-valgrind_DEPENDENCIES =
-valgrind_LDFLAGS=-static -g
-valgrind_LDADD=
-
-stage2_SOURCES = \
+libcoregrind_a_SOURCES = \
 	m_cpuid.S \
 	m_debugger.c \
 	m_debuglog.c \
@@ -126,7 +124,7 @@ stage2_SOURCES = \
 	m_ume.c
 
 ## Nb: libscheduler.a must precede libdispatch.a in this list.
-stage2_extra= \
+libcoregrind_a_extra= \
 	m_debuginfo/libdebuginfo.a \
 	m_demangle/libdemangle.a \
 	m_scheduler/libscheduler.a \
@@ -136,36 +134,27 @@ stage2_extra= \
 	m_syswrap/libsyswrap.a \
 	@VEX_DIR@/libvex.a
 
-## These ones must be linked in with the --whole-archive flag, because they
-## wouldn't get pulled into stage2 otherwise (because they contain symbols
-## only referred to by tool shared objects).
-stage2_extra2 = \
+## These ones must be linked in with the --whole-archive flag, because
+## they wouldn't get pulled into libcoregrind otherwise (because they
+## contain symbols only referred to by tool shared objects).
+libcoregrind_a_extra2 = \
 	m_replacemalloc/libreplacemalloc_core.a
 
 ## Nb: older versions of automake don't seem to like having += within an
 ## if-then-else, so we have to use these variables for the common parts.
-st2_DEPS_common = \
-	$(stage2_extra) \
-	$(stage2_extra2)
+libcoregrind_a_DEPS_common = \
+	$(libcoregrind_a_extra) \
+	$(libcoregrind_a_extra2)
 
 st2_LDFLAGS_common = \
 	-Wl,--export-dynamic -g \
-	-Wl,--whole-archive $(stage2_extra2) -Wl,--no-whole-archive
+	-Wl,--whole-archive $(libcoregrind_a_extra2) -Wl,--no-whole-archive
 
-if USE_PIE
-stage2_DEPENDENCIES = $(st2_DEPS_common)
-stage2_LDFLAGS = \
-	$(st2_LDFLAGS_common) \
-	-pie
-else
-stage2_DEPENDENCIES = $(st2_DEPS_common) stage2.lds
-stage2_LDFLAGS = \
-	$(st2_LDFLAGS_common) \
-	-Wl,-defsym,kickstart_base=@KICKSTART_BASE@ -Wl,-T,stage2.lds
-endif
+libcoregrind_a_DEPENDENCIES = $(libcoregrind_a_DEPS_common)
+libcoregrind_a_LIBFLAGS = \
+	$(st2_LDFLAGS_common)
 
-stage2_LDADD= $(stage2_extra) \
-	-ldl
+libcoregrind_a_LIBADD= $(libcoregrind_a_extra) $(libcoregrind_a_extra2)
 
 vg_preload_core_so_SOURCES = vg_preloaded.c
 vg_preload_core_so_CFLAGS = $(AM_CFLAGS) -fpic
@@ -175,28 +164,8 @@ vg_preload_core_so_LDFLAGS = \
 	-Wl,--soname,vg_preload_core.so \
 	-Wl,-z,initfirst
 
-# Extract ld's default linker script and hack it to our needs.
-# First we cut everything above and below the "=====..." lines at the top
-# and bottom.
-# Then we have to replace the load address with "kickstart_base".
-# The line to replace in has one of the following two forms:
-#
-#   . = 0x08048000 + SIZEOF_HEADERS;
-#
-# or
-#   PROVIDE (__executable_start = 0x08048000); . = 0x08048000 + SIZEOF_HEADERS;
-#
-# So we search for the line with a hex value "+ SIZEOF_HEADERS", and replace
-# all the hex values in that line with "kickstart_base".
-stage2.lds: Makefile
-	$(CC) -Wl,--verbose -nostdlib 2>&1 | sed \
-		-e '1,/^=====\+$$/d' \
-		-e '/^=====\+$$/d' \
-		-e '/\. = 0x[0-9A-Fa-f]\+ + SIZEOF_HEADERS/s/0x[0-9A-Fa-f]\+/kickstart_base/g' > $@ \
-	|| rm -f $@
-
 @VEX_DIR@/libvex.a: @VEX_DIR@/priv/main/vex_svnversion.h
-	$(MAKE) -C @VEX_DIR@ libvex.a EXTRA_CFLAGS="@PIE_AM_CFLAGS@"
+	$(MAKE) -C @VEX_DIR@ libvex.a
 
 @VEX_DIR@/priv/main/vex_svnversion.h:
 	$(MAKE) -C @VEX_DIR@ version

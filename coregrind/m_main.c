@@ -1026,81 +1026,86 @@ static void list_tools(void)
 static void load_tool( const char *toolname,
                        ToolInfo** toolinfo_out, char **preloadpath_out )
 {
-   Bool      ok;
-   int       len = strlen(VG_(libdir)) + strlen(toolname) + 16;
-   char      buf[len];
-   void*     handle;
-   ToolInfo* toolinfo;
-   char*     preloadpath = NULL;
+   extern ToolInfo VG_(tool_info);
+   *toolinfo_out = &VG_(tool_info);
+   /* HHHHHHHHACCCCCCCCCCK */
+   *preloadpath_out = "/home/sewardj/VgASPACE/aspace/coregrind/vg_preload_core.so";
 
-   // XXX: allowing full paths for --tool option -- does it make sense?
-   // Doesn't allow for vgpreload_<tool>.so.
-
-   if (strchr(toolname, '/') != 0) {
-      /* toolname contains '/', and so must be a pathname */
-      handle = dlopen(toolname, RTLD_NOW);
-   } else {
-      /* just try in the libdir */
-      snprintf(buf, len, "%s/vgtool_%s.so", VG_(libdir), toolname);
-      handle = dlopen(buf, RTLD_NOW);
-
-      if (handle != NULL) {
-	 snprintf(buf, len, "%s/vgpreload_%s.so", VG_(libdir), toolname);
-	 if (access(buf, R_OK) == 0) {
-	    preloadpath = strdup(buf);
-            vg_assert(NULL != preloadpath);
-         }
-      }
-   }
-
-   ok = (NULL != handle);
-   if (!ok) {
-      fprintf(stderr, "Can't open tool \"%s\": %s\n", toolname, dlerror());
-      goto bad_load;
-   }
-
-   toolinfo = dlsym(handle, "vgPlain_tool_info");
-   ok = (NULL != toolinfo);
-   if (!ok) {
-      fprintf(stderr, "Tool \"%s\" doesn't define its ToolInfo - "
-                      "add VG_DETERMINE_INTERFACE_VERSION?\n", toolname);
-      goto bad_load;
-   }
-
-   ok = (toolinfo->sizeof_ToolInfo == sizeof(*toolinfo) &&
-         toolinfo->interface_version == VG_CORE_INTERFACE_VERSION &&
-         toolinfo->tl_pre_clo_init != NULL);
-   if (!ok) { 
-      fprintf(stderr, "Error:\n"
-              "  Tool and core interface versions do not match.\n"
-              "  Interface version used by core is: %d (size %d)\n"
-              "  Interface version used by tool is: %d (size %d)\n"
-              "  The version numbers must match.\n",
-              VG_CORE_INTERFACE_VERSION, 
-              (Int)sizeof(*toolinfo),
-              toolinfo->interface_version,
-              toolinfo->sizeof_ToolInfo);
-      fprintf(stderr, "  You need to at least recompile, and possibly update,\n");
-      if (VG_CORE_INTERFACE_VERSION > toolinfo->interface_version)
-         fprintf(stderr, "  your tool to work with this version of Valgrind.\n");
-      else
-         fprintf(stderr, "  your version of Valgrind to work with this tool.\n");
-      goto bad_load;
-   }
-
-   vg_assert(NULL != toolinfo);
-   *toolinfo_out    = toolinfo;
-   *preloadpath_out = preloadpath;
-   return;
-
-
- bad_load:
-   if (handle != NULL)
-      dlclose(handle);
-
-   fprintf(stderr, "valgrind: couldn't load tool\n");
-   list_tools();
-   exit(127);
+//zz    Bool      ok;
+//zz    int       len = strlen(VG_(libdir)) + strlen(toolname) + 16;
+//zz    char      buf[len];
+//zz    void*     handle;
+//zz    ToolInfo* toolinfo;
+//zz    char*     preloadpath = NULL;
+//zz 
+//zz    // XXX: allowing full paths for --tool option -- does it make sense?
+//zz    // Doesn't allow for vgpreload_<tool>.so.
+//zz 
+//zz    if (strchr(toolname, '/') != 0) {
+//zz       /* toolname contains '/', and so must be a pathname */
+//zz       handle = dlopen(toolname, RTLD_NOW);
+//zz    } else {
+//zz       /* just try in the libdir */
+//zz       snprintf(buf, len, "%s/vgtool_%s.so", VG_(libdir), toolname);
+//zz       handle = dlopen(buf, RTLD_NOW);
+//zz 
+//zz       if (handle != NULL) {
+//zz 	 snprintf(buf, len, "%s/vgpreload_%s.so", VG_(libdir), toolname);
+//zz 	 if (access(buf, R_OK) == 0) {
+//zz 	    preloadpath = strdup(buf);
+//zz             vg_assert(NULL != preloadpath);
+//zz          }
+//zz       }
+//zz    }
+//zz 
+//zz    ok = (NULL != handle);
+//zz    if (!ok) {
+//zz       fprintf(stderr, "Can't open tool \"%s\": %s\n", toolname, dlerror());
+//zz       goto bad_load;
+//zz    }
+//zz 
+//zz    toolinfo = dlsym(handle, "vgPlain_tool_info");
+//zz    ok = (NULL != toolinfo);
+//zz    if (!ok) {
+//zz       fprintf(stderr, "Tool \"%s\" doesn't define its ToolInfo - "
+//zz                       "add VG_DETERMINE_INTERFACE_VERSION?\n", toolname);
+//zz       goto bad_load;
+//zz    }
+//zz 
+//zz    ok = (toolinfo->sizeof_ToolInfo == sizeof(*toolinfo) &&
+//zz          toolinfo->interface_version == VG_CORE_INTERFACE_VERSION &&
+//zz          toolinfo->tl_pre_clo_init != NULL);
+//zz    if (!ok) { 
+//zz       fprintf(stderr, "Error:\n"
+//zz               "  Tool and core interface versions do not match.\n"
+//zz               "  Interface version used by core is: %d (size %d)\n"
+//zz               "  Interface version used by tool is: %d (size %d)\n"
+//zz               "  The version numbers must match.\n",
+//zz               VG_CORE_INTERFACE_VERSION, 
+//zz               (Int)sizeof(*toolinfo),
+//zz               toolinfo->interface_version,
+//zz               toolinfo->sizeof_ToolInfo);
+//zz       fprintf(stderr, "  You need to at least recompile, and possibly update,\n");
+//zz       if (VG_CORE_INTERFACE_VERSION > toolinfo->interface_version)
+//zz          fprintf(stderr, "  your tool to work with this version of Valgrind.\n");
+//zz       else
+//zz          fprintf(stderr, "  your version of Valgrind to work with this tool.\n");
+//zz       goto bad_load;
+//zz    }
+//zz 
+//zz    vg_assert(NULL != toolinfo);
+//zz    *toolinfo_out    = toolinfo;
+//zz    *preloadpath_out = preloadpath;
+//zz    return;
+//zz 
+//zz 
+//zz  bad_load:
+//zz    if (handle != NULL)
+//zz       dlclose(handle);
+//zz 
+//zz    fprintf(stderr, "valgrind: couldn't load tool\n");
+//zz    list_tools();
+//zz    exit(127);
 }
 
 
