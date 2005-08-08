@@ -1012,7 +1012,20 @@ static void load_tool( const char *toolname,
    extern ToolInfo VG_(tool_info);
    *toolinfo_out = &VG_(tool_info);
    /* HHHHHHHHACCCCCCCCCCK */
-   *preloadpath_out = "/home/sewardj/VgASPACEM/aspacem/Inst/lib/valgrind/vgpreload_memcheck.so";
+   //*preloadpath_out = "/home/sewardj/VgASPACEM/aspacem/Inst/lib/valgrind/vgpreload_memcheck.so";
+   int   len = strlen(VG_(libdir)) + strlen(toolname) + 16;
+   char  buf[len];
+   char* preloadpath = NULL;
+
+   snprintf(buf, len, "%s/vgpreload_%s.so", VG_(libdir), toolname);
+   if (access(buf, R_OK) == 0) {
+      preloadpath = strdup(buf);
+      *preloadpath_out = preloadpath;
+   } else {
+      fprintf(stderr, "valgrind: couldn't load tool\n");
+      list_tools();
+      exit(127);
+   }
 
 //zz    Bool      ok;
 //zz    int       len = strlen(VG_(libdir)) + strlen(toolname) + 16;
