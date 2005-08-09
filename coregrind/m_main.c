@@ -61,9 +61,7 @@
 #include "pub_core_transtab.h"
 #include "pub_core_ume.h"
 
-#include <stdio.h>
 #include <stdlib.h>
-#include <unistd.h>
 
 #include "memcheck/memcheck.h"
 
@@ -279,7 +277,7 @@ static void layout_remaining_space(Addr argc_addr, float ratio)
                   VKI_MAP_PRIVATE|VKI_MAP_ANONYMOUS|VKI_MAP_FIXED|VKI_MAP_NORESERVE,
                   -1, 0);
       if (res.isError) {
-         fprintf(stderr, 
+         VG_(printf)(
           "valgrind: Could not allocate address space (%p bytes)\n"
           "valgrind:   for shadow memory\n"
           "valgrind: Possible causes:\n"
@@ -291,7 +289,7 @@ static void layout_remaining_space(Addr argc_addr, float ratio)
           "valgrind:   too-small (eg. 2GB) user address space.\n"
           , (void*)shadow_size
          ); 
-         exit(1);
+         VG_(exit)(1);
       }
    }
 }
@@ -304,14 +302,14 @@ static void layout_remaining_space(Addr argc_addr, float ratio)
 // at call site.
 static char* get_file_clo(char* dir)
 {
-#  define FLEN 512
    Int    n;
    SysRes fd;
    struct vki_stat s1;
    Char* f_clo = NULL;
-   Char  filename[FLEN];
+   Char  filename[VKI_PATH_MAX];
 
-   snprintf(filename, FLEN, "%s/.valgrindrc", ( NULL == dir ? "" : dir ) );
+   VG_(snprintf)(filename, VKI_PATH_MAX, "%s/.valgrindrc", 
+                           ( NULL == dir ? "" : dir ) );
    fd = VG_(open)(filename, 0, VKI_S_IRUSR);
    if ( !fd.isError ) {
       if ( 0 == VG_(fstat)(fd.val, &s1) ) {
@@ -324,7 +322,6 @@ static char* get_file_clo(char* dir)
       VG_(close)(fd.val);
    }
    return f_clo;
-#  undef FLEN
 }
 
 static Int count_args(char* s)
@@ -375,8 +372,8 @@ static void augment_command_line(Int* vg_argc_inout, char*** vg_argv_inout)
 
    // get_file_clo() allocates the return value with malloc().  We do not
    // free f1_clo and f2_clo as they get put into vg_argv[] which must persist.
-   char*  env_clo = getenv(VALGRINDOPTS);
-   char*  f1_clo  = get_file_clo( getenv("HOME") );
+   char*  env_clo = VG_(getenv)(VALGRINDOPTS);
+   char*  f1_clo  = get_file_clo( VG_(getenv)("HOME") );
    char*  f2_clo  = get_file_clo(".");
 
    /* copy any extra args from file or environment, if present */
@@ -393,8 +390,8 @@ static void augment_command_line(Int* vg_argc_inout, char*** vg_argv_inout)
       f2_arg_count  = count_args(f2_clo);
 
       if (0)
-	 printf("extra-argc=%d %d %d\n",
-		env_arg_count, f1_arg_count, f2_arg_count);
+	 VG_(printf)("extra-argc=%d %d %d\n",
+                     env_arg_count, f1_arg_count, f2_arg_count);
 
       /* +2: +1 for null-termination, +1 for added '--' */
       from     = vg_argv0;
@@ -447,7 +444,7 @@ static void get_command_line( int argc, char** argv,
    int    vg_argc0;
    char** vg_argv0;
    char** cl_argv;
-   char*  env_clo = getenv(VALGRINDCLO);
+   char*  env_clo = VG_(getenv)(VALGRINDCLO);
 
    if (env_clo != NULL && *env_clo != '\0') {
       char *cp;
@@ -509,7 +506,7 @@ static void get_command_line( int argc, char** argv,
    if (0) {
       Int i;
       for (i = 0; i < vg_argc0; i++)
-         printf("vg_argv0[%d]=\"%s\"\n", i, vg_argv0[i]);
+         VG_(printf)("vg_argv0[%d]=\"%s\"\n", i, vg_argv0[i]);
    }
 
    *vg_argc_out =         vg_argc0;
@@ -595,11 +592,11 @@ static HChar **fix_environment(HChar **origenv, const HChar *preload)
    vg_assert(preload_core_path);
 
    if (preload)
-      snprintf(preload_core_path, preload_core_path_len, "%s/%s:%s", 
-	       VG_(libdir), preload_core_so, preload);
+      VG_(snprintf)(preload_core_path, preload_core_path_len, "%s/%s:%s", 
+                    VG_(libdir), preload_core_so, preload);
    else
-      snprintf(preload_core_path, preload_core_path_len, "%s/%s", 
-	       VG_(libdir), preload_core_so);
+      VG_(snprintf)(preload_core_path, preload_core_path_len, "%s/%s", 
+                    VG_(libdir), preload_core_so);
    
    /* Count the original size of the env */
    envc = 0;			/* trailing NULL */
@@ -624,8 +621,8 @@ static HChar **fix_environment(HChar **origenv, const HChar *preload)
 	 HChar *cp = malloc(len);
          vg_assert(cp);
 
-	 snprintf(cp, len, "%s%s:%s",
-		  ld_preload, preload_core_path, (*cpp)+ld_preload_len);
+	 VG_(snprintf)(cp, len, "%s%s:%s",
+                       ld_preload, preload_core_path, (*cpp)+ld_preload_len);
 
 	 *cpp = cp;
 	 
@@ -641,7 +638,7 @@ static HChar **fix_environment(HChar **origenv, const HChar *preload)
       HChar *cp = malloc(len);
       vg_assert(cp);
       
-      snprintf(cp, len, "%s%s", ld_preload, preload_core_path);
+      VG_(snprintf)(cp, len, "%s%s", ld_preload, preload_core_path);
       
       ret[envc++] = cp;
    }
@@ -665,7 +662,7 @@ static char *copy_str(char **tab, const char *str)
    *cp++ = '\0';
 
    if (0)
-      printf("copied %p \"%s\" len %lld\n", orig, orig, (Long)(cp-orig));
+      VG_(printf)("copied %p \"%s\" len %lld\n", orig, orig, (Long)(cp-orig));
 
    *tab = cp;
 
@@ -794,11 +791,11 @@ static Addr setup_client_stack(void* init_sp,
    VG_(clstk_base) = VG_PGROUNDDN(cl_esp);
 
    if (0)
-      printf("stringsize=%d auxsize=%d stacksize=%d\n"
-             "clstk_base %p\n"
-             "clstk_end  %p\n",
-	     stringsize, auxsize, stacksize,
-             (void*)VG_(clstk_base), (void*)VG_(clstk_end));
+      VG_(printf)("stringsize=%d auxsize=%d stacksize=%d\n"
+                  "clstk_base %p\n"
+                  "clstk_end  %p\n",
+	          stringsize, auxsize, stacksize,
+                  (void*)VG_(clstk_base), (void*)VG_(clstk_end));
 
    /* ==================== allocate space ==================== */
 
@@ -927,7 +924,7 @@ static Addr setup_client_stack(void* init_sp,
       default:
 	 /* stomp out anything we don't know about */
 	 if (0)
-	    printf("stomping auxv entry %lld\n", (ULong)auxv->a_type);
+	    VG_(printf)("stomping auxv entry %lld\n", (ULong)auxv->a_type);
 	 auxv->a_type = AT_IGNORE;
 	 break;
 	 
@@ -960,8 +957,8 @@ static Bool match_executable(const char *entry) {
    if (*entry == '\0')
       entry = ".";
 
-   snprintf(buf, sizeof(buf), "%s/%s", entry, executable_name);
-   if (access(buf, R_OK|X_OK) == 0) {
+   VG_(snprintf)(buf, sizeof(buf), "%s/%s", entry, executable_name);
+   if (VG_(access)(buf, True/*r*/, False/*w*/, True/*x*/) == 0) {
       VG_(strncpy)( executable_name, buf, VKI_PATH_MAX-1 );
       executable_name[VKI_PATH_MAX-1] = 0;
       return True;
@@ -977,7 +974,7 @@ static const char* find_executable(const char* exec)
 
    if (VG_(strchr)(executable_name, '/') == NULL) {
       /* no '/' - we need to search the path */
-      char *path = getenv("PATH");
+      char *path = VG_(getenv)("PATH");
       scan_colsep(path, match_executable);
    }
    return executable_name;
@@ -1005,15 +1002,16 @@ static void load_tool( const char *toolname,
    Int    len = VG_(strlen)(VG_(libdir)) + VG_(strlen)(toolname) + 16;
    HChar  buf[len];
 
-   snprintf(buf, len, "%s/vgpreload_%s.so", VG_(libdir), toolname);
-   if (access(buf, R_OK) == 0 || len >= VKI_PATH_MAX-1) {
+   VG_(snprintf)(buf, len, "%s/vgpreload_%s.so", VG_(libdir), toolname);
+   if (VG_(access)(buf, True/*r*/, False/*w*/, False/*x*/) == 0 
+       && len < VKI_PATH_MAX-1) {
       VG_(strncpy)( load_tool__preloadpath, buf, VKI_PATH_MAX-1 );
       load_tool__preloadpath[VKI_PATH_MAX-1] = 0;
       *preloadpath_out = load_tool__preloadpath;
    } else {
-      fprintf(stderr, "valgrind: couldn't find preload file for tool %s\n", 
-                      toolname);
-      exit(127);
+      VG_(printf)("valgrind: couldn't find preload file for tool %s\n", 
+                  toolname);
+      VG_(exit)(127);
    }
 }
 
@@ -1086,9 +1084,9 @@ static void load_client(char* cl_argv[], const char* exec, Int need_help,
                       .val;
       ret = VG_(do_exec)(exec, info);
       if (ret != 0) {
-         fprintf(stderr, "valgrind: do_exec(%s) failed: %s\n",
-                         exec, VG_(strerror)(ret));
-         exit(127);
+         VG_(printf)("valgrind: do_exec(%s) failed: %s\n",
+                     exec, VG_(strerror)(ret));
+         VG_(exit)(127);
       }
    }
 
@@ -1241,8 +1239,8 @@ static void pre_process_cmd_line_options
    for (i = 1; i < vg_argc; i++) {
 
       if (local_strcmp(vg_argv[i], "--version") == 0) {
-         printf("valgrind-" VERSION "\n");
-         exit(0);
+         VG_(printf)("valgrind-" VERSION "\n");
+         VG_(exit)(0);
 
       } else if (VG_CLO_STREQ(vg_argv[i], "--help") ||
                  VG_CLO_STREQ(vg_argv[i], "-h")) {
@@ -2266,25 +2264,35 @@ void show_BB_profile ( BBProfEntry tops[], UInt n_tops, ULong score_total )
 
 Int main(Int argc, HChar **argv, HChar **envp)
 {
-   HChar **cl_argv;
-   const HChar *tool = "memcheck";   // default to Memcheck
-   const HChar *exec = NULL;
-   HChar *preload;          /* tool-specific LD_PRELOAD .so */
-   HChar **env;
-   Int need_help = 0;      // 0 = no, 1 = --help, 2 = --help-debug
-   struct exeinfo info;
-   ToolInfo *toolinfo = NULL;
-   Addr client_eip;
-   Addr sp_at_startup;     /* client's SP at the point we gained control. */
-   UInt * client_auxv;
-   struct vki_rlimit zero = { 0, 0 };
-   Int loglevel, i;
+         HChar** cl_argv;
+   const HChar*  tool = "memcheck";   // default to Memcheck
+   const HChar*  exec = NULL;
+         HChar*  preload;             /* tool-specific LD_PRELOAD .so */
+         HChar** env;
+         Int     need_help = 0;      // 0 = no, 1 = --help, 2 = --help-debug
+         struct exeinfo info;
+         ToolInfo* toolinfo = NULL;
+         Addr      client_eip;
+         Addr      sp_at_startup;  /* client's SP at the point we
+				      gained control. */
+         UInt*     client_auxv;
+         Int       loglevel, i;
+         struct vki_rlimit zero = { 0, 0 };
 
    //============================================================
    // Nb: startup is complex.  Prerequisites are shown at every step.
    //
    // *** Be very careful when messing with the order ***
+   //
+   // TODO (JRS 9 Aug 05): 
+   //    - there's circular dependencies with VG_(getenv).
+   //      TODO: review and clarify all issues to do with
+   //      environment variables.
+   //      
    //============================================================
+   
+   /* This is needed to make VG_(getenv) usable early. */
+   VG_(client_envp) = (Char**)envp;
 
    //--------------------------------------------------------------
    // Start up the logging mechanism
@@ -2340,7 +2348,7 @@ Int main(Int argc, HChar **argv, HChar **envp)
    // Look for alternative libdir                                  
    //   p: none
    //--------------------------------------------------------------
-   {  HChar *cp = getenv(VALGRINDLIB);
+   if (0) {  HChar *cp = VG_(getenv)(VALGRINDLIB);
       if (cp != NULL)
 	 VG_(libdir) = cp;
    }

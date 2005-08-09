@@ -70,10 +70,12 @@ static void send_bytes_to_logging_sink ( Char* msg, Int nbytes )
    printf() and friends
    ------------------------------------------------------------------ */
 
-typedef struct {
-   char buf[100];
-   int n;
-} printf_buf;
+typedef 
+   struct {
+      HChar buf[100];
+      Int   n;
+   } 
+   printf_buf;
 
 // Adds a single char to the buffer.  When the buffer gets sufficiently
 // full, we write its contents to the logging sink.
@@ -150,6 +152,53 @@ UInt VG_(sprintf) ( Char* buf, const HChar *format, ... )
 
    return ret;
 }
+
+
+/* A replacement for snprintf. */
+typedef 
+   struct {
+      HChar* buf;
+      Int    buf_size;
+      Int    buf_used;
+   } 
+   snprintf_buf;
+
+static void add_to_vg_snprintf_buf ( HChar c, void* p )
+{
+   snprintf_buf* b = p;
+   if (b->buf_size > 0 && b->buf_used < b->buf_size) {
+      b->buf[b->buf_used++] = c;
+      if (b->buf_used < b->buf_size)
+         b->buf[b->buf_used] = 0;
+   } 
+}
+
+UInt VG_(vsnprintf) ( Char* buf, Int size, const HChar *format, va_list vargs )
+{
+   Int ret;
+   snprintf_buf b;
+   b.buf      = buf;
+   b.buf_size = size < 0 ? 0 : size;
+   b.buf_used = 0;
+
+   ret = VG_(debugLog_vprintf) 
+            ( add_to_vg_snprintf_buf, &b, format, vargs );
+
+   return b.buf_used;
+}
+
+UInt VG_(snprintf) ( Char* buf, Int size, const HChar *format, ... )
+{
+   UInt ret;
+   va_list vargs;
+
+   va_start(vargs,format);
+   ret = VG_(vsnprintf)(buf, size, format, vargs);
+   va_end(vargs);
+
+   return ret;
+}
+
 
 /* ---------------------------------------------------------------------
    percentify()

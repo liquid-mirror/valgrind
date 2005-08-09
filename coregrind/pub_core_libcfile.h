@@ -60,6 +60,8 @@ extern Int VG_(getpeername) ( Int sd, struct vki_sockaddr *name, Int *namelen );
 extern Int VG_(getsockopt)  ( Int sd, Int level, Int optname, void *optval,
                               Int *optlen );
 
+extern Int VG_(access) ( HChar* path, Bool irusr, Bool iwusr, Bool ixusr );
+
 #endif   // __PUB_CORE_LIBCFILE_H
 
 /*--------------------------------------------------------------------*/
