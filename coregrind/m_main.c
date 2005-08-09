@@ -61,8 +61,6 @@
 #include "pub_core_transtab.h"
 #include "pub_core_ume.h"
 
-#include <stdlib.h>
-
 #include "memcheck/memcheck.h"
 
 #ifndef AT_DCACHEBSIZE
@@ -121,6 +119,26 @@ static Int local_strcmp ( const HChar* s1, const HChar* s2 )
 
       s1++; s2++;
    }
+}
+
+// HACK HACK HACK HACK HACK HACK HACK HACK HACK HACK HACK HACK HACK A
+// temporary bootstrapping allocator, for use until such time as we
+// can get rid of the circularites in allocator dependencies at
+// startup.
+#define N_HACK_BYTES 10000
+static Int   hack_bytes_used = 0;
+static HChar hack_bytes[N_HACK_BYTES];
+
+static void* hack_malloc ( Int n )
+{
+   VG_(debugLog)(1, "main", "  FIXME: hack_malloc(%d)\n", n);
+   while (n % 16) n++;
+   if (hack_bytes_used + n > N_HACK_BYTES) {
+     VG_(printf)("valgrind: N_HACK_BYTES too low.  Sorry.\n");
+     VG_(exit)(0);
+   }
+   hack_bytes_used += n;
+   return (void*) &hack_bytes[hack_bytes_used - n];
 }
 
 
@@ -313,7 +331,7 @@ static char* get_file_clo(char* dir)
    fd = VG_(open)(filename, 0, VKI_S_IRUSR);
    if ( !fd.isError ) {
       if ( 0 == VG_(fstat)(fd.val, &s1) ) {
-         f_clo = malloc(s1.st_size+1);
+         f_clo = VG_(malloc)(s1.st_size+1);
          vg_assert(f_clo);
          n = VG_(read)(fd.val, f_clo, s1.st_size);
          if (n == -1) n = 0;
@@ -395,8 +413,8 @@ static void augment_command_line(Int* vg_argc_inout, char*** vg_argv_inout)
 
       /* +2: +1 for null-termination, +1 for added '--' */
       from     = vg_argv0;
-      vg_argv0 = malloc( (orig_arg_count + env_arg_count + f1_arg_count 
-                          + f2_arg_count + 2) * sizeof(char **));
+      vg_argv0 = VG_(malloc)( (orig_arg_count + env_arg_count + f1_arg_count 
+                              + f2_arg_count + 2) * sizeof(char **));
       vg_assert(vg_argv0);
       to      = vg_argv0;
 
@@ -459,7 +477,7 @@ static void get_command_line( int argc, char** argv,
 	 if (*cp == VG_CLO_SEP)
 	    vg_argc0++;
 
-      vg_argv0 = malloc(sizeof(char **) * (vg_argc0 + 1));
+      vg_argv0 = VG_(malloc)(sizeof(char **) * (vg_argc0 + 1));
       vg_assert(vg_argv0);
 
       cpp = vg_argv0;
@@ -588,7 +606,8 @@ static HChar **fix_environment(HChar **origenv, const HChar *preload)
    /* Find the vg_preload_core.so; also make room for the tool preload
       library */
    preload_core_path_len = sizeof(preload_core_so) + vgliblen + preloadlen + 16;
-   preload_core_path = malloc(preload_core_path_len);
+   /* FIXME */
+   preload_core_path = /*VG_(malloc)*/ hack_malloc(preload_core_path_len);
    vg_assert(preload_core_path);
 
    if (preload)
@@ -604,7 +623,7 @@ static HChar **fix_environment(HChar **origenv, const HChar *preload)
       envc++;
 
    /* Allocate a new space */
-   ret = malloc(sizeof(HChar *) * (envc+1+1)); /* 1 new entry + NULL */
+   ret = /* FIXME VG_(malloc)*/ hack_malloc (sizeof(HChar *) * (envc+1+1)); /* 1 new entry + NULL */
    vg_assert(ret);
 
    /* copy it over */
@@ -618,7 +637,7 @@ static HChar **fix_environment(HChar **origenv, const HChar *preload)
    for (cpp = ret; cpp && *cpp; cpp++) {
       if (VG_(memcmp)(*cpp, ld_preload, ld_preload_len) == 0) {
 	 int len = VG_(strlen)(*cpp) + preload_core_path_len;
-	 HChar *cp = malloc(len);
+	 HChar *cp = /*FIXME VG_(malloc)*/ hack_malloc(len);
          vg_assert(cp);
 
 	 VG_(snprintf)(cp, len, "%s%s:%s",
@@ -635,7 +654,7 @@ static HChar **fix_environment(HChar **origenv, const HChar *preload)
    /* Add the missing bits */
    if (!ld_preload_done) {
       int len = ld_preload_len + preload_core_path_len;
-      HChar *cp = malloc(len);
+      HChar *cp = /*FIXME VG_(malloc)*/ hack_malloc (len);
       vg_assert(cp);
       
       VG_(snprintf)(cp, len, "%s%s", ld_preload, preload_core_path);
@@ -643,7 +662,7 @@ static HChar **fix_environment(HChar **origenv, const HChar *preload)
       ret[envc++] = cp;
    }
 
-   free(preload_core_path);
+   //FIXME   VG_(free)(preload_core_path);
    ret[envc] = NULL;
 
    return ret;
@@ -816,11 +835,11 @@ static Addr setup_client_stack(void* init_sp,
    /* --- argv --- */
    if (info->interp_name) {
       *ptr++ = (Addr)copy_str(&strtab, info->interp_name);
-      free(info->interp_name);
+//FIXME      free(info->interp_name);
    }
    if (info->interp_args) {
       *ptr++ = (Addr)copy_str(&strtab, info->interp_args);
-      free(info->interp_args);
+//FIXME      free(info->interp_args);
    }
    for (cpp = orig_argv; *cpp; ptr++, cpp++) {
       *ptr = (Addr)copy_str(&strtab, *cpp);
@@ -1478,8 +1497,9 @@ static void process_cmd_line_options( UInt* client_auxv, const char* toolname )
          VG_(bad_option)(arg);
       }
     skip_arg:
-      if (arg != vg_argv[i])
-         free(arg);
+      if (arg != vg_argv[i]) {
+         //FIXME         free(arg);
+      }
    }
 
    /* Make VEX control parameters sane */
@@ -2438,7 +2458,7 @@ Int main(Int argc, HChar **argv, HChar **envp)
 
    sp_at_startup = setup_client_stack(init_sp, cl_argv, env, &info,
                                       &client_auxv);
-   free(env);
+   //FIXME   free(env);
    }
 
    VG_(debugLog)(2, "main",
