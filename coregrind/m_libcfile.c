@@ -113,10 +113,12 @@ Int VG_(pipe) ( Int fd[2] )
    return res.isError ? -1 : 0;
 }
 
-OffT VG_(lseek) ( Int fd, OffT offset, Int whence)
+OffT VG_(lseek) ( Int fd, OffT offset, Int whence )
 {
    SysRes res = VG_(do_syscall3)(__NR_lseek, fd, offset, whence);
    return res.isError ? (-1) : 0;
+   /* if you change the error-reporting conventions of this, also
+      change VG_(pread) and all other usage points. */
 }
 
 SysRes VG_(stat) ( Char* file_name, struct vki_stat* buf )
@@ -201,6 +203,14 @@ Int VG_(access) ( HChar* path, Bool irusr, Bool iwusr, Bool ixusr )
 #endif
 }
 
+SSizeT VG_(pread) ( Int fd, void* buf, Int count, Int offset )
+{
+   OffT off = VG_(lseek)( fd, (OffT)offset, VKI_SEEK_SET);
+   if (off != 0)
+     return (SSizeT)(-1);
+   SysRes res = VG_(do_syscall3)(__NR_read, fd, (UWord)buf, count );
+   return (SSizeT)( res.isError ? -1 : res.val);
+}
 
 /* ---------------------------------------------------------------------
    Socket-related stuff.  This is very Linux-kernel specific.

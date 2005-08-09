@@ -124,17 +124,17 @@ static Int local_strcmp ( const HChar* s1, const HChar* s2 )
 // HACK HACK HACK HACK HACK HACK HACK HACK HACK HACK HACK HACK HACK A
 // temporary bootstrapping allocator, for use until such time as we
 // can get rid of the circularites in allocator dependencies at
-// startup.
+// startup.  There is also a copy of this in m_ume.c.
 #define N_HACK_BYTES 10000
 static Int   hack_bytes_used = 0;
 static HChar hack_bytes[N_HACK_BYTES];
 
 static void* hack_malloc ( Int n )
 {
-   VG_(debugLog)(1, "main", "  FIXME: hack_malloc(%d)\n", n);
+   VG_(debugLog)(1, "main", "  FIXME: hack_malloc(m_main)(%d)\n", n);
    while (n % 16) n++;
    if (hack_bytes_used + n > N_HACK_BYTES) {
-     VG_(printf)("valgrind: N_HACK_BYTES too low.  Sorry.\n");
+     VG_(printf)("valgrind: N_HACK_BYTES(m_main) too low.  Sorry.\n");
      VG_(exit)(0);
    }
    hack_bytes_used += n;

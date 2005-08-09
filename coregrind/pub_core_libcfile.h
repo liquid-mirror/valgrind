@@ -62,6 +62,8 @@ extern Int VG_(getsockopt)  ( Int sd, Int level, Int optname, void *optval,
 
 extern Int VG_(access) ( HChar* path, Bool irusr, Bool iwusr, Bool ixusr );
 
+extern SSizeT VG_(pread) ( Int fd, void* buf, Int count, Int offset );
+
 #endif   // __PUB_CORE_LIBCFILE_H
 
 /*--------------------------------------------------------------------*/

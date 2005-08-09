@@ -40,7 +40,7 @@ extern void   VG_(close)  ( Int fd );
 extern Int    VG_(read)   ( Int fd, void* buf, Int count);
 extern Int    VG_(write)  ( Int fd, const void* buf, Int count);
 extern Int    VG_(pipe)   ( Int fd[2] );
-extern OffT   VG_(lseek)  ( Int fd, OffT offset, Int whence);
+extern OffT   VG_(lseek)  ( Int fd, OffT offset, Int whence );
 
 extern SysRes VG_(stat)   ( Char* file_name, struct vki_stat* buf );
 extern Int    VG_(fstat)  ( Int   fd,        struct vki_stat* buf );
@@ -49,10 +49,10 @@ extern Int    VG_(rename) ( Char* old_name, Char* new_name );
 extern Int    VG_(unlink) ( Char* file_name );
 
 // Returns False on failure (eg. if the buffer isn't big enough).
-extern Bool VG_(getcwd) ( Char* buf, SizeT size );
+extern Bool   VG_(getcwd) ( Char* buf, SizeT size );
 
-extern Int  VG_(readlink)( Char* path, Char* buf, UInt bufsize );
-extern Int  VG_(getdents)( UInt fd, struct vki_dirent *dirp, UInt count );
+extern Int    VG_(readlink)( Char* path, Char* buf, UInt bufsize );
+extern Int    VG_(getdents)( UInt fd, struct vki_dirent *dirp, UInt count );
 
 #endif   // __PUB_TOOL_LIBCFILE_H
 

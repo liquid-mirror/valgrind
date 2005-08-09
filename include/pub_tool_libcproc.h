@@ -64,11 +64,12 @@ extern Int VG_(setrlimit) ( Int resource, const struct vki_rlimit *rlim );
    pids, etc
    ------------------------------------------------------------------ */
 
-extern Int VG_(gettid)	 ( void );
+extern Int VG_(gettid)  ( void );
 extern Int VG_(getpid)  ( void );
 extern Int VG_(getppid) ( void );
 extern Int VG_(getpgrp) ( void );
-extern Int VG_(setpgid) ( Int pid, Int pgrp );
+extern Int VG_(geteuid) ( void );
+extern Int VG_(getegid) ( void );
 
 /* ---------------------------------------------------------------------
    Timing

@@ -388,11 +388,18 @@ Int VG_(getppid) ( void )
    return VG_(do_syscall0)(__NR_getppid) . val;
 }
 
-Int VG_(setpgid) ( Int pid, Int pgrp )
+Int VG_(geteuid) ( void )
 {
    /* ASSUMES SYSCALL ALWAYS SUCCEEDS */
-   return VG_(do_syscall2)(__NR_setpgid, pid, pgrp) . val;
+   return VG_(do_syscall0)(__NR_geteuid) . val;
 }
+
+Int VG_(getegid) ( void )
+{
+   /* ASSUMES SYSCALL ALWAYS SUCCEEDS */
+   return VG_(do_syscall0)(__NR_getegid) . val;
+}
+
 
 /* ---------------------------------------------------------------------
    Timing stuff
