@@ -215,6 +215,36 @@ SysRes VG_(do_syscall) ( UWord sysno, UWord a1, UWord a2, UWord a3,
 #endif
 }
 
+/* ---------------------------------------------------------------------
+   Names of errors.
+   ------------------------------------------------------------------ */
+
+/* Return a string which gives the name of an error value.  Note,
+   unlike the standard C syserror fn, the returned string is not
+   malloc-allocated or writable -- treat it as a constant. 
+   TODO: implement this properly. */
+
+const HChar* VG_(strerror) ( UWord errnum )
+{
+   switch (errnum) {
+      case VKI_EPERM:       return "EPERM";
+      case VKI_ESRCH:       return "ESRCH";
+      case VKI_EINTR:       return "EINTR";
+      case VKI_EBADF:       return "EBADF";
+      case VKI_EAGAIN:      return "EAGAIN";
+      case VKI_ENOMEM:      return "ENOMEM";
+      case VKI_EACCES:      return "EACCES";
+      case VKI_EFAULT:      return "EFAULT";
+      case VKI_EEXIST:      return "EEXIST";
+      case VKI_EINVAL:      return "EINVAL";
+      case VKI_EMFILE:      return "EMFILE";
+      case VKI_ENOSYS:      return "ENOSYS";
+      case VKI_ERESTARTSYS: return "ERESTARTSYS";
+      default:              return "VG_(strerror): unknown error";
+   }
+}
+
+
 /*--------------------------------------------------------------------*/
 /*--- end                                                        ---*/
 /*--------------------------------------------------------------------*/

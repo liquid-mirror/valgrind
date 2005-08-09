@@ -44,6 +44,7 @@
 #include "pub_core_libcprint.h"
 #include "pub_core_libcproc.h"
 #include "pub_core_libcsignal.h"
+#include "pub_core_syscall.h"       // VG_(strerror)
 #include "pub_core_machine.h"
 #include "pub_core_main.h"
 #include "pub_core_mallocfree.h"
@@ -60,12 +61,8 @@
 #include "pub_core_transtab.h"
 #include "pub_core_ume.h"
 
-#include <dirent.h>
-//#include <dlfcn.h>
-#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 #include <unistd.h>
 
 #include "memcheck/memcheck.h"
@@ -106,6 +103,28 @@
 /* Number of file descriptors that Valgrind tries to reserve for
    it's own use - just a small constant. */
 #define N_RESERVED_FDS (10)
+
+
+
+/*====================================================================*/
+/*=== Ultra-basic startup stuff                                    ===*/
+/*====================================================================*/
+
+/* This may be needed before m_mylibc is OK to run. */
+static Int local_strcmp ( const HChar* s1, const HChar* s2 )
+{
+   while (True) {
+      if (*s1 == 0 && *s2 == 0) return 0;
+      if (*s1 == 0) return -1;
+      if (*s2 == 0) return 1;
+
+      if (*(UChar*)s1 < *(UChar*)s2) return -1;
+      if (*(UChar*)s1 > *(UChar*)s2) return 1;
+
+      s1++; s2++;
+   }
+}
+
 
 /*====================================================================*/
 /*=== Global entities not referenced from generated code           ===*/
@@ -553,21 +572,21 @@ static Bool scan_colsep(char *colsep, Bool (*func)(const char *))
    If this needs to handle any more variables it should be hacked
    into something table driven.
  */
-static char **fix_environment(char **origenv, const char *preload)
+static HChar **fix_environment(HChar **origenv, const HChar *preload)
 {
-   static const char preload_core_so[]    = "vg_preload_core.so";
-   static const char ld_preload[]         = "LD_PRELOAD=";
-   static const char valgrind_clo[]       = VALGRINDCLO "=";
+   static const HChar preload_core_so[]    = "vg_preload_core.so";
+   static const HChar ld_preload[]         = "LD_PRELOAD=";
+   static const HChar valgrind_clo[]       = VALGRINDCLO "=";
    static const int  ld_preload_len       = sizeof(ld_preload)-1;
    static const int  valgrind_clo_len     = sizeof(valgrind_clo)-1;
    int ld_preload_done       = 0;
-   char *preload_core_path;
+   HChar *preload_core_path;
    int   preload_core_path_len;
-   int vgliblen = strlen(VG_(libdir));
-   char **cpp;
-   char **ret;
+   int vgliblen = VG_(strlen)(VG_(libdir));
+   HChar **cpp;
+   HChar **ret;
    int envc;
-   const int preloadlen = (preload == NULL) ? 0 : strlen(preload);
+   const int preloadlen = (preload == NULL) ? 0 : VG_(strlen)(preload);
 
    /* Find the vg_preload_core.so; also make room for the tool preload
       library */
@@ -588,7 +607,7 @@ static char **fix_environment(char **origenv, const char *preload)
       envc++;
 
    /* Allocate a new space */
-   ret = malloc(sizeof(char *) * (envc+1+1)); /* 1 new entry + NULL */
+   ret = malloc(sizeof(HChar *) * (envc+1+1)); /* 1 new entry + NULL */
    vg_assert(ret);
 
    /* copy it over */
@@ -600,9 +619,9 @@ static char **fix_environment(char **origenv, const char *preload)
 
    /* Walk over the new environment, mashing as we go */
    for (cpp = ret; cpp && *cpp; cpp++) {
-      if (memcmp(*cpp, ld_preload, ld_preload_len) == 0) {
-	 int len = strlen(*cpp) + preload_core_path_len;
-	 char *cp = malloc(len);
+      if (VG_(memcmp)(*cpp, ld_preload, ld_preload_len) == 0) {
+	 int len = VG_(strlen)(*cpp) + preload_core_path_len;
+	 HChar *cp = malloc(len);
          vg_assert(cp);
 
 	 snprintf(cp, len, "%s%s:%s",
@@ -611,7 +630,7 @@ static char **fix_environment(char **origenv, const char *preload)
 	 *cpp = cp;
 	 
 	 ld_preload_done = 1;
-      } else if (memcmp(*cpp, valgrind_clo, valgrind_clo_len) == 0) {
+      } else if (VG_(memcmp)(*cpp, valgrind_clo, valgrind_clo_len) == 0) {
 	 *cpp = "";
       }
    }
@@ -619,7 +638,7 @@ static char **fix_environment(char **origenv, const char *preload)
    /* Add the missing bits */
    if (!ld_preload_done) {
       int len = ld_preload_len + preload_core_path_len;
-      char *cp = malloc(len);
+      HChar *cp = malloc(len);
       vg_assert(cp);
       
       snprintf(cp, len, "%s%s", ld_preload, preload_core_path);
@@ -716,31 +735,31 @@ static Addr setup_client_stack(void* init_sp,
    argc = 0;
    if (info->interp_name != NULL) {
       argc++;
-      stringsize += strlen(info->interp_name) + 1;
+      stringsize += VG_(strlen)(info->interp_name) + 1;
    }
    if (info->interp_args != NULL) {
       argc++;
-      stringsize += strlen(info->interp_args) + 1;
+      stringsize += VG_(strlen)(info->interp_args) + 1;
    }
 
    /* now scan the args we're given... */
    for (cpp = orig_argv; *cpp; cpp++) {
       argc++;
-      stringsize += strlen(*cpp) + 1;
+      stringsize += VG_(strlen)(*cpp) + 1;
    }
    
    /* ...and the environment */
    envc = 0;
    for (cpp = orig_envp; cpp && *cpp; cpp++) {
       envc++;
-      stringsize += strlen(*cpp) + 1;
+      stringsize += VG_(strlen)(*cpp) + 1;
    }
 
    /* now, how big is the auxv? */
    auxsize = sizeof(*auxv);	/* there's always at least one entry: AT_NULL */
    for (cauxv = orig_auxv; cauxv->a_type != AT_NULL; cauxv++) {
       if (cauxv->a_type == AT_PLATFORM)
-	 stringsize += strlen(cauxv->u.a_ptr) + 1;
+	 stringsize += VG_(strlen)(cauxv->u.a_ptr) + 1;
       auxsize += sizeof(*cauxv);
    }
 
@@ -862,7 +881,6 @@ static Addr setup_client_stack(void* init_sp,
 	 break;
 
       case AT_IGNORE:
-      case AT_EXECFD:
       case AT_PHENT:
       case AT_PAGESZ:
       case AT_FLAGS:
@@ -932,20 +950,20 @@ static Addr setup_client_stack(void* init_sp,
 /*=== Find executable                                              ===*/
 /*====================================================================*/
 
-static const char* executable_name;
+/* Need a static copy because can't use dynamic mem allocation yet */
+static HChar executable_name[VKI_PATH_MAX];
 
 static Bool match_executable(const char *entry) {
-   char buf[strlen(entry) + strlen(executable_name) + 2];
+   char buf[VG_(strlen)(entry) + VG_(strlen)(executable_name) + 2];
 
    /* empty PATH element means . */
    if (*entry == '\0')
       entry = ".";
 
    snprintf(buf, sizeof(buf), "%s/%s", entry, executable_name);
-   
    if (access(buf, R_OK|X_OK) == 0) {
-      executable_name = strdup(buf);
-      vg_assert(NULL != executable_name);
+      VG_(strncpy)( executable_name, buf, VKI_PATH_MAX-1 );
+      executable_name[VKI_PATH_MAX-1] = 0;
       return True;
    }
    return False;
@@ -954,8 +972,10 @@ static Bool match_executable(const char *entry) {
 static const char* find_executable(const char* exec)
 {
    vg_assert(NULL != exec);
-   executable_name = exec;
-   if (strchr(executable_name, '/') == NULL) {
+   VG_(strncpy)( executable_name, exec, VKI_PATH_MAX-1 );
+   executable_name[VKI_PATH_MAX-1] = 0;
+
+   if (VG_(strchr)(executable_name, '/') == NULL) {
       /* no '/' - we need to search the path */
       char *path = getenv("PATH");
       scan_colsep(path, match_executable);
@@ -968,140 +988,33 @@ static const char* find_executable(const char* exec)
 /*=== Loading tools                                                ===*/
 /*====================================================================*/
 
-static void list_tools(void)
-{
-   DIR *dir = opendir(VG_(libdir));
-   struct dirent *de;
-   int first = 1;
+/* Return a pointer to the tool_info struct.  Also looks to see if
+   there's a matching vgpreload_*.so file, and returns its name in
+   *preloadpath. */
 
-   if (dir == NULL) {
-      fprintf(stderr, "Can't open %s: %s (installation problem?)\n",
-              VG_(libdir), strerror(errno));
-      return;
-   }
+/* HACK required because we can't use VG_(strdup) yet -- dynamic
+   memory allocation is not running. */
+static HChar load_tool__preloadpath[VKI_PATH_MAX];
 
-   while ((de = readdir(dir)) != NULL) {
-      int len = strlen(de->d_name);
-
-      /* look for vgtool_TOOL.so names */
-      if (len > (7+1+3) &&   /* "vgtool_" + at least 1-char toolname + ".so" */
-         strncmp(de->d_name, "vgtool_", 7) == 0 &&
-         VG_STREQ(de->d_name + len - 3, ".so")) {
-         if (first) {
-            fprintf(stderr, "Available tools:\n");
-            first = 0;
-         }
-         de->d_name[len-3] = '\0';
-         fprintf(stderr, "\t%s\n", de->d_name+7);
-      }
-   }
-
-   closedir(dir);
-
-   if (first)
-      fprintf(stderr, "No tools available in \"%s\" (installation problem?)\n",
-             VG_(libdir));
-}
-
-
-/* Find and load a tool, and check it looks ok.  Also looks to see if there's 
- * a matching vgpreload_*.so file, and returns its name in *preloadpath. */
 static void load_tool( const char *toolname,
                        ToolInfo** toolinfo_out, char **preloadpath_out )
 {
    extern ToolInfo VG_(tool_info);
    *toolinfo_out = &VG_(tool_info);
-   /* HHHHHHHHACCCCCCCCCCK */
-   //*preloadpath_out = "/home/sewardj/VgASPACEM/aspacem/Inst/lib/valgrind/vgpreload_memcheck.so";
-   int   len = strlen(VG_(libdir)) + strlen(toolname) + 16;
-   char  buf[len];
-   char* preloadpath = NULL;
+
+   Int    len = VG_(strlen)(VG_(libdir)) + VG_(strlen)(toolname) + 16;
+   HChar  buf[len];
 
    snprintf(buf, len, "%s/vgpreload_%s.so", VG_(libdir), toolname);
-   if (access(buf, R_OK) == 0) {
-      preloadpath = strdup(buf);
-      *preloadpath_out = preloadpath;
+   if (access(buf, R_OK) == 0 || len >= VKI_PATH_MAX-1) {
+      VG_(strncpy)( load_tool__preloadpath, buf, VKI_PATH_MAX-1 );
+      load_tool__preloadpath[VKI_PATH_MAX-1] = 0;
+      *preloadpath_out = load_tool__preloadpath;
    } else {
-      fprintf(stderr, "valgrind: couldn't load tool\n");
-      list_tools();
+      fprintf(stderr, "valgrind: couldn't find preload file for tool %s\n", 
+                      toolname);
       exit(127);
    }
-
-//zz    Bool      ok;
-//zz    int       len = strlen(VG_(libdir)) + strlen(toolname) + 16;
-//zz    char      buf[len];
-//zz    void*     handle;
-//zz    ToolInfo* toolinfo;
-//zz    char*     preloadpath = NULL;
-//zz 
-//zz    // XXX: allowing full paths for --tool option -- does it make sense?
-//zz    // Doesn't allow for vgpreload_<tool>.so.
-//zz 
-//zz    if (strchr(toolname, '/') != 0) {
-//zz       /* toolname contains '/', and so must be a pathname */
-//zz       handle = dlopen(toolname, RTLD_NOW);
-//zz    } else {
-//zz       /* just try in the libdir */
-//zz       snprintf(buf, len, "%s/vgtool_%s.so", VG_(libdir), toolname);
-//zz       handle = dlopen(buf, RTLD_NOW);
-//zz 
-//zz       if (handle != NULL) {
-//zz 	 snprintf(buf, len, "%s/vgpreload_%s.so", VG_(libdir), toolname);
-//zz 	 if (access(buf, R_OK) == 0) {
-//zz 	    preloadpath = strdup(buf);
-//zz             vg_assert(NULL != preloadpath);
-//zz          }
-//zz       }
-//zz    }
-//zz 
-//zz    ok = (NULL != handle);
-//zz    if (!ok) {
-//zz       fprintf(stderr, "Can't open tool \"%s\": %s\n", toolname, dlerror());
-//zz       goto bad_load;
-//zz    }
-//zz 
-//zz    toolinfo = dlsym(handle, "vgPlain_tool_info");
-//zz    ok = (NULL != toolinfo);
-//zz    if (!ok) {
-//zz       fprintf(stderr, "Tool \"%s\" doesn't define its ToolInfo - "
-//zz                       "add VG_DETERMINE_INTERFACE_VERSION?\n", toolname);
-//zz       goto bad_load;
-//zz    }
-//zz 
-//zz    ok = (toolinfo->sizeof_ToolInfo == sizeof(*toolinfo) &&
-//zz          toolinfo->interface_version == VG_CORE_INTERFACE_VERSION &&
-//zz          toolinfo->tl_pre_clo_init != NULL);
-//zz    if (!ok) { 
-//zz       fprintf(stderr, "Error:\n"
-//zz               "  Tool and core interface versions do not match.\n"
-//zz               "  Interface version used by core is: %d (size %d)\n"
-//zz               "  Interface version used by tool is: %d (size %d)\n"
-//zz               "  The version numbers must match.\n",
-//zz               VG_CORE_INTERFACE_VERSION, 
-//zz               (Int)sizeof(*toolinfo),
-//zz               toolinfo->interface_version,
-//zz               toolinfo->sizeof_ToolInfo);
-//zz       fprintf(stderr, "  You need to at least recompile, and possibly update,\n");
-//zz       if (VG_CORE_INTERFACE_VERSION > toolinfo->interface_version)
-//zz          fprintf(stderr, "  your tool to work with this version of Valgrind.\n");
-//zz       else
-//zz          fprintf(stderr, "  your version of Valgrind to work with this tool.\n");
-//zz       goto bad_load;
-//zz    }
-//zz 
-//zz    vg_assert(NULL != toolinfo);
-//zz    *toolinfo_out    = toolinfo;
-//zz    *preloadpath_out = preloadpath;
-//zz    return;
-//zz 
-//zz 
-//zz  bad_load:
-//zz    if (handle != NULL)
-//zz       dlclose(handle);
-//zz 
-//zz    fprintf(stderr, "valgrind: couldn't load tool\n");
-//zz    list_tools();
-//zz    exit(127);
 }
 
 
@@ -1174,7 +1087,7 @@ static void load_client(char* cl_argv[], const char* exec, Int need_help,
       ret = VG_(do_exec)(exec, info);
       if (ret != 0) {
          fprintf(stderr, "valgrind: do_exec(%s) failed: %s\n",
-                         exec, strerror(ret));
+                         exec, VG_(strerror)(ret));
          exit(127);
       }
    }
@@ -1327,7 +1240,7 @@ static void pre_process_cmd_line_options
    /* parse the options we have (only the options we care about now) */
    for (i = 1; i < vg_argc; i++) {
 
-      if (strcmp(vg_argv[i], "--version") == 0) {
+      if (local_strcmp(vg_argv[i], "--version") == 0) {
          printf("valgrind-" VERSION "\n");
          exit(0);
 
@@ -1385,7 +1298,7 @@ static void process_cmd_line_options( UInt* client_auxv, const char* toolname )
             // prefix matches, convert "--toolname:foo" to "--foo"
             if (0)
                VG_(printf)("tool-specific arg: %s\n", arg);
-            arg = strdup(arg + toolname_len + 1);
+            arg = VG_(strdup)(arg + toolname_len + 1);
             arg[0] = '-';
             arg[1] = '-';
 
@@ -1767,8 +1680,8 @@ static void process_cmd_line_options( UInt* client_auxv, const char* toolname )
 
 
    /* Check that the requested tool actually supports XML output. */
-   if (VG_(clo_xml) && 0 != VG_(strcmp)(toolname, "memcheck")
-                    && 0 != VG_(strcmp)(toolname, "none")) {
+   if (VG_(clo_xml) && 0 != local_strcmp(toolname, "memcheck")
+                    && 0 != local_strcmp(toolname, "none")) {
       VG_(clo_xml) = False;
       VG_(message)(Vg_UserMsg, 
          "Currently only Memcheck|None supports XML output."); 
@@ -1980,7 +1893,7 @@ Char* VG_(build_child_VALGRINDCLO)( Char* exename )
       
       if (VG_(memcmp)(arg, "--exec=", 7) == 0) {
          // don't copy existing --exec= arg
-      } else if (VG_(strcmp)(arg, "--") == 0) {
+      } else if (local_strcmp(arg, "--") == 0) {
          // stop at "--"
          break;
       } else {
@@ -2349,22 +2262,6 @@ void show_BB_profile ( BBProfEntry tops[], UInt n_tops, ULong score_total )
   used for the first 1MB's worth of allocations.  This is enough to
   build the segment skip-list.
 */
-
-
-/* This may be needed before m_mylibc is OK to run. */
-static Int local_strcmp ( const HChar* s1, const HChar* s2 )
-{
-   while (True) {
-      if (*s1 == 0 && *s2 == 0) return 0;
-      if (*s1 == 0) return -1;
-      if (*s2 == 0) return 1;
-
-      if (*(UChar*)s1 < *(UChar*)s2) return -1;
-      if (*(UChar*)s1 > *(UChar*)s2) return 1;
-
-      s1++; s2++;
-   }
-}
 
 
 Int main(Int argc, HChar **argv, HChar **envp)

@@ -112,10 +112,6 @@ struct ume_auxv
 
 extern struct ume_auxv *VG_(find_auxv)(UWord* orig_esp);
 
-/* Our private auxv entries */
-#define AT_UME_PADFD	0xff01	/* padding file fd */
-#define AT_UME_EXECFD	0xff02	/* stage1 executable fd */
-
 #endif /* __PUB_CORE_UME_H */
 
 /*--------------------------------------------------------------------*/
