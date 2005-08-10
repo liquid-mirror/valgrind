@@ -134,8 +134,8 @@ new_override_SOURCES 	= new_override.cpp
 
 # Valgrind unit self-tests
 hello_LDFLAGS		= -Wl,-defsym,valt_load_address=0x50000000 \
-			  -Wl,-T,../../../valt_load_address.lds
-hello_DEPENDENCIES 	= ../../../valt_load_address.lds
+			  -Wl,-T,$(top_srcdir)/valt_load_address.lds
+hello_DEPENDENCIES 	= $(top_srcdir)/valt_load_address.lds
 
 vgtest_ume_CFLAGS	= -DVGA_$(VG_ARCH) -DVGO_$(VG_OS)
 vgtest_ume_LDADD	= ../../coregrind/m_ume.o

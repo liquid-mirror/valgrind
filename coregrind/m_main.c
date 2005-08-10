@@ -106,21 +106,6 @@
 /*=== Ultra-basic startup stuff                                    ===*/
 /*====================================================================*/
 
-/* This may be needed before m_mylibc is OK to run. */
-static Int local_strcmp ( const HChar* s1, const HChar* s2 )
-{
-   while (True) {
-      if (*s1 == 0 && *s2 == 0) return 0;
-      if (*s1 == 0) return -1;
-      if (*s2 == 0) return 1;
-
-      if (*(UChar*)s1 < *(UChar*)s2) return -1;
-      if (*(UChar*)s1 > *(UChar*)s2) return 1;
-
-      s1++; s2++;
-   }
-}
-
 // HACK HACK HACK HACK HACK HACK HACK HACK HACK HACK HACK HACK HACK A
 // temporary bootstrapping allocator, for use until such time as we
 // can get rid of the circularites in allocator dependencies at
@@ -1257,7 +1242,7 @@ static void pre_process_cmd_line_options
    /* parse the options we have (only the options we care about now) */
    for (i = 1; i < vg_argc; i++) {
 
-      if (local_strcmp(vg_argv[i], "--version") == 0) {
+      if (VG_STREQ(vg_argv[i], "--version")) {
          VG_(printf)("valgrind-" VERSION "\n");
          VG_(exit)(0);
 
@@ -1698,8 +1683,8 @@ static void process_cmd_line_options( UInt* client_auxv, const char* toolname )
 
 
    /* Check that the requested tool actually supports XML output. */
-   if (VG_(clo_xml) && 0 != local_strcmp(toolname, "memcheck")
-                    && 0 != local_strcmp(toolname, "none")) {
+   if (VG_(clo_xml) && !VG_STREQ(toolname, "memcheck")
+                    && !VG_STREQ(toolname, "none")) {
       VG_(clo_xml) = False;
       VG_(message)(Vg_UserMsg, 
          "Currently only Memcheck|None supports XML output."); 
@@ -1909,9 +1894,9 @@ Char* VG_(build_child_VALGRINDCLO)( Char* exename )
    for (i = 1; i < vg_argc; i++) {
       Char *arg = vg_argv[i];
       
-      if (VG_(memcmp)(arg, "--exec=", 7) == 0) {
+      if (VG_CLO_STREQN(7, arg, "--exec=")) {
          // don't copy existing --exec= arg
-      } else if (local_strcmp(arg, "--") == 0) {
+      } else if (VG_CLO_STREQ(arg, "--")) {
          // stop at "--"
          break;
       } else {
@@ -2324,9 +2309,9 @@ Int main(Int argc, HChar **argv, HChar **envp)
    for (i = 1; i < argc; i++) {
       if (argv[i][0] != '-')
          break;
-      if (0 == local_strcmp(argv[i], "--")) 
+      if (VG_STREQ(argv[i], "--")) 
          break;
-      if (0 == local_strcmp(argv[i], "-d")) 
+      if (VG_STREQ(argv[i], "-d")) 
          loglevel++;
    }
 
@@ -2390,9 +2375,9 @@ Int main(Int argc, HChar **argv, HChar **envp)
       for (i = 1; i < vg_argc; i++) {
          if (vg_argv[i][0] != '-')
             break;
-         if (0 == local_strcmp(vg_argv[i], "--")) 
+         if (VG_STREQ(vg_argv[i], "--")) 
             break;
-         if (0 == local_strcmp(vg_argv[i], "-d")) 
+         if (VG_STREQ(vg_argv[i], "-d")) 
             loglevel++;
       }
       VG_(debugLog_startup)(loglevel, "Stage 2 (second go)");
