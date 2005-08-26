@@ -421,6 +421,13 @@ Int VG_(getgroups)( Int size, UInt* list )
       list[i] = (UInt)list16[i];
    return size;
 
+#  elif defined(VGP_amd64_linux)
+   SysRes sres;
+   sres = VG_(do_syscall2)(__NR_getgroups, size, (Addr)list);
+   if (sres.isError)
+      return -1;
+   return sres.val;
+
 #  else
 #     error "VG_(getgroups): needs implementation on this platform"
 #  endif

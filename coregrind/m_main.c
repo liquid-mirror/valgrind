@@ -238,6 +238,7 @@ static void scan_auxv(void* init_sp)
 
 extern char _start[];
 
+#if defined(VGP_x86_linux)
 asm("\n"
     "\t.globl _start\n"
     "\t.type _start,@function\n"
@@ -247,10 +248,22 @@ asm("\n"
     "\tcall  _start_in_C\n"
     "\thlt\n"
 );
+#elif defined(VGP_amd64_linux)
+asm("\n"
+    "\t.globl _start\n"
+    "\t.type _start,@function\n"
+    "_start:\n"
+    "\tmovq  %rsp,%rdi\n"
+    "\tcall  _start_in_C\n"
+    "\thlt\n"
+);
+#else
+#error "_start: needs implementation on this platform"
+#endif
 
 extern Int main (Int argc, HChar **argv, HChar **envp);
 
-static void _start_in_C ( Int* pArgc )
+static void _start_in_C ( ULong* pArgc )
 {
    Int     argc = pArgc[0];
    HChar** argv = (HChar**)&pArgc[1];
