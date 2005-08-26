@@ -315,12 +315,12 @@ struct vki_sigcontext {
 #define VKI_SIOCGSTAMP	0x8906		/* Get stamp */
 
 //----------------------------------------------------------------------
-// From linux-2.6.8.1/include/asm-i386/stat.h
+// From linux-2.6.8.1/include/linux/stat.h
 //----------------------------------------------------------------------
 
 #define VKI_S_IFMT  00170000
 #define VKI_S_IFSOCK 0140000
-#define VKI_S_IFLNK	 0120000
+#define VKI_S_IFLNK  0120000
 #define VKI_S_IFREG  0100000
 #define VKI_S_IFBLK  0060000
 #define VKI_S_IFDIR  0040000
@@ -337,6 +337,21 @@ struct vki_sigcontext {
 #define VKI_S_ISBLK(m)	(((m) & VKI_S_IFMT) == VKI_S_IFBLK)
 #define VKI_S_ISFIFO(m)	(((m) & VKI_S_IFMT) == VKI_S_IFIFO)
 #define VKI_S_ISSOCK(m)	(((m) & VKI_S_IFMT) == VKI_S_IFSOCK)
+
+#define VKI_S_IRWXU 00700
+#define VKI_S_IRUSR 00400
+#define VKI_S_IWUSR 00200
+#define VKI_S_IXUSR 00100
+
+#define VKI_S_IRWXG 00070
+#define VKI_S_IRGRP 00040
+#define VKI_S_IWGRP 00020
+#define VKI_S_IXGRP 00010
+
+#define VKI_S_IRWXO 00007
+#define VKI_S_IROTH 00004
+#define VKI_S_IWOTH 00002
+#define VKI_S_IXOTH 00001
 
 struct vki_stat {
 	unsigned long  st_dev;

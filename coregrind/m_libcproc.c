@@ -400,6 +400,31 @@ Int VG_(getegid) ( void )
    return VG_(do_syscall0)(__NR_getegid) . val;
 }
 
+/* Get supplementary groups into list[0 .. size-1].  Returns the
+   number of groups written, or -1 if error.  Note that in order to be
+   portable, the groups are 32-bit unsigned ints regardless of the
+   platform. */
+Int VG_(getgroups)( Int size, UInt* list )
+{
+#  if defined(VGP_x86_linux)
+   Int    i;
+   SysRes sres;
+   UShort list16[32];
+   if (size < 0) return -1;
+   if (size > 32) size = 32;
+   sres = VG_(do_syscall2)(__NR_getgroups, size, (Addr)list16);
+   if (sres.isError)
+      return -1;
+   if (sres.val != size)
+      return -1;
+   for (i = 0; i < size; i++)
+      list[i] = (UInt)list16[i];
+   return size;
+
+#  else
+#     error "VG_(getgroups): needs implementation on this platform"
+#  endif
+}
 
 /* ---------------------------------------------------------------------
    Timing stuff

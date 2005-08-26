@@ -54,15 +54,6 @@
 
 #include "pub_core_ume.h"
 
-//#include <sys/mman.h>
-#include <fcntl.h>
-#include <errno.h>
-
-//#include <string.h>
-//#include <stdlib.h>
-//#include <unistd.h>
-//#include <assert.h>
-
 
 // HACK HACK HACK HACK HACK HACK HACK HACK HACK HACK HACK HACK HACK A
 // temporary bootstrapping allocator, for use until such time as we
@@ -306,15 +297,17 @@ struct ume_auxv *VG_(find_auxv)(UWord* sp)
 static 
 struct elfinfo *readelf(int fd, const char *filename)
 {
+   SysRes sres;
    struct elfinfo *e = hack_malloc(sizeof(*e));
    int phsz;
 
    vg_assert(e);
    e->fd = fd;
 
-   if (VG_(pread)(fd, &e->e, sizeof(e->e), 0) != sizeof(e->e)) {
+   sres = VG_(pread)(fd, &e->e, sizeof(e->e), 0);
+   if (sres.isError || sres.val != sizeof(e->e)) {
       VG_(printf)("valgrind: %s: can't read ELF header: %s\n", 
-                  filename, VG_(strerror)(errno));
+                  filename, VG_(strerror)(sres.val));
       goto bad;
    }
 
@@ -351,9 +344,10 @@ struct elfinfo *readelf(int fd, const char *filename)
    e->p = hack_malloc(phsz);
    vg_assert(e->p);
 
-   if (VG_(pread)(fd, e->p, phsz, e->e.e_phoff) != phsz) {
+   sres = VG_(pread)(fd, e->p, phsz, e->e.e_phoff);
+   if (sres.isError || sres.val != phsz) {
       VG_(printf)("valgrind: can't read phdr: %s\n", 
-                  VG_(strerror)(errno));
+                  VG_(strerror)(sres.val));
       //FIXME      VG_(free)(e->p);
       goto bad;
    }
@@ -456,6 +450,7 @@ ESZ(Addr) mapelf(struct elfinfo *e, ESZ(Addr) base)
 }
 
 // Forward declaration.
+/* returns: 0 = success, non-0 is failure */
 static int do_exec_inner(const char *exe, struct exeinfo *info);
 
 static int match_ELF(const char *hdr, int len)
@@ -467,6 +462,7 @@ static int match_ELF(const char *hdr, int len)
 static int load_ELF(char *hdr, int len, int fd, const char *name,
                     struct exeinfo *info)
 {
+   SysRes sres;
    struct elfinfo *e;
    struct elfinfo *interp = NULL;
    ESZ(Addr) minaddr = ~0;	/* lowest mapped address */
@@ -485,7 +481,7 @@ static int load_ELF(char *hdr, int len, int fd, const char *name,
    e = readelf(fd, name);
 
    if (e == NULL)
-      return ENOEXEC;
+      return VKI_ENOEXEC;
 
    /* The kernel maps position-independent executables at TASK_SIZE*2/3;
       duplicate this behavior as close as we can. */
@@ -522,11 +518,12 @@ static int load_ELF(char *hdr, int len, int fd, const char *name,
 	 VG_(pread)(fd, buf, ph->p_filesz, ph->p_offset);
 	 buf[ph->p_filesz] = '\0';
 
-	 intfd = open(buf, O_RDONLY);
-	 if (intfd == -1) {
+	 sres = VG_(open)(buf, VKI_O_RDONLY, 0);
+         if (sres.isError) {
 	    VG_(printf)("valgrind: m_ume.c: can't open interpreter\n");
 	    VG_(exit)(1);
 	 }
+         intfd = sres.val;
 
 	 interp = readelf(intfd, buf);
 	 if (interp == NULL) {
@@ -575,14 +572,14 @@ static int load_ELF(char *hdr, int len, int fd, const char *name,
                      "acceptable range %p-%p\n",
                      (void *)minaddr + ebase, (void *)maxaddr + ebase,
                      (void *)info->exe_base,  (void *)info->exe_end);
-	 return ENOMEM;
+	 return VKI_ENOMEM;
       }
    }
 
    info->brkbase = mapelf(e, ebase);	/* map the executable */
 
    if (info->brkbase == 0)
-      return ENOMEM;
+      return VKI_ENOMEM;
 
    if (interp != NULL) {
       /* reserve a chunk of address space for interpreter */
@@ -632,6 +629,7 @@ static int match_script(const char *hdr, Int len)
    return (len > 2) && VG_(memcmp)(hdr, "#!", 2) == 0;
 }
 
+/* returns: 0 = success, non-0 is failure */
 static int load_script(char *hdr, int len, int fd, const char *name,
                        struct exeinfo *info)
 {
@@ -646,7 +644,7 @@ static int load_script(char *hdr, int len, int fd, const char *name,
       interp++;
 
    if (*interp != '/')
-      return ENOEXEC;		/* absolute path only for interpreter */
+      return VKI_ENOEXEC; /* absolute path only for interpreter */
 
    /* skip over interpreter name */
    for(cp = interp; cp < end && *cp != ' ' && *cp != '\t' && *cp != '\n'; cp++)
@@ -696,50 +694,54 @@ static int load_script(char *hdr, int len, int fd, const char *name,
    (otherwise the executable may misbehave if it doesn't have the
    permissions it thinks it does).
 */
+/* returns: 0 = success, non-0 is failure */
 static int check_perms(int fd)
 {
-   struct stat st;
+   struct vki_stat st;
 
-   if (fstat(fd, &st) == -1) 
-      return errno;
+   if (VG_(fstat)(fd, &st) == -1) 
+      return VKI_EACCES;
 
-   if (st.st_mode & (S_ISUID | S_ISGID)) {
+   if (st.st_mode & (VKI_S_ISUID | VKI_S_ISGID)) {
       //VG_(printf)("Can't execute suid/sgid executable %s\n", exe);
-      return EACCES;
+      return VKI_EACCES;
    }
 
    if (VG_(geteuid)() == st.st_uid) {
-      if (!(st.st_mode & S_IXUSR))
-	 return EACCES;
+      if (!(st.st_mode & VKI_S_IXUSR))
+	 return VKI_EACCES;
    } else {
       int grpmatch = 0;
 
       if (VG_(getegid)() == st.st_gid)
 	 grpmatch = 1;
       else {
-	 gid_t groups[32];
-	 int ngrp = getgroups(32, groups);
-	 int i;
-
-	 for(i = 0; i < ngrp; i++)
+	 UInt groups[32];
+	 Int ngrp = VG_(getgroups)(32, groups);
+	 Int i;
+         /* ngrp will be -1 if VG_(getgroups) failed. */
+         for (i = 0; i < ngrp; i++) {
 	    if (groups[i] == st.st_gid) {
 	       grpmatch = 1;
 	       break;
 	    }
+         }
       }
 
       if (grpmatch) {
-	 if (!(st.st_mode & S_IXGRP))
-	    return EACCES;
-      } else if (!(st.st_mode & S_IXOTH))
-	 return EACCES;
+	 if (!(st.st_mode & VKI_S_IXGRP))
+	    return VKI_EACCES;
+      } else if (!(st.st_mode & VKI_S_IXOTH))
+	 return VKI_EACCES;
    }
 
    return 0;
 }
 
+/* returns: 0 = success, non-0 is failure */
 static int do_exec_inner(const char *exe, struct exeinfo *info)
 {
+   SysRes sres;
    int fd;
    int err;
    char buf[VKI_PAGE_SIZE];
@@ -755,13 +757,14 @@ static int do_exec_inner(const char *exe, struct exeinfo *info)
       { match_script, load_script },
    };
 
-   fd = open(exe, O_RDONLY);
-   if (fd == -1) {
+   sres = VG_(open)(exe, VKI_O_RDONLY, 0);
+   if (sres.isError) {
       if (0)
 	 VG_(printf)("Can't open executable %s: %s\n",
-                     exe, VG_(strerror)(errno));
-      return errno;
+                     exe, VG_(strerror)(sres.val));
+      return sres.val;
    }
+   fd = sres.val;
 
    err = check_perms(fd);
    if (err != 0) {
@@ -769,15 +772,16 @@ static int do_exec_inner(const char *exe, struct exeinfo *info)
       return err;
    }
 
-   bufsz = VG_(pread)(fd, buf, sizeof(buf), 0);
-   if (bufsz < 0) {
+   sres = VG_(pread)(fd, buf, sizeof(buf), 0);
+   if (sres.isError || sres.val != sizeof(buf)) {
       VG_(printf)("Can't read executable header: %s\n",
-                  VG_(strerror)(errno));
+                  VG_(strerror)(sres.val));
       VG_(close)(fd);
-      return errno;
+      return sres.val;
    }
+   bufsz = sres.val;
 
-   ret = ENOEXEC;
+   ret = VKI_ENOEXEC;
    for(i = 0; i < sizeof(formats)/sizeof(*formats); i++) {
       if ((formats[i].match)(buf, bufsz)) {
 	 ret = (formats[i].load)(buf, bufsz, fd, exe, info);
@@ -792,6 +796,7 @@ static int do_exec_inner(const char *exe, struct exeinfo *info)
 
 // See ume.h for an indication of which entries of 'info' are inputs, which
 // are outputs, and which are both.
+/* returns: 0 = success, non-0 is failure */
 int VG_(do_exec)(const char *exe, struct exeinfo *info)
 {
    info->interp_name = NULL;

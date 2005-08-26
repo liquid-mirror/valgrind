@@ -332,7 +332,7 @@ static void block_signals(ThreadId tid)
    do {									\
       ThreadState * volatile _qq_tst = VG_(get_ThreadState)(tid);	\
 									\
-      (jumped) = setjmp(_qq_tst->sched_jmpbuf);                         \
+      (jumped) = __builtin_setjmp(_qq_tst->sched_jmpbuf);               \
       if ((jumped) == 0) {						\
 	 vg_assert(!_qq_tst->sched_jmpbuf_valid);			\
 	 _qq_tst->sched_jmpbuf_valid = True;				\

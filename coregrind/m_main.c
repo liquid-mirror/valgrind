@@ -211,7 +211,55 @@ static void scan_auxv(void* init_sp)
 /*=== Address space determination                                  ===*/
 /*====================================================================*/
 
+/* Glibc's sysdeps/i386/elf/start.S has the following gem of a
+   comment, which explains how the stack looks right at process start
+   (when _start is jumped to).  Hence _start passes %esp to
+   _start_in_C, which extracts argc/argv/envp and starts up
+   correctly. */
+
+/* This is the canonical entry point, usually the first thing in the text
+   segment.  The SVR4/i386 ABI (pages 3-31, 3-32) says that when the entry
+   point runs, most registers' values are unspecified, except for:
+
+   %edx         Contains a function pointer to be registered with `atexit'.
+                This is how the dynamic linker arranges to have DT_FINI
+                functions called for shared libraries that have been loaded
+                before this code runs.
+
+   %esp         The stack contains the arguments and environment:
+                0(%esp)                 argc
+                4(%esp)                 argv[0]
+                ...
+                (4*argc)(%esp)          NULL
+                (4*(argc+1))(%esp)      envp[0]
+                ...
+                                        NULL
+*/
+
 extern char _start[];
+
+asm("\n"
+    "\t.globl _start\n"
+    "\t.type _start,@function\n"
+    "_start:\n"
+    "\tmovl  %esp,%eax\n"
+    "\tpushl %eax\n"
+    "\tcall  _start_in_C\n"
+    "\thlt\n"
+);
+
+extern Int main (Int argc, HChar **argv, HChar **envp);
+
+static void _start_in_C ( Int* pArgc )
+{
+   Int     argc = pArgc[0];
+   HChar** argv = (HChar**)&pArgc[1];
+   HChar** envp = (HChar**)&pArgc[1+argc+1];
+   Int r = main(argc,argv,envp);
+   VG_(exit)(r);
+}
+
+///////////////////////////////////////////////////////////////
 
 static void layout_remaining_space(Addr argc_addr, float ratio)
 {
@@ -2845,6 +2893,7 @@ void VG_(shutdown_actions_NORETURN) ( ThreadId tid,
       VG_(core_panic)("main(): unexpected scheduler return code");
    }
 }
+
 
 /*--------------------------------------------------------------------*/
 /*--- end                                                          ---*/

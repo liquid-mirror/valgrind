@@ -73,8 +73,9 @@ extern void   VG_(env_remove_valgrind_env_stuff) ( Char** env );
 extern Char **VG_(env_clone)    ( Char **env_clone );
 
 // misc
-extern Int VG_(poll)( struct vki_pollfd *, UInt nfds, Int timeout);
+extern Int  VG_(poll)( struct vki_pollfd *, UInt nfds, Int timeout);
 extern void VG_(nanosleep) ( struct vki_timespec * );
+extern Int  VG_(getgroups)( Int size, UInt* list );
 
 // atfork
 typedef void (*vg_atfork_t)(ThreadId);

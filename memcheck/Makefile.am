@@ -26,7 +26,8 @@ valgrind_memcheck_LDFLAGS = \
 	-static \
 	$(top_srcdir)/coregrind/libcoregrind.a \
 	-Wl,-defsym,valt_load_address=@VALT_LOAD_ADDRESS@ \
-	-Wl,-T,$(top_srcdir)/valt_load_address.lds
+	-Wl,-T,$(top_srcdir)/valt_load_address.lds \
+	-nodefaultlibs -lgcc -nostartfiles
 
 mcincludedir = $(includedir)/valgrind
 

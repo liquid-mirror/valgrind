@@ -40,12 +40,14 @@
 
 // We can remove these easily by implementing our own VG_(ptrace)() and
 // VG_(fork)().
-#include <sys/ptrace.h>
-#include <sys/wait.h>
-#include <unistd.h>
+//#include <sys/ptrace.h>
+//#include <sys/wait.h>
+//#include <unistd.h>
 
 static Int ptrace_setregs(Int pid, VexGuestArchState* vex)
 {
+   I_die_here;
+#if 0
    struct vki_user_regs_struct regs;
 #if defined(VGA_x86)
    regs.cs     = vex->guest_CS;
@@ -93,6 +95,7 @@ static Int ptrace_setregs(Int pid, VexGuestArchState* vex)
 #else
 #  error Unknown arch
 #endif
+#endif /* 0 */
 }
 
 /* Start debugger and get it to attach to this process.  Called if the
@@ -102,7 +105,9 @@ static Int ptrace_setregs(Int pid, VexGuestArchState* vex)
    continue, quit the debugger.  */
 void VG_(start_debugger) ( ThreadId tid )
 {
-   Int pid;
+  I_die_here;
+#if 0
+  Int pid;
 
    if ((pid = fork()) == 0) {
       ptrace(PTRACE_TRACEME, 0, NULL, NULL);
@@ -172,6 +177,7 @@ void VG_(start_debugger) ( ThreadId tid )
       VG_(kill)(pid, VKI_SIGKILL);
       VG_(waitpid)(pid, &status, 0);
    }
+#endif
 }
 
 

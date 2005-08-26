@@ -1508,7 +1508,7 @@ static void resume_scheduler(ThreadId tid)
    if (tst->sched_jmpbuf_valid) {
       /* Can't continue; must longjmp back to the scheduler and thus
          enter the sighandler immediately. */
-      longjmp(tst->sched_jmpbuf, True);
+      __builtin_longjmp(tst->sched_jmpbuf, True);
    }
 }
 

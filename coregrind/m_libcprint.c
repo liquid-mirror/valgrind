@@ -38,8 +38,6 @@
 #include "pub_core_options.h"
 #include "valgrind.h"            // For RUNNING_ON_VALGRIND
 
-#include <time.h>
-#include <sys/time.h>
 
 
 /* ---------------------------------------------------------------------
@@ -256,9 +254,10 @@ void VG_(percentify)(UInt n, UInt m, UInt d, Int n_buf, char buf[])
 
 void VG_(ctime) ( /*OUT*/HChar* buf )
 {
+#if 0
    struct timeval tv;
    struct tm tm;
-   buf[0] = 0;     
+   buf[0] = 0;
    if ( gettimeofday( &tv, NULL ) == 0
         && localtime_r( &tv.tv_sec, &tm ) == &tm )
    {
@@ -267,6 +266,9 @@ void VG_(ctime) ( /*OUT*/HChar* buf )
                     tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday,
                     tm.tm_hour, tm.tm_min, tm.tm_sec, tv.tv_usec / 1000 );
    }
+#else
+   VG_(strcpy)(buf, "VG_(ctime) HACK!");
+#endif
 }
 
 

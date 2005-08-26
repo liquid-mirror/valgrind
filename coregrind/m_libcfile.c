@@ -203,13 +203,13 @@ Int VG_(access) ( HChar* path, Bool irusr, Bool iwusr, Bool ixusr )
 #endif
 }
 
-SSizeT VG_(pread) ( Int fd, void* buf, Int count, Int offset )
+SysRes VG_(pread) ( Int fd, void* buf, Int count, Int offset )
 {
    OffT off = VG_(lseek)( fd, (OffT)offset, VKI_SEEK_SET);
    if (off != 0)
-     return (SSizeT)(-1);
+      return VG_(mk_SysRes_Error)( VKI_EINVAL );
    SysRes res = VG_(do_syscall3)(__NR_read, fd, (UWord)buf, count );
-   return (SSizeT)( res.isError ? -1 : res.val);
+   return res;
 }
 
 /* ---------------------------------------------------------------------
