@@ -9,10 +9,15 @@ EXTRA_DIST = \
 
 noinst_HEADERS = cg_arch.h
 
-val_PROGRAMS = vgtool_cachegrind.so
+bin_PROGRAMS = valgrind_cachegrind
 
-vgtool_cachegrind_so_SOURCES = \
+valgrind_cachegrind_DEPENDENCIES = $(top_srcdir)/coregrind/libcoregrind.a
+valgrind_cachegrind_SOURCES = \
 	cg_main.c \
 	cg-@VG_ARCH@.c
-vgtool_cachegrind_so_LDFLAGS = -shared
-
+valgrind_cachegrind_LDFLAGS = \
+	-static \
+	$(top_srcdir)/coregrind/libcoregrind.a \
+	-Wl,-defsym,valt_load_address=@VALT_LOAD_ADDRESS@ \
+	-Wl,-T,$(top_srcdir)/valt_load_address.lds \
+	-nodefaultlibs -lgcc -nostartfiles

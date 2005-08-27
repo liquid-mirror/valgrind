@@ -1014,9 +1014,7 @@ static void load_tool( const char *toolname,
       load_tool__preloadpath[VKI_PATH_MAX-1] = 0;
       *preloadpath_out = load_tool__preloadpath;
    } else {
-      VG_(printf)("valgrind: couldn't find preload file for tool %s\n", 
-                  toolname);
-      VG_(exit)(127);
+      *preloadpath_out = NULL;
    }
 }
 
@@ -1255,7 +1253,8 @@ static void pre_process_cmd_line_options
          *need_help = 2;
 
       } else if (VG_CLO_STREQN(7, vg_argv[i], "--tool=")) {
-	 *tool = &vg_argv[i][7];
+         /* *tool = &vg_argv[i][7]; */
+         /* ignore this, since by now it is way too late to change */
 	 
       } else if (VG_CLO_STREQN(7, vg_argv[i], "--exec=")) {
 	 *exec = &vg_argv[i][7];
@@ -2270,20 +2269,20 @@ void show_BB_profile ( BBProfEntry tops[], UInt n_tops, ULong score_total )
 
 Int main(Int argc, HChar **argv, HChar **envp)
 {
-         HChar** cl_argv;
-   const HChar*  tool = "memcheck";   // default to Memcheck
-   const HChar*  exec = NULL;
-         HChar*  preload;             /* tool-specific LD_PRELOAD .so */
-         HChar** env;
-         Int     need_help = 0;      // 0 = no, 1 = --help, 2 = --help-debug
-         struct exeinfo info;
-         ToolInfo* toolinfo = NULL;
-         Addr      client_eip;
-         Addr      sp_at_startup;  /* client's SP at the point we
-				      gained control. */
-         UInt*     client_auxv;
-         Int       loglevel, i;
-         struct vki_rlimit zero = { 0, 0 };
+   HChar** cl_argv;
+   HChar*  tool    = NULL;    // will acquire tool name later
+   HChar*  exec    = NULL;
+   HChar*  preload = NULL;    /* tool-specific LD_PRELOAD .so */
+   HChar** env;
+   Int     need_help = 0;      // 0 = no, 1 = --help, 2 = --help-debug
+   struct exeinfo info;
+   ToolInfo* toolinfo = NULL;
+   Addr      client_eip;
+   Addr      sp_at_startup;  /* client's SP at the point we
+                                gained control. */
+   UInt*     client_auxv;
+   Int       loglevel, i;
+   struct vki_rlimit zero = { 0, 0 };
 
    //============================================================
    // Nb: startup is complex.  Prerequisites are shown at every step.
@@ -2354,7 +2353,8 @@ Int main(Int argc, HChar **argv, HChar **envp)
    // Look for alternative libdir                                  
    //   p: none
    //--------------------------------------------------------------
-   if (0) {  HChar *cp = VG_(getenv)(VALGRINDLIB);
+   if (0) {
+      HChar *cp = VG_(getenv)(VALGRINDLIB);
       if (cp != NULL)
 	 VG_(libdir) = cp;
    }
@@ -2388,6 +2388,28 @@ Int main(Int argc, HChar **argv, HChar **envp)
    // Nb: once a tool is specified, the tool.so must be loaded even if 
    // they specified --help or didn't specify a client program.
    //==============================================================
+
+   //--------------------------------------------------------------
+   // Figure out the tool name by looking at the executable name
+   //   eg  /path/to/valgrind_memcheck   -->  memcheck
+   //   p: none, except the ability to bomb out if nothing
+   //      sensible can be determined
+   //--------------------------------------------------------------
+   VG_(debugLog)(1, "main", "Deducing tool name from argv[0]\n");
+   { 
+      HChar *p0, *p1;
+      tool = "CANNOT_DETERMINE_TOOL_NAME";
+      /* scan to the end the the exe name */
+      p0 = argv[0];
+      for (p1 = p0; *p1; p1++)
+         ;
+      /* scan bwds to find '_' */
+      for (; p1 > p0 && *p1 != '_'; p1--)
+         ;
+      if (p1 > p0 && *p1 == '_')
+         tool = p1 + 1;
+   }
+   VG_(debugLog)(1, "main", "Deduced tool name = '%s'\n", tool);
 
    //--------------------------------------------------------------
    // With client padded out, map in tool
