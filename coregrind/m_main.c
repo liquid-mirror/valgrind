@@ -2939,7 +2939,11 @@ asm("\n"
     "\t.type _start,@function\n"
     "_start:\n"
     "\tmovl  %esp,%eax\n"
-    "\tpushl %eax\n"
+    "\tandl  $~15,%esp\n"   /* Make sure stack is 16 byte aligned */
+    "\tpushl %eax\n"        /* Push junk to preserve alignment */
+    "\tpushl %eax\n"        /* Push junk to preserve alignment */
+    "\tpushl %eax\n"        /* Push junk to preserve alignment */
+    "\tpushl %eax\n"        /* Pass pointer to argc to _start_in_C */
     "\tcall  _start_in_C\n"
     "\thlt\n"
 );
@@ -2948,7 +2952,8 @@ asm("\n"
     "\t.globl _start\n"
     "\t.type _start,@function\n"
     "_start:\n"
-    "\tmovq  %rsp,%rdi\n"
+    "\tmovq  %rsp,%rdi\n"   /* Pass pointer to argc to _start_in_C */
+    "\tandq  $~15,%rsp\n"   /* Make sure stack is 16 byte aligned */
     "\tcall  _start_in_C\n"
     "\thlt\n"
 );
