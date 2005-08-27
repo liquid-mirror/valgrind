@@ -2873,9 +2873,11 @@ void VG_(shutdown_actions_NORETURN) ( ThreadId tid,
 
 /* ---------------- Requirement 1 ---------------- */
 
+void* memcpy(void *dest, const void *src, size_t n);
 void* memcpy(void *dest, const void *src, size_t n) {
    return VG_(memcpy)(dest,src,n);
 }
+void* memset(void *s, int c, size_t n);
 void* memset(void *s, int c, size_t n) {
   return VG_(memset)(s,c,n);
 }
