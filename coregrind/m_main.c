@@ -211,68 +211,8 @@ static void scan_auxv(void* init_sp)
 /*=== Address space determination                                  ===*/
 /*====================================================================*/
 
-/* Glibc's sysdeps/i386/elf/start.S has the following gem of a
-   comment, which explains how the stack looks right at process start
-   (when _start is jumped to).  Hence _start passes %esp to
-   _start_in_C, which extracts argc/argv/envp and starts up
-   correctly. */
-
-/* This is the canonical entry point, usually the first thing in the text
-   segment.  The SVR4/i386 ABI (pages 3-31, 3-32) says that when the entry
-   point runs, most registers' values are unspecified, except for:
-
-   %edx         Contains a function pointer to be registered with `atexit'.
-                This is how the dynamic linker arranges to have DT_FINI
-                functions called for shared libraries that have been loaded
-                before this code runs.
-
-   %esp         The stack contains the arguments and environment:
-                0(%esp)                 argc
-                4(%esp)                 argv[0]
-                ...
-                (4*argc)(%esp)          NULL
-                (4*(argc+1))(%esp)      envp[0]
-                ...
-                                        NULL
-*/
-
+// defined at the end of this file
 extern char _start[];
-
-#if defined(VGP_x86_linux)
-asm("\n"
-    "\t.globl _start\n"
-    "\t.type _start,@function\n"
-    "_start:\n"
-    "\tmovl  %esp,%eax\n"
-    "\tpushl %eax\n"
-    "\tcall  _start_in_C\n"
-    "\thlt\n"
-);
-#elif defined(VGP_amd64_linux)
-asm("\n"
-    "\t.globl _start\n"
-    "\t.type _start,@function\n"
-    "_start:\n"
-    "\tmovq  %rsp,%rdi\n"
-    "\tcall  _start_in_C\n"
-    "\thlt\n"
-);
-#else
-#error "_start: needs implementation on this platform"
-#endif
-
-extern Int main (Int argc, HChar **argv, HChar **envp);
-
-static void _start_in_C ( UWord* pArgc )
-{
-   Word    argc = pArgc[0];
-   HChar** argv = (HChar**)&pArgc[1];
-   HChar** envp = (HChar**)&pArgc[1+argc+1];
-   Int r = main( (Int)argc, argv, envp );
-   VG_(exit)(r);
-}
-
-///////////////////////////////////////////////////////////////
 
 static void layout_remaining_space(Addr argc_addr, float ratio)
 {
@@ -2907,6 +2847,102 @@ void VG_(shutdown_actions_NORETURN) ( ThreadId tid,
    }
 }
 
+
+/*====================================================================*/
+/*=== Getting to main() alive                                      ===*/
+/*====================================================================*/
+
+/* If linking of the final executables is done with glibc present,
+   then Valgrind starts at main() above as usual, and all of the
+   following code is irrelevant.
+
+   However, this is not the intended mode of use.  The plan is to
+   avoid linking against glibc, by giving gcc the flags 
+   -nodefaultlibs -lgcc -nostartfiles at startup.
+
+   From this derive two requirements:
+
+   1. gcc may emit calls to memcpy and memset to deal with structure
+      assignments etc.  Since we have chosen to ignore all the
+      "normal" supporting libraries, we have to provide our own
+      implementations of them.  No problem.
+
+   2. We have to provide a symbol "_start", to which the kernel
+      hands control at startup.  Hence the code below.
+*/
+
+/* ---------------- Requirement 1 ---------------- */
+
+void* memcpy(void *dest, const void *src, size_t n) {
+   return VG_(memcpy)(dest,src,n);
+}
+void* memset(void *s, int c, size_t n) {
+  return VG_(memset)(s,c,n);
+}
+
+/* ---------------- Requirement 2 ---------------- */
+
+/* Glibc's sysdeps/i386/elf/start.S has the following gem of a
+   comment, which explains how the stack looks right at process start
+   (when _start is jumped to).  Hence _start passes %esp to
+   _start_in_C, which extracts argc/argv/envp and starts up
+   correctly. */
+
+/* This is the canonical entry point, usually the first thing in the text
+   segment.  The SVR4/i386 ABI (pages 3-31, 3-32) says that when the entry
+   point runs, most registers' values are unspecified, except for:
+
+   %edx         Contains a function pointer to be registered with `atexit'.
+                This is how the dynamic linker arranges to have DT_FINI
+                functions called for shared libraries that have been loaded
+                before this code runs.
+
+   %esp         The stack contains the arguments and environment:
+                0(%esp)                 argc
+                4(%esp)                 argv[0]
+                ...
+                (4*argc)(%esp)          NULL
+                (4*(argc+1))(%esp)      envp[0]
+                ...
+                                        NULL
+*/
+
+/* The kernel hands control to _start, which extracts the initial
+   stack pointer and calls onwards to _start_in_C. */
+#if defined(VGP_x86_linux)
+asm("\n"
+    "\t.globl _start\n"
+    "\t.type _start,@function\n"
+    "_start:\n"
+    "\tmovl  %esp,%eax\n"
+    "\tpushl %eax\n"
+    "\tcall  _start_in_C\n"
+    "\thlt\n"
+);
+#elif defined(VGP_amd64_linux)
+asm("\n"
+    "\t.globl _start\n"
+    "\t.type _start,@function\n"
+    "_start:\n"
+    "\tmovq  %rsp,%rdi\n"
+    "\tcall  _start_in_C\n"
+    "\thlt\n"
+);
+#else
+#error "_start: needs implementation on this platform"
+#endif
+
+/* Avoid compiler warnings: this fn _is_ used, but labelling it
+   'static' causes gcc to complain it isn't. */
+void _start_in_C ( UWord* pArgc );
+void _start_in_C ( UWord* pArgc )
+{
+   Word    argc = pArgc[0];
+   HChar** argv = (HChar**)&pArgc[1];
+   HChar** envp = (HChar**)&pArgc[1+argc+1];
+   Int r = main( (Int)argc, argv, envp );
+   VG_(exit)(r);
+}
 
 /*--------------------------------------------------------------------*/
 /*--- end                                                          ---*/
