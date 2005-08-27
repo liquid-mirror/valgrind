@@ -263,12 +263,12 @@ asm("\n"
 
 extern Int main (Int argc, HChar **argv, HChar **envp);
 
-static void _start_in_C ( ULong* pArgc )
+static void _start_in_C ( UWord* pArgc )
 {
-   Int     argc = pArgc[0];
+   Word    argc = pArgc[0];
    HChar** argv = (HChar**)&pArgc[1];
    HChar** envp = (HChar**)&pArgc[1+argc+1];
-   Int r = main(argc,argv,envp);
+   Int r = main( (Int)argc, argv, envp );
    VG_(exit)(r);
 }
 
