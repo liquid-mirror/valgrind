@@ -1952,9 +1952,12 @@ typedef __vki_kernel_uid32_t vki_qid_t; /* Type in which we store ids in memory 
 // From linux-2.6.9/include/linux/ptrace.h
 //----------------------------------------------------------------------
 
+#define VKI_PTRACE_TRACEME         0
 #define VKI_PTRACE_PEEKTEXT	   1
 #define VKI_PTRACE_PEEKDATA	   2
 #define VKI_PTRACE_PEEKUSR	   3
+
+#define VKI_PTRACE_DETACH       0x11
 
 #endif // __VKI_LINUX_H
 

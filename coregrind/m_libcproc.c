@@ -434,6 +434,32 @@ Int VG_(getgroups)( Int size, UInt* list )
 }
 
 /* ---------------------------------------------------------------------
+   Process tracing
+   ------------------------------------------------------------------ */
+
+Int VG_(ptrace) ( Int request, Int pid, void *addr, void *data )
+{
+   SysRes res;
+   res = VG_(do_syscall4)(__NR_ptrace, request, pid, (UWord)addr, (UWord)data);
+   if (res.isError)
+      return -1;
+   return res.val;
+}
+
+/* ---------------------------------------------------------------------
+   Fork
+   ------------------------------------------------------------------ */
+
+Int VG_(fork) ( void )
+{
+   SysRes res;
+   res = VG_(do_syscall0)(__NR_fork);
+   if (res.isError)
+      return -1;
+   return res.val;
+}
+
+/* ---------------------------------------------------------------------
    Timing stuff
    ------------------------------------------------------------------ */
 
