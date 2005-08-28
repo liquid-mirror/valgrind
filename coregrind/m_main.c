@@ -2353,7 +2353,7 @@ Int main(Int argc, HChar **argv, HChar **envp)
    // Look for alternative libdir                                  
    //   p: none
    //--------------------------------------------------------------
-   if (0) {
+   if (1) {
       HChar *cp = VG_(getenv)(VALGRINDLIB);
       if (cp != NULL)
 	 VG_(libdir) = cp;
