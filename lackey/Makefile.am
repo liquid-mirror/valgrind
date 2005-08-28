@@ -1,11 +1,11 @@
 include $(top_srcdir)/Makefile.tool.am
 
-bin_PROGRAMS = valgrind_lackey
+val_PROGRAMS = lackey
 
-valgrind_lackey_DEPENDENCIES = $(top_srcdir)/coregrind/libcoregrind.a
-valgrind_lackey_SOURCES = \
+lackey_DEPENDENCIES = $(top_srcdir)/coregrind/libcoregrind.a
+lackey_SOURCES = \
 	lk_main.c
-valgrind_lackey_LDFLAGS = \
+lackey_LDFLAGS = \
 	-static \
 	$(top_srcdir)/coregrind/libcoregrind.a \
 	-Wl,-defsym,valt_load_address=@VALT_LOAD_ADDRESS@ \

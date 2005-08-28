@@ -2,8 +2,7 @@ include $(top_srcdir)/Makefile.tool.am
 
 SUBDIRS += hp2ps
 
-val_PROGRAMS = vgpreload_massif.so
-bin_PROGRAMS = valgrind_massif
+val_PROGRAMS = massif vgpreload_massif.so
 
 vgpreload_massif_so_SOURCES = 
 vgpreload_massif_so_DEPENDENCIES = \
@@ -13,10 +12,10 @@ vgpreload_massif_so_LDFLAGS = -shared -Wl,-z,interpose,-z,initfirst \
 	$(LIBREPLACEMALLOC) \
 	-Wl,--no-whole-archive
 
-valgrind_massif_DEPENDENCIES = $(top_srcdir)/coregrind/libcoregrind.a
-valgrind_massif_SOURCES = \
+massif_DEPENDENCIES = $(top_srcdir)/coregrind/libcoregrind.a
+massif_SOURCES = \
 	ms_main.c
-valgrind_massif_LDFLAGS = \
+massif_LDFLAGS = \
 	-static \
 	$(top_srcdir)/coregrind/libcoregrind.a \
 	-Wl,-defsym,valt_load_address=@VALT_LOAD_ADDRESS@ \

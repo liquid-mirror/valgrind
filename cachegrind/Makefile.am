@@ -9,13 +9,13 @@ EXTRA_DIST = \
 
 noinst_HEADERS = cg_arch.h
 
-bin_PROGRAMS = valgrind_cachegrind
+val_PROGRAMS = cachegrind
 
-valgrind_cachegrind_DEPENDENCIES = $(top_srcdir)/coregrind/libcoregrind.a
-valgrind_cachegrind_SOURCES = \
+cachegrind_DEPENDENCIES = $(top_srcdir)/coregrind/libcoregrind.a
+cachegrind_SOURCES = \
 	cg_main.c \
 	cg-@VG_ARCH@.c
-valgrind_cachegrind_LDFLAGS = \
+cachegrind_LDFLAGS = \
 	-static \
 	$(top_srcdir)/coregrind/libcoregrind.a \
 	-Wl,-defsym,valt_load_address=@VALT_LOAD_ADDRESS@ \

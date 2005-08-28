@@ -33,6 +33,9 @@ libcoregrind_a_AR = $(LD) --whole-archive -r -o
 RANLIB = echo "Not really ranlib-ing"
 ## end of hack
 
+bin_PROGRAMS = \
+	valgrind
+
 val_PROGRAMS = \
 	vg_preload_core.so
 
@@ -88,6 +91,10 @@ noinst_HEADERS = \
 
 BUILT_SOURCES = 
 CLEANFILES = 
+
+valgrind_SOURCES = \
+	m_launcher.c \
+	m_debuglog.c
 
 libcoregrind_a_SOURCES = \
 	m_cpuid.S \

@@ -1,11 +1,11 @@
 include $(top_srcdir)/Makefile.tool.am
 
-bin_PROGRAMS = valgrind_none
+val_PROGRAMS = none
 
-valgrind_none_DEPENDENCIES = $(top_srcdir)/coregrind/libcoregrind.a
-valgrind_none_SOURCES = \
+none_DEPENDENCIES = $(top_srcdir)/coregrind/libcoregrind.a
+none_SOURCES = \
 	nl_main.c
-valgrind_none_LDFLAGS = \
+none_LDFLAGS = \
 	-static \
 	$(top_srcdir)/coregrind/libcoregrind.a \
 	-Wl,-defsym,valt_load_address=@VALT_LOAD_ADDRESS@ \
