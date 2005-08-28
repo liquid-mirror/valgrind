@@ -1032,9 +1032,9 @@ static void pre_process_cmd_line_options
       } else if (VG_CLO_STREQ(vg_argv[i], "--help-debug")) {
          *need_help = 2;
 
+      // The tool has already been determined, but we need to know it here.
       } else if (VG_CLO_STREQN(7, vg_argv[i], "--tool=")) {
-         /* *tool = &vg_argv[i][7]; */
-         /* ignore this, since by now it is way too late to change */
+         *tool = &vg_argv[i][7];
 	 
       } else if (VG_CLO_STREQN(7, vg_argv[i], "--exec=")) {
 	 *exec = &vg_argv[i][7];
@@ -2050,7 +2050,7 @@ void show_BB_profile ( BBProfEntry tops[], UInt n_tops, ULong score_total )
 Int main(Int argc, HChar **argv, HChar **envp)
 {
    HChar** cl_argv;
-   HChar*  tool    = NULL;    // will acquire tool name later
+   HChar*  tool    = "memcheck";    // default to Memcheck
    HChar*  exec    = NULL;
    HChar*  preload = NULL;    /* tool-specific LD_PRELOAD .so */
    HChar** env;
@@ -2170,33 +2170,11 @@ Int main(Int argc, HChar **argv, HChar **envp)
    //==============================================================
 
    //--------------------------------------------------------------
-   // Figure out the tool name by looking at the executable name
-   //   eg  /path/to/valgrind_memcheck   -->  memcheck
-   //   p: none, except the ability to bomb out if nothing
-   //      sensible can be determined
-   //--------------------------------------------------------------
-   VG_(debugLog)(1, "main", "Deducing tool name from argv[0]\n");
-   { 
-      HChar *p0, *p1;
-      tool = "CANNOT_DETERMINE_TOOL_NAME";
-      /* scan to the end the the exe name */
-      p0 = argv[0];
-      for (p1 = p0; *p1; p1++)
-         ;
-      /* scan bwds to find '_' */
-      for (; p1 > p0 && *p1 != '_'; p1--)
-         ;
-      if (p1 > p0 && *p1 == '_')
-         tool = p1 + 1;
-   }
-   VG_(debugLog)(1, "main", "Deduced tool name = '%s'\n", tool);
-
-   //--------------------------------------------------------------
    // With client padded out, map in tool
    //   p: set-libdir                     [for VG_(libdir)]
    //   p: pre_process_cmd_line_options() [for 'tool']
    //--------------------------------------------------------------
-   VG_(debugLog)(1, "main", "Loading tool\n");
+   VG_(debugLog)(1, "main", "Loading tool '%s'\n", tool);
    load_tool(tool, &toolinfo, &preload);
 
    //==============================================================
