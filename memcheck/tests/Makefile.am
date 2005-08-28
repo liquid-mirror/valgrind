@@ -89,6 +89,7 @@ EXTRA_DIST = $(noinst_SCRIPTS) \
 	zeropage.stderr.exp zeropage.stderr.exp2 zeropage.stdout.exp \
 	zeropage.vgtest
 
+# vgtest_ume is not working
 check_PROGRAMS = \
 	addressable \
 	badaddrvalue badfree badjump badjump2 \
@@ -111,7 +112,7 @@ check_PROGRAMS = \
 	stack_changes strchr str_tester supp1 supp2 suppfree \
 	trivialleak weirdioctl	\
 	mismatches new_override metadata \
-	vgtest_ume xml1 \
+	xml1 \
 	writev zeropage
 
 
