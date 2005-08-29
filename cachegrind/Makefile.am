@@ -11,13 +11,7 @@ noinst_HEADERS = cg_arch.h
 
 val_PROGRAMS = cachegrind
 
-cachegrind_DEPENDENCIES = $(top_srcdir)/coregrind/libcoregrind.a
-cachegrind_SOURCES = \
-	cg_main.c \
-	cg-@VG_ARCH@.c
-cachegrind_LDFLAGS = \
-	-static \
-	$(top_srcdir)/coregrind/libcoregrind.a \
-	-Wl,-defsym,valt_load_address=@VALT_LOAD_ADDRESS@ \
-	-Wl,-T,$(top_srcdir)/valt_load_address.lds \
-	-nodefaultlibs -lgcc -nostartfiles
+cachegrind_SOURCES      = cg_main.c cg-@VG_ARCH@.c
+cachegrind_DEPENDENCIES = $(COREGRIND_LIBS)
+cachegrind_LDADD        = $(TOOL_LINKADD)
+cachegrind_LDFLAGS      = $(TOOL_LINKFLAGS)

@@ -23,15 +23,7 @@ AM_CPPFLAGS += -DVG_LIBDIR="\"$(valdir)"\" \
 
 default.supp: $(SUPP_FILES)
 
-## XXXXXXXXXXXXX JRS 8 Aug 05: the next three lines constitute an
-## appalling hack.  Although we purportedly create a .a file, in fact
-## it is really a .o (relocatable ELF object) file.  The root reason
-## is that some of the inputs to libcoregrind.a are themselves .a files,
-## and I don't know how to get /usr/bin/ar to accept .a files as inputs.
-noinst_LIBRARIES = libcoregrind.a
-libcoregrind_a_AR = $(LD) --whole-archive -r -o
-RANLIB = echo "Not really ranlib-ing"
-## end of hack
+noinst_LIBRARIES = libcoregrind_singles.a
 
 bin_PROGRAMS = \
 	valgrind
@@ -98,7 +90,7 @@ valgrind_SOURCES = \
 	m_commandline.c \
 	m_debuglog.c
 
-libcoregrind_a_SOURCES = \
+libcoregrind_singles_a_SOURCES = \
 	m_commandline.c \
 	m_cpuid.S \
 	m_debugger.c \
@@ -132,39 +124,6 @@ libcoregrind_a_SOURCES = \
 	m_translate.c \
 	m_transtab.c \
 	m_ume.c
-
-## Nb: libscheduler.a must precede libdispatch.a in this list.
-libcoregrind_a_extra= \
-	m_debuginfo/libdebuginfo.a \
-	m_demangle/libdemangle.a \
-	m_scheduler/libscheduler.a \
-	m_dispatch/libdispatch.a \
-	m_aspacemgr/libaspacemgr.a \
-	m_sigframe/libsigframe.a \
-	m_syswrap/libsyswrap.a \
-	@VEX_DIR@/libvex.a
-
-## These ones must be linked in with the --whole-archive flag, because
-## they wouldn't get pulled into libcoregrind otherwise (because they
-## contain symbols only referred to by tool shared objects).
-libcoregrind_a_extra2 = \
-	m_replacemalloc/libreplacemalloc_core.a
-
-## Nb: older versions of automake don't seem to like having += within an
-## if-then-else, so we have to use these variables for the common parts.
-libcoregrind_a_DEPS_common = \
-	$(libcoregrind_a_extra) \
-	$(libcoregrind_a_extra2)
-
-st2_LDFLAGS_common = \
-	-Wl,--export-dynamic -g \
-	-Wl,--whole-archive $(libcoregrind_a_extra2) -Wl,--no-whole-archive
-
-libcoregrind_a_DEPENDENCIES = $(libcoregrind_a_DEPS_common)
-libcoregrind_a_LIBFLAGS = \
-	$(st2_LDFLAGS_common)
-
-libcoregrind_a_LIBADD= $(libcoregrind_a_extra) $(libcoregrind_a_extra2)
 
 vg_preload_core_so_SOURCES = vg_preloaded.c
 vg_preload_core_so_CFLAGS = $(AM_CFLAGS) -fpic

@@ -7,3 +7,26 @@ include $(top_srcdir)/Makefile.tool-inplace.am
 
 LIBREPLACEMALLOC = $(top_builddir)/coregrind/m_replacemalloc/libreplacemalloc_toolpreload.a
 
+## Nb: libscheduler.a must precede libdispatch.a in this list.
+COREGRIND_LIBS = \
+	$(top_builddir)/coregrind/libcoregrind_singles.a \
+	$(top_builddir)/coregrind/m_aspacemgr/libaspacemgr.a \
+	$(top_builddir)/coregrind/m_debuginfo/libdebuginfo.a \
+	$(top_builddir)/coregrind/m_demangle/libdemangle.a \
+	$(top_builddir)/coregrind/m_scheduler/libscheduler.a \
+	$(top_builddir)/coregrind/m_dispatch/libdispatch.a \
+	$(top_builddir)/coregrind/m_replacemalloc/libreplacemalloc_core.a \
+	$(top_builddir)/coregrind/m_sigframe/libsigframe.a \
+	$(top_builddir)/coregrind/m_syswrap/libsyswrap.a \
+	@VEX_DIR@/libvex.a
+
+
+## Nb: do not call this variables "TOOL_LINKADD" and "TOOL_LDFLAGS" -- that
+## makes automake think we are building something called "TOOLS".
+TOOL_LINKADD = $(COREGRIND_LIBS) -lgcc
+TOOL_LINKFLAGS = \
+	-static \
+	-Wl,-defsym,valt_load_address=@VALT_LOAD_ADDRESS@ \
+	-Wl,-T,$(top_srcdir)/valt_load_address.lds \
+	-nodefaultlibs -nostartfiles
+

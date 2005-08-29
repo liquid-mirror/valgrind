@@ -5,28 +5,23 @@ AM_CFLAGS += -O2
 
 val_PROGRAMS = memcheck vgpreload_memcheck.so
 
-vgpreload_memcheck_so_SOURCES = \
-	mac_replace_strmem.c
-vgpreload_memcheck_so_DEPENDENCIES = \
-	$(LIBREPLACEMALLOC)
-vgpreload_memcheck_so_LDFLAGS = -shared -Wl,-z,interpose,-z,initfirst \
+vgpreload_memcheck_so_SOURCES      = mac_replace_strmem.c
+vgpreload_memcheck_so_DEPENDENCIES = $(LIBREPLACEMALLOC)
+vgpreload_memcheck_so_LDFLAGS      = \
+	-shared -Wl,-z,interpose,-z,initfirst \
 	-Wl,--whole-archive \
 	$(LIBREPLACEMALLOC) \
 	-Wl,--no-whole-archive
 
-memcheck_DEPENDENCIES = $(top_srcdir)/coregrind/libcoregrind.a
 memcheck_SOURCES = \
 	mac_leakcheck.c \
 	mac_malloc_wrappers.c \
 	mc_main.c \
 	mac_shared.c \
 	mc_translate.c
-memcheck_LDFLAGS = \
-	-static \
-	$(top_srcdir)/coregrind/libcoregrind.a \
-	-Wl,-defsym,valt_load_address=@VALT_LOAD_ADDRESS@ \
-	-Wl,-T,$(top_srcdir)/valt_load_address.lds \
-	-nodefaultlibs -lgcc -nostartfiles
+memcheck_DEPENDENCIES = $(COREGRIND_LIBS)
+memcheck_LDADD        = $(TOOL_LINKADD)
+memcheck_LDFLAGS      = $(TOOL_LINKFLAGS)
 
 mcincludedir = $(includedir)/valgrind
 
