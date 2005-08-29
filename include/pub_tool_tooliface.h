@@ -64,6 +64,8 @@ typedef struct _ToolInfo {
    float shadow_ratio;
 } ToolInfo;
 
+extern const ToolInfo VG_(tool_info);
+
 /* Every tool must include this macro somewhere, exactly once. */
 #define VG_DETERMINE_INTERFACE_VERSION(pre_clo_init, shadow)   \
    const ToolInfo VG_(tool_info) = {                           \

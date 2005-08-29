@@ -109,7 +109,7 @@
 
 // HACK HACK HACK HACK HACK HACK HACK HACK HACK HACK HACK HACK HACK A
 // temporary bootstrapping allocator, for use until such time as we
-// can get rid of the circularites in allocator dependencies at
+// can get rid of the circularities in allocator dependencies at
 // startup.  There is also a copy of this in m_ume.c.
 #define N_HACK_BYTES 10000
 static Int   hack_bytes_used = 0;
@@ -353,38 +353,50 @@ static Bool scan_colsep(char *colsep, Bool (*func)(const char *))
    If this needs to handle any more variables it should be hacked
    into something table driven.
  */
-static HChar **fix_environment(HChar **origenv, const HChar *preload)
+static HChar **fix_environment(HChar **origenv, const HChar *toolname)
 {
-   static const HChar preload_core_so[]    = "vg_preload_core.so";
-   static const HChar ld_preload[]         = "LD_PRELOAD=";
-   static const HChar valgrind_clo[]       = VALGRINDCLO "=";
-   static const int  ld_preload_len       = sizeof(ld_preload)-1;
-   static const int  valgrind_clo_len     = sizeof(valgrind_clo)-1;
-   int ld_preload_done       = 0;
-   HChar *preload_core_path;
-   int   preload_core_path_len;
-   int vgliblen = VG_(strlen)(VG_(libdir));
-   HChar **cpp;
-   HChar **ret;
-   int envc;
-   const int preloadlen = (preload == NULL) ? 0 : VG_(strlen)(preload);
+   static const HChar preload_core_so[] = "vg_preload_core.so";
+   static const HChar ld_preload[]      = "LD_PRELOAD=";
+   static const HChar valgrind_clo[]    = VALGRINDCLO "=";
+   static const Int  ld_preload_len     = sizeof(ld_preload)-1;
+   static const Int  valgrind_clo_len   = sizeof(valgrind_clo)-1;
+   Bool ld_preload_done                 = False;
+   Int vgliblen = VG_(strlen)(VG_(libdir));
+   HChar** cpp;
+   HChar** ret;
+   HChar*  preload_tool_path;;
+   Int envc;
 
-   /* Find the vg_preload_core.so; also make room for the tool preload
-      library */
-   preload_core_path_len = sizeof(preload_core_so) + vgliblen + preloadlen + 16;
+   /* Alloc space for the vgpreload_core.so path and vgpreload_<tool>.so
+      paths.  We might not need the space for vgpreload_<tool>.so, but it
+      doesn't hurt to over-allocate briefly.  The 16s are just cautious
+      slop. */
+   Int preload_core_path_len = vgliblen + sizeof(preload_core_so) + 16;
+   Int preload_tool_path_len = vgliblen + VG_(strlen)(toolname)   + 16;
+   Int preload_string_len    = preload_core_path_len + preload_tool_path_len;
    /* FIXME */
-   preload_core_path = /*VG_(malloc)*/ hack_malloc(preload_core_path_len);
-   vg_assert(preload_core_path);
-
-   if (preload)
-      VG_(snprintf)(preload_core_path, preload_core_path_len, "%s/%s:%s", 
-                    VG_(libdir), preload_core_so, preload);
-   else
-      VG_(snprintf)(preload_core_path, preload_core_path_len, "%s/%s", 
-                    VG_(libdir), preload_core_so);
+   HChar* preload_string     = /*VG_(malloc)*/ hack_malloc(preload_string_len);
+   vg_assert(preload_string);
    
+   /* Determine if there's a vgpreload_<tool>.so file, and setup
+      preload_string. */
+   preload_tool_path = /*VG_(malloc)*/ hack_malloc(preload_tool_path_len);
+   vg_assert(preload_tool_path);
+   VG_(snprintf)(preload_tool_path, preload_tool_path_len,
+                 "%s/vgpreload_%s.so", VG_(libdir), toolname);
+   if (VG_(access)(preload_tool_path, True/*r*/, False/*w*/, False/*x*/) == 0) {
+      VG_(snprintf)(preload_string, preload_string_len, "%s/%s:%s", 
+                    VG_(libdir), preload_core_so, preload_tool_path);
+   } else {
+      VG_(snprintf)(preload_string, preload_string_len, "%s/%s", 
+                    VG_(libdir), preload_core_so);
+   }
+   //FIXME   VG_(free)(preload_tool);
+
+   VG_(debugLog)(1, "main", "preload_string = %s\n", preload_string);
+
    /* Count the original size of the env */
-   envc = 0;			/* trailing NULL */
+   envc = 0;               /* trailing NULL */
    for (cpp = origenv; cpp && *cpp; cpp++)
       envc++;
 
@@ -402,39 +414,39 @@ static HChar **fix_environment(HChar **origenv, const HChar *preload)
    /* Walk over the new environment, mashing as we go */
    for (cpp = ret; cpp && *cpp; cpp++) {
       if (VG_(memcmp)(*cpp, ld_preload, ld_preload_len) == 0) {
-	 int len = VG_(strlen)(*cpp) + preload_core_path_len;
-	 HChar *cp = /*FIXME VG_(malloc)*/ hack_malloc(len);
+         Int len = VG_(strlen)(*cpp) + preload_string_len;
+         HChar *cp = /*FIXME VG_(malloc)*/ hack_malloc(len);
          vg_assert(cp);
 
-	 VG_(snprintf)(cp, len, "%s%s:%s",
-                       ld_preload, preload_core_path, (*cpp)+ld_preload_len);
+         VG_(snprintf)(cp, len, "%s%s:%s",
+                       ld_preload, preload_string, (*cpp)+ld_preload_len);
 
-	 *cpp = cp;
-	 
-	 ld_preload_done = 1;
+         *cpp = cp;
+
+         ld_preload_done = True;
       } else if (VG_(memcmp)(*cpp, valgrind_clo, valgrind_clo_len) == 0) {
-	 *cpp = "";
+         *cpp = "";
       }
    }
 
    /* Add the missing bits */
    if (!ld_preload_done) {
-      int len = ld_preload_len + preload_core_path_len;
+      Int len = ld_preload_len + preload_string_len;
       HChar *cp = /*FIXME VG_(malloc)*/ hack_malloc (len);
       vg_assert(cp);
-      
-      VG_(snprintf)(cp, len, "%s%s", ld_preload, preload_core_path);
-      
+
+      VG_(snprintf)(cp, len, "%s%s", ld_preload, preload_string);
+
       ret[envc++] = cp;
    }
 
-   //FIXME   VG_(free)(preload_core_path);
+   //FIXME   VG_(free)(preload_string);
    ret[envc] = NULL;
 
    return ret;
 }
 
-extern char **environ;		/* our environment */
+extern char **environ;          /* our environment */
 
 /* Add a string onto the string table, and return its address */
 static char *copy_str(char **tab, const char *str)
@@ -767,39 +779,6 @@ static const char* find_executable(const char* exec)
 
 
 /*====================================================================*/
-/*=== Loading tools                                                ===*/
-/*====================================================================*/
-
-/* Return a pointer to the tool_info struct.  Also looks to see if
-   there's a matching vgpreload_*.so file, and returns its name in
-   *preloadpath. */
-
-/* HACK required because we can't use VG_(strdup) yet -- dynamic
-   memory allocation is not running. */
-static HChar load_tool__preloadpath[VKI_PATH_MAX];
-
-static void load_tool( const char *toolname,
-                       ToolInfo** toolinfo_out, char **preloadpath_out )
-{
-   extern ToolInfo VG_(tool_info);
-   *toolinfo_out = &VG_(tool_info);
-
-   Int    len = VG_(strlen)(VG_(libdir)) + VG_(strlen)(toolname) + 16;
-   HChar  buf[len];
-
-   VG_(snprintf)(buf, len, "%s/vgpreload_%s.so", VG_(libdir), toolname);
-   if (VG_(access)(buf, True/*r*/, False/*w*/, False/*x*/) == 0 
-       && len < VKI_PATH_MAX-1) {
-      VG_(strncpy)( load_tool__preloadpath, buf, VKI_PATH_MAX-1 );
-      load_tool__preloadpath[VKI_PATH_MAX-1] = 0;
-      *preloadpath_out = load_tool__preloadpath;
-   } else {
-      *preloadpath_out = NULL;
-   }
-}
-
-
-/*====================================================================*/
 /*=== Command line errors                                          ===*/
 /*====================================================================*/
 
@@ -1012,7 +991,7 @@ static void usage ( Bool debug_help )
 }
 
 static void pre_process_cmd_line_options
-      ( Int* need_help, const char** tool, const char** exec )
+      ( Int* need_help, HChar** tool, HChar** exec )
 {
    UInt i;
 
@@ -2052,11 +2031,9 @@ Int main(Int argc, HChar **argv, HChar **envp)
    HChar** cl_argv;
    HChar*  tool    = "memcheck";    // default to Memcheck
    HChar*  exec    = NULL;
-   HChar*  preload = NULL;    /* tool-specific LD_PRELOAD .so */
    HChar** env;
    Int     need_help = 0;      // 0 = no, 1 = --help, 2 = --help-debug
    struct exeinfo info;
-   ToolInfo* toolinfo = NULL;
    Addr      client_eip;
    Addr      sp_at_startup;  /* client's SP at the point we
                                 gained control. */
@@ -2133,7 +2110,7 @@ Int main(Int argc, HChar **argv, HChar **envp)
    // Look for alternative libdir                                  
    //   p: none
    //--------------------------------------------------------------
-   if (1) {
+   {
       HChar *cp = VG_(getenv)(VALGRINDLIB);
       if (cp != NULL)
 	 VG_(libdir) = cp;
@@ -2165,29 +2142,16 @@ Int main(Int argc, HChar **argv, HChar **envp)
    }
 
    //==============================================================
-   // Nb: once a tool is specified, the tool.so must be loaded even if 
-   // they specified --help or didn't specify a client program.
-   //==============================================================
-
-   //--------------------------------------------------------------
-   // With client padded out, map in tool
-   //   p: set-libdir                     [for VG_(libdir)]
-   //   p: pre_process_cmd_line_options() [for 'tool']
-   //--------------------------------------------------------------
-   VG_(debugLog)(1, "main", "Loading tool '%s'\n", tool);
-   load_tool(tool, &toolinfo, &preload);
-
-   //==============================================================
    // Can use VG_(malloc)() and VG_(arena_malloc)() only after load_tool()
    // -- redzone size is now set.  This is checked by vg_malloc2.c.
    //==============================================================
    
    //--------------------------------------------------------------
    // Finalise address space layout
-   //   p: load_tool()  [for 'toolinfo']
+   //   p: load_tool()  [probably?]
    //--------------------------------------------------------------
    VG_(debugLog)(1, "main", "Laying out remaining space\n");
-   layout_remaining_space( (Addr) & argc, toolinfo->shadow_ratio );
+   layout_remaining_space( (Addr) & argc, VG_(tool_info).shadow_ratio );
 
    //--------------------------------------------------------------
    // Load client executable, finding in $PATH if necessary
@@ -2207,11 +2171,11 @@ Int main(Int argc, HChar **argv, HChar **envp)
 
    //--------------------------------------------------------------
    // Set up client's environment
-   //   p: set-libdir  [for VG_(libdir)]
-   //   p: load_tool() [for 'preload']
+   //   p: set-libdir                   [for VG_(libdir)]
+   //   p: pre_process_cmd_line_options [for tool]
    //--------------------------------------------------------------
    VG_(debugLog)(1, "main", "Setup client env\n");
-   env = fix_environment(envp, preload);
+   env = fix_environment(envp, tool);
 
    //--------------------------------------------------------------
    // Setup client stack, eip, and VG_(client_arg[cv])
@@ -2259,7 +2223,6 @@ Int main(Int argc, HChar **argv, HChar **envp)
    //--------------------------------------------------------------
    // Init tool: pre_clo_init, process cmd line, post_clo_init
    //   p: setup_client_stack()      [for 'VG_(client_arg[cv]']
-   //   p: load_tool()               [for 'toolinfo']
    //   p: setup_file_descriptors()  [for 'VG_(fd_xxx_limit)']
    //   p: parse_procselfmaps        [so VG segments are setup so tool can
    //                                 call VG_(malloc)]
@@ -2268,7 +2231,7 @@ Int main(Int argc, HChar **argv, HChar **envp)
       Char* s;
       Bool  ok;
       VG_(debugLog)(1, "main", "Initialise the tool\n");
-      (*toolinfo->tl_pre_clo_init)();
+      (VG_(tool_info).tl_pre_clo_init)();
       ok = VG_(sanity_check_needs)( VG_(shadow_base) != VG_(shadow_end), &s );
       if (!ok) {
          VG_(tool_panic)(s);
