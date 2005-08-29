@@ -103,7 +103,8 @@ int main(int argc, char** argv, char** envp)
 
    execve(toolfile, argv, envp);
 
-   fprintf(stderr, "valgrind: failed to start %s: %s", toolname, strerror(errno));
+   fprintf(stderr, "valgrind: failed to start %s: %s\n",
+                   toolname, strerror(errno));
 
    exit(1);
 }
