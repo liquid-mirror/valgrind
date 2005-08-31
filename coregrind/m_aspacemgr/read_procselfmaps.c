@@ -30,12 +30,11 @@
 */
 
 #include "pub_core_basics.h"
+#include "pub_core_debuglog.h"
 #include "pub_core_debuginfo.h"  // Needed for pub_core_aspacemgr :(
 #include "pub_core_aspacemgr.h"
-#include "pub_core_libcbase.h"
 #include "pub_core_libcassert.h"
 #include "pub_core_libcfile.h"
-#include "pub_core_libcprint.h"
 
 /* Size of a smallish table used to read /proc/self/map entries. */
 #define M_PROCMAP_BUF 50000
@@ -104,7 +103,7 @@ static void read_procselfmaps ( void )
    /* Read the initial memory mapping from the /proc filesystem. */
    fd = VG_(open) ( "/proc/self/maps", VKI_O_RDONLY, 0 );
    if (fd.isError) {
-      VG_(message)(Vg_UserMsg, "FATAL: can't open /proc/self/maps");
+      VG_(debugLog)(0, "Valgrind:", "FATAL: can't open /proc/self/maps\n");
       VG_(exit)(1);
    }
    buf_n_tot = 0;
@@ -115,13 +114,13 @@ static void read_procselfmaps ( void )
    } while ( n_chunk > 0 && buf_n_tot < M_PROCMAP_BUF );
    VG_(close)(fd.val);
    if (buf_n_tot >= M_PROCMAP_BUF-5) {
-      VG_(message)(Vg_UserMsg, "FATAL: M_PROCMAP_BUF is too small; "
-                               "increase it and recompile");
-       VG_(exit)(1);
+      VG_(debugLog)(0, "Valgrind:", "FATAL: M_PROCMAP_BUF is too small;\n");
+      VG_(debugLog)(0, "Valgrind:", "       increase it and recompile.\n");
+      VG_(exit)(1);
    }
    if (buf_n_tot == 0) {
-      VG_(message)(Vg_UserMsg, "FATAL: I/O error on /proc/self/maps" );
-       VG_(exit)(1);
+      VG_(debugLog)(0, "Valgrind:", "FATAL: I/O error on /proc/self/maps\n");
+      VG_(exit)(1);
    }
    procmap_buf[buf_n_tot] = 0;
 }
@@ -165,7 +164,7 @@ void VG_(parse_procselfmaps) (
    tl_assert( '\0' != procmap_buf[0] && 0 != buf_n_tot);
 
    if (0)
-      VG_(message)(Vg_DebugMsg, "raw:\n%s", procmap_buf );
+      VG_(debugLog)(0, "procselfmaps", "raw:\n%s\n", procmap_buf);
 
    /* Ok, it's safely aboard.  Parse the entries. */
    i = 0;
@@ -219,11 +218,20 @@ void VG_(parse_procselfmaps) (
       goto read_line_ok;
 
     syntaxerror:
-      VG_(message)(Vg_UserMsg, "FATAL: syntax error reading /proc/self/maps");
-      { Int k;
-        VG_(printf)("last 50 chars: '");
-        for (k = i-50; k <= i; k++) VG_(printf)("%c", procmap_buf[k]);
-        VG_(printf)("'\n");
+      VG_(debugLog)(0, "Valgrind:", 
+                       "FATAL: syntax error reading /proc/self/maps\n");
+      { Int k, m;
+        HChar buf50[51];
+        m = 0;
+        buf50[m] = 0;
+        k = i - 50;
+        if (k < 0) k = 0;
+        for (; k <= i; k++) {
+           buf50[m] = procmap_buf[k];
+           buf50[m+1] = 0;
+           if (m < 50-1) m++;
+        }
+        VG_(debugLog)(0, "procselfmaps", "Last 50 chars: '%s'\n", buf50);
       }
       VG_(exit)(1);
 
