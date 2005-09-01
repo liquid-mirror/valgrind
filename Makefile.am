@@ -16,9 +16,8 @@ TOOLS =		memcheck \
 # And we want to include Addrcheck in the distro, but not compile/test it.
 # Put docs last because building the HTML is slow and we want to get
 # everything else working before we try it.
-BUILD_SUBDIRS = include coregrind . tests auxprogs $(TOOLS) helgrind docs
-SUBDIRS       = VEX $(BUILD_SUBDIRS)
-DIST_SUBDIRS  =	$(BUILD_SUBDIRS) addrcheck
+SUBDIRS = include coregrind . tests auxprogs $(TOOLS) helgrind docs
+DIST_SUBDIRS  =	$(SUBDIRS) addrcheck
 
 SUPP_FILES = \
 	glibc-2.2.supp glibc-2.3.supp glibc-2.4.supp \
@@ -86,8 +85,6 @@ VEX_PRIMARY_SOURCES = \
 	VEX/LICENSE.README \
 	VEX/LICENSE.GPL \
 	VEX/Makefile \
-	VEX/test_main.c \
-	VEX/test_main.h \
 	VEX/auxprogs/genoffsets.c \
 	VEX/pub/libvex_guest_amd64.h \
 	VEX/pub/libvex_ir.h \
