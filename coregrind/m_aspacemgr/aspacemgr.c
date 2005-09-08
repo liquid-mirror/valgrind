@@ -1318,6 +1318,42 @@ Bool VG_(setup_pointercheck)(Addr client_base, Addr client_end)
 /////////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////////
 
+static void add_to_aspacem_sprintf_buf ( HChar c, void *p )
+{
+   HChar** aspacem_sprintf_ptr = p;
+   *(*aspacem_sprintf_ptr)++ = c;
+}
+
+static
+UInt aspacem_vsprintf ( HChar* buf, const HChar *format, va_list vargs )
+{
+   Int ret;
+   Char *aspacem_sprintf_ptr = buf;
+
+   ret = VG_(debugLog_vprintf)
+            ( add_to_aspacem_sprintf_buf, 
+              &aspacem_sprintf_ptr, format, vargs );
+   add_to_aspacem_sprintf_buf('\0', &aspacem_sprintf_ptr);
+
+   return ret;
+}
+
+static
+UInt aspacem_sprintf ( HChar* buf, const HChar *format, ... )
+{
+   UInt ret;
+   va_list vargs;
+
+   va_start(vargs,format);
+   ret = aspacem_vsprintf(buf, format, vargs);
+   va_end(vargs);
+
+   return ret;
+}
+
+
+/////////////////////////////////////////////////////////////////
+
 static void aspacem_barf_toolow ( HChar* what )
 {
   VG_(debugLog)(0, "aspacem", "Valgrind: FATAL: %s is too low.\n", what);
@@ -1623,26 +1659,35 @@ static HChar* show_seg_kind ( NSegment* seg )
   }
 }
 
+static void show_Addr_concisely ( /*OUT*/HChar* buf, Addr aA )
+{
+  HChar* fmt;
+  ULong a = (ULong)aA;
+  if (a >= 10000000ULL) {
+    fmt = "%6llum";
+a /= 1024*1024ULL;
+  } else {
+    fmt = "%7llu";
+  }
+  aspacem_sprintf(buf, fmt, a);
+}
+
 static void show_nsegment ( Int logLevel, Int segNo, NSegment* seg )
 {
+  HChar len_buf[20];
+    ULong len = ((ULong)seg->end) - ((ULong)seg->start) + 1;
+    show_Addr_concisely(len_buf, len);
+
   switch (seg->kind) {
   case SkFree: {
-    ULong len = ((ULong)seg->end) - ((ULong)seg->start) + 1;
-    HChar* fmt;
-    if (len >= 1024*1024ULL) {
-      len /= 1024*1024ULL;
-      fmt = "%3d: %s 0x%08llx-0x%08llx %6llum\n";
-    } else {
-      fmt = "%3d: %s 0x%08llx-0x%08llx %7llu\n";
-    }
   VG_(debugLog)(
      logLevel, "aspacem",
-     fmt,
+     "%3d: %s 0x%08llx-0x%08llx %s\n",
       segNo,
      show_seg_kind(seg),
      (ULong)seg->start,
      (ULong)seg->end,
-     len
+     len_buf
   );
   break;
   }
@@ -1650,12 +1695,12 @@ static void show_nsegment ( Int logLevel, Int segNo, NSegment* seg )
   case SkAnon:
   VG_(debugLog)(
      logLevel, "aspacem",
-     "%3d: %s 0x%08llx-0x%08llx %7llu %c%c%c%c d=0x%03x i=%-7d o=%-7lld (%d)\n",
+     "%3d: %s 0x%08llx-0x%08llx %s %c%c%c%c d=0x%03x i=%-7d o=%-7lld (%d)\n",
       segNo,
      show_seg_kind(seg),
      (ULong)seg->start,
      (ULong)seg->end,
-     ((ULong)seg->end) - ((ULong)seg->start) + 1,
+     len_buf,
      seg->hasR ? 'r' : '-', 
      seg->hasW ? 'w' : '-', 
      seg->hasX ? 'x' : '-', 
@@ -1669,12 +1714,12 @@ static void show_nsegment ( Int logLevel, Int segNo, NSegment* seg )
   case SkFile:
   VG_(debugLog)(
      logLevel, "aspacem",
-     "%3d: %s 0x%08llx-0x%08llx %7llu %c%c%c%c d=0x%03x i=%-7d o=%-7lld (%d)\n",
+     "%3d: %s 0x%08llx-0x%08llx %s %c%c%c%c d=0x%03x i=%-7d o=%-7lld (%d)\n",
       segNo,
      show_seg_kind(seg),
      (ULong)seg->start,
      (ULong)seg->end,
-     ((ULong)seg->end) - ((ULong)seg->start) + 1,
+     len_buf,
      seg->hasR ? 'r' : '-', 
      seg->hasW ? 'w' : '-', 
      seg->hasX ? 'x' : '-', 
@@ -1688,20 +1733,16 @@ static void show_nsegment ( Int logLevel, Int segNo, NSegment* seg )
   case SkResvn:
   VG_(debugLog)(
      logLevel, "aspacem",
-     "%3d: %s 0x%08llx-0x%08llx %7llu %c%c%c%c d=0x%03x i=%-7d o=%-7lld (%d) (%s,%s,%llu)\n",
+     "%3d: %s 0x%08llx-0x%08llx %s %c%c%c%c (%s,%s,%llu)\n",
       segNo,
      show_seg_kind(seg),
      (ULong)seg->start,
      (ULong)seg->end,
-     ((ULong)seg->end) - ((ULong)seg->start) + 1,
+     len_buf,
      seg->hasR ? 'r' : '-', 
      seg->hasW ? 'w' : '-', 
      seg->hasX ? 'x' : '-', 
      seg->anyTranslated ? 'T' : '-', 
-     seg->dev,
-     seg->ino,
-     (Long)seg->offset,
-     seg->fnIdx,
      showMovable(seg->moveLo),
      showMovable(seg->moveHi),
 (ULong)seg->maxlen
@@ -1744,7 +1785,7 @@ static void add_segment ( NSegment* seg )
 
   Addr dStart = seg->start;
   Addr dEnd   = seg->end;
-  
+
   aspacem_assert(dStart <= dEnd);
 
   nDeld = 0;
@@ -1823,7 +1864,8 @@ static void add_segment ( NSegment* seg )
     k = 0;
   } else {
      for (i = 0; i < nsegments_used; i++)
-       if (nsegments[i].start == dEnd+1)
+       if (dEnd+1 == nsegments[i].start 
+           && /*guard against wraparound*/dEnd+1 > dEnd)
          break;
      k = i;
   }
@@ -1900,7 +1942,6 @@ void VG_(new_aspacem_start) ( void )
       init_resvn(&seg, Addr_MIN, aspacem_cStart-1);
       add_segment(&seg);
    }
-
    if (aspacem_maxAddr < Addr_MAX) {
       init_resvn(&seg, aspacem_maxAddr+1, Addr_MAX);
       add_segment(&seg);
