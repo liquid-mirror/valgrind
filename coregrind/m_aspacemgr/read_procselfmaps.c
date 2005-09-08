@@ -266,7 +266,6 @@ void VG_(parse_procselfmaps) (
       if (ww == 'w') prot |= VKI_PROT_WRITE;
       if (xx == 'x') prot |= VKI_PROT_EXEC;
 
-      //if (start < VG_(valgrind_last))
       (*record_mapping) ( start, endPlusOne-start, 
                           prot, maj * 256 + min, ino,
                           foffset, filename );

@@ -151,6 +151,31 @@ void VG_(parse_procselfmaps) (
 // Pointercheck
 extern Bool VG_(setup_pointercheck) ( Addr client_base, Addr client_end );
 
+/////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////
+
+#define VG_STACK_GUARD_SZB  8192
+#define VG_STACK_ACTIVE_SZB 65536
+
+typedef
+   HChar
+   VgStack[VG_STACK_GUARD_SZB + VG_STACK_ACTIVE_SZB + VG_STACK_GUARD_SZB];
+
+extern void VG_(new_aspacem_start) ( void );
+
+
+typedef
+   struct {
+      enum { MFixed, MHint, MAny } rkind;
+      Addr start;
+      Addr len;
+   }
+   MapRequest;
+
+extern
+Bool VG_(aspacem_getAdvisory)
+     ( MapRequest* req, Bool forClient, /*OUT*/Addr* result );
+
 #endif   // __PUB_CORE_ASPACEMGR_H
 
 /*--------------------------------------------------------------------*/

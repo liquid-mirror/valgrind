@@ -2026,6 +2026,11 @@ void show_BB_profile ( BBProfEntry tops[], UInt n_tops, ULong score_total )
 */
 
 
+/* When main() is entered, we should be on the following stack, not
+   the one the kernel gave us. */
+VgStack VG_(the_root_stack);
+
+
 Int main(Int argc, HChar **argv, HChar **envp)
 {
    HChar** cl_argv;
@@ -2075,6 +2080,28 @@ Int main(Int argc, HChar **argv, HChar **envp)
    /* ... and start the debug logger.  Now we can safely emit logging
       messages all through startup. */
    VG_(debugLog_startup)(loglevel, "Stage 2 (main)");
+
+   //--------------------------------------------------------------
+   // Start up the address space manager
+   //   p: logging
+   //--------------------------------------------------------------
+   VG_(debugLog)(1, "main", "Starting the address space manager\n");
+
+   /* Ensure we're on a plausible stack. */
+   { HChar* limLo  = (HChar*)(&VG_(the_root_stack)[0]);
+     HChar* limHi  = limLo + sizeof(VG_(the_root_stack));
+     HChar* aLocal = (HChar*)&zero; /* any auto local will do */
+     if (aLocal < limLo || aLocal >= limHi) {
+        /* something's wrong.  Stop. */
+        VG_(debugLog)(0, "main", "Root stack %p to %p, a local %p\n",
+                          limLo, limHi, aLocal );
+        VG_(debugLog)(0, "main", "FATAL: Initial stack switched failed.\n");
+        VG_(debugLog)(0, "main", "       Cannot continue.  Sorry.\n");
+        VG_(exit)(1);
+     }
+   }
+
+   VG_(new_aspacem_start)();
 
    //============================================================
    // Command line argument handling order:
@@ -2653,18 +2680,23 @@ void* memset(void *s, int c, size_t n) {
 */
 
 /* The kernel hands control to _start, which extracts the initial
-   stack pointer and calls onwards to _start_in_C. */
+   stack pointer and calls onwards to _start_in_C.  This also switches the new stack.  */
 #if defined(VGP_x86_linux)
 asm("\n"
     "\t.globl _start\n"
     "\t.type _start,@function\n"
     "_start:\n"
     "\tmovl  %esp,%eax\n"
-    "\tandl  $~15,%esp\n"   /* Make sure stack is 16 byte aligned */
-    "\tpushl %eax\n"        /* Push junk to preserve alignment */
-    "\tpushl %eax\n"        /* Push junk to preserve alignment */
-    "\tpushl %eax\n"        /* Push junk to preserve alignment */
-    "\tpushl %eax\n"        /* Pass pointer to argc to _start_in_C */
+    /* set up the new stack in %eax */
+    "\tmovl  $vgPlain_the_root_stack, %eax\n"
+    "\taddl  $"VG_STRINGIFY(VG_STACK_GUARD_SZB)", %eax\n"
+    "\taddl  $"VG_STRINGIFY(VG_STACK_ACTIVE_SZB)", %eax\n"
+    "\tsubl  $16, %eax\n"
+    "\tandl  $~15, %eax\n"
+    /* install it, and collect the original one */
+    "\txchgl %eax, %esp\n"
+    /* call _start_in_C, passing it the startup %esp */
+    "\tpushl %eax\n"
     "\tcall  _start_in_C\n"
     "\thlt\n"
 );

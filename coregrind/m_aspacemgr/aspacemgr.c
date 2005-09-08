@@ -31,6 +31,7 @@
 */
 
 #include "pub_core_basics.h"
+#include "pub_core_debuglog.h"
 #include "pub_core_debuginfo.h"  // Needed for pub_core_aspacemgr.h :(
 #include "pub_core_aspacemgr.h"
 #include "pub_core_libcbase.h"
@@ -1313,6 +1314,606 @@ Bool VG_(setup_pointercheck)(Addr client_base, Addr client_end)
 #  error Unknown architecture
 #endif
 }
+
+/////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////
+
+static void aspacem_barf_toolow ( HChar* what )
+{
+  VG_(debugLog)(0, "aspacem", "Valgrind: FATAL: %s is too low.\n", what);
+  VG_(debugLog)(0, "aspacem", "  Increase it and rebuild.  "
+                              "Exiting now.\n");
+  VG_(exit)(1);
+}
+
+static void aspacem_assert_fail( const HChar* expr,
+                                 const Char* file,
+				 Int line, 
+                                 const Char* fn )
+{
+  VG_(debugLog)(0, "aspacem", "Valgrind: FATAL: assertion failed:\n");
+  VG_(debugLog)(0, "aspacem", "  %s\n", expr);
+  VG_(debugLog)(0, "aspacem", "  at %s:%d (%s)\n", file,line,fn);
+  VG_(debugLog)(0, "aspacem", "Exiting now.\n");
+  VG_(exit)(1);
+}
+
+#define aspacem_assert(expr)                           \
+  ((void) ((expr) ? 0 :                                \
+           (aspacem_assert_fail(#expr,                 \
+                              __FILE__, __LINE__,      \
+                              __PRETTY_FUNCTION__))))
+
+
+
+#define Addr_MIN ((Addr)0)
+#define Addr_MAX ((Addr)(-1ULL))
+
+
+/* Describes the ways in which the ends of a segment may be moved. */
+typedef
+   enum {
+     MoFixed,   // usual case -- cannot be moved
+     MoDownOK,  // can be moved to a lower address
+     MoUpOK     // can be moved to a higher address
+   }
+   Movable;
+
+static HChar* showMovable ( Movable m )
+{
+  switch (m) {
+  case MoFixed: return "Fixed";
+  case MoDownOK: return "MoveD";
+  case MoUpOK: return "MoveU";
+  default: return "?????";
+  }
+}
+
+typedef
+   enum {
+      SkFree,  // unmapped space
+      SkAnon,  // anonymous mapping
+      SkFile,  // mapping to a file
+      SkResvn  // reservation
+   }
+   MKind;
+
+/* Describes a segment.  Invariants:
+
+     kind == SkFree:
+        // the only meaningful fields are .start and .end
+
+     kind == SkAnon:
+        // the segment may be resized if required
+        // there's no associated file:
+        dev==ino==foff = 0, fnidx == -1
+        // segment may have permissions
+
+     kind == SkFile
+        // the segment may not be resized:
+        moveLo == moveHi == NotMovable, maxlen == 0
+        // there is an associated file
+        // segment may have permissions
+
+     kind == SkResvn
+        // the segment may be resized if required
+        // there's no associated file:
+        dev==ino==foff = 0, fnidx == -1
+        // segment has no permissions
+        hasR==hasW==hasX==anyTranslated == False
+
+     Also: if !isClient then anyTranslated==False
+           (viz, not allowed to make translations from non-client areas)
+*/
+typedef
+   struct {
+      MKind   kind;
+      Bool    isClient;
+      /* Extent (SkFree, SkAnon, SkFile, SkResvn) */
+      Addr    start;    // lowest address in range
+      Addr    end;      // highest address in range
+      /* Resizability (SkAnon, SkResvn only) */
+      Movable moveLo;   //  if yes, can lower end be moved
+      Movable moveHi;   //  if yes, can upper end be moved
+      SizeT   maxlen;   //  if yes, what's the max size?
+      /* Associated file (SkFile only) */
+      UInt    dev;
+      UInt    ino;
+      ULong   offset;
+      Int     fnIdx;    // file name table index, if name is known
+      /* Permissions (SkAnon, SkFile only) */
+      Bool    hasR;
+      Bool    hasW;
+      Bool    hasX;
+      Bool    anyTranslated;
+      /* Admin */
+      Bool    mark;
+   }
+   NSegment;
+
+/* Array [0 .. nsegments_used-1] of all mappings. */
+/* Sorted by .addr field. */
+/* I: len may not be zero. */
+/* I: overlapping segments are not allowed. */
+/* Each segment can optionally hold an index into the filename table. */
+
+static NSegment nsegments[VG_N_SEGMENTS];
+static Int      nsegments_used = 0;
+
+
+
+
+/* check the interval array */
+static void check_nsegments ( void )
+{
+  Int i;
+  aspacem_assert(nsegments_used > 0);
+  aspacem_assert(nsegments[0].start == Addr_MIN);
+  aspacem_assert(nsegments[nsegments_used-1].end == Addr_MAX);
+  for (i = 1; i < nsegments_used; i++)
+    aspacem_assert(nsegments[i-1].end+1 == nsegments[i].start);
+}
+
+
+
+
+
+
+/* Limits etc */
+
+// The smallest address that aspacem will try to allocate
+static Addr aspacem_minAddr;
+
+// The largest address that aspacem will try to allocate
+static Addr aspacem_maxAddr;
+
+// Where aspacem will start looking for client space
+static Addr aspacem_cStart;
+
+// Where aspacem will start looking for Valgrind space
+static Addr aspacem_vStart;
+
+
+Bool VG_(aspacem_getAdvisory)
+        ( MapRequest* req, Bool forClient, /*OUT*/Addr* result )
+{
+  return False;
+#if 0
+  /* Iterate over all holes in the address space, twice.  In the first
+pass, find the first hole which is not below the search start
+point. */
+  Addr holeStart, holeEnd, holeLen;
+  Int i, j;
+
+  Addr minAddr = Addr_MIN;
+  Addr maxAddr = Addr_MAX;
+  Addr startPoint = forClient ? aspacem_cStart : aspacem_vStart;
+
+  Addr reqStart = req->rkind==MAny ? 0 : req->start;
+  Addr reqEnd   = reqStart + req->len - 1;
+  Addr reqLen   = req->len;
+
+  Addr floatStart = 0;
+  Bool floatFound = False;
+
+  /* Don't waste time looking for a fixed match if not requested to. */
+  Bool fixedFound = req->rkind==MAny ? True : False;
+
+  for (i = 0; i <=/*yes,really*/ nsegments_used; i++) {
+    holeEnd = i==nsegments_used
+                ? maxAddr
+                : nsegments[i].start - 1;
+    if (holeEnd >= startPoint)
+      break;
+  }
+
+  /* Now examine holes from index i back round to i-1.  Record the
+     size and length of the first fixed hole and the first floating
+     hole which would satisfy the request. */
+  for (j = 0; j < nsegments_used; j++) {
+
+    holeStart = i==0 
+                ? minAddr 
+                : nsegments[i-1].start + nsegments[i-1].len - 1;
+    holeEnd = i==nsegments_used
+                ? maxAddr
+                : nsegments[i].start - 1;
+
+    /* Clamp the hole to something plausible */
+    if (holeStart < aspacem_minAddr) holeStart = aspacem_minAddr;
+    if (holeEnd   > aspacem_maxAddr) holeEnd = aspacem_maxAddr;
+
+    /* If it still looks viable, see if it's any use to us. */
+    if (holeStart < holeEnd) {
+
+      holeLen = holeEnd - holeStart + 1;
+
+      if (!fixedFound 
+	  && holeStart <= reqStart && reqEnd <= holeEnd) {
+	fixedFound = True;
+      }
+
+      if (!floatFound
+	  && holeLen >= reqLen) {
+	floatFound = True;
+	floatStart = holeStart;
+      }
+    }
+
+    /* Don't waste time searching once we've found what we wanted. */
+    if (fixedFound && floatFound)
+      break;
+
+    i++;
+    if (i >= nsegments_used) i = 0;
+  }
+
+  /* Now see if we found anything which can satisfy the request. */
+  switch (req->rkind) {
+  case MFixed:
+    if (fixedFound) {
+      *result = req->start;
+      return True;
+    } else {
+      return False;
+    }
+    break;
+  case MHint:
+    if (fixedFound) {
+      *result = req->start;
+      return True;
+    }
+    if (floatFound) {
+      *result = floatStart;
+      return True;
+    }
+    return False;
+  case MAny:
+    if (floatFound) {
+      *result = floatStart;
+      return True;
+    }
+    return False;
+
+  default: break;
+  }
+  /*NOTREACHED*/
+  aspacemgr_barf("getAdvisory: unknown request kind");
+  return False;
+#endif
+}
+
+
+
+static void init_nsegment ( /*OUT*/NSegment* seg )
+{
+   seg->kind     = SkAnon;
+   seg->isClient = False;
+   seg->start    = 0;
+   seg->end      = 0;
+   seg->moveLo   = MoFixed;
+   seg->moveHi   = MoFixed;
+   seg->maxlen   = 0;
+   seg->dev      = 0;
+   seg->ino      = 0;
+   seg->offset   = 0;
+   seg->fnIdx    = -1;
+   seg->hasR = seg->hasR = seg->hasW = False;
+   seg->anyTranslated = False;
+   seg->mark = False;
+}
+
+static void init_resvn ( /*OUT*/NSegment* seg, Addr start, Addr end )
+{
+  aspacem_assert(start < end);
+  init_nsegment(seg);
+  seg->kind = SkResvn;
+  seg->start = start;
+  seg->end = end;
+}
+
+static HChar* show_seg_kind ( NSegment* seg )
+{
+  switch (seg->kind) {
+  case SkFree: return "FREE";
+  case SkAnon: return seg->isClient ? "ANON" : "anon";
+  case SkFile: return seg->isClient ? "FILE" : "file";
+  case SkResvn: return seg->isClient ? "RSVN" : "rsvn";
+  default: return "????";
+  }
+}
+
+static void show_nsegment ( Int logLevel, Int segNo, NSegment* seg )
+{
+  switch (seg->kind) {
+  case SkFree: {
+    ULong len = ((ULong)seg->end) - ((ULong)seg->start) + 1;
+    HChar* fmt;
+    if (len >= 1024*1024ULL) {
+      len /= 1024*1024ULL;
+      fmt = "%3d: %s 0x%08llx-0x%08llx %6llum\n";
+    } else {
+      fmt = "%3d: %s 0x%08llx-0x%08llx %7llu\n";
+    }
+  VG_(debugLog)(
+     logLevel, "aspacem",
+     fmt,
+      segNo,
+     show_seg_kind(seg),
+     (ULong)seg->start,
+     (ULong)seg->end,
+     len
+  );
+  break;
+  }
+
+  case SkAnon:
+  VG_(debugLog)(
+     logLevel, "aspacem",
+     "%3d: %s 0x%08llx-0x%08llx %7llu %c%c%c%c d=0x%03x i=%-7d o=%-7lld (%d)\n",
+      segNo,
+     show_seg_kind(seg),
+     (ULong)seg->start,
+     (ULong)seg->end,
+     ((ULong)seg->end) - ((ULong)seg->start) + 1,
+     seg->hasR ? 'r' : '-', 
+     seg->hasW ? 'w' : '-', 
+     seg->hasX ? 'x' : '-', 
+     seg->anyTranslated ? 'T' : '-', 
+     seg->dev,
+     seg->ino,
+     (Long)seg->offset,
+     seg->fnIdx
+     );
+  break;
+  case SkFile:
+  VG_(debugLog)(
+     logLevel, "aspacem",
+     "%3d: %s 0x%08llx-0x%08llx %7llu %c%c%c%c d=0x%03x i=%-7d o=%-7lld (%d)\n",
+      segNo,
+     show_seg_kind(seg),
+     (ULong)seg->start,
+     (ULong)seg->end,
+     ((ULong)seg->end) - ((ULong)seg->start) + 1,
+     seg->hasR ? 'r' : '-', 
+     seg->hasW ? 'w' : '-', 
+     seg->hasX ? 'x' : '-', 
+     seg->anyTranslated ? 'T' : '-', 
+     seg->dev,
+     seg->ino,
+     (Long)seg->offset,
+     seg->fnIdx
+     );
+  break;
+  case SkResvn:
+  VG_(debugLog)(
+     logLevel, "aspacem",
+     "%3d: %s 0x%08llx-0x%08llx %7llu %c%c%c%c d=0x%03x i=%-7d o=%-7lld (%d) (%s,%s,%llu)\n",
+      segNo,
+     show_seg_kind(seg),
+     (ULong)seg->start,
+     (ULong)seg->end,
+     ((ULong)seg->end) - ((ULong)seg->start) + 1,
+     seg->hasR ? 'r' : '-', 
+     seg->hasW ? 'w' : '-', 
+     seg->hasX ? 'x' : '-', 
+     seg->anyTranslated ? 'T' : '-', 
+     seg->dev,
+     seg->ino,
+     (Long)seg->offset,
+     seg->fnIdx,
+     showMovable(seg->moveLo),
+     showMovable(seg->moveHi),
+(ULong)seg->maxlen
+     );
+  break;
+
+  default:
+  VG_(debugLog)(
+     logLevel, "aspacem",
+     "%3d: ???? UNKNOWN SEGMENT KIND\n",
+segNo );
+  break;
+  }
+}
+
+/* Print out the segment array (debugging only!). */
+static void show_nsegments ( Int logLevel, HChar* who )
+{
+   Int i;
+   VG_(debugLog)(logLevel, "aspacem",
+                 "<<< SHOW_SEGMENTS: %s (%d segments, %d segnames)\n", 
+                 who, segments_used, segnames_used);
+   for (i = 0; i < segnames_used; i++) {
+      if (!segnames[i].inUse)
+         continue;
+      VG_(debugLog)(logLevel, "aspacem",
+                    "(%2d) %s\n", i, segnames[i].fname);
+   }
+   for (i = 0; i < nsegments_used; i++)
+     show_nsegment( logLevel, i, &nsegments[i] );
+   VG_(debugLog)(logLevel, "aspacem",
+                 ">>>\n");
+}
+
+/* Add SEG to the collection, deleting/truncating any it overlaps */
+static void add_segment ( NSegment* seg )
+{
+  Int  nDeld, i, j, k;
+  Addr iStart, iEnd;
+
+  Addr dStart = seg->start;
+  Addr dEnd   = seg->end;
+  
+  aspacem_assert(dStart <= dEnd);
+
+  nDeld = 0;
+
+  for (i = 0; i < nsegments_used; i++) {
+
+    nsegments[i].mark = False;
+
+    iStart = nsegments[i].start;
+    iEnd = nsegments[i].end;
+
+    /* no-overlap cases */
+    if (iEnd < dStart) continue;
+    if (dEnd < iStart) continue;
+
+    if (dStart <= iStart && iEnd <= dEnd) {
+      /* i is completely overlapped.  Mark it for deletion. */
+      nsegments[i].mark = True;
+      nDeld++;
+      continue;
+    }
+
+    if (iStart < dStart && iEnd > dEnd) {
+      /* deleted interval is completely contained within i.  This
+	 means i has to be split into two pieces.  As a result, first
+	 move the following elements up by one place to make space for
+	 the new part. */
+      if (nsegments_used >= VG_N_SEGMENTS)
+	aspacem_barf_toolow("VG_N_SEGMENTS");
+      for (j = nsegments_used-1; j > i; j--)
+	nsegments[j+1] = nsegments[j];
+      nsegments_used++;
+      nsegments[i+1] = nsegments[i];
+      nsegments[i].end = dStart-1;
+      nsegments[i+1].start = dEnd+1;
+      nsegments[i+1].offset += (nsegments[i+1].start - nsegments[i].start);
+      continue;
+    }
+
+    if (iStart < dStart && iEnd <= dEnd && iEnd >= dStart) {
+      /* interval to be deleted straddles upper boundary of i. */
+      nsegments[i].end = dStart-1;
+      continue;
+    }
+
+    if (iEnd > dEnd && iStart >= dStart && iStart <= dEnd) {
+      /* interval to be deleted straddles lower boundary of i. */
+      nsegments[i].offset += (dEnd+1 - nsegments[i].start);
+      nsegments[i].start = dEnd+1;
+      continue;
+    }
+
+    /* I don't think we can get here */
+    aspacem_assert(0);
+  }
+
+  /* Get rid of the intervals marked for deletion. */
+  if (nDeld > 0) {
+    j = 0;
+    for (i = 0; i < nsegments_used; i++) {
+      if (nsegments[i].mark)
+	continue;
+      nsegments[j] = nsegments[i];
+      j++;
+    }
+    nsegments_used -= nDeld;
+  }
+
+  /* At this point, there should be a gap dStart .. dEnd inclusive.
+     Find the gap and insert the new interval in it.  Set k so that
+     all entries >= k must be moved up 1, and the new interval placed
+     at k. */
+  if (nsegments_used >= VG_N_SEGMENTS)
+    aspacem_barf_toolow("VG_N_SEGMENTS");
+  if (nsegments_used == 0) {
+    k = 0;
+  } else {
+     for (i = 0; i < nsegments_used; i++)
+       if (nsegments[i].start == dEnd+1)
+         break;
+     k = i;
+  }
+
+  aspacem_assert(k >= 0 && k <= nsegments_used);
+  for (j = nsegments_used-1; j >= k; j--)
+    nsegments[j+1] = nsegments[j];
+  nsegments_used++;
+
+  nsegments[k] = *seg;
+
+  check_nsegments();
+}
+
+
+
+static void read_maps_callback ( 
+ Addr addr, SizeT len, UInt prot,
+			   UInt dev, UInt ino, ULong foff, const UChar* filename )
+{
+  NSegment seg;
+  init_nsegment( &seg );
+  seg.start = addr;
+  seg.end = addr+len-1;
+  seg.dev = dev;
+  seg.ino = ino;
+  seg.offset = foff;
+  seg.hasR = toBool(prot & VKI_PROT_READ);
+  seg.hasW = toBool(prot & VKI_PROT_WRITE);
+  seg.hasX = toBool(prot & VKI_PROT_EXEC);
+
+  seg.kind = SkAnon;
+  if (filename) { 
+     seg.kind = SkFile;
+     seg.fnIdx = allocate_segname( filename );
+  }
+
+  show_nsegment( 0,0, &seg );
+  add_segment( &seg );
+}
+
+void VG_(new_aspacem_start) ( void )
+{
+   NSegment seg;
+
+   /* Add a single interval covering the entire address space. */
+   init_nsegment(&seg);
+   seg.kind        = SkFree;
+   seg.start       = Addr_MIN;
+   seg.end         = Addr_MAX;
+   nsegments[0]    = seg;
+   nsegments_used  = 1;
+
+   /* Establish address limits and block out unusable parts
+      accordingly. */
+
+   aspacem_minAddr = (Addr) 0x00000000;
+
+#  if VG_WORDSIZE == 8
+   aspacem_maxAddr = (Addr)0x400000000 - 1; // 16G
+#  else
+   aspacem_maxAddr = (Addr) 0xC0000000 - 1; // 3G
+#  endif
+
+   aspacem_cStart = (Addr)0x04000000; // 64M
+   aspacem_vStart = (aspacem_minAddr + aspacem_maxAddr + 1) / 2;
+
+   VG_(debugLog)(2, "aspacem", "minAddr = 0x%llx\n", (ULong)aspacem_minAddr);
+   VG_(debugLog)(2, "aspacem", "maxAddr = 0x%llx\n", (ULong)aspacem_maxAddr);
+   VG_(debugLog)(2, "aspacem", " cStart = 0x%llx\n", (ULong)aspacem_cStart);
+   VG_(debugLog)(2, "aspacem", " vStart = 0x%llx\n", (ULong)aspacem_vStart);
+
+   if (aspacem_cStart > Addr_MIN) {
+      init_resvn(&seg, Addr_MIN, aspacem_cStart-1);
+      add_segment(&seg);
+   }
+
+   if (aspacem_maxAddr < Addr_MAX) {
+      init_resvn(&seg, aspacem_maxAddr+1, Addr_MAX);
+      add_segment(&seg);
+   }
+
+   show_nsegments(2, "Initial layout");
+
+   VG_(debugLog)(2, "aspacem", "Reading /proc/self/maps\n");
+   VG_(parse_procselfmaps) ( read_maps_callback );
+
+   show_nsegments(2, "With contents of /proc/self/maps");
+}
+
 
 /*--------------------------------------------------------------------*/
 /*--- end                                                          ---*/
