@@ -176,6 +176,20 @@ extern
 Bool VG_(aspacem_getAdvisory)
      ( MapRequest* req, Bool forClient, /*OUT*/Addr* result );
 
+extern
+SysRes VG_(mmap_file_fixed_client)
+     ( void* startV, SizeT length, Int prot, Int fd, SizeT offset );
+
+extern
+SysRes VG_(mmap_anon_fixed_client)
+     ( void* startV, SizeT length, Int prot );
+
+extern
+SysRes VG_(map_anon_float_valgrind)( SizeT cszB );
+
+extern ULong VG_(aspacem_get_anonsize_total)( void );
+
+
 #endif   // __PUB_CORE_ASPACEMGR_H
 
 /*--------------------------------------------------------------------*/

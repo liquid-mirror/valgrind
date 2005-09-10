@@ -2080,14 +2080,14 @@ Int main(Int argc, HChar **argv, HChar **envp)
    /* ... and start the debug logger.  Now we can safely emit logging
       messages all through startup. */
    VG_(debugLog_startup)(loglevel, "Stage 2 (main)");
+   VG_(debugLog)(1, "main", "Welcome to Valgrind version " 
+                            VERSION " debug logging.\n");
 
    //--------------------------------------------------------------
-   // Start up the address space manager
+   // Ensure we're on a plausible stack.
    //   p: logging
    //--------------------------------------------------------------
-   VG_(debugLog)(1, "main", "Starting the address space manager\n");
-
-   /* Ensure we're on a plausible stack. */
+   VG_(debugLog)(1, "main", "Checking we're on a plausible stack\n");
    { HChar* limLo  = (HChar*)(&VG_(the_root_stack)[0]);
      HChar* limHi  = limLo + sizeof(VG_(the_root_stack));
      HChar* aLocal = (HChar*)&zero; /* any auto local will do */
@@ -2101,7 +2101,26 @@ Int main(Int argc, HChar **argv, HChar **envp)
      }
    }
 
+   //--------------------------------------------------------------
+   // Start up the address space manager
+   //   p: logging, plausible-stack
+   //--------------------------------------------------------------
+   VG_(debugLog)(1, "main", "Starting the address space manager\n");
    VG_(new_aspacem_start)();
+   VG_(debugLog)(1, "main", "Address space manager is running\n");
+
+   //--------------------------------------------------------------
+   // Start up the dynamic memory manager
+   //   p: address space management
+   //   In fact m_mallocfree is self-initialising, so there's no
+   //   initialisation call to do.  Instead, try a simple malloc/
+   //   free pair right now to check that nothing is broken.
+   //--------------------------------------------------------------
+   VG_(debugLog)(1, "main", "Starting the dynamic memory manager\n");
+   { void* p = VG_(malloc)( 12345 );
+     if (p) VG_(free)( p );
+   }
+   VG_(debugLog)(1, "main", "Dynamic memory manager is running\n");
 
    //============================================================
    // Command line argument handling order:
@@ -2126,6 +2145,10 @@ Int main(Int argc, HChar **argv, HChar **envp)
    //--------------------------------------------------------------
    // Check we were launched by stage1
    //   p: none
+   // TODO: this is pretty pointless now.  Plus, we shouldn't be
+   // screwing with our own auxv: instead, when our own auxv is
+   // used as the basis for the client's one, make modifications
+   // at that point.
    //--------------------------------------------------------------
    VG_(debugLog)(1, "main", "Doing scan_auxv()\n");
    {
@@ -2177,8 +2200,8 @@ Int main(Int argc, HChar **argv, HChar **envp)
    // Finalise address space layout
    //   p: load_tool()  [probably?]
    //--------------------------------------------------------------
-   VG_(debugLog)(1, "main", "Laying out remaining space\n");
-   layout_remaining_space( (Addr) & argc, VG_(tool_info).shadow_ratio );
+   //VG_(debugLog)(1, "main", "Laying out remaining space\n");
+   //layout_remaining_space( (Addr) & argc, VG_(tool_info).shadow_ratio );
 
    //--------------------------------------------------------------
    // Load client executable, finding in $PATH if necessary

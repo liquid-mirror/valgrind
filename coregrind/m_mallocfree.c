@@ -30,7 +30,12 @@
 */
 
 #include "pub_core_basics.h"
+#include "pub_core_debuglog.h"
 #include "pub_core_libcbase.h"
+
+#include "pub_core_debuginfo.h"     // Needed for pub_core_aspacemgr :(
+#include "pub_core_aspacemgr.h"
+
 #include "pub_core_libcassert.h"
 #include "pub_core_libcmman.h"
 #include "pub_core_libcprint.h"
@@ -473,6 +478,36 @@ void ensure_mm_init ( void )
 /*--- Superblock management                                ---*/
 /*------------------------------------------------------------*/
 
+static
+void VG_(out_of_memory_NORETURN) ( HChar* who, SizeT szB )
+{
+   static Bool alreadyCrashing = False;
+   ULong tot_alloc = VG_(aspacem_get_anonsize_total)();
+   if (!alreadyCrashing) {
+      alreadyCrashing = True;
+      VG_(printf)("\n"
+                  "Valgrind's memory management: out of memory:\n");
+      VG_(printf)("   %s's request for %llu bytes failed.\n", 
+                  who, (ULong)szB );
+      VG_(printf)("   %llu bytes have already been allocated.\n", 
+                  tot_alloc);
+      VG_(printf)("Valgrind cannot continue.  Sorry.\n\n");
+   } else {
+      VG_(debugLog)(0,"mallocfree","\n");
+      VG_(debugLog)(0,"mallocfree",
+                      "Valgrind's memory management: out of memory:\n");
+      VG_(debugLog)(0,"mallocfree",
+                      "   %s's request for %llu bytes failed.\n", 
+                      who, (ULong)szB );
+      VG_(debugLog)(0,"mallocfree",
+                      "   %llu bytes have already been allocated.\n", 
+                      tot_alloc);
+      VG_(debugLog)(0,"mallocfree","Valgrind cannot continue.  Sorry.\n\n");
+   }
+   VG_(exit)(1);
+}
+
+
 // Align ptr p upwards to an align-sized boundary.
 static
 void* align_upwards ( void* p, SizeT align )
@@ -487,10 +522,8 @@ void* align_upwards ( void* p, SizeT align )
 static
 Superblock* newSuperblock ( Arena* a, SizeT cszB )
 {
-   // The extra VG_MIN_MALLOC_SZB bytes are for possible alignment up.
-   static UByte bootstrap_superblock[CORE_ARENA_MIN_SZB+VG_MIN_MALLOC_SZB];
-   static Bool  called_before = True; //False;
    Superblock* sb;
+   SysRes      sres;
 
    // Take into account admin bytes in the Superblock.
    cszB += sizeof(Superblock);
@@ -498,32 +531,30 @@ Superblock* newSuperblock ( Arena* a, SizeT cszB )
    if (cszB < a->min_sblock_szB) cszB = a->min_sblock_szB;
    while ((cszB % VKI_PAGE_SIZE) > 0) cszB++;
 
-   if (!called_before) {
-      // First time we're called -- use the special static bootstrap
-      // superblock (see comment at top of main() for details).
-      called_before = True;
-      vg_assert(a == arenaId_to_ArenaP(VG_AR_CORE));
-      vg_assert(CORE_ARENA_MIN_SZB >= cszB);
-      // Ensure sb is suitably aligned.
-      sb = (Superblock*)align_upwards( bootstrap_superblock, 
-                                       VG_MIN_MALLOC_SZB );
-   } else if (a->clientmem) {
+   if (a->clientmem) {
       // client allocation -- return 0 to client if it fails
       sb = (Superblock*)VG_(get_memory_from_mmap_for_client)(cszB);
       if (NULL == sb)
          return 0;
    } else {
       // non-client allocation -- aborts if it fails
-      sb = VG_(get_memory_from_mmap) ( cszB, "newSuperblock" );
+      sres = VG_(map_anon_float_valgrind)( cszB );
+      if (sres.isError) {
+         VG_(out_of_memory_NORETURN)("newSuperblock", cszB);
+         /* NOTREACHED */
+         sb = NULL; /* keep gcc happy */
+      } else {
+         sb = (Superblock*)sres.val;
+      }
    }
    vg_assert(NULL != sb);
    //zzVALGRIND_MAKE_WRITABLE(sb, cszB);
    vg_assert(0 == (Addr)sb % VG_MIN_MALLOC_SZB);
    sb->n_payload_bytes = cszB - sizeof(Superblock);
    a->bytes_mmaped += cszB;
-   if (0)
-      VG_(message)(Vg_DebugMsg, "newSuperblock, %d payload bytes", 
-                                sb->n_payload_bytes);
+   if (1)
+      VG_(message)(Vg_DebugMsg, "newSuperblock at %p, %d payload bytes", 
+                                sb, sb->n_payload_bytes);
    return sb;
 }
 

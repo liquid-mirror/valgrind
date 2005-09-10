@@ -43,6 +43,8 @@
 #include "pub_core_transtab.h"   // For VG_(discard_translations)
 #include "vki_unistd.h"
 
+static void aspacem_barf ( HChar* what );
+
 
 /* Define to debug the memory-leak-detector. */
 /* #define VG_DEBUG_LEAKCHECK */
@@ -81,6 +83,7 @@ SysRes VG_(mmap_native)(void *start, SizeT length, UInt prot, UInt flags,
                         UInt fd, OffT offset)
 {
    SysRes res;
+aspacem_barf("mmap_native");
 #if defined(VGP_x86_linux)
    { 
       UWord args[6];
@@ -106,11 +109,13 @@ SysRes VG_(mmap_native)(void *start, SizeT length, UInt prot, UInt flags,
 
 SysRes VG_(munmap_native)(void *start, SizeT length)
 {
+aspacem_barf("munmap_native");
    return VG_(do_syscall2)(__NR_munmap, (UWord)start, length );
 }
 
 SysRes VG_(mprotect_native)( void *start, SizeT length, UInt prot )
 {
+aspacem_barf("mprotect_native");
    return VG_(do_syscall3)(__NR_mprotect, (UWord)start, length, prot );
 }
 
@@ -569,6 +574,7 @@ Bool VG_(seg_contains)(const Segment *s, Addr p, SizeT len)
 {
    Addr se = s->addr+s->len;
    Addr pe = p+len;
+aspacem_barf("seg_contains");
    vg_assert(pe >= p);
 
    return (p >= s->addr && pe <= se);
@@ -578,6 +584,7 @@ Bool VG_(seg_overlaps)(const Segment *s, Addr p, SizeT len)
 {
    Addr se = s->addr+s->len;
    Addr pe = p+len;
+aspacem_barf("seg_overlaps");
    vg_assert(pe >= p);
 
    return (p < se && pe > s->addr);
@@ -616,6 +623,7 @@ void VG_(unmap_range)(Addr addr, SizeT len)
    Addr     end, s_end;
    Int      i;
    Bool     deleted;
+aspacem_barf("unmap_range");
 
    if (len == 0)
       return;
@@ -734,6 +742,7 @@ VG_(map_file_segment)( Addr addr, SizeT len,
    HChar*   stage2_suffix1 = "lib/valgrind/stage2";
    HChar*   stage2_suffix2 = "coregrind/stage2";
    Bool     is_stage2 = False;
+aspacem_barf("map_file_segment");
    
    is_stage2 = is_stage2 || ( VG_(strstr)(filename, stage2_suffix1) != NULL );
    is_stage2 = is_stage2 || ( VG_(strstr)(filename, stage2_suffix2) != NULL );
@@ -845,6 +854,7 @@ void VG_(map_fd_segment)(Addr addr, SizeT len, UInt prot, UInt flags,
 {
    Char buf[VKI_PATH_MAX];
    struct vki_stat st;
+aspacem_barf("map_fd_segment");
 
    st.st_dev = 0;
    st.st_ino = 0;
@@ -866,6 +876,7 @@ void VG_(map_fd_segment)(Addr addr, SizeT len, UInt prot, UInt flags,
 
 void VG_(map_segment)(Addr addr, SizeT len, UInt prot, UInt flags)
 {
+aspacem_barf("map_segment");
    flags &= ~SF_FILE;
 
    VG_(map_file_segment)(addr, len, prot, flags, 0, 0, 0, 0);
@@ -876,6 +887,7 @@ void VG_(mprotect_range)(Addr a, SizeT len, UInt prot)
 {
    Int r;
    const Bool debug = False || mem_debug;
+aspacem_barf("mprotect_range");
 
    if (debug)
       VG_(printf)("\nmprotect_range(%p, %lu, %x)\n", a, len, prot);
@@ -907,6 +919,8 @@ void VG_(mprotect_range)(Addr a, SizeT len, UInt prot)
 Addr VG_(find_map_space)(Addr addr, SizeT len, Bool for_client)
 {
    const Bool debug = False || mem_debug;
+aspacem_barf("find_map_space");
+
    Addr ret;
    Addr addrOrig = addr;
    Addr limit = (for_client ? VG_(client_end)-1   : VG_(valgrind_last));
@@ -1047,6 +1061,7 @@ void VG_(pad_address_space)(Addr start)
 {
    Addr     addr = (start == 0) ? VG_(client_base) : start;
    SysRes   ret;
+aspacem_barf("pad_address_space");
 
    Int      i = 0;
    Segment* s = i >= segments_used ? NULL : &segments[i];
@@ -1080,6 +1095,7 @@ void VG_(unpad_address_space)(Addr start)
 
    Int      i = 0;
    Segment* s = i >= segments_used ? NULL : &segments[i];
+aspacem_barf("unpad_address_space");
 
    while (s && addr <= VG_(valgrind_last)) {
       if (addr < s->addr) {
@@ -1101,6 +1117,8 @@ void VG_(unpad_address_space)(Addr start)
 Segment *VG_(find_segment)(Addr a)
 {
   Int r = find_segment(a);
+aspacem_barf("find_segment");
+
   if (0) show_segments("find_segment");
   if (r == -1) return NULL;
   return &segments[r];
@@ -1113,6 +1131,7 @@ Segment *VG_(find_segment)(Addr a)
 Segment *VG_(find_segment_above_unmapped)(Addr a)
 {
   Int r = find_segment_above_unmapped(a);
+aspacem_barf("find_segment_above_unmapped");
   if (0) show_segments("find_segment_above_unmapped");
   if (r == -1) return NULL;
   return &segments[r];
@@ -1125,6 +1144,7 @@ Segment *VG_(find_segment_above_unmapped)(Addr a)
 Segment *VG_(find_segment_above_mapped)(Addr a)
 {
   Int r = find_segment_above_mapped(a);
+aspacem_barf("find_segment_above_mapped");
   if (0) show_segments("find_segment_above_mapped");
   if (r == -1) return NULL;
   return &segments[r];
@@ -1142,6 +1162,7 @@ Segment *VG_(find_segment_above_mapped)(Addr a)
 Bool VG_(is_addressable)(Addr p, SizeT size, UInt prot)
 {
    Segment *seg;
+aspacem_barf("is_addressable");
 
    if ((p + size) < p)
       return False; /* reject wraparounds */
@@ -1178,6 +1199,7 @@ void VG_(find_root_memory)(void (*add_rootrange)(Addr a, SizeT sz))
    Int     i;
    UInt    flags;
    Segment *s;
+aspacem_barf("find_root_memory");
 
    for (i = 0; i < segments_used; i++) {
       s = &segments[i];
@@ -1202,11 +1224,13 @@ void VG_(find_root_memory)(void (*add_rootrange)(Addr a, SizeT sz))
 
 Bool VG_(is_client_addr)(Addr a)
 {
+aspacem_barf("is_client_addr");
    return a >= VG_(client_base) && a < VG_(client_end);
 }
 
 Bool VG_(is_shadow_addr)(Addr a)
 {
+aspacem_barf("is_shadow_addr");
    return a >= VG_(shadow_base) && a < VG_(shadow_end);
 }
 
@@ -1220,6 +1244,7 @@ void *VG_(shadow_alloc)(UInt size)
    static Addr shadow_alloc = 0;
    Addr try_here;
    SysRes r;
+aspacem_barf("shadow_alloc");
 
    if (0) show_segments("shadow_alloc(before)");
 
@@ -1277,6 +1302,7 @@ void *VG_(shadow_alloc)(UInt size)
 
 Bool VG_(setup_pointercheck)(Addr client_base, Addr client_end)
 {
+aspacem_barf("setup_pointercheck");
    vg_assert(0 != client_end);
 #if defined(VGP_x86_linux)
    /* Client address space segment limit descriptor entry */
@@ -1317,6 +1343,8 @@ Bool VG_(setup_pointercheck)(Addr client_base, Addr client_end)
 
 /////////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////
 
 static void add_to_aspacem_sprintf_buf ( HChar c, void *p )
 {
@@ -1353,6 +1381,64 @@ UInt aspacem_sprintf ( HChar* buf, const HChar *format, ... )
 
 
 /////////////////////////////////////////////////////////////////
+
+static
+SysRes do_mmap_NATIVE( Addr start, SizeT length, UInt prot, UInt flags,
+                       UInt fd, OffT offset)
+{
+   SysRes res;
+#  if defined(VGP_x86_linux)
+   { 
+      UWord args[6];
+      args[0] = (UWord)start;
+      args[1] = length;
+      args[2] = prot;
+      args[3] = flags;
+      args[4] = fd;
+      args[5] = offset;
+      res = VG_(do_syscall1)(__NR_mmap, (UWord)args );
+   }
+#  elif defined(VGP_amd64_linux)
+   res = VG_(do_syscall6)(__NR_mmap, (UWord)start, length, 
+                         prot, flags, fd, offset);
+#  elif defined(VGP_ppc32_linux)
+   res = VG_(do_syscall6)(__NR_mmap, (UWord)(start), (length),
+			  prot, flags, fd, offset);
+#  else
+#    error Unknown platform
+#  endif
+   return res;
+}
+
+static
+SysRes do_munmap_NATIVE(Addr start, SizeT length)
+{
+   return VG_(do_syscall2)(__NR_munmap, (UWord)start, length );
+}
+
+
+
+static 
+Bool get_inode_for_fd ( Int fd, /*OUT*/UInt* dev, /*OUT*/UInt* ino )
+{
+   return False;
+}
+
+static
+Bool get_name_for_fd ( Int fd, /*OUT*/HChar* buf, Int nbuf )
+{
+   return False;
+}
+
+
+/////////////////////////////////////////////////////////////////
+
+static void aspacem_barf ( HChar* what )
+{
+  VG_(debugLog)(0, "aspacem", "Valgrind: FATAL: %s\n", what);
+  VG_(debugLog)(0, "aspacem", "Exiting now.\n");
+  VG_(exit)(1);
+}
 
 static void aspacem_barf_toolow ( HChar* what )
 {
@@ -1477,7 +1563,17 @@ static NSegment nsegments[VG_N_SEGMENTS];
 static Int      nsegments_used = 0;
 
 
-
+ULong VG_(aspacem_get_anonsize_total)( void )
+{
+  Int i;
+  ULong total = 0;
+  for (i = 0; i < nsegments_used; i++) {
+    if (nsegments[i].kind != SkAnon)
+      continue;
+    total += (ULong)nsegments[i].end - (ULong)nsegments[i].start + 1ULL;
+  }
+  return total;
+}
 
 /* check the interval array */
 static void check_nsegments ( void )
@@ -1491,7 +1587,31 @@ static void check_nsegments ( void )
 }
 
 
+/* Binary search the interval array for a given address.  Since the
+   array covers the entire address space the search cannot fail. */
+static Int find_nsegment_idx ( Addr a )
+{
+   Addr a_mid_lo, a_mid_hi;
+   Int  mid,
+        lo = 0,
+        hi = nsegments_used-1;
+   while (True) {
+      /* current unsearched space is from lo to hi, inclusive. */
+      if (lo > hi) {
+         /* Not found.  This can't happen. */
+         aspacem_barf("find_nsegment_idx: not found");
+      }
+      mid      = (lo + hi) / 2;
+      a_mid_lo = nsegments[mid].start;
+      a_mid_hi = nsegments[mid].end;
 
+      if (a < a_mid_lo) { hi = mid-1; continue; }
+      if (a > a_mid_hi) { lo = mid+1; continue; }
+      aspacem_assert(a >= a_mid_lo && a <= a_mid_hi);
+      aspacem_assert(0 <= mid && mid < nsegments_used);
+      return mid;
+   }
+}
 
 
 
@@ -1513,81 +1633,85 @@ static Addr aspacem_vStart;
 Bool VG_(aspacem_getAdvisory)
         ( MapRequest* req, Bool forClient, /*OUT*/Addr* result )
 {
-  return False;
-#if 0
+
   /* Iterate over all holes in the address space, twice.  In the first
-pass, find the first hole which is not below the search start
-point. */
+     pass, find the first hole which is not below the search start
+     point. */
   Addr holeStart, holeEnd, holeLen;
   Int i, j;
+  Bool fixed_not_required;
 
-  Addr minAddr = Addr_MIN;
-  Addr maxAddr = Addr_MAX;
   Addr startPoint = forClient ? aspacem_cStart : aspacem_vStart;
 
   Addr reqStart = req->rkind==MAny ? 0 : req->start;
   Addr reqEnd   = reqStart + req->len - 1;
   Addr reqLen   = req->len;
 
-  Addr floatStart = 0;
-  Bool floatFound = False;
+  /* These hold indices for segments found during search, or -1 if not
+     found. */
+  Int  floatIdx = -1;
+  Int fixedIdx = -1;
 
   /* Don't waste time looking for a fixed match if not requested to. */
-  Bool fixedFound = req->rkind==MAny ? True : False;
+  aspacem_assert(nsegments_used > 0);
+  fixed_not_required = req->rkind == MAny;
 
-  for (i = 0; i <=/*yes,really*/ nsegments_used; i++) {
-    holeEnd = i==nsegments_used
-                ? maxAddr
-                : nsegments[i].start - 1;
-    if (holeEnd >= startPoint)
-      break;
-  }
+  i = find_nsegment_idx(startPoint);
+
+  if (0) VG_(debugLog)(0,"","startPoint %p, idx %d, reqlen %d\n", 
+         startPoint,i,reqLen);
 
   /* Now examine holes from index i back round to i-1.  Record the
-     size and length of the first fixed hole and the first floating
-     hole which would satisfy the request. */
+     index first fixed hole and the first floating hole which would
+     satisfy the request. */
   for (j = 0; j < nsegments_used; j++) {
 
-    holeStart = i==0 
-                ? minAddr 
-                : nsegments[i-1].start + nsegments[i-1].len - 1;
-    holeEnd = i==nsegments_used
-                ? maxAddr
-                : nsegments[i].start - 1;
-
-    /* Clamp the hole to something plausible */
-    if (holeStart < aspacem_minAddr) holeStart = aspacem_minAddr;
-    if (holeEnd   > aspacem_maxAddr) holeEnd = aspacem_maxAddr;
-
-    /* If it still looks viable, see if it's any use to us. */
-    if (holeStart < holeEnd) {
-
-      holeLen = holeEnd - holeStart + 1;
-
-      if (!fixedFound 
-	  && holeStart <= reqStart && reqEnd <= holeEnd) {
-	fixedFound = True;
-      }
-
-      if (!floatFound
-	  && holeLen >= reqLen) {
-	floatFound = True;
-	floatStart = holeStart;
-      }
+    if (nsegments[i].kind != SkFree) {
+      i++;
+      if (i >= nsegments_used) i = 0;
+      continue;
     }
 
+    holeStart = nsegments[i].start;
+    holeEnd   = nsegments[i].end;
+
+    /* Stay sane .. */
+    aspacem_assert(holeStart <= holeEnd);
+    aspacem_assert(aspacem_minAddr <= holeStart);
+    aspacem_assert(holeEnd <= aspacem_maxAddr);
+
+    /* See if it's any use to us. */
+    holeLen = holeEnd - holeStart + 1;
+
+      if (fixedIdx == -1 
+	  && holeStart <= reqStart && reqEnd <= holeEnd) {
+	fixedIdx = i;
+      }
+
+      if (floatIdx == -1
+	  && holeLen >= reqLen) {
+	floatIdx = i;
+      }
+  
     /* Don't waste time searching once we've found what we wanted. */
-    if (fixedFound && floatFound)
+    if ((fixed_not_required || fixedIdx >= 0) && floatIdx >= 0)
       break;
 
     i++;
     if (i >= nsegments_used) i = 0;
   }
 
+aspacem_assert(fixedIdx >= -1 && fixedIdx < nsegments_used);
+aspacem_assert(floatIdx >= -1 && floatIdx < nsegments_used);
+if (fixedIdx >= 0) 
+aspacem_assert(nsegments[fixedIdx].kind == SkFree);
+if (floatIdx >= 0) 
+aspacem_assert(nsegments[floatIdx].kind == SkFree);
+
   /* Now see if we found anything which can satisfy the request. */
   switch (req->rkind) {
   case MFixed:
-    if (fixedFound) {
+    if (fixedIdx >= 0) {
       *result = req->start;
       return True;
     } else {
@@ -1595,18 +1719,18 @@ point. */
     }
     break;
   case MHint:
-    if (fixedFound) {
+    if (fixedIdx >= 0) {
       *result = req->start;
       return True;
     }
-    if (floatFound) {
-      *result = floatStart;
+    if (floatIdx >= 0) {
+      *result = nsegments[floatIdx].start;
       return True;
     }
     return False;
   case MAny:
-    if (floatFound) {
-      *result = floatStart;
+    if (floatIdx >= 0) {
+      *result = nsegments[floatIdx].start;
       return True;
     }
     return False;
@@ -1614,9 +1738,8 @@ point. */
   default: break;
   }
   /*NOTREACHED*/
-  aspacemgr_barf("getAdvisory: unknown request kind");
+  aspacem_barf("getAdvisory: unknown request kind");
   return False;
-#endif
 }
 
 
@@ -1642,6 +1765,8 @@ static void init_nsegment ( /*OUT*/NSegment* seg )
 static void init_resvn ( /*OUT*/NSegment* seg, Addr start, Addr end )
 {
   aspacem_assert(start < end);
+  aspacem_assert(VG_IS_PAGE_ALIGNED(start));
+  aspacem_assert(VG_IS_PAGE_ALIGNED(end+1));
   init_nsegment(seg);
   seg->kind = SkResvn;
   seg->start = start;
@@ -1652,9 +1777,9 @@ static HChar* show_seg_kind ( NSegment* seg )
 {
   switch (seg->kind) {
   case SkFree: return "FREE";
-  case SkAnon: return seg->isClient ? "ANON" : "anon";
-  case SkFile: return seg->isClient ? "FILE" : "file";
-  case SkResvn: return seg->isClient ? "RSVN" : "rsvn";
+  case SkAnon: return seg->isClient ? "anon" : "ANON";
+  case SkFile: return seg->isClient ? "file" : "FILE";
+  case SkResvn: return "RSVN";
   default: return "????";
   }
 }
@@ -1787,6 +1912,8 @@ static void add_segment ( NSegment* seg )
   Addr dEnd   = seg->end;
 
   aspacem_assert(dStart <= dEnd);
+  aspacem_assert(VG_IS_PAGE_ALIGNED(dStart));
+  aspacem_assert(VG_IS_PAGE_ALIGNED(dEnd+1));
 
   nDeld = 0;
 
@@ -1911,6 +2038,11 @@ void VG_(new_aspacem_start) ( void )
 {
    NSegment seg;
 
+   aspacem_assert(sizeof(Word)   == sizeof(void*));
+   aspacem_assert(sizeof(Addr)   == sizeof(void*));
+   aspacem_assert(sizeof(SizeT)  == sizeof(void*));
+   aspacem_assert(sizeof(SSizeT) == sizeof(void*));
+
    /* Add a single interval covering the entire address space. */
    init_nsegment(&seg);
    seg.kind        = SkFree;
@@ -1933,6 +2065,11 @@ void VG_(new_aspacem_start) ( void )
    aspacem_cStart = (Addr)0x04000000; // 64M
    aspacem_vStart = (aspacem_minAddr + aspacem_maxAddr + 1) / 2;
 
+   aspacem_assert(VG_IS_PAGE_ALIGNED(aspacem_minAddr));
+   aspacem_assert(VG_IS_PAGE_ALIGNED(aspacem_maxAddr + 1));
+   aspacem_assert(VG_IS_PAGE_ALIGNED(aspacem_cStart));
+   aspacem_assert(VG_IS_PAGE_ALIGNED(aspacem_vStart));
+
    VG_(debugLog)(2, "aspacem", "minAddr = 0x%llx\n", (ULong)aspacem_minAddr);
    VG_(debugLog)(2, "aspacem", "maxAddr = 0x%llx\n", (ULong)aspacem_maxAddr);
    VG_(debugLog)(2, "aspacem", " cStart = 0x%llx\n", (ULong)aspacem_cStart);
@@ -1947,12 +2084,194 @@ void VG_(new_aspacem_start) ( void )
       add_segment(&seg);
    }
 
+   /* Create a 1-page reservation at the notional initial
+      client/valgrind boundary.  This isn't strictly necessary, but
+      because the advisor does first-fit and starts searches for
+      valgrind allocations at the boundary, this is kind of necessary
+      in order to get it to start allocating in the right place. */
+   init_resvn(&seg, aspacem_vStart,  aspacem_vStart + VKI_PAGE_SIZE - 1);
+   add_segment(&seg);
+
    show_nsegments(2, "Initial layout");
 
    VG_(debugLog)(2, "aspacem", "Reading /proc/self/maps\n");
    VG_(parse_procselfmaps) ( read_maps_callback );
 
    show_nsegments(2, "With contents of /proc/self/maps");
+}
+
+
+SysRes VG_(mmap_file_fixed_client)
+     ( void* startV, SizeT length, Int prot, Int fd, SizeT offset )
+{
+   SysRes     sres;
+   NSegment   seg;
+   Addr       advised;
+   Bool       ok;
+   MapRequest req;
+   UInt       dev, ino;
+   HChar      buf[VKI_PATH_MAX];
+ 
+   Addr start = (Addr)startV; 
+ 
+   /* Not allowable. */
+   /* Not allowable. */
+   if (length == 0 || !VG_IS_PAGE_ALIGNED(start))
+      return VG_(mk_SysRes_Error)( VKI_EINVAL );
+
+   /* Ask for an advisory.  If it's negative, fail immediately. */
+   req.rkind = MFixed;
+   req.start = start;
+   req.len   = length;
+   ok = VG_(aspacem_getAdvisory)( &req, True/*client*/, &advised );
+   if (!ok || advised != start)
+      return VG_(mk_SysRes_Error)( VKI_EINVAL );
+
+   /* We have been advised that the mapping is allowable at the
+      specified address.  So hand it off to the kernel, and propagate
+      any resulting failure immediately. */
+   sres = do_mmap_NATIVE( start, length, prot, 
+                          VKI_MAP_FIXED|VKI_MAP_PRIVATE, fd, offset );
+   if (sres.isError)
+      return sres;
+
+   if (sres.val != start) {
+      /* I don't think this can happen.  It means the kernel made a
+         fixed map succeed but not at the requested location.  Try to
+         repair the damage, then return saying the mapping failed. */
+      (void)do_munmap_NATIVE( sres.val, length );
+      return VG_(mk_SysRes_Error)( VKI_EINVAL );
+   }
+
+   /* Ok, the mapping succeeded.  Now notify the interval map. */
+   init_nsegment( &seg );
+   seg.kind     = SkFile;
+   seg.isClient = True;
+   seg.start    = start;
+   seg.end      = seg.start + VG_PGROUNDUP(length) - 1;
+   seg.offset   = offset;
+   seg.hasR     = toBool(prot & VKI_PROT_READ);
+   seg.hasW     = toBool(prot & VKI_PROT_WRITE);
+   seg.hasX     = toBool(prot & VKI_PROT_EXEC);
+   if (get_inode_for_fd(fd, &dev, &ino)) {
+      seg.dev = dev;
+      seg.ino = ino;
+   }
+   if (get_name_for_fd(fd, buf, VKI_PATH_MAX)) {
+      seg.fnIdx = allocate_segname( buf );
+   }
+   add_segment( &seg );
+
+   return sres;
+}
+
+
+SysRes VG_(mmap_anon_fixed_client)
+     ( void* startV, SizeT length, Int prot )
+{
+   SysRes     sres;
+   NSegment   seg;
+   Addr       advised;
+   Bool       ok;
+   MapRequest req;
+ 
+   Addr start = (Addr)startV; 
+ 
+   /* Not allowable. */
+   if (length == 0 || !VG_IS_PAGE_ALIGNED(start))
+      return VG_(mk_SysRes_Error)( VKI_EINVAL );
+
+   /* Ask for an advisory.  If it's negative, fail immediately. */
+   req.rkind = MFixed;
+   req.start = start;
+   req.len   = length;
+   ok = VG_(aspacem_getAdvisory)( &req, True/*client*/, &advised );
+   if (!ok || advised != start)
+      return VG_(mk_SysRes_Error)( VKI_EINVAL );
+
+   /* We have been advised that the mapping is allowable at the
+      specified address.  So hand it off to the kernel, and propagate
+      any resulting failure immediately. */
+   sres = do_mmap_NATIVE( start, length, prot, 
+                          VKI_MAP_FIXED|VKI_MAP_PRIVATE
+                                       |VKI_MAP_ANONYMOUS, 0, 0 );
+   if (sres.isError)
+      return sres;
+
+   if (sres.val != start) {
+      /* I don't think this can happen.  It means the kernel made a
+         fixed map succeed but not at the requested location.  Try to
+         repair the damage, then return saying the mapping failed. */
+      (void)do_munmap_NATIVE( sres.val, length );
+      return VG_(mk_SysRes_Error)( VKI_EINVAL );
+   }
+
+   /* Ok, the mapping succeeded.  Now notify the interval map. */
+   init_nsegment( &seg );
+   seg.kind     = SkAnon;
+   seg.isClient = True;
+   seg.start    = start;
+   seg.end      = seg.start + VG_PGROUNDUP(length) - 1;
+   seg.hasR     = toBool(prot & VKI_PROT_READ);
+   seg.hasW     = toBool(prot & VKI_PROT_WRITE);
+   seg.hasX     = toBool(prot & VKI_PROT_EXEC);
+   add_segment( &seg );
+
+   return sres;
+}
+
+
+SysRes VG_(map_anon_float_valgrind)( SizeT length )
+{
+   SysRes     sres;
+   NSegment   seg;
+   Addr       advised;
+   Bool       ok;
+   MapRequest req;
+ 
+   /* Not allowable. */
+   if (length == 0)
+      return VG_(mk_SysRes_Error)( VKI_EINVAL );
+
+   /* Ask for an advisory.  If it's negative, fail immediately. */
+   req.rkind = MAny;
+   req.start = 0;
+   req.len   = length;
+   ok = VG_(aspacem_getAdvisory)( &req, False/*valgrind*/, &advised );
+   if (!ok)
+      return VG_(mk_SysRes_Error)( VKI_EINVAL );
+
+   /* We have been advised that the mapping is allowable at the
+      specified address.  So hand it off to the kernel, and propagate
+      any resulting failure immediately. */
+   sres = do_mmap_NATIVE( advised, length, 
+                          VKI_PROT_READ|VKI_PROT_WRITE
+                                       |VKI_PROT_EXEC, 
+                          VKI_MAP_FIXED|VKI_MAP_PRIVATE
+                                       |VKI_MAP_ANONYMOUS, 0, 0 );
+   if (sres.isError)
+      return sres;
+
+   if (sres.val != advised) {
+      /* I don't think this can happen.  It means the kernel made a
+         fixed map succeed but not at the requested location.  Try to
+         repair the damage, then return saying the mapping failed. */
+      (void)do_munmap_NATIVE( sres.val, length );
+      return VG_(mk_SysRes_Error)( VKI_EINVAL );
+   }
+
+   /* Ok, the mapping succeeded.  Now notify the interval map. */
+   init_nsegment( &seg );
+   seg.kind     = SkAnon;
+   seg.isClient = False;
+   seg.start    = advised;
+   seg.end      = seg.start + VG_PGROUNDUP(length) - 1;
+   seg.hasR     = True;
+   seg.hasW     = True;
+   seg.hasX     = True;
+   add_segment( &seg );
+
+   return sres;
 }
 
 
