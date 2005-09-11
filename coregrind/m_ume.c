@@ -55,33 +55,6 @@
 #include "pub_core_ume.h"
 
 
-// HACK HACK HACK HACK HACK HACK HACK HACK HACK HACK HACK HACK HACK A
-// temporary bootstrapping allocator, for use until such time as we
-// can get rid of the circularites in allocator dependencies at
-// startup.  There is also a copy of this in m_main.c.
-#define N_HACK_BYTES 10000
-static Int   hack_bytes_used = 0;
-static HChar hack_bytes[N_HACK_BYTES];
-
-static void* hack_malloc ( Int n )
-{
-   VG_(debugLog)(1, "ume", "  FIXME: hack_malloc(m_ume)(%d)\n", n);
-   while (n % 16) n++;
-   if (hack_bytes_used + n > N_HACK_BYTES) {
-     VG_(printf)("valgrind: N_HACK_BYTES(m_ume) too low.  Sorry.\n");
-     VG_(exit)(0);
-   }
-   hack_bytes_used += n;
-   return (void*) &hack_bytes[hack_bytes_used - n];
-}
-
-static HChar* hack_strdup ( HChar* str )
-{
-   HChar* p = hack_malloc( 1 + VG_(strlen)(str) );
-   VG_(strcpy)(p, str);
-   return p;
-}
-
 #if	VG_WORDSIZE == 8
 #define ESZ(x)	Elf64_##x
 #elif	VG_WORDSIZE == 4
@@ -298,7 +271,7 @@ static
 struct elfinfo *readelf(int fd, const char *filename)
 {
    SysRes sres;
-   struct elfinfo *e = hack_malloc(sizeof(*e));
+   struct elfinfo *e = VG_(malloc)(sizeof(*e));
    int phsz;
 
    vg_assert(e);
@@ -341,21 +314,21 @@ struct elfinfo *readelf(int fd, const char *filename)
    }
 
    phsz = sizeof(ESZ(Phdr)) * e->e.e_phnum;
-   e->p = hack_malloc(phsz);
+   e->p = VG_(malloc)(phsz);
    vg_assert(e->p);
 
    sres = VG_(pread)(fd, e->p, phsz, e->e.e_phoff);
    if (sres.isError || sres.val != phsz) {
       VG_(printf)("valgrind: can't read phdr: %s\n", 
                   VG_(strerror)(sres.val));
-      //FIXME      VG_(free)(e->p);
+      VG_(free)(e->p);
       goto bad;
    }
 
    return e;
 
   bad:
-    //FIXME    VG_(free)(e);
+   VG_(free)(e);
    return NULL;
 }
 
@@ -412,12 +385,13 @@ ESZ(Addr) mapelf(struct elfinfo *e, ESZ(Addr) base)
       //
       // The condition handles the case of a zero-length segment.
       if (VG_PGROUNDUP(bss)-VG_PGROUNDDN(addr) > 0) {
-         res = VG_(mmap_native)
-                    ((char *)VG_PGROUNDDN(addr),
+         res = VG_(mmap_file_fixed_client)
+                    ((void *)VG_PGROUNDDN(addr),
                     VG_PGROUNDUP(bss)-VG_PGROUNDDN(addr),
-                    prot, VKI_MAP_FIXED|VKI_MAP_PRIVATE, 
+                    prot, /*VKI_MAP_FIXED|VKI_MAP_PRIVATE, */
                     e->fd, VG_PGROUNDDN(off)
                );
+         if (0) VG_(show_nsegments)("after native 1");
          check_mmap(res, (char*)VG_PGROUNDDN(addr),
                     VG_PGROUNDUP(bss)-VG_PGROUNDDN(addr));
       }
@@ -428,6 +402,7 @@ ESZ(Addr) mapelf(struct elfinfo *e, ESZ(Addr) base)
 
 	 bytes = VG_PGROUNDUP(brkaddr)-VG_PGROUNDUP(bss);
 	 if (bytes > 0) {
+            VG_(debugLog)(0,"","mmap_native 2\n");
 	    res = VG_(mmap_native)(
                      (Char *)VG_PGROUNDUP(bss), bytes,
 		     prot, VKI_MAP_FIXED|VKI_MAP_ANONYMOUS|VKI_MAP_PRIVATE, 
@@ -509,7 +484,7 @@ static int load_ELF(char *hdr, int len, int fd, const char *name,
 	 break;
 			
       case PT_INTERP: {
-	 char *buf = hack_malloc(ph->p_filesz+1);
+	 char *buf = VG_(malloc)(ph->p_filesz+1);
 	 int j;
 	 int intfd;
 	 int baseaddr_set;
@@ -530,7 +505,7 @@ static int load_ELF(char *hdr, int len, int fd, const char *name,
 	    VG_(printf)("valgrind: m_ume.c: can't read interpreter\n");
 	    return 1;
 	 }
-	  //FIXME    VG_(free)(buf);
+	 VG_(free)(buf);
 
 	 baseaddr_set = 0;
 	 for(j = 0; j < interp->e.e_phnum; j++) {
@@ -593,13 +568,20 @@ static int load_ELF(char *hdr, int len, int fd, const char *name,
 	 flags |= VKI_MAP_FIXED;
       }
 
-      res = VG_(mmap_native)(base, interp_size, VKI_PROT_NONE, flags, -1, 0);
+      if (base)
+         res = VG_(mmap_anon_fixed_client)(base, interp_size, VKI_PROT_NONE);
+      else
+         res = VG_(mmap_anon_float_client)(interp_size, VKI_PROT_NONE);
+
+      if (0) VG_(show_nsegments)("after native 3");
+
       check_mmap(res, base, interp_size);
       vg_assert(!res.isError);
       base = (Char*)res.val;
 
-      baseoff = base - interp_addr;
+      VG_(munmap_client)( res.val, interp_size );
 
+      baseoff = base - interp_addr;
       mapelf(interp, (ESZ(Addr))baseoff);
 
       VG_(close)(interp->fd);
@@ -607,8 +589,8 @@ static int load_ELF(char *hdr, int len, int fd, const char *name,
       entry = baseoff + interp->e.e_entry;
       info->interp_base = (ESZ(Addr))base;
 
-       //FIXME    VG_(free)(interp->p);
-       //FIXME    VG_(free)(interp);
+      VG_(free)(interp->p);
+      VG_(free)(interp);
    } else
       entry = (void *)(ebase + e->e.e_entry);
 
@@ -617,8 +599,8 @@ static int load_ELF(char *hdr, int len, int fd, const char *name,
 
    info->init_eip = (Addr)entry;
 
-    //FIXME    VG_(free)(e->p);
-    //FIXME    VG_(free)(e);
+   VG_(free)(e->p);
+   VG_(free)(e);
 
    return 0;
 }
@@ -666,10 +648,10 @@ static int load_script(char *hdr, int len, int fd, const char *name,
       *cp = '\0';
    }
    
-   info->interp_name = hack_strdup(interp);
+   info->interp_name = VG_(strdup)(interp);
    vg_assert(NULL != info->interp_name);
    if (arg != NULL && *arg != '\0') {
-      info->interp_args = hack_strdup(arg);
+      info->interp_args = VG_(strdup)(arg);
       vg_assert(NULL != info->interp_args);
    }
 

@@ -104,31 +104,6 @@
 
 
 /*====================================================================*/
-/*=== Ultra-basic startup stuff                                    ===*/
-/*====================================================================*/
-
-// HACK HACK HACK HACK HACK HACK HACK HACK HACK HACK HACK HACK HACK A
-// temporary bootstrapping allocator, for use until such time as we
-// can get rid of the circularities in allocator dependencies at
-// startup.  There is also a copy of this in m_ume.c.
-#define N_HACK_BYTES 10000
-static Int   hack_bytes_used = 0;
-static HChar hack_bytes[N_HACK_BYTES];
-
-static void* hack_malloc ( Int n )
-{
-   VG_(debugLog)(1, "main", "  FIXME: hack_malloc(m_main)(%d)\n", n);
-   while (n % 16) n++;
-   if (hack_bytes_used + n > N_HACK_BYTES) {
-     VG_(printf)("valgrind: N_HACK_BYTES(m_main) too low.  Sorry.\n");
-     VG_(exit)(0);
-   }
-   hack_bytes_used += n;
-   return (void*) &hack_bytes[hack_bytes_used - n];
-}
-
-
-/*====================================================================*/
 /*=== Global entities not referenced from generated code           ===*/
 /*====================================================================*/
 
@@ -142,6 +117,14 @@ static Int vgexecfd = -1;
 /* our argc/argv */
 static Int  vg_argc;
 static Char **vg_argv;
+
+/* This should get some address inside the stack on which we gained
+   control (eg, it could be the SP at startup).  It doesn't matter
+   exactly where in the stack it is.  This value is passed to the
+   address space manager at startup, which uses it to identify the
+   initial stack segment and hence the upper end of the usable address
+   space. */
+static Addr sp_at_startup_new = 0;
 
 
 /*====================================================================*/
@@ -374,13 +357,12 @@ static HChar **fix_environment(HChar **origenv, const HChar *toolname)
    Int preload_core_path_len = vgliblen + sizeof(preload_core_so) + 16;
    Int preload_tool_path_len = vgliblen + VG_(strlen)(toolname)   + 16;
    Int preload_string_len    = preload_core_path_len + preload_tool_path_len;
-   /* FIXME */
-   HChar* preload_string     = /*VG_(malloc)*/ hack_malloc(preload_string_len);
+   HChar* preload_string     = VG_(malloc)(preload_string_len);
    vg_assert(preload_string);
    
    /* Determine if there's a vgpreload_<tool>.so file, and setup
       preload_string. */
-   preload_tool_path = /*VG_(malloc)*/ hack_malloc(preload_tool_path_len);
+   preload_tool_path = VG_(malloc)(preload_tool_path_len);
    vg_assert(preload_tool_path);
    VG_(snprintf)(preload_tool_path, preload_tool_path_len,
                  "%s/vgpreload_%s.so", VG_(libdir), toolname);
@@ -391,7 +373,7 @@ static HChar **fix_environment(HChar **origenv, const HChar *toolname)
       VG_(snprintf)(preload_string, preload_string_len, "%s/%s", 
                     VG_(libdir), preload_core_so);
    }
-   //FIXME   VG_(free)(preload_tool);
+   VG_(free)(preload_tool_path);
 
    VG_(debugLog)(1, "main", "preload_string = %s\n", preload_string);
 
@@ -401,7 +383,7 @@ static HChar **fix_environment(HChar **origenv, const HChar *toolname)
       envc++;
 
    /* Allocate a new space */
-   ret = /* FIXME VG_(malloc)*/ hack_malloc (sizeof(HChar *) * (envc+1+1)); /* 1 new entry + NULL */
+   ret = VG_(malloc) (sizeof(HChar *) * (envc+1+1)); /* 1 new entry + NULL */
    vg_assert(ret);
 
    /* copy it over */
@@ -415,7 +397,7 @@ static HChar **fix_environment(HChar **origenv, const HChar *toolname)
    for (cpp = ret; cpp && *cpp; cpp++) {
       if (VG_(memcmp)(*cpp, ld_preload, ld_preload_len) == 0) {
          Int len = VG_(strlen)(*cpp) + preload_string_len;
-         HChar *cp = /*FIXME VG_(malloc)*/ hack_malloc(len);
+         HChar *cp = VG_(malloc)(len);
          vg_assert(cp);
 
          VG_(snprintf)(cp, len, "%s%s:%s",
@@ -432,7 +414,7 @@ static HChar **fix_environment(HChar **origenv, const HChar *toolname)
    /* Add the missing bits */
    if (!ld_preload_done) {
       Int len = ld_preload_len + preload_string_len;
-      HChar *cp = /*FIXME VG_(malloc)*/ hack_malloc (len);
+      HChar *cp = VG_(malloc) (len);
       vg_assert(cp);
 
       VG_(snprintf)(cp, len, "%s%s", ld_preload, preload_string);
@@ -440,7 +422,7 @@ static HChar **fix_environment(HChar **origenv, const HChar *toolname)
       ret[envc++] = cp;
    }
 
-   //FIXME   VG_(free)(preload_string);
+   VG_(free)(preload_string);
    ret[envc] = NULL;
 
    return ret;
@@ -472,7 +454,7 @@ static char *copy_str(char **tab, const char *str)
 
    The format of the stack is:
 
-   higher address +-----------------+
+   higher address +-----------------+ <- clstack_end
 		  | Trampoline code |
 		  +-----------------+
                   |                 |
@@ -496,10 +478,17 @@ static char *copy_str(char **tab, const char *str)
                   | undefined       |
 		  :                 :
  */
-static Addr setup_client_stack(void* init_sp,
-                               char **orig_argv, char **orig_envp, 
-			       const struct exeinfo *info,
-                               UInt** client_auxv)
+
+/* Allocate and create the initial client stack.  It is allocated down
+   from clstack_end, which was previously determined by the address
+   space manager.  A modified version of our auxv is copied into the
+   new stack.  The returned value is the SP value for the client. */
+static 
+Addr setup_client_stack( void* init_sp,
+                         char **orig_argv, char **orig_envp, 
+                         const struct exeinfo *info,
+                         UInt** client_auxv,
+                         Addr clstack_end )
 {
    SysRes res;
    char **cpp;
@@ -514,7 +503,10 @@ static Addr setup_client_stack(void* init_sp,
    int argc;			/* total argc */
    int envc;			/* total number of env vars */
    unsigned stacksize;		/* total client stack size */
-   Addr cl_esp;	                /* client stack base (initial esp) */
+   Addr client_SP;	        /* client stack base (initial SP) */
+   Addr clstack_start;
+
+   vg_assert(VG_IS_PAGE_ALIGNED(clstack_end+1));
 
    /* use our own auxv as a prototype */
    orig_auxv = VG_(find_auxv)(init_sp);
@@ -574,38 +566,36 @@ static Addr setup_client_stack(void* init_sp,
 
    if (0) VG_(printf)("stacksize = %d\n", stacksize);
 
-   // decide where stack goes!
-   VG_(clstk_end) = VG_(client_end);
-
-   /* cl_esp is the client's stack pointer */
-   cl_esp = VG_(clstk_end) - stacksize;
-   cl_esp = VG_ROUNDDN(cl_esp, 16); /* make stack 16 byte aligned */
+   /* client_SP is the client's stack pointer */
+   client_SP = clstack_end - stacksize;
+   client_SP = VG_ROUNDDN(client_SP, 16); /* make stack 16 byte aligned */
 
    /* base of the string table (aligned) */
-   stringbase = strtab = (char *)(VG_(clstk_end) 
-                         - VG_ROUNDUP(stringsize, sizeof(int)));
+   stringbase = strtab = (char *)clstack_end 
+                         - VG_ROUNDUP(stringsize, sizeof(int));
 
-   VG_(clstk_base) = VG_PGROUNDDN(cl_esp);
+   clstack_start = VG_PGROUNDDN(client_SP);
 
-   if (0)
+   if (1)
       VG_(printf)("stringsize=%d auxsize=%d stacksize=%d\n"
-                  "clstk_base %p\n"
-                  "clstk_end  %p\n",
+                  "clstack_start %p\n"
+                  "clstack_end   %p\n",
 	          stringsize, auxsize, stacksize,
-                  (void*)VG_(clstk_base), (void*)VG_(clstk_end));
+                  (void*)clstack_start, (void*)clstack_end);
 
    /* ==================== allocate space ==================== */
 
    /* allocate a stack - mmap enough space for the stack */
-   res = VG_(mmap_native)((void *)VG_PGROUNDDN(cl_esp), 
-              VG_(clstk_end) - VG_PGROUNDDN(cl_esp),
-	      VKI_PROT_READ|VKI_PROT_WRITE|VKI_PROT_EXEC, 
-	      VKI_MAP_PRIVATE|VKI_MAP_ANONYMOUS|VKI_MAP_FIXED, -1, 0);
+   res = VG_(mmap_anon_fixed_client)(
+            (void *)clstack_start,
+            clstack_end - clstack_start + 1,
+	    VKI_PROT_READ|VKI_PROT_WRITE|VKI_PROT_EXEC
+	 );
    vg_assert(!res.isError); 
 
    /* ==================== copy client stack ==================== */
 
-   ptr = (Addr*)cl_esp;
+   ptr = (Addr*)client_SP;
 
    /* --- argc --- */
    *ptr++ = argc;		/* client argc */
@@ -613,11 +603,11 @@ static Addr setup_client_stack(void* init_sp,
    /* --- argv --- */
    if (info->interp_name) {
       *ptr++ = (Addr)copy_str(&strtab, info->interp_name);
-//FIXME      free(info->interp_name);
+      VG_(free)(info->interp_name);
    }
    if (info->interp_args) {
       *ptr++ = (Addr)copy_str(&strtab, info->interp_args);
-//FIXME      free(info->interp_args);
+      VG_(free)(info->interp_args);
    }
    for (cpp = orig_argv; *cpp; ptr++, cpp++) {
       *ptr = (Addr)copy_str(&strtab, *cpp);
@@ -732,12 +722,12 @@ static Addr setup_client_stack(void* init_sp,
 
    vg_assert((strtab-stringbase) == stringsize);
 
-   /* We know the initial ESP is pointing at argc/argv */
-   VG_(client_argc) = *(Int*)cl_esp;
-   VG_(client_argv) = (Char**)(cl_esp + sizeof(HWord));
+   /* We know the initial SP is pointing at argc/argv */
+   VG_(client_argc) = *(Int*)client_SP;
+   VG_(client_argv) = (Char**)(client_SP + sizeof(HWord));
 
-   if (0) VG_(printf)("startup SP = %p\n", cl_esp);
-   return cl_esp;
+   if (0) VG_(printf)("startup SP = %p\n", client_SP);
+   return client_SP;
 }
 
 /*====================================================================*/
@@ -1242,7 +1232,7 @@ static void process_cmd_line_options( UInt* client_auxv, const char* toolname )
       }
     skip_arg:
       if (arg != vg_argv[i]) {
-         //FIXME         free(arg);
+         VG_(free)(arg);
       }
    }
 
@@ -2039,9 +2029,9 @@ Int main(Int argc, HChar **argv, HChar **envp)
    HChar** env;
    Int     need_help = 0;      // 0 = no, 1 = --help, 2 = --help-debug
    struct exeinfo info;
-   Addr      client_eip;
-   Addr      sp_at_startup;  /* client's SP at the point we
-                                gained control. */
+   Addr      initial_client_IP;
+   Addr      initial_client_SP;
+   Addr      clstack_top;
    UInt*     client_auxv;
    Int       loglevel, i;
    struct vki_rlimit zero = { 0, 0 };
@@ -2081,13 +2071,13 @@ Int main(Int argc, HChar **argv, HChar **envp)
       messages all through startup. */
    VG_(debugLog_startup)(loglevel, "Stage 2 (main)");
    VG_(debugLog)(1, "main", "Welcome to Valgrind version " 
-                            VERSION " debug logging.\n");
+                            VERSION " debug logging\n");
 
    //--------------------------------------------------------------
    // Ensure we're on a plausible stack.
    //   p: logging
    //--------------------------------------------------------------
-   VG_(debugLog)(1, "main", "Checking we're on a plausible stack\n");
+   VG_(debugLog)(1, "main", "Checking current stack is plausible");
    { HChar* limLo  = (HChar*)(&VG_(the_root_stack)[0]);
      HChar* limHi  = limLo + sizeof(VG_(the_root_stack));
      HChar* aLocal = (HChar*)&zero; /* any auto local will do */
@@ -2095,18 +2085,34 @@ Int main(Int argc, HChar **argv, HChar **envp)
         /* something's wrong.  Stop. */
         VG_(debugLog)(0, "main", "Root stack %p to %p, a local %p\n",
                           limLo, limHi, aLocal );
-        VG_(debugLog)(0, "main", "FATAL: Initial stack switched failed.\n");
-        VG_(debugLog)(0, "main", "       Cannot continue.  Sorry.\n");
+        VG_(debugLog)(0, "main", "Valgrind: FATAL: "
+                                 "Initial stack switched failed.\n");
+        VG_(debugLog)(0, "main", "   Cannot continue.  Sorry.\n");
         VG_(exit)(1);
      }
    }
 
    //--------------------------------------------------------------
-   // Start up the address space manager
+   // Ensure we have a plausible pointer to the stack on which
+   // we gained control (not the current stack!)
+   //   p: logging
+   //--------------------------------------------------------------
+   VG_(debugLog)(1, "main", "Checking initial stack was noted\n");
+   if (sp_at_startup_new == 0) {
+      VG_(debugLog)(0, "main", "Valgrind: FATAL: "
+                               "Initial stack was not noted.\n");
+      VG_(debugLog)(0, "main", "   Cannot continue.  Sorry.\n");
+      VG_(exit)(1);
+   }
+
+
+   //--------------------------------------------------------------
+   // Start up the address space manager, and determine the
+   // approximate location of the client's stack
    //   p: logging, plausible-stack
    //--------------------------------------------------------------
    VG_(debugLog)(1, "main", "Starting the address space manager\n");
-   VG_(new_aspacem_start)();
+   clstack_top = VG_(new_aspacem_start)( sp_at_startup_new );
    VG_(debugLog)(1, "main", "Address space manager is running\n");
 
    //--------------------------------------------------------------
@@ -2151,19 +2157,17 @@ Int main(Int argc, HChar **argv, HChar **envp)
    // at that point.
    //--------------------------------------------------------------
    VG_(debugLog)(1, "main", "Doing scan_auxv()\n");
-   {
-   void* init_sp = argv - 1;
-   scan_auxv(init_sp);
+   { void* init_sp = argv - 1;
+     scan_auxv(init_sp);
    }
 
    //--------------------------------------------------------------
    // Look for alternative libdir                                  
    //   p: none
    //--------------------------------------------------------------
-   {
-      HChar *cp = VG_(getenv)(VALGRINDLIB);
-      if (cp != NULL)
-	 VG_(libdir) = cp;
+   { HChar *cp = VG_(getenv)(VALGRINDLIB);
+     if (cp != NULL)
+        VG_(libdir) = cp;
    }
 
    //--------------------------------------------------------------
@@ -2209,7 +2213,7 @@ Int main(Int argc, HChar **argv, HChar **envp)
    //   p: layout_remaining_space          [so there's space]
    //--------------------------------------------------------------
    VG_(debugLog)(1, "main", "Loading client\n");
-   load_client(cl_argv, exec, need_help, &info, &client_eip);
+   load_client(cl_argv, exec, need_help, &info, &initial_client_IP);
 
    //--------------------------------------------------------------
    // Everything in place, remove padding done by stage1
@@ -2233,18 +2237,19 @@ Int main(Int argc, HChar **argv, HChar **envp)
    //   p: fix_environment() [for 'env']
    //--------------------------------------------------------------
    VG_(debugLog)(1, "main", "Setup client stack\n");
-   { 
-   void* init_sp = argv - 1;
+   { void* init_sp = argv - 1;
 
-   sp_at_startup = setup_client_stack(init_sp, cl_argv, env, &info,
-                                      &client_auxv);
-   //FIXME   free(env);
+     initial_client_SP
+        = setup_client_stack(init_sp, cl_argv, env, &info,
+                             &client_auxv,clstack_top);
+     VG_(free)(env);
    }
 
    VG_(debugLog)(2, "main",
                     "Client info: "
-                    "entry=%p client esp=%p vg_argc=%d brkbase=%p\n",
-                    (void*)client_eip, (void*)sp_at_startup, vg_argc, 
+                    "entry=%p client_SP=%p vg_argc=%d brkbase=%p\n",
+                    (void*)initial_client_IP, 
+                    (void*)initial_client_SP, vg_argc, 
                     (void*)VG_(brk_base) );
 
    //==============================================================
@@ -2263,8 +2268,8 @@ Int main(Int argc, HChar **argv, HChar **envp)
    // Build segment map (Valgrind segments only)
    //   p: tl_pre_clo_init()  [to setup new_mem_startup tracker]
    //--------------------------------------------------------------
-   VG_(debugLog)(1, "main", "Parse /proc/self/maps (round 1)\n");
-   VG_(parse_procselfmaps) ( build_valgrind_map_callback );
+   //VG_(debugLog)(1, "main", "Parse /proc/self/maps (round 1)\n");
+   //VG_(parse_procselfmaps) ( build_valgrind_map_callback );
 
    //==============================================================
    // Can use VG_(arena_malloc)() with non-CORE arena after segments set up
@@ -2303,10 +2308,10 @@ Int main(Int argc, HChar **argv, HChar **envp)
    //   p: setup_client_stack()  [for 'sp_at_startup']
    //   p: init tool             [for 'new_mem_startup']
    //--------------------------------------------------------------
-   VG_(debugLog)(1, "main", "Parse /proc/self/maps (round 2)\n");
-   sp_at_startup___global_arg = sp_at_startup;
-   VG_(parse_procselfmaps) ( build_segment_map_callback );  /* everything */
-   sp_at_startup___global_arg = 0;
+   //VG_(debugLog)(1, "main", "Parse /proc/self/maps (round 2)\n");
+   //sp_at_startup___global_arg = sp_at_startup;
+   //VG_(parse_procselfmaps) ( build_segment_map_callback );  /* everything */
+   //sp_at_startup___global_arg = 0;
 
    //==============================================================
    // Can use VG_(map)() after segments set up
@@ -2367,7 +2372,8 @@ Int main(Int argc, HChar **argv, HChar **envp)
    //      setup_scheduler()      [for the rest of state 1 stuff]
    //--------------------------------------------------------------
    VG_(debugLog)(1, "main", "Initialise thread 1's state\n");
-   init_thread1state(client_eip, sp_at_startup, &VG_(threads)[1].arch);
+   init_thread1state( initial_client_IP, initial_client_SP, 
+                      &VG_(threads)[1].arch);
 
    //--------------------------------------------------------------
    // Initialise the pthread model
@@ -2742,10 +2748,12 @@ asm("\n"
 void _start_in_C ( UWord* pArgc );
 void _start_in_C ( UWord* pArgc )
 {
+   Int     r;
    Word    argc = pArgc[0];
    HChar** argv = (HChar**)&pArgc[1];
    HChar** envp = (HChar**)&pArgc[1+argc+1];
-   Int r = main( (Int)argc, argv, envp );
+   sp_at_startup_new = (Addr)pArgc;
+   r = main( (Int)argc, argv, envp );
    VG_(exit)(r);
 }
 

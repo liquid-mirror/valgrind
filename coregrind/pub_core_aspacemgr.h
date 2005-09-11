@@ -161,8 +161,13 @@ typedef
    HChar
    VgStack[VG_STACK_GUARD_SZB + VG_STACK_ACTIVE_SZB + VG_STACK_GUARD_SZB];
 
-extern void VG_(new_aspacem_start) ( void );
+/* Takes a pointer to the sp at the time V gained control.  This is
+   taken to be the highest usable address (more or less).  Based on
+   that (and general consultation of tea leaves, etc) return a
+   suggested end address for the client's stack. */
+extern Addr VG_(new_aspacem_start) ( Addr sp_at_startup );
 
+extern void VG_(show_nsegments) ( HChar* who );
 
 typedef
    struct {
@@ -185,9 +190,15 @@ SysRes VG_(mmap_anon_fixed_client)
      ( void* startV, SizeT length, Int prot );
 
 extern
+SysRes VG_(mmap_anon_float_client)
+     ( SizeT length, Int prot );
+
+extern
 SysRes VG_(map_anon_float_valgrind)( SizeT cszB );
 
 extern ULong VG_(aspacem_get_anonsize_total)( void );
+
+extern SysRes VG_(munmap_client)( Addr base, SizeT length );
 
 
 #endif   // __PUB_CORE_ASPACEMGR_H
