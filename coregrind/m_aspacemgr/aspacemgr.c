@@ -1472,16 +1472,6 @@ static void aspacem_assert_fail( const HChar* expr,
 #define Addr_MAX ((Addr)(-1ULL))
 
 
-static HChar* showMovable ( Movable m )
-{
-  switch (m) {
-  case MoFixed: return "Fixed";
-  case MoDownOK: return "MoveD";
-  case MoUpOK: return "MoveU";
-  default: return "?????";
-  }
-}
-
 /* Array [0 .. nsegments_used-1] of all mappings. */
 /* Sorted by .addr field. */
 /* I: len may not be zero. */
@@ -1490,6 +1480,22 @@ static HChar* showMovable ( Movable m )
 
 static NSegment nsegments[VG_N_SEGMENTS];
 static Int      nsegments_used = 0;
+
+
+/* Given a pointer to a seg, tries to figure out which one it is in
+   nsegments[..].  Very paranoid. */
+static Int segAddr_to_index ( NSegment* seg )
+{
+   Int i;
+   if (seg < &nsegments[0] || seg >= &nsegments[nsegments_used])
+      return -1;
+   i = (seg - &nsegments[0]) / sizeof(NSegment);
+   if (i < 0 || i >= nsegments_used)
+      return -1;
+   if (seg == &nsegments[i])
+      return i;
+   return -1;
+}
 
 
 ULong VG_(aspacem_get_anonsize_total)( void )
@@ -1689,9 +1695,7 @@ static void init_nsegment ( /*OUT*/NSegment* seg )
    seg->isClient = False;
    seg->start    = 0;
    seg->end      = 0;
-   seg->moveLo   = MoFixed;
-   seg->moveHi   = MoFixed;
-   seg->maxlen   = 0;
+   seg->smode    = SmFixed;
    seg->dev      = 0;
    seg->ino      = 0;
    seg->offset   = 0;
@@ -1719,6 +1723,16 @@ static HChar* show_seg_kind ( NSegment* seg )
   case SkFile: return seg->isClient ? "file" : "FILE";
   case SkResvn: return "RSVN";
   default: return "????";
+  }
+}
+
+static HChar* show_ShrinkMode ( ShrinkMode sm )
+{
+  switch (sm) {
+  case SmLower: return "SmLower";
+  case SmUpper: return "SmUpper";
+  case SmFixed: return "SmFixed";
+  default: return "Sm?????";
   }
 }
 
@@ -1796,7 +1810,7 @@ static void show_nsegment ( Int logLevel, Int segNo, NSegment* seg )
   case SkResvn:
   VG_(debugLog)(
      logLevel, "aspacem",
-     "%3d: %s %08llx-%08llx %s %c%c%c%c (%s,%s,%llu)\n",
+     "%3d: %s %08llx-%08llx %s %c%c%c%c %s\n",
       segNo,
      show_seg_kind(seg),
      (ULong)seg->start,
@@ -1806,9 +1820,7 @@ static void show_nsegment ( Int logLevel, Int segNo, NSegment* seg )
      seg->hasW ? 'w' : '-', 
      seg->hasX ? 'x' : '-', 
      seg->hasT ? 'T' : '-', 
-     showMovable(seg->moveLo),
-     showMovable(seg->moveHi),
-(ULong)seg->maxlen
+     show_ShrinkMode(seg->smode)
      );
   break;
 
@@ -2308,6 +2320,149 @@ SysRes VG_(munmap_client)( Addr base, SizeT length )
    add_segment( &seg );
 
    return sres;
+}
+
+
+/* See comment on prototype in pub_core_aspacemgr.h for a description
+   of this. */
+Bool VG_(create_reservation) ( Addr start, SizeT length, 
+                               ShrinkMode smode, SSizeT extra )
+{
+   Int      startI, endI;
+   NSegment seg;
+
+   /* start and end, not taking into account the extra space. */
+   Addr start1 = start;
+   Addr end1   = start + length - 1;
+
+   /* start and end, taking into account the extra space. */
+   Addr start2 = start1;
+   Addr end2   = end1;
+
+   if (extra < 0) start2 += extra; // this moves it down :-)
+   if (extra > 0) end2 += extra;
+
+   aspacem_assert(VG_IS_PAGE_ALIGNED(start));
+   aspacem_assert(VG_IS_PAGE_ALIGNED(start+length-1));
+   aspacem_assert(VG_IS_PAGE_ALIGNED(start2));
+   aspacem_assert(VG_IS_PAGE_ALIGNED(end2));
+
+   startI = find_nsegment_idx( start2 );
+   endI = find_nsegment_idx( end2 );
+
+   /* If the start and end points don't fall within the same (free)
+      segment, we're hosed.  This does rely on the assumption that all
+      mergeable adjacent segments can be merged, but add_segment()
+      should ensure that. */
+   if (startI != endI)
+      return False;
+
+   if (nsegments[startI].kind != SkFree)
+      return False;
+
+   /* Looks good - make the reservation. */
+   aspacem_assert(nsegments[startI].start <= start2);
+   aspacem_assert(end2 <= nsegments[startI].end);
+
+   init_nsegment( &seg );
+   seg.kind = SkResvn;
+   seg.start = start1;  /* NB: extra space is not included in the reservation. */
+   seg.end = end1;
+   seg.smode = smode;
+   add_segment( &seg );
+   return True;
+}
+
+
+/* See comment on prototype in pub_core_aspacemgr.h for a description
+   of this. */
+Bool VG_(extend_into_adjacent_reservation)( NSegment* seg, SSizeT delta )
+{
+   Int    segA, segR;
+   UInt   prot;
+   SysRes sres;
+
+   /* Find the segment array index for SEG.  If the assertion fails it
+      probably means you passed in a bogus SEG. */
+   segA = segAddr_to_index( seg );
+   aspacem_assert(segA >= 0 && segA < nsegments_used);
+
+   if (nsegments[segA].kind != SkAnon)
+      return False;
+
+   if (delta == 0)
+      return True;
+
+   prot =   (nsegments[segA].hasR ? VKI_PROT_READ : 0)
+          | (nsegments[segA].hasW ? VKI_PROT_WRITE : 0)
+          | (nsegments[segA].hasX ? VKI_PROT_EXEC : 0);
+
+   aspacem_assert(VG_IS_PAGE_ALIGNED(delta<0 ? -delta : delta));
+
+   if (delta > 0) {
+
+      /* Extending the segment forwards. */
+      segR = segA+1;
+      if (segR >= nsegments_used
+          || nsegments[segR].kind != SkResvn
+          || nsegments[segR].smode != SmLower
+          || nsegments[segR].start != nsegments[segA].end + 1
+          || delta > (nsegments[segR].end - nsegments[segR].start + 1))
+	return False;
+        
+      /* Extend the kernel's mapping. */
+      sres = do_mmap_NATIVE( nsegments[segR].start, delta,
+                             prot,
+                             VKI_MAP_FIXED|VKI_MAP_PRIVATE
+                                          |VKI_MAP_ANONYMOUS, 0, 0 );
+      if (sres.isError)
+         return False; /* kernel bug if this happens? */
+      if (sres.val != nsegments[segR].start) {
+	 /* kernel bug if this happens? */
+	do_munmap_NATIVE( sres.val, delta );
+	return False;
+      }
+
+      /* Ok, success with the kernel.  Update our structures. */
+      nsegments[segR].start += delta;
+      nsegments[segA].end += delta;
+      aspacem_assert(nsegments[segR].start <= nsegments[segR].end);
+
+   } else {
+
+      /* Extending the segment backwards. */
+      delta = -delta;
+      aspacem_assert(delta > 0);
+
+      segR = segA-1;
+      if (segR < 0
+          || nsegments[segR].kind != SkResvn
+          || nsegments[segR].smode != SmUpper
+          || nsegments[segR].end + 1 != nsegments[segA].start
+          || delta > (nsegments[segR].end - nsegments[segR].start + 1))
+	return False;
+        
+      /* Extend the kernel's mapping. */
+      sres = do_mmap_NATIVE( nsegments[segA].start-delta, delta,
+                             prot,
+                             VKI_MAP_FIXED|VKI_MAP_PRIVATE
+                                          |VKI_MAP_ANONYMOUS, 0, 0 );
+      if (sres.isError)
+         return False; /* kernel bug if this happens? */
+      if (sres.val != nsegments[segA].start-delta) {
+	 /* kernel bug if this happens? */
+	do_munmap_NATIVE( sres.val, delta );
+	return False;
+      }
+
+      /* Ok, success with the kernel.  Update our structures. */
+      nsegments[segR].end -= delta;
+      nsegments[segA].start -= delta;
+      aspacem_assert(nsegments[segR].start <= nsegments[segR].end);
+
+   }
+
+   return True;
 }
 
 

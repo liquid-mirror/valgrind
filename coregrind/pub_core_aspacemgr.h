@@ -161,15 +161,6 @@ typedef
    HChar
    VgStack[VG_STACK_GUARD_SZB + VG_STACK_ACTIVE_SZB + VG_STACK_GUARD_SZB];
 
-/* Describes the ways in which the ends of a segment may be moved. */
-typedef
-   enum {
-     MoFixed,   // usual case -- cannot be moved
-     MoDownOK,  // can be moved to a lower address
-     MoUpOK     // can be moved to a higher address
-   }
-   Movable;
-
 typedef
    enum {
       SkFree,  // unmapped space
@@ -178,6 +169,14 @@ typedef
       SkResvn  // reservation
    }
    MKind;
+
+typedef
+   enum {
+      SmLower,  // lower end can move up
+      SmFixed,  // cannot be shrunk
+      SmUpper   // upper end can move down
+   }
+   ShrinkMode;
 
 /* Describes a segment.  Invariants:
 
@@ -213,10 +212,8 @@ typedef
       /* Extent (SkFree, SkAnon, SkFile, SkResvn) */
       Addr    start;    // lowest address in range
       Addr    end;      // highest address in range
-      /* Resizability (SkAnon, SkResvn only) */
-      Movable moveLo;   //  if yes, can lower end be moved
-      Movable moveHi;   //  if yes, can upper end be moved
-      SizeT   maxlen;   //  if yes, what's the max size?
+      /* Shrinkable? (SkResvn only) */
+      ShrinkMode smode;
       /* Associated file (SkFile only) */
       UInt    dev;
       UInt    ino;
@@ -233,7 +230,7 @@ typedef
    NSegment;
 
 
-/* Takes a pointer to the sp at the time V gained control.  This is
+/* Takes a pointer to the SP at the time V gained control.  This is
    taken to be the highest usable address (more or less).  Based on
    that (and general consultation of tea leaves, etc) return a
    suggested end address for the client's stack. */
@@ -273,6 +270,32 @@ extern ULong VG_(aspacem_get_anonsize_total)( void );
 extern SysRes VG_(munmap_client)( Addr base, SizeT length );
 
 extern NSegment* VG_(find_nsegment) ( Addr a );
+extern NSegment* VG_(next_nsegment) ( NSegment* here, Bool fwds );
+
+/* Create a reservation from START .. START+LENGTH-1, with the given
+   ShrinkMode.  When checking whether the reservation can be created,
+   also ensure that at least abs(EXTRA) extra free bytes will remain
+   above (> 0) or below (< 0) the reservation.
+
+   The reservation will only be created if it, plus the extra-zone,
+   falls entirely within a single free segment.  The returned Bool
+   indicates whether the creation succeeded. */
+extern 
+Bool VG_(create_reservation) ( Addr start, SizeT length, 
+                               ShrinkMode smode, SSizeT extra );
+
+
+/* Let SEG be an anonymous mapping.  This fn extends the mapping by
+   DELTA bytes, taking the space from a reservation section which must
+   be adjacent.  If DELTA is positive, the segment is extended
+   forwards in the address space, and the reservation must be the next
+   one along.  If DELTA is negative, the segment is extended backwards
+   in the address space and the reservation must be the previous one.
+   DELTA must be page aligned and must not exceed the size of the
+   reservation segment. */
+extern
+Bool VG_(extend_into_adjacent_reservation) ( NSegment* seg, SSizeT delta );
+
 
 #endif   // __PUB_CORE_ASPACEMGR_H
 
