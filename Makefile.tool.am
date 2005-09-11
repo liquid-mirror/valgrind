@@ -23,7 +23,7 @@ COREGRIND_LIBS = \
 
 ## Nb: do not call this variables "TOOL_LINKADD" and "TOOL_LDFLAGS" -- that
 ## makes automake think we are building something called "TOOLS".
-TOOL_LINKADD = $(COREGRIND_LIBS) $(COREGRIND_LIBS) -lgcc
+TOOL_LINKADD = -Wl,-whole-archive $(COREGRIND_LIBS) -Wl,-no-whole-archive -lgcc
 TOOL_LINKFLAGS = \
 	-static \
 	-Wl,-defsym,valt_load_address=@VALT_LOAD_ADDRESS@ \
