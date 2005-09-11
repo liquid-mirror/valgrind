@@ -478,7 +478,6 @@ void ensure_mm_init ( void )
 /*--- Superblock management                                ---*/
 /*------------------------------------------------------------*/
 
-static
 void VG_(out_of_memory_NORETURN) ( HChar* who, SizeT szB )
 {
    static Bool alreadyCrashing = False;
@@ -552,9 +551,10 @@ Superblock* newSuperblock ( Arena* a, SizeT cszB )
    vg_assert(0 == (Addr)sb % VG_MIN_MALLOC_SZB);
    sb->n_payload_bytes = cszB - sizeof(Superblock);
    a->bytes_mmaped += cszB;
-   if (1)
-      VG_(message)(Vg_DebugMsg, "newSuperblock at %p, %d payload bytes", 
-                                sb, sb->n_payload_bytes);
+   VG_(debugLog)(1, "mallocfree",
+                    "newSuperblock at %p, for %s, %lld payload bytes\n", 
+                    sb, a->clientmem ? "CLIENT" : "VALGRIND",
+                    (Long)sb->n_payload_bytes);
    return sb;
 }
 

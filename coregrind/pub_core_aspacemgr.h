@@ -161,13 +161,85 @@ typedef
    HChar
    VgStack[VG_STACK_GUARD_SZB + VG_STACK_ACTIVE_SZB + VG_STACK_GUARD_SZB];
 
+/* Describes the ways in which the ends of a segment may be moved. */
+typedef
+   enum {
+     MoFixed,   // usual case -- cannot be moved
+     MoDownOK,  // can be moved to a lower address
+     MoUpOK     // can be moved to a higher address
+   }
+   Movable;
+
+typedef
+   enum {
+      SkFree,  // unmapped space
+      SkAnon,  // anonymous mapping
+      SkFile,  // mapping to a file
+      SkResvn  // reservation
+   }
+   MKind;
+
+/* Describes a segment.  Invariants:
+
+     kind == SkFree:
+        // the only meaningful fields are .start and .end
+
+     kind == SkAnon:
+        // the segment may be resized if required
+        // there's no associated file:
+        dev==ino==foff = 0, fnidx == -1
+        // segment may have permissions
+
+     kind == SkFile
+        // the segment may not be resized:
+        moveLo == moveHi == NotMovable, maxlen == 0
+        // there is an associated file
+        // segment may have permissions
+
+     kind == SkResvn
+        // the segment may be resized if required
+        // there's no associated file:
+        dev==ino==foff = 0, fnidx == -1
+        // segment has no permissions
+        hasR==hasW==hasX==anyTranslated == False
+
+     Also: if !isClient then anyTranslated==False
+           (viz, not allowed to make translations from non-client areas)
+*/
+typedef
+   struct {
+      MKind   kind;
+      Bool    isClient;
+      /* Extent (SkFree, SkAnon, SkFile, SkResvn) */
+      Addr    start;    // lowest address in range
+      Addr    end;      // highest address in range
+      /* Resizability (SkAnon, SkResvn only) */
+      Movable moveLo;   //  if yes, can lower end be moved
+      Movable moveHi;   //  if yes, can upper end be moved
+      SizeT   maxlen;   //  if yes, what's the max size?
+      /* Associated file (SkFile only) */
+      UInt    dev;
+      UInt    ino;
+      ULong   offset;
+      Int     fnIdx;    // file name table index, if name is known
+      /* Permissions (SkAnon, SkFile only) */
+      Bool    hasR;
+      Bool    hasW;
+      Bool    hasX;
+      Bool    hasT;     // True --> translations have (or MAY have)
+      /* Admin */       // been taken from this segment
+      Bool    mark;
+   }
+   NSegment;
+
+
 /* Takes a pointer to the sp at the time V gained control.  This is
    taken to be the highest usable address (more or less).  Based on
    that (and general consultation of tea leaves, etc) return a
    suggested end address for the client's stack. */
 extern Addr VG_(new_aspacem_start) ( Addr sp_at_startup );
 
-extern void VG_(show_nsegments) ( HChar* who );
+extern void VG_(show_nsegments) ( Int logLevel, HChar* who );
 
 typedef
    struct {
@@ -200,6 +272,7 @@ extern ULong VG_(aspacem_get_anonsize_total)( void );
 
 extern SysRes VG_(munmap_client)( Addr base, SizeT length );
 
+extern NSegment* VG_(find_nsegment) ( Addr a );
 
 #endif   // __PUB_CORE_ASPACEMGR_H
 

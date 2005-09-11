@@ -1472,15 +1472,6 @@ static void aspacem_assert_fail( const HChar* expr,
 #define Addr_MAX ((Addr)(-1ULL))
 
 
-/* Describes the ways in which the ends of a segment may be moved. */
-typedef
-   enum {
-     MoFixed,   // usual case -- cannot be moved
-     MoDownOK,  // can be moved to a lower address
-     MoUpOK     // can be moved to a higher address
-   }
-   Movable;
-
 static HChar* showMovable ( Movable m )
 {
   switch (m) {
@@ -1490,68 +1481,6 @@ static HChar* showMovable ( Movable m )
   default: return "?????";
   }
 }
-
-typedef
-   enum {
-      SkFree,  // unmapped space
-      SkAnon,  // anonymous mapping
-      SkFile,  // mapping to a file
-      SkResvn  // reservation
-   }
-   MKind;
-
-/* Describes a segment.  Invariants:
-
-     kind == SkFree:
-        // the only meaningful fields are .start and .end
-
-     kind == SkAnon:
-        // the segment may be resized if required
-        // there's no associated file:
-        dev==ino==foff = 0, fnidx == -1
-        // segment may have permissions
-
-     kind == SkFile
-        // the segment may not be resized:
-        moveLo == moveHi == NotMovable, maxlen == 0
-        // there is an associated file
-        // segment may have permissions
-
-     kind == SkResvn
-        // the segment may be resized if required
-        // there's no associated file:
-        dev==ino==foff = 0, fnidx == -1
-        // segment has no permissions
-        hasR==hasW==hasX==anyTranslated == False
-
-     Also: if !isClient then anyTranslated==False
-           (viz, not allowed to make translations from non-client areas)
-*/
-typedef
-   struct {
-      MKind   kind;
-      Bool    isClient;
-      /* Extent (SkFree, SkAnon, SkFile, SkResvn) */
-      Addr    start;    // lowest address in range
-      Addr    end;      // highest address in range
-      /* Resizability (SkAnon, SkResvn only) */
-      Movable moveLo;   //  if yes, can lower end be moved
-      Movable moveHi;   //  if yes, can upper end be moved
-      SizeT   maxlen;   //  if yes, what's the max size?
-      /* Associated file (SkFile only) */
-      UInt    dev;
-      UInt    ino;
-      ULong   offset;
-      Int     fnIdx;    // file name table index, if name is known
-      /* Permissions (SkAnon, SkFile only) */
-      Bool    hasR;
-      Bool    hasW;
-      Bool    hasX;
-      Bool    anyTranslated;
-      /* Admin */
-      Bool    mark;
-   }
-   NSegment;
 
 /* Array [0 .. nsegments_used-1] of all mappings. */
 /* Sorted by .addr field. */
@@ -1611,6 +1540,19 @@ static Int find_nsegment_idx ( Addr a )
       aspacem_assert(0 <= mid && mid < nsegments_used);
       return mid;
    }
+}
+
+/* Find a segment, not include free-space and ones, for outside use. */
+NSegment* VG_(find_nsegment) ( Addr a )
+{
+   Int i = find_nsegment_idx(a);
+   aspacem_assert(i >= 0 && i < nsegments_used);
+   aspacem_assert(nsegments[i].start <= a);
+   aspacem_assert(a <= nsegments[i].end);
+   if (nsegments[i].kind == SkFree) 
+      return NULL;
+   else
+      return &nsegments[i];
 }
 
 
@@ -1754,8 +1696,7 @@ static void init_nsegment ( /*OUT*/NSegment* seg )
    seg->ino      = 0;
    seg->offset   = 0;
    seg->fnIdx    = -1;
-   seg->hasR = seg->hasR = seg->hasW = False;
-   seg->anyTranslated = False;
+   seg->hasR = seg->hasR = seg->hasW = seg->hasT = False;
    seg->mark = False;
 }
 
@@ -1826,7 +1767,7 @@ static void show_nsegment ( Int logLevel, Int segNo, NSegment* seg )
      seg->hasR ? 'r' : '-', 
      seg->hasW ? 'w' : '-', 
      seg->hasX ? 'x' : '-', 
-     seg->anyTranslated ? 'T' : '-', 
+     seg->hasT ? 'T' : '-', 
      seg->dev,
      seg->ino,
      (Long)seg->offset,
@@ -1845,7 +1786,7 @@ static void show_nsegment ( Int logLevel, Int segNo, NSegment* seg )
      seg->hasR ? 'r' : '-', 
      seg->hasW ? 'w' : '-', 
      seg->hasX ? 'x' : '-', 
-     seg->anyTranslated ? 'T' : '-', 
+     seg->hasT ? 'T' : '-', 
      seg->dev,
      seg->ino,
      (Long)seg->offset,
@@ -1864,7 +1805,7 @@ static void show_nsegment ( Int logLevel, Int segNo, NSegment* seg )
      seg->hasR ? 'r' : '-', 
      seg->hasW ? 'w' : '-', 
      seg->hasX ? 'x' : '-', 
-     seg->anyTranslated ? 'T' : '-', 
+     seg->hasT ? 'T' : '-', 
      showMovable(seg->moveLo),
      showMovable(seg->moveHi),
 (ULong)seg->maxlen
@@ -1881,7 +1822,7 @@ segNo );
 }
 
 /* Print out the segment array (debugging only!). */
-static void show_nsegments ( Int logLevel, HChar* who )
+void VG_(show_nsegments) ( Int logLevel, HChar* who )
 {
    Int i;
    VG_(debugLog)(logLevel, "aspacem",
@@ -1897,11 +1838,6 @@ static void show_nsegments ( Int logLevel, HChar* who )
      show_nsegment( logLevel, i, &nsegments[i] );
    VG_(debugLog)(logLevel, "aspacem",
                  ">>>\n");
-}
-
-void VG_(show_nsegments) ( HChar* who )
-{
-  show_nsegments( 0, who );
 }
 
 
@@ -2033,7 +1969,7 @@ static void read_maps_callback (
      seg.fnIdx = allocate_segname( filename );
   }
 
-  show_nsegment( 0,0, &seg );
+  show_nsegment( 2,0, &seg );
   add_segment( &seg );
 }
 
@@ -2115,12 +2051,12 @@ Addr VG_(new_aspacem_start) ( Addr sp_at_startup )
    init_resvn(&seg, aspacem_vStart,  aspacem_vStart + VKI_PAGE_SIZE - 1);
    add_segment(&seg);
 
-   show_nsegments(2, "Initial layout");
+   VG_(show_nsegments)(2, "Initial layout");
 
    VG_(debugLog)(2, "aspacem", "Reading /proc/self/maps\n");
    VG_(parse_procselfmaps) ( read_maps_callback );
 
-   show_nsegments(2, "With contents of /proc/self/maps");
+   VG_(show_nsegments)(2, "With contents of /proc/self/maps");
 
    return suggested_clstack_top;
 }

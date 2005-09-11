@@ -245,7 +245,7 @@ void VG_(main_thread_wrapper_NORETURN)(ThreadId tid)
 {
    VG_(debugLog)(1, "syswrap-x86-linux", 
                     "entering VG_(main_thread_wrapper_NORETURN)\n");
-
+#if 0
    UWord* esp = allocstack(tid);
 
    /* shouldn't be any other threads around yet */
@@ -257,6 +257,9 @@ void VG_(main_thread_wrapper_NORETURN)(ThreadId tid)
       run_a_thread_NORETURN,  /* fn to call */
       (Word)tid               /* arg to give it */
    );
+#endif
+
+   run_a_thread_NORETURN( tid );
 
    /*NOTREACHED*/
    vg_assert(0);

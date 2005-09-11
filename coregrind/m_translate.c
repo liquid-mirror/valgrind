@@ -408,10 +408,12 @@ static Bool     chase_into_ok ( Addr64 addr64 )
       match the logic at XXXYYYZZZ below. */
    if (VG_(clo_smc_check) == Vg_SmcStack) {
       ThreadId tid = chase_into_ok__CLOSURE_tid;
-      Segment* seg = VG_(find_segment)(addr);
-      if (seg 
-          && seg->addr <= VG_(get_SP)(tid)
-          && VG_(get_SP)(tid) < seg->addr+seg->len)
+      NSegment* seg = VG_(find_nsegment)(addr);
+      if (seg
+          && (seg->kind == SkAnon || seg->kind == SkFile)
+          && seg->isClient
+          && seg->start <= VG_(get_SP)(tid)
+          && VG_(get_SP)(tid)+sizeof(Word)-1 <= seg->end)
          goto dontchase;
    }
 
@@ -441,7 +443,7 @@ Bool VG_(translate) ( ThreadId tid,
    Int       tmpbuf_used, verbosity;
    Bool      notrace_until_done, do_self_check;
    UInt      notrace_until_limit = 0;
-   Segment*  seg;
+   NSegment* seg;
    VexGuestExtents vge;
 
    /* Indicates what arch we are running on, and other important info
@@ -512,8 +514,6 @@ Bool VG_(translate) ( ThreadId tid,
    notrace_until_done
       = VG_(get_bbs_translated)() >= notrace_until_limit;
 
-   seg = VG_(find_segment)(orig_addr);
-
    if (!debugging_translation)
       VG_TRACK( pre_mem_read, Vg_CoreTranslate, tid, "", orig_addr, 1 );
 
@@ -527,22 +527,37 @@ Bool VG_(translate) ( ThreadId tid,
               bbs_done);
    }
 
-   if (seg == NULL ||
-       !VG_(seg_contains)(seg, orig_addr, 1) || 
-       (seg->prot & (VKI_PROT_READ|VKI_PROT_EXEC)) == 0) {
+   /* Figure out what segment the requested address is in, and 
+      look for possible reasons to disallow it. */
+
+   seg = VG_(find_nsegment)(orig_addr);
+
+   if (seg == NULL 
+       || !(seg->kind == SkAnon || seg->kind == SkFile)
+       || !seg->isClient
+       || !seg->hasX) {
+
+      /* U R busted, sonny.  Place your hands on your head and step
+         away from the orig_addr. */
       /* Code address is bad - deliver a signal instead */
-      vg_assert(!VG_(is_addressable)(orig_addr, 1, 
-                                     VKI_PROT_READ|VKI_PROT_EXEC));
-
-      if (seg != NULL && VG_(seg_contains)(seg, orig_addr, 1)) {
-         vg_assert((seg->prot & VKI_PROT_EXEC) == 0);
+      if (seg != NULL) {
+         /* There's some kind of segment at the requested place, but we
+            aren't allowed to execute code here. */
          VG_(synth_fault_perms)(tid, orig_addr);
-      } else
+      } else {
+        /* There is no segment at all; we are attempting to execute in
+           the middle of nowhere. */
          VG_(synth_fault_mapping)(tid, orig_addr);
-
+      }
       return False;
-   } else
-      seg->flags |= SF_CODE;        /* contains cached code */
+
+   } else {
+
+      /* Ok to execute here.  Mark that we have taken a translation
+         from this segment. */
+      seg->hasT = True;        /* contains cached code */
+   }
+
 
    /* Do we want a self-checking translation? */
    do_self_check = False;
@@ -554,8 +569,8 @@ Bool VG_(translate) ( ThreadId tid,
          do_self_check
             /* = seg ? toBool(seg->flags & SF_GROWDOWN) : False; */
             = seg 
-              ? (seg->addr <= VG_(get_SP)(tid)
-                 && VG_(get_SP)(tid) < seg->addr+seg->len)
+              ? (seg->start <= VG_(get_SP)(tid)
+                 && VG_(get_SP)(tid)+sizeof(Word)-1 <= seg->end)
               : False;
          break;
       default: 

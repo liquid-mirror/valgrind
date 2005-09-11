@@ -391,7 +391,7 @@ ESZ(Addr) mapelf(struct elfinfo *e, ESZ(Addr) base)
                     prot, /*VKI_MAP_FIXED|VKI_MAP_PRIVATE, */
                     e->fd, VG_PGROUNDDN(off)
                );
-         if (0) VG_(show_nsegments)("after native 1");
+         if (0) VG_(show_nsegments)(0,"after native 1");
          check_mmap(res, (char*)VG_PGROUNDDN(addr),
                     VG_PGROUNDUP(bss)-VG_PGROUNDDN(addr));
       }
@@ -402,7 +402,7 @@ ESZ(Addr) mapelf(struct elfinfo *e, ESZ(Addr) base)
 
 	 bytes = VG_PGROUNDUP(brkaddr)-VG_PGROUNDUP(bss);
 	 if (bytes > 0) {
-            VG_(debugLog)(0,"","mmap_native 2\n");
+            VG_(debugLog)(0,"ume","mmap_native 2\n");
 	    res = VG_(mmap_native)(
                      (Char *)VG_PGROUNDUP(bss), bytes,
 		     prot, VKI_MAP_FIXED|VKI_MAP_ANONYMOUS|VKI_MAP_PRIVATE, 
@@ -573,7 +573,7 @@ static int load_ELF(char *hdr, int len, int fd, const char *name,
       else
          res = VG_(mmap_anon_float_client)(interp_size, VKI_PROT_NONE);
 
-      if (0) VG_(show_nsegments)("after native 3");
+      if (0) VG_(show_nsegments)(0,"after native 3");
 
       check_mmap(res, base, interp_size);
       vg_assert(!res.isError);

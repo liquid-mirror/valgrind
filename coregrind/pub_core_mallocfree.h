@@ -83,6 +83,10 @@ extern void  VG_(sanity_check_malloc_all) ( void );
 
 extern void  VG_(print_all_arena_stats) ( void );
 
+// TODO: move somewhere else
+// Call here to bomb the system when out of memory (mmap anon fails)
+extern void VG_(out_of_memory_NORETURN) ( HChar* who, SizeT szB );
+
 #endif   // __PUB_CORE_MALLOCFREE_H
 
 /*--------------------------------------------------------------------*/

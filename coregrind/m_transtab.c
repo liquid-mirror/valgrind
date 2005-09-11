@@ -30,6 +30,7 @@
 */
 
 #include "pub_core_basics.h"
+#include "pub_core_debuglog.h"
 #include "pub_core_machine.h"    // ppc32: VG_(cache_line_size_ppc32)
 #include "pub_core_libcbase.h"
 #include "pub_core_libcassert.h"
@@ -38,6 +39,10 @@
 #include "pub_core_options.h"
 #include "pub_core_tooliface.h"  // For VG_(details).avg_translation_sizeB
 #include "pub_core_transtab.h"
+
+#include "pub_core_debuginfo.h"     // Needed for pub_core_aspacemgr :(
+#include "pub_core_aspacemgr.h"
+#include "pub_core_mallocfree.h"    // VG_(out_of_memory_NORETURN)
 
 /* #define DEBUG_TRANSTAB */
 
@@ -288,7 +293,8 @@ static void invalidateFastCache ( void )
 
 static void initialiseSector ( Int sno )
 {
-   Int i;
+   Int    i;
+   SysRes sres;
    vg_assert(isValidSector(sno));
 
    if (sectors[sno].tc == NULL) {
@@ -297,16 +303,30 @@ static void initialiseSector ( Int sno )
       vg_assert(sectors[sno].tt == NULL);
       vg_assert(sectors[sno].tc_next == NULL);
       vg_assert(sectors[sno].tt_n_inuse == 0);
-      sectors[sno].tc 
-         = VG_(get_memory_from_mmap)
-              ( 8 * tc_sector_szQ, "sectors[sno].tc" );
-      sectors[sno].tt 
-         = VG_(get_memory_from_mmap) 
-              ( N_TTES_PER_SECTOR * sizeof(TTEntry), "sectors[sno].tt" );
+
+      VG_(debugLog)(1,"transtab", "allocate sector %d\n", sno);
+
+      sres = VG_(map_anon_float_valgrind)( 8 * tc_sector_szQ );
+      if (sres.isError) {
+         VG_(out_of_memory_NORETURN)("initialiseSector(TC)", 
+                                     8 * tc_sector_szQ );
+	 /*NOTREACHED*/
+      }
+      sectors[sno].tc = sres.val;
+
+      sres = VG_(map_anon_float_valgrind)( N_TTES_PER_SECTOR * sizeof(TTEntry) );
+      if (sres.isError) {
+         VG_(out_of_memory_NORETURN)("initialiseSector(TT)", 
+                                     N_TTES_PER_SECTOR * sizeof(TTEntry) );
+	 /*NOTREACHED*/
+      }
+      sectors[sno].tt = sres.val;
+
       if (VG_(clo_verbosity) > 2)
          VG_(message)(Vg_DebugMsg, "TT/TC: initialise sector %d", sno);
    } else {
       /* Sector has been used before. */
+      VG_(debugLog)(1,"transtab", "recycle sector %d\n", sno);
       vg_assert(sectors[sno].tt != NULL);
       vg_assert(sectors[sno].tc_next != NULL);
       n_dump_count += sectors[sno].tt_n_inuse;

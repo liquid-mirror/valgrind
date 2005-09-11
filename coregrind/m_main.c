@@ -576,7 +576,7 @@ Addr setup_client_stack( void* init_sp,
 
    clstack_start = VG_PGROUNDDN(client_SP);
 
-   if (1)
+   if (0)
       VG_(printf)("stringsize=%d auxsize=%d stacksize=%d\n"
                   "clstack_start %p\n"
                   "clstack_end   %p\n",
@@ -587,8 +587,8 @@ Addr setup_client_stack( void* init_sp,
 
    /* allocate a stack - mmap enough space for the stack */
    res = VG_(mmap_anon_fixed_client)(
-            (void *)clstack_start,
-            clstack_end - clstack_start + 1,
+            (void *)clstack_start  -40960,
+            clstack_end - clstack_start + 1  +40960,
 	    VKI_PROT_READ|VKI_PROT_WRITE|VKI_PROT_EXEC
 	 );
    vg_assert(!res.isError); 
@@ -2077,7 +2077,7 @@ Int main(Int argc, HChar **argv, HChar **envp)
    // Ensure we're on a plausible stack.
    //   p: logging
    //--------------------------------------------------------------
-   VG_(debugLog)(1, "main", "Checking current stack is plausible");
+   VG_(debugLog)(1, "main", "Checking current stack is plausible\n");
    { HChar* limLo  = (HChar*)(&VG_(the_root_stack)[0]);
      HChar* limHi  = limLo + sizeof(VG_(the_root_stack));
      HChar* aLocal = (HChar*)&zero; /* any auto local will do */
@@ -2460,14 +2460,23 @@ Int main(Int argc, HChar **argv, HChar **envp)
    //   p: layout_remaining_space() [for VG_(client_{base,end})]
    //   p: process_cmd_line_options() [for VG_(clo_pointercheck)]
    //--------------------------------------------------------------
-   if (VG_(clo_pointercheck))
-      VG_(clo_pointercheck) =
-         VG_(setup_pointercheck)( VG_(client_base), VG_(client_end));
+   //if (VG_(clo_pointercheck))
+   //   VG_(clo_pointercheck) =
+   //      VG_(setup_pointercheck)( VG_(client_base), VG_(client_end));
 
    //--------------------------------------------------------------
    // register client stack
    //--------------------------------------------------------------
    VG_(clstk_id) = VG_(register_stack)(VG_(clstk_base), VG_(clstk_end));
+
+   //--------------------------------------------------------------
+   // Show the address space state so far
+   //--------------------------------------------------------------
+   VG_(debugLog)(1, "main", "\n");
+   VG_(debugLog)(1, "main", "\n");
+   VG_(show_nsegments)(1,"Memory layout at client startup");
+   VG_(debugLog)(1, "main", "\n");
+   VG_(debugLog)(1, "main", "\n");
 
    //--------------------------------------------------------------
    // Run!
