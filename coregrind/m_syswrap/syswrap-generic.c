@@ -783,7 +783,23 @@ void buf_and_len_post_check( ThreadId tid, SysRes res,
    Data seg end, for brk()
    ------------------------------------------------------------------ */
 
-static Addr do_brk(Addr newbrk)
+/*   +--------+------------+
+     | anon   |    resvn   |
+     +--------+------------+
+
+     ^     ^  ^
+     |     |  boundary is page aligned
+     |     VG_(brk_limit) -- no alignment constraint
+     VG_(brk_base) -- page aligned -- does not move
+
+     Both the anon part and the reservation part are always at least
+     one page.  
+*/
+
+/* Set the new data segment end to NEWBRK.  If this succeeds, return
+   NEWBRK, else return the current data segment end. */
+
+static Addr do_brk ( Addr newbrk )
 {
    Addr ret = VG_(brk_limit);
    static const Bool debug = False;
@@ -799,8 +815,11 @@ static Addr do_brk(Addr newbrk)
    if (0) show_segments("in_brk");
 #  endif
 
-   if (newbrk < VG_(brk_base) || newbrk >= VG_(client_end))
+   if (newbrk < VG_(brk_base))
+      /* Clearly impossible. */
       return VG_(brk_limit);
+
+vg_assert(0);
 
    /* brk isn't allowed to grow over anything else */
    seg = VG_(find_segment)(VG_(brk_limit) -1);

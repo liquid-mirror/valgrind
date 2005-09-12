@@ -760,6 +760,37 @@ Addr setup_client_stack( void*  init_sp,
    return client_SP;
 }
 
+
+/* Allocate the client data segment.  It is an expandable anonymous
+   mapping abutting a shrinkable reservation of size max_dseg_size.
+   The data segment starts at VG_(brk_base), which is page-aligned,
+   and runs up to VG_(brk_limit), which isn't. */
+static void setup_client_dataseg ( SizeT max_size )
+{
+   Bool   ok;
+   SysRes sres;
+   SizeT  anon_size = VKI_PAGE_SIZE;
+   SizeT  resvn_size = max_size - anon_size;
+   Addr   anon_start = VG_(brk_base);
+   Addr   resvn_start = anon_start + anon_size;
+
+   vg_assert(VG_IS_PAGE_ALIGNED(anon_size));
+   vg_assert(VG_IS_PAGE_ALIGNED(resvn_size));
+   vg_assert(VG_IS_PAGE_ALIGNED(anon_start));
+   vg_assert(VG_IS_PAGE_ALIGNED(resvn_start));
+
+   ok = VG_(create_reservation)( resvn_start, resvn_size, SmLower, anon_size );
+   vg_assert(ok);
+   sres = VG_(mmap_anon_fixed_client)( 
+             (void*)anon_start, anon_size, 
+             VKI_PROT_READ|VKI_PROT_WRITE|VKI_PROT_EXEC 
+          );
+   vg_assert(!sres.isError);
+   vg_assert(sres.val == anon_start);
+}
+
+
+
 /*====================================================================*/
 /*=== Find executable                                              ===*/
 /*====================================================================*/
@@ -873,7 +904,7 @@ static void load_client(char* cl_argv[], const char* exec, Int need_help,
 
    /* Copy necessary bits of 'info' that were filled in */
    *client_eip = info->init_eip;
-   VG_(brk_base) = VG_(brk_limit) = info->brkbase;
+   VG_(brk_base) = VG_(brk_limit) = VG_PGROUNDUP(info->brkbase);
 }
 
 
@@ -2266,13 +2297,14 @@ Int main(Int argc, HChar **argv, HChar **envp)
    //   p: fix_environment() [for 'env']
    //--------------------------------------------------------------
    VG_(debugLog)(1, "main", "Setup client stack\n");
-   { void* init_sp = argv - 1;
-
-     SizeT one_meg    = 1024 * 1024;
-     SizeT eight_megs = 8 * one_meg;
+   { 
+     void* init_sp = argv - 1;
+     SizeT m1 = 1024 * 1024;
+     SizeT m8 = 8 * m1;
      SizeT stack_max_size = (SizeT)VG_(client_rlimit_stack).rlim_cur;
-     if (stack_max_size < one_meg) stack_max_size = one_meg;
-     if (stack_max_size > eight_megs) stack_max_size = eight_megs;
+     if (stack_max_size < m1) stack_max_size = m1;
+     if (stack_max_size > m8) stack_max_size = m8;
+     stack_max_size = VG_PGROUNDUP(stack_max_size);
 
      initial_client_SP
         = setup_client_stack( init_sp, cl_argv, env, &info,
@@ -2287,6 +2319,23 @@ Int main(Int argc, HChar **argv, HChar **envp)
                     (void*)initial_client_IP, 
                     (void*)initial_client_SP, vg_argc, 
                     (void*)VG_(brk_base) );
+
+   //--------------------------------------------------------------
+   // Setup client data (brk) segment.  Initially a 1-page segment
+   // which abuts a shrinkable reservation. 
+   //     p: load_client()     [for 'info' and hence VG_(brk_base)]
+   //setup_client_dataseg();
+   VG_(debugLog)(1, "main", "Setup client data (brk) segment\n");
+   { 
+     SizeT m1 = 1024 * 1024;
+     SizeT m8 = 8 * m1;
+     SizeT dseg_max_size = (SizeT)VG_(client_rlimit_data).rlim_cur;
+     if (dseg_max_size < m1) dseg_max_size = m1;
+     if (dseg_max_size > m8) dseg_max_size = m8;
+     dseg_max_size = VG_PGROUNDUP(dseg_max_size);
+
+     setup_client_dataseg( dseg_max_size );
+   }
 
    //==============================================================
    // Finished setting up operating environment.  Now initialise

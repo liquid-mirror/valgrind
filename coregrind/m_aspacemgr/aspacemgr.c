@@ -63,8 +63,8 @@ Addr VG_(clstk_base);
 Addr VG_(clstk_end);
 UWord VG_(clstk_id);
 
-Addr VG_(brk_base);	         /* start of brk */
-Addr VG_(brk_limit);	         /* current brk */
+Addr VG_(brk_base)  = 0;         /* start of brk */
+Addr VG_(brk_limit) = 0;         /* current brk */
 
 Addr VG_(shadow_base);	         /* tool's shadow memory */
 Addr VG_(shadow_end);
