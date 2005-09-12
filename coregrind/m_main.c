@@ -2760,7 +2760,6 @@ asm("\n"
     "\t.globl _start\n"
     "\t.type _start,@function\n"
     "_start:\n"
-    "\tmovl  %esp,%eax\n"
     /* set up the new stack in %eax */
     "\tmovl  $vgPlain_the_root_stack, %eax\n"
     "\taddl  $"VG_STRINGIFY(VG_STACK_GUARD_SZB)", %eax\n"
@@ -2779,8 +2778,14 @@ asm("\n"
     "\t.globl _start\n"
     "\t.type _start,@function\n"
     "_start:\n"
-    "\tmovq  %rsp,%rdi\n"   /* Pass pointer to argc to _start_in_C */
-    "\tandq  $~15,%rsp\n"   /* Make sure stack is 16 byte aligned */
+    /* set up the new stack in %rdi */
+    "\tmovq  $vgPlain_the_root_stack, %rdi\n"
+    "\taddq  $"VG_STRINGIFY(VG_STACK_GUARD_SZB)", %rdi\n"
+    "\taddq  $"VG_STRINGIFY(VG_STACK_ACTIVE_SZB)", %rdi\n"
+    "\tandq  $~15, %rdi\n"
+    /* install it, and collect the original one */
+    "\txchgq %rdi, %rsp\n"
+    /* call _start_in_C, passing it the startup %rsp */
     "\tcall  _start_in_C\n"
     "\thlt\n"
 );
