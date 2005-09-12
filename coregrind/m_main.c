@@ -484,11 +484,13 @@ static char *copy_str(char **tab, const char *str)
    space manager.  A modified version of our auxv is copied into the
    new stack.  The returned value is the SP value for the client. */
 static 
-Addr setup_client_stack( void* init_sp,
-                         char **orig_argv, char **orig_envp, 
+Addr setup_client_stack( void*  init_sp,
+                         char** orig_argv, 
+                         char** orig_envp, 
                          const struct exeinfo *info,
                          UInt** client_auxv,
-                         Addr clstack_end )
+                         Addr   clstack_end,
+                         SizeT  clstack_max_size )
 {
    SysRes res;
    char **cpp;
@@ -576,22 +578,50 @@ Addr setup_client_stack( void* init_sp,
 
    clstack_start = VG_PGROUNDDN(client_SP);
 
+   /* The max stack size */
+   clstack_max_size = VG_PGROUNDUP(clstack_max_size);
+
    if (0)
-      VG_(printf)("stringsize=%d auxsize=%d stacksize=%d\n"
+      VG_(printf)("stringsize=%d auxsize=%d stacksize=%d maxsize=0x%x\n"
                   "clstack_start %p\n"
                   "clstack_end   %p\n",
-	          stringsize, auxsize, stacksize,
+	          stringsize, auxsize, stacksize, (Int)clstack_max_size,
                   (void*)clstack_start, (void*)clstack_end);
 
    /* ==================== allocate space ==================== */
 
-   /* allocate a stack - mmap enough space for the stack */
-   res = VG_(mmap_anon_fixed_client)(
-            (void *)clstack_start  -40960,
-            clstack_end - clstack_start + 1  +40960,
-	    VKI_PROT_READ|VKI_PROT_WRITE|VKI_PROT_EXEC
-	 );
-   vg_assert(!res.isError); 
+   { SizeT anon_size   = clstack_end - clstack_start + 1;
+     SizeT resvn_size  = clstack_max_size - anon_size;
+     Addr  anon_start  = clstack_start;
+     Addr  resvn_start = anon_start - resvn_size;
+
+     vg_assert(VG_IS_PAGE_ALIGNED(anon_size));
+     vg_assert(VG_IS_PAGE_ALIGNED(resvn_size));
+     vg_assert(VG_IS_PAGE_ALIGNED(anon_start));
+     vg_assert(VG_IS_PAGE_ALIGNED(resvn_start));
+     vg_assert(resvn_start = clstack_end + 1 - clstack_max_size);
+
+     if (0)
+        VG_(printf)("%p 0x%x  %p 0x%x\n", 
+                    resvn_start, resvn_size, anon_start, anon_size);
+
+     /* Create a shrinkable reservation followed by an anonymous
+        segment.  Together these constitute a growdown stack. */
+     Bool ok = VG_(create_reservation)(
+                  resvn_start,
+                  resvn_size,
+                  SmUpper, 
+                  anon_size
+               );
+     vg_assert(ok);
+     /* allocate a stack - mmap enough space for the stack */
+     res = VG_(mmap_anon_fixed_client)(
+              (void*)anon_start,
+              anon_size,
+	      VKI_PROT_READ|VKI_PROT_WRITE|VKI_PROT_EXEC
+	   );
+     vg_assert(!res.isError); 
+   }
 
    /* ==================== copy client stack ==================== */
 
@@ -820,6 +850,7 @@ static void load_client(char* cl_argv[], const char* exec, Int need_help,
       }
    }
 
+   VG_(memset)(info, 0, sizeof(*info));
    info->map_base = VG_(client_mapbase);
    info->exe_base = VG_(client_base);
    info->exe_end  = VG_(client_end);
@@ -827,8 +858,6 @@ static void load_client(char* cl_argv[], const char* exec, Int need_help,
 
    if (need_help) {
       VG_(clexecfd) = -1;
-      // Totally zero 'info' before continuing.
-      VG_(memset)(info, 0, sizeof(*info));
    } else {
       Int ret;
       /* HACK: assumes VG_(open) always succeeds */
@@ -2239,9 +2268,16 @@ Int main(Int argc, HChar **argv, HChar **envp)
    VG_(debugLog)(1, "main", "Setup client stack\n");
    { void* init_sp = argv - 1;
 
+     SizeT one_meg    = 1024 * 1024;
+     SizeT eight_megs = 8 * one_meg;
+     SizeT stack_max_size = (SizeT)VG_(client_rlimit_stack).rlim_cur;
+     if (stack_max_size < one_meg) stack_max_size = one_meg;
+     if (stack_max_size > eight_megs) stack_max_size = eight_megs;
+
      initial_client_SP
-        = setup_client_stack(init_sp, cl_argv, env, &info,
-                             &client_auxv,clstack_top);
+        = setup_client_stack( init_sp, cl_argv, env, &info,
+                               &client_auxv, clstack_top, stack_max_size);
+
      VG_(free)(env);
    }
 

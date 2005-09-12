@@ -312,7 +312,7 @@ static void initialiseSector ( Int sno )
                                      8 * tc_sector_szQ );
 	 /*NOTREACHED*/
       }
-      sectors[sno].tc = sres.val;
+      sectors[sno].tc = (ULong*)sres.val;
 
       sres = VG_(map_anon_float_valgrind)( N_TTES_PER_SECTOR * sizeof(TTEntry) );
       if (sres.isError) {
@@ -320,7 +320,7 @@ static void initialiseSector ( Int sno )
                                      N_TTES_PER_SECTOR * sizeof(TTEntry) );
 	 /*NOTREACHED*/
       }
-      sectors[sno].tt = sres.val;
+      sectors[sno].tt = (TTEntry*)sres.val;
 
       if (VG_(clo_verbosity) > 2)
          VG_(message)(Vg_DebugMsg, "TT/TC: initialise sector %d", sno);

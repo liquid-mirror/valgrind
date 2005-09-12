@@ -1489,12 +1489,36 @@ static Int segAddr_to_index ( NSegment* seg )
    Int i;
    if (seg < &nsegments[0] || seg >= &nsegments[nsegments_used])
       return -1;
-   i = (seg - &nsegments[0]) / sizeof(NSegment);
+   i = ((UChar*)seg - (UChar*)(&nsegments[0])) / sizeof(NSegment);
    if (i < 0 || i >= nsegments_used)
       return -1;
    if (seg == &nsegments[i])
       return i;
    return -1;
+}
+
+/* Find the next segment along from HERE, if it is a file/anon/resvn
+   segment. */
+NSegment* VG_(next_nsegment) ( NSegment* here, Bool fwds )
+{
+   Int i = segAddr_to_index(here);
+   if (i < 0 || i >= nsegments_used)
+      return NULL;
+   if (fwds) {
+      i++;
+      if (i >= nsegments_used)
+         return NULL;
+   } else {
+      i--;
+      if (i < 0)
+         return NULL;
+   }
+   if (nsegments[i].kind == SkFile 
+       || nsegments[i].kind == SkAnon
+       || nsegments[i].kind == SkResvn)
+     return &nsegments[i];
+   else 
+      return NULL;
 }
 
 
@@ -2343,9 +2367,9 @@ Bool VG_(create_reservation) ( Addr start, SizeT length,
    if (extra > 0) end2 += extra;
 
    aspacem_assert(VG_IS_PAGE_ALIGNED(start));
-   aspacem_assert(VG_IS_PAGE_ALIGNED(start+length-1));
+   aspacem_assert(VG_IS_PAGE_ALIGNED(start+length));
    aspacem_assert(VG_IS_PAGE_ALIGNED(start2));
-   aspacem_assert(VG_IS_PAGE_ALIGNED(end2));
+   aspacem_assert(VG_IS_PAGE_ALIGNED(end2+1));
 
    startI = find_nsegment_idx( start2 );
    endI = find_nsegment_idx( end2 );

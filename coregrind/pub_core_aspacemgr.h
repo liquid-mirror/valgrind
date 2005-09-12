@@ -269,7 +269,12 @@ extern ULong VG_(aspacem_get_anonsize_total)( void );
 
 extern SysRes VG_(munmap_client)( Addr base, SizeT length );
 
+/* Finds the segment containing 'a'.  Only returns file/anon/resvn
+   segments. */
 extern NSegment* VG_(find_nsegment) ( Addr a );
+
+/* Find the next segment along from HERE, if it is a file/anon/resvn
+   segment. */
 extern NSegment* VG_(next_nsegment) ( NSegment* here, Bool fwds );
 
 /* Create a reservation from START .. START+LENGTH-1, with the given
