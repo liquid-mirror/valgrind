@@ -434,8 +434,50 @@ static int match_ELF(const char *hdr, int len)
    return (len > sizeof(*e)) && VG_(memcmp)(&e->e_ident[0], ELFMAG, SELFMAG) == 0;
 }
 
+
+/* load_ELF pulls an ELF executable into the address space, prepares
+   it for execution, and writes info about it into INFO.  In
+   particular it fills in .init_eip, which is the starting point.
+
+   Returns zero on success, non-zero (a VKI_E.. value) on failure.
+
+   The sequence of activities is roughly as follows:
+
+   - use readelf() to extract program header info from the exe file.
+
+   - scan the program header, collecting info (not sure what all those
+     info-> fields are, or whether they are used, but still) and in
+     particular looking out fo the PT_INTERP header, which describes
+     the interpreter.  If such a field is found, the space needed to
+     hold the interpreter is computed into interp_size.
+
+   - map the executable in, by calling mapelf().  This maps in all
+     loadable sections, and I _think_ also creates any .bss areas
+     required.  mapelf() returns the address just beyond the end of
+     the furthest-along.  The executable is mapped starting at EBASE,
+     which is usually read from it (eg, 0x8048000 etc) except if it's
+     a PIE, in which case I'm not sure what happens.
+
+     The returned address is recorded in INFO as the start point of
+     the brk (data) segment, as it is traditional to place the
+     data segment just after the executable.
+
+   - If the initial phdr scan didn't find any mention of an
+     interpreter (interp == NULL), this must be a statically linked
+     executable, and we're pretty much done.
+
+   - Otherwise, we need to use mapelf() a second time to load the
+     interpreter.  The interpreter can go anywhere, but mapelf() wants
+     to be told a specific address to put it at.  So an advisory query
+     is passed to aspacem, asking where it would put an anonymous
+     client mapping of size INTERP_SIZE.  That address is then used
+     as the mapping address for the interpreter.
+
+   - The entry point in INFO is set to the interpreter's entry point,
+     and we're done.
+*/
 static int load_ELF(char *hdr, int len, int fd, const char *name,
-                    struct exeinfo *info)
+                    /*MOD*/struct exeinfo *info)
 {
    SysRes sres;
    struct elfinfo *e;
@@ -558,31 +600,36 @@ static int load_ELF(char *hdr, int len, int fd, const char *name,
 
    if (interp != NULL) {
       /* reserve a chunk of address space for interpreter */
-      SysRes res;
-      Char*  base = (Char *)info->exe_base;
-      Char*  baseoff;
-      Int flags = VKI_MAP_PRIVATE|VKI_MAP_ANONYMOUS;
+      Char*      base = (Char *)info->exe_base;
+      Char*      baseoff;
+      Addr       advised;
+      MapRequest mreq;
+      Bool       ok;
 
-      if (info->map_base != 0) {
-	 base = (char *)VG_ROUNDUP(info->map_base, interp_align);
-	 flags |= VKI_MAP_FIXED;
+      if (info->map_base != 0)
+	 base = (Char *)VG_ROUNDUP(info->map_base, interp_align);
+
+      /* Don't actually reserve the space.  Just get an advisory
+         indicating where it would be allocated, and pass that to
+         mapelf(), which in turn asks aspacem to do some fixed maps at
+         the specified address.  This is a bit of hack, but it should
+         work because there should be no intervening transactions with
+         aspacem which could cause those fixed maps to fail. */
+      mreq.rkind = base ? MFixed : MAny;
+      mreq.start = (Addr)base;
+      mreq.len   = interp_size;
+      ok = VG_(aspacem_getAdvisory)( &mreq, True/*client*/, &advised );
+      if (!ok) {
+         /* bomb out */
+         SysRes res = VG_(mk_SysRes_Error)(VKI_EINVAL);
+         check_mmap(res, base, interp_size);
+	 /*NOTREACHED*/
       }
 
-      if (base)
-         res = VG_(mmap_anon_fixed_client)(base, interp_size, VKI_PROT_NONE);
-      else
-         res = VG_(mmap_anon_float_client)(interp_size, VKI_PROT_NONE);
-
-      if (0) VG_(show_nsegments)(0,"after native 3");
-
-      check_mmap(res, base, interp_size);
-      vg_assert(!res.isError);
-      base = (Char*)res.val;
-
-      VG_(munmap_client)( res.val, interp_size );
+      base = (Char*)advised;
 
       baseoff = base - interp_addr;
-      mapelf(interp, (ESZ(Addr))baseoff);
+      (void)mapelf(interp, (ESZ(Addr))baseoff);
 
       VG_(close)(interp->fd);
 
