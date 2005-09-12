@@ -454,13 +454,16 @@ static int match_ELF(const char *hdr, int len)
    - map the executable in, by calling mapelf().  This maps in all
      loadable sections, and I _think_ also creates any .bss areas
      required.  mapelf() returns the address just beyond the end of
-     the furthest-along.  The executable is mapped starting at EBASE,
-     which is usually read from it (eg, 0x8048000 etc) except if it's
-     a PIE, in which case I'm not sure what happens.
+     the furthest-along mapping it creates.  The executable is mapped
+     starting at EBASE, which is usually read from it (eg, 0x8048000
+     etc) except if it's a PIE, in which case I'm not sure what
+     happens.
 
-     The returned address is recorded in INFO as the start point of
-     the brk (data) segment, as it is traditional to place the
-     data segment just after the executable.
+     The returned address is recorded in info->brkbase as the start
+     point of the brk (data) segment, as it is traditional to place
+     the data segment just after the executable.  Neither load_ELF nor
+     mapelf creates the brk segment, though: that is for the caller of
+     load_ELF to attend to.
 
    - If the initial phdr scan didn't find any mention of an
      interpreter (interp == NULL), this must be a statically linked
@@ -474,8 +477,7 @@ static int match_ELF(const char *hdr, int len)
      as the mapping address for the interpreter.
 
    - The entry point in INFO is set to the interpreter's entry point,
-     and we're done.
-*/
+     and we're done.  */
 static int load_ELF(char *hdr, int len, int fd, const char *name,
                     /*MOD*/struct exeinfo *info)
 {
