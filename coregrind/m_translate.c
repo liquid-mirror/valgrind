@@ -410,8 +410,7 @@ static Bool     chase_into_ok ( Addr64 addr64 )
       ThreadId tid = chase_into_ok__CLOSURE_tid;
       NSegment* seg = VG_(am_find_nsegment)(addr);
       if (seg
-          && (seg->kind == SkAnon || seg->kind == SkFile)
-          && seg->isClient
+          && (seg->kind == SkAnonC || seg->kind == SkFileC)
           && seg->start <= VG_(get_SP)(tid)
           && VG_(get_SP)(tid)+sizeof(Word)-1 <= seg->end)
          goto dontchase;
@@ -533,8 +532,7 @@ Bool VG_(translate) ( ThreadId tid,
    seg = VG_(am_find_nsegment)(orig_addr);
 
    if (seg == NULL 
-       || !(seg->kind == SkAnon || seg->kind == SkFile)
-       || !seg->isClient
+       || !(seg->kind == SkAnonC || seg->kind == SkFileC)
        || !seg->hasX) {
 
       /* U R busted, sonny.  Place your hands on your head and step

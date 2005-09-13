@@ -175,10 +175,12 @@ typedef
 /* Describes segment kinds. */
 typedef
    enum {
-      SkFree,  // unmapped space
-      SkAnon,  // anonymous mapping
-      SkFile,  // mapping to a file
-      SkResvn  // reservation
+      SkFree,   // unmapped space
+      SkAnonC,  // anonymous mapping belonging to the client
+      SkAnonV,  // anonymous mapping belonging to valgrind
+      SkFileC,  // file mapping belonging to the client
+      SkFileV,  // file mapping belonging to valgrind
+      SkResvn   // reservation
    }
    MKind;
 
@@ -196,13 +198,13 @@ typedef
      kind == SkFree:
         // the only meaningful fields are .start and .end
 
-     kind == SkAnon:
+     kind == SkAnon{C,V}:
         // the segment may be resized if required
         // there's no associated file:
         dev==ino==foff = 0, fnidx == -1
         // segment may have permissions
 
-     kind == SkFile
+     kind == SkFile{C,V}:
         // the segment may not be resized:
         moveLo == moveHi == NotMovable, maxlen == 0
         // there is an associated file
@@ -215,24 +217,23 @@ typedef
         // segment has no permissions
         hasR==hasW==hasX==anyTranslated == False
 
-     Also: if !isClient then anyTranslated==False
+     Also: anyTranslated==True is only allowed in SkFileV and SkAnonV
            (viz, not allowed to make translations from non-client areas)
 */
 typedef
    struct {
       MKind   kind;
-      Bool    isClient;
-      /* Extent (SkFree, SkAnon, SkFile, SkResvn) */
+      /* Extent (SkFree, SkAnon{C,V}, SkFile{C,V}, SkResvn) */
       Addr    start;    // lowest address in range
       Addr    end;      // highest address in range
       /* Shrinkable? (SkResvn only) */
       ShrinkMode smode;
-      /* Associated file (SkFile only) */
+      /* Associated file (SkFile{C,V} only) */
       UInt    dev;
       UInt    ino;
       ULong   offset;
       Int     fnIdx;    // file name table index, if name is known
-      /* Permissions (SkAnon, SkFile only) */
+      /* Permissions (SkAnon{C,V}, SkFile{C,V} only) */
       Bool    hasR;
       Bool    hasW;
       Bool    hasX;

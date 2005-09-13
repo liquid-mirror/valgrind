@@ -1709,7 +1709,7 @@ Bool VG_(extend_stack)(Addr addr, UInt maxsize)
    NSegment* seg_next = seg ? VG_(am_next_nsegment)( seg, True/*fwds*/ )
                             : NULL;
 
-   if (seg && seg->kind == SkAnon)
+   if (seg && seg->kind == SkAnonC)
       /* addr is already mapped.  Nothing to do. */
       return True;
 
@@ -1720,8 +1720,7 @@ Bool VG_(extend_stack)(Addr addr, UInt maxsize)
            && seg->kind == SkResvn
            && seg->smode == SmUpper
            && seg_next
-           && seg_next->kind == SkAnon
-           && seg_next->isClient
+           && seg_next->kind == SkAnonC
            && seg->end+1 == seg_next->start))
       return False;
 
@@ -1870,8 +1869,7 @@ void sync_signalhandler ( Int sigNo, vki_siginfo_t *info, struct vki_ucontext *u
           && seg->kind == SkResvn
           && seg->smode == SmUpper
           && seg_next
-          && seg_next->kind == SkAnon
-          && seg_next->isClient
+          && seg_next->kind == SkAnonC
           && seg->end+1 == seg_next->start
 	  && fault >= (esp - VG_STACK_REDZONE_SZB)) {
 	 /* If the fault address is above esp but below the current known

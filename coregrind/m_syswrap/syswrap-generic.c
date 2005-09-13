@@ -832,7 +832,7 @@ static Addr do_brk ( Addr newbrk )
    /* These should be assured by setup_client_dataseg in m_main. */
    vg_assert(aseg);
    vg_assert(rseg);
-   vg_assert(aseg->kind == SkAnon);
+   vg_assert(aseg->kind == SkAnonC);
    vg_assert(rseg->kind == SkResvn);
    vg_assert(aseg->end+1 == rseg->start);
 

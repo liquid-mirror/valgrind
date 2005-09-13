@@ -1602,12 +1602,14 @@ NSegment* VG_(am_next_nsegment) ( NSegment* here, Bool fwds )
       if (i < 0)
          return NULL;
    }
-   if (nsegments[i].kind == SkFile 
-       || nsegments[i].kind == SkAnon
-       || nsegments[i].kind == SkResvn)
-      return &nsegments[i];
-   else 
-      return NULL;
+   switch (nsegments[i].kind) {
+      case SkFileC: case SkFileV: 
+      case SkAnonC: case SkAnonV: case SkResvn:
+         return &nsegments[i];
+      default:
+         break;
+   }
+   return NULL;
 }
 
 
@@ -1632,9 +1634,10 @@ ULong VG_(am_get_anonsize_total)( void )
    Int   i;
    ULong total = 0;
    for (i = 0; i < nsegments_used; i++) {
-      if (nsegments[i].kind != SkAnon)
-         continue;
-      total += (ULong)nsegments[i].end - (ULong)nsegments[i].start + 1ULL;
+      if (nsegments[i].kind == SkAnonC || nsegments[i].kind == SkAnonV) {
+         total += (ULong)nsegments[i].end 
+                  - (ULong)nsegments[i].start + 1ULL;
+      }
    }
    return total;
 }
@@ -1661,8 +1664,7 @@ Bool VG_(am_is_valid_for_client)( Addr start, SizeT len, UInt prot )
    iLo = find_nsegment_idx(start);
    iHi = find_nsegment_idx(start + len - 1);
    for (i = iLo; i <= iHi; i++) {
-      if (nsegments[i].isClient
-          && (nsegments[i].kind == SkFile || nsegments[i].kind == SkAnon)
+      if ((nsegments[i].kind == SkFileC || nsegments[i].kind == SkAnonC)
           && (needR ? nsegments[i].hasR : True)
           && (needW ? nsegments[i].hasW : True)
           && (needX ? nsegments[i].hasX : True)) {
@@ -1685,8 +1687,10 @@ static HChar* show_seg_kind ( NSegment* seg )
 {
    switch (seg->kind) {
       case SkFree:  return "    ";
-      case SkAnon:  return seg->isClient ? "anon" : "ANON";
-      case SkFile:  return seg->isClient ? "file" : "FILE";
+      case SkAnonC: return "anon";
+      case SkAnonV: return "ANON";
+      case SkFileC: return "file";
+      case SkFileV: return "FILE";
       case SkResvn: return "RSVN";
       default:      return "????";
    }
@@ -1732,7 +1736,7 @@ static void show_nsegment ( Int logLevel, Int segNo, NSegment* seg )
          );
          break;
 
-      case SkAnon:
+      case SkAnonC: case SkAnonV:
          VG_(debugLog)(
             logLevel, "aspacem",
             "%3d: %s %08llx-%08llx %s %c%c%c%c d=0x%03x i=%-7d o=%-7lld (%d)\n",
@@ -1744,7 +1748,7 @@ static void show_nsegment ( Int logLevel, Int segNo, NSegment* seg )
          );
          break;
 
-      case SkFile:
+      case SkFileC: case SkFileV:
          VG_(debugLog)(
             logLevel, "aspacem",
             "%3d: %s %08llx-%08llx %s %c%c%c%c d=0x%03x i=%-7d o=%-7lld (%d)\n",
@@ -1921,8 +1925,7 @@ static void add_segment ( NSegment* seg )
 
 static void init_nsegment ( /*OUT*/NSegment* seg )
 {
-   seg->kind     = SkAnon;
-   seg->isClient = False;
+   seg->kind     = SkFree;
    seg->start    = 0;
    seg->end      = 0;
    seg->smode    = SmFixed;
@@ -1942,9 +1945,9 @@ static void init_resvn ( /*OUT*/NSegment* seg, Addr start, Addr end )
    aspacem_assert(VG_IS_PAGE_ALIGNED(start));
    aspacem_assert(VG_IS_PAGE_ALIGNED(end+1));
    init_nsegment(seg);
-   seg->kind = SkResvn;
+   seg->kind  = SkResvn;
    seg->start = start;
-   seg->end = end;
+   seg->end   = end;
 }
 
 
@@ -1970,13 +1973,13 @@ static void read_maps_callback ( Addr addr, SizeT len, UInt prot,
    seg.hasX   = toBool(prot & VKI_PROT_EXEC);
    seg.hasT   = False;
 
-   seg.kind = SkAnon;
+   seg.kind = SkAnonV;
    if (filename) { 
-      seg.kind = SkFile;
+      seg.kind  = SkFileV;
       seg.fnIdx = allocate_segname( filename );
    }
 
-   show_nsegment( 2,0, &seg );
+   if (0) show_nsegment( 2,0, &seg );
    add_segment( &seg );
 }
 
@@ -2168,7 +2171,7 @@ Bool VG_(am_get_advisory) ( MapRequest*  req,
       Bool allow = True;
       for (i = iLo; i <= iHi; i++) {
          if (nsegments[i].kind == SkFree
-             || (nsegments[i].kind == SkFile && nsegments[i].isClient)) {
+             || nsegments[i].kind == SkFileC) {
             /* ok */
          } else {
             allow = False;
@@ -2284,14 +2287,13 @@ VG_(am_notify_client_mmap)( Addr a, SizeT len, UInt prot, UInt flags,
    aspacem_assert(VG_IS_PAGE_ALIGNED(a));
    aspacem_assert(VG_IS_PAGE_ALIGNED(len));
    init_nsegment( &seg );
-   seg.kind     = (flags & VKI_MAP_ANONYMOUS) ? SkAnon : SkFile;
-   seg.isClient = True;
-   seg.start    = a;
-   seg.end      = a + len - 1;
-   seg.offset   = offset;
-   seg.hasR     = toBool(prot & VKI_PROT_READ);
-   seg.hasW     = toBool(prot & VKI_PROT_WRITE);
-   seg.hasX     = toBool(prot & VKI_PROT_EXEC);
+   seg.kind   = (flags & VKI_MAP_ANONYMOUS) ? SkAnonC : SkFileC;
+   seg.start  = a;
+   seg.end    = a + len - 1;
+   seg.offset = offset;
+   seg.hasR   = toBool(prot & VKI_PROT_READ);
+   seg.hasW   = toBool(prot & VKI_PROT_WRITE);
+   seg.hasX   = toBool(prot & VKI_PROT_EXEC);
    /* TODO: what about seg.hasT ? */
    if (get_inode_for_fd(fd, &dev, &ino)) {
       seg.dev = dev;
@@ -2319,7 +2321,7 @@ void VG_(am_notify_client_mprotect)( Addr start, SizeT len, UInt prot )
    if (iLo == iHi 
        && nsegments[iLo].start == start 
        && nsegments[iLo].end+1 == start+len
-       && (nsegments[iLo].kind == SkFile || nsegments[iLo].kind == SkAnon)) {
+       && (nsegments[iLo].kind == SkFileC || nsegments[iLo].kind == SkAnonC)) {
       nsegments[iLo].hasR = toBool(prot & VKI_PROT_READ);
       nsegments[iLo].hasW = toBool(prot & VKI_PROT_WRITE);
       nsegments[iLo].hasX = toBool(prot & VKI_PROT_EXEC);
@@ -2403,14 +2405,13 @@ SysRes VG_(am_mmap_file_fixed_client)
 
    /* Ok, the mapping succeeded.  Now notify the interval map. */
    init_nsegment( &seg );
-   seg.kind     = SkFile;
-   seg.isClient = True;
-   seg.start    = start;
-   seg.end      = seg.start + VG_PGROUNDUP(length) - 1;
-   seg.offset   = offset;
-   seg.hasR     = toBool(prot & VKI_PROT_READ);
-   seg.hasW     = toBool(prot & VKI_PROT_WRITE);
-   seg.hasX     = toBool(prot & VKI_PROT_EXEC);
+   seg.kind   = SkFileC;
+   seg.start  = start;
+   seg.end    = seg.start + VG_PGROUNDUP(length) - 1;
+   seg.offset = offset;
+   seg.hasR   = toBool(prot & VKI_PROT_READ);
+   seg.hasW   = toBool(prot & VKI_PROT_WRITE);
+   seg.hasX   = toBool(prot & VKI_PROT_EXEC);
    if (get_inode_for_fd(fd, &dev, &ino)) {
       seg.dev = dev;
       seg.ino = ino;
@@ -2468,13 +2469,12 @@ SysRes VG_(am_mmap_anon_fixed_client) ( Addr start, SizeT length, UInt prot )
 
    /* Ok, the mapping succeeded.  Now notify the interval map. */
    init_nsegment( &seg );
-   seg.kind     = SkAnon;
-   seg.isClient = True;
-   seg.start    = start;
-   seg.end      = seg.start + VG_PGROUNDUP(length) - 1;
-   seg.hasR     = toBool(prot & VKI_PROT_READ);
-   seg.hasW     = toBool(prot & VKI_PROT_WRITE);
-   seg.hasX     = toBool(prot & VKI_PROT_EXEC);
+   seg.kind  = SkAnonC;
+   seg.start = start;
+   seg.end   = seg.start + VG_PGROUNDUP(length) - 1;
+   seg.hasR  = toBool(prot & VKI_PROT_READ);
+   seg.hasW  = toBool(prot & VKI_PROT_WRITE);
+   seg.hasX  = toBool(prot & VKI_PROT_EXEC);
    add_segment( &seg );
 
    return sres;
@@ -2525,13 +2525,12 @@ SysRes VG_(am_mmap_anon_float_client) ( SizeT length, Int prot )
 
    /* Ok, the mapping succeeded.  Now notify the interval map. */
    init_nsegment( &seg );
-   seg.kind     = SkAnon;
-   seg.isClient = True;
-   seg.start    = advised;
-   seg.end      = seg.start + VG_PGROUNDUP(length) - 1;
-   seg.hasR     = toBool(prot & VKI_PROT_READ);
-   seg.hasW     = toBool(prot & VKI_PROT_WRITE);
-   seg.hasX     = toBool(prot & VKI_PROT_EXEC);
+   seg.kind  = SkAnonC;
+   seg.start = advised;
+   seg.end   = seg.start + VG_PGROUNDUP(length) - 1;
+   seg.hasR  = toBool(prot & VKI_PROT_READ);
+   seg.hasW  = toBool(prot & VKI_PROT_WRITE);
+   seg.hasX  = toBool(prot & VKI_PROT_EXEC);
    add_segment( &seg );
 
    return sres;
@@ -2584,13 +2583,12 @@ SysRes VG_(am_mmap_anon_float_valgrind)( SizeT length )
 
    /* Ok, the mapping succeeded.  Now notify the interval map. */
    init_nsegment( &seg );
-   seg.kind     = SkAnon;
-   seg.isClient = False;
-   seg.start    = advised;
-   seg.end      = seg.start + VG_PGROUNDUP(length) - 1;
-   seg.hasR     = True;
-   seg.hasW     = True;
-   seg.hasX     = True;
+   seg.kind  = SkAnonV;
+   seg.start = advised;
+   seg.end   = seg.start + VG_PGROUNDUP(length) - 1;
+   seg.hasR  = True;
+   seg.hasW  = True;
+   seg.hasX  = True;
    add_segment( &seg );
 
    return sres;
@@ -2663,7 +2661,7 @@ Bool VG_(am_extend_into_adjacent_reservation)( NSegment* seg, SSizeT delta )
    segA = segAddr_to_index( seg );
    aspacem_assert(segA >= 0 && segA < nsegments_used);
 
-   if (nsegments[segA].kind != SkAnon)
+   if (nsegments[segA].kind != SkAnonC && nsegments[segA].kind != SkAnonV)
       return False;
 
    if (delta == 0)
