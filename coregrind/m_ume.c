@@ -70,10 +70,11 @@ struct elfinfo
    int		fd;
 };
 
-static void check_mmap(SysRes res, void* base, int len)
+static void check_mmap(SysRes res, Addr base, SizeT len)
 {
    if (res.isError) {
-      VG_(printf)("valgrind: mmap(%p, %d) failed in UME.\n", base, len);
+      VG_(printf)("valgrind: mmap(0x%llx, %lld) failed in UME.\n", 
+                  (ULong)base, (Long)len);
       VG_(exit)(1);
    }
 }
@@ -385,15 +386,15 @@ ESZ(Addr) mapelf(struct elfinfo *e, ESZ(Addr) base)
       //
       // The condition handles the case of a zero-length segment.
       if (VG_PGROUNDUP(bss)-VG_PGROUNDDN(addr) > 0) {
-         res = VG_(mmap_file_fixed_client)
-                    ((void *)VG_PGROUNDDN(addr),
+         res = VG_(am_mmap_file_fixed_client)(
+                    VG_PGROUNDDN(addr),
                     VG_PGROUNDUP(bss)-VG_PGROUNDDN(addr),
                     prot, /*VKI_MAP_FIXED|VKI_MAP_PRIVATE, */
                     e->fd, VG_PGROUNDDN(off)
                );
-         if (0) VG_(show_nsegments)(0,"after native 1");
-         check_mmap(res, (char*)VG_PGROUNDDN(addr),
-                    VG_PGROUNDUP(bss)-VG_PGROUNDDN(addr));
+         if (0) VG_(am_show_nsegments)(0,"after native 1");
+         check_mmap(res, VG_PGROUNDDN(addr),
+                         VG_PGROUNDUP(bss)-VG_PGROUNDDN(addr));
       }
 
       // if memsz > filesz, fill the remainder with zeroed pages
@@ -402,17 +403,12 @@ ESZ(Addr) mapelf(struct elfinfo *e, ESZ(Addr) base)
 
 	 bytes = VG_PGROUNDUP(brkaddr)-VG_PGROUNDUP(bss);
 	 if (bytes > 0) {
-            VG_(debugLog)(0,"ume","mmap_native 2\n");
-	    //res = VG_(mmap_native)(
-            //         (Char *)VG_PGROUNDUP(bss), bytes,
-	    //     prot, VKI_MAP_FIXED|VKI_MAP_ANONYMOUS|VKI_MAP_PRIVATE, 
-            //         -1, 0
-            //      );
-	    res = VG_(mmap_anon_fixed_client)(
-                     (Char *)VG_PGROUNDUP(bss), bytes,
+            if (0) VG_(debugLog)(0,"ume","mmap_native 2\n");
+	    res = VG_(am_mmap_anon_fixed_client)(
+                     VG_PGROUNDUP(bss), bytes,
 		     prot
                   );
-            check_mmap(res, (char*)VG_PGROUNDUP(bss), bytes);
+            check_mmap(res, VG_PGROUNDUP(bss), bytes);
          }
 
 	 bytes = bss & (VKI_PAGE_SIZE - 1);
@@ -624,11 +620,11 @@ static int load_ELF(char *hdr, int len, int fd, const char *name,
       mreq.rkind = base ? MFixed : MAny;
       mreq.start = (Addr)base;
       mreq.len   = interp_size;
-      ok = VG_(aspacem_getAdvisory)( &mreq, True/*client*/, &advised );
+      ok = VG_(am_get_advisory)( &mreq, True/*client*/, &advised );
       if (!ok) {
          /* bomb out */
          SysRes res = VG_(mk_SysRes_Error)(VKI_EINVAL);
-         check_mmap(res, base, interp_size);
+         check_mmap(res, (Addr)base, interp_size);
 	 /*NOTREACHED*/
       }
 

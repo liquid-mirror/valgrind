@@ -416,7 +416,8 @@ PRE(sys_sysctl)
    args = (struct __vki_sysctl_args *)ARG1;
    PRE_REG_READ1(long, "sysctl", struct __sysctl_args *, args);
    PRE_MEM_WRITE( "sysctl(args)", ARG1, sizeof(struct __vki_sysctl_args) );
-   if (!VG_(aspacem_is_valid_for_client)(ARG1, sizeof(struct __vki_sysctl_args), VKI_PROT_READ)) {
+   if (!VG_(am_is_valid_for_client)(ARG1, sizeof(struct __vki_sysctl_args), 
+                                          VKI_PROT_READ)) {
       SET_STATUS_Failure( VKI_EFAULT );
       return;
    }

@@ -607,7 +607,7 @@ Addr setup_client_stack( void*  init_sp,
 
      /* Create a shrinkable reservation followed by an anonymous
         segment.  Together these constitute a growdown stack. */
-     Bool ok = VG_(create_reservation)(
+     Bool ok = VG_(am_create_reservation)(
                   resvn_start,
                   resvn_size,
                   SmUpper, 
@@ -615,8 +615,8 @@ Addr setup_client_stack( void*  init_sp,
                );
      vg_assert(ok);
      /* allocate a stack - mmap enough space for the stack */
-     res = VG_(mmap_anon_fixed_client)(
-              (void*)anon_start,
+     res = VG_(am_mmap_anon_fixed_client)(
+              anon_start,
               anon_size,
 	      VKI_PROT_READ|VKI_PROT_WRITE|VKI_PROT_EXEC
 	   );
@@ -779,10 +779,16 @@ static void setup_client_dataseg ( SizeT max_size )
    vg_assert(VG_IS_PAGE_ALIGNED(anon_start));
    vg_assert(VG_IS_PAGE_ALIGNED(resvn_start));
 
-   ok = VG_(create_reservation)( resvn_start, resvn_size, SmLower, anon_size );
+   ok = VG_(am_create_reservation)( 
+           resvn_start, 
+           resvn_size, 
+           SmLower, 
+           anon_size
+        );
    vg_assert(ok);
-   sres = VG_(mmap_anon_fixed_client)( 
-             (void*)anon_start, anon_size, 
+   sres = VG_(am_mmap_anon_fixed_client)( 
+             anon_start, 
+             anon_size, 
              VKI_PROT_READ|VKI_PROT_WRITE|VKI_PROT_EXEC 
           );
    vg_assert(!sres.isError);
@@ -2172,7 +2178,7 @@ Int main(Int argc, HChar **argv, HChar **envp)
    //   p: logging, plausible-stack
    //--------------------------------------------------------------
    VG_(debugLog)(1, "main", "Starting the address space manager\n");
-   clstack_top = VG_(new_aspacem_start)( sp_at_startup_new );
+   clstack_top = VG_(am_startup)( sp_at_startup_new );
    VG_(debugLog)(1, "main", "Address space manager is running\n");
 
    //--------------------------------------------------------------
@@ -2559,7 +2565,7 @@ Int main(Int argc, HChar **argv, HChar **envp)
    //--------------------------------------------------------------
    VG_(debugLog)(1, "main", "\n");
    VG_(debugLog)(1, "main", "\n");
-   VG_(show_nsegments)(1,"Memory layout at client startup");
+   VG_(am_show_nsegments)(1,"Memory layout at client startup");
    VG_(debugLog)(1, "main", "\n");
    VG_(debugLog)(1, "main", "\n");
 

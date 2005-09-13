@@ -408,7 +408,7 @@ static Bool     chase_into_ok ( Addr64 addr64 )
       match the logic at XXXYYYZZZ below. */
    if (VG_(clo_smc_check) == Vg_SmcStack) {
       ThreadId tid = chase_into_ok__CLOSURE_tid;
-      NSegment* seg = VG_(find_nsegment)(addr);
+      NSegment* seg = VG_(am_find_nsegment)(addr);
       if (seg
           && (seg->kind == SkAnon || seg->kind == SkFile)
           && seg->isClient
@@ -530,7 +530,7 @@ Bool VG_(translate) ( ThreadId tid,
    /* Figure out what segment the requested address is in, and 
       look for possible reasons to disallow it. */
 
-   seg = VG_(find_nsegment)(orig_addr);
+   seg = VG_(am_find_nsegment)(orig_addr);
 
    if (seg == NULL 
        || !(seg->kind == SkAnon || seg->kind == SkFile)

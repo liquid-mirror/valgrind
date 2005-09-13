@@ -72,7 +72,7 @@ Bool ML_(valid_client_addr)(Addr start, SizeT size, ThreadId tid,
    if (0 && cl_base < 0x10000)
       cl_base = 0x10000;
 
-   ret = VG_(aspacem_is_valid_for_client)(start,size,VKI_PROT_NONE);
+   ret = VG_(am_is_valid_for_client)(start,size,VKI_PROT_NONE);
 
    if (0)
       VG_(printf)("%s: test=%p-%p client=%p-%p ret=%d\n",
@@ -144,7 +144,7 @@ ML_(notify_aspacem_and_tool_of_mmap) ( Addr a, SizeT len, UInt prot,
    /* whereas len is whatever the syscall supplied.  So: */
    len = VG_PGROUNDUP(len);
 
-   VG_(notify_client_mmap)( a, len, prot, flags, fd, offset );
+   VG_(am_notify_client_mmap)( a, len, prot, flags, fd, offset );
 
    rr = toBool(prot & VKI_PROT_READ);
    ww = toBool(prot & VKI_PROT_WRITE);
@@ -826,8 +826,8 @@ static Addr do_brk ( Addr newbrk )
    }
 
    /* otherwise we're expanding the brk segment. */
-   aseg = VG_(find_nsegment)( VG_(brk_base) );
-   rseg = VG_(next_nsegment)( aseg, True/*forwards*/ );
+   aseg = VG_(am_find_nsegment)( VG_(brk_base) );
+   rseg = VG_(am_next_nsegment)( aseg, True/*forwards*/ );
 
    /* These should be assured by setup_client_dataseg in m_main. */
    vg_assert(aseg);
@@ -855,7 +855,7 @@ static Addr do_brk ( Addr newbrk )
    vg_assert(delta > 0);
    vg_assert(VG_IS_PAGE_ALIGNED(delta));
    
-   ok = VG_(extend_into_adjacent_reservation)( aseg, delta );
+   ok = VG_(am_extend_into_adjacent_reservation)( aseg, delta );
    if (!ok) goto bad;
 
    VG_(brk_limit) = newbrk;
@@ -4574,7 +4574,7 @@ PRE(sys_mmap2)
    }
 
    /* Enquire ... */
-   mreq_ok = VG_(aspacem_getAdvisory)( &mreq, True/*client*/, &advised );
+   mreq_ok = VG_(am_get_advisory)( &mreq, True/*client*/, &advised );
    if (!mreq_ok) {
       /* Our request was bounced, so we'd better fail. */
       SET_STATUS_Failure( VKI_EINVAL );
@@ -4585,9 +4585,9 @@ PRE(sys_mmap2)
 
    /* Otherwise we're OK (so far).  Install aspacem's choice of
       address, and let the mmap go through.  */
-   sres = VG_(aspacem_do_mmap_NO_NOTIFY)(advised, ARG2, ARG3,
-                                         ARG4 | VKI_MAP_FIXED,
-                                         ARG5, ARG6);
+   sres = VG_(am_do_mmap_NO_NOTIFY)(advised, ARG2, ARG3,
+                                    ARG4 | VKI_MAP_FIXED,
+                                    ARG5, ARG6);
    SET_STATUS_from_SysRes(sres);
 
    if (!sres.isError) {
@@ -4642,7 +4642,7 @@ POST(sys_mprotect)
    Bool xx = toBool(prot & VKI_PROT_EXEC);
 
    page_align_addr_and_len(&a, &len);
-   VG_(notify_client_mprotect)(a, len, prot);
+   VG_(am_notify_client_mprotect)(a, len, prot);
    VG_TRACK( change_mem_mprotect, a, len, rr, ww, xx );
 }
 
@@ -4662,7 +4662,7 @@ POST(sys_munmap)
    SizeT len = ARG2;
 
    page_align_addr_and_len(&a, &len);
-   VG_(notify_client_munmap)(a, len);
+   VG_(am_notify_client_munmap)(a, len);
    VG_TRACK( die_mem_munmap, a, len );
 }
 

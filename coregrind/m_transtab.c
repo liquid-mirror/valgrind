@@ -306,7 +306,7 @@ static void initialiseSector ( Int sno )
 
       VG_(debugLog)(1,"transtab", "allocate sector %d\n", sno);
 
-      sres = VG_(map_anon_float_valgrind)( 8 * tc_sector_szQ );
+      sres = VG_(am_mmap_anon_float_valgrind)( 8 * tc_sector_szQ );
       if (sres.isError) {
          VG_(out_of_memory_NORETURN)("initialiseSector(TC)", 
                                      8 * tc_sector_szQ );
@@ -314,7 +314,8 @@ static void initialiseSector ( Int sno )
       }
       sectors[sno].tc = (ULong*)sres.val;
 
-      sres = VG_(map_anon_float_valgrind)( N_TTES_PER_SECTOR * sizeof(TTEntry) );
+      sres = VG_(am_mmap_anon_float_valgrind)
+                ( N_TTES_PER_SECTOR * sizeof(TTEntry) );
       if (sres.isError) {
          VG_(out_of_memory_NORETURN)("initialiseSector(TT)", 
                                      N_TTES_PER_SECTOR * sizeof(TTEntry) );

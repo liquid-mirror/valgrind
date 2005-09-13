@@ -154,6 +154,13 @@ extern Bool VG_(setup_pointercheck) ( Addr client_base, Addr client_end );
 /////////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////////
 
+/* New address-space-manager stuff from here on down. */
+
+
+//--------------------------------------------------------------
+// Valgrind (non-client) thread stacks.  V itself runs on such
+// stacks.
+
 #define VG_STACK_GUARD_SZB  8192
 #define VG_STACK_ACTIVE_SZB 65536
 
@@ -161,6 +168,11 @@ typedef
    HChar
    VgStack[VG_STACK_GUARD_SZB + VG_STACK_ACTIVE_SZB + VG_STACK_GUARD_SZB];
 
+
+//--------------------------------------------------------------
+// Definition of address-space segments
+
+/* Describes segment kinds. */
 typedef
    enum {
       SkFree,  // unmapped space
@@ -170,6 +182,7 @@ typedef
    }
    MKind;
 
+/* Describes how a reservation segment can be resized. */
 typedef
    enum {
       SmLower,  // lower end can move up
@@ -230,14 +243,55 @@ typedef
    NSegment;
 
 
-/* Takes a pointer to the SP at the time V gained control.  This is
+//--------------------------------------------------------------
+// Initialisation
+
+/* Initialise the address space manager, setting up the initial
+   segment list, and reading /proc/self/maps into it.  This must
+   be called before any other function.
+
+   Takes a pointer to the SP at the time V gained control.  This is
    taken to be the highest usable address (more or less).  Based on
    that (and general consultation of tea leaves, etc) return a
    suggested end address for the client's stack. */
-extern Addr VG_(new_aspacem_start) ( Addr sp_at_startup );
+extern Addr VG_(am_startup) ( Addr sp_at_startup );
 
-extern void VG_(show_nsegments) ( Int logLevel, HChar* who );
 
+//--------------------------------------------------------------
+// Querying current status
+
+/* Finds the segment containing 'a'.  Only returns file/anon/resvn
+   segments. */
+extern NSegment* VG_(am_find_nsegment) ( Addr a );
+
+/* Find the next segment along from 'here', if it is a file/anon/resvn
+   segment. */
+extern NSegment* VG_(am_next_nsegment) ( NSegment* here, Bool fwds );
+
+/* Is the area [start .. start+len-1] validly accessible by the 
+   client with at least the permissions 'prot' ?  To find out
+   simply if said area merely belongs to the client, pass 
+   VKI_PROT_NONE as 'prot'.  Will return False if any part of the
+   area does not belong to the client or does not have at least
+   the stated permissions. */
+extern Bool VG_(am_is_valid_for_client)( Addr start, SizeT len, 
+                                         UInt prot );
+
+/* Trivial fn: return the total amount of space in anonymous mappings,
+   both for V and the client.  Is used for printing stats in
+   out-of-memory messages. */
+extern ULong VG_(am_get_anonsize_total)( void );
+
+/* Show the segment array on the debug log, at given loglevel. */
+extern void VG_(am_show_nsegments) ( Int logLevel, HChar* who );
+
+
+//--------------------------------------------------------------
+// Functions pertaining to the central query-notify mechanism
+// used to handle mmap/munmap/mprotect resulting from client
+// syscalls.
+
+/* Describes a request for VG_(am_get_advisory). */
 typedef
    struct {
       enum { MFixed, MHint, MAny } rkind;
@@ -246,57 +300,61 @@ typedef
    }
    MapRequest;
 
-extern
-Bool VG_(aspacem_is_valid_for_client)( Addr start, SizeT len, UInt prot );
-
-extern
-Bool VG_(aspacem_getAdvisory)
-     ( MapRequest* req, Bool forClient, /*OUT*/Addr* result );
-
-extern
-SysRes VG_(mmap_file_fixed_client)
-     ( void* startV, SizeT length, Int prot, Int fd, SizeT offset );
-
-extern
-SysRes VG_(mmap_anon_fixed_client)
-     ( void* startV, SizeT length, Int prot );
-
-extern
-SysRes VG_(mmap_anon_float_client)
-     ( SizeT length, Int prot );
-
-extern
-SysRes VG_(map_anon_float_valgrind)( SizeT cszB );
-
-extern ULong VG_(aspacem_get_anonsize_total)( void );
-
-extern SysRes VG_(munmap_client)( Addr base, SizeT length );
-
-/* This function is dangerous -- it can cause aspacem's view of the
-   address space to diverge from that of the kernel.  DO NOT USE IT
-   UNLESS YOU UNDERSTAND the request-notify model used by aspacem. */
-extern
-SysRes VG_(aspacem_do_mmap_NO_NOTIFY)( Addr start, SizeT length, UInt prot, 
-                                       UInt flags, UInt fd, OffT offset);
-
-extern 
-void VG_(notify_client_mmap)( Addr a, SizeT len, UInt prot, UInt flags,
-                              Int fd, SizeT offset );
-
-extern
-void VG_(notify_client_mprotect)( Addr a, SizeT len, UInt prot );
-
-extern
-void VG_(notify_client_munmap)( Addr start, SizeT len );
+/* Query aspacem to ask where a mapping should go.  On success,
+   returns True and the advised placement is in *result.  If False is
+   returned, it means aspacem has vetoed the mapping, and so the
+   caller should not proceed with it. */
+extern Bool VG_(am_get_advisory)
+   ( MapRequest* req, Bool forClient, /*OUT*/Addr* result );
 
 
-/* Finds the segment containing 'a'.  Only returns file/anon/resvn
-   segments. */
-extern NSegment* VG_(find_nsegment) ( Addr a );
+/* Notifies aspacem that the client completed an mmap successfully.
+   The segment array is updated accordingly. */
+extern void VG_(am_notify_client_mmap)
+   ( Addr a, SizeT len, UInt prot, UInt flags, Int fd, SizeT offset );
 
-/* Find the next segment along from HERE, if it is a file/anon/resvn
-   segment. */
-extern NSegment* VG_(next_nsegment) ( NSegment* here, Bool fwds );
+/* Notifies aspacem that the client completed an mprotect
+   successfully.  The segment array is updated accordingly. */
+extern void VG_(am_notify_client_mprotect)( Addr a, SizeT len, UInt prot );
+
+/* Notifies aspacem that the client completed an munmap successfully.
+   The segment array is updated accordingly. */
+extern void VG_(am_notify_client_munmap)( Addr start, SizeT len );
+
+
+/* Hand a raw mmap to the kernel, without aspacem updating the segment
+   array.  THIS FUNCTION IS DANGEROUS -- it will cause aspacem's view
+   of the address space to diverge from that of the kernel.  DO NOT
+   USE IT UNLESS YOU UNDERSTAND the request-notify model used by
+   aspacem. */
+extern SysRes VG_(am_do_mmap_NO_NOTIFY)
+   ( Addr start, SizeT length, UInt prot, UInt flags, UInt fd, OffT offset);
+
+
+//--------------------------------------------------------------
+// Dealing with mappings which do not arise directly from the
+// simulation of the client.  These are typically used for
+// loading the client and building its stack/data segment, before
+// execution begins.  Also for V's own administrative use.
+
+/* Map a file at a fixed address for the client, and update the
+   segment array accordingly. */
+extern SysRes VG_(am_mmap_file_fixed_client)
+   ( Addr start, SizeT length, UInt prot, Int fd, SizeT offset );
+
+/* Map anonymously at a fixed address for the client, and update
+   the segment array accordingly. */
+extern SysRes VG_(am_mmap_anon_fixed_client)
+   ( Addr start, SizeT length, UInt prot );
+
+/* Map anonymously at an unconstrained address for the client, and
+   update the segment array accordingly.  */
+extern SysRes VG_(am_mmap_anon_float_client) ( SizeT length, Int prot );
+
+/* Map anonymously at an unconstrained address for V, and update the
+   segment array accordingly.  This is fundamentally how V allocates
+   itself more address space when needed. */
+extern SysRes VG_(am_mmap_anon_float_valgrind)( SizeT cszB );
 
 /* Create a reservation from START .. START+LENGTH-1, with the given
    ShrinkMode.  When checking whether the reservation can be created,
@@ -306,21 +364,19 @@ extern NSegment* VG_(next_nsegment) ( NSegment* here, Bool fwds );
    The reservation will only be created if it, plus the extra-zone,
    falls entirely within a single free segment.  The returned Bool
    indicates whether the creation succeeded. */
-extern 
-Bool VG_(create_reservation) ( Addr start, SizeT length, 
-                               ShrinkMode smode, SSizeT extra );
+extern Bool VG_(am_create_reservation) 
+   ( Addr start, SizeT length, ShrinkMode smode, SSizeT extra );
 
-
-/* Let SEG be an anonymous mapping.  This fn extends the mapping by
-   DELTA bytes, taking the space from a reservation section which must
-   be adjacent.  If DELTA is positive, the segment is extended
-   forwards in the address space, and the reservation must be the next
-   one along.  If DELTA is negative, the segment is extended backwards
-   in the address space and the reservation must be the previous one.
-   DELTA must be page aligned and must not exceed the size of the
-   reservation segment. */
-extern
-Bool VG_(extend_into_adjacent_reservation) ( NSegment* seg, SSizeT delta );
+/* Let SEG be an anonymous client mapping.  This fn extends the
+   mapping by DELTA bytes, taking the space from a reservation section
+   which must be adjacent.  If DELTA is positive, the segment is
+   extended forwards in the address space, and the reservation must be
+   the next one along.  If DELTA is negative, the segment is extended
+   backwards in the address space and the reservation must be the
+   previous one.  DELTA must be page aligned and must not exceed the
+   size of the reservation segment. */
+extern Bool VG_(am_extend_into_adjacent_reservation) 
+   ( NSegment* seg, SSizeT delta );
 
 
 #endif   // __PUB_CORE_ASPACEMGR_H

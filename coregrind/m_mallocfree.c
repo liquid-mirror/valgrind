@@ -481,7 +481,7 @@ void ensure_mm_init ( void )
 void VG_(out_of_memory_NORETURN) ( HChar* who, SizeT szB )
 {
    static Bool alreadyCrashing = False;
-   ULong tot_alloc = VG_(aspacem_get_anonsize_total)();
+   ULong tot_alloc = VG_(am_get_anonsize_total)();
    if (!alreadyCrashing) {
       alreadyCrashing = True;
       VG_(printf)("\n"
@@ -537,7 +537,7 @@ Superblock* newSuperblock ( Arena* a, SizeT cszB )
          return 0;
    } else {
       // non-client allocation -- aborts if it fails
-      sres = VG_(map_anon_float_valgrind)( cszB );
+      sres = VG_(am_mmap_anon_float_valgrind)( cszB );
       if (sres.isError) {
          VG_(out_of_memory_NORETURN)("newSuperblock", cszB);
          /* NOTREACHED */

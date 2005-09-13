@@ -1532,7 +1532,7 @@ PRE(old_mmap)
    }
 
    /* Enquire ... */
-   mreq_ok = VG_(aspacem_getAdvisory)( &mreq, True/*client*/, &advised );
+   mreq_ok = VG_(am_get_advisory)( &mreq, True/*client*/, &advised );
    if (!mreq_ok) {
       /* Our request was bounced, so we'd better fail. */
       SET_STATUS_Failure( VKI_EINVAL );
@@ -1546,7 +1546,7 @@ PRE(old_mmap)
 
    vg_assert(! FAILURE);
 
-   sres = VG_(aspacem_do_mmap_NO_NOTIFY)(a1, a2, a3, a4, a5, a6);
+   sres = VG_(am_do_mmap_NO_NOTIFY)(a1, a2, a3, a4, a5, a6);
    SET_STATUS_from_SysRes(sres);
 
    if (!sres.isError) {

@@ -1705,8 +1705,9 @@ Bool VG_(extend_stack)(Addr addr, UInt maxsize)
    SizeT udelta;
 
    /* Find the next Segment above addr */
-   NSegment* seg      = VG_(find_nsegment)(addr);
-   NSegment* seg_next = seg ? VG_(next_nsegment)( seg, True/*fwds*/ ) : NULL;
+   NSegment* seg      = VG_(am_find_nsegment)(addr);
+   NSegment* seg_next = seg ? VG_(am_next_nsegment)( seg, True/*fwds*/ )
+                            : NULL;
 
    if (seg && seg->kind == SkAnon)
       /* addr is already mapped.  Nothing to do. */
@@ -1728,7 +1729,7 @@ Bool VG_(extend_stack)(Addr addr, UInt maxsize)
    VG_(debugLog)(1, "signals", 
                     "extending a stack base 0x%llx down by %lld ..\n",
                     (ULong)seg_next->start, (ULong)udelta);
-   if (! VG_(extend_into_adjacent_reservation)( seg_next, -(SSizeT)udelta )) {
+   if (! VG_(am_extend_into_adjacent_reservation)( seg_next, -(SSizeT)udelta )) {
       VG_(debugLog)(1, "signals", "  .. failure\n");
       return False;
    }
@@ -1846,8 +1847,9 @@ void sync_signalhandler ( Int sigNo, vki_siginfo_t *info, struct vki_ucontext *u
    if (info->si_signo == VKI_SIGSEGV) {
       Addr fault = (Addr)info->_sifields._sigfault._addr;
       Addr esp   =  VG_(get_SP)(tid);
-      NSegment* seg      = VG_(find_nsegment)(fault);
-      NSegment* seg_next = seg ? VG_(next_nsegment)( seg, True/*fwds*/ ) : NULL;
+      NSegment* seg      = VG_(am_find_nsegment)(fault);
+      NSegment* seg_next = seg ? VG_(am_next_nsegment)( seg, True/*fwds*/ )
+                               : NULL;
 
       if (VG_(clo_trace_signals)) {
 	 if (seg == NULL)
