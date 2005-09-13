@@ -45,6 +45,11 @@
 #include "pub_core_libcproc.h"   // For VALGRINDLIB
 #include "pub_core_mallocfree.h"
 
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+
+
 /* Where we expect to find all our aux files */
 static const char *valgrind_lib = VG_LIBDIR;
 
