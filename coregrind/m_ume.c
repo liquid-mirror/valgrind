@@ -403,10 +403,14 @@ ESZ(Addr) mapelf(struct elfinfo *e, ESZ(Addr) base)
 	 bytes = VG_PGROUNDUP(brkaddr)-VG_PGROUNDUP(bss);
 	 if (bytes > 0) {
             VG_(debugLog)(0,"ume","mmap_native 2\n");
-	    res = VG_(mmap_native)(
+	    //res = VG_(mmap_native)(
+            //         (Char *)VG_PGROUNDUP(bss), bytes,
+	    //     prot, VKI_MAP_FIXED|VKI_MAP_ANONYMOUS|VKI_MAP_PRIVATE, 
+            //         -1, 0
+            //      );
+	    res = VG_(mmap_anon_fixed_client)(
                      (Char *)VG_PGROUNDUP(bss), bytes,
-		     prot, VKI_MAP_FIXED|VKI_MAP_ANONYMOUS|VKI_MAP_PRIVATE, 
-                     -1, 0
+		     prot
                   );
             check_mmap(res, (char*)VG_PGROUNDUP(bss), bytes);
          }

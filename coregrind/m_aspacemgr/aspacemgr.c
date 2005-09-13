@@ -1382,9 +1382,8 @@ UInt aspacem_sprintf ( HChar* buf, const HChar *format, ... )
 
 /////////////////////////////////////////////////////////////////
 
-static
-SysRes do_mmap_NATIVE( Addr start, SizeT length, UInt prot, UInt flags,
-                       UInt fd, OffT offset)
+SysRes VG_(aspacem_do_mmap_NO_NOTIFY)( Addr start, SizeT length, UInt prot, 
+                                       UInt flags, UInt fd, OffT offset)
 {
    SysRes res;
 #  if defined(VGP_x86_linux)
@@ -1602,113 +1601,184 @@ static Addr aspacem_cStart;
 static Addr aspacem_vStart;
 
 
-Bool VG_(aspacem_getAdvisory)
-        ( MapRequest* req, Bool forClient, /*OUT*/Addr* result )
+Bool VG_(aspacem_getAdvisory) ( MapRequest*  req, 
+                                Bool         forClient, 
+                                /*OUT*/Addr* result )
 {
+   /* This function implements allocation policy.
 
-  /* Iterate over all holes in the address space, twice.  In the first
-     pass, find the first hole which is not below the search start
-     point. */
-  Addr holeStart, holeEnd, holeLen;
-  Int i, j;
-  Bool fixed_not_required;
+      The nature of the allocation request is determined by req, which
+      specifies the start and length of the request and indicates
+      whether the start address is mandatory, a hint, or irrelevant,
+      and by forClient, which says whether this is for the client or
+      for V. 
 
-  Addr startPoint = forClient ? aspacem_cStart : aspacem_vStart;
+      Return values: the request can be vetoed (return False), in
+      which case the caller should not attempt to proceed with making
+      the mapping.  Otherwise, the caller may proceed, and the
+      preferred address at which the mapping should happen is written
+      in *result.
 
-  Addr reqStart = req->rkind==MAny ? 0 : req->start;
-  Addr reqEnd   = reqStart + req->len - 1;
-  Addr reqLen   = req->len;
+      Note that this is an advisory system only: the kernel can in
+      fact do whatever it likes as far as placement goes, and we have
+      no absolute control over it.
 
-  /* These hold indices for segments found during search, or -1 if not
-     found. */
-  Int  floatIdx = -1;
-  Int fixedIdx = -1;
+      Allocations will never be granted in a reserved area.
 
-  /* Don't waste time looking for a fixed match if not requested to. */
-  aspacem_assert(nsegments_used > 0);
-  fixed_not_required = req->rkind == MAny;
+      The Default Policy is:
 
-  i = find_nsegment_idx(startPoint);
+        Search the address space for two free intervals: one of them
+        big enough to contain the request without regard to the
+        specified address (viz, as if it was a floating request) and
+        the other being able to contain the request at the specified
+        address (viz, as if were a fixed request).  Then, depending on
+        the outcome of the search and the kind of request made, decide
+        whether the request is allowable and what address to advise.
 
-  /* Now examine holes from index i back round to i-1.  Record the
-     index first fixed hole and the first floating hole which would
-     satisfy the request. */
-  for (j = 0; j < nsegments_used; j++) {
+      The Default Policy is overriden by Policy Exception #1:
 
-    if (nsegments[i].kind != SkFree) {
+        If the request is for a fixed client map, we are prepared to
+        grant it providing all areas inside the request are either
+        free or are file mappings belonging to the client.  In other
+        words we are prepared to let the client trash its own mappings
+        if it wants to.  
+   */
+   Int  i, j;
+   Addr holeStart, holeEnd, holeLen;
+   Bool fixed_not_required;
+
+   Addr startPoint = forClient ? aspacem_cStart : aspacem_vStart;
+
+   Addr reqStart = req->rkind==MAny ? 0 : req->start;
+   Addr reqEnd   = reqStart + req->len - 1;
+   Addr reqLen   = req->len;
+
+   /* These hold indices for segments found during search, or -1 if not
+      found. */
+   Int floatIdx = -1;
+   Int fixedIdx = -1;
+
+   aspacem_assert(nsegments_used > 0);
+
+   VG_(show_nsegments)(0,"getAdvisory");
+   VG_(debugLog)(0,"aspacem", "getAdvisory 0x%llx %lld\n", 
+                   (ULong)req->start, (ULong)req->len);
+
+   /* Reject zero-length requests */
+   if (req->len == 0)
+      return False;
+
+   /* Reject wraparounds */
+   if ((req->rkind==MFixed || req->rkind==MHint)
+       && req->start + req->len < req->start)
+      return False;
+
+   /* ------ Implement Policy Exception #1 ------ */
+
+   if (forClient && req->rkind == MFixed) {
+      Int  iLo   = find_nsegment_idx(reqStart);
+      Int  iHi   = find_nsegment_idx(reqEnd);
+      Bool allow = True;
+      for (i = iLo; i <= iHi; i++) {
+         if (nsegments[i].kind == SkFree
+             || (nsegments[i].kind == SkFile && nsegments[i].isClient)) {
+            /* ok */
+         } else {
+            allow = False;
+            break;
+         }
+      }
+      if (allow) {
+         *result = reqStart;
+         return True;
+       }
+       return False;
+   }
+
+   /* ------ Implement the Default Policy ------ */
+
+   /* Don't waste time looking for a fixed match if not requested to. */
+   fixed_not_required = req->rkind == MAny;
+
+   i = find_nsegment_idx(startPoint);
+
+   /* Examine holes from index i back round to i-1.  Record the
+      index first fixed hole and the first floating hole which would
+      satisfy the request. */
+   for (j = 0; j < nsegments_used; j++) {
+
+      if (nsegments[i].kind != SkFree) {
+         i++;
+         if (i >= nsegments_used) i = 0;
+         continue;
+      }
+
+      holeStart = nsegments[i].start;
+      holeEnd   = nsegments[i].end;
+
+      /* Stay sane .. */
+      aspacem_assert(holeStart <= holeEnd);
+      aspacem_assert(aspacem_minAddr <= holeStart);
+      aspacem_assert(holeEnd <= aspacem_maxAddr);
+
+      /* See if it's any use to us. */
+      holeLen = holeEnd - holeStart + 1;
+
+      if (fixedIdx == -1 && holeStart <= reqStart && reqEnd <= holeEnd)
+         fixedIdx = i;
+
+      if (floatIdx == -1 && holeLen >= reqLen)
+         floatIdx = i;
+  
+      /* Don't waste time searching once we've found what we wanted. */
+      if ((fixed_not_required || fixedIdx >= 0) && floatIdx >= 0)
+         break;
+
       i++;
       if (i >= nsegments_used) i = 0;
-      continue;
-    }
+   }
 
-    holeStart = nsegments[i].start;
-    holeEnd   = nsegments[i].end;
+   aspacem_assert(fixedIdx >= -1 && fixedIdx < nsegments_used);
+   if (fixedIdx >= 0) 
+      aspacem_assert(nsegments[fixedIdx].kind == SkFree);
 
-    /* Stay sane .. */
-    aspacem_assert(holeStart <= holeEnd);
-    aspacem_assert(aspacem_minAddr <= holeStart);
-    aspacem_assert(holeEnd <= aspacem_maxAddr);
+   aspacem_assert(floatIdx >= -1 && floatIdx < nsegments_used);
+   if (floatIdx >= 0) 
+      aspacem_assert(nsegments[floatIdx].kind == SkFree);
 
-    /* See if it's any use to us. */
-    holeLen = holeEnd - holeStart + 1;
+   /* Now see if we found anything which can satisfy the request. */
+   switch (req->rkind) {
+      case MFixed:
+         if (fixedIdx >= 0) {
+            *result = req->start;
+            return True;
+         } else {
+            return False;
+         }
+         break;
+      case MHint:
+         if (fixedIdx >= 0) {
+            *result = req->start;
+            return True;
+         }
+         if (floatIdx >= 0) {
+            *result = nsegments[floatIdx].start;
+            return True;
+         }
+         return False;
+      case MAny:
+         if (floatIdx >= 0) {
+            *result = nsegments[floatIdx].start;
+            return True;
+         }
+         return False;
+      default: 
+         break;
+   }
 
-      if (fixedIdx == -1 
-	  && holeStart <= reqStart && reqEnd <= holeEnd) {
-	fixedIdx = i;
-      }
-
-      if (floatIdx == -1
-	  && holeLen >= reqLen) {
-	floatIdx = i;
-      }
-  
-    /* Don't waste time searching once we've found what we wanted. */
-    if ((fixed_not_required || fixedIdx >= 0) && floatIdx >= 0)
-      break;
-
-    i++;
-    if (i >= nsegments_used) i = 0;
-  }
-
-aspacem_assert(fixedIdx >= -1 && fixedIdx < nsegments_used);
-aspacem_assert(floatIdx >= -1 && floatIdx < nsegments_used);
-if (fixedIdx >= 0) 
-aspacem_assert(nsegments[fixedIdx].kind == SkFree);
-if (floatIdx >= 0) 
-aspacem_assert(nsegments[floatIdx].kind == SkFree);
-
-  /* Now see if we found anything which can satisfy the request. */
-  switch (req->rkind) {
-  case MFixed:
-    if (fixedIdx >= 0) {
-      *result = req->start;
-      return True;
-    } else {
-      return False;
-    }
-    break;
-  case MHint:
-    if (fixedIdx >= 0) {
-      *result = req->start;
-      return True;
-    }
-    if (floatIdx >= 0) {
-      *result = nsegments[floatIdx].start;
-      return True;
-    }
-    return False;
-  case MAny:
-    if (floatIdx >= 0) {
-      *result = nsegments[floatIdx].start;
-      return True;
-    }
-    return False;
-
-  default: break;
-  }
-  /*NOTREACHED*/
-  aspacem_barf("getAdvisory: unknown request kind");
-  return False;
+   /*NOTREACHED*/
+   aspacem_barf("getAdvisory: unknown request kind");
+   return False;
 }
 
 
@@ -1940,7 +2010,7 @@ static void add_segment ( NSegment* seg )
       continue;
     }
 
-    /* I don't think we can get here */
+    /* I don't think we can get here. */
     aspacem_assert(0);
   }
 
@@ -2127,8 +2197,11 @@ SysRes VG_(mmap_file_fixed_client)
    /* We have been advised that the mapping is allowable at the
       specified address.  So hand it off to the kernel, and propagate
       any resulting failure immediately. */
-   sres = do_mmap_NATIVE( start, length, prot, 
-                          VKI_MAP_FIXED|VKI_MAP_PRIVATE, fd, offset );
+   sres = VG_(aspacem_do_mmap_NO_NOTIFY)( 
+             start, length, prot, 
+             VKI_MAP_FIXED|VKI_MAP_PRIVATE, 
+             fd, offset 
+          );
    if (sres.isError)
       return sres;
 
@@ -2189,9 +2262,11 @@ SysRes VG_(mmap_anon_fixed_client)
    /* We have been advised that the mapping is allowable at the
       specified address.  So hand it off to the kernel, and propagate
       any resulting failure immediately. */
-   sres = do_mmap_NATIVE( start, length, prot, 
-                          VKI_MAP_FIXED|VKI_MAP_PRIVATE
-                                       |VKI_MAP_ANONYMOUS, 0, 0 );
+   sres = VG_(aspacem_do_mmap_NO_NOTIFY)( 
+             start, length, prot, 
+             VKI_MAP_FIXED|VKI_MAP_PRIVATE|VKI_MAP_ANONYMOUS, 
+             0, 0 
+          );
    if (sres.isError)
       return sres;
 
@@ -2242,9 +2317,11 @@ SysRes VG_(mmap_anon_float_client)
    /* We have been advised that the mapping is allowable at the
       advised address.  So hand it off to the kernel, and propagate
       any resulting failure immediately. */
-   sres = do_mmap_NATIVE( advised, length, prot, 
-                          VKI_MAP_FIXED|VKI_MAP_PRIVATE
-                                       |VKI_MAP_ANONYMOUS, 0, 0 );
+   sres = VG_(aspacem_do_mmap_NO_NOTIFY)( 
+             advised, length, prot, 
+             VKI_MAP_FIXED|VKI_MAP_PRIVATE|VKI_MAP_ANONYMOUS, 
+             0, 0 
+          );
    if (sres.isError)
       return sres;
 
@@ -2294,11 +2371,12 @@ SysRes VG_(map_anon_float_valgrind)( SizeT length )
    /* We have been advised that the mapping is allowable at the
       specified address.  So hand it off to the kernel, and propagate
       any resulting failure immediately. */
-   sres = do_mmap_NATIVE( advised, length, 
-                          VKI_PROT_READ|VKI_PROT_WRITE
-                                       |VKI_PROT_EXEC, 
-                          VKI_MAP_FIXED|VKI_MAP_PRIVATE
-                                       |VKI_MAP_ANONYMOUS, 0, 0 );
+   sres = VG_(aspacem_do_mmap_NO_NOTIFY)( 
+             advised, length, 
+             VKI_PROT_READ|VKI_PROT_WRITE|VKI_PROT_EXEC, 
+             VKI_MAP_FIXED|VKI_MAP_PRIVATE|VKI_MAP_ANONYMOUS, 
+             0, 0 
+          );
    if (sres.isError)
       return sres;
 
@@ -2435,10 +2513,12 @@ Bool VG_(extend_into_adjacent_reservation)( NSegment* seg, SSizeT delta )
 	return False;
         
       /* Extend the kernel's mapping. */
-      sres = do_mmap_NATIVE( nsegments[segR].start, delta,
-                             prot,
-                             VKI_MAP_FIXED|VKI_MAP_PRIVATE
-                                          |VKI_MAP_ANONYMOUS, 0, 0 );
+      sres = VG_(aspacem_do_mmap_NO_NOTIFY)( 
+                nsegments[segR].start, delta,
+                prot,
+                VKI_MAP_FIXED|VKI_MAP_PRIVATE|VKI_MAP_ANONYMOUS, 
+                0, 0 
+             );
       if (sres.isError)
          return False; /* kernel bug if this happens? */
       if (sres.val != nsegments[segR].start) {
@@ -2467,10 +2547,12 @@ Bool VG_(extend_into_adjacent_reservation)( NSegment* seg, SSizeT delta )
 	return False;
         
       /* Extend the kernel's mapping. */
-      sres = do_mmap_NATIVE( nsegments[segA].start-delta, delta,
-                             prot,
-                             VKI_MAP_FIXED|VKI_MAP_PRIVATE
-                                          |VKI_MAP_ANONYMOUS, 0, 0 );
+      sres = VG_(aspacem_do_mmap_NO_NOTIFY)( 
+                nsegments[segA].start-delta, delta,
+                prot,
+                VKI_MAP_FIXED|VKI_MAP_PRIVATE|VKI_MAP_ANONYMOUS, 
+                0, 0 
+             );
       if (sres.isError)
          return False; /* kernel bug if this happens? */
       if (sres.val != nsegments[segA].start-delta) {
@@ -2486,6 +2568,112 @@ Bool VG_(extend_into_adjacent_reservation)( NSegment* seg, SSizeT delta )
 
    }
 
+   return True;
+}
+
+
+void 
+VG_(notify_client_mmap)( Addr a, SizeT len, UInt prot, UInt flags,
+                         Int fd, SizeT offset )
+{
+   HChar buf[VKI_PATH_MAX];
+   UInt dev, ino;
+   NSegment seg;
+   aspacem_assert(len > 0);
+   aspacem_assert(VG_IS_PAGE_ALIGNED(a));
+   aspacem_assert(VG_IS_PAGE_ALIGNED(len));
+   init_nsegment( &seg );
+   seg.kind     = (flags & VKI_MAP_ANONYMOUS) ? SkAnon : SkFile;
+   seg.isClient = True;
+   seg.start    = a;
+   seg.end      = a + len - 1;
+   seg.offset   = offset;
+   seg.hasR     = toBool(prot & VKI_PROT_READ);
+   seg.hasW     = toBool(prot & VKI_PROT_WRITE);
+   seg.hasX     = toBool(prot & VKI_PROT_EXEC);
+   /* TODO: what about seg.hasT ? */
+   if (get_inode_for_fd(fd, &dev, &ino)) {
+     seg.dev = dev;
+     seg.ino = ino;
+   }
+   if (get_name_for_fd(fd, buf, VKI_PATH_MAX)) {
+      seg.fnIdx = allocate_segname( buf );
+   }
+   add_segment( &seg );
+}
+
+
+void VG_(notify_client_mprotect)( Addr start, SizeT len, UInt prot )
+{
+   Int iLo, iHi;
+
+   if (len == 0)
+      return;
+
+   iLo = find_nsegment_idx(start);
+   iHi = find_nsegment_idx(start + len - 1);
+
+   if (iLo == iHi 
+       && nsegments[iLo].start == start 
+       && nsegments[iLo].end+1 == start+len
+       && (nsegments[iLo].kind == SkFile || nsegments[iLo].kind == SkAnon)) {
+      nsegments[iLo].hasR = toBool(prot & VKI_PROT_READ);
+      nsegments[iLo].hasW = toBool(prot & VKI_PROT_WRITE);
+      nsegments[iLo].hasX = toBool(prot & VKI_PROT_EXEC);
+      return;
+   }
+
+   /* FIXME: unhandled general case */
+   aspacem_barf("notify_mprotect general case");
+}
+
+
+void VG_(notify_client_munmap)( Addr start, SizeT len )
+{
+   NSegment seg;
+
+   if (len == 0)
+      return;
+
+   init_nsegment( &seg );
+   seg.kind  = SkFree;
+   seg.start = start;
+   seg.end   = start + len - 1;
+   add_segment( &seg );
+}
+
+
+/* Test if a piece of memory is addressable by the client with at
+   least the "prot" protection permissions by examining the underlying
+   segments.
+*/
+Bool VG_(aspacem_is_valid_for_client)( Addr start, SizeT len, UInt prot )
+{
+   Int  i, iLo, iHi;
+   Bool needR, needW, needX;
+
+   if (len == 0)
+      return True; /* somewhat dubious case */
+   if (start + len < start)
+      return False; /* reject wraparounds */
+
+   needR = toBool(prot & VKI_PROT_READ);
+   needW = toBool(prot & VKI_PROT_WRITE);
+   needX = toBool(prot & VKI_PROT_EXEC);
+
+   iLo = find_nsegment_idx(start);
+   iHi = find_nsegment_idx(start + len - 1);
+   for (i = iLo; i <= iHi; i++) {
+      if (nsegments[i].isClient
+          && (nsegments[i].kind == SkFile || nsegments[i].kind == SkAnon)
+          && (needR ? nsegments[i].hasR : True)
+          && (needW ? nsegments[i].hasW : True)
+          && (needX ? nsegments[i].hasX : True)) {
+         /* ok */
+      } else {
+         return False;
+      }
+   }
    return True;
 }
 

@@ -72,14 +72,11 @@ Bool ML_(valid_client_addr)(Addr start, SizeT size, ThreadId tid,
    if (0 && cl_base < 0x10000)
       cl_base = 0x10000;
 
-   ret =
-      (end >= start) && 
-      start >= cl_base && start < VG_(client_end) &&
-      (end <= VG_(client_end));
+   ret = VG_(aspacem_is_valid_for_client)(start,size,VKI_PROT_NONE);
 
    if (0)
       VG_(printf)("%s: test=%p-%p client=%p-%p ret=%d\n",
-		  syscallname, start, end, cl_base, VG_(client_end), ret);
+		  syscallname, start, end, cl_base, VG_(client_end), (Int)ret);
 
    if (!ret && syscallname != NULL) {
       VG_(message)(Vg_UserMsg, "Warning: client syscall %s tried "
@@ -93,6 +90,7 @@ Bool ML_(valid_client_addr)(Addr start, SizeT size, ThreadId tid,
 
    return ret;
 }
+
 
 Bool ML_(client_signal_OK)(Int sigNo)
 {
@@ -122,7 +120,7 @@ Bool ML_(client_signal_OK)(Int sigNo)
    idea of addressible memory diverges from that of the
    kernel's, which causes the leak detector to crash. */
 static 
-void mash_addr_and_len( Addr* a, SizeT* len)
+void page_align_addr_and_len( Addr* a, SizeT* len)
 {
    Addr ra;
    
@@ -131,25 +129,26 @@ void mash_addr_and_len( Addr* a, SizeT* len)
    *a = ra;
 }
 
-void ML_(mmap_segment) ( Addr a, SizeT len, UInt prot, 
-                         UInt mm_flags, Int fd, ULong offset )
+/* When a client mmap has been successfully done, this function must
+   be called.  It notifies both aspacem and the tool of the new
+   mapping.
+*/
+void 
+ML_(notify_aspacem_and_tool_of_mmap) ( Addr a, SizeT len, UInt prot, 
+                                       UInt flags, Int fd, ULong offset )
 {
    Bool rr, ww, xx;
-   UInt flags;
 
-   flags = SF_MMAP;
-   
-   if (!(mm_flags & VKI_MAP_PRIVATE))
-      flags |= SF_SHARED;
+   /* 'a' is the return value from a real kernel mmap, hence: */
+   vg_assert(VG_IS_PAGE_ALIGNED(a));
+   /* whereas len is whatever the syscall supplied.  So: */
+   len = VG_PGROUNDUP(len);
 
-   if (fd != -1)
-      flags |= SF_FILE;
+   VG_(notify_client_mmap)( a, len, prot, flags, fd, offset );
 
-   VG_(map_fd_segment)(a, len, prot, flags, fd, offset, NULL);
-
-   rr = prot & VKI_PROT_READ;
-   ww = prot & VKI_PROT_WRITE;
-   xx = prot & VKI_PROT_EXEC;
+   rr = toBool(prot & VKI_PROT_READ);
+   ww = toBool(prot & VKI_PROT_WRITE);
+   xx = toBool(prot & VKI_PROT_EXEC);
 
    VG_TRACK( new_mem_mmap, a, len, rr, ww, xx );
 }
@@ -801,11 +800,11 @@ void buf_and_len_post_check( ThreadId tid, SysRes res,
 
 static Addr do_brk ( Addr newbrk )
 {
-   Addr ret = VG_(brk_limit);
-   static const Bool debug = False;
-   Segment *seg;
-   Addr current, newaddr;
-
+   NSegment *aseg, *rseg;
+   Addr newbrkP;
+   SizeT delta;
+   Bool ok;
+   Bool debug = False;
 
    if (debug)
       VG_(printf)("\ndo_brk: brk_base=%p brk_limit=%p newbrk=%p\n",
@@ -817,66 +816,53 @@ static Addr do_brk ( Addr newbrk )
 
    if (newbrk < VG_(brk_base))
       /* Clearly impossible. */
-      return VG_(brk_limit);
+      goto bad;
 
-vg_assert(0);
+   if (newbrk >= VG_(brk_base) && newbrk < VG_(brk_limit)) {
+      /* shrinking the data segment.  Be lazy and don't munmap the
+         excess area. */
+      VG_(brk_limit) = newbrk;
+      return newbrk;
+   }
 
-   /* brk isn't allowed to grow over anything else */
-   seg = VG_(find_segment)(VG_(brk_limit) -1);
+   /* otherwise we're expanding the brk segment. */
+   aseg = VG_(find_nsegment)( VG_(brk_base) );
+   rseg = VG_(next_nsegment)( aseg, True/*forwards*/ );
 
-   vg_assert(seg != NULL);
+   /* These should be assured by setup_client_dataseg in m_main. */
+   vg_assert(aseg);
+   vg_assert(rseg);
+   vg_assert(aseg->kind == SkAnon);
+   vg_assert(rseg->kind == SkResvn);
+   vg_assert(aseg->end+1 == rseg->start);
 
-   if (0)
-      VG_(printf)("brk_limit=%p seg->addr=%p seg->end=%p\n", 
-		  VG_(brk_limit), seg->addr, seg->addr+seg->len);
-   vg_assert(VG_(brk_limit) >= seg->addr && VG_(brk_limit) 
-             <= (seg->addr + seg->len));
+   vg_assert(newbrk >= VG_(brk_base));
+   if (newbrk < aseg->end+1) {
+      /* still fits within the anon segment. */
+      VG_(brk_limit) = newbrk;
+      return newbrk;
+   }
 
-   seg = VG_(find_segment_above_mapped)(VG_(brk_limit)-1);
-   if (0 && seg) 
-      VG_(printf)("NEXT addr = %p\n", seg->addr);
-   if (seg != NULL && newbrk > seg->addr)
-      return VG_(brk_limit);
+   if (newbrk >= rseg->end+1 - VKI_PAGE_SIZE) {
+      /* request is too large -- the resvn would fall below 1 page,
+         which isn't allowed. */
+      goto bad;
+   }
 
-   current = VG_PGROUNDUP(VG_(brk_limit));
-   newaddr = VG_PGROUNDUP(newbrk);
-   if (newaddr != current) {
+   newbrkP = VG_PGROUNDUP(newbrk);
+   vg_assert(newbrkP > rseg->start && newbrkP < rseg->end+1 - VKI_PAGE_SIZE);
+   delta = newbrkP - rseg->start;
+   vg_assert(delta > 0);
+   vg_assert(VG_IS_PAGE_ALIGNED(delta));
+   
+   ok = VG_(extend_into_adjacent_reservation)( aseg, delta );
+   if (!ok) goto bad;
 
-      /* new brk in a new page - fix the mappings */
-      if (newbrk > VG_(brk_limit)) {
-	 
-	 if (debug)
-	    VG_(printf)("  extending brk: current=%p newaddr=%p delta=%d\n",
-			current, newaddr, newaddr-current);
+   VG_(brk_limit) = newbrk;
+   return newbrk;
 
-	 if (newaddr == current) {
-	    ret = newbrk;
-         } else if ((void*)-1 != VG_(mmap)((void*)current, newaddr-current,
-               VKI_PROT_READ|VKI_PROT_WRITE|VKI_PROT_EXEC,
-               VKI_MAP_PRIVATE|VKI_MAP_ANONYMOUS|VKI_MAP_FIXED|VKI_MAP_CLIENT,
-               0, -1, 0)) 
-         {
-	    ret = newbrk;
-	 }
-      } else {
-	 vg_assert(newbrk < VG_(brk_limit));
-
-	 if (debug)
-	    VG_(printf)("  shrinking brk: current=%p newaddr=%p delta=%d\n",
-			current, newaddr, current-newaddr);
-
-	 if (newaddr != current) {
-	    Int res = VG_(munmap)((void *)newaddr, current - newaddr);
-            vg_assert(0 == res);
-	 }
-	 ret = newbrk;
-      }
-   } else
-      ret = newbrk;
-
-   VG_(brk_limit) = ret;
-
-   return ret;
+  bad:
+   return VG_(brk_limit);
 }
 
 
@@ -4589,7 +4575,7 @@ POST(sys_mmap2)
 {
    vg_assert(SUCCESS);
    vg_assert(ML_(valid_client_addr)(RES, ARG2, tid, "mmap2"));
-   ML_(mmap_segment)( (Addr)RES, ARG2, ARG3, ARG4, ARG5,
+   ML_(notify_aspacem_and_tool_of_mmap)( (Addr)RES, ARG2, ARG3, ARG4, ARG5,
                       ARG6 * (ULong)VKI_PAGE_SIZE );
 }
 
@@ -4608,12 +4594,12 @@ POST(sys_mprotect)
    Addr a    = ARG1;
    SizeT len = ARG2;
    Int  prot = ARG3;
-   Bool rr = prot & VKI_PROT_READ;
-   Bool ww = prot & VKI_PROT_WRITE;
-   Bool xx = prot & VKI_PROT_EXEC;
+   Bool rr = toBool(prot & VKI_PROT_READ);
+   Bool ww = toBool(prot & VKI_PROT_WRITE);
+   Bool xx = toBool(prot & VKI_PROT_EXEC);
 
-   mash_addr_and_len(&a, &len);
-   VG_(mprotect_range)(a, len, prot);
+   page_align_addr_and_len(&a, &len);
+   VG_(notify_client_mprotect)(a, len, prot);
    VG_TRACK( change_mem_mprotect, a, len, rr, ww, xx );
 }
 
@@ -4632,8 +4618,8 @@ POST(sys_munmap)
    Addr  a   = ARG1;
    SizeT len = ARG2;
 
-   mash_addr_and_len(&a, &len);
-   VG_(unmap_range)(a, len);
+   page_align_addr_and_len(&a, &len);
+   VG_(notify_client_munmap)(a, len);
    VG_TRACK( die_mem_munmap, a, len );
 }
 

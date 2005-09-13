@@ -1486,17 +1486,21 @@ PRE(old_mmap)
          unsigned long offset;
    }; */
    UWord a1, a2, a3, a4, a5, a6;
+   MapRequest mreq;
+   Addr       advised;
+   Bool       mreq_ok;
+   SysRes     sres;
 
    UWord* args = (UWord*)ARG1;
    PRE_REG_READ1(long, "old_mmap", struct mmap_arg_struct *, args);
    PRE_MEM_READ( "old_mmap(args)", (Addr)args, 6*sizeof(UWord) );
 
-   a1 = args[0];
-   a2 = args[1];
-   a3 = args[2];
-   a4 = args[3];
-   a5 = args[4];
-   a6 = args[5];
+   a1 = args[1-1];
+   a2 = args[2-1];
+   a3 = args[3-1];
+   a4 = args[4-1];
+   a5 = args[5-1];
+   a6 = args[6-1];
 
    PRINT("old_mmap ( %p, %llu, %d, %d, %d, %d )",
          a1, (ULong)a2, a3, a4, a5, a6 );
@@ -1508,12 +1512,58 @@ PRE(old_mmap)
       return;
    }
 
-   if (/*(a4 & VKI_MAP_FIXED) &&*/ (0 != (a1 & (VKI_PAGE_SIZE-1)))) {
+   if (/*(a4 & VKI_MAP_FIXED) &&*/ !VG_IS_PAGE_ALIGNED(a1)) {
       /* zap any misaligned addresses. */
       SET_STATUS_Failure( VKI_EINVAL );
       return;
    }
 
+   /* Figure out what kind of allocation constraints there are
+      (fixed/hint/any), and ask aspacem what we should do. */
+   mreq.start = a1;
+   mreq.len   = a2;
+   if (a4 & VKI_MAP_FIXED) {
+      mreq.rkind = MFixed;
+   } else 
+   if (a1 != 0) {
+      mreq.rkind = MHint;
+   } else {
+      mreq.rkind = MAny;
+   }
+
+   /* Enquire ... */
+   mreq_ok = VG_(aspacem_getAdvisory)( &mreq, True/*client*/, &advised );
+   if (!mreq_ok) {
+      /* Our request was bounced, so we'd better fail. */
+      SET_STATUS_Failure( VKI_EINVAL );
+      return;
+   }
+
+   /* Otherwise we're OK (so far).  Install aspacem's choice of
+      address, and let the mmap go through.  */
+   a1 = advised;
+   a4 |= VKI_MAP_FIXED;
+
+   vg_assert(! FAILURE);
+
+   sres = VG_(aspacem_do_mmap_NO_NOTIFY)(a1, a2, a3, a4, a5, a6);
+   SET_STATUS_from_SysRes(sres);
+
+   if (!sres.isError) {
+      /* Notify aspacem and the tool. */
+      ML_(notify_aspacem_and_tool_of_mmap)( 
+         (Addr)sres.val, /* addr kernel actually assigned */
+         a2, a3, 
+         args[4-1], /* the original flags value */
+         a5, a6 
+      );
+   }
+
+   /* Stay sane */
+   if (SUCCESS && (args[4-1] & VKI_MAP_FIXED))
+      vg_assert(RES == args[0]);
+
+#if 0
    if (a4 & VKI_MAP_FIXED) {
       if (!ML_(valid_client_addr)(a1, a2, tid, "old_mmap")) {
          PRINT("old_mmap failing: %p-%p\n", a1, a1+a2);
@@ -1551,6 +1601,7 @@ PRE(old_mmap)
    /* Stay sane */
    if (SUCCESS && (args[3] & VKI_MAP_FIXED))
       vg_assert(RES == args[0]);
+#endif
 }
 
 // XXX: lstat64/fstat64/stat64 are generic, but not necessarily

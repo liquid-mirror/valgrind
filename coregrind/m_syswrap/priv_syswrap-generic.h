@@ -56,9 +56,12 @@ extern
 Bool ML_(do_sigkill)(Int pid, Int tgid);
 
 /* So that it can be seen from syswrap-x86-linux.c. */
+/* When a client mmap has been successfully done, both aspacem and the
+   tool need to be notified of the new mapping.  Hence this fn. */
 extern 
-void ML_(mmap_segment) ( Addr a, SizeT len, UInt prot, 
-                         UInt mm_flags, Int fd, ULong offset );
+void 
+ML_(notify_aspacem_and_tool_of_mmap) ( Addr a, SizeT len, UInt prot, 
+                                       UInt mm_flags, Int fd, ULong offset );
 
 
 DECL_TEMPLATE(generic, sys_ni_syscall);            // * P -- unimplemented

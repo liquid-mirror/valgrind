@@ -247,6 +247,9 @@ typedef
    MapRequest;
 
 extern
+Bool VG_(aspacem_is_valid_for_client)( Addr start, SizeT len, UInt prot );
+
+extern
 Bool VG_(aspacem_getAdvisory)
      ( MapRequest* req, Bool forClient, /*OUT*/Addr* result );
 
@@ -268,6 +271,24 @@ SysRes VG_(map_anon_float_valgrind)( SizeT cszB );
 extern ULong VG_(aspacem_get_anonsize_total)( void );
 
 extern SysRes VG_(munmap_client)( Addr base, SizeT length );
+
+/* This function is dangerous -- it can cause aspacem's view of the
+   address space to diverge from that of the kernel.  DO NOT USE IT
+   UNLESS YOU UNDERSTAND the request-notify model used by aspacem. */
+extern
+SysRes VG_(aspacem_do_mmap_NO_NOTIFY)( Addr start, SizeT length, UInt prot, 
+                                       UInt flags, UInt fd, OffT offset);
+
+extern 
+void VG_(notify_client_mmap)( Addr a, SizeT len, UInt prot, UInt flags,
+                              Int fd, SizeT offset );
+
+extern
+void VG_(notify_client_mprotect)( Addr a, SizeT len, UInt prot );
+
+extern
+void VG_(notify_client_munmap)( Addr start, SizeT len );
+
 
 /* Finds the segment containing 'a'.  Only returns file/anon/resvn
    segments. */
