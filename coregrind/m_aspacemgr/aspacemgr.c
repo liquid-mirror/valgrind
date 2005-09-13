@@ -1816,7 +1816,6 @@ static void preen_nsegments ( void )
 
    aspacem_assert(sane_NSegment(&nsegments[0]));
    for (i = 1; i < nsegments_used; i++) {
-if (!sane_NSegment(&nsegments[i])) show_nsegment_full(0,&nsegments[i]);
       aspacem_assert(sane_NSegment(&nsegments[i]));
       aspacem_assert(nsegments[i-1].end+1 == nsegments[i].start);
    }
