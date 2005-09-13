@@ -1499,18 +1499,22 @@ SysRes VG_(am_do_mmap_NO_NOTIFY)( Addr start, SizeT length, UInt prot,
    return res;
 }
 
-static
-SysRes do_munmap_NO_NOTIFY(Addr start, SizeT length)
+static SysRes do_munmap_NO_NOTIFY(Addr start, SizeT length)
 {
    return VG_(do_syscall2)(__NR_munmap, (UWord)start, length );
 }
 
-static
-Int aspacem_readlink(HChar* path, HChar* buf, UInt bufsiz)
+static Int aspacem_readlink(HChar* path, HChar* buf, UInt bufsiz)
 {
    SysRes res;
    res = VG_(do_syscall3)(__NR_readlink, (UWord)path, (UWord)buf, bufsiz);
    return res.isError ? -1 : res.val;
+}
+
+static Int aspacem_fstat( Int fd, struct vki_stat* buf )
+{
+   SysRes res = VG_(do_syscall2)(__NR_fstat, fd, (UWord)buf);
+   return res.isError ? (-1) : 0;
 }
 
 
@@ -1520,6 +1524,13 @@ Int aspacem_readlink(HChar* path, HChar* buf, UInt bufsiz)
 static 
 Bool get_inode_for_fd ( Int fd, /*OUT*/UInt* dev, /*OUT*/UInt* ino )
 {
+   struct vki_stat buf;
+   Int r = aspacem_fstat(fd, &buf);
+   if (r == 0) {
+      *dev = buf.st_dev;
+      *ino = buf.st_ino;
+      return True;
+   }
    return False;
 }
 
@@ -2021,6 +2032,14 @@ Addr VG_(am_startup) ( Addr sp_at_startup )
    aspacem_assert(sizeof(Addr)   == sizeof(void*));
    aspacem_assert(sizeof(SizeT)  == sizeof(void*));
    aspacem_assert(sizeof(SSizeT) == sizeof(void*));
+
+   { 
+      /* If these fail, we'd better change the type of dev and ino in
+         NSegment accordingly. */
+      struct vki_stat buf;
+      aspacem_assert(sizeof(buf.st_dev) == sizeof(UInt));
+      aspacem_assert(sizeof(buf.st_ino) == sizeof(UInt));
+   }
 
    /* Add a single interval covering the entire address space. */
    init_nsegment(&seg);
