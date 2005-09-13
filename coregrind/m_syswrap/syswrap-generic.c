@@ -4529,6 +4529,11 @@ PRE(sys_mkdir)
 
 PRE(sys_mmap2)
 {
+   MapRequest mreq;
+   Addr       advised;
+   Bool       mreq_ok;
+   SysRes     sres;
+
    // Exactly like old_mmap() in x86-linux except:
    //  - all 6 args are passed in regs, rather than in a memory-block.
    //  - the file offset is specified in pagesize units rather than bytes,
@@ -4555,6 +4560,51 @@ PRE(sys_mmap2)
       return;
    }
 
+   /* Figure out what kind of allocation constraints there are
+      (fixed/hint/any), and ask aspacem what we should do. */
+   mreq.start = ARG1;
+   mreq.len   = ARG2;
+   if (ARG4 & VKI_MAP_FIXED) {
+      mreq.rkind = MFixed;
+   } else 
+   if (ARG1 != 0) {
+      mreq.rkind = MHint;
+   } else {
+      mreq.rkind = MAny;
+   }
+
+   /* Enquire ... */
+   mreq_ok = VG_(aspacem_getAdvisory)( &mreq, True/*client*/, &advised );
+   if (!mreq_ok) {
+      /* Our request was bounced, so we'd better fail. */
+      SET_STATUS_Failure( VKI_EINVAL );
+      return;
+   }
+
+   vg_assert(! FAILURE);
+
+   /* Otherwise we're OK (so far).  Install aspacem's choice of
+      address, and let the mmap go through.  */
+   sres = VG_(aspacem_do_mmap_NO_NOTIFY)(advised, ARG2, ARG3,
+                                         ARG4 | VKI_MAP_FIXED,
+                                         ARG5, ARG6);
+   SET_STATUS_from_SysRes(sres);
+
+   if (!sres.isError) {
+      /* Notify aspacem and the tool. */
+      ML_(notify_aspacem_and_tool_of_mmap)( 
+         (Addr)sres.val, /* addr kernel actually assigned */
+         ARG2, ARG3, 
+         ARG4, /* the original flags value */
+         ARG5, ARG6 
+      );
+   }
+
+   /* Stay sane */
+   if (SUCCESS && (ARG4 & VKI_MAP_FIXED))
+      vg_assert(RES == ARG1);
+
+#if 0
    if (ARG4 & VKI_MAP_FIXED) {
       if (!ML_(valid_client_addr)(ARG1, ARG2, tid, "mmap2"))
 	 SET_STATUS_Failure( VKI_ENOMEM );
@@ -4569,14 +4619,7 @@ PRE(sys_mmap2)
          ARG4 |= VKI_MAP_FIXED;
       }
    }
-}
-
-POST(sys_mmap2)
-{
-   vg_assert(SUCCESS);
-   vg_assert(ML_(valid_client_addr)(RES, ARG2, tid, "mmap2"));
-   ML_(notify_aspacem_and_tool_of_mmap)( (Addr)RES, ARG2, ARG3, ARG4, ARG5,
-                      ARG6 * (ULong)VKI_PAGE_SIZE );
+#endif
 }
 
 PRE(sys_mprotect)

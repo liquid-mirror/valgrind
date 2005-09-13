@@ -2065,7 +2065,7 @@ const SyscallTableEntry ML_(syscall_table)[] = {
 //..    //   (__NR_reboot,            sys_reboot),            // 88 */Linux
 //..    //   (__NR_readdir,           old_readdir),           // 89 -- superseded
 
-   GENXY(__NR_mmap,              sys_mmap2),                  // 90
+   GENX_(__NR_mmap,              sys_mmap2),                  // 90
    GENXY(__NR_munmap,            sys_munmap),                 // 91
 //..    GENX_(__NR_truncate,          sys_truncate),          // 92
    GENX_(__NR_ftruncate,         sys_ftruncate),         // 93
@@ -2191,7 +2191,7 @@ const SyscallTableEntry ML_(syscall_table)[] = {
    GENX_(__NR_vfork,             sys_fork),              // 189
    GENXY(__NR_ugetrlimit,        sys_getrlimit),         // 190
 //__NR_readahead      // 191 ppc/Linux only?
-   GENXY(__NR_mmap2,             sys_mmap2),             // 192
+   GENX_(__NR_mmap2,             sys_mmap2),             // 192
 //..    GENX_(__NR_truncate64,        sys_truncate64),        // 193
 //..    GENX_(__NR_ftruncate64,       sys_ftruncate64),       // 194
 //..    

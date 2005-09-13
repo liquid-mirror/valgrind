@@ -246,7 +246,7 @@ void VG_(main_thread_wrapper_NORETURN)(ThreadId tid)
 {
    VG_(debugLog)(1, "syswrap-amd64-linux", 
                     "entering VG_(main_thread_wrapper_NORETURN)\n");
-
+#if 0
    UWord* rsp = allocstack(tid);
 
    /* shouldn't be any other threads around yet */
@@ -258,6 +258,9 @@ void VG_(main_thread_wrapper_NORETURN)(ThreadId tid)
       run_a_thread_NORETURN,  /* fn to call */
       (Word)tid               /* arg to give it */
    );
+#endif
+
+   run_a_thread_NORETURN( tid );
 
    /*NOTREACHED*/
    vg_assert(0);
@@ -1186,7 +1189,7 @@ const SyscallTableEntry ML_(syscall_table)[] = {
    GENXY(__NR_lstat,             sys_newlstat),       // 6 
    GENXY(__NR_poll,              sys_poll),           // 7 
    GENX_(__NR_lseek,             sys_lseek),          // 8 
-   GENXY(__NR_mmap,              sys_mmap2),          // 9 
+   GENX_(__NR_mmap,              sys_mmap2),          // 9 
 
    GENXY(__NR_mprotect,          sys_mprotect),       // 10 
    GENXY(__NR_munmap,            sys_munmap),         // 11 
