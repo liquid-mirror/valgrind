@@ -49,6 +49,9 @@ extern Int VG_(fcntl)   ( Int fd, Int cmd, Int arg );
 /* Convert an fd into a filename */
 extern Bool VG_(resolve_filename) ( Int fd, HChar* buf, Int n_buf );
 
+/* Return the size of a file */
+extern Int VG_(fsize) ( Int fd );
+
 /* Default destination port to be used in logging over a network, if
    none specified. */
 #define VG_CLO_DEFAULT_LOGPORT 1500

@@ -133,6 +133,13 @@ Int VG_(fstat) ( Int fd, struct vki_stat* buf )
    return res.isError ? (-1) : 0;
 }
 
+Int VG_(fsize) ( Int fd )
+{
+   struct vki_stat buf;
+   SysRes res = VG_(do_syscall2)(__NR_fstat, fd, (UWord)&buf);
+   return res.isError ? (-1) : buf.st_size;
+}
+
 Int VG_(dup2) ( Int oldfd, Int newfd )
 {
    SysRes res = VG_(do_syscall2)(__NR_dup2, oldfd, newfd);

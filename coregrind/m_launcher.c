@@ -159,9 +159,10 @@ Int VG_(read) ( Int fd, void* buf, Int count)
    return read(fd, buf, count);
 }
 
-Int VG_(fstat) ( Int fd, struct vki_stat* buf )
+Int VG_(fsize) ( Int fd )
 {
-   return fstat(fd, buf);
+   struct stat buf;
+   return fstat(fd, &buf) == 0 ? buf.st_size : (-1);
 }
 
 UInt VG_(snprintf) ( Char* buf, Int size, const HChar *format, ... )
