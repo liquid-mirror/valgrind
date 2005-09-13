@@ -873,9 +873,8 @@ static Addr do_brk ( Addr newbrk )
 /* Return true if we're allowed to use or create this fd */
 Bool ML_(fd_allowed)(Int fd, const Char *syscallname, ThreadId tid, Bool soft)
 {
-   if ((fd < 0 || fd >= VG_(fd_hard_limit) || fd == VG_(clo_log_fd)) &&
-       VG_(showing_core_errors)())
-   {
+   if ( (fd < 0 || fd >= VG_(fd_hard_limit) || fd == VG_(clo_log_fd)) 
+        && VG_(showing_core_errors)() ) {
       VG_(message)(Vg_UserMsg, 
          "Warning: invalid file descriptor %d in syscall %s()",
          fd, syscallname);
