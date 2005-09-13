@@ -1555,6 +1555,292 @@ Bool get_name_for_fd ( Int fd, /*OUT*/HChar* buf, Int nbuf )
 
 /*-----------------------------------------------------------------*/
 /*---                                                           ---*/
+/*--- Displaying the segment array.                             ---*/
+/*---                                                           ---*/
+/*-----------------------------------------------------------------*/
+
+static HChar* show_SegKind ( SegKind sk )
+{
+   switch (sk) {
+      case SkFree:  return "    ";
+      case SkAnonC: return "anon";
+      case SkAnonV: return "ANON";
+      case SkFileC: return "file";
+      case SkFileV: return "FILE";
+      case SkResvn: return "RSVN";
+      default:      return "????";
+   }
+}
+
+static HChar* show_ShrinkMode ( ShrinkMode sm )
+{
+   switch (sm) {
+      case SmLower: return "SmLower";
+      case SmUpper: return "SmUpper";
+      case SmFixed: return "SmFixed";
+      default: return "Sm?????";
+   }
+}
+
+static void show_Addr_concisely ( /*OUT*/HChar* buf, Addr aA )
+{
+   HChar* fmt;
+   ULong a = (ULong)aA;
+   if (a >= 10000000ULL) {
+      fmt = "%6llum";
+      a /= 1024*1024ULL;
+   } else {
+      fmt = "%7llu";
+   }
+   aspacem_sprintf(buf, fmt, a);
+}
+
+
+/* Show full details of an NSegment */
+
+static void show_nsegment_full ( Int logLevel, NSegment* seg )
+{
+   VG_(debugLog)(logLevel, "aspacem",
+      "NSegment{%s, start=0x%llx, end=0x%llx, smode=%s, dev=%u, "
+      "ino=%u, offset=%llu, fnIdx=%d, hasR=%d, hasW=%d, hasX=%d, "
+      "hasT=%d, mark=%d}\n",
+      show_SegKind(seg->kind),
+      (ULong)seg->start,
+      (ULong)seg->end,
+      show_ShrinkMode(seg->smode),
+      seg->dev, seg->ino, (ULong)seg->offset, seg->fnIdx,
+      (Int)seg->hasR, (Int)seg->hasW, (Int)seg->hasX, (Int)seg->hasT,
+      (Int)seg->mark
+   );
+}
+
+
+/* Show an NSegment in a user-friendly-ish way. */
+
+static void show_nsegment ( Int logLevel, Int segNo, NSegment* seg )
+{
+   HChar len_buf[20];
+   ULong len = ((ULong)seg->end) - ((ULong)seg->start) + 1;
+   show_Addr_concisely(len_buf, len);
+
+   switch (seg->kind) {
+
+      case SkFree:
+         VG_(debugLog)(
+            logLevel, "aspacem",
+            "%3d: %s %08llx-%08llx %s\n",
+            segNo, show_SegKind(seg->kind),
+            (ULong)seg->start, (ULong)seg->end, len_buf
+         );
+         break;
+
+      case SkAnonC: case SkAnonV:
+         VG_(debugLog)(
+            logLevel, "aspacem",
+            "%3d: %s %08llx-%08llx %s %c%c%c%c\n",
+            segNo, show_SegKind(seg->kind),
+            (ULong)seg->start, (ULong)seg->end, len_buf,
+            seg->hasR ? 'r' : '-', seg->hasW ? 'w' : '-', 
+            seg->hasX ? 'x' : '-', seg->hasT ? 'T' : '-' 
+         );
+         break;
+
+      case SkFileC: case SkFileV:
+         VG_(debugLog)(
+            logLevel, "aspacem",
+            "%3d: %s %08llx-%08llx %s %c%c%c%c d=0x%03x i=%-7d o=%-7lld (%d)\n",
+            segNo, show_SegKind(seg->kind),
+            (ULong)seg->start, (ULong)seg->end, len_buf,
+            seg->hasR ? 'r' : '-', seg->hasW ? 'w' : '-', 
+            seg->hasX ? 'x' : '-', seg->hasT ? 'T' : '-', 
+            seg->dev, seg->ino, (Long)seg->offset, seg->fnIdx
+         );
+         break;
+
+     case SkResvn:
+        VG_(debugLog)(
+           logLevel, "aspacem",
+           "%3d: %s %08llx-%08llx %s %c%c%c%c %s\n",
+           segNo, show_SegKind(seg->kind),
+           (ULong)seg->start, (ULong)seg->end, len_buf,
+           seg->hasR ? 'r' : '-', seg->hasW ? 'w' : '-', 
+           seg->hasX ? 'x' : '-', seg->hasT ? 'T' : '-', 
+           show_ShrinkMode(seg->smode)
+        );
+        break;
+
+     default:
+        VG_(debugLog)(
+           logLevel, "aspacem",
+           "%3d: ???? UNKNOWN SEGMENT KIND\n", 
+           segNo 
+        );
+        break;
+    }
+}
+
+/* Print out the segment array (debugging only!). */
+void VG_(am_show_nsegments) ( Int logLevel, HChar* who )
+{
+   Int i;
+   VG_(debugLog)(logLevel, "aspacem",
+                 "<<< SHOW_SEGMENTS: %s (%d segments, %d segnames)\n", 
+                 who, segments_used, segnames_used);
+   for (i = 0; i < segnames_used; i++) {
+      if (!segnames[i].inUse)
+         continue;
+      VG_(debugLog)(logLevel, "aspacem",
+                    "(%2d) %s\n", i, segnames[i].fname);
+   }
+   for (i = 0; i < nsegments_used; i++)
+     show_nsegment( logLevel, i, &nsegments[i] );
+   VG_(debugLog)(logLevel, "aspacem",
+                 ">>>\n");
+}
+
+
+/*-----------------------------------------------------------------*/
+/*---                                                           ---*/
+/*--- Sanity checking and preening of the segment array.        ---*/
+/*---                                                           ---*/
+/*-----------------------------------------------------------------*/
+
+/* Check representational invariants for NSegments. */
+
+static Bool sane_NSegment ( NSegment* s )
+{
+   if (s == NULL) return False;
+
+   /* No zero sized segments and no wraparounds. */
+   if (s->start >= s->end) return False;
+
+   /* .mark is used for admin purposes only. */
+   if (s->mark) return False;
+
+   /* require page alignment */
+   if (!VG_IS_PAGE_ALIGNED(s->start)) return False;
+   if (!VG_IS_PAGE_ALIGNED(s->end+1)) return False;
+
+   switch (s->kind) {
+
+      case SkFree:
+         return 
+            s->smode == SmFixed
+            && s->dev == 0 && s->ino == 0 && s->offset == 0 && s->fnIdx == -1 
+            && !s->hasR && !s->hasW && !s->hasX && !s->hasT;
+
+      case SkAnonC: case SkAnonV:
+         return 
+            s->smode == SmFixed 
+            && s->dev == 0 && s->ino == 0 && s->offset == 0 && s->fnIdx == -1;
+
+      case SkFileC: case SkFileV:
+         return 
+            s->smode == SmFixed;
+
+      case SkResvn: 
+         return 
+            s->dev == 0 && s->ino == 0 && s->offset == 0 && s->fnIdx == -1 
+            && !s->hasR && !s->hasW && !s->hasX && !s->hasT;
+
+      default:
+         return False;
+   }
+}
+
+
+/* Try merging s2 into s1, if possible.  If successful, s1 is
+   modified, and True is returned.  Otherwise s1 is unchanged and
+   False is returned. */
+
+static Bool maybe_merge_nsegments ( NSegment* s1, NSegment* s2 )
+{
+   if (s1->kind != s2->kind) 
+      return False;
+
+   if (s1->end+1 != s2->start)
+      return False;
+
+   /* reject cases which would cause wraparound */
+   if (s1->start > s2->end)
+      return False;
+
+   switch (s1->kind) {
+
+      case SkFree:
+         s1->end = s2->end;
+         return True;
+
+      case SkAnonC: case SkAnonV:
+         if (s1->hasR == s2->hasR 
+             && s1->hasW == s2->hasW && s1->hasX == s2->hasX) {
+            s1->end = s2->end;
+            s1->hasT |= s2->hasT;
+            return True;
+         }
+         break;
+
+      case SkFileC: case SkFileV:
+         if (s1->hasR == s2->hasR 
+             && s1->hasW == s2->hasW && s1->hasX == s2->hasX
+             && s1->dev == s2->dev && s1->ino == s2->ino
+             && s2->offset == s1->offset
+                              + ((ULong)s2->start) - ((ULong)s1->start) ) {
+            s1->end = s2->end;
+            s1->hasT |= s2->hasT;
+            return True;
+         }
+         break;
+
+      default:
+         break;
+   
+   }
+
+   return False;
+}
+
+
+/* Sanity-check and canonicalise the segment array (merge mergable
+   segments). */
+
+static void preen_nsegments ( void )
+{
+   Int i, r, w;
+
+   /* Pass 1: check the segment array covers the entire address space
+      exactly once, and also that each segment is sane. */
+   aspacem_assert(nsegments_used > 0);
+   aspacem_assert(nsegments[0].start == Addr_MIN);
+   aspacem_assert(nsegments[nsegments_used-1].end == Addr_MAX);
+
+   aspacem_assert(sane_NSegment(&nsegments[0]));
+   for (i = 1; i < nsegments_used; i++) {
+if (!sane_NSegment(&nsegments[i])) show_nsegment_full(0,&nsegments[i]);
+      aspacem_assert(sane_NSegment(&nsegments[i]));
+      aspacem_assert(nsegments[i-1].end+1 == nsegments[i].start);
+   }
+
+   /* Pass 2: merge as much as possible, using
+      maybe_merge_segments. */
+   w = 0;
+   for (r = 1; r < nsegments_used; r++) {
+      if (maybe_merge_nsegments(&nsegments[w], &nsegments[r])) {
+         /* nothing */
+      } else {
+         w++;
+         if (w != r) 
+            nsegments[w] = nsegments[r];
+      }
+   }
+   w++;
+   aspacem_assert(w > 0 && w <= nsegments_used);
+   nsegments_used = w;
+}
+
+
+/*-----------------------------------------------------------------*/
+/*---                                                           ---*/
 /*--- Low level access / modification of the segment array.     ---*/
 /*---                                                           ---*/
 /*-----------------------------------------------------------------*/
@@ -1644,19 +1930,6 @@ NSegment* VG_(am_next_nsegment) ( NSegment* here, Bool fwds )
 }
 
 
-/* Sanity checking: ensure the segment array covers the entire address
-   space exactly. */
-static void check_nsegments ( void )
-{
-   Int i;
-   aspacem_assert(nsegments_used > 0);
-   aspacem_assert(nsegments[0].start == Addr_MIN);
-   aspacem_assert(nsegments[nsegments_used-1].end == Addr_MAX);
-   for (i = 1; i < nsegments_used; i++)
-      aspacem_assert(nsegments[i-1].end+1 == nsegments[i].start);
-}
-
-
 /* Trivial fn: return the total amount of space in anonymous mappings,
    both for V and the client.  Is used for printing stats in
    out-of-memory messages. */
@@ -1710,134 +1983,17 @@ Bool VG_(am_is_valid_for_client)( Addr start, SizeT len, UInt prot )
 
 /*-----------------------------------------------------------------*/
 /*---                                                           ---*/
-/*--- Displaying the segment array.                             ---*/
-/*---                                                           ---*/
-/*-----------------------------------------------------------------*/
-
-static HChar* show_seg_kind ( NSegment* seg )
-{
-   switch (seg->kind) {
-      case SkFree:  return "    ";
-      case SkAnonC: return "anon";
-      case SkAnonV: return "ANON";
-      case SkFileC: return "file";
-      case SkFileV: return "FILE";
-      case SkResvn: return "RSVN";
-      default:      return "????";
-   }
-}
-
-static HChar* show_ShrinkMode ( ShrinkMode sm )
-{
-   switch (sm) {
-      case SmLower: return "SmLower";
-      case SmUpper: return "SmUpper";
-      case SmFixed: return "SmFixed";
-      default: return "Sm?????";
-   }
-}
-
-static void show_Addr_concisely ( /*OUT*/HChar* buf, Addr aA )
-{
-   HChar* fmt;
-   ULong a = (ULong)aA;
-   if (a >= 10000000ULL) {
-      fmt = "%6llum";
-      a /= 1024*1024ULL;
-   } else {
-      fmt = "%7llu";
-   }
-   aspacem_sprintf(buf, fmt, a);
-}
-
-static void show_nsegment ( Int logLevel, Int segNo, NSegment* seg )
-{
-   HChar len_buf[20];
-   ULong len = ((ULong)seg->end) - ((ULong)seg->start) + 1;
-   show_Addr_concisely(len_buf, len);
-
-   switch (seg->kind) {
-
-      case SkFree:
-         VG_(debugLog)(
-            logLevel, "aspacem",
-            "%3d: %s %08llx-%08llx %s\n",
-            segNo, show_seg_kind(seg),
-            (ULong)seg->start, (ULong)seg->end, len_buf
-         );
-         break;
-
-      case SkAnonC: case SkAnonV:
-         VG_(debugLog)(
-            logLevel, "aspacem",
-            "%3d: %s %08llx-%08llx %s %c%c%c%c d=0x%03x i=%-7d o=%-7lld (%d)\n",
-            segNo, show_seg_kind(seg),
-            (ULong)seg->start, (ULong)seg->end, len_buf,
-            seg->hasR ? 'r' : '-', seg->hasW ? 'w' : '-', 
-            seg->hasX ? 'x' : '-', seg->hasT ? 'T' : '-', 
-            seg->dev, seg->ino, (Long)seg->offset, seg->fnIdx
-         );
-         break;
-
-      case SkFileC: case SkFileV:
-         VG_(debugLog)(
-            logLevel, "aspacem",
-            "%3d: %s %08llx-%08llx %s %c%c%c%c d=0x%03x i=%-7d o=%-7lld (%d)\n",
-            segNo, show_seg_kind(seg),
-            (ULong)seg->start, (ULong)seg->end, len_buf,
-            seg->hasR ? 'r' : '-', seg->hasW ? 'w' : '-', 
-            seg->hasX ? 'x' : '-', seg->hasT ? 'T' : '-', 
-            seg->dev, seg->ino, (Long)seg->offset, seg->fnIdx
-         );
-         break;
-
-     case SkResvn:
-        VG_(debugLog)(
-           logLevel, "aspacem",
-           "%3d: %s %08llx-%08llx %s %c%c%c%c %s\n",
-           segNo, show_seg_kind(seg),
-           (ULong)seg->start, (ULong)seg->end, len_buf,
-           seg->hasR ? 'r' : '-', seg->hasW ? 'w' : '-', 
-           seg->hasX ? 'x' : '-', seg->hasT ? 'T' : '-', 
-           show_ShrinkMode(seg->smode)
-        );
-        break;
-
-     default:
-        VG_(debugLog)(
-           logLevel, "aspacem",
-           "%3d: ???? UNKNOWN SEGMENT KIND\n", 
-           segNo 
-        );
-        break;
-    }
-}
-
-/* Print out the segment array (debugging only!). */
-void VG_(am_show_nsegments) ( Int logLevel, HChar* who )
-{
-   Int i;
-   VG_(debugLog)(logLevel, "aspacem",
-                 "<<< SHOW_SEGMENTS: %s (%d segments, %d segnames)\n", 
-                 who, segments_used, segnames_used);
-   for (i = 0; i < segnames_used; i++) {
-      if (!segnames[i].inUse)
-         continue;
-      VG_(debugLog)(logLevel, "aspacem",
-                    "(%2d) %s\n", i, segnames[i].fname);
-   }
-   for (i = 0; i < nsegments_used; i++)
-     show_nsegment( logLevel, i, &nsegments[i] );
-   VG_(debugLog)(logLevel, "aspacem",
-                 ">>>\n");
-}
-
-
-/*-----------------------------------------------------------------*/
-/*---                                                           ---*/
 /*--- Modifying the segment array, and constructing segments.   ---*/
 /*---                                                           ---*/
 /*-----------------------------------------------------------------*/
+
+/* Helper fn */
+
+static Bool is_SkFile ( SegKind sk )
+{
+   return sk == SkFileV || sk == SkFileC;
+}
+
 
 /* Add SEG to the collection, deleting/truncating any it overlaps.
    This deals with all the tricky cases of splitting up segments as
@@ -1854,6 +2010,7 @@ static void add_segment ( NSegment* seg )
    aspacem_assert(dStart <= dEnd);
    aspacem_assert(VG_IS_PAGE_ALIGNED(dStart));
    aspacem_assert(VG_IS_PAGE_ALIGNED(dEnd+1));
+   aspacem_assert(sane_NSegment(seg));
 
    nDeld = 0;
 
@@ -1891,7 +2048,8 @@ static void add_segment ( NSegment* seg )
          nsegments[i+1] = nsegments[i];
          nsegments[i].end = dStart-1;
          nsegments[i+1].start = dEnd+1;
-         nsegments[i+1].offset += (nsegments[i+1].start - nsegments[i].start);
+         if (is_SkFile(nsegments[i].kind))
+            nsegments[i+1].offset += (nsegments[i+1].start - nsegments[i].start);
          continue;
       }
 
@@ -1903,7 +2061,8 @@ static void add_segment ( NSegment* seg )
 
       if (iEnd > dEnd && iStart >= dStart && iStart <= dEnd) {
          /* interval to be deleted straddles lower boundary of i. */
-         nsegments[i].offset += (dEnd+1 - nsegments[i].start);
+         if (is_SkFile(nsegments[i].kind))
+            nsegments[i].offset += (dEnd+1 - nsegments[i].start);
          nsegments[i].start = dEnd+1;
          continue;
       }
@@ -1948,7 +2107,7 @@ static void add_segment ( NSegment* seg )
 
    nsegments[k] = *seg;
 
-   check_nsegments();
+   preen_nsegments();
 }
 
 
@@ -1964,7 +2123,7 @@ static void init_nsegment ( /*OUT*/NSegment* seg )
    seg->ino      = 0;
    seg->offset   = 0;
    seg->fnIdx    = -1;
-   seg->hasR = seg->hasR = seg->hasW = seg->hasT = False;
+   seg->hasR = seg->hasW = seg->hasX = seg->hasT = False;
    seg->mark = False;
 }
 

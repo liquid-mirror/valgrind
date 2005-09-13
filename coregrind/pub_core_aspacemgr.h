@@ -182,7 +182,7 @@ typedef
       SkFileV,  // file mapping belonging to valgrind
       SkResvn   // reservation
    }
-   MKind;
+   SegKind;
 
 /* Describes how a reservation segment can be resized. */
 typedef
@@ -199,13 +199,13 @@ typedef
         // the only meaningful fields are .start and .end
 
      kind == SkAnon{C,V}:
-        // the segment may be resized if required
+        // smode==SmFixed
         // there's no associated file:
         dev==ino==foff = 0, fnidx == -1
         // segment may have permissions
 
      kind == SkFile{C,V}:
-        // the segment may not be resized:
+        // smode==SmFixed
         moveLo == moveHi == NotMovable, maxlen == 0
         // there is an associated file
         // segment may have permissions
@@ -222,7 +222,7 @@ typedef
 */
 typedef
    struct {
-      MKind   kind;
+      SegKind kind;
       /* Extent (SkFree, SkAnon{C,V}, SkFile{C,V}, SkResvn) */
       Addr    start;    // lowest address in range
       Addr    end;      // highest address in range
