@@ -78,7 +78,7 @@ Bool VG_(resolve_filename) ( Int fd, HChar* buf, Int n_buf )
    VG_(sprintf)(tmp, "/proc/self/fd/%d", fd);
    VG_(memset)(buf, 0, n_buf);
 
-   if (VG_(readlink)(tmp, buf, VKI_PATH_MAX) > 0 && buf[0] == '/')
+   if (VG_(readlink)(tmp, buf, n_buf) > 0 && buf[0] == '/')
       return True;
    else
       return False;
