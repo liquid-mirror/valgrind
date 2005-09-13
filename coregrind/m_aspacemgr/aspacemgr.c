@@ -1469,8 +1469,8 @@ UInt aspacem_sprintf ( HChar* buf, const HChar *format, ... )
 
 
 //--------------------------------------------------------------
-// Direct access to the kernel's mmap/munmap syscalls.  This
-// avoids dependence on m_libcmman.
+// Direct access to a handful of syscalls.  This avoids dependence on
+// m_libc*.
 
 SysRes VG_(am_do_mmap_NO_NOTIFY)( Addr start, SizeT length, UInt prot, 
                                   UInt flags, UInt fd, OffT offset)
@@ -1505,6 +1505,14 @@ SysRes do_munmap_NO_NOTIFY(Addr start, SizeT length)
    return VG_(do_syscall2)(__NR_munmap, (UWord)start, length );
 }
 
+static
+Int aspacem_readlink(HChar* path, HChar* buf, UInt bufsiz)
+{
+   SysRes res;
+   res = VG_(do_syscall3)(__NR_readlink, (UWord)path, (UWord)buf, bufsiz);
+   return res.isError ? -1 : res.val;
+}
+
 
 //--------------------------------------------------------------
 // Functions for extracting information about file descriptors.
@@ -1515,10 +1523,22 @@ Bool get_inode_for_fd ( Int fd, /*OUT*/UInt* dev, /*OUT*/UInt* ino )
    return False;
 }
 
+/* Given a file descriptor, attempt to deduce its filename.  To do
+   this, we use /proc/self/fd/<FD>.  If this doesn't point to a file,
+   or if it doesn't exist, we return False. */
 static
 Bool get_name_for_fd ( Int fd, /*OUT*/HChar* buf, Int nbuf )
 {
-   return False;
+   Int   i;
+   HChar tmp[64];
+
+   aspacem_sprintf(tmp, "/proc/self/fd/%d", fd);
+   for (i = 0; i < nbuf; i++) buf[i] = 0;
+   
+   if (aspacem_readlink(tmp, buf, nbuf) > 0 && buf[0] == '/')
+      return True;
+   else
+      return False;
 }
 
 
