@@ -289,13 +289,22 @@ typedef
    }
    MapRequest;
 
-/* Query aspacem to ask where a mapping should go.  On success,
-   returns True and the advised placement is in *result.  If False is
-   returned, it means aspacem has vetoed the mapping, and so the
+/* Query aspacem to ask where a mapping should go.  On success, the
+   advised placement is returned, and *ok is set to True.  On failure,
+   zero is returned and *ok is set to False.  Note that *ok must be
+   consulted by the caller to establish success or failure; that
+   cannot be established reliably from the returned value.  If *ok is
+   set to False, it means aspacem has vetoed the mapping, and so the
    caller should not proceed with it. */
-extern Bool VG_(am_get_advisory)
-   ( MapRequest* req, Bool forClient, /*OUT*/Addr* result );
+extern Addr VG_(am_get_advisory)
+   ( MapRequest* req, Bool forClient, /*OUT*/Bool* ok );
 
+/* Convenience wrapper for VG_(am_get_advisory) for client floating or
+   fixed requests.  If start is zero, a floating request is issued; if
+   nonzero, a fixed request at that address is issued.  Same comments
+   about return values apply. */
+extern Addr VG_(am_get_advisory_client_simple) 
+   ( Addr start, SizeT len, /*OUT*/Bool* ok );
 
 /* Notifies aspacem that the client completed an mmap successfully.
    The segment array is updated accordingly. */

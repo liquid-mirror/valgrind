@@ -1508,9 +1508,14 @@ ML_(generic_PRE_sys_shmat) ( ThreadId tid,
                              UWord arg0, UWord arg1, UWord arg2 )
 {
    /* void *shmat(int shmid, const void *shmaddr, int shmflg); */
-   UInt segmentSize = get_shm_size ( arg0 );
-   if (arg1 == 0)
-      arg1 = VG_(find_map_space)(0, segmentSize, True);
+   UInt  segmentSize = get_shm_size ( arg0 );
+   UWord tmp;
+   Bool  ok;
+   if (arg1 == 0) {
+      tmp = VG_(am_get_advisory_client_simple)(0, segmentSize, &ok);
+      if (ok)
+         arg1 = ok;
+   }
    else if (!ML_(valid_client_addr)(arg1, segmentSize, tid, "shmat"))
       arg1 = 0;
    return arg1;
@@ -4573,7 +4578,7 @@ PRE(sys_mmap2)
    }
 
    /* Enquire ... */
-   mreq_ok = VG_(am_get_advisory)( &mreq, True/*client*/, &advised );
+   advised = VG_(am_get_advisory)( &mreq, True/*client*/, &mreq_ok );
    if (!mreq_ok) {
       /* Our request was bounced, so we'd better fail. */
       SET_STATUS_Failure( VKI_EINVAL );

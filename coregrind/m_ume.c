@@ -605,7 +605,6 @@ static int load_ELF(char *hdr, int len, int fd, const char *name,
       Char*      base = (Char *)info->exe_base;
       Char*      baseoff;
       Addr       advised;
-      MapRequest mreq;
       Bool       ok;
 
       if (info->map_base != 0)
@@ -617,10 +616,9 @@ static int load_ELF(char *hdr, int len, int fd, const char *name,
          the specified address.  This is a bit of hack, but it should
          work because there should be no intervening transactions with
          aspacem which could cause those fixed maps to fail. */
-      mreq.rkind = base ? MFixed : MAny;
-      mreq.start = (Addr)base;
-      mreq.len   = interp_size;
-      ok = VG_(am_get_advisory)( &mreq, True/*client*/, &advised );
+      advised = VG_(am_get_advisory_client_simple)( 
+                   (Addr)base, interp_size, &ok 
+                );
       if (!ok) {
          /* bomb out */
          SysRes res = VG_(mk_SysRes_Error)(VKI_EINVAL);

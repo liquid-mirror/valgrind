@@ -376,7 +376,7 @@ static SysRes do_clone ( ThreadId ptid,
    ThreadState* ptst = VG_(get_ThreadState)(ptid);
    ThreadState* ctst = VG_(get_ThreadState)(ctid);
    UWord*       stack;
-   Segment*     seg;
+   NSegment*    seg;
    SysRes       res;
    Int          eax;
    vki_sigset_t blockall, savedmask;
@@ -428,14 +428,14 @@ static SysRes do_clone ( ThreadId ptid,
       memory mappings and try to derive some useful information.  We
       assume that esp starts near its highest possible value, and can
       only go down to the start of the mmaped segment. */
-   seg = VG_(find_segment)((Addr)esp);
-   if (seg) {
+   seg = VG_(am_find_nsegment)((Addr)esp);
+   if (seg && seg->kind != SkResvn) {
       ctst->client_stack_highest_word = (Addr)VG_PGROUNDUP(esp);
-      ctst->client_stack_szB  = ctst->client_stack_highest_word - seg->addr;
+      ctst->client_stack_szB = ctst->client_stack_highest_word - seg->start;
 
       if (debug)
 	 VG_(printf)("tid %d: guessed client stack range %p-%p\n",
-		     ctid, seg->addr, VG_PGROUNDUP(esp));
+		     ctid, seg->start, VG_PGROUNDUP(esp));
    } else {
       VG_(message)(Vg_UserMsg, "!? New thread %d starts with ESP(%p) unmapped\n",
 		   ctid, esp);
@@ -1514,7 +1514,7 @@ PRE(old_mmap)
    }
 
    /* Enquire ... */
-   mreq_ok = VG_(am_get_advisory)( &mreq, True/*client*/, &advised );
+   advised = VG_(am_get_advisory)( &mreq, True/*client*/, &mreq_ok );
    if (!mreq_ok) {
       /* Our request was bounced, so we'd better fail. */
       SET_STATUS_Failure( VKI_EINVAL );

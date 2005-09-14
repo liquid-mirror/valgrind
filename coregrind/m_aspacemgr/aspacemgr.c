@@ -2275,9 +2275,9 @@ Addr VG_(am_startup) ( Addr sp_at_startup )
 
 /* Query aspacem to ask where a mapping should go. */
 
-Bool VG_(am_get_advisory) ( MapRequest*  req, 
+Addr VG_(am_get_advisory) ( MapRequest*  req, 
                             Bool         forClient, 
-                            /*OUT*/Addr* result )
+                            /*OUT*/Bool* ok )
 {
    /* This function implements allocation policy.
 
@@ -2287,11 +2287,11 @@ Bool VG_(am_get_advisory) ( MapRequest*  req,
       and by forClient, which says whether this is for the client or
       for V. 
 
-      Return values: the request can be vetoed (return False), in
-      which case the caller should not attempt to proceed with making
-      the mapping.  Otherwise, the caller may proceed, and the
-      preferred address at which the mapping should happen is written
-      in *result.
+      Return values: the request can be vetoed (*ok is set to False),
+      in which case the caller should not attempt to proceed with
+      making the mapping.  Otherwise, *ok is set to True, the caller
+      may proceed, and the preferred address at which the mapping
+      should happen is returned.
 
       Note that this is an advisory system only: the kernel can in
       fact do whatever it likes as far as placement goes, and we have
@@ -2315,8 +2315,7 @@ Bool VG_(am_get_advisory) ( MapRequest*  req,
         grant it providing all areas inside the request are either
         free or are file mappings belonging to the client.  In other
         words we are prepared to let the client trash its own mappings
-        if it wants to.  
-   */
+        if it wants to.  */
    Int  i, j;
    Addr holeStart, holeEnd, holeLen;
    Bool fixed_not_required;
@@ -2341,13 +2340,17 @@ Bool VG_(am_get_advisory) ( MapRequest*  req,
    }
 
    /* Reject zero-length requests */
-   if (req->len == 0)
-      return False;
+   if (req->len == 0) {
+      *ok = False;
+      return 0;
+   }
 
    /* Reject wraparounds */
    if ((req->rkind==MFixed || req->rkind==MHint)
-       && req->start + req->len < req->start)
-      return False;
+       && req->start + req->len < req->start) {
+      *ok = False;
+      return 0;
+   }
 
    /* ------ Implement Policy Exception #1 ------ */
 
@@ -2365,10 +2368,11 @@ Bool VG_(am_get_advisory) ( MapRequest*  req,
          }
       }
       if (allow) {
-         *result = reqStart;
-         return True;
-       }
-       return False;
+         *ok = True;
+         return reqStart;
+      }
+      *ok = False;
+      return 0;
    }
 
    /* ------ Implement the Default Policy ------ */
@@ -2426,35 +2430,54 @@ Bool VG_(am_get_advisory) ( MapRequest*  req,
    switch (req->rkind) {
       case MFixed:
          if (fixedIdx >= 0) {
-            *result = req->start;
-            return True;
+            *ok = True;
+            return req->start;
          } else {
-            return False;
+            *ok = False;
+            return 0;
          }
          break;
       case MHint:
          if (fixedIdx >= 0) {
-            *result = req->start;
-            return True;
+            *ok = True;
+            return req->start;
          }
          if (floatIdx >= 0) {
-            *result = nsegments[floatIdx].start;
-            return True;
+            *ok = True;
+            return nsegments[floatIdx].start;
          }
-         return False;
+         *ok = False;
+         return 0;
       case MAny:
          if (floatIdx >= 0) {
-            *result = nsegments[floatIdx].start;
-            return True;
+            *ok = True;
+            return nsegments[floatIdx].start;
          }
-         return False;
+         *ok = False;
+         return 0;
       default: 
          break;
    }
 
    /*NOTREACHED*/
    aspacem_barf("getAdvisory: unknown request kind");
-   return False;
+   *ok = False;
+   return 0;
+}
+
+/* Convenience wrapper for VG_(am_get_advisory) for client floating or
+   fixed requests.  If start is zero, a floating request is issued; if
+   nonzero, a fixed request at that address is issued.  Same comments
+   about return values apply. */
+
+Addr VG_(am_get_advisory_client_simple) ( Addr start, SizeT len, 
+                                          /*OUT*/Bool* ok )
+{
+   MapRequest mreq;
+   mreq.rkind = start==0 ? MAny : MFixed;
+   mreq.start = start;
+   mreq.len   = len;
+   return VG_(am_get_advisory)( &mreq, True/*client*/, ok );
 }
 
 
@@ -2595,7 +2618,7 @@ SysRes VG_(am_mmap_file_fixed_client)
    req.rkind = MFixed;
    req.start = start;
    req.len   = length;
-   ok = VG_(am_get_advisory)( &req, True/*client*/, &advised );
+   advised = VG_(am_get_advisory)( &req, True/*client*/, &ok );
    if (!ok || advised != start)
       return VG_(mk_SysRes_Error)( VKI_EINVAL );
 
@@ -2659,7 +2682,7 @@ SysRes VG_(am_mmap_anon_fixed_client) ( Addr start, SizeT length, UInt prot )
    req.rkind = MFixed;
    req.start = start;
    req.len   = length;
-   ok = VG_(am_get_advisory)( &req, True/*client*/, &advised );
+   advised = VG_(am_get_advisory)( &req, True/*client*/, &ok );
    if (!ok || advised != start)
       return VG_(mk_SysRes_Error)( VKI_EINVAL );
 
@@ -2715,7 +2738,7 @@ SysRes VG_(am_mmap_anon_float_client) ( SizeT length, Int prot )
    req.rkind = MAny;
    req.start = 0;
    req.len   = length;
-   ok = VG_(am_get_advisory)( &req, True/*client*/, &advised );
+   advised = VG_(am_get_advisory)( &req, True/*client*/, &ok );
    if (!ok)
       return VG_(mk_SysRes_Error)( VKI_EINVAL );
 
@@ -2772,7 +2795,7 @@ SysRes VG_(am_mmap_anon_float_valgrind)( SizeT length )
    req.rkind = MAny;
    req.start = 0;
    req.len   = length;
-   ok = VG_(am_get_advisory)( &req, False/*valgrind*/, &advised );
+   advised = VG_(am_get_advisory)( &req, False/*valgrind*/, &ok );
    if (!ok)
       return VG_(mk_SysRes_Error)( VKI_EINVAL );
 
