@@ -1521,6 +1521,7 @@ static Int aspacem_fstat( Int fd, struct vki_stat* buf )
 //--------------------------------------------------------------
 // Functions for extracting information about file descriptors.
 
+/* Extract the device and inode numbers for a fd. */
 static 
 Bool get_inode_for_fd ( Int fd, /*OUT*/UInt* dev, /*OUT*/UInt* ino )
 {
@@ -1987,11 +1988,72 @@ Bool VG_(am_is_valid_for_client)( Addr start, SizeT len, UInt prot )
 /*---                                                           ---*/
 /*-----------------------------------------------------------------*/
 
-/* Helper fn */
+/* Split the segment containing 'a' into two, so that 'a' is
+   guaranteed to be the start of a new segment.  If 'a' is already the
+   start of a segment, do nothing. */
 
-static Bool is_SkFile ( SegKind sk )
+static void split_nsegment_at ( Addr a )
 {
-   return sk == SkFileV || sk == SkFileC;
+   Int i, j;
+
+   aspacem_assert(a > 0);
+   aspacem_assert(VG_IS_PAGE_ALIGNED(a));
+ 
+   i = find_nsegment_idx(a);
+   aspacem_assert(i >= 0 && i < nsegments_used);
+
+   if (nsegments[i].start == a)
+      /* 'a' is already the start point of a segment, so nothing to be
+         done. */
+      return;
+
+   /* else we have to slide the segments upwards to make a hole */
+   if (nsegments_used >= VG_N_SEGMENTS)
+      aspacem_barf_toolow("VG_N_SEGMENTS");
+   for (j = nsegments_used-1; j > i; j--)
+      nsegments[j+1] = nsegments[j];
+   nsegments_used++;
+
+   nsegments[i+1]       = nsegments[i];
+   nsegments[i+1].start = a;
+   nsegments[i].end     = a-1;
+
+   if (nsegments[i].kind == SkFileV || nsegments[i].kind == SkFileC)
+      nsegments[i+1].offset 
+         += ((ULong)nsegments[i+1].start) - ((ULong)nsegments[i].start);
+
+   aspacem_assert(sane_NSegment(&nsegments[i]));
+   aspacem_assert(sane_NSegment(&nsegments[i+1]));
+}
+
+
+/* Do the minimum amount of segment splitting necessary to ensure that
+   sLo is the first address denoted by some segment and sHi is the
+   highest address denoted by some other segment.  Returns the indices
+   of the lowest and highest segments in the range. */
+
+static 
+void split_nsegments_lo_and_hi ( Addr sLo, Addr sHi,
+                                 /*OUT*/Int* iLo,
+                                 /*OUT*/Int* iHi )
+{
+   aspacem_assert(sLo < sHi);
+   aspacem_assert(VG_IS_PAGE_ALIGNED(sLo));
+   aspacem_assert(VG_IS_PAGE_ALIGNED(sHi+1));
+
+   if (sLo > 0)
+      split_nsegment_at(sLo);
+   if (sHi < sHi+1)
+      split_nsegment_at(sHi+1);
+
+   *iLo = find_nsegment_idx(sLo);
+   *iHi = find_nsegment_idx(sHi);
+   aspacem_assert(0 <= *iLo && *iLo < nsegments_used);
+   aspacem_assert(0 <= *iHi && *iHi < nsegments_used);
+   aspacem_assert(*iLo <= *iHi);
+   aspacem_assert(nsegments[*iLo].start == sLo);
+   aspacem_assert(nsegments[*iHi].end == sHi);
+   /* Not that I'm overly paranoid or anything, definitely not :-) */
 }
 
 
@@ -2001,113 +2063,33 @@ static Bool is_SkFile ( SegKind sk )
 
 static void add_segment ( NSegment* seg )
 {
-   Int  nDeld, i, j, k;
-   Addr iStart, iEnd;
+   Int  i, iLo, iHi, delta;
 
-   Addr dStart = seg->start;
-   Addr dEnd   = seg->end;
+   Addr sStart = seg->start;
+   Addr sEnd   = seg->end;
 
-   aspacem_assert(dStart <= dEnd);
-   aspacem_assert(VG_IS_PAGE_ALIGNED(dStart));
-   aspacem_assert(VG_IS_PAGE_ALIGNED(dEnd+1));
+   aspacem_assert(sStart <= sEnd);
+   aspacem_assert(VG_IS_PAGE_ALIGNED(sStart));
+   aspacem_assert(VG_IS_PAGE_ALIGNED(sEnd+1));
    aspacem_assert(sane_NSegment(seg));
 
-   nDeld = 0;
+   split_nsegments_lo_and_hi( sStart, sEnd, &iLo, &iHi );
 
-   /* Iterate over all segments, considering how each interacts with
-      the new address range dStart .. dEnd. */
-
-   for (i = 0; i < nsegments_used; i++) {
-
-      nsegments[i].mark = False;
-
-      iStart = nsegments[i].start;
-      iEnd = nsegments[i].end;
-
-      /* no-overlap cases */
-      if (iEnd < dStart) continue;
-      if (dEnd < iStart) continue;
-
-      if (dStart <= iStart && iEnd <= dEnd) {
-         /* i is completely overlapped.  Mark it for deletion. */
-         nsegments[i].mark = True;
-         nDeld++;
-         continue;
-      }
-
-      if (iStart < dStart && iEnd > dEnd) {
-         /* deleted interval is completely contained within i.  This
-            means i has to be split into two pieces.  As a result,
-            first move the following elements up by one place to make
-            space for the new part. */
-         if (nsegments_used >= VG_N_SEGMENTS)
-            aspacem_barf_toolow("VG_N_SEGMENTS");
-         for (j = nsegments_used-1; j > i; j--)
-            nsegments[j+1] = nsegments[j];
-         nsegments_used++;
-         nsegments[i+1] = nsegments[i];
-         nsegments[i].end = dStart-1;
-         nsegments[i+1].start = dEnd+1;
-         if (is_SkFile(nsegments[i].kind))
-            nsegments[i+1].offset += (nsegments[i+1].start - nsegments[i].start);
-         continue;
-      }
-
-      if (iStart < dStart && iEnd <= dEnd && iEnd >= dStart) {
-         /* interval to be deleted straddles upper boundary of i. */
-         nsegments[i].end = dStart-1;
-         continue;
-      }
-
-      if (iEnd > dEnd && iStart >= dStart && iStart <= dEnd) {
-         /* interval to be deleted straddles lower boundary of i. */
-         if (is_SkFile(nsegments[i].kind))
-            nsegments[i].offset += (dEnd+1 - nsegments[i].start);
-         nsegments[i].start = dEnd+1;
-         continue;
-      }
-
-      /* I don't think we can get here. */
-      aspacem_assert(0);
+   /* Now iLo .. iHi inclusive is the range of segment indices which
+      seg will replace.  If we're replacing more than one segment,
+      slide those above the range down to fill the hole. */
+   delta = iHi - iLo;
+   aspacem_assert(delta >= 0);
+   if (delta > 0) {
+      for (i = iLo; i < nsegments_used-delta; i++)
+         nsegments[i] = nsegments[i+delta];
+      nsegments_used -= delta;
    }
 
-   /* Get rid of the intervals marked for deletion. */
-   if (nDeld > 0) {
-      j = 0;
-      for (i = 0; i < nsegments_used; i++) {
-         if (nsegments[i].mark)
-            continue;
-         nsegments[j] = nsegments[i];
-         j++;
-      }
-      nsegments_used -= nDeld;
-   }
-
-   /* At this point, there should be a gap dStart .. dEnd inclusive.
-      Find the gap and insert the new interval in it.  Set k so that
-      all entries >= k must be moved up 1, and the new interval placed
-      at k. */
-   if (nsegments_used >= VG_N_SEGMENTS)
-      aspacem_barf_toolow("VG_N_SEGMENTS");
-   if (nsegments_used == 0) {
-      k = 0;
-   } else {
-      for (i = 0; i < nsegments_used; i++) {
-         if (dEnd+1 == nsegments[i].start 
-             && /*guard against wraparound*/dEnd+1 > dEnd)
-            break;
-      }
-      k = i;
-   }
-
-   aspacem_assert(k >= 0 && k <= nsegments_used);
-   for (j = nsegments_used-1; j >= k; j--)
-      nsegments[j+1] = nsegments[j];
-   nsegments_used++;
-
-   nsegments[k] = *seg;
+   nsegments[iLo] = *seg;
 
    preen_nsegments();
+   if (0) VG_(am_show_nsegments)(0,"AFTER preen (add_segment)");
 }
 
 
@@ -2523,10 +2505,15 @@ void VG_(am_notify_client_mprotect)( Addr start, SizeT len, UInt prot )
       nsegments[iLo].hasR = toBool(prot & VKI_PROT_READ);
       nsegments[iLo].hasW = toBool(prot & VKI_PROT_WRITE);
       nsegments[iLo].hasX = toBool(prot & VKI_PROT_EXEC);
+      preen_nsegments();
       return;
    }
 
    /* FIXME: unhandled general case */
+   if (1)
+      VG_(debugLog)(0,"aspacem", "notify mprotect 0x%llx %lld\n", 
+                       (ULong)start, (Long)len);
+   VG_(am_show_nsegments)(0, "notify_mprotect general case");
    aspacem_barf("notify_mprotect general case");
 }
 
