@@ -1499,6 +1499,11 @@ SysRes VG_(am_do_mmap_NO_NOTIFY)( Addr start, SizeT length, UInt prot,
    return res;
 }
 
+static SysRes do_mprotect_NO_NOTIFY(Addr start, SizeT length, UInt prot)
+{
+   return VG_(do_syscall3)(__NR_mprotect, (UWord)start, length, prot );
+}
+
 static SysRes do_munmap_NO_NOTIFY(Addr start, SizeT length)
 {
    return VG_(do_syscall2)(__NR_munmap, (UWord)start, length );
@@ -2485,45 +2490,65 @@ VG_(am_notify_client_mmap)( Addr a, SizeT len, UInt prot, UInt flags,
    add_segment( &seg );
 }
 
-/* Notifies aspacem that the client completed an mprotect
-   successfully.  The segment array is updated accordingly. */
+/* Notifies aspacem that an mprotect was completed successfully.  The
+   segment array is updated accordingly.  Note, as with
+   VG_(am_notify_munmap), it is not the job of this function to reject
+   stupid mprotects, for example the client doing mprotect of
+   non-client areas.  Such requests should be intercepted earlier, by
+   the syscall wrapper for mprotect.  This function merely records
+   whatever it is told. */
 
-void VG_(am_notify_client_mprotect)( Addr start, SizeT len, UInt prot )
+void VG_(am_notify_mprotect)( Addr start, SizeT len, UInt prot )
 {
-   Int iLo, iHi;
+   Int  i, iLo, iHi;
+   Bool newR, newW, newX;
+
+   aspacem_assert(VG_IS_PAGE_ALIGNED(start));
+   aspacem_assert(VG_IS_PAGE_ALIGNED(len));
 
    if (len == 0)
       return;
 
+   split_nsegments_lo_and_hi( start, start+len-1, &iLo, &iHi );
+
    iLo = find_nsegment_idx(start);
    iHi = find_nsegment_idx(start + len - 1);
 
-   if (iLo == iHi 
-       && nsegments[iLo].start == start 
-       && nsegments[iLo].end+1 == start+len
-       && (nsegments[iLo].kind == SkFileC || nsegments[iLo].kind == SkAnonC)) {
-      nsegments[iLo].hasR = toBool(prot & VKI_PROT_READ);
-      nsegments[iLo].hasW = toBool(prot & VKI_PROT_WRITE);
-      nsegments[iLo].hasX = toBool(prot & VKI_PROT_EXEC);
-      preen_nsegments();
-      return;
+   newR = toBool(prot & VKI_PROT_READ);
+   newW = toBool(prot & VKI_PROT_WRITE);
+   newX = toBool(prot & VKI_PROT_EXEC);
+
+   for (i = iLo; i <= iHi; i++) {
+      /* Apply the permissions to all relevant segments. */
+      switch (nsegments[i].kind) {
+         case SkAnonC: case SkAnonV: case SkFileC: case SkFileV:
+            nsegments[i].hasR = newR;
+            nsegments[i].hasW = newW;
+            nsegments[i].hasX = newX;
+            aspacem_assert(sane_NSegment(&nsegments[i]));
+            break;
+         default:
+            break;
+      }
    }
 
-   /* FIXME: unhandled general case */
-   if (1)
-      VG_(debugLog)(0,"aspacem", "notify mprotect 0x%llx %lld\n", 
-                       (ULong)start, (Long)len);
-   VG_(am_show_nsegments)(0, "notify_mprotect general case");
-   aspacem_barf("notify_mprotect general case");
+   /* Changing permissions could have made previously un-mergable
+      segments mergeable.  Therefore have to re-preen them. */
+   preen_segments();
 }
 
 
-/* Notifies aspacem that the client completed an munmap successfully.
-   The segment array is updated accordingly. */
+/* Notifies aspacem that an munmap completed successfully.  The
+   segment array is updated accordingly.  As with
+   VG_(am_notify_munmap), we merely record the given info, and don't
+   check it for sensibleness. */
 
-void VG_(am_notify_c_or_v_munmap)( Addr start, SizeT len )
+void VG_(am_notify_munmap)( Addr start, SizeT len )
 {
    NSegment seg;
+
+   aspacem_assert(VG_IS_PAGE_ALIGNED(start));
+   aspacem_assert(VG_IS_PAGE_ALIGNED(len));
 
    if (len == 0)
       return;
@@ -2533,6 +2558,10 @@ void VG_(am_notify_c_or_v_munmap)( Addr start, SizeT len )
    seg.start = start;
    seg.end   = start + len - 1;
    add_segment( &seg );
+
+   /* Unmapping could create two adjacent free segments, so a preen is
+      needed. */
+   preen_segments();
 }
 
 
@@ -2824,7 +2853,8 @@ Bool VG_(am_create_reservation) ( Addr start, SizeT length,
 
    init_nsegment( &seg );
    seg.kind  = SkResvn;
-   seg.start = start1;  /* NB: extra space is not included in the reservation. */
+   seg.start = start1;  /* NB: extra space is not included in the
+                           reservation. */
    seg.end   = end1;
    seg.smode = smode;
    add_segment( &seg );
@@ -2963,27 +2993,26 @@ VgStack* VG_(am_alloc_VgStack)( /*OUT*/Addr* initial_sp )
    aspacem_assert(VG_IS_PAGE_ALIGNED(stack));
    
    /* Protect the guard areas. */
-#if 0
    sres = do_mprotect_NO_NOTIFY( 
-             &stack[0], 
+             (Addr) &stack[0], 
              VG_STACK_GUARD_SZB, VKI_PROT_NONE 
           );
    if (sres.isError) goto protect_failed;
-   VG_(am_notify_valgrind_mprotect)( 
-      &stack[0], 
+   VG_(am_notify_mprotect)( 
+      (Addr) &stack->bytes[0], 
       VG_STACK_GUARD_SZB, VKI_PROT_NONE 
    );
 
    sres = do_mprotect_NO_NOTIFY( 
-             &stack[VG_STACK_GUARD_SZB + VG_STACK_ACTIVE_SZB], 
+             (Addr) &stack->bytes[VG_STACK_GUARD_SZB + VG_STACK_ACTIVE_SZB], 
              VG_STACK_GUARD_SZB, VKI_PROT_NONE 
           );
    if (sres.isError) goto protect_failed;
-   VG_(am_notify_valgrind_mprotect)( 
-      &stack[VG_STACK_GUARD_SZB + VG_STACK_ACTIVE_SZB],
+   VG_(am_notify_mprotect)( 
+      (Addr) &stack->bytes[VG_STACK_GUARD_SZB + VG_STACK_ACTIVE_SZB],
       VG_STACK_GUARD_SZB, VKI_PROT_NONE 
    );
-#endif
+
    /* Looks good.  Fill the active area with junk so we can later
       tell how much got used. */
 
@@ -2998,13 +3027,12 @@ VgStack* VG_(am_alloc_VgStack)( /*OUT*/Addr* initial_sp )
    VG_(debugLog)( 1,"aspacem","allocated thread stack at 0x%llx size %d\n",
                   (ULong)(Addr)stack, szB);
    return stack;
-#if 0
+
   protect_failed:
    /* The stack was allocated, but we can't protect it.  Unmap it and
       return NULL (failure). */
    (void)do_munmap_NO_NOTIFY( (Addr)stack, szB );
    return NULL;
-#endif
 }
 
 

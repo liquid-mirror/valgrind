@@ -302,21 +302,27 @@ extern Bool VG_(am_get_advisory)
 extern void VG_(am_notify_client_mmap)
    ( Addr a, SizeT len, UInt prot, UInt flags, Int fd, SizeT offset );
 
-/* Notifies aspacem that the client completed an mprotect
-   successfully.  The segment array is updated accordingly. */
-extern void VG_(am_notify_client_mprotect)( Addr a, SizeT len, UInt prot );
+/* Notifies aspacem that an mprotect was completed successfully.  The
+   segment array is updated accordingly.  Note, as with
+   VG_(am_notify_munmap), it is not the job of this function to reject
+   stupid mprotects, for example the client doing mprotect of
+   non-client areas.  Such requests should be intercepted earlier, by
+   the syscall wrapper for mprotect.  This function merely records
+   whatever it is told. */
+extern void VG_(am_notify_mprotect)( Addr start, SizeT len, UInt prot );
 
-/* Notifies aspacem that an munmap was completed successfully.  This
-   can be used to unmap either client or Valgrind areas.  The segment
-   array is updated accordingly. */
-extern void VG_(am_notify_c_or_v_munmap)( Addr start, SizeT len );
+/* Notifies aspacem that an munmap completed successfully.  The
+   segment array is updated accordingly.  As with
+   VG_(am_notify_munmap), we merely record the given info, and don't
+   check it for sensibleness. */
+extern void VG_(am_notify_munmap)( Addr start, SizeT len );
 
 
 /* Hand a raw mmap to the kernel, without aspacem updating the segment
    array.  THIS FUNCTION IS DANGEROUS -- it will cause aspacem's view
    of the address space to diverge from that of the kernel.  DO NOT
    USE IT UNLESS YOU UNDERSTAND the request-notify model used by
-   aspacem. */
+   aspacem.  In short, DO NOT USE THIS FUNCTION. */
 extern SysRes VG_(am_do_mmap_NO_NOTIFY)
    ( Addr start, SizeT length, UInt prot, UInt flags, UInt fd, OffT offset);
 

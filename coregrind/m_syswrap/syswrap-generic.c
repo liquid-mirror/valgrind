@@ -4641,7 +4641,7 @@ POST(sys_mprotect)
    Bool xx = toBool(prot & VKI_PROT_EXEC);
 
    page_align_addr_and_len(&a, &len);
-   VG_(am_notify_client_mprotect)(a, len, prot);
+   VG_(am_notify_mprotect)(a, len, prot);
    VG_TRACK( change_mem_mprotect, a, len, rr, ww, xx );
 }
 
@@ -4661,7 +4661,7 @@ POST(sys_munmap)
    SizeT len = ARG2;
 
    page_align_addr_and_len(&a, &len);
-   VG_(am_notify_c_or_v_munmap)(a, len);
+   VG_(am_notify_munmap)(a, len);
    VG_TRACK( die_mem_munmap, a, len );
 }
 
