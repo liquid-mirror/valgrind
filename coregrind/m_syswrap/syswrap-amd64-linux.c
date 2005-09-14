@@ -368,7 +368,7 @@ static SysRes do_clone ( ThreadId ptid,
    ThreadState* ptst = VG_(get_ThreadState)(ptid);
    ThreadState* ctst = VG_(get_ThreadState)(ctid);
    UWord*       stack;
-   Segment*     seg;
+   NSegment*    seg;
    SysRes       res;
    Long         rax;
    vki_sigset_t blockall, savedmask;
@@ -416,14 +416,14 @@ static SysRes do_clone ( ThreadId ptid,
       memory mappings and try to derive some useful information.  We
       assume that esp starts near its highest possible value, and can
       only go down to the start of the mmaped segment. */
-   seg = VG_(find_segment)((Addr)rsp);
-   if (seg) {
+   seg = VG_(am_find_nsegment)((Addr)rsp);
+   if (seg && seg->kind != SkResvn) {
       ctst->client_stack_highest_word = (Addr)VG_PGROUNDUP(rsp);
-      ctst->client_stack_szB  = ctst->client_stack_highest_word - seg->addr;
+      ctst->client_stack_szB = ctst->client_stack_highest_word - seg->start;
 
       if (debug)
 	 VG_(printf)("tid %d: guessed client stack range %p-%p\n",
-		     ctid, seg->addr, VG_PGROUNDUP(rsp));
+		     ctid, seg->start, VG_PGROUNDUP(rsp));
    } else {
       VG_(message)(Vg_UserMsg, "!? New thread %d starts with RSP(%p) unmapped\n",
 		   ctid, rsp);
