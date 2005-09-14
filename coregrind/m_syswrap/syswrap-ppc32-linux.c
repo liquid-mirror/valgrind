@@ -437,6 +437,10 @@ static SysRes do_clone ( ThreadId ptid,
    vg_assert(VG_(is_valid_tid)(ctid));
 
    stack = allocstack(ctid);
+   if (stack == NULL) {
+      res = VG_(mk_SysRes_Error)( VKI_ENOMEM );
+      goto out;
+   }
 
 //?   /* make a stack frame */
 //?   stack -= 16;
