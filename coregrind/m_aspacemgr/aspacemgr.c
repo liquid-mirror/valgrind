@@ -1608,14 +1608,14 @@ static void __attribute__ ((unused))
             show_nsegment_full ( Int logLevel, NSegment* seg )
 {
    VG_(debugLog)(logLevel, "aspacem",
-      "NSegment{%s, start=0x%llx, end=0x%llx, smode=%s, dev=%lu, "
-      "ino=%lu, offset=%llu, fnIdx=%d, hasR=%d, hasW=%d, hasX=%d, "
+      "NSegment{%s, start=0x%llx, end=0x%llx, smode=%s, dev=%llu, "
+      "ino=%llu, offset=%llu, fnIdx=%d, hasR=%d, hasW=%d, hasX=%d, "
       "hasT=%d, mark=%d}\n",
       show_SegKind(seg->kind),
       (ULong)seg->start,
       (ULong)seg->end,
       show_ShrinkMode(seg->smode),
-      seg->dev, seg->ino, (ULong)seg->offset, seg->fnIdx,
+      (ULong)seg->dev, (ULong)seg->ino, (ULong)seg->offset, seg->fnIdx,
       (Int)seg->hasR, (Int)seg->hasW, (Int)seg->hasX, (Int)seg->hasT,
       (Int)seg->mark
    );
@@ -1655,12 +1655,13 @@ static void show_nsegment ( Int logLevel, Int segNo, NSegment* seg )
       case SkFileC: case SkFileV:
          VG_(debugLog)(
             logLevel, "aspacem",
-            "%3d: %s %08llx-%08llx %s %c%c%c%c d=0x%03lx i=%-7ld o=%-7lld (%d)\n",
+            "%3d: %s %08llx-%08llx %s %c%c%c%c d=0x%03llx "
+            "i=%-7lld o=%-7lld (%d)\n",
             segNo, show_SegKind(seg->kind),
             (ULong)seg->start, (ULong)seg->end, len_buf,
             seg->hasR ? 'r' : '-', seg->hasW ? 'w' : '-', 
             seg->hasX ? 'x' : '-', seg->hasT ? 'T' : '-', 
-            seg->dev, seg->ino, (Long)seg->offset, seg->fnIdx
+            (ULong)seg->dev, (ULong)seg->ino, (Long)seg->offset, seg->fnIdx
          );
          break;
 
