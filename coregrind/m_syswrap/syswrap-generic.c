@@ -837,7 +837,7 @@ static Addr do_brk ( Addr newbrk )
    vg_assert(aseg->end+1 == rseg->start);
 
    vg_assert(newbrk >= VG_(brk_base));
-   if (newbrk < aseg->end+1) {
+   if (newbrk <= rseg->start) {
       /* still fits within the anon segment. */
       VG_(brk_limit) = newbrk;
       return newbrk;
@@ -5817,3 +5817,4 @@ POST(sys_waitid)
 /*--------------------------------------------------------------------*/
 /*--- end                                                          ---*/
 /*--------------------------------------------------------------------*/
+
