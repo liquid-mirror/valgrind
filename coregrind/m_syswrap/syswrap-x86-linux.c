@@ -239,8 +239,6 @@ void VG_(main_thread_wrapper_NORETURN)(ThreadId tid)
       (Word)tid               /* arg to give it */
    );
 
-   run_a_thread_NORETURN( tid );
-
    /*NOTREACHED*/
    vg_assert(0);
 }

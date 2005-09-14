@@ -61,70 +61,46 @@
    Note.  Why is this stuff here?
    ------------------------------------------------------------------ */
 
-/* 
-   Allocate a stack for this thread.
+/* Allocate a stack for this thread.  They're allocated lazily, and
+   never freed. */
 
-   They're allocated lazily, but never freed.
- */
-#define FILL	0xdeadbeefcabafeed
+/* Allocate a stack for this thread, if it doesn't already have one.
+   Returns the initial stack pointer value to use, or 0 if allocation
+   failed. */
 
-// Valgrind's stack size, in words.
-#define STACK_SIZE_W      16384
-
-static UWord* allocstack(ThreadId tid)
+static Addr allocstack(ThreadId tid)
 {
-   ThreadState *tst = VG_(get_ThreadState)(tid);
-   UWord* rsp;
+   ThreadState* tst = VG_(get_ThreadState)(tid);
+   VgStack*     stack;
+   Addr         initial_SP;
+
+   /* Either the stack_base and stack_init_SP are both zero (in which
+      case a stack hasn't been allocated) or they are both non-zero,
+      in which case it has. */
+
+   if (tst->os_state.valgrind_stack_base == 0)
+      vg_assert(tst->os_state.valgrind_stack_init_SP == 0);
+
+   if (tst->os_state.valgrind_stack_base != 0)
+      vg_assert(tst->os_state.valgrind_stack_init_SP != 0);
+
+   /* If no stack is present, allocate one. */
 
    if (tst->os_state.valgrind_stack_base == 0) {
-      void *stk = VG_(mmap)(0, STACK_SIZE_W * sizeof(UWord) + VKI_PAGE_SIZE,
-			    VKI_PROT_READ|VKI_PROT_WRITE,
-			    VKI_MAP_PRIVATE|VKI_MAP_ANONYMOUS,
-			    SF_VALGRIND,
-			    -1, 0);
-
-      if (stk != (void *)-1) {
-	 VG_(mprotect)(stk, VKI_PAGE_SIZE, VKI_PROT_NONE); /* guard page */
-	 tst->os_state.valgrind_stack_base = ((Addr)stk) + VKI_PAGE_SIZE;
-	 tst->os_state.valgrind_stack_szB  = STACK_SIZE_W * sizeof(UWord);
-      } else 
-	 return (UWord*)-1;
+      stack = VG_(am_alloc_VgStack)( &initial_SP );
+      if (stack) {
+         tst->os_state.valgrind_stack_base    = (Addr)stack;
+         tst->os_state.valgrind_stack_init_SP = initial_SP;
+      }
    }
 
-   for (rsp = (UWord*) tst->os_state.valgrind_stack_base; 
-        rsp < (UWord*)(tst->os_state.valgrind_stack_base +
-                       tst->os_state.valgrind_stack_szB); 
-        rsp++)
-      *rsp = FILL;
-   /* rsp is left at top of stack */
-
    if (0)
-      VG_(printf)("stack for tid %d at %p (%llx); rsp=%p\n",
-		  tid, tst->os_state.valgrind_stack_base,
-                  *(UWord*)(tst->os_state.valgrind_stack_base), rsp);
-
-   return rsp;
-}
-
-/* NB: this is identical the the x86 version. */
-/* Return how many bytes of this stack have not been used */
-SSizeT VG_(stack_unused)(ThreadId tid)
-{
-   ThreadState *tst = VG_(get_ThreadState)(tid);
-   UWord* p;
-
-   for (p = (UWord*)tst->os_state.valgrind_stack_base; 
-	p && (p < (UWord*)(tst->os_state.valgrind_stack_base +
-                           tst->os_state.valgrind_stack_szB)); 
-	p++)
-      if (*p != FILL)
-	 break;
-
-   if (0)
-      VG_(printf)("p=%p %llx tst->os_state.valgrind_stack_base=%p\n",
-                  p, *p, tst->os_state.valgrind_stack_base);
-
-   return ((Addr)p) - tst->os_state.valgrind_stack_base;
+      VG_(printf)( "stack for tid %d at %p; init_SP=%p\n",
+                   tid, 
+                   (void*)tst->os_state.valgrind_stack_base, 
+                   (void*)tst->os_state.valgrind_stack_init_SP );
+                  
+   return tst->os_state.valgrind_stack_init_SP;
 }
 
 
@@ -246,8 +222,12 @@ void VG_(main_thread_wrapper_NORETURN)(ThreadId tid)
 {
    VG_(debugLog)(1, "syswrap-amd64-linux", 
                     "entering VG_(main_thread_wrapper_NORETURN)\n");
-#if 0
-   UWord* rsp = allocstack(tid);
+
+   Addr rsp = allocstack(tid);
+
+   /* If we can't even allocate the first thread's stack, we're hosed.
+      Give up. */
+   vg_assert2(rsp != 0, "Cannot allocate main thread's stack.");
 
    /* shouldn't be any other threads around yet */
    vg_assert( VG_(count_living_threads)() == 1 );
@@ -258,9 +238,6 @@ void VG_(main_thread_wrapper_NORETURN)(ThreadId tid)
       run_a_thread_NORETURN,  /* fn to call */
       (Word)tid               /* arg to give it */
    );
-#endif
-
-   run_a_thread_NORETURN( tid );
 
    /*NOTREACHED*/
    vg_assert(0);
@@ -401,7 +378,7 @@ static SysRes do_clone ( ThreadId ptid,
    vg_assert(VG_(is_running_thread)(ptid));
    vg_assert(VG_(is_valid_tid)(ctid));
 
-   stack = allocstack(ctid);
+   stack = (UWord*)allocstack(ctid);
 
    /* Copy register state
 
