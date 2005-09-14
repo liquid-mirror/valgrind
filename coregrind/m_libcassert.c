@@ -108,8 +108,7 @@ static void report_and_quit ( const Char* report, Addr ip, Addr sp, Addr fp )
        GET_REAL_SP_AND_FP(sp, fp);
    }
  
-   stacktop = tst->os_state.valgrind_stack_base + 
-              tst->os_state.valgrind_stack_szB;
+   stacktop = tst->os_state.valgrind_stack_init_SP;
  
    VG_(get_StackTrace2)(ips, BACKTRACE_DEPTH, ip, sp, fp, sp, stacktop);
    VG_(pp_StackTrace)  (ips, BACKTRACE_DEPTH);

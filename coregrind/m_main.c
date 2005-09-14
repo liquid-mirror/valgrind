@@ -2144,7 +2144,7 @@ Int main(Int argc, HChar **argv, HChar **envp)
    //   p: logging
    //--------------------------------------------------------------
    VG_(debugLog)(1, "main", "Checking current stack is plausible\n");
-   { HChar* limLo  = (HChar*)(&VG_(the_root_stack)[0]);
+   { HChar* limLo  = (HChar*)(&VG_(the_root_stack).bytes[0]);
      HChar* limHi  = limLo + sizeof(VG_(the_root_stack));
      HChar* aLocal = (HChar*)&zero; /* any auto local will do */
      if (aLocal < limLo || aLocal >= limHi) {

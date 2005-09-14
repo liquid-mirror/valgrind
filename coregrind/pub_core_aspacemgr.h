@@ -158,18 +158,6 @@ extern Bool VG_(setup_pointercheck) ( Addr client_base, Addr client_end );
 
 
 //--------------------------------------------------------------
-// Valgrind (non-client) thread stacks.  V itself runs on such
-// stacks.
-
-#define VG_STACK_GUARD_SZB  8192
-#define VG_STACK_ACTIVE_SZB 65536
-
-typedef
-   HChar
-   VgStack[VG_STACK_GUARD_SZB + VG_STACK_ACTIVE_SZB + VG_STACK_GUARD_SZB];
-
-
-//--------------------------------------------------------------
 // Definition of address-space segments
 
 /* Describes segment kinds. */
@@ -318,9 +306,10 @@ extern void VG_(am_notify_client_mmap)
    successfully.  The segment array is updated accordingly. */
 extern void VG_(am_notify_client_mprotect)( Addr a, SizeT len, UInt prot );
 
-/* Notifies aspacem that the client completed an munmap successfully.
-   The segment array is updated accordingly. */
-extern void VG_(am_notify_client_munmap)( Addr start, SizeT len );
+/* Notifies aspacem that an munmap was completed successfully.  This
+   can be used to unmap either client or Valgrind areas.  The segment
+   array is updated accordingly. */
+extern void VG_(am_notify_c_or_v_munmap)( Addr start, SizeT len );
 
 
 /* Hand a raw mmap to the kernel, without aspacem updating the segment
@@ -378,6 +367,37 @@ extern Bool VG_(am_create_reservation)
    size of the reservation segment. */
 extern Bool VG_(am_extend_into_adjacent_reservation) 
    ( NSegment* seg, SSizeT delta );
+
+
+//--------------------------------------------------------------
+// Valgrind (non-client) thread stacks.  V itself runs on such
+// stacks.  The address space manager provides and suitably
+// protects such stacks.
+
+#define VG_STACK_GUARD_SZB  8192   // 2 pages
+#define VG_STACK_ACTIVE_SZB 65536  // 16 pages
+
+typedef
+   struct {
+      HChar bytes[VG_STACK_GUARD_SZB 
+                  + VG_STACK_ACTIVE_SZB 
+                  + VG_STACK_GUARD_SZB];
+   }
+   VgStack;
+
+
+/* Allocate and initialise a VgStack (anonymous client space).
+   Protect the stack active area and the guard areas appropriately.
+   Returns NULL on failure, else the address of the bottom of the
+   stack.  On success, also sets *initial_sp to what the stack pointer
+   should be set to. */
+
+extern VgStack* VG_(am_alloc_VgStack)( /*OUT*/Addr* initial_sp );
+
+/* Figure out how many bytes of the stack's active area have not
+   been used.  Used for estimating if we are close to overflowing it. */
+
+extern Int VG_(am_get_VgStack_unused_szB)( VgStack* stack ); 
 
 
 #endif   // __PUB_CORE_ASPACEMGR_H

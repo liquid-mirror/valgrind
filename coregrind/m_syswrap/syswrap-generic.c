@@ -4661,7 +4661,7 @@ POST(sys_munmap)
    SizeT len = ARG2;
 
    page_align_addr_and_len(&a, &len);
-   VG_(am_notify_client_munmap)(a, len);
+   VG_(am_notify_c_or_v_munmap)(a, len);
    VG_TRACK( die_mem_munmap, a, len );
 }
 

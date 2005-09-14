@@ -1598,7 +1598,8 @@ static void show_Addr_concisely ( /*OUT*/HChar* buf, Addr aA )
 
 /* Show full details of an NSegment */
 
-static void show_nsegment_full ( Int logLevel, NSegment* seg )
+static void __attribute__ ((unused))
+            show_nsegment_full ( Int logLevel, NSegment* seg )
 {
    VG_(debugLog)(logLevel, "aspacem",
       "NSegment{%s, start=0x%llx, end=0x%llx, smode=%s, dev=%u, "
@@ -2533,7 +2534,7 @@ void VG_(am_notify_client_mprotect)( Addr start, SizeT len, UInt prot )
 /* Notifies aspacem that the client completed an munmap successfully.
    The segment array is updated accordingly. */
 
-void VG_(am_notify_client_munmap)( Addr start, SizeT len )
+void VG_(am_notify_c_or_v_munmap)( Addr start, SizeT len )
 {
    NSegment seg;
 
@@ -2939,6 +2940,103 @@ Bool VG_(am_extend_into_adjacent_reservation)( NSegment* seg, SSizeT delta )
 
    return True;
 }
+
+
+/*-----------------------------------------------------------------*/
+/*---                                                           ---*/
+/*--- Manage stacks for Valgrind itself.                        ---*/
+/*---                                                           ---*/
+/*-----------------------------------------------------------------*/
+
+/* Allocate and initialise a VgStack (anonymous client space).
+   Protect the stack active area and the guard areas appropriately.
+   Returns NULL on failure, else the address of the bottom of the
+   stack.  On success, also sets *initial_sp to what the stack pointer
+   should be set to. */
+
+VgStack* VG_(am_alloc_VgStack)( /*OUT*/Addr* initial_sp )
+{
+   Int      szB;
+   SysRes   sres;
+   VgStack* stack;
+   UInt*    p;
+   Int      i;
+
+   /* Allocate the stack. */
+   szB = VG_STACK_GUARD_SZB 
+         + VG_STACK_ACTIVE_SZB + VG_STACK_GUARD_SZB;
+
+   sres = VG_(am_mmap_anon_float_valgrind)( szB );
+   if (sres.isError)
+      return NULL;
+
+   stack = (VgStack*)sres.val;
+
+   aspacem_assert(VG_IS_PAGE_ALIGNED(szB));
+   aspacem_assert(VG_IS_PAGE_ALIGNED(stack));
+   
+   /* Protect the guard areas. */
+#if 0
+   sres = do_mprotect_NO_NOTIFY( 
+             &stack[0], 
+             VG_STACK_GUARD_SZB, VKI_PROT_NONE 
+          );
+   if (sres.isError) goto protect_failed;
+   VG_(am_notify_valgrind_mprotect)( 
+      &stack[0], 
+      VG_STACK_GUARD_SZB, VKI_PROT_NONE 
+   );
+
+   sres = do_mprotect_NO_NOTIFY( 
+             &stack[VG_STACK_GUARD_SZB + VG_STACK_ACTIVE_SZB], 
+             VG_STACK_GUARD_SZB, VKI_PROT_NONE 
+          );
+   if (sres.isError) goto protect_failed;
+   VG_(am_notify_valgrind_mprotect)( 
+      &stack[VG_STACK_GUARD_SZB + VG_STACK_ACTIVE_SZB],
+      VG_STACK_GUARD_SZB, VKI_PROT_NONE 
+   );
+#endif
+   /* Looks good.  Fill the active area with junk so we can later
+      tell how much got used. */
+
+   p = (UInt*)&stack->bytes[VG_STACK_GUARD_SZB];
+   for (i = 0; i < VG_STACK_ACTIVE_SZB/sizeof(UInt); i++)
+      p[i] = 0xDEADBEEF;
+
+   *initial_sp = (Addr)&stack->bytes[VG_STACK_GUARD_SZB + VG_STACK_ACTIVE_SZB];
+   *initial_sp -= 8;
+   *initial_sp &= ~((Addr)0xF);
+
+   VG_(debugLog)( 1,"aspacem","allocated thread stack at 0x%llx size %d\n",
+                  (ULong)(Addr)stack, szB);
+   return stack;
+#if 0
+  protect_failed:
+   /* The stack was allocated, but we can't protect it.  Unmap it and
+      return NULL (failure). */
+   (void)do_munmap_NO_NOTIFY( (Addr)stack, szB );
+   return NULL;
+#endif
+}
+
+
+/* Figure out how many bytes of the stack's active area have not
+   been used.  Used for estimating if we are close to overflowing it. */
+
+Int VG_(am_get_VgStack_unused_szB)( VgStack* stack )
+{
+   Int i;
+   UInt* p;
+
+   p = (UInt*)&stack->bytes[VG_STACK_GUARD_SZB];
+   for (i = 0; i < VG_STACK_ACTIVE_SZB/sizeof(UInt); i++)
+      if (p[i] != 0xDEADBEEF)
+         break;
+
+   return i * sizeof(UInt);
+}
+
 
 /*--------------------------------------------------------------------*/
 /*--- end                                                          ---*/

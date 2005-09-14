@@ -450,15 +450,14 @@ UInt run_thread_for_a_while ( ThreadId tid )
 
 static void os_state_clear(ThreadState *tst)
 {
-   tst->os_state.lwpid = 0;
+   tst->os_state.lwpid       = 0;
    tst->os_state.threadgroup = 0;
 }
 
 static void os_state_init(ThreadState *tst)
 {
-   tst->os_state.valgrind_stack_base = 0;
-   tst->os_state.valgrind_stack_szB  = 0;
-
+   tst->os_state.valgrind_stack_base    = 0;
+   tst->os_state.valgrind_stack_init_SP = 0;
    os_state_clear(tst);
 }
 
@@ -1150,13 +1149,18 @@ void VG_(sanity_check_general) ( Bool force_expensive )
 
       /* Look for stack overruns.  Visit all threads. */
       for (tid = 1; tid < VG_N_THREADS; tid++) {
-	 SSizeT remains;
+	 SizeT    remains;
+         VgStack* stack;
 
 	 if (VG_(threads)[tid].status == VgTs_Empty ||
 	     VG_(threads)[tid].status == VgTs_Zombie)
 	    continue;
 
-	 remains = VG_(stack_unused)(tid);
+         stack 
+            = (VgStack*)
+              VG_(get_ThreadState)(tid)->os_state.valgrind_stack_base;
+	 remains 
+            = VG_(am_get_VgStack_unused_szB)(stack);
 	 if (remains < VKI_PAGE_SIZE)
 	    VG_(message)(Vg_DebugMsg, 
                          "WARNING: Thread %d is within %d bytes "
