@@ -217,8 +217,8 @@ typedef
       /* Shrinkable? (SkResvn only) */
       ShrinkMode smode;
       /* Associated file (SkFile{C,V} only) */
-      UInt    dev;
-      UInt    ino;
+      UWord   dev;
+      UWord   ino;
       ULong   offset;
       Int     fnIdx;    // file name table index, if name is known
       /* Permissions (SkAnon{C,V}, SkFile{C,V} only) */

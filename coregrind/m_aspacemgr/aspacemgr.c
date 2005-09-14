@@ -1602,8 +1602,8 @@ static void __attribute__ ((unused))
             show_nsegment_full ( Int logLevel, NSegment* seg )
 {
    VG_(debugLog)(logLevel, "aspacem",
-      "NSegment{%s, start=0x%llx, end=0x%llx, smode=%s, dev=%u, "
-      "ino=%u, offset=%llu, fnIdx=%d, hasR=%d, hasW=%d, hasX=%d, "
+      "NSegment{%s, start=0x%llx, end=0x%llx, smode=%s, dev=%lu, "
+      "ino=%lu, offset=%llu, fnIdx=%d, hasR=%d, hasW=%d, hasX=%d, "
       "hasT=%d, mark=%d}\n",
       show_SegKind(seg->kind),
       (ULong)seg->start,
@@ -1649,7 +1649,7 @@ static void show_nsegment ( Int logLevel, Int segNo, NSegment* seg )
       case SkFileC: case SkFileV:
          VG_(debugLog)(
             logLevel, "aspacem",
-            "%3d: %s %08llx-%08llx %s %c%c%c%c d=0x%03x i=%-7d o=%-7lld (%d)\n",
+            "%3d: %s %08llx-%08llx %s %c%c%c%c d=0x%03lx i=%-7ld o=%-7lld (%d)\n",
             segNo, show_SegKind(seg->kind),
             (ULong)seg->start, (ULong)seg->end, len_buf,
             seg->hasR ? 'r' : '-', seg->hasW ? 'w' : '-', 
@@ -2196,8 +2196,8 @@ Addr VG_(am_startup) ( Addr sp_at_startup )
       /* If these fail, we'd better change the type of dev and ino in
          NSegment accordingly. */
       struct vki_stat buf;
-      aspacem_assert(sizeof(buf.st_dev) == sizeof(UInt));
-      aspacem_assert(sizeof(buf.st_ino) == sizeof(UInt));
+      aspacem_assert(sizeof(buf.st_dev) == sizeof(seg.dev));
+      aspacem_assert(sizeof(buf.st_ino) == sizeof(seg.ino));
    }
 
    /* Add a single interval covering the entire address space. */
