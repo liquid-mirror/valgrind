@@ -499,6 +499,7 @@ static void preen_segments ( void )
 {
    Int i, j, rd, wr;
    Segment *s, *s1;
+   aspacem_barf("preen_segments");
    vg_assert(segments_used >= 0 && segments_used < VG_N_SEGMENTS);
    vg_assert(segnames_used >= 0 && segnames_used < VG_N_SEGNAMES);
 
@@ -1810,11 +1811,11 @@ static Bool maybe_merge_nsegments ( NSegment* s1, NSegment* s2 )
 
 
 /* Sanity-check and canonicalise the segment array (merge mergable
-   segments). */
+   segments).  Returns True if any segments were merged. */
 
-static void preen_nsegments ( void )
+static Bool preen_nsegments ( void )
 {
-   Int i, r, w;
+   Int i, r, w, nsegments_used_old = nsegments_used;
 
    /* Pass 1: check the segment array covers the entire address space
       exactly once, and also that each segment is sane. */
@@ -1843,6 +1844,8 @@ static void preen_nsegments ( void )
    w++;
    aspacem_assert(w > 0 && w <= nsegments_used);
    nsegments_used = w;
+
+   return nsegments_used != nsegments_used_old;
 }
 
 
@@ -2116,7 +2119,7 @@ static void add_segment ( NSegment* seg )
 
    nsegments[iLo] = *seg;
 
-   preen_nsegments();
+   (void)preen_nsegments();
    if (0) VG_(am_show_nsegments)(0,"AFTER preen (add_segment)");
 }
 
@@ -2580,7 +2583,7 @@ void VG_(am_notify_mprotect)( Addr start, SizeT len, UInt prot )
 
    /* Changing permissions could have made previously un-mergable
       segments mergeable.  Therefore have to re-preen them. */
-   preen_segments();
+   (void)preen_nsegments();
 }
 
 
@@ -2606,8 +2609,7 @@ void VG_(am_notify_munmap)( Addr start, SizeT len )
    add_segment( &seg );
 
    /* Unmapping could create two adjacent free segments, so a preen is
-      needed. */
-   preen_segments();
+      needed.  add_segment() will do that, so no need to here. */
 }
 
 
