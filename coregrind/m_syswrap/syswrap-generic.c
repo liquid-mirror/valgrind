@@ -57,32 +57,28 @@
 #include "vki_unistd.h"              /* for the __NR_* constants */
 
 
-/* return true if address range entirely contained within client
-   address space */
+/* Returns True iff address range is something the client can
+   plausibly mess with: all of it is either already belongs to the
+   client or is free. */
+
 Bool ML_(valid_client_addr)(Addr start, SizeT size, ThreadId tid,
                                    const Char *syscallname)
 {
-   Addr end = start+size;
-   Addr cl_base = VG_(client_base);
    Bool ret;
 
    if (size == 0)
       return True;
 
-   if (0 && cl_base < 0x10000)
-      cl_base = 0x10000;
-
-   ret = VG_(am_is_valid_for_client)(start,size,VKI_PROT_NONE);
+   ret = VG_(am_is_free_or_valid_for_client)(start,size,VKI_PROT_NONE);
 
    if (0)
-      VG_(printf)("%s: test=%p-%p client=%p-%p ret=%d\n",
-		  syscallname, start, end, cl_base, VG_(client_end), (Int)ret);
+      VG_(printf)("%s: test=%p-%p ret=%d\n",
+		  syscallname, start, start+size-1, (Int)ret);
 
    if (!ret && syscallname != NULL) {
       VG_(message)(Vg_UserMsg, "Warning: client syscall %s tried "
                                "to modify addresses %p-%p",
-                               syscallname, start, end);
-
+                               syscallname, start, start+size-1);
       if (VG_(clo_verbosity) > 1) {
          VG_(get_and_pp_StackTrace)(tid, VG_(clo_backtrace_size));
       }

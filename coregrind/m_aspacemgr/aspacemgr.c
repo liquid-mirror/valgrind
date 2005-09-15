@@ -1956,9 +1956,10 @@ ULong VG_(am_get_anonsize_total)( void )
 
 /* Test if a piece of memory is addressable by the client with at
    least the "prot" protection permissions by examining the underlying
-   segments.
+   segments.  If freeOk is True then SkFree areas are also allowed.
 */
-Bool VG_(am_is_valid_for_client)( Addr start, SizeT len, UInt prot )
+static
+Bool is_valid_for_client( Addr start, SizeT len, UInt prot, Bool freeOk )
 {
    Int  i, iLo, iHi;
    Bool needR, needW, needX;
@@ -1975,10 +1976,13 @@ Bool VG_(am_is_valid_for_client)( Addr start, SizeT len, UInt prot )
    iLo = find_nsegment_idx(start);
    iHi = find_nsegment_idx(start + len - 1);
    for (i = iLo; i <= iHi; i++) {
-      if ((nsegments[i].kind == SkFileC || nsegments[i].kind == SkAnonC)
-          && (needR ? nsegments[i].hasR : True)
-          && (needW ? nsegments[i].hasW : True)
-          && (needX ? nsegments[i].hasX : True)) {
+      if ( (nsegments[i].kind == SkFileC 
+            || nsegments[i].kind == SkAnonC
+            || (nsegments[i].kind == SkFree  && freeOk)
+            || (nsegments[i].kind == SkResvn && freeOk))
+           && (needR ? nsegments[i].hasR : True)
+           && (needW ? nsegments[i].hasW : True)
+           && (needX ? nsegments[i].hasX : True) ) {
          /* ok */
       } else {
          return False;
@@ -1987,6 +1991,24 @@ Bool VG_(am_is_valid_for_client)( Addr start, SizeT len, UInt prot )
    return True;
 }
 
+/* Test if a piece of memory is addressable by the client with at
+   least the "prot" protection permissions by examining the underlying
+   segments. */
+Bool VG_(am_is_valid_for_client)( Addr start, SizeT len, 
+                                  UInt prot )
+{
+   return is_valid_for_client( start, len, prot, False/*free not OK*/ );
+}
+
+/* Variant of VG_(am_is_valid_for_client) which allows free areas to
+   be consider part of the client's addressable space.  It also
+   considers reservations to be allowable, since from the client's
+   point of view they don't exist. */
+Bool VG_(am_is_free_or_valid_for_client)( Addr start, SizeT len, 
+                                          UInt prot )
+{
+   return is_valid_for_client( start, len, prot, True/*free is OK*/ );
+}
 
 /*-----------------------------------------------------------------*/
 /*---                                                           ---*/

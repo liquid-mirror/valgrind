@@ -266,6 +266,13 @@ extern NSegment* VG_(am_next_nsegment) ( NSegment* here, Bool fwds );
 extern Bool VG_(am_is_valid_for_client)( Addr start, SizeT len, 
                                          UInt prot );
 
+/* Variant of VG_(am_is_valid_for_client) which allows free areas to
+   be consider part of the client's addressable space.  It also
+   considers reservations to be allowable, since from the client's
+   point of view they don't exist. */
+extern Bool VG_(am_is_free_or_valid_for_client)( Addr start, SizeT len, 
+                                                 UInt prot );
+
 /* Trivial fn: return the total amount of space in anonymous mappings,
    both for V and the client.  Is used for printing stats in
    out-of-memory messages. */
