@@ -1019,6 +1019,7 @@ struct  vki_seminfo {
 //----------------------------------------------------------------------
 
 #define	VKI_EPERM		 1	/* Operation not permitted */
+#define	VKI_ENOENT		 2	/* No such file or directory */
 #define	VKI_ESRCH		 3	/* No such process */
 #define	VKI_EINTR		 4	/* Interrupted system call */
 #define VKI_ENOEXEC              8      /* Exec format error */

@@ -228,6 +228,7 @@ const HChar* VG_(strerror) ( UWord errnum )
 {
    switch (errnum) {
       case VKI_EPERM:       return "EPERM";
+      case VKI_ENOENT:      return "ENOENT";
       case VKI_ESRCH:       return "ESRCH";
       case VKI_EINTR:       return "EINTR";
       case VKI_EBADF:       return "EBADF";
