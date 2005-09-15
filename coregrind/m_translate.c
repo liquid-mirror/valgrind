@@ -440,7 +440,7 @@ Bool VG_(translate) ( ThreadId tid,
 {
    Addr64    redir, orig_addr0 = orig_addr;
    Int       tmpbuf_used, verbosity;
-   Bool      notrace_until_done, do_self_check;
+   Bool      notrace_until_done, do_self_check, allowR;
    UInt      notrace_until_limit = 0;
    NSegment* seg;
    VexGuestExtents vge;
@@ -531,9 +531,15 @@ Bool VG_(translate) ( ThreadId tid,
 
    seg = VG_(am_find_nsegment)(orig_addr);
 
+#  if defined(VGA_x86)
+   allowR = True;
+#  else
+   allowR = False;
+#  endif
+
    if (seg == NULL 
        || !(seg->kind == SkAnonC || seg->kind == SkFileC)
-       || !seg->hasX) {
+       || !(seg->hasX || (seg->hasR && allowR)) ) {
 
       /* U R busted, sonny.  Place your hands on your head and step
          away from the orig_addr. */
