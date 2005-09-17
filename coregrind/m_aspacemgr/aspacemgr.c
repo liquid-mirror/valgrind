@@ -1471,7 +1471,8 @@ UInt aspacem_sprintf ( HChar* buf, const HChar *format, ... )
 
 //--------------------------------------------------------------
 // Direct access to a handful of syscalls.  This avoids dependence on
-// m_libc*.
+// m_libc*.  THESE DO NOT UPDATE THE SEGMENT LIST.  DO NOT USE THEM
+// UNLESS YOU KNOW WHAT YOU ARE DOING.
 
 SysRes VG_(am_do_mmap_NO_NOTIFY)( Addr start, SizeT length, UInt prot, 
                                   UInt flags, UInt fd, OffT offset)
@@ -1508,6 +1509,37 @@ static SysRes do_mprotect_NO_NOTIFY(Addr start, SizeT length, UInt prot)
 static SysRes do_munmap_NO_NOTIFY(Addr start, SizeT length)
 {
    return VG_(do_syscall2)(__NR_munmap, (UWord)start, length );
+}
+
+static SysRes do_extend_mapping_NO_NOTIFY( Addr  old_addr, SizeT old_len,
+                                           SizeT new_len )
+{
+   /* Extend the mapping old_addr .. old_addr+old_len-1 to have length
+      new_len, WITHOUT moving it.  If it can't be extended in place,
+      fail. */
+   return VG_(do_syscall5)(
+             __NR_mremap, 
+             old_addr, old_len, new_len, 
+             0/*flags, meaning: must be at old_addr, else FAIL */,
+             0/*new_addr, is ignored*/
+          );
+}
+
+static SysRes do_relocate_nooverlap_mapping_NO_NOTIFY( 
+                 Addr old_addr, Addr old_len, 
+                 Addr new_addr, Addr new_len 
+              )
+{
+   /* Move the mapping old_addr .. old_addr+old_len-1 to the new
+      location and with the new length.  Only needs to handle the case
+      where the two areas do not overlap, neither length is zero, and
+      all args are page aligned. */
+   return VG_(do_syscall5)(
+             __NR_mremap, 
+             old_addr, old_len, new_len, 
+             VKI_MREMAP_MAYMOVE|VKI_MREMAP_FIXED/*move-or-fail*/,
+             0/*new_addr*/
+          );
 }
 
 static Int aspacem_readlink(HChar* path, HChar* buf, UInt bufsiz)
@@ -2007,8 +2039,8 @@ Bool VG_(am_is_valid_for_client)( Addr start, SizeT len,
    be consider part of the client's addressable space.  It also
    considers reservations to be allowable, since from the client's
    point of view they don't exist. */
-Bool VG_(am_is_free_or_valid_for_client)( Addr start, SizeT len, 
-                                          UInt prot )
+Bool VG_(am_is_valid_for_client_or_free_or_resvn)
+   ( Addr start, SizeT len, UInt prot )
 {
    return is_valid_for_client( start, len, prot, True/*free is OK*/ );
 }
@@ -2102,6 +2134,7 @@ static void add_segment ( NSegment* seg )
    aspacem_assert(sStart <= sEnd);
    aspacem_assert(VG_IS_PAGE_ALIGNED(sStart));
    aspacem_assert(VG_IS_PAGE_ALIGNED(sEnd+1));
+   /* if (!sane_NSegment(seg)) show_nsegment_full(0,seg); */
    aspacem_assert(sane_NSegment(seg));
 
    split_nsegments_lo_and_hi( sStart, sEnd, &iLo, &iHi );
@@ -2528,13 +2561,14 @@ VG_(am_notify_client_mmap)( Addr a, SizeT len, UInt prot, UInt flags,
    seg.hasR   = toBool(prot & VKI_PROT_READ);
    seg.hasW   = toBool(prot & VKI_PROT_WRITE);
    seg.hasX   = toBool(prot & VKI_PROT_EXEC);
-   /* TODO: what about seg.hasT ? */
-   if (get_inode_for_fd(fd, &dev, &ino)) {
-      seg.dev = dev;
-      seg.ino = ino;
-   }
-   if (get_name_for_fd(fd, buf, VKI_PATH_MAX)) {
-      seg.fnIdx = allocate_segname( buf );
+   if (!(flags & VKI_MAP_ANONYMOUS)) {
+      if (get_inode_for_fd(fd, &dev, &ino)) {
+         seg.dev = dev;
+         seg.ino = ino;
+      }
+      if (get_name_for_fd(fd, buf, VKI_PATH_MAX)) {
+         seg.fnIdx = allocate_segname( buf );
+      }
    }
    add_segment( &seg );
 }
@@ -2619,6 +2653,8 @@ void VG_(am_notify_munmap)( Addr start, SizeT len )
 /*--- simulation of the client.                                 ---*/
 /*---                                                           ---*/
 /*-----------------------------------------------------------------*/
+
+/* --- --- --- map, unmap, protect  --- --- --- */
 
 /* Map a file at a fixed address for the client, and update the
    segment array accordingly. */
@@ -2857,8 +2893,53 @@ SysRes VG_(am_mmap_anon_float_valgrind)( SizeT length )
 }
 
 
-/* See comment on prototype in pub_core_aspacemgr.h for a description
-   of this. */
+/* Unmap the given address range an update the segment array
+   accordingly.  This fails if the range isn't valid for the
+   client. */
+
+SysRes VG_(am_munmap_client)( Addr start, SizeT len )
+{
+   SysRes sres;
+
+   if (!VG_IS_PAGE_ALIGNED(start))
+      goto eINVAL;
+
+   if (len == 0)
+      return VG_(mk_SysRes_Success)( 0 );
+
+   if (start + len < len)
+      goto eINVAL;
+
+   len = VG_PGROUNDUP(len);
+   aspacem_assert(VG_IS_PAGE_ALIGNED(start));
+   aspacem_assert(VG_IS_PAGE_ALIGNED(len));
+
+   if (!VG_(am_is_valid_for_client_or_free_or_resvn)
+         ( start, len, VKI_PROT_NONE ))
+      goto eINVAL;
+
+   sres = do_munmap_NO_NOTIFY( start, len );
+   if (sres.isError)
+      return sres;
+
+   VG_(am_notify_munmap)( start, len );
+   return sres;
+
+  eINVAL:
+   return VG_(mk_SysRes_Error)( VKI_EINVAL );
+}
+
+
+/* --- --- --- reservations --- --- --- */
+
+/* Create a reservation from START .. START+LENGTH-1, with the given
+   ShrinkMode.  When checking whether the reservation can be created,
+   also ensure that at least abs(EXTRA) extra free bytes will remain
+   above (> 0) or below (< 0) the reservation.
+
+   The reservation will only be created if it, plus the extra-zone,
+   falls entirely within a single free segment.  The returned Bool
+   indicates whether the creation succeeded. */
 
 Bool VG_(am_create_reservation) ( Addr start, SizeT length, 
                                   ShrinkMode smode, SSizeT extra )
@@ -2910,10 +2991,17 @@ Bool VG_(am_create_reservation) ( Addr start, SizeT length,
 }
 
 
-/* See comment on prototype in pub_core_aspacemgr.h for a description
-   of this. */
+/* Let SEG be an anonymous client mapping.  This fn extends the
+   mapping by DELTA bytes, taking the space from a reservation section
+   which must be adjacent.  If DELTA is positive, the segment is
+   extended forwards in the address space, and the reservation must be
+   the next one along.  If DELTA is negative, the segment is extended
+   backwards in the address space and the reservation must be the
+   previous one.  DELTA must be page aligned and must not exceed the
+   size of the reservation segment. */
 
-Bool VG_(am_extend_into_adjacent_reservation)( NSegment* seg, SSizeT delta )
+Bool VG_(am_extend_into_adjacent_reservation_client) ( NSegment* seg, 
+                                                       SSizeT    delta )
 {
    Int    segA, segR;
    UInt   prot;
@@ -2924,7 +3012,7 @@ Bool VG_(am_extend_into_adjacent_reservation)( NSegment* seg, SSizeT delta )
    segA = segAddr_to_index( seg );
    aspacem_assert(segA >= 0 && segA < nsegments_used);
 
-   if (nsegments[segA].kind != SkAnonC && nsegments[segA].kind != SkAnonV)
+   if (nsegments[segA].kind != SkAnonC)
       return False;
 
    if (delta == 0)
@@ -2958,7 +3046,7 @@ Bool VG_(am_extend_into_adjacent_reservation)( NSegment* seg, SSizeT delta )
          return False; /* kernel bug if this happens? */
       if (sres.val != nsegments[segR].start) {
          /* kernel bug if this happens? */
-        do_munmap_NO_NOTIFY( sres.val, delta );
+        (void)do_munmap_NO_NOTIFY( sres.val, delta );
         return False;
       }
 
@@ -2992,7 +3080,7 @@ Bool VG_(am_extend_into_adjacent_reservation)( NSegment* seg, SSizeT delta )
          return False; /* kernel bug if this happens? */
       if (sres.val != nsegments[segA].start-delta) {
          /* kernel bug if this happens? */
-        do_munmap_NO_NOTIFY( sres.val, delta );
+        (void)do_munmap_NO_NOTIFY( sres.val, delta );
         return False;
       }
 
@@ -3002,6 +3090,109 @@ Bool VG_(am_extend_into_adjacent_reservation)( NSegment* seg, SSizeT delta )
       aspacem_assert(nsegments[segR].start <= nsegments[segR].end);
 
    }
+
+   return True;
+}
+
+
+/* --- --- --- resizing/move a mapping --- --- --- */
+
+/* Let SEG be a client mapping (anonymous or file).  This fn extends
+   the mapping forwards only by DELTA bytes, and trashes whatever was
+   in the new area.  Fails if SEG is not a single client mapping or if
+   the new area is not accessible to the client.  Fails if DELTA is
+   not page aligned.  *seg is invalid after a successful return. */
+
+Bool VG_(am_extend_map_client)( NSegment* seg, SizeT delta )
+{
+   Addr     xStart;
+   SysRes   sres;
+   NSegment seg_copy;
+
+   if (seg->kind != SkFileC && seg->kind != SkAnonC)
+      return False;
+
+   if (delta == 0 || !VG_IS_PAGE_ALIGNED(delta)) 
+      return False;
+
+   xStart = seg->end+1;
+   if (xStart + delta < delta)
+      return False;
+
+   if (!VG_(am_is_valid_for_client_or_free_or_resvn)( xStart, delta, 
+                                                      VKI_PROT_NONE ))
+      return False;
+
+   sres = do_extend_mapping_NO_NOTIFY( seg->start, seg->end+1-seg->start,
+                                       delta );
+   if (sres.isError)
+      return False;
+
+   seg_copy = *seg;
+   seg_copy.end += delta;
+   add_segment( &seg_copy );
+   return True;
+}
+
+
+/* Remap the old address range to the new address range.  Fails if any
+   parameter is not page aligned, if the either size is zero, if any
+   wraparound is implied, if the old address range does not fall
+   entirely within a single segment, if the new address range overlaps
+   with the old one, or if the old address range is not a valid client
+   mapping. */
+
+Bool VG_(am_relocate_nooverlap_client)( Addr old_addr, SizeT old_len,
+                                        Addr new_addr, SizeT new_len )
+{
+   Int      iLo, iHi;
+   SysRes   sres;
+   NSegment seg, oldseg;
+
+   if (old_len == 0 || new_len == 0)
+      return False;
+
+   if (!VG_IS_PAGE_ALIGNED(old_addr) || !VG_IS_PAGE_ALIGNED(old_len)
+       || !VG_IS_PAGE_ALIGNED(new_addr) || !VG_IS_PAGE_ALIGNED(new_len))
+      return False;
+
+   if (old_addr + old_len < old_addr
+       || new_addr + new_len < new_addr)
+      return False;
+
+   if (old_addr + old_len - 1 < new_addr
+       || new_addr + new_len - 1 < old_addr) {
+      /* no overlap */
+   } else
+      return False;
+
+   iLo = find_nsegment_idx( old_addr );
+   iHi = find_nsegment_idx( old_addr + old_len - 1 );
+   if (iLo != iHi)
+      return False;
+
+   if (nsegments[iLo].kind != SkFileC && nsegments[iLo].kind != SkAnonC)
+      return False;
+
+   sres = do_relocate_nooverlap_mapping_NO_NOTIFY( old_addr, old_len, 
+                                                   new_addr, new_len );
+   if (sres.isError)
+      return False;
+
+   oldseg = nsegments[iLo];
+
+   /* Create a free hole in the old location. */
+   init_nsegment( &seg );
+   seg.kind  = SkFree;
+   seg.start = old_addr;
+   seg.end   = old_addr + old_len - 1;
+   add_segment( &seg );
+
+   /* Mark the new area based on the old seg. */
+   oldseg.offset += ((ULong)old_addr) - ((ULong)oldseg.start);
+   oldseg.start = new_addr;
+   oldseg.end   = new_addr + new_len - 1;
+   add_segment( &seg );
 
    return True;
 }

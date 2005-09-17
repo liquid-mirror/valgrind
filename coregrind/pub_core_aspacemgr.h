@@ -263,15 +263,15 @@ extern NSegment* VG_(am_next_nsegment) ( NSegment* here, Bool fwds );
    VKI_PROT_NONE as 'prot'.  Will return False if any part of the
    area does not belong to the client or does not have at least
    the stated permissions. */
-extern Bool VG_(am_is_valid_for_client)( Addr start, SizeT len, 
-                                         UInt prot );
+extern Bool VG_(am_is_valid_for_client)
+   ( Addr start, SizeT len, UInt prot );
 
 /* Variant of VG_(am_is_valid_for_client) which allows free areas to
    be consider part of the client's addressable space.  It also
    considers reservations to be allowable, since from the client's
    point of view they don't exist. */
-extern Bool VG_(am_is_free_or_valid_for_client)( Addr start, SizeT len, 
-                                                 UInt prot );
+extern Bool VG_(am_is_valid_for_client_or_free_or_resvn)
+   ( Addr start, SizeT len, UInt prot );
 
 /* Trivial fn: return the total amount of space in anonymous mappings,
    both for V and the client.  Is used for printing stats in
@@ -349,6 +349,8 @@ extern SysRes VG_(am_do_mmap_NO_NOTIFY)
 // loading the client and building its stack/data segment, before
 // execution begins.  Also for V's own administrative use.
 
+/* --- --- --- map, unmap, protect  --- --- --- */
+
 /* Map a file at a fixed address for the client, and update the
    segment array accordingly. */
 extern SysRes VG_(am_mmap_file_fixed_client)
@@ -367,6 +369,13 @@ extern SysRes VG_(am_mmap_anon_float_client) ( SizeT length, Int prot );
    segment array accordingly.  This is fundamentally how V allocates
    itself more address space when needed. */
 extern SysRes VG_(am_mmap_anon_float_valgrind)( SizeT cszB );
+
+/* Unmap the given address range an update the segment array
+   accordingly.  This fails if the range isn't valid for the
+   client. */
+extern SysRes VG_(am_munmap_client)( Addr start, SizeT length );
+
+/* --- --- --- reservations --- --- --- */
 
 /* Create a reservation from START .. START+LENGTH-1, with the given
    ShrinkMode.  When checking whether the reservation can be created,
@@ -387,9 +396,26 @@ extern Bool VG_(am_create_reservation)
    backwards in the address space and the reservation must be the
    previous one.  DELTA must be page aligned and must not exceed the
    size of the reservation segment. */
-extern Bool VG_(am_extend_into_adjacent_reservation) 
+extern Bool VG_(am_extend_into_adjacent_reservation_client) 
    ( NSegment* seg, SSizeT delta );
 
+/* --- --- --- resizing/move a mapping --- --- --- */
+
+/* Let SEG be a client mapping (anonymous or file).  This fn extends
+   the mapping forwards only by DELTA bytes, and trashes whatever was
+   in the new area.  Fails if SEG is not a single client mapping or if
+   the new area is not accessible to the client.  Fails if DELTA is
+   not page aligned.  *seg is invalid after a successful return. */
+extern Bool VG_(am_extend_map_client)( NSegment* seg, SizeT delta );
+
+/* Remap the old address range to the new address range.  Fails if any
+   parameter is not page aligned, if the either size is zero, if any
+   wraparound is implied, if the old address range does not fall
+   entirely within a single segment, if the new address range overlaps
+   with the old one, or if the old address range is not a valid client
+   mapping. */
+extern Bool VG_(am_relocate_nooverlap_client)( Addr old_addr, SizeT old_len,
+                                               Addr new_addr, SizeT new_len );
 
 //--------------------------------------------------------------
 // Valgrind (non-client) thread stacks.  V itself runs on such

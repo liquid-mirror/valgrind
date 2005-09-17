@@ -1339,6 +1339,11 @@ static void default_action(const vki_siginfo_t *info, ThreadId tid)
 	       haveaddr = False;
 	       break;
 	    }
+     VG_(am_show_nsegments)(0,"post segfault");
+     {HChar buf[110];
+     VG_(sprintf)(buf, "/bin/cat /proc/%d/maps", VG_(getpid)());
+     VG_(system)(buf);
+     }
 	    break;
 
 	 case VKI_SIGILL:
@@ -1726,14 +1731,13 @@ Bool VG_(extend_stack)(Addr addr, UInt maxsize)
 
    udelta = VG_PGROUNDUP(seg_next->start - addr);
    VG_(debugLog)(1, "signals", 
-                    "extending a stack base 0x%llx down by %lld ..\n",
+                    "extending a stack base 0x%llx down by %lld\n",
                     (ULong)seg_next->start, (ULong)udelta);
-   if (! VG_(am_extend_into_adjacent_reservation)( seg_next, -(SSizeT)udelta )) {
-      VG_(debugLog)(1, "signals", "  .. failure\n");
+   if (! VG_(am_extend_into_adjacent_reservation_client)
+            ( seg_next, -(SSizeT)udelta )) {
+      VG_(debugLog)(1, "signals", "extending a stack base: FAILED\n");
       return False;
    }
-
-   VG_(debugLog)(1, "signals", "  .. success\n");
 
    /* When we change the main stack, we have to let the stack handling
       code know about it. */

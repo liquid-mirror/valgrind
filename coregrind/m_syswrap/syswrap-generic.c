@@ -59,7 +59,7 @@
 
 /* Returns True iff address range is something the client can
    plausibly mess with: all of it is either already belongs to the
-   client or is free. */
+   client or is free or a reservation. */
 
 Bool ML_(valid_client_addr)(Addr start, SizeT size, ThreadId tid,
                                    const Char *syscallname)
@@ -69,7 +69,8 @@ Bool ML_(valid_client_addr)(Addr start, SizeT size, ThreadId tid,
    if (size == 0)
       return True;
 
-   ret = VG_(am_is_free_or_valid_for_client)(start,size,VKI_PROT_NONE);
+   ret = VG_(am_is_valid_for_client_or_free_or_resvn)
+            (start,size,VKI_PROT_NONE);
 
    if (0)
       VG_(printf)("%s: test=%p-%p ret=%d\n",
@@ -149,140 +150,211 @@ ML_(notify_aspacem_and_tool_of_mmap) ( Addr a, SizeT len, UInt prot,
    VG_TRACK( new_mem_mmap, a, len, rr, ww, xx );
 }
 
-static 
-SysRes mremap_segment ( Addr old_addr, SizeT old_size,
-                        Addr new_addr, SizeT new_size,
-                        UInt flags, ThreadId tid)
+/* Expand (or shrink) an existing mapping, potentially moving it at
+   the same time (controlled by the MREMAP_MAYMOVE flag).  Nightmare.
+*/
+static
+SysRes do_mremap( Addr old_addr, SizeT old_len, 
+                  Addr new_addr, SizeT new_len,
+                  UWord flags, ThreadId tid )
 {
-   SysRes ret;
-   Segment *seg, *next;
-
-   old_size = VG_PGROUNDUP(old_size);
-   new_size = VG_PGROUNDUP(new_size);
-
-   if (VG_PGROUNDDN(old_addr) != old_addr)
-      return VG_(mk_SysRes_Error)( VKI_EINVAL );
-
-   if (!ML_(valid_client_addr)(old_addr, old_size, tid, "mremap(old_addr)"))
-      return VG_(mk_SysRes_Error)( VKI_EFAULT );
-
-   /* fixed at the current address means we don't move it */
-   if ((flags & VKI_MREMAP_FIXED) && (old_addr == new_addr))
-      flags &= ~(VKI_MREMAP_FIXED|VKI_MREMAP_MAYMOVE);
-
-   if (flags & VKI_MREMAP_FIXED) {
-      if (VG_PGROUNDDN(new_addr) != new_addr)
-	 return VG_(mk_SysRes_Error)( VKI_EINVAL );
-
-      if (!ML_(valid_client_addr)(new_addr, new_size, tid, "mremap(new_addr)"))
-	 return VG_(mk_SysRes_Error)( VKI_ENOMEM );
-
-      /* check for overlaps */
-      if ((old_addr < (new_addr+new_size) &&
-	   (old_addr+old_size) > new_addr) ||
-	  (new_addr < (old_addr+new_size) &&
-	   (new_addr+new_size) > old_addr))
-	 return VG_(mk_SysRes_Error)( VKI_EINVAL );
-   }
-
-   /* Do nothing */
-   if (!(flags & VKI_MREMAP_FIXED) && new_size == old_size)
-      return VG_(mk_SysRes_Success)( old_addr );
-
-   seg = VG_(find_segment)(old_addr);
-
-   /* range must be contained within segment */
-   if (seg == NULL || !VG_(seg_contains)(seg, old_addr, old_size))
-      return VG_(mk_SysRes_Error)( VKI_EINVAL );
-
-   next = VG_(find_segment_above_mapped)(old_addr);
+   Bool      ok;
+   NSegment* old_seg;
+   Addr      advised;
+   Bool      f_fixed   = toBool(flags & VKI_MREMAP_FIXED);
+   Bool      f_maymove = toBool(flags & VKI_MREMAP_MAYMOVE);
 
    if (0)
-      VG_(printf)("mremap: old_addr+new_size=%p next->addr=%p flags=%d\n",
-		  old_addr+new_size, next->addr, flags);
-   
-   if ((flags & VKI_MREMAP_FIXED) ||
-       (next != NULL && (old_addr+new_size) > next->addr)) {
-      /* we're moving the block */
-      Addr a;
-      
-      if ((flags & (VKI_MREMAP_FIXED|VKI_MREMAP_MAYMOVE)) == 0)
-         /* not allowed to move */
-	 return VG_(mk_SysRes_Error)( VKI_ENOMEM ); 
+      VG_(printf)("do_remap (old %p %d) (new %p %d) %s %s\n",
+                  old_addr,old_len,new_addr,new_len, 
+                  flags & VKI_MREMAP_MAYMOVE ? "MAYMOVE" : "",
+                  flags & VKI_MREMAP_FIXED ? "FIXED" : "");
 
-      if ((flags & VKI_MREMAP_FIXED) == 0)
-	  new_addr = 0;
+   if (flags & ~(VKI_MREMAP_FIXED | VKI_MREMAP_MAYMOVE))
+      goto eINVAL;
 
-      a = VG_(find_map_space)(new_addr, new_size, True);
+   if (!VG_IS_PAGE_ALIGNED(old_addr))
+      goto eINVAL;
 
-      if ((flags & VKI_MREMAP_FIXED) && a != new_addr)
-         /* didn't find the place we wanted */
-	 return VG_(mk_SysRes_Error)( VKI_ENOMEM );
+   old_len = VG_PGROUNDUP(old_len);
+   new_len = VG_PGROUNDUP(new_len);
 
-      new_addr = a;
+   if (new_len == 0)
+      goto eINVAL;
 
-      /* we've nailed down the location */
-      flags |= VKI_MREMAP_FIXED|VKI_MREMAP_MAYMOVE;
+   /* kernel doesn't reject this, but we do. */
+   if (old_len == 0)
+      goto eINVAL;
 
-      ret = VG_(do_syscall5)(__NR_mremap, old_addr, old_size, new_size, 
-			     flags, new_addr);
+   /* reject wraparounds */
+   if (old_addr + old_len < old_addr
+       || new_addr + new_len < new_len)
+      goto eINVAL;
 
-      if (ret.isError) {
-	 return ret;
-      }
+   /* kernel rejects all fixed, no-move requests (which are
+      meaningless). */
+   if (f_fixed == True && f_maymove == False)
+      goto eINVAL;
 
-      VG_TRACK(copy_mem_remap, old_addr, new_addr, 
-	       (old_size < new_size) ? old_size : new_size);
+   /* Stay away from non-client areas. */
+   if (!ML_(valid_client_addr)(old_addr, old_len, tid, "mremap(old_addr)"))
+      goto eINVAL;
 
-      if (new_size > old_size)
-	 VG_TRACK(new_mem_mmap, new_addr+old_size, new_size-old_size,
-		  seg->prot & VKI_PROT_READ, 
-		  seg->prot & VKI_PROT_WRITE, 
-		  seg->prot & VKI_PROT_EXEC);
-      VG_TRACK(die_mem_munmap, old_addr, old_size);
+   /* In all remaining cases, if the old range does not fall within a
+      single segment, fail. */
+   old_seg = VG_(am_find_nsegment)( old_addr );
+   if (old_addr < old_seg->start || old_addr+old_len-1 > old_seg->end)
+      goto eINVAL;
+   if (old_seg->kind != SkAnonC && old_seg->kind != SkAnonV)
+      goto eINVAL;
 
-      VG_(map_file_segment)(new_addr, new_size,
-			    seg->prot, 
-			    seg->flags,
-			    seg->dev, seg->ino,
-			    seg->offset, seg->filename);
+   vg_assert(old_len > 0);
+   vg_assert(new_len > 0);
+   vg_assert(VG_IS_PAGE_ALIGNED(old_len));
+   vg_assert(VG_IS_PAGE_ALIGNED(new_len));
+   vg_assert(VG_IS_PAGE_ALIGNED(old_addr));
 
-      VG_(munmap)((void *)old_addr, old_size);
-   } else {
-      /* staying in place */
-      ret = VG_(mk_SysRes_Success)( old_addr );
+   /* There are 3 remaining cases:
 
-      if (new_size < old_size) {
-	 VG_TRACK(die_mem_munmap, old_addr+new_size, old_size-new_size);
-	 VG_(munmap)((void *)(old_addr+new_size), old_size-new_size);
-      } else {
-	 /* we've nailed down the location */
-	 flags &= ~VKI_MREMAP_MAYMOVE;
+      * maymove == False
 
-	 if (0)
-	    VG_(printf)("mremap: old_addr=%p old_size=%d new_size=%d flags=%d\n",
-			old_addr, old_size, new_size, flags);
+        new space has to be at old address, so:
+            - shrink    -> unmap end
+            - same size -> do nothing
+            - grow      -> if can grow in-place, do so, else fail
 
-	 ret = VG_(do_syscall5)(__NR_mremap, old_addr, old_size, new_size, 
-			        flags, 0);
+      * maymove == True, fixed == False
 
-	 if (ret.isError || (!ret.isError && ret.val != old_addr))
-	    return ret;
+        new space can be anywhere, so:
+            - shrink    -> unmap end
+            - same size -> do nothing
+            - grow      -> if can grow in-place, do so, else 
+                           move to anywhere large enough, else fail
 
-	 VG_TRACK(new_mem_mmap, old_addr+old_size, new_size-old_size,
-		  seg->prot & VKI_PROT_READ, 
-		  seg->prot & VKI_PROT_WRITE, 
-		  seg->prot & VKI_PROT_EXEC);
+      * maymove == True, fixed == True
 
-	 VG_(map_file_segment)(old_addr+old_size, new_size-old_size,
-			       seg->prot, 
-			       seg->flags,
-			       seg->dev, seg->ino,
-			       seg->offset, seg->filename);	 
-      }
+        new space must be at new address, so:
+
+            - if new address is not page aligned, fail
+            - if new address range overlaps old one, fail
+            - if new address range cannot be allocated, fail
+            - else move to new address range with new size
+            - else fail
+   */
+
+   if (f_maymove == False) {
+      /* new space has to be at old address */
+      if (new_len < old_len)
+         goto shrink_in_place;
+      if (new_len > old_len)
+         goto grow_in_place_or_fail;
+      goto same_in_place;
    }
 
-   return ret;
+   if (f_maymove == True && f_fixed == False) {
+      /* new space can be anywhere */
+      if (new_len < old_len)
+         goto shrink_in_place;
+      if (new_len > old_len)
+         goto grow_in_place_or_move_anywhere_or_fail;
+      goto same_in_place;
+   }
+
+   if (f_maymove == True && f_fixed == True) {
+      /* new space can only be at the new address */
+      if (!VG_IS_PAGE_ALIGNED(new_addr)) 
+         goto eINVAL;
+      if (new_addr+new_len-1 < old_addr || new_addr > old_addr+old_len-1) {
+         /* no overlap */
+      } else {
+         goto eINVAL;
+      }
+      if (new_addr == 0) 
+         goto eINVAL; 
+         /* VG_(am_get_advisory_client_simple) interprets zero to mean
+            non-fixed, which is not what we want */
+      advised = VG_(am_get_advisory_client_simple)(new_addr, new_len, &ok);
+      if (!ok || advised != new_addr)
+         goto eNOMEM;
+      ok = VG_(am_relocate_nooverlap_client)
+              ( old_addr, old_len, new_addr, new_len );
+      if (ok) 
+         return VG_(mk_SysRes_Success)( new_addr );
+      goto eNOMEM;
+   }
+
+   /* end of the 3 cases */
+   /*NOTREACHED*/ vg_assert(0);
+
+  grow_in_place_or_move_anywhere_or_fail: 
+   { 
+   /* try growing it in-place */
+   Addr   needA = old_addr + old_len;
+   SSizeT needL = new_len - old_len;
+
+   vg_assert(needL > 0);
+   if (needA == 0)
+      goto eINVAL; 
+      /* VG_(am_get_advisory_client_simple) interprets zero to mean
+         non-fixed, which is not what we want */
+   advised = VG_(am_get_advisory_client_simple)( needA, needL, &ok );
+   if (ok && advised == needA) {
+      ok = VG_(am_extend_map_client)( old_seg, needL );
+      old_seg = NULL;
+      if (ok)
+         return VG_(mk_SysRes_Success)( old_addr );
+   }
+
+   /* that failed.  Look elsewhere. */
+   advised = VG_(am_get_advisory_client_simple)( 0, new_len, &ok );
+   if (ok) {
+      /* assert new area does not overlap old */
+      vg_assert(advised+new_len-1 < old_addr 
+                || advised > old_addr+old_len-1);
+      ok = VG_(am_relocate_nooverlap_client)
+              ( old_addr, old_len, advised, new_len );
+      if (ok) return VG_(mk_SysRes_Success)( advised );
+   }
+   goto eNOMEM;
+   }
+   /*NOTREACHED*/ vg_assert(0);
+
+  grow_in_place_or_fail:
+   {
+   Addr  needA = old_addr + old_len;
+   SizeT needL = new_len - old_len;
+   if (needA == 0) 
+      goto eINVAL;
+      /* VG_(am_get_advisory_client_simple) interprets zero to mean
+         non-fixed, which is not what we want */
+   advised = VG_(am_get_advisory_client_simple)( needA, needL, &ok );
+   if (!ok || advised != needA)
+      goto eNOMEM;
+   ok = VG_(am_extend_map_client)( old_seg, needL );
+   old_seg = NULL;
+   if (!ok)
+      goto eNOMEM;
+   return VG_(mk_SysRes_Success)( old_addr );
+   }
+   /*NOTREACHED*/ vg_assert(0);
+
+  shrink_in_place:
+   {
+   SysRes sres = VG_(am_munmap_client)( old_addr+new_len, old_len-new_len);
+   if (sres.isError)
+      return sres;
+   return VG_(mk_SysRes_Success)( old_addr );
+   }
+   /*NOTREACHED*/ vg_assert(0);
+
+  same_in_place:
+   return VG_(mk_SysRes_Success)( old_addr );
+   /*NOTREACHED*/ vg_assert(0);
+
+  eINVAL:
+   return VG_(mk_SysRes_Error)( VKI_EINVAL );
+  eNOMEM:
+   return VG_(mk_SysRes_Error)( VKI_ENOMEM );
 }
 
 
@@ -851,7 +923,7 @@ static Addr do_brk ( Addr newbrk )
    vg_assert(delta > 0);
    vg_assert(VG_IS_PAGE_ALIGNED(delta));
    
-   ok = VG_(am_extend_into_adjacent_reservation)( aseg, delta );
+   ok = VG_(am_extend_into_adjacent_reservation_client)( aseg, delta );
    if (!ok) goto bad;
 
    VG_(brk_limit) = newbrk;
@@ -2033,7 +2105,7 @@ PRE(sys_mremap)
                  unsigned long, new_size, unsigned long, flags,
                  unsigned long, new_addr);
    SET_STATUS_from_SysRes( 
-      mremap_segment((Addr)ARG1, ARG2, (Addr)ARG5, ARG3, ARG4, tid) 
+      do_mremap((Addr)ARG1, ARG2, (Addr)ARG5, ARG3, ARG4, tid) 
    );
 }
 
