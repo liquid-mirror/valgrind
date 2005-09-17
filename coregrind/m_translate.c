@@ -440,7 +440,7 @@ Bool VG_(translate) ( ThreadId tid,
 {
    Addr64    redir, orig_addr0 = orig_addr;
    Int       tmpbuf_used, verbosity;
-   Bool      notrace_until_done, do_self_check, allowR;
+   Bool      notrace_until_done, do_self_check, allowR, seg_ok;
    UInt      notrace_until_limit = 0;
    NSegment* seg;
    VexGuestExtents vge;
@@ -537,9 +537,11 @@ Bool VG_(translate) ( ThreadId tid,
    allowR = False;
 #  endif
 
-   if (seg == NULL 
-       || !(seg->kind == SkAnonC || seg->kind == SkFileC)
-       || !(seg->hasX || (seg->hasR && allowR)) ) {
+   seg_ok = seg != NULL
+            && (seg->kind == SkAnonC || seg->kind == SkFileC)
+            && (seg->hasX || (seg->hasR && allowR));
+
+   if (!seg_ok) {
 
       /* U R busted, sonny.  Place your hands on your head and step
          away from the orig_addr. */
