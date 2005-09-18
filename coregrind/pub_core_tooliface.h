@@ -158,7 +158,7 @@ typedef struct {
    void (*track_new_mem_brk)         (Addr, SizeT);
    void (*track_new_mem_mmap)        (Addr, SizeT, Bool, Bool, Bool);
 
-   void (*track_copy_mem_remap)      (Addr, Addr, SizeT);
+   void (*track_copy_mem_remap)      (Addr src, Addr dst, SizeT);
    void (*track_change_mem_mprotect) (Addr, SizeT, Bool, Bool, Bool);
    void (*track_die_mem_stack_signal)(Addr, SizeT);
    void (*track_die_mem_brk)         (Addr, SizeT);

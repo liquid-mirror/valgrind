@@ -1391,7 +1391,7 @@ static Addr aspacem_vStart = 0;
 
 #define AM_SANITY_CHECK                                      \
    do {                                                      \
-      if (VG_(clo_sanity_level > 1))                         \
+      if (VG_(clo_sanity_level >= 3))                        \
          aspacem_assert(do_sync_check(__PRETTY_FUNCTION__,   \
                                       __FILE__,__LINE__));   \
    } while (0) 
@@ -1971,6 +1971,16 @@ static Bool do_sync_check ( HChar* fn, HChar* file, Int line )
                       "sync check at %s:%d (%s): FAILED\n",
                       file, line, fn);
       VG_(debugLog)(0,"aspacem", "\n");
+
+#     if 0
+      {
+         HChar buf[100];
+         VG_(am_show_nsegments)(0,"post segfault");
+         VG_(sprintf)(buf, "/bin/cat /proc/%d/maps", VG_(getpid)());
+         VG_(system)(buf);
+      }
+#     endif
+
    }
    return sync_check_ok;
 }

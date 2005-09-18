@@ -738,20 +738,34 @@ static void mc_make_readable ( Addr a, SizeT len )
 }
 
 
-/* --- Block-copy permissions (needed for implementing realloc()). --- */
+/* --- Block-copy permissions (needed for implementing realloc() and
+       sys_mremap). --- */
 
 static void mc_copy_address_range_state ( Addr src, Addr dst, SizeT len )
 {
-   SizeT i;
+   SizeT i, j;
    UWord abit, vbyte;
 
    DEBUG("mc_copy_address_range_state\n");
-
    PROF_EVENT(50, "mc_copy_address_range_state");
-   for (i = 0; i < len; i++) {
-      PROF_EVENT(51, "mc_copy_address_range_state(loop)");
-      get_abit_and_vbyte( &abit, &vbyte, src+i );
-      set_abit_and_vbyte( dst+i, abit, vbyte );
+
+   if (len == 0)
+      return;
+
+   if (src < dst) {
+      for (i = 0, j = len-1; i < len; i++, j--) {
+         PROF_EVENT(51, "mc_copy_address_range_state(loop)");
+         get_abit_and_vbyte( &abit, &vbyte, src+j );
+         set_abit_and_vbyte( dst+j, abit, vbyte );
+      }
+   }
+
+   if (src > dst) {
+      for (i = 0; i < len; i++) {
+         PROF_EVENT(51, "mc_copy_address_range_state(loop)");
+         get_abit_and_vbyte( &abit, &vbyte, src+i );
+         set_abit_and_vbyte( dst+i, abit, vbyte );
+      }
    }
 }
 
