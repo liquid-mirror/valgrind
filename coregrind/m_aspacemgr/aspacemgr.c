@@ -1549,7 +1549,7 @@ static SysRes do_relocate_nooverlap_mapping_NO_NOTIFY(
              __NR_mremap, 
              old_addr, old_len, new_len, 
              VKI_MREMAP_MAYMOVE|VKI_MREMAP_FIXED/*move-or-fail*/,
-             0/*new_addr*/
+             new_addr
           );
 }
 
@@ -3292,8 +3292,8 @@ Bool VG_(am_relocate_nooverlap_client)( Addr old_addr, SizeT old_len,
    sres = do_relocate_nooverlap_mapping_NO_NOTIFY( old_addr, old_len, 
                                                    new_addr, new_len );
    if (sres.isError) {
-      return False;
       AM_SANITY_CHECK;
+      return False;
    }
 
    oldseg = nsegments[iLo];
