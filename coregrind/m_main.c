@@ -2344,9 +2344,24 @@ Int main(Int argc, HChar **argv, HChar **envp)
    }
 
    //==============================================================
-   // Finished setting up operating environment.  Now initialise
-   // Valgrind.  (This is where the old VG_(main)() started.)
+   //
+   // Finished loading/setting up the client address space.
+   //
    //==============================================================
+
+   //--------------------------------------------------------------
+   // Initialise translation table and translation cache
+   //   p: aspacem
+   //--------------------------------------------------------------
+   VG_(debugLog)(1, "main", "Initialise TT/TC\n");
+   VG_(init_tt_tc)();
+
+   //--------------------------------------------------------------
+   // Initialise the redirect table.
+   //   p: init_tt_tc [so it can call VG_(search_transtab) safely]
+   //--------------------------------------------------------------
+   VG_(debugLog)(1, "main", "Initialise redirects\n");
+   VG_(setup_code_redirect_table)();
 
    //--------------------------------------------------------------
    // setup file descriptors
@@ -2449,6 +2464,31 @@ Int main(Int argc, HChar **argv, HChar **envp)
    }
 
    //--------------------------------------------------------------
+   // Load debug info for the existing segments.
+   //   p: setup_code_redirect_table [so that redirs can be recorded]
+   //   p: mallocfree
+   //   p: probably: setup fds and process CLOs, so that logging works
+   //--------------------------------------------------------------
+   { Addr* seg_starts;
+     Int   n_seg_starts;
+     /* find out how many spaces are needed */
+     VG_(am_get_segment_starts)( NULL, &n_seg_starts );
+     /* allocate */
+     seg_starts = VG_(malloc)( n_seg_starts * sizeof(Addr) );
+     vg_assert(seg_starts);
+     /* guard against race */
+     VG_(am_get_segment_starts)( NULL, &i );
+     vg_assert(n_seg_starts == i);
+     /* acquire */
+     VG_(am_get_segment_starts)( seg_starts, &n_seg_starts );
+     /* show them all to the debug info reader */
+     for (i = 0; i < n_seg_starts; i++)
+        VG_(di_notify_mmap)( seg_starts[i] );
+     /* release */
+     VG_(free)( seg_starts );
+   }
+
+   //--------------------------------------------------------------
    // Initialise the scheduler
    //   p: setup_file_descriptors() [else VG_(safe_fd)() breaks]
    //--------------------------------------------------------------
@@ -2506,23 +2546,6 @@ Int main(Int argc, HChar **argv, HChar **envp)
       VG_(debugLog)(1, "main", "Load suppressions\n");
       VG_(load_suppressions)();
    }
-
-   //--------------------------------------------------------------
-   // Initialise translation table and translation cache
-   //   p: read_procselfmaps  [so the anonymous mmaps for the TT/TC
-   //         aren't identified as part of the client, which would waste
-   //         > 20M of virtual address space.]
-   //--------------------------------------------------------------
-   VG_(debugLog)(1, "main", "Initialise TT/TC\n");
-   VG_(init_tt_tc)();
-
-   //--------------------------------------------------------------
-   // Initialise the redirect table.
-   //   p: parse_procselfmaps? [XXX for debug info?]
-   //   p: init_tt_tc [so it can call VG_(search_transtab) safely]
-   //--------------------------------------------------------------
-   VG_(debugLog)(1, "main", "Initialise redirects\n");
-   VG_(setup_code_redirect_table)();
 
    //--------------------------------------------------------------
    // Tell the tool about permissions in our handwritten assembly

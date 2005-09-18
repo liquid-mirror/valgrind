@@ -281,6 +281,22 @@ extern ULong VG_(am_get_anonsize_total)( void );
 /* Show the segment array on the debug log, at given loglevel. */
 extern void VG_(am_show_nsegments) ( Int logLevel, HChar* who );
 
+/* Get the filename corresponding to this segment, if known and if it
+   has one.  The returned name's storage cannot be assumed to be
+   persistent, so the caller should immediately copy the name
+   elsewhere. */
+extern HChar* VG_(am_get_filename)( NSegment* );
+
+/* Collect up the start addresses of all non-free, non-resvn segments.
+   The interface is a bit strange.  You have to call it twice.  If
+   'starts' is NULL, the number of such segments is calculated and
+   written to *nStarts.  If 'starts' is non-NULL, it should point to
+   an array of size *nStarts, and the segment start addresses are
+   written at starts[0 .. *nStarts-1].  In the latter case, the number
+   of required slots is recalculated, and the function asserts if this
+   is not equal to *nStarts. */
+extern void VG_(am_get_segment_starts)( Addr* starts, Int* nStarts );
+
 
 //--------------------------------------------------------------
 // Functions pertaining to the central query-notify mechanism
@@ -370,10 +386,20 @@ extern SysRes VG_(am_mmap_anon_float_client) ( SizeT length, Int prot );
    itself more address space when needed. */
 extern SysRes VG_(am_mmap_anon_float_valgrind)( SizeT cszB );
 
-/* Unmap the given address range an update the segment array
+/* Map a file at an unconstrained address for V, and update the
+   segment array accordingly.  This is used by V for transiently
+   mapping in object files to read their debug info.  */
+extern SysRes VG_(am_mmap_file_float_valgrind)
+   ( SizeT length, UInt prot, Int fd, SizeT offset );
+
+/* Unmap the given address range and update the segment array
    accordingly.  This fails if the range isn't valid for the
    client. */
 extern SysRes VG_(am_munmap_client)( Addr start, SizeT length );
+
+/* Unmap the given address range and update the segment array
+   accordingly.  This fails if the range isn't valid for valgrind. */
+extern SysRes VG_(am_munmap_valgrind)( Addr start, SizeT length );
 
 /* --- --- --- reservations --- --- --- */
 

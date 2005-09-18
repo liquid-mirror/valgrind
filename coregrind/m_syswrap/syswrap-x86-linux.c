@@ -1539,6 +1539,8 @@ PRE(old_mmap)
          args[4-1], /* the original flags value */
          a5, a6 
       );
+      /* Load symbols? */
+      VG_(di_notify_mmap)( (Addr)sres.val );
    }
 
    /* Stay sane */

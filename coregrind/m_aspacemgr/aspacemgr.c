@@ -1751,6 +1751,63 @@ void VG_(am_show_nsegments) ( Int logLevel, HChar* who )
 }
 
 
+/* Get the filename corresponding to this segment, if known and if it
+   has one.  The returned name's storage cannot be assumed to be
+   persistent, so the caller should immediately copy the name
+   elsewhere. */
+HChar* VG_(am_get_filename)( NSegment* seg )
+{
+   Int i;
+   aspacem_assert(seg);
+   i = seg->fnIdx;
+   if (i < 0 || i >= segnames_used || !segnames[i].inUse)
+      return NULL;
+   else
+      return &segnames[i].fname[0];
+}
+
+/* Collect up the start addresses of all non-free, non-resvn segments.
+   The interface is a bit strange.  You have to call it twice.  If
+   'starts' is NULL, the number of such segments is calculated and
+   written to *nStarts.  If 'starts' is non-NULL, it should point to
+   an array of size *nStarts, and the segment start addresses are
+   written at starts[0 .. *nStarts-1].  In the latter case, the number
+   of required slots is recalculated, and the function asserts if this
+   is not equal to *nStarts. */
+
+void VG_(am_get_segment_starts)( Addr* starts, Int* nStarts )
+{
+   Int i, j, nSegs;
+
+   nSegs = 0;
+   for (i = 0; i < nsegments_used; i++) {
+      if (nsegments[i].kind == SkFree || nsegments[i].kind == SkResvn)
+         continue;
+      nSegs++;
+   }
+
+   if (starts == NULL) {
+      /* caller just wants to know how many segments there are. */
+      *nStarts = nSegs;
+      return;
+   }
+
+   /* otherwise, caller really is after the segments. */
+   /* If this assertion fails, the passed-in *nStarts is incorrect. */
+   aspacem_assert(*nStarts == nSegs);
+
+   j = 0;
+   for (i = 0; i < nsegments_used; i++) {
+      if (nsegments[i].kind == SkFree || nsegments[i].kind == SkResvn)
+         continue;
+      starts[j] = nsegments[i].start;
+      j++;
+   }
+
+   aspacem_assert(j == nSegs); /* this should not fail */
+}
+
+
 /*-----------------------------------------------------------------*/
 /*---                                                           ---*/
 /*--- Sanity checking and preening of the segment array.        ---*/
@@ -2149,6 +2206,32 @@ Bool VG_(am_is_valid_for_client_or_free_or_resvn)
 {
    return is_valid_for_client( start, len, prot, True/*free is OK*/ );
 }
+
+
+/* Test if a piece of memory is addressable by valgrind with at least
+   PROT_NONE protection permissions by examining the underlying
+   segments. */
+static Bool is_valid_for_valgrind( Addr start, SizeT len )
+{
+   Int  i, iLo, iHi;
+
+   if (len == 0)
+      return True; /* somewhat dubious case */
+   if (start + len < start)
+      return False; /* reject wraparounds */
+
+   iLo = find_nsegment_idx(start);
+   iHi = find_nsegment_idx(start + len - 1);
+   for (i = iLo; i <= iHi; i++) {
+      if (nsegments[i].kind == SkFileV || nsegments[i].kind == SkAnonV) {
+         /* ok */
+      } else {
+         return False;
+      }
+   }
+   return True;
+}
+
 
 /*-----------------------------------------------------------------*/
 /*---                                                           ---*/
@@ -3008,11 +3091,79 @@ SysRes VG_(am_mmap_anon_float_valgrind)( SizeT length )
 }
 
 
-/* Unmap the given address range an update the segment array
-   accordingly.  This fails if the range isn't valid for the
-   client. */
+/* Map a file at an unconstrained address for V, and update the
+   segment array accordingly.  This is used by V for transiently
+   mapping in object files to read their debug info.  */
 
-SysRes VG_(am_munmap_client)( Addr start, SizeT len )
+SysRes VG_(am_mmap_file_float_valgrind) ( SizeT length, UInt prot, 
+                                          Int fd, SizeT offset )
+{
+   SysRes     sres;
+   NSegment   seg;
+   Addr       advised;
+   Bool       ok;
+   MapRequest req;
+   UInt       dev, ino;
+   HChar      buf[VKI_PATH_MAX];
+ 
+   /* Not allowable. */
+   if (length == 0)
+      return VG_(mk_SysRes_Error)( VKI_EINVAL );
+
+   /* Ask for an advisory.  If it's negative, fail immediately. */
+   req.rkind = MAny;
+   req.start = 0;
+   req.len   = length;
+   advised = VG_(am_get_advisory)( &req, True/*client*/, &ok );
+   if (!ok)
+      return VG_(mk_SysRes_Error)( VKI_EINVAL );
+
+   /* We have been advised that the mapping is allowable at the
+      specified address.  So hand it off to the kernel, and propagate
+      any resulting failure immediately. */
+   sres = VG_(am_do_mmap_NO_NOTIFY)( 
+             advised, length, prot, 
+             VKI_MAP_FIXED|VKI_MAP_PRIVATE, 
+             fd, offset 
+          );
+   if (sres.isError)
+      return sres;
+
+   if (sres.val != advised) {
+      /* I don't think this can happen.  It means the kernel made a
+         fixed map succeed but not at the requested location.  Try to
+         repair the damage, then return saying the mapping failed. */
+      (void)do_munmap_NO_NOTIFY( sres.val, length );
+      return VG_(mk_SysRes_Error)( VKI_EINVAL );
+   }
+
+   /* Ok, the mapping succeeded.  Now notify the interval map. */
+   init_nsegment( &seg );
+   seg.kind   = SkFileV;
+   seg.start  = sres.val;
+   seg.end    = seg.start + VG_PGROUNDUP(length) - 1;
+   seg.offset = offset;
+   seg.hasR   = toBool(prot & VKI_PROT_READ);
+   seg.hasW   = toBool(prot & VKI_PROT_WRITE);
+   seg.hasX   = toBool(prot & VKI_PROT_EXEC);
+   if (get_inode_for_fd(fd, &dev, &ino)) {
+      seg.dev = dev;
+      seg.ino = ino;
+   }
+   if (get_name_for_fd(fd, buf, VKI_PATH_MAX)) {
+      seg.fnIdx = allocate_segname( buf );
+   }
+   add_segment( &seg );
+
+   AM_SANITY_CHECK;
+   return sres;
+}
+
+
+/* --- --- munmap helper --- --- */
+
+static 
+SysRes am_munmap_both_wrk ( Addr start, SizeT len, Bool forClient )
 {
    SysRes sres;
 
@@ -3029,9 +3180,14 @@ SysRes VG_(am_munmap_client)( Addr start, SizeT len )
    aspacem_assert(VG_IS_PAGE_ALIGNED(start));
    aspacem_assert(VG_IS_PAGE_ALIGNED(len));
 
-   if (!VG_(am_is_valid_for_client_or_free_or_resvn)
-         ( start, len, VKI_PROT_NONE ))
-      goto eINVAL;
+   if (forClient) {
+      if (!VG_(am_is_valid_for_client_or_free_or_resvn)
+            ( start, len, VKI_PROT_NONE ))
+         goto eINVAL;
+   } else {
+      if (!is_valid_for_valgrind( start, len ))
+         goto eINVAL;
+   }
 
    sres = do_munmap_NO_NOTIFY( start, len );
    if (sres.isError)
@@ -3043,6 +3199,23 @@ SysRes VG_(am_munmap_client)( Addr start, SizeT len )
 
   eINVAL:
    return VG_(mk_SysRes_Error)( VKI_EINVAL );
+}
+
+/* Unmap the given address range and update the segment array
+   accordingly.  This fails if the range isn't valid for the
+   client. */
+
+SysRes VG_(am_munmap_client)( Addr start, SizeT len )
+{
+   return am_munmap_both_wrk( start, len, True/*client*/ );
+}
+
+/* Unmap the given address range and update the segment array
+   accordingly.  This fails if the range isn't valid for valgrind. */
+
+SysRes VG_(am_munmap_valgrind)( Addr start, SizeT len )
+{
+   return am_munmap_both_wrk( start, len, False/*valgrind*/ );
 }
 
 

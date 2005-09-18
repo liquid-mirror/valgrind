@@ -4740,6 +4740,7 @@ POST(sys_mprotect)
    page_align_addr_and_len(&a, &len);
    VG_(am_notify_mprotect)(a, len, prot);
    VG_TRACK( change_mem_mprotect, a, len, rr, ww, xx );
+   VG_(di_notify_mprotect)( a, len, prot );
 }
 
 PRE(sys_munmap)
@@ -4760,6 +4761,7 @@ POST(sys_munmap)
    page_align_addr_and_len(&a, &len);
    VG_(am_notify_munmap)(a, len);
    VG_TRACK( die_mem_munmap, a, len );
+   VG_(di_notify_munmap)( a, len );
 }
 
 PRE(sys_mincore)
