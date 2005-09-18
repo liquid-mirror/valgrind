@@ -41,6 +41,9 @@
 #include "pub_core_syscall.h"
 #include "pub_core_tooliface.h"
 #include "pub_core_transtab.h"   // For VG_(discard_translations)
+
+#include "pub_core_options.h"    // VG_(clo_sanity_level)
+
 #include "vki_unistd.h"
 
 static void aspacem_barf ( HChar* what );
@@ -1386,6 +1389,14 @@ static Addr aspacem_cStart = 0;
 static Addr aspacem_vStart = 0;
 
 
+#define AM_SANITY_CHECK                                      \
+   do {                                                      \
+      if (VG_(clo_sanity_level > 1))                         \
+         aspacem_assert(do_sync_check(__PRETTY_FUNCTION__,   \
+                                      __FILE__,__LINE__));   \
+   } while (0) 
+
+
 /*-----------------------------------------------------------------*/
 /*---                                                           ---*/
 /*--- Stuff to make aspacem almost completely independent of    ---*/
@@ -1424,11 +1435,11 @@ static void aspacem_assert_fail( const HChar* expr,
   VG_(exit)(1);
 }
 
-#define aspacem_assert(expr)                           \
-  ((void) ((expr) ? 0 :                                \
-           (aspacem_assert_fail(#expr,                 \
-                              __FILE__, __LINE__,      \
-                              __PRETTY_FUNCTION__))))
+#define aspacem_assert(expr)                             \
+  ((void) ((expr) ? 0 :                                  \
+           (aspacem_assert_fail(#expr,                   \
+                                __FILE__, __LINE__,      \
+                                __PRETTY_FUNCTION__))))
 
 
 //--------------------------------------------------------------
@@ -1881,6 +1892,90 @@ static Bool preen_nsegments ( void )
 }
 
 
+/* Check the segment array corresponds with the kernel's view of
+   memory layout.  sync_check_ok returns True if no anomalies were
+   found, else False.  In the latter case the mismatching segments are
+   displayed. */
+
+static Int  sync_check_i  = 0;
+static Bool sync_check_ok = False;
+
+static void sync_check_callback ( Addr addr, SizeT len, UInt prot,
+                                  UInt dev, UInt ino, ULong offset, 
+                                  const UChar* filename )
+{
+   Bool same;
+
+   /* If a problem has already been detected, don't continue comparing
+      segments, so as to avoid flooding the output with error
+      messages. */
+   if (!sync_check_ok)
+      return;
+
+   /* Advance sync_check_i to the first possible nsegment entry which
+      could map the kernel's offering.  It will have been left at the
+      previous match.  We are prepared to skip any sequence of free
+      and reservation segments, but everything else must match the
+      kernel's segments. */
+   sync_check_i++;
+
+   while (sync_check_i < nsegments_used
+          && (nsegments[sync_check_i].kind == SkFree
+              || nsegments[sync_check_i].kind == SkResvn))
+      sync_check_i++;
+
+   aspacem_assert(sync_check_i >= 0 && sync_check_i <= nsegments_used);
+
+   if (sync_check_i == nsegments_used) {
+      sync_check_ok = False;
+      VG_(debugLog)(0,"aspacem","sync_check_callback: out of segments\n");
+      goto show_kern_seg;
+   }
+
+   /* compare the kernel's offering against ours. */
+   same = nsegments[sync_check_i].start == addr
+          && nsegments[sync_check_i].end == addr+len-1
+          && nsegments[sync_check_i].dev == dev
+          && nsegments[sync_check_i].ino == ino
+          && nsegments[sync_check_i].offset == offset;
+   if (!same) {
+      sync_check_ok = False;
+      VG_(debugLog)(0,"aspacem",
+                      "sync_check_callback: segment mismatch: V's seg:\n");
+      show_nsegment_full( 0, &nsegments[sync_check_i] );
+      goto show_kern_seg;
+   }
+
+   /* Looks harmless.  Keep going. */
+   return;
+
+  show_kern_seg:
+   VG_(debugLog)(0,"aspacem",
+                   "sync_check_callback: segment mismatch: kernel's seg:\n");
+   VG_(debugLog)(0,"aspacem", 
+                   "start=0x%llx end=0x%llx dev=%u ino=%u offset=%lld\n",
+                   (ULong)addr, ((ULong)addr) + ((ULong)len) - 1,
+                   dev, ino, offset );
+   return;
+}
+
+static Bool do_sync_check ( HChar* fn, HChar* file, Int line )
+{
+   sync_check_i  = -1;
+   sync_check_ok = True;
+   if (0)
+      VG_(debugLog)(0,"aspacem", "do_sync_check %s:%d\n", file,line);
+   VG_(parse_procselfmaps)( sync_check_callback );
+   if (!sync_check_ok) {
+      VG_(debugLog)(0,"aspacem", 
+                      "sync check at %s:%d (%s): FAILED\n",
+                      file, line, fn);
+      VG_(debugLog)(0,"aspacem", "\n");
+   }
+   return sync_check_ok;
+}
+
+
 /*-----------------------------------------------------------------*/
 /*---                                                           ---*/
 /*--- Low level access / modification of the segment array.     ---*/
@@ -2321,6 +2416,7 @@ Addr VG_(am_startup) ( Addr sp_at_startup )
 
    VG_(am_show_nsegments)(2, "With contents of /proc/self/maps");
 
+   AM_SANITY_CHECK;
    return suggested_clstack_top;
 }
 
@@ -2484,6 +2580,8 @@ Addr VG_(am_get_advisory) ( MapRequest*  req,
    if (floatIdx >= 0) 
       aspacem_assert(nsegments[floatIdx].kind == SkFree);
 
+   AM_SANITY_CHECK;
+
    /* Now see if we found anything which can satisfy the request. */
    switch (req->rkind) {
       case MFixed:
@@ -2571,6 +2669,7 @@ VG_(am_notify_client_mmap)( Addr a, SizeT len, UInt prot, UInt flags,
       }
    }
    add_segment( &seg );
+   AM_SANITY_CHECK;
 }
 
 /* Notifies aspacem that an mprotect was completed successfully.  The
@@ -2618,6 +2717,7 @@ void VG_(am_notify_mprotect)( Addr start, SizeT len, UInt prot )
    /* Changing permissions could have made previously un-mergable
       segments mergeable.  Therefore have to re-preen them. */
    (void)preen_nsegments();
+   AM_SANITY_CHECK;
 }
 
 
@@ -2644,6 +2744,7 @@ void VG_(am_notify_munmap)( Addr start, SizeT len )
 
    /* Unmapping could create two adjacent free segments, so a preen is
       needed.  add_segment() will do that, so no need to here. */
+   AM_SANITY_CHECK;
 }
 
 
@@ -2719,6 +2820,7 @@ SysRes VG_(am_mmap_file_fixed_client)
    }
    add_segment( &seg );
 
+   AM_SANITY_CHECK;
    return sres;
 }
 
@@ -2775,6 +2877,7 @@ SysRes VG_(am_mmap_anon_fixed_client) ( Addr start, SizeT length, UInt prot )
    seg.hasX  = toBool(prot & VKI_PROT_EXEC);
    add_segment( &seg );
 
+   AM_SANITY_CHECK;
    return sres;
 }
 
@@ -2831,6 +2934,7 @@ SysRes VG_(am_mmap_anon_float_client) ( SizeT length, Int prot )
    seg.hasX  = toBool(prot & VKI_PROT_EXEC);
    add_segment( &seg );
 
+   AM_SANITY_CHECK;
    return sres;
 }
 
@@ -2889,6 +2993,7 @@ SysRes VG_(am_mmap_anon_float_valgrind)( SizeT length )
    seg.hasX  = True;
    add_segment( &seg );
 
+   AM_SANITY_CHECK;
    return sres;
 }
 
@@ -2923,6 +3028,7 @@ SysRes VG_(am_munmap_client)( Addr start, SizeT len )
       return sres;
 
    VG_(am_notify_munmap)( start, len );
+   AM_SANITY_CHECK;
    return sres;
 
   eINVAL:
@@ -2987,6 +3093,8 @@ Bool VG_(am_create_reservation) ( Addr start, SizeT length,
    seg.end   = end1;
    seg.smode = smode;
    add_segment( &seg );
+
+   AM_SANITY_CHECK;
    return True;
 }
 
@@ -3091,6 +3199,7 @@ Bool VG_(am_extend_into_adjacent_reservation_client) ( NSegment* seg,
 
    }
 
+   AM_SANITY_CHECK;
    return True;
 }
 
@@ -3107,7 +3216,8 @@ Bool VG_(am_extend_map_client)( NSegment* seg, SizeT delta )
 {
    Addr     xStart;
    SysRes   sres;
-   NSegment seg_copy;
+   NSegment seg_copy = *seg;
+   SizeT    seg_old_len = seg->end + 1 - seg->start;
 
    if (seg->kind != SkFileC && seg->kind != SkAnonC)
       return False;
@@ -3123,14 +3233,19 @@ Bool VG_(am_extend_map_client)( NSegment* seg, SizeT delta )
                                                       VKI_PROT_NONE ))
       return False;
 
-   sres = do_extend_mapping_NO_NOTIFY( seg->start, seg->end+1-seg->start,
-                                       delta );
-   if (sres.isError)
+   AM_SANITY_CHECK;
+   sres = do_extend_mapping_NO_NOTIFY( seg->start, 
+                                       seg_old_len,
+                                       seg_old_len + delta );
+   if (sres.isError) {
+      AM_SANITY_CHECK;
       return False;
+   }
 
-   seg_copy = *seg;
    seg_copy.end += delta;
    add_segment( &seg_copy );
+
+   AM_SANITY_CHECK;
    return True;
 }
 
@@ -3176,8 +3291,10 @@ Bool VG_(am_relocate_nooverlap_client)( Addr old_addr, SizeT old_len,
 
    sres = do_relocate_nooverlap_mapping_NO_NOTIFY( old_addr, old_len, 
                                                    new_addr, new_len );
-   if (sres.isError)
+   if (sres.isError) {
       return False;
+      AM_SANITY_CHECK;
+   }
 
    oldseg = nsegments[iLo];
 
@@ -3194,6 +3311,7 @@ Bool VG_(am_relocate_nooverlap_client)( Addr old_addr, SizeT old_len,
    oldseg.end   = new_addr + new_len - 1;
    add_segment( &seg );
 
+   AM_SANITY_CHECK;
    return True;
 }
 
@@ -3265,12 +3383,14 @@ VgStack* VG_(am_alloc_VgStack)( /*OUT*/Addr* initial_sp )
 
    VG_(debugLog)( 1,"aspacem","allocated thread stack at 0x%llx size %d\n",
                   (ULong)(Addr)stack, szB);
+   AM_SANITY_CHECK;
    return stack;
 
   protect_failed:
    /* The stack was allocated, but we can't protect it.  Unmap it and
       return NULL (failure). */
    (void)do_munmap_NO_NOTIFY( (Addr)stack, szB );
+   AM_SANITY_CHECK;
    return NULL;
 }
 
