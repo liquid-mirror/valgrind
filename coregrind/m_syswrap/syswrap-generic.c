@@ -158,6 +158,8 @@ SysRes do_mremap( Addr old_addr, SizeT old_len,
                   Addr new_addr, SizeT new_len,
                   UWord flags, ThreadId tid )
 {
+#  define MIN_SIZET(_aa,_bb) (_aa) < (_bb) ? (_aa) : (_bb)
+
    Bool      ok;
    NSegment* old_seg;
    Addr      advised;
@@ -278,8 +280,15 @@ SysRes do_mremap( Addr old_addr, SizeT old_len,
          goto eNOMEM;
       ok = VG_(am_relocate_nooverlap_client)
               ( old_addr, old_len, new_addr, new_len );
-      if (ok) 
+      if (ok) {
+         VG_TRACK( copy_mem_remap, old_addr, new_addr, 
+                                   MIN_SIZET(old_len,new_len) );
+         if (new_len > old_len)
+            VG_TRACK( new_mem_mmap, new_addr+old_len, new_len-old_len,
+                      old_seg->hasR, old_seg->hasW, old_seg->hasX );
+         VG_TRACK(die_mem_munmap, old_addr, old_len);
          return VG_(mk_SysRes_Success)( new_addr );
+      }
       goto eNOMEM;
    }
 
@@ -300,9 +309,12 @@ SysRes do_mremap( Addr old_addr, SizeT old_len,
    advised = VG_(am_get_advisory_client_simple)( needA, needL, &ok );
    if (ok && advised == needA) {
       ok = VG_(am_extend_map_client)( old_seg, needL );
-      old_seg = NULL;
-      if (ok)
+      if (ok) {
+         VG_TRACK( new_mem_mmap, needA, needL, 
+                                 old_seg->hasR, 
+                                 old_seg->hasW, old_seg->hasX );
          return VG_(mk_SysRes_Success)( old_addr );
+      }
    }
 
    /* that failed.  Look elsewhere. */
@@ -313,7 +325,15 @@ SysRes do_mremap( Addr old_addr, SizeT old_len,
                 || advised > old_addr+old_len-1);
       ok = VG_(am_relocate_nooverlap_client)
               ( old_addr, old_len, advised, new_len );
-      if (ok) return VG_(mk_SysRes_Success)( advised );
+      if (ok) {
+         VG_TRACK( copy_mem_remap, old_addr, new_addr, 
+                                   MIN_SIZET(old_len,new_len) );
+         if (new_len > old_len)
+            VG_TRACK( new_mem_mmap, new_addr+old_len, new_len-old_len,
+                      old_seg->hasR, old_seg->hasW, old_seg->hasX );
+         VG_TRACK(die_mem_munmap, old_addr, old_len);
+         return VG_(mk_SysRes_Success)( advised );
+      }
    }
    goto eNOMEM;
    }
@@ -331,18 +351,20 @@ SysRes do_mremap( Addr old_addr, SizeT old_len,
    if (!ok || advised != needA)
       goto eNOMEM;
    ok = VG_(am_extend_map_client)( old_seg, needL );
-   old_seg = NULL;
    if (!ok)
       goto eNOMEM;
+   VG_TRACK( new_mem_mmap, needA, needL, 
+                           old_seg->hasR, old_seg->hasW, old_seg->hasX );
    return VG_(mk_SysRes_Success)( old_addr );
    }
    /*NOTREACHED*/ vg_assert(0);
 
   shrink_in_place:
    {
-   SysRes sres = VG_(am_munmap_client)( old_addr+new_len, old_len-new_len);
+   SysRes sres = VG_(am_munmap_client)( old_addr+new_len, old_len-new_len );
    if (sres.isError)
       return sres;
+   VG_TRACK( die_mem_munmap, old_addr+new_len, old_len-new_len );
    return VG_(mk_SysRes_Success)( old_addr );
    }
    /*NOTREACHED*/ vg_assert(0);
@@ -355,6 +377,8 @@ SysRes do_mremap( Addr old_addr, SizeT old_len,
    return VG_(mk_SysRes_Error)( VKI_EINVAL );
   eNOMEM:
    return VG_(mk_SysRes_Error)( VKI_ENOMEM );
+
+#  undef MIN_SIZET
 }
 
 
