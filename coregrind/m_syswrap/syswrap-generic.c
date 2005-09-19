@@ -1627,7 +1627,8 @@ ML_(generic_POST_sys_shmat) ( ThreadId tid,
 
       if (!(arg2 & 010000)) /* = SHM_RDONLY */
          prot &= ~VKI_PROT_WRITE;
-      VG_(map_segment)(res, segmentSize, prot, SF_SHARED|SF_SHM);
+      VG_(am_notify_client_mmap)( res, segmentSize, 
+                                  prot, VKI_MAP_ANONYMOUS, 0,0);
    }
 }
 
@@ -1643,11 +1644,13 @@ ML_(generic_PRE_sys_shmdt) ( ThreadId tid, UWord arg0 )
 void
 ML_(generic_POST_sys_shmdt) ( ThreadId tid, UWord res, UWord arg0 )
 {
-   Segment *s = VG_(find_segment)(arg0);
+   NSegment *s = VG_(am_find_nsegment)(arg0);
 
-   if (s != NULL && (s->flags & SF_SHM) && VG_(seg_contains)(s, arg0, 1)) {
-      VG_TRACK( die_mem_munmap, s->addr, s->len );
-      VG_(unmap_range)(s->addr, s->len);
+   if (s != NULL /* && (s->flags & SF_SHM) */
+                 /* && Implied by defn of am_find_nsegment:
+                       VG_(seg_contains)(s, arg0, 1) */) {
+      VG_TRACK( die_mem_munmap, s->start, s->end+1 - s->start );
+      VG_(am_notify_munmap)(s->start, s->end+1 - s->start);
    }
 }
 /* ------ */

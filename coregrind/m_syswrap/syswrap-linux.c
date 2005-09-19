@@ -678,41 +678,47 @@ PRE(sys_fadvise64_64)
 // the padding is in place.
 PRE(sys_io_setup)
 {
-   SizeT size;
-   Addr addr;
+   // JRS 19 Sept 2005: this wrapper might be a lot easier with the
+   // new aspacemgr in place.  No need to do address space padding/
+   // unpadding; just let the kernel do what the hell it likes and
+   // notify aspacem of the results afterwards.  For now, however:
+   SET_STATUS_Failure( VKI_ENOSYS );
 
-   PRINT("sys_io_setup ( %u, %p )", ARG1,ARG2);
-   PRE_REG_READ2(long, "io_setup",
-                 unsigned, nr_events, vki_aio_context_t *, ctxp);
-   PRE_MEM_WRITE( "io_setup(ctxp)", ARG2, sizeof(vki_aio_context_t) );
-   
-   size = VG_PGROUNDUP(sizeof(struct vki_aio_ring) +
-                       ARG1*sizeof(struct vki_io_event));
-   addr = VG_(find_map_space)(0, size, True);
-   
-   if (addr == 0) {
-      SET_STATUS_Failure( VKI_ENOMEM );
-      return;
-   }
-
-   VG_(map_segment)(addr, size, VKI_PROT_READ|VKI_PROT_WRITE, 0);
-   
-   VG_(pad_address_space)(0);
-   SET_STATUS_from_SysRes( VG_(do_syscall2)(SYSNO, ARG1, ARG2) );
-   VG_(unpad_address_space)(0);
-
-   if (SUCCESS && RES == 0) {
-      struct vki_aio_ring *r = *(struct vki_aio_ring **)ARG2;
-        
-      vg_assert(addr == (Addr)r);
-      vg_assert(ML_(valid_client_addr)(addr, size, tid, "io_setup"));
-                
-      VG_TRACK( new_mem_mmap, addr, size, True, True, False );
-      POST_MEM_WRITE( ARG2, sizeof(vki_aio_context_t) );
-   }
-   else {
-      VG_(unmap_range)(addr, size);
-   }
+//   SizeT size;
+//   Addr addr;
+//
+//   PRINT("sys_io_setup ( %u, %p )", ARG1,ARG2);
+//   PRE_REG_READ2(long, "io_setup",
+//                 unsigned, nr_events, vki_aio_context_t *, ctxp);
+//   PRE_MEM_WRITE( "io_setup(ctxp)", ARG2, sizeof(vki_aio_context_t) );
+//   
+//   size = VG_PGROUNDUP(sizeof(struct vki_aio_ring) +
+//                       ARG1*sizeof(struct vki_io_event));
+//   addr = VG_(find_map_space)(0, size, True);
+//   
+//   if (addr == 0) {
+//      SET_STATUS_Failure( VKI_ENOMEM );
+//      return;
+//   }
+//
+//   VG_(map_segment)(addr, size, VKI_PROT_READ|VKI_PROT_WRITE, 0);
+//   
+//   VG_(pad_address_space)(0);
+//   SET_STATUS_from_SysRes( VG_(do_syscall2)(SYSNO, ARG1, ARG2) );
+//   VG_(unpad_address_space)(0);
+//
+//   if (SUCCESS && RES == 0) {
+//      struct vki_aio_ring *r = *(struct vki_aio_ring **)ARG2;
+//        
+//      vg_assert(addr == (Addr)r);
+//      vg_assert(ML_(valid_client_addr)(addr, size, tid, "io_setup"));
+//                
+//      VG_TRACK( new_mem_mmap, addr, size, True, True, False );
+//      POST_MEM_WRITE( ARG2, sizeof(vki_aio_context_t) );
+//   }
+//   else {
+//      VG_(unmap_range)(addr, size);
+//   }
 }
 
 // Nb: This wrapper is "Special" because we need 'size' to do the unmap
@@ -724,8 +730,9 @@ PRE(sys_io_setup)
 // XXX This segment can be implicitly unmapped when aio
 // file-descriptors are closed...
 PRE(sys_io_destroy)
-{     
-   Segment *s = VG_(find_segment)(ARG1);
+{
+   SET_STATUS_Failure( VKI_ENOSYS );
+   NSegment *s = VG_(am_find_nsegment)(ARG1);
    struct vki_aio_ring *r;
    SizeT size;
       
@@ -740,14 +747,18 @@ PRE(sys_io_destroy)
 
    SET_STATUS_from_SysRes( VG_(do_syscall1)(SYSNO, ARG1) );
 
+   /* jrs 20050917: testing s here seems nonsensical.  Even if s is
+      NULL, the syscall might have succeeded, and so if s is null then
+      neither the tool nor aspacem will be notified. */
    if (SUCCESS && RES == 0 && s != NULL) { 
       VG_TRACK( die_mem_munmap, ARG1, size );
-      VG_(unmap_range)(ARG1, size);
+      VG_(am_notify_munmap)(ARG1, size);
    }  
 }  
 
 PRE(sys_io_getevents)
 {
+   SET_STATUS_Failure( VKI_ENOSYS );
    *flags |= SfMayBlock;
    PRINT("sys_io_getevents ( %llu, %lld, %lld, %p, %p )",
          (ULong)ARG1,(Long)ARG2,(Long)ARG3,ARG4,ARG5);

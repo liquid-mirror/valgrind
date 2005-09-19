@@ -367,7 +367,10 @@ static void* perm_malloc(SizeT n_bytes)
    #define SUPERBLOCK_SIZE  (1 << 20)         // 1 MB
 
    if (hp + n_bytes > hp_lim) {
-      hp     = (Addr)VG_(get_memory_from_mmap)(SUPERBLOCK_SIZE, "perm_malloc");
+      hp = (Addr)VG_(am_shadow_alloc)(SUPERBLOCK_SIZE);
+      if (hp == 0)
+         VG_(out_of_memory_NORETURN)( "massif:perm_malloc", 
+                                      SUPERBLOCK_SIZE);
       hp_lim = hp + SUPERBLOCK_SIZE - 1;
    }
 

@@ -130,22 +130,9 @@ extern NSegment* VG_(am_find_nsegment) ( Addr a );
 extern Bool VG_(am_is_valid_for_client) ( Addr start, SizeT len, 
                                           UInt prot );
 
-extern Bool VG_(is_client_addr) (Addr a);
-
-extern Bool VG_(is_shadow_addr) (Addr a);
-
+// See pub_core_aspacemgr.h for description.
 /* Really just a wrapper around VG_(am_mmap_anon_float_valgrind). */
 extern void* VG_(am_shadow_alloc)(SizeT size);
-
-extern Bool VG_(is_addressable)(Addr p, SizeT sz, UInt prot);
-
-/* Calls into the core used by leak-checking */
-
-/* Calls "add_rootrange" with each range of memory which looks like a
-   plausible source of root pointers.  This is very Memcheck-specific --
-   it's used in leak detection.
-*/
-extern void VG_(find_root_memory)(void (*add_rootrange)(Addr addr, SizeT sz));
 
 #endif   // __PUB_TOOL_ASPACEMGR_H
 

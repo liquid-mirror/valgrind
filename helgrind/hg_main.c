@@ -501,7 +501,10 @@ ESecMap* alloc_secondary_map ( __attribute__ ((unused)) Char* caller )
    //PROF_EVENT(10); PPP
 
    // Mark all words as virgin.
-   map = (ESecMap *)VG_(shadow_alloc)(sizeof(ESecMap));
+   map = (ESecMap *)VG_(am_shadow_alloc)(sizeof(ESecMap));
+   if (map == NULL)
+      VG_(out_of_memory_NORETURN)( "helgrind:allocate new ESecMap", 
+                                   sizeof(ESecMap) );
    for (i = 0; i < ESEC_MAP_WORDS; i++)
       map->swords[i] = virgin_sword;
 

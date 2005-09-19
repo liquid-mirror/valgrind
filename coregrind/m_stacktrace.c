@@ -184,7 +184,7 @@ UInt VG_(get_StackTrace) ( ThreadId tid, StackTrace ips, UInt n_ips )
       useful.  */
    if (ip >= (Addr)&VG_(trampoline_stuff_start) 
        && ip < (Addr)&VG_(trampoline_stuff_end)
-       &&  VG_(is_addressable)(sp, sizeof(Addr), VKI_PROT_READ)) {
+       && VG_(am_is_valid_for_client)(sp, sizeof(Addr), VKI_PROT_READ)) {
       ip = *(Addr *)sp;
       sp += sizeof(Addr);
    }

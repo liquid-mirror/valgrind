@@ -31,9 +31,6 @@
 #ifndef __PUB_TOOL_LIBCMMAN_H
 #define __PUB_TOOL_LIBCMMAN_H
 
-/* Get memory by anonymous mmap. */
-extern void* VG_(get_memory_from_mmap) ( SizeT nBytes, Char* who );
-
 #endif   // __PUB_TOOL_LIBCMMAN_H
 
 /*--------------------------------------------------------------------*/

@@ -1028,21 +1028,24 @@ PRE(sys_clone)
 
    if (ARG1 & VKI_CLONE_PARENT_SETTID) {
       PRE_MEM_WRITE("clone(parent_tidptr)", ARG3, sizeof(Int));
-      if (!VG_(is_addressable)(ARG3, sizeof(Int), VKI_PROT_WRITE)) {
+      if (!VG_(am_is_valid_for_client)(ARG3, sizeof(Int), 
+                                             VKI_PROT_WRITE)) {
          SET_STATUS_Failure( VKI_EFAULT );
          return;
       }
    }
    if (ARG1 & (VKI_CLONE_CHILD_SETTID | VKI_CLONE_CHILD_CLEARTID)) {
       PRE_MEM_WRITE("clone(child_tidptr)", ARG5, sizeof(Int));
-      if (!VG_(is_addressable)(ARG5, sizeof(Int), VKI_PROT_WRITE)) {
+      if (!VG_(am_is_valid_for_client)(ARG5, sizeof(Int), 
+                                             VKI_PROT_WRITE)) {
          SET_STATUS_Failure( VKI_EFAULT );
          return;
       }
    }
    if (ARG1 & VKI_CLONE_SETTLS) {
       PRE_MEM_READ("clone(tls_user_desc)", ARG4, sizeof(vki_modify_ldt_t));
-      if (!VG_(is_addressable)(ARG4, sizeof(vki_modify_ldt_t), VKI_PROT_READ)) {
+      if (!VG_(am_is_valid_for_client)(ARG4, sizeof(vki_modify_ldt_t), 
+                                             VKI_PROT_READ)) {
          SET_STATUS_Failure( VKI_EFAULT );
          return;
       }

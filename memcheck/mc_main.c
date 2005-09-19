@@ -191,6 +191,9 @@ static SecMap* copy_for_writing ( SecMap* dist_sm )
 	     || dist_sm == &sm_distinguished[2]);
 
    new_sm = VG_(am_shadow_alloc)(sizeof(SecMap));
+   if (new_sm == NULL)
+      VG_(out_of_memory_NORETURN)( "memcheck:allocate new SecMap", 
+                                   sizeof(SecMap) );
    VG_(memcpy)(new_sm, dist_sm, sizeof(SecMap));
    n_secmaps_issued++;
    return new_sm;
