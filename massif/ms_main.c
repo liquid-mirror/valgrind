@@ -1844,7 +1844,7 @@ static void ms_pre_clo_init()
    tl_assert( VG_(getcwd)(base_dir, VKI_PATH_MAX) );
 }
 
-VG_DETERMINE_INTERFACE_VERSION(ms_pre_clo_init, 0)
+VG_DETERMINE_INTERFACE_VERSION(ms_pre_clo_init)
 
 /*--------------------------------------------------------------------*/
 /*--- end                                                ms_main.c ---*/

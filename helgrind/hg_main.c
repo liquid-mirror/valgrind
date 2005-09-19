@@ -3449,8 +3449,7 @@ static void hg_pre_clo_init(void)
    hg_malloc_list = VG_(HT_construct)( 80021 );    // prime, big
 }
 
-/* Uses a 1:1 mapping */
-VG_DETERMINE_INTERFACE_VERSION(hg_pre_clo_init, 1.0)
+VG_DETERMINE_INTERFACE_VERSION(hg_pre_clo_init)
 
 /*--------------------------------------------------------------------*/
 /*--- end                                                hg_main.c ---*/

@@ -1208,7 +1208,7 @@ static void cg_pre_clo_init(void)
    instr_info_table = VG_(HT_construct)( 4999 );   // prime, biggish
 }
 
-VG_DETERMINE_INTERFACE_VERSION(cg_pre_clo_init, 0)
+VG_DETERMINE_INTERFACE_VERSION(cg_pre_clo_init)
 
 /*--------------------------------------------------------------------*/
 /*--- end                                                          ---*/

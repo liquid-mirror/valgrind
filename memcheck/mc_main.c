@@ -2659,7 +2659,7 @@ static void mc_pre_clo_init(void)
    tl_assert( mc_expensive_sanity_check() );
 }
 
-VG_DETERMINE_INTERFACE_VERSION(mc_pre_clo_init, 9./8)
+VG_DETERMINE_INTERFACE_VERSION(mc_pre_clo_init)
 
 /*--------------------------------------------------------------------*/
 /*--- end                                                mc_main.c ---*/

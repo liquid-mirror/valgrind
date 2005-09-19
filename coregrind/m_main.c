@@ -2393,7 +2393,7 @@ Int main(Int argc, HChar **argv, HChar **envp)
       Bool  ok;
       VG_(debugLog)(1, "main", "Initialise the tool\n");
       (VG_(tool_info).tl_pre_clo_init)();
-      ok = VG_(sanity_check_needs)( VG_(shadow_base) != VG_(shadow_end), &s );
+      ok = VG_(sanity_check_needs)( &s );
       if (!ok) {
          VG_(tool_panic)(s);
       }
