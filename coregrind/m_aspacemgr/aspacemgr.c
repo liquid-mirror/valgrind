@@ -1767,17 +1767,25 @@ HChar* VG_(am_get_filename)( NSegment* seg )
 }
 
 /* Collect up the start addresses of all non-free, non-resvn segments.
-   The interface is a bit strange.  You have to call it twice.  If
-   'starts' is NULL, the number of such segments is calculated and
-   written to *nStarts.  If 'starts' is non-NULL, it should point to
-   an array of size *nStarts, and the segment start addresses are
-   written at starts[0 .. *nStarts-1].  In the latter case, the number
-   of required slots is recalculated, and the function asserts if this
-   is not equal to *nStarts. */
+   The interface is a bit strange in order to avoid potential
+   segment-creation races caused by dynamic allocation of the result
+   buffer *starts.
 
-void VG_(am_get_segment_starts)( Addr* starts, Int* nStarts )
+   The function first computes how many entries in the result
+   buffer *starts will be needed.  If this number <= nStarts,
+   they are placed in starts[0..], and the number is returned.
+   If nStarts is not large enough, nothing is written to
+   starts[0..], and the negation of the size is returned.
+
+   Correct use of this function may mean calling it multiple times in
+   order to establish a suitably-sized buffer. */
+
+Int VG_(am_get_segment_starts)( Addr* starts, Int nStarts )
 {
    Int i, j, nSegs;
+
+   /* don't pass dumbass arguments */
+   aspacem_assert(nStarts >= 0);
 
    nSegs = 0;
    for (i = 0; i < nsegments_used; i++) {
@@ -1786,15 +1794,14 @@ void VG_(am_get_segment_starts)( Addr* starts, Int* nStarts )
       nSegs++;
    }
 
-   if (starts == NULL) {
-      /* caller just wants to know how many segments there are. */
-      *nStarts = nSegs;
-      return;
+   if (nSegs > nStarts) {
+      /* The buffer isn't big enough.  Tell the caller how big it needs
+         to be. */
+      return -nSegs;
    }
 
-   /* otherwise, caller really is after the segments. */
-   /* If this assertion fails, the passed-in *nStarts is incorrect. */
-   aspacem_assert(*nStarts == nSegs);
+   /* There's enough space.  So write into the result buffer. */
+   aspacem_assert(nSegs <= nStarts);
 
    j = 0;
    for (i = 0; i < nsegments_used; i++) {
@@ -1805,6 +1812,7 @@ void VG_(am_get_segment_starts)( Addr* starts, Int* nStarts )
    }
 
    aspacem_assert(j == nSegs); /* this should not fail */
+   return nSegs;
 }
 
 
@@ -3089,6 +3097,15 @@ SysRes VG_(am_mmap_anon_float_valgrind)( SizeT length )
    AM_SANITY_CHECK;
    return sres;
 }
+
+/* Really just a wrapper around VG_(am_mmap_anon_float_valgrind). */
+
+void* VG_(am_shadow_alloc)(SizeT size)
+{
+   SysRes sres = VG_(am_mmap_anon_float_valgrind)( size );
+   return sres.isError ? NULL : (void*)sres.val;
+}
+
 
 
 /* Map a file at an unconstrained address for V, and update the

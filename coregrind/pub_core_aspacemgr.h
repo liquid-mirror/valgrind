@@ -160,76 +160,8 @@ extern Bool VG_(setup_pointercheck) ( Addr client_base, Addr client_end );
 //--------------------------------------------------------------
 // Definition of address-space segments
 
-/* Describes segment kinds. */
-typedef
-   enum {
-      SkFree,   // unmapped space
-      SkAnonC,  // anonymous mapping belonging to the client
-      SkAnonV,  // anonymous mapping belonging to valgrind
-      SkFileC,  // file mapping belonging to the client
-      SkFileV,  // file mapping belonging to valgrind
-      SkResvn   // reservation
-   }
-   SegKind;
-
-/* Describes how a reservation segment can be resized. */
-typedef
-   enum {
-      SmLower,  // lower end can move up
-      SmFixed,  // cannot be shrunk
-      SmUpper   // upper end can move down
-   }
-   ShrinkMode;
-
-/* Describes a segment.  Invariants:
-
-     kind == SkFree:
-        // the only meaningful fields are .start and .end
-
-     kind == SkAnon{C,V}:
-        // smode==SmFixed
-        // there's no associated file:
-        dev==ino==foff = 0, fnidx == -1
-        // segment may have permissions
-
-     kind == SkFile{C,V}:
-        // smode==SmFixed
-        moveLo == moveHi == NotMovable, maxlen == 0
-        // there is an associated file
-        // segment may have permissions
-
-     kind == SkResvn
-        // the segment may be resized if required
-        // there's no associated file:
-        dev==ino==foff = 0, fnidx == -1
-        // segment has no permissions
-        hasR==hasW==hasX==anyTranslated == False
-
-     Also: anyTranslated==True is only allowed in SkFileV and SkAnonV
-           (viz, not allowed to make translations from non-client areas)
-*/
-typedef
-   struct {
-      SegKind kind;
-      /* Extent (SkFree, SkAnon{C,V}, SkFile{C,V}, SkResvn) */
-      Addr    start;    // lowest address in range
-      Addr    end;      // highest address in range
-      /* Shrinkable? (SkResvn only) */
-      ShrinkMode smode;
-      /* Associated file (SkFile{C,V} only) */
-      UWord   dev;
-      UWord   ino;
-      ULong   offset;
-      Int     fnIdx;    // file name table index, if name is known
-      /* Permissions (SkAnon{C,V}, SkFile{C,V} only) */
-      Bool    hasR;
-      Bool    hasW;
-      Bool    hasX;
-      Bool    hasT;     // True --> translations have (or MAY have)
-      /* Admin */       // been taken from this segment
-      Bool    mark;
-   }
-   NSegment;
+/* types SegKind, ShrinkMode and NSegment are described in
+   the tool-visible header file, not here. */
 
 
 //--------------------------------------------------------------
@@ -251,7 +183,8 @@ extern Addr VG_(am_startup) ( Addr sp_at_startup );
 
 /* Finds the segment containing 'a'.  Only returns file/anon/resvn
    segments. */
-extern NSegment* VG_(am_find_nsegment) ( Addr a );
+// Is in tool-visible header file.
+// extern NSegment* VG_(am_find_nsegment) ( Addr a );
 
 /* Find the next segment along from 'here', if it is a file/anon/resvn
    segment. */
@@ -263,8 +196,9 @@ extern NSegment* VG_(am_next_nsegment) ( NSegment* here, Bool fwds );
    VKI_PROT_NONE as 'prot'.  Will return False if any part of the
    area does not belong to the client or does not have at least
    the stated permissions. */
-extern Bool VG_(am_is_valid_for_client)
-   ( Addr start, SizeT len, UInt prot );
+// Is in tool-visible header file.
+// extern Bool VG_(am_is_valid_for_client)
+//   ( Addr start, SizeT len, UInt prot );
 
 /* Variant of VG_(am_is_valid_for_client) which allows free areas to
    be consider part of the client's addressable space.  It also
@@ -287,15 +221,8 @@ extern void VG_(am_show_nsegments) ( Int logLevel, HChar* who );
    elsewhere. */
 extern HChar* VG_(am_get_filename)( NSegment* );
 
-/* Collect up the start addresses of all non-free, non-resvn segments.
-   The interface is a bit strange.  You have to call it twice.  If
-   'starts' is NULL, the number of such segments is calculated and
-   written to *nStarts.  If 'starts' is non-NULL, it should point to
-   an array of size *nStarts, and the segment start addresses are
-   written at starts[0 .. *nStarts-1].  In the latter case, the number
-   of required slots is recalculated, and the function asserts if this
-   is not equal to *nStarts. */
-extern void VG_(am_get_segment_starts)( Addr* starts, Int* nStarts );
+/* VG_(am_get_segment_starts) is also part of this section, but its
+   prototype is tool-visible, hence not in this header file. */
 
 
 //--------------------------------------------------------------

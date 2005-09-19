@@ -72,6 +72,41 @@ void scan_all_valid_memory_catcher ( Int sigNo, Addr addr )
       __builtin_longjmp(memscan_jmpbuf, 1);
 }
 
+
+/* TODO: GIVE THIS A PROPER HOME
+   TODO: MERGE THIS WITH DUPLICATE IN m_main.c
+   Extract from aspacem a vector of the current segment start
+   addresses.  The vector is dynamically allocated and should be freed
+   by the caller when done.  REQUIRES m_mallocfree to be running.
+   Writes the number of addresses required into *n_acquired. */
+
+static Addr* get_seg_starts ( /*OUT*/Int* n_acquired )
+{
+   Addr* starts;
+   Int   n_starts, r;
+
+   n_starts = 1;
+   while (True) {
+      starts = VG_(malloc)( n_starts * sizeof(Addr) );
+      if (starts == NULL)
+         break;
+      r = VG_(am_get_segment_starts)( starts, n_starts );
+      if (r >= 0)
+         break;
+      VG_(free)(starts);
+      n_starts *= 2;
+   }
+
+   if (starts == NULL) {
+     *n_acquired = 0;
+     return NULL;
+   }
+
+   *n_acquired = r;
+   return starts;
+}
+
+
 /*------------------------------------------------------------*/
 /*--- Detecting leaked (unreachable) malloc'd blocks.      ---*/
 /*------------------------------------------------------------*/
@@ -293,7 +328,8 @@ static void _lc_markstack_push(Addr ptr, Int clique)
 {
    Int sh_no;
 
-   if (!VG_(is_client_addr)(ptr)) /* quick filter */
+   /* quick filter */
+   if (!VG_(am_is_valid_for_client)(ptr, 1, VKI_PROT_NONE))
       return;
 
    sh_no = find_shadow_for(ptr, lc_shadows, lc_n_shadows);
@@ -393,8 +429,7 @@ static void _lc_scan_memory(Addr start, SizeT len, Int clique)
 
    lc_scanned += end-ptr;
 
-   if (!VG_(is_client_addr)(ptr) ||
-       !VG_(is_addressable)(ptr, sizeof(Addr), VKI_PROT_READ))
+   if (!VG_(am_is_valid_for_client)(ptr, sizeof(Addr), VKI_PROT_READ))
       ptr = VG_PGROUNDUP(ptr+1);	/* first page bad */
 
    while (ptr < end) {
@@ -408,8 +443,7 @@ static void _lc_scan_memory(Addr start, SizeT len, Int clique)
 
       /* Look to see if this page seems reasonble */
       if ((ptr % VKI_PAGE_SIZE) == 0) {
-	 if (!VG_(is_client_addr)(ptr) ||
-	     !VG_(is_addressable)(ptr, sizeof(Addr), VKI_PROT_READ))
+	 if (!VG_(am_is_valid_for_client)(ptr, sizeof(Addr), VKI_PROT_READ))
 	    ptr += VKI_PAGE_SIZE; /* bad page - skip it */
       }
 
@@ -692,8 +726,24 @@ void MAC_(do_detect_memory_leaks) (
 
    lc_scanned = 0;
 
-   /* Do the scan of memory, pushing any pointers onto the mark stack */
-   VG_(find_root_memory)(lc_scan_memory);
+   /* Do the scan of memory, pushing any pointers onto the mark stack.
+      Here, we iterate over the segment array, handing any RW client
+      sections to lc_scan_memory. */
+   { NSegment* seg;
+     Addr*     seg_starts;
+     Int       n_seg_starts;
+     seg_starts = get_seg_starts( &n_seg_starts );
+     tl_assert(seg_starts && n_seg_starts > 0);
+     for (i = 0; i < n_seg_starts; i++) {
+        seg = VG_(am_find_nsegment)( seg_starts[i] );
+        tl_assert(seg);
+        if (seg->kind != SkFileC && seg->kind != SkAnonC) 
+           continue;
+        if (!(seg->hasR && seg->hasW))
+           continue;
+        lc_scan_memory(seg->start, seg->end+1 - seg->start);
+     }
+   }
 
    /* Push registers onto mark stack */
    VG_(apply_to_GP_regs)(lc_markstack_push);

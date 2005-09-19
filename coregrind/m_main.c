@@ -920,7 +920,7 @@ static void load_client(char* cl_argv[], const char* exec, Int need_help,
 
 // See pub_{core,tool}_options.h for explanations of all these.
 
-static void usage ( Bool debug_help )
+static void usage_NORETURN ( Bool debug_help )
 {
    Char* usage1 = 
 "usage: valgrind --tool=<toolname> [options] prog-and-args\n"
@@ -2035,6 +2035,40 @@ void show_BB_profile ( BBProfEntry tops[], UInt n_tops, ULong score_total )
 /*=== main()                                                       ===*/
 /*====================================================================*/
 
+/* TODO: GIVE THIS A PROPER HOME
+   TODO: MERGE THIS WITH DUPLICATE IN mac_leakcheck.c
+   Extract from aspacem a vector of the current segment start
+   addresses.  The vector is dynamically allocated and should be freed
+   by the caller when done.  REQUIRES m_mallocfree to be running.
+   Writes the number of addresses required into *n_acquired. */
+
+static Addr* get_seg_starts ( /*OUT*/Int* n_acquired )
+{
+   Addr* starts;
+   Int   n_starts, r;
+
+   n_starts = 1;
+   while (True) {
+      starts = VG_(malloc)( n_starts * sizeof(Addr) );
+      if (starts == NULL)
+         break;
+      r = VG_(am_get_segment_starts)( starts, n_starts );
+      if (r >= 0)
+         break;
+      VG_(free)(starts);
+      n_starts *= 2;
+   }
+
+   if (starts == NULL) {
+     *n_acquired = 0;
+     return NULL;
+   }
+
+   *n_acquired = r;
+   return starts;
+}
+
+
 /*
   This code decides on the layout of the client and Valgrind address
   spaces, loads valgrind.so and the tool.so into the valgrind part,
@@ -2098,6 +2132,7 @@ Int main(Int argc, HChar **argv, HChar **envp)
    Addr      initial_client_IP;
    Addr      initial_client_SP;
    Addr      clstack_top;
+   SizeT     clstack_max_size;
    UInt*     client_auxv;
    Int       loglevel, i;
    struct vki_rlimit zero = { 0, 0 };
@@ -2307,14 +2342,14 @@ Int main(Int argc, HChar **argv, HChar **envp)
      void* init_sp = argv - 1;
      SizeT m1 = 1024 * 1024;
      SizeT m8 = 8 * m1;
-     SizeT stack_max_size = (SizeT)VG_(client_rlimit_stack).rlim_cur;
-     if (stack_max_size < m1) stack_max_size = m1;
-     if (stack_max_size > m8) stack_max_size = m8;
-     stack_max_size = VG_PGROUNDUP(stack_max_size);
+     clstack_max_size = (SizeT)VG_(client_rlimit_stack).rlim_cur;
+     if (clstack_max_size < m1) clstack_max_size = m1;
+     if (clstack_max_size > m8) clstack_max_size = m8;
+     clstack_max_size = VG_PGROUNDUP(clstack_max_size);
 
      initial_client_SP
         = setup_client_stack( init_sp, cl_argv, env, &info,
-                               &client_auxv, clstack_top, stack_max_size);
+                               &client_auxv, clstack_top, clstack_max_size);
 
      VG_(free)(env);
    }
@@ -2330,7 +2365,6 @@ Int main(Int argc, HChar **argv, HChar **envp)
    // Setup client data (brk) segment.  Initially a 1-page segment
    // which abuts a shrinkable reservation. 
    //     p: load_client()     [for 'info' and hence VG_(brk_base)]
-   //setup_client_dataseg();
    VG_(debugLog)(1, "main", "Setup client data (brk) segment\n");
    { 
      SizeT m1 = 1024 * 1024;
@@ -2402,7 +2436,7 @@ Int main(Int argc, HChar **argv, HChar **envp)
    // If --tool and --help/--help-debug was given, now give the core+tool
    // help message
    if (need_help) {
-      usage(/*--help-debug?*/2 == need_help);
+      usage_NORETURN(/*--help-debug?*/2 == need_help);
    }
    process_cmd_line_options(client_auxv, tool);
 
@@ -2469,31 +2503,69 @@ Int main(Int argc, HChar **argv, HChar **envp)
    //   p: mallocfree
    //   p: probably: setup fds and process CLOs, so that logging works
    //--------------------------------------------------------------
+   VG_(debugLog)(1, "main", "Load initial debug info\n");
    { Addr* seg_starts;
      Int   n_seg_starts;
-     /* find out how many spaces are needed */
-     VG_(am_get_segment_starts)( NULL, &n_seg_starts );
-     /* allocate */
-     seg_starts = VG_(malloc)( n_seg_starts * sizeof(Addr) );
-     vg_assert(seg_starts);
-     /* guard against race */
-     VG_(am_get_segment_starts)( NULL, &i );
-     vg_assert(n_seg_starts == i);
-     /* acquire */
-     VG_(am_get_segment_starts)( seg_starts, &n_seg_starts );
+
+     seg_starts = get_seg_starts( &n_seg_starts );
+     vg_assert(seg_starts && n_seg_starts > 0);
+
      /* show them all to the debug info reader */
      for (i = 0; i < n_seg_starts; i++)
         VG_(di_notify_mmap)( seg_starts[i] );
-     /* release */
+
      VG_(free)( seg_starts );
+   }
+
+   //--------------------------------------------------------------
+   // Tell the tool about the initial client memory permissions
+   //   p: aspacem
+   //   p: mallocfree
+   //   p: setup_client_stack
+   //   p: setup_client_dataseg
+   //--------------------------------------------------------------
+   VG_(debugLog)(1, "main", "Tell tool about initial permissions\n");
+   { Addr*     seg_starts;
+     Int       n_seg_starts;
+     NSegment* seg;
+
+     seg_starts = get_seg_starts( &n_seg_starts );
+     vg_assert(seg_starts && n_seg_starts > 0);
+
+     /* show interesting ones to the tool */
+     for (i = 0; i < n_seg_starts; i++) {
+        seg = VG_(am_find_nsegment)( seg_starts[i] );
+        vg_assert(seg);
+        if (seg->kind == SkFileC || seg->kind == SkAnonC)
+           VG_TRACK( new_mem_startup, seg->start, seg->end+1-seg->start, 
+                                      seg->hasR, seg->hasW, seg->hasX );
+     }
+
+     VG_(free)( seg_starts );
+
+     /* Also do the initial stack permissions. */
+     seg = VG_(am_find_nsegment)( initial_client_SP );
+     vg_assert(seg);
+     vg_assert(seg->kind == SkAnonC);
+     vg_assert(initial_client_SP >= seg->start);
+     vg_assert(initial_client_SP <= seg->end);
+     /* Stuff below the initial SP is unaddressable. */
+     VG_TRACK( die_mem_stack, seg->start, initial_client_SP - seg->start );
    }
 
    //--------------------------------------------------------------
    // Initialise the scheduler
    //   p: setup_file_descriptors() [else VG_(safe_fd)() breaks]
+   //   p: setup_client_stack
    //--------------------------------------------------------------
    VG_(debugLog)(1, "main", "Initialise scheduler\n");
-   VG_(scheduler_init)();
+   { NSegment* seg = VG_(am_find_nsegment)( initial_client_SP );
+     vg_assert(seg);
+     vg_assert(seg->kind == SkAnonC);
+     vg_assert(initial_client_SP >= seg->start);
+     vg_assert(initial_client_SP <= seg->end);
+     VG_(scheduler_init)( seg->end, clstack_max_size );
+   }
 
    //--------------------------------------------------------------
    // Initialise the pthread model

@@ -1313,7 +1313,8 @@ static void default_action(const vki_siginfo_t *info, ThreadId tid)
 
    if (VG_(clo_verbosity) > 1 || (could_core && info->si_code > VKI_SI_USER)) {
       VG_(message)(Vg_UserMsg, "");
-      VG_(message)(Vg_UserMsg, "Process terminating with default action of signal %d (%s)%s", 
+      VG_(message)(Vg_UserMsg, 
+                   "Process terminating with default action of signal %d (%s)%s", 
 		   sigNo, signame(sigNo), core ? ": dumping core" : "");
 
       /* Be helpful - decode some more details about this fault */
@@ -1339,11 +1340,14 @@ static void default_action(const vki_siginfo_t *info, ThreadId tid)
 	       haveaddr = False;
 	       break;
 	    }
-     VG_(am_show_nsegments)(0,"post segfault");
-     {HChar buf[110];
-     VG_(sprintf)(buf, "/bin/cat /proc/%d/maps", VG_(getpid)());
-     VG_(system)(buf);
-     }
+#if 0
+            {
+              HChar buf[110];
+              VG_(am_show_nsegments)(0,"post segfault");
+              VG_(sprintf)(buf, "/bin/cat /proc/%d/maps", VG_(getpid)());
+              VG_(system)(buf);
+            }
+#endif
 	    break;
 
 	 case VKI_SIGILL:

@@ -158,7 +158,7 @@ static void nuke_syms_in_range ( Addr start, SizeT length )
       }
 
       if (!found) break;
-      unload_symbols( curr->start, 1 );
+      unload_symbols( curr->start, curr->size );
 
    }
 }
@@ -207,7 +207,11 @@ void VG_(di_notify_munmap)( Addr a, SizeT len )
 
 void VG_(di_notify_mprotect)( Addr a, SizeT len, UInt prot )
 {
-   if (!(prot & VKI_PROT_EXEC))
+   Bool exe_ok = toBool(prot & VKI_PROT_EXEC);
+#  if defined(VGP_x86_linux)
+   exe_ok = exe_ok || toBool(prot & VKI_PROT_READ);
+#  endif
+   if (!exe_ok)
       nuke_syms_in_range(a, len);
 }
 

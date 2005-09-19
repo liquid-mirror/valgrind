@@ -424,7 +424,7 @@ static
 void ensure_mm_init ( void )
 {
    static Bool  init_done = False;
-   static SizeT client_redzone_szB = 8;   // default: be paranoid
+   static SizeT client_redzone_szB = 16; //8;   // default: be paranoid
 
    if (init_done) {
       // This assertion ensures that a tool cannot try to change the client
@@ -532,9 +532,11 @@ Superblock* newSuperblock ( Arena* a, SizeT cszB )
 
    if (a->clientmem) {
       // client allocation -- return 0 to client if it fails
-      sb = (Superblock*)VG_(get_memory_from_mmap_for_client)(cszB);
-      if (NULL == sb)
+      sres = VG_(am_mmap_anon_float_client)
+                ( cszB, VKI_PROT_READ|VKI_PROT_WRITE|VKI_PROT_EXEC );
+      if (sres.isError)
          return 0;
+      sb = (Superblock*)sres.val;
    } else {
       // non-client allocation -- aborts if it fails
       sres = VG_(am_mmap_anon_float_valgrind)( cszB );

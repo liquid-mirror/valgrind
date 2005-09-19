@@ -535,10 +535,13 @@ static void sched_fork_cleanup(ThreadId me)
    caller subsequently initialises the guest state components of this
    main thread, thread 1.  
 */
-void VG_(scheduler_init) ( void )
+void VG_(scheduler_init) ( Addr clstack_end, SizeT clstack_size )
 {
    Int i;
    ThreadId tid_main;
+
+   vg_assert(VG_IS_PAGE_ALIGNED(clstack_end+1));
+   vg_assert(VG_IS_PAGE_ALIGNED(clstack_size));
 
    ML_(sema_init)(&run_sema);
 
@@ -559,10 +562,10 @@ void VG_(scheduler_init) ( void )
 
    tid_main = VG_(alloc_ThreadState)();
 
-   /* Initial thread's stack is the original process stack */
    VG_(threads)[tid_main].client_stack_highest_word 
-                                            = VG_(clstk_end) - sizeof(UWord);
-   VG_(threads)[tid_main].client_stack_szB  = VG_(client_rlimit_stack).rlim_cur;
+      = clstack_end + 1 - sizeof(UWord);
+   VG_(threads)[tid_main].client_stack_szB 
+      = clstack_size;
 
    VG_(atfork_child)(sched_fork_cleanup);
 }
