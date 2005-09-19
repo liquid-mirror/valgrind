@@ -1,3 +1,4 @@
+#define _GNU_SOURCE
 
 #include <stdio.h>
 #include <sys/mman.h>
@@ -5,16 +6,16 @@
 #include <stdlib.h>
 #include <sys/types.h>
 #include <unistd.h>
+#include <errno.h>
+#include <syscall.h>
 
 
-/* x86 linux specifics */
-#define __NR_mremap          163
-#define VKI_MREMAP_MAYMOVE        1
-#define VKI_MREMAP_FIXED  2
+#ifndef REMAP_FIXED
+#define MREMAP_FIXED 2
+#endif
 
 
-
-#define PAGE 4096
+static int PAGE;
 
 void mapanon_fixed ( void* start, size_t length )
 {
@@ -82,40 +83,6 @@ void show ( void )
 }
 
 
-int is_kerror(int r) 
-{
-  return r >= -4096 && r <= -1;
-}
-
-typedef unsigned int UWord;
-extern UWord do_syscall_WRK (
-          UWord syscall_no,
-          UWord a1, UWord a2, UWord a3,
-          UWord a4, UWord a5, UWord a6
-       );
-asm(
-"do_syscall_WRK:\n"
-"       push    %esi\n"
-"       push    %edi\n"
-"       push    %ebx\n"
-"       push    %ebp\n"
-"       movl    16+ 4(%esp),%eax\n"
-"       movl    16+ 8(%esp),%ebx\n"
-"       movl    16+12(%esp),%ecx\n"
-"       movl    16+16(%esp),%edx\n"
-"       movl    16+20(%esp),%esi\n"
-"       movl    16+24(%esp),%edi\n"
-"       movl    16+28(%esp),%ebp\n"
-"       int     $0x80\n"
-"       popl    %ebp\n"
-"       popl    %ebx\n"
-"       popl    %edi\n"
-"       popl    %esi\n"
-"       ret\n"
-);
-
-
-
 char* dst = NULL;
 char* src = NULL;
 char* dst_impossible = NULL;
@@ -141,6 +108,8 @@ int main ( void )
   int firsttime = 1;
   char buf[100];
 
+  PAGE = sysconf(_SC_PAGESIZE);
+
   for (maymove = 0; maymove <= 1 ; maymove++) {
   for (fixed = 0; fixed <= 1; fixed++) {
     printf("\n");
@@ -148,8 +117,8 @@ int main ( void )
   for (dstpossible = 0; dstpossible <= 1; dstpossible++) {
 
     int newsize = newsizes[nsi] * PAGE;
-    int flags = (maymove ? VKI_MREMAP_MAYMOVE : 0)  |
-                (fixed ? VKI_MREMAP_FIXED : 0);
+    int flags = (maymove ? MREMAP_MAYMOVE : 0)  |
+                (fixed ? MREMAP_FIXED : 0);
     dst = dstpossible ? try_dst : dst_impossible;
     src = setup( tidythis, tidylen );
 
@@ -165,22 +134,21 @@ int main ( void )
        firsttime = 0;
     }
 
-    printf("maymv %d   fixed %d   newsz %2d   dstpo %d  dst 0x%08x ->  ",
-	   maymove, fixed, newsizes[nsi], dstpossible, (UWord)dst );
+    printf("maymv %d   fixed %d   newsz %2d   dstpo %d  dst %p ->  ",
+	   maymove, fixed, newsizes[nsi], dstpossible, dst );
     r = (char*)
-        do_syscall_WRK(__NR_mremap, (UWord)src, 
-                       20*PAGE, newsize, flags, (UWord)dst, 0 );
-    if (is_kerror((int)r))
-      printf("error %d\n", -(int)r);
+        syscall(__NR_mremap, src, 20*PAGE, newsize, flags, dst, 0 );
+    if (r == MAP_FAILED)
+      printf("error %d\n", errno);
     else
-      printf("0x%08x (== %s)\n", (int)r, identify(r));
+      printf("%p (== %s)\n", r, identify(r));
 
     if (1) {
        show();
        printf("\n");
     }
 
-    if (!is_kerror((int)r)) {
+    if (r != MAP_FAILED) {
       if (r != src && r != try_dst && r != dst_impossible) {
 	tidythis = r;
 	tidylen = newsize;
