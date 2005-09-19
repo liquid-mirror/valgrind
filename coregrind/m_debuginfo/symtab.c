@@ -1299,9 +1299,8 @@ calc_gnu_debuglink_crc32(UInt crc, const UChar *buf, Int len)
 static
 Addr open_debug_file( Char* name, UInt crc, UInt* size )
 {
-   SysRes fd;
+   SysRes fd, sres;
    struct vki_stat stat_buf;
-   Addr addr;
    UInt calccrc;
 
    fd = VG_(open)(name, VKI_O_RDONLY, 0);
@@ -1318,26 +1317,24 @@ Addr open_debug_file( Char* name, UInt crc, UInt* size )
 
    *size = stat_buf.st_size;
    
-   if ((addr = (Addr)VG_(mmap)(NULL, *size, VKI_PROT_READ,
-                               VKI_MAP_PRIVATE|VKI_MAP_NOSYMS, 
-                               0, fd.val, 0)) == (Addr)-1) 
-   {
-      VG_(close)(fd.val);
-      return 0;
-   }
+   sres = VG_(am_mmap_file_float_valgrind)
+             ( *size, VKI_PROT_READ, fd.val, 0 );
 
    VG_(close)(fd.val);
    
-   calccrc = calc_gnu_debuglink_crc32(0, (UChar*)addr, *size);
+   if (sres.isError)
+      return 0;
+
+   calccrc = calc_gnu_debuglink_crc32(0, (UChar*)sres.val, *size);
    if (calccrc != crc) {
-      int res = VG_(munmap)((void*)addr, *size);
-      vg_assert(0 == res);
+      SysRes res = VG_(am_munmap_valgrind)(sres.val, *size);
+      vg_assert(!res.isError);
       if (VG_(clo_verbosity) > 1)
 	 VG_(message)(Vg_DebugMsg, "... CRC mismatch (computed %08x wanted %08x)", calccrc, crc);
       return 0;
    }
    
-   return addr;
+   return sres.val;
 }
 
 /*
