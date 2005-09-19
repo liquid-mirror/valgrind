@@ -20,6 +20,11 @@ COREGRIND_LIBS = \
 	$(top_builddir)/coregrind/m_syswrap/libsyswrap.a \
 	@VEX_DIR@/libvex.a
 
+@VEX_DIR@/libvex.a: @VEX_DIR@/priv/main/vex_svnversion.h
+	$(MAKE) -C @VEX_DIR@ libvex.a
+
+@VEX_DIR@/priv/main/vex_svnversion.h:
+	$(MAKE) -C @VEX_DIR@ version
 
 ## Nb: do not call this variables "TOOL_LINKADD" and "TOOL_LDFLAGS" -- that
 ## makes automake think we are building something called "TOOLS".

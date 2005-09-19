@@ -133,12 +133,6 @@ vg_preload_core_so_LDFLAGS = \
 	-Wl,--soname,vg_preload_core.so \
 	-Wl,-z,initfirst
 
-@VEX_DIR@/libvex.a: @VEX_DIR@/priv/main/vex_svnversion.h
-	$(MAKE) -C @VEX_DIR@ libvex.a
-
-@VEX_DIR@/priv/main/vex_svnversion.h:
-	$(MAKE) -C @VEX_DIR@ version
-
 clean-local:
 	$(MAKE) -C @VEX_DIR@ clean
 
