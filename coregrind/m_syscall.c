@@ -227,18 +227,18 @@ SysRes VG_(do_syscall) ( UWord sysno, UWord a1, UWord a2, UWord a3,
 const HChar* VG_(strerror) ( UWord errnum )
 {
    switch (errnum) {
-      case VKI_EPERM:       return "EPERM";
-      case VKI_ENOENT:      return "ENOENT";
-      case VKI_ESRCH:       return "ESRCH";
-      case VKI_EINTR:       return "EINTR";
-      case VKI_EBADF:       return "EBADF";
-      case VKI_EAGAIN:      return "EAGAIN";
-      case VKI_ENOMEM:      return "ENOMEM";
-      case VKI_EACCES:      return "EACCES";
-      case VKI_EFAULT:      return "EFAULT";
-      case VKI_EEXIST:      return "EEXIST";
-      case VKI_EINVAL:      return "EINVAL";
-      case VKI_EMFILE:      return "EMFILE";
+      case VKI_EPERM:       return "Operation not permitted";
+      case VKI_ENOENT:      return "No such file or directory";
+      case VKI_ESRCH:       return "No such process";
+      case VKI_EINTR:       return "Interrupted system call";
+      case VKI_EBADF:       return "Bad file number";
+      case VKI_EAGAIN:      return "Try again";
+      case VKI_ENOMEM:      return "Out of memory";
+      case VKI_EACCES:      return "Permission denied";
+      case VKI_EFAULT:      return "Bad address";
+      case VKI_EEXIST:      return "File exists";
+      case VKI_EINVAL:      return "Invalid argument";
+      case VKI_EMFILE:      return "Too many open files";
       case VKI_ENOSYS:      return "ENOSYS";
       case VKI_ERESTARTSYS: return "ERESTARTSYS";
       default:              return "VG_(strerror): unknown error";

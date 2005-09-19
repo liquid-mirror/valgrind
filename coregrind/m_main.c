@@ -2374,7 +2374,8 @@ Int main(Int argc, HChar **argv, HChar **envp)
      if (dseg_max_size > m8) dseg_max_size = m8;
      dseg_max_size = VG_PGROUNDUP(dseg_max_size);
 
-     setup_client_dataseg( dseg_max_size );
+     if (!need_help)
+        setup_client_dataseg( dseg_max_size );
    }
 
    //==============================================================
