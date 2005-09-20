@@ -384,13 +384,14 @@ ESZ(Addr) mapelf(struct elfinfo *e, ESZ(Addr) base)
       //
       // The condition handles the case of a zero-length segment.
       if (VG_PGROUNDUP(bss)-VG_PGROUNDDN(addr) > 0) {
+         if (0) VG_(debugLog)(0,"ume","mmap_file_fixed_client #1\n");
          res = VG_(am_mmap_file_fixed_client)(
-                    VG_PGROUNDDN(addr),
-                    VG_PGROUNDUP(bss)-VG_PGROUNDDN(addr),
-                    prot, /*VKI_MAP_FIXED|VKI_MAP_PRIVATE, */
-                    e->fd, VG_PGROUNDDN(off)
+                  VG_PGROUNDDN(addr),
+                  VG_PGROUNDUP(bss)-VG_PGROUNDDN(addr),
+                  prot, /*VKI_MAP_FIXED|VKI_MAP_PRIVATE, */
+                  e->fd, VG_PGROUNDDN(off)
                );
-         if (0) VG_(am_show_nsegments)(0,"after native 1");
+         if (0) VG_(am_show_nsegments)(0,"after #1");
          check_mmap(res, VG_PGROUNDDN(addr),
                          VG_PGROUNDUP(bss)-VG_PGROUNDDN(addr));
       }
@@ -401,11 +402,12 @@ ESZ(Addr) mapelf(struct elfinfo *e, ESZ(Addr) base)
 
 	 bytes = VG_PGROUNDUP(brkaddr)-VG_PGROUNDUP(bss);
 	 if (bytes > 0) {
-            if (0) VG_(debugLog)(0,"ume","mmap_native 2\n");
+            if (0) VG_(debugLog)(0,"ume","mmap_anon_fixed_client #2\n");
 	    res = VG_(am_mmap_anon_fixed_client)(
                      VG_PGROUNDUP(bss), bytes,
 		     prot
                   );
+            if (0) VG_(am_show_nsegments)(0,"after #2");
             check_mmap(res, VG_PGROUNDUP(bss), bytes);
          }
 
@@ -620,8 +622,9 @@ static int load_ELF(char *hdr, int len, int fd, const char *name,
       if (!ok) {
          /* bomb out */
          SysRes res = VG_(mk_SysRes_Error)(VKI_EINVAL);
+         if (0) VG_(printf)("reserve for interp: failed\n");
          check_mmap(res, (Addr)base, interp_size);
-	 /*NOTREACHED*/
+         /*NOTREACHED*/
       }
 
       base = (Char*)advised;
