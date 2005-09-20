@@ -1605,7 +1605,7 @@ ML_(generic_PRE_sys_shmat) ( ThreadId tid,
    if (arg1 == 0) {
       tmp = VG_(am_get_advisory_client_simple)(0, segmentSize, &ok);
       if (ok)
-         arg1 = ok;
+         arg1 = tmp;
    }
    else if (!ML_(valid_client_addr)(arg1, segmentSize, tid, "shmat"))
       arg1 = 0;
