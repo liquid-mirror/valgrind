@@ -1406,7 +1406,7 @@ const SyscallTableEntry ML_(syscall_table)[] = {
    GENXY(__NR_sched_getaffinity, sys_sched_getaffinity), // 204 
 
    //   (__NR_set_thread_area,   sys_ni_syscall),     // 205 
-   LINX_(__NR_io_setup,          sys_io_setup),       // 206 
+   LINXY(__NR_io_setup,          sys_io_setup),       // 206 
    LINX_(__NR_io_destroy,        sys_io_destroy),     // 207 
    LINXY(__NR_io_getevents,      sys_io_getevents),   // 208 
    LINX_(__NR_io_submit,         sys_io_submit),      // 209 

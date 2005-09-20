@@ -2278,7 +2278,7 @@ const SyscallTableEntry ML_(syscall_table)[] = {
    PLAX_(__NR_set_thread_area,   sys_set_thread_area),   // 243
    PLAX_(__NR_get_thread_area,   sys_get_thread_area),   // 244
 
-   LINX_(__NR_io_setup,          sys_io_setup),       // 245
+   LINXY(__NR_io_setup,          sys_io_setup),       // 245
    LINX_(__NR_io_destroy,        sys_io_destroy),     // 246
    LINXY(__NR_io_getevents,      sys_io_getevents),   // 247
    LINX_(__NR_io_submit,         sys_io_submit),      // 248
