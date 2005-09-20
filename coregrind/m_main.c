@@ -2034,7 +2034,6 @@ Int main(Int argc, HChar **argv, HChar **envp)
       VG_(exit)(1);
    }
 
-
    //--------------------------------------------------------------
    // Start up the address space manager, and determine the
    // approximate location of the client's stack
@@ -2124,18 +2123,6 @@ Int main(Int argc, HChar **argv, HChar **envp)
       VG_(debugLog_startup)(loglevel, "Stage 2 (second go)");
    }
 
-   //==============================================================
-   // Can use VG_(malloc)() and VG_(arena_malloc)() only after load_tool()
-   // -- redzone size is now set.  This is checked by vg_malloc2.c.
-   //==============================================================
-   
-   //--------------------------------------------------------------
-   // Finalise address space layout
-   //   p: load_tool()  [probably?]
-   //--------------------------------------------------------------
-   //VG_(debugLog)(1, "main", "Laying out remaining space\n");
-   //layout_remaining_space( (Addr) & argc, VG_(tool_info).shadow_ratio );
-
    //--------------------------------------------------------------
    // Load client executable, finding in $PATH if necessary
    //   p: pre_process_cmd_line_options()  [for 'exec', 'need_help']
@@ -2143,14 +2130,6 @@ Int main(Int argc, HChar **argv, HChar **envp)
    //--------------------------------------------------------------
    VG_(debugLog)(1, "main", "Loading client\n");
    load_client(cl_argv, exec, need_help, &info, &initial_client_IP);
-
-   //--------------------------------------------------------------
-   // Everything in place, remove padding done by stage1
-   //   p: layout_remaining_space()  [everything must be mapped in before now]  
-   //   p: load_client()             [ditto] 
-   //--------------------------------------------------------------
-   //as_unpad((void *)VG_(shadow_end), (void *)~0, padfile);
-   //as_closepadfile(padfile);  // no more padding
 
    //--------------------------------------------------------------
    // Set up client's environment
@@ -2213,8 +2192,27 @@ Int main(Int argc, HChar **argv, HChar **envp)
    //==============================================================
 
    //--------------------------------------------------------------
+   // Init tool part 1: pre_clo_init
+   //   p: setup_client_stack()      [for 'VG_(client_arg[cv]']
+   //   p: setup_file_descriptors()  [for 'VG_(fd_xxx_limit)']
+   //   p: parse_procselfmaps        [so VG segments are setup so tool can
+   //                                 call VG_(malloc)]
+   //--------------------------------------------------------------
+   {
+      Char* s;
+      Bool  ok;
+      VG_(debugLog)(1, "main", "Initialise the tool part 1 (pre_clo_init)\n");
+      (VG_(tool_info).tl_pre_clo_init)();
+      ok = VG_(sanity_check_needs)( &s );
+      if (!ok) {
+         VG_(tool_panic)(s);
+      }
+   }
+
+   //--------------------------------------------------------------
    // Initialise translation table and translation cache
-   //   p: aspacem
+   //   p: aspacem      [??]
+   //   p: pre_clo_init [for 'VG_(details).avg_translation_sizeB']
    //--------------------------------------------------------------
    VG_(debugLog)(1, "main", "Initialise TT/TC\n");
    VG_(init_tt_tc)();
@@ -2237,34 +2235,14 @@ Int main(Int argc, HChar **argv, HChar **envp)
    setup_file_descriptors();
 
    //--------------------------------------------------------------
-   // Build segment map (Valgrind segments only)
-   //   p: tl_pre_clo_init()  [to setup new_mem_startup tracker]
-   //--------------------------------------------------------------
-   //VG_(debugLog)(1, "main", "Parse /proc/self/maps (round 1)\n");
-   //VG_(parse_procselfmaps) ( build_valgrind_map_callback );
-
-   //==============================================================
-   // Can use VG_(arena_malloc)() with non-CORE arena after segments set up
-   //==============================================================
-
-   //--------------------------------------------------------------
-   // Init tool: pre_clo_init, process cmd line, post_clo_init
+   // Init tool part 2: pre_clo_init
    //   p: setup_client_stack()      [for 'VG_(client_arg[cv]']
    //   p: setup_file_descriptors()  [for 'VG_(fd_xxx_limit)']
    //   p: parse_procselfmaps        [so VG segments are setup so tool can
    //                                 call VG_(malloc)]
    //--------------------------------------------------------------
-   {
-      Char* s;
-      Bool  ok;
-      VG_(debugLog)(1, "main", "Initialise the tool\n");
-      (VG_(tool_info).tl_pre_clo_init)();
-      ok = VG_(sanity_check_needs)( &s );
-      if (!ok) {
-         VG_(tool_panic)(s);
-      }
-   }
 
+   VG_(debugLog)(1, "main", "Initialise the tool part 2 (post_clo_init)\n");
    // If --tool and --help/--help-debug was given, now give the core+tool
    // help message
    if (need_help) {
@@ -2273,21 +2251,6 @@ Int main(Int argc, HChar **argv, HChar **envp)
    process_cmd_line_options(client_auxv, tool);
 
    VG_TDICT_CALL(tool_post_clo_init);
-
-   //--------------------------------------------------------------
-   // Build segment map (all segments)
-   //   p: shadow/redzone segments
-   //   p: setup_client_stack()  [for 'sp_at_startup']
-   //   p: init tool             [for 'new_mem_startup']
-   //--------------------------------------------------------------
-   //VG_(debugLog)(1, "main", "Parse /proc/self/maps (round 2)\n");
-   //sp_at_startup___global_arg = sp_at_startup;
-   //VG_(parse_procselfmaps) ( build_segment_map_callback );  /* everything */
-   //sp_at_startup___global_arg = 0;
-
-   //==============================================================
-   // Can use VG_(map)() after segments set up
-   //==============================================================
 
    //--------------------------------------------------------------
    // Allow GDB attach
