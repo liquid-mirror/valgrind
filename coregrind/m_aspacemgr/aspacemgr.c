@@ -1032,7 +1032,19 @@ Bool is_valid_for_client( Addr start, SizeT len, UInt prot, Bool freeOk )
    needX = toBool(prot & VKI_PROT_EXEC);
 
    iLo = find_nsegment_idx(start);
-   iHi = find_nsegment_idx(start + len - 1);
+   aspacem_assert(start >= nsegments[iLo].start);
+
+   if (start+len-1 <= nsegments[iLo].end) {
+      /* This is a speedup hack which avoids calling find_nsegment_idx
+         a second time when possible.  It is always correct to just
+         use the "else" clause below, but is_valid_for_client is
+         called a lot by the leak checker, so avoiding pointless calls
+         to find_nsegment_idx, which can be expensive, is helpful. */
+      iHi = iLo;
+   } else {
+      iHi = find_nsegment_idx(start + len - 1);
+   }
+
    for (i = iLo; i <= iHi; i++) {
       if ( (nsegments[i].kind == SkFileC 
             || nsegments[i].kind == SkAnonC
