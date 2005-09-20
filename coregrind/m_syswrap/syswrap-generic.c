@@ -4627,10 +4627,8 @@ PRE(sys_mkdir)
 
 PRE(sys_mmap2)
 {
-   MapRequest mreq;
-   Addr       advised;
-   Bool       mreq_ok;
-   SysRes     sres;
+   Addr   advised;
+   SysRes sres;
 
    // Exactly like old_mmap() in x86-linux except:
    //  - all 6 args are passed in regs, rather than in a memory-block.
@@ -4660,23 +4658,33 @@ PRE(sys_mmap2)
 
    /* Figure out what kind of allocation constraints there are
       (fixed/hint/any), and ask aspacem what we should do. */
-   mreq.start = ARG1;
-   mreq.len   = ARG2;
    if (ARG4 & VKI_MAP_FIXED) {
-      mreq.rkind = MFixed;
-   } else 
-   if (ARG1 != 0) {
-      mreq.rkind = MHint;
-   } else {
-      mreq.rkind = MAny;
-   }
+      if (!ML_(valid_client_addr)(ARG1, ARG2, tid, "mmap2")) {
+         SET_STATUS_Failure( VKI_EINVAL );
+         return;
+      }
 
-   /* Enquire ... */
-   advised = VG_(am_get_advisory)( &mreq, True/*client*/, &mreq_ok );
-   if (!mreq_ok) {
-      /* Our request was bounced, so we'd better fail. */
-      SET_STATUS_Failure( VKI_EINVAL );
-      return;
+      advised = ARG1;
+   } else {
+      MapRequest mreq;
+      Bool       mreq_ok;
+
+      mreq.start = ARG1;
+      mreq.len   = ARG2;
+
+      if (ARG1 != 0) {
+         mreq.rkind = MHint;
+      } else {
+         mreq.rkind = MAny;
+      }
+
+      /* Enquire ... */
+      advised = VG_(am_get_advisory)( &mreq, True/*client*/, &mreq_ok );
+      if (!mreq_ok) {
+         /* Our request was bounced, so we'd better fail. */
+         SET_STATUS_Failure( VKI_EINVAL );
+         return;
+      }
    }
 
    vg_assert(! FAILURE);
@@ -4701,23 +4709,6 @@ PRE(sys_mmap2)
    /* Stay sane */
    if (SUCCESS && (ARG4 & VKI_MAP_FIXED))
       vg_assert(RES == ARG1);
-
-#if 0
-   if (ARG4 & VKI_MAP_FIXED) {
-      if (!ML_(valid_client_addr)(ARG1, ARG2, tid, "mmap2"))
-	 SET_STATUS_Failure( VKI_ENOMEM );
-   } else {
-      Addr a = VG_(find_map_space)(ARG1, ARG2, True);
-      if (a == 0 && ARG1 != 0)
-         a = VG_(find_map_space)(0, ARG2, True);
-      if (a == 0) {
-	 SET_STATUS_Failure( VKI_ENOMEM );
-      } else {
-         ARG1 = a;
-         ARG4 |= VKI_MAP_FIXED;
-      }
-   }
-#endif
 }
 
 PRE(sys_mprotect)
