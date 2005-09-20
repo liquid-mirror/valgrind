@@ -1626,7 +1626,7 @@ ML_(generic_POST_sys_shmat) ( ThreadId tid,
 
       if (!(arg2 & 010000)) /* = SHM_RDONLY */
          prot &= ~VKI_PROT_WRITE;
-      VG_(am_notify_client_mmap)( res, segmentSize, 
+      VG_(am_notify_client_mmap)( res, VG_PGROUNDUP(segmentSize), 
                                   prot, VKI_MAP_ANONYMOUS, 0,0);
    }
 }
