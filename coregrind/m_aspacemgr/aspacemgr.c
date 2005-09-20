@@ -38,8 +38,7 @@
 
 #include "pub_core_debuglog.h"   // VG_(debugLog)
 
-#include "pub_core_libcbase.h"   // TODO: rm
-                                 // VG_(strlen), VG_(strcmp)
+#include "pub_core_libcbase.h"   // VG_(strlen), VG_(strcmp)
                                  // VG_IS_PAGE_ALIGNED
                                  // VG_PGROUNDDN, VG_PGROUNDUP
 
@@ -468,11 +467,25 @@ static void show_Addr_concisely ( /*OUT*/HChar* buf, Addr aA )
 {
    HChar* fmt;
    ULong a = (ULong)aA;
-   if (a >= 10000000ULL) {
-      fmt = "%6llum";
-      a /= 1024*1024ULL;
-   } else {
+
+   if (a < 10*1000*1000ULL) {
       fmt = "%7llu";
+   } 
+   else if (a < 999999ULL * (1ULL<<20)) {
+      fmt = "%6llum";
+      a >>= 20;
+   }
+   else if (a < 999999ULL * (1ULL<<30)) {
+      fmt = "%6llug";
+      a >>= 30;
+   }
+   else if (a < 999999ULL * (1ULL<<40)) {
+      fmt = "%6llut";
+      a >>= 40;
+   }
+   else {
+      fmt = "%6llue";
+      a >>= 50;
    }
    aspacem_sprintf(buf, fmt, a);
 }
@@ -511,7 +524,7 @@ static void show_nsegment ( Int logLevel, Int segNo, NSegment* seg )
       case SkFree:
          VG_(debugLog)(
             logLevel, "aspacem",
-            "%3d: %s %08llx-%08llx %s\n",
+            "%3d: %s %010llx-%010llx %s\n",
             segNo, show_SegKind(seg->kind),
             (ULong)seg->start, (ULong)seg->end, len_buf
          );
@@ -520,7 +533,7 @@ static void show_nsegment ( Int logLevel, Int segNo, NSegment* seg )
       case SkAnonC: case SkAnonV:
          VG_(debugLog)(
             logLevel, "aspacem",
-            "%3d: %s %08llx-%08llx %s %c%c%c%c\n",
+            "%3d: %s %010llx-%010llx %s %c%c%c%c\n",
             segNo, show_SegKind(seg->kind),
             (ULong)seg->start, (ULong)seg->end, len_buf,
             seg->hasR ? 'r' : '-', seg->hasW ? 'w' : '-', 
@@ -531,7 +544,7 @@ static void show_nsegment ( Int logLevel, Int segNo, NSegment* seg )
       case SkFileC: case SkFileV:
          VG_(debugLog)(
             logLevel, "aspacem",
-            "%3d: %s %08llx-%08llx %s %c%c%c%c d=0x%03llx "
+            "%3d: %s %010llx-%010llx %s %c%c%c%c d=0x%03llx "
             "i=%-7lld o=%-7lld (%d)\n",
             segNo, show_SegKind(seg->kind),
             (ULong)seg->start, (ULong)seg->end, len_buf,
@@ -544,7 +557,7 @@ static void show_nsegment ( Int logLevel, Int segNo, NSegment* seg )
      case SkResvn:
         VG_(debugLog)(
            logLevel, "aspacem",
-           "%3d: %s %08llx-%08llx %s %c%c%c%c %s\n",
+           "%3d: %s %010llx-%010llx %s %c%c%c%c %s\n",
            segNo, show_SegKind(seg->kind),
            (ULong)seg->start, (ULong)seg->end, len_buf,
            seg->hasR ? 'r' : '-', seg->hasW ? 'w' : '-', 
@@ -1343,19 +1356,19 @@ Addr VG_(am_startup) ( Addr sp_at_startup )
    aspacem_assert(VG_IS_PAGE_ALIGNED(suggested_clstack_top + 1));
 
    VG_(debugLog)(2, "aspacem", 
-                    "              minAddr = 0x%08llx (computed)\n", 
+                    "              minAddr = 0x%010llx (computed)\n", 
                     (ULong)aspacem_minAddr);
    VG_(debugLog)(2, "aspacem", 
-                    "              maxAddr = 0x%08llx (computed)\n", 
+                    "              maxAddr = 0x%010llx (computed)\n", 
                     (ULong)aspacem_maxAddr);
    VG_(debugLog)(2, "aspacem", 
-                    "               cStart = 0x%08llx (computed)\n", 
+                    "               cStart = 0x%010llx (computed)\n", 
                     (ULong)aspacem_cStart);
    VG_(debugLog)(2, "aspacem", 
-                    "               vStart = 0x%08llx (computed)\n", 
+                    "               vStart = 0x%010llx (computed)\n", 
                     (ULong)aspacem_vStart);
    VG_(debugLog)(2, "aspacem", 
-                    "suggested_clstack_top = 0x%08llx (computed)\n", 
+                    "suggested_clstack_top = 0x%010llx (computed)\n", 
                     (ULong)suggested_clstack_top);
 
    if (aspacem_cStart > Addr_MIN) {
