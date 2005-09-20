@@ -2455,16 +2455,6 @@ PRE(sys_execve)
 
    VG_(debugLog)(1, "syswrap", "Exec of %s\n", (HChar*)ARG1);
 
-   if (0) {
-      Char **cpp;
-
-      VG_(printf)("exec: %s\n", (Char *)ARG1);
-      for(cpp = (Char **)ARG2; cpp && *cpp; cpp++)
-         VG_(printf)("argv: %s\n", *cpp);
-      for(cpp = (Char **)ARG3; cpp && *cpp; cpp++)
-         VG_(printf)("env: %s\n", *cpp);
-   }
-
    /* restore the DATA rlimit for the child */
    VG_(setrlimit)(VKI_RLIMIT_DATA, &VG_(client_rlimit_data));
 
@@ -2507,6 +2497,15 @@ PRE(sys_execve)
          ;
 
       VG_(sigprocmask)(VKI_SIG_SETMASK, &tst->sig_mask, NULL);
+   }
+
+   if (0) {
+      Char **cpp;
+      VG_(printf)("exec: %s\n", (Char *)path);
+      for (cpp = (Char **)ARG2; cpp && *cpp; cpp++)
+         VG_(printf)("argv: %s\n", *cpp);
+      for (cpp = (Char **)ARG3; cpp && *cpp; cpp++)
+         VG_(printf)("env: %s\n", *cpp);
    }
 
    SET_STATUS_from_SysRes( 
