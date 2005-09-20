@@ -602,13 +602,8 @@ static int load_ELF(char *hdr, int len, int fd, const char *name,
 
    if (interp != NULL) {
       /* reserve a chunk of address space for interpreter */
-      Char*      base = (Char *)info->exe_base;
-      Char*      baseoff;
       Addr       advised;
       Bool       ok;
-
-      if (info->map_base != 0)
-	 base = (Char *)VG_ROUNDUP(info->map_base, interp_align);
 
       /* Don't actually reserve the space.  Just get an advisory
          indicating where it would be allocated, and pass that to
@@ -617,25 +612,22 @@ static int load_ELF(char *hdr, int len, int fd, const char *name,
          work because there should be no intervening transactions with
          aspacem which could cause those fixed maps to fail. */
       advised = VG_(am_get_advisory_client_simple)( 
-                   (Addr)base, interp_size, &ok 
+                   (Addr)interp_addr, interp_size, &ok 
                 );
       if (!ok) {
          /* bomb out */
          SysRes res = VG_(mk_SysRes_Error)(VKI_EINVAL);
          if (0) VG_(printf)("reserve for interp: failed\n");
-         check_mmap(res, (Addr)base, interp_size);
+         check_mmap(res, (Addr)interp_addr, interp_size);
          /*NOTREACHED*/
       }
 
-      base = (Char*)advised;
-
-      baseoff = base - interp_addr;
-      (void)mapelf(interp, (ESZ(Addr))baseoff);
+      (void)mapelf(interp, (ESZ(Addr))advised - interp_addr);
 
       VG_(close)(interp->fd);
 
-      entry = baseoff + interp->e.e_entry;
-      info->interp_base = (ESZ(Addr))base;
+      entry = (void *)(advised - interp_addr + interp->e.e_entry);
+      info->interp_base = (ESZ(Addr))advised;
 
       VG_(free)(interp->p);
       VG_(free)(interp);
