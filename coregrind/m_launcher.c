@@ -48,20 +48,33 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+#include <assert.h>
 
+
+#define PATH_MAX 4096 /* POSIX refers to this a lot but I dunno
+                         where it is defined */
+
+static void barf ( char* str )
+{
+   fprintf(stderr, "valgrind: Cannot continue: %s\n", str );
+   exit(1);
+}
 
 /* Where we expect to find all our aux files */
 static const char *valgrind_lib = VG_LIBDIR;
 
 int main(int argc, char** argv, char** envp)
 {
-   int i, loglevel;
+   int i, j, loglevel, r;
    Int vg_argc;
    Char **vg_argv;
    char **cl_argv;
    const char *toolname = NULL;
    const char *cp;
    char *toolfile;
+   char stage1_name[PATH_MAX+1];
+   char* new_line;
+   char** new_env;
 
    /* Start the debugging-log system ASAP.  First find out how many 
       "-d"s were specified.  This is a pre-scan of the command line. */
@@ -96,19 +109,53 @@ int main(int argc, char** argv, char** envp)
       toolname = "memcheck";
    }
 
+   /* Figure out the name of this executable, so we can tell
+      stage2. */
+   memset(stage1_name, 0, PATH_MAX+1);
+   r = readlink("/proc/self/exe", stage1_name, PATH_MAX);
+   if (r == -1)
+      barf("readlink(\"/proc/self/exe\") failed.");
+
+   r = setenv(VALGRINDSTAGE1, stage1_name, 1/*overwrite*/);
+   if (r != 0)
+      barf("setenv(VALGRINDSTAGE1) failed.");
+
+   /* tediously augment the env: VALGRINDSTAGE1=stage1_name */
+   new_line = malloc(strlen(VALGRINDSTAGE1) + 1 
+                     + strlen(stage1_name) + 1);
+   if (new_line == NULL)
+      barf("malloc of new_line failed.");
+   strcpy(new_line, VALGRINDSTAGE1);
+   strcat(new_line, "=");
+   strcat(new_line, stage1_name);
+
+   for (j = 0; envp[j]; j++)
+      ;
+   new_env = malloc((j+2) * sizeof(char*));
+   if (new_env == NULL)
+      barf("malloc of new_env failed.");
+   for (i = 0; i < j; i++)
+      new_env[i] = envp[i];
+   new_env[i++] = new_line;
+   new_env[i++] = NULL;
+   assert(i == j+2);
+
+
    cp = getenv(VALGRINDLIB);
 
    if (cp != NULL)
       valgrind_lib = cp;
 
    toolfile = malloc(strlen(valgrind_lib) + strlen(toolname) + 2);
+   if (toolfile == NULL)
+      barf("malloc of toolfile failed.");
    sprintf(toolfile, "%s/%s", valgrind_lib, toolname);
 
    VG_(debugLog)(1, "stage1", "launching %s\n", toolfile);
 
-   execve(toolfile, argv, envp);
+   execve(toolfile, argv, new_env);
 
-   fprintf(stderr, "valgrind: failed to start %s: %s\n",
+   fprintf(stderr, "valgrind: failed to start tool '%s': %s\n",
                    toolname, strerror(errno));
 
    exit(1);

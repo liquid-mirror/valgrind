@@ -90,15 +90,6 @@
 #define AT_SECURE 23   /* secure mode boolean */
 #endif	/* AT_SECURE */
 
-/* redzone gap between client address space and shadow */
-#define REDZONE_SIZE		(1 * 1024*1024)
-
-/* size multiple for client address space */
-#define CLIENT_SIZE_MULTIPLE	(1 * 1024*1024)
-
-/* Proportion of client space for its heap (rest is for mmaps + stack) */
-#define CLIENT_HEAP_PROPORTION   0.333
-
 /* Number of file descriptors that Valgrind tries to reserve for
    it's own use - just a small constant. */
 #define N_RESERVED_FDS (10)
@@ -113,8 +104,8 @@
    Startup stuff                            
    ------------------------------------------------------------------ */
 
-/* stage1 (main) executable */
-static Int vgexecfd = -1;
+/* The name of the stage1 (main) executable */
+static HChar* name_of_stage1 = NULL;
 
 /* our argc/argv */
 static Int  vg_argc;
@@ -1672,10 +1663,8 @@ Char* VG_(build_child_VALGRINDCLO)( Char* exename )
 // Build "/proc/self/fd/<execfd>".
 Char* VG_(build_child_exename)( void )
 {
-   Char* exename = VG_(arena_malloc)(VG_AR_CORE, 64);
-   vg_assert(NULL != exename);
-   VG_(sprintf)(exename, "/proc/self/fd/%d", vgexecfd);
-   return exename;
+   vg_assert(name_of_stage1);
+   return VG_(arena_strdup)(VG_AR_CORE, name_of_stage1);
 }
 
 
@@ -1707,8 +1696,6 @@ static void setup_file_descriptors(void)
    /* Update the soft limit. */
    VG_(setrlimit)(VKI_RLIMIT_NOFILE, &rl);
 
-   if (vgexecfd != -1)
-      vgexecfd = VG_(safe_fd)( vgexecfd );
    if (VG_(clexecfd) != -1)
       VG_(clexecfd) = VG_(safe_fd)( VG_(clexecfd) );
 }
@@ -2054,6 +2041,16 @@ Int main(Int argc, HChar **argv, HChar **envp)
      if (p) VG_(free)( p );
    }
    VG_(debugLog)(1, "main", "Dynamic memory manager is running\n");
+
+   //--------------------------------------------------------------
+   // Extract the stage1 name from the environment.
+   VG_(debugLog)(1, "main", "Getting stage1's name\n");
+   name_of_stage1 = VG_(getenv)(VALGRINDSTAGE1);
+   if (name_of_stage1 == NULL) {
+      VG_(printf)("valgrind: You cannot run the tool binary directly.\n");
+      VG_(printf)("valgrind: You should use $prefix/bin/valgrind.\n");
+      VG_(exit)(1);
+   }
 
    //============================================================
    // Command line argument handling order:

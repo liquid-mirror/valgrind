@@ -39,13 +39,20 @@
 #include "pub_tool_libcproc.h"
 
 /* The directory we look for all our auxillary files in.  Useful for
-   running Valgrind out of a build tree without having to do "make install". */
+   running Valgrind out of a build tree without having to do "make
+   install". */
 #define VALGRINDLIB	"VALGRINDLIB"
 
 /* Additional command-line arguments; they are overridden by actual
    command-line option.  Each argument is separated by spaces.  There
    is no quoting mechanism.  */
 #define VALGRINDOPTS	"VALGRIND_OPTS"
+
+/* The full name of Valgrind's stage1 (launcher) executable.  This is
+   set by stage1 and read by stage2, and is used for recursive
+   invokations of Valgrind on child processes. */
+#define VALGRINDSTAGE1	"VALGRIND_STAGE1"
+
 
 /* If this variable is present in the environment, then valgrind will
    not parse the command line for options at all; all options come

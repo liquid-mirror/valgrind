@@ -216,6 +216,9 @@ void VG_(env_remove_valgrind_env_stuff)(Char** envp)
    // Remove VALGRIND_CLO variable.
    VG_(env_unsetenv)(envp, VALGRINDCLO);
 
+   // Remove VALGRIND_STAGE1 variable.
+   VG_(env_unsetenv)(envp, VALGRINDSTAGE1);
+
    // XXX if variable becomes empty, remove it completely?
 
    VG_(arena_free)(VG_AR_CORE, buf);
