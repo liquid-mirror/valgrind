@@ -4704,6 +4704,8 @@ PRE(sys_mmap2)
          ARG4, /* the original flags value */
          ARG5, ARG6 
       );
+      /* Load symbols? */
+      VG_(di_notify_mmap)( (Addr)sres.val );
    }
 
    /* Stay sane */
