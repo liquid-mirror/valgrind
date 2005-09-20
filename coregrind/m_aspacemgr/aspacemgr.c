@@ -755,7 +755,7 @@ static Bool maybe_merge_nsegments ( NSegment* s1, NSegment* s2 )
 
 static Bool preen_nsegments ( void )
 {
-   Int i, r, w, nsegments_used_old = nsegments_used;
+   Int i, j, r, w, nsegments_used_old = nsegments_used;
 
    /* Pass 1: check the segment array covers the entire address space
       exactly once, and also that each segment is sane. */
@@ -784,6 +784,27 @@ static Bool preen_nsegments ( void )
    w++;
    aspacem_assert(w > 0 && w <= nsegments_used);
    nsegments_used = w;
+
+   /* Pass 3: free up unused string table slots */
+   /* clear mark bits */
+   for (i = 0; i < segnames_used; i++)
+      segnames[i].mark = False;
+   /* mark */
+   for (i = 0; i < nsegments_used; i++) {
+     j = nsegments[i].fnIdx;
+      aspacem_assert(j >= -1 && j < segnames_used);
+      if (j >= 0) {
+         aspacem_assert(segnames[j].inUse);
+         segnames[j].mark = True;
+      }
+   }
+   /* release */
+   for (i = 0; i < segnames_used; i++) {
+      if (segnames[i].mark == False) {
+         segnames[i].inUse = False;
+         segnames[i].fname[0] = 0;
+      }
+   }
 
    return nsegments_used != nsegments_used_old;
 }
