@@ -825,7 +825,6 @@ static void load_client(char* cl_argv[], const char* exec, Int need_help,
    }
 
    VG_(memset)(info, 0, sizeof(*info));
-   info->map_base = VG_(client_mapbase);
    info->exe_base = VG_(client_base);
    info->exe_end  = VG_(client_end);
    info->argv     = cl_argv;

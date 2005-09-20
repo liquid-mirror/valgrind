@@ -76,7 +76,6 @@
 // inputs/outputs of do_exec().
 struct exeinfo
 {
-   Addr map_base;       // IN: if non-zero, base address of mappings
    char** argv;         // IN: the original argv
 
    Addr exe_base;       // INOUT: lowest (allowed) address of exe
