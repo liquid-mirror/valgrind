@@ -30,14 +30,13 @@
 
 #include "pub_core_basics.h"
 #include "pub_core_threadstate.h"
-#include "pub_core_debuginfo.h"     // Needed for pub_core_aspacemgr :(
+#include "pub_core_debuginfo.h"     // VG_(di_notify_*)
 #include "pub_core_aspacemgr.h"
 #include "pub_core_debuglog.h"
 #include "pub_core_errormgr.h"
 #include "pub_core_libcbase.h"
 #include "pub_core_libcassert.h"
 #include "pub_core_libcfile.h"
-#include "pub_core_libcmman.h"      // For VG_(mmap), VG_(munmap)()
 #include "pub_core_libcprint.h"
 #include "pub_core_libcproc.h"
 #include "pub_core_libcsignal.h"

@@ -47,9 +47,7 @@
 #include "pub_core_libcassert.h"  // VG_(exit), vg_assert
 #include "pub_core_syscall.h"     // VG_(strerror)
 #include "pub_core_mallocfree.h"  // VG_(malloc), VG_(free)
-
-#include "pub_core_debuginfo.h"   // Needed for pub_core_aspacemgr.h :(
-#include "pub_core_aspacemgr.h"   // VG_(mmap_native)
+#include "pub_core_aspacemgr.h"   // various mapping fns
 #include "vki_unistd.h"           // mmap-related constants
 
 #include "pub_core_ume.h"

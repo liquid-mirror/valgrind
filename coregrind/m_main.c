@@ -32,7 +32,6 @@
 
 #include "pub_core_basics.h"
 #include "pub_core_threadstate.h"
-#include "pub_core_debuginfo.h"     // Needed for pub_core_aspacemgr :(
 #include "pub_core_aspacemgr.h"
 #include "pub_core_commandline.h"
 #include "pub_core_debuglog.h"
@@ -51,7 +50,10 @@
 #include "pub_core_mallocfree.h"
 #include "pub_core_options.h"
 #include "pub_core_profile.h"
+
+#include "pub_core_debuginfo.h"     // Needed for pub_core_redir
 #include "pub_core_redir.h"
+
 #include "pub_core_scheduler.h"
 #include "pub_core_signals.h"
 #include "pub_core_stacks.h"        // For VG_(register_stack)

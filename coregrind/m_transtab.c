@@ -34,15 +34,12 @@
 #include "pub_core_machine.h"    // ppc32: VG_(cache_line_size_ppc32)
 #include "pub_core_libcbase.h"
 #include "pub_core_libcassert.h"
-#include "pub_core_libcmman.h"   // For VG_(get_memory_from_mmap)()
 #include "pub_core_libcprint.h"
 #include "pub_core_options.h"
 #include "pub_core_tooliface.h"  // For VG_(details).avg_translation_sizeB
 #include "pub_core_transtab.h"
-
-#include "pub_core_debuginfo.h"     // Needed for pub_core_aspacemgr :(
 #include "pub_core_aspacemgr.h"
-#include "pub_core_mallocfree.h"    // VG_(out_of_memory_NORETURN)
+#include "pub_core_mallocfree.h" // VG_(out_of_memory_NORETURN)
 
 /* #define DEBUG_TRANSTAB */
 

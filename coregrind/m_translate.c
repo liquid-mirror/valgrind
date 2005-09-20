@@ -30,7 +30,6 @@
 */
 
 #include "pub_core_basics.h"
-#include "pub_core_debuginfo.h"     // Needed for pub_core_aspacemgr :(
 #include "pub_core_aspacemgr.h"
 #include "pub_core_cpuid.h"
 #include "pub_core_machine.h"       // For VG_(cache_line_size_ppc32)
@@ -41,7 +40,10 @@
 #include "pub_core_libcprint.h"
 #include "pub_core_options.h"
 #include "pub_core_profile.h"
+
+#include "pub_core_debuginfo.h"     // Needed for pub_core_redir :(
 #include "pub_core_redir.h"         // For VG_(code_redirect)()
+
 #include "pub_core_signals.h"       // For VG_(synth_fault_{perms,mapping})()
 #include "pub_core_stacks.h"        // For VG_(unknown_SP_update)()
 #include "pub_core_tooliface.h"     // For VG_(tdict)
