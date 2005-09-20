@@ -567,8 +567,8 @@ Superblock* newSuperblock ( Arena* a, SizeT cszB )
    sb->n_payload_bytes = cszB - sizeof(Superblock);
    a->bytes_mmaped += cszB;
    VG_(debugLog)(1, "mallocfree",
-                    "newSuperblock at %p (pszB %7lld) owner %s/%s\n", 
-                    sb, (Long)sb->n_payload_bytes, 
+                    "newSuperblock at %p (pszB %7ld) owner %s/%s\n", 
+                    sb, sb->n_payload_bytes, 
                     a->clientmem ? "CLIENT" : "VALGRIND", a->name );
    return sb;
 }
