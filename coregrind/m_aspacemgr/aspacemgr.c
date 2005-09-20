@@ -1400,9 +1400,10 @@ Addr VG_(am_get_advisory) ( MapRequest*  req,
 
         If the request is for a fixed client map, we are prepared to
         grant it providing all areas inside the request are either
-        free or are file mappings belonging to the client.  In other
-        words we are prepared to let the client trash its own mappings
-        if it wants to.  */
+        free, reservations, or file mappings belonging to the client.
+        In other words we are prepared to let the client trash its own
+        mappings if it wants to.
+   */
    Int  i, j;
    Addr holeStart, holeEnd, holeLen;
    Bool fixed_not_required;
@@ -1447,7 +1448,8 @@ Addr VG_(am_get_advisory) ( MapRequest*  req,
       Bool allow = True;
       for (i = iLo; i <= iHi; i++) {
          if (nsegments[i].kind == SkFree
-             || nsegments[i].kind == SkFileC) {
+             || nsegments[i].kind == SkFileC
+             || nsegments[i].kind == SkResvn) {
             /* ok */
          } else {
             allow = False;
@@ -1703,7 +1705,7 @@ SysRes VG_(am_mmap_file_fixed_client)
    MapRequest req;
    UInt       dev, ino;
    HChar      buf[VKI_PATH_MAX];
- 
+
    /* Not allowable. */
    if (length == 0 || !VG_IS_PAGE_ALIGNED(start))
       return VG_(mk_SysRes_Error)( VKI_EINVAL );
