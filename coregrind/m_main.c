@@ -675,27 +675,54 @@ Addr setup_client_stack( void*  init_sp,
    mapping abutting a shrinkable reservation of size max_dseg_size.
    The data segment starts at VG_(brk_base), which is page-aligned,
    and runs up to VG_(brk_limit), which isn't. */
+
 static void setup_client_dataseg ( SizeT max_size )
 {
    Bool   ok;
    SysRes sres;
-   SizeT  anon_size = VKI_PAGE_SIZE;
-   SizeT  resvn_size = max_size - anon_size;
-   Addr   anon_start = VG_(brk_base);
+   Addr   anon_start  = VG_(brk_base);
+   SizeT  anon_size   = VKI_PAGE_SIZE;
    Addr   resvn_start = anon_start + anon_size;
+   SizeT  resvn_size  = max_size - anon_size;
 
    vg_assert(VG_IS_PAGE_ALIGNED(anon_size));
    vg_assert(VG_IS_PAGE_ALIGNED(resvn_size));
    vg_assert(VG_IS_PAGE_ALIGNED(anon_start));
    vg_assert(VG_IS_PAGE_ALIGNED(resvn_start));
 
+   /* Because there's been no brk activity yet: */
+   vg_assert(VG_(brk_base) == VG_(brk_limit));
+
+   /* Try to create the data seg and associated reservation where
+      VG_(brk_base) says. */
    ok = VG_(am_create_reservation)( 
            resvn_start, 
            resvn_size, 
            SmLower, 
            anon_size
         );
+
+   if (!ok) {
+      /* Hmm, that didn't work.  Well, let aspacem suggest an address
+         it likes better, and try again with that. */
+      anon_start = VG_(am_get_advisory_client_simple)
+                      ( 0/*floating*/, anon_size+resvn_size, &ok );
+      if (ok) {
+         resvn_start = anon_start + anon_size;
+         ok = VG_(am_create_reservation)( 
+                 resvn_start, 
+                 resvn_size, 
+                 SmLower, 
+                 anon_size
+              );
+         if (ok)
+            VG_(brk_base) = VG_(brk_limit) = anon_start;
+      }
+      /* that too might have failed, but if it has, we're hosed: there
+         is no Plan C. */
+   }
    vg_assert(ok);
+
    sres = VG_(am_mmap_anon_fixed_client)( 
              anon_start, 
              anon_size, 
