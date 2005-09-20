@@ -211,11 +211,9 @@ void VG_(di_notify_mprotect)( Addr a, SizeT len, UInt prot )
 #  if defined(VGP_x86_linux)
    exe_ok = exe_ok || toBool(prot & VKI_PROT_READ);
 #  endif
-   if (!exe_ok)
+   if (0 && !exe_ok)
       nuke_syms_in_range(a, len);
 }
-
-
 
 
 /*------------------------------------------------------------*/
