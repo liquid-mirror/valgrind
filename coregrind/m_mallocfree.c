@@ -476,7 +476,7 @@ void ensure_mm_init ( ArenaId aid )
       arena_init ( VG_AR_TOOL,      "tool",     4,                  1048576 );
       arena_init ( VG_AR_SYMTAB,    "symtab",   4,                  1048576 );
       arena_init ( VG_AR_DEMANGLE,  "demangle", 4,                    65536 );
-      arena_init ( VG_AR_EXECTXT,   "exectxt",  4,                    65536 );
+      arena_init ( VG_AR_EXECTXT,   "exectxt",  4,                   262144 );
       arena_init ( VG_AR_ERRORS,    "errors",   4,                    65536 );
       nonclient_inited = True;
    }
@@ -567,9 +567,9 @@ Superblock* newSuperblock ( Arena* a, SizeT cszB )
    sb->n_payload_bytes = cszB - sizeof(Superblock);
    a->bytes_mmaped += cszB;
    VG_(debugLog)(1, "mallocfree",
-                    "newSuperblock at %p, for %s, %lld payload bytes\n", 
-                    sb, a->clientmem ? "CLIENT" : "VALGRIND",
-                    (Long)sb->n_payload_bytes);
+                    "newSuperblock at %p (pszB %7lld) owner %s/%s\n", 
+                    sb, (Long)sb->n_payload_bytes, 
+                    a->clientmem ? "CLIENT" : "VALGRIND", a->name );
    return sb;
 }
 
