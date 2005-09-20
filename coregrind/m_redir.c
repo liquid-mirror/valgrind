@@ -366,6 +366,14 @@ Bool VG_(setup_code_redirect_table) ( void )
       (Addr)&VG_(amd64_linux_REDIR_FOR_vtime) 
    );
 
+#elif defined(VGP_ppc32_linux)
+
+   //CAB: TODO
+
+#else
+#  error Unknown platform
+#endif
+
    { Addr co_start   = VG_PGROUNDDN( (Addr)&VG_(trampoline_stuff_start) );
      Addr co_endPlus = VG_PGROUNDUP( (Addr)&VG_(trampoline_stuff_end) );
      VG_(debugLog)(1,"redir",
@@ -374,14 +382,6 @@ Bool VG_(setup_code_redirect_table) ( void )
      return 
         VG_(am_change_ownership_v_to_c)( co_start, co_endPlus - co_start );
    }
-
-#elif defined(VGP_ppc32_linux)
-
-   //CAB: TODO
-
-#else
-#  error Unknown platform
-#endif
 }
 
 /* Z-decode a symbol into library:func form, eg 

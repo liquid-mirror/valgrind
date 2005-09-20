@@ -37,6 +37,15 @@
    This code runs on the simulated CPU.
 */
 
+#	define UD2_16     ud2 ; ud2 ; ud2 ; ud2 ;ud2 ; ud2 ; ud2 ; ud2
+#	define UD2_64     UD2_16   ; UD2_16   ; UD2_16   ; UD2_16
+#	define UD2_256    UD2_64   ; UD2_64   ; UD2_64   ; UD2_64
+#	define UD2_1024   UD2_256  ; UD2_256  ; UD2_256  ; UD2_256
+#	define UD2_PAGE   UD2_1024 ; UD2_1024 ; UD2_1024 ; UD2_1024  
+
+	/* a leading page of unexecutable code */
+	UD2_PAGE
+	
 /*---------------- x86-linux ----------------*/
 #if defined(VGP_x86_linux)
 
@@ -73,15 +82,6 @@ VG_(trampoline_stuff_end):
 #else
 #if defined(VGP_amd64_linux)
 
-#	define UD2_16     ud2 ; ud2 ; ud2 ; ud2 ;ud2 ; ud2 ; ud2 ; ud2
-#	define UD2_64     UD2_16   ; UD2_16   ; UD2_16   ; UD2_16
-#	define UD2_256    UD2_64   ; UD2_64   ; UD2_64   ; UD2_64
-#	define UD2_1024   UD2_256  ; UD2_256  ; UD2_256  ; UD2_256
-#	define UD2_PAGE   UD2_1024 ; UD2_1024 ; UD2_1024 ; UD2_1024  
-
-	/* a leading page of unexecutable code */
-	UD2_PAGE
-	
 .global VG_(trampoline_stuff_start)
 VG_(trampoline_stuff_start):
 
@@ -108,15 +108,6 @@ VG_(amd64_linux_REDIR_FOR_vtime):
 .global VG_(trampoline_stuff_end)
 VG_(trampoline_stuff_end):
 
-	/* and a trailing page of unexecutable code */
-	UD2_PAGE
-
-#	undef UD2_16
-#	undef UD2_64
-#	undef UD2_256
-#	undef UD2_1024
-#	undef UD2_PAGE
-
 
 /*---------------- ppc32-linux ----------------*/
 #else
@@ -138,7 +129,14 @@ VG_(trampoline_stuff_end):
 #endif
 #endif
 
-tramp_code_end:
+	/* and a trailing page of unexecutable code */
+	UD2_PAGE
+
+#	undef UD2_16
+#	undef UD2_64
+#	undef UD2_256
+#	undef UD2_1024
+#	undef UD2_PAGE
 
 
 /* Let the linker know we don't need an executable stack */
