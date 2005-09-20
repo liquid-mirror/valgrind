@@ -2106,6 +2106,7 @@ Int main(Int argc, HChar **argv, HChar **envp)
    VG_(get_command_line)(argc, argv, &vg_argc, &vg_argv, &cl_argv);
    pre_process_cmd_line_options(&need_help, &tool, &exec);
 
+   // TODO: this should be done in pre_process_cmd_line_options().
    /* If this process was created by exec done by another Valgrind
       process, the arguments will only show up at this point.  Hence
       we need to also snoop around in vg_argv to see if anyone is
@@ -2171,6 +2172,7 @@ Int main(Int argc, HChar **argv, HChar **envp)
    // Setup client data (brk) segment.  Initially a 1-page segment
    // which abuts a shrinkable reservation. 
    //     p: load_client()     [for 'info' and hence VG_(brk_base)]
+   //--------------------------------------------------------------
    VG_(debugLog)(1, "main", "Setup client data (brk) segment\n");
    { 
      SizeT m1 = 1024 * 1024;
