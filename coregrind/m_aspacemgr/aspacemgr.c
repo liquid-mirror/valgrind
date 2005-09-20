@@ -30,28 +30,38 @@
    The GNU General Public License is contained in the file COPYING.
 */
 
-#include "pub_core_basics.h"
-#include "pub_core_debuglog.h"
-#include "pub_core_debuginfo.h"  // Needed for pub_core_aspacemgr.h :(
-#include "pub_core_aspacemgr.h"
-#include "pub_core_libcbase.h"
-#include "pub_core_libcassert.h"
-#include "pub_core_libcfile.h"   // For VG_(fstat), VG_(resolve_filename_nodup)
-#include "pub_core_libcprint.h"
-#include "pub_core_syscall.h"
-#include "pub_core_tooliface.h"
-#include "pub_core_transtab.h"   // For VG_(discard_translations)
+/* One of the important design goals of the address space manager is
+   to minimise dependence on other modules.  Hence the following
+   minimal set of imports. */
+
+#include "pub_core_basics.h"     // types
+
+#include "pub_core_debuglog.h"   // VG_(debugLog)
+
+#include "pub_core_libcbase.h"   // TODO: rm
+                                 // VG_(strlen), VG_(strcmp)
+                                 // VG_IS_PAGE_ALIGNED
+                                 // VG_PGROUNDDN, VG_PGROUNDUP
+
+#include "pub_core_syscall.h"    // VG_(do_syscallN)
+                                 // VG_(mk_SysRes_Error)
+                                 // VG_(mk_SysRes_Success)
 
 #include "pub_core_options.h"    // VG_(clo_sanity_level)
 
-#include "vki_unistd.h"
+#include "vki_unistd.h"          // __NR_* constants
 
-static void aspacem_barf ( HChar* what );
+#include "pub_core_aspacemgr.h"  // self
 
 
-/*--------------------------------------------------------------*/
-/*--- Basic globals about the address space.                 ---*/
-/*--------------------------------------------------------------*/
+/*-----------------------------------------------------------------*/
+/*---                                                           ---*/
+/*--- Basic globals about the address space.                    ---*/
+/*---                                                           ---*/
+/*-----------------------------------------------------------------*/
+
+// FIXME: these are nothing to do with the address space manager
+// and should be moved elsewhere.
 
 /* Client address space, lowest to highest (see top of ume.c) */
 Addr VG_(client_base);           /* client address space limits */
@@ -64,19 +74,15 @@ UWord VG_(clstk_id);
 Addr VG_(brk_base)  = 0;         /* start of brk */
 Addr VG_(brk_limit) = 0;         /* current brk */
 
-Addr VG_(shadow_base);	         /* tool's shadow memory */
-Addr VG_(shadow_end);
-
-Addr VG_(valgrind_base);	 /* valgrind's address range */
-
-// Note that VG_(valgrind_last) names the last byte of the section, whereas
-// the VG_(*_end) vars name the byte one past the end of the section.
-Addr VG_(valgrind_last);
 
 
-/*--------------------------------------------------------------*/
-/*--- A simple, self-contained ordered array of segments.    ---*/
-/*--------------------------------------------------------------*/
+/*-----------------------------------------------------------------*/
+/*---                                                           ---*/
+/*--- The Address Space Manager's state.                        ---*/
+/*---                                                           ---*/
+/*-----------------------------------------------------------------*/
+
+/* ------ start of STATE for the address-space manager ------ */
 
 /* Max number of segments we can track. */
 #define VG_N_SEGMENTS 2000
@@ -87,8 +93,6 @@ Addr VG_(valgrind_last);
 /* Max length of a segment file name. */
 #define VG_MAX_SEGNAMELEN 1000
 
-
-/* ------ STATE for the address-space manager ------ */
 
 typedef
    struct {
@@ -105,86 +109,6 @@ typedef
 static SegName segnames[VG_N_SEGNAMES];
 static Int     segnames_used = 0;
 
-
-/* ------ end of STATE for the address-space manager ------ */
-
-
-/* Searches the filename table to find an index for the given name.
-   If none is found, an index is allocated and the name stored.  If no
-   space is available we just give up.  If the string is too long to
-   store, return -1.
-*/
-static Int allocate_segname ( const HChar* name )
-{
-   Int i, j, len;
-
-   vg_assert(name);
-
-   if (0) VG_(printf)("allocate_segname %s\n", name);
-
-   len = VG_(strlen)(name);
-   if (len >= VG_MAX_SEGNAMELEN-1) {
-      return -1;
-   }
-
-   /* first see if we already have the name. */
-   for (i = 0; i < segnames_used; i++) {
-      if (!segnames[i].inUse)
-         continue;
-      if (0 == VG_(strcmp)(name, &segnames[i].fname[0])) {
-         return i;
-      }
-   }
-
-   /* no we don't.  So look for a free slot. */
-   for (i = 0; i < segnames_used; i++)
-      if (!segnames[i].inUse)
-         break;
-
-   if (i == segnames_used) {
-      /* no free slots .. advance the high-water mark. */
-      if (segnames_used+1 < VG_N_SEGNAMES) {
-         i = segnames_used;
-         segnames_used++;
-      } else {
-         VG_(printf)(
-            "coregrind/m_aspacemgr/aspacemgr.c:\n"
-            "   VG_N_SEGNAMES is too small: "
-            "increase it and rebuild Valgrind.\n"
-         );
-         VG_(printf)(
-            "coregrind/m_aspacemgr/aspacemgr.c:\n"
-            "   giving up now.\n\n"
-         );
-         VG_(exit)(0);
-      }
-   }
-
-   /* copy it in */
-   segnames[i].inUse = True;
-   for (j = 0; j < len; j++)
-      segnames[i].fname[j] = name[j];
-   vg_assert(len < VG_MAX_SEGNAMELEN);
-   segnames[i].fname[len] = 0;
-   return i;
-}
-
-
-/////////////////////////////////////////////////////////////////
-/////////////////////////////////////////////////////////////////
-/////////////////////////////////////////////////////////////////
-/////////////////////////////////////////////////////////////////
-
-
-/* Note: many of the exported functions implemented below are
-   described more fully in comments in pub_core_aspacemgr.h.
-*/
-
-/*-----------------------------------------------------------------*/
-/*---                                                           ---*/
-/*--- The Address Space Manager's state.                        ---*/
-/*---                                                           ---*/
-/*-----------------------------------------------------------------*/
 
 /* Array [0 .. nsegments_used-1] of all mappings. */
 /* Sorted by .addr field. */
@@ -221,6 +145,8 @@ static Addr aspacem_vStart = 0;
                                       __FILE__,__LINE__));   \
    } while (0) 
 
+/* ------ end of STATE for the address-space manager ------ */
+
 
 /*-----------------------------------------------------------------*/
 /*---                                                           ---*/
@@ -228,6 +154,9 @@ static Addr aspacem_vStart = 0;
 /*--- the rest of Valgrind.                                     ---*/
 /*---                                                           ---*/
 /*-----------------------------------------------------------------*/
+
+// Forwards decl
+static void aspacem_exit ( Int );
 
 //--------------------------------------------------------------
 // Simple assert and assert-like fns, which avoid dependence on
@@ -237,7 +166,7 @@ static void aspacem_barf ( HChar* what )
 {
   VG_(debugLog)(0, "aspacem", "Valgrind: FATAL: %s\n", what);
   VG_(debugLog)(0, "aspacem", "Exiting now.\n");
-  VG_(exit)(1);
+  aspacem_exit(1);
 }
 
 static void aspacem_barf_toolow ( HChar* what )
@@ -245,7 +174,7 @@ static void aspacem_barf_toolow ( HChar* what )
   VG_(debugLog)(0, "aspacem", "Valgrind: FATAL: %s is too low.\n", what);
   VG_(debugLog)(0, "aspacem", "  Increase it and rebuild.  "
                               "Exiting now.\n");
-  VG_(exit)(1);
+  aspacem_exit(1);
 }
 
 static void aspacem_assert_fail( const HChar* expr,
@@ -257,7 +186,7 @@ static void aspacem_assert_fail( const HChar* expr,
   VG_(debugLog)(0, "aspacem", "  %s\n", expr);
   VG_(debugLog)(0, "aspacem", "  at %s:%d (%s)\n", file,line,fn);
   VG_(debugLog)(0, "aspacem", "Exiting now.\n");
-  VG_(exit)(1);
+  aspacem_exit(1);
 }
 
 #define aspacem_assert(expr)                             \
@@ -391,6 +320,16 @@ static Int aspacem_fstat( Int fd, struct vki_stat* buf )
    return res.isError ? (-1) : 0;
 }
 
+static void aspacem_exit( Int status )
+{
+   (void)VG_(do_syscall1)(__NR_exit_group, status );
+   (void)VG_(do_syscall1)(__NR_exit, status );
+   /* Why are we still alive here? */
+   /*NOTREACHED*/
+   *(volatile Int *)0 = 'x';
+   aspacem_assert(2+2 == 5);
+}
+
 
 //--------------------------------------------------------------
 // Functions for extracting information about file descriptors.
@@ -427,6 +366,74 @@ Bool get_name_for_fd ( Int fd, /*OUT*/HChar* buf, Int nbuf )
       return False;
 }
 
+
+/*-----------------------------------------------------------------*/
+/*---                                                           ---*/
+/*--- SegName array management.                                 ---*/
+/*---                                                           ---*/
+/*-----------------------------------------------------------------*/
+
+/* Searches the filename table to find an index for the given name.
+   If none is found, an index is allocated and the name stored.  If no
+   space is available we just give up.  If the string is too long to
+   store, return -1.
+*/
+static Int allocate_segname ( const HChar* name )
+{
+   Int i, j, len;
+
+   aspacem_assert(name);
+
+   if (0) VG_(debugLog)(0,"aspacem","allocate_segname %s\n", name);
+
+   len = VG_(strlen)(name);
+   if (len >= VG_MAX_SEGNAMELEN-1) {
+      return -1;
+   }
+
+   /* first see if we already have the name. */
+   for (i = 0; i < segnames_used; i++) {
+      if (!segnames[i].inUse)
+         continue;
+      if (0 == VG_(strcmp)(name, &segnames[i].fname[0])) {
+         return i;
+      }
+   }
+
+   /* no we don't.  So look for a free slot. */
+   for (i = 0; i < segnames_used; i++)
+      if (!segnames[i].inUse)
+         break;
+
+   if (i == segnames_used) {
+      /* no free slots .. advance the high-water mark. */
+      if (segnames_used+1 < VG_N_SEGNAMES) {
+         i = segnames_used;
+         segnames_used++;
+      } else {
+         aspacem_barf_toolow("VG_N_SEGNAMES");
+      }
+   }
+
+   /* copy it in */
+   segnames[i].inUse = True;
+   for (j = 0; j < len; j++)
+      segnames[i].fname[j] = name[j];
+   aspacem_assert(len < VG_MAX_SEGNAMELEN);
+   segnames[i].fname[len] = 0;
+   return i;
+}
+
+
+/////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////
+
+
+/* Note: many of the exported functions implemented below are
+   described more fully in comments in pub_core_aspacemgr.h.
+*/
 
 /*-----------------------------------------------------------------*/
 /*---                                                           ---*/

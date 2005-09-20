@@ -181,7 +181,6 @@ static void scan_auxv(void* init_sp)
 #        endif
 
          case AT_PHDR:
-            VG_(valgrind_base) = VG_PGROUNDDN(auxv->u.a_val);
             break;
 
          default:

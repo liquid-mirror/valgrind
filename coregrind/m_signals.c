@@ -1862,15 +1862,13 @@ void sync_signalhandler ( Int sigNo, vki_siginfo_t *info, struct vki_ucontext *u
 	 if (seg == NULL)
 	    VG_(message)(Vg_DebugMsg,
 			 "SIGSEGV: si_code=%d faultaddr=%p tid=%d ESP=%p "
-                         "seg=NULL shad=%p-%p",
-			 info->si_code, fault, tid, esp,
-			 VG_(shadow_base), VG_(shadow_end));
+                         "seg=NULL",
+			 info->si_code, fault, tid, esp);
 	 else
 	    VG_(message)(Vg_DebugMsg,
 			 "SIGSEGV: si_code=%d faultaddr=%p tid=%d ESP=%p "
-                          "seg=%p-%p shad=%p-%p",
-			 info->si_code, fault, tid, esp, seg->start, seg->end, 
-                         VG_(shadow_base), VG_(shadow_end));
+                          "seg=%p-%p",
+			 info->si_code, fault, tid, esp, seg->start, seg->end);
       }
       if (info->si_code == 1 /* SEGV_MAPERR */
           && seg
