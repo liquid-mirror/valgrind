@@ -230,6 +230,12 @@ extern SysRes VG_(am_munmap_client)( Addr start, SizeT length );
    accordingly.  This fails if the range isn't valid for valgrind. */
 extern SysRes VG_(am_munmap_valgrind)( Addr start, SizeT length );
 
+/* Let (start,len) denote an area within a single Valgrind-owned
+  segment (anon or file).  Change the ownership of [start, start+len)
+  to the client instead.  Fails if (start,len) does not denote a
+  suitable segment. */
+extern Bool VG_(am_change_ownership_v_to_c)( Addr start, SizeT len );
+
 /* --- --- --- reservations --- --- --- */
 
 /* Create a reservation from START .. START+LENGTH-1, with the given

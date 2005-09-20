@@ -2069,6 +2069,46 @@ SysRes VG_(am_munmap_valgrind)( Addr start, SizeT len )
    return am_munmap_both_wrk( start, len, False/*valgrind*/ );
 }
 
+/* Let (start,len) denote an area within a single Valgrind-owned
+  segment (anon or file).  Change the ownership of [start, start+len)
+  to the client instead.  Fails if (start,len) does not denote a
+  suitable segment. */
+
+Bool VG_(am_change_ownership_v_to_c)( Addr start, SizeT len )
+{
+   Int i, iLo, iHi;
+
+   if (len == 0)
+      return True;
+   if (start + len < start)
+      return False;
+   if (!VG_IS_PAGE_ALIGNED(start) || !VG_IS_PAGE_ALIGNED(len))
+      return False;
+
+   i = find_nsegment_idx(start);
+   if (nsegments[i].kind != SkFileV && nsegments[i].kind != SkAnonV)
+      return False;
+   if (start+len-1 > nsegments[i].end)
+      return False;
+
+   aspacem_assert(start >= nsegments[i].start);
+   aspacem_assert(start+len-1 <= nsegments[i].end);
+
+   /* This scheme is like how mprotect works: split the to-be-changed
+      range into its own segment(s), then mess with them (it).  There
+      should be only one. */
+   split_nsegments_lo_and_hi( start, start+len-1, &iLo, &iHi );
+   aspacem_assert(iLo == iHi);
+   switch (nsegments[iLo].kind) {
+      case SkFileV: nsegments[iLo].kind = SkFileC; break;
+      case SkAnonV: nsegments[iLo].kind = SkAnonC; break;
+      default: aspacem_assert(0); /* can't happen - guarded above */
+   }
+
+   preen_nsegments();
+   return True;
+}
+
 
 /* --- --- --- reservations --- --- --- */
 

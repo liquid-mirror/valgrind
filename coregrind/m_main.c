@@ -2222,9 +2222,12 @@ Int main(Int argc, HChar **argv, HChar **envp)
    //--------------------------------------------------------------
    // Initialise the redirect table.
    //   p: init_tt_tc [so it can call VG_(search_transtab) safely]
+   //   p: aspacem [so can change ownership of sysinfo pages]
    //--------------------------------------------------------------
    VG_(debugLog)(1, "main", "Initialise redirects\n");
-   VG_(setup_code_redirect_table)();
+   { Bool setup_redirects_succeeded = VG_(setup_code_redirect_table)();
+     vg_assert(setup_redirects_succeeded);
+   }
 
    //--------------------------------------------------------------
    // setup file descriptors
