@@ -44,6 +44,9 @@ static Char procmap_buf[M_PROCMAP_BUF];
 /* Records length of /proc/self/maps read into procmap_buf. */
 static Int  buf_n_tot;
 
+/* Minimum and maximum addresses */
+#define Addr_MIN ((Addr)0)
+#define Addr_MAX ((Addr)(-1ULL))
 
 /* Helper fns. */
 
@@ -148,11 +151,12 @@ static void read_procselfmaps ( void )
 */
 void VG_(parse_procselfmaps) (
    void (*record_mapping)( Addr addr, SizeT len, UInt prot,
-			   UInt dev, UInt ino, ULong foff, const UChar* filename )
+			   UInt dev, UInt ino, ULong foff, const UChar* filename ),
+   void (*record_gap)( Addr addr, SizeT len )
    )
 {
    Int    i, j, i_eol;
-   Addr   start, endPlusOne;
+   Addr   start, endPlusOne, gapStart;
    UChar* filename;
    UChar  rr, ww, xx, pp, ch, tmp;
    UInt	  ino, prot;
@@ -167,6 +171,7 @@ void VG_(parse_procselfmaps) (
 
    /* Ok, it's safely aboard.  Parse the entries. */
    i = 0;
+   gapStart = Addr_MIN;
    while (True) {
       if (i >= buf_n_tot) break;
 
@@ -265,6 +270,9 @@ void VG_(parse_procselfmaps) (
       if (ww == 'w') prot |= VKI_PROT_WRITE;
       if (xx == 'x') prot |= VKI_PROT_EXEC;
 
+      if (record_gap && gapStart < start)
+         (*record_gap) ( gapStart, start-gapStart );
+
       (*record_mapping) ( start, endPlusOne-start, 
                           prot, maj * 256 + min, ino,
                           foffset, filename );
@@ -274,7 +282,11 @@ void VG_(parse_procselfmaps) (
       }
 
       i = i_eol + 1;
+      gapStart = endPlusOne;
    }
+
+   if (record_gap && gapStart < Addr_MAX)
+      (*record_gap) ( gapStart, Addr_MAX - gapStart + 1 );
 }
 
 /*--------------------------------------------------------------------*/

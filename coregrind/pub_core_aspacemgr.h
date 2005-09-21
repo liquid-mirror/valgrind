@@ -46,7 +46,8 @@ extern
 void VG_(parse_procselfmaps) (
    void (*record_mapping)( Addr addr, SizeT len, UInt prot,
 			   UInt dev, UInt ino, ULong foff,
-                           const UChar *filename ) );
+                           const UChar *filename ),
+   void (*record_gap)( Addr addr, SizeT len ) );
 
 //--------------------------------------------------------------
 // Definition of address-space segments
