@@ -1909,9 +1909,14 @@ Int main(Int argc, HChar **argv, HChar **envp)
    struct vki_rlimit zero = { 0, 0 };
 
    //============================================================
-   // Nb: startup is complex.  Prerequisites are shown at every step.
    //
+   // Nb: startup is complex.  Prerequisites are shown at every step.
    // *** Be very careful when messing with the order ***
+   //
+   // The first order of business is to get debug logging, the address
+   // space manager and the dynamic memory manager up and running.
+   // Once that's done, we can relax a bit.
+   //
    //============================================================
    
    /* This is needed to make VG_(getenv) usable early. */
@@ -1993,25 +1998,23 @@ Int main(Int argc, HChar **argv, HChar **envp)
    }
    VG_(debugLog)(1, "main", "Dynamic memory manager is running\n");
 
+   //============================================================
+   //
+   // Dynamic memory management is now available.
+   //
+   //============================================================
+
    //--------------------------------------------------------------
    // Extract the stage1 name from the environment.
    VG_(debugLog)(1, "main", "Getting stage1's name\n");
    name_of_stage1 = VG_(getenv)(VALGRINDSTAGE1);
    if (name_of_stage1 == NULL) {
-      VG_(printf)("valgrind: You cannot run the tool binary directly.\n");
+      VG_(printf)("valgrind: You cannot run '%s' directly.\n", argv[0]);
       VG_(printf)("valgrind: You should use $prefix/bin/valgrind.\n");
       VG_(exit)(1);
    }
 
-   //============================================================
-   // Command line argument handling order:
-   // * If --help/--help-debug are present, show usage message 
-   //   (including the tool-specific usage)
-   // * (If no --tool option given, default to Memcheck)
-   // * Then, if client is missing, abort with error msg
-   // * Then, if any cmdline args are bad, abort with error msg
-   //============================================================
-
+   //--------------------------------------------------------------
    // Get the current process datasize rlimit, and set it to zero.
    // This prevents any internal uses of brk() from having any effect.
    // We remember the old value so we can restore it on exec, so that
@@ -2044,6 +2047,15 @@ Int main(Int argc, HChar **argv, HChar **envp)
      if (cp != NULL)
         VG_(libdir) = cp;
    }
+
+   //============================================================
+   // Command line argument handling order:
+   // * If --help/--help-debug are present, show usage message 
+   //   (including the tool-specific usage)
+   // * (If no --tool option given, default to Memcheck)
+   // * Then, if client is missing, abort with error msg
+   // * Then, if any cmdline args are bad, abort with error msg
+   //============================================================
 
    //--------------------------------------------------------------
    // Get valgrind args + client args (inc. from VALGRIND_OPTS/.valgrindrc).
