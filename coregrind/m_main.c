@@ -32,6 +32,7 @@
 
 #include "pub_core_basics.h"
 #include "pub_core_threadstate.h"
+#include "pub_core_clientstate.h"
 #include "pub_core_aspacemgr.h"
 #include "pub_core_commandline.h"
 #include "pub_core_debuglog.h"

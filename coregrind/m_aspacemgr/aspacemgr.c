@@ -55,28 +55,6 @@
 
 /*-----------------------------------------------------------------*/
 /*---                                                           ---*/
-/*--- Basic globals about the address space.                    ---*/
-/*---                                                           ---*/
-/*-----------------------------------------------------------------*/
-
-// FIXME: these are nothing to do with the address space manager
-// and should be moved elsewhere.
-
-/* Client address space, lowest to highest (see top of ume.c) */
-Addr VG_(client_base);           /* client address space limits */
-Addr VG_(client_end);
-
-Addr VG_(clstk_base);
-Addr VG_(clstk_end);
-UWord VG_(clstk_id);
-
-Addr VG_(brk_base)  = 0;         /* start of brk */
-Addr VG_(brk_limit) = 0;         /* current brk */
-
-
-
-/*-----------------------------------------------------------------*/
-/*---                                                           ---*/
 /*--- The Address Space Manager's state.                        ---*/
 /*---                                                           ---*/
 /*-----------------------------------------------------------------*/

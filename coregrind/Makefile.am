@@ -35,6 +35,7 @@ noinst_HEADERS = \
 	coregrind.h		\
 	pub_core_aspacemgr.h	\
 	pub_core_basics.h	\
+	pub_core_clientstate.h	\
 	pub_core_commandline.h	\
 	pub_core_cpuid.h	\
 	pub_core_debuginfo.h	\
@@ -92,6 +93,7 @@ valgrind_SOURCES = \
 libcoregrind_singles_a_SOURCES = \
 	m_commandline.c \
 	m_cpuid.S \
+	m_clientstate.c \
 	m_debugger.c \
 	m_debuglog.c \
 	m_errormgr.c \
