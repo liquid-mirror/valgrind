@@ -1883,55 +1883,12 @@ static Addr* get_seg_starts ( /*OUT*/Int* n_acquired )
 }
 
 
-/*
-  This code decides on the layout of the client and Valgrind address
-  spaces, loads valgrind.so and the tool.so into the valgrind part,
-  loads the client executable (and the dynamic linker, if necessary)
-  into the client part, and calls into Valgrind proper.
-
-  The code is careful not to allow spurious mappings to appear in the
-  wrong parts of the address space.  In particular, to make sure
-  dlopen puts things in the right place, it will pad out the forbidden
-  chunks of address space so that dlopen is forced to put things where
-  we want them.
-
-  The memory map it creates is:
-
-  client_base    +-------------------------+
-                 | client address space    |
-	         :                         :
-	         :                         :
-		 | client stack            |
-  client_end     +-------------------------+
-                 | redzone                 |
-  shadow_base    +-------------------------+
-                 |                         |
-	         : shadow memory for tools :
-	         | (may be 0 sized)        |
-  shadow_end     +-------------------------+
-  valgrind_base  +-------------------------+
-                 | kickstart executable    |
-                 | valgrind heap  vvvvvvvvv| (barely used)
-                 -                         -
-                 | valgrind .so files      |
-		 | and mappings            |
-                 -                         -
-                 | valgrind stack ^^^^^^^^^|
-  valgrind_last  +-------------------------+
-		 : kernel                  :
-
-  Nb: Before we can do general allocations with VG_(arena_malloc)() and
-  VG_(mmap)(), we need to build the segment skip-list, so we know where
-  we can put things.  However, building that structure requires
-  allocating memory.  So we need to a bootstrapping process.  It's done
-  by making VG_(arena_malloc)() have a special static superblock that's
-  used for the first 1MB's worth of allocations.  This is enough to
-  build the segment skip-list.
-*/
-
-
 /* When main() is entered, we should be on the following stack, not
-   the one the kernel gave us. */
+   the one the kernel gave us.  We will run on this stack until
+   simulation of the root thread is started, at which point a transfer
+   is made to a dynamically allocated stack.  This is for the sake of
+   uniform overflow detection for all Valgrind threads. */
+
 VgStack VG_(the_root_stack);
 
 
@@ -1955,12 +1912,6 @@ Int main(Int argc, HChar **argv, HChar **envp)
    // Nb: startup is complex.  Prerequisites are shown at every step.
    //
    // *** Be very careful when messing with the order ***
-   //
-   // TODO (JRS 9 Aug 05): 
-   //    - there's circular dependencies with VG_(getenv).
-   //      TODO: review and clarify all issues to do with
-   //      environment variables.
-   //      
    //============================================================
    
    /* This is needed to make VG_(getenv) usable early. */
