@@ -50,6 +50,7 @@
 #include "pub_tool_replacemalloc.h"
 #include "pub_tool_stacktrace.h"
 #include "pub_tool_tooliface.h"
+#include "pub_tool_clientstate.h"
 
 #include "valgrind.h"           // For {MALLOC,FREE}LIKE_BLOCK
 
@@ -1374,8 +1375,8 @@ static void write_hp_file(void)
 
    // File header, including command line
    SPRINTF(buf, "JOB         \"");
-   for (i = 0; i < VG_(client_argc); i++)
-      SPRINTF(buf, "%s ", VG_(client_argv)[i]);
+   for (i = 0; i < VG_(args_for_client).used; i++)
+      SPRINTF(buf, "%s ", VG_(args_for_client).strs[i]);
    SPRINTF(buf, /*" (%d ms/sample)\"\n"*/ "\"\n"
                 "DATE        \"\"\n"
                 "SAMPLE_UNIT \"ms\"\n"
@@ -1697,8 +1698,8 @@ write_text_file(ULong total_ST, ULong heap_ST)
 
    // Command line
    SPRINTF(buf, "Command: ");
-   for (i = 0; i < VG_(client_argc); i++)
-      SPRINTF(buf, "%s ", VG_(client_argv)[i]);
+   for (i = 0; i < VG_(args_for_client).used; i++)
+      SPRINTF(buf, "%s ", VG_(args_for_client).strs[i]);
    SPRINTF(buf, "\n%s\n", maybe_p);
 
    if (clo_heap)

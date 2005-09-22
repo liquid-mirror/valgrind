@@ -87,7 +87,6 @@ CLEANFILES =
 
 valgrind_SOURCES = \
 	m_launcher.c \
-	m_commandline.c \
 	m_debuglog.c
 
 libcoregrind_singles_a_SOURCES = \

@@ -36,7 +36,6 @@
    ------------------------------------------------------------------ */
 
 /* Client args and environment (which can be inspected with VG_(getenv)(). */
-extern Int    VG_(client_argc);
 extern Char** VG_(client_argv);
 extern Char** VG_(client_envp);
 

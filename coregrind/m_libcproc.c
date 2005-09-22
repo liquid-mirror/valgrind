@@ -35,6 +35,7 @@
 #include "pub_core_libcproc.h"
 #include "pub_core_mallocfree.h"
 #include "pub_core_syscall.h"
+#include "pub_core_clientstate.h"
 #include "vki_unistd.h"
 
 /* ---------------------------------------------------------------------
@@ -213,11 +214,8 @@ void VG_(env_remove_valgrind_env_stuff)(Char** envp)
    VG_(sprintf)(buf, "%s*", VG_(libdir));
    mash_colon_env(ld_library_path_str, buf);
 
-   // Remove VALGRIND_CLO variable.
-   VG_(env_unsetenv)(envp, VALGRINDCLO);
-
-   // Remove VALGRIND_STAGE1 variable.
-   VG_(env_unsetenv)(envp, VALGRINDSTAGE1);
+   // Remove VALGRIND_LAUNCHER variable.
+   VG_(env_unsetenv)(envp, VALGRIND_LAUNCHER);
 
    // XXX if variable becomes empty, remove it completely?
 
@@ -310,9 +308,6 @@ Int VG_(system) ( Char* cmd )
 /* ---------------------------------------------------------------------
    Resource limits
    ------------------------------------------------------------------ */
-
-struct vki_rlimit VG_(client_rlimit_data);
-struct vki_rlimit VG_(client_rlimit_stack);
 
 /* Support for getrlimit. */
 Int VG_(getrlimit) (Int resource, struct vki_rlimit *rlim)

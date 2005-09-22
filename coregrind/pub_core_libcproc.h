@@ -41,36 +41,18 @@
 /* The directory we look for all our auxillary files in.  Useful for
    running Valgrind out of a build tree without having to do "make
    install". */
-#define VALGRINDLIB	"VALGRINDLIB"
+#define VALGRIND_LIB     "VALGRIND_LIB"
 
 /* Additional command-line arguments; they are overridden by actual
    command-line option.  Each argument is separated by spaces.  There
    is no quoting mechanism.  */
-#define VALGRINDOPTS	"VALGRIND_OPTS"
+#define VALGRIND_OPTS    "VALGRIND_OPTS"
 
 /* The full name of Valgrind's stage1 (launcher) executable.  This is
    set by stage1 and read by stage2, and is used for recursive
    invokations of Valgrind on child processes. */
-#define VALGRINDSTAGE1	"VALGRIND_STAGE1"
+#define VALGRIND_LAUNCHER  "VALGRIND_LAUNCHER"
 
-
-/* If this variable is present in the environment, then valgrind will
-   not parse the command line for options at all; all options come
-   from this variable.  Arguments are terminated by ^A (\001).  There
-   is no quoting mechanism.
-
-   This variable is not expected to be set by anything other than
-   Valgrind itself, as part of its handling of execve with
-   --trace-children=yes.  This variable should not be present in the
-   client environment.  */
-#define VALGRINDCLO	"_VALGRIND_CLO"
-
-// Client's executable file descriptor.
-extern Int VG_(clexecfd);
-
-// Client's original rlimit data and rlimit stack
-extern struct vki_rlimit VG_(client_rlimit_data);
-extern struct vki_rlimit VG_(client_rlimit_stack);
 
 // Environment manipulations
 extern Char **VG_(env_setenv)   ( Char ***envp, const Char* varname,

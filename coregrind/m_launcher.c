@@ -28,27 +28,20 @@
    The GNU General Public License is contained in the file COPYING.
 */
 
-#include <ctype.h>
+/* Note: this is a "normal" program and not part of Valgrind proper,
+   and so it doesn't have to conform to Valgrind's arcane rules on
+   no-glibc-usage etc. */
+
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-
-#include "pub_core_basics.h"
-#include "pub_core_commandline.h"
-#include "pub_core_debuglog.h"
-#include "pub_core_libcassert.h"
-#include "pub_core_libcbase.h"
-#include "pub_core_libcfile.h"
-#include "pub_core_libcprint.h"
-#include "pub_core_libcproc.h"   // For VALGRINDLIB
-#include "pub_core_mallocfree.h"
-
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <fcntl.h>
 #include <assert.h>
+
+#include "pub_core_debuglog.h"
+#include "pub_core_libcproc.h"  // For VALGRIND_LIB, VALGRIND_LAUNCHER
+
 
 
 #define PATH_MAX 4096 /* POSIX refers to this a lot but I dunno
@@ -66,68 +59,57 @@ static const char *valgrind_lib = VG_LIBDIR;
 int main(int argc, char** argv, char** envp)
 {
    int i, j, loglevel, r;
-   Int vg_argc;
-   Char **vg_argv;
-   char **cl_argv;
    const char *toolname = NULL;
    const char *cp;
    char *toolfile;
-   char stage1_name[PATH_MAX+1];
+   char launcher_name[PATH_MAX+1];
    char* new_line;
    char** new_env;
 
    /* Start the debugging-log system ASAP.  First find out how many 
-      "-d"s were specified.  This is a pre-scan of the command line. */
+      "-d"s were specified.  This is a pre-scan of the command line.
+      At the same time, look for the tool name. */
    loglevel = 0;
    for (i = 1; i < argc; i++) {
-     if (argv[i][0] != '-')
-        break;
-     if (0 == strcmp(argv[i], "--")) 
-        break;
-     if (0 == strcmp(argv[i], "-d")) 
-        loglevel++;
+      if (argv[i][0] != '-')
+         break;
+      if (0 == strcmp(argv[i], "--")) 
+         break;
+      if (0 == strcmp(argv[i], "-d")) 
+         loglevel++;
+      if (0 == strncmp(argv[i], "--tool=", 7)) 
+         toolname = argv[i] + 7;
    }
 
    /* ... and start the debug logger.  Now we can safely emit logging
       messages all through startup. */
    VG_(debugLog_startup)(loglevel, "Stage 1");
 
-   /* Get the full command line */
-   VG_(get_command_line)(argc, argv, &vg_argc, &vg_argv, &cl_argv);
-
-   /* Look for a --tool switch */
-   for (i = 1; i < vg_argc; i++) {
-     if (0 == strncmp(vg_argv[i], "--tool=", 7)) 
-        toolname = vg_argv[i] + 7;
-   }
-
    /* Make sure we know which tool we're using */
    if (toolname) {
-      VG_(debugLog)(1, "stage1", "tool %s requested\n", toolname);
+      VG_(debugLog)(1, "launcher", "tool '%s' requested\n", toolname);
    } else {
-      VG_(debugLog)(1, "stage1", "no tool requested, defaulting to memcheck\n");
+      VG_(debugLog)(1, "launcher", 
+                       "no tool requested, defaulting to 'memcheck'\n");
       toolname = "memcheck";
    }
 
-   /* Figure out the name of this executable, so we can tell
-      stage2. */
-   memset(stage1_name, 0, PATH_MAX+1);
-   r = readlink("/proc/self/exe", stage1_name, PATH_MAX);
+   /* Figure out the name of this executable (viz, the launcher), so
+      we can tell stage2.  stage2 will use the name for recursive
+      invokations of valgrind on child processes. */
+   memset(launcher_name, 0, PATH_MAX+1);
+   r = readlink("/proc/self/exe", launcher_name, PATH_MAX);
    if (r == -1)
       barf("readlink(\"/proc/self/exe\") failed.");
 
-   r = setenv(VALGRINDSTAGE1, stage1_name, 1/*overwrite*/);
-   if (r != 0)
-      barf("setenv(VALGRINDSTAGE1) failed.");
-
-   /* tediously augment the env: VALGRINDSTAGE1=stage1_name */
-   new_line = malloc(strlen(VALGRINDSTAGE1) + 1 
-                     + strlen(stage1_name) + 1);
+   /* tediously augment the env: VALGRIND_LAUNCHER=launcher_name */
+   new_line = malloc(strlen(VALGRIND_LAUNCHER) + 1 
+                     + strlen(launcher_name) + 1);
    if (new_line == NULL)
       barf("malloc of new_line failed.");
-   strcpy(new_line, VALGRINDSTAGE1);
+   strcpy(new_line, VALGRIND_LAUNCHER);
    strcat(new_line, "=");
-   strcat(new_line, stage1_name);
+   strcat(new_line, launcher_name);
 
    for (j = 0; envp[j]; j++)
       ;
@@ -140,18 +122,19 @@ int main(int argc, char** argv, char** envp)
    new_env[i++] = NULL;
    assert(i == j+2);
 
-
-   cp = getenv(VALGRINDLIB);
+   /* Establish the correct VALGRIND_LIB. */
+   cp = getenv(VALGRIND_LIB);
 
    if (cp != NULL)
       valgrind_lib = cp;
 
+   /* Build the stage2 invokation, and execve it.  Bye! */
    toolfile = malloc(strlen(valgrind_lib) + strlen(toolname) + 2);
    if (toolfile == NULL)
       barf("malloc of toolfile failed.");
    sprintf(toolfile, "%s/%s", valgrind_lib, toolname);
 
-   VG_(debugLog)(1, "stage1", "launching %s\n", toolfile);
+   VG_(debugLog)(1, "launcher", "launching %s\n", toolfile);
 
    execve(toolfile, argv, new_env);
 
@@ -159,104 +142,4 @@ int main(int argc, char** argv, char** envp)
                    toolname, strerror(errno));
 
    exit(1);
-}
-
-void* VG_(malloc) ( SizeT nbytes )
-{
-   return malloc(nbytes);
-}
-
-Bool VG_(isspace) ( Char c )
-{
-   return isspace(c);
-}
-
-Int VG_(strcmp) ( const Char* s1, const Char* s2 )
-{
-   return strcmp(s1, s2);
-}
-
-Char *VG_(getenv)(Char *varname)
-{
-   return getenv(varname);
-}
-
-SysRes VG_(open) ( const Char* pathname, Int flags, Int mode )
-{
-   SysRes res;
-   Int fd;
-   if ((fd = open(pathname, flags, mode)) < 0) {
-      res.isError = True;
-      res.val = errno;
-   } else {
-      res.isError = False;
-      res.val = fd;
-   }
-   return res;
-}
-
-void VG_(close) ( Int fd )
-{
-   close(fd);
-   return;
-}
-
-Int VG_(read) ( Int fd, void* buf, Int count)
-{
-   return read(fd, buf, count);
-}
-
-Int VG_(fsize) ( Int fd )
-{
-   struct stat buf;
-   return fstat(fd, &buf) == 0 ? buf.st_size : (-1);
-}
-
-UInt VG_(snprintf) ( Char* buf, Int size, const HChar *format, ... )
-{
-   va_list vargs;
-   UInt n;
-
-   va_start(vargs, format);
-   n = vsnprintf(buf, size, format, vargs);
-   va_end(vargs);
-
-   return n;
-}
-
-void VG_(assert_fail) ( Bool isCore, const Char* expr, const Char* file, 
-                        Int line, const Char* fn, const HChar* format, ... )
-{
-   va_list vargs;
-   Char buf[256];
-
-   va_start(vargs, format);
-   vsprintf(buf, format, vargs);
-   va_end(vargs);
-
-   fprintf(stderr, "\nvalgrind: %s:%d (%s): Assertion '%s' failed.\n",
-           file, line, fn, expr );
-   if (!strcmp(buf, ""))
-      fprintf(stderr, "valgrind: %s\n", buf);
-
-   exit(1);
-}
-
-static Bool isterm ( Char c )
-{
-   return ( VG_(isspace)(c) || 0 == c );
-}
-
-Int VG_(strcmp_ws) ( const Char* s1, const Char* s2 )
-{
-   while (True) {
-      if (isterm(*s1) && isterm(*s2)) return 0;
-      if (isterm(*s1)) return -1;
-      if (isterm(*s2)) return 1;
-
-      if (*(UChar*)s1 < *(UChar*)s2) return -1;
-      if (*(UChar*)s1 > *(UChar*)s2) return 1;
-
-      s1++; s2++;
-   }
 }

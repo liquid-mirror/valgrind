@@ -31,11 +31,14 @@
 #ifndef __PUB_CORE_COMMANDLINE_H
 #define __PUB_CORE_COMMANDLINE_H
 
-#define VG_CLO_SEP   '\01'
 
-extern void VG_(get_command_line)( int argc, char** argv,
-                                   Int* vg_argc_out, Char*** vg_argv_out, 
-                                                     char*** cl_argv_out );
+/* Split up the args presented by the launcher to m_main.main(), and
+   park them in VG_(args_for_client), VG_(args_for_valgrind) and
+   VG_(args_for_valgrind_extras).  The latter are acquired from
+   $VALGRIND_OPTS, ./.valgrindrc and ~/.valgrindrc. */
+
+extern void VG_(split_up_argv)( Int argc, HChar** argv );
+
 
 #endif   // __PUB_CORE_COMMANDLINE_H
 

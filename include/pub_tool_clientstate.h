@@ -1,6 +1,6 @@
 
 /*--------------------------------------------------------------------*/
-/*--- Misc client state info                pub_core_clientstate.h ---*/
+/*--- Misc client state info                pub_tool_clientstate.h ---*/
 /*--------------------------------------------------------------------*/
 
 /*
@@ -28,42 +28,46 @@
    The GNU General Public License is contained in the file COPYING.
 */
 
-#ifndef __PUB_CORE_CLIENTSTATE_H
-#define __PUB_CORE_CLIENTSTATE_H
-
-//--------------------------------------------------------------------
-// PURPOSE: This module holds various bits of client state which don't
-// live comfortably anywhere else.  Note that the ThreadStates for the
-// client don't live here; they instead live in m_threadstate.h.
-//--------------------------------------------------------------------
-
-#include "pub_tool_clientstate.h"
-
-// Address space globals
-
-extern Addr  VG_(client_base);	 // client address space limits
-extern Addr  VG_(client_end);
-
-extern Addr  VG_(clstk_base);	 // client stack range
-extern Addr  VG_(clstk_end);
-extern UWord VG_(clstk_id);      // client stack id
-
-extern Addr  VG_(brk_base);	 // start of brk
-extern Addr  VG_(brk_limit);	 // current brk
-
-// Client's executable file descriptor.
-extern Int VG_(clexecfd);
-
-// Client's original rlimit data and rlimit stack
-extern struct vki_rlimit VG_(client_rlimit_data);
-extern struct vki_rlimit VG_(client_rlimit_stack);
-
-// Name of the launcher, as extracted from VALGRIND_LAUNCHER at
-// startup.
-extern HChar* VG_(name_of_launcher);
+#ifndef __PUB_TOOL_CLIENTSTATE_H
+#define __PUB_TOOL_CLIENTSTATE_H
 
 
-#endif   // __PUB_CORE_CLIENTSTATE_H
+// Command line pieces, after they have been extracted from argv in
+// m_main.main().  These are all NULL-terminated vectors.
+
+/* Expandable arrays of strings. */
+typedef
+   struct {
+      Int     size;
+      Int     used;
+      HChar** strs;
+   }
+   XArrayStrings;
+
+/* Args for the client. */
+extern XArrayStrings VG_(args_for_client);
+
+/* Args for V.  This is the concatenation of the following:
+   - contents of ~/.valgrindrc
+   - contents of $VALGRIND_OPTS
+   - contents of ./.valgrindrc
+   - args from the command line
+   Only the last of these is passed onwards to child Valgrinds at
+   client sys_execve, since the children will re-acquire the first 
+   3 categories for themselves.  Therefore we also record the 
+   number of these no-pass-at-execve arguments. */
+extern XArrayStrings VG_(args_for_valgrind);
+
+/* Number of leading args in VG_(args_for_valgrind) not to pass on at
+   exec time. */
+extern Int VG_(args_for_valgrind_noexecpass);
+
+/* The name of the client executable, as specified on the command
+   line. */
+extern HChar* VG_(args_the_exename);
+
+
+#endif   // __PUB_TOOL_CLIENTSTATE_H
 
 /*--------------------------------------------------------------------*/
 /*--- end                                                          ---*/

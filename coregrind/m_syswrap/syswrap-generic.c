@@ -2444,11 +2444,8 @@ PRE(sys_execve)
    }
 
    if (VG_(clo_trace_children)) {
-      Char* optvar = VG_(build_child_VALGRINDCLO)( (Char*)ARG1 );
-
-      // Set VALGRINDCLO and VALGRINDLIB in ARG3 (the environment)
-      VG_(env_setenv)( (Char***)&ARG3, VALGRINDCLO, optvar);
-      VG_(env_setenv)( (Char***)&ARG3, VALGRINDLIB, VG_(libdir));
+      // Set VALGRIND_LIB in ARG3 (the environment)
+      VG_(env_setenv)( (Char***)&ARG3, VALGRIND_LIB, VG_(libdir));
 
       // Create executable name: "/proc/self/fd/<vgexecfd>", update ARG1
       path = VG_(build_child_exename)();

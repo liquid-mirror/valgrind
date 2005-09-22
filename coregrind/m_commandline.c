@@ -28,6 +28,7 @@
    The GNU General Public License is contained in the file COPYING.
 */
 
+// TODO: prune these
 #include "pub_core_basics.h"
 #include "pub_core_commandline.h"
 #include "pub_core_libcassert.h"
@@ -37,6 +38,93 @@
 #include "pub_core_libcproc.h"
 #include "pub_core_mallocfree.h"
 #include "pub_core_options.h"
+#include "pub_core_clientstate.h"
+
+
+/* Add a string to an expandable array of strings. */
+static void add_string ( XArrayStrings* xa, HChar* str )
+{
+   Int     i;
+   HChar** strs2;
+   vg_assert(xa->used >= 0);
+   vg_assert(xa->size >= 0);
+   vg_assert(xa->used <= xa->size);
+   if (xa->strs == NULL) vg_assert(xa->size == 0);
+
+   if (xa->used == xa->size) {
+      xa->size = xa->size==0 ? 2 : 2*xa->size;
+      strs2 = VG_(malloc)( xa->size * sizeof(HChar*) );
+      for (i = 0; i < xa->used; i++)
+         strs2[i] = xa->strs[i];
+      if (xa->strs) 
+         VG_(free)(xa->strs);
+      xa->strs = strs2;
+   }
+   vg_assert(xa->used < xa->size);
+   xa->strs[xa->used++] = str;
+}
+
+
+/* Split up the args presented by the launcher to m_main.main(), and
+   park them in VG_(args_for_client), VG_(args_for_valgrind),
+   VG_(args_for_valgrind_extras) and VG_(args_the_exename).  The
+   latter are acquired from $VALGRIND_OPTS, ./.valgrindrc and
+   ~/.valgrindrc. 
+*/
+/* Scheme: args look like this:
+
+      args-for-v  exe_name  args-for-c
+
+   args-for-v are taken until either they don't start with '-' or
+   a "--" is seen.
+
+   If args-for-v includes --command-line-only=yes, then the extra
+   sources (env vars, files) are not consulted.
+*/
+
+
+void VG_(split_up_argv)( Int argc, HChar** argv )
+{
+          Int  i;
+          Bool augment = True;
+   static Bool already_called = False;
+
+   /* This function should be called once, at startup, and then never
+      again. */
+   vg_assert(!already_called);
+   already_called = True;
+
+   /* Collect up the args-for-V. */
+   i = 1; /* skip the exe (stage2) name. */
+   for (; i < argc; i++) {
+      vg_assert(argv[i]);
+      if (0 == VG_(strcmp)(argv[i], "--")) {
+         i++;
+         break;
+      }
+      if (0 == VG_(strcmp)(argv[i], "--command-line-only=yes"))
+         augment = False;
+      if (argv[i][0] != '-')
+	break;
+      add_string( &VG_(args_for_valgrind), argv[i] );
+   }
+
+   /* Should now be looking at the exe name. */
+   if (i < argc) {
+     vg_assert(argv[i]);
+      VG_(args_the_exename) = argv[i];
+      i++;
+   }
+
+   /* The rest are args for the client. */
+   for (; i < argc; i++) {
+     vg_assert(argv[i]);
+     add_string( &VG_(args_for_client), argv[i] );
+   }
+
+
+}
+
 
 // Note that we deliberately don't free the malloc'd memory.  See comment
 // at call site.
@@ -107,6 +195,7 @@ static char** copy_args( char* s, char** to )
 // files.
 static void augment_command_line(Int* vg_argc_inout, char*** vg_argv_inout)
 {
+#if 0
    int    vg_argc0 = *vg_argc_inout;
    char** vg_argv0 = *vg_argv_inout;
 
@@ -173,81 +262,5 @@ static void augment_command_line(Int* vg_argc_inout, char*** vg_argv_inout)
 
    *vg_argc_inout = vg_argc0;
    *vg_argv_inout = vg_argv0;
-}
-
-void VG_(get_command_line)( int argc, char** argv,
-                            Int* vg_argc_out, Char*** vg_argv_out, 
-                                              char*** cl_argv_out )
-{
-   int    vg_argc0;
-   char** vg_argv0;
-   char** cl_argv;
-   char*  env_clo = VG_(getenv)(VALGRINDCLO);
-
-   if (env_clo != NULL && *env_clo != '\0') {
-      char *cp;
-      char **cpp;
-
-      /* OK, VALGRINDCLO is set, which means we must be a child of another
-         Valgrind process using --trace-children, so we're getting all our
-         arguments from VALGRINDCLO, and the entire command line belongs to
-         the client (including argv[0]) */
-      vg_argc0 = 1;		/* argv[0] */
-      for (cp = env_clo; *cp; cp++)
-	 if (*cp == VG_CLO_SEP)
-	    vg_argc0++;
-
-      vg_argv0 = VG_(malloc)(sizeof(char **) * (vg_argc0 + 1));
-      vg_assert(vg_argv0);
-
-      cpp = vg_argv0;
-
-      *cpp++ = "valgrind";	/* nominal argv[0] */
-      *cpp++ = env_clo;
-
-      // Replace the VG_CLO_SEP args separator with '\0'
-      for (cp = env_clo; *cp; cp++) {
-	 if (*cp == VG_CLO_SEP) {
-	    *cp++ = '\0';	/* chop it up in place */
-	    *cpp++ = cp;
-	 }
-      }
-      *cpp = NULL;
-      cl_argv = argv;
-
-   } else {
-      Bool noaugment = False;
-
-      /* Count the arguments on the command line. */
-      vg_argv0 = argv;
-
-      for (vg_argc0 = 1; vg_argc0 < argc; vg_argc0++) {
-         Char* arg = argv[vg_argc0];
-         if (arg[0] != '-') /* exe name */
-	    break;
-	 if (VG_STREQ(arg, "--")) { /* dummy arg */
-	    vg_argc0++;
-	    break;
-	 }
-         VG_BOOL_CLO(arg, "--command-line-only", noaugment)
-      }
-      cl_argv = &argv[vg_argc0];
-
-      /* Get extra args from VALGRIND_OPTS and .valgrindrc files.
-         Note we don't do this if getting args from VALGRINDCLO, as 
-         those extra args will already be present in VALGRINDCLO.
-         (We also don't do it when --command-line-only=yes.) */
-      if (!noaugment)
-	 augment_command_line(&vg_argc0, &vg_argv0);
-   }
-
-   if (0) {
-      Int i;
-      for (i = 0; i < vg_argc0; i++)
-         VG_(printf)("vg_argv0[%d]=\"%s\"\n", i, vg_argv0[i]);
-   }
-
-   *vg_argc_out =         vg_argc0;
-   *vg_argv_out = (Char**)vg_argv0;
-   *cl_argv_out =         cl_argv;
+#endif
 }
