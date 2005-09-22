@@ -104,13 +104,6 @@
    Startup stuff                            
    ------------------------------------------------------------------ */
 
-/* The name of the stage1 (main) executable */
-static HChar* name_of_stage1 = NULL;
-
-/* our argc/argv */
-//static Int  vg_argc;
-//static Char **vg_argv;
-
 /* This should get some address inside the stack on which we gained
    control (eg, it could be the SP at startup).  It doesn't matter
    exactly where in the stack it is.  This value is passed to the
@@ -235,27 +228,33 @@ static Bool scan_colsep(char *colsep, Bool (*func)(const char *))
 
    If this is missing, then it is added.
 
+   Also, remove any binding for VALGRIND_LAUNCHER=.  The client should
+   not be able to see this.
+
    If this needs to handle any more variables it should be hacked
    into something table driven.  The copy is VG_(malloc)'d space.
 */
 static HChar** setup_client_env ( HChar** origenv, const HChar* toolname)
 {
-   static const HChar preload_core_so[] = "vg_preload_core.so";
-   static const HChar ld_preload[]      = "LD_PRELOAD=";
-   static const Int   ld_preload_len    = sizeof(ld_preload)-1;
-                Bool  ld_preload_done   = False;
-                Int   vgliblen          = VG_(strlen)(VG_(libdir));
+   HChar* preload_core_so = "vg_preload_core.so";
+   HChar* ld_preload      = "LD_PRELOAD=";
+   HChar* v_launcher      = VALGRIND_LAUNCHER "=";
+   Int    ld_preload_len  = VG_(strlen)( ld_preload );
+   Int    v_launcher_len  = VG_(strlen)( v_launcher );
+   Bool   ld_preload_done = False;
+   Int    vglib_len       = VG_(strlen)(VG_(libdir));
+
    HChar** cpp;
    HChar** ret;
    HChar*  preload_tool_path;;
-   Int envc;
+   Int     envc, i;
 
    /* Alloc space for the vgpreload_core.so path and vgpreload_<tool>.so
       paths.  We might not need the space for vgpreload_<tool>.so, but it
       doesn't hurt to over-allocate briefly.  The 16s are just cautious
       slop. */
-   Int preload_core_path_len = vgliblen + sizeof(preload_core_so) + 16;
-   Int preload_tool_path_len = vgliblen + VG_(strlen)(toolname)   + 16;
+   Int preload_core_path_len = vglib_len + sizeof(preload_core_so) + 16;
+   Int preload_tool_path_len = vglib_len + VG_(strlen)(toolname)   + 16;
    Int preload_string_len    = preload_core_path_len + preload_tool_path_len;
    HChar* preload_string     = VG_(malloc)(preload_string_len);
    vg_assert(preload_string);
@@ -318,6 +317,18 @@ static HChar** setup_client_env ( HChar** origenv, const HChar* toolname)
       VG_(snprintf)(cp, len, "%s%s", ld_preload, preload_string);
 
       ret[envc++] = cp;
+   }
+
+   /* ret[0 .. envc-1] is live now. */
+   /* Find and remove a binding for VALGRIND_LAUNCHER. */
+   for (i = 0; i < envc; i++)
+      if (0 == VG_(memcmp(ret[i], v_launcher, v_launcher_len)))
+         break;
+
+   if (i < envc) {
+      for (; i < envc-1; i++)
+         ret[i] = ret[i+1];
+      envc--;
    }
 
    VG_(free)(preload_string);
@@ -404,6 +415,7 @@ Addr setup_client_stack( void*  init_sp,
    Addr client_SP;	        /* client stack base (initial SP) */
    Addr clstack_start;
    Int i;
+   Bool have_exename;
 
    vg_assert(VG_IS_PAGE_ALIGNED(clstack_end+1));
 
@@ -413,7 +425,8 @@ Addr setup_client_stack( void*  init_sp,
    /* ==================== compute sizes ==================== */
 
    /* first of all, work out how big the client stack will be */
-   stringsize = 0;
+   stringsize   = 0;
+   have_exename = VG_(args_the_exename) != NULL;
 
    /* paste on the extra args if the loader needs them (ie, the #! 
       interpreter and its argument) */
@@ -428,11 +441,14 @@ Addr setup_client_stack( void*  init_sp,
    }
 
    /* now scan the args we're given... */
+   if (have_exename)
+      stringsize += VG_(strlen)( VG_(args_the_exename) ) + 1;
+
    for (i = 0; i < VG_(args_for_client).used; i++) {
       argc++;
       stringsize += VG_(strlen)( VG_(args_for_client).strs[i] ) + 1;
    }
-   
+
    /* ...and the environment */
    envc = 0;
    for (cpp = orig_envp; cpp && *cpp; cpp++) {
@@ -454,14 +470,15 @@ Addr setup_client_stack( void*  init_sp,
 
    /* OK, now we know how big the client stack is */
    stacksize =
-      sizeof(Word) +			/* argc */
-      sizeof(char **)*argc +		/* argv */
-      sizeof(char **) +			/* terminal NULL */
-      sizeof(char **)*envc +		/* envp */
-      sizeof(char **) +			/* terminal NULL */
-      auxsize +				/* auxv */
-      VG_ROUNDUP(stringsize, sizeof(Word)) +/* strings (aligned) */
-      VKI_PAGE_SIZE;			/* page for trampoline code */
+      sizeof(Word) +                          /* argc */
+      (have_exename ? sizeof(char **) : 0) +  /* argc[0] == exename */
+      sizeof(char **)*argc +                  /* argv */
+      sizeof(char **) +	                      /* terminal NULL */
+      sizeof(char **)*envc +                  /* envp */
+      sizeof(char **) +	                      /* terminal NULL */
+      auxsize +                               /* auxv */
+      VG_ROUNDUP(stringsize, sizeof(Word)) +  /* strings (aligned) */
+      VKI_PAGE_SIZE;                   /* page for trampoline code */
 
    if (0) VG_(printf)("stacksize = %d\n", stacksize);
 
@@ -520,14 +537,14 @@ Addr setup_client_stack( void*  init_sp,
      vg_assert(!res.isError); 
    }
 
-   /* ==================== copy client stack ==================== */
+   /* ==================== create client stack ==================== */
 
    ptr = (Addr*)client_SP;
 
-   /* --- argc --- */
-   *ptr++ = argc;		/* client argc */
+   /* --- client argc --- */
+   *ptr++ = argc + (have_exename ? 1 : 0);
 
-   /* --- argv --- */
+   /* --- client argv --- */
    if (info->interp_name) {
       *ptr++ = (Addr)copy_str(&strtab, info->interp_name);
       VG_(free)(info->interp_name);
@@ -536,8 +553,12 @@ Addr setup_client_stack( void*  init_sp,
       *ptr++ = (Addr)copy_str(&strtab, info->interp_args);
       VG_(free)(info->interp_args);
    }
-   for (i = 0; i < VG_(args_for_client).used; ptr++, i++) {
-      *ptr = (Addr)copy_str(&strtab, *cpp);
+
+   if (have_exename)
+      *ptr++ = (Addr)copy_str(&strtab, VG_(args_the_exename));
+
+   for (i = 0; i < VG_(args_for_client).used; i++) {
+      *ptr++ = (Addr)copy_str(&strtab, VG_(args_for_client).strs[i]);
    }
    *ptr++ = 0;
 
@@ -1587,13 +1608,6 @@ static void process_cmd_line_options( UInt* client_auxv, const char* toolname )
       VG_(clo_suppressions)[VG_(clo_n_suppressions)] = buf;
       VG_(clo_n_suppressions)++;
    }
-}
-
-// Build "/proc/self/fd/<execfd>".
-Char* VG_(build_child_exename)( void )
-{
-   vg_assert(name_of_stage1);
-   return VG_(arena_strdup)(VG_AR_CORE, name_of_stage1);
 }
 
 

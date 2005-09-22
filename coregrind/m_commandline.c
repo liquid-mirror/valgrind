@@ -80,6 +80,9 @@ static void add_string ( XArrayStrings* xa, HChar* str )
 
    If args-for-v includes --command-line-only=yes, then the extra
    sources (env vars, files) are not consulted.
+
+   Note that args-for-c[0] is the first real arg for the client, not
+   its executable name.
 */
 
 

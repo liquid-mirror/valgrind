@@ -2384,9 +2384,13 @@ void VG_(reap_threads)(ThreadId self)
 // but it seems to work nonetheless...
 PRE(sys_execve)
 {
-   Char*        path;          /* path to executable */
+   Char*        path = NULL;       /* path to executable */
    Char**       envp = NULL;
+   Char**       argv = NULL;
+   Char**       arg2copy;
+   Char*        launcher_basename = NULL;
    ThreadState* tst;
+   Int          i, j, tot_args;
 
    PRINT("sys_execve ( %p(%s), %p, %p )", ARG1, ARG1, ARG2, ARG3);
    PRE_REG_READ3(vki_off_t, "execve",
@@ -2397,17 +2401,15 @@ PRE(sys_execve)
    if (ARG3 != 0)
       pre_argv_envp( ARG3, tid, "execve(envp)", "execve(envp[i])" );
 
-   path = (Char *)ARG1;
-
    vg_assert(VG_(is_valid_tid)(tid));
    tst = VG_(get_ThreadState)(tid);
 
    /* Erk.  If the exec fails, then the following will have made a
       mess of things which makes it hard for us to continue.  The
       right thing to do is piece everything together again in
-      POST(execve), but that's hard work.  Instead, we make an effort
-      to check that the execve will work before actually calling
-      exec. */
+      POST(execve), but that's close to impossible.  Instead, we make
+      an effort to check that the execve will work before actually
+      doing it. */
    {
       struct vki_stat st;
       SysRes r = VG_(stat)((Char *)ARG1, &st);
@@ -2426,32 +2428,114 @@ PRE(sys_execve)
       }
    }
 
+   /* Check more .. that the name at least begins in client-accessible
+      storage. */
+   if (!VG_(am_is_valid_for_client)( ARG1, 1, VKI_PROT_READ )) {
+      SET_STATUS_Failure( VKI_EFAULT );
+      return;
+   }
+
+   /* After this point, we can't recover if the execve fails. */
+   VG_(debugLog)(1, "syswrap", "Exec of %s\n", (Char*)ARG1);
+
    /* Resistance is futile.  Nuke all other threads.  POSIX mandates
       this. (Really, nuke them all, since the new process will make
       its own new thread.) */
    VG_(nuke_all_threads_except)( tid, VgSrc_ExitSyscall );
    VG_(reap_threads)(tid);
 
+   // Set up the child's exe path.
+   //
+   if (VG_(clo_trace_children)) {
+
+      // We want to exec the launcher.  Get its pre-remembered path.
+      path = VG_(name_of_launcher);
+      // VG_(name_of_launcher) should have been acquired by m_main at
+      // startup.
+      vg_assert(path);
+
+      launcher_basename = VG_(strrchr)(path, '/');
+      if (launcher_basename == NULL || launcher_basename[1] == 0) {
+         launcher_basename = path;  // hmm, tres dubious
+      } else {
+         launcher_basename++;
+      }
+
+   } else {
+      path = (Char*)ARG1;
+   }
+
+   // Set up the child's environment.
+   //
    // Remove the valgrind-specific stuff from the environment so the
    // child doesn't get vg_preload_core.so, vg_preload_TOOL.so, etc.  
    // This is done unconditionally, since if we are tracing the child,
-   // stage1/2 will set up the appropriate client environment.
+   // the child valgrind will set up the appropriate client environment.
    // Nb: we make a copy of the environment before trying to mangle it
    // as it might be in read-only memory (this was bug #101881).
-   if (ARG3 != 0) {
+   //
+   // Then, if tracing the child, set VALGRIND_LIB for it.
+   //
+   if (ARG3 == 0) {
+      envp = NULL;
+   } else {
       envp = VG_(env_clone)( (Char**)ARG3 );
+      if (envp == NULL) goto hosed;
       VG_(env_remove_valgrind_env_stuff)( envp );
    }
 
    if (VG_(clo_trace_children)) {
       // Set VALGRIND_LIB in ARG3 (the environment)
-      VG_(env_setenv)( (Char***)&ARG3, VALGRIND_LIB, VG_(libdir));
-
-      // Create executable name: "/proc/self/fd/<vgexecfd>", update ARG1
-      path = VG_(build_child_exename)();
+      VG_(env_setenv)( &envp, VALGRIND_LIB, VG_(libdir));
    }
 
-   VG_(debugLog)(1, "syswrap", "Exec of %s\n", (HChar*)ARG1);
+   // Set up the child's args.  If not tracing it, they are
+   // simply ARG2.  Otherwise, they are
+   //
+   // [launcher_basename] ++ VG_(args_for_valgrind) ++ [ARG1] ++ ARG2[1..]
+   //
+   // except that the first VG_(args_for_valgrind_noexecpass) args
+   // are omitted.
+   //
+   if (!VG_(clo_trace_children)) {
+      argv = (Char**)ARG2;
+   } else {
+      vg_assert( VG_(args_for_valgrind_noexecpass) >= 0 );
+      vg_assert( VG_(args_for_valgrind_noexecpass) 
+                   <= VG_(args_for_valgrind).used );
+      /* how many args in total will there be? */
+      // launcher basename
+      tot_args = 1;
+      // V's args
+      tot_args += VG_(args_for_valgrind).used;
+      tot_args -= VG_(args_for_valgrind_noexecpass);
+      // name of client exe
+      tot_args++;
+      // args for client exe, skipping [0]
+      arg2copy = (Char**)ARG2;
+      if (arg2copy && arg2copy[0]) {
+         for (i = 1; arg2copy[i]; i++)
+            tot_args++;
+      }
+      // allocate
+      argv = VG_(malloc)( (tot_args+1) * sizeof(HChar*) );
+      if (argv == 0) goto hosed;
+      // copy
+      j = 0;
+      argv[j++] = launcher_basename;
+      for (i = 0; i < VG_(args_for_valgrind).used; i++) {
+	if (i <  VG_(args_for_valgrind_noexecpass))
+	  continue;
+	argv[j++] = VG_(args_for_valgrind).strs[i];
+      }
+      argv[j++] = (Char*)ARG1;
+      if (arg2copy && arg2copy[0])
+         for (i = 1; arg2copy[i]; i++)
+            argv[j++] = arg2copy[i];
+      argv[j++] = NULL;
+      // check
+      vg_assert(j == tot_args+1);
+   }
 
    /* restore the DATA rlimit for the child */
    VG_(setrlimit)(VKI_RLIMIT_DATA, &VG_(client_rlimit_data));
@@ -2477,9 +2561,8 @@ PRE(sys_execve)
       vki_sigset_t allsigs;
       vki_siginfo_t info;
       static const struct vki_timespec zero = { 0, 0 };
-      Int i;
 
-      for(i = 1; i < VG_(max_signal); i++) {
+      for (i = 1; i < VG_(max_signal); i++) {
          struct vki_sigaction sa;
          VG_(do_sys_sigaction)(i, NULL, &sa);
          if (sa.ksa_handler == VKI_SIG_IGN)
@@ -2499,19 +2582,21 @@ PRE(sys_execve)
 
    if (0) {
       Char **cpp;
-      VG_(printf)("exec: %s\n", (Char *)path);
-      for (cpp = (Char **)ARG2; cpp && *cpp; cpp++)
+      VG_(printf)("exec: %s\n", path);
+      for (cpp = argv; cpp && *cpp; cpp++)
          VG_(printf)("argv: %s\n", *cpp);
-      for (cpp = (Char **)ARG3; cpp && *cpp; cpp++)
-         VG_(printf)("env: %s\n", *cpp);
+      if (0)
+         for (cpp = envp; cpp && *cpp; cpp++)
+            VG_(printf)("env: %s\n", *cpp);
    }
 
    SET_STATUS_from_SysRes( 
-      VG_(do_syscall3)(__NR_execve, (UWord)path, ARG2, ARG3) 
+      VG_(do_syscall3)(__NR_execve, (UWord)path, (UWord)argv, (UWord)envp) 
    );
 
-   /* If we got here, then the execve failed.  We've already made too
-      much of a mess of ourselves to continue, so we have to abort. */
+   /* If we got here, then the execve failed.  We've already made way
+      too much of a mess to continue, so we have to abort. */
+  hosed:
    VG_(message)(Vg_UserMsg, "execve(%p(%s), %p, %p) failed, errno %d",
                 ARG1, ARG1, ARG2, ARG3, RES_unchecked);
    VG_(message)(Vg_UserMsg, "EXEC FAILED: I can't recover from "
