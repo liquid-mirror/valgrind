@@ -124,6 +124,10 @@ static Addr aspacem_vStart = 0;
 
 /* ------ end of STATE for the address-space manager ------ */
 
+// Forwards decls
+static void aspacem_exit ( Int );
+static Int  find_nsegment_idx ( Addr a );
+
 
 /*-----------------------------------------------------------------*/
 /*---                                                           ---*/
@@ -131,9 +135,6 @@ static Addr aspacem_vStart = 0;
 /*--- the rest of Valgrind.                                     ---*/
 /*---                                                           ---*/
 /*-----------------------------------------------------------------*/
-
-// Forwards decl
-static void aspacem_exit ( Int );
 
 //--------------------------------------------------------------
 // Simple assert and assert-like fns, which avoid dependence on
@@ -804,83 +805,88 @@ static Bool preen_nsegments ( void )
 /* Check the segment array corresponds with the kernel's view of
    memory layout.  sync_check_ok returns True if no anomalies were
    found, else False.  In the latter case the mismatching segments are
-   displayed. */
+   displayed. 
 
-static Int  sync_check_i  = 0;
+   The general idea is: we get the kernel to show us all its segments
+   and also the gaps in between.  For each such interval, try and find
+   a sequence of appropriate intervals in our segment array which
+   cover or more than cover the kernel's interval, and which all have
+   suitable kinds/permissions etc. 
+
+   Although any specific kernel interval is not matched exactly to a
+   valgrind interval or sequence thereof, eventually any disagreement
+   on mapping boundaries will be detected.  This is because, if for
+   example valgrind's intervals cover a greater range than the current
+   kernel interval, it must be the case that a neighbouring free-space
+   interval belonging to valgrind cannot cover the neighbouring
+   free-space interval belonging to the kernel.  So the disagreement
+   is detected.
+
+   In other words, we examine each kernel interval in turn, and check
+   we do not disagree over the range of that interval.  Because all of
+   the address space is examined, any disagreements must eventually be
+   detected.
+*/
+
 static Bool sync_check_ok = False;
 
 static void sync_check_mapping_callback ( Addr addr, SizeT len, UInt prot,
                                           UInt dev, UInt ino, ULong offset, 
                                           const UChar* filename )
 {
+   Int iLo, iHi, i;
+
    /* If a problem has already been detected, don't continue comparing
       segments, so as to avoid flooding the output with error
       messages. */
    if (!sync_check_ok)
       return;
 
-   /* The start of this kernel mapping should fall within the
-      current segment.*/
-   if (addr < nsegments[sync_check_i].start ||
-       addr > nsegments[sync_check_i].end) {
-      sync_check_ok = False;
-      VG_(debugLog)(0,"aspacem",
-                    "sync_check_mapping_callback: segment mismatch: V's seg:\n");
-      show_nsegment_full( 0, &nsegments[sync_check_i] );
-      goto show_kern_seg;
-   }
+   if (len == 0)
+      return;
 
-   /* Check that any segments that fall within this mapping
-      have attributes which match the mapping. */
-   while (sync_check_i < nsegments_used &&
-          nsegments[sync_check_i].start < addr+len &&
-          nsegments[sync_check_i].end >= addr ) {
-      Bool same;
+   /* The kernel should not give us wraparounds. */
+   aspacem_assert(addr <= addr + len - 1); 
+
+   iLo = find_nsegment_idx( addr );
+   iHi = find_nsegment_idx( addr + len - 1 );
+
+   /* These 5 should be guaranteed by find_nsegment_idx. */
+   aspacem_assert(0 <= iLo && iLo < nsegments_used);
+   aspacem_assert(0 <= iHi && iHi < nsegments_used);
+   aspacem_assert(iLo <= iHi);
+   aspacem_assert(nsegments[iLo].start <= addr );
+   aspacem_assert(nsegments[iHi].end   >= addr + len - 1 );
+
+   /* NSegments iLo .. iHi inclusive should agree with the presented
+      data. */
+   for (i = iLo; i <= iHi; i++) {
+
+      Bool same, cmp_offsets;
    
       /* compare the kernel's offering against ours. */
-      same = nsegments[sync_check_i].kind == SkAnonC
-             || nsegments[sync_check_i].kind == SkAnonV
-             || nsegments[sync_check_i].kind == SkFileC
-             || nsegments[sync_check_i].kind == SkFileV;
+      same = nsegments[i].kind == SkAnonC
+             || nsegments[i].kind == SkAnonV
+             || nsegments[i].kind == SkFileC
+             || nsegments[i].kind == SkFileV;
+
+      cmp_offsets
+         = nsegments[i].kind == SkFileC || nsegments[i].kind == SkFileV;
+
       same = same
-             && nsegments[sync_check_i].dev == dev
-             && nsegments[sync_check_i].ino == ino
-             && nsegments[sync_check_i].start-nsegments[sync_check_i].offset == addr-offset;
+             && nsegments[i].dev == dev
+             && nsegments[i].ino == ino
+             && (cmp_offsets 
+                   ? nsegments[i].start-nsegments[i].offset == addr-offset
+                   : True);
       if (!same) {
          sync_check_ok = False;
-         VG_(debugLog)(0,"aspacem",
-                       "sync_check_mapping_callback: segment mismatch: V's seg:\n");
-         show_nsegment_full( 0, &nsegments[sync_check_i] );
+         VG_(debugLog)(
+            0,"aspacem",
+              "sync_check_mapping_callback: segment mismatch: V's seg:\n");
+         show_nsegment_full( 0, &nsegments[i] );
          goto show_kern_seg;
       }
-
-      sync_check_i++;
-   }
-
-   /* The end of this kernel mapping should fall within the
-      previous segment.*/
-   if (addr+len-1 < nsegments[sync_check_i-1].start ||
-       addr+len-1 > nsegments[sync_check_i-1].end) {
-      sync_check_ok = False;
-      VG_(debugLog)(0,"aspacem",
-                    "sync_check_mapping_callback: segment mismatch: V's seg:\n");
-      show_nsegment_full( 0, &nsegments[sync_check_i-1] );
-      goto show_kern_seg;
-   }
-
-   /* If this mapping ended in the middle of a segment then reduce
-      sync_check_i by one so that we continue from that segment with
-      the next mapping or gap. */
-   if (addr+len-1 < nsegments[sync_check_i-1].end)
-      sync_check_i--;
-
-   /* If we've run out of segments and there is still part of a
-      mapping unaccounted for then fail. */
-   if (sync_check_i == nsegments_used &&
-       addr+len-1 > nsegments[sync_check_i-1].end) {
-      sync_check_ok = False;
-      VG_(debugLog)(0,"aspacem","sync_check_mapping_callback: out of segments\n");
-      goto show_kern_seg;
    }
 
    /* Looks harmless.  Keep going. */
@@ -898,71 +904,48 @@ static void sync_check_mapping_callback ( Addr addr, SizeT len, UInt prot,
 
 static void sync_check_gap_callback ( Addr addr, SizeT len )
 {
+   Int iLo, iHi, i;
+
    /* If a problem has already been detected, don't continue comparing
       segments, so as to avoid flooding the output with error
       messages. */
    if (!sync_check_ok)
       return;
 
-   if (addr+len-1 > nsegments[nsegments_used-1].end)
-      len = nsegments[nsegments_used-1].end-addr+1;
+   if (len == 0)
+      return;
 
-   /* The start of this kernel mapping should fall within the
-      current segment.*/
-   if (addr < nsegments[sync_check_i].start ||
-       addr > nsegments[sync_check_i].end) {
-      sync_check_ok = False;
-      VG_(debugLog)(0,"aspacem",
-                    "sync_check_gap_callback: segment mismatch: V's seg:\n");
-      show_nsegment_full( 0, &nsegments[sync_check_i] );
-      goto show_kern_gap;
-   }
+   /* The kernel should not give us wraparounds. */
+   aspacem_assert(addr <= addr + len - 1); 
 
-   /* Check that any segments that fall within this gap
-      have attributes which match the mapping. */
-   while (sync_check_i < nsegments_used &&
-          nsegments[sync_check_i].start <= addr+len-1 &&
-          nsegments[sync_check_i].end >= addr ) {
+   iLo = find_nsegment_idx( addr );
+   iHi = find_nsegment_idx( addr + len - 1 );
+
+   /* These 5 should be guaranteed by find_nsegment_idx. */
+   aspacem_assert(0 <= iLo && iLo < nsegments_used);
+   aspacem_assert(0 <= iHi && iHi < nsegments_used);
+   aspacem_assert(iLo <= iHi);
+   aspacem_assert(nsegments[iLo].start <= addr );
+   aspacem_assert(nsegments[iHi].end   >= addr + len - 1 );
+
+   /* NSegments iLo .. iHi inclusive should agree with the presented
+      data. */
+   for (i = iLo; i <= iHi; i++) {
+
       Bool same;
-
+   
       /* compare the kernel's offering against ours. */
-      same = nsegments[sync_check_i].kind == SkFree
-             || nsegments[sync_check_i].kind == SkResvn;
+      same = nsegments[i].kind == SkFree
+             || nsegments[i].kind == SkResvn;
+
       if (!same) {
          sync_check_ok = False;
-         VG_(debugLog)(0,"aspacem",
-                       "sync_check_gap_callback: segment mismatch: V's seg:\n");
-         show_nsegment_full( 0, &nsegments[sync_check_i] );
+         VG_(debugLog)(
+            0,"aspacem",
+              "sync_check_mapping_callback: segment mismatch: V's gap:\n");
+         show_nsegment_full( 0, &nsegments[i] );
          goto show_kern_gap;
       }
-
-      sync_check_i++;
-   }
-
-   /* The end of this kernel mapping should fall within the
-      previous segment.*/
-   if (addr+len-1 < nsegments[sync_check_i-1].start ||
-       addr+len-1 > nsegments[sync_check_i-1].end) {
-      sync_check_ok = False;
-      VG_(debugLog)(0,"aspacem",
-                    "sync_check_gap_callback: segment mismatch: V's seg:\n");
-      show_nsegment_full( 0, &nsegments[sync_check_i-1] );
-      goto show_kern_gap;
-   }
-
-   /* If this gap ended in the middle of a segment then reduce
-      sync_check_i by one so that we continue from that segment with
-      the next mapping or gap. */
-   if (addr+len-1 < nsegments[sync_check_i-1].end) 
-      sync_check_i--;
-
-   /* If we've run out of segments and there is still part of a
-      gap unaccounted for then fail. */
-   if (sync_check_i == nsegments_used &&
-       addr+len-1 > nsegments[sync_check_i-1].end) {
-      sync_check_ok = False;
-      VG_(debugLog)(0,"aspacem","sync_check_gap_callback: out of segments\n");
-      goto show_kern_gap;
    }
 
    /* Looks harmless.  Keep going. */
@@ -977,9 +960,9 @@ static void sync_check_gap_callback ( Addr addr, SizeT len )
    return;
 }
 
-static Bool do_sync_check ( HChar* fn, HChar* file, Int line )
+
+ Bool do_sync_check ( HChar* fn, HChar* file, Int line )
 {
-   sync_check_i  = 0;
    sync_check_ok = True;
    if (0)
       VG_(debugLog)(0,"aspacem", "do_sync_check %s:%d\n", file,line);
@@ -994,7 +977,7 @@ static Bool do_sync_check ( HChar* fn, HChar* file, Int line )
 #     if 0
       {
          HChar buf[100];
-         VG_(am_show_nsegments)(0,"post segfault");
+         VG_(am_show_nsegments)(0,"post syncheck failure");
          VG_(sprintf)(buf, "/bin/cat /proc/%d/maps", VG_(getpid)());
          VG_(system)(buf);
       }
