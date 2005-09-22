@@ -5,26 +5,19 @@ include $(top_srcdir)/Makefile.all.am
 include $(top_srcdir)/Makefile.tool-flags.am
 include $(top_srcdir)/Makefile.tool-inplace.am
 
-LIBREPLACEMALLOC = $(top_builddir)/coregrind/m_replacemalloc/libreplacemalloc_toolpreload.a
+LIBREPLACEMALLOC = $(top_builddir)/coregrind/libreplacemalloc_toolpreload.a
 
-## Nb: libscheduler.a must precede libdispatch.a in this list.
 COREGRIND_LIBS = \
-	$(top_builddir)/coregrind/libcoregrind_singles.a \
-	$(top_builddir)/coregrind/m_aspacemgr/libaspacemgr.a \
-	$(top_builddir)/coregrind/m_debuginfo/libdebuginfo.a \
-	$(top_builddir)/coregrind/m_demangle/libdemangle.a \
-	$(top_builddir)/coregrind/m_scheduler/libscheduler.a \
-	$(top_builddir)/coregrind/m_dispatch/libdispatch.a \
-	$(top_builddir)/coregrind/m_replacemalloc/libreplacemalloc_core.a \
-	$(top_builddir)/coregrind/m_sigframe/libsigframe.a \
-	$(top_builddir)/coregrind/m_syswrap/libsyswrap.a \
+	$(top_builddir)/coregrind/libcoregrind.a \
 	@VEX_DIR@/libvex.a
 
+.PHONY:  @VEX_DIR@/libvex.a
+
 @VEX_DIR@/libvex.a: @VEX_DIR@/priv/main/vex_svnversion.h
-	$(MAKE) -C @VEX_DIR@ libvex.a
+	$(MAKE) -C @VEX_DIR@ CC="$(CC)" libvex.a EXTRA_CFLAGS="@ARCH_CORE_AM_CFLAGS@"
 
 @VEX_DIR@/priv/main/vex_svnversion.h:
-	$(MAKE) -C @VEX_DIR@ version
+	$(MAKE) -C @VEX_DIR@ CC="$(CC)" version
 
 ## Nb: do not call this variables "TOOL_LINKADD" and "TOOL_LDFLAGS" -- that
 ## makes automake think we are building something called "TOOLS".

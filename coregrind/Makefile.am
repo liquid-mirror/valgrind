@@ -1,35 +1,28 @@
 include $(top_srcdir)/Makefile.all.am
 include $(top_srcdir)/Makefile.core-AM_CPPFLAGS.am
 
-MODULES = \
-	m_aspacemgr \
-	m_debuginfo \
-	m_demangle \
-	m_dispatch \
-	m_replacemalloc \
-	m_scheduler \
-	m_sigframe \
-	m_syswrap
-
-## When building, we are only interested in the current arch/OS/platform.
-## But when doing 'make dist', we are interested in every arch/OS/platform.
-## That's what DIST_SUBDIRS specifies.
-SUBDIRS = $(MODULES) .
-
-DIST_SUBDIRS = $(MODULES) .
-
 AM_CPPFLAGS += -DVG_LIBDIR="\"$(valdir)"\" \
 		-DKICKSTART_BASE=@KICKSTART_BASE@
 
 default.supp: $(SUPP_FILES)
 
-noinst_LIBRARIES = libcoregrind_singles.a
+noinst_LIBRARIES = \
+    libcoregrind.a \
+    libreplacemalloc_toolpreload.a
 
 bin_PROGRAMS = \
 	valgrind
 
 val_PROGRAMS = \
 	vg_preload_core.so
+
+# Remember to include all the arch-specific files in the distribution.
+EXTRA_DIST = \
+        $(addsuffix .S,$(addprefix m_dispatch/dispatch-,$(VG_ARCH_ALL))) \
+        $(addsuffix .c,$(addprefix m_sigframe/sigframe-,$(VG_PLATFORM_ALL))) \
+        $(addsuffix .S,$(addprefix m_syswrap/syscall-,$(VG_PLATFORM_ALL))) \
+        $(addsuffix .c,$(addprefix m_syswrap/syswrap-,$(VG_OS_ALL))) \
+        $(addsuffix .c,$(addprefix m_syswrap/syswrap-,$(VG_PLATFORM_ALL)))
 
 noinst_HEADERS = \
 	coregrind.h		\
@@ -80,7 +73,18 @@ noinst_HEADERS = \
 	vki_unistd.h		\
 	vki_unistd-amd64-linux.h\
 	vki_unistd-ppc32-linux.h\
-	vki_unistd-x86-linux.h
+	vki_unistd-x86-linux.h	\
+	m_debuginfo/priv_symtab.h	\
+	m_debuginfo/priv_symtypes.h	\
+	m_demangle/ansidecl.h	\
+	m_demangle/dyn-string.h	\
+	m_demangle/demangle.h	\
+	m_demangle/safe-ctype.h \
+	m_scheduler/priv_sema.h \
+	m_syswrap/priv_types_n_macros.h \
+	m_syswrap/priv_syswrap-generic.h \
+	m_syswrap/priv_syswrap-linux.h \
+	m_syswrap/priv_syswrap-main.h
 
 BUILT_SOURCES = 
 CLEANFILES = 
@@ -89,7 +93,7 @@ valgrind_SOURCES = \
 	m_launcher.c \
 	m_debuglog.c
 
-libcoregrind_singles_a_SOURCES = \
+libcoregrind_a_SOURCES = \
 	m_commandline.c \
 	m_cpuid.S \
 	m_clientstate.c \
@@ -122,7 +126,38 @@ libcoregrind_singles_a_SOURCES = \
 	m_trampoline.S \
 	m_translate.c \
 	m_transtab.c \
-	m_ume.c
+	m_ume.c \
+	m_aspacemgr/read_procselfmaps.c \
+	m_aspacemgr/aspacemgr.c \
+	m_debuginfo/dwarf.c \
+	m_debuginfo/stabs.c \
+	m_debuginfo/symtab.c \
+	m_debuginfo/symtypes.c \
+	m_demangle/cp-demangle.c \
+	m_demangle/cplus-dem.c \
+	m_demangle/demangle.c \
+	m_demangle/dyn-string.c \
+	m_demangle/safe-ctype.c \
+	m_dispatch/dispatch-@VG_ARCH@.S \
+	m_replacemalloc/replacemalloc_core.c \
+	m_scheduler/scheduler.c \
+	m_scheduler/sema.c \
+	m_sigframe/sigframe-@VG_PLATFORM@.c \
+	m_syswrap/syscall-@VG_PLATFORM@.S \
+	m_syswrap/syswrap-generic.c \
+	m_syswrap/syswrap-@VG_OS@.c \
+	m_syswrap/syswrap-@VG_PLATFORM@.c \
+	m_syswrap/syswrap-main.c
+
+libreplacemalloc_toolpreload_a_SOURCES = m_replacemalloc/vg_replace_malloc.c
+libreplacemalloc_toolpreload_a_CFLAGS = $(PIC_AM_CFLAGS)
+
+m_dispatch/dispatch-@VG_ARCH@.S:   libvex_guest_offsets.h
+m_syswrap/syscall-@VG_PLATFORM@.S: libvex_guest_offsets.h
+m_syswrap/syswrap-main.c: 	   libvex_guest_offsets.h
+
+libvex_guest_offsets.h:
+	$(MAKE) -C @VEX_DIR@ pub/libvex_guest_offsets.h
 
 vg_preload_core_so_SOURCES = vg_preloaded.c
 vg_preload_core_so_CFLAGS = $(AM_CFLAGS) -fpic
