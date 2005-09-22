@@ -32,7 +32,6 @@
 
 #include "pub_core_basics.h"
 #include "pub_core_debuglog.h"
-#include "pub_core_aspacemgr.h"   // VG_(am_change_ownership_v_to_c)
 #include "pub_core_debuginfo.h"
 #include "pub_core_libcbase.h"
 #include "pub_core_libcassert.h"
@@ -342,7 +341,7 @@ Addr VG_(code_redirect)(Addr a)
    return r->to_addr;
 }
 
-Bool VG_(setup_code_redirect_table) ( void )
+void VG_(setup_code_redirect_table) ( void )
 {
 #if defined(VGP_x86_linux)
    /* Redirect _dl_sysinfo_int80, which is glibc's default system call
@@ -373,15 +372,6 @@ Bool VG_(setup_code_redirect_table) ( void )
 #else
 #  error Unknown platform
 #endif
-
-   { Addr co_start   = VG_PGROUNDDN( (Addr)&VG_(trampoline_stuff_start) );
-     Addr co_endPlus = VG_PGROUNDUP( (Addr)&VG_(trampoline_stuff_end) );
-     VG_(debugLog)(1,"redir",
-                     "transfer ownership V -> C of 0x%llx .. 0x%llx\n",
-                     (ULong)co_start, (ULong)co_endPlus-1 );
-     return 
-        VG_(am_change_ownership_v_to_c)( co_start, co_endPlus - co_start );
-   }
 }
 
 /* Z-decode a symbol into library:func form, eg 

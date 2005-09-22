@@ -2120,10 +2120,8 @@ Int main(Int argc, HChar **argv, HChar **envp)
    //   p: aspacem [so can change ownership of sysinfo pages]
    //--------------------------------------------------------------
    if (!need_help) { 
-      Bool setup_redirects_succeeded;
       VG_(debugLog)(1, "main", "Initialise redirects\n");
-      setup_redirects_succeeded = VG_(setup_code_redirect_table)();
-      vg_assert(setup_redirects_succeeded);
+      VG_(setup_code_redirect_table)();
    }
 
    //--------------------------------------------------------------
@@ -2211,6 +2209,25 @@ Int main(Int argc, HChar **argv, HChar **envp)
         VG_(di_notify_mmap)( seg_starts[i] );
 
      VG_(free)( seg_starts );
+   }
+
+   //--------------------------------------------------------------
+   // Tell aspacem of ownership change of the asm helpers, so that
+   // m_translate allows them to be translated.  However, only do this
+   // after the initial debug info read, since making a hole in the
+   // address range for the stage2 binary confuses the debug info reader.
+   //   p: aspacem
+   //--------------------------------------------------------------
+   { Bool change_ownership_v_c_OK;
+     Addr co_start   = VG_PGROUNDDN( (Addr)&VG_(trampoline_stuff_start) );
+     Addr co_endPlus = VG_PGROUNDUP( (Addr)&VG_(trampoline_stuff_end) );
+     VG_(debugLog)(1,"redir",
+                     "transfer ownership V -> C of 0x%llx .. 0x%llx\n",
+                     (ULong)co_start, (ULong)co_endPlus-1 );
+
+     change_ownership_v_c_OK 
+        = VG_(am_change_ownership_v_to_c)( co_start, co_endPlus - co_start );
+     vg_assert(change_ownership_v_c_OK);
    }
 
    //--------------------------------------------------------------
