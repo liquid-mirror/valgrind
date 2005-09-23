@@ -118,8 +118,8 @@ static Addr aspacem_vStart = 0;
 #define AM_SANITY_CHECK                                      \
    do {                                                      \
       if (VG_(clo_sanity_level >= 3))                        \
-         aspacem_assert(do_sync_check(__PRETTY_FUNCTION__,   \
-                                      __FILE__,__LINE__));   \
+         aspacem_assert(VG_(am_do_sync_check)                \
+            (__PRETTY_FUNCTION__,__FILE__,__LINE__));        \
    } while (0) 
 
 /* ------ end of STATE for the address-space manager ------ */
@@ -964,7 +964,12 @@ static void sync_check_gap_callback ( Addr addr, SizeT len )
 }
 
 
- Bool do_sync_check ( HChar* fn, HChar* file, Int line )
+/* Sanity check: check that Valgrind and the kernel agree on the
+   address space layout.  Prints offending segments and call point if
+   a discrepancy is detected, but does not abort the system.  Returned
+   Bool is False if a discrepancy was found. */
+
+Bool VG_(am_do_sync_check) ( HChar* fn, HChar* file, Int line )
 {
    sync_check_ok = True;
    if (0)

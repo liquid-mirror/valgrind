@@ -116,6 +116,13 @@ extern HChar* VG_(am_get_filename)( NSegment* );
 /* VG_(am_get_segment_starts) is also part of this section, but its
    prototype is tool-visible, hence not in this header file. */
 
+/* Sanity check: check that Valgrind and the kernel agree on the
+   address space layout.  Prints offending segments and call point if
+   a discrepancy is detected, but does not abort the system.  Returned
+   Bool is False if a discrepancy was found. */
+
+extern Bool VG_(am_do_sync_check) ( HChar* fn, HChar* file, Int line );
+
 
 //--------------------------------------------------------------
 // Functions pertaining to the central query-notify mechanism

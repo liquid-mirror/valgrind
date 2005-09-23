@@ -607,7 +607,14 @@ static void handle_syscall(ThreadId tid)
       complete by the time this call returns, and we'll be
       runnable again.  We could take a signal while the
       syscall runs. */
+
+   if (VG_(clo_sanity_level >= 3))
+      VG_(am_do_sync_check)("(BEFORE SYSCALL)",__FILE__,__LINE__);
+
    SCHEDSETJMP(tid, jumped, VG_(client_syscall)(tid));
+
+   if (VG_(clo_sanity_level >= 3))
+      VG_(am_do_sync_check)("(AFTER SYSCALL)",__FILE__,__LINE__);
 
    if (!VG_(is_running_thread)(tid))
       VG_(printf)("tid %d not running; VG_(running_tid)=%d, tid %d status %d\n",
