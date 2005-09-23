@@ -1525,9 +1525,13 @@ Addr VG_(am_get_advisory) ( MapRequest*  req,
 
         If the request is for a fixed client map, we are prepared to
         grant it providing all areas inside the request are either
-        free, reservations, or file mappings belonging to the client.
-        In other words we are prepared to let the client trash its own
+        free, reservations, or mappings belonging to the client.  In
+        other words we are prepared to let the client trash its own
         mappings if it wants to.
+
+        Similarly, a hinted client map will be granted at the
+        requested address providing the same conditions hold.
+
    */
    Int  i, j;
    Addr holeStart, holeEnd, holeLen;
@@ -1567,13 +1571,14 @@ Addr VG_(am_get_advisory) ( MapRequest*  req,
 
    /* ------ Implement Policy Exception #1 ------ */
 
-   if (forClient && req->rkind == MFixed) {
+   if (forClient && (req->rkind == MFixed || req->rkind == MHint)) {
       Int  iLo   = find_nsegment_idx(reqStart);
       Int  iHi   = find_nsegment_idx(reqEnd);
       Bool allow = True;
       for (i = iLo; i <= iHi; i++) {
          if (nsegments[i].kind == SkFree
              || nsegments[i].kind == SkFileC
+             || nsegments[i].kind == SkAnonC
              || nsegments[i].kind == SkResvn) {
             /* ok */
          } else {
@@ -1582,11 +1587,16 @@ Addr VG_(am_get_advisory) ( MapRequest*  req,
          }
       }
       if (allow) {
+         /* Acceptable.  Granted. */
          *ok = True;
          return reqStart;
       }
-      *ok = False;
-      return 0;
+      /* Not acceptable.  Fixed fails, Hint is now attempted by the
+         default policy. */
+      if (req->rkind == MFixed) {
+         *ok = False;
+         return 0;
+      }
    }
 
    /* ------ Implement the Default Policy ------ */
