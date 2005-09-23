@@ -82,6 +82,7 @@
 #include "pub_core_basics.h"
 #include "pub_core_debuglog.h"
 #include "pub_core_threadstate.h"
+#include "pub_core_clientstate.h"
 #include "pub_core_aspacemgr.h"
 #include "pub_core_debugger.h"      // For VG_(start_debugger)
 #include "pub_core_errormgr.h"
@@ -1743,7 +1744,7 @@ Bool VG_(extend_stack)(Addr addr, UInt maxsize)
 
    /* When we change the main stack, we have to let the stack handling
       code know about it. */
-   /// FIXME VG_(change_stack)(VG_(clstk_id), base, VG_(clstk_end));
+   VG_(change_stack)(VG_(clstk_id), addr, VG_(clstk_end));
 
    if (VG_(clo_sanity_level) > 2)
       VG_(sanity_check_general)(False);

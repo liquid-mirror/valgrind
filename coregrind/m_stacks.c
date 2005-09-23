@@ -151,6 +151,9 @@ static Bool set_current_stack(UWord id)
 UWord VG_(register_stack)(Addr start, Addr end)
 {
    Stack *i;
+
+   if (0) VG_(printf)("REGISTER STACK %p %p\n", start,end);
+
    if (start > end) {
       Addr t = end;
       end = start;
