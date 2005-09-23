@@ -2281,7 +2281,10 @@ Int main(Int argc, HChar **argv, HChar **envp)
      vg_assert(seg->kind == SkAnonC);
      vg_assert(initial_client_SP >= seg->start);
      vg_assert(initial_client_SP <= seg->end);
+
      /* Stuff below the initial SP is unaddressable. */
+     /* NB: shouldn't this take into account the VG_STACK_REDZONE_SZB
+        bytes below SP?  */
      VG_TRACK( die_mem_stack, seg->start, initial_client_SP - seg->start );
      VG_(debugLog)(2, "main", "mark stack inaccessible %010lx-%010lx\n",
                       seg->start, initial_client_SP-1 );
