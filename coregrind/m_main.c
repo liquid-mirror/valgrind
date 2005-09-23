@@ -1543,21 +1543,28 @@ static void process_cmd_line_options( UInt* client_auxv, const char* toolname )
       }
       VG_(message)(Vg_UserMsg, "");
       VG_(message)(Vg_UserMsg, "<args>");
+
       VG_(message)(Vg_UserMsg, "  <vargv>");
+      if (VG_(name_of_launcher))
+         VG_(message)(Vg_UserMsg, "    <exe>%t</exe>", 
+                                  VG_(name_of_launcher));
       for (i = 0; i < VG_(args_for_valgrind).used; i++) {
-         HChar* tag = i==0 ? "exe" : "arg";
          VG_(message)(Vg_UserMsg, 
-                      "    <%s>%t</%s>", 
-                      tag,  VG_(args_for_valgrind).strs[i], tag);
+                      "    <arg>%t</arg>", 
+                      VG_(args_for_valgrind).strs[i]);
       }
       VG_(message)(Vg_UserMsg, "  </vargv>");
+
       VG_(message)(Vg_UserMsg, "  <argv>");
+      if (VG_(args_the_exename))
+         VG_(message)(Vg_UserMsg, "    <exe>%t</exe>", 
+                                  VG_(args_the_exename));
       for (i = 0; i < VG_(args_for_client).used; i++) {
-         HChar* tag = i==0 ? "exe" : "arg";
-         VG_(message)(Vg_UserMsg, "    <%s>%t</%s>", 
-                                  tag, VG_(args_for_client).strs[i], tag);
+         VG_(message)(Vg_UserMsg, "    <arg>%t</arg>", 
+                                  VG_(args_for_client).strs[i]);
       }
       VG_(message)(Vg_UserMsg, "  </argv>");
+
       VG_(message)(Vg_UserMsg, "</args>");
    }
 
