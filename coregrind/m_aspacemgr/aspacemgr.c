@@ -969,7 +969,8 @@ static void sync_check_gap_callback ( Addr addr, SizeT len )
    a discrepancy is detected, but does not abort the system.  Returned
    Bool is False if a discrepancy was found. */
 
-Bool VG_(am_do_sync_check) ( HChar* fn, HChar* file, Int line )
+Bool VG_(am_do_sync_check) ( const HChar* fn, 
+                             const HChar* file, Int line )
 {
    sync_check_ok = True;
    if (0)

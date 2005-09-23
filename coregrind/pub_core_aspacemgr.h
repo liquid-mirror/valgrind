@@ -121,7 +121,8 @@ extern HChar* VG_(am_get_filename)( NSegment* );
    a discrepancy is detected, but does not abort the system.  Returned
    Bool is False if a discrepancy was found. */
 
-extern Bool VG_(am_do_sync_check) ( HChar* fn, HChar* file, Int line );
+extern Bool VG_(am_do_sync_check) ( const HChar* fn, 
+                                    const HChar* file, Int line );
 
 
 //--------------------------------------------------------------
