@@ -40,6 +40,11 @@ extern
 Bool ML_(valid_client_addr)(Addr start, SizeT size, ThreadId tid,
                             const Char *syscallname);
 
+/* Handy small function to help stop wrappers from segfaulting when
+   presented with bogus client addresses.  Is not used for generating
+   user-visible errors. */
+extern Bool ML_(safe_to_deref) ( void* start, SizeT size );
+
 // Returns True if the signal is OK for the client to use.
 extern Bool ML_(client_signal_OK)(Int sigNo);
 

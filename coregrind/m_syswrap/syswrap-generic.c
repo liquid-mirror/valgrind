@@ -99,6 +99,17 @@ Bool ML_(client_signal_OK)(Int sigNo)
    return ret;
 }
 
+
+/* Handy small function to help stop wrappers from segfaulting when
+   presented with bogus client addresses.  Is not used for generating
+   user-visible errors. */
+
+Bool ML_(safe_to_deref) ( void* start, SizeT size )
+{
+   return VG_(am_is_valid_for_client)( (Addr)start, size, VKI_PROT_NONE );
+}
+
+
 /* ---------------------------------------------------------------------
    Doing mmap, mremap
    ------------------------------------------------------------------ */
@@ -5613,7 +5624,8 @@ PRE(sys_rt_sigaction)
       PRE_MEM_READ( "rt_sigaction(act->sa_handler)", (Addr)&sa->ksa_handler, sizeof(sa->ksa_handler));
       PRE_MEM_READ( "rt_sigaction(act->sa_mask)", (Addr)&sa->sa_mask, sizeof(sa->sa_mask));
       PRE_MEM_READ( "rt_sigaction(act->sa_flags)", (Addr)&sa->sa_flags, sizeof(sa->sa_flags));
-      if (sa->sa_flags & VKI_SA_RESTORER)
+      if (ML_(safe_to_deref)(sa,sizeof(sa)) 
+          && (sa->sa_flags & VKI_SA_RESTORER))
          PRE_MEM_READ( "rt_sigaction(act->sa_restorer)", (Addr)&sa->sa_restorer, sizeof(sa->sa_restorer));
    }
    if (ARG3 != 0)
