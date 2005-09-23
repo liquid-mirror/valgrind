@@ -2500,7 +2500,7 @@ Bool VG_(am_relocate_nooverlap_client)( Addr old_addr, SizeT old_len,
    oldseg.offset += ((ULong)old_addr) - ((ULong)oldseg.start);
    oldseg.start = new_addr;
    oldseg.end   = new_addr + new_len - 1;
-   add_segment( &seg );
+   add_segment( &oldseg );
 
    AM_SANITY_CHECK;
    return True;
