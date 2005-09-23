@@ -516,7 +516,8 @@ Bool VG_(translate) ( ThreadId tid,
       = VG_(get_bbs_translated)() >= notrace_until_limit;
 
    if (!debugging_translation)
-      VG_TRACK( pre_mem_read, Vg_CoreTranslate, tid, "", orig_addr, 1 );
+      VG_TRACK( pre_mem_read, Vg_CoreTranslate, 
+                              tid, "(translator)", orig_addr, 1 );
 
    /* If doing any code printing, print a basic block start marker */
    if (VG_(clo_trace_flags) || debugging_translation) {

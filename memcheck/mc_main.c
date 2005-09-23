@@ -1204,12 +1204,15 @@ void mc_check_is_readable ( CorePart part, ThreadId tid, Char* s,
 
    VGP_PUSHCC(VgpCheckMem);
    
-   /* VG_(message)(Vg_DebugMsg,"check is readable: %x .. %x",
-                               base,base+size-1); */
    res = mc_check_readable ( base, size, &bad_addr );
+
+   if (0)
+      VG_(printf)("mc_check_is_readable(0x%x, %d, %s) -> %s\n",
+                  (UInt)base, (Int)size, s, res==MC_Ok ? "yes" : "no" );
+
    if (MC_Ok != res) {
       Bool isUnaddr = ( MC_AddrErr == res ? True : False );
-      
+
       switch (part) {
       case Vg_CoreSysCall:
          MAC_(record_param_error) ( tid, bad_addr, /*isReg*/False,
