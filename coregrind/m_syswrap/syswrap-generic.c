@@ -1627,6 +1627,16 @@ ML_(generic_POST_sys_shmat) ( ThreadId tid,
 
       if (!(arg2 & 010000)) /* = SHM_RDONLY */
          prot &= ~VKI_PROT_WRITE;
+      /* It isn't exactly correct to pass 0 for the fd and offset
+         here.  The kernel seems to think the corresponding section
+         does have dev/ino numbers:
+         
+         04e52000-04ec8000 rw-s 00000000 00:06 1966090  /SYSV00000000 (deleted)
+
+         However there is no obvious way to find them.  In order to
+         cope with the discrepancy, aspacem's sync checker omits the
+         dev/ino correspondence check in cases where V does not know
+         the dev/ino. */
       VG_(am_notify_client_mmap)( res, VG_PGROUNDUP(segmentSize), 
                                   prot, VKI_MAP_ANONYMOUS, 0,0);
    }

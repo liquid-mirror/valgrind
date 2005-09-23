@@ -862,7 +862,7 @@ static void sync_check_mapping_callback ( Addr addr, SizeT len, UInt prot,
       data. */
    for (i = iLo; i <= iHi; i++) {
 
-      Bool same, cmp_offsets;
+      Bool same, cmp_offsets, cmp_devino;
    
       /* compare the kernel's offering against ours. */
       same = nsegments[i].kind == SkAnonC
@@ -872,10 +872,13 @@ static void sync_check_mapping_callback ( Addr addr, SizeT len, UInt prot,
 
       cmp_offsets
          = nsegments[i].kind == SkFileC || nsegments[i].kind == SkFileV;
+      cmp_devino
+         = nsegments[i].dev != 0 || nsegments[i].ino != 0;
 
       same = same
-             && nsegments[i].dev == dev
-             && nsegments[i].ino == ino
+             && (cmp_devino
+                   ? (nsegments[i].dev == dev && nsegments[i].ino == ino)
+                   : True)
              && (cmp_offsets 
                    ? nsegments[i].start-nsegments[i].offset == addr-offset
                    : True);
