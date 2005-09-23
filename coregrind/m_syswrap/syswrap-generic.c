@@ -1621,9 +1621,6 @@ ML_(generic_POST_sys_shmat) ( ThreadId tid,
    UInt segmentSize = get_shm_size ( arg0 );
    if ( segmentSize > 0 ) {
       UInt prot = VKI_PROT_READ|VKI_PROT_WRITE;
-      /* we don't distinguish whether it's read-only or
-       * read-write -- it doesn't matter really. */
-      VG_TRACK( new_mem_mmap, res, segmentSize, True, True, False );
 
       if (!(arg2 & 010000)) /* = SHM_RDONLY */
          prot &= ~VKI_PROT_WRITE;
@@ -1639,6 +1636,10 @@ ML_(generic_POST_sys_shmat) ( ThreadId tid,
          the dev/ino. */
       VG_(am_notify_client_mmap)( res, VG_PGROUNDUP(segmentSize), 
                                   prot, VKI_MAP_ANONYMOUS, 0,0);
+
+      /* we don't distinguish whether it's read-only or
+       * read-write -- it doesn't matter really. */
+      VG_TRACK( new_mem_mmap, res, segmentSize, True, True, False );
    }
 }
 
@@ -1659,8 +1660,8 @@ ML_(generic_POST_sys_shmdt) ( ThreadId tid, UWord res, UWord arg0 )
    if (s != NULL /* && (s->flags & SF_SHM) */
                  /* && Implied by defn of am_find_nsegment:
                        VG_(seg_contains)(s, arg0, 1) */) {
-      VG_TRACK( die_mem_munmap, s->start, s->end+1 - s->start );
       VG_(am_notify_munmap)(s->start, s->end+1 - s->start);
+      VG_TRACK( die_mem_munmap, s->start, s->end+1 - s->start );
    }
 }
 /* ------ */

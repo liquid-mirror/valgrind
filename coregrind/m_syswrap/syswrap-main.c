@@ -170,6 +170,28 @@
    build signal frames).  Do not do this.  If you want a signal poll
    after the syscall goes through, do "*flags |= SfPollAfter" and the
    driver logic will do it for you.
+
+   -----------
+
+   Another critical requirement following introduction of new address
+   space manager (JRS, 20050923):
+
+   In a situation where the mappedness of memory has changed, aspacem
+   should be notified BEFORE the tool.  Hence the following is
+   correct:
+
+      VG_(am_notify_munmap)(s->start, s->end+1 - s->start);
+      VG_TRACK( die_mem_munmap, s->start, s->end+1 - s->start );
+
+   whilst this is wrong:
+
+      VG_TRACK( die_mem_munmap, s->start, s->end+1 - s->start );
+      VG_(am_notify_munmap)(s->start, s->end+1 - s->start);
+
+   The reason is that the tool may itself ask aspacem for more shadow
+   memory as a result of the VG_TRACK call.  In such a situation it is
+   critical that aspacem's segment array is up to date -- hence the
+   need to notify aspacem first.
 */
 
 
