@@ -670,9 +670,7 @@ Addr setup_client_stack( void*  init_sp,
 
    vg_assert((strtab-stringbase) == stringsize);
 
-   /* We know the initial SP is pointing at argc/argv */
-   //   VG_(client_argc) = *(Int*)client_SP;
-   VG_(client_argv) = (Char**)(client_SP + sizeof(HWord));
+   /* client_SP is pointing at client's argc/argv */
 
    if (0) VG_(printf)("startup SP = %p\n", client_SP);
    return client_SP;

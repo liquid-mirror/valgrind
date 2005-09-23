@@ -44,8 +44,6 @@
 
 /* As deduced from sp_at_startup, the client's argc, argv[] and
    envp[] as extracted from the client's stack at startup-time. */
-Int    VG_(client_argc);
-Char** VG_(client_argv);
 Char** VG_(client_envp);
 
 /* client executable file descriptor */
