@@ -1280,6 +1280,7 @@ void split_nsegments_lo_and_hi ( Addr sLo, Addr sHi,
 static void add_segment ( NSegment* seg )
 {
    Int  i, iLo, iHi, delta;
+   Bool segment_is_sane;
 
    Addr sStart = seg->start;
    Addr sEnd   = seg->end;
@@ -1287,8 +1288,10 @@ static void add_segment ( NSegment* seg )
    aspacem_assert(sStart <= sEnd);
    aspacem_assert(VG_IS_PAGE_ALIGNED(sStart));
    aspacem_assert(VG_IS_PAGE_ALIGNED(sEnd+1));
-   /* if (!sane_NSegment(seg)) show_nsegment_full(0,seg); */
-   aspacem_assert(sane_NSegment(seg));
+
+   segment_is_sane = sane_NSegment(seg);
+   if (!segment_is_sane) show_nsegment_full(0,seg);
+   aspacem_assert(segment_is_sane);
 
    split_nsegments_lo_and_hi( sStart, sEnd, &iLo, &iHi );
 
@@ -2515,7 +2518,12 @@ Bool VG_(am_relocate_nooverlap_client)( Addr old_addr, SizeT old_len,
    add_segment( &seg );
 
    /* Mark the new area based on the old seg. */
-   oldseg.offset += ((ULong)old_addr) - ((ULong)oldseg.start);
+   if (oldseg.kind == SkFileC) {
+      oldseg.offset += ((ULong)old_addr) - ((ULong)oldseg.start);
+   } else {
+      aspacem_assert(oldseg.kind == SkAnonC);
+      aspacem_assert(oldseg.offset == 0);
+   }
    oldseg.start = new_addr;
    oldseg.end   = new_addr + new_len - 1;
    add_segment( &oldseg );
