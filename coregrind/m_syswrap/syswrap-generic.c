@@ -175,7 +175,7 @@ SysRes do_mremap( Addr old_addr, SizeT old_len,
 {
 #  define MIN_SIZET(_aa,_bb) (_aa) < (_bb) ? (_aa) : (_bb)
 
-   Bool      ok;
+   Bool      ok, d;
    NSegment* old_seg;
    Addr      advised;
    Bool      f_fixed   = toBool(flags & VKI_MREMAP_FIXED);
@@ -294,7 +294,7 @@ SysRes do_mremap( Addr old_addr, SizeT old_len,
       if (!ok || advised != new_addr)
          goto eNOMEM;
       ok = VG_(am_relocate_nooverlap_client)
-              ( old_addr, old_len, new_addr, new_len );
+              ( &d, old_addr, old_len, new_addr, new_len );
       if (ok) {
          VG_TRACK( copy_mem_remap, old_addr, new_addr, 
                                    MIN_SIZET(old_len,new_len) );
@@ -302,6 +302,10 @@ SysRes do_mremap( Addr old_addr, SizeT old_len,
             VG_TRACK( new_mem_mmap, new_addr+old_len, new_len-old_len,
                       old_seg->hasR, old_seg->hasW, old_seg->hasX );
          VG_TRACK(die_mem_munmap, old_addr, old_len);
+         if (d) {
+            VG_(discard_translations)( old_addr, old_len );
+            VG_(discard_translations)( new_addr, new_len );
+         }
          return VG_(mk_SysRes_Success)( new_addr );
       }
       goto eNOMEM;
@@ -323,11 +327,13 @@ SysRes do_mremap( Addr old_addr, SizeT old_len,
          non-fixed, which is not what we want */
    advised = VG_(am_get_advisory_client_simple)( needA, needL, &ok );
    if (ok && advised == needA) {
-      ok = VG_(am_extend_map_client)( old_seg, needL );
+      ok = VG_(am_extend_map_client)( &d, old_seg, needL );
       if (ok) {
          VG_TRACK( new_mem_mmap, needA, needL, 
                                  old_seg->hasR, 
                                  old_seg->hasW, old_seg->hasX );
+         if (d) 
+            VG_(discard_translations)( needA, needL );
          return VG_(mk_SysRes_Success)( old_addr );
       }
    }
@@ -339,14 +345,18 @@ SysRes do_mremap( Addr old_addr, SizeT old_len,
       vg_assert(advised+new_len-1 < old_addr 
                 || advised > old_addr+old_len-1);
       ok = VG_(am_relocate_nooverlap_client)
-              ( old_addr, old_len, advised, new_len );
+              ( &d, old_addr, old_len, advised, new_len );
       if (ok) {
-         VG_TRACK( copy_mem_remap, old_addr, new_addr, 
+         VG_TRACK( copy_mem_remap, old_addr, advised, 
                                    MIN_SIZET(old_len,new_len) );
          if (new_len > old_len)
-            VG_TRACK( new_mem_mmap, new_addr+old_len, new_len-old_len,
+            VG_TRACK( new_mem_mmap, advised+old_len, new_len-old_len,
                       old_seg->hasR, old_seg->hasW, old_seg->hasX );
          VG_TRACK(die_mem_munmap, old_addr, old_len);
+         if (d) {
+            VG_(discard_translations)( old_addr, old_len );
+            VG_(discard_translations)( advised, new_len );
+         }
          return VG_(mk_SysRes_Success)( advised );
       }
    }
@@ -365,21 +375,25 @@ SysRes do_mremap( Addr old_addr, SizeT old_len,
    advised = VG_(am_get_advisory_client_simple)( needA, needL, &ok );
    if (!ok || advised != needA)
       goto eNOMEM;
-   ok = VG_(am_extend_map_client)( old_seg, needL );
+   ok = VG_(am_extend_map_client)( &d, old_seg, needL );
    if (!ok)
       goto eNOMEM;
    VG_TRACK( new_mem_mmap, needA, needL, 
                            old_seg->hasR, old_seg->hasW, old_seg->hasX );
+   if (d)
+      VG_(discard_translations)( needA, needL );
    return VG_(mk_SysRes_Success)( old_addr );
    }
    /*NOTREACHED*/ vg_assert(0);
 
   shrink_in_place:
    {
-   SysRes sres = VG_(am_munmap_client)( old_addr+new_len, old_len-new_len );
+   SysRes sres = VG_(am_munmap_client)( &d, old_addr+new_len, old_len-new_len );
    if (sres.isError)
       return sres;
    VG_TRACK( die_mem_munmap, old_addr+new_len, old_len-new_len );
+   if (d)
+      VG_(discard_translations)( old_addr+new_len, old_len-new_len );
    return VG_(mk_SysRes_Success)( old_addr );
    }
    /*NOTREACHED*/ vg_assert(0);
@@ -928,6 +942,7 @@ static Addr do_brk ( Addr newbrk )
    if (newbrk >= VG_(brk_base) && newbrk < VG_(brk_limit)) {
       /* shrinking the data segment.  Be lazy and don't munmap the
          excess area. */
+      VG_(discard_translations)( newbrk, VG_(brk_limit) - newbrk );
       VG_(brk_limit) = newbrk;
       return newbrk;
    }

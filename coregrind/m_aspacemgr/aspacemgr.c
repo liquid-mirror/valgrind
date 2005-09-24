@@ -1203,7 +1203,7 @@ static Bool is_valid_for_valgrind( Addr start, SizeT len )
    translations made from it.  This is used to determine when to
    discard code, so if in doubt return True. */
 
-static Bool anyTs_in_range ( Addr start, SizeT len )
+static Bool any_Ts_in_range ( Addr start, SizeT len )
 {
    Int iLo, iHi, i;
    aspacem_assert(len > 0);
@@ -1749,7 +1749,7 @@ VG_(am_notify_client_mmap)( Addr a, SizeT len, UInt prot, UInt flags,
    aspacem_assert(VG_IS_PAGE_ALIGNED(len));
 
    /* Discard is needed if any of the just-trashed range had T. */
-   needDiscard = anyTs_in_range( a, len );
+   needDiscard = any_Ts_in_range( a, len );
 
    init_nsegment( &seg );
    seg.kind   = (flags & VKI_MAP_ANONYMOUS) ? SkAnonC : SkFileC;
@@ -1799,7 +1799,7 @@ Bool VG_(am_notify_mprotect)( Addr start, SizeT len, UInt prot )
    newX = toBool(prot & VKI_PROT_EXEC);
 
    /* Discard is needed if we're dumping X permission */
-   needDiscard = anyTs_in_range( start, len ) && !newX;
+   needDiscard = any_Ts_in_range( start, len ) && !newX;
 
    split_nsegments_lo_and_hi( start, start+len-1, &iLo, &iHi );
 
@@ -1845,7 +1845,7 @@ Bool VG_(am_notify_munmap)( Addr start, SizeT len )
    if (len == 0)
       return False;
 
-   needDiscard = anyTs_in_range( start, len );
+   needDiscard = any_Ts_in_range( start, len );
 
    init_nsegment( &seg );
    seg.kind  = SkFree;
@@ -2191,15 +2191,19 @@ SysRes VG_(am_mmap_file_float_valgrind) ( SizeT length, UInt prot,
 /* --- --- munmap helper --- --- */
 
 static 
-SysRes am_munmap_both_wrk ( Addr start, SizeT len, Bool forClient )
+SysRes am_munmap_both_wrk ( /*OUT*/Bool* need_discard,
+                            Addr start, SizeT len, Bool forClient )
 {
+   Bool   d;
    SysRes sres;
 
    if (!VG_IS_PAGE_ALIGNED(start))
       goto eINVAL;
 
-   if (len == 0)
+   if (len == 0) {
+      *need_discard = False;
       return VG_(mk_SysRes_Success)( 0 );
+   }
 
    if (start + len < len)
       goto eINVAL;
@@ -2217,12 +2221,15 @@ SysRes am_munmap_both_wrk ( Addr start, SizeT len, Bool forClient )
          goto eINVAL;
    }
 
+   d = any_Ts_in_range( start, len );
+
    sres = do_munmap_NO_NOTIFY( start, len );
    if (sres.isError)
       return sres;
 
    VG_(am_notify_munmap)( start, len );
    AM_SANITY_CHECK;
+   *need_discard = d;
    return sres;
 
   eINVAL:
@@ -2230,12 +2237,15 @@ SysRes am_munmap_both_wrk ( Addr start, SizeT len, Bool forClient )
 }
 
 /* Unmap the given address range and update the segment array
-   accordingly.  This fails if the range isn't valid for the
-   client. */
+   accordingly.  This fails if the range isn't valid for the client.
+   If *need_discard is True after a successful return, the caller
+   should immediately discard translations from the specified address
+   range. */
 
-SysRes VG_(am_munmap_client)( Addr start, SizeT len )
+SysRes VG_(am_munmap_client)( /*OUT*/Bool* need_discard,
+                              Addr start, SizeT len )
 {
-   return am_munmap_both_wrk( start, len, True/*client*/ );
+   return am_munmap_both_wrk( need_discard, start, len, True/*client*/ );
 }
 
 /* Unmap the given address range and update the segment array
@@ -2243,7 +2253,14 @@ SysRes VG_(am_munmap_client)( Addr start, SizeT len )
 
 SysRes VG_(am_munmap_valgrind)( Addr start, SizeT len )
 {
-   return am_munmap_both_wrk( start, len, False/*valgrind*/ );
+   Bool need_discard;
+   SysRes r = am_munmap_both_wrk( &need_discard, 
+                                  start, len, False/*valgrind*/ );
+   /* If this assertion fails, it means we allowed translations to be
+      made from a V-owned section.  Which shouldn't happen. */
+   if (!r.isError)
+      aspacem_assert(!need_discard);
+   return r;
 }
 
 /* Let (start,len) denote an area within a single Valgrind-owned
@@ -2461,9 +2478,12 @@ Bool VG_(am_extend_into_adjacent_reservation_client) ( NSegment* seg,
    the mapping forwards only by DELTA bytes, and trashes whatever was
    in the new area.  Fails if SEG is not a single client mapping or if
    the new area is not accessible to the client.  Fails if DELTA is
-   not page aligned.  *seg is invalid after a successful return. */
+   not page aligned.  *seg is invalid after a successful return.  If
+   *need_discard is True after a successful return, the caller should
+   immediately discard translations from the new area. */
 
-Bool VG_(am_extend_map_client)( NSegment* seg, SizeT delta )
+Bool VG_(am_extend_map_client)( /*OUT*/Bool* need_discard,
+                                NSegment* seg, SizeT delta )
 {
    Addr     xStart;
    SysRes   sres;
@@ -2493,6 +2513,8 @@ Bool VG_(am_extend_map_client)( NSegment* seg, SizeT delta )
       return False;
    }
 
+   *need_discard = any_Ts_in_range( seg_copy.end+1, delta );
+
    seg_copy.end += delta;
    add_segment( &seg_copy );
 
@@ -2506,9 +2528,12 @@ Bool VG_(am_extend_map_client)( NSegment* seg, SizeT delta )
    wraparound is implied, if the old address range does not fall
    entirely within a single segment, if the new address range overlaps
    with the old one, or if the old address range is not a valid client
-   mapping. */
+   mapping.  If *need_discard is True after a successful return, the
+   caller should immediately discard translations from both specified
+   address ranges.  */
 
-Bool VG_(am_relocate_nooverlap_client)( Addr old_addr, SizeT old_len,
+Bool VG_(am_relocate_nooverlap_client)( /*OUT*/Bool* need_discard,
+                                        Addr old_addr, SizeT old_len,
                                         Addr new_addr, SizeT new_len )
 {
    Int      iLo, iHi;
@@ -2546,6 +2571,9 @@ Bool VG_(am_relocate_nooverlap_client)( Addr old_addr, SizeT old_len,
       AM_SANITY_CHECK;
       return False;
    }
+
+   *need_discard = any_Ts_in_range( old_addr, old_len )
+                   || any_Ts_in_range( new_addr, new_len );
 
    oldseg = nsegments[iLo];
 

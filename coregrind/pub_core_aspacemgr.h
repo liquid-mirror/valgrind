@@ -226,9 +226,12 @@ extern SysRes VG_(am_mmap_file_float_valgrind)
    ( SizeT length, UInt prot, Int fd, SizeT offset );
 
 /* Unmap the given address range and update the segment array
-   accordingly.  This fails if the range isn't valid for the
-   client. */
-extern SysRes VG_(am_munmap_client)( Addr start, SizeT length );
+   accordingly.  This fails if the range isn't valid for the client.
+   If *need_discard is True after a successful return, the caller
+   should immediately discard translations from the specified address
+   range. */
+extern SysRes VG_(am_munmap_client)( /*OUT*/Bool* need_discard,
+                                     Addr start, SizeT length );
 
 /* Unmap the given address range and update the segment array
    accordingly.  This fails if the range isn't valid for valgrind. */
@@ -270,16 +273,22 @@ extern Bool VG_(am_extend_into_adjacent_reservation_client)
    the mapping forwards only by DELTA bytes, and trashes whatever was
    in the new area.  Fails if SEG is not a single client mapping or if
    the new area is not accessible to the client.  Fails if DELTA is
-   not page aligned.  *seg is invalid after a successful return. */
-extern Bool VG_(am_extend_map_client)( NSegment* seg, SizeT delta );
+   not page aligned.  *seg is invalid after a successful return.  If
+   *need_discard is True after a successful return, the caller should
+   immediately discard translations from the new area. */
+extern Bool VG_(am_extend_map_client)( /*OUT*/Bool* need_discard,
+                                       NSegment* seg, SizeT delta );
 
 /* Remap the old address range to the new address range.  Fails if any
    parameter is not page aligned, if the either size is zero, if any
    wraparound is implied, if the old address range does not fall
    entirely within a single segment, if the new address range overlaps
    with the old one, or if the old address range is not a valid client
-   mapping. */
-extern Bool VG_(am_relocate_nooverlap_client)( Addr old_addr, SizeT old_len,
+   mapping.  If *need_discard is True after a successful return, the
+   caller should immediately discard translations from both specified
+   address ranges.  */
+extern Bool VG_(am_relocate_nooverlap_client)( /*OUT*/Bool* need_discard,
+                                               Addr old_addr, SizeT old_len,
                                                Addr new_addr, SizeT new_len );
 
 //--------------------------------------------------------------
