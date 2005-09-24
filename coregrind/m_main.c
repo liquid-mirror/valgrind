@@ -517,7 +517,7 @@ Addr setup_client_stack( void*  init_sp,
      vg_assert(VG_IS_PAGE_ALIGNED(resvn_size));
      vg_assert(VG_IS_PAGE_ALIGNED(anon_start));
      vg_assert(VG_IS_PAGE_ALIGNED(resvn_start));
-     vg_assert(resvn_start = clstack_end + 1 - clstack_max_size);
+     vg_assert(resvn_start == clstack_end + 1 - clstack_max_size);
 
      if (0)
         VG_(printf)("%p 0x%x  %p 0x%x\n", 
