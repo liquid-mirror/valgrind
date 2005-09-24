@@ -1513,6 +1513,9 @@ static void process_cmd_line_options( UInt* client_auxv, const char* toolname )
          "%sCopyright (C) 2000-2005, and GNU GPL'd, by Julian Seward et al.%s",
          xpre, xpost );
 
+      if (VG_(clo_verbosity) == 1 && !VG_(clo_xml))
+         VG_(message)(Vg_UserMsg, "For more details, rerun with: -v");
+
       if (VG_(clo_xml))
          VG_(message)(Vg_UserMsg, "</preamble>");
    }
@@ -1578,6 +1581,10 @@ static void process_cmd_line_options( UInt* client_auxv, const char* toolname )
 
       VG_(message)(Vg_UserMsg, "</args>");
    }
+
+   // Empty line after the preamble
+   if (VG_(clo_verbosity) > 0)
+      VG_(message)(Vg_UserMsg, "");
 
    if (VG_(clo_verbosity) > 1) {
       SysRes fd;
@@ -2384,15 +2391,6 @@ Int main(Int argc, HChar **argv, HChar **envp)
       VG_(debugLog)(1, "main", "Load suppressions\n");
       VG_(load_suppressions)();
    }
-
-   //--------------------------------------------------------------
-   // Verbosity message
-   //   p: end_rdtsc_calibration [so startup message is printed first]
-   //--------------------------------------------------------------
-   if (VG_(clo_verbosity) == 1 && !VG_(clo_xml))
-      VG_(message)(Vg_UserMsg, "For more details, rerun with: -v");
-   if (VG_(clo_verbosity) > 0)
-      VG_(message)(Vg_UserMsg, "");
 
    //--------------------------------------------------------------
    // Setup pointercheck
