@@ -581,12 +581,17 @@ Bool overlaps ( Addr64 start, ULong range, VexGuestExtents* vge )
 }
 
 
-void VG_(discard_translations) ( Addr64 guest_start, ULong range )
+void VG_(discard_translations) ( Addr64 guest_start, ULong range,
+                                 HChar* who )
 {
    Int sno, i;
    Bool anyDeleted = False;
 
    vg_assert(init_done);
+
+   VG_(debugLog)(1, "transtab",
+                    "discard_translations(0x%llx, %lld) req by %s\n",
+                    guest_start, range, who );
 
    for (sno = 0; sno < N_SECTORS; sno++) {
       if (sectors[sno].tc == NULL)
@@ -659,6 +664,16 @@ void VG_(init_tt_tc) ( void )
          N_SECTORS * N_TTES_PER_SECTOR_USABLE, 
          SECTOR_TT_LIMIT_PERCENT );
    }
+
+   VG_(debugLog)(2, "transtab",
+      "cache: %d sectors of %d bytes each = %d total\n", 
+       N_SECTORS, 8 * tc_sector_szQ,
+       N_SECTORS * 8 * tc_sector_szQ );
+   VG_(debugLog)(2, "transtab",
+      "table: %d total entries, max occupancy %d (%d%%)\n",
+      N_SECTORS * N_TTES_PER_SECTOR,
+      N_SECTORS * N_TTES_PER_SECTOR_USABLE, 
+      SECTOR_TT_LIMIT_PERCENT );
 }
 
 

@@ -782,7 +782,8 @@ VgSchedReturnCode VG_(scheduler) ( ThreadId tid )
       case VEX_TRC_JMP_TINVAL:
          VG_(discard_translations)(
             (Addr64)VG_(threads)[tid].arch.vex.guest_TISTART,
-            VG_(threads)[tid].arch.vex.guest_TILEN
+            VG_(threads)[tid].arch.vex.guest_TILEN,
+            "scheduler(VEX_TRC_JMP_TINVAL)"
          );
          if (0)
             VG_(printf)("dump translations done.\n");
@@ -1050,7 +1051,9 @@ void do_client_request ( ThreadId tid )
                          " addr %p,  len %d\n",
                          (void*)arg[1], arg[2] );
 
-         VG_(discard_translations)( arg[1], arg[2] );
+         VG_(discard_translations)( 
+            arg[1], arg[2], "scheduler(VG_USERREQ__DISCARD_TRANSLATIONS)" 
+         );
 
          SET_CLREQ_RETVAL( tid, 0 );     /* return value is meaningless */
 	 break;

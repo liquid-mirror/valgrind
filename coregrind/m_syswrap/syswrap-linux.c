@@ -726,7 +726,8 @@ PRE(sys_io_destroy)
       Bool d = VG_(am_notify_munmap)( ARG1, size );
       VG_TRACK( die_mem_munmap, ARG1, size );
       if (d)
-         VG_(discard_translations)( (Addr64)ARG1, (ULong)size );
+         VG_(discard_translations)( (Addr64)ARG1, (ULong)size, 
+                                    "PRE(sys_io_destroy)" );
    }  
 }  
 

@@ -162,7 +162,8 @@ ML_(notify_aspacem_and_tool_of_mmap) ( Addr a, SizeT len, UInt prot,
    VG_TRACK( new_mem_mmap, a, len, rr, ww, xx );
 
    if (d)
-      VG_(discard_translations)( (Addr64)a, (ULong)len );
+      VG_(discard_translations)( (Addr64)a, (ULong)len,
+                                 "ML_(notify_aspacem_and_tool_of_mmap)" );
 }
 
 /* Expand (or shrink) an existing mapping, potentially moving it at
@@ -303,8 +304,8 @@ SysRes do_mremap( Addr old_addr, SizeT old_len,
                       old_seg->hasR, old_seg->hasW, old_seg->hasX );
          VG_TRACK(die_mem_munmap, old_addr, old_len);
          if (d) {
-            VG_(discard_translations)( old_addr, old_len );
-            VG_(discard_translations)( new_addr, new_len );
+            VG_(discard_translations)( old_addr, old_len, "do_remap(1)" );
+            VG_(discard_translations)( new_addr, new_len, "do_remap(2)" );
          }
          return VG_(mk_SysRes_Success)( new_addr );
       }
@@ -333,7 +334,7 @@ SysRes do_mremap( Addr old_addr, SizeT old_len,
                                  old_seg->hasR, 
                                  old_seg->hasW, old_seg->hasX );
          if (d) 
-            VG_(discard_translations)( needA, needL );
+            VG_(discard_translations)( needA, needL, "do_remap(3)" );
          return VG_(mk_SysRes_Success)( old_addr );
       }
    }
@@ -354,8 +355,8 @@ SysRes do_mremap( Addr old_addr, SizeT old_len,
                       old_seg->hasR, old_seg->hasW, old_seg->hasX );
          VG_TRACK(die_mem_munmap, old_addr, old_len);
          if (d) {
-            VG_(discard_translations)( old_addr, old_len );
-            VG_(discard_translations)( advised, new_len );
+            VG_(discard_translations)( old_addr, old_len, "do_remap(4)" );
+            VG_(discard_translations)( advised, new_len, "do_remap(5)" );
          }
          return VG_(mk_SysRes_Success)( advised );
       }
@@ -381,7 +382,7 @@ SysRes do_mremap( Addr old_addr, SizeT old_len,
    VG_TRACK( new_mem_mmap, needA, needL, 
                            old_seg->hasR, old_seg->hasW, old_seg->hasX );
    if (d)
-      VG_(discard_translations)( needA, needL );
+      VG_(discard_translations)( needA, needL, "do_remap(6)" );
    return VG_(mk_SysRes_Success)( old_addr );
    }
    /*NOTREACHED*/ vg_assert(0);
@@ -393,7 +394,8 @@ SysRes do_mremap( Addr old_addr, SizeT old_len,
       return sres;
    VG_TRACK( die_mem_munmap, old_addr+new_len, old_len-new_len );
    if (d)
-      VG_(discard_translations)( old_addr+new_len, old_len-new_len );
+      VG_(discard_translations)( old_addr+new_len, old_len-new_len, 
+                                 "do_remap(7)" );
    return VG_(mk_SysRes_Success)( old_addr );
    }
    /*NOTREACHED*/ vg_assert(0);
@@ -942,7 +944,10 @@ static Addr do_brk ( Addr newbrk )
    if (newbrk >= VG_(brk_base) && newbrk < VG_(brk_limit)) {
       /* shrinking the data segment.  Be lazy and don't munmap the
          excess area. */
-      VG_(discard_translations)( newbrk, VG_(brk_limit) - newbrk );
+      NSegment* seg = VG_(am_find_nsegment)(newbrk);
+      if (seg && seg->hasT)
+         VG_(discard_translations)( newbrk, VG_(brk_limit) - newbrk, 
+                                    "do_brk(shrink)" );
       VG_(brk_limit) = newbrk;
       return newbrk;
    }
@@ -1673,7 +1678,8 @@ ML_(generic_POST_sys_shmat) ( ThreadId tid,
       VG_TRACK( new_mem_mmap, res, segmentSize, True, True, False );
       if (d)
          VG_(discard_translations)( (Addr64)res, 
-                                    (ULong)VG_PGROUNDUP(segmentSize) );
+                                    (ULong)VG_PGROUNDUP(segmentSize),
+                                    "ML_(generic_POST_sys_shmat)" );
    }
 }
 
@@ -1698,7 +1704,8 @@ ML_(generic_POST_sys_shmdt) ( ThreadId tid, UWord res, UWord arg0 )
       VG_TRACK( die_mem_munmap, s->start, s->end+1 - s->start );
       if (d)
          VG_(discard_translations)( (Addr64)(s->start),
-                                    (ULong)(s->end+1 - s->start) );
+                                    (ULong)(s->end+1 - s->start),
+                                    "ML_(generic_POST_sys_shmdt)" );
    }
 }
 /* ------ */
@@ -4868,7 +4875,8 @@ POST(sys_mprotect)
    VG_TRACK( change_mem_mprotect, a, len, rr, ww, xx );
    VG_(di_notify_mprotect)( a, len, prot );
    if (d)
-      VG_(discard_translations)( (Addr64)a, (ULong)len );
+      VG_(discard_translations)( (Addr64)a, (ULong)len, 
+                                 "POST(sys_mprotect)" );
 }
 
 PRE(sys_munmap)
@@ -4892,7 +4900,8 @@ POST(sys_munmap)
    VG_TRACK( die_mem_munmap, a, len );
    VG_(di_notify_munmap)( a, len );
    if (d)
-      VG_(discard_translations)( (Addr64)a, (ULong)len );
+      VG_(discard_translations)( (Addr64)a, (ULong)len,
+                                 "POST(sys_munmap)" );
 }
 
 PRE(sys_mincore)
