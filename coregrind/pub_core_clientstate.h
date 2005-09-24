@@ -51,7 +51,7 @@ extern UWord VG_(clstk_id);      // client stack id
 extern Addr  VG_(brk_base);	 // start of brk
 extern Addr  VG_(brk_limit);	 // current brk
 
-// Client's executable file descriptor.
+/* A fd which refers to the client executable. */
 extern Int VG_(clexecfd);
 
 // Client's original rlimit data and rlimit stack

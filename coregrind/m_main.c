@@ -828,6 +828,7 @@ static void load_client ( /*OUT*/struct exeinfo* info,
 {
    HChar* exec;
    Int    ret;
+   SysRes res;
 
    vg_assert( VG_(args_the_exename) != NULL);
    exec = find_executable( VG_(args_the_exename) );
@@ -842,6 +843,12 @@ static void load_client ( /*OUT*/struct exeinfo* info,
                   exec, VG_(strerror)(ret));
       VG_(exit)(127);
    }
+
+   /* Get hold of a file descriptor which refers to the client
+      executable.  This is needed for attaching to GDB. */
+   res = VG_(open)(exec, VKI_O_RDONLY, VKI_S_IRUSR);
+   if (!res.isError)
+      VG_(clexecfd) = res.val;
 
    /* Copy necessary bits of 'info' that were filled in */
    *client_eip = info->init_eip;

@@ -46,9 +46,6 @@
    envp[] as extracted from the client's stack at startup-time. */
 Char** VG_(client_envp);
 
-/* client executable file descriptor */
-Int VG_(clexecfd) = -1;
-
 /* Path to library directory */
 const Char *VG_(libdir) = VG_LIBDIR;
 

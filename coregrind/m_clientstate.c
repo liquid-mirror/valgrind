@@ -52,6 +52,9 @@ UWord VG_(clstk_id)    = 0;
 Addr  VG_(brk_base)    = 0;       /* start of brk */
 Addr  VG_(brk_limit)   = 0;       /* current brk */
 
+/* A fd which refers to the client executable. */
+Int VG_(clexecfd) = -1;
+
 
 // Command line pieces, after they have been extracted from argv in
 // m_main.main().  The payload vectors are allocated in VG_AR_TOOL
