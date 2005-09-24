@@ -1022,7 +1022,7 @@ static void get_helprequest_and_toolname ( Int* need_help, HChar** tool )
    }
 }
 
-static void process_cmd_line_options( UInt* client_auxv, const char* toolname )
+static Bool process_cmd_line_options( UInt* client_auxv, const char* toolname )
 {
    SysRes sres;
    Int    i, eventually_log_fd;
@@ -1465,11 +1465,34 @@ static void process_cmd_line_options( UInt* client_auxv, const char* toolname )
       VG_(fcntl)(VG_(clo_log_fd), VKI_F_SETFD, VKI_FD_CLOEXEC);
    }
 
-   /* Ok, the logging sink is running now.  Print a suitable preamble.
-      If logging to file or a socket, write details of parent PID and
-      command line args, to help people trying to interpret the
-      results of a run which encompasses multiple processes. */
+   if (VG_(clo_n_suppressions) < VG_CLO_MAX_SFILES-1 &&
+       (VG_(needs).core_errors || VG_(needs).tool_errors)) {
+      /* If we haven't reached the max number of suppressions, load
+         the default one. */
+      static const Char default_supp[] = "default.supp";
+      Int len = VG_(strlen)(VG_(libdir)) + 1 + sizeof(default_supp);
+      Char *buf = VG_(arena_malloc)(VG_AR_CORE, len);
+      VG_(sprintf)(buf, "%s/%s", VG_(libdir), default_supp);
+      VG_(clo_suppressions)[VG_(clo_n_suppressions)] = buf;
+      VG_(clo_n_suppressions)++;
+   }
 
+   return (log_to == VgLogTo_Fd);
+}
+
+
+/*====================================================================*/
+/*=== Printing the preamble                                        ===*/
+/*====================================================================*/
+
+/* Ok, the logging sink is running now.  Print a suitable preamble.
+   If logging to file or a socket, write details of parent PID and
+   command line args, to help people trying to interpret the
+   results of a run which encompasses multiple processes. */
+static void print_preamble(Bool logging_to_fd, const char* toolname)
+{
+   Int i;
+   
    if (VG_(clo_xml)) {
       VG_(message)(Vg_UserMsg, "<?xml version=\"1.0\"?>");
       VG_(message)(Vg_UserMsg, "");
@@ -1520,7 +1543,7 @@ static void process_cmd_line_options( UInt* client_auxv, const char* toolname )
          VG_(message)(Vg_UserMsg, "</preamble>");
    }
 
-   if (!VG_(clo_xml) && VG_(clo_verbosity) > 0 && log_to != VgLogTo_Fd) {
+   if (!VG_(clo_xml) && VG_(clo_verbosity) > 0 && !logging_to_fd) {
       VG_(message)(Vg_UserMsg, "");
       VG_(message)(Vg_UserMsg, 
          "My PID = %d, parent PID = %d.  Prog and args are:",
@@ -1588,7 +1611,7 @@ static void process_cmd_line_options( UInt* client_auxv, const char* toolname )
 
    if (VG_(clo_verbosity) > 1) {
       SysRes fd;
-      if (log_to != VgLogTo_Fd)
+      if (!logging_to_fd)
          VG_(message)(Vg_DebugMsg, "");
       VG_(message)(Vg_DebugMsg, "Valgrind library directory: %s", VG_(libdir));
 
@@ -1621,18 +1644,6 @@ static void process_cmd_line_options( UInt* client_auxv, const char* toolname )
          VG_(close)(fd.val);
 #        undef BUF_LEN
       }
-   }
-
-   if (VG_(clo_n_suppressions) < VG_CLO_MAX_SFILES-1 &&
-       (VG_(needs).core_errors || VG_(needs).tool_errors)) {
-      /* If we haven't reached the max number of suppressions, load
-         the default one. */
-      static const Char default_supp[] = "default.supp";
-      Int len = VG_(strlen)(VG_(libdir)) + 1 + sizeof(default_supp);
-      Char *buf = VG_(arena_malloc)(VG_AR_CORE, len);
-      VG_(sprintf)(buf, "%s/%s", VG_(libdir), default_supp);
-      VG_(clo_suppressions)[VG_(clo_n_suppressions)] = buf;
-      VG_(clo_n_suppressions)++;
    }
 }
 
@@ -1863,7 +1874,7 @@ VgStack VG_(the_root_stack);
 
 Int main(Int argc, HChar **argv, HChar **envp)
 {
-   HChar*  tool              = "memcheck";    // default to Memcheck
+   HChar*  toolname          = "memcheck";    // default to Memcheck
    HChar** env               = NULL;
    Int     need_help         = 0; // 0 = no, 1 = --help, 2 = --help-debug
    Addr    initial_client_IP = 0;
@@ -1872,6 +1883,7 @@ Int main(Int argc, HChar **argv, HChar **envp)
    SizeT   clstack_max_size  = 0;
    UInt*   client_auxv;
    Int     loglevel, i;
+   Bool    logging_to_fd;
    struct vki_rlimit zero = { 0, 0 };
    struct exeinfo info;
 
@@ -2026,7 +2038,7 @@ Int main(Int argc, HChar **argv, HChar **envp)
    // Split up argv into: C args, V args, V extra args, and exename.
    //   p: dynamic memory allocation
    //--------------------------------------------------------------
-   VG_(debugLog)(1, "main", "Split up command line");
+   VG_(debugLog)(1, "main", "Split up command line\n");
    VG_(split_up_argv)( argc, argv );
    if (0) {
       for (i = 0; i < VG_(args_for_valgrind).used; i++)
@@ -2043,7 +2055,7 @@ Int main(Int argc, HChar **argv, HChar **envp)
    //   p: split_up_argv [for VG_(args_for_valgrind)]
    //--------------------------------------------------------------
    VG_(debugLog)(1, "main", "Preprocess command line opts\n");
-   get_helprequest_and_toolname(&need_help, &tool);
+   get_helprequest_and_toolname(&need_help, &toolname);
 
    // Set default vex control params
    LibVEX_default_VexControl(& VG_(clo_vex_control));
@@ -2065,11 +2077,11 @@ Int main(Int argc, HChar **argv, HChar **envp)
    //--------------------------------------------------------------
    // Set up client's environment
    //   p: set-libdir                   [for VG_(libdir)]
-   //   p: pre_process_cmd_line_options [for tool]
+   //   p: pre_process_cmd_line_options [for toolname]
    //--------------------------------------------------------------
    if (!need_help) {
       VG_(debugLog)(1, "main", "Setup client env\n");
-      env = setup_client_env(envp, tool);
+      env = setup_client_env(envp, toolname);
    }
 
    //--------------------------------------------------------------
@@ -2116,8 +2128,7 @@ Int main(Int argc, HChar **argv, HChar **envp)
      if (dseg_max_size > m8) dseg_max_size = m8;
      dseg_max_size = VG_PGROUNDUP(dseg_max_size);
 
-     if (!need_help)
-        setup_client_dataseg( dseg_max_size );
+     setup_client_dataseg( dseg_max_size );
    }
 
    //==============================================================
@@ -2125,6 +2136,13 @@ Int main(Int argc, HChar **argv, HChar **envp)
    // Finished loading/setting up the client address space.
    //
    //==============================================================
+
+   //--------------------------------------------------------------
+   // setup file descriptors
+   //   p: n/a
+   //--------------------------------------------------------------
+   VG_(debugLog)(1, "main", "Setup file descriptors\n");
+   setup_file_descriptors();
 
    //--------------------------------------------------------------
    // Init tool part 1: pre_clo_init
@@ -2145,51 +2163,63 @@ Int main(Int argc, HChar **argv, HChar **envp)
    }
 
    //--------------------------------------------------------------
-   // Initialise translation table and translation cache
-   //   p: aspacem      [??]
-   //   p: pre_clo_init [for 'VG_(details).avg_translation_sizeB']
+   // If --tool and --help/--help-debug was given, now give the core+tool
+   // help message
+   //   p: get_helprequest_and_toolname() [for 'need_help']
+   //   p: tl_pre_clo_init                [for 'VG_(tdict).usage']
    //--------------------------------------------------------------
-   if (!need_help) {
-      VG_(debugLog)(1, "main", "Initialise TT/TC\n");
-      VG_(init_tt_tc)();
+   VG_(debugLog)(1, "main", "Print help and quit, if requested\n");
+   if (need_help) {
+      usage_NORETURN(/*--help-debug?*/2 == need_help);
    }
+
+   //--------------------------------------------------------------
+   // Process command line options to Valgrind + tool
+   //   p: setup_client_stack()      [for 'VG_(client_arg[cv]']
+   //   p: setup_file_descriptors()  [for 'VG_(fd_xxx_limit)']
+   //   p: parse_procselfmaps        [so VG segments are setup so tool can
+   //                                 call VG_(malloc)]
+   //--------------------------------------------------------------
+   VG_(debugLog)(1, "main", "Process Valgrind's command line options, "
+                            " setup logging\n");
+   logging_to_fd = process_cmd_line_options(client_auxv, toolname);
+
+   //--------------------------------------------------------------
+   // Init tool part 2: post_clo_init
+   //   p: setup_client_stack()      [for 'VG_(client_arg[cv]']
+   //   p: setup_file_descriptors()  [for 'VG_(fd_xxx_limit)']
+   //   p: parse_procselfmaps        [so VG segments are setup so tool can
+   //                                 call VG_(malloc)]
+   //--------------------------------------------------------------
+   VG_(debugLog)(1, "main", "Initialise the tool part 2 (post_clo_init)\n");
+   VG_TDICT_CALL(tool_post_clo_init);
+
+   //--------------------------------------------------------------
+   // Print the preamble
+   //   p: tl_pre_clo_init            [for 'VG_(details).name' and friends]
+   //   p: process_cmd_line_options() [for VG_(clo_verbosity), VG_(clo_xml),
+   //                                      VG_(clo_log_file_qualifier),
+   //                                      logging_to_fd]
+   //--------------------------------------------------------------
+   VG_(debugLog)(1, "main", "Print the preamble...\n");
+   print_preamble(logging_to_fd, toolname);
+   VG_(debugLog)(1, "main", "...finished the preamble\n");
+
+   //--------------------------------------------------------------
+   // Initialise translation table and translation cache
+   //   p: aspacem         [??]
+   //   p: tl_pre_clo_init [for 'VG_(details).avg_translation_sizeB']
+   //--------------------------------------------------------------
+   VG_(debugLog)(1, "main", "Initialise TT/TC\n");
+   VG_(init_tt_tc)();
 
    //--------------------------------------------------------------
    // Initialise the redirect table.
    //   p: init_tt_tc [so it can call VG_(search_transtab) safely]
    //   p: aspacem [so can change ownership of sysinfo pages]
    //--------------------------------------------------------------
-   if (!need_help) { 
-      VG_(debugLog)(1, "main", "Initialise redirects\n");
-      VG_(setup_code_redirect_table)();
-   }
-
-   //--------------------------------------------------------------
-   // setup file descriptors
-   //   p: n/a
-   //--------------------------------------------------------------
-   if (!need_help) {
-      VG_(debugLog)(1, "main", "Setup file descriptors\n");
-      setup_file_descriptors();
-   }
-
-   //--------------------------------------------------------------
-   // Init tool part 2: pre_clo_init
-   //   p: setup_client_stack()      [for 'VG_(client_arg[cv]']
-   //   p: setup_file_descriptors()  [for 'VG_(fd_xxx_limit)']
-   //   p: parse_procselfmaps        [so VG segments are setup so tool can
-   //                                 call VG_(malloc)]
-   //--------------------------------------------------------------
-
-   VG_(debugLog)(1, "main", "Initialise the tool part 2 (post_clo_init)\n");
-   // If --tool and --help/--help-debug was given, now give the core+tool
-   // help message
-   if (need_help) {
-      usage_NORETURN(/*--help-debug?*/2 == need_help);
-   }
-   process_cmd_line_options(client_auxv, tool);
-
-   VG_TDICT_CALL(tool_post_clo_init);
+   VG_(debugLog)(1, "main", "Initialise redirects\n");
+   VG_(setup_code_redirect_table)();
 
    //--------------------------------------------------------------
    // Allow GDB attach
