@@ -381,6 +381,24 @@ void log_bytes ( HChar* bytes, Int nbytes )
    'tid' is the identity of the thread needing this block.
 */
 
+/* Look for reasons to disallow making translations from the given
+   segment. */
+
+static Bool translations_allowable_from_seg ( NSegment* seg )
+{
+#  if defined(VGA_x86)
+   Bool allowR = True;
+#  else
+   Bool allowR = False;
+#  endif
+
+   return seg != NULL
+          && (seg->kind == SkAnonC || seg->kind == SkFileC)
+          && (seg->hasX || (seg->hasR && allowR));
+}
+
+
+
 /* This stops Vex from chasing into function entry points that we wish
    to redirect.  Chasing across them obviously defeats the redirect
    mechanism, with bad effects for Memcheck, Addrcheck, and possibly
@@ -397,6 +415,8 @@ void log_bytes ( HChar* bytes, Int nbytes )
 static ThreadId chase_into_ok__CLOSURE_tid;
 static Bool     chase_into_ok ( Addr64 addr64 )
 {
+   NSegment* seg;
+
    /* Work through a list of possibilities why we might not want to
       allow a chase. */
    Addr addr = (Addr)addr64;
@@ -405,12 +425,16 @@ static Bool     chase_into_ok ( Addr64 addr64 )
    if (VG_(clo_smc_check) == Vg_SmcAll)
       goto dontchase;
 
+   /* Check the segment permissions. */
+   seg = VG_(am_find_nsegment)(addr);
+   if (!translations_allowable_from_seg(seg))
+      goto dontchase;
+
    /* AAABBBCCC: if default self-checks are in force, reject if we
       would choose to have a self-check for the dest.  Note, this must
       match the logic at XXXYYYZZZ below. */
    if (VG_(clo_smc_check) == Vg_SmcStack) {
       ThreadId tid = chase_into_ok__CLOSURE_tid;
-      NSegment* seg = VG_(am_find_nsegment)(addr);
       if (seg
           && (seg->kind == SkAnonC || seg->kind == SkFileC)
           && seg->start <= VG_(get_SP)(tid)
@@ -442,7 +466,7 @@ Bool VG_(translate) ( ThreadId tid,
 {
    Addr64    redir, orig_addr0 = orig_addr;
    Int       tmpbuf_used, verbosity, i;
-   Bool      notrace_until_done, do_self_check, allowR, seg_ok;
+   Bool      notrace_until_done, do_self_check;
    UInt      notrace_until_limit = 0;
    NSegment* seg;
    VexGuestExtents vge;
@@ -529,22 +553,11 @@ Bool VG_(translate) ( ThreadId tid,
               bbs_done);
    }
 
-   /* Figure out what segment the requested address is in, and 
-      look for possible reasons to disallow it. */
+   /* Are we allowed to translate here? */
 
    seg = VG_(am_find_nsegment)(orig_addr);
 
-#  if defined(VGA_x86)
-   allowR = True;
-#  else
-   allowR = False;
-#  endif
-
-   seg_ok = seg != NULL
-            && (seg->kind == SkAnonC || seg->kind == SkFileC)
-            && (seg->hasX || (seg->hasR && allowR));
-
-   if (!seg_ok) {
+   if (!translations_allowable_from_seg(seg)) {
       /* U R busted, sonny.  Place your hands on your head and step
          away from the orig_addr. */
       /* Code address is bad - deliver a signal instead */
@@ -623,8 +636,14 @@ Bool VG_(translate) ( ThreadId tid,
    VGP_POPCC(VgpVexTime);
 
    /* Tell aspacem of all segments that have had translations taken
-      from them. */
-   for (i = 0; i < vge.n_used; i++) {
+      from them.  Optimisation: don't re-look up vge.base[0] since seg
+      should already point to it. */
+
+   vg_assert( vge.base[0] == (Addr64)orig_addr );
+   if (seg->kind == SkFileC || seg->kind == SkAnonC)
+      seg->hasT = True; /* has cached code */
+
+   for (i = 1; i < vge.n_used; i++) {
       seg = VG_(am_find_nsegment)( vge.base[i] );
       if (seg->kind == SkFileC || seg->kind == SkAnonC)
          seg->hasT = True; /* has cached code */
