@@ -32,6 +32,7 @@
 #include "pub_core_threadstate.h"
 #include "pub_core_debuginfo.h"     // VG_(di_notify_*)
 #include "pub_core_aspacemgr.h"
+#include "pub_core_transtab.h"      // VG_(discard_translations)
 #include "pub_core_clientstate.h"   // VG_(brk_base), VG_(brk_limit)
 #include "pub_core_debuglog.h"
 #include "pub_core_errormgr.h"
@@ -145,20 +146,23 @@ void
 ML_(notify_aspacem_and_tool_of_mmap) ( Addr a, SizeT len, UInt prot, 
                                        UInt flags, Int fd, ULong offset )
 {
-   Bool rr, ww, xx;
+   Bool rr, ww, xx, d;
 
    /* 'a' is the return value from a real kernel mmap, hence: */
    vg_assert(VG_IS_PAGE_ALIGNED(a));
    /* whereas len is whatever the syscall supplied.  So: */
    len = VG_PGROUNDUP(len);
 
-   VG_(am_notify_client_mmap)( a, len, prot, flags, fd, offset );
+   d = VG_(am_notify_client_mmap)( a, len, prot, flags, fd, offset );
 
    rr = toBool(prot & VKI_PROT_READ);
    ww = toBool(prot & VKI_PROT_WRITE);
    xx = toBool(prot & VKI_PROT_EXEC);
 
    VG_TRACK( new_mem_mmap, a, len, rr, ww, xx );
+
+   if (d)
+      VG_(discard_translations)( (Addr64)a, (ULong)len );
 }
 
 /* Expand (or shrink) an existing mapping, potentially moving it at
@@ -1632,6 +1636,7 @@ ML_(generic_POST_sys_shmat) ( ThreadId tid,
    UInt segmentSize = get_shm_size ( arg0 );
    if ( segmentSize > 0 ) {
       UInt prot = VKI_PROT_READ|VKI_PROT_WRITE;
+      Bool d;
 
       if (!(arg2 & 010000)) /* = SHM_RDONLY */
          prot &= ~VKI_PROT_WRITE;
@@ -1645,12 +1650,15 @@ ML_(generic_POST_sys_shmat) ( ThreadId tid,
          cope with the discrepancy, aspacem's sync checker omits the
          dev/ino correspondence check in cases where V does not know
          the dev/ino. */
-      VG_(am_notify_client_mmap)( res, VG_PGROUNDUP(segmentSize), 
-                                  prot, VKI_MAP_ANONYMOUS, 0,0);
+      d = VG_(am_notify_client_mmap)( res, VG_PGROUNDUP(segmentSize), 
+                                      prot, VKI_MAP_ANONYMOUS, 0,0);
 
       /* we don't distinguish whether it's read-only or
        * read-write -- it doesn't matter really. */
       VG_TRACK( new_mem_mmap, res, segmentSize, True, True, False );
+      if (d)
+         VG_(discard_translations)( (Addr64)res, 
+                                    (ULong)VG_PGROUNDUP(segmentSize) );
    }
 }
 
@@ -1666,13 +1674,16 @@ ML_(generic_PRE_sys_shmdt) ( ThreadId tid, UWord arg0 )
 void
 ML_(generic_POST_sys_shmdt) ( ThreadId tid, UWord res, UWord arg0 )
 {
-   NSegment *s = VG_(am_find_nsegment)(arg0);
+   NSegment* s = VG_(am_find_nsegment)(arg0);
 
    if (s != NULL /* && (s->flags & SF_SHM) */
                  /* && Implied by defn of am_find_nsegment:
                        VG_(seg_contains)(s, arg0, 1) */) {
-      VG_(am_notify_munmap)(s->start, s->end+1 - s->start);
+      Bool d = VG_(am_notify_munmap)(s->start, s->end+1 - s->start);
       VG_TRACK( die_mem_munmap, s->start, s->end+1 - s->start );
+      if (d)
+         VG_(discard_translations)( (Addr64)(s->start),
+                                    (ULong)(s->end+1 - s->start) );
    }
 }
 /* ------ */
@@ -4835,11 +4846,14 @@ POST(sys_mprotect)
    Bool rr = toBool(prot & VKI_PROT_READ);
    Bool ww = toBool(prot & VKI_PROT_WRITE);
    Bool xx = toBool(prot & VKI_PROT_EXEC);
+   Bool d;
 
    page_align_addr_and_len(&a, &len);
-   VG_(am_notify_mprotect)(a, len, prot);
+   d = VG_(am_notify_mprotect)(a, len, prot);
    VG_TRACK( change_mem_mprotect, a, len, rr, ww, xx );
    VG_(di_notify_mprotect)( a, len, prot );
+   if (d)
+      VG_(discard_translations)( (Addr64)a, (ULong)len );
 }
 
 PRE(sys_munmap)
@@ -4856,11 +4870,14 @@ POST(sys_munmap)
 {
    Addr  a   = ARG1;
    SizeT len = ARG2;
+   Bool  d;
 
    page_align_addr_and_len(&a, &len);
-   VG_(am_notify_munmap)(a, len);
+   d = VG_(am_notify_munmap)(a, len);
    VG_TRACK( die_mem_munmap, a, len );
    VG_(di_notify_munmap)( a, len );
+   if (d)
+      VG_(discard_translations)( (Addr64)a, (ULong)len );
 }
 
 PRE(sys_mincore)

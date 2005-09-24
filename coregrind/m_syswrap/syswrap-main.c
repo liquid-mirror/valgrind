@@ -180,18 +180,27 @@
    should be notified BEFORE the tool.  Hence the following is
    correct:
 
-      VG_(am_notify_munmap)(s->start, s->end+1 - s->start);
+      Bool d = VG_(am_notify_munmap)(s->start, s->end+1 - s->start);
       VG_TRACK( die_mem_munmap, s->start, s->end+1 - s->start );
+      if (d)
+         VG_(discard_translations)(s->start, s->end+1 - s->start);
 
    whilst this is wrong:
 
       VG_TRACK( die_mem_munmap, s->start, s->end+1 - s->start );
-      VG_(am_notify_munmap)(s->start, s->end+1 - s->start);
+      Bool d = VG_(am_notify_munmap)(s->start, s->end+1 - s->start);
+      if (d)
+         VG_(discard_translations)(s->start, s->end+1 - s->start);
 
    The reason is that the tool may itself ask aspacem for more shadow
    memory as a result of the VG_TRACK call.  In such a situation it is
    critical that aspacem's segment array is up to date -- hence the
    need to notify aspacem first.
+
+   -----------
+
+   Also .. take care to call VG_(discard_translations) whenever
+   memory with execute permissions is unmapped.
 */
 
 

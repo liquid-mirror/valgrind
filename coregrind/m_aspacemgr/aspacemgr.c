@@ -1199,6 +1199,25 @@ static Bool is_valid_for_valgrind( Addr start, SizeT len )
 }
 
 
+/* Returns True if any part of the address range is marked as having
+   translations made from it.  This is used to determine when to
+   discard code, so if in doubt return True. */
+
+static Bool anyTs_in_range ( Addr start, SizeT len )
+{
+   Int iLo, iHi, i;
+   aspacem_assert(len > 0);
+   aspacem_assert(start + len > start);
+   iLo = find_nsegment_idx(start);
+   iHi = find_nsegment_idx(start + len - 1);
+   for (i = iLo; i <= iHi; i++) {
+      if (nsegments[i].hasT)
+         return True;
+   }
+   return False;
+}
+
+
 /*-----------------------------------------------------------------*/
 /*---                                                           ---*/
 /*--- Modifying the segment array, and constructing segments.   ---*/
@@ -1712,19 +1731,26 @@ Addr VG_(am_get_advisory_client_simple) ( Addr start, SizeT len,
 
 
 /* Notifies aspacem that the client completed an mmap successfully.
-   The segment array is updated accordingly. */
+   The segment array is updated accordingly.  If the returned Bool is
+   True, the caller should immediately discard translations from the
+   specified address range. */
 
-void 
+Bool
 VG_(am_notify_client_mmap)( Addr a, SizeT len, UInt prot, UInt flags,
                             Int fd, SizeT offset )
 {
    HChar    buf[VKI_PATH_MAX];
    UInt     dev, ino;
    NSegment seg;
+   Bool     needDiscard;
 
    aspacem_assert(len > 0);
    aspacem_assert(VG_IS_PAGE_ALIGNED(a));
    aspacem_assert(VG_IS_PAGE_ALIGNED(len));
+
+   /* Discard is needed if any of the just-trashed range had T. */
+   needDiscard = anyTs_in_range( a, len );
+
    init_nsegment( &seg );
    seg.kind   = (flags & VKI_MAP_ANONYMOUS) ? SkAnonC : SkFileC;
    seg.start  = a;
@@ -1744,6 +1770,7 @@ VG_(am_notify_client_mmap)( Addr a, SizeT len, UInt prot, UInt flags,
    }
    add_segment( &seg );
    AM_SANITY_CHECK;
+   return needDiscard;
 }
 
 /* Notifies aspacem that an mprotect was completed successfully.  The
@@ -1752,27 +1779,32 @@ VG_(am_notify_client_mmap)( Addr a, SizeT len, UInt prot, UInt flags,
    stupid mprotects, for example the client doing mprotect of
    non-client areas.  Such requests should be intercepted earlier, by
    the syscall wrapper for mprotect.  This function merely records
-   whatever it is told. */
+   whatever it is told.  If the returned Bool is True, the caller
+   should immediately discard translations from the specified address
+   range. */
 
-void VG_(am_notify_mprotect)( Addr start, SizeT len, UInt prot )
+Bool VG_(am_notify_mprotect)( Addr start, SizeT len, UInt prot )
 {
    Int  i, iLo, iHi;
-   Bool newR, newW, newX;
+   Bool newR, newW, newX, needDiscard;
 
    aspacem_assert(VG_IS_PAGE_ALIGNED(start));
    aspacem_assert(VG_IS_PAGE_ALIGNED(len));
 
    if (len == 0)
-      return;
+      return False;
+
+   newR = toBool(prot & VKI_PROT_READ);
+   newW = toBool(prot & VKI_PROT_WRITE);
+   newX = toBool(prot & VKI_PROT_EXEC);
+
+   /* Discard is needed if we're dumping X permission */
+   needDiscard = anyTs_in_range( start, len ) && !newX;
 
    split_nsegments_lo_and_hi( start, start+len-1, &iLo, &iHi );
 
    iLo = find_nsegment_idx(start);
    iHi = find_nsegment_idx(start + len - 1);
-
-   newR = toBool(prot & VKI_PROT_READ);
-   newW = toBool(prot & VKI_PROT_WRITE);
-   newX = toBool(prot & VKI_PROT_EXEC);
 
    for (i = iLo; i <= iHi; i++) {
       /* Apply the permissions to all relevant segments. */
@@ -1792,23 +1824,28 @@ void VG_(am_notify_mprotect)( Addr start, SizeT len, UInt prot )
       segments mergeable.  Therefore have to re-preen them. */
    (void)preen_nsegments();
    AM_SANITY_CHECK;
+   return needDiscard;
 }
 
 
 /* Notifies aspacem that an munmap completed successfully.  The
    segment array is updated accordingly.  As with
    VG_(am_notify_munmap), we merely record the given info, and don't
-   check it for sensibleness. */
+   check it for sensibleness.  If the returned Bool is True, the
+   caller should immediately discard translations from the specified
+   address range. */
 
-void VG_(am_notify_munmap)( Addr start, SizeT len )
+Bool VG_(am_notify_munmap)( Addr start, SizeT len )
 {
    NSegment seg;
-
+   Bool     needDiscard;
    aspacem_assert(VG_IS_PAGE_ALIGNED(start));
    aspacem_assert(VG_IS_PAGE_ALIGNED(len));
 
    if (len == 0)
-      return;
+      return False;
+
+   needDiscard = anyTs_in_range( start, len );
 
    init_nsegment( &seg );
    seg.kind  = SkFree;
@@ -1819,6 +1856,7 @@ void VG_(am_notify_munmap)( Addr start, SizeT len )
    /* Unmapping could create two adjacent free segments, so a preen is
       needed.  add_segment() will do that, so no need to here. */
    AM_SANITY_CHECK;
+   return needDiscard;
 }
 
 

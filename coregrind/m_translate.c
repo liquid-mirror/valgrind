@@ -441,7 +441,7 @@ Bool VG_(translate) ( ThreadId tid,
                       ULong    bbs_done )
 {
    Addr64    redir, orig_addr0 = orig_addr;
-   Int       tmpbuf_used, verbosity;
+   Int       tmpbuf_used, verbosity, i;
    Bool      notrace_until_done, do_self_check, allowR, seg_ok;
    UInt      notrace_until_limit = 0;
    NSegment* seg;
@@ -545,7 +545,6 @@ Bool VG_(translate) ( ThreadId tid,
             && (seg->hasX || (seg->hasR && allowR));
 
    if (!seg_ok) {
-
       /* U R busted, sonny.  Place your hands on your head and step
          away from the orig_addr. */
       /* Code address is bad - deliver a signal instead */
@@ -559,14 +558,7 @@ Bool VG_(translate) ( ThreadId tid,
          VG_(synth_fault_mapping)(tid, orig_addr);
       }
       return False;
-
-   } else {
-
-      /* Ok to execute here.  Mark that we have taken a translation
-         from this segment. */
-      seg->hasT = True;        /* contains cached code */
    }
-
 
    /* Do we want a self-checking translation? */
    do_self_check = False;
@@ -629,6 +621,14 @@ Bool VG_(translate) ( ThreadId tid,
    vg_assert(tmpbuf_used > 0);
 
    VGP_POPCC(VgpVexTime);
+
+   /* Tell aspacem of all segments that have had translations taken
+      from them. */
+   for (i = 0; i < vge.n_used; i++) {
+      seg = VG_(am_find_nsegment)( vge.base[i] );
+      if (seg->kind == SkFileC || seg->kind == SkAnonC)
+         seg->hasT = True; /* has cached code */
+   }
 
    /* Copy data at trans_addr into the translation cache. */
    vg_assert(tmpbuf_used > 0 && tmpbuf_used < 65536);

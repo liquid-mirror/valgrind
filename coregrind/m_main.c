@@ -1577,7 +1577,10 @@ static void process_cmd_line_options( UInt* client_auxv, const char* toolname )
       if (log_to != VgLogTo_Fd)
          VG_(message)(Vg_DebugMsg, "");
       VG_(message)(Vg_DebugMsg, "Valgrind library directory: %s", VG_(libdir));
+
       VG_(message)(Vg_DebugMsg, "Command line");
+      if (VG_(args_the_exename))
+         VG_(message)(Vg_DebugMsg, "   %s", VG_(args_the_exename));
       for (i = 0; i < VG_(args_for_client).used; i++)
          VG_(message)(Vg_DebugMsg, "   %s", VG_(args_for_client).strs[i]);
 

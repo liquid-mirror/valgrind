@@ -157,8 +157,10 @@ extern Addr VG_(am_get_advisory_client_simple)
    ( Addr start, SizeT len, /*OUT*/Bool* ok );
 
 /* Notifies aspacem that the client completed an mmap successfully.
-   The segment array is updated accordingly. */
-extern void VG_(am_notify_client_mmap)
+   The segment array is updated accordingly.  If the returned Bool is
+   True, the caller should immediately discard translations from the
+   specified address range. */
+extern Bool VG_(am_notify_client_mmap)
    ( Addr a, SizeT len, UInt prot, UInt flags, Int fd, SizeT offset );
 
 /* Notifies aspacem that an mprotect was completed successfully.  The
@@ -167,14 +169,18 @@ extern void VG_(am_notify_client_mmap)
    stupid mprotects, for example the client doing mprotect of
    non-client areas.  Such requests should be intercepted earlier, by
    the syscall wrapper for mprotect.  This function merely records
-   whatever it is told. */
-extern void VG_(am_notify_mprotect)( Addr start, SizeT len, UInt prot );
+   whatever it is told.  If the returned Bool is True, the caller
+   should immediately discard translations from the specified address
+   range. */
+extern Bool VG_(am_notify_mprotect)( Addr start, SizeT len, UInt prot );
 
 /* Notifies aspacem that an munmap completed successfully.  The
    segment array is updated accordingly.  As with
    VG_(am_notify_munmap), we merely record the given info, and don't
-   check it for sensibleness. */
-extern void VG_(am_notify_munmap)( Addr start, SizeT len );
+   check it for sensibleness.  If the returned Bool is True, the
+   caller should immediately discard translations from the specified
+   address range. */
+extern Bool VG_(am_notify_munmap)( Addr start, SizeT len );
 
 
 /* Hand a raw mmap to the kernel, without aspacem updating the segment

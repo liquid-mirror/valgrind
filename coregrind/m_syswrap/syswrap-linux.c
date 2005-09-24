@@ -31,6 +31,7 @@
 #include "pub_core_basics.h"
 #include "pub_core_threadstate.h"
 #include "pub_core_aspacemgr.h"
+#include "pub_core_transtab.h"     // VG_(discard_translations)
 #include "pub_core_debuglog.h"
 #include "pub_core_libcbase.h"
 #include "pub_core_libcassert.h"
@@ -722,8 +723,10 @@ PRE(sys_io_destroy)
    SET_STATUS_from_SysRes( VG_(do_syscall1)(SYSNO, ARG1) );
 
    if (SUCCESS && RES == 0) { 
-      VG_(am_notify_munmap)( ARG1, size );
+      Bool d = VG_(am_notify_munmap)( ARG1, size );
       VG_TRACK( die_mem_munmap, ARG1, size );
+      if (d)
+         VG_(discard_translations)( (Addr64)ARG1, (ULong)size );
    }  
 }  
 
