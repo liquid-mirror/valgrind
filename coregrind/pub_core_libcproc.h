@@ -41,8 +41,14 @@
 
 /* The directory we look for all our auxillary files in.  Useful for
    running Valgrind out of a build tree without having to do "make
-   install". */
-#define VALGRIND_LIB     "VALGRIND_LIB"
+   install".  Inner valgrinds require a different lib variable, else
+   they end up picking up .so's etc intended for the outer
+   valgrind. */
+#ifdef ENABLE_INNER
+#  define VALGRIND_LIB     "VALGRIND_LIB_INNER"
+#else
+#  define VALGRIND_LIB     "VALGRIND_LIB"
+#endif
 
 /* Additional command-line arguments; they are overridden by actual
    command-line option.  Each argument is separated by spaces.  There
@@ -53,9 +59,8 @@
    set by stage1 and read by stage2, and is used for recursive
    invocations of Valgrind on child processes. 
    
-   For self-hosting, the inner and outer Valgrinds must use different names
-   to avoid collisions.
-*/
+   For self-hosting, the inner and outer Valgrinds must use different
+   names to avoid collisions.  */
 #ifdef ENABLE_INNER
 #  define VALGRIND_LAUNCHER  "VALGRIND_LAUNCHER_INNER"
 #else
