@@ -4985,11 +4985,18 @@ POST(sys_read)
 
 PRE(sys_write)
 {
+   Bool ok;
    *flags |= SfMayBlock;
    PRINT("sys_write ( %d, %p, %llu )", ARG1, ARG2, (ULong)ARG3);
    PRE_REG_READ3(ssize_t, "write",
                  unsigned int, fd, const char *, buf, vki_size_t, count);
-   if (!ML_(fd_allowed)(ARG1, "write", tid, False))
+   /* check to see if it is allowed.  If not, try for an exemption from
+      --weird-hacks=enable-outer (used for self hosting). */
+   ok = ML_(fd_allowed)(ARG1, "write", tid, False);
+   if (!ok && ARG1 == 2/*stderr*/ 
+           && VG_(strstr)(VG_(clo_weird_hacks),"enable-outer"))
+      ok = True;
+   if (!ok)
       SET_STATUS_Failure( VKI_EBADF );
    else
       PRE_MEM_READ( "write(buf)", ARG2, ARG3 );
