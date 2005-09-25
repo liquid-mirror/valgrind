@@ -1019,7 +1019,7 @@ void* VG_(arena_malloc) ( ArenaId aid, SizeT req_pszB )
    v = get_block_payload(a, b);
    vg_assert( (((Addr)v) & (VG_MIN_MALLOC_SZB-1)) == 0 );
 
-   VALGRIND_MALLOCLIKE_BLOCK(v, req_pszB, 0, False);
+   //zzVALGRIND_MALLOCLIKE_BLOCK(v, req_pszB, 0, False);
    return v;
 }
 
@@ -1113,7 +1113,7 @@ void VG_(arena_free) ( ArenaId aid, void* ptr )
    sanity_check_malloc_arena(aid);
 #  endif
 
-   VALGRIND_FREELIKE_BLOCK(ptr, 0);
+   //zzVALGRIND_FREELIKE_BLOCK(ptr, 0);
 
    VGP_POPCC(VgpMalloc);
 }
@@ -1236,7 +1236,7 @@ void* VG_(arena_memalign) ( ArenaId aid, SizeT req_alignB, SizeT req_pszB )
 
    vg_assert( (((Addr)align_p) % req_alignB) == 0 );
 
-   VALGRIND_MALLOCLIKE_BLOCK(align_p, req_pszB, 0, False);
+   //zzVALGRIND_MALLOCLIKE_BLOCK(align_p, req_pszB, 0, False);
 
    return align_p;
 }
@@ -1268,7 +1268,7 @@ void* VG_(arena_calloc) ( ArenaId aid, SizeT nmemb, SizeT bytes_per_memb )
 
    VG_(memset)(p, 0, size);
 
-   VALGRIND_MALLOCLIKE_BLOCK(p, size, 0, True);
+   //zzVALGRIND_MALLOCLIKE_BLOCK(p, size, 0, True);
 
    VGP_POPCC(VgpMalloc);
    
