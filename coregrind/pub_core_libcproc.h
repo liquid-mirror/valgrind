@@ -36,6 +36,7 @@
 // It's a bit of a mixed bag.
 //--------------------------------------------------------------------
 
+#include "config.h"           // Crucial: ensure we get ENABLE_INNER
 #include "pub_tool_libcproc.h"
 
 /* The directory we look for all our auxillary files in.  Useful for
@@ -50,8 +51,16 @@
 
 /* The full name of Valgrind's stage1 (launcher) executable.  This is
    set by stage1 and read by stage2, and is used for recursive
-   invokations of Valgrind on child processes. */
-#define VALGRIND_LAUNCHER  "VALGRIND_LAUNCHER"
+   invocations of Valgrind on child processes. 
+   
+   For self-hosting, the inner and outer Valgrinds must use different names
+   to avoid collisions.
+*/
+#ifdef ENABLE_INNER
+#  define VALGRIND_LAUNCHER  "VALGRIND_LAUNCHER_INNER"
+#else
+#  define VALGRIND_LAUNCHER  "VALGRIND_LAUNCHER"
+#endif
 
 
 // Environment manipulations

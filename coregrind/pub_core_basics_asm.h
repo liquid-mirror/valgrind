@@ -1,8 +1,8 @@
 
 /*--------------------------------------------------------------------*/
-/*--- Header imported directly by every tool asm file, and         ---*/
-/*--- (via pub_tool_basics.h) by every tool C file.                ---*/
-/*---                                        pub_tool_basics_asm.h ---*/
+/*--- Header imported directly by every core asm file, and         ---*/
+/*--- (via pub_core_basics.h) by every core C file.                ---*/
+/*---                                        pub_core_basics_asm.h ---*/
 /*--------------------------------------------------------------------*/
 
 /*
@@ -30,27 +30,23 @@
    The GNU General Public License is contained in the file COPYING.
 */
 
-#ifndef __PUB_TOOL_BASICS_ASM_H
-#define __PUB_TOOL_BASICS_ASM_H
+#ifndef __PUB_CORE_BASICS_ASM_H
+#define __PUB_CORE_BASICS_ASM_H
 
-/* All symbols externally visible from Valgrind are prefixed
-   as specified here to avoid namespace conflict problems.  */
+//--------------------------------------------------------------------
+// PURPOSE: This header should be imported by every single asm and 
+// (indirectly) by every C file in the core.  It contains really basic
+// things needed everywhere.
+//--------------------------------------------------------------------
 
-#define VGAPPEND(str1,str2) str1##str2
+#include "pub_tool_basics_asm.h"
 
-/* VG_ is for symbols exported from modules.  ML_ (module-local) is
-   for symbols which are not intended to be visible outside modules,
-   but which cannot be declared as C 'static's since they need to be
-   visible across C files within a given module.  It is a mistake for
-   a ML_ name to appear in a pub_core_*.h or pub_tool_*.h file.
-   Likewise it is a mistake for a VG_ name to appear in a priv_*.h
-   file. 
-*/
-#define VG_(str)    VGAPPEND(vgPlain_,          str)
-#define ML_(str)    VGAPPEND(vgModuleLocal_,    str)
+// Autoconf-generated settings
+#include "config.h"
 
-#endif /* __PUB_TOOL_BASICS_ASM_H */
+#endif /* __PUB_CORE_BASICS_ASM_H */
 
 /*--------------------------------------------------------------------*/
 /*--- end                                                          ---*/
 /*--------------------------------------------------------------------*/
+

@@ -70,7 +70,7 @@ void  VG_(env_unsetenv) ( Char **env, const Char *varname )
    Char **to = NULL;
    Int len = VG_(strlen)(varname);
 
-   for(from = to = env; from && *from; from++) {
+   for (from = to = env; from && *from; from++) {
       if (!(VG_(strncmp)(varname, *from, len) == 0 && (*from)[len] == '=')) {
 	 *to = *from;
 	 to++;
@@ -90,7 +90,7 @@ Char **VG_(env_setenv) ( Char ***envp, const Char* varname, const Char *val )
 
    VG_(sprintf)(valstr, "%s=%s", varname, val);
 
-   for(cpp = env; cpp && *cpp; cpp++) {
+   for (cpp = env; cpp && *cpp; cpp++) {
       if (VG_(strncmp)(varname, *cpp, len) == 0 && (*cpp)[len] == '=') {
 	 *cpp = valstr;
 	 return oldenv;
@@ -108,7 +108,7 @@ Char **VG_(env_setenv) ( Char ***envp, const Char* varname, const Char *val )
       Int envlen = (cpp-env) + 2;
       Char **newenv = VG_(arena_malloc)(VG_AR_CORE, envlen * sizeof(Char **));
 
-      for(cpp = newenv; *env; )
+      for (cpp = newenv; *env; )
 	 *cpp++ = *env++;
       *cpp++ = valstr;
       *cpp++ = NULL;
