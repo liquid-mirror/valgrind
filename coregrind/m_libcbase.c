@@ -350,7 +350,7 @@ void* VG_(memcpy) ( void *dest, const void *src, SizeT sz )
          sI += 4;
       }
       if (sz == 0) 
-         return;
+         return dest;
       while (sz >= 4) {
          dI[0] = sI[0];
          sz -= 4;
@@ -358,7 +358,7 @@ void* VG_(memcpy) ( void *dest, const void *src, SizeT sz )
          sI += 1;
       }
       if (sz == 0) 
-         return;
+         return dest;
       s = (const UChar*)sI;
       d = (UChar*)dI;
    }
