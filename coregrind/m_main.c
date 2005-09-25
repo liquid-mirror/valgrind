@@ -1014,10 +1014,10 @@ static void get_helprequest_and_toolname ( Int* need_help, HChar** tool )
       } else if (VG_CLO_STREQ(str, "--help-debug")) {
          *need_help = 2;
 
-      // The tool has already been determined, but we need to know it here.
+      // The tool has already been determined, but we need to know the name
+      // here.
       } else if (VG_CLO_STREQN(7, str, "--tool=")) {
          *tool = &str[7];
-	 
       }
    }
 }
@@ -2061,7 +2061,7 @@ Int main(Int argc, HChar **argv, HChar **envp)
 
    //--------------------------------------------------------------
    // Load client executable, finding in $PATH if necessary
-   //   p: pre_process_cmd_line_options()  [for 'exec', 'need_help']
+   //   p: get_helprequest_and_toolname()  [for 'exec', 'need_help']
    //   p: layout_remaining_space          [so there's space]
    //--------------------------------------------------------------
    if (!need_help) {
@@ -2076,7 +2076,7 @@ Int main(Int argc, HChar **argv, HChar **envp)
    //--------------------------------------------------------------
    // Set up client's environment
    //   p: set-libdir                   [for VG_(libdir)]
-   //   p: pre_process_cmd_line_options [for toolname]
+   //   p: get_helprequest_and_toolname [for toolname]
    //--------------------------------------------------------------
    if (!need_help) {
       VG_(debugLog)(1, "main", "Setup client env\n");
@@ -2405,7 +2405,7 @@ Int main(Int argc, HChar **argv, HChar **envp)
    // vg_dummy_profile.c's?
    //
    // XXX: want this as early as possible.  Looking for --profile
-   // in pre_process_cmd_line_options() could get it earlier.
+   // in get_helprequest_and_toolname() could get it earlier.
    //--------------------------------------------------------------
    if (VG_(clo_profile))
       VG_(init_profiling)();
