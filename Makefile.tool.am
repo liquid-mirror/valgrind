@@ -11,7 +11,7 @@ COREGRIND_LIBS = \
 	$(top_builddir)/coregrind/libcoregrind.a \
 	@VEX_DIR@/libvex.a
 
-.PHONY:  @VEX_DIR@/libvex.a
+##.PHONY:  @VEX_DIR@/libvex.a
 
 @VEX_DIR@/libvex.a: @VEX_DIR@/priv/main/vex_svnversion.h
 	$(MAKE) -C @VEX_DIR@ CC="$(CC)" libvex.a EXTRA_CFLAGS="@ARCH_CORE_AM_CFLAGS@"
