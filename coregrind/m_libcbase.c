@@ -334,21 +334,33 @@ Bool VG_(string_match) ( const Char* pat, const Char* str )
 
 void* VG_(memcpy) ( void *dest, const void *src, SizeT sz )
 {
-   const Char *s = (const Char *)src;
-   Char *d = (Char *)dest;
+   const UChar* s  = (const UChar*)src;
+         UChar* d  =       (UChar*)dest;
+   const UInt*  sI = (const UInt*)src;
+         UInt*  dI =       (UInt*)dest;
 
-   while (sz >= 8) {
-      d[0] = s[0];
-      d[1] = s[1];
-      d[2] = s[2];
-      d[3] = s[3];
-      d[4] = s[4];
-      d[5] = s[5];
-      d[6] = s[6];
-      d[7] = s[7];
-      sz -= 8;
-      d += 8;
-      s += 8;
+   if (VG_IS_4_ALIGNED(dI) && VG_IS_4_ALIGNED(sI)) {
+      while (sz >= 16) {
+         dI[0] = sI[0];
+         dI[1] = sI[1];
+         dI[2] = sI[2];
+         dI[3] = sI[3];
+         sz -= 16;
+         dI += 4;
+         sI += 4;
+      }
+      if (sz == 0) 
+         return;
+      while (sz >= 4) {
+         dI[0] = sI[0];
+         sz -= 4;
+         dI += 1;
+         sI += 1;
+      }
+      if (sz == 0) 
+         return;
+      s = (const UChar*)sI;
+      d = (UChar*)dI;
    }
 
    while (sz--)
