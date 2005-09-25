@@ -1447,6 +1447,9 @@ Addr VG_(am_startup) ( Addr sp_at_startup )
 
    aspacem_cStart = aspacem_minAddr; // 64M
    aspacem_vStart = VG_PGROUNDUP((aspacem_minAddr + aspacem_maxAddr + 1) / 2);
+#  ifdef ENABLE_INNER
+   aspacem_vStart -= 0x10000000; // 256M
+#  endif
 
    suggested_clstack_top = aspacem_maxAddr - 16*1024*1024ULL
                                            + VKI_PAGE_SIZE;

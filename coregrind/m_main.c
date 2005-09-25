@@ -512,12 +512,17 @@ Addr setup_client_stack( void*  init_sp,
      SizeT resvn_size  = clstack_max_size - anon_size;
      Addr  anon_start  = clstack_start;
      Addr  resvn_start = anon_start - resvn_size;
+     SizeT inner_HACK  = 0;
 
      vg_assert(VG_IS_PAGE_ALIGNED(anon_size));
      vg_assert(VG_IS_PAGE_ALIGNED(resvn_size));
      vg_assert(VG_IS_PAGE_ALIGNED(anon_start));
      vg_assert(VG_IS_PAGE_ALIGNED(resvn_start));
      vg_assert(resvn_start == clstack_end + 1 - clstack_max_size);
+
+#    ifdef ENABLE_INNER
+     inner_HACK = 1024*1024; // create 1M non-fault-extending stack
+#    endif
 
      if (0)
         VG_(printf)("%p 0x%x  %p 0x%x\n", 
@@ -527,15 +532,15 @@ Addr setup_client_stack( void*  init_sp,
         segment.  Together these constitute a growdown stack. */
      Bool ok = VG_(am_create_reservation)(
                   resvn_start,
-                  resvn_size,
+                  resvn_size -inner_HACK,
                   SmUpper, 
-                  anon_size
+                  anon_size +inner_HACK
                );
      vg_assert(ok);
      /* allocate a stack - mmap enough space for the stack */
      res = VG_(am_mmap_anon_fixed_client)(
-              anon_start,
-              anon_size,
+              anon_start -inner_HACK,
+              anon_size +inner_HACK,
 	      VKI_PROT_READ|VKI_PROT_WRITE|VKI_PROT_EXEC
 	   );
      vg_assert(!res.isError); 

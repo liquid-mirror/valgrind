@@ -600,6 +600,9 @@ void VG_(debugLog) ( Int level, const HChar* modulename,
    buf.n = 0;
    buf.buf[0] = 0;
    pid = local_sys_getpid();
+#  ifdef ENABLE_INNER
+   (void)myvprintf_str ( add_to_buf, &buf, 0, 1, ">", False );
+#  endif
    (void)myvprintf_str ( add_to_buf, &buf, 0, 2, "--", False );
    (void)myvprintf_int64 ( add_to_buf, &buf, 0, 10, 1, (ULong)pid );
    (void)myvprintf_str ( add_to_buf, &buf, 0, 1, ":", False );
