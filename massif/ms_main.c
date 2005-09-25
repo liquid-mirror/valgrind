@@ -1375,8 +1375,13 @@ static void write_hp_file(void)
 
    // File header, including command line
    SPRINTF(buf, "JOB         \"");
-   for (i = 0; i < VG_(args_for_client).used; i++)
-      SPRINTF(buf, "%s ", VG_(args_for_client).strs[i]);
+   if (VG_(args_the_exename)) {
+      SPRINTF(buf, "%s", VG_(args_the_exename));
+   }
+   for (i = 0; i < VG_(args_for_client).used; i++) {
+      if (VG_(args_for_client).strs[i])
+         SPRINTF(buf, " %s", VG_(args_for_client).strs[i]);
+   }
    SPRINTF(buf, /*" (%d ms/sample)\"\n"*/ "\"\n"
                 "DATE        \"\"\n"
                 "SAMPLE_UNIT \"ms\"\n"
@@ -1697,9 +1702,14 @@ write_text_file(ULong total_ST, ULong heap_ST)
    }
 
    // Command line
-   SPRINTF(buf, "Command: ");
-   for (i = 0; i < VG_(args_for_client).used; i++)
-      SPRINTF(buf, "%s ", VG_(args_for_client).strs[i]);
+   SPRINTF(buf, "Command:");
+   if (VG_(args_the_exename)) {
+      SPRINTF(buf, " %s", VG_(args_the_exename));
+   }
+   for (i = 0; i < VG_(args_for_client).used; i++) {
+      if (VG_(args_for_client).strs[i])
+         SPRINTF(buf, " %s", VG_(args_for_client).strs[i]);
+   }
    SPRINTF(buf, "\n%s\n", maybe_p);
 
    if (clo_heap)
