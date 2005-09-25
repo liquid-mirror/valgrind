@@ -283,10 +283,9 @@ void VG_(ctime) ( /*OUT*/HChar* buf )
 
 UInt VG_(vmessage) ( VgMsgKind kind, const HChar* format, va_list vargs )
 {
-   UInt  count = 0;
-   Char  c;
-   const Char* pfx_s;
-   static const Char pfx[] = ">>>>>>>>>>>>>>>>";
+   UInt count = 0;
+   Char c;
+   Int  i, depth;
 
    switch (kind) {
       case Vg_UserMsg:       c = '='; break;
@@ -296,16 +295,15 @@ UInt VG_(vmessage) ( VgMsgKind kind, const HChar* format, va_list vargs )
       default:               c = '?'; break;
    }
 
-   // The pfx trick prints one or more '>' characters in front of the
-   // messages when running Valgrind under Valgrind, one per level of
-   // self-hosting.
-   pfx_s = &pfx[sizeof(pfx)-1-RUNNING_ON_VALGRIND],
-
-   // Print the message
-   count = 0;
-
+   // Print one '>' in front of the messages for each level of self-hosting
+   // being performed.
+   depth = RUNNING_ON_VALGRIND;
+   for (i = 0; i < depth; i++) {
+      count += VG_(printf) (">");
+   }
+   
    if (!VG_(clo_xml))
-      count += VG_(printf) ("%s%c%c", pfx_s, c,c);
+      count += VG_(printf) ("%c%c", c,c);
 
    if (VG_(clo_time_stamp)) {
       HChar buf[50];
