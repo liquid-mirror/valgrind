@@ -1072,7 +1072,6 @@ static Bool process_cmd_line_options( UInt* client_auxv, const char* toolname )
       
       /* Ignore these options - they've already been handled */
       if (VG_CLO_STREQN( 7, arg, "--tool="))              goto skip_arg;
-      if (VG_CLO_STREQN( 7, arg, "--exec="))              goto skip_arg;
       if (VG_CLO_STREQN(20, arg, "--command-line-only=")) goto skip_arg;
 
       if (     VG_CLO_STREQ(arg, "--"))                  goto skip_arg;
