@@ -2153,8 +2153,6 @@ Int main(Int argc, HChar **argv, HChar **envp)
    // Init tool part 1: pre_clo_init
    //   p: setup_client_stack()      [for 'VG_(client_arg[cv]']
    //   p: setup_file_descriptors()  [for 'VG_(fd_xxx_limit)']
-   //   p: parse_procselfmaps        [so VG segments are setup so tool can
-   //                                 call VG_(malloc)]
    //--------------------------------------------------------------
    {
       Char* s;
@@ -2182,22 +2180,10 @@ Int main(Int argc, HChar **argv, HChar **envp)
    // Process command line options to Valgrind + tool
    //   p: setup_client_stack()      [for 'VG_(client_arg[cv]']
    //   p: setup_file_descriptors()  [for 'VG_(fd_xxx_limit)']
-   //   p: parse_procselfmaps        [so VG segments are setup so tool can
-   //                                 call VG_(malloc)]
    //--------------------------------------------------------------
    VG_(debugLog)(1, "main", "Process Valgrind's command line options, "
                             " setup logging\n");
    logging_to_fd = process_cmd_line_options(client_auxv, toolname);
-
-   //--------------------------------------------------------------
-   // Init tool part 2: post_clo_init
-   //   p: setup_client_stack()      [for 'VG_(client_arg[cv]']
-   //   p: setup_file_descriptors()  [for 'VG_(fd_xxx_limit)']
-   //   p: parse_procselfmaps        [so VG segments are setup so tool can
-   //                                 call VG_(malloc)]
-   //--------------------------------------------------------------
-   VG_(debugLog)(1, "main", "Initialise the tool part 2 (post_clo_init)\n");
-   VG_TDICT_CALL(tool_post_clo_init);
 
    //--------------------------------------------------------------
    // Print the preamble
@@ -2209,6 +2195,16 @@ Int main(Int argc, HChar **argv, HChar **envp)
    VG_(debugLog)(1, "main", "Print the preamble...\n");
    print_preamble(logging_to_fd, toolname);
    VG_(debugLog)(1, "main", "...finished the preamble\n");
+
+   //--------------------------------------------------------------
+   // Init tool part 2: post_clo_init
+   //   p: setup_client_stack()      [for 'VG_(client_arg[cv]']
+   //   p: setup_file_descriptors()  [for 'VG_(fd_xxx_limit)']
+   //   p: print_preamble()          [so any warnings printed in post_clo_init
+   //                                 are shown after the preamble]
+   //--------------------------------------------------------------
+   VG_(debugLog)(1, "main", "Initialise the tool part 2 (post_clo_init)\n");
+   VG_TDICT_CALL(tool_post_clo_init);
 
    //--------------------------------------------------------------
    // Initialise translation table and translation cache
