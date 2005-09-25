@@ -52,7 +52,8 @@ extern UInt VG_(vsnprintf)( Char* buf, Int size,
                                        const HChar *format, va_list vargs );
 
 // Percentify n/m with d decimal places.  Includes the '%' symbol at the end.
-extern void VG_(percentify)(UInt n, UInt m, UInt d, Int n_buf, char buf[]);
+// Right justifies in 'buf'.
+extern void VG_(percentify)(ULong n, ULong m, UInt d, Int n_buf, char buf[]);
 
 /* ---------------------------------------------------------------------
    Messages for the user
