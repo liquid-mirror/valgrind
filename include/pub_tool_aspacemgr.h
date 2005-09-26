@@ -101,7 +101,9 @@ typedef
       Bool    hasW;
       Bool    hasX;
       Bool    hasT;     // True --> translations have (or MAY have)
-      /* Admin */       // been taken from this segment
+                        // been taken from this segment
+      Bool    isCH;     // True --> is client heap (SkAnonC ONLY)
+      /* Admin */
       Bool    mark;
    }
    NSegment;

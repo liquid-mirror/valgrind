@@ -512,47 +512,50 @@ static void show_nsegment ( Int logLevel, Int segNo, NSegment* seg )
       case SkAnonC: case SkAnonV:
          VG_(debugLog)(
             logLevel, "aspacem",
-            "%3d: %s %010llx-%010llx %s %c%c%c%c\n",
+            "%3d: %s %010llx-%010llx %s %c%c%c%c%c\n",
             segNo, show_SegKind(seg->kind),
             (ULong)seg->start, (ULong)seg->end, len_buf,
             seg->hasR ? 'r' : '-', seg->hasW ? 'w' : '-', 
-            seg->hasX ? 'x' : '-', seg->hasT ? 'T' : '-' 
+            seg->hasX ? 'x' : '-', seg->hasT ? 'T' : '-',
+            seg->isCH ? 'H' : '-'
          );
          break;
 
       case SkFileC: case SkFileV:
          VG_(debugLog)(
             logLevel, "aspacem",
-            "%3d: %s %010llx-%010llx %s %c%c%c%c d=0x%03llx "
+            "%3d: %s %010llx-%010llx %s %c%c%c%c%c d=0x%03llx "
             "i=%-7lld o=%-7lld (%d)\n",
             segNo, show_SegKind(seg->kind),
             (ULong)seg->start, (ULong)seg->end, len_buf,
             seg->hasR ? 'r' : '-', seg->hasW ? 'w' : '-', 
             seg->hasX ? 'x' : '-', seg->hasT ? 'T' : '-', 
+            seg->isCH ? 'H' : '-',
             (ULong)seg->dev, (ULong)seg->ino, (Long)seg->offset, seg->fnIdx
          );
          break;
 
-     case SkResvn:
-        VG_(debugLog)(
-           logLevel, "aspacem",
-           "%3d: %s %010llx-%010llx %s %c%c%c%c %s\n",
-           segNo, show_SegKind(seg->kind),
-           (ULong)seg->start, (ULong)seg->end, len_buf,
-           seg->hasR ? 'r' : '-', seg->hasW ? 'w' : '-', 
-           seg->hasX ? 'x' : '-', seg->hasT ? 'T' : '-', 
-           show_ShrinkMode(seg->smode)
-        );
-        break;
+      case SkResvn:
+         VG_(debugLog)(
+            logLevel, "aspacem",
+            "%3d: %s %010llx-%010llx %s %c%c%c%c%c %s\n",
+            segNo, show_SegKind(seg->kind),
+            (ULong)seg->start, (ULong)seg->end, len_buf,
+            seg->hasR ? 'r' : '-', seg->hasW ? 'w' : '-', 
+            seg->hasX ? 'x' : '-', seg->hasT ? 'T' : '-', 
+            seg->isCH ? 'H' : '-',
+            show_ShrinkMode(seg->smode)
+         );
+         break;
 
-     default:
-        VG_(debugLog)(
-           logLevel, "aspacem",
-           "%3d: ???? UNKNOWN SEGMENT KIND\n", 
-           segNo 
-        );
-        break;
-    }
+      default:
+         VG_(debugLog)(
+            logLevel, "aspacem",
+            "%3d: ???? UNKNOWN SEGMENT KIND\n", 
+            segNo 
+         );
+         break;
+   }
 }
 
 /* Print out the segment array (debugging only!). */
@@ -668,21 +671,25 @@ static Bool sane_NSegment ( NSegment* s )
          return 
             s->smode == SmFixed
             && s->dev == 0 && s->ino == 0 && s->offset == 0 && s->fnIdx == -1 
-            && !s->hasR && !s->hasW && !s->hasX && !s->hasT;
+            && !s->hasR && !s->hasW && !s->hasX && !s->hasT
+            && !s->isCH;
 
       case SkAnonC: case SkAnonV:
          return 
             s->smode == SmFixed 
-            && s->dev == 0 && s->ino == 0 && s->offset == 0 && s->fnIdx == -1;
+            && s->dev == 0 && s->ino == 0 && s->offset == 0 && s->fnIdx == -1
+            && (s->kind==SkAnonC ? True : !s->isCH);
 
       case SkFileC: case SkFileV:
          return 
-            s->smode == SmFixed;
+            s->smode == SmFixed
+            && !s->isCH;
 
       case SkResvn: 
          return 
             s->dev == 0 && s->ino == 0 && s->offset == 0 && s->fnIdx == -1 
-            && !s->hasR && !s->hasW && !s->hasX && !s->hasT;
+            && !s->hasR && !s->hasW && !s->hasX && !s->hasT
+            && !s->isCH;
 
       default:
          return False;
@@ -713,8 +720,8 @@ static Bool maybe_merge_nsegments ( NSegment* s1, NSegment* s2 )
          return True;
 
       case SkAnonC: case SkAnonV:
-         if (s1->hasR == s2->hasR 
-             && s1->hasW == s2->hasW && s1->hasX == s2->hasX) {
+         if (s1->hasR == s2->hasR && s1->hasW == s2->hasW 
+             && s1->hasX == s2->hasX && s1->isCH == s2->isCH) {
             s1->end = s2->end;
             s1->hasT |= s2->hasT;
             return True;
@@ -1345,7 +1352,7 @@ static void init_nsegment ( /*OUT*/NSegment* seg )
    seg->ino      = 0;
    seg->offset   = 0;
    seg->fnIdx    = -1;
-   seg->hasR = seg->hasW = seg->hasX = seg->hasT = False;
+   seg->hasR = seg->hasW = seg->hasX = seg->hasT = seg->isCH = False;
    seg->mark = False;
 }
 

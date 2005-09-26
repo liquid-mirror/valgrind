@@ -537,6 +537,7 @@ Superblock* newSuperblock ( Arena* a, SizeT cszB )
 {
    Superblock* sb;
    SysRes      sres;
+   NSegment*   seg;
 
    // Take into account admin bytes in the Superblock.
    cszB += sizeof(Superblock);
@@ -551,6 +552,12 @@ Superblock* newSuperblock ( Arena* a, SizeT cszB )
       if (sres.isError)
          return 0;
       sb = (Superblock*)sres.val;
+      // Mark this segment as containing client heap.  The leak
+      // checker needs to be able to identify such segments so as not
+      // to use them as sources of roots during leak checks.
+      seg = VG_(am_find_nsegment)( (Addr)sb );
+      vg_assert(seg && seg->kind == SkAnonC);
+      seg->isCH = True;
    } else {
       // non-client allocation -- abort if it fails
       sres = VG_(am_mmap_anon_float_valgrind)( cszB );
