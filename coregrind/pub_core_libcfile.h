@@ -67,6 +67,12 @@ extern Int VG_(access) ( HChar* path, Bool irusr, Bool iwusr, Bool ixusr );
 
 extern SysRes VG_(pread) ( Int fd, void* buf, Int count, Int offset );
 
+/* Create and open (-rw------) a tmp file name incorporating said arg.
+   Returns -1 on failure, else the fd of the file.  If fullname is
+   non-NULL, the file's name is written into it.  The number of bytes
+   written is guaranteed not to exceed 64+strlen(part_of_name). */
+extern Int VG_(mkstemp) ( HChar* part_of_name, /*OUT*/HChar* fullname );
+
 #endif   // __PUB_CORE_LIBCFILE_H
 
 /*--------------------------------------------------------------------*/

@@ -52,7 +52,18 @@ extern Addr  VG_(brk_base);	 // start of brk
 extern Addr  VG_(brk_limit);	 // current brk
 
 /* A fd which refers to the client executable. */
-extern Int VG_(clexecfd);
+extern Int VG_(cl_exec_fd);
+
+/* A fd which refers to the fake /proc/<pid>/cmdline in /tmp.  The
+   idea is: make up the /proc/<pid>/cmdline file the client would
+   expect to see if it was running natively.  Copy into a file in
+   /tmp.  When the client then does an open of /proc/<pid>/cmdline or
+   /proc/self/cmdline, instead give it a file handle to the file in
+   /tmp.  The problem of deleting said file when Valgrind exits is
+   neatly sidestepped by unlinking it as soon as it has been created,
+   but holding on to the file handle.  That causes the kernel to keep
+   the file contents alive exactly until the process exits. */
+extern Int VG_(cl_cmdline_fd);
 
 // Client's original rlimit data and rlimit stack
 extern struct vki_rlimit VG_(client_rlimit_data);

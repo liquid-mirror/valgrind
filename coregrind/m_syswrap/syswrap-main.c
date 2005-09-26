@@ -673,7 +673,7 @@ void VG_(client_syscall) ( ThreadId tid )
          success. */
       PRINT(" --> [pre-success] Success(0x%llx)\n", (Long)sci->status.val );
                                        
-      /* In this case thes allowable flag are to ask for a signal-poll
+      /* In this case the allowable flags are to ask for a signal-poll
          and/or a yield after the call.  Changing the args isn't
          allowed. */
       vg_assert(0 == (sci->flags & ~(SfPollAfter | SfYieldAfter)));

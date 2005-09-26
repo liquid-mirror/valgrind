@@ -853,7 +853,7 @@ static void load_client ( /*OUT*/struct exeinfo* info,
       executable.  This is needed for attaching to GDB. */
    res = VG_(open)(exec, VKI_O_RDONLY, VKI_S_IRUSR);
    if (!res.isError)
-      VG_(clexecfd) = res.val;
+      VG_(cl_exec_fd) = res.val;
 
    /* Copy necessary bits of 'info' that were filled in */
    *client_eip = info->init_eip;
@@ -1681,8 +1681,8 @@ static void setup_file_descriptors(void)
    /* Update the soft limit. */
    VG_(setrlimit)(VKI_RLIMIT_NOFILE, &rl);
 
-   if (VG_(clexecfd) != -1)
-      VG_(clexecfd) = VG_(safe_fd)( VG_(clexecfd) );
+   if (VG_(cl_exec_fd) != -1)
+      VG_(cl_exec_fd) = VG_(safe_fd)( VG_(cl_exec_fd) );
 }
 
 
@@ -2125,15 +2125,15 @@ Int main(Int argc, HChar **argv, HChar **envp)
    //     p: load_client()     [for 'info' and hence VG_(brk_base)]
    //--------------------------------------------------------------
    if (!need_help) { 
-     SizeT m1 = 1024 * 1024;
-     SizeT m8 = 8 * m1;
-     SizeT dseg_max_size = (SizeT)VG_(client_rlimit_data).rlim_cur;
-     VG_(debugLog)(1, "main", "Setup client data (brk) segment\n");
-     if (dseg_max_size < m1) dseg_max_size = m1;
-     if (dseg_max_size > m8) dseg_max_size = m8;
-     dseg_max_size = VG_PGROUNDUP(dseg_max_size);
+      SizeT m1 = 1024 * 1024;
+      SizeT m8 = 8 * m1;
+      SizeT dseg_max_size = (SizeT)VG_(client_rlimit_data).rlim_cur;
+      VG_(debugLog)(1, "main", "Setup client data (brk) segment\n");
+      if (dseg_max_size < m1) dseg_max_size = m1;
+      if (dseg_max_size > m8) dseg_max_size = m8;
+      dseg_max_size = VG_PGROUNDUP(dseg_max_size);
 
-     setup_client_dataseg( dseg_max_size );
+      setup_client_dataseg( dseg_max_size );
    }
 
    //==============================================================
@@ -2148,6 +2148,51 @@ Int main(Int argc, HChar **argv, HChar **envp)
    //--------------------------------------------------------------
    VG_(debugLog)(1, "main", "Setup file descriptors\n");
    setup_file_descriptors();
+
+   //--------------------------------------------------------------
+   // create the fake /proc/<pid>/cmdline file and then unlink it,
+   // but hold onto the fd, so we can hand it out to the client
+   // when it tries to open /proc/<pid>/cmdline for itself.
+   //   p: setup file descriptors
+   //--------------------------------------------------------------
+   if (!need_help) {
+      HChar  buf[50], buf2[50+64];
+      HChar  nul[1];
+      Int    fd, r;
+      HChar* exename;
+
+      VG_(debugLog)(1, "main", "Create fake /proc/<pid>/cmdline\n");
+
+      VG_(sprintf)(buf, "proc_%d_cmdline", VG_(getpid)());
+      fd = VG_(mkstemp)( buf, buf2 );
+      if (fd == -1)
+         config_error("Can't create client cmdline file in /tmp.");
+
+      nul[0] = 0;
+      exename = VG_(args_the_exename) ? VG_(args_the_exename)
+                                      : "unknown_exename";
+
+      VG_(write)(fd, VG_(args_the_exename), 
+                     VG_(strlen)( VG_(args_the_exename) ));
+      VG_(write)(fd, nul, 1);
+
+      for (i = 0; i < VG_(args_for_client).used; i++) {
+         VG_(write)(fd, VG_(args_for_client).strs[i],
+                        VG_(strlen)( VG_(args_for_client).strs[i] ));
+         VG_(write)(fd, nul, 1);
+      }
+
+      /* Don't bother to seek the file back to the start; instead do
+	 it every time a copy of it is given out (by PRE(sys_open)). 
+	 That is probably more robust across fork() etc. */
+
+      /* Now delete it, but hang on to the fd. */
+      r = VG_(unlink)( buf2 );
+      if (r)
+         config_error("Can't delete client cmdline file in /tmp.");
+
+      VG_(cl_cmdline_fd) = fd;
+   }
 
    //--------------------------------------------------------------
    // Init tool part 1: pre_clo_init

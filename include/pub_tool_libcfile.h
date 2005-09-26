@@ -44,7 +44,7 @@ extern OffT   VG_(lseek)  ( Int fd, OffT offset, Int whence );
 
 extern SysRes VG_(stat)   ( Char* file_name, struct vki_stat* buf );
 extern Int    VG_(fstat)  ( Int   fd,        struct vki_stat* buf );
-extern Int    VG_(dup2)   ( Int oldfd, Int newfd );
+extern SysRes VG_(dup)    ( Int oldfd );
 extern Int    VG_(rename) ( Char* old_name, Char* new_name );
 extern Int    VG_(unlink) ( Char* file_name );
 

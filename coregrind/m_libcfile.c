@@ -33,6 +33,7 @@
 #include "pub_core_libcassert.h"
 #include "pub_core_libcfile.h"
 #include "pub_core_libcprint.h"     // For VG_(sprintf)()
+#include "pub_core_libcproc.h"      // VG_(getpid), VG_(getppid)
 #include "pub_core_syscall.h"
 #include "vki_unistd.h"
 
@@ -140,10 +141,9 @@ Int VG_(fsize) ( Int fd )
    return res.isError ? (-1) : buf.st_size;
 }
 
-Int VG_(dup2) ( Int oldfd, Int newfd )
+SysRes VG_(dup) ( Int oldfd )
 {
-   SysRes res = VG_(do_syscall2)(__NR_dup2, oldfd, newfd);
-   return res.isError ? (-1) : res.val;
+   return VG_(do_syscall1)(__NR_dup, oldfd);
 }
 
 /* Returns -1 on error. */
@@ -218,6 +218,48 @@ SysRes VG_(pread) ( Int fd, void* buf, Int count, Int offset )
    SysRes res = VG_(do_syscall3)(__NR_read, fd, (UWord)buf, count );
    return res;
 }
+
+/* Create and open (-rw------) a tmp file name incorporating said arg.
+   Returns -1 on failure, else the fd of the file.  If fullname is
+   non-NULL, the file's name is written into it.  The number of bytes
+   written is guaranteed not to exceed 64+strlen(part_of_name). */
+
+Int VG_(mkstemp) ( HChar* part_of_name, /*OUT*/HChar* fullname )
+{
+   HChar  buf[200];
+   Int    n, tries, fd;
+   UInt   seed;
+   SysRes sres;
+
+   vg_assert(part_of_name);
+   n = VG_(strlen)(part_of_name);
+   vg_assert(n > 0 && n < 100);
+
+   seed = (VG_(getpid)() << 9) ^ VG_(getppid)();
+
+   tries = 0;
+   while (True) {
+      if (tries > 10) 
+         return -1;
+      VG_(sprintf)( buf, "/tmp/valgrind_%s_%08x", 
+                         part_of_name, VG_(random)( &seed ));
+      if (0)
+         VG_(printf)("VG_(mkstemp): trying: %s\n", buf);
+
+      sres = VG_(open)(buf,
+                       VKI_O_CREAT|VKI_O_RDWR|VKI_O_EXCL|VKI_O_TRUNC,
+                       VKI_S_IRUSR|VKI_S_IWUSR);
+      if (sres.isError)
+         continue;
+      /* VG_(safe_fd) doesn't return if it fails. */
+      fd = VG_(safe_fd)( sres.val );
+      if (fullname)
+         VG_(strcpy)( fullname, buf );
+      return fd;
+   }
+   /* NOTREACHED */
+}
+
 
 /* ---------------------------------------------------------------------
    Socket-related stuff.  This is very Linux-kernel specific.

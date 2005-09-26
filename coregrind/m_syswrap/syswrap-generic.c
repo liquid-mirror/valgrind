@@ -4937,7 +4937,9 @@ POST(sys_nanosleep)
 
 PRE(sys_open)
 {
-   *flags |= SfMayBlock;
+   HChar  name[30];
+   SysRes sres;
+
    if (ARG2 & VKI_O_CREAT) {
       // 3-arg version
       PRINT("sys_open ( %p(%s), %d, %d )",ARG1,ARG1,ARG2,ARG3);
@@ -4950,6 +4952,28 @@ PRE(sys_open)
                     const char *, filename, int, flags);
    }
    PRE_MEM_RASCIIZ( "open(filename)", ARG1 );
+
+   /* Handle the case where the open is of /proc/self/cmdline or
+      /proc/<pid>/cmdline, and just give it a copy of the fd for the
+      fake file we cooked up at startup (in m_main).  Also, seek the
+      cloned fd back to the start. */
+
+   VG_(sprintf)(name, "/proc/%d/cmdline", VG_(getpid)());
+   if (ML_(safe_to_deref)( (void*)ARG1, 1 )
+       && (VG_(strcmp)((Char *)ARG1, name) == 0 
+           || VG_(strcmp)((Char *)ARG1, "/proc/self/cmdline") == 0)) {
+      sres = VG_(dup)( VG_(cl_cmdline_fd) );
+      SET_STATUS_from_SysRes( sres );
+      if (!sres.isError) {
+         OffT off = VG_(lseek)( sres.val, 0, VKI_SEEK_SET );
+         if (off)
+            SET_STATUS_Failure( VKI_EMFILE );
+      }
+      return;
+   }
+
+   /* Otherwise handle normally */
+   *flags |= SfMayBlock;
 }
 
 POST(sys_open)
@@ -5110,7 +5134,7 @@ PRE(sys_readlink)
       VG_(sprintf)(name, "/proc/%d/exe", VG_(getpid)());
       if (VG_(strcmp)((Char *)ARG1, name) == 0 ||
           VG_(strcmp)((Char *)ARG1, "/proc/self/exe") == 0) {
-         VG_(sprintf)(name, "/proc/self/fd/%d", VG_(clexecfd));
+         VG_(sprintf)(name, "/proc/self/fd/%d", VG_(cl_exec_fd));
          SET_STATUS_from_SysRes( VG_(do_syscall3)(saved, (UWord)name, ARG2, ARG3));
       }
    }

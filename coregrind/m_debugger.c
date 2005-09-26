@@ -122,7 +122,7 @@ void VG_(start_debugger) ( ThreadId tid )
          Char *cmdptr;
          
          VG_(sprintf)(pidbuf, "%d", pid);
-         VG_(sprintf)(file, "/proc/%d/fd/%d", pid, VG_(clexecfd));
+         VG_(sprintf)(file, "/proc/%d/fd/%d", pid, VG_(cl_exec_fd));
  
          bufptr = buf;
          cmdptr = VG_(clo_db_command);
