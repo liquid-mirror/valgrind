@@ -77,7 +77,7 @@ extern void* VG_(arena_memalign)( ArenaId aid, SizeT req_alignB,
                                                SizeT req_pszB );
 extern Char* VG_(arena_strdup)  ( ArenaId aid, const Char* s);
 
-extern SizeT VG_(arena_payload_szB) ( ArenaId aid, void* payload );
+extern SizeT VG_(arena_payload_szB) ( ThreadId tid, ArenaId aid, void* payload );
 
 extern void  VG_(sanity_check_malloc_all) ( void );
 

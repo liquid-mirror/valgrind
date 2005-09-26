@@ -60,9 +60,9 @@ typedef UChar UByte;
 /* Layout of an in-use block:
 
       this block total szB     (sizeof(SizeT) bytes)
-      red zone bytes           (depends on Arena.rz_szB, but > sizeof(void*))
+      red zone bytes           (depends on Arena.rz_szB, but >= sizeof(void*))
       (payload bytes)
-      red zone bytes           (depends on Arena.rz_szB, but > sizeof(void*))
+      red zone bytes           (depends on Arena.rz_szB, but >= sizeof(void*))
       this block total szB     (sizeof(SizeT) bytes)
 
    Layout of a block on the free list:
@@ -171,47 +171,49 @@ SizeT mk_plain_bszB ( SizeT bszB )
    return bszB & (~SIZE_T_0x1);
 }
 
-// Set get the lower size field of a block.
+//---------------------------------------------------------------------------
+
+// Get a block's size as stored, ie with the in-use/free attribute.
 static __inline__
-SizeT get_bszB_lo ( Block* b )
+SizeT get_bszB_as_is ( Block* b )
 {
-   return *(SizeT*)&b[0];
+   UByte* b2     = (UByte*)b;
+   SizeT bszB_lo = *(SizeT*)&b2[0];
+   SizeT bszB_hi = *(SizeT*)&b2[mk_plain_bszB(bszB_lo) - sizeof(SizeT)];
+   vg_assert2(bszB_lo == bszB_hi, 
+      "Heap block lo/hi size mismatch: lo = %llu, hi = %llu.\n"
+      "Probably caused by overrunning/underrunning a heap block's bounds\n");
+   return bszB_lo;
 }
+
+// Get a block's plain size, ie. remove the in-use/free attribute.
+static __inline__
+SizeT get_bszB ( Block* b )
+{
+   return mk_plain_bszB(get_bszB_as_is(b));
+}
+
+// Set the size fields of a block.  bszB may have the in-use/free attribute.
+static __inline__
+void set_bszB ( Block* b, SizeT bszB )
+{
+   UByte* b2 = (UByte*)b;
+   *(SizeT*)&b2[0]                                   = bszB;
+   *(SizeT*)&b2[mk_plain_bszB(bszB) - sizeof(SizeT)] = bszB;
+}
+
+//---------------------------------------------------------------------------
 
 // Does this block have the in-use attribute?
 static __inline__
 Bool is_inuse_block ( Block* b )
 {
-   SizeT bszB = get_bszB_lo(b);
+   SizeT bszB = get_bszB_as_is(b);
    vg_assert(bszB != 0);
    return (0 != (bszB & SIZE_T_0x1)) ? False : True;
 }
 
-// Get the address of the last byte in a block
-static __inline__
-UByte* last_byte ( Block* b )
-{
-   UByte* b2 = (UByte*)b;
-   return &b2[mk_plain_bszB(get_bszB_lo(b)) - 1];
-}
-
-// Get the upper size field of a block.
-static __inline__
-SizeT get_bszB_hi ( Block* b )
-{
-   UByte* lb = last_byte(b);
-   return *(SizeT*)&lb[-sizeof(SizeT) + 1];
-}
-
-// Set the size fields of a block.
-static __inline__
-void set_bszB ( Block* b, SizeT bszB )
-{
-   UByte* lb;
-   *(SizeT*)&b[0] = bszB;     // Set lo bszB;  must precede last_byte() call
-   lb = last_byte(b);
-   *(SizeT*)&lb[-sizeof(SizeT) + 1] = bszB;  // Set hi bszB
-}
+//---------------------------------------------------------------------------
 
 // Return the lower, upper and total overhead in bytes for a block.
 // These are determined purely by which arena the block lives in.
@@ -231,6 +233,8 @@ SizeT overhead_szB ( Arena* a )
    return overhead_szB_lo(a) + overhead_szB_hi(a);
 }
 
+//---------------------------------------------------------------------------
+
 // Return the minimum bszB for a block in this arena.  Can have zero-length
 // payloads, so it's the size of the admin bytes.
 static __inline__
@@ -238,6 +242,8 @@ SizeT min_useful_bszB ( Arena* a )
 {
    return overhead_szB(a);
 }
+
+//---------------------------------------------------------------------------
 
 // Convert payload size <--> block size (both in bytes).
 static __inline__
@@ -252,22 +258,7 @@ SizeT bszB_to_pszB ( Arena* a, SizeT bszB )
    return bszB - overhead_szB(a);
 }
 
-// Get a block's size as stored, ie with the in-use/free attribute.
-static __inline__
-SizeT get_bszB_as_is ( Block* b )
-{
-   SizeT bszB_lo = get_bszB_lo(b);
-   SizeT bszB_hi = get_bszB_hi(b);
-   vg_assert(bszB_lo == bszB_hi);
-   return bszB_lo;
-}
-
-// Get a block's plain size, ie. remove the in-use/free attribute.
-static __inline__
-SizeT get_bszB ( Block* b )
-{
-   return mk_plain_bszB(get_bszB_as_is(b));
-}
+//---------------------------------------------------------------------------
 
 // Get a block's payload size.
 static __inline__
@@ -276,7 +267,9 @@ SizeT get_pszB ( Arena* a, Block* b )
    return bszB_to_pszB(a, get_bszB(b));
 }
 
-// Given the addr of a block, return the addr of its payload.
+//---------------------------------------------------------------------------
+
+// Given the addr of a block, return the addr of its payload, and vice versa.
 static __inline__
 UByte* get_block_payload ( Arena* a, Block* b )
 {
@@ -290,6 +283,7 @@ Block* get_payload_block ( Arena* a, UByte* payload )
    return (Block*)&payload[ -overhead_szB_lo(a) ];
 }
 
+//---------------------------------------------------------------------------
 
 // Set and get the next and previous link fields of a block.
 static __inline__
@@ -301,8 +295,8 @@ void set_prev_b ( Block* b, Block* prev_p )
 static __inline__
 void set_next_b ( Block* b, Block* next_p )
 {
-   UByte* lb = last_byte(b);
-   *(Block**)&lb[-sizeof(SizeT) - sizeof(void*) + 1] = next_p;
+   UByte* b2 = (UByte*)b;
+   *(Block**)&b2[get_bszB(b) - sizeof(SizeT) - sizeof(void*)] = next_p;
 }
 static __inline__
 Block* get_prev_b ( Block* b )
@@ -313,10 +307,11 @@ Block* get_prev_b ( Block* b )
 static __inline__
 Block* get_next_b ( Block* b )
 { 
-   UByte* lb = last_byte(b);
-   return *(Block**)&lb[-sizeof(SizeT) - sizeof(void*) + 1];
+   UByte* b2 = (UByte*)b;
+   return *(Block**)&b2[get_bszB(b) - sizeof(SizeT) - sizeof(void*)];
 }
 
+//---------------------------------------------------------------------------
 
 // Get the block immediately preceding this one in the Superblock.
 static __inline__
@@ -326,6 +321,8 @@ Block* get_predecessor_block ( Block* b )
    SizeT  bszB = mk_plain_bszB( (*(SizeT*)&b2[-sizeof(SizeT)]) );
    return (Block*)&b2[-bszB];
 }
+
+//---------------------------------------------------------------------------
 
 // Read and write the lower and upper red-zone bytes of a block.
 static __inline__
@@ -337,8 +334,8 @@ void set_rz_lo_byte ( Arena* a, Block* b, UInt rz_byteno, UByte v )
 static __inline__
 void set_rz_hi_byte ( Arena* a, Block* b, UInt rz_byteno, UByte v )
 {
-   UByte* lb = last_byte(b);
-   lb[-sizeof(SizeT) - rz_byteno] = v;
+   UByte* b2 = (UByte*)b;
+   b2[get_bszB(b) - sizeof(SizeT) - rz_byteno - 1] = v;
 }
 static __inline__
 UByte get_rz_lo_byte ( Arena* a, Block* b, UInt rz_byteno )
@@ -349,8 +346,8 @@ UByte get_rz_lo_byte ( Arena* a, Block* b, UInt rz_byteno )
 static __inline__
 UByte get_rz_hi_byte ( Arena* a, Block* b, UInt rz_byteno )
 {
-   UByte* lb = last_byte(b);
-   return lb[-sizeof(SizeT) - rz_byteno];
+   UByte* b2 = (UByte*)b;
+   return b2[get_bszB(b) - sizeof(SizeT) - rz_byteno - 1];
 }
 
 
@@ -379,7 +376,12 @@ void arena_init ( ArenaId aid, Char* name, SizeT rz_szB, SizeT min_sblock_szB )
    SizeT i;
    Arena* a = arenaId_to_ArenaP(aid);
    
-   vg_assert(rz_szB < 128);      // ensure reasonable size
+   // Ensure redzones are a reasonable size.  They must always be at least
+   // the size of a pointer, for holding the prev/next pointer (see the layout
+   // details at the top of this file).
+   vg_assert(rz_szB < 128);
+   if (rz_szB < sizeof(void*)) rz_szB = sizeof(void*);
+   
    vg_assert((min_sblock_szB % VKI_PAGE_SIZE) == 0);
    a->name      = name;
    a->clientmem = ( VG_AR_CLIENT == aid ? True : False );
@@ -550,7 +552,7 @@ Superblock* newSuperblock ( Arena* a, SizeT cszB )
          return 0;
       sb = (Superblock*)sres.val;
    } else {
-      // non-client allocation -- aborts if it fails
+      // non-client allocation -- abort if it fails
       sres = VG_(am_mmap_anon_float_valgrind)( cszB );
       if (sres.isError) {
          VG_(out_of_memory_NORETURN)("newSuperblock", cszB);
@@ -678,8 +680,8 @@ Bool blockSane ( Arena* a, Block* b )
 {
 #  define BLEAT(str) VG_(printf)("blockSane: fail -- %s\n",str)
    UInt i;
-   if (get_bszB_lo(b) != get_bszB_hi(b))
-      {BLEAT("sizes");return False;}
+   // The lo and hi size fields will be checked (indirectly) by the call
+   // to get_rz_hi_byte().
    if (!a->clientmem && is_inuse_block(b)) {
       for (i = 0; i < a->rz_szB; i++) {
          if (get_rz_lo_byte(a, b, i) != 
@@ -1242,13 +1244,12 @@ void* VG_(arena_memalign) ( ArenaId aid, SizeT req_alignB, SizeT req_pszB )
 }
 
 
-SizeT VG_(arena_payload_szB) ( ArenaId aid, void* ptr )
+SizeT VG_(arena_payload_szB) ( ThreadId tid, ArenaId aid, void* ptr )
 {
    Arena* a = arenaId_to_ArenaP(aid);
    Block* b = get_payload_block(a, ptr);
    return get_pszB(a, b);
 }
-
 
 /*------------------------------------------------------------*/
 /*--- Services layered on top of malloc/free.              ---*/
