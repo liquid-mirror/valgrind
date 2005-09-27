@@ -1892,6 +1892,9 @@ Int main(Int argc, HChar **argv, HChar **envp)
    struct vki_rlimit zero = { 0, 0 };
    struct exeinfo info;
 
+   #error Do not use the ASPACEM branch any more!  It has been
+   #error folded back into the trunk.
+
    //============================================================
    //
    // Nb: startup is complex.  Prerequisites are shown at every step.
