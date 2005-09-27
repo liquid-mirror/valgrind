@@ -2579,9 +2579,9 @@ PRE(sys_execve)
       j = 0;
       argv[j++] = launcher_basename;
       for (i = 0; i < VG_(args_for_valgrind).used; i++) {
-	if (i <  VG_(args_for_valgrind_noexecpass))
-	  continue;
-	argv[j++] = VG_(args_for_valgrind).strs[i];
+         if (i < VG_(args_for_valgrind_noexecpass))
+            continue;
+         argv[j++] = VG_(args_for_valgrind).strs[i];
       }
       argv[j++] = (Char*)ARG1;
       if (arg2copy && arg2copy[0])

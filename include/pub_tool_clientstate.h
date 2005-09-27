@@ -52,10 +52,13 @@ extern XArrayStrings VG_(args_for_client);
    - contents of $VALGRIND_OPTS
    - contents of ./.valgrindrc
    - args from the command line
+   in the stated order.
+
    Only the last of these is passed onwards to child Valgrinds at
-   client sys_execve, since the children will re-acquire the first 
-   3 categories for themselves.  Therefore we also record the 
-   number of these no-pass-at-execve arguments. */
+   client sys_execve, since the children will re-acquire the first 3
+   categories for themselves.  Therefore we also record the number of
+   these no-pass-at-execve arguments -- that is what
+   VG_(args_for_valgrind_noexecpass) is. */
 extern XArrayStrings VG_(args_for_valgrind);
 
 /* Number of leading args in VG_(args_for_valgrind) not to pass on at
