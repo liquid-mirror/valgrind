@@ -95,10 +95,8 @@ static HChar* read_dot_valgrindrc ( HChar* dir )
 }
 
 
-// Add args out of environment, skipping multiple spaces and "--" args.
-// We split 's' into multiple strings by replacing whitespace with nuls,
-// eg. "--aa --bb --cc" --> "--aa\0--bb\0--cc".  And for each new string
-// carved out of 's', we put a pointer to it in 'to'.
+// Add args from a string into VG_(args_for_valgrind), splitting the
+// string at whitespace and adding each component as a separate arg.
 
 static void add_args_from_string ( HChar* s )
 {
@@ -210,7 +208,7 @@ void VG_(split_up_argv)( Int argc, HChar** argv )
       // VG_(malloc)().  We do not free f1_clo and f2_clo as they get
       // put into VG_(args_for_valgrind) and so must persist.
       HChar* f1_clo  = read_dot_valgrindrc( VG_(getenv)("HOME") );
-      HChar* env_clo = VG_(getenv)(VALGRIND_OPTS);
+      HChar* env_clo = VG_(strdup)( VG_(getenv)(VALGRIND_OPTS) );
       HChar* f2_clo  = read_dot_valgrindrc(".");
 
       if (f1_clo)  add_args_from_string( f1_clo );
