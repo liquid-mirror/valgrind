@@ -276,6 +276,9 @@ UWord read_bit_array ( UChar* arr, UWord idx )
 #define VGM_BYTE_VALID      0
 #define VGM_BYTE_INVALID    0xFF
 
+#define VGM_SHORT_VALID     0
+#define VGM_SHORT_INVALID   0xFFFF
+
 #define VGM_WORD32_VALID    0
 #define VGM_WORD32_INVALID  0xFFFFFFFF
 
