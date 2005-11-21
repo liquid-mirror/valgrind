@@ -2014,7 +2014,7 @@ void mc_STOREV2 ( Addr aA, UWord vbytes, Bool isBigEndian )
    } else {
       /* Slow but general case. */
       PROF_EVENT(253, "mc_STOREV2-slow3");
-      mc_STOREVn_slow( aA, 2, (ULong)vbytes, /*iS_BIGENDIAN*/False );
+      mc_STOREVn_slow( aA, 2, (ULong)vbytes, isBigEndian );
    }
 }
 
