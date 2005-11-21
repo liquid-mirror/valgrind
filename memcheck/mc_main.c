@@ -1205,7 +1205,7 @@ static MC_ReadResult mc_check_readable ( Addr a, SizeT len, Addr* bad_addr )
       }
       a++;
    }
-   return MC_Ok;;
+   return MC_Ok;
 }
 
 
