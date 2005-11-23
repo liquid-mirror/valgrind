@@ -686,10 +686,10 @@ static SecMap** find_secmap_binder_for_addr ( Addr aA )
 }
 
 
-static void set_address_range_perms ( Addr a, SizeT len, UWord vabits32,
+static void set_address_range_perms ( Addr a, SizeT len, UWord vabits64,
                                       UWord dsm_num )
 {
-   UWord    sm_off;
+   UWord    sm_off64;
    SecMap*  sm;
    SecMap** binder;
    SecMap*  example_dsm;
@@ -697,9 +697,9 @@ static void set_address_range_perms ( Addr a, SizeT len, UWord vabits32,
    PROF_EVENT(150, "set_address_range_perms");
 
    /* Check the V+A bits make sense. */
-   tl_assert(vabits32 == MC_BITS32_NOACCESS ||
-             vabits32 == MC_BITS32_WRITABLE ||
-             vabits32 == MC_BITS32_READABLE);
+   tl_assert(vabits64 == MC_BITS64_NOACCESS ||
+             vabits64 == MC_BITS64_WRITABLE ||
+             vabits64 == MC_BITS64_READABLE);
 
    if (len == 0)
       return;
@@ -707,9 +707,9 @@ static void set_address_range_perms ( Addr a, SizeT len, UWord vabits32,
    if (len > 100 * 1000 * 1000) {
       if (VG_(clo_verbosity) > 0 && !VG_(clo_xml)) {
          Char* s = NULL;   // placate GCC
-         if (vabits32 == MC_BITS32_NOACCESS) s = "noaccess";
-         if (vabits32 == MC_BITS32_WRITABLE) s = "writable";
-         if (vabits32 == MC_BITS32_READABLE) s = "readable";
+         if (vabits64 == MC_BITS64_NOACCESS) s = "noaccess";
+         if (vabits64 == MC_BITS64_WRITABLE) s = "writable";
+         if (vabits64 == MC_BITS64_READABLE) s = "readable";
          VG_(message)(Vg_UserMsg, "Warning: set address range perms: "
                                   "large range %lu (%s)", len, s);
       }
@@ -719,7 +719,7 @@ static void set_address_range_perms ( Addr a, SizeT len, UWord vabits32,
    /*------------------ debug-only case ------------------ */
    {
       // XXX: Simplest, slow version
-      UWord vabits8 = vabits32 & 0x3;
+      UWord vabits8 = vabits64 & 0x3;
       SizeT i;
       for (i = 0; i < len; i++) {
          set_vabits8(aA + i, vabits8);
@@ -735,11 +735,9 @@ static void set_address_range_perms ( Addr a, SizeT len, UWord vabits32,
    example_dsm = &sm_distinguished[dsm_num];
 
    /* Slowly do parts preceding 8-byte alignment. */
-   while (True) {
-      if (len == 0) break;
-      if (VG_IS_8_ALIGNED(a)) break;
+   while (len != 0 && !VG_IS_8_ALIGNED(a)) {
       PROF_EVENT(151, "set_address_range_perms-loop1-pre");
-      set_vabits8( a, vabits32 & 0x3 );
+      set_vabits8( a, vabits64 & 0x3 );
       a++;
       len--;
    }   
@@ -752,11 +750,7 @@ static void set_address_range_perms ( Addr a, SizeT len, UWord vabits32,
    /* Now go in steps of 8 bytes. */
    binder = find_secmap_binder_for_addr(a);
 
-   // XXX: understand this better...
-   while (True) {
-
-      if (len < 8) break;
-
+   while (len >= 8) {
       PROF_EVENT(152, "set_address_range_perms-loop8");
 
       if ((a & SECONDARY_MASK) == 0) {
@@ -777,30 +771,25 @@ static void set_address_range_perms ( Addr a, SizeT len, UWord vabits32,
             PROF_EVENT(154, "set_address_range_perms-entire-secmap");
             *binder = example_dsm;
             len -= SECONDARY_SIZE;
-            a += SECONDARY_SIZE;
+            a   += SECONDARY_SIZE;
             continue;
          }
       }
 
       /* If the primary is already pointing to a distinguished map
          with the same properties as we're trying to set, then leave
-         it that way. */
-      if (*binder == example_dsm) {
-         a += 8;
-         len -= 8;
-         continue;
+         it that way.  Otherwise we have to do some writing. */
+      if (*binder != example_dsm) {
+         /* Make sure it's OK to write the secondary. */
+         if (is_distinguished_sm(*binder)) {
+            *binder = copy_for_writing(*binder);
+         }
+         sm       = *binder;
+         sm_off64 = SM_OFF_64(a);
+         ((UShort*)(sm->vabits32))[sm_off64] = vabits64;
       }
 
-      /* Make sure it's OK to write the secondary. */
-      if (is_distinguished_sm(*binder))
-         *binder = copy_for_writing(*binder);
-
-      sm = *binder;
-      sm_off = SM_OFF(a);
-      sm->vabits32[sm_off+0] = vabits32;
-      sm->vabits32[sm_off+1] = vabits32;
-
-      a += 8;
+      a   += 8;
       len -= 8;
    }
 
@@ -810,10 +799,9 @@ static void set_address_range_perms ( Addr a, SizeT len, UWord vabits32,
    tl_assert(VG_IS_8_ALIGNED(a) && len > 0 && len < 8);
 
    /* Finish the upper fragment. */
-   while (True) {
-      if (len == 0) break;
+   while (len > 0) {
       PROF_EVENT(155, "set_address_range_perms-loop1-post");
-      set_vabits8 ( a, vabits32 & 0x3 );
+      set_vabits8 ( a, vabits64 & 0x3 );
       a++;
       len--;
    }   
@@ -826,21 +814,21 @@ static void mc_make_noaccess ( Addr a, SizeT len )
 {
    PROF_EVENT(40, "mc_make_noaccess");
    DEBUG("mc_make_noaccess(%p, %lu)\n", a, len);
-   set_address_range_perms ( a, len, MC_BITS32_NOACCESS, SM_DIST_NOACCESS );
+   set_address_range_perms ( a, len, MC_BITS64_NOACCESS, SM_DIST_NOACCESS );
 }
 
 static void mc_make_writable ( Addr a, SizeT len )
 {
    PROF_EVENT(41, "mc_make_writable");
    DEBUG("mc_make_writable(%p, %lu)\n", a, len);
-   set_address_range_perms ( a, len, MC_BITS32_WRITABLE, SM_DIST_WRITABLE );
+   set_address_range_perms ( a, len, MC_BITS64_WRITABLE, SM_DIST_WRITABLE );
 }
 
 static void mc_make_readable ( Addr a, SizeT len )
 {
    PROF_EVENT(42, "mc_make_readable");
    DEBUG("mc_make_readable(%p, %lu)\n", a, len);
-   set_address_range_perms ( a, len, MC_BITS32_READABLE, SM_DIST_READABLE );
+   set_address_range_perms ( a, len, MC_BITS64_READABLE, SM_DIST_READABLE );
 }
 
 
