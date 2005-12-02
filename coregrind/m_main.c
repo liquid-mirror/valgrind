@@ -1826,7 +1826,7 @@ void show_BB_profile ( BBProfEntry tops[], UInt n_tops, ULong score_total )
                   score_cumul, buf_cumul,
                   score_here,  buf_here, tops[r].addr, name );
       VG_(printf)("\n");
-      VG_(translate)(0, tops[r].addr, True, VG_(clo_profile_flags), 0);
+      VG_(translate)(0, tops[r].addr, True, VG_(clo_profile_flags), 0, True);
       VG_(printf)("=-=-=-=-=-=-=-=-=-=-=-=-=-=  end BB rank %d  "
                   "=-=-=-=-=-=-=-=-=-=-=-=-=-=\n\n", r);
    }

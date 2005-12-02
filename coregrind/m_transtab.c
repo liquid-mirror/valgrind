@@ -1203,6 +1203,114 @@ void VG_(discard_translations) ( Addr64 guest_start, ULong range,
 
 
 /*------------------------------------------------------------*/
+/*--- AUXILIARY: the unredirected TT/TC                    ---*/
+/*------------------------------------------------------------*/
+
+/* A very simple translation cache which holds a small number of
+   unredirected translations.  This is completely independent of the
+   main tt/tc structures.  When unredir_tc or unredir_tt becomes full,
+   both structures are simply dumped and we start over.
+
+   Since these translations are unredirected, the search key is (by
+   definition) the first address entry in the .vge field. */
+
+/* Sized to hold 500 translations each of size 1000 bytes. */
+
+#define UNREDIR_SZB   1000
+
+#define N_UNREDIR_TT  500
+#define N_UNREDIR_TCQ (N_UNREDIR_TT * UNREDIR_SZB / sizeof(ULong))
+
+typedef
+   struct {
+      VexGuestExtents vge;
+      Addr            hcode;
+      Bool            inUse;
+   }
+   UTCEntry;
+
+static ULong    unredir_tc[N_UNREDIR_TCQ] __attribute__((aligned(8)));
+static Int      unredir_tc_used;
+static UTCEntry unredir_tt[N_UNREDIR_TT];
+
+
+static void init_unredir_tt_tc ( void )
+{
+   Int i;
+   unredir_tc_used = 0;
+   for (i = 0; i < N_UNREDIR_TT; i++)
+      unredir_tt[i].inUse = False;
+}
+
+/* Add an UNREDIRECTED translation of vge to TT/TC.  The translation
+   is temporarily in code[0 .. code_len-1].
+*/
+void VG_(add_to_unredir_transtab)( VexGuestExtents* vge,
+                                   Addr64           entry,
+                                   AddrH            code,
+                                   UInt             code_len,
+                                   Bool             is_self_checking )
+{
+   Int   i, j, code_szQ;
+   HChar *srcP, *dstP;
+
+   /* This is the whole point: it's not redirected! */
+   vg_assert(entry == vge->base[0]);
+
+   /* How many unredir_tt slots are needed */   
+   code_szQ = (code_len + 7) / 8;
+
+   /* Look for an empty unredir_tc slot */
+   for (i = 0; i < N_UNREDIR_TT; i++)
+      if (!unredir_tt[i].inUse)
+         break;
+
+   if (i >= N_UNREDIR_TT || code_szQ > (N_UNREDIR_TCQ - unredir_tc_used)) {
+      /* It's full; dump everything we currently have */
+      init_unredir_tt_tc();
+      i = 0;
+   }
+
+   vg_assert(unredir_tc_used >= 0);
+   vg_assert(unredir_tc_used <= N_UNREDIR_TCQ);
+   vg_assert(code_szQ > 0);
+   vg_assert(code_szQ + unredir_tc_used <= N_UNREDIR_TCQ);
+   vg_assert(i >= 0 && i < N_UNREDIR_TT);
+   vg_assert(unredir_tt[i].inUse == False);
+
+   dstP = (HChar*)&unredir_tc[unredir_tc_used];
+   srcP = (HChar*)code;
+   for (j = 0; j < code_len; j++)
+      dstP[j] = srcP[j];
+
+   unredir_tt[i].inUse = True;
+   unredir_tt[i].vge   = *vge;
+   unredir_tt[i].hcode = (Addr)dstP;
+
+   unredir_tc_used += code_szQ;
+   vg_assert(unredir_tc_used >= 0);
+   vg_assert(unredir_tc_used <= N_UNREDIR_TCQ);
+
+   vg_assert(&dstP[code_len] <= (HChar*)&unredir_tc[unredir_tc_used]);
+}
+
+Bool VG_(search_unredir_transtab) ( /*OUT*/AddrH* result,
+                                    Addr64        guest_addr )
+{
+   Int i;
+   for (i = 0; i < N_UNREDIR_TT; i++) {
+      if (!unredir_tt[i].inUse)
+         continue;
+      if (unredir_tt[i].vge.base[0] == guest_addr) {
+         *result = (AddrH)unredir_tt[i].hcode;
+         return True;
+      }
+   }
+   return False;
+}
+
+
+/*------------------------------------------------------------*/
 /*--- Initialisation.                                      ---*/
 /*------------------------------------------------------------*/
 

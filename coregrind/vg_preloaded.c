@@ -71,3 +71,68 @@ void VG_NOTIFY_ON_LOAD(freeres)( void )
 /*--- end                                                          ---*/
 /*--------------------------------------------------------------------*/
 
+#define PTH_FUNC(ret_ty, f, args...) \
+   ret_ty VG_REPLACE_FUNCTION(libpthreadZdsoZd0, f)(args); \
+   ret_ty VG_REPLACE_FUNCTION(libpthreadZdsoZd0, f)(args)
+
+#define LIBC_FUNC(ret_ty, f, args...) \
+   ret_ty VG_REPLACE_FUNCTION(libcZdsoZd6, f)(args); \
+   ret_ty VG_REPLACE_FUNCTION(libcZdsoZd6, f)(args)
+
+#include <stdio.h>
+#include <pthread.h>
+
+#if 1
+PTH_FUNC(int, pthread_create,    // pthread_create@*
+               pthread_t *thread, const pthread_attr_t *attr,
+               void *(*start) (void *), void *arg)
+{
+   int ret;
+   fprintf(stderr, "<< pthread_create wrapper"); fflush(stderr);
+
+   VALGRIND_SET_NOREDIR;
+   ret = pthread_create(thread, attr, start, arg);
+
+   fprintf(stderr, " -> %d >>\n", ret);
+   return ret;
+}
+
+PTH_FUNC(int, pthread_mutex_lock, pthread_mutex_t *mutex)
+{
+   int ret;
+   fprintf(stderr, "<< pthread_mxlock %p", mutex); fflush(stderr);
+
+   VALGRIND_SET_NOREDIR;
+   ret = pthread_mutex_lock(mutex);
+
+   fprintf(stderr, " -> %d >>\n", ret);
+   return ret;
+}
+
+PTH_FUNC(int, pthread_mutex_unlock, pthread_mutex_t *mutex)
+{
+   int ret;
+   fprintf(stderr, "<< pthread_mxunlk %p", mutex); fflush(stderr);
+
+   VALGRIND_SET_NOREDIR;
+   ret = pthread_mutex_unlock(mutex);
+
+   fprintf(stderr, " -> %d >>\n", ret);
+   return ret;
+}
+
+#endif
+
+#if 0
+LIBC_FUNC(int, fclose, void* f)
+{
+   int ret;
+   fprintf(stderr, "<< fclose(%p)\n", f);
+
+   VALGRIND_SET_NOREDIR;
+   ret = fclose(f);
+
+   fprintf(stderr, ">>\n");
+   return ret;
+}
+#endif

@@ -445,11 +445,12 @@ Bool VG_(translate) ( ThreadId tid,
                       Addr64   orig_addr,
                       Bool     debugging_translation,
                       Int      debugging_verbosity,
-                      ULong    bbs_done )
+                      ULong    bbs_done,
+                      Bool     allow_redirection )
 {
    Addr64             redir, orig_addr_noredir = orig_addr;
    Int                tmpbuf_used, verbosity, i;
-   Bool               notrace_until_done, do_self_check;
+   Bool               notrace_until_done, do_self_check, did_redirect;
    UInt               notrace_until_limit = 0;
    NSegment*          seg;
    VexArch            vex_arch;
@@ -474,7 +475,13 @@ Bool VG_(translate) ( ThreadId tid,
 
    /* Look in the code redirect table to see if we should
       translate an alternative address for orig_addr. */
-   redir = VG_(code_redirect)(orig_addr);
+   if (allow_redirection) {
+      redir        = VG_(code_redirect)(orig_addr);
+      did_redirect = redir != orig_addr;
+   } else {
+      redir        = orig_addr;
+      did_redirect = False;
+   }
 
    if (redir != orig_addr && VG_(clo_verbosity) >= 2) {
       Bool ok;
@@ -592,7 +599,11 @@ Bool VG_(translate) ( ThreadId tid,
              True, /* cleanup after instrumentation */
              do_self_check,
              NULL,
-             verbosity
+             verbosity,
+	     /* If this translation started at a redirected address,
+                then we need to ask the JIT to put in the
+                guest_NOREDIR preamble. */
+             did_redirect             
           );
 
    vg_assert(tres == VexTransOK);
@@ -621,13 +632,25 @@ Bool VG_(translate) ( ThreadId tid,
    // If debugging, don't do anything with the translated block;  we
    // only did this for the debugging output produced along the way.
    if (!debugging_translation) {
-      // Note that we use orig_addr_noredir, not orig_addr, which
-      // might have been changed by the redirection
-      VG_(add_to_transtab)( &vge,
-                            orig_addr_noredir,
-                            (Addr)(&tmpbuf[0]), 
-                            tmpbuf_used,
-                            do_self_check );
+
+      if (allow_redirection) {
+          // Put it into the normal TT/TC structures.  This is the
+          // normal case.
+
+          // Note that we use orig_addr_noredir, not orig_addr, which
+          // might have been changed by the redirection
+          VG_(add_to_transtab)( &vge,
+                                orig_addr_noredir,
+                                (Addr)(&tmpbuf[0]), 
+                                tmpbuf_used,
+                                do_self_check );
+      } else {
+          VG_(add_to_unredir_transtab)( &vge,
+                                        orig_addr_noredir,
+                                        (Addr)(&tmpbuf[0]), 
+                                        tmpbuf_used,
+                                        do_self_check );
+      }
    }
 
    VGP_POPCC(VgpTranslate);

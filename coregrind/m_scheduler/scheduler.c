@@ -580,6 +580,95 @@ void VG_(scheduler_init) ( Addr clstack_end, SizeT clstack_size )
 
 
 /* ---------------------------------------------------------------------
+   Helper stuff for managing no-redirection translations.
+   ------------------------------------------------------------------ */
+
+/* Run a translation.  argblock points to 4 UWords, 2 to carry args
+   and 2 to carry results:
+      0: input:  ptr to translation
+      1: input:  ptr to guest state
+      2: output: next guest PC
+      3: output: guest state pointer afterwards (== thread return code)
+*/
+extern UWord run_a_translation ( UWord* argblock );
+#if defined(VGP_x86_linux)
+asm("\n"
+".text\n"
+"run_a_translation:\n"
+"   pushl %esi\n"
+"   pushl %edi\n"
+"   pushl %ebp\n"
+"   pushl %ebx\n"
+
+"   movl 20(%esp), %esi\n"
+"   movl 4(%esi), %ebp\n"
+"   call *0(%esi)\n"
+
+"   movl 20(%esp), %esi\n"
+"   movl %eax, 8(%esi)\n"
+"   movl %ebp, 12(%esi)\n"
+
+"   popl %ebx\n"
+"   popl %ebp\n"
+"   popl %edi\n"
+"   popl %esi\n"
+"   ret\n"
+".previous\n"
+);
+#else
+#  error "Not implemented"
+#endif
+
+
+/* tid just requested a jump to the noredir version of its current
+   program counter.  So make up that translation if needed, run it,
+   and return the resulting thread return code. */
+static UInt/*trc*/ handle_noredir_jump ( ThreadId tid )
+{
+   UInt  trc;
+   AddrH hcode = 0;
+   Addr  ip    = VG_(get_IP)(tid);
+
+   Bool  found = VG_(search_unredir_transtab)( &hcode, ip );
+   if (!found) {
+      /* Not found; we need to request a translation. */
+      if (VG_(translate)( tid, ip, /*debug*/False, 0/*not verbose*/, bbs_done,
+                          False/*NO REDIRECTION*/ )) {
+
+         found = VG_(search_unredir_transtab)( &hcode, ip );
+         vg_assert2(found, "unredir translation missing after creation?!");
+      
+      } else {
+	 // If VG_(translate)() fails, it's because it had to throw a
+	 // signal because the client jumped to a bad address.  That
+	 // means that either a signal has been set up for delivery,
+	 // or the thread has been marked for termination.  Either
+	 // way, we just need to go back into the scheduler loop.
+         return VG_TRC_BORING;
+      }
+
+   }
+
+   vg_assert(found);
+   vg_assert(hcode != 0);
+ 
+   { UWord argblock[4];
+     argblock[0] = (UWord)hcode;
+     argblock[1] = (UWord)&VG_(threads)[tid].arch.vex;
+     argblock[2] = 0;
+     argblock[3] = 0;
+     trc = run_a_translation( &argblock[0] );
+     /* store away the guest program counter */
+     VG_(set_IP)( tid, argblock[2] );
+     if (argblock[3] == argblock[1])
+        return VG_TRC_BORING;
+     else
+        return (UInt)argblock[3];
+   }
+}
+
+
+/* ---------------------------------------------------------------------
    The scheduler proper.
    ------------------------------------------------------------------ */
 
@@ -593,7 +682,8 @@ static void handle_tt_miss ( ThreadId tid )
    found = VG_(search_transtab)( NULL, ip, True/*upd_fast_cache*/ );
    if (!found) {
       /* Not found; we need to request a translation. */
-      if (VG_(translate)( tid, ip, /*debug*/False, 0/*not verbose*/, bbs_done )) {
+      if (VG_(translate)( tid, ip, /*debug*/False, 0/*not verbose*/, 
+                          bbs_done, True/*allow redirection*/ )) {
 	 found = VG_(search_transtab)( NULL, ip, True ); 
          vg_assert2(found, "VG_TRC_INNER_FASTMISS: missing tt_fast entry");
       
@@ -711,7 +801,23 @@ VgSchedReturnCode VG_(scheduler) ( ThreadId tid )
 	 print_sched_event(tid, buf);
       }
 
-      switch(trc) {
+      if (trc == VEX_TRC_JMP_NOREDIR) {
+         /* If we got a request to run a no-redir version of
+            something, do so now -- handle_noredir_jump just (creates
+            and) runs that one translation.  The flip side is that the
+            noredir translation can't itself return another noredir
+            request -- that would be nonsensical.  It can, however,
+            return VG_TRC_BORING, which just means keep going as
+            normal. */
+         trc = handle_noredir_jump(tid);
+         vg_assert(trc != VEX_TRC_JMP_NOREDIR);
+      }
+
+      switch (trc) {
+      case VG_TRC_BORING:
+         /* no special event, just keep going. */
+         break;
+
       case VG_TRC_INNER_FASTMISS:
 	 vg_assert(VG_(dispatch_ctr) > 1);
 	 handle_tt_miss(tid);
@@ -927,6 +1033,14 @@ void VG_(nuke_all_threads_except) ( ThreadId me, VgSchedReturnCode src )
                   zztid, O_CLREQ_RET, sizeof(UWord), f); \
    } while (0)
 
+#define SET_CLIENT_NOREDIR(zztid, zzval) \
+   do { VG_(threads)[zztid].arch.vex.guest_NOREDIR = 1; \
+        VG_TRACK( post_reg_write, \
+                  Vg_CoreClientReq, zztid, \
+                  offsetof(VexGuestArchState,guest_NOREDIR), \
+                  sizeof(UWord) ); \
+   } while (0)
+
 /* ---------------------------------------------------------------------
    Handle client requests.
    ------------------------------------------------------------------ */
@@ -970,6 +1084,11 @@ void do_client_request ( ThreadId tid )
    if (0)
       VG_(printf)("req no = 0x%llx, arg = %p\n", (ULong)req_no, arg);
    switch (req_no) {
+
+      case VG_USERREQ__SET_NOREDIR:
+         SET_CLIENT_NOREDIR(tid, 1);
+         SET_CLREQ_RETVAL(tid, 0);
+         break;
 
       case VG_USERREQ__CLIENT_CALL0: {
          UWord (*f)(ThreadId) = (void*)arg[1];

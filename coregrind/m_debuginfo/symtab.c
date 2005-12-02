@@ -1876,13 +1876,24 @@ static Int search_one_symtab ( SegInfo* si, Addr ptr,
    table is designed we have no option but to do a complete linear
    scan of the table.  Returns NULL if not found. */
 
+static Bool hacky_match ( Char* patt, Char* in_symtab )
+{
+   Int   plen = VG_(strlen)(patt);
+   Char* p    = VG_(strstr)(in_symtab, patt);
+   if (p == NULL) return False;
+   if (p[plen] == 0 || p[plen] == '@') return True;
+   return False;
+}
+
 Addr VG_(reverse_search_one_symtab) ( const SegInfo* si, const Char* name )
 {
    UInt i;
    for (i = 0; i < si->symtab_used; i++) {
       if (0) 
          VG_(printf)("%p %s\n",  si->symtab[i].addr, si->symtab[i].name);
-      if (0 == VG_(strcmp)(name, si->symtab[i].name))
+      //      if (0 == VG_(strcmp)(name, si->symtab[i].name))
+      //         return si->symtab[i].addr;
+      if (hacky_match(name, si->symtab[i].name))
          return si->symtab[i].addr;
    }
    return (Addr)NULL;

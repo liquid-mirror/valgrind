@@ -248,6 +248,7 @@
 typedef
    enum { VG_USERREQ__RUNNING_ON_VALGRIND  = 0x1001,
           VG_USERREQ__DISCARD_TRANSLATIONS = 0x1002,
+          VG_USERREQ__SET_NOREDIR          = 0x1003,
 
           /* These allow any function to be called from the
              simulated CPU but run on the real CPU.
@@ -309,6 +310,19 @@ typedef
                             VG_USERREQ__DISCARD_TRANSLATIONS,      \
                             _qzz_addr, _qzz_len, 0, 0);            \
    }
+
+/* Sets this thread's guest_NOREDIR register to 1, so that the next
+   entry by this thread into a redirected translation will cause it
+   instead to jump to the non-redirected version. */
+#define VALGRIND_SET_NOREDIR __extension__                         \
+   ({unsigned int _qzz_res;                                        \
+    VALGRIND_MAGIC_SEQUENCE(_qzz_res, 0,                           \
+                            VG_USERREQ__SET_NOREDIR,               \
+                            0, 0, 0, 0);                           \
+    _qzz_res;                                                      \
+   })
+
+
 
 #ifdef NVALGRIND
 
