@@ -446,7 +446,7 @@ static void lc_scan_memory_WRK(Addr start, SizeT len, Int clique)
 
       /* Skip invalid chunks */
       if (!(*lc_is_within_valid_secondary)(ptr)) {
-	 ptr = VG_ROUNDUP(ptr+1, SECONDARY_SIZE);
+	 ptr = VG_ROUNDUP(ptr+1, SM_SIZE);
 	 continue;
       }
 

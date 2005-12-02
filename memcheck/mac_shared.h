@@ -204,8 +204,8 @@ extern HChar* MAC_(event_ctr_name)[N_PROF_EVENTS];
 /* The number of entries in the primary map can be altered.  However
    we hardwire the assumption that each secondary map covers precisely
    64k of address space. */
-#define SECONDARY_SIZE 65536               /* DO NOT CHANGE */
-#define SECONDARY_MASK (SECONDARY_SIZE-1)  /* DO NOT CHANGE */
+#define SM_SIZE 65536            /* DO NOT CHANGE */
+#define SM_MASK (SM_SIZE-1)      /* DO NOT CHANGE */
 
 //zz #define SECONDARY_SHIFT	16
 //zz #define SECONDARY_SIZE	(1 << SECONDARY_SHIFT)

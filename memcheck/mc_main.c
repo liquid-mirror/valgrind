@@ -56,6 +56,7 @@
 #include "mc_include.h"
 #include "memcheck.h"   /* for client requests */
 
+// XXX: introduce PM_OFF macro
 
 #define EXPECTED_TAKEN(cond)     __builtin_expect((cond),1)
 #define EXPECTED_NOT_TAKEN(cond) __builtin_expect((cond),0)
@@ -129,6 +130,7 @@
 /* --------------- Stats maps --------------- */
 
 static Int   n_secmaps_issued   = 0;
+static Int   n_secmaps_deissued = 0;
 static ULong n_auxmap_searches  = 0;
 static ULong n_auxmap_cmps      = 0;
 static Int   n_sanity_cheap     = 0;
@@ -182,14 +184,21 @@ static Int   n_sanity_expensive = 0;
 #define MC_BITS32_WRITABLE    0x55     // 01_01_01_01b
 #define MC_BITS32_READABLE    0xaa     // 10_10_10_10b
 
-#define MC_BITS64_NOACCESS    0x0000   // 00_00_00_00__00_00_00_00b
-#define MC_BITS64_WRITABLE    0x5555   // 01_01_01_01__01_01_01_01b
-#define MC_BITS64_READABLE    0xaaaa   // 10_10_10_10__10_10_10_10b
+#define MC_BITS64_NOACCESS    0x0000   // 00_00_00_00b x 2
+#define MC_BITS64_WRITABLE    0x5555   // 01_01_01_01b x 2
+#define MC_BITS64_READABLE    0xaaaa   // 10_10_10_10b x 2
 
 
 #define SM_CHUNKS             16384
 #define SM_OFF(aaa)           (((aaa) & 0xffff) >> 2)
 #define SM_OFF_64(aaa)        (((aaa) & 0xffff) >> 3)
+
+static inline Addr start_of_this_sm ( Addr a ) {
+   return (a & (~SM_MASK));
+}
+static inline Bool is_start_of_sm ( Addr a ) {
+   return (start_of_this_sm(a) == a);
+}
 
 typedef 
    struct {
@@ -685,11 +694,12 @@ static SecMap** find_secmap_binder_for_addr ( Addr aA )
    }
 }
 
-
-static void set_address_range_perms ( Addr a, SizeT len, UWord vabits64,
+static void set_address_range_perms ( Addr a, SizeT lenT, UWord vabits64,
                                       UWord dsm_num )
 {
-   UWord    sm_off64;
+   UWord    vabits8, sm_off, sm_off64;
+   SizeT    lenA, lenB, len_to_next_secmap;
+   Addr     aNext;
    SecMap*  sm;
    SecMap** binder;
    SecMap*  example_dsm;
@@ -701,27 +711,26 @@ static void set_address_range_perms ( Addr a, SizeT len, UWord vabits64,
              vabits64 == MC_BITS64_WRITABLE ||
              vabits64 == MC_BITS64_READABLE);
 
-   if (len == 0)
+   if (lenT == 0)
       return;
 
-   if (len > 100 * 1000 * 1000) {
+   if (lenT > 100 * 1000 * 1000) {
       if (VG_(clo_verbosity) > 0 && !VG_(clo_xml)) {
-         Char* s = NULL;   // placate GCC
+         Char* s = "unknown???";
          if (vabits64 == MC_BITS64_NOACCESS) s = "noaccess";
          if (vabits64 == MC_BITS64_WRITABLE) s = "writable";
          if (vabits64 == MC_BITS64_READABLE) s = "readable";
          VG_(message)(Vg_UserMsg, "Warning: set address range perms: "
-                                  "large range %lu (%s)", len, s);
+                                  "large range %lu (%s)", lenT, s);
       }
    }
 
 #  if VG_DEBUG_MEMORY >= 2
    /*------------------ debug-only case ------------------ */
    {
-      // XXX: Simplest, slow version
       UWord vabits8 = vabits64 & 0x3;
       SizeT i;
-      for (i = 0; i < len; i++) {
+      for (i = 0; i < lenT; i++) {
          set_vabits8(aA + i, vabits8);
       }
       return;
@@ -734,77 +743,176 @@ static void set_address_range_perms ( Addr a, SizeT len, UWord vabits64,
       to use (part of the space-compression scheme). */
    example_dsm = &sm_distinguished[dsm_num];
 
-   /* Slowly do parts preceding 8-byte alignment. */
-   while (len != 0 && !VG_IS_8_ALIGNED(a)) {
-      PROF_EVENT(151, "set_address_range_perms-loop1-pre");
-      set_vabits8( a, vabits64 & 0x3 );
-      a++;
-      len--;
-   }   
+   vabits8 = vabits64 & 0x3;
+   
+   // We have to handle ranges covering various combinations of partial and
+   // whole sec-maps.  Here is how parts 1, 2 and 3 are used in each case.
+   // Cases marked with a '*' are common.
+   //
+   //   TYPE                                             PARTS USED
+   //   ----                                             ----------
+   // * one partial sec-map                  (p)         1
+   // - one whole sec-map                    (P)         2
+   //
+   // * two partial sec-maps                 (pp)        1,3 
+   // - one partial, one whole sec-map       (pP)        1,2
+   // - one whole, one partial sec-map       (Pp)        2,3
+   // - two whole sec-maps                   (PP)        2,2
+   //
+   // * one partial, one whole, one partial  (pPp)       1,2,3
+   // - one partial, two whole               (pPP)       1,2,2
+   // - two whole, one partial               (PPp)       2,2,3
+   // - three whole                          (PPP)       2,2,2
+   //
+   // * one partial, N-2 whole, one partial  (pP...Pp)   1,2...2,3
+   // - one partial, N-1 whole               (pP...PP)   1,2...2,2
+   // - N-1 whole, one partial               (PP...Pp)   2,2...2,3
+   // - N whole                              (PP...PP)   2,2...2,3
 
-   if (len == 0)
-      return;
-
-   tl_assert(VG_IS_8_ALIGNED(a) && len > 0);
-
-   /* Now go in steps of 8 bytes. */
-   binder = find_secmap_binder_for_addr(a);
-
-   while (len >= 8) {
-      PROF_EVENT(152, "set_address_range_perms-loop8");
-
-      if ((a & SECONDARY_MASK) == 0) {
-         /* we just traversed a primary map boundary, so update the binder. */
-         binder = find_secmap_binder_for_addr(a);
-         PROF_EVENT(153, "set_address_range_perms-update-binder");
-
-         /* Space-optimisation.  If we are setting the entire
-            secondary map, just point this entry at one of our
-            distinguished secondaries.  However, only do that if it
-            already points at a distinguished secondary, since doing
-            otherwise would leak the existing secondary.  We could do
-            better and free up any pre-existing non-distinguished
-            secondary at this point, since we are guaranteed that each
-            non-dist secondary only has one pointer to it, and we have
-            that pointer right here. */
-         if (len >= SECONDARY_SIZE && is_distinguished_sm(*binder)) {
-            PROF_EVENT(154, "set_address_range_perms-entire-secmap");
-            *binder = example_dsm;
-            len -= SECONDARY_SIZE;
-            a   += SECONDARY_SIZE;
-            continue;
-         }
-      }
-
-      /* If the primary is already pointing to a distinguished map
-         with the same properties as we're trying to set, then leave
-         it that way.  Otherwise we have to do some writing. */
-      if (*binder != example_dsm) {
-         /* Make sure it's OK to write the secondary. */
-         if (is_distinguished_sm(*binder)) {
-            *binder = copy_for_writing(*binder);
-         }
-         sm       = *binder;
-         sm_off64 = SM_OFF_64(a);
-         ((UShort*)(sm->vabits32))[sm_off64] = vabits64;
-      }
-
-      a   += 8;
-      len -= 8;
+   // Break up total length (lenT) into two parts:  length in the first
+   // sec-map (lenA), and the rest (lenB);   lenT == lenA + lenB.
+   aNext = start_of_this_sm(a) + SM_SIZE;
+   len_to_next_secmap = aNext - a;
+   if ( lenT <= len_to_next_secmap ) {
+      // Range entirely within one sec-map.  Covers almost all cases.
+      PROF_EVENT(151, "set_address_range_perms-single-secmap");
+      lenA = lenT;
+      lenB = 0;
+   } else if (is_start_of_sm(a)) {
+      // Range spans at least one whole sec-map, and starts at the beginning
+      // of a sec-map; skip to Part 2.
+      PROF_EVENT(152, "set_address_range_perms-startof-secmap");
+      lenA = 0;
+      lenB = lenT;
+      goto part2;
+   } else {
+      // Range spans two or more sec-maps, first one is partial.
+      PROF_EVENT(153, "set_address_range_perms-multiple-secmaps");
+      lenA = len_to_next_secmap;
+      lenB = lenT - lenA;
    }
 
-   if (len == 0)
+   //------------------------------------------------------------------------
+   // Part 1: Deal with the first sec_map.  Most of the time the range will be
+   // entirely within a sec_map and this part alone will suffice.  Also,
+   // doing it this way lets us avoid repeatedly testing for the crossing of
+   // a sec-map boundary within these loops.
+   //------------------------------------------------------------------------
+
+   // If it's distinguished, make it undistinguished if necessary.
+   binder = find_secmap_binder_for_addr(a);
+   if (is_distinguished_sm(*binder)) {
+      if (*binder == example_dsm) {
+         // Sec-map already has the V+A bits that we want, so skip.
+         PROF_EVENT(154, "set_address_range_perms-dist-sm1-quick");
+         a    = aNext;
+         lenA = 0;
+      } else {
+         PROF_EVENT(155, "set_address_range_perms-dist-sm1");
+         *binder = copy_for_writing(*binder);
+      }
+   }
+   sm = *binder;
+
+   // 1 byte steps
+   while (True) {
+      if (VG_IS_8_ALIGNED(a)) break;
+      if (lenA < 1)           break;
+      PROF_EVENT(156, "set_address_range_perms-loop1a");
+      sm_off = SM_OFF(a);
+      insert_vabit8_into_vabits32( a, vabits8, &(sm->vabits32[sm_off]) );
+      a    += 1;
+      lenA -= 1;
+   }
+   // 8-aligned, 8 byte steps
+   while (True) {
+      if (lenA < 8) break;
+      PROF_EVENT(157, "set_address_range_perms-loop8a");
+      sm_off64 = SM_OFF_64(a);
+      ((UShort*)(sm->vabits32))[sm_off64] = vabits64;
+      a    += 8;
+      lenA -= 8;
+   }
+   // 1 byte steps
+   while (True) {
+      if (lenA < 1) break;
+      PROF_EVENT(158, "set_address_range_perms-loop1b");
+      sm_off = SM_OFF(a);
+      insert_vabit8_into_vabits32( a, vabits8, &(sm->vabits32[sm_off]) );
+      a    += 1;
+      lenA -= 1;
+   }
+
+   // We've finished the first sec-map.  Is that it?
+   if (lenB == 0)
       return;
 
-   tl_assert(VG_IS_8_ALIGNED(a) && len > 0 && len < 8);
+   //------------------------------------------------------------------------
+   // Part 2: Fast-set entire sec-maps at a time.
+   //------------------------------------------------------------------------
+  part2:
+   // 64KB-aligned, 64KB steps.
+   // Nb: we can reach here with lenB < SM_SIZE
+   while (True) {
+      if (lenB < SM_SIZE) break;
+      tl_assert(is_start_of_sm(a));
+      PROF_EVENT(159, "set_address_range_perms-loop64K");
+      binder = find_secmap_binder_for_addr(a);
+      if (!is_distinguished_sm(*binder)) {
+         PROF_EVENT(160, "set_address_range_perms-loop64K-free-dist-sm");
+         // Free the non-distinguished sec-map that we're replacing.  This
+         // case happens moderately often, enough to be worthwhile.
+         VG_(am_munmap_valgrind)((Addr)*binder, sizeof(SecMap));
+         n_secmaps_deissued++;      // Needed for the expensive sanity check
+      }
+      // Make the sec-map entry point to the example DSM
+      *binder = example_dsm;
+      lenB -= SM_SIZE;
+      a    += SM_SIZE;
+   }
 
-   /* Finish the upper fragment. */
-   while (len > 0) {
-      PROF_EVENT(155, "set_address_range_perms-loop1-post");
-      set_vabits8 ( a, vabits64 & 0x3 );
-      a++;
-      len--;
-   }   
+   // We've finished the whole sec-maps.  Is that it?
+   if (lenB == 0)
+      return;
+
+   //------------------------------------------------------------------------
+   // Part 3: Finish off the final partial sec-map, if necessary.
+   //------------------------------------------------------------------------
+
+   tl_assert(is_start_of_sm(a) && lenB < SM_SIZE);
+
+   // If it's distinguished, make it undistinguished if necessary.
+   binder = find_secmap_binder_for_addr(a);
+   if (is_distinguished_sm(*binder)) {
+      if (*binder == example_dsm) {
+         // Sec-map already has the V+A bits that we want, so stop.
+         PROF_EVENT(161, "set_address_range_perms-dist-sm2-quick");
+         return;
+      } else {
+         PROF_EVENT(162, "set_address_range_perms-dist-sm2");
+         *binder = copy_for_writing(*binder);
+      }
+   }
+   sm = *binder;
+
+   // 8-aligned, 8 byte steps
+   while (True) {
+      if (lenB < 8) break;
+      PROF_EVENT(163, "set_address_range_perms-loop8b");
+      sm_off64 = SM_OFF_64(a);
+      ((UShort*)(sm->vabits32))[sm_off64] = vabits64;
+      a    += 8;
+      lenB -= 8;
+   }
+   // 1 byte steps
+   while (True) {
+      if (lenB < 1) return;
+      PROF_EVENT(164, "set_address_range_perms-loop1c");
+      sm_off = SM_OFF(a);
+      insert_vabit8_into_vabits32( a, vabits8, &(sm->vabits32[sm_off]) );
+      a    += 1;
+      lenB -= 1;
+   }
 }
 
 
@@ -2410,7 +2518,7 @@ static Bool mc_expensive_sanity_check ( void )
       }
    }
 
-   if (n_secmaps_found != n_secmaps_issued)
+   if (n_secmaps_found != (n_secmaps_issued - n_secmaps_deissued))
       bad = True;
 
    if (bad) {
@@ -2736,13 +2844,11 @@ static void mc_fini ( Int exitcode )
          " memcheck: auxmaps: %lld searches, %lld comparisons",
          n_auxmap_searches, n_auxmap_cmps );   
       VG_(message)(Vg_DebugMsg,
-         " memcheck: secondaries: %d issued (%dk, %dM)",
+         " memcheck: secondaries: %d issued (%dk, %dM), %d deissued",
          n_secmaps_issued, 
-         n_secmaps_issued * 64,
-         n_secmaps_issued / 16 );   
-      VG_(message)(Vg_DebugMsg,
-         " memcheck: sec V bit entries: %d",
-         VG_(OSet_Size)(secVBitTable) );
+         n_secmaps_issued * sizeof(SecMap) / 1024,
+         n_secmaps_issued * sizeof(SecMap) / (1024 * 1024),
+         n_secmaps_deissued);   
 
       n_accessible_dist = 0;
       for (i = 0; i < N_PRIMARY_MAP; i++) {
@@ -2761,9 +2867,12 @@ static void mc_fini ( Int exitcode )
       VG_(message)(Vg_DebugMsg,
          " memcheck: secondaries: %d accessible and distinguished (%dk, %dM)",
          n_accessible_dist, 
-         n_accessible_dist * 64,
-         n_accessible_dist / 16 );   
+         n_accessible_dist * sizeof(SecMap) / 1024,
+         n_accessible_dist * sizeof(SecMap) / (1024 * 1024) );
 
+      VG_(message)(Vg_DebugMsg,
+         " memcheck: sec V bit entries: %d",
+         VG_(OSet_Size)(secVBitTable) );
    }
 
    if (0) {
