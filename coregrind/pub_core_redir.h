@@ -99,27 +99,27 @@ extern Addr VG_(get_libc_freeres_wrapper)(void);
 // This is currently not working(?) --njn
 
 /* Wrapping machinery */
-enum return_type {
-   RT_RETURN,
-   RT_LONGJMP,
-   RT_EXIT,
-};
-
-typedef struct _FuncWrapper FuncWrapper;
-struct _FuncWrapper {
-   void *(*before)(va_list args);
-   void  (*after) (void *nonce, enum return_type, Word retval);
-};
-
-extern void VG_(wrap_function)(Addr eip, const FuncWrapper *wrapper);
-extern const FuncWrapper *VG_(is_wrapped)(Addr eip);
-extern Bool VG_(is_wrapper_return)(Addr eip);
+//enum return_type {
+  //   RT_RETURN,
+   //   RT_LONGJMP,
+   //   RT_EXIT,
+   //};
+//
+//typedef struct _FuncWrapper FuncWrapper;
+//struct _FuncWrapper {
+  //   void *(*before)(va_list args);
+  //   void  (*after) (void *nonce, enum return_type, Word retval);
+  //};
+//
+//extern void VG_(wrap_function)(Addr eip, const FuncWrapper *wrapper);
+//extern const FuncWrapper *VG_(is_wrapped)(Addr eip);
+//extern Bool VG_(is_wrapper_return)(Addr eip);
 
 /* Primary interface for adding wrappers for client-side functions. */
-extern CodeRedirect *VG_(add_wrapper)(const Char *from_lib, const Char *from_sym,
-				      const FuncWrapper *wrapper);
-
-extern Bool VG_(is_resolved)(const CodeRedirect *redir);
+//extern CodeRedirect *VG_(add_wrapper)(const Char *from_lib, const Char *from_sym,
+//				      const FuncWrapper *wrapper);
+//
+//extern Bool VG_(is_resolved)(const CodeRedirect *redir);
 
 #endif   // __PUB_CORE_REDIR_H
 
