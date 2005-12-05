@@ -43,33 +43,30 @@
 
 #include "pub_tool_redir.h"
 
-//--------------------------------------------------------------------
-// General
-//--------------------------------------------------------------------
-
-// This module needs be told about all the symbols that get loaded, so 
-// it can check if it needs to do anything special.  This is the function
-// that does that checking.  It modifies 'symbol' in-place by Z-decoding
-// it if necessary.
-void VG_(maybe_redir_or_notify) ( Char* symbol, Addr addr );
 
 //--------------------------------------------------------------------
-// Code replacement
+// Notifications - by which we are told of state changes
 //--------------------------------------------------------------------
 
-// See include/pub_tool_redir.h for details on how to do code replacement.
+/* Notify the module of a new SegInfo (called from m_debuginfo). */
+extern void VG_(redir_notify_new_SegInfo)( SegInfo* );
 
-typedef struct _CodeRedirect CodeRedirect;
+/* Notify the module of the disappearance of a SegInfo (also called
+   from m_debuginfo). */
+extern void VG_(redir_notify_delete_SegInfo)( SegInfo* );
 
-// This is the crucial redirection function.  It answers the question: 
-// should this code address be redirected somewhere else?  It's used just
-// before translating a basic block.
-extern Addr VG_(code_redirect) ( Addr orig );
+/* Initialise the module, and load initial "hardwired" redirects. */
+extern void VG_(redir_initialise)( void );
 
-/* Set up some default redirects. */
-extern void VG_(setup_code_redirect_table) ( void );
 
-extern void VG_(resolve_existing_redirs_with_seginfo)(SegInfo *si);
+//--------------------------------------------------------------------
+// Queries
+//--------------------------------------------------------------------
+
+/* This is the crucial redirection function.  It answers the question:
+   should this code address be redirected somewhere else?  It's used
+   just before translating a basic block. */
+extern Addr VG_(redir_do_lookup) ( Addr orig );
 
 
 //--------------------------------------------------------------------
@@ -85,12 +82,25 @@ extern void VG_(resolve_existing_redirs_with_seginfo)(SegInfo *si);
    Functions named with this macro should be in client space, ie. in
    vgpreload_<tool>.h or vgpreload_core.h. */
 
-#define VG_NOTIFY_ON_LOAD(name)           _vgw_##name
-#define VG_NOTIFY_ON_LOAD_PREFIX          "_vgw_"
-#define VG_NOTIFY_ON_LOAD_PREFIX_LEN      5
+#define VG_NOTIFY_ON_LOAD(name)           _vgnU_##name
+#define VG_NOTIFY_ON_LOAD_PREFIX          "_vgnU_"
+#define VG_NOTIFY_ON_LOAD_PREFIX_LEN      6
 
-// Called by m_main to get our __libc_freeres wrapper.
-extern Addr VG_(get_libc_freeres_wrapper)(void);
+
+//--------------------------------------------------------------------
+// Demangling of Z-encoded names
+//--------------------------------------------------------------------
+
+/* Demangle 'sym' into its soname and fnname parts, putting them in
+   the specified buffers.  Returns a Bool indicating whether the
+   demangled failed or not.  A failure can occur because the prefix
+   isn't recognised, the internal Z-escaping is wrong, or because one
+   or the other (or both) of the output buffers becomes full. */
+
+Bool VG_(maybe_Z_demangle) ( const HChar* sym, 
+                             /*OUT*/HChar* so, Int soLen,
+                             /*OUT*/HChar* fn, Int fnLen );
+
 
 //--------------------------------------------------------------------
 // Function wrapping

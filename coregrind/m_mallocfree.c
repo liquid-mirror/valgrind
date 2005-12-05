@@ -1058,9 +1058,8 @@ void VG_(arena_free) ( ArenaId aid, void* ptr )
       
    b = get_payload_block(a, ptr);
 
-#  ifdef DEBUG_MALLOC
-   vg_assert(blockSane(a, b));
-#  endif
+if (aid != VG_AR_CLIENT)
+vg_assert(blockSane(a, b));
 
    b_bszB   = get_bszB(b);
    b_pszB   = bszB_to_pszB(a, b_bszB);
@@ -1069,6 +1068,9 @@ void VG_(arena_free) ( ArenaId aid, void* ptr )
    sb_end   = &sb->payload_bytes[sb->n_payload_bytes - 1];
 
    a->bytes_on_loan -= b_pszB;
+
+if (aid != VG_AR_CLIENT)
+VG_(memset)(ptr, 0xDD, (SizeT)b_pszB);
 
    // Put this chunk back on a list somewhere.
    b_listno = pszB_to_listNo(b_pszB);

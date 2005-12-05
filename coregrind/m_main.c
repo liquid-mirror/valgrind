@@ -2314,7 +2314,7 @@ Int main(Int argc, HChar **argv, HChar **envp)
    //   p: aspacem [so can change ownership of sysinfo pages]
    //--------------------------------------------------------------
    VG_(debugLog)(1, "main", "Initialise redirects\n");
-   VG_(setup_code_redirect_table)();
+   VG_(redir_initialise)();
 
    //--------------------------------------------------------------
    // Allow GDB attach
@@ -2690,13 +2690,13 @@ void shutdown_actions_NORETURN( ThreadId tid,
 */
 static void final_tidyup(ThreadId tid)
 {
-   Addr __libc_freeres_wrapper;
+   Addr __libc_freeres_wrapper = VG_(client___libc_freeres_wrapper);
 
    vg_assert(VG_(is_running_thread)(tid));
    
    if ( !VG_(needs).libc_freeres ||
         !VG_(clo_run_libc_freeres) ||
-        0 == (__libc_freeres_wrapper = VG_(get_libc_freeres_wrapper)()) )
+        0 == __libc_freeres_wrapper )
       return;			/* can't/won't do it */
 
    if (VG_(clo_verbosity) > 2  ||
@@ -2705,7 +2705,7 @@ static void final_tidyup(ThreadId tid)
       VG_(message)(Vg_DebugMsg, 
 		   "Caught __NR_exit; running __libc_freeres()");
       
-   /* point thread context to point to libc_freeres_wrapper */
+   /* set thread context to point to libc_freeres_wrapper */
    VG_(set_IP)(tid, __libc_freeres_wrapper);
    // XXX should we use a special stack?
 

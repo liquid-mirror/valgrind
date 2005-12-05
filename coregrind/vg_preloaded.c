@@ -71,6 +71,8 @@ void VG_NOTIFY_ON_LOAD(freeres)( void )
 /*--- end                                                          ---*/
 /*--------------------------------------------------------------------*/
 
+#if 0
+
 #define PTH_FUNC(ret_ty, f, args...) \
    ret_ty VG_REPLACE_FUNCTION(libpthreadZdsoZd0, f)(args); \
    ret_ty VG_REPLACE_FUNCTION(libpthreadZdsoZd0, f)(args)
@@ -82,7 +84,6 @@ void VG_NOTIFY_ON_LOAD(freeres)( void )
 #include <stdio.h>
 #include <pthread.h>
 
-#if 1
 PTH_FUNC(int, pthread_create,    // pthread_create@*
                pthread_t *thread, const pthread_attr_t *attr,
                void *(*start) (void *), void *arg)

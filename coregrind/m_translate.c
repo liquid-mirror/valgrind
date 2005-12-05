@@ -40,12 +40,12 @@
 #include "pub_core_options.h"
 #include "pub_core_profile.h"
 
-#include "pub_core_debuginfo.h"     // Needed for pub_core_redir :(
-#include "pub_core_redir.h"         // For VG_(code_redirect)()
+#include "pub_core_debuginfo.h"     // Needed for pub_core_redir [SegInfo]
+#include "pub_core_redir.h"         // VG_(redir_do_lookup)
 
-#include "pub_core_signals.h"       // For VG_(synth_fault_{perms,mapping})()
-#include "pub_core_stacks.h"        // For VG_(unknown_SP_update)()
-#include "pub_core_tooliface.h"     // For VG_(tdict)
+#include "pub_core_signals.h"       // VG_(synth_fault_{perms,mapping})()
+#include "pub_core_stacks.h"        // VG_(unknown_SP_update)()
+#include "pub_core_tooliface.h"     // VG_(tdict)
 #include "pub_core_translate.h"
 #include "pub_core_transtab.h"
 
@@ -426,7 +426,7 @@ static Bool     chase_into_ok ( Addr64 addr64 )
    }
 
    /* Destination is redirected? */
-   if (addr != VG_(code_redirect)(addr))
+   if (addr != VG_(redir_do_lookup)(addr))
       goto dontchase;
 
    /* well, ok then.  go on and chase. */
@@ -476,7 +476,7 @@ Bool VG_(translate) ( ThreadId tid,
    /* Look in the code redirect table to see if we should
       translate an alternative address for orig_addr. */
    if (allow_redirection) {
-      redir        = VG_(code_redirect)(orig_addr);
+      redir        = VG_(redir_do_lookup)(orig_addr);
       did_redirect = redir != orig_addr;
    } else {
       redir        = orig_addr;

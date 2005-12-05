@@ -43,6 +43,7 @@
 #include "pub_core_trampoline.h"
 #include "pub_core_transtab.h"
 #include "pub_core_tooliface.h"    // VG_(needs).malloc_replacement
+#include "pub_core_aspacemgr.h"    // VG_(am_find_nsegment)
 
 /*------------------------------------------------------------*/
 /*--- Semantics                                            ---*/
@@ -154,6 +155,11 @@
 #define TRACE_REDIR(format, args...) \
    if (VG_(clo_trace_redir)) { VG_(message)(Vg_DebugMsg, format, ## args); }
 
+static void*  symtab_alloc(SizeT);
+static void   symtab_free(void*);
+static HChar* symtab_strdup(HChar*);
+static Bool   is_plausible_guest_addr(Addr);
+
 /*------------------------------------------------------------*/
 /*--- REDIRECTION SPECIFICATIONS                           ---*/
 /*------------------------------------------------------------*/
@@ -219,6 +225,16 @@ static void maybe_add_active ( Active /*by value; callee copies*/ );
 /*--- NOTIFICATIONS                                        ---*/
 /*------------------------------------------------------------*/
 
+static 
+void generate_and_add_actives ( 
+        /* spec list and the owning TopSpec */
+        Spec*    specs, 
+        TopSpec* parent_spec,
+	/* seginfo and the owning TopSpec */
+        SegInfo* si,
+        TopSpec* parent_sym 
+     );
+
 /* Notify m_redir of the arrival of a new SegInfo.  This is fairly
    complex, but the net effect is to (1) add a new entry to the
    topspecs list, and (2) figure out what new binding are now active,
@@ -228,9 +244,13 @@ static void maybe_add_active ( Active /*by value; callee copies*/ );
 
 void VG_(redir_notify_new_SegInfo)( SegInfo* newsi )
 {
-   TopSpec* ts, newts;
+   Bool     ok;
+   Int      i, nsyms;
+   Spec*    specList;
+   Spec*    spec;
+   TopSpec* ts;
+   TopSpec* newts;
    HChar*   sym_name;
-   UInt     sym_size;
    Addr     sym_addr;
    HChar    demangled_sopatt[N_DEMANGLED];
    HChar    demangled_fnpatt[N_DEMANGLED];
@@ -295,16 +315,19 @@ void VG_(redir_notify_new_SegInfo)( SegInfo* newsi )
    /* Case (1) */
    for (ts = topSpecs; ts; ts = ts->next) {
       if (ts->seginfo)
-         generate_and_add_actives( specList,newts, ts->seginfo );
+         generate_and_add_actives( specList,    newts,
+                                   ts->seginfo, ts );
    }
 	
    /* Case (2) */
    for (ts = topSpecs; ts; ts = ts->next) {
-      generate_and_add_actives( ts->specs,ts, newsi );
+      generate_and_add_actives( ts->specs, ts, 
+                                newsi,     newts );
    }
 
    /* Case (3) */
-   generate_and_add_actives( specList,newts, newsi );
+   generate_and_add_actives( specList, newts, 
+                             newsi,    newts );
 
    /* Finally, add the new TopSpec. */
    newts->next = topSpecs;
@@ -320,18 +343,28 @@ void VG_(redir_notify_new_SegInfo)( SegInfo* newsi )
    would thereby arise, don't add it, but do complain. */
 
 static 
-void generate_and_add_actives ( Spec* specs, void* parent_topspec,
-                                SegInfo* si )
+void generate_and_add_actives ( 
+        /* spec list and the owning TopSpec */
+        Spec*    specs, 
+        TopSpec* parent_spec,
+	/* seginfo and the owning TopSpec */
+        SegInfo* si,
+        TopSpec* parent_sym 
+     )
 {
    Spec*  sp;
    Bool   anyMark;
    Active act;
+   Int    nsyms, i;
+   Addr   sym_addr;
+   HChar* sym_name;
 
    /* First figure out which of the specs match the seginfo's
       soname. */
    anyMark = False;
    for (sp = specs; sp; sp = sp->next) {
-      sp->mark = VG_(string_match)( sp->from_sopatt, si->soname );
+      sp->mark = VG_(string_match)( sp->from_sopatt, 
+                                    VG_(seginfo_soname)(si) );
       anyMark = anyMark || sp->mark;
    }
 
@@ -351,8 +384,8 @@ void generate_and_add_actives ( Spec* specs, void* parent_topspec,
             /* got a new binding.  Add to collection. */
             act.from_addr   = sym_addr;
             act.to_addr     = sp->to_addr;
-            act.parent_spec = parent_topspec;
-            act.parent_sym  = si;
+            act.parent_spec = parent_spec;
+            act.parent_sym  = parent_sym;
             maybe_add_active( act );
          }
       }
@@ -362,7 +395,7 @@ void generate_and_add_actives ( Spec* specs, void* parent_topspec,
 
 /* Add an act (passed by value; is copied here) and deal with
    conflicting bindings. */
-static void add_to_active ( Active act )
+static void maybe_add_active ( Active act )
 {
    Active* old = VG_(OSet_Lookup)( activeSet, &act.from_addr );
    if (old) {
@@ -378,7 +411,7 @@ static void add_to_active ( Active act )
          /* COMPLAIN if new and old parents differ */
       }
    } else {
-      Active* a = VG_(OSet_AllocNode)(active, sizeof(Active));
+      Active* a = VG_(OSet_AllocNode)(activeSet, sizeof(Active));
       vg_assert(a);
       *a = act;
       VG_(OSet_Insert)(activeSet, a);
@@ -394,6 +427,9 @@ void VG_(redir_notify_delete_SegInfo)( SegInfo* delsi )
 {
    TopSpec* ts;
    OSet*    tmpSet;
+   Active*  act;
+   Bool     delMe;
+   Addr*    addrP;
 
    vg_assert(delsi);
 
@@ -406,8 +442,8 @@ void VG_(redir_notify_delete_SegInfo)( SegInfo* delsi )
 
    /* Traverse the actives, copying the addresses of those we intend
       to delete into tmpSet. */
-   tmpSet = VG_(OSet_Create, 0/*keyOff*/, NULL/*fastCmp*/,
-                             symtab_alloc, symtab_free);
+   tmpSet = VG_(OSet_Create)( 0/*keyOff*/, NULL/*fastCmp*/,
+                              symtab_alloc, symtab_free);
 
    ts->mark = True;
 
@@ -429,26 +465,84 @@ void VG_(redir_notify_delete_SegInfo)( SegInfo* delsi )
       activeSet. */
    VG_(OSet_ResetIter)( tmpSet );
    while ( (addrP = VG_(OSet_Next)(tmpSet)) ) {
-      VG_(OSet_Remove)( activeSet, *addrP );
-      VG_(OSet_FreeNode)( activeSet, *addrP );
+      VG_(OSet_Remove)( activeSet, addrP );
+      VG_(OSet_FreeNode)( activeSet, addrP );
    }
 
    VG_(OSet_Destroy)( tmpSet );
 }
 
 
-//////////////////////////////////////////////////////////////////
-//////////////////////////////////////////////////////////////////
+/*------------------------------------------------------------*/
+/*--- QUERIES (really the whole point of this module)      ---*/
+/*------------------------------------------------------------*/
 
-static void* symtab_alloc(SizeT n)
+/* This is the crucial redirection function.  It answers the question:
+   should this code address be redirected somewhere else?  It's used
+   just before translating a basic block. */
+Addr VG_(redir_do_lookup) ( Addr orig )
 {
-   return VG_(arena_malloc)(VG_AR_SYMTAB, n);
+   Spec* r = VG_(OSet_Lookup)(activeSet, &orig);
+   if (r == NULL)
+      return orig;
+
+   vg_assert(r->to_addr != 0);
+   return r->to_addr;
 }
 
-static void symtab_free(void* p)
+
+/*------------------------------------------------------------*/
+/*--- INITIALISATION                                       ---*/
+/*------------------------------------------------------------*/
+
+/* Add a never-delete-me Active. */
+
+__attribute__((unused)) /* only used on amd64 */
+static void add_hardwired_active ( Addr from, Addr to )
 {
-   return VG_(arena_free)(VG_AR_SYMTAB, p);
+   Active act;
+   act.from_addr   = from;
+   act.to_addr     = to;
+   act.parent_spec = NULL;
+   act.parent_sym  = NULL;
+   maybe_add_active( act );
 }
+
+
+/* Add a never-delete-me Spec.  This is a bit of a kludge.  On the
+   assumption that this is called only at startup, only handle the
+   case where topSpecs is completely empty, or if it isn't, it has
+   just one entry and that is the one with NULL seginfo -- that is the
+   entry that holds these initial specs. */
+
+__attribute__((unused)) /* not used on all platforms */
+static void add_hardwired_spec ( HChar* sopatt, HChar* fnpatt, Addr to_addr )
+{
+   Spec* spec = symtab_alloc(sizeof(Spec));
+   vg_assert(spec);
+
+   if (topSpecs == NULL) {
+      topSpecs = symtab_alloc(sizeof(TopSpec));
+      vg_assert(topSpecs);
+      topSpecs->next    = NULL;
+      topSpecs->seginfo = NULL;
+      topSpecs->specs   = NULL;
+      topSpecs->mark    = False;
+   }
+
+   vg_assert(topSpecs != NULL);
+   vg_assert(topSpecs->next == NULL);
+   vg_assert(topSpecs->seginfo == NULL);
+
+   spec->from_sopatt = sopatt;
+   spec->from_fnpatt = fnpatt;
+   spec->to_addr     = to_addr;
+   spec->mark        = False; /* not significant */
+
+   spec->next = topSpecs->specs;
+   topSpecs->specs = spec;
+}
+
 
 /* Initialise the redir system, and create the initial Spec list and
    for amd64-linux a couple of permanent active mappings.  The initial
@@ -456,18 +550,16 @@ static void symtab_free(void* p)
    assumption that no SegInfos have so far been created, and so when
    they are created, that will happen. */
 
-void VG_(redir_init) ( void )
+void VG_(redir_initialise) ( void )
 {
+   // Assert that there are no SegInfos so far
    vg_assert( VG_(next_seginfo)(NULL) == NULL );
 
-   // Initialise spec list.
-   specs = NULL;
-
    // Initialise active mapping.
-   active = VG_(OSet_Create)(offsetof(Active, from_addr),
-                             NULL,     // Use fast comparison
-                             symtab_alloc,
-                             symtab_free);
+   activeSet = VG_(OSet_Create)(offsetof(Active, from_addr),
+                                NULL,     // Use fast comparison
+                                symtab_alloc,
+                                symtab_free);
 
    // The rest of this function just adds initial Specs.   
 
@@ -475,30 +567,26 @@ void VG_(redir_init) ( void )
    /* Redirect _dl_sysinfo_int80, which is glibc's default system call
       routine, to our copy so that the special sysinfo unwind hack in
       m_stacktrace.c will kick in. */
-   add_to_specs(
-      Spec{NULL, 
-           "soname:ld-linux.so.2", "_dl_sysinfo_int80",
-           (Addr)&VG_(x86_linux_REDIR_FOR__dl_sysinfo_int80),
-           NULL}
+   add_hardwired_spec(
+      "ld-linux.so.2", "_dl_sysinfo_int80",
+      (Addr)&VG_(x86_linux_REDIR_FOR__dl_sysinfo_int80) 
    );
    /* If we're using memcheck, use this intercept right from the
       start, otherwise ld.so (glibc-2.3.5) makes a lot of noise. */
    if (0==VG_(strcmp)("Memcheck", VG_(details).name)) {
-      add_to_specs(
-         Spec{NULL,
-              "soname:ld-linux.so.2", "index",
-              (Addr)&VG_(x86_linux_REDIR_FOR_index),
-              NULL}
+      add_hardwired_spec(
+         "ld-linux.so.2", "index",
+          (Addr)&VG_(x86_linux_REDIR_FOR_index)
       );
    }
 
 #  elif defined(VGP_amd64_linux)
    /* Redirect vsyscalls to local versions */
-   add_to_actives(
+   add_hardwired_active(
       0xFFFFFFFFFF600000ULL,
       (Addr)&VG_(amd64_linux_REDIR_FOR_vgettimeofday) 
    );
-   add_to_actives( 
+   add_hardwired_active( 
       0xFFFFFFFFFF600400ULL,
       (Addr)&VG_(amd64_linux_REDIR_FOR_vtime) 
    );
@@ -507,20 +595,14 @@ void VG_(redir_init) ( void )
    /* If we're using memcheck, use these intercepts right from
       the start, otherwise ld.so makes a lot of noise. */
    if (0==VG_(strcmp)("Memcheck", VG_(details).name)) {
-
-      add_to_specs(
-         Spec{NULL,
-              "soname:ld.so.1", "strlen",
-              (Addr)&VG_(ppc32_linux_REDIR_FOR_strlen),
-              NULL}
+      add_hardwired_spec(
+         "ld.so.1", "strlen",
+          (Addr)&VG_(ppc32_linux_REDIR_FOR_strlen),
       );   
-      add_to_specs(
-         Spec{NULL,
-              "soname:ld.so.1", "strcmp",
-              (Addr)&VG_(ppc32_linux_REDIR_FOR_strcmp),
-              NULL}
+      add_hardwired_spec(
+         "soname:ld.so.1", "strcmp",
+         (Addr)&VG_(ppc32_linux_REDIR_FOR_strcmp),
       );
-
    }
 
 #  elif defined(VGP_ppc64_linux)
@@ -535,199 +617,6 @@ void VG_(redir_init) ( void )
 //////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////
 
-static Bool soname_matches(const Char *pattern, const Char* soname)
-{
-   // pattern must start with "soname:"
-   vg_assert(NULL != pattern);
-   vg_assert(0 == VG_(strncmp)(pattern, "soname:", 7));
-
-   if (NULL == soname)
-      return False;
-   
-   return VG_(string_match)(pattern + 7, soname);
-}
-
-// Prepends redir to the unresolved list.
-static void add_redir_to_unresolved_list(Spec *redir)
-{
-   redir->next = specs;
-   specs = redir;
-}
-
-static void add_redir_to_resolved_list(Spec *redir, Bool need_discard)
-{
-   vg_assert(redir->from_addr);
-
-      TRACE_REDIR("  redir resolved (%s:%s=%p -> %p)", 
-                  redir->from_lib, redir->from_sym, redir->from_addr,
-                  redir->to_addr);
-
-      vg_assert(redir->to_addr != 0);
-
-      if (need_discard) {
-         /* For some given (from, to) redir, the "from" function got
-            loaded before the .so containing "to" became available so
-            we need to discard any existing translations involving
-            the "from" function.
-
-            Note, we only really need to discard the first bb of the
-            old entry point, and so we avoid the problem of having to
-            figure out how big that bb was -- since it is at least 1
-            byte of original code, we can just pass 1 as the original
-            size to invalidate_translations() and it will indeed get
-            rid of the translation. 
-
-            Note, this is potentially expensive -- discarding
-            translations requires a complete search through all of
-            them.
-         */
-         TRACE_REDIR("Discarding translation due to redirect of already loaded function" );
-         TRACE_REDIR("   %s:%s(%p) -> %p)", redir->from_lib, redir->from_sym,
-                                            redir->from_addr, redir->to_addr );
-         VG_(discard_translations)((Addr64)redir->from_addr, 1, 
-                                   "add_redir_to_resolved_list");
-      }
-
-      // This entails a possible double OSet lookup -- one for Contains(),
-      // one for Insert().  If we had OSet_InsertIfNonDup() we could do it
-      // with one lookup.
-      if ( ! VG_(OSet_Contains)(active, &redir->from_addr) ) {
-         VG_(OSet_Insert)(active, redir);
-      } else {
-         TRACE_REDIR("  redir %s:%s:%p->%p duplicated\n",
-                     redir->from_lib, redir->from_sym, redir->from_addr,
-                     redir->to_addr);
-         // jrs 20 Nov 05: causes this: m_mallocfree.c:170
-         // (mk_plain_bszB): Assertion 'bszB != 0' failed.
-         // Perhaps it is an invalid free?  Disable for now
-         // XXX leak?
-         //VG_(arena_free)(VG_AR_SYMTAB, redir);
-      }
-}
-
-// Resolve a redir using si if possible.  Returns True if it succeeded.
-static Bool resolve_redir_with_seginfo(Spec *redir, const SegInfo *si)
-{
-   Bool ok;
-
-   vg_assert(si != NULL);
-   vg_assert(redir->from_addr == 0 );
-   vg_assert(redir->from_sym  != NULL);
-
-   // Resolved if the soname matches and we find the symbol.
-   ok = soname_matches(redir->from_lib, VG_(seginfo_soname)(si));
-   if (ok) {
-      redir->from_addr = VG_(reverse_search_one_symtab)(si, redir->from_sym);
-      ok = ( redir->from_addr == 0 ? False : True );
-   }
-   return ok;   
-}
-
-// Resolve a redir using any SegInfo if possible.  This is called whenever
-// a new sym-to-addr redir is created.  It covers the case where a
-// replacement function is loaded after its replacee.
-static Bool resolve_redir_with_existing_seginfos(Spec *redir)
-{
-   const SegInfo *si;
-
-   for (si = VG_(next_seginfo)(NULL); 
-        si != NULL; 
-        si = VG_(next_seginfo)(si))
-   {
-      if (resolve_redir_with_seginfo(redir, si))
-	 return True;
-   }
-   return False;
-}
-
-// Resolve as many unresolved redirs as possible with this SegInfo.  This
-// should be called when a new SegInfo symtab is loaded.  It covers the case
-// where a replacee function is loaded after its replacement function.
-void VG_(resolve_existing_redirs_with_seginfo)(SegInfo *si)
-{
-   Spec **prevp = &specs;
-   Spec *redir, *next;
-
-   TRACE_REDIR("Just loaded %s (soname=%s),",
-               VG_(seginfo_filename)(si), VG_(seginfo_soname)(si));
-   TRACE_REDIR(" resolving any unresolved redirs with it");
-
-   // Visit each unresolved redir - if it becomes resolved, then
-   // move it from the unresolved list to the resolved list.
-   for (redir = specs; redir != NULL; redir = next) {
-      next = redir->next;
-
-      if (resolve_redir_with_seginfo(redir, si)) {
-	 *prevp = next;
-	 redir->next = NULL;
-         add_redir_to_resolved_list(redir, False);
-      } else
-	 prevp = &redir->next;
-   }
-
-   TRACE_REDIR(" Finished resolving");
-}
-
-/* Redirect a function at from_addr to a function at to_addr */
-__attribute__((unused))    // It is used, but not on all platforms...
-static void add_redirect_addr_to_addr( Addr from_addr, Addr to_addr )
-{
-   Spec* redir = VG_(OSet_AllocNode)(active,
-                                             sizeof(Spec));
-   vg_assert(0 != from_addr && 0 != to_addr);
-
-   redir->from_lib  = NULL;
-   redir->from_sym  = NULL;
-   redir->from_addr = from_addr;
-
-   redir->to_addr   = to_addr;
-
-   TRACE_REDIR("REDIRECT addr to addr: %p to %p", from_addr, to_addr);
-
-   // This redirection is already resolved, put it straight in the list.
-   add_redir_to_resolved_list(redir, True);
-}
-
-/* Redirect a lib/symbol reference to a function at addr */
-static void add_redirect_sym_to_addr(
-   const Char *from_lib, const Char *from_sym, Addr to_addr
-)
-{
-   Spec* redir = VG_(OSet_AllocNode)(active,
-                                             sizeof(Spec));
-   vg_assert(from_lib && from_sym && 0 != to_addr);
-
-   redir->from_lib  = VG_(arena_strdup)(VG_AR_SYMTAB, from_lib);
-   redir->from_sym  = VG_(arena_strdup)(VG_AR_SYMTAB, from_sym);
-   redir->from_addr = 0;
-   redir->to_addr   = to_addr;
-
-   TRACE_REDIR("REDIR sym to addr: %s:%s to %p", from_lib, from_sym, to_addr);
-
-   // Check against all existing segments to see if this redirection
-   // can be resolved immediately (as will be the case when the replacement
-   // function is loaded after the replacee).  Then add it to the
-   // appropriate list.
-   if (resolve_redir_with_existing_seginfos(redir)) {
-      add_redir_to_resolved_list(redir, True);
-   } else {
-      add_redir_to_unresolved_list(redir);
-   }
-}
-
-/* If address 'a' is being redirected, return the redirected-to
-   address. */
-Addr VG_(code_redirect)(Addr a)
-{
-   Spec* r = VG_(OSet_Lookup)(active, &a);
-   if (r == NULL)
-      return a;
-
-   vg_assert(r->to_addr != 0);
-
-   return r->to_addr;
-}
-
 static void* symtab_alloc(SizeT n)
 {
    return VG_(arena_malloc)(VG_AR_SYMTAB, n);
@@ -738,180 +627,55 @@ static void symtab_free(void* p)
    return VG_(arena_free)(VG_AR_SYMTAB, p);
 }
 
-void VG_(setup_code_redirect_table) ( void )
+static HChar* symtab_strdup(HChar* str)
 {
-   // Initialise active list.
-   active = VG_(OSet_Create)(offsetof(Spec, from_addr),
-                             NULL,     // Use fast comparison
-                             symtab_alloc,
-}                             symtab_free));
-
-
-/* Z-decode a symbol into library:func form, eg 
-  
-     _vgi_libcZdsoZd6__ZdlPv  -->  libc.so.6:_ZdlPv
-
-   Uses the Z-encoding scheme described in pub_core_redir.h.
-   Returns True if demangle OK, False otherwise.
-*/
-static Bool Z_decode(const Char* symbol, Char* result, Int nbytes)
-{
-#  define EMIT(ch)                    \
-      do {                            \
-         if (j >= nbytes)             \
-            result[j-1] = 0;          \
-         else                         \
-            result[j++] = ch;         \
-      } while (0)
-
-   Bool error = False;
-   Int i, j = 0;
-   Int len = VG_(strlen)(symbol);
-   if (0) VG_(printf)("idm: %s\n", symbol);
-
-   i = VG_REPLACE_FUNCTION_PREFIX_LEN;
-
-   /* Chew though the Z-encoded soname part. */
-   while (True) {
-
-      if (i >= len) 
-         break;
-
-      if (symbol[i] == '_')
-         /* We found the underscore following the Z-encoded soname.
-            Just copy the rest literally. */
-         break;
-
-      if (symbol[i] != 'Z') {
-         EMIT(symbol[i]);
-         i++;
-         continue;
-      }
-
-      /* We've got a Z-escape.  Act accordingly. */
-      i++;
-      if (i >= len) {
-         /* Hmm, Z right at the end.  Something's wrong. */
-         error = True;
-         EMIT('Z');
-         break;
-      }
-      switch (symbol[i]) {
-         case 'a': EMIT('*'); break;
-         case 'p': EMIT('+'); break;
-         case 'c': EMIT(':'); break;
-         case 'd': EMIT('.'); break;
-         case 'u': EMIT('_'); break;
-         case 'h': EMIT('-'); break;
-         case 's': EMIT(' '); break;
-         case 'Z': EMIT('Z'); break;
-         default: error = True; EMIT('Z'); EMIT(symbol[i]); break;
-      }
-      i++;
-   }
-
-   if (error || i >= len || symbol[i] != '_') {
-      /* Something's wrong.  Give up. */
-      VG_(message)(Vg_UserMsg, "intercept: error demangling: %s", symbol);
-      EMIT(0);
-      return False;
-   }
-
-   /* Copy the rest of the string verbatim. */
-   i++;
-   EMIT(':');
-   while (True) {
-     if (i >= len)
-        break;
-     EMIT(symbol[i]);
-     i++;
-   }
-
-   EMIT(0);
-   if (0) VG_(printf)("%s\n", result);
-   return True;
-
-#  undef EMIT
+   return VG_(arena_strdup)(VG_AR_SYMTAB, str);
 }
 
-// Nb: this can change the string pointed to by 'symbol'.
-static void handle_replacement_function( Char* symbol, Addr addr )
+/* Really this should be merged with  translations_allowable_from_seg
+   in m_translate. */
+static Bool is_plausible_guest_addr(Addr a)
 {
-   Bool ok;
-   Int  len  = VG_(strlen)(symbol) + 1 - VG_REPLACE_FUNCTION_PREFIX_LEN;
-   Char *lib = VG_(arena_malloc)(VG_AR_SYMTAB, len+8);
-   Char *func;
-
-   // Put "soname:" at the start of lib
-   VG_(strcpy)(lib, "soname:");
-
-   ok = Z_decode(symbol, lib+7, len);
-   if (ok) {
-      // lib is "soname:<libname>:<fnname>".  Split the string at the 2nd ':'.
-      func = lib + VG_(strlen)(lib)-1;
-      while(*func != ':') func--;
-      *func = '\0';
-      func++;           // Move past the '\0'
-
-      // Now lib is "soname:<libname>" and func is "<fnname>".
-      if (0) VG_(printf)("lib A%sZ, func A%sZ\n", lib, func);
-      add_redirect_sym_to_addr(lib, func, addr);
-
-      // Overwrite the given Z-encoded name with just the fnname.
-      VG_(strcpy)(symbol, func);
-   }
-
-   VG_(arena_free)(VG_AR_SYMTAB, lib);
+   NSegment* seg = VG_(am_find_nsegment)(a);
+   return seg != NULL
+          && (seg->kind == SkAnonC || seg->kind == SkFileC)
+          && (seg->hasX || seg->hasR); /* crude x86-specific hack */
 }
 
-static Addr __libc_freeres_wrapper = 0;
+//////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////
 
-Addr VG_(get_libc_freeres_wrapper)(void)
-{
-   return __libc_freeres_wrapper;
-}
 
 // This is specifically for stringifying VG_(x) function names.  We
 // need to do two macroexpansions to get the VG_ macro expanded before
 // stringifying.
-#define _STR(x) #x
-#define STR(x)  _STR(x)
-
-static void handle_load_notifier( Char* symbol, Addr addr )
-{
-   if (VG_(strcmp)(symbol, STR(VG_NOTIFY_ON_LOAD(freeres))) == 0)
-      __libc_freeres_wrapper = addr;
+//zz #define _STR(x) #x
+//zz #define STR(x)  _STR(x)
+//zz 
+//zz static void handle_load_notifier( Char* symbol, Addr addr )
+//zz {
+//zz    if (VG_(strcmp)(symbol, STR(VG_NOTIFY_ON_LOAD(freeres))) == 0)
+//zz       VG_(client___libc_freeres_wrapper) = addr;
 // else
 // if (VG_(strcmp)(symbol, STR(VG_WRAPPER(pthread_startfunc_wrapper))) == 0)
 //    VG_(pthread_startfunc_wrapper)((Addr)(si->offset + sym->st_value));
-   else
-      vg_assert2(0, "unrecognised load notification function: %s", symbol);
-}
-
-static Bool is_replacement_function(Char* s)
-{
-   return (0 == VG_(strncmp)(s,
-                             VG_REPLACE_FUNCTION_PREFIX,
-                             VG_REPLACE_FUNCTION_PREFIX_LEN));
-}
-
-static Bool is_load_notifier(Char* s)
-{
-   return (0 == VG_(strncmp)(s,
-                             VG_NOTIFY_ON_LOAD_PREFIX,
-                             VG_NOTIFY_ON_LOAD_PREFIX_LEN));
-}
-
-// Call this for each symbol loaded.  It determines if we need to do
-// anything special with it.  It can modify 'symbol' in-place.
-void VG_(maybe_redir_or_notify) ( Char* symbol, Addr addr )
-{
-   if (is_replacement_function(symbol))
-      handle_replacement_function(symbol, addr);
-   else 
-   if (is_load_notifier(symbol))
-      handle_load_notifier(symbol, addr);
-}
+//zz    else
+//zz       vg_assert2(0, "unrecognised load notification function: %s", symbol);
+//zz }
+//zz 
+//zz static Bool is_replacement_function(Char* s)
+//zz {
+//zz    return (0 == VG_(strncmp)(s,
+//zz                              VG_REPLACE_FUNCTION_PREFIX,
+//zz                              VG_REPLACE_FUNCTION_PREFIX_LEN));
+//zz }
+//zz 
+//zz static Bool is_load_notifier(Char* s)
+//zz {
+//zz    return (0 == VG_(strncmp)(s,
+//zz                              VG_NOTIFY_ON_LOAD_PREFIX,
+//zz                              VG_NOTIFY_ON_LOAD_PREFIX_LEN));
+//zz }
 
 
 /*------------------------------------------------------------*/
@@ -945,8 +709,11 @@ Bool VG_(maybe_Z_demangle) ( const HChar* sym,
          }                                  \
       } while (0)
 
-   vg_assert(solen > 0);
-   vg_assert(fnlen > 0);
+   Bool error, oflow, valid, fn_is_encoded;
+   Int  soi, fni, i;
+
+   vg_assert(soLen > 0);
+   vg_assert(fnLen > 0);
    error = False;
    oflow = False;
    soi = 0;
@@ -985,7 +752,7 @@ Bool VG_(maybe_Z_demangle) ( const HChar* sym,
 
       /* We've got a Z-escape. */
       i++;
-      switch (symbol[i]) {
+      switch (sym[i]) {
          case 'a': EMITSO('*'); break;
          case 'p': EMITSO('+'); break;
          case 'c': EMITSO(':'); break;
@@ -994,6 +761,7 @@ Bool VG_(maybe_Z_demangle) ( const HChar* sym,
          case 'h': EMITSO('-'); break;
          case 's': EMITSO(' '); break;
          case 'Z': EMITSO('Z'); break;
+         case 'A': EMITSO('@'); break;
          default: error = True; goto out;
       }
       i++;
@@ -1030,7 +798,7 @@ Bool VG_(maybe_Z_demangle) ( const HChar* sym,
 
       /* We've got a Z-escape. */
       i++;
-      switch (symbol[i]) {
+      switch (sym[i]) {
          case 'a': EMITFN('*'); break;
          case 'p': EMITFN('+'); break;
          case 'c': EMITFN(':'); break;
@@ -1039,6 +807,7 @@ Bool VG_(maybe_Z_demangle) ( const HChar* sym,
          case 'h': EMITFN('-'); break;
          case 's': EMITFN(' '); break;
          case 'Z': EMITFN('Z'); break;
+         case 'A': EMITFN('@'); break;
          default: error = True; goto out;
       }
       i++;
@@ -1050,12 +819,12 @@ Bool VG_(maybe_Z_demangle) ( const HChar* sym,
 
    if (error) {
       /* Something's wrong.  Give up. */
-      VG_(message)(Vg_UserMsg, "m_redir: error demangling: %s", symbol);
+      VG_(message)(Vg_UserMsg, "m_redir: error demangling: %s", sym);
       return False;
    }
    if (oflow) {
       /* It didn't fit.  Give up. */
-      VG_(message)(Vg_UserMsg, "m_debuginfo: oflow demangling: %s", symbol);
+      VG_(message)(Vg_UserMsg, "m_debuginfo: oflow demangling: %s", sym);
       return False;
    }
 
