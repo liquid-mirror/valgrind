@@ -911,6 +911,7 @@ static void usage_NORETURN ( Bool debug_help )
 "    --trace-signals=no|yes    show signal handling details? [no]\n"
 "    --trace-symtab=no|yes     show symbol table details? [no]\n"
 "    --trace-cfi=no|yes        show call-frame-info details? [no]\n"
+"    --trace-redir=no|yes      show redirection details? [no]\n"
 "    --trace-sched=no|yes      show thread scheduler details? [no]\n"
 "    --wait-for-gdb=yes|no     pause on startup to wait for gdb attach\n"
 #if 0

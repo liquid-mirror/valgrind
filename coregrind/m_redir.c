@@ -160,6 +160,9 @@ static void   symtab_free(void*);
 static HChar* symtab_strdup(HChar*);
 static Bool   is_plausible_guest_addr(Addr);
 
+static void   show_redir_state ( HChar* who );
+
+
 /*------------------------------------------------------------*/
 /*--- REDIRECTION SPECIFICATIONS                           ---*/
 /*------------------------------------------------------------*/
@@ -256,6 +259,7 @@ void VG_(redir_notify_new_SegInfo)( SegInfo* newsi )
    HChar    demangled_fnpatt[N_DEMANGLED];
 
    vg_assert(newsi);
+   vg_assert(VG_(seginfo_soname)(newsi) != NULL);
 
    /* stay sane: we don't already have this. */
    for (ts = topSpecs; ts; ts = ts->next)
@@ -332,6 +336,9 @@ void VG_(redir_notify_new_SegInfo)( SegInfo* newsi )
    /* Finally, add the new TopSpec. */
    newts->next = topSpecs;
    topSpecs = newts;
+
+   if (VG_(clo_trace_redir))
+      show_redir_state("after VG_(redir_notify_new_SegInfo)");
 }
 
 #undef N_DEMANGLED
@@ -482,7 +489,7 @@ void VG_(redir_notify_delete_SegInfo)( SegInfo* delsi )
    just before translating a basic block. */
 Addr VG_(redir_do_lookup) ( Addr orig )
 {
-   Spec* r = VG_(OSet_Lookup)(activeSet, &orig);
+   Active* r = VG_(OSet_Lookup)(activeSet, &orig);
    if (r == NULL)
       return orig;
 
@@ -611,6 +618,9 @@ void VG_(redir_initialise) ( void )
 #  else
 #    error Unknown platform
 #  endif
+
+   if (VG_(clo_trace_redir))
+      show_redir_state("after VG_(redir_initialise)");
 }
 
 
@@ -831,6 +841,60 @@ Bool VG_(maybe_Z_demangle) ( const HChar* sym,
    return True;
 }
 
+
+/*------------------------------------------------------------*/
+/*--- SANITY/DEBUG                                         ---*/
+/*------------------------------------------------------------*/
+
+static void show_spec ( HChar* left, Spec* spec )
+{
+   VG_(message)(Vg_DebugMsg, 
+                  "%s%18s %22s -> 0x%08llx",
+                  left,
+                  spec->from_sopatt, spec->from_fnpatt,
+                  (ULong)spec->to_addr );
+}
+
+static void show_active ( HChar* left, Active* act )
+{
+   Bool ok;
+   HChar name1[64] = "";
+   HChar name2[64] = "";
+   name1[0] = name2[0] = 0;
+   ok = VG_(get_fnname_w_offset)(act->from_addr, name1, 64);
+   if (!ok) VG_(strcpy)(name1, "???");
+   ok = VG_(get_fnname_w_offset)(act->to_addr, name2, 64);
+   if (!ok) VG_(strcpy)(name2, "???");
+
+   VG_(message)(Vg_DebugMsg, "%s0x%08llx (%10s) -> 0x%08llx %s", 
+                             left, 
+                             (ULong)act->from_addr, name1,
+                             (ULong)act->to_addr, name2 );
+}
+
+static void show_redir_state ( HChar* who )
+{
+   TopSpec* ts;
+   Spec*    sp;
+   Active*  act;
+   VG_(message)(Vg_DebugMsg, "<<");
+   VG_(message)(Vg_DebugMsg, "   ------ REDIR STATE %s ------", who);
+   for (ts = topSpecs; ts; ts = ts->next) {
+      VG_(message)(Vg_DebugMsg, 
+                   "   TOPSPECS of soname %s",
+                   ts->seginfo ? (HChar*)VG_(seginfo_soname)(ts->seginfo)
+                               : "(hardwired)" );
+      for (sp = ts->specs; sp; sp = sp->next)
+         show_spec("     ", sp);
+   }
+   VG_(message)(Vg_DebugMsg, "   ------ ACTIVE ------");
+   VG_(OSet_ResetIter)( activeSet );
+   while ( (act = VG_(OSet_Next)(activeSet)) ) {
+      show_active("    ", act);
+   }
+
+   VG_(message)(Vg_DebugMsg, ">>");
+}
 
 /*--------------------------------------------------------------------*/
 /*--- end                                                          ---*/

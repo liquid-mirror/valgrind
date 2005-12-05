@@ -1436,7 +1436,10 @@ Bool read_lib_symbols ( SegInfo* si )
 
 	 o_phdr = &((ElfXX_Phdr *)(oimage + ehdr->e_phoff))[i];
 
-         // Try to get the soname.
+         /* Try to get the soname.  If there isn't one, use "NONE".
+            The seginfo needs to have some kind of soname in order to
+            facilitate writing redirect functions, since all redirect
+            specifications require a soname (pattern). */
 	 if (o_phdr->p_type == PT_DYNAMIC && si->soname == NULL) {
 	    const ElfXX_Dyn *dyn = (const ElfXX_Dyn *)(oimage + o_phdr->p_offset);
 	    Int stroff = -1;
@@ -1446,7 +1449,7 @@ Bool read_lib_symbols ( SegInfo* si )
 	    for(j = 0; dyn[j].d_tag != DT_NULL; j++) {
 	       switch(dyn[j].d_tag) {
 	       case DT_SONAME:
-		  stroff =  dyn[j].d_un.d_val;
+		  stroff = dyn[j].d_un.d_val;
 		  break;
 
 	       case DT_STRTAB:
@@ -1508,6 +1511,13 @@ Bool read_lib_symbols ( SegInfo* si )
 	    }
 	 }
       }
+   }
+
+   /* If, after looking at all the program headers, we still didn't 
+      find a soname, add a fake one. */
+   if (si->soname == NULL) {
+      TRACE_SYMTAB("soname(fake)=\"NONE\"\n");
+      si->soname = "NONE";
    }
 
    TRACE_SYMTAB("shoff = %d,  shnum = %d,  size = %d,  n_vg_oimage = %d\n",
