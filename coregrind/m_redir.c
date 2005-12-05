@@ -44,6 +44,8 @@
 #include "pub_core_transtab.h"
 #include "pub_core_tooliface.h"    // VG_(needs).malloc_replacement
 #include "pub_core_aspacemgr.h"    // VG_(am_find_nsegment)
+#include "pub_core_clientstate.h"  // VG_(client___libc_freeres_wrapper)
+
 
 /*------------------------------------------------------------*/
 /*--- Semantics                                            ---*/
@@ -162,6 +164,8 @@ static Bool   is_plausible_guest_addr(Addr);
 
 static void   show_redir_state ( HChar* who );
 
+static void   handle_maybe_load_notifier( HChar* symbol, Addr addr );
+
 
 /*------------------------------------------------------------*/
 /*--- REDIRECTION SPECIFICATIONS                           ---*/
@@ -172,11 +176,11 @@ static void   show_redir_state ( HChar* who );
    spec can match an arbitrary number of times. */
 typedef
    struct _Spec {
-      struct _Spec* next;       /* linked list */
-      HChar*      from_sopatt;  /* from soname pattern  */
-      const Char* from_fnpatt;  /* from fnname pattern  */
-      Addr        to_addr;      /* where redirecting to */
-      Bool        mark; /* transient temporary used during matching */
+      struct _Spec* next;  /* linked list */
+      HChar* from_sopatt;  /* from soname pattern  */
+      HChar* from_fnpatt;  /* from fnname pattern  */
+      Addr   to_addr;      /* where redirecting to */
+      Bool   mark; /* transient temporary used during matching */
    }
    Spec;
 
@@ -188,8 +192,8 @@ typedef
 typedef
    struct _TopSpec {
       struct _TopSpec* next; /* linked list */
-      SegInfo* seginfo; /* symbols etc */
-      Spec*    specs;   /* specs pulled out of seginfo */
+      SegInfo* seginfo;      /* symbols etc */
+      Spec*    specs;        /* specs pulled out of seginfo */
       Bool     mark; /* transient temporary used during deletion */
    }
    TopSpec;
@@ -275,7 +279,12 @@ void VG_(redir_notify_new_SegInfo)( SegInfo* newsi )
       VG_(seginfo_syms_getidx)( newsi, i, &sym_addr, NULL, &sym_name );
       ok = VG_(maybe_Z_demangle)( sym_name, demangled_sopatt, N_DEMANGLED,
 				  demangled_fnpatt, N_DEMANGLED );
-      if (!ok) continue;
+      if (!ok) {
+         /* It's not a full-scale redirect, but perhaps it is a load-notify
+            fn?  Let the load-notify department see it. */
+         handle_maybe_load_notifier( sym_name, sym_addr );
+         continue; 
+      }
       spec = symtab_alloc(sizeof(Spec));
       vg_assert(spec);
       spec->from_sopatt = symtab_strdup(demangled_sopatt);
@@ -433,6 +442,9 @@ static void maybe_add_active ( Active act )
 void VG_(redir_notify_delete_SegInfo)( SegInfo* delsi )
 {
    TopSpec* ts;
+   TopSpec* tsPrev;
+   Spec*    sp;
+   Spec*    sp_next;
    OSet*    tmpSet;
    Active*  act;
    Bool     delMe;
@@ -440,12 +452,19 @@ void VG_(redir_notify_delete_SegInfo)( SegInfo* delsi )
 
    vg_assert(delsi);
 
-   /* Search for it. */
-   for (ts = topSpecs; ts; ts = ts->next)
-      if (ts->seginfo == delsi)
-         break;
+   /* Search for it, and make tsPrev point to the previous entry, if
+      any. */
+   tsPrev = NULL;
+   ts     = topSpecs;
+   while (True) {
+     if (ts == NULL) break;
+     if (ts->seginfo == delsi) break;
+     tsPrev = ts;
+     ts = ts->next;
+   }
 
    vg_assert(ts); /* else we don't have the deleted SegInfo */
+   vg_assert(ts->seginfo == delsi);
 
    /* Traverse the actives, copying the addresses of those we intend
       to delete into tmpSet. */
@@ -472,11 +491,29 @@ void VG_(redir_notify_delete_SegInfo)( SegInfo* delsi )
       activeSet. */
    VG_(OSet_ResetIter)( tmpSet );
    while ( (addrP = VG_(OSet_Next)(tmpSet)) ) {
+      /* XXXXXXXXXXX invalidate translations */
       VG_(OSet_Remove)( activeSet, addrP );
       VG_(OSet_FreeNode)( activeSet, addrP );
    }
 
    VG_(OSet_Destroy)( tmpSet );
+
+   /* The Actives set is now cleaned up.  Free up this TopSpec and
+      everything hanging off it. */
+   for (sp = ts->specs; sp; sp = sp_next) {
+      if (sp->from_sopatt) symtab_free(sp->from_sopatt);
+      if (sp->from_fnpatt) symtab_free(sp->from_fnpatt);
+      sp_next = sp->next;
+      symtab_free(sp);
+   }
+
+   if (tsPrev == NULL) {
+      /* first in list */
+      topSpecs = ts->next;
+   } else {
+      tsPrev->next = ts->next;
+   }
+   symtab_free(ts);
 }
 
 
@@ -624,8 +661,9 @@ void VG_(redir_initialise) ( void )
 }
 
 
-//////////////////////////////////////////////////////////////////
-//////////////////////////////////////////////////////////////////
+/*------------------------------------------------------------*/
+/*--- MISC HELPERS                                         ---*/
+/*------------------------------------------------------------*/
 
 static void* symtab_alloc(SizeT n)
 {
@@ -642,7 +680,7 @@ static HChar* symtab_strdup(HChar* str)
    return VG_(arena_strdup)(VG_AR_SYMTAB, str);
 }
 
-/* Really this should be merged with  translations_allowable_from_seg
+/* Really this should be merged with translations_allowable_from_seg
    in m_translate. */
 static Bool is_plausible_guest_addr(Addr a)
 {
@@ -652,40 +690,26 @@ static Bool is_plausible_guest_addr(Addr a)
           && (seg->hasX || seg->hasR); /* crude x86-specific hack */
 }
 
-//////////////////////////////////////////////////////////////////
-//////////////////////////////////////////////////////////////////
 
+/*------------------------------------------------------------*/
+/*--- NOTIFY-ON-LOAD FUNCTIONS                             ---*/
+/*------------------------------------------------------------*/
 
-// This is specifically for stringifying VG_(x) function names.  We
-// need to do two macroexpansions to get the VG_ macro expanded before
-// stringifying.
-//zz #define _STR(x) #x
-//zz #define STR(x)  _STR(x)
-//zz 
-//zz static void handle_load_notifier( Char* symbol, Addr addr )
-//zz {
-//zz    if (VG_(strcmp)(symbol, STR(VG_NOTIFY_ON_LOAD(freeres))) == 0)
-//zz       VG_(client___libc_freeres_wrapper) = addr;
+static void handle_maybe_load_notifier( HChar* symbol, Addr addr )
+{
+   if (0 != VG_(strncmp)(symbol, VG_NOTIFY_ON_LOAD_PREFIX, 
+                                 VG_NOTIFY_ON_LOAD_PREFIX_LEN))
+      /* Doesn't have the right prefix */
+      return;
+
+   if (VG_(strcmp)(symbol, VG_STRINGIFY(VG_NOTIFY_ON_LOAD(freeres))) == 0)
+      VG_(client___libc_freeres_wrapper) = addr;
 // else
 // if (VG_(strcmp)(symbol, STR(VG_WRAPPER(pthread_startfunc_wrapper))) == 0)
 //    VG_(pthread_startfunc_wrapper)((Addr)(si->offset + sym->st_value));
-//zz    else
-//zz       vg_assert2(0, "unrecognised load notification function: %s", symbol);
-//zz }
-//zz 
-//zz static Bool is_replacement_function(Char* s)
-//zz {
-//zz    return (0 == VG_(strncmp)(s,
-//zz                              VG_REPLACE_FUNCTION_PREFIX,
-//zz                              VG_REPLACE_FUNCTION_PREFIX_LEN));
-//zz }
-//zz 
-//zz static Bool is_load_notifier(Char* s)
-//zz {
-//zz    return (0 == VG_(strncmp)(s,
-//zz                              VG_NOTIFY_ON_LOAD_PREFIX,
-//zz                              VG_NOTIFY_ON_LOAD_PREFIX_LEN));
-//zz }
+   else
+      vg_assert2(0, "unrecognised load notification function: %s", symbol);
+}
 
 
 /*------------------------------------------------------------*/

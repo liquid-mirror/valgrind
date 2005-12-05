@@ -71,6 +71,8 @@ void VG_NOTIFY_ON_LOAD(freeres)( void )
 /*--- end                                                          ---*/
 /*--------------------------------------------------------------------*/
 
+#if 0
+
 #define PTH_FUNC(ret_ty, f, args...) \
    ret_ty VG_REDIRECT_FUNCTION_ZZ(libpthreadZdsoZd0,f)(args); \
    ret_ty VG_REDIRECT_FUNCTION_ZZ(libpthreadZdsoZd0,f)(args)
@@ -125,3 +127,5 @@ PTH_FUNC(int, pthreadZumutexZuunlock, // pthread_mutex_unlock
    fprintf(stderr, " -> %d >>\n", ret);
    return ret;
 }
+
+#endif
