@@ -154,18 +154,6 @@
    - if each active (s,d) deleted, discard (s,1) and (d,1)
 */
 
-#define TRACE_REDIR(format, args...) \
-   if (VG_(clo_trace_redir)) { VG_(message)(Vg_DebugMsg, format, ## args); }
-
-static void*  symtab_alloc(SizeT);
-static void   symtab_free(void*);
-static HChar* symtab_strdup(HChar*);
-static Bool   is_plausible_guest_addr(Addr);
-
-static void   show_redir_state ( HChar* who );
-
-static void   handle_maybe_load_notifier( HChar* symbol, Addr addr );
-
 
 /*------------------------------------------------------------*/
 /*--- REDIRECTION SPECIFICATIONS                           ---*/
@@ -225,7 +213,22 @@ typedef
 /* The active set is a fast lookup table */
 static OSet* activeSet = NULL;
 
+
+/*------------------------------------------------------------*/
+/*--- FWDses                                               ---*/
+/*------------------------------------------------------------*/
+
 static void maybe_add_active ( Active /*by value; callee copies*/ );
+
+static void*  symtab_alloc(SizeT);
+static void   symtab_free(void*);
+static HChar* symtab_strdup(HChar*);
+static Bool   is_plausible_guest_addr(Addr);
+
+static void   show_redir_state ( HChar* who );
+static void   show_active ( HChar* left, Active* act );
+
+static void   handle_maybe_load_notifier( HChar* symbol, Addr addr );
 
 
 /*------------------------------------------------------------*/
@@ -413,25 +416,55 @@ void generate_and_add_actives (
    conflicting bindings. */
 static void maybe_add_active ( Active act )
 {
-   Active* old = VG_(OSet_Lookup)( activeSet, &act.from_addr );
+   HChar*  what = NULL;
+   Active* old;
+
+   /* Complain and ignore manifestly bogus 'from' addresses.
+
+      Kludge: because this can get called befor the trampoline area (a
+      bunch of magic 'to' addresses) has its ownership changed from V
+      to C, we can't check the 'to' address similarly.  Sigh.
+   */
+   if (!is_plausible_guest_addr(act.from_addr)) {
+      what = "redirection from-address is in non-executable area";
+      goto bad;
+   }
+
+   old = VG_(OSet_Lookup)( activeSet, &act.from_addr );
    if (old) {
       /* Dodgy.  Conflicting binding. */
       vg_assert(old->from_addr == act.from_addr);
       if (old->to_addr != act.to_addr) {
-         /* COMPLAIN */
          /* we have to ignore it -- otherwise activeSet would contain
             conflicting bindings. */
+         what = "new redirection conflicts with existing -- ignoring it";
+         goto bad;
       } else {
          /* This appears to be a duplicate of an existing binding.
             Safe(ish) -- ignore. */
-         /* COMPLAIN if new and old parents differ */
+         /* XXXXXXXXXXX COMPLAIN if new and old parents differ */
       }
    } else {
       Active* a = VG_(OSet_AllocNode)(activeSet, sizeof(Active));
       vg_assert(a);
       *a = act;
       VG_(OSet_Insert)(activeSet, a);
+      /* Now that a new from->to redirection is in force, we need to
+         get rid of any translations intersecting 'from' in order that
+         they get redirected to 'to'.  So discard them.  Just for
+         paranoia (but, I believe, unnecessarily), discard 'to' as
+         well. */
+      VG_(discard_translations)( (Addr64)act.from_addr, 1,
+                                 "redir_new_SegInfo(from_addr)");
+      VG_(discard_translations)( (Addr64)act.to_addr, 1,
+                                 "redir_new_SegInfo(to_addr)");
    }
+   return;
+
+  bad:
+   vg_assert(what);
+   VG_(message)(Vg_UserMsg, "WARNING: %s", what);
+   show_active("         ", &act);
 }
 
 
@@ -480,10 +513,25 @@ void VG_(redir_notify_delete_SegInfo)( SegInfo* delsi )
               && act->parent_spec->seginfo != NULL
               && act->parent_sym->seginfo != NULL
               && (act->parent_spec->mark || act->parent_sym->mark);
+
+      /* While we're at it, a bit of paranoia: delete any actives
+	 which don't have both feet in valid client executable
+	 areas. */
+      if (!delMe) {
+         if (!is_plausible_guest_addr(act->from_addr)) delMe = True;
+         if (!is_plausible_guest_addr(act->to_addr)) delMe = True;
+      }
+
       if (delMe) {
          addrP = VG_(OSet_AllocNode)( tmpSet, sizeof(Addr) );
          *addrP = act->from_addr;
          VG_(OSet_Insert)( tmpSet, addrP );
+         /* While we have our hands on both the 'from' and 'to'
+            of this Active, do paranoid stuff with tt/tc. */
+         VG_(discard_translations)( (Addr64)act->from_addr, 1,
+                                    "redir_del_SegInfo(from_addr)");
+         VG_(discard_translations)( (Addr64)act->to_addr, 1,
+                                    "redir_del_SegInfo(to_addr)");
       }
    }
 
