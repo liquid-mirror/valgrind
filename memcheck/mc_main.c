@@ -1045,7 +1045,7 @@ void make_aligned_word32_noaccess ( Addr a )
 static __inline__
 void make_aligned_word64_writable ( Addr a )
 {
-   UWord   sec_no, sm_off;
+   UWord   sec_no, sm_off64;
    SecMap* sm;
 
    PROF_EVENT(320, "make_aligned_word64_writable");
@@ -1069,17 +1069,16 @@ void make_aligned_word64_writable ( Addr a )
    if (EXPECTED_NOT_TAKEN(is_distinguished_sm(primary_map[sec_no])))
       primary_map[sec_no] = copy_for_writing(primary_map[sec_no]);
 
-   sm     = primary_map[sec_no];
-   sm_off = SM_OFF(a);
-   sm->vabits32[sm_off+0] = MC_BITS32_WRITABLE;
-   sm->vabits32[sm_off+1] = MC_BITS32_WRITABLE;
+   sm       = primary_map[sec_no];
+   sm_off64 = SM_OFF_64(a);
+   ((UShort*)(sm->vabits32))[sm_off64] = MC_BITS64_WRITABLE;
 }
 
 
 static __inline__
 void make_aligned_word64_noaccess ( Addr a )
 {
-   UWord   sec_no, sm_off;
+   UWord   sec_no, sm_off64;
    SecMap* sm;
 
    PROF_EVENT(330, "make_aligned_word64_noaccess");
@@ -1103,10 +1102,9 @@ void make_aligned_word64_noaccess ( Addr a )
    if (EXPECTED_NOT_TAKEN(is_distinguished_sm(primary_map[sec_no])))
       primary_map[sec_no] = copy_for_writing(primary_map[sec_no]);
 
-   sm     = primary_map[sec_no];
-   sm_off = SM_OFF(a);
-   sm->vabits32[sm_off+0] = MC_BITS32_NOACCESS;
-   sm->vabits32[sm_off+1] = MC_BITS32_NOACCESS;
+   sm       = primary_map[sec_no];
+   sm_off64 = SM_OFF_64(a);
+   ((UShort*)(sm->vabits32))[sm_off64] = MC_BITS64_NOACCESS;
 }
 
 
