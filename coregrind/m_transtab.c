@@ -557,6 +557,9 @@ static Bool sanity_check_eclasses_in_sector ( Sector* sec )
 
 /* Sanity check absolutely everything.  True == check passed. */
 
+/* forward */
+static Bool sanity_check_redir_tt_tc ( void );
+
 static Bool sanity_check_all_sectors ( void )
 {
    Int     sno;
@@ -570,6 +573,8 @@ static Bool sanity_check_all_sectors ( void )
       if (!sane)
          return False;
    }
+   if (!sanity_check_redir_tt_tc() )
+      return False;
    return True;
 }
 
@@ -958,6 +963,9 @@ Bool VG_(search_transtab) ( /*OUT*/AddrH* result,
 /*--- Delete translations.                                  ---*/
 /*-------------------------------------------------------------*/
 
+/* forward */
+static void unredir_discard_translations( Addr64, ULong );
+
 /* Stuff for deleting translations which intersect with a given
    address range.  Unfortunately, to make this run at a reasonable
    speed, it is complex. */
@@ -1179,6 +1187,9 @@ void VG_(discard_translations) ( Addr64 guest_start, ULong range,
    if (anyDeleted)
       invalidateFastCache();
 
+   /* don't forget the no-redir cache */
+   unredir_discard_translations( guest_start, range );
+
    /* Post-deletion sanity check */
    if (VG_(clo_sanity_level >= 4)) {
       Int      i;
@@ -1229,9 +1240,17 @@ typedef
    }
    UTCEntry;
 
+/* We just allocate forwards in _tc, never deleting. */
 static ULong    unredir_tc[N_UNREDIR_TCQ] __attribute__((aligned(8)));
 static Int      unredir_tc_used;
+
+/* Slots in _tt can come into use and out again (.inUse).
+   Nevertheless _tt_highwater is maintained so that invalidations
+   don't have to scan all the slots when only a few are in use.
+   _tt_highwater holds the index of the highest ever allocated
+   slot. */
 static UTCEntry unredir_tt[N_UNREDIR_TT];
+static Int      unredir_tt_highwater;
 
 
 static void init_unredir_tt_tc ( void )
@@ -1240,7 +1259,26 @@ static void init_unredir_tt_tc ( void )
    unredir_tc_used = 0;
    for (i = 0; i < N_UNREDIR_TT; i++)
       unredir_tt[i].inUse = False;
+   unredir_tt_highwater = -1;
 }
+
+/* Do a sanity check; return False on failure. */
+static Bool sanity_check_redir_tt_tc ( void )
+{
+   Int i;
+   if (unredir_tt_highwater < -1) return False;
+   if (unredir_tt_highwater >= N_UNREDIR_TT) return False;
+
+   for (i = unredir_tt_highwater+1; i < N_UNREDIR_TT; i++)
+      if (unredir_tt[i].inUse)
+         return False;
+
+   if (unredir_tc_used < 0) return False;
+   if (unredir_tc_used > N_UNREDIR_TCQ) return False;
+
+   return True;
+}
+
 
 /* Add an UNREDIRECTED translation of vge to TT/TC.  The translation
    is temporarily in code[0 .. code_len-1].
@@ -1253,6 +1291,8 @@ void VG_(add_to_unredir_transtab)( VexGuestExtents* vge,
 {
    Int   i, j, code_szQ;
    HChar *srcP, *dstP;
+
+   vg_assert(sanity_check_redir_tt_tc());
 
    /* This is the whole point: it's not redirected! */
    vg_assert(entry == vge->base[0]);
@@ -1277,6 +1317,9 @@ void VG_(add_to_unredir_transtab)( VexGuestExtents* vge,
    vg_assert(code_szQ + unredir_tc_used <= N_UNREDIR_TCQ);
    vg_assert(i >= 0 && i < N_UNREDIR_TT);
    vg_assert(unredir_tt[i].inUse == False);
+
+   if (i > unredir_tt_highwater)
+      unredir_tt_highwater = i;
 
    dstP = (HChar*)&unredir_tc[unredir_tc_used];
    srcP = (HChar*)code;
@@ -1307,6 +1350,19 @@ Bool VG_(search_unredir_transtab) ( /*OUT*/AddrH* result,
       }
    }
    return False;
+}
+
+static void unredir_discard_translations( Addr64 guest_start, ULong range )
+{
+   Int i;
+
+   vg_assert(sanity_check_redir_tt_tc());
+
+   for (i = 0; i <= unredir_tt_highwater; i++) {
+      if (unredir_tt[i].inUse
+          && overlaps( guest_start, range, &unredir_tt[i].vge))
+         unredir_tt[i].inUse = False;
+   }
 }
 
 
