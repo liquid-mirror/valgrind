@@ -811,7 +811,7 @@ static void handle_maybe_load_notifier( HChar* symbol, Addr addr )
 static void show_spec ( HChar* left, Spec* spec )
 {
    VG_(message)(Vg_DebugMsg, 
-                  "%s%18s %22s -> 0x%08llx",
+                  "%s%18s %30s -> 0x%08llx",
                   left,
                   spec->from_sopatt, spec->from_fnpatt,
                   (ULong)spec->to_addr );

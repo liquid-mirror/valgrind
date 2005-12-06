@@ -84,9 +84,9 @@ void VG_NOTIFY_ON_LOAD(freeres)( void )
 #include <stdio.h>
 #include <pthread.h>
 
-// pthread_create@GLIBC_2.0
+// pthread_create@GLIBC_2.0 - making it match this too causes loops.??
 // pthread_create@@GLIBC_2.1
-PTH_FUNC(int, pthreadZucreateZAZa, // pthread_create@*
+PTH_FUNC(int, pthreadZucreateZAZAGLIBCZu2Zd1, // pthread_create@@GLIBC_2.1
               pthread_t *thread, const pthread_attr_t *attr,
               void *(*start) (void *), void *arg)
 {
