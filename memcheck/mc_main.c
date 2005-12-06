@@ -2485,6 +2485,13 @@ static Bool mc_expensive_sanity_check ( void )
       return False;
    }
 
+   /* If we're not checking for undefined value errors, the secondary V bit
+    * table should be empty. */
+   if (!MAC_(clo_undef_value_errors)) {
+      if (0 != VG_(OSet_Size)(secVBitTable))
+         return False;
+   }
+
    /* check nonsensical auxmap sizing */
    if (auxmap_used > auxmap_size)
        bad = True;

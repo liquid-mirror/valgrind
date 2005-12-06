@@ -64,12 +64,15 @@ LeakCheckMode MAC_(clo_leak_check)             = LC_Summary;
 VgRes         MAC_(clo_leak_resolution)        = Vg_LowRes;
 Bool          MAC_(clo_show_reachable)         = False;
 Bool          MAC_(clo_workaround_gcc296_bugs) = False;
+Bool          MAC_(clo_undef_value_errors)     = True;
 
 Bool MAC_(process_common_cmd_line_option)(Char* arg)
 {
 	VG_BOOL_CLO(arg, "--partial-loads-ok",      MAC_(clo_partial_loads_ok))
    else VG_BOOL_CLO(arg, "--show-reachable",        MAC_(clo_show_reachable))
    else VG_BOOL_CLO(arg, "--workaround-gcc296-bugs",MAC_(clo_workaround_gcc296_bugs))
+
+   else VG_BOOL_CLO(arg, "--undef-value-errors",    MAC_(clo_undef_value_errors))
    
    else VG_BNUM_CLO(arg, "--freelist-vol",  MAC_(clo_freelist_vol), 0, 1000000000)
    
@@ -100,6 +103,7 @@ void MAC_(print_common_usage)(void)
 "    --leak-check=no|summary|full     search for memory leaks at exit?  [summary]\n"
 "    --leak-resolution=low|med|high   how much bt merging in leak check [low]\n"
 "    --show-reachable=no|yes          show reachable blocks in leak check? [no]\n"
+"    --undef-value-errors=no|yes      check for undefined value errors [yes]\n"
 "    --partial-loads-ok=no|yes        too hard to explain here; see manual [no]\n"
 "    --freelist-vol=<number>          volume of freed blocks queue [5000000]\n"
 "    --workaround-gcc296-bugs=no|yes  self explanatory [no]\n"

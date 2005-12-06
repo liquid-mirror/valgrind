@@ -316,8 +316,20 @@ extern VgRes MAC_(clo_leak_resolution);
 extern Bool MAC_(clo_show_reachable);
 
 /* Assume accesses immediately below %esp are due to gcc-2.96 bugs.
- * default: NO*/
+ * default: NO */
 extern Bool MAC_(clo_workaround_gcc296_bugs);
+
+/* Do undefined value checking? "No" gives Addrcheck-style behaviour, ie.
+ * faster but fewer errors found.  Note that although Addrcheck had 1 bit
+ * per byte overhead vs the old Memcheck's 9 bits per byte, with this mode
+ * and compressed V bits, no memory is saved with this mode -- it's still
+ * 2 bits per byte overhead.  This is a little wasteful -- it could be done
+ * with 1 bit per byte -- but lets us reuse the many shadow memory access
+ * functions.  Note also that in this mode the secondary V bit table is
+ * never used.
+ *
+ * default: YES */
+extern Bool MAC_(clo_undef_value_errors);
 
 extern Bool MAC_(process_common_cmd_line_option) ( Char* arg );
 extern void MAC_(print_common_usage)             ( void );
