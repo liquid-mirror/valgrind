@@ -491,7 +491,10 @@ void set_vabits8 ( Addr a, UChar vabits8 )
 {
    SecMap* sm       = get_secmap_writable(a);
    UWord   sm_off   = SM_OFF(a);
+//   VG_(printf)("se:%p, %d\n", a, sm_off);
+//   VG_(printf)("s1:%p (0x%x)\n", &(sm->vabits32[sm_off]), vabits8);
    insert_vabit8_into_vabits32( a, vabits8, &(sm->vabits32[sm_off]) );
+//   VG_(printf)("s2: 0x%x\n", sm->vabits32[sm_off]);
 }
 
 static inline
@@ -1741,19 +1744,16 @@ ULong MC_(helperc_LOADV8le) ( Addr a )
 static inline __attribute__((always_inline))
 void mc_STOREV8 ( Addr aA, ULong vbytes, Bool isBigEndian )
 {
-//   UWord   mask, a, sec_no, sm_off64, vabits64;
-//   SecMap* sm;
+   UWord   mask, a, sec_no, sm_off64, vabits64;
+   SecMap* sm;
 
    PROF_EVENT(210, "mc_STOREV8");
 
-// XXX: enable
-//   if (VG_DEBUG_MEMORY >= 2) {
+   if (VG_DEBUG_MEMORY >= 2) {
       mc_STOREVn_slow( aA, 8, vbytes, isBigEndian );
       return;
-//   }
+   }
 
-// XXX: not working, I haven't yet worked out why
-#if 0
    mask = ~((0x10000-8) | ((N_PRIMARY_MAP-1) << 16));
    a    = (UWord)aA;
 
@@ -1776,47 +1776,18 @@ void mc_STOREV8 ( Addr aA, ULong vbytes, Bool isBigEndian )
    sm_off64 = SM_OFF_64(a);
    vabits64 = ((UShort*)(sm->vabits32))[sm_off64];
 
-   VG_(printf)("BAR: 0x%lx\n", vabits64);
-   VG_(printf)("BAZ: %lx %lx\n", sm->vabits32[SM_OFF(a)], sm->vabits32[SM_OFF(a)+1]);
    if (EXPECTED_TAKEN( !is_distinguished_sm(sm) && 
-                       MC_BITS64_NOACCESS != vabits64 ))
+                       (MC_BITS64_READABLE == vabits64 ||
+                        MC_BITS64_WRITABLE == vabits64) ))
    {
       /* Handle common case quickly: a is suitably aligned, */
       /* is mapped, and is addressible. */
       // Convert full V-bits in register to compact 2-bit form.
       // XXX: is it best to check for VALID before INVALID?
       if (VGM_WORD64_VALID == vbytes) {
-         //((UShort*)(sm->vabits32))[sm_off64] = (UShort)MC_BITS64_READABLE;
-         OINK(8);
-         mc_STOREVn_slow( aA, 8, vbytes, isBigEndian );
+         ((UShort*)(sm->vabits32))[sm_off64] = (UShort)MC_BITS64_READABLE;
       } else if (VGM_WORD64_INVALID == vbytes) {
-//         ((UShort*)(sm->vabits32))[sm_off64] = (UShort)MC_BITS64_WRITABLE;
-
-       VG_(printf)("0: %lx %lx, %llx\n",
-                   sm->vabits32[SM_OFF(a)+0], sm->vabits32[SM_OFF(a)+1],
-                   vbytes);
-       mc_STOREVn_slow( aA, 8, vbytes, isBigEndian );
-//   VG_(printf)("FOO: %p, 0x%lx\n", &( ((UShort*)(sm->vabits32))[sm_off64] ),
-//               vbytes);
-{
-      UWord x1, x2, y1, y2;
-       VG_(printf)("a: %lx %lx, %p\n",
-                   sm->vabits32[SM_OFF(a)+0], sm->vabits32[SM_OFF(a)+1], a);
-
-       x1 = sm->vabits32[SM_OFF(a)+0];
-       x2 = sm->vabits32[SM_OFF(a)+1];
-
-       sm->vabits32[SM_OFF(a)+0] = MC_BITS32_WRITABLE;
-       sm->vabits32[SM_OFF(a)+1] = MC_BITS32_WRITABLE;
-       VG_(printf)("c: %lx %lx\n",
-                   sm->vabits32[SM_OFF(a)+0], sm->vabits32[SM_OFF(a)+1]);
-
-       y1 = sm->vabits32[SM_OFF(a)+0];
-       y2 = sm->vabits32[SM_OFF(a)+1];
-
-       tl_assert2(x1==y1 && x2==y2,
-                  "%lx %lx,  %lx %lx\n", x1, y1, x2, y2);
-}
+         ((UShort*)(sm->vabits32))[sm_off64] = (UShort)MC_BITS64_WRITABLE;
       } else {
          /* Slow but general case -- writing partially defined bytes. */
          PROF_EVENT(212, "mc_STOREV8-slow2");
@@ -1827,7 +1798,6 @@ void mc_STOREV8 ( Addr aA, ULong vbytes, Bool isBigEndian )
       PROF_EVENT(213, "mc_STOREV8-slow3");
       mc_STOREVn_slow( aA, 8, vbytes, isBigEndian );
    }
-#endif
 }
 
 VG_REGPARM(1)
@@ -1972,7 +1942,8 @@ void mc_STOREV4 ( Addr aA, UWord vbytes, Bool isBigEndian )
 //---------------------------------------------------------------------------
 #else
    if (EXPECTED_TAKEN( !is_distinguished_sm(sm) && 
-                       MC_BITS32_NOACCESS != vabits32 ))
+                       (MC_BITS32_READABLE == vabits32 ||
+                        MC_BITS32_WRITABLE == vabits32) ))
    {
       /* Handle common case quickly: a is suitably aligned, */
       /* is mapped, and is addressible. */
