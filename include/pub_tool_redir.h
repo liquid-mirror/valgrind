@@ -110,6 +110,8 @@
    Everything else is left unchanged.
 */
 
+/* If you change these, the code in VG_(maybe_Z_demangle) needs to
+   be changed accordingly. */
 #define VG_REDIRECT_FUNCTION_ZU(soname,fnname) _vgrZU_##soname##_##fnname
 #define VG_REDIRECT_FUNCTION_ZZ(soname,fnname) _vgrZZ_##soname##_##fnname
 

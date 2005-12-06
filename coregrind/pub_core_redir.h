@@ -88,21 +88,6 @@ extern Addr VG_(redir_do_lookup) ( Addr orig );
 
 
 //--------------------------------------------------------------------
-// Demangling of Z-encoded names
-//--------------------------------------------------------------------
-
-/* Demangle 'sym' into its soname and fnname parts, putting them in
-   the specified buffers.  Returns a Bool indicating whether the
-   demangled failed or not.  A failure can occur because the prefix
-   isn't recognised, the internal Z-escaping is wrong, or because one
-   or the other (or both) of the output buffers becomes full. */
-
-Bool VG_(maybe_Z_demangle) ( const HChar* sym, 
-                             /*OUT*/HChar* so, Int soLen,
-                             /*OUT*/HChar* fn, Int fnLen );
-
-
-//--------------------------------------------------------------------
 // Function wrapping
 //--------------------------------------------------------------------
 

@@ -45,6 +45,7 @@
 #include "pub_core_tooliface.h"    // VG_(needs).malloc_replacement
 #include "pub_core_aspacemgr.h"    // VG_(am_find_nsegment)
 #include "pub_core_clientstate.h"  // VG_(client___libc_freeres_wrapper)
+#include "pub_core_demangle.h"     // VG_(maybe_Z_demangle)
 
 
 /*------------------------------------------------------------*/
@@ -463,8 +464,10 @@ static void maybe_add_active ( Active act )
 
   bad:
    vg_assert(what);
-   VG_(message)(Vg_UserMsg, "WARNING: %s", what);
-   show_active("         ", &act);
+   if (VG_(clo_verbosity) > 1) {
+      VG_(message)(Vg_UserMsg, "WARNING: %s", what);
+      show_active(             "    new: ", &act);
+   }
 }
 
 
@@ -757,160 +760,6 @@ static void handle_maybe_load_notifier( HChar* symbol, Addr addr )
 //    VG_(pthread_startfunc_wrapper)((Addr)(si->offset + sym->st_value));
    else
       vg_assert2(0, "unrecognised load notification function: %s", symbol);
-}
-
-
-/*------------------------------------------------------------*/
-/*--- THE DEMANGLER                                        ---*/
-/*------------------------------------------------------------*/
-
-/* Demangle 'sym' into its soname and fnname parts, putting them in
-   the specified buffers.  Returns a Bool indicating whether the
-   demangled failed or not.  A failure can occur because the prefix
-   isn't recognised, the internal Z-escaping is wrong, or because one
-   or the other (or both) of the output buffers becomes full. */
-
-Bool VG_(maybe_Z_demangle) ( const HChar* sym, 
-                             /*OUT*/HChar* so, Int soLen,
-                             /*OUT*/HChar* fn, Int fnLen )
-{
-#  define EMITSO(ch)                        \
-      do {                                  \
-         if (soi >= soLen) {                \
-            so[soLen-1] = 0; oflow = True;  \
-         } else {                           \
-            so[soi++] = ch; so[soi] = 0;    \
-         }                                  \
-      } while (0)
-#  define EMITFN(ch)                        \
-      do {                                  \
-         if (fni >= fnLen) {                \
-            fn[fnLen-1] = 0; oflow = True;  \
-         } else {                           \
-            fn[fni++] = ch; fn[fni] = 0;    \
-         }                                  \
-      } while (0)
-
-   Bool error, oflow, valid, fn_is_encoded;
-   Int  soi, fni, i;
-
-   vg_assert(soLen > 0);
-   vg_assert(fnLen > 0);
-   error = False;
-   oflow = False;
-   soi = 0;
-   fni = 0;
-
-   valid =     sym[0] == '_'
-           &&  sym[1] == 'v'
-           &&  sym[2] == 'g'
-           && (sym[3] == 'r' || sym[3] == 'n')
-           &&  sym[4] == 'Z'
-           && (sym[5] == 'Z' || sym[5] == 'U')
-           &&  sym[6] == '_';
-   if (!valid)
-      return False;
-
-   fn_is_encoded = sym[5] == 'Z';
-
-   /* Now scan the Z-encoded soname. */
-   i = 7;
-   while (True) {
-
-      if (sym[i] == '_')
-      /* Found the delimiter.  Move on to the fnname loop. */
-         break;
-
-      if (sym[i] == 0) {
-         error = True;
-         goto out;
-      }
-
-      if (sym[i] != 'Z') {
-         EMITSO(sym[i]);
-         i++;
-         continue;
-      }
-
-      /* We've got a Z-escape. */
-      i++;
-      switch (sym[i]) {
-         case 'a': EMITSO('*'); break;
-         case 'p': EMITSO('+'); break;
-         case 'c': EMITSO(':'); break;
-         case 'd': EMITSO('.'); break;
-         case 'u': EMITSO('_'); break;
-         case 'h': EMITSO('-'); break;
-         case 's': EMITSO(' '); break;
-         case 'Z': EMITSO('Z'); break;
-         case 'A': EMITSO('@'); break;
-         default: error = True; goto out;
-      }
-      i++;
-   }
-
-   vg_assert(sym[i] == '_');
-   i++;
-
-   /* Now deal with the function name part. */
-   if (!fn_is_encoded) {
-
-      /* simple; just copy. */
-      while (True) {
-         if (sym[i] == 0)
-            break;
-         EMITFN(sym[i]);
-         i++;
-      }
-      goto out;
-
-   }
-
-   /* else use a Z-decoding loop like with soname */
-   while (True) {
-
-      if (sym[i] == 0)
-         break;
-
-      if (sym[i] != 'Z') {
-         EMITFN(sym[i]);
-         i++;
-         continue;
-      }
-
-      /* We've got a Z-escape. */
-      i++;
-      switch (sym[i]) {
-         case 'a': EMITFN('*'); break;
-         case 'p': EMITFN('+'); break;
-         case 'c': EMITFN(':'); break;
-         case 'd': EMITFN('.'); break;
-         case 'u': EMITFN('_'); break;
-         case 'h': EMITFN('-'); break;
-         case 's': EMITFN(' '); break;
-         case 'Z': EMITFN('Z'); break;
-         case 'A': EMITFN('@'); break;
-         default: error = True; goto out;
-      }
-      i++;
-   }
-
-  out:
-   EMITSO(0);
-   EMITFN(0);
-
-   if (error) {
-      /* Something's wrong.  Give up. */
-      VG_(message)(Vg_UserMsg, "m_redir: error demangling: %s", sym);
-      return False;
-   }
-   if (oflow) {
-      /* It didn't fit.  Give up. */
-      VG_(message)(Vg_UserMsg, "m_debuginfo: oflow demangling: %s", sym);
-      return False;
-   }
-
-   return True;
 }
 
 
