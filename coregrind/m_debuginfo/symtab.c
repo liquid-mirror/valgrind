@@ -46,8 +46,8 @@
 #include "pub_core_mallocfree.h"
 #include "pub_core_options.h"
 #include "pub_core_profile.h"
-#include "pub_core_redir.h"
-#include "pub_core_tooliface.h"     // For VG_(needs).data_syms
+#include "pub_core_redir.h"       // VG_(redir_notify_{new,delete}_SegInfo)
+#include "pub_core_tooliface.h"   // VG_(needs).data_syms
 
 #include "pub_core_aspacemgr.h"
 
