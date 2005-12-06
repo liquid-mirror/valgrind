@@ -1934,8 +1934,8 @@ void mc_STOREV4 ( Addr aA, UWord vbytes, Bool isBigEndian )
       } else if (!is_distinguished_sm(sm) && MC_BITS32_NOACCESS != vabits32) {
          sm->vabits32[sm_off] = (UInt)MC_BITS32_READABLE;
       } else {
-         // unaddressable, or distinguished, or changing state
-         PROF_EVENT(232, "mc_STOREV-slow2");
+         // unaddressable, or distinguished and changing state
+         PROF_EVENT(232, "mc_STOREV4-slow2");
          mc_STOREVn_slow( aA, 4, (ULong)vbytes, isBigEndian );
       }
    } else if (VGM_WORD32_INVALID == vbytes) {
@@ -1944,12 +1944,12 @@ void mc_STOREV4 ( Addr aA, UWord vbytes, Bool isBigEndian )
       } else if (!is_distinguished_sm(sm) && MC_BITS32_NOACCESS != vabits32) {
          sm->vabits32[sm_off] = (UInt)MC_BITS32_WRITABLE;
       } else {
-         // unaddressable, or distinguished, or changing state
+         // unaddressable, or distinguished and changing state
          PROF_EVENT(233, "mc_STOREV4-slow3");
          mc_STOREVn_slow( aA, 4, (ULong)vbytes, isBigEndian );
       }
    } else {
-      // Partially defined bytes
+      // Partially defined word
       PROF_EVENT(234, "mc_STOREV4-slow4");
       mc_STOREVn_slow( aA, 4, (ULong)vbytes, isBigEndian );
    }
