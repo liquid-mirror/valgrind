@@ -48,6 +48,49 @@
 #include "pub_core_demangle.h"     // VG_(maybe_Z_demangle)
 
 
+/* This module is a critical part of the redirection/intercept system.
+   It keeps track of the current intercept state, cleans up the
+   translation caches when that state changes, and finally, answers
+   queries about the whether an address is currently redirected or
+   not.  It doesn't do any of the control-flow trickery needed to put
+   the redirections into practice.  That is the job of m_translate,
+   which calls here to find out which translations need to be
+   redirected.
+
+   The interface is simple.  VG_(redir_initialise) initialises and
+   loads some hardwired redirects which never disappear; this is
+   platform-specific.
+
+   The module is notified of redirection state changes by m_debuginfo.
+   That calls VG_(redir_notify_new_SegInfo) when a new SegInfo (shared
+   object symbol table, basically) appears.  Appearance of new symbols
+   can cause new (active) redirections to appear for two reasons: the
+   symbols in the new table may match existing redirection
+   specifications (see comments below), and because the symbols in the
+   new table may themselves supply new redirect specifications which
+   match existing symbols (or ones in the new table).
+
+   Redirect specifications are really symbols with "funny" prefixes
+   (_vgrZU_ and _vgrZZ_).  These names tell m_redir that the
+   associated code should replace the standard entry point for some
+   set of functions.  The set of functions is specified by a (soname
+   pattern, function name pattern) pair which is encoded in the symbol
+   name following the prefix.  The names use a Z-encoding scheme so
+   that they may contain punctuation characters and wildcards (*).
+   The encoding scheme is described in pub_tool_redir.h and is decoded
+   by VG_(maybe_Z_demangle).
+
+   When a shared object is unloaded, this module learns of it via a
+   call to VG_(redir_notify_delete_SegInfo).  It then removes from its
+   tables all active redirections in any way associated with that
+   object, and tidies up the translation caches accordingly.
+
+   That takes care of tracking the redirection state.  When a
+   translation is actually to be made, m_translate calls to
+   VG_(redir_do_lookup) in this module to find out if the
+   translation's address should be redirected.
+*/
+
 /*------------------------------------------------------------*/
 /*--- Semantics                                            ---*/
 /*------------------------------------------------------------*/
@@ -113,10 +156,8 @@
    actually want to have a system that allows this, I propose this:
    all changes to Specs are acceptable.  But, when recomputing Active
    following the change, if the same orig is bound to more than one
-   redir, then all bindings for orig are thrown out (of Active) and a
-   warning message printed.  That's pretty much what we have at
-   present anyway (warning, but no throwout; instead just keep the
-   first).
+   redir, then the first binding for orig is retained, and all the
+   rest ignored.
 
    ===========================================================
    ===========================================================

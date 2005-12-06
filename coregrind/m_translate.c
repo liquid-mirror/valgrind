@@ -441,6 +441,9 @@ static Bool     chase_into_ok ( Addr64 addr64 )
 }
 
 
+/* Note: see comments at top of m_redir.c for the Big Picture on how
+   redirections are managed. */
+
 Bool VG_(translate) ( ThreadId tid, 
                       Addr64   orig_addr,
                       Bool     debugging_translation,

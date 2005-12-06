@@ -38,6 +38,21 @@
 #include "demangle.h"
 #include "pub_core_libcprint.h"
 
+/* The demangler's job is to take a raw symbol name and turn it into
+   something a Human Bean can understand.  There are two levels of
+   mangling.
+
+   1. First, C++ names are mangled by the compiler.  So we'll have to
+      undo that.
+
+   2. Optionally, in relatively rare cases, the resulting name is then
+      itself encoded using Z-escaping (see pub_core_redir.h) so as to
+      become part of a redirect-specification.
+
+   Therefore, VG_(demangle) first tries to undo (2).  If successful,
+   the soname part is discarded (humans don't want to see that).
+   Then, it tries to undo (1) (using demangling code from GNU/FSF).
+*/
 
 /* This is the main, standard demangler entry point. */
 
