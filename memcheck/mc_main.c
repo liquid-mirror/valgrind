@@ -1117,13 +1117,39 @@ SP_UPDATE_HANDLERS ( make_aligned_word32_writable,
                    );
 
 
+/* The AMD64 ABI says:
+
+   "The 128-byte area beyond the location pointed to by %rsp is considered
+    to be reserved and shall not be modified by signal or interrupt
+    handlers.  Therefore, functions may use this area for temporary data
+    that is not needed across function calls.  In particular, leaf functions
+    may use this area for their entire stack frame, rather than adjusting
+    the stack pointer in the prologue and epilogue.  This area is known as
+    red zone [sic]."
+
+   So after any call or return we need to mark this redzone as containing
+   undefined values.
+
+   Consider this:  we're in function f.  f calls g.  g moves rsp down
+   modestly (say 16 bytes) and writes stuff all over the red zone, making it
+   defined.  g returns.  f is buggy and reads from parts of the red zone
+   that it didn't write on.  But because g filled that area in, f is going
+   to be picking up defined V bits and so any errors from reading bits of
+   the red zone it didn't write, will be missed.  The only solution I could
+   think of was to make the red zone undefined when g returns to f.
+
+   This is in accordance with the ABI, which makes it clear the redzone
+   is volatile across function calls.
+
+   The problem occurs the other way round too: f could fill the RZ up
+   with defined values and g could mistakenly read them.  So the RZ
+   also needs to be nuked on function calls.
+*/
 void MC_(helperc_MAKE_STACK_UNINIT) ( Addr base, UWord len )
 {
    tl_assert(sizeof(UWord) == sizeof(SizeT));
    if (0)
       VG_(printf)("helperc_MAKE_STACK_UNINIT %p %d\n", base, len );
-
-tl_assert(0);  // XXX
 
 #  if 0
    /* Really slow version */
@@ -1164,20 +1190,13 @@ tl_assert(0);  // XXX
          * the address range falls entirely with a single
            secondary map
          * the SM is modifiable
-      If all those conditions hold, just update the V bits
-      by writing directly on the v-bit array.   We don't care
-      about A bits; if the address range is marked invalid,
-      any attempt to access it will elicit an addressing error,
-      and that's good enough.
+      If all those conditions hold, just update the V+A bits
+      by writing directly into the vabits array.   
    */
-// XXX: Real version that I commented out -- njn
-tl_assert(0);
-#if 0
    if (EXPECTED_TAKEN( len == 128
                        && VG_IS_8_ALIGNED(base) 
       )) {
-      /* Now we know the address range is suitably sized and
-         aligned. */
+      /* Now we know the address range is suitably sized and aligned. */
       UWord a_lo   = (UWord)base;
       UWord a_hi   = (UWord)(base + 127);
       UWord sec_lo = a_lo >> 16;
@@ -1194,24 +1213,24 @@ tl_assert(0);
          if (EXPECTED_TAKEN( !is_distinguished_sm(sm) )) {
             /* And finally, now we know that the secondary in question
                is modifiable. */
-            UWord   v_off = a_lo & 0xFFFF;
-            ULong*  p     = (ULong*)(&sm->vbyte[v_off]);
-            p[ 0] =  VGM_WORD64_INVALID;
-            p[ 1] =  VGM_WORD64_INVALID;
-            p[ 2] =  VGM_WORD64_INVALID;
-            p[ 3] =  VGM_WORD64_INVALID;
-            p[ 4] =  VGM_WORD64_INVALID;
-            p[ 5] =  VGM_WORD64_INVALID;
-            p[ 6] =  VGM_WORD64_INVALID;
-            p[ 7] =  VGM_WORD64_INVALID;
-            p[ 8] =  VGM_WORD64_INVALID;
-            p[ 9] =  VGM_WORD64_INVALID;
-            p[10] =  VGM_WORD64_INVALID;
-            p[11] =  VGM_WORD64_INVALID;
-            p[12] =  VGM_WORD64_INVALID;
-            p[13] =  VGM_WORD64_INVALID;
-            p[14] =  VGM_WORD64_INVALID;
-            p[15] =  VGM_WORD64_INVALID;
+            UWord   v_off = SM_OFF(a_lo);
+            UShort* p     = (UShort*)(&sm->vabits32[v_off]);
+            p[ 0] =  MC_BITS64_WRITABLE;
+            p[ 1] =  MC_BITS64_WRITABLE;
+            p[ 2] =  MC_BITS64_WRITABLE;
+            p[ 3] =  MC_BITS64_WRITABLE;
+            p[ 4] =  MC_BITS64_WRITABLE;
+            p[ 5] =  MC_BITS64_WRITABLE;
+            p[ 6] =  MC_BITS64_WRITABLE;
+            p[ 7] =  MC_BITS64_WRITABLE;
+            p[ 8] =  MC_BITS64_WRITABLE;
+            p[ 9] =  MC_BITS64_WRITABLE;
+            p[10] =  MC_BITS64_WRITABLE;
+            p[11] =  MC_BITS64_WRITABLE;
+            p[12] =  MC_BITS64_WRITABLE;
+            p[13] =  MC_BITS64_WRITABLE;
+            p[14] =  MC_BITS64_WRITABLE;
+            p[15] =  MC_BITS64_WRITABLE;
             return;
          }
       }
@@ -1219,7 +1238,6 @@ tl_assert(0);
 
    /* else fall into slow case */
    mc_make_writable(base, len);
-#endif
 }
 
 
