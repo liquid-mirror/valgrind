@@ -482,7 +482,7 @@ UChar extract_vabits8_from_vabits32 ( Addr a, UChar vabits32 )
    return 0x3 & vabits32;           // mask out the rest
 }
 
-// XXX: note that these are only used in slow cases.  The fast cases do
+// Note that these two are only used in slow cases.  The fast cases do
 // clever things like combine the auxmap check (in
 // get_secmap_{read,writ}able) with alignment checks.
 
@@ -500,7 +500,6 @@ UChar get_vabits8 ( Addr a )
    SecMap* sm       = get_secmap_readable(a);
    UWord   sm_off   = SM_OFF(a);
    UChar   vabits32 = sm->vabits32[sm_off];
-//   VG_(printf)("get: %p\n", &(sm->vabits32[sm_off]));
    return extract_vabits8_from_vabits32(a, vabits32);
 }
 
@@ -601,7 +600,6 @@ void mc_STOREVn_slow ( Addr a, SizeT szB, ULong vbytes, Bool bigendian )
          }
          set_vabits8(ai, vabits8);
       } else {
-         // XXX: is this right?
          // Unaddressable!  Do nothing -- when writing to unaddressable
          // memory it acts as a black hole, and the V bits can never be seen
          // again.  So we don't have to write them at all.
