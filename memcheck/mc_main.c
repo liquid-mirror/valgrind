@@ -1749,6 +1749,8 @@ void mc_STOREV8 ( Addr aA, ULong vbytes, Bool isBigEndian )
 
    PROF_EVENT(210, "mc_STOREV8");
 
+   // XXX: this slow case seems to be marginally faster than the fast case!
+   // Investigate further.
    if (VG_DEBUG_MEMORY >= 2) {
       mc_STOREVn_slow( aA, 8, vbytes, isBigEndian );
       return;
@@ -1917,20 +1919,20 @@ void mc_STOREV4 ( Addr aA, UWord vbytes, Bool isBigEndian )
    if (VGM_WORD32_VALID == vbytes) {
       if (vabits32 == (UInt)MC_BITS32_READABLE) {
          return;
-      } else if (!is_distinguished_sm(sm) && MC_BITS32_NOACCESS != vabits32) {
+      } else if (!is_distinguished_sm(sm) && MC_BITS32_WRITABLE == vabits32) {
          sm->vabits32[sm_off] = (UInt)MC_BITS32_READABLE;
       } else {
-         // unaddressable, or distinguished and changing state
+         // not readable/writable, or distinguished and changing state
          PROF_EVENT(232, "mc_STOREV4-slow2");
          mc_STOREVn_slow( aA, 4, (ULong)vbytes, isBigEndian );
       }
    } else if (VGM_WORD32_INVALID == vbytes) {
       if (vabits32 == (UInt)MC_BITS32_WRITABLE) {
          return;
-      } else if (!is_distinguished_sm(sm) && MC_BITS32_NOACCESS != vabits32) {
+      } else if (!is_distinguished_sm(sm) && MC_BITS32_READABLE == vabits32) {
          sm->vabits32[sm_off] = (UInt)MC_BITS32_WRITABLE;
       } else {
-         // unaddressable, or distinguished and changing state
+         // not readable/writable, or distinguished and changing state
          PROF_EVENT(233, "mc_STOREV4-slow3");
          mc_STOREVn_slow( aA, 4, (ULong)vbytes, isBigEndian );
       }
