@@ -54,13 +54,13 @@ static SizeT cmalloc_n_frees    = 0;
 static SizeT cmalloc_bs_mallocd = 0;
 
 /* Function pointers for the two tools to track interesting events. */
-void (*MAC_(new_mem_heap)) ( Addr a, SizeT len, Bool is_inited )  = NULL;
-void (*MAC_(ban_mem_heap)) ( Addr a, SizeT len )                  = NULL;
-void (*MAC_(die_mem_heap)) ( Addr a, SizeT len )                  = NULL;
-void (*MAC_(copy_mem_heap))( Addr from, Addr to, SizeT len )      = NULL;
+void (*MC_(new_mem_heap)) ( Addr a, SizeT len, Bool is_inited )  = NULL;
+void (*MC_(ban_mem_heap)) ( Addr a, SizeT len )                  = NULL;
+void (*MC_(die_mem_heap)) ( Addr a, SizeT len )                  = NULL;
+void (*MC_(copy_mem_heap))( Addr from, Addr to, SizeT len )      = NULL;
 
 /* Function pointers for internal sanity checking. */
-Bool (*MAC_(check_noaccess))( Addr a, SizeT len, Addr* bad_addr ) = NULL;
+Bool (*MC_(check_noaccess))( Addr a, SizeT len, Addr* bad_addr ) = NULL;
 
 
 /*------------------------------------------------------------*/
@@ -68,10 +68,10 @@ Bool (*MAC_(check_noaccess))( Addr a, SizeT len, Addr* bad_addr ) = NULL;
 /*------------------------------------------------------------*/
 
 /* Record malloc'd blocks. */
-VgHashTable MAC_(malloc_list) = NULL;
+VgHashTable MC_(malloc_list) = NULL;
 
 /* Memory pools. */
-VgHashTable MAC_(mempool_list) = NULL;
+VgHashTable MC_(mempool_list) = NULL;
    
 /* Records blocks after freeing. */
 static MAC_Chunk* freed_list_start  = NULL;
@@ -122,7 +122,7 @@ static void add_to_freed_queue ( MAC_Chunk* mc )
    }
 }
 
-MAC_Chunk* MAC_(get_freed_list_head)(void)
+MAC_Chunk* MC_(get_freed_list_head)(void)
 {
    return freed_list_start;
 }
@@ -142,7 +142,7 @@ MAC_Chunk* create_MAC_Chunk ( ThreadId tid, Addr p, SizeT size,
       the mc->data field isn't visible to the leak checker.  If memory
       management is working correctly, any pointer returned by VG_(malloc)
       should be noaccess as far as the client is concerned. */
-   if (!MAC_(check_noaccess)( (Addr)mc, sizeof(MAC_Chunk), NULL )) {
+   if (!MC_(check_noaccess)( (Addr)mc, sizeof(MAC_Chunk), NULL )) {
       VG_(tool_panic)("create_MAC_Chunk: shadow area is accessible");
    } 
    return mc;
@@ -177,7 +177,7 @@ static Bool complain_about_silly_args2(SizeT n, SizeT sizeB)
 
 /* Allocate memory and note change in memory available */
 __inline__
-void* MAC_(new_block) ( ThreadId tid,
+void* MC_(new_block) ( ThreadId tid,
                         Addr p, SizeT size, SizeT align, UInt rzB,
                         Bool is_zeroed, MAC_AllocKind kind, VgHashTable table)
 {
@@ -202,67 +202,67 @@ void* MAC_(new_block) ( ThreadId tid,
 
    VG_(HT_add_node)( table, create_MAC_Chunk(tid, p, size, kind) );
 
-   MAC_(ban_mem_heap)( p-rzB, rzB );
-   MAC_(new_mem_heap)( p, size, is_zeroed );
-   MAC_(ban_mem_heap)( p+size, rzB );
+   MC_(ban_mem_heap)( p-rzB, rzB );
+   MC_(new_mem_heap)( p, size, is_zeroed );
+   MC_(ban_mem_heap)( p+size, rzB );
 
    VGP_POPCC(VgpCliMalloc);
 
    return (void*)p;
 }
 
-void* MAC_(malloc) ( ThreadId tid, SizeT n )
+void* MC_(malloc) ( ThreadId tid, SizeT n )
 {
    if (complain_about_silly_args(n, "malloc")) {
       return NULL;
    } else {
-      return MAC_(new_block) ( tid, 0, n, VG_(clo_alignment), 
+      return MC_(new_block) ( tid, 0, n, VG_(clo_alignment), 
          MAC_MALLOC_REDZONE_SZB, /*is_zeroed*/False, MAC_AllocMalloc,
-         MAC_(malloc_list));
+         MC_(malloc_list));
    }
 }
 
-void* MAC_(__builtin_new) ( ThreadId tid, SizeT n )
+void* MC_(__builtin_new) ( ThreadId tid, SizeT n )
 {
    if (complain_about_silly_args(n, "__builtin_new")) {
       return NULL;
    } else {
-      return MAC_(new_block) ( tid, 0, n, VG_(clo_alignment), 
+      return MC_(new_block) ( tid, 0, n, VG_(clo_alignment), 
          MAC_MALLOC_REDZONE_SZB, /*is_zeroed*/False, MAC_AllocNew,
-         MAC_(malloc_list));
+         MC_(malloc_list));
    }
 }
 
-void* MAC_(__builtin_vec_new) ( ThreadId tid, SizeT n )
+void* MC_(__builtin_vec_new) ( ThreadId tid, SizeT n )
 {
    if (complain_about_silly_args(n, "__builtin_vec_new")) {
       return NULL;
    } else {
-      return MAC_(new_block) ( tid, 0, n, VG_(clo_alignment), 
+      return MC_(new_block) ( tid, 0, n, VG_(clo_alignment), 
          MAC_MALLOC_REDZONE_SZB, /*is_zeroed*/False, MAC_AllocNewVec,
-         MAC_(malloc_list));
+         MC_(malloc_list));
    }
 }
 
-void* MAC_(memalign) ( ThreadId tid, SizeT align, SizeT n )
+void* MC_(memalign) ( ThreadId tid, SizeT align, SizeT n )
 {
    if (complain_about_silly_args(n, "memalign")) {
       return NULL;
    } else {
-      return MAC_(new_block) ( tid, 0, n, align, 
+      return MC_(new_block) ( tid, 0, n, align, 
          MAC_MALLOC_REDZONE_SZB, /*is_zeroed*/False, MAC_AllocMalloc,
-         MAC_(malloc_list));
+         MC_(malloc_list));
    }
 }
 
-void* MAC_(calloc) ( ThreadId tid, SizeT nmemb, SizeT size1 )
+void* MC_(calloc) ( ThreadId tid, SizeT nmemb, SizeT size1 )
 {
    if (complain_about_silly_args2(nmemb, size1)) {
       return NULL;
    } else {
-      return MAC_(new_block) ( tid, 0, nmemb*size1, VG_(clo_alignment),
+      return MC_(new_block) ( tid, 0, nmemb*size1, VG_(clo_alignment),
          MAC_MALLOC_REDZONE_SZB, /*is_zeroed*/True, MAC_AllocMalloc,
-         MAC_(malloc_list));
+         MC_(malloc_list));
    }
 }
 
@@ -271,9 +271,9 @@ void die_and_free_mem ( ThreadId tid, MAC_Chunk* mc, SizeT rzB )
 {
    /* Note: ban redzones again -- just in case user de-banned them
       with a client request... */
-   MAC_(ban_mem_heap)( mc->data-rzB, rzB );
-   MAC_(die_mem_heap)( mc->data, mc->size );
-   MAC_(ban_mem_heap)( mc->data+mc->size, rzB );
+   MC_(ban_mem_heap)( mc->data-rzB, rzB );
+   MC_(die_mem_heap)( mc->data, mc->size );
+   MC_(ban_mem_heap)( mc->data+mc->size, rzB );
 
    /* Put it out of harm's way for a while, if not from a client request */
    if (MAC_AllocCustom != mc->allockind) {
@@ -286,7 +286,7 @@ void die_and_free_mem ( ThreadId tid, MAC_Chunk* mc, SizeT rzB )
 }
 
 __inline__
-void MAC_(handle_free) ( ThreadId tid, Addr p, UInt rzB, MAC_AllocKind kind )
+void MC_(handle_free) ( ThreadId tid, Addr p, UInt rzB, MAC_AllocKind kind )
 {
    MAC_Chunk* mc;
 
@@ -294,13 +294,13 @@ void MAC_(handle_free) ( ThreadId tid, Addr p, UInt rzB, MAC_AllocKind kind )
 
    cmalloc_n_frees++;
 
-   mc = VG_(HT_remove) ( MAC_(malloc_list), (UWord)p );
+   mc = VG_(HT_remove) ( MC_(malloc_list), (UWord)p );
    if (mc == NULL) {
-      MAC_(record_free_error) ( tid, p );
+      MC_(record_free_error) ( tid, p );
    } else {
       /* check if it is a matching free() / delete / delete [] */
       if (kind != mc->allockind) {
-         MAC_(record_freemismatch_error) ( tid, p, mc );
+         MC_(record_freemismatch_error) ( tid, p, mc );
       }
       die_and_free_mem ( tid, mc, rzB );
    }
@@ -308,25 +308,25 @@ void MAC_(handle_free) ( ThreadId tid, Addr p, UInt rzB, MAC_AllocKind kind )
    VGP_POPCC(VgpCliMalloc);
 }
 
-void MAC_(free) ( ThreadId tid, void* p )
+void MC_(free) ( ThreadId tid, void* p )
 {
-   MAC_(handle_free)( 
+   MC_(handle_free)( 
       tid, (Addr)p, MAC_MALLOC_REDZONE_SZB, MAC_AllocMalloc );
 }
 
-void MAC_(__builtin_delete) ( ThreadId tid, void* p )
+void MC_(__builtin_delete) ( ThreadId tid, void* p )
 {
-   MAC_(handle_free)(
+   MC_(handle_free)(
       tid, (Addr)p, MAC_MALLOC_REDZONE_SZB, MAC_AllocNew);
 }
 
-void MAC_(__builtin_vec_delete) ( ThreadId tid, void* p )
+void MC_(__builtin_vec_delete) ( ThreadId tid, void* p )
 {
-   MAC_(handle_free)(
+   MC_(handle_free)(
       tid, (Addr)p, MAC_MALLOC_REDZONE_SZB, MAC_AllocNewVec);
 }
 
-void* MAC_(realloc) ( ThreadId tid, void* p_old, SizeT new_size )
+void* MC_(realloc) ( ThreadId tid, void* p_old, SizeT new_size )
 {
    MAC_Chunk* mc;
    void*      p_new;
@@ -342,9 +342,9 @@ void* MAC_(realloc) ( ThreadId tid, void* p_old, SizeT new_size )
       return NULL;
 
    /* Remove the old block */
-   mc = VG_(HT_remove) ( MAC_(malloc_list), (UWord)p_old );
+   mc = VG_(HT_remove) ( MC_(malloc_list), (UWord)p_old );
    if (mc == NULL) {
-      MAC_(record_free_error) ( tid, (Addr)p_old );
+      MC_(record_free_error) ( tid, (Addr)p_old );
       /* We return to the program regardless. */
       VGP_POPCC(VgpCliMalloc);
       return NULL;
@@ -353,7 +353,7 @@ void* MAC_(realloc) ( ThreadId tid, void* p_old, SizeT new_size )
    /* check if its a matching free() / delete / delete [] */
    if (MAC_AllocMalloc != mc->allockind) {
       /* can not realloc a range that was allocated with new or new [] */
-      MAC_(record_freemismatch_error) ( tid, (Addr)p_old, mc );
+      MC_(record_freemismatch_error) ( tid, (Addr)p_old, mc );
       /* but keep going anyway */
    }
 
@@ -366,7 +366,7 @@ void* MAC_(realloc) ( ThreadId tid, void* p_old, SizeT new_size )
       
    } else if (old_size > new_size) {
       /* new size is smaller */
-      MAC_(die_mem_heap)( mc->data+new_size, mc->size-new_size );
+      MC_(die_mem_heap)( mc->data+new_size, mc->size-new_size );
       mc->size = new_size;
       mc->where = VG_(record_ExeContext)(tid);
       p_new = p_old;
@@ -378,10 +378,10 @@ void* MAC_(realloc) ( ThreadId tid, void* p_old, SizeT new_size )
 
       if (a_new) {
          /* First half kept and copied, second half new, red zones as normal */
-         MAC_(ban_mem_heap) ( a_new-MAC_MALLOC_REDZONE_SZB, MAC_MALLOC_REDZONE_SZB );
-         MAC_(copy_mem_heap)( (Addr)p_old, a_new, mc->size );
-         MAC_(new_mem_heap) ( a_new+mc->size, new_size-mc->size, /*init'd*/False );
-         MAC_(ban_mem_heap) ( a_new+new_size, MAC_MALLOC_REDZONE_SZB );
+         MC_(ban_mem_heap) ( a_new-MAC_MALLOC_REDZONE_SZB, MAC_MALLOC_REDZONE_SZB );
+         MC_(copy_mem_heap)( (Addr)p_old, a_new, mc->size );
+         MC_(new_mem_heap) ( a_new+mc->size, new_size-mc->size, /*init'd*/False );
+         MC_(ban_mem_heap) ( a_new+new_size, MAC_MALLOC_REDZONE_SZB );
 
          /* Copy from old to new */
          VG_(memcpy)((void*)a_new, p_old, mc->size);
@@ -404,7 +404,7 @@ void* MAC_(realloc) ( ThreadId tid, void* p_old, SizeT new_size )
    // will have removed and then re-added mc unnecessarily.  But that's ok
    // because shrinking a block with realloc() is (presumably) much rarer
    // than growing it, and this way simplifies the growing case.
-   VG_(HT_add_node)( MAC_(malloc_list), mc );
+   VG_(HT_add_node)( MC_(malloc_list), mc );
 
    VGP_POPCC(VgpCliMalloc);
    return p_new;
@@ -412,7 +412,7 @@ void* MAC_(realloc) ( ThreadId tid, void* p_old, SizeT new_size )
 
 /* Memory pool stuff. */
 
-void MAC_(create_mempool)(Addr pool, UInt rzB, Bool is_zeroed)
+void MC_(create_mempool)(Addr pool, UInt rzB, Bool is_zeroed)
 {
    MAC_Mempool* mp = VG_(malloc)(sizeof(MAC_Mempool));
    mp->pool        = pool;
@@ -425,23 +425,23 @@ void MAC_(create_mempool)(Addr pool, UInt rzB, Bool is_zeroed)
       management is working correctly, anything pointer returned by
       VG_(malloc) should be noaccess as far as the client is
       concerned. */
-   if (!MAC_(check_noaccess)( (Addr)mp, sizeof(MAC_Mempool), NULL )) {
-      VG_(tool_panic)("MAC_(create_mempool): shadow area is accessible");
+   if (!MC_(check_noaccess)( (Addr)mp, sizeof(MAC_Mempool), NULL )) {
+      VG_(tool_panic)("MC_(create_mempool): shadow area is accessible");
    } 
 
-   VG_(HT_add_node)( MAC_(mempool_list), mp );
+   VG_(HT_add_node)( MC_(mempool_list), mp );
 }
 
-void MAC_(destroy_mempool)(Addr pool)
+void MC_(destroy_mempool)(Addr pool)
 {
    MAC_Chunk*   mc;
    MAC_Mempool* mp;
 
-   mp = VG_(HT_remove) ( MAC_(mempool_list), (UWord)pool );
+   mp = VG_(HT_remove) ( MC_(mempool_list), (UWord)pool );
 
    if (mp == NULL) {
       ThreadId tid = VG_(get_running_tid)();
-      MAC_(record_illegal_mempool_error) ( tid, pool );
+      MC_(record_illegal_mempool_error) ( tid, pool );
       return;
    }
 
@@ -450,9 +450,9 @@ void MAC_(destroy_mempool)(Addr pool)
    while ( (mc = VG_(HT_Next)(mp->chunks)) ) {
       /* Note: ban redzones again -- just in case user de-banned them
          with a client request... */
-      MAC_(ban_mem_heap)(mc->data-mp->rzB, mp->rzB );
-      MAC_(die_mem_heap)(mc->data, mc->size );
-      MAC_(ban_mem_heap)(mc->data+mc->size, mp->rzB );
+      MC_(ban_mem_heap)(mc->data-mp->rzB, mp->rzB );
+      MC_(die_mem_heap)(mc->data, mc->size );
+      MC_(ban_mem_heap)(mc->data+mc->size, mp->rzB );
    }
    // Destroy the chunk table
    VG_(HT_destruct)(mp->chunks);
@@ -460,33 +460,33 @@ void MAC_(destroy_mempool)(Addr pool)
    VG_(free)(mp);
 }
 
-void MAC_(mempool_alloc)(ThreadId tid, Addr pool, Addr addr, SizeT size)
+void MC_(mempool_alloc)(ThreadId tid, Addr pool, Addr addr, SizeT size)
 {
-   MAC_Mempool* mp = VG_(HT_lookup) ( MAC_(mempool_list), (UWord)pool );
+   MAC_Mempool* mp = VG_(HT_lookup) ( MC_(mempool_list), (UWord)pool );
 
    if (mp == NULL) {
-      MAC_(record_illegal_mempool_error) ( tid, pool );
+      MC_(record_illegal_mempool_error) ( tid, pool );
    } else {
-      MAC_(new_block)(tid, addr, size, /*ignored*/0, mp->rzB, mp->is_zeroed,
+      MC_(new_block)(tid, addr, size, /*ignored*/0, mp->rzB, mp->is_zeroed,
                       MAC_AllocCustom, mp->chunks);
    }
 }
 
-void MAC_(mempool_free)(Addr pool, Addr addr)
+void MC_(mempool_free)(Addr pool, Addr addr)
 {
    MAC_Mempool*  mp;
    MAC_Chunk*    mc;
    ThreadId      tid = VG_(get_running_tid)();
 
-   mp = VG_(HT_lookup)(MAC_(mempool_list), (UWord)pool);
+   mp = VG_(HT_lookup)(MC_(mempool_list), (UWord)pool);
    if (mp == NULL) {
-      MAC_(record_illegal_mempool_error)(tid, pool);
+      MC_(record_illegal_mempool_error)(tid, pool);
       return;
    }
 
    mc = VG_(HT_remove)(mp->chunks, (UWord)addr);
    if (mc == NULL) {
-      MAC_(record_free_error)(tid, (Addr)addr);
+      MC_(record_free_error)(tid, (Addr)addr);
       return;
    }
 
@@ -497,7 +497,7 @@ void MAC_(mempool_free)(Addr pool, Addr addr)
 /*--- Statistics printing                                  ---*/
 /*------------------------------------------------------------*/
 
-void MAC_(print_malloc_stats) ( void )
+void MC_(print_malloc_stats) ( void )
 {
    MAC_Chunk* mc;
    SizeT      nblocks = 0;
@@ -509,8 +509,8 @@ void MAC_(print_malloc_stats) ( void )
       return;
 
    /* Count memory still in use. */
-   VG_(HT_ResetIter)(MAC_(malloc_list));
-   while ( (mc = VG_(HT_Next)(MAC_(malloc_list))) ) {
+   VG_(HT_ResetIter)(MC_(malloc_list));
+   while ( (mc = VG_(HT_Next)(MC_(malloc_list))) ) {
       nblocks++;
       nbytes += mc->size;
    }

@@ -32,7 +32,7 @@
 #ifndef __MC_INCLUDE_H
 #define __MC_INCLUDE_H
 
-#define MAC_(str)    VGAPPEND(vgMAC_,str)
+#define MC_(str)    VGAPPEND(vgMemCheck_,str)
 
 /*------------------------------------------------------------*/
 /*--- Errors and suppressions                              ---*/
@@ -151,6 +151,10 @@ typedef
    }
    MAC_Mempool;
 
+extern void MC_(record_free_error)            ( ThreadId tid, Addr a ); 
+extern void MC_(record_illegal_mempool_error) ( ThreadId tid, Addr a );
+extern void MC_(record_freemismatch_error)    ( ThreadId tid, Addr a,
+                                                MAC_Chunk* mc );
 
 /*------------------------------------------------------------*/
 /*--- Profiling of tools and memory events                 ---*/
@@ -170,17 +174,17 @@ typedef
 #ifdef MAC_PROFILE_MEMORY
 #  define N_PROF_EVENTS 500
 
-extern UInt   MAC_(event_ctr)[N_PROF_EVENTS];
-extern HChar* MAC_(event_ctr_name)[N_PROF_EVENTS];
+extern UInt   MC_(event_ctr)[N_PROF_EVENTS];
+extern HChar* MC_(event_ctr_name)[N_PROF_EVENTS];
 
 #  define PROF_EVENT(ev, name)                                \
    do { tl_assert((ev) >= 0 && (ev) < N_PROF_EVENTS);         \
         /* crude and inaccurate check to ensure the same */   \
         /* event isn't being used with > 1 name */            \
-        if (MAC_(event_ctr_name)[ev])                         \
-           tl_assert(name == MAC_(event_ctr_name)[ev]);       \
-        MAC_(event_ctr)[ev]++;                                \
-        MAC_(event_ctr_name)[ev] = (name);                    \
+        if (MC_(event_ctr_name)[ev])                         \
+           tl_assert(name == MC_(event_ctr_name)[ev]);       \
+        MC_(event_ctr)[ev]++;                                \
+        MC_(event_ctr_name)[ev] = (name);                    \
    } while (False);
 
 #else
@@ -227,84 +231,58 @@ extern HChar* MAC_(event_ctr_name)[N_PROF_EVENTS];
 /*------------------------------------------------------------*/
 
 /* For tracking malloc'd blocks */
-extern VgHashTable MAC_(malloc_list);
+extern VgHashTable MC_(malloc_list);
 
 /* For tracking memory pools. */
-extern VgHashTable MAC_(mempool_list);
+extern VgHashTable MC_(mempool_list);
 
 /* Function pointers for the two tools to track interesting events. */
-extern void (*MAC_(new_mem_heap)) ( Addr a, SizeT len, Bool is_inited );
-extern void (*MAC_(ban_mem_heap)) ( Addr a, SizeT len );
-extern void (*MAC_(die_mem_heap)) ( Addr a, SizeT len );
-extern void (*MAC_(copy_mem_heap))( Addr from, Addr to, SizeT len );
+extern void (*MC_(new_mem_heap)) ( Addr a, SizeT len, Bool is_inited );
+extern void (*MC_(ban_mem_heap)) ( Addr a, SizeT len );
+extern void (*MC_(die_mem_heap)) ( Addr a, SizeT len );
+extern void (*MC_(copy_mem_heap))( Addr from, Addr to, SizeT len );
 
 /* Function pointers for internal sanity checking. */
-extern Bool (*MAC_(check_noaccess))( Addr a, SizeT len, Addr* bad_addr );
-
-/* Used in describe_addr() */
-extern Bool (*MAC_(describe_addr_supp))    ( Addr a, AddrInfo* ai );
+extern Bool (*MC_(check_noaccess))( Addr a, SizeT len, Addr* bad_addr );
 
 /* For VALGRIND_COUNT_LEAKS client request */
-extern SizeT MAC_(bytes_leaked);
-extern SizeT MAC_(bytes_indirect);
-extern SizeT MAC_(bytes_dubious);
-extern SizeT MAC_(bytes_reachable);
-extern SizeT MAC_(bytes_suppressed);
+extern SizeT MC_(bytes_leaked);
+extern SizeT MC_(bytes_indirect);
+extern SizeT MC_(bytes_dubious);
+extern SizeT MC_(bytes_reachable);
+extern SizeT MC_(bytes_suppressed);
 
 /*------------------------------------------------------------*/
 /*--- Functions                                            ---*/
 /*------------------------------------------------------------*/
 
-extern void MAC_(pp_AddrInfo) ( Addr a, AddrInfo* ai );
+extern void MC_(pp_AddrInfo) ( Addr a, AddrInfo* ai );
 
-extern void MAC_(clear_MAC_Error)          ( MAC_Error* err_extra );
+extern void MC_(clear_MAC_Error)          ( MAC_Error* err_extra );
 
-extern Bool  MAC_(eq_Error) ( VgRes res, Error* e1, Error* e2 );
-extern UInt  MAC_(update_extra)( Error* err );
-extern Bool  MAC_(read_extra_suppression_info) ( Int fd, Char* buf, Int nBuf, Supp *su );
-extern Bool  MAC_(error_matches_suppression)(Error* err, Supp* su);
-extern Char* MAC_(get_error_name) ( Error* err );
-extern void  MAC_(print_extra_suppression_info)  ( Error* err );
-
-extern Bool  MAC_(shared_recognised_suppression) ( Char* name, Supp* su );
-
-extern void* MAC_(new_block) ( ThreadId tid,
+extern void* MC_(new_block) ( ThreadId tid,
                                Addr p, SizeT size, SizeT align, UInt rzB,
                                Bool is_zeroed, MAC_AllocKind kind,
                                VgHashTable table);
 
-extern void MAC_(handle_free) ( ThreadId tid,
+extern void MC_(handle_free) ( ThreadId tid,
                                 Addr p, UInt rzB, MAC_AllocKind kind );
 
-extern void MAC_(create_mempool)(Addr pool, UInt rzB, Bool is_zeroed);
+extern void MC_(create_mempool)(Addr pool, UInt rzB, Bool is_zeroed);
 
-extern void MAC_(destroy_mempool)(Addr pool);
+extern void MC_(destroy_mempool)(Addr pool);
 
-extern void MAC_(mempool_alloc)(ThreadId tid, 
+extern void MC_(mempool_alloc)(ThreadId tid, 
                                 Addr pool, Addr addr, SizeT size);
 
-extern void MAC_(mempool_free)(Addr pool, Addr addr);
+extern void MC_(mempool_free)(Addr pool, Addr addr);
 
-extern void MAC_(record_address_error)     ( ThreadId tid, Addr a,
-                                             Int size, Bool isWrite );
-extern void MAC_(record_core_mem_error)    ( ThreadId tid, Bool isUnaddr,
-                                             Char* s );
-extern void MAC_(record_param_error)       ( ThreadId tid, Addr a, Bool isReg,
-                                             Bool isUnaddr, Char* msg );
-extern void MAC_(record_jump_error)        ( ThreadId tid, Addr a );
-extern void MAC_(record_free_error)        ( ThreadId tid, Addr a );
-extern void MAC_(record_freemismatch_error)( ThreadId tid, Addr a,
-                                             MAC_Chunk* mc);
-extern void MAC_(record_overlap_error)     ( ThreadId tid, 
-                                             Char* function, OverlapExtra* oe );
-extern void MAC_(record_illegal_mempool_error) ( ThreadId tid, Addr pool );
-
-extern MAC_Chunk* MAC_(get_freed_list_head)( void );
+extern MAC_Chunk* MC_(get_freed_list_head)( void );
 
 /* For leak checking */
-extern void MAC_(pp_LeakError)(void* extra);
+extern void MC_(pp_LeakError)(void* extra);
                            
-extern void MAC_(print_malloc_stats) ( void );
+extern void MC_(print_malloc_stats) ( void );
 
 typedef
    enum {
@@ -314,207 +292,21 @@ typedef
    }
    LeakCheckMode;
 
-extern void MAC_(do_detect_memory_leaks) (
+extern void MC_(do_detect_memory_leaks) (
           ThreadId tid, LeakCheckMode mode,
           Bool (*is_within_valid_secondary) ( Addr ),
           Bool (*is_valid_aligned_word)     ( Addr )
        );
 
-extern VG_REGPARM(1) void MAC_(new_mem_stack_4)  ( Addr old_ESP );
-extern VG_REGPARM(1) void MAC_(die_mem_stack_4)  ( Addr old_ESP );
-extern VG_REGPARM(1) void MAC_(new_mem_stack_8)  ( Addr old_ESP );
-extern VG_REGPARM(1) void MAC_(die_mem_stack_8)  ( Addr old_ESP );
-extern VG_REGPARM(1) void MAC_(new_mem_stack_12) ( Addr old_ESP );
-extern VG_REGPARM(1) void MAC_(die_mem_stack_12) ( Addr old_ESP );
-extern VG_REGPARM(1) void MAC_(new_mem_stack_16) ( Addr old_ESP );
-extern VG_REGPARM(1) void MAC_(die_mem_stack_16) ( Addr old_ESP );
-extern VG_REGPARM(1) void MAC_(new_mem_stack_32) ( Addr old_ESP );
-extern VG_REGPARM(1) void MAC_(die_mem_stack_32) ( Addr old_ESP );
-extern               void MAC_(die_mem_stack) ( Addr a, SizeT len);
-extern               void MAC_(new_mem_stack) ( Addr a, SizeT len);
-
-extern void* MAC_(malloc)               ( ThreadId tid, SizeT n );
-extern void* MAC_(__builtin_new)        ( ThreadId tid, SizeT n );
-extern void* MAC_(__builtin_vec_new)    ( ThreadId tid, SizeT n );
-extern void* MAC_(memalign)             ( ThreadId tid, SizeT align, SizeT n );
-extern void* MAC_(calloc)               ( ThreadId tid, SizeT nmemb, SizeT size1 );
-extern void  MAC_(free)                 ( ThreadId tid, void* p );
-extern void  MAC_(__builtin_delete)     ( ThreadId tid, void* p );
-extern void  MAC_(__builtin_vec_delete) ( ThreadId tid, void* p );
-extern void* MAC_(realloc)              ( ThreadId tid, void* p, SizeT new_size );
-
-/*------------------------------------------------------------*/
-/*--- Stack pointer adjustment                             ---*/
-/*------------------------------------------------------------*/
-
-/* Some noble preprocessor abuse, to enable Memcheck and Addrcheck to
-   share this code, but call different functions.
-
-   Note that this code is executed very frequently and must be highly
-   optimised, which is why I resort to the preprocessor to achieve the
-   factoring, rather than eg. using function pointers.  
-*/
-
-#define SP_UPDATE_HANDLERS(ALIGNED4_NEW,  ALIGNED4_DIE,           \
-                           ALIGNED8_NEW,  ALIGNED8_DIE,           \
-                           UNALIGNED_NEW, UNALIGNED_DIE)          \
-                                                                  \
-void VG_REGPARM(1) MAC_(new_mem_stack_4)(Addr new_SP)             \
-{                                                                 \
-   PROF_EVENT(110, "new_mem_stack_4");                            \
-   if (VG_IS_4_ALIGNED(new_SP)) {                                 \
-      ALIGNED4_NEW  ( -VG_STACK_REDZONE_SZB + new_SP );           \
-   } else {                                                       \
-      UNALIGNED_NEW ( -VG_STACK_REDZONE_SZB + new_SP, 4 );        \
-   }                                                              \
-}                                                                 \
-                                                                  \
-void VG_REGPARM(1) MAC_(die_mem_stack_4)(Addr new_SP)             \
-{                                                                 \
-   PROF_EVENT(120, "die_mem_stack_4");                            \
-   if (VG_IS_4_ALIGNED(new_SP)) {                                 \
-      ALIGNED4_DIE  ( -VG_STACK_REDZONE_SZB + new_SP-4 );         \
-   } else {                                                       \
-      UNALIGNED_DIE ( -VG_STACK_REDZONE_SZB + new_SP-4, 4 );      \
-   }                                                              \
-}                                                                 \
-                                                                  \
-void VG_REGPARM(1) MAC_(new_mem_stack_8)(Addr new_SP)             \
-{                                                                 \
-   PROF_EVENT(111, "new_mem_stack_8");                            \
-   if (VG_IS_8_ALIGNED(new_SP)) {                                 \
-      ALIGNED8_NEW  ( -VG_STACK_REDZONE_SZB + new_SP );           \
-   } else if (VG_IS_4_ALIGNED(new_SP)) {                          \
-      ALIGNED4_NEW  ( -VG_STACK_REDZONE_SZB + new_SP   );         \
-      ALIGNED4_NEW  ( -VG_STACK_REDZONE_SZB + new_SP+4 );         \
-   } else {                                                       \
-      UNALIGNED_NEW ( -VG_STACK_REDZONE_SZB + new_SP, 8 );        \
-   }                                                              \
-}                                                                 \
-                                                                  \
-void VG_REGPARM(1) MAC_(die_mem_stack_8)(Addr new_SP)             \
-{                                                                 \
-   PROF_EVENT(121, "die_mem_stack_8");                            \
-   if (VG_IS_8_ALIGNED(new_SP)) {                                 \
-      ALIGNED8_DIE  ( -VG_STACK_REDZONE_SZB + new_SP-8 );         \
-   } else if (VG_IS_4_ALIGNED(new_SP)) {                          \
-      ALIGNED4_DIE  ( -VG_STACK_REDZONE_SZB + new_SP-8 );         \
-      ALIGNED4_DIE  ( -VG_STACK_REDZONE_SZB + new_SP-4 );         \
-   } else {                                                       \
-      UNALIGNED_DIE ( -VG_STACK_REDZONE_SZB + new_SP-8, 8 );      \
-   }                                                              \
-}                                                                 \
-                                                                  \
-void VG_REGPARM(1) MAC_(new_mem_stack_12)(Addr new_SP)            \
-{                                                                 \
-   PROF_EVENT(112, "new_mem_stack_12");                           \
-   if (VG_IS_8_ALIGNED(new_SP)) {                                 \
-      ALIGNED8_NEW  ( -VG_STACK_REDZONE_SZB + new_SP   );         \
-      ALIGNED4_NEW  ( -VG_STACK_REDZONE_SZB + new_SP+8 );         \
-   } else if (VG_IS_4_ALIGNED(new_SP)) {                          \
-      ALIGNED4_NEW  ( -VG_STACK_REDZONE_SZB + new_SP   );         \
-      ALIGNED8_NEW  ( -VG_STACK_REDZONE_SZB + new_SP+4 );         \
-   } else {                                                       \
-      UNALIGNED_NEW ( -VG_STACK_REDZONE_SZB + new_SP, 12 );       \
-   }                                                              \
-}                                                                 \
-                                                                  \
-void VG_REGPARM(1) MAC_(die_mem_stack_12)(Addr new_SP)            \
-{                                                                 \
-   PROF_EVENT(122, "die_mem_stack_12");                           \
-   /* Note the -12 in the test */                                 \
-   if (VG_IS_8_ALIGNED(new_SP-12)) {                              \
-      ALIGNED8_DIE  ( -VG_STACK_REDZONE_SZB + new_SP-12 );        \
-      ALIGNED4_DIE  ( -VG_STACK_REDZONE_SZB + new_SP-4  );        \
-   } else if (VG_IS_4_ALIGNED(new_SP)) {                          \
-      ALIGNED4_DIE  ( -VG_STACK_REDZONE_SZB + new_SP-12 );        \
-      ALIGNED8_DIE  ( -VG_STACK_REDZONE_SZB + new_SP-8  );        \
-   } else {                                                       \
-      UNALIGNED_DIE ( -VG_STACK_REDZONE_SZB + new_SP-12, 12 );    \
-   }                                                              \
-}                                                                 \
-                                                                  \
-void VG_REGPARM(1) MAC_(new_mem_stack_16)(Addr new_SP)            \
-{                                                                 \
-   PROF_EVENT(113, "new_mem_stack_16");                           \
-   if (VG_IS_8_ALIGNED(new_SP)) {                                 \
-      ALIGNED8_NEW  ( -VG_STACK_REDZONE_SZB + new_SP   );         \
-      ALIGNED8_NEW  ( -VG_STACK_REDZONE_SZB + new_SP+8 );         \
-   } else if (VG_IS_4_ALIGNED(new_SP)) {                          \
-      ALIGNED4_NEW  ( -VG_STACK_REDZONE_SZB + new_SP    );        \
-      ALIGNED8_NEW  ( -VG_STACK_REDZONE_SZB + new_SP+4  );        \
-      ALIGNED4_NEW  ( -VG_STACK_REDZONE_SZB + new_SP+12 );        \
-   } else {                                                       \
-      UNALIGNED_NEW ( -VG_STACK_REDZONE_SZB + new_SP, 16 );       \
-   }                                                              \
-}                                                                 \
-                                                                  \
-void VG_REGPARM(1) MAC_(die_mem_stack_16)(Addr new_SP)            \
-{                                                                 \
-   PROF_EVENT(123, "die_mem_stack_16");                           \
-   if (VG_IS_8_ALIGNED(new_SP)) {                                 \
-      ALIGNED8_DIE  ( -VG_STACK_REDZONE_SZB + new_SP-16 );        \
-      ALIGNED8_DIE  ( -VG_STACK_REDZONE_SZB + new_SP-8  );        \
-   } else if (VG_IS_4_ALIGNED(new_SP)) {                          \
-      ALIGNED4_DIE  ( -VG_STACK_REDZONE_SZB + new_SP-16 );        \
-      ALIGNED8_DIE  ( -VG_STACK_REDZONE_SZB + new_SP-12 );        \
-      ALIGNED4_DIE  ( -VG_STACK_REDZONE_SZB + new_SP-4  );        \
-   } else {                                                       \
-      UNALIGNED_DIE ( -VG_STACK_REDZONE_SZB + new_SP-16, 16 );    \
-   }                                                              \
-}                                                                 \
-                                                                  \
-void VG_REGPARM(1) MAC_(new_mem_stack_32)(Addr new_SP)            \
-{                                                                 \
-   PROF_EVENT(114, "new_mem_stack_32");                           \
-   if (VG_IS_8_ALIGNED(new_SP)) {                                 \
-      ALIGNED8_NEW  ( -VG_STACK_REDZONE_SZB + new_SP    );        \
-      ALIGNED8_NEW  ( -VG_STACK_REDZONE_SZB + new_SP+8  );        \
-      ALIGNED8_NEW  ( -VG_STACK_REDZONE_SZB + new_SP+16 );        \
-      ALIGNED8_NEW  ( -VG_STACK_REDZONE_SZB + new_SP+24 );        \
-   } else if (VG_IS_4_ALIGNED(new_SP)) {                          \
-      ALIGNED4_NEW  ( -VG_STACK_REDZONE_SZB + new_SP    );        \
-      ALIGNED8_NEW  ( -VG_STACK_REDZONE_SZB + new_SP+4  );        \
-      ALIGNED8_NEW  ( -VG_STACK_REDZONE_SZB + new_SP+12 );        \
-      ALIGNED8_NEW  ( -VG_STACK_REDZONE_SZB + new_SP+20 );        \
-      ALIGNED4_NEW  ( -VG_STACK_REDZONE_SZB + new_SP+28 );        \
-   } else {                                                       \
-      UNALIGNED_NEW ( -VG_STACK_REDZONE_SZB + new_SP, 32 );       \
-   }                                                              \
-}                                                                 \
-                                                                  \
-void VG_REGPARM(1) MAC_(die_mem_stack_32)(Addr new_SP)            \
-{                                                                 \
-   PROF_EVENT(124, "die_mem_stack_32");                           \
-   if (VG_IS_8_ALIGNED(new_SP)) {                                 \
-      ALIGNED8_DIE  ( -VG_STACK_REDZONE_SZB + new_SP-32 );        \
-      ALIGNED8_DIE  ( -VG_STACK_REDZONE_SZB + new_SP-24 );        \
-      ALIGNED8_DIE  ( -VG_STACK_REDZONE_SZB + new_SP-16 );        \
-      ALIGNED8_DIE  ( -VG_STACK_REDZONE_SZB + new_SP- 8 );        \
-   } else if (VG_IS_4_ALIGNED(new_SP)) {                          \
-      ALIGNED4_DIE  ( -VG_STACK_REDZONE_SZB + new_SP-32 );        \
-      ALIGNED8_DIE  ( -VG_STACK_REDZONE_SZB + new_SP-28 );        \
-      ALIGNED8_DIE  ( -VG_STACK_REDZONE_SZB + new_SP-20 );        \
-      ALIGNED8_DIE  ( -VG_STACK_REDZONE_SZB + new_SP-12 );        \
-      ALIGNED4_DIE  ( -VG_STACK_REDZONE_SZB + new_SP-4  );        \
-   } else {                                                       \
-      UNALIGNED_DIE ( -VG_STACK_REDZONE_SZB + new_SP-32, 32 );    \
-   }                                                              \
-}                                                                 \
-                                                                  \
-void MAC_(new_mem_stack) ( Addr a, SizeT len )                    \
-{                                                                 \
-   PROF_EVENT(115, "new_mem_stack");                              \
-   UNALIGNED_NEW ( -VG_STACK_REDZONE_SZB + a, len );              \
-}                                                                 \
-                                                                  \
-void MAC_(die_mem_stack) ( Addr a, SizeT len )                    \
-{                                                                 \
-   PROF_EVENT(125, "die_mem_stack");                              \
-   UNALIGNED_DIE ( -VG_STACK_REDZONE_SZB + a, len );              \
-}
-
-#define MC_(str)    VGAPPEND(vgMemCheck_,str)
+extern void* MC_(malloc)               ( ThreadId tid, SizeT n );
+extern void* MC_(__builtin_new)        ( ThreadId tid, SizeT n );
+extern void* MC_(__builtin_vec_new)    ( ThreadId tid, SizeT n );
+extern void* MC_(memalign)             ( ThreadId tid, SizeT align, SizeT n );
+extern void* MC_(calloc)               ( ThreadId tid, SizeT nmemb, SizeT size1 );
+extern void  MC_(free)                 ( ThreadId tid, void* p );
+extern void  MC_(__builtin_delete)     ( ThreadId tid, void* p );
+extern void  MC_(__builtin_vec_delete) ( ThreadId tid, void* p );
+extern void* MC_(realloc)              ( ThreadId tid, void* p, SizeT new_size );
 
 /*------------------------------------------------------------*/
 /*--- Command line options + defaults                      ---*/

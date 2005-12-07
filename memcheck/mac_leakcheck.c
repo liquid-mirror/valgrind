@@ -264,7 +264,7 @@ static const HChar* xml_kind ( Reachedness lossmode )
 
 /* Used for printing leak errors, avoids exposing the LossRecord type (which
    comes in as void*, requiring a cast. */
-void MAC_(pp_LeakError)(void* vextra)
+void MC_(pp_LeakError)(void* vextra)
 {
    HChar* xpre  = VG_(clo_xml) ? "  <what>" : "";
    HChar* xpost = VG_(clo_xml) ? "</what>"  : "";
@@ -315,11 +315,11 @@ void MAC_(pp_LeakError)(void* vextra)
    VG_(pp_ExeContext)(l->allocated_at);
 }
 
-SizeT MAC_(bytes_leaked)     = 0;
-SizeT MAC_(bytes_indirect)   = 0;
-SizeT MAC_(bytes_dubious)    = 0;
-SizeT MAC_(bytes_reachable)  = 0;
-SizeT MAC_(bytes_suppressed) = 0;
+SizeT MC_(bytes_leaked)     = 0;
+SizeT MC_(bytes_indirect)   = 0;
+SizeT MC_(bytes_dubious)    = 0;
+SizeT MC_(bytes_reachable)  = 0;
+SizeT MC_(bytes_suppressed) = 0;
 
 static Int lc_compar(void* n1, void* n2)
 {
@@ -611,23 +611,23 @@ static void full_report(ThreadId tid)
 
       if (is_suppressed) {
          blocks_suppressed      += p_min->num_blocks;
-         MAC_(bytes_suppressed) += p_min->total_bytes;
+         MC_(bytes_suppressed) += p_min->total_bytes;
 
       } else if (Unreached  == p_min->loss_mode) {
          blocks_leaked      += p_min->num_blocks;
-         MAC_(bytes_leaked) += p_min->total_bytes;
+         MC_(bytes_leaked) += p_min->total_bytes;
 
       } else if (IndirectLeak  == p_min->loss_mode) {
          blocks_indirect    += p_min->num_blocks;
-         MAC_(bytes_indirect)+= p_min->total_bytes;
+         MC_(bytes_indirect)+= p_min->total_bytes;
 
       } else if (Interior    == p_min->loss_mode) {
          blocks_dubious      += p_min->num_blocks;
-         MAC_(bytes_dubious) += p_min->total_bytes;
+         MC_(bytes_dubious) += p_min->total_bytes;
 
       } else if (Proper        == p_min->loss_mode) {
          blocks_reachable      += p_min->num_blocks;
-         MAC_(bytes_reachable) += p_min->total_bytes;
+         MC_(bytes_reachable) += p_min->total_bytes;
 
       } else {
          VG_(tool_panic)("generic_detect_memory_leaks: unknown loss mode");
@@ -647,22 +647,22 @@ static void make_summary(void)
       switch(lc_markstack[i].state) {
       case Unreached:
 	 blocks_leaked++;
-	 MAC_(bytes_leaked) += size;
+	 MC_(bytes_leaked) += size;
 	 break;
 
       case Proper:
 	 blocks_reachable++;
-	 MAC_(bytes_reachable) += size;
+	 MC_(bytes_reachable) += size;
 	 break;
 
       case Interior:
 	 blocks_dubious++;
-	 MAC_(bytes_dubious) += size;
+	 MC_(bytes_dubious) += size;
 	 break;
 	 
       case IndirectLeak:	/* shouldn't happen */
 	 blocks_indirect++;
-	 MAC_(bytes_indirect) += size;
+	 MC_(bytes_indirect) += size;
 	 break;
       }
    }
@@ -677,7 +677,7 @@ static void make_summary(void)
    distinguishing different allocation points, and whether or not
    reachable blocks should be shown.
 */
-void MAC_(do_detect_memory_leaks) (
+void MC_(do_detect_memory_leaks) (
    ThreadId tid, LeakCheckMode mode,
    Bool (*is_within_valid_secondary) ( Addr ),
    Bool (*is_valid_aligned_word)     ( Addr )
@@ -688,7 +688,7 @@ void MAC_(do_detect_memory_leaks) (
    tl_assert(mode != LC_Off);
 
    /* VG_(HT_to_array) allocates storage for shadows */
-   lc_shadows = (MAC_Chunk**)VG_(HT_to_array)( MAC_(malloc_list),
+   lc_shadows = (MAC_Chunk**)VG_(HT_to_array)( MC_(malloc_list),
                                                &lc_n_shadows );
 
    /* Sort the array. */
@@ -776,11 +776,11 @@ void MAC_(do_detect_memory_leaks) (
    if (VG_(clo_verbosity) > 0 && !VG_(clo_xml))
       VG_(message)(Vg_UserMsg, "checked %,lu bytes.", lc_scanned);
 
-   blocks_leaked     = MAC_(bytes_leaked)     = 0;
-   blocks_indirect   = MAC_(bytes_indirect)   = 0;
-   blocks_dubious    = MAC_(bytes_dubious)    = 0;
-   blocks_reachable  = MAC_(bytes_reachable)  = 0;
-   blocks_suppressed = MAC_(bytes_suppressed) = 0;
+   blocks_leaked     = MC_(bytes_leaked)     = 0;
+   blocks_indirect   = MC_(bytes_indirect)   = 0;
+   blocks_dubious    = MC_(bytes_dubious)    = 0;
+   blocks_reachable  = MC_(bytes_reachable)  = 0;
+   blocks_suppressed = MC_(bytes_suppressed) = 0;
 
    if (mode == LC_Full)
       full_report(tid);
@@ -791,16 +791,16 @@ void MAC_(do_detect_memory_leaks) (
       VG_(message)(Vg_UserMsg, "");
       VG_(message)(Vg_UserMsg, "LEAK SUMMARY:");
       VG_(message)(Vg_UserMsg, "   definitely lost: %,lu bytes in %,lu blocks.",
-                               MAC_(bytes_leaked), blocks_leaked );
+                               MC_(bytes_leaked), blocks_leaked );
       if (blocks_indirect > 0)
 	 VG_(message)(Vg_UserMsg, "   indirectly lost: %,lu bytes in %,lu blocks.",
-		      MAC_(bytes_indirect), blocks_indirect );
+		      MC_(bytes_indirect), blocks_indirect );
       VG_(message)(Vg_UserMsg, "     possibly lost: %,lu bytes in %,lu blocks.",
-                               MAC_(bytes_dubious), blocks_dubious );
+                               MC_(bytes_dubious), blocks_dubious );
       VG_(message)(Vg_UserMsg, "   still reachable: %,lu bytes in %,lu blocks.",
-                               MAC_(bytes_reachable), blocks_reachable );
+                               MC_(bytes_reachable), blocks_reachable );
       VG_(message)(Vg_UserMsg, "        suppressed: %,lu bytes in %,lu blocks.",
-                               MAC_(bytes_suppressed), blocks_suppressed );
+                               MC_(bytes_suppressed), blocks_suppressed );
       if (mode == LC_Summary && blocks_leaked > 0)
 	 VG_(message)(Vg_UserMsg,
 		      "Use --leak-check=full to see details of leaked memory.");

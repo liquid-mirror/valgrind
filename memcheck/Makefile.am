@@ -44,7 +44,6 @@ MEMCHECK_SOURCES_COMMON = \
 	mac_leakcheck.c \
 	mac_malloc_wrappers.c \
 	mc_main.c \
-	mac_shared.c \
 	mc_translate.c
 
 memcheck_x86_linux_SOURCES      = $(MEMCHECK_SOURCES_COMMON)
