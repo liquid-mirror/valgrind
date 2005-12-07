@@ -583,9 +583,9 @@ void VG_(redir_notify_delete_SegInfo)( SegInfo* delsi )
       activeSet. */
    VG_(OSet_ResetIter)( tmpSet );
    while ( (addrP = VG_(OSet_Next)(tmpSet)) ) {
-      /* XXXXXXXXXXX invalidate translations */
-      VG_(OSet_Remove)( activeSet, addrP );
-      VG_(OSet_FreeNode)( activeSet, addrP );
+      act = VG_(OSet_Remove)( activeSet, addrP );
+      vg_assert(act);
+      VG_(OSet_FreeNode)( activeSet, act );
    }
 
    VG_(OSet_Destroy)( tmpSet );
@@ -606,6 +606,9 @@ void VG_(redir_notify_delete_SegInfo)( SegInfo* delsi )
       tsPrev->next = ts->next;
    }
    symtab_free(ts);
+
+   if (VG_(clo_trace_redir))
+      show_redir_state("after VG_(redir_notify_delete_SegInfo)");
 }
 
 
