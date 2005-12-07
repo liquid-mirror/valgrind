@@ -30,7 +30,7 @@
 */
 
 #include "pub_tool_basics.h"
-#include "pub_tool_hashtable.h"     // For mac_shared.h
+#include "pub_tool_hashtable.h"     // For mc_include.h
 #include "pub_tool_libcassert.h"
 #include "pub_tool_libcprint.h"
 #include "pub_tool_profile.h"
@@ -802,7 +802,7 @@ static void complainIfUndefined ( MCEnv* mce, IRAtom* atom )
    IRAtom*  cond;
 
    // Don't do V bit tests if we're not reporting undefined value errors.
-   if (!MAC_(clo_undef_value_errors))
+   if (!MC_(clo_undef_value_errors))
       return;
 
    /* Since the original expression is atomic, there's no duplicated
@@ -926,7 +926,7 @@ void do_shadow_PUT ( MCEnv* mce,  Int offset,
    // Don't do shadow PUTs if we're not doing undefined value checking.
    // Their absence lets Vex's optimiser remove all the shadow computation
    // that they depend on, which includes GETs of the shadow registers.
-   if (!MAC_(clo_undef_value_errors))
+   if (!MC_(clo_undef_value_errors))
       return;
    
    if (atom) {
@@ -965,7 +965,7 @@ void do_shadow_PUTI ( MCEnv* mce,
    // Don't do shadow PUTIs if we're not doing undefined value checking.
    // Their absence lets Vex's optimiser remove all the shadow computation
    // that they depend on, which includes GETIs of the shadow registers.
-   if (!MAC_(clo_undef_value_errors))
+   if (!MC_(clo_undef_value_errors))
       return;
    
    tl_assert(isOriginalAtom(mce,atom));
@@ -2527,7 +2527,7 @@ void do_shadow_Store ( MCEnv* mce,
    // If we're not doing undefined value checking, pretend that this value
    // is "all valid".  That lets Vex's optimiser remove some of the V bit
    // shadow computation ops that precede it.
-   if (!MAC_(clo_undef_value_errors)) {
+   if (!MC_(clo_undef_value_errors)) {
       switch (ty) {
          case Ity_V128: c = IRConst_V128(VGM_SHORT_VALID); break; // V128 weirdness
          case Ity_I64:  c = IRConst_U64(VGM_WORD64_VALID); break;

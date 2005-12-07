@@ -32,9 +32,9 @@
 
 #include "pub_tool_basics.h"
 #include "pub_tool_aspacemgr.h"
-#include "pub_tool_errormgr.h"      // For mac_shared.h
-#include "pub_tool_execontext.h"    // For mac_shared.h
-#include "pub_tool_hashtable.h"     // For mac_shared.h
+#include "pub_tool_errormgr.h"      // For mc_include.h
+#include "pub_tool_execontext.h"    // For mc_include.h
+#include "pub_tool_hashtable.h"     // For mc_include.h
 #include "pub_tool_libcbase.h"
 #include "pub_tool_libcassert.h"
 #include "pub_tool_libcprint.h"
@@ -42,10 +42,10 @@
 #include "pub_tool_machine.h"
 #include "pub_tool_mallocfree.h"
 #include "pub_tool_options.h"
-#include "pub_tool_profile.h"       // For mac_shared.h
+#include "pub_tool_profile.h"       // For mc_include.h
 #include "pub_tool_signals.h"
 
-#include "mac_shared.h"
+#include "mc_include.h"
 
 #include <setjmp.h>                 // For jmp_buf
 
@@ -551,7 +551,7 @@ static void full_report(ThreadId tid)
 
       for (p = errlist; p != NULL; p = p->next) {
          if (p->loss_mode == lc_markstack[i].state
-             && VG_(eq_ExeContext) ( MAC_(clo_leak_resolution),
+             && VG_(eq_ExeContext) ( MC_(clo_leak_resolution),
                                      p->allocated_at, 
                                      where) ) {
             break;
@@ -593,7 +593,7 @@ static void full_report(ThreadId tid)
          Prints the error if not suppressed, unless it's reachable (Proper
          or IndirectLeak) and --show-reachable=no */
 
-      print_record = ( MAC_(clo_show_reachable) || 
+      print_record = ( MC_(clo_show_reachable) || 
 		       Unreached == p_min->loss_mode || 
                        Interior == p_min->loss_mode );
 
@@ -804,7 +804,7 @@ void MAC_(do_detect_memory_leaks) (
       if (mode == LC_Summary && blocks_leaked > 0)
 	 VG_(message)(Vg_UserMsg,
 		      "Use --leak-check=full to see details of leaked memory.");
-      else if (!MAC_(clo_show_reachable)) {
+      else if (!MC_(clo_show_reachable)) {
          VG_(message)(Vg_UserMsg, 
            "Reachable blocks (those to which a pointer was found) are not shown.");
          VG_(message)(Vg_UserMsg, 

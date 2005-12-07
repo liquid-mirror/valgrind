@@ -6,8 +6,7 @@
 
 /*
    This file is part of MemCheck, a heavyweight Valgrind tool for
-   detecting memory errors, and AddrCheck, a lightweight Valgrind tool 
-   for detecting memory errors.
+   detecting memory errors.
 
    Copyright (C) 2000-2005 Julian Seward 
       jseward@acm.org
@@ -31,19 +30,19 @@
 */
 
 #include "pub_tool_basics.h"
-#include "pub_tool_errormgr.h"      // For mac_shared.h
-#include "pub_tool_execontext.h"    // For mac_shared.h
-#include "pub_tool_hashtable.h"     // For mac_shared.h
+#include "pub_tool_errormgr.h"      // For mc_include.h
+#include "pub_tool_execontext.h"    // For mc_include.h
+#include "pub_tool_hashtable.h"     // For mc_include.h
 #include "pub_tool_libcassert.h"
 #include "pub_tool_libcbase.h"
 #include "pub_tool_libcprint.h"
 #include "pub_tool_mallocfree.h"
 #include "pub_tool_machine.h"
 #include "pub_tool_options.h"
-#include "pub_tool_profile.h"       // For mac_shared.h
+#include "pub_tool_profile.h"       // For mc_include.h
 #include "pub_tool_replacemalloc.h"
 #include "pub_tool_threadstate.h"
-#include "mac_shared.h"
+#include "mc_include.h"
 #include "memcheck.h"   /* for VG_USERREQ__* */
 
 /*------------------------------------------------------------*/
@@ -53,68 +52,6 @@
 /* These many bytes below %ESP are considered addressible if we're
    doing the --workaround-gcc296-bugs hack. */
 #define VG_GCC296_BUG_STACK_SLOP 1024
-
-/*------------------------------------------------------------*/
-/*--- Command line options                                 ---*/
-/*------------------------------------------------------------*/
-
-Bool          MAC_(clo_partial_loads_ok)       = False;
-Int           MAC_(clo_freelist_vol)           = 5000000;
-LeakCheckMode MAC_(clo_leak_check)             = LC_Summary;
-VgRes         MAC_(clo_leak_resolution)        = Vg_LowRes;
-Bool          MAC_(clo_show_reachable)         = False;
-Bool          MAC_(clo_workaround_gcc296_bugs) = False;
-Bool          MAC_(clo_undef_value_errors)     = True;
-
-Bool MAC_(process_common_cmd_line_option)(Char* arg)
-{
-	VG_BOOL_CLO(arg, "--partial-loads-ok",      MAC_(clo_partial_loads_ok))
-   else VG_BOOL_CLO(arg, "--show-reachable",        MAC_(clo_show_reachable))
-   else VG_BOOL_CLO(arg, "--workaround-gcc296-bugs",MAC_(clo_workaround_gcc296_bugs))
-
-   else VG_BOOL_CLO(arg, "--undef-value-errors",    MAC_(clo_undef_value_errors))
-   
-   else VG_BNUM_CLO(arg, "--freelist-vol",  MAC_(clo_freelist_vol), 0, 1000000000)
-   
-   else if (VG_CLO_STREQ(arg, "--leak-check=no"))
-      MAC_(clo_leak_check) = LC_Off;
-   else if (VG_CLO_STREQ(arg, "--leak-check=summary"))
-      MAC_(clo_leak_check) = LC_Summary;
-   else if (VG_CLO_STREQ(arg, "--leak-check=yes") ||
-	    VG_CLO_STREQ(arg, "--leak-check=full"))
-      MAC_(clo_leak_check) = LC_Full;
-
-   else if (VG_CLO_STREQ(arg, "--leak-resolution=low"))
-      MAC_(clo_leak_resolution) = Vg_LowRes;
-   else if (VG_CLO_STREQ(arg, "--leak-resolution=med"))
-      MAC_(clo_leak_resolution) = Vg_MedRes;
-   else if (VG_CLO_STREQ(arg, "--leak-resolution=high"))
-      MAC_(clo_leak_resolution) = Vg_HighRes;
-
-   else
-      return VG_(replacement_malloc_process_cmd_line_option)(arg);
-
-   return True;
-}
-
-void MAC_(print_common_usage)(void)
-{
-   VG_(printf)(
-"    --leak-check=no|summary|full     search for memory leaks at exit?  [summary]\n"
-"    --leak-resolution=low|med|high   how much bt merging in leak check [low]\n"
-"    --show-reachable=no|yes          show reachable blocks in leak check? [no]\n"
-"    --undef-value-errors=no|yes      check for undefined value errors [yes]\n"
-"    --partial-loads-ok=no|yes        too hard to explain here; see manual [no]\n"
-"    --freelist-vol=<number>          volume of freed blocks queue [5000000]\n"
-"    --workaround-gcc296-bugs=no|yes  self explanatory [no]\n"
-   );
-   VG_(replacement_malloc_print_usage)();
-}
-
-void MAC_(print_common_debug_usage)(void)
-{
-   VG_(replacement_malloc_print_debug_usage)();
-}
 
 /*------------------------------------------------------------*/
 /*--- Comparing and printing errors                        ---*/
@@ -303,109 +240,6 @@ void MAC_(pp_AddrInfo) ( Addr a, AddrInfo* ai )
    }
 }
 
-/* This prints out the message for the error types where Memcheck and
-   Addrcheck have identical messages */
-void MAC_(pp_shared_Error) ( Error* err )
-{
-   MAC_Error* err_extra = VG_(get_error_extra)(err);
-
-   HChar* xpre  = VG_(clo_xml) ? "  <what>" : "";
-   HChar* xpost = VG_(clo_xml) ? "</what>"  : "";
-
-   switch (VG_(get_error_kind)(err)) {
-      case FreeErr:
-         if (VG_(clo_xml))
-            VG_(message)(Vg_UserMsg, "  <kind>InvalidFree</kind>");
-         VG_(message)(Vg_UserMsg, 
-                      "%sInvalid free() / delete / delete[]%s",
-                      xpre, xpost);
-         VG_(pp_ExeContext)( VG_(get_error_where)(err) );
-         MAC_(pp_AddrInfo)(VG_(get_error_address)(err), &err_extra->addrinfo);
-         break;
-
-      case FreeMismatchErr:
-         if (VG_(clo_xml))
-            VG_(message)(Vg_UserMsg, "  <kind>MismatchedFree</kind>");
-         VG_(message)(Vg_UserMsg, 
-                      "%sMismatched free() / delete / delete []%s",
-                      xpre, xpost);
-         VG_(pp_ExeContext)( VG_(get_error_where)(err) );
-         MAC_(pp_AddrInfo)(VG_(get_error_address)(err), &err_extra->addrinfo);
-         break;
-
-      case AddrErr:
-         switch (err_extra->axskind) {
-            case ReadAxs:
-               if (VG_(clo_xml))
-                  VG_(message)(Vg_UserMsg, "  <kind>InvalidRead</kind>");
-               VG_(message)(Vg_UserMsg,
-                            "%sInvalid read of size %d%s", 
-                            xpre, err_extra->size, xpost ); 
-               break;
-            case WriteAxs:
-               if (VG_(clo_xml))
-                  VG_(message)(Vg_UserMsg, "  <kind>InvalidWrite</kind>");
-               VG_(message)(Vg_UserMsg, 
-                           "%sInvalid write of size %d%s", 
-                           xpre, err_extra->size, xpost ); 
-               break;
-            case ExecAxs:
-               if (VG_(clo_xml))
-                  VG_(message)(Vg_UserMsg, "  <kind>InvalidJump</kind>");
-               VG_(message)(Vg_UserMsg, 
-                            "%sJump to the invalid address "
-                            "stated on the next line%s",
-                            xpre, xpost);
-               break;
-            default: 
-               VG_(tool_panic)("MAC_(pp_shared_Error)(axskind)");
-         }
-         VG_(pp_ExeContext)( VG_(get_error_where)(err) );
-         MAC_(pp_AddrInfo)(VG_(get_error_address)(err), &err_extra->addrinfo);
-         break;
-
-      case OverlapErr: {
-         OverlapExtra* ov_extra = (OverlapExtra*)VG_(get_error_extra)(err);
-         if (VG_(clo_xml))
-            VG_(message)(Vg_UserMsg, "  <kind>Overlap</kind>");
-         if (ov_extra->len == -1)
-            VG_(message)(Vg_UserMsg,
-                         "%sSource and destination overlap in %s(%p, %p)%s",
-                         xpre,
-                         VG_(get_error_string)(err),
-                         ov_extra->dst, ov_extra->src,
-                         xpost);
-         else
-            VG_(message)(Vg_UserMsg,
-                         "%sSource and destination overlap in %s(%p, %p, %d)%s",
-                         xpre,
-                         VG_(get_error_string)(err),
-                         ov_extra->dst, ov_extra->src, ov_extra->len,
-                         xpost);
-         VG_(pp_ExeContext)( VG_(get_error_where)(err) );
-         break;
-      }
-      case LeakErr: {
-         MAC_(pp_LeakError)(err_extra);
-         break;
-      }
-
-      case IllegalMempoolErr:
-         if (VG_(clo_xml))
-            VG_(message)(Vg_UserMsg, "  <kind>InvalidMemPool</kind>");
-         VG_(message)(Vg_UserMsg, "%sIllegal memory pool address%s",
-                                  xpre, xpost);
-         VG_(pp_ExeContext)( VG_(get_error_where)(err) );
-         MAC_(pp_AddrInfo)(VG_(get_error_address)(err), &err_extra->addrinfo);
-         break;
-
-      default: 
-         VG_(printf)("Error:\n  unknown Memcheck/Addrcheck error code %d\n",
-                     VG_(get_error_kind)(err));
-         VG_(tool_panic)("unknown error code in MAC_(pp_shared_Error)");
-   }
-}
-
 /*------------------------------------------------------------*/
 /*--- Recording errors                                     ---*/
 /*------------------------------------------------------------*/
@@ -499,7 +333,7 @@ void MAC_(record_address_error) ( ThreadId tid, Addr a, Int size,
 
    /* If this is caused by an access immediately below %ESP, and the
       user asks nicely, we just ignore it. */
-   if (MAC_(clo_workaround_gcc296_bugs) && just_below_esp)
+   if (MC_(clo_workaround_gcc296_bugs) && just_below_esp)
       return;
 
    MAC_(clear_MAC_Error)( &err_extra );
@@ -789,259 +623,6 @@ void MAC_(print_extra_suppression_info) ( Error* err )
 {
    if (ParamErr == VG_(get_error_kind)(err)) {
       VG_(printf)("   %s\n", VG_(get_error_string)(err));
-   }
-}
-
-/*------------------------------------------------------------*/
-/*--- Crude profiling machinery.                           ---*/
-/*------------------------------------------------------------*/
-
-/* Event index.  If just the name of the fn is given, this means the
-   number of calls to the fn.  Otherwise it is the specified event.
-   Ones marked 'M' are MemCheck only.  Ones marked 'A' are AddrCheck only.
-   The rest are shared.
-
-   10   alloc_secondary_map
-
-   20   get_abit
-M  21   get_vbyte
-   22   set_abit
-M  23   set_vbyte
-   24   get_abits4_ALIGNED
-M  25   get_vbytes4_ALIGNED       
-
-   30   set_address_range_perms
-   31   set_address_range_perms(lower byte loop)
-   32   set_address_range_perms(quadword loop)
-   33   set_address_range_perms(upper byte loop)
-   
-   35   make_noaccess
-   36   make_writable
-   37   make_readable
-A  38   make_accessible
-
-   40   copy_address_range_state
-   41   copy_address_range_state(byte loop)
-   42   check_writable
-   43   check_writable(byte loop)
-   44   check_readable
-   45   check_readable(byte loop)
-   46   check_readable_asciiz
-   47   check_readable_asciiz(byte loop)
-A  48   check_accessible
-A  49   check_accessible(byte loop)
-
-   50   make_noaccess_aligned
-   51   make_writable_aligned
-
-M  60   helperc_LOADV4
-M  61   helperc_STOREV4
-M  62   helperc_LOADV2
-M  63   helperc_STOREV2
-M  64   helperc_LOADV1
-M  65   helperc_STOREV1
-
-A  66   helperc_ACCESS4
-A  67   helperc_ACCESS2
-A  68   helperc_ACCESS1
-
-M  70   rim_rd_V4_SLOWLY
-M  71   rim_wr_V4_SLOWLY
-M  72   rim_rd_V2_SLOWLY
-M  73   rim_wr_V2_SLOWLY
-M  74   rim_rd_V1_SLOWLY
-M  75   rim_wr_V1_SLOWLY
-
-A  76   ACCESS4_SLOWLY
-A  77   ACCESS2_SLOWLY
-A  78   ACCESS1_SLOWLY
-
-   80   fpu_read
-   81   fpu_read aligned 4
-   82   fpu_read aligned 8
-   83   fpu_read 2
-   84   fpu_read 10/28/108/512
-
-M  85   fpu_write
-M  86   fpu_write aligned 4
-M  87   fpu_write aligned 8
-M  88   fpu_write 2
-M  89   fpu_write 10/28/108/512
-
-   90   fpu_access
-   91   fpu_access aligned 4
-   92   fpu_access aligned 8
-   93   fpu_access 2
-   94   fpu_access 10/28/108/512
-
-   100  fpu_access_check_SLOWLY
-   101  fpu_access_check_SLOWLY(byte loop)
-
-   110  new_mem_stack_4
-   111  new_mem_stack_8
-   112  new_mem_stack_12
-   113  new_mem_stack_16
-   114  new_mem_stack_32
-   115  new_mem_stack
-
-   120  die_mem_stack_4
-   121  die_mem_stack_8
-   122  die_mem_stack_12
-   123  die_mem_stack_16
-   124  die_mem_stack_32
-   125  die_mem_stack
-*/
-
-#ifdef MAC_PROFILE_MEMORY
-
-UInt   MAC_(event_ctr)[N_PROF_EVENTS];
-HChar* MAC_(event_ctr_name)[N_PROF_EVENTS];
-
-static void init_prof_mem ( void )
-{
-   Int i;
-   for (i = 0; i < N_PROF_EVENTS; i++) {
-      MAC_(event_ctr)[i] = 0;
-      MAC_(event_ctr_name)[i] = NULL;
-   }
-}
-
-static void done_prof_mem ( void )
-{
-   Int  i;
-   Bool spaced = False;
-   for (i = 0; i < N_PROF_EVENTS; i++) {
-      if (!spaced && (i % 10) == 0) {
-         VG_(printf)("\n");
-         spaced = True;
-      }
-      if (MAC_(event_ctr)[i] > 0) {
-         spaced = False;
-         VG_(printf)( "prof mem event %3d: %9d   %s\n", 
-                      i, MAC_(event_ctr)[i],
-                      MAC_(event_ctr_name)[i] 
-                         ? MAC_(event_ctr_name)[i] : "unnamed");
-      }
-   }
-}
-
-#else
-
-static void init_prof_mem ( void ) { }
-static void done_prof_mem ( void ) { }
-
-#endif
-
-/*------------------------------------------------------------*/
-/*--- Common initialisation + finalisation                 ---*/
-/*------------------------------------------------------------*/
-
-void MAC_(common_pre_clo_init)(void)
-{
-   MAC_(malloc_list)  = VG_(HT_construct)( 80021 );   // prime, big
-   MAC_(mempool_list) = VG_(HT_construct)( 1009  );   // prime, not so big
-   init_prof_mem();
-}
-
-void MAC_(common_fini)(void (*leak_check)(ThreadId tid, LeakCheckMode mode))
-{
-   MAC_(print_malloc_stats)();
-
-   if (VG_(clo_verbosity) == 1 && !VG_(clo_xml)) {
-      if (MAC_(clo_leak_check) == LC_Off)
-         VG_(message)(Vg_UserMsg, 
-             "For a detailed leak analysis,  rerun with: --leak-check=yes");
-
-      VG_(message)(Vg_UserMsg, 
-                   "For counts of detected errors, rerun with: -v");
-   }
-   if (MAC_(clo_leak_check) != LC_Off)
-      leak_check(1/*bogus ThreadId*/, MAC_(clo_leak_check));
-
-   done_prof_mem();
-}
-
-/*------------------------------------------------------------*/
-/*--- Common client request handling                       ---*/
-/*------------------------------------------------------------*/
-
-Bool MAC_(handle_common_client_requests)(ThreadId tid, UWord* arg, UWord* ret )
-{
-   switch (arg[0]) {
-   case VG_USERREQ__COUNT_LEAKS: { /* count leaked bytes */
-      UWord** argp = (UWord**)arg;
-      // MAC_(bytes_leaked) et al were set by the last leak check (or zero
-      // if no prior leak checks performed).
-      *argp[1] = MAC_(bytes_leaked) + MAC_(bytes_indirect);
-      *argp[2] = MAC_(bytes_dubious);
-      *argp[3] = MAC_(bytes_reachable);
-      *argp[4] = MAC_(bytes_suppressed);
-      // there is no argp[5]
-      //*argp[5] = MAC_(bytes_indirect);
-      // XXX need to make *argp[1-4] readable
-      *ret = 0;
-      return True;
-   }
-   case VG_USERREQ__MALLOCLIKE_BLOCK: {
-      Addr p         = (Addr)arg[1];
-      SizeT sizeB    =       arg[2];
-      UInt rzB       =       arg[3];
-      Bool is_zeroed = (Bool)arg[4];
-
-      MAC_(new_block) ( tid, p, sizeB, /*ignored*/0, rzB, is_zeroed, 
-                        MAC_AllocCustom, MAC_(malloc_list) );
-      return True;
-   }
-   case VG_USERREQ__FREELIKE_BLOCK: {
-      Addr p         = (Addr)arg[1];
-      UInt rzB       =       arg[2];
-
-      MAC_(handle_free) ( tid, p, rzB, MAC_AllocCustom );
-      return True;
-   }
-
-   case _VG_USERREQ__MEMCHECK_RECORD_OVERLAP_ERROR: {
-      Char*         s     = (Char*)        arg[1];
-      OverlapExtra* extra = (OverlapExtra*)arg[2];
-      MAC_(record_overlap_error)(tid, s, extra);
-      return True;
-   }
-
-   case VG_USERREQ__CREATE_MEMPOOL: {
-      Addr pool      = (Addr)arg[1];
-      UInt rzB       =       arg[2];
-      Bool is_zeroed = (Bool)arg[3];
-
-      MAC_(create_mempool) ( pool, rzB, is_zeroed );
-      return True;
-   }
-
-   case VG_USERREQ__DESTROY_MEMPOOL: {
-      Addr pool      = (Addr)arg[1];
-
-      MAC_(destroy_mempool) ( pool );
-      return True;
-   }
-
-   case VG_USERREQ__MEMPOOL_ALLOC: {
-      Addr pool      = (Addr)arg[1];
-      Addr addr      = (Addr)arg[2];
-      UInt size      =       arg[3];
-
-      MAC_(mempool_alloc) ( tid, pool, addr, size );
-      return True;
-   }
-
-   case VG_USERREQ__MEMPOOL_FREE: {
-      Addr pool      = (Addr)arg[1];
-      Addr addr      = (Addr)arg[2];
-
-      MAC_(mempool_free) ( pool, addr );
-      return True;
-   }
-
-   default:
-      return False;
    }
 }
 
