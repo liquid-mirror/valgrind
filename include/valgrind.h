@@ -315,23 +315,30 @@ typedef
    that the next entry by this thread into a redirected translation
    whose address is on top of the stack will instead to jump to the
    non-redirected version.  Returns 0 if success, 1 if failure. */
-#define VALGRIND_PUSH_NRADDR(_qzz_addr) __extension__              \
+#define VALGRIND_PUSH_NRADDR(_qzz_addr,_qzz_check) __extension__   \
    ({unsigned long _qzz_res;                                       \
      VALGRIND_MAGIC_SEQUENCE(_qzz_res, 0/*native result*/,         \
                              VG_USERREQ__PUSH_NRADDR,              \
-                             _qzz_addr, 0, 0, 0);                  \
+                             _qzz_addr, _qzz_check, 0, 0);         \
      _qzz_res;                                                     \
    })
+
 #define VALGRIND_PUSH_NRADDR_AND_CHECK(_addr)                      \
+   /* Always use this one -- it's safer. */                        \
    do {                                                            \
       extern void exit(int);                                       \
-      long _r = VALGRIND_PUSH_NRADDR(_addr);                       \
+      long _r = VALGRIND_PUSH_NRADDR(_addr,1);                     \
       if (_r) {                                                    \
          VALGRIND_PRINTF_BACKTRACE(                                \
             "Valgrind: function wrapping: "                        \
             "redirect stack is full.  Program halted.");           \
          exit(1);                                                  \
       }                                                            \
+   } while (0)
+#define VALGRIND_PUSH_NRADDR_NO_CHECK(_addr)                       \
+   /* Don't use this. This is a horrible kludge for libpthread. */ \
+   do {                                                            \
+      (void) VALGRIND_PUSH_NRADDR(_addr,0);                        \
    } while (0)
 
 
@@ -520,8 +527,37 @@ VALGRIND_PRINTF_BACKTRACE(const char *format, ...)
                             id, start, end, 0);                    \
    }
 
+/* ---------------------------------------------------------- */
+/* --- Hacky macros for writing function wrappers.        --- */
+/* --- XXXXXXX DANGEROUS.  DO NOT USE.  XXXXXXXXXX        --- */
+/* ---------------------------------------------------------- */
 
-/* --- End-user functions for writing function wrappers. --- */
+#define CALL_ORIG_FN_1_UNCHECKED(lval,fn,arg1)                 \
+   do {                                                        \
+      __typeof__(&(fn)) _fn = &(fn);                           \
+      __typeof__(lval)  _lval;                                 \
+      __typeof__(arg1)  _arg1 = (arg1);                        \
+      VALGRIND_PUSH_NRADDR_NO_CHECK(_fn);                      \
+      _lval = (*_fn)(_arg1);                                   \
+      lval = _lval;                                            \
+   } while (0)
+
+#define CALL_ORIG_FN_4_UNCHECKED(lval,fn,arg1,arg2,arg3,arg4)  \
+   do {                                                        \
+      __typeof__(&(fn)) _fn = &(fn);                           \
+      __typeof__(lval)  _lval;                                 \
+      __typeof__(arg1)  _arg1 = (arg1);                        \
+      __typeof__(arg2)  _arg2 = (arg2);                        \
+      __typeof__(arg3)  _arg3 = (arg3);                        \
+      __typeof__(arg4)  _arg4 = (arg4);                        \
+      VALGRIND_PUSH_NRADDR_NO_CHECK(_fn);                      \
+      _lval = (*_fn)(_arg1,_arg2,_arg3,_arg4);                 \
+      lval = _lval;                                            \
+   } while (0)
+
+/* ---------------------------------------------------------- */
+/* --- End-user functions for writing function wrappers.  --- */
+/* ---------------------------------------------------------- */
 
 /* Use these to write the name of your wrapper.  NOTE: duplicates
    VG_REDIRECT_FUNCTION_Z{U,Z} in pub_tool_redir.h. */
@@ -546,7 +582,7 @@ VALGRIND_PRINTF_BACKTRACE(const char *format, ...)
       (*_fn)();                                                \
    } while (0)
 
-/* returns an arg, takes one arg */
+/* returns a value, takes one arg */
 #define CALL_ORIG_FN_1(lval,fn,arg1)                           \
    do {                                                        \
       __typeof__(&(fn)) _fn = &(fn);                           \
@@ -554,6 +590,20 @@ VALGRIND_PRINTF_BACKTRACE(const char *format, ...)
       __typeof__(arg1)  _arg1 = (arg1);                        \
       VALGRIND_PUSH_NRADDR_AND_CHECK(_fn);                     \
       _lval = (*_fn)(_arg1);                                   \
+      lval = _lval;                                            \
+   } while (0)
+
+/* returns a value, takes four args */
+#define CALL_ORIG_FN_4(lval,fn,arg1,arg2,arg3,arg4)            \
+   do {                                                        \
+      __typeof__(&(fn)) _fn = &(fn);                           \
+      __typeof__(lval)  _lval;                                 \
+      __typeof__(arg1)  _arg1 = (arg1);                        \
+      __typeof__(arg2)  _arg2 = (arg2);                        \
+      __typeof__(arg3)  _arg3 = (arg3);                        \
+      __typeof__(arg4)  _arg4 = (arg4);                        \
+      VALGRIND_PUSH_NRADDR_AND_CHECK(_fn);                     \
+      _lval = (*_fn)(_arg1,_arg2,_arg3,_arg4);                 \
       lval = _lval;                                            \
    } while (0)
 

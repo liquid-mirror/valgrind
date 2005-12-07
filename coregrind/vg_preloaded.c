@@ -77,10 +77,6 @@ void VG_NOTIFY_ON_LOAD(freeres)( void )
    ret_ty VG_REDIRECT_FUNCTION_ZZ(libpthreadZdsoZd0,f)(args); \
    ret_ty VG_REDIRECT_FUNCTION_ZZ(libpthreadZdsoZd0,f)(args)
 
-#define LIBC_FUNC(ret_ty, f, args...) \
-   ret_ty VG_REPLACE_FUNCTION(libcZdsoZd6, f)(args); \
-   ret_ty VG_REPLACE_FUNCTION(libcZdsoZd6, f)(args)
-
 #include <stdio.h>
 #include <pthread.h>
 
@@ -93,8 +89,7 @@ PTH_FUNC(int, pthreadZucreateZAZAGLIBCZu2Zd1, // pthread_create@@GLIBC_2.1
    int ret;
    fprintf(stderr, "<< pthread_create wrapper"); fflush(stderr);
 
-   VALGRIND_SET_NOREDIR;
-   ret = pthread_create(thread, attr, start, arg);
+   CALL_ORIG_FN_4_UNCHECKED(ret, pthread_create, thread,attr,start,arg);
 
    fprintf(stderr, " -> %d >>\n", ret);
    return ret;
@@ -107,8 +102,7 @@ PTH_FUNC(int, pthreadZumutexZulock, // pthread_mutex_lock
    int ret;
    fprintf(stderr, "<< pthread_mxlock %p", mutex); fflush(stderr);
 
-   VALGRIND_SET_NOREDIR;
-   ret = pthread_mutex_lock(mutex);
+   CALL_ORIG_FN_1_UNCHECKED(ret, pthread_mutex_lock, mutex);
 
    fprintf(stderr, " -> %d >>\n", ret);
    return ret;
@@ -121,8 +115,7 @@ PTH_FUNC(int, pthreadZumutexZuunlock, // pthread_mutex_unlock
    int ret;
    fprintf(stderr, "<< pthread_mxunlk %p", mutex); fflush(stderr);
 
-   VALGRIND_SET_NOREDIR;
-   ret = pthread_mutex_unlock(mutex);
+   CALL_ORIG_FN_1_UNCHECKED(ret, pthread_mutex_unlock, mutex);
 
    fprintf(stderr, " -> %d >>\n", ret);
    return ret;

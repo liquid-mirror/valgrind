@@ -486,7 +486,8 @@ Bool VG_(translate) ( ThreadId tid,
       did_redirect = False;
    }
 
-   if (redir != orig_addr && VG_(clo_verbosity) >= 2) {
+   if (redir != orig_addr 
+       && (VG_(clo_verbosity) >= 2 || VG_(clo_trace_redir))) {
       Bool ok;
       Char name1[64] = "";
       Char name2[64] = "";

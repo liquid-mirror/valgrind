@@ -1033,13 +1033,16 @@ void VG_(nuke_all_threads_except) ( ThreadId me, VgSchedReturnCode src )
                   zztid, O_CLREQ_RET, sizeof(UWord), f); \
    } while (0)
 
-#define SET_CLIENT_NRADDR(zztid, zzaddr) \
-   do { VG_(threads)[zztid].arch.vex.guest_NRFLAG = 1; \
-        VG_(threads)[zztid].arch.vex.guest_NRADDR = (zzaddr); \
+#define SET_CLIENT_NRFLAG(zztid, zzflag) \
+   do { VG_(threads)[zztid].arch.vex.guest_NRFLAG = (zzflag); \
         VG_TRACK( post_reg_write, \
                   Vg_CoreClientReq, zztid, \
                   offsetof(VexGuestArchState,guest_NRFLAG), \
                   sizeof(UWord) ); \
+   } while (0)
+
+#define SET_CLIENT_NRADDR(zztid, zzaddr) \
+   do { VG_(threads)[zztid].arch.vex.guest_NRADDR = (zzaddr); \
         VG_TRACK( post_reg_write, \
                   Vg_CoreClientReq, zztid, \
                   offsetof(VexGuestArchState,guest_NRADDR), \
@@ -1048,6 +1051,8 @@ void VG_(nuke_all_threads_except) ( ThreadId me, VgSchedReturnCode src )
 
 #define GET_CLIENT_NRFLAG(zztid) \
    VG_(threads)[zztid].arch.vex.guest_NRFLAG
+#define GET_CLIENT_NRADDR(zztid) \
+   VG_(threads)[zztid].arch.vex.guest_NRADDR
 
 
 /* ---------------------------------------------------------------------
@@ -1095,14 +1100,51 @@ void do_client_request ( ThreadId tid )
    switch (req_no) {
 
       case VG_USERREQ__PUSH_NRADDR: {
-         Addr noredir = arg[1];
-         if (GET_CLIENT_NRFLAG(tid) != 0) {
-            /* The 1-entry stack is full, so we must fail (return 1). */
-            SET_CLREQ_RETVAL(tid, 1);
-         } else {
-            SET_CLIENT_NRADDR(tid, noredir); /* also sets _NRFLAG */
+         Addr  nraddr   = arg[1];
+         UWord do_check = arg[2];
+
+	 if (do_check) {
+
+            /* This is the normal (safe) case. */
+            switch (GET_CLIENT_NRFLAG(tid)) {
+               case 0:
+                  SET_CLIENT_NRFLAG(tid, 1);
+                  SET_CLIENT_NRADDR(tid, nraddr);
+                  SET_CLREQ_RETVAL(tid, 0);
+                  break;
+               case 1: 
+               case 2:
+                  /* The 1-entry stack is full, so we must fail
+                     (return 1). */
+                 SET_CLREQ_RETVAL(tid, 1);
+                 break;
+               default:
+                  vg_assert2(0, "VG_USERREQ__PUSH_NRADDR(checked):"
+                                " bogus value");
+            }
+
+	 } else {
+
+            /* This is the not-normal (unsafe) case. */
+            switch (GET_CLIENT_NRFLAG(tid)) {
+               case 0:
+                  SET_CLIENT_NRFLAG(tid, 1);
+                  SET_CLIENT_NRADDR(tid, nraddr);
+                  break;
+               case 1: 
+                  SET_CLIENT_NRFLAG(tid, 2);
+                  break;
+               case 2:
+                  break;
+               default:
+                  vg_assert2(0, "VG_USERREQ__PUSH_NRADDR(***unchecked***):"
+                                " bogus value");
+            }
+            /* Unchecked case always succeeds */
             SET_CLREQ_RETVAL(tid, 0);
-         }
+
+	 }
+
          break;
       }
 
