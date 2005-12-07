@@ -248,7 +248,7 @@
 typedef
    enum { VG_USERREQ__RUNNING_ON_VALGRIND  = 0x1001,
           VG_USERREQ__DISCARD_TRANSLATIONS = 0x1002,
-          VG_USERREQ__SET_NOREDIR          = 0x1003,
+          VG_USERREQ__PUSH_NRADDR          = 0x1003,
 
           /* These allow any function to be called from the
              simulated CPU but run on the real CPU.
@@ -311,17 +311,28 @@ typedef
                             _qzz_addr, _qzz_len, 0, 0);            \
    }
 
-/* Sets this thread's guest_NOREDIR register to 1, so that the next
-   entry by this thread into a redirected translation will cause it
-   instead to jump to the non-redirected version. */
-#define VALGRIND_SET_NOREDIR __extension__                         \
-   ({unsigned int _qzz_res;                                        \
-    VALGRIND_MAGIC_SEQUENCE(_qzz_res, 0,                           \
-                            VG_USERREQ__SET_NOREDIR,               \
-                            0, 0, 0, 0);                           \
-    _qzz_res;                                                      \
+/* Push an address onto this thread's stack of noredir addresses, so
+   that the next entry by this thread into a redirected translation
+   whose address is on top of the stack will instead to jump to the
+   non-redirected version.  Returns 0 if success, 1 if failure. */
+#define VALGRIND_PUSH_NRADDR(_qzz_addr) __extension__              \
+   ({unsigned long _qzz_res;                                       \
+     VALGRIND_MAGIC_SEQUENCE(_qzz_res, 0/*native result*/,         \
+                             VG_USERREQ__PUSH_NRADDR,              \
+                             _qzz_addr, 0, 0, 0);                  \
+     _qzz_res;                                                     \
    })
-
+#define VALGRIND_PUSH_NRADDR_AND_CHECK(_addr)                      \
+   do {                                                            \
+      extern void exit(int);                                       \
+      long _r = VALGRIND_PUSH_NRADDR(_addr);                       \
+      if (_r) {                                                    \
+         VALGRIND_PRINTF_BACKTRACE(                                \
+            "Valgrind: function wrapping: "                        \
+            "redirect stack is full.  Program halted.");           \
+         exit(1);                                                  \
+      }                                                            \
+   } while (0)
 
 
 #ifdef NVALGRIND
@@ -508,5 +519,42 @@ VALGRIND_PRINTF_BACKTRACE(const char *format, ...)
                             VG_USERREQ__STACK_CHANGE,              \
                             id, start, end, 0);                    \
    }
+
+
+/* --- End-user functions for writing function wrappers. --- */
+
+/* Use these to write the name of your wrapper.  NOTE: duplicates
+   VG_REDIRECT_FUNCTION_Z{U,Z} in pub_tool_redir.h. */
+
+#define I_REPLACE_SONAME_FNNAME_ZU(soname,fnname)              \
+   _vgrZU_##soname##_##fnname
+
+#define I_REPLACE_SONAME_FNNAME_ZZ(soname,fnname)              \
+   _vgrZZ_##soname##_##fnname
+
+/* Use these inside the wrapper, to make calls to the function you are
+   wrapping.  You must use these - calling originals directly will get
+   you a redirect-stack overflow in short order.  Also, these force
+   evaluation of all args before pushing the noredir-address, which is
+   needed to make things work reliably.*/
+
+/* returns void, takes zero args */
+#define CALL_ORIG_VOIDFN_0(fn)                                 \
+   do {                                                        \
+      __typeof__(&(fn)) _fn = &(fn);                           \
+      VALGRIND_PUSH_NRADDR_AND_CHECK(_fn);                     \
+      (*_fn)();                                                \
+   } while (0)
+
+/* returns an arg, takes one arg */
+#define CALL_ORIG_FN_1(lval,fn,arg1)                           \
+   do {                                                        \
+      __typeof__(&(fn)) _fn = &(fn);                           \
+      __typeof__(lval)  _lval;                                 \
+      __typeof__(arg1)  _arg1 = (arg1);                        \
+      VALGRIND_PUSH_NRADDR_AND_CHECK(_fn);                     \
+      _lval = (*_fn)(_arg1);                                   \
+      lval = _lval;                                            \
+   } while (0)
 
 #endif   /* __VALGRIND_H */

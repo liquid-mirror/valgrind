@@ -110,8 +110,9 @@
    Everything else is left unchanged.
 */
 
-/* If you change these, the code in VG_(maybe_Z_demangle) needs to
-   be changed accordingly. */
+/* If you change these, the code in VG_(maybe_Z_demangle) needs to be
+   changed accordingly.  NOTE: duplicates
+   I_REPLACE_SONAME_FNNAME_Z{U,Z} in valgrind.h. */
 #define VG_REDIRECT_FUNCTION_ZU(soname,fnname) _vgrZU_##soname##_##fnname
 #define VG_REDIRECT_FUNCTION_ZZ(soname,fnname) _vgrZZ_##soname##_##fnname
 
