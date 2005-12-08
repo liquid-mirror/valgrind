@@ -384,8 +384,7 @@ static Bool translations_allowable_from_seg ( NSegment* seg )
 
 /* This stops Vex from chasing into function entry points that we wish
    to redirect.  Chasing across them obviously defeats the redirect
-   mechanism, with bad effects for Memcheck, Addrcheck, and possibly
-   others.
+   mechanism, with bad effects for Memcheck and possibly others.
 
    Also, we must stop Vex chasing into blocks for which we might want
    to self checking.

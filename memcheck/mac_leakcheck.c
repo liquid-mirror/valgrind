@@ -1,13 +1,11 @@
 
 /*--------------------------------------------------------------------*/
-/*--- The leak checker, shared between Memcheck and Addrcheck.     ---*/
-/*---                                              mac_leakcheck.c ---*/
+/*--- The leak checker.                            mac_leakcheck.c ---*/
 /*--------------------------------------------------------------------*/
 
 /*
    This file is part of MemCheck, a heavyweight Valgrind tool for
-   detecting memory errors, and AddrCheck, a lightweight Valgrind tool 
-   for detecting memory errors.
+   detecting memory errors.
 
    Copyright (C) 2000-2005 Julian Seward 
       jseward@acm.org
@@ -32,9 +30,8 @@
 
 #include "pub_tool_basics.h"
 #include "pub_tool_aspacemgr.h"
-#include "pub_tool_errormgr.h"      // For mc_include.h
-#include "pub_tool_execontext.h"    // For mc_include.h
-#include "pub_tool_hashtable.h"     // For mc_include.h
+#include "pub_tool_execontext.h"
+#include "pub_tool_hashtable.h"
 #include "pub_tool_libcbase.h"
 #include "pub_tool_libcassert.h"
 #include "pub_tool_libcprint.h"
@@ -166,9 +163,9 @@ typedef
 #if VG_DEBUG_LEAKCHECK
 /* Used to sanity-check the fast binary-search mechanism. */
 static 
-Int find_shadow_for_OLD ( Addr        ptr, 
-                          MAC_Chunk** shadows,
-                          Int         n_shadows )
+Int find_shadow_for_OLD ( Addr       ptr, 
+                          MC_Chunk** shadows,
+                          Int        n_shadows )
 
 {
    Int  i;
@@ -187,9 +184,9 @@ Int find_shadow_for_OLD ( Addr        ptr,
 
 
 static 
-Int find_shadow_for ( Addr        ptr, 
-                      MAC_Chunk** shadows,
-                      Int         n_shadows )
+Int find_shadow_for ( Addr       ptr, 
+                      MC_Chunk** shadows,
+                      Int        n_shadows )
 {
    Addr a_mid_lo, a_mid_hi;
    Int lo, mid, hi, retVal;
@@ -226,13 +223,13 @@ Int find_shadow_for ( Addr        ptr,
 }
 
 /* Globals, for the following callback used by VG_(detect_memory_leaks). */
-static MAC_Chunk**  lc_shadows;
-static Int          lc_n_shadows;
-static MarkStack*   lc_markstack;
-static Int	    lc_markstack_top;
-static Addr         lc_min_mallocd_addr;
-static Addr         lc_max_mallocd_addr;
-static SizeT	    lc_scanned;
+static MC_Chunk** lc_shadows;
+static Int        lc_n_shadows;
+static MarkStack* lc_markstack;
+static Int	  lc_markstack_top;
+static Addr       lc_min_mallocd_addr;
+static Addr       lc_max_mallocd_addr;
+static SizeT	  lc_scanned;
 
 static Bool	  (*lc_is_within_valid_secondary) (Addr addr);
 static Bool	  (*lc_is_valid_aligned_word)     (Addr addr);
@@ -323,8 +320,8 @@ SizeT MC_(bytes_suppressed) = 0;
 
 static Int lc_compar(void* n1, void* n2)
 {
-   MAC_Chunk* mc1 = *(MAC_Chunk**)n1;
-   MAC_Chunk* mc2 = *(MAC_Chunk**)n2;
+   MC_Chunk* mc1 = *(MC_Chunk**)n1;
+   MC_Chunk* mc2 = *(MC_Chunk**)n2;
    return (mc1->data < mc2->data ? -1 : 1);
 }
 
@@ -604,29 +601,27 @@ static void full_report(ThreadId tid)
       leak_extra.n_total_records = n_lossrecords;
       leak_extra.lossRecord      = p_min;
       is_suppressed = 
-         VG_(unique_error) ( tid, LeakErr, /*Addr*/0, /*s*/NULL,
-                             /*extra*/&leak_extra, 
-                             /*where*/p_min->allocated_at, print_record,
-                             /*allow_GDB_attach*/False, /*count_error*/False );
+         MC_(record_leak_error) ( tid, &leak_extra, p_min->allocated_at,
+                                  print_record );
 
       if (is_suppressed) {
-         blocks_suppressed      += p_min->num_blocks;
+         blocks_suppressed     += p_min->num_blocks;
          MC_(bytes_suppressed) += p_min->total_bytes;
 
-      } else if (Unreached  == p_min->loss_mode) {
-         blocks_leaked      += p_min->num_blocks;
-         MC_(bytes_leaked) += p_min->total_bytes;
+      } else if (Unreached == p_min->loss_mode) {
+         blocks_leaked       += p_min->num_blocks;
+         MC_(bytes_leaked)   += p_min->total_bytes;
 
-      } else if (IndirectLeak  == p_min->loss_mode) {
-         blocks_indirect    += p_min->num_blocks;
-         MC_(bytes_indirect)+= p_min->total_bytes;
+      } else if (IndirectLeak == p_min->loss_mode) {
+         blocks_indirect     += p_min->num_blocks;
+         MC_(bytes_indirect) += p_min->total_bytes;
 
-      } else if (Interior    == p_min->loss_mode) {
-         blocks_dubious      += p_min->num_blocks;
+      } else if (Interior   == p_min->loss_mode) {
+         blocks_dubious     += p_min->num_blocks;
          MC_(bytes_dubious) += p_min->total_bytes;
 
-      } else if (Proper        == p_min->loss_mode) {
-         blocks_reachable      += p_min->num_blocks;
+      } else if (Proper       == p_min->loss_mode) {
+         blocks_reachable     += p_min->num_blocks;
          MC_(bytes_reachable) += p_min->total_bytes;
 
       } else {
@@ -670,12 +665,9 @@ static void make_summary(void)
 
 /* Top level entry point to leak detector.  Call here, passing in
    suitable address-validating functions (see comment at top of
-   scan_all_valid_memory above).  All this is to avoid duplication
-   of the leak-detection code for Memcheck and Addrcheck.
-   Also pass in a tool-specific function to extract the .where field
-   for allocated blocks, an indication of the resolution wanted for
-   distinguishing different allocation points, and whether or not
-   reachable blocks should be shown.
+   scan_all_valid_memory above).  These functions used to encapsulate the
+   differences between Memcheck and Addrcheck;  they no longer do but it
+   doesn't hurt to keep them here.
 */
 void MC_(do_detect_memory_leaks) (
    ThreadId tid, LeakCheckMode mode,
@@ -688,8 +680,8 @@ void MC_(do_detect_memory_leaks) (
    tl_assert(mode != LC_Off);
 
    /* VG_(HT_to_array) allocates storage for shadows */
-   lc_shadows = (MAC_Chunk**)VG_(HT_to_array)( MC_(malloc_list),
-                                               &lc_n_shadows );
+   lc_shadows = (MC_Chunk**)VG_(HT_to_array)( MC_(malloc_list),
+                                              &lc_n_shadows );
 
    /* Sort the array. */
    VG_(ssort)((void*)lc_shadows, lc_n_shadows, sizeof(VgHashNode*), lc_compar);

@@ -309,7 +309,7 @@ is why we have chosen this arrangement.</para>
 <sect1 id="manual-core.report" xreflabel="Reporting of errors">
 <title>Reporting of errors</title>
 
-<para>When one of the error-checking tools (Memcheck, Addrcheck,
+<para>When one of the error-checking tools (Memcheck,
 Helgrind) detects something bad happening in the program, an
 error message is written to the commentary.  For example:</para>
 
@@ -342,7 +342,7 @@ and sorted by, their occurrence counts.  This makes it easy to
 see which errors have occurred most frequently.</para>
 
 <para>Errors are reported before the associated operation
-actually happens.  If you're using a tool (Memcheck, Addrcheck)
+actually happens.  If you're using a tool (Memcheck)
 which does address checking, and your program attempts to read
 from address zero, the tool will emit a message to this effect,
 and the program will then duly die with a segmentation
@@ -588,7 +588,7 @@ categories.</para>
     <para><computeroutput>--tool=&lt;name&gt;</computeroutput>
     [default=memcheck]</para>
     <para>Run the Valgrind tool called <emphasis>name</emphasis>,
-    e.g. Memcheck, Addrcheck, Cachegrind, etc.</para>
+    e.g. Memcheck, Cachegrind, etc.</para>
    </listitem>
   </itemizedlist>
 </sect2>
@@ -972,7 +972,7 @@ errors, e.g. Memcheck, but not Cachegrind.</para>
 
 <para>For tools that use their own version of
 <computeroutput>malloc()</computeroutput> (e.g. Memcheck and
-Addrcheck), the following options apply.</para>
+Massif), the following options apply.</para>
 
   <itemizedlist>
 
@@ -1021,7 +1021,7 @@ Addrcheck), the following options apply.</para>
     this, they provided a routine called
     <computeroutput>__libc_freeres</computeroutput> specifically
     to make glibc release all memory it has allocated.  Memcheck
-    and Addrcheck therefore try and run
+    therefore tries to run
     <computeroutput>__libc_freeres</computeroutput> at
     exit.</para>
 

@@ -35,80 +35,91 @@
 #define MC_(str)    VGAPPEND(vgMemCheck_,str)
 
 /*------------------------------------------------------------*/
-/*--- Errors and suppressions                              ---*/
+/*--- Tracking the heap                                    ---*/
 /*------------------------------------------------------------*/
 
-/* The classification of a faulting address. */
-typedef 
-   enum { 
-      Undescribed,   // as-yet unclassified
-      Stack, 
-      Unknown,       // classification yielded nothing useful
-      Freed, Mallocd, 
-      UserG,         // in a user-defined block
-      Mempool,       // in a mempool
-      Register,      // in a register;  for Param errors only
-   }
-   AddrKind;
+/* We want at least a 16B redzone on client heap blocks for Memcheck */
+#define MC_MALLOC_REDZONE_SZB    16
 
-/* Records info about a faulting address. */
+/* For malloc()/new/new[] vs. free()/delete/delete[] mismatch checking. */
 typedef
-   struct {                   // Used by:
-      AddrKind akind;         //   ALL
-      SizeT blksize;          //   Freed, Mallocd
-      OffT rwoffset;          //   Freed, Mallocd
-      ExeContext* lastchange; //   Freed, Mallocd
-      ThreadId stack_tid;     //   Stack
-      const Char *desc;	      //   UserG
-      Bool maybe_gcc;         // True if just below %esp -- could be a gcc bug.
+   enum {
+      MC_AllocMalloc = 0,
+      MC_AllocNew    = 1,
+      MC_AllocNewVec = 2,
+      MC_AllocCustom = 3
    }
-   AddrInfo;
-
-typedef 
-   enum { 
-      ParamSupp,     // Bad syscall params
-      CoreMemSupp,   // Memory errors in core (pthread ops, signal handling)
-
-      // Use of invalid values of given size (MemCheck only)
-      Value0Supp, Value1Supp, Value2Supp, Value4Supp, Value8Supp, Value16Supp,
-
-      // Invalid read/write attempt at given size
-      Addr1Supp, Addr2Supp, Addr4Supp, Addr8Supp, Addr16Supp,
-
-      FreeSupp,      // Invalid or mismatching free
-      OverlapSupp,   // Overlapping blocks in memcpy(), strcpy(), etc
-      LeakSupp,      // Something to be suppressed in a leak check.
-      MempoolSupp,   // Memory pool suppression.
-   } 
-   MAC_SuppKind;
-
-/* What kind of error it is. */
-typedef 
-   enum { ValueErr,     /* Memcheck only */
-          CoreMemErr,
-          AddrErr, 
-          ParamErr, UserErr,  /* behaves like an anonymous ParamErr */
-          FreeErr, FreeMismatchErr,
-          OverlapErr,
-          LeakErr,
-          IllegalMempoolErr,
-   }
-   MAC_ErrorKind;
-
-/* What kind of memory access is involved in the error? */
+   MC_AllocKind;
+   
+/* Nb: first two fields must match core's VgHashNode. */
 typedef
-   enum { ReadAxs, WriteAxs, ExecAxs }
-   AxsKind;
-
-/* Extra context for memory errors */
-typedef
-   struct {                // Used by:
-      AxsKind axskind;     //   AddrErr
-      Int size;            //   AddrErr, ValueErr
-      AddrInfo addrinfo;   //   {Addr,Free,FreeMismatch,Param,User}Err
-      Bool isUnaddr;       //   {CoreMem,Param,User}Err
+   struct _MC_Chunk {
+      struct _MC_Chunk* next;
+      Addr          data;           // ptr to actual block
+      SizeT         size : (sizeof(UWord)*8)-2; // size requested; 30 or 62 bits
+      MC_AllocKind allockind : 2;   // which wrapper did the allocation
+      ExeContext*   where;          // where it was allocated
    }
-   MAC_Error;
+   MC_Chunk;
+
+/* Memory pool.  Nb: first two fields must match core's VgHashNode. */
+typedef
+   struct _MC_Mempool {
+      struct _MC_Mempool* next;
+      Addr          pool;           // pool identifier
+      SizeT         rzB;            // pool red-zone size
+      Bool          is_zeroed;      // allocations from this pool are zeroed
+      VgHashTable   chunks;         // chunks associated with this pool
+   }
+   MC_Mempool;
+
+
+extern void* MC_(new_block)  ( ThreadId tid,
+                               Addr p, SizeT size, SizeT align, UInt rzB,
+                               Bool is_zeroed, MC_AllocKind kind,
+                               VgHashTable table);
+extern void MC_(handle_free) ( ThreadId tid,
+                                Addr p, UInt rzB, MC_AllocKind kind );
+
+extern void MC_(create_mempool)  ( Addr pool, UInt rzB, Bool is_zeroed );
+extern void MC_(destroy_mempool) ( Addr pool );
+extern void MC_(mempool_alloc)   ( ThreadId tid, Addr pool,
+                                   Addr addr, SizeT size );
+extern void MC_(mempool_free)    ( Addr pool, Addr addr );
+
+extern MC_Chunk* MC_(get_freed_list_head)( void );
+
+/* For tracking malloc'd blocks */
+extern VgHashTable MC_(malloc_list);
+
+/* For tracking memory pools. */
+extern VgHashTable MC_(mempool_list);
+
+/* Function pointers for the two tools to track interesting events. */
+extern void (*MC_(new_mem_heap)) ( Addr a, SizeT len, Bool is_inited );
+extern void (*MC_(ban_mem_heap)) ( Addr a, SizeT len );
+extern void (*MC_(die_mem_heap)) ( Addr a, SizeT len );
+extern void (*MC_(copy_mem_heap))( Addr from, Addr to, SizeT len );
+
+/* Function pointers for internal sanity checking. */
+extern Bool (*MC_(check_noaccess))( Addr a, SizeT len, Addr* bad_addr );
+
+extern void MC_(print_malloc_stats) ( void );
+
+extern void* MC_(malloc)               ( ThreadId tid, SizeT n );
+extern void* MC_(__builtin_new)        ( ThreadId tid, SizeT n );
+extern void* MC_(__builtin_vec_new)    ( ThreadId tid, SizeT n );
+extern void* MC_(memalign)             ( ThreadId tid, SizeT align, SizeT n );
+extern void* MC_(calloc)               ( ThreadId tid, SizeT nmemb, SizeT size1 );
+extern void  MC_(free)                 ( ThreadId tid, void* p );
+extern void  MC_(__builtin_delete)     ( ThreadId tid, void* p );
+extern void  MC_(__builtin_vec_delete) ( ThreadId tid, void* p );
+extern void* MC_(realloc)              ( ThreadId tid, void* p, SizeT new_size );
+
+
+/*------------------------------------------------------------*/
+/*--- Errors and suppressions                              ---*/
+/*------------------------------------------------------------*/
 
 /* Extra info for overlap errors */
 typedef
@@ -119,42 +130,14 @@ typedef
    }
    OverlapExtra;
 
-/* For malloc()/new/new[] vs. free()/delete/delete[] mismatch checking. */
-typedef
-   enum {
-      MAC_AllocMalloc = 0,
-      MAC_AllocNew    = 1,
-      MAC_AllocNewVec = 2,
-      MAC_AllocCustom = 3
-   }
-   MAC_AllocKind;
-   
-/* Nb: first two fields must match core's VgHashNode. */
-typedef
-   struct _MAC_Chunk {
-      struct _MAC_Chunk* next;
-      Addr          data;           // ptr to actual block
-      SizeT         size : (sizeof(UWord)*8)-2; // size requested; 30 or 62 bits
-      MAC_AllocKind allockind : 2;  // which wrapper did the allocation
-      ExeContext*   where;          // where it was allocated
-   }
-   MAC_Chunk;
-
-/* Memory pool.  Nb: first two fields must match core's VgHashNode. */
-typedef
-   struct _MAC_Mempool {
-      struct _MAC_Mempool* next;
-      Addr          pool;           // pool identifier
-      SizeT         rzB;            // pool red-zone size
-      Bool          is_zeroed;      // allocations from this pool are zeroed
-      VgHashTable   chunks;         // chunks associated with this pool
-   }
-   MAC_Mempool;
-
 extern void MC_(record_free_error)            ( ThreadId tid, Addr a ); 
 extern void MC_(record_illegal_mempool_error) ( ThreadId tid, Addr a );
 extern void MC_(record_freemismatch_error)    ( ThreadId tid, Addr a,
-                                                MAC_Chunk* mc );
+                                                MC_Chunk* mc );
+extern Bool MC_(record_leak_error)            ( ThreadId tid, 
+                                                void* leak_extra,
+                                                ExeContext* where,
+                                                Bool print_record );
 
 /*------------------------------------------------------------*/
 /*--- Profiling of tools and memory events                 ---*/
@@ -169,9 +152,9 @@ typedef
    VgpToolCC;
 
 /* Define to collect detailed performance info. */
-/* #define MAC_PROFILE_MEMORY */
+/* #define MC_PROFILE_MEMORY */
 
-#ifdef MAC_PROFILE_MEMORY
+#ifdef MC_PROFILE_MEMORY
 #  define N_PROF_EVENTS 500
 
 extern UInt   MC_(event_ctr)[N_PROF_EVENTS];
@@ -191,7 +174,7 @@ extern HChar* MC_(event_ctr_name)[N_PROF_EVENTS];
 
 #  define PROF_EVENT(ev, name) /* */
 
-#endif   /* MAC_PROFILE_MEMORY */
+#endif   /* MC_PROFILE_MEMORY */
 
 
 /*------------------------------------------------------------*/
@@ -204,46 +187,25 @@ extern HChar* MC_(event_ctr_name)[N_PROF_EVENTS];
 #define SM_SIZE 65536            /* DO NOT CHANGE */
 #define SM_MASK (SM_SIZE-1)      /* DO NOT CHANGE */
 
-#define VGM_BIT_VALID       0
-#define VGM_BIT_INVALID     1
+#define V_BIT_VALID        0
+#define V_BIT_INVALID      1
 
-#define VGM_NIBBLE_VALID    0
-#define VGM_NIBBLE_INVALID  0xF
+#define V_BITS8_VALID      0
+#define V_BITS8_INVALID    0xFF
 
-#define VGM_BYTE_VALID      0
-#define VGM_BYTE_INVALID    0xFF
+#define V_BITS16_VALID     0
+#define V_BITS16_INVALID   0xFFFF
 
-#define VGM_SHORT_VALID     0
-#define VGM_SHORT_INVALID   0xFFFF
+#define V_BITS32_VALID     0
+#define V_BITS32_INVALID   0xFFFFFFFF
 
-#define VGM_WORD32_VALID    0
-#define VGM_WORD32_INVALID  0xFFFFFFFF
+#define V_BITS64_VALID     0ULL
+#define V_BITS64_INVALID   0xFFFFFFFFFFFFFFFFULL
 
-#define VGM_WORD64_VALID    0ULL
-#define VGM_WORD64_INVALID  0xFFFFFFFFFFFFFFFFULL
-
-
-/* We want a 16B redzone on heap blocks for Memcheck */
-#define MAC_MALLOC_REDZONE_SZB    16
 
 /*------------------------------------------------------------*/
-/*--- Variables                                            ---*/
+/*--- Leak checking                                        ---*/
 /*------------------------------------------------------------*/
-
-/* For tracking malloc'd blocks */
-extern VgHashTable MC_(malloc_list);
-
-/* For tracking memory pools. */
-extern VgHashTable MC_(mempool_list);
-
-/* Function pointers for the two tools to track interesting events. */
-extern void (*MC_(new_mem_heap)) ( Addr a, SizeT len, Bool is_inited );
-extern void (*MC_(ban_mem_heap)) ( Addr a, SizeT len );
-extern void (*MC_(die_mem_heap)) ( Addr a, SizeT len );
-extern void (*MC_(copy_mem_heap))( Addr from, Addr to, SizeT len );
-
-/* Function pointers for internal sanity checking. */
-extern Bool (*MC_(check_noaccess))( Addr a, SizeT len, Addr* bad_addr );
 
 /* For VALGRIND_COUNT_LEAKS client request */
 extern SizeT MC_(bytes_leaked);
@@ -252,38 +214,9 @@ extern SizeT MC_(bytes_dubious);
 extern SizeT MC_(bytes_reachable);
 extern SizeT MC_(bytes_suppressed);
 
-/*------------------------------------------------------------*/
-/*--- Functions                                            ---*/
-/*------------------------------------------------------------*/
-
-extern void MC_(pp_AddrInfo) ( Addr a, AddrInfo* ai );
-
-extern void MC_(clear_MAC_Error)          ( MAC_Error* err_extra );
-
-extern void* MC_(new_block) ( ThreadId tid,
-                               Addr p, SizeT size, SizeT align, UInt rzB,
-                               Bool is_zeroed, MAC_AllocKind kind,
-                               VgHashTable table);
-
-extern void MC_(handle_free) ( ThreadId tid,
-                                Addr p, UInt rzB, MAC_AllocKind kind );
-
-extern void MC_(create_mempool)(Addr pool, UInt rzB, Bool is_zeroed);
-
-extern void MC_(destroy_mempool)(Addr pool);
-
-extern void MC_(mempool_alloc)(ThreadId tid, 
-                                Addr pool, Addr addr, SizeT size);
-
-extern void MC_(mempool_free)(Addr pool, Addr addr);
-
-extern MAC_Chunk* MC_(get_freed_list_head)( void );
-
 /* For leak checking */
 extern void MC_(pp_LeakError)(void* extra);
                            
-extern void MC_(print_malloc_stats) ( void );
-
 typedef
    enum {
       LC_Off,
@@ -297,16 +230,6 @@ extern void MC_(do_detect_memory_leaks) (
           Bool (*is_within_valid_secondary) ( Addr ),
           Bool (*is_valid_aligned_word)     ( Addr )
        );
-
-extern void* MC_(malloc)               ( ThreadId tid, SizeT n );
-extern void* MC_(__builtin_new)        ( ThreadId tid, SizeT n );
-extern void* MC_(__builtin_vec_new)    ( ThreadId tid, SizeT n );
-extern void* MC_(memalign)             ( ThreadId tid, SizeT align, SizeT n );
-extern void* MC_(calloc)               ( ThreadId tid, SizeT nmemb, SizeT size1 );
-extern void  MC_(free)                 ( ThreadId tid, void* p );
-extern void  MC_(__builtin_delete)     ( ThreadId tid, void* p );
-extern void  MC_(__builtin_vec_delete) ( ThreadId tid, void* p );
-extern void* MC_(realloc)              ( ThreadId tid, void* p, SizeT new_size );
 
 /*------------------------------------------------------------*/
 /*--- Command line options + defaults                      ---*/
@@ -345,7 +268,7 @@ extern Bool MC_(clo_undef_value_errors);
 
 
 /*------------------------------------------------------------*/
-/*--- Functions                                            ---*/
+/*--- Instrumentation                                      ---*/
 /*------------------------------------------------------------*/
 
 /* Functions defined in mc_main.c */

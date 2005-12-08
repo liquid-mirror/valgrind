@@ -38,8 +38,6 @@
 
 #include "pub_tool_basics.h"
 #include "pub_tool_aspacemgr.h"
-#include "pub_tool_errormgr.h"      // For mc_include.h
-#include "pub_tool_execontext.h"    // For mc_include.h
 #include "pub_tool_hashtable.h"     // For mc_include.h
 #include "pub_tool_libcbase.h"
 #include "pub_tool_libcassert.h"
@@ -171,22 +169,22 @@ static Int   n_sanity_expensive = 0;
 // This isn't so difficult, it just requires careful attention in a few
 // places.
 
-#define MC_BITS8_NOACCESS     0x0      // 00b
-#define MC_BITS8_WRITABLE     0x1      // 01b
-#define MC_BITS8_READABLE     0x2      // 10b
-#define MC_BITS8_OTHER        0x3      // 11b
+#define VA_BITS8_NOACCESS     0x0      // 00b
+#define VA_BITS8_WRITABLE     0x1      // 01b
+#define VA_BITS8_READABLE     0x2      // 10b
+#define VA_BITS8_OTHER        0x3      // 11b
 
-#define MC_BITS16_NOACCESS    0x0      // 00_00b
-#define MC_BITS16_WRITABLE    0x5      // 01_01b
-#define MC_BITS16_READABLE    0xa      // 10_10b
+#define VA_BITS16_NOACCESS    0x0      // 00_00b
+#define VA_BITS16_WRITABLE    0x5      // 01_01b
+#define VA_BITS16_READABLE    0xa      // 10_10b
 
-#define MC_BITS32_NOACCESS    0x00     // 00_00_00_00b
-#define MC_BITS32_WRITABLE    0x55     // 01_01_01_01b
-#define MC_BITS32_READABLE    0xaa     // 10_10_10_10b
+#define VA_BITS32_NOACCESS    0x00     // 00_00_00_00b
+#define VA_BITS32_WRITABLE    0x55     // 01_01_01_01b
+#define VA_BITS32_READABLE    0xaa     // 10_10_10_10b
 
-#define MC_BITS64_NOACCESS    0x0000   // 00_00_00_00b x 2
-#define MC_BITS64_WRITABLE    0x5555   // 01_01_01_01b x 2
-#define MC_BITS64_READABLE    0xaaaa   // 10_10_10_10b x 2
+#define VA_BITS64_NOACCESS    0x0000   // 00_00_00_00b x 2
+#define VA_BITS64_WRITABLE    0x5555   // 01_01_01_01b x 2
+#define VA_BITS64_READABLE    0xaaaa   // 10_10_10_10b x 2
 
 
 #define SM_CHUNKS             16384
@@ -424,7 +422,7 @@ static UWord get_sec_vbits8(Addr a)
    tl_assert(n);
    // Shouldn't be fully defined or fully undefined -- those cases shouldn't
    // make it to the secondary V bits table.
-   tl_assert(VGM_BYTE_VALID != n->vbits8 && VGM_BYTE_INVALID != n->vbits8 );
+   tl_assert(V_BITS8_VALID != n->vbits8 && V_BITS8_INVALID != n->vbits8 );
    return n->vbits8;
 }
 
@@ -434,7 +432,7 @@ static void set_sec_vbits8(Addr a, UWord vbits8)
    n = VG_(OSet_Lookup)(secVBitTable, &a);
    // Shouldn't be fully defined or fully undefined -- those cases shouldn't
    // make it to the secondary V bits table.
-   tl_assert(VGM_BYTE_VALID != vbits8 && VGM_BYTE_INVALID != vbits8 );
+   tl_assert(V_BITS8_VALID != vbits8 && V_BITS8_INVALID != vbits8 );
    if (n) {
       n->vbits8 = vbits8;  // update
    } else {
@@ -524,7 +522,7 @@ ULong mc_LOADVn_slow ( Addr a, SizeT szB, Bool bigendian )
       valid addresses and Defined for invalid addresses.  Iterate over
       the bytes in the word, from the most significant down to the
       least. */
-   ULong vw          = VGM_WORD64_INVALID;
+   ULong vw          = V_BITS64_INVALID;
    SizeT i           = szB-1;
    SizeT n_addrs_bad = 0;
    Addr  ai;
@@ -543,13 +541,13 @@ ULong mc_LOADVn_slow ( Addr a, SizeT szB, Bool bigendian )
       // XXX: We check in order of most likely to least likely...
       // XXX: could maybe have a little lookup table instead of these
       //      chained conditionals?  and elsewhere?
-      if      ( MC_BITS8_READABLE == vabits8 ) { vbyte = VGM_BYTE_VALID;   }
-      else if ( MC_BITS8_WRITABLE == vabits8 ) { vbyte = VGM_BYTE_INVALID; }
-      else if ( MC_BITS8_NOACCESS == vabits8 ) {
-         vbyte = VGM_BYTE_VALID;    // Make V bits defined!
+      if      ( VA_BITS8_READABLE == vabits8 ) { vbyte = V_BITS8_VALID;   }
+      else if ( VA_BITS8_WRITABLE == vabits8 ) { vbyte = V_BITS8_INVALID; }
+      else if ( VA_BITS8_NOACCESS == vabits8 ) {
+         vbyte = V_BITS8_VALID;    // Make V bits defined!
          n_addrs_bad++;
       } else {
-         tl_assert( MC_BITS8_OTHER == vabits8 );
+         tl_assert( VA_BITS8_OTHER == vabits8 );
          vbyte = get_sec_vbits8(ai);
       }
       vw <<= 8; 
@@ -601,12 +599,12 @@ void mc_STOREVn_slow ( Addr a, SizeT szB, ULong vbytes, Bool bigendian )
       ai = a+byte_offset_w(szB,bigendian,i);
       vbyte = vbytes & 0xff;
       vabits8 = get_vabits8(ai);
-      if ( MC_BITS8_NOACCESS != vabits8 ) {
+      if ( VA_BITS8_NOACCESS != vabits8 ) {
          // Addressable.  Convert in-register format to in-memory format.
-         if      ( VGM_BYTE_VALID   == vbyte ) { vabits8 = MC_BITS8_READABLE; }
-         else if ( VGM_BYTE_INVALID == vbyte ) { vabits8 = MC_BITS8_WRITABLE; }
+         if      ( V_BITS8_VALID   == vbyte ) { vabits8 = VA_BITS8_READABLE; }
+         else if ( V_BITS8_INVALID == vbyte ) { vabits8 = VA_BITS8_WRITABLE; }
          else    { 
-            vabits8 = MC_BITS8_OTHER;
+            vabits8 = VA_BITS8_OTHER;
             set_sec_vbits8(ai, vbyte);
          }
          set_vabits8(ai, vabits8);
@@ -716,9 +714,9 @@ static void set_address_range_perms ( Addr a, SizeT lenT, UWord vabits64,
    PROF_EVENT(150, "set_address_range_perms");
 
    /* Check the V+A bits make sense. */
-   tl_assert(vabits64 == MC_BITS64_NOACCESS ||
-             vabits64 == MC_BITS64_WRITABLE ||
-             vabits64 == MC_BITS64_READABLE);
+   tl_assert(vabits64 == VA_BITS64_NOACCESS ||
+             vabits64 == VA_BITS64_WRITABLE ||
+             vabits64 == VA_BITS64_READABLE);
 
    if (lenT == 0)
       return;
@@ -726,9 +724,9 @@ static void set_address_range_perms ( Addr a, SizeT lenT, UWord vabits64,
    if (lenT > 100 * 1000 * 1000) {
       if (VG_(clo_verbosity) > 0 && !VG_(clo_xml)) {
          Char* s = "unknown???";
-         if (vabits64 == MC_BITS64_NOACCESS) s = "noaccess";
-         if (vabits64 == MC_BITS64_WRITABLE) s = "writable";
-         if (vabits64 == MC_BITS64_READABLE) s = "readable";
+         if (vabits64 == VA_BITS64_NOACCESS) s = "noaccess";
+         if (vabits64 == VA_BITS64_WRITABLE) s = "writable";
+         if (vabits64 == VA_BITS64_READABLE) s = "readable";
          VG_(message)(Vg_UserMsg, "Warning: set address range perms: "
                                   "large range %lu (%s)", lenT, s);
       }
@@ -931,21 +929,21 @@ static void mc_make_noaccess ( Addr a, SizeT len )
 {
    PROF_EVENT(40, "mc_make_noaccess");
    DEBUG("mc_make_noaccess(%p, %lu)\n", a, len);
-   set_address_range_perms ( a, len, MC_BITS64_NOACCESS, SM_DIST_NOACCESS );
+   set_address_range_perms ( a, len, VA_BITS64_NOACCESS, SM_DIST_NOACCESS );
 }
 
 static void mc_make_writable ( Addr a, SizeT len )
 {
    PROF_EVENT(41, "mc_make_writable");
    DEBUG("mc_make_writable(%p, %lu)\n", a, len);
-   set_address_range_perms ( a, len, MC_BITS64_WRITABLE, SM_DIST_WRITABLE );
+   set_address_range_perms ( a, len, VA_BITS64_WRITABLE, SM_DIST_WRITABLE );
 }
 
 static void mc_make_readable ( Addr a, SizeT len )
 {
    PROF_EVENT(42, "mc_make_readable");
    DEBUG("mc_make_readable(%p, %lu)\n", a, len);
-   set_address_range_perms ( a, len, MC_BITS64_READABLE, SM_DIST_READABLE );
+   set_address_range_perms ( a, len, VA_BITS64_READABLE, SM_DIST_READABLE );
 }
 
 
@@ -1010,7 +1008,7 @@ void make_aligned_word32_writable ( Addr a )
 
    sm                   = primary_map[sec_no];
    sm_off               = SM_OFF(a);
-   sm->vabits32[sm_off] = MC_BITS32_WRITABLE;
+   sm->vabits32[sm_off] = VA_BITS32_WRITABLE;
 }
 
 
@@ -1045,7 +1043,7 @@ void make_aligned_word32_noaccess ( Addr a )
 
    sm                   = primary_map[sec_no];
    sm_off               = SM_OFF(a);
-   sm->vabits32[sm_off] = MC_BITS32_NOACCESS;
+   sm->vabits32[sm_off] = VA_BITS32_NOACCESS;
 }
 
 
@@ -1079,7 +1077,7 @@ void make_aligned_word64_writable ( Addr a )
 
    sm       = primary_map[sec_no];
    sm_off64 = SM_OFF_64(a);
-   ((UShort*)(sm->vabits32))[sm_off64] = MC_BITS64_WRITABLE;
+   ((UShort*)(sm->vabits32))[sm_off64] = VA_BITS64_WRITABLE;
 }
 
 
@@ -1112,7 +1110,7 @@ void make_aligned_word64_noaccess ( Addr a )
 
    sm       = primary_map[sec_no];
    sm_off64 = SM_OFF_64(a);
-   ((UShort*)(sm->vabits32))[sm_off64] = MC_BITS64_NOACCESS;
+   ((UShort*)(sm->vabits32))[sm_off64] = VA_BITS64_NOACCESS;
 }
 
 
@@ -1374,22 +1372,22 @@ void MC_(helperc_MAKE_STACK_UNINIT) ( Addr base, UWord len )
                is modifiable. */
             UWord   v_off = SM_OFF(a_lo);
             UShort* p     = (UShort*)(&sm->vabits32[v_off]);
-            p[ 0] =  MC_BITS64_WRITABLE;
-            p[ 1] =  MC_BITS64_WRITABLE;
-            p[ 2] =  MC_BITS64_WRITABLE;
-            p[ 3] =  MC_BITS64_WRITABLE;
-            p[ 4] =  MC_BITS64_WRITABLE;
-            p[ 5] =  MC_BITS64_WRITABLE;
-            p[ 6] =  MC_BITS64_WRITABLE;
-            p[ 7] =  MC_BITS64_WRITABLE;
-            p[ 8] =  MC_BITS64_WRITABLE;
-            p[ 9] =  MC_BITS64_WRITABLE;
-            p[10] =  MC_BITS64_WRITABLE;
-            p[11] =  MC_BITS64_WRITABLE;
-            p[12] =  MC_BITS64_WRITABLE;
-            p[13] =  MC_BITS64_WRITABLE;
-            p[14] =  MC_BITS64_WRITABLE;
-            p[15] =  MC_BITS64_WRITABLE;
+            p[ 0] =  VA_BITS64_WRITABLE;
+            p[ 1] =  VA_BITS64_WRITABLE;
+            p[ 2] =  VA_BITS64_WRITABLE;
+            p[ 3] =  VA_BITS64_WRITABLE;
+            p[ 4] =  VA_BITS64_WRITABLE;
+            p[ 5] =  VA_BITS64_WRITABLE;
+            p[ 6] =  VA_BITS64_WRITABLE;
+            p[ 7] =  VA_BITS64_WRITABLE;
+            p[ 8] =  VA_BITS64_WRITABLE;
+            p[ 9] =  VA_BITS64_WRITABLE;
+            p[10] =  VA_BITS64_WRITABLE;
+            p[11] =  VA_BITS64_WRITABLE;
+            p[12] =  VA_BITS64_WRITABLE;
+            p[13] =  VA_BITS64_WRITABLE;
+            p[14] =  VA_BITS64_WRITABLE;
+            p[15] =  VA_BITS64_WRITABLE;
             return;
          }
       }
@@ -1430,7 +1428,7 @@ static Bool mc_check_noaccess ( Addr a, SizeT len, Addr* bad_addr )
    for (i = 0; i < len; i++) {
       PROF_EVENT(61, "mc_check_noaccess(loop)");
       vabits8 = get_vabits8(a);
-      if (MC_BITS8_NOACCESS != vabits8) {
+      if (VA_BITS8_NOACCESS != vabits8) {
          if (bad_addr != NULL) *bad_addr = a;
          return False;
       }
@@ -1449,7 +1447,7 @@ static Bool mc_check_writable ( Addr a, SizeT len, Addr* bad_addr )
    for (i = 0; i < len; i++) {
       PROF_EVENT(63, "mc_check_writable(loop)");
       vabits8 = get_vabits8(a);
-      if (MC_BITS8_NOACCESS == vabits8) {
+      if (VA_BITS8_NOACCESS == vabits8) {
          if (bad_addr != NULL) *bad_addr = a;
          return False;
       }
@@ -1468,11 +1466,11 @@ static MC_ReadResult mc_check_readable ( Addr a, SizeT len, Addr* bad_addr )
    for (i = 0; i < len; i++) {
       PROF_EVENT(65, "mc_check_readable(loop)");
       vabits8 = get_vabits8(a);
-      if (MC_BITS8_READABLE != vabits8) {
+      if (VA_BITS8_READABLE != vabits8) {
          // Error!  Nb: Report addressability errors in preference to
          // definedness errors.
          if (bad_addr != NULL) *bad_addr = a;
-         return ( MC_BITS8_NOACCESS == vabits8 ? MC_AddrErr : MC_ValueErr );
+         return ( VA_BITS8_NOACCESS == vabits8 ? MC_AddrErr : MC_ValueErr );
       }
       a++;
    }
@@ -1493,11 +1491,11 @@ static Bool mc_check_readable_asciiz ( Addr a, Addr* bad_addr )
    while (True) {
       PROF_EVENT(67, "mc_check_readable_asciiz(loop)");
       vabits8 = get_vabits8(a);
-      if (MC_BITS8_READABLE != vabits8) {
+      if (VA_BITS8_READABLE != vabits8) {
          // Error!  Nb: Report addressability errors in preference to
          // definedness errors.
          if (bad_addr != NULL) *bad_addr = a;
-         return ( MC_BITS8_NOACCESS == vabits8 ? MC_AddrErr : MC_ValueErr );
+         return ( VA_BITS8_NOACCESS == vabits8 ? MC_AddrErr : MC_ValueErr );
       }
       /* Ok, a is safe to read. */
       if (* ((UChar*)a) == 0) {
@@ -1650,7 +1648,7 @@ static void mc_post_reg_write ( CorePart part, ThreadId tid,
 {
    UChar area[1024];
    tl_assert(size <= 1024);
-   VG_(memset)(area, VGM_BYTE_VALID, size);
+   VG_(memset)(area, V_BITS8_VALID, size);
    VG_(set_shadow_regs_area)( tid, offset, size, area );
 }
 
@@ -1679,7 +1677,7 @@ static void mc_pre_reg_read ( CorePart part, ThreadId tid, Char* s,
 
    bad = False;
    for (i = 0; i < size; i++) {
-      if (area[i] != VGM_BYTE_VALID) {
+      if (area[i] != V_BITS8_VALID) {
          bad = True;
          break;
       }
@@ -1689,6 +1687,82 @@ static void mc_pre_reg_read ( CorePart part, ThreadId tid, Char* s,
       mc_record_param_error ( tid, 0, /*isReg*/True, /*isUnaddr*/False, s );
 }
 
+
+/*------------------------------------------------------------*/
+/*--- Error and suppression types                          ---*/
+/*------------------------------------------------------------*/
+
+/* The classification of a faulting address. */
+typedef 
+   enum { 
+      Undescribed,   // as-yet unclassified
+      Stack, 
+      Unknown,       // classification yielded nothing useful
+      Freed, Mallocd, 
+      UserG,         // in a user-defined block
+      Mempool,       // in a mempool
+      Register,      // in a register;  for Param errors only
+   }
+   AddrKind;
+
+/* Records info about a faulting address. */
+typedef
+   struct {                   // Used by:
+      AddrKind akind;         //   ALL
+      SizeT blksize;          //   Freed, Mallocd
+      OffT rwoffset;          //   Freed, Mallocd
+      ExeContext* lastchange; //   Freed, Mallocd
+      ThreadId stack_tid;     //   Stack
+      const Char *desc;	      //   UserG
+      Bool maybe_gcc;         // True if just below %esp -- could be a gcc bug.
+   }
+   AddrInfo;
+
+typedef 
+   enum { 
+      ParamSupp,     // Bad syscall params
+      CoreMemSupp,   // Memory errors in core (pthread ops, signal handling)
+
+      // Use of invalid values of given size (MemCheck only)
+      Value0Supp, Value1Supp, Value2Supp, Value4Supp, Value8Supp, Value16Supp,
+
+      // Invalid read/write attempt at given size
+      Addr1Supp, Addr2Supp, Addr4Supp, Addr8Supp, Addr16Supp,
+
+      FreeSupp,      // Invalid or mismatching free
+      OverlapSupp,   // Overlapping blocks in memcpy(), strcpy(), etc
+      LeakSupp,      // Something to be suppressed in a leak check.
+      MempoolSupp,   // Memory pool suppression.
+   } 
+   MC_SuppKind;
+
+/* What kind of error it is. */
+typedef 
+   enum { ValueErr,     /* Memcheck only */
+          CoreMemErr,
+          AddrErr, 
+          ParamErr, UserErr,  /* behaves like an anonymous ParamErr */
+          FreeErr, FreeMismatchErr,
+          OverlapErr,
+          LeakErr,
+          IllegalMempoolErr,
+   }
+   MC_ErrorKind;
+
+/* What kind of memory access is involved in the error? */
+typedef
+   enum { ReadAxs, WriteAxs, ExecAxs }
+   AxsKind;
+
+/* Extra context for memory errors */
+typedef
+   struct {                // Used by:
+      AxsKind axskind;     //   AddrErr
+      Int size;            //   AddrErr, ValueErr
+      AddrInfo addrinfo;   //   {Addr,Free,FreeMismatch,Param,User}Err
+      Bool isUnaddr;       //   {CoreMem,Param,User}Err
+   }
+   MC_Error;
 
 /*------------------------------------------------------------*/
 /*--- Printing errors                                      ---*/
@@ -1764,7 +1838,7 @@ static void mc_pp_AddrInfo ( Addr a, AddrInfo* ai )
 
 static void mc_pp_Error ( Error* err )
 {
-   MAC_Error* err_extra = VG_(get_error_extra)(err);
+   MC_Error* err_extra = VG_(get_error_extra)(err);
 
    HChar* xpre  = VG_(clo_xml) ? "  <what>" : "";
    HChar* xpost = VG_(clo_xml) ? "</what>"  : "";
@@ -1915,7 +1989,7 @@ static void mc_pp_Error ( Error* err )
          break;
 
       default: 
-         VG_(printf)("Error:\n  unknown Memcheck/Addrcheck error code %d\n",
+         VG_(printf)("Error:\n  unknown Memcheck error code %d\n",
                      VG_(get_error_kind)(err));
          VG_(tool_panic)("unknown error code in mc_pp_Error)");
    }
@@ -1939,31 +2013,25 @@ static Bool is_just_below_ESP( Addr esp, Addr aa )
       return False;
 }
 
-static __inline__
-void clear_AddrInfo ( AddrInfo* ai )
+static void mc_clear_MC_Error ( MC_Error* err_extra )
 {
-   ai->akind      = Unknown;
-   ai->blksize    = 0;
-   ai->rwoffset   = 0;
-   ai->lastchange = NULL;
-   ai->stack_tid  = VG_INVALID_THREADID;
-   ai->maybe_gcc  = False;
-   ai->desc       = NULL;
-}
-
-void MC_(clear_MAC_Error) ( MAC_Error* err_extra )
-{
-   err_extra->axskind   = ReadAxs;
-   err_extra->size      = 0;
-   clear_AddrInfo ( &err_extra->addrinfo );
-   err_extra->isUnaddr  = True;
+   err_extra->axskind             = ReadAxs;
+   err_extra->size                = 0;
+   err_extra->isUnaddr            = True;
+   err_extra->addrinfo.akind      = Unknown;
+   err_extra->addrinfo.blksize    = 0;
+   err_extra->addrinfo.rwoffset   = 0;
+   err_extra->addrinfo.lastchange = NULL;
+   err_extra->addrinfo.stack_tid  = VG_INVALID_THREADID;
+   err_extra->addrinfo.maybe_gcc  = False;
+   err_extra->addrinfo.desc       = NULL;
 }
 
 /* This one called from generated code and non-generated code. */
 static void mc_record_address_error ( ThreadId tid, Addr a, Int size,
                                       Bool isWrite )
 {
-   MAC_Error err_extra;
+   MC_Error err_extra;
    Bool      just_below_esp;
 
    just_below_esp = is_just_below_ESP( VG_(get_SP)(tid), a );
@@ -1973,7 +2041,7 @@ static void mc_record_address_error ( ThreadId tid, Addr a, Int size,
    if (MC_(clo_workaround_gcc296_bugs) && just_below_esp)
       return;
 
-   MC_(clear_MAC_Error)( &err_extra );
+   mc_clear_MC_Error( &err_extra );
    err_extra.axskind = isWrite ? WriteAxs : ReadAxs;
    err_extra.size    = size;
    err_extra.addrinfo.akind     = Undescribed;
@@ -1987,9 +2055,9 @@ static void mc_record_address_error ( ThreadId tid, Addr a, Int size,
    errors which are found by the core. */
 static void mc_record_core_mem_error ( ThreadId tid, Bool isUnaddr, Char* msg )
 {
-   MAC_Error err_extra;
+   MC_Error err_extra;
 
-   MC_(clear_MAC_Error)( &err_extra );
+   mc_clear_MC_Error( &err_extra );
    err_extra.isUnaddr = isUnaddr;
    VG_(maybe_record_error)( tid, CoreMemErr, /*addr*/0, msg, &err_extra );
 }
@@ -2002,11 +2070,11 @@ static void mc_record_core_mem_error ( ThreadId tid, Bool isUnaddr, Char* msg )
 static void mc_record_param_error ( ThreadId tid, Addr a, Bool isReg,
                                     Bool isUnaddr, Char* msg )
 {
-   MAC_Error err_extra;
+   MC_Error err_extra;
 
    tl_assert(VG_INVALID_THREADID != tid);
    if (isUnaddr) tl_assert(!isReg);    // unaddressable register is impossible
-   MC_(clear_MAC_Error)( &err_extra );
+   mc_clear_MC_Error( &err_extra );
    err_extra.addrinfo.akind = ( isReg ? Register : Undescribed );
    err_extra.isUnaddr = isUnaddr;
    VG_(maybe_record_error)( tid, ParamErr, a, msg, &err_extra );
@@ -2014,10 +2082,10 @@ static void mc_record_param_error ( ThreadId tid, Addr a, Bool isReg,
 
 static void mc_record_jump_error ( ThreadId tid, Addr a )
 {
-   MAC_Error err_extra;
+   MC_Error err_extra;
 
    tl_assert(VG_INVALID_THREADID != tid);
-   MC_(clear_MAC_Error)( &err_extra );
+   mc_clear_MC_Error( &err_extra );
    err_extra.axskind = ExecAxs;
    err_extra.size    = 1;     // size only used for suppressions
    err_extra.addrinfo.akind = Undescribed;
@@ -2026,31 +2094,31 @@ static void mc_record_jump_error ( ThreadId tid, Addr a )
 
 void MC_(record_free_error) ( ThreadId tid, Addr a ) 
 {
-   MAC_Error err_extra;
+   MC_Error err_extra;
 
    tl_assert(VG_INVALID_THREADID != tid);
-   MC_(clear_MAC_Error)( &err_extra );
+   mc_clear_MC_Error( &err_extra );
    err_extra.addrinfo.akind = Undescribed;
    VG_(maybe_record_error)( tid, FreeErr, a, /*s*/NULL, &err_extra );
 }
 
 void MC_(record_illegal_mempool_error) ( ThreadId tid, Addr a ) 
 {
-   MAC_Error err_extra;
+   MC_Error err_extra;
 
    tl_assert(VG_INVALID_THREADID != tid);
-   MC_(clear_MAC_Error)( &err_extra );
+   mc_clear_MC_Error( &err_extra );
    err_extra.addrinfo.akind = Undescribed;
    VG_(maybe_record_error)( tid, IllegalMempoolErr, a, /*s*/NULL, &err_extra );
 }
 
-void MC_(record_freemismatch_error) ( ThreadId tid, Addr a, MAC_Chunk* mc )
+void MC_(record_freemismatch_error) ( ThreadId tid, Addr a, MC_Chunk* mc )
 {
-   MAC_Error err_extra;
+   MC_Error err_extra;
    AddrInfo* ai;
 
    tl_assert(VG_INVALID_THREADID != tid);
-   MC_(clear_MAC_Error)( &err_extra );
+   mc_clear_MC_Error( &err_extra );
    ai = &err_extra.addrinfo;
    ai->akind      = Mallocd;     // Nb: not 'Freed'
    ai->blksize    = mc->size;
@@ -2066,14 +2134,24 @@ static void mc_record_overlap_error ( ThreadId tid,
       tid, OverlapErr, /*addr*/0, /*s*/function, ov_extra );
 }
 
+Bool MC_(record_leak_error) ( ThreadId tid, /*LeakExtra*/void* leak_extra,
+                              ExeContext* where, Bool print_record )
+{
+   return
+   VG_(unique_error) ( tid, LeakErr, /*Addr*/0, /*s*/NULL,
+                       /*extra*/leak_extra, where, print_record,
+                       /*allow_GDB_attach*/False, /*count_error*/False );
+}
+
+
 /* Creates a copy of the 'extra' part, updates the copy with address info if
    necessary, and returns the copy. */
 /* This one called from generated code and non-generated code. */
 static void mc_record_value_error ( ThreadId tid, Int size )
 {
-   MAC_Error err_extra;
+   MC_Error err_extra;
 
-   MC_(clear_MAC_Error)( &err_extra );
+   mc_clear_MC_Error( &err_extra );
    err_extra.size     = size;
    err_extra.isUnaddr = False;
    VG_(maybe_record_error)( tid, ValueErr, /*addr*/0, /*s*/NULL, &err_extra );
@@ -2084,10 +2162,10 @@ static void mc_record_value_error ( ThreadId tid, Int size )
 static void mc_record_user_error ( ThreadId tid, Addr a, Bool isWrite,
                                    Bool isUnaddr )
 {
-   MAC_Error err_extra;
+   MC_Error err_extra;
 
    tl_assert(VG_INVALID_THREADID != tid);
-   MC_(clear_MAC_Error)( &err_extra );
+   mc_clear_MC_Error( &err_extra );
    err_extra.addrinfo.akind = Undescribed;
    err_extra.isUnaddr       = isUnaddr;
    VG_(maybe_record_error)( tid, UserErr, a, /*s*/NULL, &err_extra );
@@ -2114,8 +2192,8 @@ static Bool eq_AddrInfo ( VgRes res, AddrInfo* ai1, AddrInfo* ai2 )
    are allowed to be different.  */
 static Bool mc_eq_Error ( VgRes res, Error* e1, Error* e2 )
 {
-   MAC_Error* e1_extra = VG_(get_error_extra)(e1);
-   MAC_Error* e2_extra = VG_(get_error_extra)(e2);
+   MC_Error* e1_extra = VG_(get_error_extra)(e1);
+   MC_Error* e2_extra = VG_(get_error_extra)(e2);
 
    /* Guaranteed by calling function */
    tl_assert(VG_(get_error_kind)(e1) == VG_(get_error_kind)(e2));
@@ -2187,17 +2265,17 @@ static Bool mc_eq_Error ( VgRes res, Error* e1, Error* e2 )
    }
 }
 
-/* Function used when searching MAC_Chunk lists */
-static Bool addr_is_in_MAC_Chunk(MAC_Chunk* mc, Addr a)
+/* Function used when searching MC_Chunk lists */
+static Bool addr_is_in_MC_Chunk(MC_Chunk* mc, Addr a)
 {
    // Nb: this is not quite right!  It assumes that the heap block has
-   // a redzone of size MAC_MALLOC_REDZONE_SZB.  That's true for malloc'd
+   // a redzone of size MC_MALLOC_REDZONE_SZB.  That's true for malloc'd
    // blocks, but not necessarily true for custom-alloc'd blocks.  So
    // in some cases this could result in an incorrect description (eg.
    // saying "12 bytes after block A" when really it's within block B.
-   // Fixing would require adding redzone size to MAC_Chunks, though.
+   // Fixing would require adding redzone size to MC_Chunks, though.
    return VG_(addr_is_in_block)( a, mc->data, mc->size,
-                                 MAC_MALLOC_REDZONE_SZB );
+                                 MC_MALLOC_REDZONE_SZB );
 }
 
 // Forward declaration
@@ -2207,7 +2285,7 @@ static Bool client_perm_maybe_describe( Addr a, AddrInfo* ai );
    putting the result in ai. */
 static void describe_addr ( Addr a, AddrInfo* ai )
 {
-   MAC_Chunk* mc;
+   MC_Chunk* mc;
    ThreadId   tid;
    Addr       stack_min, stack_max;
 
@@ -2227,7 +2305,7 @@ static void describe_addr ( Addr a, AddrInfo* ai )
    /* Search for a recently freed block which might bracket it. */
    mc = MC_(get_freed_list_head)();
    while (mc) {
-      if (addr_is_in_MAC_Chunk(mc, a)) {
+      if (addr_is_in_MC_Chunk(mc, a)) {
          ai->akind      = Freed;
          ai->blksize    = mc->size;
          ai->rwoffset   = (Int)a - (Int)mc->data;
@@ -2239,7 +2317,7 @@ static void describe_addr ( Addr a, AddrInfo* ai )
    /* Search for a currently malloc'd block which might bracket it. */
    VG_(HT_ResetIter)(MC_(malloc_list));
    while ( (mc = VG_(HT_Next)(MC_(malloc_list))) ) {
-      if (addr_is_in_MAC_Chunk(mc, a)) {
+      if (addr_is_in_MC_Chunk(mc, a)) {
          ai->akind      = Mallocd;
          ai->blksize    = mc->size;
          ai->rwoffset   = (Int)(a) - (Int)mc->data;
@@ -2260,20 +2338,20 @@ static UInt mc_update_extra( Error* err )
    // need any updating.
    case CoreMemErr:
    case ValueErr: {
-      MAC_Error* extra = VG_(get_error_extra)(err);
+      MC_Error* extra = VG_(get_error_extra)(err);
       tl_assert(Unknown == extra->addrinfo.akind);
-      return sizeof(MAC_Error);
+      return sizeof(MC_Error);
    }
 
    // ParamErrs sometimes involve a memory address; call describe_addr() in
    // this case.
    case ParamErr: {
-      MAC_Error* extra = VG_(get_error_extra)(err);
+      MC_Error* extra = VG_(get_error_extra)(err);
       tl_assert(Undescribed == extra->addrinfo.akind ||
                 Register    == extra->addrinfo.akind);
       if (Undescribed == extra->addrinfo.akind)
          describe_addr ( VG_(get_error_address)(err), &(extra->addrinfo) );
-      return sizeof(MAC_Error);
+      return sizeof(MC_Error);
    }
 
    // These four always involve a memory address.
@@ -2281,22 +2359,22 @@ static UInt mc_update_extra( Error* err )
    case UserErr:
    case FreeErr:
    case IllegalMempoolErr: {
-      MAC_Error* extra = VG_(get_error_extra)(err);
+      MC_Error* extra = VG_(get_error_extra)(err);
       tl_assert(Undescribed == extra->addrinfo.akind);
       describe_addr ( VG_(get_error_address)(err), &(extra->addrinfo) );
-      return sizeof(MAC_Error);
+      return sizeof(MC_Error);
    }
 
    // FreeMismatchErrs have already had their address described;  this is
-   // possible because we have the MAC_Chunk on hand when the error is
+   // possible because we have the MC_Chunk on hand when the error is
    // detected.  However, the address may be part of a user block, and if so
    // we override the pre-determined description with a user block one.
    case FreeMismatchErr: {
-      MAC_Error* extra = VG_(get_error_extra)(err);
+      MC_Error* extra = VG_(get_error_extra)(err);
       tl_assert(extra && Mallocd == extra->addrinfo.akind);
       (void)client_perm_maybe_describe( VG_(get_error_address)(err), 
                                         &(extra->addrinfo) );
-      return sizeof(MAC_Error);
+      return sizeof(MC_Error);
    }
 
    // No memory address involved with these ones.  Nb:  for LeakErrs the
@@ -2358,7 +2436,7 @@ Bool mc_read_extra_suppression_info ( Int fd, Char* buf, Int nBuf, Supp *su )
 static Bool mc_error_matches_suppression(Error* err, Supp* su)
 {
    Int        su_size;
-   MAC_Error* err_extra = VG_(get_error_extra)(err);
+   MC_Error* err_extra = VG_(get_error_extra)(err);
    ErrorKind  ekind     = VG_(get_error_kind )(err);
 
    switch (VG_(get_supp_kind)(su)) {
@@ -2420,7 +2498,7 @@ static Char* mc_get_error_name ( Error* err )
    case IllegalMempoolErr:  return "Mempool";
    case FreeErr:            return "Free";
    case AddrErr:            
-      switch ( ((MAC_Error*)VG_(get_error_extra)(err))->size ) {
+      switch ( ((MC_Error*)VG_(get_error_extra)(err))->size ) {
       case 1:               return "Addr1";
       case 2:               return "Addr2";
       case 4:               return "Addr4";
@@ -2430,7 +2508,7 @@ static Char* mc_get_error_name ( Error* err )
       }
      
    case ValueErr:
-      switch ( ((MAC_Error*)VG_(get_error_extra)(err))->size ) {
+      switch ( ((MC_Error*)VG_(get_error_extra)(err))->size ) {
       case 0:               return "Cond";
       case 1:               return "Value1";
       case 2:               return "Value2";
@@ -2505,10 +2583,10 @@ ULong mc_LOADV8 ( Addr aA, Bool isBigEndian )
    vabits64 = ((UShort*)(sm->vabits32))[sm_off64];
 
    // Convert V bits from compact memory form to expanded register form
-   if (EXPECTED_TAKEN(vabits64 == MC_BITS64_READABLE)) {
-      return VGM_WORD64_VALID;
-   } else if (EXPECTED_TAKEN(vabits64 == MC_BITS64_WRITABLE)) {
-      return VGM_WORD64_INVALID;
+   if (EXPECTED_TAKEN(vabits64 == VA_BITS64_READABLE)) {
+      return V_BITS64_VALID;
+   } else if (EXPECTED_TAKEN(vabits64 == VA_BITS64_WRITABLE)) {
+      return V_BITS64_INVALID;
    } else {
       /* Slow but general case. */
       PROF_EVENT(202, "mc_STOREV-slow2");
@@ -2566,17 +2644,17 @@ void mc_STOREV8 ( Addr aA, ULong vbytes, Bool isBigEndian )
    vabits64 = ((UShort*)(sm->vabits32))[sm_off64];
 
    if (EXPECTED_TAKEN( !is_distinguished_sm(sm) && 
-                       (MC_BITS64_READABLE == vabits64 ||
-                        MC_BITS64_WRITABLE == vabits64) ))
+                       (VA_BITS64_READABLE == vabits64 ||
+                        VA_BITS64_WRITABLE == vabits64) ))
    {
       /* Handle common case quickly: a is suitably aligned, */
       /* is mapped, and is addressible. */
       // Convert full V-bits in register to compact 2-bit form.
       // XXX: is it best to check for VALID before INVALID?
-      if (VGM_WORD64_VALID == vbytes) {
-         ((UShort*)(sm->vabits32))[sm_off64] = (UShort)MC_BITS64_READABLE;
-      } else if (VGM_WORD64_INVALID == vbytes) {
-         ((UShort*)(sm->vabits32))[sm_off64] = (UShort)MC_BITS64_WRITABLE;
+      if (V_BITS64_VALID == vbytes) {
+         ((UShort*)(sm->vabits32))[sm_off64] = (UShort)VA_BITS64_READABLE;
+      } else if (V_BITS64_INVALID == vbytes) {
+         ((UShort*)(sm->vabits32))[sm_off64] = (UShort)VA_BITS64_WRITABLE;
       } else {
          /* Slow but general case -- writing partially defined bytes. */
          PROF_EVENT(212, "mc_STOREV8-slow2");
@@ -2640,10 +2718,10 @@ UWord mc_LOADV4 ( Addr a, Bool isBigEndian )
    // Convert V bits from compact memory form to expanded register form
    // For 64-bit platforms, set the high 32 bits of retval to 1 (undefined).
    // Almost certainly not necessary, but be paranoid.
-   if (EXPECTED_TAKEN(vabits32 == MC_BITS32_READABLE)) {
-      return ((UWord)0xFFFFFFFF00000000ULL | (UWord)VGM_WORD32_VALID);
-   } else if (EXPECTED_TAKEN(vabits32 == MC_BITS32_WRITABLE)) {
-      return ((UWord)0xFFFFFFFF00000000ULL | (UWord)VGM_WORD32_INVALID);
+   if (EXPECTED_TAKEN(vabits32 == VA_BITS32_READABLE)) {
+      return ((UWord)0xFFFFFFFF00000000ULL | (UWord)V_BITS32_VALID);
+   } else if (EXPECTED_TAKEN(vabits32 == VA_BITS32_WRITABLE)) {
+      return ((UWord)0xFFFFFFFF00000000ULL | (UWord)V_BITS32_INVALID);
    } else {
       /* Slow but general case. */
       PROF_EVENT(222, "mc_LOADV4-slow2");
@@ -2703,21 +2781,21 @@ void mc_STOREV4 ( Addr aA, UWord vbytes, Bool isBigEndian )
    // Cleverness:  sometimes we don't have to write the shadow memory at
    // all, if we can tell that what we want to write is the same as what is
    // already there.
-   if (VGM_WORD32_VALID == vbytes) {
-      if (vabits32 == (UInt)MC_BITS32_READABLE) {
+   if (V_BITS32_VALID == vbytes) {
+      if (vabits32 == (UInt)VA_BITS32_READABLE) {
          return;
-      } else if (!is_distinguished_sm(sm) && MC_BITS32_WRITABLE == vabits32) {
-         sm->vabits32[sm_off] = (UInt)MC_BITS32_READABLE;
+      } else if (!is_distinguished_sm(sm) && VA_BITS32_WRITABLE == vabits32) {
+         sm->vabits32[sm_off] = (UInt)VA_BITS32_READABLE;
       } else {
          // not readable/writable, or distinguished and changing state
          PROF_EVENT(232, "mc_STOREV4-slow2");
          mc_STOREVn_slow( aA, 4, (ULong)vbytes, isBigEndian );
       }
-   } else if (VGM_WORD32_INVALID == vbytes) {
-      if (vabits32 == (UInt)MC_BITS32_WRITABLE) {
+   } else if (V_BITS32_INVALID == vbytes) {
+      if (vabits32 == (UInt)VA_BITS32_WRITABLE) {
          return;
-      } else if (!is_distinguished_sm(sm) && MC_BITS32_READABLE == vabits32) {
-         sm->vabits32[sm_off] = (UInt)MC_BITS32_WRITABLE;
+      } else if (!is_distinguished_sm(sm) && VA_BITS32_READABLE == vabits32) {
+         sm->vabits32[sm_off] = (UInt)VA_BITS32_WRITABLE;
       } else {
          // not readable/writable, or distinguished and changing state
          PROF_EVENT(233, "mc_STOREV4-slow3");
@@ -2731,17 +2809,17 @@ void mc_STOREV4 ( Addr aA, UWord vbytes, Bool isBigEndian )
 //---------------------------------------------------------------------------
 #else
    if (EXPECTED_TAKEN( !is_distinguished_sm(sm) && 
-                       (MC_BITS32_READABLE == vabits32 ||
-                        MC_BITS32_WRITABLE == vabits32) ))
+                       (VA_BITS32_READABLE == vabits32 ||
+                        VA_BITS32_WRITABLE == vabits32) ))
    {
       /* Handle common case quickly: a is suitably aligned, */
       /* is mapped, and is addressible. */
       // Convert full V-bits in register to compact 2-bit form.
       // XXX: is it best to check for VALID before INVALID?
-      if (VGM_WORD32_VALID == vbytes) {
-         sm->vabits32[sm_off] = MC_BITS32_READABLE;
-      } else if (VGM_WORD32_INVALID == vbytes) {
-         sm->vabits32[sm_off] = MC_BITS32_WRITABLE;
+      if (V_BITS32_VALID == vbytes) {
+         sm->vabits32[sm_off] = VA_BITS32_READABLE;
+      } else if (V_BITS32_INVALID == vbytes) {
+         sm->vabits32[sm_off] = VA_BITS32_WRITABLE;
       } else {
          /* Slow but general case -- writing partially defined bytes. */
          PROF_EVENT(232, "mc_STOREV4-slow2");
@@ -2804,10 +2882,10 @@ UWord mc_LOADV2 ( Addr aA, Bool isBigEndian )
    // Convert V bits from compact memory form to expanded register form
    // XXX: checking READABLE before WRITABLE a good idea?
    // XXX: set the high 16/48 bits of retval to 1?
-   if (EXPECTED_TAKEN(vabits32 == MC_BITS32_READABLE)) {
-      return VGM_SHORT_VALID;
-   } else if (EXPECTED_TAKEN(vabits32 == MC_BITS32_WRITABLE)) {
-      return VGM_SHORT_INVALID;
+   if (EXPECTED_TAKEN(vabits32 == VA_BITS32_READABLE)) {
+      return V_BITS16_VALID;
+   } else if (EXPECTED_TAKEN(vabits32 == VA_BITS32_WRITABLE)) {
+      return V_BITS16_INVALID;
    } else {
       // XXX: could extract the vabits16 and check it first... (see
       // LOADV1)... depends how common this case is.
@@ -2863,20 +2941,20 @@ void mc_STOREV2 ( Addr aA, UWord vbytes, Bool isBigEndian )
    sm_off   = SM_OFF(a);
    vabits32 = sm->vabits32[sm_off];
    if (EXPECTED_TAKEN( !is_distinguished_sm(sm) && 
-                       (MC_BITS32_READABLE == vabits32 ||
-                        MC_BITS32_WRITABLE == vabits32) ))
+                       (VA_BITS32_READABLE == vabits32 ||
+                        VA_BITS32_WRITABLE == vabits32) ))
    {
       /* Handle common case quickly: a is suitably aligned, */
       /* is mapped, and is addressible. */
       // Convert full V-bits in register to compact 2-bit form.
       // XXX: is it best to check for VALID before INVALID?
-      if (VGM_SHORT_VALID == vbytes) {
+      if (V_BITS16_VALID == vbytes) {
          //mc_STOREVn_slow( aA, 2, (ULong)vbytes, isBigEndian );
-         insert_vabits16_into_vabits32( a, MC_BITS16_READABLE,
+         insert_vabits16_into_vabits32( a, VA_BITS16_READABLE,
                                         &(sm->vabits32[sm_off]) );
-      } else if (VGM_SHORT_INVALID == vbytes) {
+      } else if (V_BITS16_INVALID == vbytes) {
          //mc_STOREVn_slow( aA, 2, (ULong)vbytes, isBigEndian );
-         insert_vabits16_into_vabits32( a, MC_BITS16_WRITABLE,
+         insert_vabits16_into_vabits32( a, VA_BITS16_WRITABLE,
                                         &(sm->vabits32[sm_off]) );
       } else {
          /* Slow but general case -- writing partially defined bytes. */
@@ -2942,13 +3020,13 @@ UWord MC_(helperc_LOADV1) ( Addr aA )
       word32 it lives in is addressible. */
    // XXX: set the high 24/56 bits of retval to 1?
    // XXX: check if this sequence is reasonable
-   if      (vabits32 == MC_BITS32_READABLE) { return VGM_BYTE_VALID;   }
-   else if (vabits32 == MC_BITS32_WRITABLE) { return VGM_BYTE_INVALID; }
+   if      (vabits32 == VA_BITS32_READABLE) { return V_BITS8_VALID;   }
+   else if (vabits32 == VA_BITS32_WRITABLE) { return V_BITS8_INVALID; }
    else {
       // XXX: Could just do the slow but general case if this is uncommon...
       UChar vabits8 = extract_vabits8_from_vabits32(a, vabits32);
-      if      (vabits8 == MC_BITS8_READABLE) { return VGM_BYTE_VALID;   }
-      else if (vabits8 == MC_BITS8_WRITABLE) { return VGM_BYTE_INVALID; }
+      if      (vabits8 == VA_BITS8_READABLE) { return V_BITS8_VALID;   }
+      else if (vabits8 == VA_BITS8_WRITABLE) { return V_BITS8_INVALID; }
       else {
          /* Slow but general case. */
          PROF_EVENT(262, "helperc_LOADV1-slow2");
@@ -2992,18 +3070,18 @@ void MC_(helperc_STOREV1) ( Addr aA, UWord vbyte )
    sm_off   = SM_OFF(a);
    vabits32 = sm->vabits32[sm_off];
    if (EXPECTED_TAKEN( !is_distinguished_sm(sm) && 
-                       (MC_BITS32_READABLE == vabits32 ||
-                        MC_BITS32_WRITABLE == vabits32) ))
+                       (VA_BITS32_READABLE == vabits32 ||
+                        VA_BITS32_WRITABLE == vabits32) ))
    {
       /* Handle common case quickly: a is mapped, the entire word32 it
          lives in is addressible. */
       // Convert full V-bits in register to compact 2-bit form.
       // XXX: is it best to check for VALID before INVALID?
-      if (VGM_BYTE_VALID == vbyte) {
-         insert_vabit8_into_vabits32( a, MC_BITS8_READABLE,
+      if (V_BITS8_VALID == vbyte) {
+         insert_vabit8_into_vabits32( a, VA_BITS8_READABLE,
                                       &(sm->vabits32[sm_off]) );
-      } else if (VGM_BYTE_INVALID == vbyte) {
-         insert_vabit8_into_vabits32( a, MC_BITS8_WRITABLE,
+      } else if (V_BITS8_INVALID == vbyte) {
+         insert_vabit8_into_vabits32( a, VA_BITS8_WRITABLE,
                                       &(sm->vabits32[sm_off]) );
       } else {
          /* Slow but general case -- writing partially defined bytes. */
@@ -3082,11 +3160,11 @@ VG_REGPARM(1) void MC_(helperc_complain_undef) ( HWord sz )
 //zz    for (i = 0; i < szW; i++) {
 //zz       dataP  = &data[i];
 //zz       vbitsP = &vbits[i];
-//zz       if (get_abits4_ALIGNED((Addr)dataP) != VGM_NIBBLE_VALID) {
+//zz       if (get_abits4_ALIGNED((Addr)dataP) != V_NIBBLE_VALID) {
 //zz          addressibleD = False;
 //zz          break;
 //zz       }
-//zz       if (get_abits4_ALIGNED((Addr)vbitsP) != VGM_NIBBLE_VALID) {
+//zz       if (get_abits4_ALIGNED((Addr)vbitsP) != V_NIBBLE_VALID) {
 //zz          addressibleV = False;
 //zz          break;
 //zz       }
@@ -3106,7 +3184,7 @@ VG_REGPARM(1) void MC_(helperc_complain_undef) ( HWord sz )
 //zz    if (setting) {
 //zz       /* setting */
 //zz       for (i = 0; i < szW; i++) {
-//zz          if (get_vbytes4_ALIGNED( (Addr)&vbits[i] ) != VGM_WORD_VALID)
+//zz          if (get_vbytes4_ALIGNED( (Addr)&vbits[i] ) != V_WORD_VALID)
 //zz             mc_record_value_error(tid, 4);
 //zz          set_vbytes4_ALIGNED( (Addr)&data[i], vbits[i] );
 //zz       }
@@ -3114,7 +3192,7 @@ VG_REGPARM(1) void MC_(helperc_complain_undef) ( HWord sz )
 //zz       /* getting */
 //zz       for (i = 0; i < szW; i++) {
 //zz          vbits[i] = get_vbytes4_ALIGNED( (Addr)&data[i] );
-//zz          set_vbytes4_ALIGNED( (Addr)&vbits[i], VGM_WORD_VALID );
+//zz          set_vbytes4_ALIGNED( (Addr)&vbits[i], V_WORD_VALID );
 //zz       }
 //zz    }
 //zz 
@@ -3185,20 +3263,20 @@ static void init_shadow_memory ( void )
    Int     i;
    SecMap* sm;
 
-   tl_assert(VGM_BIT_INVALID  == 1);
-   tl_assert(VGM_BIT_VALID    == 0);
-   tl_assert(VGM_BYTE_INVALID == 0xFF);
-   tl_assert(VGM_BYTE_VALID   == 0);
+   tl_assert(V_BIT_INVALID  == 1);
+   tl_assert(V_BIT_VALID    == 0);
+   tl_assert(V_BITS8_INVALID == 0xFF);
+   tl_assert(V_BITS8_VALID   == 0);
 
    /* Build the 3 distinguished secondaries */
    sm = &sm_distinguished[SM_DIST_NOACCESS];
-   for (i = 0; i < SM_CHUNKS; i++) sm->vabits32[i] = MC_BITS32_NOACCESS;
+   for (i = 0; i < SM_CHUNKS; i++) sm->vabits32[i] = VA_BITS32_NOACCESS;
 
    sm = &sm_distinguished[SM_DIST_WRITABLE];
-   for (i = 0; i < SM_CHUNKS; i++) sm->vabits32[i] = MC_BITS32_WRITABLE;
+   for (i = 0; i < SM_CHUNKS; i++) sm->vabits32[i] = VA_BITS32_WRITABLE;
 
    sm = &sm_distinguished[SM_DIST_READABLE];
-   for (i = 0; i < SM_CHUNKS; i++) sm->vabits32[i] = MC_BITS32_READABLE;
+   for (i = 0; i < SM_CHUNKS; i++) sm->vabits32[i] = VA_BITS32_READABLE;
 
    /* Set up the primary map. */
    /* These entries gradually get overwritten as the used address
@@ -3242,19 +3320,19 @@ static Bool mc_expensive_sanity_check ( void )
    /* Check noaccess. */
    sm = &sm_distinguished[SM_DIST_NOACCESS];
    for (i = 0; i < SM_CHUNKS; i++)
-      if (sm->vabits32[i] != MC_BITS32_NOACCESS)
+      if (sm->vabits32[i] != VA_BITS32_NOACCESS)
          bad = True;
 
    /* Check writable. */
    sm = &sm_distinguished[SM_DIST_WRITABLE];
    for (i = 0; i < SM_CHUNKS; i++)
-      if (sm->vabits32[i] != MC_BITS32_WRITABLE)
+      if (sm->vabits32[i] != VA_BITS32_WRITABLE)
          bad = True;
 
    /* Check readable. */
    sm = &sm_distinguished[SM_DIST_READABLE];
    for (i = 0; i < SM_CHUNKS; i++)
-      if (sm->vabits32[i] != MC_BITS32_READABLE)
+      if (sm->vabits32[i] != VA_BITS32_READABLE)
          bad = True;
 
    if (bad) {
@@ -3487,15 +3565,14 @@ static Bool client_perm_maybe_describe( Addr a, AddrInfo* ai )
       // Use zero as the redzone for client blocks.
       if (VG_(addr_is_in_block)(a, cgbs[i].start, cgbs[i].size, 0)) {
          /* OK - maybe it's a mempool, too? */
-         MAC_Mempool* mp = VG_(HT_lookup)(MC_(mempool_list),
+         MC_Mempool* mp = VG_(HT_lookup)(MC_(mempool_list),
                                           (UWord)cgbs[i].start);
          if (mp != NULL) {
             if (mp->chunks != NULL) {
-               MAC_Chunk* mc;
+               MC_Chunk* mc;
                VG_(HT_ResetIter)(mp->chunks);
                while ( (mc = VG_(HT_Next)(mp->chunks)) ) {
-                  if (VG_(addr_is_in_block)(a, mc->data, mc->size,
-                                            MAC_MALLOC_REDZONE_SZB)) {
+                  if (addr_is_in_MC_Chunk(mc, a)) {
                      ai->akind      = UserG;
                      ai->blksize    = mc->size;
                      ai->rwoffset   = (Int)(a) - (Int)mc->data;
@@ -3643,14 +3720,14 @@ static Bool mc_handle_client_request ( ThreadId tid, UWord* arg, UWord* ret )
          Bool is_zeroed = (Bool)arg[4];
 
          MC_(new_block) ( tid, p, sizeB, /*ignored*/0, rzB, is_zeroed, 
-                           MAC_AllocCustom, MC_(malloc_list) );
+                          MC_AllocCustom, MC_(malloc_list) );
          return True;
       }
       case VG_USERREQ__FREELIKE_BLOCK: {
          Addr p         = (Addr)arg[1];
          UInt rzB       =       arg[2];
 
-         MC_(handle_free) ( tid, p, rzB, MAC_AllocCustom );
+         MC_(handle_free) ( tid, p, rzB, MC_AllocCustom );
          return True;
       }
 
@@ -3803,7 +3880,7 @@ M  89   fpu_write 10/28/108/512
    125  die_mem_stack
 */
 
-#ifdef MAC_PROFILE_MEMORY
+#ifdef MC_PROFILE_MEMORY
 
 UInt   MC_(event_ctr)[N_PROF_EVENTS];
 HChar* MC_(event_ctr_name)[N_PROF_EVENTS];
@@ -3969,7 +4046,7 @@ static void mc_pre_clo_init(void)
                                    MC_(__builtin_delete),
                                    MC_(__builtin_vec_delete),
                                    MC_(realloc),
-                                   MAC_MALLOC_REDZONE_SZB );
+                                   MC_MALLOC_REDZONE_SZB );
 
    MC_( new_mem_heap)             = mc_new_mem_heap;
    MC_( ban_mem_heap)             = mc_make_noaccess;

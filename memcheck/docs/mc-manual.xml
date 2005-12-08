@@ -584,10 +584,6 @@ stored value is actually valid.</para>
 <programlisting><![CDATA[
 Memcheck:suppression_type]]></programlisting>
 
-<para>Or, since some of the suppressions are shared with Addrcheck:</para>
-<programlisting><![CDATA[
-Memcheck,Addrcheck:suppression_type]]></programlisting>
-
 <para>The Memcheck suppression types are as follows:</para>
 
 <itemizedlist>
@@ -1001,7 +997,7 @@ is:</para>
 <title>Client Requests</title>
 
 <para>The following client requests are defined in
-<filename>memcheck.h</filename>.  They also work for Addrcheck.
+<filename>memcheck.h</filename>.
 See <filename>memcheck.h</filename> for exact details of their
 arguments.</para>
 
