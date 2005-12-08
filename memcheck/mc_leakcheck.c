@@ -1,6 +1,6 @@
 
 /*--------------------------------------------------------------------*/
-/*--- The leak checker.                            mac_leakcheck.c ---*/
+/*--- The leak checker.                             mc_leakcheck.c ---*/
 /*--------------------------------------------------------------------*/
 
 /*
@@ -71,7 +71,7 @@ void scan_all_valid_memory_catcher ( Int sigNo, Addr addr )
 
 
 /* TODO: GIVE THIS A PROPER HOME
-   TODO: MERGE THIS WITH DUPLICATE IN m_main.c
+   TODO: MERGE THIS WITH DUPLICATE IN m_main.c and coredump-elf.c.
    Extract from aspacem a vector of the current segment start
    addresses.  The vector is dynamically allocated and should be freed
    by the caller when done.  REQUIRES m_mallocfree to be running.
@@ -809,6 +809,6 @@ void MC_(do_detect_memory_leaks) (
 }
 
 /*--------------------------------------------------------------------*/
-/*--- end                                          mac_leakcheck.c ---*/
+/*--- end                                                          ---*/
 /*--------------------------------------------------------------------*/
 

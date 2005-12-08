@@ -1,7 +1,7 @@
 
 /*--------------------------------------------------------------------*/
 /*--- malloc/free wrappers for detecting errors and updating bits. ---*/
-/*---                                        mac_malloc_wrappers.c ---*/
+/*---                                         mc_malloc_wrappers.c ---*/
 /*--------------------------------------------------------------------*/
 
 /*
