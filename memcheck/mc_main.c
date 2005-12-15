@@ -381,6 +381,16 @@ static AuxMapEnt* find_or_alloc_in_auxmap ( Addr a )
 
 /* --------------- SecMap fundamentals --------------- */
 
+__attribute__((always_inline))
+static inline SecMap* get_secmap_readable_low ( Addr a )
+{
+   UWord pm_off = a >> 16;
+#  if VG_DEBUG_MEMORY >= 1
+   tl_assert(pm_off < N_PRIMARY_MAP);
+#  endif
+   return primary_map[ pm_off ];
+}
+
 /* Produce the secmap for 'a', either from the primary map or by
    ensuring there is an entry for it in the aux primary map.  The
    secmap may be a distinguished one as the caller will only want to
@@ -389,8 +399,7 @@ static AuxMapEnt* find_or_alloc_in_auxmap ( Addr a )
 static SecMap* get_secmap_readable ( Addr a )
 {
    if (a <= MAX_PRIMARY_ADDRESS) {
-      UWord pm_off = a >> 16;
-      return primary_map[ pm_off ];
+      return get_secmap_readable_low(a);
    } else {
       AuxMapEnt* am = find_or_alloc_in_auxmap(a);
       return am->sm;
@@ -404,15 +413,25 @@ static SecMap* get_secmap_readable ( Addr a )
 static SecMap* maybe_get_secmap_for ( Addr a )
 {
    if (a <= MAX_PRIMARY_ADDRESS) {
-      UWord pm_off = a >> 16;
-      return primary_map[ pm_off ];
+      return get_secmap_readable_low(a);
    } else {
       AuxMapEnt* am = maybe_find_in_auxmap(a);
       return am ? am->sm : NULL;
    }
 }
 
-
+// Produce the secmap for 'a', where 'a' is known to be in the primary map.
+__attribute__((always_inline))
+static inline SecMap* get_secmap_writable_low(Addr a)
+{
+   UWord pm_off = a >> 16;
+#  if VG_DEBUG_MEMORY >= 1
+   tl_assert(pm_off < N_PRIMARY_MAP);
+#  endif
+   if (EXPECTED_NOT_TAKEN(is_distinguished_sm(primary_map[pm_off])))
+      primary_map[pm_off] = copy_for_writing(primary_map[pm_off]);
+   return primary_map[pm_off];
+}
 
 /* Produce the secmap for 'a', either from the primary map or by
    ensuring there is an entry for it in the aux primary map.  The
@@ -424,10 +443,7 @@ static SecMap* maybe_get_secmap_for ( Addr a )
 static SecMap* get_secmap_writable ( Addr a )
 {
    if (a <= MAX_PRIMARY_ADDRESS) {
-      UWord pm_off = a >> 16;
-      if (is_distinguished_sm(primary_map[ pm_off ]))
-         primary_map[pm_off] = copy_for_writing(primary_map[pm_off]);
-      return primary_map[pm_off];
+      return get_secmap_writable_low(a);
    } else {
       AuxMapEnt* am = find_or_alloc_in_auxmap(a);
       if (is_distinguished_sm(am->sm))
@@ -1083,7 +1099,7 @@ static void mc_copy_address_range_state ( Addr src, Addr dst, SizeT len )
 static __inline__
 void make_aligned_word32_writable ( Addr a )
 {
-   UWord   sec_no, sm_off;
+   UWord   sm_off;
    SecMap* sm;
 
    PROF_EVENT(300, "make_aligned_word32_writable");
@@ -1099,16 +1115,7 @@ void make_aligned_word32_writable ( Addr a )
       return;
    }
 
-   sec_no = (UWord)(a >> 16);
-#  if VG_DEBUG_MEMORY >= 1
-   tl_assert(sec_no < N_PRIMARY_MAP);
-#  endif
-
-   // XXX: This is basically what get_secmap_writable is doing.
-   if (EXPECTED_NOT_TAKEN(is_distinguished_sm(primary_map[sec_no])))
-      primary_map[sec_no] = copy_for_writing(primary_map[sec_no]);
-
-   sm                   = primary_map[sec_no];
+   sm                   = get_secmap_writable_low(a);
    sm_off               = SM_OFF(a);
    sm->vabits32[sm_off] = VA_BITS32_WRITABLE;
 }
@@ -1118,7 +1125,7 @@ void make_aligned_word32_writable ( Addr a )
 static __inline__
 void make_aligned_word32_noaccess ( Addr a )
 {
-   UWord   sec_no, sm_off;
+   UWord   sm_off;
    SecMap* sm;
 
    PROF_EVENT(310, "make_aligned_word32_noaccess");
@@ -1134,16 +1141,7 @@ void make_aligned_word32_noaccess ( Addr a )
       return;
    }
 
-   sec_no = (UWord)(a >> 16);
-#  if VG_DEBUG_MEMORY >= 1
-   tl_assert(sec_no < N_PRIMARY_MAP);
-#  endif
-
-   // XXX: This is basically what get_secmap_writable is doing.
-   if (EXPECTED_NOT_TAKEN(is_distinguished_sm(primary_map[sec_no])))
-      primary_map[sec_no] = copy_for_writing(primary_map[sec_no]);
-
-   sm                   = primary_map[sec_no];
+   sm                   = get_secmap_writable_low(a);
    sm_off               = SM_OFF(a);
    sm->vabits32[sm_off] = VA_BITS32_NOACCESS;
 }
@@ -1153,7 +1151,7 @@ void make_aligned_word32_noaccess ( Addr a )
 static __inline__
 void make_aligned_word64_writable ( Addr a )
 {
-   UWord   sec_no, sm_off64;
+   UWord   sm_off64;
    SecMap* sm;
 
    PROF_EVENT(320, "make_aligned_word64_writable");
@@ -1169,15 +1167,7 @@ void make_aligned_word64_writable ( Addr a )
       return;
    }
 
-   sec_no = (UWord)(a >> 16);
-#  if VG_DEBUG_MEMORY >= 1
-   tl_assert(sec_no < N_PRIMARY_MAP);
-#  endif
-
-   if (EXPECTED_NOT_TAKEN(is_distinguished_sm(primary_map[sec_no])))
-      primary_map[sec_no] = copy_for_writing(primary_map[sec_no]);
-
-   sm       = primary_map[sec_no];
+   sm       = get_secmap_writable_low(a);
    sm_off64 = SM_OFF_64(a);
    ((UShort*)(sm->vabits32))[sm_off64] = VA_BITS64_WRITABLE;
 }
@@ -1186,7 +1176,7 @@ void make_aligned_word64_writable ( Addr a )
 static __inline__
 void make_aligned_word64_noaccess ( Addr a )
 {
-   UWord   sec_no, sm_off64;
+   UWord   sm_off64;
    SecMap* sm;
 
    PROF_EVENT(330, "make_aligned_word64_noaccess");
@@ -1202,15 +1192,7 @@ void make_aligned_word64_noaccess ( Addr a )
       return;
    }
 
-   sec_no = (UWord)(a >> 16);
-#  if VG_DEBUG_MEMORY >= 1
-   tl_assert(sec_no < N_PRIMARY_MAP);
-#  endif
-
-   if (EXPECTED_NOT_TAKEN(is_distinguished_sm(primary_map[sec_no])))
-      primary_map[sec_no] = copy_for_writing(primary_map[sec_no]);
-
-   sm       = primary_map[sec_no];
+   sm       = get_secmap_writable_low(a);
    sm_off64 = SM_OFF_64(a);
    ((UShort*)(sm->vabits32))[sm_off64] = VA_BITS64_NOACCESS;
 }
@@ -2655,7 +2637,7 @@ static void mc_print_extra_suppression_info ( Error* err )
 static inline __attribute__((always_inline))
 ULong mc_LOADV8 ( Addr aA, Bool isBigEndian )
 {
-   UWord   mask, a, sec_no, sm_off64, vabits64;
+   UWord   mask, a, sm_off64, vabits64;
    SecMap* sm;
 
    PROF_EVENT(200, "mc_LOADV8");
@@ -2675,12 +2657,7 @@ ULong mc_LOADV8 ( Addr aA, Bool isBigEndian )
       return (UWord)mc_LOADVn_slow( aA, 8, isBigEndian );
    }
 
-   sec_no = (UWord)(a >> 16);
-
-   if (VG_DEBUG_MEMORY >= 1)
-      tl_assert(sec_no < N_PRIMARY_MAP);
-
-   sm       = primary_map[sec_no];
+   sm       = get_secmap_readable_low(a);
    sm_off64 = SM_OFF_64(a);
    vabits64 = ((UShort*)(sm->vabits32))[sm_off64];
 
@@ -2711,7 +2688,7 @@ ULong MC_(helperc_LOADV8le) ( Addr a )
 static inline __attribute__((always_inline))
 void mc_STOREV8 ( Addr aA, ULong vbytes, Bool isBigEndian )
 {
-   UWord   mask, a, sec_no, sm_off64, vabits64;
+   UWord   mask, a, sm_off64, vabits64;
    SecMap* sm;
 
    PROF_EVENT(210, "mc_STOREV8");
@@ -2736,12 +2713,7 @@ void mc_STOREV8 ( Addr aA, ULong vbytes, Bool isBigEndian )
       return;
    }
 
-   sec_no = (UWord)(a >> 16);
-
-   if (VG_DEBUG_MEMORY >= 1)
-      tl_assert(sec_no < N_PRIMARY_MAP);
-
-   sm       = primary_map[sec_no];
+   sm       = get_secmap_readable_low(a);
    sm_off64 = SM_OFF_64(a);
    vabits64 = ((UShort*)(sm->vabits32))[sm_off64];
 
@@ -2786,7 +2758,7 @@ void MC_(helperc_STOREV8le) ( Addr a, ULong vbytes )
 static inline __attribute__((always_inline))
 UWord mc_LOADV4 ( Addr a, Bool isBigEndian )
 {
-   UWord   mask, sec_no, sm_off, vabits32;
+   UWord   mask, sm_off, vabits32;
    SecMap* sm;
 
    PROF_EVENT(220, "mc_LOADV4");
@@ -2805,12 +2777,7 @@ UWord mc_LOADV4 ( Addr a, Bool isBigEndian )
       return (UWord)mc_LOADVn_slow( a, 4, isBigEndian );
    }
 
-   sec_no = (UWord)(a >> 16);
-
-   if (VG_DEBUG_MEMORY >= 1)
-      tl_assert(sec_no < N_PRIMARY_MAP);
-
-   sm       = primary_map[sec_no];
+   sm       = get_secmap_readable_low(a);
    sm_off   = SM_OFF(a);
    vabits32 = sm->vabits32[sm_off];
 
@@ -2846,7 +2813,7 @@ UWord MC_(helperc_LOADV4le) ( Addr a )
 static inline __attribute__((always_inline))
 void mc_STOREV4 ( Addr aA, UWord vbytes, Bool isBigEndian )
 {
-   UWord   mask, a, sec_no, sm_off, vabits32;
+   UWord   mask, a, sm_off, vabits32;
    SecMap* sm;
 
    PROF_EVENT(230, "mc_STOREV4");
@@ -2869,12 +2836,7 @@ void mc_STOREV4 ( Addr aA, UWord vbytes, Bool isBigEndian )
       return;
    }
 
-   sec_no = (UWord)(a >> 16);
-
-   if (VG_DEBUG_MEMORY >= 1)
-      tl_assert(sec_no < N_PRIMARY_MAP);
-
-   sm       = primary_map[sec_no];
+   sm       = get_secmap_readable_low(a);
    sm_off   = SM_OFF(a);
    vabits32 = sm->vabits32[sm_off];
 
@@ -2953,7 +2915,7 @@ void MC_(helperc_STOREV4le) ( Addr a, UWord vbytes )
 static inline __attribute__((always_inline))
 UWord mc_LOADV2 ( Addr aA, Bool isBigEndian )
 {
-   UWord   mask, a, sec_no, sm_off, vabits32;
+   UWord   mask, a, sm_off, vabits32;
    SecMap* sm;
 
    PROF_EVENT(240, "mc_LOADV2");
@@ -2973,12 +2935,7 @@ UWord mc_LOADV2 ( Addr aA, Bool isBigEndian )
       return (UWord)mc_LOADVn_slow( aA, 2, isBigEndian );
    }
 
-   sec_no = (UWord)(a >> 16);
-
-   if (VG_DEBUG_MEMORY >= 1)
-      tl_assert(sec_no < N_PRIMARY_MAP);
-
-   sm       = primary_map[sec_no];
+   sm       = get_secmap_readable_low(a);
    sm_off   = SM_OFF(a);
    vabits32 = sm->vabits32[sm_off];
    // Convert V bits from compact memory form to expanded register form
@@ -3011,7 +2968,7 @@ UWord MC_(helperc_LOADV2le) ( Addr a )
 static inline __attribute__((always_inline))
 void mc_STOREV2 ( Addr aA, UWord vbytes, Bool isBigEndian )
 {
-   UWord   mask, a, sec_no, sm_off, vabits32;
+   UWord   mask, a, sm_off, vabits32;
    SecMap* sm;
 
    PROF_EVENT(250, "mc_STOREV2");
@@ -3034,12 +2991,7 @@ void mc_STOREV2 ( Addr aA, UWord vbytes, Bool isBigEndian )
       return;
    }
 
-   sec_no = (UWord)(a >> 16);
-
-   if (VG_DEBUG_MEMORY >= 1)
-      tl_assert(sec_no < N_PRIMARY_MAP);
-
-   sm       = primary_map[sec_no];
+   sm       = get_secmap_readable_low(a);
    sm_off   = SM_OFF(a);
    vabits32 = sm->vabits32[sm_off];
    if (EXPECTED_TAKEN( !is_distinguished_sm(sm) && 
@@ -3088,7 +3040,7 @@ void MC_(helperc_STOREV2le) ( Addr a, UWord vbytes )
 VG_REGPARM(1)
 UWord MC_(helperc_LOADV1) ( Addr aA )
 {
-   UWord   mask, a, sec_no, sm_off, vabits32;
+   UWord   mask, a, sm_off, vabits32;
    SecMap* sm;
 
    PROF_EVENT(260, "helperc_LOADV1");
@@ -3108,13 +3060,7 @@ UWord MC_(helperc_LOADV1) ( Addr aA )
       return (UWord)mc_LOADVn_slow( aA, 1, False/*irrelevant*/ );
    }
 
-   sec_no = (UWord)(a >> 16);
-
-#  if VG_DEBUG_MEMORY >= 1
-   tl_assert(sec_no < N_PRIMARY_MAP);
-#  endif
-
-   sm       = primary_map[sec_no];
+   sm       = get_secmap_readable_low(a);
    sm_off   = SM_OFF(a);
    vabits32 = sm->vabits32[sm_off];
    // Convert V bits from compact memory form to expanded register form
@@ -3141,7 +3087,7 @@ UWord MC_(helperc_LOADV1) ( Addr aA )
 VG_REGPARM(2)
 void MC_(helperc_STOREV1) ( Addr aA, UWord vbyte )
 {
-   UWord   mask, a, sec_no, sm_off, vabits32;
+   UWord   mask, a, sm_off, vabits32;
    SecMap* sm;
 
    PROF_EVENT(270, "helperc_STOREV1");
@@ -3162,13 +3108,7 @@ void MC_(helperc_STOREV1) ( Addr aA, UWord vbyte )
       return;
    }
 
-   sec_no = (UWord)(a >> 16);
-
-#  if VG_DEBUG_MEMORY >= 1
-   tl_assert(sec_no < N_PRIMARY_MAP);
-#  endif
-
-   sm       = primary_map[sec_no];
+   sm       = get_secmap_readable_low(a);
    sm_off   = SM_OFF(a);
    vabits32 = sm->vabits32[sm_off];
    if (EXPECTED_TAKEN( !is_distinguished_sm(sm) && 
