@@ -804,13 +804,12 @@ void mc_STOREVn_slow ( Addr a, SizeT szB, ULong vbytes, Bool bigendian )
    primary map.  
 */
 
-static SecMap** find_secmap_binder_for_addr ( Addr aA )
+static SecMap** find_secmap_binder_for_addr ( Addr a )
 {
-   if (aA > MAX_PRIMARY_ADDRESS) {
-      AuxMapEnt* am = find_or_alloc_in_auxmap(aA);
+   if (a > MAX_PRIMARY_ADDRESS) {
+      AuxMapEnt* am = find_or_alloc_in_auxmap(a);
       return &am->sm;
    } else {
-      UWord a      = (UWord)aA;
       UWord sec_no = (UWord)(a >> 16);
 #     if VG_DEBUG_MEMORY >= 1
       tl_assert(sec_no < N_PRIMARY_MAP);
@@ -856,7 +855,7 @@ static void set_address_range_perms ( Addr a, SizeT lenT, UWord vabits64,
       UWord vabits8 = vabits64 & 0x3;
       SizeT i;
       for (i = 0; i < lenT; i++) {
-         set_vabits8(aA + i, vabits8);
+         set_vabits8(a + i, vabits8);
       }
       return;
    }
@@ -2642,21 +2641,19 @@ static void mc_print_extra_suppression_info ( Error* err )
 /* ------------------------ Size = 8 ------------------------ */
 
 static inline __attribute__((always_inline))
-ULong mc_LOADV8 ( Addr aA, Bool isBigEndian )
+ULong mc_LOADV8 ( Addr a, Bool isBigEndian )
 {
-   UWord   a, sm_off64, vabits64;
+   UWord   sm_off64, vabits64;
    SecMap* sm;
 
    PROF_EVENT(200, "mc_LOADV8");
 
    if (VG_DEBUG_MEMORY >= 2)
-      return mc_LOADVn_slow( aA, 8, isBigEndian );
-
-   a = (UWord)aA;
+      return mc_LOADVn_slow( a, 8, isBigEndian );
 
    if (EXPECTED_NOT_TAKEN( UNALIGNED_OR_HIGH(a,8) )) {
       PROF_EVENT(201, "mc_LOADV8-slow1");
-      return (UWord)mc_LOADVn_slow( aA, 8, isBigEndian );
+      return (UWord)mc_LOADVn_slow( a, 8, isBigEndian );
    }
 
    sm       = get_secmap_readable_low(a);
@@ -2688,9 +2685,9 @@ ULong MC_(helperc_LOADV8le) ( Addr a )
 
 
 static inline __attribute__((always_inline))
-void mc_STOREV8 ( Addr aA, ULong vbytes, Bool isBigEndian )
+void mc_STOREV8 ( Addr a, ULong vbytes, Bool isBigEndian )
 {
-   UWord   a, sm_off64, vabits64;
+   UWord   sm_off64, vabits64;
    SecMap* sm;
 
    PROF_EVENT(210, "mc_STOREV8");
@@ -2698,15 +2695,13 @@ void mc_STOREV8 ( Addr aA, ULong vbytes, Bool isBigEndian )
    // XXX: this slow case seems to be marginally faster than the fast case!
    // Investigate further.
    if (VG_DEBUG_MEMORY >= 2) {
-      mc_STOREVn_slow( aA, 8, vbytes, isBigEndian );
+      mc_STOREVn_slow( a, 8, vbytes, isBigEndian );
       return;
    }
 
-   a = (UWord)aA;
-
    if (EXPECTED_NOT_TAKEN( UNALIGNED_OR_HIGH(a,8) )) {
       PROF_EVENT(211, "mc_STOREV8-slow1");
-      mc_STOREVn_slow( aA, 8, vbytes, isBigEndian );
+      mc_STOREVn_slow( a, 8, vbytes, isBigEndian );
       return;
    }
 
@@ -2729,12 +2724,12 @@ void mc_STOREV8 ( Addr aA, ULong vbytes, Bool isBigEndian )
       } else {
          /* Slow but general case -- writing partially defined bytes. */
          PROF_EVENT(212, "mc_STOREV8-slow2");
-         mc_STOREVn_slow( aA, 8, vbytes, isBigEndian );
+         mc_STOREVn_slow( a, 8, vbytes, isBigEndian );
       }
    } else {
       /* Slow but general case. */
       PROF_EVENT(213, "mc_STOREV8-slow3");
-      mc_STOREVn_slow( aA, 8, vbytes, isBigEndian );
+      mc_STOREVn_slow( a, 8, vbytes, isBigEndian );
    }
 }
 
@@ -2802,23 +2797,21 @@ UWord MC_(helperc_LOADV4le) ( Addr a )
 
 
 static inline __attribute__((always_inline))
-void mc_STOREV4 ( Addr aA, UWord vbytes, Bool isBigEndian )
+void mc_STOREV4 ( Addr a, UWord vbytes, Bool isBigEndian )
 {
-   UWord   a, sm_off, vabits32;
+   UWord   sm_off, vabits32;
    SecMap* sm;
 
    PROF_EVENT(230, "mc_STOREV4");
 
    if (VG_DEBUG_MEMORY >= 2) {
-      mc_STOREVn_slow( aA, 4, (ULong)vbytes, isBigEndian );
+      mc_STOREVn_slow( a, 4, (ULong)vbytes, isBigEndian );
       return;
    }
 
-   a = (UWord)aA;
-
    if (EXPECTED_NOT_TAKEN( UNALIGNED_OR_HIGH(a,4) )) {
       PROF_EVENT(231, "mc_STOREV4-slow1");
-      mc_STOREVn_slow( aA, 4, (ULong)vbytes, isBigEndian );
+      mc_STOREVn_slow( a, 4, (ULong)vbytes, isBigEndian );
       return;
    }
 
@@ -2839,7 +2832,7 @@ void mc_STOREV4 ( Addr aA, UWord vbytes, Bool isBigEndian )
       } else {
          // not readable/writable, or distinguished and changing state
          PROF_EVENT(232, "mc_STOREV4-slow2");
-         mc_STOREVn_slow( aA, 4, (ULong)vbytes, isBigEndian );
+         mc_STOREVn_slow( a, 4, (ULong)vbytes, isBigEndian );
       }
    } else if (V_BITS32_INVALID == vbytes) {
       if (vabits32 == (UInt)VA_BITS32_WRITABLE) {
@@ -2849,12 +2842,12 @@ void mc_STOREV4 ( Addr aA, UWord vbytes, Bool isBigEndian )
       } else {
          // not readable/writable, or distinguished and changing state
          PROF_EVENT(233, "mc_STOREV4-slow3");
-         mc_STOREVn_slow( aA, 4, (ULong)vbytes, isBigEndian );
+         mc_STOREVn_slow( a, 4, (ULong)vbytes, isBigEndian );
       }
    } else {
       // Partially defined word
       PROF_EVENT(234, "mc_STOREV4-slow4");
-      mc_STOREVn_slow( aA, 4, (ULong)vbytes, isBigEndian );
+      mc_STOREVn_slow( a, 4, (ULong)vbytes, isBigEndian );
    }
 //---------------------------------------------------------------------------
 #else
@@ -2873,12 +2866,12 @@ void mc_STOREV4 ( Addr aA, UWord vbytes, Bool isBigEndian )
       } else {
          /* Slow but general case -- writing partially defined bytes. */
          PROF_EVENT(232, "mc_STOREV4-slow2");
-         mc_STOREVn_slow( aA, 4, (ULong)vbytes, isBigEndian );
+         mc_STOREVn_slow( a, 4, (ULong)vbytes, isBigEndian );
       }
    } else {
       /* Slow but general case. */
       PROF_EVENT(233, "mc_STOREV4-slow3");
-      mc_STOREVn_slow( aA, 4, (ULong)vbytes, isBigEndian );
+      mc_STOREVn_slow( a, 4, (ULong)vbytes, isBigEndian );
    }
 #endif
 //---------------------------------------------------------------------------
@@ -2899,21 +2892,19 @@ void MC_(helperc_STOREV4le) ( Addr a, UWord vbytes )
 /* ------------------------ Size = 2 ------------------------ */
 
 static inline __attribute__((always_inline))
-UWord mc_LOADV2 ( Addr aA, Bool isBigEndian )
+UWord mc_LOADV2 ( Addr a, Bool isBigEndian )
 {
-   UWord   a, sm_off, vabits32;
+   UWord   sm_off, vabits32;
    SecMap* sm;
 
    PROF_EVENT(240, "mc_LOADV2");
 
    if (VG_DEBUG_MEMORY >= 2)
-      return (UWord)mc_LOADVn_slow( aA, 2, isBigEndian );
-
-   a = (UWord)aA;
+      return (UWord)mc_LOADVn_slow( a, 2, isBigEndian );
 
    if (EXPECTED_NOT_TAKEN( UNALIGNED_OR_HIGH(a,2) )) {
       PROF_EVENT(241, "mc_LOADV2-slow1");
-      return (UWord)mc_LOADVn_slow( aA, 2, isBigEndian );
+      return (UWord)mc_LOADVn_slow( a, 2, isBigEndian );
    }
 
    sm       = get_secmap_readable_low(a);
@@ -2930,7 +2921,7 @@ UWord mc_LOADV2 ( Addr aA, Bool isBigEndian )
       // XXX: could extract the vabits16 and check it first... (see
       // LOADV1)... depends how common this case is.
       PROF_EVENT(242, "mc_LOADV2-slow2");
-      return (UWord)mc_LOADVn_slow( aA, 2, isBigEndian );
+      return (UWord)mc_LOADVn_slow( a, 2, isBigEndian );
    }
 }
 
@@ -2947,23 +2938,21 @@ UWord MC_(helperc_LOADV2le) ( Addr a )
 
 
 static inline __attribute__((always_inline))
-void mc_STOREV2 ( Addr aA, UWord vbytes, Bool isBigEndian )
+void mc_STOREV2 ( Addr a, UWord vbytes, Bool isBigEndian )
 {
-   UWord   a, sm_off, vabits32;
+   UWord   sm_off, vabits32;
    SecMap* sm;
 
    PROF_EVENT(250, "mc_STOREV2");
 
    if (VG_DEBUG_MEMORY >= 2) {
-      mc_STOREVn_slow( aA, 2, (ULong)vbytes, isBigEndian );
+      mc_STOREVn_slow( a, 2, (ULong)vbytes, isBigEndian );
       return;
    }
 
-   a = (UWord)aA;
-
    if (EXPECTED_NOT_TAKEN( UNALIGNED_OR_HIGH(a,2) )) {
       PROF_EVENT(251, "mc_STOREV2-slow1");
-      mc_STOREVn_slow( aA, 2, (ULong)vbytes, isBigEndian );
+      mc_STOREVn_slow( a, 2, (ULong)vbytes, isBigEndian );
       return;
    }
 
@@ -2979,22 +2968,20 @@ void mc_STOREV2 ( Addr aA, UWord vbytes, Bool isBigEndian )
       // Convert full V-bits in register to compact 2-bit form.
       // XXX: is it best to check for VALID before INVALID?
       if (V_BITS16_VALID == vbytes) {
-         //mc_STOREVn_slow( aA, 2, (ULong)vbytes, isBigEndian );
          insert_vabits16_into_vabits32( a, VA_BITS16_READABLE,
                                         &(sm->vabits32[sm_off]) );
       } else if (V_BITS16_INVALID == vbytes) {
-         //mc_STOREVn_slow( aA, 2, (ULong)vbytes, isBigEndian );
          insert_vabits16_into_vabits32( a, VA_BITS16_WRITABLE,
                                         &(sm->vabits32[sm_off]) );
       } else {
          /* Slow but general case -- writing partially defined bytes. */
          PROF_EVENT(252, "mc_STOREV2-slow2");
-         mc_STOREVn_slow( aA, 2, (ULong)vbytes, isBigEndian );
+         mc_STOREVn_slow( a, 2, (ULong)vbytes, isBigEndian );
       }
    } else {
       /* Slow but general case. */
       PROF_EVENT(253, "mc_STOREV2-slow3");
-      mc_STOREVn_slow( aA, 2, (ULong)vbytes, isBigEndian );
+      mc_STOREVn_slow( a, 2, (ULong)vbytes, isBigEndian );
    }
 }
 
@@ -3014,22 +3001,20 @@ void MC_(helperc_STOREV2le) ( Addr a, UWord vbytes )
 /* Note: endianness is irrelevant for size == 1 */
 
 VG_REGPARM(1)
-UWord MC_(helperc_LOADV1) ( Addr aA )
+UWord MC_(helperc_LOADV1) ( Addr a )
 {
-   UWord   a, sm_off, vabits32;
+   UWord   sm_off, vabits32;
    SecMap* sm;
 
    PROF_EVENT(260, "helperc_LOADV1");
 
 #  if VG_DEBUG_MEMORY >= 2
-   return (UWord)mc_LOADVn_slow( aA, 1, False/*irrelevant*/ );
+   return (UWord)mc_LOADVn_slow( a, 1, False/*irrelevant*/ );
 #  endif
-
-   a = (UWord)aA;
 
    if (EXPECTED_NOT_TAKEN( UNALIGNED_OR_HIGH(a,1) )) {
       PROF_EVENT(261, "helperc_LOADV1-slow1");
-      return (UWord)mc_LOADVn_slow( aA, 1, False/*irrelevant*/ );
+      return (UWord)mc_LOADVn_slow( a, 1, False/*irrelevant*/ );
    }
 
    sm       = get_secmap_readable_low(a);
@@ -3050,30 +3035,28 @@ UWord MC_(helperc_LOADV1) ( Addr aA )
       else {
          /* Slow but general case. */
          PROF_EVENT(262, "helperc_LOADV1-slow2");
-         return (UWord)mc_LOADVn_slow( aA, 1, False/*irrelevant*/ );
+         return (UWord)mc_LOADVn_slow( a, 1, False/*irrelevant*/ );
       }
    }
 }
 
 
 VG_REGPARM(2)
-void MC_(helperc_STOREV1) ( Addr aA, UWord vbyte )
+void MC_(helperc_STOREV1) ( Addr a, UWord vbyte )
 {
-   UWord   a, sm_off, vabits32;
+   UWord   sm_off, vabits32;
    SecMap* sm;
 
    PROF_EVENT(270, "helperc_STOREV1");
 
 #  if VG_DEBUG_MEMORY >= 2
-   mc_STOREVn_slow( aA, 1, (ULong)vbyte, False/*irrelevant*/ );
+   mc_STOREVn_slow( a, 1, (ULong)vbyte, False/*irrelevant*/ );
    return;
 #  endif
 
-   a = (UWord)aA;
-
    if (EXPECTED_NOT_TAKEN( UNALIGNED_OR_HIGH(a,1) )) {
       PROF_EVENT(271, "helperc_STOREV1-slow1");
-      mc_STOREVn_slow( aA, 1, (ULong)vbyte, False/*irrelevant*/ );
+      mc_STOREVn_slow( a, 1, (ULong)vbyte, False/*irrelevant*/ );
       return;
    }
 
@@ -4124,6 +4107,8 @@ static void mc_pre_clo_init(void)
 
    tl_assert( mc_expensive_sanity_check() );
 
+   // {LOADV,STOREV}[8421] will all fail horribly if this isn't true.
+   tl_assert(sizeof(UWord) == sizeof(Addr));
 }
 
 VG_DETERMINE_INTERFACE_VERSION(mc_pre_clo_init)
