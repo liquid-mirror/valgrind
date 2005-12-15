@@ -2632,12 +2632,19 @@ static void mc_print_extra_suppression_info ( Error* err )
    are a UWord, and for STOREV8 they are a ULong.
 */
 
+/* If any part of '_a' indicated by the mask is 1, either
+   '_a' is not naturally '_sz'-aligned, or it exceeds the range
+   covered by the primary map. */
+#define UNALIGNED_OR_HIGH(_a,_sz)   ((_a) & MASK((_sz)))
+#define MASK(_sz)   ( ~((0x10000-(_sz)) | ((N_PRIMARY_MAP-1) << 16)) )
+
+
 /* ------------------------ Size = 8 ------------------------ */
 
 static inline __attribute__((always_inline))
 ULong mc_LOADV8 ( Addr aA, Bool isBigEndian )
 {
-   UWord   mask, a, sm_off64, vabits64;
+   UWord   a, sm_off64, vabits64;
    SecMap* sm;
 
    PROF_EVENT(200, "mc_LOADV8");
@@ -2645,14 +2652,9 @@ ULong mc_LOADV8 ( Addr aA, Bool isBigEndian )
    if (VG_DEBUG_MEMORY >= 2)
       return mc_LOADVn_slow( aA, 8, isBigEndian );
 
-   mask = ~((0x10000-8) | ((N_PRIMARY_MAP-1) << 16));
-   a    = (UWord)aA;
+   a = (UWord)aA;
 
-   /* If any part of 'a' indicated by the mask is 1, either */
-   /* 'a' is not naturally aligned, or 'a' exceeds the range */
-   /* covered by the primary map.  Either way we defer to the */
-   /* slow-path case. */
-   if (EXPECTED_NOT_TAKEN(a & mask)) {
+   if (EXPECTED_NOT_TAKEN( UNALIGNED_OR_HIGH(a,8) )) {
       PROF_EVENT(201, "mc_LOADV8-slow1");
       return (UWord)mc_LOADVn_slow( aA, 8, isBigEndian );
    }
@@ -2688,7 +2690,7 @@ ULong MC_(helperc_LOADV8le) ( Addr a )
 static inline __attribute__((always_inline))
 void mc_STOREV8 ( Addr aA, ULong vbytes, Bool isBigEndian )
 {
-   UWord   mask, a, sm_off64, vabits64;
+   UWord   a, sm_off64, vabits64;
    SecMap* sm;
 
    PROF_EVENT(210, "mc_STOREV8");
@@ -2700,14 +2702,9 @@ void mc_STOREV8 ( Addr aA, ULong vbytes, Bool isBigEndian )
       return;
    }
 
-   mask = ~((0x10000-8) | ((N_PRIMARY_MAP-1) << 16));
-   a    = (UWord)aA;
+   a = (UWord)aA;
 
-   /* If any part of 'a' indicated by the mask is 1, either */
-   /* 'a' is not naturally aligned, or 'a' exceeds the range */
-   /* covered by the primary map.  Either way we defer to the */
-   /* slow-path case. */
-   if (EXPECTED_NOT_TAKEN(a & mask)) {
+   if (EXPECTED_NOT_TAKEN( UNALIGNED_OR_HIGH(a,8) )) {
       PROF_EVENT(211, "mc_STOREV8-slow1");
       mc_STOREVn_slow( aA, 8, vbytes, isBigEndian );
       return;
@@ -2758,7 +2755,7 @@ void MC_(helperc_STOREV8le) ( Addr a, ULong vbytes )
 static inline __attribute__((always_inline))
 UWord mc_LOADV4 ( Addr a, Bool isBigEndian )
 {
-   UWord   mask, sm_off, vabits32;
+   UWord   sm_off, vabits32;
    SecMap* sm;
 
    PROF_EVENT(220, "mc_LOADV4");
@@ -2766,13 +2763,7 @@ UWord mc_LOADV4 ( Addr a, Bool isBigEndian )
    if (VG_DEBUG_MEMORY >= 2)
       return (UWord)mc_LOADVn_slow( a, 4, isBigEndian );
 
-   mask = ~((0x10000-4) | ((N_PRIMARY_MAP-1) << 16));
-
-   /* If any part of 'a' indicated by the mask is 1, either */
-   /* 'a' is not naturally aligned, or 'a' exceeds the range */
-   /* covered by the primary map.  Either way we defer to the */
-   /* slow-path case. */
-   if (EXPECTED_NOT_TAKEN(a & mask)) {
+   if (EXPECTED_NOT_TAKEN( UNALIGNED_OR_HIGH(a,4) )) {
       PROF_EVENT(221, "mc_LOADV4-slow1");
       return (UWord)mc_LOADVn_slow( a, 4, isBigEndian );
    }
@@ -2813,7 +2804,7 @@ UWord MC_(helperc_LOADV4le) ( Addr a )
 static inline __attribute__((always_inline))
 void mc_STOREV4 ( Addr aA, UWord vbytes, Bool isBigEndian )
 {
-   UWord   mask, a, sm_off, vabits32;
+   UWord   a, sm_off, vabits32;
    SecMap* sm;
 
    PROF_EVENT(230, "mc_STOREV4");
@@ -2823,14 +2814,9 @@ void mc_STOREV4 ( Addr aA, UWord vbytes, Bool isBigEndian )
       return;
    }
 
-   mask = ~((0x10000-4) | ((N_PRIMARY_MAP-1) << 16));
-   a    = (UWord)aA;
+   a = (UWord)aA;
 
-   /* If any part of 'a' indicated by the mask is 1, either */
-   /* 'a' is not naturally aligned, or 'a' exceeds the range */
-   /* covered by the primary map.  Either way we defer to the */
-   /* slow-path case. */
-   if (EXPECTED_NOT_TAKEN(a & mask)) {
+   if (EXPECTED_NOT_TAKEN( UNALIGNED_OR_HIGH(a,4) )) {
       PROF_EVENT(231, "mc_STOREV4-slow1");
       mc_STOREVn_slow( aA, 4, (ULong)vbytes, isBigEndian );
       return;
@@ -2915,7 +2901,7 @@ void MC_(helperc_STOREV4le) ( Addr a, UWord vbytes )
 static inline __attribute__((always_inline))
 UWord mc_LOADV2 ( Addr aA, Bool isBigEndian )
 {
-   UWord   mask, a, sm_off, vabits32;
+   UWord   a, sm_off, vabits32;
    SecMap* sm;
 
    PROF_EVENT(240, "mc_LOADV2");
@@ -2923,14 +2909,9 @@ UWord mc_LOADV2 ( Addr aA, Bool isBigEndian )
    if (VG_DEBUG_MEMORY >= 2)
       return (UWord)mc_LOADVn_slow( aA, 2, isBigEndian );
 
-   mask = ~((0x10000-2) | ((N_PRIMARY_MAP-1) << 16));
-   a    = (UWord)aA;
+   a = (UWord)aA;
 
-   /* If any part of 'a' indicated by the mask is 1, either */
-   /* 'a' is not naturally aligned, or 'a' exceeds the range */
-   /* covered by the primary map.  Either way we defer to the */
-   /* slow-path case. */
-   if (EXPECTED_NOT_TAKEN(a & mask)) {
+   if (EXPECTED_NOT_TAKEN( UNALIGNED_OR_HIGH(a,2) )) {
       PROF_EVENT(241, "mc_LOADV2-slow1");
       return (UWord)mc_LOADVn_slow( aA, 2, isBigEndian );
    }
@@ -2968,7 +2949,7 @@ UWord MC_(helperc_LOADV2le) ( Addr a )
 static inline __attribute__((always_inline))
 void mc_STOREV2 ( Addr aA, UWord vbytes, Bool isBigEndian )
 {
-   UWord   mask, a, sm_off, vabits32;
+   UWord   a, sm_off, vabits32;
    SecMap* sm;
 
    PROF_EVENT(250, "mc_STOREV2");
@@ -2978,14 +2959,9 @@ void mc_STOREV2 ( Addr aA, UWord vbytes, Bool isBigEndian )
       return;
    }
 
-   mask = ~((0x10000-2) | ((N_PRIMARY_MAP-1) << 16));
-   a    = (UWord)aA;
+   a = (UWord)aA;
 
-   /* If any part of 'a' indicated by the mask is 1, either */
-   /* 'a' is not naturally aligned, or 'a' exceeds the range */
-   /* covered by the primary map.  Either way we defer to the */
-   /* slow-path case. */
-   if (EXPECTED_NOT_TAKEN(a & mask)) {
+   if (EXPECTED_NOT_TAKEN( UNALIGNED_OR_HIGH(a,2) )) {
       PROF_EVENT(251, "mc_STOREV2-slow1");
       mc_STOREVn_slow( aA, 2, (ULong)vbytes, isBigEndian );
       return;
@@ -3040,7 +3016,7 @@ void MC_(helperc_STOREV2le) ( Addr a, UWord vbytes )
 VG_REGPARM(1)
 UWord MC_(helperc_LOADV1) ( Addr aA )
 {
-   UWord   mask, a, sm_off, vabits32;
+   UWord   a, sm_off, vabits32;
    SecMap* sm;
 
    PROF_EVENT(260, "helperc_LOADV1");
@@ -3049,13 +3025,9 @@ UWord MC_(helperc_LOADV1) ( Addr aA )
    return (UWord)mc_LOADVn_slow( aA, 1, False/*irrelevant*/ );
 #  endif
 
-   mask = ~((0x10000-1) | ((N_PRIMARY_MAP-1) << 16));
-   a    = (UWord)aA;
+   a = (UWord)aA;
 
-   /* If any part of 'a' indicated by the mask is 1, it means 'a'
-      exceeds the range covered by the primary map.  In which case we
-      defer to the slow-path case. */
-   if (EXPECTED_NOT_TAKEN(a & mask)) {
+   if (EXPECTED_NOT_TAKEN( UNALIGNED_OR_HIGH(a,1) )) {
       PROF_EVENT(261, "helperc_LOADV1-slow1");
       return (UWord)mc_LOADVn_slow( aA, 1, False/*irrelevant*/ );
    }
@@ -3087,7 +3059,7 @@ UWord MC_(helperc_LOADV1) ( Addr aA )
 VG_REGPARM(2)
 void MC_(helperc_STOREV1) ( Addr aA, UWord vbyte )
 {
-   UWord   mask, a, sm_off, vabits32;
+   UWord   a, sm_off, vabits32;
    SecMap* sm;
 
    PROF_EVENT(270, "helperc_STOREV1");
@@ -3097,12 +3069,9 @@ void MC_(helperc_STOREV1) ( Addr aA, UWord vbyte )
    return;
 #  endif
 
-   mask = ~((0x10000-1) | ((N_PRIMARY_MAP-1) << 16));
-   a    = (UWord)aA;
-   /* If any part of 'a' indicated by the mask is 1, it means 'a'
-      exceeds the range covered by the primary map.  In which case we
-      defer to the slow-path case. */
-   if (EXPECTED_NOT_TAKEN(a & mask)) {
+   a = (UWord)aA;
+
+   if (EXPECTED_NOT_TAKEN( UNALIGNED_OR_HIGH(a,1) )) {
       PROF_EVENT(271, "helperc_STOREV1-slow1");
       mc_STOREVn_slow( aA, 1, (ULong)vbyte, False/*irrelevant*/ );
       return;
