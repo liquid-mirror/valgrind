@@ -398,49 +398,103 @@ static SecMap* get_secmap_writable ( Addr a )
 
 /* --------------- Secondary V bit table ------------ */
 
-// XXX: this table can hold out-of-date stuff.  Eg. write a partially
-// defined byte, then overwrite it with a fully defined byte.  The info for
-// the partially defined bytes will still be here.  But it shouldn't ever
-// get accessed, I think...
+// Note: the nodes in this table can become stale.  Eg. if you write a
+// partially defined byte (PDB), then overwrite the same address with a
+// fully defined byte, the sec-V-bit node will not necessarily be removed.
+// This is because checking for whether removal is necessary would slow down
+// the fast paths.  Hopefully this is not a problem.  If it becomes a
+// problem, we may have to consider doing a clean-up pass every so often.
 
-// XXX: profile, esp. with Julian's random-ORing stress test.  Could maybe
-// store in chunks up to a page size.
+static OSet* secVBitTable;
 
-OSet* secVBitTable;
+static ULong sec_vbits_bytes_allocd = 0;
+static ULong sec_vbits_bytes_freed  = 0;
+static ULong sec_vbits_bytes_curr   = 0;
+static ULong sec_vbits_bytes_peak   = 0;
+
+// 4 is the best value here.  We can go from 1 to 4 for free -- it doesn't
+// change the size of the SecVBitNode because of padding.  If we make it
+// larger, we have bigger nodes, but can possibly fit more partially defined
+// bytes in each node.  In practice it seems that partially defined bytes
+// are not clustered close to each other, so going bigger than 4 does not
+// save space.
+#define BYTES_PER_SEC_VBIT_NODE  4
 
 typedef 
    struct {
       Addr  a;
-      UWord vbits8;
+      UChar vbits8[BYTES_PER_SEC_VBIT_NODE];
    } 
    SecVBitNode;
 
 static UWord get_sec_vbits8(Addr a)
 {
-   SecVBitNode* n;
-   n = VG_(OSet_Lookup)(secVBitTable, &a);
+   Addr         aAligned = VG_ROUNDDN(a, BYTES_PER_SEC_VBIT_NODE);
+   Int          amod     = a % BYTES_PER_SEC_VBIT_NODE;
+   SecVBitNode* n        = VG_(OSet_Lookup)(secVBitTable, &aAligned);
+   UChar        vbits8;
    tl_assert(n);
    // Shouldn't be fully defined or fully undefined -- those cases shouldn't
    // make it to the secondary V bits table.
-   tl_assert(V_BITS8_VALID != n->vbits8 && V_BITS8_INVALID != n->vbits8 );
-   return n->vbits8;
+   vbits8 = n->vbits8[amod];
+   tl_assert(V_BITS8_VALID != vbits8 && V_BITS8_INVALID != vbits8);
+   return vbits8;
 }
 
 static void set_sec_vbits8(Addr a, UWord vbits8)
 {
-   SecVBitNode* n;
-   n = VG_(OSet_Lookup)(secVBitTable, &a);
+   Addr         aAligned = VG_ROUNDDN(a, BYTES_PER_SEC_VBIT_NODE);
+   Int          i, amod  = a % BYTES_PER_SEC_VBIT_NODE;
+   SecVBitNode* n        = VG_(OSet_Lookup)(secVBitTable, &aAligned);
    // Shouldn't be fully defined or fully undefined -- those cases shouldn't
    // make it to the secondary V bits table.
-   tl_assert(V_BITS8_VALID != vbits8 && V_BITS8_INVALID != vbits8 );
+   tl_assert(V_BITS8_VALID != vbits8 && V_BITS8_INVALID != vbits8);
    if (n) {
-      n->vbits8 = vbits8;  // update
+      n->vbits8[amod] = vbits8;  // update
    } else {
+      // New node:  assign the specific byte, make the rest invalid (they
+      // should never be read as-is, but be cautious).
+      sec_vbits_bytes_allocd += sizeof(SecVBitNode);
+      sec_vbits_bytes_curr   += sizeof(SecVBitNode);
+      if (sec_vbits_bytes_curr > sec_vbits_bytes_peak)
+         sec_vbits_bytes_peak = sec_vbits_bytes_curr;
       n = VG_(OSet_AllocNode)(secVBitTable, sizeof(SecVBitNode));
-      n->a      = a;
-      n->vbits8 = vbits8;
+      n->a            = aAligned;
+      for (i = 0; i < BYTES_PER_SEC_VBIT_NODE; i++) {
+         n->vbits8[i] = V_BITS8_INVALID;
+      }
+      n->vbits8[amod] = vbits8;
       VG_(OSet_Insert)(secVBitTable, n);
    }
+}
+
+// Remove the node if its V bytes (other than the one for 'a') are all fully
+// defined or fully undefined.  We ignore the V byte for 'a' because it's
+// about to be overwritten with a fully defined or fully undefined value.
+__attribute__((unused))
+static void maybe_remove_sec_vbits8(Addr a)
+{
+   Addr         aAligned = VG_ROUNDDN(a, BYTES_PER_SEC_VBIT_NODE);
+   Int          i, amod  = a % BYTES_PER_SEC_VBIT_NODE;
+   SecVBitNode* n        = VG_(OSet_Lookup)(secVBitTable, &aAligned);
+   tl_assert(n);
+   for (i = 0; i < BYTES_PER_SEC_VBIT_NODE; i++) {
+      UChar vbits8 = n->vbits8[i];
+
+      // Ignore the V byte for 'a'.
+      if (i == amod)
+         continue;
+      
+      // One of the other V bytes is still partially defined -- don't remove
+      // this entry from the table.
+      if (V_BITS8_VALID != vbits8 && V_BITS8_INVALID != vbits8)
+         return;
+   }
+   n = VG_(OSet_Remove)(secVBitTable, &aAligned);
+   VG_(OSet_FreeNode)(secVBitTable, n);
+   sec_vbits_bytes_freed += sizeof(SecVBitNode);
+   sec_vbits_bytes_curr  -= sizeof(SecVBitNode);
+   tl_assert(n);
 }
 
 
@@ -457,7 +511,7 @@ static inline UWord byte_offset_w ( UWord wordszB, Bool bigendian,
 /* --------------- Fundamental functions --------------- */
 
 static inline
-void insert_vabit8_into_vabits32 ( Addr a, UChar vabits8, UChar* vabits32 )
+void insert_vabits8_into_vabits32 ( Addr a, UChar vabits8, UChar* vabits32 )
 {
    UInt shift =  (a & 3)  << 1;        // shift by 0, 2, 4, or 6
    *vabits32 &= ~(0x3     << shift);   // mask out the two old bits
@@ -489,10 +543,7 @@ void set_vabits8 ( Addr a, UChar vabits8 )
 {
    SecMap* sm       = get_secmap_writable(a);
    UWord   sm_off   = SM_OFF(a);
-//   VG_(printf)("se:%p, %d\n", a, sm_off);
-//   VG_(printf)("s1:%p (0x%x)\n", &(sm->vabits32[sm_off]), vabits8);
-   insert_vabit8_into_vabits32( a, vabits8, &(sm->vabits32[sm_off]) );
-//   VG_(printf)("s2: 0x%x\n", sm->vabits32[sm_off]);
+   insert_vabits8_into_vabits32( a, vabits8, &(sm->vabits32[sm_off]) );
 }
 
 static inline
@@ -518,16 +569,16 @@ static void mc_record_jump_error     ( ThreadId tid, Addr a );
 static
 ULong mc_LOADVn_slow ( Addr a, SizeT szB, Bool bigendian )
 {
-   /* Make up a result V word, which contains the loaded data for
+   /* Make up a 64-bit result V word, which contains the loaded data for
       valid addresses and Defined for invalid addresses.  Iterate over
       the bytes in the word, from the most significant down to the
       least. */
-   ULong vw          = V_BITS64_INVALID;
+   ULong vbits64     = V_BITS64_INVALID;
    SizeT i           = szB-1;
    SizeT n_addrs_bad = 0;
    Addr  ai;
    Bool  partial_load_exemption_applies;
-   UWord vbyte, vabits8;
+   UWord vbits8, vabits8;
 
    PROF_EVENT(30, "mc_LOADVn_slow");
    tl_assert(szB == 8 || szB == 4 || szB == 2 || szB == 1);
@@ -541,17 +592,17 @@ ULong mc_LOADVn_slow ( Addr a, SizeT szB, Bool bigendian )
       // XXX: We check in order of most likely to least likely...
       // XXX: could maybe have a little lookup table instead of these
       //      chained conditionals?  and elsewhere?
-      if      ( VA_BITS8_READABLE == vabits8 ) { vbyte = V_BITS8_VALID;   }
-      else if ( VA_BITS8_WRITABLE == vabits8 ) { vbyte = V_BITS8_INVALID; }
+      if      ( VA_BITS8_READABLE == vabits8 ) { vbits8 = V_BITS8_VALID;   }
+      else if ( VA_BITS8_WRITABLE == vabits8 ) { vbits8 = V_BITS8_INVALID; }
       else if ( VA_BITS8_NOACCESS == vabits8 ) {
-         vbyte = V_BITS8_VALID;    // Make V bits defined!
+         vbits8 = V_BITS8_VALID;    // Make V bits defined!
          n_addrs_bad++;
       } else {
          tl_assert( VA_BITS8_OTHER == vabits8 );
-         vbyte = get_sec_vbits8(ai);
+         vbits8 = get_sec_vbits8(ai);
       }
-      vw <<= 8; 
-      vw |= vbyte;
+      vbits64 <<= 8; 
+      vbits64 |= vbits8;
       if (i == 0) break;
       i--;
    }
@@ -577,7 +628,7 @@ ULong mc_LOADVn_slow ( Addr a, SizeT szB, Bool bigendian )
    if (n_addrs_bad > 0 && !partial_load_exemption_applies)
       mc_record_address_error( VG_(get_running_tid)(), a, szB, False );
 
-   return vw;
+   return vbits64;
 }
 
 
@@ -585,7 +636,7 @@ static
 void mc_STOREVn_slow ( Addr a, SizeT szB, ULong vbytes, Bool bigendian )
 {
    SizeT i, n_addrs_bad = 0;
-   UWord vbyte, vabits8;
+   UWord vbits8, vabits8;
    Addr  ai;
 
    PROF_EVENT(35, "mc_STOREVn_slow");
@@ -597,17 +648,33 @@ void mc_STOREVn_slow ( Addr a, SizeT szB, ULong vbytes, Bool bigendian )
    for (i = 0; i < szB; i++) {
       PROF_EVENT(36, "mc_STOREVn_slow(loop)");
       ai = a+byte_offset_w(szB,bigendian,i);
-      vbyte = vbytes & 0xff;
+      vbits8  = vbytes & 0xff;
       vabits8 = get_vabits8(ai);
       if ( VA_BITS8_NOACCESS != vabits8 ) {
          // Addressable.  Convert in-register format to in-memory format.
-         if      ( V_BITS8_VALID   == vbyte ) { vabits8 = VA_BITS8_READABLE; }
-         else if ( V_BITS8_INVALID == vbyte ) { vabits8 = VA_BITS8_WRITABLE; }
-         else    { 
+         // Also remove any existing sec V bit entry for the byte if no
+         // longer necessary.
+         //
+         // XXX: the calls to maybe_remove_sec_vbits8() are commented out
+         // because they slow things down a bit (eg. 10% for perf/bz2)
+         // and the space saving is quite small (eg. 1--2% reduction in the
+         // size of the sec-V-bit-table?)
+         if ( V_BITS8_VALID == vbits8 ) { 
+//            if (VA_BITS8_OTHER == vabits8)
+//               maybe_remove_sec_vbits8(ai);
+            vabits8 = VA_BITS8_READABLE; 
+
+         } else if ( V_BITS8_INVALID == vbits8 ) { 
+//            if (VA_BITS8_OTHER == vabits8)
+//               maybe_remove_sec_vbits8(ai);
+            vabits8 = VA_BITS8_WRITABLE; 
+
+         } else    { 
             vabits8 = VA_BITS8_OTHER;
-            set_sec_vbits8(ai, vbyte);
+            set_sec_vbits8(ai, vbits8);
          }
          set_vabits8(ai, vabits8);
+
       } else {
          // Unaddressable!  Do nothing -- when writing to unaddressable
          // memory it acts as a black hole, and the V bits can never be seen
@@ -827,7 +894,7 @@ static void set_address_range_perms ( Addr a, SizeT lenT, UWord vabits64,
       if (lenA < 1)           break;
       PROF_EVENT(156, "set_address_range_perms-loop1a");
       sm_off = SM_OFF(a);
-      insert_vabit8_into_vabits32( a, vabits8, &(sm->vabits32[sm_off]) );
+      insert_vabits8_into_vabits32( a, vabits8, &(sm->vabits32[sm_off]) );
       a    += 1;
       lenA -= 1;
    }
@@ -845,7 +912,7 @@ static void set_address_range_perms ( Addr a, SizeT lenT, UWord vabits64,
       if (lenA < 1) break;
       PROF_EVENT(158, "set_address_range_perms-loop1b");
       sm_off = SM_OFF(a);
-      insert_vabit8_into_vabits32( a, vabits8, &(sm->vabits32[sm_off]) );
+      insert_vabits8_into_vabits32( a, vabits8, &(sm->vabits32[sm_off]) );
       a    += 1;
       lenA -= 1;
    }
@@ -916,7 +983,7 @@ static void set_address_range_perms ( Addr a, SizeT lenT, UWord vabits64,
       if (lenB < 1) return;
       PROF_EVENT(164, "set_address_range_perms-loop1c");
       sm_off = SM_OFF(a);
-      insert_vabit8_into_vabits32( a, vabits8, &(sm->vabits32[sm_off]) );
+      insert_vabits8_into_vabits32( a, vabits8, &(sm->vabits32[sm_off]) );
       a    += 1;
       lenB -= 1;
    }
@@ -3078,11 +3145,11 @@ void MC_(helperc_STOREV1) ( Addr aA, UWord vbyte )
       // Convert full V-bits in register to compact 2-bit form.
       // XXX: is it best to check for VALID before INVALID?
       if (V_BITS8_VALID == vbyte) {
-         insert_vabit8_into_vabits32( a, VA_BITS8_READABLE,
-                                      &(sm->vabits32[sm_off]) );
+         insert_vabits8_into_vabits32( a, VA_BITS8_READABLE,
+                                       &(sm->vabits32[sm_off]) );
       } else if (V_BITS8_INVALID == vbyte) {
-         insert_vabit8_into_vabits32( a, VA_BITS8_WRITABLE,
-                                      &(sm->vabits32[sm_off]) );
+         insert_vabits8_into_vabits32( a, VA_BITS8_WRITABLE,
+                                       &(sm->vabits32[sm_off]) );
       } else {
          /* Slow but general case -- writing partially defined bytes. */
          PROF_EVENT(272, "helperc_STOREV1-slow2");
