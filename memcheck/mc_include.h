@@ -55,10 +55,10 @@ typedef
 typedef
    struct _MC_Chunk {
       struct _MC_Chunk* next;
-      Addr          data;           // ptr to actual block
-      SizeT         size : (sizeof(UWord)*8)-2; // size requested; 30 or 62 bits
+      Addr         data;            // ptr to actual block
+      SizeT        size : (sizeof(UWord)*8)-2; // size requested; 30 or 62 bits
       MC_AllocKind allockind : 2;   // which wrapper did the allocation
-      ExeContext*   where;          // where it was allocated
+      ExeContext*  where;           // where it was allocated
    }
    MC_Chunk;
 

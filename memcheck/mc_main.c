@@ -70,35 +70,65 @@
 
 
 /*------------------------------------------------------------*/
+/*--- V bits and A bits                                    ---*/
+/*------------------------------------------------------------*/
+
+/* Conceptually, every byte value has 8 V bits, which track whether Memcheck
+   thinks the corresponding value bit is defined.  And every memory byte
+   has an A bit, which tracks whether Memcheck thinks the program can access
+   it safely.   So every N-bit register is shadowed with N V bits, and every
+   memory byte is shadowed with 8 V bits and one A bit.
+
+   In the implementation, we use two forms of compression (compressed V bits
+   and distinguished secondary maps) to avoid the 9-bit-per-byte overhead
+   for memory.
+
+   Memcheck also tracks extra information about each heap block that is
+   allocated, for detecting memory leaks and other purposes.
+*/
+
+/*------------------------------------------------------------*/
 /*--- Basic A/V bitmap representation.                     ---*/
 /*------------------------------------------------------------*/
 
-/* TODO: fix this comment */
-//zz /* All reads and writes are checked against a memory map, which
-//zz    records the state of all memory in the process.  The memory map is
-//zz    organised like this:
-//zz 
-//zz    The top 16 bits of an address are used to index into a top-level
-//zz    map table, containing 65536 entries.  Each entry is a pointer to a
-//zz    second-level map, which records the accesibililty and validity
-//zz    permissions for the 65536 bytes indexed by the lower 16 bits of the
-//zz    address.  Each byte is represented by nine bits, one indicating
-//zz    accessibility, the other eight validity.  So each second-level map
-//zz    contains 73728 bytes.  This two-level arrangement conveniently
-//zz    divides the 4G address space into 64k lumps, each size 64k bytes.
-//zz 
-//zz    All entries in the primary (top-level) map must point to a valid
-//zz    secondary (second-level) map.  Since most of the 4G of address
-//zz    space will not be in use -- ie, not mapped at all -- there is a
-//zz    distinguished secondary map, which indicates 'not addressible and
-//zz    not valid' writeable for all bytes.  Entries in the primary map for
-//zz    which the entire 64k is not in use at all point at this
-//zz    distinguished map.
-//zz 
-//zz    There are actually 4 distinguished secondaries.  These are used to
-//zz    represent a memory range which is either not addressable (validity
-//zz    doesn't matter), addressable+not valid, addressable+valid.
-//zz */
+/* All reads and writes are checked against a memory map (a.k.a. shadow
+   memory), which records the state of all memory in the process.  
+   
+   On 32-bit machine the memory map is organised as follows.
+   The top 16 bits of an address are used to index into a top-level
+   map table, containing 65536 entries.  Each entry is a pointer to a
+   second-level map, which records the accesibililty and validity
+   permissions for the 65536 bytes indexed by the lower 16 bits of the
+   address.  Each byte is represented by two bits (details are below).  So
+   each second-level map contains 16384 bytes.  This two-level arrangement
+   conveniently divides the 4G address space into 64k lumps, each size 64k
+   bytes.
+
+   All entries in the primary (top-level) map must point to a valid
+   secondary (second-level) map.  Since many of the 64kB chunks will
+   have the same status for every bit -- ie. not mapped at all (for unused
+   address space) or entirely readable (for code segments) -- there are
+   three distinguished secondary maps, which indicate 'noaccess', 'writable'
+   and 'readable'.  For these uniform 64kB chunks, the primary map entry
+   points to the relevant distinguished map.  In practice, typically around
+   half of the addressable memory is represented with the 'writable' or
+   'readable' distinguished secondary map, so it gives a good saving.  It
+   also lets us set the V+A bits of large address regions quickly in
+   set_address_range_perms().
+
+   On 64-bit machines it's more complicated.  If we followed the same basic
+   scheme we'd have a four-level table which would require too many memory
+   accesses.  So instead the top-level map table has 2^19 entries (indexed
+   using bits 16..34 of the address);  this covers the bottom 32GB.  Any
+   accesses above 32GB are handled with a slow, sparse auxiliary table.
+   Valgrind's address space manager tries very hard to keep things below
+   this 32GB barrier so that performance doesn't suffer too much.
+
+   Note that this file has a lot of different functions for reading and
+   writing shadow memory.  Only a couple are strictly necessary (eg.
+   get_vabits8 and set_vabits8), most are just specialised for specific
+   common cases to improve performance.
+*/
 
 /* --------------- Basic configuration --------------- */
 
@@ -158,16 +188,27 @@ static Int   n_sanity_expensive = 0;
 // easily (without having to do any shifting and/or masking), and that is a
 // very common operation.  (Note that although each vabits32 chunk
 // represents 32 bits of memory, but is only 8 bits in size.)
-// 
-// XXX: something about endianness.  Storing 1st byte in bits 1..0, 2nd byte
-// in bits 3..2, 3rd in 5..4, 4th in 7..6.  (Little endian?)
 //
+// The representation is "inverse" little-endian... each 4 bytes of
+// memory is represented by a 1 byte value, where:
+//
+// - the status of byte (a+0) is held in bits [1..0]
+// - the status of byte (a+1) is held in bits [3..2]
+// - the status of byte (a+2) is held in bits [5..4]
+// - the status of byte (a+3) is held in bits [7..6]
+//
+// It's "inverse" because endianness normally describes a mapping from
+// value bits to memory addresses;  in this case the mapping is inverted.
+// Ie. instead of particular value bits being held in certain addresses, in
+// this case certain addresses are represented by particular value bits.
+// See insert_vabits8_into_vabits32() for an example.
+// 
 // But note that we don't compress the V bits stored in registers;  they
 // need to be explicit to made the shadow operations possible.  Therefore
-// when moving values between registers and memory we need to convert between
-// the expanded in-register format and the compressed in-memory format.
-// This isn't so difficult, it just requires careful attention in a few
-// places.
+// when moving values between registers and memory we need to convert
+// between the expanded in-register format and the compressed in-memory
+// format.  This isn't so difficult, it just requires careful attention in a
+// few places.
 
 #define VA_BITS8_NOACCESS     0x0      // 00b
 #define VA_BITS8_WRITABLE     0x1      // 01b
@@ -574,7 +615,7 @@ ULong mc_LOADVn_slow ( Addr a, SizeT szB, Bool bigendian )
       the bytes in the word, from the most significant down to the
       least. */
    ULong vbits64     = V_BITS64_INVALID;
-   SizeT i           = szB-1;
+   SSizeT i          = szB-1;    // Must be signed
    SizeT n_addrs_bad = 0;
    Addr  ai;
    Bool  partial_load_exemption_applies;
@@ -583,15 +624,11 @@ ULong mc_LOADVn_slow ( Addr a, SizeT szB, Bool bigendian )
    PROF_EVENT(30, "mc_LOADVn_slow");
    tl_assert(szB == 8 || szB == 4 || szB == 2 || szB == 1);
 
-   // XXX: change this to a for loop.  The loop var i must be signed.
-   while (True) {
+   for (i = szB-1; i >= 0; i--) {
       PROF_EVENT(31, "mc_LOADVn_slow(loop)");
       ai = a+byte_offset_w(szB,bigendian,i);
       vabits8 = get_vabits8(ai);
       // Convert the in-memory format to in-register format.
-      // XXX: We check in order of most likely to least likely...
-      // XXX: could maybe have a little lookup table instead of these
-      //      chained conditionals?  and elsewhere?
       if      ( VA_BITS8_READABLE == vabits8 ) { vbits8 = V_BITS8_VALID;   }
       else if ( VA_BITS8_WRITABLE == vabits8 ) { vbits8 = V_BITS8_INVALID; }
       else if ( VA_BITS8_NOACCESS == vabits8 ) {
@@ -603,8 +640,6 @@ ULong mc_LOADVn_slow ( Addr a, SizeT szB, Bool bigendian )
       }
       vbits64 <<= 8; 
       vbits64 |= vbits8;
-      if (i == 0) break;
-      i--;
    }
 
    /* This is a hack which avoids producing errors for code which
