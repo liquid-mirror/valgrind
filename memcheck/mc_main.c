@@ -469,13 +469,13 @@ static ULong sec_vbits_bytes_freed  = 0;
 static ULong sec_vbits_bytes_curr   = 0;
 static ULong sec_vbits_bytes_peak   = 0;
 
-// 4 is the best value here.  We can go from 1 to 4 for free -- it doesn't
-// change the size of the SecVBitNode because of padding.  If we make it
-// larger, we have bigger nodes, but can possibly fit more partially defined
-// bytes in each node.  In practice it seems that partially defined bytes
-// are not clustered close to each other, so going bigger than 4 does not
-// save space.
-#define BYTES_PER_SEC_VBIT_NODE  4
+// sizeof(Addr) is the best value here.  We can go from 1 to sizeof(Addr)
+// for free -- it doesn't change the size of the SecVBitNode because of
+// padding.  If we make it larger, we have bigger nodes, but can possibly
+// fit more partially defined bytes in each node.  In practice it seems that
+// partially defined bytes are rarely clustered close to each other, so
+// going bigger than sizeof(Addr) does not save space.
+#define BYTES_PER_SEC_VBIT_NODE  sizeof(Addr)
 
 typedef 
    struct {
