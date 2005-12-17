@@ -2660,14 +2660,14 @@ ULong mc_LOADV8 ( Addr a, Bool isBigEndian )
    sm_off64 = SM_OFF_64(a);
    vabits64 = ((UShort*)(sm->vabits32))[sm_off64];
 
-   // Convert V bits from compact memory form to expanded register form
+   // Convert V bits from compact memory form to expanded register form.
    if (EXPECTED_TAKEN(vabits64 == VA_BITS64_READABLE)) {
       return V_BITS64_VALID;
    } else if (EXPECTED_TAKEN(vabits64 == VA_BITS64_WRITABLE)) {
       return V_BITS64_INVALID;
    } else {
-      /* Slow but general case. */
-      PROF_EVENT(202, "mc_STOREV-slow2");
+      /* Slow case: the 8 bytes are not all-readable or all-writable. */
+      PROF_EVENT(202, "mc_LOADV8-slow2");
       return mc_LOADVn_slow( a, 8, isBigEndian );
    }
 }
@@ -2778,7 +2778,7 @@ UWord mc_LOADV4 ( Addr a, Bool isBigEndian )
    } else if (EXPECTED_TAKEN(vabits32 == VA_BITS32_WRITABLE)) {
       return ((UWord)0xFFFFFFFF00000000ULL | (UWord)V_BITS32_INVALID);
    } else {
-      /* Slow but general case. */
+      /* Slow case: the 4 bytes are not all-readable or all-writable. */
       PROF_EVENT(222, "mc_LOADV4-slow2");
       return (UWord)mc_LOADVn_slow( a, 4, isBigEndian );
    }
@@ -2918,8 +2918,7 @@ UWord mc_LOADV2 ( Addr a, Bool isBigEndian )
    } else if (EXPECTED_TAKEN(vabits32 == VA_BITS32_WRITABLE)) {
       return V_BITS16_INVALID;
    } else {
-      // XXX: could extract the vabits16 and check it first... (see
-      // LOADV1)... depends how common this case is.
+      /* Slow case: the 4 (yes, 4) bytes are not all-readable or all-writable. */
       PROF_EVENT(242, "mc_LOADV2-slow2");
       return (UWord)mc_LOADVn_slow( a, 2, isBigEndian );
    }
@@ -3024,16 +3023,18 @@ UWord MC_(helperc_LOADV1) ( Addr a )
    /* Handle common case quickly: a is mapped, and the entire
       word32 it lives in is addressible. */
    // XXX: set the high 24/56 bits of retval to 1?
-   // XXX: check if this sequence is reasonable
    if      (vabits32 == VA_BITS32_READABLE) { return V_BITS8_VALID;   }
    else if (vabits32 == VA_BITS32_WRITABLE) { return V_BITS8_INVALID; }
    else {
-      // XXX: Could just do the slow but general case if this is uncommon...
+      // XXX: Could just do the slow but general case if this is uncommon,
+      //      but removing it slowed perf/bz2 down some...
+      // The 4 (yes, 4) bytes are not all-readable or all-writable, check
+      // the single byte.
       UChar vabits8 = extract_vabits8_from_vabits32(a, vabits32);
       if      (vabits8 == VA_BITS8_READABLE) { return V_BITS8_VALID;   }
       else if (vabits8 == VA_BITS8_WRITABLE) { return V_BITS8_INVALID; }
       else {
-         /* Slow but general case. */
+         /* Slow case: the byte is not all-readable or all-writable. */
          PROF_EVENT(262, "helperc_LOADV1-slow2");
          return (UWord)mc_LOADVn_slow( a, 1, False/*irrelevant*/ );
       }
