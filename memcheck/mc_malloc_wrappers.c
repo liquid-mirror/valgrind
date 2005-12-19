@@ -180,7 +180,6 @@ void* MC_(new_block) ( ThreadId tid,
                         Addr p, SizeT size, SizeT align, UInt rzB,
                         Bool is_zeroed, MC_AllocKind kind, VgHashTable table)
 {
-   VGP_PUSHCC(VgpCliMalloc);
    cmalloc_n_mallocs ++;
 
    // Allocate and zero if necessary
@@ -190,7 +189,6 @@ void* MC_(new_block) ( ThreadId tid,
       tl_assert(MC_AllocCustom != kind);
       p = (Addr)VG_(cli_malloc)( align, size );
       if (!p) {
-         VGP_POPCC(VgpCliMalloc);
          return NULL;
       }
       if (is_zeroed) VG_(memset)((void*)p, 0, size);
@@ -204,8 +202,6 @@ void* MC_(new_block) ( ThreadId tid,
    MC_(ban_mem_heap)( p-rzB, rzB );
    MC_(new_mem_heap)( p, size, is_zeroed );
    MC_(ban_mem_heap)( p+size, rzB );
-
-   VGP_POPCC(VgpCliMalloc);
 
    return (void*)p;
 }
@@ -289,8 +285,6 @@ void MC_(handle_free) ( ThreadId tid, Addr p, UInt rzB, MC_AllocKind kind )
 {
    MC_Chunk* mc;
 
-   VGP_PUSHCC(VgpCliMalloc);
-
    cmalloc_n_frees++;
 
    mc = VG_(HT_remove) ( MC_(malloc_list), (UWord)p );
@@ -303,8 +297,6 @@ void MC_(handle_free) ( ThreadId tid, Addr p, UInt rzB, MC_AllocKind kind )
       }
       die_and_free_mem ( tid, mc, rzB );
    }
-
-   VGP_POPCC(VgpCliMalloc);
 }
 
 void MC_(free) ( ThreadId tid, void* p )
@@ -331,8 +323,6 @@ void* MC_(realloc) ( ThreadId tid, void* p_old, SizeT new_size )
    void*     p_new;
    SizeT     old_size;
 
-   VGP_PUSHCC(VgpCliMalloc);
-
    cmalloc_n_frees ++;
    cmalloc_n_mallocs ++;
    cmalloc_bs_mallocd += new_size;
@@ -345,7 +335,6 @@ void* MC_(realloc) ( ThreadId tid, void* p_old, SizeT new_size )
    if (mc == NULL) {
       MC_(record_free_error) ( tid, (Addr)p_old );
       /* We return to the program regardless. */
-      VGP_POPCC(VgpCliMalloc);
       return NULL;
    }
 
@@ -405,7 +394,6 @@ void* MC_(realloc) ( ThreadId tid, void* p_old, SizeT new_size )
    // than growing it, and this way simplifies the growing case.
    VG_(HT_add_node)( MC_(malloc_list), mc );
 
-   VGP_POPCC(VgpCliMalloc);
    return p_new;
 }
 
