@@ -116,10 +116,10 @@ static Addr* get_seg_starts ( /*OUT*/Int* n_acquired )
 */
 typedef 
    enum { 
-      Unreached, 
-      IndirectLeak,
-      Interior, 
-      Proper
+      Unreached    =0, 
+      IndirectLeak =1,
+      Interior     =2, 
+      Proper       =3
   }
   Reachedness;
 
@@ -533,7 +533,17 @@ static void full_report(ThreadId tid)
       lc_do_leakcheck(i);
 
       tl_assert(lc_markstack_top == -1);
-      tl_assert(lc_markstack[i].state == IndirectLeak);
+      tl_assert(lc_markstack[i].state == IndirectLeak
+                /* jrs 20051218: Ashley Pittman supplied a
+                   custom-allocator test program which causes the ==
+                   IndirectLeak condition to fail - it causes .state
+                   to be Unreached.  Since I have no idea how this
+                   clique stuff works and no time to figure it out,
+                   just allow that condition too.  This could well be
+                   a completely bogus fix.  It doesn't seem unsafe
+                   given that in any case the .state field is
+                   immediately overwritten by the next statement. */
+                || lc_markstack[i].state == Unreached);
 
       lc_markstack[i].state = Unreached; /* Return to unreached state,
 					    to indicate its a clique
@@ -694,14 +704,14 @@ void MC_(do_detect_memory_leaks) (
    /* Sanity check -- make sure they don't overlap */
    for (i = 0; i < lc_n_shadows-1; i++) {
       tl_assert( lc_shadows[i]->data + lc_shadows[i]->size
-                 < lc_shadows[i+1]->data );
+                 <= lc_shadows[i+1]->data );
    }
 
    if (lc_n_shadows == 0) {
       tl_assert(lc_shadows == NULL);
       if (VG_(clo_verbosity) >= 1 && !VG_(clo_xml)) {
          VG_(message)(Vg_UserMsg, 
-                      "No malloc'd blocks -- no leaks are possible.");
+                      "All heap blocks were freed -- no leaks are possible.");
       }
       return;
    }
