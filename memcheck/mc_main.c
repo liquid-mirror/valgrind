@@ -53,8 +53,6 @@
 #include "mc_include.h"
 #include "memcheck.h"   /* for client requests */
 
-// XXX: introduce PM_OFF macro
-
 #define EXPECTED_TAKEN(cond)     __builtin_expect((cond),1)
 #define EXPECTED_NOT_TAKEN(cond) __builtin_expect((cond),0)
 
@@ -1119,7 +1117,6 @@ void make_aligned_word32_writable ( Addr a )
 }
 
 
-// XXX: can surely merge this somehow with make_aligned_word32_writable
 static __inline__
 void make_aligned_word32_noaccess ( Addr a )
 {
@@ -2654,6 +2651,8 @@ ULong mc_LOADV8 ( Addr a, Bool isBigEndian )
    sm_off64 = SM_OFF_64(a);
    vabits64 = ((UShort*)(sm->vabits32))[sm_off64];
 
+   // Handle common case quickly: a is suitably aligned, is mapped, and
+   // addressible.
    // Convert V bits from compact memory form to expanded register form.
    if (EXPECTED_TAKEN(vabits64 == VA_BITS64_READABLE)) {
       return V_BITS64_VALID;
@@ -2710,7 +2709,6 @@ void mc_STOREV8 ( Addr a, ULong vbytes, Bool isBigEndian )
       /* Handle common case quickly: a is suitably aligned, */
       /* is mapped, and is addressible. */
       // Convert full V-bits in register to compact 2-bit form.
-      // XXX: is it best to check for VALID before INVALID?
       if (V_BITS64_VALID == vbytes) {
          ((UShort*)(sm->vabits32))[sm_off64] = (UShort)VA_BITS64_READABLE;
       } else if (V_BITS64_INVALID == vbytes) {
@@ -2761,10 +2759,9 @@ UWord mc_LOADV4 ( Addr a, Bool isBigEndian )
    sm_off   = SM_OFF(a);
    vabits32 = sm->vabits32[sm_off];
 
-   // XXX: copy this comment to all the LOADV* functions.
-   // Handle common case quickly: a is suitably aligned, is mapped, and is
-   // addressible.
-   // Convert V bits from compact memory form to expanded register form
+   // Handle common case quickly: a is suitably aligned, is mapped, and the
+   // entire word32 it lives in is addressible.
+   // Convert V bits from compact memory form to expanded register form.
    // For 64-bit platforms, set the high 32 bits of retval to 1 (undefined).
    // Almost certainly not necessary, but be paranoid.
    if (EXPECTED_TAKEN(vabits32 == VA_BITS32_READABLE)) {
@@ -2852,7 +2849,6 @@ void mc_STOREV4 ( Addr a, UWord vbytes, Bool isBigEndian )
       /* Handle common case quickly: a is suitably aligned, */
       /* is mapped, and is addressible. */
       // Convert full V-bits in register to compact 2-bit form.
-      // XXX: is it best to check for VALID before INVALID?
       if (V_BITS32_VALID == vbytes) {
          sm->vabits32[sm_off] = VA_BITS32_READABLE;
       } else if (V_BITS32_INVALID == vbytes) {
@@ -2904,17 +2900,23 @@ UWord mc_LOADV2 ( Addr a, Bool isBigEndian )
    sm       = get_secmap_readable_low(a);
    sm_off   = SM_OFF(a);
    vabits32 = sm->vabits32[sm_off];
+   // Handle common case quickly: a is suitably aligned, is mapped, and is
+   // addressible.
    // Convert V bits from compact memory form to expanded register form
-   // XXX: checking READABLE before WRITABLE a good idea?
-   // XXX: set the high 16/48 bits of retval to 1?
-   if (EXPECTED_TAKEN(vabits32 == VA_BITS32_READABLE)) {
-      return V_BITS16_VALID;
-   } else if (EXPECTED_TAKEN(vabits32 == VA_BITS32_WRITABLE)) {
-      return V_BITS16_INVALID;
-   } else {
-      /* Slow case: the 4 (yes, 4) bytes are not all-readable or all-writable. */
-      PROF_EVENT(242, "mc_LOADV2-slow2");
-      return (UWord)mc_LOADVn_slow( a, 2, isBigEndian );
+   // XXX: set the high 16/48 bits of retval to 1 for 64-bit paranoia?
+   if      (vabits32 == VA_BITS32_READABLE) { return V_BITS16_VALID;   }
+   else if (vabits32 == VA_BITS32_WRITABLE) { return V_BITS16_INVALID; }
+   else {
+      // The 4 (yes, 4) bytes are not all-readable or all-writable, check
+      // the two sub-bytes.
+      UChar vabits16 = extract_vabits16_from_vabits32(a, vabits32);
+      if      (vabits16 == VA_BITS16_READABLE) { return V_BITS16_VALID;   }
+      else if (vabits16 == VA_BITS16_WRITABLE) { return V_BITS16_INVALID; }
+      else {
+         /* Slow case: the two bytes are not all-readable or all-writable. */
+         PROF_EVENT(242, "mc_LOADV2-slow2");
+         return (UWord)mc_LOADVn_slow( a, 2, isBigEndian );
+      }
    }
 }
 
@@ -2959,7 +2961,6 @@ void mc_STOREV2 ( Addr a, UWord vbytes, Bool isBigEndian )
       /* Handle common case quickly: a is suitably aligned, */
       /* is mapped, and is addressible. */
       // Convert full V-bits in register to compact 2-bit form.
-      // XXX: is it best to check for VALID before INVALID?
       if (V_BITS16_VALID == vbytes) {
          insert_vabits16_into_vabits32( a, VA_BITS16_READABLE,
                                         &(sm->vabits32[sm_off]) );
@@ -2999,14 +3000,14 @@ UWord MC_(helperc_LOADV1) ( Addr a )
    UWord   sm_off, vabits32;
    SecMap* sm;
 
-   PROF_EVENT(260, "helperc_LOADV1");
+   PROF_EVENT(260, "mc_LOADV1");
 
 #  if VG_DEBUG_MEMORY >= 2
    return (UWord)mc_LOADVn_slow( a, 1, False/*irrelevant*/ );
 #  endif
 
    if (EXPECTED_NOT_TAKEN( UNALIGNED_OR_HIGH(a,1) )) {
-      PROF_EVENT(261, "helperc_LOADV1-slow1");
+      PROF_EVENT(261, "mc_LOADV1-slow1");
       return (UWord)mc_LOADVn_slow( a, 1, False/*irrelevant*/ );
    }
 
@@ -3014,14 +3015,12 @@ UWord MC_(helperc_LOADV1) ( Addr a )
    sm_off   = SM_OFF(a);
    vabits32 = sm->vabits32[sm_off];
    // Convert V bits from compact memory form to expanded register form
-   /* Handle common case quickly: a is mapped, and the entire
-      word32 it lives in is addressible. */
-   // XXX: set the high 24/56 bits of retval to 1?
+   // Handle common case quickly: a is mapped, and the entire
+   // word32 it lives in is addressible.
+   // XXX: set the high 24/56 bits of retval to 1 for 64-bit paranoia?
    if      (vabits32 == VA_BITS32_READABLE) { return V_BITS8_VALID;   }
    else if (vabits32 == VA_BITS32_WRITABLE) { return V_BITS8_INVALID; }
    else {
-      // XXX: Could just do the slow but general case if this is uncommon,
-      //      but removing it slowed perf/bz2 down some...
       // The 4 (yes, 4) bytes are not all-readable or all-writable, check
       // the single byte.
       UChar vabits8 = extract_vabits8_from_vabits32(a, vabits32);
@@ -3029,7 +3028,7 @@ UWord MC_(helperc_LOADV1) ( Addr a )
       else if (vabits8 == VA_BITS8_WRITABLE) { return V_BITS8_INVALID; }
       else {
          /* Slow case: the byte is not all-readable or all-writable. */
-         PROF_EVENT(262, "helperc_LOADV1-slow2");
+         PROF_EVENT(262, "mc_LOADV1-slow2");
          return (UWord)mc_LOADVn_slow( a, 1, False/*irrelevant*/ );
       }
    }
@@ -3042,7 +3041,7 @@ void MC_(helperc_STOREV1) ( Addr a, UWord vbyte )
    UWord   sm_off, vabits32;
    SecMap* sm;
 
-   PROF_EVENT(270, "helperc_STOREV1");
+   PROF_EVENT(270, "mc_STOREV1");
 
 #  if VG_DEBUG_MEMORY >= 2
    mc_STOREVn_slow( a, 1, (ULong)vbyte, False/*irrelevant*/ );
@@ -3050,7 +3049,7 @@ void MC_(helperc_STOREV1) ( Addr a, UWord vbyte )
 #  endif
 
    if (EXPECTED_NOT_TAKEN( UNALIGNED_OR_HIGH(a,1) )) {
-      PROF_EVENT(271, "helperc_STOREV1-slow1");
+      PROF_EVENT(271, "mc_STOREV1-slow1");
       mc_STOREVn_slow( a, 1, (ULong)vbyte, False/*irrelevant*/ );
       return;
    }
@@ -3065,7 +3064,6 @@ void MC_(helperc_STOREV1) ( Addr a, UWord vbyte )
       /* Handle common case quickly: a is mapped, the entire word32 it
          lives in is addressible. */
       // Convert full V-bits in register to compact 2-bit form.
-      // XXX: is it best to check for VALID before INVALID?
       if (V_BITS8_VALID == vbyte) {
          insert_vabits8_into_vabits32( a, VA_BITS8_READABLE,
                                        &(sm->vabits32[sm_off]) );
@@ -3074,12 +3072,12 @@ void MC_(helperc_STOREV1) ( Addr a, UWord vbyte )
                                        &(sm->vabits32[sm_off]) );
       } else {
          /* Slow but general case -- writing partially defined bytes. */
-         PROF_EVENT(272, "helperc_STOREV1-slow2");
+         PROF_EVENT(272, "mc_STOREV1-slow2");
          mc_STOREVn_slow( a, 1, (ULong)vbyte, False/*irrelevant*/ );
       }
    } else {
       /* Slow but general case. */
-      PROF_EVENT(273, "helperc_STOREV1-slow3");
+      PROF_EVENT(273, "mc_STOREV1-slow3");
       mc_STOREVn_slow( a, 1, (ULong)vbyte, False/*irrelevant*/ );
    }
 }
