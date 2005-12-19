@@ -1550,9 +1550,11 @@ static MC_ReadResult mc_check_readable ( Addr a, SizeT len, Addr* bad_addr )
       vabits8 = get_vabits8(a);
       if (VA_BITS8_READABLE != vabits8) {
          // Error!  Nb: Report addressability errors in preference to
-         // definedness errors.
+         // definedness errors.  And don't report definedeness errors unless
+         // --undef-value-errors=yes.
          if (bad_addr != NULL) *bad_addr = a;
-         return ( VA_BITS8_NOACCESS == vabits8 ? MC_AddrErr : MC_ValueErr );
+         if      ( VA_BITS8_NOACCESS == vabits8 ) return MC_AddrErr; 
+         else if ( MC_(clo_undef_value_errors)  ) return MC_ValueErr;
       }
       a++;
    }
@@ -1575,9 +1577,11 @@ static Bool mc_check_readable_asciiz ( Addr a, Addr* bad_addr )
       vabits8 = get_vabits8(a);
       if (VA_BITS8_READABLE != vabits8) {
          // Error!  Nb: Report addressability errors in preference to
-         // definedness errors.
+         // definedness errors.  And don't report definedeness errors unless
+         // --undef-value-errors=yes.
          if (bad_addr != NULL) *bad_addr = a;
-         return ( VA_BITS8_NOACCESS == vabits8 ? MC_AddrErr : MC_ValueErr );
+         if      ( VA_BITS8_NOACCESS == vabits8 ) return MC_AddrErr; 
+         else if ( MC_(clo_undef_value_errors)  ) return MC_ValueErr;
       }
       /* Ok, a is safe to read. */
       if (* ((UChar*)a) == 0) {
@@ -2143,6 +2147,7 @@ static void mc_record_param_error ( ThreadId tid, Addr a, Bool isReg,
 {
    MC_Error err_extra;
 
+   tl_assert(MC_(clo_undef_value_errors));
    tl_assert(VG_INVALID_THREADID != tid);
    if (isUnaddr) tl_assert(!isReg);    // unaddressable register is impossible
    mc_clear_MC_Error( &err_extra );
@@ -2222,6 +2227,7 @@ static void mc_record_value_error ( ThreadId tid, Int size )
 {
    MC_Error err_extra;
 
+   tl_assert(MC_(clo_undef_value_errors));
    mc_clear_MC_Error( &err_extra );
    err_extra.size     = size;
    err_extra.isUnaddr = False;
@@ -4080,7 +4086,8 @@ static void mc_pre_clo_init(void)
    VG_(track_pre_mem_write)       ( mc_check_is_writable );
    VG_(track_post_mem_write)      ( mc_post_mem_write );
 
-   VG_(track_pre_reg_read)        ( mc_pre_reg_read );
+   if (MC_(clo_undef_value_errors))
+      VG_(track_pre_reg_read)     ( mc_pre_reg_read );
 
    VG_(track_post_reg_write)                  ( mc_post_reg_write );
    VG_(track_post_reg_write_clientcall_return)( mc_post_reg_write_clientcall );
