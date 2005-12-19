@@ -1364,7 +1364,7 @@ Bool read_lib_symbols ( SegInfo* si )
    struct vki_stat stat_buf;
 
    oimage = (Addr)NULL;
-   if (VG_(clo_verbosity) > 1)
+   if (VG_(clo_verbosity) > 1 || VG_(clo_trace_redir))
       VG_(message)(Vg_DebugMsg, "Reading syms from %s (%p)", 
                                 si->filename, si->start );
 
@@ -1813,9 +1813,9 @@ static void unload_symbols ( Addr start, SizeT length )
    while (curr) {
       if (start == curr->start) {
          // Found it;  remove from list and free it.
-         if (VG_(clo_verbosity) > 1)
+         if (VG_(clo_verbosity) > 1 || VG_(clo_trace_redir))
             VG_(message)(Vg_DebugMsg, 
-                         "discard syms at %p-%p in %s due to munmap()", 
+                         "Discarding syms at %p-%p in %s due to munmap()", 
                          start, start+length,
                          curr->filename ? curr->filename : (Char *)"???");
          vg_assert(*prev_next_ptr == curr);
