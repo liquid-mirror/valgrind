@@ -46,7 +46,6 @@
 #include "pub_tool_mallocfree.h"
 #include "pub_tool_options.h"
 #include "pub_tool_oset.h"
-#include "pub_tool_profile.h"       // For mc_include.h
 #include "pub_tool_replacemalloc.h"
 #include "pub_tool_tooliface.h"
 #include "pub_tool_threadstate.h"
@@ -4085,10 +4084,6 @@ static void mc_pre_clo_init(void)
 
    VG_(track_post_reg_write)                  ( mc_post_reg_write );
    VG_(track_post_reg_write_clientcall_return)( mc_post_reg_write_clientcall );
-
-   VG_(register_profile_event) ( VgpSetMem,   "set-mem-perms" );
-   VG_(register_profile_event) ( VgpCheckMem, "check-mem-perms" );
-   VG_(register_profile_event) ( VgpESPAdj,   "adjust-ESP" );
 
    init_shadow_memory();
    MC_(malloc_list)  = VG_(HT_construct)( 80021 );   // prime, big

@@ -140,16 +140,8 @@ extern Bool MC_(record_leak_error)            ( ThreadId tid,
                                                 Bool print_record );
 
 /*------------------------------------------------------------*/
-/*--- Profiling of tools and memory events                 ---*/
+/*--- Profiling of memory events                           ---*/
 /*------------------------------------------------------------*/
-
-typedef 
-   enum { 
-      VgpCheckMem = VgpFini+1,
-      VgpSetMem,
-      VgpESPAdj
-   } 
-   VgpToolCC;
 
 /* Define to collect detailed performance info. */
 /* #define MC_PROFILE_MEMORY */

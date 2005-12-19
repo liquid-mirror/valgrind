@@ -39,7 +39,6 @@
 #include "pub_tool_machine.h"
 #include "pub_tool_mallocfree.h"
 #include "pub_tool_options.h"
-#include "pub_tool_profile.h"       // For mc_include.h
 #include "pub_tool_signals.h"
 
 #include "mc_include.h"

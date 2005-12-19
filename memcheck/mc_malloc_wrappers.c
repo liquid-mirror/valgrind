@@ -38,7 +38,6 @@
 #include "pub_tool_libcprint.h"
 #include "pub_tool_mallocfree.h"
 #include "pub_tool_options.h"
-#include "pub_tool_profile.h"       // For mc_include.h
 #include "pub_tool_replacemalloc.h"
 #include "pub_tool_threadstate.h"
 #include "mc_include.h"
