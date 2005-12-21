@@ -34,6 +34,9 @@
 
    test whether it would be faster, for LOADV4, to check
    only for 8-byte validity on the fast path
+
+   (That could only be faster for 64-bit platforms, right?  
+    --njn Dec-20-2005)
 */
 
 #include "pub_tool_basics.h"
@@ -575,7 +578,9 @@ void insert_vabits8_into_vabits32 ( Addr a, UChar vabits8, UChar* vabits32 )
 static inline
 void insert_vabits16_into_vabits32 ( Addr a, UChar vabits16, UChar* vabits32 )
 {
-   UInt shift =  (a & 2)   << 1;       // shift by 0 or 4
+   UInt shift;
+   tl_assert(VG_IS_2_ALIGNED(a));      // Must be 2-aligned
+   shift      =  (a & 2)   << 1;       // shift by 0 or 4
    *vabits32 &= ~(0xf      << shift);  // mask out the four old bits
    *vabits32 |=  (vabits16 << shift);  // mask  in the four new bits
 }
@@ -583,9 +588,19 @@ void insert_vabits16_into_vabits32 ( Addr a, UChar vabits16, UChar* vabits32 )
 static inline
 UChar extract_vabits8_from_vabits32 ( Addr a, UChar vabits32 )
 {
-   UInt shift = (a & 3) << 1;       // use (a % 4) for the offset
-   vabits32 >>= shift;              // shift the two bits to the bottom
-   return 0x3 & vabits32;           // mask out the rest
+   UInt shift = (a & 3) << 1;          // shift by 0, 2, 4, or 6
+   vabits32 >>= shift;                 // shift the two bits to the bottom
+   return 0x3 & vabits32;              // mask out the rest
+}
+
+static inline
+UChar extract_vabits16_from_vabits32 ( Addr a, UChar vabits32 )
+{
+   UInt shift;
+   tl_assert(VG_IS_2_ALIGNED(a));      // Must be 2-aligned
+   shift = (a & 2) << 1;               // shift by 0 or 4
+   vabits32 >>= shift;                 // shift the four bits to the bottom
+   return 0xf & vabits32;              // mask out the rest
 }
 
 // Note that these two are only used in slow cases.  The fast cases do
