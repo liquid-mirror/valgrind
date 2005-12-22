@@ -487,17 +487,16 @@ static SecMap* maybe_get_secmap_for ( Addr a )
 
 static OSet* secVBitTable;
 
-static ULong sec_vbits_bytes_allocd = 0;
-static ULong sec_vbits_bytes_freed  = 0;
-static ULong sec_vbits_bytes_curr   = 0;
-static ULong sec_vbits_bytes_peak   = 0;
+static ULong sec_vbits_new_nodes = 0;
+static ULong sec_vbits_updates   = 0;
 
-// sizeof(Addr) is the best value here.  We can go from 1 to sizeof(Addr)
-// for free -- it doesn't change the size of the SecVBitNode because of
-// padding.  If we make it larger, we have bigger nodes, but can possibly
-// fit more partially defined bytes in each node.  In practice it seems that
-// partially defined bytes are rarely clustered close to each other, so
-// going bigger than sizeof(Addr) does not save space.
+// This must be a power of two;  this is checked in mc_pre_clo_init().
+// The size chosen here is a trade-off:  if the nodes are bigger (ie. cover
+// a larger address range) they take more space but we can get multiple
+// partially-defined bytes in one if they are close to each other, reducing
+// the number of total nodes.  In practice sometimes they are clustered (eg.
+// perf/bz2 repeatedly writes then reads more than 20,000 in a contiguous
+// row), but often not.  So we choose something intermediate.
 #define BYTES_PER_SEC_VBIT_NODE  sizeof(Addr)
 
 typedef 
@@ -531,13 +530,10 @@ static void set_sec_vbits8(Addr a, UWord vbits8)
    tl_assert(V_BITS8_VALID != vbits8 && V_BITS8_INVALID != vbits8);
    if (n) {
       n->vbits8[amod] = vbits8;  // update
+      sec_vbits_updates++;
    } else {
       // New node:  assign the specific byte, make the rest invalid (they
       // should never be read as-is, but be cautious).
-      sec_vbits_bytes_allocd += sizeof(SecVBitNode);
-      sec_vbits_bytes_curr   += sizeof(SecVBitNode);
-      if (sec_vbits_bytes_curr > sec_vbits_bytes_peak)
-         sec_vbits_bytes_peak = sec_vbits_bytes_curr;
       n = VG_(OSet_AllocNode)(secVBitTable, sizeof(SecVBitNode));
       n->a            = aAligned;
       for (i = 0; i < BYTES_PER_SEC_VBIT_NODE; i++) {
@@ -545,6 +541,7 @@ static void set_sec_vbits8(Addr a, UWord vbits8)
       }
       n->vbits8[amod] = vbits8;
       VG_(OSet_Insert)(secVBitTable, n);
+      sec_vbits_new_nodes++;
    }
 }
 
@@ -572,8 +569,6 @@ static void maybe_remove_sec_vbits8(Addr a)
    }
    n = VG_(OSet_Remove)(secVBitTable, &aAligned);
    VG_(OSet_FreeNode)(secVBitTable, n);
-   sec_vbits_bytes_freed += sizeof(SecVBitNode);
-   sec_vbits_bytes_curr  -= sizeof(SecVBitNode);
    tl_assert(n);
 }
 
@@ -3986,8 +3981,12 @@ static void mc_fini ( Int exitcode )
          n_accessible_dist * sizeof(SecMap) / (1024 * 1024) );
 
       VG_(message)(Vg_DebugMsg,
-         " memcheck: sec V bit entries: %d",
+         " memcheck: sec V bit nodes:      %d",
          VG_(OSet_Size)(secVBitTable) );
+      VG_(message)(Vg_DebugMsg,
+         " memcheck: set_sec_vbits8 calls: %llu (new: %llu, updates: %llu)",
+         sec_vbits_new_nodes + sec_vbits_updates,
+         sec_vbits_new_nodes, sec_vbits_updates );
    }
 
    if (0) {
@@ -4103,6 +4102,9 @@ static void mc_pre_clo_init(void)
 
    // {LOADV,STOREV}[8421] will all fail horribly if this isn't true.
    tl_assert(sizeof(UWord) == sizeof(Addr));
+
+   // BYTES_PER_SEC_VBIT_NODE must be a power of two.
+   tl_assert(-1 != VG_(log2)(BYTES_PER_SEC_VBIT_NODE));
 }
 
 VG_DETERMINE_INTERFACE_VERSION(mc_pre_clo_init)
