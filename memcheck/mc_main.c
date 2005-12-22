@@ -476,17 +476,101 @@ static SecMap* maybe_get_secmap_for ( Addr a )
    }
 }
 
+/* --------------- Fundamental functions --------------- */
+
+static inline
+void insert_vabits8_into_vabits32 ( Addr a, UChar vabits8, UChar* vabits32 )
+{
+   UInt shift =  (a & 3)  << 1;        // shift by 0, 2, 4, or 6
+   *vabits32 &= ~(0x3     << shift);   // mask out the two old bits
+   *vabits32 |=  (vabits8 << shift);   // mask  in the two new bits
+}
+
+static inline
+void insert_vabits16_into_vabits32 ( Addr a, UChar vabits16, UChar* vabits32 )
+{
+   UInt shift;
+   tl_assert(VG_IS_2_ALIGNED(a));      // Must be 2-aligned
+   shift      =  (a & 2)   << 1;       // shift by 0 or 4
+   *vabits32 &= ~(0xf      << shift);  // mask out the four old bits
+   *vabits32 |=  (vabits16 << shift);  // mask  in the four new bits
+}
+
+static inline
+UChar extract_vabits8_from_vabits32 ( Addr a, UChar vabits32 )
+{
+   UInt shift = (a & 3) << 1;          // shift by 0, 2, 4, or 6
+   vabits32 >>= shift;                 // shift the two bits to the bottom
+   return 0x3 & vabits32;              // mask out the rest
+}
+
+static inline
+UChar extract_vabits16_from_vabits32 ( Addr a, UChar vabits32 )
+{
+   UInt shift;
+   tl_assert(VG_IS_2_ALIGNED(a));      // Must be 2-aligned
+   shift = (a & 2) << 1;               // shift by 0 or 4
+   vabits32 >>= shift;                 // shift the four bits to the bottom
+   return 0xf & vabits32;              // mask out the rest
+}
+
+// Note that these two are only used in slow cases.  The fast cases do
+// clever things like combine the auxmap check (in
+// get_secmap_{read,writ}able) with alignment checks.
+
+static inline
+void set_vabits8 ( Addr a, UChar vabits8 )
+{
+   SecMap* sm       = get_secmap_writable(a);
+   UWord   sm_off   = SM_OFF(a);
+   insert_vabits8_into_vabits32( a, vabits8, &(sm->vabits32[sm_off]) );
+}
+
+static inline
+UChar get_vabits8 ( Addr a )
+{
+   SecMap* sm       = get_secmap_readable(a);
+   UWord   sm_off   = SM_OFF(a);
+   UChar   vabits32 = sm->vabits32[sm_off];
+   return extract_vabits8_from_vabits32(a, vabits32);
+}
+
+
 /* --------------- Secondary V bit table ------------ */
 
-// Note: the nodes in this table can become stale.  Eg. if you write a
-// partially defined byte (PDB), then overwrite the same address with a
-// fully defined byte, the sec-V-bit node will not necessarily be removed.
-// This is because checking for whether removal is necessary would slow down
-// the fast paths.  Hopefully this is not a problem.  If it becomes a
-// problem, we may have to consider doing a clean-up pass every so often.
+// This table holds the full V bit pattern for partially-defined bytes
+// (PDBs) that are represented by VA_BITS8_OTHER in the main shadow memory.
+//
+// Note: the nodes in this table can become stale.  Eg. if you write a PDB,
+// then overwrite the same address with a fully defined byte, the sec-V-bit
+// node will not necessarily be removed.  This is because checking for
+// whether removal is necessary would slow down the fast paths.  
+//
+// To avoid the stale nodes building up too much, we periodically (once the
+// table reaches a certain size) garbage collect (GC) the table by
+// traversing it and evicting any "sufficiently stale" nodes, ie. nodes that
+// are stale and haven't been touched for a certain number of collections.
+// If more than a certain proportion of nodes survived, we increase the
+// table size so that GCs occur less often.  
+//
+// (So this a bit different to a traditional GC, where you definitely want
+// to remove any dead nodes.  It's more like we have a resizable cache and
+// we're trying to find the right balance how many elements to evict and how
+// big to make the cache.)
+//
+// This policy is designed to avoid bad table bloat in the worst case where
+// a program creates huge numbers of stale PDBs -- we would get this bloat
+// if we had no GC -- while handling well the case where a node becomes
+// stale but shortly afterwards is rewritten with a PDB and so becomes
+// non-stale again (which happens quite often, eg. in perf/bz2).  If we just
+// remove all stale nodes as soon as possible, we just end up re-adding a
+// lot of them in later again.  The "sufficiently stale" approach avoids
+// this.  (If a program has many live PDBs, performance will just suck,
+// there's no way around that.)
 
 static OSet* secVBitTable;
 
+// Stats
 static ULong sec_vbits_new_nodes = 0;
 static ULong sec_vbits_updates   = 0;
 
@@ -497,14 +581,105 @@ static ULong sec_vbits_updates   = 0;
 // the number of total nodes.  In practice sometimes they are clustered (eg.
 // perf/bz2 repeatedly writes then reads more than 20,000 in a contiguous
 // row), but often not.  So we choose something intermediate.
-#define BYTES_PER_SEC_VBIT_NODE  sizeof(Addr)
+#define BYTES_PER_SEC_VBIT_NODE     16
+
+// We make the table bigger if more than this many nodes survive a GC.
+#define MAX_SURVIVOR_PROPORTION  0.5
+
+// Each time we make the table bigger, we increase it by this much.
+#define TABLE_GROWTH_FACTOR      2
+
+// This defines "sufficiently stale" -- any node that hasn't been touched in
+// this many GCs will be removed.
+#define MAX_STALE_AGE            2
+      
+// We GC the table when it gets this many nodes in it, ie. it's effectively
+// the table size.  It can change.
+static Int  secVBitLimit = 1024;
+
+// The number of GCs done, used to age sec-V-bit nodes for eviction.
+// Because it's unsigned, wrapping doesn't matter -- the right answer will
+// come out anyway.
+static UInt GCs_done = 0;
 
 typedef 
    struct {
       Addr  a;
       UChar vbits8[BYTES_PER_SEC_VBIT_NODE];
+      UInt  last_touched;
    } 
    SecVBitNode;
+
+static OSet* createSecVBitTable(void)
+{
+   return VG_(OSet_Create)( offsetof(SecVBitNode, a), 
+                            NULL, // use fast comparisons
+                            VG_(malloc), VG_(free) );
+}
+
+static void gcSecVBitTable(void)
+{
+   OSet*        secVBitTable2;
+   SecVBitNode* n;
+   Int          i, n_nodes = 0, n_survivors = 0;
+
+   GCs_done++;
+
+   // Create the new table.
+   secVBitTable2 = createSecVBitTable();
+
+   // Traverse the table, moving fresh nodes into the new table.
+   VG_(OSet_ResetIter)(secVBitTable);
+   while ( (n = VG_(OSet_Next)(secVBitTable)) ) {
+      Bool keep = False;
+      if ( (GCs_done - n->last_touched) <= MAX_STALE_AGE ) {
+         // Keep node if it's been touched recently enough (regardless of
+         // freshness/staleness).
+         keep = True;
+      } else {
+         // Keep node if any of its bytes are non-stale.  Using
+         // get_vabits8() for the lookup is not very efficient, but I don't
+         // think it matters.
+         for (i = 0; i < BYTES_PER_SEC_VBIT_NODE; i++) {
+            if (VA_BITS8_OTHER == get_vabits8(n->a + i)) {
+               keep = True;      // Found a non-stale byte, so keep
+               break;
+            }
+         }
+      }
+
+      if ( keep ) {
+         // Insert a copy of the node into the new table.
+         SecVBitNode* n2 = 
+            VG_(OSet_AllocNode)(secVBitTable2, sizeof(SecVBitNode));
+         *n2 = *n;
+         VG_(OSet_Insert)(secVBitTable2, n2);
+      }
+   }
+
+   // Get the before and after sizes.
+   n_nodes     = VG_(OSet_Size)(secVBitTable);
+   n_survivors = VG_(OSet_Size)(secVBitTable2);
+
+   // Destroy the old table, and put the new one in its place.
+   VG_(OSet_Destroy)(secVBitTable);
+   secVBitTable = secVBitTable2;
+
+   if (VG_(clo_verbosity) > 1) {
+      Char percbuf[6];
+      VG_(percentify)(n_survivors, n_nodes, 1, 6, percbuf);
+      VG_(message)(Vg_DebugMsg, "memcheck GC: %d nodes, %d survivors (%s)",
+                   n_nodes, n_survivors, percbuf);
+   }
+
+   // Increase table size if necessary.
+   if (n_survivors > (secVBitLimit * MAX_SURVIVOR_PROPORTION)) {
+      secVBitLimit *= TABLE_GROWTH_FACTOR;
+      if (VG_(clo_verbosity) > 1)
+         VG_(message)(Vg_DebugMsg, "memcheck GC: increase table size to %d",
+                      secVBitLimit);
+   }
+}
 
 static UWord get_sec_vbits8(Addr a)
 {
@@ -512,7 +687,7 @@ static UWord get_sec_vbits8(Addr a)
    Int          amod     = a % BYTES_PER_SEC_VBIT_NODE;
    SecVBitNode* n        = VG_(OSet_Lookup)(secVBitTable, &aAligned);
    UChar        vbits8;
-   tl_assert(n);
+   tl_assert2(n, "get_sec_vbits8: no node for address %p (%p)\n", aAligned, a);
    // Shouldn't be fully defined or fully undefined -- those cases shouldn't
    // make it to the secondary V bits table.
    vbits8 = n->vbits8[amod];
@@ -529,7 +704,8 @@ static void set_sec_vbits8(Addr a, UWord vbits8)
    // make it to the secondary V bits table.
    tl_assert(V_BITS8_VALID != vbits8 && V_BITS8_INVALID != vbits8);
    if (n) {
-      n->vbits8[amod] = vbits8;  // update
+      n->vbits8[amod] = vbits8;     // update
+      n->last_touched = GCs_done;
       sec_vbits_updates++;
    } else {
       // New node:  assign the specific byte, make the rest invalid (they
@@ -540,38 +716,19 @@ static void set_sec_vbits8(Addr a, UWord vbits8)
          n->vbits8[i] = V_BITS8_INVALID;
       }
       n->vbits8[amod] = vbits8;
+      n->last_touched = GCs_done;
+
+      // Do a table GC if necessary.  Nb: do this before inserting the new
+      // node, to avoid erroneously GC'ing the new node.
+      if (secVBitLimit == VG_(OSet_Size)(secVBitTable)) {
+         gcSecVBitTable();
+      }
+
+      // Insert the new node.
       VG_(OSet_Insert)(secVBitTable, n);
       sec_vbits_new_nodes++;
    }
 }
-
-// Remove the node if its V bytes (other than the one for 'a') are all fully
-// defined or fully undefined.  We ignore the V byte for 'a' because it's
-// about to be overwritten with a fully defined or fully undefined value.
-__attribute__((unused))
-static void maybe_remove_sec_vbits8(Addr a)
-{
-   Addr         aAligned = VG_ROUNDDN(a, BYTES_PER_SEC_VBIT_NODE);
-   Int          i, amod  = a % BYTES_PER_SEC_VBIT_NODE;
-   SecVBitNode* n        = VG_(OSet_Lookup)(secVBitTable, &aAligned);
-   tl_assert(n);
-   for (i = 0; i < BYTES_PER_SEC_VBIT_NODE; i++) {
-      UChar vbits8 = n->vbits8[i];
-
-      // Ignore the V byte for 'a'.
-      if (i == amod)
-         continue;
-      
-      // One of the other V bytes is still partially defined -- don't remove
-      // this entry from the table.
-      if (V_BITS8_VALID != vbits8 && V_BITS8_INVALID != vbits8)
-         return;
-   }
-   n = VG_(OSet_Remove)(secVBitTable, &aAligned);
-   VG_(OSet_FreeNode)(secVBitTable, n);
-   tl_assert(n);
-}
-
 
 /* --------------- Endianness helpers --------------- */
 
@@ -581,67 +738,6 @@ static INLINE UWord byte_offset_w ( UWord wordszB, Bool bigendian,
                                     UWord byteno ) {
    return bigendian ? (wordszB-1-byteno) : byteno;
 }
-
-
-/* --------------- Fundamental functions --------------- */
-
-static INLINE
-void insert_vabits8_into_vabits32 ( Addr a, UChar vabits8, UChar* vabits32 )
-{
-   UInt shift =  (a & 3)  << 1;        // shift by 0, 2, 4, or 6
-   *vabits32 &= ~(0x3     << shift);   // mask out the two old bits
-   *vabits32 |=  (vabits8 << shift);   // mask  in the two new bits
-}
-
-static INLINE
-void insert_vabits16_into_vabits32 ( Addr a, UChar vabits16, UChar* vabits32 )
-{
-   UInt shift;
-   tl_assert(VG_IS_2_ALIGNED(a));      // Must be 2-aligned
-   shift      =  (a & 2)   << 1;       // shift by 0 or 4
-   *vabits32 &= ~(0xf      << shift);  // mask out the four old bits
-   *vabits32 |=  (vabits16 << shift);  // mask  in the four new bits
-}
-
-static INLINE
-UChar extract_vabits8_from_vabits32 ( Addr a, UChar vabits32 )
-{
-   UInt shift = (a & 3) << 1;          // shift by 0, 2, 4, or 6
-   vabits32 >>= shift;                 // shift the two bits to the bottom
-   return 0x3 & vabits32;              // mask out the rest
-}
-
-static INLINE
-UChar extract_vabits16_from_vabits32 ( Addr a, UChar vabits32 )
-{
-   UInt shift;
-   tl_assert(VG_IS_2_ALIGNED(a));      // Must be 2-aligned
-   shift = (a & 2) << 1;               // shift by 0 or 4
-   vabits32 >>= shift;                 // shift the four bits to the bottom
-   return 0xf & vabits32;              // mask out the rest
-}
-
-// Note that these two are only used in slow cases.  The fast cases do
-// clever things like combine the auxmap check (in
-// get_secmap_{read,writ}able) with alignment checks.
-
-static INLINE
-void set_vabits8 ( Addr a, UChar vabits8 )
-{
-   SecMap* sm       = get_secmap_writable(a);
-   UWord   sm_off   = SM_OFF(a);
-   insert_vabits8_into_vabits32( a, vabits8, &(sm->vabits32[sm_off]) );
-}
-
-static INLINE
-UChar get_vabits8 ( Addr a )
-{
-   SecMap* sm       = get_secmap_readable(a);
-   UWord   sm_off   = SM_OFF(a);
-   UChar   vabits32 = sm->vabits32[sm_off];
-   return extract_vabits8_from_vabits32(a, vabits32);
-}
-
 
 /* --------------- Load/store slow cases. --------------- */
 
@@ -735,25 +831,10 @@ void mc_STOREVn_slow ( Addr a, SizeT szB, ULong vbytes, Bool bigendian )
          // Addressable.  Convert in-register format to in-memory format.
          // Also remove any existing sec V bit entry for the byte if no
          // longer necessary.
-         //
-         // XXX: the calls to maybe_remove_sec_vbits8() are commented out
-         // because they slow things down a bit (eg. 10% for perf/bz2)
-         // and the space saving is quite small (eg. 1--2% reduction in the
-         // size of the sec-V-bit-table?)
-         if ( V_BITS8_VALID == vbits8 ) { 
-//            if (VA_BITS8_OTHER == vabits8)
-//               maybe_remove_sec_vbits8(ai);
-            vabits8 = VA_BITS8_READABLE; 
-
-         } else if ( V_BITS8_INVALID == vbits8 ) { 
-//            if (VA_BITS8_OTHER == vabits8)
-//               maybe_remove_sec_vbits8(ai);
-            vabits8 = VA_BITS8_WRITABLE; 
-
-         } else    { 
-            vabits8 = VA_BITS8_OTHER;
-            set_sec_vbits8(ai, vbits8);
-         }
+         if      ( V_BITS8_VALID   == vbits8 ) { vabits8 = VA_BITS8_READABLE; }
+         else if ( V_BITS8_INVALID == vbits8 ) { vabits8 = VA_BITS8_WRITABLE; }
+         else                                  { vabits8 = VA_BITS8_OTHER;
+                                                 set_sec_vbits8(ai, vbits8);  }
          set_vabits8(ai, vabits8);
 
       } else {
@@ -3274,9 +3355,7 @@ static void init_shadow_memory ( void )
       no ... these are statically initialised */
 
    /* Secondary V bit table */
-   secVBitTable = VG_(OSet_Create)( offsetof(SecVBitNode, a), 
-                                    NULL, // use fast comparisons
-                                    VG_(malloc), VG_(free) );
+   secVBitTable = createSecVBitTable();
 }
 
 
