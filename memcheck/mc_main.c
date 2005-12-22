@@ -232,10 +232,14 @@ static Int   n_sanity_expensive = 0;
 #define SM_OFF(aaa)           (((aaa) & 0xffff) >> 2)
 #define SM_OFF_64(aaa)        (((aaa) & 0xffff) >> 3)
 
-static inline Addr start_of_this_sm ( Addr a ) {
+// Paranoia:  it's critical for performance that the requested inlining
+// occurs.  So try extra hard.
+#define INLINE    inline __attribute__((always_inline))
+
+static INLINE Addr start_of_this_sm ( Addr a ) {
    return (a & (~SM_MASK));
 }
-static inline Bool is_start_of_sm ( Addr a ) {
+static INLINE Bool is_start_of_sm ( Addr a ) {
    return (start_of_this_sm(a) == a);
 }
 
@@ -255,7 +259,7 @@ typedef
 
 static SecMap sm_distinguished[3];
 
-static inline Bool is_distinguished_sm ( SecMap* sm ) {
+static INLINE Bool is_distinguished_sm ( SecMap* sm ) {
    return sm >= &sm_distinguished[0] && sm <= &sm_distinguished[2];
 }
 
@@ -381,14 +385,55 @@ static AuxMapEnt* find_or_alloc_in_auxmap ( Addr a )
 
 /* --------------- SecMap fundamentals --------------- */
 
-__attribute__((always_inline))
-static inline SecMap* get_secmap_readable_low ( Addr a )
+// In all these, 'low' means it's definitely in the main primary map,
+// 'high' means it's definitely in the auxiliary table.
+
+static INLINE SecMap** get_secmap_low_ptr ( Addr a )
 {
    UWord pm_off = a >> 16;
 #  if VG_DEBUG_MEMORY >= 1
    tl_assert(pm_off < N_PRIMARY_MAP);
 #  endif
-   return primary_map[ pm_off ];
+   return &primary_map[ pm_off ];
+}
+
+static INLINE SecMap** get_secmap_high_ptr ( Addr a )
+{
+   AuxMapEnt* am = find_or_alloc_in_auxmap(a);
+   return &am->sm;
+}
+
+static SecMap** get_secmap_ptr ( Addr a )
+{
+   return ( a <= MAX_PRIMARY_ADDRESS 
+          ? get_secmap_low_ptr(a) 
+          : get_secmap_high_ptr(a));
+}
+
+static INLINE SecMap* get_secmap_readable_low ( Addr a )
+{
+   return *get_secmap_low_ptr(a);
+}
+
+static INLINE SecMap* get_secmap_readable_high ( Addr a )
+{
+   return *get_secmap_high_ptr(a);
+}
+
+static INLINE SecMap* get_secmap_writable_low(Addr a)
+{
+   SecMap** p = get_secmap_low_ptr(a);
+   if (EXPECTED_NOT_TAKEN(is_distinguished_sm(*p)))
+      *p = copy_for_writing(*p);
+   return *p;
+}
+
+static INLINE SecMap* get_secmap_writable_high ( Addr a )
+{
+   SecMap** p = get_secmap_high_ptr(a);
+   if (EXPECTED_NOT_TAKEN(is_distinguished_sm(*p)))
+      *p = copy_for_writing(*p);
+   return *p;
 }
 
 /* Produce the secmap for 'a', either from the primary map or by
@@ -398,12 +443,23 @@ static inline SecMap* get_secmap_readable_low ( Addr a )
 */
 static SecMap* get_secmap_readable ( Addr a )
 {
-   if (a <= MAX_PRIMARY_ADDRESS) {
-      return get_secmap_readable_low(a);
-   } else {
-      AuxMapEnt* am = find_or_alloc_in_auxmap(a);
-      return am->sm;
-   }
+   return ( a <= MAX_PRIMARY_ADDRESS
+          ? get_secmap_readable_low (a)
+          : get_secmap_readable_high(a) );
+}
+
+/* Produce the secmap for 'a', either from the primary map or by
+   ensuring there is an entry for it in the aux primary map.  The
+   secmap may not be a distinguished one, since the caller will want
+   to be able to write it.  If it is a distinguished secondary, make a
+   writable copy of it, install it, and return the copy instead.  (COW
+   semantics).
+*/
+static SecMap* get_secmap_writable ( Addr a )
+{
+   return ( a <= MAX_PRIMARY_ADDRESS
+          ? get_secmap_writable_low (a)
+          : get_secmap_writable_high(a) );
 }
 
 /* If 'a' has a SecMap, produce it.  Else produce NULL.  But don't
@@ -419,39 +475,6 @@ static SecMap* maybe_get_secmap_for ( Addr a )
       return am ? am->sm : NULL;
    }
 }
-
-// Produce the secmap for 'a', where 'a' is known to be in the primary map.
-__attribute__((always_inline))
-static inline SecMap* get_secmap_writable_low(Addr a)
-{
-   UWord pm_off = a >> 16;
-#  if VG_DEBUG_MEMORY >= 1
-   tl_assert(pm_off < N_PRIMARY_MAP);
-#  endif
-   if (EXPECTED_NOT_TAKEN(is_distinguished_sm(primary_map[pm_off])))
-      primary_map[pm_off] = copy_for_writing(primary_map[pm_off]);
-   return primary_map[pm_off];
-}
-
-/* Produce the secmap for 'a', either from the primary map or by
-   ensuring there is an entry for it in the aux primary map.  The
-   secmap may not be a distinguished one, since the caller will want
-   to be able to write it.  If it is a distinguished secondary, make a
-   writable copy of it, install it, and return the copy instead.  (COW
-   semantics).
-*/
-static SecMap* get_secmap_writable ( Addr a )
-{
-   if (a <= MAX_PRIMARY_ADDRESS) {
-      return get_secmap_writable_low(a);
-   } else {
-      AuxMapEnt* am = find_or_alloc_in_auxmap(a);
-      if (is_distinguished_sm(am->sm))
-         am->sm = copy_for_writing(am->sm);
-      return am->sm;
-   }
-}
-
 
 /* --------------- Secondary V bit table ------------ */
 
@@ -559,7 +582,7 @@ static void maybe_remove_sec_vbits8(Addr a)
 
 /* Returns the offset in memory of the byteno-th most significant byte
    in a wordszB-sized word, given the specified endianness. */
-static inline UWord byte_offset_w ( UWord wordszB, Bool bigendian, 
+static INLINE UWord byte_offset_w ( UWord wordszB, Bool bigendian, 
                                     UWord byteno ) {
    return bigendian ? (wordszB-1-byteno) : byteno;
 }
@@ -567,7 +590,7 @@ static inline UWord byte_offset_w ( UWord wordszB, Bool bigendian,
 
 /* --------------- Fundamental functions --------------- */
 
-static inline
+static INLINE
 void insert_vabits8_into_vabits32 ( Addr a, UChar vabits8, UChar* vabits32 )
 {
    UInt shift =  (a & 3)  << 1;        // shift by 0, 2, 4, or 6
@@ -575,7 +598,7 @@ void insert_vabits8_into_vabits32 ( Addr a, UChar vabits8, UChar* vabits32 )
    *vabits32 |=  (vabits8 << shift);   // mask  in the two new bits
 }
 
-static inline
+static INLINE
 void insert_vabits16_into_vabits32 ( Addr a, UChar vabits16, UChar* vabits32 )
 {
    UInt shift;
@@ -585,7 +608,7 @@ void insert_vabits16_into_vabits32 ( Addr a, UChar vabits16, UChar* vabits32 )
    *vabits32 |=  (vabits16 << shift);  // mask  in the four new bits
 }
 
-static inline
+static INLINE
 UChar extract_vabits8_from_vabits32 ( Addr a, UChar vabits32 )
 {
    UInt shift = (a & 3) << 1;          // shift by 0, 2, 4, or 6
@@ -593,7 +616,7 @@ UChar extract_vabits8_from_vabits32 ( Addr a, UChar vabits32 )
    return 0x3 & vabits32;              // mask out the rest
 }
 
-static inline
+static INLINE
 UChar extract_vabits16_from_vabits32 ( Addr a, UChar vabits32 )
 {
    UInt shift;
@@ -607,7 +630,7 @@ UChar extract_vabits16_from_vabits32 ( Addr a, UChar vabits32 )
 // clever things like combine the auxmap check (in
 // get_secmap_{read,writ}able) with alignment checks.
 
-static inline
+static INLINE
 void set_vabits8 ( Addr a, UChar vabits8 )
 {
    SecMap* sm       = get_secmap_writable(a);
@@ -615,7 +638,7 @@ void set_vabits8 ( Addr a, UChar vabits8 )
    insert_vabits8_into_vabits32( a, vabits8, &(sm->vabits32[sm_off]) );
 }
 
-static inline
+static INLINE
 UChar get_vabits8 ( Addr a )
 {
    SecMap* sm       = get_secmap_readable(a);
@@ -755,7 +778,7 @@ void mc_STOREVn_slow ( Addr a, SizeT szB, ULong vbytes, Bool bigendian )
 
 //zz /* Reading/writing of the bitmaps, for aligned word-sized accesses. */
 //zz 
-//zz static __inline__ UChar get_abits4_ALIGNED ( Addr a )
+//zz static INLINE UChar get_abits4_ALIGNED ( Addr a )
 //zz {
 //zz    SecMap* sm;
 //zz    UInt    sm_off;
@@ -772,7 +795,7 @@ void mc_STOREVn_slow ( Addr a, SizeT szB, ULong vbytes, Bool bigendian )
 //zz    return abits8;
 //zz }
 //zz 
-//zz static UInt __inline__ get_vbytes4_ALIGNED ( Addr a )
+//zz static UInt INLINE get_vbytes4_ALIGNED ( Addr a )
 //zz {
 //zz    SecMap* sm     = primary_map[PM_IDX(a)];
 //zz    UInt    sm_off = SM_OFF(a);
@@ -784,7 +807,7 @@ void mc_STOREVn_slow ( Addr a, SizeT szB, ULong vbytes, Bool bigendian )
 //zz }
 //zz 
 //zz 
-//zz static void __inline__ set_vbytes4_ALIGNED ( Addr a, UInt vbytes )
+//zz static void INLINE set_vbytes4_ALIGNED ( Addr a, UInt vbytes )
 //zz {
 //zz    SecMap* sm;
 //zz    UInt    sm_off;
@@ -803,33 +826,6 @@ void mc_STOREVn_slow ( Addr a, SizeT szB, ULong vbytes, Bool bigendian )
 /*--- Setting permissions over address ranges.             ---*/
 /*------------------------------------------------------------*/
 
-/* Given address 'a', find the place where the pointer to a's
-   secondary map lives.  If a falls into the primary map, the returned
-   value points to one of the entries in primary_map[].  Otherwise,
-   the auxiliary primary map is searched for 'a', or an entry is
-   created for it; either way, the returned value points to the
-   relevant AuxMapEnt's .sm field.
-
-   The point of this is to enable set_address_range_perms to assign
-   secondary maps in a uniform way, without worrying about whether a
-   given secondary map is pointed to from the main or auxiliary
-   primary map.  
-*/
-
-static SecMap** find_secmap_binder_for_addr ( Addr a )
-{
-   if (a > MAX_PRIMARY_ADDRESS) {
-      AuxMapEnt* am = find_or_alloc_in_auxmap(a);
-      return &am->sm;
-   } else {
-      UWord sec_no = (UWord)(a >> 16);
-#     if VG_DEBUG_MEMORY >= 1
-      tl_assert(sec_no < N_PRIMARY_MAP);
-#     endif
-      return &primary_map[sec_no];
-   }
-}
-
 static void set_address_range_perms ( Addr a, SizeT lenT, UWord vabits64,
                                       UWord dsm_num )
 {
@@ -837,7 +833,7 @@ static void set_address_range_perms ( Addr a, SizeT lenT, UWord vabits64,
    SizeT    lenA, lenB, len_to_next_secmap;
    Addr     aNext;
    SecMap*  sm;
-   SecMap** binder;
+   SecMap** sm_ptr;
    SecMap*  example_dsm;
 
    PROF_EVENT(150, "set_address_range_perms");
@@ -936,19 +932,19 @@ static void set_address_range_perms ( Addr a, SizeT lenT, UWord vabits64,
    //------------------------------------------------------------------------
 
    // If it's distinguished, make it undistinguished if necessary.
-   binder = find_secmap_binder_for_addr(a);
-   if (is_distinguished_sm(*binder)) {
-      if (*binder == example_dsm) {
+   sm_ptr = get_secmap_ptr(a);
+   if (is_distinguished_sm(*sm_ptr)) {
+      if (*sm_ptr == example_dsm) {
          // Sec-map already has the V+A bits that we want, so skip.
          PROF_EVENT(154, "set_address_range_perms-dist-sm1-quick");
          a    = aNext;
          lenA = 0;
       } else {
          PROF_EVENT(155, "set_address_range_perms-dist-sm1");
-         *binder = copy_for_writing(*binder);
+         *sm_ptr = copy_for_writing(*sm_ptr);
       }
    }
-   sm = *binder;
+   sm = *sm_ptr;
 
    // 1 byte steps
    while (True) {
@@ -993,16 +989,16 @@ static void set_address_range_perms ( Addr a, SizeT lenT, UWord vabits64,
       if (lenB < SM_SIZE) break;
       tl_assert(is_start_of_sm(a));
       PROF_EVENT(159, "set_address_range_perms-loop64K");
-      binder = find_secmap_binder_for_addr(a);
-      if (!is_distinguished_sm(*binder)) {
+      sm_ptr = get_secmap_ptr(a);
+      if (!is_distinguished_sm(*sm_ptr)) {
          PROF_EVENT(160, "set_address_range_perms-loop64K-free-dist-sm");
          // Free the non-distinguished sec-map that we're replacing.  This
          // case happens moderately often, enough to be worthwhile.
-         VG_(am_munmap_valgrind)((Addr)*binder, sizeof(SecMap));
+         VG_(am_munmap_valgrind)((Addr)*sm_ptr, sizeof(SecMap));
          n_secmaps_deissued++;      // Needed for the expensive sanity check
       }
       // Make the sec-map entry point to the example DSM
-      *binder = example_dsm;
+      *sm_ptr = example_dsm;
       lenB -= SM_SIZE;
       a    += SM_SIZE;
    }
@@ -1018,18 +1014,18 @@ static void set_address_range_perms ( Addr a, SizeT lenT, UWord vabits64,
    tl_assert(is_start_of_sm(a) && lenB < SM_SIZE);
 
    // If it's distinguished, make it undistinguished if necessary.
-   binder = find_secmap_binder_for_addr(a);
-   if (is_distinguished_sm(*binder)) {
-      if (*binder == example_dsm) {
+   sm_ptr = get_secmap_ptr(a);
+   if (is_distinguished_sm(*sm_ptr)) {
+      if (*sm_ptr == example_dsm) {
          // Sec-map already has the V+A bits that we want, so stop.
          PROF_EVENT(161, "set_address_range_perms-dist-sm2-quick");
          return;
       } else {
          PROF_EVENT(162, "set_address_range_perms-dist-sm2");
-         *binder = copy_for_writing(*binder);
+         *sm_ptr = copy_for_writing(*sm_ptr);
       }
    }
-   sm = *binder;
+   sm = *sm_ptr;
 
    // 8-aligned, 8 byte steps
    while (True) {
@@ -1107,7 +1103,7 @@ static void mc_copy_address_range_state ( Addr src, Addr dst, SizeT len )
 
 /* --- Fast case permission setters, for dealing with stacks. --- */
 
-static __inline__
+static INLINE
 void make_aligned_word32_writable ( Addr a )
 {
    UWord   sm_off;
@@ -1132,7 +1128,7 @@ void make_aligned_word32_writable ( Addr a )
 }
 
 
-static __inline__
+static INLINE
 void make_aligned_word32_noaccess ( Addr a )
 {
    UWord   sm_off;
@@ -1158,7 +1154,7 @@ void make_aligned_word32_noaccess ( Addr a )
 
 
 /* Nb: by "aligned" here we mean 8-byte aligned */
-static __inline__
+static INLINE
 void make_aligned_word64_writable ( Addr a )
 {
    UWord   sm_off64;
@@ -1183,7 +1179,7 @@ void make_aligned_word64_writable ( Addr a )
 }
 
 
-static __inline__
+static INLINE
 void make_aligned_word64_noaccess ( Addr a )
 {
    UWord   sm_off64;
@@ -1438,32 +1434,25 @@ void MC_(helperc_MAKE_STACK_UNINIT) ( Addr base, UWord len )
    /* Idea is: go fast when
          * 8-aligned and length is 128
          * the sm is available in the main primary map
-         * the address range falls entirely with a single
-           secondary map
-         * the SM is modifiable
-      If all those conditions hold, just update the V+A bits
-      by writing directly into the vabits array.   
+         * the address range falls entirely with a single secondary map
+      If all those conditions hold, just update the V+A bits by writing
+      directly into the vabits array.  (If the sm was distinguished, this
+      will make a copy and then write to it.)
    */
-   if (EXPECTED_TAKEN( len == 128
-                       && VG_IS_8_ALIGNED(base) 
-      )) {
+   if (EXPECTED_TAKEN( len == 128 && VG_IS_8_ALIGNED(base) )) {
       /* Now we know the address range is suitably sized and aligned. */
-      UWord a_lo   = (UWord)base;
-      UWord a_hi   = (UWord)(base + 127);
-      UWord sec_lo = a_lo >> 16;
-      UWord sec_hi = a_hi >> 16;
-
-      if (EXPECTED_TAKEN( sec_lo == sec_hi 
-                          && sec_lo <= N_PRIMARY_MAP
-         )) {
+      UWord a_lo = (UWord)(base);
+      UWord a_hi = (UWord)(base + 127);
+      tl_assert(a_lo < a_hi);             // paranoia: detect overflow
+      if (a_hi < MAX_PRIMARY_ADDRESS) {
+         // Now we know the entire range is within the main primary map.
+         SecMap* sm    = get_secmap_writable_low(a_lo);
+         SecMap* sm_hi = get_secmap_writable_low(a_hi);
          /* Now we know that the entire address range falls within a
             single secondary map, and that that secondary 'lives' in
             the main primary map. */
-         SecMap* sm = primary_map[sec_lo];
-
-         if (EXPECTED_TAKEN( !is_distinguished_sm(sm) )) {
-            /* And finally, now we know that the secondary in question
-               is modifiable. */
+         if (EXPECTED_TAKEN(sm == sm_hi)) {
+            // Finally, we know that the range is entirely within one secmap.
             UWord   v_off = SM_OFF(a_lo);
             UShort* p     = (UShort*)(&sm->vabits32[v_off]);
             p[ 0] =  VA_BITS64_WRITABLE;
@@ -2646,7 +2635,7 @@ static void mc_print_extra_suppression_info ( Error* err )
 
 /* ------------------------ Size = 8 ------------------------ */
 
-static inline __attribute__((always_inline))
+static INLINE
 ULong mc_LOADV8 ( Addr a, Bool isBigEndian )
 {
    UWord   sm_off64, vabits64;
@@ -2692,7 +2681,7 @@ ULong MC_(helperc_LOADV8le) ( Addr a )
 }
 
 
-static inline __attribute__((always_inline))
+static INLINE
 void mc_STOREV8 ( Addr a, ULong vbytes, Bool isBigEndian )
 {
    UWord   sm_off64, vabits64;
@@ -2754,7 +2743,7 @@ void MC_(helperc_STOREV8le) ( Addr a, ULong vbytes )
 
 /* ------------------------ Size = 4 ------------------------ */
 
-static inline __attribute__((always_inline))
+static INLINE
 UWord mc_LOADV4 ( Addr a, Bool isBigEndian )
 {
    UWord   sm_off, vabits32;
@@ -2802,7 +2791,7 @@ UWord MC_(helperc_LOADV4le) ( Addr a )
 }
 
 
-static inline __attribute__((always_inline))
+static INLINE
 void mc_STOREV4 ( Addr a, UWord vbytes, Bool isBigEndian )
 {
    UWord   sm_off, vabits32;
@@ -2896,7 +2885,7 @@ void MC_(helperc_STOREV4le) ( Addr a, UWord vbytes )
 
 /* ------------------------ Size = 2 ------------------------ */
 
-static inline __attribute__((always_inline))
+static INLINE
 UWord mc_LOADV2 ( Addr a, Bool isBigEndian )
 {
    UWord   sm_off, vabits32;
@@ -2947,7 +2936,7 @@ UWord MC_(helperc_LOADV2le) ( Addr a )
 }
 
 
-static inline __attribute__((always_inline))
+static INLINE
 void mc_STOREV2 ( Addr a, UWord vbytes, Bool isBigEndian )
 {
    UWord   sm_off, vabits32;
