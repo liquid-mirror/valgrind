@@ -128,6 +128,13 @@
    writing shadow memory.  Only a couple are strictly necessary (eg.
    get_vabits8 and set_vabits8), most are just specialised for specific
    common cases to improve performance.
+
+   Aside: the V+A bits are less precise than they could be -- we have no way
+   of marking memory as read-only.  It would be great if we could add an
+   extra state VA_BITSn_READONLY.  But then we'd have 5 different states,
+   which requires 2.3 bits to hold, and there's no way to do that elegantly
+   -- we'd have to double up to 4 bits of metadata per byte, which doesn't
+   seem worth it.
 */
 
 /* --------------- Basic configuration --------------- */
