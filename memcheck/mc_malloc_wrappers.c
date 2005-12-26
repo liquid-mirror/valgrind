@@ -51,15 +51,6 @@ static SizeT cmalloc_n_mallocs  = 0;
 static SizeT cmalloc_n_frees    = 0;
 static SizeT cmalloc_bs_mallocd = 0;
 
-/* Function pointers for tracking interesting events. */
-void (*MC_(new_mem_heap)) ( Addr a, SizeT len, Bool is_inited )  = NULL;
-void (*MC_(ban_mem_heap)) ( Addr a, SizeT len )                  = NULL;
-void (*MC_(die_mem_heap)) ( Addr a, SizeT len )                  = NULL;
-void (*MC_(copy_mem_heap))( Addr from, Addr to, SizeT len )      = NULL;
-
-/* Function pointers for internal sanity checking. */
-Bool (*MC_(check_noaccess))( Addr a, SizeT len, Addr* bad_addr ) = NULL;
-
 
 /*------------------------------------------------------------*/
 /*--- Tracking malloc'd and free'd blocks                  ---*/
@@ -198,9 +189,10 @@ void* MC_(new_block) ( ThreadId tid,
 
    VG_(HT_add_node)( table, create_MC_Chunk(tid, p, size, kind) );
 
-   MC_(ban_mem_heap)( p-rzB, rzB );
-   MC_(new_mem_heap)( p, size, is_zeroed );
-   MC_(ban_mem_heap)( p+size, rzB );
+   if (is_zeroed)
+      MC_(make_readable)( p, size );
+   else
+      MC_(make_writable)( p, size );
 
    return (void*)p;
 }
@@ -263,11 +255,9 @@ void* MC_(calloc) ( ThreadId tid, SizeT nmemb, SizeT size1 )
 static
 void die_and_free_mem ( ThreadId tid, MC_Chunk* mc, SizeT rzB )
 {
-   /* Note: ban redzones again -- just in case user de-banned them
-      with a client request... */
-   MC_(ban_mem_heap)( mc->data-rzB, rzB );
-   MC_(die_mem_heap)( mc->data, mc->size );
-   MC_(ban_mem_heap)( mc->data+mc->size, rzB );
+   /* Note: make redzones noaccess again -- just in case user made them
+      accessible with a client request... */
+   MC_(make_noaccess)( mc->data-rzB, mc->size + 2*rzB );
 
    /* Put it out of harm's way for a while, if not from a client request */
    if (MC_AllocCustom != mc->allockind) {
@@ -353,7 +343,7 @@ void* MC_(realloc) ( ThreadId tid, void* p_old, SizeT new_size )
       
    } else if (old_size > new_size) {
       /* new size is smaller */
-      MC_(die_mem_heap)( mc->data+new_size, mc->size-new_size );
+      MC_(make_noaccess)( mc->data+new_size, mc->size-new_size );
       mc->size = new_size;
       mc->where = VG_(record_ExeContext)(tid);
       p_new = p_old;
@@ -365,10 +355,10 @@ void* MC_(realloc) ( ThreadId tid, void* p_old, SizeT new_size )
 
       if (a_new) {
          /* First half kept and copied, second half new, red zones as normal */
-         MC_(ban_mem_heap) ( a_new-MC_MALLOC_REDZONE_SZB, MC_MALLOC_REDZONE_SZB );
-         MC_(copy_mem_heap)( (Addr)p_old, a_new, mc->size );
-         MC_(new_mem_heap) ( a_new+mc->size, new_size-mc->size, /*init'd*/False );
-         MC_(ban_mem_heap) ( a_new+new_size, MC_MALLOC_REDZONE_SZB );
+         MC_(make_noaccess)( a_new-MC_MALLOC_REDZONE_SZB, MC_MALLOC_REDZONE_SZB );
+         MC_(copy_address_range_state)( (Addr)p_old, a_new, mc->size );
+         MC_(make_writable)( a_new+mc->size, new_size-mc->size );
+         MC_(make_noaccess)( a_new+new_size, MC_MALLOC_REDZONE_SZB );
 
          /* Copy from old to new */
          VG_(memcpy)((void*)a_new, p_old, mc->size);
@@ -434,11 +424,9 @@ void MC_(destroy_mempool)(Addr pool)
    // Clean up the chunks, one by one
    VG_(HT_ResetIter)(mp->chunks);
    while ( (mc = VG_(HT_Next)(mp->chunks)) ) {
-      /* Note: ban redzones again -- just in case user de-banned them
-         with a client request... */
-      MC_(ban_mem_heap)(mc->data-mp->rzB, mp->rzB );
-      MC_(die_mem_heap)(mc->data, mc->size );
-      MC_(ban_mem_heap)(mc->data+mc->size, mp->rzB );
+      /* Note: make redzones noaccess again -- just in case user made them
+         accessible with a client request... */
+      MC_(make_noaccess)(mc->data-mp->rzB, mc->size + 2*mp->rzB );
    }
    // Destroy the chunk table
    VG_(HT_destruct)(mp->chunks);

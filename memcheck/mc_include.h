@@ -95,14 +95,12 @@ extern VgHashTable MC_(malloc_list);
 /* For tracking memory pools. */
 extern VgHashTable MC_(mempool_list);
 
-/* Function pointers for the two tools to track interesting events. */
-extern void (*MC_(new_mem_heap)) ( Addr a, SizeT len, Bool is_inited );
-extern void (*MC_(ban_mem_heap)) ( Addr a, SizeT len );
-extern void (*MC_(die_mem_heap)) ( Addr a, SizeT len );
-extern void (*MC_(copy_mem_heap))( Addr from, Addr to, SizeT len );
-
-/* Function pointers for internal sanity checking. */
-extern Bool (*MC_(check_noaccess))( Addr a, SizeT len, Addr* bad_addr );
+/* Shadow memory functions */
+extern Bool MC_(check_noaccess)( Addr a, SizeT len, Addr* bad_addr );
+extern void MC_(make_noaccess) ( Addr a, SizeT len );
+extern void MC_(make_writable) ( Addr a, SizeT len );
+extern void MC_(make_readable) ( Addr a, SizeT len );
+extern void MC_(copy_address_range_state) ( Addr src, Addr dst, SizeT len );
 
 extern void MC_(print_malloc_stats) ( void );
 

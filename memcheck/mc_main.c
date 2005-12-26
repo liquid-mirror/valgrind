@@ -1133,24 +1133,24 @@ static void set_address_range_perms ( Addr a, SizeT lenT, UWord vabits64,
 
 /* --- Set permissions for arbitrary address ranges --- */
 
-static void mc_make_noaccess ( Addr a, SizeT len )
+void MC_(make_noaccess) ( Addr a, SizeT len )
 {
-   PROF_EVENT(40, "mc_make_noaccess");
-   DEBUG("mc_make_noaccess(%p, %lu)\n", a, len);
+   PROF_EVENT(40, "MC_(make_noaccess)");
+   DEBUG("MC_(make_noaccess)(%p, %lu)\n", a, len);
    set_address_range_perms ( a, len, VA_BITS64_NOACCESS, SM_DIST_NOACCESS );
 }
 
-static void mc_make_writable ( Addr a, SizeT len )
+void MC_(make_writable) ( Addr a, SizeT len )
 {
-   PROF_EVENT(41, "mc_make_writable");
-   DEBUG("mc_make_writable(%p, %lu)\n", a, len);
+   PROF_EVENT(41, "MC_(make_writable)");
+   DEBUG("MC_(make_writable)(%p, %lu)\n", a, len);
    set_address_range_perms ( a, len, VA_BITS64_WRITABLE, SM_DIST_WRITABLE );
 }
 
-static void mc_make_readable ( Addr a, SizeT len )
+void MC_(make_readable) ( Addr a, SizeT len )
 {
-   PROF_EVENT(42, "mc_make_readable");
-   DEBUG("mc_make_readable(%p, %lu)\n", a, len);
+   PROF_EVENT(42, "MC_(make_readable)");
+   DEBUG("MC_(make_readable)(%p, %lu)\n", a, len);
    set_address_range_perms ( a, len, VA_BITS64_READABLE, SM_DIST_READABLE );
 }
 
@@ -1158,26 +1158,26 @@ static void mc_make_readable ( Addr a, SizeT len )
 /* --- Block-copy permissions (needed for implementing realloc() and
        sys_mremap). --- */
 
-static void mc_copy_address_range_state ( Addr src, Addr dst, SizeT len )
+void MC_(copy_address_range_state) ( Addr src, Addr dst, SizeT len )
 {
    SizeT i, j;
 
-   DEBUG("mc_copy_address_range_state\n");
-   PROF_EVENT(50, "mc_copy_address_range_state");
+   DEBUG("MC_(copy_address_range_state)\n");
+   PROF_EVENT(50, "MC_(copy_address_range_state)");
 
    if (len == 0)
       return;
 
    if (src < dst) {
       for (i = 0, j = len-1; i < len; i++, j--) {
-         PROF_EVENT(51, "mc_copy_address_range_state(loop)");
+         PROF_EVENT(51, "MC_(copy_address_range_state)(loop)");
          set_vabits8( dst+j, get_vabits8( src+j ) );
       }
    }
 
    if (src > dst) {
       for (i = 0; i < len; i++) {
-         PROF_EVENT(51, "mc_copy_address_range_state(loop)");
+         PROF_EVENT(51, "MC_(copy_address_range_state)(loop)");
          set_vabits8( dst+i, get_vabits8( src+i ) );
       }
    }
@@ -1195,13 +1195,13 @@ void make_aligned_word32_writable ( Addr a )
    PROF_EVENT(300, "make_aligned_word32_writable");
 
 #  if VG_DEBUG_MEMORY >= 2
-   mc_make_writable(a, 4);
+   MC_(make_writable)(a, 4);
    return;
 #  endif
 
    if (EXPECTED_NOT_TAKEN(a > MAX_PRIMARY_ADDRESS)) {
       PROF_EVENT(301, "make_aligned_word32_writable-slow1");
-      mc_make_writable(a, 4);
+      MC_(make_writable)(a, 4);
       return;
    }
 
@@ -1220,13 +1220,13 @@ void make_aligned_word32_noaccess ( Addr a )
    PROF_EVENT(310, "make_aligned_word32_noaccess");
 
 #  if VG_DEBUG_MEMORY >= 2
-   mc_make_noaccess(a, 4);
+   MC_(make_noaccess)(a, 4);
    return;
 #  endif
 
    if (EXPECTED_NOT_TAKEN(a > MAX_PRIMARY_ADDRESS)) {
       PROF_EVENT(311, "make_aligned_word32_noaccess-slow1");
-      mc_make_noaccess(a, 4);
+      MC_(make_noaccess)(a, 4);
       return;
    }
 
@@ -1246,13 +1246,13 @@ void make_aligned_word64_writable ( Addr a )
    PROF_EVENT(320, "make_aligned_word64_writable");
 
 #  if VG_DEBUG_MEMORY >= 2
-   mc_make_writable(a, 8);
+   MC_(make_writable)(a, 8);
    return;
 #  endif
 
    if (EXPECTED_NOT_TAKEN(a > MAX_PRIMARY_ADDRESS)) {
       PROF_EVENT(321, "make_aligned_word64_writable-slow1");
-      mc_make_writable(a, 8);
+      MC_(make_writable)(a, 8);
       return;
    }
 
@@ -1271,13 +1271,13 @@ void make_aligned_word64_noaccess ( Addr a )
    PROF_EVENT(330, "make_aligned_word64_noaccess");
 
 #  if VG_DEBUG_MEMORY >= 2
-   mc_make_noaccess(a, 8);
+   MC_(make_noaccess)(a, 8);
    return;
 #  endif
 
    if (EXPECTED_NOT_TAKEN(a > MAX_PRIMARY_ADDRESS)) {
       PROF_EVENT(331, "make_aligned_word64_noaccess-slow1");
-      mc_make_noaccess(a, 8);
+      MC_(make_noaccess)(a, 8);
       return;
    }
 
@@ -1297,7 +1297,7 @@ static void VG_REGPARM(1) mc_new_mem_stack_4(Addr new_SP)
    if (VG_IS_4_ALIGNED(new_SP)) {
       make_aligned_word32_writable  ( -VG_STACK_REDZONE_SZB + new_SP );
    } else {
-      mc_make_writable ( -VG_STACK_REDZONE_SZB + new_SP, 4 );
+      MC_(make_writable) ( -VG_STACK_REDZONE_SZB + new_SP, 4 );
    }
 }
 
@@ -1307,7 +1307,7 @@ static void VG_REGPARM(1) mc_die_mem_stack_4(Addr new_SP)
    if (VG_IS_4_ALIGNED(new_SP)) {
       make_aligned_word32_noaccess  ( -VG_STACK_REDZONE_SZB + new_SP-4 );
    } else {
-      mc_make_noaccess ( -VG_STACK_REDZONE_SZB + new_SP-4, 4 );
+      MC_(make_noaccess) ( -VG_STACK_REDZONE_SZB + new_SP-4, 4 );
    }
 }
 
@@ -1320,7 +1320,7 @@ static void VG_REGPARM(1) mc_new_mem_stack_8(Addr new_SP)
       make_aligned_word32_writable  ( -VG_STACK_REDZONE_SZB + new_SP   );
       make_aligned_word32_writable  ( -VG_STACK_REDZONE_SZB + new_SP+4 );
    } else {
-      mc_make_writable ( -VG_STACK_REDZONE_SZB + new_SP, 8 );
+      MC_(make_writable) ( -VG_STACK_REDZONE_SZB + new_SP, 8 );
    }
 }
 
@@ -1333,7 +1333,7 @@ static void VG_REGPARM(1) mc_die_mem_stack_8(Addr new_SP)
       make_aligned_word32_noaccess  ( -VG_STACK_REDZONE_SZB + new_SP-8 );
       make_aligned_word32_noaccess  ( -VG_STACK_REDZONE_SZB + new_SP-4 );
    } else {
-      mc_make_noaccess ( -VG_STACK_REDZONE_SZB + new_SP-8, 8 );
+      MC_(make_noaccess) ( -VG_STACK_REDZONE_SZB + new_SP-8, 8 );
    }
 }
 
@@ -1347,7 +1347,7 @@ static void VG_REGPARM(1) mc_new_mem_stack_12(Addr new_SP)
       make_aligned_word32_writable  ( -VG_STACK_REDZONE_SZB + new_SP   );
       make_aligned_word64_writable  ( -VG_STACK_REDZONE_SZB + new_SP+4 );
    } else {
-      mc_make_writable ( -VG_STACK_REDZONE_SZB + new_SP, 12 );
+      MC_(make_writable) ( -VG_STACK_REDZONE_SZB + new_SP, 12 );
    }
 }
 
@@ -1362,7 +1362,7 @@ static void VG_REGPARM(1) mc_die_mem_stack_12(Addr new_SP)
       make_aligned_word32_noaccess  ( -VG_STACK_REDZONE_SZB + new_SP-12 );
       make_aligned_word64_noaccess  ( -VG_STACK_REDZONE_SZB + new_SP-8  );
    } else {
-      mc_make_noaccess ( -VG_STACK_REDZONE_SZB + new_SP-12, 12 );
+      MC_(make_noaccess) ( -VG_STACK_REDZONE_SZB + new_SP-12, 12 );
    }
 }
 
@@ -1377,7 +1377,7 @@ static void VG_REGPARM(1) mc_new_mem_stack_16(Addr new_SP)
       make_aligned_word64_writable  ( -VG_STACK_REDZONE_SZB + new_SP+4  );
       make_aligned_word32_writable  ( -VG_STACK_REDZONE_SZB + new_SP+12 );
    } else {
-      mc_make_writable ( -VG_STACK_REDZONE_SZB + new_SP, 16 );
+      MC_(make_writable) ( -VG_STACK_REDZONE_SZB + new_SP, 16 );
    }
 }
 
@@ -1392,7 +1392,7 @@ static void VG_REGPARM(1) mc_die_mem_stack_16(Addr new_SP)
       make_aligned_word64_noaccess  ( -VG_STACK_REDZONE_SZB + new_SP-12 );
       make_aligned_word32_noaccess  ( -VG_STACK_REDZONE_SZB + new_SP-4  );
    } else {
-      mc_make_noaccess ( -VG_STACK_REDZONE_SZB + new_SP-16, 16 );
+      MC_(make_noaccess) ( -VG_STACK_REDZONE_SZB + new_SP-16, 16 );
    }
 }
 
@@ -1411,7 +1411,7 @@ static void VG_REGPARM(1) mc_new_mem_stack_32(Addr new_SP)
       make_aligned_word64_writable  ( -VG_STACK_REDZONE_SZB + new_SP+20 );
       make_aligned_word32_writable  ( -VG_STACK_REDZONE_SZB + new_SP+28 );
    } else {
-      mc_make_writable ( -VG_STACK_REDZONE_SZB + new_SP, 32 );
+      MC_(make_writable) ( -VG_STACK_REDZONE_SZB + new_SP, 32 );
    }
 }
 
@@ -1430,20 +1430,20 @@ static void VG_REGPARM(1) mc_die_mem_stack_32(Addr new_SP)
       make_aligned_word64_noaccess  ( -VG_STACK_REDZONE_SZB + new_SP-12 );
       make_aligned_word32_noaccess  ( -VG_STACK_REDZONE_SZB + new_SP-4  );
    } else {
-      mc_make_noaccess ( -VG_STACK_REDZONE_SZB + new_SP-32, 32 );
+      MC_(make_noaccess) ( -VG_STACK_REDZONE_SZB + new_SP-32, 32 );
    }
 }
 
 static void mc_new_mem_stack ( Addr a, SizeT len )
 {
    PROF_EVENT(115, "new_mem_stack");
-   mc_make_writable ( -VG_STACK_REDZONE_SZB + a, len );
+   MC_(make_writable) ( -VG_STACK_REDZONE_SZB + a, len );
 }
 
 static void mc_die_mem_stack ( Addr a, SizeT len )
 {
    PROF_EVENT(125, "die_mem_stack");
-   mc_make_noaccess ( -VG_STACK_REDZONE_SZB + a, len );
+   MC_(make_noaccess) ( -VG_STACK_REDZONE_SZB + a, len );
 }
 
 
@@ -1483,7 +1483,7 @@ void MC_(helperc_MAKE_STACK_UNINIT) ( Addr base, UWord len )
 
 #  if 0
    /* Really slow version */
-   mc_make_writable(base, len);
+   MC_(make_writable)(base, len);
 #  endif
 
 #  if 0
@@ -1510,7 +1510,7 @@ void MC_(helperc_MAKE_STACK_UNINIT) ( Addr base, UWord len )
       make_aligned_word64_writable(base + 112);
       make_aligned_word64_writable(base + 120);
    } else {
-      mc_make_writable(base, len);
+      MC_(make_writable)(base, len);
    }
 #  endif 
 
@@ -1560,7 +1560,7 @@ void MC_(helperc_MAKE_STACK_UNINIT) ( Addr base, UWord len )
    }
 
    /* else fall into slow case */
-   mc_make_writable(base, len);
+   MC_(make_writable)(base, len);
 }
 
 
@@ -1585,7 +1585,7 @@ typedef
    returns False, and if bad_addr is non-NULL, sets *bad_addr to
    indicate the lowest failing address.  Functions below are
    similar. */
-static Bool mc_check_noaccess ( Addr a, SizeT len, Addr* bad_addr )
+Bool MC_(check_noaccess) ( Addr a, SizeT len, Addr* bad_addr )
 {
    SizeT i;
    UWord vabits8;
@@ -1768,29 +1768,19 @@ void mc_new_mem_startup( Addr a, SizeT len, Bool rr, Bool ww, Bool xx )
    /* Ignore the permissions, just make it readable.  Seems to work... */
    DEBUG("mc_new_mem_startup(%p, %llu, rr=%u, ww=%u, xx=%u)\n",
          a,(ULong)len,rr,ww,xx);
-   mc_make_readable(a, len);
-}
-
-static
-void mc_new_mem_heap ( Addr a, SizeT len, Bool is_inited )
-{
-   if (is_inited) {
-      mc_make_readable(a, len);
-   } else {
-      mc_make_writable(a, len);
-   }
+   MC_(make_readable)(a, len);
 }
 
 static
 void mc_new_mem_mmap ( Addr a, SizeT len, Bool rr, Bool ww, Bool xx )
 {
-   mc_make_readable(a, len);
+   MC_(make_readable)(a, len);
 }
 
 static
 void mc_post_mem_write(CorePart part, ThreadId tid, Addr a, SizeT len)
 {
-   mc_make_readable(a, len);
+   MC_(make_readable)(a, len);
 }
 
 
@@ -3713,17 +3703,17 @@ static Bool mc_handle_client_request ( ThreadId tid, UWord* arg, UWord* ret )
          break;
 
       case VG_USERREQ__MAKE_NOACCESS: /* make no access */
-         mc_make_noaccess ( arg[1], arg[2] );
+         MC_(make_noaccess) ( arg[1], arg[2] );
          *ret = -1;
          break;
 
       case VG_USERREQ__MAKE_WRITABLE: /* make writable */
-         mc_make_writable ( arg[1], arg[2] );
+         MC_(make_writable) ( arg[1], arg[2] );
          *ret = -1;
          break;
 
       case VG_USERREQ__MAKE_READABLE: /* make readable */
-         mc_make_readable ( arg[1], arg[2] );
+         MC_(make_readable) ( arg[1], arg[2] );
          *ret = -1;
          break;
 
@@ -4124,18 +4114,12 @@ static void mc_pre_clo_init(void)
                                    MC_(realloc),
                                    MC_MALLOC_REDZONE_SZB );
 
-   MC_( new_mem_heap)             = mc_new_mem_heap;
-   MC_( ban_mem_heap)             = mc_make_noaccess;
-   MC_(copy_mem_heap)             = mc_copy_address_range_state;
-   MC_( die_mem_heap)             = mc_make_noaccess;
-   MC_(check_noaccess)            = mc_check_noaccess;
-
    VG_(track_new_mem_startup)     ( mc_new_mem_startup );
-   VG_(track_new_mem_stack_signal)( mc_make_writable );
-   VG_(track_new_mem_brk)         ( mc_make_writable );
+   VG_(track_new_mem_stack_signal)( MC_(make_writable) );
+   VG_(track_new_mem_brk)         ( MC_(make_writable) );
    VG_(track_new_mem_mmap)        ( mc_new_mem_mmap );
    
-   VG_(track_copy_mem_remap)      ( mc_copy_address_range_state );
+   VG_(track_copy_mem_remap)      ( MC_(copy_address_range_state) );
 
    // Nb: we don't do anything with mprotect.  This means that V bits are
    // preserved if a program, for example, marks some memory as inaccessible
@@ -4148,9 +4132,9 @@ static void mc_pre_clo_init(void)
    // distinct from V bits, then we could handle all this properly.
    VG_(track_change_mem_mprotect) ( NULL );
       
-   VG_(track_die_mem_stack_signal)( mc_make_noaccess ); 
-   VG_(track_die_mem_brk)         ( mc_make_noaccess );
-   VG_(track_die_mem_munmap)      ( mc_make_noaccess ); 
+   VG_(track_die_mem_stack_signal)( MC_(make_noaccess) ); 
+   VG_(track_die_mem_brk)         ( MC_(make_noaccess) );
+   VG_(track_die_mem_munmap)      ( MC_(make_noaccess) ); 
 
    VG_(track_new_mem_stack_4)     ( mc_new_mem_stack_4  );
    VG_(track_new_mem_stack_8)     ( mc_new_mem_stack_8  );
@@ -4166,7 +4150,7 @@ static void mc_pre_clo_init(void)
    VG_(track_die_mem_stack_32)    ( mc_die_mem_stack_32 );
    VG_(track_die_mem_stack)       ( mc_die_mem_stack    );
    
-   VG_(track_ban_mem_stack)       ( mc_make_noaccess );
+   VG_(track_ban_mem_stack)       ( MC_(make_noaccess) );
 
    VG_(track_pre_mem_read)        ( mc_check_is_readable );
    VG_(track_pre_mem_read_asciiz) ( mc_check_is_readable_asciiz );
