@@ -56,8 +56,8 @@ void VG_(demangle) ( Char* orig, Char* result, Int result_size );
 extern 
 Bool VG_(maybe_Z_demangle) ( const HChar* sym, 
                              /*OUT*/HChar* so, Int soLen,
-                             /*OUT*/HChar* fn, Int fnLen );
-
+                             /*OUT*/HChar* fn, Int fnLen,
+                             /*OUT*/Bool* isWrap );
 
 #endif   // __PUB_CORE_DEMANGLE_H
 

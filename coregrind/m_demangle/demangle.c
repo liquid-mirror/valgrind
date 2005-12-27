@@ -72,7 +72,7 @@ void VG_(demangle) ( Char* orig, Char* result, Int result_size )
       Z-demangling (with NULL soname buffer, since we're not
       interested in that). */
    if (VG_(maybe_Z_demangle)( orig, NULL,0,/*soname*/
-                              z_demangled, N_ZBUF)) {
+                              z_demangled, N_ZBUF, NULL)) {
       orig = z_demangled;
    }
 
@@ -113,7 +113,8 @@ void VG_(demangle) ( Char* orig, Char* result, Int result_size )
 
 Bool VG_(maybe_Z_demangle) ( const HChar* sym, 
                              /*OUT*/HChar* so, Int soLen,
-                             /*OUT*/HChar* fn, Int fnLen )
+                             /*OUT*/HChar* fn, Int fnLen,
+                             /*OUT*/Bool* isWrap )
 {
 #  define EMITSO(ch)                           \
       do {                                     \
@@ -147,7 +148,7 @@ Bool VG_(maybe_Z_demangle) ( const HChar* sym,
    valid =     sym[0] == '_'
            &&  sym[1] == 'v'
            &&  sym[2] == 'g'
-           && (sym[3] == 'r' || sym[3] == 'n')
+           && (sym[3] == 'r' || sym[3] == 'w' || sym[3] == 'n')
            &&  sym[4] == 'Z'
            && (sym[5] == 'Z' || sym[5] == 'U')
            &&  sym[6] == '_';
@@ -155,6 +156,9 @@ Bool VG_(maybe_Z_demangle) ( const HChar* sym,
       return False;
 
    fn_is_encoded = sym[5] == 'Z';
+
+   if (isWrap)
+      *isWrap = sym[3] == 'w';
 
    /* Now scan the Z-encoded soname. */
    i = 7;
@@ -244,12 +248,12 @@ Bool VG_(maybe_Z_demangle) ( const HChar* sym,
 
    if (error) {
       /* Something's wrong.  Give up. */
-      VG_(message)(Vg_UserMsg, "m_redir: error demangling: %s", sym);
+      VG_(message)(Vg_UserMsg, "m_demangle: error Z-demangling: %s", sym);
       return False;
    }
    if (oflow) {
       /* It didn't fit.  Give up. */
-      VG_(message)(Vg_UserMsg, "m_debuginfo: oflow demangling: %s", sym);
+      VG_(message)(Vg_UserMsg, "m_demangle: oflow Z-demangling: %s", sym);
       return False;
    }
 

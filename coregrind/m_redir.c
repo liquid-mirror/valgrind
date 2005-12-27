@@ -98,7 +98,7 @@
 /* The redirector holds two pieces of state:
 
      Specs  - a set of   (soname pattern, fnname pattern) -> redir addr
-     Active - a set of   orig addr -> redir addr
+     Active - a set of   orig addr -> (bool, redir addr)
 
    Active is the currently active set of bindings that the translator
    consults.  Specs is the current set of specifications as harvested
@@ -210,6 +210,7 @@ typedef
       HChar* from_sopatt;  /* from soname pattern  */
       HChar* from_fnpatt;  /* from fnname pattern  */
       Addr   to_addr;      /* where redirecting to */
+      Bool   isWrap;       /* wrap or replacement? */
       Bool   mark; /* transient temporary used during matching */
    }
    Spec;
@@ -249,6 +250,7 @@ typedef
       Addr     to_addr;     /* where redirecting to */
       TopSpec* parent_spec; /* the TopSpec which supplied the Spec */
       TopSpec* parent_sym;  /* the TopSpec which supplied the symbol */
+      Bool     isWrap;      /* wrap or replacement? */
    }
    Active;
 
@@ -296,7 +298,7 @@ void generate_and_add_actives (
 
 void VG_(redir_notify_new_SegInfo)( SegInfo* newsi )
 {
-   Bool     ok;
+   Bool     ok, isWrap;
    Int      i, nsyms;
    Spec*    specList;
    Spec*    spec;
@@ -323,7 +325,7 @@ void VG_(redir_notify_new_SegInfo)( SegInfo* newsi )
    for (i = 0; i < nsyms; i++) {
       VG_(seginfo_syms_getidx)( newsi, i, &sym_addr, NULL, &sym_name );
       ok = VG_(maybe_Z_demangle)( sym_name, demangled_sopatt, N_DEMANGLED,
-				  demangled_fnpatt, N_DEMANGLED );
+				  demangled_fnpatt, N_DEMANGLED, &isWrap );
       if (!ok) {
          /* It's not a full-scale redirect, but perhaps it is a load-notify
             fn?  Let the load-notify department see it. */
@@ -337,6 +339,7 @@ void VG_(redir_notify_new_SegInfo)( SegInfo* newsi )
       vg_assert(spec->from_sopatt);
       vg_assert(spec->from_fnpatt);
       spec->to_addr = sym_addr;
+      spec->isWrap = isWrap;
       /* check we're not adding manifestly stupid destinations */
       vg_assert(is_plausible_guest_addr(sym_addr));
       spec->next = specList;
@@ -447,6 +450,7 @@ void generate_and_add_actives (
             act.to_addr     = sp->to_addr;
             act.parent_spec = parent_spec;
             act.parent_sym  = parent_sym;
+            act.isWrap      = sp->isWrap;
             maybe_add_active( act );
          }
       }
@@ -619,13 +623,15 @@ void VG_(redir_notify_delete_SegInfo)( SegInfo* delsi )
 /* This is the crucial redirection function.  It answers the question:
    should this code address be redirected somewhere else?  It's used
    just before translating a basic block. */
-Addr VG_(redir_do_lookup) ( Addr orig )
+Addr VG_(redir_do_lookup) ( Addr orig, Bool* isWrap )
 {
    Active* r = VG_(OSet_Lookup)(activeSet, &orig);
    if (r == NULL)
       return orig;
 
    vg_assert(r->to_addr != 0);
+   if (isWrap)
+      *isWrap = r->isWrap;
    return r->to_addr;
 }
 
@@ -644,6 +650,7 @@ static void add_hardwired_active ( Addr from, Addr to )
    act.to_addr     = to;
    act.parent_spec = NULL;
    act.parent_sym  = NULL;
+   act.isWrap      = False;
    maybe_add_active( act );
 }
 
@@ -676,6 +683,7 @@ static void add_hardwired_spec ( HChar* sopatt, HChar* fnpatt, Addr to_addr )
    spec->from_sopatt = sopatt;
    spec->from_fnpatt = fnpatt;
    spec->to_addr     = to_addr;
+   spec->isWrap      = False;
    spec->mark        = False; /* not significant */
 
    spec->next = topSpecs->specs;
@@ -814,9 +822,10 @@ static void handle_maybe_load_notifier( HChar* symbol, Addr addr )
 static void show_spec ( HChar* left, Spec* spec )
 {
    VG_(message)(Vg_DebugMsg, 
-                  "%s%18s %30s -> 0x%08llx",
+                  "%s%18s %30s %s-> 0x%08llx",
                   left,
                   spec->from_sopatt, spec->from_fnpatt,
+                  spec->isWrap ? "W" : "R",
                   (ULong)spec->to_addr );
 }
 
@@ -831,9 +840,10 @@ static void show_active ( HChar* left, Active* act )
    ok = VG_(get_fnname_w_offset)(act->to_addr, name2, 64);
    if (!ok) VG_(strcpy)(name2, "???");
 
-   VG_(message)(Vg_DebugMsg, "%s0x%08llx (%10s) -> 0x%08llx %s", 
+   VG_(message)(Vg_DebugMsg, "%s0x%08llx (%10s) %s-> 0x%08llx %s", 
                              left, 
                              (ULong)act->from_addr, name1,
+                             act->isWrap ? "W" : "R",
                              (ULong)act->to_addr, name2 );
 }
 

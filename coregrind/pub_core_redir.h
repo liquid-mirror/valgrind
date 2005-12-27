@@ -65,8 +65,10 @@ extern void VG_(redir_initialise)( void );
 
 /* This is the crucial redirection function.  It answers the question:
    should this code address be redirected somewhere else?  It's used
-   just before translating a basic block. */
-extern Addr VG_(redir_do_lookup) ( Addr orig );
+   just before translating a basic block.  If a redir is found,
+   *isWrap allows to distinguish wrap- from replace- style
+   redirections. */
+extern Addr VG_(redir_do_lookup) ( Addr orig, Bool* isWrap );
 
 
 //--------------------------------------------------------------------

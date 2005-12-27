@@ -138,8 +138,8 @@
     _zzq_args[4] = (volatile unsigned long long)(_zzq_arg4);    \
     __asm__ volatile("roll $29, %%eax ; roll $3, %%eax\n\t"	\
                      "rorl $27, %%eax ; rorl $5, %%eax\n\t"	\
-                     "roll $13, %%eax ; roll $19, %%eax"		\
-                     : "=d" (_zzq_rlval)				\
+                     "roll $13, %%eax ; roll $19, %%eax"	\
+                     : "=d" (_zzq_rlval)			\
                      : "a" (&_zzq_args[0]), "0" (_zzq_default)	\
                      : "cc", "memory"				\
                     );						\
@@ -248,7 +248,7 @@
 typedef
    enum { VG_USERREQ__RUNNING_ON_VALGRIND  = 0x1001,
           VG_USERREQ__DISCARD_TRANSLATIONS = 0x1002,
-          VG_USERREQ__PUSH_NRADDR          = 0x1003,
+          VG_USERREQ__GET_NRADDR           = 0x1003,
 
           /* These allow any function to be called from the
              simulated CPU but run on the real CPU.
@@ -315,32 +315,13 @@ typedef
    that the next entry by this thread into a redirected translation
    whose address is on top of the stack will instead to jump to the
    non-redirected version.  Returns 0 if success, 1 if failure. */
-#define VALGRIND_PUSH_NRADDR(_qzz_addr,_qzz_check) __extension__   \
+#define VALGRIND_GET_NRADDR  __extension__                         \
    ({unsigned long _qzz_res;                                       \
      VALGRIND_MAGIC_SEQUENCE(_qzz_res, 0/*native result*/,         \
-                             VG_USERREQ__PUSH_NRADDR,              \
-                             _qzz_addr, _qzz_check, 0, 0);         \
-     _qzz_res;                                                     \
+                             VG_USERREQ__GET_NRADDR,               \
+                             0, 0, 0, 0);                          \
+     (void*)_qzz_res;                                              \
    })
-
-#define VALGRIND_PUSH_NRADDR_AND_CHECK(_addr)                      \
-   /* Always use this one -- it's safer. */                        \
-   do {                                                            \
-      extern void exit(int);                                       \
-      long _r = VALGRIND_PUSH_NRADDR(_addr,1);                     \
-      if (_r) {                                                    \
-         VALGRIND_PRINTF_BACKTRACE(                                \
-            "Valgrind: function wrapping: "                        \
-            "redirect stack is full.  Program halted.");           \
-         exit(1);                                                  \
-      }                                                            \
-   } while (0)
-#define VALGRIND_PUSH_NRADDR_NO_CHECK(_addr)                       \
-   /* Don't use this. This is a horrible kludge for libpthread. */ \
-   do {                                                            \
-      (void) VALGRIND_PUSH_NRADDR(_addr,0);                        \
-   } while (0)
-
 
 #ifdef NVALGRIND
 
@@ -560,13 +541,13 @@ VALGRIND_PRINTF_BACKTRACE(const char *format, ...)
 /* ---------------------------------------------------------- */
 
 /* Use these to write the name of your wrapper.  NOTE: duplicates
-   VG_REDIRECT_FUNCTION_Z{U,Z} in pub_tool_redir.h. */
+   VG_WRAP_FUNCTION_Z{U,Z} in pub_tool_redir.h. */
 
-#define I_REPLACE_SONAME_FNNAME_ZU(soname,fnname)              \
-   _vgrZU_##soname##_##fnname
+#define I_WRAP_SONAME_FNNAME_ZU(soname,fnname)                 \
+   _vgwZU_##soname##_##fnname
 
-#define I_REPLACE_SONAME_FNNAME_ZZ(soname,fnname)              \
-   _vgrZZ_##soname##_##fnname
+#define I_WRAP_SONAME_FNNAME_ZZ(soname,fnname)                 \
+   _vgwZZ_##soname##_##fnname
 
 /* Use these inside the wrapper, to make calls to the function you are
    wrapping.  You must use these - calling originals directly will get
@@ -606,5 +587,138 @@ VALGRIND_PRINTF_BACKTRACE(const char *format, ...)
       _lval = (*_fn)(_arg1,_arg2,_arg3,_arg4);                 \
       lval = _lval;                                            \
    } while (0)
+
+/* Generates a magic call-noredir *%eax "insn" */
+#define __CALL_NOREDIR_EAX                           \
+   /* "call-noredir *%eax" */                        \
+   "rorl $28, %%eax ; rorl $4, %%eax\n\t"            \
+   "roll $26, %%eax ; roll $6, %%eax\n\t"            \
+   "rorl $12, %%eax ; rorl $20, %%eax\n\t"           \
+   "call *%%eax\n\t"                                 \
+
+/* x86: regs trashed by the hidden call.  No need to mention eax as
+   gcc can already see that, plus causes gcc to bomb. */
+#define __CALLER_SAVED_REGS /*"eax"*/ "ecx", "edx"
+
+/* Rename _GET_NRADDR to something that is meaningful to people
+   writing wrappers.  Used within a wrapper function, gets the address
+   of the original function, which needs to be supplied the CALL_FN_
+   macros below. */
+#define VALGRIND_GET_ORIG_FN  VALGRIND_GET_NRADDR
+
+#define CALL_FN_W_v(lval, fnptr)                           \
+   do {                                                    \
+      void* _fnptr = (fnptr);                              \
+      long  _argvec[1];                                    \
+      long  _res;                                          \
+      _argvec[0] = (long)_fnptr;                           \
+      __asm__ volatile(                                    \
+         "movl (%%eax), %%eax\n\t"  /* target->%eax */     \
+         __CALL_NOREDIR_EAX                                \
+         : /*out*/   "=a" (_res)                           \
+         : /*in*/    "a" (&_argvec[0])                     \
+         : /*trash*/ "cc", "memory",  __CALLER_SAVED_REGS  \
+      );                                                   \
+      lval = (__typeof__(lval)) _res;                      \
+   } while (0)
+
+#define CALL_FN_W_W(lval, fnptr, arg1)                     \
+   do {                                                    \
+      void* _fnptr = (fnptr);                              \
+      long  _argvec[2];                                    \
+      long  _res;                                          \
+      _argvec[0] = (long)_fnptr;                           \
+      _argvec[1] = (long)(arg1);                           \
+      __asm__ volatile(                                    \
+         "pushl 4(%%eax)\n\t"                              \
+         "movl (%%eax), %%eax\n\t"  /* target->%eax */     \
+         __CALL_NOREDIR_EAX                                \
+         "addl $4, %%esp\n"                                \
+         : /*out*/   "=a" (_res)                           \
+         : /*in*/    "a" (&_argvec[0])                     \
+         : /*trash*/ "cc", "memory", __CALLER_SAVED_REGS   \
+      );                                                   \
+      lval = (__typeof__(lval)) _res;                      \
+   } while (0)
+
+#define CALL_FN_W_WW(lval, fnptr, arg1,arg2)               \
+   do {                                                    \
+      void* _fnptr = (fnptr);                              \
+      long  _argvec[3];                                    \
+      long  _res;                                          \
+      _argvec[0] = (long)_fnptr;                           \
+      _argvec[1] = (long)(arg1);                           \
+      _argvec[2] = (long)(arg2);                           \
+      __asm__ volatile(                                    \
+         "pushl 8(%%eax)\n\t"                              \
+         "pushl 4(%%eax)\n\t"                              \
+         "movl (%%eax), %%eax\n\t"  /* target->%eax */     \
+         __CALL_NOREDIR_EAX                                \
+         "addl $8, %%esp\n"                                \
+         : /*out*/   "=a" (_res)                           \
+         : /*in*/    "a" (&_argvec[0])                     \
+         : /*trash*/ "cc", "memory", __CALLER_SAVED_REGS   \
+      );                                                   \
+      lval = (__typeof__(lval)) _res;                      \
+   } while (0)
+
+#define CALL_FN_W_WWWWW(lval, fnptr, arg1,arg2,arg3,arg4,arg5) \
+   do {                                                    \
+      void* _fnptr = (fnptr);                              \
+      long  _argvec[6];                                    \
+      long  _res;                                          \
+      _argvec[0] = (long)_fnptr;                           \
+      _argvec[1] = (long)(arg1);                           \
+      _argvec[2] = (long)(arg2);                           \
+      _argvec[3] = (long)(arg3);                           \
+      _argvec[4] = (long)(arg4);                           \
+      _argvec[5] = (long)(arg5);                           \
+      __asm__ volatile(                                    \
+         "pushl 20(%%eax)\n\t"                             \
+         "pushl 16(%%eax)\n\t"                             \
+         "pushl 12(%%eax)\n\t"                             \
+         "pushl 8(%%eax)\n\t"                              \
+         "pushl 4(%%eax)\n\t"                              \
+         "movl (%%eax), %%eax\n\t"  /* target->%eax */     \
+         __CALL_NOREDIR_EAX                                \
+         "addl $20, %%esp\n"                               \
+         : /*out*/   "=a" (_res)                           \
+         : /*in*/    "a" (&_argvec[0])                     \
+         : /*trash*/ "cc", "memory", __CALLER_SAVED_REGS   \
+      );                                                   \
+      lval = (__typeof__(lval)) _res;                      \
+   } while (0)
+
+#define CALL_FN_W_WWWWWWW(lval, fnptr, arg1,arg2,arg3,arg4,arg5,arg6,arg7) \
+   do {                                                    \
+      void* _fnptr = (fnptr);                              \
+      long  _argvec[8];                                    \
+      long  _res;                                          \
+      _argvec[0] = (long)_fnptr;                           \
+      _argvec[1] = (long)(arg1);                           \
+      _argvec[2] = (long)(arg2);                           \
+      _argvec[3] = (long)(arg3);                           \
+      _argvec[4] = (long)(arg4);                           \
+      _argvec[5] = (long)(arg5);                           \
+      _argvec[6] = (long)(arg6);                           \
+      _argvec[7] = (long)(arg7);                           \
+      __asm__ volatile(                                    \
+         "pushl 28(%%eax)\n\t"                             \
+         "pushl 24(%%eax)\n\t"                             \
+         "pushl 20(%%eax)\n\t"                             \
+         "pushl 16(%%eax)\n\t"                             \
+         "pushl 12(%%eax)\n\t"                             \
+         "pushl 8(%%eax)\n\t"                              \
+         "pushl 4(%%eax)\n\t"                              \
+         "movl (%%eax), %%eax\n\t"  /* target->%eax */     \
+         __CALL_NOREDIR_EAX                                \
+         "addl $28, %%esp\n"                               \
+         : /*out*/   "=a" (_res)                           \
+         : /*in*/    "a" (&_argvec[0])                     \
+         : /*trash*/ "cc", "memory", __CALLER_SAVED_REGS   \
+      );                                                   \
+      lval = (__typeof__(lval)) _res;                      \
+   } while (0)
+
 
 #endif   /* __VALGRIND_H */

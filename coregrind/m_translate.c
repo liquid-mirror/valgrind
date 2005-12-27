@@ -426,7 +426,7 @@ static Bool     chase_into_ok ( Addr64 addr64 )
    }
 
    /* Destination is redirected? */
-   if (addr != VG_(redir_do_lookup)(addr))
+   if (addr != VG_(redir_do_lookup)(addr, NULL))
       goto dontchase;
 
    /* well, ok then.  go on and chase. */
@@ -453,7 +453,8 @@ Bool VG_(translate) ( ThreadId tid,
 {
    Addr64             redir, orig_addr_noredir = orig_addr;
    Int                tmpbuf_used, verbosity, i;
-   Bool               notrace_until_done, do_self_check, did_redirect;
+   Bool               notrace_until_done, do_self_check;
+   Bool               did_redirect, isWrap;
    UInt               notrace_until_limit = 0;
    NSegment*          seg;
    VexArch            vex_arch;
@@ -478,13 +479,16 @@ Bool VG_(translate) ( ThreadId tid,
 
    /* Look in the code redirect table to see if we should
       translate an alternative address for orig_addr. */
+   isWrap = False;
    if (allow_redirection) {
-      redir        = VG_(redir_do_lookup)(orig_addr);
+      redir        = VG_(redir_do_lookup)(orig_addr, &isWrap);
       did_redirect = redir != orig_addr;
    } else {
       redir        = orig_addr;
       did_redirect = False;
    }
+
+   if (did_redirect == False) vg_assert(isWrap == False);
 
    if (redir != orig_addr 
        && (VG_(clo_verbosity) >= 2 || VG_(clo_trace_redir))) {
@@ -605,9 +609,9 @@ Bool VG_(translate) ( ThreadId tid,
              NULL,
              verbosity,
 	     /* If this translation started at a redirected address,
-                then we need to ask the JIT to put in the
-                guest_NOREDIR preamble. */
-             did_redirect             
+                then we need to ask the JIT to generate code to put the
+                non-redirected guest address into guest_NRADDR. */
+             isWrap            
           );
 
    vg_assert(tres == VexTransOK);

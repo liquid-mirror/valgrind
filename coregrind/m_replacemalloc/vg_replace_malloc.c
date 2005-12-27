@@ -103,8 +103,8 @@ static void init(void) __attribute__((constructor));
 */
 #define ALLOC_or_NULL(soname, fnname, vg_replacement) \
    \
-   void* VG_REDIRECT_FUNCTION_ZU(soname,fnname) (SizeT n); \
-   void* VG_REDIRECT_FUNCTION_ZU(soname,fnname) (SizeT n)  \
+   void* VG_REPLACE_FUNCTION_ZU(soname,fnname) (SizeT n); \
+   void* VG_REPLACE_FUNCTION_ZU(soname,fnname) (SizeT n)  \
    { \
       void* v; \
       \
@@ -123,8 +123,8 @@ static void init(void) __attribute__((constructor));
 */
 #define ALLOC_or_BOMB(soname, fnname, vg_replacement)  \
    \
-   void* VG_REDIRECT_FUNCTION_ZU(soname,fnname) (SizeT n); \
-   void* VG_REDIRECT_FUNCTION_ZU(soname,fnname) (SizeT n)  \
+   void* VG_REPLACE_FUNCTION_ZU(soname,fnname) (SizeT n); \
+   void* VG_REPLACE_FUNCTION_ZU(soname,fnname) (SizeT n)  \
    { \
       void* v; \
       \
@@ -221,8 +221,8 @@ ALLOC_or_BOMB(m_libc_dot_so_star,      __builtin_vec_new, __builtin_vec_new );
 */
 #define FREE(soname, fnname, vg_replacement) \
    \
-   void VG_REDIRECT_FUNCTION_ZU(soname,fnname) (void *p); \
-   void VG_REDIRECT_FUNCTION_ZU(soname,fnname) (void *p)  \
+   void VG_REPLACE_FUNCTION_ZU(soname,fnname) (void *p); \
+   void VG_REPLACE_FUNCTION_ZU(soname,fnname) (void *p)  \
    { \
       MALLOC_TRACE(#vg_replacement "(%p)", p ); \
       if (p == NULL)  \
@@ -264,8 +264,8 @@ FREE(m_libc_dot_so_star,       _ZdaPvRKSt9nothrow_t, __builtin_vec_delete );
 
 #define CALLOC(soname, fnname) \
    \
-   void* VG_REDIRECT_FUNCTION_ZU(soname,fnname) ( SizeT nmemb, SizeT size ); \
-   void* VG_REDIRECT_FUNCTION_ZU(soname,fnname) ( SizeT nmemb, SizeT size )  \
+   void* VG_REPLACE_FUNCTION_ZU(soname,fnname) ( SizeT nmemb, SizeT size ); \
+   void* VG_REPLACE_FUNCTION_ZU(soname,fnname) ( SizeT nmemb, SizeT size )  \
    { \
       void* v; \
       \
@@ -282,8 +282,8 @@ CALLOC(m_libc_dot_so_star, calloc);
 
 #define REALLOC(soname, fnname) \
    \
-   void* VG_REDIRECT_FUNCTION_ZU(soname,fnname) ( void* ptrV, SizeT new_size );\
-   void* VG_REDIRECT_FUNCTION_ZU(soname,fnname) ( void* ptrV, SizeT new_size ) \
+   void* VG_REPLACE_FUNCTION_ZU(soname,fnname) ( void* ptrV, SizeT new_size );\
+   void* VG_REPLACE_FUNCTION_ZU(soname,fnname) ( void* ptrV, SizeT new_size ) \
    { \
       void* v; \
       \
@@ -292,9 +292,9 @@ CALLOC(m_libc_dot_so_star, calloc);
       if (ptrV == NULL) \
          /* We need to call a malloc-like function; so let's use \
             one which we know exists. */ \
-         return VG_REDIRECT_FUNCTION_ZU(libcZdsoZa,malloc) (new_size); \
+         return VG_REPLACE_FUNCTION_ZU(libcZdsoZa,malloc) (new_size); \
       if (new_size <= 0) { \
-         VG_REDIRECT_FUNCTION_ZU(libcZdsoZa,free)(ptrV); \
+         VG_REPLACE_FUNCTION_ZU(libcZdsoZa,free)(ptrV); \
          MALLOC_TRACE(" = 0"); \
          return NULL; \
       } \
@@ -309,8 +309,8 @@ REALLOC(m_libc_dot_so_star, realloc);
 
 #define MEMALIGN(soname, fnname) \
    \
-   void* VG_REDIRECT_FUNCTION_ZU(soname,fnname) ( SizeT alignment, SizeT n ); \
-   void* VG_REDIRECT_FUNCTION_ZU(soname,fnname) ( SizeT alignment, SizeT n )  \
+   void* VG_REPLACE_FUNCTION_ZU(soname,fnname) ( SizeT alignment, SizeT n ); \
+   void* VG_REPLACE_FUNCTION_ZU(soname,fnname) ( SizeT alignment, SizeT n )  \
    { \
       void* v; \
       \
@@ -335,10 +335,10 @@ MEMALIGN(m_libc_dot_so_star, memalign);
 
 #define VALLOC(soname, fnname) \
    \
-   void* VG_REDIRECT_FUNCTION_ZU(soname,fnname) ( SizeT size ); \
-   void* VG_REDIRECT_FUNCTION_ZU(soname,fnname) ( SizeT size )  \
+   void* VG_REPLACE_FUNCTION_ZU(soname,fnname) ( SizeT size ); \
+   void* VG_REPLACE_FUNCTION_ZU(soname,fnname) ( SizeT size )  \
    { \
-      return VG_REDIRECT_FUNCTION_ZU(libcZdsoZa,memalign)(VKI_PAGE_SIZE, size); \
+      return VG_REPLACE_FUNCTION_ZU(libcZdsoZa,memalign)(VKI_PAGE_SIZE, size); \
    }
 
 VALLOC(m_libc_dot_so_star, valloc);
@@ -348,8 +348,8 @@ VALLOC(m_libc_dot_so_star, valloc);
 
 #define MALLOPT(soname, fnname) \
    \
-   int VG_REDIRECT_FUNCTION_ZU(soname, fnname) ( int cmd, int value ); \
-   int VG_REDIRECT_FUNCTION_ZU(soname, fnname) ( int cmd, int value )  \
+   int VG_REPLACE_FUNCTION_ZU(soname, fnname) ( int cmd, int value ); \
+   int VG_REPLACE_FUNCTION_ZU(soname, fnname) ( int cmd, int value )  \
    { \
       /* In glibc-2.2.4, 1 denotes a successful return value for \
          mallopt */ \
@@ -361,9 +361,9 @@ MALLOPT(m_libc_dot_so_star, mallopt);
 
 #define POSIX_MEMALIGN(soname, fnname) \
    \
-   int VG_REDIRECT_FUNCTION_ZU(soname, fnname) ( void **memptr, \
+   int VG_REPLACE_FUNCTION_ZU(soname, fnname) ( void **memptr, \
                                                  SizeT alignment, SizeT size ); \
-   int VG_REDIRECT_FUNCTION_ZU(soname, fnname) ( void **memptr, \
+   int VG_REPLACE_FUNCTION_ZU(soname, fnname) ( void **memptr, \
                                                  SizeT alignment, SizeT size )  \
    { \
       void *mem; \
@@ -374,7 +374,7 @@ MALLOPT(m_libc_dot_so_star, mallopt);
           || (alignment & (alignment - 1)) != 0) \
          return VKI_EINVAL; \
       \
-      mem = VG_REDIRECT_FUNCTION_ZU(libcZdsoZa,memalign)(alignment, size); \
+      mem = VG_REPLACE_FUNCTION_ZU(libcZdsoZa,memalign)(alignment, size); \
       \
       if (mem != NULL) { \
         *memptr = mem; \
@@ -389,8 +389,8 @@ POSIX_MEMALIGN(m_libc_dot_so_star, posix_memalign);
 
 #define MALLOC_USABLE_SIZE(soname, fnname) \
    \
-   int VG_REDIRECT_FUNCTION_ZU(soname, fnname) ( void* p ); \
-   int VG_REDIRECT_FUNCTION_ZU(soname, fnname) ( void* p )  \
+   int VG_REPLACE_FUNCTION_ZU(soname, fnname) ( void* p ); \
+   int VG_REPLACE_FUNCTION_ZU(soname, fnname) ( void* p )  \
    {  \
       SizeT pszB; \
       \
@@ -420,8 +420,8 @@ static void panic(const char *str)
 
 #define PANIC(soname, fnname) \
    \
-   void VG_REDIRECT_FUNCTION_ZU(soname, fnname) ( void ); \
-   void VG_REDIRECT_FUNCTION_ZU(soname, fnname) ( void )  \
+   void VG_REPLACE_FUNCTION_ZU(soname, fnname) ( void ); \
+   void VG_REPLACE_FUNCTION_ZU(soname, fnname) ( void )  \
    { \
       panic(#fnname); \
    }
@@ -437,8 +437,8 @@ PANIC(m_libc_dot_so_star, malloc_set_state);
 // doesn't know that the call to mallinfo fills in mi.
 #define MALLINFO(soname, fnname) \
    \
-   struct vg_mallinfo VG_REDIRECT_FUNCTION_ZU(soname, fnname) ( void ); \
-   struct vg_mallinfo VG_REDIRECT_FUNCTION_ZU(soname, fnname) ( void )  \
+   struct vg_mallinfo VG_REPLACE_FUNCTION_ZU(soname, fnname) ( void ); \
+   struct vg_mallinfo VG_REPLACE_FUNCTION_ZU(soname, fnname) ( void )  \
    { \
       static struct vg_mallinfo mi; \
       MALLOC_TRACE("mallinfo()"); \

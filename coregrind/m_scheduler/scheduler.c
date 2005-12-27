@@ -1099,54 +1099,9 @@ void do_client_request ( ThreadId tid )
       VG_(printf)("req no = 0x%llx, arg = %p\n", (ULong)req_no, arg);
    switch (req_no) {
 
-      case VG_USERREQ__PUSH_NRADDR: {
-         Addr  nraddr   = arg[1];
-         UWord do_check = arg[2];
-
-	 if (do_check) {
-
-            /* This is the normal (safe) case. */
-            switch (GET_CLIENT_NRFLAG(tid)) {
-               case 0:
-                  SET_CLIENT_NRFLAG(tid, 1);
-                  SET_CLIENT_NRADDR(tid, nraddr);
-                  SET_CLREQ_RETVAL(tid, 0);
-                  break;
-               case 1: 
-               case 2:
-                  /* The 1-entry stack is full, so we must fail
-                     (return 1). */
-                 SET_CLREQ_RETVAL(tid, 1);
-                 break;
-               default:
-                  vg_assert2(0, "VG_USERREQ__PUSH_NRADDR(checked):"
-                                " bogus value");
-            }
-
-	 } else {
-
-            /* This is the not-normal (unsafe) case. */
-            switch (GET_CLIENT_NRFLAG(tid)) {
-               case 0:
-                  SET_CLIENT_NRFLAG(tid, 1);
-                  SET_CLIENT_NRADDR(tid, nraddr);
-                  break;
-               case 1: 
-                  SET_CLIENT_NRFLAG(tid, 2);
-                  break;
-               case 2:
-                  break;
-               default:
-                  vg_assert2(0, "VG_USERREQ__PUSH_NRADDR(***unchecked***):"
-                                " bogus value");
-            }
-            /* Unchecked case always succeeds */
-            SET_CLREQ_RETVAL(tid, 0);
-
-	 }
-
+      case VG_USERREQ__GET_NRADDR:
+         SET_CLREQ_RETVAL(tid, VG_(threads)[tid].arch.vex.guest_NRADDR);
          break;
-      }
 
       case VG_USERREQ__CLIENT_CALL0: {
          UWord (*f)(ThreadId) = (void*)arg[1];

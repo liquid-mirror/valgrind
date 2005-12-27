@@ -31,12 +31,32 @@
 #ifndef __PUB_TOOL_REDIR_H
 #define __PUB_TOOL_REDIR_H
 
-/* The following macros facilitate function redirection (redirects).
+/* The following macros facilitate function replacement and wrapping.
 
-   The general idea is: you can write a function like this:
+   Function wrapping and function replacement are similar but not
+   identical.
+
+   A replacement for some function F simply diverts all calls to F
+   to the stated replacement.  There is no way to get back to F itself
+   from the replacement.
+
+   A wrapper for a function F causes all calls to F to instead go to
+   the wrapper.  However, from inside the wrapper, it is possible
+   (with some difficulty) to get to F itself.
+
+   You may notice that replacement is a special case of wrapping, in
+   which the call to the original is omitted.  For implementation
+   reasons, though, it is important to use the following macros
+   correctly: in particular, if you want to write a replacement, make
+   sure you use the VG_REPLACE_FN_ macros and not the VG_WRAP_FN_
+   macros.
+
+   Replacement
+   ~~~~~~~~~~~
+   To write a replacement function, do this:
 
       ret_type 
-      VG_REDIRECT_FUNCTION_ZU(zEncodedSoname,fnname) ( .. args .. )
+      VG_REPLACE_FUNCTION_ZU(zEncodedSoname,fnname) ( .. args .. )
       {
          ... body ...
       }
@@ -51,7 +71,7 @@
    It is also possible to write
 
       ret_type 
-      VG_REDIRECT_FUNCTION_ZZ(zEncodedSoname,zEncodedFnname) ( .. args .. )
+      VG_REPLACE_FUNCTION_ZZ(zEncodedSoname,zEncodedFnname) ( .. args .. )
       {
          ... body ...
       }
@@ -92,6 +112,18 @@
    underscores, since the intercept-handlers in m_redir.c detect the
    end of the soname by looking for the first trailing underscore.
 
+   Wrapping
+   ~~~~~~~~
+   This is identical to replacement, except that you should use the
+   macro names
+
+      VG_WRAP_FUNCTION_ZU
+      VG_WRAP_FUNCTION_ZZ
+
+   instead.
+
+   Z-encoding
+   ~~~~~~~~~~
    Z-encoding details: the scheme is like GHC's.  It is just about
    readable enough to make a preprocessor unnecessary.  First the
    "_vgrZU_" or "_vgrZZ_" prefix is added, and then the following
@@ -112,10 +144,13 @@
 
 /* If you change these, the code in VG_(maybe_Z_demangle) needs to be
    changed accordingly.  NOTE: duplicates
-   I_REPLACE_SONAME_FNNAME_Z{U,Z} in valgrind.h. */
-#define VG_REDIRECT_FUNCTION_ZU(soname,fnname) _vgrZU_##soname##_##fnname
-#define VG_REDIRECT_FUNCTION_ZZ(soname,fnname) _vgrZZ_##soname##_##fnname
+   I_{WRAP,REPLACE}_SONAME_FNNAME_Z{U,Z} in valgrind.h. */
 
+#define VG_REPLACE_FUNCTION_ZU(soname,fnname) _vgrZU_##soname##_##fnname
+#define VG_REPLACE_FUNCTION_ZZ(soname,fnname) _vgrZZ_##soname##_##fnname
+
+#define VG_WRAP_FUNCTION_ZU(soname,fnname) _vgwZU_##soname##_##fnname
+#define VG_WRAP_FUNCTION_ZZ(soname,fnname) _vgwZZ_##soname##_##fnname
 
 #endif   // __PUB_TOOL_REDIR_H
 
