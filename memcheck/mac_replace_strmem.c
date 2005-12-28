@@ -93,9 +93,9 @@ Bool is_overlap ( void* dst, const void* src, SizeT dstlen, SizeT srclen )
 #define RECORD_OVERLAP_ERROR(s, p_extra) \
 { \
    Word unused_res; \
-   VALGRIND_MAGIC_SEQUENCE(unused_res, 0, \
-			   _VG_USERREQ__MEMCHECK_RECORD_OVERLAP_ERROR, \
-			   s, p_extra, 0, 0); \
+   VALGRIND_DO_CLIENT_REQUEST(unused_res, 0, \
+			      _VG_USERREQ__MEMCHECK_RECORD_OVERLAP_ERROR, \
+			      s, p_extra, 0, 0); \
 }
 
 static __inline__

@@ -461,8 +461,8 @@ static void init(void)
 
    init_done = 1;
 
-   VALGRIND_MAGIC_SEQUENCE(res, -1, VG_USERREQ__GET_MALLOCFUNCS, &info,
-                           0, 0, 0);
+   VALGRIND_DO_CLIENT_REQUEST(res, -1, VG_USERREQ__GET_MALLOCFUNCS, &info,
+                              0, 0, 0);
 }
 
 /*--------------------------------------------------------------------*/

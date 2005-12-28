@@ -1033,27 +1033,6 @@ void VG_(nuke_all_threads_except) ( ThreadId me, VgSchedReturnCode src )
                   zztid, O_CLREQ_RET, sizeof(UWord), f); \
    } while (0)
 
-#define SET_CLIENT_NRFLAG(zztid, zzflag) \
-   do { VG_(threads)[zztid].arch.vex.guest_NRFLAG = (zzflag); \
-        VG_TRACK( post_reg_write, \
-                  Vg_CoreClientReq, zztid, \
-                  offsetof(VexGuestArchState,guest_NRFLAG), \
-                  sizeof(UWord) ); \
-   } while (0)
-
-#define SET_CLIENT_NRADDR(zztid, zzaddr) \
-   do { VG_(threads)[zztid].arch.vex.guest_NRADDR = (zzaddr); \
-        VG_TRACK( post_reg_write, \
-                  Vg_CoreClientReq, zztid, \
-                  offsetof(VexGuestArchState,guest_NRADDR), \
-                  sizeof(UWord) ); \
-   } while (0)
-
-#define GET_CLIENT_NRFLAG(zztid) \
-   VG_(threads)[zztid].arch.vex.guest_NRFLAG
-#define GET_CLIENT_NRADDR(zztid) \
-   VG_(threads)[zztid].arch.vex.guest_NRADDR
-
 
 /* ---------------------------------------------------------------------
    Handle client requests.
@@ -1098,10 +1077,6 @@ void do_client_request ( ThreadId tid )
    if (0)
       VG_(printf)("req no = 0x%llx, arg = %p\n", (ULong)req_no, arg);
    switch (req_no) {
-
-      case VG_USERREQ__GET_NRADDR:
-         SET_CLREQ_RETVAL(tid, VG_(threads)[tid].arch.vex.guest_NRADDR);
-         break;
 
       case VG_USERREQ__CLIENT_CALL0: {
          UWord (*f)(ThreadId) = (void*)arg[1];
