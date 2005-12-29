@@ -71,7 +71,7 @@ void VG_NOTIFY_ON_LOAD(freeres)( void )
 /*--- end                                                          ---*/
 /*--------------------------------------------------------------------*/
 
-#if 1
+#if 0
 
 #define PTH_FUNC(ret_ty, f, args...) \
    ret_ty VG_WRAP_FUNCTION_ZZ(libpthreadZdsoZd0,f)(args); \
