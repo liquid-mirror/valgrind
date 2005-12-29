@@ -644,6 +644,17 @@ static RiSym *prefersym(RiSym *a, RiSym *b)
 
    TRACE_SYMTAB("choosing between '%s' and '%s'\n", a->name, b->name);
 
+   /* MPI hack: prefer PMPI_Foo over MPI_Foo */
+   if (0==VG_(strncmp)(a->name, "MPI_", 4)
+       && 0==VG_(strncmp)(b->name, "PMPI_", 5)
+       && 0==VG_(strcmp)(a->name, 1+b->name))
+      return b;
+   else
+   if (0==VG_(strncmp)(b->name, "MPI_", 4)
+       && 0==VG_(strncmp)(a->name, "PMPI_", 5)
+       && 0==VG_(strcmp)(b->name, 1+a->name))
+      return a;
+
    /* Select the shortest unversioned name */
    if (vlena < vlenb)
       return a;
