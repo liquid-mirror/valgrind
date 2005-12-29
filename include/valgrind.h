@@ -335,32 +335,35 @@
    as gcc can already see that, plus causes gcc to bomb. */
 #define __CALLER_SAVED_REGS /*"eax"*/ "ecx", "edx"
 
+/* These CALL_FN_ macros assume that on x86-linux, sizeof(unsigned
+   long) == 4. */
+
 #define CALL_FN_W_v(lval, fnptr)                                  \
    do {                                                           \
-      void* _fnptr = (fnptr);                                     \
-      long  _argvec[1];                                           \
-      long  _res;                                                 \
-      _argvec[0] = (long)_fnptr;                                  \
+      void*         _fnptr = (fnptr);                             \
+      unsigned long _argvec[1];                                   \
+      unsigned long _res;                                         \
+      _argvec[0] = (unsigned long)_fnptr;                         \
       __asm__ volatile(                                           \
          "movl (%%eax), %%eax\n\t"  /* target->%eax */            \
          VALGRIND_CALL_NOREDIR_EAX                                \
          : /*out*/   "=a" (_res)                                  \
          : /*in*/    "a" (&_argvec[0])                            \
-         : /*trash*/ "cc", "memory",  __CALLER_SAVED_REGS         \
+         : /*trash*/ "cc", "memory", __CALLER_SAVED_REGS          \
       );                                                          \
       lval = (__typeof__(lval)) _res;                             \
    } while (0)
 
 #define CALL_FN_v_v(fnptr)                                        \
-   do { long _junk; CALL_FN_W_v(_junk,fnptr); } while (0)
+   do { unsigned long _junk; CALL_FN_W_v(_junk,fnptr); } while (0)
 
 #define CALL_FN_W_W(lval, fnptr, arg1)                            \
    do {                                                           \
-      void* _fnptr = (fnptr);                                     \
-      long  _argvec[2];                                           \
-      long  _res;                                                 \
-      _argvec[0] = (long)_fnptr;                                  \
-      _argvec[1] = (long)(arg1);                                  \
+      void*         _fnptr = (fnptr);                             \
+      unsigned long _argvec[2];                                   \
+      unsigned long _res;                                         \
+      _argvec[0] = (unsigned long)_fnptr;                         \
+      _argvec[1] = (unsigned long)(arg1);                         \
       __asm__ volatile(                                           \
          "pushl 4(%%eax)\n\t"                                     \
          "movl (%%eax), %%eax\n\t"  /* target->%eax */            \
@@ -375,12 +378,12 @@
 
 #define CALL_FN_W_WW(lval, fnptr, arg1,arg2)                      \
    do {                                                           \
-      void* _fnptr = (fnptr);                                     \
-      long  _argvec[3];                                           \
-      long  _res;                                                 \
-      _argvec[0] = (long)_fnptr;                                  \
-      _argvec[1] = (long)(arg1);                                  \
-      _argvec[2] = (long)(arg2);                                  \
+      void*         _fnptr = (fnptr);                             \
+      unsigned long _argvec[3];                                   \
+      unsigned long _res;                                         \
+      _argvec[0] = (unsigned long)_fnptr;                         \
+      _argvec[1] = (unsigned long)(arg1);                         \
+      _argvec[2] = (unsigned long)(arg2);                         \
       __asm__ volatile(                                           \
          "pushl 8(%%eax)\n\t"                                     \
          "pushl 4(%%eax)\n\t"                                     \
@@ -396,14 +399,14 @@
 
 #define CALL_FN_W_WWWW(lval, fnptr, arg1,arg2,arg3,arg4)          \
    do {                                                           \
-      void* _fnptr = (fnptr);                                     \
-      long  _argvec[5];                                           \
-      long  _res;                                                 \
-      _argvec[0] = (long)_fnptr;                                  \
-      _argvec[1] = (long)(arg1);                                  \
-      _argvec[2] = (long)(arg2);                                  \
-      _argvec[3] = (long)(arg3);                                  \
-      _argvec[4] = (long)(arg4);                                  \
+      void*         _fnptr = (fnptr);                             \
+      unsigned long _argvec[5];                                   \
+      unsigned long _res;                                         \
+      _argvec[0] = (unsigned long)_fnptr;                         \
+      _argvec[1] = (unsigned long)(arg1);                         \
+      _argvec[2] = (unsigned long)(arg2);                         \
+      _argvec[3] = (unsigned long)(arg3);                         \
+      _argvec[4] = (unsigned long)(arg4);                         \
       __asm__ volatile(                                           \
          "pushl 16(%%eax)\n\t"                                    \
          "pushl 12(%%eax)\n\t"                                    \
@@ -419,17 +422,17 @@
       lval = (__typeof__(lval)) _res;                             \
    } while (0)
 
-#define CALL_FN_W_WWWWW(lval, fnptr, arg1,arg2,arg3,arg4,arg5)    \
+#define CALL_FN_W_5W(lval, fnptr, arg1,arg2,arg3,arg4,arg5)       \
    do {                                                           \
-      void* _fnptr = (fnptr);                                     \
-      long  _argvec[6];                                           \
-      long  _res;                                                 \
-      _argvec[0] = (long)_fnptr;                                  \
-      _argvec[1] = (long)(arg1);                                  \
-      _argvec[2] = (long)(arg2);                                  \
-      _argvec[3] = (long)(arg3);                                  \
-      _argvec[4] = (long)(arg4);                                  \
-      _argvec[5] = (long)(arg5);                                  \
+      void*         _fnptr = (fnptr);                             \
+      unsigned long _argvec[6];                                   \
+      unsigned long _res;                                         \
+      _argvec[0] = (unsigned long)_fnptr;                         \
+      _argvec[1] = (unsigned long)(arg1);                         \
+      _argvec[2] = (unsigned long)(arg2);                         \
+      _argvec[3] = (unsigned long)(arg3);                         \
+      _argvec[4] = (unsigned long)(arg4);                         \
+      _argvec[5] = (unsigned long)(arg5);                         \
       __asm__ volatile(                                           \
          "pushl 20(%%eax)\n\t"                                    \
          "pushl 16(%%eax)\n\t"                                    \
@@ -446,19 +449,49 @@
       lval = (__typeof__(lval)) _res;                             \
    } while (0)
 
-#define CALL_FN_W_WWWWWWW(lval, fnptr, arg1,arg2,arg3,arg4,arg5,arg6,arg7) \
+#define CALL_FN_W_6W(lval, fnptr, arg1,arg2,arg3,arg4,arg5,arg6)  \
    do {                                                           \
-      void* _fnptr = (fnptr);                                     \
-      long  _argvec[8];                                           \
-      long  _res;                                                 \
-      _argvec[0] = (long)_fnptr;                                  \
-      _argvec[1] = (long)(arg1);                                  \
-      _argvec[2] = (long)(arg2);                                  \
-      _argvec[3] = (long)(arg3);                                  \
-      _argvec[4] = (long)(arg4);                                  \
-      _argvec[5] = (long)(arg5);                                  \
-      _argvec[6] = (long)(arg6);                                  \
-      _argvec[7] = (long)(arg7);                                  \
+      void*         _fnptr = (fnptr);                             \
+      unsigned long _argvec[7];                                   \
+      unsigned long _res;                                         \
+      _argvec[0] = (unsigned long)_fnptr;                         \
+      _argvec[1] = (unsigned long)(arg1);                         \
+      _argvec[2] = (unsigned long)(arg2);                         \
+      _argvec[3] = (unsigned long)(arg3);                         \
+      _argvec[4] = (unsigned long)(arg4);                         \
+      _argvec[5] = (unsigned long)(arg5);                         \
+      _argvec[6] = (unsigned long)(arg6);                         \
+      __asm__ volatile(                                           \
+         "pushl 24(%%eax)\n\t"                                    \
+         "pushl 20(%%eax)\n\t"                                    \
+         "pushl 16(%%eax)\n\t"                                    \
+         "pushl 12(%%eax)\n\t"                                    \
+         "pushl 8(%%eax)\n\t"                                     \
+         "pushl 4(%%eax)\n\t"                                     \
+         "movl (%%eax), %%eax\n\t"  /* target->%eax */            \
+         VALGRIND_CALL_NOREDIR_EAX                                \
+         "addl $24, %%esp\n"                                      \
+         : /*out*/   "=a" (_res)                                  \
+         : /*in*/    "a" (&_argvec[0])                            \
+         : /*trash*/ "cc", "memory", __CALLER_SAVED_REGS          \
+      );                                                          \
+      lval = (__typeof__(lval)) _res;                             \
+   } while (0)
+
+#define CALL_FN_W_7W(lval, fnptr, arg1,arg2,arg3,arg4,arg5,arg6,  \
+                                  arg7)                           \
+   do {                                                           \
+      void*         _fnptr = (fnptr);                             \
+      unsigned long _argvec[8];                                   \
+      unsigned long _res;                                         \
+      _argvec[0] = (unsigned long)_fnptr;                         \
+      _argvec[1] = (unsigned long)(arg1);                         \
+      _argvec[2] = (unsigned long)(arg2);                         \
+      _argvec[3] = (unsigned long)(arg3);                         \
+      _argvec[4] = (unsigned long)(arg4);                         \
+      _argvec[5] = (unsigned long)(arg5);                         \
+      _argvec[6] = (unsigned long)(arg6);                         \
+      _argvec[7] = (unsigned long)(arg7);                         \
       __asm__ volatile(                                           \
          "pushl 28(%%eax)\n\t"                                    \
          "pushl 24(%%eax)\n\t"                                    \
@@ -470,6 +503,83 @@
          "movl (%%eax), %%eax\n\t"  /* target->%eax */            \
          VALGRIND_CALL_NOREDIR_EAX                                \
          "addl $28, %%esp\n"                                      \
+         : /*out*/   "=a" (_res)                                  \
+         : /*in*/    "a" (&_argvec[0])                            \
+         : /*trash*/ "cc", "memory", __CALLER_SAVED_REGS          \
+      );                                                          \
+      lval = (__typeof__(lval)) _res;                             \
+   } while (0)
+
+#define CALL_FN_W_8W(lval, fnptr, arg1,arg2,arg3,arg4,arg5,arg6,  \
+                                  arg7,arg8)                      \
+   do {                                                           \
+      void*         _fnptr = (fnptr);                             \
+      unsigned long _argvec[9];                                   \
+      unsigned long _res;                                         \
+      _argvec[0] = (unsigned long)_fnptr;                         \
+      _argvec[1] = (unsigned long)(arg1);                         \
+      _argvec[2] = (unsigned long)(arg2);                         \
+      _argvec[3] = (unsigned long)(arg3);                         \
+      _argvec[4] = (unsigned long)(arg4);                         \
+      _argvec[5] = (unsigned long)(arg5);                         \
+      _argvec[6] = (unsigned long)(arg6);                         \
+      _argvec[7] = (unsigned long)(arg7);                         \
+      _argvec[8] = (unsigned long)(arg8);                         \
+      __asm__ volatile(                                           \
+         "pushl 32(%%eax)\n\t"                                    \
+         "pushl 28(%%eax)\n\t"                                    \
+         "pushl 24(%%eax)\n\t"                                    \
+         "pushl 20(%%eax)\n\t"                                    \
+         "pushl 16(%%eax)\n\t"                                    \
+         "pushl 12(%%eax)\n\t"                                    \
+         "pushl 8(%%eax)\n\t"                                     \
+         "pushl 4(%%eax)\n\t"                                     \
+         "movl (%%eax), %%eax\n\t"  /* target->%eax */            \
+         VALGRIND_CALL_NOREDIR_EAX                                \
+         "addl $32, %%esp\n"                                      \
+         : /*out*/   "=a" (_res)                                  \
+         : /*in*/    "a" (&_argvec[0])                            \
+         : /*trash*/ "cc", "memory", __CALLER_SAVED_REGS          \
+      );                                                          \
+      lval = (__typeof__(lval)) _res;                             \
+   } while (0)
+
+#define CALL_FN_W_12W(lval, fnptr, arg1,arg2,arg3,arg4,arg5,      \
+                                   arg6,arg7,arg8,arg9,arg10,     \
+                                   arg11,arg12)                   \
+   do {                                                           \
+      void*         _fnptr = (fnptr);                             \
+      unsigned long _argvec[13];                                  \
+      unsigned long _res;                                         \
+      _argvec[0] = (unsigned long)_fnptr;                         \
+      _argvec[1] = (unsigned long)(arg1);                         \
+      _argvec[2] = (unsigned long)(arg2);                         \
+      _argvec[3] = (unsigned long)(arg3);                         \
+      _argvec[4] = (unsigned long)(arg4);                         \
+      _argvec[5] = (unsigned long)(arg5);                         \
+      _argvec[6] = (unsigned long)(arg6);                         \
+      _argvec[7] = (unsigned long)(arg7);                         \
+      _argvec[8] = (unsigned long)(arg8);                         \
+      _argvec[9] = (unsigned long)(arg9);                         \
+      _argvec[10] = (unsigned long)(arg10);                       \
+      _argvec[11] = (unsigned long)(arg11);                       \
+      _argvec[12] = (unsigned long)(arg12);                       \
+      __asm__ volatile(                                           \
+         "pushl 48(%%eax)\n\t"                                    \
+         "pushl 44(%%eax)\n\t"                                    \
+         "pushl 40(%%eax)\n\t"                                    \
+         "pushl 36(%%eax)\n\t"                                    \
+         "pushl 32(%%eax)\n\t"                                    \
+         "pushl 28(%%eax)\n\t"                                    \
+         "pushl 24(%%eax)\n\t"                                    \
+         "pushl 20(%%eax)\n\t"                                    \
+         "pushl 16(%%eax)\n\t"                                    \
+         "pushl 12(%%eax)\n\t"                                    \
+         "pushl 8(%%eax)\n\t"                                     \
+         "pushl 4(%%eax)\n\t"                                     \
+         "movl (%%eax), %%eax\n\t"  /* target->%eax */            \
+         VALGRIND_CALL_NOREDIR_EAX                                \
+         "addl $48, %%esp\n"                                      \
          : /*out*/   "=a" (_res)                                  \
          : /*in*/    "a" (&_argvec[0])                            \
          : /*trash*/ "cc", "memory", __CALLER_SAVED_REGS          \
