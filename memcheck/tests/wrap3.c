@@ -22,20 +22,24 @@ int fact2 ( int n )
 }
 
 
-int I_REPLACE_SONAME_FNNAME_ZU(NONE,fact1) ( int n )
+int I_WRAP_SONAME_FNNAME_ZU(NONE,fact1) ( int n )
 {
-   int r;
+   int   r;
+   void* fn;
+   VALGRIND_GET_ORIG_FN(fn);
    printf("in wrapper1-pre:  fact(%d)\n", n);
-   CALL_ORIG_FN_1(r,fact1,n);
+   CALL_FN_W_W(r,fn,n);
    printf("in wrapper1-post: fact(%d) = %d\n", n, r);
    return r;
 }
 
-int I_REPLACE_SONAME_FNNAME_ZU(NONE,fact2) ( int n )
+int I_WRAP_SONAME_FNNAME_ZU(NONE,fact2) ( int n )
 {
-   int r;
+   int   r;
+   void* fn;
+   VALGRIND_GET_ORIG_FN(fn);
    printf("in wrapper2-pre:  fact(%d)\n", n);
-   CALL_ORIG_FN_1(r,fact2,n);
+   CALL_FN_W_W(r,fn,n);
    printf("in wrapper2-post: fact(%d) = %d\n", n, r);
    return r;
 }

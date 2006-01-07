@@ -6,6 +6,7 @@
    and check we run the wrapper instead. */
 
 /* The "original" function */
+__attribute__((noinline))
 void actual ( void )
 {
    printf("in actual\n");
@@ -14,12 +15,12 @@ void actual ( void )
 /* The wrapper.  Since this executable won't have a soname, we have to
    use "NONE", since V treats any executable/.so which lacks a soname
    as if its soname was "NONE". */
-void I_REPLACE_SONAME_FNNAME_ZU(NONE,actual) ( void )
+void I_WRAP_SONAME_FNNAME_ZU(NONE,actual) ( void )
 {
+   void* orig;
+   VALGRIND_GET_ORIG_FN(orig);
    printf("wrapper-pre\n");
-
-   CALL_ORIG_VOIDFN_0(actual);
-
+   CALL_FN_v_v(orig);
    printf("wrapper-post\n");
 }
 
