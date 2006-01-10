@@ -8,27 +8,27 @@
    attempt to shake out any problems caused by insufficient saving of
    caller-save registers around the hidden call instruction. */
 
-typedef unsigned long  UWord;
+typedef unsigned int  UInt;
 
-#define ROL(_x,n) (((_x) << n) | ((UWord)(_x)) >> ((8*sizeof(UWord)-n)))
+#define ROL(_x,n) (((_x) << n) | ((UInt)(_x)) >> ((8*sizeof(UInt)-n)))
 
 #define TRASH_IREGS(_rlval, _vec) \
    do { \
-      UWord* vec = (_vec);   \
+      UInt* vec = (_vec);   \
       /* x86 spills for v > 4, amd64 for v > 12. */   \
-      UWord i, sum = 0;   \
-      UWord v1 = vec[1-1];   \
-      UWord v2 = vec[2-1];   \
-      UWord v3 = vec[3-1];   \
-      UWord v4 = vec[4-1];   \
-      UWord v5 = vec[5-1];   \
-      UWord v6 = vec[6-1];   \
-      UWord v7 = vec[7-1];   \
-      UWord v8 = vec[8-1];   \
-      UWord v9 = vec[9-1];   \
-      UWord v10 = vec[10-1];   \
-      UWord v11 = vec[11-1];   \
-      UWord v12 = vec[12-1];   \
+      UInt i, sum = 0;   \
+      UInt v1 = vec[1-1];   \
+      UInt v2 = vec[2-1];   \
+      UInt v3 = vec[3-1];   \
+      UInt v4 = vec[4-1];   \
+      UInt v5 = vec[5-1];   \
+      UInt v6 = vec[6-1];   \
+      UInt v7 = vec[7-1];   \
+      UInt v8 = vec[8-1];   \
+      UInt v9 = vec[9-1];   \
+      UInt v10 = vec[10-1];   \
+      UInt v11 = vec[11-1];   \
+      UInt v12 = vec[12-1];   \
       for (i = 0; i < 50; i++) {   \
          v1 = ROL(v1,1);   \
          v2 = ROL(v2,2);   \
@@ -59,18 +59,18 @@ typedef unsigned long  UWord;
 
 /* --------------- 0 --------------- */  
 
-UWord fn_0 ( void )
+UInt fn_0 ( void )
 {
-   UWord r;
-   UWord* words = calloc(200, sizeof(UWord));
+   UInt r;
+   UInt* words = calloc(200, sizeof(UInt));
    TRASH_IREGS(r, words);
    free(words);
    return r;
 }
 
-UWord I_WRAP_SONAME_FNNAME_ZU(NONE,fn_0) ( UWord a1 )
+UInt I_WRAP_SONAME_FNNAME_ZU(NONE,fn_0) ( UInt a1 )
 {
-   UWord r;
+   UInt r;
    void* fn;
    VALGRIND_GET_ORIG_FN(fn);
    printf("fn_0  wrapper pre ()\n");
@@ -83,19 +83,19 @@ UWord I_WRAP_SONAME_FNNAME_ZU(NONE,fn_0) ( UWord a1 )
 
 /* --------------- 1 --------------- */  
 
-UWord fn_1 ( UWord a1 )
+UInt fn_1 ( UInt a1 )
 {
-   UWord r;
-   UWord* words = calloc(200, sizeof(UWord));
+   UInt r;
+   UInt* words = calloc(200, sizeof(UInt));
    words[1-1] = a1;
    TRASH_IREGS(r, words);
    free(words);
    return r;
 }
 
-UWord I_WRAP_SONAME_FNNAME_ZU(NONE,fn_1) ( UWord a1 )
+UInt I_WRAP_SONAME_FNNAME_ZU(NONE,fn_1) ( UInt a1 )
 {
-   UWord r;
+   UInt r;
    void* fn;
    VALGRIND_GET_ORIG_FN(fn);
    printf("fn_1  wrapper pre ( %d )\n", (int)a1);
@@ -108,10 +108,10 @@ UWord I_WRAP_SONAME_FNNAME_ZU(NONE,fn_1) ( UWord a1 )
 
 /* --------------- 2 --------------- */  
 
-UWord fn_2 ( UWord a1, UWord a2 )
+UInt fn_2 ( UInt a1, UInt a2 )
 {
-   UWord r;
-   UWord* words = calloc(200, sizeof(UWord));
+   UInt r;
+   UInt* words = calloc(200, sizeof(UInt));
    words[1-1] = a1;
    words[2-1] = a2;
    TRASH_IREGS(r, words);
@@ -119,9 +119,9 @@ UWord fn_2 ( UWord a1, UWord a2 )
    return r;
 }
 
-UWord I_WRAP_SONAME_FNNAME_ZU(NONE,fn_2) ( UWord a1, UWord a2 )
+UInt I_WRAP_SONAME_FNNAME_ZU(NONE,fn_2) ( UInt a1, UInt a2 )
 {
-   UWord r;
+   UInt r;
    void* fn;
    VALGRIND_GET_ORIG_FN(fn);
    printf("fn_2  wrapper pre ( %d, %d )\n", (int)a1, (int)a2);
@@ -136,7 +136,7 @@ UWord I_WRAP_SONAME_FNNAME_ZU(NONE,fn_2) ( UWord a1, UWord a2 )
 
 int main ( void )
 {
-   UWord w;
+   UInt w;
 
    printf("fn_0  ...\n");
    w = fn_0();
