@@ -200,7 +200,7 @@
 #define VALGRIND_CALL_NOREDIR_EAX                                 \
                      __SPECIAL_INSTRUCTION_PREAMBLE               \
                      /* call-noredir *%EAX */                     \
-                     "xchgl %%edx,%%edx"
+                     "xchgl %%edx,%%edx\n\t"
 #endif /* ARCH_x86 */
 
 /* --------------------------- amd64 --------------------------- */
@@ -245,7 +245,7 @@
 #define VALGRIND_CALL_NOREDIR_RAX                                 \
                      __SPECIAL_INSTRUCTION_PREAMBLE               \
                      /* call-noredir *%RAX */                     \
-                     "xchgq %%rdx,%%rdx"
+                     "xchgq %%rdx,%%rdx\n\t"
 #endif /* ARCH_amd64 */
 
 /* --------------------------- ppc32 --------------------------- */
@@ -642,9 +642,9 @@
 
 /* --------------------------- amd64 --------------------------- */
 
-/* ARGREGS: rdi rsi rdx rcx r8 r9 (the rest on stack in R-to-L order) */
-
 #if defined(ARCH_amd64)
+
+/* ARGREGS: rdi rsi rdx rcx r8 r9 (the rest on stack in R-to-L order) */
 
 /* These regs are trashed by the hidden call. */
 #define __CALLER_SAVED_REGS /*"rax",*/ "rcx", "rdx", "rsi",       \
@@ -710,6 +710,8 @@
 #endif /* ARCH_amd64 */
 
 /* --------------------------- ppc32 --------------------------- */
+
+#if defined(ARCH_ppc32)
 
 /* ARGREGS: r3 r4 r5 r6 r7 r8 r9 r10 (the rest on stack somewhere) */
 
@@ -780,6 +782,8 @@
       );                                                          \
       lval = (__typeof__(lval)) _res;                             \
    } while (0)
+
+#endif /* ARCH_ppc32 */
 
 /* --------------------------- ppc64 --------------------------- */
 
