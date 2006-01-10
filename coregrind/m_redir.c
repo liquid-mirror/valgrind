@@ -753,11 +753,11 @@ void VG_(redir_initialise) ( void )
    if (0==VG_(strcmp)("Memcheck", VG_(details).name)) {
       add_hardwired_spec(
          "ld.so.1", "strlen",
-          (Addr)&VG_(ppc32_linux_REDIR_FOR_strlen),
+          (Addr)&VG_(ppc32_linux_REDIR_FOR_strlen)
       );   
       add_hardwired_spec(
          "soname:ld.so.1", "strcmp",
-         (Addr)&VG_(ppc32_linux_REDIR_FOR_strcmp),
+         (Addr)&VG_(ppc32_linux_REDIR_FOR_strcmp)
       );
    }
 

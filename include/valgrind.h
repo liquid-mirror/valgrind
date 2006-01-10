@@ -200,7 +200,7 @@
 #define VALGRIND_CALL_NOREDIR_EAX                                 \
                      __SPECIAL_INSTRUCTION_PREAMBLE               \
                      /* call-noredir *%EAX */                     \
-                     "xchgl %%edx,%%edx\n\t"
+                     "xchgl %%edx,%%edx"
 #endif /* ARCH_x86 */
 
 /* --------------------------- amd64 --------------------------- */
@@ -245,36 +245,54 @@
 #define VALGRIND_CALL_NOREDIR_RAX                                 \
                      __SPECIAL_INSTRUCTION_PREAMBLE               \
                      /* call-noredir *%RAX */                     \
-                     "xchgq %%rdx,%%rdx\n\t"
+                     "xchgq %%rdx,%%rdx"
 #endif /* ARCH_amd64 */
 
 /* --------------------------- ppc32 --------------------------- */
 
 #if defined(ARCH_ppc32)
+#define __SPECIAL_INSTRUCTION_PREAMBLE                            \
+                     "rlwinm 0,0,3,0,0  ; rlwinm 0,0,13,0,0\n\t"  \
+                     "rlwinm 0,0,29,0,0 ; rlwinm 0,0,19,0,0\n\t"  \
+
 #define VALGRIND_DO_CLIENT_REQUEST(                               \
         _zzq_rlval, _zzq_default, _zzq_request,                   \
         _zzq_arg1, _zzq_arg2, _zzq_arg3, _zzq_arg4)               \
                                                                   \
   { volatile unsigned int _zzq_args[5];                           \
-    register unsigned int _zzq_tmp __asm__("r3");                 \
+    register unsigned int _zzq_result __asm__("r3");              \
     register volatile unsigned int *_zzq_ptr __asm__("r4");       \
-    _zzq_args[0] = (volatile unsigned int)(_zzq_request);         \
-    _zzq_args[1] = (volatile unsigned int)(_zzq_arg1);            \
-    _zzq_args[2] = (volatile unsigned int)(_zzq_arg2);            \
-    _zzq_args[3] = (volatile unsigned int)(_zzq_arg3);            \
-    _zzq_args[4] = (volatile unsigned int)(_zzq_arg4);            \
+    _zzq_args[0] = (unsigned int)(_zzq_request);                  \
+    _zzq_args[1] = (unsigned int)(_zzq_arg1);                     \
+    _zzq_args[2] = (unsigned int)(_zzq_arg2);                     \
+    _zzq_args[3] = (unsigned int)(_zzq_arg3);                     \
+    _zzq_args[4] = (unsigned int)(_zzq_arg4);                     \
     _zzq_ptr = _zzq_args;                                         \
-    __asm__ volatile("tw 0,3,27\n\t"                              \
-                     "rlwinm 0,0,29,0,0\n\t"                      \
-                     "rlwinm 0,0,3,0,0\n\t"                       \
-                     "rlwinm 0,0,13,0,0\n\t"                      \
-                     "rlwinm 0,0,19,0,0\n\t"                      \
-                     "nop\n\t"                                    \
-                     : "=r" (_zzq_tmp)                            \
+    __asm__ volatile(__SPECIAL_INSTRUCTION_PREAMBLE               \
+                     /* %R3 = client_request ( %R4 ) */           \
+                     "or 1,1,1"                                   \
+                     : "=r" (_zzq_result)                         \
                      : "0" (_zzq_default), "r" (_zzq_ptr)         \
-                     : "memory");                                 \
-    _zzq_rlval = (__typeof__(_zzq_rlval)) _zzq_tmp;               \
+                     : "cc", "memory");                           \
+    _zzq_rlval = _zzq_result;                                     \
   }
+
+#define VALGRIND_GET_NRADDR(_zzq_rlval)                           \
+  { register unsigned int __addr __asm__("r3");                   \
+    __asm__ volatile(__SPECIAL_INSTRUCTION_PREAMBLE               \
+                     /* %R3 = guest_NRADDR */                     \
+                     "or 2,2,2"                                   \
+                     : "=r" (__addr)                              \
+                     :                                            \
+                     : "cc", "memory"                             \
+                    );                                            \
+    _zzq_rlval = (void*)__addr;                                   \
+  }
+
+#define VALGRIND_BRANCH_AND_LINK_TO_NOREDIR_R11                   \
+                     __SPECIAL_INSTRUCTION_PREAMBLE               \
+                     /* branch-and-link-to-noredir *%R11 */       \
+                     "or 3,3,3\n\t"
 #endif /* ARCH_ppc32 */
 
 /* --------------------------- ppc64 --------------------------- */
@@ -692,6 +710,76 @@
 #endif /* ARCH_amd64 */
 
 /* --------------------------- ppc32 --------------------------- */
+
+/* ARGREGS: r3 r4 r5 r6 r7 r8 r9 r10 (the rest on stack somewhere) */
+
+/* These regs are trashed by the hidden call. */
+#define __CALLER_SAVED_REGS "lr",                                 \
+                            "r0", "r2", "r3", "r4", "r5", "r6",   \
+                            "r7", "r8", "r9", "r10", "r11", "r12"
+
+/* These CALL_FN_ macros assume that on ppc32-linux, sizeof(unsigned
+   long) == 4. */
+
+#define CALL_FN_W_v(lval, fnptr)                                  \
+   do {                                                           \
+      volatile void*         _fnptr = (fnptr);                    \
+      volatile unsigned long _argvec[1];                          \
+      volatile unsigned long _res;                                \
+      _argvec[0] = (unsigned long)_fnptr;                         \
+      __asm__ volatile(                                           \
+         "mr 11,%1\n\t"                                           \
+         "lwz 11,0(11)\n\t"  /* target->r11 */                    \
+         VALGRIND_BRANCH_AND_LINK_TO_NOREDIR_R11                  \
+         "mr %0,3"                                                \
+         : /*out*/   "=r" (_res)                                  \
+         : /*in*/    "r" (&_argvec[0])                            \
+         : /*trash*/ "cc", "memory", __CALLER_SAVED_REGS          \
+      );                                                          \
+      lval = (__typeof__(lval)) _res;                             \
+   } while (0)
+
+#define CALL_FN_W_W(lval, fnptr, arg1)                            \
+   do {                                                           \
+      volatile void*         _fnptr = (fnptr);                    \
+      volatile unsigned long _argvec[2];                          \
+      volatile unsigned long _res;                                \
+      _argvec[0] = (unsigned long)_fnptr;                         \
+      _argvec[1] = (unsigned long)arg1;                           \
+      __asm__ volatile(                                           \
+         "mr 11,%1\n\t"                                           \
+         "lwz 3,4(11)\n\t"   /* arg1->r3 */                       \
+         "lwz 11,0(11)\n\t"  /* target->r11 */                    \
+         VALGRIND_BRANCH_AND_LINK_TO_NOREDIR_R11                  \
+         "mr %0,3"                                                \
+         : /*out*/   "=r" (_res)                                  \
+         : /*in*/    "r" (&_argvec[0])                            \
+         : /*trash*/ "cc", "memory", __CALLER_SAVED_REGS          \
+      );                                                          \
+      lval = (__typeof__(lval)) _res;                             \
+   } while (0)
+
+#define CALL_FN_W_WW(lval, fnptr, arg1,arg2)                      \
+   do {                                                           \
+      volatile void*         _fnptr = (fnptr);                    \
+      volatile unsigned long _argvec[3];                          \
+      volatile unsigned long _res;                                \
+      _argvec[0] = (unsigned long)_fnptr;                         \
+      _argvec[1] = (unsigned long)arg1;                           \
+      _argvec[2] = (unsigned long)arg2;                           \
+      __asm__ volatile(                                           \
+         "mr 11,%1\n\t"                                           \
+         "lwz 3,4(11)\n\t"   /* arg1->r3 */                       \
+         "lwz 4,8(11)\n\t"                                        \
+         "lwz 11,0(11)\n\t"  /* target->r11 */                    \
+         VALGRIND_BRANCH_AND_LINK_TO_NOREDIR_R11                  \
+         "mr %0,3"                                                \
+         : /*out*/   "=r" (_res)                                  \
+         : /*in*/    "r" (&_argvec[0])                            \
+         : /*trash*/ "cc", "memory", __CALLER_SAVED_REGS          \
+      );                                                          \
+      lval = (__typeof__(lval)) _res;                             \
+   } while (0)
 
 /* --------------------------- ppc64 --------------------------- */
 
