@@ -161,32 +161,33 @@
 /* ---------------------------- x86 ---------------------------- */
 
 #if defined(ARCH_x86)
+#define __SPECIAL_INSTRUCTION_PREAMBLE                            \
+                     "roll $3,  %%edi ; roll $13, %%edi\n\t"      \
+                     "roll $29, %%edi ; roll $19, %%edi\n\t"      \
+
 #define VALGRIND_DO_CLIENT_REQUEST(                               \
         _zzq_rlval, _zzq_default, _zzq_request,                   \
         _zzq_arg1, _zzq_arg2, _zzq_arg3, _zzq_arg4)               \
-  { unsigned int _zzq_args[5];                                    \
+  { volatile unsigned int _zzq_args[5];                           \
+    volatile unsigned int _zzq_result;                            \
     _zzq_args[0] = (unsigned int)(_zzq_request);                  \
     _zzq_args[1] = (unsigned int)(_zzq_arg1);                     \
     _zzq_args[2] = (unsigned int)(_zzq_arg2);                     \
     _zzq_args[3] = (unsigned int)(_zzq_arg3);                     \
     _zzq_args[4] = (unsigned int)(_zzq_arg4);                     \
-    __asm__ volatile(/* "Special" instruction preamble */         \
-                     "roll $3,  %%edi ; roll $13, %%edi\n\t"      \
-                     "roll $29, %%edi ; roll $19, %%edi\n\t"      \
+    __asm__ volatile(__SPECIAL_INSTRUCTION_PREAMBLE               \
                      /* %EDX = client_request ( %EAX ) */         \
                      "xchgl %%ebx,%%ebx"                          \
-                     : "=d" (_zzq_rlval)                          \
+                     : "=d" (_zzq_result)                         \
                      : "a" (&_zzq_args[0]), "0" (_zzq_default)    \
                      : "cc", "memory"                             \
                     );                                            \
+    _zzq_rlval = _zzq_result;                                     \
   }
 
 #define VALGRIND_GET_NRADDR(_zzq_rlval)                           \
-  { unsigned int __addr;                                          \
-    __asm__ volatile("movl $0, %%eax\n\t"                         \
-                     /* "Special" instruction preamble */         \
-                     "roll $3,  %%edi ; roll $13, %%edi\n\t"      \
-                     "roll $29, %%edi ; roll $19, %%edi\n\t"      \
+  { volatile unsigned int __addr;                                 \
+    __asm__ volatile(__SPECIAL_INSTRUCTION_PREAMBLE               \
                      /* %EAX = guest_NRADDR */                    \
                      "xchgl %%ecx,%%ecx"                          \
                      : "=a" (__addr)                              \
@@ -197,9 +198,7 @@
   }
 
 #define VALGRIND_CALL_NOREDIR_EAX                                 \
-                     /* "Special" instruction preamble */         \
-                     "roll $3,  %%edi ; roll $13, %%edi\n\t"      \
-                     "roll $29, %%edi ; roll $19, %%edi\n\t"      \
+                     __SPECIAL_INSTRUCTION_PREAMBLE               \
                      /* call-noredir *%EAX */                     \
                      "xchgl %%edx,%%edx\n\t"
 #endif /* ARCH_x86 */
@@ -207,24 +206,46 @@
 /* --------------------------- amd64 --------------------------- */
 
 #if defined(ARCH_amd64)
+#define __SPECIAL_INSTRUCTION_PREAMBLE                            \
+                     "rolq $3,  %%rdi ; rolq $13, %%rdi\n\t"      \
+                     "rolq $61, %%rdi ; rolq $51, %%rdi\n\t"      \
+
 #define VALGRIND_DO_CLIENT_REQUEST(                               \
         _zzq_rlval, _zzq_default, _zzq_request,                   \
         _zzq_arg1, _zzq_arg2, _zzq_arg3, _zzq_arg4)               \
-                                                                  \
-  { volatile unsigned long long _zzq_args[5];                     \
-    _zzq_args[0] = (volatile unsigned long long)(_zzq_request);   \
-    _zzq_args[1] = (volatile unsigned long long)(_zzq_arg1);      \
-    _zzq_args[2] = (volatile unsigned long long)(_zzq_arg2);      \
-    _zzq_args[3] = (volatile unsigned long long)(_zzq_arg3);      \
-    _zzq_args[4] = (volatile unsigned long long)(_zzq_arg4);      \
-    __asm__ volatile("roll $29, %%eax ; roll $3, %%eax\n\t"       \
-                     "rorl $27, %%eax ; rorl $5, %%eax\n\t"       \
-                     "roll $13, %%eax ; roll $19, %%eax"          \
-                     : "=d" (_zzq_rlval)                          \
+  { volatile unsigned long long int _zzq_args[5];                 \
+    volatile unsigned long long int _zzq_result;                  \
+    _zzq_args[0] = (unsigned long long int)(_zzq_request);        \
+    _zzq_args[1] = (unsigned long long int)(_zzq_arg1);           \
+    _zzq_args[2] = (unsigned long long int)(_zzq_arg2);           \
+    _zzq_args[3] = (unsigned long long int)(_zzq_arg3);           \
+    _zzq_args[4] = (unsigned long long int)(_zzq_arg4);           \
+    __asm__ volatile(__SPECIAL_INSTRUCTION_PREAMBLE               \
+                     /* %RDX = client_request ( %RAX ) */         \
+                     "xchgq %%rbx,%%rbx"                          \
+                     : "=d" (_zzq_result)                         \
                      : "a" (&_zzq_args[0]), "0" (_zzq_default)    \
                      : "cc", "memory"                             \
                     );                                            \
+    _zzq_rlval = _zzq_result;                                     \
   }
+
+#define VALGRIND_GET_NRADDR(_zzq_rlval)                           \
+  { volatile unsigned long long int __addr;                       \
+    __asm__ volatile(__SPECIAL_INSTRUCTION_PREAMBLE               \
+                     /* %RAX = guest_NRADDR */                    \
+                     "xchgq %%rcx,%%rcx"                          \
+                     : "=a" (__addr)                              \
+                     :                                            \
+                     : "cc", "memory"                             \
+                    );                                            \
+    _zzq_rlval = (void*)__addr;                                   \
+  }
+
+#define VALGRIND_CALL_NOREDIR_RAX                                 \
+                     __SPECIAL_INSTRUCTION_PREAMBLE               \
+                     /* call-noredir *%RAX */                     \
+                     "xchgq %%rdx,%%rdx\n\t"
 #endif /* ARCH_amd64 */
 
 /* --------------------------- ppc32 --------------------------- */
@@ -305,7 +326,7 @@
 
    The naming scheme is as follows:
 
-      CALL_FN_{W,v}_{v,W,WW,WWW,WWWW,WWWWW,WWWWWW,etc}
+      CALL_FN_{W,v}_{v,W,WW,WWW,WWWW,5W,6W,7W,etc}
 
    'W' stands for "word" and 'v' for "void".  Hence there are
    different macros for calling arity 0, 1, 2, 3, 4, etc, functions,
@@ -340,9 +361,9 @@
 
 #define CALL_FN_W_v(lval, fnptr)                                  \
    do {                                                           \
-      void*         _fnptr = (fnptr);                             \
-      unsigned long _argvec[1];                                   \
-      unsigned long _res;                                         \
+      volatile void*         _fnptr = (fnptr);                    \
+      volatile unsigned long _argvec[1];                          \
+      volatile unsigned long _res;                                \
       _argvec[0] = (unsigned long)_fnptr;                         \
       __asm__ volatile(                                           \
          "movl (%%eax), %%eax\n\t"  /* target->%eax */            \
@@ -359,9 +380,9 @@
 
 #define CALL_FN_W_W(lval, fnptr, arg1)                            \
    do {                                                           \
-      void*         _fnptr = (fnptr);                             \
-      unsigned long _argvec[2];                                   \
-      unsigned long _res;                                         \
+      volatile void*         _fnptr = (fnptr);                    \
+      volatile unsigned long _argvec[2];                          \
+      volatile unsigned long _res;                                \
       _argvec[0] = (unsigned long)_fnptr;                         \
       _argvec[1] = (unsigned long)(arg1);                         \
       __asm__ volatile(                                           \
@@ -378,9 +399,9 @@
 
 #define CALL_FN_W_WW(lval, fnptr, arg1,arg2)                      \
    do {                                                           \
-      void*         _fnptr = (fnptr);                             \
-      unsigned long _argvec[3];                                   \
-      unsigned long _res;                                         \
+      volatile void*         _fnptr = (fnptr);                    \
+      volatile unsigned long _argvec[3];                          \
+      volatile unsigned long _res;                                \
       _argvec[0] = (unsigned long)_fnptr;                         \
       _argvec[1] = (unsigned long)(arg1);                         \
       _argvec[2] = (unsigned long)(arg2);                         \
@@ -399,9 +420,9 @@
 
 #define CALL_FN_W_WWWW(lval, fnptr, arg1,arg2,arg3,arg4)          \
    do {                                                           \
-      void*         _fnptr = (fnptr);                             \
-      unsigned long _argvec[5];                                   \
-      unsigned long _res;                                         \
+      volatile void*         _fnptr = (fnptr);                    \
+      volatile unsigned long _argvec[5];                          \
+      volatile unsigned long _res;                                \
       _argvec[0] = (unsigned long)_fnptr;                         \
       _argvec[1] = (unsigned long)(arg1);                         \
       _argvec[2] = (unsigned long)(arg2);                         \
@@ -424,9 +445,9 @@
 
 #define CALL_FN_W_5W(lval, fnptr, arg1,arg2,arg3,arg4,arg5)       \
    do {                                                           \
-      void*         _fnptr = (fnptr);                             \
-      unsigned long _argvec[6];                                   \
-      unsigned long _res;                                         \
+      volatile void*         _fnptr = (fnptr);                    \
+      volatile unsigned long _argvec[6];                          \
+      volatile unsigned long _res;                                \
       _argvec[0] = (unsigned long)_fnptr;                         \
       _argvec[1] = (unsigned long)(arg1);                         \
       _argvec[2] = (unsigned long)(arg2);                         \
@@ -451,9 +472,9 @@
 
 #define CALL_FN_W_6W(lval, fnptr, arg1,arg2,arg3,arg4,arg5,arg6)  \
    do {                                                           \
-      void*         _fnptr = (fnptr);                             \
-      unsigned long _argvec[7];                                   \
-      unsigned long _res;                                         \
+      volatile void*         _fnptr = (fnptr);                    \
+      volatile unsigned long _argvec[7];                          \
+      volatile unsigned long _res;                                \
       _argvec[0] = (unsigned long)_fnptr;                         \
       _argvec[1] = (unsigned long)(arg1);                         \
       _argvec[2] = (unsigned long)(arg2);                         \
@@ -481,9 +502,9 @@
 #define CALL_FN_W_7W(lval, fnptr, arg1,arg2,arg3,arg4,arg5,arg6,  \
                                   arg7)                           \
    do {                                                           \
-      void*         _fnptr = (fnptr);                             \
-      unsigned long _argvec[8];                                   \
-      unsigned long _res;                                         \
+      volatile void*         _fnptr = (fnptr);                    \
+      volatile unsigned long _argvec[8];                          \
+      volatile unsigned long _res;                                \
       _argvec[0] = (unsigned long)_fnptr;                         \
       _argvec[1] = (unsigned long)(arg1);                         \
       _argvec[2] = (unsigned long)(arg2);                         \
@@ -513,9 +534,9 @@
 #define CALL_FN_W_8W(lval, fnptr, arg1,arg2,arg3,arg4,arg5,arg6,  \
                                   arg7,arg8)                      \
    do {                                                           \
-      void*         _fnptr = (fnptr);                             \
-      unsigned long _argvec[9];                                   \
-      unsigned long _res;                                         \
+      volatile void*         _fnptr = (fnptr);                    \
+      volatile unsigned long _argvec[9];                          \
+      volatile unsigned long _res;                                \
       _argvec[0] = (unsigned long)_fnptr;                         \
       _argvec[1] = (unsigned long)(arg1);                         \
       _argvec[2] = (unsigned long)(arg2);                         \
@@ -548,9 +569,9 @@
                                    arg6,arg7,arg8,arg9,arg10,     \
                                    arg11,arg12)                   \
    do {                                                           \
-      void*         _fnptr = (fnptr);                             \
-      unsigned long _argvec[13];                                  \
-      unsigned long _res;                                         \
+      volatile void*         _fnptr = (fnptr);                    \
+      volatile unsigned long _argvec[13];                         \
+      volatile unsigned long _res;                                \
       _argvec[0] = (unsigned long)_fnptr;                         \
       _argvec[1] = (unsigned long)(arg1);                         \
       _argvec[2] = (unsigned long)(arg2);                         \
@@ -590,6 +611,57 @@
 #endif /* ARCH_x86 */
 
 /* --------------------------- amd64 --------------------------- */
+
+/* ARGREGS: rdi rsi rdx rcx r8 r9 (the rest on stack in R-to-L order) */
+
+#if defined(ARCH_amd64)
+
+/* These regs are trashed by the hidden call. */
+#define __CALLER_SAVED_REGS /*"rax",*/ "rcx", "rdx", "rsi",       \
+                            "rdi", "r8", "r9", "r10", "r11"
+
+/* These CALL_FN_ macros assume that on amd64-linux, sizeof(unsigned
+   long) == 8. */
+
+#define CALL_FN_W_v(lval, fnptr)                                  \
+   do {                                                           \
+      volatile void*         _fnptr = (fnptr);                    \
+      volatile unsigned long _argvec[1];                          \
+      volatile unsigned long _res;                                \
+      _argvec[0] = (unsigned long)_fnptr;                         \
+      __asm__ volatile(                                           \
+         "movq (%%rax), %%rax\n\t"  /* target->%rax */            \
+         VALGRIND_CALL_NOREDIR_RAX                                \
+         : /*out*/   "=a" (_res)                                  \
+         : /*in*/    "a" (&_argvec[0])                            \
+         : /*trash*/ "cc", "memory", __CALLER_SAVED_REGS          \
+      );                                                          \
+      lval = (__typeof__(lval)) _res;                             \
+   } while (0)
+
+#define CALL_FN_v_v(fnptr)                                        \
+   do { volatile unsigned long _junk;                             \
+        CALL_FN_W_v(_junk,fnptr); } while (0)
+
+#define CALL_FN_W_W(lval, fnptr, arg1)                            \
+   do {                                                           \
+      volatile void*         _fnptr = (fnptr);                    \
+      volatile unsigned long _argvec[2];                          \
+      volatile unsigned long _res;                                \
+      _argvec[0] = (unsigned long)_fnptr;                         \
+      _argvec[1] = (unsigned long)(arg1);                         \
+      __asm__ volatile(                                           \
+         "movq 8(%%rax), %%rdi\n\t"                               \
+         "movq (%%rax), %%rax\n\t"  /* target->%rax */            \
+         VALGRIND_CALL_NOREDIR_RAX                                \
+         : /*out*/   "=a" (_res)                                  \
+         : /*in*/    "a" (&_argvec[0])                            \
+         : /*trash*/ "cc", "memory", __CALLER_SAVED_REGS          \
+      );                                                          \
+      lval = (__typeof__(lval)) _res;                             \
+   } while (0)
+
+#endif /* ARCH_amd64 */
 
 /* --------------------------- ppc32 --------------------------- */
 

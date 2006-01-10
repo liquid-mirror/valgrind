@@ -470,8 +470,17 @@ static void maybe_add_active ( Active act )
       Kludge: because this can get called befor the trampoline area (a
       bunch of magic 'to' addresses) has its ownership changed from V
       to C, we can't check the 'to' address similarly.  Sigh.
-   */
-   if (!is_plausible_guest_addr(act.from_addr)) {
+
+      amd64-linux hack: the vsysinfo pages appear to have no
+      permissions
+         ffffffffff600000-ffffffffffe00000 ---p 00000000 00:00 0
+      so skip the check for them.  */
+   if (!is_plausible_guest_addr(act.from_addr)
+#      if defined(VGP_amd64_linux)
+       && act.from_addr != 0xFFFFFFFFFF600000ULL
+       && act.from_addr != 0xFFFFFFFFFF600400ULL
+#      endif
+      ) {
       what = "redirection from-address is in non-executable area";
       goto bad;
    }
