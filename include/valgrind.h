@@ -643,6 +643,7 @@
    do { volatile unsigned long _junk;                             \
         CALL_FN_W_v(_junk,fnptr); } while (0)
 
+
 #define CALL_FN_W_W(lval, fnptr, arg1)                            \
    do {                                                           \
       volatile void*         _fnptr = (fnptr);                    \
@@ -660,6 +661,35 @@
       );                                                          \
       lval = (__typeof__(lval)) _res;                             \
    } while (0)
+
+#define CALL_FN_v_W(fnptr, arg1)                                  \
+   do { volatile unsigned long _junk;                             \
+        CALL_FN_W_W(_junk,fnptr,arg1); } while (0)
+
+
+#define CALL_FN_W_WW(lval, fnptr, arg1,arg2)                      \
+   do {                                                           \
+      volatile void*         _fnptr = (fnptr);                    \
+      volatile unsigned long _argvec[3];                          \
+      volatile unsigned long _res;                                \
+      _argvec[0] = (unsigned long)_fnptr;                         \
+      _argvec[1] = (unsigned long)(arg1);                         \
+      _argvec[2] = (unsigned long)(arg2);                         \
+      __asm__ volatile(                                           \
+         "movq 16(%%rax), %%rsi\n\t"                              \
+         "movq 8(%%rax), %%rdi\n\t"                               \
+         "movq (%%rax), %%rax\n\t"  /* target->%rax */            \
+         VALGRIND_CALL_NOREDIR_RAX                                \
+         : /*out*/   "=a" (_res)                                  \
+         : /*in*/    "a" (&_argvec[0])                            \
+         : /*trash*/ "cc", "memory", __CALLER_SAVED_REGS          \
+      );                                                          \
+      lval = (__typeof__(lval)) _res;                             \
+   } while (0)
+
+#define CALL_FN_v_WW(fnptr, arg1,arg2)                            \
+   do { volatile unsigned long _junk;                             \
+        CALL_FN_W_WW(_junk,fnptr,arg1,arg2); } while (0)
 
 #endif /* ARCH_amd64 */
 
