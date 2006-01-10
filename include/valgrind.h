@@ -348,6 +348,21 @@
    one of the CALL_FN_ macros. */
 #define VALGRIND_GET_ORIG_FN(_lval)  VALGRIND_GET_NRADDR(_lval)
 
+/* Derivatives of the main macros below, for calling functions
+   returning void. */
+
+#define CALL_FN_v_v(fnptr)                                        \
+   do { volatile unsigned long _junk;                             \
+        CALL_FN_W_v(_junk,fnptr); } while (0)
+
+#define CALL_FN_v_W(fnptr, arg1)                                  \
+   do { volatile unsigned long _junk;                             \
+        CALL_FN_W_W(_junk,fnptr,arg1); } while (0)
+
+#define CALL_FN_v_WW(fnptr, arg1,arg2)                            \
+   do { volatile unsigned long _junk;                             \
+        CALL_FN_W_WW(_junk,fnptr,arg1,arg2); } while (0)
+
 /* ---------------------------- x86 ---------------------------- */
 
 #if defined(ARCH_x86)
@@ -374,9 +389,6 @@
       );                                                          \
       lval = (__typeof__(lval)) _res;                             \
    } while (0)
-
-#define CALL_FN_v_v(fnptr)                                        \
-   do { unsigned long _junk; CALL_FN_W_v(_junk,fnptr); } while (0)
 
 #define CALL_FN_W_W(lval, fnptr, arg1)                            \
    do {                                                           \
@@ -639,11 +651,6 @@
       lval = (__typeof__(lval)) _res;                             \
    } while (0)
 
-#define CALL_FN_v_v(fnptr)                                        \
-   do { volatile unsigned long _junk;                             \
-        CALL_FN_W_v(_junk,fnptr); } while (0)
-
-
 #define CALL_FN_W_W(lval, fnptr, arg1)                            \
    do {                                                           \
       volatile void*         _fnptr = (fnptr);                    \
@@ -661,11 +668,6 @@
       );                                                          \
       lval = (__typeof__(lval)) _res;                             \
    } while (0)
-
-#define CALL_FN_v_W(fnptr, arg1)                                  \
-   do { volatile unsigned long _junk;                             \
-        CALL_FN_W_W(_junk,fnptr,arg1); } while (0)
-
 
 #define CALL_FN_W_WW(lval, fnptr, arg1,arg2)                      \
    do {                                                           \
@@ -686,10 +688,6 @@
       );                                                          \
       lval = (__typeof__(lval)) _res;                             \
    } while (0)
-
-#define CALL_FN_v_WW(fnptr, arg1,arg2)                            \
-   do { volatile unsigned long _junk;                             \
-        CALL_FN_W_WW(_junk,fnptr,arg1,arg2); } while (0)
 
 #endif /* ARCH_amd64 */
 
