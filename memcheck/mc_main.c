@@ -521,7 +521,7 @@ UChar extract_vabits16_from_vabits32 ( Addr a, UChar vabits32 )
    return 0xf & vabits32;              // mask out the rest
 }
 
-// Note that these two are only used in slow cases.  The fast cases do
+// Note that these four are only used in slow cases.  The fast cases do
 // clever things like combine the auxmap check (in
 // get_secmap_{read,writ}able) with alignment checks.
 
@@ -540,6 +540,56 @@ UChar get_vabits8 ( Addr a )
    UWord   sm_off   = SM_OFF(a);
    UChar   vabits32 = sm->vabits32[sm_off];
    return extract_vabits8_from_vabits32(a, vabits32);
+}
+
+// Forward declarations
+static UWord get_sec_vbits8(Addr a);
+static void  set_sec_vbits8(Addr a, UWord vbits8);
+
+// Returns False if there was an addressability error.
+static inline
+Bool set_vbits8 ( Addr a, UChar vbits8 )
+{
+   Bool  ok      = True;
+   UChar vabits8 = get_vabits8(a);
+   if ( VA_BITS8_NOACCESS != vabits8 ) {
+      // Addressable.  Convert in-register format to in-memory format.
+      // Also remove any existing sec V bit entry for the byte if no
+      // longer necessary.
+      if      ( V_BITS8_VALID   == vbits8 ) { vabits8 = VA_BITS8_READABLE; }
+      else if ( V_BITS8_INVALID == vbits8 ) { vabits8 = VA_BITS8_WRITABLE; }
+      else                                  { vabits8 = VA_BITS8_OTHER;
+                                              set_sec_vbits8(a, vbits8);  }
+      set_vabits8(a, vabits8);
+
+   } else {
+      // Unaddressable!  Do nothing -- when writing to unaddressable
+      // memory it acts as a black hole, and the V bits can never be seen
+      // again.  So we don't have to write them at all.
+      ok = False;
+   }
+   return ok;
+}
+
+// Returns False if there was an addressability error.  In that case, we put
+// all defined bits into vbits8.
+static inline
+Bool get_vbits8 ( Addr a, UChar* vbits8 )
+{
+   Bool  ok      = True;
+   UChar vabits8 = get_vabits8(a);
+
+   // Convert the in-memory format to in-register format.
+   if      ( VA_BITS8_READABLE == vabits8 ) { *vbits8 = V_BITS8_VALID;   }
+   else if ( VA_BITS8_WRITABLE == vabits8 ) { *vbits8 = V_BITS8_INVALID; }
+   else if ( VA_BITS8_NOACCESS == vabits8 ) {
+      *vbits8 = V_BITS8_VALID;    // Make V bits defined!
+      ok = False;
+   } else {
+      tl_assert( VA_BITS8_OTHER == vabits8 );
+      *vbits8 = get_sec_vbits8(a);
+   }
+   return ok;
 }
 
 
@@ -768,7 +818,8 @@ ULong mc_LOADVn_slow ( Addr a, SizeT szB, Bool bigendian )
    SizeT n_addrs_bad = 0;
    Addr  ai;
    Bool  partial_load_exemption_applies;
-   UWord vbits8, vabits8;
+   UChar vbits8;
+   Bool  ok;
 
    PROF_EVENT(30, "mc_LOADVn_slow");
    tl_assert(szB == 8 || szB == 4 || szB == 2 || szB == 1);
@@ -776,17 +827,8 @@ ULong mc_LOADVn_slow ( Addr a, SizeT szB, Bool bigendian )
    for (i = szB-1; i >= 0; i--) {
       PROF_EVENT(31, "mc_LOADVn_slow(loop)");
       ai = a+byte_offset_w(szB,bigendian,i);
-      vabits8 = get_vabits8(ai);
-      // Convert the in-memory format to in-register format.
-      if      ( VA_BITS8_READABLE == vabits8 ) { vbits8 = V_BITS8_VALID;   }
-      else if ( VA_BITS8_WRITABLE == vabits8 ) { vbits8 = V_BITS8_INVALID; }
-      else if ( VA_BITS8_NOACCESS == vabits8 ) {
-         vbits8 = V_BITS8_VALID;    // Make V bits defined!
-         n_addrs_bad++;
-      } else {
-         tl_assert( VA_BITS8_OTHER == vabits8 );
-         vbits8 = get_sec_vbits8(ai);
-      }
+      ok = get_vbits8(ai, &vbits8);
+      if (!ok) n_addrs_bad++;
       vbits64 <<= 8; 
       vbits64 |= vbits8;
    }
@@ -820,8 +862,9 @@ static
 void mc_STOREVn_slow ( Addr a, SizeT szB, ULong vbytes, Bool bigendian )
 {
    SizeT i, n_addrs_bad = 0;
-   UWord vbits8, vabits8;
+   UChar vbits8;
    Addr  ai;
+   Bool  ok;
 
    PROF_EVENT(35, "mc_STOREVn_slow");
    tl_assert(szB == 8 || szB == 4 || szB == 2 || szB == 1);
@@ -831,25 +874,10 @@ void mc_STOREVn_slow ( Addr a, SizeT szB, ULong vbytes, Bool bigendian )
       location. */
    for (i = 0; i < szB; i++) {
       PROF_EVENT(36, "mc_STOREVn_slow(loop)");
-      ai = a+byte_offset_w(szB,bigendian,i);
-      vbits8  = vbytes & 0xff;
-      vabits8 = get_vabits8(ai);
-      if ( VA_BITS8_NOACCESS != vabits8 ) {
-         // Addressable.  Convert in-register format to in-memory format.
-         // Also remove any existing sec V bit entry for the byte if no
-         // longer necessary.
-         if      ( V_BITS8_VALID   == vbits8 ) { vabits8 = VA_BITS8_READABLE; }
-         else if ( V_BITS8_INVALID == vbits8 ) { vabits8 = VA_BITS8_WRITABLE; }
-         else                                  { vabits8 = VA_BITS8_OTHER;
-                                                 set_sec_vbits8(ai, vbits8);  }
-         set_vabits8(ai, vabits8);
-
-      } else {
-         // Unaddressable!  Do nothing -- when writing to unaddressable
-         // memory it acts as a black hole, and the V bits can never be seen
-         // again.  So we don't have to write them at all.
-         n_addrs_bad++;
-      }
+      ai     = a+byte_offset_w(szB,bigendian,i);
+      vbits8 = vbytes & 0xff;
+      ok     = set_vbits8(ai, vbits8);
+      if (!ok) n_addrs_bad++;
       vbytes >>= 8;
    }
 
@@ -857,52 +885,6 @@ void mc_STOREVn_slow ( Addr a, SizeT szB, ULong vbytes, Bool bigendian )
    if (n_addrs_bad > 0)
       mc_record_address_error( VG_(get_running_tid)(), a, szB, True );
 }
-
-
-//zz /* Reading/writing of the bitmaps, for aligned word-sized accesses. */
-//zz 
-//zz static INLINE UChar get_abits4_ALIGNED ( Addr a )
-//zz {
-//zz    SecMap* sm;
-//zz    UInt    sm_off;
-//zz    UChar   abits8;
-//zz    PROF_EVENT(24);
-//zz #  ifdef VG_DEBUG_MEMORY
-//zz    tl_assert(VG_IS_4_ALIGNED(a));
-//zz #  endif
-//zz    sm     = primary_map[PM_IDX(a)];
-//zz    sm_off = SM_OFF(a);
-//zz    abits8 = sm->abits[sm_off >> 3];
-//zz    abits8 >>= (a & 4 /* 100b */);   /* a & 4 is either 0 or 4 */
-//zz    abits8 &= 0x0F;
-//zz    return abits8;
-//zz }
-//zz 
-//zz static UInt INLINE get_vbytes4_ALIGNED ( Addr a )
-//zz {
-//zz    SecMap* sm     = primary_map[PM_IDX(a)];
-//zz    UInt    sm_off = SM_OFF(a);
-//zz    PROF_EVENT(25);
-//zz #  ifdef VG_DEBUG_MEMORY
-//zz    tl_assert(VG_IS_4_ALIGNED(a));
-//zz #  endif
-//zz    return ((UInt*)(sm->vbyte))[sm_off >> 2];
-//zz }
-//zz 
-//zz 
-//zz static void INLINE set_vbytes4_ALIGNED ( Addr a, UInt vbytes )
-//zz {
-//zz    SecMap* sm;
-//zz    UInt    sm_off;
-//zz    ENSURE_MAPPABLE(a, "set_vbytes4_ALIGNED");
-//zz    sm     = primary_map[PM_IDX(a)];
-//zz    sm_off = SM_OFF(a);
-//zz    PROF_EVENT(23);
-//zz #  ifdef VG_DEBUG_MEMORY
-//zz    tl_assert(VG_IS_4_ALIGNED(a));
-//zz #  endif
-//zz    ((UInt*)(sm->vbyte))[sm_off >> 2] = vbytes;
-//zz }
 
 
 /*------------------------------------------------------------*/
@@ -3191,77 +3173,70 @@ VG_REGPARM(1) void MC_(helperc_complain_undef) ( HWord sz )
 }
 
 
-//zz /*------------------------------------------------------------*/
-//zz /*--- Metadata get/set functions, for client requests.     ---*/
-//zz /*------------------------------------------------------------*/
-//zz 
-//zz /* Copy Vbits for src into vbits. Returns: 1 == OK, 2 == alignment
-//zz    error, 3 == addressing error. */
-//zz static Int mc_get_or_set_vbits_for_client ( 
-//zz    ThreadId tid,
-//zz    Addr dataV, 
-//zz    Addr vbitsV, 
-//zz    SizeT size, 
-//zz    Bool setting /* True <=> set vbits,  False <=> get vbits */ 
-//zz )
-//zz {
-//zz    Bool addressibleD = True;
-//zz    Bool addressibleV = True;
-//zz    UInt* data  = (UInt*)dataV;
-//zz    UInt* vbits = (UInt*)vbitsV;
-//zz    SizeT szW   = size / 4; /* sigh */
-//zz    SizeT i;
-//zz    UInt* dataP  = NULL; /* bogus init to keep gcc happy */
-//zz    UInt* vbitsP = NULL; /* ditto */
-//zz 
-//zz    /* Check alignment of args. */
-//zz    if (!(VG_IS_4_ALIGNED(data) && VG_IS_4_ALIGNED(vbits)))
-//zz       return 2;
-//zz    if ((size & 3) != 0)
-//zz       return 2;
-//zz   
-//zz    /* Check that arrays are addressible. */
-//zz    for (i = 0; i < szW; i++) {
-//zz       dataP  = &data[i];
-//zz       vbitsP = &vbits[i];
-//zz       if (get_abits4_ALIGNED((Addr)dataP) != V_NIBBLE_VALID) {
-//zz          addressibleD = False;
-//zz          break;
-//zz       }
-//zz       if (get_abits4_ALIGNED((Addr)vbitsP) != V_NIBBLE_VALID) {
-//zz          addressibleV = False;
-//zz          break;
-//zz       }
-//zz    }
-//zz    if (!addressibleD) {
-//zz       mc_record_address_error( tid, (Addr)dataP, 4, 
-//zz                                   setting ? True : False );
-//zz       return 3;
-//zz    }
-//zz    if (!addressibleV) {
-//zz       mc_record_address_error( tid, (Addr)vbitsP, 4, 
-//zz                                   setting ? False : True );
-//zz       return 3;
-//zz    }
-//zz  
-//zz    /* Do the copy */
-//zz    if (setting) {
-//zz       /* setting */
-//zz       for (i = 0; i < szW; i++) {
-//zz          if (get_vbytes4_ALIGNED( (Addr)&vbits[i] ) != V_WORD_VALID)
-//zz             mc_record_value_error(tid, 4);
-//zz          set_vbytes4_ALIGNED( (Addr)&data[i], vbits[i] );
-//zz       }
-//zz    } else {
-//zz       /* getting */
-//zz       for (i = 0; i < szW; i++) {
-//zz          vbits[i] = get_vbytes4_ALIGNED( (Addr)&data[i] );
-//zz          set_vbytes4_ALIGNED( (Addr)&vbits[i], V_WORD_VALID );
-//zz       }
-//zz    }
-//zz 
-//zz    return 1;
-//zz }
+/*------------------------------------------------------------*/
+/*--- Metadata get/set functions, for client requests.     ---*/
+/*------------------------------------------------------------*/
+
+// Nb: this expands the V+A bits out into register-form V bits, even though
+// they're in memory.  This is for backward compatibility, and because it's
+// probably what the user wants.
+
+/* Copy Vbits from/to address 'a'. Returns: 1 == OK, 2 == alignment
+   error [no longer used], 3 == addressing error. */
+static Int mc_get_or_set_vbits_for_client ( 
+   ThreadId tid,
+   Addr a, 
+   Addr vbits, 
+   SizeT szB, 
+   Bool setting /* True <=> set vbits,  False <=> get vbits */ 
+)
+{
+   SizeT i;
+   Bool  ok;
+   UChar vbits8;
+
+   /* Check that arrays are addressible before doing any getting/setting. */
+   for (i = 0; i < szB; i++) {
+      if (VA_BITS8_NOACCESS == get_vabits8(a + i)) {
+         mc_record_address_error( tid, a + i,     1, setting ? True : False );
+         return 3;
+      }
+      if (VA_BITS8_NOACCESS == get_vabits8(vbits + i)) {
+         mc_record_address_error( tid, vbits + i, 1, setting ? False : True );
+         return 3;
+      }
+   }
+
+   /* Do the copy */
+   if (setting) {
+
+      // It's actually a tool ClientReq, but Vg_CoreClientReq is the closest
+      // thing we have... XXX: actually, mc_check_is_readable() can't handle
+      // that...
+      mc_check_is_readable(Vg_CoreClientReq, tid, "SET_VBITS(vbits)",
+                           vbits, szB);
+      
+      /* setting */
+      for (i = 0; i < szB; i++) {
+         ok = set_vbits8(a + i, ((UChar*)vbits)[i]);
+         tl_assert(ok);
+      }
+   } else {
+      /* getting */
+      for (i = 0; i < szB; i++) {
+         ok = get_vbits8(a + i, &vbits8);
+         tl_assert(ok);
+// XXX: used to do this, but it's a pain
+//         if (V_BITS8_VALID != vbits8)
+//            mc_record_value_error(tid, 1);
+         ((UChar*)vbits)[i] = vbits8;
+      }
+      // The bytes in vbits[] have now been set, so mark them as such.
+      MC_(make_readable)(vbits, szB);
+   }
+
+   return 1;
+}
 
 
 /*------------------------------------------------------------*/
@@ -3745,21 +3720,21 @@ static Bool mc_handle_client_request ( ThreadId tid, UWord* arg, UWord* ret )
          }
          break;
 
-//zz       case VG_USERREQ__GET_VBITS:
-//zz          /* Returns: 1 == OK, 2 == alignment error, 3 == addressing
-//zz             error. */
-//zz          /* VG_(printf)("get_vbits %p %p %d\n", arg[1], arg[2], arg[3] ); */
-//zz          *ret = mc_get_or_set_vbits_for_client
-//zz                    ( tid, arg[1], arg[2], arg[3], False /* get them */ );
-//zz          break;
-//zz 
-//zz       case VG_USERREQ__SET_VBITS:
-//zz          /* Returns: 1 == OK, 2 == alignment error, 3 == addressing
-//zz             error. */
-//zz          /* VG_(printf)("set_vbits %p %p %d\n", arg[1], arg[2], arg[3] ); */
-//zz          *ret = mc_get_or_set_vbits_for_client
-//zz                    ( tid, arg[1], arg[2], arg[3], True /* set them */ );
-//zz          break;
+      case VG_USERREQ__GET_VBITS:
+         /* Returns: 1 == OK, 2 == alignment error, 3 == addressing
+            error. */
+         /* VG_(printf)("get_vbits %p %p %d\n", arg[1], arg[2], arg[3] ); */
+         *ret = mc_get_or_set_vbits_for_client
+                   ( tid, arg[1], arg[2], arg[3], False /* get them */ );
+         break;
+
+      case VG_USERREQ__SET_VBITS:
+         /* Returns: 1 == OK, 2 == alignment error, 3 == addressing
+            error. */
+         /* VG_(printf)("set_vbits %p %p %d\n", arg[1], arg[2], arg[3] ); */
+         *ret = mc_get_or_set_vbits_for_client
+                   ( tid, arg[1], arg[2], arg[3], True /* set them */ );
+         break;
 
       case VG_USERREQ__COUNT_LEAKS: { /* count leaked bytes */
          UWord** argp = (UWord**)arg;
@@ -4089,3 +4064,4 @@ VG_DETERMINE_INTERFACE_VERSION(mc_pre_clo_init)
 /*--------------------------------------------------------------------*/
 /*--- end                                                          ---*/
 /*--------------------------------------------------------------------*/
+

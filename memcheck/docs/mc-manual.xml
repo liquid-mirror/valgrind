@@ -1074,8 +1074,7 @@ arguments.</para>
     you to get and set the V (validity) bits for an address
     range.  You should probably only set V bits that you have got
     with <computeroutput>VALGRIND_GET_VBITS</computeroutput>.
-    Only for those who really know what they are doing.  Note: currently
-    disabled in Valgrind 3.1.0.</para>
+    Only for those who really know what they are doing.</para>
   </listitem>
 
 </itemizedlist>
