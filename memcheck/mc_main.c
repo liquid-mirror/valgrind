@@ -2721,7 +2721,7 @@ ULong mc_LOADV8 ( Addr a, Bool isBigEndian )
 
    if (EXPECTED_NOT_TAKEN( UNALIGNED_OR_HIGH(a,8) )) {
       PROF_EVENT(201, "mc_LOADV8-slow1");
-      return (UWord)mc_LOADVn_slow( a, 8, isBigEndian );
+      return (ULong)mc_LOADVn_slow( a, 8, isBigEndian );
    }
 
    sm       = get_secmap_readable_low(a);
