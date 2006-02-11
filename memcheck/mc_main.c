@@ -2724,13 +2724,11 @@ ULong mc_LOADV8 ( Addr a, Bool isBigEndian )
    }
 }
 
-VG_REGPARM(1)
-ULong MC_(helperc_LOADV8be) ( Addr a )
+VG_REGPARM(1) ULong MC_(helperc_LOADV8be) ( Addr a )
 {
    return mc_LOADV8(a, True);
 }
-VG_REGPARM(1)
-ULong MC_(helperc_LOADV8le) ( Addr a )
+VG_REGPARM(1) ULong MC_(helperc_LOADV8le) ( Addr a )
 {
    return mc_LOADV8(a, False);
 }
@@ -2784,13 +2782,11 @@ void mc_STOREV8 ( Addr a, ULong vbytes, Bool isBigEndian )
    }
 }
 
-VG_REGPARM(1)
-void MC_(helperc_STOREV8be) ( Addr a, ULong vbytes )
+VG_REGPARM(1) void MC_(helperc_STOREV8be) ( Addr a, ULong vbytes )
 {
    mc_STOREV8(a, vbytes, True);
 }
-VG_REGPARM(1)
-void MC_(helperc_STOREV8le) ( Addr a, ULong vbytes )
+VG_REGPARM(1) void MC_(helperc_STOREV8le) ( Addr a, ULong vbytes )
 {
    mc_STOREV8(a, vbytes, False);
 }
@@ -2834,13 +2830,11 @@ UWord mc_LOADV4 ( Addr a, Bool isBigEndian )
    }
 }
 
-VG_REGPARM(1)
-UWord MC_(helperc_LOADV4be) ( Addr a )
+VG_REGPARM(1) UWord MC_(helperc_LOADV4be) ( Addr a )
 {
    return mc_LOADV4(a, True);
 }
-VG_REGPARM(1)
-UWord MC_(helperc_LOADV4le) ( Addr a )
+VG_REGPARM(1) UWord MC_(helperc_LOADV4le) ( Addr a )
 {
    return mc_LOADV4(a, False);
 }
@@ -2926,13 +2920,11 @@ void mc_STOREV4 ( Addr a, UWord vbytes, Bool isBigEndian )
 //---------------------------------------------------------------------------
 }
 
-VG_REGPARM(2)
-void MC_(helperc_STOREV4be) ( Addr a, UWord vbytes )
+VG_REGPARM(2) void MC_(helperc_STOREV4be) ( Addr a, UWord vbytes )
 {
    mc_STOREV4(a, vbytes, True);
 }
-VG_REGPARM(2)
-void MC_(helperc_STOREV4le) ( Addr a, UWord vbytes )
+VG_REGPARM(2) void MC_(helperc_STOREV4le) ( Addr a, UWord vbytes )
 {
    mc_STOREV4(a, vbytes, False);
 }
@@ -2979,13 +2971,11 @@ UWord mc_LOADV2 ( Addr a, Bool isBigEndian )
    }
 }
 
-VG_REGPARM(1)
-UWord MC_(helperc_LOADV2be) ( Addr a )
+VG_REGPARM(1) UWord MC_(helperc_LOADV2be) ( Addr a )
 {
    return mc_LOADV2(a, True);
 }
-VG_REGPARM(1)
-UWord MC_(helperc_LOADV2le) ( Addr a )
+VG_REGPARM(1) UWord MC_(helperc_LOADV2le) ( Addr a )
 {
    return mc_LOADV2(a, False);
 }
@@ -3038,13 +3028,11 @@ void mc_STOREV2 ( Addr a, UWord vbytes, Bool isBigEndian )
    }
 }
 
-VG_REGPARM(2)
-void MC_(helperc_STOREV2be) ( Addr a, UWord vbytes )
+VG_REGPARM(2) void MC_(helperc_STOREV2be) ( Addr a, UWord vbytes )
 {
    mc_STOREV2(a, vbytes, True);
 }
-VG_REGPARM(2)
-void MC_(helperc_STOREV2le) ( Addr a, UWord vbytes )
+VG_REGPARM(2) void MC_(helperc_STOREV2le) ( Addr a, UWord vbytes )
 {
    mc_STOREV2(a, vbytes, False);
 }
