@@ -59,11 +59,7 @@
 #define EXPECTED_TAKEN(cond)     __builtin_expect((cond),1)
 #define EXPECTED_NOT_TAKEN(cond) __builtin_expect((cond),0)
 
-/* Define to debug the mem audit system.  Set to:
-      0  no debugging, fast cases are used
-      1  some sanity checking, fast cases are used
-      2  max sanity checking, only slow cases are used
-*/
+/* Set to 1 to do a little more sanity checking */
 #define VG_DEBUG_MEMORY 0
 
 #define DEBUG(fmt, args...) //VG_(printf)(fmt, ## args)
@@ -140,7 +136,7 @@
 
    Note that this file has a lot of different functions for reading and
    writing shadow memory.  Only a couple are strictly necessary (eg.
-   get_vabits8 and set_vabits8), most are just specialised for specific
+   get_vabits2 and set_vabits2), most are just specialised for specific
    common cases to improve performance.
 
    Aside: the V+A bits are less precise than they could be -- we have no way
@@ -205,10 +201,10 @@ static Int   n_sanity_expensive = 0;
 //
 // We store the compressed V+A bits in 8-bit chunks, ie. the V+A bits for
 // four bytes (32 bits) of memory are in each chunk.  Hence the name
-// "vabits32".  This lets us get the V+A bits for four bytes at a time
+// "vabits8".  This lets us get the V+A bits for four bytes at a time
 // easily (without having to do any shifting and/or masking), and that is a
-// very common operation.  (Note that although each vabits32 chunk
-// represents 32 bits of memory, but is only 8 bits in size.)
+// very common operation.  (Note that although each vabits8 chunk
+// is 8 bits in size, it represents 32 bits of memory.)
 //
 // The representation is "inverse" little-endian... each 4 bytes of
 // memory is represented by a 1 byte value, where:
@@ -222,7 +218,7 @@ static Int   n_sanity_expensive = 0;
 // value bits to memory addresses;  in this case the mapping is inverted.
 // Ie. instead of particular value bits being held in certain addresses, in
 // this case certain addresses are represented by particular value bits.
-// See insert_vabits8_into_vabits32() for an example.
+// See insert_vabits2_into_vabits8() for an example.
 // 
 // But note that we don't compress the V bits stored in registers;  they
 // need to be explicit to made the shadow operations possible.  Therefore
@@ -231,27 +227,27 @@ static Int   n_sanity_expensive = 0;
 // format.  This isn't so difficult, it just requires careful attention in a
 // few places.
 
-#define VA_BITS8_NOACCESS     0x0      // 00b
-#define VA_BITS8_WRITABLE     0x1      // 01b
-#define VA_BITS8_READABLE     0x2      // 10b
-#define VA_BITS8_OTHER        0x3      // 11b
+#define VA_BITS2_NOACCESS     0x0      // 00b
+#define VA_BITS2_WRITABLE     0x1      // 01b
+#define VA_BITS2_READABLE     0x2      // 10b
+#define VA_BITS2_OTHER        0x3      // 11b
 
-#define VA_BITS16_NOACCESS    0x0      // 00_00b
-#define VA_BITS16_WRITABLE    0x5      // 01_01b
-#define VA_BITS16_READABLE    0xa      // 10_10b
+#define VA_BITS4_NOACCESS     0x0      // 00_00b
+#define VA_BITS4_WRITABLE     0x5      // 01_01b
+#define VA_BITS4_READABLE     0xa      // 10_10b
 
-#define VA_BITS32_NOACCESS    0x00     // 00_00_00_00b
-#define VA_BITS32_WRITABLE    0x55     // 01_01_01_01b
-#define VA_BITS32_READABLE    0xaa     // 10_10_10_10b
+#define VA_BITS8_NOACCESS     0x00     // 00_00_00_00b
+#define VA_BITS8_WRITABLE     0x55     // 01_01_01_01b
+#define VA_BITS8_READABLE     0xaa     // 10_10_10_10b
 
-#define VA_BITS64_NOACCESS    0x0000   // 00_00_00_00b x 2
-#define VA_BITS64_WRITABLE    0x5555   // 01_01_01_01b x 2
-#define VA_BITS64_READABLE    0xaaaa   // 10_10_10_10b x 2
+#define VA_BITS16_NOACCESS    0x0000   // 00_00_00_00b x 2
+#define VA_BITS16_WRITABLE    0x5555   // 01_01_01_01b x 2
+#define VA_BITS16_READABLE    0xaaaa   // 10_10_10_10b x 2
 
 
 #define SM_CHUNKS             16384
 #define SM_OFF(aaa)           (((aaa) & 0xffff) >> 2)
-#define SM_OFF_64(aaa)        (((aaa) & 0xffff) >> 3)
+#define SM_OFF_16(aaa)        (((aaa) & 0xffff) >> 3)
 
 // Paranoia:  it's critical for performance that the requested inlining
 // occurs.  So try extra hard.
@@ -266,7 +262,7 @@ static INLINE Bool is_start_of_sm ( Addr a ) {
 
 typedef 
    struct {
-      UChar vabits32[SM_CHUNKS];
+      UChar vabits8[SM_CHUNKS];
    }
    SecMap;
 
@@ -500,39 +496,39 @@ static SecMap* maybe_get_secmap_for ( Addr a )
 /* --------------- Fundamental functions --------------- */
 
 static inline
-void insert_vabits8_into_vabits32 ( Addr a, UChar vabits8, UChar* vabits32 )
+void insert_vabits2_into_vabits8 ( Addr a, UChar vabits2, UChar* vabits8 )
 {
    UInt shift =  (a & 3)  << 1;        // shift by 0, 2, 4, or 6
-   *vabits32 &= ~(0x3     << shift);   // mask out the two old bits
-   *vabits32 |=  (vabits8 << shift);   // mask  in the two new bits
+   *vabits8  &= ~(0x3     << shift);   // mask out the two old bits
+   *vabits8  |=  (vabits2 << shift);   // mask  in the two new bits
 }
 
 static inline
-void insert_vabits16_into_vabits32 ( Addr a, UChar vabits16, UChar* vabits32 )
+void insert_vabits4_into_vabits8 ( Addr a, UChar vabits4, UChar* vabits8 )
 {
    UInt shift;
    tl_assert(VG_IS_2_ALIGNED(a));      // Must be 2-aligned
-   shift      =  (a & 2)   << 1;       // shift by 0 or 4
-   *vabits32 &= ~(0xf      << shift);  // mask out the four old bits
-   *vabits32 |=  (vabits16 << shift);  // mask  in the four new bits
+   shift     =  (a & 2)   << 1;        // shift by 0 or 4
+   *vabits8 &= ~(0xf      << shift);   // mask out the four old bits
+   *vabits8 |=  (vabits4 << shift);    // mask  in the four new bits
 }
 
 static inline
-UChar extract_vabits8_from_vabits32 ( Addr a, UChar vabits32 )
+UChar extract_vabits2_from_vabits8 ( Addr a, UChar vabits8 )
 {
    UInt shift = (a & 3) << 1;          // shift by 0, 2, 4, or 6
-   vabits32 >>= shift;                 // shift the two bits to the bottom
-   return 0x3 & vabits32;              // mask out the rest
+   vabits8 >>= shift;                  // shift the two bits to the bottom
+   return 0x3 & vabits8;               // mask out the rest
 }
 
 static inline
-UChar extract_vabits16_from_vabits32 ( Addr a, UChar vabits32 )
+UChar extract_vabits4_from_vabits8 ( Addr a, UChar vabits8 )
 {
    UInt shift;
    tl_assert(VG_IS_2_ALIGNED(a));      // Must be 2-aligned
    shift = (a & 2) << 1;               // shift by 0 or 4
-   vabits32 >>= shift;                 // shift the four bits to the bottom
-   return 0xf & vabits32;              // mask out the rest
+   vabits8 >>= shift;                  // shift the four bits to the bottom
+   return 0xf & vabits8;               // mask out the rest
 }
 
 // Note that these four are only used in slow cases.  The fast cases do
@@ -540,20 +536,20 @@ UChar extract_vabits16_from_vabits32 ( Addr a, UChar vabits32 )
 // get_secmap_{read,writ}able) with alignment checks.
 
 static inline
-void set_vabits8 ( Addr a, UChar vabits8 )
+void set_vabits2 ( Addr a, UChar vabits2 )
 {
    SecMap* sm       = get_secmap_writable(a);
    UWord   sm_off   = SM_OFF(a);
-   insert_vabits8_into_vabits32( a, vabits8, &(sm->vabits32[sm_off]) );
+   insert_vabits2_into_vabits8( a, vabits2, &(sm->vabits8[sm_off]) );
 }
 
 static inline
-UChar get_vabits8 ( Addr a )
+UChar get_vabits2 ( Addr a )
 {
    SecMap* sm       = get_secmap_readable(a);
    UWord   sm_off   = SM_OFF(a);
-   UChar   vabits32 = sm->vabits32[sm_off];
-   return extract_vabits8_from_vabits32(a, vabits32);
+   UChar   vabits8  = sm->vabits8[sm_off];
+   return extract_vabits2_from_vabits8(a, vabits8);
 }
 
 // Forward declarations
@@ -565,16 +561,16 @@ static inline
 Bool set_vbits8 ( Addr a, UChar vbits8 )
 {
    Bool  ok      = True;
-   UChar vabits8 = get_vabits8(a);
-   if ( VA_BITS8_NOACCESS != vabits8 ) {
+   UChar vabits2 = get_vabits2(a);
+   if ( VA_BITS2_NOACCESS != vabits2 ) {
       // Addressable.  Convert in-register format to in-memory format.
       // Also remove any existing sec V bit entry for the byte if no
       // longer necessary.
-      if      ( V_BITS8_VALID   == vbits8 ) { vabits8 = VA_BITS8_READABLE; }
-      else if ( V_BITS8_INVALID == vbits8 ) { vabits8 = VA_BITS8_WRITABLE; }
-      else                                  { vabits8 = VA_BITS8_OTHER;
+      if      ( V_BITS8_VALID   == vbits8 ) { vabits2 = VA_BITS2_READABLE; }
+      else if ( V_BITS8_INVALID == vbits8 ) { vabits2 = VA_BITS2_WRITABLE; }
+      else                                  { vabits2 = VA_BITS2_OTHER;
                                               set_sec_vbits8(a, vbits8);  }
-      set_vabits8(a, vabits8);
+      set_vabits2(a, vabits2);
 
    } else {
       // Unaddressable!  Do nothing -- when writing to unaddressable
@@ -591,16 +587,16 @@ static inline
 Bool get_vbits8 ( Addr a, UChar* vbits8 )
 {
    Bool  ok      = True;
-   UChar vabits8 = get_vabits8(a);
+   UChar vabits2 = get_vabits2(a);
 
    // Convert the in-memory format to in-register format.
-   if      ( VA_BITS8_READABLE == vabits8 ) { *vbits8 = V_BITS8_VALID;   }
-   else if ( VA_BITS8_WRITABLE == vabits8 ) { *vbits8 = V_BITS8_INVALID; }
-   else if ( VA_BITS8_NOACCESS == vabits8 ) {
+   if      ( VA_BITS2_READABLE == vabits2 ) { *vbits8 = V_BITS8_VALID;   }
+   else if ( VA_BITS2_WRITABLE == vabits2 ) { *vbits8 = V_BITS8_INVALID; }
+   else if ( VA_BITS2_NOACCESS == vabits2 ) {
       *vbits8 = V_BITS8_VALID;    // Make V bits defined!
       ok = False;
    } else {
-      tl_assert( VA_BITS8_OTHER == vabits8 );
+      tl_assert( VA_BITS2_OTHER == vabits2 );
       *vbits8 = get_sec_vbits8(a);
    }
    return ok;
@@ -610,7 +606,7 @@ Bool get_vbits8 ( Addr a, UChar* vbits8 )
 /* --------------- Secondary V bit table ------------ */
 
 // This table holds the full V bit pattern for partially-defined bytes
-// (PDBs) that are represented by VA_BITS8_OTHER in the main shadow memory.
+// (PDBs) that are represented by VA_BITS2_OTHER in the main shadow memory.
 //
 // Note: the nodes in this table can become stale.  Eg. if you write a PDB,
 // then overwrite the same address with a fully defined byte, the sec-V-bit
@@ -709,10 +705,10 @@ static void gcSecVBitTable(void)
          keep = True;
       } else {
          // Keep node if any of its bytes are non-stale.  Using
-         // get_vabits8() for the lookup is not very efficient, but I don't
+         // get_vabits2() for the lookup is not very efficient, but I don't
          // think it matters.
          for (i = 0; i < BYTES_PER_SEC_VBIT_NODE; i++) {
-            if (VA_BITS8_OTHER == get_vabits8(n->a + i)) {
+            if (VA_BITS2_OTHER == get_vabits2(n->a + i)) {
                keep = True;      // Found a non-stale byte, so keep
                break;
             }
@@ -911,10 +907,10 @@ void mc_STOREVn_slow ( Addr a, SizeT szB, ULong vbytes, Bool bigendian )
 /*--- Setting permissions over address ranges.             ---*/
 /*------------------------------------------------------------*/
 
-static void set_address_range_perms ( Addr a, SizeT lenT, UWord vabits64,
+static void set_address_range_perms ( Addr a, SizeT lenT, UWord vabits16,
                                       UWord dsm_num )
 {
-   UWord    vabits8, sm_off, sm_off64;
+   UWord    vabits2, sm_off, sm_off16;
    SizeT    lenA, lenB, len_to_next_secmap;
    Addr     aNext;
    SecMap*  sm;
@@ -924,9 +920,9 @@ static void set_address_range_perms ( Addr a, SizeT lenT, UWord vabits64,
    PROF_EVENT(150, "set_address_range_perms");
 
    /* Check the V+A bits make sense. */
-   tl_assert(vabits64 == VA_BITS64_NOACCESS ||
-             vabits64 == VA_BITS64_WRITABLE ||
-             vabits64 == VA_BITS64_READABLE);
+   tl_assert(vabits16 == VA_BITS16_NOACCESS ||
+             vabits16 == VA_BITS16_WRITABLE ||
+             vabits16 == VA_BITS16_READABLE);
 
    if (lenT == 0)
       return;
@@ -934,9 +930,9 @@ static void set_address_range_perms ( Addr a, SizeT lenT, UWord vabits64,
    if (lenT > 100 * 1000 * 1000) {
       if (VG_(clo_verbosity) > 0 && !VG_(clo_xml)) {
          Char* s = "unknown???";
-         if (vabits64 == VA_BITS64_NOACCESS) s = "noaccess";
-         if (vabits64 == VA_BITS64_WRITABLE) s = "writable";
-         if (vabits64 == VA_BITS64_READABLE) s = "readable";
+         if (vabits16 == VA_BITS16_NOACCESS) s = "noaccess";
+         if (vabits16 == VA_BITS16_WRITABLE) s = "writable";
+         if (vabits16 == VA_BITS16_READABLE) s = "readable";
          VG_(message)(Vg_UserMsg, "Warning: set address range perms: "
                                   "large range %lu (%s)", lenT, s);
       }
@@ -947,10 +943,10 @@ static void set_address_range_perms ( Addr a, SizeT lenT, UWord vabits64,
    {
       // Endianness doesn't matter here because all bytes are being set to
       // the same value.
-      UWord vabits8 = vabits64 & 0x3;
+      UWord vabits2 = vabits16 & 0x3;
       SizeT i;
       for (i = 0; i < lenT; i++) {
-         set_vabits8(a + i, vabits8);
+         set_vabits2(a + i, vabits2);
       }
       return;
    }
@@ -962,7 +958,7 @@ static void set_address_range_perms ( Addr a, SizeT lenT, UWord vabits64,
       to use (part of the space-compression scheme). */
    example_dsm = &sm_distinguished[dsm_num];
 
-   vabits8 = vabits64 & 0x3;
+   vabits2 = vabits16 & 0x3;
    
    // We have to handle ranges covering various combinations of partial and
    // whole sec-maps.  Here is how parts 1, 2 and 3 are used in each case.
@@ -1039,7 +1035,7 @@ static void set_address_range_perms ( Addr a, SizeT lenT, UWord vabits64,
       if (lenA < 1)           break;
       PROF_EVENT(156, "set_address_range_perms-loop1a");
       sm_off = SM_OFF(a);
-      insert_vabits8_into_vabits32( a, vabits8, &(sm->vabits32[sm_off]) );
+      insert_vabits2_into_vabits8( a, vabits2, &(sm->vabits8[sm_off]) );
       a    += 1;
       lenA -= 1;
    }
@@ -1047,8 +1043,8 @@ static void set_address_range_perms ( Addr a, SizeT lenT, UWord vabits64,
    while (True) {
       if (lenA < 8) break;
       PROF_EVENT(157, "set_address_range_perms-loop8a");
-      sm_off64 = SM_OFF_64(a);
-      ((UShort*)(sm->vabits32))[sm_off64] = vabits64;
+      sm_off16 = SM_OFF_16(a);
+      ((UShort*)(sm->vabits8))[sm_off16] = vabits16;
       a    += 8;
       lenA -= 8;
    }
@@ -1057,7 +1053,7 @@ static void set_address_range_perms ( Addr a, SizeT lenT, UWord vabits64,
       if (lenA < 1) break;
       PROF_EVENT(158, "set_address_range_perms-loop1b");
       sm_off = SM_OFF(a);
-      insert_vabits8_into_vabits32( a, vabits8, &(sm->vabits32[sm_off]) );
+      insert_vabits2_into_vabits8( a, vabits2, &(sm->vabits8[sm_off]) );
       a    += 1;
       lenA -= 1;
    }
@@ -1118,8 +1114,8 @@ static void set_address_range_perms ( Addr a, SizeT lenT, UWord vabits64,
    while (True) {
       if (lenB < 8) break;
       PROF_EVENT(163, "set_address_range_perms-loop8b");
-      sm_off64 = SM_OFF_64(a);
-      ((UShort*)(sm->vabits32))[sm_off64] = vabits64;
+      sm_off16 = SM_OFF_16(a);
+      ((UShort*)(sm->vabits8))[sm_off16] = vabits16;
       a    += 8;
       lenB -= 8;
    }
@@ -1128,7 +1124,7 @@ static void set_address_range_perms ( Addr a, SizeT lenT, UWord vabits64,
       if (lenB < 1) return;
       PROF_EVENT(164, "set_address_range_perms-loop1c");
       sm_off = SM_OFF(a);
-      insert_vabits8_into_vabits32( a, vabits8, &(sm->vabits32[sm_off]) );
+      insert_vabits2_into_vabits8( a, vabits2, &(sm->vabits8[sm_off]) );
       a    += 1;
       lenB -= 1;
    }
@@ -1141,21 +1137,21 @@ void MC_(make_noaccess) ( Addr a, SizeT len )
 {
    PROF_EVENT(40, "MC_(make_noaccess)");
    DEBUG("MC_(make_noaccess)(%p, %lu)\n", a, len);
-   set_address_range_perms ( a, len, VA_BITS64_NOACCESS, SM_DIST_NOACCESS );
+   set_address_range_perms ( a, len, VA_BITS16_NOACCESS, SM_DIST_NOACCESS );
 }
 
 void MC_(make_writable) ( Addr a, SizeT len )
 {
    PROF_EVENT(41, "MC_(make_writable)");
    DEBUG("MC_(make_writable)(%p, %lu)\n", a, len);
-   set_address_range_perms ( a, len, VA_BITS64_WRITABLE, SM_DIST_WRITABLE );
+   set_address_range_perms ( a, len, VA_BITS16_WRITABLE, SM_DIST_WRITABLE );
 }
 
 void MC_(make_readable) ( Addr a, SizeT len )
 {
    PROF_EVENT(42, "MC_(make_readable)");
    DEBUG("MC_(make_readable)(%p, %lu)\n", a, len);
-   set_address_range_perms ( a, len, VA_BITS64_READABLE, SM_DIST_READABLE );
+   set_address_range_perms ( a, len, VA_BITS16_READABLE, SM_DIST_READABLE );
 }
 
 
@@ -1175,14 +1171,14 @@ void MC_(copy_address_range_state) ( Addr src, Addr dst, SizeT len )
    if (src < dst) {
       for (i = 0, j = len-1; i < len; i++, j--) {
          PROF_EVENT(51, "MC_(copy_address_range_state)(loop)");
-         set_vabits8( dst+j, get_vabits8( src+j ) );
+         set_vabits2( dst+j, get_vabits2( src+j ) );
       }
    }
 
    if (src > dst) {
       for (i = 0; i < len; i++) {
          PROF_EVENT(51, "MC_(copy_address_range_state)(loop)");
-         set_vabits8( dst+i, get_vabits8( src+i ) );
+         set_vabits2( dst+i, get_vabits2( src+i ) );
       }
    }
 }
@@ -1207,9 +1203,9 @@ void make_aligned_word32_writable ( Addr a )
       return;
    }
 
-   sm                   = get_secmap_writable_low(a);
-   sm_off               = SM_OFF(a);
-   sm->vabits32[sm_off] = VA_BITS32_WRITABLE;
+   sm                  = get_secmap_writable_low(a);
+   sm_off              = SM_OFF(a);
+   sm->vabits8[sm_off] = VA_BITS8_WRITABLE;
 #endif
 }
 
@@ -1231,9 +1227,9 @@ void make_aligned_word32_noaccess ( Addr a )
       return;
    }
 
-   sm                   = get_secmap_writable_low(a);
-   sm_off               = SM_OFF(a);
-   sm->vabits32[sm_off] = VA_BITS32_NOACCESS;
+   sm                  = get_secmap_writable_low(a);
+   sm_off              = SM_OFF(a);
+   sm->vabits8[sm_off] = VA_BITS8_NOACCESS;
 #endif
 }
 
@@ -1242,7 +1238,7 @@ void make_aligned_word32_noaccess ( Addr a )
 static INLINE
 void make_aligned_word64_writable ( Addr a )
 {
-   UWord   sm_off64;
+   UWord   sm_off16;
    SecMap* sm;
 
    PROF_EVENT(320, "make_aligned_word64_writable");
@@ -1257,8 +1253,8 @@ void make_aligned_word64_writable ( Addr a )
    }
 
    sm       = get_secmap_writable_low(a);
-   sm_off64 = SM_OFF_64(a);
-   ((UShort*)(sm->vabits32))[sm_off64] = VA_BITS64_WRITABLE;
+   sm_off16 = SM_OFF_16(a);
+   ((UShort*)(sm->vabits8))[sm_off16] = VA_BITS16_WRITABLE;
 #endif
 }
 
@@ -1266,7 +1262,7 @@ void make_aligned_word64_writable ( Addr a )
 static INLINE
 void make_aligned_word64_noaccess ( Addr a )
 {
-   UWord   sm_off64;
+   UWord   sm_off16;
    SecMap* sm;
 
    PROF_EVENT(330, "make_aligned_word64_noaccess");
@@ -1281,8 +1277,8 @@ void make_aligned_word64_noaccess ( Addr a )
    }
 
    sm       = get_secmap_writable_low(a);
-   sm_off64 = SM_OFF_64(a);
-   ((UShort*)(sm->vabits32))[sm_off64] = VA_BITS64_NOACCESS;
+   sm_off16 = SM_OFF_16(a);
+   ((UShort*)(sm->vabits8))[sm_off16] = VA_BITS16_NOACCESS;
 #endif
 }
 
@@ -1537,23 +1533,23 @@ void MC_(helperc_MAKE_STACK_UNINIT) ( Addr base, UWord len )
          if (EXPECTED_TAKEN(sm == sm_hi)) {
             // Finally, we know that the range is entirely within one secmap.
             UWord   v_off = SM_OFF(a_lo);
-            UShort* p     = (UShort*)(&sm->vabits32[v_off]);
-            p[ 0] =  VA_BITS64_WRITABLE;
-            p[ 1] =  VA_BITS64_WRITABLE;
-            p[ 2] =  VA_BITS64_WRITABLE;
-            p[ 3] =  VA_BITS64_WRITABLE;
-            p[ 4] =  VA_BITS64_WRITABLE;
-            p[ 5] =  VA_BITS64_WRITABLE;
-            p[ 6] =  VA_BITS64_WRITABLE;
-            p[ 7] =  VA_BITS64_WRITABLE;
-            p[ 8] =  VA_BITS64_WRITABLE;
-            p[ 9] =  VA_BITS64_WRITABLE;
-            p[10] =  VA_BITS64_WRITABLE;
-            p[11] =  VA_BITS64_WRITABLE;
-            p[12] =  VA_BITS64_WRITABLE;
-            p[13] =  VA_BITS64_WRITABLE;
-            p[14] =  VA_BITS64_WRITABLE;
-            p[15] =  VA_BITS64_WRITABLE;
+            UShort* p     = (UShort*)(&sm->vabits8[v_off]);
+            p[ 0] =  VA_BITS16_WRITABLE;
+            p[ 1] =  VA_BITS16_WRITABLE;
+            p[ 2] =  VA_BITS16_WRITABLE;
+            p[ 3] =  VA_BITS16_WRITABLE;
+            p[ 4] =  VA_BITS16_WRITABLE;
+            p[ 5] =  VA_BITS16_WRITABLE;
+            p[ 6] =  VA_BITS16_WRITABLE;
+            p[ 7] =  VA_BITS16_WRITABLE;
+            p[ 8] =  VA_BITS16_WRITABLE;
+            p[ 9] =  VA_BITS16_WRITABLE;
+            p[10] =  VA_BITS16_WRITABLE;
+            p[11] =  VA_BITS16_WRITABLE;
+            p[12] =  VA_BITS16_WRITABLE;
+            p[13] =  VA_BITS16_WRITABLE;
+            p[14] =  VA_BITS16_WRITABLE;
+            p[15] =  VA_BITS16_WRITABLE;
             return;
          }
       }
@@ -1588,13 +1584,13 @@ typedef
 Bool MC_(check_noaccess) ( Addr a, SizeT len, Addr* bad_addr )
 {
    SizeT i;
-   UWord vabits8;
+   UWord vabits2;
 
    PROF_EVENT(60, "mc_check_noaccess");
    for (i = 0; i < len; i++) {
       PROF_EVENT(61, "mc_check_noaccess(loop)");
-      vabits8 = get_vabits8(a);
-      if (VA_BITS8_NOACCESS != vabits8) {
+      vabits2 = get_vabits2(a);
+      if (VA_BITS2_NOACCESS != vabits2) {
          if (bad_addr != NULL) *bad_addr = a;
          return False;
       }
@@ -1607,13 +1603,13 @@ Bool MC_(check_noaccess) ( Addr a, SizeT len, Addr* bad_addr )
 static Bool mc_check_writable ( Addr a, SizeT len, Addr* bad_addr )
 {
    SizeT i;
-   UWord vabits8;
+   UWord vabits2;
 
    PROF_EVENT(62, "mc_check_writable");
    for (i = 0; i < len; i++) {
       PROF_EVENT(63, "mc_check_writable(loop)");
-      vabits8 = get_vabits8(a);
-      if (VA_BITS8_NOACCESS == vabits8) {
+      vabits2 = get_vabits2(a);
+      if (VA_BITS2_NOACCESS == vabits2) {
          if (bad_addr != NULL) *bad_addr = a;
          return False;
       }
@@ -1625,19 +1621,19 @@ static Bool mc_check_writable ( Addr a, SizeT len, Addr* bad_addr )
 static MC_ReadResult mc_check_readable ( Addr a, SizeT len, Addr* bad_addr )
 {
    SizeT i;
-   UWord vabits8;
+   UWord vabits2;
 
    PROF_EVENT(64, "mc_check_readable");
    DEBUG("mc_check_readable\n");
    for (i = 0; i < len; i++) {
       PROF_EVENT(65, "mc_check_readable(loop)");
-      vabits8 = get_vabits8(a);
-      if (VA_BITS8_READABLE != vabits8) {
+      vabits2 = get_vabits2(a);
+      if (VA_BITS2_READABLE != vabits2) {
          // Error!  Nb: Report addressability errors in preference to
          // definedness errors.  And don't report definedeness errors unless
          // --undef-value-errors=yes.
          if (bad_addr != NULL) *bad_addr = a;
-         if      ( VA_BITS8_NOACCESS == vabits8 ) return MC_AddrErr; 
+         if      ( VA_BITS2_NOACCESS == vabits2 ) return MC_AddrErr; 
          else if ( MC_(clo_undef_value_errors)  ) return MC_ValueErr;
       }
       a++;
@@ -1652,19 +1648,19 @@ static MC_ReadResult mc_check_readable ( Addr a, SizeT len, Addr* bad_addr )
 
 static Bool mc_check_readable_asciiz ( Addr a, Addr* bad_addr )
 {
-   UWord vabits8;
+   UWord vabits2;
 
    PROF_EVENT(66, "mc_check_readable_asciiz");
    DEBUG("mc_check_readable_asciiz\n");
    while (True) {
       PROF_EVENT(67, "mc_check_readable_asciiz(loop)");
-      vabits8 = get_vabits8(a);
-      if (VA_BITS8_READABLE != vabits8) {
+      vabits2 = get_vabits2(a);
+      if (VA_BITS2_READABLE != vabits2) {
          // Error!  Nb: Report addressability errors in preference to
          // definedness errors.  And don't report definedeness errors unless
          // --undef-value-errors=yes.
          if (bad_addr != NULL) *bad_addr = a;
-         if      ( VA_BITS8_NOACCESS == vabits8 ) return MC_AddrErr; 
+         if      ( VA_BITS2_NOACCESS == vabits2 ) return MC_AddrErr; 
          else if ( MC_(clo_undef_value_errors)  ) return MC_ValueErr;
       }
       /* Ok, a is safe to read. */
@@ -2711,7 +2707,7 @@ static void mc_print_extra_suppression_info ( Error* err )
 static INLINE
 ULong mc_LOADV8 ( Addr a, Bool isBigEndian )
 {
-   UWord   sm_off64, vabits64;
+   UWord   sm_off16, vabits16;
    SecMap* sm;
 
    PROF_EVENT(200, "mc_LOADV8");
@@ -2725,15 +2721,15 @@ ULong mc_LOADV8 ( Addr a, Bool isBigEndian )
    }
 
    sm       = get_secmap_readable_low(a);
-   sm_off64 = SM_OFF_64(a);
-   vabits64 = ((UShort*)(sm->vabits32))[sm_off64];
+   sm_off16 = SM_OFF_16(a);
+   vabits16 = ((UShort*)(sm->vabits8))[sm_off16];
 
    // Handle common case quickly: a is suitably aligned, is mapped, and
    // addressible.
    // Convert V bits from compact memory form to expanded register form.
-   if (EXPECTED_TAKEN(vabits64 == VA_BITS64_READABLE)) {
+   if (EXPECTED_TAKEN(vabits16 == VA_BITS16_READABLE)) {
       return V_BITS64_VALID;
-   } else if (EXPECTED_TAKEN(vabits64 == VA_BITS64_WRITABLE)) {
+   } else if (EXPECTED_TAKEN(vabits16 == VA_BITS16_WRITABLE)) {
       return V_BITS64_INVALID;
    } else {
       /* Slow case: the 8 bytes are not all-readable or all-writable. */
@@ -2756,7 +2752,7 @@ VG_REGPARM(1) ULong MC_(helperc_LOADV8le) ( Addr a )
 static INLINE
 void mc_STOREV8 ( Addr a, ULong vbytes, Bool isBigEndian )
 {
-   UWord   sm_off64, vabits64;
+   UWord   sm_off16, vabits16;
    SecMap* sm;
 
    PROF_EVENT(210, "mc_STOREV8");
@@ -2773,20 +2769,20 @@ void mc_STOREV8 ( Addr a, ULong vbytes, Bool isBigEndian )
    }
 
    sm       = get_secmap_readable_low(a);
-   sm_off64 = SM_OFF_64(a);
-   vabits64 = ((UShort*)(sm->vabits32))[sm_off64];
+   sm_off16 = SM_OFF_16(a);
+   vabits16 = ((UShort*)(sm->vabits8))[sm_off16];
 
    if (EXPECTED_TAKEN( !is_distinguished_sm(sm) && 
-                       (VA_BITS64_READABLE == vabits64 ||
-                        VA_BITS64_WRITABLE == vabits64) ))
+                       (VA_BITS16_READABLE == vabits16 ||
+                        VA_BITS16_WRITABLE == vabits16) ))
    {
       /* Handle common case quickly: a is suitably aligned, */
       /* is mapped, and is addressible. */
       // Convert full V-bits in register to compact 2-bit form.
       if (V_BITS64_VALID == vbytes) {
-         ((UShort*)(sm->vabits32))[sm_off64] = (UShort)VA_BITS64_READABLE;
+         ((UShort*)(sm->vabits8))[sm_off16] = (UShort)VA_BITS16_READABLE;
       } else if (V_BITS64_INVALID == vbytes) {
-         ((UShort*)(sm->vabits32))[sm_off64] = (UShort)VA_BITS64_WRITABLE;
+         ((UShort*)(sm->vabits8))[sm_off16] = (UShort)VA_BITS16_WRITABLE;
       } else {
          /* Slow but general case -- writing partially defined bytes. */
          PROF_EVENT(212, "mc_STOREV8-slow2");
@@ -2815,7 +2811,7 @@ VG_REGPARM(1) void MC_(helperc_STOREV8le) ( Addr a, ULong vbytes )
 static INLINE
 UWord mc_LOADV4 ( Addr a, Bool isBigEndian )
 {
-   UWord   sm_off, vabits32;
+   UWord   sm_off, vabits8;
    SecMap* sm;
 
    PROF_EVENT(220, "mc_LOADV4");
@@ -2828,18 +2824,18 @@ UWord mc_LOADV4 ( Addr a, Bool isBigEndian )
       return (UWord)mc_LOADVn_slow( a, 4, isBigEndian );
    }
 
-   sm       = get_secmap_readable_low(a);
-   sm_off   = SM_OFF(a);
-   vabits32 = sm->vabits32[sm_off];
+   sm      = get_secmap_readable_low(a);
+   sm_off  = SM_OFF(a);
+   vabits8 = sm->vabits8[sm_off];
 
    // Handle common case quickly: a is suitably aligned, is mapped, and the
    // entire word32 it lives in is addressible.
    // Convert V bits from compact memory form to expanded register form.
    // For 64-bit platforms, set the high 32 bits of retval to 1 (undefined).
    // Almost certainly not necessary, but be paranoid.
-   if (EXPECTED_TAKEN(vabits32 == VA_BITS32_READABLE)) {
+   if (EXPECTED_TAKEN(vabits8 == VA_BITS8_READABLE)) {
       return ((UWord)0xFFFFFFFF00000000ULL | (UWord)V_BITS32_VALID);
-   } else if (EXPECTED_TAKEN(vabits32 == VA_BITS32_WRITABLE)) {
+   } else if (EXPECTED_TAKEN(vabits8 == VA_BITS8_WRITABLE)) {
       return ((UWord)0xFFFFFFFF00000000ULL | (UWord)V_BITS32_INVALID);
    } else {
       /* Slow case: the 4 bytes are not all-readable or all-writable. */
@@ -2862,7 +2858,7 @@ VG_REGPARM(1) UWord MC_(helperc_LOADV4le) ( Addr a )
 static INLINE
 void mc_STOREV4 ( Addr a, UWord vbytes, Bool isBigEndian )
 {
-   UWord   sm_off, vabits32;
+   UWord   sm_off, vabits8;
    SecMap* sm;
 
    PROF_EVENT(230, "mc_STOREV4");
@@ -2876,9 +2872,9 @@ void mc_STOREV4 ( Addr a, UWord vbytes, Bool isBigEndian )
       return;
    }
 
-   sm       = get_secmap_readable_low(a);
-   sm_off   = SM_OFF(a);
-   vabits32 = sm->vabits32[sm_off];
+   sm      = get_secmap_readable_low(a);
+   sm_off  = SM_OFF(a);
+   vabits8 = sm->vabits8[sm_off];
 
 //---------------------------------------------------------------------------
 #if 1
@@ -2886,20 +2882,20 @@ void mc_STOREV4 ( Addr a, UWord vbytes, Bool isBigEndian )
    // all, if we can tell that what we want to write is the same as what is
    // already there.
    if (V_BITS32_VALID == vbytes) {
-      if (vabits32 == (UInt)VA_BITS32_READABLE) {
+      if (vabits8 == (UInt)VA_BITS8_READABLE) {
          return;
-      } else if (!is_distinguished_sm(sm) && VA_BITS32_WRITABLE == vabits32) {
-         sm->vabits32[sm_off] = (UInt)VA_BITS32_READABLE;
+      } else if (!is_distinguished_sm(sm) && VA_BITS8_WRITABLE == vabits8) {
+         sm->vabits8[sm_off] = (UInt)VA_BITS8_READABLE;
       } else {
          // not readable/writable, or distinguished and changing state
          PROF_EVENT(232, "mc_STOREV4-slow2");
          mc_STOREVn_slow( a, 4, (ULong)vbytes, isBigEndian );
       }
    } else if (V_BITS32_INVALID == vbytes) {
-      if (vabits32 == (UInt)VA_BITS32_WRITABLE) {
+      if (vabits8 == (UInt)VA_BITS8_WRITABLE) {
          return;
-      } else if (!is_distinguished_sm(sm) && VA_BITS32_READABLE == vabits32) {
-         sm->vabits32[sm_off] = (UInt)VA_BITS32_WRITABLE;
+      } else if (!is_distinguished_sm(sm) && VA_BITS8_READABLE == vabits8) {
+         sm->vabits8[sm_off] = (UInt)VA_BITS8_WRITABLE;
       } else {
          // not readable/writable, or distinguished and changing state
          PROF_EVENT(233, "mc_STOREV4-slow3");
@@ -2913,16 +2909,16 @@ void mc_STOREV4 ( Addr a, UWord vbytes, Bool isBigEndian )
 //---------------------------------------------------------------------------
 #else
    if (EXPECTED_TAKEN( !is_distinguished_sm(sm) && 
-                       (VA_BITS32_READABLE == vabits32 ||
-                        VA_BITS32_WRITABLE == vabits32) ))
+                       (VA_BITS8_READABLE == vabits8 ||
+                        VA_BITS8_WRITABLE == vabits8) ))
    {
       /* Handle common case quickly: a is suitably aligned, */
       /* is mapped, and is addressible. */
       // Convert full V-bits in register to compact 2-bit form.
       if (V_BITS32_VALID == vbytes) {
-         sm->vabits32[sm_off] = VA_BITS32_READABLE;
+         sm->vabits8[sm_off] = VA_BITS8_READABLE;
       } else if (V_BITS32_INVALID == vbytes) {
-         sm->vabits32[sm_off] = VA_BITS32_WRITABLE;
+         sm->vabits8[sm_off] = VA_BITS8_WRITABLE;
       } else {
          /* Slow but general case -- writing partially defined bytes. */
          PROF_EVENT(232, "mc_STOREV4-slow2");
@@ -2953,7 +2949,7 @@ VG_REGPARM(2) void MC_(helperc_STOREV4le) ( Addr a, UWord vbytes )
 static INLINE
 UWord mc_LOADV2 ( Addr a, Bool isBigEndian )
 {
-   UWord   sm_off, vabits32;
+   UWord   sm_off, vabits8;
    SecMap* sm;
 
    PROF_EVENT(240, "mc_LOADV2");
@@ -2966,21 +2962,21 @@ UWord mc_LOADV2 ( Addr a, Bool isBigEndian )
       return (UWord)mc_LOADVn_slow( a, 2, isBigEndian );
    }
 
-   sm       = get_secmap_readable_low(a);
-   sm_off   = SM_OFF(a);
-   vabits32 = sm->vabits32[sm_off];
+   sm      = get_secmap_readable_low(a);
+   sm_off  = SM_OFF(a);
+   vabits8 = sm->vabits8[sm_off];
    // Handle common case quickly: a is suitably aligned, is mapped, and is
    // addressible.
    // Convert V bits from compact memory form to expanded register form
    // XXX: set the high 16/48 bits of retval to 1 for 64-bit paranoia?
-   if      (vabits32 == VA_BITS32_READABLE) { return V_BITS16_VALID;   }
-   else if (vabits32 == VA_BITS32_WRITABLE) { return V_BITS16_INVALID; }
+   if      (vabits8 == VA_BITS8_READABLE) { return V_BITS16_VALID;   }
+   else if (vabits8 == VA_BITS8_WRITABLE) { return V_BITS16_INVALID; }
    else {
       // The 4 (yes, 4) bytes are not all-readable or all-writable, check
       // the two sub-bytes.
-      UChar vabits16 = extract_vabits16_from_vabits32(a, vabits32);
-      if      (vabits16 == VA_BITS16_READABLE) { return V_BITS16_VALID;   }
-      else if (vabits16 == VA_BITS16_WRITABLE) { return V_BITS16_INVALID; }
+      UChar vabits4 = extract_vabits4_from_vabits8(a, vabits8);
+      if      (vabits4 == VA_BITS4_READABLE) { return V_BITS16_VALID;   }
+      else if (vabits4 == VA_BITS4_WRITABLE) { return V_BITS16_INVALID; }
       else {
          /* Slow case: the two bytes are not all-readable or all-writable. */
          PROF_EVENT(242, "mc_LOADV2-slow2");
@@ -3003,7 +2999,7 @@ VG_REGPARM(1) UWord MC_(helperc_LOADV2le) ( Addr a )
 static INLINE
 void mc_STOREV2 ( Addr a, UWord vbytes, Bool isBigEndian )
 {
-   UWord   sm_off, vabits32;
+   UWord   sm_off, vabits8;
    SecMap* sm;
 
    PROF_EVENT(250, "mc_STOREV2");
@@ -3017,22 +3013,22 @@ void mc_STOREV2 ( Addr a, UWord vbytes, Bool isBigEndian )
       return;
    }
 
-   sm       = get_secmap_readable_low(a);
-   sm_off   = SM_OFF(a);
-   vabits32 = sm->vabits32[sm_off];
+   sm      = get_secmap_readable_low(a);
+   sm_off  = SM_OFF(a);
+   vabits8 = sm->vabits8[sm_off];
    if (EXPECTED_TAKEN( !is_distinguished_sm(sm) && 
-                       (VA_BITS32_READABLE == vabits32 ||
-                        VA_BITS32_WRITABLE == vabits32) ))
+                       (VA_BITS8_READABLE == vabits8 ||
+                        VA_BITS8_WRITABLE == vabits8) ))
    {
       /* Handle common case quickly: a is suitably aligned, */
       /* is mapped, and is addressible. */
       // Convert full V-bits in register to compact 2-bit form.
       if (V_BITS16_VALID == vbytes) {
-         insert_vabits16_into_vabits32( a, VA_BITS16_READABLE,
-                                        &(sm->vabits32[sm_off]) );
+         insert_vabits4_into_vabits8( a, VA_BITS4_READABLE,
+                                      &(sm->vabits8[sm_off]) );
       } else if (V_BITS16_INVALID == vbytes) {
-         insert_vabits16_into_vabits32( a, VA_BITS16_WRITABLE,
-                                        &(sm->vabits32[sm_off]) );
+         insert_vabits4_into_vabits8( a, VA_BITS4_WRITABLE,
+                                      &(sm->vabits8[sm_off]) );
       } else {
          /* Slow but general case -- writing partially defined bytes. */
          PROF_EVENT(252, "mc_STOREV2-slow2");
@@ -3062,7 +3058,7 @@ VG_REGPARM(2) void MC_(helperc_STOREV2le) ( Addr a, UWord vbytes )
 VG_REGPARM(1)
 UWord MC_(helperc_LOADV1) ( Addr a )
 {
-   UWord   sm_off, vabits32;
+   UWord   sm_off, vabits8;
    SecMap* sm;
 
    PROF_EVENT(260, "mc_LOADV1");
@@ -3075,21 +3071,21 @@ UWord MC_(helperc_LOADV1) ( Addr a )
       return (UWord)mc_LOADVn_slow( a, 1, False/*irrelevant*/ );
    }
 
-   sm       = get_secmap_readable_low(a);
-   sm_off   = SM_OFF(a);
-   vabits32 = sm->vabits32[sm_off];
+   sm      = get_secmap_readable_low(a);
+   sm_off  = SM_OFF(a);
+   vabits8 = sm->vabits8[sm_off];
    // Convert V bits from compact memory form to expanded register form
    // Handle common case quickly: a is mapped, and the entire
    // word32 it lives in is addressible.
    // XXX: set the high 24/56 bits of retval to 1 for 64-bit paranoia?
-   if      (vabits32 == VA_BITS32_READABLE) { return V_BITS8_VALID;   }
-   else if (vabits32 == VA_BITS32_WRITABLE) { return V_BITS8_INVALID; }
+   if      (vabits8 == VA_BITS8_READABLE) { return V_BITS8_VALID;   }
+   else if (vabits8 == VA_BITS8_WRITABLE) { return V_BITS8_INVALID; }
    else {
       // The 4 (yes, 4) bytes are not all-readable or all-writable, check
       // the single byte.
-      UChar vabits8 = extract_vabits8_from_vabits32(a, vabits32);
-      if      (vabits8 == VA_BITS8_READABLE) { return V_BITS8_VALID;   }
-      else if (vabits8 == VA_BITS8_WRITABLE) { return V_BITS8_INVALID; }
+      UChar vabits2 = extract_vabits2_from_vabits8(a, vabits8);
+      if      (vabits2 == VA_BITS2_READABLE) { return V_BITS8_VALID;   }
+      else if (vabits2 == VA_BITS2_WRITABLE) { return V_BITS8_INVALID; }
       else {
          /* Slow case: the byte is not all-readable or all-writable. */
          PROF_EVENT(262, "mc_LOADV1-slow2");
@@ -3103,7 +3099,7 @@ UWord MC_(helperc_LOADV1) ( Addr a )
 VG_REGPARM(2)
 void MC_(helperc_STOREV1) ( Addr a, UWord vbyte )
 {
-   UWord   sm_off, vabits32;
+   UWord   sm_off, vabits8;
    SecMap* sm;
 
    PROF_EVENT(270, "mc_STOREV1");
@@ -3117,22 +3113,22 @@ void MC_(helperc_STOREV1) ( Addr a, UWord vbyte )
       return;
    }
 
-   sm       = get_secmap_readable_low(a);
-   sm_off   = SM_OFF(a);
-   vabits32 = sm->vabits32[sm_off];
+   sm      = get_secmap_readable_low(a);
+   sm_off  = SM_OFF(a);
+   vabits8 = sm->vabits8[sm_off];
    if (EXPECTED_TAKEN( !is_distinguished_sm(sm) && 
-                       (VA_BITS32_READABLE == vabits32 ||
-                        VA_BITS32_WRITABLE == vabits32) ))
+                       (VA_BITS8_READABLE == vabits8 ||
+                        VA_BITS8_WRITABLE == vabits8) ))
    {
       /* Handle common case quickly: a is mapped, the entire word32 it
          lives in is addressible. */
       // Convert full V-bits in register to compact 2-bit form.
       if (V_BITS8_VALID == vbyte) {
-         insert_vabits8_into_vabits32( a, VA_BITS8_READABLE,
-                                       &(sm->vabits32[sm_off]) );
+         insert_vabits2_into_vabits8( a, VA_BITS2_READABLE,
+                                       &(sm->vabits8[sm_off]) );
       } else if (V_BITS8_INVALID == vbyte) {
-         insert_vabits8_into_vabits32( a, VA_BITS8_WRITABLE,
-                                       &(sm->vabits32[sm_off]) );
+         insert_vabits2_into_vabits8( a, VA_BITS2_WRITABLE,
+                                       &(sm->vabits8[sm_off]) );
       } else {
          /* Slow but general case -- writing partially defined bytes. */
          PROF_EVENT(272, "mc_STOREV1-slow2");
@@ -3202,11 +3198,11 @@ static Int mc_get_or_set_vbits_for_client (
 
    /* Check that arrays are addressible before doing any getting/setting. */
    for (i = 0; i < szB; i++) {
-      if (VA_BITS8_NOACCESS == get_vabits8(a + i)) {
+      if (VA_BITS2_NOACCESS == get_vabits2(a + i)) {
          mc_record_address_error( tid, a + i,     1, setting ? True : False );
          return 3;
       }
-      if (VA_BITS8_NOACCESS == get_vabits8(vbits + i)) {
+      if (VA_BITS2_NOACCESS == get_vabits2(vbits + i)) {
          mc_record_address_error( tid, vbits + i, 1, setting ? False : True );
          return 3;
       }
@@ -3314,13 +3310,13 @@ static void init_shadow_memory ( void )
 
    /* Build the 3 distinguished secondaries */
    sm = &sm_distinguished[SM_DIST_NOACCESS];
-   for (i = 0; i < SM_CHUNKS; i++) sm->vabits32[i] = VA_BITS32_NOACCESS;
+   for (i = 0; i < SM_CHUNKS; i++) sm->vabits8[i] = VA_BITS8_NOACCESS;
 
    sm = &sm_distinguished[SM_DIST_WRITABLE];
-   for (i = 0; i < SM_CHUNKS; i++) sm->vabits32[i] = VA_BITS32_WRITABLE;
+   for (i = 0; i < SM_CHUNKS; i++) sm->vabits8[i] = VA_BITS8_WRITABLE;
 
    sm = &sm_distinguished[SM_DIST_READABLE];
-   for (i = 0; i < SM_CHUNKS; i++) sm->vabits32[i] = VA_BITS32_READABLE;
+   for (i = 0; i < SM_CHUNKS; i++) sm->vabits8[i] = VA_BITS8_READABLE;
 
    /* Set up the primary map. */
    /* These entries gradually get overwritten as the used address
@@ -3362,19 +3358,19 @@ static Bool mc_expensive_sanity_check ( void )
    /* Check noaccess. */
    sm = &sm_distinguished[SM_DIST_NOACCESS];
    for (i = 0; i < SM_CHUNKS; i++)
-      if (sm->vabits32[i] != VA_BITS32_NOACCESS)
+      if (sm->vabits8[i] != VA_BITS8_NOACCESS)
          bad = True;
 
    /* Check writable. */
    sm = &sm_distinguished[SM_DIST_WRITABLE];
    for (i = 0; i < SM_CHUNKS; i++)
-      if (sm->vabits32[i] != VA_BITS32_WRITABLE)
+      if (sm->vabits8[i] != VA_BITS8_WRITABLE)
          bad = True;
 
    /* Check readable. */
    sm = &sm_distinguished[SM_DIST_READABLE];
    for (i = 0; i < SM_CHUNKS; i++)
-      if (sm->vabits32[i] != VA_BITS32_READABLE)
+      if (sm->vabits8[i] != VA_BITS8_READABLE)
          bad = True;
 
    if (bad) {
