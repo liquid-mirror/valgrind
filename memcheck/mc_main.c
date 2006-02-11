@@ -70,6 +70,20 @@
 
 
 /*------------------------------------------------------------*/
+/*--- Fast-case knobs                                      ---*/
+/*------------------------------------------------------------*/
+ 
+// Comment these out to disable the fast cases (don't just set them to zero).
+
+#define PERF_FAST_LOADV    1
+#define PERF_FAST_STOREV   1
+
+#define PERF_FAST_SARP     1
+
+#define PERF_FAST_STACK    1
+#define PERF_FAST_STACK2   1
+
+/*------------------------------------------------------------*/
 /*--- V bits and A bits                                    ---*/
 /*------------------------------------------------------------*/
 
@@ -807,6 +821,9 @@ static void mc_record_param_error    ( ThreadId tid, Addr a, Bool isReg,
 static void mc_record_jump_error     ( ThreadId tid, Addr a );
 
 static
+#ifndef PERF_FAST_LOADV
+INLINE
+#endif
 ULong mc_LOADVn_slow ( Addr a, SizeT szB, Bool bigendian )
 {
    /* Make up a 64-bit result V word, which contains the loaded data for
@@ -858,7 +875,10 @@ ULong mc_LOADVn_slow ( Addr a, SizeT szB, Bool bigendian )
 }
 
 
-static 
+static
+#ifndef PERF_FAST_STOREV
+INLINE
+#endif
 void mc_STOREVn_slow ( Addr a, SizeT szB, ULong vbytes, Bool bigendian )
 {
    SizeT i, n_addrs_bad = 0;
@@ -922,9 +942,11 @@ static void set_address_range_perms ( Addr a, SizeT lenT, UWord vabits64,
       }
    }
 
-#  if VG_DEBUG_MEMORY >= 2
+#ifndef PERF_FAST_SARP
    /*------------------ debug-only case ------------------ */
    {
+      // Endianness doesn't matter here because all bytes are being set to
+      // the same value.
       UWord vabits8 = vabits64 & 0x3;
       SizeT i;
       for (i = 0; i < lenT; i++) {
@@ -932,7 +954,7 @@ static void set_address_range_perms ( Addr a, SizeT lenT, UWord vabits64,
       }
       return;
    }
-#  endif
+#endif
 
    /*------------------ standard handling ------------------ */
 
@@ -1176,11 +1198,9 @@ void make_aligned_word32_writable ( Addr a )
 
    PROF_EVENT(300, "make_aligned_word32_writable");
 
-#  if VG_DEBUG_MEMORY >= 2
+#ifndef PERF_FAST_STACK2
    MC_(make_writable)(a, 4);
-   return;
-#  endif
-
+#else
    if (EXPECTED_NOT_TAKEN(a > MAX_PRIMARY_ADDRESS)) {
       PROF_EVENT(301, "make_aligned_word32_writable-slow1");
       MC_(make_writable)(a, 4);
@@ -1190,6 +1210,7 @@ void make_aligned_word32_writable ( Addr a )
    sm                   = get_secmap_writable_low(a);
    sm_off               = SM_OFF(a);
    sm->vabits32[sm_off] = VA_BITS32_WRITABLE;
+#endif
 }
 
 
@@ -1201,11 +1222,9 @@ void make_aligned_word32_noaccess ( Addr a )
 
    PROF_EVENT(310, "make_aligned_word32_noaccess");
 
-#  if VG_DEBUG_MEMORY >= 2
+#ifndef PERF_FAST_STACK2
    MC_(make_noaccess)(a, 4);
-   return;
-#  endif
-
+#else
    if (EXPECTED_NOT_TAKEN(a > MAX_PRIMARY_ADDRESS)) {
       PROF_EVENT(311, "make_aligned_word32_noaccess-slow1");
       MC_(make_noaccess)(a, 4);
@@ -1215,6 +1234,7 @@ void make_aligned_word32_noaccess ( Addr a )
    sm                   = get_secmap_writable_low(a);
    sm_off               = SM_OFF(a);
    sm->vabits32[sm_off] = VA_BITS32_NOACCESS;
+#endif
 }
 
 
@@ -1227,11 +1247,9 @@ void make_aligned_word64_writable ( Addr a )
 
    PROF_EVENT(320, "make_aligned_word64_writable");
 
-#  if VG_DEBUG_MEMORY >= 2
+#ifndef PERF_FAST_STACK2
    MC_(make_writable)(a, 8);
-   return;
-#  endif
-
+#else
    if (EXPECTED_NOT_TAKEN(a > MAX_PRIMARY_ADDRESS)) {
       PROF_EVENT(321, "make_aligned_word64_writable-slow1");
       MC_(make_writable)(a, 8);
@@ -1241,6 +1259,7 @@ void make_aligned_word64_writable ( Addr a )
    sm       = get_secmap_writable_low(a);
    sm_off64 = SM_OFF_64(a);
    ((UShort*)(sm->vabits32))[sm_off64] = VA_BITS64_WRITABLE;
+#endif
 }
 
 
@@ -1252,11 +1271,9 @@ void make_aligned_word64_noaccess ( Addr a )
 
    PROF_EVENT(330, "make_aligned_word64_noaccess");
 
-#  if VG_DEBUG_MEMORY >= 2
+#ifndef PERF_FAST_STACK2
    MC_(make_noaccess)(a, 8);
-   return;
-#  endif
-
+#else
    if (EXPECTED_NOT_TAKEN(a > MAX_PRIMARY_ADDRESS)) {
       PROF_EVENT(331, "make_aligned_word64_noaccess-slow1");
       MC_(make_noaccess)(a, 8);
@@ -1266,6 +1283,7 @@ void make_aligned_word64_noaccess ( Addr a )
    sm       = get_secmap_writable_low(a);
    sm_off64 = SM_OFF_64(a);
    ((UShort*)(sm->vabits32))[sm_off64] = VA_BITS64_NOACCESS;
+#endif
 }
 
 
@@ -2698,9 +2716,9 @@ ULong mc_LOADV8 ( Addr a, Bool isBigEndian )
 
    PROF_EVENT(200, "mc_LOADV8");
 
-   if (VG_DEBUG_MEMORY >= 2)
-      return mc_LOADVn_slow( a, 8, isBigEndian );
-
+#ifndef PERF_FAST_LOADV
+   return mc_LOADVn_slow( a, 8, isBigEndian );
+#else
    if (EXPECTED_NOT_TAKEN( UNALIGNED_OR_HIGH(a,8) )) {
       PROF_EVENT(201, "mc_LOADV8-slow1");
       return (ULong)mc_LOADVn_slow( a, 8, isBigEndian );
@@ -2722,6 +2740,7 @@ ULong mc_LOADV8 ( Addr a, Bool isBigEndian )
       PROF_EVENT(202, "mc_LOADV8-slow2");
       return mc_LOADVn_slow( a, 8, isBigEndian );
    }
+#endif
 }
 
 VG_REGPARM(1) ULong MC_(helperc_LOADV8be) ( Addr a )
@@ -2742,13 +2761,11 @@ void mc_STOREV8 ( Addr a, ULong vbytes, Bool isBigEndian )
 
    PROF_EVENT(210, "mc_STOREV8");
 
+#ifndef PERF_FAST_STOREV
    // XXX: this slow case seems to be marginally faster than the fast case!
    // Investigate further.
-   if (VG_DEBUG_MEMORY >= 2) {
-      mc_STOREVn_slow( a, 8, vbytes, isBigEndian );
-      return;
-   }
-
+   mc_STOREVn_slow( a, 8, vbytes, isBigEndian );
+#else
    if (EXPECTED_NOT_TAKEN( UNALIGNED_OR_HIGH(a,8) )) {
       PROF_EVENT(211, "mc_STOREV8-slow1");
       mc_STOREVn_slow( a, 8, vbytes, isBigEndian );
@@ -2780,6 +2797,7 @@ void mc_STOREV8 ( Addr a, ULong vbytes, Bool isBigEndian )
       PROF_EVENT(213, "mc_STOREV8-slow3");
       mc_STOREVn_slow( a, 8, vbytes, isBigEndian );
    }
+#endif
 }
 
 VG_REGPARM(1) void MC_(helperc_STOREV8be) ( Addr a, ULong vbytes )
@@ -2802,9 +2820,9 @@ UWord mc_LOADV4 ( Addr a, Bool isBigEndian )
 
    PROF_EVENT(220, "mc_LOADV4");
 
-   if (VG_DEBUG_MEMORY >= 2)
-      return (UWord)mc_LOADVn_slow( a, 4, isBigEndian );
-
+#ifndef PERF_FAST_LOADV
+   return (UWord)mc_LOADVn_slow( a, 4, isBigEndian );
+#else
    if (EXPECTED_NOT_TAKEN( UNALIGNED_OR_HIGH(a,4) )) {
       PROF_EVENT(221, "mc_LOADV4-slow1");
       return (UWord)mc_LOADVn_slow( a, 4, isBigEndian );
@@ -2828,6 +2846,7 @@ UWord mc_LOADV4 ( Addr a, Bool isBigEndian )
       PROF_EVENT(222, "mc_LOADV4-slow2");
       return (UWord)mc_LOADVn_slow( a, 4, isBigEndian );
    }
+#endif
 }
 
 VG_REGPARM(1) UWord MC_(helperc_LOADV4be) ( Addr a )
@@ -2848,11 +2867,9 @@ void mc_STOREV4 ( Addr a, UWord vbytes, Bool isBigEndian )
 
    PROF_EVENT(230, "mc_STOREV4");
 
-   if (VG_DEBUG_MEMORY >= 2) {
-      mc_STOREVn_slow( a, 4, (ULong)vbytes, isBigEndian );
-      return;
-   }
-
+#ifndef PERF_FAST_STOREV
+   mc_STOREVn_slow( a, 4, (ULong)vbytes, isBigEndian );
+#else
    if (EXPECTED_NOT_TAKEN( UNALIGNED_OR_HIGH(a,4) )) {
       PROF_EVENT(231, "mc_STOREV4-slow1");
       mc_STOREVn_slow( a, 4, (ULong)vbytes, isBigEndian );
@@ -2918,6 +2935,7 @@ void mc_STOREV4 ( Addr a, UWord vbytes, Bool isBigEndian )
    }
 #endif
 //---------------------------------------------------------------------------
+#endif
 }
 
 VG_REGPARM(2) void MC_(helperc_STOREV4be) ( Addr a, UWord vbytes )
@@ -2940,9 +2958,9 @@ UWord mc_LOADV2 ( Addr a, Bool isBigEndian )
 
    PROF_EVENT(240, "mc_LOADV2");
 
-   if (VG_DEBUG_MEMORY >= 2)
-      return (UWord)mc_LOADVn_slow( a, 2, isBigEndian );
-
+#ifndef PERF_FAST_LOADV
+   return (UWord)mc_LOADVn_slow( a, 2, isBigEndian );
+#else
    if (EXPECTED_NOT_TAKEN( UNALIGNED_OR_HIGH(a,2) )) {
       PROF_EVENT(241, "mc_LOADV2-slow1");
       return (UWord)mc_LOADVn_slow( a, 2, isBigEndian );
@@ -2969,6 +2987,7 @@ UWord mc_LOADV2 ( Addr a, Bool isBigEndian )
          return (UWord)mc_LOADVn_slow( a, 2, isBigEndian );
       }
    }
+#endif
 }
 
 VG_REGPARM(1) UWord MC_(helperc_LOADV2be) ( Addr a )
@@ -2989,11 +3008,9 @@ void mc_STOREV2 ( Addr a, UWord vbytes, Bool isBigEndian )
 
    PROF_EVENT(250, "mc_STOREV2");
 
-   if (VG_DEBUG_MEMORY >= 2) {
-      mc_STOREVn_slow( a, 2, (ULong)vbytes, isBigEndian );
-      return;
-   }
-
+#ifndef PERF_FAST_STOREV
+   mc_STOREVn_slow( a, 2, (ULong)vbytes, isBigEndian );
+#else
    if (EXPECTED_NOT_TAKEN( UNALIGNED_OR_HIGH(a,2) )) {
       PROF_EVENT(251, "mc_STOREV2-slow1");
       mc_STOREVn_slow( a, 2, (ULong)vbytes, isBigEndian );
@@ -3026,6 +3043,7 @@ void mc_STOREV2 ( Addr a, UWord vbytes, Bool isBigEndian )
       PROF_EVENT(253, "mc_STOREV2-slow3");
       mc_STOREVn_slow( a, 2, (ULong)vbytes, isBigEndian );
    }
+#endif
 }
 
 VG_REGPARM(2) void MC_(helperc_STOREV2be) ( Addr a, UWord vbytes )
@@ -3049,10 +3067,9 @@ UWord MC_(helperc_LOADV1) ( Addr a )
 
    PROF_EVENT(260, "mc_LOADV1");
 
-#  if VG_DEBUG_MEMORY >= 2
+#ifndef PERF_FAST_LOADV
    return (UWord)mc_LOADVn_slow( a, 1, False/*irrelevant*/ );
-#  endif
-
+#else
    if (EXPECTED_NOT_TAKEN( UNALIGNED_OR_HIGH(a,1) )) {
       PROF_EVENT(261, "mc_LOADV1-slow1");
       return (UWord)mc_LOADVn_slow( a, 1, False/*irrelevant*/ );
@@ -3079,6 +3096,7 @@ UWord MC_(helperc_LOADV1) ( Addr a )
          return (UWord)mc_LOADVn_slow( a, 1, False/*irrelevant*/ );
       }
    }
+#endif
 }
 
 
@@ -3090,11 +3108,9 @@ void MC_(helperc_STOREV1) ( Addr a, UWord vbyte )
 
    PROF_EVENT(270, "mc_STOREV1");
 
-#  if VG_DEBUG_MEMORY >= 2
+#ifndef PERF_FAST_STOREV
    mc_STOREVn_slow( a, 1, (ULong)vbyte, False/*irrelevant*/ );
-   return;
-#  endif
-
+#else
    if (EXPECTED_NOT_TAKEN( UNALIGNED_OR_HIGH(a,1) )) {
       PROF_EVENT(271, "mc_STOREV1-slow1");
       mc_STOREVn_slow( a, 1, (ULong)vbyte, False/*irrelevant*/ );
@@ -3127,6 +3143,7 @@ void MC_(helperc_STOREV1) ( Addr a, UWord vbyte )
       PROF_EVENT(273, "mc_STOREV1-slow3");
       mc_STOREVn_slow( a, 1, (ULong)vbyte, False/*irrelevant*/ );
    }
+#endif
 }
 
 
@@ -4006,18 +4023,22 @@ static void mc_pre_clo_init(void)
    VG_(track_die_mem_brk)         ( MC_(make_noaccess) );
    VG_(track_die_mem_munmap)      ( MC_(make_noaccess) ); 
 
+#ifdef PERF_FAST_STACK
    VG_(track_new_mem_stack_4)     ( mc_new_mem_stack_4  );
    VG_(track_new_mem_stack_8)     ( mc_new_mem_stack_8  );
    VG_(track_new_mem_stack_12)    ( mc_new_mem_stack_12 );
    VG_(track_new_mem_stack_16)    ( mc_new_mem_stack_16 );
    VG_(track_new_mem_stack_32)    ( mc_new_mem_stack_32 );
+#endif
    VG_(track_new_mem_stack)       ( mc_new_mem_stack    );
 
+#ifdef PERF_FAST_STACK
    VG_(track_die_mem_stack_4)     ( mc_die_mem_stack_4  );
    VG_(track_die_mem_stack_8)     ( mc_die_mem_stack_8  );
    VG_(track_die_mem_stack_12)    ( mc_die_mem_stack_12 );
    VG_(track_die_mem_stack_16)    ( mc_die_mem_stack_16 );
    VG_(track_die_mem_stack_32)    ( mc_die_mem_stack_32 );
+#endif
    VG_(track_die_mem_stack)       ( mc_die_mem_stack    );
    
    VG_(track_ban_mem_stack)       ( MC_(make_noaccess) );
