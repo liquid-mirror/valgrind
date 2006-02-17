@@ -177,20 +177,20 @@ extern HChar* MC_(event_ctr_name)[N_PROF_EVENTS];
 #define SM_SIZE 65536            /* DO NOT CHANGE */
 #define SM_MASK (SM_SIZE-1)      /* DO NOT CHANGE */
 
-#define V_BIT_VALID        0
-#define V_BIT_INVALID      1
+#define V_BIT_DEFINED         0
+#define V_BIT_UNDEFINED       1
 
-#define V_BITS8_VALID      0
-#define V_BITS8_INVALID    0xFF
+#define V_BITS8_DEFINED       0
+#define V_BITS8_UNDEFINED     0xFF
 
-#define V_BITS16_VALID     0
-#define V_BITS16_INVALID   0xFFFF
+#define V_BITS16_DEFINED      0
+#define V_BITS16_UNDEFINED    0xFFFF
 
-#define V_BITS32_VALID     0
-#define V_BITS32_INVALID   0xFFFFFFFF
+#define V_BITS32_DEFINED      0
+#define V_BITS32_UNDEFINED    0xFFFFFFFF
 
-#define V_BITS64_VALID     0ULL
-#define V_BITS64_INVALID   0xFFFFFFFFFFFFFFFFULL
+#define V_BITS64_DEFINED      0ULL
+#define V_BITS64_UNDEFINED    0xFFFFFFFFFFFFFFFFULL
 
 
 /*------------------------------------------------------------*/

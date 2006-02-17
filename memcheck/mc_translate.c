@@ -2528,11 +2528,11 @@ void do_shadow_Store ( MCEnv* mce,
    // shadow computation ops that precede it.
    if (!MC_(clo_undef_value_errors)) {
       switch (ty) {
-         case Ity_V128: c = IRConst_V128(V_BITS16_VALID); break; // V128 weirdness
-         case Ity_I64:  c = IRConst_U64 (V_BITS64_VALID); break;
-         case Ity_I32:  c = IRConst_U32 (V_BITS32_VALID); break;
-         case Ity_I16:  c = IRConst_U16 (V_BITS16_VALID); break;
-         case Ity_I8:   c = IRConst_U8  (V_BITS8_VALID);  break;
+         case Ity_V128: c = IRConst_V128(V_BITS16_DEFINED); break; // V128 weirdness
+         case Ity_I64:  c = IRConst_U64 (V_BITS64_DEFINED); break;
+         case Ity_I32:  c = IRConst_U32 (V_BITS32_DEFINED); break;
+         case Ity_I16:  c = IRConst_U16 (V_BITS16_DEFINED); break;
+         case Ity_I8:   c = IRConst_U8  (V_BITS8_DEFINED);  break;
          default:       VG_(tool_panic)("memcheck:do_shadow_Store(LE)");
       }
       vdata = IRExpr_Const( c );
