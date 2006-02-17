@@ -910,7 +910,8 @@ void mc_STOREVn_slow ( Addr a, SizeT szB, ULong vbytes, Bool bigendian )
 static void set_address_range_perms ( Addr a, SizeT lenT, UWord vabits16,
                                       UWord dsm_num )
 {
-   UWord    vabits2, sm_off, sm_off16;
+   UWord    sm_off, sm_off16;
+   UWord    vabits2 = vabits16 & 0x3;
    SizeT    lenA, lenB, len_to_next_secmap;
    Addr     aNext;
    SecMap*  sm;
@@ -943,7 +944,6 @@ static void set_address_range_perms ( Addr a, SizeT lenT, UWord vabits16,
    {
       // Endianness doesn't matter here because all bytes are being set to
       // the same value.
-      UWord vabits2 = vabits16 & 0x3;
       SizeT i;
       for (i = 0; i < lenT; i++) {
          set_vabits2(a + i, vabits2);
@@ -958,8 +958,6 @@ static void set_address_range_perms ( Addr a, SizeT lenT, UWord vabits16,
       to use (part of the space-compression scheme). */
    example_dsm = &sm_distinguished[dsm_num];
 
-   vabits2 = vabits16 & 0x3;
-   
    // We have to handle ranges covering various combinations of partial and
    // whole sec-maps.  Here is how parts 1, 2 and 3 are used in each case.
    // Cases marked with a '*' are common.
