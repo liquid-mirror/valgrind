@@ -535,6 +535,10 @@ UChar extract_vabits4_from_vabits8 ( Addr a, UChar vabits8 )
 // clever things like combine the auxmap check (in
 // get_secmap_{read,writ}able) with alignment checks.
 
+// *** WARNING! ***
+// Any time this function is called, if it is possible that vabits2
+// is equal to VA_BITS2_OTHER, then the corresponding entry in the
+// sec-V-bits table must also be set!
 static inline
 void set_vabits2 ( Addr a, UChar vabits2 )
 {
@@ -921,9 +925,13 @@ static void set_address_range_perms ( Addr a, SizeT lenT, UWord vabits16,
    PROF_EVENT(150, "set_address_range_perms");
 
    /* Check the V+A bits make sense. */
-   tl_assert(vabits16 == VA_BITS16_NOACCESS ||
-             vabits16 == VA_BITS16_WRITABLE ||
-             vabits16 == VA_BITS16_READABLE);
+   tl_assert(VA_BITS16_NOACCESS == vabits16 ||
+             VA_BITS16_WRITABLE == vabits16 ||
+             VA_BITS16_READABLE == vabits16);
+
+   // This code should never write PDBs;  ensure this.  (See comment above
+   // set_vabits2().)
+   tl_assert(VA_BITS2_OTHER != vabits2);
 
    if (lenT == 0)
       return;
@@ -944,6 +952,9 @@ static void set_address_range_perms ( Addr a, SizeT lenT, UWord vabits16,
    {
       // Endianness doesn't matter here because all bytes are being set to
       // the same value.
+      // Nb: We don't have to worry about updating the sec-V-bits table
+      // after these set_vabits2() calls because this code never writes
+      // VA_BITS2_OTHER values.
       SizeT i;
       for (i = 0; i < lenT; i++) {
          set_vabits2(a + i, vabits2);
@@ -1159,6 +1170,7 @@ void MC_(make_readable) ( Addr a, SizeT len )
 void MC_(copy_address_range_state) ( Addr src, Addr dst, SizeT len )
 {
    SizeT i, j;
+   UChar vabits2;
 
    DEBUG("MC_(copy_address_range_state)\n");
    PROF_EVENT(50, "MC_(copy_address_range_state)");
@@ -1169,14 +1181,22 @@ void MC_(copy_address_range_state) ( Addr src, Addr dst, SizeT len )
    if (src < dst) {
       for (i = 0, j = len-1; i < len; i++, j--) {
          PROF_EVENT(51, "MC_(copy_address_range_state)(loop)");
-         set_vabits2( dst+j, get_vabits2( src+j ) );
+         vabits2 = get_vabits2( src+j );
+         set_vabits2( dst+j, vabits2 );
+         if (VA_BITS2_OTHER == vabits2) {
+            set_sec_vbits8( dst+j, get_sec_vbits8( src+j ) );
+         }
       }
    }
 
    if (src > dst) {
       for (i = 0; i < len; i++) {
-         PROF_EVENT(51, "MC_(copy_address_range_state)(loop)");
-         set_vabits2( dst+i, get_vabits2( src+i ) );
+         PROF_EVENT(52, "MC_(copy_address_range_state)(loop)");
+         vabits2 = get_vabits2( src+i );
+         set_vabits2( dst+i, vabits2 );
+         if (VA_BITS2_OTHER == vabits2) {
+            set_sec_vbits8( dst+i, get_sec_vbits8( src+i ) );
+         }
       }
    }
 }
