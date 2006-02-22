@@ -74,7 +74,7 @@
 #define PERF_FAST_LOADV    1
 #define PERF_FAST_STOREV   1
 
-//#define PERF_FAST_SARP     1
+#define PERF_FAST_SARP     1
 
 #define PERF_FAST_STACK    1
 #define PERF_FAST_STACK2   1
