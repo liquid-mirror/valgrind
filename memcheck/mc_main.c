@@ -310,6 +310,9 @@ static ULong n_auxmap_cmps      = 0;
 static Int   n_sanity_cheap     = 0;
 static Int   n_sanity_expensive = 0;
 
+static Int   n_secVBit_nodes   = 0;
+static Int   max_secVBit_nodes = 0;
+
 static void update_SM_counts(SecMap* oldSM, SecMap* newSM)
 {
    tl_assert(oldSM != newSM);
@@ -830,6 +833,10 @@ static void set_sec_vbits8(Addr a, UWord vbits8)
       // Insert the new node.
       VG_(OSet_Insert)(secVBitTable, n);
       sec_vbits_new_nodes++;
+
+      n_secVBit_nodes = VG_(OSet_Size)(secVBitTable);
+      if (n_secVBit_nodes > max_secVBit_nodes)
+         max_secVBit_nodes = n_secVBit_nodes;
    }
 }
 
@@ -3958,6 +3965,8 @@ static void mc_fini ( Int exitcode )
    done_prof_mem();
 
    if (VG_(clo_verbosity) > 1) {
+      SizeT max_secVBit_szB, max_SMs_szB, max_shmem_szB;
+      
       VG_(message)(Vg_DebugMsg,
          " memcheck: sanity checks: %d cheap, %d expensive",
          n_sanity_cheap, n_sanity_expensive );
@@ -3977,13 +3986,25 @@ static void mc_fini ( Int exitcode )
       print_SM_info("max_readable", max_readable_SMs);
       print_SM_info("max_non_DSM ", max_non_DSM_SMs);
 
+      // Three DSMs, plus the non-DSM ones
+      max_SMs_szB = (3 + max_non_DSM_SMs) * sizeof(SecMap);
+      // The 12 bytes is the AVL node metadata size.
+      // The 16 bytes is the malloc metadata size.
+      // Hardwiring the numbers in sucks, but I don't see how else to do it.
+      max_secVBit_szB = max_secVBit_nodes * (sizeof(SecVBitNode) + 12 + 16);
+      max_shmem_szB   = sizeof(primary_map) + max_SMs_szB + max_secVBit_szB;
+
       VG_(message)(Vg_DebugMsg,
-         " memcheck: sec V bit nodes:      %d",
-         VG_(OSet_Size)(secVBitTable) );
+         " memcheck: max sec V bit nodes:    %d (%dk, %dM)",
+         max_secVBit_nodes, max_secVBit_szB / 1024,
+                            max_secVBit_szB / (1024 * 1024));
       VG_(message)(Vg_DebugMsg,
          " memcheck: set_sec_vbits8 calls: %llu (new: %llu, updates: %llu)",
          sec_vbits_new_nodes + sec_vbits_updates,
          sec_vbits_new_nodes, sec_vbits_updates );
+      VG_(message)(Vg_DebugMsg,
+         " memcheck: max shadow mem size:   %dk, %dM",
+         max_shmem_szB / 1024, max_shmem_szB / (1024 * 1024));
    }
 
    if (0) {
