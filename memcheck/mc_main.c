@@ -74,7 +74,7 @@
 #define PERF_FAST_LOADV    1
 #define PERF_FAST_STOREV   1
 
-#define PERF_FAST_SARP     1
+//#define PERF_FAST_SARP     1
 
 #define PERF_FAST_STACK    1
 #define PERF_FAST_STACK2   1
@@ -170,16 +170,6 @@
 
 /* Do not change this. */
 #define MAX_PRIMARY_ADDRESS (Addr)((((Addr)65536) * N_PRIMARY_MAP)-1)
-
-
-/* --------------- Stats maps --------------- */
-
-static Int   n_secmaps_issued   = 0;
-static Int   n_secmaps_deissued = 0;
-static ULong n_auxmap_searches  = 0;
-static ULong n_auxmap_cmps      = 0;
-static Int   n_sanity_cheap     = 0;
-static Int   n_sanity_expensive = 0;
 
 
 /* --------------- Secondary maps --------------- */
@@ -280,6 +270,9 @@ static INLINE Bool is_distinguished_sm ( SecMap* sm ) {
    return sm >= &sm_distinguished[0] && sm <= &sm_distinguished[2];
 }
 
+// Forward declaration
+static void update_SM_counts(SecMap* oldSM, SecMap* newSM);
+
 /* dist_sm points to one of our three distinguished secondaries.  Make
    a copy of it so that we can write to it.
 */
@@ -295,8 +288,48 @@ static SecMap* copy_for_writing ( SecMap* dist_sm )
       VG_(out_of_memory_NORETURN)( "memcheck:allocate new SecMap", 
                                    sizeof(SecMap) );
    VG_(memcpy)(new_sm, dist_sm, sizeof(SecMap));
-   n_secmaps_issued++;
+   update_SM_counts(dist_sm, new_sm);
    return new_sm;
+}
+
+/* --------------- Stats --------------- */
+
+static Int   n_issued_SMs     = 0;
+static Int   n_deissued_SMs   = 0;
+static Int   n_noaccess_SMs   = N_PRIMARY_MAP; // start with many noaccess DSMs
+static Int   n_writable_SMs   = 0;
+static Int   n_readable_SMs   = 0;
+static Int   n_non_DSM_SMs    = 0;
+static Int   max_noaccess_SMs = 0;
+static Int   max_writable_SMs = 0;
+static Int   max_readable_SMs = 0;
+static Int   max_non_DSM_SMs  = 0;
+
+static ULong n_auxmap_searches  = 0;
+static ULong n_auxmap_cmps      = 0;
+static Int   n_sanity_cheap     = 0;
+static Int   n_sanity_expensive = 0;
+
+static void update_SM_counts(SecMap* oldSM, SecMap* newSM)
+{
+   tl_assert(oldSM != newSM);
+   
+   if      (oldSM == &sm_distinguished[SM_DIST_NOACCESS]) n_noaccess_SMs--;
+   else if (oldSM == &sm_distinguished[SM_DIST_WRITABLE]) n_writable_SMs--;
+   else if (oldSM == &sm_distinguished[SM_DIST_READABLE]) n_readable_SMs--;
+   else                                                 { n_non_DSM_SMs--;
+                                                          n_deissued_SMs++; }
+
+   if      (newSM == &sm_distinguished[SM_DIST_NOACCESS]) n_noaccess_SMs++;
+   else if (newSM == &sm_distinguished[SM_DIST_WRITABLE]) n_writable_SMs++;
+   else if (newSM == &sm_distinguished[SM_DIST_READABLE]) n_readable_SMs++;
+   else                                                 { n_non_DSM_SMs++;
+                                                          n_issued_SMs++; }
+
+   if (n_noaccess_SMs > max_noaccess_SMs) max_noaccess_SMs = n_noaccess_SMs;
+   if (n_writable_SMs > max_writable_SMs) max_writable_SMs = n_writable_SMs;
+   if (n_readable_SMs > max_readable_SMs) max_readable_SMs = n_readable_SMs;
+   if (n_non_DSM_SMs  > max_non_DSM_SMs ) max_non_DSM_SMs  = n_non_DSM_SMs;   
 }
 
 /* --------------- Primary maps --------------- */
@@ -398,7 +431,6 @@ static AuxMapEnt* find_or_alloc_in_auxmap ( Addr a )
    auxmap_used++;
    return &auxmap[auxmap_used-1];
 }
-
 
 /* --------------- SecMap fundamentals --------------- */
 
@@ -1087,8 +1119,8 @@ static void set_address_range_perms ( Addr a, SizeT lenT, UWord vabits16,
          // Free the non-distinguished sec-map that we're replacing.  This
          // case happens moderately often, enough to be worthwhile.
          VG_(am_munmap_valgrind)((Addr)*sm_ptr, sizeof(SecMap));
-         n_secmaps_deissued++;      // Needed for the expensive sanity check
       }
+      update_SM_counts(*sm_ptr, example_dsm);
       // Make the sec-map entry point to the example DSM
       *sm_ptr = example_dsm;
       lenB -= SM_SIZE;
@@ -3435,7 +3467,7 @@ static Bool mc_expensive_sanity_check ( void )
       }
    }
 
-   if (n_secmaps_found != (n_secmaps_issued - n_secmaps_deissued))
+   if (n_secmaps_found != (n_issued_SMs - n_deissued_SMs))
       bad = True;
 
    if (bad) {
@@ -3898,11 +3930,18 @@ static void mc_post_clo_init ( void )
    }
 }
 
+static void print_SM_info(char* type, int n_SMs)
+{
+   VG_(message)(Vg_DebugMsg,
+      " memcheck: SMs: %s = %d (%dk, %dM)",
+      type,
+      n_SMs,
+      n_SMs * sizeof(SecMap) / 1024,
+      n_SMs * sizeof(SecMap) / (1024 * 1024) );
+}
+
 static void mc_fini ( Int exitcode )
 {
-   Int     i, n_accessible_dist;
-   SecMap* sm;
-
    MC_(print_malloc_stats)();
 
    if (VG_(clo_verbosity) == 1 && !VG_(clo_xml)) {
@@ -3930,32 +3969,13 @@ static void mc_fini ( Int exitcode )
       VG_(message)(Vg_DebugMsg,
          " memcheck: auxmaps: %lld searches, %lld comparisons",
          n_auxmap_searches, n_auxmap_cmps );   
-      VG_(message)(Vg_DebugMsg,
-         " memcheck: secondaries: %d issued (%dk, %dM), %d deissued",
-         n_secmaps_issued, 
-         n_secmaps_issued * sizeof(SecMap) / 1024,
-         n_secmaps_issued * sizeof(SecMap) / (1024 * 1024),
-         n_secmaps_deissued);   
 
-      n_accessible_dist = 0;
-      for (i = 0; i < N_PRIMARY_MAP; i++) {
-         sm = primary_map[i];
-         if (is_distinguished_sm(sm)
-             && sm != &sm_distinguished[SM_DIST_NOACCESS])
-            n_accessible_dist ++;
-      }
-      for (i = 0; i < auxmap_used; i++) {
-         sm = auxmap[i].sm;
-         if (is_distinguished_sm(sm)
-             && sm != &sm_distinguished[SM_DIST_NOACCESS])
-            n_accessible_dist ++;
-      }
-
-      VG_(message)(Vg_DebugMsg,
-         " memcheck: secondaries: %d accessible and distinguished (%dk, %dM)",
-         n_accessible_dist, 
-         n_accessible_dist * sizeof(SecMap) / 1024,
-         n_accessible_dist * sizeof(SecMap) / (1024 * 1024) );
+      print_SM_info("n_issued    ", n_issued_SMs);
+      print_SM_info("n_deissued  ", n_deissued_SMs);
+      print_SM_info("max_noaccess", max_noaccess_SMs);
+      print_SM_info("max_writable", max_writable_SMs);
+      print_SM_info("max_readable", max_readable_SMs);
+      print_SM_info("max_non_DSM ", max_non_DSM_SMs);
 
       VG_(message)(Vg_DebugMsg,
          " memcheck: sec V bit nodes:      %d",
