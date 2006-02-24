@@ -315,8 +315,6 @@ static Int   max_secVBit_nodes = 0;
 
 static void update_SM_counts(SecMap* oldSM, SecMap* newSM)
 {
-   tl_assert(oldSM != newSM);
-   
    if      (oldSM == &sm_distinguished[SM_DIST_NOACCESS]) n_noaccess_SMs--;
    else if (oldSM == &sm_distinguished[SM_DIST_WRITABLE]) n_writable_SMs--;
    else if (oldSM == &sm_distinguished[SM_DIST_READABLE]) n_readable_SMs--;
@@ -3988,10 +3986,11 @@ static void mc_fini ( Int exitcode )
 
       // Three DSMs, plus the non-DSM ones
       max_SMs_szB = (3 + max_non_DSM_SMs) * sizeof(SecMap);
-      // The 12 bytes is the AVL node metadata size.
-      // The 16 bytes is the malloc metadata size.
-      // Hardwiring the numbers in sucks, but I don't see how else to do it.
-      max_secVBit_szB = max_secVBit_nodes * (sizeof(SecVBitNode) + 12 + 16);
+      // The 3*sizeof(Word) bytes is the AVL node metadata size.
+      // The 4*sizeof(Word) bytes is the malloc metadata size.
+      // Hardwiring these sizes in sucks, but I don't see how else to do it.
+      max_secVBit_szB = max_secVBit_nodes * 
+            (sizeof(SecVBitNode) + 3*sizeof(Word) + 4*sizeof(Word));
       max_shmem_szB   = sizeof(primary_map) + max_SMs_szB + max_secVBit_szB;
 
       VG_(message)(Vg_DebugMsg,
