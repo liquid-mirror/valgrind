@@ -3171,9 +3171,13 @@ void MC_(helperc_STOREV1) ( Addr a, UWord vbyte )
    sm      = get_secmap_readable_low(a);
    sm_off  = SM_OFF(a);
    vabits8 = sm->vabits8[sm_off];
-   if (EXPECTED_TAKEN( !is_distinguished_sm(sm) && 
-                       (VA_BITS8_READABLE == vabits8 ||
-                        VA_BITS8_WRITABLE == vabits8) ))
+   if (EXPECTED_TAKEN
+         ( !is_distinguished_sm(sm) &&
+           ( (VA_BITS8_READABLE == vabits8 || VA_BITS8_WRITABLE == vabits8)
+          || (VA_BITS2_NOACCESS != extract_vabits2_from_vabits8(a, vabits8))
+           )
+         )
+      )
    {
       /* Handle common case quickly: a is mapped, the entire word32 it
          lives in is addressible. */
