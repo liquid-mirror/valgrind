@@ -2288,6 +2288,7 @@ typedef
           VG_USERREQ__DESTROY_MEMPOOL  = 0x1304,
           VG_USERREQ__MEMPOOL_ALLOC    = 0x1305,
           VG_USERREQ__MEMPOOL_FREE     = 0x1306,
+          VG_USERREQ__MEMPOOL_TRIM     = 0x1307,
 
           /* Allow printfs to valgrind log. */
           VG_USERREQ__PRINTF           = 0x1401,
@@ -2296,7 +2297,7 @@ typedef
           /* Stack support. */
           VG_USERREQ__STACK_REGISTER   = 0x1501,
           VG_USERREQ__STACK_DEREGISTER = 0x1502,
-          VG_USERREQ__STACK_CHANGE     = 0x1503,
+          VG_USERREQ__STACK_CHANGE     = 0x1503
    } Vg_ClientRequest;
 
 #if !defined(__GNUC__)
@@ -2376,6 +2377,7 @@ VALGRIND_PRINTF_BACKTRACE(const char *format, ...)
 /* These requests allow control to move from the simulated CPU to the
    real CPU, calling an arbitary function */
 #define VALGRIND_NON_SIMD_CALL0(_qyy_fn)                          \
+   __extension__                                                  \
    ({unsigned long _qyy_res;                                      \
     VALGRIND_DO_CLIENT_REQUEST(_qyy_res, 0 /* default return */,  \
                                VG_USERREQ__CLIENT_CALL0,          \
@@ -2385,6 +2387,7 @@ VALGRIND_PRINTF_BACKTRACE(const char *format, ...)
    })
 
 #define VALGRIND_NON_SIMD_CALL1(_qyy_fn, _qyy_arg1)               \
+   __extension__                                                  \
    ({unsigned long _qyy_res;                                      \
     VALGRIND_DO_CLIENT_REQUEST(_qyy_res, 0 /* default return */,  \
                                VG_USERREQ__CLIENT_CALL1,          \
@@ -2394,6 +2397,7 @@ VALGRIND_PRINTF_BACKTRACE(const char *format, ...)
    })
 
 #define VALGRIND_NON_SIMD_CALL2(_qyy_fn, _qyy_arg1, _qyy_arg2)    \
+   __extension__                                                  \
    ({unsigned long _qyy_res;                                      \
     VALGRIND_DO_CLIENT_REQUEST(_qyy_res, 0 /* default return */,  \
                                VG_USERREQ__CLIENT_CALL2,          \
@@ -2403,6 +2407,7 @@ VALGRIND_PRINTF_BACKTRACE(const char *format, ...)
    })
 
 #define VALGRIND_NON_SIMD_CALL3(_qyy_fn, _qyy_arg1, _qyy_arg2, _qyy_arg3) \
+   __extension__                                                  \
    ({unsigned long _qyy_res;                                      \
     VALGRIND_DO_CLIENT_REQUEST(_qyy_res, 0 /* default return */,  \
                                VG_USERREQ__CLIENT_CALL3,          \
@@ -2417,6 +2422,7 @@ VALGRIND_PRINTF_BACKTRACE(const char *format, ...)
    the tool must record the errors with VG_(maybe_record_error)() or
    VG_(unique_error)() for them to be counted. */
 #define VALGRIND_COUNT_ERRORS                                     \
+   __extension__                                                  \
    ({unsigned int _qyy_res;                                       \
     VALGRIND_DO_CLIENT_REQUEST(_qyy_res, 0 /* default return */,  \
                                VG_USERREQ__COUNT_ERRORS,          \
@@ -2497,6 +2503,14 @@ VALGRIND_PRINTF_BACKTRACE(const char *format, ...)
     VALGRIND_DO_CLIENT_REQUEST(_qzz_res, 0,                       \
                                VG_USERREQ__MEMPOOL_FREE,          \
                                pool, addr, 0, 0, 0);              \
+   }
+
+/* Disassociate any pieces outside a particular range. */
+#define VALGRIND_MEMPOOL_TRIM(pool, addr, size)                   \
+   {unsigned int _qzz_res;                                        \
+    VALGRIND_DO_CLIENT_REQUEST(_qzz_res, 0,                       \
+                               VG_USERREQ__MEMPOOL_TRIM,          \
+                               pool, addr, size, 0, 0);           \
    }
 
 /* Mark a piece of memory as being a stack. Returns a stack id. */

@@ -1872,7 +1872,7 @@ void MC_(helperc_MAKE_STACK_UNINIT) ( Addr base, UWord len )
    if (EXPECTED_TAKEN( len == 128 && VG_IS_8_ALIGNED(base) )) {
       /* Now we know the address range is suitably sized and aligned. */
       UWord a_lo = (UWord)(base);
-      UWord a_hi = (UWord)(base + 127);
+      UWord a_hi = (UWord)(base + 128 - 1);
       tl_assert(a_lo < a_hi);             // paranoia: detect overflow
       if (a_hi < MAX_PRIMARY_ADDRESS) {
          // Now we know the entire range is within the main primary map.
@@ -1907,10 +1907,10 @@ void MC_(helperc_MAKE_STACK_UNINIT) ( Addr base, UWord len )
    }
 
    /* 288 bytes (36 ULongs) is the magic value for ELF ppc64. */
-   if (EXPECTED_TAKEN( len == 128 && VG_IS_8_ALIGNED(base) )) {
+   if (EXPECTED_TAKEN( len == 288 && VG_IS_8_ALIGNED(base) )) {
       /* Now we know the address range is suitably sized and aligned. */
       UWord a_lo = (UWord)(base);
-      UWord a_hi = (UWord)(base + 127);
+      UWord a_hi = (UWord)(base + 288 - 1);
       tl_assert(a_lo < a_hi);             // paranoia: detect overflow
       if (a_hi < MAX_PRIMARY_ADDRESS) {
          // Now we know the entire range is within the main primary map.
@@ -4053,7 +4053,8 @@ static Bool mc_handle_client_request ( ThreadId tid, UWord* arg, UWord* ret )
     && VG_USERREQ__CREATE_MEMPOOL   != arg[0]
     && VG_USERREQ__DESTROY_MEMPOOL  != arg[0]
     && VG_USERREQ__MEMPOOL_ALLOC    != arg[0]
-    && VG_USERREQ__MEMPOOL_FREE     != arg[0])
+    && VG_USERREQ__MEMPOOL_FREE     != arg[0]
+    && VG_USERREQ__MEMPOOL_TRIM     != arg[0])
       return False;
 
    switch (arg[0]) {
@@ -4216,6 +4217,15 @@ static Bool mc_handle_client_request ( ThreadId tid, UWord* arg, UWord* ret )
          Addr addr      = (Addr)arg[2];
 
          MC_(mempool_free) ( pool, addr );
+         return True;
+      }
+
+      case VG_USERREQ__MEMPOOL_TRIM: {
+         Addr pool      = (Addr)arg[1];
+         Addr addr      = (Addr)arg[2];
+         UInt size      =       arg[3];
+
+         MC_(mempool_trim) ( pool, addr, size );
          return True;
       }
 

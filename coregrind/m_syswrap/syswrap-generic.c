@@ -187,6 +187,8 @@ SysRes do_mremap( Addr old_addr, SizeT old_len,
                   old_addr,old_len,new_addr,new_len, 
                   flags & VKI_MREMAP_MAYMOVE ? "MAYMOVE" : "",
                   flags & VKI_MREMAP_FIXED ? "FIXED" : "");
+   if (0)
+      VG_(am_show_nsegments)(0, "do_remap: before");
 
    if (flags & ~(VKI_MREMAP_FIXED | VKI_MREMAP_MAYMOVE))
       goto eINVAL;
@@ -327,6 +329,18 @@ SysRes do_mremap( Addr old_addr, SizeT old_len,
       /* VG_(am_get_advisory_client_simple) interprets zero to mean
          non-fixed, which is not what we want */
    advised = VG_(am_get_advisory_client_simple)( needA, needL, &ok );
+   if (ok) {
+      /* VG_(am_get_advisory_client_simple) (first arg == 0, meaning
+         this-or-nothing) is too lenient, and may allow us to trash
+         the next segment along.  So make very sure that the proposed
+         new area really is free.  This is perhaps overly
+         conservative, but it fixes #129866. */
+      NSegment* segLo = VG_(am_find_nsegment)( needA );
+      NSegment* segHi = VG_(am_find_nsegment)( needA + needL - 1 );
+      if (segLo == NULL || segHi == NULL 
+          || segLo != segHi || segLo->kind != SkFree)
+         ok = False;
+   }
    if (ok && advised == needA) {
       ok = VG_(am_extend_map_client)( &d, old_seg, needL );
       if (ok) {
@@ -374,6 +388,17 @@ SysRes do_mremap( Addr old_addr, SizeT old_len,
       /* VG_(am_get_advisory_client_simple) interprets zero to mean
          non-fixed, which is not what we want */
    advised = VG_(am_get_advisory_client_simple)( needA, needL, &ok );
+   if (ok) {
+      /* VG_(am_get_advisory_client_simple) (first arg == 0, meaning
+         this-or-nothing) is too lenient, and may allow us to trash
+         the next segment along.  So make very sure that the proposed
+         new area really is free. */
+      NSegment* segLo = VG_(am_find_nsegment)( needA );
+      NSegment* segHi = VG_(am_find_nsegment)( needA + needL - 1 );
+      if (segLo == NULL || segHi == NULL 
+          || segLo != segHi || segLo->kind != SkFree)
+         ok = False;
+   }
    if (!ok || advised != needA)
       goto eNOMEM;
    ok = VG_(am_extend_map_client)( &d, old_seg, needL );
@@ -989,14 +1014,14 @@ static Addr do_brk ( Addr newbrk )
       return newbrk;
    }
 
-   if (newbrk >= rseg->end+1 - VKI_PAGE_SIZE) {
+   if (newbrk > rseg->end+1 - VKI_PAGE_SIZE) {
       /* request is too large -- the resvn would fall below 1 page,
          which isn't allowed. */
       goto bad;
    }
 
    newbrkP = VG_PGROUNDUP(newbrk);
-   vg_assert(newbrkP > rseg->start && newbrkP < rseg->end+1 - VKI_PAGE_SIZE);
+   vg_assert(newbrkP > rseg->start && newbrkP <= rseg->end+1 - VKI_PAGE_SIZE);
    delta = newbrkP - rseg->start;
    vg_assert(delta > 0);
    vg_assert(VG_IS_PAGE_ALIGNED(delta));
@@ -3815,6 +3840,32 @@ PRE(sys_ioctl)
                     VKI_E_TABSZ * sizeof(unsigned short) );
       break;
 
+   case VKI_GIO_UNIMAP:
+      if ( ARG3 ) {
+         struct vki_unimapdesc *desc = (struct vki_unimapdesc *) ARG3;
+         PRE_MEM_READ( "ioctl(GIO_UNIMAP)", (Addr)&desc->entry_ct,
+                       sizeof(unsigned short));
+         PRE_MEM_READ( "ioctl(GIO_UNIMAP)", (Addr)&desc->entries,
+                       sizeof(struct vki_unipair *));
+         PRE_MEM_WRITE( "ioctl(GIO_UNIMAP).entries", (Addr)desc->entries,
+                        desc->entry_ct * sizeof(struct vki_unipair));
+      }
+      break;
+   case VKI_PIO_UNIMAP:
+      if ( ARG3 ) {
+         struct vki_unimapdesc *desc = (struct vki_unimapdesc *) ARG3;
+         PRE_MEM_READ( "ioctl(GIO_UNIMAP)", (Addr)&desc->entry_ct,
+                       sizeof(unsigned short) );
+         PRE_MEM_READ( "ioctl(GIO_UNIMAP)", (Addr)&desc->entries,
+                       sizeof(struct vki_unipair *) );
+         PRE_MEM_READ( "ioctl(PIO_UNIMAP).entries", (Addr)desc->entries,
+                       desc->entry_ct * sizeof(struct vki_unipair) );
+      }
+      break;
+   case VKI_PIO_UNIMAPCLR:
+      PRE_MEM_READ( "ioctl(GIO_UNIMAP)", ARG3, sizeof(struct vki_unimapinit));
+      break;
+
    case VKI_KDGKBMODE:
       PRE_MEM_WRITE( "ioctl(KDGKBMODE)", ARG3, sizeof(int) );
       break;
@@ -3902,6 +3953,68 @@ PRE(sys_ioctl)
    case VKI_KDKBDREP:
       PRE_MEM_READ( "ioctl(KBKBDREP)", ARG3, sizeof(struct vki_kbd_repeat) );
       break;
+
+   case VKI_KDFONTOP:
+      if ( ARG3 ) {
+         struct vki_console_font_op *op = (struct vki_console_font_op *) ARG3;
+         PRE_MEM_READ( "ioctl(KDFONTOP)", (Addr)op,
+                       sizeof(struct vki_console_font_op) );
+         switch ( op->op ) {
+            case VKI_KD_FONT_OP_SET:
+               PRE_MEM_READ( "ioctl(KDFONTOP,KD_FONT_OP_SET).data",
+                             (Addr)op->data,
+                             (op->width + 7) / 8 * 32 * op->charcount );
+               break;
+            case VKI_KD_FONT_OP_GET:
+               if ( op->data )
+                  PRE_MEM_WRITE( "ioctl(KDFONTOP,KD_FONT_OP_GET).data",
+                                 (Addr)op->data,
+                                 (op->width + 7) / 8 * 32 * op->charcount );
+               break;
+            case VKI_KD_FONT_OP_SET_DEFAULT:
+               if ( op->data )
+                  PRE_MEM_RASCIIZ( "ioctl(KDFONTOP,KD_FONT_OP_SET_DEFAULT).data",
+                                   (Addr)op->data );
+               break;
+            case VKI_KD_FONT_OP_COPY:
+               break;
+         }
+      }
+      break;
+
+   case VKI_VT_OPENQRY:
+      PRE_MEM_WRITE( "ioctl(VT_OPENQRY)", ARG3, sizeof(int) );
+      break;
+   case VKI_VT_GETMODE:
+      PRE_MEM_WRITE( "ioctl(VT_GETMODE)", ARG3, sizeof(struct vki_vt_mode) );
+      break;
+   case VKI_VT_SETMODE:
+      PRE_MEM_READ( "ioctl(VT_SETMODE)", ARG3, sizeof(struct vki_vt_mode) );
+      break;
+   case VKI_VT_GETSTATE:
+      PRE_MEM_READ( "ioctl(VT_GETSTATE)", ARG3, sizeof(struct vki_vt_stat) );
+      PRE_MEM_WRITE( "ioctl(VT_GETSTATE).v_active",
+                     (Addr) &(((struct vki_vt_stat*) ARG3)->v_active),
+                     sizeof(((struct vki_vt_stat*) ARG3)->v_active));
+      PRE_MEM_WRITE( "ioctl(VT_GETSTATE).v_state",
+                     (Addr) &(((struct vki_vt_stat*) ARG3)->v_state),
+                     sizeof(((struct vki_vt_stat*) ARG3)->v_state));
+      break;
+   case VKI_VT_RELDISP:
+   case VKI_VT_ACTIVATE:
+   case VKI_VT_WAITACTIVE:
+   case VKI_VT_DISALLOCATE:
+      break;
+   case VKI_VT_RESIZE:
+      PRE_MEM_READ( "ioctl(VT_RESIZE)", ARG3, sizeof(struct vki_vt_sizes) );
+      break;
+   case VKI_VT_RESIZEX:
+      PRE_MEM_READ( "ioctl(VT_RESIZEX)", ARG3, sizeof(struct vki_vt_consize) );
+      break;
+   case VKI_VT_LOCKSWITCH:
+   case VKI_VT_UNLOCKSWITCH:
+      break;
+
       
       /* We don't have any specific information on it, so
 	 try to do something reasonable based on direction and
@@ -4453,6 +4566,19 @@ POST(sys_ioctl)
    case VKI_PIO_UNISCRNMAP:
       break;
 
+   case VKI_GIO_UNIMAP:
+      if ( ARG3 ) {
+         struct vki_unimapdesc *desc = (struct vki_unimapdesc *) ARG3;
+         POST_MEM_WRITE( (Addr)&desc->entry_ct, sizeof(desc->entry_ct));
+         POST_MEM_WRITE( (Addr)desc->entries,
+      	                 desc->entry_ct * sizeof(struct vki_unipair) );
+      }
+      break;
+   case VKI_PIO_UNIMAP:
+      break;
+   case VKI_PIO_UNIMAPCLR:
+      break;
+
    case VKI_KDGKBMODE:
       POST_MEM_WRITE( ARG3, sizeof(int) );
       break;
@@ -4503,6 +4629,54 @@ POST(sys_ioctl)
 
    case VKI_KDKBDREP:
       break;
+
+   case VKI_KDFONTOP:
+      if ( ARG3 ) {
+         struct vki_console_font_op *op = (struct vki_console_font_op *) ARG3;
+         switch ( op->op ) {
+            case VKI_KD_FONT_OP_SET:
+               break;
+            case VKI_KD_FONT_OP_GET:
+               if ( op->data )
+                  POST_MEM_WRITE( (Addr) op->data,
+                                  (op->width + 7) / 8 * 32 * op->charcount );
+               break;
+            case VKI_KD_FONT_OP_SET_DEFAULT:
+               break;
+            case VKI_KD_FONT_OP_COPY:
+               break;
+         }
+         POST_MEM_WRITE( (Addr) op, sizeof(*op));
+      }
+      break;
+
+   case VKI_VT_OPENQRY:
+      POST_MEM_WRITE( ARG3, sizeof(int) );
+      break;
+   case VKI_VT_GETMODE:
+      POST_MEM_WRITE( ARG3, sizeof(struct vki_vt_mode) );
+      break;
+   case VKI_VT_SETMODE:
+      break;
+   case VKI_VT_GETSTATE:
+      POST_MEM_WRITE( (Addr) &(((struct vki_vt_stat*) ARG3)->v_active),
+                      sizeof(((struct vki_vt_stat*) ARG3)->v_active) );
+      POST_MEM_WRITE( (Addr) &(((struct vki_vt_stat*) ARG3)->v_state),
+                      sizeof(((struct vki_vt_stat*) ARG3)->v_state) );
+      break;
+   case VKI_VT_RELDISP:
+   case VKI_VT_ACTIVATE:
+   case VKI_VT_WAITACTIVE:
+   case VKI_VT_DISALLOCATE:
+      break;
+   case VKI_VT_RESIZE:
+      break;
+   case VKI_VT_RESIZEX:
+      break;
+   case VKI_VT_LOCKSWITCH:
+   case VKI_VT_UNLOCKSWITCH:
+      break;
+      
 
       /* We don't have any specific information on it, so
 	 try to do something reasonable based on direction and

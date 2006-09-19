@@ -386,6 +386,7 @@ DECL_TEMPLATE(ppc32_linux, sys_mmap);
 DECL_TEMPLATE(ppc32_linux, sys_mmap2);
 DECL_TEMPLATE(ppc32_linux, sys_stat64);
 DECL_TEMPLATE(ppc32_linux, sys_lstat64);
+DECL_TEMPLATE(ppc32_linux, sys_fstatat64);
 DECL_TEMPLATE(ppc32_linux, sys_fstat64);
 DECL_TEMPLATE(ppc32_linux, sys_ipc);
 DECL_TEMPLATE(ppc32_linux, sys_clone);
@@ -717,6 +718,20 @@ POST(sys_lstat64)
    if (RES == 0) {
       POST_MEM_WRITE( ARG2, sizeof(struct vki_stat64) );
    }
+}
+
+PRE(sys_fstatat64)
+{
+   PRINT("sys_fstatat64 ( %d, %p(%s), %p )",ARG1,ARG2,ARG2,ARG3);
+   PRE_REG_READ3(long, "fstatat64",
+                 int, dfd, char *, file_name, struct stat64 *, buf);
+   PRE_MEM_RASCIIZ( "fstatat64(file_name)", ARG2 );
+   PRE_MEM_WRITE( "fstatat64(buf)", ARG3, sizeof(struct vki_stat64) );
+}
+
+POST(sys_fstatat64)
+{
+   POST_MEM_WRITE( ARG3, sizeof(struct vki_stat64) );
 }
 
 PRE(sys_fstat64)
@@ -1583,7 +1598,7 @@ const SyscallTableEntry ML_(syscall_table)[] = {
    GENXY(__NR_fstatfs,           sys_fstatfs),           // 100
 //..    LINX_(__NR_ioperm,            sys_ioperm),            // 101
    PLAXY(__NR_socketcall,        sys_socketcall),        // 102
-//..    LINXY(__NR_syslog,            sys_syslog),            // 103
+   LINXY(__NR_syslog,            sys_syslog),            // 103
    GENXY(__NR_setitimer,         sys_setitimer),         // 104
 //.. 
 //..    GENXY(__NR_getitimer,         sys_getitimer),         // 105
@@ -1599,7 +1614,7 @@ const SyscallTableEntry ML_(syscall_table)[] = {
    GENXY(__NR_wait4,             sys_wait4),             // 114
 //.. 
 //..    //   (__NR_swapoff,           sys_swapoff),           // 115 */Linux 
-//..    LINXY(__NR_sysinfo,           sys_sysinfo),           // 116
+   LINXY(__NR_sysinfo,           sys_sysinfo),           // 116
    PLAXY(__NR_ipc,               sys_ipc),               // 117
    GENX_(__NR_fsync,             sys_fsync),             // 118
    PLAX_(__NR_sigreturn,         sys_sigreturn),         // 119 ?/Linux
@@ -1745,7 +1760,7 @@ const SyscallTableEntry ML_(syscall_table)[] = {
 //.. 
    LINX_(__NR_set_tid_address,   sys_set_tid_address),   // 232
 
-//..    LINX_(__NR_fadvise64,         sys_fadvise64),         // 233 */(Linux?)
+   LINX_(__NR_fadvise64,         sys_fadvise64),         // 233 */(Linux?)
    LINX_(__NR_exit_group,        sys_exit_group),        // 234
 //..    GENXY(__NR_lookup_dcookie,    sys_lookup_dcookie),    // 235
    LINXY(__NR_epoll_create,      sys_epoll_create),      // 236
@@ -1798,6 +1813,22 @@ const SyscallTableEntry ML_(syscall_table)[] = {
    LINX_(__NR_inotify_init,  sys_inotify_init),               // 275
    LINX_(__NR_inotify_add_watch,  sys_inotify_add_watch),     // 276
    LINX_(__NR_inotify_rm_watch,   sys_inotify_rm_watch),      // 277
+
+   LINXY(__NR_openat,            sys_openat),            // 286
+   LINX_(__NR_mkdirat,           sys_mkdirat),           // 287
+   LINX_(__NR_mknodat,           sys_mknodat),           // 288
+   LINX_(__NR_fchownat,          sys_fchownat),          // 289
+   LINX_(__NR_futimesat,         sys_futimesat),         // 290
+   PLAXY(__NR_fstatat64,         sys_fstatat64),         // 291
+   LINX_(__NR_unlinkat,          sys_unlinkat),          // 292
+   LINX_(__NR_renameat,          sys_renameat),          // 293
+   LINX_(__NR_linkat,            sys_linkat),            // 294
+   LINX_(__NR_symlinkat,         sys_symlinkat),         // 295
+   LINX_(__NR_readlinkat,        sys_readlinkat),        // 296
+   LINX_(__NR_fchmodat,          sys_fchmodat),          // 297
+   LINX_(__NR_faccessat,         sys_faccessat),         // 298
+   LINX_(__NR_set_robust_list,   sys_set_robust_list),   // 299
+   LINXY(__NR_get_robust_list,   sys_get_robust_list),   // 300
 };
 
 const UInt ML_(syscall_table_size) = 

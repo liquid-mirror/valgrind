@@ -275,10 +275,10 @@
 /* ------ start of STATE for the address-space manager ------ */
 
 /* Max number of segments we can track. */
-#define VG_N_SEGMENTS 2000
+#define VG_N_SEGMENTS 5000
 
 /* Max number of segment file names we can track. */
-#define VG_N_SEGNAMES 400
+#define VG_N_SEGNAMES 1000
 
 /* Max length of a segment file name. */
 #define VG_MAX_SEGNAMELEN 1000
@@ -993,6 +993,12 @@ static Bool maybe_merge_nsegments ( NSegment* s1, NSegment* s2 )
 
       case SkShmC:
          return False;
+
+      case SkResvn:
+         if (s1->smode == SmFixed && s2->smode == SmFixed) {
+            s1->end = s2->end;
+            return True;
+         }
 
       default:
          break;
@@ -2232,9 +2238,26 @@ Bool VG_(am_notify_munmap)( Addr start, SizeT len )
    needDiscard = any_Ts_in_range( start, len );
 
    init_nsegment( &seg );
-   seg.kind  = SkFree;
    seg.start = start;
    seg.end   = start + len - 1;
+
+   /* The segment becomes unused (free).  Segments from above
+      aspacem_maxAddr were originally SkResvn and so we make them so
+      again.  Note, this isn't really right when the segment straddles
+      the aspacem_maxAddr boundary - then really it should be split in
+      two, the lower part marked as SkFree and the upper part as
+      SkResvn.  Ah well. */
+   if (start > aspacem_maxAddr 
+       && /* check previous comparison is meaningful */
+          aspacem_maxAddr < Addr_MAX)
+      seg.kind = SkResvn;
+   else 
+   /* Ditto for segments from below aspacem_minAddr. */
+   if (seg.end < aspacem_minAddr && aspacem_minAddr > 0)
+      seg.kind = SkResvn;
+   else
+      seg.kind = SkFree;
+
    add_segment( &seg );
 
    /* Unmapping could create two adjacent free segments, so a preen is
@@ -2884,6 +2907,9 @@ Bool VG_(am_extend_map_client)( /*OUT*/Bool* need_discard,
    NSegment seg_copy = *seg;
    SizeT    seg_old_len = seg->end + 1 - seg->start;
 
+   if (0)
+      VG_(am_show_nsegments)(0, "VG_(am_extend_map_client) BEFORE");
+
    if (seg->kind != SkFileC && seg->kind != SkAnonC)
       return False;
 
@@ -2905,12 +2931,18 @@ Bool VG_(am_extend_map_client)( /*OUT*/Bool* need_discard,
    if (sres.isError) {
       AM_SANITY_CHECK;
       return False;
+   } else {
+      /* the area must not have moved */
+      aspacem_assert(sres.val == seg->start);
    }
 
    *need_discard = any_Ts_in_range( seg_copy.end+1, delta );
 
    seg_copy.end += delta;
    add_segment( &seg_copy );
+
+   if (0)
+      VG_(am_show_nsegments)(0, "VG_(am_extend_map_client) AFTER");
 
    AM_SANITY_CHECK;
    return True;
@@ -2964,6 +2996,8 @@ Bool VG_(am_relocate_nooverlap_client)( /*OUT*/Bool* need_discard,
    if (sres.isError) {
       AM_SANITY_CHECK;
       return False;
+   } else {
+      aspacem_assert(sres.val == new_addr);
    }
 
    *need_discard = any_Ts_in_range( old_addr, old_len )
@@ -2984,9 +3018,17 @@ Bool VG_(am_relocate_nooverlap_client)( /*OUT*/Bool* need_discard,
 
    /* Create a free hole in the old location. */
    init_nsegment( &seg );
-   seg.kind  = SkFree;
    seg.start = old_addr;
    seg.end   = old_addr + old_len - 1;
+   /* See comments in VG_(am_notify_munmap) about this SkResvn vs
+      SkFree thing. */
+   if (old_addr > aspacem_maxAddr 
+       && /* check previous comparison is meaningful */
+          aspacem_maxAddr < Addr_MAX)
+      seg.kind = SkResvn;
+   else
+      seg.kind = SkFree;
+
    add_segment( &seg );
 
    AM_SANITY_CHECK;
