@@ -19,7 +19,7 @@ check_PROGRAMS = \
 # force -gstabs, because we don't print symaddr for DWARF yet
 # Sigh, gcc-3.4.3 on ppc64 generates bogus .stabs.  So disable it
 # for now on ppc64-linux.
-if VG_PPC64_LINUX
+if VGP_PPC64_LINUX
 AM_CFLAGS	= $(WERROR) -Winline -Wall -Wshadow -g      $(AM_FLAG_M3264_PRI)
 else
 AM_CFLAGS	= $(WERROR) -Winline -Wall -Wshadow -gstabs $(AM_FLAG_M3264_PRI)
