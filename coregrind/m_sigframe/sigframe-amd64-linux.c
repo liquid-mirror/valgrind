@@ -375,7 +375,7 @@ void synth_ucontext(ThreadId tid, const vki_siginfo_t *si,
 static Bool extend ( ThreadState *tst, Addr addr, SizeT size )
 {
    ThreadId tid = tst->tid;
-   NSegment *stackseg = NULL;
+   NSegment const* stackseg = NULL;
 
    if (VG_(extend_stack)(addr, tst->client_stack_szB)) {
       stackseg = VG_(am_find_nsegment)(addr);
