@@ -1,15 +1,19 @@
 
 /*--------------------------------------------------------------------*/
-/*--- Generic header for Valgrind's kernel interface.              ---*/
-/*---                                                 vki_unistd.h ---*/
+/*--- Top level for kernel interface declarations.                 ---*/
+/*---                                         pub_core_vkiscnums.h ---*/
 /*--------------------------------------------------------------------*/
 
 /*
    This file is part of Valgrind, a dynamic binary instrumentation
    framework.
 
-   Copyright (C) 2005 Nicholas Nethercote
+   Copyright (C) 2000-2006 Julian Seward
+      jseward@acm.org
+   Copyright (C) 2005-2006 Nicholas Nethercote
       njn@valgrind.org
+   Copyright (C) 2006-2006 OpenWorks LLP
+      info@open-works.co.uk
 
    This program is free software; you can redistribute it and/or
    modify it under the terms of the GNU General Public License as
@@ -29,22 +33,29 @@
    The GNU General Public License is contained in the file COPYING.
 */
 
-#ifndef __VKI_UNISTD_H
-#define __VKI_UNISTD_H
+#ifndef __PUB_CORE_VKISCNUMS_H
+#define __PUB_CORE_VKISCNUMS_H
 
-#if defined(VGP_x86_linux)
-#  include "vki_unistd-x86-linux.h"   
-#elif defined(VGP_amd64_linux)
-#  include "vki_unistd-amd64-linux.h" 
-#elif defined(VGP_ppc32_linux)
-#  include "vki_unistd-ppc32-linux.h" 
-#elif defined(VGP_ppc64_linux)
-#  include "vki_unistd-ppc64-linux.h" 
-#else
-#  error Unknown platform
+/* Most unfortunately, all the kernel decls are visible to tools.  Not
+   really necessary, but to avoid this would require some tedious
+   refactoring of the sources.  Anyway, we live with this kludge, and
+   that means the only thing to be done here is ... */
+
+#include "pub_tool_vkiscnums.h"
+
+
+/* Make it possible to include this file in assembly sources. */
+#if !defined(VG_IN_ASSEMBLY_SOURCE)
+
+#if defined(VGO_aix5)
+/* Bind the given syscall name to the given number.  Returns True if
+   successful, False if the name is unknown. */
+extern Bool VG_(aix5_register_syscall)( Int, UChar* );
 #endif
 
-#endif   // __VKI_UNISTD_H
+#endif /* !defined(VG_IN_ASSEMBLY_SOURCE) */
+
+#endif // __PUB_CORE_VKISCNUMS_H
 
 /*--------------------------------------------------------------------*/
 /*--- end                                                          ---*/
