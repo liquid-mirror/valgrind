@@ -924,11 +924,11 @@ void finish(void)
   /* pop all remaining items from CallStack for correct sum
    */
   CLG_(forall_threads)(unwind_thread);
-  
+
   CLG_(dump_profile)(0, False);
-  
+
   CLG_(finish_command)();
-  
+
   if (VG_(clo_verbosity) == 0) return;
   
   /* Hash table stats */

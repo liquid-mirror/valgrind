@@ -1293,7 +1293,7 @@ static int new_dumpfile(Char buf[BUF_LEN], int tid, Char* trigger)
 	    file_err();
 	}
     }
-    fd = (Int) res.val;
+    fd = (Int) res.res;
 
     CLG_DEBUG(2, "  new_dumpfile '%s'\n", filename);
 
@@ -1551,7 +1551,7 @@ static void print_bbccs_of_thread(thread_info* ti)
     
     p++;
   }
-  
+
   close_dumpfile(print_buf, print_fd, CLG_(current_tid));
   if (array) VG_(free)(array);
   
@@ -1601,7 +1601,6 @@ void CLG_(dump_profile)(Char* trigger, Bool only_current_thread)
    out_counter++;
 
    print_bbccs(trigger, only_current_thread);
-
 
    bbs_done = CLG_(stat).bb_executions++;
 
@@ -1707,7 +1706,7 @@ void CLG_(init_files)(Char** dir, Char** file)
 	    file_err(); 
 	}
     }
-    if (!res.isError) VG_(close)( (Int)res.val );
+    if (!res.isError) VG_(close)( (Int)res.res );
 
     *dir  = base_directory;
     *file = filename;

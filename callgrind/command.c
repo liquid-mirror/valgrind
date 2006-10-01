@@ -108,7 +108,7 @@ void CLG_(init_command)(Char* dir, Char* dumps)
     }
   }
   if (!res.isError)
-      fd = (Int) res.val;
+      fd = (Int) res.res;
   if (fd>=0) {
     Char buf[512];
     Int i;
@@ -176,7 +176,7 @@ static Int createRes(Int fd)
      * to not confuse it with our special value -2
      */
     if (res.isError) fd = -1;
-    else fd = (Int) res.val;
+    else fd = (Int) res.res;
 
     return fd;
 }
@@ -366,7 +366,7 @@ void CLG_(check_command)()
     
     res = VG_(open)(current_command_file, VKI_O_RDONLY,0);
     if (!res.isError) {
-	fd = (Int) res.val;
+	fd = (Int) res.res;
 	bytesRead = VG_(read)(fd,cmdBuffer,500);
 	cmdBuffer[500] = 0; /* no command overrun please */
 	VG_(close)(fd);
