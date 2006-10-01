@@ -30,6 +30,7 @@
 */
 
 #include "pub_tool_basics.h"
+#include "pub_tool_vki.h"
 #include "pub_tool_debuginfo.h"
 #include "pub_tool_libcbase.h"
 #include "pub_tool_libcassert.h"
@@ -1001,7 +1002,7 @@ static void fprint_CC_table_and_calc_totals(void)
          "       ... so simulation results will be missing.");
       return;
    } else {
-      fd = sres.val;
+      fd = sres.res;
    }
 
    // "desc:" lines (giving I1/D1/L2 cache configuration).  The spaces after
@@ -1287,7 +1288,7 @@ static void parse_cache_opt ( cache_t* cache, Char* opt )
    return;
 
   bad:
-   VG_(bad_option)(opt);
+   VG_(err_bad_option)(opt);
 }
 
 static Bool cg_process_cmd_line_option(Char* arg)
