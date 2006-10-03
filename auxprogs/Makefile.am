@@ -7,6 +7,7 @@ noinst_SCRIPTS = gen-mdg DotToScc.hs primes.c \
 		gsl16test gsl16-badfree.patch gsl16-wavelet.patch \
 		ppcfround.c ppc64shifts.c libmpiwrap.c mpiwrap_type_test.c \
 		aix5_VKI_info.c \
+		aix5_proc_self_sysent.c \
 		posixtestsuite-1.5.1-diff-results \
 		posixtestsuite-1.5.1-diff.txt
 
