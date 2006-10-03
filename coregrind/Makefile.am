@@ -51,7 +51,7 @@ valgrind_SOURCES = \
 	m_vkiscnums.c
 else
 valgrind_SOURCES = \
-	launcher.c \
+	launcher-linux.c \
 	m_debuglog.c
 endif
 
