@@ -537,8 +537,8 @@ void putSyscallStatusIntoGuestState ( /*IN*/ SyscallStatus*     canonical,
 
 #  elif defined(VGP_ppc32_linux)
    VexGuestPPC32State* gst = (VexGuestPPC32State*)gst_vanilla;
-   vg_assert(canonical->what == SsComplete);
    UInt old_cr = LibVEX_GuestPPC32_get_CR(gst);
+   vg_assert(canonical->what == SsComplete);
    if (canonical->sres.isError) {
       /* set CR0.SO */
       LibVEX_GuestPPC32_put_CR( old_cr | (1<<28), gst );
@@ -551,8 +551,8 @@ void putSyscallStatusIntoGuestState ( /*IN*/ SyscallStatus*     canonical,
 
 #  elif defined(VGP_ppc64_linux)
    VexGuestPPC64State* gst = (VexGuestPPC64State*)gst_vanilla;
-   vg_assert(canonical->what == SsComplete);
    UInt old_cr = LibVEX_GuestPPC64_get_CR(gst);
+   vg_assert(canonical->what == SsComplete);
    if (canonical->sres.isError) {
       /* set CR0.SO */
       LibVEX_GuestPPC64_put_CR( old_cr | (1<<28), gst );
