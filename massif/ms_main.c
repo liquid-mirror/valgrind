@@ -35,6 +35,7 @@
 // structures below for more info on how things work.
 
 #include "pub_tool_basics.h"
+#include "pub_tool_vki.h"
 #include "pub_tool_aspacemgr.h"
 #include "pub_tool_debuginfo.h"
 #include "pub_tool_hashtable.h"
@@ -297,7 +298,7 @@ static Bool ms_process_cmd_line_option(Char* arg)
       n_alloc_fns++;
       if (n_alloc_fns >= MAX_ALLOC_FNS) {
          VG_(printf)("Too many alloc functions specified, sorry");
-         VG_(bad_option)(arg);
+         VG_(err_bad_option)(arg);
       }
    }
 
@@ -1287,7 +1288,7 @@ static void write_hp_file(void)
       file_err( hp_file );
       return;
    } else {
-      fd = sres.val;
+      fd = sres.res;
    }
 
    // File header, including command line
@@ -1600,7 +1601,7 @@ write_text_file(ULong total_ST, ULong heap_ST)
       file_err( text_file );
       return;
    } else {
-      fd = sres.val;
+      fd = sres.res;
    }
 
    // Header
