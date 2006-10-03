@@ -619,6 +619,10 @@ static IRExpr* narrowTo32 ( IRTypeEnv* tyenv, IRExpr* e ) {
 
 static void gen_PUSH ( IRBB* bb, IRExpr* e )
 {
+   IRArray* descr;
+   IRTemp   t1;
+   IRExpr*  one;
+
 #  if defined(VGP_ppc64_linux) || defined(VGP_ppc64_aix5)
    Int    stack_size       = VEX_GUEST_PPC64_REDIR_STACK_SIZE;
    Int    offB_REDIR_SP    = offsetof(VexGuestPPC64State,guest_REDIR_SP);
@@ -647,9 +651,9 @@ static void gen_PUSH ( IRBB* bb, IRExpr* e )
    vg_assert(VG_WORDSIZE == 4);
 #  endif
 
-   IRArray* descr = mkIRArray( offB_REDIR_STACK, ty_Word, stack_size );
-   IRTemp   t1    = newIRTemp( bb->tyenv, ty_Word );
-   IRExpr*  one   = mkU(1);
+   descr = mkIRArray( offB_REDIR_STACK, ty_Word, stack_size );
+   t1    = newIRTemp( bb->tyenv, ty_Word );
+   one   = mkU(1);
 
    vg_assert(typeOfIRExpr(bb->tyenv, e) == ty_Word);
 

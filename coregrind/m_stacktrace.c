@@ -60,10 +60,17 @@ UInt VG_(get_StackTrace2) ( ThreadId tid_if_known,
                             Addr ip, Addr sp, Addr fp, Addr lr,
                             Addr fp_min, Addr fp_max_orig )
 {
-#if defined(VGP_ppc32_linux) || defined(VGP_ppc64_linux) \
-    || defined(VGP_ppc32_aix5) || defined(VGP_ppc64_aix5)
-   Bool  lr_is_first_RA = False; /* ppc only */
-#endif
+#  if defined(VGP_ppc32_linux) || defined(VGP_ppc64_linux) \
+                               || defined(VGP_ppc32_aix5) \
+                               || defined(VGP_ppc64_aix5)
+   Bool  lr_is_first_RA = False;
+#  endif
+#  if defined(VGP_ppc64_linux) || defined(VGP_ppc64_aix5) \
+                               || defined(VGP_ppc32_aix5)
+   Word redir_stack_size = 0;
+   Word redirs_used      = 0;
+#  endif
+
    Bool  debug = False;
    Int   i;
    Addr  fp_max;
@@ -245,11 +252,11 @@ UInt VG_(get_StackTrace2) ( ThreadId tid_if_known,
       frame pointers. */
 
 #  if defined(VGP_ppc64_linux) || defined(VGP_ppc64_aix5)
-   Word redir_stack_size = VEX_GUEST_PPC64_REDIR_STACK_SIZE;
-   Word redirs_used      = 0;
+   redir_stack_size = VEX_GUEST_PPC64_REDIR_STACK_SIZE;
+   redirs_used      = 0;
 #  elif defined(VGP_ppc32_aix5)
-   Word redir_stack_size = VEX_GUEST_PPC32_REDIR_STACK_SIZE;
-   Word redirs_used      = 0;
+   redir_stack_size = VEX_GUEST_PPC32_REDIR_STACK_SIZE;
+   redirs_used      = 0;
 #  endif
 
 #  if defined(VG_PLAT_USES_PPCTOC)
