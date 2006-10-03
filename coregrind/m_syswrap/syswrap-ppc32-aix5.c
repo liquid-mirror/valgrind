@@ -205,7 +205,6 @@ static void run_a_thread_NORETURN ( Word tidW )
           "mr 2,23\n\t"            /* r2 = __NR_exit */
           "mr 3,22\n\t"            /* set r3 = tst->os_state.exitcode */
           /* set up for syscall */
-          "crorc 6,6,6\n\t"
           ".long 0x48000005\n\t"   /* "bl here+4" */
           "mflr 29\n\t"
           "addi 29,29,16\n\t"
@@ -514,7 +513,7 @@ PRE(sys_thread_setstate)
                                       "thread_setstate (NEW)");
 
    /* Intercept and handle ourselves any attempts to cancel 
-      another thread (our ourselves). */
+      another thread (including this one). */
 
    if (ats_new && (!ats_old) && ats_new->flags == TSTATE_INTR) {
       dst_ts = NULL;
