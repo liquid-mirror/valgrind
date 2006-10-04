@@ -137,6 +137,7 @@ noinst_HEADERS = \
 	m_debuginfo/priv_readstabs.h	\
 	m_debuginfo/priv_readdwarf.h	\
 	m_debuginfo/priv_readelf.h	\
+	m_debuginfo/priv_readxcoff.h	\
 	m_demangle/ansidecl.h	\
 	m_demangle/dyn-string.h	\
 	m_demangle/demangle.h	\
