@@ -98,6 +98,31 @@
 
 extern void _exit(int);
 
+/* Apparently it is necessary to make ourselves free of any dependency
+   on memcpy() on ppc32-aix5; else programs linked with -brtl fail.
+   memcpy() is used by gcc for a struct assignment in mallinfo()
+   below.  Add the following conservative implementation (memmove,
+   really). */
+#if defined(VGO_aix5)
+__attribute__((weak))
+void *memcpy(void *destV, const void *srcV, unsigned long n)
+{
+   unsigned char* src = (unsigned char*)srcV;
+   unsigned char* dest = (unsigned char*)destV;
+   unsigned long  i;
+   if (dest < src) {
+      for (i = 0; i < n; i++)
+         dest[i] = src[i];
+   }
+   if (dest > src) {
+      for (i = n; i > 0; i--)
+         dest[i-1] = src[i-1];
+   }
+   return dest;
+}
+#endif
+
+
 /*------------------------------------------------------------*/
 /*--- Replacing malloc() et al                             ---*/
 /*------------------------------------------------------------*/
