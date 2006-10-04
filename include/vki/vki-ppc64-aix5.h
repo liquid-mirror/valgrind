@@ -61,6 +61,7 @@
 #define VKI_EFAULT 14
 #define VKI_EMFILE 24
 #define VKI_ECHILD 10
+#define VKI_EOVERFLOW 127
 #define VKI_ERESTARTSYS 0 /* AIX doesn't have this */
 
 /* ---------------- File I/O ---------------- */
@@ -82,7 +83,13 @@
 #define VKI_S_ISGID  0x00000400
 #define VKI_S_IFMT   0x0000f000
 #define VKI_S_IFDIR  0x00004000
-#define VKI_S_ISDIR(m) (((m) & VKI_S_IFMT) == VKI_S_IFDIR)
+#define VKI_S_IFCHR  0x00002000
+#define VKI_S_IFBLK  0x00006000
+
+/* Next 3 are from include/vki/vki-linux.h */
+#define VKI_S_ISDIR(m)  (((m) & VKI_S_IFMT) == VKI_S_IFDIR)
+#define VKI_S_ISCHR(m)  (((m) & VKI_S_IFMT) == VKI_S_IFCHR)
+#define VKI_S_ISBLK(m)  (((m) & VKI_S_IFMT) == VKI_S_IFBLK)
 
 #define VKI_F_DUPFD  0x00000000
 #define VKI_F_SETFD  0x00000002

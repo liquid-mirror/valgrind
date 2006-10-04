@@ -43,6 +43,7 @@ int main ( void )
    printf("#define VKI_EFAULT %d\n", EFAULT);
    printf("#define VKI_EMFILE %d\n", EMFILE);
    printf("#define VKI_ECHILD %d\n", ECHILD);
+   printf("#define VKI_EOVERFLOW %d\n", EOVERFLOW);
    printf("\n");
    printf("/* ---------------- File I/O ---------------- */\n");
    printf("\n");
@@ -63,6 +64,8 @@ int main ( void )
    printf("#define VKI_S_ISGID  0x%08x\n", S_ISGID);
    printf("#define VKI_S_IFMT   0x%08x\n", S_IFMT);
    printf("#define VKI_S_IFDIR  0x%08x\n", S_IFDIR);
+   printf("#define VKI_S_IFCHR  0x%08x\n", S_IFCHR);
+   printf("#define VKI_S_IFBLK  0x%08x\n", S_IFBLK);
    printf("\n");
    printf("#define VKI_F_DUPFD  0x%08x\n", F_DUPFD);
    printf("#define VKI_F_SETFD  0x%08x\n", F_SETFD);
