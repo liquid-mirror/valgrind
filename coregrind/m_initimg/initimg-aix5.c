@@ -178,6 +178,8 @@ ClientInitImgInfo
                                  + (have_ld_pre ? ld_pre_len : 0)
                                  + errmsg_len;
    szPG = VG_PGROUNDUP(szB+1) / VKI_PAGE_SIZE;
+   VG_(debugLog)(2, "initimg", "preload page size: %d bytes, %d pages\n", szB, szPG);
+
    vg_assert(szB > 0);
    vg_assert(szB < szPG * VKI_PAGE_SIZE);
 
@@ -189,6 +191,8 @@ ClientInitImgInfo
       VG_(err_config_error)("Can't allocate client page(s) "
                             "for preload info");
    pp = (AIX5PreloadPage*)sres.res;
+
+   VG_(debugLog)(2, "initimg", "preload page allocation succeeded at %p\n", pp);
 
    /* Zero out the initial structure. */
    VG_(memset)(pp, 0, sizeof(AIX5PreloadPage));
@@ -212,7 +216,7 @@ ClientInitImgInfo
    pp->off_errmsg = pc - (UChar*)pp;
    pp->len_errmsg = errmsg_len - 1; /* -1: skip terminating NUL */
 
-   vg_assert(pc < ((UChar*)pp) + szPG * VKI_PAGE_SIZE);
+   vg_assert(pc <= ((UChar*)pp) - 1 + szPG * VKI_PAGE_SIZE);
 
    VG_(free)(plcore_str);
    VG_(free)(pltool_str);
