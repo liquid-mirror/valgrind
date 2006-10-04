@@ -131,6 +131,7 @@ noinst_HEADERS = \
 	pub_core_ume.h		\
 	pub_core_vki.h		\
 	pub_core_vkiscnums.h	\
+	pub_core_initimg.h	\
 	m_coredump/priv_elf.h	\
 	m_debuginfo/priv_storage.h	\
 	m_debuginfo/priv_readstabs.h	\
@@ -147,7 +148,9 @@ noinst_HEADERS = \
 	m_syswrap/priv_syswrap-linux-variants.h \
 	m_syswrap/priv_syswrap-aix5.h \
 	m_syswrap/priv_syswrap-main.h \
-	launcher-aix5-bootblock.h
+	m_aspacemgr/priv_aspacemgr.h \
+	launcher-aix5-bootblock.h \
+	m_initimg/simple_huffman.c
 
 BUILT_SOURCES = 
 CLEANFILES = 

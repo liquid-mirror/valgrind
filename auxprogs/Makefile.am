@@ -103,6 +103,25 @@ if BUILD_MPIWRAP_SEC
 endif
 
 
+## And some hacks for 'make dist'
+## It would seem that using nodist_SOURCES is the right fix, but
+## I can't figure out how to do it.
+##
+if BUILD_MPIWRAP_PRI
+#nodist_SOURCES        = libmpiwrap-@VG_PLATFORM_PRI@.c
+libmpiwrap-@VG_PLATFORM_PRI@.c:
+	rm -f libmpiwrap-@VG_PLATFORM_PRI@.c
+	touch libmpiwrap-@VG_PLATFORM_PRI@.c
+libmpiwrap-.c:
+	rm -f libmpiwrap-.c
+	touch libmpiwrap-.c
+endif
+if BUILD_MPIWRAP_SEC
+#nodist_SOURCES        = libmpiwrap-@VG_PLATFORM_SEC@.c
+libmpiwrap-@VG_PLATFORM_SEC@.c:
+	rm -f libmpiwrap-@VG_PLATFORM_SEC@.c
+	touch libmpiwrap-@VG_PLATFORM_SEC@.c
+endif
 
 #
 #----------------------------------------------------------
