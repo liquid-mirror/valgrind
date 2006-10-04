@@ -586,6 +586,7 @@ Str4FNs(libqtZda)                         /* libqt.a */
 #if defined(VGP_ppc64_aix5)
 Str4FNs(NONE)                             /* in main exe */
 Str4FNs(libX11ZdaZLshrZu64ZdoZR)          /* libX11.a(shr_64.o) */
+Str4FNs(libiconvZdaZLshr4Zu64ZdoZR)       /* libiconv.a(shr4_64.o) */
 Str4FNs(libGLZdaZLshrZu64ZdoZR)           /* libGL.a(shr_64.o) */
 Str4FNs(libppeZurZdaZLdynamic64ZdoZR)     /* libppe_r.a(dynamic64.o) */
 Str4FNs(libodmZdaZLshrZu64ZdoZR)          /* libodm.a(shr_64.o) */

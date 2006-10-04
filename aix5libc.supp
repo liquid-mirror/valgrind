@@ -617,6 +617,31 @@
    fun:fread
 }
 
+## Looks like inlined strcpy etc in module with no symbols; nothing
+# to be done about it.
+{
+   AIX-uconv-1
+   Memcheck:Cond
+   obj:/*/UTF32TBL__64
+   obj:/*/UTF32TBL__64
+   obj:/*/UTF32TBL__64
+}
+{
+   AIX-uconv-2
+   Memcheck:Value8
+   obj:/*/UTF32TBL__64
+   obj:/*/UTF32TBL__64
+   obj:/*/UTF32TBL__64
+}
+{
+   AIX-uconv-3
+   Memcheck:Addr8
+   obj:/*/UTF32TBL__64
+   obj:/*/UTF32TBL__64
+   obj:/*/UTF32TBL__64
+}
+
+
 #####################################################################
 ### AIX 64-bit                                                    ###
 #####################################################################
