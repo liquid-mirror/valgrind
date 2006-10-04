@@ -6,7 +6,7 @@ bin_PROGRAMS = valgrind-listener
 noinst_SCRIPTS = gen-mdg DotToScc.hs primes.c \
 		gsl16test gsl16-badfree.patch gsl16-wavelet.patch \
 		ppcfround.c ppc64shifts.c libmpiwrap.c mpiwrap_type_test.c \
-		aix5_VKI_info.c \
+		aix5_VKI_info.c libmpiwrap_aix5.exp \
 		aix5_proc_self_sysent.c \
 		posixtestsuite-1.5.1-diff-results \
 		posixtestsuite-1.5.1-diff.txt
@@ -43,9 +43,9 @@ valgrind_listener_LDFLAGS   = $(AM_CFLAGS_PRI)
 # using automake's standard gunk.
 #
 if VGO_AIX5
- HACKY_FLAGS_PRI = -g -O -bE:libmpiwrap.exp -bM:SRE -bnoentry \
+ HACKY_FLAGS_PRI = -g -O -bE:libmpiwrap_aix5.exp -bM:SRE -bnoentry \
 			`echo $(AM_FLAG_M3264_PRI) | sed s/maix/q/g`
- HACKY_FLAGS_SEC = -g -O -bE:libmpiwrap.exp -bM:SRE -bnoentry \
+ HACKY_FLAGS_SEC = -g -O -bE:libmpiwrap_aix5.exp -bM:SRE -bnoentry \
 			`echo $(AM_FLAG_M3264_SEC) | sed s/maix/q/g`
 else
  HACKY_FLAGS_PRI = -g -O -fno-omit-frame-pointer -Wall -fpic -shared \
