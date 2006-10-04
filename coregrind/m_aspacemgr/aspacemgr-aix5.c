@@ -1413,7 +1413,16 @@ NSegment const* VG_(am_next_nsegment) ( NSegment* here, Bool fwds )
    out-of-memory messages. */
 ULong VG_(am_get_anonsize_total)( void )
 {
-   return 0;
+   Int   i;
+   ULong total = 0;
+   for (i = 0; i < asegs_pri.used; i++) {
+      if (asegs_pri.seg[i].kind == ASkAnonC 
+          || asegs_pri.seg[i].kind == ASkAnonV) {
+         total += (ULong)asegs_pri.seg[i].end
+                  - (ULong)asegs_pri.seg[i].start + 1ULL;
+      }
+   }
+   return total;
 }
 
 
