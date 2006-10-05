@@ -244,7 +244,7 @@ void call_on_new_stack_0_1_NORETURN ( Addr stack,
                                       Word arg1 )
 {
    UWord* fdescr = (UWord*)f_NORETURN;
-   UWord block[5];
+   volatile UWord block[5];
    block[0] = fdescr[0];  /* nia */
    block[1] = stack;      /* r1 */
    block[2] = fdescr[1];  /* r2 */
