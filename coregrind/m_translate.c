@@ -651,6 +651,10 @@ static void gen_PUSH ( IRBB* bb, IRExpr* e )
    vg_assert(VG_WORDSIZE == 4);
 #  endif
 
+   vg_assert(sizeof(void*) == VG_WORDSIZE);
+   vg_assert(sizeof(Word)  == VG_WORDSIZE);
+   vg_assert(sizeof(Addr)  == VG_WORDSIZE);
+
    descr = mkIRArray( offB_REDIR_STACK, ty_Word, stack_size );
    t1    = newIRTemp( bb->tyenv, ty_Word );
    one   = mkU(1);
@@ -738,6 +742,10 @@ static IRTemp gen_POP ( IRBB* bb )
    IRTemp   t1    = newIRTemp( bb->tyenv, ty_Word );
    IRTemp   res   = newIRTemp( bb->tyenv, ty_Word );
    IRExpr*  one   = mkU(1);
+
+   vg_assert(sizeof(void*) == VG_WORDSIZE);
+   vg_assert(sizeof(Word)  == VG_WORDSIZE);
+   vg_assert(sizeof(Addr)  == VG_WORDSIZE);
 
    /* t1 = guest_REDIR_SP */
    addStmtToIRBB(
