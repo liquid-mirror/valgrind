@@ -166,24 +166,6 @@ Int VG_(sigaction) ( Int signum, const struct vki_sigaction* act,
 }
 
 
-Int VG_(signal)(Int signum, void (*sighandler)(Int))
-{
-   SysRes res;
-   Int    n;
-   struct vki_sigaction sa;
-   sa.ksa_handler = sighandler;
-   sa.sa_flags = VKI_SA_ONSTACK | VKI_SA_RESTART;
-#  if !defined(VGO_aix5)
-   sa.sa_restorer = NULL;
-#  endif
-   n = VG_(sigemptyset)( &sa.sa_mask );
-   vg_assert(n == 0);
-   res = VG_(do_syscall4)(__NR_rt_sigaction, signum, (UWord)&sa, (UWord)NULL,
-                           _VKI_NSIG_WORDS * sizeof(UWord));
-   return res.isError ? -1 : 0;
-}
-
-
 Int VG_(kill)( Int pid, Int signo )
 {
    SysRes res = VG_(do_syscall2)(__NR_kill, pid, signo);
