@@ -120,10 +120,12 @@ static void free_SegInfo ( SegInfo* si )
 */
 static void discard_SegInfo ( SegInfo* si )
 {
-#  if defined(VGO_aix5)
+#  if defined(VGP_ppc32_aix5)
    HChar* reason = "__unload";
+#  elif defined(VGP_ppc64_aix5)
+   HChar* reason = "kunload64";
 #  else
-   HChar* reason = "munmap()";
+   HChar* reason = "munmap";
 #  endif
 
    SegInfo** prev_next_ptr = &segInfo_list;
@@ -134,7 +136,7 @@ static void discard_SegInfo ( SegInfo* si )
          // Found it;  remove from list and free it.
          if (VG_(clo_verbosity) > 1 || VG_(clo_trace_redir))
             VG_(message)(Vg_DebugMsg, 
-                         "Discarding syms at %p-%p in %s due to %s", 
+                         "Discarding syms at %p-%p in %s due to %s()", 
                          si->start, si->start + si->size,
                          curr->filename ? curr->filename : (UChar*)"???",
                          reason);
