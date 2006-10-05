@@ -89,6 +89,8 @@
 #undef PLAT_amd64_linux
 #undef PLAT_ppc32_linux
 #undef PLAT_ppc64_linux
+#undef PLAT_ppc32_aix5
+#undef PLAT_ppc64_aix5
 
 #if !defined(_AIX) && defined(__i386__)
 #  define PLAT_x86_linux 1
