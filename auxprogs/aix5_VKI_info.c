@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <sys/statfs.h>
 #include <fcntl.h>
 #include <unistd.h>
 #include <sys/mman.h>
@@ -125,6 +126,14 @@ int main ( void )
    printf("#define _VKI_IOC_NONE %d\n",  3 & (IOC_VOID >> 30));
    printf("#define _VKI_IOC_READ %d\n",  3 & (IOC_OUT >> 30));
    printf("#define _VKI_IOC_WRITE %d\n", 3 & (IOC_IN >> 30));
+   printf("\n");
+   printf("/* -------------- Filesystems --------------- */\n");
+   printf("\n");
+
+   /* info about struct statfs */
+   struct statfs stf;
+   printf("sizeof(struct statfs) = %d\n", (int)sizeof(struct statfs));
+
    printf("\n");
    printf("/* ---------------- MMappery ---------------- */\n");
    printf("\n");
