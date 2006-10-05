@@ -127,14 +127,6 @@ int main ( void )
    printf("#define _VKI_IOC_READ %d\n",  3 & (IOC_OUT >> 30));
    printf("#define _VKI_IOC_WRITE %d\n", 3 & (IOC_IN >> 30));
    printf("\n");
-   printf("/* -------------- Filesystems --------------- */\n");
-   printf("\n");
-
-   /* info about struct statfs */
-   struct statfs stf;
-   printf("sizeof(struct statfs) = %d\n", (int)sizeof(struct statfs));
-
-   printf("\n");
    printf("/* ---------------- MMappery ---------------- */\n");
    printf("\n");
    printf("#define VKI_PAGE_SIZE %d\n", (int)sysconf(_SC_PAGESIZE));

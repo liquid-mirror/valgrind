@@ -143,15 +143,6 @@ struct vki_iovec {
 #define _VKI_IOC_DIR(_x)   (((_x) >> 30) & 3)
 #define _VKI_IOC_SIZE(_x)  (((_x) >> 16) & 0x7F)
 
-/* -------------- Filesystems --------------- */
-
-/* Known:
-   sizeof(struct statfs) = 132
-*/
-struct vki_statfs {
-   UChar __off0[132];
-};
-
 /* ---------------- MMappery ---------------- */
 
 #define VKI_PAGE_SIZE 4096 /* this is checked by the launcher */

@@ -257,6 +257,7 @@ static void handle_sbrk ( Word delta )
 #include <sys/times.h>
 #include <sys/shm.h>
 #include <semaphore.h>
+#include <sys/statfs.h>
 /* --- !!! --- EXTERNAL HEADERS end --- !!! --- */
 
 HChar* ML_(aix5debugstuff_pc_to_fnname) ( Addr pc )
@@ -2154,11 +2155,11 @@ PRE(sys_statfs)
    PRINT("sys_statfs ( %p(%s), %p )",ARG1,ARG1,ARG2);
    PRE_REG_READ2(long, "statfs", const char *, path, struct statfs *, buf);
    PRE_MEM_RASCIIZ( "statfs(path)", ARG1 );
-   PRE_MEM_WRITE( "statfs(buf)", ARG2, sizeof(struct vki_statfs) );
+   PRE_MEM_WRITE( "statfs(buf)", ARG2, sizeof(struct statfs) );
 }
 POST(sys_statfs)
 {
-   POST_MEM_WRITE( ARG2, sizeof(struct vki_statfs) );
+   POST_MEM_WRITE( ARG2, sizeof(struct statfs) );
 }
 
 PRE(sys_statx)
