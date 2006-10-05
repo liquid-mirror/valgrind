@@ -1603,12 +1603,14 @@ int main ( int argc, char** argv, char** envp )
       return WEXITSTATUS(status);
    } 
    else if (WIFSIGNALED(status)) {
-      VG_(debugLog)(0, "launcher",
+      VG_(debugLog)(1, "launcher",
                        "parent: child exited on signal %d\n",
-                       WTERMSIG(status));
+                       (int)WTERMSIG(status));
+      /* Since the child exited with a signal, we'd better
+         whack ourselves on the head with the same signal. */
+      kill( getpid(), (int)WTERMSIG(status) );
+      /* presumably NOTREACHED? */
       return 0; /* This is completely bogus */
-      /* Better: since the child exited with a signal, we'd better
-         whack ourselves on the head with the same signal.  Duh. */
    } 
    else {
       /* erm.  Can we ever get here? */
