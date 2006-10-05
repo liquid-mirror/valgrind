@@ -268,6 +268,7 @@ static UInt compute_adler32 ( void* addr, UWord len )
 void VG_(finalise_thread1state)( /*MOD*/ThreadArchState* arch,
                                  ClientInitImgInfo ciii )
 {
+  UInt adler32_act;
    SysRes sres;
    /* On AIX we get a block of 37 words telling us the initial state
       for (GPR0 .. GPR31, PC, CR, LR, CTR, XER), and we start with all
@@ -427,7 +428,7 @@ void VG_(finalise_thread1state)( /*MOD*/ThreadArchState* arch,
 
    Huffman_Uncompress( (void*)ciii.compressed_page, unz_page,
                        VKI_PAGE_SIZE, VKI_PAGE_SIZE );
-   UInt adler32_act = compute_adler32(unz_page, VKI_PAGE_SIZE);
+   adler32_act = compute_adler32(unz_page, VKI_PAGE_SIZE);
 
    VG_(debugLog)(1, "initimg", 
                     "decompress done, adler32s: act 0x%x, exp 0x%x\n",
@@ -479,9 +480,10 @@ static void diagnose_load_failure ( void )
          sys_kload() but didn't make usla do the relevant
          relocations. */
    } else {
+      UChar** p;
       Int r = loadquery(L_GETMESSAGES, buf, NBUF);
       VG_(debugLog)(0, "initimg", "loadquery returned %d (0 = success)\n", r);
-      UChar** p = (UChar**)(&buf[0]);
+      p = (UChar**)(&buf[0]);
       for (; *p; p++)
          VG_(debugLog)(0, "initimg", "\"%s\"\n", *p);
       VG_(debugLog)(0, "initimg", "Use /usr/sbin/execerror to make "

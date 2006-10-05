@@ -1855,9 +1855,10 @@ Bool VG_(am_notify_munmap)( Addr start, SizeT len )
 SysRes VG_(am_mmap_file_fixed_client)
      ( Addr start, SizeT length, UInt prot, Int fd, Off64T offset )
 {
+   SysRes r = {0,0};
    ML_(am_barf)("unimplemented: VG_(am_mmap_file_fixed_client)");
    /*NOTREACHED*/
-   SysRes r = {0,0}; return r;
+   return r;
 }
 
 
@@ -1866,9 +1867,10 @@ SysRes VG_(am_mmap_file_fixed_client)
 
 SysRes VG_(am_mmap_anon_fixed_client) ( Addr start, SizeT length, UInt prot )
 {
+   SysRes r = {0,0};
    ML_(am_barf)("unimplemented: VG_(am_mmap_anon_fixed_client)");
    /*NOTREACHED*/
-   SysRes r = {0,0}; return r;
+   return r;
 }
 
 
@@ -2081,9 +2083,10 @@ SysRes VG_(am_mmap_file_float_valgrind) ( SizeT length, UInt prot,
 SysRes VG_(am_munmap_client)( /*OUT*/Bool* need_discard,
                               Addr start, SizeT len )
 {
+   SysRes r = {0,0}; 
    ML_(am_barf)("unimplemented: VG_(am_munmap_client)");
    /*NOTREACHED*/
-   SysRes r = {0,0}; return r;
+   return r;
 }
 
 

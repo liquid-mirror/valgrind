@@ -2284,22 +2284,24 @@ void _start_in_C_linux ( UWord* pArgc )
 void _start_in_C_aix5 ( AIX5Bootblock* bootblock );
 void _start_in_C_aix5 ( AIX5Bootblock* bootblock )
 {
-   Int r;
+   Int     r;
+   ULong* intregs37;
+   UWord   argc, argv, envp;
    __NR_getpid = bootblock->__NR_getpid;
    __NR_write  = bootblock->__NR_write;
    __NR_exit   = bootblock->__NR_exit;
    __NR_open   = bootblock->__NR_open;
    __NR_read   = bootblock->__NR_read;
    __NR_close  = bootblock->__NR_close;
-   ULong* intregs37 = &bootblock->iregs_pc_cr_lr_ctr_xer[0];
+   intregs37 = &bootblock->iregs_pc_cr_lr_ctr_xer[0];
 #  if defined(VGP_ppc32_aix5)
-   UWord argc = (UWord)intregs37[3];  /* client's r3 == argc */
-   UWord argv = (UWord)intregs37[4];
-   UWord envp = (UWord)intregs37[5];
+   argc = (UWord)intregs37[3];  /* client's r3 == argc */
+   argv = (UWord)intregs37[4];
+   envp = (UWord)intregs37[5];
 #  else /* defined(VGP_ppc64_aix5) */
-   UWord argc = (UWord)intregs37[14];  /* client's r14 == argc */
-   UWord argv = (UWord)intregs37[15];
-   UWord envp = (UWord)intregs37[16];
+   argc = (UWord)intregs37[14];  /* client's r14 == argc */
+   argv = (UWord)intregs37[15];
+   envp = (UWord)intregs37[16];
 #  endif
    sp_at_startup = (Addr)0xDeadBeefDeadBeefULL; /* Not important on AIX. */
    r = valgrind_main( (Int)argc, (HChar**)argv, (HChar**)envp, 

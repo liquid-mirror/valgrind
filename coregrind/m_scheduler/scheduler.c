@@ -861,15 +861,16 @@ VgSchedReturnCode VG_(scheduler) ( ThreadId tid )
 	 /* ------------ now we don't have The Lock ------------ */
 
 #        if defined(VGP_ppc32_aix5) || defined(VGP_ppc64_aix5)
-	 static Int ctr=0;
-         vg_assert(__NR_AIX5__nsleep != __NR_AIX5_UNKNOWN);
-         vg_assert(__NR_AIX5_yield   != __NR_AIX5_UNKNOWN);
-         if (1 && rt > 0 && ((++ctr % 3) == 0)) { 
-            //struct vki_timespec ts;
-            //ts.tv_sec = 0;
-            //ts.tv_nsec = 0*1000*1000;
-            //VG_(do_syscall2)(__NR_AIX5__nsleep, (UWord)&ts, (UWord)NULL);
-	    VG_(do_syscall0)(__NR_AIX5_yield);
+         { static Int ctr=0;
+           vg_assert(__NR_AIX5__nsleep != __NR_AIX5_UNKNOWN);
+           vg_assert(__NR_AIX5_yield   != __NR_AIX5_UNKNOWN);
+           if (1 && rt > 0 && ((++ctr % 3) == 0)) { 
+              //struct vki_timespec ts;
+              //ts.tv_sec = 0;
+              //ts.tv_nsec = 0*1000*1000;
+              //VG_(do_syscall2)(__NR_AIX5__nsleep, (UWord)&ts, (UWord)NULL);
+	      VG_(do_syscall0)(__NR_AIX5_yield);
+           }
          }
 #        endif
 

@@ -877,9 +877,9 @@ HChar* read_symbol_table (
                but at least it is simple: the CSECT_LEN(aux) field
                contains it's length, so we just heave that into the
                pot for phase 2. */
+            XCoffSym cand;
             if (0) VG_(printf)("SD: len is %d\n", (Int)CSECT_LEN(aux));
             if (0) VG_(printf)("SD: proposed %p\n", sym->n_value);
-            XCoffSym cand;
             init_XCoffSym(&cand);
             cand.first = sym->n_value;
             cand.last = cand.first + (UWord)CSECT_LEN(aux) - 1;
