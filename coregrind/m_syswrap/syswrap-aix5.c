@@ -292,23 +292,43 @@ static HChar* aix5debugstuff_name_of_tstate_flag ( UWord flag )
       case TSTATE_CANCEL_CHKPT:    return "CANCEL_CHKPT";
       case TSTATE_INTR:            return "INTR";
       case TSTATE_EXEMPT:          return "EXEMPT";
+#ifdef TSTATE_PROFILING_OFF
       case TSTATE_PROFILING_OFF:   return "PROFILING_OFF";
+#endif
       case TSTATE_SUSPEND:         return "SUSPEND";
       case TSTATE_CONT:            return "CONT";
+#ifdef TSTATE_CREDS
       case TSTATE_CREDS:           return "CREDS";
+#endif
+#ifdef TSTATE_PROCHANDLERS
       case TSTATE_PROCHANDLERS:    return "PROCHANDLERS";
+#endif
       case TSTATE_ADVH:            return "ADVH";
       case TSTATE_SYNCH:           return "SYNCH";
       case TSTATE_USCHED:          return "USCHED";
       case TSTATE_DEFAULT_SCHED:   return "DEFAULT_SCHED";
+#ifdef TSTATE_INHERIT_SCHED
       case TSTATE_INHERIT_SCHED:   return "INHERIT_SCHED";
+#endif
+#ifdef TSTATE_LOCAL_INIT
       case TSTATE_LOCAL_INIT:      return "LOCAL_INIT";
+#endif
+#ifdef TSTATE_LOCAL_TERM
       case TSTATE_LOCAL_TERM:      return "LOCAL_TERM";
+#endif
+#ifdef TSTATE_LOCAL_MCHANGE
       case TSTATE_LOCAL_MCHANGE:   return "LOCAL_MCHANGE";
+#endif
       case TSTATE_CHANGE_ALL:      return "CHANGE_ALL";
+#ifdef TSTATE_CHANGE_PTID
       case TSTATE_CHANGE_PTID:     return "CHANGE_PTID";
+#endif
+#ifdef TSTATE_CHANGE_PROFILE
       case TSTATE_CHANGE_PROFILE:  return "CHANGE_PROFILE";
+#endif
+#ifdef TSTATE_CHANGE_SSTACK
       case TSTATE_CHANGE_SSTACK:   return "CHANGE_SSTACK";
+#endif
       case TSTATE_CHANGE_ERRNOP:   return "CHANGE_ERRNOP";
       case TSTATE_CHANGE_SIGMASK:  return "CHANGE_SIGMASK";
       case TSTATE_CHANGE_PSIG:     return "CHANGE_PSIG";
@@ -379,10 +399,11 @@ void ML_(aix5debugstuff_show_tstate) ( Addr tsA, HChar* who )
    VG_(printf)("  fpscrx           %d\n", ts->fpscrx);
    VG_(printf)("  sigaltstack      ??\n");
    VG_(printf)("  thread_control_p 0x%llx\n", (ULong)ts->thread_control_p);
-   VG_(printf)("  prbase           %p\n", (void*)ts->prbase);
-   VG_(printf)("  credp            %p\n", (void*)ts->credp);
-   VG_(printf)("  ptid             %d\n", (int)ts->ptid);
-   VG_(printf)("  tct_clock        %d\n", (int)ts->tct_clock);
+//   AIX 5.1 does not seem to have these members
+//   VG_(printf)("  prbase           %p\n", (void*)ts->prbase);
+//   VG_(printf)("  credp            %p\n", (void*)ts->credp);
+//   VG_(printf)("  ptid             %d\n", (int)ts->ptid);
+//   VG_(printf)("  tct_clock        %d\n", (int)ts->tct_clock);
    UInt* p = (UInt*)tsA;
    for (i = 0; i < sizeof(struct tstate)/sizeof(UInt); i++) {
       HChar* s = ML_(aix5debugstuff_pc_to_fnname)( (Addr)p[i] );
