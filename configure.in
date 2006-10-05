@@ -241,6 +241,10 @@ case "${host_os}" in
 
         ;;
 
+     aix5.1.*)
+        AC_MSG_RESULT([ok (${host_os})])
+        VG_OS="aix5"
+        ;;
      aix5.2.*)
         AC_MSG_RESULT([ok (${host_os})])
         VG_OS="aix5"
@@ -437,7 +441,7 @@ libc="2.4")
 
 AC_EGREP_CPP([AIX5_LIBC], [
 #include <standards.h>
-#if defined(_AIXVERSION_520) || defined(_AIXVERSION_530)
+#if defined(_AIXVERSION_510) || defined(_AIXVERSION_520) || defined(_AIXVERSION_530)
   AIX5_LIBC
 #endif
 ],
@@ -465,8 +469,8 @@ case "${libc}" in
 	;;
 
      aix5)
-	AC_MSG_RESULT(AIX 5.2 or 5.3)
-	AC_DEFINE([AIX5_LIBC], 1, [Define to 1 if you're using AIX 5.2 or 5.3])
+	AC_MSG_RESULT(AIX 5.1, 5.2 or 5.3)
+	AC_DEFINE([AIX5_LIBC], 1, [Define to 1 if you're using AIX 5.1, 5.2 or 5.3])
 	DEFAULT_SUPP="aix5libc.supp ${DEFAULT_SUPP}"
 	;;
 
