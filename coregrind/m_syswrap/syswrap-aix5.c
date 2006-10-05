@@ -1492,6 +1492,24 @@ PRE(sys_knlist)
    PRINT("knlist (BOGUS HANDLER)");
 }
 
+PRE(sys_kpread)
+{
+   *flags |= SfMayBlock;
+   PRINT("sys_kpread ( %d, %p, %llu, %lld )",
+         ARG1, ARG2, (ULong)ARG3, ARG4);
+   PRE_REG_READ4(ssize_t, "kpread",
+                 unsigned int, fd, char *, buf,
+                 vki_size_t, count, long, offset);
+   PRE_MEM_WRITE( "kpread(buf)", ARG2, ARG3 );
+}
+POST(sys_kpread)
+{
+   vg_assert(SUCCESS);
+   if (RES > 0) {
+      POST_MEM_WRITE( ARG2, RES );
+   }
+}
+
 PRE(sys_kread)
 {
    *flags |= SfMayBlock;
@@ -2129,6 +2147,18 @@ PRE(sys_socket)
 {
    PRINT("socket ( %ld, %ld, %ld )", ARG1, ARG2, ARG3);
    PRE_REG_READ3(int, "socket", int, domain, int, type, int, protocol);
+}
+
+PRE(sys_statfs)
+{
+   PRINT("sys_statfs ( %p(%s), %p )",ARG1,ARG1,ARG2);
+   PRE_REG_READ2(long, "statfs", const char *, path, struct statfs *, buf);
+   PRE_MEM_RASCIIZ( "statfs(path)", ARG1 );
+   PRE_MEM_WRITE( "statfs(buf)", ARG2, sizeof(struct vki_statfs) );
+}
+POST(sys_statfs)
+{
+   POST_MEM_WRITE( ARG2, sizeof(struct vki_statfs) );
 }
 
 PRE(sys_statx)
