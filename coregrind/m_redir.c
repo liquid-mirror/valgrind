@@ -301,20 +301,19 @@ void generate_and_add_actives (
 
 void VG_(redir_notify_new_SegInfo)( SegInfo* newsi )
 {
-   Bool     ok, isWrap;
-   Int      i, nsyms;
-   Spec*    specList;
-   Spec*    spec;
-   TopSpec* ts;
-   TopSpec* newts;
-   HChar*   sym_name;
-   Addr     sym_addr, sym_toc;
-   HChar    demangled_sopatt[N_DEMANGLED];
-   HChar    demangled_fnpatt[N_DEMANGLED];
-   Bool     check_ppcTOCs = False;
-
-
+   Bool         ok, isWrap;
+   Int          i, nsyms;
+   Spec*        specList;
+   Spec*        spec;
+   TopSpec*     ts;
+   TopSpec*     newts;
+   HChar*       sym_name;
+   Addr         sym_addr, sym_toc;
+   HChar        demangled_sopatt[N_DEMANGLED];
+   HChar        demangled_fnpatt[N_DEMANGLED];
+   Bool         check_ppcTOCs = False;
    const UChar* newsi_soname;
+
 #  if defined(VG_PLAT_USES_PPCTOC)
    check_ppcTOCs = True;
 #  endif
@@ -334,7 +333,8 @@ void VG_(redir_notify_new_SegInfo)( SegInfo* newsi )
 
    nsyms = VG_(seginfo_syms_howmany)( newsi );
    for (i = 0; i < nsyms; i++) {
-      VG_(seginfo_syms_getidx)( newsi, i, &sym_addr, &sym_toc, NULL, &sym_name );
+      VG_(seginfo_syms_getidx)( newsi, i, &sym_addr, &sym_toc, 
+                                          NULL, &sym_name );
       ok = VG_(maybe_Z_demangle)( sym_name, demangled_sopatt, N_DEMANGLED,
                                   demangled_fnpatt, N_DEMANGLED, &isWrap );
       if (!ok) {
@@ -367,7 +367,8 @@ void VG_(redir_notify_new_SegInfo)( SegInfo* newsi )
 
    if (check_ppcTOCs) {
       for (i = 0; i < nsyms; i++) {
-         VG_(seginfo_syms_getidx)( newsi, i, &sym_addr, &sym_toc, NULL, &sym_name );
+         VG_(seginfo_syms_getidx)( newsi, i, &sym_addr, &sym_toc, 
+                                             NULL, &sym_name );
          ok = VG_(maybe_Z_demangle)( sym_name, demangled_sopatt, N_DEMANGLED,
                                      demangled_fnpatt, N_DEMANGLED, &isWrap );
          if (!ok)
@@ -875,7 +876,7 @@ static HChar* symtab_strdup(HChar* str)
    in m_translate. */
 static Bool is_plausible_guest_addr(Addr a)
 {
-   NSegment const*const seg = VG_(am_find_nsegment)(a);
+   NSegment const* seg = VG_(am_find_nsegment)(a);
    return seg != NULL
           && (seg->kind == SkAnonC || seg->kind == SkFileC)
           && (seg->hasX || seg->hasR); /* crude x86-specific hack */
