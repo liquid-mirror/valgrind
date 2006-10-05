@@ -524,57 +524,6 @@ Int VG_(aix5_NR_acancel) = __NR_AIX5_UNKNOWN;
 Int VG_(aix5_NR_iosuspend) = __NR_AIX5_UNKNOWN;
 Int VG_(aix5_NR_kaio_rdwr) = __NR_AIX5_UNKNOWN;
 Int VG_(aix5_NR_aio_nwait) = __NR_AIX5_UNKNOWN;
-Int VG_(aix5_NR_ptx_get_sysinfo) = __NR_AIX5_UNKNOWN;
-Int VG_(aix5_NR_ptx_li_getinfo) = __NR_AIX5_UNKNOWN;
-Int VG_(aix5_NR_ptx_li_seltrc) = __NR_AIX5_UNKNOWN;
-Int VG_(aix5_NR_ptx_set_tuning_phase) = __NR_AIX5_UNKNOWN;
-Int VG_(aix5_NR_ptx_get_tuning_mode) = __NR_AIX5_UNKNOWN;
-Int VG_(aix5_NR_ptx_li_disable) = __NR_AIX5_UNKNOWN;
-Int VG_(aix5_NR_ptx_li_enable) = __NR_AIX5_UNKNOWN;
-Int VG_(aix5_NR_ptx_get_dkstats_pathname) = __NR_AIX5_UNKNOWN;
-Int VG_(aix5_NR_ptx_get_pathstats) = __NR_AIX5_UNKNOWN;
-Int VG_(aix5_NR_ptx_get_numpathstats) = __NR_AIX5_UNKNOWN;
-Int VG_(aix5_NR_ptx_get_counts) = __NR_AIX5_UNKNOWN;
-Int VG_(aix5_NR_ptx_get_intrs) = __NR_AIX5_UNKNOWN;
-Int VG_(aix5_NR_ptx_get_num_intr_source) = __NR_AIX5_UNKNOWN;
-Int VG_(aix5_NR_ptx_get_file_count) = __NR_AIX5_UNKNOWN;
-Int VG_(aix5_NR_ptx_get_cinodes) = __NR_AIX5_UNKNOWN;
-Int VG_(aix5_NR_ptx_get_ncino) = __NR_AIX5_UNKNOWN;
-Int VG_(aix5_NR_ptx_get_syswait) = __NR_AIX5_UNKNOWN;
-Int VG_(aix5_NR_ptx_get_misc_intrs) = __NR_AIX5_UNKNOWN;
-Int VG_(aix5_NR_ptx_get_domain_proto) = __NR_AIX5_UNKNOWN;
-Int VG_(aix5_NR_ptx_get_flckinfo) = __NR_AIX5_UNKNOWN;
-Int VG_(aix5_NR_ptx_get_shminfo) = __NR_AIX5_UNKNOWN;
-Int VG_(aix5_NR_ptx_get_seminfo) = __NR_AIX5_UNKNOWN;
-Int VG_(aix5_NR_ptx_get_msginfo) = __NR_AIX5_UNKNOWN;
-Int VG_(aix5_NR_ptx_get_kmembuckets) = __NR_AIX5_UNKNOWN;
-Int VG_(aix5_NR_ptx_get_numkmembuckets) = __NR_AIX5_UNKNOWN;
-Int VG_(aix5_NR_ptx_get_kmemstats) = __NR_AIX5_UNKNOWN;
-Int VG_(aix5_NR_ptx_get_rtstat) = __NR_AIX5_UNKNOWN;
-Int VG_(aix5_NR_ptx_get_udpstat) = __NR_AIX5_UNKNOWN;
-Int VG_(aix5_NR_ptx_get_tcpstat) = __NR_AIX5_UNKNOWN;
-Int VG_(aix5_NR_ptx_get_icmp6stat) = __NR_AIX5_UNKNOWN;
-Int VG_(aix5_NR_ptx_get_icmpstat) = __NR_AIX5_UNKNOWN;
-Int VG_(aix5_NR_ptx_get_ip6stat) = __NR_AIX5_UNKNOWN;
-Int VG_(aix5_NR_ptx_get_ipstat) = __NR_AIX5_UNKNOWN;
-Int VG_(aix5_NR_ptx_get_mbstat) = __NR_AIX5_UNKNOWN;
-Int VG_(aix5_NR_ptx_get_pfhdata) = __NR_AIX5_UNKNOWN;
-Int VG_(aix5_NR_ptx_get_vmker) = __NR_AIX5_UNKNOWN;
-Int VG_(aix5_NR_ptx_get_vminfo) = __NR_AIX5_UNKNOWN;
-Int VG_(aix5_NR_ptx_get_cpuinfo) = __NR_AIX5_UNKNOWN;
-Int VG_(aix5_NR_ptx_get_ndd) = __NR_AIX5_UNKNOWN;
-Int VG_(aix5_NR_ptx_get_ndds) = __NR_AIX5_UNKNOWN;
-Int VG_(aix5_NR_ptx_get_numndds) = __NR_AIX5_UNKNOWN;
-Int VG_(aix5_NR_ptx_get_ifnet) = __NR_AIX5_UNKNOWN;
-Int VG_(aix5_NR_ptx_get_ifnets) = __NR_AIX5_UNKNOWN;
-Int VG_(aix5_NR_ptx_get_numifnets) = __NR_AIX5_UNKNOWN;
-Int VG_(aix5_NR_ptx_get_dkstat) = __NR_AIX5_UNKNOWN;
-Int VG_(aix5_NR_ptx_get_dkstats_diskname) = __NR_AIX5_UNKNOWN;
-Int VG_(aix5_NR_ptx_get_dkstats) = __NR_AIX5_UNKNOWN;
-Int VG_(aix5_NR_ptx_get_numdkstats) = __NR_AIX5_UNKNOWN;
-Int VG_(aix5_NR_ptx_get_numintrs) = __NR_AIX5_UNKNOWN;
-Int VG_(aix5_NR_ptx_get_emal_sample) = __NR_AIX5_UNKNOWN;
-Int VG_(aix5_NR_oracle_kstat) = __NR_AIX5_UNKNOWN;
 Int VG_(aix5_NR__posix_iofsync) = __NR_AIX5_UNKNOWN;
 Int VG_(aix5_NR__posix_aio_nwait_timeout) = __NR_AIX5_UNKNOWN;
 Int VG_(aix5_NR__posix_kaio_stats) = __NR_AIX5_UNKNOWN;
@@ -1111,57 +1060,6 @@ Bool VG_(aix5_register_syscall)( Int sysno, UChar* sysname )
    XXX(iosuspend)
    XXX(kaio_rdwr)
    XXX(aio_nwait)
-   XXX(ptx_get_sysinfo)
-   XXX(ptx_li_getinfo)
-   XXX(ptx_li_seltrc)
-   XXX(ptx_set_tuning_phase)
-   XXX(ptx_get_tuning_mode)
-   XXX(ptx_li_disable)
-   XXX(ptx_li_enable)
-   XXX(ptx_get_dkstats_pathname)
-   XXX(ptx_get_pathstats)
-   XXX(ptx_get_numpathstats)
-   XXX(ptx_get_counts)
-   XXX(ptx_get_intrs)
-   XXX(ptx_get_num_intr_source)
-   XXX(ptx_get_file_count)
-   XXX(ptx_get_cinodes)
-   XXX(ptx_get_ncino)
-   XXX(ptx_get_syswait)
-   XXX(ptx_get_misc_intrs)
-   XXX(ptx_get_domain_proto)
-   XXX(ptx_get_flckinfo)
-   XXX(ptx_get_shminfo)
-   XXX(ptx_get_seminfo)
-   XXX(ptx_get_msginfo)
-   XXX(ptx_get_kmembuckets)
-   XXX(ptx_get_numkmembuckets)
-   XXX(ptx_get_kmemstats)
-   XXX(ptx_get_rtstat)
-   XXX(ptx_get_udpstat)
-   XXX(ptx_get_tcpstat)
-   XXX(ptx_get_icmp6stat)
-   XXX(ptx_get_icmpstat)
-   XXX(ptx_get_ip6stat)
-   XXX(ptx_get_ipstat)
-   XXX(ptx_get_mbstat)
-   XXX(ptx_get_pfhdata)
-   XXX(ptx_get_vmker)
-   XXX(ptx_get_vminfo)
-   XXX(ptx_get_cpuinfo)
-   XXX(ptx_get_ndd)
-   XXX(ptx_get_ndds)
-   XXX(ptx_get_numndds)
-   XXX(ptx_get_ifnet)
-   XXX(ptx_get_ifnets)
-   XXX(ptx_get_numifnets)
-   XXX(ptx_get_dkstat)
-   XXX(ptx_get_dkstats_diskname)
-   XXX(ptx_get_dkstats)
-   XXX(ptx_get_numdkstats)
-   XXX(ptx_get_numintrs)
-   XXX(ptx_get_emal_sample)
-   XXX(oracle_kstat)
    XXX(_posix_iofsync)
    XXX(_posix_aio_nwait_timeout)
    XXX(_posix_kaio_stats)
