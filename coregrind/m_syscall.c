@@ -346,8 +346,12 @@ static void do_syscall_WRK ( UWord* res_r3, UWord* res_r4,
       // set up LR to point just after the sc insn
       ".long 0x48000005\n\t" // "bl here+4" -- lr := & next insn
       "mflr 29\n\t"
-      "addi 29,29,16\n\t"
+      "addi 29,29,20\n\t"
       "mtlr 29\n\t"
+
+      // set bit 3 of CR1 otherwise AIX 5.1 returns to the
+      // wrong address after the sc instruction
+      "crorc 6,6,6\n\t"
 
       // do it!
       "sc\n\t"
@@ -413,8 +417,12 @@ static void do_syscall_WRK ( UWord* res_r3, UWord* res_r4,
       // set up LR to point just after the sc insn
       ".long 0x48000005\n\t" // "bl here+4" -- lr := & next insn
       "mflr 29\n\t"
-      "addi 29,29,16\n\t"
+      "addi 29,29,20\n\t"
       "mtlr 29\n\t"
+
+      // set bit 3 of CR1 otherwise AIX 5.1 returns to the
+      // wrong address after the sc instruction
+      "crorc 6,6,6\n\t"
 
       // do it!
       "sc\n\t"
