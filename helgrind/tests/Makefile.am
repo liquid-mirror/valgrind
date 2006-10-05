@@ -22,7 +22,11 @@ check_PROGRAMS = \
 if VGP_PPC64_LINUX
 AM_CFLAGS	= $(WERROR) -Winline -Wall -Wshadow -g      $(AM_FLAG_M3264_PRI)
 else
-AM_CFLAGS	= $(WERROR) -Winline -Wall -Wshadow -gstabs $(AM_FLAG_M3264_PRI)
+
+# In fact -gstabs is broken on many systems now
+#AM_CFLAGS	= $(WERROR) -Winline -Wall -Wshadow -gstabs $(AM_FLAG_M3264_PRI)
+AM_CFLAGS	= $(WERROR) -Winline -Wall -Wshadow -g      $(AM_FLAG_M3264_PRI)
+
 endif
 
 LDADD		= -lpthread
