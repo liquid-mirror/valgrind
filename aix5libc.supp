@@ -242,7 +242,6 @@
    Memcheck:Cond
    fun:seekdir64
    fun:opendir64
-   fun:getwd
 }
 
 ## No idea what this is caused by
