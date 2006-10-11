@@ -26,7 +26,10 @@ int main ( void )
    int  res;
    assert(sizeof(long int) == sizeof(void*));
 
-#  if !defined(_AIX)  
+#  if defined(_AIX)
+   printf("AIX 5.2 knows about neither memalign() nor posix_memalign().\n");
+
+#  else
    p = memalign(0, 100);      assert(0 == (long)p % 8);
    p = memalign(1, 100);      assert(0 == (long)p % 8);
    p = memalign(2, 100);      assert(0 == (long)p % 8);
@@ -45,7 +48,6 @@ int main ( void )
    p = memalign(4095, 100);   assert(0 == (long)p % 4096);
    p = memalign(4096, 100);   assert(0 == (long)p % 4096);
    p = memalign(4097, 100);   assert(0 == (long)p % 8192);
-#  endif
 
 #  define PM(a,b,c) posix_memalign((void**)a, b, c)
 
@@ -66,6 +68,8 @@ int main ( void )
    res = PM(&p, 4096, 100);   assert(0 == res &&
                                                  0 == (long)p % 4096); 
    res = PM(&p, 4097, 100);   assert(EINVAL == res);
+
+#  endif
    
    return 0;
 }
