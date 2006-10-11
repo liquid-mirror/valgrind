@@ -1627,9 +1627,9 @@ Bool VG_(extend_stack)(Addr addr, UInt maxsize)
    SizeT udelta;
 
    /* Find the next Segment above addr */
-   NSegment const*const seg
+   NSegment const* seg
       = VG_(am_find_nsegment)(addr);
-   NSegment const*const seg_next 
+   NSegment const* seg_next 
       = seg ? VG_(am_next_nsegment)( (NSegment*)seg, True/*fwds*/ )
             : NULL;
 
@@ -1668,10 +1668,12 @@ Bool VG_(extend_stack)(Addr addr, UInt maxsize)
    return True;
 }
 
-static void (*fault_catcher)(Int sig, Addr addr);
+static void (*fault_catcher)(Int sig, Addr addr) = NULL;
 
 void VG_(set_fault_catcher)(void (*catcher)(Int, Addr))
 {
+   if (0)
+      VG_(debugLog)(0, "signals", "set fault catcher to %p\n", catcher);
    vg_assert2(NULL == catcher || NULL == fault_catcher,
               "Fault catcher is already registered");
 
@@ -1785,15 +1787,28 @@ void sync_signalhandler ( Int sigNo, vki_siginfo_t *info, struct vki_ucontext *u
    }
    vg_assert(sigNo >= 1 && sigNo <= VG_(max_signal));
 
+   /* Check to see if someone is interested in faults.  The fault
+      catcher should never be set whilst we're in generated code, so
+      check for that.  AFAIK the only use of the catcher right now is
+      memcheck's leak detector.
+   */
+   if (fault_catcher) {
+      vg_assert(VG_(in_generated_code) == False);
+
+      (*fault_catcher)(sigNo, (Addr)info->VKI_SIGINFO_si_addr);
+      /* If the catcher returns, then it didn't handle the fault,
+         so carry on panicing. */
+   }
+
    /* Special fault-handling case. We can now get signals which can
       act upon and immediately restart the faulting instruction.
     */
    if (info->si_signo == VKI_SIGSEGV) {
       Addr fault = (Addr)info->VKI_SIGINFO_si_addr;
       Addr esp   =  VG_(get_SP)(tid);
-      NSegment const*const seg
+      NSegment const* seg
          = VG_(am_find_nsegment)(fault);
-      NSegment const*const seg_next 
+      NSegment const* seg_next 
          = seg ? VG_(am_next_nsegment)( (NSegment*)seg, True/*fwds*/ )
                : NULL;
 
@@ -1854,14 +1869,6 @@ void sync_signalhandler ( Int sigNo, vki_siginfo_t *info, struct vki_ucontext *u
 	    enter the sighandler immediately. */
 	 deliver_signal(tid, info);
 	 resume_scheduler(tid);
-      }
-
-      /* Check to see if someone is interested in faults. */
-      if (fault_catcher) {
-	 (*fault_catcher)(sigNo, (Addr)info->VKI_SIGINFO_si_addr);
-
-	 /* If the catcher returns, then it didn't handle the fault,
-	    so carry on panicing. */
       }
 
       /* If resume_scheduler returns or its our fault, it means we
