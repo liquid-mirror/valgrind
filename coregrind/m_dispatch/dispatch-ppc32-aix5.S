@@ -64,6 +64,8 @@ tocent__vgPlain_machine_ppc32_has_FP:
     .tc vgPlain_machine_ppc32_has_FP[TC],vgPlain_machine_ppc32_has_FP[RW]
 tocent__vgPlain_tt_fast:
     .tc vgPlain_tt_fast[TC],vgPlain_tt_fast[RW]
+tocent__vgPlain_tt_fastN:
+    .tc vgPlain_tt_fast[TC],vgPlain_tt_fastN[RW]
     .csect .text[PR]
     .align 2
     .globl vgPlain_run_innerloop
@@ -315,19 +317,17 @@ VG_(run_innerloop__dispatch_unprofiled):
 
 .globl VG_(run_innerloop__dispatch_profiled)
 VG_(run_innerloop__dispatch_profiled):
-	trap
-#if 0
 	/* At entry: Live regs:
-		r1 (=sp)
+		r1  (=sp)
 		r3  (=CIA = next guest address)
 		r29 (=dispatch_ctr)
 		r31 (=guest_state)
 	   Stack state:
-		44(r1) (=orig guest_state)
+		128(r1) (=orig guest_state)
 	*/
 
 	/* Has the guest state pointer been messed with?  If yes, exit. */
-        lwz     5,44(1)         /* original guest_state ptr */
+        lwz     5,128(1)         /* original guest_state ptr */
         cmpw    5,31
         bne	gsp_changed
 
@@ -335,27 +335,30 @@ VG_(run_innerloop__dispatch_profiled):
         stw     3,OFFSET_ppc32_CIA(31)
 
         /* Are we out of timeslice?  If yes, defer to scheduler. */
-	subi	29,29,1
+	addi	29,29,-1
 	cmplwi	29,0
         beq	counter_is_zero
 
         /* try a fast lookup in the translation cache */
         /* r4 = VG_TT_FAST_HASH(addr)           * sizeof(ULong*)
               = ((r3 >>u 2) & VG_TT_FAST_MASK)  << 2 */
-        rlwinm  4,3, 0, 32-2-VG_TT_FAST_BITS, 31-2 
-        addis   5,4,VG_(tt_fast)@ha
-        lwz     5,VG_(tt_fast)@l(5)
+        rlwinm  4,3, 0, 32-2-VG_TT_FAST_BITS, 31-2
+
+	lwz	5,tocent__vgPlain_tt_fast(2)	/* r5 = &tt_fast */
+
+        lwzx    5,5,4	/* r5 = tt_fast[r4] */
+
         lwz     6,4(5)   /* big-endian, so comparing 2nd 32bit word */
         cmpw    3,6
         bne     fast_lookup_failed
 
         /* increment bb profile counter */
-        addis   6,4,VG_(tt_fastN)@ha
-        lwz     7,VG_(tt_fastN)@l(6)
-        lwz     8,0(7)
-        addi    8,8,1
-        stw     8,0(7)
-
+	lwz	9,tocent__vgPlain_tt_fastN(2)   /* r9 = &tt_fastN */
+        lwzx    7,9,4   /* r7 = tt_fastN[r4] */
+        lwz     10,0(7)
+        addi    10,10,1
+        stw     10,0(7)
+	
         /* Found a match.  Call tce[1], which is 8 bytes along, since
            each tce element is a 64-bit int. */
         addi    8,5,8
@@ -373,7 +376,6 @@ VG_(run_innerloop__dispatch_profiled):
 	/* start over */
 	b	VG_(run_innerloop__dispatch_profiled)
 	/*NOTREACHED*/
-#endif
 
 /*----------------------------------------------------*/
 /*--- exit points                                  ---*/
