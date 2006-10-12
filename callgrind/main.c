@@ -1076,7 +1076,7 @@ void CLG_(pre_clo_init)(void)
     VG_(details_copyright_author)("Copyright (C) 2002-2006, and GNU GPL'd, "
 				  "by Josef Weidendorfer et al.");
     VG_(details_bug_reports_to)  (VG_BUGS_TO);
-    VG_(details_avg_translation_sizeB) ( 245 );
+    VG_(details_avg_translation_sizeB) ( 500 );
 
     VG_(basic_tool_funcs)        (CLG_(post_clo_init),
                                   CLG_(instrument),

@@ -4800,7 +4800,7 @@ static void mc_pre_clo_init(void)
    VG_(details_copyright_author)(
       "Copyright (C) 2002-2006, and GNU GPL'd, by Julian Seward et al.");
    VG_(details_bug_reports_to)  (VG_BUGS_TO);
-   VG_(details_avg_translation_sizeB) ( 370 );
+   VG_(details_avg_translation_sizeB) ( 556 );
 
    VG_(basic_tool_funcs)          (mc_post_clo_init,
                                    MC_(instrument),
