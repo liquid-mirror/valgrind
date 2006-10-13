@@ -482,6 +482,7 @@ static HChar* check_auxmap_L1_L2_sanity ( Word* n_secmaps_found )
 static void insert_into_auxmap_L1_at ( Word rank, AuxMapEnt* ent )
 {
    Word i;
+   tl_assert(ent);
    tl_assert(rank >= 0 && rank < N_AUXMAP_L1);
    for (i = N_AUXMAP_L1-1; i > rank; i--)
       auxmap_L1[i] = auxmap_L1[i-1];
@@ -567,7 +568,7 @@ static AuxMapEnt* find_or_alloc_in_auxmap ( Addr a )
    nyu->base = a;
    nyu->sm   = &sm_distinguished[SM_DIST_NOACCESS];
    VG_(OSet_Insert)( auxmap_L2, nyu );
-   insert_into_auxmap_L1_at( AUXMAP_L1_INSERT_IX, res );
+   insert_into_auxmap_L1_at( AUXMAP_L1_INSERT_IX, nyu );
    n_auxmap_L2_nodes++;
    return nyu;
 }
