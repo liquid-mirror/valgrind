@@ -1498,7 +1498,7 @@ PRE(sys_clock_nanosleep)
 }
 POST(sys_clock_nanosleep)
 {
-   if (ARG4 != 0 && FAILURE && RES_unchecked == VKI_EINTR)
+   if (ARG4 != 0 && FAILURE && ERR == VKI_EINTR)
       POST_MEM_WRITE( ARG4, sizeof(struct vki_timespec) );
 }
 

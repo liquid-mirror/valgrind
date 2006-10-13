@@ -271,26 +271,13 @@ SyscallTableEntry* ML_(get_ppc64_aix5_syscall_entry) ( UInt sysno );
 #define ARG7   (arrghs->arg7)
 #define ARG8   (arrghs->arg8)
 
-/* Reference to the syscall's current result status/value.  Note that
-   
-   (1) status->val by itself is meaningless -- you have to consider it
-       together with status->what, which is why RES uses a helper
-       function (this also has the desirable effect of turning RES
-       into a non-lvalue).
-
-   (2) post-wrappers will not get called in case of failure (unless
-       PostOnFail is set, which is rare).  This is why the assertion
-       in getRES is viable.
-
-   If you really really want to just get hold of status->val without
-   inspecting status->what, use RES_unchecked.  This is dangerous and
-   therefore discouraged.  
-*/
+/* Reference to the syscall's current result status/value.  General
+   paranoia all round. */
 #define SUCCESS       (status->what == SsComplete && !status->sres.isError)
 #define FAILURE       (status->what == SsComplete &&  status->sres.isError)
 #define SWHAT         (status->what)
-#define RES_unchecked (status->sres.res) /* do not use! */
-#define RES           (getRES(status))   /* use this instead, if possible */
+#define RES           (getRES(status))
+#define ERR           (getERR(status))
 
 static inline UWord getRES ( SyscallStatus* st ) {
    vg_assert(st->what == SsComplete);
@@ -298,6 +285,11 @@ static inline UWord getRES ( SyscallStatus* st ) {
    return st->sres.res;
 }
 
+static inline UWord getERR ( SyscallStatus* st ) {
+   vg_assert(st->what == SsComplete);
+   vg_assert(st->sres.isError);
+   return st->sres.err;
+}
 
 
 /* Set the current result status/value in various ways. */

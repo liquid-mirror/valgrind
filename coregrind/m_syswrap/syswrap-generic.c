@@ -2548,7 +2548,7 @@ PRE(sys_execve)
   hosed:
    vg_assert(FAILURE);
    VG_(message)(Vg_UserMsg, "execve(%p(%s), %p, %p) failed, errno %d",
-                ARG1, ARG1, ARG2, ARG3, RES_unchecked);
+                ARG1, ARG1, ARG2, ARG3, ERR);
    VG_(message)(Vg_UserMsg, "EXEC FAILED: I can't recover from "
                             "execve() failing, so I'm dying.");
    VG_(message)(Vg_UserMsg, "Add more stringent tests in PRE(sys_execve), "
@@ -4940,7 +4940,7 @@ PRE(sys_nanosleep)
 POST(sys_nanosleep)
 {
    vg_assert(SUCCESS || FAILURE);
-   if (ARG2 != 0 && FAILURE && RES_unchecked == VKI_EINTR)
+   if (ARG2 != 0 && FAILURE && ERR == VKI_EINTR)
       POST_MEM_WRITE( ARG2, sizeof(struct vki_timespec) );
 }
 
