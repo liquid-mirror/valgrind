@@ -68,9 +68,6 @@ EXTRA_DIST = $(noinst_SCRIPTS) \
 	malloc1.stderr.exp malloc1.vgtest \
 	malloc2.stderr.exp malloc2.vgtest \
 	malloc3.stderr.exp malloc3.stdout.exp malloc3.vgtest \
-	manuel1.stderr.exp manuel1.stdout.exp manuel1.vgtest \
-	manuel2.stderr.exp manuel2.stderr.exp64 manuel2.stdout.exp manuel2.vgtest \
-	manuel3.stderr.exp manuel3.vgtest \
 	match-overrun.stderr.exp match-overrun.vgtest match-overrun.supp \
 	memalign_test.stderr.exp memalign_test.vgtest \
 	memalign2.stderr.exp memalign2.vgtest \
@@ -84,6 +81,13 @@ EXTRA_DIST = $(noinst_SCRIPTS) \
 	new_nothrow.stderr.exp new_nothrow.vgtest \
 	new_override.stderr.exp new_override.stdout.exp new_override.vgtest \
 	null_socket.stderr.exp null_socket.vgtest \
+	origin-yes.stderr.exp origin-yes.vgtest \
+	origin-no.stderr.exp origin-no.vgtest \
+	origin-not-quite.stderr.exp origin-not-quite.vgtest \
+	origin-load.stderr.exp origin-load.vgtest \
+	origin-store.stderr.exp origin-store.vgtest \
+	origin-jump.stderr.exp origin-jump.vgtest \
+	origin-many.stderr.exp many-store.vgtest \
 	overlap.stderr.exp overlap.stdout.exp overlap.vgtest \
 	oset_test.stderr.exp oset_test.stdout.exp oset_test.vgtest \
 	partiallydefinedeq.vgtest partiallydefinedeq.stderr.exp \
@@ -124,7 +128,7 @@ EXTRA_DIST = $(noinst_SCRIPTS) \
 	vcpu_fbench.stdout.exp vcpu_fbench.stderr.exp vcpu_fbench.vgtest \
 	vcpu_fnfns.stdout.exp vcpu_fnfns.stderr.exp vcpu_fnfns.vgtest \
 	vgtest_ume.stderr.exp vgtest_ume.disabled \
-	with-space.stderr.exp with-space.stdout.exp with-space.vgtest \
+	with-space.stderr.exp with-space.vgtest \
 	wrap1.vgtest wrap1.stdout.exp wrap1.stderr.exp \
 	wrap2.vgtest wrap2.stdout.exp wrap2.stderr.exp \
 	wrap3.vgtest wrap3.stdout.exp wrap3.stderr.exp \
@@ -152,11 +156,14 @@ check_PROGRAMS = \
 	doublefree error_counts errs1 exitprog execve execve2 erringfds \
 	fprw fwrite hello inits inline \
 	leak-0 leak-cycle leak-pool leak-tree leak-regroot leakotron \
-	malloc_usable malloc1 malloc2 malloc3 manuel1 manuel2 manuel3 \
+	malloc_usable malloc1 malloc2 malloc3 \
 	match-overrun \
 	memalign_test memalign2 memcmptest mempool mmaptest \
 	nanoleak new_nothrow \
-	null_socket oset_test overlap \
+	null_socket \
+	origin-yes origin-no origin-not-quite \
+	origin-load origin-store origin-jump origin-many \
+	oset_test overlap \
 	partiallydefinedeq \
 	partial_load pdb-realloc pdb-realloc2 \
 	pipe pointer-trace \
@@ -175,6 +182,7 @@ check_PROGRAMS = \
 
 
 AM_CPPFLAGS = -I$(top_srcdir) -I$(top_srcdir)/include \
+		-I$(top_srcdir)/memcheck \
 		-I$(top_srcdir)/coregrind -I$(top_builddir)/include \
 		-I@VEX_DIR@/pub
 AM_CFLAGS   = $(WERROR) -Winline -Wall -Wshadow -g $(AM_FLAG_M3264_PRI)

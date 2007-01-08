@@ -1,0 +1,37 @@
+Conditional jump or move depends on uninitialised value(s)
+   at 0x........: main (origin-yes.c:30)
+ Uninitialised value has possible origin 1 on a stack
+
+Conditional jump or move depends on uninitialised value(s)
+   at 0x........: main (origin-yes.c:36)
+ Uninitialised value has possible origin 1 on a stack
+ Uninitialised value has possible origin 2 on a stack
+
+Conditional jump or move depends on uninitialised value(s)
+   at 0x........: main (origin-yes.c:43)
+ Uninitialised value has possible origin 1
+   at 0x........: malloc (vg_replace_malloc.c:...)
+   by 0x........: main (origin-yes.c:41)
+
+Conditional jump or move depends on uninitialised value(s)
+   at 0x........: main (origin-yes.c:54)
+ Uninitialised value has possible origin 1
+   at 0x........: realloc (vg_replace_malloc.c:...)
+   by 0x........: main (origin-yes.c:50)
+
+Conditional jump or move depends on uninitialised value(s)
+   at 0x........: main (origin-yes.c:62)
+ Uninitialised value has possible origin 1
+   at 0x........: main (origin-yes.c:60)
+
+Conditional jump or move depends on uninitialised value(s)
+   at 0x........: main (origin-yes.c:69)
+ Uninitialised value has possible origin 1
+   at 0x........: brk (in /...libc...)
+   by 0x........: ...
+   by 0x........: main (origin-yes.c:67)
+
+Conditional jump or move depends on uninitialised value(s)
+   at 0x........: main (origin-yes.c:76)
+ Uninitialised value has possible origin 1
+   at 0x........: main (origin-yes.c:75)

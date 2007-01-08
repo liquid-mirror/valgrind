@@ -114,6 +114,7 @@ int main(void)
    //    i == undefA[i] == V_bits_of(undefA[i])
    //
    // which is useful for testing below.
+   // (Nb: this assumes --undef-origins=no!)
    undefA = calloc(1, 256);         // one for each possible undefinedness value
    VALGRIND_MAKE_MEM_UNDEFINED(undefA, 256);
    for (i = 0; i < 256; i++) {

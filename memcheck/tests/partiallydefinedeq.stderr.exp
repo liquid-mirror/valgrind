@@ -2,10 +2,17 @@
 Conditional jump or move depends on uninitialised value(s)
    at 0x........: foo (partiallydefinedeq.c:15)
    by 0x........: main (partiallydefinedeq.c:37)
+ Uninitialised value has possible origin 1
+   at 0x........: malloc (vg_replace_malloc.c:...)
+   by 0x........: main (partiallydefinedeq.c:28)
+ Uninitialised value has possible origin 2
+   at 0x........: malloc (vg_replace_malloc.c:...)
+   by 0x........: main (partiallydefinedeq.c:27)
 
 Conditional jump or move depends on uninitialised value(s)
    at 0x........: foo (partiallydefinedeq.c:15)
    by 0x........: main (partiallydefinedeq.c:52)
+ Uninitialised value has unknown origin
 
 ERROR SUMMARY: 2 errors from 2 contexts (suppressed: 0 from 0)
 malloc/free: in use at exit: 8 bytes in 2 blocks.

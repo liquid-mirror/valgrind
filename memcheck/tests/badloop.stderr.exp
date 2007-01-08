@@ -1,2 +1,3 @@
 Conditional jump or move depends on uninitialised value(s)
    at 0x........: main (badloop.c:12)
+ Uninitialised value has possible origin 1 on a stack

@@ -1,8 +1,10 @@
 Conditional jump or move depends on uninitialised value(s)
    at 0x........: main (fprw.c:16)
+ Uninitialised value has unknown origin
 
 Conditional jump or move depends on uninitialised value(s)
    at 0x........: main (fprw.c:17)
+ Uninitialised value has unknown origin
 
 Invalid read of size 8
    at 0x........: main (fprw.c:20)

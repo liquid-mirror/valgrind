@@ -30,6 +30,14 @@
    The GNU General Public License is contained in the file COPYING.
 */
 
+// XXX: origin-tracking todo:
+// - try recording ExeContexts for stack allocation sites, alter the
+//   new_mem_stack* events to allow the origin_low32 to be passed in.
+// - do timings, to work out how much slow-down it causes.  Specialise
+//   the helperc functions some if possible.  Work out if checking
+//   clo_undef_origins frequently slows things down much.
+// - unbreak various regtests
+
 #include "pub_tool_basics.h"
 #include "pub_tool_aspacemgr.h"
 #include "pub_tool_hashtable.h"     // For mc_include.h
@@ -61,6 +69,11 @@
 
 #define DEBUG(fmt, args...) //VG_(printf)(fmt, ## args)
 
+// ExeContext for stack allocations, and its obfuscated low 32 bits.
+// Used for origin-tracking.
+static ExeContext* stack_ec;
+static UInt         obfusc_stack_ec_low32;
+static ULong double_obfusc_stack_ec_low32;
 
 /*------------------------------------------------------------*/
 /*--- Fast-case knobs                                      ---*/
@@ -1562,11 +1575,28 @@ void MC_(make_mem_noaccess) ( Addr a, SizeT len )
    set_address_range_perms ( a, len, VA_BITS16_NOACCESS, SM_DIST_NOACCESS );
 }
 
-void MC_(make_mem_undefined) ( Addr a, SizeT len )
+static void mc_make_mem_undefined ( Addr a, SizeT len )
 {
+   ExeContext* ec = VG_(record_ExeContext)( VG_(get_running_tid)() );
+   UInt obfusc_ec_low32 = MC_(obfuscate_ExeContext_low32)( (UInt)ec );
+   MC_(make_mem_undefined)(a, len, obfusc_ec_low32);
+}
+
+void MC_(make_mem_undefined) ( Addr a, SizeT len, UInt obfusc_ec_low32 )
+{
+   Int i;
    PROF_EVENT(41, "MC_(make_mem_undefined)");
    DEBUG("MC_(make_mem_undefined)(%p, %lu)\n", a, len);
    set_address_range_perms ( a, len, VA_BITS16_UNDEFINED, SM_DIST_UNDEFINED );
+
+   if (MC_(clo_undef_origins)) {
+      // Initialise it with obfuscated copies of the lower 32 bits of the
+      // ExeContext pointer for the undefined-value origin-tracking.
+      a = VG_ROUNDUP(a, 4);
+      for (i = 0; i < VG_ROUNDDN(len, 4); i += 4) {
+         *(UInt*)(a + i) = obfusc_ec_low32;
+      }
+   }
 }
 
 void MC_(make_mem_defined) ( Addr a, SizeT len )
@@ -1689,20 +1719,22 @@ void make_aligned_word32_undefined ( Addr a )
    PROF_EVENT(300, "make_aligned_word32_undefined");
 
 #ifndef PERF_FAST_STACK2
-   MC_(make_mem_undefined)(a, 4);
+   MC_(make_mem_undefined)(a, 4, obfusc_stack_ec_low32);
 #else
    if (EXPECTED_NOT_TAKEN(a > MAX_PRIMARY_ADDRESS)) {
       PROF_EVENT(301, "make_aligned_word32_undefined-slow1");
-      MC_(make_mem_undefined)(a, 4);
+      MC_(make_mem_undefined)(a, 4, obfusc_stack_ec_low32);
       return;
    }
 
    sm                  = get_secmap_for_writing_low(a);
    sm_off              = SM_OFF(a);
    sm->vabits8[sm_off] = VA_BITS8_UNDEFINED;
+   if (MC_(clo_undef_origins)) {
+      *(UInt*)a = obfusc_stack_ec_low32;
+   }
 #endif
 }
-
 
 static INLINE
 void make_aligned_word32_noaccess ( Addr a )
@@ -1738,17 +1770,20 @@ void make_aligned_word64_undefined ( Addr a )
    PROF_EVENT(320, "make_aligned_word64_undefined");
 
 #ifndef PERF_FAST_STACK2
-   MC_(make_mem_undefined)(a, 8);
+   MC_(make_mem_undefined)(a, 8, obfusc_stack_ec_low32);
 #else
    if (EXPECTED_NOT_TAKEN(a > MAX_PRIMARY_ADDRESS)) {
       PROF_EVENT(321, "make_aligned_word64_undefined-slow1");
-      MC_(make_mem_undefined)(a, 8);
+      MC_(make_mem_undefined)(a, 8, obfusc_stack_ec_low32);
       return;
    }
 
    sm       = get_secmap_for_writing_low(a);
    sm_off16 = SM_OFF_16(a);
    ((UShort*)(sm->vabits8))[sm_off16] = VA_BITS16_UNDEFINED;
+   if (MC_(clo_undef_origins)) {
+      *(ULong*)a = double_obfusc_stack_ec_low32;
+   }
 #endif
 }
 
@@ -1781,13 +1816,18 @@ void make_aligned_word64_noaccess ( Addr a )
 /*--- Stack pointer adjustment                             ---*/
 /*------------------------------------------------------------*/
 
+// XXX: should try recording code addresses for stack allocations, to give
+// a 1-deep stack trace.  Hmm, but difficult because code addresses are
+// word-sized.  We'd need an ip_low32-to-ip table...
+
 static void VG_REGPARM(1) mc_new_mem_stack_4(Addr new_SP)
 {
    PROF_EVENT(110, "new_mem_stack_4");
    if (VG_IS_4_ALIGNED( -VG_STACK_REDZONE_SZB + new_SP )) {
       make_aligned_word32_undefined ( -VG_STACK_REDZONE_SZB + new_SP );
    } else {
-      MC_(make_mem_undefined) ( -VG_STACK_REDZONE_SZB + new_SP, 4 );
+      MC_(make_mem_undefined) ( -VG_STACK_REDZONE_SZB + new_SP, 4,
+                                obfusc_stack_ec_low32 );
    }
 }
 
@@ -1810,7 +1850,8 @@ static void VG_REGPARM(1) mc_new_mem_stack_8(Addr new_SP)
       make_aligned_word32_undefined ( -VG_STACK_REDZONE_SZB + new_SP   );
       make_aligned_word32_undefined ( -VG_STACK_REDZONE_SZB + new_SP+4 );
    } else {
-      MC_(make_mem_undefined) ( -VG_STACK_REDZONE_SZB + new_SP, 8 );
+      MC_(make_mem_undefined) ( -VG_STACK_REDZONE_SZB + new_SP, 8,
+                                obfusc_stack_ec_low32 );
    }
 }
 
@@ -1840,7 +1881,8 @@ static void VG_REGPARM(1) mc_new_mem_stack_12(Addr new_SP)
       make_aligned_word32_undefined ( -VG_STACK_REDZONE_SZB + new_SP   );
       make_aligned_word64_undefined ( -VG_STACK_REDZONE_SZB + new_SP+4 );
    } else {
-      MC_(make_mem_undefined) ( -VG_STACK_REDZONE_SZB + new_SP, 12 );
+      MC_(make_mem_undefined) ( -VG_STACK_REDZONE_SZB + new_SP, 12,
+                                obfusc_stack_ec_low32 );
    }
 }
 
@@ -1878,7 +1920,8 @@ static void VG_REGPARM(1) mc_new_mem_stack_16(Addr new_SP)
       make_aligned_word64_undefined ( -VG_STACK_REDZONE_SZB + new_SP+4  );
       make_aligned_word32_undefined ( -VG_STACK_REDZONE_SZB + new_SP+12 );
    } else {
-      MC_(make_mem_undefined) ( -VG_STACK_REDZONE_SZB + new_SP, 16 );
+      MC_(make_mem_undefined) ( -VG_STACK_REDZONE_SZB + new_SP, 16,
+                                obfusc_stack_ec_low32 );
    }
 }
 
@@ -1917,7 +1960,8 @@ static void VG_REGPARM(1) mc_new_mem_stack_32(Addr new_SP)
       make_aligned_word64_undefined ( -VG_STACK_REDZONE_SZB + new_SP+20 );
       make_aligned_word32_undefined ( -VG_STACK_REDZONE_SZB + new_SP+28 );
    } else {
-      MC_(make_mem_undefined) ( -VG_STACK_REDZONE_SZB + new_SP, 32 );
+      MC_(make_mem_undefined) ( -VG_STACK_REDZONE_SZB + new_SP, 32,
+                                obfusc_stack_ec_low32 );
    }
 }
 
@@ -1962,7 +2006,8 @@ static void VG_REGPARM(1) mc_new_mem_stack_112(Addr new_SP)
       make_aligned_word64_undefined ( -VG_STACK_REDZONE_SZB + new_SP+96 );
       make_aligned_word64_undefined ( -VG_STACK_REDZONE_SZB + new_SP+104);
    } else {
-      MC_(make_mem_undefined) ( -VG_STACK_REDZONE_SZB + new_SP, 112 );
+      MC_(make_mem_undefined) ( -VG_STACK_REDZONE_SZB + new_SP, 112,
+                                obfusc_stack_ec_low32 );
    }
 }
 
@@ -2010,7 +2055,8 @@ static void VG_REGPARM(1) mc_new_mem_stack_128(Addr new_SP)
       make_aligned_word64_undefined ( -VG_STACK_REDZONE_SZB + new_SP+112);
       make_aligned_word64_undefined ( -VG_STACK_REDZONE_SZB + new_SP+120);
    } else {
-      MC_(make_mem_undefined) ( -VG_STACK_REDZONE_SZB + new_SP, 128 );
+      MC_(make_mem_undefined) ( -VG_STACK_REDZONE_SZB + new_SP, 128,
+                                obfusc_stack_ec_low32 );
    }
 }
 
@@ -2062,7 +2108,8 @@ static void VG_REGPARM(1) mc_new_mem_stack_144(Addr new_SP)
       make_aligned_word64_undefined ( -VG_STACK_REDZONE_SZB + new_SP+128);
       make_aligned_word64_undefined ( -VG_STACK_REDZONE_SZB + new_SP+136);
    } else {
-      MC_(make_mem_undefined) ( -VG_STACK_REDZONE_SZB + new_SP, 144 );
+      MC_(make_mem_undefined) ( -VG_STACK_REDZONE_SZB + new_SP, 144,
+                                obfusc_stack_ec_low32 );
    }
 }
 
@@ -2118,7 +2165,8 @@ static void VG_REGPARM(1) mc_new_mem_stack_160(Addr new_SP)
       make_aligned_word64_undefined ( -VG_STACK_REDZONE_SZB + new_SP+144);
       make_aligned_word64_undefined ( -VG_STACK_REDZONE_SZB + new_SP+152);
    } else {
-      MC_(make_mem_undefined) ( -VG_STACK_REDZONE_SZB + new_SP, 160 );
+      MC_(make_mem_undefined) ( -VG_STACK_REDZONE_SZB + new_SP, 160,
+                                obfusc_stack_ec_low32 );
    }
 }
 
@@ -2154,7 +2202,8 @@ static void VG_REGPARM(1) mc_die_mem_stack_160(Addr new_SP)
 static void mc_new_mem_stack ( Addr a, SizeT len )
 {
    PROF_EVENT(115, "new_mem_stack");
-   MC_(make_mem_undefined) ( -VG_STACK_REDZONE_SZB + a, len );
+   MC_(make_mem_undefined) ( -VG_STACK_REDZONE_SZB + a, len,
+                             obfusc_stack_ec_low32 );
 }
 
 static void mc_die_mem_stack ( Addr a, SizeT len )
@@ -2255,6 +2304,7 @@ void MC_(helperc_MAKE_STACK_UNINIT) ( Addr base, UWord len )
             // Finally, we know that the range is entirely within one secmap.
             UWord   v_off = SM_OFF(a_lo);
             UShort* p     = (UShort*)(&sm->vabits8[v_off]);
+            // Write the shadow V+A bits
             p[ 0] = VA_BITS16_UNDEFINED;
             p[ 1] = VA_BITS16_UNDEFINED;
             p[ 2] = VA_BITS16_UNDEFINED;
@@ -2271,6 +2321,27 @@ void MC_(helperc_MAKE_STACK_UNINIT) ( Addr base, UWord len )
             p[13] = VA_BITS16_UNDEFINED;
             p[14] = VA_BITS16_UNDEFINED;
             p[15] = VA_BITS16_UNDEFINED;
+
+            // Write the origin-tracking values.
+            if (MC_(clo_undef_origins)) {
+               ULong* p2 = (ULong*)base;
+               p2[ 0] = double_obfusc_stack_ec_low32;
+               p2[ 1] = double_obfusc_stack_ec_low32;
+               p2[ 2] = double_obfusc_stack_ec_low32;
+               p2[ 3] = double_obfusc_stack_ec_low32;
+               p2[ 4] = double_obfusc_stack_ec_low32;
+               p2[ 5] = double_obfusc_stack_ec_low32;
+               p2[ 6] = double_obfusc_stack_ec_low32;
+               p2[ 7] = double_obfusc_stack_ec_low32;
+               p2[ 8] = double_obfusc_stack_ec_low32;
+               p2[ 9] = double_obfusc_stack_ec_low32;
+               p2[10] = double_obfusc_stack_ec_low32;
+               p2[11] = double_obfusc_stack_ec_low32;
+               p2[12] = double_obfusc_stack_ec_low32;
+               p2[13] = double_obfusc_stack_ec_low32;
+               p2[14] = double_obfusc_stack_ec_low32;
+               p2[15] = double_obfusc_stack_ec_low32;
+            }
             return;
          }
       }
@@ -2293,6 +2364,7 @@ void MC_(helperc_MAKE_STACK_UNINIT) ( Addr base, UWord len )
             // Finally, we know that the range is entirely within one secmap.
             UWord   v_off = SM_OFF(a_lo);
             UShort* p     = (UShort*)(&sm->vabits8[v_off]);
+            // Write the shadow values.
             p[ 0] = VA_BITS16_UNDEFINED;
             p[ 1] = VA_BITS16_UNDEFINED;
             p[ 2] = VA_BITS16_UNDEFINED;
@@ -2329,13 +2401,54 @@ void MC_(helperc_MAKE_STACK_UNINIT) ( Addr base, UWord len )
             p[33] = VA_BITS16_UNDEFINED;
             p[34] = VA_BITS16_UNDEFINED;
             p[35] = VA_BITS16_UNDEFINED;
+
+            // Write the origin-tracking values.
+            if (MC_(clo_undef_origins)) {
+               ULong* p2 = (ULong*)base;
+               p2[ 0] = double_obfusc_stack_ec_low32;
+               p2[ 1] = double_obfusc_stack_ec_low32;
+               p2[ 2] = double_obfusc_stack_ec_low32;
+               p2[ 3] = double_obfusc_stack_ec_low32;
+               p2[ 4] = double_obfusc_stack_ec_low32;
+               p2[ 5] = double_obfusc_stack_ec_low32;
+               p2[ 6] = double_obfusc_stack_ec_low32;
+               p2[ 7] = double_obfusc_stack_ec_low32;
+               p2[ 8] = double_obfusc_stack_ec_low32;
+               p2[ 9] = double_obfusc_stack_ec_low32;
+               p2[10] = double_obfusc_stack_ec_low32;
+               p2[11] = double_obfusc_stack_ec_low32;
+               p2[12] = double_obfusc_stack_ec_low32;
+               p2[13] = double_obfusc_stack_ec_low32;
+               p2[14] = double_obfusc_stack_ec_low32;
+               p2[15] = double_obfusc_stack_ec_low32;
+               p2[16] = double_obfusc_stack_ec_low32;
+               p2[17] = double_obfusc_stack_ec_low32;
+               p2[18] = double_obfusc_stack_ec_low32;
+               p2[19] = double_obfusc_stack_ec_low32;
+               p2[20] = double_obfusc_stack_ec_low32;
+               p2[21] = double_obfusc_stack_ec_low32;
+               p2[22] = double_obfusc_stack_ec_low32;
+               p2[23] = double_obfusc_stack_ec_low32;
+               p2[24] = double_obfusc_stack_ec_low32;
+               p2[25] = double_obfusc_stack_ec_low32;
+               p2[26] = double_obfusc_stack_ec_low32;
+               p2[27] = double_obfusc_stack_ec_low32;
+               p2[28] = double_obfusc_stack_ec_low32;
+               p2[29] = double_obfusc_stack_ec_low32;
+               p2[30] = double_obfusc_stack_ec_low32;
+               p2[31] = double_obfusc_stack_ec_low32;
+               p2[32] = double_obfusc_stack_ec_low32;
+               p2[33] = double_obfusc_stack_ec_low32;
+               p2[34] = double_obfusc_stack_ec_low32;
+               p2[15] = double_obfusc_stack_ec_low32;
+            }
             return;
          }
       }
    }
 
    /* else fall into slow case */
-   MC_(make_mem_undefined)(base, len);
+   MC_(make_mem_undefined)(base, len, obfusc_stack_ec_low32);
 }
 
 
@@ -2669,7 +2782,6 @@ struct _AddrInfo {
 typedef 
    enum { 
       Err_Value,
-      Err_Cond,
       Err_CoreMem,
       Err_Addr, 
       Err_Jump, 
@@ -2685,7 +2797,9 @@ typedef
    MC_ErrorTag;
 
 
-typedef struct _MC_Error MC_Error;
+typedef
+   struct _MC_Error
+   MC_Error;
 
 struct _MC_Error {
    // Nb: we don't need the tag here, as it's stored in the Error type! Yuk.
@@ -2695,13 +2809,17 @@ struct _MC_Error {
       // Use of an undefined value:
       // - as a pointer in a load or store
       // - as a jump target
+      // The "obfusc" fields are zeroed by "update_extra"
+      // ("obfusc_origins_low32" is stack-allocated while it exists).  The
+      // "origins" fields aren't set until "update_extra" ("origins" is
+      // heap-allocated once it's created.)
       struct {
-         SizeT szB;     // size of value in bytes
+         UInt*        obfusc_origins_low32;   // Obfuscated origins (low 32 bits).
+         Int          n_obfusc_origins_low32; // Number of them
+         ExeContext** origins;                // Possible origins.
+         Int          n_origins;              // Number of them
+         SizeT        szB;                    // Size of value in bytes.
       } Value;
-
-      // Use of an undefined value in a conditional branch or move.
-      struct {
-      } Cond;
 
       // Addressability error in core (signal-handling) operation.
       // It would be good to get rid of this error kind, merge it with
@@ -2728,14 +2846,14 @@ struct _MC_Error {
 
       // System call memory input contains undefined/unaddressable bytes
       struct {
-         Bool     isAddrErr;  // Addressability or definedness error?
          AddrInfo ai;
+         Bool     isAddrErr;  // Addressability or definedness error?
       } MemParam;
 
       // Problem found from a client request like CHECK_MEM_IS_ADDRESSABLE.
       struct {
-         Bool     isAddrErr;  // Addressability or definedness error?
          AddrInfo ai;
+         Bool     isAddrErr;  // Addressability or definedness error?
       } User;
 
       // Program tried to free() something that's not a heap block (this
@@ -2879,6 +2997,37 @@ static void mc_pp_msg( Char* xml_name, Error* err, const HChar* format, ... )
    VG_(pp_ExeContext)( VG_(get_error_where)(err) );
 }
 
+static void mc_pp_origins ( ExeContext* origins[], Int n_origins )
+{
+   // XXX: in origin-yes, get two origins for the 64-bit stack case --
+   // should remove dup'd origins from the list.
+   
+   // XXX: is this XML-isation good enough?
+   HChar* xpre  = VG_(clo_xml) ? "  <auxwhat>" : " ";
+   HChar* xpost = VG_(clo_xml) ? "</auxwhat>"  : "";
+
+   if (n_origins > 0) {
+      Int i;
+      for (i = 0; i < n_origins; i++) {
+         tl_assert(NULL != origins[i]);
+         if (origins[i] == stack_ec) {
+            VG_(message)(Vg_UserMsg,
+                         "%sUninitialised value has possible origin %d"
+                         " on a stack%s", xpre, i + 1, xpost);
+         } else {
+            VG_(message)(Vg_UserMsg,
+                         "%sUninitialised value has possible origin %d%s",
+                         xpre, i + 1, xpost);
+            VG_(pp_ExeContext)( origins[i] );
+         }
+      }
+   } else {
+      VG_(message)(Vg_UserMsg,
+                   "%sUninitialised value has unknown origin%s",
+                   xpre, xpost);
+   }
+}
+
 static void mc_pp_Error ( Error* err )
 {
    MC_Error* extra = VG_(get_error_extra)(err);
@@ -2895,15 +3044,16 @@ static void mc_pp_Error ( Error* err )
       } 
       
       case Err_Value:
-         mc_pp_msg("UninitValue", err,
-                   "Use of uninitialised value of size %d",
-                   extra->Err.Value.szB);
-         break;
-
-      case Err_Cond:
-         mc_pp_msg("UninitCondition", err,
-                   "Conditional jump or move depends"
-                   " on uninitialised value(s)");
+         if (0 == extra->Err.Value.szB) {
+            mc_pp_msg("UninitCondition", err,
+                      "Conditional jump or move depends"
+                      " on uninitialised value(s)");
+         } else {
+            mc_pp_msg("UninitValue", err,
+                      "Use of uninitialised value of size %d",
+                      extra->Err.Value.szB);
+         }
+         mc_pp_origins(extra->Err.Value.origins, extra->Err.Value.n_origins);
          break;
 
       case Err_RegParam:
@@ -3117,18 +3267,18 @@ static void mc_record_address_error ( ThreadId tid, Addr a, Int szB,
    VG_(maybe_record_error)( tid, Err_Addr, a, /*s*/NULL, &extra );
 }
 
-static void mc_record_value_error ( ThreadId tid, Int szB )
+static void mc_record_value_error ( ThreadId tid, Int szB,
+                                            UInt obfusc_origins_low32[],
+                                            Int n_obfusc_origins_low32)
 {
    MC_Error extra;
    tl_assert(MC_(clo_undef_value_errors));
-   extra.Err.Value.szB = szB;
-   VG_(maybe_record_error)( tid, Err_Value, /*addr*/0, /*s*/NULL, &extra );
-}
-
-static void mc_record_cond_error ( ThreadId tid )
-{
-   tl_assert(MC_(clo_undef_value_errors));
-   VG_(maybe_record_error)( tid, Err_Cond, /*addr*/0, /*s*/NULL, /*extra*/NULL);
+   extra.Err.Value.szB                    = szB;
+   extra.Err.Value.obfusc_origins_low32   = obfusc_origins_low32;
+   extra.Err.Value.n_obfusc_origins_low32 = n_obfusc_origins_low32;
+   extra.Err.Value.origins                = NULL;  // updated by update_extra
+   extra.Err.Value.n_origins              = 0;     // updated by update_extra
+   VG_(maybe_record_error)( tid, Err_Value, /*addr*/0, /*s*/NULL, &extra);
 }
 
 /* --- Called from non-generated code --- */
@@ -3280,7 +3430,6 @@ static Bool mc_eq_Error ( VgRes res, Error* e1, Error* e2 )
       case Err_Jump:
       case Err_IllegalMempool:
       case Err_Overlap:
-      case Err_Cond:
          return True;
 
       case Err_Addr:
@@ -3383,8 +3532,6 @@ static UInt mc_update_extra( Error* err )
    // These ones don't have addresses associated with them, and so don't
    // need any updating.
    case Err_CoreMem:
-   case Err_Value:
-   case Err_Cond:
    case Err_Overlap:
    case Err_RegParam:
    // For Err_Leaks the returned size does not matter -- they are always
@@ -3392,6 +3539,47 @@ static UInt mc_update_extra( Error* err )
    // consistent with the others.
    case Err_Leak:
       return sizeof(MC_Error);
+
+   case Err_Value: {
+      // We do the is-it-an-ExeContext tests here, once we know this error
+      // is not a duplicated, because they're expensive.
+      Int i, n_origins = 0;
+
+      // Temporary storage for found origins -- n_obfusc_origins_low32 is an
+      // upper bound, once we have the actual ExeContexts we copy them to
+      // permanently-allocated memory.
+      ExeContext*  origins_tmp[ extra->Err.Value.n_obfusc_origins_low32 ];
+
+      // Permanent storage for found origins, allocated once we know how
+      // many we have.
+      ExeContext** origins = NULL;
+
+      for (i = 0; i < extra->Err.Value.n_obfusc_origins_low32; i++) {
+         UInt origin_low32  = MC_(deobfuscate_ExeContext_low32)(
+                                    extra->Err.Value.obfusc_origins_low32[i]);
+         ExeContext* origin = is_an_ExeContext(origin_low32);
+         if (NULL != origin) {
+            origins_tmp[ n_origins++ ] = origin;
+         }
+      }
+
+      // If we found any origins, allocate 'origins' and copy them into it.
+      if (n_origins > 0) {
+         origins = VG_(malloc)(n_origins * sizeof(ExeContext*));
+         for (i = 0; i < n_origins; i++) {
+            origins[i] = origins_tmp[i];
+         }
+      }
+      
+      // Zero the "obfusc" fields (obfusc_origins_low32 is stack-allocated
+      // so we don't need to free it).  And set the "origins" fields,
+      // copying the origins from stack memory into new heap memory.
+      extra->Err.Value.n_obfusc_origins_low32 = 0;
+      extra->Err.Value.obfusc_origins_low32   = NULL;
+      extra->Err.Value.n_origins              = n_origins;
+      extra->Err.Value.origins                = origins;
+      return sizeof(MC_Error);
+   }
 
    // These ones always involve a memory address.
    case Err_Addr:
@@ -3530,7 +3718,7 @@ static Bool mc_error_matches_suppression(Error* err, Supp* su)
          return (ekind == Err_Value && extra->Err.Value.szB == su_szB);
 
       case CondSupp:
-         return (ekind == Err_Cond);
+         return (ekind == Err_Value && extra->Err.Value.szB == 0);
 
       case Addr1Supp: su_szB = 1; goto addr_case;
       case Addr2Supp: su_szB = 2; goto addr_case;
@@ -3577,7 +3765,6 @@ static Char* mc_get_error_name ( Error* err )
    case Err_CoreMem:        return "CoreMem";
    case Err_Overlap:        return "Overlap";
    case Err_Leak:           return "Leak";
-   case Err_Cond:           return "Cond";
    case Err_Addr: {
       MC_Error* extra = VG_(get_error_extra)(err);
       switch ( extra->Err.Addr.szB ) {
@@ -3592,6 +3779,7 @@ static Char* mc_get_error_name ( Error* err )
    case Err_Value: {
       MC_Error* extra = VG_(get_error_extra)(err);
       switch ( extra->Err.Value.szB ) {
+      case 0:               return "Cond";
       case 1:               return "Value1";
       case 2:               return "Value2";
       case 4:               return "Value4";
@@ -4083,29 +4271,98 @@ void MC_(helperc_STOREV8) ( Addr a, UWord vbits8 )
 /*--- Value-check failure handlers.                        ---*/
 /*------------------------------------------------------------*/
 
-void MC_(helperc_value_check0_fail) ( void )
+static void
+mc_helperc_value_error_N_origins ( HWord szB, HWord origin_hwords[],
+                                              Int n_origin_hwords)
 {
-   mc_record_cond_error ( VG_(get_running_tid)() );
+   #if VG_WORDSIZE == 4
+      UInt* origins = (UInt*)origin_hwords;
+      Int n_origins = n_origin_hwords;
+   #else
+      // On 64-bit platforms, split the 8-byte words into 2 x 32-bit halves.
+      Int  n_origins = n_origin_hwords * 2;
+      UInt origins[n_origins];
+      tl_assert(8 == VG_WORDSIZE);
+      for (i = 0; i < n_origins; i += 2) {
+         origins[i  ] = (UInt) origin_hwords[i];         // low  32 bits
+         origins[i+1] = (UInt)(origin_hwords[i] >> 32);  // high 32 bits
+      }
+   #endif
+   mc_record_value_error ( VG_(get_running_tid)(), (Int)szB, origins, n_origins );
 }
 
-void MC_(helperc_value_check1_fail) ( void )
+VG_REGPARM(1) void MC_(helperc_value_error_0_origins) ( HWord szB )
 {
-   mc_record_value_error ( VG_(get_running_tid)(), 1 );
+   mc_helperc_value_error_N_origins(szB, NULL, 0);
 }
 
-void MC_(helperc_value_check4_fail) ( void )
+VG_REGPARM(2) void MC_(helperc_value_error_1_origin) ( HWord szB,
+                        HWord origin_hword0 )
 {
-   mc_record_value_error ( VG_(get_running_tid)(), 4 );
+   HWord origin_hwords[1];
+   origin_hwords[0] = origin_hword0;
+   mc_helperc_value_error_N_origins(szB, origin_hwords, 1);
 }
 
-void MC_(helperc_value_check8_fail) ( void )
+VG_REGPARM(3) void MC_(helperc_value_error_2_origins) ( HWord szB,
+                        HWord origin_hword0, HWord origin_hword1 )
 {
-   mc_record_value_error ( VG_(get_running_tid)(), 8 );
+   HWord origin_hwords[2];
+   origin_hwords[0] = origin_hword0;
+   origin_hwords[1] = origin_hword1;
+   mc_helperc_value_error_N_origins(szB, origin_hwords, 2);
 }
 
-VG_REGPARM(1) void MC_(helperc_complain_undef) ( HWord sz )
+VG_REGPARM(3) void MC_(helperc_value_error_3_origins) ( HWord szB,
+                        HWord origin_hword0, HWord origin_hword1,
+                        HWord origin_hword2)
 {
-   mc_record_value_error ( VG_(get_running_tid)(), (Int)sz );
+   HWord origin_hwords[3];
+   origin_hwords[0] = origin_hword0;
+   origin_hwords[1] = origin_hword1;
+   origin_hwords[2] = origin_hword2;
+   mc_helperc_value_error_N_origins(szB, origin_hwords, 3);
+}
+
+VG_REGPARM(3) void MC_(helperc_value_error_4_origins) ( HWord szB,
+                        HWord origin_hword0, HWord origin_hword1,
+                        HWord origin_hword2, HWord origin_hword3)
+{
+   HWord origin_hwords[4];
+   origin_hwords[0] = origin_hword0;
+   origin_hwords[1] = origin_hword1;
+   origin_hwords[2] = origin_hword2;
+   origin_hwords[3] = origin_hword3;
+   mc_helperc_value_error_N_origins(szB, origin_hwords, 4);
+}
+
+VG_REGPARM(3) void MC_(helperc_value_error_5_origins) ( HWord szB,
+                        HWord origin_hword0, HWord origin_hword1,
+                        HWord origin_hword2, HWord origin_hword3,
+                        HWord origin_hword4 )
+{
+   HWord origin_hwords[5];
+   origin_hwords[0] = origin_hword0;
+   origin_hwords[1] = origin_hword1;
+   origin_hwords[2] = origin_hword2;
+   origin_hwords[3] = origin_hword3;
+   origin_hwords[4] = origin_hword4;
+   mc_helperc_value_error_N_origins(szB, origin_hwords, 5);
+}
+
+VG_REGPARM(3) void MC_(helperc_value_error_6_origins) ( HWord szB,
+                        HWord origin_hword0, HWord origin_hword1,
+                        HWord origin_hword2, HWord origin_hword3,
+                        HWord origin_hword4, HWord origin_hword5 )
+{
+   HWord origin_hwords[6];
+   origin_hwords[0] = origin_hword0;
+   origin_hwords[1] = origin_hword1;
+   origin_hwords[2] = origin_hword2;
+   origin_hwords[3] = origin_hword3;
+   origin_hwords[4] = origin_hword4;
+   origin_hwords[5] = origin_hword5;
+   mc_helperc_value_error_N_origins(szB, origin_hwords, 6);
 }
 
 
@@ -4373,6 +4630,7 @@ VgRes         MC_(clo_leak_resolution)        = Vg_LowRes;
 Bool          MC_(clo_show_reachable)         = False;
 Bool          MC_(clo_workaround_gcc296_bugs) = False;
 Bool          MC_(clo_undef_value_errors)     = True;
+Bool          MC_(clo_undef_origins)          = True;
 
 static Bool mc_process_cmd_line_options(Char* arg)
 {
@@ -4381,6 +4639,7 @@ static Bool mc_process_cmd_line_options(Char* arg)
    else VG_BOOL_CLO(arg, "--workaround-gcc296-bugs",MC_(clo_workaround_gcc296_bugs))
 
    else VG_BOOL_CLO(arg, "--undef-value-errors",    MC_(clo_undef_value_errors))
+   else VG_BOOL_CLO(arg, "--undef-origins",         MC_(clo_undef_origins))
    
    else VG_BNUM_CLO(arg, "--freelist-vol",  MC_(clo_freelist_vol), 0, 1000000000)
    
@@ -4440,7 +4699,8 @@ static void mc_print_usage(void)
 "    --leak-check=no|summary|full     search for memory leaks at exit?  [summary]\n"
 "    --leak-resolution=low|med|high   how much bt merging in leak check [low]\n"
 "    --show-reachable=no|yes          show reachable blocks in leak check? [no]\n"
-"    --undef-value-errors=no|yes      check for undefined value errors [yes]\n"
+"    --undef-value-errors=no|yes      check for undefined value errors? [yes]\n"
+"    --undef-origins=no|yes           track undefined value origins? [yes]\n"
 "    --partial-loads-ok=no|yes        too hard to explain here; see manual [no]\n"
 "    --freelist-vol=<number>          volume of freed blocks queue [5000000]\n"
 "    --workaround-gcc296-bugs=no|yes  self explanatory [no]\n"
@@ -4637,10 +4897,13 @@ static Bool mc_handle_client_request ( ThreadId tid, UWord* arg, UWord* ret )
          *ret = -1;
          break;
 
-      case VG_USERREQ__MAKE_MEM_UNDEFINED:
-         MC_(make_mem_undefined) ( arg[1], arg[2] );
+      case VG_USERREQ__MAKE_MEM_UNDEFINED: {
+         ExeContext* ec = VG_(record_ExeContext)( VG_(get_running_tid)() );
+         UInt obfusc_ec_low32 = MC_(obfuscate_ExeContext_low32)( (UInt)ec );
+         MC_(make_mem_undefined) ( arg[1], arg[2], obfusc_ec_low32 );
          *ret = -1;
          break;
+      }
 
       case VG_USERREQ__MAKE_MEM_DEFINED:
          MC_(make_mem_defined) ( arg[1], arg[2] );
@@ -4946,6 +5209,8 @@ static void mc_fini ( Int exitcode )
       VG_(message)(Vg_DebugMsg,
          " memcheck: max shadow mem size:   %dk, %dM",
          max_shmem_szB / 1024, max_shmem_szB / (1024 * 1024));
+      
+      MC_(print_origin_tracking_stats)();
    }
 
    if (0) {
@@ -4998,8 +5263,8 @@ static void mc_pre_clo_init(void)
    VG_(needs_xml_output)          ();
 
    VG_(track_new_mem_startup)     ( mc_new_mem_startup );
-   VG_(track_new_mem_stack_signal)( MC_(make_mem_undefined) );
-   VG_(track_new_mem_brk)         ( MC_(make_mem_undefined) );
+   VG_(track_new_mem_stack_signal)( mc_make_mem_undefined );
+   VG_(track_new_mem_brk)         ( mc_make_mem_undefined );
    VG_(track_new_mem_mmap)        ( mc_new_mem_mmap );
    
    VG_(track_copy_mem_remap)      ( MC_(copy_address_range_state) );
@@ -5063,6 +5328,13 @@ static void mc_pre_clo_init(void)
    MC_(mempool_list) = VG_(HT_construct)( 1009  );   // prime, not so big
    init_prof_mem();
 
+   // Get a dummy ExeContext to represent stack allocations.  Its contents
+   // don't matter.
+   stack_ec = VG_(record_ExeContext)(/*tid*/1);
+   obfusc_stack_ec_low32 = MC_(obfuscate_ExeContext_low32)( (UInt)stack_ec );
+   double_obfusc_stack_ec_low32 =
+       (ULong)obfusc_stack_ec_low32 | ((ULong)obfusc_stack_ec_low32 << 32);
+
    tl_assert( mc_expensive_sanity_check() );
 
    // {LOADV,STOREV}[8421] will all fail horribly if this isn't true.
@@ -5079,3 +5351,4 @@ VG_DETERMINE_INTERFACE_VERSION(mc_pre_clo_init)
 /*--------------------------------------------------------------------*/
 /*--- end                                                          ---*/
 /*--------------------------------------------------------------------*/
+

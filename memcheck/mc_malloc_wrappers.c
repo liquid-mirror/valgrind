@@ -6,8 +6,7 @@
 
 /*
    This file is part of MemCheck, a heavyweight Valgrind tool for
-   detecting memory errors, and AddrCheck, a lightweight Valgrind tool 
-   for detecting memory errors.
+   detecting memory errors.
 
    Copyright (C) 2000-2006 Julian Seward 
       jseward@acm.org
@@ -125,14 +124,14 @@ MC_Chunk* MC_(get_freed_list_head)(void)
 
 /* Allocate its shadow chunk, put it on the appropriate list. */
 static
-MC_Chunk* create_MC_Chunk ( ThreadId tid, Addr p, SizeT szB,
+MC_Chunk* create_MC_Chunk ( ExeContext* ec, Addr p, SizeT szB,
                             MC_AllocKind kind)
 {
    MC_Chunk* mc  = VG_(malloc)(sizeof(MC_Chunk));
    mc->data      = p;
    mc->szB       = szB;
    mc->allockind = kind;
-   mc->where     = VG_(record_ExeContext)(tid);
+   mc->where     = ec;
 
    /* Paranoia ... ensure the MC_Chunk is off-limits to the client, so
       the mc->data field isn't visible to the leak checker.  If memory
@@ -171,35 +170,78 @@ static Bool complain_about_silly_args2(SizeT n, SizeT sizeB)
    return False;
 }
 
-/* Allocate memory and note change in memory available */
-__inline__
-void* MC_(new_block) ( ThreadId tid,
-                        Addr p, SizeT szB, SizeT alignB, UInt rzB,
-                        Bool is_zeroed, MC_AllocKind kind, VgHashTable table)
+// For undefined-value origin-tracking, we store the low 32 bits of ExeContext
+// pointers in undefined client values.  We need to obfuscate these
+// ExeContext pointers, otherwise we greatly increase the likelihood that
+// the program trashes Valgrind/Memcheck data if it uses the undefined values.
+//
+// We do this by right shifting by two.  We know (and check) that the bottom
+// two bits are zero.  This is reversible, and on 32-bit platforms forces
+// the pointer into the 1st GB of memory, which is very likely to be client
+// memory, and so minimises the chance of the program trashing
+// Valgrind/Memcheck memory.  (Valgrind's static executable lives in the 1st
+// GB x86/Linux, so it could be trashed, but we can't do this perfectly.)
+// On 64-bit programs it doesn't matter as much, because we piggy-back
+// 32-bit values and so aren't writing full pointers into the client's
+// space, but we do it the same way anyway for consistency.
+UInt MC_(obfuscate_ExeContext_low32)(UInt ec_low32)
 {
+   tl_assert(VG_IS_4_ALIGNED(ec_low32));  // bottom 2 bits are zero
+   return ec_low32 >> 2;
+}
+UInt MC_(deobfuscate_ExeContext_low32)(UInt obfusc_ec_low32)
+{
+   return obfusc_ec_low32 << 2;
+}
+
+/* Allocate memory and note change in memory available */
+//
+// Nb: here "is_zeroed" means:
+// - if block has already been allocated by a custom allocator, it has
+//   already been zeroed;
+// - otherwise, we have to zero the block we allocate.
+//
+__inline__ __attribute__((always_inline))
+void* MC_(new_block) ( ThreadId tid,
+                       Addr p, SizeT szB, SizeT alignB, UInt rzB,
+                       Bool is_zeroed, MC_AllocKind kind, VgHashTable table)
+{
+   ExeContext* ec;
+
    cmalloc_n_mallocs ++;
 
    // Allocate and zero if necessary
    if (p) {
+      // Custom-allocator, memory has already been allocated.
       tl_assert(MC_AllocCustom == kind);
    } else {
+      // Non-custom-allocator, we have to allocate and possible zero it.
       tl_assert(MC_AllocCustom != kind);
       p = (Addr)VG_(cli_malloc)( alignB, szB );
       if (!p) {
          return NULL;
       }
-      if (is_zeroed) VG_(memset)((void*)p, 0, szB);
+      if (is_zeroed) {
+         VG_(memset)((void*)p, 0, szB);
+      } 
    }
 
    // Only update this stat if allocation succeeded.
    cmalloc_bs_mallocd += szB;
 
-   VG_(HT_add_node)( table, create_MC_Chunk(tid, p, szB, kind) );
+   ec = VG_(record_ExeContext)(tid);
 
-   if (is_zeroed)
+   VG_(HT_add_node)( table, create_MC_Chunk(ec, p, szB, kind) );
+
+   // If block is zeroed (either by the custom allocator or here by us),
+   // mark it as defined.  If block is not zeroed, mark it as undefined.
+   if (is_zeroed) {
       MC_(make_mem_defined)( p, szB );
-   else
-      MC_(make_mem_undefined)( p, szB );
+   } else {
+      UInt        ec_low32 = (UInt)ec;
+      UInt obfusc_ec_low32 = MC_(obfuscate_ExeContext_low32)(ec_low32);
+      MC_(make_mem_undefined)( p, szB, obfusc_ec_low32 );
+   }
 
    return (void*)p;
 }
@@ -363,10 +405,15 @@ void* MC_(realloc) ( ThreadId tid, void* p_old, SizeT new_szB )
       Addr a_new = (Addr)VG_(cli_malloc)(VG_(clo_alignment), new_szB);
 
       if (a_new) {
+         ExeContext* ec       = VG_(record_ExeContext)(tid);
+         UInt        ec_low32 = (UInt)ec;
+         UInt obfusc_ec_low32 = MC_(obfuscate_ExeContext_low32)(ec_low32);
+
          /* First half kept and copied, second half new, red zones as normal */
          MC_(make_mem_noaccess)( a_new-MC_MALLOC_REDZONE_SZB, MC_MALLOC_REDZONE_SZB );
          MC_(copy_address_range_state)( (Addr)p_old, a_new, mc->szB );
-         MC_(make_mem_undefined)( a_new+mc->szB, new_szB-mc->szB );
+         MC_(make_mem_undefined)( a_new+mc->szB, new_szB-mc->szB,
+                                  obfusc_ec_low32 );
          MC_(make_mem_noaccess) ( a_new+new_szB, MC_MALLOC_REDZONE_SZB );
 
          /* Copy from old to new */
@@ -379,7 +426,7 @@ void* MC_(realloc) ( ThreadId tid, void* p_old, SizeT new_szB )
          die_and_free_mem ( tid, mc, MC_MALLOC_REDZONE_SZB );
 
          // Allocate a new chunk.
-         mc = create_MC_Chunk( tid, a_new, new_szB, MC_AllocMalloc );
+         mc = create_MC_Chunk( ec, a_new, new_szB, MC_AllocMalloc );
       }
 
       p_new = (void*)a_new;

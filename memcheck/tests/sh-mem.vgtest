@@ -1,2 +1,2 @@
 prog: sh-mem
-vgopts: -q
+vgopts: -q --undef-origins=no

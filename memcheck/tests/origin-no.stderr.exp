@@ -1,0 +1,35 @@
+Conditional jump or move depends on uninitialised value(s)
+   at 0x........: main (origin-no.c:18)
+ Uninitialised value has unknown origin
+
+Conditional jump or move depends on uninitialised value(s)
+   at 0x........: main (origin-no.c:26)
+ Uninitialised value has unknown origin
+
+Conditional jump or move depends on uninitialised value(s)
+   at 0x........: main (origin-no.c:34)
+ Uninitialised value has possible origin 1
+   at 0x........: malloc (vg_replace_malloc.c:...)
+   by 0x........: main (origin-no.c:32)
+
+Conditional jump or move depends on uninitialised value(s)
+   at 0x........: main (origin-no.c:41)
+ Uninitialised value has unknown origin
+
+Conditional jump or move depends on uninitialised value(s)
+   at 0x........: main (origin-no.c:49)
+ Uninitialised value has unknown origin
+
+Conditional jump or move depends on uninitialised value(s)
+   at 0x........: main (origin-no.c:67)
+ Uninitialised value has possible origin 1
+   at 0x........: main (origin-no.c:65)
+
+Conditional jump or move depends on uninitialised value(s)
+   at 0x........: main (origin-no.c:68)
+ Uninitialised value has unknown origin
+
+Conditional jump or move depends on uninitialised value(s)
+   at 0x........: main (origin-no.c:69)
+ Uninitialised value has possible origin 1
+   at 0x........: main (origin-no.c:66)

@@ -52,6 +52,7 @@ U8 build(int size, U1 byte)
    
    // res is now considered partially defined, but we know exactly what its
    // value is (it happens to be the same as its metavalue).
+   // (Nb: assumes that --undef-origins=no!)
    
    VALGRIND_GET_VBITS(&res, &shres, 8);
    res2 = res;

@@ -54,6 +54,10 @@ typedef
 // ThreadId should be passed in by the core.
 extern ExeContext* VG_(record_ExeContext) ( ThreadId tid );
 
+// Returns true if the given pointer is a real ExeContext pointer.  Does
+// a linear (slow) lookup by value.
+extern ExeContext* is_an_ExeContext(UInt maybe_ec_low32);
+
 // Apply a function to every element in the ExeContext.  The parameter 'n'
 // gives the index of the passed ip.  Doesn't go below main() unless
 // --show-below-main=yes is set.

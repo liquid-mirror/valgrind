@@ -1,0 +1,122 @@
+Conditional jump or move depends on uninitialised value(s)
+   at 0x........: main (origin-many.c:31)
+ Uninitialised value has possible origin 1
+   at 0x........: malloc (vg_replace_malloc.c:...)
+   by 0x........: main (origin-many.c:14)
+
+Conditional jump or move depends on uninitialised value(s)
+   at 0x........: main (origin-many.c:32)
+ Uninitialised value has possible origin 1
+   at 0x........: malloc (vg_replace_malloc.c:...)
+   by 0x........: main (origin-many.c:14)
+ Uninitialised value has possible origin 2
+   at 0x........: malloc (vg_replace_malloc.c:...)
+   by 0x........: main (origin-many.c:15)
+
+Conditional jump or move depends on uninitialised value(s)
+   at 0x........: main (origin-many.c:33)
+ Uninitialised value has possible origin 1
+   at 0x........: malloc (vg_replace_malloc.c:...)
+   by 0x........: main (origin-many.c:16)
+ Uninitialised value has possible origin 2
+   at 0x........: malloc (vg_replace_malloc.c:...)
+   by 0x........: main (origin-many.c:14)
+ Uninitialised value has possible origin 3
+   at 0x........: malloc (vg_replace_malloc.c:...)
+   by 0x........: main (origin-many.c:15)
+
+Conditional jump or move depends on uninitialised value(s)
+   at 0x........: main (origin-many.c:34)
+ Uninitialised value has possible origin 1
+   at 0x........: malloc (vg_replace_malloc.c:...)
+   by 0x........: main (origin-many.c:17)
+ Uninitialised value has possible origin 2
+   at 0x........: malloc (vg_replace_malloc.c:...)
+   by 0x........: main (origin-many.c:16)
+ Uninitialised value has possible origin 3
+   at 0x........: malloc (vg_replace_malloc.c:...)
+   by 0x........: main (origin-many.c:14)
+ Uninitialised value has possible origin 4
+   at 0x........: malloc (vg_replace_malloc.c:...)
+   by 0x........: main (origin-many.c:15)
+
+Conditional jump or move depends on uninitialised value(s)
+   at 0x........: main (origin-many.c:35)
+ Uninitialised value has possible origin 1
+   at 0x........: malloc (vg_replace_malloc.c:...)
+   by 0x........: main (origin-many.c:18)
+ Uninitialised value has possible origin 2
+   at 0x........: malloc (vg_replace_malloc.c:...)
+   by 0x........: main (origin-many.c:17)
+ Uninitialised value has possible origin 3
+   at 0x........: malloc (vg_replace_malloc.c:...)
+   by 0x........: main (origin-many.c:16)
+ Uninitialised value has possible origin 4
+   at 0x........: malloc (vg_replace_malloc.c:...)
+   by 0x........: main (origin-many.c:14)
+ Uninitialised value has possible origin 5
+   at 0x........: malloc (vg_replace_malloc.c:...)
+   by 0x........: main (origin-many.c:15)
+
+Conditional jump or move depends on uninitialised value(s)
+   at 0x........: main (origin-many.c:36)
+ Uninitialised value has possible origin 1
+   at 0x........: malloc (vg_replace_malloc.c:...)
+   by 0x........: main (origin-many.c:19)
+ Uninitialised value has possible origin 2
+   at 0x........: malloc (vg_replace_malloc.c:...)
+   by 0x........: main (origin-many.c:18)
+ Uninitialised value has possible origin 3
+   at 0x........: malloc (vg_replace_malloc.c:...)
+   by 0x........: main (origin-many.c:17)
+ Uninitialised value has possible origin 4
+   at 0x........: malloc (vg_replace_malloc.c:...)
+   by 0x........: main (origin-many.c:16)
+ Uninitialised value has possible origin 5
+   at 0x........: malloc (vg_replace_malloc.c:...)
+   by 0x........: main (origin-many.c:14)
+ Uninitialised value has possible origin 6
+   at 0x........: malloc (vg_replace_malloc.c:...)
+   by 0x........: main (origin-many.c:15)
+
+Conditional jump or move depends on uninitialised value(s)
+   at 0x........: main (origin-many.c:37)
+ Uninitialised value has possible origin 1
+   at 0x........: malloc (vg_replace_malloc.c:...)
+   by 0x........: main (origin-many.c:20)
+ Uninitialised value has possible origin 2
+   at 0x........: malloc (vg_replace_malloc.c:...)
+   by 0x........: main (origin-many.c:19)
+ Uninitialised value has possible origin 3
+   at 0x........: malloc (vg_replace_malloc.c:...)
+   by 0x........: main (origin-many.c:18)
+ Uninitialised value has possible origin 4
+   at 0x........: malloc (vg_replace_malloc.c:...)
+   by 0x........: main (origin-many.c:17)
+ Uninitialised value has possible origin 5
+   at 0x........: malloc (vg_replace_malloc.c:...)
+   by 0x........: main (origin-many.c:16)
+ Uninitialised value has possible origin 6
+   at 0x........: malloc (vg_replace_malloc.c:...)
+   by 0x........: main (origin-many.c:14)
+
+Conditional jump or move depends on uninitialised value(s)
+   at 0x........: main (origin-many.c:38)
+ Uninitialised value has possible origin 1
+   at 0x........: malloc (vg_replace_malloc.c:...)
+   by 0x........: main (origin-many.c:21)
+ Uninitialised value has possible origin 2
+   at 0x........: malloc (vg_replace_malloc.c:...)
+   by 0x........: main (origin-many.c:20)
+ Uninitialised value has possible origin 3
+   at 0x........: malloc (vg_replace_malloc.c:...)
+   by 0x........: main (origin-many.c:19)
+ Uninitialised value has possible origin 4
+   at 0x........: malloc (vg_replace_malloc.c:...)
+   by 0x........: main (origin-many.c:18)
+ Uninitialised value has possible origin 5
+   at 0x........: malloc (vg_replace_malloc.c:...)
+   by 0x........: main (origin-many.c:17)
+ Uninitialised value has possible origin 6
+   at 0x........: malloc (vg_replace_malloc.c:...)
+   by 0x........: main (origin-many.c:16)

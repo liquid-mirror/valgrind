@@ -325,25 +325,25 @@ IRSB* vg_SP_update_pass ( void*             closureV,
       if (get_SP_delta(st->Ist.Put.data->Iex.RdTmp.tmp, &delta)) {
          IRTemp tttmp = st->Ist.Put.data->Iex.RdTmp.tmp;
          switch (delta) {
-            case    0:                      addStmtToIRSB(bb,st); continue;
-            case    4: DO(die,  4,  tttmp); addStmtToIRSB(bb,st); continue;
-            case   -4: DO(new,  4,  tttmp); addStmtToIRSB(bb,st); continue;
-            case    8: DO(die,  8,  tttmp); addStmtToIRSB(bb,st); continue;
-            case   -8: DO(new,  8,  tttmp); addStmtToIRSB(bb,st); continue;
-            case   12: DO(die,  12, tttmp); addStmtToIRSB(bb,st); continue;
-            case  -12: DO(new,  12, tttmp); addStmtToIRSB(bb,st); continue;
-            case   16: DO(die,  16, tttmp); addStmtToIRSB(bb,st); continue;
-            case  -16: DO(new,  16, tttmp); addStmtToIRSB(bb,st); continue;
-            case   32: DO(die,  32, tttmp); addStmtToIRSB(bb,st); continue;
-            case  -32: DO(new,  32, tttmp); addStmtToIRSB(bb,st); continue;
-            case  112: DO(die, 112, tttmp); addStmtToIRSB(bb,st); continue;
-            case -112: DO(new, 112, tttmp); addStmtToIRSB(bb,st); continue;
-            case  128: DO(die, 128, tttmp); addStmtToIRSB(bb,st); continue;
-            case -128: DO(new, 128, tttmp); addStmtToIRSB(bb,st); continue;
-            case  144: DO(die, 144, tttmp); addStmtToIRSB(bb,st); continue;
-            case -144: DO(new, 144, tttmp); addStmtToIRSB(bb,st); continue;
-            case  160: DO(die, 160, tttmp); addStmtToIRSB(bb,st); continue;
-            case -160: DO(new, 160, tttmp); addStmtToIRSB(bb,st); continue;
+            case    0: addStmtToIRSB(bb,st);                      continue;
+            case    4: addStmtToIRSB(bb,st); DO(die,  4,  tttmp); continue;
+            case   -4: addStmtToIRSB(bb,st); DO(new,  4,  tttmp); continue;
+            case    8: addStmtToIRSB(bb,st); DO(die,  8,  tttmp); continue;
+            case   -8: addStmtToIRSB(bb,st); DO(new,  8,  tttmp); continue;
+            case   12: addStmtToIRSB(bb,st); DO(die,  12, tttmp); continue;
+            case  -12: addStmtToIRSB(bb,st); DO(new,  12, tttmp); continue;
+            case   16: addStmtToIRSB(bb,st); DO(die,  16, tttmp); continue;
+            case  -16: addStmtToIRSB(bb,st); DO(new,  16, tttmp); continue;
+            case   32: addStmtToIRSB(bb,st); DO(die,  32, tttmp); continue;
+            case  -32: addStmtToIRSB(bb,st); DO(new,  32, tttmp); continue;
+            case  112: addStmtToIRSB(bb,st); DO(die, 112, tttmp); continue;
+            case -112: addStmtToIRSB(bb,st); DO(new, 112, tttmp); continue;
+            case  128: addStmtToIRSB(bb,st); DO(die, 128, tttmp); continue;
+            case -128: addStmtToIRSB(bb,st); DO(new, 128, tttmp); continue;
+            case  144: addStmtToIRSB(bb,st); DO(die, 144, tttmp); continue;
+            case -144: addStmtToIRSB(bb,st); DO(new, 144, tttmp); continue;
+            case  160: addStmtToIRSB(bb,st); DO(die, 160, tttmp); continue;
+            case -160: addStmtToIRSB(bb,st); DO(new, 160, tttmp); continue;
             default:  
                /* common values for ppc64: 144 128 160 112 176 */
                n_SP_updates_generic_known++;
@@ -364,6 +364,11 @@ IRSB* vg_SP_update_pass ( void*             closureV,
             IRStmt_WrTmp( old_SP, IRExpr_Get(offset_SP, typeof_SP) ) 
          );
 
+         addStmtToIRSB( bb, st );
+
+         // XXX: have to do this after the SP is changed for Memcheck -- it
+         // writes a value to the new stack area, and if the stack needs to
+         // be extended we have to do that before we can write to it.
          dcall = unsafeIRDirty_0_N( 
                     2/*regparms*/, 
                     "VG_(unknown_SP_update)", 
@@ -371,8 +376,6 @@ IRSB* vg_SP_update_pass ( void*             closureV,
                     mkIRExprVec_2( IRExpr_RdTmp(old_SP), st->Ist.Put.data ) 
                  );
          addStmtToIRSB( bb, IRStmt_Dirty(dcall) );
-
-         addStmtToIRSB( bb, st );
 
          clear_SP_aliases();
          add_SP_alias(st->Ist.Put.data->Iex.RdTmp.tmp, 0);

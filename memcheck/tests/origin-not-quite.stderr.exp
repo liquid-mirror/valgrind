@@ -1,7 +1,7 @@
 Conditional jump or move depends on uninitialised value(s)
-   at 0x........: main (clientperm.c:29)
+   at 0x........: main (origin-not-quite.c:20)
  Uninitialised value has unknown origin
 
 Conditional jump or move depends on uninitialised value(s)
-   at 0x........: main (clientperm.c:36)
+   at 0x........: main (origin-not-quite.c:27)
  Uninitialised value has unknown origin

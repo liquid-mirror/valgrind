@@ -192,6 +192,20 @@ static inline UWord ROLW ( UWord w, Int n )
    return w;
 }
 
+static UWord compute_hash(Addr* ips, UInt n_ips)
+{
+   Int i;
+   UWord hash = 0;
+   for (i = 0; i < n_ips; i++) {
+      hash ^= ips[i];
+      hash = ROLW(hash, 19);
+   }
+   if (0) VG_(printf)("hash  0x%lx  ", hash);
+   hash = hash % N_EC_LISTS;
+   if (0) VG_(printf)("%lu\n", hash);
+   return hash;
+}
+
 ExeContext* VG_(record_ExeContext) ( ThreadId tid )
 {
    Int         i;
@@ -218,14 +232,7 @@ ExeContext* VG_(record_ExeContext) ( ThreadId tid )
    /* Now figure out if we've seen this one before.  First hash it so
       as to determine the list number. */
 
-   hash = 0;
-   for (i = 0; i < n_ips; i++) {
-      hash ^= ips[i];
-      hash = ROLW(hash, 19);
-   }
-   if (0) VG_(printf)("hash  0x%lx  ", hash);
-   hash = hash % N_EC_LISTS;
-   if (0) VG_(printf)("%lu\n", hash);
+   hash = compute_hash(ips, n_ips);
 
    /* And (the expensive bit) look a matching entry in the list. */
 
@@ -280,6 +287,32 @@ ExeContext* VG_(record_ExeContext) ( ThreadId tid )
    ec_list[hash] = new_ec;
 
    return new_ec;
+}
+
+// XXX: Ridiculously Memcheck-specific, probably better to provide an
+// iterator, or a first-match predicate?  But don't want to slow this down
+// too much?  Maybe it doesn't matter, since it's only called on non-dup
+// errors.
+ExeContext* is_an_ExeContext(UInt maybe_ec_low32)
+{
+   Int i;
+   ExeContext* curr;
+
+   // 0 means it cannot possibly be a pointer.
+   if (0 == maybe_ec_low32)
+      return NULL;
+
+   for (i = 0; i < N_EC_LISTS; i++) {
+      curr = ec_list[i];
+      while (True) {
+         if (curr == NULL)
+            break;
+         if ((UInt)( (UWord)curr & 0xffffffff ) == maybe_ec_low32) 
+            return curr;  // Found a probable match.
+         curr = curr->next;
+      }
+   }
+   return NULL;
 }
 
 StackTrace VG_(extract_StackTrace) ( ExeContext* e )

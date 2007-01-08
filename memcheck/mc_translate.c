@@ -69,9 +69,16 @@ static IRExpr* expr2vbits ( struct _MCEnv* mce, IRExpr* e );
 /* Carries around state during memcheck instrumentation. */
 typedef
    struct _MCEnv {
+      /* READONLY: the superblock being instrumented. */
+      IRSB* bb_in;
+
+      /* MODIFIED: index of the current statement in bb_in, in the main
+         MC_(instrument) loop. */
+      Int bb_in_i;
+
       /* MODIFIED: the superblock being constructed.  IRStmts are
          added. */
-      IRSB* bb;
+      IRSB* bb_out;
 
       /* MODIFIED: a table [0 .. #temps_in_original_bb-1] which maps
          original temps to their current their current shadow temp.
@@ -108,7 +115,7 @@ typedef
 
    Shadow IRTemps are therefore allocated on demand.  mce.tmpMap is a
    table indexed [0 .. n_types-1], which gives the current shadow for
-   each original tmp, or INVALID_IRTEMP if none is so far assigned.
+   each original tmp, or IRTemp_INVALID if none is so far assigned.
    It is necessary to support making multiple assignments to a shadow
    -- specifically, after testing a shadow for definedness, it needs
    to be made defined.  But IR's SSA property disallows this.  
@@ -130,8 +137,8 @@ static IRTemp findShadowTmp ( MCEnv* mce, IRTemp orig )
    tl_assert(orig < mce->n_originalTmps);
    if (mce->tmpMap[orig] == IRTemp_INVALID) {
       mce->tmpMap[orig] 
-         = newIRTemp(mce->bb->tyenv, 
-                     shadowType(mce->bb->tyenv->types[orig]));
+         = newIRTemp(mce->bb_out->tyenv, 
+                     shadowType(mce->bb_out->tyenv->types[orig]));
    }
    return mce->tmpMap[orig];
 }
@@ -146,8 +153,8 @@ static void newShadowTmp ( MCEnv* mce, IRTemp orig )
 {
    tl_assert(orig < mce->n_originalTmps);
    mce->tmpMap[orig] 
-      = newIRTemp(mce->bb->tyenv, 
-                  shadowType(mce->bb->tyenv->types[orig]));
+      = newIRTemp(mce->bb_out->tyenv, 
+                  shadowType(mce->bb_out->tyenv->types[orig]));
 }
 
 
@@ -265,8 +272,8 @@ static IRExpr* definedOfType ( IRType ty ) {
    temporary.  This effectively converts an arbitrary expression into
    an atom. */
 static IRAtom* assignNew ( MCEnv* mce, IRType ty, IRExpr* e ) {
-   IRTemp t = newIRTemp(mce->bb->tyenv, ty);
-   assign(mce->bb, t, e);
+   IRTemp t = newIRTemp(mce->bb_out->tyenv, ty);
+   assign(mce->bb_out, t, e);
    return mkexpr(t);
 }
 
@@ -507,7 +514,7 @@ static IRAtom* mkPCastTo( MCEnv* mce, IRType dst_ty, IRAtom* vbits )
    /* Note, dst_ty is a shadow type, not an original type. */
    /* First of all, collapse vbits down to a single bit. */
    tl_assert(isShadowAtom(mce,vbits));
-   ty   = typeOfIRExpr(mce->bb->tyenv, vbits);
+   ty   = typeOfIRExpr(mce->bb_out->tyenv, vbits);
    tmp1 = NULL;
    switch (ty) {
       case Ity_I1:
@@ -790,6 +797,290 @@ static IRAtom* doCmpORD ( MCEnv*  mce,
    }
 }
 
+/*------------------------------------------------------------*/
+/*--- Undefined value origin-tracking                      ---*/
+/*------------------------------------------------------------*/
+
+static UInt origin_tracking_0  = 0,
+            origin_tracking_1  = 0,
+            origin_tracking_2  = 0;
+
+void MC_(print_origin_tracking_stats)(void)
+{
+   Char perc0[7], perc1[7], perc2[7];
+   UInt n_total = origin_tracking_2 + origin_tracking_1 + origin_tracking_0;
+
+   // XXX: there's an off-by-one error in percentify -- if I use 6 instead
+   // of 5 here, the buffers get overrun.  (there's one in snprintf, too)
+   VG_(percentify)(origin_tracking_2, n_total, 1, 7, perc2);
+   VG_(percentify)(origin_tracking_1, n_total, 1, 7, perc1);
+   VG_(percentify)(origin_tracking_0, n_total, 1, 7, perc0);
+   VG_(message)(Vg_DebugMsg, 
+                " memcheck: origins: static cmps with 2 args = %6d (%s)",
+                origin_tracking_2, perc2);
+   VG_(message)(Vg_DebugMsg, 
+                " memcheck: origins: static cmps with 1 arg  = %6d (%s)",
+                origin_tracking_1, perc1);
+   VG_(message)(Vg_DebugMsg, 
+                " memcheck: origins: static cmps with 0 args = %6d (%s)",
+                origin_tracking_0, perc0);
+}
+
+/*------------------------------------------------------------*/
+
+#define MAX_ORIGINS  20
+
+typedef 
+   struct {
+      IRTemp tmps[MAX_ORIGINS];
+      Int    tmps_nextfree;
+   }
+   OriginsList;
+
+static void init_OriginsList(OriginsList* list)
+{
+   Int i;
+   for (i = 0; i < MAX_ORIGINS; i++) {
+      list->tmps[i] = IRTemp_INVALID;
+   }
+   list->tmps_nextfree = 0;
+}
+
+static void add_to_OriginsList(OriginsList* list, IRTemp t)
+{
+   // Check it's not already in the list.
+   Int i;
+   for (i = 0; i < list->tmps_nextfree; i++) {
+      if (list->tmps[i] == t) {
+         return;
+      }
+   }
+   // Not already there: add it.
+   tl_assert(list->tmps_nextfree < MAX_ORIGINS);
+   list->tmps[ list->tmps_nextfree++ ] = t;
+}
+
+static void add_to_OriginsList_if_tmp(OriginsList* list, IRExpr* arg)
+{
+   if (Iex_RdTmp == arg->tag)
+      add_to_OriginsList(list, arg->Iex.RdTmp.tmp);
+}
+
+static Bool remove_from_OriginsList(OriginsList* list, IRTemp t)
+{
+   Int i, j;
+   tl_assert(list->tmps_nextfree < MAX_ORIGINS);
+   for (i = 0; i < list->tmps_nextfree; i++) {
+      if (list->tmps[i] == t) {
+         // shift ones above down
+         for (j = i; j < list->tmps_nextfree - 1; j++)
+            list->tmps[j] = list->tmps[j+1];
+         list->tmps[ list->tmps_nextfree ] = IRTemp_INVALID;
+         list->tmps_nextfree--;
+//         VG_(printf)("remove: "); ppIRTemp(t); VG_(printf)("\n");
+         return True;
+      }
+   }
+   return False;
+}
+
+static Bool OriginsList_is_empty(OriginsList* list)
+{
+   return ( 0 == list->tmps_nextfree ? True : False );
+}
+
+/*------------------------------------------------------------*/
+
+// We work backwards, trying to find any and all values, >= 32 bits in size,
+// that were used to create currTemp.  We may not succeed, eg. if the values
+// are all 8-bits.
+static void getOriginTmps(MCEnv* mce, IRTemp currTemp, OriginsList* originTmps)
+{
+   // XXX: write a test that adds a whole lot of undefined numbers, and
+   // should be able to give origins for all of them.
+   // XXX: write a test where two undefined chars are compared, but they're
+   // recently converted from 32-bit values and so can be identified.
+   OriginsList worklist_actual, *worklist = &worklist_actual;
+   Int i = mce->bb_in_i - 1;
+
+   // Don't do all this work if we're not reporting undefined value errors.
+   if (!MC_(clo_undef_value_errors))
+      return;
+
+   init_OriginsList(worklist);
+   add_to_OriginsList(worklist, currTemp);
+
+   tl_assert(i >= 0);
+
+   while (True) {
+
+      IRStmt* st = mce->bb_in->stmts[i];
+
+//      VG_(printf)("stmt: "); ppIRStmt(st); VG_(printf)("\n");
+
+      //---------------------------------------------------------------------
+      switch (st->tag) {
+         case Ist_WrTmp: {
+            IRTemp  tX   = st->Ist.WrTmp.tmp;
+            IRExpr* data = st->Ist.WrTmp.data;
+
+            // tX = ...   Is tX in the worklist?
+            if (remove_from_OriginsList(worklist, tX)) {
+
+               //---------------------------------------------------------------
+               switch (data->tag) {
+                  case Iex_RdTmp: {
+                     // tX = tY.  Add tY to worklist.
+                     IRTemp tY = data->Iex.RdTmp.tmp;
+                     add_to_OriginsList(worklist, tY);
+                     break;
+                  }
+
+                  case Iex_Unop:
+                     add_to_OriginsList_if_tmp(worklist, data->Iex.Unop.arg);
+                     break;
+
+                  case Iex_Binop:
+                     add_to_OriginsList_if_tmp(worklist, data->Iex.Binop.arg1);
+                     add_to_OriginsList_if_tmp(worklist, data->Iex.Binop.arg2);
+                     break;
+
+                  case Iex_Triop:
+                     add_to_OriginsList_if_tmp(worklist, data->Iex.Triop.arg1);
+                     add_to_OriginsList_if_tmp(worklist, data->Iex.Triop.arg2);
+                     add_to_OriginsList_if_tmp(worklist, data->Iex.Triop.arg3);
+                     break;
+
+                  case Iex_Qop:
+                     add_to_OriginsList_if_tmp(worklist, data->Iex.Qop.arg1);
+                     add_to_OriginsList_if_tmp(worklist, data->Iex.Qop.arg2);
+                     add_to_OriginsList_if_tmp(worklist, data->Iex.Qop.arg3);
+                     add_to_OriginsList_if_tmp(worklist, data->Iex.Qop.arg4);
+                     break;
+
+                  case Iex_Mux0X:
+                     add_to_OriginsList_if_tmp(worklist, data->Iex.Mux0X.cond);
+                     add_to_OriginsList_if_tmp(worklist, data->Iex.Mux0X.expr0);
+                     add_to_OriginsList_if_tmp(worklist, data->Iex.Mux0X.exprX);
+                     break;
+
+                  case Iex_Const:
+                     // tX = <constant>.  Do nothing.
+                     break;
+
+                  case Iex_Get:
+                  case Iex_Load: {
+                     // tX = GET:I<ty>(N), or tX = LDxx:I<ty>(tY)
+                     // If tX is 32 or 64 bits, add it to the finish_list.
+                     //Int szB = sizeofIRType(data->Iex.Get.ty);
+                     // XXX
+                     Int szB =
+                           sizeofIRType(typeOfIRTemp(mce->bb_in->tyenv, tX));
+                     if (4 == szB || 8 == szB) {
+                        add_to_OriginsList(originTmps, tX);
+                     }
+                     break;
+                  }
+
+                  case Iex_GetI:
+                     // XXX: should treat similarly to Get/Load
+                     break;
+                  
+                  // XXX: remove
+//                  case Iex_Load: {
+//                     // tX = LDle:I<ty>(tY)
+//                     // If size is 32 or 64 bits, add tX to the finish_list.
+//                     Int szB = sizeofIRType(data->Iex.Load.ty);
+//                     if (4 == szB || 8 == szB) {
+//                        add_to_OriginsList(originTmps, tX);
+//                     }
+//                     break;
+//                  }
+
+                  case Iex_CCall: {
+                     // tX = call(argY,argZ,...).  If tX is present: remove
+                     // tX from worklist, and add all args that are temps to
+                     // worklist.
+                     // XXX: this is similar to the Ist_Dirty case, factor
+                     //      out...
+                     if (remove_from_OriginsList(worklist, tX)) {
+                        IRExpr** args = data->Iex.CCall.args;
+                        Int j = 0;
+                        while (NULL != args[j]) {
+                           IRExpr* arg = args[j];
+                           // We can ignore arguments for which the mcx_mask
+                           // is set, because they are always defined.
+                           if (Iex_RdTmp == arg->tag && 
+                               0 == (data->Iex.CCall.cee->mcx_mask & (1<<j))) {
+                              // Arg is a temp (tY), add it to worklist.
+                              IRTemp tY = arg->Iex.RdTmp.tmp;
+                              add_to_OriginsList(worklist, tY);
+                           }
+                           j++;
+                        }
+                     }
+                     break;
+                  }
+
+                  default: 
+                     ppIRExpr(data);
+                     VG_(tool_panic)("getOriginTmps: unhandled expr type");
+               }
+               //---------------------------------------------------------------
+            }
+            break;   // end of Ist_WrTmp case
+         }
+
+         case Ist_Dirty: {
+            // tX = call(argY,argZ,...).  If tX is present: remove tX from
+            // worklist, and add all args that are temps to worklist.
+            IRDirty* d = st->Ist.Dirty.details;
+            IRTemp  tX = d->tmp;
+            if (IRTemp_INVALID != tX && remove_from_OriginsList(worklist, tX))
+            {
+               Int j = 0;
+               while (NULL != d->args[j]) {
+                  IRExpr* arg = d->args[j];
+                  // We can ignore arguments for which the mcx_mask
+                  // is set, because they are always defined.
+                  if (Iex_RdTmp == arg->tag &&
+                      0 == (d->cee->mcx_mask & (1<<j))) {
+                     // Arg is a temp (tY), add it to worklist.
+                     IRTemp tY = arg->Iex.RdTmp.tmp;
+                     add_to_OriginsList(worklist, tY);
+                  }
+                  j++;
+               }
+            }
+            break;
+         }
+         
+         case Ist_NoOp:
+         case Ist_IMark:
+         case Ist_AbiHint:
+         case Ist_Put:
+         case Ist_PutI:
+         case Ist_Store:
+         case Ist_MFence:
+         case Ist_Exit:
+            break;
+
+         default:
+            // XXX: complete
+            ppIRStmt(st);
+            tl_assert2(0, "unhandled statement type");
+      }
+      //---------------------------------------------------------------------
+
+      if (OriginsList_is_empty(worklist)) {
+         return;
+      }
+
+      tl_assert(i > 0);
+      i--;
+   }
+}
+
 
 /*------------------------------------------------------------*/
 /*--- Emit a test and complaint if something is undefined. ---*/
@@ -810,7 +1101,6 @@ static void setHelperAnns ( MCEnv* mce, IRDirty* di ) {
    di->fxState[1].size   = mce->layout->sizeof_IP;
 }
 
-
 /* Check the supplied **original** atom for undefinedness, and emit a
    complaint if so.  Once that happens, mark it as defined.  This is
    possible because the atom is either a tmp or literal.  If it's a
@@ -823,11 +1113,21 @@ static void setHelperAnns ( MCEnv* mce, IRDirty* di ) {
 */
 static void complainIfUndefined ( MCEnv* mce, IRAtom* atom )
 {
-   IRAtom*  vatom;
-   IRType   ty;
-   Int      sz;
-   IRDirty* di;
-   IRAtom*  cond;
+   #define N_ORIGIN_TMPS   20
+   IRAtom*     vatom;
+   IRType      ty;
+   Int         sz;
+   IRDirty*    di;
+   IRAtom*     cond;
+   OriginsList originTmps;
+   Int         n_origins_found = 0;
+   Int         j;
+
+   Char*    fn_name;
+   void*    fn_ptr;
+   UInt     regparms;
+   IRExpr** arg_vec;
+   IRExpr*  szHWordExpr;
 
    // Don't do V bit tests if we're not reporting undefined value errors.
    if (!MC_(clo_undef_value_errors))
@@ -842,7 +1142,7 @@ static void complainIfUndefined ( MCEnv* mce, IRAtom* atom )
    tl_assert(isShadowAtom(mce, vatom));
    tl_assert(sameKindedAtoms(atom, vatom));
 
-   ty = typeOfIRExpr(mce->bb->tyenv, vatom);
+   ty = typeOfIRExpr(mce->bb_out->tyenv, vatom);
 
    /* sz is only used for constructing the error message */
    sz = ty==Ity_I1 ? 0 : sizeofIRType(ty);
@@ -850,51 +1150,110 @@ static void complainIfUndefined ( MCEnv* mce, IRAtom* atom )
    cond = mkPCastTo( mce, Ity_I1, vatom );
    /* cond will be 0 if all defined, and 1 if any not defined. */
 
-   switch (sz) {
-      case 0:
-         di = unsafeIRDirty_0_N( 
-                 0/*regparms*/, 
-                 "MC_(helperc_value_check0_fail)",
-                 VG_(fnptr_to_fnentry)( &MC_(helperc_value_check0_fail) ),
-                 mkIRExprVec_0() 
-              );
-         break;
-      case 1:
-         di = unsafeIRDirty_0_N( 
-                 0/*regparms*/, 
-                 "MC_(helperc_value_check1_fail)",
-                 VG_(fnptr_to_fnentry)( &MC_(helperc_value_check1_fail) ),
-                 mkIRExprVec_0() 
-              );
-         break;
-      case 4:
-         di = unsafeIRDirty_0_N( 
-                 0/*regparms*/, 
-                 "MC_(helperc_value_check4_fail)",
-                 VG_(fnptr_to_fnentry)( &MC_(helperc_value_check4_fail) ),
-                 mkIRExprVec_0() 
-              );
-         break;
-      case 8:
-         di = unsafeIRDirty_0_N( 
-                 0/*regparms*/, 
-                 "MC_(helperc_value_check8_fail)",
-                 VG_(fnptr_to_fnentry)( &MC_(helperc_value_check8_fail) ),
-                 mkIRExprVec_0() 
-              );
-         break;
-      default:
-         di = unsafeIRDirty_0_N( 
-                 1/*regparms*/, 
-                 "MC_(helperc_complain_undef)",
-                 VG_(fnptr_to_fnentry)( &MC_(helperc_complain_undef) ),
-                 mkIRExprVec_1( mkIRExpr_HWord( sz ))
-              );
-         break;
+   // Get the temps that can be used for origin-tracking, if atom itself is
+   // a tmp.
+   if (Iex_RdTmp == atom->tag) {
+      init_OriginsList(&originTmps);
+      getOriginTmps(mce, atom->Iex.RdTmp.tmp, &originTmps);
+      n_origins_found = originTmps.tmps_nextfree;
    }
+   
+   // foreach (t) in finish_list {
+   //    32-bit machines:
+   //       if (4 == sizeof(t)) --> use t
+   //       if (8 == sizeof(t)) --> use Iop_64HIto32(t)  // pass in high word
+   // 
+   //    64-bit machines:
+   //       if (4 == sizeof(t)) --> use Iop(32HLto64)(0, t)
+   //       if (8 == sizeof(t)) --> use t
+   // }
+   for (j = 0; j < n_origins_found; j++) {
+      IRTemp tmp     = originTmps.tmps[j];
+      Int    tmp_szB = sizeofIRType(typeOfIRTemp(mce->bb_in->tyenv, tmp));
+      // XXX: in the 16==tmp_szB case, convert using Iop_128HIto64, then
+      // Iop_64HIto32
+      if        (8 == tmp_szB && 4 == VG_WORDSIZE) {
+         //convert using Iop_64HIto32, rename in the originTmps array
+         tl_assert2(0, "XXX: 64-bit operand, not yet handled");
+      } else if (4 == tmp_szB && 8 == VG_WORDSIZE) {
+         // convert using Iop_32HLto64, rename in the originTmps array
+         tl_assert2(0, "XXX: 32-bit operand on 64-bit $PLAT, not yet handled");
+      } else {
+         tl_assert(VG_WORDSIZE == tmp_szB);
+      }
+   }
+   
+   // XXX: specialise the common cases if it helps performance
+   szHWordExpr = mkIRExpr_HWord( sz );
+
+   if (0 == n_origins_found) {
+      fn_name = "MC_(helperc_value_error_0_origins)";
+      fn_ptr  = &MC_(helperc_value_error_0_origins);
+      regparms = 1;
+      arg_vec  = mkIRExprVec_1(szHWordExpr);
+
+   } else if (1 == n_origins_found) {
+      fn_name = "MC_(helperc_value_error_1_origin)";
+      fn_ptr  = &MC_(helperc_value_error_1_origin);
+      regparms = 2;
+      arg_vec  = mkIRExprVec_2(szHWordExpr, mkexpr(originTmps.tmps[0]));
+
+   } else if (2 == n_origins_found) {
+      fn_name = "MC_(helperc_value_error_2_origins)";
+      fn_ptr  = &MC_(helperc_value_error_2_origins);
+      regparms = 3;
+      arg_vec  = mkIRExprVec_3(szHWordExpr, mkexpr(originTmps.tmps[0]),
+                                            mkexpr(originTmps.tmps[1]));
+   } else if (3 == n_origins_found) {
+      fn_name = "MC_(helperc_value_error_3_origins)";
+      fn_ptr  = &MC_(helperc_value_error_3_origins);
+      regparms = 3;
+      arg_vec  = mkIRExprVec_4(szHWordExpr, mkexpr(originTmps.tmps[0]),
+                                            mkexpr(originTmps.tmps[1]),
+                                            mkexpr(originTmps.tmps[2]));
+   } else if (4 == n_origins_found) {
+      fn_name = "MC_(helperc_value_error_4_origins)";
+      fn_ptr  = &MC_(helperc_value_error_4_origins);
+      regparms = 3;
+      arg_vec  = mkIRExprVec_5(szHWordExpr, mkexpr(originTmps.tmps[0]),
+                                            mkexpr(originTmps.tmps[1]),
+                                            mkexpr(originTmps.tmps[2]),
+                                            mkexpr(originTmps.tmps[3]));
+   } else if (5 == n_origins_found) {
+      fn_name = "MC_(helperc_value_error_5_origins)";
+      fn_ptr  = &MC_(helperc_value_error_5_origins);
+      regparms = 3;
+      arg_vec  = mkIRExprVec_6(szHWordExpr, mkexpr(originTmps.tmps[0]),
+                                            mkexpr(originTmps.tmps[1]),
+                                            mkexpr(originTmps.tmps[2]),
+                                            mkexpr(originTmps.tmps[3]),
+                                            mkexpr(originTmps.tmps[4]));
+   } else {
+   // XXX: maybe allow more origins
+//      if (n_origins_found > 6) {
+//         VG_(printf)("XXX: found %d origins\n", n_origins_found);
+//      }
+      fn_name = "MC_(helperc_value_error_6_origins)";
+      fn_ptr  = &MC_(helperc_value_error_6_origins);
+      regparms = 3;
+      arg_vec  = mkIRExprVec_7(szHWordExpr, mkexpr(originTmps.tmps[0]),
+                                            mkexpr(originTmps.tmps[1]),
+                                            mkexpr(originTmps.tmps[2]),
+                                            mkexpr(originTmps.tmps[3]),
+                                            mkexpr(originTmps.tmps[4]),
+                                            mkexpr(originTmps.tmps[5]));
+   }
+   
+   // The C call itself.
+   di = unsafeIRDirty_0_N( 
+           regparms, fn_name,
+           VG_(fnptr_to_fnentry)(fn_ptr),
+           arg_vec
+        );
    di->guard = cond;
+
    setHelperAnns( mce, di );
-   stmt( mce->bb, IRStmt_Dirty(di));
+   stmt( mce->bb_out, IRStmt_Dirty(di));
 
    /* Set the shadow tmp to be defined.  First, update the
       orig->shadow tmp mapping to reflect the fact that this shadow is
@@ -904,9 +1263,10 @@ static void complainIfUndefined ( MCEnv* mce, IRAtom* atom )
    if (vatom->tag == Iex_RdTmp) {
       tl_assert(atom->tag == Iex_RdTmp);
       newShadowTmp(mce, atom->Iex.RdTmp.tmp);
-      assign(mce->bb, findShadowTmp(mce, atom->Iex.RdTmp.tmp), 
-                      definedOfType(ty));
+      assign(mce->bb_out, findShadowTmp(mce, atom->Iex.RdTmp.tmp), 
+                          definedOfType(ty));
    }
+   #undef N_ORIGIN_TMPS
 }
 
 
@@ -971,7 +1331,7 @@ void do_shadow_PUT ( MCEnv* mce,  Int offset,
       tl_assert(isShadowAtom(mce, vatom));
    }
 
-   ty = typeOfIRExpr(mce->bb->tyenv, vatom);
+   ty = typeOfIRExpr(mce->bb_out->tyenv, vatom);
    tl_assert(ty != Ity_I1);
    if (isAlwaysDefd(mce, offset, sizeofIRType(ty))) {
       /* later: no ... */
@@ -979,7 +1339,7 @@ void do_shadow_PUT ( MCEnv* mce,  Int offset,
       /* complainIfUndefined(mce, atom); */
    } else {
       /* Do a plain shadow Put. */
-      stmt( mce->bb, IRStmt_Put( offset + mce->layout->total_sizeB, vatom ) );
+      stmt( mce->bb_out, IRStmt_Put( offset + mce->layout->total_sizeB, vatom ) );
    }
 }
 
@@ -994,7 +1354,7 @@ void do_shadow_PUTI ( MCEnv* mce,
 {
    IRAtom* vatom;
    IRType  ty, tyS;
-   Int     arrSize;;
+   Int     arrSize;
 
    // Don't do shadow PUTIs if we're not doing undefined value checking.
    // Their absence lets Vex's optimiser remove all the shadow computation
@@ -1009,8 +1369,8 @@ void do_shadow_PUTI ( MCEnv* mce,
    tyS  = shadowType(ty);
    arrSize = descr->nElems * sizeofIRType(ty);
    tl_assert(ty != Ity_I1);
-   tl_assert(isOriginalAtom(mce,ix));
-   complainIfUndefined(mce,ix);
+   tl_assert(isOriginalAtom(mce, ix));
+   complainIfUndefined(mce, ix);
    if (isAlwaysDefd(mce, descr->base, arrSize)) {
       /* later: no ... */
       /* emit code to emit a complaint if any of the vbits are 1. */
@@ -1021,7 +1381,7 @@ void do_shadow_PUTI ( MCEnv* mce,
       IRRegArray* new_descr 
          = mkIRRegArray( descr->base + mce->layout->total_sizeB, 
                          tyS, descr->nElems);
-      stmt( mce->bb, IRStmt_PutI( new_descr, ix, bias, vatom ));
+      stmt( mce->bb_out, IRStmt_PutI( new_descr, ix, bias, vatom ));
    }
 }
 
@@ -1056,8 +1416,8 @@ IRExpr* shadow_GETI ( MCEnv* mce,
    IRType tyS  = shadowType(ty);
    Int arrSize = descr->nElems * sizeofIRType(ty);
    tl_assert(ty != Ity_I1);
-   tl_assert(isOriginalAtom(mce,ix));
-   complainIfUndefined(mce,ix);
+   tl_assert(isOriginalAtom(mce, ix));
+   complainIfUndefined(mce, ix);
    if (isAlwaysDefd(mce, descr->base, arrSize)) {
       /* Always defined, return all zeroes of the relevant type */
       return definedOfType(tyS);
@@ -1084,8 +1444,8 @@ static
 IRAtom* mkLazy2 ( MCEnv* mce, IRType finalVty, IRAtom* va1, IRAtom* va2 )
 {
    IRAtom* at;
-   IRType t1 = typeOfIRExpr(mce->bb->tyenv, va1);
-   IRType t2 = typeOfIRExpr(mce->bb->tyenv, va2);
+   IRType t1 = typeOfIRExpr(mce->bb_out->tyenv, va1);
+   IRType t2 = typeOfIRExpr(mce->bb_out->tyenv, va2);
    tl_assert(isShadowAtom(mce,va1));
    tl_assert(isShadowAtom(mce,va2));
 
@@ -1133,9 +1493,9 @@ IRAtom* mkLazy3 ( MCEnv* mce, IRType finalVty,
                   IRAtom* va1, IRAtom* va2, IRAtom* va3 )
 {
    IRAtom* at;
-   IRType t1 = typeOfIRExpr(mce->bb->tyenv, va1);
-   IRType t2 = typeOfIRExpr(mce->bb->tyenv, va2);
-   IRType t3 = typeOfIRExpr(mce->bb->tyenv, va3);
+   IRType t1 = typeOfIRExpr(mce->bb_out->tyenv, va1);
+   IRType t2 = typeOfIRExpr(mce->bb_out->tyenv, va2);
+   IRType t3 = typeOfIRExpr(mce->bb_out->tyenv, va3);
    tl_assert(isShadowAtom(mce,va1));
    tl_assert(isShadowAtom(mce,va2));
    tl_assert(isShadowAtom(mce,va3));
@@ -1202,10 +1562,10 @@ IRAtom* mkLazy4 ( MCEnv* mce, IRType finalVty,
                   IRAtom* va1, IRAtom* va2, IRAtom* va3, IRAtom* va4 )
 {
    IRAtom* at;
-   IRType t1 = typeOfIRExpr(mce->bb->tyenv, va1);
-   IRType t2 = typeOfIRExpr(mce->bb->tyenv, va2);
-   IRType t3 = typeOfIRExpr(mce->bb->tyenv, va3);
-   IRType t4 = typeOfIRExpr(mce->bb->tyenv, va4);
+   IRType t1 = typeOfIRExpr(mce->bb_out->tyenv, va1);
+   IRType t2 = typeOfIRExpr(mce->bb_out->tyenv, va2);
+   IRType t3 = typeOfIRExpr(mce->bb_out->tyenv, va3);
+   IRType t4 = typeOfIRExpr(mce->bb_out->tyenv, va4);
    tl_assert(isShadowAtom(mce,va1));
    tl_assert(isShadowAtom(mce,va2));
    tl_assert(isShadowAtom(mce,va3));
@@ -2555,15 +2915,14 @@ IRAtom* expr2vbits_Load_WRK ( MCEnv* mce,
       addrAct = assignNew(mce, tyAddr, binop(mkAdd, addr, eBias) );
    }
 
-   /* We need to have a place to park the V bits we're just about to
-      read. */
-   datavbits = newIRTemp(mce->bb->tyenv, ty);
+   /* We need to have a place to park the V bits we're just about to read. */
+   datavbits = newIRTemp(mce->bb_out->tyenv, ty);
    di = unsafeIRDirty_1_N( datavbits, 
                            1/*regparms*/, 
                            hname, VG_(fnptr_to_fnentry)( helper ), 
                            mkIRExprVec_1( addrAct ));
    setHelperAnns( mce, di );
-   stmt( mce->bb, IRStmt_Dirty(di) );
+   stmt( mce->bb_out, IRStmt_Dirty(di) );
 
    return mkexpr(datavbits);
 }
@@ -2617,7 +2976,7 @@ IRAtom* expr2vbits_Mux0X ( MCEnv* mce,
    vbitsC = expr2vbits(mce, cond);
    vbits0 = expr2vbits(mce, expr0);
    vbitsX = expr2vbits(mce, exprX);
-   ty = typeOfIRExpr(mce->bb->tyenv, vbits0);
+   ty = typeOfIRExpr(mce->bb_out->tyenv, vbits0);
 
    return
       mkUifU(mce, ty, assignNew(mce, ty, IRExpr_Mux0X(cond, vbits0, vbitsX)),
@@ -2642,7 +3001,7 @@ IRExpr* expr2vbits ( MCEnv* mce, IRExpr* e )
          return IRExpr_RdTmp( findShadowTmp(mce, e->Iex.RdTmp.tmp) );
 
       case Iex_Const:
-         return definedOfType(shadowType(typeOfIRExpr(mce->bb->tyenv, e)));
+         return definedOfType(shadowType(typeOfIRExpr(mce->bb_out->tyenv, e)));
 
       case Iex_Qop:
          return expr2vbits_Qop(
@@ -2705,7 +3064,7 @@ IRExpr* zwidenToHostWord ( MCEnv* mce, IRAtom* vatom )
    /* vatom is vbits-value and as such can only have a shadow type. */
    tl_assert(isShadowAtom(mce,vatom));
 
-   ty  = typeOfIRExpr(mce->bb->tyenv, vatom);
+   ty  = typeOfIRExpr(mce->bb_out->tyenv, vatom);
    tyH = mce->hWordTy;
 
    if (tyH == Ity_I32) {
@@ -2776,7 +3135,7 @@ void do_shadow_Store ( MCEnv* mce,
    tl_assert(isOriginalAtom(mce,addr));
    tl_assert(isShadowAtom(mce,vdata));
 
-   ty = typeOfIRExpr(mce->bb->tyenv, vdata);
+   ty = typeOfIRExpr(mce->bb_out->tyenv, vdata);
 
    // If we're not doing undefined value checking, pretend that this value
    // is "all valid".  That lets Vex's optimiser remove some of the V bit
@@ -2868,8 +3227,8 @@ void do_shadow_Store ( MCEnv* mce,
                   );
       setHelperAnns( mce, diLo64 );
       setHelperAnns( mce, diHi64 );
-      stmt( mce->bb, IRStmt_Dirty(diLo64) );
-      stmt( mce->bb, IRStmt_Dirty(diHi64) );
+      stmt( mce->bb_out, IRStmt_Dirty(diLo64) );
+      stmt( mce->bb_out, IRStmt_Dirty(diHi64) );
 
    } else {
 
@@ -2900,7 +3259,7 @@ void do_shadow_Store ( MCEnv* mce,
               );
       }
       setHelperAnns( mce, di );
-      stmt( mce->bb, IRStmt_Dirty(di) );
+      stmt( mce->bb_out, IRStmt_Dirty(di) );
    }
 
 }
@@ -2940,6 +3299,7 @@ void do_shadow_Dirty ( MCEnv* mce, IRDirty* d )
 #  endif
 
    /* First check the guard. */
+   // XXX: could use get_cmpTemps and complainIfUndefinedCond here...
    complainIfUndefined(mce, d->guard);
 
    /* Now round up all inputs and PCast over them. */
@@ -3003,7 +3363,7 @@ void do_shadow_Dirty ( MCEnv* mce, IRDirty* d )
       tl_assert(d->mAddr);
       complainIfUndefined(mce, d->mAddr);
 
-      tyAddr = typeOfIRExpr(mce->bb->tyenv, d->mAddr);
+      tyAddr = typeOfIRExpr(mce->bb_out->tyenv, d->mAddr);
       tl_assert(tyAddr == Ity_I32 || tyAddr == Ity_I64);
       tl_assert(tyAddr == mce->hWordTy); /* not really right */
    }
@@ -3045,8 +3405,8 @@ void do_shadow_Dirty ( MCEnv* mce, IRDirty* d )
    /* Outputs: the destination temporary, if there is one. */
    if (d->tmp != IRTemp_INVALID) {
       dst   = findShadowTmp(mce, d->tmp);
-      tyDst = typeOfIRTemp(mce->bb->tyenv, d->tmp);
-      assign( mce->bb, dst, mkPCastTo( mce, tyDst, curr) );
+      tyDst = typeOfIRTemp(mce->bb_out->tyenv, d->tmp);
+      assign( mce->bb_out, dst, mkPCastTo( mce, tyDst, curr) );
    }
 
    /* Outputs: guest state that we write or modify. */
@@ -3118,9 +3478,8 @@ void do_AbiHint ( MCEnv* mce, IRExpr* base, Int len )
            VG_(fnptr_to_fnentry)( &MC_(helperc_MAKE_STACK_UNINIT) ),
            mkIRExprVec_2( base, mkIRExpr_HWord( (UInt)len) )
         );
-   stmt( mce->bb, IRStmt_Dirty(di) );
+   stmt( mce->bb_out, IRStmt_Dirty(di) );
 }
-
 
 /*------------------------------------------------------------*/
 /*--- Memcheck main                                        ---*/
@@ -3243,10 +3602,10 @@ IRSB* MC_(instrument) ( VgCallbackClosure* closure,
 {
    Bool    verboze = False; //True; 
    Bool    bogus;
-   Int     i, j, first_stmt;
+   Int     j, first_stmt;
    IRStmt* st;
    MCEnv   mce;
-   IRSB*   bb;
+   IRSB*   bb_out;
 
    if (gWordTy != hWordTy) {
       /* We don't currently support this case. */
@@ -3262,30 +3621,31 @@ IRSB* MC_(instrument) ( VgCallbackClosure* closure,
    tl_assert(sizeof(Int)   == 4);
 
    /* Set up SB */
-   bb = deepCopyIRSBExceptStmts(bb_in);
+   bb_out = deepCopyIRSBExceptStmts(bb_in);
 
-   /* Set up the running environment.  Only .bb is modified as we go
-      along. */
-   mce.bb             = bb;
+   /* Set up the running environment.  Only .bb_out and .curr_stmt_i are
+      modified as we go along. */
+   mce.bb_in          = bb_in;
+   mce.bb_in_i        = 0;
+   mce.bb_out         = bb_out;
    mce.layout         = layout;
-   mce.n_originalTmps = bb->tyenv->types_used;
+   mce.n_originalTmps = bb_out->tyenv->types_used;
    mce.hWordTy        = hWordTy;
    mce.bogusLiterals  = False;
    mce.tmpMap         = LibVEX_Alloc(mce.n_originalTmps * sizeof(IRTemp));
-   for (i = 0; i < mce.n_originalTmps; i++)
-      mce.tmpMap[i] = IRTemp_INVALID;
+   for (j = 0; j < mce.n_originalTmps; j++)
+      mce.tmpMap[j] = IRTemp_INVALID;
 
    /* Make a preliminary inspection of the statements, to see if there
       are any dodgy-looking literals.  If there are, we generate
       extra-detailed (hence extra-expensive) instrumentation in
-      places.  Scan the whole bb even if dodgyness is found earlier,
+      places.  Scan the whole bb_in even if dodgyness is found earlier,
       so that the flatness assertion is applied to all stmts. */
 
    bogus = False;
 
-   for (i = 0; i < bb_in->stmts_used; i++) {
-
-      st = bb_in->stmts[i];
+   for (mce.bb_in_i = 0; mce.bb_in_i < bb_in->stmts_used; mce.bb_in_i++) {
+      st = bb_in->stmts[mce.bb_in_i];
       tl_assert(st);
       tl_assert(isFlatIRStmt(st));
 
@@ -3304,17 +3664,18 @@ IRSB* MC_(instrument) ( VgCallbackClosure* closure,
 
    /* Copy verbatim any IR preamble preceding the first IMark */
 
-   tl_assert(mce.bb == bb);
+   tl_assert(mce.bb_out == bb_out);
 
-   i = 0;
-   while (i < bb_in->stmts_used && bb_in->stmts[i]->tag != Ist_IMark) {
-
-      st = bb_in->stmts[i];
+   mce.bb_in_i = 0;
+   while (mce.bb_in_i < bb_in->stmts_used &&
+          bb_in->stmts[mce.bb_in_i]->tag != Ist_IMark)
+   {
+      st = bb_in->stmts[mce.bb_in_i];
       tl_assert(st);
       tl_assert(isFlatIRStmt(st));
 
-      addStmtToIRSB( bb, bb_in->stmts[i] );
-      i++;
+      addStmtToIRSB( bb_out, bb_in->stmts[mce.bb_in_i] );
+      mce.bb_in_i++;
    }
 
    /* Nasty problem.  IR optimisation of the pre-instrumented IR may
@@ -3335,16 +3696,19 @@ IRSB* MC_(instrument) ( VgCallbackClosure* closure,
       instrumentation loop before had been applied to the statement
       'tmp = CONSTANT'.
    */
-   for (j = 0; j < i; j++) {
-      if (bb_in->stmts[j]->tag == Ist_WrTmp) {
+
+   j = mce.bb_in_i;
+   for (mce.bb_in_i = 0; mce.bb_in_i < j; mce.bb_in_i++) {
+      if (bb_in->stmts[mce.bb_in_i]->tag == Ist_WrTmp) {
          /* findShadowTmp checks its arg is an original tmp;
             no need to assert that here. */
-         IRTemp tmp_o = bb_in->stmts[j]->Ist.WrTmp.tmp;
+         IRTemp tmp_o = bb_in->stmts[mce.bb_in_i]->Ist.WrTmp.tmp;
          IRTemp tmp_s = findShadowTmp(&mce, tmp_o);
-         IRType ty_s  = typeOfIRTemp(bb->tyenv, tmp_s);
-         assign( bb, tmp_s, definedOfType( ty_s ) );
+         IRType ty_s  = typeOfIRTemp(bb_out->tyenv, tmp_s);
+         assign( bb_out, tmp_s, definedOfType( ty_s ) );
          if (0) {
-            VG_(printf)("create shadow tmp for preamble tmp [%d] ty ", j);
+            VG_(printf)("create shadow tmp for preamble tmp [%d] ty ",
+                        mce.bb_in_i);
             ppIRType( ty_s );
             VG_(printf)("\n");
          }
@@ -3354,14 +3718,14 @@ IRSB* MC_(instrument) ( VgCallbackClosure* closure,
    /* Iterate over the remaining stmts to generate instrumentation. */
 
    tl_assert(bb_in->stmts_used > 0);
-   tl_assert(i >= 0);
-   tl_assert(i < bb_in->stmts_used);
-   tl_assert(bb_in->stmts[i]->tag == Ist_IMark);
+   tl_assert(mce.bb_in_i >= 0);
+   tl_assert(mce.bb_in_i < bb_in->stmts_used);
+   tl_assert(bb_in->stmts[mce.bb_in_i]->tag == Ist_IMark);
 
-   for (/* use current i*/; i <  bb_in->stmts_used; i++) {
-
-      st = bb_in->stmts[i];
-      first_stmt = bb->stmts_used;
+   for (/*current*/ ; mce.bb_in_i < bb_in->stmts_used; mce.bb_in_i++)
+   {
+      st = bb_in->stmts[mce.bb_in_i];
+      first_stmt = bb_out->stmts_used;
 
       if (verboze) {
          ppIRStmt(st);
@@ -3373,8 +3737,8 @@ IRSB* MC_(instrument) ( VgCallbackClosure* closure,
       switch (st->tag) {
 
          case Ist_WrTmp:
-            assign( bb, findShadowTmp(&mce, st->Ist.WrTmp.tmp), 
-                        expr2vbits( &mce, st->Ist.WrTmp.data) );
+            assign( bb_out, findShadowTmp(&mce, st->Ist.WrTmp.tmp), 
+                            expr2vbits( &mce, st->Ist.WrTmp.data) );
             break;
 
          case Ist_Put:
@@ -3399,9 +3763,14 @@ IRSB* MC_(instrument) ( VgCallbackClosure* closure,
                                    NULL /* shadow data */ );
             break;
 
-         case Ist_Exit:
-            complainIfUndefined( &mce, st->Ist.Exit.guard );
+         case Ist_Exit: {
+            IRAtom* guard = st->Ist.Exit.guard;
+            tl_assert(isIRAtom(guard));
+            tl_assert(Iex_RdTmp == guard->tag);
+            tl_assert(mce.bb_in_i > 0);
+            complainIfUndefined( &mce, guard );
             break;
+         }
 
          case Ist_NoOp:
          case Ist_IMark:
@@ -3425,42 +3794,42 @@ IRSB* MC_(instrument) ( VgCallbackClosure* closure,
       } /* switch (st->tag) */
 
       if (verboze) {
-         for (j = first_stmt; j < bb->stmts_used; j++) {
+         for (j = first_stmt; j < bb_out->stmts_used; j++) {
             VG_(printf)("   ");
-            ppIRStmt(bb->stmts[j]);
+            ppIRStmt(bb_out->stmts[j]);
             VG_(printf)("\n");
          }
          VG_(printf)("\n");
       }
 
       /* ... and finally copy the stmt itself to the output. */
-      addStmtToIRSB(bb, st);
-
+      addStmtToIRSB(bb_out, st);
    }
 
    /* Now we need to complain if the jump target is undefined. */
-   first_stmt = bb->stmts_used;
+   first_stmt = bb_out->stmts_used;
 
    if (verboze) {
-      VG_(printf)("bb->next = ");
-      ppIRExpr(bb->next);
+      VG_(printf)("bb_out->next = ");
+      ppIRExpr(bb_out->next);
       VG_(printf)("\n\n");
    }
 
-   complainIfUndefined( &mce, bb->next );
+   complainIfUndefined( &mce, bb_out->next );
 
    if (verboze) {
-      for (j = first_stmt; j < bb->stmts_used; j++) {
+      for (j = first_stmt; j < bb_out->stmts_used; j++) {
          VG_(printf)("   ");
-         ppIRStmt(bb->stmts[j]);
+         ppIRStmt(bb_out->stmts[j]);
          VG_(printf)("\n");
       }
       VG_(printf)("\n");
    }
 
-   return bb;
+   return bb_out;
 }
 
 /*--------------------------------------------------------------------*/
 /*--- end                                           mc_translate.c ---*/
 /*--------------------------------------------------------------------*/
+

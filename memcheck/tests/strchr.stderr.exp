@@ -1,15 +1,19 @@
 Conditional jump or move depends on uninitialised value(s)
    at 0x........: index (mc_replace_strmem.c:...)
    by 0x........: main (strchr.c:15)
+ Uninitialised value has unknown origin
 
 Conditional jump or move depends on uninitialised value(s)
    at 0x........: index (mc_replace_strmem.c:...)
    by 0x........: main (strchr.c:15)
+ Uninitialised value has unknown origin
 
 Conditional jump or move depends on uninitialised value(s)
    at 0x........: rindex (mc_replace_strmem.c:...)
    by 0x........: main (strchr.c:16)
+ Uninitialised value has unknown origin
 
 Conditional jump or move depends on uninitialised value(s)
    at 0x........: rindex (mc_replace_strmem.c:...)
    by 0x........: main (strchr.c:16)
+ Uninitialised value has unknown origin

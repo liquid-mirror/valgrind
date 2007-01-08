@@ -102,7 +102,7 @@ extern VgHashTable MC_(mempool_list);
 /* Shadow memory functions */
 extern Bool MC_(check_mem_is_noaccess)( Addr a, SizeT len, Addr* bad_addr );
 extern void MC_(make_mem_noaccess) ( Addr a, SizeT len );
-extern void MC_(make_mem_undefined)( Addr a, SizeT len );
+extern void MC_(make_mem_undefined)( Addr a, SizeT len, UInt obfusc_ec_low32 );
 extern void MC_(make_mem_defined)  ( Addr a, SizeT len );
 extern void MC_(copy_address_range_state) ( Addr src, Addr dst, SizeT len );
 
@@ -118,6 +118,9 @@ extern void  MC_(__builtin_delete)     ( ThreadId tid, void* p );
 extern void  MC_(__builtin_vec_delete) ( ThreadId tid, void* p );
 extern void* MC_(realloc)              ( ThreadId tid, void* p, SizeT new_size );
 
+// Functions involved in undefined-value origin-tracking.
+UInt MC_(obfuscate_ExeContext_low32)   ( UInt        ec_low32 );
+UInt MC_(deobfuscate_ExeContext_low32) ( UInt obfusc_ec_low32 );
 
 /*------------------------------------------------------------*/
 /*--- Profiling of memory events                           ---*/
@@ -247,6 +250,8 @@ extern Bool MC_(record_leak_error)            ( ThreadId tid,
                                                 LossRecord* lossRecord,
                                                 Bool print_record );
 
+extern void MC_(print_origin_tracking_stats) ( void );
+
 /*------------------------------------------------------------*/
 /*--- Command line options + defaults                      ---*/
 /*------------------------------------------------------------*/
@@ -282,17 +287,34 @@ extern Bool MC_(clo_workaround_gcc296_bugs);
  * default: YES */
 extern Bool MC_(clo_undef_value_errors);
 
+/* Track origins of undefined values?  Results in better error messages for
+ * undefined values, but may be a little slower [XXX: confirm this] and
+ * can make a program more likely to crash if it has undefined value bugs.
+ *
+ * default: YES */
+extern Bool MC_(clo_undef_origins);
 
 /*------------------------------------------------------------*/
 /*--- Instrumentation                                      ---*/
 /*------------------------------------------------------------*/
 
 /* Functions defined in mc_main.c */
-extern VG_REGPARM(1) void MC_(helperc_complain_undef) ( HWord );
-extern void MC_(helperc_value_check8_fail) ( void );
-extern void MC_(helperc_value_check4_fail) ( void );
-extern void MC_(helperc_value_check1_fail) ( void );
-extern void MC_(helperc_value_check0_fail) ( void );
+extern VG_REGPARM(1) void MC_(helperc_value_error_0_origins) ( HWord );
+extern VG_REGPARM(2) void MC_(helperc_value_error_1_origin)  ( HWord, HWord );
+extern VG_REGPARM(3) void MC_(helperc_value_error_2_origins) ( HWord, HWord,
+                                                               HWord );
+extern VG_REGPARM(3) void MC_(helperc_value_error_3_origins) ( HWord, HWord,
+                                                               HWord, HWord );
+extern VG_REGPARM(3) void MC_(helperc_value_error_4_origins) ( HWord, HWord,
+                                                               HWord, HWord,
+                                                               HWord );
+extern VG_REGPARM(3) void MC_(helperc_value_error_5_origins) ( HWord, HWord,
+                                                               HWord, HWord,
+                                                               HWord, HWord );
+extern VG_REGPARM(3) void MC_(helperc_value_error_6_origins) ( HWord, HWord,
+                                                               HWord, HWord,
+                                                               HWord, HWord,
+                                                               HWord );
 
 extern VG_REGPARM(1) void MC_(helperc_STOREV64be) ( Addr, ULong );
 extern VG_REGPARM(1) void MC_(helperc_STOREV64le) ( Addr, ULong );
