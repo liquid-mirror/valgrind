@@ -903,8 +903,9 @@ static void getOriginTmps(MCEnv* mce, IRTemp currTemp, OriginsList* originTmps)
    OriginsList worklist_actual, *worklist = &worklist_actual;
    Int i = mce->bb_in_i - 1;
 
-   // Don't do all this work if we're not reporting undefined value errors.
-   if (!MC_(clo_undef_value_errors))
+   // Don't do all this work if we're not reporting undefined value errors
+   // or undefined value error origins.
+   if (!MC_(clo_undef_value_errors) || !MC_(clo_undef_origins))
       return;
 
    init_OriginsList(worklist);

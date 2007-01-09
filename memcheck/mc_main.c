@@ -36,7 +36,6 @@
 // - do timings, to work out how much slow-down it causes.  Specialise
 //   the helperc functions some if possible.  Work out if checking
 //   clo_undef_origins frequently slows things down much.
-// - unbreak various regtests
 
 #include "pub_tool_basics.h"
 #include "pub_tool_aspacemgr.h"
