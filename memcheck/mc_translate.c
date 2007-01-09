@@ -1158,28 +1158,87 @@ static void complainIfUndefined ( MCEnv* mce, IRAtom* atom )
       n_origins_found = originTmps.tmps_nextfree;
    }
    
-   // foreach (t) in finish_list {
-   //    32-bit machines:
-   //       if (4 == sizeof(t)) --> use t
-   //       if (8 == sizeof(t)) --> use Iop_64HIto32(t)  // pass in high word
-   // 
-   //    64-bit machines:
-   //       if (4 == sizeof(t)) --> use Iop(32HLto64)(0, t)
-   //       if (8 == sizeof(t)) --> use t
-   // }
+   // Here we pass in one 32-bit origin per word.  Even on 64-bit machines
+   // -- we extend the 32-bit origin to be 64-bits.
+   tl_assert(4 == VG_WORDSIZE || 8 == VG_WORDSIZE);
+
    for (j = 0; j < n_origins_found; j++) {
-      IRTemp tmp     = originTmps.tmps[j];
-      Int    tmp_szB = sizeofIRType(typeOfIRTemp(mce->bb_in->tyenv, tmp));
-      // XXX: in the 16==tmp_szB case, convert using Iop_128HIto64, then
-      // Iop_64HIto32
-      if        (8 == tmp_szB && 4 == VG_WORDSIZE) {
-         //convert using Iop_64HIto32, rename in the originTmps array
-         tl_assert2(0, "XXX: 64-bit operand, not yet handled");
-      } else if (4 == tmp_szB && 8 == VG_WORDSIZE) {
-         // convert using Iop_32HLto64, rename in the originTmps array
-         tl_assert2(0, "XXX: 32-bit operand on 64-bit $PLAT, not yet handled");
-      } else {
-         tl_assert(VG_WORDSIZE == tmp_szB);
+      IRTemp tX     = originTmps.tmps[j];
+      IRType tX_ty  = typeOfIRTemp(mce->bb_in->tyenv, tX);
+
+      switch (tX_ty) {
+      case Ity_I32:
+         if (4 == VG_WORDSIZE) {
+            // Word-size, ok to pass as-is: do nothing
+         } else {
+            // XXX
+            // convert using Iop_32HLto64, rename in the originTmps array
+            tl_assert2(0, "XXX: I32 tmp on 64-bit $PLAT, not yet handled");
+         }
+         break;
+
+      case Ity_F32:
+         if (4 == VG_WORDSIZE) {
+            // tX is an F32, add "tY = ReinterpF32asI32(tX)", rename tX as
+            // tY in originTmps.
+            IRTemp  tY   = newIRTemp(mce->bb_out->tyenv, Ity_I32);
+            IRExpr* expr = unop(Iop_ReinterpF32asI32, mkexpr(tX));
+            assign( mce->bb_out, tY, expr );
+            originTmps.tmps[j] = tY;
+         } else {
+            // Need to reinterpF32asI32, then use 32HLto64 to zero-extend,
+            // and rename in the originTmps array.
+            tl_assert2(0, "XXX: F32 tmp on 64-bit $PLAT, not yet handled");
+         }
+         break;
+
+      case Ity_I64:
+         if (8 == VG_WORDSIZE) {
+            // Word-sized, ok to pass as-is: do nothing
+         } else {
+            // XXX: when this occurs, try the code below (which should work)
+            //      by removing the assertion.
+            // tX is an I64, add "tY = 64HIto32(tX)", rename tX as
+            // tY in originTmps.
+            IRTemp  tY   = newIRTemp(mce->bb_out->tyenv, Ity_I32);
+            IRExpr* expr = unop(Iop_64HIto32, mkexpr(tX));
+            assign( mce->bb_out, tY, expr );
+            originTmps.tmps[j] = tY;
+         }
+         break;
+
+      case Ity_F64:
+         if (8 == VG_WORDSIZE) {
+            // XXX: when this occurs, try the code below (which should work)
+            //      by removing this assertion.
+            // tX is an F64, add "tY = ReinterpF64asI64(tX)", rename tX as
+            // tY in originTmps.
+            IRTemp  tY   = newIRTemp(mce->bb_out->tyenv, Ity_I64);
+            IRExpr* expr = unop(Iop_ReinterpF64asI64, mkexpr(tX));
+            assign( mce->bb_out, tY, expr );
+            originTmps.tmps[j] = tY;
+            tl_assert2(0, "XXX: F64 on 64-bit, not yet handled");
+         } else {
+            // tX is an F64, add:
+            //    tY = ReinterpF64asI64(tX)
+            //    tZ = 64HIto32(tY)
+            // and rename tX as tZ in originTmps.
+            IRTemp  tY    = newIRTemp(mce->bb_out->tyenv, Ity_I64);
+            IRTemp  tZ    = newIRTemp(mce->bb_out->tyenv, Ity_I32);
+            IRExpr* expr1 = unop(Iop_ReinterpF64asI64, mkexpr(tX));
+            IRExpr* expr2 = unop(Iop_64HIto32,         mkexpr(tY));
+            assign( mce->bb_out, tY, expr1 );
+            assign( mce->bb_out, tZ, expr2 );
+            originTmps.tmps[j] = tZ;
+         }
+         break;
+
+      default:
+         // XXX: I1, I8, I16, I128, F32, F64, V128
+         // XXX: in the 16==tmp_szB case, convert using Iop_128HIto64, then
+         // Iop_64HIto32
+         ppIRType(tX_ty);
+         tl_assert2(0, "complainIfUndefined: unhandled type");
       }
    }
    
