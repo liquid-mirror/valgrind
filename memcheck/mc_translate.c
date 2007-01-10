@@ -812,6 +812,7 @@ void MC_(print_origin_tracking_stats)(void)
 
    // XXX: there's an off-by-one error in percentify -- if I use 6 instead
    // of 5 here, the buffers get overrun.  (there's one in snprintf, too)
+   // [XXX: the snprintf one has been fixed, I think]
    VG_(percentify)(origin_tracking_2, n_total, 1, 7, perc2);
    VG_(percentify)(origin_tracking_1, n_total, 1, 7, perc1);
    VG_(percentify)(origin_tracking_0, n_total, 1, 7, perc0);
@@ -896,8 +897,6 @@ static Bool OriginsList_is_empty(OriginsList* list)
 // are all 8-bits.
 static void getOriginTmps(MCEnv* mce, IRTemp currTemp, OriginsList* originTmps)
 {
-   // XXX: write a test that adds a whole lot of undefined numbers, and
-   // should be able to give origins for all of them.
    // XXX: write a test where two undefined chars are compared, but they're
    // recently converted from 32-bit values and so can be identified.
    OriginsList worklist_actual, *worklist = &worklist_actual;
@@ -1247,23 +1246,67 @@ static void complainIfUndefined ( MCEnv* mce, IRAtom* atom )
    szHWordExpr = mkIRExpr_HWord( sz );
 
    if (0 == n_origins_found) {
-      fn_name = "MC_(helperc_value_error_0_origins)";
-      fn_ptr  = &MC_(helperc_value_error_0_origins);
-      regparms = 1;
-      arg_vec  = mkIRExprVec_1(szHWordExpr);
+      if (VG_WORDSIZE == sz) {
+         // Specialise the word-sized case
+         fn_name = "MC_(helperc_value_error_0_origins_szWord)";
+         fn_ptr  = &MC_(helperc_value_error_0_origins_szWord);
+         regparms = 0;
+         arg_vec  = mkIRExprVec_0();
+      } else if (0 == sz) {
+         // Specialise the cond case
+         fn_name = "MC_(helperc_value_error_0_origins_sz0)";
+         fn_ptr  = &MC_(helperc_value_error_0_origins_sz0);
+         regparms = 0;
+         arg_vec  = mkIRExprVec_0();
+      } else {
+         fn_name = "MC_(helperc_value_error_0_origins)";
+         fn_ptr  = &MC_(helperc_value_error_0_origins);
+         regparms = 1;
+         arg_vec  = mkIRExprVec_1(szHWordExpr);
+      }
 
    } else if (1 == n_origins_found) {
-      fn_name = "MC_(helperc_value_error_1_origin)";
-      fn_ptr  = &MC_(helperc_value_error_1_origin);
-      regparms = 2;
-      arg_vec  = mkIRExprVec_2(szHWordExpr, mkexpr(originTmps.tmps[0]));
+      if (VG_WORDSIZE == sz) {
+         // Specialise the word-sized case
+         fn_name = "MC_(helperc_value_error_1_origin_szWord)";
+         fn_ptr  = &MC_(helperc_value_error_1_origin_szWord);
+         regparms = 1;
+         arg_vec  = mkIRExprVec_1(mkexpr(originTmps.tmps[0]));
+      } else if (0 == sz) {
+         // Specialise the cond case
+         fn_name = "MC_(helperc_value_error_1_origin_sz0)";
+         fn_ptr  = &MC_(helperc_value_error_1_origin_sz0);
+         regparms = 1;
+         arg_vec  = mkIRExprVec_1(mkexpr(originTmps.tmps[0]));
+      } else {
+         fn_name = "MC_(helperc_value_error_1_origin)";
+         fn_ptr  = &MC_(helperc_value_error_1_origin);
+         regparms = 2;
+         arg_vec  = mkIRExprVec_2(szHWordExpr, mkexpr(originTmps.tmps[0]));
+      }
 
    } else if (2 == n_origins_found) {
-      fn_name = "MC_(helperc_value_error_2_origins)";
-      fn_ptr  = &MC_(helperc_value_error_2_origins);
-      regparms = 3;
-      arg_vec  = mkIRExprVec_3(szHWordExpr, mkexpr(originTmps.tmps[0]),
-                                            mkexpr(originTmps.tmps[1]));
+      if (VG_WORDSIZE == sz) {
+         // Specialise the word-sized case
+         fn_name = "MC_(helperc_value_error_2_origins_szWord)";
+         fn_ptr  = &MC_(helperc_value_error_2_origins_szWord);
+         regparms = 2;
+         arg_vec  = mkIRExprVec_2(mkexpr(originTmps.tmps[0]),
+                                  mkexpr(originTmps.tmps[1]));
+      } else if (0 == sz) {
+         // Specialise the cond case
+         fn_name = "MC_(helperc_value_error_2_origins_sz0)";
+         fn_ptr  = &MC_(helperc_value_error_2_origins_sz0);
+         regparms = 2;
+         arg_vec  = mkIRExprVec_2(mkexpr(originTmps.tmps[0]),
+                                  mkexpr(originTmps.tmps[1]));
+      } else {
+         fn_name = "MC_(helperc_value_error_2_origins)";
+         fn_ptr  = &MC_(helperc_value_error_2_origins);
+         regparms = 3;
+         arg_vec  = mkIRExprVec_3(szHWordExpr, mkexpr(originTmps.tmps[0]),
+                                               mkexpr(originTmps.tmps[1]));
+      }
    } else if (3 == n_origins_found) {
       fn_name = "MC_(helperc_value_error_3_origins)";
       fn_ptr  = &MC_(helperc_value_error_3_origins);

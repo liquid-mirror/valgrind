@@ -17,6 +17,8 @@ int x = 0;
 
 int main(void)
 {
+   assert(1 == sizeof(char));
+   assert(2 == sizeof(short));
    assert(4 == sizeof(int));
    assert(8 == sizeof(long long));
 
@@ -28,6 +30,29 @@ int main(void)
    {
       int undef_stack_int;
       x += (undef_stack_int == 0x12345678 ? 10 : 21);
+   }
+   
+   // Stack, 32-bit, recently modified
+   // XXX: this should work, as the unmodified version should be visible
+   // within the IRSB.  Same for the next two cases -- what's going wrong?
+   {
+      int modified_undef_stack_int;
+      modified_undef_stack_int++;
+      x += (modified_undef_stack_int == 0x1234 ? 11 : 22);
+   }
+   
+   // Stack, 16-bit from (recently) 32-bit
+   {
+      int undef_stack_int;
+      short undef_stack_short = (short)undef_stack_int;
+      x += (undef_stack_short == 0x1234 ? 11 : 22);
+   }
+   
+   // Stack, 8-bit from (recently) 32-bit
+   {
+      int undef_stack_int;
+      char undef_stack_char = (char)undef_stack_int;
+      x += (undef_stack_char == 0x12 ? 11 : 22);
    }
    
    // Stack, 64-bit

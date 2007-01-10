@@ -4288,28 +4288,65 @@ mc_helperc_value_error_N_origins ( HWord szB, HWord origin_hwords[],
    mc_record_value_error ( VG_(get_running_tid)(), (Int)szB, origins, n_origins );
 }
 
-VG_REGPARM(1) void MC_(helperc_value_error_0_origins) ( HWord szB )
-{
-   mc_helperc_value_error_N_origins(szB, NULL, 0);
+// Here we specialise the common cases (0, 1 and 2 origins with szB of 0 and
+// VG_WORDSIZE) to reduce the number of args passed.  Remaining cases are
+// done with the more general functions.
+
+// Zero origins
+VG_REGPARM(0) void MC_(helperc_value_error_0_origins_szWord) ( void ) {
+   mc_helperc_value_error_N_origins(VG_WORDSIZE, NULL, 0);
+}
+VG_REGPARM(0) void MC_(helperc_value_error_0_origins_sz0) ( void ) {
+   mc_helperc_value_error_N_origins(0,           NULL, 0);
+}
+VG_REGPARM(1) void MC_(helperc_value_error_0_origins) ( HWord szB ) {
+   mc_helperc_value_error_N_origins(szB,         NULL, 0);
 }
 
-VG_REGPARM(2) void MC_(helperc_value_error_1_origin) ( HWord szB,
-                        HWord origin_hword0 )
-{
+// One origin
+VG_REGPARM(1) void MC_(helperc_value_error_1_origin_szWord) ( 
+                        HWord origin_hword0 ) {
    HWord origin_hwords[1];
    origin_hwords[0] = origin_hword0;
-   mc_helperc_value_error_N_origins(szB, origin_hwords, 1);
+   mc_helperc_value_error_N_origins(VG_WORDSIZE, origin_hwords, 1);
+}
+VG_REGPARM(1) void MC_(helperc_value_error_1_origin_sz0) ( 
+                        HWord origin_hword0 ) {
+   HWord origin_hwords[1];
+   origin_hwords[0] = origin_hword0;
+   mc_helperc_value_error_N_origins(0,           origin_hwords, 1);
+}
+VG_REGPARM(2) void MC_(helperc_value_error_1_origin) ( HWord szB,
+                        HWord origin_hword0 ) {
+   HWord origin_hwords[1];
+   origin_hwords[0] = origin_hword0;
+   mc_helperc_value_error_N_origins(szB,         origin_hwords, 1);
 }
 
-VG_REGPARM(3) void MC_(helperc_value_error_2_origins) ( HWord szB,
-                        HWord origin_hword0, HWord origin_hword1 )
-{
+// Two origins
+VG_REGPARM(2) void MC_(helperc_value_error_2_origins_szWord) (
+                        HWord origin_hword0, HWord origin_hword1 ) {
    HWord origin_hwords[2];
    origin_hwords[0] = origin_hword0;
    origin_hwords[1] = origin_hword1;
-   mc_helperc_value_error_N_origins(szB, origin_hwords, 2);
+   mc_helperc_value_error_N_origins(VG_WORDSIZE, origin_hwords, 2);
+}
+VG_REGPARM(2) void MC_(helperc_value_error_2_origins_sz0) (
+                        HWord origin_hword0, HWord origin_hword1 ) {
+   HWord origin_hwords[2];
+   origin_hwords[0] = origin_hword0;
+   origin_hwords[1] = origin_hword1;
+   mc_helperc_value_error_N_origins(0,           origin_hwords, 2);
+}
+VG_REGPARM(3) void MC_(helperc_value_error_2_origins) ( HWord szB,
+                        HWord origin_hword0, HWord origin_hword1 ) {
+   HWord origin_hwords[2];
+   origin_hwords[0] = origin_hword0;
+   origin_hwords[1] = origin_hword1;
+   mc_helperc_value_error_N_origins(szB,         origin_hwords, 2);
 }
 
+// More than two origins
 VG_REGPARM(3) void MC_(helperc_value_error_3_origins) ( HWord szB,
                         HWord origin_hword0, HWord origin_hword1,
                         HWord origin_hword2)
@@ -4320,7 +4357,6 @@ VG_REGPARM(3) void MC_(helperc_value_error_3_origins) ( HWord szB,
    origin_hwords[2] = origin_hword2;
    mc_helperc_value_error_N_origins(szB, origin_hwords, 3);
 }
-
 VG_REGPARM(3) void MC_(helperc_value_error_4_origins) ( HWord szB,
                         HWord origin_hword0, HWord origin_hword1,
                         HWord origin_hword2, HWord origin_hword3)
@@ -4332,7 +4368,6 @@ VG_REGPARM(3) void MC_(helperc_value_error_4_origins) ( HWord szB,
    origin_hwords[3] = origin_hword3;
    mc_helperc_value_error_N_origins(szB, origin_hwords, 4);
 }
-
 VG_REGPARM(3) void MC_(helperc_value_error_5_origins) ( HWord szB,
                         HWord origin_hword0, HWord origin_hword1,
                         HWord origin_hword2, HWord origin_hword3,
@@ -4346,7 +4381,6 @@ VG_REGPARM(3) void MC_(helperc_value_error_5_origins) ( HWord szB,
    origin_hwords[4] = origin_hword4;
    mc_helperc_value_error_N_origins(szB, origin_hwords, 5);
 }
-
 VG_REGPARM(3) void MC_(helperc_value_error_6_origins) ( HWord szB,
                         HWord origin_hword0, HWord origin_hword1,
                         HWord origin_hword2, HWord origin_hword3,

@@ -299,10 +299,21 @@ extern Bool MC_(clo_undef_origins);
 /*------------------------------------------------------------*/
 
 /* Functions defined in mc_main.c */
+extern VG_REGPARM(0) void MC_(helperc_value_error_0_origins_szWord) ( void );
+extern VG_REGPARM(0) void MC_(helperc_value_error_0_origins_sz0)    ( void );
 extern VG_REGPARM(1) void MC_(helperc_value_error_0_origins) ( HWord );
+
+extern VG_REGPARM(1) void MC_(helperc_value_error_1_origin_szWord) ( HWord );
+extern VG_REGPARM(1) void MC_(helperc_value_error_1_origin_sz0)    ( HWord );
 extern VG_REGPARM(2) void MC_(helperc_value_error_1_origin)  ( HWord, HWord );
+
+extern VG_REGPARM(2) void MC_(helperc_value_error_2_origins_szWord) ( HWord,
+                                                                      HWord );
+extern VG_REGPARM(2) void MC_(helperc_value_error_2_origins_sz0)    ( HWord,
+                                                                      HWord );
 extern VG_REGPARM(3) void MC_(helperc_value_error_2_origins) ( HWord, HWord,
-                                                               HWord );
+                                                                      HWord );
+
 extern VG_REGPARM(3) void MC_(helperc_value_error_3_origins) ( HWord, HWord,
                                                                HWord, HWord );
 extern VG_REGPARM(3) void MC_(helperc_value_error_4_origins) ( HWord, HWord,
