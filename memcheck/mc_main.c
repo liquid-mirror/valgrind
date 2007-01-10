@@ -33,9 +33,11 @@
 // XXX: origin-tracking todo:
 // - try recording ExeContexts for stack allocation sites, alter the
 //   new_mem_stack* events to allow the origin_low32 to be passed in.
-// - do timings, to work out how much slow-down it causes.  Specialise
-//   the helperc functions some if possible.  Work out if checking
-//   clo_undef_origins frequently slows things down much.
+// - do timings:
+//   - to work out how much slow-down it causes.  
+//   - Specialise the helperc functions some if possible.
+//   - Work out if checking clo_undef_origins frequently slows things down
+//     much. [seemingly not]
 
 #include "pub_tool_basics.h"
 #include "pub_tool_aspacemgr.h"
@@ -1815,10 +1817,6 @@ void make_aligned_word64_noaccess ( Addr a )
 /*--- Stack pointer adjustment                             ---*/
 /*------------------------------------------------------------*/
 
-// XXX: should try recording code addresses for stack allocations, to give
-// a 1-deep stack trace.  Hmm, but difficult because code addresses are
-// word-sized.  We'd need an ip_low32-to-ip table...
-
 static void VG_REGPARM(1) mc_new_mem_stack_4(Addr new_SP)
 {
    PROF_EVENT(110, "new_mem_stack_4");
@@ -2998,7 +2996,7 @@ static void mc_pp_msg( Char* xml_name, Error* err, const HChar* format, ... )
 
 static void mc_pp_origins ( ExeContext* origins[], Int n_origins )
 {
-   // XXX: in origin-yes, get two origins for the 64-bit stack case --
+   // XXX: in origin-yes, we get two origins for the 64-bit stack case --
    // should remove dup'd origins from the list.
    
    // XXX: is this XML-isation good enough?
