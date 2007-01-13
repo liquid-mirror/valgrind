@@ -34,8 +34,9 @@
 // - try recording ExeContexts for stack allocation sites, alter the
 //   new_mem_stack* events to allow the origin_low32 to be passed in.
 // - do timings:
-//   - to work out how much slow-down it causes.  
-//   - Specialise the helperc functions some if possible.
+//   - work out how much slow-down it causes (2-4% mostly, up to 13% for
+//     real progs, about 25% for sarp)
+//   - Specialise the helperc functions some if possible [done]
 //   - Work out if checking clo_undef_origins frequently slows things down
 //     much. [seemingly not]
 
@@ -1593,8 +1594,15 @@ void MC_(make_mem_undefined) ( Addr a, SizeT len, UInt obfusc_ec_low32 )
    if (MC_(clo_undef_origins)) {
       // Initialise it with obfuscated copies of the lower 32 bits of the
       // ExeContext pointer for the undefined-value origin-tracking.
-      a = VG_ROUNDUP(a, 4);
-      for (i = 0; i < VG_ROUNDDN(len, 4); i += 4) {
+
+      // Round up 'a' to the start of a 4-byte boundary.  Reduce 'len'
+      // accordingly.  
+      UWord a_roundup_amount = VG_ROUNDUP(a, 4) - a;
+      a   += a_roundup_amount;
+      len -= a_roundup_amount;
+
+      // Now we can start painting 4-byte values.
+      for (     ; i < VG_ROUNDDN(len, 4); i += 4) {
          *(UInt*)(a + i) = obfusc_ec_low32;
       }
    }
