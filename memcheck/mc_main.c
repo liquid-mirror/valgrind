@@ -1602,7 +1602,7 @@ void MC_(make_mem_undefined) ( Addr a, SizeT len, UInt obfusc_ec_low32 )
       len -= a_roundup_amount;
 
       // Now we can start painting 4-byte values.
-      for (     ; i < VG_ROUNDDN(len, 4); i += 4) {
+      for (i = 0; i < VG_ROUNDDN(len, 4); i += 4) {
          *(UInt*)(a + i) = obfusc_ec_low32;
       }
    }
