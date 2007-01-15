@@ -1596,11 +1596,12 @@ void MC_(make_mem_undefined) ( Addr a, SizeT len, UInt obfusc_ec_low32 )
       // ExeContext pointer for the undefined-value origin-tracking.
 
       // Round up 'a' to the start of a 4-byte boundary.  Reduce 'len'
-      // accordingly.  
+      // accordingly.  If that would make len <= 0, don't do anything.
       UWord a_roundup_amount = VG_ROUNDUP(a, 4) - a;
       a   += a_roundup_amount;
-      len -= a_roundup_amount;
-
+      if (len <= a_roundup_amount) {
+         return;
+      }
       // Now we can start painting 4-byte values.
       for (i = 0; i < VG_ROUNDDN(len, 4); i += 4) {
          *(UInt*)(a + i) = obfusc_ec_low32;
