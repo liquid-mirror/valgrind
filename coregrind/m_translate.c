@@ -265,6 +265,8 @@ IRSB* vg_SP_update_pass ( void*             closureV,
          dcall->fxState[0].offset = layout->offset_SP;                  \
          dcall->fxState[0].size   = layout->sizeof_SP;                  \
                                                                         \
+         addStmtToIRSB( bb, st );                                       \
+                                                                        \
          addStmtToIRSB( bb, IRStmt_Dirty(dcall) );                      \
                                                                         \
          update_SP_aliases(-delta);                                     \
@@ -325,25 +327,25 @@ IRSB* vg_SP_update_pass ( void*             closureV,
       if (get_SP_delta(st->Ist.Put.data->Iex.RdTmp.tmp, &delta)) {
          IRTemp tttmp = st->Ist.Put.data->Iex.RdTmp.tmp;
          switch (delta) {
-            case    0: addStmtToIRSB(bb,st);                      continue;
-            case    4: addStmtToIRSB(bb,st); DO(die,  4,  tttmp); continue;
-            case   -4: addStmtToIRSB(bb,st); DO(new,  4,  tttmp); continue;
-            case    8: addStmtToIRSB(bb,st); DO(die,  8,  tttmp); continue;
-            case   -8: addStmtToIRSB(bb,st); DO(new,  8,  tttmp); continue;
-            case   12: addStmtToIRSB(bb,st); DO(die,  12, tttmp); continue;
-            case  -12: addStmtToIRSB(bb,st); DO(new,  12, tttmp); continue;
-            case   16: addStmtToIRSB(bb,st); DO(die,  16, tttmp); continue;
-            case  -16: addStmtToIRSB(bb,st); DO(new,  16, tttmp); continue;
-            case   32: addStmtToIRSB(bb,st); DO(die,  32, tttmp); continue;
-            case  -32: addStmtToIRSB(bb,st); DO(new,  32, tttmp); continue;
-            case  112: addStmtToIRSB(bb,st); DO(die, 112, tttmp); continue;
-            case -112: addStmtToIRSB(bb,st); DO(new, 112, tttmp); continue;
-            case  128: addStmtToIRSB(bb,st); DO(die, 128, tttmp); continue;
-            case -128: addStmtToIRSB(bb,st); DO(new, 128, tttmp); continue;
-            case  144: addStmtToIRSB(bb,st); DO(die, 144, tttmp); continue;
-            case -144: addStmtToIRSB(bb,st); DO(new, 144, tttmp); continue;
-            case  160: addStmtToIRSB(bb,st); DO(die, 160, tttmp); continue;
-            case -160: addStmtToIRSB(bb,st); DO(new, 160, tttmp); continue;
+            case    0:                      continue;
+            case    4: DO(die,  4,  tttmp); continue;
+            case   -4: DO(new,  4,  tttmp); continue;
+            case    8: DO(die,  8,  tttmp); continue;
+            case   -8: DO(new,  8,  tttmp); continue;
+            case   12: DO(die,  12, tttmp); continue;
+            case  -12: DO(new,  12, tttmp); continue;
+            case   16: DO(die,  16, tttmp); continue;
+            case  -16: DO(new,  16, tttmp); continue;
+            case   32: DO(die,  32, tttmp); continue;
+            case  -32: DO(new,  32, tttmp); continue;
+            case  112: DO(die, 112, tttmp); continue;
+            case -112: DO(new, 112, tttmp); continue;
+            case  128: DO(die, 128, tttmp); continue;
+            case -128: DO(new, 128, tttmp); continue;
+            case  144: DO(die, 144, tttmp); continue;
+            case -144: DO(new, 144, tttmp); continue;
+            case  160: DO(die, 160, tttmp); continue;
+            case -160: DO(new, 160, tttmp); continue;
             default:  
                /* common values for ppc64: 144 128 160 112 176 */
                n_SP_updates_generic_known++;
