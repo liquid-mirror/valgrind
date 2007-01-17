@@ -31,6 +31,7 @@
 */
 
 // XXX: origin-tracking todo:
+// - keep fixing the SP-delta instrumentation in m_translate.c
 // - try recording ExeContexts for stack allocation sites, alter the
 //   new_mem_stack* events to allow the origin_low32 to be passed in.
 // - do timings:

@@ -810,6 +810,8 @@ void MC_(print_origin_tracking_stats)(void)
    Char perc0[7], perc1[7], perc2[7];
    UInt n_total = origin_tracking_2 + origin_tracking_1 + origin_tracking_0;
 
+   // XXX: this is all out-of-date now
+   
    // XXX: there's an off-by-one error in percentify -- if I use 6 instead
    // of 5 here, the buffers get overrun.  (there's one in snprintf, too)
    // [XXX: the snprintf one has been fixed, I think]
