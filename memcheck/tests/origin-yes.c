@@ -32,30 +32,18 @@ int main(void)
       x += (undef_stack_int == 0x12345678 ? 10 : 21);
    }
    
-   // Stack, 32-bit, recently modified
-   // XXX: this should work, as the unmodified version should be visible
-   // within the IRSB.  Same for the next two cases -- what's going wrong?
+   // Stack, 32-bit, recently modified.  Nb: we have to do the register
+   // mucking about to make sure that the modification isn't fenced by a
+   // store/load pair and thus not seen (see origin-not-quite.c).
    {
-      int modified_undef_stack_int;
+      int undef_stack_int;
+      register int modified_undef_stack_int;
+      modified_undef_stack_int = undef_stack_int;
       modified_undef_stack_int++;
       x += (modified_undef_stack_int == 0x1234 ? 11 : 22);
    }
    
-   // Stack, 16-bit from (recently) 32-bit
-   {
-      int undef_stack_int;
-      short undef_stack_short = (short)undef_stack_int;
-      x += (undef_stack_short == 0x1234 ? 11 : 22);
-   }
-   
-   // Stack, 8-bit from (recently) 32-bit
-   {
-      int undef_stack_int;
-      char undef_stack_char = (char)undef_stack_int;
-      x += (undef_stack_char == 0x12 ? 11 : 22);
-   }
-   
-   // Stack, 64-bit
+   // Stack, 64-bit.  XXX: gets reported with two identical origins.
    {
       long long undef_stack_longlong;
       x += (undef_stack_longlong == 0x1234567812345678LL ? 11 : 22);

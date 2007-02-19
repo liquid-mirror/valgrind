@@ -1,6 +1,6 @@
 
 /*--------------------------------------------------------------------*/
-/*--- Stack management.                                 m_stacks.c ---*/
+/*--- Stack management.                          pub_core_stacks.c ---*/
 /*--------------------------------------------------------------------*/
 
 /*
@@ -31,6 +31,8 @@
 #ifndef __PUB_CORE_STACKS_H
 #define __PUB_CORE_STACKS_H
 
+#include "pub_tool_stacks.h"
+
 //--------------------------------------------------------------------
 // PURPOSE: This module deals with the registration of stacks for the
 // purposes of detecting stack switches.
@@ -40,8 +42,7 @@ extern UWord VG_(register_stack)   ( Addr start, Addr end );
 extern void  VG_(deregister_stack) ( UWord id );
 extern void  VG_(change_stack)     ( UWord id, Addr start, Addr end );
 
-extern VG_REGPARM(2)
-       void  VG_(unknown_SP_update) ( Addr old_SP, Addr new_SP );
+extern VG_REGPARM(2) void VG_(unknown_SP_update) ( Addr old_SP, Addr new_SP );
 
 #endif   // __PUB_CORE_STACKS_H
 

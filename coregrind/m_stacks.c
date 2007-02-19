@@ -30,6 +30,7 @@
 
 #include "pub_core_basics.h"
 #include "pub_core_debuglog.h"
+#include "pub_core_libcassert.h"
 #include "pub_core_libcprint.h"
 #include "pub_core_mallocfree.h"
 #include "pub_core_options.h"
@@ -71,6 +72,10 @@
    We do not concern ourselves here with the VG_STACK_REDZONE_SZB
    bias; that is handled by new_mem_stack/die_mem_stack.
 */
+
+//--------------------------------------------------------------------
+// Stack registering
+//--------------------------------------------------------------------
 
 /*
  * This structure holds information about the start and end addresses of
@@ -195,12 +200,11 @@ void VG_(change_stack)(UWord id, Addr start, Addr end)
    }
 }
 
-/* This function gets called if new_mem_stack and/or die_mem_stack are
-   tracked by the tool, and one of the specialised cases
-   (eg. new_mem_stack_4) isn't used in preference.  
-*/
-VG_REGPARM(2)
-void VG_(unknown_SP_update)( Addr old_SP, Addr new_SP )
+//--------------------------------------------------------------------
+// SP update instrumentation
+//--------------------------------------------------------------------
+
+Bool VG_(check_if_stack_has_changed)(Addr old_SP, Addr new_SP)
 {
    static Int moans = 3;
    Word delta  = (Word)new_SP - (Word)old_SP;
@@ -213,7 +217,7 @@ void VG_(unknown_SP_update)( Addr old_SP, Addr new_SP )
          /* The stack pointer is now in another stack.  Update the current
             stack information and return without doing anything else. */
          current_stack = new_stack;
-         return;
+         return True;
       }
    }
 
@@ -240,6 +244,26 @@ void VG_(unknown_SP_update)( Addr old_SP, Addr new_SP )
                 "         further instances of this message "
                 "will not be shown.");
       }
+
+      return True;
+   }
+
+   return False;
+}
+
+
+/* This function gets called if new_mem_stack and/or die_mem_stack are
+   tracked by the tool, and one of the specialised cases
+   (eg. new_mem_stack_4) isn't used in preference.  
+*/
+VG_REGPARM(2)
+void VG_(unknown_SP_update)( Addr old_SP, Addr new_SP )
+{
+   Word delta  = (Word)new_SP - (Word)old_SP;
+
+   if (VG_(check_if_stack_has_changed)(old_SP, new_SP)) {
+      return;     // Don't do anything more!
+
    } else if (delta < 0) {
       VG_TRACK( new_mem_stack, new_SP, -delta );
 

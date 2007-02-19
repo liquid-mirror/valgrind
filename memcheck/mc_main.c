@@ -30,17 +30,6 @@
    The GNU General Public License is contained in the file COPYING.
 */
 
-// XXX: origin-tracking todo:
-// - keep fixing the SP-delta instrumentation in m_translate.c
-// - try recording ExeContexts for stack allocation sites, alter the
-//   new_mem_stack* events to allow the origin_low32 to be passed in.
-// - do timings:
-//   - work out how much slow-down it causes (2-4% mostly, up to 13% for
-//     real progs, about 25% for sarp)
-//   - Specialise the helperc functions some if possible [done]
-//   - Work out if checking clo_undef_origins frequently slows things down
-//     much. [seemingly not]
-
 #include "pub_tool_basics.h"
 #include "pub_tool_aspacemgr.h"
 #include "pub_tool_hashtable.h"     // For mc_include.h
@@ -72,12 +61,6 @@
 
 #define DEBUG(fmt, args...) //VG_(printf)(fmt, ## args)
 
-// ExeContext for stack allocations, and its obfuscated low 32 bits.
-// Used for origin-tracking.
-static ExeContext* stack_ec;
-static UInt         obfusc_stack_ec_low32;
-static ULong double_obfusc_stack_ec_low32;
-
 /*------------------------------------------------------------*/
 /*--- Fast-case knobs                                      ---*/
 /*------------------------------------------------------------*/
@@ -89,7 +72,8 @@ static ULong double_obfusc_stack_ec_low32;
 
 #define PERF_FAST_SARP     1
 
-#define PERF_FAST_STACK    1
+// Nb: PERF_FAST_STACK is now defined and used in memcheck/mc_translate.c.
+//#define PERF_FAST_STACK    1
 #define PERF_FAST_STACK2   1
 
 /*------------------------------------------------------------*/
@@ -1722,7 +1706,7 @@ void MC_(copy_address_range_state) ( Addr src, Addr dst, SizeT len )
 /* --- Fast case permission setters, for dealing with stacks. --- */
 
 static INLINE
-void make_aligned_word32_undefined ( Addr a )
+void make_aligned_word32_undefined ( Addr a, UInt obfusc_ec_low32 )
 {
    UWord   sm_off;
    SecMap* sm;
@@ -1730,11 +1714,11 @@ void make_aligned_word32_undefined ( Addr a )
    PROF_EVENT(300, "make_aligned_word32_undefined");
 
 #ifndef PERF_FAST_STACK2
-   MC_(make_mem_undefined)(a, 4, obfusc_stack_ec_low32);
+   MC_(make_mem_undefined)(a, 4, obfusc_ec_low32);
 #else
    if (EXPECTED_NOT_TAKEN(a > MAX_PRIMARY_ADDRESS)) {
       PROF_EVENT(301, "make_aligned_word32_undefined-slow1");
-      MC_(make_mem_undefined)(a, 4, obfusc_stack_ec_low32);
+      MC_(make_mem_undefined)(a, 4, obfusc_ec_low32);
       return;
    }
 
@@ -1742,7 +1726,7 @@ void make_aligned_word32_undefined ( Addr a )
    sm_off              = SM_OFF(a);
    sm->vabits8[sm_off] = VA_BITS8_UNDEFINED;
    if (MC_(clo_undef_origins)) {
-      *(UInt*)a = obfusc_stack_ec_low32;
+      *(UInt*)a = obfusc_ec_low32;
    }
 #endif
 }
@@ -1773,7 +1757,7 @@ void make_aligned_word32_noaccess ( Addr a )
 
 /* Nb: by "aligned" here we mean 8-byte aligned */
 static INLINE
-void make_aligned_word64_undefined ( Addr a )
+void make_aligned_word64_undefined ( Addr a, ULong double_obfusc_ec_low32)
 {
    UWord   sm_off16;
    SecMap* sm;
@@ -1781,11 +1765,11 @@ void make_aligned_word64_undefined ( Addr a )
    PROF_EVENT(320, "make_aligned_word64_undefined");
 
 #ifndef PERF_FAST_STACK2
-   MC_(make_mem_undefined)(a, 8, obfusc_stack_ec_low32);
+   MC_(make_mem_undefined)(a, 8, (UInt)double_obfusc_ec_low32);
 #else
    if (EXPECTED_NOT_TAKEN(a > MAX_PRIMARY_ADDRESS)) {
       PROF_EVENT(321, "make_aligned_word64_undefined-slow1");
-      MC_(make_mem_undefined)(a, 8, obfusc_stack_ec_low32);
+      MC_(make_mem_undefined)(a, 8, (UInt)double_obfusc_ec_low32);
       return;
    }
 
@@ -1793,7 +1777,7 @@ void make_aligned_word64_undefined ( Addr a )
    sm_off16 = SM_OFF_16(a);
    ((UShort*)(sm->vabits8))[sm_off16] = VA_BITS16_UNDEFINED;
    if (MC_(clo_undef_origins)) {
-      *(ULong*)a = double_obfusc_stack_ec_low32;
+      *(ULong*)a = double_obfusc_ec_low32;
    }
 #endif
 }
@@ -1827,396 +1811,216 @@ void make_aligned_word64_noaccess ( Addr a )
 /*--- Stack pointer adjustment                             ---*/
 /*------------------------------------------------------------*/
 
-static void VG_REGPARM(1) mc_new_mem_stack_4(Addr new_SP)
+// Take a 32-bit UInt that's held in a word-sized UInt and duplicate it into
+// a ULong.  Eg: 
+// - 32-bit platforms:         0x12345678 --> 0x1234567812345678
+// - 64-bit platforms: 0x????????12345678 --> 0x1234567812345678
+static ULong UIntWord_to_ULong(UWord x)
+{
+   return ( (ULong)x << 32 ) & (ULong)x;
+}
+
+#define ALIGNED4(a) \
+   VG_IS_4_ALIGNED( -VG_STACK_REDZONE_SZB + a )
+#define ALIGNED8(a) \
+   VG_IS_8_ALIGNED( -VG_STACK_REDZONE_SZB + a )
+
+#define UNDEFINED32(a) \
+   make_aligned_word32_undefined ( -VG_STACK_REDZONE_SZB + a, \
+                                   (UInt)obfusc_ec_low32_UWord );
+#define UNDEFINED64(a) \
+   make_aligned_word64_undefined ( -VG_STACK_REDZONE_SZB + a, \
+                                   double_obfusc_ec_low32 );
+#define UNDEFINED_N(a, N) \
+   MC_(make_mem_undefined)       ( -VG_STACK_REDZONE_SZB + a, N, \
+                                   (UInt)obfusc_ec_low32_UWord );
+#define NOACCESS32(a) \
+   make_aligned_word32_noaccess  ( -VG_STACK_REDZONE_SZB + a );
+#define NOACCESS64(a) \
+   make_aligned_word64_noaccess  ( -VG_STACK_REDZONE_SZB + a );
+#define NOACCESS_N(a, N) \
+   MC_(make_mem_noaccess)        ( -VG_STACK_REDZONE_SZB + a, N );
+
+void VG_REGPARM(2)
+MC_(new_mem_stack_4)(Addr new_SP, UWord obfusc_ec_low32_UWord)
 {
    PROF_EVENT(110, "new_mem_stack_4");
-   if (VG_IS_4_ALIGNED( -VG_STACK_REDZONE_SZB + new_SP )) {
-      make_aligned_word32_undefined ( -VG_STACK_REDZONE_SZB + new_SP );
+   if (ALIGNED4(new_SP)) {
+      UNDEFINED32(new_SP);
    } else {
-      MC_(make_mem_undefined) ( -VG_STACK_REDZONE_SZB + new_SP, 4,
-                                obfusc_stack_ec_low32 );
+      UNDEFINED_N(new_SP, 4);
    }
 }
 
-static void VG_REGPARM(1) mc_die_mem_stack_4(Addr new_SP)
+void VG_REGPARM(1) MC_(die_mem_stack_4)(Addr new_SP)
 {
    PROF_EVENT(120, "die_mem_stack_4");
-   if (VG_IS_4_ALIGNED( -VG_STACK_REDZONE_SZB + new_SP )) {
-      make_aligned_word32_noaccess ( -VG_STACK_REDZONE_SZB + new_SP-4 );
+   if (ALIGNED4(new_SP-4)) {
+      NOACCESS32(new_SP-4);
    } else {
-      MC_(make_mem_noaccess) ( -VG_STACK_REDZONE_SZB + new_SP-4, 4 );
+      NOACCESS_N(new_SP-4, 4);
    }
 }
 
-static void VG_REGPARM(1) mc_new_mem_stack_8(Addr new_SP)
+void VG_REGPARM(2)
+MC_(new_mem_stack_8)(Addr new_SP, UWord obfusc_ec_low32_UWord)
 {
-   PROF_EVENT(111, "new_mem_stack_8");
-   if (VG_IS_8_ALIGNED( -VG_STACK_REDZONE_SZB + new_SP )) {
-      make_aligned_word64_undefined ( -VG_STACK_REDZONE_SZB + new_SP );
-   } else if (VG_IS_4_ALIGNED( -VG_STACK_REDZONE_SZB + new_SP )) {
-      make_aligned_word32_undefined ( -VG_STACK_REDZONE_SZB + new_SP   );
-      make_aligned_word32_undefined ( -VG_STACK_REDZONE_SZB + new_SP+4 );
+   PROF_EVENT(112, "new_mem_stack_8");
+   if (ALIGNED8(new_SP)) {
+      ULong double_obfusc_ec_low32 = UIntWord_to_ULong(obfusc_ec_low32_UWord);
+      UNDEFINED64(new_SP);
+   } else if (ALIGNED4(new_SP)) {
+      UNDEFINED32(new_SP);
+      UNDEFINED32(new_SP+4);
    } else {
-      MC_(make_mem_undefined) ( -VG_STACK_REDZONE_SZB + new_SP, 8,
-                                obfusc_stack_ec_low32 );
+      UNDEFINED_N(new_SP, 8);
    }
 }
 
-static void VG_REGPARM(1) mc_die_mem_stack_8(Addr new_SP)
+void VG_REGPARM(1) MC_(die_mem_stack_8)(Addr new_SP)
 {
    PROF_EVENT(121, "die_mem_stack_8");
-   if (VG_IS_8_ALIGNED( -VG_STACK_REDZONE_SZB + new_SP )) {
-      make_aligned_word64_noaccess ( -VG_STACK_REDZONE_SZB + new_SP-8 );
-   } else if (VG_IS_4_ALIGNED( -VG_STACK_REDZONE_SZB + new_SP )) {
-      make_aligned_word32_noaccess ( -VG_STACK_REDZONE_SZB + new_SP-8 );
-      make_aligned_word32_noaccess ( -VG_STACK_REDZONE_SZB + new_SP-4 );
+   if (ALIGNED8(new_SP-8)) {
+      NOACCESS64(new_SP-8);
+   } else if (ALIGNED4(new_SP-8)) {
+      NOACCESS32(new_SP-8);
+      NOACCESS32(new_SP-4);
    } else {
-      MC_(make_mem_noaccess) ( -VG_STACK_REDZONE_SZB + new_SP-8, 8 );
+      NOACCESS_N(new_SP-8, 8);
    }
 }
 
-static void VG_REGPARM(1) mc_new_mem_stack_12(Addr new_SP)
+void VG_REGPARM(2)
+MC_(new_mem_stack_12)(Addr new_SP, UWord obfusc_ec_low32_UWord)
 {
-   PROF_EVENT(112, "new_mem_stack_12");
-   if (VG_IS_8_ALIGNED( -VG_STACK_REDZONE_SZB + new_SP )) {
-      make_aligned_word64_undefined ( -VG_STACK_REDZONE_SZB + new_SP   );
-      make_aligned_word32_undefined ( -VG_STACK_REDZONE_SZB + new_SP+8 );
-   } else if (VG_IS_4_ALIGNED( -VG_STACK_REDZONE_SZB + new_SP )) {
+   ULong double_obfusc_ec_low32 = UIntWord_to_ULong(obfusc_ec_low32_UWord);
+   PROF_EVENT(113, "new_mem_stack_12");
+   if (ALIGNED8(new_SP)) {
+      UNDEFINED64(new_SP);
+      UNDEFINED32(new_SP+8);
+   } else if (ALIGNED4(new_SP)) {
       /* from previous test we don't have 8-alignment at offset +0,
          hence must have 8 alignment at offsets +4/-4.  Hence safe to
          do 4 at +0 and then 8 at +4/. */
-      make_aligned_word32_undefined ( -VG_STACK_REDZONE_SZB + new_SP   );
-      make_aligned_word64_undefined ( -VG_STACK_REDZONE_SZB + new_SP+4 );
+      UNDEFINED32(new_SP);
+      UNDEFINED64(new_SP+4);
    } else {
-      MC_(make_mem_undefined) ( -VG_STACK_REDZONE_SZB + new_SP, 12,
-                                obfusc_stack_ec_low32 );
+      UNDEFINED_N(new_SP, 12);
    }
 }
 
-static void VG_REGPARM(1) mc_die_mem_stack_12(Addr new_SP)
+void VG_REGPARM(1) MC_(die_mem_stack_12)(Addr new_SP)
 {
    PROF_EVENT(122, "die_mem_stack_12");
-   /* Note the -12 in the test */
-   if (VG_IS_8_ALIGNED( -VG_STACK_REDZONE_SZB + new_SP-12 )) {
-      /* We have 8-alignment at -12, hence ok to do 8 at -12 and 4 at
-         -4. */
-      make_aligned_word64_noaccess ( -VG_STACK_REDZONE_SZB + new_SP-12 );
-      make_aligned_word32_noaccess ( -VG_STACK_REDZONE_SZB + new_SP-4  );
-   } else if (VG_IS_4_ALIGNED( -VG_STACK_REDZONE_SZB + new_SP )) {
-      /* We have 4-alignment at +0, but we don't have 8-alignment at
-         -12.  So we must have 8-alignment at -8.  Hence do 4 at -12
-         and then 8 at -8. */
-      make_aligned_word32_noaccess ( -VG_STACK_REDZONE_SZB + new_SP-12 );
-      make_aligned_word64_noaccess ( -VG_STACK_REDZONE_SZB + new_SP-8  );
+   if (ALIGNED8(new_SP-12)) {
+      /* We have 8-alignment at -12, hence ok to do 8 at -12 and 4 at -4. */
+      NOACCESS64(new_SP-12);
+      NOACCESS32(new_SP-4);
+   } else if (ALIGNED4(new_SP-12)) {
+      /* We have 4-alignment but not 8-alignment at -12.  So we must have
+         8-alignment at -8.  Hence do 4 at -12 and then 8 at -8. */
+      NOACCESS32(new_SP-12);
+      NOACCESS64(new_SP-8);
    } else {
-      MC_(make_mem_noaccess) ( -VG_STACK_REDZONE_SZB + new_SP-12, 12 );
+      NOACCESS_N(new_SP-12, 12);
    }
 }
 
-static void VG_REGPARM(1) mc_new_mem_stack_16(Addr new_SP)
+void VG_REGPARM(2)
+MC_(new_mem_stack_16)(Addr new_SP, UWord obfusc_ec_low32_UWord)
 {
-   PROF_EVENT(113, "new_mem_stack_16");
-   if (VG_IS_8_ALIGNED( -VG_STACK_REDZONE_SZB + new_SP )) {
+   ULong double_obfusc_ec_low32 = UIntWord_to_ULong(obfusc_ec_low32_UWord);
+   PROF_EVENT(114, "new_mem_stack_16");
+   if (ALIGNED8(new_SP)) {
       /* Have 8-alignment at +0, hence do 8 at +0 and 8 at +8. */
-      make_aligned_word64_undefined ( -VG_STACK_REDZONE_SZB + new_SP   );
-      make_aligned_word64_undefined ( -VG_STACK_REDZONE_SZB + new_SP+8 );
-   } else if (VG_IS_4_ALIGNED( -VG_STACK_REDZONE_SZB + new_SP )) {
+      UNDEFINED64(new_SP);
+      UNDEFINED64(new_SP+8);
+   } else if (ALIGNED4(new_SP)) {
       /* Have 4 alignment at +0 but not 8; hence 8 must be at +4.
          Hence do 4 at +0, 8 at +4, 4 at +12. */
-      make_aligned_word32_undefined ( -VG_STACK_REDZONE_SZB + new_SP    );
-      make_aligned_word64_undefined ( -VG_STACK_REDZONE_SZB + new_SP+4  );
-      make_aligned_word32_undefined ( -VG_STACK_REDZONE_SZB + new_SP+12 );
+      UNDEFINED32(new_SP);
+      UNDEFINED64(new_SP+4);
+      UNDEFINED32(new_SP+12);
    } else {
-      MC_(make_mem_undefined) ( -VG_STACK_REDZONE_SZB + new_SP, 16,
-                                obfusc_stack_ec_low32 );
+      UNDEFINED_N(new_SP, 16);
    }
 }
 
-static void VG_REGPARM(1) mc_die_mem_stack_16(Addr new_SP)
+void VG_REGPARM(1) MC_(die_mem_stack_16)(Addr new_SP)
 {
    PROF_EVENT(123, "die_mem_stack_16");
-   if (VG_IS_8_ALIGNED( -VG_STACK_REDZONE_SZB + new_SP )) {
+   if (ALIGNED8(new_SP-16)) {
       /* Have 8-alignment at +0, hence do 8 at -16 and 8 at -8. */
-      make_aligned_word64_noaccess ( -VG_STACK_REDZONE_SZB + new_SP-16 );
-      make_aligned_word64_noaccess ( -VG_STACK_REDZONE_SZB + new_SP-8  );
-   } else if (VG_IS_4_ALIGNED( -VG_STACK_REDZONE_SZB + new_SP )) {
-      /* 8 alignment must be at -12.  Do 4 at -16, 8 at -12, 4 at -4. */
-      make_aligned_word32_noaccess ( -VG_STACK_REDZONE_SZB + new_SP-16 );
-      make_aligned_word64_noaccess ( -VG_STACK_REDZONE_SZB + new_SP-12 );
-      make_aligned_word32_noaccess ( -VG_STACK_REDZONE_SZB + new_SP-4  );
+      NOACCESS64(new_SP-16);
+      NOACCESS64(new_SP- 8);
+   } else if (ALIGNED4(new_SP-16)) {
+      /* 8-alignment must be at -12.  Do 4 at -16, 8 at -12, 4 at -4. */
+      NOACCESS32(new_SP-16);
+      NOACCESS64(new_SP-12);
+      NOACCESS32(new_SP- 4);
    } else {
-      MC_(make_mem_noaccess) ( -VG_STACK_REDZONE_SZB + new_SP-16, 16 );
+      NOACCESS_N(new_SP-16, 16);
    }
 }
 
-static void VG_REGPARM(1) mc_new_mem_stack_32(Addr new_SP)
+void VG_REGPARM(2)
+MC_(new_mem_stack_32)(Addr new_SP, UWord obfusc_ec_low32_UWord)
 {
-   PROF_EVENT(114, "new_mem_stack_32");
-   if (VG_IS_8_ALIGNED( -VG_STACK_REDZONE_SZB + new_SP )) {
+   ULong double_obfusc_ec_low32 = UIntWord_to_ULong(obfusc_ec_low32_UWord);
+   PROF_EVENT(115, "new_mem_stack_32");
+   if (ALIGNED8(new_SP)) {
       /* Straightforward */
-      make_aligned_word64_undefined ( -VG_STACK_REDZONE_SZB + new_SP    );
-      make_aligned_word64_undefined ( -VG_STACK_REDZONE_SZB + new_SP+8  );
-      make_aligned_word64_undefined ( -VG_STACK_REDZONE_SZB + new_SP+16 );
-      make_aligned_word64_undefined ( -VG_STACK_REDZONE_SZB + new_SP+24 );
-   } else if (VG_IS_4_ALIGNED( -VG_STACK_REDZONE_SZB + new_SP )) {
+      UNDEFINED64(new_SP);
+      UNDEFINED64(new_SP+8);
+      UNDEFINED64(new_SP+16);
+      UNDEFINED64(new_SP+24);
+   } else if (ALIGNED4(new_SP)) {
       /* 8 alignment must be at +4.  Hence do 8 at +4,+12,+20 and 4 at
          +0,+28. */
-      make_aligned_word32_undefined ( -VG_STACK_REDZONE_SZB + new_SP    );
-      make_aligned_word64_undefined ( -VG_STACK_REDZONE_SZB + new_SP+4  );
-      make_aligned_word64_undefined ( -VG_STACK_REDZONE_SZB + new_SP+12 );
-      make_aligned_word64_undefined ( -VG_STACK_REDZONE_SZB + new_SP+20 );
-      make_aligned_word32_undefined ( -VG_STACK_REDZONE_SZB + new_SP+28 );
+      UNDEFINED32(new_SP);
+      UNDEFINED64(new_SP+4);
+      UNDEFINED64(new_SP+12);
+      UNDEFINED64(new_SP+20);
+      UNDEFINED32(new_SP+28);
    } else {
-      MC_(make_mem_undefined) ( -VG_STACK_REDZONE_SZB + new_SP, 32,
-                                obfusc_stack_ec_low32 );
+      UNDEFINED_N(new_SP, 32);
    }
 }
 
-static void VG_REGPARM(1) mc_die_mem_stack_32(Addr new_SP)
+void VG_REGPARM(1) MC_(die_mem_stack_32)(Addr new_SP)
 {
    PROF_EVENT(124, "die_mem_stack_32");
-   if (VG_IS_8_ALIGNED( -VG_STACK_REDZONE_SZB + new_SP )) {
+   if (ALIGNED8(new_SP-32)) {
       /* Straightforward */
-      make_aligned_word64_noaccess ( -VG_STACK_REDZONE_SZB + new_SP-32 );
-      make_aligned_word64_noaccess ( -VG_STACK_REDZONE_SZB + new_SP-24 );
-      make_aligned_word64_noaccess ( -VG_STACK_REDZONE_SZB + new_SP-16 );
-      make_aligned_word64_noaccess ( -VG_STACK_REDZONE_SZB + new_SP- 8 );
-   } else if (VG_IS_4_ALIGNED( -VG_STACK_REDZONE_SZB + new_SP )) {
+      NOACCESS64(new_SP-32);
+      NOACCESS64(new_SP-24);
+      NOACCESS64(new_SP-16);
+      NOACCESS64(new_SP- 8);
+   } else if (ALIGNED4(new_SP-32)) {
       /* 8 alignment must be at -4 etc.  Hence do 8 at -12,-20,-28 and
          4 at -32,-4. */
-      make_aligned_word32_noaccess ( -VG_STACK_REDZONE_SZB + new_SP-32 );
-      make_aligned_word64_noaccess ( -VG_STACK_REDZONE_SZB + new_SP-28 );
-      make_aligned_word64_noaccess ( -VG_STACK_REDZONE_SZB + new_SP-20 );
-      make_aligned_word64_noaccess ( -VG_STACK_REDZONE_SZB + new_SP-12 );
-      make_aligned_word32_noaccess ( -VG_STACK_REDZONE_SZB + new_SP-4  );
+      NOACCESS32(new_SP-32);
+      NOACCESS64(new_SP-28);
+      NOACCESS64(new_SP-20);
+      NOACCESS64(new_SP-12);
+      NOACCESS32(new_SP- 4);
    } else {
-      MC_(make_mem_noaccess) ( -VG_STACK_REDZONE_SZB + new_SP-32, 32 );
+      NOACCESS_N(new_SP-32, 32);
    }
 }
 
-static void VG_REGPARM(1) mc_new_mem_stack_112(Addr new_SP)
+VG_REGPARM(3)
+void MC_(new_mem_stack) ( Addr a, SizeT len, UWord obfusc_ec_low32_UWord )
 {
-   PROF_EVENT(115, "new_mem_stack_112");
-   if (VG_IS_8_ALIGNED( -VG_STACK_REDZONE_SZB + new_SP )) {
-      make_aligned_word64_undefined ( -VG_STACK_REDZONE_SZB + new_SP    );
-      make_aligned_word64_undefined ( -VG_STACK_REDZONE_SZB + new_SP+8  );
-      make_aligned_word64_undefined ( -VG_STACK_REDZONE_SZB + new_SP+16 );
-      make_aligned_word64_undefined ( -VG_STACK_REDZONE_SZB + new_SP+24 );
-      make_aligned_word64_undefined ( -VG_STACK_REDZONE_SZB + new_SP+32 );
-      make_aligned_word64_undefined ( -VG_STACK_REDZONE_SZB + new_SP+40 );
-      make_aligned_word64_undefined ( -VG_STACK_REDZONE_SZB + new_SP+48 );
-      make_aligned_word64_undefined ( -VG_STACK_REDZONE_SZB + new_SP+56 );
-      make_aligned_word64_undefined ( -VG_STACK_REDZONE_SZB + new_SP+64 );
-      make_aligned_word64_undefined ( -VG_STACK_REDZONE_SZB + new_SP+72 );
-      make_aligned_word64_undefined ( -VG_STACK_REDZONE_SZB + new_SP+80 );
-      make_aligned_word64_undefined ( -VG_STACK_REDZONE_SZB + new_SP+88 );
-      make_aligned_word64_undefined ( -VG_STACK_REDZONE_SZB + new_SP+96 );
-      make_aligned_word64_undefined ( -VG_STACK_REDZONE_SZB + new_SP+104);
-   } else {
-      MC_(make_mem_undefined) ( -VG_STACK_REDZONE_SZB + new_SP, 112,
-                                obfusc_stack_ec_low32 );
-   }
+   PROF_EVENT(117, "new_mem_stack");
+   UNDEFINED_N(a, len);
 }
 
-static void VG_REGPARM(1) mc_die_mem_stack_112(Addr new_SP)
+VG_REGPARM(2)
+void MC_(die_mem_stack) ( Addr a, SizeT len )
 {
-   PROF_EVENT(125, "die_mem_stack_112");
-   if (VG_IS_8_ALIGNED( -VG_STACK_REDZONE_SZB + new_SP )) {
-      make_aligned_word64_noaccess ( -VG_STACK_REDZONE_SZB + new_SP-112);
-      make_aligned_word64_noaccess ( -VG_STACK_REDZONE_SZB + new_SP-104);
-      make_aligned_word64_noaccess ( -VG_STACK_REDZONE_SZB + new_SP-96 );
-      make_aligned_word64_noaccess ( -VG_STACK_REDZONE_SZB + new_SP-88 );
-      make_aligned_word64_noaccess ( -VG_STACK_REDZONE_SZB + new_SP-80 );
-      make_aligned_word64_noaccess ( -VG_STACK_REDZONE_SZB + new_SP-72 );
-      make_aligned_word64_noaccess ( -VG_STACK_REDZONE_SZB + new_SP-64 );
-      make_aligned_word64_noaccess ( -VG_STACK_REDZONE_SZB + new_SP-56 );
-      make_aligned_word64_noaccess ( -VG_STACK_REDZONE_SZB + new_SP-48 );
-      make_aligned_word64_noaccess ( -VG_STACK_REDZONE_SZB + new_SP-40 );
-      make_aligned_word64_noaccess ( -VG_STACK_REDZONE_SZB + new_SP-32 );
-      make_aligned_word64_noaccess ( -VG_STACK_REDZONE_SZB + new_SP-24 );
-      make_aligned_word64_noaccess ( -VG_STACK_REDZONE_SZB + new_SP-16 );
-      make_aligned_word64_noaccess ( -VG_STACK_REDZONE_SZB + new_SP- 8 );
-   } else {
-      MC_(make_mem_noaccess) ( -VG_STACK_REDZONE_SZB + new_SP-112, 112 );
-   }
-}
-
-static void VG_REGPARM(1) mc_new_mem_stack_128(Addr new_SP)
-{
-   PROF_EVENT(116, "new_mem_stack_128");
-   if (VG_IS_8_ALIGNED( -VG_STACK_REDZONE_SZB + new_SP )) {
-      make_aligned_word64_undefined ( -VG_STACK_REDZONE_SZB + new_SP    );
-      make_aligned_word64_undefined ( -VG_STACK_REDZONE_SZB + new_SP+8  );
-      make_aligned_word64_undefined ( -VG_STACK_REDZONE_SZB + new_SP+16 );
-      make_aligned_word64_undefined ( -VG_STACK_REDZONE_SZB + new_SP+24 );
-      make_aligned_word64_undefined ( -VG_STACK_REDZONE_SZB + new_SP+32 );
-      make_aligned_word64_undefined ( -VG_STACK_REDZONE_SZB + new_SP+40 );
-      make_aligned_word64_undefined ( -VG_STACK_REDZONE_SZB + new_SP+48 );
-      make_aligned_word64_undefined ( -VG_STACK_REDZONE_SZB + new_SP+56 );
-      make_aligned_word64_undefined ( -VG_STACK_REDZONE_SZB + new_SP+64 );
-      make_aligned_word64_undefined ( -VG_STACK_REDZONE_SZB + new_SP+72 );
-      make_aligned_word64_undefined ( -VG_STACK_REDZONE_SZB + new_SP+80 );
-      make_aligned_word64_undefined ( -VG_STACK_REDZONE_SZB + new_SP+88 );
-      make_aligned_word64_undefined ( -VG_STACK_REDZONE_SZB + new_SP+96 );
-      make_aligned_word64_undefined ( -VG_STACK_REDZONE_SZB + new_SP+104);
-      make_aligned_word64_undefined ( -VG_STACK_REDZONE_SZB + new_SP+112);
-      make_aligned_word64_undefined ( -VG_STACK_REDZONE_SZB + new_SP+120);
-   } else {
-      MC_(make_mem_undefined) ( -VG_STACK_REDZONE_SZB + new_SP, 128,
-                                obfusc_stack_ec_low32 );
-   }
-}
-
-static void VG_REGPARM(1) mc_die_mem_stack_128(Addr new_SP)
-{
-   PROF_EVENT(126, "die_mem_stack_128");
-   if (VG_IS_8_ALIGNED( -VG_STACK_REDZONE_SZB + new_SP )) {
-      make_aligned_word64_noaccess ( -VG_STACK_REDZONE_SZB + new_SP-128);
-      make_aligned_word64_noaccess ( -VG_STACK_REDZONE_SZB + new_SP-120);
-      make_aligned_word64_noaccess ( -VG_STACK_REDZONE_SZB + new_SP-112);
-      make_aligned_word64_noaccess ( -VG_STACK_REDZONE_SZB + new_SP-104);
-      make_aligned_word64_noaccess ( -VG_STACK_REDZONE_SZB + new_SP-96 );
-      make_aligned_word64_noaccess ( -VG_STACK_REDZONE_SZB + new_SP-88 );
-      make_aligned_word64_noaccess ( -VG_STACK_REDZONE_SZB + new_SP-80 );
-      make_aligned_word64_noaccess ( -VG_STACK_REDZONE_SZB + new_SP-72 );
-      make_aligned_word64_noaccess ( -VG_STACK_REDZONE_SZB + new_SP-64 );
-      make_aligned_word64_noaccess ( -VG_STACK_REDZONE_SZB + new_SP-56 );
-      make_aligned_word64_noaccess ( -VG_STACK_REDZONE_SZB + new_SP-48 );
-      make_aligned_word64_noaccess ( -VG_STACK_REDZONE_SZB + new_SP-40 );
-      make_aligned_word64_noaccess ( -VG_STACK_REDZONE_SZB + new_SP-32 );
-      make_aligned_word64_noaccess ( -VG_STACK_REDZONE_SZB + new_SP-24 );
-      make_aligned_word64_noaccess ( -VG_STACK_REDZONE_SZB + new_SP-16 );
-      make_aligned_word64_noaccess ( -VG_STACK_REDZONE_SZB + new_SP- 8 );
-   } else {
-      MC_(make_mem_noaccess) ( -VG_STACK_REDZONE_SZB + new_SP-128, 128 );
-   }
-}
-
-static void VG_REGPARM(1) mc_new_mem_stack_144(Addr new_SP)
-{
-   PROF_EVENT(117, "new_mem_stack_144");
-   if (VG_IS_8_ALIGNED( -VG_STACK_REDZONE_SZB + new_SP )) {
-      make_aligned_word64_undefined ( -VG_STACK_REDZONE_SZB + new_SP    );
-      make_aligned_word64_undefined ( -VG_STACK_REDZONE_SZB + new_SP+8  );
-      make_aligned_word64_undefined ( -VG_STACK_REDZONE_SZB + new_SP+16 );
-      make_aligned_word64_undefined ( -VG_STACK_REDZONE_SZB + new_SP+24 );
-      make_aligned_word64_undefined ( -VG_STACK_REDZONE_SZB + new_SP+32 );
-      make_aligned_word64_undefined ( -VG_STACK_REDZONE_SZB + new_SP+40 );
-      make_aligned_word64_undefined ( -VG_STACK_REDZONE_SZB + new_SP+48 );
-      make_aligned_word64_undefined ( -VG_STACK_REDZONE_SZB + new_SP+56 );
-      make_aligned_word64_undefined ( -VG_STACK_REDZONE_SZB + new_SP+64 );
-      make_aligned_word64_undefined ( -VG_STACK_REDZONE_SZB + new_SP+72 );
-      make_aligned_word64_undefined ( -VG_STACK_REDZONE_SZB + new_SP+80 );
-      make_aligned_word64_undefined ( -VG_STACK_REDZONE_SZB + new_SP+88 );
-      make_aligned_word64_undefined ( -VG_STACK_REDZONE_SZB + new_SP+96 );
-      make_aligned_word64_undefined ( -VG_STACK_REDZONE_SZB + new_SP+104);
-      make_aligned_word64_undefined ( -VG_STACK_REDZONE_SZB + new_SP+112);
-      make_aligned_word64_undefined ( -VG_STACK_REDZONE_SZB + new_SP+120);
-      make_aligned_word64_undefined ( -VG_STACK_REDZONE_SZB + new_SP+128);
-      make_aligned_word64_undefined ( -VG_STACK_REDZONE_SZB + new_SP+136);
-   } else {
-      MC_(make_mem_undefined) ( -VG_STACK_REDZONE_SZB + new_SP, 144,
-                                obfusc_stack_ec_low32 );
-   }
-}
-
-static void VG_REGPARM(1) mc_die_mem_stack_144(Addr new_SP)
-{
-   PROF_EVENT(127, "die_mem_stack_144");
-   if (VG_IS_8_ALIGNED( -VG_STACK_REDZONE_SZB + new_SP )) {
-      make_aligned_word64_noaccess ( -VG_STACK_REDZONE_SZB + new_SP-144);
-      make_aligned_word64_noaccess ( -VG_STACK_REDZONE_SZB + new_SP-136);
-      make_aligned_word64_noaccess ( -VG_STACK_REDZONE_SZB + new_SP-128);
-      make_aligned_word64_noaccess ( -VG_STACK_REDZONE_SZB + new_SP-120);
-      make_aligned_word64_noaccess ( -VG_STACK_REDZONE_SZB + new_SP-112);
-      make_aligned_word64_noaccess ( -VG_STACK_REDZONE_SZB + new_SP-104);
-      make_aligned_word64_noaccess ( -VG_STACK_REDZONE_SZB + new_SP-96 );
-      make_aligned_word64_noaccess ( -VG_STACK_REDZONE_SZB + new_SP-88 );
-      make_aligned_word64_noaccess ( -VG_STACK_REDZONE_SZB + new_SP-80 );
-      make_aligned_word64_noaccess ( -VG_STACK_REDZONE_SZB + new_SP-72 );
-      make_aligned_word64_noaccess ( -VG_STACK_REDZONE_SZB + new_SP-64 );
-      make_aligned_word64_noaccess ( -VG_STACK_REDZONE_SZB + new_SP-56 );
-      make_aligned_word64_noaccess ( -VG_STACK_REDZONE_SZB + new_SP-48 );
-      make_aligned_word64_noaccess ( -VG_STACK_REDZONE_SZB + new_SP-40 );
-      make_aligned_word64_noaccess ( -VG_STACK_REDZONE_SZB + new_SP-32 );
-      make_aligned_word64_noaccess ( -VG_STACK_REDZONE_SZB + new_SP-24 );
-      make_aligned_word64_noaccess ( -VG_STACK_REDZONE_SZB + new_SP-16 );
-      make_aligned_word64_noaccess ( -VG_STACK_REDZONE_SZB + new_SP- 8 );
-   } else {
-      MC_(make_mem_noaccess) ( -VG_STACK_REDZONE_SZB + new_SP-144, 144 );
-   }
-}
-
-static void VG_REGPARM(1) mc_new_mem_stack_160(Addr new_SP)
-{
-   PROF_EVENT(118, "new_mem_stack_160");
-   if (VG_IS_8_ALIGNED( -VG_STACK_REDZONE_SZB + new_SP )) {
-      make_aligned_word64_undefined ( -VG_STACK_REDZONE_SZB + new_SP    );
-      make_aligned_word64_undefined ( -VG_STACK_REDZONE_SZB + new_SP+8  );
-      make_aligned_word64_undefined ( -VG_STACK_REDZONE_SZB + new_SP+16 );
-      make_aligned_word64_undefined ( -VG_STACK_REDZONE_SZB + new_SP+24 );
-      make_aligned_word64_undefined ( -VG_STACK_REDZONE_SZB + new_SP+32 );
-      make_aligned_word64_undefined ( -VG_STACK_REDZONE_SZB + new_SP+40 );
-      make_aligned_word64_undefined ( -VG_STACK_REDZONE_SZB + new_SP+48 );
-      make_aligned_word64_undefined ( -VG_STACK_REDZONE_SZB + new_SP+56 );
-      make_aligned_word64_undefined ( -VG_STACK_REDZONE_SZB + new_SP+64 );
-      make_aligned_word64_undefined ( -VG_STACK_REDZONE_SZB + new_SP+72 );
-      make_aligned_word64_undefined ( -VG_STACK_REDZONE_SZB + new_SP+80 );
-      make_aligned_word64_undefined ( -VG_STACK_REDZONE_SZB + new_SP+88 );
-      make_aligned_word64_undefined ( -VG_STACK_REDZONE_SZB + new_SP+96 );
-      make_aligned_word64_undefined ( -VG_STACK_REDZONE_SZB + new_SP+104);
-      make_aligned_word64_undefined ( -VG_STACK_REDZONE_SZB + new_SP+112);
-      make_aligned_word64_undefined ( -VG_STACK_REDZONE_SZB + new_SP+120);
-      make_aligned_word64_undefined ( -VG_STACK_REDZONE_SZB + new_SP+128);
-      make_aligned_word64_undefined ( -VG_STACK_REDZONE_SZB + new_SP+136);
-      make_aligned_word64_undefined ( -VG_STACK_REDZONE_SZB + new_SP+144);
-      make_aligned_word64_undefined ( -VG_STACK_REDZONE_SZB + new_SP+152);
-   } else {
-      MC_(make_mem_undefined) ( -VG_STACK_REDZONE_SZB + new_SP, 160,
-                                obfusc_stack_ec_low32 );
-   }
-}
-
-static void VG_REGPARM(1) mc_die_mem_stack_160(Addr new_SP)
-{
-   PROF_EVENT(128, "die_mem_stack_160");
-   if (VG_IS_8_ALIGNED( -VG_STACK_REDZONE_SZB + new_SP )) {
-      make_aligned_word64_noaccess ( -VG_STACK_REDZONE_SZB + new_SP-160);
-      make_aligned_word64_noaccess ( -VG_STACK_REDZONE_SZB + new_SP-152);
-      make_aligned_word64_noaccess ( -VG_STACK_REDZONE_SZB + new_SP-144);
-      make_aligned_word64_noaccess ( -VG_STACK_REDZONE_SZB + new_SP-136);
-      make_aligned_word64_noaccess ( -VG_STACK_REDZONE_SZB + new_SP-128);
-      make_aligned_word64_noaccess ( -VG_STACK_REDZONE_SZB + new_SP-120);
-      make_aligned_word64_noaccess ( -VG_STACK_REDZONE_SZB + new_SP-112);
-      make_aligned_word64_noaccess ( -VG_STACK_REDZONE_SZB + new_SP-104);
-      make_aligned_word64_noaccess ( -VG_STACK_REDZONE_SZB + new_SP-96 );
-      make_aligned_word64_noaccess ( -VG_STACK_REDZONE_SZB + new_SP-88 );
-      make_aligned_word64_noaccess ( -VG_STACK_REDZONE_SZB + new_SP-80 );
-      make_aligned_word64_noaccess ( -VG_STACK_REDZONE_SZB + new_SP-72 );
-      make_aligned_word64_noaccess ( -VG_STACK_REDZONE_SZB + new_SP-64 );
-      make_aligned_word64_noaccess ( -VG_STACK_REDZONE_SZB + new_SP-56 );
-      make_aligned_word64_noaccess ( -VG_STACK_REDZONE_SZB + new_SP-48 );
-      make_aligned_word64_noaccess ( -VG_STACK_REDZONE_SZB + new_SP-40 );
-      make_aligned_word64_noaccess ( -VG_STACK_REDZONE_SZB + new_SP-32 );
-      make_aligned_word64_noaccess ( -VG_STACK_REDZONE_SZB + new_SP-24 );
-      make_aligned_word64_noaccess ( -VG_STACK_REDZONE_SZB + new_SP-16 );
-      make_aligned_word64_noaccess ( -VG_STACK_REDZONE_SZB + new_SP- 8 );
-   } else {
-      MC_(make_mem_noaccess) ( -VG_STACK_REDZONE_SZB + new_SP-160, 160 );
-   }
-}
-
-static void mc_new_mem_stack ( Addr a, SizeT len )
-{
-   PROF_EVENT(115, "new_mem_stack");
-   MC_(make_mem_undefined) ( -VG_STACK_REDZONE_SZB + a, len,
-                             obfusc_stack_ec_low32 );
-}
-
-static void mc_die_mem_stack ( Addr a, SizeT len )
-{
-   PROF_EVENT(125, "die_mem_stack");
-   MC_(make_mem_noaccess) ( -VG_STACK_REDZONE_SZB + a, len );
+   PROF_EVENT(127, "die_mem_stack");
+   NOACCESS_N(a, len);
 }
 
 
@@ -2248,8 +2052,13 @@ static void mc_die_mem_stack ( Addr a, SizeT len )
    with defined values and g could mistakenly read them.  So the RZ
    also needs to be nuked on function calls.
 */
-void MC_(helperc_MAKE_STACK_UNINIT) ( Addr base, UWord len )
+
+VG_REGPARM(3)
+void MC_(helperc_MAKE_STACK_UNINIT) ( Addr base, UWord len,
+                                      UWord obfusc_ec_low32_UWord )
 {
+   ULong double_obfusc_ec_low32 = UIntWord_to_ULong(obfusc_ec_low32_UWord);
+
    tl_assert(sizeof(UWord) == sizeof(SizeT));
    if (0)
       VG_(printf)("helperc_MAKE_STACK_UNINIT %p %d\n", base, len );
@@ -2332,22 +2141,22 @@ void MC_(helperc_MAKE_STACK_UNINIT) ( Addr base, UWord len )
             // Write the origin-tracking values.
             if (MC_(clo_undef_origins)) {
                ULong* p2 = (ULong*)base;
-               p2[ 0] = double_obfusc_stack_ec_low32;
-               p2[ 1] = double_obfusc_stack_ec_low32;
-               p2[ 2] = double_obfusc_stack_ec_low32;
-               p2[ 3] = double_obfusc_stack_ec_low32;
-               p2[ 4] = double_obfusc_stack_ec_low32;
-               p2[ 5] = double_obfusc_stack_ec_low32;
-               p2[ 6] = double_obfusc_stack_ec_low32;
-               p2[ 7] = double_obfusc_stack_ec_low32;
-               p2[ 8] = double_obfusc_stack_ec_low32;
-               p2[ 9] = double_obfusc_stack_ec_low32;
-               p2[10] = double_obfusc_stack_ec_low32;
-               p2[11] = double_obfusc_stack_ec_low32;
-               p2[12] = double_obfusc_stack_ec_low32;
-               p2[13] = double_obfusc_stack_ec_low32;
-               p2[14] = double_obfusc_stack_ec_low32;
-               p2[15] = double_obfusc_stack_ec_low32;
+               p2[ 0] = double_obfusc_ec_low32;
+               p2[ 1] = double_obfusc_ec_low32;
+               p2[ 2] = double_obfusc_ec_low32;
+               p2[ 3] = double_obfusc_ec_low32;
+               p2[ 4] = double_obfusc_ec_low32;
+               p2[ 5] = double_obfusc_ec_low32;
+               p2[ 6] = double_obfusc_ec_low32;
+               p2[ 7] = double_obfusc_ec_low32;
+               p2[ 8] = double_obfusc_ec_low32;
+               p2[ 9] = double_obfusc_ec_low32;
+               p2[10] = double_obfusc_ec_low32;
+               p2[11] = double_obfusc_ec_low32;
+               p2[12] = double_obfusc_ec_low32;
+               p2[13] = double_obfusc_ec_low32;
+               p2[14] = double_obfusc_ec_low32;
+               p2[15] = double_obfusc_ec_low32;
             }
             return;
          }
@@ -2412,42 +2221,42 @@ void MC_(helperc_MAKE_STACK_UNINIT) ( Addr base, UWord len )
             // Write the origin-tracking values.
             if (MC_(clo_undef_origins)) {
                ULong* p2 = (ULong*)base;
-               p2[ 0] = double_obfusc_stack_ec_low32;
-               p2[ 1] = double_obfusc_stack_ec_low32;
-               p2[ 2] = double_obfusc_stack_ec_low32;
-               p2[ 3] = double_obfusc_stack_ec_low32;
-               p2[ 4] = double_obfusc_stack_ec_low32;
-               p2[ 5] = double_obfusc_stack_ec_low32;
-               p2[ 6] = double_obfusc_stack_ec_low32;
-               p2[ 7] = double_obfusc_stack_ec_low32;
-               p2[ 8] = double_obfusc_stack_ec_low32;
-               p2[ 9] = double_obfusc_stack_ec_low32;
-               p2[10] = double_obfusc_stack_ec_low32;
-               p2[11] = double_obfusc_stack_ec_low32;
-               p2[12] = double_obfusc_stack_ec_low32;
-               p2[13] = double_obfusc_stack_ec_low32;
-               p2[14] = double_obfusc_stack_ec_low32;
-               p2[15] = double_obfusc_stack_ec_low32;
-               p2[16] = double_obfusc_stack_ec_low32;
-               p2[17] = double_obfusc_stack_ec_low32;
-               p2[18] = double_obfusc_stack_ec_low32;
-               p2[19] = double_obfusc_stack_ec_low32;
-               p2[20] = double_obfusc_stack_ec_low32;
-               p2[21] = double_obfusc_stack_ec_low32;
-               p2[22] = double_obfusc_stack_ec_low32;
-               p2[23] = double_obfusc_stack_ec_low32;
-               p2[24] = double_obfusc_stack_ec_low32;
-               p2[25] = double_obfusc_stack_ec_low32;
-               p2[26] = double_obfusc_stack_ec_low32;
-               p2[27] = double_obfusc_stack_ec_low32;
-               p2[28] = double_obfusc_stack_ec_low32;
-               p2[29] = double_obfusc_stack_ec_low32;
-               p2[30] = double_obfusc_stack_ec_low32;
-               p2[31] = double_obfusc_stack_ec_low32;
-               p2[32] = double_obfusc_stack_ec_low32;
-               p2[33] = double_obfusc_stack_ec_low32;
-               p2[34] = double_obfusc_stack_ec_low32;
-               p2[15] = double_obfusc_stack_ec_low32;
+               p2[ 0] = double_obfusc_ec_low32;
+               p2[ 1] = double_obfusc_ec_low32;
+               p2[ 2] = double_obfusc_ec_low32;
+               p2[ 3] = double_obfusc_ec_low32;
+               p2[ 4] = double_obfusc_ec_low32;
+               p2[ 5] = double_obfusc_ec_low32;
+               p2[ 6] = double_obfusc_ec_low32;
+               p2[ 7] = double_obfusc_ec_low32;
+               p2[ 8] = double_obfusc_ec_low32;
+               p2[ 9] = double_obfusc_ec_low32;
+               p2[10] = double_obfusc_ec_low32;
+               p2[11] = double_obfusc_ec_low32;
+               p2[12] = double_obfusc_ec_low32;
+               p2[13] = double_obfusc_ec_low32;
+               p2[14] = double_obfusc_ec_low32;
+               p2[15] = double_obfusc_ec_low32;
+               p2[16] = double_obfusc_ec_low32;
+               p2[17] = double_obfusc_ec_low32;
+               p2[18] = double_obfusc_ec_low32;
+               p2[19] = double_obfusc_ec_low32;
+               p2[20] = double_obfusc_ec_low32;
+               p2[21] = double_obfusc_ec_low32;
+               p2[22] = double_obfusc_ec_low32;
+               p2[23] = double_obfusc_ec_low32;
+               p2[24] = double_obfusc_ec_low32;
+               p2[25] = double_obfusc_ec_low32;
+               p2[26] = double_obfusc_ec_low32;
+               p2[27] = double_obfusc_ec_low32;
+               p2[28] = double_obfusc_ec_low32;
+               p2[29] = double_obfusc_ec_low32;
+               p2[30] = double_obfusc_ec_low32;
+               p2[31] = double_obfusc_ec_low32;
+               p2[32] = double_obfusc_ec_low32;
+               p2[33] = double_obfusc_ec_low32;
+               p2[34] = double_obfusc_ec_low32;
+               p2[35] = double_obfusc_ec_low32;
             }
             return;
          }
@@ -2455,7 +2264,7 @@ void MC_(helperc_MAKE_STACK_UNINIT) ( Addr base, UWord len )
    }
 
    /* else fall into slow case */
-   MC_(make_mem_undefined)(base, len, obfusc_stack_ec_low32);
+   MC_(make_mem_undefined)(base, len, obfusc_ec_low32_UWord);
 }
 
 
@@ -3017,16 +2826,10 @@ static void mc_pp_origins ( ExeContext* origins[], Int n_origins )
       Int i;
       for (i = 0; i < n_origins; i++) {
          tl_assert(NULL != origins[i]);
-         if (origins[i] == stack_ec) {
-            VG_(message)(Vg_UserMsg,
-                         "%sUninitialised value has possible origin %d"
-                         " on a stack%s", xpre, i + 1, xpost);
-         } else {
-            VG_(message)(Vg_UserMsg,
-                         "%sUninitialised value has possible origin %d%s",
-                         xpre, i + 1, xpost);
-            VG_(pp_ExeContext)( origins[i] );
-         }
+         VG_(message)(Vg_UserMsg,
+                      "%sUninitialised value has possible origin %d%s",
+                      xpre, i + 1, xpost);
+         VG_(pp_ExeContext)( origins[i] );
       }
    } else {
       VG_(message)(Vg_UserMsg,
@@ -5325,31 +5128,8 @@ static void mc_pre_clo_init(void)
    VG_(track_die_mem_brk)         ( MC_(make_mem_noaccess) );
    VG_(track_die_mem_munmap)      ( MC_(make_mem_noaccess) ); 
 
-#ifdef PERF_FAST_STACK
-   VG_(track_new_mem_stack_4)     ( mc_new_mem_stack_4   );
-   VG_(track_new_mem_stack_8)     ( mc_new_mem_stack_8   );
-   VG_(track_new_mem_stack_12)    ( mc_new_mem_stack_12  );
-   VG_(track_new_mem_stack_16)    ( mc_new_mem_stack_16  );
-   VG_(track_new_mem_stack_32)    ( mc_new_mem_stack_32  );
-   VG_(track_new_mem_stack_112)   ( mc_new_mem_stack_112 );
-   VG_(track_new_mem_stack_128)   ( mc_new_mem_stack_128 );
-   VG_(track_new_mem_stack_144)   ( mc_new_mem_stack_144 );
-   VG_(track_new_mem_stack_160)   ( mc_new_mem_stack_160 );
-#endif
-   VG_(track_new_mem_stack)       ( mc_new_mem_stack     );
-
-#ifdef PERF_FAST_STACK
-   VG_(track_die_mem_stack_4)     ( mc_die_mem_stack_4   );
-   VG_(track_die_mem_stack_8)     ( mc_die_mem_stack_8   );
-   VG_(track_die_mem_stack_12)    ( mc_die_mem_stack_12  );
-   VG_(track_die_mem_stack_16)    ( mc_die_mem_stack_16  );
-   VG_(track_die_mem_stack_32)    ( mc_die_mem_stack_32  );
-   VG_(track_die_mem_stack_112)   ( mc_die_mem_stack_112 );
-   VG_(track_die_mem_stack_128)   ( mc_die_mem_stack_128 );
-   VG_(track_die_mem_stack_144)   ( mc_die_mem_stack_144 );
-   VG_(track_die_mem_stack_160)   ( mc_die_mem_stack_160 );
-#endif
-   VG_(track_die_mem_stack)       ( mc_die_mem_stack     );
+   // Nb: we don't use any new_mem_stack*/die_mem_stack* events because we
+   // handle those ourself in mc_SP_update_pass.
    
    VG_(track_ban_mem_stack)       ( MC_(make_mem_noaccess) );
 
@@ -5368,13 +5148,6 @@ static void mc_pre_clo_init(void)
    MC_(malloc_list)  = VG_(HT_construct)( 80021 );   // prime, big
    MC_(mempool_list) = VG_(HT_construct)( 1009  );   // prime, not so big
    init_prof_mem();
-
-   // Get a dummy ExeContext to represent stack allocations.  Its contents
-   // don't matter.
-   stack_ec = VG_(record_ExeContext)(/*tid*/1);
-   obfusc_stack_ec_low32 = MC_(obfuscate_ExeContext_low32)( (UInt)stack_ec );
-   double_obfusc_stack_ec_low32 =
-       (ULong)obfusc_stack_ec_low32 | ((ULong)obfusc_stack_ec_low32 << 32);
 
    tl_assert( mc_expensive_sanity_check() );
 

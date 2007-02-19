@@ -34,7 +34,9 @@
 #include "pub_tool_libcassert.h"
 #include "pub_tool_libcprint.h"
 #include "pub_tool_tooliface.h"
-#include "pub_tool_machine.h"     // VG_(fnptr_to_fnentry)
+#include "pub_tool_machine.h"       // VG_(fnptr_to_fnentry)
+#include "pub_tool_stacks.h"        // SP-update stuff
+#include "pub_tool_translate.h"     // more SP-update stuff
 #include "mc_include.h"
 
 
@@ -51,6 +53,15 @@
      2005 USENIX Annual Technical Conference (General Track),
      Anaheim, CA, USA, April 10-15, 2005.
 */
+
+/*------------------------------------------------------------*/
+/*--- Fast-case knobs                                      ---*/
+/*------------------------------------------------------------*/
+ 
+// Comment these out to disable the fast cases (don't just set them to zero).
+// (See mc_main.c for the rest of them.)
+
+#define PERF_FAST_STACK    1
 
 /*------------------------------------------------------------*/
 /*--- Forward decls                                        ---*/
@@ -810,8 +821,6 @@ void MC_(print_origin_tracking_stats)(void)
    Char perc0[7], perc1[7], perc2[7];
    UInt n_total = origin_tracking_2 + origin_tracking_1 + origin_tracking_0;
 
-   // XXX: this is all out-of-date now
-   
    // XXX: there's an off-by-one error in percentify -- if I use 6 instead
    // of 5 here, the buffers get overrun.  (there's one in snprintf, too)
    // [XXX: the snprintf one has been fixed, I think]
@@ -869,9 +878,26 @@ static void add_to_OriginsList_if_tmp(OriginsList* list, IRExpr* arg)
       add_to_OriginsList(list, arg->Iex.RdTmp.tmp);
 }
 
+static void
+add_args_to_OriginsList(OriginsList* list, IRExpr** args, UInt mcx_mask)
+{
+   Int j = 0;
+   while (NULL != args[j]) {
+      // We can ignore arguments for which the mcx_mask
+      // is set, because they are always defined.
+      if (Iex_RdTmp == args[j]->tag &&
+          0 == (mcx_mask & (1<<j))) {
+         // Arg is a temp (tY), add it to worklist.
+         IRTemp tY = args[j]->Iex.RdTmp.tmp;
+         add_to_OriginsList(list, tY);
+      }
+      j++;
+   }
+}
 static Bool remove_from_OriginsList(OriginsList* list, IRTemp t)
 {
    Int i, j;
+   tl_assert(t != IRTemp_INVALID);
    tl_assert(list->tmps_nextfree < MAX_ORIGINS);
    for (i = 0; i < list->tmps_nextfree; i++) {
       if (list->tmps[i] == t) {
@@ -880,7 +906,6 @@ static Bool remove_from_OriginsList(OriginsList* list, IRTemp t)
             list->tmps[j] = list->tmps[j+1];
          list->tmps[ list->tmps_nextfree ] = IRTemp_INVALID;
          list->tmps_nextfree--;
-//         VG_(printf)("remove: "); ppIRTemp(t); VG_(printf)("\n");
          return True;
       }
    }
@@ -899,8 +924,6 @@ static Bool OriginsList_is_empty(OriginsList* list)
 // are all 8-bits.
 static void getOriginTmps(MCEnv* mce, IRTemp currTemp, OriginsList* originTmps)
 {
-   // XXX: write a test where two undefined chars are compared, but they're
-   // recently converted from 32-bit values and so can be identified.
    OriginsList worklist_actual, *worklist = &worklist_actual;
    Int i = mce->bb_in_i - 1;
 
@@ -917,8 +940,6 @@ static void getOriginTmps(MCEnv* mce, IRTemp currTemp, OriginsList* originTmps)
    while (True) {
 
       IRStmt* st = mce->bb_in->stmts[i];
-
-//      VG_(printf)("stmt: "); ppIRStmt(st); VG_(printf)("\n");
 
       //---------------------------------------------------------------------
       switch (st->tag) {
@@ -974,8 +995,6 @@ static void getOriginTmps(MCEnv* mce, IRTemp currTemp, OriginsList* originTmps)
                   case Iex_Load: {
                      // tX = GET:I<ty>(N), or tX = LDxx:I<ty>(tY)
                      // If tX is 32 or 64 bits, add it to the finish_list.
-                     //Int szB = sizeofIRType(data->Iex.Get.ty);
-                     // XXX
                      Int szB =
                            sizeofIRType(typeOfIRTemp(mce->bb_in->tyenv, tX));
                      if (4 == szB || 8 == szB) {
@@ -988,38 +1007,14 @@ static void getOriginTmps(MCEnv* mce, IRTemp currTemp, OriginsList* originTmps)
                      // XXX: should treat similarly to Get/Load
                      break;
                   
-                  // XXX: remove
-//                  case Iex_Load: {
-//                     // tX = LDle:I<ty>(tY)
-//                     // If size is 32 or 64 bits, add tX to the finish_list.
-//                     Int szB = sizeofIRType(data->Iex.Load.ty);
-//                     if (4 == szB || 8 == szB) {
-//                        add_to_OriginsList(originTmps, tX);
-//                     }
-//                     break;
-//                  }
-
                   case Iex_CCall: {
                      // tX = call(argY,argZ,...).  If tX is present: remove
                      // tX from worklist, and add all args that are temps to
                      // worklist.
-                     // XXX: this is similar to the Ist_Dirty case, factor
-                     //      out...
                      if (remove_from_OriginsList(worklist, tX)) {
-                        IRExpr** args = data->Iex.CCall.args;
-                        Int j = 0;
-                        while (NULL != args[j]) {
-                           IRExpr* arg = args[j];
-                           // We can ignore arguments for which the mcx_mask
-                           // is set, because they are always defined.
-                           if (Iex_RdTmp == arg->tag && 
-                               0 == (data->Iex.CCall.cee->mcx_mask & (1<<j))) {
-                              // Arg is a temp (tY), add it to worklist.
-                              IRTemp tY = arg->Iex.RdTmp.tmp;
-                              add_to_OriginsList(worklist, tY);
-                           }
-                           j++;
-                        }
+                        add_args_to_OriginsList(worklist,
+                           data->Iex.CCall.args,
+                           data->Iex.CCall.cee->mcx_mask);
                      }
                      break;
                   }
@@ -1038,21 +1033,8 @@ static void getOriginTmps(MCEnv* mce, IRTemp currTemp, OriginsList* originTmps)
             // worklist, and add all args that are temps to worklist.
             IRDirty* d = st->Ist.Dirty.details;
             IRTemp  tX = d->tmp;
-            if (IRTemp_INVALID != tX && remove_from_OriginsList(worklist, tX))
-            {
-               Int j = 0;
-               while (NULL != d->args[j]) {
-                  IRExpr* arg = d->args[j];
-                  // We can ignore arguments for which the mcx_mask
-                  // is set, because they are always defined.
-                  if (Iex_RdTmp == arg->tag &&
-                      0 == (d->cee->mcx_mask & (1<<j))) {
-                     // Arg is a temp (tY), add it to worklist.
-                     IRTemp tY = arg->Iex.RdTmp.tmp;
-                     add_to_OriginsList(worklist, tY);
-                  }
-                  j++;
-               }
+            if (IRTemp_INVALID != tX && remove_from_OriginsList(worklist, tX)) {
+               add_args_to_OriginsList(worklist, d->args, d->cee->mcx_mask);
             }
             break;
          }
@@ -1068,7 +1050,6 @@ static void getOriginTmps(MCEnv* mce, IRTemp currTemp, OriginsList* originTmps)
             break;
 
          default:
-            // XXX: complete
             ppIRStmt(st);
             tl_assert2(0, "unhandled statement type");
       }
@@ -1244,7 +1225,6 @@ static void complainIfUndefined ( MCEnv* mce, IRAtom* atom )
       }
    }
    
-   // XXX: specialise the common cases if it helps performance
    szHWordExpr = mkIRExpr_HWord( sz );
 
    if (0 == n_origins_found) {
@@ -1334,10 +1314,7 @@ static void complainIfUndefined ( MCEnv* mce, IRAtom* atom )
                                             mkexpr(originTmps.tmps[3]),
                                             mkexpr(originTmps.tmps[4]));
    } else {
-   // XXX: maybe allow more origins
-//      if (n_origins_found > 6) {
-//         VG_(printf)("XXX: found %d origins\n", n_origins_found);
-//      }
+      // We allow up to 6 origins.  Less than 0.1% of cases have more than 6.
       fn_name = "MC_(helperc_value_error_6_origins)";
       fn_ptr  = &MC_(helperc_value_error_6_origins);
       regparms = 3;
@@ -3404,7 +3381,6 @@ void do_shadow_Dirty ( MCEnv* mce, IRDirty* d )
 #  endif
 
    /* First check the guard. */
-   // XXX: could use get_cmpTemps and complainIfUndefinedCond here...
    complainIfUndefined(mce, d->guard);
 
    /* Now round up all inputs and PCast over them. */
@@ -3566,6 +3542,9 @@ void do_shadow_Dirty ( MCEnv* mce, IRDirty* d )
 
 }
 
+// Forward declaration.
+static UWord mc_get_stack_alloc_obfusc_ec_low32_UWord(Addr ip);
+
 /* We have an ABI hint telling us that [base .. base+len-1] is to
    become undefined ("writable").  Generate code to call a helper to
    notify the A/V bit machinery of this fact.
@@ -3574,16 +3553,214 @@ void do_shadow_Dirty ( MCEnv* mce, IRDirty* d )
    void MC_(helperc_MAKE_STACK_UNINIT) ( Addr base, UWord len );
 */
 static
-void do_AbiHint ( MCEnv* mce, IRExpr* base, Int len )
+void do_AbiHint ( MCEnv* mce, IRExpr* base, Int len, Addr ip )
 {
    IRDirty* di;
+   UWord x = mc_get_stack_alloc_obfusc_ec_low32_UWord(ip);
+   tl_assert(ip != 0);
    di = unsafeIRDirty_0_N(
-           0/*regparms*/,
+           3/*regparms*/,
            "MC_(helperc_MAKE_STACK_UNINIT)",
            VG_(fnptr_to_fnentry)( &MC_(helperc_MAKE_STACK_UNINIT) ),
-           mkIRExprVec_2( base, mkIRExpr_HWord( (UInt)len) )
+           mkIRExprVec_3( base, mkIRExpr_HWord( (UInt)len),
+                                mkIRExpr_HWord( x ) )
         );
    stmt( mce->bb_out, IRStmt_Dirty(di) );
+}
+
+
+/*------------------------------------------------------------*/
+/*--- SP-update instrumentation                            ---*/
+/*------------------------------------------------------------*/
+
+static UWord mc_get_stack_alloc_obfusc_ec_low32_UWord(Addr ip)
+{
+   ExeContext*       ec = VG_(record_single_IP_ExeContext)( ip );
+   UInt obfusc_ec_low32 = MC_(obfuscate_ExeContext_low32)( (UInt)ec );
+   return (UWord)obfusc_ec_low32;
+}
+
+static VG_REGPARM(3)
+void mc_unknown_SP_update( Addr old_SP, Addr new_SP,
+                           UWord obfusc_ec_low32_UWord )
+{
+   Word delta = (Word)new_SP - (Word)old_SP;
+
+   if (VG_(check_if_stack_has_changed)(old_SP, new_SP)) {
+      return;     // Don't do anything more!
+
+   } else if (delta < 0) {
+      MC_(new_mem_stack)(new_SP, -delta, obfusc_ec_low32_UWord);
+
+   } else if (delta > 0) {
+      MC_(die_mem_stack)(old_SP, delta);
+   }
+}
+
+// Nb: if all is well, this generic case will typically be called something
+// like < 10% of all (static) SP updates.  If it's more than that, the above
+// code may be missing some cases.
+static IRDirty* prep_call_to_generic_SP_update(IRSB* bb_out, IRStmt* st,
+                                               Addr ip, VexGuestLayout* layout)
+{
+   UWord x;
+   IRTemp old_SP;
+   IRType typeof_SP = layout->sizeof_SP==4 ? Ity_I32 : Ity_I64;
+
+   /* Pass both the old and new SP values to this helper. */
+   old_SP = newIRTemp(bb_out->tyenv, typeof_SP);
+   addStmtToIRSB( bb_out,
+                  IRStmt_WrTmp( old_SP,
+                                IRExpr_Get(layout->offset_SP, typeof_SP) ) 
+   );
+
+   // Tricky case:  we use the complex tracker in the new_mem_stack case,
+   // and the simple tracker in the die_mem_stack case.  But when the delta
+   // is unknown, we don't know at instrumentation-time whether this SP
+   // update will be a new_mem_stack event or a die_mem_stack event.  So if
+   // we always pass the statically-determined ExeContext argument.  The end
+   // result is that the extra argument may not always be used.
+   tl_assert(ip != 0);
+   x = mc_get_stack_alloc_obfusc_ec_low32_UWord(ip);
+
+   return unsafeIRDirty_0_N( 
+            3/*regparms*/,         "mc_unknown_SP_update", 
+            VG_(fnptr_to_fnentry)( &mc_unknown_SP_update ),
+            mkIRExprVec_3( IRExpr_RdTmp(old_SP),
+                           st->Ist.Put.data,
+                           mkIRExpr_HWord(x) )
+          );
+}
+
+static IRDirty* prep_call_to_new_mem_stack_N( 
+   IRSB* sb_in, Int this_i, Addr ip, Int N,
+   Char* new_mem_stack_N_string,
+   VG_REGPARM(2) void(*new_mem_stack_N)(Addr, UWord), // complex tracker
+   IRExpr* SP_update_expr)
+{
+   // Complex tracker -- call the static function first to get the
+   // value to pass to the run-time helper.
+   UWord x;
+   Bool can_ignore = False;
+
+   tl_assert(ip != 0);
+
+   // A lot of the time, the SP area allocated is immediately overwritten.
+   // For example, in x86 'call' or 'push' instructions we get a sequence
+   // like this:
+   //
+   //   t16 = GET:I32(16)
+   //   ...
+   //   t17 = Sub32(t16,0x4:I32)
+   //   PUT(16) = t17
+   //   ...
+   //   STle(t17) = 0x23C797:I32
+   //
+   // Painting the allocated area with an origin-tracking value after the
+   // PUT is pointless because the whole 4-byte area is immediately
+   // overwritten.  So we detect this case to avoid going to wasted effort.
+   //
+   // Currently, we avoid allocating the unnecessary ExeContext and paint
+   // the stack location with zero instead.  We could also call simpler
+   // new_mem_stack_[48] functions to avoid passing the 2nd argument and
+   // doing the zero-painting. However, it's not yet clear that this makes
+   // much difference to performance, and it requires yet more special cases
+   // in mc_main.c.
+   //
+   tl_assert(Iex_RdTmp == SP_update_expr->tag);
+   if (N == VG_WORDSIZE) {
+      Int i;
+      for (i = this_i; i < sb_in->stmts_used; i++) {
+         IRStmt* st2 = sb_in->stmts[i]; 
+         if (st2->tag == Ist_Store &&
+              st2->Ist.Store.addr->tag == Iex_RdTmp &&
+              st2->Ist.Store.addr->Iex.RdTmp.tmp ==
+                SP_update_expr->Iex.RdTmp.tmp)
+         {
+            can_ignore = True;
+            break;
+         }
+      }
+   }
+
+   if (can_ignore) {
+      x = 0;
+   } else {
+      x = mc_get_stack_alloc_obfusc_ec_low32_UWord(ip);
+   }
+
+   return unsafeIRDirty_0_N(
+            2/*regparms*/,
+            new_mem_stack_N_string,
+            VG_(fnptr_to_fnentry)( new_mem_stack_N ),
+            mkIRExprVec_2( SP_update_expr, mkIRExpr_HWord(x) )
+          );
+}
+
+static IRDirty* prep_call_to_die_mem_stack_N(
+   Char* die_mem_stack_N_string,
+   VG_REGPARM(1) void(*die_mem_stack_N)(Addr), // simple tracker
+   IRExpr* SP_update_expr)
+{
+   return unsafeIRDirty_0_N(
+            1/*regparms*/,
+            die_mem_stack_N_string,
+            VG_(fnptr_to_fnentry)( die_mem_stack_N ),
+            mkIRExprVec_1( SP_update_expr )
+          );
+}
+
+static Bool mc_handle_SP_update(IRSB* sb_in, IRSB* sb_out,
+                  VexGuestLayout* layout, Int i, IRStmt* st, Addr ip,
+                  IRExpr* SP_update_expr, Bool is_delta_known, Int delta_szB)
+{
+   IRDirty* dcall = NULL;
+   Bool specialised = True;
+
+   if (!is_delta_known) {
+      delta_szB = 99999;   // Something that doesn't match the switch below
+   }
+
+#ifndef PERF_FAST_STACK
+   // This forces it to always use the most generic SP-update handler.
+   delta_szB = 99999;
+#endif
+
+   switch (delta_szB) {
+      #define NEW(size) prep_call_to_new_mem_stack_N( sb_in, \
+                           i, ip, -delta_szB, \
+                           "MC_(new_mem_stack_"#size")", \
+                            MC_(new_mem_stack_##size), SP_update_expr);
+      #define DIE(size) prep_call_to_die_mem_stack_N( \
+                           "MC_(die_mem_stack_"#size")", \
+                            MC_(die_mem_stack_##size), SP_update_expr);
+      /* common values for ppc64: 144 128 160 112 176 */
+      case   0:                  break;
+      case   4: dcall = DIE(4);  break;
+      case  -4: dcall = NEW(4);  break;
+      case   8: dcall = DIE(8);  break;
+      case  -8: dcall = NEW(8);  break;
+      case  12: dcall = DIE(12); break;
+      case -12: dcall = NEW(12); break;
+      case  16: dcall = DIE(16); break;
+      case -16: dcall = NEW(16); break;
+      case  32: dcall = DIE(32); break;
+      case -32: dcall = NEW(32); break;
+      default:  
+         dcall = prep_call_to_generic_SP_update(sb_out, st, ip, layout);
+         specialised = False;
+         break;
+   }
+
+   // Update SP first, then call the helper.  This ensures that, in
+   // the new_mem_stack_* case, that the memory allocated is really
+   // allocated before the helper is called, and thus the helper is
+   // able to access it.
+   addStmtToIRSB( sb_out, st );
+   if (dcall)
+      addStmtToIRSB( sb_out, IRStmt_Dirty(dcall) );
+
+   return specialised;
 }
 
 /*------------------------------------------------------------*/
@@ -3711,6 +3888,7 @@ IRSB* MC_(instrument) ( VgCallbackClosure* closure,
    IRStmt* st;
    MCEnv   mce;
    IRSB*   bb_out;
+   Addr    ip = 0;
 
    if (gWordTy != hWordTy) {
       /* We don't currently support this case. */
@@ -3878,8 +4056,11 @@ IRSB* MC_(instrument) ( VgCallbackClosure* closure,
          }
 
          case Ist_NoOp:
-         case Ist_IMark:
          case Ist_MFence:
+            break;
+
+         case Ist_IMark:
+            ip = (Addr)st->Ist.IMark.addr;
             break;
 
          case Ist_Dirty:
@@ -3887,7 +4068,7 @@ IRSB* MC_(instrument) ( VgCallbackClosure* closure,
             break;
 
          case Ist_AbiHint:
-            do_AbiHint( &mce, st->Ist.AbiHint.base, st->Ist.AbiHint.len );
+            do_AbiHint( &mce, st->Ist.AbiHint.base, st->Ist.AbiHint.len, ip );
             break;
 
          default:
@@ -3931,10 +4112,11 @@ IRSB* MC_(instrument) ( VgCallbackClosure* closure,
       VG_(printf)("\n");
    }
 
-   return bb_out;
+   /* Now do the SP-update instrumentation pass, and return the result. */
+   return VG_(SP_update_pass)(bb_out, layout, mc_handle_SP_update);
 }
 
 /*--------------------------------------------------------------------*/
-/*--- end                                           mc_translate.c ---*/
+/*--- end                                                          ---*/
 /*--------------------------------------------------------------------*/
 

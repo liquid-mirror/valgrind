@@ -167,15 +167,16 @@ typedef struct {
    void (*track_die_mem_brk)         (Addr, SizeT);
    void (*track_die_mem_munmap)      (Addr, SizeT);
 
+   // Stack trackers
    void VG_REGPARM(1) (*track_new_mem_stack_4)  (Addr);
    void VG_REGPARM(1) (*track_new_mem_stack_8)  (Addr);
    void VG_REGPARM(1) (*track_new_mem_stack_12) (Addr);
    void VG_REGPARM(1) (*track_new_mem_stack_16) (Addr);
    void VG_REGPARM(1) (*track_new_mem_stack_32) (Addr);
-   void VG_REGPARM(1) (*track_new_mem_stack_112)(Addr);
-   void VG_REGPARM(1) (*track_new_mem_stack_128)(Addr);
-   void VG_REGPARM(1) (*track_new_mem_stack_144)(Addr);
-   void VG_REGPARM(1) (*track_new_mem_stack_160)(Addr);
+//   void VG_REGPARM(1) (*track_new_mem_stack_112)(Addr);
+//   void VG_REGPARM(1) (*track_new_mem_stack_128)(Addr);
+//   void VG_REGPARM(1) (*track_new_mem_stack_144)(Addr);
+//   void VG_REGPARM(1) (*track_new_mem_stack_160)(Addr);
    void (*track_new_mem_stack)(Addr, SizeT);
 
    void VG_REGPARM(1) (*track_die_mem_stack_4)  (Addr);
@@ -183,14 +184,15 @@ typedef struct {
    void VG_REGPARM(1) (*track_die_mem_stack_12) (Addr);
    void VG_REGPARM(1) (*track_die_mem_stack_16) (Addr);
    void VG_REGPARM(1) (*track_die_mem_stack_32) (Addr);
-   void VG_REGPARM(1) (*track_die_mem_stack_112)(Addr);
-   void VG_REGPARM(1) (*track_die_mem_stack_128)(Addr);
-   void VG_REGPARM(1) (*track_die_mem_stack_144)(Addr);
-   void VG_REGPARM(1) (*track_die_mem_stack_160)(Addr);
+//   void VG_REGPARM(1) (*track_die_mem_stack_112)(Addr);
+//   void VG_REGPARM(1) (*track_die_mem_stack_128)(Addr);
+//   void VG_REGPARM(1) (*track_die_mem_stack_144)(Addr);
+//   void VG_REGPARM(1) (*track_die_mem_stack_160)(Addr);
    void (*track_die_mem_stack)(Addr, SizeT);
 
    void (*track_ban_mem_stack)(Addr, SizeT);
 
+   // Memory and register access trackers
    void (*track_pre_mem_read)       (CorePart, ThreadId, Char*, Addr, SizeT);
    void (*track_pre_mem_read_asciiz)(CorePart, ThreadId, Char*, Addr);
    void (*track_pre_mem_write)      (CorePart, ThreadId, Char*, Addr, SizeT);
@@ -200,6 +202,7 @@ typedef struct {
    void (*track_post_reg_write)(CorePart, ThreadId,        OffT, SizeT);
    void (*track_post_reg_write_clientcall_return)(ThreadId, OffT, SizeT, Addr);
 
+   // Other trackers
    void (*track_start_client_code)(ThreadId, ULong);
    void (*track_stop_client_code) (ThreadId, ULong);
 

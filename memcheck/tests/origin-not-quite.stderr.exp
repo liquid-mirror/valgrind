@@ -5,3 +5,7 @@ Conditional jump or move depends on uninitialised value(s)
 Conditional jump or move depends on uninitialised value(s)
    at 0x........: main (origin-not-quite.c:27)
  Uninitialised value has unknown origin
+
+Conditional jump or move depends on uninitialised value(s)
+   at 0x........: main (origin-not-quite.c:37)
+ Uninitialised value has unknown origin

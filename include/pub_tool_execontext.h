@@ -54,6 +54,10 @@ typedef
 // ThreadId should be passed in by the core.
 extern ExeContext* VG_(record_ExeContext) ( ThreadId tid );
 
+// This one is similar, but returns an ExeContext that contains only a
+// single code location.
+extern ExeContext* VG_(record_single_IP_ExeContext) ( Addr ip );
+
 // Returns true if the given pointer is a real ExeContext pointer.  Does
 // a linear (slow) lookup by value.
 extern ExeContext* is_an_ExeContext(UInt maybe_ec_low32);

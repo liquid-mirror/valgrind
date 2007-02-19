@@ -1,37 +1,45 @@
 Conditional jump or move depends on uninitialised value(s)
-   at 0x........: main (origin-yes.c:30)
- Uninitialised value has possible origin 1 on a stack
-
-Conditional jump or move depends on uninitialised value(s)
-   at 0x........: main (origin-yes.c:36)
- Uninitialised value has possible origin 1 on a stack
- Uninitialised value has possible origin 2 on a stack
+   at 0x........: main (origin-yes.c:32)
+ Uninitialised value has possible origin 1
+   at 0x........: main (origin-yes.c:19)
 
 Conditional jump or move depends on uninitialised value(s)
    at 0x........: main (origin-yes.c:43)
  Uninitialised value has possible origin 1
-   at 0x........: malloc (vg_replace_malloc.c:...)
-   by 0x........: main (origin-yes.c:41)
+   at 0x........: main (origin-yes.c:19)
 
 Conditional jump or move depends on uninitialised value(s)
-   at 0x........: main (origin-yes.c:54)
+   at 0x........: main (origin-yes.c:49)
+ Uninitialised value has possible origin 1
+   at 0x........: main (origin-yes.c:19)
+ Uninitialised value has possible origin 2
+   at 0x........: main (origin-yes.c:19)
+
+Conditional jump or move depends on uninitialised value(s)
+   at 0x........: main (origin-yes.c:56)
+ Uninitialised value has possible origin 1
+   at 0x........: malloc (vg_replace_malloc.c:...)
+   by 0x........: main (origin-yes.c:54)
+
+Conditional jump or move depends on uninitialised value(s)
+   at 0x........: main (origin-yes.c:67)
  Uninitialised value has possible origin 1
    at 0x........: realloc (vg_replace_malloc.c:...)
-   by 0x........: main (origin-yes.c:50)
+   by 0x........: main (origin-yes.c:63)
 
 Conditional jump or move depends on uninitialised value(s)
-   at 0x........: main (origin-yes.c:62)
+   at 0x........: main (origin-yes.c:75)
  Uninitialised value has possible origin 1
-   at 0x........: main (origin-yes.c:60)
+   at 0x........: main (origin-yes.c:73)
 
 Conditional jump or move depends on uninitialised value(s)
-   at 0x........: main (origin-yes.c:69)
+   at 0x........: main (origin-yes.c:82)
  Uninitialised value has possible origin 1
    at 0x........: brk (in /...libc...)
    by 0x........: ...
-   by 0x........: main (origin-yes.c:67)
+   by 0x........: main (origin-yes.c:80)
 
 Conditional jump or move depends on uninitialised value(s)
-   at 0x........: main (origin-yes.c:76)
+   at 0x........: main (origin-yes.c:89)
  Uninitialised value has possible origin 1
-   at 0x........: main (origin-yes.c:75)
+   at 0x........: main (origin-yes.c:88)

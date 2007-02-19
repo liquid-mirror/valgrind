@@ -27,5 +27,15 @@ int main(void)
       x += (undef_float == (float)234.56  ? 13 : 24);
    }
 
+   // Stack, 32-bit, recently modified.
+   // Problem here is that we don't chase backwards through loads and
+   // stores.  Ie. the variable is stored after it's been modified, then
+   // loaded again, so we don't see the unmodified version.
+   {
+      int modified_undef_stack_int;
+      modified_undef_stack_int++;
+      x += (modified_undef_stack_int == 0x1234 ? 11 : 22);
+   }
+   
    return x;
 }

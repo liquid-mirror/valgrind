@@ -343,7 +343,24 @@ extern VG_REGPARM(1) UWord MC_(helperc_LOADV16be) ( Addr );
 extern VG_REGPARM(1) UWord MC_(helperc_LOADV16le) ( Addr );
 extern VG_REGPARM(1) UWord MC_(helperc_LOADV8)    ( Addr );
 
-extern void MC_(helperc_MAKE_STACK_UNINIT) ( Addr base, UWord len );
+extern VG_REGPARM(3) void MC_(helperc_MAKE_STACK_UNINIT)
+                        ( Addr base, UWord len, UWord obfusc_ec_low32_UWord );
+
+/* SP update functions */
+extern VG_REGPARM(2) void MC_(new_mem_stack_4) (Addr new_SP, UWord x);
+extern VG_REGPARM(2) void MC_(new_mem_stack_8) (Addr new_SP, UWord x);
+extern VG_REGPARM(2) void MC_(new_mem_stack_12)(Addr new_SP, UWord x);
+extern VG_REGPARM(2) void MC_(new_mem_stack_16)(Addr new_SP, UWord x);
+extern VG_REGPARM(2) void MC_(new_mem_stack_32)(Addr new_SP, UWord x);
+extern VG_REGPARM(3) void MC_(new_mem_stack)   (Addr a, SizeT len, UWord x);
+
+extern VG_REGPARM(1) void MC_(die_mem_stack_4) (Addr die_SP);
+extern VG_REGPARM(1) void MC_(die_mem_stack_8) (Addr die_SP);
+extern VG_REGPARM(1) void MC_(die_mem_stack_12)(Addr die_SP);
+extern VG_REGPARM(1) void MC_(die_mem_stack_16)(Addr die_SP);
+extern VG_REGPARM(1) void MC_(die_mem_stack_32)(Addr die_SP);
+extern VG_REGPARM(2) void MC_(die_mem_stack)   (Addr a, SizeT len);
+
 
 /* Functions defined in mc_translate.c */
 extern

@@ -1,14 +1,14 @@
 
 /*--------------------------------------------------------------------*/
-/*--- The JITter wrapper.                     pub_core_translate.h ---*/
+/*--- Stack management.                          pub_tool_stacks.h ---*/
 /*--------------------------------------------------------------------*/
 
 /*
    This file is part of Valgrind, a dynamic binary instrumentation
    framework.
 
-   Copyright (C) 2000-2006 Julian Seward
-      jseward@acm.org
+   Copyright (C) 2007-2007 Nicholas Nethercote
+      njn@valgrind.org
 
    This program is free software; you can redistribute it and/or
    modify it under the terms of the GNU General Public License as
@@ -28,28 +28,16 @@
    The GNU General Public License is contained in the file COPYING.
 */
 
-#ifndef __PUB_CORE_TRANSLATE_H
-#define __PUB_CORE_TRANSLATE_H
+#ifndef __PUB_TOOL_STACKS_H
+#define __PUB_TOOL_STACKS_H
 
-#include "pub_tool_translate.h"
+// This is useful for tools doing their own SP-update handling, rather than
+// using the new_mem_stack/die_mem_stack events.  It can be called at
+// run-time when the SP changes to determine if we've switched to another
+// stack.
+extern Bool VG_(check_if_stack_has_changed)(Addr old_SP, Addr new_SP);
 
-//--------------------------------------------------------------------
-// PURPOSE: This module is Valgrind's interface to the JITter.  It's
-// basically a wrapper around Vex.  It also provides some helpful
-// instrumentation functions to the tool.
-//--------------------------------------------------------------------
-
-extern 
-Bool VG_(translate) ( ThreadId tid, 
-                      Addr64   orig_addr,
-                      Bool     debugging_translation,
-                      Int      debugging_verbosity,
-                      ULong    bbs_done,
-                      Bool     allow_redirection );
-
-extern void VG_(print_translation_stats) ( void );
-
-#endif   // __PUB_CORE_TRANSLATE_H
+#endif   // __PUB_TOOL_STACKS_H
 
 /*--------------------------------------------------------------------*/
 /*--- end                                                          ---*/

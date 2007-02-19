@@ -35,7 +35,8 @@
 #include "libvex.h"              // for all Vex stuff
 
 /* ------------------------------------------------------------------ */
-/* The interface version */
+/* The interface version                                              */
+/* ------------------------------------------------------------------ */
 
 /* The version number indicates binary-incompatible changes to the
    interface;  if the core and tool versions don't match, Valgrind
@@ -71,7 +72,8 @@ extern const ToolInfo VG_(tool_info);
    };
 
 /* ------------------------------------------------------------------ */
-/* Basic tool functions */
+/* Basic tool functions                                               */
+/* ------------------------------------------------------------------ */
 
 /* The tool_instrument function is passed as a callback to
    LibVEX_Translate.  VgCallbackClosure carries additional info
@@ -245,7 +247,8 @@ extern void VG_(basic_tool_funcs)(
 );
 
 /* ------------------------------------------------------------------ */
-/* Details */
+/* Details                                                            */
+/* ------------------------------------------------------------------ */
 
 /* Default value for avg_translations_sizeB (in bytes), indicating typical
    code expansion of about 6:1. */
@@ -273,7 +276,8 @@ extern void VG_(details_avg_translation_sizeB) ( UInt size );
 extern void VG_(details_bug_reports_to)   ( Char* bug_reports_to );
 
 /* ------------------------------------------------------------------ */
-/* Needs */
+/* Needs                                                              */
+/* ------------------------------------------------------------------ */
 
 /* Should __libc_freeres() be run?  Bugs in it can crash the tool. */
 extern void VG_(needs_libc_freeres) ( void );
@@ -440,7 +444,8 @@ extern void VG_(needs_malloc_replacement)(
 extern void VG_(needs_xml_output)( void );
 
 /* ------------------------------------------------------------------ */
-/* Core events to track */
+/* Core events to track                                               */
+/* ------------------------------------------------------------------ */
 
 /* Part of the core from which this call was made.  Useful for determining
    what kind of error message should be emitted. */
@@ -477,6 +482,9 @@ void VG_(track_die_mem_stack_signal)(void(*f)(Addr a, SizeT len));
 void VG_(track_die_mem_brk)         (void(*f)(Addr a, SizeT len));
 void VG_(track_die_mem_munmap)      (void(*f)(Addr a, SizeT len));
 
+/* ------------------------------------------------------------------ */
+/* Stack-change events. */
+
 /* These ones are called when SP changes.  A tool could track these itself
    (except for ban_mem_stack) but it's much easier to use the core's help.
 
@@ -484,35 +492,44 @@ void VG_(track_die_mem_munmap)      (void(*f)(Addr a, SizeT len));
    are defined.  These functions are called a lot if they are used, so
    specialising can optimise things significantly.  If any of the
    specialised cases are defined, the general case must be defined too.
+*/
 
-   Nb: all the specialised ones must use the VG_REGPARM(n) attribute.
- */
-void VG_(track_new_mem_stack_4)  (VG_REGPARM(1) void(*f)(Addr new_ESP));
-void VG_(track_new_mem_stack_8)  (VG_REGPARM(1) void(*f)(Addr new_ESP));
-void VG_(track_new_mem_stack_12) (VG_REGPARM(1) void(*f)(Addr new_ESP));
-void VG_(track_new_mem_stack_16) (VG_REGPARM(1) void(*f)(Addr new_ESP));
-void VG_(track_new_mem_stack_32) (VG_REGPARM(1) void(*f)(Addr new_ESP));
-void VG_(track_new_mem_stack_112)(VG_REGPARM(1) void(*f)(Addr new_ESP));
-void VG_(track_new_mem_stack_128)(VG_REGPARM(1) void(*f)(Addr new_ESP));
-void VG_(track_new_mem_stack_144)(VG_REGPARM(1) void(*f)(Addr new_ESP));
-void VG_(track_new_mem_stack_160)(VG_REGPARM(1) void(*f)(Addr new_ESP));
-void VG_(track_new_mem_stack)                  (void(*f)(Addr a, SizeT len));
+/* The first, simpler group. */
+ 
+// DYN is the type of a function that is passed an SP.  For new_mem_* it's
+// the new_SP, for die_mem_* it's the old_SP.  DYN_GEN is similar but also
+// gets the length.
+typedef VG_REGPARM(1) void(*DYN    )(Addr SP);
+typedef VG_REGPARM(2) void(*DYN_GEN)(Addr SP, SizeT len);
 
-void VG_(track_die_mem_stack_4)  (VG_REGPARM(1) void(*f)(Addr die_ESP));
-void VG_(track_die_mem_stack_8)  (VG_REGPARM(1) void(*f)(Addr die_ESP));
-void VG_(track_die_mem_stack_12) (VG_REGPARM(1) void(*f)(Addr die_ESP));
-void VG_(track_die_mem_stack_16) (VG_REGPARM(1) void(*f)(Addr die_ESP));
-void VG_(track_die_mem_stack_32) (VG_REGPARM(1) void(*f)(Addr die_ESP));
-void VG_(track_die_mem_stack_112)(VG_REGPARM(1) void(*f)(Addr die_ESP));
-void VG_(track_die_mem_stack_128)(VG_REGPARM(1) void(*f)(Addr die_ESP));
-void VG_(track_die_mem_stack_144)(VG_REGPARM(1) void(*f)(Addr die_ESP));
-void VG_(track_die_mem_stack_160)(VG_REGPARM(1) void(*f)(Addr die_ESP));
-void VG_(track_die_mem_stack)                  (void(*f)(Addr a, SizeT len));
+void VG_(track_new_mem_stack_4)  (DYN);
+void VG_(track_new_mem_stack_8)  (DYN);
+void VG_(track_new_mem_stack_12) (DYN);
+void VG_(track_new_mem_stack_16) (DYN);
+void VG_(track_new_mem_stack_32) (DYN);
+//void VG_(track_new_mem_stack_112)(DYN);
+//void VG_(track_new_mem_stack_128)(DYN);
+//void VG_(track_new_mem_stack_144)(DYN);
+//void VG_(track_new_mem_stack_160)(DYN);
+void VG_(track_new_mem_stack)    (DYN_GEN);
+
+void VG_(track_die_mem_stack_4)  (DYN);
+void VG_(track_die_mem_stack_8)  (DYN);
+void VG_(track_die_mem_stack_12) (DYN);
+void VG_(track_die_mem_stack_16) (DYN);
+void VG_(track_die_mem_stack_32) (DYN);
+//void VG_(track_die_mem_stack_112)(DYN);
+//void VG_(track_die_mem_stack_128)(DYN);
+//void VG_(track_die_mem_stack_144)(DYN);
+//void VG_(track_die_mem_stack_160)(DYN);
+void VG_(track_die_mem_stack)    (DYN_GEN);
 
 /* Used for redzone at end of thread stacks */
 void VG_(track_ban_mem_stack)      (void(*f)(Addr a, SizeT len));
 
-/* These ones occur around syscalls, signal handling, etc */
+/* ------------------------------------------------------------------ */
+/* Memory read/write events. 
+ * These ones occur around syscalls, signal handling, etc */
 void VG_(track_pre_mem_read)       (void(*f)(CorePart part, ThreadId tid,
                                              Char* s, Addr a, SizeT size));
 void VG_(track_pre_mem_read_asciiz)(void(*f)(CorePart part, ThreadId tid,
@@ -522,8 +539,9 @@ void VG_(track_pre_mem_write)      (void(*f)(CorePart part, ThreadId tid,
 void VG_(track_post_mem_write)     (void(*f)(CorePart part, ThreadId tid,
                                              Addr a, SizeT size));
 
-/* Register events.  Use VG_(set_shadow_state_area)() to set the shadow regs
-   for these events.  */
+/* ------------------------------------------------------------------ */
+/* Register events.  
+   Use VG_(set_shadow_state_area)() to set the shadow regs for these events. */
 void VG_(track_pre_reg_read)  (void(*f)(CorePart part, ThreadId tid,
                                         Char* s, OffT guest_state_offset,
                                         SizeT size));
@@ -536,7 +554,8 @@ void VG_(track_post_reg_write_clientcall_return)(
       void(*f)(ThreadId tid, OffT guest_state_offset, SizeT size, Addr f));
 
 
-/* Scheduler events (not exhaustive) */
+/* ------------------------------------------------------------------ */
+/* Scheduler events. */
 
 /* Called when 'tid' starts or stops running client code blocks.
    Gives the total dispatched block count at that event.  Note, this is
@@ -555,20 +574,21 @@ void VG_(track_stop_client_code)(
      );
 
 
-/* Thread events (not exhaustive)
+/* ------------------------------------------------------------------ */
+/* Thread events. */
 
-   Called during thread create, before the new thread has run any
+/* Called during thread create, before the new thread has run any
    instructions (or touched any memory).
  */
 void VG_(track_post_thread_create)(void(*f)(ThreadId tid, ThreadId child));
 void VG_(track_post_thread_join)  (void(*f)(ThreadId joiner, ThreadId joinee));
 
 
-/* Signal events (not exhaustive)
+/* ------------------------------------------------------------------ */
+/* Signal events.
+   (We could add more, eg. pre_send_signal, post_send_signal.) */
 
-   ... pre_send_signal, post_send_signal ...
-
-   Called before a signal is delivered;  `alt_stack' indicates if it is
+/* Called before a signal is delivered;  `alt_stack' indicates if it is
    delivered on an alternative stack.  */
 void VG_(track_pre_deliver_signal) (void(*f)(ThreadId tid, Int sigNo,
                                              Bool alt_stack));

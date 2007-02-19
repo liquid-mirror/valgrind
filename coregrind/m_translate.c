@@ -61,36 +61,30 @@
 /*--- Stats                                                ---*/
 /*------------------------------------------------------------*/
 
-static UInt n_SP_delta_known_and_handled           = 0;
-static UInt n_SP_delta_known_but_unhandled_by_core = 0;
-static UInt n_SP_delta_known_but_unhandled_by_tool = 0;
-static UInt n_SP_delta_unknown                     = 0;
+static UInt n_SP_delta_known_and_handled   = 0;
+static UInt n_SP_delta_known_but_unhandled = 0;
+static UInt n_SP_delta_unknown             = 0;
 
 void VG_(print_translation_stats) ( void )
 {
    Char buf[6];
    UInt n_tot =
-      n_SP_delta_known_and_handled + n_SP_delta_known_but_unhandled_by_core +
-      n_SP_delta_known_but_unhandled_by_tool + n_SP_delta_unknown;
+      n_SP_delta_known_and_handled + n_SP_delta_known_but_unhandled +
+      n_SP_delta_unknown;
 
    VG_(percentify)(n_SP_delta_known_and_handled, n_tot, 1, 6, buf);
    VG_(message)(Vg_DebugMsg,
-      " SP instr: delta known and handled:           %,7u (%s)",
+      " SP instr: delta known and handled:   %,7u (%s)",
       n_SP_delta_known_and_handled, buf );
 
-   VG_(percentify)(n_SP_delta_known_but_unhandled_by_tool, n_tot, 1, 6, buf);
+   VG_(percentify)(n_SP_delta_known_but_unhandled, n_tot, 1, 6, buf);
    VG_(message)(Vg_DebugMsg,
-      " SP instr: delta known but unhandled by tool: %,7u (%s)",
-      n_SP_delta_known_but_unhandled_by_tool, buf );
-
-   VG_(percentify)(n_SP_delta_known_but_unhandled_by_core, n_tot, 1, 6, buf);
-   VG_(message)(Vg_DebugMsg,
-      " SP instr: delta known but unhandled by core: %,7u (%s)",
-      n_SP_delta_known_but_unhandled_by_core, buf );
+      " SP instr: delta known but unhandled: %,7u (%s)",
+      n_SP_delta_known_but_unhandled, buf );
 
    VG_(percentify)(n_SP_delta_unknown, n_tot, 1, 6, buf);
    VG_(message)(Vg_DebugMsg,
-      " SP instr: delta unknown:                     %,7u (%s)",
+      " SP instr: delta unknown:             %,7u (%s)",
       n_SP_delta_unknown, buf );
 }
 
@@ -100,26 +94,11 @@ void VG_(print_translation_stats) ( void )
 
 static Bool need_to_handle_SP_assignment(void)
 {
-   return ( VG_(tdict).track_new_mem_stack_4   ||
-            VG_(tdict).track_die_mem_stack_4   ||
-            VG_(tdict).track_new_mem_stack_8   ||
-            VG_(tdict).track_die_mem_stack_8   ||
-            VG_(tdict).track_new_mem_stack_12  ||
-            VG_(tdict).track_die_mem_stack_12  ||
-            VG_(tdict).track_new_mem_stack_16  ||
-            VG_(tdict).track_die_mem_stack_16  ||
-            VG_(tdict).track_new_mem_stack_32  ||
-            VG_(tdict).track_die_mem_stack_32  ||
-            VG_(tdict).track_new_mem_stack_112 ||
-            VG_(tdict).track_die_mem_stack_112 ||
-            VG_(tdict).track_new_mem_stack_128 ||
-            VG_(tdict).track_die_mem_stack_128 ||
-            VG_(tdict).track_new_mem_stack_144 ||
-            VG_(tdict).track_die_mem_stack_144 ||
-            VG_(tdict).track_new_mem_stack_160 ||
-            VG_(tdict).track_die_mem_stack_160 ||
-            VG_(tdict).track_new_mem_stack     ||
-            VG_(tdict).track_die_mem_stack     );
+   // The tests in m_tooliface.c ensure that if any of the new_mem_stack_*
+   // ones are set, one of the generic ones is set, and likewise for the
+   // die_mem_stack_* ones.  So we only need to check those.
+   return ( VG_(tdict).track_new_mem_stack ||
+            VG_(tdict).track_die_mem_stack );
 }
 
 // - The SP aliases are held in an array which is used as a circular buffer.
@@ -188,86 +167,270 @@ static Bool get_SP_delta(IRTemp temp, ULong* delta)
    return False;
 }
 
-static void update_SP_aliases(Long delta)
+
+static void reset_SP_update_state(void)
 {
-   Int i;
-   for (i = 0; i < N_ALIASES; i++) {
-      if (SP_aliases[i].temp == IRTemp_INVALID) {
-         return;
-      }
-      SP_aliases[i].delta += delta;
-   }
+   clear_SP_aliases();
 }
 
+static Bool find_next_SP_update(
+             IRSB*    sb_in,
+      VexGuestLayout* layout,
+             IRStmt*  prev_SP_update_stmt,
+             Int      start_stmt_i,
+      /*out*/Int*     out_update_stmt_i,
+      /*out*/Addr*    out_ip,
+      /*out*/IRExpr** out_update_expr,
+      /*out*/Bool*    out_is_delta_known,
+      /*out*/Long*    out_delta_szB)
+{
+#  define IS_ADD(op) (sizeof_SP==4 ? ((op)==Iop_Add32) : ((op)==Iop_Add64))
+#  define IS_SUB(op) (sizeof_SP==4 ? ((op)==Iop_Sub32) : ((op)==Iop_Sub64))
+
+#  define IS_ADD_OR_SUB(op) (IS_ADD(op) || IS_SUB(op))
+
+#  define GET_CONST(con)                                                \
+       (sizeof_SP==4 ? (Long)(Int)(con->Ico.U32)                        \
+                     : (Long)(con->Ico.U64))
+
+   // Nb: sometimes this function gets called twice within the IR for a
+   // single instruction -- some x86 instructions do two stack updates.
+   // So we make 'ip' static so that it remembers the previous one, and thus
+   // handles this case correctly.
+   static Addr ip = 0;
+
+   Int         j, minoff_ST, maxoff_ST;
+   IRRegArray* descr;
+   Long        con, delta_szB = 0;
+   Int         i = start_stmt_i;
+
+   Int    sizeof_SP = layout->sizeof_SP;
+   Int    offset_SP = layout->offset_SP;
+   IRType typeof_SP = sizeof_SP==4 ? Ity_I32 : Ity_I64;
+   vg_assert(sizeof_SP == 4 || sizeof_SP == 8);
+
+   if (prev_SP_update_stmt) {
+      IRExpr* prev_SP_update_expr = prev_SP_update_stmt->Ist.Put.data;
+      tl_assert(prev_SP_update_stmt->tag            == Ist_Put   &&
+                prev_SP_update_stmt->Ist.Put.offset == offset_SP &&
+                prev_SP_update_expr->tag            == Iex_RdTmp);
+         // Nb: this add_SP_alias call is crucial, without it our
+         // delta-identification rates go way down.
+         clear_SP_aliases();
+         add_SP_alias(prev_SP_update_expr->Iex.RdTmp.tmp, 0);
+   }
+
+   for ( ; i < sb_in->stmts_used; i++) {
+
+      IRStmt* st = sb_in->stmts[i];
+
+      switch (st->tag) {
+
+         case Ist_IMark:
+            ip = (Addr)st->Ist.IMark.addr;
+            break;
+
+         case Ist_WrTmp: {
+            IRExpr* data = st->Ist.WrTmp.data;
+            if (data->tag            == Iex_Get &&
+                data->Iex.Get.offset == offset_SP &&
+                data->Iex.Get.ty     == typeof_SP)
+            {
+               /* t = Get(sp):   curr = t, delta = 0 */
+               add_SP_alias(st->Ist.WrTmp.tmp, 0);
+            }
+            else if (data->tag                 == Iex_Binop &&
+                     data->Iex.Binop.arg1->tag == Iex_RdTmp &&
+                     data->Iex.Binop.arg2->tag == Iex_Const &&
+                     get_SP_delta(data->Iex.Binop.arg1->Iex.RdTmp.tmp,
+                                  &delta_szB) &&
+                     IS_ADD_OR_SUB(data->Iex.Binop.op))
+            {
+               /* t = curr +/- const:   curr = t,  delta_szB +=/-= const */
+               con = GET_CONST(data->Iex.Binop.arg2->Iex.Const.con);
+               if (IS_ADD(data->Iex.Binop.op)) {
+                  add_SP_alias(st->Ist.WrTmp.tmp, delta_szB + con);
+               } else {
+                  add_SP_alias(st->Ist.WrTmp.tmp, delta_szB - con);
+               }
+            }
+            else if (data->tag == Iex_RdTmp &&
+                     get_SP_delta(data->Iex.RdTmp.tmp, &delta_szB))
+            {
+               /* t = curr:   curr = t */
+               add_SP_alias(st->Ist.WrTmp.tmp, delta_szB);
+            }
+            break;
+         }
+
+         case Ist_Put:
+            if (st->Ist.Put.offset    == offset_SP &&
+                st->Ist.Put.data->tag == Iex_RdTmp)
+            {
+               // A 'Put' to SP
+               *out_ip            = ip;
+               *out_update_stmt_i = i;
+               *out_update_expr   = st->Ist.Put.data;
+               if (get_SP_delta( (*out_update_expr)->Iex.RdTmp.tmp,
+                                 &delta_szB )) {
+                  /* Put(sp) = curr (delta known) */
+                  *out_is_delta_known = True;
+                  *out_delta_szB      = delta_szB;
+               } else {
+                  /* Put(sp) = non-curr (delta unknown) */
+                  *out_is_delta_known = False;
+                  *out_delta_szB      = 0;   // shouldn't be read,
+               }                             // but just in case
+               // We've found the SP update!  Return.
+               return True;
+            }
+            break;
+
+         case Ist_PutI:
+            /* PutI or Dirty call which overlaps SP: complain.  We can't
+               deal with SP changing in weird ways (well, we can, but not at
+               this time of night).  */
+            descr = st->Ist.PutI.descr;
+            minoff_ST = descr->base;
+            maxoff_ST = descr->base + descr->nElems *
+                                          sizeofIRType(descr->elemTy) - 1;
+            if (!(offset_SP > maxoff_ST || 
+                 (offset_SP + sizeof_SP - 1) < minoff_ST)) {
+               VG_(core_panic)("find_next_SP_update: PutI overlaps SP");
+            }
+            break;
+
+         case Ist_Dirty: {
+            IRDirty* d = st->Ist.Dirty.details;
+            for (j = 0; j < d->nFxState; j++) {
+               minoff_ST = d->fxState[j].offset;
+               maxoff_ST = d->fxState[j].offset + d->fxState[j].size - 1;
+               if (d->fxState[j].fx == Ifx_Read || d->fxState[j].fx == Ifx_None)
+                  break;
+               if (!(offset_SP > maxoff_ST ||
+                    (offset_SP + sizeof_SP - 1) < minoff_ST)) {
+                  VG_(core_panic)("find_next_SP_update: Dirty overlaps SP");
+               }
+            }
+            break;
+         }
+
+         default:
+            /* Not interesting.  Just skip and keep going. */
+            break;
+      }
+   }
+
+   // We hit the block's end without finding an SP update.  The outputs
+   // shouldn't be looked at by the caller, but fill in with zeroes just in
+   // case.
+   *out_ip             = 0;
+   *out_update_stmt_i  = 0;
+   *out_update_expr    = 0;
+   *out_is_delta_known = False;
+   *out_delta_szB      = 0;
+   return False;
+}
 
 // Nb: if all is well, this generic case will typically be called something
 // like < 10% of all (static) SP updates.  If it's more than that, the above
 // code may be missing some cases.
-static void
-add_call_to_generic_SP_update(IRSB* bb, IRStmt* st, IRType typeof_SP,
-                              Int sizeof_SP, Int offset_SP, Bool delta_known)
+static IRDirty*
+prep_call_to_generic_SP_update_fn(IRSB* sb_out, VexGuestLayout* layout,
+                                  IRStmt* st, Addr ip)
 {
    IRTemp old_SP;
-   IRDirty *dcall;
+   IRType typeof_SP = layout->sizeof_SP==4 ? Ity_I32 : Ity_I64;
 
    /* Pass both the old and new SP values to this helper. */
-   old_SP = newIRTemp(bb->tyenv, typeof_SP);
-   addStmtToIRSB( bb,
-                  IRStmt_WrTmp( old_SP, IRExpr_Get(offset_SP, typeof_SP) ) 
+   old_SP = newIRTemp(sb_out->tyenv, typeof_SP);
+   addStmtToIRSB( sb_out,
+                  IRStmt_WrTmp( old_SP,
+                                IRExpr_Get(layout->offset_SP, typeof_SP) ) 
    );
 
-   // Update SP first, then call the helper.  This ensures that, in the
-   // new_mem_stack_* case, that the memory allocated is really allocated
-   // before the helper is called, and thus the helper is able to access
-   // it if wants.
-   dcall = unsafeIRDirty_0_N( 
-              2/*regparms*/, 
-              "VG_(unknown_SP_update)", 
-              VG_(fnptr_to_fnentry)( &VG_(unknown_SP_update) ),
-              mkIRExprVec_2( IRExpr_RdTmp(old_SP),
-                             st->Ist.Put.data ) 
-           );
-   addStmtToIRSB( bb, st );
-   addStmtToIRSB( bb, IRStmt_Dirty(dcall) );
-
-   clear_SP_aliases();
-   add_SP_alias(st->Ist.Put.data->Iex.RdTmp.tmp, 0);
-
-   if (delta_known) {
-      n_SP_delta_known_but_unhandled_by_core++;
-   } else {
-      n_SP_delta_unknown++;
-   }
+   return unsafeIRDirty_0_N( 
+            2/*regparms*/, 
+            "VG_(unknown_SP_update)", 
+            VG_(fnptr_to_fnentry)( &VG_(unknown_SP_update) ),
+            mkIRExprVec_2( IRExpr_RdTmp(old_SP),
+                           st->Ist.Put.data ) 
+         );
 }
 
-static void
-maybe_add_call_to_specialised_SP_update( 
-   IRSB* bb, IRStmt* st, Char* tdict_fn_string,
-   VG_REGPARM(1) void(*tdict_fn)(Addr), IRTemp tmp, Int delta)
+static IRDirty*
+prep_call_to_possibly_specialised_SP_update_fn( 
+   IRSB* sb_out, VexGuestLayout* layout, IRStmt* st, Addr ip,
+   Char* tdict_fn_string, VG_REGPARM(1) void(*tdict_fn)(Addr),
+   IRExpr* SP_update_expr)
 {
    if (tdict_fn) {
-
-      IRDirty *dcall = unsafeIRDirty_0_N(
-                          1/*regparms*/,
-                          tdict_fn_string,
-                          VG_(fnptr_to_fnentry)( tdict_fn ),
-                          mkIRExprVec_1(IRExpr_RdTmp(tmp))
-                       );
-
-      // Update SP first, then call the helper.  See comment in
-      // add_call_to_generic_SP_update() for why.
-      addStmtToIRSB( bb, st );
-      addStmtToIRSB( bb, IRStmt_Dirty(dcall) );
-
-      update_SP_aliases(-delta);
-
-      n_SP_delta_known_and_handled++;
-
+      return unsafeIRDirty_0_N(
+                  1/*regparms*/, tdict_fn_string,
+                  VG_(fnptr_to_fnentry)( tdict_fn ),
+                  mkIRExprVec_1(SP_update_expr)
+               );
    } else {
-      n_SP_delta_known_but_unhandled_by_tool++;
+      return prep_call_to_generic_SP_update_fn(sb_out, layout, st, ip);
    }  
 }
 
+static Bool vg_handle_SP_update(IRSB* sb_in, IRSB* sb_out,
+                  VexGuestLayout* layout, Int i, IRStmt* st, Addr ip,
+                  IRExpr* SP_update_expr, Bool is_delta_known, Int delta_szB)
+{
+   IRDirty* dcall = NULL;
+   Bool specialised = True;
+
+   if (!is_delta_known) {
+      delta_szB = 99999;   // Something that doesn't match the switch below
+   }
+   tl_assert(SP_update_expr->tag = Iex_RdTmp);
+
+   switch (delta_szB) {
+      #define DO(kind, size) \
+         prep_call_to_possibly_specialised_SP_update_fn( sb_out, layout, \
+            st, ip, \
+            "VG_(tdict).track_"#kind "_mem_stack_"#size, \
+             VG_(tdict).track_##kind##_mem_stack_##size, \
+            SP_update_expr);
+      /* common values for ppc64: 144 128 160 112 176 */
+      case    0:                      break;
+      case    4: dcall = DO(die,  4); break;
+      case   -4: dcall = DO(new,  4); break;
+      case    8: dcall = DO(die,  8); break;
+      case   -8: dcall = DO(new,  8); break;
+      case   12: dcall = DO(die, 12); break;
+      case  -12: dcall = DO(new, 12); break;
+      case   16: dcall = DO(die, 16); break;
+      case  -16: dcall = DO(new, 16); break;
+      case   32: dcall = DO(die, 32); break;
+      case  -32: dcall = DO(new, 32); break;
+// XXX: omitting the rare cases here.
+//    case  112: DO(die, 112, t); break;
+//    case -112: DO(new, 112, t); break;
+//    case  128: DO(die, 128, t); break;
+//    case -128: DO(new, 128, t); break;
+//    case  144: DO(die, 144, t); break;
+//    case -144: DO(new, 144, t); break;
+//    case  160: DO(die, 160, t); break;
+//    case -160: DO(new, 160, t); break;
+      default:  
+         dcall = prep_call_to_generic_SP_update_fn(sb_out, layout, st, ip);
+         specialised = False;
+         break;
+   }
+
+   // Update SP first, then call the helper.  This ensures that, in
+   // the new_mem_stack_* case, that the memory allocated is really
+   // allocated before the helper is called, and thus the helper is
+   // able to access it if it wants.
+   addStmtToIRSB( sb_out, st );
+   if (dcall)
+      addStmtToIRSB( sb_out, IRStmt_Dirty(dcall) );
+
+   return specialised;
+}
 
 /* For tools that want to know about SP changes, this pass adds
    in the appropriate hooks.  We have to do it after the tool's
@@ -284,173 +447,78 @@ maybe_add_call_to_specialised_SP_update(
    constants, we can do a specific call to eg. new_mem_stack_4, otherwise
    we fall back to the case that handles an unknown SP change.
 */
-static
-IRSB* vg_SP_update_pass ( void*             closureV,
-                          IRSB*             sb_in, 
-                          VexGuestLayout*   layout, 
-                          VexGuestExtents*  vge,
-                          IRType            gWordTy, 
-                          IRType            hWordTy )
+IRSB* VG_(SP_update_pass) (
+         IRSB*             sb_in, 
+         VexGuestLayout*   layout, 
+         Bool(*my_handle_SP_update)(IRSB*, IRSB*, VexGuestLayout*, Int,
+                                    IRStmt*, Addr, IRExpr*, Bool, Int)
+      )
 {
-   Int         i, j, minoff_ST, maxoff_ST, sizeof_SP, offset_SP;
-   IRStmt*     st;
-   IRRegArray* descr;
-   IRType      typeof_SP;
-   Long        delta, con;
+   Int      i, next_i;
+   IRStmt*  st = NULL;
+   IRExpr*  SP_update_expr;
+   Long     delta_szB = 0;
+   Addr     ip = 0;
+   Bool     is_delta_known, found_SP_update, specialised;
 
-   /* Set up BB */
-   IRSB* bb     = emptyIRSB();
-   bb->tyenv    = deepCopyIRTypeEnv(sb_in->tyenv);
-   bb->next     = deepCopyIRExpr(sb_in->next);
-   bb->jumpkind = sb_in->jumpkind;
+   /* Set up SB */
+   IRSB* sb_out     = emptyIRSB();
+   sb_out->tyenv    = deepCopyIRTypeEnv(sb_in->tyenv);
+   sb_out->next     = deepCopyIRExpr(sb_in->next);
+   sb_out->jumpkind = sb_in->jumpkind;
 
-   delta = 0;
+   reset_SP_update_state();
 
-   sizeof_SP = layout->sizeof_SP;
-   offset_SP = layout->offset_SP;
-   typeof_SP = sizeof_SP==4 ? Ity_I32 : Ity_I64;
-   vg_assert(sizeof_SP == 4 || sizeof_SP == 8);
+   // Find the first SP-update statement.
+   found_SP_update =
+      find_next_SP_update(sb_in, layout, NULL, 0, &next_i, &ip,
+                          &SP_update_expr, &is_delta_known, &delta_szB);
 
-#  define IS_ADD(op) (sizeof_SP==4 ? ((op)==Iop_Add32) : ((op)==Iop_Add64))
-#  define IS_SUB(op) (sizeof_SP==4 ? ((op)==Iop_Sub32) : ((op)==Iop_Sub64))
-
-#  define IS_ADD_OR_SUB(op) (IS_ADD(op) || IS_SUB(op))
-
-#  define GET_CONST(con)                                                \
-       (sizeof_SP==4 ? (Long)(Int)(con->Ico.U32)                        \
-                     : (Long)(con->Ico.U64))
-
-   clear_SP_aliases();
-
-   for (i = 0; i <  sb_in->stmts_used; i++) {
+   for (i = 0; i < sb_in->stmts_used; i++) {
 
       st = sb_in->stmts[i];
 
-      switch (st->tag) {
+      // If the statement is an SP-update, post-instrument the SP-update
+      // with the appropriate call.  These functions copy the SP-update
+      // statement also.
+      if (found_SP_update && i == next_i) {
+         specialised = my_handle_SP_update(sb_in, sb_out, layout, i, st, ip,
+                           SP_update_expr, is_delta_known, delta_szB);
 
-         case Ist_WrTmp: {
-            IRExpr* data = st->Ist.WrTmp.data;
-            if (data->tag            == Iex_Get &&
-                data->Iex.Get.offset == offset_SP &&
-                data->Iex.Get.ty     == typeof_SP)
-            {
-               /* t = Get(sp):   curr = t, delta = 0 */
-               add_SP_alias(st->Ist.WrTmp.tmp, 0);
-            }
-            else if (data->tag                 == Iex_Binop &&
-                     data->Iex.Binop.arg1->tag == Iex_RdTmp &&
-                     data->Iex.Binop.arg2->tag == Iex_Const &&
-                     get_SP_delta(data->Iex.Binop.arg1->Iex.RdTmp.tmp,&delta) &&
-                     IS_ADD_OR_SUB(data->Iex.Binop.op))
-            {
-               /* t = curr +/- const:   curr = t,  delta +=/-= const */
-               con = GET_CONST(data->Iex.Binop.arg2->Iex.Const.con);
-               if (IS_ADD(data->Iex.Binop.op)) {
-                  add_SP_alias(st->Ist.WrTmp.tmp, delta + con);
-               } else {
-                  add_SP_alias(st->Ist.WrTmp.tmp, delta - con);
-               }
-            }
-            else if (data->tag == Iex_RdTmp &&
-                     get_SP_delta(data->Iex.RdTmp.tmp, &delta))
-            {
-               /* t = curr:   curr = t */
-               add_SP_alias(st->Ist.WrTmp.tmp, delta);
-            }
-            addStmtToIRSB( bb, st );
-            break;
-         }
-
-         #define DO(kind, size, tmp) \
-            maybe_add_call_to_specialised_SP_update( \
-               bb, st, "VG_(tdict)." #kind "_mem_stack_" #size, \
-               VG_(tdict).track_##kind##_mem_stack_##size, t, delta);
-         case Ist_Put:
-            if (st->Ist.Put.offset    == offset_SP &&
-                st->Ist.Put.data->tag == Iex_RdTmp)
-            {
-                if (get_SP_delta(st->Ist.Put.data->Iex.RdTmp.tmp, &delta)) {
-                  /* Put(sp) = curr */
-                  IRTemp t = st->Ist.Put.data->Iex.RdTmp.tmp;
-                  switch (delta) {
-                     /* common values for ppc64: 144 128 160 112 176 */
-                     case    0:                 break;
-                     case    4: DO(die,  4, t); break;
-                     case   -4: DO(new,  4, t); break;
-                     case    8: DO(die,  8, t); break;
-                     case   -8: DO(new,  8, t); break;
-                     case   12: DO(die, 12, t); break;
-                     case  -12: DO(new, 12, t); break;
-                     case   16: DO(die, 16, t); break;
-                     case  -16: DO(new, 16, t); break;
-                     case   32: DO(die, 32, t); break;
-                     case  -32: DO(new, 32, t); break;
-// XXX: omitting the rare cases here.
-//                     case  112: DO(die, 112, t); break;
-//                     case -112: DO(new, 112, t); break;
-//                     case  128: DO(die, 128, t); break;
-//                     case -128: DO(new, 128, t); break;
-//                     case  144: DO(die, 144, t); break;
-//                     case -144: DO(new, 144, t); break;
-//                     case  160: DO(die, 160, t); break;
-//                     case -160: DO(new, 160, t); break;
-                     default:  
-                        add_call_to_generic_SP_update(bb, st, typeof_SP,
-                                                      sizeof_SP, offset_SP,
-                                                      /*delta_known*/True);
-                        break;
-                  }
-               } else {
-                  /* Put(sp) = non-curr */
-                  add_call_to_generic_SP_update(bb, st, typeof_SP,
-                                                sizeof_SP, offset_SP,
-                                                /*delta_unknown*/False);
-               }
+         if (is_delta_known) {
+            if (specialised) {
+               n_SP_delta_known_and_handled++;
             } else {
-               // 'Put' of a register other than SP.
-               addStmtToIRSB( bb, st );
+               n_SP_delta_known_but_unhandled++;
             }
-            break;
-
-         case Ist_PutI:
-            /* PutI or Dirty call which overlaps SP: complain.  We can't
-               deal with SP changing in weird ways (well, we can, but not at
-               this time of night).  */
-            descr = st->Ist.PutI.descr;
-            minoff_ST = descr->base;
-            maxoff_ST = descr->base + descr->nElems *
-                                          sizeofIRType(descr->elemTy) - 1;
-            if (!(offset_SP > maxoff_ST || 
-                 (offset_SP + sizeof_SP - 1) < minoff_ST)) {
-               VG_(core_panic)("vg_SP_update_pass: PutI which overlaps SP");
-            }
-            addStmtToIRSB( bb, st );
-            break;
-
-         case Ist_Dirty: {
-            IRDirty* d = st->Ist.Dirty.details;
-            for (j = 0; j < d->nFxState; j++) {
-               minoff_ST = d->fxState[j].offset;
-               maxoff_ST = d->fxState[j].offset + d->fxState[j].size - 1;
-               if (d->fxState[j].fx == Ifx_Read || d->fxState[j].fx == Ifx_None)
-                  break;
-               if (!(offset_SP > maxoff_ST ||
-                    (offset_SP + sizeof_SP - 1) < minoff_ST)) {
-                  VG_(core_panic)("vg_SP_update_pass: Dirty which overlaps SP");
-               }
-            }
-            addStmtToIRSB( bb, st );
-            break;
+         } else {
+            n_SP_delta_unknown++;
          }
 
-         default:
-            /* Not interesting.  Just copy and keep going. */
-            addStmtToIRSB( bb, st );
-            break;
+         // Now find the next SP-update statement.
+         found_SP_update =
+            find_next_SP_update(sb_in, layout, st, i+1,
+                                &next_i, &ip, &SP_update_expr,
+                                &is_delta_known, &delta_szB);
+      } else {
+         // Not an SP-update: copy the statement.
+         addStmtToIRSB( sb_out, st );
       }
-   } /* for (i = 0; i < sb_in->stmts_used; i++) */
+   }
 
-   return bb;
+   return sb_out;
+}
+
+static IRSB* vg_SP_update_pass ( void*            closere,
+                                 IRSB*            sb_in, 
+                                 VexGuestLayout*  layout, 
+                                 VexGuestExtents* vge,
+                                 IRType           gWordTy, 
+                                 IRType           hWordTy
+      )
+{
+   return VG_(SP_update_pass)(sb_in, layout, vg_handle_SP_update);
+         
 }
 
 /*------------------------------------------------------------*/
@@ -1400,3 +1468,4 @@ Bool VG_(translate) ( ThreadId tid,
 /*--------------------------------------------------------------------*/
 /*--- end                                                          ---*/
 /*--------------------------------------------------------------------*/
+

@@ -18,12 +18,12 @@ int main(void)
       x += (undef_char == 0x12 ? 11 : 22);
    }
 
-   // 16-bit undefined value.  When compared it's loaded from memory, so
-   // will never work.
+   // Stack, 8-bit from (recently) 32-bit.  But the load only loads 8-bits
+   // of the value, so it'll never work.
    {
-      short* ptr_to_undef_short = malloc(sizeof(short));
-      short  undef_short = *ptr_to_undef_short;
-      x += (undef_short == 0x1234 ? 12 : 23);
+      int undef_stack_int;
+      register char undef_stack_char = (char)undef_stack_int;
+      x += (undef_stack_char == 0x12 ? 11 : 22);
    }
 
    // 32-bit undefined value.  This one is identified, and is here for

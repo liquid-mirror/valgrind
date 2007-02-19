@@ -101,6 +101,21 @@ static void init_ExeContext_storage ( void )
    init_done = True;
 }
 
+//static void print_all_ExeContexts(void)
+//{
+//   Int i, n = 0;
+//   ExeContext* curr;
+//
+//   for (i = 0; i < N_EC_LISTS; i++) {
+//      curr = ec_list[i];
+//      while (curr) {
+//         VG_(printf)("-- %d --\n", n);
+//         VG_(pp_ExeContext)(curr);
+//         curr = curr->next;
+//         n++;
+//      }
+//   }
+//}
 
 /* Print stats. */
 void VG_(print_ExeContext_stats) ( void )
@@ -121,6 +136,7 @@ void VG_(print_ExeContext_stats) ( void )
       "   exectx: %,llu cmp2, %,llu cmp4, %,llu cmpAll",
       ec_cmp2s, ec_cmp4s, ec_cmpAlls 
    );
+//   print_all_ExeContexts();
 }
 
 
@@ -206,15 +222,13 @@ static UWord compute_hash(Addr* ips, UInt n_ips)
    return hash;
 }
 
-ExeContext* VG_(record_ExeContext) ( ThreadId tid )
+static ExeContext* record_ExeContext_wrk(Addr* ips, UInt n_ips)
 {
    Int         i;
-   Addr        ips[VG_DEEPEST_BACKTRACE];
    Bool        same;
    UWord       hash;
    ExeContext* new_ec;
    ExeContext* list;
-   UInt        n_ips;
    ExeContext  *prev2, *prev;
 
    static UInt ctr = 0;
@@ -222,12 +236,10 @@ ExeContext* VG_(record_ExeContext) ( ThreadId tid )
    vg_assert(sizeof(void*) == sizeof(UWord));
    vg_assert(sizeof(void*) == sizeof(Addr));
 
-   init_ExeContext_storage();
    vg_assert(VG_(clo_backtrace_size) >= 1 &&
              VG_(clo_backtrace_size) <= VG_DEEPEST_BACKTRACE);
 
-   n_ips = VG_(get_StackTrace)( tid, ips, VG_(clo_backtrace_size) );
-   tl_assert(n_ips >= 1);
+   init_ExeContext_storage();
 
    /* Now figure out if we've seen this one before.  First hash it so
       as to determine the list number. */
@@ -287,6 +299,26 @@ ExeContext* VG_(record_ExeContext) ( ThreadId tid )
    ec_list[hash] = new_ec;
 
    return new_ec;
+}
+
+
+ExeContext* VG_(record_ExeContext) ( ThreadId tid )
+{
+   Addr ips[VG_DEEPEST_BACKTRACE];
+   UInt n_ips;
+
+   n_ips = VG_(get_StackTrace)( tid, ips, VG_(clo_backtrace_size) );
+   tl_assert(n_ips >= 1);
+   return record_ExeContext_wrk(ips, n_ips);
+}
+
+
+ExeContext* VG_(record_single_IP_ExeContext) ( Addr ip )
+{
+   UInt n_ips = 1;
+   Addr ips[n_ips];
+   ips[0] = ip;
+   return record_ExeContext_wrk(ips, n_ips);
 }
 
 // XXX: Ridiculously Memcheck-specific, probably better to provide an
