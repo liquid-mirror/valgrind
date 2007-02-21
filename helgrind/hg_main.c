@@ -3348,8 +3348,9 @@ static void hg_post_clo_init(void)
    else
       stack_tracker = & hg_new_mem_stack;
 
-   VG_(track_new_mem_stack)        (stack_tracker);
-   VG_(track_new_mem_stack_signal) (stack_tracker);
+// XXX: commented out because the prototypes changed...
+//   VG_(track_new_mem_stack)        (stack_tracker);
+//   VG_(track_new_mem_stack_signal) (stack_tracker);
 }
 
 

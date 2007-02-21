@@ -270,8 +270,8 @@ void VG_(fn)(void(*f)(args)) \
    VG_(tdict).fn = f; \
 }
 
-#define DEF2(fn, args...) \
-void VG_(fn)(VG_REGPARM(1) void(*f)(args)) \
+#define DEF2(regparm, fn, args...) \
+void VG_(fn)(VG_REGPARM(regparm) void(*f)(args)) \
 { \
    VG_(tdict).fn = f; \
 }
@@ -287,27 +287,27 @@ DEF(track_die_mem_stack_signal,  Addr, SizeT)
 DEF(track_die_mem_brk,           Addr, SizeT)
 DEF(track_die_mem_munmap,        Addr, SizeT)
 
-DEF2(track_new_mem_stack_4,      Addr)
-DEF2(track_new_mem_stack_8,      Addr)
-DEF2(track_new_mem_stack_12,     Addr)
-DEF2(track_new_mem_stack_16,     Addr)
-DEF2(track_new_mem_stack_32,     Addr)
+DEF2(1, track_new_mem_stack_4,      Addr)
+DEF2(1, track_new_mem_stack_8,      Addr)
+DEF2(1, track_new_mem_stack_12,     Addr)
+DEF2(1, track_new_mem_stack_16,     Addr)
+DEF2(1, track_new_mem_stack_32,     Addr)
 //DEF2(track_new_mem_stack_112,    Addr)
 //DEF2(track_new_mem_stack_128,    Addr)
 //DEF2(track_new_mem_stack_144,    Addr)
 //DEF2(track_new_mem_stack_160,    Addr)
-DEF (track_new_mem_stack,        Addr, SizeT)
+DEF2(2, track_new_mem_stack,        Addr, SizeT)
 
-DEF2(track_die_mem_stack_4,      Addr)
-DEF2(track_die_mem_stack_8,      Addr)
-DEF2(track_die_mem_stack_12,     Addr)
-DEF2(track_die_mem_stack_16,     Addr)
-DEF2(track_die_mem_stack_32,     Addr)
+DEF2(1, track_die_mem_stack_4,      Addr)
+DEF2(1, track_die_mem_stack_8,      Addr)
+DEF2(1, track_die_mem_stack_12,     Addr)
+DEF2(1, track_die_mem_stack_16,     Addr)
+DEF2(1, track_die_mem_stack_32,     Addr)
 //DEF2(track_die_mem_stack_112,    Addr)
 //DEF2(track_die_mem_stack_128,    Addr)
 //DEF2(track_die_mem_stack_144,    Addr)
 //DEF2(track_die_mem_stack_160,    Addr)
-DEF (track_die_mem_stack,        Addr, SizeT)
+DEF2(2, track_die_mem_stack,        Addr, SizeT)
 
 DEF(track_ban_mem_stack,         Addr, SizeT)
 

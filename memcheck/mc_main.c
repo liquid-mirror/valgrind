@@ -30,6 +30,22 @@
    The GNU General Public License is contained in the file COPYING.
 */
 
+// XXX: improving things:
+// - chase backwards through put/get pairs.  Will allow FP ones to be
+//   recognised.
+// - For 1B and 2B cases, maybe try to match the 1B or 2B value against the
+//   ExeContext.  Likely to have more possible matches, but that's ok,
+//   better to give several possibilities, one of which is correct, than
+//   nothing.  Could even extend this more generally, and make the
+//   origin-values word-sized instead of 32B?
+// - Could do similar things to handle misalignment -- try rotating the
+//   values.
+// - Could also do similar things to handle some modifications -- eg. a
+//   change may well only affect the bottom few bits of a 32-bit value.
+// - With all these changes, seems like we'd want to report some kind of
+//   confidence level on the matches.  Eg. a full match is much more likely
+//   to be right than a partial one.
+
 #include "pub_tool_basics.h"
 #include "pub_tool_aspacemgr.h"
 #include "pub_tool_hashtable.h"     // For mc_include.h
@@ -2813,7 +2829,8 @@ static void mc_pp_msg( Char* xml_name, Error* err, const HChar* format, ... )
    VG_(pp_ExeContext)( VG_(get_error_where)(err) );
 }
 
-static void mc_pp_origins ( ExeContext* origins[], Int n_origins )
+static void mc_pp_origins ( ExeContext* origins[], Int n_origins,
+                                                   Int n_obfusc_origins_low32 )
 {
    // XXX: in origin-yes, we get two origins for the 64-bit stack case --
    // should remove dup'd origins from the list.
@@ -2833,8 +2850,8 @@ static void mc_pp_origins ( ExeContext* origins[], Int n_origins )
       }
    } else {
       VG_(message)(Vg_UserMsg,
-                   "%sUninitialised value has unknown origin%s",
-                   xpre, xpost);
+                   "%sUninitialised value has unknown origin (%d)%s",
+                   xpre, n_obfusc_origins_low32, xpost);
    }
 }
 
@@ -2863,7 +2880,9 @@ static void mc_pp_Error ( Error* err )
                       "Use of uninitialised value of size %d",
                       extra->Err.Value.szB);
          }
-         mc_pp_origins(extra->Err.Value.origins, extra->Err.Value.n_origins);
+         mc_pp_origins(extra->Err.Value.origins,
+                       extra->Err.Value.n_origins,
+                       extra->Err.Value.n_obfusc_origins_low32);
          break;
 
       case Err_RegParam:
@@ -3367,7 +3386,7 @@ static UInt mc_update_extra( Error* err )
       for (i = 0; i < extra->Err.Value.n_obfusc_origins_low32; i++) {
          UInt origin_low32  = MC_(deobfuscate_ExeContext_low32)(
                                     extra->Err.Value.obfusc_origins_low32[i]);
-         ExeContext* origin = is_an_ExeContext(origin_low32);
+         ExeContext* origin = VG_(is_an_ExeContext)(origin_low32);
          if (NULL != origin) {
             origins_tmp[ n_origins++ ] = origin;
          }
@@ -3384,7 +3403,10 @@ static UInt mc_update_extra( Error* err )
       // Zero the "obfusc" fields (obfusc_origins_low32 is stack-allocated
       // so we don't need to free it).  And set the "origins" fields,
       // copying the origins from stack memory into new heap memory.
-      extra->Err.Value.n_obfusc_origins_low32 = 0;
+
+// XXX: don't zero n_obfusc_origins_low32 yet -- it can tell us why an origin
+//      failed to be identified.
+//      extra->Err.Value.n_obfusc_origins_low32 = 0;
       extra->Err.Value.obfusc_origins_low32   = NULL;
       extra->Err.Value.n_origins              = n_origins;
       extra->Err.Value.origins                = origins;
@@ -4100,6 +4122,8 @@ mc_helperc_value_error_N_origins ( HWord szB, HWord origin_hwords[],
    #endif
    mc_record_value_error ( VG_(get_running_tid)(), (Int)szB, origins, n_origins );
 }
+
+// XXX: move all these into mc_translate, make mc_record_value_error public.
 
 // Here we specialise the common cases (0, 1 and 2 origins with szB of 0 and
 // VG_WORDSIZE) to reduce the number of args passed.  Remaining cases are

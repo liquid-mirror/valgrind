@@ -325,7 +325,7 @@ ExeContext* VG_(record_single_IP_ExeContext) ( Addr ip )
 // iterator, or a first-match predicate?  But don't want to slow this down
 // too much?  Maybe it doesn't matter, since it's only called on non-dup
 // errors.
-ExeContext* is_an_ExeContext(UInt maybe_ec_low32)
+ExeContext* VG_(is_an_ExeContext)(UInt maybe_ec_low32)
 {
    Int i;
    ExeContext* curr;

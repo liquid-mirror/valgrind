@@ -812,30 +812,35 @@ static IRAtom* doCmpORD ( MCEnv*  mce,
 /*--- Undefined value origin-tracking                      ---*/
 /*------------------------------------------------------------*/
 
-static UInt origin_tracking_0  = 0,
-            origin_tracking_1  = 0,
-            origin_tracking_2  = 0;
+// Buckets:  0..6 and 7+
+static UInt n_found_origins[8];
 
 void MC_(print_origin_tracking_stats)(void)
 {
-   Char perc0[7], perc1[7], perc2[7];
-   UInt n_total = origin_tracking_2 + origin_tracking_1 + origin_tracking_0;
+//   Char perc0[7], perc1[7], perc2[7];
+//   UInt n_total = origin_tracking_2 + origin_tracking_1 + origin_tracking_0;
+//
+//   // XXX: there's an off-by-one error in percentify -- if I use 6 instead
+//   // of 5 here, the buffers get overrun.  (there's one in snprintf, too)
+//   // [XXX: the snprintf one has been fixed, I think]
+//   VG_(percentify)(origin_tracking_2, n_total, 1, 7, perc2);
+//   VG_(percentify)(origin_tracking_1, n_total, 1, 7, perc1);
+//   VG_(percentify)(origin_tracking_0, n_total, 1, 7, perc0);
 
-   // XXX: there's an off-by-one error in percentify -- if I use 6 instead
-   // of 5 here, the buffers get overrun.  (there's one in snprintf, too)
-   // [XXX: the snprintf one has been fixed, I think]
-   VG_(percentify)(origin_tracking_2, n_total, 1, 7, perc2);
-   VG_(percentify)(origin_tracking_1, n_total, 1, 7, perc1);
-   VG_(percentify)(origin_tracking_0, n_total, 1, 7, perc0);
-   VG_(message)(Vg_DebugMsg, 
-                " memcheck: origins: static cmps with 2 args = %6d (%s)",
-                origin_tracking_2, perc2);
-   VG_(message)(Vg_DebugMsg, 
-                " memcheck: origins: static cmps with 1 arg  = %6d (%s)",
-                origin_tracking_1, perc1);
-   VG_(message)(Vg_DebugMsg, 
-                " memcheck: origins: static cmps with 0 args = %6d (%s)",
-                origin_tracking_0, perc0);
+   Char perc[7];
+   UInt n_total;
+   Int  i;
+   
+   n_total = 0;
+   for (i = 0; i <= 7; i++) {
+      n_total += n_found_origins[i];
+   }
+   for (i = 0; i <= 7; i++) {
+      VG_(percentify)(n_found_origins[i], n_total, 1, 6, perc);
+      VG_(message)(Vg_DebugMsg, 
+                   " memcheck: origins: found %d%s origins = %8u (%6s)",
+                   i, ( i == 7 ? "+" : " " ), n_found_origins[i], perc);
+   }
 }
 
 /*------------------------------------------------------------*/
@@ -995,6 +1000,11 @@ static void getOriginTmps(MCEnv* mce, IRTemp currTemp, OriginsList* originTmps)
                   case Iex_Load: {
                      // tX = GET:I<ty>(N), or tX = LDxx:I<ty>(tY)
                      // If tX is 32 or 64 bits, add it to the finish_list.
+                     //
+                     // Otherwise (or sometimes even if -- giving longer
+                     // chains back?), should look for a put to the same
+                     // register, and trace back through it.
+                     // That will allow the float cases to work.
                      Int szB =
                            sizeofIRType(typeOfIRTemp(mce->bb_in->tyenv, tX));
                      if (4 == szB || 8 == szB) {
@@ -1005,6 +1015,12 @@ static void getOriginTmps(MCEnv* mce, IRTemp currTemp, OriginsList* originTmps)
 
                   case Iex_GetI:
                      // XXX: should treat similarly to Get/Load
+                     //
+                     //  XXX: a temp used as the ix should arguably be
+                     //       ignored!
+                     //  XXX: can also ignore the temp assigned by a GETI?
+                     //  can certainly ignore it if it's an I8 (ie. an
+                     //  FPTAG)
                      break;
                   
                   case Iex_CCall: {
@@ -1226,6 +1242,11 @@ static void complainIfUndefined ( MCEnv* mce, IRAtom* atom )
    }
    
    szHWordExpr = mkIRExpr_HWord( sz );
+
+   if (n_origins_found >= 7)
+      n_found_origins[7]++;
+   else
+      n_found_origins[n_origins_found]++;
 
    if (0 == n_origins_found) {
       if (VG_WORDSIZE == sz) {
