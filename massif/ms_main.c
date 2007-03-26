@@ -28,6 +28,10 @@
    The GNU General Public License is contained in the file COPYING.
 */
 
+// XXX:
+// - separate content from presentation by dumping all results to a file and
+//   then post-processing with a separate program, a la Cachegrind?
+
 // Memory profiler.  Produces a graph, gives lots of information about
 // allocation contexts, in terms of space.time values (ie. area under the
 // graph).  Allocation context information is hierarchical, and can thus
@@ -211,8 +215,9 @@ struct _XPt {
    // Nb: this value goes up and down as the program executes.
    UInt  curr_szB;
 
-   // n_children and max_children are integers;  a very big program might
-   // have more than 65536 allocation points (Konqueror startup has 1800).
+   // n_children and max_children are 32-bit integers, not 16-bit, because
+   // a very big program might have more than 65536 allocation points
+   // (Konqueror startup has 1800).
    XPt*  parent;           // pointer to parent XPt
    UInt  n_children;       // number of children
    UInt  max_children;     // capacity of children array
@@ -362,18 +367,10 @@ static Char* alloc_fns[MAX_ALLOC_FNS] = {
 
 #define MAX_DEPTH       50
 
-// XXX: remove
-typedef
-   enum {
-      XText, XHTML,
-   }
-   XFormat;
-
 static Bool clo_heap        = True;
 static UInt clo_heap_admin  = 8;
 static Bool clo_stacks      = True;
 static Bool clo_depth       = 3;
-static XFormat clo_format   = XText;
 
 static Bool ms_process_cmd_line_option(Char* arg)
 {
@@ -392,11 +389,6 @@ static Bool ms_process_cmd_line_option(Char* arg)
       }
    }
 
-   else if (VG_CLO_STREQ(arg, "--format=text"))
-      clo_format = XText;
-   else if (VG_CLO_STREQ(arg, "--format=html"))
-      clo_format = XHTML;
-
    else
       return VG_(replacement_malloc_process_cmd_line_option)(arg);
 
@@ -411,7 +403,6 @@ static void ms_print_usage(void)
 "    --stacks=no|yes           profile stack(s) [yes]\n"
 "    --depth=<number>          depth of contexts [3]\n"
 "    --alloc-fn=<name>         specify <fn> as an alloc function [empty]\n"
-"    --format=text|html        format of textual output [text]\n"
    );
    VG_(replacement_malloc_print_usage)();
 }
@@ -422,105 +413,8 @@ static void ms_print_debug_usage(void)
 }
 
 /*------------------------------------------------------------*/
-/*--- A generic Queue                                      ---*/
-/*------------------------------------------------------------*/
-
-#if 0
-// The queue elements are always in a contiguous portion of the array, but
-// not necessarily at the start.
-typedef
-   struct {
-      UInt   head;         // Index of first entry
-      UInt   tail;         // Index of final+1 entry, ie. next free slot
-      UInt   max_elems;
-      void** elems;
-   }
-   Queue;
-
-static Queue* construct_queue(UInt size)
-{
-   UInt i;
-   Queue* q     = VG_(malloc)(sizeof(Queue));
-   q->head      = 0;
-   q->tail      = 0;
-   q->max_elems = size;
-   q->elems     = VG_(malloc)(size * sizeof(void*));
-   for (i = 0; i < size; i++)
-      q->elems[i] = NULL;
-
-   return q;
-}
-
-__attribute__((unused))
-static void destruct_queue(Queue* q)
-{
-   VG_(free)(q->elems); q->elems = NULL;
-   VG_(free)(q);        q        = NULL;
-}
-
-// Shuffles down the elements in old_elems (which are from 'q'), and copies
-// them to q.  Used both when just pushing down, and also when increasing
-// the queue size and copying the elements to the new array.
-static void shuffle(Queue* q, void** old_elems)
-{
-   UInt i, j;
-   for (i = 0, j = q->head;   j < q->tail;   i++, j++)
-      q->elems[i] = old_elems[j];
-   q->head = 0;
-   q->tail = i;
-   for (  ; i < q->max_elems; i++)
-      q->elems[i] = NULL;      // paranoia
-}
-      
-// Shuffles elements down.  If not enough slots free, increase size. (We
-// don't wait until we've completely run out of space, because there could
-// be lots of shuffling just before that point which would be slow.)
-static void adjust(Queue* q)
-{
-   void** old_elems;
-
-   tl_assert(q->tail == q->max_elems);
-   if (q->head < 10) {
-      // Fewer than 10 spare slots.  Make it bigger.
-      old_elems     = q->elems;
-      q->max_elems *= 2; 
-      q->elems      = VG_(malloc)(q->max_elems * sizeof(void*));
-      shuffle(q, old_elems);
-      VG_(free)(old_elems);   old_elems = NULL;
-   } else {
-      shuffle(q, q->elems);
-   }
-}
-
-static void enqueue(Queue* q, void* elem)
-{
-   if (q->tail == q->max_elems)
-      adjust(q);
-   q->elems[q->tail++] = elem;
-}
-
-static Bool is_empty_queue(Queue* q)
-{
-   return (q->head == q->tail);
-}
-
-static void* dequeue(Queue* q)
-{
-   if (is_empty_queue(q))
-      return NULL;         // Queue empty
-   else
-      return q->elems[q->head++];
-}
-#endif
-
-/*------------------------------------------------------------*/
 /*--- Execution contexts                                   ---*/
 /*------------------------------------------------------------*/
-
-#if 0
-// Queue for breadth-first traversal of the XTree.
-static Queue* xpt_q = NULL;
-#endif
 
 // Fake XPt representing all allocation functions like malloc().  Acts as
 // parent node to all top-XPts.
@@ -1366,7 +1260,7 @@ static void write_text_graph(void)
 }
 
 /*------------------------------------------------------------*/
-/*--- Writing the XPt text/HTML file                       ---*/
+/*--- Writing the output                                   ---*/
 /*------------------------------------------------------------*/
 
 #if 0
@@ -1435,12 +1329,6 @@ static Bool is_significant_XPt(XPt* xpt, SizeT curr_total_szB)
 {
    return (xpt->curr_szB * 1000 / curr_total_szB >= 10);   // < 1%?
 }
-
-// Important point:  for HTML, each XPt must be identified uniquely for the
-// HTML links to all match up correctly.  Using xpt->ip is not
-// sufficient, because function pointers mean that you can call more than
-// one other function from a single code location.  So instead we use the
-// address of the xpt struct itself, which is guaranteed to be unique.
 
 static void pp_snapshot_child_XPts(XPt* parent, Int depth, Char* depth_str,
                                    Int depth_str_len,
@@ -1563,131 +1451,16 @@ static void pp_snapshot(SizeT curr_heap_szB,   SizeT curr_heap_admin_szB,
    VG_(free)(depth_str);
 }
 
-#if 0
-static void
-write_text_file(ULong total_ST, ULong heap_ST)
-{
-   SysRes sres;
-   Int    fd, i;
-   Char*  text_file;
-   Char*  maybe_p = ( XHTML == clo_format ? "<p>" : "" );
-
-   // Open file
-   text_file = make_filename( base_dir, 
-                              ( XText == clo_format ? ".txt" : ".html" ) );
-
-   sres = VG_(open)(text_file, VKI_O_CREAT|VKI_O_TRUNC|VKI_O_WRONLY,
-                             VKI_S_IRUSR|VKI_S_IWUSR);
-   if (sres.isError) {
-      file_err( text_file );
-      return;
-   } else {
-      fd = sres.res;
-   }
-
-   // Header
-   if (XHTML == clo_format) {
-      SPRINTF(buf, "<html>\n"
-                   "<head>\n"
-                   "<title>%s</title>\n"
-                   "</head>\n"
-                   "<body>\n",
-                   text_file);
-   }
-
-   // Command line
-   SPRINTF(buf, "Command:");
-   if (VG_(args_the_exename)) {
-      SPRINTF(buf, " %s", VG_(args_the_exename));
-   }
-   for (i = 0; i < VG_(sizeXA)( VG_(args_for_client) ); i++) {
-      HChar* arg = * (HChar**) VG_(indexXA)( VG_(args_for_client), i );
-      if (arg)
-         SPRINTF(buf, " %s", arg);
-   }
-   SPRINTF(buf, "\n%s\n", maybe_p);
-
-   if (clo_heap)
-      pp_significant_XPts(fd, alloc_xpt, heap_ST, total_ST);
-
-   tl_assert(fd >= 0);
-   VG_(close)(fd);
-}
-#endif
-
 /*------------------------------------------------------------*/
 /*--- Finalisation                                         ---*/
 /*------------------------------------------------------------*/
 
-#if 0
-static void
-print_summary(ULong total_ST, ULong heap_ST, ULong heap_admin_ST,
-              ULong stack_ST)
-{
-   VG_(message)(Vg_UserMsg, "Total spacetime:   %,llu ms.B", total_ST);
-
-   // Heap --------------------------------------------------------------
-   if (clo_heap)
-      VG_(message)(Vg_UserMsg, "heap:              %s",
-                   ( 0 == total_ST ? (Char*)"(n/a)"
-                                   : make_perc(heap_ST, total_ST) ) );
-
-   // Heap admin --------------------------------------------------------
-   if (clo_heap_admin)
-      VG_(message)(Vg_UserMsg, "heap admin:        %s", 
-                   ( 0 == total_ST ? (Char*)"(n/a)"
-                                   : make_perc(heap_admin_ST, total_ST) ) );
-
-   tl_assert( VG_(HT_count_nodes)(malloc_list) == n_heap_blocks );
-
-   // Stack(s) ----------------------------------------------------------
-   if (clo_stacks) {
-      VG_(message)(Vg_UserMsg, "stack(s):          %s", 
-                   ( 0 == stack_ST ? (Char*)"0%" 
-                                   : make_perc(stack_ST, total_ST) ) );
-   }
-
-   if (VG_(clo_verbosity) > 1) {
-      tl_assert(n_xpts > 0);  // always have alloc_xpt
-      VG_(message)(Vg_DebugMsg, "    allocs: %u", n_allocs);
-      VG_(message)(Vg_DebugMsg, "zeroallocs: %u (%d%%)", n_zero_allocs,
-                                n_zero_allocs * 100 / n_allocs );
-      VG_(message)(Vg_DebugMsg, "     frees: %u", n_frees);
-      VG_(message)(Vg_DebugMsg, "      XPts: %u (%d B)", n_xpts,
-                                                         n_xpts*sizeof(XPt));
-      VG_(message)(Vg_DebugMsg, "  bot-XPts: %u (%d%%)", n_bot_xpts,
-                                n_bot_xpts * 100 / n_xpts);
-      VG_(message)(Vg_DebugMsg, "  top-XPts: %u (%d%%)", alloc_xpt->n_children,
-                                alloc_xpt->n_children * 100 / n_xpts);
-      VG_(message)(Vg_DebugMsg, "c-reallocs: %u", n_children_reallocs);
-      VG_(message)(Vg_DebugMsg, "snap-frees: %u", n_snapshot_frees);
-      VG_(message)(Vg_DebugMsg, "atmp censi: %u", n_attempted_censi);
-      VG_(message)(Vg_DebugMsg, "fake censi: %u", n_fake_censi);
-      VG_(message)(Vg_DebugMsg, "real censi: %u", n_real_censi);
-      VG_(message)(Vg_DebugMsg, "  halvings: %u", n_halvings);
-   }
-}
-#endif
-
 static void ms_fini(Int exit_status)
 {
-   ///ULong total_ST      = 0;
-  /// ULong heap_ST       = 0;
- ///  ULong heap_admin_ST = 0;
-///   ULong stack_ST      = 0;
-
    // Do a final (empty) sample to show program's end
    hp_census();
 
-   // Redo spacetimes of significant contexts to match the .hp file.
-//   calc_exact_ST_dbld(&heap_ST, &heap_admin_ST, &stack_ST);
-//   total_ST = heap_ST + heap_admin_ST + stack_ST; 
-//   write_hp_file  ( );
-//   write_text_file( total_ST, heap_ST );
-//   print_summary  ( total_ST, heap_ST, heap_admin_ST, stack_ST );
-
-//   destruct_queue(xpt_q);
-
+   // Output.
    write_text_graph();
 }
 
@@ -1744,9 +1517,6 @@ static void ms_pre_clo_init(void)
 
    // Dummy node at top of the context structure.
    alloc_xpt = new_XPt(0, NULL, /*is_bottom*/False);
-
-//   // XPt traversal queue
-//   xpt_q = construct_queue(100);
 
    tl_assert( VG_(getcwd)(base_dir, VKI_PATH_MAX) );
 }
