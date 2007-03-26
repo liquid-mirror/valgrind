@@ -61,6 +61,104 @@
 
 // Heap blocks are tracked, and the amount of space allocated by various
 // contexts (ie. lines of code, more or less) is also tracked.
+// Periodically, a census is taken.  There are two
+//
+//
+//  
+// 100M|B                .      :A
+//     |               .:::   :::#      
+//     |              :::::. c:::#:     
+//     |             b:::::: |:::#::    
+//     |            :|:::::::|:::#::    
+//  75M|            :|:::::::|:::#:::   
+//     |           ::|:::::::|:::#:::   
+//     |           ::|:::::::|:::#:::d  
+//     |           ::|:::::::|:::#:::|: 
+//     |          .::|:::::::|:::#:::|::
+//  50M|          :::|:::::::|:::#:::|:::                      
+//     |         ::::|:::::::|:::#:::|:::::                        :::.
+//     |        :::::|:::::::|:::#:::|::::::                    g::::::::
+//     |       a:::::|:::::::|:::#:::|:::::::e:               ::|::::::::::h
+//     |       |:::::|:::::::|:::#:::|:::::::|::.        :: .:::|::::::::::|::
+// 25M^|       |:::::|:::::::|:::#:::|:::::::|::::      f:::::::|::::::::::|::
+//  20M|      :|:::::|:::::::|:::#:::|:::::::|::::.  .::|:::::::|::::::::::|::
+//  15M|    .::|:::::|:::::::|:::#:::|:::::::|::::::::::|:::::::|::::::::::|::
+//  10M|  .::::|:::::|:::::::|:::#:::|:::::::|::::::::::|:::::::|::::::::::|::
+//   5M|:::::::|:::::|:::::::|:::#:::|:::::::|::::::::::|:::::::|::::::::::|::
+//   0M+----------------------------------------------------------------------t
+//     012                                                               
+//
+// Explanation of y-axis:
+// - Top of the x-axis box represents 0.
+//
+//    4M^|   .:     This row has base=2M, half-threshold=3M, full-threshold=4M
+//    2M^| .:::     This row has base=0M, half-threshold=1M, full-threshold=2M
+//    0M +-----        
+//        abcde        
+//                   
+// - A '.' is only shown in a row if we've reached its half-threshold
+// - A ':' is only shown in a row if we've reached its full-threshold
+// - So: a is in range 0 -- 0.99 
+//       b is in range 1 -- 1.99 
+//       c is in range 2 -- 2.99
+//       d is in range 3 -- 3.99
+//       e is in range 4 -- 4.99
+//
+// Explanation of x-axis:
+// - Assume each column represents one second
+// - First usable column has range 0..0.99s
+// - Second usable column has range 1..1.99s
+// - etc.
+
+
+
+
+// Ideas:
+// - Graph has 72 columns of data, 0..71
+//   - Once we've had the first 72, always have 72.
+//   - On number  73, remove column 1, (0,2..71)
+//   - On number  74, remove column 2, (0,2,4..71)
+//   - On number  75, remove column 3, (0,2,4,6..71)
+//   - On number 72+n, remove col   n, (0,2,4,6,...,2n..71)
+//   - ...
+//   - On number 107, remove column 35, (0,2,4,6,...,70..71)
+//   
+
+// column: 00 01 02 03 04 05 06 07 08 09 10 11 12
+// census  --------------------------------------
+// 00      00
+// 01      00 01
+// 02      00 01 02
+// ...
+// 11      00 01 02 03 04 05 06 07 08 09 10 11
+// 12      00 01 02 03 04 05 06 07 08 09 10 11 12
+// 13      00 02 03 04 05 06 07 08 09 10 11 12 13     removed col 01
+// 14      00 02 04 05 06 07 08 09 10 11 12 13 14     removed col 02
+// 15      00 02 04 06 07 08 09 10 11 12 13 14 15     removed col 03
+// 16      00 02 04 06 08 09 10 11 12 13 14 15 16     removed col 04
+// 17      00 02 04 06 08 10 11 12 13 14 15 16 17     removed col 05
+// 18      00 02 04 06 08 10 12 13 14 15 16 17 18     removed col 06
+// 19      00 02 04 06 08 10 12 14 15 16 17 18 19     removed col 07
+// 20      00 02 04 06 08 10 12 14 16 17 18 19 20     removed col 08
+// 21      00 02 04 06 08 10 12 14 16 18 19 20 21     removed col 09
+// 22      00 02 04 06 08 10 12 14 16 18 20 21 22     removed col 10
+// 23      00 02 04 06 08 10 12 14 16 18 20 22 23     removed col 11
+// 24      00 02 04 06 08 10 12 14 16 18 20 22 24     removed col 12
+//
+// Problem with this is that we don't have an even x-axis distribution.
+// Getting such a distribution is difficult in general.
+//
+// 
+
+
+
+// - like Callgrind, allow multiple data sets to be dumped, by choosing points.
+//   That way you could print one graph per phase, for example, for better
+//   granularity.
+
+
+
+
 // Periodically, a census is taken, and the amount of space used, at that
 // point, by the most significant (highly allocating) contexts is recorded.
 // Census start off frequently, but are scaled back as the program goes on,
@@ -111,18 +209,7 @@ struct _XPt {
    // Bottom-XPts: space for the precise context.
    // Other XPts:  space of all the descendent bottom-XPts.
    // Nb: this value goes up and down as the program executes.
-   UInt  curr_space;
-
-   // An approximate space.time calculation used along the way for selecting
-   // which contexts to include at each census point.
-   // !!! top-XPTs only !!!
-   ULong approx_ST;
-
-   // exact_ST_dbld is an exact space.time calculation done at the end, and
-   // used in the results.
-   // Note that it is *doubled*, to avoid rounding errors.
-   // !!! not used for 'alloc_xpt' !!!
-   ULong exact_ST_dbld;
+   UInt  curr_szB;
 
    // n_children and max_children are integers;  a very big program might
    // have more than 65536 allocation points (Konqueror startup has 1800).
@@ -133,7 +220,7 @@ struct _XPt {
 };
 
 // Each census snapshots the most significant XTrees, each XTree having a
-// top-XPt as its root.  The 'curr_space' element for each XPt is recorded 
+// top-XPt as its root.  The 'curr_szB' element for each XPt is recorded 
 // in the snapshot.  The snapshot contains all the XTree's XPts, not in a
 // tree structure, but flattened into an array.  This flat snapshot is used
 // at the end for computing exact_ST_dbld for each XPt.
@@ -151,7 +238,7 @@ struct _XPt {
 // This isn't exactly right, because we actually drop (N/2)-1 when halving,
 // but it shows the basic idea.
 
-#define MAX_N_CENSI           200  // Keep it even, for simplicity
+#define MAX_N_CENSI           10   // Keep it even, for simplicity
 
 // Graph resolution, y-axis: hp2ps only draws the 19 biggest (in space-time)
 // bands, rest get lumped into OTHERS.  I only print the top N
@@ -176,11 +263,8 @@ typedef XPtSnapshot* XTreeSnapshot;
 
 typedef
    struct {
-      Int           ms_time;     // Int: must allow -1
-      XTreeSnapshot xtree_snapshots[MAX_SNAPSHOTS+1]; // +1 for zero-termination
-      UInt          others_space;
-      UInt          heap_admin_space;
-      UInt          stacks_space;
+      Int   ms_time;    // Int: must allow -1
+      SizeT total_szB;  // Size of all allocations at that census time
    } 
    Census;
 
@@ -194,7 +278,7 @@ typedef
    struct _HP_Chunk {
       struct _HP_Chunk* next;
       Addr              data;    // Ptr to actual block
-      SizeT             size;    // Size requested
+      SizeT             szB;     // Size requested
       XPt*              where;   // Where allocated; bottom-XPt
    }
    HP_Chunk;
@@ -212,18 +296,18 @@ typedef
 //  -  15,000 XPts            800,000 XPts
 //  -   1,800 top-XPts
 
+// XXX: check if we still need all these...
 static UInt n_xpts               = 0;
 static UInt n_bot_xpts           = 0;
 static UInt n_allocs             = 0;
 static UInt n_zero_allocs        = 0;
 static UInt n_frees              = 0;
 static UInt n_children_reallocs  = 0;
-static UInt n_snapshot_frees     = 0;
+//static UInt n_snapshot_frees     = 0;
 
 static UInt n_halvings           = 0;
 static UInt n_real_censi         = 0;
 static UInt n_fake_censi         = 0;
-static UInt n_attempted_censi    = 0;
 
 /*------------------------------------------------------------*/
 /*--- Globals                                              ---*/
@@ -239,9 +323,13 @@ static UInt n_attempted_censi    = 0;
 #define BUF_LEN         1024     // general purpose
 static Char buf [BUF_LEN];
 static Char buf2[BUF_LEN];
-static Char buf3[BUF_LEN];
+//static Char buf3[BUF_LEN];
 
-static SizeT sigstacks_space = 0;    // Current signal stacks space sum
+// Make these signed so things are more obvious if they go negative.
+static SSizeT sigstacks_szB = 0;     // Current signal stacks space sum
+static SSizeT heap_szB      = 0;     // Live heap size
+static SSizeT peak_heap_szB = 0;
+static SSizeT peak_census_total_szB = 0;
 
 static VgHashTable malloc_list  = NULL;   // HP_Chunks
 
@@ -274,6 +362,7 @@ static Char* alloc_fns[MAX_ALLOC_FNS] = {
 
 #define MAX_DEPTH       50
 
+// XXX: remove
 typedef
    enum {
       XText, XHTML,
@@ -333,8 +422,105 @@ static void ms_print_debug_usage(void)
 }
 
 /*------------------------------------------------------------*/
+/*--- A generic Queue                                      ---*/
+/*------------------------------------------------------------*/
+
+#if 0
+// The queue elements are always in a contiguous portion of the array, but
+// not necessarily at the start.
+typedef
+   struct {
+      UInt   head;         // Index of first entry
+      UInt   tail;         // Index of final+1 entry, ie. next free slot
+      UInt   max_elems;
+      void** elems;
+   }
+   Queue;
+
+static Queue* construct_queue(UInt size)
+{
+   UInt i;
+   Queue* q     = VG_(malloc)(sizeof(Queue));
+   q->head      = 0;
+   q->tail      = 0;
+   q->max_elems = size;
+   q->elems     = VG_(malloc)(size * sizeof(void*));
+   for (i = 0; i < size; i++)
+      q->elems[i] = NULL;
+
+   return q;
+}
+
+__attribute__((unused))
+static void destruct_queue(Queue* q)
+{
+   VG_(free)(q->elems); q->elems = NULL;
+   VG_(free)(q);        q        = NULL;
+}
+
+// Shuffles down the elements in old_elems (which are from 'q'), and copies
+// them to q.  Used both when just pushing down, and also when increasing
+// the queue size and copying the elements to the new array.
+static void shuffle(Queue* q, void** old_elems)
+{
+   UInt i, j;
+   for (i = 0, j = q->head;   j < q->tail;   i++, j++)
+      q->elems[i] = old_elems[j];
+   q->head = 0;
+   q->tail = i;
+   for (  ; i < q->max_elems; i++)
+      q->elems[i] = NULL;      // paranoia
+}
+      
+// Shuffles elements down.  If not enough slots free, increase size. (We
+// don't wait until we've completely run out of space, because there could
+// be lots of shuffling just before that point which would be slow.)
+static void adjust(Queue* q)
+{
+   void** old_elems;
+
+   tl_assert(q->tail == q->max_elems);
+   if (q->head < 10) {
+      // Fewer than 10 spare slots.  Make it bigger.
+      old_elems     = q->elems;
+      q->max_elems *= 2; 
+      q->elems      = VG_(malloc)(q->max_elems * sizeof(void*));
+      shuffle(q, old_elems);
+      VG_(free)(old_elems);   old_elems = NULL;
+   } else {
+      shuffle(q, q->elems);
+   }
+}
+
+static void enqueue(Queue* q, void* elem)
+{
+   if (q->tail == q->max_elems)
+      adjust(q);
+   q->elems[q->tail++] = elem;
+}
+
+static Bool is_empty_queue(Queue* q)
+{
+   return (q->head == q->tail);
+}
+
+static void* dequeue(Queue* q)
+{
+   if (is_empty_queue(q))
+      return NULL;         // Queue empty
+   else
+      return q->elems[q->head++];
+}
+#endif
+
+/*------------------------------------------------------------*/
 /*--- Execution contexts                                   ---*/
 /*------------------------------------------------------------*/
+
+#if 0
+// Queue for breadth-first traversal of the XTree.
+static Queue* xpt_q = NULL;
+#endif
 
 // Fake XPt representing all allocation functions like malloc().  Acts as
 // parent node to all top-XPts.
@@ -368,11 +554,7 @@ static XPt* new_XPt(Addr ip, XPt* parent, Bool is_bottom)
 {
    XPt* xpt          = perm_malloc(sizeof(XPt));
    xpt->ip           = ip;
-
-   xpt->curr_space    = 0;
-   xpt->approx_ST     = 0;
-   xpt->exact_ST_dbld = 0;
-
+   xpt->curr_szB     = 0;
    xpt->parent       = parent;
 
    // Check parent is not a bottom-XPt
@@ -411,6 +593,7 @@ static Bool is_alloc_fn(Addr ip)
    return False;
 }
 
+// XXX: check, improve this!
 // Returns an XCon, from the bottom-XPt.  Nb: the XPt returned must be a
 // bottom-XPt now and must always remain a bottom-XPt.  We go to some effort
 // to ensure this in certain cases.  See comments below.
@@ -510,125 +693,50 @@ static XPt* get_XCon( ThreadId tid, Bool custom_malloc )
    }
 }
 
-// Update 'curr_space' of every XPt in the XCon, by percolating upwards.
-static void update_XCon(XPt* xpt, Int space_delta)
+// Update 'curr_szB' of every XPt in the XCon, by percolating upwards.
+static void update_XCon(XPt* xpt, SSizeT space_delta)
 {
    tl_assert(True == clo_heap);
-   tl_assert(0    != space_delta);
    tl_assert(NULL != xpt);
    tl_assert(0    == xpt->n_children);    // must be bottom-XPt
 
+   if (0 == space_delta)
+      return;
+
    while (xpt != alloc_xpt) {
-      if (space_delta < 0) tl_assert(xpt->curr_space >= -space_delta);
-      xpt->curr_space += space_delta;
+      if (space_delta < 0) tl_assert(xpt->curr_szB >= -space_delta);
+      xpt->curr_szB += space_delta;
       xpt = xpt->parent;
    } 
-   if (space_delta < 0) tl_assert(alloc_xpt->curr_space >= -space_delta);
-   alloc_xpt->curr_space += space_delta;
+   if (space_delta < 0) tl_assert(alloc_xpt->curr_szB >= -space_delta);
+   alloc_xpt->curr_szB += space_delta;
 }
 
-// Actually want a reverse sort, biggest to smallest
-static Int XPt_cmp_approx_ST(void* n1, void* n2)
+// Reverse comparison for a reverse sort -- biggest to smallest.
+static Int XPt_revcmp_curr_szB(void* n1, void* n2)
 {
    XPt* xpt1 = *(XPt**)n1;
    XPt* xpt2 = *(XPt**)n2;
-   return (xpt1->approx_ST < xpt2->approx_ST ? 1 : -1);
+   return ( xpt1->curr_szB < xpt2->curr_szB ?  1 
+          : xpt1->curr_szB > xpt2->curr_szB ? -1
+          :                                    0);
 }
-
-static Int XPt_cmp_exact_ST_dbld(void* n1, void* n2)
-{
-   XPt* xpt1 = *(XPt**)n1;
-   XPt* xpt2 = *(XPt**)n2;
-   return (xpt1->exact_ST_dbld < xpt2->exact_ST_dbld ? 1 : -1);
-}
-
 
 /*------------------------------------------------------------*/
-/*--- A generic Queue                                      ---*/
+/*--- Heap management                                      ---*/
 /*------------------------------------------------------------*/
 
-typedef
-   struct {
-      UInt   head;         // Index of first entry
-      UInt   tail;         // Index of final+1 entry, ie. next free slot
-      UInt   max_elems;
-      void** elems;
-   }
-   Queue;
-
-static Queue* construct_queue(UInt size)
+static void update_heap_stats(SSizeT heap_szB_delta, Int n_heap_blocks_delta)
 {
-   UInt i;
-   Queue* q     = VG_(malloc)(sizeof(Queue));
-   q->head      = 0;
-   q->tail      = 0;
-   q->max_elems = size;
-   q->elems     = VG_(malloc)(size * sizeof(void*));
-   for (i = 0; i < size; i++)
-      q->elems[i] = NULL;
-
-   return q;
-}
-
-static void destruct_queue(Queue* q)
-{
-   VG_(free)(q->elems);
-   VG_(free)(q);
-}
-
-static void shuffle(Queue* dest_q, void** old_elems)
-{
-   UInt i, j;
-   for (i = 0, j = dest_q->head;   j < dest_q->tail;   i++, j++)
-      dest_q->elems[i] = old_elems[j];
-   dest_q->head = 0;
-   dest_q->tail = i;
-   for (  ; i < dest_q->max_elems; i++)
-      dest_q->elems[i] = NULL;      // paranoia
-}
-      
-// Shuffles elements down.  If not enough slots free, increase size. (We
-// don't wait until we've completely run out of space, because there could
-// be lots of shuffling just before that point which would be slow.)
-static void adjust(Queue* q)
-{
-   void** old_elems;
-
-   tl_assert(q->tail == q->max_elems);
-   if (q->head < 10) {
-      old_elems     = q->elems;
-      q->max_elems *= 2; 
-      q->elems      = VG_(malloc)(q->max_elems * sizeof(void*));
-      shuffle(q, old_elems);
-      VG_(free)(old_elems);
-   } else {
-      shuffle(q, q->elems);
+   if (n_heap_blocks_delta<0) tl_assert(n_heap_blocks >= -n_heap_blocks_delta);
+   if (heap_szB_delta     <0) tl_assert(heap_szB      >= -heap_szB_delta     );
+   n_heap_blocks += n_heap_blocks_delta;
+   heap_szB      += heap_szB_delta;
+   if (heap_szB > peak_heap_szB) {
+      peak_heap_szB = heap_szB;
    }
 }
 
-static void enqueue(Queue* q, void* elem)
-{
-   if (q->tail == q->max_elems)
-      adjust(q);
-   q->elems[q->tail++] = elem;
-}
-
-static Bool is_empty_queue(Queue* q)
-{
-   return (q->head == q->tail);
-}
-
-static void* dequeue(Queue* q)
-{
-   if (is_empty_queue(q))
-      return NULL;         // Queue empty
-   else
-      return q->elems[q->head++];
-}
-
-/*------------------------------------------------------------*/
-/*--- malloc() et al replacement wrappers                  ---*/
-/*------------------------------------------------------------*/
 
 // Forward declaration
 static void hp_census(void);
@@ -656,18 +764,21 @@ void* new_block ( ThreadId tid, void* p, SizeT size, SizeT align,
 
    // Make new HP_Chunk node, add to malloc_list
    hc       = VG_(malloc)(sizeof(HP_Chunk));
-   hc->size = size;
+   hc->szB  = size;
    hc->data = (Addr)p;
    hc->where = NULL;    // paranoia
+
+   // Update heap stats
+   update_heap_stats(hc->szB, /*n_heap_blocks_delta*/1);
+
+   // Update XTree, if necessary
    if (clo_heap) {
       hc->where = get_XCon( tid, custom_alloc );
-      if (0 != size) 
-         update_XCon(hc->where, size);
+      update_XCon(hc->where, size);
    }
    VG_(HT_add_node)(malloc_list, hc);
-   n_heap_blocks++;
 
-   // do a census!
+   // Do a census!
    hp_census();      
 
    return p;
@@ -683,24 +794,88 @@ void die_block ( void* p, Bool custom_free )
 
    // Remove HP_Chunk from malloc_list
    hc = VG_(HT_remove)(malloc_list, (UWord)p);
-   if (NULL == hc)
+   if (NULL == hc) {
       return;   // must have been a bogus free()
-   tl_assert(n_heap_blocks > 0);
-   n_heap_blocks--;
+   }
 
-   if (clo_heap && hc->size != 0)
-      update_XCon(hc->where, -hc->size);
+   // Update heap stats
+   update_heap_stats(-hc->szB, /*n_heap_blocks_delta*/-1);
 
-   VG_(free)( hc );
+   // Update XTree, if necessary
+   if (clo_heap) {
+      update_XCon(hc->where, -hc->szB);
+   }
 
-   // Actually free the heap block, if necessary
+   // Actually free the chunk, and the heap block (if necessary)
+   VG_(free)( hc );  hc = NULL;
    if (!custom_free)
       VG_(cli_free)( p );
 
-   // do a census!
+   // Do a census!
    hp_census();
 }
+
+static __inline__
+void* renew_block ( ThreadId tid, void* p_old, SizeT new_size )
+{
+   HP_Chunk* hc;
+   void*     p_new;
+   SizeT     old_size;
+   XPt      *old_where, *new_where;
+   
+   // Remove the old block
+   hc = VG_(HT_remove)(malloc_list, (UWord)p_old);
+   if (hc == NULL) {
+      return NULL;   // must have been a bogus realloc()
+   }
+
+   old_size = hc->szB;
+
+   // Update heap stats
+   update_heap_stats(new_size - old_size, /*n_heap_blocks_delta*/0);
+  
+   if (new_size <= old_size) {
+      // new size is smaller or same;  block not moved
+      p_new = p_old;
+
+   } else {
+      // new size is bigger;  make new block, copy shared contents, free old
+      p_new = VG_(cli_malloc)(VG_(clo_alignment), new_size);
+      if (p_new) {
+         VG_(memcpy)(p_new, p_old, old_size);
+         VG_(cli_free)(p_old);
+      }
+   }
+
+   if (p_new) {
+      old_where = hc->where;
+      new_where = get_XCon( tid, /*custom_malloc*/False);
+
+      // Update HP_Chunk
+      hc->data  = (Addr)p_new;
+      hc->szB   = new_size;
+      hc->where = new_where;
+
+      // Update XPt curr_szB fields
+      if (clo_heap) {
+         update_XCon(old_where, -old_size);
+         update_XCon(new_where,  new_size);
+      }
+   }
+
+   // Now insert the new hc (with a possibly new 'data' field) into
+   // malloc_list.  If this realloc() did not increase the memory size, we
+   // will have removed and then re-added mc unnecessarily.  But that's ok
+   // because shrinking a block with realloc() is (presumably) much rarer
+   // than growing it, and this way simplifies the growing case.
+   VG_(HT_add_node)(malloc_list, hc);
+
+   return p_new;
+}
  
+/*------------------------------------------------------------*/
+/*--- malloc() et al replacement wrappers                  ---*/
+/*------------------------------------------------------------*/
 
 static void* ms_malloc ( ThreadId tid, SizeT n )
 {
@@ -744,56 +919,7 @@ static void ms___builtin_vec_delete ( ThreadId tid, void* p )
 
 static void* ms_realloc ( ThreadId tid, void* p_old, SizeT new_size )
 {
-   HP_Chunk* hc;
-   void*     p_new;
-   SizeT     old_size;
-   XPt      *old_where, *new_where;
-   
-   // Remove the old block
-   hc = VG_(HT_remove)(malloc_list, (UWord)p_old);
-   if (hc == NULL) {
-      return NULL;   // must have been a bogus realloc()
-   }
-
-   old_size = hc->size;
-  
-   if (new_size <= old_size) {
-      // new size is smaller or same;  block not moved
-      p_new = p_old;
-
-   } else {
-      // new size is bigger;  make new block, copy shared contents, free old
-      p_new = VG_(cli_malloc)(VG_(clo_alignment), new_size);
-      if (p_new) {
-         VG_(memcpy)(p_new, p_old, old_size);
-         VG_(cli_free)(p_old);
-      }
-   }
-
-   if (p_new) {
-      old_where = hc->where;
-      new_where = get_XCon( tid, /*custom_malloc*/False);
-
-      // Update HP_Chunk
-      hc->data  = (Addr)p_new;
-      hc->size  = new_size;
-      hc->where = new_where;
-
-      // Update XPt curr_space fields
-      if (clo_heap) {
-         if (0 != old_size) update_XCon(old_where, -old_size);
-         if (0 != new_size) update_XCon(new_where,  new_size);
-      }
-   }
-
-   // Now insert the new hc (with a possibly new 'data' field) into
-   // malloc_list.  If this realloc() did not increase the memory size, we
-   // will have removed and then re-added mc unnecessarily.  But that's ok
-   // because shrinking a block with realloc() is (presumably) much rarer
-   // than growing it, and this way simplifies the growing case.
-   VG_(HT_add_node)(malloc_list, hc);
-
-   return p_new;
+   return renew_block(tid, p_old, new_size);
 }
 
 
@@ -802,18 +928,18 @@ static void* ms_realloc ( ThreadId tid, void* p_old, SizeT new_size )
 /*------------------------------------------------------------*/
 
 static Census censi[MAX_N_CENSI];
-static UInt   curr_census = 0;
+static UInt   curr_census = 0;   // Points to where next census will go.
 
 static UInt get_xtree_size(XPt* xpt, UInt ix)
 {
    UInt i;
 
    // If no memory allocated at all, nothing interesting to record.
-   if (alloc_xpt->curr_space == 0) return 0;
+   if (alloc_xpt->curr_szB == 0) return 0;
    
    // Ignore sub-XTrees that account for a miniscule fraction of current
    // allocated space.
-   if (xpt->curr_space / (double)alloc_xpt->curr_space > 0.002) {
+   if (xpt->curr_szB / (double)alloc_xpt->curr_szB > 0.002) {
       ix++;
 
       // Count all (non-zero) descendent XPts
@@ -830,11 +956,11 @@ UInt do_space_snapshot(XPt xpt[], XTreeSnapshot xtree_snapshot, UInt ix)
 
    // Structure of this function mirrors that of get_xtree_size().
 
-   if (alloc_xpt->curr_space == 0) return 0;
+   if (alloc_xpt->curr_szB == 0) return 0;
    
-   if (xpt->curr_space / (double)alloc_xpt->curr_space > 0.002) {
+   if (xpt->curr_szB / (double)alloc_xpt->curr_szB > 0.002) {
       xtree_snapshot[ix].xpt   = xpt;
-      xtree_snapshot[ix].space = xpt->curr_space;
+      xtree_snapshot[ix].space = xpt->curr_szB;
       ix++;
 
       for (i = 0; i < xpt->n_children; i++)
@@ -858,7 +984,7 @@ static UInt do_every_nth_census = 30;
 // equals 200, and this is only done every 100 censi, which is not too often.
 static void halve_censi(void)
 {
-   Int     i, jp, j, jn, k;
+   Int     i, jp, j, jn;
    Census* min_census;
 
    n_halvings++;
@@ -895,11 +1021,6 @@ static void halve_censi(void)
       }
       // We've found the least important census, now remove it
       min_census = & censi[ min_j ];
-      for (k = 0; NULL != min_census->xtree_snapshots[k]; k++) {
-         n_snapshot_frees++;
-         VG_(free)(min_census->xtree_snapshots[k]); 
-         min_census->xtree_snapshots[k] = NULL;
-      }
       min_census->ms_time = -1;
    }
 
@@ -921,6 +1042,12 @@ static void halve_censi(void)
       VG_(message)(Vg_UserMsg, "...done");
 }
 
+// Forward declaration.
+// XXX: necessary?
+static void pp_snapshot(SizeT curr_heap_szB,   SizeT curr_heap_admin_szB,
+                        SizeT curr_stacks_szB, SizeT curr_total_szB);
+
+
 // Take a census.  Census time seems to be insignificant (usually <= 0 ms,
 // almost always <= 1ms) so don't have to worry about subtracting it from
 // running time in any way.
@@ -931,6 +1058,10 @@ static void hp_census(void)
 {
    static UInt ms_prev_census = 0;
    static UInt ms_next_census = 0;     // zero allows startup census
+
+   SSizeT census_heap_szB       = 0;
+   SSizeT census_heap_admin_szB = 0;
+   SSizeT census_stacks_szB     = 0;
 
    Int     ms_time, ms_time_since_prev;
    Census* census;
@@ -946,86 +1077,44 @@ static void hp_census(void)
 
    census = & censi[curr_census];
 
-   census->ms_time = ms_time;
-
-   // Heap: snapshot the K most significant XTrees -------------------
+   // Heap -------------------------------------------------------------
    if (clo_heap) {
-      Int i, K;
-      K = ( alloc_xpt->n_children < MAX_SNAPSHOTS 
-          ? alloc_xpt->n_children
-          : MAX_SNAPSHOTS);     // max out
-
-      // Update .approx_ST field (approximatively) for all top-XPts.
-      // We *do not* do it for any non-top-XPTs.
-      for (i = 0; i < alloc_xpt->n_children; i++) {
-         XPt* top_XPt = alloc_xpt->children[i];
-         top_XPt->approx_ST += top_XPt->curr_space * ms_time_since_prev;
-      }
-      // Sort top-XPts by approx_ST field.
-      VG_(ssort)(alloc_xpt->children, alloc_xpt->n_children, sizeof(XPt*),
-                 XPt_cmp_approx_ST);
-
-      // For each significant top-level XPt, record space info about its
-      // entire XTree, in a single census entry.
-      // Nb: the xtree_size count/snapshot buffer allocation, and the actual
-      // snapshot, take similar amounts of time (measured with the
-      // millisecond counter).
-      for (i = 0; i < K; i++) {
-         UInt xtree_size, xtree_size2;
-//         VG_(printf)("%7u ", alloc_xpt->children[i]->approx_ST);
-         // Count how many XPts are in the XTree
-         xtree_size = get_xtree_size( alloc_xpt->children[i], 0 );
-
-         // If no XPts counted (ie. alloc_xpt.curr_space==0 or XTree
-         // insignificant) then don't take any more snapshots.
-         if (0 == xtree_size) break;
-         
-         // Make array of the appropriate size (+1 for zero termination,
-         // which calloc() does for us).
-         census->xtree_snapshots[i] =
-            VG_(calloc)(xtree_size+1, sizeof(XPtSnapshot));
-         if (0 && VG_(clo_verbosity) > 1)
-            VG_(printf)("calloc: %d (%d B)\n", xtree_size+1,
-                        (xtree_size+1) * sizeof(XPtSnapshot));
-
-         // Take space-snapshot: copy 'curr_space' for every XPt in the
-         // XTree into the snapshot array, along with pointers to the XPts.
-         // (Except for ones with curr_space==0, which wouldn't contribute
-         // to the final exact_ST_dbld calculation anyway;  excluding them
-         // saves a lot of memory and up to 40% time with big --depth valus.
-         xtree_size2 = do_space_snapshot(alloc_xpt->children[i],
-                                         census->xtree_snapshots[i], 0);
-         tl_assert(xtree_size == xtree_size2);
-      }
-//      VG_(printf)("\n\n");
-      // Zero-terminate 'xtree_snapshot' array
-      census->xtree_snapshots[i] = NULL;
-
-      //VG_(printf)("printed %d censi\n", K);
-
-      // Lump the rest into a single "others" entry.
-      census->others_space = 0;
-      for (i = K; i < alloc_xpt->n_children; i++) {
-         census->others_space += alloc_xpt->children[i]->curr_space;
-      }
+      census_heap_szB = heap_szB;
    }
 
    // Heap admin -------------------------------------------------------
-   if (clo_heap_admin > 0)
-      census->heap_admin_space = clo_heap_admin * n_heap_blocks;
+   if (clo_heap_admin > 0) {
+      census_heap_admin_szB = clo_heap_admin * n_heap_blocks;
+   }
 
    // Stack(s) ---------------------------------------------------------
    if (clo_stacks) {
       ThreadId tid;
       Addr     stack_min, stack_max;
-      census->stacks_space = sigstacks_space;
       VG_(thread_stack_reset_iter)();
       while ( VG_(thread_stack_next)(&tid, &stack_min, &stack_max) ) {
-         census->stacks_space += (stack_max - stack_min);
+         census_stacks_szB += (stack_max - stack_min);
       }
+      census_stacks_szB += sigstacks_szB;    // Add signal stacks, too
    }
 
-   // Finish, update interval if necessary -----------------------------
+   // Write out census -------------------------------------------------
+   census->ms_time = ms_time;
+   census->total_szB =
+      census_heap_szB + census_heap_admin_szB + census_stacks_szB;
+//   VG_(printf)("heap, admin, stacks: %ld, %ld, %ld B\n",
+//      census_heap_szB, census_heap_admin_szB, census_stacks_szB);
+   if (census->total_szB > peak_census_total_szB) {
+      peak_census_total_szB = census->total_szB;
+      VG_(printf)("new peak census total szB = %ld B\n", peak_census_total_szB);
+   }
+
+   // Print the significant part of the XTree  [XXX: temporary]
+   if (clo_heap)
+      pp_snapshot(census_heap_szB,   census_heap_admin_szB,
+                  census_stacks_szB, census->total_szB);
+
+   // Clean-ups
    curr_census++;
    census = NULL;    // don't use again now that curr_census changed
 
@@ -1036,15 +1125,14 @@ static void hp_census(void)
 
    // Take time for next census from now, rather than when this census
    // should have happened.  Because, if there's a big gap due to a kernel
-   // operation, there's no point doing catch-up censi every BB for a while
-   // -- that would just give N censi at almost the same time.
+   // operation, there's no point doing catch-up censi every allocation for
+   // a while -- that would just give N censi at almost the same time.
    if (VG_(clo_verbosity) > 1) {
       VG_(message)(Vg_UserMsg, "census: %d ms (took %d ms)", ms_time, 
                                VG_(read_millisecond_timer)() - ms_time );
    }
    ms_prev_census = ms_time;
    ms_next_census = ms_time + ms_interval;
-   //ms_next_census += ms_interval;
 
    //VG_(printf)("Next: %d ms\n", ms_next_census);
 } 
@@ -1055,13 +1143,13 @@ static void hp_census(void)
 
 static void new_mem_stack_signal(Addr a, SizeT len)
 {
-   sigstacks_space += len;
+   sigstacks_szB += len;
 }
 
 static void die_mem_stack_signal(Addr a, SizeT len)
 {
-   tl_assert(sigstacks_space >= len);
-   sigstacks_space -= len;
+   tl_assert(sigstacks_szB >= len);
+   sigstacks_szB -= len;
 }
 
 /*------------------------------------------------------------*/
@@ -1103,107 +1191,22 @@ IRSB* ms_instrument ( VgCallbackClosure* closure,
                       VexGuestExtents* vge,
                       IRType gWordTy, IRType hWordTy )
 {
-   /* XXX Will Massif work when gWordTy != hWordTy ? */
+   static Bool is_first_SB = True;
+
+   if (is_first_SB) {
+      // Do an initial sample for t = 0
+      hp_census();
+      is_first_SB = False;
+   }
+
    return bb_in;
-}
-
-/*------------------------------------------------------------*/
-/*--- Spacetime recomputation                              ---*/
-/*------------------------------------------------------------*/
-
-// Although we've been calculating space-time along the way, because the
-// earlier calculations were done at a finer timescale, the .approx_ST field
-// might not agree with what hp2ps sees, because we've thrown away some of
-// the information.  So recompute it at the scale that hp2ps sees, so we can
-// confidently determine which contexts hp2ps will choose for displaying as
-// distinct bands.  This recomputation only happens to the significant ones
-// that get printed in the .hp file, so it's cheap.
-//
-// The approx_ST calculation: 
-//   ( a[0]*d(0,1) + a[1]*(d(0,1) + d(1,2)) + ... + a[N-1]*d(N-2,N-1) ) / 2
-//   where
-//   a[N] is the space at census N
-//   d(A,B) is the time interval between censi A and B
-//   and
-//   d(A,B) + d(B,C) == d(A,C)
-//
-// Key point:  we can calculate the area for a census without knowing the
-// previous or subsequent censi's space;  because any over/underestimates
-// for this census will be reversed in the next, balancing out.  This is
-// important, as getting the previous/next census entry for a particular
-// AP is a pain with this data structure, but getting the prev/next
-// census time is easy.
-//
-// Each heap calculation gets added to its context's exact_ST_dbld field.
-// The ULong* values are all running totals, hence the use of "+=" everywhere.
-
-// This does the calculations for a single census.
-static void calc_exact_ST_dbld2(Census* census, UInt d_t1_t2,
-                             ULong* twice_heap_ST,
-                             ULong* twice_heap_admin_ST,
-                             ULong* twice_stack_ST)
-{
-   UInt i, j;
-   XPtSnapshot* xpt_snapshot;
-
-   // Heap --------------------------------------------------------
-   if (clo_heap) {
-      for (i = 0; NULL != census->xtree_snapshots[i]; i++) {
-         // Compute total heap exact_ST_dbld for the entire XTree using only
-         // the top-XPt (the first XPt in xtree_snapshot).
-         *twice_heap_ST += d_t1_t2 * census->xtree_snapshots[i][0].space;
-
-         // Increment exact_ST_dbld for every XPt in xtree_snapshot (inc.
-         // top one)
-         for (j = 0; NULL != census->xtree_snapshots[i][j].xpt; j++) {
-            xpt_snapshot = & census->xtree_snapshots[i][j];
-            xpt_snapshot->xpt->exact_ST_dbld += d_t1_t2 * xpt_snapshot->space;
-         }
-      }
-      *twice_heap_ST += d_t1_t2 * census->others_space;
-   }
-
-   // Heap admin --------------------------------------------------
-   if (clo_heap_admin > 0)
-      *twice_heap_admin_ST += d_t1_t2 * census->heap_admin_space;
-
-   // Stack(s) ----------------------------------------------------
-   if (clo_stacks)
-      *twice_stack_ST += d_t1_t2 * census->stacks_space;
-}
-
-// This does the calculations for all censi.
-static void calc_exact_ST_dbld(ULong* heap2, ULong* heap_admin2, ULong* stack2)
-{
-   UInt i, N = curr_census;
-
-   *heap2       = 0;
-   *heap_admin2 = 0;
-   *stack2      = 0;
-   
-   if (N <= 1)
-      return;
-
-   calc_exact_ST_dbld2( &censi[0], censi[1].ms_time - censi[0].ms_time,
-                        heap2, heap_admin2, stack2 );
-
-   for (i = 1; i <= N-2; i++) {
-      calc_exact_ST_dbld2( & censi[i], censi[i+1].ms_time - censi[i-1].ms_time,
-                           heap2, heap_admin2, stack2 );
-   }
-
-   calc_exact_ST_dbld2( & censi[N-1], censi[N-1].ms_time - censi[N-2].ms_time,
-                        heap2, heap_admin2, stack2 ); 
-   // Now get rid of the halves.  May lose a 0.5 on each, doesn't matter.
-   *heap2       /= 2;
-   *heap_admin2 /= 2;
-   *stack2      /= 2;
 }
 
 /*------------------------------------------------------------*/
 /*--- Writing the graph file                               ---*/
 /*------------------------------------------------------------*/
 
+#if 0
 static Char* make_filename(Char* dir, Char* suffix)
 {
    Char* filename;
@@ -1236,146 +1239,137 @@ static void file_err ( Char* file )
    VG_(message)(Vg_UserMsg, "error: can't open output file '%s'", file );
    VG_(message)(Vg_UserMsg, "       ... so profile results will be missing.");
 }
+#endif
 
-/* Format, by example:
+#define P   VG_(printf)
 
-   JOB "a.out -p"
-   DATE "Fri Apr 17 11:43:45 1992"
-   SAMPLE_UNIT "seconds"
-   VALUE_UNIT "bytes"
-   BEGIN_SAMPLE 0.00
-     SYSTEM 24
-   END_SAMPLE 0.00
-   BEGIN_SAMPLE 1.00
-     elim 180
-     insert 24
-     intersect 12
-     disin 60
-     main 12
-     reduce 20
-     SYSTEM 12
-   END_SAMPLE 1.00
-   MARK 1.50
-   MARK 1.75
-   MARK 1.80
-   BEGIN_SAMPLE 2.00
-     elim 192
-     insert 24
-     intersect 12
-     disin 84
-     main 12
-     SYSTEM 24
-   END_SAMPLE 2.00
-   BEGIN_SAMPLE 2.82
-   END_SAMPLE 2.82
- */
-static void write_hp_file(void)
+static void write_text_graph(void)
 {
-   Int    i, j;
-   Int    fd, res;
-   SysRes sres;
-   Char  *hp_file, *ps_file, *aux_file;
-   Char*  cmdfmt;
-   Char*  cmdbuf;
-   Int    cmdlen;
+   Int    i /*,j*/;
+   Int    x, y;         // y must be signed!
+   Int end_ms_time;
+   Char unit;
+   Int orders_of_magnitude;
+   SizeT peak_census_total_szScaled;
 
-   // Open file
-   hp_file  = make_filename( base_dir, ".hp" );
-   ps_file  = make_filename( base_dir, ".ps" );
-   aux_file = make_filename( base_dir, ".aux" );
-   sres = VG_(open)(hp_file, VKI_O_CREAT|VKI_O_TRUNC|VKI_O_WRONLY,
-                             VKI_S_IRUSR|VKI_S_IWUSR);
-   if (sres.isError) {
-      file_err( hp_file );
-      return;
-   } else {
-      fd = sres.res;
+
+   // XXX: unhardwire the sizes later
+   #define GRAPH_X   72
+   #define GRAPH_Y   20
+
+   // The ASCII graph.
+   // Row    0 ([0..GRAPH_X][0]) is the x-axis.
+   // Column 0 ([0][0..GRAPH_Y]) is the y-axis.
+   // The rest ([1][1]..[GRAPH_X][GRAPH_Y]) is the usable graph area.
+   Char graph[GRAPH_X+1][GRAPH_Y+1];
+
+   // Setup the graph
+   graph[0][0] = '+';                     // axes join point
+   for (x = 1; x <= GRAPH_X; x++) {       // x-axis
+      graph[x][0] = '-';
+   }
+   for (y = 1; y <= GRAPH_Y; y++) {       // y-axis
+      graph[0][y] = '|';
+   }
+   for (x = 1; x <= GRAPH_X; x++) {       // usable area
+      for (y = 1; y <= GRAPH_Y; y++) {
+         graph[x][y] = ' ';
+      }
    }
 
-   // File header, including command line
-   SPRINTF(buf, "JOB         \"");
+   // We increment end_ms_time by 1 so that the last census occurs just
+   // before it, and doesn't spill over into the final column.
+   tl_assert(curr_census > 0);
+   end_ms_time = censi[curr_census-1].ms_time + 1;
+   tl_assert(end_ms_time > 0);
+   tl_assert(peak_census_total_szB > 0);
+   P("end time = %d ms\n", end_ms_time);
+   P("peak census total szB = %ld B\n", peak_census_total_szB);
+
+   // Header, including command line
+   P("cmd: ");
    if (VG_(args_the_exename)) {
-      SPRINTF(buf, "%s", VG_(args_the_exename));
+      P("%s", VG_(args_the_exename));
+      for (i = 0; i < VG_(sizeXA)( VG_(args_for_client) ); i++) {
+         HChar* arg = * (HChar**) VG_(indexXA)( VG_(args_for_client), i );
+         if (arg)
+            P(" %s", arg);
+      }
+   } else {
+      P(" ???");
    }
-   for (i = 0; i < VG_(sizeXA)( VG_(args_for_client) ); i++) {
-       HChar* arg = * (HChar**) VG_(indexXA)( VG_(args_for_client), i );
-      if (arg)
-         SPRINTF(buf, " %s", arg);
-   }
-   SPRINTF(buf, /*" (%d ms/sample)\"\n"*/ "\"\n"
-                "DATE        \"\"\n"
-                "SAMPLE_UNIT \"ms\"\n"
-                "VALUE_UNIT  \"bytes\"\n", ms_interval);
+   P("\n");
 
    // Censi
    for (i = 0; i < curr_census; i++) {
       Census* census = & censi[i];
 
-      // Census start
-      SPRINTF(buf, "MARK %d.0\n"
-                   "BEGIN_SAMPLE %d.0\n",
-                   census->ms_time, census->ms_time);
+      // Work out how many bytes each row represents.
+      double per_row_full_thresh_szB = (double)peak_census_total_szB / GRAPH_Y;
+      double per_row_half_thresh_szB = per_row_full_thresh_szB / 2;
 
-      // Heap -----------------------------------------------------------
-      if (clo_heap) {
-         // Print all the significant XPts from that census
-         for (j = 0; NULL != census->xtree_snapshots[j]; j++) {
-            // Grab the jth top-XPt
-            XTreeSnapshot xtree_snapshot = & census->xtree_snapshots[j][0];
-            if ( ! VG_(get_fnname)(xtree_snapshot->xpt->ip, buf2, 16)) {
-               VG_(sprintf)(buf2, "???");
-            }
-            SPRINTF(buf, "x%x:%s %d\n", xtree_snapshot->xpt->ip,
-                         clean_fnname(buf3, buf2), xtree_snapshot->space);
-         }
+      // Work out which column this census belongs to.
+      double bar_x_pos_frac = ((double)census->ms_time / end_ms_time) * GRAPH_X;
+      int    bar_x_pos      = (int)bar_x_pos_frac + 1;    // +1 due to y-axis
+      // XXX: why is the 0 one not getting drawn?
+      P("n: %d\n", bar_x_pos);
+      tl_assert(1 <= bar_x_pos && bar_x_pos <= GRAPH_X);
 
-         // Remaining heap block alloc points, combined
-         if (census->others_space > 0)
-            SPRINTF(buf, "other %d\n", census->others_space);
+      // Grow this census bar from bottom to top.
+      for (y = 1; y <= GRAPH_Y; y++) {
+         double this_row_full_thresh_szB = y * per_row_full_thresh_szB;
+         double this_row_half_thresh_szB =
+            this_row_full_thresh_szB - per_row_half_thresh_szB;
+
+         graph[bar_x_pos][y] = ' ';
+         if (census->total_szB >= this_row_half_thresh_szB)
+            graph[bar_x_pos][y] = '.';
+         if (census->total_szB >= this_row_full_thresh_szB)
+            graph[bar_x_pos][y] = ':';
       }
-
-      // Heap admin -----------------------------------------------------
-      if (clo_heap_admin > 0 && census->heap_admin_space)
-         SPRINTF(buf, "heap-admin %d\n", census->heap_admin_space);
-      
-      // Stack(s) -------------------------------------------------------
-      if (clo_stacks)
-         SPRINTF(buf, "stack(s) %d\n", census->stacks_space);
-
-      // Census end
-      SPRINTF(buf, "END_SAMPLE %d.0\n", census->ms_time);
    }
 
-   // Close file
-   tl_assert(fd >= 0);
-   VG_(close)(fd);
-
-   // Attempt to convert file using hp2ps
-   cmdfmt = "%s/hp2ps -c -t1 %s";
-   cmdlen = VG_(strlen)(VG_(libdir)) + VG_(strlen)(hp_file) 
-                                     + VG_(strlen)(cmdfmt);
-   cmdbuf = VG_(malloc)( sizeof(Char) * cmdlen );
-   VG_(sprintf)(cmdbuf, cmdfmt, VG_(libdir), hp_file);
-   res = VG_(system)(cmdbuf);
-   VG_(free)(cmdbuf);
-   if (res != 0) {      
-      VG_(message)(Vg_UserMsg, 
-                   "Conversion to PostScript failed.  Try converting manually.");
-   } else {
-      // remove the .hp and .aux file
-      VG_(unlink)(hp_file);
-      VG_(unlink)(aux_file);
+   orders_of_magnitude = 0;
+   peak_census_total_szScaled = peak_census_total_szB;
+   while (peak_census_total_szScaled > 1000) {
+      orders_of_magnitude++;
+      peak_census_total_szScaled /= 1000;
+   }
+   switch (orders_of_magnitude) {
+      case 0: unit = ' '; break;
+      case 1: unit = 'k'; break;
+      case 2: unit = 'M'; break;
+      case 3: unit = 'G'; break;
+      case 4: unit = 'T'; break;
+      default:
+         tl_assert2(0, "unknown order of magnitude: %d", orders_of_magnitude);
    }
 
-   VG_(free)(hp_file);
-   VG_(free)(ps_file);
-   VG_(free)(aux_file);
+   // Print graph
+   P("-- start graph --\n");
+   for (y = GRAPH_Y; y >= 0; y--) {
+      // Row prefix
+      if (GRAPH_Y == y)                // top point
+         P("%3lu%c", peak_census_total_szScaled, unit);
+      else if (0 == y)                 // bottom point
+         P("  0 ");
+      else                             // anywhere else
+         P("    ");
+         
+      // Axis and data for the row
+      for (x = 0; x <= GRAPH_X; x++) {
+         P("%c", graph[x][y]);
+      }
+      P("\n");
+   }
+   P("-- end graph --\n");
 }
 
 /*------------------------------------------------------------*/
 /*--- Writing the XPt text/HTML file                       ---*/
 /*------------------------------------------------------------*/
 
+#if 0
 static void percentify(Int n, Int pow, Int field_width, char xbuf[])
 {
    int i, len, space;
@@ -1390,28 +1384,30 @@ static void percentify(Int n, Int pow, Int field_width, char xbuf[])
    for (     ; i >= 0;    i--)  xbuf[i + space] = xbuf[i];
    for (i = 0; i < space; i++)  xbuf[i] = ' ';
 }
+#endif
 
 // Nb: uses a static buffer, each call trashes the last string returned.
 static Char* make_perc(ULong spacetime, ULong total_spacetime)
 {
    static Char mbuf[32];
    
-   UInt  p = 10;
+//   UInt  p = 10;
    tl_assert(0 != total_spacetime);
-   percentify(spacetime * 100 * p / total_spacetime, p, 5, mbuf); 
+//   percentify(spacetime * 100 * p / total_spacetime, p, 5, mbuf); 
+// XXX: I'm not confident that VG_(percentify) works as it should...
+   VG_(percentify)(spacetime, total_spacetime, 1, 5, mbuf); 
+   if (' ' == mbuf[0]) mbuf[0] = '0';
    return mbuf;
 }
 
+#if 0
 // Nb: passed in XPt is a lower-level XPt;  IPs are grabbed from
 // bottom-to-top of XCon, and then printed in the reverse order.
-static UInt pp_XCon(Int fd, XPt* xpt)
+static UInt pp_XCon(XPt* xpt)
 {
    Addr  rev_ips[clo_depth+1];
    Int   i = 0;
    Int   n = 0;
-   Bool  is_HTML      = ( XHTML == clo_format );
-   Char* maybe_br     = ( is_HTML ? "<br>" : "" );
-   Char* maybe_indent = ( is_HTML ? "&nbsp;&nbsp;" : "" );
 
    tl_assert(NULL != xpt);
 
@@ -1426,10 +1422,18 @@ static UInt pp_XCon(Int fd, XPt* xpt)
    for (i = n-1; i >= 0; i--) {
       // -1 means point to calling line
       VG_(describe_IP)(rev_ips[i]-1, buf2, BUF_LEN);
-      SPRINTF(buf, "  %s%s%s\n", maybe_indent, buf2, maybe_br);
+      P("  %s\n", buf2);
    }
 
    return n;
+}
+#endif
+
+// Does the xpt account for >= 1% of total memory used?
+// XXX: make command-line controllable?
+static Bool is_significant_XPt(XPt* xpt, SizeT curr_total_szB)
+{
+   return (xpt->curr_szB * 1000 / curr_total_szB >= 10);   // < 1%?
 }
 
 // Important point:  for HTML, each XPt must be identified uniquely for the
@@ -1438,153 +1442,128 @@ static UInt pp_XCon(Int fd, XPt* xpt)
 // one other function from a single code location.  So instead we use the
 // address of the xpt struct itself, which is guaranteed to be unique.
 
-static void pp_all_XPts2(Int fd, Queue* q, ULong heap_spacetime,
-                         ULong total_spacetime)
+static void pp_snapshot_child_XPts(XPt* parent, Int depth, Char* depth_str,
+                                   Int depth_str_len,
+                                   SizeT curr_heap_szB, SizeT curr_total_szB)
 {
-   UInt  i;
-   XPt  *xpt, *child;
-   UInt  L   = 0;
-   UInt  c1  = 1;
-   UInt  c2  = 0;
-   ULong sum = 0;
-   UInt  n;
-   Char *ip_desc, *perc;
-   Bool  is_HTML   = ( XHTML == clo_format );
-   Char* maybe_br  = ( is_HTML ?  "<br>" : "" );
-   Char* maybe_p   = ( is_HTML ?   "<p>" : "" );
-   Char* maybe_ul  = ( is_HTML ?  "<ul>" : "" );
-   Char* maybe_li  = ( is_HTML ?  "<li>" : "" );
-   Char* maybe_fli = ( is_HTML ? "</li>" : "" );
-   Char* maybe_ful = ( is_HTML ? "</ul>" : "" );
-   Char* end_hr    = ( is_HTML ? "<hr>"  : 
-                                 "=================================" );
-   Char* depth     = ( is_HTML ? "<code>--depth</code>" : "--depth" );
+   Int   i;
+   XPt*  child;
+   Bool  child_is_last_sibling;
+   Char* ip_desc, *perc;
 
-   if (total_spacetime == 0) {
-      SPRINTF(buf, "(No heap memory allocated)\n");
-      return;
+   // XXX: don't want to see 0xFFFFFFFE entries
+   
+   // Check that the sum of all children's sizes equals the parent's size.
+   SizeT children_sum_szB = 0;
+   for (i = 0; i < parent->n_children; i++) {
+      children_sum_szB += parent->children[i]->curr_szB;
    }
+   tl_assert(children_sum_szB == parent->curr_szB);
 
+   // Sort children by curr_szB (reverse order:  biggest to smallest)
+   // XXX: is it better to keep them always in order?
+   // XXX: or, don't keep them in order, inspect all of them, but sort
+   //      the selected ones in the queue when they're added.
+   VG_(ssort)(parent->children, parent->n_children, sizeof(XPt*),
+              XPt_revcmp_curr_szB);
 
-   SPRINTF(buf, "== %d ===========================%s\n", L, maybe_br);
+   // Show all children that account for > 1% of current total szB.
+   for (i = 0; i < parent->n_children; i++) {
+      child = parent->children[i];
 
-   while (NULL != (xpt = (XPt*)dequeue(q))) {
-      // Check that non-top-level XPts have a zero .approx_ST field.
-      if (xpt->parent != alloc_xpt) tl_assert( 0 == xpt->approx_ST );
-
-      // Check that the sum of all children .exact_ST_dbld fields equals
-      // parent's (unless alloc_xpt, when it should == 0).
-      if (alloc_xpt == xpt) {
-         tl_assert(0 == xpt->exact_ST_dbld);
-      } else {
-         sum = 0;
-         for (i = 0; i < xpt->n_children; i++) {
-            sum += xpt->children[i]->exact_ST_dbld;
-         }
-         //tl_assert(sum == xpt->exact_ST_dbld);
-         // It's possible that not all the children were included in the
-         // exact_ST_dbld calculations.  Hopefully almost all of them were, and
-         // all the important ones.
-//         tl_assert(sum <= xpt->exact_ST_dbld);
-//         tl_assert(sum * 1.05 > xpt->exact_ST_dbld );
-//         if (sum != xpt->exact_ST_dbld) {
-//            VG_(printf)("%lld, %lld\n", sum, xpt->exact_ST_dbld);
-//         }
-      }
-
-      if (xpt == alloc_xpt) {
-         SPRINTF(buf, "Heap allocation functions accounted for "
-                      "%s of measured spacetime%s\n", 
-                      make_perc(heap_spacetime, total_spacetime), maybe_br);
-      } else {
-         // Remember: exact_ST_dbld is space.time *doubled*
-         perc = make_perc(xpt->exact_ST_dbld / 2, total_spacetime);
-         if (is_HTML) {
-            SPRINTF(buf, "<a name=\"b%x\"></a>"
-                         "Context accounted for "
-                         "<a href=\"#a%x\">%s</a> of measured spacetime<br>\n",
-                         xpt, xpt, perc);
-         } else {
-            SPRINTF(buf, "Context accounted for %s of measured spacetime\n",
-                         perc);
-         }
-         n = pp_XCon(fd, xpt);
-         tl_assert(n == L);
-      }
-
-      // Sort children by exact_ST_dbld
-      VG_(ssort)(xpt->children, xpt->n_children, sizeof(XPt*),
-                 XPt_cmp_exact_ST_dbld);
-
-      SPRINTF(buf, "%s\nCalled from:%s\n", maybe_p, maybe_ul);
-      for (i = 0; i < xpt->n_children; i++) {
-         child = xpt->children[i];
-
-         // Stop when <1% of total spacetime
-         if (child->exact_ST_dbld * 1000 / (total_spacetime * 2) < 5) {
-            UInt  n_insig = xpt->n_children - i;
-            Char* s       = ( n_insig == 1 ? "" : "s" );
-            Char* and     = ( 0 == i ? "" : "and "   );
-            Char* other   = ( 0 == i ? "" : "other " );
-            SPRINTF(buf, "  %s%s%d %sinsignificant place%s%s\n\n",
-                    maybe_li, and, n_insig, other, s, maybe_fli);
-            break;
-         }
-
-         // Remember: exact_ST_dbld is space.time *doubled*
-         perc    = make_perc(child->exact_ST_dbld / 2, total_spacetime);
+      child_is_last_sibling = ( i+1 == parent->n_children ? True : False );
+   
+      // Indent appropriately
+      P("%s", depth_str);
+      if (is_significant_XPt(child, curr_total_szB)) {
+         // This child is significant.  Print it.
+         perc = make_perc(child->curr_szB, curr_total_szB);
          ip_desc = VG_(describe_IP)(child->ip-1, buf2, BUF_LEN);
-         if (is_HTML) {
-            SPRINTF(buf, "<li><a name=\"a%x\"></a>", child );
+         P("->%6s: %s\n", perc, ip_desc);
 
-            if (child->n_children > 0) {
-               SPRINTF(buf, "<a href=\"#b%x\">%s</a>", child, perc);
-            } else {
-               SPRINTF(buf, "%s", perc);
-            }
-            SPRINTF(buf, ": %s\n", ip_desc);
+         // If the child has any children, print them.  But first add the
+         // prefix for them, which is "  " if the parent has no smaller
+         // siblings following, or "| " if it does.
+         tl_assert(depth*2+1 < depth_str_len-1);   // -1 for end NUL char
+         if (child_is_last_sibling) {
+            depth_str[depth*2+0] = ' ';
+            depth_str[depth*2+1] = ' ';
+            depth_str[depth*2+2] = '\0';
          } else {
-            SPRINTF(buf, "  %6s: %s\n\n", perc, ip_desc);
+            depth_str[depth*2+0] = '|';
+            depth_str[depth*2+1] = ' ';
+            depth_str[depth*2+2] = '\0';
          }
+         if (child->n_children > 0 &&
+            // XXX: horrible -- need to totally overhaul below-main checking,
+            // do it in m_stacktrace.c.  [Ah, but we don't know the function
+            // names at that point, just the IPs...]
+            !VG_(strstr)(ip_desc, " main (")
+#             if defined(VGO_linux)
+              && !VG_(strstr)(ip_desc, "__libc_start_main")  // glibc glibness
+              && !VG_(strstr)(ip_desc, "generic_start_main") // Yellow Dog doggedness
+#             endif
+            ) 
+         {
+            pp_snapshot_child_XPts(child, depth+1, depth_str, depth_str_len,
+               curr_heap_szB, curr_total_szB);
+         } else {
+            // Reached the bottom of an XCon, print a blank (modulo
+            // indentation lines) line.
+            P("%s\n", depth_str);
+         }
+         // Undo the indentation.
+         depth_str[depth*2+0] = '\0';
+         depth_str[depth*2+1] = '\0';
+         depth_str[depth*2+2] = '\0';
 
-         if (child->n_children > 0) {
-            enqueue(q, (void*)child);
-            c2++;
-         }
-      }
-      SPRINTF(buf, "%s%s", maybe_ful, maybe_p);
-      c1--;
-      
-      // Putting markers between levels of the structure:
-      // c1 tracks how many to go on this level, c2 tracks how many we've
-      // queued up for the next level while finishing off this level.  
-      // When c1 gets to zero, we've changed levels, so print a marker,
-      // move c2 into c1, and zero c2.
-      if (0 == c1) {
-         L++;
-         c1 = c2;
-         c2 = 0;
-         if (! is_empty_queue(q) ) {      // avoid empty one at end
-            SPRINTF(buf, "== %d ===========================%s\n", L, maybe_br);
-         }
       } else {
-         SPRINTF(buf, "---------------------------------%s\n", maybe_br);
+         // This child is insignificant, as are all those remaining.
+         // Don't bother with them.
+         UInt  n_insig = parent->n_children - i;
+         Char* s       = ( n_insig == 1 ? "" : "s" );
+         Char* other   = ( 0 == i ? "" : "other " );
+         P("->the rest in %d %sinsignificant place%s\n", n_insig, other, s);
+         P("%s\n", depth_str);
+         return;
       }
    }
-   SPRINTF(buf, "%s\n\nEnd of information.  Rerun with a bigger "
-                "%s value for more.\n", end_hr, depth);
 }
 
-static void pp_all_XPts(Int fd, XPt* xpt, ULong heap_spacetime,
-                        ULong total_spacetime)
+static void pp_snapshot(SizeT curr_heap_szB,   SizeT curr_heap_admin_szB,
+                        SizeT curr_stacks_szB, SizeT curr_total_szB)
 {
-   Queue* q = construct_queue(100);
+   Int  depth_str_len = clo_depth * 2 + 2;
+   Char* depth_str = VG_(malloc)(sizeof(Char) * depth_str_len);
+   depth_str[0] = '\0';    // Initialise to "".
+   
+   P("=================================\n");
+   P("== snapshot\n");
+   P("=================================\n");
+   P("Total memory usage: %,12lu bytes\n", curr_total_szB);
+   P("Useful heap usage : %,12lu bytes (%s)\n",
+      curr_heap_szB,       make_perc(curr_heap_szB, curr_total_szB));
+   P("Admin  heap usage : %,12lu bytes (%s)\n",
+      curr_heap_admin_szB, make_perc(curr_heap_admin_szB, curr_total_szB));
+   P("Stacks usage      : %,12lu bytes (%s)\n",
+      curr_stacks_szB,     make_perc(curr_stacks_szB, curr_total_szB));
 
-   enqueue(q, xpt);
-   pp_all_XPts2(fd, q, heap_spacetime, total_spacetime);
-   destruct_queue(q);
+   if (0 == curr_heap_szB) {
+      P("(No heap memory currently allocated)\n");
+   } else {
+      P("Heap tree:\n");
+      P("%6s: (heap allocation functions) malloc, new, new[], etc.\n",
+         make_perc(curr_heap_szB, curr_total_szB));
+
+      pp_snapshot_child_XPts(alloc_xpt, 0, depth_str, depth_str_len,
+                             curr_heap_szB, curr_total_szB);
+   }
+
+   P("\n");
+   VG_(free)(depth_str);
 }
 
+#if 0
 static void
 write_text_file(ULong total_ST, ULong heap_ST)
 {
@@ -1629,16 +1608,18 @@ write_text_file(ULong total_ST, ULong heap_ST)
    SPRINTF(buf, "\n%s\n", maybe_p);
 
    if (clo_heap)
-      pp_all_XPts(fd, alloc_xpt, heap_ST, total_ST);
+      pp_significant_XPts(fd, alloc_xpt, heap_ST, total_ST);
 
    tl_assert(fd >= 0);
    VG_(close)(fd);
 }
+#endif
 
 /*------------------------------------------------------------*/
 /*--- Finalisation                                         ---*/
 /*------------------------------------------------------------*/
 
+#if 0
 static void
 print_summary(ULong total_ST, ULong heap_ST, ULong heap_admin_ST,
               ULong stack_ST)
@@ -1686,23 +1667,28 @@ print_summary(ULong total_ST, ULong heap_ST, ULong heap_admin_ST,
       VG_(message)(Vg_DebugMsg, "  halvings: %u", n_halvings);
    }
 }
+#endif
 
 static void ms_fini(Int exit_status)
 {
-   ULong total_ST      = 0;
-   ULong heap_ST       = 0;
-   ULong heap_admin_ST = 0;
-   ULong stack_ST      = 0;
+   ///ULong total_ST      = 0;
+  /// ULong heap_ST       = 0;
+ ///  ULong heap_admin_ST = 0;
+///   ULong stack_ST      = 0;
 
    // Do a final (empty) sample to show program's end
    hp_census();
 
    // Redo spacetimes of significant contexts to match the .hp file.
-   calc_exact_ST_dbld(&heap_ST, &heap_admin_ST, &stack_ST);
-   total_ST = heap_ST + heap_admin_ST + stack_ST; 
-   write_hp_file  ( );
-   write_text_file( total_ST, heap_ST );
-   print_summary  ( total_ST, heap_ST, heap_admin_ST, stack_ST );
+//   calc_exact_ST_dbld(&heap_ST, &heap_admin_ST, &stack_ST);
+//   total_ST = heap_ST + heap_admin_ST + stack_ST; 
+//   write_hp_file  ( );
+//   write_text_file( total_ST, heap_ST );
+//   print_summary  ( total_ST, heap_ST, heap_admin_ST, stack_ST );
+
+//   destruct_queue(xpt_q);
+
+   write_text_graph();
 }
 
 /*------------------------------------------------------------*/
@@ -1713,8 +1699,10 @@ static void ms_post_clo_init(void)
 {
    ms_interval = 1;
 
-   // Do an initial sample for t = 0
-   hp_census();
+   // We don't take a census now, because there's still some core
+   // initialisation to do, in which case we have an artificial gap.
+   // Instead we do it when the first translation occurs.  See
+   // ms_instrument().
 }
 
 static void ms_pre_clo_init(void)
@@ -1756,6 +1744,9 @@ static void ms_pre_clo_init(void)
 
    // Dummy node at top of the context structure.
    alloc_xpt = new_XPt(0, NULL, /*is_bottom*/False);
+
+//   // XPt traversal queue
+//   xpt_q = construct_queue(100);
 
    tl_assert( VG_(getcwd)(base_dir, VKI_PATH_MAX) );
 }
