@@ -77,6 +77,12 @@
 //   - "show me the extra allocations from last-snapshot"
 //   - "start/stop logging" (eg. quickly skip boring bits)
 //
+// Docs:
+// - need to explain that --alloc-fn changed slightly -- now if an entry
+//   matches an alloc-fn, that entry *and all above it* are removed.  So you
+//   can cut out allc-fn chains at the bottom, rather than having to name
+//   all of them, which is better.
+//
 //---------------------------------------------------------------------------
 
 // Memory profiler.  Produces a graph, gives lots of information about
@@ -231,21 +237,27 @@
 /*------------------------------------------------------------*/
 
 // An XPt represents an "execution point", ie. a code address.  Each XPt is
-// part of a tree of XPts (an "execution tree", or "XTree").  Each
-// top-to-bottom path through an XTree gives an execution context ("XCon"),
-// and is equivalent to a traditional Valgrind ExeContext.  
+// part of a tree of XPts (an "execution tree", or "XTree").  
 //
-// The XPt at the top of an XTree (but below "alloc_xpt") is called a
-// "top-XPt".  The XPts are the bottom of an XTree (leaf nodes) are
-// "bottom-XPTs".  The number of XCons in an XTree is equal to the number of
-// bottom-XPTs in that XTree.
+// The root of the tree is 'alloc_xpt', which represents all allocation
+// functions, eg:
+// - malloc/calloc/realloc/memalign/new/new[];
+// - user-specified allocation functions (using --alloc-fn);
+// - custom allocation (MALLOCLIKE) points
+// It's a bit of a fake XPt (ie. its 'ip' is zero), and is only used because
+// it makes the code simpler.
 //
-// All XCons have the same top-XPt, "alloc_xpt", which represents all
-// allocation functions like malloc().  It's a bit of a fake XPt, though,
-// and is only used because it makes some of the code simpler.
+// Any child of 'alloc_xpt' is called a "top-XPt".  The XPts are the bottom
+// of an XTree (leaf nodes) are "bottom-XPTs".  The number of XCons in an
+// XTree is equal to the number of bottom-XPTs in that XTree.
 //
-// XTrees are bi-directional.
+// Each path from a top-XPt to a bottom-XPt through an XTree gives an
+// execution context ("XCon"), ie. a stack trace.  (And sub-paths represent
+// stack sub-traces.)
 //
+//      alloc_xpt       XTrees are bi-directional.
+//        | ^
+//        v |
 //     > parent <       Example: if child1() calls parent() and child2()
 //    /    |     \      also calls parent(), and parent() calls malloc(),
 //   |    / \     |     the XTree will look like this.
@@ -262,11 +274,12 @@ struct _XPt {
    // Nb: this value goes up and down as the program executes.
    UInt  curr_szB;
 
-   // n_children and max_children are 32-bit integers, not 16-bit, because
-   // a very big program might have more than 65536 allocation points
-   // (Konqueror startup has 1800).
    XPt*  parent;           // pointer to parent XPt
 
+   // Children.
+   // n_children and max_children are 32-bit integers, not 16-bit, because
+   // a very big program might have more than 65536 allocation points (ie.
+   // top-XPts) -- Konqueror starting up has 1800.
    UInt  n_children;       // number of children
    UInt  max_children;     // capacity of children array
    XPt** children;         // pointers to children XPts
@@ -302,18 +315,6 @@ struct _XPt {
 // calculation that just sums the totals;  ie. it assumes all samples are
 // the same distance apart).
 
-#define MAX_SNAPSHOTS         32
-
-typedef
-   struct {
-      XPt* xpt;
-      UInt space;
-   }
-   XPtSnapshot;
-
-// An XTree snapshot is stored as an array of of XPt snapshots.
-typedef XPtSnapshot* XTreeSnapshot;
-
 typedef
    struct {
       Int   ms_time;    // Int: must allow -1
@@ -326,7 +327,8 @@ typedef
 // HP_Chunks, XPt 'space' fields are incremented (at allocation) and
 // decremented (at deallocation).
 //
-// Nb: first two fields must match core's VgHashNode.
+// Nb: first two fields must match core's VgHashNode. [XXX: is that still
+// true?]
 typedef
    struct _HP_Chunk {
       struct _HP_Chunk* next;
@@ -349,14 +351,13 @@ typedef
 //  -  15,000 XPts            800,000 XPts
 //  -   1,800 top-XPts
 
-// XXX: check if we still need all these...
 static UInt n_xpts               = 0;
-static UInt n_bot_xpts           = 0;
 static UInt n_allocs             = 0;
 static UInt n_zero_allocs        = 0;
 static UInt n_frees              = 0;
 static UInt n_children_reallocs  = 0;
-//static UInt n_snapshot_frees     = 0;
+
+static UInt n_getXCon_redo       = 0;
 
 static UInt n_halvings           = 0;
 static UInt n_real_censi         = 0;
@@ -376,7 +377,6 @@ static UInt n_fake_censi         = 0;
 #define BUF_LEN         1024     // general purpose
 static Char buf [BUF_LEN];
 static Char buf2[BUF_LEN];
-//static Char buf3[BUF_LEN];
 
 // Make these signed so things are more obvious if they go negative.
 static SSizeT sigstacks_szB = 0;     // Current signal stacks space sum
@@ -397,6 +397,8 @@ static Char base_dir[VKI_PATH_MAX];
 static UInt  n_alloc_fns = 10;
 static Char* alloc_fns[MAX_ALLOC_FNS] = { 
    "malloc",
+   // XXX: maybe these four shouldn't be in here?  Someone might want to see
+   // inside them...
    "operator new(unsigned)",
    "operator new[](unsigned)",
    "operator new(unsigned, std::nothrow_t const&)",
@@ -470,7 +472,7 @@ static void ms_print_debug_usage(void)
 }
 
 /*------------------------------------------------------------*/
-/*--- Execution contexts                                   ---*/
+/*--- XPts                                                 ---*/
 /*------------------------------------------------------------*/
 
 // Fake XPt representing all allocation functions like malloc().  Acts as
@@ -499,31 +501,22 @@ static void* perm_malloc(SizeT n_bytes)
    return (void*)(hp - n_bytes);
 }
 
-
-
-static XPt* new_XPt(Addr ip, XPt* parent, Bool is_bottom)
+static XPt* new_XPt(Addr ip, XPt* parent)
 {
+   // XPts are never freed, so we can use perm_malloc to allocate them.
+   // Note that we cannot use perm_malloc for the 'children' array, because
+   // that needs to be resizable.
    XPt* xpt          = perm_malloc(sizeof(XPt));
    xpt->ip           = ip;
    xpt->curr_szB     = 0;
    xpt->parent       = parent;
 
-   // Check parent is not a bottom-XPt
-   tl_assert(parent == NULL || 0 != parent->max_children);
-
+   // We don't initially allocate any space for children.  We let that
+   // happen on demand.  Many XPts (ie. all the bottom-XPts) don't have any
+   // children anyway.
    xpt->n_children   = 0;
-
-   // If a bottom-XPt, don't allocate space for children.  This can be 50%
-   // or more, although it tends to drop as --depth increases (eg. 10% for
-   // konqueror with --depth=20).
-   if ( is_bottom ) {
-      xpt->max_children = 0;
-      xpt->children     = NULL;
-      n_bot_xpts++;
-   } else {
-      xpt->max_children = 4;
-      xpt->children     = VG_(malloc)( xpt->max_children * sizeof(XPt*) );
-   }
+   xpt->max_children = 0;
+   xpt->children     = NULL;
 
    // Update statistics
    n_xpts++;
@@ -531,148 +524,211 @@ static XPt* new_XPt(Addr ip, XPt* parent, Bool is_bottom)
    return xpt;
 }
 
-static Bool is_alloc_fn(Addr ip)
+static void add_child_xpt(XPt* parent, XPt* child)
+{
+   // Expand 'children' if necessary.
+   tl_assert(parent->n_children <= parent->max_children);
+   if (parent->n_children == parent->max_children) {
+      if (parent->max_children == 0) {
+         parent->max_children = 4;
+         parent->children = VG_(malloc)( parent->max_children * sizeof(XPt*) );
+      } else {
+         parent->max_children *= 2;    // Double size
+         parent->children = VG_(realloc)( parent->children,
+                                          parent->max_children * sizeof(XPt*) );
+      }
+      n_children_reallocs++;
+   }
+
+   // Insert new child XPt in parent's children list.
+   parent->children[ parent->n_children++ ] = child;
+}
+
+// Reverse comparison for a reverse sort -- biggest to smallest.
+static Int XPt_revcmp_curr_szB(void* n1, void* n2)
+{
+   XPt* xpt1 = *(XPt**)n1;
+   XPt* xpt2 = *(XPt**)n2;
+   return ( xpt1->curr_szB < xpt2->curr_szB ?  1 
+          : xpt1->curr_szB > xpt2->curr_szB ? -1
+          :                                    0);
+}
+
+/*------------------------------------------------------------*/
+/*--- XCons                                                ---*/
+/*------------------------------------------------------------*/
+
+// This is the limit on the number of removed alloc-fns that can be in a
+// single XCon.
+#define MAX_OVERESTIMATE   50
+#define MAX_IPS            (MAX_DEPTH + MAX_OVERESTIMATE)
+
+static Bool is_alloc_fn(Char* fnname)
 {
    Int i;
-
-   if ( VG_(get_fnname)(ip, buf, BUF_LEN) ) {
-      for (i = 0; i < n_alloc_fns; i++) {
-         if (VG_STREQ(buf, alloc_fns[i]))
-            return True;
-      }
+   for (i = 0; i < n_alloc_fns; i++) {
+      if (VG_STREQ(fnname, alloc_fns[i]))
+         return True;
    }
    return False;
 }
 
-// XXX: check, improve this!
-// Returns an XCon, from the bottom-XPt.  Nb: the XPt returned must be a
-// bottom-XPt now and must always remain a bottom-XPt.  We go to some effort
-// to ensure this in certain cases.  See comments below.
-static XPt* get_XCon( ThreadId tid, Bool custom_malloc )
+// XXX: look at the "(below main)"/"__libc_start_main" mess (m_stacktrace.c
+//      and m_demangle.c).  Don't hard-code "(below main)" in here.
+static Bool is_main_or_below_main(Char* fnname)
 {
-   // Static to minimise stack size.  +1 for added ~0 IP
-   // XXX: MAX_ALLOC_FNS isn't the right number to use here -- that's the
-   // total number of them, we want the number that might occur in a
-   // stacktrace (if there were repeats...)
-   static Addr ips[MAX_DEPTH + MAX_ALLOC_FNS + 1];
+   Int i;
 
-   XPt* xpt = alloc_xpt;
-   UInt n_ips, L, A, B, nC;
-   UInt overestimate;
-   Bool reached_bottom;
+   for (i = 0; i < n_alloc_fns; i++) {
+      if (VG_STREQ(fnname, "main"))         return True;
+      if (VG_STREQ(fnname, "(below main)")) return True;
+   }
+   return False;
+}
 
+// Get the stack trace for an XCon, filtering out uninteresting entries:
+// alloc-fns and entries above alloc-fns, and entries below
+// main-or-below-main.
+// Eg:       alloc-fn1 / alloc-fn2 / a / b / main / (below main) / c
+// becomes:  a / b / main
+static 
+Int get_IPs( ThreadId tid, Bool is_custom_malloc, Addr ips[], Int max_ips)
+{
+   Int n_ips, i, n_alloc_fns_removed = 0;
+   Int overestimate;
+   Bool fewer_IPs_than_asked_for   = False;
+   Bool removed_below_main         = False;
+   Bool enough_IPs_after_filtering = False;
 
-//---------------------------------------------------------------------------
-// simplified Algorithm
-// - get the biggest stack-trace possible: ips[n]
-// - filter out alloc-fns: --> ips[n2], n2<=n
-// - curr_xpt = alloc_xpt
-// - foreach ip in ips[]:
-//   - if ip is in curr_xpt->children[]
-//     - then: curr_xpt = the matching child
-//     - else: add new child (with ip) to curr_xpt->children[],
-//             curr_xpt = the new child
-// - return curr_xpt as the bottom-XPt
-//
-// Notes:
-// - a bottom-XPt should never become a non-bottom-XPt, because its curr_szB
-//   would get mucked up.  Eg. if we have an XCon A/B/C, we should never see
-//   a later XCon A/B/C/D, because C would no longer be a bottom-XPt.  It
-//   doesn't seem like this should ever happen, but it's hard to know for
-//   sure.  
-//   [XXX: if main is recursive, you could imagine getting main/A,
-//   then main/main/A...]
-//   [XXX: actually, not true -- the curr_szB wouldn't be mucked up.
-//
-//---------------------------------------------------------------------------
+   // XXX: get this properly
+   Bool should_hide_below_main     = /*!VG_(clo_show_below_main)*/True;
 
-   // Want at least clo_depth non-alloc-fn entries in the snapshot.
-   // However, because we have 1 or more (an unknown number, at this point)
-   // alloc-fns ignored, we overestimate the size needed for the stack
-   // snapshot.  Then, if necessary, we repeatedly increase the size until
-   // it is enough.
-   overestimate = 2;
-   while (True) {
+   // We ask for a few more IPs than clo_depth suggests we need.  Then we
+   // remove every entry that is an alloc-fns or above an alloc-fn, and
+   // remove anything below main-or-below-main functions.  Depending on the
+   // circumstances, we may need to redo it all, asking for more IPs.
+   // Details:
+   // - If the original stack trace is smaller than asked-for,   redo=False
+   // - Else if we see main-or-below-main in the stack trace,    redo=False
+   // - Else if after filtering we have more than clo_depth IPs, redo=False
+   // - Else redo=True
+   // In other words, to redo, we'd have to get a stack trace as big as we
+   // asked for, remove more than 'overestimate' alloc-fns, and not hit
+   // main-or-below-main.
+
+   // Main loop
+   for (overestimate = 3; True; overestimate += 6) {
+      // This should never happen -- would require MAX_OVERESTIMATE
+      // alloc-fns to be removed from the stack trace.
+      if (overestimate > MAX_OVERESTIMATE)
+         VG_(tool_panic)("get_IPs: ips[] too small, inc. MAX_OVERESTIMATE?");
+
+      // Ask for more than clo_depth suggests we need.
       n_ips = VG_(get_StackTrace)( tid, ips, clo_depth + overestimate );
+      tl_assert(n_ips > 0);
 
-      // Now we add a dummy "unknown" IP at the end.  This is only used if we
-      // run out of IPs before hitting clo_depth.  It's done to ensure the
-      // XPt we return is (now and forever) a bottom-XPt.  If the returned XPt
-      // wasn't a bottom-XPt (now or later) it would cause problems later (eg.
-      // the parent's approx_ST wouldn't be equal [or almost equal] to the
-      // total of the childrens' approx_STs).  
-      ips[ n_ips++ ] = ~((Addr)0);
+      // If we got fewer IPs than we asked for, redo=False
+      if (n_ips < clo_depth + overestimate)
+         fewer_IPs_than_asked_for = True;
 
-      // Skip over alloc functions in ips[]. 
-      for (L = 0; is_alloc_fn(ips[L]) && L < n_ips; L++) { }
+      // Filter uninteresting entries out of the stack trace.  n_ips is
+      // updated accordingly.
+      for (i = n_ips-1; i >= 0; i--) {
+         if (VG_(get_fnname)(ips[i], buf, BUF_LEN)) {
+
+            // If it's a main-or-below-main function, we (may) want to
+            // ignore everything after it.
+            // If we see one of these functions, redo=False.
+            if (should_hide_below_main && is_main_or_below_main(buf)) {
+               n_ips = i+1;            // Ignore everything below here.
+               removed_below_main = True;
+            }
+
+            // If it's an alloc-fn, we want to delete it and everything
+            // before it.
+            if (is_alloc_fn(buf)) {
+               Int j;
+               if (i+1 >= n_ips) {
+                  // This occurs if removing an alloc-fn and entries above
+                  // it results in an empty stack trace.
+                  VG_(message)(Vg_UserMsg,
+                     "User error: nothing but alloc-fns in stack trace");
+                  VG_(message)(Vg_UserMsg,
+                     "Try removing --alloc-fn=%s option and try again.", buf);
+                  VG_(message)(Vg_UserMsg,
+                     "Exiting.");
+                  VG_(exit)(1);
+               }
+               n_alloc_fns_removed = i+1;
+               
+               for (j = 0; j < n_ips; j++) {  // Shuffle the rest down.
+                  ips[j] = ips[j + n_alloc_fns_removed]; 
+               }
+               n_ips -= n_alloc_fns_removed;
+               break;
+            }
+         }
+      }
 
       // Must be at least one alloc function, unless client used
-      // MALLOCLIKE_BLOCK
-      if (!custom_malloc) tl_assert(L > 0);    
+      // MALLOCLIKE_BLOCK.
+      if (!is_custom_malloc) tl_assert(n_alloc_fns_removed > 0);    
 
-      // Should be at least one non-alloc function.  If not, try again.
-      if (L == n_ips) {
-         overestimate += 2;
-         if (overestimate > MAX_ALLOC_FNS)
-            VG_(tool_panic)("No stk snapshot big enough to find non-alloc fns");
+      // Did we get enough IPs after filtering?  If so, redo=False.
+      if (n_ips >= clo_depth) {
+         n_ips = clo_depth;      // Ignore any IPs below --depth.
+         enough_IPs_after_filtering = True;
+      }
+
+      if (fewer_IPs_than_asked_for ||
+          removed_below_main       ||
+          enough_IPs_after_filtering)
+      {
+         return n_ips;
+
       } else {
-         break;
+         n_getXCon_redo++;
       }
    }
-   A = L;
-   B = n_ips - 1;
-   reached_bottom = False;
+}
 
-   // By this point, the IPs we care about are in ips[A]..ips[B]
+// Gets an XCon and puts it in the tree.  Returns the XCon's bottom-XPt.
+static XPt* get_XCon( ThreadId tid, Bool is_custom_malloc )
+{
+   static Addr ips[MAX_IPS];     // Static to minimise stack size.
+   Int i;
+   XPt* xpt = alloc_xpt;
+
+   // After this call, the IPs we want are in ips[0]..ips[n_ips-1].
+   Int n_ips = get_IPs(tid, is_custom_malloc, ips, MAX_IPS);
 
    // Now do the search/insertion of the XCon. 'L' is the loop counter,
    // being the index into ips[].
-   while (True) {
+   for (i = 0; i < n_ips; i++) {
+      Addr ip = ips[i];
+      Int ch;
       // Look for IP in xpt's children.
       // XXX: linear search, ugh -- about 10% of time for konqueror startup
-      // XXX: tried cacheing last result, only hit about 4% for konqueror
+      // XXX: tried caching last result, only hit about 4% for konqueror
       // Nb:  this search hits about 98% of the time for konqueror
+      for (ch = 0; True; ch++) {
+         if (ch == xpt->n_children) {
+            // IP not found in the children.
+            // Create and add new child XPt, then stop.
+            XPt* new_child_xpt = new_XPt(ip, xpt);
+            add_child_xpt(xpt, new_child_xpt);
+            xpt = new_child_xpt;
+            break;
 
-      // If we've searched/added deep enough, or run out of EIPs, this is
-      // the bottom XPt.
-      if (L - A + 1 == clo_depth || L == B) 
-         reached_bottom = True;
-
-      nC = 0;
-      while (True) {
-         if (nC == xpt->n_children) {
-            // not found, insert new XPt
-            // XXX: assertion can fail (eg.  bug 89061).  Apparently caused
-            //      by getting an IP in the stack trace that is ~0 (eg.
-            //      0xffffffff).
-            tl_assert(xpt->max_children != 0);     
-            tl_assert(xpt->n_children <= xpt->max_children);
-            // Expand 'children' if necessary
-            if (xpt->n_children == xpt->max_children) {
-               xpt->max_children *= 2;
-               xpt->children = VG_(realloc)( xpt->children,
-                                             xpt->max_children * sizeof(XPt*) );
-               n_children_reallocs++;
-            }
-            // Make new XPt for IP, insert in list
-            xpt->children[ xpt->n_children++ ] = 
-               new_XPt(ips[L], xpt, reached_bottom);
+         } else if (ip == xpt->children[ch]->ip) {
+            // Found the IP in the children, stop.
+            xpt = xpt->children[ch];
             break;
          }
-         if (ips[L] == xpt->children[nC]->ip) break;   // found the IP
-         nC++;                                           // keep looking
       }
-
-      // Return found/built bottom-XPt.
-      if (reached_bottom) {
-         tl_assert(0 == xpt->children[nC]->n_children);   // Must be bottom-XPt
-         return xpt->children[nC];
-      }
-
-      // Descend to next level in XTree, the newly found/built non-bottom-XPt
-      xpt = xpt->children[nC];
-      L++;
    }
+   tl_assert(0 == xpt->n_children); // Must be bottom-XPt   XXX: really?
+   return xpt;
 }
 
 // Update 'curr_szB' of every XPt in the XCon, by percolating upwards.
@@ -692,16 +748,6 @@ static void update_XCon(XPt* xpt, SSizeT space_delta)
    } 
    if (space_delta < 0) tl_assert(alloc_xpt->curr_szB >= -space_delta);
    alloc_xpt->curr_szB += space_delta;
-}
-
-// Reverse comparison for a reverse sort -- biggest to smallest.
-static Int XPt_revcmp_curr_szB(void* n1, void* n2)
-{
-   XPt* xpt1 = *(XPt**)n1;
-   XPt* xpt2 = *(XPt**)n2;
-   return ( xpt1->curr_szB < xpt2->curr_szB ?  1 
-          : xpt1->curr_szB > xpt2->curr_szB ? -1
-          :                                    0);
 }
 
 /*------------------------------------------------------------*/
@@ -1430,17 +1476,7 @@ static void pp_snapshot_child_XPts(XPt* parent, Int depth, Char* depth_str,
             depth_str[depth*2+1] = ' ';
             depth_str[depth*2+2] = '\0';
          }
-         if (child->n_children > 0 &&
-            // XXX: horrible -- need to totally overhaul below-main checking,
-            // do it in m_stacktrace.c.  [Ah, but we don't know the function
-            // names at that point, just the IPs...]
-            !VG_(strstr)(ip_desc, " main (")
-#             if defined(VGO_linux)
-              && !VG_(strstr)(ip_desc, "__libc_start_main")  // glibc glibness
-              && !VG_(strstr)(ip_desc, "generic_start_main") // Yellow Dog doggedness
-#             endif
-            ) 
-         {
+         if (child->n_children > 0) {
             pp_snapshot_child_XPts(child, depth+1, depth_str, depth_str_len,
                curr_heap_szB, curr_total_szB);
          } else {
@@ -1488,7 +1524,8 @@ static void pp_snapshot(SizeT curr_heap_szB,   SizeT curr_heap_admin_szB,
       P("(No heap memory currently allocated)\n");
    } else {
       P("Heap tree:\n");
-      P("%6s: (heap allocation functions) malloc, new, new[], etc.\n",
+      P("%6s: (heap allocation functions) malloc/new/new[],"
+        " --alloc-fn functions, etc.\n",
          make_perc(curr_heap_szB, curr_total_szB));
 
       pp_snapshot_child_XPts(alloc_xpt, 0, depth_str, depth_str_len,
@@ -1510,6 +1547,24 @@ static void ms_fini(Int exit_status)
 
    // Output.
    write_text_graph();
+
+   // Stats
+   if (VG_(clo_verbosity) > 1) {
+      tl_assert(n_xpts > 0);  // always have alloc_xpt
+      VG_(message)(Vg_DebugMsg, "    allocs: %u", n_allocs);
+      VG_(message)(Vg_DebugMsg, "zeroallocs: %u (%d%%)", n_zero_allocs,
+                                n_zero_allocs * 100 / n_allocs );
+      VG_(message)(Vg_DebugMsg, "     frees: %u", n_frees);
+      VG_(message)(Vg_DebugMsg, "      XPts: %u (%d B)", n_xpts,
+                                                         n_xpts*sizeof(XPt));
+      VG_(message)(Vg_DebugMsg, "  top-XPts: %u (%d%%)", alloc_xpt->n_children,
+                                alloc_xpt->n_children * 100 / n_xpts);
+      VG_(message)(Vg_DebugMsg, "c-reallocs: %u", n_children_reallocs);
+      VG_(message)(Vg_DebugMsg, "fake censi: %u", n_fake_censi);
+      VG_(message)(Vg_DebugMsg, "real censi: %u", n_real_censi);
+      VG_(message)(Vg_DebugMsg, "  halvings: %u", n_halvings);
+      VG_(message)(Vg_DebugMsg, "XCon_redos: %u", n_getXCon_redo);
+   }
 }
 
 /*------------------------------------------------------------*/
@@ -1572,7 +1627,7 @@ static void ms_pre_clo_init(void)
    malloc_list  = VG_(HT_construct)( 80021 );   // prime, big
 
    // Dummy node at top of the context structure.
-   alloc_xpt = new_XPt(0, NULL, /*is_bottom*/False);
+   alloc_xpt = new_XPt(/*ip*/0, /*parent*/NULL);
 
    tl_assert( VG_(getcwd)(base_dir, VKI_PATH_MAX) );
 }
