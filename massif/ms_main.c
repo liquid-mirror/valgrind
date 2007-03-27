@@ -266,6 +266,7 @@ struct _XPt {
    // a very big program might have more than 65536 allocation points
    // (Konqueror startup has 1800).
    XPt*  parent;           // pointer to parent XPt
+
    UInt  n_children;       // number of children
    UInt  max_children;     // capacity of children array
    XPt** children;         // pointers to children XPts
@@ -550,12 +551,40 @@ static Bool is_alloc_fn(Addr ip)
 static XPt* get_XCon( ThreadId tid, Bool custom_malloc )
 {
    // Static to minimise stack size.  +1 for added ~0 IP
+   // XXX: MAX_ALLOC_FNS isn't the right number to use here -- that's the
+   // total number of them, we want the number that might occur in a
+   // stacktrace (if there were repeats...)
    static Addr ips[MAX_DEPTH + MAX_ALLOC_FNS + 1];
 
    XPt* xpt = alloc_xpt;
    UInt n_ips, L, A, B, nC;
    UInt overestimate;
    Bool reached_bottom;
+
+
+//---------------------------------------------------------------------------
+// simplified Algorithm
+// - get the biggest stack-trace possible: ips[n]
+// - filter out alloc-fns: --> ips[n2], n2<=n
+// - curr_xpt = alloc_xpt
+// - foreach ip in ips[]:
+//   - if ip is in curr_xpt->children[]
+//     - then: curr_xpt = the matching child
+//     - else: add new child (with ip) to curr_xpt->children[],
+//             curr_xpt = the new child
+// - return curr_xpt as the bottom-XPt
+//
+// Notes:
+// - a bottom-XPt should never become a non-bottom-XPt, because its curr_szB
+//   would get mucked up.  Eg. if we have an XCon A/B/C, we should never see
+//   a later XCon A/B/C/D, because C would no longer be a bottom-XPt.  It
+//   doesn't seem like this should ever happen, but it's hard to know for
+//   sure.  
+//   [XXX: if main is recursive, you could imagine getting main/A,
+//   then main/main/A...]
+//   [XXX: actually, not true -- the curr_szB wouldn't be mucked up.
+//
+//---------------------------------------------------------------------------
 
    // Want at least clo_depth non-alloc-fn entries in the snapshot.
    // However, because we have 1 or more (an unknown number, at this point)
@@ -882,45 +911,6 @@ static void* ms_realloc ( ThreadId tid, void* p_old, SizeT new_size )
 
 static Census censi[MAX_N_CENSI];
 static UInt   curr_census = 0;   // Points to where next census will go.
-
-static UInt get_xtree_size(XPt* xpt, UInt ix)
-{
-   UInt i;
-
-   // If no memory allocated at all, nothing interesting to record.
-   if (alloc_xpt->curr_szB == 0) return 0;
-   
-   // Ignore sub-XTrees that account for a miniscule fraction of current
-   // allocated space.
-   if (xpt->curr_szB / (double)alloc_xpt->curr_szB > 0.002) {
-      ix++;
-
-      // Count all (non-zero) descendent XPts
-      for (i = 0; i < xpt->n_children; i++)
-         ix = get_xtree_size(xpt->children[i], ix);
-   }
-   return ix;
-}
-
-static 
-UInt do_space_snapshot(XPt xpt[], XTreeSnapshot xtree_snapshot, UInt ix)
-{
-   UInt i;
-
-   // Structure of this function mirrors that of get_xtree_size().
-
-   if (alloc_xpt->curr_szB == 0) return 0;
-   
-   if (xpt->curr_szB / (double)alloc_xpt->curr_szB > 0.002) {
-      xtree_snapshot[ix].xpt   = xpt;
-      xtree_snapshot[ix].space = xpt->curr_szB;
-      ix++;
-
-      for (i = 0; i < xpt->n_children; i++)
-         ix = do_space_snapshot(xpt->children[i], xtree_snapshot, ix);
-   }
-   return ix;
-}
 
 static UInt ms_interval;
 static UInt do_every_nth_census = 30;
@@ -1592,4 +1582,5 @@ VG_DETERMINE_INTERFACE_VERSION(ms_pre_clo_init)
 /*--------------------------------------------------------------------*/
 /*--- end                                                          ---*/
 /*--------------------------------------------------------------------*/
+
 
