@@ -28,9 +28,56 @@
    The GNU General Public License is contained in the file COPYING.
 */
 
+//---------------------------------------------------------------------------
 // XXX:
-// - separate content from presentation by dumping all results to a file and
-//   then post-processing with a separate program, a la Cachegrind?
+//---------------------------------------------------------------------------
+// Separate content from presentation by dumping all results to a file and
+// then post-processing with a separate program, a la Cachegrind?
+// - work out the file format
+// - allow two decimal places in percentages (Kirk Johnson says people want
+//   it)
+// - allow truncation of long fnnames if the exact line number is
+//   identified?
+//
+// Examine and fix bugs on bugzilla:
+// IGNORE:
+// 112163  nor     MASSIF crashed with signal 7 (SIGBUS) after running 2 days
+//   - weird, crashes in VEX, ignore
+// 82871   nor     Massif output function names too short
+//   - on .ps graph, now irrelevant, ignore
+// 129576  nor     Massif loses track of memory, incorrect graphs
+//   - dunno, hard to reproduce, ignore
+// 132132  nor     massif --format=html output does not do html entity escaping
+//   - only for HTML output, irrelevant, ignore
+//
+// FIXED:
+// 142197  nor     massif tool ignores --massif:alloc-fn parameters in .valg...
+//   - fixed in trunk
+// 142491  nor     Maximise use of alloc_fns array
+//   - addressed, using the patch (with minor changes) from the bug report
+//
+// TODO:
+// 89061   cra     Massif: ms_main.c:485 (get_XCon): Assertion `xpt->max_chi...
+// 141631  nor     Massif: percentages don't add up correctly
+// 142706  nor     massif numbers don't seem to add up
+// 143062  cra     massif crashes on app exit with signal 8 SIGFPE
+//   - occurs with no allocations -- ensure that case works
+//
+// Work out when to take periodic snapshots.
+// - If I separate content from presentation I don't have to thin out the
+//   old ones (but not doing so takes space...)
+//
+// Work out how to take the peak.
+// - exact peak, or within a certain percentage?
+// - include the stack?  makes it harder
+//
+// Michael Meeks:
+// - wants an interactive way to request a dump (callgrind_control-style)
+//   - "profile now"
+//   - "show me the extra allocations from last-snapshot"
+//   - "start/stop logging" (eg. quickly skip boring bits)
+//
+//---------------------------------------------------------------------------
 
 // Memory profiler.  Produces a graph, gives lots of information about
 // allocation contexts, in terms of space.time values (ie. area under the
@@ -343,10 +390,10 @@ static UInt n_heap_blocks = 0;
 // Current directory at startup.
 static Char base_dir[VKI_PATH_MAX];
 
-#define MAX_ALLOC_FNS      32      // includes the builtin ones
+#define MAX_ALLOC_FNS      128     // includes the builtin ones
 
 // First few filled in, rest should be zeroed.  Zero-terminated vector.
-static UInt  n_alloc_fns = 11;
+static UInt  n_alloc_fns = 10;
 static Char* alloc_fns[MAX_ALLOC_FNS] = { 
    "malloc",
    "operator new(unsigned)",
@@ -370,7 +417,7 @@ static Char* alloc_fns[MAX_ALLOC_FNS] = {
 static Bool clo_heap        = True;
 static UInt clo_heap_admin  = 8;
 static Bool clo_stacks      = True;
-static Bool clo_depth       = 3;
+static Bool clo_depth       = 8;
 
 static Bool ms_process_cmd_line_option(Char* arg)
 {
@@ -381,12 +428,21 @@ static Bool ms_process_cmd_line_option(Char* arg)
    else VG_BNUM_CLO(arg, "--depth",       clo_depth, 1, MAX_DEPTH)
 
    else if (VG_CLO_STREQN(11, arg, "--alloc-fn=")) {
-      alloc_fns[n_alloc_fns] = & arg[11];
-      n_alloc_fns++;
+      int i;
+
+      // Check first if the function is already present.
+      for (i = 0; i < n_alloc_fns; i++) {
+         if ( VG_STREQ(alloc_fns[i], & arg[11]) )
+            return True;
+      }
+      // Abort if we reached the limit.
       if (n_alloc_fns >= MAX_ALLOC_FNS) {
          VG_(printf)("Too many alloc functions specified, sorry");
          VG_(err_bad_option)(arg);
       }
+      // Ok, add the function.
+      alloc_fns[n_alloc_fns] = & arg[11];
+      n_alloc_fns++;
    }
 
    else
@@ -401,7 +457,7 @@ static void ms_print_usage(void)
 "    --heap=no|yes             profile heap blocks [yes]\n"
 "    --heap-admin=<number>     average admin bytes per heap block [8]\n"
 "    --stacks=no|yes           profile stack(s) [yes]\n"
-"    --depth=<number>          depth of contexts [3]\n"
+"    --depth=<number>          depth of contexts [8]\n"
 "    --alloc-fn=<name>         specify <fn> as an alloc function [empty]\n"
    );
    VG_(replacement_malloc_print_usage)();
@@ -557,7 +613,10 @@ static XPt* get_XCon( ThreadId tid, Bool custom_malloc )
       while (True) {
          if (nC == xpt->n_children) {
             // not found, insert new XPt
-            tl_assert(xpt->max_children != 0);
+            // XXX: assertion can fail (eg.  bug 89061).  Apparently caused
+            //      by getting an IP in the stack trace that is ~0 (eg.
+            //      0xffffffff).
+            tl_assert(xpt->max_children != 0);     
             tl_assert(xpt->n_children <= xpt->max_children);
             // Expand 'children' if necessary
             if (xpt->n_children == xpt->max_children) {
@@ -1281,15 +1340,14 @@ static void percentify(Int n, Int pow, Int field_width, char xbuf[])
 #endif
 
 // Nb: uses a static buffer, each call trashes the last string returned.
-static Char* make_perc(ULong spacetime, ULong total_spacetime)
+static Char* make_perc(ULong x, ULong y)
 {
    static Char mbuf[32];
    
-//   UInt  p = 10;
-   tl_assert(0 != total_spacetime);
-//   percentify(spacetime * 100 * p / total_spacetime, p, 5, mbuf); 
 // XXX: I'm not confident that VG_(percentify) works as it should...
-   VG_(percentify)(spacetime, total_spacetime, 1, 5, mbuf); 
+   VG_(percentify)(x, y, 1, 5, mbuf); 
+   // XXX: this is bogus if the denominator was zero -- resulting string is
+   // something like "0 --%")
    if (' ' == mbuf[0]) mbuf[0] = '0';
    return mbuf;
 }
@@ -1470,6 +1528,14 @@ static void ms_fini(Int exit_status)
 
 static void ms_post_clo_init(void)
 {
+   Int i;
+   if (VG_(clo_verbosity) > 1) {
+      VG_(message)(Vg_DebugMsg, "alloc-fns:");
+      for (i = 0; i < n_alloc_fns; i++) {
+         VG_(message)(Vg_DebugMsg, "  %d: %s", i, alloc_fns[i]);
+      }
+   }
+   
    ms_interval = 1;
 
    // We don't take a census now, because there's still some core
