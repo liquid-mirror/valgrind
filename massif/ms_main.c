@@ -69,10 +69,6 @@
 // 143062  cra     massif crashes on app exit with signal 8 SIGFPE
 //   - occurs with no allocations -- ensure that case works
 //
-// Work out when to take periodic snapshots.
-// - If I separate content from presentation I don't have to thin out the
-//   old ones (but not doing so takes space...)
-//
 // Work out how to take the peak.
 // - exact peak, or within a certain percentage?
 // - include the stack?  makes it harder
@@ -82,6 +78,12 @@
 //   - "profile now"
 //   - "show me the extra allocations from last-snapshot"
 //   - "start/stop logging" (eg. quickly skip boring bits)
+//
+// Other:
+//   - am I recording asked-for sizes or actual rounded-up sizes?
+//   - there's a gap between the ms timer initialisation during Valgrind
+//     start-up and our first use of it.  Could normalise versus our first
+//     use...
 //
 // Docs:
 // - need to explain that --alloc-fn changed slightly -- now if an entry
@@ -134,23 +136,36 @@
 /*--- Overview of operation                                ---*/
 /*------------------------------------------------------------*/
 
-// Heap blocks are tracked, and the amount of space allocated by various
-// contexts (ie. lines of code, more or less) is also tracked.
-// "Snapshots", ie. detailed recordings of the memory usage, are taken every
-// so often.  There are two kinds of snapshot:
+// The size of the stacks and heap is tracked.  The heap is tracked in a lot
+// of detail, enough to tell how many bytes each line of code is responsible
+// for, more or less.
+//
+// "Snapshots" are recordings of the memory usage.  There are two basic
+// kinds:
+// - Normal:  these record the current time, total memory size, total heap
+//   size, heap admin size and stack size.
+// - Detailed: these record those things in a normal snapshot, plus a very
+//   detailed XTree (see below) indicating how the heap is structured.
+//
+// Snapshots are taken every so often.  There are two storage classes of
+// snapshots:
 // - Temporary:  Massif does a temporary snapshot every so often.  The idea
 //   is to always have a certain number of temporary snapshots around.  So
 //   we take them frequently to begin with, but decreasingly often as the
 //   program continues to run.  Also, we remove some old ones after a while.
-//   Overall it's a kind of exponential decay thing.
-// - Permanent:  Massif takes a permanent snapshot in some circumstances.
-//   They are:
+//   Overall it's a kind of exponential decay thing.  Most of these are
+//   normal snapshots, a small fraction are detailed snapshots.
+// - Permanent:  Massif takes a permanent (detailed) snapshot in some
+//   circumstances.  They are:
 //   - Peak snapshot:  When the memory usage peak is reached, it takes a
 //     snapshot.  It keeps this, unless the peak is subsequently exceeded,
 //     in which case it will overwrite the peak snapshot.
 //   - User-requested snapshots:  These are done in response to client
 //     requests.  They are always kept.
+//
+// The summary output produced by Massif could include a graph like this.
 //  
+//---------------------------------------------------------------------------
 // 100M|B                .      :A
 //     |               .:::   :::#      
 //     |              :::::. c:::#:     
@@ -176,15 +191,19 @@
 //
 //      Temporary snapshots:
 //       a: periodic snapshot, total size: 33,000,000 bytes
-//       b: periodic snapshot, total size: ...        bytes
-//       c: periodic snapshot, total size: ...        bytes
-//       d: periodic snapshot, total size: ...        bytes
-//       e: periodic snapshot, total size: ...        bytes
-//       f: periodic snapshot, total size: ...        bytes
-//       g: periodic snapshot, total size: ...        bytes
-//       h: periodic snapshot, total size: ...        bytes
+//       b: periodic snapshot, total size: 82,000,000 bytes
+//       c: periodic snapshot, total size: 90,000,000 bytes
+//       d: periodic snapshot, total size: 64,000,000 bytes
+//       e: periodic snapshot, total size: 34,000,000 bytes
+//       f: periodic snapshot, total size: 24,000,000 bytes
+//       g: periodic snapshot, total size: 39,000,000 bytes
+//       h: periodic snapshot, total size: 33,000,000 bytes
 //
-// Explanation of y-axis:
+//      Permanent snapshots:
+//       A: peak snapshot, total size: 100,000,000 bytes
+//---------------------------------------------------------------------------
+//
+// Explanation of the y-axis:
 // - Top of the x-axis box represents 0.
 //
 //    4M^|   .:     This row has base=2M, half-threshold=3M, full-threshold=4M
@@ -207,28 +226,13 @@
 // - etc.
 
 
-// Periodically, a census is taken, and the amount of space used, at that
-// point, by the most significant (highly allocating) contexts is recorded.
-// Census start off frequently, but are scaled back as the program goes on,
-// so that there are always a good number of them.  At the end, overall
-// spacetimes for different contexts (of differing levels of precision) is
-// calculated, the graph is printed, and the text giving spacetimes for the
-// increasingly precise contexts is given.
-//
-// Measures the following:
-// - heap blocks
-// - heap admin bytes
-// - stack(s)
-// - code (code segments loaded at startup, and loaded with mmap)
-// - data (data segments loaded at startup, and loaded/created with mmap,
-//         and brk()d segments)
-
 /*------------------------------------------------------------*/
 /*--- Main types                                           ---*/
 /*------------------------------------------------------------*/
 
 // An XPt represents an "execution point", ie. a code address.  Each XPt is
-// part of a tree of XPts (an "execution tree", or "XTree").  
+// part of a tree of XPts (an "execution tree", or "XTree").  The details of
+// the heap are represented by a single XTree.
 //
 // The root of the tree is 'alloc_xpt', which represents all allocation
 // functions, eg:
@@ -276,42 +280,31 @@ struct _XPt {
    XPt** children;         // pointers to children XPts
 };
 
-// Each census snapshots the most significant XTrees, each XTree having a
-// top-XPt as its root.  The 'curr_szB' element for each XPt is recorded 
-// in the snapshot.  The snapshot contains all the XTree's XPts, not in a
-// tree structure, but flattened into an array.  This flat snapshot is used
-// at the end for computing exact_ST_dbld for each XPt.
-//
-// Graph resolution, x-axis: no point having more than about 200 census
-// x-points;  you can't see them on the graph.  Therefore:
-//
-//   - do a census every 1 ms for first 200 --> 200, all          (200 ms)
-//   - halve (drop half of them)            --> 100, every 2nd    (200 ms)
-//   - do a census every 2 ms for next 200  --> 200, every 2nd    (400 ms)
-//   - halve                                --> 100, every 4th    (400 ms)
-//   - do a census every 4 ms for next 400  --> 200, every 4th    (800 ms)
+// Snapshots are done so we keep a good number of them.  If MAX_N_SNAPSHOTS
+// equals 200, then it works something like this:
+//   - do a snapshot every 1ms for first 200ms --> 200, all          (200 ms)
+//   - halve (drop half of them)               --> 100, every 2nd
+//   - do a snapshot every 2ms for next 200ms  --> 200, every 2nd    (400 ms)
+//   - halve                                   --> 100, every 4th
+//   - do a snapshot every 4ms for next 400ms  --> 200, every 4th    (800 ms)
 //   - etc.
 //
 // This isn't exactly right, because we actually drop (N/2)-1 when halving,
 // but it shows the basic idea.
 
-#define MAX_N_CENSI           10   // Keep it even, for simplicity
-
-// Graph resolution, y-axis: hp2ps only draws the 19 biggest (in space-time)
-// bands, rest get lumped into OTHERS.  I only print the top N
-// (cumulative-so-far space-time) at each point.  N should be a bit bigger
-// than 19 in case the cumulative space-time doesn't fit with the eventual
-// space-time computed by hp2ps (but it should be close if the samples are
-// evenly spread, since hp2ps does an approximate per-band space-time
-// calculation that just sums the totals;  ie. it assumes all samples are
-// the same distance apart).
+#define MAX_N_SNAPSHOTS         50  // Keep it even, for simplicity
+#define DETAILED_SNAPSHOT_FREQ  10  // Every Nth snapshot will be detailed
 
 typedef
    struct {
-      Int   ms_time;    // Int: must allow -1
-      SizeT total_szB;  // Size of all allocations at that census time
-   } 
-   Census;
+      Int   ms_time;       // Int: must allow -1.
+      SizeT total_szB;     // Size of all allocations at that snapshot time.
+      SizeT heap_admin_szB;
+      SizeT heap_szB;
+      SizeT stacks_szB;
+      XPt*  alloc_xpt;     // Heap XTree root, if a detailed snapshot,
+   }                       // otherwise NULL
+   Snapshot;
 
 // Metadata for heap blocks.  Each one contains a pointer to a bottom-XPt,
 // which is a foothold into the XCon at which it was allocated.  From
@@ -343,6 +336,8 @@ typedef
 //  -   1,800 top-XPts
 
 static UInt n_xpts               = 0;
+static UInt n_dupd_xpts          = 0;
+static UInt n_dupd_xpts_freed    = 0;
 static UInt n_allocs             = 0;
 static UInt n_zero_allocs        = 0;
 static UInt n_frees              = 0;
@@ -351,8 +346,8 @@ static UInt n_children_reallocs  = 0;
 static UInt n_getXCon_redo       = 0;
 
 static UInt n_halvings           = 0;
-static UInt n_real_censi         = 0;
-static UInt n_fake_censi         = 0;
+static UInt n_real_snapshots     = 0;
+static UInt n_fake_snapshots     = 0;
 
 /*------------------------------------------------------------*/
 /*--- Globals                                              ---*/
@@ -373,7 +368,7 @@ static Char buf2[BUF_LEN];
 static SSizeT sigstacks_szB = 0;     // Current signal stacks space sum
 static SSizeT heap_szB      = 0;     // Live heap size
 static SSizeT peak_heap_szB = 0;
-static SSizeT peak_census_total_szB = 0;
+static SSizeT peak_snapshot_total_szB = 0;
 
 static VgHashTable malloc_list  = NULL;   // HP_Chunks
 
@@ -393,7 +388,7 @@ static Char base_dir[VKI_PATH_MAX];
 //   operator new[](unsigned, std::nothrow_t const&)
 // But someone might be interested in seeing them.  If they're not, they can
 // specify them with --alloc-fn.
-static UInt  n_alloc_fns = 10;
+static UInt  n_alloc_fns = 6;
 static Char* alloc_fns[MAX_ALLOC_FNS] = { 
    "malloc",
    "__builtin_new",
@@ -743,6 +738,215 @@ static void update_XCon(XPt* xpt, SSizeT space_delta)
    alloc_xpt->curr_szB += space_delta;
 }
 
+
+/*------------------------------------------------------------*/
+/*--- Taking a snapshot                                    ---*/
+/*------------------------------------------------------------*/
+
+static Snapshot snapshots[MAX_N_SNAPSHOTS];
+static UInt     curr_snapshot = 0;   // Points to where next snapshot will go.
+
+static UInt ms_interval;
+
+// Weed out half the snapshots;  we choose those that represent the smallest
+// time-spans, because that loses the least information.
+//
+// Algorithm for N snapshots:  We find the snapshot representing the smallest
+// timeframe, and remove it.  We repeat this until (N/2)-1 snapshots are gone.
+// (It's (N/2)-1 because we never remove the first and last snapshots.)
+// We have to do this one snapshot at a time, rather than finding the (N/2)-1
+// smallest snapshots in one hit, because when a snapshot is removed, its
+// neighbours immediately cover greater timespans.  So it's N^2, but N is
+// small, and it's not done very often.
+static void halve_snapshots(void)
+{
+   Int       i, jp, j, jn;
+   Snapshot* min_snapshot;
+
+   n_halvings++;
+   if (VG_(clo_verbosity) > 1)
+      VG_(message)(Vg_DebugMsg, "Halving snapshots...");
+
+   // Sets j to the index of the first not-yet-removed snapshot at or after i
+   #define FIND_SNAPSHOT(i, j) \
+      for (j = i; j < MAX_N_SNAPSHOTS && -1 == snapshots[j].ms_time; j++) { }
+
+   for (i = 2; i < MAX_N_SNAPSHOTS; i += 2) {
+      // Find the snapshot representing the smallest timespan.  The timespan
+      // for snapshot n = d(N-1,N)+d(N,N+1), where d(A,B) is the time between
+      // snapshot A and B.  We don't consider the first and last snapshots for
+      // removal.
+      Int min_span = 0x7fffffff;
+      Int min_j    = 0;
+
+      // Initial triple: (prev, curr, next) == (jp, j, jn)
+      jp = 0;
+      FIND_SNAPSHOT(1,   j);
+      FIND_SNAPSHOT(j+1, jn);
+      while (jn < MAX_N_SNAPSHOTS) {
+         Int timespan = snapshots[jn].ms_time - snapshots[jp].ms_time;
+         tl_assert(timespan >= 0);
+         if (timespan < min_span) {
+            min_span = timespan;
+            min_j    = j;
+         }
+         // Move on to next triple
+         jp = j; 
+         j  = jn;
+         FIND_SNAPSHOT(jn+1, jn);
+      }
+      // We've found the least important snapshot, now remove it
+      min_snapshot = & snapshots[ min_j ];
+      min_snapshot->ms_time = -1;
+
+      // XXX: free XTree if present...
+      // free_XTree(min_snapshot->alloc_xpt)
+   }
+
+   // Slide down the remaining snapshots over the removed ones.  The '<=' is
+   // because we are removing on (N/2)-1, rather than N/2.
+   for (i = 0, j = 0; i <= MAX_N_SNAPSHOTS / 2; i++, j++) {
+      FIND_SNAPSHOT(j, j);
+      if (i != j) {
+         snapshots[i] = snapshots[j];
+      }
+   }
+   curr_snapshot = i;
+
+   // Double intervals
+   ms_interval *= 2;
+
+   if (VG_(clo_verbosity) > 1)
+      VG_(message)(Vg_DebugMsg, "...done");
+}
+
+// XXX: taking a full snapshot... could/should just snapshot the significant
+// parts.  Nb: then the amounts wouldn't add up, unless I represented the
+// "other insignificant places" in XPts.
+static XPt* dup_XTree(XPt* xpt)
+{
+   Int  i;
+   XPt* dup_xpt = VG_(malloc)(sizeof(XPt));
+   dup_xpt->ip           = xpt->ip;
+   dup_xpt->curr_szB     = xpt->curr_szB;
+   dup_xpt->parent       = xpt->parent;
+   dup_xpt->n_children   = xpt->n_children;
+   dup_xpt->max_children = xpt->n_children;  // Nb: don't copy max_children!
+   dup_xpt->children     = VG_(malloc)(dup_xpt->max_children * sizeof(XPt*));
+   for (i = 0; i < xpt->n_children; i++) {
+      dup_xpt->children[i] = dup_XTree(xpt->children[i]);
+   }
+
+   n_dupd_xpts++;
+
+   return dup_xpt;
+}
+
+static void free_XTree(XPt* xpt)
+{
+   Int  i;
+   // Free all children XPts, then the children array, then the XPt itself.
+   for (i = 0; i < xpt->n_children; i++) {
+      free_XTree(xpt->children[i]);
+   }
+   VG_(free)(xpt->children);  xpt->children = NULL;
+   VG_(free)(xpt);            xpt           = NULL;
+
+   n_dupd_xpts_freed++;
+}
+
+
+// Take a snapshot.  Note that with bigger depths, snapshots can be slow,
+// eg. konqueror snapshots can easily take 50ms!
+// [XXX: is that still true?]
+static void take_snapshot(void)
+{
+   static UInt ms_prev_snapshot = 0;
+   static UInt ms_next_snapshot = 0;     // zero allows startup snapshot
+   static Int  n_snapshots_since_last_detailed = 0;
+
+   Int       ms_time, ms_time_since_prev;
+   Snapshot* snapshot;
+
+   // Only do a snapshot if it's time.
+   ms_time            = VG_(read_millisecond_timer)();
+   ms_time_since_prev = ms_time - ms_prev_snapshot;
+   if (ms_time < ms_next_snapshot) {
+      n_fake_snapshots++;
+      return;
+   }
+
+   // Right!  We're taking a real snapshot.
+   n_real_snapshots++;
+   snapshot = & snapshots[curr_snapshot];
+
+   // Heap -------------------------------------------------------------
+   if (clo_heap) {
+      snapshot->heap_szB = heap_szB;
+      // Take a detailed snapshot if it's been long enough since the last one.
+      if (DETAILED_SNAPSHOT_FREQ == n_snapshots_since_last_detailed) {
+         snapshot->alloc_xpt = dup_XTree(alloc_xpt);
+         n_snapshots_since_last_detailed = 0;
+      } else {
+         n_snapshots_since_last_detailed++;
+      }
+   }
+
+   // Heap admin -------------------------------------------------------
+   if (clo_heap_admin > 0) {
+      snapshot->heap_admin_szB = clo_heap_admin * n_heap_blocks;
+   }
+
+   // Stack(s) ---------------------------------------------------------
+   if (clo_stacks) {
+      ThreadId tid;
+      Addr     stack_min, stack_max;
+      VG_(thread_stack_reset_iter)();
+      while ( VG_(thread_stack_next)(&tid, &stack_min, &stack_max) ) {
+         snapshot->stacks_szB += (stack_max - stack_min);
+      }
+      snapshot->stacks_szB += sigstacks_szB;    // Add signal stacks, too
+   }
+
+   // Finish writing snapshot ------------------------------------------
+   snapshot->ms_time   = ms_time;
+   snapshot->total_szB =
+      snapshot->heap_szB + snapshot->heap_admin_szB + snapshot->stacks_szB;
+
+   // Update peak data -------------------------------------------------
+   // XXX: this is not really the right way to do peak data -- it's only
+   // peak snapshot data, the true peak could be between snapshots.
+   if (snapshot->total_szB > peak_snapshot_total_szB) {
+      peak_snapshot_total_szB = snapshot->total_szB;
+//      VG_(printf)("new peak snapshot total szB = %ld B\n",
+//         peak_snapshot_total_szB);
+   }
+
+//   VG_(printf)("heap, admin, stacks: %ld, %ld, %ld B\n",
+//      snapshot_heap_szB, snapshot_heap_admin_szB, snapshot_stacks_szB);
+
+   // Clean-ups
+   curr_snapshot++;
+   snapshot = NULL;    // don't use again now that curr_snapshot changed
+
+   // Halve the entries, if our snapshot table is full
+   if (MAX_N_SNAPSHOTS == curr_snapshot) {
+      halve_snapshots();
+   }
+
+   // Take time for next snapshot from now, rather than when this snapshot
+   // should have happened.  Because, if there's a big gap due to a kernel
+   // operation, there's no point doing catch-up snapshots every allocation
+   // for a while -- that would just give N snapshots at almost the same time.
+   if (VG_(clo_verbosity) > 1) {
+      VG_(message)(Vg_DebugMsg, "snapshot: %d ms (took %d ms)", ms_time, 
+                                VG_(read_millisecond_timer)() - ms_time );
+   }
+   ms_prev_snapshot = ms_time;
+   ms_next_snapshot = ms_time + ms_interval;
+} 
+
+
 /*------------------------------------------------------------*/
 /*--- Heap management                                      ---*/
 /*------------------------------------------------------------*/
@@ -757,10 +961,6 @@ static void update_heap_stats(SSizeT heap_szB_delta, Int n_heap_blocks_delta)
       peak_heap_szB = heap_szB;
    }
 }
-
-
-// Forward declaration
-static void hp_census(void);
 
 static
 void* new_block ( ThreadId tid, void* p, SizeT size, SizeT align,
@@ -799,8 +999,8 @@ void* new_block ( ThreadId tid, void* p, SizeT size, SizeT align,
    }
    VG_(HT_add_node)(malloc_list, hc);
 
-   // Do a census!
-   hp_census();      
+   // Do a snapshot!
+   take_snapshot();      
 
    return p;
 }
@@ -832,8 +1032,8 @@ void die_block ( void* p, Bool custom_free )
    if (!custom_free)
       VG_(cli_free)( p );
 
-   // Do a census!
-   hp_census();
+   // Do a snapshot!
+   take_snapshot();
 }
 
 static __inline__
@@ -945,181 +1145,6 @@ static void* ms_realloc ( ThreadId tid, void* p_old, SizeT new_size )
 
 
 /*------------------------------------------------------------*/
-/*--- Taking a census                                      ---*/
-/*------------------------------------------------------------*/
-
-static Census censi[MAX_N_CENSI];
-static UInt   curr_census = 0;   // Points to where next census will go.
-
-static UInt ms_interval;
-static UInt do_every_nth_census = 30;
-
-// Weed out half the censi;  we choose those that represent the smallest
-// time-spans, because that loses the least information.
-//
-// Algorithm for N censi:  We find the census representing the smallest
-// timeframe, and remove it.  We repeat this until (N/2)-1 censi are gone.
-// (It's (N/2)-1 because we never remove the first and last censi.)
-// We have to do this one census at a time, rather than finding the (N/2)-1
-// smallest censi in one hit, because when a census is removed, it's
-// neighbours immediately cover greater timespans.  So it's N^2, but N only
-// equals 200, and this is only done every 100 censi, which is not too often.
-static void halve_censi(void)
-{
-   Int     i, jp, j, jn;
-   Census* min_census;
-
-   n_halvings++;
-   if (VG_(clo_verbosity) > 1)
-      VG_(message)(Vg_UserMsg, "Halving censi...");
-
-   // Sets j to the index of the first not-yet-removed census at or after i
-   #define FIND_CENSUS(i, j) \
-      for (j = i; j < MAX_N_CENSI && -1 == censi[j].ms_time; j++) { }
-
-   for (i = 2; i < MAX_N_CENSI; i += 2) {
-      // Find the censi representing the smallest timespan.  The timespan
-      // for census n = d(N-1,N)+d(N,N+1), where d(A,B) is the time between
-      // censi A and B.  We don't consider the first and last censi for
-      // removal.
-      Int min_span = 0x7fffffff;
-      Int min_j    = 0;
-
-      // Initial triple: (prev, curr, next) == (jp, j, jn)
-      jp = 0;
-      FIND_CENSUS(1,   j);
-      FIND_CENSUS(j+1, jn);
-      while (jn < MAX_N_CENSI) {
-         Int timespan = censi[jn].ms_time - censi[jp].ms_time;
-         tl_assert(timespan >= 0);
-         if (timespan < min_span) {
-            min_span = timespan;
-            min_j    = j;
-         }
-         // Move on to next triple
-         jp = j; 
-         j  = jn;
-         FIND_CENSUS(jn+1, jn);
-      }
-      // We've found the least important census, now remove it
-      min_census = & censi[ min_j ];
-      min_census->ms_time = -1;
-   }
-
-   // Slide down the remaining censi over the removed ones.  The '<=' is
-   // because we are removing on (N/2)-1, rather than N/2.
-   for (i = 0, j = 0; i <= MAX_N_CENSI / 2; i++, j++) {
-      FIND_CENSUS(j, j);
-      if (i != j) {
-         censi[i] = censi[j];
-      }
-   }
-   curr_census = i;
-
-   // Double intervals
-   ms_interval         *= 2;
-   do_every_nth_census *= 2;
-
-   if (VG_(clo_verbosity) > 1)
-      VG_(message)(Vg_UserMsg, "...done");
-}
-
-// Forward declaration.
-// XXX: necessary?
-static void pp_snapshot(SizeT curr_heap_szB,   SizeT curr_heap_admin_szB,
-                        SizeT curr_stacks_szB, SizeT curr_total_szB);
-
-
-// Take a census.  Census time seems to be insignificant (usually <= 0 ms,
-// almost always <= 1ms) so don't have to worry about subtracting it from
-// running time in any way.
-//
-// XXX: NOT TRUE!  with bigger depths, konqueror censuses can easily take
-//      50ms!
-static void hp_census(void)
-{
-   static UInt ms_prev_census = 0;
-   static UInt ms_next_census = 0;     // zero allows startup census
-
-   SSizeT census_heap_szB       = 0;
-   SSizeT census_heap_admin_szB = 0;
-   SSizeT census_stacks_szB     = 0;
-
-   Int     ms_time, ms_time_since_prev;
-   Census* census;
-
-   // Only do a census if it's time
-   ms_time            = VG_(read_millisecond_timer)();
-   ms_time_since_prev = ms_time - ms_prev_census;
-   if (ms_time < ms_next_census) {
-      n_fake_censi++;
-      return;
-   }
-   n_real_censi++;
-
-   census = & censi[curr_census];
-
-   // Heap -------------------------------------------------------------
-   if (clo_heap) {
-      census_heap_szB = heap_szB;
-   }
-
-   // Heap admin -------------------------------------------------------
-   if (clo_heap_admin > 0) {
-      census_heap_admin_szB = clo_heap_admin * n_heap_blocks;
-   }
-
-   // Stack(s) ---------------------------------------------------------
-   if (clo_stacks) {
-      ThreadId tid;
-      Addr     stack_min, stack_max;
-      VG_(thread_stack_reset_iter)();
-      while ( VG_(thread_stack_next)(&tid, &stack_min, &stack_max) ) {
-         census_stacks_szB += (stack_max - stack_min);
-      }
-      census_stacks_szB += sigstacks_szB;    // Add signal stacks, too
-   }
-
-   // Write out census -------------------------------------------------
-   census->ms_time = ms_time;
-   census->total_szB =
-      census_heap_szB + census_heap_admin_szB + census_stacks_szB;
-//   VG_(printf)("heap, admin, stacks: %ld, %ld, %ld B\n",
-//      census_heap_szB, census_heap_admin_szB, census_stacks_szB);
-   if (census->total_szB > peak_census_total_szB) {
-      peak_census_total_szB = census->total_szB;
-      VG_(printf)("new peak census total szB = %ld B\n", peak_census_total_szB);
-   }
-
-   // Print the significant part of the XTree  [XXX: temporary]
-   if (clo_heap)
-      pp_snapshot(census_heap_szB,   census_heap_admin_szB,
-                  census_stacks_szB, census->total_szB);
-
-   // Clean-ups
-   curr_census++;
-   census = NULL;    // don't use again now that curr_census changed
-
-   // Halve the entries, if our census table is full
-   if (MAX_N_CENSI == curr_census) {
-      halve_censi();
-   }
-
-   // Take time for next census from now, rather than when this census
-   // should have happened.  Because, if there's a big gap due to a kernel
-   // operation, there's no point doing catch-up censi every allocation for
-   // a while -- that would just give N censi at almost the same time.
-   if (VG_(clo_verbosity) > 1) {
-      VG_(message)(Vg_UserMsg, "census: %d ms (took %d ms)", ms_time, 
-                               VG_(read_millisecond_timer)() - ms_time );
-   }
-   ms_prev_census = ms_time;
-   ms_next_census = ms_time + ms_interval;
-
-   //VG_(printf)("Next: %d ms\n", ms_next_census);
-} 
-
-/*------------------------------------------------------------*/
 /*--- Tracked events                                       ---*/
 /*------------------------------------------------------------*/
 
@@ -1177,7 +1202,7 @@ IRSB* ms_instrument ( VgCallbackClosure* closure,
 
    if (is_first_SB) {
       // Do an initial sample for t = 0
-      hp_census();
+      take_snapshot();
       is_first_SB = False;
    }
 
@@ -1200,22 +1225,6 @@ static Char* make_filename(Char* dir, Char* suffix)
    return filename;
 }
 
-// Make string acceptable to hp2ps (sigh): remove spaces, escape parentheses.
-static Char* clean_fnname(Char *d, Char* s)
-{
-   Char* dorig = d;
-   while (*s) {
-      if      (' ' == *s) { *d   = '%';            }
-      else if ('(' == *s) { *d++ = '\\'; *d = '('; }
-      else if (')' == *s) { *d++ = '\\'; *d = ')'; }
-      else                { *d   = *s;             };
-      s++;
-      d++;
-   }
-   *d = '\0';
-   return dorig;
-}
-
 static void file_err ( Char* file )
 {
    VG_(message)(Vg_UserMsg, "error: can't open output file '%s'", file );
@@ -1227,13 +1236,12 @@ static void file_err ( Char* file )
 
 static void write_text_graph(void)
 {
-   Int    i /*,j*/;
+   Int    i;
    Int    x, y;         // y must be signed!
    Int end_ms_time;
    Char unit;
    Int orders_of_magnitude;
-   SizeT peak_census_total_szScaled;
-
+   SizeT peak_snapshot_total_szScaled;
 
    // XXX: unhardwire the sizes later
    #define GRAPH_X   72
@@ -1245,30 +1253,72 @@ static void write_text_graph(void)
    // The rest ([1][1]..[GRAPH_X][GRAPH_Y]) is the usable graph area.
    Char graph[GRAPH_X+1][GRAPH_Y+1];
 
-   // Setup the graph
-   graph[0][0] = '+';                     // axes join point
-   for (x = 1; x <= GRAPH_X; x++) {       // x-axis
-      graph[x][0] = '-';
-   }
-   for (y = 1; y <= GRAPH_Y; y++) {       // y-axis
-      graph[0][y] = '|';
-   }
-   for (x = 1; x <= GRAPH_X; x++) {       // usable area
+   // We increment end_ms_time by 1 so that the last snapshot occurs just
+   // before it, and doesn't spill over into the final column.
+   tl_assert(curr_snapshot > 0);
+   end_ms_time = snapshots[curr_snapshot-1].ms_time + 1;
+   tl_assert(end_ms_time > 0);
+
+   // Setup graph[][].
+   graph[0][0] = '+';                                       // axes join point
+   for (x = 1; x <= GRAPH_X; x++) { graph[x][0] = '-'; }    // x-axis
+   for (y = 1; y <= GRAPH_Y; y++) { graph[0][y] = '|'; }    // y-axis
+   for (x = 1; x <= GRAPH_X; x++) {                         // usable area
       for (y = 1; y <= GRAPH_Y; y++) {
          graph[x][y] = ' ';
       }
    }
 
-   // We increment end_ms_time by 1 so that the last census occurs just
-   // before it, and doesn't spill over into the final column.
-   tl_assert(curr_census > 0);
-   end_ms_time = censi[curr_census-1].ms_time + 1;
-   tl_assert(end_ms_time > 0);
-   tl_assert(peak_census_total_szB > 0);
-   P("end time = %d ms\n", end_ms_time);
-   P("peak census total szB = %ld B\n", peak_census_total_szB);
+   // Write snapshot bars into graph[][].
+   // XXX: many detailed snapshot bars are being overwritten by
+   for (i = 0; i < curr_snapshot; i++) {
+      Snapshot* snapshot = & snapshots[i];
+      Bool is_detailed = ( snapshot->alloc_xpt ? True : False );
 
-   // Header, including command line
+      // Work out how many bytes each row represents.
+      double per_row_full_thresh_szB = (double)peak_snapshot_total_szB / GRAPH_Y;
+      double per_row_half_thresh_szB = per_row_full_thresh_szB / 2;
+
+      // Work out which column this snapshot belongs to.
+      double x_pos_frac = ((double)snapshot->ms_time / end_ms_time) * GRAPH_X;
+      x = (int)x_pos_frac + 1;    // +1 due to y-axis
+
+      // Grow this snapshot bar from bottom to top.
+      for (y = 1; y <= GRAPH_Y; y++) {
+         double this_row_full_thresh_szB = y * per_row_full_thresh_szB;
+         double this_row_half_thresh_szB =
+            this_row_full_thresh_szB - per_row_half_thresh_szB;
+
+         graph[x][y] = ' ';
+         if (snapshot->total_szB >= this_row_half_thresh_szB)
+            graph[x][y] = '.';
+         if (snapshot->total_szB >= this_row_full_thresh_szB)
+            graph[x][y] = ( is_detailed ? '|' : ':' );
+      }
+      // If it's detailed, mark the x-axis
+      if (is_detailed) 
+         graph[x][0] = '|';
+   }
+
+   // Work out the units for the y-axis.
+   orders_of_magnitude = 0;
+   peak_snapshot_total_szScaled = peak_snapshot_total_szB;
+   while (peak_snapshot_total_szScaled > 1000) {
+      orders_of_magnitude++;
+      peak_snapshot_total_szScaled /= 1000;
+   }
+   switch (orders_of_magnitude) {
+      case 0: unit = ' '; break;
+      case 1: unit = 'k'; break;
+      case 2: unit = 'M'; break;
+      case 3: unit = 'G'; break;
+      case 4: unit = 'T'; break;
+      default:
+         tl_assert2(0, "unknown order of magnitude: %d", orders_of_magnitude);
+   }
+
+   // Print graph header, including command line.
+   P("-- start graph header --\n");
    P("cmd: ");
    if (VG_(args_the_exename)) {
       P("%s", VG_(args_the_exename));
@@ -1281,58 +1331,14 @@ static void write_text_graph(void)
       P(" ???");
    }
    P("\n");
+   P("-- end graph header --\n");
 
-   // Censi
-   for (i = 0; i < curr_census; i++) {
-      Census* census = & censi[i];
-
-      // Work out how many bytes each row represents.
-      double per_row_full_thresh_szB = (double)peak_census_total_szB / GRAPH_Y;
-      double per_row_half_thresh_szB = per_row_full_thresh_szB / 2;
-
-      // Work out which column this census belongs to.
-      double bar_x_pos_frac = ((double)census->ms_time / end_ms_time) * GRAPH_X;
-      int    bar_x_pos      = (int)bar_x_pos_frac + 1;    // +1 due to y-axis
-      // XXX: why is the 0 one not getting drawn?
-      P("n: %d\n", bar_x_pos);
-      tl_assert(1 <= bar_x_pos && bar_x_pos <= GRAPH_X);
-
-      // Grow this census bar from bottom to top.
-      for (y = 1; y <= GRAPH_Y; y++) {
-         double this_row_full_thresh_szB = y * per_row_full_thresh_szB;
-         double this_row_half_thresh_szB =
-            this_row_full_thresh_szB - per_row_half_thresh_szB;
-
-         graph[bar_x_pos][y] = ' ';
-         if (census->total_szB >= this_row_half_thresh_szB)
-            graph[bar_x_pos][y] = '.';
-         if (census->total_szB >= this_row_full_thresh_szB)
-            graph[bar_x_pos][y] = ':';
-      }
-   }
-
-   orders_of_magnitude = 0;
-   peak_census_total_szScaled = peak_census_total_szB;
-   while (peak_census_total_szScaled > 1000) {
-      orders_of_magnitude++;
-      peak_census_total_szScaled /= 1000;
-   }
-   switch (orders_of_magnitude) {
-      case 0: unit = ' '; break;
-      case 1: unit = 'k'; break;
-      case 2: unit = 'M'; break;
-      case 3: unit = 'G'; break;
-      case 4: unit = 'T'; break;
-      default:
-         tl_assert2(0, "unknown order of magnitude: %d", orders_of_magnitude);
-   }
-
-   // Print graph
+   // Print graph[][].
    P("-- start graph --\n");
    for (y = GRAPH_Y; y >= 0; y--) {
       // Row prefix
       if (GRAPH_Y == y)                // top point
-         P("%3lu%c", peak_census_total_szScaled, unit);
+         P("%3lu%c", peak_snapshot_total_szScaled, unit);
       else if (0 == y)                 // bottom point
          P("  0 ");
       else                             // anywhere else
@@ -1345,28 +1351,23 @@ static void write_text_graph(void)
       P("\n");
    }
    P("-- end graph --\n");
+
+   // Print graph legend.
+   P("-- start graph legend --\n");
+   for (i = 0; i < curr_snapshot; i++) {
+      Snapshot* snapshot = & snapshots[i];
+      Bool is_detailed = ( snapshot->alloc_xpt ? True : False );
+      if (is_detailed) {
+         P("    snapshot %3d, t = %,12d ms, size = %,12ld bytes\n",
+            i, snapshot->ms_time, snapshot->total_szB);
+      }
+   }
+   P("-- end graph legend --\n");
 }
 
 /*------------------------------------------------------------*/
-/*--- Writing the output                                   ---*/
+/*--- Writing snapshots                                    ---*/
 /*------------------------------------------------------------*/
-
-#if 0
-static void percentify(Int n, Int pow, Int field_width, char xbuf[])
-{
-   int i, len, space;
-
-   VG_(sprintf)(xbuf, "%d.%d%%", n / pow, n % pow);
-   len = VG_(strlen)(xbuf);
-   space = field_width - len;
-   if (space < 0) space = 0;     /* Allow for v. small field_width */
-   i = len;
-
-   /* Right justify in field */
-   for (     ; i >= 0;    i--)  xbuf[i + space] = xbuf[i];
-   for (i = 0; i < space; i++)  xbuf[i] = ' ';
-}
-#endif
 
 // Nb: uses a static buffer, each call trashes the last string returned.
 static Char* make_perc(ULong x, ULong y)
@@ -1380,35 +1381,6 @@ static Char* make_perc(ULong x, ULong y)
    if (' ' == mbuf[0]) mbuf[0] = '0';
    return mbuf;
 }
-
-#if 0
-// Nb: passed in XPt is a lower-level XPt;  IPs are grabbed from
-// bottom-to-top of XCon, and then printed in the reverse order.
-static UInt pp_XCon(XPt* xpt)
-{
-   Addr  rev_ips[clo_depth+1];
-   Int   i = 0;
-   Int   n = 0;
-
-   tl_assert(NULL != xpt);
-
-   while (True) {
-      rev_ips[i] = xpt->ip;
-      n++;
-      if (alloc_xpt == xpt->parent) break;
-      i++;
-      xpt = xpt->parent;
-   }
-
-   for (i = n-1; i >= 0; i--) {
-      // -1 means point to calling line
-      VG_(describe_IP)(rev_ips[i]-1, buf2, BUF_LEN);
-      P("  %s\n", buf2);
-   }
-
-   return n;
-}
-#endif
 
 // Does the xpt account for >= 1% of total memory used?
 // XXX: make command-line controllable?
@@ -1426,8 +1398,6 @@ static void pp_snapshot_child_XPts(XPt* parent, Int depth, Char* depth_str,
    Bool  child_is_last_sibling;
    Char* ip_desc, *perc;
 
-   // XXX: don't want to see 0xFFFFFFFE entries
-   
    // Check that the sum of all children's sizes equals the parent's size.
    SizeT children_sum_szB = 0;
    for (i = 0; i < parent->n_children; i++) {
@@ -1488,6 +1458,8 @@ static void pp_snapshot_child_XPts(XPt* parent, Int depth, Char* depth_str,
          UInt  n_insig = parent->n_children - i;
          Char* s       = ( n_insig == 1 ? "" : "s" );
          Char* other   = ( 0 == i ? "" : "other " );
+         // XXX: should give the percentage.  be careful when computing
+         // it...
          P("->the rest in %d %sinsignificant place%s\n", n_insig, other, s);
          P("%s\n", depth_str);
          return;
@@ -1495,38 +1467,50 @@ static void pp_snapshot_child_XPts(XPt* parent, Int depth, Char* depth_str,
    }
 }
 
-static void pp_snapshot(SizeT curr_heap_szB,   SizeT curr_heap_admin_szB,
-                        SizeT curr_stacks_szB, SizeT curr_total_szB)
+static void pp_snapshot(Snapshot* snapshot, Int snapshot_n)
 {
-   Int  depth_str_len = clo_depth * 2 + 2;
+   Int   depth_str_len = clo_depth * 2 + 2;
    Char* depth_str = VG_(malloc)(sizeof(Char) * depth_str_len);
    depth_str[0] = '\0';    // Initialise to "".
    
    P("=================================\n");
-   P("== snapshot\n");
+   P("== snapshot %d\n", snapshot_n);
    P("=================================\n");
-   P("Total memory usage: %,12lu bytes\n", curr_total_szB);
+   P("Total memory usage: %,12lu bytes\n", snapshot->total_szB);
    P("Useful heap usage : %,12lu bytes (%s)\n",
-      curr_heap_szB,       make_perc(curr_heap_szB, curr_total_szB));
+      snapshot->heap_szB,
+      make_perc(snapshot->heap_szB, snapshot->total_szB));
    P("Admin  heap usage : %,12lu bytes (%s)\n",
-      curr_heap_admin_szB, make_perc(curr_heap_admin_szB, curr_total_szB));
+      snapshot->heap_admin_szB,
+      make_perc(snapshot->heap_admin_szB, snapshot->total_szB));
    P("Stacks usage      : %,12lu bytes (%s)\n",
-      curr_stacks_szB,     make_perc(curr_stacks_szB, curr_total_szB));
+      snapshot->stacks_szB,
+      make_perc(snapshot->stacks_szB, snapshot->total_szB));
 
-   if (0 == curr_heap_szB) {
+   if (0 == snapshot->heap_szB) {
       P("(No heap memory currently allocated)\n");
    } else {
       P("Heap tree:\n");
       P("%6s: (heap allocation functions) malloc/new/new[],"
         " --alloc-fn functions, etc.\n",
-         make_perc(curr_heap_szB, curr_total_szB));
+         make_perc(snapshot->heap_szB, snapshot->total_szB));
 
       pp_snapshot_child_XPts(alloc_xpt, 0, depth_str, depth_str_len,
-                             curr_heap_szB, curr_total_szB);
+                             snapshot->heap_szB, snapshot->total_szB);
    }
 
-   P("\n");
    VG_(free)(depth_str);
+}
+
+static void write_snapshots(void)
+{
+   Int i;
+   for (i = 0; i < curr_snapshot; i++) {
+      Snapshot* snapshot = & snapshots[i];
+      if (snapshot->alloc_xpt) {
+         pp_snapshot(snapshot, i);     // Detailed snapshot!
+      }
+   }
 }
 
 /*------------------------------------------------------------*/
@@ -1536,27 +1520,29 @@ static void pp_snapshot(SizeT curr_heap_szB,   SizeT curr_heap_admin_szB,
 static void ms_fini(Int exit_status)
 {
    // Do a final (empty) sample to show program's end
-   hp_census();
+   take_snapshot();
 
    // Output.
    write_text_graph();
+   write_snapshots();
 
    // Stats
    if (VG_(clo_verbosity) > 1) {
       tl_assert(n_xpts > 0);  // always have alloc_xpt
-      VG_(message)(Vg_DebugMsg, "    allocs: %u", n_allocs);
-      VG_(message)(Vg_DebugMsg, "zeroallocs: %u (%d%%)", n_zero_allocs,
-                                n_zero_allocs * 100 / n_allocs );
-      VG_(message)(Vg_DebugMsg, "     frees: %u", n_frees);
-      VG_(message)(Vg_DebugMsg, "      XPts: %u (%d B)", n_xpts,
-                                                         n_xpts*sizeof(XPt));
-      VG_(message)(Vg_DebugMsg, "  top-XPts: %u (%d%%)", alloc_xpt->n_children,
-                                alloc_xpt->n_children * 100 / n_xpts);
-      VG_(message)(Vg_DebugMsg, "c-reallocs: %u", n_children_reallocs);
-      VG_(message)(Vg_DebugMsg, "fake censi: %u", n_fake_censi);
-      VG_(message)(Vg_DebugMsg, "real censi: %u", n_real_censi);
-      VG_(message)(Vg_DebugMsg, "  halvings: %u", n_halvings);
-      VG_(message)(Vg_DebugMsg, "XCon_redos: %u", n_getXCon_redo);
+      VG_(message)(Vg_DebugMsg, "    allocs:      %u", n_allocs);
+      VG_(message)(Vg_DebugMsg, "zeroallocs:      %u (%d%%)", n_zero_allocs,
+         n_zero_allocs * 100 / n_allocs );
+      VG_(message)(Vg_DebugMsg, "     frees:      %u", n_frees);
+      VG_(message)(Vg_DebugMsg, "      XPts:      %u", n_xpts);
+      VG_(message)(Vg_DebugMsg, "  top-XPts:      %u (%d%%)",
+         alloc_xpt->n_children, alloc_xpt->n_children * 100 / n_xpts);
+      VG_(message)(Vg_DebugMsg, "dup'd XPts:      %u", n_dupd_xpts);
+      VG_(message)(Vg_DebugMsg, "dup'd/freed XPts:%u", n_dupd_xpts_freed);
+      VG_(message)(Vg_DebugMsg, "c-reallocs:      %u", n_children_reallocs);
+      VG_(message)(Vg_DebugMsg, "fake snapshots:  %u", n_fake_snapshots);
+      VG_(message)(Vg_DebugMsg, "real snapshots:  %u", n_real_snapshots);
+      VG_(message)(Vg_DebugMsg, "  halvings:      %u", n_halvings);
+      VG_(message)(Vg_DebugMsg, "XCon_redos:      %u", n_getXCon_redo);
    }
 }
 
@@ -1574,9 +1560,9 @@ static void ms_post_clo_init(void)
       }
    }
    
-   ms_interval = 1;
+   ms_interval = 5;
 
-   // We don't take a census now, because there's still some core
+   // We don't take a snapshot now, because there's still some core
    // initialisation to do, in which case we have an artificial gap.
    // Instead we do it when the first translation occurs.  See
    // ms_instrument().
