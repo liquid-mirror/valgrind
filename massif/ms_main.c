@@ -32,6 +32,7 @@
 // XXX:
 //---------------------------------------------------------------------------
 // Next:
+// - print percentages/sizes in "the rest" entries
 // - truncate really long file names [hmm, could make getting the name of
 //   alloc-fns more difficult]
 // - Check MALLOCLIKE_BLOCK works, write regtest
@@ -84,6 +85,7 @@
 //   - there's a gap between the ms timer initialisation during Valgrind
 //     start-up and our first use of it.  Could normalise versus our first
 //     use...
+//   - could conceivably remove XPts that have their szB reduced to zero.
 //
 // Docs:
 // - need to explain that --alloc-fn changed slightly -- now if an entry
@@ -292,8 +294,10 @@ struct _XPt {
 // This isn't exactly right, because we actually drop (N/2)-1 when halving,
 // but it shows the basic idea.
 
+// XXX: if the program is really short, we may get no detailed snapshots...
+// that's bad, do something about it.
 #define MAX_N_SNAPSHOTS         50  // Keep it even, for simplicity
-#define DETAILED_SNAPSHOT_FREQ  10  // Every Nth snapshot will be detailed
+#define DETAILED_SNAPSHOT_FREQ   2  // Every Nth snapshot will be detailed
 
 typedef
    struct {
@@ -355,6 +359,8 @@ static UInt n_fake_snapshots     = 0;
 
 #define FILENAME_LEN    256
 
+#define P               VG_(printf)
+
 #define SPRINTF(zz_buf, fmt, args...) \
    do { Int len = VG_(sprintf)(zz_buf, fmt, ## args); \
         VG_(write)(fd, (void*)zz_buf, len); \
@@ -409,14 +415,17 @@ static Bool clo_heap        = True;
 static UInt clo_heap_admin  = 8;
 static Bool clo_stacks      = True;
 static Bool clo_depth       = 8;
+static UInt clo_threshold   = 100;     // 100 == 1%
 
 static Bool ms_process_cmd_line_option(Char* arg)
 {
         VG_BOOL_CLO(arg, "--heap",       clo_heap)
    else VG_BOOL_CLO(arg, "--stacks",     clo_stacks)
 
-   else VG_NUM_CLO (arg, "--heap-admin",  clo_heap_admin)
-   else VG_BNUM_CLO(arg, "--depth",       clo_depth, 1, MAX_DEPTH)
+   else VG_NUM_CLO (arg, "--heap-admin", clo_heap_admin)
+   else VG_BNUM_CLO(arg, "--depth",      clo_depth, 1, MAX_DEPTH)
+
+   else VG_NUM_CLO(arg, "--threshold",   clo_threshold)
 
    else if (VG_CLO_STREQN(11, arg, "--alloc-fn=")) {
       int i;
@@ -450,6 +459,9 @@ static void ms_print_usage(void)
 "    --stacks=no|yes           profile stack(s) [yes]\n"
 "    --depth=<number>          depth of contexts [8]\n"
 "    --alloc-fn=<name>         specify <fn> as an alloc function [empty]\n"
+"    --threshold=<n>           significance threshold, in 100ths of a percent\n"
+"                              (eg. <n>=100 shows nodes covering >= 1%% of\n"
+"                               total size, <n>=0 shows all nodes) [100]\n"
    );
    VG_(replacement_malloc_print_usage)();
 }
@@ -740,6 +752,61 @@ static void update_XCon(XPt* xpt, SSizeT space_delta)
 
 
 /*------------------------------------------------------------*/
+/*--- Sanity checking                                      ---*/
+/*------------------------------------------------------------*/
+
+__attribute__((unused))
+static void pp_XPt(XPt* xpt)
+{
+   Int i;
+   P("XPt (%p):\n", xpt);
+   P("- ip:         : %p\n", (void*)xpt->ip);
+   P("- curr_szB    : %ld\n", xpt->curr_szB);
+   P("- parent      : %p\n", xpt->parent);
+   P("- n_children  : %d\n", xpt->n_children);
+   P("- max_children: %d\n", xpt->max_children);
+   for (i = 0; i < xpt->n_children; i++) {
+      P("- children[%2d]: %p\n", i, xpt->children[i]);
+   }
+}
+
+static void sanity_check_XTree(XPt* xpt, XPt* parent)
+{
+   Int i;
+   SizeT children_sum_szB = 0;
+
+   if (NULL == xpt)
+      return;
+
+   // Check back-pointer.
+   tl_assert2(xpt->parent == parent,
+      "xpt->parent = %p, parent = %p\n", xpt->parent, parent);
+
+   // Check children counts look sane.
+   tl_assert(xpt->n_children <= xpt->max_children);
+
+   // Check the sum of any children szBs equals the XPt's szB.
+   if (xpt->n_children > 0) {
+      for (i = 0; i < xpt->n_children; i++) {
+         children_sum_szB += xpt->children[i]->curr_szB;
+      }
+      tl_assert(children_sum_szB == xpt->curr_szB);
+   }
+
+   // Check each child.
+   for (i = 0; i < xpt->n_children; i++) {
+      sanity_check_XTree(xpt->children[i], xpt);
+   }
+}
+
+static void sanity_check_snapshot(Snapshot* snapshot)
+{
+   tl_assert(snapshot->total_szB ==
+      snapshot->heap_admin_szB + snapshot->heap_szB + snapshot->stacks_szB);
+   sanity_check_XTree(snapshot->alloc_xpt, /*parent*/NULL);
+}
+
+/*------------------------------------------------------------*/
 /*--- Taking a snapshot                                    ---*/
 /*------------------------------------------------------------*/
 
@@ -823,18 +890,18 @@ static void halve_snapshots(void)
 // XXX: taking a full snapshot... could/should just snapshot the significant
 // parts.  Nb: then the amounts wouldn't add up, unless I represented the
 // "other insignificant places" in XPts.
-static XPt* dup_XTree(XPt* xpt)
+static XPt* dup_XTree(XPt* xpt, XPt* parent)
 {
    Int  i;
    XPt* dup_xpt = VG_(malloc)(sizeof(XPt));
    dup_xpt->ip           = xpt->ip;
    dup_xpt->curr_szB     = xpt->curr_szB;
-   dup_xpt->parent       = xpt->parent;
+   dup_xpt->parent       = parent;           // Nb: not xpt->children!
    dup_xpt->n_children   = xpt->n_children;
    dup_xpt->max_children = xpt->n_children;  // Nb: don't copy max_children!
    dup_xpt->children     = VG_(malloc)(dup_xpt->max_children * sizeof(XPt*));
    for (i = 0; i < xpt->n_children; i++) {
-      dup_xpt->children[i] = dup_XTree(xpt->children[i]);
+      dup_xpt->children[i] = dup_XTree(xpt->children[i], dup_xpt);
    }
 
    n_dupd_xpts++;
@@ -885,7 +952,8 @@ static void take_snapshot(void)
       snapshot->heap_szB = heap_szB;
       // Take a detailed snapshot if it's been long enough since the last one.
       if (DETAILED_SNAPSHOT_FREQ == n_snapshots_since_last_detailed) {
-         snapshot->alloc_xpt = dup_XTree(alloc_xpt);
+         snapshot->alloc_xpt = dup_XTree(alloc_xpt, /*parent*/NULL);
+         tl_assert(snapshot->alloc_xpt->curr_szB == heap_szB);
          n_snapshots_since_last_detailed = 0;
       } else {
          n_snapshots_since_last_detailed++;
@@ -912,6 +980,9 @@ static void take_snapshot(void)
    snapshot->ms_time   = ms_time;
    snapshot->total_szB =
       snapshot->heap_szB + snapshot->heap_admin_szB + snapshot->stacks_szB;
+
+   // Sanity-check it.
+   sanity_check_snapshot(snapshot);
 
    // Update peak data -------------------------------------------------
    // XXX: this is not really the right way to do peak data -- it's only
@@ -963,29 +1034,29 @@ static void update_heap_stats(SSizeT heap_szB_delta, Int n_heap_blocks_delta)
 }
 
 static
-void* new_block ( ThreadId tid, void* p, SizeT size, SizeT align,
+void* new_block ( ThreadId tid, void* p, SizeT szB, SizeT alignB,
                   Bool is_zeroed )
 {
    HP_Chunk* hc;
    Bool custom_alloc = (NULL == p);
-   if (size < 0) return NULL;
+   if (szB < 0) return NULL;
 
    // Update statistics
    n_allocs++;
-   if (0 == size) n_zero_allocs++;
+   if (0 == szB) n_zero_allocs++;
 
    // Allocate and zero if necessary
    if (!p) {
-      p = VG_(cli_malloc)( align, size );
+      p = VG_(cli_malloc)( alignB, szB );
       if (!p) {
          return NULL;
       }
-      if (is_zeroed) VG_(memset)(p, 0, size);
+      if (is_zeroed) VG_(memset)(p, 0, szB);
    }
 
    // Make new HP_Chunk node, add to malloc_list
    hc       = VG_(malloc)(sizeof(HP_Chunk));
-   hc->szB  = size;
+   hc->szB  = szB;
    hc->data = (Addr)p;
    hc->where = NULL;    // paranoia
 
@@ -995,7 +1066,7 @@ void* new_block ( ThreadId tid, void* p, SizeT size, SizeT align,
    // Update XTree, if necessary
    if (clo_heap) {
       hc->where = get_XCon( tid, custom_alloc );
-      update_XCon(hc->where, size);
+      update_XCon(hc->where, szB);
    }
    VG_(HT_add_node)(malloc_list, hc);
 
@@ -1098,29 +1169,29 @@ void* renew_block ( ThreadId tid, void* p_old, SizeT new_size )
 /*--- malloc() et al replacement wrappers                  ---*/
 /*------------------------------------------------------------*/
 
-static void* ms_malloc ( ThreadId tid, SizeT n )
+static void* ms_malloc ( ThreadId tid, SizeT szB )
 {
-   return new_block( tid, NULL, n, VG_(clo_alignment), /*is_zeroed*/False );
+   return new_block( tid, NULL, szB, VG_(clo_alignment), /*is_zeroed*/False );
 }
 
-static void* ms___builtin_new ( ThreadId tid, SizeT n )
+static void* ms___builtin_new ( ThreadId tid, SizeT szB )
 {
-   return new_block( tid, NULL, n, VG_(clo_alignment), /*is_zeroed*/False );
+   return new_block( tid, NULL, szB, VG_(clo_alignment), /*is_zeroed*/False );
 }
 
-static void* ms___builtin_vec_new ( ThreadId tid, SizeT n )
+static void* ms___builtin_vec_new ( ThreadId tid, SizeT szB )
 {
-   return new_block( tid, NULL, n, VG_(clo_alignment), /*is_zeroed*/False );
+   return new_block( tid, NULL, szB, VG_(clo_alignment), /*is_zeroed*/False );
 }
 
-static void* ms_calloc ( ThreadId tid, SizeT m, SizeT size )
+static void* ms_calloc ( ThreadId tid, SizeT m, SizeT szB )
 {
-   return new_block( tid, NULL, m*size, VG_(clo_alignment), /*is_zeroed*/True );
+   return new_block( tid, NULL, m*szB, VG_(clo_alignment), /*is_zeroed*/True );
 }
 
-static void *ms_memalign ( ThreadId tid, SizeT align, SizeT n )
+static void *ms_memalign ( ThreadId tid, SizeT alignB, SizeT szB )
 {
-   return new_block( tid, NULL, n, align, False );
+   return new_block( tid, NULL, szB, alignB, False );
 }
 
 static void ms_free ( ThreadId tid, void* p )
@@ -1138,9 +1209,12 @@ static void ms___builtin_vec_delete ( ThreadId tid, void* p )
    die_block( p, /*custom_free*/False );
 }
 
-static void* ms_realloc ( ThreadId tid, void* p_old, SizeT new_size )
+static void* ms_realloc ( ThreadId tid, void* p_old, SizeT new_szB )
 {
-   return renew_block(tid, p_old, new_size);
+//   return renew_block(tid, p_old, new_size);
+   die_block( p_old, /*custom_free*/False );
+   return new_block( tid, NULL, new_szB, VG_(clo_alignment),
+      /*is_zeroed*/False );
 }
 
 
@@ -1168,10 +1242,11 @@ static Bool ms_handle_client_request ( ThreadId tid, UWord* argv, UWord* ret )
    switch (argv[0]) {
    case VG_USERREQ__MALLOCLIKE_BLOCK: {
       void* res;
-      void* p         = (void*)argv[1];
-      SizeT sizeB     =        argv[2];
-      *ret            = 0;
-      res = new_block( tid, p, sizeB, /*align--ignored*/0, /*is_zeroed*/False );
+      void* p   = (void*)argv[1];
+      SizeT szB =        argv[2];
+      *ret = 0;
+      res  =
+         new_block( tid, p, szB, /*alignB--ignored*/0, /*is_zeroed*/False );
       tl_assert(res == p);
       return True;
    }
@@ -1231,8 +1306,6 @@ static void file_err ( Char* file )
    VG_(message)(Vg_UserMsg, "       ... so profile results will be missing.");
 }
 #endif
-
-#define P   VG_(printf)
 
 static void write_text_graph(void)
 {
@@ -1373,6 +1446,8 @@ static void write_text_graph(void)
 static Char* make_perc(ULong x, ULong y)
 {
    static Char mbuf[32];
+
+//   tl_assert(x <= y);    XXX; put back in later...
    
 // XXX: I'm not confident that VG_(percentify) works as it should...
    VG_(percentify)(x, y, 1, 5, mbuf); 
@@ -1386,7 +1461,12 @@ static Char* make_perc(ULong x, ULong y)
 // XXX: make command-line controllable?
 static Bool is_significant_XPt(XPt* xpt, SizeT curr_total_szB)
 {
-   return (xpt->curr_szB * 1000 / curr_total_szB >= 10);   // < 1%?
+   // clo_threshold is measured in hundredths of a percent of total size,
+   // ie. 10,000ths of total size.  So clo_threshold=100 means that the
+   // threshold is 1% of total size.
+   tl_assert(xpt->curr_szB <= curr_total_szB);
+   // XXX: overflow danger here...
+   return (xpt->curr_szB * 10000 / curr_total_szB >= clo_threshold);
 }
 
 static void pp_snapshot_child_XPts(XPt* parent, Int depth, Char* depth_str,
@@ -1404,6 +1484,7 @@ static void pp_snapshot_child_XPts(XPt* parent, Int depth, Char* depth_str,
       children_sum_szB += parent->children[i]->curr_szB;
    }
    tl_assert(children_sum_szB == parent->curr_szB);
+//   VG_(printf)("szB = %,ld B\n", children_sum_szB);
 
    // Sort children by curr_szB (reverse order:  biggest to smallest)
    // XXX: is it better to keep them always in order?
@@ -1424,7 +1505,7 @@ static void pp_snapshot_child_XPts(XPt* parent, Int depth, Char* depth_str,
          // This child is significant.  Print it.
          perc = make_perc(child->curr_szB, curr_total_szB);
          ip_desc = VG_(describe_IP)(child->ip-1, buf2, BUF_LEN);
-         P("->%6s: %s\n", perc, ip_desc);
+         P("->%6s(%,ldB): %s\n", perc, child->curr_szB, ip_desc);
 
          // If the child has any children, print them.  But first add the
          // prefix for them, which is "  " if the parent has no smaller
@@ -1472,6 +1553,8 @@ static void pp_snapshot(Snapshot* snapshot, Int snapshot_n)
    Int   depth_str_len = clo_depth * 2 + 2;
    Char* depth_str = VG_(malloc)(sizeof(Char) * depth_str_len);
    depth_str[0] = '\0';    // Initialise to "".
+
+   sanity_check_snapshot(snapshot);
    
    P("=================================\n");
    P("== snapshot %d\n", snapshot_n);
@@ -1491,11 +1574,12 @@ static void pp_snapshot(Snapshot* snapshot, Int snapshot_n)
       P("(No heap memory currently allocated)\n");
    } else {
       P("Heap tree:\n");
-      P("%6s: (heap allocation functions) malloc/new/new[],"
-        " --alloc-fn functions, etc.\n",
-         make_perc(snapshot->heap_szB, snapshot->total_szB));
+      P("%6s(%,ldB): (heap allocation functions) malloc/new/new[],"
+        " --alloc-fns, etc.\n",
+         make_perc(snapshot->heap_szB, snapshot->total_szB),
+         snapshot->heap_szB);
 
-      pp_snapshot_child_XPts(alloc_xpt, 0, depth_str, depth_str_len,
+      pp_snapshot_child_XPts(snapshot->alloc_xpt, 0, depth_str, depth_str_len,
                              snapshot->heap_szB, snapshot->total_szB);
    }
 
@@ -1505,12 +1589,26 @@ static void pp_snapshot(Snapshot* snapshot, Int snapshot_n)
 static void write_snapshots(void)
 {
    Int i;
+
+   // XXX: temporary
+   Int   depth_str_len = clo_depth * 2 + 2;
+   Char* depth_str = VG_(malloc)(sizeof(Char) * depth_str_len);
+   depth_str[0] = '\0';    // Initialise to "".
+
    for (i = 0; i < curr_snapshot; i++) {
       Snapshot* snapshot = & snapshots[i];
       if (snapshot->alloc_xpt) {
          pp_snapshot(snapshot, i);     // Detailed snapshot!
       }
    }
+   P("=================================\n");
+   P("== main XTree\n");
+   P("=================================\n");
+   P("heap szB: %ld\n", heap_szB);
+   pp_snapshot_child_XPts(alloc_xpt, 0, depth_str, depth_str_len,
+                          heap_szB, 999999);
+
+   VG_(free)(depth_str);
 }
 
 /*------------------------------------------------------------*/
