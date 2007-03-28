@@ -31,6 +31,11 @@
 //---------------------------------------------------------------------------
 // XXX:
 //---------------------------------------------------------------------------
+// Next:
+// - truncate really long file names [hmm, could make getting the name of
+//   alloc-fns more difficult]
+// - Check MALLOCLIKE_BLOCK works, write regtest
+//
 // Separate content from presentation by dumping all results to a file and
 // then post-processing with a separate program, a la Cachegrind?
 // - work out the file format
@@ -50,14 +55,15 @@
 // 132132  nor     massif --format=html output does not do html entity escaping
 //   - only for HTML output, irrelevant, ignore
 //
-// FIXED:
+// FIXED/NOW IRRELEVANT:
 // 142197  nor     massif tool ignores --massif:alloc-fn parameters in .valg...
 //   - fixed in trunk
 // 142491  nor     Maximise use of alloc_fns array
 //   - addressed, using the patch (with minor changes) from the bug report
+// 89061   cra     Massif: ms_main.c:485 (get_XCon): Assertion `xpt->max_chi...
+//   - relevant code now gone
 //
 // TODO:
-// 89061   cra     Massif: ms_main.c:485 (get_XCon): Assertion `xpt->max_chi...
 // 141631  nor     Massif: percentages don't add up correctly
 // 142706  nor     massif numbers don't seem to add up
 // 143062  cra     massif crashes on app exit with signal 8 SIGFPE
@@ -82,6 +88,18 @@
 //   matches an alloc-fn, that entry *and all above it* are removed.  So you
 //   can cut out allc-fn chains at the bottom, rather than having to name
 //   all of them, which is better.
+// - Mention that the C++ overloadable new/new[] operators aren't include in
+//   alloc-fns by default.  
+// - Mention that complex functions names are best protected with single
+//   quotes, eg:
+//       --alloc-fn='operator new(unsigned, std::nothrow_t const&)'
+//   [XXX: that doesn't work if the option is in a .valgrindrc file or in
+//    $VALGRIND_OPTS.  In m_commandline.c:add_args_from_string() need to
+//    respect single quotes...]
+//
+// Tests:
+// - tests/overloaded_new.cpp is there
+// - one involving MALLOCLIKE
 //
 //---------------------------------------------------------------------------
 
@@ -118,9 +136,20 @@
 
 // Heap blocks are tracked, and the amount of space allocated by various
 // contexts (ie. lines of code, more or less) is also tracked.
-// Periodically, a census is taken.  There are two
-//
-//
+// "Snapshots", ie. detailed recordings of the memory usage, are taken every
+// so often.  There are two kinds of snapshot:
+// - Temporary:  Massif does a temporary snapshot every so often.  The idea
+//   is to always have a certain number of temporary snapshots around.  So
+//   we take them frequently to begin with, but decreasingly often as the
+//   program continues to run.  Also, we remove some old ones after a while.
+//   Overall it's a kind of exponential decay thing.
+// - Permanent:  Massif takes a permanent snapshot in some circumstances.
+//   They are:
+//   - Peak snapshot:  When the memory usage peak is reached, it takes a
+//     snapshot.  It keeps this, unless the peak is subsequently exceeded,
+//     in which case it will overwrite the peak snapshot.
+//   - User-requested snapshots:  These are done in response to client
+//     requests.  They are always kept.
 //  
 // 100M|B                .      :A
 //     |               .:::   :::#      
@@ -137,13 +166,23 @@
 //     |        :::::|:::::::|:::#:::|::::::                    g::::::::
 //     |       a:::::|:::::::|:::#:::|:::::::e:               ::|::::::::::h
 //     |       |:::::|:::::::|:::#:::|:::::::|::.        :: .:::|::::::::::|::
-// 25M^|       |:::::|:::::::|:::#:::|:::::::|::::      f:::::::|::::::::::|::
-//  20M|      :|:::::|:::::::|:::#:::|:::::::|::::.  .::|:::::::|::::::::::|::
-//  15M|    .::|:::::|:::::::|:::#:::|:::::::|::::::::::|:::::::|::::::::::|::
-//  10M|  .::::|:::::|:::::::|:::#:::|:::::::|::::::::::|:::::::|::::::::::|::
-//   5M|:::::::|:::::|:::::::|:::#:::|:::::::|::::::::::|:::::::|::::::::::|::
+//  25M|       |:::::|:::::::|:::#:::|:::::::|::::      f:::::::|::::::::::|::
+//     |      :|:::::|:::::::|:::#:::|:::::::|::::.  .::|:::::::|::::::::::|::
+//     |    .::|:::::|:::::::|:::#:::|:::::::|::::::::::|:::::::|::::::::::|::
+//     |  .::::|:::::|:::::::|:::#:::|:::::::|::::::::::|:::::::|::::::::::|::
+//     |:::::::|:::::|:::::::|:::#:::|:::::::|::::::::::|:::::::|::::::::::|::
 //   0M+----------------------------------------------------------------------t
 //     012                                                               
+//
+//      Temporary snapshots:
+//       a: periodic snapshot, total size: 33,000,000 bytes
+//       b: periodic snapshot, total size: ...        bytes
+//       c: periodic snapshot, total size: ...        bytes
+//       d: periodic snapshot, total size: ...        bytes
+//       e: periodic snapshot, total size: ...        bytes
+//       f: periodic snapshot, total size: ...        bytes
+//       g: periodic snapshot, total size: ...        bytes
+//       h: periodic snapshot, total size: ...        bytes
 //
 // Explanation of y-axis:
 // - Top of the x-axis box represents 0.
@@ -166,54 +205,6 @@
 // - First usable column has range 0..0.99s
 // - Second usable column has range 1..1.99s
 // - etc.
-
-
-
-
-// Ideas:
-// - Graph has 72 columns of data, 0..71
-//   - Once we've had the first 72, always have 72.
-//   - On number  73, remove column 1, (0,2..71)
-//   - On number  74, remove column 2, (0,2,4..71)
-//   - On number  75, remove column 3, (0,2,4,6..71)
-//   - On number 72+n, remove col   n, (0,2,4,6,...,2n..71)
-//   - ...
-//   - On number 107, remove column 35, (0,2,4,6,...,70..71)
-//   
-
-// column: 00 01 02 03 04 05 06 07 08 09 10 11 12
-// census  --------------------------------------
-// 00      00
-// 01      00 01
-// 02      00 01 02
-// ...
-// 11      00 01 02 03 04 05 06 07 08 09 10 11
-// 12      00 01 02 03 04 05 06 07 08 09 10 11 12
-// 13      00 02 03 04 05 06 07 08 09 10 11 12 13     removed col 01
-// 14      00 02 04 05 06 07 08 09 10 11 12 13 14     removed col 02
-// 15      00 02 04 06 07 08 09 10 11 12 13 14 15     removed col 03
-// 16      00 02 04 06 08 09 10 11 12 13 14 15 16     removed col 04
-// 17      00 02 04 06 08 10 11 12 13 14 15 16 17     removed col 05
-// 18      00 02 04 06 08 10 12 13 14 15 16 17 18     removed col 06
-// 19      00 02 04 06 08 10 12 14 15 16 17 18 19     removed col 07
-// 20      00 02 04 06 08 10 12 14 16 17 18 19 20     removed col 08
-// 21      00 02 04 06 08 10 12 14 16 18 19 20 21     removed col 09
-// 22      00 02 04 06 08 10 12 14 16 18 20 21 22     removed col 10
-// 23      00 02 04 06 08 10 12 14 16 18 20 22 23     removed col 11
-// 24      00 02 04 06 08 10 12 14 16 18 20 22 24     removed col 12
-//
-// Problem with this is that we don't have an even x-axis distribution.
-// Getting such a distribution is difficult in general.
-//
-// 
-
-
-
-// - like Callgrind, allow multiple data sets to be dumped, by choosing points.
-//   That way you could print one graph per phase, for example, for better
-//   granularity.
-
-
 
 
 // Periodically, a census is taken, and the amount of space used, at that
@@ -394,15 +385,17 @@ static Char base_dir[VKI_PATH_MAX];
 #define MAX_ALLOC_FNS      128     // includes the builtin ones
 
 // First few filled in, rest should be zeroed.  Zero-terminated vector.
+// Nb: I used to have the following four C++ global overloadable allocators
+// in alloc_fns:
+//   operator new(unsigned)
+//   operator new[](unsigned)
+//   operator new(unsigned, std::nothrow_t const&)
+//   operator new[](unsigned, std::nothrow_t const&)
+// But someone might be interested in seeing them.  If they're not, they can
+// specify them with --alloc-fn.
 static UInt  n_alloc_fns = 10;
 static Char* alloc_fns[MAX_ALLOC_FNS] = { 
    "malloc",
-   // XXX: maybe these four shouldn't be in here?  Someone might want to see
-   // inside them...
-   "operator new(unsigned)",
-   "operator new[](unsigned)",
-   "operator new(unsigned, std::nothrow_t const&)",
-   "operator new[](unsigned, std::nothrow_t const&)",
    "__builtin_new",
    "__builtin_vec_new",
    "calloc",
