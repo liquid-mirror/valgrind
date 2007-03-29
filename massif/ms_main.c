@@ -31,8 +31,6 @@
 // XXX:
 //---------------------------------------------------------------------------
 // Next:
-// - print percentages/sizes in "the rest" entries
-// - show 2nd decimal point (only if threshold is below 10, ie. 0.1%?)
 // - truncate really long file names [hmm, could make getting the name of
 //   alloc-fns more difficult]
 // - Check MALLOCLIKE_BLOCK works, write regtest
@@ -1540,7 +1538,7 @@ static Char* make_perc(ULong x, ULong y)
 //   tl_assert(x <= y);    XXX; put back in later...
    
 // XXX: I'm not confident that VG_(percentify) works as it should...
-   VG_(percentify)(x, y, 1, 5, mbuf); 
+   VG_(percentify)(x, y, 2, 6, mbuf); 
    // XXX: this is bogus if the denominator was zero -- resulting string is
    // something like "0 --%")
    if (' ' == mbuf[0]) mbuf[0] = '0';
@@ -1567,6 +1565,7 @@ static void pp_snapshot_child_XPts(XPt* parent, Int depth, Char* depth_str,
    XPt*  child;
    Bool  child_is_last_sibling;
    Char* ip_desc, *perc;
+   SizeT printed_children_szB = 0;
 
    // Check that the sum of all children's sizes equals the parent's size.
    SizeT children_sum_szB = 0;
@@ -1595,7 +1594,8 @@ static void pp_snapshot_child_XPts(XPt* parent, Int depth, Char* depth_str,
          // This child is significant.  Print it.
          perc = make_perc(child->curr_szB, curr_total_szB);
          ip_desc = VG_(describe_IP)(child->ip-1, buf2, BUF_LEN);
-         P("->%6s(%,ldB): %s\n", perc, child->curr_szB, ip_desc);
+         P("->%s (%,ldB): %s\n", perc, child->curr_szB, ip_desc);
+         printed_children_szB += child->curr_szB;
 
          // If the child has any children, print them.  But first add the
          // prefix for them, which is "  " if the parent has no smaller
@@ -1626,12 +1626,15 @@ static void pp_snapshot_child_XPts(XPt* parent, Int depth, Char* depth_str,
       } else {
          // This child is insignificant, as are all those remaining.
          // Don't bother with them.
-         UInt  n_insig = parent->n_children - i;
-         Char* s       = ( n_insig == 1 ? "" : "s" );
-         Char* other   = ( 0 == i ? "" : "other " );
+         UInt  n_insig  = parent->n_children - i;
+         Char* s        = ( n_insig == 1 ? "" : "s" );
+         Char* other    = ( 0 == i ? "" : "other " );
+         SizeT unprinted_children_szB = parent->curr_szB - printed_children_szB;
          // XXX: should give the percentage.  be careful when computing
          // it...
-         P("->the rest in %d %sinsignificant place%s\n", n_insig, other, s);
+         perc = make_perc(unprinted_children_szB, curr_total_szB);
+         P("->%s (%,ldB): in %d %sinsignificant place%s\n",
+            perc, unprinted_children_szB, n_insig, other, s);
          P("%s\n", depth_str);
          return;
       }
@@ -1664,7 +1667,7 @@ static void pp_snapshot(Snapshot* snapshot, Int snapshot_n)
       P("(No heap memory currently allocated)\n");
    } else {
       P("Heap tree:\n");
-      P("%6s(%,ldB): (heap allocation functions) malloc/new/new[],"
+      P("%s (%,ldB): (heap allocation functions) malloc/new/new[],"
         " --alloc-fns, etc.\n",
          make_perc(snapshot->heap_szB, snapshot->total_szB),
          snapshot->heap_szB);
