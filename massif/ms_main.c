@@ -1,7 +1,6 @@
-
-/*--------------------------------------------------------------------*/
-/*--- Massif: a heap profiling tool.                     ms_main.c ---*/
-/*--------------------------------------------------------------------*/
+//--------------------------------------------------------------------*/
+//--- Massif: a heap profiling tool.                     ms_main.c ---*/
+//--------------------------------------------------------------------*/
 
 /*
    This file is part of Massif, a Valgrind tool for profiling memory
@@ -32,9 +31,6 @@
 // XXX:
 //---------------------------------------------------------------------------
 // Next:
-// - sanity check:  do the periodic core-based one, check the main XTree but
-//   not the individual snapshots, since they're checked when taken and
-//   printed.
 // - print percentages/sizes in "the rest" entries
 // - show 2nd decimal point (only if threshold is below 10, ie. 0.1%?)
 // - truncate really long file names [hmm, could make getting the name of
@@ -138,9 +134,9 @@
 
 #include "valgrind.h"           // For {MALLOC,FREE}LIKE_BLOCK
 
-/*------------------------------------------------------------*/
-/*--- Overview of operation                                ---*/
-/*------------------------------------------------------------*/
+//------------------------------------------------------------*/
+//--- Overview of operation                                ---*/
+//------------------------------------------------------------*/
 
 // The size of the stacks and heap is tracked.  The heap is tracked in a lot
 // of detail, enough to tell how many bytes each line of code is responsible
@@ -232,9 +228,9 @@
 // - etc.
 
 
-/*------------------------------------------------------------*/
-/*--- Main types                                           ---*/
-/*------------------------------------------------------------*/
+///-----------------------------------------------------------//
+//--- Main types                                           ---//
+//------------------------------------------------------------//
 
 // An XPt represents an "execution point", ie. a code address.  Each XPt is
 // part of a tree of XPts (an "execution tree", or "XTree").  The details of
@@ -264,6 +260,10 @@
 //   |    / \     |     the XTree will look like this.
 //   |   v   v    |
 //  child1   child2
+//
+// Sanity checking:  we check snapshot XTrees when they are taken, deleted
+// and printed.  We periodically check the main heap XTree periodically via
+// ms_expensive_sanity_check.
 
 typedef struct _XPt XPt;
 
@@ -330,9 +330,10 @@ typedef
    }
    HP_Chunk;
 
-/*------------------------------------------------------------*/
-/*--- Statistics                                           ---*/
-/*------------------------------------------------------------*/
+
+//------------------------------------------------------------//
+//--- Statistics                                           ---//
+//------------------------------------------------------------//
 
 // Konqueror startup, to give an idea of the numbers involved with a biggish
 // program, with default depth:
@@ -357,9 +358,10 @@ static UInt n_halvings           = 0;
 static UInt n_real_snapshots     = 0;
 static UInt n_fake_snapshots     = 0;
 
-/*------------------------------------------------------------*/
-/*--- Globals                                              ---*/
-/*------------------------------------------------------------*/
+
+//------------------------------------------------------------//
+//--- Globals                                              ---//
+//------------------------------------------------------------//
 
 #define FILENAME_LEN    256
 
@@ -377,7 +379,7 @@ static Char buf2[BUF_LEN];
 // Make these signed so things are more obvious if they go negative.
 static SSizeT sigstacks_szB = 0;     // Current signal stacks space sum
 static SSizeT heap_szB      = 0;     // Live heap size
-static SSizeT peak_heap_szB = 0;
+static SSizeT peak_heap_szB = 0;    // XXX: currently unused
 static SSizeT peak_snapshot_total_szB = 0;
 
 static VgHashTable malloc_list  = NULL;   // HP_Chunks
@@ -409,9 +411,9 @@ static Char* alloc_fns[MAX_ALLOC_FNS] = {
 };
 
 
-/*------------------------------------------------------------*/
-/*--- Command line args                                    ---*/
-/*------------------------------------------------------------*/
+//------------------------------------------------------------//
+//--- Command line args                                    ---//
+//------------------------------------------------------------//
 
 #define MAX_DEPTH       50
 
@@ -475,9 +477,10 @@ static void ms_print_debug_usage(void)
    VG_(replacement_malloc_print_debug_usage)();
 }
 
-/*------------------------------------------------------------*/
-/*--- XPts                                                 ---*/
-/*------------------------------------------------------------*/
+
+//------------------------------------------------------------//
+//--- XPts                                                 ---//
+//------------------------------------------------------------//
 
 // Fake XPt representing all allocation functions like malloc().  Acts as
 // parent node to all top-XPts.
@@ -503,6 +506,21 @@ static void* perm_malloc(SizeT n_bytes)
    hp += n_bytes;
 
    return (void*)(hp - n_bytes);
+}
+
+__attribute__((unused))
+static void pp_XPt(XPt* xpt)
+{
+   Int i;
+   P("XPt (%p):\n", xpt);
+   P("- ip:         : %p\n", (void*)xpt->ip);
+   P("- curr_szB    : %ld\n", xpt->curr_szB);
+   P("- parent      : %p\n", xpt->parent);
+   P("- n_children  : %d\n", xpt->n_children);
+   P("- max_children: %d\n", xpt->max_children);
+   for (i = 0; i < xpt->n_children; i++) {
+      P("- children[%2d]: %p\n", i, xpt->children[i]);
+   }
 }
 
 static XPt* new_XPt(Addr ip, XPt* parent)
@@ -558,9 +576,82 @@ static Int XPt_revcmp_curr_szB(void* n1, void* n2)
           :                                    0);
 }
 
-/*------------------------------------------------------------*/
-/*--- XCons                                                ---*/
-/*------------------------------------------------------------*/
+
+//------------------------------------------------------------//
+//--- XTrees                                               ---//
+//------------------------------------------------------------//
+
+// XXX: taking a full snapshot... could/should just snapshot the significant
+// parts.  Nb: then the amounts wouldn't add up, unless I represented the
+// "other insignificant places" in XPts.
+static XPt* dup_XTree(XPt* xpt, XPt* parent)
+{
+   Int  i;
+   XPt* dup_xpt = VG_(malloc)(sizeof(XPt));
+   dup_xpt->ip           = xpt->ip;
+   dup_xpt->curr_szB     = xpt->curr_szB;
+   dup_xpt->parent       = parent;           // Nb: not xpt->children!
+   dup_xpt->n_children   = xpt->n_children;
+   dup_xpt->max_children = xpt->n_children;  // Nb: don't copy max_children!
+   dup_xpt->children     = VG_(malloc)(dup_xpt->max_children * sizeof(XPt*));
+   for (i = 0; i < xpt->n_children; i++) {
+      dup_xpt->children[i] = dup_XTree(xpt->children[i], dup_xpt);
+   }
+
+   n_dupd_xpts++;
+
+   return dup_xpt;
+}
+
+static void free_XTree(XPt* xpt)
+{
+   Int  i;
+   // Free all children XPts, then the children array, then the XPt itself.
+   tl_assert(xpt != NULL);
+   for (i = 0; i < xpt->n_children; i++) {
+      XPt* child = xpt->children[i];
+      free_XTree(child);
+      xpt->children[i] = NULL;
+   }
+   VG_(free)(xpt->children);  xpt->children = NULL;
+   VG_(free)(xpt);            xpt           = NULL;
+
+   n_dupd_xpts_freed++;
+}
+
+// XXX: improve this so that it prints the failing XPt always.
+static void sanity_check_XTree(XPt* xpt, XPt* parent)
+{
+   Int i;
+   SizeT children_sum_szB = 0;
+
+   tl_assert(xpt != NULL);
+
+   // Check back-pointer.
+   tl_assert2(xpt->parent == parent,
+      "xpt->parent = %p, parent = %p\n", xpt->parent, parent);
+
+   // Check children counts look sane.
+   tl_assert(xpt->n_children <= xpt->max_children);
+
+   // Check the sum of any children szBs equals the XPt's szB.
+   if (xpt->n_children > 0) {
+      for (i = 0; i < xpt->n_children; i++) {
+         children_sum_szB += xpt->children[i]->curr_szB;
+      }
+      tl_assert(children_sum_szB == xpt->curr_szB);
+   }
+
+   // Check each child.
+   for (i = 0; i < xpt->n_children; i++) {
+      sanity_check_XTree(xpt->children[i], xpt);
+   }
+}
+
+
+//------------------------------------------------------------//
+//--- XCons                                                ---//
+//------------------------------------------------------------//
 
 // This is the limit on the number of removed alloc-fns that can be in a
 // single XCon.
@@ -755,69 +846,80 @@ static void update_XCon(XPt* xpt, SSizeT space_delta)
 }
 
 
-/*------------------------------------------------------------*/
-/*--- Sanity checking                                      ---*/
-/*------------------------------------------------------------*/
+//------------------------------------------------------------//
+//--- Snapshots                                            ---//
+//------------------------------------------------------------//
 
-__attribute__((unused))
-static void pp_XPt(XPt* xpt)
+static Snapshot snapshots[MAX_N_SNAPSHOTS];
+static UInt     next_snapshot = 0;   // Points to where next snapshot will go.
+
+static Bool is_snapshot_in_use(Snapshot* snapshot)
 {
-   Int i;
-   P("XPt (%p):\n", xpt);
-   P("- ip:         : %p\n", (void*)xpt->ip);
-   P("- curr_szB    : %ld\n", xpt->curr_szB);
-   P("- parent      : %p\n", xpt->parent);
-   P("- n_children  : %d\n", xpt->n_children);
-   P("- max_children: %d\n", xpt->max_children);
-   for (i = 0; i < xpt->n_children; i++) {
-      P("- children[%2d]: %p\n", i, xpt->children[i]);
+   if (-1 == snapshot->ms_time) {
+      // If .ms_time looks unused, check everything else is.
+      tl_assert(snapshot->total_szB      == 0);
+      tl_assert(snapshot->heap_admin_szB == 0);
+      tl_assert(snapshot->heap_szB       == 0);
+      tl_assert(snapshot->stacks_szB     == 0);
+      tl_assert(snapshot->alloc_xpt      == NULL);
+      return False;
+   } else {
+      return True;
    }
 }
 
-static void sanity_check_XTree(XPt* xpt, XPt* parent)
+static Bool is_detailed_snapshot(Snapshot* snapshot)
 {
-   Int i;
-   SizeT children_sum_szB = 0;
-
-   if (NULL == xpt)
-      return;
-
-   // Check back-pointer.
-   tl_assert2(xpt->parent == parent,
-      "xpt->parent = %p, parent = %p\n", xpt->parent, parent);
-
-   // Check children counts look sane.
-   tl_assert(xpt->n_children <= xpt->max_children);
-
-   // Check the sum of any children szBs equals the XPt's szB.
-   if (xpt->n_children > 0) {
-      for (i = 0; i < xpt->n_children; i++) {
-         children_sum_szB += xpt->children[i]->curr_szB;
-      }
-      tl_assert(children_sum_szB == xpt->curr_szB);
-   }
-
-   // Check each child.
-   for (i = 0; i < xpt->n_children; i++) {
-      sanity_check_XTree(xpt->children[i], xpt);
-   }
+   return (snapshot->alloc_xpt ? True : False);
 }
 
 static void sanity_check_snapshot(Snapshot* snapshot)
 {
    tl_assert(snapshot->total_szB ==
       snapshot->heap_admin_szB + snapshot->heap_szB + snapshot->stacks_szB);
-   sanity_check_XTree(snapshot->alloc_xpt, /*parent*/NULL);
+   if (snapshot->alloc_xpt) {
+      sanity_check_XTree(snapshot->alloc_xpt, /*parent*/NULL);
+   }
 }
 
-/*------------------------------------------------------------*/
-/*--- Taking a snapshot                                    ---*/
-/*------------------------------------------------------------*/
+// All the used entries should look used, all the unused ones should be clear.
+static void sanity_check_snapshots_array(void)
+{
+   Int i;
+   for (i = 0; i < next_snapshot; i++) {
+      tl_assert( is_snapshot_in_use( & snapshots[i] ));
+   }
+   for (    ; i < MAX_N_SNAPSHOTS; i++) {
+      tl_assert(!is_snapshot_in_use( & snapshots[i] ));
+   }
+}
 
-static Snapshot snapshots[MAX_N_SNAPSHOTS];
-static UInt     curr_snapshot = 0;   // Points to where next snapshot will go.
+// This zeroes all the fields in the snapshot, but does not free the heap
+// XTree if present.
+static void clear_snapshot(Snapshot* snapshot)
+{
+   sanity_check_snapshot(snapshot);
+   snapshot->ms_time        = -1;
+   snapshot->total_szB      = 0;
+   snapshot->heap_admin_szB = 0;
+   snapshot->heap_szB       = 0;
+   snapshot->stacks_szB     = 0;
+   snapshot->alloc_xpt      = NULL;
+}
 
-static UInt ms_interval;
+// This zeroes all the fields in the snapshot, and frees the heap XTree if
+// present.  
+static void delete_snapshot(Snapshot* snapshot)
+{
+   // Nb: if there's an XTRee, we free it after calling clear_snapshot,
+   // because clear_snapshot does a sanity check which includes checking the
+   // XTree.
+   XPt* tmp_xpt = snapshot->alloc_xpt;
+   clear_snapshot(snapshot);
+   if (tmp_xpt) {
+      free_XTree(tmp_xpt);
+   }
+}
 
 // Weed out half the snapshots;  we choose those that represent the smallest
 // time-spans, because that loses the least information.
@@ -840,7 +942,9 @@ static void halve_snapshots(void)
 
    // Sets j to the index of the first not-yet-removed snapshot at or after i
    #define FIND_SNAPSHOT(i, j) \
-      for (j = i; j < MAX_N_SNAPSHOTS && -1 == snapshots[j].ms_time; j++) { }
+      for (j = i; \
+           j < MAX_N_SNAPSHOTS && !is_snapshot_in_use(&snapshots[j]); \
+           j++) { }
 
    for (i = 2; i < MAX_N_SNAPSHOTS; i += 2) {
       // Find the snapshot representing the smallest timespan.  The timespan
@@ -866,72 +970,38 @@ static void halve_snapshots(void)
          j  = jn;
          FIND_SNAPSHOT(jn+1, jn);
       }
-      // We've found the least important snapshot, now remove it
+      // We've found the least important snapshot, now delete it.
       min_snapshot = & snapshots[ min_j ];
-      min_snapshot->ms_time = -1;
-
-      // XXX: free XTree if present...
-      // free_XTree(min_snapshot->alloc_xpt)
+      delete_snapshot(min_snapshot);
    }
 
    // Slide down the remaining snapshots over the removed ones.  The '<=' is
    // because we are removing on (N/2)-1, rather than N/2.
-   for (i = 0, j = 0; i <= MAX_N_SNAPSHOTS / 2; i++, j++) {
-      FIND_SNAPSHOT(j, j);
-      if (i != j) {
-         snapshots[i] = snapshots[j];
+   // First set i to point to the first empty slot, and j to the first full
+   // slot after i.  Then slide everything down.
+   for (i = 0;  is_snapshot_in_use( &snapshots[i] ); i++) { }
+   for (j = i; !is_snapshot_in_use( &snapshots[j] ); j++) { }
+   for (  ; j < MAX_N_SNAPSHOTS; j++) {
+      if (is_snapshot_in_use( &snapshots[j] )) {
+         snapshots[i++] = snapshots[j];
+         clear_snapshot(&snapshots[j]);
       }
    }
-   curr_snapshot = i;
+   next_snapshot = i;
 
-   // Double intervals
-   ms_interval *= 2;
+   // Check snapshots array looks ok after changes.
+   sanity_check_snapshots_array();
 
    if (VG_(clo_verbosity) > 1)
       VG_(message)(Vg_DebugMsg, "...done");
 }
-
-// XXX: taking a full snapshot... could/should just snapshot the significant
-// parts.  Nb: then the amounts wouldn't add up, unless I represented the
-// "other insignificant places" in XPts.
-static XPt* dup_XTree(XPt* xpt, XPt* parent)
-{
-   Int  i;
-   XPt* dup_xpt = VG_(malloc)(sizeof(XPt));
-   dup_xpt->ip           = xpt->ip;
-   dup_xpt->curr_szB     = xpt->curr_szB;
-   dup_xpt->parent       = parent;           // Nb: not xpt->children!
-   dup_xpt->n_children   = xpt->n_children;
-   dup_xpt->max_children = xpt->n_children;  // Nb: don't copy max_children!
-   dup_xpt->children     = VG_(malloc)(dup_xpt->max_children * sizeof(XPt*));
-   for (i = 0; i < xpt->n_children; i++) {
-      dup_xpt->children[i] = dup_XTree(xpt->children[i], dup_xpt);
-   }
-
-   n_dupd_xpts++;
-
-   return dup_xpt;
-}
-
-static void free_XTree(XPt* xpt)
-{
-   Int  i;
-   // Free all children XPts, then the children array, then the XPt itself.
-   for (i = 0; i < xpt->n_children; i++) {
-      free_XTree(xpt->children[i]);
-   }
-   VG_(free)(xpt->children);  xpt->children = NULL;
-   VG_(free)(xpt);            xpt           = NULL;
-
-   n_dupd_xpts_freed++;
-}
-
 
 // Take a snapshot.  Note that with bigger depths, snapshots can be slow,
 // eg. konqueror snapshots can easily take 50ms!
 // [XXX: is that still true?]
 static void take_snapshot(void)
 {
+   static UInt ms_interval      = 5;
    static UInt ms_prev_snapshot = 0;
    static UInt ms_next_snapshot = 0;     // zero allows startup snapshot
    static Int  n_snapshots_since_last_detailed = 0;
@@ -949,7 +1019,9 @@ static void take_snapshot(void)
 
    // Right!  We're taking a real snapshot.
    n_real_snapshots++;
-   snapshot = & snapshots[curr_snapshot];
+   snapshot = & snapshots[next_snapshot];
+   next_snapshot++;
+   tl_assert(!is_snapshot_in_use(snapshot));
 
    // Heap -------------------------------------------------------------
    if (clo_heap) {
@@ -1000,13 +1072,10 @@ static void take_snapshot(void)
 //   VG_(printf)("heap, admin, stacks: %ld, %ld, %ld B\n",
 //      snapshot_heap_szB, snapshot_heap_admin_szB, snapshot_stacks_szB);
 
-   // Clean-ups
-   curr_snapshot++;
-   snapshot = NULL;    // don't use again now that curr_snapshot changed
-
    // Halve the entries, if our snapshot table is full
-   if (MAX_N_SNAPSHOTS == curr_snapshot) {
+   if (MAX_N_SNAPSHOTS == next_snapshot) {
       halve_snapshots();
+      ms_interval *= 2;
    }
 
    // Take time for next snapshot from now, rather than when this snapshot
@@ -1022,9 +1091,27 @@ static void take_snapshot(void)
 } 
 
 
-/*------------------------------------------------------------*/
-/*--- Heap management                                      ---*/
-/*------------------------------------------------------------*/
+//------------------------------------------------------------//
+//--- Sanity checking                                      ---//
+//------------------------------------------------------------//
+
+static Bool ms_cheap_sanity_check ( void )
+{
+   // Nothing useful we can rapidly check.
+   return True;
+}
+
+static Bool ms_expensive_sanity_check ( void )
+{
+   sanity_check_XTree(alloc_xpt, /*parent*/NULL);
+   sanity_check_snapshots_array();
+   return True;
+}
+
+
+//------------------------------------------------------------//
+//--- Heap management                                      ---//
+//------------------------------------------------------------//
 
 static void update_heap_stats(SSizeT heap_szB_delta, Int n_heap_blocks_delta)
 {
@@ -1169,9 +1256,10 @@ void* renew_block ( ThreadId tid, void* p_old, SizeT new_size )
    return p_new;
 }
  
-/*------------------------------------------------------------*/
-/*--- malloc() et al replacement wrappers                  ---*/
-/*------------------------------------------------------------*/
+
+//------------------------------------------------------------//
+//--- malloc() et al replacement wrappers                  ---//
+//------------------------------------------------------------//
 
 static void* ms_malloc ( ThreadId tid, SizeT szB )
 {
@@ -1219,9 +1307,9 @@ static void* ms_realloc ( ThreadId tid, void* p_old, SizeT new_szB )
 }
 
 
-/*------------------------------------------------------------*/
-/*--- Tracked events                                       ---*/
-/*------------------------------------------------------------*/
+//------------------------------------------------------------//
+//--- Tracked events                                       ---//
+//------------------------------------------------------------//
 
 static void new_mem_stack_signal(Addr a, SizeT len)
 {
@@ -1234,9 +1322,10 @@ static void die_mem_stack_signal(Addr a, SizeT len)
    sigstacks_szB -= len;
 }
 
-/*------------------------------------------------------------*/
-/*--- Client Requests                                      ---*/
-/*------------------------------------------------------------*/
+
+//------------------------------------------------------------//
+//--- Client Requests                                      ---//
+//------------------------------------------------------------//
 
 static Bool ms_handle_client_request ( ThreadId tid, UWord* argv, UWord* ret )
 {
@@ -1263,9 +1352,9 @@ static Bool ms_handle_client_request ( ThreadId tid, UWord* argv, UWord* ret )
    }
 }
 
-/*------------------------------------------------------------*/
-/*--- Instrumentation                                      ---*/
-/*------------------------------------------------------------*/
+//------------------------------------------------------------//
+//--- Instrumentation                                      ---//
+//------------------------------------------------------------//
 
 static
 IRSB* ms_instrument ( VgCallbackClosure* closure,
@@ -1285,9 +1374,10 @@ IRSB* ms_instrument ( VgCallbackClosure* closure,
    return bb_in;
 }
 
-/*------------------------------------------------------------*/
-/*--- Writing the graph file                               ---*/
-/*------------------------------------------------------------*/
+
+//------------------------------------------------------------//
+//--- Writing the graph file                               ---//
+//------------------------------------------------------------//
 
 #if 0
 static Char* make_filename(Char* dir, Char* suffix)
@@ -1329,8 +1419,8 @@ static void write_text_graph(void)
 
    // We increment end_ms_time by 1 so that the last snapshot occurs just
    // before it, and doesn't spill over into the final column.
-   tl_assert(curr_snapshot > 0);
-   end_ms_time = snapshots[curr_snapshot-1].ms_time + 1;
+   tl_assert(next_snapshot > 0);
+   end_ms_time = snapshots[next_snapshot-1].ms_time + 1;
    tl_assert(end_ms_time > 0);
 
    // Setup graph[][].
@@ -1345,9 +1435,8 @@ static void write_text_graph(void)
 
    // Write snapshot bars into graph[][].
    // XXX: many detailed snapshot bars are being overwritten by
-   for (i = 0; i < curr_snapshot; i++) {
+   for (i = 0; i < next_snapshot; i++) {
       Snapshot* snapshot = & snapshots[i];
-      Bool is_detailed = ( snapshot->alloc_xpt ? True : False );
 
       // Work out how many bytes each row represents.
       double per_row_full_thresh_szB = (double)peak_snapshot_total_szB / GRAPH_Y;
@@ -1367,10 +1456,10 @@ static void write_text_graph(void)
          if (snapshot->total_szB >= this_row_half_thresh_szB)
             graph[x][y] = '.';
          if (snapshot->total_szB >= this_row_full_thresh_szB)
-            graph[x][y] = ( is_detailed ? '|' : ':' );
+            graph[x][y] = ( is_detailed_snapshot(snapshot) ? '|' : ':' );
       }
       // If it's detailed, mark the x-axis
-      if (is_detailed) 
+      if (is_detailed_snapshot(snapshot)) 
          graph[x][0] = '|';
    }
 
@@ -1428,20 +1517,20 @@ static void write_text_graph(void)
 
    // Print graph legend.
    P("-- start graph legend --\n");
-   for (i = 0; i < curr_snapshot; i++) {
+   for (i = 0; i < next_snapshot; i++) {
       Snapshot* snapshot = & snapshots[i];
-      Bool is_detailed = ( snapshot->alloc_xpt ? True : False );
-      if (is_detailed) {
-         P("    snapshot %3d, t = %,12d ms, size = %,12ld bytes\n",
+      if (is_detailed_snapshot(snapshot)) {
+         P("    snapshot %3d: t = %,12d ms, size = %,12ld bytes\n",
             i, snapshot->ms_time, snapshot->total_szB);
       }
    }
    P("-- end graph legend --\n");
 }
 
-/*------------------------------------------------------------*/
-/*--- Writing snapshots                                    ---*/
-/*------------------------------------------------------------*/
+
+//------------------------------------------------------------//
+//--- Writing snapshots                                    ---//
+//------------------------------------------------------------//
 
 // Nb: uses a static buffer, each call trashes the last string returned.
 static Char* make_perc(ULong x, ULong y)
@@ -1587,34 +1676,21 @@ static void pp_snapshot(Snapshot* snapshot, Int snapshot_n)
    VG_(free)(depth_str);
 }
 
-static void write_snapshots(void)
+static void write_detailed_snapshots(void)
 {
    Int i;
-
-   // XXX: temporary
-   Int   depth_str_len = clo_depth * 2 + 2;
-   Char* depth_str = VG_(malloc)(sizeof(Char) * depth_str_len);
-   depth_str[0] = '\0';    // Initialise to "".
-
-   for (i = 0; i < curr_snapshot; i++) {
+   for (i = 0; i < next_snapshot; i++) {
       Snapshot* snapshot = & snapshots[i];
       if (snapshot->alloc_xpt) {
          pp_snapshot(snapshot, i);     // Detailed snapshot!
       }
    }
-   P("=================================\n");
-   P("== main XTree\n");
-   P("=================================\n");
-   P("heap szB: %ld\n", heap_szB);
-   pp_snapshot_child_XPts(alloc_xpt, 0, depth_str, depth_str_len,
-                          heap_szB, 999999);
-
-   VG_(free)(depth_str);
 }
 
-/*------------------------------------------------------------*/
-/*--- Finalisation                                         ---*/
-/*------------------------------------------------------------*/
+
+//------------------------------------------------------------//
+//--- Finalisation                                         ---//
+//------------------------------------------------------------//
 
 static void ms_fini(Int exit_status)
 {
@@ -1623,7 +1699,7 @@ static void ms_fini(Int exit_status)
 
    // Output.
    write_text_graph();
-   write_snapshots();
+   write_detailed_snapshots();
 
    // Stats
    if (VG_(clo_verbosity) > 1) {
@@ -1645,9 +1721,10 @@ static void ms_fini(Int exit_status)
    }
 }
 
-/*------------------------------------------------------------*/
-/*--- Initialisation                                       ---*/
-/*------------------------------------------------------------*/
+
+//------------------------------------------------------------//
+//--- Initialisation                                       ---//
+//------------------------------------------------------------//
 
 static void ms_post_clo_init(void)
 {
@@ -1658,8 +1735,6 @@ static void ms_post_clo_init(void)
          VG_(message)(Vg_DebugMsg, "  %d: %s", i, alloc_fns[i]);
       }
    }
-   
-   ms_interval = 5;
 
    // We don't take a snapshot now, because there's still some core
    // initialisation to do, in which case we have an artificial gap.
@@ -1669,6 +1744,8 @@ static void ms_post_clo_init(void)
 
 static void ms_pre_clo_init(void)
 { 
+   Int i;
+   
    VG_(details_name)            ("Massif");
    VG_(details_version)         (NULL);
    VG_(details_description)     ("a space profiler");
@@ -1686,6 +1763,8 @@ static void ms_pre_clo_init(void)
                                    ms_print_usage,
                                    ms_print_debug_usage);
    VG_(needs_client_requests)     (ms_handle_client_request);
+   VG_(needs_sanity_checks)       (ms_cheap_sanity_check,
+                                   ms_expensive_sanity_check);
    VG_(needs_malloc_replacement)  (ms_malloc,
                                    ms___builtin_new,
                                    ms___builtin_vec_new,
@@ -1707,13 +1786,17 @@ static void ms_pre_clo_init(void)
    // Dummy node at top of the context structure.
    alloc_xpt = new_XPt(/*ip*/0, /*parent*/NULL);
 
+   // Initialise snapshot array, and sanity check it.
+   for (i = 0; i < MAX_N_SNAPSHOTS; i++) {
+      clear_snapshot( & snapshots[i] );
+   }
+   sanity_check_snapshots_array();
+
    tl_assert( VG_(getcwd)(base_dir, VKI_PATH_MAX) );
 }
 
 VG_DETERMINE_INTERFACE_VERSION(ms_pre_clo_init)
 
-/*--------------------------------------------------------------------*/
-/*--- end                                                          ---*/
-/*--------------------------------------------------------------------*/
-
-
+//--------------------------------------------------------------------//
+//--- end                                                          ---//
+//--------------------------------------------------------------------//
