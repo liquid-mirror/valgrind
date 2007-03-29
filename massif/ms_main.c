@@ -32,7 +32,11 @@
 // XXX:
 //---------------------------------------------------------------------------
 // Next:
+// - sanity check:  do the periodic core-based one, check the main XTree but
+//   not the individual snapshots, since they're checked when taken and
+//   printed.
 // - print percentages/sizes in "the rest" entries
+// - show 2nd decimal point (only if threshold is below 10, ie. 0.1%?)
 // - truncate really long file names [hmm, could make getting the name of
 //   alloc-fns more difficult]
 // - Check MALLOCLIKE_BLOCK works, write regtest
@@ -296,8 +300,8 @@ struct _XPt {
 
 // XXX: if the program is really short, we may get no detailed snapshots...
 // that's bad, do something about it.
-#define MAX_N_SNAPSHOTS         50  // Keep it even, for simplicity
-#define DETAILED_SNAPSHOT_FREQ   2  // Every Nth snapshot will be detailed
+#define MAX_N_SNAPSHOTS        100  // Keep it even, for simplicity
+#define DETAILED_SNAPSHOT_FREQ  10  // Every Nth snapshot will be detailed
 
 typedef
    struct {
@@ -1211,10 +1215,7 @@ static void ms___builtin_vec_delete ( ThreadId tid, void* p )
 
 static void* ms_realloc ( ThreadId tid, void* p_old, SizeT new_szB )
 {
-//   return renew_block(tid, p_old, new_size);
-   die_block( p_old, /*custom_free*/False );
-   return new_block( tid, NULL, new_szB, VG_(clo_alignment),
-      /*is_zeroed*/False );
+   return renew_block(tid, p_old, new_szB);
 }
 
 
