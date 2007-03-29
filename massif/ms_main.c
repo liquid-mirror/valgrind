@@ -31,17 +31,18 @@
 // XXX:
 //---------------------------------------------------------------------------
 // Next:
-// - truncate really long file names [hmm, could make getting the name of
-//   alloc-fns more difficult]
 // - Check MALLOCLIKE_BLOCK works, write regtest
+//
+// Work out how to take the peak.
+// - exact peak, or within a certain percentage?
+// - include the stack?  makes it harder
 //
 // Separate content from presentation by dumping all results to a file and
 // then post-processing with a separate program, a la Cachegrind?
 // - work out the file format
-// - allow two decimal places in percentages (Kirk Johnson says people want
-//   it)
 // - allow truncation of long fnnames if the exact line number is
-//   identified?
+//   identified?  [hmm, could make getting the name of alloc-fns more
+//   difficult]
 //
 // Examine and fix bugs on bugzilla:
 // IGNORE:
@@ -64,19 +65,25 @@
 //
 // TODO:
 // 141631  nor     Massif: percentages don't add up correctly
+//   - better sanity-checking should help this greatly
 // 142706  nor     massif numbers don't seem to add up
+//   - better sanity-checking should help this greatly
 // 143062  cra     massif crashes on app exit with signal 8 SIGFPE
 //   - occurs with no allocations -- ensure that case works
-//
-// Work out how to take the peak.
-// - exact peak, or within a certain percentage?
-// - include the stack?  makes it harder
 //
 // Michael Meeks:
 // - wants an interactive way to request a dump (callgrind_control-style)
 //   - "profile now"
 //   - "show me the extra allocations from last-snapshot"
 //   - "start/stop logging" (eg. quickly skip boring bits)
+//
+// Artur Wisz:
+// - added a feature to Massif to ignore any heap blocks larger than a
+//   certain size!  Because:
+//     "linux's malloc allows to set a MMAP_THRESHOLD value, so we
+//      set it to 4096 - all blocks above that will be handled directly by
+//      the kernel, and are guaranteed to be returned to the system when
+//      freed. So we needed to profile only blocks below this limit."
 //
 // Other:
 //   - am I recording asked-for sizes or actual rounded-up sizes?
@@ -98,18 +105,14 @@
 //   [XXX: that doesn't work if the option is in a .valgrindrc file or in
 //    $VALGRIND_OPTS.  In m_commandline.c:add_args_from_string() need to
 //    respect single quotes...]
+// - Explain the --threshold=0 case -- entries with zero bytes must have
+//   allocated some memory and then freed it all again.
 //
 // Tests:
 // - tests/overloaded_new.cpp is there
 // - one involving MALLOCLIKE
 //
 //---------------------------------------------------------------------------
-
-// Memory profiler.  Produces a graph, gives lots of information about
-// allocation contexts, in terms of space.time values (ie. area under the
-// graph).  Allocation context information is hierarchical, and can thus
-// be inspected step-wise to an appropriate depth.  See comments on data
-// structures below for more info on how things work.
 
 #include "pub_tool_basics.h"
 #include "pub_tool_vki.h"
