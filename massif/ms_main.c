@@ -37,9 +37,28 @@
 // - exact peak, or within a certain percentage?
 // - include the stack?  makes it harder
 //
+// Option #1
+// - just take the peak snapshot.
+// - pros:
+//   - easy, fast
+// - cons:
+//   - not the true peak
+//
+// #2: true peak
+// - check every malloc, every new_mem_stack
+// - slow
+// - most accurate
+//
+// #2a:
+// - same, but only do detailed snapshot if x% larger than previous peak
+// 
+// #3: in-between
+// - check every malloc, but not every new_mem_stack
+//
 // Separate content from presentation by dumping all results to a file and
 // then post-processing with a separate program, a la Cachegrind?
-// - work out the file format
+// - work out the file format (Josef wants Callgrind format, Donna wants
+//   XML, Nick wants something easy to read in Perl)
 // - allow truncation of long fnnames if the exact line number is
 //   identified?  [hmm, could make getting the name of alloc-fns more
 //   difficult]
@@ -671,6 +690,7 @@ static Bool is_alloc_fn(Char* fnname)
 
 // XXX: look at the "(below main)"/"__libc_start_main" mess (m_stacktrace.c
 //      and m_demangle.c).  Don't hard-code "(below main)" in here.
+// [Nb: Josef wants --show-below-main to work for his fn entry/exit tracing]
 static Bool is_main_or_below_main(Char* fnname)
 {
    Int i;
@@ -1589,8 +1609,6 @@ static void pp_snapshot_child_XPts(XPt* parent, Int depth, Char* depth_str,
    for (i = 0; i < parent->n_children; i++) {
       child = parent->children[i];
 
-      child_is_last_sibling = ( i+1 == parent->n_children ? True : False );
-   
       // Indent appropriately
       P("%s", depth_str);
       if (is_significant_XPt(child, curr_total_szB)) {
@@ -1604,7 +1622,7 @@ static void pp_snapshot_child_XPts(XPt* parent, Int depth, Char* depth_str,
          // prefix for them, which is "  " if the parent has no smaller
          // siblings following, or "| " if it does.
          tl_assert(depth*2+1 < depth_str_len-1);   // -1 for end NUL char
-         if (child_is_last_sibling) {
+         if ( i+1 == parent->n_children ) {     // ie. child is last sibling
             depth_str[depth*2+0] = ' ';
             depth_str[depth*2+1] = ' ';
             depth_str[depth*2+2] = '\0';
