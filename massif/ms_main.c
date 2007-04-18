@@ -185,68 +185,6 @@
 //   - User-requested snapshots:  These are done in response to client
 //     requests.  They are always kept.
 //
-// The summary output produced by Massif could include a graph like this.
-//  
-//---------------------------------------------------------------------------
-// 100M|B                .      :A
-//     |               .:::   :::#      
-//     |              :::::. c:::#:     
-//     |             b:::::: |:::#::    
-//     |            :|:::::::|:::#::    
-//  75M|            :|:::::::|:::#:::   
-//     |           ::|:::::::|:::#:::   
-//     |           ::|:::::::|:::#:::d  
-//     |           ::|:::::::|:::#:::|: 
-//     |          .::|:::::::|:::#:::|::
-//  50M|          :::|:::::::|:::#:::|:::                      
-//     |         ::::|:::::::|:::#:::|:::::                        :::.
-//     |        :::::|:::::::|:::#:::|::::::                    g::::::::
-//     |       a:::::|:::::::|:::#:::|:::::::e:               ::|::::::::::h
-//     |       |:::::|:::::::|:::#:::|:::::::|::.        :: .:::|::::::::::|::
-//  25M|       |:::::|:::::::|:::#:::|:::::::|::::      f:::::::|::::::::::|::
-//     |      :|:::::|:::::::|:::#:::|:::::::|::::.  .::|:::::::|::::::::::|::
-//     |    .::|:::::|:::::::|:::#:::|:::::::|::::::::::|:::::::|::::::::::|::
-//     |  .::::|:::::|:::::::|:::#:::|:::::::|::::::::::|:::::::|::::::::::|::
-//     |:::::::|:::::|:::::::|:::#:::|:::::::|::::::::::|:::::::|::::::::::|::
-//   0M+----------------------------------------------------------------------t
-//     012                                                               
-//
-//      Temporary snapshots:
-//       a: periodic snapshot, total size: 33,000,000 bytes
-//       b: periodic snapshot, total size: 82,000,000 bytes
-//       c: periodic snapshot, total size: 90,000,000 bytes
-//       d: periodic snapshot, total size: 64,000,000 bytes
-//       e: periodic snapshot, total size: 34,000,000 bytes
-//       f: periodic snapshot, total size: 24,000,000 bytes
-//       g: periodic snapshot, total size: 39,000,000 bytes
-//       h: periodic snapshot, total size: 33,000,000 bytes
-//
-//      Permanent snapshots:
-//       A: peak snapshot, total size: 100,000,000 bytes
-//---------------------------------------------------------------------------
-//
-// Explanation of the y-axis:
-// - Top of the x-axis box represents 0.
-//
-//    4M^|   .:     This row has base=2M, half-threshold=3M, full-threshold=4M
-//    2M^| .:::     This row has base=0M, half-threshold=1M, full-threshold=2M
-//    0M +-----        
-//        abcde        
-//                   
-// - A '.' is only shown in a row if we've reached its half-threshold
-// - A ':' is only shown in a row if we've reached its full-threshold
-// - So: a is in range 0 -- 0.99 
-//       b is in range 1 -- 1.99 
-//       c is in range 2 -- 2.99
-//       d is in range 3 -- 3.99
-//       e is in range 4 -- 4.99
-//
-// Explanation of x-axis:
-// - Assume each column represents one second
-// - First usable column has range 0..0.99s
-// - Second usable column has range 1..1.99s
-// - etc.
-
 
 ///-----------------------------------------------------------//
 //--- Main types                                           ---//
@@ -1397,7 +1335,7 @@ IRSB* ms_instrument ( VgCallbackClosure* closure,
 
 
 //------------------------------------------------------------//
-//--- Writing the graph file                               ---//
+//--- Writing snapshots                                    ---//
 //------------------------------------------------------------//
 
 #if 0
@@ -1418,142 +1356,6 @@ static void file_err ( Char* file )
    VG_(message)(Vg_UserMsg, "       ... so profile results will be missing.");
 }
 #endif
-
-#if 0
-static void write_text_graph(void)
-{
-   Int    i;
-   Int    x, y;         // y must be signed!
-   Int end_time_ms;
-   Char unit;
-   Int orders_of_magnitude;
-   SizeT peak_snapshot_total_szScaled;
-
-   // XXX: unhardwire the sizes later
-   #define GRAPH_X   72
-   #define GRAPH_Y   20
-
-   // The ASCII graph.
-   // Row    0 ([0..GRAPH_X][0]) is the x-axis.
-   // Column 0 ([0][0..GRAPH_Y]) is the y-axis.
-   // The rest ([1][1]..[GRAPH_X][GRAPH_Y]) is the usable graph area.
-   Char graph[GRAPH_X+1][GRAPH_Y+1];
-
-   // We increment end_time_ms by 1 so that the last snapshot occurs just
-   // before it, and doesn't spill over into the final column.
-   tl_assert(next_snapshot > 0);
-   end_time_ms = snapshots[next_snapshot-1].time_ms + 1;
-   tl_assert(end_time_ms > 0);
-
-   // Setup graph[][].
-   graph[0][0] = '+';                                       // axes join point
-   for (x = 1; x <= GRAPH_X; x++) { graph[x][0] = '-'; }    // x-axis
-   for (y = 1; y <= GRAPH_Y; y++) { graph[0][y] = '|'; }    // y-axis
-   for (x = 1; x <= GRAPH_X; x++) {                         // usable area
-      for (y = 1; y <= GRAPH_Y; y++) {
-         graph[x][y] = ' ';
-      }
-   }
-
-   // Write snapshot bars into graph[][].
-   // XXX: many detailed snapshot bars are being overwritten by
-   for (i = 0; i < next_snapshot; i++) {
-      Snapshot* snapshot = & snapshots[i];
-
-      // Work out how many bytes each row represents.
-      double per_row_full_thresh_szB = (double)peak_snapshot_total_szB / GRAPH_Y;
-      double per_row_half_thresh_szB = per_row_full_thresh_szB / 2;
-
-      // Work out which column this snapshot belongs to.
-      double x_pos_frac = ((double)snapshot->time_ms / end_time_ms) * GRAPH_X;
-      x = (int)x_pos_frac + 1;    // +1 due to y-axis
-
-      // Grow this snapshot bar from bottom to top.
-      for (y = 1; y <= GRAPH_Y; y++) {
-         double this_row_full_thresh_szB = y * per_row_full_thresh_szB;
-         double this_row_half_thresh_szB =
-            this_row_full_thresh_szB - per_row_half_thresh_szB;
-
-         graph[x][y] = ' ';
-         if (snapshot->total_szB >= this_row_half_thresh_szB)
-            graph[x][y] = '.';
-         if (snapshot->total_szB >= this_row_full_thresh_szB)
-            graph[x][y] = ( is_detailed_snapshot(snapshot) ? '|' : ':' );
-      }
-      // If it's detailed, mark the x-axis
-      if (is_detailed_snapshot(snapshot)) 
-         graph[x][0] = '|';
-   }
-
-   // Work out the units for the y-axis.
-   orders_of_magnitude = 0;
-   peak_snapshot_total_szScaled = peak_snapshot_total_szB;
-   while (peak_snapshot_total_szScaled > 1000) {
-      orders_of_magnitude++;
-      peak_snapshot_total_szScaled /= 1000;
-   }
-   switch (orders_of_magnitude) {
-      case 0: unit = ' '; break;
-      case 1: unit = 'k'; break;
-      case 2: unit = 'M'; break;
-      case 3: unit = 'G'; break;
-      case 4: unit = 'T'; break;
-      default:
-         tl_assert2(0, "unknown order of magnitude: %d", orders_of_magnitude);
-   }
-
-   // Print graph header, including command line.
-   P("-- start graph header --\n");
-   P("cmd: ");
-   if (VG_(args_the_exename)) {
-      P("%s", VG_(args_the_exename));
-      for (i = 0; i < VG_(sizeXA)( VG_(args_for_client) ); i++) {
-         HChar* arg = * (HChar**) VG_(indexXA)( VG_(args_for_client), i );
-         if (arg)
-            P(" %s", arg);
-      }
-   } else {
-      P(" ???");
-   }
-   P("\n");
-   P("-- end graph header --\n");
-
-   // Print graph[][].
-   P("-- start graph --\n");
-   for (y = GRAPH_Y; y >= 0; y--) {
-      // Row prefix
-      if (GRAPH_Y == y)                // top point
-         P("%3lu%c", peak_snapshot_total_szScaled, unit);
-      else if (0 == y)                 // bottom point
-         P("  0 ");
-      else                             // anywhere else
-         P("    ");
-         
-      // Axis and data for the row
-      for (x = 0; x <= GRAPH_X; x++) {
-         P("%c", graph[x][y]);
-      }
-      P("\n");
-   }
-   P("-- end graph --\n");
-
-   // Print graph legend.
-   P("-- start graph legend --\n");
-   for (i = 0; i < next_snapshot; i++) {
-      Snapshot* snapshot = & snapshots[i];
-      if (is_detailed_snapshot(snapshot)) {
-         P("    snapshot %3d: t = %,12d ms, size = %,12ld bytes\n",
-            i, snapshot->time_ms, snapshot->total_szB);
-      }
-   }
-   P("-- end graph legend --\n");
-}
-#endif
-
-
-//------------------------------------------------------------//
-//--- Writing snapshots                                    ---//
-//------------------------------------------------------------//
 
 // Nb: uses a static buffer, each call trashes the last string returned.
 static Char* make_perc(ULong x, ULong y)
@@ -1604,24 +1406,21 @@ static void pp_snapshot_XPt(XPt* xpt, Int depth, Char* depth_str,
    }
 
    // Sort XPt's children by curr_szB (reverse order:  biggest to smallest)
-   // XXX: is it better to keep them always in order?
-   // XXX: or, don't keep them in order, inspect all of them, but sort
-   //      the selected ones in the queue when they're added.
    VG_(ssort)(xpt->children, xpt->n_children, sizeof(XPt*),
               XPt_revcmp_curr_szB);
 
    // How many children are significant?  Also calculate the number of child
-   // entries to print:  there may be a need for an "insignificant rest"
-   // line.
-   for (i = 0; 
-        i < xpt->n_children && 
-           is_significant_XPt(xpt->children[i], curr_total_szB);
-        i++) { }
-   n_sig_children   = i;    
+   // entries to print -- there may be a need for an "N other insignificant
+   // places" line.
+   n_sig_children = 0;
+   while (n_sig_children < xpt->n_children &&
+          is_significant_XPt(xpt->children[n_sig_children], curr_total_szB)) {
+      n_sig_children++;
+   }
    n_insig_children = xpt->n_children - n_sig_children;    
    n_child_entries = n_sig_children + ( n_insig_children > 0 ? 1 : 0 );
 
-   // Print the XPt entry
+   // Print the XPt entry.
    if (xpt->ip == 0) {
       ip_desc =
          "(heap allocation functions) malloc/new/new[], --alloc-fns, etc.";
@@ -1629,15 +1428,14 @@ static void pp_snapshot_XPt(XPt* xpt, Int depth, Char* depth_str,
       ip_desc = VG_(describe_IP)(xpt->ip-1, buf2, BUF_LEN);
    }
    perc = make_perc(xpt->curr_szB, curr_total_szB);
-   P("%sn%d: %ld %s\n",
-         depth_str, n_child_entries, xpt->curr_szB, ip_desc);
+   P("%sn%d: %ld %s\n", depth_str, n_child_entries, xpt->curr_szB, ip_desc);
 
-   // Indent
+   // Indent.
    tl_assert(depth+1 < depth_str_len-1);    // -1 for end NUL char
    depth_str[depth+0] = ' ';
    depth_str[depth+1] = '\0';
 
-   // Print the children
+   // Print the children.
    for (i = 0; i < n_sig_children; i++) {
       XPt* child = xpt->children[i];
       pp_snapshot_XPt(child, depth+1, depth_str, depth_str_len,
@@ -1645,13 +1443,11 @@ static void pp_snapshot_XPt(XPt* xpt, Int depth, Char* depth_str,
       printed_children_szB += child->curr_szB;
    }
 
-   // Print the extra "insignificant rest" entry, if necessary
+   // Print the extra "N other insignificant places" line, if necessary.
    if (n_insig_children > 0) {
       Char* s        = ( n_insig_children == 1 ? "" : "s" );
       Char* other    = ( 0 == i ? "" : "other " );
       SizeT unprinted_children_szB = xpt->curr_szB - printed_children_szB;
-      // XXX: should give the percentage.  be careful when computing
-      // it...
       perc = make_perc(unprinted_children_szB, curr_total_szB);
       P("%sn0: %ld in %d %sinsignificant place%s\n",
          depth_str, unprinted_children_szB, n_insig_children, other, s);

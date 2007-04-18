@@ -38,6 +38,73 @@ use strict;
 # - merge read_input_file[12]
 
 #----------------------------------------------------------------------------
+# Discussion of the graph.
+#----------------------------------------------------------------------------
+# The summary output includes a graph like this.
+#  
+#---------------------------------------------------------------------------
+# 100M|B                .      :A
+#     |               .:::   :::#      
+#     |              :::::. c:::#:     
+#     |             b:::::: |:::#::    
+#     |            :|:::::::|:::#::    
+#  75M|            :|:::::::|:::#:::   
+#     |           ::|:::::::|:::#:::   
+#     |           ::|:::::::|:::#:::d  
+#     |           ::|:::::::|:::#:::|: 
+#     |          .::|:::::::|:::#:::|::
+#  50M|          :::|:::::::|:::#:::|:::                      
+#     |         ::::|:::::::|:::#:::|:::::                        :::.
+#     |        :::::|:::::::|:::#:::|::::::                    g::::::::
+#     |       a:::::|:::::::|:::#:::|:::::::e:               ::|::::::::::h
+#     |       |:::::|:::::::|:::#:::|:::::::|::.        :: .:::|::::::::::|::
+#  25M|       |:::::|:::::::|:::#:::|:::::::|::::      f:::::::|::::::::::|::
+#     |      :|:::::|:::::::|:::#:::|:::::::|::::.  .::|:::::::|::::::::::|::
+#     |    .::|:::::|:::::::|:::#:::|:::::::|::::::::::|:::::::|::::::::::|::
+#     |  .::::|:::::|:::::::|:::#:::|:::::::|::::::::::|:::::::|::::::::::|::
+#     |:::::::|:::::|:::::::|:::#:::|:::::::|::::::::::|:::::::|::::::::::|::
+#   0M+----------------------------------------------------------------------t
+#     012                                                               
+#
+#      Temporary snapshots:
+#       a: periodic snapshot, total size: 33,000,000 bytes
+#       b: periodic snapshot, total size: 82,000,000 bytes
+#       c: periodic snapshot, total size: 90,000,000 bytes
+#       d: periodic snapshot, total size: 64,000,000 bytes
+#       e: periodic snapshot, total size: 34,000,000 bytes
+#       f: periodic snapshot, total size: 24,000,000 bytes
+#       g: periodic snapshot, total size: 39,000,000 bytes
+#       h: periodic snapshot, total size: 33,000,000 bytes
+#
+#      Permanent snapshots:
+#       A: peak snapshot, total size: 100,000,000 bytes
+#---------------------------------------------------------------------------
+#
+# Explanation of the y-axis:
+# - Top of the x-axis box represents 0.
+#
+#    4M^|   .:     This row has base=2M, half-threshold=3M, full-threshold=4M
+#    2M^| .:::     This row has base=0M, half-threshold=1M, full-threshold=2M
+#    0M +-----        
+#        abcde        
+#                   
+# - A '.' is only shown in a row if we've reached its half-threshold
+# - A ':' is only shown in a row if we've reached its full-threshold
+# - So: a is in range 0 -- 0.99 
+#       b is in range 1 -- 1.99 
+#       c is in range 2 -- 2.99
+#       d is in range 3 -- 3.99
+#       e is in range 4 -- 4.99
+#
+# Explanation of x-axis:
+# - Assume each column represents one second
+# - First usable column has range 0..0.99s
+# - Second usable column has range 1..1.99s
+# - etc.
+
+
+
+#----------------------------------------------------------------------------
 # Global variables, main data structures
 #----------------------------------------------------------------------------
 
