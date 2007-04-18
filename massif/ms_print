@@ -32,6 +32,11 @@ use strict;
 
 # XXX:need to put threshold in the stats at the top of the output
 
+# XXX:
+# - move graph printing stuff into a separate subroutine
+# - implement --threshold 
+# - merge read_input_file[12]
+
 #----------------------------------------------------------------------------
 # Global variables, main data structures
 #----------------------------------------------------------------------------
@@ -61,9 +66,9 @@ usage: ms_print [options]
     --threshold=<n>       significance threshold, in percent [$threshold]
 
   You must use either --<pid> or --massif-out-file exactly once
-  in order that cg_annotate knows what file to read profile data from.
+  in order that ms_print knows what file to read profile data from.
 
-  ms_print is Copyright (C) 2007 Nicholas Nethercote.
+  ms_print is Copyright (C) 2007-2007 Nicholas Nethercote.
   and licensed under the GNU General Public License, version 2.
   Bug reports, feedback, admiration, abuse, etc, to: njn\@valgrind.org.
                                                 
@@ -85,7 +90,7 @@ sub process_cmd_line()
 
             # --version
             if ($arg =~ /^-v$|^--version$/) {
-                die("cg_annotate-$version\n");
+                die("ms_print-$version\n");
 
             # --threshold=X (tolerates a trailing '%')
             } elsif ($arg =~ /^--threshold=([\d\.]+)%?$/) {
@@ -164,7 +169,7 @@ sub read_heap_tree($$$$$)
     # any children of this node with "$this_prefix$child_midfix$arrow".
     my ($print, $this_prefix, $child_midfix, $arrow, $mem_total_B) = @_;
     my $line = get_line();
-    (defined $line and $line =~ /^\s*n(\d+):(\d+)(.*)$/)
+    (defined $line and $line =~ /^\s*n(\d+):\s*(\d+)(.*)$/)
         or die("Line $.: expected a tree node line, got:\n$line\n");
     my $n       = $1;
     my $bytes   = $2;

@@ -325,7 +325,7 @@ struct _XPt {
 
 typedef
    struct {
-      Int   ms_time;       // Int: must allow -1.
+      Int   time_ms;       // Int: must allow -1.
       SizeT total_szB;     // Size of all allocations at that snapshot time.
       SizeT heap_admin_szB;
       SizeT heap_szB;
@@ -876,8 +876,8 @@ static UInt     next_snapshot = 0;   // Points to where next snapshot will go.
 
 static Bool is_snapshot_in_use(Snapshot* snapshot)
 {
-   if (-1 == snapshot->ms_time) {
-      // If .ms_time looks unused, check everything else is.
+   if (-1 == snapshot->time_ms) {
+      // If .time_ms looks unused, check everything else is.
       tl_assert(snapshot->total_szB      == 0);
       tl_assert(snapshot->heap_admin_szB == 0);
       tl_assert(snapshot->heap_szB       == 0);
@@ -920,7 +920,7 @@ static void sanity_check_snapshots_array(void)
 static void clear_snapshot(Snapshot* snapshot)
 {
    sanity_check_snapshot(snapshot);
-   snapshot->ms_time        = -1;
+   snapshot->time_ms        = -1;
    snapshot->total_szB      = 0;
    snapshot->heap_admin_szB = 0;
    snapshot->heap_szB       = 0;
@@ -980,7 +980,7 @@ static void halve_snapshots(void)
       FIND_SNAPSHOT(1,   j);
       FIND_SNAPSHOT(j+1, jn);
       while (jn < MAX_N_SNAPSHOTS) {
-         Int timespan = snapshots[jn].ms_time - snapshots[jp].ms_time;
+         Int timespan = snapshots[jn].time_ms - snapshots[jp].time_ms;
          tl_assert(timespan >= 0);
          if (timespan < min_span) {
             min_span = timespan;
@@ -1022,18 +1022,18 @@ static void halve_snapshots(void)
 // [XXX: is that still true?]
 static void take_snapshot(void)
 {
-   static UInt ms_interval      = 5;
+   static UInt interval_ms      = 5;
    static UInt ms_prev_snapshot = 0;
    static UInt ms_next_snapshot = 0;     // zero allows startup snapshot
    static Int  n_snapshots_since_last_detailed = 0;
 
-   Int       ms_time, ms_time_since_prev;
+   Int       time_ms, time_ms_since_prev;
    Snapshot* snapshot;
 
    // Only do a snapshot if it's time.
-   ms_time            = VG_(read_millisecond_timer)();
-   ms_time_since_prev = ms_time - ms_prev_snapshot;
-   if (ms_time < ms_next_snapshot) {
+   time_ms            = VG_(read_millisecond_timer)();
+   time_ms_since_prev = time_ms - ms_prev_snapshot;
+   if (time_ms < ms_next_snapshot) {
       n_fake_snapshots++;
       return;
    }
@@ -1074,7 +1074,7 @@ static void take_snapshot(void)
    }
 
    // Finish writing snapshot ------------------------------------------
-   snapshot->ms_time   = ms_time;
+   snapshot->time_ms   = time_ms;
    snapshot->total_szB =
       snapshot->heap_szB + snapshot->heap_admin_szB + snapshot->stacks_szB;
 
@@ -1096,7 +1096,7 @@ static void take_snapshot(void)
    // Halve the entries, if our snapshot table is full
    if (MAX_N_SNAPSHOTS == next_snapshot) {
       halve_snapshots();
-      ms_interval *= 2;
+      interval_ms *= 2;
    }
 
    // Take time for next snapshot from now, rather than when this snapshot
@@ -1104,11 +1104,11 @@ static void take_snapshot(void)
    // operation, there's no point doing catch-up snapshots every allocation
    // for a while -- that would just give N snapshots at almost the same time.
    if (VG_(clo_verbosity) > 1) {
-      VG_(message)(Vg_DebugMsg, "snapshot: %d ms (took %d ms)", ms_time, 
-                                VG_(read_millisecond_timer)() - ms_time );
+      VG_(message)(Vg_DebugMsg, "snapshot: %d ms (took %d ms)", time_ms, 
+                                VG_(read_millisecond_timer)() - time_ms );
    }
-   ms_prev_snapshot = ms_time;
-   ms_next_snapshot = ms_time + ms_interval;
+   ms_prev_snapshot = time_ms;
+   ms_next_snapshot = time_ms + interval_ms;
 } 
 
 
@@ -1419,11 +1419,12 @@ static void file_err ( Char* file )
 }
 #endif
 
+#if 0
 static void write_text_graph(void)
 {
    Int    i;
    Int    x, y;         // y must be signed!
-   Int end_ms_time;
+   Int end_time_ms;
    Char unit;
    Int orders_of_magnitude;
    SizeT peak_snapshot_total_szScaled;
@@ -1438,11 +1439,11 @@ static void write_text_graph(void)
    // The rest ([1][1]..[GRAPH_X][GRAPH_Y]) is the usable graph area.
    Char graph[GRAPH_X+1][GRAPH_Y+1];
 
-   // We increment end_ms_time by 1 so that the last snapshot occurs just
+   // We increment end_time_ms by 1 so that the last snapshot occurs just
    // before it, and doesn't spill over into the final column.
    tl_assert(next_snapshot > 0);
-   end_ms_time = snapshots[next_snapshot-1].ms_time + 1;
-   tl_assert(end_ms_time > 0);
+   end_time_ms = snapshots[next_snapshot-1].time_ms + 1;
+   tl_assert(end_time_ms > 0);
 
    // Setup graph[][].
    graph[0][0] = '+';                                       // axes join point
@@ -1464,7 +1465,7 @@ static void write_text_graph(void)
       double per_row_half_thresh_szB = per_row_full_thresh_szB / 2;
 
       // Work out which column this snapshot belongs to.
-      double x_pos_frac = ((double)snapshot->ms_time / end_ms_time) * GRAPH_X;
+      double x_pos_frac = ((double)snapshot->time_ms / end_time_ms) * GRAPH_X;
       x = (int)x_pos_frac + 1;    // +1 due to y-axis
 
       // Grow this snapshot bar from bottom to top.
@@ -1542,11 +1543,12 @@ static void write_text_graph(void)
       Snapshot* snapshot = & snapshots[i];
       if (is_detailed_snapshot(snapshot)) {
          P("    snapshot %3d: t = %,12d ms, size = %,12ld bytes\n",
-            i, snapshot->ms_time, snapshot->total_szB);
+            i, snapshot->time_ms, snapshot->total_szB);
       }
    }
    P("-- end graph legend --\n");
 }
+#endif
 
 
 //------------------------------------------------------------//
@@ -1580,134 +1582,143 @@ static Bool is_significant_XPt(XPt* xpt, SizeT curr_total_szB)
    return (xpt->curr_szB * 10000 / curr_total_szB >= clo_threshold);
 }
 
-static void pp_snapshot_child_XPts(XPt* parent, Int depth, Char* depth_str,
-                                   Int depth_str_len,
-                                   SizeT curr_heap_szB, SizeT curr_total_szB)
+static void pp_snapshot_XPt(XPt* xpt, Int depth, Char* depth_str,
+                            Int depth_str_len,
+                            SizeT curr_heap_szB, SizeT curr_total_szB)
 {
    Int   i;
-   XPt*  child;
-   Bool  child_is_last_sibling;
    Char* ip_desc, *perc;
    SizeT printed_children_szB = 0;
+   Int   n_sig_children;
+   Int   n_insig_children;
+   Int   n_child_entries;
 
-   // Check that the sum of all children's sizes equals the parent's size.
-   SizeT children_sum_szB = 0;
-   for (i = 0; i < parent->n_children; i++) {
-      children_sum_szB += parent->children[i]->curr_szB;
+   // If the XPt has children, check that the sum of all their sizes equals
+   // the XPt's size.
+   if (xpt->n_children > 0) {
+      SizeT children_sum_szB = 0;
+      for (i = 0; i < xpt->n_children; i++) {
+         children_sum_szB += xpt->children[i]->curr_szB;
+      }
+      tl_assert(children_sum_szB == xpt->curr_szB);
    }
-   tl_assert(children_sum_szB == parent->curr_szB);
-//   VG_(printf)("szB = %,ld B\n", children_sum_szB);
 
-   // Sort children by curr_szB (reverse order:  biggest to smallest)
+   // Sort XPt's children by curr_szB (reverse order:  biggest to smallest)
    // XXX: is it better to keep them always in order?
    // XXX: or, don't keep them in order, inspect all of them, but sort
    //      the selected ones in the queue when they're added.
-   VG_(ssort)(parent->children, parent->n_children, sizeof(XPt*),
+   VG_(ssort)(xpt->children, xpt->n_children, sizeof(XPt*),
               XPt_revcmp_curr_szB);
 
-   // Show all children that account for > 1% of current total szB.
-   for (i = 0; i < parent->n_children; i++) {
-      child = parent->children[i];
+   // How many children are significant?  Also calculate the number of child
+   // entries to print:  there may be a need for an "insignificant rest"
+   // line.
+   for (i = 0; 
+        i < xpt->n_children && 
+           is_significant_XPt(xpt->children[i], curr_total_szB);
+        i++) { }
+   n_sig_children   = i;    
+   n_insig_children = xpt->n_children - n_sig_children;    
+   n_child_entries = n_sig_children + ( n_insig_children > 0 ? 1 : 0 );
 
-      // Indent appropriately
-      P("%s", depth_str);
-      if (is_significant_XPt(child, curr_total_szB)) {
-         // This child is significant.  Print it.
-         perc = make_perc(child->curr_szB, curr_total_szB);
-         ip_desc = VG_(describe_IP)(child->ip-1, buf2, BUF_LEN);
-         P("->%s (%,ldB): %s\n", perc, child->curr_szB, ip_desc);
-         printed_children_szB += child->curr_szB;
-
-         // If the child has any children, print them.  But first add the
-         // prefix for them, which is "  " if the parent has no smaller
-         // siblings following, or "| " if it does.
-         tl_assert(depth*2+1 < depth_str_len-1);   // -1 for end NUL char
-         if ( i+1 == parent->n_children ) {     // ie. child is last sibling
-            depth_str[depth*2+0] = ' ';
-            depth_str[depth*2+1] = ' ';
-            depth_str[depth*2+2] = '\0';
-         } else {
-            depth_str[depth*2+0] = '|';
-            depth_str[depth*2+1] = ' ';
-            depth_str[depth*2+2] = '\0';
-         }
-         if (child->n_children > 0) {
-            pp_snapshot_child_XPts(child, depth+1, depth_str, depth_str_len,
-               curr_heap_szB, curr_total_szB);
-         } else {
-            // Reached the bottom of an XCon, print a blank (modulo
-            // indentation lines) line.
-            P("%s\n", depth_str);
-         }
-         // Undo the indentation.
-         depth_str[depth*2+0] = '\0';
-         depth_str[depth*2+1] = '\0';
-         depth_str[depth*2+2] = '\0';
-
-      } else {
-         // This child is insignificant, as are all those remaining.
-         // Don't bother with them.
-         UInt  n_insig  = parent->n_children - i;
-         Char* s        = ( n_insig == 1 ? "" : "s" );
-         Char* other    = ( 0 == i ? "" : "other " );
-         SizeT unprinted_children_szB = parent->curr_szB - printed_children_szB;
-         // XXX: should give the percentage.  be careful when computing
-         // it...
-         perc = make_perc(unprinted_children_szB, curr_total_szB);
-         P("->%s (%,ldB): in %d %sinsignificant place%s\n",
-            perc, unprinted_children_szB, n_insig, other, s);
-         P("%s\n", depth_str);
-         return;
-      }
+   // Print the XPt entry
+   if (xpt->ip == 0) {
+      ip_desc =
+         "(heap allocation functions) malloc/new/new[], --alloc-fns, etc.";
+   } else {
+      ip_desc = VG_(describe_IP)(xpt->ip-1, buf2, BUF_LEN);
    }
+   perc = make_perc(xpt->curr_szB, curr_total_szB);
+   P("%sn%d: %ld %s\n",
+         depth_str, n_child_entries, xpt->curr_szB, ip_desc);
+
+   // Indent
+   tl_assert(depth+1 < depth_str_len-1);    // -1 for end NUL char
+   depth_str[depth+0] = ' ';
+   depth_str[depth+1] = '\0';
+
+   // Print the children
+   for (i = 0; i < n_sig_children; i++) {
+      XPt* child = xpt->children[i];
+      pp_snapshot_XPt(child, depth+1, depth_str, depth_str_len,
+         curr_heap_szB, curr_total_szB);
+      printed_children_szB += child->curr_szB;
+   }
+
+   // Print the extra "insignificant rest" entry, if necessary
+   if (n_insig_children > 0) {
+      Char* s        = ( n_insig_children == 1 ? "" : "s" );
+      Char* other    = ( 0 == i ? "" : "other " );
+      SizeT unprinted_children_szB = xpt->curr_szB - printed_children_szB;
+      // XXX: should give the percentage.  be careful when computing
+      // it...
+      perc = make_perc(unprinted_children_szB, curr_total_szB);
+      P("%sn0: %ld in %d %sinsignificant place%s\n",
+         depth_str, unprinted_children_szB, n_insig_children, other, s);
+   }
+
+   // Unindent.
+   depth_str[depth+0] = '\0';
+   depth_str[depth+1] = '\0';
 }
 
 static void pp_snapshot(Snapshot* snapshot, Int snapshot_n)
 {
-   Int   depth_str_len = clo_depth * 2 + 2;
-   Char* depth_str = VG_(malloc)(sizeof(Char) * depth_str_len);
-   depth_str[0] = '\0';    // Initialise to "".
-
    sanity_check_snapshot(snapshot);
    
-   P("=================================\n");
-   P("== snapshot %d\n", snapshot_n);
-   P("=================================\n");
-   P("Total memory usage: %,12lu bytes\n", snapshot->total_szB);
-   P("Useful heap usage : %,12lu bytes (%s)\n",
-      snapshot->heap_szB,
-      make_perc(snapshot->heap_szB, snapshot->total_szB));
-   P("Admin  heap usage : %,12lu bytes (%s)\n",
-      snapshot->heap_admin_szB,
-      make_perc(snapshot->heap_admin_szB, snapshot->total_szB));
-   P("Stacks usage      : %,12lu bytes (%s)\n",
-      snapshot->stacks_szB,
-      make_perc(snapshot->stacks_szB, snapshot->total_szB));
+   P("#--------------------------------\n");
+   P("snapshot=%d\n", snapshot_n);
+   P("#--------------------------------\n");
+   P("time_ms=%lu\n",          snapshot->time_ms);
+   P("mem_total_B=%lu\n",      snapshot->total_szB);
+   P("mem_heap_B=%lu\n",       snapshot->heap_szB);
+   P("mem_heap_admin_B=%lu\n", snapshot->heap_admin_szB);
+   P("mem_stacks_B=%lu\n",     snapshot->stacks_szB);
 
-   if (0 == snapshot->heap_szB) {
-      P("(No heap memory currently allocated)\n");
+   if (is_detailed_snapshot(snapshot)) {
+      // Detailed snapshot -- print heap tree
+      // XXX: check this works ok when no heap memory has been allocated
+      Int   depth_str_len = clo_depth + 3;
+      Char* depth_str = VG_(malloc)(sizeof(Char) * depth_str_len);
+      depth_str[0] = '\0';   // Initialise depth_str to "".
+
+      P("heap_tree=...\n");
+      pp_snapshot_XPt(snapshot->alloc_xpt, 0, depth_str,
+                      depth_str_len, snapshot->heap_szB,
+                      snapshot->total_szB);
+
+      VG_(free)(depth_str);
+
    } else {
-      P("Heap tree:\n");
-      P("%s (%,ldB): (heap allocation functions) malloc/new/new[],"
-        " --alloc-fns, etc.\n",
-         make_perc(snapshot->heap_szB, snapshot->total_szB),
-         snapshot->heap_szB);
-
-      pp_snapshot_child_XPts(snapshot->alloc_xpt, 0, depth_str, depth_str_len,
-                             snapshot->heap_szB, snapshot->total_szB);
+      P("heap_tree=empty\n");
    }
-
-   VG_(free)(depth_str);
 }
 
 static void write_detailed_snapshots(void)
 {
    Int i;
+
+   // Print description lines.
+   P("desc: XXX\n");
+
+   // Print "cmd:" line.
+   P("cmd: ");
+   if (VG_(args_the_exename)) {
+      P("%s", VG_(args_the_exename));
+      for (i = 0; i < VG_(sizeXA)( VG_(args_for_client) ); i++) {
+         HChar* arg = * (HChar**) VG_(indexXA)( VG_(args_for_client), i );
+         if (arg)
+            P(" %s", arg);
+      }
+   } else {
+      P(" ???");
+   }
+   P("\n");
+
+
    for (i = 0; i < next_snapshot; i++) {
       Snapshot* snapshot = & snapshots[i];
-      if (snapshot->alloc_xpt) {
-         pp_snapshot(snapshot, i);     // Detailed snapshot!
-      }
+      pp_snapshot(snapshot, i);     // Detailed snapshot!
    }
 }
 
@@ -1722,7 +1733,6 @@ static void ms_fini(Int exit_status)
    take_snapshot();
 
    // Output.
-   write_text_graph();
    write_detailed_snapshots();
 
    // Stats
