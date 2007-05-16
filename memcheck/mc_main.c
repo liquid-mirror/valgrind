@@ -4967,6 +4967,7 @@ static void mc_pre_clo_init(void)
 
    VG_(basic_tool_funcs)          (mc_post_clo_init,
                                    MC_(instrument),
+                                   MC_(final_tidy),
                                    mc_fini);
 
    VG_(needs_core_errors)         ();

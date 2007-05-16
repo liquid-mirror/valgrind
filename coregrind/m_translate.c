@@ -1287,6 +1287,7 @@ Bool VG_(translate) ( ThreadId tid,
    vta.instrument2      = need_to_handle_SP_assignment()
                              ? vg_SP_update_pass
                              : NULL;
+   vta.finaltidy        = VG_(tdict).final_tidy;
    vta.do_self_check    = do_self_check;
    vta.traceflags       = verbosity;
 

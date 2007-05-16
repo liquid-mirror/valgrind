@@ -109,6 +109,7 @@ typedef struct {
                                IRSB*, 
                                VexGuestLayout*, VexGuestExtents*, 
                                IRType, IRType);
+   IRSB* (*final_tidy)        (IRSB*);
    void  (*tool_fini)         (Int);
 
    // VG_(needs).core_errors

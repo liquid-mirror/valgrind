@@ -3389,6 +3389,7 @@ static void hg_pre_clo_init(void)
 
    VG_(basic_tool_funcs)          (hg_post_clo_init,
                                    hg_instrument,
+                                   NULL,
                                    hg_fini);
 
    VG_(printf)(

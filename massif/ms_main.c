@@ -1729,6 +1729,7 @@ static void ms_pre_clo_init(void)
    // Basic functions
    VG_(basic_tool_funcs)          (ms_post_clo_init,
                                    ms_instrument,
+                                   NULL,
                                    ms_fini);
 
    // Needs

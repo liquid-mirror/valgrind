@@ -1090,6 +1090,7 @@ void CLG_(pre_clo_init)(void)
 
     VG_(basic_tool_funcs)        (CLG_(post_clo_init),
                                   CLG_(instrument),
+                                  NULL,
                                   CLG_(fini));
 
     VG_(needs_superblock_discards)(clg_discard_superblock_info);

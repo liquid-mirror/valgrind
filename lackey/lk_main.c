@@ -919,6 +919,7 @@ static void lk_pre_clo_init(void)
 
    VG_(basic_tool_funcs)          (lk_post_clo_init,
                                    lk_instrument,
+                                   NULL,
                                    lk_fini);
    VG_(needs_command_line_options)(lk_process_cmd_line_option,
                                    lk_print_usage,

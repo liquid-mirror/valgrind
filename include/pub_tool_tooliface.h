@@ -239,6 +239,8 @@ extern void VG_(basic_tool_funcs)(
                       IRType             gWordTy, 
                       IRType             hWordTy),
 
+   IRSB*(*final_tidy)(IRSB*),
+
    // Finish up, print out any results, etc.  `exitcode' is program's exit
    // code.  The shadow can be found with VG_(get_exit_status_shadow)().
    void  (*fini)(Int)

@@ -42,11 +42,13 @@ void VG_(basic_tool_funcs)(
    void(*post_clo_init)(void),
    IRSB*(*instrument)(VgCallbackClosure*, IRSB*, 
                       VexGuestLayout*, VexGuestExtents*, IRType, IRType),
+   IRSB*(*final_tidy)(IRSB*),
    void(*fini)(Int)
 )
 {
    VG_(tdict).tool_post_clo_init = post_clo_init;
    VG_(tdict).tool_instrument    = instrument;
+   VG_(tdict).final_tidy         = final_tidy;
    VG_(tdict).tool_fini          = fini;
 }
 

@@ -60,6 +60,7 @@ static void nl_pre_clo_init(void)
 
    VG_(basic_tool_funcs)        (nl_post_clo_init,
                                  nl_instrument,
+                                 NULL,
                                  nl_fini);
 
    /* No needs, no core events to track */

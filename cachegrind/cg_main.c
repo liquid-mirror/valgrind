@@ -1362,6 +1362,7 @@ static void cg_pre_clo_init(void)
 
    VG_(basic_tool_funcs)          (cg_post_clo_init,
                                    cg_instrument,
+                                   NULL,
                                    cg_fini);
 
    VG_(needs_superblock_discards)(cg_discard_superblock_info);
