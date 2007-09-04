@@ -37,6 +37,9 @@
 #include "pub_tool_machine.h"     // VG_(fnptr_to_fnentry)
 #include "mc_include.h"
 
+#include "pub_tool_xarray.h"
+#include "pub_tool_mallocfree.h"
+#include "pub_tool_libcbase.h"
 
 /* This file implements the Memcheck instrumentation, and in
    particular contains the core of its undefined value detection
@@ -356,38 +359,22 @@ static IRAtom* mkUifU ( MCEnv* mce, IRType vty, IRAtom* a1, IRAtom* a2 ) {
 
 static IRAtom* mkLeft8 ( MCEnv* mce, IRAtom* a1 ) {
    tl_assert(isShadowAtom(mce,a1));
-   /* It's safe to duplicate a1 since it's only an atom */
-   return assignNew(mce, Ity_I8, 
-                    binop(Iop_Or8, a1, 
-                          assignNew(mce, Ity_I8,
-                                         unop(Iop_Neg8, a1))));
+   return assignNew(mce, Ity_I8, unop(Iop_Left8, a1));
 }
 
 static IRAtom* mkLeft16 ( MCEnv* mce, IRAtom* a1 ) {
    tl_assert(isShadowAtom(mce,a1));
-   /* It's safe to duplicate a1 since it's only an atom */
-   return assignNew(mce, Ity_I16, 
-                    binop(Iop_Or16, a1, 
-                          assignNew(mce, Ity_I16,
-                                         unop(Iop_Neg16, a1))));
+   return assignNew(mce, Ity_I16, unop(Iop_Left16, a1));
 }
 
 static IRAtom* mkLeft32 ( MCEnv* mce, IRAtom* a1 ) {
    tl_assert(isShadowAtom(mce,a1));
-   /* It's safe to duplicate a1 since it's only an atom */
-   return assignNew(mce, Ity_I32, 
-                    binop(Iop_Or32, a1, 
-                          assignNew(mce, Ity_I32,
-                                         unop(Iop_Neg32, a1))));
+   return assignNew(mce, Ity_I32, unop(Iop_Left32, a1));
 }
 
 static IRAtom* mkLeft64 ( MCEnv* mce, IRAtom* a1 ) {
    tl_assert(isShadowAtom(mce,a1));
-   /* It's safe to duplicate a1 since it's only an atom */
-   return assignNew(mce, Ity_I64, 
-                    binop(Iop_Or64, a1, 
-                          assignNew(mce, Ity_I64,
-                                         unop(Iop_Neg64, a1))));
+   return assignNew(mce, Ity_I64, unop(Iop_Left64, a1));
 }
 
 /* --------- 'Improvement' functions for AND/OR. --------- */
@@ -502,14 +489,28 @@ static IRAtom* mkImproveORV128 ( MCEnv* mce, IRAtom* data, IRAtom* vbits )
 
 static IRAtom* mkPCastTo( MCEnv* mce, IRType dst_ty, IRAtom* vbits ) 
 {
-   IRType  ty;
+   IRType  src_ty;
    IRAtom* tmp1;
    /* Note, dst_ty is a shadow type, not an original type. */
    /* First of all, collapse vbits down to a single bit. */
    tl_assert(isShadowAtom(mce,vbits));
-   ty   = typeOfIRExpr(mce->bb->tyenv, vbits);
-   tmp1 = NULL;
-   switch (ty) {
+   src_ty = typeOfIRExpr(mce->bb->tyenv, vbits);
+
+   /* Fast-track some common cases */
+   if (src_ty == Ity_I32 && dst_ty == Ity_I32)
+      return assignNew(mce, Ity_I32, unop(Iop_CmpwNEZ32, vbits));
+
+   if (src_ty == Ity_I64 && dst_ty == Ity_I64)
+      return assignNew(mce, Ity_I64, unop(Iop_CmpwNEZ64, vbits));
+
+   if (src_ty == Ity_I32 && dst_ty == Ity_I64) {
+      IRAtom* tmp = assignNew(mce, Ity_I32, unop(Iop_CmpwNEZ32, vbits));
+      return assignNew(mce, Ity_I64, binop(Iop_32HLto64, tmp, tmp));
+   }
+
+   /* Else do it the slow way .. */
+   tmp1   = NULL;
+   switch (src_ty) {
       case Ity_I1:
          tmp1 = vbits;
          break;
@@ -536,7 +537,7 @@ static IRAtom* mkPCastTo( MCEnv* mce, IRType dst_ty, IRAtom* vbits )
          break;
       }
       default:
-         ppIRType(ty);
+         ppIRType(src_ty);
          VG_(tool_panic)("mkPCastTo(1)");
    }
    tl_assert(tmp1);
@@ -1260,9 +1261,27 @@ static
 IRAtom* mkLazyN ( MCEnv* mce, 
                   IRAtom** exprvec, IRType finalVtype, IRCallee* cee )
 {
-   Int i;
+   Int     i;
    IRAtom* here;
-   IRAtom* curr = definedOfType(Ity_I32);
+   IRAtom* curr;
+   IRType  mergeTy;
+   IRType  mergeTy64 = True;
+
+   /* Decide on the type of the merge intermediary.  If all relevant
+      args are I64, then it's I64.  In all other circumstances, use
+      I32. */
+   for (i = 0; exprvec[i]; i++) {
+      tl_assert(i < 32);
+      tl_assert(isOriginalAtom(mce, exprvec[i]));
+      if (cee->mcx_mask & (1<<i))
+         continue;
+      if (typeOfIRExpr(mce->bb->tyenv, exprvec[i]) != Ity_I64)
+         mergeTy64 = False;
+   }
+
+   mergeTy = mergeTy64  ? Ity_I64  : Ity_I32;
+   curr    = definedOfType(mergeTy);
+
    for (i = 0; exprvec[i]; i++) {
       tl_assert(i < 32);
       tl_assert(isOriginalAtom(mce, exprvec[i]));
@@ -1275,8 +1294,10 @@ IRAtom* mkLazyN ( MCEnv* mce,
       } else {
          /* calculate the arg's definedness, and pessimistically merge
             it in. */
-         here = mkPCastTo( mce, Ity_I32, expr2vbits(mce, exprvec[i]) );
-         curr = mkUifU32(mce, here, curr);
+         here = mkPCastTo( mce, mergeTy, expr2vbits(mce, exprvec[i]) );
+         curr = mergeTy64 
+                   ? mkUifU64(mce, here, curr)
+                   : mkUifU32(mce, here, curr);
       }
    }
    return mkPCastTo(mce, finalVtype, curr );
@@ -2465,17 +2486,6 @@ IRExpr* expr2vbits_Unop ( MCEnv* mce, IROp op, IRAtom* atom )
       case Iop_Not1:
          return vatom;
 
-      /* Neg* really fall under the Add/Sub banner, and as such you
-         might think would qualify for the 'expensive add/sub'
-         treatment.  However, in this case since the implied literal
-         is zero (0 - arg), we just do the cheap thing anyway. */
-      case Iop_Neg8:
-         return mkLeft8(mce, vatom);
-      case Iop_Neg16:
-         return mkLeft16(mce, vatom);
-      case Iop_Neg32:
-         return mkLeft32(mce, vatom);
-
       default:
          ppIROp(op);
          VG_(tool_panic)("memcheck:expr2vbits_Unop");
@@ -3460,6 +3470,149 @@ IRSB* MC_(instrument) ( VgCallbackClosure* closure,
 
    return bb;
 }
+
+/*------------------------------------------------------------*/
+/*--- Post-tree-build final tidying                        ---*/
+/*------------------------------------------------------------*/
+
+/* This exploits the observation that Memcheck often produces
+   repeated conditional calls of the form
+
+   Dirty G MC_(helperc_value_check0/1/4/8_fail)()
+
+   with the same guard expression G guarding the same helper call.
+   The second and subsequent calls are redundant.  This usually
+   results from instrumentation of guest code containing multiple
+   memory references at different constant offsets from the same base
+   register.  After optimisation of the instrumentation, you get a
+   test for the definedness of the base register for each memory
+   reference, which is kinda pointless.  MC_(final_tidy) therefore
+   looks for such repeated calls and removes all but the first. */
+
+/* A struct for recording which (helper, guard) pairs we have already
+   seen. */
+typedef
+   struct { void* entry; IRExpr* guard; }
+   Pair;
+
+/* Return True if e1 and e2 definitely denote the same value (used to
+   compare guards).  Return False if unknown; False is the safe
+   answer.  Since guest registers and guest memory do not have the
+   SSA property we must return False if any Gets or Loads appear in
+   the expression. */
+
+static Bool sameIRValue ( IRExpr* e1, IRExpr* e2 )
+{
+   if (e1->tag != e2->tag)
+      return False;
+   switch (e1->tag) {
+      case Iex_Const:
+         return eqIRConst( e1->Iex.Const.con, e2->Iex.Const.con );
+      case Iex_Binop:
+         return e1->Iex.Binop.op == e2->Iex.Binop.op 
+                && sameIRValue(e1->Iex.Binop.arg1, e2->Iex.Binop.arg1)
+                && sameIRValue(e1->Iex.Binop.arg2, e2->Iex.Binop.arg2);
+      case Iex_Unop:
+         return e1->Iex.Unop.op == e2->Iex.Unop.op 
+                && sameIRValue(e1->Iex.Unop.arg, e2->Iex.Unop.arg);
+      case Iex_RdTmp:
+         return e1->Iex.RdTmp.tmp == e2->Iex.RdTmp.tmp;
+      case Iex_Mux0X:
+         return sameIRValue( e1->Iex.Mux0X.cond, e2->Iex.Mux0X.cond )
+                && sameIRValue( e1->Iex.Mux0X.expr0, e2->Iex.Mux0X.expr0 )
+                && sameIRValue( e1->Iex.Mux0X.exprX, e2->Iex.Mux0X.exprX );
+      case Iex_Qop:
+      case Iex_Triop:
+      case Iex_CCall:
+         /* be lazy.  Could define equality for these, but they never
+            appear to be used. */
+         return False;
+      case Iex_Get:
+      case Iex_GetI:
+      case Iex_Load:
+         /* be conservative - these may not give the same value each
+            time */
+         return False;
+      case Iex_Binder:
+         /* should never see this */
+         /* fallthrough */
+      default:
+         VG_(printf)("mc_translate.c: sameIRValue: unhandled: ");
+         ppIRExpr(e1); 
+         VG_(tool_panic)("memcheck:sameIRValue");
+         return False;
+   }
+}
+
+/* See if 'pairs' already has an entry for (entry, guard).  Return
+   True if so.  If not, add an entry. */
+
+static 
+Bool check_or_add ( XArray* /*of Pair*/ pairs, IRExpr* guard, void* entry )
+{
+   Pair  p;
+   Pair* pp;
+   Int   i, n = VG_(sizeXA)( pairs );
+   for (i = 0; i < n; i++) {
+      pp = VG_(indexXA)( pairs, i );
+      if (pp->entry == entry && sameIRValue(pp->guard, guard))
+         return True;
+   }
+   p.guard = guard;
+   p.entry = entry;
+   VG_(addToXA)( pairs, &p );
+   return False;
+}
+
+static Bool is_helperc_value_checkN_fail ( HChar* name )
+{
+   return
+      0==VG_(strcmp)(name, "MC_(helperc_value_check0_fail)")
+      || 0==VG_(strcmp)(name, "MC_(helperc_value_check1_fail)")
+      || 0==VG_(strcmp)(name, "MC_(helperc_value_check4_fail)")
+      || 0==VG_(strcmp)(name, "MC_(helperc_value_check8_fail)");
+}
+
+IRSB* MC_(final_tidy) ( IRSB* sb_in )
+{
+   Int i;
+   IRStmt*   st;
+   IRDirty*  di;
+   IRExpr*   guard;
+   IRCallee* cee;
+   Bool      alreadyPresent;
+   XArray*   pairs = VG_(newXA)( VG_(malloc), VG_(free), sizeof(Pair) );
+   /* Scan forwards through the statements.  Each time a call to one
+      of the relevant helpers is seen, check if we have made a
+      previous call to the same helper using the same guard
+      expression, and if so, delete the call. */
+   for (i = 0; i < sb_in->stmts_used; i++) {
+      st = sb_in->stmts[i];
+      tl_assert(st);
+      if (st->tag != Ist_Dirty)
+         continue;
+      di = st->Ist.Dirty.details;
+      guard = di->guard;
+      if (!guard)
+         continue;
+      if (0) { ppIRExpr(guard); VG_(printf)("\n"); }
+      cee = di->cee;
+      if (!is_helperc_value_checkN_fail( cee->name )) 
+         continue;
+       /* Ok, we have a call to helperc_value_check0/1/4/8_fail with
+          guard 'guard'.  Check if we have already seen a call to this
+          function with the same guard.  If so, delete it.  If not,
+          add it to the set of calls we do know about. */
+      alreadyPresent = check_or_add( pairs, guard, cee->addr );
+      if (alreadyPresent) {
+         sb_in->stmts[i] = IRStmt_NoOp();
+         if (0) VG_(printf)("XX\n");
+      }
+   }
+   VG_(deleteXA)( pairs );
+   return sb_in;
+}
+
 
 /*--------------------------------------------------------------------*/
 /*--- end                                           mc_translate.c ---*/
