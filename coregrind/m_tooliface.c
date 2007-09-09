@@ -332,8 +332,8 @@ DEF(track_post_reg_write_clientcall_return, ThreadId, OffT, SizeT, Addr)
 DEF(track_start_client_code,     ThreadId, ULong)
 DEF(track_stop_client_code,      ThreadId, ULong)
 
-DEF(track_post_thread_create,    ThreadId, ThreadId)
-DEF(track_post_thread_join,      ThreadId, ThreadId)
+DEF(track_pre_thread_ll_create,  ThreadId, ThreadId)
+DEF(track_pre_thread_ll_exit,    ThreadId)
 
 DEF(track_pre_deliver_signal,    ThreadId, Int sigNo, Bool)
 DEF(track_post_deliver_signal,   ThreadId, Int sigNo)
