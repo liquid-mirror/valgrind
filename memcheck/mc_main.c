@@ -4659,7 +4659,7 @@ static Bool mc_handle_client_request ( ThreadId tid, UWord* arg, UWord* ret )
             cgbs[i].start = arg[1];
             cgbs[i].size  = arg[2];
             cgbs[i].desc  = VG_(strdup)((Char *)arg[3]);
-            cgbs[i].where = VG_(record_ExeContext) ( tid );
+            cgbs[i].where = VG_(record_ExeContext) ( tid, 0/*first_ip_delta*/ );
 
             *ret = i;
          } else

@@ -380,7 +380,7 @@ void construct_error ( Error* err, ThreadId tid, ErrorKind ekind, Addr a,
    err->count    = 1;
    err->tid      = tid;
    if (NULL == where)
-      err->where = VG_(record_ExeContext)( tid );
+     err->where = VG_(record_ExeContext)( tid, 0 );
    else
       err->where = where;
 

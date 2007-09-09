@@ -369,7 +369,8 @@ UInt VG_(get_StackTrace2) ( ThreadId tid_if_known,
    return n_found;
 }
 
-UInt VG_(get_StackTrace) ( ThreadId tid, StackTrace ips, UInt n_ips )
+UInt VG_(get_StackTrace) ( ThreadId tid, StackTrace ips, UInt n_ips, 
+                           Word first_ip_delta )
 {
    /* thread in thread table */
    Addr ip                 = VG_(get_IP)(tid);
@@ -404,6 +405,10 @@ UInt VG_(get_StackTrace) ( ThreadId tid, StackTrace ips, UInt n_ips )
       sp += sizeof(Addr);
    }
 #  endif
+
+   /* Take into account the first_ip_delta. */
+   vg_assert( sizeof(Addr) == sizeof(Word) );
+   ip += first_ip_delta;
 
    if (0)
       VG_(printf)("tid %d: stack_highest=%p ip=%p sp=%p fp=%p\n",
@@ -446,7 +451,8 @@ void VG_(pp_StackTrace) ( StackTrace ips, UInt n_ips )
 void VG_(get_and_pp_StackTrace) ( ThreadId tid, UInt n_ips )
 {
    Addr ips[n_ips];
-   UInt n_ips_obtained = VG_(get_StackTrace)(tid, ips, n_ips);
+   UInt n_ips_obtained = VG_(get_StackTrace)(tid, ips, n_ips,
+                                             0/*first_ip_delta*/);
    VG_(pp_StackTrace)(ips, n_ips_obtained);
 }
 
