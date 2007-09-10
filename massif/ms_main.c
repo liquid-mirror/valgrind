@@ -431,7 +431,8 @@ static XPt* get_XCon( ThreadId tid, Bool custom_malloc )
    // it is enough.
    overestimate = 2;
    while (True) {
-      n_ips = VG_(get_StackTrace)( tid, ips, clo_depth + overestimate );
+     n_ips = VG_(get_StackTrace)( tid, ips, clo_depth + overestimate,
+                                  0/*first_ip_delta*/ );
 
       // Now we add a dummy "unknown" IP at the end.  This is only used if we
       // run out of IPs before hitting clo_depth.  It's done to ensure the
