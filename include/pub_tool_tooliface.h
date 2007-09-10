@@ -562,11 +562,16 @@ void VG_(track_stop_client_code)(
 
 /* Thread events (not exhaustive)
 
-   Called during thread create, before the new thread has run any
-   instructions (or touched any memory).
- */
-void VG_(track_post_thread_create)(void(*f)(ThreadId tid, ThreadId child));
-void VG_(track_post_thread_join)  (void(*f)(ThreadId joiner, ThreadId joinee));
+   ll_create: low level thread creation.  Called before the new thread
+   has run any instructions (or touched any memory).  In fact, called
+   immediately before the new thread has come into existence; the new
+   thread can be assumed to exist when notified by this call.
+
+   ll_exit: low level thread exit.  Called after the exiting thread
+   has run its last instruction.
+*/
+void VG_(track_pre_thread_ll_create)(void(*f)(ThreadId tid, ThreadId child));
+void VG_(track_pre_thread_ll_exit)  (void(*f)(ThreadId tid));
 
 
 /* Signal events (not exhaustive)
