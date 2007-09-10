@@ -313,6 +313,13 @@
    fun:pthread_create@@GLIBC_*
    fun:pthread_create@*
 }
+{
+   thrcheck-wrappers-glibc-create-2
+   Thrcheck:Race
+   fun:do_clone
+   fun:pthread_create@@GLIBC_*
+   fun:pthread_create@*
+}
 
 # This is very ugly.  It is needed to suppress errors inside 
 # NPTL's pthread_cond_signal.  Why only one stack frame -- 
