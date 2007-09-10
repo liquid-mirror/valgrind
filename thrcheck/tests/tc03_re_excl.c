@@ -3,7 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-/* Simple test program, no race: parent only modified x after child
+/* Simple test program, no race: parent only modifies x after child
    has modified it and then joined with the parent.  Tests simple
    thread lifetime segment handling. */
 
@@ -23,11 +23,11 @@ static void* worker_thread ( void* argV )
 int main ( void )
 {
    pthread_t thread_id;
-   int* x = malloc(10 * sizeof(int));
-   x[5] = 0;
+   volatile int* x = malloc(10 * sizeof(int));
+   x[5] = 1;
    /* x[5] is Excl(parent) */
 
-   pthread_create(&thread_id, 0, worker_thread, x);
+   pthread_create(&thread_id, 0, worker_thread, (void*)x);
 
    use(x[5]); /* read access */
 
@@ -38,8 +38,7 @@ int main ( void )
       and child has merged to parent.  So now it's ok for parent to
       access it without locking. */
 
-   x[5] = 99; /* write access */
+   x[5] = 0; /* write access */
 
-   free(x);
-   return 0;
+   return x[5];
 }

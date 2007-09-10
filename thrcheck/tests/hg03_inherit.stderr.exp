@@ -1,0 +1,22 @@
+
+Thread 3:
+Thread #1 is the program's root thread
+
+Thread #3 was created
+   at 0x........: clone (in /...libc...)
+   by 0x........: ...
+   by 0x........: pthread_create@@GLIBC_2.2.5 (in /lib64/libpthread-2.5.so)
+   by 0x........: pthread_create@* (tc_intercepts.c:184)
+   by 0x........: main (hg03_inherit.c:46)
+
+Possible data race during write to 0x........ 
+   at 0x........: t2 (hg03_inherit.c:28)
+   by 0x........: mythread_wrapper (tc_intercepts.c:164)
+   by 0x........: ...
+   by 0x........: ...
+  Old state: shared-readonly by threads #1, #3
+  New state: shared-modified by threads #1, #3
+  Reason:    this thread, #3, holds no consistent locks
+  Location 0x........ has never been protected by any lock
+
+ERROR SUMMARY: 1 errors from 1 contexts (suppressed: 0 from 0)
