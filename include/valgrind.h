@@ -1032,10 +1032,10 @@ typedef
 
    Why is this important?  Imagine that a wrapper has a stack
    allocated local, and passes to the hidden call, a pointer to it.
-   Because gcc does not know about the hidden call, it can allocate
+   Because gcc does not know about the hidden call, it may allocate
    that local in the redzone.  Unfortunately the hidden call may then
-   trash it before it comes to use it.  So we must clear the redzone
-   to make it safe.
+   trash it before it comes to use it.  So we must step clear of the
+   redzone, for the duration of the hidden call, to make it safe.
 
    Probably the same problem afflicts the other redzone-style ABIs too
    (ppc64-linux, ppc32-aix5, ppc64-aix5); but for those, the stack is
