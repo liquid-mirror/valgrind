@@ -7,28 +7,50 @@ include $(top_srcdir)/Makefile.flags.am
 noinst_SCRIPTS = filter_stderr
 
 EXTRA_DIST = $(noinst_SCRIPTS) \
-	allok.stderr.exp allok.vgtest		\
-	deadlock.stderr.exp deadlock.vgtest	\
-	inherit.stderr.exp inherit.vgtest	\
-	race.stderr.exp race.vgtest		\
-	race2.stderr.exp race2.vgtest		\
-	readshared.stderr.exp readshared.vgtest \
-	toobig-allocs.stderr.exp toobig-allocs.vgtest
+	hg01_all_ok.vgtest hg01_all_ok.stderr.exp hg01_all_ok.stdout.exp \
+	hg02_deadlock.vgtest hg02_deadlock.stderr.exp hg02_deadlock.stdout.exp \
+	hg03_inherit.vgtest hg03_inherit.stderr.exp hg03_inherit.stdout.exp \
+	hg04_race.vgtest hg04_race.stderr.exp hg04_race.stdout.exp \
+	hg05_race2.vgtest hg05_race2.stderr.exp hg05_race2.stdout.exp \
+	hg06_readshared.vgtest hg06_readshared.stderr.exp \
+		hg06_readshared.stdout.exp \
+	tc01_simple_race.vgtest tc01_simple_race.stderr.exp \
+		tc01_simple_race.stdout.exp \
+	tc02_simple_tls.vgtest tc02_simple_tls.stderr.exp \
+		tc02_simple_tls.stdout.exp \
+	tc03_re_excl.vgtest tc03_re_excl.stderr.exp tc03_re_excl.stdout.exp \
+	tc04_free_lock.vgtest tc04_free_lock.stderr.exp \
+		tc04_free_lock.stdout.exp \
+	tc05_simple_race.vgtest tc05_simple_race.stderr.exp \
+		tc05_simple_race.stdout.exp \
+	tc06_two_races.vgtest tc06_two_races.stderr.exp \
+		tc06_two_races.stdout.exp \
+	tc07_hbl1.vgtest tc07_hbl1.stderr.exp tc07_hbl1.stdout.exp \
+	tc08_hbl2.vgtest tc08_hbl2.stderr.exp tc08_hbl2.stdout.exp \
+	tc09_bad_unlock.vgtest tc09_bad_unlock.stderr.exp \
+		tc09_bad_unlock.stdout.exp \
+	tc10_rec_lock.vgtest tc10_rec_lock.stderr.exp \
+		tc10_rec_lock.stdout.exp
 
 check_PROGRAMS = \
-	allok deadlock inherit race race2 readshared
+	hg01_all_ok \
+	hg02_deadlock \
+	hg03_inherit \
+	hg04_race \
+	hg05_race2 \
+	hg06_readshared \
+	tc01_simple_race \
+	tc02_simple_tls \
+	tc03_re_excl \
+	tc04_free_lock \
+	tc05_simple_race \
+	tc06_two_races \
+	tc07_hbl1 \
+	tc08_hbl2 \
+	tc09_bad_unlock \
+	tc10_rec_lock
 
-# force -gstabs, because we don't print symaddr for DWARF yet
-# Sigh, gcc-3.4.3 on ppc64 generates bogus .stabs.  So disable it
-# for now on ppc64-linux.
-if VGP_PPC64_LINUX
+# is this necessary?
 AM_CFLAGS	= $(WERROR) -Winline -Wall -Wshadow -g      $(AM_FLAG_M3264_PRI)
-else
-
-# In fact -gstabs is broken on many systems now
-#AM_CFLAGS	= $(WERROR) -Winline -Wall -Wshadow -gstabs $(AM_FLAG_M3264_PRI)
-AM_CFLAGS	= $(WERROR) -Winline -Wall -Wshadow -g      $(AM_FLAG_M3264_PRI)
-
-endif
 
 LDADD		= -lpthread
