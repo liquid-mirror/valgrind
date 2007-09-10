@@ -8,6 +8,7 @@ TOOLS =		memcheck \
 		callgrind \
 		massif \
 		lackey \
+		thrcheck \
 		none
 
 # Temporary: we want to compile Helgrind, but not regtest it.

@@ -979,6 +979,9 @@ AC_OUTPUT(
    helgrind/Makefile
    helgrind/tests/Makefile
    helgrind/docs/Makefile
+   thrcheck/Makefile
+   thrcheck/tests/Makefile
+   thrcheck/docs/Makefile
    massif/Makefile
    massif/hp2ps/Makefile
    massif/tests/Makefile
