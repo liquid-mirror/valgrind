@@ -32,7 +32,7 @@
 #endif
 
 
-#if defined(PLAT_amd64_linux)
+#if defined(PLAT_amd64_linux) || defined(PLAT_x86_linux)
 #  define INC(_lval) \
       __asm__ __volatile__ ( \
       "lock ; incl (%0)" : /*out*/ : /*in*/"r"(&(_lval)) : "memory", "cc" )
