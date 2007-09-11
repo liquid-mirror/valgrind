@@ -36,6 +36,17 @@
 #  define INC(_lval) \
       __asm__ __volatile__ ( \
       "lock ; incl (%0)" : /*out*/ : /*in*/"r"(&(_lval)) : "memory", "cc" )
+#elif defined(PLAT_ppc32_linux)
+#  define INC(_lval)                      \
+   __asm__ __volatile__(                  \
+      "1:\n"                              \
+      "        lwarx 15,0,%0\n"           \
+      "        addi 15,15,1\n"            \
+      "        stwcx. 15,0,%0\n"          \
+      "        bne- 1b"                   \
+      : /*out*/ : /*in*/ "b"(&(_lval))    \
+      : /*trash*/ "r15", "cr0", "memory"  \
+   )
 #else
 #  error "Fix Me for this platform"
 #endif
