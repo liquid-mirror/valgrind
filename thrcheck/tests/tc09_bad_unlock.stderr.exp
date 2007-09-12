@@ -10,7 +10,6 @@ Thread #1 unlocked a not-locked lock at 0x........
    by 0x........: nearly_main (tc09_bad_unlock.c:23)
    by 0x........: main (tc09_bad_unlock.c:49)
 
-Thread 2:
 Thread #2 was created
    at 0x........: clone (in /...libc...)
    by 0x........: ...
@@ -30,7 +29,6 @@ Thread #2 unlocked lock at 0x........ currently held by thread #1
    by 0x........: nearly_main (tc09_bad_unlock.c:31)
    by 0x........: main (tc09_bad_unlock.c:49)
 
-Thread 1:
 Thread #1 unlocked an invalid lock at 0x........ 
    at 0x........: pthread_mutex_unlock (tc_intercepts.c:423)
    by 0x........: nearly_main (tc09_bad_unlock.c:41)
@@ -58,7 +56,6 @@ Thread #1 unlocked a not-locked lock at 0x........
    by 0x........: nearly_main (tc09_bad_unlock.c:23)
    by 0x........: main (tc09_bad_unlock.c:50)
 
-Thread 2:
 Thread #3 was created
    at 0x........: clone (in /...libc...)
    by 0x........: ...
@@ -78,7 +75,6 @@ Thread #3 unlocked lock at 0x........ currently held by thread #1
    by 0x........: nearly_main (tc09_bad_unlock.c:31)
    by 0x........: main (tc09_bad_unlock.c:50)
 
-Thread 1:
 Thread #1 unlocked an invalid lock at 0x........ 
    at 0x........: pthread_mutex_unlock (tc_intercepts.c:423)
    by 0x........: nearly_main (tc09_bad_unlock.c:41)
