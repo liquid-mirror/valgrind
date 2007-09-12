@@ -2,7 +2,7 @@
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <sched.h>
+#include <unistd.h>
 
 /* Simple test program, no race.  Parent writes atomically to a counter
    whilst child reads it.  When counter reaches a prearranged value, 
@@ -55,19 +55,25 @@
 
 #define LIMIT 10
 
-int x = 0;
+volatile int x = 0;
 
 void* child_fn ( void* arg )
 {
    int q = 0;
    int oldx = 0;
+   int ctr = 0;
    while (1) {
-      q = x == LIMIT;
+      q = (x >= LIMIT);
       if (x != oldx) {
          oldx = x;
          printf("child: new value %d\n", oldx);
+         fflush(stdout);
       }
       if (q) break;
+      /* Make sure the parent doesn't starve.  Seems to be a problem
+	 on very slow machines. */
+      ctr++;
+      if (ctr == 2000000) sleep(1);
    }
    return NULL;
 }
@@ -84,15 +90,15 @@ int main ( void )
 
    for (i = 0; i < LIMIT; i++) {
       INC(x);
-      /* Not really necessary, but just gives the child a chance
-	 to run too. */
-      sched_yield();
+      if (i == 5) sleep(1); /* make sure child doesn't starve */
    }
 
    if (pthread_join(child, NULL)) {
       perror("pthread join");
       exit(1);
    }
+
+   printf("done, x = %d\n", x);
 
    return 0;
 }
