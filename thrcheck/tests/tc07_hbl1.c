@@ -32,7 +32,7 @@
 #  define INC(_lval) \
       __asm__ __volatile__ ( \
       "lock ; incl (%0)" : /*out*/ : /*in*/"r"(&(_lval)) : "memory", "cc" )
-#elif defined(PLAT_ppc32_linux)
+#elif defined(PLAT_ppc32_linux) || defined(PLAT_ppc64_linux)
 #  define INC(_lval)                      \
    __asm__ __volatile__(                  \
       "1:\n"                              \

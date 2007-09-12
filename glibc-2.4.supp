@@ -296,3 +296,9 @@
    fun:pthread_create*
    fun:pthread_create*
 }
+{
+   thrcheck-glibc24-ppc64-1
+   Thrcheck:Race
+   fun:__free_tcb
+   fun:pthread_join
+}
