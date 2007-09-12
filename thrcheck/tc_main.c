@@ -3987,7 +3987,13 @@ static void init_XError ( XError* xe ) {
 /* Extensions of suppressions */
 typedef
    enum {
-      XS_Race=62 /* race */
+      XS_Race=72, /* race */
+      XS_FreeMemLock,
+      XS_UnlockUnlocked,
+      XS_UnlockForeign,
+      XS_UnlockBogus,
+      XS_DestroyLocked,
+      XS_PthAPIerror
    }
    XSuppTag;
 
@@ -4384,7 +4390,7 @@ static void tc_pp_Error ( Error* err )
          VG_(message)(Vg_UserMsg,
                       "  Old state: owned exclusively by thread #%d",
                       old_thr->errmsg_index);
-         // This should always show exactly 2 threeads
+         // This should always show exactly 2 threads
          summarise_threadset( new_tset, new_tset_buf, sizeof(new_tset_buf) );
          VG_(message)(Vg_UserMsg,
                       "  New state: shared-modified by threads %s",
@@ -4454,15 +4460,36 @@ static void tc_pp_Error ( Error* err )
    } /* switch (VG_(get_error_kind)(err)) */
 }
 
+static Char* tc_get_error_name ( Error* err )
+{
+   switch (VG_(get_error_kind)(err)) {
+      case XE_Race:           return "Race";
+      case XE_FreeMemLock:    return "FreeMemLock";
+      case XE_UnlockUnlocked: return "UnlockUnlocked";
+      case XE_UnlockForeign:  return "UnlockForeign";
+      case XE_UnlockBogus:    return "UnlockBogus";
+      case XE_DestroyLocked:  return "DestroyLocked";
+      case XE_PthAPIerror:    return "PthAPIerror";
+      default: tl_assert(0); /* fill in missing case */
+   }
+}
+
 static Bool tc_recognised_suppression ( Char* name, Supp *su )
 {
-   // FIXME fill in missing cases
-   if (0 == VG_(strcmp)(name, "Race")) {
-      VG_(set_supp_kind)(su, XS_Race);
-      return True;
-   } else {
-      return False;
-   }
+#  define TRY(_name,_xskind)                   \
+      if (0 == VG_(strcmp)(name, (_name))) {   \
+         VG_(set_supp_kind)(su, (_xskind));    \
+         return True;                          \
+      }
+   TRY("Race",           XS_Race);
+   TRY("FreeMemLock",    XS_FreeMemLock);
+   TRY("UnlockUnlocked", XS_UnlockUnlocked);
+   TRY("UnlockForeign",  XS_UnlockForeign);
+   TRY("UnlockBogus",    XS_UnlockBogus);
+   TRY("DestroyLocked",  XS_DestroyLocked);
+   TRY("PthAPIerror",    XS_PthAPIerror);
+   return False;
+#  undef TRY
 }
 
 static Bool tc_read_extra_suppression_info ( Int fd, Char* buf, Int nBuf,
@@ -4475,16 +4502,16 @@ static Bool tc_read_extra_suppression_info ( Int fd, Char* buf, Int nBuf,
 
 static Bool tc_error_matches_suppression ( Error* err, Supp* su )
 {
-   tl_assert(VG_(get_supp_kind)(su) == XS_Race);
-   return VG_(get_error_kind)(err) == XE_Race;
-}
-
-static Char* tc_get_error_name ( Error* err )
-{
-   if (XE_Race == VG_(get_error_kind)(err)) {
-      return "Race";
-   } else {
-      return NULL;      /* Other error types can't be suppressed */
+   switch (VG_(get_supp_kind)(su)) {
+   case XS_Race:           return VG_(get_error_kind)(err) == XE_Race;
+   case XS_FreeMemLock:    return VG_(get_error_kind)(err) == XE_FreeMemLock;
+   case XS_UnlockUnlocked: return VG_(get_error_kind)(err) == XE_UnlockUnlocked;
+   case XS_UnlockForeign:  return VG_(get_error_kind)(err) == XE_UnlockForeign;
+   case XS_UnlockBogus:    return VG_(get_error_kind)(err) == XE_UnlockBogus;
+   case XS_DestroyLocked:  return VG_(get_error_kind)(err) == XE_DestroyLocked;
+   case XS_PthAPIerror:    return VG_(get_error_kind)(err) == XE_PthAPIerror;
+   //case XS_: return VG_(get_error_kind)(err) == XE_;
+   default: tl_assert(0); /* fill in missing cases */
    }
 }
 
