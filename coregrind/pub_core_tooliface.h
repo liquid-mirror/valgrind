@@ -118,6 +118,7 @@ typedef struct {
    // VG_(needs).tool_errors
    Bool  (*tool_eq_Error)                    (VgRes, Error*, Error*);
    void  (*tool_pp_Error)                    (Error*);
+   Bool  tool_show_ThreadIDs_for_errors;
    UInt  (*tool_update_extra)                (Error*);
    Bool  (*tool_recognised_suppression)      (Char*, Supp*);
    Bool  (*tool_read_extra_suppression_info) (Int, Char*, Int, Supp*);

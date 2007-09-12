@@ -303,6 +303,9 @@ extern void VG_(needs_tool_errors) (
    // Print error context.
    void (*pp_Error)(Error* err),
 
+   // Should the core indicate which ThreadId each error comes from?
+   Bool show_ThreadIDs_for_errors,
+
    // Should fill in any details that could be postponed until after the
    // decision whether to ignore the error (ie. details not affecting the
    // result of VG_(tdict).tool_eq_Error()).  This saves time when errors

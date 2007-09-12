@@ -4975,6 +4975,7 @@ static void mc_pre_clo_init(void)
    VG_(needs_core_errors)         ();
    VG_(needs_tool_errors)         (mc_eq_Error,
                                    mc_pp_Error,
+                                   True,/*show TIDs for errors*/
                                    mc_update_extra,
                                    mc_recognised_suppression,
                                    mc_read_extra_suppression_info,

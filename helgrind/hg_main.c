@@ -3413,6 +3413,7 @@ static void hg_pre_clo_init(void)
    VG_(needs_core_errors)         ();
    VG_(needs_tool_errors)         (hg_eq_Error,
                                    hg_pp_Error,
+                                   True,/*show TIDs for errors*/
                                    hg_update_extra,
                                    hg_recognised_suppression,
                                    hg_read_extra_suppression_info,

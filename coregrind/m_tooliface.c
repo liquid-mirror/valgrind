@@ -176,6 +176,7 @@ void VG_(needs_superblock_discards)(
 void VG_(needs_tool_errors)(
    Bool (*eq)         (VgRes, Error*, Error*),
    void (*pp)         (Error*),
+   Bool show_TIDs,
    UInt (*update)     (Error*),
    Bool (*recog)      (Char*, Supp*),
    Bool (*read_extra) (Int, Char*, Int, Supp*),
@@ -187,6 +188,7 @@ void VG_(needs_tool_errors)(
    VG_(needs).tool_errors = True;
    VG_(tdict).tool_eq_Error                     = eq;
    VG_(tdict).tool_pp_Error                     = pp;
+   VG_(tdict).tool_show_ThreadIDs_for_errors    = show_TIDs;
    VG_(tdict).tool_update_extra                 = update;
    VG_(tdict).tool_recognised_suppression       = recog;
    VG_(tdict).tool_read_extra_suppression_info  = read_extra;

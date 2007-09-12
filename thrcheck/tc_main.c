@@ -4617,6 +4617,7 @@ static void tc_pre_clo_init ( void )
    VG_(needs_core_errors)         ();
    VG_(needs_tool_errors)         (tc_eq_Error,
                                    tc_pp_Error,
+                                   False,/*show TIDs for errors*/
                                    tc_update_extra,
                                    tc_recognised_suppression,
                                    tc_read_extra_suppression_info,
