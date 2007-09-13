@@ -3,103 +3,278 @@
           "http://www.oasis-open.org/docbook/xml/4.2/docbookx.dtd">
 
 
-<chapter id="hg-manual" xreflabel="Helgrind: a data-race detector">
-  <title>Helgrind: a data-race detector</title>
+<chapter id="tc-manual" xreflabel="Thrcheck: thread error detector">
+  <title>Thrcheck: a thread error detector</title>
 
 <para>To use this tool, you must specify
-<computeroutput>--tool=helgrind</computeroutput> on the Valgrind
+<computeroutput>--tool=thrcheck</computeroutput> on the Valgrind
 command line.</para>
 
-<para>Note: Helgrind does not work in Valgrind 3.1.0.  We hope
-to reinstate in version 3.2.0.</para>
+
+<sect1 id="tc-manual.overview" xreflabel="Overview">
+<title>Overview</title>
+
+<para>Thrcheck is a Valgrind tool for detecting threading errors in C,
+C++ and Fortran programs that use the POSIX Pthreads library.</para>
+
+<para>The main abstractions in POSIX Pthreads are: a set of threads
+sharing a common address space, mutexes (locks), condition variables
+(inter-thread event notifications), thread creation, thread joinage
+and thread exit.</para>
+
+<para>Thrcheck can detect three the following three classes of
+errors:</para>
+
+<orderedlist>
+ <listitem>
+  <para>Misuses of the POSIX Pthreads API.  Because the tool observes all
+  significant thread events (creation, joinage, exit, lock, unlock,
+  wait, signal, broadcast), it can report various common problems:</para>
+  <itemizedlist>
+   <listitem><para>unlocking a not-locked mutex</para></listitem>
+   <listitem><para>unlocking a mutex held by a different
+                   thread</para></listitem>
+   <listitem><para>recursively locking a non-recursive mutex</para></listitem>
+   <listitem><para>waiting for a condition variable without holding
+                   the associated mutex</para></listitem>
+   <listitem><para>inconsistent association of mutex and condition
+                   variables in pthread_cond_wait</para></listitem>
+   <listitem><para>threads which exit while holding locked 
+                   mutexes</para></listitem>
+   <listitem><para>deallocation of memory that contains a
+                   locked mutex</para></listitem>
+  </itemizedlist>
+ </listitem>
+
+ <listitem>
+  <para>Potential deadlocks arising from lock ordering problems.  If
+  threads must acquire more than one lock before accessing some shared
+  resource, then all threads must acquire those locks in the same
+  order.  Not doing so risks deadlock.  Detecting such inconsistencies
+  is useful because, whilst actual deadlocks are fairly obvious,
+  potential deadlocks may never be discovered during testing and could
+  later lead to hard-to-diagnose in-service failures.
+  </para>
+  <para>
+  Detecting such problems is a simple matter of keeping track of
+  observed lock acquisition orderings and reporting when new
+  acquisitions violate the existing ordering.</para>
+ </listitem>
+
+ <listitem>
+  <para>Data races.  A data race happens, or could happen, when two threads
+  access a shared memory location without using suitable locks to
+  ensure single-threaded access.  Such missing locking can cause
+  obscure timing dependent bugs.  Ensuring programs are race-free is
+  one of the central difficulties of threaded programming.</para>
+ </listitem>
+</orderedlist>
+
+</sect1>
 
 
-<sect1 id="hg-manual.data-races" xreflabel="Data Races">
+<sect1 id="tc-manual.data-races" xreflabel="Data Races">
 <title>Data Races</title>
 
-<para>Helgrind is a valgrind tool for detecting data races in C and C++
-programs that use the Pthreads library.</para>
+This section describes Thrcheck's data race detection in more detail.
 
-<para>It uses the Eraser algorithm described in:
+<para>In short, what Thrcheck does is to look for memory locations
+which are accessed by more than one thread.  For each such location,
+Thrcheck records which of the program's (pthread_mutex_)locks were
+held by the accessing thread at the time of each access.  The hope is
+to discover that there is indeed at least one lock which is
+consistently used by all threads to protect that location.  If no such
+lock can be found, then there is apparently no consistent locking
+strategy being applied for that location, and so a possible data race
+might result.</para>
 
- <address>Eraser: A Dynamic Data Race Detector for Multithreaded Programs
-  Stefan Savage, Michael Burrows, Greg Nelson, Patrick Sobalvarro and Thomas Anderson
-  ACM Transactions on Computer Systems, 15(4):391-411
-  November 1997.
- </address>
+<para>In practice this discipline is far too simplistic,
+and is unusable since it reports many races in some widely used
+and known-correct programming disciplines.  Thrcheck's checking
+therefore incorporates many refinements to this basic idea, and
+can be summarised as follows:</para>
+
+<para>The following thread events are intercepted and monitored:</para>
+
+<itemizedlist>
+ <listitem><para>thread creation and exiting (pthread_create,
+           pthread_join, pthread_exit)</para>
+ </listitem>
+ <listitem>
+  <para>lock acquisition and release (pthread_mutex_lock,
+        pthread_mutex_unlock, and variants)</para>
+ </listitem>
+ <listitem>
+  <para>inter-thread event notifications (pthread_cond_wait,
+        pthread_cond_signal, pthread_cond_broadcast)</para>
+ </listitem>
+</itemizedlist>
+
+<para>Memory allocation and deallocation events are intercepted and
+monitored:</para>
+
+<itemizedlist>
+ <listitem>
+  <para>malloc/new/free/delete and variants</para>
+ </listitem>
+ <listitem>
+  <para>stack allocation and deallocation</para>
+ </listitem>
+</itemizedlist>
+
+<para>All memory accesses are intercepted and monitored.</para>
+
+<para>By observing the above events, Thrcheck can infer certain
+aspects of the program's locking discipline.  Programs which adhere to
+the are considered to be acceptable:
 </para>
 
-<para>We also incorporate significant improvements from this paper:
+<itemizedlist>
+ <listitem>
+  <para>A thread may allocate memory, and write initial values into
+  it, without locking.  That thread is regarded as owning the memory
+  exclusively.</para>
+ </listitem>
+ <listitem>
+  <para>A thread may read and write memory which it owns exclusively,
+  without locking.</para>
+ </listitem>
+ <listitem>
+  <para>Memory which is owned exclusively by one thread may be read by
+  that thread and others without locking.  However, in this situation
+  no thread may do unlocked writes to the memory (except for the owner
+  thread's initializing write).</para>
+ </listitem>
+ <listitem>
+  <para>Memory which is shared between multiple threads, one or more
+  of which writes to it, must be protected by a lock which is
+  correctly acquired and released by all threads accessing the
+  memory.</para>
+ </listitem>
+</itemizedlist>
 
- <address>Runtime Checking of Multithreaded Applications with Visual Threads
-  Jerry J. Harrow, Jr.
-  Proceedings of the 7th International SPIN Workshop on Model Checking of Software
-  Stanford, California, USA
-  August 2000
-  LNCS 1885, pp331--342
-  K. Havelund, J. Penix, and W. Visser, editors.
- </address>
+<para>Any violation of this discipline will cause an error to be reported.
+However, two exemptions apply:</para>
+
+<itemizedlist>
+ <listitem>
+  <para>A thread Y can acquire exclusive ownership of memory
+  previously owned exclusively by a different thread X providing the
+  X's last access and Y's first access are separated by one of the
+  following synchronization events: X creates thread Y, or X uses a
+  condition-variable to signal at Y, and Y is waiting for that event.
+  </para>
+  <para>
+  This refinement allows Thrcheck to correctly track the ownership
+  state of inter-thread buffers used in the worker-thread and
+  worker-thread-pool concurrent programming idioms (styles).
 </para>
+ </listitem>
+ <listitem>
+  <para>Similarly, if Y later joins back to X, memory exclusively
+  owned by Y becomes exclusively owned by X instead.  Also, memory
+  that has been shared only by X and Y becomes exclusively owned by X.
+  More generally, memory that has been shared by X, Y and some
+  arbitrary other set S of threads is re-marked as shared by X and S.
+  Hence, under the right circumstances, memory shared amongst multiple
+  threads, all of which join into just one, can revert to the
+  exclusive ownership state.</para>
+  <para>
+  In effect, each memory location may make arbitrarily many
+  transitions between exclusive and shared ownership.  Furthermore, a
+  different lock may protect the location during each period of shared
+  ownership.  This significantly enhances the flexibility of the
+  algorithm.
+  </para>
+ </listitem>
+</itemizedlist>
+
+<para>The ownership state, accessing thread-set and related lock-set
+for each memory location are tracked at 32-bit granularity.  This keeps
+the memory overhead tolerable, but it means the algorithm is imprecise
+for 16- and 8-bit memory accesses.  Future work may lead to an
+implementation capable of tracking memory at 8-bit granularity
+without excessive space and time overheads.</para>
 
 </sect1>
 
 
-<sect1 id="hg-manual.what-does" xreflabel="What Helgrind Does">
-<title>What Helgrind Does</title>
+<sect1 id="tc-manual.options" xreflabel="Thrcheck Options">
+<title>Thrcheck Options</title>
 
-<para>Basically what Helgrind does is to look for memory
-locations which are accessed by more than one thread.  For each
-such location, Helgrind records which of the program's
-(pthread_mutex_)locks were held by the accessing thread at the
-time of the access.  The hope is to discover that there is indeed
-at least one lock which is used by all threads to protect that
-location.  If no such lock can be found, then there is
-(apparently) no consistent locking strategy being applied for
-that location, and so a possible data race might result.</para>
-
-<para>Helgrind also allows for "thread segment lifetimes".  If
-the execution of two threads cannot overlap -- for example, if
-your main thread waits on another thread with a
-<computeroutput>pthread_join()</computeroutput> operation -- they
-can both access the same variable without holding a lock.</para>
-
-<para>There's a lot of other sophistication in Helgrind, aimed at
-reducing the number of false reports, and at producing useful
-error reports.  We hope to have more documentation one
-day ... </para>
-
-</sect1>
-
-
-
-<sect1 id="hg-manual.options" xreflabel="Helgrind Options">
-<title>Helgrind Options</title>
-
-<para>Helgrind-specific options are:</para>
+<para>Currently there is only one Thrcheck-specific option:</para>
 
 <!-- start of xi:include in the manpage -->
-<variablelist id="hg.opts.list">
+<variablelist id="tc.opts.list">
 
-  <varlistentry id="opt.private-stacks" xreflabel="--private-stacks">
+  <varlistentry id="opt.happens-before" xreflabel="--happens-before">
     <term>
-      <option><![CDATA[--private-stacks=<yes|no> [default: no] ]]></option>
+      <option><![CDATA[--happens-before=none|threads|condvars
+      [default: condvars] ]]></option>
     </term>
     <listitem>
-      <para>Assume thread stacks are used privately.</para>
-    </listitem>
-  </varlistentry>
-
-  <varlistentry id="opt.show-last-access" xreflabel="--show-last-access">
-    <term>
-      <option><![CDATA[--show-last-access=<yes|some|no> [default: no] ]]></option>
-    </term>
-    <listitem>
-      <para>Show location of last word access on error.</para>
+      <para>This option is mostly useful for debugging Thrcheck
+       itself.  It isn't much use to end users and is a bit difficult
+       to explain.
+      </para>
+      <para>Thrcheck always regards locks as the basis for
+       inter-thread synchronisation.  However, by default, before
+       reporting a race error, Thrcheck will also check whether
+       certain other kinds of inter-thread synchronisation events
+       happened.  It may be that if such events took place, then no
+       race really occurred, and so no error needs to be reported.
+       This enables Thrcheck to correctly handle the
+       worker-thread and worker-thread-pool idioms.
+      </para>
+      <para>With <varname>--happens-before=condvars</varname>, both
+       thread creation/joinage, and condition variable
+       signal/broadcast/waits are regarded as sources of
+       synchronisation, and so both the worker-thread and
+       worker-thread-pool idioms are correctly handled.  "Correctly
+       handled" means that Thrcheck will not falsely report race
+       errors for correct uses of these idioms.
+      </para>
+      <para>With <varname>--happens-before=threads</varname>, only
+       thread creation/joinage events are regarded as sources of
+       synchronisation, and so only the worker-thread idiom is
+       correctly handled.  The worker-thread-pool is not correctly
+       handled.
+      </para>
+      <para>With <varname>--happens-before=none</varname>, no events
+       (apart, of course, from locking) are regarded as sources of
+       synchronisation.  And so neither the worker-thread nor
+       worker-thread-pool idioms are correctly handled.
+      </para>
+      <para>Changing this setting from the default will increase your
+       false-error rate but give little or no gain.  The only advantage
+       is that <option>--happens-before=threads</option> and 
+       <option>--happens-before=none</option> should make Thrcheck
+       less and less sensitive to the scheduling of threads, and hence
+       the output more and more repeatable across runs.
+      </para>
     </listitem>
   </varlistentry>
 
 </variablelist>
 <!-- end of xi:include in the manpage -->
+
+</sect1>
+
+
+<sect1 id="tc-manual.otherstuff" xreflabel="Other Stuff">
+<title>Other Stuff</title>
+
+<para>FIXME: this section will contain other stuff that it is
+important to document:</para>
+
+<itemizedlist>
+ <listitem><para>LOCK prefixes on x86/amd64
+                 instructions</para></listitem>
+ <listitem><para>Reader-writer locks, and semaphores?
+                 </para></listitem>
+ <listitem><para>Other stuff I forgot?
+                 </para></listitem>
+</itemizedlist>
 
 </sect1>
 
