@@ -1535,12 +1535,14 @@ static void ms_fini(Int exit_status)
    if (VG_(clo_verbosity) > 1) {
       tl_assert(n_xpts > 0);  // always have alloc_xpt
       VG_(message)(Vg_DebugMsg, "    allocs:      %u", n_allocs);
-      VG_(message)(Vg_DebugMsg, "zeroallocs:      %u (%d%%)", n_zero_allocs,
-         n_zero_allocs * 100 / n_allocs );
+      if (n_allocs)
+         VG_(message)(Vg_DebugMsg, "zeroallocs:      %u (%d%%)", n_zero_allocs,
+            n_zero_allocs * 100 / n_allocs );
       VG_(message)(Vg_DebugMsg, "     frees:      %u", n_frees);
       VG_(message)(Vg_DebugMsg, "      XPts:      %u", n_xpts);
-      VG_(message)(Vg_DebugMsg, "  top-XPts:      %u (%d%%)",
-         alloc_xpt->n_children, alloc_xpt->n_children * 100 / n_xpts);
+      if (n_xpts) 
+         VG_(message)(Vg_DebugMsg, "  top-XPts:      %u (%d%%)",
+            alloc_xpt->n_children, alloc_xpt->n_children * 100 / n_xpts);
       VG_(message)(Vg_DebugMsg, "dup'd XPts:      %u", n_dupd_xpts);
       VG_(message)(Vg_DebugMsg, "dup'd/freed XPts:%u", n_dupd_xpts_freed);
       VG_(message)(Vg_DebugMsg, "c-reallocs:      %u", n_children_reallocs);
