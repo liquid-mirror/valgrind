@@ -118,8 +118,7 @@
    threading errors (glibc goes off and does tons of crap w.r.t.
    locales etc) */
 static char* lame_strerror ( long err )
-{
-   switch (err) {
+{   switch (err) {
       case EPERM:       return "EPERM: Operation not permitted";
       case ENOENT:      return "ENOENT: No such file or directory";
       case ESRCH:       return "ESRCH: No such process";
@@ -136,6 +135,7 @@ static char* lame_strerror ( long err )
       case EOVERFLOW:   return "EOVERFLOW: Value too large "
                                "for defined data type";
       case EBUSY:       return "EBUSY: Device or resource busy";
+      case ETIMEDOUT:   return "ETIMEDOUT: Connection timed out";
       default:          return "tc_intercepts.c: lame_strerror(): "
                                "unhandled case -- please fix me!";
    }
