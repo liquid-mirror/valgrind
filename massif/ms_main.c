@@ -55,8 +55,7 @@
 // #3: in-between
 // - check every malloc, but not every new_mem_stack
 //
-// Separate content from presentation by dumping all results to a file and
-// then post-processing with a separate program, a la Cachegrind?
+// Dumping the results to file:
 // - work out the file format (Josef wants Callgrind format, Donna wants
 //   XML, Nick wants something easy to read in Perl)
 // - allow truncation of long fnnames if the exact line number is
@@ -89,6 +88,8 @@
 //   - better sanity-checking should help this greatly
 // 143062  cra     massif crashes on app exit with signal 8 SIGFPE
 //   - occurs with no allocations -- ensure that case works
+// 144453  XXX
+// 146456  XXX
 //
 // Michael Meeks:
 // - wants an interactive way to request a dump (callgrind_control-style)
@@ -110,6 +111,7 @@
 //     start-up and our first use of it.  Could normalise versus our first
 //     use...
 //   - could conceivably remove XPts that have their szB reduced to zero.
+//   - allow the output file name to be changed
 //
 // Docs:
 // - need to explain that --alloc-fn changed slightly -- now if an entry
@@ -321,23 +323,12 @@ static UInt n_fake_snapshots     = 0;
 //--- Globals                                              ---//
 //------------------------------------------------------------//
 
-#define FILENAME_LEN    256
-
 #define P               VG_(printf)
-
-#define SPRINTF(zz_buf, fmt, args...) \
-   do { Int len = VG_(sprintf)(zz_buf, fmt, ## args); \
-        VG_(write)(fd, (void*)zz_buf, len); \
-   } while (0)
-
-#define BUF_LEN         1024     // general purpose
-static Char buf [BUF_LEN];
-static Char buf2[BUF_LEN];
 
 // Make these signed so things are more obvious if they go negative.
 static SSizeT sigstacks_szB = 0;     // Current signal stacks space sum
 static SSizeT heap_szB      = 0;     // Live heap size
-static SSizeT peak_heap_szB = 0;    // XXX: currently unused
+static SSizeT peak_heap_szB = 0;     // XXX: currently unused
 static SSizeT peak_snapshot_total_szB = 0;
 
 static VgHashTable malloc_list  = NULL;   // HP_Chunks
@@ -345,7 +336,7 @@ static VgHashTable malloc_list  = NULL;   // HP_Chunks
 static UInt n_heap_blocks = 0;
 
 // Current directory at startup.
-static Char base_dir[VKI_PATH_MAX];
+static Char base_dir[VKI_PATH_MAX]; // XXX: currently unused
 
 #define MAX_ALLOC_FNS      128     // includes the builtin ones
 
@@ -356,6 +347,12 @@ static Char base_dir[VKI_PATH_MAX];
 //   operator new[](unsigned)
 //   operator new(unsigned, std::nothrow_t const&)
 //   operator new[](unsigned, std::nothrow_t const&)
+// [Dennis Lubert says these are also necessary on AMD64:
+//  "operator new(unsigned long)",
+//  "operator new[](unsigned long)",
+//  "operator new(unsigned long, std::nothrow_t const&)",
+//  "operator new[](unsigned long, std::nothrow_t const&)",
+// ]
 // But someone might be interested in seeing them.  If they're not, they can
 // specify them with --alloc-fn.
 static UInt  n_alloc_fns = 6;
@@ -688,6 +685,9 @@ Int get_IPs( ThreadId tid, Bool is_custom_malloc, Addr ips[], Int max_ips)
       // Filter uninteresting entries out of the stack trace.  n_ips is
       // updated accordingly.
       for (i = n_ips-1; i >= 0; i--) {
+         #define BUF_LEN   1024
+         Char buf[BUF_LEN];
+         
          if (VG_(get_fnname)(ips[i], buf, BUF_LEN)) {
 
             // If it's a main-or-below-main function, we (may) want to
@@ -1388,8 +1388,11 @@ static void pp_snapshot_XPt(XPt* xpt, Int depth, Char* depth_str,
                             Int depth_str_len,
                             SizeT curr_heap_szB, SizeT curr_total_szB)
 {
+   #define BUF_LEN   1024
    Int   i;
-   Char* ip_desc, *perc;
+   Char* perc;
+   Char  ip_desc_array[BUF_LEN];
+   Char* ip_desc = ip_desc_array;
    SizeT printed_children_szB = 0;
    Int   n_sig_children;
    Int   n_insig_children;
@@ -1397,6 +1400,7 @@ static void pp_snapshot_XPt(XPt* xpt, Int depth, Char* depth_str,
 
    // If the XPt has children, check that the sum of all their sizes equals
    // the XPt's size.
+   // XXX: duplicates code from the sanity check?
    if (xpt->n_children > 0) {
       SizeT children_sum_szB = 0;
       for (i = 0; i < xpt->n_children; i++) {
@@ -1425,7 +1429,7 @@ static void pp_snapshot_XPt(XPt* xpt, Int depth, Char* depth_str,
       ip_desc =
          "(heap allocation functions) malloc/new/new[], --alloc-fns, etc.";
    } else {
-      ip_desc = VG_(describe_IP)(xpt->ip-1, buf2, BUF_LEN);
+      ip_desc = VG_(describe_IP)(xpt->ip-1, ip_desc, BUF_LEN);
    }
    perc = make_perc(xpt->curr_szB, curr_total_szB);
    P("%sn%d: %ld %s\n", depth_str, n_child_entries, xpt->curr_szB, ip_desc);
@@ -1490,6 +1494,7 @@ static void pp_snapshot(Snapshot* snapshot, Int snapshot_n)
    }
 }
 
+// XXX: rename
 static void write_detailed_snapshots(void)
 {
    Int i;

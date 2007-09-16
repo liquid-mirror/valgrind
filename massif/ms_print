@@ -118,7 +118,7 @@ my $threshold = 1.0;
 # Input file name
 my $input_file = undef;
 
-# Version number        XXX
+# Version number
 my $version = "XXX";
 
 # Usage message.
@@ -227,33 +227,70 @@ sub get_equals_num_line($)
     return equals_num_line($line, $fieldname);
 }
 
+sub is_significant_XPt($$)
+{
+    my ($xpt_szB, $total_szB) = @_;
+    ($xpt_szB <= $total_szB) or die;
+    return ( $xpt_szB * 100 / $total_szB >= $threshold ? 1 : 0 );
+}
+
 # Forward declaration, because it's recursive.
 sub read_heap_tree($$$$$);
 
+# Return pair:  if the tree was significant, both are zero.  If it was
+# insignificant, the first element is 1 and the second is the number of
+# bytes.
 sub read_heap_tree($$$$$)
 {
-    # We precede this node's line with "$this_prefix.$arrow".  We precede
-    # any children of this node with "$this_prefix$child_midfix$arrow".
+    # Read the line and determine if it is significant.
     my ($print, $this_prefix, $child_midfix, $arrow, $mem_total_B) = @_;
     my $line = get_line();
     (defined $line and $line =~ /^\s*n(\d+):\s*(\d+)(.*)$/)
         or die("Line $.: expected a tree node line, got:\n$line\n");
-    my $n       = $1;
-    my $bytes   = $2;
-    my $details = $3;
-    my $perc    = 100 * $bytes / $mem_total_B;
-    printf("$this_prefix$arrow%05.2f%% (${bytes}B)$details\n", $perc)
-        if $print;
-    for (my $i = 0; $i < $n; $i++) {
-        my $this_prefix2 = $this_prefix . $child_midfix;
-        # If child is the last sibling, the midfix is empty.
-        my $child_midfix2 = ( $i+1 == $n ? "  " : "| " );
-        read_heap_tree($print, $this_prefix2, $child_midfix2, "->",
-            $mem_total_B);
+    my $n_children = $1;
+    my $bytes      = $2;
+    my $details    = $3;
+    my $perc       = 100 * $bytes / $mem_total_B;
+    my $is_significant = is_significant_XPt($bytes, $mem_total_B);
+
+    # We precede this node's line with "$this_prefix.$arrow".  We precede
+    # any children of this node with "$this_prefix$child_midfix$arrow".
+    if ($print && $is_significant) {
+        printf("$this_prefix$arrow%05.2f%% $is_significant(${bytes}B)$details\n", $perc);
     }
-    # If this node has no children, print an extra empty line.
-    if (0 == $n) {
-        print("$this_prefix\n") if $print;
+
+    # Now read all the children.
+    my $n_insig_children = 0;
+    my $total_insig_children_szB = 0;
+    my $this_prefix2 = $this_prefix . $child_midfix;
+    for (my $i = 0; $i < $n_children; $i++) {
+        # If child is the last sibling, the midfix is empty.
+        my $child_midfix2 = ( $i+1 == $n_children ? "  " : "| " );
+        my ($is_child_insignificant, $child_insig_bytes) =
+            read_heap_tree($print, $this_prefix2, $child_midfix2, "->",
+                $mem_total_B);
+        $n_insig_children += $is_child_insignificant;
+        $total_insig_children_szB += $child_insig_bytes;
+    }
+
+    if ($is_significant) {
+        # If this was significant but any children were insignificant, print
+        # an "insignificant" line for them.
+        if ($print && $n_insig_children > 0) {
+            $perc = 100 * $total_insig_children_szB / $mem_total_B;
+            printf("$this_prefix2->%05.2f%% (${total_insig_children_szB}B) ... $n_insig_children insig...\n",
+                $perc);
+            print("$this_prefix2\n");
+        }
+
+        # If this node has no children, print an extra empty line.
+        if ($print && 0 == $n_children) {
+            print("$this_prefix\n");
+        }
+        return (0, 0);
+
+    } else {
+        return (1, $bytes);
     }
 }
 
@@ -343,7 +380,7 @@ sub read_input_file1()
     # Row    0 ([0..GRAPH_X][0]) is the x-axis.
     # Column 0 ([0][0..GRAPH_Y]) is the y-axis.
     # The rest ([1][1]..[GRAPH_X][GRAPH_Y]) is the usable graph area.
-    my $GRAPH_X = 72;
+    my $GRAPH_X = 72;       # Make these command-line options
     my $GRAPH_Y = 20;
     my @graph;
     my $x;
