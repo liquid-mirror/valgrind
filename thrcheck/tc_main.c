@@ -3565,6 +3565,35 @@ static void instrument_mem_access ( IRSB*   bbOut,
 }
 
 
+static void instrument_memory_bus_event ( IRSB* bbOut, IRMBusEvent event )
+{
+   switch (event) {
+      case Imbe_Fence:
+         break; /* not interesting */
+      case Imbe_BusLock:
+      case Imbe_BusUnlock:
+         addStmtToIRSB(
+            bbOut,
+            IRStmt_Dirty(
+               unsafeIRDirty_0_N( 
+                  0/*regparms*/, 
+                  event == Imbe_BusLock ? "evim__bus_lock"
+                                        : "evim__bus_unlock",
+                  VG_(fnptr_to_fnentry)(
+                     event == Imbe_BusLock ? &evim__bus_lock 
+                                           : &evim__bus_unlock 
+                  ),
+                  mkIRExprVec_0() 
+               )
+            )
+         );
+         break;
+      default:
+         tl_assert(0);
+    }
+ }
+
+
 static
 IRSB* tc_instrument ( VgCallbackClosure* closure,
                       IRSB* bbIn,
@@ -3602,10 +3631,13 @@ IRSB* tc_instrument ( VgCallbackClosure* closure,
          case Ist_AbiHint:
          case Ist_Put:
          case Ist_PutI:
-         case Ist_MFence:
          case Ist_IMark:
          case Ist_Exit:
             /* None of these can contain any memory references. */
+            break;
+
+         case Ist_MBE:
+            instrument_memory_bus_event( bbOut, st->Ist.MBE.event );
             break;
 
          case Ist_Store:
@@ -3725,7 +3757,7 @@ Bool tc_handle_client_request ( ThreadId tid, UWord* args, UWord* ret)
          if (0)
          VG_(printf)("SET_MY_PTHREAD_T (tid %d): pthread_t = %p\n", (Int)tid,
                      (void*)args[1]);
-	 map_pthread_t_to_Thread_INIT();
+         map_pthread_t_to_Thread_INIT();
          my_thr = map_threads_maybe_lookup( tid );
          /* This assertion should hold because the map_threads (tid to
             Thread*) binding should have been made at the point of
@@ -3762,7 +3794,7 @@ Bool tc_handle_client_request ( ThreadId tid, UWord* args, UWord* ret)
          if (0)
          VG_(printf)("NOTIFY_JOIN_COMPLETE (tid %d): quitter = %p\n", (Int)tid,
                      (void*)args[1]);
-	 map_pthread_t_to_Thread_INIT();
+         map_pthread_t_to_Thread_INIT();
          found = TC_(lookupFM)( map_pthread_t_to_Thread, 
                                 NULL, (Word*)&thr_q, (Word)args[1] );
           /* Can this fail?  It would mean that our pthread_join
@@ -3824,7 +3856,7 @@ Bool tc_handle_client_request ( ThreadId tid, UWord* args, UWord* ret)
          break;
 
       /* Thread successfully completed pthread_cond_wait, cond=arg[1],
-	 mutex=arg[2] */
+         mutex=arg[2] */
       case _VG_USERREQ__TC_PTHREAD_COND_WAIT_POST:
          evim__TC_PTHREAD_COND_WAIT_POST( tid,
                                           (void*)args[1], (void*)args[2] );
