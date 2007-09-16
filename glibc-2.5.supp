@@ -217,55 +217,82 @@
 ##----------------------------------------------------------------------##
 # Suppressions for the Thrcheck tool
 
+###--- ld.so stuff ---###
 {
-   thrcheck-glibc25-1
+   thrcheck-glibc25-ldso-1
    Thrcheck:Race
    fun:_dl_lookup_symbol_x
    fun:_dl_fixup
    fun:_dl_runtime_resolve
 }
 {
-   thrcheck-glibc25-1.1
+   thrcheck-glibc25-ldso-2
    Thrcheck:Race
    fun:do_lookup_x
    fun:_dl_lookup_symbol_x
    fun:_dl_fixup
 }
 {
-   thrcheck-glibc25-2
+   thrcheck-glibc25-ldso-3
+   Thrcheck:Race
+   fun:_dl_map_object_deps
+   fun:dl_open_worker
+   fun:_dl_catch_error
+}
+{
+   thrcheck-glibc25-ldso-4
+   Thrcheck:Race
+   fun:setup_direct
+   fun:_dl_map_object_deps
+   fun:dl_open_worker
+}
+{
+   thrcheck-glibc25-ldso-5
+   Thrcheck:Race
+   fun:_dl_map_object_from_fd
+   fun:_dl_map_object
+   fun:dl_open_worker
+}
+{
+   thrcheck-glibc25-ldso-6
+   Thrcheck:Race
+   fun:_dl_map_object
+   fun:dl_open_worker
+   fun:_dl_catch_error
+}
+
+###--- pthread_join ---###
+{
+   thrcheck-glibc25-pthjoin-1
    Thrcheck:Race
    fun:pthread_join
    fun:pthread_join
 }
 {
-   thrcheck-glibc25-3
+   thrcheck-glibc25-pthjoin-2
    Thrcheck:Race
    fun:__free_tcb
    fun:pthread_join
    fun:pthread_join
 }
+
+###--- IO_file ---###
 {
-   thrcheck-glibc25-4
+   thrcheck-glibc25-IOfile-1
    Thrcheck:Race
    fun:_IO_file_xsputn*
    fun:vfprintf
    fun:*printf
 }
 {
-   thrcheck-glibc25-5
+   thrcheck-glibc25-IOfile-2
    Thrcheck:Race
    fun:_IO_file_overflow*
    fun:_IO_file_xsputn*
    fun:*printf
 }
 {
-   thrcheck-glibc25-6
-   Thrcheck:Race
-   fun:vfprintf
-   fun:printf
-}
-{
-   thrcheck-glibc25-7
+   thrcheck-glibc25-IOfile-3
    Thrcheck:Race
    fun:new_do_write
    fun:_IO_do_write*
@@ -273,54 +300,76 @@
    fun:*printf
 }
 {
-   thrcheck-glibc25-7a
+   thrcheck-glibc25-IOfile-4
    Thrcheck:Race
    fun:new_do_write
    fun:_IO_file_xsputn*
    fun:*printf
 }
 {
-   thrcheck-glibc25-8
+   thrcheck-glibc25-IOfile-5
    Thrcheck:Race
    fun:new_do_write
    fun:_IO_do_write*
    fun:_IO_file_overflow*
    fun:_IO_file_xsputn*
 }
+
+###--- thread creation ---###
 {
-   thrcheck-glibc25-9
+   thrcheck-glibc25-creation-1
    Thrcheck:Race
    fun:start_thread
    fun:clone
 }
+
+###--- thread exit ---###
 {
-   thrcheck-glibc25-10
+   thrcheck-glibc25-exit-1
    Thrcheck:Race
    fun:_dl_fini
    fun:exit
 }
 
+###--- pthread_mutex_lock ---###
 {
-   thrcheck-wrappers-glibc-mutex_lock-1
+   thrcheck-glibc25-pthmxlock-1
    Thrcheck:Race
    fun:pthread_mutex_lock
    fun:pthread_mutex_lock
 }
-
 {
-   thrcheck-wrappers-glibc-create-1
+   thrcheck-glibc25-pthmxlock-2
+   Thrcheck:Race
+   fun:__lll_mutex_lock_wait
+   fun:pthread_mutex_lock
+}
+
+###--- pthread_mutex_destroy ---###
+{
+   thrcheck-glibc25-pthmxlock-2
+   Thrcheck:Race
+   fun:pthread_mutex_destroy
+   fun:pthread_mutex_destroy
+}
+
+###--- pthread_create ---###
+{
+   thrcheck-glibc25-pthcreate-1
    Thrcheck:Race
    fun:pthread_create@@GLIBC_*
    fun:pthread_create@*
 }
 {
-   thrcheck-wrappers-glibc-create-2
+   thrcheck-glibc25-pthcreate-2
    Thrcheck:Race
    fun:do_clone
    fun:pthread_create@@GLIBC_*
    fun:pthread_create@*
 }
 
+###--- pthread_cond_signal ---###
+#
 # This is very ugly.  It is needed to suppress errors inside 
 # NPTL's pthread_cond_signal.  Why only one stack frame -- 
 # at least we should see the wrapper calling the real function,
@@ -329,37 +378,116 @@
 # stack frame.  Therefore it's only one level of unwinding before
 # we're back out in user code rather than the 2 levels you'd expect.
 {
-   thrcheck-wrappers-glibc-cond_sig-1
+   thrcheck-glibc25-condsig-1
    Thrcheck:Race
    fun:pthread_cond_signal@@GLIBC_2.3.2
 }
 
+###--- pthread_cond_broadcast ---###
 # ditto
 {
-   thrcheck-wrappers-glibc-cond_wait-1
+   thrcheck-glibc25-condbcast-1
+   Thrcheck:Race
+   fun:pthread_cond_broadcast@@GLIBC_2.3.2
+}
+
+###--- pthread_cond_wait ---###
+# ditto
+{
+   thrcheck-glibc25-pthcondwait-1
    Thrcheck:Race
    fun:pthread_cond_wait@@GLIBC_2.3.2
 }
-
-# ditto
 {
-   thrcheck-wrappers-glibc-mutex_trylock-1
-   Thrcheck:Race
-   fun:pthread_mutex_trylock
-}
-
-
-{
-   thrcheck-wrappers-glibc-cond_wait-1
+   thrcheck-glibc25-pthcondwait-2
    Thrcheck:Race
    fun:pthread_cond_wait@@GLIBC_*
    fun:pthread_cond_wait*
 }
 
+###--- pthread_mutex_trylock ---###
+# ditto
 {
-   thrcheck-wrappers-1000
+   thrcheck-glibc25-pthmxtrylock-1
+   Thrcheck:Race
+   fun:pthread_mutex_trylock
+}
+
+###--- pthread_cond_timedwait ---###
+{
+   thrcheck-glibc25-pthmxtimedwait-1
+   Thrcheck:Race
+   fun:pthread_cond_timedwait@@GLIBC_*
+   fun:pthread_cond_timedwait*
+}
+{
+   thrcheck-glibc25-pthmxtimedwait-2
+   Thrcheck:Race
+   fun:__lll_mutex_lock_wait
+   fun:pthread_cond_timedwait@@GLIBC_*
+   fun:pthread_cond_timedwait*
+}
+
+###--- libpthread internal stuff ---###
+{
+   thrcheck-glibc25-libpthread-1
    Thrcheck:Race
    fun:__pthread_mutex_unlock_usercnt
    fun:pthread_mutex_unlock
    fun:pthread_mutex_unlock
+}
+{
+   thrcheck-glibc25-libpthread-2
+   Thrcheck:Race
+   fun:__lll_mutex_unlock_wake
+   fun:_L_mutex_unlock_*
+   fun:__pthread_mutex_unlock_usercnt
+}
+{
+   thrcheck-glibc25-libpthread-3
+   Thrcheck:Race
+   fun:__lll_mutex_lock_wait
+   fun:_L_mutex_lock_*
+   fun:start_thread
+}
+{
+   thrcheck-glibc25-libpthread-4
+   Thrcheck:Race
+   fun:__lll_mutex_lock_wait
+   fun:_L_mutex_lock_*
+   fun:pthread_mutex_lock
+}
+{
+   thrcheck-glibc25-libpthread-5
+   Thrcheck:Race
+   fun:mythread_wrapper
+   fun:start_thread
+}
+{
+   thrcheck-glibc25-libpthread-6
+   Thrcheck:Race
+   fun:__deallocate_stack
+   fun:start_thread
+}
+{
+   thrcheck-glibc25-libpthread-7
+   Thrcheck:Race
+   fun:__deallocate_stack
+   fun:__free_tcb
+   fun:start_thread
+}
+{
+   thrcheck-glibc25-libpthread-8
+   Thrcheck:Race
+   fun:__deallocate_stack
+   fun:pthread_join
+   fun:pthread_join
+}
+
+###--- fork ---###
+{
+   thrcheck-glibc25-fork-1
+   Thrcheck:Race
+   fun:__reclaim_stacks
+   fun:fork
 }
