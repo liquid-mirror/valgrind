@@ -1492,8 +1492,7 @@ static void pp_snapshot(Snapshot* snapshot, Int snapshot_n)
    P("#--------------------------------\n");
    P("snapshot=%d\n", snapshot_n);
    P("#--------------------------------\n");
-   // XXX: shouldn't print 'time_ms' now that time can be measured in bytes.
-   P("time_ms=%lu\n",          snapshot->time);
+   P("time=%lu\n",             snapshot->time);
    P("mem_total_B=%lu\n",      snapshot->total_szB);
    P("mem_heap_B=%lu\n",       snapshot->heap_szB);
    P("mem_heap_admin_B=%lu\n", snapshot->heap_admin_szB);
@@ -1540,6 +1539,10 @@ static void write_detailed_snapshots(void)
    }
    P("\n");
 
+   P("time_unit: ");
+   if      (clo_time_unit == TimeMS) P("ms\n");
+   else if (clo_time_unit == TimeB)  P("B\n");
+   else                              tl_assert2(0, "bad --time-unit value");
 
    for (i = 0; i < next_snapshot; i++) {
       Snapshot* snapshot = & snapshots[i];

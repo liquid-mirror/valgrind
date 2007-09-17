@@ -111,6 +111,9 @@ use strict;
 # Command line of profiled program.
 my $cmd;
 
+# Time unit used in profile.
+my $time_unit;
+
 # Threshold dictating what percentage an entry must represent for us to
 # bother showing it.
 my $threshold = 1.0;
@@ -308,7 +311,7 @@ sub read_input_file1()
 {
     my $desc = "";              # Concatenated description lines.
     my @snapshot_nums = ();
-    my @time_mss      = ();
+    my @times         = ();
     my @mem_total_Bs  = ();
     my @is_detaileds  = ();
     my $peak_mem_total_szB = 0;
@@ -327,15 +330,22 @@ sub read_input_file1()
     }
 
     # Read "cmd:" line (Nb: will already be in $line from "desc:" loop above).
-    ($line =~ /^cmd:\s*(.*)$/) or die("Line $.: missing command line\n");
+    ($line =~ /^cmd:\s*(.*)$/) or
+        die("Line $.: missing 'cmd' line\n");
     $cmd = $1;
+
+    # Read "time_unit:" line.
+    $line = get_line();
+    ($line =~ /^time_unit:\s*(.*)$/) or
+        die("Line $.: missing 'time_unit' line\n");
+    $time_unit = $1;
 
     # Read body of input file.
     $line = get_line();
     while (defined $line) {
         # XXX: equals_num_line vs get_equals_num_line is ugly
         my $snapshot_num     =     equals_num_line($line, "snapshot");
-        my $time_ms          = get_equals_num_line("time_ms");
+        my $time             = get_equals_num_line("time");
         my $mem_total_B      = get_equals_num_line("mem_total_B");
         my $mem_heap_B       = get_equals_num_line("mem_heap_B");
         my $mem_heap_admin_B = get_equals_num_line("mem_heap_admin_B");
@@ -354,7 +364,7 @@ sub read_input_file1()
 
         # Remember the pertinent information
         push(@snapshot_nums, $snapshot_num);
-        push(@time_mss,      $time_ms);
+        push(@times,         $time);
         push(@mem_total_Bs,  $mem_total_B);
         push(@is_detaileds,  ( $heap_tree eq "empty" ? 0 : 1 ));
         $peak_mem_total_szB = $mem_total_B
@@ -391,8 +401,8 @@ sub read_input_file1()
     # before it, and doesn't spill over into the final column.
     my $n_snapshots = scalar(@snapshot_nums);
     ($n_snapshots > 0) or die;
-    my $end_time_ms = $time_mss[$n_snapshots-1] + 1;
-    ($end_time_ms > 0) or die;
+    my $end_time = $times[$n_snapshots-1] + 1;
+    ($end_time > 0) or die;
 
     # Setup graph[][].
     $graph[0][0] = '+';                                     # axes join point
@@ -415,7 +425,7 @@ sub read_input_file1()
         my $per_row_half_thresh_szB = $per_row_full_thresh_szB / 2;
  
         # Work out which column this snapshot belongs to.
-        my $x_pos_frac = ($time_mss[$i] / $end_time_ms) * $GRAPH_X;
+        my $x_pos_frac = ($times[$i] / $end_time) * $GRAPH_X;
         $x = int($x_pos_frac) + 1;    # +1 due to y-axis
  
         # Draw the column only if it's a detailed snapshot, or we don't already
@@ -489,9 +499,8 @@ sub read_input_file1()
     print("\n");
     for (my $i = 0; $i < $n_snapshots; $i++) {
         # XXX: adjust the column widths dynamically
-        # XXX: assuming ms as the time-unit
-        printf("  snapshot %3d: t = %12s ms, size = %12s bytes\n",
-            $snapshot_nums[$i], commify($time_mss[$i]),
+        printf("  snapshot %3d: t = %12s $time_unit, size = %12s bytes\n",
+            $snapshot_nums[$i], commify($times[$i]),
             commify($mem_total_Bs[$i]));
     }
     print("\n");
@@ -520,12 +529,17 @@ sub read_input_file2()
     # Read "cmd:" line (Nb: will already be in $line from "desc:" loop above).
     ($line =~ /^cmd:\s*(.*)$/) or die("Line $.: missing command line\n");
 
+    # Read "time_unit:" line.
+    $line = get_line();
+    ($line =~ /^time_unit:\s*(.*)$/) or
+        die("Line $.: missing 'time_unit' line\n");
+
     # Read body of input file.
     $line = get_line();
     while (defined $line) {
         # XXX: equals_num_line vs get_equals_num_line is ugly
         my $snapshot_num     =     equals_num_line($line, "snapshot");
-        my $time_ms          = get_equals_num_line("time_ms");
+        my $time             = get_equals_num_line("time");
         my $mem_total_B      = get_equals_num_line("mem_total_B");
         my $mem_heap_B       = get_equals_num_line("mem_heap_B");
         my $mem_heap_admin_B = get_equals_num_line("mem_heap_admin_B");
@@ -534,8 +548,8 @@ sub read_input_file2()
 
         # Print snapshot header.
         printf("=================================\n");
-        # XXX: assuming ms as the time-unit
-        printf("== snapshot $snapshot_num (%s ms)\n", commify($time_ms)); 
+        printf("== snapshot $snapshot_num (%s $time_unit)\n",
+            commify($time)); 
         printf("=================================\n");
         printf("Total memory usage: %12s bytes\n", commify($mem_total_B));
         printf("Useful heap usage : %12s bytes\n", commify($mem_heap_B));
