@@ -126,17 +126,15 @@ my $version = "XXX";
 
 # Usage message.
 my $usage = <<END
-usage: ms_print [options]
+usage: ms_print [options] <file>
 
   options for the user, with defaults in [ ], are:
     -h --help             show this message
     -v --version          show version
-    --<pid>               read profile data from massif.<pid>
-    --massif-out-file=<file>   read profile data from <file>
     --threshold=<n>       significance threshold, in percent [$threshold]
 
-  You must use either --<pid> or --massif-out-file exactly once
-  in order that ms_print knows what file to read profile data from.
+  You must use either --<pid> or specify exactly one profile file
+  so that ms_print knows what file to read profile data from.
 
   ms_print is Copyright (C) 2007-2007 Nicholas Nethercote.
   and licensed under the GNU General Public License, version 2.
@@ -153,6 +151,7 @@ my $fancy = '-' x 80 . "\n";
 #-----------------------------------------------------------------------------
 sub process_cmd_line() 
 {
+    my @files;
     for my $arg (@ARGV) { 
 
         # Option handling
@@ -167,33 +166,19 @@ sub process_cmd_line()
                 $threshold = $1;
                 ($1 >= 0 && $1 <= 100) or die($usage);
 
-            # --massif-out-file=<filename>
-            } elsif ($arg =~ /^--massif-out-file=(.*)$/) {
-                if (not defined $input_file) {
-                    $input_file = $1;
-                } else {
-                    die("You may only specify one input file\n" .
-                        "using the --<pid> and --massif-out-file options.\n");
-                }
-
-            # --<pid>
-            } elsif ($arg =~ /^--(\d+)$/) {
-                my $pid = $1;
-                if (not defined $input_file) {
-                    $input_file = "massif.$pid";
-                } else {
-                    die("You may only specify one input file\n" .
-                        "using the --<pid> and --massif-out-file options.\n");
-                }
-
             } else {            # -h and --help fall under this case
                 die($usage);
             }
+        } else {
+            # Not an option.  Remember it as a filename. 
+            push(@files, $arg);
         }
     }
 
-    # Must have chosen an input file
-    if (not defined $input_file) {
+    # Must have chosen exactly one input file.
+    if (scalar @files) {
+        $input_file = $files[0];
+    } else {
         die($usage);
     }
 }
