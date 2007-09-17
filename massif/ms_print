@@ -205,6 +205,7 @@ sub get_line()
 {
     while (my $line = <INPUTFILE>) {
         $line =~ s/#.*$//;          # remove comments
+        $line =~ s/==\d+==.*$//;    # remove Valgrind output lines   XXX
         if ($line !~ /^\s*$/) {
             return $line;           # return $line if non-empty
         }
