@@ -266,7 +266,10 @@ struct _XPt {
 
 typedef
    struct {
-      Int   time_ms;       // Int: must allow -1.
+      // Time is measured either in ms or bytes, depending on the
+      // --time-unit option.  It's a Long because it can get very big with
+      // --time-unit=ms.
+      Long  time;          // Long: must allow -1.
       SizeT total_szB;     // Size of all allocations at that snapshot time.
       SizeT heap_admin_szB;
       SizeT heap_szB;
@@ -330,6 +333,11 @@ static SSizeT sigstacks_szB = 0;     // Current signal stacks space sum
 static SSizeT heap_szB      = 0;     // Live heap size
 static SSizeT peak_heap_szB = 0;     // XXX: currently unused
 static SSizeT peak_snapshot_total_szB = 0;
+
+// Incremented every time memory is allocated/deallocated, by the
+// allocated/deallocated amount.  An alternative unit of program progress to
+// time.
+static ULong  total_allocs_deallocs_szB = 0;
 
 static VgHashTable malloc_list  = NULL;   // HP_Chunks
 
@@ -395,11 +403,14 @@ static Bool is_alloc_fn(Char* fnname)
 
 #define MAX_DEPTH       50
 
+typedef enum { TimeMS, TimeB } TimeUnit;
+
 static Bool clo_heap        = True;
 static UInt clo_heap_admin  = 8;
 static Bool clo_stacks      = True;
 static Bool clo_depth       = 8;
 static UInt clo_threshold   = 100;     // 100 == 1%
+static UInt clo_time_unit   = TimeMS;
 
 static Bool ms_process_cmd_line_option(Char* arg)
 {
@@ -410,6 +421,9 @@ static Bool ms_process_cmd_line_option(Char* arg)
    else VG_BNUM_CLO(arg, "--depth",      clo_depth, 1, MAX_DEPTH)
 
    else VG_NUM_CLO(arg, "--threshold",   clo_threshold)
+
+   else if (VG_CLO_STREQ(arg, "--time-unit=ms")) clo_time_unit = TimeMS;
+   else if (VG_CLO_STREQ(arg, "--time-unit=B"))  clo_time_unit = TimeB;
 
    else if (VG_CLO_STREQN(11, arg, "--alloc-fn=")) {
       VG_(OSetWord_Insert)(alloc_fns, (Word) & arg[11]);
@@ -432,6 +446,8 @@ static void ms_print_usage(void)
 "    --threshold=<n>           significance threshold, in 100ths of a percent\n"
 "                              (eg. <n>=100 shows nodes covering >= 1%% of\n"
 "                               total size, <n>=0 shows all nodes) [100]\n"
+"    --time-unit=ms|B          time unit, milliseconds or bytes\n"
+"                               alloc'd/dealloc'd on the heap [ms]\n"
    );
    VG_(replacement_malloc_print_usage)();
 }
@@ -650,7 +666,7 @@ Int get_IPs( ThreadId tid, Bool is_custom_malloc, Addr ips[], Int max_ips)
    Bool should_hide_below_main     = /*!VG_(clo_show_below_main)*/True;
 
    // We ask for a few more IPs than clo_depth suggests we need.  Then we
-   // remove every entry that is an alloc-fns or above an alloc-fn, and
+   // remove every entry that is an alloc-fn or above an alloc-fn, and
    // remove anything below main-or-below-main functions.  Depending on the
    // circumstances, we may need to redo it all, asking for more IPs.
    // Details:
@@ -710,7 +726,8 @@ Int get_IPs( ThreadId tid, Bool is_custom_malloc, Addr ips[], Int max_ips)
                }
                n_alloc_fns_removed = i+1;
                
-               for (j = 0; j < n_ips; j++) {  // Shuffle the rest down.
+               // Shuffle the rest down.
+               for (j = 0; j < n_ips; j++) {  
                   ips[j] = ips[j + n_alloc_fns_removed]; 
                }
                n_ips -= n_alloc_fns_removed;
@@ -719,7 +736,7 @@ Int get_IPs( ThreadId tid, Bool is_custom_malloc, Addr ips[], Int max_ips)
          }
       }
 
-      // Must be at least one alloc function, unless client used
+      // There must be at least one alloc function, unless client used
       // MALLOCLIKE_BLOCK.
       if (!is_custom_malloc)
          tl_assert2(n_alloc_fns_removed > 0,
@@ -736,7 +753,6 @@ Int get_IPs( ThreadId tid, Bool is_custom_malloc, Addr ips[], Int max_ips)
           enough_IPs_after_filtering)
       {
          return n_ips;
-
       } else {
          n_getXCon_redo++;
       }
@@ -811,8 +827,8 @@ static UInt     next_snapshot = 0;   // Points to where next snapshot will go.
 
 static Bool is_snapshot_in_use(Snapshot* snapshot)
 {
-   if (-1 == snapshot->time_ms) {
-      // If .time_ms looks unused, check everything else is.
+   if (-1 == snapshot->time) {
+      // If .time looks unused, check everything else is.
       tl_assert(snapshot->total_szB      == 0);
       tl_assert(snapshot->heap_admin_szB == 0);
       tl_assert(snapshot->heap_szB       == 0);
@@ -855,7 +871,7 @@ static void sanity_check_snapshots_array(void)
 static void clear_snapshot(Snapshot* snapshot)
 {
    sanity_check_snapshot(snapshot);
-   snapshot->time_ms        = -1;
+   snapshot->time           = -1;
    snapshot->total_szB      = 0;
    snapshot->heap_admin_szB = 0;
    snapshot->heap_szB       = 0;
@@ -915,7 +931,7 @@ static void halve_snapshots(void)
       FIND_SNAPSHOT(1,   j);
       FIND_SNAPSHOT(j+1, jn);
       while (jn < MAX_N_SNAPSHOTS) {
-         Int timespan = snapshots[jn].time_ms - snapshots[jp].time_ms;
+         Int timespan = snapshots[jn].time - snapshots[jp].time;
          tl_assert(timespan >= 0);
          if (timespan < min_span) {
             min_span = timespan;
@@ -957,18 +973,25 @@ static void halve_snapshots(void)
 // [XXX: is that still true?]
 static void take_snapshot(void)
 {
-   static UInt interval_ms      = 5;
-   static UInt ms_prev_snapshot = 0;
-   static UInt ms_next_snapshot = 0;     // zero allows startup snapshot
+   static UInt time_interval         = 5;
+   static UInt time_of_prev_snapshot = 0;
+   static UInt time_of_next_snapshot = 0;     // zero allows startup snapshot
    static Int  n_snapshots_since_last_detailed = 0;
 
-   Int       time_ms, time_ms_since_prev;
+   Int       time, time_since_prev, time_ms;
    Snapshot* snapshot;
 
+   // For measuring how long the snapshot took (used with -v).
+   time_ms = VG_(read_millisecond_timer)();
+
+   // Get current time, in whatever time unit we're using.
+   if      (clo_time_unit == TimeMS) time = VG_(read_millisecond_timer)();
+   else if (clo_time_unit == TimeB)  time = total_allocs_deallocs_szB;
+   else                              tl_assert2(0, "bad --time-unit value");
+
    // Only do a snapshot if it's time.
-   time_ms            = VG_(read_millisecond_timer)();
-   time_ms_since_prev = time_ms - ms_prev_snapshot;
-   if (time_ms < ms_next_snapshot) {
+   time_since_prev = time - time_of_prev_snapshot;
+   if (time < time_of_next_snapshot) {
       n_fake_snapshots++;
       return;
    }
@@ -1009,7 +1032,7 @@ static void take_snapshot(void)
    }
 
    // Finish writing snapshot ------------------------------------------
-   snapshot->time_ms   = time_ms;
+   snapshot->time = time;
    snapshot->total_szB =
       snapshot->heap_szB + snapshot->heap_admin_szB + snapshot->stacks_szB;
 
@@ -1031,7 +1054,7 @@ static void take_snapshot(void)
    // Halve the entries, if our snapshot table is full
    if (MAX_N_SNAPSHOTS == next_snapshot) {
       halve_snapshots();
-      interval_ms *= 2;
+      time_interval *= 2;
    }
 
    // Take time for next snapshot from now, rather than when this snapshot
@@ -1039,11 +1062,11 @@ static void take_snapshot(void)
    // operation, there's no point doing catch-up snapshots every allocation
    // for a while -- that would just give N snapshots at almost the same time.
    if (VG_(clo_verbosity) > 1) {
-      VG_(message)(Vg_DebugMsg, "snapshot: %d ms (took %d ms)", time_ms, 
+      VG_(message)(Vg_DebugMsg, "snapshot: %d %s (took %d ms)", time_ms, 
                                 VG_(read_millisecond_timer)() - time_ms );
    }
-   ms_prev_snapshot = time_ms;
-   ms_next_snapshot = time_ms + interval_ms;
+   time_of_prev_snapshot = time;
+   time_of_next_snapshot = time + time_interval;
 } 
 
 
@@ -1078,6 +1101,9 @@ static void update_heap_stats(SSizeT heap_szB_delta, Int n_heap_blocks_delta)
    if (heap_szB > peak_heap_szB) {
       peak_heap_szB = heap_szB;
    }
+
+   if (heap_szB_delta < 0) total_allocs_deallocs_szB -= heap_szB_delta;
+   if (heap_szB_delta > 0) total_allocs_deallocs_szB += heap_szB_delta;
 }
 
 static
@@ -1466,7 +1492,8 @@ static void pp_snapshot(Snapshot* snapshot, Int snapshot_n)
    P("#--------------------------------\n");
    P("snapshot=%d\n", snapshot_n);
    P("#--------------------------------\n");
-   P("time_ms=%lu\n",          snapshot->time_ms);
+   // XXX: shouldn't print 'time_ms' now that time can be measured in bytes.
+   P("time_ms=%lu\n",          snapshot->time);
    P("mem_total_B=%lu\n",      snapshot->total_szB);
    P("mem_heap_B=%lu\n",       snapshot->heap_szB);
    P("mem_heap_admin_B=%lu\n", snapshot->heap_admin_szB);

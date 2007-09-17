@@ -257,7 +257,7 @@ sub read_heap_tree($$$$$)
     # We precede this node's line with "$this_prefix.$arrow".  We precede
     # any children of this node with "$this_prefix$child_midfix$arrow".
     if ($print && $is_significant) {
-        printf("$this_prefix$arrow%05.2f%% $is_significant(${bytes}B)$details\n", $perc);
+        printf("$this_prefix$arrow%05.2f%% (${bytes}B)$details\n", $perc);
     }
 
     # Now read all the children.
@@ -488,7 +488,8 @@ sub read_input_file1()
     #-------------------------------------------------------------------------
     print("\n");
     for (my $i = 0; $i < $n_snapshots; $i++) {
-        # XXX adjust the column widths dynamically
+        # XXX: adjust the column widths dynamically
+        # XXX: assuming ms as the time-unit
         printf("  snapshot %3d: t = %12s ms, size = %12s bytes\n",
             $snapshot_nums[$i], commify($time_mss[$i]),
             commify($mem_total_Bs[$i]));
@@ -533,6 +534,7 @@ sub read_input_file2()
 
         # Print snapshot header.
         printf("=================================\n");
+        # XXX: assuming ms as the time-unit
         printf("== snapshot $snapshot_num (%s ms)\n", commify($time_ms)); 
         printf("=================================\n");
         printf("Total memory usage: %12s bytes\n", commify($mem_total_B));
