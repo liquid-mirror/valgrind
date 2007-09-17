@@ -77,7 +77,7 @@
 // 142197  nor     massif tool ignores --massif:alloc-fn parameters in .valg...
 //   - fixed in trunk
 // 142491  nor     Maximise use of alloc_fns array
-//   - addressed, using the patch (with minor changes) from the bug report
+//   - addressed, it's now an OSet and thus unlimited in size
 // 89061   cra     Massif: ms_main.c:485 (get_XCon): Assertion `xpt->max_chi...
 //   - relevant code now gone
 //
@@ -148,6 +148,7 @@
 #include "pub_tool_machine.h"
 #include "pub_tool_mallocfree.h"
 #include "pub_tool_options.h"
+#include "pub_tool_oset.h"
 #include "pub_tool_replacemalloc.h"
 #include "pub_tool_stacktrace.h"
 #include "pub_tool_tooliface.h"
@@ -204,13 +205,13 @@
 // It's a bit of a fake XPt (ie. its 'ip' is zero), and is only used because
 // it makes the code simpler.
 //
-// Any child of 'alloc_xpt' is called a "top-XPt".  The XPts are the bottom
-// of an XTree (leaf nodes) are "bottom-XPTs".  The number of XCons in an
-// XTree is equal to the number of bottom-XPTs in that XTree.
+// Any child of 'alloc_xpt' is called a "top-XPt".  The XPts at the bottom
+// of an XTree (leaf nodes) are "bottom-XPTs".  
 //
 // Each path from a top-XPt to a bottom-XPt through an XTree gives an
 // execution context ("XCon"), ie. a stack trace.  (And sub-paths represent
-// stack sub-traces.)
+// stack sub-traces.)  The number of XCons in an XTree is equal to the
+// number of bottom-XPTs in that XTree.
 //
 //      alloc_xpt       XTrees are bi-directional.
 //        | ^
@@ -222,7 +223,7 @@
 //  child1   child2
 //
 // Sanity checking:  we check snapshot XTrees when they are taken, deleted
-// and printed.  We periodically check the main heap XTree periodically via
+// and printed.  We periodically check the main heap XTree with
 // ms_expensive_sanity_check.
 
 typedef struct _XPt XPt;
@@ -238,9 +239,9 @@ struct _XPt {
    XPt*  parent;           // pointer to parent XPt
 
    // Children.
-   // n_children and max_children are 32-bit integers, not 16-bit, because
-   // a very big program might have more than 65536 allocation points (ie.
-   // top-XPts) -- Konqueror starting up has 1800.
+   // n_children and max_children are 32-bit integers.  16-bit integers
+   // are too small -- a very big program might have more than 65536
+   // allocation points (ie. top-XPts) -- Konqueror starting up has 1800.
    UInt  n_children;       // number of children
    UInt  max_children;     // capacity of children array
    XPt** children;         // pointers to children XPts
@@ -279,8 +280,7 @@ typedef
 // HP_Chunks, XPt 'space' fields are incremented (at allocation) and
 // decremented (at deallocation).
 //
-// Nb: first two fields must match core's VgHashNode. [XXX: is that still
-// true?]
+// Nb: first two fields must match core's VgHashNode.
 typedef
    struct _HP_Chunk {
       struct _HP_Chunk* next;
@@ -340,7 +340,10 @@ static Char base_dir[VKI_PATH_MAX]; // XXX: currently unused
 
 #define MAX_ALLOC_FNS      128     // includes the builtin ones
 
-// First few filled in, rest should be zeroed.  Zero-terminated vector.
+//------------------------------------------------------------//
+//--- Alloc fns                                            ---//
+//------------------------------------------------------------//
+
 // Nb: I used to have the following four C++ global overloadable allocators
 // in alloc_fns:
 //   operator new(unsigned)
@@ -355,15 +358,35 @@ static Char base_dir[VKI_PATH_MAX]; // XXX: currently unused
 // ]
 // But someone might be interested in seeing them.  If they're not, they can
 // specify them with --alloc-fn.
-static UInt  n_alloc_fns = 6;
-static Char* alloc_fns[MAX_ALLOC_FNS] = { 
-   "malloc",
-   "__builtin_new",
-   "__builtin_vec_new",
-   "calloc",
-   "realloc",
-   "memalign",
-};
+
+OSet* alloc_fns;
+
+static void init_alloc_fns(void)
+{
+   // Create the OSet, and add the default elements.
+   alloc_fns = VG_(OSetWord_Create)(VG_(malloc), VG_(free));
+   #define DO(x)  VG_(OSetWord_Insert)(alloc_fns, (Word)x);
+   DO("malloc"           );
+   DO("calloc"           );
+   DO("realloc"          );
+   DO("memalign"         );
+   DO("__builtin_new"    );
+   DO("__builtin_vec_new");
+}
+
+static Bool is_alloc_fn(Char* fnname)
+{
+   Word alloc_fn_word;
+
+   // Nb: It's a linear search through the list, because we're comparing
+   // strings rather than pointers to strings.
+   VG_(OSetWord_ResetIter)(alloc_fns);
+   while ( VG_(OSetWord_Next)(alloc_fns, &alloc_fn_word) ) {
+      if (VG_STREQ(fnname, (Char*)alloc_fn_word))
+         return True;
+   }
+   return False;
+}
 
 
 //------------------------------------------------------------//
@@ -389,21 +412,7 @@ static Bool ms_process_cmd_line_option(Char* arg)
    else VG_NUM_CLO(arg, "--threshold",   clo_threshold)
 
    else if (VG_CLO_STREQN(11, arg, "--alloc-fn=")) {
-      int i;
-
-      // Check first if the function is already present.
-      for (i = 0; i < n_alloc_fns; i++) {
-         if ( VG_STREQ(alloc_fns[i], & arg[11]) )
-            return True;
-      }
-      // Abort if we reached the limit.
-      if (n_alloc_fns >= MAX_ALLOC_FNS) {
-         VG_(printf)("Too many alloc functions specified, sorry");
-         VG_(err_bad_option)(arg);
-      }
-      // Ok, add the function.
-      alloc_fns[n_alloc_fns] = & arg[11];
-      n_alloc_fns++;
+      VG_(OSetWord_Insert)(alloc_fns, (Word) & arg[11]);
    }
 
    else
@@ -613,27 +622,13 @@ static void sanity_check_XTree(XPt* xpt, XPt* parent)
 #define MAX_OVERESTIMATE   50
 #define MAX_IPS            (MAX_DEPTH + MAX_OVERESTIMATE)
 
-static Bool is_alloc_fn(Char* fnname)
-{
-   Int i;
-   for (i = 0; i < n_alloc_fns; i++) {
-      if (VG_STREQ(fnname, alloc_fns[i]))
-         return True;
-   }
-   return False;
-}
-
 // XXX: look at the "(below main)"/"__libc_start_main" mess (m_stacktrace.c
 //      and m_demangle.c).  Don't hard-code "(below main)" in here.
 // [Nb: Josef wants --show-below-main to work for his fn entry/exit tracing]
 static Bool is_main_or_below_main(Char* fnname)
 {
-   Int i;
-
-   for (i = 0; i < n_alloc_fns; i++) {
-      if (VG_STREQ(fnname, "main"))         return True;
-      if (VG_STREQ(fnname, "(below main)")) return True;
-   }
+   if (VG_STREQ(fnname, "main"))         return True;
+   if (VG_STREQ(fnname, "(below main)")) return True;
    return False;
 }
 
@@ -726,7 +721,9 @@ Int get_IPs( ThreadId tid, Bool is_custom_malloc, Addr ips[], Int max_ips)
 
       // Must be at least one alloc function, unless client used
       // MALLOCLIKE_BLOCK.
-      if (!is_custom_malloc) tl_assert(n_alloc_fns_removed > 0);    
+      if (!is_custom_malloc)
+         tl_assert2(n_alloc_fns_removed > 0,
+                    "n_alloc_fns_removed = %s\n", n_alloc_fns_removed);
 
       // Did we get enough IPs after filtering?  If so, redo=False.
       if (n_ips >= clo_depth) {
@@ -1565,11 +1562,15 @@ static void ms_fini(Int exit_status)
 
 static void ms_post_clo_init(void)
 {
-   Int i;
+   Int i = 1;
+   Word alloc_fn_word;
+
    if (VG_(clo_verbosity) > 1) {
       VG_(message)(Vg_DebugMsg, "alloc-fns:");
-      for (i = 0; i < n_alloc_fns; i++) {
-         VG_(message)(Vg_DebugMsg, "  %d: %s", i, alloc_fns[i]);
+      VG_(OSetWord_ResetIter)(alloc_fns);
+      while ( VG_(OSetWord_Next)(alloc_fns, &alloc_fn_word) ) {
+         VG_(message)(Vg_DebugMsg, "  %d: %s", i, (Char*)alloc_fn_word);
+         i++;
       }
    }
 
@@ -1628,6 +1629,9 @@ static void ms_pre_clo_init(void)
       clear_snapshot( & snapshots[i] );
    }
    sanity_check_snapshots_array();
+
+   // Initialise alloc_fns.
+   init_alloc_fns();
 
    tl_assert( VG_(getcwd)(base_dir, VKI_PATH_MAX) );
 }
