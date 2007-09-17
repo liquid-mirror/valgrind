@@ -371,7 +371,7 @@ sub read_input_file1()
     print($fancy);
     print("Command:          $cmd\n");
     print("Data file:        $input_file\n");
-    print($desc);
+    print("Description:      $desc\n");
     print("\n");
 
     #-------------------------------------------------------------------------
@@ -395,18 +395,19 @@ sub read_input_file1()
     ($end_time_ms > 0) or die;
 
     # Setup graph[][].
-    $graph[0][0] = '+';                                       # axes join point
-    for ($x = 1; $x <= $GRAPH_X; $x++) { $graph[$x][0] = '-'; }    # x-axis
-    for ($y = 1; $y <= $GRAPH_Y; $y++) { $graph[0][$y] = '|'; }    # y-axis
-    for ($x = 1; $x <= $GRAPH_X; $x++) {                         # usable area
+    $graph[0][0] = '+';                                     # axes join point
+    for ($x = 1; $x <= $GRAPH_X; $x++) { $graph[$x][0] = '-'; } # x-axis
+    for ($y = 1; $y <= $GRAPH_Y; $y++) { $graph[0][$y] = '|'; } # y-axis
+    for ($x = 1; $x <= $GRAPH_X; $x++) {                        # usable area
        for ($y = 1; $y <= $GRAPH_Y; $y++) {
           $graph[$x][$y] = ' ';
        }
     }
 
+    my $detailed_char = '@';
+    my $normal_char   = ':';
+
     # Write snapshot bars into graph[][].
-    # XXX: many detailed snapshot bars are being overwritten by non-detailed
-    #      bars
     for (my $i = 0; $i < $n_snapshots; $i++) {
  
         # Work out how many bytes each row represents.
@@ -417,23 +418,31 @@ sub read_input_file1()
         my $x_pos_frac = ($time_mss[$i] / $end_time_ms) * $GRAPH_X;
         $x = int($x_pos_frac) + 1;    # +1 due to y-axis
  
-        # Grow this snapshot bar from bottom to top.
-        for ($y = 1; $y <= $GRAPH_Y; $y++) {
-            my $this_row_full_thresh_szB = $y * $per_row_full_thresh_szB;
-            my $this_row_half_thresh_szB =
-                $this_row_full_thresh_szB - $per_row_half_thresh_szB;
- 
-            $graph[$x][$y] = ' ';
-            if ($mem_total_Bs[$i] >= $this_row_half_thresh_szB) {
-                $graph[$x][$y] = '.';
+        # Draw the column only if it's a detailed snapshot, or we don't already
+        # have a detailed snapshot's bar in this column -- we don't want to
+        # overwrite detailed snapshot's bars with non-detailed snapshot's bars.
+        my $should_draw_column = 
+            ($is_detaileds[$i] or $graph[$x][0] ne $detailed_char
+            ? 1 : 0);
+        if ($should_draw_column == 1) {
+            # If it's detailed, mark the x-axis
+            if ($is_detaileds[$i])  {
+               $graph[$x][0] = $detailed_char;
             }
-            if ($mem_total_Bs[$i] >= $this_row_full_thresh_szB) {
-                $graph[$x][$y] = ( $is_detaileds[$i] ? '|' : ':' );
+            # Grow this snapshot bar from bottom to top.
+            for ($y = 1; $y <= $GRAPH_Y; $y++) {
+                my $this_row_full_thresh_szB = $y * $per_row_full_thresh_szB;
+                my $this_row_half_thresh_szB =
+                    $this_row_full_thresh_szB - $per_row_half_thresh_szB;
+     
+                if ($mem_total_Bs[$i] >= $this_row_half_thresh_szB) {
+                    $graph[$x][$y] = '.';
+                } 
+                if ($mem_total_Bs[$i] >= $this_row_full_thresh_szB) {
+                    $graph[$x][$y] = ( $is_detaileds[$i] 
+                                     ? $detailed_char : $normal_char );
+                }
             }
-        }
-        # If it's detailed, mark the x-axis
-        if ($is_detaileds[$i])  {
-           $graph[$x][0] = '|';
         }
     }
 
