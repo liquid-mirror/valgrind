@@ -234,7 +234,7 @@ struct _XPt {
    // Bottom-XPts: space for the precise context.
    // Other XPts:  space of all the descendent bottom-XPts.
    // Nb: this value goes up and down as the program executes.
-   UInt  curr_szB;
+   SizeT curr_szB;
 
    XPt*  parent;           // pointer to parent XPt
 
@@ -598,11 +598,9 @@ static void free_XTree(XPt* xpt)
    n_dupd_xpts_freed++;
 }
 
-// XXX: improve this so that it prints the failing XPt always.
 static void sanity_check_XTree(XPt* xpt, XPt* parent)
 {
    Int i;
-   SizeT children_sum_szB = 0;
 
    tl_assert(xpt != NULL);
 
@@ -615,6 +613,7 @@ static void sanity_check_XTree(XPt* xpt, XPt* parent)
 
    // Check the sum of any children szBs equals the XPt's szB.
    if (xpt->n_children > 0) {
+      SizeT children_sum_szB = 0;
       for (i = 0; i < xpt->n_children; i++) {
          children_sum_szB += xpt->children[i]->curr_szB;
       }
@@ -1389,14 +1388,12 @@ static Char* make_perc(ULong x, ULong y)
 }
 
 // Does the xpt account for >= 1% of total memory used?
-// XXX: make command-line controllable?
 static Bool is_significant_XPt(XPt* xpt, SizeT curr_total_szB)
 {
    // clo_threshold is measured in hundredths of a percent of total size,
    // ie. 10,000ths of total size.  So clo_threshold=100 means that the
    // threshold is 1% of total size.
    tl_assert(xpt->curr_szB <= curr_total_szB);
-   // XXX: overflow danger here...
    return (xpt->curr_szB * 10000 / curr_total_szB >= clo_threshold);
 }
 
@@ -1413,17 +1410,6 @@ static void pp_snapshot_XPt(Int fd, XPt* xpt, Int depth, Char* depth_str,
    Int   n_sig_children;
    Int   n_insig_children;
    Int   n_child_entries;
-
-   // If the XPt has children, check that the sum of all their sizes equals
-   // the XPt's size.
-   // XXX: duplicates code from the sanity check?
-   if (xpt->n_children > 0) {
-      SizeT children_sum_szB = 0;
-      for (i = 0; i < xpt->n_children; i++) {
-         children_sum_szB += xpt->children[i]->curr_szB;
-      }
-      tl_assert(children_sum_szB == xpt->curr_szB);
-   }
 
    // Sort XPt's children by curr_szB (reverse order:  biggest to smallest)
    VG_(ssort)(xpt->children, xpt->n_children, sizeof(XPt*),
@@ -1529,7 +1515,12 @@ static void write_detailed_snapshots(void)
       fd = sres.res;
    }
 
-   // Print description lines.
+   // Print description lines.  Include:
+   // * --heap-admin value
+   // * --depth number
+   // * --stacks value
+   // * --alloc-fn values
+   // * --threshold values
    FP("desc: XXX\n");
 
    // Print "cmd:" line.
