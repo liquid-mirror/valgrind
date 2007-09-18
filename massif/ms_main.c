@@ -1005,7 +1005,7 @@ static void take_snapshot(void)
    if (clo_heap) {
       snapshot->heap_szB = heap_szB;
       // Take a detailed snapshot if it's been long enough since the last one.
-      if (DETAILED_SNAPSHOT_FREQ == n_snapshots_since_last_detailed) {
+      if (DETAILED_SNAPSHOT_FREQ == n_snapshots_since_last_detailed+1) {
          snapshot->alloc_xpt = dup_XTree(alloc_xpt, /*parent*/NULL);
          tl_assert(snapshot->alloc_xpt->curr_szB == heap_szB);
          n_snapshots_since_last_detailed = 0;
