@@ -406,7 +406,7 @@ typedef enum { TimeMS, TimeB } TimeUnit;
 static Bool clo_heap        = True;
 static UInt clo_heap_admin  = 8;
 static Bool clo_stacks      = True;
-static Bool clo_depth       = 8;
+static UInt clo_depth       = 8;
 static UInt clo_threshold   = 100;     // 100 == 1%
 static UInt clo_time_unit   = TimeMS;
 
@@ -1516,12 +1516,16 @@ static void write_detailed_snapshots(void)
    }
 
    // Print description lines.  Include:
-   // * --heap-admin value
-   // * --depth number
-   // * --stacks value
    // * --alloc-fn values
    // * --threshold values
-   FP("desc: XXX\n");
+   FP("desc: Options:   XXX\n");
+//   FP("desc: Options:   Heap profiling %s.  Stack profiling %s\n",
+//         clo_heap ? "on" : "off", clo_stacks ? "on" : "off");
+//   FP("desc: Options:   Heap admin size = %u bytes.\n", clo_heap_admin);
+//   FP("desc: Options:   Max. tree depth = %u calls.\n", clo_depth);
+//   FP("desc: Options:   Significance threshold = %s\n",
+//         make_perc(clo_threshold, 10000));
+//   FP("desc: Allocation functions = ...");
 
    // Print "cmd:" line.
    FP("cmd: ");

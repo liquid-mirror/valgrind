@@ -30,8 +30,6 @@
 use warnings;
 use strict;
 
-# XXX:need to put threshold in the stats at the top of the output
-
 # XXX:
 # - move graph printing stuff into a separate subroutine
 # - implement --threshold 
@@ -364,9 +362,9 @@ sub read_input_file1()
     # Print header
     #-------------------------------------------------------------------------
     print($fancy);
-    print("Command:          $cmd\n");
-    print("Data file:        $input_file\n");
-    print("Description:      $desc\n");
+    print("Command:   $cmd\n");
+    print("Data file: $input_file\n");
+    print("$desc\n");
     print("\n");
 
     #-------------------------------------------------------------------------
