@@ -326,8 +326,6 @@ static UInt n_fake_snapshots     = 0;
 //--- Globals                                              ---//
 //------------------------------------------------------------//
 
-#define P               VG_(printf)
-
 // Make these signed so things are more obvious if they go negative.
 static SSizeT sigstacks_szB = 0;     // Current signal stacks space sum
 static SSizeT heap_szB      = 0;     // Live heap size
@@ -492,14 +490,15 @@ __attribute__((unused))
 static void pp_XPt(XPt* xpt)
 {
    Int i;
-   P("XPt (%p):\n", xpt);
-   P("- ip:         : %p\n", (void*)xpt->ip);
-   P("- curr_szB    : %ld\n", xpt->curr_szB);
-   P("- parent      : %p\n", xpt->parent);
-   P("- n_children  : %d\n", xpt->n_children);
-   P("- max_children: %d\n", xpt->max_children);
+
+   VG_(printf)("XPt (%p):\n", xpt);
+   VG_(printf)("- ip:         : %p\n", (void*)xpt->ip);
+   VG_(printf)("- curr_szB    : %ld\n", xpt->curr_szB);
+   VG_(printf)("- parent      : %p\n", xpt->parent);
+   VG_(printf)("- n_children  : %d\n", xpt->n_children);
+   VG_(printf)("- max_children: %d\n", xpt->max_children);
    for (i = 0; i < xpt->n_children; i++) {
-      P("- children[%2d]: %p\n", i, xpt->children[i]);
+      VG_(printf)("- children[%2d]: %p\n", i, xpt->children[i]);
    }
 }
 
@@ -1361,24 +1360,18 @@ IRSB* ms_instrument ( VgCallbackClosure* closure,
 //--- Writing snapshots                                    ---//
 //------------------------------------------------------------//
 
-#if 0
-static Char* make_filename(Char* dir, Char* suffix)
-{
-   Char* filename;
+// XXX: do the filename properly, eventually
+static Char* massif_out_file = "massif.out";
 
-   /* Block is big enough for dir name + massif.<pid>.<suffix> */
-   filename = VG_(malloc)((VG_(strlen)(dir) + 32)*sizeof(Char));
-   VG_(sprintf)(filename, "%s/massif.%d%s", dir, VG_(getpid)(), suffix);
+#define BUF_SIZE     1024
+Char buf[1024];
 
-   return filename;
-}
-
-static void file_err ( Char* file )
-{
-   VG_(message)(Vg_UserMsg, "error: can't open output file '%s'", file );
-   VG_(message)(Vg_UserMsg, "       ... so profile results will be missing.");
-}
-#endif
+// XXX: implement f{,n}printf in m_libcprint.c eventually, and use it here.
+// Then change Cachegrind to use it too.
+#define FP(format, args...) ({ \
+   VG_(snprintf)(buf, BUF_SIZE, format, ##args); \
+   VG_(write)(fd, (void*)buf, VG_(strlen)(buf)); \
+})
 
 // Nb: uses a static buffer, each call trashes the last string returned.
 static Char* make_perc(ULong x, ULong y)
@@ -1407,7 +1400,7 @@ static Bool is_significant_XPt(XPt* xpt, SizeT curr_total_szB)
    return (xpt->curr_szB * 10000 / curr_total_szB >= clo_threshold);
 }
 
-static void pp_snapshot_XPt(XPt* xpt, Int depth, Char* depth_str,
+static void pp_snapshot_XPt(Int fd, XPt* xpt, Int depth, Char* depth_str,
                             Int depth_str_len,
                             SizeT curr_heap_szB, SizeT curr_total_szB)
 {
@@ -1455,7 +1448,7 @@ static void pp_snapshot_XPt(XPt* xpt, Int depth, Char* depth_str,
       ip_desc = VG_(describe_IP)(xpt->ip-1, ip_desc, BUF_LEN);
    }
    perc = make_perc(xpt->curr_szB, curr_total_szB);
-   P("%sn%d: %ld %s\n", depth_str, n_child_entries, xpt->curr_szB, ip_desc);
+   FP("%sn%d: %ld %s\n", depth_str, n_child_entries, xpt->curr_szB, ip_desc);
 
    // Indent.
    tl_assert(depth+1 < depth_str_len-1);    // -1 for end NUL char
@@ -1465,7 +1458,7 @@ static void pp_snapshot_XPt(XPt* xpt, Int depth, Char* depth_str,
    // Print the children.
    for (i = 0; i < n_sig_children; i++) {
       XPt* child = xpt->children[i];
-      pp_snapshot_XPt(child, depth+1, depth_str, depth_str_len,
+      pp_snapshot_XPt(fd, child, depth+1, depth_str, depth_str_len,
          curr_heap_szB, curr_total_szB);
       printed_children_szB += child->curr_szB;
    }
@@ -1476,7 +1469,7 @@ static void pp_snapshot_XPt(XPt* xpt, Int depth, Char* depth_str,
       Char* other    = ( 0 == i ? "" : "other " );
       SizeT unprinted_children_szB = xpt->curr_szB - printed_children_szB;
       perc = make_perc(unprinted_children_szB, curr_total_szB);
-      P("%sn0: %ld in %d %sinsignificant place%s\n",
+      FP("%sn0: %ld in %d %sinsignificant place%s\n",
          depth_str, unprinted_children_szB, n_insig_children, other, s);
    }
 
@@ -1485,18 +1478,18 @@ static void pp_snapshot_XPt(XPt* xpt, Int depth, Char* depth_str,
    depth_str[depth+1] = '\0';
 }
 
-static void pp_snapshot(Snapshot* snapshot, Int snapshot_n)
+static void pp_snapshot(Int fd, Snapshot* snapshot, Int snapshot_n)
 {
    sanity_check_snapshot(snapshot);
    
-   P("#--------------------------------\n");
-   P("snapshot=%d\n", snapshot_n);
-   P("#--------------------------------\n");
-   P("time=%lu\n",             snapshot->time);
-   P("mem_total_B=%lu\n",      snapshot->total_szB);
-   P("mem_heap_B=%lu\n",       snapshot->heap_szB);
-   P("mem_heap_admin_B=%lu\n", snapshot->heap_admin_szB);
-   P("mem_stacks_B=%lu\n",     snapshot->stacks_szB);
+   FP("#--------------------------------\n");
+   FP("snapshot=%d\n", snapshot_n);
+   FP("#--------------------------------\n");
+   FP("time=%lu\n",             snapshot->time);
+   FP("mem_total_B=%lu\n",      snapshot->total_szB);
+   FP("mem_heap_B=%lu\n",       snapshot->heap_szB);
+   FP("mem_heap_admin_B=%lu\n", snapshot->heap_admin_szB);
+   FP("mem_stacks_B=%lu\n",     snapshot->stacks_szB);
 
    if (is_detailed_snapshot(snapshot)) {
       // Detailed snapshot -- print heap tree
@@ -1505,48 +1498,62 @@ static void pp_snapshot(Snapshot* snapshot, Int snapshot_n)
       Char* depth_str = VG_(malloc)(sizeof(Char) * depth_str_len);
       depth_str[0] = '\0';   // Initialise depth_str to "".
 
-      P("heap_tree=...\n");
-      pp_snapshot_XPt(snapshot->alloc_xpt, 0, depth_str,
+      FP("heap_tree=...\n");
+      pp_snapshot_XPt(fd, snapshot->alloc_xpt, 0, depth_str,
                       depth_str_len, snapshot->heap_szB,
                       snapshot->total_szB);
 
       VG_(free)(depth_str);
 
    } else {
-      P("heap_tree=empty\n");
+      FP("heap_tree=empty\n");
    }
 }
 
-// XXX: rename
 static void write_detailed_snapshots(void)
 {
-   Int i;
+   Int i, fd;
+   SysRes sres;
+
+   sres = VG_(open)(massif_out_file, VKI_O_CREAT|VKI_O_TRUNC|VKI_O_WRONLY,
+                                     VKI_S_IRUSR|VKI_S_IWUSR);
+   if (sres.isError) {
+      // If the file can't be opened for whatever reason (conflict
+      // between multiple cachegrinded processes?), give up now.
+      VG_(message)(Vg_UserMsg,
+         "error: can't open output file '%s'", massif_out_file );
+      VG_(message)(Vg_UserMsg,
+         "       ... so profiling results will be missing.");
+      return;
+   } else {
+      fd = sres.res;
+   }
 
    // Print description lines.
-   P("desc: XXX\n");
+   FP("desc: XXX\n");
 
    // Print "cmd:" line.
-   P("cmd: ");
+   FP("cmd: ");
    if (VG_(args_the_exename)) {
-      P("%s", VG_(args_the_exename));
+      FP("%s", VG_(args_the_exename));
       for (i = 0; i < VG_(sizeXA)( VG_(args_for_client) ); i++) {
          HChar* arg = * (HChar**) VG_(indexXA)( VG_(args_for_client), i );
          if (arg)
-            P(" %s", arg);
+            FP(" %s", arg);
       }
    } else {
-      P(" ???");
+      FP(" ???");
    }
-   P("\n");
+   FP("\n");
 
-   P("time_unit: ");
-   if      (clo_time_unit == TimeMS) P("ms\n");
-   else if (clo_time_unit == TimeB)  P("B\n");
+   FP("time_unit: ");
+   if      (clo_time_unit == TimeMS) FP("ms\n");
+   else if (clo_time_unit == TimeB)  FP("B\n");
    else                              tl_assert2(0, "bad --time-unit value");
 
    for (i = 0; i < next_snapshot; i++) {
       Snapshot* snapshot = & snapshots[i];
-      pp_snapshot(snapshot, i);     // Detailed snapshot!
+      pp_snapshot(fd, snapshot, i);     // Detailed snapshot!
    }
 }
 
