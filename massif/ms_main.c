@@ -30,9 +30,15 @@
 //---------------------------------------------------------------------------
 // XXX:
 //---------------------------------------------------------------------------
-// Next:
+// Todo:
+// - write a good basic test that shows how the tool works, suitable for
+//   documentation
+// - get snapshot frequency right after some have been discarded
 // - Check MALLOCLIKE_BLOCK works, write regtest
+// - clean up structure of ms_print
+// - work out peak-taking
 //
+// Misc:
 // - with --heap=no, --heap-admin still counts.  should it?
 //
 // Work out how to take the peak.
@@ -564,7 +570,8 @@ static Int XPt_revcmp_curr_szB(void* n1, void* n2)
 
 // XXX: taking a full snapshot... could/should just snapshot the significant
 // parts.  Nb: then the amounts wouldn't add up, unless I represented the
-// "other insignificant places" in XPts.
+// "other insignificant places" in XPts.  Might be worthwhile -- there can
+// be a lot of zero nodes in the XTree...
 static XPt* dup_XTree(XPt* xpt, XPt* parent)
 {
    Int  i;
@@ -1418,8 +1425,7 @@ static void pp_snapshot_XPt(Int fd, XPt* xpt, Int depth, Char* depth_str,
               XPt_revcmp_curr_szB);
 
    // How many children are significant?  Also calculate the number of child
-   // entries to print -- there may be a need for an "N other insignificant
-   // places" line.
+   // entries to print -- there may be a need for an "N [other] places" line.
    n_sig_children = 0;
    while (n_sig_children < xpt->n_children &&
           is_significant_XPt(xpt->children[n_sig_children], curr_total_szB)) {
@@ -1451,15 +1457,17 @@ static void pp_snapshot_XPt(Int fd, XPt* xpt, Int depth, Char* depth_str,
       printed_children_szB += child->curr_szB;
    }
 
-   // Print the extra "N [other] insignificant places" line, if necessary.
-   // If there were no significant children, we omit the "other".
+   // Print the extra "N [other] places" line, if any children were
+   // insignificant.  If all children were insignificant, we omit the
+   // "other".
    if (n_insig_children > 0) {
-      Char* s        = ( n_insig_children == 1 ? "" : "s" );
-      Char* other    = ( 0 == n_sig_children ? "" : "other " );
-      SizeT unprinted_children_szB = xpt->curr_szB - printed_children_szB;
-      perc = make_perc(unprinted_children_szB, curr_total_szB);
-      FP("%sn0: %ld in %d %sinsignificant place%s\n",
-         depth_str, unprinted_children_szB, n_insig_children, other, s);
+      Char* s        = ( n_insig_children == 1 ? "," : "s, all" );
+      Char* other    = ( n_insig_children == xpt->n_children ? "" : " other" );
+      SizeT total_insig_children_szB = xpt->curr_szB - printed_children_szB;
+      perc = make_perc(total_insig_children_szB, curr_total_szB);
+      FP("%sn0: %ld in %d%s place%s below massif's threshold (%s)\n",
+         depth_str, total_insig_children_szB, n_insig_children, other, s,
+         make_perc(clo_threshold, 10000));
    }
 
    // Unindent.

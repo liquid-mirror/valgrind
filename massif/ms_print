@@ -32,7 +32,6 @@ use strict;
 
 # XXX:
 # - move graph printing stuff into a separate subroutine
-# - implement --threshold 
 # - merge read_input_file[12]
 
 #----------------------------------------------------------------------------
@@ -160,6 +159,7 @@ sub process_cmd_line()
             if ($arg =~ /^-v$|^--version$/) {
                 die("ms_print-$version\n");
 
+            # XXX: consider making threshold /100, like massif itself
             # --threshold=X (tolerates a trailing '%')
             } elsif ($arg =~ /^--threshold=([\d\.]+)%?$/) {
                 $threshold = $1;
@@ -244,7 +244,9 @@ sub read_heap_tree($$$$$)
     # We precede this node's line with "$this_prefix.$arrow".  We precede
     # any children of this node with "$this_prefix$child_midfix$arrow".
     if ($print && $is_significant) {
-        printf("$this_prefix$arrow%05.2f%% (${bytes}B)$details\n", $perc);
+        # Nb: $details might have '%' in it, so don't embed directly in the
+        # format string.
+        printf("$this_prefix$arrow%05.2f%% (${bytes}B)%s\n", $perc, $details);
     }
 
     # Now read all the children.
@@ -263,22 +265,21 @@ sub read_heap_tree($$$$$)
 
     if ($is_significant) {
         # If this was significant but any children were insignificant, print
-        # the "N [other] insignificant places" line for them.
-        # If all children were insignificant, we omit the "other".
+        # the "N [other] places" line for them.  If all children were
+        # insignificant, we omit the "other".
         if ($print && $n_insig_children > 0) {
             $perc = 100 * $total_insig_children_szB / $mem_total_B;
+            my $s     = ( $n_insig_children == 1 ? "," : "s, all" );
             my $other = ( $n_insig_children == $n_children ? "" : " other" );
-            # XXX: Currently printing "... N insig ..." to distinguish
-            # significance judgments made here versus those made in Massif2
-            # itself.
-            printf("$this_prefix2->%05.2f%% (${total_insig_children_szB}B) ... $n_insig_children$other insig...\n",
-                $perc);
+            printf("%s->%05.2f%% (%dB) in %d%s place%s below ms_print's threshold (%05.2f%%)\n",
+                $this_prefix2, $perc, $total_insig_children_szB,
+                $n_insig_children, $other, $s, $threshold);
             print("$this_prefix2\n");
         }
 
-        # If this node has no children, print an extra empty line.
+        # If this node has no children, print an extra (mostly) empty line.
         if ($print && 0 == $n_children) {
-            print("$this_prefix\n");
+            print("$this_prefix2\n");
         }
         return (0, 0);
 
@@ -367,6 +368,7 @@ sub read_input_file1()
     #-------------------------------------------------------------------------
     # Print header
     #-------------------------------------------------------------------------
+    # XXX: print the massif invocation and the ms_print invocation
     print($fancy_nl);
     print("Command:   $cmd\n");
     print("Data file: $input_file\n");
@@ -488,13 +490,19 @@ sub read_input_file1()
     #-------------------------------------------------------------------------
     print("\n\n");
     print("Number of snapshots: $n_snapshots\n");
-    print(" Detailed snapshots:");
+    print(" Detailed snapshots: [");
+    my $first_detailed = 1;
     for (my $i = 0; $i < $n_snapshots; $i++) {
         if ($is_detaileds[$i]) {
-            print("  $i");
+            if ($first_detailed) {
+                printf("$i");
+                $first_detailed = 0;
+            } else {
+                printf(", $i");
+            }
         }
     }
-    print("\n");
+    print("]\n");
 }
 
 #-----------------------------------------------------------------------------
@@ -575,6 +583,8 @@ sub read_input_file2()
             # Depth in the heap tree.  '1' means the tree should be printed.
             # Then reprint the header.
             read_heap_tree(1, "", "", "", $mem_total_B);
+            # XXX: don't print the header if there are no more snapshots!
+            # (see tests/thresholds.c for an example)
             print($header);
         } else {
             die("Line $.: expected 'empty' or '...' after 'heap_tree='\n");
