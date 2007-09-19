@@ -142,7 +142,8 @@ END
 ;
 
 # Used in various places of output.
-my $fancy = '-' x 80 . "\n";
+my $fancy    = '-' x 80;
+my $fancy_nl = $fancy . "\n";
 
 #-----------------------------------------------------------------------------
 # Argument and option handling
@@ -262,10 +263,15 @@ sub read_heap_tree($$$$$)
 
     if ($is_significant) {
         # If this was significant but any children were insignificant, print
-        # an "insignificant" line for them.
+        # the "N [other] insignificant places" line for them.
+        # If all children were insignificant, we omit the "other".
         if ($print && $n_insig_children > 0) {
             $perc = 100 * $total_insig_children_szB / $mem_total_B;
-            printf("$this_prefix2->%05.2f%% (${total_insig_children_szB}B) ... $n_insig_children insig...\n",
+            my $other = ( $n_insig_children == $n_children ? "" : " other" );
+            # XXX: Currently printing "... N insig ..." to distinguish
+            # significance judgments made here versus those made in Massif2
+            # itself.
+            printf("$this_prefix2->%05.2f%% (${total_insig_children_szB}B) ... $n_insig_children$other insig...\n",
                 $perc);
             print("$this_prefix2\n");
         }
@@ -361,11 +367,12 @@ sub read_input_file1()
     #-------------------------------------------------------------------------
     # Print header
     #-------------------------------------------------------------------------
-    print($fancy);
+    print($fancy_nl);
     print("Command:   $cmd\n");
     print("Data file: $input_file\n");
-    print("$desc\n");
-    print("\n");
+    print("$desc");
+    print($fancy_nl);
+    print("\n\n");
 
     #-------------------------------------------------------------------------
     # Print graph
@@ -477,14 +484,15 @@ sub read_input_file1()
     }
 
     #-------------------------------------------------------------------------
-    # Print graph legend
+    # Print snapshot numbers
     #-------------------------------------------------------------------------
-    print("\n");
+    print("\n\n");
+    print("Number of snapshots: $n_snapshots\n");
+    print(" Detailed snapshots:");
     for (my $i = 0; $i < $n_snapshots; $i++) {
-        # XXX: adjust the column widths dynamically
-        printf("  snapshot %3d: t = %12s $time_unit, size = %12s bytes\n",
-            $snapshot_nums[$i], commify($times[$i]),
-            commify($mem_total_Bs[$i]));
+        if ($is_detaileds[$i]) {
+            print("  $i");
+        }
     }
     print("\n");
 }
@@ -517,6 +525,28 @@ sub read_input_file2()
     ($line =~ /^time_unit:\s*(.*)$/) or
         die("Line $.: missing 'time_unit' line\n");
 
+
+    #-------------------------------------------------------------------------
+    # Print snapshot list header
+    #-------------------------------------------------------------------------
+    my $time_column = sprintf("%14s", "time($time_unit)");
+    my $column_format = "%3s %14s %16s %16s %13s %12s\n";
+    my $header =
+        $fancy_nl .
+        sprintf($column_format
+        ,   "n"
+        ,   $time_column
+        ,   "total(B)"
+        ,   "useful-heap(B)"
+        ,   "admin-heap(B)"
+        ,   "stacks(B)"
+        ) .
+        $fancy_nl;
+    print($header);
+
+    #-------------------------------------------------------------------------
+    # Print snapshot list
+    #-------------------------------------------------------------------------
     # Read body of input file.
     $line = get_line();
     while (defined $line) {
@@ -529,21 +559,23 @@ sub read_input_file2()
         my $mem_stacks_B     = get_equals_num_line("mem_stacks_B");
         my $heap_tree        = get_equals_num_line("heap_tree");
 
-        # Print snapshot header.
-        printf("=================================\n");
-        printf("== snapshot $snapshot_num (%s $time_unit)\n",
-            commify($time)); 
-        printf("=================================\n");
-        printf("Total memory usage: %12s bytes\n", commify($mem_total_B));
-        printf("Useful heap usage : %12s bytes\n", commify($mem_heap_B));
-        printf("Admin  heap usage : %12s bytes\n", commify($mem_heap_admin_B));
-        printf("Stacks usage      : %12s bytes\n", commify($mem_stacks_B));
-
+        # Print snapshot details.
+        printf($column_format,
+        ,   $snapshot_num
+        ,   commify($time)
+        ,   commify($mem_total_B)
+        ,   commify($mem_heap_B)
+        ,   commify($mem_heap_admin_B)
+        ,   commify($mem_stacks_B)
+        );
+        
         if      ($heap_tree eq "empty") {
             # do nothing
         } elsif ($heap_tree eq "...") {
             # Depth in the heap tree.  '1' means the tree should be printed.
+            # Then reprint the header.
             read_heap_tree(1, "", "", "", $mem_total_B);
+            print($header);
         } else {
             die("Line $.: expected 'empty' or '...' after 'heap_tree='\n");
         }

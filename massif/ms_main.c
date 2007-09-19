@@ -33,6 +33,8 @@
 // Next:
 // - Check MALLOCLIKE_BLOCK works, write regtest
 //
+// - with --heap=no, --heap-admin still counts.  should it?
+//
 // Work out how to take the peak.
 // - exact peak, or within a certain percentage?
 // - include the stack?  makes it harder
@@ -1449,10 +1451,11 @@ static void pp_snapshot_XPt(Int fd, XPt* xpt, Int depth, Char* depth_str,
       printed_children_szB += child->curr_szB;
    }
 
-   // Print the extra "N other insignificant places" line, if necessary.
+   // Print the extra "N [other] insignificant places" line, if necessary.
+   // If there were no significant children, we omit the "other".
    if (n_insig_children > 0) {
       Char* s        = ( n_insig_children == 1 ? "" : "s" );
-      Char* other    = ( 0 == i ? "" : "other " );
+      Char* other    = ( 0 == n_sig_children ? "" : "other " );
       SizeT unprinted_children_szB = xpt->curr_szB - printed_children_szB;
       perc = make_perc(unprinted_children_szB, curr_total_szB);
       FP("%sn0: %ld in %d %sinsignificant place%s\n",
