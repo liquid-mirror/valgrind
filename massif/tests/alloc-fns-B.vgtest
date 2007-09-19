@@ -1,0 +1,6 @@
+prog: alloc-fns
+# We deliberately do d1 and d3 as alloc-fns, so we can test calling into the
+# middle of a chain of functions above and below some alloc-fns.
+vgopts: --stacks=no --time-unit=B --heap-admin=0 --alloc-fn=a4 --alloc-fn=b3 --alloc-fn=c2 --alloc-fn=d1 --alloc-fn=d3
+post: perl ../../massif/ms_print massif.out
+cleanup: rm massif.out

@@ -5,6 +5,8 @@ include $(top_srcdir)/Makefile.flags.am
 noinst_SCRIPTS = filter_stderr
 
 EXTRA_DIST = $(noinst_SCRIPTS) \
+	alloc-fns-A.post.exp alloc-fns-A.stderr.exp alloc-fns-A.vgtest \
+	alloc-fns-B.post.exp alloc-fns-B.stderr.exp alloc-fns-B.vgtest \
 	basic.post.exp basic.stderr.exp basic.vgtest \
         basic_malloc.stderr.exp basic_malloc.vgtest \
 	thresholds_0_0.post.exp   thresholds_0_0.stderr.exp   thresholds_0_0.vgtest \
@@ -18,6 +20,7 @@ EXTRA_DIST = $(noinst_SCRIPTS) \
 AM_CFLAGS   = $(WERROR) -Winline -Wall -Wshadow -g $(AM_FLAG_M3264_PRI)
 
 check_PROGRAMS = \
+	alloc-fns \
 	basic \
 	basic_malloc \
 	thresholds
