@@ -33,6 +33,9 @@
 // Todo:
 // - write a good basic test that shows how the tool works, suitable for
 //   documentation
+// - try to write a -v test.  how to filter the Valgrind -v stuff out?  Have
+//   --ms-verbose, which is implied by -v but also able to be turned on
+//   separately?
 // - get snapshot frequency right after some have been discarded
 // - Check MALLOCLIKE_BLOCK works, write regtest
 // - clean up structure of ms_print
@@ -410,6 +413,15 @@ static Bool is_alloc_fn(Char* fnname)
 #define MAX_DEPTH       50
 
 typedef enum { TimeMS, TimeB } TimeUnit;
+
+static Char* TimeUnit_to_string(TimeUnit time_unit)
+{
+   switch (time_unit) {
+   case TimeMS: return "ms";
+   case TimeB:  return "B";
+   default:     tl_assert2(0, "TimeUnit_to_string: unrecognised TimeUnit");
+   }
+}
 
 static Bool clo_heap        = True;
 static UInt clo_heap_admin  = 8;
@@ -1070,6 +1082,7 @@ static void take_snapshot(void)
    // for a while -- that would just give N snapshots at almost the same time.
    if (VG_(clo_verbosity) > 1) {
       VG_(message)(Vg_DebugMsg, "snapshot: %d %s (took %d ms)", time_ms, 
+                                TimeUnit_to_string(clo_time_unit),
                                 VG_(read_millisecond_timer)() - time_ms );
    }
    time_of_prev_snapshot = time;
@@ -1549,10 +1562,7 @@ static void write_detailed_snapshots(void)
    }
    FP("\n");
 
-   FP("time_unit: ");
-   if      (clo_time_unit == TimeMS) FP("ms\n");
-   else if (clo_time_unit == TimeB)  FP("B\n");
-   else                              tl_assert2(0, "bad --time-unit value");
+   FP("time_unit: %s\n", TimeUnit_to_string(clo_time_unit));
 
    for (i = 0; i < next_snapshot; i++) {
       Snapshot* snapshot = & snapshots[i];
