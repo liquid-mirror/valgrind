@@ -1471,9 +1471,9 @@ static void pp_snapshot(Int fd, Snapshot* snapshot, Int snapshot_n)
 {
    sanity_check_snapshot(snapshot);
    
-   FP("#--------------------------------\n");
+   FP("#-----------\n");
    FP("snapshot=%d\n", snapshot_n);
-   FP("#--------------------------------\n");
+   FP("#-----------\n");
    FP("time=%lu\n",             snapshot->time);
    FP("mem_total_B=%lu\n",      snapshot->total_szB);
    FP("mem_heap_B=%lu\n",       snapshot->heap_szB);
