@@ -265,15 +265,13 @@ sub read_heap_tree($$$$$)
 
     if ($is_significant) {
         # If this was significant but any children were insignificant, print
-        # the "N [other] places" line for them.  If all children were
-        # insignificant, we omit the "other".
+        # the "in N places" line for them.
         if ($print && $n_insig_children > 0) {
             $perc = 100 * $total_insig_children_szB / $mem_total_B;
-            my $s     = ( $n_insig_children == 1 ? "," : "s, all" );
-            my $other = ( $n_insig_children == $n_children ? "" : " other" );
-            printf("%s->%05.2f%% (%dB) in %d%s place%s below ms_print's threshold (%05.2f%%)\n",
+            printf("%s->%05.2f%% (%dB) in %d+ places, all below "
+                 . "ms_print's threshold (%05.2f%%)\n",
                 $this_prefix2, $perc, $total_insig_children_szB,
-                $n_insig_children, $other, $s, $threshold);
+                $n_insig_children, $threshold);
             print("$this_prefix2\n");
         }
 

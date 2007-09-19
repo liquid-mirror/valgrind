@@ -48,15 +48,15 @@ Number of snapshots: 10
 | ->60.00% (6000B) 0x80483D3: a7550 (thresholds.c:38)
 | | ->60.00% (6000B) 0x8048448: main (thresholds.c:52)
 | |   
-| ->06.50% (650B) in 3 places, all below massif's threshold (10.00%)
-|   
+| ->06.50% (650B) in 2+ places, all below ms_print's threshold (10.00%)
+| 
 ->20.00% (2000B) 0x804846A: main (thresholds.c:55)
 | 
 ->13.00% (1300B) 0x80483A4: my_malloc2 (thresholds.c:28)
-| ->13.00% (1300B) in 3 places, all below massif's threshold (10.00%)
-|   
-->00.50% (50B) in 1 place, below massif's threshold (10.00%)
-  
+| ->13.00% (1300B) in 2+ places, all below ms_print's threshold (10.00%)
+| 
+->00.50% (50B) in 1+ places, all below ms_print's threshold (10.00%)
+
 --------------------------------------------------------------------------------
   n        time(B)         total(B)   useful-heap(B) admin-heap(B)    stacks(B)
 --------------------------------------------------------------------------------

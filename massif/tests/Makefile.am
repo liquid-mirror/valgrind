@@ -10,6 +10,8 @@ EXTRA_DIST = $(noinst_SCRIPTS) \
 	thresholds_0_0.post.exp   thresholds_0_0.stderr.exp   thresholds_0_0.vgtest \
 	thresholds_0_10.post.exp  thresholds_0_10.stderr.exp  thresholds_0_10.vgtest \
 	thresholds_10_0.post.exp  thresholds_10_0.stderr.exp  thresholds_10_0.vgtest \
+	thresholds_5_0.post.exp   thresholds_5_0.stderr.exp   thresholds_5_0.vgtest \
+	thresholds_5_10.post.exp  thresholds_5_10.stderr.exp  thresholds_5_10.vgtest \
 	thresholds_10_10.post.exp thresholds_10_10.stderr.exp thresholds_10_10.vgtest \
         toobig-allocs.stderr.exp toobig-allocs.vgtest
 
