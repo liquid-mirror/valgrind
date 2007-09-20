@@ -10,16 +10,16 @@ Thread #1 is the program's root thread
 
 Thread #1 unlocked a not-locked lock at 0x........ 
    at 0x........: pthread_mutex_unlock (tc_intercepts.c:423)
-   by 0x........: nearly_main (tc10_rec_lock.c:39)
-   by 0x........: main (tc10_rec_lock.c:44)
+   by 0x........: nearly_main (tc10_rec_lock.c:53)
+   by 0x........: main (tc10_rec_lock.c:58)
   Lock at 0x........ was first observed
    at 0x........: pthread_mutex_init (tc_intercepts.c:299)
-   by 0x........: nearly_main (tc10_rec_lock.c:21)
-   by 0x........: main (tc10_rec_lock.c:44)
+   by 0x........: nearly_main (tc10_rec_lock.c:35)
+   by 0x........: main (tc10_rec_lock.c:58)
 
 Thread #1's call to pthread_mutex_unlock failed with error 1 (EPERM: Operation not permitted)
    at 0x........: pthread_mutex_unlock (tc_intercepts.c:432)
-   by 0x........: nearly_main (tc10_rec_lock.c:39)
-   by 0x........: main (tc10_rec_lock.c:44)
+   by 0x........: nearly_main (tc10_rec_lock.c:53)
+   by 0x........: main (tc10_rec_lock.c:58)
 
 ERROR SUMMARY: 2 errors from 2 contexts (suppressed: 0 from 0)
