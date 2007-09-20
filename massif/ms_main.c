@@ -310,7 +310,7 @@ static UInt n_children_reallocs  = 0;
 
 static UInt n_getXCon_redo       = 0;
 
-static UInt n_halvings           = 0;
+static UInt n_cullings           = 0;
 static UInt n_real_snapshots     = 0;
 static UInt n_fake_snapshots     = 0;
 
@@ -823,17 +823,11 @@ static void update_XCon(XPt* xpt, SSizeT space_delta)
 //--- Snapshots                                            ---//
 //------------------------------------------------------------//
 
-// Snapshots are done so we keep a good number of them.  If MAX_N_SNAPSHOTS
-// equals 200, then it works something like this:
-//   - do a snapshot every 1ms for first 200ms --> 200, all          (200 ms)
-//   - halve (drop half of them)               --> 100, every 2nd
-//   - do a snapshot every 2ms for next 200ms  --> 200, every 2nd    (400 ms)
-//   - halve                                   --> 100, every 4th
-//   - do a snapshot every 4ms for next 400ms  --> 200, every 4th    (800 ms)
-//   - etc.
-//
-// This isn't exactly right, because we actually drop (N/2)-1 when halving,
-// but it shows the basic idea.
+// Snapshots are done in a way so that we always have a reasonable number of
+// them.  We start by taking them quickly.  Once we hit our limit, we cull
+// some (eg. half), and start taking them more slowly.  Once we hit the
+// limit again, we again cull and then take them even more slowly, and so
+// on.
 
 // XXX: if the program is really short, we may get no detailed snapshots...
 // that's bad, do something about it.
@@ -935,12 +929,12 @@ static void delete_snapshot(Snapshot* snapshot)
 // smallest snapshots in one hit, because when a snapshot is removed, its
 // neighbours immediately cover greater timespans.  So it's N^2, but N is
 // small, and it's not done very often.
-static void halve_snapshots(void)
+static void cull_snapshots(void)
 {
    Int       i, jp, j, jn;
    Snapshot* min_snapshot;
 
-   n_halvings++;
+   n_cullings++;
    if (VG_(clo_verbosity) > 1)
       VG_(message)(Vg_DebugMsg, "Halving snapshots...");
 
@@ -1085,7 +1079,7 @@ static void take_snapshot(void)
 
    // Halve the entries, if our snapshot table is full
    if (MAX_N_SNAPSHOTS == next_snapshot_i) {
-      halve_snapshots();
+      cull_snapshots();
       time_interval *= 2;
    }
 
@@ -1613,7 +1607,7 @@ static void ms_fini(Int exit_status)
       VG_(message)(Vg_DebugMsg, "c-reallocs:      %u", n_children_reallocs);
       VG_(message)(Vg_DebugMsg, "fake snapshots:  %u", n_fake_snapshots);
       VG_(message)(Vg_DebugMsg, "real snapshots:  %u", n_real_snapshots);
-      VG_(message)(Vg_DebugMsg, "  halvings:      %u", n_halvings);
+      VG_(message)(Vg_DebugMsg, "cullings:        %u", n_cullings);
       VG_(message)(Vg_DebugMsg, "XCon_redos:      %u", n_getXCon_redo);
    }
 }
