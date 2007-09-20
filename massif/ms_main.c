@@ -208,11 +208,14 @@
 //     in which case it will overwrite the peak snapshot.
 //   - User-requested snapshots:  These are done in response to client
 //     requests.  They are always kept.
-//
 
 ///-----------------------------------------------------------//
 //--- Main types                                           ---//
 //------------------------------------------------------------//
+
+// Used for printing things when clo_verbosity > 1.
+#define VERB(format, args...) \
+   VG_(message)(Vg_DebugMsg, "Massif: " format, ##args)
 
 // An XPt represents an "execution point", ie. a code address.  Each XPt is
 // part of a tree of XPts (an "execution tree", or "XTree").  The details of
@@ -936,7 +939,7 @@ static void cull_snapshots(void)
 
    n_cullings++;
    if (VG_(clo_verbosity) > 1)
-      VG_(message)(Vg_DebugMsg, "Halving snapshots...");
+      VERB("Culling...");
 
    // Sets j to the index of the first not-yet-removed snapshot at or after i
    #define FIND_SNAPSHOT(i, j) \
@@ -991,7 +994,7 @@ static void cull_snapshots(void)
    sanity_check_snapshots_array();
 
    if (VG_(clo_verbosity) > 1)
-      VG_(message)(Vg_DebugMsg, "...done");
+      VERB("...done");
 }
 
 // Take a snapshot.  Note that with bigger depths, snapshots can be slow,
@@ -1088,7 +1091,7 @@ static void take_snapshot(void)
    // operation, there's no point doing catch-up snapshots every allocation
    // for a while -- that would just give N snapshots at almost the same time.
    if (VG_(clo_verbosity) > 1) {
-      VG_(message)(Vg_DebugMsg, "snapshot: %d %s (took %d ms)", time_ms, 
+      VERB("snapshot: %d %s (took %d ms)", time_ms, 
                                 TimeUnit_to_string(clo_time_unit),
                                 VG_(read_millisecond_timer)() - time_ms );
    }
@@ -1593,22 +1596,22 @@ static void ms_fini(Int exit_status)
    // Stats
    if (VG_(clo_verbosity) > 1) {
       tl_assert(n_xpts > 0);  // always have alloc_xpt
-      VG_(message)(Vg_DebugMsg, "    allocs:      %u", n_allocs);
+      VERB("    allocs:      %u", n_allocs);
       if (n_allocs)
-         VG_(message)(Vg_DebugMsg, "zeroallocs:      %u (%d%%)", n_zero_allocs,
+         VERB("zeroallocs:      %u (%d%%)", n_zero_allocs,
             n_zero_allocs * 100 / n_allocs );
-      VG_(message)(Vg_DebugMsg, "     frees:      %u", n_frees);
-      VG_(message)(Vg_DebugMsg, "      XPts:      %u", n_xpts);
+      VERB("     frees:      %u", n_frees);
+      VERB("      XPts:      %u", n_xpts);
       if (n_xpts) 
-         VG_(message)(Vg_DebugMsg, "  top-XPts:      %u (%d%%)",
+         VERB("  top-XPts:      %u (%d%%)",
             alloc_xpt->n_children, alloc_xpt->n_children * 100 / n_xpts);
-      VG_(message)(Vg_DebugMsg, "dup'd XPts:      %u", n_dupd_xpts);
-      VG_(message)(Vg_DebugMsg, "dup'd/freed XPts:%u", n_dupd_xpts_freed);
-      VG_(message)(Vg_DebugMsg, "c-reallocs:      %u", n_children_reallocs);
-      VG_(message)(Vg_DebugMsg, "fake snapshots:  %u", n_fake_snapshots);
-      VG_(message)(Vg_DebugMsg, "real snapshots:  %u", n_real_snapshots);
-      VG_(message)(Vg_DebugMsg, "cullings:        %u", n_cullings);
-      VG_(message)(Vg_DebugMsg, "XCon_redos:      %u", n_getXCon_redo);
+      VERB("dup'd XPts:      %u", n_dupd_xpts);
+      VERB("dup'd/freed XPts:%u", n_dupd_xpts_freed);
+      VERB("c-reallocs:      %u", n_children_reallocs);
+      VERB("fake snapshots:  %u", n_fake_snapshots);
+      VERB("real snapshots:  %u", n_real_snapshots);
+      VERB("cullings:        %u", n_cullings);
+      VERB("XCon_redos:      %u", n_getXCon_redo);
    }
 }
 
@@ -1623,10 +1626,10 @@ static void ms_post_clo_init(void)
    Word alloc_fn_word;
 
    if (VG_(clo_verbosity) > 1) {
-      VG_(message)(Vg_DebugMsg, "alloc-fns:");
+      VERB("alloc-fns:");
       VG_(OSetWord_ResetIter)(alloc_fns);
       while ( VG_(OSetWord_Next)(alloc_fns, &alloc_fn_word) ) {
-         VG_(message)(Vg_DebugMsg, "  %d: %s", i, (Char*)alloc_fn_word);
+         VERB("  %d: %s", i, (Char*)alloc_fn_word);
          i++;
       }
    }
