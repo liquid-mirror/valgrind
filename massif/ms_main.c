@@ -40,6 +40,10 @@
 // - Check MALLOCLIKE_BLOCK works, write regtest
 // - clean up structure of ms_print
 // - work out peak-taking
+// - make everything configurable, eg. max number of snapshots, frequency
+//   of detailed snapshots, etc.
+// - have a test with lots of zero-sized allocations -- makes sure that
+//   timespans of 0 between snapshots is ok...
 //
 // Misc:
 // - with --heap=no, --heap-admin still counts.  should it?
@@ -67,6 +71,9 @@
 // 
 // #3: in-between
 // - check every malloc, but not every new_mem_stack
+//
+// What is the proportion of stack allocs/deallocs vs heap allocs/deallocs?
+// Try with Konqueror.
 //
 // Dumping the results to file:
 // - work out the file format (Josef wants Callgrind format, Donna wants
@@ -260,36 +267,9 @@ struct _XPt {
    XPt** children;         // pointers to children XPts
 };
 
-// Snapshots are done so we keep a good number of them.  If MAX_N_SNAPSHOTS
-// equals 200, then it works something like this:
-//   - do a snapshot every 1ms for first 200ms --> 200, all          (200 ms)
-//   - halve (drop half of them)               --> 100, every 2nd
-//   - do a snapshot every 2ms for next 200ms  --> 200, every 2nd    (400 ms)
-//   - halve                                   --> 100, every 4th
-//   - do a snapshot every 4ms for next 400ms  --> 200, every 4th    (800 ms)
-//   - etc.
-//
-// This isn't exactly right, because we actually drop (N/2)-1 when halving,
-// but it shows the basic idea.
-
-// XXX: if the program is really short, we may get no detailed snapshots...
-// that's bad, do something about it.
-#define MAX_N_SNAPSHOTS        100  // Keep it even, for simplicity
-#define DETAILED_SNAPSHOT_FREQ  10  // Every Nth snapshot will be detailed
-
-typedef
-   struct {
-      // Time is measured either in ms or bytes, depending on the
-      // --time-unit option.  It's a Long because it can get very big with
-      // --time-unit=ms.
-      Long  time;          // Long: must allow -1.
-      SizeT total_szB;     // Size of all allocations at that snapshot time.
-      SizeT heap_admin_szB;
-      SizeT heap_szB;
-      SizeT stacks_szB;
-      XPt*  alloc_xpt;     // Heap XTree root, if a detailed snapshot,
-   }                       // otherwise NULL
-   Snapshot;
+//------------------------------------------------------------//
+//--- Heap blocks                                          ---//
+//------------------------------------------------------------//
 
 // Metadata for heap blocks.  Each one contains a pointer to a bottom-XPt,
 // which is a foothold into the XCon at which it was allocated.  From
@@ -843,6 +823,37 @@ static void update_XCon(XPt* xpt, SSizeT space_delta)
 //--- Snapshots                                            ---//
 //------------------------------------------------------------//
 
+// Snapshots are done so we keep a good number of them.  If MAX_N_SNAPSHOTS
+// equals 200, then it works something like this:
+//   - do a snapshot every 1ms for first 200ms --> 200, all          (200 ms)
+//   - halve (drop half of them)               --> 100, every 2nd
+//   - do a snapshot every 2ms for next 200ms  --> 200, every 2nd    (400 ms)
+//   - halve                                   --> 100, every 4th
+//   - do a snapshot every 4ms for next 400ms  --> 200, every 4th    (800 ms)
+//   - etc.
+//
+// This isn't exactly right, because we actually drop (N/2)-1 when halving,
+// but it shows the basic idea.
+
+// XXX: if the program is really short, we may get no detailed snapshots...
+// that's bad, do something about it.
+#define MAX_N_SNAPSHOTS        100  // Keep it even, for simplicity
+#define DETAILED_SNAPSHOT_FREQ  10  // Every Nth snapshot will be detailed
+
+typedef
+   struct {
+      // Time is measured either in ms or bytes, depending on the
+      // --time-unit option.  It's a Long because it can get very big with
+      // --time-unit=ms.
+      Long  time;          // Long: must allow -1.
+      SizeT total_szB;     // Size of all allocations at that snapshot time.
+      SizeT heap_admin_szB;
+      SizeT heap_szB;
+      SizeT stacks_szB;
+      XPt*  alloc_xpt;     // Heap XTree root, if a detailed snapshot,
+   }                       // otherwise NULL
+   Snapshot;
+
 static Snapshot snapshots[MAX_N_SNAPSHOTS];
 static UInt     next_snapshot_i = 0;   // Points to where next snapshot will go.
 
@@ -904,7 +915,7 @@ static void clear_snapshot(Snapshot* snapshot)
 // present.  
 static void delete_snapshot(Snapshot* snapshot)
 {
-   // Nb: if there's an XTRee, we free it after calling clear_snapshot,
+   // Nb: if there's an XTree, we free it after calling clear_snapshot,
    // because clear_snapshot does a sanity check which includes checking the
    // XTree.
    XPt* tmp_xpt = snapshot->alloc_xpt;
