@@ -277,3 +277,19 @@
    fun:__reclaim_stacks
    fun:fork
 }
+
+###--- OpenSUSE 10.3 specific ---###
+{
+   thrcheck-glibc26-ld261-64bit-1
+   Thrcheck:Race
+   obj:/lib64/ld-2.6.1.so
+   obj:/lib64/ld-2.6.1.so
+   obj:/lib64/ld-2.6.1.so
+}
+{
+   thrcheck-glibc26-ld261-32bit-1
+   Thrcheck:Race
+   obj:/lib/ld-2.6.1.so
+   obj:/lib/ld-2.6.1.so
+   obj:/lib/ld-2.6.1.so
+}
