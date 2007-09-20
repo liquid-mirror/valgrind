@@ -31,6 +31,7 @@
 // XXX:
 //---------------------------------------------------------------------------
 // Todo:
+// - test what happens when alloc-fns cover an entire trace
 // - write a good basic test that shows how the tool works, suitable for
 //   documentation
 // - try to write a -v test.  how to filter the Valgrind -v stuff out?  Have
@@ -184,7 +185,8 @@
 
 // The size of the stacks and heap is tracked.  The heap is tracked in a lot
 // of detail, enough to tell how many bytes each line of code is responsible
-// for, more or less.
+// for, more or less.  The main data structure is a tree representing the
+// call tree beneath all the allocation functions like malloc().
 //
 // "Snapshots" are recordings of the memory usage.  There are two basic
 // kinds:
@@ -209,13 +211,13 @@
 //   - User-requested snapshots:  These are done in response to client
 //     requests.  They are always kept.
 
-///-----------------------------------------------------------//
-//--- Main types                                           ---//
-//------------------------------------------------------------//
-
 // Used for printing things when clo_verbosity > 1.
 #define VERB(format, args...) \
    VG_(message)(Vg_DebugMsg, "Massif: " format, ##args)
+
+///-----------------------------------------------------------//
+//--- XPts                                                 ---//
+//------------------------------------------------------------//
 
 // An XPt represents an "execution point", ie. a code address.  Each XPt is
 // part of a tree of XPts (an "execution tree", or "XTree").  The details of
@@ -1596,15 +1598,15 @@ static void ms_fini(Int exit_status)
    // Stats
    if (VG_(clo_verbosity) > 1) {
       tl_assert(n_xpts > 0);  // always have alloc_xpt
-      VERB("    allocs:      %u", n_allocs);
-      if (n_allocs)
-         VERB("zeroallocs:      %u (%d%%)", n_zero_allocs,
-            n_zero_allocs * 100 / n_allocs );
-      VERB("     frees:      %u", n_frees);
-      VERB("      XPts:      %u", n_xpts);
-      if (n_xpts) 
-         VERB("  top-XPts:      %u (%d%%)",
-            alloc_xpt->n_children, alloc_xpt->n_children * 100 / n_xpts);
+      VERB("allocs:          %u", n_allocs);                     
+      VERB("zeroallocs:      %u (%d%%)",                     
+         n_zero_allocs,                                      
+         ( n_allocs ? n_zero_allocs * 100 / n_allocs : 0 )); 
+      VERB("frees:           %u", n_frees);
+      VERB("XPts:            %u", n_xpts);
+      VERB("top-XPts:        %u (%d%%)",                     
+         alloc_xpt->n_children,                              
+         ( n_xpts ? alloc_xpt->n_children * 100 / n_xpts : 0));
       VERB("dup'd XPts:      %u", n_dupd_xpts);
       VERB("dup'd/freed XPts:%u", n_dupd_xpts_freed);
       VERB("c-reallocs:      %u", n_children_reallocs);
