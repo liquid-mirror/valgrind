@@ -40,8 +40,9 @@
 // - Check MALLOCLIKE_BLOCK works, write regtest
 // - clean up structure of ms_print
 // - work out peak-taking
-// - make everything configurable, eg. max number of snapshots, frequency
-//   of detailed snapshots, etc.
+// - make everything configurable, eg. min/max number of snapshots (which
+//   also determine culling proportion), frequency of detailed snapshots,
+//   etc.
 // - have a test with lots of zero-sized allocations -- makes sure that
 //   timespans of 0 between snapshots is ok...
 //
@@ -923,11 +924,10 @@ static void delete_snapshot(Snapshot* snapshot)
 // time-spans, because that loses the least information.
 //
 // Algorithm for N snapshots:  We find the snapshot representing the smallest
-// timeframe, and remove it.  We repeat this until (N/2)-1 snapshots are gone.
-// (It's (N/2)-1 because we never remove the first and last snapshots.)
-// We have to do this one snapshot at a time, rather than finding the (N/2)-1
+// timeframe, and remove it.  We repeat this until (N/2) snapshots are gone.
+// We have to do this one snapshot at a time, rather than finding the (N/2)
 // smallest snapshots in one hit, because when a snapshot is removed, its
-// neighbours immediately cover greater timespans.  So it's N^2, but N is
+// neighbours immediately cover greater timespans.  So it's O(N^2), but N is
 // small, and it's not done very often.
 static void cull_snapshots(void)
 {
@@ -944,7 +944,7 @@ static void cull_snapshots(void)
            j < MAX_N_SNAPSHOTS && !is_snapshot_in_use(&snapshots[j]); \
            j++) { }
 
-   for (i = 2; i < MAX_N_SNAPSHOTS; i += 2) {
+   for (i = 0; i < MAX_N_SNAPSHOTS/2; i++) {
       // Find the snapshot representing the smallest timespan.  The timespan
       // for snapshot n = d(N-1,N)+d(N,N+1), where d(A,B) is the time between
       // snapshot A and B.  We don't consider the first and last snapshots for
