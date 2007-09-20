@@ -925,6 +925,13 @@ static void delete_snapshot(Snapshot* snapshot)
    }
 }
 
+static void VERB_snapshot(Char* prefix, Int i)
+{
+   Char* suffix = ( is_detailed_snapshot(&snapshots[i]) ? " (detailed)" : "");
+   VERB("%s snapshot %3d (t = %lld %s)%s", prefix, i,
+      snapshots[i].time, TimeUnit_to_string(clo_time_unit), suffix);
+}
+
 // Weed out half the snapshots;  we choose those that represent the smallest
 // time-spans, because that loses the least information.
 //
@@ -937,11 +944,10 @@ static void delete_snapshot(Snapshot* snapshot)
 static void cull_snapshots(void)
 {
    Int       i, jp, j, jn;
-   Snapshot* min_snapshot;
+   Int   n_deleted = 0;
+   Long min_timespan = 0x7fffffff;
 
    n_cullings++;
-   if (VG_(clo_verbosity) > 1)
-      VERB("Culling...");
 
    // Sets j to the index of the first not-yet-removed snapshot at or after i
    #define FIND_SNAPSHOT(i, j) \
@@ -949,23 +955,31 @@ static void cull_snapshots(void)
            j < MAX_N_SNAPSHOTS && !is_snapshot_in_use(&snapshots[j]); \
            j++) { }
 
+   if (VG_(clo_verbosity) > 1)
+      VERB("Culling...");
+
+   // First we remove enough snapshots by clearing them in-place.  Once
+   // that's done, we can slide the remaining ones down.
    for (i = 0; i < MAX_N_SNAPSHOTS/2; i++) {
       // Find the snapshot representing the smallest timespan.  The timespan
       // for snapshot n = d(N-1,N)+d(N,N+1), where d(A,B) is the time between
       // snapshot A and B.  We don't consider the first and last snapshots for
       // removal.
-      Int min_span = 0x7fffffff;
-      Int min_j    = 0;
+      Snapshot* min_snapshot;
+      Int min_j;
 
       // Initial triple: (prev, curr, next) == (jp, j, jn)
+      // Initial min_timespan is the first one.
       jp = 0;
       FIND_SNAPSHOT(1,   j);
       FIND_SNAPSHOT(j+1, jn);
+      min_timespan = snapshots[jn].time - snapshots[jp].time;
+      min_j = j;
       while (jn < MAX_N_SNAPSHOTS) {
          Int timespan = snapshots[jn].time - snapshots[jp].time;
          tl_assert(timespan >= 0);
-         if (timespan < min_span) {
-            min_span = timespan;
+         if (timespan < min_timespan) {
+            min_timespan = timespan;
             min_j    = j;
          }
          // Move on to next triple
@@ -973,15 +987,21 @@ static void cull_snapshots(void)
          j  = jn;
          FIND_SNAPSHOT(jn+1, jn);
       }
-      // We've found the least important snapshot, now delete it.
+      // We've found the least important snapshot, now delete it.  First
+      // print it if necessary.
       min_snapshot = & snapshots[ min_j ];
+      if (VG_(clo_verbosity) > 1) {                          
+         Char buf[64];                                       
+         VG_(snprintf)(buf, 64, "  cull %3d (t-span = %lld)", i, min_timespan); 
+         VERB_snapshot(buf, min_j);                          
+      }          
       delete_snapshot(min_snapshot);
+      n_deleted++;
    }
 
-   // Slide down the remaining snapshots over the removed ones.  The '<=' is
-   // because we are removing on (N/2)-1, rather than N/2.
-   // First set i to point to the first empty slot, and j to the first full
-   // slot after i.  Then slide everything down.
+   // Slide down the remaining snapshots over the removed ones.  First set i
+   // to point to the first empty slot, and j to the first full slot after
+   // i.  Then slide everything down.
    for (i = 0;  is_snapshot_in_use( &snapshots[i] ); i++) { }
    for (j = i; !is_snapshot_in_use( &snapshots[j] ); j++) { }
    for (  ; j < MAX_N_SNAPSHOTS; j++) {
@@ -995,8 +1015,14 @@ static void cull_snapshots(void)
    // Check snapshots array looks ok after changes.
    sanity_check_snapshots_array();
 
-   if (VG_(clo_verbosity) > 1)
-      VERB("...done");
+   // Print remaining snapshots, if necessary.
+   if (VG_(clo_verbosity) > 1) {
+      VERB("Finished culling (%3d of %3d deleted)", n_deleted, MAX_N_SNAPSHOTS);
+      for (i = 0; i < next_snapshot_i; i++) {
+         VERB_snapshot("  new", i);
+      }
+      VERB("New time interval = %ld", min_timespan);
+   }
 }
 
 // Take a snapshot.  Note that with bigger depths, snapshots can be slow,
@@ -1009,11 +1035,9 @@ static void take_snapshot(void)
    static UInt time_of_next_snapshot = 0;     // zero allows startup snapshot
    static Int  n_snapshots_since_last_detailed = 0;
 
-   Int       time, time_since_prev, time_ms;
+   Int       time, time_since_prev;
    Snapshot* snapshot;
-
-   // For measuring how long the snapshot took (used with -v).
-   time_ms = VG_(read_millisecond_timer)();
+   Int       this_snapshot_i = next_snapshot_i;
 
    // Get current time, in whatever time unit we're using.
    if      (clo_time_unit == TimeMS) time = VG_(read_millisecond_timer)();
@@ -1075,31 +1099,27 @@ static void take_snapshot(void)
    // peak snapshot data, the true peak could be between snapshots.
    if (snapshot->total_szB > peak_snapshot_total_szB) {
       peak_snapshot_total_szB = snapshot->total_szB;
-//      VG_(printf)("new peak snapshot total szB = %ld B\n",
-//         peak_snapshot_total_szB);
    }
 
-//   VG_(printf)("heap, admin, stacks: %ld, %ld, %ld B\n",
-//      snapshot_heap_szB, snapshot_heap_admin_szB, snapshot_stacks_szB);
+   if (VG_(clo_verbosity) > 1) {                             
+      VERB_snapshot("took", this_snapshot_i);
+   }   
 
-   // Halve the entries, if our snapshot table is full
+   // Cull the entries, if our snapshot table is full
    if (MAX_N_SNAPSHOTS == next_snapshot_i) {
       cull_snapshots();
       time_interval *= 2;
    }
 
-   // Take time for next snapshot from now, rather than when this snapshot
-   // should have happened.  Because, if there's a big gap due to a kernel
-   // operation, there's no point doing catch-up snapshots every allocation
-   // for a while -- that would just give N snapshots at almost the same time.
-   if (VG_(clo_verbosity) > 1) {
-      VERB("snapshot: %d %s (took %d ms)", time_ms, 
-                                TimeUnit_to_string(clo_time_unit),
-                                VG_(read_millisecond_timer)() - time_ms );
-   }
+   // Take time for the next snapshot from now, rather than when this      
+   // snapshot should have happened.  Because the time_interval is the     
+   // minimum time between snapshots -- if there's a big gap due to a kernel
+   // operation or something, there's no point doing catch-up snapshots    
+   // every allocation for a while -- that would just give N snapshots at  
+   // almost the same time.     
    time_of_prev_snapshot = time;
    time_of_next_snapshot = time + time_interval;
-} 
+}
 
 
 //------------------------------------------------------------//
