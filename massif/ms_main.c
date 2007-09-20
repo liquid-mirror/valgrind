@@ -43,6 +43,8 @@
 //
 // Misc:
 // - with --heap=no, --heap-admin still counts.  should it?
+// - in each XPt, record both bytes and the number of live allocations (or even 
+//   total allocations and total deallocations?)
 //
 // Work out how to take the peak.
 // - exact peak, or within a certain percentage?
@@ -842,7 +844,7 @@ static void update_XCon(XPt* xpt, SSizeT space_delta)
 //------------------------------------------------------------//
 
 static Snapshot snapshots[MAX_N_SNAPSHOTS];
-static UInt     next_snapshot = 0;   // Points to where next snapshot will go.
+static UInt     next_snapshot_i = 0;   // Points to where next snapshot will go.
 
 static Bool is_snapshot_in_use(Snapshot* snapshot)
 {
@@ -877,7 +879,7 @@ static void sanity_check_snapshot(Snapshot* snapshot)
 static void sanity_check_snapshots_array(void)
 {
    Int i;
-   for (i = 0; i < next_snapshot; i++) {
+   for (i = 0; i < next_snapshot_i; i++) {
       tl_assert( is_snapshot_in_use( & snapshots[i] ));
    }
    for (    ; i < MAX_N_SNAPSHOTS; i++) {
@@ -978,7 +980,7 @@ static void halve_snapshots(void)
          clear_snapshot(&snapshots[j]);
       }
    }
-   next_snapshot = i;
+   next_snapshot_i = i;
 
    // Check snapshots array looks ok after changes.
    sanity_check_snapshots_array();
@@ -1017,8 +1019,8 @@ static void take_snapshot(void)
 
    // Right!  We're taking a real snapshot.
    n_real_snapshots++;
-   snapshot = & snapshots[next_snapshot];
-   next_snapshot++;
+   snapshot = & snapshots[next_snapshot_i];
+   next_snapshot_i++;
    tl_assert(!is_snapshot_in_use(snapshot));
 
    // Heap -------------------------------------------------------------
@@ -1071,7 +1073,7 @@ static void take_snapshot(void)
 //      snapshot_heap_szB, snapshot_heap_admin_szB, snapshot_stacks_szB);
 
    // Halve the entries, if our snapshot table is full
-   if (MAX_N_SNAPSHOTS == next_snapshot) {
+   if (MAX_N_SNAPSHOTS == next_snapshot_i) {
       halve_snapshots();
       time_interval *= 2;
    }
@@ -1564,7 +1566,7 @@ static void write_detailed_snapshots(void)
 
    FP("time_unit: %s\n", TimeUnit_to_string(clo_time_unit));
 
-   for (i = 0; i < next_snapshot; i++) {
+   for (i = 0; i < next_snapshot_i; i++) {
       Snapshot* snapshot = & snapshots[i];
       pp_snapshot(fd, snapshot, i);     // Detailed snapshot!
    }
