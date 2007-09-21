@@ -46,8 +46,8 @@
 //
 // Misc:
 // - with --heap=no, --heap-admin still counts.  should it?
-// - in each XPt, record both bytes and the number of live allocations (or even 
-//   total allocations and total deallocations?)
+// - in each XPt, record both bytes and the number of live allocations? (or
+//   even total allocations and total deallocations?)
 //
 // Work out how to take the peak.
 // - exact peak, or within a certain percentage?
@@ -211,83 +211,6 @@
 #define VERB(format, args...) \
    VG_(message)(Vg_DebugMsg, "Massif: " format, ##args)
 
-///-----------------------------------------------------------//
-//--- XPts                                                 ---//
-//------------------------------------------------------------//
-
-// An XPt represents an "execution point", ie. a code address.  Each XPt is
-// part of a tree of XPts (an "execution tree", or "XTree").  The details of
-// the heap are represented by a single XTree.
-//
-// The root of the tree is 'alloc_xpt', which represents all allocation
-// functions, eg:
-// - malloc/calloc/realloc/memalign/new/new[];
-// - user-specified allocation functions (using --alloc-fn);
-// - custom allocation (MALLOCLIKE) points
-// It's a bit of a fake XPt (ie. its 'ip' is zero), and is only used because
-// it makes the code simpler.
-//
-// Any child of 'alloc_xpt' is called a "top-XPt".  The XPts at the bottom
-// of an XTree (leaf nodes) are "bottom-XPTs".  
-//
-// Each path from a top-XPt to a bottom-XPt through an XTree gives an
-// execution context ("XCon"), ie. a stack trace.  (And sub-paths represent
-// stack sub-traces.)  The number of XCons in an XTree is equal to the
-// number of bottom-XPTs in that XTree.
-//
-//      alloc_xpt       XTrees are bi-directional.
-//        | ^
-//        v |
-//     > parent <       Example: if child1() calls parent() and child2()
-//    /    |     \      also calls parent(), and parent() calls malloc(),
-//   |    / \     |     the XTree will look like this.
-//   |   v   v    |
-//  child1   child2
-//
-// Sanity checking:  we check snapshot XTrees when they are taken, deleted
-// and printed.  We periodically check the main heap XTree with
-// ms_expensive_sanity_check.
-
-typedef struct _XPt XPt;
-
-struct _XPt {
-   Addr  ip;              // code address
-
-   // Bottom-XPts: space for the precise context.
-   // Other XPts:  space of all the descendent bottom-XPts.
-   // Nb: this value goes up and down as the program executes.
-   SizeT curr_szB;
-
-   XPt*  parent;           // pointer to parent XPt
-
-   // Children.
-   // n_children and max_children are 32-bit integers.  16-bit integers
-   // are too small -- a very big program might have more than 65536
-   // allocation points (ie. top-XPts) -- Konqueror starting up has 1800.
-   UInt  n_children;       // number of children
-   UInt  max_children;     // capacity of children array
-   XPt** children;         // pointers to children XPts
-};
-
-//------------------------------------------------------------//
-//--- Heap blocks                                          ---//
-//------------------------------------------------------------//
-
-// Metadata for heap blocks.  Each one contains a pointer to a bottom-XPt,
-// which is a foothold into the XCon at which it was allocated.  From
-// HP_Chunks, XPt 'space' fields are incremented (at allocation) and
-// decremented (at deallocation).
-//
-// Nb: first two fields must match core's VgHashNode.
-typedef
-   struct _HP_Chunk {
-      struct _HP_Chunk* next;
-      Addr              data;    // Ptr to actual block
-      SizeT             szB;     // Size requested
-      XPt*              where;   // Where allocated; bottom-XPt
-   }
-   HP_Chunk;
-
 
 //------------------------------------------------------------//
 //--- Statistics                                           ---//
@@ -319,25 +242,21 @@ static UInt n_skipped_snapshots = 0;
 //--- Globals                                              ---//
 //------------------------------------------------------------//
 
-// Make these signed so things are more obvious if they go negative.
+// These are signed so things are more obvious if they go negative.
 static SSizeT sigstacks_szB = 0;     // Current signal stacks space sum
 static SSizeT heap_szB      = 0;     // Live heap size
 static SSizeT peak_heap_szB = 0;     // XXX: currently unused
 static SSizeT peak_snapshot_total_szB = 0;
 
 // Incremented every time memory is allocated/deallocated, by the
-// allocated/deallocated amount.  An alternative unit of program progress to
-// time.
-static ULong  total_allocs_deallocs_szB = 0;
-
-static VgHashTable malloc_list  = NULL;   // HP_Chunks
+// allocated/deallocated amount.  An alternative to milliseconds as a unit
+// of program "time".
+static ULong total_allocs_deallocs_szB = 0;
 
 static UInt n_heap_blocks = 0;
 
 // Current directory at startup.
 static Char base_dir[VKI_PATH_MAX]; // XXX: currently unused
-
-#define MAX_ALLOC_FNS      128     // includes the builtin ones
 
 //------------------------------------------------------------//
 //--- Alloc fns                                            ---//
@@ -459,8 +378,57 @@ static void ms_print_debug_usage(void)
 
 
 //------------------------------------------------------------//
-//--- XPts                                                 ---//
+//--- XPts, XTrees and XCons                               ---//
 //------------------------------------------------------------//
+
+// An XPt represents an "execution point", ie. a code address.  Each XPt is
+// part of a tree of XPts (an "execution tree", or "XTree").  The details of
+// the heap are represented by a single XTree.
+//
+// The root of the tree is 'alloc_xpt', which represents all allocation
+// functions, eg:
+// - malloc/calloc/realloc/memalign/new/new[];
+// - user-specified allocation functions (using --alloc-fn);
+// - custom allocation (MALLOCLIKE) points
+// It's a bit of a fake XPt (ie. its 'ip' is zero), and is only used because
+// it makes the code simpler.
+//
+// Any child of 'alloc_xpt' is called a "top-XPt".  The XPts at the bottom
+// of an XTree (leaf nodes) are "bottom-XPTs".  
+//
+// Each path from a top-XPt to a bottom-XPt through an XTree gives an
+// execution context ("XCon"), ie. a stack trace.  (And sub-paths represent
+// stack sub-traces.)  The number of XCons in an XTree is equal to the
+// number of bottom-XPTs in that XTree.
+//
+//      alloc_xpt       XTrees are bi-directional.
+//        | ^
+//        v |
+//     > parent <       Example: if child1() calls parent() and child2()
+//    /    |     \      also calls parent(), and parent() calls malloc(),
+//   |    / \     |     the XTree will look like this.
+//   |   v   v    |
+//  child1   child2
+
+typedef struct _XPt XPt;
+struct _XPt {
+   Addr  ip;              // code address
+
+   // Bottom-XPts: space for the precise context.
+   // Other XPts:  space of all the descendent bottom-XPts.
+   // Nb: this value goes up and down as the program executes.
+   SizeT curr_szB;
+
+   XPt*  parent;           // pointer to parent XPt
+
+   // Children.
+   // n_children and max_children are 32-bit integers.  16-bit integers
+   // are too small -- a very big program might have more than 65536
+   // allocation points (ie. top-XPts) -- Konqueror starting up has 1800.
+   UInt  n_children;       // number of children
+   UInt  max_children;     // capacity of children array
+   XPt** children;         // pointers to children XPts
+};
 
 // Fake XPt representing all allocation functions like malloc().  Acts as
 // parent node to all top-XPts.
@@ -559,13 +527,14 @@ static Int XPt_revcmp_curr_szB(void* n1, void* n2)
 
 
 //------------------------------------------------------------//
-//--- XTrees                                               ---//
+//--- XTree Operations                                     ---//
 //------------------------------------------------------------//
 
 // XXX: taking a full snapshot... could/should just snapshot the significant
 // parts.  Nb: then the amounts wouldn't add up, unless I represented the
 // "insignificant places" in XPts.  Might be worthwhile -- there can
-// be a lot of zero nodes in the XTree...
+// be a lot of zero nodes in the XTree... (simpler: ignore all zero nodes
+// unless threshold=0?)
 static XPt* dup_XTree(XPt* xpt, XPt* parent)
 {
    Int  i;
@@ -601,6 +570,10 @@ static void free_XTree(XPt* xpt)
    n_dupd_xpts_freed++;
 }
 
+// Sanity checking:  we check snapshot XTrees when they are taken, deleted
+// and printed.  We periodically check the main heap XTree with
+// ms_expensive_sanity_check.
+//
 static void sanity_check_XTree(XPt* xpt, XPt* parent)
 {
    Int i;
@@ -631,7 +604,7 @@ static void sanity_check_XTree(XPt* xpt, XPt* parent)
 
 
 //------------------------------------------------------------//
-//--- XCons                                                ---//
+//--- XCon Operations                                      ---//
 //------------------------------------------------------------//
 
 // This is the limit on the number of removed alloc-fns that can be in a
@@ -1183,6 +1156,23 @@ static Bool ms_expensive_sanity_check ( void )
 //------------------------------------------------------------//
 //--- Heap management                                      ---//
 //------------------------------------------------------------//
+
+// Metadata for heap blocks.  Each one contains a pointer to a bottom-XPt,
+// which is a foothold into the XCon at which it was allocated.  From
+// HP_Chunks, XPt 'space' fields are incremented (at allocation) and
+// decremented (at deallocation).
+//
+// Nb: first two fields must match core's VgHashNode.
+typedef
+   struct _HP_Chunk {
+      struct _HP_Chunk* next;
+      Addr              data;    // Ptr to actual block
+      SizeT             szB;     // Size requested
+      XPt*              where;   // Where allocated; bottom-XPt
+   }
+   HP_Chunk;
+
+static VgHashTable malloc_list  = NULL;   // HP_Chunks
 
 static void update_heap_stats(SSizeT heap_szB_delta, Int n_heap_blocks_delta)
 {
