@@ -133,9 +133,8 @@
 //
 // Other:
 //   - am I recording asked-for sizes or actual rounded-up sizes?
-//   - there's a gap between the ms timer initialisation during Valgrind
-//     start-up and our first use of it.  Could normalise versus our first
-//     use...
+//     [asked-for.  Should probably be actual.  But that might be
+//     confusing...]
 //   - could conceivably remove XPts that have their szB reduced to zero.
 //   - allow the output file name to be changed
 //
@@ -1073,9 +1072,30 @@ static void take_snapshot(void)
    Int       this_snapshot_i = next_snapshot_i;
 
    // Get current time, in whatever time unit we're using.
-   if      (clo_time_unit == TimeMS) time = VG_(read_millisecond_timer)();
-   else if (clo_time_unit == TimeB)  time = total_allocs_deallocs_szB;
-   else                              tl_assert2(0, "bad --time-unit value");
+   if (clo_time_unit == TimeMS) {
+      // Some stuff happens between the millisecond timer being initialised
+      // to zero and us taking our first snapshot.  We determine that time
+      // gap so we can subtract it from all subsequent times so that our
+      // first snapshot is considered to be at t = 0ms.  Unfortunately, a
+      // bunch of symbols get read after the first snapshot is taken but
+      // before the second one (which is triggered by the first allocation),
+      // so when the time-unit is 'ms' we always have a big gap between the
+      // first two snapshots.  But at least users won't have to wonder why
+      // the first snapshot isn't at t=0.
+      static Bool is_first_snapshot = True;
+      static Long start_time_ms;
+      if (is_first_snapshot) {
+         start_time_ms = VG_(read_millisecond_timer)();
+         time = 0;
+         is_first_snapshot = False;
+      } else {
+         time = VG_(read_millisecond_timer)() - start_time_ms;
+      }
+   } else if (clo_time_unit == TimeB) {
+      time = total_allocs_deallocs_szB;
+   } else {
+      tl_assert2(0, "bad --time-unit value");
+   }
 
    // Only do a snapshot if it's time.
    time_since_prev = time - time_of_prev_snapshot;
