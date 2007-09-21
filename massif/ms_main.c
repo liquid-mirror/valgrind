@@ -31,6 +31,7 @@
 // XXX:
 //---------------------------------------------------------------------------
 // Todo:
+// - do a test for realloc -- I think no snapshots are being taken for it.
 // - do a test where the time exceeds 32-bits
 // - do a test with no allocations -- bar should be zero sized in graph?
 // - do tests with complicated stack traces -- big ones, ones that require
@@ -1045,7 +1046,7 @@ static UInt cull_snapshots(void)
    if (VG_(clo_verbosity) > 1) {
       VERB("Finished culling (%3d of %3d deleted)", n_deleted, MAX_N_SNAPSHOTS);
       for (i = 0; i < next_snapshot_i; i++) {
-         VERB_snapshot("  new", i);
+         VERB_snapshot("  post-cull", i);
       }
       VERB("New time interval = %lld (between snapshots %d and %d)",
          min_timespan, min_timespan_i-1, min_timespan_i);
@@ -1057,7 +1058,7 @@ static UInt cull_snapshots(void)
 // Take a snapshot.  Note that with bigger depths, snapshots can be slow,
 // eg. konqueror snapshots can easily take 50ms!
 // [XXX: is that still true?]
-static void take_snapshot(void)
+static void take_snapshot(Char* kind)
 {
    // 'min_time_interval' is the minimum time interval between snapshots;
    // if we try to take a snapshot and less than this much time has passed,
@@ -1157,7 +1158,7 @@ static void take_snapshot(void)
    }
 
    if (VG_(clo_verbosity) > 1) {                             
-      VERB_snapshot("took", this_snapshot_i);
+      VERB_snapshot(kind, this_snapshot_i);
    }   
 
    // Cull the entries, if our snapshot table is full.
@@ -1244,8 +1245,7 @@ void* new_block ( ThreadId tid, void* p, SizeT szB, SizeT alignB,
    }
    VG_(HT_add_node)(malloc_list, hc);
 
-   // Do a snapshot!
-   take_snapshot();      
+   take_snapshot("  alloc");
 
    return p;
 }
@@ -1278,7 +1278,7 @@ void die_block ( void* p, Bool custom_free )
       VG_(cli_free)( p );
 
    // Do a snapshot!
-   take_snapshot();
+   take_snapshot("dealloc");
 }
 
 static __inline__
@@ -1450,7 +1450,7 @@ IRSB* ms_instrument ( VgCallbackClosure* closure,
 
    if (is_first_SB) {
       // Do an initial sample for t = 0
-      take_snapshot();
+      take_snapshot("startup");
       is_first_SB = False;
    }
 
