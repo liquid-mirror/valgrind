@@ -367,7 +367,6 @@ sub read_input_file()
     #-------------------------------------------------------------------------
     # Print header.
     #-------------------------------------------------------------------------
-    # XXX: print the massif invocation and the ms_print invocation
     print($fancy_nl);
     print("Command:            $cmd\n");
     print("Massif arguments:  $desc");
