@@ -33,12 +33,11 @@
 // Todo:
 // - do a test for realloc -- I think no snapshots are being taken for it.
 // - do tests with complicated stack traces -- big ones, ones that require
-//   XCon_redo, etc.
+//   XCon_redo, ones that exceed --depth, etc.
 // - test what happens when alloc-fns cover an entire trace
 // - write a good basic test that shows how the tool works, suitable for
 //   documentation
 // - Check MALLOCLIKE_BLOCK works, write regtest
-// - clean up structure of ms_print
 // - work out peak-taking
 // - make everything configurable, eg. min/max number of snapshots (which
 //   also determine culling proportion), frequency of detailed snapshots,

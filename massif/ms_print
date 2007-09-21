@@ -50,8 +50,8 @@ my $input_file = undef;
 # Tmp file name.
 my $tmp_file = "ms_print.tmp.$$";
 
-# Version number
-my $version = "XXX";
+# Version number  (XXX: change it when I convert this file to ms_print.in)
+my $version = "XXX";    # "@VERSION@";
 
 # Usage message.
 my $usage = <<END
@@ -334,19 +334,20 @@ sub read_input_file()
         # Read the heap tree, and if it's detailed, print it and a subsequent
         # snapshot list header to $tmp_file.
         if      ($heap_tree eq "empty") {
-            # do nothing
+            $line = get_line();
         } elsif ($heap_tree eq "...") {
             # '1' means it's the top node of the tree.
             read_heap_tree(1, "", "", "", $mem_total_B);
 
-            # XXX: don't print the header if there are no more snapshots!
-            # (see tests/thresholds.c for an example)
-            print(TMPFILE $header);
+            # Print the header, unless there are no more snapshots.
+            $line = get_line();
+            if (defined $line) {
+                print(TMPFILE $header);
+            }
         } else {
             die("Line $.: expected 'empty' or '...' after 'heap_tree='\n");
         }
 
-        $line = get_line();
     }
 
     close(INPUTFILE);
