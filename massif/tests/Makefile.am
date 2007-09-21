@@ -11,6 +11,7 @@ EXTRA_DIST = $(noinst_SCRIPTS) \
         basic_malloc.stderr.exp basic_malloc.vgtest \
         culling1.stderr.exp culling1.vgtest \
         culling2.stderr.exp culling2.vgtest \
+	long-time.post.exp long-time.stderr.exp long-time.vgtest \
 	thresholds_0_0.post.exp   thresholds_0_0.stderr.exp   thresholds_0_0.vgtest \
 	thresholds_0_10.post.exp  thresholds_0_10.stderr.exp  thresholds_0_10.vgtest \
 	thresholds_10_0.post.exp  thresholds_10_0.stderr.exp  thresholds_10_0.vgtest \
@@ -28,6 +29,7 @@ check_PROGRAMS = \
 	basic \
 	basic_malloc \
 	culling1 culling2 \
+	long-time \
 	thresholds \
 	zero
 

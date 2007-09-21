@@ -317,9 +317,7 @@ static UInt n_allocs            = 0;
 static UInt n_zero_allocs       = 0;
 static UInt n_frees             = 0;
 static UInt n_xpt_expansions    = 0;
-
 static UInt n_getXCon_redo      = 0;
-
 static UInt n_cullings          = 0;
 static UInt n_real_snapshots    = 0;
 static UInt n_skipped_snapshots = 0;
@@ -1541,7 +1539,7 @@ static void pp_snapshot_XPt(Int fd, XPt* xpt, Int depth, Char* depth_str,
       ip_desc = VG_(describe_IP)(xpt->ip-1, ip_desc, BUF_LEN);
    }
    perc = make_perc(xpt->curr_szB, curr_total_szB);
-   FP("%sn%d: %ld %s\n", depth_str, n_child_entries, xpt->curr_szB, ip_desc);
+   FP("%sn%d: %lu %s\n", depth_str, n_child_entries, xpt->curr_szB, ip_desc);
 
    // Indent.
    tl_assert(depth+1 < depth_str_len-1);    // -1 for end NUL char
@@ -1561,7 +1559,7 @@ static void pp_snapshot_XPt(Int fd, XPt* xpt, Int depth, Char* depth_str,
       Char* s        = ( n_insig_children == 1 ? "," : "s, all" );
       SizeT total_insig_children_szB = xpt->curr_szB - printed_children_szB;
       perc = make_perc(total_insig_children_szB, curr_total_szB);
-      FP("%sn0: %ld in %d place%s below massif's threshold (%s)\n",
+      FP("%sn0: %lu in %d place%s below massif's threshold (%s)\n",
          depth_str, total_insig_children_szB, n_insig_children, s,
          make_perc(clo_threshold, 10000));
    }
@@ -1578,7 +1576,7 @@ static void pp_snapshot(Int fd, Snapshot* snapshot, Int snapshot_n)
    FP("#-----------\n");
    FP("snapshot=%d\n", snapshot_n);
    FP("#-----------\n");
-   FP("time=%lu\n",             snapshot->time);
+   FP("time=%lld\n",            snapshot->time);
    FP("mem_total_B=%lu\n",      snapshot->total_szB);
    FP("mem_heap_B=%lu\n",       snapshot->heap_szB);
    FP("mem_heap_admin_B=%lu\n", snapshot->heap_admin_szB);
