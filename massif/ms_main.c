@@ -330,8 +330,13 @@ static UInt clo_depth       = 8;
 static UInt clo_threshold   = 100;     // 100 == 1%
 static UInt clo_time_unit   = TimeMS;
 
+static XArray* args_for_massif;
+
 static Bool ms_process_cmd_line_option(Char* arg)
 {
+   // Remember the arg for later use.
+   VG_(addToXA)(args_for_massif, &arg);
+        
         VG_BOOL_CLO(arg, "--heap",       clo_heap)
    else VG_BOOL_CLO(arg, "--stacks",     clo_stacks)
 
@@ -1600,17 +1605,17 @@ static void write_detailed_snapshots(void)
       fd = sres.res;
    }
 
-   // Print description lines.  Include:
-   // * --alloc-fn values
-   // * --threshold values
-   FP("desc: Options:   XXX\n");
-//   FP("desc: Options:   Heap profiling %s.  Stack profiling %s\n",
-//         clo_heap ? "on" : "off", clo_stacks ? "on" : "off");
-//   FP("desc: Options:   Heap admin size = %u bytes.\n", clo_heap_admin);
-//   FP("desc: Options:   Max. tree depth = %u calls.\n", clo_depth);
-//   FP("desc: Options:   Significance threshold = %s\n",
-//         make_perc(clo_threshold, 10000));
-//   FP("desc: Allocation functions = ...");
+   // Print massif-specific options that were used.
+   // XXX: is it worth having a "desc:" line?  Could just call it "options:"
+   // -- this file format isn't as generic as Cachegrind's, so the
+   // implied genericity of "desc:" is bogus.
+   FP("desc:");
+   for (i = 0; i < VG_(sizeXA)(args_for_massif); i++) {
+      Char* arg = *(Char**)VG_(indexXA)(args_for_massif, i);
+      FP(" %s", arg);
+   }
+   if (0 == i) FP(" (none)");
+   FP("\n");
 
    // Print "cmd:" line.
    FP("cmd: ");
@@ -1743,6 +1748,9 @@ static void ms_pre_clo_init(void)
 
    // Initialise alloc_fns.
    init_alloc_fns();
+
+   // Initialise args_for_massif.
+   args_for_massif = VG_(newXA)(VG_(malloc), VG_(free), sizeof(HChar*));
 
    tl_assert( VG_(getcwd)(base_dir, VKI_PATH_MAX) );
 }

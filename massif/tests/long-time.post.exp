@@ -1,7 +1,7 @@
 --------------------------------------------------------------------------------
-Command:   ./long-time
-Data file: massif.out
-Options:   XXX
+Command:            ./long-time
+Massif arguments:   --stacks=no --time-unit=B
+ms_print arguments: massif.out
 --------------------------------------------------------------------------------
 
 

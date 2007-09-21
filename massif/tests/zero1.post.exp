@@ -1,7 +1,7 @@
 --------------------------------------------------------------------------------
-Command:   ./zero
-Data file: massif.out
-Options:   XXX
+Command:            ./zero
+Massif arguments:   --stacks=no --heap-admin=no --time-unit=B
+ms_print arguments: --threshold=0 massif.out
 --------------------------------------------------------------------------------
 
 

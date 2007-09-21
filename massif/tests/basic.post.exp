@@ -1,7 +1,7 @@
 --------------------------------------------------------------------------------
-Command:   ./basic
-Data file: massif.out
-Options:   XXX
+Command:            ./basic
+Massif arguments:   --stacks=no --time-unit=B
+ms_print arguments: massif.out
 --------------------------------------------------------------------------------
 
 

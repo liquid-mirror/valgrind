@@ -53,6 +53,9 @@ my $tmp_file = "ms_print.tmp.$$";
 # Version number  (XXX: change it when I convert this file to ms_print.in)
 my $version = "XXX";    # "@VERSION@";
 
+# Args passed, for printing.
+my $ms_print_args;
+
 # Usage message.
 my $usage = <<END
 usage: ms_print [options] <file>
@@ -89,6 +92,12 @@ sub safe_div_0($$)
 sub process_cmd_line() 
 {
     my @files;
+
+    # Grab a copy of the arguments, for printing later.
+    for my $arg (@ARGV) { 
+        $ms_print_args .= " $arg";       # The arguments.
+    }
+
     for my $arg (@ARGV) { 
 
         # Option handling
@@ -264,7 +273,7 @@ sub read_input_file()
     # Read "desc:" lines.
     my $line;
     while ($line = get_line()) {
-        if ($line =~ s/^desc:\s*//) {
+        if ($line =~ s/^desc://) {
             $desc .= $line;
         } else {
             last;
@@ -360,9 +369,9 @@ sub read_input_file()
     #-------------------------------------------------------------------------
     # XXX: print the massif invocation and the ms_print invocation
     print($fancy_nl);
-    print("Command:   $cmd\n");
-    print("Data file: $input_file\n");
-    print("$desc");
+    print("Command:            $cmd\n");
+    print("Massif arguments:  $desc");
+    print("ms_print arguments:$ms_print_args\n");
     print($fancy_nl);
     print("\n\n");
 
