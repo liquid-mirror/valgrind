@@ -32,25 +32,17 @@
 //---------------------------------------------------------------------------
 // Todo:
 // - do a test for realloc -- I think no snapshots are being taken for it.
-// - do a test where the time exceeds 32-bits
-// - do a test with no allocations -- bar should be zero sized in graph?
 // - do tests with complicated stack traces -- big ones, ones that require
 //   XCon_redo, etc.
 // - test what happens when alloc-fns cover an entire trace
 // - write a good basic test that shows how the tool works, suitable for
 //   documentation
-// - try to write a -v test.  how to filter the Valgrind -v stuff out?  Have
-//   --ms-verbose, which is implied by -v but also able to be turned on
-//   separately?
-// - get snapshot frequency right after some have been discarded
 // - Check MALLOCLIKE_BLOCK works, write regtest
 // - clean up structure of ms_print
 // - work out peak-taking
 // - make everything configurable, eg. min/max number of snapshots (which
 //   also determine culling proportion), frequency of detailed snapshots,
 //   etc.
-// - have a test with lots of zero-sized allocations -- makes sure that
-//   timespans of 0 between snapshots is ok...
 //
 // Misc:
 // - with --heap=no, --heap-admin still counts.  should it?
