@@ -31,6 +31,10 @@
 // XXX:
 //---------------------------------------------------------------------------
 // Todo:
+// - do a test where the time exceeds 32-bits
+// - do a test with no allocations -- bar should be zero sized in graph?
+// - do tests with complicated stack traces -- big ones, ones that require
+//   XCon_redo, etc.
 // - test what happens when alloc-fns cover an entire trace
 // - write a good basic test that shows how the tool works, suitable for
 //   documentation
@@ -306,19 +310,19 @@ typedef
 //  -  15,000 XPts            800,000 XPts
 //  -   1,800 top-XPts
 
-static UInt n_xpts               = 0;
-static UInt n_dupd_xpts          = 0;
-static UInt n_dupd_xpts_freed    = 0;
-static UInt n_allocs             = 0;
-static UInt n_zero_allocs        = 0;
-static UInt n_frees              = 0;
-static UInt n_children_reallocs  = 0;
+static UInt n_xpts              = 0;
+static UInt n_dupd_xpts         = 0;
+static UInt n_dupd_xpts_freed   = 0;
+static UInt n_allocs            = 0;
+static UInt n_zero_allocs       = 0;
+static UInt n_frees             = 0;
+static UInt n_xpt_expansions    = 0;
 
-static UInt n_getXCon_redo       = 0;
+static UInt n_getXCon_redo      = 0;
 
-static UInt n_cullings           = 0;
-static UInt n_real_snapshots     = 0;
-static UInt n_fake_snapshots     = 0;
+static UInt n_cullings          = 0;
+static UInt n_real_snapshots    = 0;
+static UInt n_skipped_snapshots = 0;
 
 
 //------------------------------------------------------------//
@@ -546,7 +550,7 @@ static void add_child_xpt(XPt* parent, XPt* child)
          parent->children = VG_(realloc)( parent->children,
                                           parent->max_children * sizeof(XPt*) );
       }
-      n_children_reallocs++;
+      n_xpt_expansions++;
    }
 
    // Insert new child XPt in parent's children list.
@@ -941,11 +945,14 @@ static void VERB_snapshot(Char* prefix, Int i)
 // smallest snapshots in one hit, because when a snapshot is removed, its
 // neighbours immediately cover greater timespans.  So it's O(N^2), but N is
 // small, and it's not done very often.
-static void cull_snapshots(void)
+//
+// Once we're done, we return the new smallest interval between snapshots.
+// That becomes our minimum time interval.
+static UInt cull_snapshots(void)
 {
-   Int       i, jp, j, jn;
-   Int   n_deleted = 0;
-   Long min_timespan = 0x7fffffff;
+   Int  i, jp, j, jn, min_timespan_i;
+   Int  n_deleted = 0;
+   Long min_timespan;
 
    n_cullings++;
 
@@ -955,8 +962,9 @@ static void cull_snapshots(void)
            j < MAX_N_SNAPSHOTS && !is_snapshot_in_use(&snapshots[j]); \
            j++) { }
 
-   if (VG_(clo_verbosity) > 1)
+   if (VG_(clo_verbosity) > 1) {
       VERB("Culling...");
+   }
 
    // First we remove enough snapshots by clearing them in-place.  Once
    // that's done, we can slide the remaining ones down.
@@ -1015,14 +1023,34 @@ static void cull_snapshots(void)
    // Check snapshots array looks ok after changes.
    sanity_check_snapshots_array();
 
+   // Find the minimum timespan remaining;  that will be our new minimum
+   // time interval.  Note that above we were finding timespans by measuring
+   // two intervals around a snapshot that was under consideration for
+   // deletion.  Here we only measure single intervals because all the
+   // deletions have occurred.
+   tl_assert(next_snapshot_i > 1);
+   min_timespan = snapshots[1].time - snapshots[0].time;
+   min_timespan_i = 1;
+   for (i = 2; i < next_snapshot_i; i++) {
+      Long timespan = snapshots[i].time - snapshots[i-1].time;
+      tl_assert(timespan >= 0);
+      if (timespan < min_timespan) {
+         min_timespan = timespan;
+         min_timespan_i = i;
+      }
+   }
+
    // Print remaining snapshots, if necessary.
    if (VG_(clo_verbosity) > 1) {
       VERB("Finished culling (%3d of %3d deleted)", n_deleted, MAX_N_SNAPSHOTS);
       for (i = 0; i < next_snapshot_i; i++) {
          VERB_snapshot("  new", i);
       }
-      VERB("New time interval = %ld", min_timespan);
+      VERB("New time interval = %lld (between snapshots %d and %d)",
+         min_timespan, min_timespan_i-1, min_timespan_i);
    }
+
+   return min_timespan;
 }
 
 // Take a snapshot.  Note that with bigger depths, snapshots can be slow,
@@ -1030,12 +1058,17 @@ static void cull_snapshots(void)
 // [XXX: is that still true?]
 static void take_snapshot(void)
 {
-   static UInt time_interval         = 5;
-   static UInt time_of_prev_snapshot = 0;
-   static UInt time_of_next_snapshot = 0;     // zero allows startup snapshot
+   // 'min_time_interval' is the minimum time interval between snapshots;
+   // if we try to take a snapshot and less than this much time has passed,
+   // we don't take it.  Initialised to zero so that we begin by taking
+   // snapshots as quickly as possible.
+   static Long min_time_interval     = 0;
+   static Long time_of_prev_snapshot = 0;
+   // Zero allows startup snapshot.
+   static Long earliest_possible_time_of_next_snapshot = 0;
    static Int  n_snapshots_since_last_detailed = 0;
 
-   Int       time, time_since_prev;
+   Long      time, time_since_prev;
    Snapshot* snapshot;
    Int       this_snapshot_i = next_snapshot_i;
 
@@ -1046,8 +1079,8 @@ static void take_snapshot(void)
 
    // Only do a snapshot if it's time.
    time_since_prev = time - time_of_prev_snapshot;
-   if (time < time_of_next_snapshot) {
-      n_fake_snapshots++;
+   if (time < earliest_possible_time_of_next_snapshot) {
+      n_skipped_snapshots++;
       return;
    }
 
@@ -1105,20 +1138,14 @@ static void take_snapshot(void)
       VERB_snapshot("took", this_snapshot_i);
    }   
 
-   // Cull the entries, if our snapshot table is full
+   // Cull the entries, if our snapshot table is full.
    if (MAX_N_SNAPSHOTS == next_snapshot_i) {
-      cull_snapshots();
-      time_interval *= 2;
+      min_time_interval = cull_snapshots();
    }
 
-   // Take time for the next snapshot from now, rather than when this      
-   // snapshot should have happened.  Because the time_interval is the     
-   // minimum time between snapshots -- if there's a big gap due to a kernel
-   // operation or something, there's no point doing catch-up snapshots    
-   // every allocation for a while -- that would just give N snapshots at  
-   // almost the same time.     
+   // Work out the earliest time when the next snapshot can happen.
    time_of_prev_snapshot = time;
-   time_of_next_snapshot = time + time_interval;
+   earliest_possible_time_of_next_snapshot = time + min_time_interval;
 }
 
 
@@ -1609,31 +1636,28 @@ static void write_detailed_snapshots(void)
 
 static void ms_fini(Int exit_status)
 {
-   // Do a final (empty) sample to show program's end
-   take_snapshot();
-
    // Output.
    write_detailed_snapshots();
 
    // Stats
    if (VG_(clo_verbosity) > 1) {
       tl_assert(n_xpts > 0);  // always have alloc_xpt
-      VERB("allocs:          %u", n_allocs);                     
-      VERB("zeroallocs:      %u (%d%%)",                     
+      VERB("allocs:            %u", n_allocs);                     
+      VERB("zeroallocs:        %u (%d%%)",                     
          n_zero_allocs,                                      
          ( n_allocs ? n_zero_allocs * 100 / n_allocs : 0 )); 
-      VERB("frees:           %u", n_frees);
-      VERB("XPts:            %u", n_xpts);
-      VERB("top-XPts:        %u (%d%%)",                     
+      VERB("frees:             %u", n_frees);
+      VERB("XPts:              %u", n_xpts);
+      VERB("top-XPts:          %u (%d%%)",                     
          alloc_xpt->n_children,                              
          ( n_xpts ? alloc_xpt->n_children * 100 / n_xpts : 0));
-      VERB("dup'd XPts:      %u", n_dupd_xpts);
-      VERB("dup'd/freed XPts:%u", n_dupd_xpts_freed);
-      VERB("c-reallocs:      %u", n_children_reallocs);
-      VERB("fake snapshots:  %u", n_fake_snapshots);
-      VERB("real snapshots:  %u", n_real_snapshots);
-      VERB("cullings:        %u", n_cullings);
-      VERB("XCon_redos:      %u", n_getXCon_redo);
+      VERB("dup'd XPts:        %u", n_dupd_xpts);
+      VERB("dup'd/freed XPts:  %u", n_dupd_xpts_freed);
+      VERB("XPt-expansions:    %u", n_xpt_expansions);
+      VERB("skipped snapshots: %u", n_skipped_snapshots);
+      VERB("real snapshots:    %u", n_real_snapshots);
+      VERB("cullings:          %u", n_cullings);
+      VERB("XCon_redos:        %u", n_getXCon_redo);
    }
 }
 

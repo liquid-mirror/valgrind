@@ -2,13 +2,15 @@
 # For AM_FLAG_M3264_PRI
 include $(top_srcdir)/Makefile.flags.am
 
-noinst_SCRIPTS = filter_stderr
+noinst_SCRIPTS = filter_stderr filter_verbose
 
 EXTRA_DIST = $(noinst_SCRIPTS) \
 	alloc-fns-A.post.exp alloc-fns-A.stderr.exp alloc-fns-A.vgtest \
 	alloc-fns-B.post.exp alloc-fns-B.stderr.exp alloc-fns-B.vgtest \
 	basic.post.exp basic.stderr.exp basic.vgtest \
         basic_malloc.stderr.exp basic_malloc.vgtest \
+        culling1.stderr.exp culling1.vgtest \
+        culling2.stderr.exp culling2.vgtest \
 	thresholds_0_0.post.exp   thresholds_0_0.stderr.exp   thresholds_0_0.vgtest \
 	thresholds_0_10.post.exp  thresholds_0_10.stderr.exp  thresholds_0_10.vgtest \
 	thresholds_10_0.post.exp  thresholds_10_0.stderr.exp  thresholds_10_0.vgtest \
@@ -23,5 +25,6 @@ check_PROGRAMS = \
 	alloc-fns \
 	basic \
 	basic_malloc \
+	culling1 culling2
 	thresholds
 
