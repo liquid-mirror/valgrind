@@ -1500,7 +1500,7 @@ static Bool is_significant_XPt(XPt* xpt, SizeT curr_total_szB)
    // every XPt significant.  We also always consider the alloc_xpt to be
    // significant.
    tl_assert(xpt->curr_szB <= curr_total_szB);
-   return xpt == alloc_xpt || 0 == clo_threshold
+   return xpt == alloc_xpt || 0 == clo_threshold ||
       (0 != curr_total_szB &&
            xpt->curr_szB * 10000 / curr_total_szB >= clo_threshold);
 }
