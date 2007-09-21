@@ -141,8 +141,10 @@ sub get_line()
 sub equals_num_line($$)
 {
     my ($line, $fieldname) = @_;
-    (defined($line) and $line =~ s/^$fieldname=(.*)\s*$//) or
-        die("Line $.: expected \"$fieldname\" line, got:\n$line\n");
+    defined($line) 
+        or die("Line $.: expected \"$fieldname\" line, got end of file\n");
+    $line =~ s/^$fieldname=(.*)\s*$//
+        or die("Line $.: expected \"$fieldname\" line, got:\n$line");
     return $1;
 }
 
