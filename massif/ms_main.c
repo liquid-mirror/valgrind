@@ -1141,8 +1141,7 @@ static void take_snapshot(Char* kind)
 
 static Bool ms_cheap_sanity_check ( void )
 {
-   // Nothing useful we can rapidly check.
-   return True;
+   return True;   // Nothing useful we can cheaply check.
 }
 
 static Bool ms_expensive_sanity_check ( void )
