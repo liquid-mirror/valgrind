@@ -44,6 +44,10 @@ my $time_unit;
 # bother showing it.
 my $threshold = 1.0;
 
+# Graph x and y dimensions.
+my $graph_x = 72;
+my $graph_y = 20;
+
 # Input file name
 my $input_file = undef;
 
@@ -63,10 +67,9 @@ usage: ms_print [options] <file>
   options for the user, with defaults in [ ], are:
     -h --help             show this message
     -v --version          show version
-    --threshold=<n>       significance threshold, in percent [$threshold]
-
-  You must use either --<pid> or specify exactly one profile file
-  so that ms_print knows what file to read profile data from.
+    --threshold=<n.n>     significance threshold, in percent [$threshold]
+    --x=<n>               graph width, in columns; min=4, max=1000 [72]
+    --y=<n>               graph height, in rows;   min=4, max=1000 [20]
 
   ms_print is Copyright (C) 2007-2007 Nicholas Nethercote.
   and licensed under the GNU General Public License, version 2.
@@ -112,6 +115,14 @@ sub process_cmd_line()
             } elsif ($arg =~ /^--threshold=([\d\.]+)%?$/) {
                 $threshold = $1;
                 ($1 >= 0 && $1 <= 100) or die($usage);
+
+            } elsif ($arg =~ /^--x=(\d+)$/) {
+                $graph_x = $1;
+                (4 <= $graph_x && $graph_x <= 1000) or die($usage);
+
+            } elsif ($arg =~ /^--y=(\d+)$/) {
+                $graph_y = $1;
+                (4 <= $graph_y && $graph_y <= 1000) or die($usage);
 
             } else {            # -h and --help fall under this case
                 die($usage);
@@ -378,11 +389,9 @@ sub read_input_file()
     # Setup for graph.
     #-------------------------------------------------------------------------
     # The ASCII graph.
-    # Row    0 ([0..GRAPH_X][0]) is the X-axis.
-    # Column 0 ([0][0..GRAPH_Y]) is the Y-axis.
-    # The rest ([1][1]..[GRAPH_X][GRAPH_Y]) is the usable graph area.
-    my $GRAPH_X = 72;       # XXX: Make these command-line options, with
-    my $GRAPH_Y = 20;       # sensible min/max values (eg. 10--1000)
+    # Row    0 ([0..graph_x][0]) is the X-axis.
+    # Column 0 ([0][0..graph_y]) is the Y-axis.
+    # The rest ([1][1]..[graph_x][graph_y]) is the usable graph area.
     my @graph;
     my $x;
     my $y;
@@ -396,10 +405,10 @@ sub read_input_file()
 
     # Setup graph[][].
     $graph[0][0] = '+';                                     # axes join point
-    for ($x = 1; $x <= $GRAPH_X; $x++) { $graph[$x][0] = '-'; } # X-axis
-    for ($y = 1; $y <= $GRAPH_Y; $y++) { $graph[0][$y] = '|'; } # Y-axis
-    for ($x = 1; $x <= $GRAPH_X; $x++) {                        # usable area
-       for ($y = 1; $y <= $GRAPH_Y; $y++) {
+    for ($x = 1; $x <= $graph_x; $x++) { $graph[$x][0] = '-'; } # X-axis
+    for ($y = 1; $y <= $graph_y; $y++) { $graph[0][$y] = '|'; } # Y-axis
+    for ($x = 1; $x <= $graph_x; $x++) {                        # usable area
+       for ($y = 1; $y <= $graph_y; $y++) {
           $graph[$x][$y] = ' ';
        }
     }
@@ -407,7 +416,7 @@ sub read_input_file()
     #-------------------------------------------------------------------------
     # Write snapshot bars into graph[][].
     #-------------------------------------------------------------------------
-    # Each row represents K bytes, which is 1/GRAPH_Yth of the peak size
+    # Each row represents K bytes, which is 1/graph_y of the peak size
     # (and K can be non-integral).  When drawing the column for a snapshot,
     # in order to fill the slot in row y (where the first row drawn on is
     # row 1) with a half-char (eg. '.'), it must be >= (y - 1/2)*K.  In
@@ -430,12 +439,12 @@ sub read_input_file()
     # Work out how many bytes each row represents.  If the peak size was 0,
     # make it 1 so that the Y-axis covers a non-zero range of values.
     if (0 == $peak_mem_total_szB) { $peak_mem_total_szB = 1; }
-    my $K = $peak_mem_total_szB / $GRAPH_Y;
+    my $K = $peak_mem_total_szB / $graph_y;
 
     for (my $i = 0; $i < $n_snapshots; $i++) {
  
         # Work out which column this snapshot belongs to.
-        my $x_pos_frac = ($times[$i] / $end_time) * $GRAPH_X;
+        my $x_pos_frac = ($times[$i] / $end_time) * $graph_x;
         $x = int($x_pos_frac) + 1;    # +1 due to Y-axis
  
         # Draw the column only if it's a detailed snapshot, or we don't
@@ -455,7 +464,7 @@ sub read_input_file()
                 $full_char = $normal_full_char;
             }
             # Grow this snapshot bar from bottom to top.
-            for ($y = 1; $y <= $GRAPH_Y; $y++) {
+            for ($y = 1; $y <= $graph_y; $y++) {
                 if ($mem_total_Bs[$i] >= ($y - 1/2) * $K) {
                     $graph[$x][$y] = $half_char;
                 } 
@@ -484,9 +493,9 @@ sub read_input_file()
     #-------------------------------------------------------------------------
     # Print graph[][].
     #-------------------------------------------------------------------------
-    for ($y = $GRAPH_Y; $y >= 0; $y--) {
+    for ($y = $graph_y; $y >= 0; $y--) {
         # Row prefix (ie. X-axis label)
-        if ($GRAPH_Y == $y) {            # top point
+        if ($graph_y == $y) {            # top point
            if ($peak_mem_total_szBscaled < 10) {
                 printf("%3.1f%s", $peak_mem_total_szBscaled, $unit);
             } else {
@@ -499,7 +508,7 @@ sub read_input_file()
         }
           
         # Axis and data for the row.
-        for ($x = 0; $x <= $GRAPH_X; $x++) {
+        for ($x = 0; $x <= $graph_x; $x++) {
             printf("%s", $graph[$x][$y]);
         }
         print("\n");
