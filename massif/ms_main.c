@@ -843,12 +843,14 @@ static void update_XCon(XPt* xpt, SSizeT space_delta)
 #define MAX_N_SNAPSHOTS        100  // Keep it even, for simplicity
 #define DETAILED_SNAPSHOT_FREQ  10  // Every Nth snapshot will be detailed
 
+// Time is measured either in ms or bytes, depending on the --time-unit
+// option.  It's a Long because it can exceed 32-bits reasonably easily, and
+// because we need to allow -1 as a possible value.
+typedef Long Time;
+
 typedef
    struct {
-      // Time is measured either in ms or bytes, depending on the
-      // --time-unit option.  It's a Long because it can get very big with
-      // --time-unit=ms.
-      Long  time;          // Long: must allow -1.
+      Time  time;
       SizeT total_szB;     // Size of all allocations at that snapshot time.
       SizeT heap_admin_szB;
       SizeT heap_szB;
@@ -951,7 +953,7 @@ static UInt cull_snapshots(void)
 {
    Int  i, jp, j, jn, min_timespan_i;
    Int  n_deleted = 0;
-   Long min_timespan;
+   Time min_timespan;
 
    n_cullings++;
 
@@ -983,7 +985,7 @@ static UInt cull_snapshots(void)
       min_timespan = snapshots[jn].time - snapshots[jp].time;
       min_j = j;
       while (jn < MAX_N_SNAPSHOTS) {
-         Int timespan = snapshots[jn].time - snapshots[jp].time;
+         Time timespan = snapshots[jn].time - snapshots[jp].time;
          tl_assert(timespan >= 0);
          if (timespan < min_timespan) {
             min_timespan = timespan;
@@ -1031,7 +1033,7 @@ static UInt cull_snapshots(void)
    min_timespan = snapshots[1].time - snapshots[0].time;
    min_timespan_i = 1;
    for (i = 2; i < next_snapshot_i; i++) {
-      Long timespan = snapshots[i].time - snapshots[i-1].time;
+      Time timespan = snapshots[i].time - snapshots[i-1].time;
       tl_assert(timespan >= 0);
       if (timespan < min_timespan) {
          min_timespan = timespan;
@@ -1061,13 +1063,13 @@ static void take_snapshot(void)
    // if we try to take a snapshot and less than this much time has passed,
    // we don't take it.  Initialised to zero so that we begin by taking
    // snapshots as quickly as possible.
-   static Long min_time_interval     = 0;
-   static Long time_of_prev_snapshot = 0;
+   static Time min_time_interval     = 0;
+   static Time time_of_prev_snapshot = 0;
    // Zero allows startup snapshot.
-   static Long earliest_possible_time_of_next_snapshot = 0;
+   static Time earliest_possible_time_of_next_snapshot = 0;
    static Int  n_snapshots_since_last_detailed = 0;
 
-   Long      time, time_since_prev;
+   Time      time, time_since_prev;
    Snapshot* snapshot;
    Int       this_snapshot_i = next_snapshot_i;
 
@@ -1083,7 +1085,7 @@ static void take_snapshot(void)
       // first two snapshots.  But at least users won't have to wonder why
       // the first snapshot isn't at t=0.
       static Bool is_first_snapshot = True;
-      static Long start_time_ms;
+      static Time start_time_ms;
       if (is_first_snapshot) {
          start_time_ms = VG_(read_millisecond_timer)();
          time = 0;
