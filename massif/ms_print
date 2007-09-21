@@ -35,73 +35,6 @@ use strict;
 # - merge read_input_file[12]
 
 #----------------------------------------------------------------------------
-# Discussion of the graph.
-#----------------------------------------------------------------------------
-# The summary output includes a graph like this.
-#  
-#---------------------------------------------------------------------------
-# 100M|B                .      :A
-#     |               .:::   :::#      
-#     |              :::::. c:::#:     
-#     |             b:::::: |:::#::    
-#     |            :|:::::::|:::#::    
-#  75M|            :|:::::::|:::#:::   
-#     |           ::|:::::::|:::#:::   
-#     |           ::|:::::::|:::#:::d  
-#     |           ::|:::::::|:::#:::|: 
-#     |          .::|:::::::|:::#:::|::
-#  50M|          :::|:::::::|:::#:::|:::                      
-#     |         ::::|:::::::|:::#:::|:::::                        :::.
-#     |        :::::|:::::::|:::#:::|::::::                    g::::::::
-#     |       a:::::|:::::::|:::#:::|:::::::e:               ::|::::::::::h
-#     |       |:::::|:::::::|:::#:::|:::::::|::.        :: .:::|::::::::::|::
-#  25M|       |:::::|:::::::|:::#:::|:::::::|::::      f:::::::|::::::::::|::
-#     |      :|:::::|:::::::|:::#:::|:::::::|::::.  .::|:::::::|::::::::::|::
-#     |    .::|:::::|:::::::|:::#:::|:::::::|::::::::::|:::::::|::::::::::|::
-#     |  .::::|:::::|:::::::|:::#:::|:::::::|::::::::::|:::::::|::::::::::|::
-#     |:::::::|:::::|:::::::|:::#:::|:::::::|::::::::::|:::::::|::::::::::|::
-#   0M+----------------------------------------------------------------------t
-#     012                                                               
-#
-#      Temporary snapshots:
-#       a: periodic snapshot, total size: 33,000,000 bytes
-#       b: periodic snapshot, total size: 82,000,000 bytes
-#       c: periodic snapshot, total size: 90,000,000 bytes
-#       d: periodic snapshot, total size: 64,000,000 bytes
-#       e: periodic snapshot, total size: 34,000,000 bytes
-#       f: periodic snapshot, total size: 24,000,000 bytes
-#       g: periodic snapshot, total size: 39,000,000 bytes
-#       h: periodic snapshot, total size: 33,000,000 bytes
-#
-#      Permanent snapshots:
-#       A: peak snapshot, total size: 100,000,000 bytes
-#---------------------------------------------------------------------------
-#
-# Explanation of the y-axis:
-# - Top of the x-axis box represents 0.
-#
-#    4M^|   .:     This row has base=2M, half-threshold=3M, full-threshold=4M
-#    2M^| .:::     This row has base=0M, half-threshold=1M, full-threshold=2M
-#    0M +-----        
-#        abcde        
-#                   
-# - A '.' is only shown in a row if we've reached its half-threshold
-# - A ':' is only shown in a row if we've reached its full-threshold
-# - So: a is in range 0 -- 0.99 
-#       b is in range 1 -- 1.99 
-#       c is in range 2 -- 2.99
-#       d is in range 3 -- 3.99
-#       e is in range 4 -- 4.99
-#
-# Explanation of x-axis:
-# - Assume each column represents one second
-# - First usable column has range 0..0.99s
-# - Second usable column has range 1..1.99s
-# - etc.
-
-
-
-#----------------------------------------------------------------------------
 # Global variables, main data structures
 #----------------------------------------------------------------------------
 
@@ -378,11 +311,11 @@ sub read_input_file1()
     # Print graph
     #-------------------------------------------------------------------------
     # The ASCII graph.
-    # Row    0 ([0..GRAPH_X][0]) is the x-axis.
-    # Column 0 ([0][0..GRAPH_Y]) is the y-axis.
+    # Row    0 ([0..GRAPH_X][0]) is the X-axis.
+    # Column 0 ([0][0..GRAPH_Y]) is the Y-axis.
     # The rest ([1][1]..[GRAPH_X][GRAPH_Y]) is the usable graph area.
-    my $GRAPH_X = 72;       # Make these command-line options
-    my $GRAPH_Y = 20;
+    my $GRAPH_X = 72;       # XXX: Make these command-line options, with
+    my $GRAPH_Y = 20;       # sensible min/max values (eg. 10--1000)
     my @graph;
     my $x;
     my $y;
@@ -396,8 +329,8 @@ sub read_input_file1()
 
     # Setup graph[][].
     $graph[0][0] = '+';                                     # axes join point
-    for ($x = 1; $x <= $GRAPH_X; $x++) { $graph[$x][0] = '-'; } # x-axis
-    for ($y = 1; $y <= $GRAPH_Y; $y++) { $graph[0][$y] = '|'; } # y-axis
+    for ($x = 1; $x <= $GRAPH_X; $x++) { $graph[$x][0] = '-'; } # X-axis
+    for ($y = 1; $y <= $GRAPH_Y; $y++) { $graph[0][$y] = '|'; } # Y-axis
     for ($x = 1; $x <= $GRAPH_X; $x++) {                        # usable area
        for ($y = 1; $y <= $GRAPH_Y; $y++) {
           $graph[$x][$y] = ' ';
@@ -408,45 +341,66 @@ sub read_input_file1()
     my $normal_char   = ':';
 
     # Write snapshot bars into graph[][].
+    #
+    # Each row represents K bytes, which is 1/GRAPH_Yth of the peak size
+    # (and K can be non-integral).  When drawing the column for a snapshot,
+    # in order to fill the slot in row y (where the first row drawn on is
+    # row 1) with a half-char (eg. '.'), it must be >= (y - 1/2)*K.  In
+    # order to fill a row/column spot with a full-char (eg. ':'), it must be
+    # >= y*K.  For example, if K = 10 bytes, then the values 0, 4, 5, 9, 10,
+    # 14, 15, 19, 20, 24, 25, 29, 30 would be drawn like this (showing one
+    # per column):
+    #
+    #                       y    (y - 1/2) * K          y * K
+    #                       -    -------------          -----------
+    # 30 |          ..:     3    (3 - 1/2) * 10 = 25    3 * 10 = 30
+    # 20 |      ..:::::     2    (2 - 1/2) * 10 = 15    2 * 10 = 20
+    # 10 |  ..:::::::::     1    (1 - 1/2) * 10 = 5     1 * 10 = 10
+    # 0  +-------------
+
+    my $detailed_full_char = '@';
+    my $normal_full_char   = ':';
+    my $half_char          = '.';
+
+    # Work out how many bytes each row represents.
+    my $K = $peak_mem_total_szB / $GRAPH_Y;
+
     for (my $i = 0; $i < $n_snapshots; $i++) {
- 
-        # Work out how many bytes each row represents.
-        my $per_row_full_thresh_szB = $peak_mem_total_szB / $GRAPH_Y;
-        my $per_row_half_thresh_szB = $per_row_full_thresh_szB / 2;
  
         # Work out which column this snapshot belongs to.
         my $x_pos_frac = ($times[$i] / $end_time) * $GRAPH_X;
-        $x = int($x_pos_frac) + 1;    # +1 due to y-axis
+        $x = int($x_pos_frac) + 1;    # +1 due to Y-axis
  
-        # Draw the column only if it's a detailed snapshot, or we don't already
-        # have a detailed snapshot's bar in this column -- we don't want to
-        # overwrite detailed snapshot's bars with non-detailed snapshot's bars.
+        # Draw the column only if it's a detailed snapshot, or we don't
+        # already have a detailed snapshot's bar in this column -- we don't
+        # want to overwrite detailed snapshot's bars with non-detailed
+        # snapshot's bars.
         my $should_draw_column = 
             ($is_detaileds[$i] or $graph[$x][0] ne $detailed_char
             ? 1 : 0);
-        if ($should_draw_column == 1) {
-            # If it's detailed, mark the x-axis
+        if ($should_draw_column) {
+            # If it's detailed, mark the X-axis.  Also choose the full-slot
+            # char.
+            my $full_char;
             if ($is_detaileds[$i])  {
-               $graph[$x][0] = $detailed_char;
+                $graph[$x][0] = $detailed_char;
+                $full_char = $detailed_full_char;
+            } else {
+                $full_char = $normal_full_char;
             }
             # Grow this snapshot bar from bottom to top.
             for ($y = 1; $y <= $GRAPH_Y; $y++) {
-                my $this_row_full_thresh_szB = $y * $per_row_full_thresh_szB;
-                my $this_row_half_thresh_szB =
-                    $this_row_full_thresh_szB - $per_row_half_thresh_szB;
-     
-                if ($mem_total_Bs[$i] >= $this_row_half_thresh_szB) {
-                    $graph[$x][$y] = '.';
+                if ($mem_total_Bs[$i] >= ($y - 1/2) * $K) {
+                    $graph[$x][$y] = $half_char;
                 } 
-                if ($mem_total_Bs[$i] >= $this_row_full_thresh_szB) {
-                    $graph[$x][$y] = ( $is_detaileds[$i] 
-                                     ? $detailed_char : $normal_char );
+                if ($mem_total_Bs[$i] >= $y * $K) {
+                    $graph[$x][$y] = $full_char;
                 }
             }
         }
     }
 
-    # Work out the units for the $y-axis.
+    # Work out the units for the Y-axis.
     my $orders_of_magnitude = 0;
     my $unit;
     my $peak_mem_total_szBscaled = $peak_mem_total_szB;
@@ -463,7 +417,7 @@ sub read_input_file1()
 
     # Print graph[][].
     for ($y = $GRAPH_Y; $y >= 0; $y--) {
-        # Row prefix (ie. x-axis label)
+        # Row prefix (ie. X-axis label)
         if ($GRAPH_Y == $y) {            # top point
            if ($peak_mem_total_szBscaled < 10) {
                 printf("%3.1f%s", $peak_mem_total_szBscaled, $unit);
