@@ -77,6 +77,13 @@ END
 my $fancy    = '-' x 80;
 my $fancy_nl = $fancy . "\n";
 
+# Returns 0 if the denominator is 0.
+sub safe_div_0($$)
+{
+    my ($x, $y) = @_;
+    return ($y ? $x / $y : 0);
+}
+
 #-----------------------------------------------------------------------------
 # Argument and option handling
 #-----------------------------------------------------------------------------
@@ -148,31 +155,36 @@ sub get_equals_num_line($)
     return equals_num_line($line, $fieldname);
 }
 
-sub is_significant_XPt($$)
+sub is_significant_XPt($$$)
 {
-    my ($xpt_szB, $total_szB) = @_;
+    my ($is_top_node, $xpt_szB, $total_szB) = @_;
     ($xpt_szB <= $total_szB) or die;
-    return ( $xpt_szB * 100 / $total_szB >= $threshold ? 1 : 0 );
+    # Nb: we always consider the alloc-XPt significant, even if the size is
+    # zero.
+    return $is_top_node || 0 == $threshold ||
+        ( $total_szB != 0 && $xpt_szB * 100 / $total_szB >= $threshold );
 }
 
 # Forward declaration, because it's recursive.
-sub read_heap_tree($$$$$);
+sub read_heap_tree($$$$$$);
 
 # Return pair:  if the tree was significant, both are zero.  If it was
 # insignificant, the first element is 1 and the second is the number of
 # bytes.
-sub read_heap_tree($$$$$)
+sub read_heap_tree($$$$$$)
 {
     # Read the line and determine if it is significant.
-    my ($print, $this_prefix, $child_midfix, $arrow, $mem_total_B) = @_;
+    my ($print, $is_top_node, $this_prefix, $child_midfix, $arrow,
+        $mem_total_B) = @_;
     my $line = get_line();
     (defined $line and $line =~ /^\s*n(\d+):\s*(\d+)(.*)$/)
         or die("Line $.: expected a tree node line, got:\n$line\n");
     my $n_children = $1;
     my $bytes      = $2;
     my $details    = $3;
-    my $perc       = 100 * $bytes / $mem_total_B;
-    my $is_significant = is_significant_XPt($bytes, $mem_total_B);
+    my $perc       = safe_div_0(100 * $bytes, $mem_total_B);
+    # Nb: we always print the alloc-XPt, even if its size is zero.
+    my $is_significant = is_significant_XPt($is_top_node, $bytes, $mem_total_B);
 
     # We precede this node's line with "$this_prefix.$arrow".  We precede
     # any children of this node with "$this_prefix$child_midfix$arrow".
@@ -190,7 +202,8 @@ sub read_heap_tree($$$$$)
         # If child is the last sibling, the midfix is empty.
         my $child_midfix2 = ( $i+1 == $n_children ? "  " : "| " );
         my ($is_child_insignificant, $child_insig_bytes) =
-            read_heap_tree($print, $this_prefix2, $child_midfix2, "->",
+            # '0' means it's not the top node of the tree.
+            read_heap_tree($print, 0, $this_prefix2, $child_midfix2, "->",
                 $mem_total_B);
         $n_insig_children += $is_child_insignificant;
         $total_insig_children_szB += $child_insig_bytes;
@@ -200,7 +213,7 @@ sub read_heap_tree($$$$$)
         # If this was significant but any children were insignificant, print
         # the "in N places" line for them.
         if ($print && $n_insig_children > 0) {
-            $perc = 100 * $total_insig_children_szB / $mem_total_B;
+            $perc = safe_div_0(100 * $total_insig_children_szB, $mem_total_B);
             printf("%s->%05.2f%% (%dB) in %d+ places, all below "
                  . "ms_print's threshold (%05.2f%%)\n",
                 $this_prefix2, $perc, $total_insig_children_szB,
@@ -277,8 +290,9 @@ sub read_input_file1()
         if      ($heap_tree eq "empty") {
             # do nothing
         } elsif ($heap_tree eq "...") {
-            # Depth in the heap tree.  '0' means the tree should not be printed.
-            read_heap_tree(0, "", "", "", $mem_total_B);
+            # Depth in the heap tree.  '0' means the tree should not be
+            # printed. '1' means it's the top node of the tree.
+            read_heap_tree(0, 1, "", "", "", $mem_total_B);
         } else {
             die("Line $.: expected 'empty' or '...' after 'heap_tree='\n");
         }
@@ -337,9 +351,6 @@ sub read_input_file1()
        }
     }
 
-    my $detailed_char = '@';
-    my $normal_char   = ':';
-
     # Write snapshot bars into graph[][].
     #
     # Each row represents K bytes, which is 1/GRAPH_Yth of the peak size
@@ -362,7 +373,9 @@ sub read_input_file1()
     my $normal_full_char   = ':';
     my $half_char          = '.';
 
-    # Work out how many bytes each row represents.
+    # Work out how many bytes each row represents.  If the peak size was 0,
+    # make it 1 so that the Y-axis covers a non-zero range of values.
+    if (0 == $peak_mem_total_szB) { $peak_mem_total_szB = 1; }
     my $K = $peak_mem_total_szB / $GRAPH_Y;
 
     for (my $i = 0; $i < $n_snapshots; $i++) {
@@ -376,14 +389,13 @@ sub read_input_file1()
         # want to overwrite detailed snapshot's bars with non-detailed
         # snapshot's bars.
         my $should_draw_column = 
-            ($is_detaileds[$i] or $graph[$x][0] ne $detailed_char
-            ? 1 : 0);
+            ($is_detaileds[$i] or $graph[$x][0] ne $detailed_full_char);
         if ($should_draw_column) {
             # If it's detailed, mark the X-axis.  Also choose the full-slot
             # char.
             my $full_char;
             if ($is_detaileds[$i])  {
-                $graph[$x][0] = $detailed_char;
+                $graph[$x][0] = $detailed_full_char;
                 $full_char = $detailed_full_char;
             } else {
                 $full_char = $normal_full_char;
@@ -533,8 +545,9 @@ sub read_input_file2()
             # do nothing
         } elsif ($heap_tree eq "...") {
             # Depth in the heap tree.  '1' means the tree should be printed.
-            # Then reprint the header.
-            read_heap_tree(1, "", "", "", $mem_total_B);
+            # '1' means it's the top node of the tree.  Then reprint the
+            # header.  
+            read_heap_tree(1, 1, "", "", "", $mem_total_B);
             # XXX: don't print the header if there are no more snapshots!
             # (see tests/thresholds.c for an example)
             print($header);

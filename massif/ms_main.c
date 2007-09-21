@@ -1245,6 +1245,7 @@ void* new_block ( ThreadId tid, void* p, SizeT szB, SizeT alignB,
    }
    VG_(HT_add_node)(malloc_list, hc);
 
+   // Do a snapshot!
    take_snapshot("  alloc");
 
    return p;
@@ -1490,14 +1491,18 @@ static Char* make_perc(ULong x, ULong y)
    return mbuf;
 }
 
-// Does the xpt account for >= 1% of total memory used?
+// Does the xpt account for >= 1% (or so) of total memory used?
 static Bool is_significant_XPt(XPt* xpt, SizeT curr_total_szB)
 {
    // clo_threshold is measured in hundredths of a percent of total size,
    // ie. 10,000ths of total size.  So clo_threshold=100 means that the
-   // threshold is 1% of total size.
+   // threshold is 1% of total size.  If curr_total_szB is zero, we consider
+   // every XPt significant.  We also always consider the alloc_xpt to be
+   // significant.
    tl_assert(xpt->curr_szB <= curr_total_szB);
-   return (xpt->curr_szB * 10000 / curr_total_szB >= clo_threshold);
+   return xpt == alloc_xpt || 0 == clo_threshold
+      (0 != curr_total_szB &&
+           xpt->curr_szB * 10000 / curr_total_szB >= clo_threshold);
 }
 
 static void pp_snapshot_XPt(Int fd, XPt* xpt, Int depth, Char* depth_str,
