@@ -31,7 +31,6 @@
 // XXX:
 //---------------------------------------------------------------------------
 // Todo:
-// - split the xpt_expansions into new ones (ie. 0-->4) and old ones (ie. >4)
 // - add a test that does no allocations (nb must use --stacks=no)
 // - do a test for realloc -- I think no snapshots are being taken for it.
 // - do tests with complicated stack traces -- big ones, ones that require
