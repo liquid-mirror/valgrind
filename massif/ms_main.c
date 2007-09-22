@@ -233,17 +233,18 @@
 //  -  15,000 XPts            800,000 XPts
 //  -   1,800 top-XPts
 
-static UInt n_xpts              = 0;
-static UInt n_dupd_xpts         = 0;
-static UInt n_dupd_xpts_freed   = 0;
-static UInt n_allocs            = 0;
-static UInt n_zero_allocs       = 0;
-static UInt n_frees             = 0;
-static UInt n_xpt_expansions    = 0;
-static UInt n_getXCon_redo      = 0;
-static UInt n_cullings          = 0;
-static UInt n_real_snapshots    = 0;
-static UInt n_skipped_snapshots = 0;
+static UInt n_xpts                 = 0;
+static UInt n_dupd_xpts            = 0;
+static UInt n_dupd_xpts_freed      = 0;
+static UInt n_allocs               = 0;
+static UInt n_zero_allocs          = 0;
+static UInt n_frees                = 0;
+static UInt n_xpt_init_expansions  = 0;
+static UInt n_xpt_later_expansions = 0;
+static UInt n_getXCon_redo         = 0;
+static UInt n_cullings             = 0;
+static UInt n_real_snapshots       = 0;
+static UInt n_skipped_snapshots    = 0;
 
 
 //------------------------------------------------------------//
@@ -516,12 +517,13 @@ static void add_child_xpt(XPt* parent, XPt* child)
       if (parent->max_children == 0) {
          parent->max_children = 4;
          parent->children = VG_(malloc)( parent->max_children * sizeof(XPt*) );
+         n_xpt_init_expansions++;
       } else {
          parent->max_children *= 2;    // Double size
          parent->children = VG_(realloc)( parent->children,
                                           parent->max_children * sizeof(XPt*) );
+         n_xpt_later_expansions++;
       }
-      n_xpt_expansions++;
    }
 
    // Insert new child XPt in parent's children list.
@@ -1662,22 +1664,23 @@ static void ms_fini(Int exit_status)
    // Stats
    if (VG_(clo_verbosity) > 1) {
       tl_assert(n_xpts > 0);  // always have alloc_xpt
-      VERB("allocs:            %u", n_allocs);                     
-      VERB("zeroallocs:        %u (%d%%)",                     
+      VERB("allocs:               %u", n_allocs);                     
+      VERB("zeroallocs:           %u (%d%%)",                     
          n_zero_allocs,                                      
          ( n_allocs ? n_zero_allocs * 100 / n_allocs : 0 )); 
-      VERB("frees:             %u", n_frees);
-      VERB("XPts:              %u", n_xpts);
-      VERB("top-XPts:          %u (%d%%)",                     
+      VERB("frees:                %u", n_frees);
+      VERB("XPts:                 %u", n_xpts);
+      VERB("top-XPts:             %u (%d%%)",                     
          alloc_xpt->n_children,                              
          ( n_xpts ? alloc_xpt->n_children * 100 / n_xpts : 0));
-      VERB("dup'd XPts:        %u", n_dupd_xpts);
-      VERB("dup'd/freed XPts:  %u", n_dupd_xpts_freed);
-      VERB("XPt-expansions:    %u", n_xpt_expansions);
-      VERB("skipped snapshots: %u", n_skipped_snapshots);
-      VERB("real snapshots:    %u", n_real_snapshots);
-      VERB("cullings:          %u", n_cullings);
-      VERB("XCon_redos:        %u", n_getXCon_redo);
+      VERB("dup'd XPts:           %u", n_dupd_xpts);
+      VERB("dup'd/freed XPts:     %u", n_dupd_xpts_freed);
+      VERB("XPt-init-expansions:  %u", n_xpt_init_expansions);
+      VERB("XPt-later-expansions: %u", n_xpt_later_expansions);
+      VERB("skipped snapshots:    %u", n_skipped_snapshots);
+      VERB("real snapshots:       %u", n_real_snapshots);
+      VERB("cullings:             %u", n_cullings);
+      VERB("XCon_redos:           %u", n_getXCon_redo);
    }
 }
 

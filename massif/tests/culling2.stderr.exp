@@ -514,15 +514,16 @@ Massif:   post-cull snapshot  47 (t = 18721 B)
 Massif:   post-cull snapshot  48 (t = 19110 B)
 Massif:   post-cull snapshot  49 (t = 19701 B) (detailed)
 Massif: New time interval = 284 (between snapshots 1 and 2)
-Massif: allocs:            200
-Massif: zeroallocs:        1 (0%)
-Massif: frees:             0
-Massif: XPts:              2
-Massif: top-XPts:          1 (50%)
-Massif: dup'd XPts:        40
-Massif: dup'd/freed XPts:  38
-Massif: XPt-expansions:    1
-Massif: skipped snapshots: 1
-Massif: real snapshots:    200
-Massif: cullings:          3
-Massif: XCon_redos:        0
+Massif: allocs:               200
+Massif: zeroallocs:           1 (0%)
+Massif: frees:                0
+Massif: XPts:                 2
+Massif: top-XPts:             1 (50%)
+Massif: dup'd XPts:           40
+Massif: dup'd/freed XPts:     38
+Massif: XPt-init-expansions:  1
+Massif: XPt-later-expansions: 0
+Massif: skipped snapshots:    1
+Massif: real snapshots:       200
+Massif: cullings:             3
+Massif: XCon_redos:           0
