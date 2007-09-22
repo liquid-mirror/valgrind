@@ -31,6 +31,8 @@
 // XXX:
 //---------------------------------------------------------------------------
 // Todo:
+// - split the xpt_expansions into new ones (ie. 0-->4) and old ones (ie. >4)
+// - add a test that does no allocations (nb must use --stacks=no)
 // - do a test for realloc -- I think no snapshots are being taken for it.
 // - do tests with complicated stack traces -- big ones, ones that require
 //   XCon_redo, ones that exceed --depth, etc.
@@ -98,14 +100,21 @@
 //   - addressed, it's now an OSet and thus unlimited in size
 // 89061   cra     Massif: ms_main.c:485 (get_XCon): Assertion `xpt->max_chi...
 //   - relevant code now gone
+// 143062  cra     massif crashes on app exit with signal 8 SIGFPE
+//   - fixed
 //
 // TODO:
+// 92615
+// 95483
+// 121629
+// 132950
+// 134138(?)
+// 146252(?)
+// 149504
 // 141631  nor     Massif: percentages don't add up correctly
 //   - better sanity-checking should help this greatly
 // 142706  nor     massif numbers don't seem to add up
 //   - better sanity-checking should help this greatly
-// 143062  cra     massif crashes on app exit with signal 8 SIGFPE
-//   - occurs with no allocations -- ensure that case works
 // 144453  XXX
 // 146456  XXX
 //
@@ -753,8 +762,8 @@ static XPt* get_XCon( ThreadId tid, Bool is_custom_malloc )
       Addr ip = ips[i];
       Int ch;
       // Look for IP in xpt's children.
-      // XXX: linear search, ugh -- about 10% of time for konqueror startup
-      // XXX: tried caching last result, only hit about 4% for konqueror
+      // Linear search, ugh -- about 10% of time for konqueror startup tried
+      // caching last result, only hit about 4% for konqueror.
       // Nb:  this search hits about 98% of the time for konqueror
       for (ch = 0; True; ch++) {
          if (ch == xpt->n_children) {
@@ -1570,6 +1579,7 @@ static void pp_snapshot(Int fd, Snapshot* snapshot, Int snapshot_n)
    if (is_detailed_snapshot(snapshot)) {
       // Detailed snapshot -- print heap tree
       // XXX: check this works ok when no heap memory has been allocated
+      //      [need to do it with --time-unit=ms]
       Int   depth_str_len = clo_depth + 3;
       Char* depth_str = VG_(malloc)(sizeof(Char) * depth_str_len);
       depth_str[0] = '\0';   // Initialise depth_str to "".
