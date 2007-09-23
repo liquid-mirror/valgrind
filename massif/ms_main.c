@@ -31,7 +31,7 @@
 // XXX:
 //---------------------------------------------------------------------------
 // Todo:
-// - do a test for realloc -- I think no snapshots are being taken for it.
+// - do a graph-drawing test
 // - do tests with complicated stack traces -- big ones, ones that require
 //   XCon_redo, ones that exceed --depth, etc.
 // - test what happens when alloc-fns cover an entire trace
@@ -236,6 +236,7 @@ static UInt n_dupd_xpts            = 0;
 static UInt n_dupd_xpts_freed      = 0;
 static UInt n_allocs               = 0;
 static UInt n_zero_allocs          = 0;
+static UInt n_reallocs             = 0;
 static UInt n_frees                = 0;
 static UInt n_xpt_init_expansions  = 0;
 static UInt n_xpt_later_expansions = 0;
@@ -1282,6 +1283,9 @@ void* renew_block ( ThreadId tid, void* p_old, SizeT new_size )
    SizeT     old_size;
    XPt      *old_where, *new_where;
    
+   // Update statistics
+   n_reallocs++;
+
    // Remove the old block
    hc = VG_(HT_remove)(malloc_list, (UWord)p_old);
    if (hc == NULL) {
@@ -1328,6 +1332,9 @@ void* renew_block ( ThreadId tid, void* p_old, SizeT new_size )
    // because shrinking a block with realloc() is (presumably) much rarer
    // than growing it, and this way simplifies the growing case.
    VG_(HT_add_node)(malloc_list, hc);
+
+   // Do a snapshot!
+   take_snapshot("realloc");
 
    return p_new;
 }
@@ -1666,6 +1673,7 @@ static void ms_fini(Int exit_status)
       VERB("zeroallocs:           %u (%d%%)",                     
          n_zero_allocs,                                      
          ( n_allocs ? n_zero_allocs * 100 / n_allocs : 0 )); 
+      VERB("reallocs:             %u", n_reallocs);                     
       VERB("frees:                %u", n_frees);
       VERB("XPts:                 %u", n_xpts);
       VERB("top-XPts:             %u (%d%%)",                     

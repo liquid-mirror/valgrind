@@ -1,0 +1,27 @@
+Massif: alloc-fns:
+Massif:   1: calloc
+Massif:   2: realloc
+Massif:   3: memalign
+Massif:   4: __builtin_new
+Massif:   5: __builtin_vec_new
+Massif:   6: malloc
+Massif: startup snapshot   0 (t = 0 B)
+Massif:   alloc snapshot   1 (t = 100 B)
+Massif: realloc snapshot   2 (t = 100 B)
+Massif: realloc snapshot   3 (t = 150 B)
+Massif: realloc snapshot   4 (t = 250 B)
+Massif: dealloc snapshot   5 (t = 400 B)
+Massif: allocs:               1
+Massif: zeroallocs:           0 (0%)
+Massif: reallocs:             4
+Massif: frees:                1
+Massif: XPts:                 5
+Massif: top-XPts:             4 (80%)
+Massif: dup'd XPts:           0
+Massif: dup'd/freed XPts:     0
+Massif: XPt-init-expansions:  1
+Massif: XPt-later-expansions: 0
+Massif: skipped snapshots:    0
+Massif: real snapshots:       6
+Massif: cullings:             0
+Massif: XCon_redos:           0

@@ -1,0 +1,5 @@
+prog: realloc
+vgopts: -v --stacks=no --heap-admin=0 --time-unit=B
+stderr_filter: filter_verbose
+post: perl ../../massif/ms_print massif.out
+cleanup: rm massif.out

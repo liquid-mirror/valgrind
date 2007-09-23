@@ -13,6 +13,7 @@ EXTRA_DIST = $(noinst_SCRIPTS) \
         culling2.stderr.exp culling2.vgtest \
 	long-time.post.exp long-time.stderr.exp long-time.vgtest \
 	null.post.exp null.stderr.exp null.vgtest \
+	realloc.post.exp realloc.stderr.exp realloc.vgtest \
 	thresholds_0_0.post.exp   thresholds_0_0.stderr.exp   thresholds_0_0.vgtest \
 	thresholds_0_10.post.exp  thresholds_0_10.stderr.exp  thresholds_0_10.vgtest \
 	thresholds_10_0.post.exp  thresholds_10_0.stderr.exp  thresholds_10_0.vgtest \
@@ -32,6 +33,7 @@ check_PROGRAMS = \
 	culling1 culling2 \
 	long-time \
 	null \
+	realloc \
 	thresholds \
 	zero
 

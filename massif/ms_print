@@ -30,6 +30,8 @@
 use warnings;
 use strict;
 
+# XXX: need to label axes with the unit
+
 #----------------------------------------------------------------------------
 # Global variables, main data structures
 #----------------------------------------------------------------------------

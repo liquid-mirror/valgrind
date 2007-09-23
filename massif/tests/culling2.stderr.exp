@@ -516,6 +516,7 @@ Massif:   post-cull snapshot  49 (t = 19701 B) (detailed)
 Massif: New time interval = 284 (between snapshots 1 and 2)
 Massif: allocs:               200
 Massif: zeroallocs:           1 (0%)
+Massif: reallocs:             0
 Massif: frees:                0
 Massif: XPts:                 2
 Massif: top-XPts:             1 (50%)
