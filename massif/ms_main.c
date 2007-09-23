@@ -31,7 +31,6 @@
 // XXX:
 //---------------------------------------------------------------------------
 // Todo:
-// - add a test that does no allocations (nb must use --stacks=no)
 // - do a test for realloc -- I think no snapshots are being taken for it.
 // - do tests with complicated stack traces -- big ones, ones that require
 //   XCon_redo, ones that exceed --depth, etc.
