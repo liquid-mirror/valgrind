@@ -8,7 +8,6 @@ EXTRA_DIST = $(noinst_SCRIPTS) \
 	alloc-fns-A.post.exp alloc-fns-A.stderr.exp alloc-fns-A.vgtest \
 	alloc-fns-B.post.exp alloc-fns-B.stderr.exp alloc-fns-B.vgtest \
 	basic.post.exp basic.stderr.exp basic.vgtest \
-        basic_malloc.stderr.exp basic_malloc.vgtest \
         culling1.stderr.exp culling1.vgtest \
         culling2.stderr.exp culling2.vgtest \
 	long-time.post.exp long-time.stderr.exp long-time.vgtest \
@@ -30,7 +29,6 @@ AM_CFLAGS   = $(WERROR) -Winline -Wall -Wshadow -g $(AM_FLAG_M3264_PRI)
 check_PROGRAMS = \
 	alloc-fns \
 	basic \
-	basic_malloc \
 	culling1 culling2 \
 	long-time \
 	null \
