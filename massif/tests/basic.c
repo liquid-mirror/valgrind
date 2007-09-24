@@ -5,7 +5,7 @@
 
 int main(void)
 {
-   // N=36 gives us 72 sample points, which fills the text graph nicely.
+   // N=36 gives us 72 snapshots, which fills the text graph nicely.
    #define N   36
    int i;
    int* a[N];
@@ -13,7 +13,7 @@ int main(void)
    for (i = 0; i < N; i++) {
       a[i] = malloc(100);
    }
-   for (i = 0; i < N; i++) {
+   for (i = 0; i < N-1; i++) {
       free(a[i]);
    }
    

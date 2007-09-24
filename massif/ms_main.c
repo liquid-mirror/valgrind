@@ -352,6 +352,7 @@ static Bool ms_process_cmd_line_option(Char* arg)
    else VG_NUM_CLO (arg, "--heap-admin", clo_heap_admin)
    else VG_BNUM_CLO(arg, "--depth",      clo_depth, 1, MAX_DEPTH)
 
+   // XXX: use a fractional number, so no division by 100
    else VG_NUM_CLO(arg, "--threshold",   clo_threshold)
 
    else if (VG_CLO_STREQ(arg, "--time-unit=ms")) clo_time_unit = TimeMS;

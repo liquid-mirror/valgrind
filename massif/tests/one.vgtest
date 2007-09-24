@@ -1,0 +1,4 @@
+prog: one
+vgopts: --stacks=no --time-unit=B --heap-admin=0
+post: perl ../../massif/ms_print massif.out
+cleanup: rm massif.out

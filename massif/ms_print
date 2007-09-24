@@ -30,8 +30,6 @@
 use warnings;
 use strict;
 
-# XXX: need to label axes with the unit
-
 #----------------------------------------------------------------------------
 # Global variables, main data structures
 #----------------------------------------------------------------------------
@@ -112,7 +110,6 @@ sub process_cmd_line()
             if ($arg =~ /^-v$|^--version$/) {
                 die("ms_print-$version\n");
 
-            # XXX: consider making threshold /100, like massif itself
             # --threshold=X (tolerates a trailing '%')
             } elsif ($arg =~ /^--threshold=([\d\.]+)%?$/) {
                 $threshold = $1;
@@ -252,8 +249,67 @@ sub read_heap_tree($$$$$)
 }
 
 #-----------------------------------------------------------------------------
-# Reading the input file
+# Reading the input file: main
 #-----------------------------------------------------------------------------
+
+sub max_label_2($$)
+{
+    my ($szB, $szB_scaled) = @_;
+
+    # For the label, if $szB is 999B or below, we print it as an integer.
+    # Otherwise, we print it as a float with 5 characters (including the '.').
+    # Examples (for bytes):
+    #       1 -->     1  B
+    #     999 -->   999  B
+    #    1000 --> 0.977 KB
+    #    1024 --> 1.000 KB
+    #   10240 --> 10.00 KB
+    #  102400 --> 100.0 KB
+    # 1024000 --> 0.977 MB
+    # 1048576 --> 1.000 MB
+    #
+    if    ($szB < 1000)        { return sprintf("%5d",   $szB);        }
+    elsif ($szB_scaled < 10)   { return sprintf("%5.3f", $szB_scaled); }
+    elsif ($szB_scaled < 100)  { return sprintf("%5.2f", $szB_scaled); }
+    else                       { return sprintf("%5.1f", $szB_scaled); }
+}
+
+# Work out the units for the max value, measured in bytes.
+sub B_max_label($)
+{
+    my ($szB) = @_;
+
+    # We repeat until the number is less than 1000, but we divide by 1024 on
+    # each scaling.
+    my $szB_scaled = $szB;
+    my $unit = "B";
+    if ($szB_scaled >= 1000) { $unit = "KB"; $szB_scaled /= 1024; }
+    if ($szB_scaled >= 1000) { $unit = "MB"; $szB_scaled /= 1024; }
+    if ($szB_scaled >= 1000) { $unit = "GB"; $szB_scaled /= 1024; }
+    if ($szB_scaled >= 1000) { $unit = "TB"; $szB_scaled /= 1024; }
+    if ($szB_scaled >= 1000) { $unit = "PB"; $szB_scaled /= 1024; }
+    if ($szB_scaled >= 1000) { $unit = "EB"; $szB_scaled /= 1024; }
+    if ($szB_scaled >= 1000) { $unit = "ZB"; $szB_scaled /= 1024; }
+    if ($szB_scaled >= 1000) { $unit = "YB"; $szB_scaled /= 1024; }
+
+    return (max_label_2($szB, $szB_scaled), $unit);
+}
+
+# Work out the units for the max value, measured in ms/s/h.
+sub t_max_label($)
+{
+    my ($szB) = @_;
+
+    # We scale from millisecond to seconds to hours.
+    #
+    # XXX: this allows a number with 6 chars, eg. "3599.0 s"
+    my $szB_scaled = $szB;
+    my $unit = "ms";
+    if ($szB_scaled >= 1000) { $unit = "s"; $szB_scaled /= 1000; }
+    if ($szB_scaled >= 3600) { $unit = "h"; $szB_scaled /= 3600; }
+
+    return (max_label_2($szB, $szB_scaled), $unit);
+}
 
 # This prints four things:
 #   - the output header
@@ -398,17 +454,17 @@ sub read_input_file()
     my $x;
     my $y;
 
-    # We increment end_ms_time by 1 so that the last snapshot occurs just
-    # before it, and doesn't spill over into the final column.
     my $n_snapshots = scalar(@snapshot_nums);
     ($n_snapshots > 0) or die;
-    my $end_time = $times[$n_snapshots-1] + 1;
-    ($end_time > 0) or die;
+    my $end_time = $times[$n_snapshots-1];
+    ($end_time >= 0) or die;
 
     # Setup graph[][].
     $graph[0][0] = '+';                                     # axes join point
     for ($x = 1; $x <= $graph_x; $x++) { $graph[$x][0] = '-'; } # X-axis
     for ($y = 1; $y <= $graph_y; $y++) { $graph[0][$y] = '|'; } # Y-axis
+    $graph[$graph_x][0] = '>';                                  # X-axis arrow
+    $graph[0][$graph_y] = '^';                                  # Y-axis arrow 
     for ($x = 1; $x <= $graph_x; $x++) {                        # usable area
        for ($y = 1; $y <= $graph_y; $y++) {
           $graph[$x][$y] = ' ';
@@ -440,14 +496,28 @@ sub read_input_file()
 
     # Work out how many bytes each row represents.  If the peak size was 0,
     # make it 1 so that the Y-axis covers a non-zero range of values.
+    # Likewise for end_time.
     if (0 == $peak_mem_total_szB) { $peak_mem_total_szB = 1; }
+    if (0 == $end_time          ) { $end_time           = 1; }
     my $K = $peak_mem_total_szB / $graph_y;
+
+    # If we leave end_time as is, the final snapshot will spill over past
+    # the last column.  So we add a small epsilon to it to prevent this from
+    # happening.
+    $end_time += 0.001;
 
     for (my $i = 0; $i < $n_snapshots; $i++) {
  
-        # Work out which column this snapshot belongs to.
-        my $x_pos_frac = ($times[$i] / $end_time) * $graph_x;
+        # Work out which column this snapshot belongs to.  
+        my $x_pos_frac = ($times[$i] / ($end_time)) * $graph_x;
         $x = int($x_pos_frac) + 1;    # +1 due to Y-axis
+        # The final snapshot will spill over into the n+1th column, which
+        # doesn't get shown.  So we fudge that one and pull it back a
+        # column, as if the end_time was actually end_time+epsilon.
+        if ($times[$i] == $end_time) {
+            ($x == $graph_x+1) or die;
+            $x = $graph_x;
+        }
  
         # Draw the column only if it's a detailed snapshot, or we don't
         # already have a detailed snapshot's bar in this column -- we don't
@@ -477,49 +547,40 @@ sub read_input_file()
         }
     }
 
-    # Work out the units for the Y-axis.
-    my $orders_of_magnitude = 0;
-    my $unit;
-    my $peak_mem_total_szBscaled = $peak_mem_total_szB;
-    while ($peak_mem_total_szBscaled > 1000) {
-        $orders_of_magnitude++;
-        $peak_mem_total_szBscaled /= 1000;
-    }
-    if    (0 == $orders_of_magnitude) { $unit = ' '; } 
-    elsif (1 == $orders_of_magnitude) { $unit = 'k'; } 
-    elsif (2 == $orders_of_magnitude) { $unit = 'M'; } 
-    elsif (3 == $orders_of_magnitude) { $unit = 'G'; } 
-    elsif (4 == $orders_of_magnitude) { $unit = 'T'; } 
-    else { die("unknown order of magnitude: $orders_of_magnitude\n"); }
-
     #-------------------------------------------------------------------------
     # Print graph[][].
     #-------------------------------------------------------------------------
+    my ($y_label, $y_unit) = B_max_label($peak_mem_total_szB);
+    my ($x_label, $x_unit) = ( $time_unit eq "ms" 
+                             ? t_max_label($end_time) 
+                             : B_max_label($end_time) );
+
+    printf("    %2s\n", $y_unit);
     for ($y = $graph_y; $y >= 0; $y--) {
-        # Row prefix (ie. X-axis label)
-        if ($graph_y == $y) {            # top point
-           if ($peak_mem_total_szBscaled < 10) {
-                printf("%3.1f%s", $peak_mem_total_szBscaled, $unit);
-            } else {
-                printf("%3d%s", $peak_mem_total_szBscaled, $unit);
-            }
-        } elsif (0 == $y) {              # bottom point
-            print("  0 ");
+        if ($graph_y == $y) {            # top row
+            print($y_label);
+        } elsif (0 == $y) {              # bottom row
+            print("   0 ");
         } else {                         # anywhere else
-            print("    ");
+            print("     ");
         }
           
         # Axis and data for the row.
         for ($x = 0; $x <= $graph_x; $x++) {
             printf("%s", $graph[$x][$y]);
         }
-        print("\n");
+        if (0 == $y) {
+            print("$x_unit\n");
+        } else {
+            print("\n");
+        }
     }
+    printf("     0%s%5s\n", ' ' x ($graph_x-5), $x_label);
 
     #-------------------------------------------------------------------------
     # Print snapshot numbers.
     #-------------------------------------------------------------------------
-    print("\n\n");
+    print("\n");
     print("Number of snapshots: $n_snapshots\n");
     print(" Detailed snapshots: [");
     my $first_detailed = 1;
