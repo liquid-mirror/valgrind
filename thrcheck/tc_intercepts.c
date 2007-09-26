@@ -44,6 +44,7 @@
 #include "thrcheck.h"
 
 #define TRACE_PTH_FNS 0
+#define TRACE_QT4_FNS 0
 
 
 /*----------------------------------------------------------------*/
@@ -136,6 +137,7 @@ static char* lame_strerror ( long err )
                                "for defined data type";
       case EBUSY:       return "EBUSY: Device or resource busy";
       case ETIMEDOUT:   return "ETIMEDOUT: Connection timed out";
+      case EDEADLK:     return "EDEADLK: Resource deadlock would occur";
       default:          return "tc_intercepts.c: lame_strerror(): "
                                "unhandled case -- please fix me!";
    }
@@ -280,24 +282,26 @@ PTH_FUNC(int, pthreadZumutexZuinit, // pthread_mutex_init
               pthread_mutexattr_t* attr)
 {
    int    ret;
+   long   mbRec;
    OrigFn fn;
    VALGRIND_GET_ORIG_FN(fn);
    if (TRACE_PTH_FNS) {
       fprintf(stderr, "<< pthread_mxinit %p", mutex); fflush(stderr);
    }
-#if 0
-if (attr) {
-int ty, zzz;
-zzz = pthread_mutexattr_gettype(attr, &ty);
-if (zzz == 0 && ty == PTHREAD_MUTEX_RECURSIVE)
-   fprintf(stderr, "ZZZZZ recursive!\n");
-}
-#endif
+
+   mbRec = 0;
+   if (attr) {
+      int ty, zzz;
+      zzz = pthread_mutexattr_gettype(attr, &ty);
+      if (zzz == 0 && ty == PTHREAD_MUTEX_RECURSIVE)
+         mbRec = 1;
+   }
+
    CALL_FN_W_WW(ret, fn, mutex,attr);
 
    if (ret == 0 /*success*/) {
-      DO_CREQ_v_W(_VG_USERREQ__tc_PTHREAD_MUTEX_INIT_POST,
-                  pthread_mutex_t*,mutex);
+      DO_CREQ_v_WW(_VG_USERREQ__tc_PTHREAD_MUTEX_INIT_POST,
+                   pthread_mutex_t*,mutex, long,mbRec);
    } else { 
       DO_PthAPIerror( "pthread_mutex_init", ret );
    }
@@ -588,6 +592,96 @@ PTH_FUNC(int, pthreadZucondZubroadcastZAZa, // pthread_cond_broadcast@*
 
    return ret;
 }
+
+
+/*----------------------------------------------------------------*/
+/*---                                                          ---*/
+/*----------------------------------------------------------------*/
+
+// soname is libQtCore.so.4 ; match against libQtCore.so*
+#define QT4_FUNC(ret_ty, f, args...) \
+   ret_ty I_WRAP_SONAME_FNNAME_ZZ(libQtCoreZdsoZa,f)(args); \
+   ret_ty I_WRAP_SONAME_FNNAME_ZZ(libQtCoreZdsoZa,f)(args)
+
+QT4_FUNC(void, ZuZZN6QMutex4lockEv, // _ZN6QMutex4lockEv == QMutex::lock()
+               void* self)
+{
+   OrigFn fn;
+   VALGRIND_GET_ORIG_FN(fn);
+   if (TRACE_QT4_FNS) {
+      fprintf(stderr, "<< QMutex::lock %p", self); fflush(stderr);
+   }
+
+   DO_CREQ_v_W(_VG_USERREQ__tc_PTHREAD_MUTEX_LOCK_PRE,
+               void*, self);
+
+   CALL_FN_v_W(fn, self);
+
+   DO_CREQ_v_W(_VG_USERREQ__TC_PTHREAD_MUTEX_LOCK_POST,
+               void*, self);
+
+   if (TRACE_QT4_FNS) {
+      fprintf(stderr, " :: QMutex::lock done >>\n");
+   }
+}
+
+QT4_FUNC(void, ZuZZN6QMutex6unlockEv, // _ZN6QMutex6unlockEv == QMutex::unlock()
+               void* self)
+{
+   OrigFn fn;
+   VALGRIND_GET_ORIG_FN(fn);
+
+   if (TRACE_QT4_FNS) {
+      fprintf(stderr, "<< QMutex::unlock %p", self); fflush(stderr);
+   }
+
+   DO_CREQ_v_W(_VG_USERREQ__TC_PTHREAD_MUTEX_UNLOCK_PRE,
+               void*, self);
+
+   CALL_FN_v_W(fn, self);
+
+   DO_CREQ_v_W(_VG_USERREQ__tc_PTHREAD_MUTEX_UNLOCK_POST,
+               void*, self);
+
+   if (TRACE_QT4_FNS) {
+      fprintf(stderr, " QMutex::unlock done >>\n");
+   }
+}
+
+// _ZN6QMutex7tryLockEv == bool QMutex::tryLock()
+// using 'long' to mimic C++ 'bool'
+QT4_FUNC(long, ZuZZN6QMutex7tryLockEv,
+               void* self)
+{
+   OrigFn fn;
+   long   ret;
+   VALGRIND_GET_ORIG_FN(fn);
+   if (1|| TRACE_QT4_FNS) {
+      fprintf(stderr, "<< QMutex::tryLock %p", self); fflush(stderr);
+   }
+
+   DO_CREQ_v_W(_VG_USERREQ__tc_PTHREAD_MUTEX_LOCK_PRE,
+               void*, self);
+
+   CALL_FN_W_W(ret, fn, self);
+
+   // assumes that only the low 8 bits of the 'bool' are significant
+   if (ret & 0xFF) {
+      DO_CREQ_v_W(_VG_USERREQ__TC_PTHREAD_MUTEX_LOCK_POST,
+                  void*, self);
+   }
+
+   if (1|| TRACE_QT4_FNS) {
+      fprintf(stderr, " :: QMutex::tryLock -> %lu >>\n", ret);
+   }
+   
+   return ret;
+}
+
+/*
+bool QMutex::tryLock(int timeout)  _ZN6QMutex7tryLockEi
+             _ZN6QMutex7tryLockEv
+*/
 
 
 /*--------------------------------------------------------------------*/
