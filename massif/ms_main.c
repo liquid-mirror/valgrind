@@ -1033,25 +1033,8 @@ static UInt cull_snapshots(void)
    return min_timespan;
 }
 
-// Take a snapshot.  Note that with bigger depths, snapshots can be slow,
-// eg. konqueror snapshots can easily take 50ms!
-// [XXX: is that still true?]
-static void take_snapshot(Char* kind)
+static Time get_time(void)
 {
-   // 'min_time_interval' is the minimum time interval between snapshots;
-   // if we try to take a snapshot and less than this much time has passed,
-   // we don't take it.  Initialised to zero so that we begin by taking
-   // snapshots as quickly as possible.
-   static Time min_time_interval     = 0;
-   static Time time_of_prev_snapshot = 0;
-   // Zero allows startup snapshot.
-   static Time earliest_possible_time_of_next_snapshot = 0;
-   static Int  n_snapshots_since_last_detailed = 0;
-
-   Time      time, time_since_prev;
-   Snapshot* snapshot;
-   Int       this_snapshot_i = next_snapshot_i;
-
    // Get current time, in whatever time unit we're using.
    if (clo_time_unit == TimeMS) {
       // Some stuff happens between the millisecond timer being initialised
@@ -1067,29 +1050,29 @@ static void take_snapshot(Char* kind)
       static Time start_time_ms;
       if (is_first_snapshot) {
          start_time_ms = VG_(read_millisecond_timer)();
-         time = 0;
          is_first_snapshot = False;
+         return 0;
       } else {
-         time = VG_(read_millisecond_timer)() - start_time_ms;
+         return VG_(read_millisecond_timer)() - start_time_ms;
       }
    } else if (clo_time_unit == TimeB) {
-      time = total_allocs_deallocs_szB;
+      return total_allocs_deallocs_szB;
    } else {
       tl_assert2(0, "bad --time-unit value");
    }
+}
 
-   // Only do a snapshot if it's time.
-   time_since_prev = time - time_of_prev_snapshot;
-   if (time < earliest_possible_time_of_next_snapshot) {
-      n_skipped_snapshots++;
-      return;
-   }
+// Take a snapshot.  Note that with bigger depths, snapshots can be slow,
+// eg. konqueror snapshots can easily take 50ms!
+// [XXX: is that still true?]
+static void take_snapshot(Int snapshot_i, Time time, Char* kind)
+{
+   static Int n_snapshots_since_last_detailed = 0;
+
+   Snapshot* snapshot = &snapshots[snapshot_i];
 
    // Right!  We're taking a real snapshot.
    n_real_snapshots++;
-   snapshot = & snapshots[next_snapshot_i];
-   next_snapshot_i++;
-   tl_assert(!is_snapshot_in_use(snapshot));
 
    // Heap -------------------------------------------------------------
    if (clo_heap) {
@@ -1136,8 +1119,39 @@ static void take_snapshot(Char* kind)
    }
 
    if (VG_(clo_verbosity) > 1) {                             
-      VERB_snapshot(kind, this_snapshot_i);
+      VERB_snapshot(kind, snapshot_i);
    }   
+}
+
+
+// Take a snapshot, if it's time.
+static void maybe_take_snapshot(Char* kind)
+{
+   // 'min_time_interval' is the minimum time interval between snapshots;
+   // if we try to take a snapshot and less than this much time has passed,
+   // we don't take it.  Initialised to zero so that we begin by taking
+   // snapshots as quickly as possible.
+   static Time min_time_interval     = 0;
+   static Time time_of_prev_snapshot = 0;
+   // Zero allows startup snapshot.
+   static Time earliest_possible_time_of_next_snapshot = 0;
+
+   Time      time, time_since_prev;
+   Snapshot* snapshot;
+
+   time = get_time();
+
+   // Only do a snapshot if it's time.
+   time_since_prev = time - time_of_prev_snapshot;
+   if (time < earliest_possible_time_of_next_snapshot) {
+      n_skipped_snapshots++;
+      return;
+   }
+
+   snapshot = & snapshots[next_snapshot_i];
+   tl_assert(!is_snapshot_in_use(snapshot));
+   take_snapshot(next_snapshot_i, time, kind);
+   next_snapshot_i++;
 
    // Cull the entries, if our snapshot table is full.
    if (MAX_N_SNAPSHOTS == next_snapshot_i) {
@@ -1239,8 +1253,8 @@ void* new_block ( ThreadId tid, void* p, SizeT szB, SizeT alignB,
    }
    VG_(HT_add_node)(malloc_list, hc);
 
-   // Do a snapshot!
-   take_snapshot("  alloc");
+   // Maybe take a snapshot.
+   maybe_take_snapshot("  alloc");
 
    return p;
 }
@@ -1272,8 +1286,8 @@ void die_block ( void* p, Bool custom_free )
    if (!custom_free)
       VG_(cli_free)( p );
 
-   // Do a snapshot!
-   take_snapshot("dealloc");
+   // Maybe take a snapshot.
+   maybe_take_snapshot("dealloc");
 }
 
 static __inline__
@@ -1334,8 +1348,8 @@ void* renew_block ( ThreadId tid, void* p_old, SizeT new_size )
    // than growing it, and this way simplifies the growing case.
    VG_(HT_add_node)(malloc_list, hc);
 
-   // Do a snapshot!
-   take_snapshot("realloc");
+   // Maybe take a snapshot.
+   maybe_take_snapshot("realloc");
 
    return p_new;
 }
@@ -1450,8 +1464,10 @@ IRSB* ms_instrument ( VgCallbackClosure* closure,
    static Bool is_first_SB = True;
 
    if (is_first_SB) {
-      // Do an initial sample for t = 0
-      take_snapshot("startup");
+      // Do an initial sample for t = 0.  We use 'maybe_take_snapshot'
+      // instead of 'take_snapshot' to get its internal static variables
+      // initialised.
+      maybe_take_snapshot("startup");
       is_first_SB = False;
    }
 
