@@ -59,12 +59,6 @@
 
 typedef  struct _WordFM  WordFM; /* opaque */
 
-/* Initialise a WordFM */
-void TC_(initFM) ( WordFM* t, 
-                   void*   (*alloc_nofail)( SizeT ),
-                   void    (*dealloc)(void*),
-                   Word    (*kCmp)(Word,Word) );
-
 /* Allocate and initialise a WordFM */
 WordFM* TC_(newFM) ( void* (*alloc_nofail)( SizeT ),
                      void  (*dealloc)(void*),
@@ -86,6 +80,7 @@ Bool TC_(delFromFM) ( WordFM* fm, /*OUT*/Word* oldV, Word key );
 Bool TC_(lookupFM) ( WordFM* fm, 
                      /*OUT*/Word* keyP, /*OUT*/Word* valP, Word key );
 
+// How many elements are there in fm?
 Word TC_(sizeFM) ( WordFM* fm );
 
 // set up FM for iteration
@@ -110,6 +105,52 @@ WordFM* TC_(dopyFM) ( WordFM* fm,
 
 //------------------------------------------------------------------//
 //---                         end WordFM                         ---//
+//---                      Public interface                      ---//
+//------------------------------------------------------------------//
+
+//------------------------------------------------------------------//
+//---                WordBag (unboxed words only)                ---//
+//---                      Public interface                      ---//
+//------------------------------------------------------------------//
+
+typedef  struct _WordBag  WordBag; /* opaque */
+
+/* Allocate and initialise a WordBag */
+WordBag* TC_(newBag) ( void* (*alloc_nofail)( SizeT ),
+                       void  (*dealloc)(void*) );
+
+/* Free up the Bag. */
+void TC_(deleteBag) ( WordBag* );
+
+/* Add a word. */
+void TC_(addToBag)( WordBag*, Word );
+
+/* Find out how many times the given word exists in the bag. */
+Word TC_(elemBag) ( WordBag*, Word );
+
+/* Delete a word from the bag. */
+Bool TC_(delFromBag)( WordBag*, Word );
+
+/* Is the bag empty? */
+Bool TC_(isEmptyBag)( WordBag* );
+
+/* Does the bag have exactly one element? */
+Bool TC_(isSingletonTotalBag)( WordBag* );
+
+/* Return an arbitrary element from the bag. */
+Word TC_(anyElementOfBag)( WordBag* );
+
+/* How many different / total elements are in the bag? */
+Word TC_(sizeUniqueBag)( WordBag* ); /* fast */
+Word TC_(sizeTotalBag)( WordBag* );  /* warning: slow */
+
+/* Iterating over the elements of a bag. */
+void TC_(initIterBag)( WordBag* );
+Bool TC_(nextIterBag)( WordBag*, /*OUT*/Word* pVal, /*OUT*/Word* pCount );
+void TC_(doneIterBag)( WordBag* );
+
+//------------------------------------------------------------------//
+//---             end WordBag (unboxed words only)               ---//
 //---                      Public interface                      ---//
 //------------------------------------------------------------------//
 

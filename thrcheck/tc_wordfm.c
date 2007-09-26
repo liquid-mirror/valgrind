@@ -67,7 +67,7 @@ typedef
       Word key;
       Word val;
       struct _AvlNode* child[2]; /* [0] is left subtree, [1] is right */
-      Char balance;
+      Char balance; /* do not make this unsigned */
    }
    AvlNode;
 
@@ -496,13 +496,11 @@ AvlNode* avl_dopy ( AvlNode* nd,
    return nyu;
 }
 
-/* --- Public interface functions --- */
-
 /* Initialise a WordFM. */
-void TC_(initFM) ( WordFM* fm,
-                   void*   (*alloc_nofail)( SizeT ),
-                   void    (*dealloc)(void*),
-                   Word    (*kCmp)(Word,Word) )
+static void initFM ( WordFM* fm,
+                     void*   (*alloc_nofail)( SizeT ),
+                     void    (*dealloc)(void*),
+                     Word    (*kCmp)(Word,Word) )
 {
    fm->root         = 0;
    fm->kCmp         = kCmp;
@@ -511,6 +509,8 @@ void TC_(initFM) ( WordFM* fm,
    fm->stackTop     = 0;
 }
 
+/* --- Public interface functions --- */
+
 /* Allocate and Initialise a WordFM. */
 WordFM* TC_(newFM) ( void* (*alloc_nofail)( SizeT ),
                      void  (*dealloc)(void*),
@@ -518,7 +518,7 @@ WordFM* TC_(newFM) ( void* (*alloc_nofail)( SizeT ),
 {
    WordFM* fm = alloc_nofail(sizeof(WordFM));
    tl_assert(fm);
-   TC_(initFM)(fm, alloc_nofail, dealloc, kCmp);
+   initFM(fm, alloc_nofail, dealloc, kCmp);
    return fm;
 }
 
@@ -682,6 +682,145 @@ WordFM* TC_(dopyFM) ( WordFM* fm, Word(*dopyK)(Word), Word(*dopyV)(Word) )
 
 //------------------------------------------------------------------//
 //---                         end WordFM                         ---//
+//---                       Implementation                       ---//
+//------------------------------------------------------------------//
+
+//------------------------------------------------------------------//
+//---                WordBag (unboxed words only)                ---//
+//---                       Implementation                       ---//
+//------------------------------------------------------------------//
+
+/* A trivial container, to make it opaque. */
+struct _WordBag { 
+   WordFM* fm; 
+};
+
+WordBag* TC_(newBag) ( void* (*alloc_nofail)( SizeT ),
+                       void  (*dealloc)(void*) )
+{
+   WordBag* bag = alloc_nofail(sizeof(WordBag));
+   bag->fm = TC_(newFM)( alloc_nofail, dealloc, NULL );
+   return bag;
+}
+
+void TC_(deleteBag) ( WordBag* bag )
+{
+   void (*dealloc)(void*) = bag->fm->dealloc;
+   TC_(deleteFM)( bag->fm, NULL, NULL );
+   VG_(memset)(bag, 0, sizeof(WordBag));
+   dealloc(bag);
+}
+
+void TC_(addToBag)( WordBag* bag, Word w )
+{
+   Word key, count;
+   if (TC_(lookupFM)(bag->fm, &key, &count, w)) {
+      tl_assert(key == w);
+      tl_assert(count >= 1);
+      TC_(addToFM)(bag->fm, w, count+1);
+   } else {
+      TC_(addToFM)(bag->fm, w, 1);
+   }
+}
+
+Word TC_(elemBag) ( WordBag* bag, Word w )
+{
+   Word key, count;
+   if (TC_(lookupFM)( bag->fm, &key, &count, w)) {
+      tl_assert(key == w);
+      tl_assert(count >= 1);
+      return count;
+   } else {
+      return 0;
+   }
+}
+
+Word TC_(sizeUniqueBag) ( WordBag* bag )
+{
+   return TC_(sizeFM)( bag->fm );
+}
+
+static Word sizeTotalBag_wrk ( AvlNode* nd )
+{
+   /* unchecked pre: nd is non-NULL */
+   Word w = nd->val;
+   tl_assert(w >= 1);
+   if (nd->child[0])
+      w += sizeTotalBag_wrk(nd->child[0]);
+   if (nd->child[1])
+      w += sizeTotalBag_wrk(nd->child[1]);
+   return w;
+}
+Word TC_(sizeTotalBag)( WordBag* bag )
+{
+   if (bag->fm->root)
+      return sizeTotalBag_wrk(bag->fm->root);
+   else
+      return 0;
+}
+
+Bool TC_(delFromBag)( WordBag* bag, Word w )
+{
+   Word key, count;
+   if (TC_(lookupFM)(bag->fm, &key, &count, w)) {
+      tl_assert(key == w);
+      tl_assert(count >= 1);
+      if (count > 1) {
+         TC_(addToFM)(bag->fm, w, count-1);
+      } else {
+         tl_assert(count == 1);
+         TC_(delFromFM)( bag->fm, NULL, w );
+      }
+      return True;
+   } else {
+      return False;
+   }
+}
+
+Bool TC_(isEmptyBag)( WordBag* bag )
+{
+   return TC_(sizeFM)(bag->fm) == 0;
+}
+
+Bool TC_(isSingletonTotalBag)( WordBag* bag )
+{
+   AvlNode* nd;
+   if (TC_(sizeFM)(bag->fm) != 1)
+      return False;
+   nd = bag->fm->root;
+   tl_assert(nd);
+   tl_assert(!nd->child[0]);
+   tl_assert(!nd->child[1]);
+   return nd->val == 1;
+}
+
+Word TC_(anyElementOfBag)( WordBag* bag )
+{
+   /* Return an arbitrarily chosen element in the bag.  We might as
+      well return the one at the root of the underlying AVL tree. */
+   AvlNode* nd = bag->fm->root;
+   tl_assert(nd); /* if this fails, 'bag' is empty - caller is in error. */
+   tl_assert(nd->val >= 1);
+   return nd->key;
+}
+
+void TC_(initIterBag)( WordBag* bag )
+{
+   TC_(initIterFM)(bag->fm);
+}
+
+Bool TC_(nextIterBag)( WordBag* bag, /*OUT*/Word* pVal, /*OUT*/Word* pCount )
+{
+   return TC_(nextIterFM)( bag->fm, pVal, pCount );
+}
+
+void TC_(doneIterBag)( WordBag* bag )
+{
+   TC_(doneIterFM)( bag->fm );
+}
+
+//------------------------------------------------------------------//
+//---             end WordBag (unboxed words only)               ---//
 //---                       Implementation                       ---//
 //------------------------------------------------------------------//
 
