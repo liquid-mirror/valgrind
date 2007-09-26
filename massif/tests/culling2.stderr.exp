@@ -518,6 +518,8 @@ Massif: allocs:               200
 Massif: zeroallocs:           1 (0%)
 Massif: reallocs:             0
 Massif: frees:                0
+Massif: stack allocs:         0
+Massif: stack frees:          0
 Massif: XPts:                 2
 Massif: top-XPts:             1 (50%)
 Massif: dup'd XPts:           40

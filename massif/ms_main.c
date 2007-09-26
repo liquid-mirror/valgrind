@@ -31,9 +31,10 @@
 // XXX:
 //---------------------------------------------------------------------------
 // Todo:
-// - disable --stacks, unless/until I do it fully and properly -- ie.
-//   track every stack alloc/dealloc -- necessary if peak-taking is to be
-//   accurate.  Stacks stuff is hard to regtest, unfortunately.
+// - -v: give more detail on each snapshot -- sizes, etc
+// - -v: print number of skipped snapshots after each one is taken
+// - Add ability to draw multiple graphs, eg. heap-only, stack-only, total.
+//   Give each graph a title.
 // - do peak-taking.
 // - make file format more generic.  Obstacles:
 //   - unit prefixes are not generic
@@ -249,6 +250,8 @@ static UInt n_allocs               = 0;
 static UInt n_zero_allocs          = 0;
 static UInt n_reallocs             = 0;
 static UInt n_frees                = 0;
+static UInt n_stack_allocs         = 0;
+static UInt n_stack_frees          = 0;
 static UInt n_xpt_init_expansions  = 0;
 static UInt n_xpt_later_expansions = 0;
 static UInt n_getXCon_redo         = 0;
@@ -1417,18 +1420,42 @@ static void* ms_realloc ( ThreadId tid, void* p_old, SizeT new_szB )
 
 
 //------------------------------------------------------------//
-//--- Tracked events                                       ---//
+//--- Stacks                                               ---//
 //------------------------------------------------------------//
+
+static void update_stack_stats(SSizeT stack_szB_len)
+{
+   total_allocs_deallocs_szB += stack_szB_len;
+}
+
+static void new_mem_stack(Addr a, SizeT len)
+{
+   n_stack_allocs++;
+   update_stack_stats(len);
+   maybe_take_snapshot("stk-new");
+}
+
+static void die_mem_stack(Addr a, SizeT len)
+{
+   n_stack_frees++;
+   update_stack_stats(len);
+   maybe_take_snapshot("stk-die");
+}
+
 
 static void new_mem_stack_signal(Addr a, SizeT len)
 {
    sigstacks_szB += len;
+   update_stack_stats(len);
+   maybe_take_snapshot("sig-new");
 }
 
 static void die_mem_stack_signal(Addr a, SizeT len)
 {
    tl_assert(sigstacks_szB >= len);
    sigstacks_szB -= len;
+   update_stack_stats(len);
+   maybe_take_snapshot("sig-die");
 }
 
 
@@ -1475,9 +1502,11 @@ IRSB* ms_instrument ( VgCallbackClosure* closure,
    static Bool is_first_SB = True;
 
    if (is_first_SB) {
-      // Do an initial sample for t = 0.  We use 'maybe_take_snapshot'
-      // instead of 'take_snapshot' to get its internal static variables
-      // initialised.
+      // Do an initial sample to guarantee that we have at least one.
+      // We use 'maybe_take_snapshot' instead of 'take_snapshot' to ensure
+      // 'maybe_take_snapshot's internal static variables are initialised.
+      // However, with --stacks=yes this snapshot may not actually be the
+      // first one, surprisingly enough.
       maybe_take_snapshot("startup");
       is_first_SB = False;
    }
@@ -1703,6 +1732,8 @@ static void ms_fini(Int exit_status)
          ( n_allocs ? n_zero_allocs * 100 / n_allocs : 0 )); 
       VERB("reallocs:             %u", n_reallocs);                     
       VERB("frees:                %u", n_frees);
+      VERB("stack allocs:         %u", n_stack_allocs);
+      VERB("stack frees:          %u", n_stack_frees);
       VERB("XPts:                 %u", n_xpts);
       VERB("top-XPts:             %u (%d%%)",                     
          alloc_xpt->n_children,                              
@@ -1735,6 +1766,15 @@ static void ms_post_clo_init(void)
          VERB("  %d: %s", i, (Char*)alloc_fn_word);
          i++;
       }
+   }
+
+   if (clo_stacks) {
+      // Events to track
+      VG_(track_new_mem_stack)       ( new_mem_stack        );
+      VG_(track_die_mem_stack)       ( die_mem_stack        );
+
+      VG_(track_new_mem_stack_signal)( new_mem_stack_signal );
+      VG_(track_die_mem_stack_signal)( die_mem_stack_signal );
    }
 
    // We don't take a snapshot now, because there's still some core
@@ -1776,10 +1816,6 @@ static void ms_pre_clo_init(void)
                                    ms___builtin_vec_delete,
                                    ms_realloc,
                                    0 );
-
-   // Events to track
-   VG_(track_new_mem_stack_signal)( new_mem_stack_signal );
-   VG_(track_die_mem_stack_signal)( die_mem_stack_signal );
 
    // HP_Chunks
    malloc_list  = VG_(HT_construct)( 80021 );   // prime, big
