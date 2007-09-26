@@ -3,49 +3,49 @@
 # Suppressions for the Thrcheck tool when using 
 # a glibc-2.{2,3,4,5,6} system
 
-###--- ld.so stuff ---###
-{
-   thrcheck-glibc2X-ldso-1
-   Thrcheck:Race
-   fun:_dl_lookup_symbol_x
-   fun:_dl_fixup
-   fun:_dl_runtime_resolve
-}
-{
-   thrcheck-glibc2X-ldso-2
-   Thrcheck:Race
-   fun:do_lookup_x
-   fun:_dl_lookup_symbol_x
-   fun:_dl_fixup
-}
-{
-   thrcheck-glibc2X-ldso-3
-   Thrcheck:Race
-   fun:_dl_map_object_deps
-   fun:dl_open_worker
-   fun:_dl_catch_error
-}
-{
-   thrcheck-glibc2X-ldso-4
-   Thrcheck:Race
-   fun:setup_direct
-   fun:_dl_map_object_deps
-   fun:dl_open_worker
-}
-{
-   thrcheck-glibc2X-ldso-5
-   Thrcheck:Race
-   fun:_dl_map_object_from_fd
-   fun:_dl_map_object
-   fun:dl_open_worker
-}
-{
-   thrcheck-glibc2X-ldso-6
-   Thrcheck:Race
-   fun:_dl_map_object
-   fun:dl_open_worker
-   fun:_dl_catch_error
-}
+#z###--- ld.so stuff ---###
+#z{
+#z   thrcheck-glibc2X-ldso-1
+#z   Thrcheck:Race
+#z   fun:_dl_lookup_symbol_x
+#z   fun:_dl_fixup
+#z   fun:_dl_runtime_resolve
+#z}
+#z{
+#z   thrcheck-glibc2X-ldso-2
+#z   Thrcheck:Race
+#z   fun:do_lookup_x
+#z   fun:_dl_lookup_symbol_x
+#z   fun:_dl_fixup
+#z}
+#z{
+#z   thrcheck-glibc2X-ldso-3
+#z   Thrcheck:Race
+#z   fun:_dl_map_object_deps
+#z   fun:dl_open_worker
+#z   fun:_dl_catch_error
+#z}
+#z{
+#z   thrcheck-glibc2X-ldso-4
+#z   Thrcheck:Race
+#z   fun:setup_direct
+#z   fun:_dl_map_object_deps
+#z   fun:dl_open_worker
+#z}
+#z{
+#z   thrcheck-glibc2X-ldso-5
+#z   Thrcheck:Race
+#z   fun:_dl_map_object_from_fd
+#z   fun:_dl_map_object
+#z   fun:dl_open_worker
+#z}
+#z{
+#z   thrcheck-glibc2X-ldso-6
+#z   Thrcheck:Race
+#z   fun:_dl_map_object
+#z   fun:dl_open_worker
+#z   fun:_dl_catch_error
+#z}
 
 ###--- pthread_join ---###
 {
@@ -54,60 +54,60 @@
    fun:pthread_join
    fun:pthread_join
 }
-{
-   thrcheck-glibc2X-pthjoin-2
-   Thrcheck:Race
-   fun:__free_tcb
-   fun:pthread_join
-   fun:pthread_join
-}
-
-###--- IO_file ---###
-{
-   thrcheck-glibc2X-IOfile-1
-   Thrcheck:Race
-   fun:_IO_file_xsputn*
-   fun:vfprintf
-   fun:*printf
-}
-{
-   thrcheck-glibc2X-IOfile-2
-   Thrcheck:Race
-   fun:_IO_file_overflow*
-   fun:_IO_file_xsputn*
-   fun:*printf
-}
-{
-   thrcheck-glibc2X-IOfile-3
-   Thrcheck:Race
-   fun:new_do_write
-   fun:_IO_do_write*
-   fun:_IO_file_xsputn*
-   fun:*printf
-}
-{
-   thrcheck-glibc2X-IOfile-4
-   Thrcheck:Race
-   fun:new_do_write
-   fun:_IO_file_xsputn*
-   fun:*printf
-}
-{
-   thrcheck-glibc2X-IOfile-5
-   Thrcheck:Race
-   fun:new_do_write
-   fun:_IO_do_write*
-   fun:_IO_file_overflow*
-   fun:_IO_file_xsputn*
-}
-
-###--- thread creation ---###
-{
-   thrcheck-glibc2X-creation-1
-   Thrcheck:Race
-   fun:start_thread
-   fun:clone
-}
+#z{
+#z   thrcheck-glibc2X-pthjoin-2
+#z   Thrcheck:Race
+#z   fun:__free_tcb
+#z   fun:pthread_join
+#z   fun:pthread_join
+#z}
+#z
+#z###--- IO_file ---###
+#z{
+#z   thrcheck-glibc2X-IOfile-1
+#z   Thrcheck:Race
+#z   fun:_IO_file_xsputn*
+#z   fun:vfprintf
+#z   fun:*printf
+#z}
+#z{
+#z   thrcheck-glibc2X-IOfile-2
+#z   Thrcheck:Race
+#z   fun:_IO_file_overflow*
+#z   fun:_IO_file_xsputn*
+#z   fun:*printf
+#z}
+#z{
+#z   thrcheck-glibc2X-IOfile-3
+#z   Thrcheck:Race
+#z   fun:new_do_write
+#z   fun:_IO_do_write*
+#z   fun:_IO_file_xsputn*
+#z   fun:*printf
+#z}
+#z{
+#z   thrcheck-glibc2X-IOfile-4
+#z   Thrcheck:Race
+#z   fun:new_do_write
+#z   fun:_IO_file_xsputn*
+#z   fun:*printf
+#z}
+#z{
+#z   thrcheck-glibc2X-IOfile-5
+#z   Thrcheck:Race
+#z   fun:new_do_write
+#z   fun:_IO_do_write*
+#z   fun:_IO_file_overflow*
+#z   fun:_IO_file_xsputn*
+#z}
+#z
+#z###--- thread creation ---###
+#z{
+#z   thrcheck-glibc2X-creation-1
+#z   Thrcheck:Race
+#z   fun:start_thread
+#z   fun:clone
+#z}
 
 ###--- thread exit ---###
 {
@@ -133,7 +133,7 @@
 
 ###--- pthread_mutex_destroy ---###
 {
-   thrcheck-glibc2X-pthmxlock-2
+   thrcheck-glibc2X-pthmxdestroy-1
    Thrcheck:Race
    fun:pthread_mutex_destroy
    fun:pthread_mutex_destroy
@@ -146,13 +146,13 @@
    fun:pthread_create@@GLIBC_*
    fun:pthread_create@*
 }
-{
-   thrcheck-glibc2X-pthcreate-2
-   Thrcheck:Race
-   fun:do_clone
-   fun:pthread_create@@GLIBC_*
-   fun:pthread_create@*
-}
+#z{
+#z   thrcheck-glibc2X-pthcreate-2
+#z   Thrcheck:Race
+#z   fun:do_clone
+#z   fun:pthread_create@@GLIBC_*
+#z   fun:pthread_create@*
+#z}
 
 ###--- pthread_cond_signal ---###
 #
@@ -184,42 +184,49 @@
    Thrcheck:Race
    fun:pthread_cond_wait@@GLIBC_2.3.2
 }
-{
-   thrcheck-glibc2X-pthcondwait-2
-   Thrcheck:Race
-   fun:pthread_cond_wait@@GLIBC_*
-   fun:pthread_cond_wait*
-}
+#z{
+#z   thrcheck-glibc2X-pthcondwait-2
+#z   Thrcheck:Race
+#z   fun:pthread_cond_wait@@GLIBC_*
+#z   fun:pthread_cond_wait*
+#z}
 
-###--- pthread_mutex_trylock ---###
+###--- pthread_cond_destroy ---###
 # ditto
 {
-   thrcheck-glibc2X-pthmxtrylock-1
+   thrcheck-glibc2X-pthconddestroy-1
    Thrcheck:Race
-   fun:pthread_mutex_trylock
+   fun:pthread_cond_destroy@@GLIBC_2.3.2
 }
 
-###--- pthread_cond_timedwait ---###
-{
-   thrcheck-glibc2X-pthmxtimedwait-1
-   Thrcheck:Race
-   fun:pthread_cond_timedwait@@GLIBC_*
-   fun:pthread_cond_timedwait*
-}
-{
-   thrcheck-glibc2X-pthmxtimedwait-2
-   Thrcheck:Race
-   fun:__lll_mutex_lock_wait
-   fun:pthread_cond_timedwait@@GLIBC_*
-   fun:pthread_cond_timedwait*
-}
+#z###--- pthread_mutex_trylock ---###
+#z# ditto
+#z{
+#z   thrcheck-glibc2X-pthmxtrylock-1
+#z   Thrcheck:Race
+#z   fun:pthread_mutex_trylock
+#z}
+#z
+#z###--- pthread_cond_timedwait ---###
+#z{
+#z   thrcheck-glibc2X-pthmxtimedwait-1
+#z   Thrcheck:Race
+#z   fun:pthread_cond_timedwait@@GLIBC_*
+#z   fun:pthread_cond_timedwait*
+#z}
+#z{
+#z   thrcheck-glibc2X-pthmxtimedwait-2
+#z   Thrcheck:Race
+#z   fun:__lll_mutex_lock_wait
+#z   fun:pthread_cond_timedwait@@GLIBC_*
+#z   fun:pthread_cond_timedwait*
+#z}
 
 ###--- libpthread internal stuff ---###
 {
    thrcheck-glibc2X-libpthread-1
    Thrcheck:Race
    fun:__pthread_mutex_unlock_usercnt
-   fun:pthread_mutex_unlock
    fun:pthread_mutex_unlock
 }
 {
@@ -229,56 +236,72 @@
    fun:_L_mutex_unlock_*
    fun:__pthread_mutex_unlock_usercnt
 }
-{
-   thrcheck-glibc2X-libpthread-3
-   Thrcheck:Race
-   fun:__lll_mutex_lock_wait
-   fun:_L_mutex_lock_*
-   fun:start_thread
-}
-{
-   thrcheck-glibc2X-libpthread-4
-   Thrcheck:Race
-   fun:__lll_mutex_lock_wait
-   fun:_L_mutex_lock_*
-   fun:pthread_mutex_lock
-}
+#z{
+#z   thrcheck-glibc2X-libpthread-3
+#z   Thrcheck:Race
+#z   fun:__lll_mutex_lock_wait
+#z   fun:_L_mutex_lock_*
+#z   fun:start_thread
+#z}
+#z{
+#z   thrcheck-glibc2X-libpthread-4
+#z   Thrcheck:Race
+#z   fun:__lll_mutex_lock_wait
+#z   fun:_L_mutex_lock_*
+#z   fun:pthread_mutex_lock
+#z}
 {
    thrcheck-glibc2X-libpthread-5
    Thrcheck:Race
    fun:mythread_wrapper
    fun:start_thread
 }
+#z{
+#z   thrcheck-glibc2X-libpthread-6
+#z   Thrcheck:Race
+#z   fun:__deallocate_stack
+#z   fun:start_thread
+#z}
+#z{
+#z   thrcheck-glibc2X-libpthread-7
+#z   Thrcheck:Race
+#z   fun:__deallocate_stack
+#z   fun:__free_tcb
+#z   fun:start_thread
+#z}
+#z{
+#z   thrcheck-glibc2X-libpthread-8
+#z   Thrcheck:Race
+#z   fun:__deallocate_stack
+#z   fun:pthread_join
+#z   fun:pthread_join
+#z}
+#z
+#z###--- fork ---###
+#z{
+#z   thrcheck-glibc2X-fork-1
+#z   Thrcheck:Race
+#z   fun:__reclaim_stacks
+#z   fun:fork
+#z}
+
+###--- glibc-2.5 specific ---###
 {
-   thrcheck-glibc2X-libpthread-6
+   thrcheck-glibc25-ld25-64bit-1
    Thrcheck:Race
-   fun:__deallocate_stack
-   fun:start_thread
+   obj:/lib64/ld-2.5.so
+   obj:/lib64/ld-2.5.so
+   obj:/lib64/ld-2.5.so
 }
 {
-   thrcheck-glibc2X-libpthread-7
+   thrcheck-glibc25-ld25-32bit-1
    Thrcheck:Race
-   fun:__deallocate_stack
-   fun:__free_tcb
-   fun:start_thread
-}
-{
-   thrcheck-glibc2X-libpthread-8
-   Thrcheck:Race
-   fun:__deallocate_stack
-   fun:pthread_join
-   fun:pthread_join
+   obj:/lib/ld-2.5.so
+   obj:/lib/ld-2.5.so
+   obj:/lib/ld-2.5.so
 }
 
-###--- fork ---###
-{
-   thrcheck-glibc2X-fork-1
-   Thrcheck:Race
-   fun:__reclaim_stacks
-   fun:fork
-}
-
-###--- OpenSUSE 10.3 specific ---###
+###--- glibc-2.6.1 specific ---###
 {
    thrcheck-glibc26-ld261-64bit-1
    Thrcheck:Race
@@ -292,4 +315,12 @@
    obj:/lib/ld-2.6.1.so
    obj:/lib/ld-2.6.1.so
    obj:/lib/ld-2.6.1.so
+}
+
+###--- qt4 specific ---###
+{
+   thrcheck-qt4-QMutex::lock()-twice
+   Thrcheck:Race
+   fun:_ZN6QMutex4lockEv
+   fun:_ZN6QMutex4lockEv
 }
