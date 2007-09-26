@@ -5,12 +5,12 @@ Massif:   3: memalign
 Massif:   4: __builtin_new
 Massif:   5: __builtin_vec_new
 Massif:   6: malloc
-Massif: startup snapshot   0 (t = 0 B)
-Massif:   alloc snapshot   1 (t = 100 B)
-Massif: realloc snapshot   2 (t = 100 B)
-Massif: realloc snapshot   3 (t = 150 B)
-Massif: realloc snapshot   4 (t = 250 B)
-Massif: dealloc snapshot   5 (t = 400 B)
+Massif: startup S.  0 (t:0, hp:0, ad:0, st:0)
+Massif:   alloc S.  1 (t:100, hp:100, ad:0, st:0)
+Massif: realloc S.  2 (t:100, hp:100, ad:0, st:0)
+Massif: realloc S.  3 (t:150, hp:50, ad:0, st:0)
+Massif: realloc S.  4 (t:250, hp:150, ad:0, st:0)
+Massif: dealloc S.  5 (t:400, hp:0, ad:0, st:0)
 Massif: allocs:               1
 Massif: zeroallocs:           0 (0%)
 Massif: reallocs:             4

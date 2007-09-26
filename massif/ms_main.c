@@ -33,6 +33,7 @@
 // Todo:
 // - -v: give more detail on each snapshot -- sizes, etc
 // - -v: print number of skipped snapshots after each one is taken
+// - make --time-unit=B include heap-admin bytes
 // - Add ability to draw multiple graphs, eg. heap-only, stack-only, total.
 //   Give each graph a title.
 // - do peak-taking.
@@ -845,8 +846,8 @@ typedef
    struct {
       Time  time;
       SizeT total_szB;     // Size of all allocations at that snapshot time.
-      SizeT heap_admin_szB;
       SizeT heap_szB;
+      SizeT heap_admin_szB;
       SizeT stacks_szB;
       XPt*  alloc_xpt;     // Heap XTree root, if a detailed snapshot,
    }                       // otherwise NULL
@@ -925,9 +926,15 @@ static void delete_snapshot(Snapshot* snapshot)
 
 static void VERB_snapshot(Char* prefix, Int i)
 {
-   Char* suffix = ( is_detailed_snapshot(&snapshots[i]) ? " (detailed)" : "");
-   VERB("%s snapshot %3d (t = %lld %s)%s", prefix, i,
-      snapshots[i].time, TimeUnit_to_string(clo_time_unit), suffix);
+   Char* suffix = ( is_detailed_snapshot(&snapshots[i]) ? "d" : ".");
+   VERB("%s S%s%3d "
+        "(t:%lld, hp:%ld, ad:%ld, st:%ld)",
+      prefix, suffix, i,
+      snapshots[i].time,
+      snapshots[i].heap_szB,
+      snapshots[i].heap_admin_szB,
+      snapshots[i].stacks_szB
+   );
 }
 
 // Weed out half the snapshots;  we choose those that represent the smallest
@@ -994,7 +1001,7 @@ static UInt cull_snapshots(void)
       min_snapshot = & snapshots[ min_j ];
       if (VG_(clo_verbosity) > 1) {                          
          Char buf[64];                                       
-         VG_(snprintf)(buf, 64, "  cull %3d (t-span = %lld)", i, min_timespan); 
+         VG_(snprintf)(buf, 64, " %3d (t-span = %lld)", i, min_timespan); 
          VERB_snapshot(buf, min_j);                          
       }          
       delete_snapshot(min_snapshot);
@@ -1060,11 +1067,11 @@ static Time get_time(void)
       // so when the time-unit is 'ms' we always have a big gap between the
       // first two snapshots.  But at least users won't have to wonder why
       // the first snapshot isn't at t=0.
-      static Bool is_first_snapshot = True;
+      static Bool is_first_get_time = True;
       static Time start_time_ms;
-      if (is_first_snapshot) {
+      if (is_first_get_time) {
          start_time_ms = VG_(read_millisecond_timer)();
-         is_first_snapshot = False;
+         is_first_get_time = False;
          return 0;
       } else {
          return VG_(read_millisecond_timer)() - start_time_ms;
