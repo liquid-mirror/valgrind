@@ -31,6 +31,16 @@
 // XXX:
 //---------------------------------------------------------------------------
 // Todo:
+// - make file format more generic.  Obstacles:
+//   - unit prefixes are not generic
+//   - preset column widths for stats are not generic
+//   - preset column headers are not generic
+//   - "Massif arguments:" line is not generic
+// - get rid of --stacks, unless/until I do it fully and properly -- ie.
+//   track every stack alloc/dealloc -- necessary if peak-taking is to be
+//   accurate.  Stacks stuff is hard to regtest, unfortunately.
+// - consider 'instructions executed' as a time unit -- more regular than
+//   ms, less artificial than B
 // - do a graph-drawing test
 // - do tests with complicated stack traces -- big ones, ones that require
 //   XCon_redo, ones that exceed --depth, etc.
@@ -39,6 +49,7 @@
 //   documentation
 // - Check MALLOCLIKE_BLOCK works, write regtest
 // - work out peak-taking
+// - do snapshots on client requests (after peak-taking is done)
 // - make everything configurable, eg. min/max number of snapshots (which
 //   also determine culling proportion), frequency of detailed snapshots,
 //   etc.
