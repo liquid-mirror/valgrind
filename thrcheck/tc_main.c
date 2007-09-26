@@ -224,23 +224,45 @@ typedef
    'normal' collection of Locks, which can come and go.  When the lock
    is copied, its .magic is changed from LockN_Magic to
    LockP_Magic. */
+
+/* Lock kinds. */
+typedef
+   enum {
+      LK_mbRec=1001, /* normal mutex, possibly recursive */
+      LK_nonRec,     /* normal mutex, definitely non recursive */
+      LK_rdwr        /* reader-writer lock */
+   }
+   LockKind;
+
 typedef
    struct _Lock {
       /* ADMIN */
       struct _Lock* admin;
       ULong         unique; /* used for persistence-hashing */
       UInt          magic;  /* LockN_MAGIC or LockP_MAGIC */
-      /* USEFUL */
-      /* If .count is zero, lock is currently unheld, and .thr must
-         be NULL.  If .count > 0, lock is locked .count times by
-         .thr, which must be non-NULL. */
-      ULong   count;
-      Thread* thr;
-      /* Guest address of lock */
-      Addr guestaddr;
       /* EXPOSITION */
       /* Place where lock first came to the attention of Thrcheck. */
-      ExeContext* appeared_at;
+      ExeContext*   appeared_at;
+      /* USEFUL-STATIC */
+      Addr          guestaddr; /* Guest address of lock */
+      LockKind      kind;      /* what kind of lock this is */
+      /* USEFUL-DYNAMIC */
+      Bool          heldW; 
+      WordBag*      heldBy; /* bag of threads that hold this lock */
+      /* .heldBy is NULL: lock is unheld, and .heldW is meaningless
+                          but arbitrarily set to False
+         .heldBy is non-NULL:
+            .heldW is True: lock is w-held by threads in heldBy
+            .heldR is False: lock is r-held by threads in heldBy
+            Either way, heldBy may not validly be an empty Bag.
+
+         for LK_nonRec, r-holdings are not allowed, and w-holdings may
+         only have sizeTotal(heldBy) == 1
+
+         for LK_mbRec, r-holdings are not allowed, and w-holdings may
+         only have sizeUnique(heldBy) == 1
+
+         for LK_rdwr, w-holdings may only have sizeTotal(heldBy) == 1 */
    }
    Lock;
 
@@ -315,6 +337,8 @@ static UWord stats__mk_Segment = 0;
 
 /* --------- Constructors --------- */
 
+static inline Bool is_sane_LockN ( Lock* lock ); /* fwds */
+
 static Thread* mk_Thread ( WordSetID lockset, SegmentID csegid ) {
    static Int indx      = 1;
    Thread* thread       = tc_zalloc( sizeof(Lock) );
@@ -329,16 +353,18 @@ static Thread* mk_Thread ( WordSetID lockset, SegmentID csegid ) {
    return thread;
 }
 // Make a new lock which is unlocked (hence ownerless)
-static Lock* mk_LockN ( Addr guestaddr ) {
+static Lock* mk_LockN ( LockKind kind, Addr guestaddr ) {
    static ULong unique = 0;
    Lock* lock        = tc_zalloc( sizeof(Lock) );
    lock->admin       = admin_locks;
    lock->unique      = unique++;
    lock->magic       = LockN_MAGIC;
-   lock->count       = 0;
-   lock->thr         = NULL;
-   lock->guestaddr   = guestaddr;
    lock->appeared_at = NULL;
+   lock->guestaddr   = guestaddr;
+   lock->kind        = kind;
+   lock->heldW       = False;
+   lock->heldBy      = NULL;
+   tl_assert(is_sane_LockN(lock));
    admin_locks       = lock;
    return lock;
 }
@@ -356,24 +382,162 @@ static Segment* mk_Segment ( Thread* thr, Segment* prev, Segment* other ) {
    return seg;
 }
 
+static inline Bool is_sane_Segment ( Segment* seg ) {
+   return seg != NULL && seg->magic == Segment_MAGIC;
+}
 static inline Bool is_sane_Thread ( Thread* thr ) {
    return thr != NULL && thr->magic == Thread_MAGIC;
 }
-static inline Bool is_sane_LockN ( Lock* lock ) {
-   return lock != NULL 
-          && lock->magic == LockN_MAGIC
-          && (lock->thr  ? lock->count > 0  : lock->count == 0);
+
+static Bool is_sane_Bag_of_Threads ( WordBag* bag )
+{
+   Thread* thr;
+   Word    count;
+   TC_(initIterBag)( bag );
+   while (TC_(nextIterBag)( bag, (Word*)&thr, &count )) {
+      if (count < 1) return False;
+      if (!is_sane_Thread(thr)) return False;
+   }
+   TC_(doneIterBag)( bag );
+   return True;
+}
+static Bool is_sane_Lock_BASE ( Lock* lock )
+{
+   if (lock == NULL
+       || (lock->magic != LockN_MAGIC && lock->magic != LockP_MAGIC))
+      return False;
+   switch (lock->kind) { 
+      case LK_mbRec: case LK_nonRec: case LK_rdwr: break; 
+      default: return False; 
+   }
+   if (lock->heldBy == NULL) {
+      /* Unheld.  We arbitrarily require heldW to be False. */
+      return !lock->heldW;
+   }
+
+   /* If heldBy is non-NULL, we require it to contain at least one
+      thread. */
+   if (TC_(isEmptyBag)(lock->heldBy))
+      return False;
+
+   /* Lock is either r- or w-held. */
+   if (!is_sane_Bag_of_Threads(lock->heldBy)) 
+      return False;
+   if (lock->heldW) {
+      /* Held in write-mode */
+      if ((lock->kind == LK_nonRec || lock->kind == LK_rdwr)
+          && !TC_(isSingletonTotalBag)(lock->heldBy))
+         return False;
+   } else {
+      /* Held in read-mode */
+      if (lock->kind != LK_rdwr) return False;
+   }
+   return True;
 }
 static inline Bool is_sane_LockP ( Lock* lock ) {
    return lock != NULL 
           && lock->magic == LockP_MAGIC
-          && (lock->thr  ? lock->count > 0  : lock->count == 0);
+          && is_sane_Lock_BASE(lock);
+}
+static inline Bool is_sane_LockN ( Lock* lock ) {
+   return lock != NULL 
+          && lock->magic == LockN_MAGIC
+          && is_sane_Lock_BASE(lock);
 }
 static inline Bool is_sane_LockNorP ( Lock* lock ) {
-   return is_sane_LockN(lock) || is_sane_LockP(lock);
+   return is_sane_Lock_BASE(lock);
 }
-static inline Bool is_sane_Segment ( Segment* seg ) {
-   return seg != NULL && seg->magic == Segment_MAGIC;
+
+/* Release storage for a Lock.  Also release storage in .heldBy, if
+   any. */
+static void del_LockN ( Lock* lk ) 
+{
+   tl_assert(is_sane_LockN(lk));
+   if (lk->heldBy)
+      TC_(deleteBag)( lk->heldBy );
+   VG_(memset)(lk, 0xAA, sizeof(*lk));
+   tc_free(lk);
+}
+
+/* Update 'lk' to reflect that 'thr' now has a write-acquisition of
+   it.  This is done strictly: only combinations resulting from
+   correct program and libpthread behaviour are allowed. */
+static void lockN_acquire_writer ( Lock* lk, Thread* thr ) 
+{
+   tl_assert(is_sane_LockN(lk));
+   tl_assert(is_sane_Thread(thr));
+   switch (lk->kind) {
+      case LK_nonRec:
+      case_LK_nonRec:
+         tl_assert(lk->heldBy == NULL); /* can't w-lock recursively */
+         tl_assert(!lk->heldW);
+         lk->heldW  = True;
+         lk->heldBy = TC_(newBag)( tc_zalloc, tc_free );
+         TC_(addToBag)( lk->heldBy, (Word)thr );
+         break;
+      case LK_mbRec:
+         if (lk->heldBy == NULL)
+            goto case_LK_nonRec;
+         /* 2nd and subsequent locking of a lock by its owner */
+         tl_assert(lk->heldW);
+	 /* assert: lk is only held by one thread .. */
+	 tl_assert(TC_(sizeUniqueBag(lk->heldBy)) == 1);
+	 /* assert: .. and that thread is 'thr'. */
+         tl_assert(TC_(elemBag)(lk->heldBy, (Word)thr)
+                   == TC_(sizeTotalBag)(lk->heldBy));
+         TC_(addToBag)(lk->heldBy, (Word)thr);
+         break;
+      case LK_rdwr:
+         tl_assert(lk->heldBy == NULL && !lk->heldW); /* must be unheld */
+         goto case_LK_nonRec;
+      default: 
+         tl_assert(0);
+  }
+  tl_assert(is_sane_LockN(lk));
+}
+
+static void lockN_acquire_reader ( Lock* lk, Thread* thr )
+{
+   tl_assert(is_sane_LockN(lk));
+   tl_assert(is_sane_Thread(thr));
+   /* can only add reader to a reader-writer lock. */
+   tl_assert(lk->kind == LK_rdwr);
+   /* lk must be free or already r-held. */
+   tl_assert(lk->heldBy == NULL 
+             || (lk->heldBy != NULL && !lk->heldW));
+   if (lk->heldBy) {
+      TC_(addToBag)(lk->heldBy, (Word)thr);
+   } else {
+      lk->heldW  = False;
+      lk->heldBy = TC_(newBag)( tc_zalloc, tc_free );
+      TC_(addToBag)( lk->heldBy, (Word)thr );
+   }
+   tl_assert(!lk->heldW);
+   tl_assert(is_sane_LockN(lk));
+}
+
+/* Update 'lk' to reflect a release of it by 'thr'.  This is done
+   strictly: only combinations resulting from correct program and
+   libpthread behaviour are allowed. */
+
+static void lockN_release ( Lock* lk, Thread* thr )
+{
+   Bool b;
+   tl_assert(is_sane_LockN(lk));
+   tl_assert(is_sane_Thread(thr));
+   /* lock must be held by someone */
+   tl_assert(lk->heldBy);
+   /* Remove it from the holder set */
+   b = TC_(delFromBag)(lk->heldBy, (Word)thr);
+   /* thr must actually have been a holder of lk */
+   tl_assert(b);
+   /* normalise */
+   if (TC_(isEmptyBag)(lk->heldBy)) {
+      TC_(deleteBag)(lk->heldBy);
+      lk->heldBy = NULL;
+      lk->heldW = False;
+   }
+   tl_assert(is_sane_LockN(lk));
 }
 
 /* --------- xxxID functions --------- */
@@ -574,15 +738,37 @@ static void pp_map_threads ( Int d )
    space(d); VG_(printf)("}\n");
 }
 
+static const HChar* show_LockKind ( LockKind lkk ) {
+   switch (lkk) {
+      case LK_mbRec:  return "mbRec";
+      case LK_nonRec: return "nonRec";
+      case LK_rdwr:   return "rdwr";
+      default:        tl_assert(0);
+   }
+}
+
 static void pp_Lock ( Int d, Lock* lk )
 {
-   space(d+0); VG_(printf)("Lock %p {\n", lk);
+   space(d+0); VG_(printf)("Lock %p (ga %p) {\n", lk, lk->guestaddr);
    if (sHOW_ADMIN) {
-      space(d+3); VG_(printf)("admin %p\n",   lk->admin);
-      space(d+3); VG_(printf)("magic 0x%x\n", (UInt)lk->magic);
+      space(d+3); VG_(printf)("admin  %p\n",   lk->admin);
+      space(d+3); VG_(printf)("magic  0x%x\n", (UInt)lk->magic);
    }
-   space(d+3); VG_(printf)("count %llu\n", lk->count);
-   space(d+3); VG_(printf)("thr   %p\n",   lk->thr);
+   space(d+3); VG_(printf)("unique %llu\n", lk->unique);
+   space(d+3); VG_(printf)("kind   %s\n", show_LockKind(lk->kind));
+   space(d+3); VG_(printf)("heldW  %s\n", lk->heldW ? "yes" : "no");
+   space(d+3); VG_(printf)("heldBy %p", lk->heldBy);
+   if (lk->heldBy) {
+      Thread* thr;
+      Word    count;
+      VG_(printf)(" { ");
+      TC_(initIterBag)( lk->heldBy );
+      while (TC_(nextIterBag)( lk->heldBy, (Word*)&thr, &count ))
+         VG_(printf)("%lu:%p ", count, thr);
+      TC_(doneIterBag)( lk->heldBy );
+      VG_(printf)("}");
+   }
+   VG_(printf)("\n");
    space(d+0); VG_(printf)("}\n");
 }
 
@@ -811,7 +997,7 @@ static void initialise_data_structures ( void )
    map_locks = TC_(newFM)( tc_zalloc, tc_free, NULL/*unboxed Word cmp*/);
    tl_assert(map_locks != NULL);
 
-   __bus_lock_Lock = mk_LockN( (Addr)&__bus_lock );
+   __bus_lock_Lock = mk_LockN( LK_nonRec, (Addr)&__bus_lock );
    tl_assert(is_sane_LockN(__bus_lock_Lock));
    TC_(addToFM)( map_locks, (Word)&__bus_lock, (Word)__bus_lock_Lock );
 
@@ -916,16 +1102,17 @@ static void map_threads_delete ( ThreadId coretid )
 /*----------------------------------------------------------------*/
 
 /* Make sure there is a lock table entry for the given (lock) guest
-   address.  If not, create one in state UnlockedNew.  In any case,
-   return the address of the existing or new Lock. */
-static Lock* map_locks_lookup_or_create ( Addr ga, ThreadId tid )
+   address.  If not, create one of the stated 'kind' in unheld state.
+   In any case, return the address of the existing or new Lock. */
+static 
+Lock* map_locks_lookup_or_create ( LockKind lkk, Addr ga, ThreadId tid )
 {
    Bool  found;
    Lock* oldlock = NULL;
    tl_assert(is_sane_ThreadId(tid));
    found = TC_(lookupFM)( map_locks, NULL, (Word*)&oldlock, (Word)ga );
    if (!found) {
-      Lock* lock = mk_LockN(ga);
+      Lock* lock = mk_LockN(lkk, ga);
       lock->appeared_at = VG_(record_ExeContext)( tid, 0 );
       tl_assert(is_sane_LockN(lock));
       TC_(addToFM)( map_locks, (Word)ga, (Word)lock );
@@ -1576,6 +1763,15 @@ static void shmem__copy_arange_state(Addr src, Addr dst, SizeT len)
 */
 
 
+/* Return True iff 'thr' holds 'lk' in some mode. */
+static Bool thread_is_a_holder_of_Lock ( Thread* thr, Lock* lk )
+{
+   if (lk->heldBy)
+      return TC_(elemBag)( lk->heldBy, (Word)thr ) > 0;
+   else
+      return False;
+}
+
 /* Sanity check Threads, as far as possible */
 static void threads__sanity_check ( Char* who )
 {
@@ -1597,8 +1793,7 @@ static void threads__sanity_check ( Char* who )
          if (!is_sane_LockN(lk)) BAD("2");
          // Thread.lockset: each Lock in set is actually held by that
          // thread
-         if (lk->count == 0) BAD("3a"); /* lock not held! */
-         if (lk->thr != thr) BAD("3b"); /* lock held by some other thread */
+         if (!thread_is_a_holder_of_Lock(thr,lk)) BAD("3");
          // Thread.csegid is a valid SegmentID
          if (!is_sane_SegmentID(thr->csegid)) BAD("4");
          // and the associated Segment has .thr == t
@@ -1636,7 +1831,8 @@ static void locks__sanity_check ( Char* who )
    TC_(doneIterFM)( map_locks );
    // scan through admin_locks ...
    for (lk = admin_locks; lk; lk = lk->admin) {
-      // lock is sane
+      // lock is sane.  Quite comprehensive, also checks that
+      // referenced (holder) threads are sane.
       if (!is_sane_LockN(lk)) BAD("3");
       // map_locks binds guest address back to this lock
       if (lk != map_locks_maybe_lookup(lk->guestaddr)) BAD("4");
@@ -1645,15 +1841,23 @@ static void locks__sanity_check ( Char* who )
       // that attempts to lock in (eg) freed memory.  Detect this
       // and warn about it in the pre/post-mutex-lock event handler.
       if (is_SHMEM_NoAccess(shmem__read_32(lk->guestaddr))) BAD("5");
-      if (lk->count > 0) {
-         if (lk->thr == NULL) BAD("6a");
-         if (!is_sane_Thread(lk->thr)) BAD("6");
-         if (!TC_(elemWS)(univ_lsets, lk->thr->lockset, (Word)lk)) 
-            BAD("7");
-         break;
+      // look at all threads mentioned as holders of this lock.  Ensure
+      // this lock is mentioned in their locksets.
+      if (lk->heldBy) {
+         Thread* thr;
+         Word    count;
+         TC_(initIterBag)( lk->heldBy );
+         while (TC_(nextIterBag)( lk->heldBy, (Word*)&thr, &count )) {
+            // is_sane_LockN above ensures these
+            tl_assert(count >= 1);
+            tl_assert(is_sane_Thread(thr));
+            if (!TC_(elemWS)(univ_lsets, thr->lockset, (Word)lk)) 
+               BAD("7");
+         }
+         TC_(doneIterBag)( lk->heldBy );
       } else {
          /* lock not held by anybody */
-         if (lk->thr != NULL) BAD("7a");
+         if (lk->heldW) BAD("7a"); /* should be False if !heldBy */
          // since lk is unheld, then (no lockset contains lk)
          // hmm, this is really too expensive to check.  Hmm.
       }
@@ -1822,6 +2026,8 @@ static void record_error_UnlockForeign  ( Thread*, Thread*, Lock* );
 static void record_error_UnlockBogus    ( Thread*, Addr );
 static void record_error_DestroyLocked  ( Thread*, Lock* );
 static void record_error_PthAPIerror    ( Thread*, HChar*, Word, HChar* );
+
+static void record_error_Misc ( Thread*, HChar* );
 
 static WordSetID add_BHL ( WordSetID lockset )
 {
@@ -2212,6 +2418,24 @@ static void msm__handle_write_aligned_32 ( Thread* thr_acc, Addr a )
 /*--- Address range handlers                                   ---*/
 /*----------------------------------------------------------------*/
 
+static void remove_Lock_from_locksets_of_all_owning_Threads( Lock* lk )
+{
+   Thread* thr;
+   if (!lk->heldBy) {
+      tl_assert(!lk->heldW);
+      return;
+   }
+   TC_(initIterBag)( lk->heldBy );
+   while (TC_(nextIterBag)( lk->heldBy, (Word*)&thr, NULL )) {
+      tl_assert(is_sane_Thread(thr));
+      tl_assert(TC_(elemWS)( univ_lsets,
+                             thr->lockset, (Word)lk ));
+      thr->lockset
+         = TC_(delFromWS)( univ_lsets, thr->lockset, (Word)lk );
+   }
+   TC_(doneIterBag)( lk->heldBy );
+}
+
 /* Deletion of memory containing locks:
 
    If the range of memory to be deleted contains no locks, then this
@@ -2294,14 +2518,19 @@ static void shadow_mem_make_NoAccess ( Thread* thr, Addr a, SizeT len )
       if (gla < a || gla >= a+len)
          continue;
       locksToDelete = TC_(addToWS)( univ_lsets, locksToDelete, (Word)lk );
-      if (lk->count > 0) {
-         tl_assert(lk->thr);
-         record_error_FreeMemLock( thr, lk );
-         /* remove lock from currlocks of the owning thread */
-         tl_assert(TC_(elemWS)( univ_lsets,
-                                lk->thr->lockset, (Word)lk ));
-         lk->thr->lockset
-            = TC_(delFromWS)( univ_lsets, lk->thr->lockset, (Word)lk );
+      /* If the lock is held, we must remove it from the currlock sets
+         of all threads that hold it.  Also take the opportunity to
+         report an error.  To report an error we need to know at least
+         one of the threads that holds it; really we should mention
+         them all, but that's too much hassle.  So choose one
+         arbitrarily. */
+      if (lk->heldBy) {
+         tl_assert(!TC_(isEmptyBag)(lk->heldBy));
+         record_error_FreeMemLock( (Thread*)TC_(anyElementOfBag)(lk->heldBy),
+                                   lk );
+         /* remove lock from locksets of all owning threads */
+         remove_Lock_from_locksets_of_all_owning_Threads( lk );
+         /* Leave lk->heldBy in place; del_Lock below will free it up. */
       }
    }
    TC_(doneIterFM)( map_locks );
@@ -2374,9 +2603,9 @@ static void shadow_mem_make_NoAccess ( Thread* thr, Addr a, SizeT len )
         }
         /* and get it out of map_locks */
         map_locks_delete(lk->guestaddr);
+        /* release storage (incl. associated .heldBy Bag) */
         { Lock* tmp = lk->admin;
-          VG_(memset)(lk, 0xAA, sizeof(Lock));
-          tc_free(lk);
+          del_LockN(lk);
           lk = tmp;
         }
      }
@@ -2482,51 +2711,102 @@ void start_new_segment_for_thread ( /*OUT*/SegmentID* new_segidP,
    thr->csegid = *new_segidP;
 }
 
-static void ev__thread_acquires_lock ( Thread* thr, Addr lock_ga )
+static 
+void ev__post_thread_w_acquires_lock ( Thread* thr, 
+                                       LockKind lkk, Addr lock_ga )
 {
-   Lock* lock = map_locks_lookup_or_create( 
-                   lock_ga, map_threads_reverse_lookup_SLOW(thr) );
-   tl_assert( is_sane_LockN(lock) );
-   shmem__set_anyLocks( lock_ga, True );
-
-   if (lock->count > 0) {
-      /* the lock is already taken?! */
-      /* perhaps this is a recursive mutex.  In which case it's OK for
-         the owner thread to lock it again.  FIXME: how do we know
-         it's a recursive one? */
-      tl_assert(lock->thr != NULL);
-      tl_assert(is_sane_Thread(lock->thr));
-      if (lock->thr == thr /* && FIXME: is recursive */) {
-         lock->count++; /* 64 bit -- wraparound implausible */
-         if (0)
-            VG_(printf)("XXX count is now %llu\n", lock->count);
-      } else {
-         /* this can't happen unless the thread library is buggy */
-         VG_(message)(Vg_DebugMsg, "Thrcheck: lock already locked?!");
-         tl_assert(0);
-      }
-   } else {
-      /* Lock is not locked.  Mark it as locked. */
-      tl_assert(lock->thr == NULL);
-      tl_assert(is_sane_Thread(thr));
-      tl_assert(!TC_(elemWS)( univ_lsets, thr->lockset, (Word)lock ));
-      lock->thr   = thr;
-      lock->count = 1;
-   }
-
-   /* update the thread's held-locks set */
-   tl_assert(is_sane_LockN(lock));
-   thr->lockset = TC_(addToWS)( univ_lsets, thr->lockset, (Word)lock );
-}
-
-static void ev__thread_releases_lock ( Thread* thr, Addr lock_ga )
-{
-   Bool  update_held_locks = True;
-   Lock* lock = map_locks_maybe_lookup( lock_ga );
+   Lock* lk; 
 
    /* be paranoid w.r.t hint bits, even if lock_ga is complete
       nonsense */
    shmem__set_anyLocks( lock_ga, True );
+
+   tl_assert(is_sane_Thread(thr));
+   /* Try to find the lock.  If we can't, then create a new one with
+      kind 'lkk'. */
+   lk = map_locks_lookup_or_create( 
+           lkk, lock_ga, map_threads_reverse_lookup_SLOW(thr) );
+   tl_assert( is_sane_LockN(lk) );
+   shmem__set_anyLocks( lock_ga, True );
+
+   /* Basically what we need to do is call lockN_acquire_writer.
+      However, that will barf if any 'invalid' lock states would
+      result.  Therefore check before calling.  Side effect is that
+      'is_sane_LockN(lk)' is both a pre- and post-condition of this
+      routine. 
+
+      Because this routine is only called after successful lock
+      acquisition, we should not be asked to move the lock into any
+      invalid states.  Requests to do so are bugs in libpthread, since
+      that should have rejected any such requests. */
+
+   if (lk->heldBy == NULL) {
+      /* the lock isn't held.  Simple. */
+      tl_assert(!lk->heldW);
+      lockN_acquire_writer( lk, thr );
+      goto noerror;
+   }
+
+   /* So the lock is already held.  If held as a r-lock then
+      libpthread must be buggy. */
+   tl_assert(lk->heldBy);
+   if (!lk->heldW) {
+      record_error_Misc( thr, "Bug in libpthread: write lock "
+                              "acquired on lock which has read locks");
+      goto error;
+   }
+
+   /* So the lock is held in w-mode.  If it's held by some other
+      thread, then libpthread must be buggy. */
+   tl_assert(TC_(sizeUniqueBag)(lk->heldBy) == 1); /* from precondition */
+
+   if (thr != (Thread*)TC_(anyElementOfBag)(lk->heldBy)) {
+      record_error_Misc( thr, "Bug in libpthread: write lock "
+                              "acquired on lock which is w-locked by "
+                              "a different thread");
+      goto error;
+   }
+
+   /* So the lock is already held in w-mode by 'thr'.  That means this
+      is an attempt to lock it recursively, which is only allowable
+      for LK_mbRec kinded locks.  Since this routine is called only
+      once the lock has been acquired, this must also be a libpthread
+      bug. */
+   if (lk->kind != LK_mbRec) {
+      record_error_Misc( thr, "Bug in libpthread: recursive w-lock "
+                              "was unexpectedly allowed");
+      goto error;
+   }
+
+   /* So we are recursively re-locking a lock we already w-hold. */
+   lockN_acquire_writer( lk, thr );
+   goto noerror;
+
+  noerror:
+   /* update the thread's held-locks set */
+   thr->lockset = TC_(addToWS)( univ_lsets, thr->lockset, (Word)lk );
+   /* fall through */
+
+  error:
+   tl_assert(is_sane_LockN(lk));
+}
+
+static void ev__pre_thread_releases_lock ( Thread* thr, Addr lock_ga )
+{
+   Lock* lock;
+   Word  n;
+
+   /* This routine is called prior to a lock release, before
+      libpthread has had a chance to validate the call.  Hence we need
+      to detect and reject any attempts to move the lock into an
+      invalid state.  Such attempts are bugs in the client. */
+
+   /* be paranoid w.r.t hint bits, even if lock_ga is complete
+      nonsense */
+   shmem__set_anyLocks( lock_ga, True );
+
+   tl_assert(is_sane_Thread(thr));
+   lock = map_locks_maybe_lookup( lock_ga );
 
    if (!lock) {
       /* We know nothing about a lock at 'lock_ga'.  Nevertheless
@@ -2536,42 +2816,64 @@ static void ev__thread_releases_lock ( Thread* thr, Addr lock_ga )
       return;
    }
 
+   tl_assert(lock->guestaddr == lock_ga);
    tl_assert(is_sane_LockN(lock));
-   if (lock->count > 0) {
-      /* lock is locked */
-      tl_assert(is_sane_Thread(lock->thr));
-      if (lock->thr != thr) {
-         /* We are not the lock's owner.  This is a bug in the guest,
-            and (per POSIX pthread rules) the unlock attempt will
-            fail.  So just complain and do nothing else. */
-         tl_assert(!TC_(elemWS)( univ_lsets, thr->lockset, (Word)lock ));
-         record_error_UnlockForeign( thr, lock->thr, lock );
-      } 
-      else
-      if (lock->count > 1 /* FIXME && lock is recursive*/) {
-         /* unlocking recursively locked lock.  Just dec the count. */
-         tl_assert(TC_(elemWS)( univ_lsets, thr->lockset, (Word)lock ));
-         lock->count--;
-         update_held_locks = False;
-      } else {
-         /* Mark the lock as unlocked by this thread (segment) */
-         tl_assert(lock->count == 1);
-         tl_assert(TC_(elemWS)( univ_lsets, thr->lockset, (Word)lock ));
-         lock->count = 0;
-         lock->thr   = NULL;
-      }
-   } else {
-      /* Complain that lock is not held.  If this happens, it
-         indicates a serious bug in the guest. */
+
+   if (!lock->heldBy) {
+      /* The lock is not held.  This indicates a serious bug in the
+         client. */
+      tl_assert(!lock->heldW);
       record_error_UnlockUnlocked( thr, lock );
       tl_assert(!TC_(elemWS)( univ_lsets, thr->lockset, (Word)lock ));
+      goto error;
    }
 
-   /* update the thread's held-locks set */
-   tl_assert(is_sane_LockN(lock));
-   if (update_held_locks)
+   /* The lock is held.  Is this thread one of the holders?  If not,
+      report a bug in the client. */
+   n = TC_(elemBag)( lock->heldBy, (Word)thr );
+   tl_assert(n >= 0);
+   if (n == 0) {
+      /* We are not a current holder of the lock.  This is a bug in
+         the guest, and (per POSIX pthread rules) the unlock
+         attempt will fail.  So just complain and do nothing
+         else. */
+      Thread* realOwner = (Thread*)TC_(anyElementOfBag)( lock->heldBy );
+      tl_assert(is_sane_Thread(realOwner));
+      tl_assert(realOwner != thr);
+      tl_assert(!TC_(elemWS)( univ_lsets, thr->lockset, (Word)lock ));
+      record_error_UnlockForeign( thr, realOwner, lock );
+      goto error;
+   }
+
+   /* Ok, we hold the lock 'n' times. */
+   tl_assert(n >= 1);
+
+   lockN_release( lock, thr );
+
+   n--;
+   tl_assert(n >= 0);
+
+   if (n > 0) {
+      tl_assert(lock->heldBy);
+      tl_assert(n == TC_(elemBag)( lock->heldBy, (Word)thr )); 
+      /* We still hold the lock.  So either it's a recursive lock 
+         or a rwlock which is currently r-held. */
+      tl_assert(lock->kind == LK_mbRec
+                || (lock->kind == LK_rdwr && !lock->heldW));
+      tl_assert(TC_(elemWS)( univ_lsets, thr->lockset, (Word)lock ));
+   } else {
+      /* We no longer hold the lock. */
+      if (lock->heldBy) {
+         tl_assert(0 == TC_(elemBag)( lock->heldBy, (Word)thr ));
+      }
+      /* update this thread's lockset accordingly. */
       thr->lockset
          = TC_(delFromWS)( univ_lsets, thr->lockset, (Word)lock );
+   }
+   /* fall through */
+
+  error:
+   tl_assert(is_sane_LockN(lock));
 }
 
 static void ev__pre_thread_create ( ThreadId parent, ThreadId child )
@@ -2889,7 +3191,11 @@ void evim__post_mutex_lock ( ThreadId tid, void* mutex ) {
                   (Int)tid, (void*)mutex );
    if (sanity_flags & SCE_LOCKS)
       all__sanity_check("evim__post_mutex_lock-pre");
-   ev__thread_acquires_lock( map_threads_lookup(tid), (Addr)mutex );
+   ev__post_thread_w_acquires_lock( 
+      map_threads_lookup(tid), 
+      LK_mbRec, /* if not known, create new lock with this LockKind */
+      (Addr)mutex 
+   );
    if (sanity_flags & SCE_LOCKS)
       all__sanity_check("evim__post_mutex_lock-post");
 }
@@ -2899,7 +3205,7 @@ void evim__post_mutex_unlock ( ThreadId tid, void* mutex ) {
    if (SHOW_EVENTS >= 1)
       VG_(printf)("evim__post_mutex_unlock(ctid=%d, %p)\n", 
                   (Int)tid, (void*)mutex );
-   ev__thread_releases_lock( map_threads_lookup(tid), (Addr)mutex );
+   ev__pre_thread_releases_lock( map_threads_lookup(tid), (Addr)mutex );
    if (sanity_flags & SCE_LOCKS)
       all__sanity_check("evim__post_mutex_unlock-post");
 }
@@ -3027,12 +3333,18 @@ void evim__mem_help_write_N(Addr a, SizeT size) {
 }
 
 static void evim__bus_lock(void) {
+   Thread* thr;
    if (0) VG_(printf)("evim__bus_lock()\n");
-   evim__post_mutex_lock( VG_(get_running_tid)(), &__bus_lock );
+   thr = map_threads_maybe_lookup( VG_(get_running_tid)() );
+   tl_assert(thr); /* cannot fail - Thread* must already exist */
+   ev__post_thread_w_acquires_lock( thr, LK_nonRec, (Addr)&__bus_lock );
 }
 static void evim__bus_unlock(void) {
+   Thread* thr;
    if (0) VG_(printf)("evim__bus_unlock()\n");
-   evim__post_mutex_unlock( VG_(get_running_tid)(), &__bus_lock );
+   thr = map_threads_maybe_lookup( VG_(get_running_tid)() );
+   tl_assert(thr); /* cannot fail - Thread* must already exist */
+   ev__pre_thread_releases_lock( thr, (Addr)&__bus_lock );
 }
 
 
@@ -3043,12 +3355,15 @@ static void evim__bus_unlock(void) {
    show where it was first locked.  Intercepting lock initialisations
    is not necessary for the basic operation of the race checker. */
 static
-void evim__tc_PTHREAD_MUTEX_INIT_POST( ThreadId tid, void* mutex )
+void evim__tc_PTHREAD_MUTEX_INIT_POST( ThreadId tid, 
+                                       void* mutex, Word mbRec )
 {
    if (SHOW_EVENTS >= 1)
-      VG_(printf)("evim__tc_PTHREAD_MUTEX_INIT_POST(ctid=%d, %p)\n", 
-                  (Int)tid, (void*)mutex );
-   map_locks_lookup_or_create( (Addr)mutex, tid );
+      VG_(printf)("evim__tc_PTHREAD_MUTEX_INIT_POST(ctid=%d, mbRec=%ld, %p)\n", 
+                  (Int)tid, mbRec, (void*)mutex );
+   tl_assert(mbRec == 0 || mbRec == 1);
+   map_locks_lookup_or_create( mbRec ? LK_mbRec : LK_nonRec,
+                               (Addr)mutex, tid );
    if (sanity_flags & SCE_LOCKS)
       all__sanity_check("evim__tc_PTHREAD_MUTEX_INIT_POST");
 }
@@ -3069,11 +3384,17 @@ void evim__TC_PTHREAD_MUTEX_DESTROY_POST( ThreadId tid, void* mutex )
    lk = map_locks_maybe_lookup( (Addr)mutex );
    if (lk) {
       tl_assert( is_sane_LockN(lk) );
-      if (lk->count > 0) {
+      tl_assert( lk->guestaddr == (Addr)mutex );
+      if (lk->heldBy) {
+         /* Basically act like we unlocked the lock */
          record_error_DestroyLocked( thr, lk );
-         lk->count = 0;
-         lk->thr   = NULL;
+         /* remove lock from locksets of all owning threads */
+         remove_Lock_from_locksets_of_all_owning_Threads( lk );
+         TC_(deleteBag)( lk->heldBy );
+         lk->heldBy = NULL;
+         lk->heldW = False;
       }
+      tl_assert( !lk->heldBy );
       tl_assert( is_sane_LockN(lk) );
    }
    if (sanity_flags & SCE_LOCKS)
@@ -3085,6 +3406,7 @@ static void evim__tc_PTHREAD_MUTEX_LOCK_PRE ( ThreadId tid, void* mutex )
    /* Just check the mutex is sane; nothing else to do. */
    // 'mutex' may be invalid - not checked by wrapper
    Thread* thr;
+   Lock*   lk;
    if (SHOW_EVENTS >= 1)
       VG_(printf)("evim__tc_PTHREAD_MUTEX_LOCK_PRE(ctid=%d, mutex=%p)\n", 
                   (Int)tid, (void*)mutex );
@@ -3092,7 +3414,17 @@ static void evim__tc_PTHREAD_MUTEX_LOCK_PRE ( ThreadId tid, void* mutex )
    thr = map_threads_maybe_lookup( tid );
    tl_assert(thr); /* cannot fail - Thread* must already exist */
 
-   // error-if: we already hold mutex, but is not a recursive one
+   lk = map_locks_maybe_lookup( (Addr)mutex );
+   if ( lk 
+        && (lk->kind == LK_nonRec || lk->kind == LK_rdwr)
+        && lk->heldBy
+        && lk->heldW
+        && TC_(elemBag)( lk->heldBy, (Word)thr ) > 0 ) {
+      /* uh, it's a non-recursive lock and we already w-hold it.  Duh.
+         Deadlock coming up; but at least produce an error message. */
+      record_error_Misc( thr, "Attempt to re-lock a "
+                              "non-recursive lock I already hold" );
+   }
 }
 
 static void evim__TC_PTHREAD_MUTEX_LOCK_POST ( ThreadId tid, void* mutex )
@@ -3106,7 +3438,11 @@ static void evim__TC_PTHREAD_MUTEX_LOCK_POST ( ThreadId tid, void* mutex )
    thr = map_threads_maybe_lookup( tid );
    tl_assert(thr); /* cannot fail - Thread* must already exist */
 
-   ev__thread_acquires_lock( thr, (Addr)mutex );
+   ev__post_thread_w_acquires_lock( 
+      thr, 
+      LK_mbRec, /* if not known, create new lock with this LockKind */
+      (Addr)mutex
+   );
 }
 
 static void evim__TC_PTHREAD_MUTEX_UNLOCK_PRE ( ThreadId tid, void* mutex )
@@ -3120,11 +3456,7 @@ static void evim__TC_PTHREAD_MUTEX_UNLOCK_PRE ( ThreadId tid, void* mutex )
    thr = map_threads_maybe_lookup( tid );
    tl_assert(thr); /* cannot fail - Thread* must already exist */
 
-   // error-if: cannot find any previous record of this mutex
-   // error-if: mutex is locked by some other thread
-   // error-if: mutex is not locked
-
-   ev__thread_releases_lock( thr, (Addr)mutex );
+   ev__pre_thread_releases_lock( thr, (Addr)mutex );
 }
 
 static void evim__tc_PTHREAD_MUTEX_UNLOCK_POST ( ThreadId tid, void* mutex )
@@ -3819,7 +4151,7 @@ Bool tc_handle_client_request ( ThreadId tid, UWord* args, UWord* ret)
          lock initialisations is not necessary for the basic operation
          of the race checker. */
       case _VG_USERREQ__tc_PTHREAD_MUTEX_INIT_POST:
-         evim__tc_PTHREAD_MUTEX_INIT_POST( tid, (void*)args[1] );
+         evim__tc_PTHREAD_MUTEX_INIT_POST( tid, (void*)args[1], args[2] );
          break;
 
       case _VG_USERREQ__TC_PTHREAD_MUTEX_DESTROY_POST:
@@ -3929,6 +4261,9 @@ static Lock* mk_LockP_from_LockN ( Lock* lkn )
       *lkp = *lkn;
       lkp->admin = NULL;
       lkp->magic = LockP_MAGIC;
+      /* Forget about the bag of lock holders - don't copy that. */
+      lkp->heldW  = False;
+      lkp->heldBy = NULL;
       TC_(addToFM)( yaWFM, (Word)lkp, (Word)lkp );
    }
    tl_assert( is_sane_LockP(lkp) );
@@ -3955,13 +4290,14 @@ static Lock* mk_LockP_from_LockN ( Lock* lkn )
 /* Error kinds */
 typedef
    enum {
-      XE_Race=52,        // race
+      XE_Race=1101,      // race
       XE_FreeMemLock,    // freeing memory containing a locked lock
       XE_UnlockUnlocked, // unlocking a not-locked lock
       XE_UnlockForeign,  // unlocking a lock held by some other thread
       XE_UnlockBogus,    // unlocking an address not known to be a lock
       XE_DestroyLocked,  // pth_mx_destroy on locked lock
-      XE_PthAPIerror     // error from the POSIX pthreads API
+      XE_PthAPIerror,    // error from the POSIX pthreads API
+      XE_Misc            // misc other error (w/ string to describe it)
    }
    XErrorTag;
 
@@ -4006,6 +4342,10 @@ typedef
             Word    err;    /* pth error code */
             HChar*  errstr; /* persistent, in tool-arena */
          } PthAPIerror;
+         struct {
+            Thread* thr;
+            HChar*  errstr; /* persistent, in tool-arena */
+         } Misc;
       } XE;
    }
    XError;
@@ -4019,13 +4359,14 @@ static void init_XError ( XError* xe ) {
 /* Extensions of suppressions */
 typedef
    enum {
-      XS_Race=72, /* race */
+      XS_Race=1201, /* race */
       XS_FreeMemLock,
       XS_UnlockUnlocked,
       XS_UnlockForeign,
       XS_UnlockBogus,
       XS_DestroyLocked,
-      XS_PthAPIerror
+      XS_PthAPIerror,
+      XS_Misc
    }
    XSuppTag;
 
@@ -4135,6 +4476,8 @@ void record_error_PthAPIerror ( Thread* thr, HChar* fnname,
                                 Word err, HChar* errstr ) {
    XError xe;
    tl_assert( is_sane_Thread(thr) );
+   tl_assert(fnname);
+   tl_assert(errstr);
    init_XError(&xe);
    xe.tag = XE_PthAPIerror;
    xe.XE.PthAPIerror.thr    = thr;
@@ -4144,6 +4487,19 @@ void record_error_PthAPIerror ( Thread* thr, HChar* fnname,
    // FIXME: tid vs thr
    VG_(maybe_record_error)( map_threads_reverse_lookup_SLOW(thr),
                             XE_PthAPIerror, 0, NULL, &xe );
+}
+
+static void record_error_Misc ( Thread* thr, HChar* errstr ) {
+   XError xe;
+   tl_assert( is_sane_Thread(thr) );
+   tl_assert(errstr);
+   init_XError(&xe);
+   xe.tag = XE_Misc;
+   xe.XE.Misc.thr    = thr;
+   xe.XE.Misc.errstr = string_table_strdup(errstr);
+   // FIXME: tid vs thr
+   VG_(maybe_record_error)( map_threads_reverse_lookup_SLOW(thr),
+                            XE_Misc, 0, NULL, &xe );
 }
 
 static Bool tc_eq_Error ( VgRes not_used, Error* e1, Error* e2 )
@@ -4184,6 +4540,9 @@ static Bool tc_eq_Error ( VgRes not_used, Error* e1, Error* e2 )
                 && 0==VG_(strcmp)(xe1->XE.PthAPIerror.fnname,
                                   xe2->XE.PthAPIerror.fnname)
                 && xe1->XE.PthAPIerror.err == xe2->XE.PthAPIerror.err;
+      case XE_Misc:
+         return xe1->XE.Misc.thr == xe2->XE.Misc.thr
+                && 0==VG_(strcmp)(xe1->XE.Misc.errstr, xe2->XE.Misc.errstr);
       default:
          tl_assert(0);
    }
@@ -4280,13 +4639,28 @@ static void tc_pp_Error ( Error* err )
 
    switch (VG_(get_error_kind)(err)) {
 
+   case XE_Misc: {
+      tl_assert(xe);
+      tl_assert( is_sane_Thread( xe->XE.Misc.thr ) );
+      announce_one_thread( xe->XE.Misc.thr );
+      VG_(message)(Vg_UserMsg,
+                  "Thread #%d: %s",
+                  (Int)xe->XE.Misc.thr->errmsg_index,
+                  xe->XE.Misc.errstr);
+      VG_(pp_ExeContext)( VG_(get_error_where)(err) );
+      break;
+   }
+
    case XE_PthAPIerror: {
       tl_assert(xe);
       tl_assert( is_sane_Thread( xe->XE.PthAPIerror.thr ) );
+      announce_one_thread( xe->XE.PthAPIerror.thr );
       VG_(message)(Vg_UserMsg,
-                  "Thread #%d's call to %s failed with error %ld (%s)",
+                  "Thread #%d's call to %s failed",
                   (Int)xe->XE.PthAPIerror.thr->errmsg_index,
-                  xe->XE.PthAPIerror.fnname,
+                  xe->XE.PthAPIerror.fnname);
+      VG_(message)(Vg_UserMsg,
+                  "   with error code %ld (%s)",
                   xe->XE.PthAPIerror.err,
                   xe->XE.PthAPIerror.errstr);
       VG_(pp_ExeContext)( VG_(get_error_where)(err) );
@@ -4296,6 +4670,7 @@ static void tc_pp_Error ( Error* err )
    case XE_UnlockBogus: {
       tl_assert(xe);
       tl_assert( is_sane_Thread( xe->XE.UnlockBogus.thr ) );
+      announce_one_thread( xe->XE.UnlockBogus.thr );
       VG_(message)(Vg_UserMsg,
                    "Thread #%d unlocked an invalid lock at %p ",
                    (Int)xe->XE.UnlockBogus.thr->errmsg_index,
@@ -4502,6 +4877,7 @@ static Char* tc_get_error_name ( Error* err )
       case XE_UnlockBogus:    return "UnlockBogus";
       case XE_DestroyLocked:  return "DestroyLocked";
       case XE_PthAPIerror:    return "PthAPIerror";
+      case XE_Misc:           return "Misc";
       default: tl_assert(0); /* fill in missing case */
    }
 }
@@ -4520,6 +4896,7 @@ static Bool tc_recognised_suppression ( Char* name, Supp *su )
    TRY("UnlockBogus",    XS_UnlockBogus);
    TRY("DestroyLocked",  XS_DestroyLocked);
    TRY("PthAPIerror",    XS_PthAPIerror);
+   TRY("Misc",           XS_Misc);
    return False;
 #  undef TRY
 }
@@ -4542,6 +4919,7 @@ static Bool tc_error_matches_suppression ( Error* err, Supp* su )
    case XS_UnlockBogus:    return VG_(get_error_kind)(err) == XE_UnlockBogus;
    case XS_DestroyLocked:  return VG_(get_error_kind)(err) == XE_DestroyLocked;
    case XS_PthAPIerror:    return VG_(get_error_kind)(err) == XE_PthAPIerror;
+   case XS_Misc:           return VG_(get_error_kind)(err) == XE_Misc;
    //case XS_: return VG_(get_error_kind)(err) == XE_;
    default: tl_assert(0); /* fill in missing cases */
    }
