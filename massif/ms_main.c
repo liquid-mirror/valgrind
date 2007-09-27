@@ -796,7 +796,7 @@ static XPt* get_XCon( ThreadId tid, Bool is_custom_malloc )
          }
       }
    }
-   tl_assert(0 == xpt->n_children); // Must be bottom-XPt   XXX: really?
+   tl_assert(0 == xpt->n_children); // Must be bottom-XPt
    return xpt;
 }
 
