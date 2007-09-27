@@ -270,8 +270,8 @@ static SSizeT heap_szB       = 0;     // Live heap size
 static SSizeT peak_total_szB = 0;
 
 // Incremented every time memory is allocated/deallocated, by the
-// allocated/deallocated amount.  An alternative to milliseconds as a unit
-// of program "time".
+// allocated/deallocated amount;  includes heap, heap-admin and stack
+// memory.  An alternative to milliseconds as a unit of program "time".
 static ULong total_allocs_deallocs_szB = 0;
 
 static UInt n_heap_blocks = 0;
@@ -1236,6 +1236,7 @@ static void update_heap_stats(SSizeT heap_szB_delta, Int n_heap_blocks_delta)
 
    if (heap_szB_delta < 0) total_allocs_deallocs_szB -= heap_szB_delta;
    if (heap_szB_delta > 0) total_allocs_deallocs_szB += heap_szB_delta;
+   total_allocs_deallocs_szB += clo_heap_admin;
 }
 
 static
