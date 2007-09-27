@@ -30,7 +30,9 @@ EXTRA_DIST = $(noinst_SCRIPTS) \
 	tc09_bad_unlock.vgtest tc09_bad_unlock.stderr.exp \
 		tc09_bad_unlock.stdout.exp \
 	tc10_rec_lock.vgtest tc10_rec_lock.stderr.exp \
-		tc10_rec_lock.stdout.exp
+		tc10_rec_lock.stdout.exp \
+	tc11_XCHG.vgtest tc11_XCHG.stderr.exp \
+		tc11_XCHG.stdout.exp
 
 check_PROGRAMS = \
 	hg01_all_ok \
@@ -48,7 +50,8 @@ check_PROGRAMS = \
 	tc07_hbl1 \
 	tc08_hbl2 \
 	tc09_bad_unlock \
-	tc10_rec_lock
+	tc10_rec_lock \
+	tc11_XCHG
 
 # is this necessary?
 AM_CFLAGS	= $(WERROR) -Winline -Wall -Wshadow -g      $(AM_FLAG_M3264_PRI)
