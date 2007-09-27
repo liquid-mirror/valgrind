@@ -31,8 +31,6 @@
 // XXX:
 //---------------------------------------------------------------------------
 // Todo:
-// - -v: give more detail on each snapshot -- sizes, etc
-// - -v: print number of skipped snapshots after each one is taken
 // - make --time-unit=B include heap-admin bytes
 // - Add ability to draw multiple graphs, eg. heap-only, stack-only, total.
 //   Give each graph a title.
@@ -259,6 +257,7 @@ static UInt n_getXCon_redo         = 0;
 static UInt n_cullings             = 0;
 static UInt n_real_snapshots       = 0;
 static UInt n_skipped_snapshots    = 0;
+static UInt n_skipped_snapshots_since_last_snapshot = 0;
 
 
 //------------------------------------------------------------//
@@ -1128,8 +1127,6 @@ static void take_snapshot(Int snapshot_i, Time time, Char* kind)
    snapshot->time = time;
    snapshot->total_szB =
       snapshot->heap_szB + snapshot->heap_admin_szB + snapshot->stacks_szB;
-
-   // Sanity-check it.
    sanity_check_snapshot(snapshot);
 
    // Update peak data -------------------------------------------------
@@ -1139,9 +1136,16 @@ static void take_snapshot(Int snapshot_i, Time time, Char* kind)
       peak_snapshot_total_szB = snapshot->total_szB;
    }
 
+   // Finish up verbosity and stats stuff.
    if (VG_(clo_verbosity) > 1) {                             
+      if (n_skipped_snapshots_since_last_snapshot > 0) {
+         VERB("  (skipped %d snapshot%s)",
+            n_skipped_snapshots_since_last_snapshot,
+            ( n_skipped_snapshots_since_last_snapshot == 1 ? "" : "s") );
+      }
       VERB_snapshot(kind, snapshot_i);
    }   
+   n_skipped_snapshots_since_last_snapshot = 0;
 }
 
 
@@ -1166,6 +1170,7 @@ static void maybe_take_snapshot(Char* kind)
    time_since_prev = time - time_of_prev_snapshot;
    if (time < earliest_possible_time_of_next_snapshot) {
       n_skipped_snapshots++;
+      n_skipped_snapshots_since_last_snapshot++;
       return;
    }
 
