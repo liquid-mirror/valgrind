@@ -265,10 +265,9 @@ static UInt n_skipped_snapshots_since_last_snapshot = 0;
 //------------------------------------------------------------//
 
 // These are signed so things are more obvious if they go negative.
-static SSizeT sigstacks_szB = 0;     // Current signal stacks space sum
-static SSizeT heap_szB      = 0;     // Live heap size
-static SSizeT peak_heap_szB = 0;     // XXX: currently unused
-static SSizeT peak_snapshot_total_szB = 0;
+static SSizeT sigstacks_szB  = 0;     // Current signal stacks space sum
+static SSizeT heap_szB       = 0;     // Live heap size
+static SSizeT peak_total_szB = 0;
 
 // Incremented every time memory is allocated/deallocated, by the
 // allocated/deallocated amount.  An alternative to milliseconds as a unit
@@ -1132,8 +1131,8 @@ static void take_snapshot(Int snapshot_i, Time time, Char* kind)
    // Update peak data -------------------------------------------------
    // XXX: this is not really the right way to do peak data -- it's only
    // peak snapshot data, the true peak could be between snapshots.
-   if (snapshot->total_szB > peak_snapshot_total_szB) {
-      peak_snapshot_total_szB = snapshot->total_szB;
+   if (snapshot->total_szB > peak_total_szB) {
+      peak_total_szB = snapshot->total_szB;
    }
 
    // Finish up verbosity and stats stuff.
@@ -1234,9 +1233,6 @@ static void update_heap_stats(SSizeT heap_szB_delta, Int n_heap_blocks_delta)
    if (heap_szB_delta     <0) tl_assert(heap_szB      >= -heap_szB_delta     );
    n_heap_blocks += n_heap_blocks_delta;
    heap_szB      += heap_szB_delta;
-   if (heap_szB > peak_heap_szB) {
-      peak_heap_szB = heap_szB;
-   }
 
    if (heap_szB_delta < 0) total_allocs_deallocs_szB -= heap_szB_delta;
    if (heap_szB_delta > 0) total_allocs_deallocs_szB += heap_szB_delta;
