@@ -199,14 +199,14 @@
    fun:pthread_cond_destroy@@GLIBC_2.3.2
 }
 
-#z###--- pthread_mutex_trylock ---###
-#z# ditto
-#z{
-#z   thrcheck-glibc2X-pthmxtrylock-1
-#z   Thrcheck:Race
-#z   fun:pthread_mutex_trylock
-#z}
-#z
+###--- pthread_mutex_trylock ---###
+{
+   thrcheck-glibc2X-pthmxtrylock-1
+   Thrcheck:Race
+   fun:pthread_mutex_trylock
+   fun:pthread_mutex_trylock
+}
+
 #z###--- pthread_cond_timedwait ---###
 #z{
 #z   thrcheck-glibc2X-pthmxtimedwait-1
@@ -256,12 +256,13 @@
    fun:mythread_wrapper
    fun:start_thread
 }
-#z{
-#z   thrcheck-glibc2X-libpthread-6
-#z   Thrcheck:Race
-#z   fun:__deallocate_stack
-#z   fun:start_thread
-#z}
+{
+   thrcheck-glibc2X-libpthread-6
+   Thrcheck:Race
+   fun:__deallocate_stack
+   fun:start_thread
+   fun:*clone*
+}
 #z{
 #z   thrcheck-glibc2X-libpthread-7
 #z   Thrcheck:Race
