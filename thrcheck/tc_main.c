@@ -69,6 +69,11 @@
 
 // FIXME accesses to NoAccess areas: change state to Excl?
 
+// FIXME report errors for accesses of NoAccess memory?
+
+// FIXME pth_cond_wait/timedwait wrappers.  Even if these fail,
+// the thread still holds the lock.
+
 // this is:
 // shadow_mem_make_NoAccess: 29156 SMs, 1728 scanned
 // happens_before_wrk: 1000
@@ -190,7 +195,7 @@ typedef  UInt  SegmentID;
 
 
 /* These are handles for Word sets.  CONSTRAINTS: must be (very) small
-   ints numbered from zero, since 15-bit versions of them are used to
+   ints numbered from zero, since < 30-bit versions of them are used to
    encode thread-sets and lock-sets in 32-bit shadow words. */
 typedef  WordSet  WordSetID;
 
@@ -204,7 +209,8 @@ typedef
       struct _Thread* admin;
       UInt            magic;
       /* USEFUL */
-      WordSetID lockset; /* WordSet of Lock* currently held by thread */
+      WordSetID locksetA; /* WordSet of Lock* currently held by thread */
+      WordSetID locksetW; /* subset of locksetA held in w-mode */
       SegmentID csegid;  /* current thread segment for thread */
       /* EXPOSITION */
       /* Place where parent was when this thread was created. */
@@ -252,8 +258,8 @@ typedef
       /* .heldBy is NULL: lock is unheld, and .heldW is meaningless
                           but arbitrarily set to False
          .heldBy is non-NULL:
-            .heldW is True: lock is w-held by threads in heldBy
-            .heldR is False: lock is r-held by threads in heldBy
+            .heldW is True:  lock is w-held by threads in heldBy
+            .heldW is False: lock is r-held by threads in heldBy
             Either way, heldBy may not validly be an empty Bag.
 
          for LK_nonRec, r-holdings are not allowed, and w-holdings may
@@ -339,10 +345,11 @@ static UWord stats__mk_Segment = 0;
 
 static inline Bool is_sane_LockN ( Lock* lock ); /* fwds */
 
-static Thread* mk_Thread ( WordSetID lockset, SegmentID csegid ) {
+static Thread* mk_Thread ( SegmentID csegid ) {
    static Int indx      = 1;
    Thread* thread       = tc_zalloc( sizeof(Lock) );
-   thread->lockset      = lockset;
+   thread->locksetA     = TC_(emptyWS)( univ_lsets );
+   thread->locksetW     = TC_(emptyWS)( univ_lsets );
    thread->csegid       = csegid;
    thread->magic        = Thread_MAGIC;
    thread->created_at   = NULL;
@@ -480,9 +487,9 @@ static void lockN_acquire_writer ( Lock* lk, Thread* thr )
             goto case_LK_nonRec;
          /* 2nd and subsequent locking of a lock by its owner */
          tl_assert(lk->heldW);
-	 /* assert: lk is only held by one thread .. */
-	 tl_assert(TC_(sizeUniqueBag(lk->heldBy)) == 1);
-	 /* assert: .. and that thread is 'thr'. */
+         /* assert: lk is only held by one thread .. */
+         tl_assert(TC_(sizeUniqueBag(lk->heldBy)) == 1);
+         /* assert: .. and that thread is 'thr'. */
          tl_assert(TC_(elemBag)(lk->heldBy, (Word)thr)
                    == TC_(sizeTotalBag)(lk->heldBy));
          TC_(addToBag)(lk->heldBy, (Word)thr);
@@ -544,14 +551,10 @@ static void lockN_release ( Lock* lk, Thread* thr )
 
 /* Proposal (for debugging sanity):
 
-   WordSetIDs from         0 ..    0x7FFF    (32768)
    SegmentIDs from 0x1000000 .. 0x1FFFFFF (16777216)
 
    All other xxxID handles are invalid.
 */
-static inline Bool is_sane_WordSetID ( WordSetID wset ) {
-   return wset >= 0 && wset <= 0x7FFF;
-}
 static inline Bool is_sane_SegmentID ( SegmentID tseg ) {
    return tseg >= 0x1000000 && tseg <= 0x1FFFFFF;
 }
@@ -587,25 +590,49 @@ static inline Bool is_sane_SecMap ( SecMap* sm ) {
 }
 
 /* Shadow value encodings:
-     11 WordSetID:15 WordSetID:15  ShM  thread-set lock-set
-     10 WordSetID:15 WordSetID:15  ShR  thread-set lock-set
-     01 TSegmentID:30              Excl thread-segment
-     00 0--(20)--0 10 0000 0000    New
-     00 0--(20)--0 01 0000 0000    NoAccess
-   Note that the elements in thread sets are TUniqueIDs and not 
-   ThreadIds. */
+
+   11 WordSetID:TSID_BITS WordSetID:LSIT_BITS  ShM  thread-set lock-set
+   10 WordSetID:TSID_BITS WordSetID:LSIT_BITS  ShR  thread-set lock-set
+   01 TSegmentID:30                            Excl thread-segment
+   00 0--(20)--0 10 0000 0000                  New
+   00 0--(20)--0 01 0000 0000                  NoAccess
+
+   TSID_BITS + LSID_BITS must equal 30.
+   The elements in thread sets are Thread*, casted to Word.
+   The elements in lock sets are Lock*, casted to Word. 
+*/
+
+#define N_LSID_BITS  16
+#define N_LSID_MASK  ((1 << (N_LSID_BITS)) - 1)
+#define N_LSID_SHIFT 0
+
+#define N_TSID_BITS  (30 - (N_LSID_BITS))
+#define N_TSID_MASK  ((1 << (N_TSID_BITS)) - 1)
+#define N_TSID_SHIFT (N_LSID_BITS)
+
+static inline Bool is_sane_WordSetID_LSet ( WordSetID wset ) {
+   return wset >= 0 && wset <= N_LSID_MASK;
+}
+static inline Bool is_sane_WordSetID_TSet ( WordSetID wset ) {
+   return wset >= 0 && wset <= N_TSID_MASK;
+}
+
 
 #define SHMEM_New      ((UInt)(2<<8))
 #define SHMEM_NoAccess ((UInt)(1<<8))
 static inline UInt mk_SHMEM_ShM ( WordSetID tset, WordSetID lset ) {
-   tl_assert(is_sane_WordSetID(tset));
-   tl_assert(is_sane_WordSetID(lset));
-   return (UInt)( (3<<30) | (tset << 15) | (lset << 0));
+   tl_assert(is_sane_WordSetID_TSet(tset));
+   tl_assert(is_sane_WordSetID_LSet(lset));
+   return (UInt)( (3<<30) | (tset << N_TSID_SHIFT) 
+                          | (lset << N_LSID_SHIFT));
 }
 static inline UInt mk_SHMEM_ShR ( WordSetID tset, WordSetID lset ) {
-   tl_assert(is_sane_WordSetID(tset));
-   tl_assert(is_sane_WordSetID(lset));
-   return (UInt)( (2<<30) | (tset << 15) | (lset << 0));
+   //if ((!is_sane_WordSetID(tset)) || (!is_sane_WordSetID(lset)))
+   //  VG_(printf)("XXXXXXXXXX %d %d\n", (Int)tset, (Int)lset);
+   tl_assert(is_sane_WordSetID_TSet(tset));
+   tl_assert(is_sane_WordSetID_LSet(lset));
+   return (UInt)( (2<<30) | (tset << N_TSID_SHIFT) 
+                          | (lset << N_LSID_SHIFT));
 }
 static inline UInt mk_SHMEM_Excl ( SegmentID tseg ) {
    tl_assert(is_sane_SegmentID(tseg));
@@ -637,27 +664,27 @@ static inline SegmentID un_SHMEM_Excl ( UInt w32 ) {
 }
 static inline WordSetID un_SHMEM_ShR_tset ( UInt w32 ) {
    tl_assert(is_SHMEM_ShR(w32));
-   return (w32 >> 15) & 0x7FFF;
+   return (w32 >> N_TSID_SHIFT) & N_TSID_MASK;
 }
 static inline WordSetID un_SHMEM_ShR_lset ( UInt w32 ) {
    tl_assert(is_SHMEM_ShR(w32));
-   return (w32 >> 0) & 0x7FFF;
+   return (w32 >> N_LSID_SHIFT) & N_LSID_MASK;
 }
 static inline WordSetID un_SHMEM_ShM_tset ( UInt w32 ) {
    tl_assert(is_SHMEM_ShM(w32));
-   return (w32 >> 15) & 0x7FFF;
+   return (w32 >> N_TSID_SHIFT) & N_TSID_MASK;
 }
 static inline WordSetID un_SHMEM_ShM_lset ( UInt w32 ) {
    tl_assert(is_SHMEM_ShM(w32));
-   return (w32 >> 0) & 0x7FFF;
+   return (w32 >> N_LSID_SHIFT) & N_LSID_MASK;
 }
 static inline WordSetID un_SHMEM_Sh_tset ( UInt w32 ) {
    tl_assert(is_SHMEM_Sh(w32));
-   return (w32 >> 15) & 0x7FFF;
+   return (w32 >> N_TSID_SHIFT) & N_TSID_MASK;
 }
 static inline WordSetID un_SHMEM_Sh_lset ( UInt w32 ) {
    tl_assert(is_SHMEM_Sh(w32));
-   return (w32 >> 0) & 0x7FFF;
+   return (w32 >> N_LSID_SHIFT) & N_LSID_MASK;
 }
 
 
@@ -692,11 +719,12 @@ static void pp_Thread ( Int d, Thread* t )
 {
    space(d+0); VG_(printf)("Thread %p {\n", t);
    if (sHOW_ADMIN) {
-   space(d+3); VG_(printf)("admin   %p\n",   t->admin);
-   space(d+3); VG_(printf)("magic   0x%x\n", (UInt)t->magic);
+   space(d+3); VG_(printf)("admin    %p\n",   t->admin);
+   space(d+3); VG_(printf)("magic    0x%x\n", (UInt)t->magic);
    }
-   space(d+3); VG_(printf)("lockset %d\n",   (Int)t->lockset);
-   space(d+3); VG_(printf)("csegid  0x%x\n", (UInt)t->csegid);
+   space(d+3); VG_(printf)("locksetA %d\n",   (Int)t->locksetA);
+   space(d+3); VG_(printf)("locksetW %d\n",   (Int)t->locksetW);
+   space(d+3); VG_(printf)("csegid   0x%x\n", (UInt)t->csegid);
    space(d+0); VG_(printf)("}\n");
 }
 
@@ -966,7 +994,6 @@ static void initialise_data_structures ( void )
 {
    SegmentID segid;
    Segment*  seg;
-   WordSetID empty;
    Thread*   thr;
 
    /* Get everything initialised and zeroed. */
@@ -1019,8 +1046,7 @@ static void initialise_data_structures ( void )
    map_segments_add( segid, seg );
 
    /* a Thread for the new thread ... */
-   empty = TC_(emptyWS)( univ_lsets );
-   thr   = mk_Thread( empty, segid );
+   thr = mk_Thread( segid );
    seg->thr = thr;
 
    /* and bind it in the thread-map table */
@@ -1778,15 +1804,18 @@ static void threads__sanity_check ( Char* who )
 #define BAD(_str) do { how = (_str); goto bad; } while (0)
    Char*     how = "no error";
    Thread*   thr;
-   WordSetID ws;
+   WordSetID wsA, wsW;
    Word*     ls_words;
    Word      ls_size, i;
    Lock*     lk;
    Segment*  seg;
    for (thr = admin_threads; thr; thr = thr->admin) {
-     if (!is_sane_Thread(thr)) BAD("1");
-      ws = thr->lockset;
-      TC_(getPayloadWS)( &ls_words, &ls_size, univ_lsets, ws );
+      if (!is_sane_Thread(thr)) BAD("1");
+      wsA = thr->locksetA;
+      wsW = thr->locksetW;
+      // locks held in W mode are a subset of all locks held
+      if (!TC_(isSubsetOf)( univ_lsets, wsW, wsA )) BAD("7");
+      TC_(getPayloadWS)( &ls_words, &ls_size, univ_lsets, wsA );
       for (i = 0; i < ls_size; i++) {
          lk = (Lock*)ls_words[i];
          // Thread.lockset: each element is really a valid Lock
@@ -1851,18 +1880,25 @@ static void locks__sanity_check ( Char* who )
             // is_sane_LockN above ensures these
             tl_assert(count >= 1);
             tl_assert(is_sane_Thread(thr));
-            if (!TC_(elemWS)(univ_lsets, thr->lockset, (Word)lk)) 
+            if (!TC_(elemWS)(univ_lsets, thr->locksetA, (Word)lk)) 
+               BAD("6");
+            // also check the w-only lockset
+            if (lk->heldW 
+                && !TC_(elemWS)(univ_lsets, thr->locksetW, (Word)lk)) 
                BAD("7");
+            if ((!lk->heldW)
+                && TC_(elemWS)(univ_lsets, thr->locksetW, (Word)lk)) 
+               BAD("8");
          }
          TC_(doneIterBag)( lk->heldBy );
       } else {
          /* lock not held by anybody */
-         if (lk->heldW) BAD("7a"); /* should be False if !heldBy */
+         if (lk->heldW) BAD("9"); /* should be False if !heldBy */
          // since lk is unheld, then (no lockset contains lk)
          // hmm, this is really too expensive to check.  Hmm.
       }
       // secmaps for lk has .anyLocks == True
-      if (!shmem__get_anyLocks(lk->guestaddr)) BAD("12");
+      if (!shmem__get_anyLocks(lk->guestaddr)) BAD("10");
    }
 
    return;
@@ -2203,7 +2239,7 @@ static void msm__handle_read_aligned_32 ( Thread* thr_acc, Addr a )
          Segment* seg_old = map_segments_lookup( segid_old );
          Thread*  thr_old = seg_old->thr;
          tset = TC_(doubletonWS)( univ_tsets, (Word)thr_old, (Word)thr_acc );
-         lset = add_BHL( thr_acc->lockset );
+         lset = add_BHL( thr_acc->locksetA ); /* read ==> use all locks */
          wnew = mk_SHMEM_ShR( tset, lset );
          *swordP = wnew;
          sm->anyShared = True;
@@ -2222,7 +2258,8 @@ static void msm__handle_read_aligned_32 ( Thread* thr_acc, Addr a )
                                          tset_old, (Word)thr_acc );
       WordSetID lset_new = TC_(intersectWS)( univ_lsets,
                                              lset_old, 
-                                             add_BHL(thr_acc->lockset) );
+                                             add_BHL(thr_acc->locksetA)
+                                             /* read ==> use all locks */ );
       UInt      wnew     = mk_SHMEM_ShR( tset_new, lset_new );
       if (lset_old != lset_new)
          record_last_lock_lossage(a,lset_old,lset_new);
@@ -2242,7 +2279,8 @@ static void msm__handle_read_aligned_32 ( Thread* thr_acc, Addr a )
                                          tset_old, (Word)thr_acc );
       WordSetID lset_new = TC_(intersectWS)( univ_lsets,
                                              lset_old,
-                                             add_BHL(thr_acc->lockset) ); 
+                                             add_BHL(thr_acc->locksetA)
+                                             /* read ==> use all locks */ ); 
       UInt      wnew     = mk_SHMEM_ShM( tset_new, lset_new );
       if (lset_old != lset_new)
          record_last_lock_lossage(a,lset_old,lset_new);
@@ -2334,7 +2372,7 @@ static void msm__handle_write_aligned_32 ( Thread* thr_acc, Addr a )
          Segment* seg_old = map_segments_lookup( segid_old );
          Thread*  thr_old = seg_old->thr;
          tset = TC_(doubletonWS)( univ_tsets, (Word)thr_old, (Word)thr_acc );
-         lset = thr_acc->lockset;
+         lset = thr_acc->locksetW; /* write ==> use only w-held locks */
          wnew = mk_SHMEM_ShM( tset, lset );
          *swordP = wnew;
          sm->anyShared = True;
@@ -2356,8 +2394,12 @@ static void msm__handle_write_aligned_32 ( Thread* thr_acc, Addr a )
       WordSetID lset_old = un_SHMEM_ShR_lset(wold);
       WordSetID tset_new = TC_(addToWS)( univ_tsets, 
                                          tset_old, (Word)thr_acc );
-      WordSetID lset_new = TC_(intersectWS)( univ_lsets, 
-                                             lset_old, thr_acc->lockset );
+      WordSetID lset_new = TC_(intersectWS)(
+                              univ_lsets, 
+                              lset_old, 
+                              thr_acc->locksetW
+                              /* write ==> use only w-held locks */
+                           );
       UInt      wnew     = mk_SHMEM_ShM( tset_new, lset_new );
       if (lset_old != lset_new)
          record_last_lock_lossage(a,lset_old,lset_new);
@@ -2380,8 +2422,12 @@ static void msm__handle_write_aligned_32 ( Thread* thr_acc, Addr a )
       WordSetID lset_old = un_SHMEM_ShM_lset(wold);
       WordSetID tset_new = TC_(addToWS)( univ_tsets,
                                          tset_old, (Word)thr_acc );
-      WordSetID lset_new = TC_(intersectWS)( univ_lsets,
-                                             lset_old, thr_acc->lockset ); 
+      WordSetID lset_new = TC_(intersectWS)( 
+                              univ_lsets,
+                              lset_old, 
+                              thr_acc->locksetW 
+                              /* write ==> use only w-held locks */
+                           ); 
       UInt      wnew     = mk_SHMEM_ShM( tset_new, lset_new );
       if (lset_old != lset_new)
          record_last_lock_lossage(a,lset_old,lset_new);
@@ -2425,13 +2471,21 @@ static void remove_Lock_from_locksets_of_all_owning_Threads( Lock* lk )
       tl_assert(!lk->heldW);
       return;
    }
+   /* for each thread that holds this lock do ... */
    TC_(initIterBag)( lk->heldBy );
    while (TC_(nextIterBag)( lk->heldBy, (Word*)&thr, NULL )) {
       tl_assert(is_sane_Thread(thr));
       tl_assert(TC_(elemWS)( univ_lsets,
-                             thr->lockset, (Word)lk ));
-      thr->lockset
-         = TC_(delFromWS)( univ_lsets, thr->lockset, (Word)lk );
+                             thr->locksetA, (Word)lk ));
+      thr->locksetA
+         = TC_(delFromWS)( univ_lsets, thr->locksetA, (Word)lk );
+
+      if (lk->heldW) {
+         tl_assert(TC_(elemWS)( univ_lsets,
+                                thr->locksetW, (Word)lk ));
+         thr->locksetW
+            = TC_(delFromWS)( univ_lsets, thr->locksetW, (Word)lk );
+      }
    }
    TC_(doneIterBag)( lk->heldBy );
 }
@@ -2683,19 +2737,20 @@ static void shadow_mem_write_range ( Thread* thr, Addr a, SizeT len )
 
 
 /*----------------------------------------------------------------*/
-/*--- Event handlers (ev__* functions)                         ---*/
-/*--- These handle the main significant events, and all take   ---*/
-/*--- a parameter indicating which thread is doing the event.  ---*/
+/*--- Event handlers (evh__* functions)                        ---*/
+/*--- plus helpers (evhH__* functions)                         ---*/
 /*----------------------------------------------------------------*/
+
+/*--------- Event handler helpers (evhH__* functions) ---------*/
 
 /* Create a new segment for 'thr', making it depend (.prev) on its
    existing segment, bind together the SegmentID and Segment, and
    return both of them.  Also update 'thr' so it references the new
    Segment. */
 static 
-void start_new_segment_for_thread ( /*OUT*/SegmentID* new_segidP,
-                                    /*OUT*/Segment** new_segP,
-                                    Thread* thr )
+void evhH__start_new_segment_for_thread ( /*OUT*/SegmentID* new_segidP,
+                                          /*OUT*/Segment** new_segP,
+                                          Thread* thr )
 {
    Segment* cur_seg;
    tl_assert(new_segP);
@@ -2711,11 +2766,25 @@ void start_new_segment_for_thread ( /*OUT*/SegmentID* new_segidP,
    thr->csegid = *new_segidP;
 }
 
+
+/* The lock at 'lock_ga' has acquired a writer.  Make all necessary
+   updates, and also do all possible error checks. */
 static 
-void ev__post_thread_w_acquires_lock ( Thread* thr, 
-                                       LockKind lkk, Addr lock_ga )
+void evhH__post_thread_w_acquires_lock ( Thread* thr, 
+                                         LockKind lkk, Addr lock_ga )
 {
    Lock* lk; 
+
+   /* Basically what we need to do is call lockN_acquire_writer.
+      However, that will barf if any 'invalid' lock states would
+      result.  Therefore check before calling.  Side effect is that
+      'is_sane_LockN(lk)' is both a pre- and post-condition of this
+      routine. 
+
+      Because this routine is only called after successful lock
+      acquisition, we should not be asked to move the lock into any
+      invalid states.  Requests to do so are bugs in libpthread, since
+      that should have rejected any such requests. */
 
    /* be paranoid w.r.t hint bits, even if lock_ga is complete
       nonsense */
@@ -2729,17 +2798,6 @@ void ev__post_thread_w_acquires_lock ( Thread* thr,
    tl_assert( is_sane_LockN(lk) );
    shmem__set_anyLocks( lock_ga, True );
 
-   /* Basically what we need to do is call lockN_acquire_writer.
-      However, that will barf if any 'invalid' lock states would
-      result.  Therefore check before calling.  Side effect is that
-      'is_sane_LockN(lk)' is both a pre- and post-condition of this
-      routine. 
-
-      Because this routine is only called after successful lock
-      acquisition, we should not be asked to move the lock into any
-      invalid states.  Requests to do so are bugs in libpthread, since
-      that should have rejected any such requests. */
-
    if (lk->heldBy == NULL) {
       /* the lock isn't held.  Simple. */
       tl_assert(!lk->heldW);
@@ -2752,7 +2810,7 @@ void ev__post_thread_w_acquires_lock ( Thread* thr,
    tl_assert(lk->heldBy);
    if (!lk->heldW) {
       record_error_Misc( thr, "Bug in libpthread: write lock "
-                              "acquired on lock which has read locks");
+                              "granted on rwlock which is currently rd-held");
       goto error;
    }
 
@@ -2762,8 +2820,8 @@ void ev__post_thread_w_acquires_lock ( Thread* thr,
 
    if (thr != (Thread*)TC_(anyElementOfBag)(lk->heldBy)) {
       record_error_Misc( thr, "Bug in libpthread: write lock "
-                              "acquired on lock which is w-locked by "
-                              "a different thread");
+                              "granted on mutex/rwlock which is currently "
+                              "wr-held by a different thread");
       goto error;
    }
 
@@ -2773,8 +2831,9 @@ void ev__post_thread_w_acquires_lock ( Thread* thr,
       once the lock has been acquired, this must also be a libpthread
       bug. */
    if (lk->kind != LK_mbRec) {
-      record_error_Misc( thr, "Bug in libpthread: recursive w-lock "
-                              "was unexpectedly allowed");
+      record_error_Misc( thr, "Bug in libpthread: recursive write lock "
+                              "granted on mutex/wrlock which does not "
+                              "support recursion");
       goto error;
    }
 
@@ -2784,14 +2843,86 @@ void ev__post_thread_w_acquires_lock ( Thread* thr,
 
   noerror:
    /* update the thread's held-locks set */
-   thr->lockset = TC_(addToWS)( univ_lsets, thr->lockset, (Word)lk );
+   thr->locksetA = TC_(addToWS)( univ_lsets, thr->locksetA, (Word)lk );
+   thr->locksetW = TC_(addToWS)( univ_lsets, thr->locksetW, (Word)lk );
    /* fall through */
 
   error:
    tl_assert(is_sane_LockN(lk));
 }
 
-static void ev__pre_thread_releases_lock ( Thread* thr, Addr lock_ga )
+
+/* The lock at 'lock_ga' has acquired a reader.  Make all necessary
+   updates, and also do all possible error checks. */
+static 
+void evhH__post_thread_r_acquires_lock ( Thread* thr, 
+                                         LockKind lkk, Addr lock_ga )
+{
+   Lock* lk; 
+
+   /* Basically what we need to do is call lockN_acquire_reader.
+      However, that will barf if any 'invalid' lock states would
+      result.  Therefore check before calling.  Side effect is that
+      'is_sane_LockN(lk)' is both a pre- and post-condition of this
+      routine. 
+
+      Because this routine is only called after successful lock
+      acquisition, we should not be asked to move the lock into any
+      invalid states.  Requests to do so are bugs in libpthread, since
+      that should have rejected any such requests. */
+
+   /* be paranoid w.r.t hint bits, even if lock_ga is complete
+      nonsense */
+   shmem__set_anyLocks( lock_ga, True );
+
+   tl_assert(is_sane_Thread(thr));
+   /* Try to find the lock.  If we can't, then create a new one with
+      kind 'lkk'.  Only a reader-writer lock can be read-locked,
+      hence the first assertion. */
+   tl_assert(lkk == LK_rdwr);
+   lk = map_locks_lookup_or_create( 
+           lkk, lock_ga, map_threads_reverse_lookup_SLOW(thr) );
+   tl_assert( is_sane_LockN(lk) );
+   shmem__set_anyLocks( lock_ga, True );
+
+   if (lk->heldBy == NULL) {
+      /* the lock isn't held.  Simple. */
+      tl_assert(!lk->heldW);
+      lockN_acquire_reader( lk, thr );
+      goto noerror;
+   }
+
+   /* So the lock is already held.  If held as a w-lock then
+      libpthread must be buggy. */
+   tl_assert(lk->heldBy);
+   if (lk->heldW) {
+      record_error_Misc( thr, "Bug in libpthread: read lock "
+                              "granted on rwlock which is "
+                              "currently wr-held");
+      goto error;
+   }
+
+   /* Easy enough.  In short anybody can get a read-lock on a rwlock
+      provided it is either unlocked or already in rd-held. */
+   lockN_acquire_reader( lk, thr );
+   goto noerror;
+
+  noerror:
+   /* update the thread's held-locks set */
+   thr->locksetA = TC_(addToWS)( univ_lsets, thr->locksetA, (Word)lk );
+   /* but don't update thr->locksetW, since lk is only rd-held */
+   /* fall through */
+
+  error:
+   tl_assert(is_sane_LockN(lk));
+}
+
+
+/* The lock at 'lock_ga' is just about to be unlocked.  Make all
+   necessary updates, and also do all possible error checks. */
+static 
+void evhH__pre_thread_releases_lock ( Thread* thr,
+                                      Addr lock_ga, Bool isRDWR )
 {
    Lock* lock;
    Word  n;
@@ -2799,7 +2930,11 @@ static void ev__pre_thread_releases_lock ( Thread* thr, Addr lock_ga )
    /* This routine is called prior to a lock release, before
       libpthread has had a chance to validate the call.  Hence we need
       to detect and reject any attempts to move the lock into an
-      invalid state.  Such attempts are bugs in the client. */
+      invalid state.  Such attempts are bugs in the client.
+
+      isRDWR is True if we know from the wrapper context that lock_ga
+      should refer to a reader-writer lock, and is False if [ditto]
+      lock_ga should refer to a standard mutex. */
 
    /* be paranoid w.r.t hint bits, even if lock_ga is complete
       nonsense */
@@ -2819,12 +2954,22 @@ static void ev__pre_thread_releases_lock ( Thread* thr, Addr lock_ga )
    tl_assert(lock->guestaddr == lock_ga);
    tl_assert(is_sane_LockN(lock));
 
+   if (isRDWR && lock->kind != LK_rdwr) {
+      record_error_Misc( thr, "pthread_rwlock_unlock with a "
+                              "pthread_mutex_t* argument " );
+   }
+   if ((!isRDWR) && lock->kind == LK_rdwr) {
+      record_error_Misc( thr, "pthread_mutex_unlock with a "
+                              "pthread_rwlock_t* argument " );
+   }
+
    if (!lock->heldBy) {
       /* The lock is not held.  This indicates a serious bug in the
          client. */
       tl_assert(!lock->heldW);
       record_error_UnlockUnlocked( thr, lock );
-      tl_assert(!TC_(elemWS)( univ_lsets, thr->lockset, (Word)lock ));
+      tl_assert(!TC_(elemWS)( univ_lsets, thr->locksetA, (Word)lock ));
+      tl_assert(!TC_(elemWS)( univ_lsets, thr->locksetW, (Word)lock ));
       goto error;
    }
 
@@ -2840,7 +2985,8 @@ static void ev__pre_thread_releases_lock ( Thread* thr, Addr lock_ga )
       Thread* realOwner = (Thread*)TC_(anyElementOfBag)( lock->heldBy );
       tl_assert(is_sane_Thread(realOwner));
       tl_assert(realOwner != thr);
-      tl_assert(!TC_(elemWS)( univ_lsets, thr->lockset, (Word)lock ));
+      tl_assert(!TC_(elemWS)( univ_lsets, thr->locksetA, (Word)lock ));
+      tl_assert(!TC_(elemWS)( univ_lsets, thr->locksetW, (Word)lock ));
       record_error_UnlockForeign( thr, realOwner, lock );
       goto error;
    }
@@ -2860,15 +3006,21 @@ static void ev__pre_thread_releases_lock ( Thread* thr, Addr lock_ga )
          or a rwlock which is currently r-held. */
       tl_assert(lock->kind == LK_mbRec
                 || (lock->kind == LK_rdwr && !lock->heldW));
-      tl_assert(TC_(elemWS)( univ_lsets, thr->lockset, (Word)lock ));
+      tl_assert(TC_(elemWS)( univ_lsets, thr->locksetA, (Word)lock ));
+      if (lock->heldW)
+         tl_assert(TC_(elemWS)( univ_lsets, thr->locksetW, (Word)lock ));
+      else
+         tl_assert(!TC_(elemWS)( univ_lsets, thr->locksetW, (Word)lock ));
    } else {
       /* We no longer hold the lock. */
       if (lock->heldBy) {
          tl_assert(0 == TC_(elemBag)( lock->heldBy, (Word)thr ));
       }
       /* update this thread's lockset accordingly. */
-      thr->lockset
-         = TC_(delFromWS)( univ_lsets, thr->lockset, (Word)lock );
+      thr->locksetA
+         = TC_(delFromWS)( univ_lsets, thr->locksetA, (Word)lock );
+      thr->locksetW
+         = TC_(delFromWS)( univ_lsets, thr->locksetW, (Word)lock );
    }
    /* fall through */
 
@@ -2876,74 +3028,151 @@ static void ev__pre_thread_releases_lock ( Thread* thr, Addr lock_ga )
    tl_assert(is_sane_LockN(lock));
 }
 
-static void ev__pre_thread_create ( ThreadId parent, ThreadId child )
-{
-   Thread*   thr_p;
-   Thread*   thr_c;
-   SegmentID segid_c;
-   Segment*  seg_c;
-   WordSetID empty;
 
-   tl_assert(is_sane_ThreadId(parent));
-   tl_assert(is_sane_ThreadId(child));
-   tl_assert(parent != child);
+/*--------- Event handlers proper (evh__* functions) ---------*/
 
-   thr_p = map_threads_maybe_lookup( parent );
-   thr_c = map_threads_maybe_lookup( child );
-
-   tl_assert(thr_p != NULL);
-   tl_assert(thr_c == NULL);
-
-   /* Create a new thread record for the child. */
-   // FIXME: code duplication from init_data_structures
-   segid_c = alloc_SegmentID();
-   seg_c   = mk_Segment( NULL/*thr*/, NULL/*prev*/, NULL/*other*/ );
-   map_segments_add( segid_c, seg_c );
-
-   /* a Thread for the new thread ... */
-   empty = TC_(emptyWS)( univ_lsets );
-   thr_c = mk_Thread( empty, segid_c );
-   seg_c->thr = thr_c;
-
-   /* and bind it in the thread-map table */
-   map_threads[child] = thr_c;
-
-   /* Record where the parent is so we can later refer to this in
-      error messages. 
-
-      On amd64-linux, this entails a nasty glibc-2.5 specific hack.
-      The stack snapshot is taken immediately after the parent has
-      returned from its sys_clone call.  Unfortunately there is no
-      unwind info for the insn following "syscall" - reading the glibc
-      sources confirms this.  So we ask for a snapshot to be taken as
-      if RIP was 3 bytes earlier, in a place where there is unwind
-      info.  Sigh.
-   */
-   { Word first_ip_delta = 0;
-#    if defined(VGP_amd64_linux)
-     first_ip_delta = -3;
-#    endif
-     thr_c->created_at = VG_(record_ExeContext)(parent, first_ip_delta);
-   }
-
-   /* Now, mess with segments. */ 
-   if (clo_happens_before >= 1) {
-      /* Make the child's new segment depend on the parent */
-      seg_c->other = map_segments_lookup( thr_p->csegid );
-      seg_c->other_hint = 'c';
-      /* and start a new segment for the parent. */
-      { SegmentID new_segid = 0; /* bogus */
-        Segment*  new_seg   = NULL;
-        start_new_segment_for_thread( &new_segid, &new_seg, thr_p );
-        tl_assert(is_sane_SegmentID(new_segid));
-        tl_assert(is_sane_Segment(new_seg));
-      }
-   }
+/* FIXME: Horrible inefficient hack.  Get rid of it somehow. */
+// FIXME: get rid of the "if .." hack.  It exists because evim__new_mem
+// is called during initialisation (as notification of initial memory
+// layout) and VG_(get_running_tid)() returns VG_INVALID_THREADID at
+// that point.
+static inline Thread* get_current_Thread ( void ) {
+   ThreadId coretid;
+   Thread*  thr;
+   coretid = VG_(get_running_tid)();
+   if (coretid == VG_INVALID_THREADID)
+      coretid = 1; /* KLUDGE */
+   thr = map_threads_lookup( coretid );
+   return thr;
 }
 
-static void ev__post_thread_async_exit ( ThreadId quit_tid )
+static
+void evh__new_mem ( Addr a, SizeT len ) {
+   if (SHOW_EVENTS >= 2)
+      VG_(printf)("evh__new_mem(%p, %lu)\n", (void*)a, len );
+   shadow_mem_make_New( get_current_Thread(), a, len );
+   if (len >= SCE_BIGRANGE_T && (sanity_flags & SCE_BIGRANGE))
+      all__sanity_check("evh__new_mem-post");
+}
+
+static
+void evh__new_mem_w_perms ( Addr a, SizeT len, 
+                            Bool rr, Bool ww, Bool xx ) {
+   if (SHOW_EVENTS >= 1)
+      VG_(printf)("evh__new_mem_w_perms(%p, %lu, %d,%d,%d)\n",
+                  (void*)a, len, (Int)rr, (Int)ww, (Int)xx );
+   if (rr || ww || xx)
+      shadow_mem_make_New( get_current_Thread(), a, len );
+   if (len >= SCE_BIGRANGE_T && (sanity_flags & SCE_BIGRANGE))
+      all__sanity_check("evh__new_mem_w_perms-post");
+}
+
+static
+void evh__set_perms ( Addr a, SizeT len,
+                      Bool rr, Bool ww, Bool xx ) {
+   if (SHOW_EVENTS >= 1)
+      VG_(printf)("evh__set_perms(%p, %lu, %d,%d,%d)\n",
+                  (void*)a, len, (Int)rr, (Int)ww, (Int)xx );
+   /* Hmm.  What should we do here, that actually makes any sense?
+      Let's say: if neither readable nor writable, then declare it
+      NoAccess, else leave it alone. */
+   if (!(rr || ww))
+      shadow_mem_make_NoAccess( get_current_Thread(), a, len );
+   if (len >= SCE_BIGRANGE_T && (sanity_flags & SCE_BIGRANGE))
+      all__sanity_check("evh__set_perms-post");
+}
+
+static
+void evh__die_mem ( Addr a, SizeT len ) {
+   if (SHOW_EVENTS >= 2)
+      VG_(printf)("evh__die_mem(%p, %lu)\n", (void*)a, len );
+   shadow_mem_make_NoAccess( get_current_Thread(), a, len );
+   if (len >= SCE_BIGRANGE_T && (sanity_flags & SCE_BIGRANGE))
+      all__sanity_check("evh__die_mem-post");
+}
+
+static
+void evh__pre_thread_ll_create ( ThreadId parent, ThreadId child )
+{
+   if (SHOW_EVENTS >= 1)
+      VG_(printf)("evh__pre_thread_ll_create(p=%d, c=%d)\n",
+                  (Int)parent, (Int)child );
+
+   if (parent != VG_INVALID_THREADID) {
+      Thread*   thr_p;
+      Thread*   thr_c;
+      SegmentID segid_c;
+      Segment*  seg_c;
+
+      tl_assert(is_sane_ThreadId(parent));
+      tl_assert(is_sane_ThreadId(child));
+      tl_assert(parent != child);
+
+      thr_p = map_threads_maybe_lookup( parent );
+      thr_c = map_threads_maybe_lookup( child );
+
+      tl_assert(thr_p != NULL);
+      tl_assert(thr_c == NULL);
+
+      /* Create a new thread record for the child. */
+      // FIXME: code duplication from init_data_structures
+      segid_c = alloc_SegmentID();
+      seg_c   = mk_Segment( NULL/*thr*/, NULL/*prev*/, NULL/*other*/ );
+      map_segments_add( segid_c, seg_c );
+
+      /* a Thread for the new thread ... */
+      thr_c = mk_Thread( segid_c );
+      seg_c->thr = thr_c;
+
+      /* and bind it in the thread-map table */
+      map_threads[child] = thr_c;
+
+      /* Record where the parent is so we can later refer to this in
+         error messages.
+
+         On amd64-linux, this entails a nasty glibc-2.5 specific hack.
+         The stack snapshot is taken immediately after the parent has
+         returned from its sys_clone call.  Unfortunately there is no
+         unwind info for the insn following "syscall" - reading the
+         glibc sources confirms this.  So we ask for a snapshot to be
+         taken as if RIP was 3 bytes earlier, in a place where there
+         is unwind info.  Sigh.
+      */
+      { Word first_ip_delta = 0;
+#       if defined(VGP_amd64_linux)
+        first_ip_delta = -3;
+#       endif
+        thr_c->created_at = VG_(record_ExeContext)(parent, first_ip_delta);
+      }
+
+      /* Now, mess with segments. */ 
+      if (clo_happens_before >= 1) {
+         /* Make the child's new segment depend on the parent */
+         seg_c->other = map_segments_lookup( thr_p->csegid );
+         seg_c->other_hint = 'c';
+         /* and start a new segment for the parent. */
+         { SegmentID new_segid = 0; /* bogus */
+           Segment*  new_seg   = NULL;
+           evhH__start_new_segment_for_thread( &new_segid, &new_seg, 
+                                               thr_p );
+           tl_assert(is_sane_SegmentID(new_segid));
+           tl_assert(is_sane_Segment(new_seg));
+         }
+      }
+   }
+
+   if (sanity_flags & SCE_THREADS)
+      all__sanity_check("evh__pre_thread_create-post");
+}
+
+static
+void evh__pre_thread_ll_exit ( ThreadId quit_tid )
 {
    Thread* thr_q;
+   if (SHOW_EVENTS >= 1)
+      VG_(printf)("evh__pre_thread_ll_exit(thr=%d)\n",
+                  (Int)quit_tid );
+
    /* quit_tid has disappeared without joining to any other thread.
       Therefore there is no synchronisation event associated with its
       exit and so we have to pretty much treat it as if it was still
@@ -2956,19 +3185,27 @@ static void ev__post_thread_async_exit ( ThreadId quit_tid )
    tl_assert(is_sane_ThreadId(quit_tid));
    thr_q = map_threads_maybe_lookup( quit_tid );
    tl_assert(thr_q != NULL);
-   // FIXME: if exiting thread holds any locks, complain
+   // FIXME: error-if: exiting thread holds any locks
    /* About the only thing we do need to do is clear the map_threads
       entry, in order that the Valgrind core can re-use it. */
    map_threads_delete( quit_tid );
+
+   if (sanity_flags & SCE_THREADS)
+      all__sanity_check("evh__pre_thread_ll_exit-post");
 }
 
-static void ev__post_thread_join ( ThreadId stay_tid, Thread* quit_thr )
+static
+void evh__TC_PTHREAD_JOIN_POST ( ThreadId stay_tid, Thread* quit_thr )
 {
    Int      i, stats_SMs, stats_SMs_scanned, stats_reExcls;
    Addr     ga;
    SecMap*  sm;
    Thread*  thr_s;
    Thread*  thr_q;
+
+   if (SHOW_EVENTS >= 1)
+      VG_(printf)("evh__post_thread_join(stayer=%d, quitter=%p)\n",
+                  (Int)stay_tid, quit_thr );
 
    tl_assert(is_sane_ThreadId(stay_tid));
 
@@ -2982,7 +3219,7 @@ static void ev__post_thread_join ( ThreadId stay_tid, Thread* quit_thr )
       /* Start a new segment for the stayer */
       SegmentID new_segid = 0; /* bogus */
       Segment*  new_seg   = NULL;
-      start_new_segment_for_thread( &new_segid, &new_seg, thr_s );
+      evhH__start_new_segment_for_thread( &new_segid, &new_seg, thr_s );
       tl_assert(is_sane_SegmentID(new_segid));
       tl_assert(is_sane_Segment(new_seg));
       /* and make it depend on the quitter's last segment */
@@ -2991,7 +3228,8 @@ static void ev__post_thread_join ( ThreadId stay_tid, Thread* quit_thr )
       new_seg->other_hint = 'j';
    }
 
-   // FIXME: if exiting thread holds any locks, complain
+   // FIXME: error-if: exiting thread holds any locks
+   //        or shouw evh__pre_thread_ll_exit do that?
 
    /* Delete thread from ShM/ShR thread sets and restore Excl states
       where appropriate */
@@ -3073,184 +3311,64 @@ static void ev__post_thread_join ( ThreadId stay_tid, Thread* quit_thr )
    TC_(doneIterFM)( map_shmem );
 
    if (SHOW_EXPENSIVE_STUFF)
-      VG_(printf)("ev__post_thread_join: %d SMs, "
+      VG_(printf)("evh__post_thread_join: %d SMs, "
                   "%d scanned, %d re-Excls\n", 
                   stats_SMs, stats_SMs_scanned, stats_reExcls);
 
    /* This holds because, at least when using NPTL as the thread
       library, we should be notified the low level thread exit before
       we hear of any join event on it.  The low level exit
-      notification feeds through into ev__post_thread_async_exit,
+      notification feeds through into evh__pre_thread_ll_exit,
       which should clear the map_threads entry for it.  Hence we
       expect there to be no map_threads entry at this point. */
    tl_assert( map_threads_maybe_reverse_lookup_SLOW(thr_q)
               == VG_INVALID_THREADID);
-}
 
-
-/*----------------------------------------------------------------*/
-/*--- Event handlers -- impedance matchers (evim__* functions) ---*/
-/*----------------------------------------------------------------*/
-
-/* FIXME: Horrible inefficient hack.  Get rid of it somehow. */
-// FIXME: get rid of the "if .." hack.  It exists because evim__new_mem
-// is called during initialisation (as notification of initial memory
-// layout) and VG_(get_running_tid)() returns VG_INVALID_THREADID at
-// that point.
-static inline Thread* get_current_Thread ( void ) {
-   ThreadId coretid;
-   Thread*  thr;
-   coretid = VG_(get_running_tid)();
-   if (coretid == VG_INVALID_THREADID)
-      coretid = 1; /* KLUDGE */
-   thr = map_threads_lookup( coretid );
-   return thr;
-}
-
-static
-void evim__new_mem ( Addr a, SizeT len ) {
-   if (SHOW_EVENTS >= 2)
-      VG_(printf)("evim__new_mem(%p, %lu)\n", (void*)a, len );
-   shadow_mem_make_New( get_current_Thread(), a, len );
-   if (len >= SCE_BIGRANGE_T && (sanity_flags & SCE_BIGRANGE))
-      all__sanity_check("evim__new_mem-post");
-}
-
-static
-void evim__new_mem_w_perms ( Addr a, SizeT len, 
-                             Bool rr, Bool ww, Bool xx ) {
-   if (SHOW_EVENTS >= 1)
-      VG_(printf)("evim__new_mem_w_perms(%p, %lu, %d,%d,%d)\n",
-                  (void*)a, len, (Int)rr, (Int)ww, (Int)xx );
-   if (rr || ww || xx)
-      shadow_mem_make_New( get_current_Thread(), a, len );
-   if (len >= SCE_BIGRANGE_T && (sanity_flags & SCE_BIGRANGE))
-      all__sanity_check("evim__new_mem_w_perms-post");
-}
-
-static
-void evim__set_perms ( Addr a, SizeT len,
-                       Bool rr, Bool ww, Bool xx ) {
-   if (SHOW_EVENTS >= 1)
-      VG_(printf)("evim__set_perms(%p, %lu, %d,%d,%d)\n",
-                  (void*)a, len, (Int)rr, (Int)ww, (Int)xx );
-   /* Hmm.  What should we do here, that actually makes any sense?
-      Let's say: if neither readable nor writable, then declare it
-      NoAccess, else leave it alone. */
-   if (!(rr || ww))
-      shadow_mem_make_NoAccess( get_current_Thread(), a, len );
-   if (len >= SCE_BIGRANGE_T && (sanity_flags & SCE_BIGRANGE))
-      all__sanity_check("evim__set_perms-post");
-}
-
-static
-void evim__die_mem ( Addr a, SizeT len ) {
-   if (SHOW_EVENTS >= 2)
-      VG_(printf)("evim__die_mem(%p, %lu)\n", (void*)a, len );
-   shadow_mem_make_NoAccess( get_current_Thread(), a, len );
-   if (len >= SCE_BIGRANGE_T && (sanity_flags & SCE_BIGRANGE))
-      all__sanity_check("evim__die_mem-post");
-}
-
-static
-void evim__pre_thread_ll_create ( ThreadId parent, ThreadId child ) {
-   if (SHOW_EVENTS >= 1)
-      VG_(printf)("evim__pre_thread_ll_create(p=%d, c=%d)\n",
-                  (Int)parent, (Int)child );
-   if (parent != VG_INVALID_THREADID)
-      ev__pre_thread_create ( parent, child );
    if (sanity_flags & SCE_THREADS)
-      all__sanity_check("evim__pre_thread_create-post");
+      all__sanity_check("evh__post_thread_join-post");
 }
 
 static
-void evim__pre_thread_ll_exit ( ThreadId tid ) {
-   if (SHOW_EVENTS >= 1)
-      VG_(printf)("evim__pre_thread_ll_exit(thr=%d)\n",
-                  (Int)tid );
-   ev__post_thread_async_exit( tid );
-   if (sanity_flags & SCE_THREADS)
-      all__sanity_check("evim__pre_thread_ll_exit-post");
-}
-
-static
-void evim__post_thread_join ( ThreadId stayer, Thread* quitter )
-{
-   if (SHOW_EVENTS >= 1)
-      VG_(printf)("evim__post_thread_join(stayer=%d, quitter=%p)\n",
-                  (Int)stayer, quitter );
-   ev__post_thread_join( stayer, quitter );
-   if (sanity_flags & SCE_THREADS)
-      all__sanity_check("evim__post_thread_join-post");
-}
-
-static
-void evim__post_mutex_lock ( ThreadId tid, void* mutex ) {
-   if (SHOW_EVENTS >= 1)
-      VG_(printf)("evim__post_mutex_lock(ctid=%d, %p)\n", 
-                  (Int)tid, (void*)mutex );
-   if (sanity_flags & SCE_LOCKS)
-      all__sanity_check("evim__post_mutex_lock-pre");
-   ev__post_thread_w_acquires_lock( 
-      map_threads_lookup(tid), 
-      LK_mbRec, /* if not known, create new lock with this LockKind */
-      (Addr)mutex 
-   );
-   if (sanity_flags & SCE_LOCKS)
-      all__sanity_check("evim__post_mutex_lock-post");
-}
-
-static
-void evim__post_mutex_unlock ( ThreadId tid, void* mutex ) {
-   if (SHOW_EVENTS >= 1)
-      VG_(printf)("evim__post_mutex_unlock(ctid=%d, %p)\n", 
-                  (Int)tid, (void*)mutex );
-   ev__pre_thread_releases_lock( map_threads_lookup(tid), (Addr)mutex );
-   if (sanity_flags & SCE_LOCKS)
-      all__sanity_check("evim__post_mutex_unlock-post");
-}
-
-static
-void evim__pre_mem_read ( CorePart part, ThreadId tid, Char* s, 
-                          Addr a, SizeT size) {
+void evh__pre_mem_read ( CorePart part, ThreadId tid, Char* s, 
+                         Addr a, SizeT size) {
    if (SHOW_EVENTS >= 2
        || (SHOW_EVENTS >= 1 && size != 1))
-      VG_(printf)("evim__pre_mem_read(ctid=%d, \"%s\", %p, %lu)\n", 
+      VG_(printf)("evh__pre_mem_read(ctid=%d, \"%s\", %p, %lu)\n", 
                   (Int)tid, s, (void*)a, size );
    shadow_mem_read_range( map_threads_lookup(tid), a, size);
    if (size >= SCE_BIGRANGE_T && (sanity_flags & SCE_BIGRANGE))
-      all__sanity_check("evim__pre_mem_read-post");
+      all__sanity_check("evh__pre_mem_read-post");
 }
 
 static
-void evim__pre_mem_read_asciiz ( CorePart part, ThreadId tid,
-                                 Char* s, Addr a ) {
+void evh__pre_mem_read_asciiz ( CorePart part, ThreadId tid,
+                                Char* s, Addr a ) {
    Int len;
    if (SHOW_EVENTS >= 1)
-      VG_(printf)("evim__pre_mem_asciiz(ctid=%d, \"%s\", %p)\n", 
+      VG_(printf)("evh__pre_mem_asciiz(ctid=%d, \"%s\", %p)\n", 
                   (Int)tid, s, (void*)a );
    // FIXME: think of a less ugly hack
    len = VG_(strlen)( (Char*) a );
-   shadow_mem_read_range( map_threads_lookup(tid), a, len );
+   shadow_mem_read_range( map_threads_lookup(tid), a, len+1 );
    if (len >= SCE_BIGRANGE_T && (sanity_flags & SCE_BIGRANGE))
-      all__sanity_check("evim__pre_mem_read_asciiz-post");
+      all__sanity_check("evh__pre_mem_read_asciiz-post");
 }
 
 static
-void evim__pre_mem_write ( CorePart part, ThreadId tid, Char* s,
-                           Addr a, SizeT size ) {
+void evh__pre_mem_write ( CorePart part, ThreadId tid, Char* s,
+                          Addr a, SizeT size ) {
    if (SHOW_EVENTS >= 1)
-      VG_(printf)("evim__pre_mem_write(ctid=%d, \"%s\", %p, %lu)\n", 
+      VG_(printf)("evh__pre_mem_write(ctid=%d, \"%s\", %p, %lu)\n", 
                   (Int)tid, s, (void*)a, size );
    shadow_mem_write_range( map_threads_lookup(tid), a, size);
    if (size >= SCE_BIGRANGE_T && (sanity_flags & SCE_BIGRANGE))
-      all__sanity_check("evim__pre_mem_write-post");
+      all__sanity_check("evh__pre_mem_write-post");
 }
 
 static
-void evim__new_mem_heap ( Addr a, SizeT len, Bool is_inited ) {
+void evh__new_mem_heap ( Addr a, SizeT len, Bool is_inited ) {
    if (SHOW_EVENTS >= 1)
-      VG_(printf)("evim__new_mem_heap(%p, %lu, inited=%d)\n", 
+      VG_(printf)("evh__new_mem_heap(%p, %lu, inited=%d)\n", 
                   (void*)a, len, (Int)is_inited );
    // FIXME: this is kinda stupid
    if (is_inited) {
@@ -3259,40 +3377,40 @@ void evim__new_mem_heap ( Addr a, SizeT len, Bool is_inited ) {
       shadow_mem_make_New(get_current_Thread(), a, len);
    }
    if (len >= SCE_BIGRANGE_T && (sanity_flags & SCE_BIGRANGE))
-      all__sanity_check("evim__pre_mem_read-post");
+      all__sanity_check("evh__pre_mem_read-post");
 }
 
 static
-void evim__die_mem_heap ( Addr a, SizeT len ) {
+void evh__die_mem_heap ( Addr a, SizeT len ) {
    if (SHOW_EVENTS >= 1)
-      VG_(printf)("evim__die_mem_heap(%p, %lu)\n", (void*)a, len );
+      VG_(printf)("evh__die_mem_heap(%p, %lu)\n", (void*)a, len );
    shadow_mem_make_NoAccess( get_current_Thread(), a, len );
    if (len >= SCE_BIGRANGE_T && (sanity_flags & SCE_BIGRANGE))
-      all__sanity_check("evim__pre_mem_read-post");
+      all__sanity_check("evh__pre_mem_read-post");
 }
 
 // thread async exit?
 
 static VG_REGPARM(1)
-void evim__mem_help_read_1(Addr a) {
+void evh__mem_help_read_1(Addr a) {
    msm__handle_read_aligned_32( get_current_Thread(), ROUNDDN(a,4) );
 }
 static VG_REGPARM(1)
-void evim__mem_help_read_2(Addr a) {
+void evh__mem_help_read_2(Addr a) {
    msm__handle_read_aligned_32( get_current_Thread(), ROUNDDN(a,4) );
 }
 static VG_REGPARM(1)
-void evim__mem_help_read_4(Addr a) {
+void evh__mem_help_read_4(Addr a) {
    msm__handle_read_aligned_32( get_current_Thread(), ROUNDDN(a,4) );
 }
 static VG_REGPARM(1)
-void evim__mem_help_read_8(Addr a) {
+void evh__mem_help_read_8(Addr a) {
    Thread* thr = get_current_Thread();
    msm__handle_read_aligned_32( thr, ROUNDDN(a+0,4) );
    msm__handle_read_aligned_32( thr, ROUNDDN(a+4,4) );
 }
 static VG_REGPARM(2)
-void evim__mem_help_read_N(Addr a, SizeT size) {
+void evh__mem_help_read_N(Addr a, SizeT size) {
    Thread* thr = get_current_Thread();
    a = ROUNDDN(a,4);
    size = ROUNDDN(size, 4);
@@ -3303,25 +3421,25 @@ void evim__mem_help_read_N(Addr a, SizeT size) {
    }
 }
 static VG_REGPARM(1)
-void evim__mem_help_write_1(Addr a) {
+void evh__mem_help_write_1(Addr a) {
    msm__handle_write_aligned_32( get_current_Thread(), ROUNDDN(a,4) );
 }
 static VG_REGPARM(1)
-void evim__mem_help_write_2(Addr a) {
+void evh__mem_help_write_2(Addr a) {
    msm__handle_write_aligned_32( get_current_Thread(), ROUNDDN(a,4) );
 }
 static VG_REGPARM(1)
-void evim__mem_help_write_4(Addr a) {
+void evh__mem_help_write_4(Addr a) {
    msm__handle_write_aligned_32( get_current_Thread(), ROUNDDN(a,4) );
 }
 static VG_REGPARM(1)
-void evim__mem_help_write_8(Addr a) {
+void evh__mem_help_write_8(Addr a) {
    Thread* thr = get_current_Thread();
    msm__handle_write_aligned_32( thr, ROUNDDN(a+0,4) );
    msm__handle_write_aligned_32( thr, ROUNDDN(a+4,4) );
 }
 static VG_REGPARM(2)
-void evim__mem_help_write_N(Addr a, SizeT size) {
+void evh__mem_help_write_N(Addr a, SizeT size) {
    Thread* thr = get_current_Thread();
    a = ROUNDDN(a,4);
    size = ROUNDDN(size, 4);
@@ -3332,49 +3450,49 @@ void evim__mem_help_write_N(Addr a, SizeT size) {
    }
 }
 
-static void evim__bus_lock(void) {
+static void evh__bus_lock(void) {
    Thread* thr;
-   if (0) VG_(printf)("evim__bus_lock()\n");
+   if (0) VG_(printf)("evh__bus_lock()\n");
    thr = map_threads_maybe_lookup( VG_(get_running_tid)() );
    tl_assert(thr); /* cannot fail - Thread* must already exist */
-   ev__post_thread_w_acquires_lock( thr, LK_nonRec, (Addr)&__bus_lock );
+   evhH__post_thread_w_acquires_lock( thr, LK_nonRec, (Addr)&__bus_lock );
 }
-static void evim__bus_unlock(void) {
+static void evh__bus_unlock(void) {
    Thread* thr;
-   if (0) VG_(printf)("evim__bus_unlock()\n");
+   if (0) VG_(printf)("evh__bus_unlock()\n");
    thr = map_threads_maybe_lookup( VG_(get_running_tid)() );
    tl_assert(thr); /* cannot fail - Thread* must already exist */
-   ev__pre_thread_releases_lock( thr, (Addr)&__bus_lock );
+   evhH__pre_thread_releases_lock( thr, (Addr)&__bus_lock, False/*!isRDWR*/ );
 }
 
 
-/* -------------- events to do with locks -------------- */
+/* -------------- events to do with mutexes -------------- */
 
 /* EXPOSITION only: by intercepting lock init events we can show the
    user where the lock was initialised, rather than only being able to
    show where it was first locked.  Intercepting lock initialisations
    is not necessary for the basic operation of the race checker. */
 static
-void evim__tc_PTHREAD_MUTEX_INIT_POST( ThreadId tid, 
-                                       void* mutex, Word mbRec )
+void evh__TC_PTHREAD_MUTEX_INIT_POST( ThreadId tid, 
+                                      void* mutex, Word mbRec )
 {
    if (SHOW_EVENTS >= 1)
-      VG_(printf)("evim__tc_PTHREAD_MUTEX_INIT_POST(ctid=%d, mbRec=%ld, %p)\n", 
+      VG_(printf)("evh__tc_PTHREAD_MUTEX_INIT_POST(ctid=%d, mbRec=%ld, %p)\n", 
                   (Int)tid, mbRec, (void*)mutex );
    tl_assert(mbRec == 0 || mbRec == 1);
    map_locks_lookup_or_create( mbRec ? LK_mbRec : LK_nonRec,
                                (Addr)mutex, tid );
    if (sanity_flags & SCE_LOCKS)
-      all__sanity_check("evim__tc_PTHREAD_MUTEX_INIT_POST");
+      all__sanity_check("evh__tc_PTHREAD_MUTEX_INIT_POST");
 }
 
 static
-void evim__TC_PTHREAD_MUTEX_DESTROY_POST( ThreadId tid, void* mutex )
+void evh__TC_PTHREAD_MUTEX_DESTROY_PRE( ThreadId tid, void* mutex )
 {
    Thread* thr;
    Lock*   lk;
    if (SHOW_EVENTS >= 1)
-      VG_(printf)("evim__tc_PTHREAD_MUTEX_DESTROY_POST(ctid=%d, %p)\n", 
+      VG_(printf)("evh__tc_PTHREAD_MUTEX_DESTROY_PRE(ctid=%d, %p)\n", 
                   (Int)tid, (void*)mutex );
 
    thr = map_threads_maybe_lookup( tid );
@@ -3382,6 +3500,12 @@ void evim__TC_PTHREAD_MUTEX_DESTROY_POST( ThreadId tid, void* mutex )
    tl_assert( is_sane_Thread(thr) );
 
    lk = map_locks_maybe_lookup( (Addr)mutex );
+
+   if (lk == NULL || (lk->kind != LK_nonRec && lk->kind != LK_mbRec)) {
+      record_error_Misc( thr,
+                         "pthread_mutex_destroy with invalid argument" );
+   }
+
    if (lk) {
       tl_assert( is_sane_LockN(lk) );
       tl_assert( lk->guestaddr == (Addr)mutex );
@@ -3397,24 +3521,31 @@ void evim__TC_PTHREAD_MUTEX_DESTROY_POST( ThreadId tid, void* mutex )
       tl_assert( !lk->heldBy );
       tl_assert( is_sane_LockN(lk) );
    }
+
    if (sanity_flags & SCE_LOCKS)
-      all__sanity_check("evim__tc_PTHREAD_MUTEX_DESTROY_POST");
+      all__sanity_check("evh__tc_PTHREAD_MUTEX_DESTROY_PRE");
 }
 
-static void evim__tc_PTHREAD_MUTEX_LOCK_PRE ( ThreadId tid, void* mutex )
+static void evh__TC_PTHREAD_MUTEX_LOCK_PRE ( ThreadId tid, void* mutex )
 {
    /* Just check the mutex is sane; nothing else to do. */
    // 'mutex' may be invalid - not checked by wrapper
    Thread* thr;
    Lock*   lk;
    if (SHOW_EVENTS >= 1)
-      VG_(printf)("evim__tc_PTHREAD_MUTEX_LOCK_PRE(ctid=%d, mutex=%p)\n", 
+      VG_(printf)("evh__tc_PTHREAD_MUTEX_LOCK_PRE(ctid=%d, mutex=%p)\n", 
                   (Int)tid, (void*)mutex );
 
    thr = map_threads_maybe_lookup( tid );
    tl_assert(thr); /* cannot fail - Thread* must already exist */
 
    lk = map_locks_maybe_lookup( (Addr)mutex );
+
+   if (lk && (lk->kind == LK_rdwr)) {
+      record_error_Misc( thr, "pthread_mutex_lock with a "
+                              "pthread_rwlock_t* argument " );
+   }
+
    if ( lk 
         && (lk->kind == LK_nonRec || lk->kind == LK_rdwr)
         && lk->heldBy
@@ -3427,44 +3558,44 @@ static void evim__tc_PTHREAD_MUTEX_LOCK_PRE ( ThreadId tid, void* mutex )
    }
 }
 
-static void evim__TC_PTHREAD_MUTEX_LOCK_POST ( ThreadId tid, void* mutex )
+static void evh__TC_PTHREAD_MUTEX_LOCK_POST ( ThreadId tid, void* mutex )
 {
    // only called if the real library call succeeded - so mutex is sane
    Thread* thr;
    if (SHOW_EVENTS >= 1)
-      VG_(printf)("evim__TC_PTHREAD_MUTEX_LOCK_POST(ctid=%d, mutex=%p)\n", 
+      VG_(printf)("evh__TC_PTHREAD_MUTEX_LOCK_POST(ctid=%d, mutex=%p)\n", 
                   (Int)tid, (void*)mutex );
 
    thr = map_threads_maybe_lookup( tid );
    tl_assert(thr); /* cannot fail - Thread* must already exist */
 
-   ev__post_thread_w_acquires_lock( 
+   evhH__post_thread_w_acquires_lock( 
       thr, 
       LK_mbRec, /* if not known, create new lock with this LockKind */
       (Addr)mutex
    );
 }
 
-static void evim__TC_PTHREAD_MUTEX_UNLOCK_PRE ( ThreadId tid, void* mutex )
+static void evh__TC_PTHREAD_MUTEX_UNLOCK_PRE ( ThreadId tid, void* mutex )
 {
    // 'mutex' may be invalid - not checked by wrapper
    Thread* thr;
    if (SHOW_EVENTS >= 1)
-      VG_(printf)("evim__TC_PTHREAD_MUTEX_UNLOCK_PRE(ctid=%d, mutex=%p)\n", 
+      VG_(printf)("evh__TC_PTHREAD_MUTEX_UNLOCK_PRE(ctid=%d, mutex=%p)\n", 
                   (Int)tid, (void*)mutex );
 
    thr = map_threads_maybe_lookup( tid );
    tl_assert(thr); /* cannot fail - Thread* must already exist */
 
-   ev__pre_thread_releases_lock( thr, (Addr)mutex );
+   evhH__pre_thread_releases_lock( thr, (Addr)mutex, False/*!isRDWR*/ );
 }
 
-static void evim__tc_PTHREAD_MUTEX_UNLOCK_POST ( ThreadId tid, void* mutex )
+static void evh__TC_PTHREAD_MUTEX_UNLOCK_POST ( ThreadId tid, void* mutex )
 {
    // only called if the real library call succeeded - so mutex is sane
    Thread* thr;
    if (SHOW_EVENTS >= 1)
-      VG_(printf)("evim__tc_PTHREAD_MUTEX_UNLOCK_POST(ctid=%d, mutex=%p)\n", 
+      VG_(printf)("evh__tc_PTHREAD_MUTEX_UNLOCK_POST(ctid=%d, mutex=%p)\n", 
                   (Int)tid, (void*)mutex );
    thr = map_threads_maybe_lookup( tid );
    tl_assert(thr); /* cannot fail - Thread* must already exist */
@@ -3491,7 +3622,7 @@ static void map_cond_to_Segment_INIT ( void ) {
    }
 }
 
-static void evim__TC_PTHREAD_COND_SIGNAL_PRE ( ThreadId tid, void* cond )
+static void evh__TC_PTHREAD_COND_SIGNAL_PRE ( ThreadId tid, void* cond )
 {
    /* 'tid' has signalled on 'cond'.  Start a new segment for this
       thread, and make a binding from 'cond' to our old segment in the
@@ -3505,7 +3636,7 @@ static void evim__TC_PTHREAD_COND_SIGNAL_PRE ( ThreadId tid, void* cond )
    Segment*  new_seg;
 
    if (SHOW_EVENTS >= 1)
-      VG_(printf)("evim__TC_PTHREAD_COND_SIGNAL_PRE(ctid=%d, cond=%p)\n", 
+      VG_(printf)("evh__TC_PTHREAD_COND_SIGNAL_PRE(ctid=%d, cond=%p)\n", 
                   (Int)tid, (void*)cond );
 
    map_cond_to_Segment_INIT();
@@ -3519,7 +3650,7 @@ static void evim__TC_PTHREAD_COND_SIGNAL_PRE ( ThreadId tid, void* cond )
       /* create a new segment ... */
       new_segid = 0; /* bogus */
       new_seg   = NULL;
-      start_new_segment_for_thread( &new_segid, &new_seg, thr );
+      evhH__start_new_segment_for_thread( &new_segid, &new_seg, thr );
       tl_assert( is_sane_SegmentID(new_segid) );
       tl_assert( is_sane_Segment(new_seg) );
       tl_assert( new_seg->thr == thr );
@@ -3531,12 +3662,12 @@ static void evim__TC_PTHREAD_COND_SIGNAL_PRE ( ThreadId tid, void* cond )
    }
 }
 
-static void evim__tc_PTHREAD_COND_WAIT_PRE ( ThreadId tid,
-                                             void* cond, void* mutex )
+static void evh__TC_PTHREAD_COND_WAIT_PRE ( ThreadId tid,
+                                            void* cond, void* mutex )
 {
    Thread* thr;
    if (SHOW_EVENTS >= 1)
-      VG_(printf)("evim__tc_PTHREAD_COND_WAIT_PRE"
+      VG_(printf)("evh__tc_PTHREAD_COND_WAIT_PRE"
                   "(ctid=%d, cond=%p, mutex=%p)\n", 
                   (Int)tid, (void*)cond, (void*)mutex );
 
@@ -3547,8 +3678,8 @@ static void evim__tc_PTHREAD_COND_WAIT_PRE ( ThreadId tid,
    // error-if: cond is also associated with a different mutex
 }
 
-static void evim__TC_PTHREAD_COND_WAIT_POST ( ThreadId tid,
-                                              void* cond, void* mutex )
+static void evh__TC_PTHREAD_COND_WAIT_POST ( ThreadId tid,
+                                             void* cond, void* mutex )
 {
    /* A pthread_cond_wait(cond, mutex) completed successfully.  Start
       a new segment for this thread.  Look up the signalling-segment
@@ -3562,7 +3693,7 @@ static void evim__TC_PTHREAD_COND_WAIT_POST ( ThreadId tid,
    Bool      found;
 
    if (SHOW_EVENTS >= 1)
-      VG_(printf)("evim__TC_PTHREAD_COND_WAIT_POST"
+      VG_(printf)("evh__TC_PTHREAD_COND_WAIT_POST"
                   "(ctid=%d, cond=%p, mutex=%p)\n", 
                   (Int)tid, (void*)cond, (void*)mutex );
 
@@ -3576,7 +3707,7 @@ static void evim__TC_PTHREAD_COND_WAIT_POST ( ThreadId tid,
       /* create a new segment ... */
       new_segid = 0; /* bogus */
       new_seg   = NULL;
-      start_new_segment_for_thread( &new_segid, &new_seg, thr );
+      evhH__start_new_segment_for_thread( &new_segid, &new_seg, thr );
       tl_assert( is_sane_SegmentID(new_segid) );
       tl_assert( is_sane_Segment(new_seg) );
       tl_assert( new_seg->thr == thr );
@@ -3600,6 +3731,133 @@ static void evim__TC_PTHREAD_COND_WAIT_POST ( ThreadId tid,
          tl_assert(0);
       }
    }
+}
+
+
+/* -------------- events to do with rwlocks -------------- */
+
+/* EXPOSITION only */
+static
+void evh__TC_PTHREAD_RWLOCK_INIT_POST( ThreadId tid, void* rwl )
+{
+   if (SHOW_EVENTS >= 1)
+      VG_(printf)("evh__tc_PTHREAD_RWLOCK_INIT_POST(ctid=%d, %p)\n", 
+                  (Int)tid, (void*)rwl );
+   map_locks_lookup_or_create( LK_rdwr, (Addr)rwl, tid );
+   if (sanity_flags & SCE_LOCKS)
+      all__sanity_check("evh__tc_PTHREAD_RWLOCK_INIT_POST");
+}
+
+static
+void evh__TC_PTHREAD_RWLOCK_DESTROY_PRE( ThreadId tid, void* rwl )
+{
+   Thread* thr;
+   Lock*   lk;
+   if (SHOW_EVENTS >= 1)
+      VG_(printf)("evh__tc_PTHREAD_RWLOCK_DESTROY_PRE(ctid=%d, %p)\n", 
+                  (Int)tid, (void*)rwl );
+
+   thr = map_threads_maybe_lookup( tid );
+   /* cannot fail - Thread* must already exist */
+   tl_assert( is_sane_Thread(thr) );
+
+   lk = map_locks_maybe_lookup( (Addr)rwl );
+
+   if (lk == NULL || lk->kind != LK_rdwr) {
+      record_error_Misc( thr,
+                         "pthread_rwlock_destroy with invalid argument" );
+   }
+
+   if (lk) {
+      tl_assert( is_sane_LockN(lk) );
+      tl_assert( lk->guestaddr == (Addr)rwl );
+      if (lk->heldBy) {
+         /* Basically act like we unlocked the lock */
+         record_error_DestroyLocked( thr, lk );
+         /* remove lock from locksets of all owning threads */
+         remove_Lock_from_locksets_of_all_owning_Threads( lk );
+         TC_(deleteBag)( lk->heldBy );
+         lk->heldBy = NULL;
+         lk->heldW = False;
+      }
+      tl_assert( !lk->heldBy );
+      tl_assert( is_sane_LockN(lk) );
+   }
+
+   if (sanity_flags & SCE_LOCKS)
+      all__sanity_check("evh__tc_PTHREAD_RWLOCK_DESTROY_PRE");
+}
+
+static 
+void evh__TC_PTHREAD_RWLOCK_LOCK_PRE ( ThreadId tid, void* rwl, Word isW )
+{
+   /* Just check the rwl is sane; nothing else to do. */
+   // 'rwl' may be invalid - not checked by wrapper
+   Thread* thr;
+   Lock*   lk;
+   if (SHOW_EVENTS >= 1)
+      VG_(printf)("evh__tc_PTHREAD_RWLOCK_LOCK_PRE(ctid=%d, isW=%d, %p)\n", 
+                  (Int)tid, (Int)isW, (void*)rwl );
+
+   tl_assert(isW == 0 || isW == 1); /* assured us by wrapper */
+   thr = map_threads_maybe_lookup( tid );
+   tl_assert(thr); /* cannot fail - Thread* must already exist */
+
+   lk = map_locks_maybe_lookup( (Addr)rwl );
+   if ( lk 
+        && (lk->kind == LK_nonRec || lk->kind == LK_mbRec) ) {
+      /* Wrong kind of lock.  Duh.  */
+      record_error_Misc( thr, "pthread_rwlock_{rd,rw}lock with a "
+                              "pthread_mutex_t* argument " );
+   }
+}
+
+static 
+void evh__TC_PTHREAD_RWLOCK_LOCK_POST ( ThreadId tid, void* rwl, Word isW )
+{
+   // only called if the real library call succeeded - so mutex is sane
+   Thread* thr;
+   if (SHOW_EVENTS >= 1)
+      VG_(printf)("evh__tc_PTHREAD_RWLOCK_LOCK_POST(ctid=%d, isW=%d, %p)\n", 
+                  (Int)tid, (Int)isW, (void*)rwl );
+
+   tl_assert(isW == 0 || isW == 1); /* assured us by wrapper */
+   thr = map_threads_maybe_lookup( tid );
+   tl_assert(thr); /* cannot fail - Thread* must already exist */
+
+   (isW ? evhH__post_thread_w_acquires_lock 
+        : evhH__post_thread_r_acquires_lock)( 
+      thr, 
+      LK_rdwr, /* if not known, create new lock with this LockKind */
+      (Addr)rwl
+   );
+}
+
+static void evh__TC_PTHREAD_RWLOCK_UNLOCK_PRE ( ThreadId tid, void* rwl )
+{
+   // 'rwl' may be invalid - not checked by wrapper
+   Thread* thr;
+   if (SHOW_EVENTS >= 1)
+      VG_(printf)("evh__TC_PTHREAD_RWLOCK_UNLOCK_PRE(ctid=%d, rwl=%p)\n", 
+                  (Int)tid, (void*)rwl );
+
+   thr = map_threads_maybe_lookup( tid );
+   tl_assert(thr); /* cannot fail - Thread* must already exist */
+
+   evhH__pre_thread_releases_lock( thr, (Addr)rwl, True/*isRDWR*/ );
+}
+
+static void evh__TC_PTHREAD_RWLOCK_UNLOCK_POST ( ThreadId tid, void* rwl )
+{
+   // only called if the real library call succeeded - so mutex is sane
+   Thread* thr;
+   if (SHOW_EVENTS >= 1)
+      VG_(printf)("evh__tc_PTHREAD_RWLOCK_UNLOCK_POST(ctid=%d, rwl=%p)\n", 
+                  (Int)tid, (void*)rwl );
+   thr = map_threads_maybe_lookup( tid );
+   tl_assert(thr); /* cannot fail - Thread* must already exist */
+
+   // anything we should do here?
 }
 
 
@@ -3660,7 +3918,7 @@ void* handle_alloc ( ThreadId tid,
    VG_(HT_add_node)( tc_mallocmeta_table, (VgHashNode*)md );
 
    /* Tell the lower level memory wranglers. */
-   evim__new_mem_heap( p, szB, is_zeroed );
+   evh__new_mem_heap( p, szB, is_zeroed );
 
    return (void*)p;
 }
@@ -3712,7 +3970,7 @@ static void handle_free ( ThreadId tid, void* p )
    delete_MallocMeta(old_md);
 
    /* Tell the lower level memory wranglers. */
-   evim__die_mem_heap( (Addr)p, szB );
+   evh__die_mem_heap( (Addr)p, szB );
 }
 
 static void tc_cli__free ( ThreadId tid, void* p ) {
@@ -3749,7 +4007,7 @@ static void* tc_cli__realloc ( ThreadId tid, void* payloadV, SizeT new_size )
       /* new size is smaller */
       md->szB   = new_size;
       md->where = VG_(record_ExeContext)(tid, 0);
-      evim__die_mem_heap( md->payload + new_size, md->szB - new_size );
+      evh__die_mem_heap( md->payload + new_size, md->szB - new_size );
       return payloadV;
    }
 
@@ -3761,12 +4019,12 @@ static void* tc_cli__realloc ( ThreadId tid, void* payloadV, SizeT new_size )
       // FIXME: shouldn't we use a copier which implements the
       // memory state machine?
       shmem__copy_arange_state( payload, p_new, md->szB );
-      evim__new_mem_heap ( p_new + md->szB, new_size - md->szB,
+      evh__new_mem_heap ( p_new + md->szB, new_size - md->szB,
                            /*inited*/False );
       /* FIXME: can anything funny happen here?  specifically, if the
          old range contained a lock, then die_mem_heap will complain.
          Is that the correct behaviour?  Not sure. */
-      evim__die_mem_heap( payload, md->szB );
+      evh__die_mem_heap( payload, md->szB );
 
       /* Copy from old to new */
       for (i = 0; i < md->szB; i++)
@@ -3827,60 +4085,60 @@ static void instrument_mem_access ( IRSB*   bbOut,
    if (isStore) {
       switch (szB) {
          case 1:
-            hName = "evim__mem_help_write_1";
-            hAddr = &evim__mem_help_write_1;
+            hName = "evh__mem_help_write_1";
+            hAddr = &evh__mem_help_write_1;
             argv = mkIRExprVec_1( addr );
             break;
          case 2:
-            hName = "evim__mem_help_write_2";
-            hAddr = &evim__mem_help_write_2;
+            hName = "evh__mem_help_write_2";
+            hAddr = &evh__mem_help_write_2;
             argv = mkIRExprVec_1( addr );
             break;
          case 4:
-            hName = "evim__mem_help_write_4";
-            hAddr = &evim__mem_help_write_4;
+            hName = "evh__mem_help_write_4";
+            hAddr = &evh__mem_help_write_4;
             argv = mkIRExprVec_1( addr );
             break;
          case 8:
-            hName = "evim__mem_help_write_8";
-            hAddr = &evim__mem_help_write_8;
+            hName = "evh__mem_help_write_8";
+            hAddr = &evh__mem_help_write_8;
             argv = mkIRExprVec_1( addr );
             break;
          default:
             tl_assert(szB > 8 && szB <= 512); /* stay sane */
             regparms = 2;
-            hName = "evim__mem_help_write_N";
-            hAddr = &evim__mem_help_write_N;
+            hName = "evh__mem_help_write_N";
+            hAddr = &evh__mem_help_write_N;
             argv = mkIRExprVec_2( addr, mkIRExpr_HWord( szB ));
             break;
       }
    } else {
       switch (szB) {
          case 1:
-            hName = "evim__mem_help_read_1";
-            hAddr = &evim__mem_help_read_1;
+            hName = "evh__mem_help_read_1";
+            hAddr = &evh__mem_help_read_1;
             argv = mkIRExprVec_1( addr );
             break;
          case 2:
-            hName = "evim__mem_help_read_2";
-            hAddr = &evim__mem_help_read_2;
+            hName = "evh__mem_help_read_2";
+            hAddr = &evh__mem_help_read_2;
             argv = mkIRExprVec_1( addr );
             break;
          case 4:
-            hName = "evim__mem_help_read_4";
-            hAddr = &evim__mem_help_read_4;
+            hName = "evh__mem_help_read_4";
+            hAddr = &evh__mem_help_read_4;
             argv = mkIRExprVec_1( addr );
             break;
          case 8:
-            hName = "evim__mem_help_read_8";
-            hAddr = &evim__mem_help_read_8;
+            hName = "evh__mem_help_read_8";
+            hAddr = &evh__mem_help_read_8;
             argv = mkIRExprVec_1( addr );
             break;
          default: 
             tl_assert(szB > 8 && szB <= 512); /* stay sane */
             regparms = 2;
-            hName = "evim__mem_help_read_N";
-            hAddr = &evim__mem_help_read_N;
+            hName = "evh__mem_help_read_N";
+            hAddr = &evh__mem_help_read_N;
             argv = mkIRExprVec_2( addr, mkIRExpr_HWord( szB ));
             break;
       }
@@ -3909,11 +4167,11 @@ static void instrument_memory_bus_event ( IRSB* bbOut, IRMBusEvent event )
             IRStmt_Dirty(
                unsafeIRDirty_0_N( 
                   0/*regparms*/, 
-                  event == Imbe_BusLock ? "evim__bus_lock"
-                                        : "evim__bus_unlock",
+                  event == Imbe_BusLock ? "evh__bus_lock"
+                                        : "evh__bus_unlock",
                   VG_(fnptr_to_fnentry)(
-                     event == Imbe_BusLock ? &evim__bus_lock 
-                                           : &evim__bus_unlock 
+                     event == Imbe_BusLock ? &evh__bus_lock 
+                                           : &evh__bus_unlock 
                   ),
                   mkIRExprVec_0() 
                )
@@ -4073,9 +4331,9 @@ Bool tc_handle_client_request ( ThreadId tid, UWord* args, UWord* ret)
          /* Call die_mem to (expensively) tidy up properly, if there
             are any held locks etc in the area */
          // FIXME: next line causes firefox to stall - no idea why
-         //         evim__die_mem(args[1], args[2]);
+         //         evh__die_mem(args[1], args[2]);
          /* and then set it to New */
-         evim__new_mem(args[1], args[2]);
+         evh__new_mem(args[1], args[2]);
          break;
 
       /* --- --- Client requests for Thrcheck's use only --- --- */
@@ -4140,7 +4398,7 @@ Bool tc_handle_client_request ( ThreadId tid, UWord* args, UWord* ret)
             if (0)
             VG_(printf)(".................... quitter Thread* = %p\n", 
                         thr_q);
-            evim__post_thread_join( tid, thr_q );
+            evh__TC_PTHREAD_JOIN_POST( tid, thr_q );
          }
          break;
       }
@@ -4150,48 +4408,74 @@ Bool tc_handle_client_request ( ThreadId tid, UWord* args, UWord* ret)
          being able to show where it was first locked.  Intercepting
          lock initialisations is not necessary for the basic operation
          of the race checker. */
-      case _VG_USERREQ__tc_PTHREAD_MUTEX_INIT_POST:
-         evim__tc_PTHREAD_MUTEX_INIT_POST( tid, (void*)args[1], args[2] );
+      case _VG_USERREQ__TC_PTHREAD_MUTEX_INIT_POST:
+         evh__TC_PTHREAD_MUTEX_INIT_POST( tid, (void*)args[1], args[2] );
          break;
 
-      case _VG_USERREQ__TC_PTHREAD_MUTEX_DESTROY_POST:
-         evim__TC_PTHREAD_MUTEX_DESTROY_POST( tid, (void*)args[1] );
+      case _VG_USERREQ__TC_PTHREAD_MUTEX_DESTROY_PRE:
+         evh__TC_PTHREAD_MUTEX_DESTROY_PRE( tid, (void*)args[1] );
          break;
 
       case _VG_USERREQ__TC_PTHREAD_MUTEX_UNLOCK_PRE:   // pth_mx_t*
-         evim__TC_PTHREAD_MUTEX_UNLOCK_PRE( tid, (void*)args[1] );
+         evh__TC_PTHREAD_MUTEX_UNLOCK_PRE( tid, (void*)args[1] );
          break;
 
-      case _VG_USERREQ__tc_PTHREAD_MUTEX_UNLOCK_POST:  // pth_mx_t*
-         evim__tc_PTHREAD_MUTEX_UNLOCK_POST( tid, (void*)args[1] );
+      case _VG_USERREQ__TC_PTHREAD_MUTEX_UNLOCK_POST:  // pth_mx_t*
+         evh__TC_PTHREAD_MUTEX_UNLOCK_POST( tid, (void*)args[1] );
          break;
 
-      case _VG_USERREQ__tc_PTHREAD_MUTEX_LOCK_PRE:     // pth_mx_t*
-         evim__tc_PTHREAD_MUTEX_LOCK_PRE( tid, (void*)args[1] );
+      case _VG_USERREQ__TC_PTHREAD_MUTEX_LOCK_PRE:     // pth_mx_t*
+         evh__TC_PTHREAD_MUTEX_LOCK_PRE( tid, (void*)args[1] );
          break;
 
       case _VG_USERREQ__TC_PTHREAD_MUTEX_LOCK_POST:    // pth_mx_t*
-         evim__TC_PTHREAD_MUTEX_LOCK_POST( tid, (void*)args[1] );
+         evh__TC_PTHREAD_MUTEX_LOCK_POST( tid, (void*)args[1] );
          break;
 
       /* This thread is about to do pthread_cond_signal on the
          pthread_cond_t* in arg[1].  Ditto pthread_cond_broadcast. */
       case _VG_USERREQ__TC_PTHREAD_COND_SIGNAL_PRE:
       case _VG_USERREQ__TC_PTHREAD_COND_BROADCAST_PRE:
-         evim__TC_PTHREAD_COND_SIGNAL_PRE( tid, (void*)args[1] );
+         evh__TC_PTHREAD_COND_SIGNAL_PRE( tid, (void*)args[1] );
          break;
 
       /* Entry into pthread_cond_wait, cond=arg[1], mutex=arg[2] */
-      case _VG_USERREQ__tc_PTHREAD_COND_WAIT_PRE:
-         evim__tc_PTHREAD_COND_WAIT_PRE( tid,
+      case _VG_USERREQ__TC_PTHREAD_COND_WAIT_PRE:
+         evh__TC_PTHREAD_COND_WAIT_PRE( tid,
                                          (void*)args[1], (void*)args[2] );
          break;
 
       /* Thread successfully completed pthread_cond_wait, cond=arg[1],
          mutex=arg[2] */
       case _VG_USERREQ__TC_PTHREAD_COND_WAIT_POST:
-         evim__TC_PTHREAD_COND_WAIT_POST( tid,
+         evh__TC_PTHREAD_COND_WAIT_POST( tid,
                                           (void*)args[1], (void*)args[2] );
+         break;
+
+      case _VG_USERREQ__TC_PTHREAD_RWLOCK_INIT_POST:
+         evh__TC_PTHREAD_RWLOCK_INIT_POST( tid, (void*)args[1] );
+         break;
+
+      case _VG_USERREQ__TC_PTHREAD_RWLOCK_DESTROY_PRE:
+         evh__TC_PTHREAD_RWLOCK_DESTROY_PRE( tid, (void*)args[1] );
+         break;
+
+      /* rwlock=arg[1], isW=arg[2] */
+      case _VG_USERREQ__TC_PTHREAD_RWLOCK_LOCK_PRE:
+         evh__TC_PTHREAD_RWLOCK_LOCK_PRE( tid, (void*)args[1], args[2] );
+         break;
+
+      /* rwlock=arg[1], isW=arg[2] */
+      case _VG_USERREQ__TC_PTHREAD_RWLOCK_LOCK_POST:
+         evh__TC_PTHREAD_RWLOCK_LOCK_POST( tid, (void*)args[1], args[2] );
+         break;
+
+      case _VG_USERREQ__TC_PTHREAD_RWLOCK_UNLOCK_PRE:
+         evh__TC_PTHREAD_RWLOCK_UNLOCK_PRE( tid, (void*)args[1] );
+         break;
+
+      case _VG_USERREQ__TC_PTHREAD_RWLOCK_UNLOCK_POST:
+         evh__TC_PTHREAD_RWLOCK_UNLOCK_POST( tid, (void*)args[1] );
          break;
 
       default:
@@ -4839,7 +5123,7 @@ static void tc_pp_Error ( Error* err )
                       "consistent locks",
                       thr_acc->errmsg_index);
          if (xe->XE.Race.mb_lastlock) {
-            VG_(message)(Vg_UserMsg, "  Last consistent lock for %p was "
+            VG_(message)(Vg_UserMsg, "  Last consistently used lock for %p was "
                                      "first observed", err_ga);
             VG_(pp_ExeContext)(xe->XE.Race.mb_lastlock);
          } else {
@@ -5086,34 +5370,34 @@ static void tc_pre_clo_init ( void )
 
    //VG_(needs_xml_output)          ();
 
-   VG_(track_new_mem_startup)     ( evim__new_mem_w_perms );
-   VG_(track_new_mem_stack_signal)( evim__die_mem );
-   VG_(track_new_mem_brk)         ( evim__new_mem );
-   VG_(track_new_mem_mmap)        ( evim__new_mem_w_perms );
-   VG_(track_new_mem_stack)       ( evim__new_mem );
+   VG_(track_new_mem_startup)     ( evh__new_mem_w_perms );
+   VG_(track_new_mem_stack_signal)( evh__die_mem );
+   VG_(track_new_mem_brk)         ( evh__new_mem );
+   VG_(track_new_mem_mmap)        ( evh__new_mem_w_perms );
+   VG_(track_new_mem_stack)       ( evh__new_mem );
 
    // FIXME: surely this isn't thread-aware
    VG_(track_copy_mem_remap)      ( shmem__copy_arange_state );
 
-   VG_(track_change_mem_mprotect) ( evim__set_perms );
+   VG_(track_change_mem_mprotect) ( evh__set_perms );
 
-   VG_(track_die_mem_stack_signal)( evim__die_mem );
-   VG_(track_die_mem_brk)         ( evim__die_mem );
-   VG_(track_die_mem_munmap)      ( evim__die_mem );
-   VG_(track_die_mem_stack)       ( evim__die_mem );
+   VG_(track_die_mem_stack_signal)( evh__die_mem );
+   VG_(track_die_mem_brk)         ( evh__die_mem );
+   VG_(track_die_mem_munmap)      ( evh__die_mem );
+   VG_(track_die_mem_stack)       ( evh__die_mem );
 
    // FIXME: what is this for?
    VG_(track_ban_mem_stack)       (NULL);
 
-   VG_(track_pre_mem_read)        ( evim__pre_mem_read );
-   VG_(track_pre_mem_read_asciiz) ( evim__pre_mem_read_asciiz );
-   VG_(track_pre_mem_write)       ( evim__pre_mem_write );
+   VG_(track_pre_mem_read)        ( evh__pre_mem_read );
+   VG_(track_pre_mem_read_asciiz) ( evh__pre_mem_read_asciiz );
+   VG_(track_pre_mem_write)       ( evh__pre_mem_write );
    VG_(track_post_mem_write)      (NULL);
 
    /////////////////
 
-   VG_(track_pre_thread_ll_create)( evim__pre_thread_ll_create );
-   VG_(track_pre_thread_ll_exit)  ( evim__pre_thread_ll_exit );
+   VG_(track_pre_thread_ll_create)( evh__pre_thread_ll_create );
+   VG_(track_pre_thread_ll_exit)  ( evh__pre_thread_ll_exit );
 
    initialise_data_structures();
 

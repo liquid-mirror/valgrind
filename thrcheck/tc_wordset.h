@@ -77,6 +77,7 @@ Int     TC_(cardinalityWS)  ( WordSetU*, WordSet );
 Bool    TC_(elemWS)         ( WordSetU*, WordSet, Word );
 WordSet TC_(doubletonWS)    ( WordSetU*, Word, Word );
 WordSet TC_(singletonWS)    ( WordSetU*, Word );
+WordSet TC_(isSubsetOf)     ( WordSetU*, WordSet, WordSet );
 
 Bool    TC_(plausibleWS)    ( WordSetU*, WordSet );
 Bool    TC_(saneWS_SLOW)    ( WordSetU*, WordSet );

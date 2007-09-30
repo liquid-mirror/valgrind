@@ -150,6 +150,7 @@ struct _WordSetU {
       UWord     n_isEmpty;
       UWord     n_isSingleton;
       UWord     n_anyElementOf;
+      UWord     n_isSubsetOf;
    };
 
 /* Create a new WordVec of the given size. */
@@ -269,6 +270,7 @@ static WordSet add_or_dealloc_WordVec( WordSetU* wsu, WordVec* wv_new )
       tl_assert(wsu->ix2vec_used < wsu->ix2vec_size);
       wsu->ix2vec[wsu->ix2vec_used] = wv_new;
       TC_(addToFM)( wsu->vec2ix, (Word)wv_new, (Word)wsu->ix2vec_used );
+      if (0) VG_(printf)("aodW %d\n", (Int)wsu->ix2vec_used );
       wsu->ix2vec_used++;
       tl_assert(wsu->ix2vec_used <= wsu->ix2vec_size);
       return (WordSet)(wsu->ix2vec_used - 1);
@@ -444,6 +446,12 @@ WordSet TC_(singletonWS) ( WordSetU* wsu, Word w )
    return TC_(doubletonWS)( wsu, w, w );
 }
 
+WordSet TC_(isSubsetOf) ( WordSetU* wsu, WordSet small, WordSet big )
+{
+   wsu->n_isSubsetOf++;
+   return small == TC_(intersectWS)( wsu, small, big );
+}
+
 void TC_(ppWS) ( WordSetU* wsu, WordSet ws )
 {
    Int      i;
@@ -468,7 +476,7 @@ void TC_(ppWSUstats) ( WordSetU* wsu, HChar* name )
    VG_(printf)("      delFrom      %10u (%u uncached)\n", 
                wsu->n_del, wsu->n_del_uncached);
    VG_(printf)("      union        %10u\n", wsu->n_union);
-   VG_(printf)("      intersect    %10u (%u uncached)\n", 
+   VG_(printf)("      intersect    %10u (%u uncached) [nb. incl isSubsetOf]\n", 
                wsu->n_intersect, wsu->n_intersect_uncached);
    VG_(printf)("      minus        %10u (%u uncached)\n",
                wsu->n_minus, wsu->n_minus_uncached);
@@ -477,6 +485,7 @@ void TC_(ppWSUstats) ( WordSetU* wsu, HChar* name )
    VG_(printf)("      isEmpty      %10u\n",   wsu->n_isEmpty);
    VG_(printf)("      isSingleton  %10u\n",   wsu->n_isSingleton);
    VG_(printf)("      anyElementOf %10u\n",   wsu->n_anyElementOf);
+   VG_(printf)("      isSubsetOf   %10u\n",   wsu->n_isSubsetOf);
 }
 
 WordSet TC_(addToWS) ( WordSetU* wsu, WordSet ws, Word w )

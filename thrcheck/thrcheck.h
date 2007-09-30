@@ -66,25 +66,28 @@ typedef
 
       /* The rest are for Thrcheck's internal use.  Not for end-user
          use.  Do not use them unless you are a Valgrind developer. */
-      /* __TC_: needed to maintain tc's internal model.
-         __tc_: only needed for error checking, can be omitted. */
 
       /* Notify the tool what this thread's pthread_t is. */
       _VG_USERREQ__TC_SET_MY_PTHREAD_T = VG_USERREQ_TOOL_BASE('T','C') 
                                          + 256,
       _VG_USERREQ__TC_PTH_API_ERROR,              // char*, int
       _VG_USERREQ__TC_PTHREAD_JOIN_POST,          // pthread_t of quitter
-      _VG_USERREQ__tc_PTHREAD_MUTEX_INIT_POST,    // pth_mx_t*
-      _VG_USERREQ__TC_PTHREAD_MUTEX_DESTROY_POST, // pth_mx_t*
+      _VG_USERREQ__TC_PTHREAD_MUTEX_INIT_POST,    // pth_mx_t*, long mbRec
+      _VG_USERREQ__TC_PTHREAD_MUTEX_DESTROY_PRE,  // pth_mx_t*
       _VG_USERREQ__TC_PTHREAD_MUTEX_UNLOCK_PRE,   // pth_mx_t*
-      _VG_USERREQ__tc_PTHREAD_MUTEX_UNLOCK_POST,  // pth_mx_t*
-      _VG_USERREQ__tc_PTHREAD_MUTEX_LOCK_PRE,     // pth_mx_t*
+      _VG_USERREQ__TC_PTHREAD_MUTEX_UNLOCK_POST,  // pth_mx_t*
+      _VG_USERREQ__TC_PTHREAD_MUTEX_LOCK_PRE,     // pth_mx_t*
       _VG_USERREQ__TC_PTHREAD_MUTEX_LOCK_POST,    // pth_mx_t*
       _VG_USERREQ__TC_PTHREAD_COND_SIGNAL_PRE,    // pth_cond_t*
       _VG_USERREQ__TC_PTHREAD_COND_BROADCAST_PRE, // pth_cond_t*
-      _VG_USERREQ__tc_PTHREAD_COND_WAIT_PRE,      // pth_cond_t*, pth_mx_t*
-      _VG_USERREQ__TC_PTHREAD_COND_WAIT_POST      // pth_cond_t*, pth_mx_t*
-
+      _VG_USERREQ__TC_PTHREAD_COND_WAIT_PRE,      // pth_cond_t*, pth_mx_t*
+      _VG_USERREQ__TC_PTHREAD_COND_WAIT_POST,     // pth_cond_t*, pth_mx_t*
+      _VG_USERREQ__TC_PTHREAD_RWLOCK_INIT_POST,   // pth_rwlk_t*
+      _VG_USERREQ__TC_PTHREAD_RWLOCK_DESTROY_PRE, // pth_rwlk_t*
+      _VG_USERREQ__TC_PTHREAD_RWLOCK_LOCK_PRE,    // pth_rwlk_t*, long isW
+      _VG_USERREQ__TC_PTHREAD_RWLOCK_LOCK_POST,   // pth_rwlk_t*, long isW
+      _VG_USERREQ__TC_PTHREAD_RWLOCK_UNLOCK_PRE,  // pth_rwlk_t*
+      _VG_USERREQ__TC_PTHREAD_RWLOCK_UNLOCK_POST  // pth_rwlk_t*
    } Vg_TCheckClientRequest;
 
 /* Clean memory state.  This makes Thrcheck forget everything it knew

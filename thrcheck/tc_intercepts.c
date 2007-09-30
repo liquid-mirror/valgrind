@@ -273,8 +273,18 @@ done.  No way the joiner can return before the thread is gone.
 
 
 /*----------------------------------------------------------------*/
-/*--- pthread_mutex_lock, pthread_mutex_unlock, et al          ---*/
+/*--- pthread_mutex_t functions                                ---*/
 /*----------------------------------------------------------------*/
+
+/* Handled:   pthread_mutex_init pthread_mutex_destroy
+              pthread_mutex_lock pthread_mutex_trylock
+              pthread_mutex_unlock
+
+   Unhandled: pthread_mutex_timedlock -- FIXME
+
+   FIXME: pthread_spin_init pthread_spin_destroy 
+   pthread_spin_lock pthread_spin_unlock pthread_spin_trylock
+*/
 
 // pthread_mutex_init
 PTH_FUNC(int, pthreadZumutexZuinit, // pthread_mutex_init
@@ -300,7 +310,7 @@ PTH_FUNC(int, pthreadZumutexZuinit, // pthread_mutex_init
    CALL_FN_W_WW(ret, fn, mutex,attr);
 
    if (ret == 0 /*success*/) {
-      DO_CREQ_v_WW(_VG_USERREQ__tc_PTHREAD_MUTEX_INIT_POST,
+      DO_CREQ_v_WW(_VG_USERREQ__TC_PTHREAD_MUTEX_INIT_POST,
                    pthread_mutex_t*,mutex, long,mbRec);
    } else { 
       DO_PthAPIerror( "pthread_mutex_init", ret );
@@ -324,12 +334,12 @@ PTH_FUNC(int, pthreadZumutexZudestroy, // pthread_mutex_destroy
       fprintf(stderr, "<< pthread_mxdestroy %p", mutex); fflush(stderr);
    }
 
+   DO_CREQ_v_W(_VG_USERREQ__TC_PTHREAD_MUTEX_DESTROY_PRE,
+               pthread_mutex_t*,mutex);
+
    CALL_FN_W_W(ret, fn, mutex);
 
-   if (ret == 0 /*success*/) {
-      DO_CREQ_v_W(_VG_USERREQ__TC_PTHREAD_MUTEX_DESTROY_POST,
-                  pthread_mutex_t*,mutex);
-   } else { 
+   if (ret != 0) {
       DO_PthAPIerror( "pthread_mutex_destroy", ret );
    }
 
@@ -351,7 +361,7 @@ PTH_FUNC(int, pthreadZumutexZulock, // pthread_mutex_lock
       fprintf(stderr, "<< pthread_mxlock %p", mutex); fflush(stderr);
    }
 
-   DO_CREQ_v_W(_VG_USERREQ__tc_PTHREAD_MUTEX_LOCK_PRE,
+   DO_CREQ_v_W(_VG_USERREQ__TC_PTHREAD_MUTEX_LOCK_PRE,
                pthread_mutex_t*,mutex);
 
    CALL_FN_W_W(ret, fn, mutex);
@@ -387,7 +397,7 @@ PTH_FUNC(int, pthreadZumutexZutrylock, // pthread_mutex_trylock
       fprintf(stderr, "<< pthread_mxtrylock %p", mutex); fflush(stderr);
    }
 
-   DO_CREQ_v_W(_VG_USERREQ__tc_PTHREAD_MUTEX_LOCK_PRE,
+   DO_CREQ_v_W(_VG_USERREQ__TC_PTHREAD_MUTEX_LOCK_PRE,
                pthread_mutex_t*,mutex);
 
    CALL_FN_W_W(ret, fn, mutex);
@@ -430,7 +440,7 @@ PTH_FUNC(int, pthreadZumutexZuunlock, // pthread_mutex_unlock
    CALL_FN_W_W(ret, fn, mutex);
 
    if (ret == 0 /*success*/) {
-      DO_CREQ_v_W(_VG_USERREQ__tc_PTHREAD_MUTEX_UNLOCK_POST,
+      DO_CREQ_v_W(_VG_USERREQ__TC_PTHREAD_MUTEX_UNLOCK_POST,
                   pthread_mutex_t*,mutex);
    } else { 
       DO_PthAPIerror( "pthread_mutex_unlock", ret );
@@ -444,8 +454,15 @@ PTH_FUNC(int, pthreadZumutexZuunlock, // pthread_mutex_unlock
 
 
 /*----------------------------------------------------------------*/
-/*--- pthread_cond_wait, pthread_cond_signal, et al            ---*/
+/*--- pthread_cond_t functions                                 ---*/
 /*----------------------------------------------------------------*/
+
+/* Handled:   pthread_cond_wait pthread_cond_timedwait
+              pthread_cond_signal pthread_cond_broadcast
+
+   Unhandled: pthread_cond_init pthread_cond_destroy
+              -- are these important?
+*/
 
 // pthread_cond_wait
 PTH_FUNC(int, pthreadZucondZuwaitZAZa, // pthread_cond_wait@*
@@ -469,13 +486,16 @@ PTH_FUNC(int, pthreadZucondZuwaitZAZa, // pthread_cond_wait@*
 
    CALL_FN_W_WW(ret, fn, cond,mutex);
 
+   /* And now we have the mutex again, regardless of the error code
+      returned. */
+   // FIXME: but only if we actually had it before the call
+   DO_CREQ_v_W(_VG_USERREQ__TC_PTHREAD_MUTEX_LOCK_POST,
+               pthread_mutex_t*,mutex);
+
    if (ret == 0) {
       DO_CREQ_v_WW(_VG_USERREQ__TC_PTHREAD_COND_WAIT_POST,
                    pthread_cond_t*,cond, pthread_mutex_t*,mutex);
 
-      /* And now we have the mutex again. */
-      DO_CREQ_v_W(_VG_USERREQ__TC_PTHREAD_MUTEX_LOCK_POST,
-                  pthread_mutex_t*,mutex);
    } else { 
       DO_PthAPIerror( "pthread_cond_wait", ret );
    }
@@ -512,13 +532,17 @@ PTH_FUNC(int, pthreadZucondZutimedwaitZAZa, // pthread_cond_timedwait@*
 
    CALL_FN_W_WWW(ret, fn, cond,mutex,abstime);
 
+   /* And now we have the mutex again, regardless of the error code
+      returned.  In particular we still have it even if
+      ret==ETIMEDOUT. */
+   // FIXME: but only if we actually had it before the call
+   DO_CREQ_v_W(_VG_USERREQ__TC_PTHREAD_MUTEX_LOCK_POST,
+               pthread_mutex_t*,mutex);
+
    if (ret == 0) {
       DO_CREQ_v_WW(_VG_USERREQ__TC_PTHREAD_COND_WAIT_POST,
                    pthread_cond_t*,cond, pthread_mutex_t*,mutex);
 
-      /* And now we have the mutex again. */
-      DO_CREQ_v_W(_VG_USERREQ__TC_PTHREAD_MUTEX_LOCK_POST,
-                  pthread_mutex_t*,mutex);
    } else { 
       DO_PthAPIerror( "pthread_cond_timedwait", ret );
    }
@@ -595,14 +619,193 @@ PTH_FUNC(int, pthreadZucondZubroadcastZAZa, // pthread_cond_broadcast@*
 
 
 /*----------------------------------------------------------------*/
+/*--- pthread_rwlock_t functions                               ---*/
+/*----------------------------------------------------------------*/
+
+/* Handled:   pthread_rwlock_init pthread_rwlock_destroy
+              pthread_rwlock_rdlock 
+              pthread_rwlock_wrlock
+              pthread_rwlock_unlock
+
+   Unhandled: pthread_rwlock_timedrdlock
+              pthread_rwlock_tryrdlock
+
+              pthread_rwlock_timedwrlock
+              pthread_rwlock_trywrlock
+*/
+
+// pthread_rwlock_init
+PTH_FUNC(int, pthreadZurwlockZuinit, // pthread_rwlock_init
+              pthread_rwlock_t *rwl,
+              pthread_rwlockattr_t* attr)
+{
+   int    ret;
+   OrigFn fn;
+   VALGRIND_GET_ORIG_FN(fn);
+   if (TRACE_PTH_FNS) {
+      fprintf(stderr, "<< pthread_rwl_init %p", rwl); fflush(stderr);
+   }
+
+   CALL_FN_W_WW(ret, fn, rwl,attr);
+
+   if (ret == 0 /*success*/) {
+      DO_CREQ_v_W(_VG_USERREQ__TC_PTHREAD_RWLOCK_INIT_POST,
+                  pthread_rwlock_t*,rwl);
+   } else { 
+      DO_PthAPIerror( "pthread_rwlock_init", ret );
+   }
+
+   if (TRACE_PTH_FNS) {
+      fprintf(stderr, " :: rwl_init -> %d >>\n", ret);
+   }
+   return ret;
+}
+
+
+// pthread_rwlock_destroy
+PTH_FUNC(int, pthreadZurwlockZudestroy, // pthread_rwlock_destroy
+              pthread_rwlock_t *rwl)
+{
+   int    ret;
+   OrigFn fn;
+   VALGRIND_GET_ORIG_FN(fn);
+   if (TRACE_PTH_FNS) {
+      fprintf(stderr, "<< pthread_rwl_destroy %p", rwl); fflush(stderr);
+   }
+
+   DO_CREQ_v_W(_VG_USERREQ__TC_PTHREAD_RWLOCK_DESTROY_PRE,
+               pthread_rwlock_t*,rwl);
+
+   CALL_FN_W_W(ret, fn, rwl);
+
+   if (ret != 0) {
+      DO_PthAPIerror( "pthread_rwlock_destroy", ret );
+   }
+
+   if (TRACE_PTH_FNS) {
+      fprintf(stderr, " :: rwl_destroy -> %d >>\n", ret);
+   }
+   return ret;
+}
+
+
+PTH_FUNC(int, pthreadZurwlockZuwrlock, // pthread_rwlock_wrlock
+	 pthread_rwlock_t* rwlock)
+{
+   int    ret;
+   OrigFn fn;
+   VALGRIND_GET_ORIG_FN(fn);
+   if (TRACE_PTH_FNS) {
+      fprintf(stderr, "<< pthread_rwl_wlk %p", rwlock); fflush(stderr);
+   }
+
+   DO_CREQ_v_WW(_VG_USERREQ__TC_PTHREAD_RWLOCK_LOCK_PRE,
+                pthread_rwlock_t*,rwlock, long,1/*isW*/);
+
+   CALL_FN_W_W(ret, fn, rwlock);
+
+   if (ret == 0 /*success*/) {
+      DO_CREQ_v_WW(_VG_USERREQ__TC_PTHREAD_RWLOCK_LOCK_POST,
+                   pthread_rwlock_t*,rwlock, long,1/*isW*/);
+   } else { 
+      DO_PthAPIerror( "pthread_rwlock_wrlock", ret );
+   }
+
+   if (TRACE_PTH_FNS) {
+      fprintf(stderr, " :: rwl_wlk -> %d >>\n", ret);
+   }
+   return ret;
+}
+
+
+PTH_FUNC(int, pthreadZurwlockZurdlock, // pthread_rwlock_rdlock
+	 pthread_rwlock_t* rwlock)
+{
+   int    ret;
+   OrigFn fn;
+   VALGRIND_GET_ORIG_FN(fn);
+   if (TRACE_PTH_FNS) {
+      fprintf(stderr, "<< pthread_rwl_rlk %p", rwlock); fflush(stderr);
+   }
+
+   DO_CREQ_v_WW(_VG_USERREQ__TC_PTHREAD_RWLOCK_LOCK_PRE,
+                pthread_rwlock_t*,rwlock, long,0/*!isW*/);
+
+   CALL_FN_W_W(ret, fn, rwlock);
+
+   if (ret == 0 /*success*/) {
+      DO_CREQ_v_WW(_VG_USERREQ__TC_PTHREAD_RWLOCK_LOCK_POST,
+                   pthread_rwlock_t*,rwlock, long,0/*!isW*/);
+   } else { 
+      DO_PthAPIerror( "pthread_rwlock_rdlock", ret );
+   }
+
+   if (TRACE_PTH_FNS) {
+      fprintf(stderr, " :: rwl_rlk -> %d >>\n", ret);
+   }
+   return ret;
+}
+
+
+PTH_FUNC(int, pthreadZurwlockZuunlock, // pthread_rwlock_unlock
+	 pthread_rwlock_t* rwlock)
+{
+   int    ret;
+   OrigFn fn;
+   VALGRIND_GET_ORIG_FN(fn);
+   if (TRACE_PTH_FNS) {
+      fprintf(stderr, "<< pthread_rwl_unlk %p", rwlock); fflush(stderr);
+   }
+
+   DO_CREQ_v_W(_VG_USERREQ__TC_PTHREAD_RWLOCK_UNLOCK_PRE,
+               pthread_rwlock_t*,rwlock);
+
+   CALL_FN_W_W(ret, fn, rwlock);
+
+   if (ret == 0 /*success*/) {
+      DO_CREQ_v_W(_VG_USERREQ__TC_PTHREAD_RWLOCK_UNLOCK_POST,
+                  pthread_rwlock_t*,rwlock);
+   } else { 
+      DO_PthAPIerror( "pthread_rwlock_unlock", ret );
+   }
+
+   if (TRACE_PTH_FNS) {
+      fprintf(stderr, " :: rwl_unlk -> %d >>\n", ret);
+   }
+   return ret;
+}
+
+
+/*----------------------------------------------------------------*/
 /*---                                                          ---*/
 /*----------------------------------------------------------------*/
+
+/* Handled:   QMutex::lock()
+              QMutex::unlock()
+              QMutex::tryLock
+              QReadWriteLock::lockForRead()
+              QReadWriteLock::lockForWrite()
+              QReadWriteLock::unlock()
+
+   Unhandled: QMutex::tryLock(int)
+              QReadWriteLock::tryLockForRead(int)
+              QReadWriteLock::tryLockForRead()
+              QReadWriteLock::tryLockForWrite(int)
+              QReadWriteLock::tryLockForWrite()
+
+              maybe not the next 3; qt-4.3.1 on Unix merely
+              implements QWaitCondition using pthread_cond_t
+              QWaitCondition::wait(QMutex*, unsigned long)
+              QWaitCondition::wakeAll()
+              QWaitCondition::wakeOne()
+*/
 
 // soname is libQtCore.so.4 ; match against libQtCore.so*
 #define QT4_FUNC(ret_ty, f, args...) \
    ret_ty I_WRAP_SONAME_FNNAME_ZZ(libQtCoreZdsoZa,f)(args); \
    ret_ty I_WRAP_SONAME_FNNAME_ZZ(libQtCoreZdsoZa,f)(args)
 
+// QMutex::lock()
 QT4_FUNC(void, ZuZZN6QMutex4lockEv, // _ZN6QMutex4lockEv == QMutex::lock()
                void* self)
 {
@@ -612,7 +815,7 @@ QT4_FUNC(void, ZuZZN6QMutex4lockEv, // _ZN6QMutex4lockEv == QMutex::lock()
       fprintf(stderr, "<< QMutex::lock %p", self); fflush(stderr);
    }
 
-   DO_CREQ_v_W(_VG_USERREQ__tc_PTHREAD_MUTEX_LOCK_PRE,
+   DO_CREQ_v_W(_VG_USERREQ__TC_PTHREAD_MUTEX_LOCK_PRE,
                void*, self);
 
    CALL_FN_v_W(fn, self);
@@ -621,10 +824,11 @@ QT4_FUNC(void, ZuZZN6QMutex4lockEv, // _ZN6QMutex4lockEv == QMutex::lock()
                void*, self);
 
    if (TRACE_QT4_FNS) {
-      fprintf(stderr, " :: QMutex::lock done >>\n");
+      fprintf(stderr, " :: Q::lock done >>\n");
    }
 }
 
+// QMutex::unlock()
 QT4_FUNC(void, ZuZZN6QMutex6unlockEv, // _ZN6QMutex6unlockEv == QMutex::unlock()
                void* self)
 {
@@ -640,14 +844,15 @@ QT4_FUNC(void, ZuZZN6QMutex6unlockEv, // _ZN6QMutex6unlockEv == QMutex::unlock()
 
    CALL_FN_v_W(fn, self);
 
-   DO_CREQ_v_W(_VG_USERREQ__tc_PTHREAD_MUTEX_UNLOCK_POST,
+   DO_CREQ_v_W(_VG_USERREQ__TC_PTHREAD_MUTEX_UNLOCK_POST,
                void*, self);
 
    if (TRACE_QT4_FNS) {
-      fprintf(stderr, " QMutex::unlock done >>\n");
+      fprintf(stderr, " Q::unlock done >>\n");
    }
 }
 
+// QMutex::tryLock
 // _ZN6QMutex7tryLockEv == bool QMutex::tryLock()
 // using 'long' to mimic C++ 'bool'
 QT4_FUNC(long, ZuZZN6QMutex7tryLockEv,
@@ -656,11 +861,11 @@ QT4_FUNC(long, ZuZZN6QMutex7tryLockEv,
    OrigFn fn;
    long   ret;
    VALGRIND_GET_ORIG_FN(fn);
-   if (1|| TRACE_QT4_FNS) {
+   if (TRACE_QT4_FNS) {
       fprintf(stderr, "<< QMutex::tryLock %p", self); fflush(stderr);
    }
 
-   DO_CREQ_v_W(_VG_USERREQ__tc_PTHREAD_MUTEX_LOCK_PRE,
+   DO_CREQ_v_W(_VG_USERREQ__TC_PTHREAD_MUTEX_LOCK_PRE,
                void*, self);
 
    CALL_FN_W_W(ret, fn, self);
@@ -671,17 +876,91 @@ QT4_FUNC(long, ZuZZN6QMutex7tryLockEv,
                   void*, self);
    }
 
-   if (1|| TRACE_QT4_FNS) {
-      fprintf(stderr, " :: QMutex::tryLock -> %lu >>\n", ret);
+   if (TRACE_QT4_FNS) {
+      fprintf(stderr, " :: Q::tryLock -> %lu >>\n", ret);
    }
    
    return ret;
 }
 
-/*
-bool QMutex::tryLock(int timeout)  _ZN6QMutex7tryLockEi
-             _ZN6QMutex7tryLockEv
-*/
+
+// QReadWriteLock::lockForRead()
+// _ZN14QReadWriteLock11lockForReadEv == QReadWriteLock::lockForRead()
+QT4_FUNC(void, ZuZZN14QReadWriteLock11lockForReadEv, 
+               // _ZN14QReadWriteLock11lockForReadEv
+               void* self)
+{
+   OrigFn fn;
+   VALGRIND_GET_ORIG_FN(fn);
+   if (TRACE_QT4_FNS) {
+      fprintf(stderr, "<< QReadWriteLock::lockForRead %p", self);
+      fflush(stderr);
+   }
+
+   DO_CREQ_v_WW(_VG_USERREQ__TC_PTHREAD_RWLOCK_LOCK_PRE,
+                void*,self, long,0/*!isW*/);
+
+   CALL_FN_v_W(fn, self);
+
+   DO_CREQ_v_WW(_VG_USERREQ__TC_PTHREAD_RWLOCK_LOCK_POST,
+                void*,self, long,0/*!isW*/);
+
+   if (TRACE_QT4_FNS) {
+      fprintf(stderr, " :: Q::lockForRead :: done >>\n");
+   }
+}
+
+// QReadWriteLock::lockForWrite()
+// _ZN14QReadWriteLock12lockForWriteEv == QReadWriteLock::lockForWrite()
+QT4_FUNC(void, ZuZZN14QReadWriteLock12lockForWriteEv, 
+               // _ZN14QReadWriteLock12lockForWriteEv
+               void* self)
+{
+   OrigFn fn;
+   VALGRIND_GET_ORIG_FN(fn);
+   if (TRACE_QT4_FNS) {
+      fprintf(stderr, "<< QReadWriteLock::lockForWrite %p", self);
+      fflush(stderr);
+   }
+
+   DO_CREQ_v_WW(_VG_USERREQ__TC_PTHREAD_RWLOCK_LOCK_PRE,
+                void*,self, long,1/*isW*/);
+
+   CALL_FN_v_W(fn, self);
+
+   DO_CREQ_v_WW(_VG_USERREQ__TC_PTHREAD_RWLOCK_LOCK_POST,
+                void*,self, long,1/*isW*/);
+
+   if (TRACE_QT4_FNS) {
+      fprintf(stderr, " :: Q::lockForWrite :: done >>\n");
+   }
+}
+
+// QReadWriteLock::unlock()
+// _ZN14QReadWriteLock6unlockEv == QReadWriteLock::unlock()
+QT4_FUNC(void, ZuZZN14QReadWriteLock6unlockEv,
+               // _ZN14QReadWriteLock6unlockEv
+               void* self)
+{
+   OrigFn fn;
+   VALGRIND_GET_ORIG_FN(fn);
+   if (TRACE_QT4_FNS) {
+      fprintf(stderr, "<< QReadWriteLock::unlock %p", self);
+      fflush(stderr);
+   }
+
+   DO_CREQ_v_W(_VG_USERREQ__TC_PTHREAD_RWLOCK_UNLOCK_PRE,
+               void*,self);
+
+   CALL_FN_v_W(fn, self);
+
+   DO_CREQ_v_W(_VG_USERREQ__TC_PTHREAD_RWLOCK_UNLOCK_POST,
+               void*,self);
+
+   if (TRACE_QT4_FNS) {
+      fprintf(stderr, " :: Q::unlock :: done >>\n");
+   }
+}
 
 
 /*--------------------------------------------------------------------*/
