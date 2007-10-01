@@ -571,7 +571,14 @@ static SegmentID alloc_SegmentID ( void ) {
 
 /* Primary Map is the usual FiniteMap Addr SecMap* w/ cache */
 
-#define N_SECMAP_BITS   11
+/* See comments below on shadow_mem_make_NoAccess re performance
+   effects of N_SECMAP_BITS settings.  On a 2.4GHz Core2,
+   starting/quitting OOo (32-bit), I have these rough numbers:
+      N_SECMAP_BITS = 11    2m23
+      N_SECMAP_BITS = 12    1m58
+      N_SECMAP_BITS = 13    1m53
+*/
+#define N_SECMAP_BITS   13
 #define N_SECMAP_ARANGE (1 << N_SECMAP_BITS)
 #define N_SECMAP_MASK   (~(N_SECMAP_ARANGE - 1))
 #define N_SECMAP_W32S   (N_SECMAP_ARANGE / 4)
@@ -2499,34 +2506,34 @@ static void remove_Lock_from_locksets_of_all_owning_Threads( Lock* lk )
    Otherwise, the range contains some locks.  Then we have to do all
    the complexity below and only then set the range to NoAccess.
 
-   // make up a set containing the which are deleted
-   ToDelete = NULL
-   scan the range in map_locks, 
-   for each lock lk found {
-      add lk to ToDelete
+   1. Make up a set containing the locks which are deleted:
+
+     ToDelete = NULL
+
+     for each lk in map_locks {
+        if lk's guest addr falls in the range to memory be deleted
+           add lk to ToDelete
+
+        if lk is held, issue an error message - freeing memory
+           containing a held lock
+     }
     
-      case lk of
-         UnlockedNew.  simply free up the Lock
-         UnlockedBy.   makes a reference to Segment (via
-                       map_segments) but just leave that.
-                       Maybe we will later GC the segment graph.
+   2. Modify all shadow words, by removing ToDelete from the lockset
+      of all ShM and ShR states.  Note this involves a complete scan
+      over map_shmem, which is very expensive according to OProfile.
+      Hence it depends critically on the size of each entry in
+      map_shmem.  See comments on definition of N_SECMAP_BITS above.
 
-         LockedBy.     Bad case.  Report error.
-                       remove from from the currlocks set of the
-                       owning thread
-   }
+   3. Set the range to NoAccess.  Clear the .hasShared and .anyLocks
+      hint bits for any completely vacated SecMaps.
 
-   modify all shadow words, by removing ToDelete from the lockset
-   of all ShM and ShR states.  
+   Optimisation 1 (implemented): skip SecMaps which do not have
+   .hasShared set
 
-   Finally set the range to NoAccess.
-
-   Optimisation 1: skip SecMaps which do not have .hasShared set
-
-   Optimisation 2: for each SecMap, have a summary lock set which is
-   the union of all locks mentioned in locksets on this page.
-   Then skip the page if the summary lockset does not intersect with
-   ToDelete.
+   Optimisation 2 (not implemented, needs rethink): for each SecMap,
+   have a summary lock set which is the union of all locks mentioned
+   in locksets on this page.  Then skip the page if the summary
+   lockset does not intersect with ToDelete.
 
    that's potentially cheap, since the usual lockset refinement
    only shrinks locksets; hence there is no point in updating the
@@ -3229,7 +3236,7 @@ void evh__TC_PTHREAD_JOIN_POST ( ThreadId stay_tid, Thread* quit_thr )
    }
 
    // FIXME: error-if: exiting thread holds any locks
-   //        or shouw evh__pre_thread_ll_exit do that?
+   //        or should evh__pre_thread_ll_exit do that?
 
    /* Delete thread from ShM/ShR thread sets and restore Excl states
       where appropriate */
