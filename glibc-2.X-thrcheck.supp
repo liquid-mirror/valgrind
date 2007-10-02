@@ -168,6 +168,12 @@
    Thrcheck:Race
    fun:pthread_cond_signal@@GLIBC_2.3.2
 }
+{
+   thrcheck-glibc2X-condsig-2
+   Thrcheck:Race
+   fun:__lll_mutex_unlock_wake
+   fun:pthread_cond_signal@@GLIBC_2.3.2
+}
 
 ###--- pthread_cond_broadcast ---###
 # ditto
@@ -190,6 +196,18 @@
 #z   fun:pthread_cond_wait@@GLIBC_*
 #z   fun:pthread_cond_wait*
 #z}
+{
+   thrcheck-glibc2X-pthcondwait-3
+   Thrcheck:Race
+   fun:__pthread_mutex*lock*
+   fun:pthread_cond_wait@@GLIBC_2.3.2
+}
+{
+   thrcheck-glibc2X-pthcondwait-4
+   Thrcheck:Race
+   fun:__lll_mutex_unlock_wake
+   fun:pthread_cond_wait@@GLIBC_2.3.2
+}
 
 ###--- pthread_cond_destroy ---###
 # ditto
@@ -236,13 +254,13 @@
    fun:_L_mutex_unlock_*
    fun:__pthread_mutex_unlock_usercnt
 }
-#z{
-#z   thrcheck-glibc2X-libpthread-3
-#z   Thrcheck:Race
-#z   fun:__lll_mutex_lock_wait
-#z   fun:_L_mutex_lock_*
-#z   fun:start_thread
-#z}
+{
+   thrcheck-glibc2X-libpthread-3
+   Thrcheck:Race
+   fun:__lll_mutex_lock_wait
+   fun:_L_mutex_lock_*
+   fun:start_thread
+}
 #z{
 #z   thrcheck-glibc2X-libpthread-4
 #z   Thrcheck:Race
