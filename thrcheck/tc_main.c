@@ -46,6 +46,7 @@
 #include "pub_tool_replacemalloc.h"
 #include "pub_tool_machine.h"
 #include "pub_tool_options.h"
+#include "pub_tool_xarray.h"
 
 #include "thrcheck.h"
 
@@ -1231,62 +1232,97 @@ static UWord stats__hbefore_probes    = 0; // # checks in cache
 static UWord stats__hbefore_gsearches = 0; // # searches in graph
 static UWord stats__hbefore_gsearchFs = 0; // # fast searches in graph
 static UWord stats__hbefore_invals    = 0; // # cache invals
+static UWord stats__hbefore_stk_hwm   = 0; // stack high water mark
 
 /* Running marker for depth-first searches */
 /* NOTE: global variable */
 static UInt dfsver_current = 0;
 
+/* A stack of possibly-unexplored nodes used in the depth first search */
+/* NOTE: global variable */
+static XArray* dfsver_stack = NULL;
+
 // FIXME: check this - is it really correct?
-static Bool happens_before_do_dfs_from_to ( Segment* here, Segment* dst )
+static Bool happens_before_do_dfs_from_to ( Segment* src, Segment* dst )
 {
-   /* begin SPEEDUP HACK */
+   Segment* here;
+   Word     ssz;
+
+   /* begin SPEEDUP HACK -- the following can safely be omitted */
    /* fast track common case, without favouring either the
       ->prev or ->other links */
-   tl_assert(here);
+   tl_assert(src);
    tl_assert(dst);
-   if ((here->prev && here->prev == dst)
-       || (here->other && here->other == dst)) {
+   if ((src->prev && src->prev == dst)
+       || (src->other && src->other == dst)) {
       stats__hbefore_gsearchFs++;
       return True;
    }
    /* end SPEEDUP HACK */
 
-  again:
-   tl_assert(here);
-   tl_assert(dst);
-   if (here == dst)
-      return True;
-   tl_assert(here->dfsver <= dfsver_current);
-   if (here->dfsver == dfsver_current)
-      return False; /* We've been here before */
-   /* Mark that we've been here */
-   here->dfsver = dfsver_current;
-   /* See if we can get to 'dst' via either of our two links */
-   /* Avoiding recursion if possible */
-   /* begin SPEEDUP hack -- the following can safely be omitted */
-   if (here->prev && !here->other) {
-      here = here->prev;
-      goto again;
+   /* empty out the stack */
+   tl_assert(dfsver_stack);
+   VG_(dropTailXA)( dfsver_stack, VG_(sizeXA)( dfsver_stack ));
+   tl_assert(VG_(sizeXA)( dfsver_stack ) == 0);
+
+   /* push starting point */
+   (void) VG_(addToXA)( dfsver_stack, &src );
+
+   while (True) {
+      /* While the stack is not empty, pop the next node off it and
+         consider. */
+      ssz = VG_(sizeXA)( dfsver_stack );
+      tl_assert(ssz >= 0);
+      if (ssz == 0)
+         return False; /* stack empty ==> no path from src to dst */
+
+      if (UNLIKELY( ((UWord)ssz) > stats__hbefore_stk_hwm ))
+         stats__hbefore_stk_hwm = (UWord)ssz;
+
+      /* here = pop(stack) */
+      here = *(Segment**) VG_(indexXA)( dfsver_stack, ssz-1 );
+      VG_(dropTailXA)( dfsver_stack, 1 );
+
+     again:
+      /* consider the node 'here' */
+      if (here == dst)
+         return True; /* found a path from src and dst */
+
+      /* have we been to 'here' before? */
+      tl_assert(here->dfsver <= dfsver_current);
+      if (here->dfsver == dfsver_current)
+         continue; /* We've been 'here' before - node is not interesting*/
+
+      /* Mark that we've been here */
+      here->dfsver = dfsver_current;
+
+      /* Now push both children on the stack */
+
+      /* begin SPEEDUP hack -- the following can safely be omitted */
+      /* idea is, if there is exactly one child, avoid the overhead of
+         pushing it on the stack and immediately popping it off again.
+         Kinda like doing a tail-call. */
+      if (here->prev && !here->other) {
+         here = here->prev;
+         goto again;
+      }
+      if (here->other && !here->prev) {
+         here = here->other;
+         goto again;
+      }
+      /* end of SPEEDUP HACK */
+
+      /* Push all available children on stack.  From some quick
+         experimentation it seems like exploring ->other first leads
+         to lower maximum stack use, although getting repeatable
+         results is difficult. */
+      if (here->prev)
+         (void) VG_(addToXA)( dfsver_stack, &(here->prev) );
+      if (here->other)
+         (void) VG_(addToXA)( dfsver_stack, &(here->other) );
    }
-   if (here->other && !here->prev) {
-      here = here->other;
-      goto again;
-   }
-   /* end of SPEEDUP HACK */
-   /* GENERAL CASE -- recurse */
-   if (here->other) {
-      if (happens_before_do_dfs_from_to(here->other, dst))
-         return True;
-   }
-   if (here->prev) {
-      if (happens_before_do_dfs_from_to(here->prev, dst))
-         return True;
-   }
-   return False;
 }
 
-// FIXME: cache the results of the last few queries and hand
-// them out as appropriate
 static Bool happens_before_wrk ( SegmentID segid1, SegmentID segid2 )
 {
    Bool    reachable;
@@ -1309,6 +1345,12 @@ static Bool happens_before_wrk ( SegmentID segid1, SegmentID segid2 )
       .prev and .other fields, that leads from seg2 back to seg1 ? */
    tl_assert(dfsver_current < 0xFFFFFFFF);
    dfsver_current++;
+   
+   if (dfsver_stack == NULL) {
+     dfsver_stack = VG_(newXA)( tc_zalloc, tc_free, sizeof(Segment*) );
+     tl_assert(dfsver_stack);
+  }
+
    reachable = happens_before_do_dfs_from_to( seg2, seg1 );
 
    if (0)
@@ -5298,8 +5340,11 @@ static void tc_fini ( Int exitcode )
       VG_(printf)(" hbefore: %10lu graph searches\n", stats__hbefore_gsearches);
       VG_(printf)(" hbefore: %10lu   of which slow\n",
                   stats__hbefore_gsearches - stats__hbefore_gsearchFs);
+      VG_(printf)(" hbefore: %10lu stack high water mark\n",
+                  stats__hbefore_stk_hwm);
       VG_(printf)(" hbefore: %10lu cache invals\n",   stats__hbefore_invals);
       VG_(printf)(" hbefore: %10lu probes\n",         stats__hbefore_probes);
+
       VG_(printf)("\n");
       VG_(printf)("segments:       %10lu Segment objects allocated\n", 
                   stats__mk_Segment);
