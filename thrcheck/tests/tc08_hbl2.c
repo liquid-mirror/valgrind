@@ -1,4 +1,17 @@
 
+/* FIXME: this is basically a bad test as it is scheduling-
+   sensitive.  Sometimes the output is:
+
+   child: new value 6
+   child: new value 10
+   done, x = 10
+
+   and sometimes
+
+   child: new value 10
+   done, x = 10
+*/
+
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>

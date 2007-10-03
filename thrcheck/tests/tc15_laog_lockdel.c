@@ -4,8 +4,9 @@
 #include <stdlib.h>
 #include <assert.h>
 
-/* The simplest possible test that triggers a lock order acquisition
-   error. */
+/* Test that locks, having entered the lock acquisition tracking
+   machinery, are forgotten by it when the memory they reside in
+   becomes inaccessible. */
 
 int main ( void )
 {

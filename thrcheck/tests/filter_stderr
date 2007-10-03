@@ -10,7 +10,11 @@ $dir/../../tests/filter_addresses                       |
 # Remove "Thrcheck, ..." line and the following copyright line.
 sed "/^Thrcheck, a thread error detector/ , /./ d" |
 
-# Anonymise line numbers in mc_replace_strmem.c
-sed "s/mc_replace_strmem.c:[0-9]*/mc_replace_strmem.c:.../"  |
+# Anonymise line numbers in tc_intercepts.c
+sed "s/tc_intercepts.c:[0-9]*/tc_intercepts.c:.../"  |
+
+# Change (eg) "/lib64/libpthread-2.5.so" into "/lib/libpthread..."
+sed "s/lib64/lib/g" | 
+sed "s/libpthread.*so/libpthread\.\.\./g" |
 
 $dir/../../tests/filter_test_paths

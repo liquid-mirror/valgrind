@@ -4,8 +4,8 @@ Thread #1 is the program's root thread
 Thread #2 was created
    at 0x........: clone (in /...libc...)
    by 0x........: ...
-   by 0x........: pthread_create@@GLIBC_2.2.5 (in /lib64/libpthread-2.5.so)
-   by 0x........: pthread_create@* (tc_intercepts.c:184)
+   by 0x........: pthread_create@@GLIBC_2.2.5 (in /lib/libpthread...)
+   by 0x........: pthread_create@* (tc_intercepts.c:...)
    by 0x........: main (tc01_simple_race.c:22)
 
 Possible data race during write to 0x........ 

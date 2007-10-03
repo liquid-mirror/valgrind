@@ -5,14 +5,14 @@ Thread #1 deallocated location 0x........ containing a locked lock
    at 0x........: free (vg_replace_malloc.c:...)
    by 0x........: main (tc04_free_lock.c:24)
   Lock at 0x........ was first observed
-   at 0x........: pthread_mutex_init (tc_intercepts.c:299)
+   at 0x........: pthread_mutex_init (tc_intercepts.c:...)
    by 0x........: main (tc04_free_lock.c:20)
 
 Thread #1 deallocated location 0x........ containing a locked lock
    at 0x........: bar (tc04_free_lock.c:40)
    by 0x........: main (tc04_free_lock.c:26)
   Lock at 0x........ was first observed
-   at 0x........: pthread_mutex_lock (tc_intercepts.c:361)
+   at 0x........: pthread_mutex_lock (tc_intercepts.c:...)
    by 0x........: bar (tc04_free_lock.c:38)
    by 0x........: main (tc04_free_lock.c:26)
 
@@ -20,7 +20,7 @@ Thread #1 deallocated location 0x........ containing a locked lock
    at 0x........: foo (tc04_free_lock.c:49)
    by 0x........: main (tc04_free_lock.c:27)
   Lock at 0x........ was first observed
-   at 0x........: pthread_mutex_init (tc_intercepts.c:299)
+   at 0x........: pthread_mutex_init (tc_intercepts.c:...)
    by 0x........: foo (tc04_free_lock.c:46)
    by 0x........: main (tc04_free_lock.c:27)
 
@@ -28,7 +28,7 @@ Thread #1 deallocated location 0x........ containing a locked lock
    at 0x........: bar (tc04_free_lock.c:40)
    by 0x........: main (tc04_free_lock.c:28)
   Lock at 0x........ was first observed
-   at 0x........: pthread_mutex_lock (tc_intercepts.c:361)
+   at 0x........: pthread_mutex_lock (tc_intercepts.c:...)
    by 0x........: bar (tc04_free_lock.c:38)
    by 0x........: main (tc04_free_lock.c:28)
 
