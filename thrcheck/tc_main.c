@@ -3945,6 +3945,119 @@ static Word cmp_LockPair ( LockPair* lp1, LockPair* lp2 ) {
 /* lock order acquisition graph */
 static WordFM* laog = NULL; /* WordFM LockPair* void */
 
+static void laog__show ( void ) {
+   LockPair* edge;
+   VG_(printf)("laog {\n");
+   TC_(initIterFM)( laog );
+   edge = NULL;
+   while (TC_(nextIterFM)( laog, (Word*)&edge, NULL)) {
+      tl_assert(edge);
+      VG_(printf)("   %p -> %p\n", edge->fst, edge->snd);
+      edge = NULL;
+   }
+   TC_(doneIterFM)( laog );
+   VG_(printf)("}\n");
+}
+
+static void laog__add_edge ( Lock* src, Lock* dst ) {
+   LockPair key;
+   key.fst = src;
+   key.snd = dst;
+   if (TC_(lookupFM)( laog, NULL, NULL, (Word)&key )) {
+      /* already present; do nothing */
+   } else {
+      LockPair* nyu = tc_zalloc(sizeof(LockPair));
+      tl_assert(nyu);
+      *nyu = key;
+      TC_(addToFM)( laog, (Word)nyu, (Word)0 );
+   }
+}
+
+static void laog__del_edge ( Lock* src, Lock* dst ) {
+   Bool      b;
+   LockPair  key;
+   LockPair* old = NULL;
+   key.fst = src;
+   key.snd = dst;
+   b = TC_(delFromFM)( laog, (Word*)&old, NULL, (Word)&key );
+   tl_assert(b);
+   tl_assert(old);
+   tc_free(old);
+}
+
+static WordSetID /* in univ_lsets */ laog__step ( Lock* lk, Bool succs ) {
+   LockPair* edge;
+   WordSetID result;
+   result = TC_(emptyWS)( univ_lsets );
+   TC_(initIterFM)( laog );
+   edge = NULL;
+   while (TC_(nextIterFM)( laog, (Word*)&edge, NULL)) {
+      tl_assert(edge);
+      if (succs) {
+         if (edge->fst == lk)
+            result = TC_(addToWS)( univ_lsets, result, (Word)edge->snd );
+      } else {
+         if (edge->snd == lk)
+            result = TC_(addToWS)( univ_lsets, result, (Word)edge->fst );
+      }
+      edge = NULL;
+   }
+   TC_(doneIterFM)( laog );
+   return result;
+}
+
+static WordSetID /* in univ_lsets */ laog__succs ( Lock* lk ) {
+   return laog__step( lk, True /* get successors of 'lk' */ );
+}
+
+static WordSetID /* in univ_lsets */ laog__preds ( Lock* lk ) {
+   return laog__step( lk, False /* get predecessors of 'lk' */ );
+}
+
+static Bool laog__do_dfs_from_to ( Lock* src, Lock* dst )
+{
+   Bool      ret;
+   Word      i, ssz;
+   XArray*   stack;   /* of Lock* */
+   WordFM*   visited; /* Lock* -> void, iow, Set(Lock*) */
+   Lock*     here;
+   WordSetID succs;
+   Word      succs_size;
+   Word*     succs_words;
+
+   stack   = VG_(newXA)( tc_zalloc, tc_free, sizeof(Lock*) );
+   visited = TC_(newFM)( tc_zalloc, tc_free, NULL/*unboxedcmp*/ );
+
+   (void) VG_(addToXA)( stack, &src );
+
+   while (True) {
+
+      ssz = VG_(sizeXA)( stack );
+
+      if (ssz == 0) { ret = False; break; }
+
+      here = *(Lock**) VG_(indexXA)( stack, ssz-1 );
+      VG_(dropTailXA)( stack, 1 );
+
+      if (here == dst) { ret = True; break; }
+
+      if (TC_(lookupFM)( visited, NULL, NULL, (Word)here ))
+         continue;
+
+      TC_(addToFM)( visited, (Word)here, 0 );
+
+      succs = laog__succs( here );
+      TC_(getPayloadWS)( &succs_words, &succs_size, univ_lsets, succs );
+      for (i = 0; i < succs_size; i++)
+         (void) VG_(addToXA)( stack, &succs_words[i] );
+   }
+
+   TC_(deleteFM)( visited, NULL, NULL );
+   VG_(deleteXA)( stack );
+   return ret;
+}
+
+
 /* Thread 'thr' is acquiring 'lk'.  Check for inconsistent ordering
    between 'lk' and the locks already held by 'thr' and issue a
    complaint if so.  Also, update the ordering graph appropriately.
@@ -3954,7 +4067,6 @@ static void laog__pre_thread_acquires_lock (
                Lock*   lk
             )
 {
-   LockPair key;
    Word*    ls_words;
    Word     ls_size, i;
    Bool     complain;
@@ -3968,15 +4080,13 @@ static void laog__pre_thread_acquires_lock (
       laog = TC_(newFM)( tc_zalloc, tc_free, 
                          (Word(*)(Word,Word)) cmp_LockPair );
 
-   /* First, the check.  Complain if 
-      any (lk, old) `elem` laog  |  old <- locks already held by thr
+   /* First, the check.  Complain if there is any path in laog
+      from lk to old  for each old <- locks already held by thr.
    */
    complain = False;
    TC_(getPayloadWS)( &ls_words, &ls_size, univ_lsets, thr->locksetA );
    for (i = 0; i < ls_size; i++) {
-      key.fst = lk;
-      key.snd = (Lock*)ls_words[i];
-      if (TC_(lookupFM)( laog, NULL, NULL, (Word)&key)) {
+      if (laog__do_dfs_from_to( lk, (Lock*)ls_words[i] )) {
          complain = True;
          break;
       }
@@ -3989,75 +4099,48 @@ static void laog__pre_thread_acquires_lock (
    /* Second, add to laog the pairs
         (old, lk)  |  old <- locks already held by thr
    */
-   for (i = 0; i < ls_size; i++) {
-      key.fst = (Lock*)ls_words[i];
-      key.snd = lk;
-      if (TC_(lookupFM)( laog, NULL, NULL, (Word)&key )) {
-         /* already present; do nothing */
-      } else {
-         LockPair* nyu = tc_zalloc(sizeof(LockPair));
-         tl_assert(nyu);
-         *nyu = key;
-         TC_(addToFM)( laog, (Word)nyu, (Word)0 );
-      }
-   }
+   for (i = 0; i < ls_size; i++)
+      laog__add_edge( (Lock*)ls_words[i], lk );
 }
 
 
 /* Delete from 'laog' any pair mentioning a lock in locksToDelete */
+
+static void laog__handle_one_lock_deletion ( Lock* lk )
+{
+   WordSetID preds, succs;
+   Word preds_size, succs_size, i, j;
+   Word *preds_words, *succs_words;
+
+   preds = laog__preds( lk );
+   succs = laog__succs( lk );
+
+   TC_(getPayloadWS)( &preds_words, &preds_size, univ_lsets, preds );
+   for (i = 0; i < preds_size; i++)
+      laog__del_edge( (Lock*)preds_words[i], lk );
+
+   TC_(getPayloadWS)( &succs_words, &succs_size, univ_lsets, succs );
+   for (j = 0; j < succs_size; j++)
+      laog__del_edge( lk, (Lock*)succs_words[j] );
+
+   for (i = 0; i < preds_size; i++) {
+      for (j = 0; j < succs_size; j++) {
+         if (preds_words[i] != succs_words[j])
+            laog__add_edge( (Lock*)preds_words[i], (Lock*)succs_words[j] );
+      }
+   }
+}
+
 static void laog__handle_lock_deletions (
                WordSetID /* in univ_lsets */ locksToDelete
             )
 {
-   Word    i;
-   XArray* pairsToDelete;
+   Word  i, ws_size;
+   Word* ws_words;
 
-   tl_assert( laog );
-   tl_assert( ! TC_(isEmptyWS)( univ_lsets, locksToDelete ) );
-
-   /* We can't iterate over laog whilst simultaneously deleting stuff
-      from it (unfortunately).  So first round up all the ones to
-      delete into an XArray and then delete them afterwards.  All
-      storage associated with the XArray is deleted at the end by
-      VG_(deleteXA). */
-   pairsToDelete = VG_(newXA)( tc_zalloc, tc_free, sizeof(LockPair) );
-   tl_assert(pairsToDelete);
-
-   /* ok.  here we go ... */
-   { Word      shouldBeZero = 1;
-     LockPair* pair = NULL;
-     TC_(initIterFM)( laog );
-     while (TC_(nextIterFM)( laog, (Word*)&pair, &shouldBeZero)) {
-        tl_assert(shouldBeZero == 0);
-        tl_assert(pair);
-        tl_assert(is_sane_LockN(pair->fst));
-        tl_assert(is_sane_LockN(pair->snd));
-        /* copy *pair into to pairsToDelete */
-        VG_(addToXA)( pairsToDelete, pair );
-        shouldBeZero = 1;
-        pair = NULL;
-     }
-     TC_(doneIterFM)( laog );
-   }
-
-   for (i = 0; i < VG_(sizeXA)( pairsToDelete ); i++) {
-      LockPair* p2 = NULL;
-      LockPair* p  = VG_(indexXA)( pairsToDelete, i );
-      /* p points into the internal array of pairsToDelete; that is,
-         it is a copy of the the one in the FM.  It is not the same.
-         Hence we need to delete it from the FM and then free up the
-         one in the FM.  Fortunately TC_(delFromFM) gives us back a
-         pointer to the old key. */
-      Bool b = TC_(delFromFM)( laog, (Word*)&p2, NULL, (Word)p );
-      tl_assert(b);  /* it must previously have been present (!) */
-      tl_assert(p2 != p); /* p is a copy of the original, not a pointer to it */
-      tl_assert(p2->fst == p->fst); /* ... but it contains the same stuff */
-      tl_assert(p2->snd == p->snd);
-      tc_free(p2);
-   }
-
-   /* finally ... */
-   VG_(deleteXA)( pairsToDelete );
+   TC_(getPayloadWS)( &ws_words, &ws_size, univ_lsets, locksToDelete );
+   for (i = 0; i < ws_size; i++)
+      laog__handle_one_lock_deletion( (Lock*)ws_words[i] );
 }
 
 
