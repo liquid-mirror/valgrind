@@ -568,12 +568,15 @@ void TC_(addToFM) ( WordFM* fm, Word k, Word v )
       fm->dealloc(node);
 }
 
-// Delete key from fm, returning associated val if found
-Bool TC_(delFromFM) ( WordFM* fm, /*OUT*/Word* oldV, Word key )
+// Delete key from fm, returning associated key and val if found
+Bool TC_(delFromFM) ( WordFM* fm,
+                      /*OUT*/Word* oldK, /*OUT*/Word* oldV, Word key )
 {
    AvlNode* node = avl_find_node( fm->root, key, fm->kCmp );
    if (node) {
       avl_remove_wrk( &fm->root, node, fm->kCmp );
+      if (oldK)
+         *oldK = node->key;
       if (oldV)
          *oldV = node->val;
       fm->dealloc(node);
@@ -769,7 +772,7 @@ Bool TC_(delFromBag)( WordBag* bag, Word w )
          TC_(addToFM)(bag->fm, w, count-1);
       } else {
          tl_assert(count == 1);
-         TC_(delFromFM)( bag->fm, NULL, w );
+         TC_(delFromFM)( bag->fm, NULL, NULL, w );
       }
       return True;
    } else {

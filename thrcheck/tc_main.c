@@ -1179,12 +1179,14 @@ static Lock* map_locks_maybe_lookup ( Addr ga )
 
 static void map_locks_delete ( Addr ga )
 {
-   Lock* lk = NULL;
-   TC_(delFromFM)( map_locks, (Word*)&lk, (Word)ga );
+   Addr  ga2 = 0;
+   Lock* lk  = NULL;
+   TC_(delFromFM)( map_locks, (Word*)&ga2, (Word*)&lk, (Word)ga );
    /* delFromFM produces the val which is being deleted, if it is
       found.  So assert it is non-null; that in effect asserts that we
       are deleting a (ga, Lock) pair which actually exists. */
    tl_assert(lk != NULL);
+   tl_assert(ga2 == ga);
 }
 
 
@@ -2513,6 +2515,9 @@ static void msm__handle_write_aligned_32 ( Thread* thr_acc, Addr a )
 /*--- Address range handlers                                   ---*/
 /*----------------------------------------------------------------*/
 
+static void laog__pre_thread_acquires_lock ( Thread*, Lock* ); /* fwds */
+static void laog__handle_lock_deletions    ( WordSetID ); /* fwds */
+
 static void remove_Lock_from_locksets_of_all_owning_Threads( Lock* lk )
 {
    Thread* thr;
@@ -2645,6 +2650,9 @@ static void shadow_mem_make_NoAccess ( Thread* thr, Addr a, SizeT len )
    if (0) 
    VG_(printf)("shadow_mem_make_NoAccess(%p, %u, %p): maybe slow case\n",
                (void*)a, (UWord)len, (void*)(a+len-1));
+
+   /* update lock order acquisition graph */
+   laog__handle_lock_deletions( locksToDelete );
 
    /* Modify all shadow words, by removing locksToDelete from the lockset
       of all ShM and ShR states.
@@ -2891,6 +2899,8 @@ void evhH__post_thread_w_acquires_lock ( Thread* thr,
    goto noerror;
 
   noerror:
+   /* check lock order acquisition graph, and update */
+   laog__pre_thread_acquires_lock( thr, lk );
    /* update the thread's held-locks set */
    thr->locksetA = TC_(addToWS)( univ_lsets, thr->locksetA, (Word)lk );
    thr->locksetW = TC_(addToWS)( univ_lsets, thr->locksetW, (Word)lk );
@@ -2957,6 +2967,8 @@ void evhH__post_thread_r_acquires_lock ( Thread* thr,
    goto noerror;
 
   noerror:
+   /* check lock order acquisition graph, and update */
+   laog__pre_thread_acquires_lock( thr, lk );
    /* update the thread's held-locks set */
    thr->locksetA = TC_(addToWS)( univ_lsets, thr->locksetA, (Word)lk );
    /* but don't update thr->locksetW, since lk is only rd-held */
@@ -3907,6 +3919,145 @@ static void evh__TC_PTHREAD_RWLOCK_UNLOCK_POST ( ThreadId tid, void* rwl )
    tl_assert(thr); /* cannot fail - Thread* must already exist */
 
    // anything we should do here?
+}
+
+
+/*--------------------------------------------------------------*/
+/*--- Lock acquisition order monitoring                      ---*/
+/*--------------------------------------------------------------*/
+
+/* Indicates that .fst must always be acquired before .snd */
+typedef
+   struct {
+      Lock* fst;
+      Lock* snd;
+   }
+   LockPair;
+
+static Word cmp_LockPair ( LockPair* lp1, LockPair* lp2 ) {
+   if (lp1->fst < lp2->fst) return -1;
+   if (lp1->fst > lp2->fst) return 1;
+   if (lp1->snd < lp2->snd) return -1;
+   if (lp1->snd > lp2->snd) return 1;
+   return 0;
+}
+
+/* lock order acquisition graph */
+static WordFM* laog = NULL; /* WordFM LockPair* void */
+
+/* Thread 'thr' is acquiring 'lk'.  Check for inconsistent ordering
+   between 'lk' and the locks already held by 'thr' and issue a
+   complaint if so.  Also, update the ordering graph appropriately.
+*/
+static void laog__pre_thread_acquires_lock ( 
+               Thread* thr, /* NB: BEFORE lock is added */
+               Lock*   lk
+            )
+{
+   LockPair key;
+   Word*    ls_words;
+   Word     ls_size, i;
+   Bool     complain;
+
+   /* It may be that 'thr' already holds 'lk' and is recursively
+      relocking in.  In this case we just ignore the call. */
+   if (TC_(elemWS)( univ_lsets, thr->locksetA, (Word)lk ))
+      return;
+
+   if (!laog)
+      laog = TC_(newFM)( tc_zalloc, tc_free, 
+                         (Word(*)(Word,Word)) cmp_LockPair );
+
+   /* First, the check.  Complain if 
+      any (lk, old) `elem` laog  |  old <- locks already held by thr
+   */
+   complain = False;
+   TC_(getPayloadWS)( &ls_words, &ls_size, univ_lsets, thr->locksetA );
+   for (i = 0; i < ls_size; i++) {
+      key.fst = lk;
+      key.snd = (Lock*)ls_words[i];
+      if (TC_(lookupFM)( laog, NULL, NULL, (Word)&key)) {
+         complain = True;
+         break;
+      }
+   }
+   if (complain) {
+      record_error_Misc( thr, "Lock acquisition order is inconsistent "
+                              "with previously observed ordering" );
+   }
+
+   /* Second, add to laog the pairs
+        (old, lk)  |  old <- locks already held by thr
+   */
+   for (i = 0; i < ls_size; i++) {
+      key.fst = (Lock*)ls_words[i];
+      key.snd = lk;
+      if (TC_(lookupFM)( laog, NULL, NULL, (Word)&key )) {
+         /* already present; do nothing */
+      } else {
+         LockPair* nyu = tc_zalloc(sizeof(LockPair));
+         tl_assert(nyu);
+         *nyu = key;
+         TC_(addToFM)( laog, (Word)nyu, (Word)0 );
+      }
+   }
+}
+
+
+/* Delete from 'laog' any pair mentioning a lock in locksToDelete */
+static void laog__handle_lock_deletions (
+               WordSetID /* in univ_lsets */ locksToDelete
+            )
+{
+   Word    i;
+   XArray* pairsToDelete;
+
+   tl_assert( laog );
+   tl_assert( ! TC_(isEmptyWS)( univ_lsets, locksToDelete ) );
+
+   /* We can't iterate over laog whilst simultaneously deleting stuff
+      from it (unfortunately).  So first round up all the ones to
+      delete into an XArray and then delete them afterwards.  All
+      storage associated with the XArray is deleted at the end by
+      VG_(deleteXA). */
+   pairsToDelete = VG_(newXA)( tc_zalloc, tc_free, sizeof(LockPair) );
+   tl_assert(pairsToDelete);
+
+   /* ok.  here we go ... */
+   { Word      shouldBeZero = 1;
+     LockPair* pair = NULL;
+     TC_(initIterFM)( laog );
+     while (TC_(nextIterFM)( laog, (Word*)&pair, &shouldBeZero)) {
+        tl_assert(shouldBeZero == 0);
+        tl_assert(pair);
+        tl_assert(is_sane_LockN(pair->fst));
+        tl_assert(is_sane_LockN(pair->snd));
+        /* copy *pair into to pairsToDelete */
+        VG_(addToXA)( pairsToDelete, pair );
+        shouldBeZero = 1;
+        pair = NULL;
+     }
+     TC_(doneIterFM)( laog );
+   }
+
+   for (i = 0; i < VG_(sizeXA)( pairsToDelete ); i++) {
+      LockPair* p2 = NULL;
+      LockPair* p  = VG_(indexXA)( pairsToDelete, i );
+      /* p points into the internal array of pairsToDelete; that is,
+         it is a copy of the the one in the FM.  It is not the same.
+         Hence we need to delete it from the FM and then free up the
+         one in the FM.  Fortunately TC_(delFromFM) gives us back a
+         pointer to the old key. */
+      Bool b = TC_(delFromFM)( laog, (Word*)&p2, NULL, (Word)p );
+      tl_assert(b);  /* it must previously have been present (!) */
+      tl_assert(p2 != p); /* p is a copy of the original, not a pointer to it */
+      tl_assert(p2->fst == p->fst); /* ... but it contains the same stuff */
+      tl_assert(p2->snd == p->snd);
+      tc_free(p2);
+   }
+
+   /* finally ... */
+   VG_(deleteXA)( pairsToDelete );
 }
 
 

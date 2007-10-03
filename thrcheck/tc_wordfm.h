@@ -73,8 +73,9 @@ void TC_(deleteFM) ( WordFM*, void(*kFin)(Word), void(*vFin)(Word) );
    previous v so that caller can finalise it.  Oh well. */
 void TC_(addToFM) ( WordFM* fm, Word k, Word v );
 
-// Delete key from fm, returning associated val if found
-Bool TC_(delFromFM) ( WordFM* fm, /*OUT*/Word* oldV, Word key );
+// Delete key from fm, returning associated key and val if found
+Bool TC_(delFromFM) ( WordFM* fm,
+                      /*OUT*/Word* oldK, /*OUT*/Word* oldV, Word key );
 
 // Look up in fm, assigning found key & val at spec'd addresses
 Bool TC_(lookupFM) ( WordFM* fm, 
