@@ -31,7 +31,6 @@
 // XXX:
 //---------------------------------------------------------------------------
 // Todo:
-// - make --time-unit=B include heap-admin bytes
 // - Add ability to draw multiple graphs, eg. heap-only, stack-only, total.
 //   Give each graph a title.
 // - do peak-taking.
@@ -854,8 +853,8 @@ typedef
    }                       // otherwise NULL
    Snapshot;
 
+static UInt     next_snapshot_i = 0;   // Index of where next snapshot will go.
 static Snapshot snapshots[MAX_N_SNAPSHOTS];
-static UInt     next_snapshot_i = 0;   // Points to where next snapshot will go.
 
 static Bool is_snapshot_in_use(Snapshot* snapshot)
 {
@@ -937,8 +936,9 @@ static void VERB_snapshot(Int verbosity, Char* prefix, Int i)
    );
 }
 
-// Weed out half the snapshots;  we choose those that represent the smallest
-// time-spans, because that loses the least information.
+// Cull half the snapshots;  we choose those that represent the smallest
+// time-spans, because that gives us the most even distribution of snapshots
+// over time.  (It's possible to lose interesting spikes, however.)
 //
 // Algorithm for N snapshots:  We find the snapshot representing the smallest
 // timeframe, and remove it.  We repeat this until (N/2) snapshots are gone.
@@ -1123,7 +1123,7 @@ static void take_snapshot(Int snapshot_i, Time time, Char* kind)
       snapshot->stacks_szB += sigstacks_szB;    // Add signal stacks, too
    }
 
-   // Finish writing snapshot ------------------------------------------
+   // Rest of snapshot -------------------------------------------------
    snapshot->time = time;
    snapshot->total_szB =
       snapshot->heap_szB + snapshot->heap_admin_szB + snapshot->stacks_szB;
@@ -1313,11 +1313,11 @@ void die_block ( void* p, Bool custom_free )
 }
 
 static __inline__
-void* renew_block ( ThreadId tid, void* p_old, SizeT new_size )
+void* renew_block ( ThreadId tid, void* p_old, SizeT new_szB )
 {
    HP_Chunk* hc;
    void*     p_new;
-   SizeT     old_size;
+   SizeT     old_szB;
    XPt      *old_where, *new_where;
    
    // Update statistics
@@ -1329,20 +1329,20 @@ void* renew_block ( ThreadId tid, void* p_old, SizeT new_size )
       return NULL;   // must have been a bogus realloc()
    }
 
-   old_size = hc->szB;
+   old_szB = hc->szB;
 
    // Update heap stats
-   update_heap_stats(new_size - old_size, /*n_heap_blocks_delta*/0);
+   update_heap_stats(new_szB - old_szB, /*n_heap_blocks_delta*/0);
   
-   if (new_size <= old_size) {
+   if (new_szB <= old_szB) {
       // new size is smaller or same;  block not moved
       p_new = p_old;
 
    } else {
       // new size is bigger;  make new block, copy shared contents, free old
-      p_new = VG_(cli_malloc)(VG_(clo_alignment), new_size);
+      p_new = VG_(cli_malloc)(VG_(clo_alignment), new_szB);
       if (p_new) {
-         VG_(memcpy)(p_new, p_old, old_size);
+         VG_(memcpy)(p_new, p_old, old_szB);
          VG_(cli_free)(p_old);
       }
    }
@@ -1353,13 +1353,13 @@ void* renew_block ( ThreadId tid, void* p_old, SizeT new_size )
 
       // Update HP_Chunk
       hc->data  = (Addr)p_new;
-      hc->szB   = new_size;
+      hc->szB   = new_szB;
       hc->where = new_where;
 
       // Update XPt curr_szB fields
       if (clo_heap) {
-         update_XCon(old_where, -old_size);
-         update_XCon(new_where,  new_size);
+         update_XCon(old_where, -old_szB);
+         update_XCon(new_where,  new_szB);
       }
    }
 
@@ -1668,7 +1668,7 @@ static void pp_snapshot(Int fd, Snapshot* snapshot, Int snapshot_n)
    }
 }
 
-static void write_detailed_snapshots(void)
+static void write_snapshots_to_file(void)
 {
    Int i, fd;
    SysRes sres;
@@ -1729,7 +1729,7 @@ static void write_detailed_snapshots(void)
 static void ms_fini(Int exit_status)
 {
    // Output.
-   write_detailed_snapshots();
+   write_snapshots_to_file();
 
    // Stats
    tl_assert(n_xpts > 0);  // always have alloc_xpt
