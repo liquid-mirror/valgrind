@@ -1122,6 +1122,8 @@ static void take_snapshot(Int snapshot_i, Time time, Char* kind)
       Addr     stack_min, stack_max;
       VG_(thread_stack_reset_iter)();
       while ( VG_(thread_stack_next)(&tid, &stack_min, &stack_max) ) {
+         VERB(2, "stack %d: %p -- %p (%ld)",
+            tid, stack_min, stack_max, stack_max - stack_min);
          snapshot->stacks_szB += (stack_max - stack_min);
       }
       snapshot->stacks_szB += sigstacks_szB;    // Add signal stacks, too
@@ -1255,6 +1257,8 @@ void* new_block ( ThreadId tid, void* p, SizeT szB, SizeT alignB,
    Bool custom_alloc = (NULL == p);
    if (szB < 0) return NULL;
 
+   VERB(2, "<<< new_mem_heap (%lu)", szB);
+
    // Update statistics
    n_allocs++;
    if (0 == szB) n_zero_allocs++;
@@ -1263,6 +1267,7 @@ void* new_block ( ThreadId tid, void* p, SizeT szB, SizeT alignB,
    if (!p) {
       p = VG_(cli_malloc)( alignB, szB );
       if (!p) {
+         VERB(2, ">>> (null)");
          return NULL;
       }
       if (is_zeroed) VG_(memset)(p, 0, szB);
@@ -1287,6 +1292,8 @@ void* new_block ( ThreadId tid, void* p, SizeT szB, SizeT alignB,
    // Maybe take a snapshot.
    maybe_take_snapshot("  alloc");
 
+   VERB(2, ">>>");
+
    return p;
 }
 
@@ -1294,6 +1301,9 @@ static __inline__
 void die_block ( void* p, Bool custom_free )
 {
    HP_Chunk* hc;
+   SizeT     die_szB;
+
+   VERB(2, "<<< die_mem_heap");
    
    // Update statistics
    n_frees++;
@@ -1301,11 +1311,13 @@ void die_block ( void* p, Bool custom_free )
    // Remove HP_Chunk from malloc_list
    hc = VG_(HT_remove)(malloc_list, (UWord)p);
    if (NULL == hc) {
+      VERB(2, ">>> (bogus)");
       return;   // must have been a bogus free()
    }
+   die_szB = hc->szB;
 
    // Update heap stats
-   update_heap_stats(-hc->szB, /*n_heap_blocks_delta*/-1);
+   update_heap_stats(-die_szB, /*n_heap_blocks_delta*/-1);
 
    // Update XTree, if necessary
    if (clo_heap) {
@@ -1319,6 +1331,8 @@ void die_block ( void* p, Bool custom_free )
 
    // Maybe take a snapshot.
    maybe_take_snapshot("dealloc");
+
+   VERB(2, ">>> (-%lu)", die_szB);
 }
 
 static __inline__
@@ -1328,6 +1342,8 @@ void* renew_block ( ThreadId tid, void* p_old, SizeT new_szB )
    void*     p_new;
    SizeT     old_szB;
    XPt      *old_where, *new_where;
+
+   VERB(2, "<<< renew_mem_heap (%lu)", new_szB);
    
    // Update statistics
    n_reallocs++;
@@ -1381,6 +1397,8 @@ void* renew_block ( ThreadId tid, void* p_old, SizeT new_szB )
 
    // Maybe take a snapshot.
    maybe_take_snapshot("realloc");
+
+   VERB(2, ">>> (%ld)", new_szB - old_szB);
 
    return p_new;
 }
@@ -1447,32 +1465,40 @@ static void update_stack_stats(SSizeT stack_szB_delta)
 
 static void new_mem_stack(Addr a, SizeT len)
 {
+   VERB(2, "<<< new_mem_stack (%ld)", len);
    n_stack_allocs++;
    update_stack_stats(len);
    maybe_take_snapshot("stk-new");
+   VERB(2, ">>>");
 }
 
 static void die_mem_stack(Addr a, SizeT len)
 {
+   VERB(2, "<<< die_mem_stack (%ld)", -len);
    n_stack_frees++;
    update_stack_stats(-len);
    maybe_take_snapshot("stk-die");
+   VERB(2, ">>>");
 }
 
 
 static void new_mem_stack_signal(Addr a, SizeT len)
 {
+   VERB(2, "<<< new_mem_stack_signal (%ld)", len);
    sigstacks_szB += len;
    update_stack_stats(len);
    maybe_take_snapshot("sig-new");
+   VERB(2, ">>>");
 }
 
 static void die_mem_stack_signal(Addr a, SizeT len)
 {
+   VERB(2, "<<< die_mem_stack_signal (%ld)", -len);
    tl_assert(sigstacks_szB >= len);
    sigstacks_szB -= len;
    update_stack_stats(len);
    maybe_take_snapshot("sig-die");
+   VERB(2, ">>>");
 }
 
 
