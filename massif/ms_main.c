@@ -839,8 +839,10 @@ static void update_XCon(XPt* xpt, SSizeT space_delta)
 
 // Time is measured either in ms or bytes, depending on the --time-unit
 // option.  It's a Long because it can exceed 32-bits reasonably easily, and
-// because we need to allow -1 as a possible value.
+// because we need to allow negative values to represent unset times.
 typedef Long Time;
+
+#define UNUSED_SNAPSHOT_TIME  -333  // A conspicuous negative number.
 
 typedef
    struct {
@@ -858,7 +860,7 @@ static Snapshot snapshots[MAX_N_SNAPSHOTS];
 
 static Bool is_snapshot_in_use(Snapshot* snapshot)
 {
-   if (-1 == snapshot->time) {
+   if (UNUSED_SNAPSHOT_TIME == snapshot->time) {
       // If .time looks unused, check everything else is.
       tl_assert(snapshot->total_szB      == 0);
       tl_assert(snapshot->heap_admin_szB == 0);
@@ -902,7 +904,7 @@ static void sanity_check_snapshots_array(void)
 static void clear_snapshot(Snapshot* snapshot)
 {
    sanity_check_snapshot(snapshot);
-   snapshot->time           = -1;
+   snapshot->time           = UNUSED_SNAPSHOT_TIME;
    snapshot->total_szB      = 0;
    snapshot->heap_admin_szB = 0;
    snapshot->heap_szB       = 0;
@@ -980,14 +982,14 @@ static UInt cull_snapshots(void)
       jp = 0;
       FIND_SNAPSHOT(1,   j);
       FIND_SNAPSHOT(j+1, jn);
-      min_timespan = snapshots[jn].time - snapshots[jp].time;
-      min_j = j;
+      min_timespan = 0x7fffffffffffffffLL;
+      min_j        = -1;
       while (jn < MAX_N_SNAPSHOTS) {
          Time timespan = snapshots[jn].time - snapshots[jp].time;
          tl_assert(timespan >= 0);
          if (timespan < min_timespan) {
             min_timespan = timespan;
-            min_j    = j;
+            min_j        = j;
          }
          // Move on to next triple
          jp = j; 
@@ -996,6 +998,7 @@ static UInt cull_snapshots(void)
       }
       // We've found the least important snapshot, now delete it.  First
       // print it if necessary.
+      tl_assert(-1 != min_j);    // Check we found a minimum.
       min_snapshot = & snapshots[ min_j ];
       if (VG_(clo_verbosity) > 1) {                          
          Char buf[64];                                       
@@ -1028,9 +1031,9 @@ static UInt cull_snapshots(void)
    // deletion.  Here we only measure single intervals because all the
    // deletions have occurred.
    tl_assert(next_snapshot_i > 1);
-   min_timespan = snapshots[1].time - snapshots[0].time;
-   min_timespan_i = 1;
-   for (i = 2; i < next_snapshot_i; i++) {
+   min_timespan = 0x7fffffffffffffffLL;
+   min_timespan_i = -1;
+   for (i = 1; i < next_snapshot_i; i++) {
       Time timespan = snapshots[i].time - snapshots[i-1].time;
       tl_assert(timespan >= 0);
       if (timespan < min_timespan) {
@@ -1038,6 +1041,7 @@ static UInt cull_snapshots(void)
          min_timespan_i = i;
       }
    }
+   tl_assert(-1 != min_timespan_i);    // Check we found a minimum.
 
    // Print remaining snapshots, if necessary.
    if (VG_(clo_verbosity) > 1) {
@@ -1649,9 +1653,7 @@ static void pp_snapshot(Int fd, Snapshot* snapshot, Int snapshot_n)
    FP("mem_stacks_B=%lu\n",     snapshot->stacks_szB);
 
    if (is_detailed_snapshot(snapshot)) {
-      // Detailed snapshot -- print heap tree
-      // XXX: check this works ok when no heap memory has been allocated
-      //      [need to do it with --time-unit=ms]
+      // Detailed snapshot -- print heap tree.
       Int   depth_str_len = clo_depth + 3;
       Char* depth_str = VG_(malloc)(sizeof(Char) * depth_str_len);
       depth_str[0] = '\0';   // Initialise depth_str to "".
