@@ -1351,6 +1351,7 @@ void* renew_block ( ThreadId tid, void* p_old, SizeT new_szB )
    // Remove the old block
    hc = VG_(HT_remove)(malloc_list, (UWord)p_old);
    if (hc == NULL) {
+      VERB(2, ">>> (bogus)");
       return NULL;   // must have been a bogus realloc()
    }
 
