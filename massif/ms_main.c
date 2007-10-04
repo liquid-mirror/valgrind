@@ -89,7 +89,7 @@
 //   XML, Nick wants something easy to read in Perl)
 // - allow truncation of long fnnames if the exact line number is
 //   identified?  [hmm, could make getting the name of alloc-fns more
-//   difficult]
+//   difficult] [could dump full names to file, truncate in ms_print]
 //
 // Examine and fix bugs on bugzilla:
 // IGNORE:
