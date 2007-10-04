@@ -58,31 +58,6 @@
 // - in each XPt, record both bytes and the number of live allocations? (or
 //   even total allocations and total deallocations?)
 //
-// Work out how to take the peak.
-// - exact peak, or within a certain percentage?
-// - include the stack?  makes it harder
-//
-// Option #1
-// - just take the peak snapshot.
-// - pros:
-//   - easy, fast
-// - cons:
-//   - not the true peak
-//
-// #2: true peak
-// - check every malloc, every new_mem_stack
-// - slow
-// - most accurate
-//
-// #2a:
-// - same, but only do detailed snapshot if x% larger than previous peak
-// 
-// #3: in-between
-// - check every malloc, but not every new_mem_stack
-//
-// What is the proportion of stack allocs/deallocs vs heap allocs/deallocs?
-// Try with Konqueror.
-//
 // Dumping the results to file:
 // - work out the file format (Josef wants Callgrind format, Donna wants
 //   XML, Nick wants something easy to read in Perl)
@@ -280,6 +255,16 @@ static UInt n_heap_blocks = 0;
 
 // Current directory at startup.
 static Char base_dir[VKI_PATH_MAX]; // XXX: currently unused
+
+// We don't start taking snapshots until the first basic block is executed,
+// rather than doing it in ms_post_clo_init (which is the obvious spot), for
+// two reasons.
+// - It lets us ignore stack events prior to that, because they're not
+//   really proper ones and just would screw things up.
+// - Because there's still some core initialisation to do, and so there
+//   would be an artificial time gap between the first and second snapshots.
+//
+static Bool have_started_executing_code = False;
 
 //------------------------------------------------------------//
 //--- Alloc fns                                            ---//
@@ -1095,6 +1080,8 @@ static void take_snapshot(Int snapshot_i, Time time, Char* kind)
 
    Snapshot* snapshot = &snapshots[snapshot_i];
 
+   tl_assert(have_started_executing_code);
+
    // Right!  We're taking a real snapshot.
    n_real_snapshots++;
 
@@ -1161,17 +1148,15 @@ static void maybe_take_snapshot(Char* kind)
    // we don't take it.  Initialised to zero so that we begin by taking
    // snapshots as quickly as possible.
    static Time min_time_interval     = 0;
-   static Time time_of_prev_snapshot = 0;
    // Zero allows startup snapshot.
    static Time earliest_possible_time_of_next_snapshot = 0;
 
-   Time      time, time_since_prev;
+   Time      time;
    Snapshot* snapshot;
 
    time = get_time();
 
    // Only do a snapshot if it's time.
-   time_since_prev = time - time_of_prev_snapshot;
    if (time < earliest_possible_time_of_next_snapshot) {
       n_skipped_snapshots++;
       n_skipped_snapshots_since_last_snapshot++;
@@ -1189,7 +1174,6 @@ static void maybe_take_snapshot(Char* kind)
    }
 
    // Work out the earliest time when the next snapshot can happen.
-   time_of_prev_snapshot = time;
    earliest_possible_time_of_next_snapshot = time + min_time_interval;
 }
 
@@ -1464,42 +1448,55 @@ static void update_stack_stats(SSizeT stack_szB_delta)
    update_alloc_stats(stack_szB_delta);
 }
 
+static void update_sigstack_stats(SSizeT sigstack_szB_delta)
+{
+   if (sigstack_szB_delta < 0) tl_assert(sigstacks_szB >= sigstack_szB_delta);
+   sigstacks_szB += sigstack_szB_delta;
+
+   update_alloc_stats(sigstack_szB_delta);
+}
+
 static void new_mem_stack(Addr a, SizeT len)
 {
-   VERB(2, "<<< new_mem_stack (%ld)", len);
-   n_stack_allocs++;
-   update_stack_stats(len);
-   maybe_take_snapshot("stk-new");
-   VERB(2, ">>>");
+   if (have_started_executing_code) {
+      VERB(2, "<<< new_mem_stack (%ld)", len);
+      n_stack_allocs++;
+      update_stack_stats(len);
+      maybe_take_snapshot("stk-new");
+      VERB(2, ">>>");
+   }
 }
 
 static void die_mem_stack(Addr a, SizeT len)
 {
-   VERB(2, "<<< die_mem_stack (%ld)", -len);
-   n_stack_frees++;
-   update_stack_stats(-len);
-   maybe_take_snapshot("stk-die");
-   VERB(2, ">>>");
+   if (have_started_executing_code) {
+      VERB(2, "<<< die_mem_stack (%ld)", -len);
+      n_stack_frees++;
+      update_stack_stats(-len);
+      maybe_take_snapshot("stk-die");
+      VERB(2, ">>>");
+   }
 }
 
 
 static void new_mem_stack_signal(Addr a, SizeT len)
 {
-   VERB(2, "<<< new_mem_stack_signal (%ld)", len);
-   sigstacks_szB += len;
-   update_stack_stats(len);
-   maybe_take_snapshot("sig-new");
-   VERB(2, ">>>");
+   if (have_started_executing_code) {
+      VERB(2, "<<< new_mem_stack_signal (%ld)", len);
+      update_sigstack_stats(len);
+      maybe_take_snapshot("sig-new");
+      VERB(2, ">>>");
+   }
 }
 
 static void die_mem_stack_signal(Addr a, SizeT len)
 {
-   VERB(2, "<<< die_mem_stack_signal (%ld)", -len);
-   tl_assert(sigstacks_szB >= len);
-   sigstacks_szB -= len;
-   update_stack_stats(len);
-   maybe_take_snapshot("sig-die");
-   VERB(2, ">>>");
+   if (have_started_executing_code) {
+      VERB(2, "<<< die_mem_stack_signal (%ld)", -len);
+      update_sigstack_stats(-len);
+      maybe_take_snapshot("sig-die");
+      VERB(2, ">>>");
+   }
 }
 
 
@@ -1543,16 +1540,12 @@ IRSB* ms_instrument ( VgCallbackClosure* closure,
                       VexGuestExtents* vge,
                       IRType gWordTy, IRType hWordTy )
 {
-   static Bool is_first_SB = True;
-
-   if (is_first_SB) {
+   if (! have_started_executing_code) {
       // Do an initial sample to guarantee that we have at least one.
       // We use 'maybe_take_snapshot' instead of 'take_snapshot' to ensure
       // 'maybe_take_snapshot's internal static variables are initialised.
-      // However, with --stacks=yes this snapshot may not actually be the
-      // first one, surprisingly enough.
+      have_started_executing_code = True;
       maybe_take_snapshot("startup");
-      is_first_SB = False;
    }
 
    return bb_in;
