@@ -963,9 +963,7 @@ static UInt cull_snapshots(void)
            j < MAX_N_SNAPSHOTS && !is_snapshot_in_use(&snapshots[j]); \
            j++) { }
 
-   if (VG_(clo_verbosity) > 1) {
-      VERB(1, "Culling...");
-   }
+   VERB(1, "Culling...");
 
    // First we remove enough snapshots by clearing them in-place.  Once
    // that's done, we can slide the remaining ones down.
@@ -1734,29 +1732,27 @@ static void ms_fini(Int exit_status)
    write_detailed_snapshots();
 
    // Stats
-   if (VG_(clo_verbosity) > 1) {
-      tl_assert(n_xpts > 0);  // always have alloc_xpt
-      VERB(1, "allocs:               %u", n_allocs);                     
-      VERB(1, "zeroallocs:           %u (%d%%)",                     
-         n_zero_allocs,                                      
-         ( n_allocs ? n_zero_allocs * 100 / n_allocs : 0 )); 
-      VERB(1, "reallocs:             %u", n_reallocs);                     
-      VERB(1, "frees:                %u", n_frees);
-      VERB(1, "stack allocs:         %u", n_stack_allocs);
-      VERB(1, "stack frees:          %u", n_stack_frees);
-      VERB(1, "XPts:                 %u", n_xpts);
-      VERB(1, "top-XPts:             %u (%d%%)",                     
-         alloc_xpt->n_children,                              
-         ( n_xpts ? alloc_xpt->n_children * 100 / n_xpts : 0));
-      VERB(1, "dup'd XPts:           %u", n_dupd_xpts);
-      VERB(1, "dup'd/freed XPts:     %u", n_dupd_xpts_freed);
-      VERB(1, "XPt-init-expansions:  %u", n_xpt_init_expansions);
-      VERB(1, "XPt-later-expansions: %u", n_xpt_later_expansions);
-      VERB(1, "skipped snapshots:    %u", n_skipped_snapshots);
-      VERB(1, "real snapshots:       %u", n_real_snapshots);
-      VERB(1, "cullings:             %u", n_cullings);
-      VERB(1, "XCon_redos:           %u", n_getXCon_redo);
-   }
+   tl_assert(n_xpts > 0);  // always have alloc_xpt
+   VERB(1, "allocs:               %u", n_allocs);                     
+   VERB(1, "zeroallocs:           %u (%d%%)",                     
+      n_zero_allocs,                                      
+      ( n_allocs ? n_zero_allocs * 100 / n_allocs : 0 )); 
+   VERB(1, "reallocs:             %u", n_reallocs);                     
+   VERB(1, "frees:                %u", n_frees);
+   VERB(1, "stack allocs:         %u", n_stack_allocs);
+   VERB(1, "stack frees:          %u", n_stack_frees);
+   VERB(1, "XPts:                 %u", n_xpts);
+   VERB(1, "top-XPts:             %u (%d%%)",                     
+      alloc_xpt->n_children,                              
+      ( n_xpts ? alloc_xpt->n_children * 100 / n_xpts : 0));
+   VERB(1, "dup'd XPts:           %u", n_dupd_xpts);
+   VERB(1, "dup'd/freed XPts:     %u", n_dupd_xpts_freed);
+   VERB(1, "XPt-init-expansions:  %u", n_xpt_init_expansions);
+   VERB(1, "XPt-later-expansions: %u", n_xpt_later_expansions);
+   VERB(1, "skipped snapshots:    %u", n_skipped_snapshots);
+   VERB(1, "real snapshots:       %u", n_real_snapshots);
+   VERB(1, "cullings:             %u", n_cullings);
+   VERB(1, "XCon_redos:           %u", n_getXCon_redo);
 }
 
 
