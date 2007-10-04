@@ -1809,11 +1809,6 @@ static void ms_post_clo_init(void)
       VG_(track_new_mem_stack_signal)( new_mem_stack_signal );
       VG_(track_die_mem_stack_signal)( die_mem_stack_signal );
    }
-
-   // We don't take a snapshot now, because there's still some core
-   // initialisation to do, in which case we have an artificial gap.
-   // Instead we do it when the first translation occurs.  See
-   // ms_instrument().
 }
 
 static void ms_pre_clo_init(void)
