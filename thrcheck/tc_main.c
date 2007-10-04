@@ -320,8 +320,9 @@ static WordFM* map_segments = NULL; /* WordFM SegmentID Segment* */
 static WordFM* map_locks = NULL; /* WordFM LockAddr Lock* */
 
 /* The word-set universes for thread sets and lock sets. */
-static WordSetU* univ_tsets = NULL;
-static WordSetU* univ_lsets = NULL;
+static WordSetU* univ_tsets = NULL; /* sets of Thread* */
+static WordSetU* univ_lsets = NULL; /* sets of Lock* */
+static WordSetU* univ_laog  = NULL; /* sets of Lock*, for LAOG */
 
 /* never changed; we only care about its address.  Is treated as if it
    was a standard userspace lock.  Also we have a Lock* describing it
@@ -610,7 +611,7 @@ static inline Bool is_sane_SecMap ( SecMap* sm ) {
    The elements in lock sets are Lock*, casted to Word. 
 */
 
-#define N_LSID_BITS  16
+#define N_LSID_BITS  17
 #define N_LSID_MASK  ((1 << (N_LSID_BITS)) - 1)
 #define N_LSID_SHIFT 0
 
@@ -1043,6 +1044,10 @@ static void initialise_data_structures ( void )
    tl_assert(univ_lsets == NULL);
    univ_lsets = TC_(newWordSetU)( tc_zalloc, tc_free );
    tl_assert(univ_lsets != NULL);
+
+   tl_assert(univ_laog == NULL);
+   univ_laog = TC_(newWordSetU)( tc_zalloc, tc_free );
+   tl_assert(univ_laog != NULL);
 
    /* Set up entries for the root thread */
    // FIXME: this assumes that the first real ThreadId is 1
@@ -3926,92 +3931,159 @@ static void evh__TC_PTHREAD_RWLOCK_UNLOCK_POST ( ThreadId tid, void* rwl )
 /*--- Lock acquisition order monitoring                      ---*/
 /*--------------------------------------------------------------*/
 
-/* Indicates that .fst must always be acquired before .snd */
 typedef
    struct {
-      Lock* fst;
-      Lock* snd;
+      WordSetID inns; /* in univ_laog */
+      WordSetID outs; /* in univ_laog */
    }
-   LockPair;
-
-static Word cmp_LockPair ( LockPair* lp1, LockPair* lp2 ) {
-   if (lp1->fst < lp2->fst) return -1;
-   if (lp1->fst > lp2->fst) return 1;
-   if (lp1->snd < lp2->snd) return -1;
-   if (lp1->snd > lp2->snd) return 1;
-   return 0;
-}
+   LAOGLinks;
 
 /* lock order acquisition graph */
-static WordFM* laog = NULL; /* WordFM LockPair* void */
+static WordFM* laog = NULL; /* WordFM Lock* LAOGLinks* */
 
 static void laog__show ( void ) {
-   LockPair* edge;
+   Word i, ws_size;
+   Word* ws_words;
+   Lock* me;
+   LAOGLinks* links;
    VG_(printf)("laog {\n");
    TC_(initIterFM)( laog );
-   edge = NULL;
-   while (TC_(nextIterFM)( laog, (Word*)&edge, NULL)) {
-      tl_assert(edge);
-      VG_(printf)("   %p -> %p\n", edge->fst, edge->snd);
-      edge = NULL;
+   me = NULL;
+   links = NULL;
+   while (TC_(nextIterFM)( laog, (Word*)&me, (Word*)&links )) {
+      tl_assert(me);
+      tl_assert(links);
+      VG_(printf)("   node %p:\n", me);
+      TC_(getPayloadWS)( &ws_words, &ws_size, univ_laog, links->inns );
+      for (i = 0; i < ws_size; i++)
+         VG_(printf)("      inn %p\n", ws_words[i] );
+      TC_(getPayloadWS)( &ws_words, &ws_size, univ_laog, links->outs );
+      for (i = 0; i < ws_size; i++)
+         VG_(printf)("      out %p\n", ws_words[i] );
+      me = NULL;
+      links = NULL;
    }
    TC_(doneIterFM)( laog );
    VG_(printf)("}\n");
 }
 
 static void laog__add_edge ( Lock* src, Lock* dst ) {
-   LockPair key;
-   key.fst = src;
-   key.snd = dst;
-   if (TC_(lookupFM)( laog, NULL, NULL, (Word)&key )) {
-      /* already present; do nothing */
+   Word       keyW;
+   LAOGLinks* links;
+   if (0) VG_(printf)("laog__add_edge %p %p\n", src, dst);
+   /* Update the out edges for src */
+   keyW  = 0;
+   links = NULL;
+   if (TC_(lookupFM)( laog, &keyW, (Word*)&links, (Word)src )) {
+      tl_assert(links);
+      tl_assert(keyW == (Word)src);
+      links->outs = TC_(addToWS)( univ_laog, links->outs, (Word)dst );
    } else {
-      LockPair* nyu = tc_zalloc(sizeof(LockPair));
-      tl_assert(nyu);
-      *nyu = key;
-      TC_(addToFM)( laog, (Word)nyu, (Word)0 );
+      links = tc_zalloc(sizeof(LAOGLinks));
+      links->inns = TC_(emptyWS)( univ_laog );
+      links->outs = TC_(singletonWS)( univ_laog, (Word)dst );
+      TC_(addToFM)( laog, (Word)src, (Word)links );
+   }
+   /* Update the in edges for dst */
+   keyW  = 0;
+   links = NULL;
+   if (TC_(lookupFM)( laog, &keyW, (Word*)&links, (Word)dst )) {
+      tl_assert(links);
+      tl_assert(keyW == (Word)dst);
+      links->inns = TC_(addToWS)( univ_laog, links->inns, (Word)src );
+   } else {
+      links = tc_zalloc(sizeof(LAOGLinks));
+      links->inns = TC_(singletonWS)( univ_laog, (Word)src );
+      links->outs = TC_(emptyWS)( univ_laog );
+      TC_(addToFM)( laog, (Word)dst, (Word)links );
    }
 }
 
 static void laog__del_edge ( Lock* src, Lock* dst ) {
-   Bool      b;
-   LockPair  key;
-   LockPair* old = NULL;
-   key.fst = src;
-   key.snd = dst;
-   b = TC_(delFromFM)( laog, (Word*)&old, NULL, (Word)&key );
-   tl_assert(b);
-   tl_assert(old);
-   tc_free(old);
+   Word       keyW;
+   LAOGLinks* links;
+   if (0) VG_(printf)("laog__del_edge %p %p\n", src, dst);
+   /* Update the out edges for src */
+   keyW  = 0;
+   links = NULL;
+   if (TC_(lookupFM)( laog, &keyW, (Word*)&links, (Word)src )) {
+      tl_assert(links);
+      tl_assert(keyW == (Word)src);
+      links->outs = TC_(delFromWS)( univ_laog, links->outs, (Word)dst );
+   }
+   /* Update the in edges for dst */
+   keyW  = 0;
+   links = NULL;
+   if (TC_(lookupFM)( laog, &keyW, (Word*)&links, (Word)dst )) {
+      tl_assert(links);
+      tl_assert(keyW == (Word)dst);
+      links->inns = TC_(delFromWS)( univ_laog, links->inns, (Word)src );
+   }
 }
 
-static WordSetID /* in univ_lsets */ laog__step ( Lock* lk, Bool succs ) {
-   LockPair* edge;
-   WordSetID result;
-   result = TC_(emptyWS)( univ_lsets );
+static WordSetID /* in univ_laog */ laog__succs ( Lock* lk ) {
+   Word       keyW;
+   LAOGLinks* links;
+   keyW  = 0;
+   links = NULL;
+   if (TC_(lookupFM)( laog, &keyW, (Word*)&links, (Word)lk )) {
+      tl_assert(links);
+      tl_assert(keyW == (Word)lk);
+      return links->outs;
+   } else {
+      return TC_(emptyWS)( univ_laog );
+   }
+}
+
+static WordSetID /* in univ_laog */ laog__preds ( Lock* lk ) {
+   Word       keyW;
+   LAOGLinks* links;
+   keyW  = 0;
+   links = NULL;
+   if (TC_(lookupFM)( laog, &keyW, (Word*)&links, (Word)lk )) {
+      tl_assert(links);
+      tl_assert(keyW == (Word)lk);
+      return links->inns;
+   } else {
+      return TC_(emptyWS)( univ_laog );
+   }
+}
+
+static void laog__sanity_check ( void ) {
+   Word i, ws_size;
+   Word* ws_words;
+   Lock* me;
+   LAOGLinks* links;
    TC_(initIterFM)( laog );
-   edge = NULL;
-   while (TC_(nextIterFM)( laog, (Word*)&edge, NULL)) {
-      tl_assert(edge);
-      if (succs) {
-         if (edge->fst == lk)
-            result = TC_(addToWS)( univ_lsets, result, (Word)edge->snd );
-      } else {
-         if (edge->snd == lk)
-            result = TC_(addToWS)( univ_lsets, result, (Word)edge->fst );
+   me = NULL;
+   links = NULL;
+VG_(printf)("laog sanity check\n");
+   while (TC_(nextIterFM)( laog, (Word*)&me, (Word*)&links )) {
+      tl_assert(me);
+      tl_assert(links);
+      TC_(getPayloadWS)( &ws_words, &ws_size, univ_laog, links->inns );
+      for (i = 0; i < ws_size; i++) {
+         if ( ! TC_(elemWS)( univ_laog, 
+                             laog__succs( (Lock*)ws_words[i] ), 
+                             (Word)me ))
+            goto bad;
       }
-      edge = NULL;
+      TC_(getPayloadWS)( &ws_words, &ws_size, univ_laog, links->outs );
+      for (i = 0; i < ws_size; i++) {
+         if ( ! TC_(elemWS)( univ_laog, 
+                             laog__preds( (Lock*)ws_words[i] ), 
+                             (Word)me ))
+            goto bad;
+      }
+      me = NULL;
+      links = NULL;
    }
    TC_(doneIterFM)( laog );
-   return result;
-}
+   return;
 
-static WordSetID /* in univ_lsets */ laog__succs ( Lock* lk ) {
-   return laog__step( lk, True /* get successors of 'lk' */ );
-}
-
-static WordSetID /* in univ_lsets */ laog__preds ( Lock* lk ) {
-   return laog__step( lk, False /* get predecessors of 'lk' */ );
+  bad:
+   laog__show();
+   tl_assert(0);
 }
 
 static Bool laog__do_dfs_from_to ( Lock* src, Lock* dst )
@@ -4024,7 +4096,7 @@ static Bool laog__do_dfs_from_to ( Lock* src, Lock* dst )
    WordSetID succs;
    Word      succs_size;
    Word*     succs_words;
-
+   //laog__sanity_check();
    stack   = VG_(newXA)( tc_zalloc, tc_free, sizeof(Lock*) );
    visited = TC_(newFM)( tc_zalloc, tc_free, NULL/*unboxedcmp*/ );
 
@@ -4047,7 +4119,7 @@ static Bool laog__do_dfs_from_to ( Lock* src, Lock* dst )
       TC_(addToFM)( visited, (Word)here, 0 );
 
       succs = laog__succs( here );
-      TC_(getPayloadWS)( &succs_words, &succs_size, univ_lsets, succs );
+      TC_(getPayloadWS)( &succs_words, &succs_size, univ_laog, succs );
       for (i = 0; i < succs_size; i++)
          (void) VG_(addToXA)( stack, &succs_words[i] );
    }
@@ -4073,12 +4145,12 @@ static void laog__pre_thread_acquires_lock (
 
    /* It may be that 'thr' already holds 'lk' and is recursively
       relocking in.  In this case we just ignore the call. */
+   /* NB: univ_lsets really is correct here */
    if (TC_(elemWS)( univ_lsets, thr->locksetA, (Word)lk ))
       return;
 
    if (!laog)
-      laog = TC_(newFM)( tc_zalloc, tc_free, 
-                         (Word(*)(Word,Word)) cmp_LockPair );
+      laog = TC_(newFM)( tc_zalloc, tc_free, NULL/*unboxedcmp*/ );
 
    /* First, the check.  Complain if there is any path in laog
       from lk to old  for each old <- locks already held by thr.
@@ -4115,11 +4187,11 @@ static void laog__handle_one_lock_deletion ( Lock* lk )
    preds = laog__preds( lk );
    succs = laog__succs( lk );
 
-   TC_(getPayloadWS)( &preds_words, &preds_size, univ_lsets, preds );
+   TC_(getPayloadWS)( &preds_words, &preds_size, univ_laog, preds );
    for (i = 0; i < preds_size; i++)
       laog__del_edge( (Lock*)preds_words[i], lk );
 
-   TC_(getPayloadWS)( &succs_words, &succs_size, univ_lsets, succs );
+   TC_(getPayloadWS)( &succs_words, &succs_size, univ_laog, succs );
    for (j = 0; j < succs_size; j++)
       laog__del_edge( lk, (Lock*)succs_words[j] );
 
@@ -4132,7 +4204,7 @@ static void laog__handle_one_lock_deletion ( Lock* lk )
 }
 
 static void laog__handle_lock_deletions (
-               WordSetID /* in univ_lsets */ locksToDelete
+               WordSetID /* in univ_laog */ locksToDelete
             )
 {
    Word  i, ws_size;
@@ -5586,6 +5658,8 @@ static void tc_fini ( Int exitcode )
                   (Int)TC_(cardinalityWSU)( univ_lsets ));
       VG_(printf)("threadsets:       %8d unique thread sets\n",
                   (Int)TC_(cardinalityWSU)( univ_tsets ));
+      VG_(printf)("univ_laog:        %8d unique lock sets\n",
+                  (Int)TC_(cardinalityWSU)( univ_laog ));
 
       VG_(printf)("L(ast)L(ock) map: %8lu inserts (%d map size)\n", 
                   stats__ga_LL_adds,
