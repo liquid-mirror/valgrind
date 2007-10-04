@@ -1230,6 +1230,13 @@ typedef
 
 static VgHashTable malloc_list  = NULL;   // HP_Chunks
 
+static void update_alloc_stats(SSizeT szB_delta)
+{
+   // Update total_allocs_deallocs_szB.
+   if (szB_delta < 0) szB_delta = -szB_delta;
+   total_allocs_deallocs_szB += szB_delta;
+}
+
 static void update_heap_stats(SSizeT heap_szB_delta, Int n_heap_blocks_delta)
 {
    if (n_heap_blocks_delta<0) tl_assert(n_heap_blocks >= -n_heap_blocks_delta);
@@ -1237,9 +1244,7 @@ static void update_heap_stats(SSizeT heap_szB_delta, Int n_heap_blocks_delta)
    n_heap_blocks += n_heap_blocks_delta;
    heap_szB      += heap_szB_delta;
 
-   if (heap_szB_delta < 0) total_allocs_deallocs_szB -= heap_szB_delta;
-   if (heap_szB_delta > 0) total_allocs_deallocs_szB += heap_szB_delta;
-   total_allocs_deallocs_szB += clo_heap_admin;
+   update_alloc_stats(heap_szB_delta + clo_heap_admin*n_heap_blocks_delta);
 }
 
 static
@@ -1435,9 +1440,9 @@ static void* ms_realloc ( ThreadId tid, void* p_old, SizeT new_szB )
 //--- Stacks                                               ---//
 //------------------------------------------------------------//
 
-static void update_stack_stats(SSizeT stack_szB_len)
+static void update_stack_stats(SSizeT stack_szB_delta)
 {
-   total_allocs_deallocs_szB += stack_szB_len;
+   update_alloc_stats(stack_szB_delta);
 }
 
 static void new_mem_stack(Addr a, SizeT len)
@@ -1450,7 +1455,7 @@ static void new_mem_stack(Addr a, SizeT len)
 static void die_mem_stack(Addr a, SizeT len)
 {
    n_stack_frees++;
-   update_stack_stats(len);
+   update_stack_stats(-len);
    maybe_take_snapshot("stk-die");
 }
 
