@@ -187,7 +187,7 @@ static void discard_SegInfo ( SegInfo* si )
          // Found it;  remove from list and free it.
          if (VG_(clo_verbosity) > 1 || VG_(clo_trace_redir))
             VG_(message)(Vg_DebugMsg, 
-                         "Discarding syms at %p-%p in %s due to %s()", 
+                         "Discarding syms at %#lx-%#lx in %s due to %s()", 
                          si->text_start_avma, 
                          si->text_start_avma + si->text_size,
                          curr->filename ? curr->filename : (UChar*)"???",
@@ -1078,7 +1078,7 @@ Bool VG_(use_CF_info) ( /*MOD*/Addr* ipP,
    static UInt n_steps = 0;
    n_search++;
 
-   if (0) VG_(printf)("search for %p\n", *ipP);
+   if (0) VG_(printf)("search for %#lx\n", *ipP);
 
    for (si = segInfo_list; si != NULL; si = si->next) {
       n_steps++;
@@ -1272,7 +1272,7 @@ VgSectKind VG_(seginfo_sect_kind)(Addr a)
 
 	 if (0)
 	    VG_(printf)(
-               "addr=%p si=%p %s got=%p %d  plt=%p %d data=%p %d bss=%p %d\n",
+               "addr=%#lx si=%p %s got=%#lx %d  plt=%#lx %d data=%#lx %d bss=%#lx %d\n",
                a, si, si->filename, 
                si->got_start_avma,  si->got_size,
                si->plt_start_avma,  si->plt_size,

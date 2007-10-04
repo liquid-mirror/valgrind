@@ -159,7 +159,7 @@ void show_raw_elf_symbol ( Int i,
       case STT_HIPROC:  VG_(printf)("hip "); break;
       default:          VG_(printf)("??? "); break;
    }
-   VG_(printf)(": val %010p, %ssz %4d  %s\n",
+   VG_(printf)(": val %#10lx, %ssz %4d  %s\n",
                sym_addr, space, sym->st_size,
                ( sym->st_name ? sym_name : (Char*)"NONAME" ) ); 
 }               
@@ -359,7 +359,7 @@ Bool get_elf_symbol_info (
       ignore it. */
    if (*sym_addr_out + *sym_size_out <= si->text_start_avma
        || *sym_addr_out >= si->text_start_avma + si->text_size) {
-      TRACE_SYMTAB( "ignore -- %p .. %p outside mapped range %p .. %p\n",
+      TRACE_SYMTAB( "ignore -- %#lx .. %#lx outside mapped range %#lx .. %#lx\n",
                     *sym_addr_out, *sym_addr_out + *sym_size_out,
                     si->text_start_avma,
                     si->text_start_avma + si->text_size);
@@ -441,8 +441,8 @@ void read_elf_symtab__normal(
 
          if (si->trace_symtab) {
             VG_(printf)("    record [%4d]:          "
-                        " val %010p, sz %4d  %s\n",
-                        i, (void*)risym.addr, (Int)risym.size, 
+                        " val %#10lx, sz %4d  %s\n",
+                        i, risym.addr, (Int)risym.size, 
                            (HChar*)risym.name
             );
          }
@@ -583,19 +583,17 @@ void read_elf_symtab__ppc64_linux(
 
             if (modify_size && si->trace_symtab) {
                VG_(printf)("    modify (old sz %4d)    "
-                           " val %010p, toc %010p, sz %4d  %s\n",
+                           " val %#010lx, toc %#010lx, sz %4d  %s\n",
                            old_size,
-                           (void*) prev->key.addr, 
-                           (void*) prev->tocptr,
+                           prev->key.addr, prev->tocptr,
                            (Int)   prev->size, 
                            (HChar*)prev->key.name
                );
             }
             if (modify_tocptr && si->trace_symtab) {
                VG_(printf)("    modify (upd tocptr)     "
-                           " val %010p, toc %010p, sz %4d  %s\n",
-                            (void*) prev->key.addr, 
-                            (void*) prev->tocptr, 
+                           " val %#010lx, toc %#010lx, sz %4d  %s\n",
+                            prev->key.addr, prev->tocptr,
                             (Int)   prev->size, 
                             (HChar*)prev->key.name
                );
@@ -613,9 +611,8 @@ void read_elf_symtab__ppc64_linux(
             VG_(OSetGen_Insert)(oset, elem);
             if (si->trace_symtab) {
                VG_(printf)("   to-oset [%4d]:          "
-                           " val %010p, toc %010p, sz %4d  %s\n",
-                           i, (void*) elem->key.addr,
-                              (void*) elem->tocptr,
+                           " val %#010lx, toc %#010lx, sz %4d  %s\n",
+                           i, elem->key.addr, elem->tocptr,
                               (Int)   elem->size, 
                               (HChar*)elem->key.name
                );
@@ -641,9 +638,8 @@ void read_elf_symtab__ppc64_linux(
       ML_(addSym) ( si, &risym );
       if (si->trace_symtab) {
          VG_(printf)("    record [%4d]:          "
-                     " val %010p, toc %010p, sz %4d  %s\n",
-                     i, (void*) risym.addr,
-                        (void*) risym.tocptr,
+                     " val %#010lx, toc %#010lx, sz %4d  %s\n",
+                     i, risym.addr, risym.tocptr,
                         (Int)   risym.size, 
                         (HChar*)risym.name
                );
@@ -975,10 +971,10 @@ Bool ML_(read_elf_debug_info) ( struct _SegInfo* si )
 	    if (newsz > si->text_size) {
 	       if (0)
 		  VG_(printf)("extending mapping %p..%p %d -> ..%p %d\n", 
-			      si->text_start_avma, 
-                              si->text_start_avma + si->text_size, 
+			      (void*)si->text_start_avma, 
+                              (void*)(si->text_start_avma + si->text_size), 
                               si->text_size,
-			      si->text_start_avma + newsz, newsz);
+			      (void*)(si->text_start_avma + newsz), newsz);
 
 	       si->text_size = newsz;
 	    }
@@ -1081,7 +1077,7 @@ Bool ML_(read_elf_debug_info) ( struct _SegInfo* si )
             sec_filea = (void*)(oimage + shdr[i].sh_offset); \
             sec_size  = shdr[i].sh_size; \
             nobits = shdr[i].sh_type == SHT_NOBITS; \
-            TRACE_SYMTAB( "%18s: filea %p .. %p, vma %p .. %p\n", \
+            TRACE_SYMTAB( "%18s: filea %p .. %p, vma %#lx .. %#lx\n", \
                           sec_name, (UChar*)sec_filea, \
                                     ((UChar*)sec_filea) + sec_size - 1, \
                           sec_vma, sec_vma + sec_size - 1); \

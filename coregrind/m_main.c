@@ -213,7 +213,7 @@ static void usage_NORETURN ( Bool debug_help )
    VG_(clo_log_fd) = 1;
    vg_assert( !VG_(logging_to_socket) );
 
-   VG_(printf)(usage1);
+   VG_(printf)("%s", usage1);
    if (VG_(details).name) {
       VG_(printf)("  user options for %s:\n", VG_(details).name);
       if (VG_(needs).command_line_options)
@@ -222,7 +222,7 @@ static void usage_NORETURN ( Bool debug_help )
 	 VG_(printf)("    (none)\n");
    }
    if (debug_help) {
-      VG_(printf)(usage2);
+      VG_(printf)("%s", usage2);
 
       if (VG_(details).name) {
          VG_(printf)("  debugging options for %s:\n", VG_(details).name);

@@ -91,7 +91,7 @@ UInt VG_(get_StackTrace2) ( ThreadId tid_if_known,
    fp_max -= sizeof(Addr);
 
    if (debug)
-      VG_(printf)("n_ips=%d fp_min=%p fp_max_orig=%p, fp_max=%p ip=%p fp=%p\n",
+      VG_(printf)("n_ips=%d fp_min=%#lx fp_max_orig=%#lx, fp_max=%#lx ip=%#lx fp=%#lx\n",
 		  n_ips, fp_min, fp_max_orig, fp_max, ip, fp);
 
    /* Assertion broken before main() is reached in pthreaded programs;  the
@@ -158,7 +158,7 @@ UInt VG_(get_StackTrace2) ( ThreadId tid_if_known,
          fp = (((UWord*)fp)[0]);
          ips[i++] = ip;
          if (debug)
-            VG_(printf)("     ipsF[%d]=%p\n", i-1, ips[i-1]);
+            VG_(printf)("     ipsF[%d]=%#08lx\n", i-1, ips[i-1]);
          ip = ip - 1;
          continue;
       }
@@ -168,7 +168,7 @@ UInt VG_(get_StackTrace2) ( ThreadId tid_if_known,
       if ( VG_(use_CF_info)( &ip, &sp, &fp, fp_min, fp_max ) ) {
          ips[i++] = ip;
          if (debug)
-            VG_(printf)("     ipsC[%d]=%p\n", i-1, ips[i-1]);
+            VG_(printf)("     ipsC[%d]=%#08lx\n", i-1, ips[i-1]);
          ip = ip - 1;
          continue;
       }

@@ -282,7 +282,7 @@ static LineSMR state_machine_regs;
 static 
 void reset_state_machine ( Int is_stmt )
 {
-   if (0) VG_(printf)("smr.a := %p (reset)\n", 0 );
+   if (0) VG_(printf)("smr.a := %p (reset)\n", NULL );
    state_machine_regs.last_address = 0;
    state_machine_regs.last_file = 1;
    state_machine_regs.last_line = 1;
@@ -340,7 +340,7 @@ Int process_extended_line_op( struct _SegInfo* si, OffT debug_offset,
 
    switch (op_code) {
       case DW_LNE_end_sequence:
-         if (0) VG_(printf)("1001: si->o %p, smr.a %p\n", 
+         if (0) VG_(printf)("1001: si->o %#lx, smr.a %#lx\n", 
                             debug_offset, state_machine_regs.address );
          /* JRS: added for compliance with spec; is pointless due to
             reset_state_machine below */
@@ -690,9 +690,9 @@ void read_dwarf2_lineblock ( struct _SegInfo*  si, OffT debug_offset,
          advAddr = adv;
          state_machine_regs.address += adv;
 
-         if (0) VG_(printf)("smr.a += %p\n", adv );
+         if (0) VG_(printf)("smr.a += %#x\n", adv );
          adv = (op_code % info.li_line_range) + info.li_line_base;
-         if (0) VG_(printf)("1002: si->o %p, smr.a %p\n", 
+         if (0) VG_(printf)("1002: si->o %#lx, smr.a %#lx\n", 
                             debug_offset, state_machine_regs.address );
          state_machine_regs.line += adv;
 
@@ -733,7 +733,7 @@ void read_dwarf2_lineblock ( struct _SegInfo*  si, OffT debug_offset,
             break;
 
          case DW_LNS_copy:
-            if (0) VG_(printf)("1002: si->o %p, smr.a %p\n", 
+            if (0) VG_(printf)("1002: si->o %#lx, smr.a %#lx\n", 
                                debug_offset, state_machine_regs.address );
             if (state_machine_regs.is_stmt) {
                /* only add a statement if there was a previous boundary */
@@ -763,7 +763,7 @@ void read_dwarf2_lineblock ( struct _SegInfo*  si, OffT debug_offset,
                      * read_leb128 (data, & bytes_read, 0);
             data += bytes_read;
             state_machine_regs.address += adv;
-            if (0) VG_(printf)("smr.a += %p\n", adv );
+            if (0) VG_(printf)("smr.a += %#x\n", adv );
             if (si->ddump_line)
                VG_(printf)("  Advance PC by %d to 0x%lx\n", 
                            (Int)adv, state_machine_regs.address);
@@ -813,7 +813,7 @@ void read_dwarf2_lineblock ( struct _SegInfo*  si, OffT debug_offset,
             adv = (((255 - info.li_opcode_base) / info.li_line_range)
                    * info.li_min_insn_length);
             state_machine_regs.address += adv;
-            if (0) VG_(printf)("smr.a += %p\n", adv );
+            if (0) VG_(printf)("smr.a += %#x\n", adv );
             if (si->ddump_line)
                VG_(printf)("  Advance PC by constant %d to 0x%lx\n", 
                            (Int)adv, (Addr)state_machine_regs.address);
@@ -824,7 +824,7 @@ void read_dwarf2_lineblock ( struct _SegInfo*  si, OffT debug_offset,
             adv = *((UShort *)data);
             data += 2;
             state_machine_regs.address += adv;
-            if (0) VG_(printf)("smr.a += %p\n", adv );
+            if (0) VG_(printf)("smr.a += %#x\n", adv );
             if (si->ddump_line)
                VG_(printf)("  DWARF2-line: fixed_advance_pc\n");
             break;
@@ -2166,7 +2166,7 @@ static void ppUnwindContext_summary ( UnwindContext* ctx )
    if (ctx->cfa_reg == FP_REG) {
       VG_(printf)("SP/CFA=%d+FP   ", ctx->cfa_off);
    } else {
-      VG_(printf)("SP/CFA=unknown  ", ctx->cfa_off);
+      VG_(printf)("SP/CFA=unknown  ");
    }
 
    VG_(printf)("RA=");
@@ -3171,7 +3171,7 @@ static Int show_CF_instruction ( UChar* instr,
             (now known to be incorrect -- the address is encoded) */
          loc = read_encoded_Addr(&len, adi, &instr[i]);
          i += len;
-         VG_(printf)("  sci:DW_CFA_set_loc(%p)\n", loc); 
+         VG_(printf)("  sci:DW_CFA_set_loc(%#lx)\n", loc); 
          break;
 
       case DW_CFA_advance_loc1:
@@ -3514,8 +3514,8 @@ void ML_(read_callframe_info_dwarf3)
 
       ciefde_start = data;
       if (si->trace_cfi) 
-         VG_(printf)("\ncie/fde.start   = %p (ehframe_image + 0x%lx)\n", 
-                     ciefde_start, ciefde_start - ehframe_image);
+         VG_(printf)("\ncie/fde.start   = %#lx (ehframe_image + 0x%lx)\n", 
+                     (Addr)ciefde_start, (Addr)(ciefde_start - ehframe_image));
 
       ciefde_len = (ULong) read_UInt(data); data += sizeof(UInt);
       if (si->trace_cfi) 

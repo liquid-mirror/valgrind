@@ -62,7 +62,7 @@ void ML_(symerr) ( HChar* msg )
 /* Print a symbol. */
 void ML_(ppSym) ( Int idx, DiSym* sym )
 {
-  VG_(printf)( "%5d:  %8p .. %8p (%d)      %s\n",
+  VG_(printf)( "%5d:  %#8lx .. %#8lx (%d)      %s\n",
                idx,
                sym->addr, 
                sym->addr + sym->size - 1, sym->size,
@@ -95,8 +95,8 @@ void ML_(ppDiCfSI) ( XArray* /* of CfiExpr */ exprs, DiCfSI* si )
          }                                       \
       } while (0)
 
-   VG_(printf)("[%p .. %p]: ", si->base, 
-                               si->base + (UWord)si->len - 1);
+   VG_(printf)("[%#lx .. %#lx]: ",
+      si->base, si->base + (UWord)si->len - 1);
    switch (si->cfa_how) {
       case CFIC_SPREL: 
          VG_(printf)("let cfa=oldSP+%d", si->cfa_off); 
@@ -245,7 +245,7 @@ void ML_(addLineInfo) ( struct _SegInfo* si,
    if (this == next) return;
 
    if (debug)
-      VG_(printf)( "  src %s %s line %d %p-%p\n",
+      VG_(printf)( "  src %s %s line %d %#lx-%#lx\n",
                    dirname ? dirname : (UChar*)"(unknown)",
                    filename, lineno, this, next );
 
@@ -815,7 +815,7 @@ static void canonicaliseCFI ( struct _SegInfo* si )
    }
 
    if (si->trace_cfi)
-      VG_(printf)("canonicaliseCfiSI: %d entries, %p .. %p\n", 
+      VG_(printf)("canonicaliseCfiSI: %d entries, %#lx .. %#lx\n", 
                   si->cfsi_used,
 	          si->cfsi_minaddr, si->cfsi_maxaddr);
 
