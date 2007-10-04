@@ -225,8 +225,11 @@
 //     requests.  They are always kept.
 
 // Used for printing things when clo_verbosity > 1.
-#define VERB(format, args...) \
-   VG_(message)(Vg_DebugMsg, "Massif: " format, ##args)
+#define VERB(verb, format, args...) \
+   if (VG_(clo_verbosity) > verb) { \
+      VG_(message)(Vg_DebugMsg, "Massif: " format, ##args); \
+   }
+
 
 
 //------------------------------------------------------------//
@@ -922,11 +925,10 @@ static void delete_snapshot(Snapshot* snapshot)
    }
 }
 
-static void VERB_snapshot(Char* prefix, Int i)
+static void VERB_snapshot(Int verbosity, Char* prefix, Int i)
 {
    Char* suffix = ( is_detailed_snapshot(&snapshots[i]) ? "d" : ".");
-   VERB("%s S%s%3d "
-        "(t:%lld, hp:%ld, ad:%ld, st:%ld)",
+   VERB(verbosity, "%s S%s%3d (t:%lld, hp:%ld, ad:%ld, st:%ld)",
       prefix, suffix, i,
       snapshots[i].time,
       snapshots[i].heap_szB,
@@ -962,7 +964,7 @@ static UInt cull_snapshots(void)
            j++) { }
 
    if (VG_(clo_verbosity) > 1) {
-      VERB("Culling...");
+      VERB(1, "Culling...");
    }
 
    // First we remove enough snapshots by clearing them in-place.  Once
@@ -1000,7 +1002,7 @@ static UInt cull_snapshots(void)
       if (VG_(clo_verbosity) > 1) {                          
          Char buf[64];                                       
          VG_(snprintf)(buf, 64, " %3d (t-span = %lld)", i, min_timespan); 
-         VERB_snapshot(buf, min_j);                          
+         VERB_snapshot(1, buf, min_j);                          
       }          
       delete_snapshot(min_snapshot);
       n_deleted++;
@@ -1041,11 +1043,12 @@ static UInt cull_snapshots(void)
 
    // Print remaining snapshots, if necessary.
    if (VG_(clo_verbosity) > 1) {
-      VERB("Finished culling (%3d of %3d deleted)", n_deleted, MAX_N_SNAPSHOTS);
+      VERB(1, "Finished culling (%3d of %3d deleted)",
+         n_deleted, MAX_N_SNAPSHOTS);
       for (i = 0; i < next_snapshot_i; i++) {
-         VERB_snapshot("  post-cull", i);
+         VERB_snapshot(1, "  post-cull", i);
       }
-      VERB("New time interval = %lld (between snapshots %d and %d)",
+      VERB(1, "New time interval = %lld (between snapshots %d and %d)",
          min_timespan, min_timespan_i-1, min_timespan_i);
    }
 
@@ -1136,14 +1139,12 @@ static void take_snapshot(Int snapshot_i, Time time, Char* kind)
    }
 
    // Finish up verbosity and stats stuff.
-   if (VG_(clo_verbosity) > 1) {                             
-      if (n_skipped_snapshots_since_last_snapshot > 0) {
-         VERB("  (skipped %d snapshot%s)",
-            n_skipped_snapshots_since_last_snapshot,
-            ( n_skipped_snapshots_since_last_snapshot == 1 ? "" : "s") );
-      }
-      VERB_snapshot(kind, snapshot_i);
-   }   
+   if (n_skipped_snapshots_since_last_snapshot > 0) {
+      VERB(1, "  (skipped %d snapshot%s)",
+         n_skipped_snapshots_since_last_snapshot,
+         ( n_skipped_snapshots_since_last_snapshot == 1 ? "" : "s") );
+   }
+   VERB_snapshot(1, kind, snapshot_i);
    n_skipped_snapshots_since_last_snapshot = 0;
 }
 
@@ -1735,26 +1736,26 @@ static void ms_fini(Int exit_status)
    // Stats
    if (VG_(clo_verbosity) > 1) {
       tl_assert(n_xpts > 0);  // always have alloc_xpt
-      VERB("allocs:               %u", n_allocs);                     
-      VERB("zeroallocs:           %u (%d%%)",                     
+      VERB(1, "allocs:               %u", n_allocs);                     
+      VERB(1, "zeroallocs:           %u (%d%%)",                     
          n_zero_allocs,                                      
          ( n_allocs ? n_zero_allocs * 100 / n_allocs : 0 )); 
-      VERB("reallocs:             %u", n_reallocs);                     
-      VERB("frees:                %u", n_frees);
-      VERB("stack allocs:         %u", n_stack_allocs);
-      VERB("stack frees:          %u", n_stack_frees);
-      VERB("XPts:                 %u", n_xpts);
-      VERB("top-XPts:             %u (%d%%)",                     
+      VERB(1, "reallocs:             %u", n_reallocs);                     
+      VERB(1, "frees:                %u", n_frees);
+      VERB(1, "stack allocs:         %u", n_stack_allocs);
+      VERB(1, "stack frees:          %u", n_stack_frees);
+      VERB(1, "XPts:                 %u", n_xpts);
+      VERB(1, "top-XPts:             %u (%d%%)",                     
          alloc_xpt->n_children,                              
          ( n_xpts ? alloc_xpt->n_children * 100 / n_xpts : 0));
-      VERB("dup'd XPts:           %u", n_dupd_xpts);
-      VERB("dup'd/freed XPts:     %u", n_dupd_xpts_freed);
-      VERB("XPt-init-expansions:  %u", n_xpt_init_expansions);
-      VERB("XPt-later-expansions: %u", n_xpt_later_expansions);
-      VERB("skipped snapshots:    %u", n_skipped_snapshots);
-      VERB("real snapshots:       %u", n_real_snapshots);
-      VERB("cullings:             %u", n_cullings);
-      VERB("XCon_redos:           %u", n_getXCon_redo);
+      VERB(1, "dup'd XPts:           %u", n_dupd_xpts);
+      VERB(1, "dup'd/freed XPts:     %u", n_dupd_xpts_freed);
+      VERB(1, "XPt-init-expansions:  %u", n_xpt_init_expansions);
+      VERB(1, "XPt-later-expansions: %u", n_xpt_later_expansions);
+      VERB(1, "skipped snapshots:    %u", n_skipped_snapshots);
+      VERB(1, "real snapshots:       %u", n_real_snapshots);
+      VERB(1, "cullings:             %u", n_cullings);
+      VERB(1, "XCon_redos:           %u", n_getXCon_redo);
    }
 }
 
@@ -1769,10 +1770,10 @@ static void ms_post_clo_init(void)
    Word alloc_fn_word;
 
    if (VG_(clo_verbosity) > 1) {
-      VERB("alloc-fns:");
+      VERB(1, "alloc-fns:");
       VG_(OSetWord_ResetIter)(alloc_fns);
       while ( VG_(OSetWord_Next)(alloc_fns, &alloc_fn_word) ) {
-         VERB("  %d: %s", i, (Char*)alloc_fn_word);
+         VERB(1, "  %d: %s", i, (Char*)alloc_fn_word);
          i++;
       }
    }
