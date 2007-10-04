@@ -187,7 +187,7 @@ BB* lookup_bb(obj_node* obj, OffT offset)
       bb = bb->next;
     }
 
-    CLG_DEBUG(5, "  lookup_bb (Obj %s, off %p): %p\n",
+    CLG_DEBUG(5, "  lookup_bb (Obj %s, off %#lx): %p\n",
 	     obj->name, offset, bb);
     return bb;
 }
@@ -207,7 +207,7 @@ obj_node* obj_of_address(Addr addr)
   if (obj->offset != offset) {
       Addr start = si ? VG_(seginfo_start)(si) : 0;
 
-      CLG_DEBUG(0, "Mapping changed for '%s': %p -> %p\n",
+      CLG_DEBUG(0, "Mapping changed for '%s': %#lx -> %#lx\n",
 		obj->name, obj->start, start);
 
       /* Size should be the same, and offset diff == start diff */
@@ -242,7 +242,7 @@ BB* CLG_(get_bb)(Addr addr, IRSB* bbIn, /*OUT*/ Bool *seen_before)
   UInt n_instrs, n_jmps;
   Bool cjmp_inverted = False;
 
-  CLG_DEBUG(5, "+ get_bb(BB %p)\n", addr);
+  CLG_DEBUG(5, "+ get_bb(BB %#lx)\n", addr);
 
   obj = obj_of_address(addr);
   bb = lookup_bb(obj, addr - obj->offset);
@@ -269,13 +269,13 @@ BB* CLG_(get_bb)(Addr addr, IRSB* bbIn, /*OUT*/ Bool *seen_before)
     CLG_ASSERT(bb->cjmp_count == n_jmps );
     CLG_(stat).bb_retranslations++;
 
-    CLG_DEBUG(5, "- get_bb(BB %p): seen before.\n", addr);
+    CLG_DEBUG(5, "- get_bb(BB %#lx): seen before.\n", addr);
     return bb;
   }
 
   bb = new_bb(obj, addr - obj->offset, n_instrs, n_jmps, cjmp_inverted);
 
-  CLG_DEBUG(5, "- get_bb(BB %p)\n", addr);
+  CLG_DEBUG(5, "- get_bb(BB %#lx)\n", addr);
 
   return bb;
 }
@@ -303,7 +303,7 @@ void CLG_(delete_bb)(Addr addr)
     }
 
     if (bb == NULL) {
-	CLG_DEBUG(3, "  delete_bb (Obj %s, off %p): NOT FOUND\n",
+	CLG_DEBUG(3, "  delete_bb (Obj %s, off %lx): NOT FOUND\n",
 		  obj->name, offset);
 
 	/* we didn't find it.
@@ -324,7 +324,7 @@ void CLG_(delete_bb)(Addr addr)
        bp->next = bb->next;
     }
 
-    CLG_DEBUG(3, "  delete_bb (Obj %s, off %p): %p, BBCC head: %p\n",
+    CLG_DEBUG(3, "  delete_bb (Obj %s, off %#lx): %p, BBCC head: %p\n",
 	      obj->name, offset, bb, bb->bbcc_list);
 
     if (bb->bbcc_list == 0) {

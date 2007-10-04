@@ -128,7 +128,7 @@ static void search_runtime_resolve(obj_node* obj)
 	    r = range + 2;
 	    found = True;
 	    while(r[1]) {
-		CLG_DEBUG(1, " [%p] Found! Checking %d bytes of [%x %x %x...]\n",
+		CLG_DEBUG(1, " [%#lx] Found! Checking %d bytes of [%x %x %x...]\n",
 			  addr, r[1], code[r[0]], code[r[0]+1], code[r[0]+2]);
 
 		if (VG_(memcmp)( (void*)(addr+r[0]), code+r[0], r[1]) != 0) {
@@ -372,7 +372,7 @@ Bool CLG_(get_debug_info)(Addr instr_addr,
   Char dir[FILENAME_LEN];
   UInt line;
   
-  CLG_DEBUG(6, "  + get_debug_info(%p)\n", instr_addr);
+  CLG_DEBUG(6, "  + get_debug_info(%#lx)\n", instr_addr);
 
   if (pSegInfo) {
       *pSegInfo = VG_(find_seginfo)(instr_addr);
@@ -418,7 +418,7 @@ Bool CLG_(get_debug_info)(Addr instr_addr,
      if (line_num) *line_num=0;
    }
 
-   CLG_DEBUG(6, "  - get_debug_info(%p): seg '%s', fn %s\n",
+   CLG_DEBUG(6, "  - get_debug_info(%#lx): seg '%s', fn %s\n",
 	    instr_addr,
 	    !pSegInfo   ? (const UChar*)"-" :
 	    (*pSegInfo) ? VG_(seginfo_filename)(*pSegInfo) :
@@ -445,7 +445,7 @@ fn_node* CLG_(get_fn_node)(BB* bb)
     /* fn from debug info is idempotent for a BB */
     if (bb->fn) return bb->fn;
 
-    CLG_DEBUG(3,"+ get_fn_node(BB %p)\n", bb_addr(bb));
+    CLG_DEBUG(3,"+ get_fn_node(BB %#lx)\n", bb_addr(bb));
 
     /* get function/file name, line number and object of
      * the BB according to debug information
@@ -458,10 +458,10 @@ fn_node* CLG_(get_fn_node)(BB* bb)
 
 	/* Use address as found in library */
 	if (sizeof(Addr) == 4)
-	    p = VG_(sprintf)(fnname, "%08p", bb->offset);
+	    p = VG_(sprintf)(fnname, "%#08lx", bb->offset);
 	else 	    
 	    // 64bit address
-	    p = VG_(sprintf)(fnname, "%016p", bb->offset);
+	    p = VG_(sprintf)(fnname, "%#016lx", bb->offset);
 
 	VG_(sprintf)(fnname+p, "%s", 
 		     (bb->sect_kind == Vg_SectData) ? " [Data]" :
@@ -536,7 +536,7 @@ fn_node* CLG_(get_fn_node)(BB* bb)
     bb->fn   = fn;
     bb->line = line_num;
 
-    CLG_DEBUG(3,"- get_fn_node(BB %p): %s (in %s:%u)\n",
+    CLG_DEBUG(3,"- get_fn_node(BB %#lx): %s (in %s:%u)\n",
 	     bb_addr(bb), fnname, filename, line_num);
 
     return fn;
