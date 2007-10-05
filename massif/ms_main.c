@@ -1089,9 +1089,11 @@ static Time get_time(void)
    }
 }
 
-// Take a snapshot.  Note that with bigger depths, snapshots can be slow,
-// eg. konqueror snapshots can easily take 50ms!
-// [XXX: is that still true?]
+// Take a snapshot, and only that -- decisions on whether to take a
+// snapshot, or what kind of snapshot, are made elsewhere.
+//
+// Note that with bigger depths, snapshots can be slow, eg. konqueror
+// snapshots can easily take 50ms!  [XXX: is that still true?]
 static void
 take_snapshot(Snapshot* snapshot, SnapshotKind kind, Time time,
               Bool is_detailed, Char* what)
@@ -1138,29 +1140,37 @@ take_snapshot(Snapshot* snapshot, SnapshotKind kind, Time time,
 
 
 // Take a snapshot, if it's time.
-static void maybe_take_snapshot(SnapshotKind kind, Char* what)
+static void
+maybe_take_snapshot(SnapshotKind kind, Char* what)
 {
-   // 'min_time_interval' is the minimum time interval between snapshots;
-   // if we try to take a snapshot and less than this much time has passed,
-   // we don't take it.  Initialised to zero so that we begin by taking
-   // snapshots as quickly as possible.
-   static Time min_time_interval     = 0;
+   // 'min_time_interval' is the minimum time interval between snapshots.
+   // If we try to take a snapshot and less than this much time has passed,
+   // we don't take it.  It gets larger as the program runs longer.  It's
+   // initialised to zero so that we begin by taking snapshots as quickly as
+   // possible.
+   static Time min_time_interval = 0;
    // Zero allows startup snapshot.
    static Time earliest_possible_time_of_next_snapshot = 0;
-   static Int n_snapshots_since_last_detailed = 0;
+   static Int n_snapshots_until_next_detailed = DETAILED_SNAPSHOT_FREQ - 1;
 
    Snapshot* snapshot;
    Bool      is_detailed;
    Time      time = get_time();
 
-   // Only do a snapshot if it's time.
-   if (time < earliest_possible_time_of_next_snapshot) {
-      n_skipped_snapshots++;
-      n_skipped_snapshots_since_last_snapshot++;
-      return;
+   switch (kind) {
+    case Normal: 
+      // Only do a snapshot if it's time.
+      if (time < earliest_possible_time_of_next_snapshot) {
+         n_skipped_snapshots++;
+         n_skipped_snapshots_since_last_snapshot++;
+         return;
+      }
+      is_detailed = (0 == n_snapshots_until_next_detailed);
+      break;
+
+    default:
+      tl_assert2(0, "maybe_take_snapshot: unrecognised snapshot kind");
    }
-   is_detailed =
-      (DETAILED_SNAPSHOT_FREQ == n_snapshots_since_last_detailed+1);
 
    // Take the snapshot.
    snapshot = & snapshots[next_snapshot_i];
@@ -1168,9 +1178,9 @@ static void maybe_take_snapshot(SnapshotKind kind, Char* what)
 
    // Record if it was detailed.
    if (is_detailed) {
-      n_snapshots_since_last_detailed = 0;
+      n_snapshots_until_next_detailed = DETAILED_SNAPSHOT_FREQ - 1;
    } else {
-      n_snapshots_since_last_detailed++;
+      n_snapshots_until_next_detailed--;
    }
 
    // Finish up verbosity and stats stuff.
