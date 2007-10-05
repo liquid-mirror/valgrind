@@ -51,17 +51,28 @@ typedef
    struct { UWord arg1; UWord arg2; UWord res; }
    WCacheEnt;
 
-#define N_WORDCACHE 5
+/* Each cache is a fixed sized array of N_WCACHE_STAT_MAX entries.
+   However only the first .dynMax are used.  This is because at some
+   point, expanding the cache further overall gives a slowdown because
+   searching more entries more than negates any performance advantage
+   from caching those entries in the first place.  Hence use .dynMax
+   to allow the size of the cache(s) to be set differently for each
+   different WordSetU. */
+#define N_WCACHE_STAT_MAX 32
 typedef
    struct {
-      WCacheEnt ent[N_WORDCACHE];
-      Word      inUse; /* 0 .. N_WORDCACHE inclusive */
+      WCacheEnt ent[N_WCACHE_STAT_MAX];
+      Word      dynMax; /* 1 .. N_WCACHE_STAT_MAX inclusive */
+      Word      inUse;  /* 0 .. dynMax inclusive */
    }
    WCache;
 
-#define WCache_INIT(_zzcache) \
-   do { \
-      (_zzcache).inUse = 0; \
+#define WCache_INIT(_zzcache,_zzdynmax)                              \
+   do {                                                              \
+      tl_assert((_zzdynmax) >= 1);                                   \
+      tl_assert((_zzdynmax) <= N_WCACHE_STAT_MAX);                   \
+      (_zzcache).dynMax = (_zzdynmax);                               \
+      (_zzcache).inUse = 0;                                          \
    } while (0)
 
 #define WCache_LOOKUP_AND_RETURN(_retty,_zzcache,_zzarg1,_zzarg2)    \
@@ -70,7 +81,10 @@ typedef
       UWord   _arg1  = (UWord)(_zzarg1);                             \
       UWord   _arg2  = (UWord)(_zzarg2);                             \
       WCache* _cache = &(_zzcache);                                  \
-      tl_assert(_cache->inUse >= 0 && _cache->inUse <= N_WORDCACHE); \
+      tl_assert(_cache->dynMax >= 1);                                \
+      tl_assert(_cache->dynMax <= N_WCACHE_STAT_MAX);                \
+      tl_assert(_cache->inUse >= 0);                                 \
+      tl_assert(_cache->inUse <= _cache->dynMax);                    \
       if (_cache->inUse > 0) {                                       \
          if (_cache->ent[0].arg1 == _arg1                            \
              && _cache->ent[0].arg2 == _arg2)                        \
@@ -94,8 +108,11 @@ typedef
       UWord   _arg2  = (UWord)(_zzarg2);                             \
       UWord   _res   = (UWord)(_zzresult);                           \
       WCache* _cache = &(_zzcache);                                  \
-      tl_assert(_cache->inUse >= 0 && _cache->inUse <= N_WORDCACHE); \
-      if (_cache->inUse < N_WORDCACHE)                               \
+      tl_assert(_cache->dynMax >= 1);                                \
+      tl_assert(_cache->dynMax <= N_WCACHE_STAT_MAX);                \
+      tl_assert(_cache->inUse >= 0);                                 \
+      tl_assert(_cache->inUse <= _cache->dynMax);                    \
+      if (_cache->inUse < _cache->dynMax)                            \
          _cache->inUse++;                                            \
       for (_i = _cache->inUse-1; _i >= 1; _i--)                      \
          _cache->ent[_i] = _cache->ent[_i-1];                        \
@@ -242,11 +259,11 @@ static WordVec* do_ix2vec ( WordSetU* wsu, WordSet ws )
       tl_assert(wsu->ix2vec);
    /* If this assertion fails, it may mean you supplied a 'ws'
       that does not come from the 'wsu' universe. */
-   tl_assert(ws < wsu->ix2vec_used);
+   tl_assert(ws < wsu->ix2vec_used); /* XXX */
    wv = wsu->ix2vec[ws];
    /* Make absolutely sure that 'ws' is a member of 'wsu'. */
    tl_assert(wv);
-   tl_assert(wv->owner == wsu);
+   tl_assert(wv->owner == wsu); /* YYY */
    return wv;
 }
 
@@ -288,7 +305,8 @@ static WordSet add_or_dealloc_WordVec( WordSetU* wsu, WordVec* wv_new )
 
 
 WordSetU* TC_(newWordSetU) ( void* (*alloc_nofail)( SizeT ),
-                             void  (*dealloc)(void*) )
+                             void  (*dealloc)(void*),
+                             Word  cacheSize )
 {
    WordSetU* wsu;
    WordVec*  empty;
@@ -301,10 +319,10 @@ WordSetU* TC_(newWordSetU) ( void* (*alloc_nofail)( SizeT ),
    wsu->ix2vec_used = 0;
    wsu->ix2vec_size = 0;
    wsu->ix2vec      = NULL;
-   WCache_INIT(wsu->cache_addTo);
-   WCache_INIT(wsu->cache_delFrom);
-   WCache_INIT(wsu->cache_intersect);
-   WCache_INIT(wsu->cache_minus);
+   WCache_INIT(wsu->cache_addTo,     cacheSize);
+   WCache_INIT(wsu->cache_delFrom,   cacheSize);
+   WCache_INIT(wsu->cache_intersect, cacheSize);
+   WCache_INIT(wsu->cache_minus,     cacheSize);
    empty = new_WV_of_size( wsu, 0 );
    wsu->empty = add_or_dealloc_WordVec( wsu, empty );
 
@@ -508,7 +526,7 @@ WordSet TC_(addToWS) ( WordSetU* wsu, WordSet ws, Word w )
    for (k = 0; k < wv->size; k++) {
       if (wv->words[k] == w) {
          result = ws;
-	 goto out;
+         goto out;
       }
    }
    /* Ok, not present.  Build a new one ... */

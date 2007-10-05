@@ -48,7 +48,8 @@ typedef  UInt              WordSet;   /* opaque, small int index */
 
 /* Allocate and initialise a WordSetU */
 WordSetU* TC_(newWordSetU) ( void* (*alloc_nofail)( SizeT ),
-                             void  (*dealloc)(void*) );
+                             void  (*dealloc)(void*),
+                             Word  cacheSize );
 
 /* Free up the WordSetU. */
 void TC_(deleteWordSetU) ( WordSetU* );

@@ -1038,15 +1038,15 @@ static void initialise_data_structures ( void )
    TC_(addToFM)( map_locks, (Word)&__bus_lock, (Word)__bus_lock_Lock );
 
    tl_assert(univ_tsets == NULL);
-   univ_tsets = TC_(newWordSetU)( tc_zalloc, tc_free );
+   univ_tsets = TC_(newWordSetU)( tc_zalloc, tc_free, 8/*cacheSize*/ );
    tl_assert(univ_tsets != NULL);
 
    tl_assert(univ_lsets == NULL);
-   univ_lsets = TC_(newWordSetU)( tc_zalloc, tc_free );
+   univ_lsets = TC_(newWordSetU)( tc_zalloc, tc_free, 8/*cacheSize*/ );
    tl_assert(univ_lsets != NULL);
 
    tl_assert(univ_laog == NULL);
-   univ_laog = TC_(newWordSetU)( tc_zalloc, tc_free );
+   univ_laog = TC_(newWordSetU)( tc_zalloc, tc_free, 16/*cacheSize*/ );
    tl_assert(univ_laog != NULL);
 
    /* Set up entries for the root thread */
