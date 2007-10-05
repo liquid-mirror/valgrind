@@ -244,7 +244,6 @@ static UInt n_skipped_snapshots_since_last_snapshot = 0;
 // These are signed so things are more obvious if they go negative.
 static SSizeT sigstacks_szB  = 0;     // Current signal stacks space sum
 static SSizeT heap_szB       = 0;     // Live heap size
-static SSizeT peak_total_szB = 0;
 
 // Incremented every time memory is allocated/deallocated, by the
 // allocated/deallocated amount;  includes heap, heap-admin and stack
@@ -830,8 +829,17 @@ typedef Long Time;
 #define UNUSED_SNAPSHOT_TIME  -333  // A conspicuous negative number.
 
 typedef
+   enum {
+      Normal = 77,
+      Unused
+   }
+   SnapshotKind;
+
+typedef
    struct {
+      SnapshotKind kind;
       Time  time;
+      // XXX: total_szB is redundant!  remove it
       SizeT total_szB;     // Size of all allocations at that snapshot time.
       SizeT heap_szB;
       SizeT heap_admin_szB;
@@ -845,8 +853,9 @@ static Snapshot snapshots[MAX_N_SNAPSHOTS];
 
 static Bool is_snapshot_in_use(Snapshot* snapshot)
 {
-   if (UNUSED_SNAPSHOT_TIME == snapshot->time) {
-      // If .time looks unused, check everything else is.
+   if (Unused == snapshot->kind) {
+      // If snapshot is unused, check all the fields are unset.
+      tl_assert(snapshot->time           == UNUSED_SNAPSHOT_TIME);
       tl_assert(snapshot->total_szB      == 0);
       tl_assert(snapshot->heap_admin_szB == 0);
       tl_assert(snapshot->heap_szB       == 0);
@@ -854,6 +863,7 @@ static Bool is_snapshot_in_use(Snapshot* snapshot)
       tl_assert(snapshot->alloc_xpt      == NULL);
       return False;
    } else {
+      tl_assert(snapshot->time           != UNUSED_SNAPSHOT_TIME);
       return True;
    }
 }
@@ -889,6 +899,7 @@ static void sanity_check_snapshots_array(void)
 static void clear_snapshot(Snapshot* snapshot)
 {
    sanity_check_snapshot(snapshot);
+   snapshot->kind           = Unused;
    snapshot->time           = UNUSED_SNAPSHOT_TIME;
    snapshot->total_szB      = 0;
    snapshot->heap_admin_szB = 0;
@@ -913,13 +924,20 @@ static void delete_snapshot(Snapshot* snapshot)
 
 static void VERB_snapshot(Int verbosity, Char* prefix, Int i)
 {
-   Char* suffix = ( is_detailed_snapshot(&snapshots[i]) ? "d" : ".");
+   Snapshot* snapshot = &snapshots[i];
+   Char* suffix;
+   switch (snapshot->kind) {
+   case Normal: suffix = ( is_detailed_snapshot(snapshot) ? "d" : "." ); break;
+   case Unused: suffix = "u";                                            break;
+   default:
+      tl_assert2(0, "VERB_snapshot: unknown snapshot kind: %d", snapshot->kind);
+   }
    VERB(verbosity, "%s S%s%3d (t:%lld, hp:%ld, ad:%ld, st:%ld)",
       prefix, suffix, i,
-      snapshots[i].time,
-      snapshots[i].heap_szB,
-      snapshots[i].heap_admin_szB,
-      snapshots[i].stacks_szB
+      snapshot->time,
+      snapshot->heap_szB,
+      snapshot->heap_admin_szB,
+      snapshot->stacks_szB
    );
 }
 
@@ -1074,36 +1092,28 @@ static Time get_time(void)
 // Take a snapshot.  Note that with bigger depths, snapshots can be slow,
 // eg. konqueror snapshots can easily take 50ms!
 // [XXX: is that still true?]
-static void take_snapshot(Int snapshot_i, Time time, Char* kind)
+static void 
+take_snapshot(Snapshot* snapshot, SnapshotKind kind, Time time,
+              Bool is_detailed, Char* what)
 {
-   static Int n_snapshots_since_last_detailed = 0;
-
-   Snapshot* snapshot = &snapshots[snapshot_i];
-
+   tl_assert(!is_snapshot_in_use(snapshot));
    tl_assert(have_started_executing_code);
 
-   // Right!  We're taking a real snapshot.
-   n_real_snapshots++;
-
-   // Heap -------------------------------------------------------------
+   // Heap.
    if (clo_heap) {
       snapshot->heap_szB = heap_szB;
-      // Take a detailed snapshot if it's been long enough since the last one.
-      if (DETAILED_SNAPSHOT_FREQ == n_snapshots_since_last_detailed+1) {
+      if (is_detailed) {
          snapshot->alloc_xpt = dup_XTree(alloc_xpt, /*parent*/NULL);
          tl_assert(snapshot->alloc_xpt->curr_szB == heap_szB);
-         n_snapshots_since_last_detailed = 0;
-      } else {
-         n_snapshots_since_last_detailed++;
       }
    }
 
-   // Heap admin -------------------------------------------------------
+   // Heap admin.
    if (clo_heap_admin > 0) {
       snapshot->heap_admin_szB = clo_heap_admin * n_heap_blocks;
    }
 
-   // Stack(s) ---------------------------------------------------------
+   // Stack(s).
    if (clo_stacks) {
       ThreadId tid;
       Addr     stack_min, stack_max;
@@ -1116,32 +1126,19 @@ static void take_snapshot(Int snapshot_i, Time time, Char* kind)
       snapshot->stacks_szB += sigstacks_szB;    // Add signal stacks, too
    }
 
-   // Rest of snapshot -------------------------------------------------
+   // Rest of snapshot.
+   snapshot->kind = kind;
    snapshot->time = time;
    snapshot->total_szB =
       snapshot->heap_szB + snapshot->heap_admin_szB + snapshot->stacks_szB;
    sanity_check_snapshot(snapshot);
 
-   // Update peak data -------------------------------------------------
-   // XXX: this is not really the right way to do peak data -- it's only
-   // peak snapshot data, the true peak could be between snapshots.
-   if (snapshot->total_szB > peak_total_szB) {
-      peak_total_szB = snapshot->total_szB;
-   }
-
-   // Finish up verbosity and stats stuff.
-   if (n_skipped_snapshots_since_last_snapshot > 0) {
-      VERB(1, "  (skipped %d snapshot%s)",
-         n_skipped_snapshots_since_last_snapshot,
-         ( n_skipped_snapshots_since_last_snapshot == 1 ? "" : "s") );
-   }
-   VERB_snapshot(1, kind, snapshot_i);
-   n_skipped_snapshots_since_last_snapshot = 0;
+   n_real_snapshots++;
 }
 
 
 // Take a snapshot, if it's time.
-static void maybe_take_snapshot(Char* kind)
+static void maybe_take_snapshot(SnapshotKind kind, Char* what)
 {
    // 'min_time_interval' is the minimum time interval between snapshots;
    // if we try to take a snapshot and less than this much time has passed,
@@ -1150,11 +1147,11 @@ static void maybe_take_snapshot(Char* kind)
    static Time min_time_interval     = 0;
    // Zero allows startup snapshot.
    static Time earliest_possible_time_of_next_snapshot = 0;
+   static Int n_snapshots_since_last_detailed = 0;
 
-   Time      time;
    Snapshot* snapshot;
-
-   time = get_time();
+   Bool      is_detailed;
+   Time      time = get_time();
 
    // Only do a snapshot if it's time.
    if (time < earliest_possible_time_of_next_snapshot) {
@@ -1162,13 +1159,31 @@ static void maybe_take_snapshot(Char* kind)
       n_skipped_snapshots_since_last_snapshot++;
       return;
    }
+   is_detailed =
+      (DETAILED_SNAPSHOT_FREQ == n_snapshots_since_last_detailed+1);
 
+   // Take the snapshot.
    snapshot = & snapshots[next_snapshot_i];
-   tl_assert(!is_snapshot_in_use(snapshot));
-   take_snapshot(next_snapshot_i, time, kind);
-   next_snapshot_i++;
+   take_snapshot(snapshot, kind, time, is_detailed, what);
+
+   // Record if it was detailed.
+   if (is_detailed) {
+      n_snapshots_since_last_detailed = 0;
+   } else {
+      n_snapshots_since_last_detailed++;
+   }
+
+   // Finish up verbosity and stats stuff.
+   if (n_skipped_snapshots_since_last_snapshot > 0) {
+      VERB(1, "  (skipped %d snapshot%s)",
+         n_skipped_snapshots_since_last_snapshot,
+         ( n_skipped_snapshots_since_last_snapshot == 1 ? "" : "s") );
+   }
+   VERB_snapshot(1, what, next_snapshot_i);
+   n_skipped_snapshots_since_last_snapshot = 0;
 
    // Cull the entries, if our snapshot table is full.
+   next_snapshot_i++;
    if (MAX_N_SNAPSHOTS == next_snapshot_i) {
       min_time_interval = cull_snapshots();
    }
@@ -1274,7 +1289,7 @@ void* new_block ( ThreadId tid, void* p, SizeT szB, SizeT alignB,
    VG_(HT_add_node)(malloc_list, hc);
 
    // Maybe take a snapshot.
-   maybe_take_snapshot("  alloc");
+   maybe_take_snapshot(Normal, "  alloc");
 
    VERB(2, ">>>");
 
@@ -1314,7 +1329,7 @@ void die_block ( void* p, Bool custom_free )
       VG_(cli_free)( p );
 
    // Maybe take a snapshot.
-   maybe_take_snapshot("dealloc");
+   maybe_take_snapshot(Normal, "dealloc");
 
    VERB(2, ">>> (-%lu)", die_szB);
 }
@@ -1381,7 +1396,7 @@ void* renew_block ( ThreadId tid, void* p_old, SizeT new_szB )
    VG_(HT_add_node)(malloc_list, hc);
 
    // Maybe take a snapshot.
-   maybe_take_snapshot("realloc");
+   maybe_take_snapshot(Normal, "realloc");
 
    VERB(2, ">>> (%ld)", new_szB - old_szB);
 
@@ -1462,7 +1477,7 @@ static void new_mem_stack(Addr a, SizeT len)
       VERB(2, "<<< new_mem_stack (%ld)", len);
       n_stack_allocs++;
       update_stack_stats(len);
-      maybe_take_snapshot("stk-new");
+      maybe_take_snapshot(Normal, "stk-new");
       VERB(2, ">>>");
    }
 }
@@ -1473,7 +1488,7 @@ static void die_mem_stack(Addr a, SizeT len)
       VERB(2, "<<< die_mem_stack (%ld)", -len);
       n_stack_frees++;
       update_stack_stats(-len);
-      maybe_take_snapshot("stk-die");
+      maybe_take_snapshot(Normal, "stk-die");
       VERB(2, ">>>");
    }
 }
@@ -1484,7 +1499,7 @@ static void new_mem_stack_signal(Addr a, SizeT len)
    if (have_started_executing_code) {
       VERB(2, "<<< new_mem_stack_signal (%ld)", len);
       update_sigstack_stats(len);
-      maybe_take_snapshot("sig-new");
+      maybe_take_snapshot(Normal, "sig-new");
       VERB(2, ">>>");
    }
 }
@@ -1494,7 +1509,7 @@ static void die_mem_stack_signal(Addr a, SizeT len)
    if (have_started_executing_code) {
       VERB(2, "<<< die_mem_stack_signal (%ld)", -len);
       update_sigstack_stats(-len);
-      maybe_take_snapshot("sig-die");
+      maybe_take_snapshot(Normal, "sig-die");
       VERB(2, ">>>");
    }
 }
@@ -1545,7 +1560,7 @@ IRSB* ms_instrument ( VgCallbackClosure* closure,
       // We use 'maybe_take_snapshot' instead of 'take_snapshot' to ensure
       // 'maybe_take_snapshot's internal static variables are initialised.
       have_started_executing_code = True;
-      maybe_take_snapshot("startup");
+      maybe_take_snapshot(Normal, "startup");
    }
 
    return bb_in;
