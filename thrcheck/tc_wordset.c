@@ -231,14 +231,23 @@ static void ensure_ix2vec_space ( WordSetU* wsu )
    wsu->ix2vec_size = new_sz;
 }
 
-/* Index into a WordSetU, doing the obvious range check. */
+/* Index into a WordSetU, doing the obvious range check.  Failure of
+   the assertions marked XXX and YYY is an indication of passing the
+   wrong WordSetU* in the public API of this module. */
 static WordVec* do_ix2vec ( WordSetU* wsu, WordSet ws )
 {
+   WordVec* wv;
    tl_assert(wsu->ix2vec_used <= wsu->ix2vec_size);
    if (wsu->ix2vec_used > 0)
       tl_assert(wsu->ix2vec);
+   /* If this assertion fails, it may mean you supplied a 'ws'
+      that does not come from the 'wsu' universe. */
    tl_assert(ws < wsu->ix2vec_used);
-   return wsu->ix2vec[ws];
+   wv = wsu->ix2vec[ws];
+   /* Make absolutely sure that 'ws' is a member of 'wsu'. */
+   tl_assert(wv);
+   tl_assert(wv->owner == wsu);
+   return wv;
 }
 
 /* See if wv is contained within wsu.  If so, deallocate wv and return
@@ -321,7 +330,6 @@ Bool TC_(isEmptyWS) ( WordSetU* wsu, WordSet ws )
 {
    WordVec* wv = do_ix2vec( wsu, ws );
    wsu->n_isEmpty++;
-   tl_assert(wv->owner == wsu);
    if (wv->size == 0) {
       tl_assert(ws == wsu->empty);
       return True;
@@ -337,7 +345,6 @@ Bool TC_(isSingletonWS) ( WordSetU* wsu, WordSet ws, Word w )
    tl_assert(wsu);
    wsu->n_isSingleton++;
    wv = do_ix2vec( wsu, ws );
-   tl_assert(wv->owner == wsu);
    return (Bool)(wv->size == 1 && wv->words[0] == w);
 }
 
@@ -346,7 +353,6 @@ Int TC_(cardinalityWS) ( WordSetU* wsu, WordSet ws )
    WordVec* wv;
    tl_assert(wsu);
    wv = do_ix2vec( wsu, ws );
-   tl_assert(wv->owner == wsu);
    tl_assert(wv->size >= 0);
    return wv->size;
 }
@@ -357,7 +363,6 @@ Word TC_(anyElementOfWS) ( WordSetU* wsu, WordSet ws )
    tl_assert(wsu);
    wsu->n_anyElementOf++;
    wv = do_ix2vec( wsu, ws );
-   tl_assert(wv->owner == wsu);
    tl_assert(wv->size >= 1);
    return wv->words[0];
 }
@@ -374,7 +379,6 @@ void TC_(getPayloadWS) ( /*OUT*/Word** words, /*OUT*/Word* nWords,
    WordVec* wv;
    tl_assert(wsu);
    wv = do_ix2vec( wsu, ws );
-   tl_assert(wv->owner == wsu);
    tl_assert(wv->size >= 0);
    *nWords = wv->size;
    *words  = wv->words;
@@ -396,6 +400,7 @@ Bool TC_(saneWS_SLOW) ( WordSetU* wsu, WordSet ws )
    if (ws < 0 || ws >= wsu->ix2vec_used)
       return False;
    wv = do_ix2vec( wsu, ws );
+   /* can never happen .. do_ix2vec will assert instead.  Oh well. */
    if (wv->owner != wsu) return False;
    if (wv->size < 0) return False;
    if (wv->size > 0) {
@@ -458,7 +463,6 @@ void TC_(ppWS) ( WordSetU* wsu, WordSet ws )
    WordVec* wv;
    tl_assert(wsu);
    wv = do_ix2vec( wsu, ws );
-   tl_assert(wv);
    VG_(printf)("{");
    for (i = 0; i < wv->size; i++) {
       VG_(printf)("%p", (void*)wv->words[i]);
@@ -587,8 +591,6 @@ WordSet TC_(unionWS) ( WordSetU* wsu, WordSet ws1, WordSet ws2 )
    WordVec* wv1 = do_ix2vec( wsu, ws1 );
    WordVec* wv2 = do_ix2vec( wsu, ws2 );
    wsu->n_union++;
-   tl_assert(wv1->owner == wsu);
-   tl_assert(wv2->owner == wsu);
    sz = 0;
    i1 = i2 = 0;
    while (1) {
@@ -678,8 +680,6 @@ WordSet TC_(intersectWS) ( WordSetU* wsu, WordSet ws1, WordSet ws2 )
 
    wv1 = do_ix2vec( wsu, ws1 );
    wv2 = do_ix2vec( wsu, ws2 );
-   tl_assert(wv1->owner == wsu);
-   tl_assert(wv2->owner == wsu);
    sz = 0;
    i1 = i2 = 0;
    while (1) {
@@ -749,8 +749,6 @@ WordSet TC_(minusWS) ( WordSetU* wsu, WordSet ws1, WordSet ws2 )
 
    wv1 = do_ix2vec( wsu, ws1 );
    wv2 = do_ix2vec( wsu, ws2 );
-   tl_assert(wv1->owner == wsu);
-   tl_assert(wv2->owner == wsu);
    sz = 0;
    i1 = i2 = 0;
    while (1) {
