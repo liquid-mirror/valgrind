@@ -348,6 +348,7 @@ static Bool ms_process_cmd_line_option(Char* arg)
         VG_BOOL_CLO(arg, "--heap",       clo_heap)
    else VG_BOOL_CLO(arg, "--stacks",     clo_stacks)
 
+   // XXX: currently allows negative heap admin sizes!  Abort if negative.
    else VG_NUM_CLO (arg, "--heap-admin", clo_heap_admin)
    else VG_BNUM_CLO(arg, "--depth",      clo_depth, 1, MAX_DEPTH)
 
@@ -839,8 +840,6 @@ typedef
    struct {
       SnapshotKind kind;
       Time  time;
-      // XXX: total_szB is redundant!  remove it
-      SizeT total_szB;     // Size of all allocations at that snapshot time.
       SizeT heap_szB;
       SizeT heap_admin_szB;
       SizeT stacks_szB;
@@ -856,7 +855,6 @@ static Bool is_snapshot_in_use(Snapshot* snapshot)
    if (Unused == snapshot->kind) {
       // If snapshot is unused, check all the fields are unset.
       tl_assert(snapshot->time           == UNUSED_SNAPSHOT_TIME);
-      tl_assert(snapshot->total_szB      == 0);
       tl_assert(snapshot->heap_admin_szB == 0);
       tl_assert(snapshot->heap_szB       == 0);
       tl_assert(snapshot->stacks_szB     == 0);
@@ -875,8 +873,6 @@ static Bool is_detailed_snapshot(Snapshot* snapshot)
 
 static void sanity_check_snapshot(Snapshot* snapshot)
 {
-   tl_assert(snapshot->total_szB ==
-      snapshot->heap_admin_szB + snapshot->heap_szB + snapshot->stacks_szB);
    if (snapshot->alloc_xpt) {
       sanity_check_XTree(snapshot->alloc_xpt, /*parent*/NULL);
    }
@@ -901,7 +897,6 @@ static void clear_snapshot(Snapshot* snapshot)
    sanity_check_snapshot(snapshot);
    snapshot->kind           = Unused;
    snapshot->time           = UNUSED_SNAPSHOT_TIME;
-   snapshot->total_szB      = 0;
    snapshot->heap_admin_szB = 0;
    snapshot->heap_szB       = 0;
    snapshot->stacks_szB     = 0;
@@ -1131,8 +1126,6 @@ take_snapshot(Snapshot* snapshot, SnapshotKind kind, Time time,
    // Rest of snapshot.
    snapshot->kind = kind;
    snapshot->time = time;
-   snapshot->total_szB =
-      snapshot->heap_szB + snapshot->heap_admin_szB + snapshot->stacks_szB;
    sanity_check_snapshot(snapshot);
 
    n_real_snapshots++;
@@ -1697,7 +1690,6 @@ static void pp_snapshot(Int fd, Snapshot* snapshot, Int snapshot_n)
    FP("snapshot=%d\n", snapshot_n);
    FP("#-----------\n");
    FP("time=%lld\n",            snapshot->time);
-   FP("mem_total_B=%lu\n",      snapshot->total_szB);
    FP("mem_heap_B=%lu\n",       snapshot->heap_szB);
    FP("mem_heap_admin_B=%lu\n", snapshot->heap_admin_szB);
    FP("mem_stacks_B=%lu\n",     snapshot->stacks_szB);
@@ -1706,12 +1698,14 @@ static void pp_snapshot(Int fd, Snapshot* snapshot, Int snapshot_n)
       // Detailed snapshot -- print heap tree.
       Int   depth_str_len = clo_depth + 3;
       Char* depth_str = VG_(malloc)(sizeof(Char) * depth_str_len);
+      SizeT snapshot_total_szB =
+         snapshot->heap_szB + snapshot->heap_admin_szB + snapshot->stacks_szB;
       depth_str[0] = '\0';   // Initialise depth_str to "".
 
       FP("heap_tree=...\n");
       pp_snapshot_XPt(fd, snapshot->alloc_xpt, 0, depth_str,
                       depth_str_len, snapshot->heap_szB,
-                      snapshot->total_szB);
+                      snapshot_total_szB);
 
       VG_(free)(depth_str);
 
