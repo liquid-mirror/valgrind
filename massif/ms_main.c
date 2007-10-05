@@ -128,7 +128,7 @@
 //   can cut out allc-fn chains at the bottom, rather than having to name
 //   all of them, which is better.
 // - Mention that the C++ overloadable new/new[] operators aren't include in
-//   alloc-fns by default.  
+//   alloc-fns by default.
 // - Mention that complex functions names are best protected with single
 //   quotes, eg:
 //       --alloc-fn='operator new(unsigned, std::nothrow_t const&)'
@@ -344,7 +344,7 @@ static Bool ms_process_cmd_line_option(Char* arg)
 {
    // Remember the arg for later use.
    VG_(addToXA)(args_for_massif, &arg);
-        
+
         VG_BOOL_CLO(arg, "--heap",       clo_heap)
    else VG_BOOL_CLO(arg, "--stacks",     clo_stacks)
 
@@ -369,7 +369,7 @@ static Bool ms_process_cmd_line_option(Char* arg)
 
 static void ms_print_usage(void)
 {
-   VG_(printf)( 
+   VG_(printf)(
 "    --heap=no|yes             profile heap blocks [yes]\n"
 "    --heap-admin=<number>     average admin bytes per heap block [8]\n"
 "    --stacks=no|yes           profile stack(s) [yes]\n"
@@ -407,7 +407,7 @@ static void ms_print_debug_usage(void)
 // it makes the code simpler.
 //
 // Any child of 'alloc_xpt' is called a "top-XPt".  The XPts at the bottom
-// of an XTree (leaf nodes) are "bottom-XPTs".  
+// of an XTree (leaf nodes) are "bottom-XPTs".
 //
 // Each path from a top-XPt to a bottom-XPt through an XTree gives an
 // execution context ("XCon"), ie. a stack trace.  (And sub-paths represent
@@ -459,7 +459,7 @@ static void* perm_malloc(SizeT n_bytes)
    if (hp + n_bytes > hp_lim) {
       hp = (Addr)VG_(am_shadow_alloc)(SUPERBLOCK_SIZE);
       if (hp == 0)
-         VG_(out_of_memory_NORETURN)( "massif:perm_malloc", 
+         VG_(out_of_memory_NORETURN)( "massif:perm_malloc",
                                       SUPERBLOCK_SIZE);
       hp_lim = hp + SUPERBLOCK_SIZE - 1;
    }
@@ -534,7 +534,7 @@ static Int XPt_revcmp_curr_szB(void* n1, void* n2)
 {
    XPt* xpt1 = *(XPt**)n1;
    XPt* xpt2 = *(XPt**)n2;
-   return ( xpt1->curr_szB < xpt2->curr_szB ?  1 
+   return ( xpt1->curr_szB < xpt2->curr_szB ?  1
           : xpt1->curr_szB > xpt2->curr_szB ? -1
           :                                    0);
 }
@@ -641,7 +641,7 @@ static Bool is_main_or_below_main(Char* fnname)
 // main-or-below-main.
 // Eg:       alloc-fn1 / alloc-fn2 / a / b / main / (below main) / c
 // becomes:  a / b / main
-static 
+static
 Int get_IPs( ThreadId tid, Bool is_custom_malloc, Addr ips[], Int max_ips)
 {
    Int n_ips, i, n_alloc_fns_removed = 0;
@@ -686,7 +686,7 @@ Int get_IPs( ThreadId tid, Bool is_custom_malloc, Addr ips[], Int max_ips)
       for (i = n_ips-1; i >= 0; i--) {
          #define BUF_LEN   1024
          Char buf[BUF_LEN];
-         
+
          if (VG_(get_fnname)(ips[i], buf, BUF_LEN)) {
 
             // If it's a main-or-below-main function, we (may) want to
@@ -713,10 +713,10 @@ Int get_IPs( ThreadId tid, Bool is_custom_malloc, Addr ips[], Int max_ips)
                   VG_(exit)(1);
                }
                n_alloc_fns_removed = i+1;
-               
+
                // Shuffle the rest down.
-               for (j = 0; j < n_ips; j++) {  
-                  ips[j] = ips[j + n_alloc_fns_removed]; 
+               for (j = 0; j < n_ips; j++) {
+                  ips[j] = ips[j + n_alloc_fns_removed];
                }
                n_ips -= n_alloc_fns_removed;
                break;
@@ -800,7 +800,7 @@ static void update_XCon(XPt* xpt, SSizeT space_delta)
       if (space_delta < 0) tl_assert(xpt->curr_szB >= -space_delta);
       xpt->curr_szB += space_delta;
       xpt = xpt->parent;
-   } 
+   }
    if (space_delta < 0) tl_assert(alloc_xpt->curr_szB >= -space_delta);
    alloc_xpt->curr_szB += space_delta;
 }
@@ -909,7 +909,7 @@ static void clear_snapshot(Snapshot* snapshot)
 }
 
 // This zeroes all the fields in the snapshot, and frees the heap XTree if
-// present.  
+// present.
 static void delete_snapshot(Snapshot* snapshot)
 {
    // Nb: if there's an XTree, we free it after calling clear_snapshot,
@@ -995,7 +995,7 @@ static UInt cull_snapshots(void)
             min_j        = j;
          }
          // Move on to next triple
-         jp = j; 
+         jp = j;
          j  = jn;
          FIND_SNAPSHOT(jn+1, jn);
       }
@@ -1003,11 +1003,11 @@ static UInt cull_snapshots(void)
       // print it if necessary.
       tl_assert(-1 != min_j);    // Check we found a minimum.
       min_snapshot = & snapshots[ min_j ];
-      if (VG_(clo_verbosity) > 1) {                          
-         Char buf[64];                                       
-         VG_(snprintf)(buf, 64, " %3d (t-span = %lld)", i, min_timespan); 
-         VERB_snapshot(1, buf, min_j);                          
-      }          
+      if (VG_(clo_verbosity) > 1) {
+         Char buf[64];
+         VG_(snprintf)(buf, 64, " %3d (t-span = %lld)", i, min_timespan);
+         VERB_snapshot(1, buf, min_j);
+      }
       delete_snapshot(min_snapshot);
       n_deleted++;
    }
@@ -1092,7 +1092,7 @@ static Time get_time(void)
 // Take a snapshot.  Note that with bigger depths, snapshots can be slow,
 // eg. konqueror snapshots can easily take 50ms!
 // [XXX: is that still true?]
-static void 
+static void
 take_snapshot(Snapshot* snapshot, SnapshotKind kind, Time time,
               Bool is_detailed, Char* what)
 {
@@ -1303,7 +1303,7 @@ void die_block ( void* p, Bool custom_free )
    SizeT     die_szB;
 
    VERB(2, "<<< die_mem_heap");
-   
+
    // Update statistics
    n_frees++;
 
@@ -1343,7 +1343,7 @@ void* renew_block ( ThreadId tid, void* p_old, SizeT new_szB )
    XPt      *old_where, *new_where;
 
    VERB(2, "<<< renew_mem_heap (%lu)", new_szB);
-   
+
    // Update statistics
    n_reallocs++;
 
@@ -1358,7 +1358,7 @@ void* renew_block ( ThreadId tid, void* p_old, SizeT new_szB )
 
    // Update heap stats
    update_heap_stats(new_szB - old_szB, /*n_heap_blocks_delta*/0);
-  
+
    if (new_szB <= old_szB) {
       // new size is smaller or same;  block not moved
       p_new = p_old;
@@ -1402,7 +1402,7 @@ void* renew_block ( ThreadId tid, void* p_old, SizeT new_szB )
 
    return p_new;
 }
- 
+
 
 //------------------------------------------------------------//
 //--- malloc() et al replacement wrappers                  ---//
@@ -1550,8 +1550,8 @@ static Bool ms_handle_client_request ( ThreadId tid, UWord* argv, UWord* ret )
 
 static
 IRSB* ms_instrument ( VgCallbackClosure* closure,
-                      IRSB* bb_in, 
-                      VexGuestLayout* layout, 
+                      IRSB* bb_in,
+                      VexGuestLayout* layout,
                       VexGuestExtents* vge,
                       IRType gWordTy, IRType hWordTy )
 {
@@ -1590,9 +1590,9 @@ static Char* make_perc(ULong x, ULong y)
    static Char mbuf[32];
 
 //   tl_assert(x <= y);    XXX; put back in later...
-   
+
 // XXX: I'm not confident that VG_(percentify) works as it should...
-   VG_(percentify)(x, y, 2, 6, mbuf); 
+   VG_(percentify)(x, y, 2, 6, mbuf);
    // XXX: this is bogus if the denominator was zero -- resulting string is
    // something like "0 --%")
    if (' ' == mbuf[0]) mbuf[0] = '0';
@@ -1638,7 +1638,7 @@ static void pp_snapshot_XPt(Int fd, XPt* xpt, Int depth, Char* depth_str,
           is_significant_XPt(xpt->children[n_sig_children], curr_total_szB)) {
       n_sig_children++;
    }
-   n_insig_children = xpt->n_children - n_sig_children;    
+   n_insig_children = xpt->n_children - n_sig_children;
    n_child_entries = n_sig_children + ( n_insig_children > 0 ? 1 : 0 );
 
    // Print the XPt entry.
@@ -1682,7 +1682,7 @@ static void pp_snapshot_XPt(Int fd, XPt* xpt, Int depth, Char* depth_str,
 static void pp_snapshot(Int fd, Snapshot* snapshot, Int snapshot_n)
 {
    sanity_check_snapshot(snapshot);
-   
+
    FP("#-----------\n");
    FP("snapshot=%d\n", snapshot_n);
    FP("#-----------\n");
@@ -1775,17 +1775,17 @@ static void ms_fini(Int exit_status)
 
    // Stats
    tl_assert(n_xpts > 0);  // always have alloc_xpt
-   VERB(1, "allocs:               %u", n_allocs);                     
-   VERB(1, "zeroallocs:           %u (%d%%)",                     
-      n_zero_allocs,                                      
-      ( n_allocs ? n_zero_allocs * 100 / n_allocs : 0 )); 
-   VERB(1, "reallocs:             %u", n_reallocs);                     
+   VERB(1, "allocs:               %u", n_allocs);
+   VERB(1, "zeroallocs:           %u (%d%%)",
+      n_zero_allocs,
+      ( n_allocs ? n_zero_allocs * 100 / n_allocs : 0 ));
+   VERB(1, "reallocs:             %u", n_reallocs);
    VERB(1, "frees:                %u", n_frees);
    VERB(1, "stack allocs:         %u", n_stack_allocs);
    VERB(1, "stack frees:          %u", n_stack_frees);
    VERB(1, "XPts:                 %u", n_xpts);
-   VERB(1, "top-XPts:             %u (%d%%)",                     
-      alloc_xpt->n_children,                              
+   VERB(1, "top-XPts:             %u (%d%%)",
+      alloc_xpt->n_children,
       ( n_xpts ? alloc_xpt->n_children * 100 / n_xpts : 0));
    VERB(1, "dup'd XPts:           %u", n_dupd_xpts);
    VERB(1, "dup'd/freed XPts:     %u", n_dupd_xpts_freed);
@@ -1827,9 +1827,9 @@ static void ms_post_clo_init(void)
 }
 
 static void ms_pre_clo_init(void)
-{ 
+{
    Int i;
-   
+
    VG_(details_name)            ("Massif");
    VG_(details_version)         (NULL);
    VG_(details_description)     ("a space profiler");
