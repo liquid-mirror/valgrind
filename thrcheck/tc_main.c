@@ -4086,7 +4086,10 @@ VG_(printf)("laog sanity check\n");
    tl_assert(0);
 }
 
-static Bool laog__do_dfs_from_to ( Lock* src, Lock* dst )
+/* Return True iff there is a path in laog from 'src' to any of the
+   elements in 'dst'. */
+static
+Bool laog__do_dfs_from_to ( Lock* src, WordSetID dsts /* univ_lsets */ )
 {
    Bool      ret;
    Word      i, ssz;
@@ -4097,6 +4100,12 @@ static Bool laog__do_dfs_from_to ( Lock* src, Lock* dst )
    Word      succs_size;
    Word*     succs_words;
    //laog__sanity_check();
+
+   /* If the destination set is empty, we can never get there from
+      'src' :-), so don't bother to try */
+   if (TC_(isEmptyWS)( univ_lsets, dsts ))
+      return False;
+
    stack   = VG_(newXA)( tc_zalloc, tc_free, sizeof(Lock*) );
    visited = TC_(newFM)( tc_zalloc, tc_free, NULL/*unboxedcmp*/ );
 
@@ -4111,7 +4120,7 @@ static Bool laog__do_dfs_from_to ( Lock* src, Lock* dst )
       here = *(Lock**) VG_(indexXA)( stack, ssz-1 );
       VG_(dropTailXA)( stack, 1 );
 
-      if (here == dst) { ret = True; break; }
+      if (TC_(elemWS)( univ_lsets, dsts, (Word)here )) { ret = True; break; }
 
       if (TC_(lookupFM)( visited, NULL, NULL, (Word)here ))
          continue;
@@ -4141,7 +4150,6 @@ static void laog__pre_thread_acquires_lock (
 {
    Word*    ls_words;
    Word     ls_size, i;
-   Bool     complain;
 
    /* It may be that 'thr' already holds 'lk' and is recursively
       relocking in.  In this case we just ignore the call. */
@@ -4152,18 +4160,13 @@ static void laog__pre_thread_acquires_lock (
    if (!laog)
       laog = TC_(newFM)( tc_zalloc, tc_free, NULL/*unboxedcmp*/ );
 
-   /* First, the check.  Complain if there is any path in laog
-      from lk to old  for each old <- locks already held by thr.
+   /* First, the check.  Complain if there is any path in laog from lk
+      to any of the locks already held by thr, since if any such path
+      existed, it would mean that previously lk was acquired before
+      (rather than after, as we are doing here) at least one of those
+      locks.
    */
-   complain = False;
-   TC_(getPayloadWS)( &ls_words, &ls_size, univ_lsets, thr->locksetA );
-   for (i = 0; i < ls_size; i++) {
-      if (laog__do_dfs_from_to( lk, (Lock*)ls_words[i] )) {
-         complain = True;
-         break;
-      }
-   }
-   if (complain) {
+   if (laog__do_dfs_from_to(lk, thr->locksetA)) {
       record_error_Misc( thr, "Lock acquisition order is inconsistent "
                               "with previously observed ordering" );
    }
@@ -4171,6 +4174,7 @@ static void laog__pre_thread_acquires_lock (
    /* Second, add to laog the pairs
         (old, lk)  |  old <- locks already held by thr
    */
+   TC_(getPayloadWS)( &ls_words, &ls_size, univ_lsets, thr->locksetA );
    for (i = 0; i < ls_size; i++)
       laog__add_edge( (Lock*)ls_words[i], lk );
 }
@@ -5677,6 +5681,8 @@ static void tc_fini ( Int exitcode )
       TC_(ppWSUstats)( univ_tsets, "univ_tsets" );
       VG_(printf)("\n");
       TC_(ppWSUstats)( univ_lsets, "univ_lsets" );
+      VG_(printf)("\n");
+      TC_(ppWSUstats)( univ_laog,  "univ_laog" );
       VG_(printf)("\n");
    }
 }
