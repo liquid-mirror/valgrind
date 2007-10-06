@@ -1,25 +1,14 @@
 
 /* Do simple things with a recursive mutex. */
 
+/* Needed for older glibcs (2.3 and older, at least) who don't
+   otherwise "know" about pthread_rwlock_anything or about
+   PTHREAD_MUTEX_RECURSIVE (amongst things). */
+#define _GNU_SOURCE 1
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <assert.h>
-
-
-
-/* glibc 2.3 doesn't appear to supply PTHREAD_MUTEX_RECURSIVE.
-   We have to give up. */
-#if __GLIBC__ < 2 || (__GLIBC__ == 2 && __GLIBC_MINOR__ <= 3)
-int main ( void ) {
-   printf("This program does not compile on systems "
-          "using glibc 2.3 or earlier.\n");
-   return 0;
-}
-#else
-
-
-
-#define __USE_UNIX98 1
 #include <pthread.h>
 
 void nearly_main ( void )
@@ -58,6 +47,3 @@ int main ( void )
    nearly_main();
    return 0;
 }
-
-
-#endif /* !(glibc 2.3 or earlier) */

@@ -106,11 +106,15 @@
                     long,_err, char*,_errstr);           \
    } while (0)
 
+
+/* Needed for older glibcs (2.3 and older, at least) who don't
+   otherwise "know" about pthread_rwlock_anything or about
+   PTHREAD_MUTEX_RECURSIVE (amongst things). */
+#define _GNU_SOURCE 1
+
 #include <stdio.h>
 #include <assert.h>
 #include <errno.h>
-
-#define __USE_UNIX98 1
 #include <pthread.h>
 
 
