@@ -632,9 +632,10 @@ Bool TC_(nextIterFM) ( WordFM* fm, /*OUT*/Word* pKey, /*OUT*/Word* pVal )
    // keeping this loop in this simpler form.
    while (stackPop(fm, &n, &i)) {
       switch (i) {
-      case 1: 
+      case 1: case_1:
          stackPush(fm, n, 2);
-         if (n->child[0])  stackPush(fm, n->child[0], 1);
+         /* if (n->child[0])  stackPush(fm, n->child[0], 1); */
+         if (n->child[0]) { n = n->child[0]; goto case_1; }
          break;
       case 2: 
          stackPush(fm, n, 3);
@@ -642,7 +643,8 @@ Bool TC_(nextIterFM) ( WordFM* fm, /*OUT*/Word* pKey, /*OUT*/Word* pVal )
          if (pVal) *pVal = n->val;
          return True;
       case 3:
-         if (n->child[1]) stackPush(fm, n->child[1], 1);
+         /* if (n->child[1]) stackPush(fm, n->child[1], 1); */
+         if (n->child[1]) { n = n->child[1]; goto case_1; }
          break;
       default:
          tl_assert(0);
