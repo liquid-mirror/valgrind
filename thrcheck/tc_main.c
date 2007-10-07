@@ -1046,7 +1046,7 @@ static void initialise_data_structures ( void )
    tl_assert(univ_lsets != NULL);
 
    tl_assert(univ_laog == NULL);
-   univ_laog = TC_(newWordSetU)( tc_zalloc, tc_free, 16/*cacheSize*/ );
+   univ_laog = TC_(newWordSetU)( tc_zalloc, tc_free, 24/*cacheSize*/ );
    tl_assert(univ_laog != NULL);
 
    /* Set up entries for the root thread */
@@ -3930,6 +3930,29 @@ static void evh__TC_PTHREAD_RWLOCK_UNLOCK_POST ( ThreadId tid, void* rwl )
 /*--------------------------------------------------------------*/
 /*--- Lock acquisition order monitoring                      ---*/
 /*--------------------------------------------------------------*/
+
+/* FIXME: here are some optimisations still to do in
+          laog__pre_thread_acquires_lock.
+
+   The common case is that some thread T holds (eg) L1 L2 and L3 and
+   is repeatedly acquiring and releasing Ln, and there is no ordering
+   error in what it is doing.  Hence it repeatly:
+
+   (1) searches laog to see if Ln --*--> {L1,L2,L3}, which always 
+       produces the answer No (because there is no error).
+
+   (2) adds edges {L1,L2,L3} --> Ln to laog, which are already present
+       (because they already got added the first time T acquired Ln).
+
+   Hence cache these two events:
+
+   (1) Cache result of the query from last time.  Invalidate the cache
+       any time any edges are added to or deleted from laog.
+
+   (2) Cache these add-edge requests and ignore them if said edges
+       have already been added to laog.  Invalidate the cache any time
+       any edges are deleted from laog.
+*/
 
 typedef
    struct {
