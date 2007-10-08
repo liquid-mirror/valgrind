@@ -137,6 +137,10 @@
 //    respect single quotes...]
 // - Explain the --threshold=0 case -- entries with zero bytes must have
 //   allocated some memory and then freed it all again.
+// - Explain that no peak will be taken if no deallocations are done.
+// - Explain how the stack is computed -- size is assumed to be zero when
+//   code starts executing, which isn't true, but reflects what you have
+//   control over in a normal program.
 //
 // Tests:
 // - tests/overloaded_new.cpp is there
@@ -233,6 +237,8 @@ static UInt n_xpt_later_expansions = 0;
 static UInt n_getXCon_redo         = 0;
 static UInt n_cullings             = 0;
 static UInt n_real_snapshots       = 0;
+static UInt n_detailed_snapshots   = 0;
+static UInt n_peak_snapshots       = 0;
 static UInt n_skipped_snapshots    = 0;
 static UInt n_skipped_snapshots_since_last_snapshot = 0;
 
@@ -244,6 +250,10 @@ static UInt n_skipped_snapshots_since_last_snapshot = 0;
 // These are signed so things are more obvious if they go negative.
 static SSizeT heap_szB   = 0;       // Live heap size
 static SSizeT stacks_szB = 0;       // Live stacks size
+
+// This is the total size from the current peak snapshot, or 0 if no peak
+// snapshot has been taken yet.
+static SSizeT peak_snapshot_total_szB = 0;
 
 // Incremented every time memory is allocated/deallocated, by the
 // allocated/deallocated amount;  includes heap, heap-admin and stack
@@ -832,6 +842,7 @@ typedef Long Time;
 typedef
    enum {
       Normal = 77,
+      Peak,
       Unused
    }
    SnapshotKind;
@@ -869,6 +880,13 @@ static Bool is_snapshot_in_use(Snapshot* snapshot)
 static Bool is_detailed_snapshot(Snapshot* snapshot)
 {
    return (snapshot->alloc_xpt ? True : False);
+}
+
+static Bool is_uncullable_snapshot(Snapshot* snapshot)
+{
+   return &snapshots[0] == snapshot                   // First snapshot
+       || &snapshots[next_snapshot_i-1] == snapshot   // Last snapshot
+       || snapshot->kind == Peak;                     // Peak snapshot
 }
 
 static void sanity_check_snapshot(Snapshot* snapshot)
@@ -922,6 +940,7 @@ static void VERB_snapshot(Int verbosity, Char* prefix, Int i)
    Snapshot* snapshot = &snapshots[i];
    Char* suffix;
    switch (snapshot->kind) {
+   case Peak:   suffix = "p";                                            break;
    case Normal: suffix = ( is_detailed_snapshot(snapshot) ? "d" : "." ); break;
    case Unused: suffix = "u";                                            break;
    default:
@@ -985,7 +1004,8 @@ static UInt cull_snapshots(void)
       while (jn < MAX_N_SNAPSHOTS) {
          Time timespan = snapshots[jn].time - snapshots[jp].time;
          tl_assert(timespan >= 0);
-         if (timespan < min_timespan) {
+         // Nb: We never cull the peak snapshot.
+         if (Peak != snapshots[j].kind && timespan < min_timespan) {
             min_timespan = timespan;
             min_j        = j;
          }
@@ -1028,15 +1048,31 @@ static UInt cull_snapshots(void)
    // two intervals around a snapshot that was under consideration for
    // deletion.  Here we only measure single intervals because all the
    // deletions have occurred.
+   //
+   // But we have to be careful -- some snapshots (eg. snapshot 0, and the
+   // peak snapshot) are uncullable.  If two uncullable snapshots end up
+   // next to each other, they'll never be culled (assuming the peak doesn't
+   // change), and the time gap between them will not change.  However, the
+   // time between the remaining cullable snapshots will grow ever larger.
+   // This means that the min_timespan found will always be that between the
+   // two uncullable snapshots, and it will be much smaller than it should
+   // be.  To avoid this problem, when computing the minimum timespan, we
+   // ignore any timespans between two uncullable snapshots.
    tl_assert(next_snapshot_i > 1);
    min_timespan = 0x7fffffffffffffffLL;
    min_timespan_i = -1;
    for (i = 1; i < next_snapshot_i; i++) {
-      Time timespan = snapshots[i].time - snapshots[i-1].time;
-      tl_assert(timespan >= 0);
-      if (timespan < min_timespan) {
-         min_timespan = timespan;
-         min_timespan_i = i;
+      if (is_uncullable_snapshot(&snapshots[i]) &&
+          is_uncullable_snapshot(&snapshots[i-1]))
+      {
+         VERB(1, "(Ignoring interval %d--%d when computing minimum)", i-1, i);
+      } else {
+         Time timespan = snapshots[i].time - snapshots[i-1].time;
+         tl_assert(timespan >= 0);
+         if (timespan < min_timespan) {
+            min_timespan = timespan;
+            min_timespan_i = i;
+         }
       }
    }
    tl_assert(-1 != min_timespan_i);    // Check we found a minimum.
@@ -1121,11 +1157,13 @@ take_snapshot(Snapshot* snapshot, SnapshotKind kind, Time time,
    sanity_check_snapshot(snapshot);
 
    // Update stats.
+   if (Peak == kind) n_peak_snapshots++;
+   if (is_detailed)  n_detailed_snapshots++;
    n_real_snapshots++;
 }
 
 
-// Take a snapshot, if it's time.
+// Take a snapshot, if it's time, or if we've hit a peak.
 static void
 maybe_take_snapshot(SnapshotKind kind, Char* what)
 {
@@ -1154,6 +1192,21 @@ maybe_take_snapshot(SnapshotKind kind, Char* what)
       is_detailed = (0 == n_snapshots_until_next_detailed);
       break;
 
+    case Peak: {
+      // Because we're about to do a deallocation, we're coming down from a
+      // local peak.  If it is (a) actually a global peak, and (b) a certain
+      // amount bigger than the previous peak, then we take a peak snapshot.
+      //
+      // XXX: make the percentage configurable
+      SizeT total_szB = heap_szB + clo_heap_admin*n_heap_blocks + stacks_szB;
+      double excess_over_previous_peak = 1.00;
+      if (total_szB <= peak_snapshot_total_szB * excess_over_previous_peak) {
+         return;
+      }
+      is_detailed = True;
+      break;
+    }
+
     default:
       tl_assert2(0, "maybe_take_snapshot: unrecognised snapshot kind");
    }
@@ -1167,6 +1220,26 @@ maybe_take_snapshot(SnapshotKind kind, Char* what)
       n_snapshots_until_next_detailed = DETAILED_SNAPSHOT_FREQ - 1;
    } else {
       n_snapshots_until_next_detailed--;
+   }
+
+   // Update peak data, if it's a Peak snapshot.
+   if (Peak == kind) {
+      Int i, number_of_peaks_snapshots_found = 0;
+
+      // Sanity check the size, then update our recorded peak.
+      SizeT snapshot_total_szB =
+         snapshot->heap_szB + snapshot->heap_admin_szB + snapshot->stacks_szB;
+      tl_assert(snapshot_total_szB > peak_snapshot_total_szB);
+      peak_snapshot_total_szB = snapshot_total_szB;
+
+      // Find the old peak snapshot, if it exists, and mark it as normal.
+      for (i = 0; i < next_snapshot_i; i++) {
+         if (Peak == snapshots[i].kind) {
+            snapshots[i].kind = Normal;
+            number_of_peaks_snapshots_found++;
+         }
+      }
+      tl_assert(number_of_peaks_snapshots_found <= 1);
    }
 
    // Finish up verbosity and stats stuff.
@@ -1311,6 +1384,9 @@ void die_block ( void* p, Bool custom_free )
    }
    die_szB = hc->szB;
 
+   // Maybe take a peak snapshot, since it's a deallocation.
+   maybe_take_snapshot(Peak, "de-PEAK");
+
    // Update heap stats
    update_heap_stats(-die_szB, /*n_heap_blocks_delta*/-1);
 
@@ -1351,6 +1427,11 @@ void* renew_block ( ThreadId tid, void* p_old, SizeT new_szB )
    }
 
    old_szB = hc->szB;
+
+   // Maybe take a peak snapshot, if it's (effectively) a deallocation.
+   if (new_szB < old_szB) {
+      maybe_take_snapshot(Peak, "re-PEAK");
+   }
 
    // Update heap stats
    update_heap_stats(new_szB - old_szB, /*n_heap_blocks_delta*/0);
@@ -1481,6 +1562,7 @@ static INLINE void die_mem_stack_2(Addr a, SizeT len, Char* what)
    if (have_started_executing_code) {
       VERB(2, "<<< die_mem_stack (%ld)", -len);
       n_stack_frees++;
+      maybe_take_snapshot(Peak,   "stkPEAK");
       update_stack_stats(-len);
       maybe_take_snapshot(Normal, what);
       VERB(2, ">>>");
@@ -1555,7 +1637,6 @@ IRSB* ms_instrument ( VgCallbackClosure* closure,
       have_started_executing_code = True;
       maybe_take_snapshot(Normal, "startup");
    }
-
    return bb_in;
 }
 
@@ -1692,7 +1773,7 @@ static void pp_snapshot(Int fd, Snapshot* snapshot, Int snapshot_n)
          snapshot->heap_szB + snapshot->heap_admin_szB + snapshot->stacks_szB;
       depth_str[0] = '\0';   // Initialise depth_str to "".
 
-      FP("heap_tree=...\n");
+      FP("heap_tree=%s\n", ( Peak == snapshot->kind ? "peak" : "detailed" ));
       pp_snapshot_XPt(fd, snapshot->alloc_xpt, 0, depth_str,
                       depth_str_len, snapshot->heap_szB,
                       snapshot_total_szB);
@@ -1787,6 +1868,8 @@ static void ms_fini(Int exit_status)
    VERB(1, "XPt-later-expansions: %u", n_xpt_later_expansions);
    VERB(1, "skipped snapshots:    %u", n_skipped_snapshots);
    VERB(1, "real snapshots:       %u", n_real_snapshots);
+   VERB(1, "detailed snapshots:   %u", n_detailed_snapshots);
+   VERB(1, "peak snapshots:       %u", n_peak_snapshots);
    VERB(1, "cullings:             %u", n_cullings);
    VERB(1, "XCon_redos:           %u", n_getXCon_redo);
 }
@@ -1811,7 +1894,7 @@ static void ms_post_clo_init(void)
    }
 
    if (clo_stacks) {
-      // Events to track
+      // Events to track.
       VG_(track_new_mem_stack)        ( new_mem_stack        );
       VG_(track_die_mem_stack)        ( die_mem_stack        );
       VG_(track_new_mem_stack_signal) ( new_mem_stack_signal );

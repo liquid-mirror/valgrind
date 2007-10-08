@@ -1,0 +1,4 @@
+prog: peak
+vgopts: --stacks=no --time-unit=B
+post: perl ../../massif/ms_print massif.out
+cleanup: rm massif.out

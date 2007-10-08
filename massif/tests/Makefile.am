@@ -10,9 +10,11 @@ EXTRA_DIST = $(noinst_SCRIPTS) \
 	basic.post.exp basic.stderr.exp basic.vgtest \
         culling1.stderr.exp culling1.vgtest \
         culling2.stderr.exp culling2.vgtest \
+	ignoring.post.exp ignoring.stderr.exp ignoring.vgtest \
 	long-time.post.exp long-time.stderr.exp long-time.vgtest \
 	null.post.exp null.stderr.exp null.vgtest \
 	one.post.exp one.stderr.exp one.vgtest \
+	peak.post.exp peak.stderr.exp peak.vgtest \
 	realloc.post.exp realloc.stderr.exp realloc.vgtest \
 	thresholds_0_0.post.exp   thresholds_0_0.stderr.exp   thresholds_0_0.vgtest \
 	thresholds_0_10.post.exp  thresholds_0_10.stderr.exp  thresholds_0_10.vgtest \
@@ -30,9 +32,11 @@ check_PROGRAMS = \
 	alloc-fns \
 	basic \
 	culling1 culling2 \
+	ignoring \
 	long-time \
 	null \
 	one \
+	peak \
 	realloc \
 	thresholds \
 	zero

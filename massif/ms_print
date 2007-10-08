@@ -332,6 +332,8 @@ sub read_input_file()
     my @times         = ();
     my @mem_total_Bs  = ();
     my @is_detaileds  = ();
+    my $peak_num = -1;      # An initial value that will be ok if no peak
+                            # entry is in the file.
     
     #-------------------------------------------------------------------------
     # Read start of input file.
@@ -415,7 +417,11 @@ sub read_input_file()
         # snapshot list header to $tmp_file.
         if      ($heap_tree eq "empty") {
             $line = get_line();
-        } elsif ($heap_tree eq "...") {
+        } elsif ($heap_tree =~ "(detailed|peak)") {
+            # If "peak", remember the number.
+            if ($heap_tree eq "peak") {
+                $peak_num = $snapshot_num;
+            }
             # '1' means it's the top node of the tree.
             read_heap_tree(1, "", "", "", $mem_total_B);
 
@@ -489,6 +495,7 @@ sub read_input_file()
     # 10 |  ..:::::::::     1    (1 - 1/2) * 10 = 5     1 * 10 = 10
     # 0  +-------------
 
+    my $peak_full_char     = '#';                            
     my $detailed_full_char = '@';
     my $normal_full_char   = ':';
     my $half_char          = '.';
@@ -517,20 +524,28 @@ sub read_input_file()
             ($x == $graph_x+1) or die;
             $x = $graph_x;
         }
- 
-        # Draw the column only if it's a detailed snapshot, or we don't
-        # already have a detailed snapshot's bar in this column -- we don't
-        # want to overwrite detailed snapshot's bars with non-detailed
-        # snapshot's bars.
+
+        # Draw the column if:                                
+        # - it's the peak column, or                         
+        # - it's a detailed column, and we won't overwrite the peak column, or
+        # - it's a normal column, and we won't overwrite the peak column or a 
+        #   detailed column. 
         my $should_draw_column = 
-            ($is_detaileds[$i] or $graph[$x][0] ne $detailed_full_char);
+            (($i == $peak_num) or                            
+             ($is_detaileds[$i] and $graph[$x][0] ne $peak_full_char) or   
+             ($graph[$x][0] ne $peak_full_char and           
+              $graph[$x][0] ne $detailed_full_char));        
+
         if ($should_draw_column) {
             # If it's detailed, mark the X-axis.  Also choose the full-slot
             # char.
             my $full_char;
-            if ($is_detaileds[$i])  {
-                $graph[$x][0] = $detailed_full_char;
+            if ($i == $peak_num)  {                          
+                $full_char = $peak_full_char;                
+                $graph[$x][0] = $full_char;                  
+            } elsif ($is_detaileds[$i])  {    
                 $full_char = $detailed_full_char;
+                $graph[$x][0] = $full_char;                  
             } else {
                 $full_char = $normal_full_char;
             }
@@ -590,6 +605,9 @@ sub read_input_file()
                 $first_detailed = 0;
             } else {
                 printf(", $i");
+            }
+            if ($i == $peak_num) {
+                print(" (peak)");
             }
         }
     }

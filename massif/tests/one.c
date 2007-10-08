@@ -1,7 +1,6 @@
 #include <stdlib.h>
 
-// Allocate some memory and then deallocate it, to get a nice up-then-down
-// graph.
+// A test for a single allocation.
 
 int main(void)
 {

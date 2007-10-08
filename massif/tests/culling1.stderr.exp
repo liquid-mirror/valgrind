@@ -425,5 +425,7 @@ Massif: XPt-init-expansions:  1
 Massif: XPt-later-expansions: 0
 Massif: skipped snapshots:    51
 Massif: real snapshots:       150
+Massif: detailed snapshots:   15
+Massif: peak snapshots:       0
 Massif: cullings:             2
 Massif: XCon_redos:           0
