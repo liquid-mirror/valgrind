@@ -31,24 +31,24 @@
 // XXX:
 //---------------------------------------------------------------------------
 // Todo:
+// - do snapshots on client requests
 // - Add ability to draw multiple graphs, eg. heap-only, stack-only, total.
 //   Give each graph a title.
-// - do peak-taking.
 // - make file format more generic.  Obstacles:
 //   - unit prefixes are not generic
 //   - preset column widths for stats are not generic
 //   - preset column headers are not generic
 //   - "Massif arguments:" line is not generic
 // - consider 'instructions executed' as a time unit -- more regular than
-//   ms, less artificial than B
+//   ms, less artificial than B (bug #121629)
 // - do a graph-drawing test
 // - do tests with complicated stack traces -- big ones, ones that require
 //   XCon_redo, ones that exceed --depth, etc.
 // - test what happens when alloc-fns cover an entire trace
+//   (it aborts -- should give a warning and do something less drastic?)
 // - write a good basic test that shows how the tool works, suitable for
 //   documentation
 // - Check MALLOCLIKE_BLOCK works, write regtest
-// - do snapshots on client requests (after peak-taking is done)
 // - make everything configurable, eg. min/max number of snapshots (which
 //   also determine culling proportion), frequency of detailed snapshots,
 //   etc.
@@ -75,36 +75,41 @@
 //   - dunno, hard to reproduce, ignore
 // 132132  nor     massif --format=html output does not do html entity escaping
 //   - only for HTML output, irrelevant, ignore
+// 132950   Heap alloc/usage summary
+//   - doesn't seem that interesting or general
 //
 // FIXED/NOW IRRELEVANT:
-// 142197  nor     massif tool ignores --massif:alloc-fn parameters in .valg...
-//   - fixed in trunk
-// 142491  nor     Maximise use of alloc_fns array
-//   - addressed, it's now an OSet and thus unlimited in size
 // 89061   cra     Massif: ms_main.c:485 (get_XCon): Assertion `xpt->max_chi...
 //   - relevant code now gone
 // 143062  cra     massif crashes on app exit with signal 8 SIGFPE
 //   - fixed
+// 95483   nor     massif feature request: include peak allocation in report
+//   - implemented in Massif2
+// 92615    nor    Write output from Massif at crash
+//   - this happens unless Massif2 itself crashes
+// 121629   add instruction-counting mode for timing
+//   - time-unit=B is similar, plus I'm considering this above anyway
+// 142197  nor     massif tool ignores --massif:alloc-fn parameters in .valg...
+//   - fixed in trunk
+// 142491  nor     Maximise use of alloc_fns array
+//   - addressed, it's now an OSet and thus unlimited in size
+// 144453   (get_XCon): Assertion 'xpt->max_children != 0' failed.
+//   - relevant code now gone
 //
-// TODO:
-// 92615
-// 95483
-// 121629
-// 132950
-// 134138(?)
-// 146252(?)
-// 149504
-// 141631  nor     Massif: percentages don't add up correctly
+// POSSIBLY FIXED BY BETTER SANITY CHECKING, BUT HARD TO TELL:
+// 141631   Massif: percentages don't add up correctly
 //   - better sanity-checking should help this greatly
-// 142706  nor     massif numbers don't seem to add up
+// 142706   massif numbers don't seem to add up
 //   - better sanity-checking should help this greatly
-// 144453  XXX
-// 146456  XXX
+// 149504   Assertion hit on alloc_xpt->curr_space >= -space_delta
+//   - better sanity-checking should help this greatly
+// 146456   (update_XCon): Assertion 'xpt->curr_space >= -space_delta' failed.
+//   - better sanity-checking should help this greatly
 //
 // Michael Meeks:
 // - wants an interactive way to request a dump (callgrind_control-style)
 //   - "profile now"
-//   - "show me the extra allocations from last-snapshot"
+//   - "show me the extra allocations since the last snapshot"
 //   - "start/stop logging" (eg. quickly skip boring bits)
 //
 // Artur Wisz:
@@ -247,13 +252,12 @@ static UInt n_skipped_snapshots_since_last_snapshot = 0;
 //--- Globals                                              ---//
 //------------------------------------------------------------//
 
-// These are signed so things are more obvious if they go negative.
-static SSizeT heap_szB   = 0;       // Live heap size
-static SSizeT stacks_szB = 0;       // Live stacks size
+static SizeT heap_szB   = 0;       // Live heap size
+static SizeT stacks_szB = 0;       // Live stacks size
 
 // This is the total size from the current peak snapshot, or 0 if no peak
 // snapshot has been taken yet.
-static SSizeT peak_snapshot_total_szB = 0;
+static SizeT peak_snapshot_total_szB = 0;
 
 // Incremented every time memory is allocated/deallocated, by the
 // allocated/deallocated amount;  includes heap, heap-admin and stack
