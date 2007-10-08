@@ -242,8 +242,8 @@ static UInt n_skipped_snapshots_since_last_snapshot = 0;
 //------------------------------------------------------------//
 
 // These are signed so things are more obvious if they go negative.
-static SSizeT sigstacks_szB  = 0;     // Current signal stacks space sum
-static SSizeT heap_szB       = 0;     // Live heap size
+static SSizeT heap_szB   = 0;       // Live heap size
+static SSizeT stacks_szB = 0;       // Live stacks size
 
 // Incremented every time memory is allocated/deallocated, by the
 // allocated/deallocated amount;  includes heap, heap-admin and stack
@@ -1112,15 +1112,7 @@ take_snapshot(Snapshot* snapshot, SnapshotKind kind, Time time,
 
    // Stack(s).
    if (clo_stacks) {
-      ThreadId tid;
-      Addr     stack_min, stack_max;
-      VG_(thread_stack_reset_iter)();
-      while ( VG_(thread_stack_next)(&tid, &stack_min, &stack_max) ) {
-         VERB(2, "stack %d: %p -- %p (%ld)",
-            tid, stack_min, stack_max, stack_max - stack_min);
-         snapshot->stacks_szB += (stack_max - stack_min);
-      }
-      snapshot->stacks_szB += sigstacks_szB;    // Add signal stacks, too
+      snapshot->stacks_szB = stacks_szB;
    }
 
    // Rest of snapshot.
@@ -1128,6 +1120,7 @@ take_snapshot(Snapshot* snapshot, SnapshotKind kind, Time time,
    snapshot->time = time;
    sanity_check_snapshot(snapshot);
 
+   // Update stats.
    n_real_snapshots++;
 }
 
@@ -1461,60 +1454,57 @@ static void* ms_realloc ( ThreadId tid, void* p_old, SizeT new_szB )
 //--- Stacks                                               ---//
 //------------------------------------------------------------//
 
+// We really want the inlining to occur...
+#define INLINE    inline __attribute__((always_inline))
+
 static void update_stack_stats(SSizeT stack_szB_delta)
 {
+   if (stack_szB_delta < 0) tl_assert(stacks_szB >= -stack_szB_delta);
+   stacks_szB += stack_szB_delta;
+
    update_alloc_stats(stack_szB_delta);
 }
 
-static void update_sigstack_stats(SSizeT sigstack_szB_delta)
-{
-   if (sigstack_szB_delta < 0) tl_assert(sigstacks_szB >= sigstack_szB_delta);
-   sigstacks_szB += sigstack_szB_delta;
-
-   update_alloc_stats(sigstack_szB_delta);
-}
-
-static void new_mem_stack(Addr a, SizeT len)
+static INLINE void new_mem_stack_2(Addr a, SizeT len, Char* what)
 {
    if (have_started_executing_code) {
       VERB(2, "<<< new_mem_stack (%ld)", len);
       n_stack_allocs++;
       update_stack_stats(len);
-      maybe_take_snapshot(Normal, "stk-new");
+      maybe_take_snapshot(Normal, what);
       VERB(2, ">>>");
    }
 }
 
-static void die_mem_stack(Addr a, SizeT len)
+static INLINE void die_mem_stack_2(Addr a, SizeT len, Char* what)
 {
    if (have_started_executing_code) {
       VERB(2, "<<< die_mem_stack (%ld)", -len);
       n_stack_frees++;
       update_stack_stats(-len);
-      maybe_take_snapshot(Normal, "stk-die");
+      maybe_take_snapshot(Normal, what);
       VERB(2, ">>>");
    }
 }
 
+static void new_mem_stack(Addr a, SizeT len)
+{
+   new_mem_stack_2(a, len, "stk-new");
+}
+
+static void die_mem_stack(Addr a, SizeT len)
+{
+   die_mem_stack_2(a, len, "stk-die");
+}
 
 static void new_mem_stack_signal(Addr a, SizeT len)
 {
-   if (have_started_executing_code) {
-      VERB(2, "<<< new_mem_stack_signal (%ld)", len);
-      update_sigstack_stats(len);
-      maybe_take_snapshot(Normal, "sig-new");
-      VERB(2, ">>>");
-   }
+   new_mem_stack_2(a, len, "sig-new");
 }
 
 static void die_mem_stack_signal(Addr a, SizeT len)
 {
-   if (have_started_executing_code) {
-      VERB(2, "<<< die_mem_stack_signal (%ld)", -len);
-      update_sigstack_stats(-len);
-      maybe_take_snapshot(Normal, "sig-die");
-      VERB(2, ">>>");
-   }
+   die_mem_stack_2(a, len, "sig-die");
 }
 
 
@@ -1822,11 +1812,10 @@ static void ms_post_clo_init(void)
 
    if (clo_stacks) {
       // Events to track
-      VG_(track_new_mem_stack)       ( new_mem_stack        );
-      VG_(track_die_mem_stack)       ( die_mem_stack        );
-
-      VG_(track_new_mem_stack_signal)( new_mem_stack_signal );
-      VG_(track_die_mem_stack_signal)( die_mem_stack_signal );
+      VG_(track_new_mem_stack)        ( new_mem_stack        );
+      VG_(track_die_mem_stack)        ( die_mem_stack        );
+      VG_(track_new_mem_stack_signal) ( new_mem_stack_signal );
+      VG_(track_die_mem_stack_signal) ( die_mem_stack_signal );
    }
 }
 
@@ -1865,7 +1854,7 @@ static void ms_pre_clo_init(void)
                                    0 );
 
    // HP_Chunks
-   malloc_list  = VG_(HT_construct)( 80021 );   // prime, big
+   malloc_list = VG_(HT_construct)( 80021 );   // prime, big
 
    // Dummy node at top of the context structure.
    alloc_xpt = new_XPt(/*ip*/0, /*parent*/NULL);
