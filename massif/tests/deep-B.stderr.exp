@@ -1,0 +1,37 @@
+Massif: alloc-fns:
+Massif:   1: a6
+Massif:   2: calloc
+Massif:   3: realloc
+Massif:   4: memalign
+Massif:   5: __builtin_new
+Massif:   6: __builtin_vec_new
+Massif:   7: malloc
+Massif: startup S.  0 (t:0, hp:0, ad:0, st:0)
+Massif:   alloc S.  1 (t:108, hp:100, ad:8, st:0)
+Massif:   alloc S.  2 (t:216, hp:200, ad:16, st:0)
+Massif:   alloc S.  3 (t:324, hp:300, ad:24, st:0)
+Massif:   alloc S.  4 (t:432, hp:400, ad:32, st:0)
+Massif:   alloc S.  5 (t:540, hp:500, ad:40, st:0)
+Massif:   alloc S.  6 (t:648, hp:600, ad:48, st:0)
+Massif:   alloc S.  7 (t:756, hp:700, ad:56, st:0)
+Massif:   alloc S.  8 (t:864, hp:800, ad:64, st:0)
+Massif:   alloc Sd  9 (t:972, hp:900, ad:72, st:0)
+Massif:   alloc S. 10 (t:1080, hp:1000, ad:80, st:0)
+Massif: allocs:               10
+Massif: zeroallocs:           0 (0%)
+Massif: reallocs:             0
+Massif: frees:                0
+Massif: stack allocs:         0
+Massif: stack frees:          0
+Massif: XPts:                 7
+Massif: top-XPts:             1 (14%)
+Massif: dup'd XPts:           7
+Massif: dup'd/freed XPts:     0
+Massif: XPt-init-expansions:  6
+Massif: XPt-later-expansions: 0
+Massif: skipped snapshots:    0
+Massif: real snapshots:       11
+Massif: detailed snapshots:   1
+Massif: peak snapshots:       0
+Massif: cullings:             0
+Massif: XCon_redos:           10

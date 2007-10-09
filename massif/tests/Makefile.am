@@ -8,6 +8,11 @@ EXTRA_DIST = $(noinst_SCRIPTS) \
 	alloc-fns-A.post.exp alloc-fns-A.stderr.exp alloc-fns-A.vgtest \
 	alloc-fns-B.post.exp alloc-fns-B.stderr.exp alloc-fns-B.vgtest \
 	basic.post.exp basic.stderr.exp basic.vgtest \
+	deep-A.post.exp deep-A.stderr.exp deep-A.vgtest \
+	deep-B.post.exp deep-B.stderr.exp deep-B.vgtest \
+	deep-C.post.exp deep-C.stderr.exp deep-C.vgtest \
+	deep-D.post.exp deep-D.stderr.exp deep-D.vgtest \
+	deep-E.post.exp deep-E.stderr.exp deep-E.vgtest \
         culling1.stderr.exp culling1.vgtest \
         culling2.stderr.exp culling2.vgtest \
 	custom_alloc.post.exp custom_alloc.stderr.exp custom_alloc.vgtest
@@ -38,6 +43,7 @@ check_PROGRAMS = \
 	basic \
 	culling1 culling2 \
 	custom_alloc \
+	deep \
 	ignoring \
 	long-time \
 	null \

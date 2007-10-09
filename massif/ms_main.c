@@ -33,7 +33,7 @@
 // Todo:
 // - do snapshots on client requests
 // - Add ability to draw multiple graphs, eg. heap-only, stack-only, total.
-//   Give each graph a title.
+//   Give each graph a title.  (try to do it generically!)
 // - make file format more generic.  Obstacles:
 //   - unit prefixes are not generic
 //   - preset column widths for stats are not generic
@@ -42,10 +42,6 @@
 // - consider 'instructions executed' as a time unit -- more regular than
 //   ms, less artificial than B (bug #121629)
 // - do a graph-drawing test
-// - do tests with complicated stack traces -- big ones, ones that require
-//   XCon_redo, ones that exceed --depth, etc.
-// - test what happens when alloc-fns cover an entire trace
-//   (it aborts -- should give a warning and do something less drastic?)
 // - write a good basic test that shows how the tool works, suitable for
 //   documentation
 // - make everything configurable, eg. min/max number of snapshots (which
@@ -346,7 +342,7 @@ static Char* TimeUnit_to_string(TimeUnit time_unit)
 static Bool clo_heap        = True;
 static UInt clo_heap_admin  = 8;
 static Bool clo_stacks      = True;
-static UInt clo_depth       = 8;
+static UInt clo_depth       = 8;       // XXX: too low?
 static UInt clo_threshold   = 100;     // 100 == 1%
 static UInt clo_time_unit   = TimeMS;
 
@@ -650,10 +646,11 @@ static Bool is_main_or_below_main(Char* fnname)
 }
 
 // Get the stack trace for an XCon, filtering out uninteresting entries:
-// alloc-fns and entries above alloc-fns, and entries below
-// main-or-below-main.
-// Eg:       alloc-fn1 / alloc-fn2 / a / b / main / (below main) / c
-// becomes:  a / b / main
+// alloc-fns and entries above alloc-fns, and entries below main-or-below-main.
+//   Eg:       alloc-fn1 / alloc-fn2 / a / b / main / (below main) / c
+//   becomes:  a / b / main
+// Nb: it's possible to end up with an empty trace, eg. if 'main' is marked
+// as an alloc-fn.  This is ok.
 static
 Int get_IPs( ThreadId tid, Bool is_custom_alloc, Addr ips[], Int max_ips)
 {
@@ -678,6 +675,12 @@ Int get_IPs( ThreadId tid, Bool is_custom_alloc, Addr ips[], Int max_ips)
    // In other words, to redo, we'd have to get a stack trace as big as we
    // asked for, remove more than 'overestimate' alloc-fns, and not hit
    // main-or-below-main.
+   //
+   // Nb: it's possible that an alloc-fn may be found in the overestimate
+   // portion, in which case the trace will be shrunk, even though it
+   // arguably shouldn't.  But it would require a very large chain of
+   // alloc-fns, and the best behaviour isn't all that clear, so we don't
+   // worry about it.
 
    // Main loop
    for (overestimate = 3; True; overestimate += 6) {
@@ -686,13 +689,14 @@ Int get_IPs( ThreadId tid, Bool is_custom_alloc, Addr ips[], Int max_ips)
       if (overestimate > MAX_OVERESTIMATE)
          VG_(tool_panic)("get_IPs: ips[] too small, inc. MAX_OVERESTIMATE?");
 
-      // Ask for more than clo_depth suggests we need.
+      // Ask for some more IPs than clo_depth suggests we need.
       n_ips = VG_(get_StackTrace)( tid, ips, clo_depth + overestimate );
       tl_assert(n_ips > 0);
 
       // If we got fewer IPs than we asked for, redo=False
-      if (n_ips < clo_depth + overestimate)
+      if (n_ips < clo_depth + overestimate) {
          fewer_IPs_than_asked_for = True;
+      }
 
       // Filter uninteresting entries out of the stack trace.  n_ips is
       // updated accordingly.
@@ -714,17 +718,6 @@ Int get_IPs( ThreadId tid, Bool is_custom_alloc, Addr ips[], Int max_ips)
             // before it.
             if (is_alloc_fn(buf)) {
                Int j;
-               if (i+1 >= n_ips) {
-                  // This occurs if removing an alloc-fn and entries above
-                  // it results in an empty stack trace.
-                  VG_(message)(Vg_UserMsg,
-                     "User error: nothing but alloc-fns in stack trace");
-                  VG_(message)(Vg_UserMsg,
-                     "Try removing --alloc-fn=%s option and try again.", buf);
-                  VG_(message)(Vg_UserMsg,
-                     "Exiting.");
-                  VG_(exit)(1);
-               }
                n_alloc_fns_removed = i+1;
 
                // Shuffle the rest down.
