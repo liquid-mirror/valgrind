@@ -44,9 +44,6 @@
 // - do a graph-drawing test
 // - write a good basic test that shows how the tool works, suitable for
 //   documentation
-// - make everything configurable, eg. min/max number of snapshots (which
-//   also determine culling proportion), frequency of detailed snapshots,
-//   etc.
 //
 // Misc:
 // - with --heap=no, --heap-admin still counts.  should it?
@@ -326,7 +323,7 @@ static Bool is_alloc_fn(Char* fnname)
 //--- Command line args                                    ---//
 //------------------------------------------------------------//
 
-#define MAX_DEPTH       50
+#define MAX_DEPTH       200
 
 typedef enum { TimeMS, TimeB } TimeUnit;
 
@@ -339,12 +336,14 @@ static Char* TimeUnit_to_string(TimeUnit time_unit)
    }
 }
 
-static Bool clo_heap        = True;
-static UInt clo_heap_admin  = 8;
-static Bool clo_stacks      = True;
-static UInt clo_depth       = 8;       // XXX: too low?
-static UInt clo_threshold   = 100;     // 100 == 1%
-static UInt clo_time_unit   = TimeMS;
+static Bool clo_heap          = True;
+static UInt clo_heap_admin    = 8;
+static Bool clo_stacks        = True;
+static UInt clo_depth         = 8;       // XXX: too low?
+static UInt clo_threshold     = 100;     // 100 == 1%
+static UInt clo_time_unit     = TimeMS;
+static UInt clo_detailed_freq = 10;
+static UInt clo_max_snapshots = 100;
 
 static XArray* args_for_massif;
 
@@ -353,15 +352,16 @@ static Bool ms_process_cmd_line_option(Char* arg)
    // Remember the arg for later use.
    VG_(addToXA)(args_for_massif, &arg);
 
-        VG_BOOL_CLO(arg, "--heap",       clo_heap)
-   else VG_BOOL_CLO(arg, "--stacks",     clo_stacks)
+        VG_BOOL_CLO(arg, "--heap",   clo_heap)
+   else VG_BOOL_CLO(arg, "--stacks", clo_stacks)
 
-   // XXX: currently allows negative heap admin sizes!  Abort if negative.
-   else VG_NUM_CLO (arg, "--heap-admin", clo_heap_admin)
-   else VG_BNUM_CLO(arg, "--depth",      clo_depth, 1, MAX_DEPTH)
+   else VG_NUM_CLO(arg, "--heap-admin", clo_heap_admin)
+   else VG_NUM_CLO(arg, "--depth",      clo_depth)
 
    // XXX: use a fractional number, so no division by 100
-   else VG_NUM_CLO(arg, "--threshold",   clo_threshold)
+   else VG_NUM_CLO(arg, "--threshold",     clo_threshold)
+   else VG_NUM_CLO(arg, "--detailed-freq", clo_detailed_freq)
+   else VG_NUM_CLO(arg, "--max-snapshots", clo_max_snapshots)
 
    else if (VG_CLO_STREQ(arg, "--time-unit=ms")) clo_time_unit = TimeMS;
    else if (VG_CLO_STREQ(arg, "--time-unit=B"))  clo_time_unit = TimeB;
@@ -389,6 +389,8 @@ static void ms_print_usage(void)
 "                               total size, <n>=0 shows all nodes) [100]\n"
 "    --time-unit=ms|B          time unit, milliseconds or bytes\n"
 "                               alloc'd/dealloc'd on the heap [ms]\n"
+"    --detailed-freq=<N>       every Nth snapshot should be detailed [10]\n"
+"    --max-snapshots=<N>       maximum number of snapshots recorded [100]\n"
    );
    VG_(replacement_malloc_print_usage)();
 }
@@ -652,7 +654,7 @@ static Bool is_main_or_below_main(Char* fnname)
 // Nb: it's possible to end up with an empty trace, eg. if 'main' is marked
 // as an alloc-fn.  This is ok.
 static
-Int get_IPs( ThreadId tid, Bool is_custom_alloc, Addr ips[], Int max_ips)
+Int get_IPs( ThreadId tid, Bool is_custom_alloc, Addr ips[])
 {
    Int n_ips, i, n_alloc_fns_removed = 0;
    Int overestimate;
@@ -756,12 +758,12 @@ Int get_IPs( ThreadId tid, Bool is_custom_alloc, Addr ips[], Int max_ips)
 // Gets an XCon and puts it in the tree.  Returns the XCon's bottom-XPt.
 static XPt* get_XCon( ThreadId tid, Bool is_custom_alloc )
 {
-   static Addr ips[MAX_IPS];     // Static to minimise stack size.
+   Addr ips[MAX_IPS];
    Int i;
    XPt* xpt = alloc_xpt;
 
    // After this call, the IPs we want are in ips[0]..ips[n_ips-1].
-   Int n_ips = get_IPs(tid, is_custom_alloc, ips, MAX_IPS);
+   Int n_ips = get_IPs(tid, is_custom_alloc, ips);
 
    // Now do the search/insertion of the XCon. 'L' is the loop counter,
    // being the index into ips[].
@@ -822,11 +824,6 @@ static void update_XCon(XPt* xpt, SSizeT space_delta)
 // limit again, we again cull and then take them even more slowly, and so
 // on.
 
-// XXX: if the program is really short, we may get no detailed snapshots...
-// that's bad, do something about it.
-#define MAX_N_SNAPSHOTS        100  // Keep it even, for simplicity
-#define DETAILED_SNAPSHOT_FREQ  10  // Every Nth snapshot will be detailed
-
 // Time is measured either in ms or bytes, depending on the --time-unit
 // option.  It's a Long because it can exceed 32-bits reasonably easily, and
 // because we need to allow negative values to represent unset times.
@@ -853,8 +850,8 @@ typedef
    }                       // otherwise NULL
    Snapshot;
 
-static UInt     next_snapshot_i = 0;   // Index of where next snapshot will go.
-static Snapshot snapshots[MAX_N_SNAPSHOTS];
+static UInt      next_snapshot_i = 0;  // Index of where next snapshot will go.
+static Snapshot* snapshots;            // Array of snapshots.
 
 static Bool is_snapshot_in_use(Snapshot* snapshot)
 {
@@ -898,7 +895,7 @@ static void sanity_check_snapshots_array(void)
    for (i = 0; i < next_snapshot_i; i++) {
       tl_assert( is_snapshot_in_use( & snapshots[i] ));
    }
-   for (    ; i < MAX_N_SNAPSHOTS; i++) {
+   for (    ; i < clo_max_snapshots; i++) {
       tl_assert(!is_snapshot_in_use( & snapshots[i] ));
    }
 }
@@ -974,14 +971,14 @@ static UInt cull_snapshots(void)
    // Sets j to the index of the first not-yet-removed snapshot at or after i
    #define FIND_SNAPSHOT(i, j) \
       for (j = i; \
-           j < MAX_N_SNAPSHOTS && !is_snapshot_in_use(&snapshots[j]); \
+           j < clo_max_snapshots && !is_snapshot_in_use(&snapshots[j]); \
            j++) { }
 
    VERB(1, "Culling...");
 
    // First we remove enough snapshots by clearing them in-place.  Once
    // that's done, we can slide the remaining ones down.
-   for (i = 0; i < MAX_N_SNAPSHOTS/2; i++) {
+   for (i = 0; i < clo_max_snapshots/2; i++) {
       // Find the snapshot representing the smallest timespan.  The timespan
       // for snapshot n = d(N-1,N)+d(N,N+1), where d(A,B) is the time between
       // snapshot A and B.  We don't consider the first and last snapshots for
@@ -996,7 +993,7 @@ static UInt cull_snapshots(void)
       FIND_SNAPSHOT(j+1, jn);
       min_timespan = 0x7fffffffffffffffLL;
       min_j        = -1;
-      while (jn < MAX_N_SNAPSHOTS) {
+      while (jn < clo_max_snapshots) {
          Time timespan = snapshots[jn].time - snapshots[jp].time;
          tl_assert(timespan >= 0);
          // Nb: We never cull the peak snapshot.
@@ -1027,7 +1024,7 @@ static UInt cull_snapshots(void)
    // i.  Then slide everything down.
    for (i = 0;  is_snapshot_in_use( &snapshots[i] ); i++) { }
    for (j = i; !is_snapshot_in_use( &snapshots[j] ); j++) { }
-   for (  ; j < MAX_N_SNAPSHOTS; j++) {
+   for (  ; j < clo_max_snapshots; j++) {
       if (is_snapshot_in_use( &snapshots[j] )) {
          snapshots[i++] = snapshots[j];
          clear_snapshot(&snapshots[j]);
@@ -1075,7 +1072,7 @@ static UInt cull_snapshots(void)
    // Print remaining snapshots, if necessary.
    if (VG_(clo_verbosity) > 1) {
       VERB(1, "Finished culling (%3d of %3d deleted)",
-         n_deleted, MAX_N_SNAPSHOTS);
+         n_deleted, clo_max_snapshots);
       for (i = 0; i < next_snapshot_i; i++) {
          VERB_snapshot(1, "  post-cull", i);
       }
@@ -1170,7 +1167,7 @@ maybe_take_snapshot(SnapshotKind kind, Char* what)
    static Time min_time_interval = 0;
    // Zero allows startup snapshot.
    static Time earliest_possible_time_of_next_snapshot = 0;
-   static Int n_snapshots_until_next_detailed = DETAILED_SNAPSHOT_FREQ - 1;
+   static Int n_snapshots_since_last_detailed = 0;
 
    Snapshot* snapshot;
    Bool      is_detailed;
@@ -1184,7 +1181,7 @@ maybe_take_snapshot(SnapshotKind kind, Char* what)
          n_skipped_snapshots_since_last_snapshot++;
          return;
       }
-      is_detailed = (0 == n_snapshots_until_next_detailed);
+      is_detailed = (clo_detailed_freq-1 == n_snapshots_since_last_detailed);
       break;
 
     case Peak: {
@@ -1212,9 +1209,9 @@ maybe_take_snapshot(SnapshotKind kind, Char* what)
 
    // Record if it was detailed.
    if (is_detailed) {
-      n_snapshots_until_next_detailed = DETAILED_SNAPSHOT_FREQ - 1;
+      n_snapshots_since_last_detailed = 0;
    } else {
-      n_snapshots_until_next_detailed--;
+      n_snapshots_since_last_detailed++;
    }
 
    // Update peak data, if it's a Peak snapshot.
@@ -1248,7 +1245,7 @@ maybe_take_snapshot(SnapshotKind kind, Char* what)
 
    // Cull the entries, if our snapshot table is full.
    next_snapshot_i++;
-   if (MAX_N_SNAPSHOTS == next_snapshot_i) {
+   if (clo_max_snapshots == next_snapshot_i) {
       min_time_interval = cull_snapshots();
    }
 
@@ -1875,10 +1872,34 @@ static void ms_fini(Int exit_status)
 
 static void ms_post_clo_init(void)
 {
-   Int i = 1;
+   Int i;
    Word alloc_fn_word;
 
+   // Check options.
+   if (clo_heap_admin < 0 || clo_heap_admin > 1024) {
+      VG_(message)(Vg_UserMsg, "--heap-admin must be between 0 and 1024");
+      VG_(err_bad_option)("--heap-admin");
+   }
+   if (clo_depth < 1 || clo_depth > MAX_DEPTH) {
+      VG_(message)(Vg_UserMsg, "--depth must be between 1 and %d", MAX_DEPTH);
+      VG_(err_bad_option)("--depth");
+   }
+   if (clo_threshold < 0 || clo_threshold > 10000) {
+      VG_(message)(Vg_UserMsg, "--threshold must be between 0 and 10000");
+      VG_(err_bad_option)("--threshold");
+   }
+   if (clo_detailed_freq < 1 || clo_detailed_freq > 10000) {
+      VG_(message)(Vg_UserMsg, "--detailed-freq must be between 1 and 10000");
+      VG_(err_bad_option)("--detailed-freq");
+   }
+   if (clo_max_snapshots < 10 || clo_max_snapshots > 1000) {
+      VG_(message)(Vg_UserMsg, "--max-snapshots must be between 10 and 1000");
+      VG_(err_bad_option)("--max-snapshots");
+   }
+
+   // Print alloc-fns, if necessary.
    if (VG_(clo_verbosity) > 1) {
+      i = 1;
       VERB(1, "alloc-fns:");
       VG_(OSetWord_ResetIter)(alloc_fns);
       while ( VG_(OSetWord_Next)(alloc_fns, &alloc_fn_word) ) {
@@ -1887,19 +1908,24 @@ static void ms_post_clo_init(void)
       }
    }
 
+   // Events to track.
    if (clo_stacks) {
-      // Events to track.
       VG_(track_new_mem_stack)        ( new_mem_stack        );
       VG_(track_die_mem_stack)        ( die_mem_stack        );
       VG_(track_new_mem_stack_signal) ( new_mem_stack_signal );
       VG_(track_die_mem_stack_signal) ( die_mem_stack_signal );
    }
+
+   // Initialise snapshot array, and sanity-check it.
+   snapshots = VG_(malloc)(sizeof(Snapshot) * clo_max_snapshots);
+   for (i = 0; i < clo_max_snapshots; i++) {
+      clear_snapshot( & snapshots[i] );
+   }
+   sanity_check_snapshots_array();
 }
 
 static void ms_pre_clo_init(void)
 {
-   Int i;
-
    VG_(details_name)            ("Massif");
    VG_(details_version)         (NULL);
    VG_(details_description)     ("a space profiler");
@@ -1935,12 +1961,6 @@ static void ms_pre_clo_init(void)
 
    // Dummy node at top of the context structure.
    alloc_xpt = new_XPt(/*ip*/0, /*parent*/NULL);
-
-   // Initialise snapshot array, and sanity check it.
-   for (i = 0; i < MAX_N_SNAPSHOTS; i++) {
-      clear_snapshot( & snapshots[i] );
-   }
-   sanity_check_snapshots_array();
 
    // Initialise alloc_fns.
    init_alloc_fns();

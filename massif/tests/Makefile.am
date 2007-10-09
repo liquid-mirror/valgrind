@@ -20,6 +20,7 @@ EXTRA_DIST = $(noinst_SCRIPTS) \
 	long-time.post.exp long-time.stderr.exp long-time.vgtest \
 	null.post.exp null.stderr.exp null.vgtest \
 	one.post.exp one.stderr.exp one.vgtest \
+	params.post.exp params.stderr.exp params.vgtest \
 	peak.post.exp peak.stderr.exp peak.vgtest \
 	realloc.post.exp realloc.stderr.exp realloc.vgtest \
 	thresholds_0_0.post.exp   thresholds_0_0.stderr.exp   thresholds_0_0.vgtest \
