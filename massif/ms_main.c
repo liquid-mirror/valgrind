@@ -32,6 +32,8 @@
 //---------------------------------------------------------------------------
 // Todo:
 // - do snapshots on client requests
+// - C++ tests -- for each of the allocators, and overloaded versions of
+//   them (see 'init_alloc_fns').
 // - Add ability to draw multiple graphs, eg. heap-only, stack-only, total.
 //   Give each graph a title.  (try to do it generically!)
 // - make file format more generic.  Obstacles:
@@ -39,16 +41,16 @@
 //   - preset column widths for stats are not generic
 //   - preset column headers are not generic
 //   - "Massif arguments:" line is not generic
-// - consider 'instructions executed' as a time unit -- more regular than
-//   ms, less artificial than B (bug #121629)
 // - do a graph-drawing test
 // - write a good basic test that shows how the tool works, suitable for
 //   documentation
-//
-// Misc:
 // - with --heap=no, --heap-admin still counts.  should it?
-// - in each XPt, record both bytes and the number of live allocations? (or
-//   even total allocations and total deallocations?)
+//
+// Possible ideas for the future:
+// - Consider 'instructions executed' as a time unit -- more regular than
+//   ms, less artificial than B (bug #121629).
+// - In each XPt, record both bytes and the number of allocations, and
+//   possibly the global number of allocations.
 //
 // Dumping the results to file:
 // - work out the file format (Josef wants Callgrind format, Donna wants
@@ -274,21 +276,6 @@ static Bool have_started_executing_code = False;
 //--- Alloc fns                                            ---//
 //------------------------------------------------------------//
 
-// Nb: I used to have the following four C++ global overloadable allocators
-// in alloc_fns:
-//   operator new(unsigned)
-//   operator new[](unsigned)
-//   operator new(unsigned, std::nothrow_t const&)
-//   operator new[](unsigned, std::nothrow_t const&)
-// [Dennis Lubert says these are also necessary on AMD64:
-//  "operator new(unsigned long)",
-//  "operator new[](unsigned long)",
-//  "operator new(unsigned long, std::nothrow_t const&)",
-//  "operator new[](unsigned long, std::nothrow_t const&)",
-// ]
-// But someone might be interested in seeing them.  If they're not, they can
-// specify them with --alloc-fn.
-
 OSet* alloc_fns;
 
 static void init_alloc_fns(void)
@@ -302,6 +289,20 @@ static void init_alloc_fns(void)
    DO("memalign"         );
    DO("__builtin_new"    );
    DO("__builtin_vec_new");
+   // The following C++ allocators are overloadable.  It's conceivable that
+   // someone would want to not consider them as allocators, in order to see
+   // what's happening beneath them.  But if they're not in alloc_fns, then
+   // when they're not overloaded they won't be seen as alloc-fns, which
+   // will screw things up.  So we always consider them to be, and tough
+   // luck for anyone who wants to see inside them.
+   DO("operator new(unsigned)");
+   DO("operator new[](unsigned)");
+   DO("operator new(unsigned long)");
+   DO("operator new[](unsigned long)");
+   DO("operator new(unsigned, std::nothrow_t const&)");
+   DO("operator new[](unsigned, std::nothrow_t const&)");
+   DO("operator new(unsigned long, std::nothrow_t const&)");
+   DO("operator new[](unsigned long, std::nothrow_t const&)");
 }
 
 static Bool is_alloc_fn(Char* fnname)
@@ -656,6 +657,8 @@ static Bool is_main_or_below_main(Char* fnname)
 static
 Int get_IPs( ThreadId tid, Bool is_custom_alloc, Addr ips[])
 {
+   #define BUF_LEN   1024
+   Char buf[BUF_LEN];
    Int n_ips, i, n_alloc_fns_removed = 0;
    Int overestimate;
    Bool fewer_IPs_than_asked_for   = False;
@@ -703,9 +706,6 @@ Int get_IPs( ThreadId tid, Bool is_custom_alloc, Addr ips[])
       // Filter uninteresting entries out of the stack trace.  n_ips is
       // updated accordingly.
       for (i = n_ips-1; i >= 0; i--) {
-         #define BUF_LEN   1024
-         Char buf[BUF_LEN];
-
          if (VG_(get_fnname)(ips[i], buf, BUF_LEN)) {
 
             // If it's a main-or-below-main function, we (may) want to
@@ -734,9 +734,19 @@ Int get_IPs( ThreadId tid, Bool is_custom_alloc, Addr ips[])
 
       // There must be at least one alloc function, unless the client used
       // MALLOCLIKE_BLOCK.
-      if (!is_custom_alloc)
-         tl_assert2(n_alloc_fns_removed > 0,
-                    "n_alloc_fns_removed = %s\n", n_alloc_fns_removed);
+      if (!is_custom_alloc) {
+         if (n_alloc_fns_removed <= 0) {
+            // Hmm.  Print out the stack trace before aborting.
+            for (i = 0; i < n_ips; i++) {
+               if (VG_(get_fnname)(ips[i], buf, BUF_LEN)) {
+                  VG_(message)(Vg_DebugMsg, "--> %s", buf);
+               } else {
+                  VG_(message)(Vg_DebugMsg, "--> ???", buf);
+               }
+            }
+            tl_assert2(0, "Didn't find any alloc functions in the stack trace");
+         }
+      }
 
       // Did we get enough IPs after filtering?  If so, redo=False.
       if (n_ips >= clo_depth) {
@@ -1929,7 +1939,8 @@ static void ms_pre_clo_init(void)
    VG_(details_name)            ("Massif");
    VG_(details_version)         (NULL);
    VG_(details_description)     ("a space profiler");
-   VG_(details_copyright_author)("Copyright (C) 2003, Nicholas Nethercote");
+   VG_(details_copyright_author)(
+      "Copyright (C) 2003-2007, and GNU GPL'd, by Nicholas Nethercote");
    VG_(details_bug_reports_to)  (VG_BUGS_TO);
 
    // Basic functions
