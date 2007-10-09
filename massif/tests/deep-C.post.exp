@@ -45,9 +45,9 @@ Number of snapshots: 11
   8            864              864              800            64            0
   9            972              972              900            72            0
 92.59% (900B) (heap allocation functions) malloc/new/new[], --alloc-fns, etc.
-->92.59% (900B) 0x8048469: a2 (deep.c:26)
-  ->92.59% (900B) 0x804847F: a1 (deep.c:27)
-    ->92.59% (900B) 0x80484B3: main (deep.c:35)
+->92.59% (900B) 0x8048469: a2 (deep.c:28)
+  ->92.59% (900B) 0x804847F: a1 (deep.c:29)
+    ->92.59% (900B) 0x80484B3: main (deep.c:37)
       
 --------------------------------------------------------------------------------
   n        time(B)         total(B)   useful-heap(B) admin-heap(B)    stacks(B)
