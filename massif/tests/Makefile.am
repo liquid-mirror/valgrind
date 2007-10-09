@@ -10,6 +10,7 @@ EXTRA_DIST = $(noinst_SCRIPTS) \
 	basic.post.exp basic.stderr.exp basic.vgtest \
         culling1.stderr.exp culling1.vgtest \
         culling2.stderr.exp culling2.vgtest \
+	custom_alloc.post.exp custom_alloc.stderr.exp custom_alloc.vgtest
 	ignoring.post.exp ignoring.stderr.exp ignoring.vgtest \
 	long-time.post.exp long-time.stderr.exp long-time.vgtest \
 	null.post.exp null.stderr.exp null.vgtest \
@@ -28,10 +29,15 @@ EXTRA_DIST = $(noinst_SCRIPTS) \
 
 AM_CFLAGS   = $(WERROR) -Winline -Wall -Wshadow -g $(AM_FLAG_M3264_PRI)
 
+AM_CPPFLAGS = -I$(top_srcdir) -I$(top_srcdir)/include \
+		-I$(top_srcdir)/coregrind -I$(top_builddir)/include \
+		-I@VEX_DIR@/pub
+
 check_PROGRAMS = \
 	alloc-fns \
 	basic \
 	culling1 culling2 \
+	custom_alloc \
 	ignoring \
 	long-time \
 	null \

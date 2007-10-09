@@ -48,7 +48,6 @@
 //   (it aborts -- should give a warning and do something less drastic?)
 // - write a good basic test that shows how the tool works, suitable for
 //   documentation
-// - Check MALLOCLIKE_BLOCK works, write regtest
 // - make everything configurable, eg. min/max number of snapshots (which
 //   also determine culling proportion), frequency of detailed snapshots,
 //   etc.
@@ -149,7 +148,6 @@
 //
 // Tests:
 // - tests/overloaded_new.cpp is there
-// - one involving MALLOCLIKE
 //
 //---------------------------------------------------------------------------
 
@@ -657,7 +655,7 @@ static Bool is_main_or_below_main(Char* fnname)
 // Eg:       alloc-fn1 / alloc-fn2 / a / b / main / (below main) / c
 // becomes:  a / b / main
 static
-Int get_IPs( ThreadId tid, Bool is_custom_malloc, Addr ips[], Int max_ips)
+Int get_IPs( ThreadId tid, Bool is_custom_alloc, Addr ips[], Int max_ips)
 {
    Int n_ips, i, n_alloc_fns_removed = 0;
    Int overestimate;
@@ -739,9 +737,9 @@ Int get_IPs( ThreadId tid, Bool is_custom_malloc, Addr ips[], Int max_ips)
          }
       }
 
-      // There must be at least one alloc function, unless client used
+      // There must be at least one alloc function, unless the client used
       // MALLOCLIKE_BLOCK.
-      if (!is_custom_malloc)
+      if (!is_custom_alloc)
          tl_assert2(n_alloc_fns_removed > 0,
                     "n_alloc_fns_removed = %s\n", n_alloc_fns_removed);
 
@@ -763,14 +761,14 @@ Int get_IPs( ThreadId tid, Bool is_custom_malloc, Addr ips[], Int max_ips)
 }
 
 // Gets an XCon and puts it in the tree.  Returns the XCon's bottom-XPt.
-static XPt* get_XCon( ThreadId tid, Bool is_custom_malloc )
+static XPt* get_XCon( ThreadId tid, Bool is_custom_alloc )
 {
    static Addr ips[MAX_IPS];     // Static to minimise stack size.
    Int i;
    XPt* xpt = alloc_xpt;
 
    // After this call, the IPs we want are in ips[0]..ips[n_ips-1].
-   Int n_ips = get_IPs(tid, is_custom_malloc, ips, MAX_IPS);
+   Int n_ips = get_IPs(tid, is_custom_alloc, ips, MAX_IPS);
 
    // Now do the search/insertion of the XCon. 'L' is the loop counter,
    // being the index into ips[].
@@ -1326,7 +1324,7 @@ void* new_block ( ThreadId tid, void* p, SizeT szB, SizeT alignB,
                   Bool is_zeroed )
 {
    HP_Chunk* hc;
-   Bool custom_alloc = (NULL == p);
+   Bool is_custom_alloc = (NULL != p);
    if (szB < 0) return NULL;
 
    VERB(2, "<<< new_mem_heap (%lu)", szB);
@@ -1356,7 +1354,7 @@ void* new_block ( ThreadId tid, void* p, SizeT szB, SizeT alignB,
 
    // Update XTree, if necessary
    if (clo_heap) {
-      hc->where = get_XCon( tid, custom_alloc );
+      hc->where = get_XCon( tid, is_custom_alloc );
       update_XCon(hc->where, szB);
    }
    VG_(HT_add_node)(malloc_list, hc);
@@ -1605,16 +1603,15 @@ static Bool ms_handle_client_request ( ThreadId tid, UWord* argv, UWord* ret )
       void* res;
       void* p   = (void*)argv[1];
       SizeT szB =        argv[2];
-      *ret = 0;
-      res  =
-         new_block( tid, p, szB, /*alignB--ignored*/0, /*is_zeroed*/False );
+      res = new_block( tid, p, szB, /*alignB--ignored*/0, /*is_zeroed*/False );
       tl_assert(res == p);
+      *ret = 0;
       return True;
    }
    case VG_USERREQ__FREELIKE_BLOCK: {
-      void* p         = (void*)argv[1];
-      *ret            = 0;
+      void* p = (void*)argv[1];
       die_block( p, /*custom_free*/True );
+      *ret = 0;
       return True;
    }
    default:
