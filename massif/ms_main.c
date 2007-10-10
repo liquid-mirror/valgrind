@@ -1911,6 +1911,12 @@ static void ms_post_clo_init(void)
       VG_(err_bad_option)("--max-snapshots");
    }
 
+   // If we have --heap=no, set --heap-admin to zero, just to make sure we
+   // don't accidentally use a non-zero heap-admin size somewhere.
+   if (!clo_heap) {
+      clo_heap_admin = 0;
+   }
+
    // Print alloc-fns, if necessary.
    if (VG_(clo_verbosity) > 1) {
       i = 1;
