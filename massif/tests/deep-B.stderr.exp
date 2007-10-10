@@ -25,10 +25,10 @@ Massif:   alloc S.  7 (t:756, hp:700, ad:56, st:0)
 Massif:   alloc S.  8 (t:864, hp:800, ad:64, st:0)
 Massif:   alloc Sd  9 (t:972, hp:900, ad:72, st:0)
 Massif:   alloc S. 10 (t:1080, hp:1000, ad:80, st:0)
-Massif: allocs:               10
-Massif: zeroallocs:           0 (0%)
-Massif: reallocs:             0
-Massif: frees:                0
+Massif: heap allocs:          10
+Massif: heap zero allocs:     0 (0%)
+Massif: heap reallocs:        0
+Massif: heap frees:           0
 Massif: stack allocs:         0
 Massif: stack frees:          0
 Massif: XPts:                 7

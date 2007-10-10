@@ -522,10 +522,10 @@ Massif:   post-cull S. 47 (t:20273, hp:18721, ad:1552, st:0)
 Massif:   post-cull S. 48 (t:20678, hp:19110, ad:1568, st:0)
 Massif:   post-cull Sd 49 (t:21293, hp:19701, ad:1592, st:0)
 Massif: New time interval = 321 (between snapshots 26 and 27)
-Massif: allocs:               200
-Massif: zeroallocs:           1 (0%)
-Massif: reallocs:             0
-Massif: frees:                0
+Massif: heap allocs:          200
+Massif: heap zero allocs:     1 (0%)
+Massif: heap reallocs:        0
+Massif: heap frees:           0
 Massif: stack allocs:         0
 Massif: stack frees:          0
 Massif: XPts:                 2

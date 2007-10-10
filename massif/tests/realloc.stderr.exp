@@ -21,10 +21,10 @@ Massif: realloc S.  4 (t:150, hp:50, ad:0, st:0)
 Massif: realloc S.  5 (t:250, hp:150, ad:0, st:0)
 Massif: de-PEAK Sp  6 (t:250, hp:150, ad:0, st:0)
 Massif: dealloc S.  7 (t:400, hp:0, ad:0, st:0)
-Massif: allocs:               1
-Massif: zeroallocs:           0 (0%)
-Massif: reallocs:             4
-Massif: frees:                1
+Massif: heap allocs:          1
+Massif: heap zero allocs:     0 (0%)
+Massif: heap reallocs:        3
+Massif: heap frees:           1
 Massif: stack allocs:         0
 Massif: stack frees:          0
 Massif: XPts:                 5
