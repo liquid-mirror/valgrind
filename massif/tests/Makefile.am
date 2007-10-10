@@ -18,6 +18,7 @@ EXTRA_DIST = $(noinst_SCRIPTS) \
 	custom_alloc.post.exp custom_alloc.stderr.exp custom_alloc.vgtest
 	ignoring.post.exp ignoring.stderr.exp ignoring.vgtest \
 	long-time.post.exp long-time.stderr.exp long-time.vgtest \
+	no-stack-no-heap.post.exp no-stack-no-heap.stderr.exp no-stack-no-heap.vgtest \
 	null.post.exp null.stderr.exp null.vgtest \
 	one.post.exp one.stderr.exp one.vgtest \
 	params.post.exp params.stderr.exp params.vgtest \

@@ -339,7 +339,7 @@ static Char* TimeUnit_to_string(TimeUnit time_unit)
 
 static Bool clo_heap          = True;
 static UInt clo_heap_admin    = 8;
-static Bool clo_stacks        = True;
+static Bool clo_stacks        = False;
 static UInt clo_depth         = 8;       // XXX: too low?
 static UInt clo_threshold     = 100;     // 100 == 1%
 static UInt clo_time_unit     = TimeMS;
@@ -356,6 +356,7 @@ static Bool ms_process_cmd_line_option(Char* arg)
         VG_BOOL_CLO(arg, "--heap",   clo_heap)
    else VG_BOOL_CLO(arg, "--stacks", clo_stacks)
 
+   // XXX: "--heap-admin= " is accepted!
    else VG_NUM_CLO(arg, "--heap-admin", clo_heap_admin)
    else VG_NUM_CLO(arg, "--depth",      clo_depth)
 
@@ -381,8 +382,9 @@ static void ms_print_usage(void)
 {
    VG_(printf)(
 "    --heap=no|yes             profile heap blocks [yes]\n"
-"    --heap-admin=<number>     average admin bytes per heap block [8]\n"
-"    --stacks=no|yes           profile stack(s) [yes]\n"
+"    --heap-admin=<number>     average admin bytes per heap block;"
+"                               ignored if --heap=no [8]\n"
+"    --stacks=no|yes           profile stack(s) [no]\n"
 "    --depth=<number>          depth of contexts [8]\n"
 "    --alloc-fn=<name>         specify <fn> as an alloc function [empty]\n"
 "    --threshold=<n>           significance threshold, in 100ths of a percent\n"
@@ -1134,17 +1136,13 @@ take_snapshot(Snapshot* snapshot, SnapshotKind kind, Time time,
    tl_assert(!is_snapshot_in_use(snapshot));
    tl_assert(have_started_executing_code);
 
-   // Heap.
+   // Heap and heap admin.
    if (clo_heap) {
       snapshot->heap_szB = heap_szB;
       if (is_detailed) {
          snapshot->alloc_xpt = dup_XTree(alloc_xpt, /*parent*/NULL);
          tl_assert(snapshot->alloc_xpt->curr_szB == heap_szB);
       }
-   }
-
-   // Heap admin.
-   if (clo_heap_admin > 0) {
       snapshot->heap_admin_szB = clo_heap_admin * n_heap_blocks;
    }
 
@@ -1231,7 +1229,8 @@ maybe_take_snapshot(SnapshotKind kind, Char* what)
       // Sanity check the size, then update our recorded peak.
       SizeT snapshot_total_szB =
          snapshot->heap_szB + snapshot->heap_admin_szB + snapshot->stacks_szB;
-      tl_assert(snapshot_total_szB > peak_snapshot_total_szB);
+      tl_assert2(snapshot_total_szB > peak_snapshot_total_szB,
+         "%ld, %ld\n", snapshot_total_szB, peak_snapshot_total_szB);
       peak_snapshot_total_szB = snapshot_total_szB;
 
       // Find the old peak snapshot, if it exists, and mark it as normal.
@@ -1348,19 +1347,19 @@ void* new_block ( ThreadId tid, void* p, SizeT szB, SizeT alignB,
    hc->szB  = szB;
    hc->data = (Addr)p;
    hc->where = NULL;    // paranoia
-
-   // Update heap stats
-   update_heap_stats(hc->szB, /*n_heap_blocks_delta*/1);
-
-   // Update XTree, if necessary
-   if (clo_heap) {
-      hc->where = get_XCon( tid, is_custom_alloc );
-      update_XCon(hc->where, szB);
-   }
    VG_(HT_add_node)(malloc_list, hc);
 
-   // Maybe take a snapshot.
-   maybe_take_snapshot(Normal, "  alloc");
+   if (clo_heap) {
+      // Update heap stats
+      update_heap_stats(hc->szB, /*n_heap_blocks_delta*/1);
+
+      // Update XTree
+      hc->where = get_XCon( tid, is_custom_alloc );
+      update_XCon(hc->where, szB);
+
+      // Maybe take a snapshot.
+      maybe_take_snapshot(Normal, "  alloc");
+   }
 
    VERB(2, ">>>");
 
@@ -1386,24 +1385,24 @@ void die_block ( void* p, Bool custom_free )
    }
    die_szB = hc->szB;
 
-   // Maybe take a peak snapshot, since it's a deallocation.
-   maybe_take_snapshot(Peak, "de-PEAK");
-
-   // Update heap stats
-   update_heap_stats(-die_szB, /*n_heap_blocks_delta*/-1);
-
-   // Update XTree, if necessary
    if (clo_heap) {
+      // Maybe take a peak snapshot, since it's a deallocation.
+      maybe_take_snapshot(Peak, "de-PEAK");
+
+      // Update heap stats
+      update_heap_stats(-die_szB, /*n_heap_blocks_delta*/-1);
+
+      // Update XTree, if necessary
       update_XCon(hc->where, -hc->szB);
+
+      // Maybe take a snapshot.
+      maybe_take_snapshot(Normal, "dealloc");
    }
 
    // Actually free the chunk, and the heap block (if necessary)
    VG_(free)( hc );  hc = NULL;
    if (!custom_free)
       VG_(cli_free)( p );
-
-   // Maybe take a snapshot.
-   maybe_take_snapshot(Normal, "dealloc");
 
    VERB(2, ">>> (-%lu)", die_szB);
 }
@@ -1430,14 +1429,17 @@ void* renew_block ( ThreadId tid, void* p_old, SizeT new_szB )
 
    old_szB = hc->szB;
 
-   // Maybe take a peak snapshot, if it's (effectively) a deallocation.
-   if (new_szB < old_szB) {
-      maybe_take_snapshot(Peak, "re-PEAK");
+   if (clo_heap) {
+      // Maybe take a peak snapshot, if it's (effectively) a deallocation.
+      if (new_szB < old_szB) {
+         maybe_take_snapshot(Peak, "re-PEAK");
+      }
+
+      // Update heap stats
+      update_heap_stats(new_szB - old_szB, /*n_heap_blocks_delta*/0);
    }
 
-   // Update heap stats
-   update_heap_stats(new_szB - old_szB, /*n_heap_blocks_delta*/0);
-
+   // Actually do the allocation, if necessary.
    if (new_szB <= old_szB) {
       // new size is smaller or same;  block not moved
       p_new = p_old;
@@ -1475,7 +1477,9 @@ void* renew_block ( ThreadId tid, void* p_old, SizeT new_szB )
    VG_(HT_add_node)(malloc_list, hc);
 
    // Maybe take a snapshot.
-   maybe_take_snapshot(Normal, "realloc");
+   if (clo_heap) {
+      maybe_take_snapshot(Normal, "realloc");
+   }
 
    VERB(2, ">>> (%ld)", new_szB - old_szB);
 
