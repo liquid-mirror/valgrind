@@ -224,10 +224,10 @@
 static UInt n_xpts                 = 0;
 static UInt n_dupd_xpts            = 0;
 static UInt n_dupd_xpts_freed      = 0;
-static UInt n_allocs               = 0;
-static UInt n_zero_allocs          = 0;
-static UInt n_reallocs             = 0;
-static UInt n_frees                = 0;
+static UInt n_heap_allocs          = 0;
+static UInt n_heap_zero_allocs     = 0;
+static UInt n_heap_reallocs        = 0;
+static UInt n_heap_frees           = 0;
 static UInt n_stack_allocs         = 0;
 static UInt n_stack_frees          = 0;
 static UInt n_xpt_init_expansions  = 0;
@@ -1326,17 +1326,10 @@ void* new_block ( ThreadId tid, void* p, SizeT szB, SizeT alignB,
    Bool is_custom_alloc = (NULL != p);
    if (szB < 0) return NULL;
 
-   VERB(2, "<<< new_mem_heap (%lu)", szB);
-
-   // Update statistics
-   n_allocs++;
-   if (0 == szB) n_zero_allocs++;
-
    // Allocate and zero if necessary
    if (!p) {
       p = VG_(cli_malloc)( alignB, szB );
       if (!p) {
-         VERB(2, ">>> (null)");
          return NULL;
       }
       if (is_zeroed) VG_(memset)(p, 0, szB);
@@ -1346,22 +1339,28 @@ void* new_block ( ThreadId tid, void* p, SizeT szB, SizeT alignB,
    hc       = VG_(malloc)(sizeof(HP_Chunk));
    hc->szB  = szB;
    hc->data = (Addr)p;
-   hc->where = NULL;    // paranoia
+   hc->where = NULL;
    VG_(HT_add_node)(malloc_list, hc);
 
    if (clo_heap) {
-      // Update heap stats
+      VERB(2, "<<< new_mem_heap (%lu)", szB);
+
+      // Update statistics.
+      n_heap_allocs++;
+      if (0 == szB) n_heap_zero_allocs++;
+
+      // Update heap stats.
       update_heap_stats(hc->szB, /*n_heap_blocks_delta*/1);
 
-      // Update XTree
+      // Update XTree.
       hc->where = get_XCon( tid, is_custom_alloc );
       update_XCon(hc->where, szB);
 
       // Maybe take a snapshot.
       maybe_take_snapshot(Normal, "  alloc");
-   }
 
-   VERB(2, ">>>");
+      VERB(2, ">>>");
+   }
 
    return p;
 }
@@ -1372,39 +1371,38 @@ void die_block ( void* p, Bool custom_free )
    HP_Chunk* hc;
    SizeT     die_szB;
 
-   VERB(2, "<<< die_mem_heap");
-
-   // Update statistics
-   n_frees++;
-
    // Remove HP_Chunk from malloc_list
    hc = VG_(HT_remove)(malloc_list, (UWord)p);
    if (NULL == hc) {
-      VERB(2, ">>> (bogus)");
       return;   // must have been a bogus free()
    }
    die_szB = hc->szB;
 
    if (clo_heap) {
+      VERB(2, "<<< die_mem_heap");
+
+      // Update statistics
+      n_heap_frees++;
+
       // Maybe take a peak snapshot, since it's a deallocation.
       maybe_take_snapshot(Peak, "de-PEAK");
 
-      // Update heap stats
+      // Update heap stats.
       update_heap_stats(-die_szB, /*n_heap_blocks_delta*/-1);
 
-      // Update XTree, if necessary
+      // Update XTree.
       update_XCon(hc->where, -hc->szB);
 
       // Maybe take a snapshot.
       maybe_take_snapshot(Normal, "dealloc");
+
+      VERB(2, ">>> (-%lu)", die_szB);
    }
 
    // Actually free the chunk, and the heap block (if necessary)
    VG_(free)( hc );  hc = NULL;
    if (!custom_free)
       VG_(cli_free)( p );
-
-   VERB(2, ">>> (-%lu)", die_szB);
 }
 
 static __inline__
@@ -1415,27 +1413,26 @@ void* renew_block ( ThreadId tid, void* p_old, SizeT new_szB )
    SizeT     old_szB;
    XPt      *old_where, *new_where;
 
-   VERB(2, "<<< renew_mem_heap (%lu)", new_szB);
-
-   // Update statistics
-   n_reallocs++;
-
    // Remove the old block
    hc = VG_(HT_remove)(malloc_list, (UWord)p_old);
    if (hc == NULL) {
-      VERB(2, ">>> (bogus)");
       return NULL;   // must have been a bogus realloc()
    }
 
    old_szB = hc->szB;
 
    if (clo_heap) {
+      VERB(2, "<<< renew_mem_heap (%lu)", new_szB);
+
+      // Update statistics
+      n_heap_reallocs++;
+
       // Maybe take a peak snapshot, if it's (effectively) a deallocation.
       if (new_szB < old_szB) {
          maybe_take_snapshot(Peak, "re-PEAK");
       }
 
-      // Update heap stats
+      // Update heap stats.
       update_heap_stats(new_szB - old_szB, /*n_heap_blocks_delta*/0);
    }
 
@@ -1454,16 +1451,16 @@ void* renew_block ( ThreadId tid, void* p_old, SizeT new_szB )
    }
 
    if (p_new) {
-      old_where = hc->where;
-      new_where = get_XCon( tid, /*custom_malloc*/False);
-
-      // Update HP_Chunk
+      // Update HP_Chunk.
       hc->data  = (Addr)p_new;
       hc->szB   = new_szB;
-      hc->where = new_where;
+      old_where = hc->where;
+      hc->where = NULL;
 
-      // Update XPt curr_szB fields
+      // Update XTree.
       if (clo_heap) {
+         new_where = get_XCon( tid, /*custom_malloc*/False);
+         hc->where = new_where;
          update_XCon(old_where, -old_szB);
          update_XCon(new_where,  new_szB);
       }
@@ -1471,7 +1468,7 @@ void* renew_block ( ThreadId tid, void* p_old, SizeT new_szB )
 
    // Now insert the new hc (with a possibly new 'data' field) into
    // malloc_list.  If this realloc() did not increase the memory size, we
-   // will have removed and then re-added mc unnecessarily.  But that's ok
+   // will have removed and then re-added hc unnecessarily.  But that's ok
    // because shrinking a block with realloc() is (presumably) much rarer
    // than growing it, and this way simplifies the growing case.
    VG_(HT_add_node)(malloc_list, hc);
@@ -1479,9 +1476,9 @@ void* renew_block ( ThreadId tid, void* p_old, SizeT new_szB )
    // Maybe take a snapshot.
    if (clo_heap) {
       maybe_take_snapshot(Normal, "realloc");
-   }
 
-   VERB(2, ">>> (%ld)", new_szB - old_szB);
+      VERB(2, ">>> (%ld)", new_szB - old_szB);
+   }
 
    return p_new;
 }
@@ -1855,12 +1852,12 @@ static void ms_fini(Int exit_status)
 
    // Stats
    tl_assert(n_xpts > 0);  // always have alloc_xpt
-   VERB(1, "allocs:               %u", n_allocs);
-   VERB(1, "zeroallocs:           %u (%d%%)",
-      n_zero_allocs,
-      ( n_allocs ? n_zero_allocs * 100 / n_allocs : 0 ));
-   VERB(1, "reallocs:             %u", n_reallocs);
-   VERB(1, "frees:                %u", n_frees);
+   VERB(1, "heap allocs:          %u", n_heap_allocs);
+   VERB(1, "heap zero allocs:     %u (%d%%)",
+      n_heap_zero_allocs,
+      ( n_heap_allocs ? n_heap_zero_allocs * 100 / n_heap_allocs : 0 ));
+   VERB(1, "heap reallocs:        %u", n_heap_reallocs);
+   VERB(1, "heap frees:           %u", n_heap_frees);
    VERB(1, "stack allocs:         %u", n_stack_allocs);
    VERB(1, "stack frees:          %u", n_stack_frees);
    VERB(1, "XPts:                 %u", n_xpts);
