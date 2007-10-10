@@ -4,7 +4,15 @@ Massif:   2: realloc
 Massif:   3: memalign
 Massif:   4: __builtin_new
 Massif:   5: __builtin_vec_new
-Massif:   6: malloc
+Massif:   6: operator new(unsigned)
+Massif:   7: operator new[](unsigned)
+Massif:   8: operator new(unsigned long)
+Massif:   9: operator new[](unsigned long)
+Massif:   10: malloc
+Massif:   11: operator new(unsigned, std::nothrow_t const&)
+Massif:   12: operator new[](unsigned, std::nothrow_t const&)
+Massif:   13: operator new(unsigned long, std::nothrow_t const&)
+Massif:   14: operator new[](unsigned long, std::nothrow_t const&)
 Massif: startup S.  0 (t:0, hp:0, ad:0, st:0)
 Massif:   alloc S.  1 (t:18, hp:10, ad:8, st:0)
 Massif:   alloc S.  2 (t:36, hp:20, ad:16, st:0)
