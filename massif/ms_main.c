@@ -85,7 +85,7 @@
 // 142197  nor     massif tool ignores --massif:alloc-fn parameters in .valg...
 //   - fixed in trunk
 // 142491  nor     Maximise use of alloc_fns array
-//   - addressed, it's now an OSet and thus unlimited in size
+//   - addressed, it's now an XArray and thus unlimited in size
 // 144453   (get_XCon): Assertion 'xpt->max_children != 0' failed.
 //   - relevant code now gone
 //
@@ -156,6 +156,12 @@
 //   tinycc     0.44s  ma:10.7s (24.4x, -----)
 //   many-xpts  0.11s  ma:32.8s (298.0x, -----)
 //
+// Changed alloc_fns from an OSet to an XArray:
+//   bz2        1.20s  ma: 5.4s ( 4.5x, -----)
+//   heap       0.24s  ma:19.4s (80.6x, -----)
+//   tinycc     0.49s  ma: 7.8s (16.0x, -----)
+//   many-xpts  0.12s  ma:11.2s (93.3x, -----)
+//
 //---------------------------------------------------------------------------
 
 #include "pub_tool_basics.h"
@@ -171,7 +177,6 @@
 #include "pub_tool_machine.h"
 #include "pub_tool_mallocfree.h"
 #include "pub_tool_options.h"
-#include "pub_tool_oset.h"
 #include "pub_tool_replacemalloc.h"
 #include "pub_tool_stacktrace.h"
 #include "pub_tool_tooliface.h"
@@ -288,44 +293,51 @@ static Bool have_started_executing_code = False;
 //--- Alloc fns                                            ---//
 //------------------------------------------------------------//
 
-OSet* alloc_fns;
+static XArray* alloc_fns;
 
 static void init_alloc_fns(void)
 {
-   // Create the OSet, and add the default elements.
-   alloc_fns = VG_(OSetWord_Create)(VG_(malloc), VG_(free));
-   #define DO(x)  VG_(OSetWord_Insert)(alloc_fns, (Word)x);
-   DO("malloc"           );
-   DO("calloc"           );
-   DO("realloc"          );
-   DO("memalign"         );
-   DO("__builtin_new"    );
-   DO("__builtin_vec_new");
-   // The following C++ allocators are overloadable.  It's conceivable that
-   // someone would want to not consider them as allocators, in order to see
-   // what's happening beneath them.  But if they're not in alloc_fns, then
-   // when they're not overloaded they won't be seen as alloc-fns, which
-   // will screw things up.  So we always consider them to be, and tough
-   // luck for anyone who wants to see inside them.
-   DO("operator new(unsigned)");
-   DO("operator new[](unsigned)");
-   DO("operator new(unsigned long)");
-   DO("operator new[](unsigned long)");
-   DO("operator new(unsigned, std::nothrow_t const&)");
-   DO("operator new[](unsigned, std::nothrow_t const&)");
-   DO("operator new(unsigned long, std::nothrow_t const&)");
+   // Create the list, and add the default elements.
+   alloc_fns = VG_(newXA)(VG_(malloc), VG_(free), sizeof(Char*));
+   #define DO(x)  { Char* s = x; VG_(addToXA)(alloc_fns, &s); }
+
+   // Ordered according to (presumed) frequency.
+   // Nb: The C++ "operator new*" ones are overloadable.  It's conceivable
+   // that someone would want to not consider them as allocators, in order
+   // to see what's happening beneath them.  But if they're not in
+   // alloc_fns, then when they're not overloaded they won't be seen as
+   // alloc-fns, which will screw things up.  So we always consider them to
+   // be, and tough luck for anyone who wants to see inside them.
+   // XXX: not actually necessarily true with the new (ie. old
+   // Massif1-style) alloc-fn approach.
+   DO("malloc"                                              );
+   DO("__builtin_new"                                       );
+   DO("operator new(unsigned)"                              );
+   DO("operator new(unsigned long)"                         );
+   DO("__builtin_vec_new"                                   );
+   DO("operator new[](unsigned)"                            );
+   DO("operator new[](unsigned long)"                       );
+   DO("calloc"                                              );
+   DO("realloc"                                             );
+   DO("memalign"                                            );
+   DO("operator new(unsigned, std::nothrow_t const&)"       );
+   DO("operator new[](unsigned, std::nothrow_t const&)"     );
+   DO("operator new(unsigned long, std::nothrow_t const&)"  );
    DO("operator new[](unsigned long, std::nothrow_t const&)");
 }
 
 static Bool is_alloc_fn(Char* fnname)
 {
-   Word alloc_fn_word;
-
+   Char** alloc_fn_ptr;
+   Int i;
+ 
    // Nb: It's a linear search through the list, because we're comparing
    // strings rather than pointers to strings.
-   VG_(OSetWord_ResetIter)(alloc_fns);
-   while ( VG_(OSetWord_Next)(alloc_fns, &alloc_fn_word) ) {
-      if (VG_STREQ(fnname, (Char*)alloc_fn_word))
+   // Nb: This gets called a lot.  It was an OSet, but they're quite slow to
+   // iterate through so it wasn't a good choice.
+   for (i = 0; i < VG_(sizeXA)(alloc_fns); i++) {
+      alloc_fn_ptr = VG_(indexXA)(alloc_fns, i);
+      if (VG_STREQ(fnname, *alloc_fn_ptr))
          return True;
    }
    return False;
@@ -381,7 +393,8 @@ static Bool ms_process_cmd_line_option(Char* arg)
    else if (VG_CLO_STREQ(arg, "--time-unit=B"))  clo_time_unit = TimeB;
 
    else if (VG_CLO_STREQN(11, arg, "--alloc-fn=")) {
-      VG_(OSetWord_Insert)(alloc_fns, (Word) & arg[11]);
+      Char* alloc_fn = &arg[11];
+      VG_(addToXA)(alloc_fns, &alloc_fn);
    }
 
    else
@@ -1897,7 +1910,6 @@ static void ms_fini(Int exit_status)
 static void ms_post_clo_init(void)
 {
    Int i;
-   Word alloc_fn_word;
 
    // Check options.
    if (clo_heap_admin < 0 || clo_heap_admin > 1024) {
@@ -1931,10 +1943,9 @@ static void ms_post_clo_init(void)
    if (VG_(clo_verbosity) > 1) {
       i = 1;
       VERB(1, "alloc-fns:");
-      VG_(OSetWord_ResetIter)(alloc_fns);
-      while ( VG_(OSetWord_Next)(alloc_fns, &alloc_fn_word) ) {
-         VERB(1, "  %d: %s", i, (Char*)alloc_fn_word);
-         i++;
+      for (i = 0; i < VG_(sizeXA)(alloc_fns); i++) {
+         Char** alloc_fn_ptr = VG_(indexXA)(alloc_fns, i);
+         VERB(1, "  %d: %s", i, *alloc_fn_ptr);
       }
    }
 
