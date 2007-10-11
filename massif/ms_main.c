@@ -145,16 +145,16 @@
 //
 // Performance:
 //
-//   perl perf/vg_perf --tools=massif --reps=3 perf/{bz2,heap,tinycc}
+//   perl perf/vg_perf --tools=massif --reps=3 perf/{bz2,heap,tinycc} massif
 //
 // The other benchmarks don't do much allocation, and so give similar speeds
 // to Nulgrind.
 //
 // Initial slowdown:
-//   bz2      massif1   :1.18s  ma: 5.3s ( 4.5x, -----)
-//   heap     massif1   :0.24s  ma:26.7s (111.4x, -----)
-//   tinycc   massif1   :0.44s  ma:10.7s (24.4x, -----)
-//
+//   bz2        1.18s  ma: 5.3s ( 4.5x, -----)
+//   heap       0.24s  ma:26.7s (111.4x, -----)
+//   tinycc     0.44s  ma:10.7s (24.4x, -----)
+//   many-xpts  0.11s  ma:32.8s (298.0x, -----)
 //
 //---------------------------------------------------------------------------
 

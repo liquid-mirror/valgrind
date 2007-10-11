@@ -38,8 +38,14 @@ int main(void)
 {
    int i;
 
+   // Create a large XTree.
    for (i = 0; i < (1 << 18); i++)
       a0(i);
+
+   // Do a lot of allocations so it gets dup'd a lot of times.
+   for (i = 0; i < 3000; i++) {
+      free(malloc(20000));
+   }
 
    return 0;
 }
