@@ -44,7 +44,6 @@
 // - do a graph-drawing test
 // - write a good basic test that shows how the tool works, suitable for
 //   documentation
-// - with --heap=no, --heap-admin still counts.  should it?
 //
 // Possible ideas for the future:
 // - Consider 'instructions executed' as a time unit -- more regular than
@@ -143,6 +142,19 @@
 //
 // Tests:
 // - tests/overloaded_new.cpp is there
+//
+// Performance:
+//
+//   perl perf/vg_perf --tools=massif --reps=3 perf/{bz2,heap,tinycc}
+//
+// The other benchmarks don't do much allocation, and so give similar speeds
+// to Nulgrind.
+//
+// Initial slowdown:
+//   bz2      massif1   :1.18s  ma: 5.3s ( 4.5x, -----)
+//   heap     massif1   :0.24s  ma:26.7s (111.4x, -----)
+//   tinycc   massif1   :0.44s  ma:10.7s (24.4x, -----)
+//
 //
 //---------------------------------------------------------------------------
 
