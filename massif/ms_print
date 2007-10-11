@@ -30,6 +30,8 @@
 use warnings;
 use strict;
 
+# XXX: put commas in sizes in heap trees?
+
 #----------------------------------------------------------------------------
 # Global variables, main data structures
 #----------------------------------------------------------------------------
