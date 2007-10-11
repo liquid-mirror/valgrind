@@ -1941,7 +1941,6 @@ static void ms_post_clo_init(void)
 
    // Print alloc-fns, if necessary.
    if (VG_(clo_verbosity) > 1) {
-      i = 1;
       VERB(1, "alloc-fns:");
       for (i = 0; i < VG_(sizeXA)(alloc_fns); i++) {
          Char** alloc_fn_ptr = VG_(indexXA)(alloc_fns, i);
