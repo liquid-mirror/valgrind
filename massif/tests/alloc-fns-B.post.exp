@@ -1,6 +1,6 @@
 --------------------------------------------------------------------------------
 Command:            ./alloc-fns
-Massif arguments:   --stacks=no --time-unit=B --heap-admin=0 --alloc-fn=a4 --alloc-fn=b3 --alloc-fn=c2 --alloc-fn=d1 --alloc-fn=d3
+Massif arguments:   --stacks=no --time-unit=B --heap-admin=0 --alloc-fn=a4 --alloc-fn=b4 --alloc-fn=b3 --alloc-fn=c4 --alloc-fn=c3 --alloc-fn=c2 --alloc-fn=d4 --alloc-fn=d3 --alloc-fn=d2 --alloc-fn=d1
 ms_print arguments: massif.out
 --------------------------------------------------------------------------------
 
@@ -63,11 +63,9 @@ Number of snapshots: 10
 |   
 ->11.11% (100B) 0x8048546: main (alloc-fns.c:30)
 | 
-->11.11% (100B) 0x80484C4: d2 (alloc-fns.c:20)
-| ->11.11% (100B) 0x8048553: main (alloc-fns.c:31)
-|   
+->11.11% (100B) 0x8048553: main (alloc-fns.c:31)
+| 
 ->11.11% (100B) 0x8048560: main (alloc-fns.c:32)
 | 
-->11.11% (100B) 0x8048498: d4 (alloc-fns.c:18)
-  ->11.11% (100B) 0x804856D: main (alloc-fns.c:33)
-    
+->11.11% (100B) 0x804856D: main (alloc-fns.c:33)
+  

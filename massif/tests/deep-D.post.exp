@@ -1,6 +1,6 @@
 --------------------------------------------------------------------------------
 Command:            ./deep
-Massif arguments:   --stacks=no --time-unit=B --alloc-fn=main
+Massif arguments:   --stacks=no --time-unit=B --alloc-fn=a1 --alloc-fn=a2 --alloc-fn=a3 --alloc-fn=a4 --alloc-fn=a5 --alloc-fn=a6 --alloc-fn=a7 --alloc-fn=a8 --alloc-fn=a9 --alloc-fn=a10 --alloc-fn=a11 --alloc-fn=a12 --alloc-fn=main --depth=20
 ms_print arguments: massif.out
 --------------------------------------------------------------------------------
 
@@ -45,15 +45,7 @@ Number of snapshots: 11
   8            864              864              800            64            0
   9            972              972              900            72            0
 92.59% (900B) (heap allocation functions) malloc/new/new[], --alloc-fns, etc.
-->92.59% (900B) 0x804838D: a12 (deep.c:18)
-  ->92.59% (900B) 0x80483A3: a11 (deep.c:19)
-    ->92.59% (900B) 0x80483B9: a10 (deep.c:20)
-      ->92.59% (900B) 0x80483CF: a9 (deep.c:21)
-        ->92.59% (900B) 0x80483E5: a8 (deep.c:22)
-          ->92.59% (900B) 0x80483FB: a7 (deep.c:23)
-            ->92.59% (900B) 0x8048411: a6 (deep.c:24)
-              ->92.59% (900B) 0x8048427: a5 (deep.c:25)
-                
+
 --------------------------------------------------------------------------------
   n        time(B)         total(B)   useful-heap(B) admin-heap(B)    stacks(B)
 --------------------------------------------------------------------------------

@@ -1,4 +1,0 @@
-prog: deep
-vgopts: --stacks=no --time-unit=B --alloc-fn=main --depth=20
-post: perl ../../massif/ms_print massif.out
-cleanup: rm massif.out

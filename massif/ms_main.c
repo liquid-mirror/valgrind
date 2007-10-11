@@ -30,6 +30,30 @@
 //---------------------------------------------------------------------------
 // XXX:
 //---------------------------------------------------------------------------
+// Performance:
+//
+//   perl perf/vg_perf --tools=massif --reps=3 perf/{heap,tinycc} massif
+//
+// The other benchmarks don't do much allocation, and so give similar speeds
+// to Nulgrind.
+//
+// Initial slowdown (r6976 + r6979):
+//   heap      0.24s  ma:26.7s (111.4x, -----)
+//   tinycc    0.44s  ma:10.7s (24.4x, -----)
+//   many-xpts 0.11s  ma:32.8s (298.0x, -----)
+//
+// Changed alloc_fns from an OSet to an XArray (r6981):
+//   heap      0.24s  ma:19.4s (80.6x, -----)
+//   tinycc    0.49s  ma: 7.8s (16.0x, -----)
+//   many-xpts 0.12s  ma:26.8s (223.4x, -----)
+//
+// Changed get_IPs so that all alloc_fns in a chain must be mentioned, not
+// just the bottom one, greatly reducing the number of calls to is_alloc_fn
+// (r6983):
+//   heap      0.24s  ma:18.8s (78.5x, -----)
+//   tinycc    0.45s  ma: 7.4s (16.4x, -----)
+//   many-xpts 0.05s  ma:23.5s (470.6x, -----)
+//
 // Todo:
 // - do snapshots on client requests
 // - C++ tests -- for each of the allocators, and overloaded versions of
@@ -121,12 +145,6 @@
 //   - allow the output file name to be changed
 //
 // Docs:
-// - need to explain that --alloc-fn changed slightly -- now if an entry
-//   matches an alloc-fn, that entry *and all above it* are removed.  So you
-//   can cut out allc-fn chains at the bottom, rather than having to name
-//   all of them, which is better.
-// - Mention that the C++ overloadable new/new[] operators aren't include in
-//   alloc-fns by default.
 // - Mention that complex functions names are best protected with single
 //   quotes, eg:
 //       --alloc-fn='operator new(unsigned, std::nothrow_t const&)'
@@ -142,25 +160,6 @@
 //
 // Tests:
 // - tests/overloaded_new.cpp is there
-//
-// Performance:
-//
-//   perl perf/vg_perf --tools=massif --reps=3 perf/{bz2,heap,tinycc} massif
-//
-// The other benchmarks don't do much allocation, and so give similar speeds
-// to Nulgrind.
-//
-// Initial slowdown:
-//   bz2        1.18s  ma: 5.3s ( 4.5x, -----)
-//   heap       0.24s  ma:26.7s (111.4x, -----)
-//   tinycc     0.44s  ma:10.7s (24.4x, -----)
-//   many-xpts  0.11s  ma:32.8s (298.0x, -----)
-//
-// Changed alloc_fns from an OSet to an XArray:
-//   bz2        1.20s  ma: 5.4s ( 4.5x, -----)
-//   heap       0.24s  ma:19.4s (80.6x, -----)
-//   tinycc     0.49s  ma: 7.8s (16.0x, -----)
-//   many-xpts  0.12s  ma:11.2s (93.3x, -----)
 //
 //---------------------------------------------------------------------------
 
@@ -686,7 +685,7 @@ Int get_IPs( ThreadId tid, Bool is_custom_alloc, Addr ips[])
 {
    #define BUF_LEN   1024
    Char buf[BUF_LEN];
-   Int n_ips, i, n_alloc_fns_removed = 0;
+   Int n_ips, i, n_alloc_fns_removed;
    Int overestimate;
    Bool fewer_IPs_than_asked_for   = False;
    Bool removed_below_main         = False;
@@ -730,30 +729,35 @@ Int get_IPs( ThreadId tid, Bool is_custom_alloc, Addr ips[])
          fewer_IPs_than_asked_for = True;
       }
 
-      // Filter uninteresting entries out of the stack trace.  n_ips is
-      // updated accordingly.
-      for (i = n_ips-1; i >= 0; i--) {
-         if (VG_(get_fnname)(ips[i], buf, BUF_LEN)) {
-
-            // If it's a main-or-below-main function, we (may) want to
-            // ignore everything after it.
-            // If we see one of these functions, redo=False.
-            if (should_hide_below_main && is_main_or_below_main(buf)) {
-               n_ips = i+1;            // Ignore everything below here.
-               removed_below_main = True;
-            }
-
-            // If it's an alloc-fn, we want to delete it and everything
-            // before it.
-            if (is_alloc_fn(buf)) {
-               Int j;
-               n_alloc_fns_removed = i+1;
-
-               // Shuffle the rest down.
-               for (j = 0; j < n_ips; j++) {
-                  ips[j] = ips[j + n_alloc_fns_removed];
+      // Filter out entries that are below main, if necessary.
+      // XXX: stats -- should record how often this happens.
+      if (should_hide_below_main) {
+         for (i = n_ips-1; i >= 0; i--) {
+            if (VG_(get_fnname)(ips[i], buf, BUF_LEN)) {
+               if (VG_STREQ(buf, "main")) {
+                  // We found main.  Ignore everything below it, and stop
+                  // looking.  redo=False.
+                  n_ips = i+1;
+                  removed_below_main = True;
+                  break;
+               } else if (VG_STREQ(buf, "(below main)")) {
+                  // We found "(below main)".  Ignore everything below it,
+                  // but keep looking.  redo=False.
+                  n_ips = i+1;
+                  removed_below_main = True;
                }
-               n_ips -= n_alloc_fns_removed;
+            }
+         }
+      }
+
+      // Filter out alloc fns.
+      n_alloc_fns_removed = 0;
+      for (i = 0; i < n_ips; i++) {
+         if (VG_(get_fnname)(ips[i], buf, BUF_LEN)) {
+            // If it's an alloc-fn, we ignore it.
+            if (is_alloc_fn(buf)) {
+               n_alloc_fns_removed++;
+            } else {
                break;
             }
          }
@@ -773,6 +777,12 @@ Int get_IPs( ThreadId tid, Bool is_custom_alloc, Addr ips[])
             }
             tl_assert2(0, "Didn't find any alloc functions in the stack trace");
          }
+      }
+
+      // Ignore the alloc fns;  shuffle the rest down.
+      n_ips -= n_alloc_fns_removed;
+      for (i = 0; i < n_ips; i++) {
+         ips[i] = ips[i + n_alloc_fns_removed];
       }
 
       // Did we get enough IPs after filtering?  If so, redo=False.

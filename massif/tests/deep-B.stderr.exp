@@ -14,6 +14,12 @@ Massif:   11: operator new[](unsigned, std::nothrow_t const&)
 Massif:   12: operator new(unsigned long, std::nothrow_t const&)
 Massif:   13: operator new[](unsigned long, std::nothrow_t const&)
 Massif:   14: a6
+Massif:   15: a7
+Massif:   16: a8
+Massif:   17: a9
+Massif:   18: a10
+Massif:   19: a11
+Massif:   20: a12
 Massif: startup S.  0 (t:0, hp:0, ad:0, st:0)
 Massif:   alloc S.  1 (t:108, hp:100, ad:8, st:0)
 Massif:   alloc S.  2 (t:216, hp:200, ad:16, st:0)
