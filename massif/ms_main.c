@@ -1698,7 +1698,8 @@ static Bool is_significant_XPt(XPt* xpt, SizeT curr_total_szB)
    tl_assert(xpt->curr_szB <= curr_total_szB);
    return xpt == alloc_xpt || 0 == clo_threshold ||
       (0 != curr_total_szB &&
-           xpt->curr_szB * 10000 / curr_total_szB >= clo_threshold);
+           // Nb: 10000 is a ULong to avoid possible overflow problems.
+           xpt->curr_szB * 10000ULL / curr_total_szB >= clo_threshold);
 }
 
 static void pp_snapshot_XPt(Int fd, XPt* xpt, Int depth, Char* depth_str,
