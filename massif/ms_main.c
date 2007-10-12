@@ -474,7 +474,7 @@ struct _XPt {
    // Bottom-XPts: space for the precise context.
    // Other XPts:  space of all the descendent bottom-XPts.
    // Nb: this value goes up and down as the program executes.
-   SizeT curr_szB;
+   SizeT szB;
 
    XPt*  parent;           // pointer to parent XPt
 
@@ -520,7 +520,7 @@ static void pp_XPt(XPt* xpt)
 
    VG_(printf)("XPt (%p):\n", xpt);
    VG_(printf)("- ip:         : %p\n", (void*)xpt->ip);
-   VG_(printf)("- curr_szB    : %ld\n", xpt->curr_szB);
+   VG_(printf)("- szB         : %ld\n", xpt->szB);
    VG_(printf)("- parent      : %p\n", xpt->parent);
    VG_(printf)("- n_children  : %d\n", xpt->n_children);
    VG_(printf)("- max_children: %d\n", xpt->max_children);
@@ -536,7 +536,7 @@ static XPt* new_XPt(Addr ip, XPt* parent)
    // that needs to be resizable.
    XPt* xpt          = perm_malloc(sizeof(XPt));
    xpt->ip           = ip;
-   xpt->curr_szB     = 0;
+   xpt->szB          = 0;
    xpt->parent       = parent;
 
    // We don't initially allocate any space for children.  We let that
@@ -574,28 +574,28 @@ static void add_child_xpt(XPt* parent, XPt* child)
 }
 
 // Reverse comparison for a reverse sort -- biggest to smallest.
-static Int XPt_revcmp_curr_szB(void* n1, void* n2)
+static Int XPt_revcmp_szB(void* n1, void* n2)
 {
    XPt* xpt1 = *(XPt**)n1;
    XPt* xpt2 = *(XPt**)n2;
-   return ( xpt1->curr_szB < xpt2->curr_szB ?  1
-          : xpt1->curr_szB > xpt2->curr_szB ? -1
-          :                                    0);
+   return ( xpt1->szB < xpt2->szB ?  1
+          : xpt1->szB > xpt2->szB ? -1
+          :                          0);
 }
 
 // Does the xpt account for >= 1% (or so) of total memory used?
-static Bool is_significant_XPt(XPt* xpt, SizeT curr_total_szB)
+static Bool is_significant_XPt(XPt* xpt, SizeT total_szB)
 {
    // clo_threshold is measured in hundredths of a percent of total size,
    // ie. 10,000ths of total size.  So clo_threshold=100 means that the
-   // threshold is 1% of total size.  If curr_total_szB is zero, we consider
+   // threshold is 1% of total size.  If total_szB is zero, we consider
    // every XPt significant.  We also always consider the alloc_xpt to be
    // significant.
-   tl_assert(xpt->curr_szB <= curr_total_szB);
+   tl_assert(xpt->szB <= total_szB);
    return xpt == alloc_xpt || 0 == clo_threshold ||
-      (0 != curr_total_szB &&
+      (0 != total_szB &&
            // Nb: 10000 is a ULong to avoid possible overflow problems.
-           xpt->curr_szB * 10000ULL / curr_total_szB >= clo_threshold);
+           xpt->szB * 10000ULL / total_szB >= clo_threshold);
 }
 
 
@@ -607,9 +607,9 @@ static XPt* dup_XTree(XPt* xpt, XPt* parent, SizeT total_szB)
 {
    Int  i;
    XPt* dup_xpt = VG_(malloc)(sizeof(XPt));
-   dup_xpt->ip           = xpt->ip;
-   dup_xpt->curr_szB     = xpt->curr_szB;
-   dup_xpt->parent       = parent;           // Nb: not xpt->children!
+   dup_xpt->ip     = xpt->ip;
+   dup_xpt->szB    = xpt->szB;
+   dup_xpt->parent = parent;              // Nb: not xpt->children!
    // If this node is not significant, there's no point duplicating its
    // children.  And not doing so can make a huge difference, eg.
    // it speeds up massif/perf/many-xpts by over 10x.
@@ -675,9 +675,9 @@ static void sanity_check_XTree(XPt* xpt, XPt* parent)
       SizeT children_sum_szB = 0;
       for (i = 0; i < xpt->n_children; i++) {
          sanity_check_XTree(xpt->children[i], xpt);
-         children_sum_szB += xpt->children[i]->curr_szB;
+         children_sum_szB += xpt->children[i]->szB;
       }
-      tl_assert(children_sum_szB == xpt->curr_szB);
+      tl_assert(children_sum_szB == xpt->szB);
    }
 }
 
@@ -867,7 +867,7 @@ static XPt* get_XCon( ThreadId tid, Bool is_custom_alloc )
    return xpt;
 }
 
-// Update 'curr_szB' of every XPt in the XCon, by percolating upwards.
+// Update 'szB' of every XPt in the XCon, by percolating upwards.
 static void update_XCon(XPt* xpt, SSizeT space_delta)
 {
    tl_assert(True == clo_heap);
@@ -878,12 +878,12 @@ static void update_XCon(XPt* xpt, SSizeT space_delta)
       return;
 
    while (xpt != alloc_xpt) {
-      if (space_delta < 0) tl_assert(xpt->curr_szB >= -space_delta);
-      xpt->curr_szB += space_delta;
+      if (space_delta < 0) tl_assert(xpt->szB >= -space_delta);
+      xpt->szB += space_delta;
       xpt = xpt->parent;
    }
-   if (space_delta < 0) tl_assert(alloc_xpt->curr_szB >= -space_delta);
-   alloc_xpt->curr_szB += space_delta;
+   if (space_delta < 0) tl_assert(alloc_xpt->szB >= -space_delta);
+   alloc_xpt->szB += space_delta;
 }
 
 
@@ -1204,7 +1204,7 @@ take_snapshot(Snapshot* snapshot, SnapshotKind kind, Time time,
          // XXX: total_szB computed in various places -- factor it out
          SizeT total_szB = heap_szB + clo_heap_admin*n_heap_blocks + stacks_szB;
          snapshot->alloc_xpt = dup_XTree(alloc_xpt, /*parent*/NULL, total_szB);
-         tl_assert(snapshot->alloc_xpt->curr_szB == heap_szB);
+         tl_assert(snapshot->alloc_xpt->szB == heap_szB);
       }
       snapshot->heap_admin_szB = clo_heap_admin * n_heap_blocks;
    }
@@ -1740,7 +1740,7 @@ static Char* make_perc(ULong x, ULong y)
 
 static void pp_snapshot_XPt(Int fd, XPt* xpt, Int depth, Char* depth_str,
                             Int depth_str_len,
-                            SizeT curr_heap_szB, SizeT curr_total_szB)
+                            SizeT snapshot_heap_szB, SizeT snapshot_total_szB)
 {
    #define BUF_LEN   1024
    Int   i;
@@ -1752,15 +1752,17 @@ static void pp_snapshot_XPt(Int fd, XPt* xpt, Int depth, Char* depth_str,
    Int   n_insig_children;
    Int   n_child_entries;
 
-   // Sort XPt's children by curr_szB (reverse order:  biggest to smallest)
+   // Sort XPt's children by szB (reverse order:  biggest to smallest)
    VG_(ssort)(xpt->children, xpt->n_children, sizeof(XPt*),
-              XPt_revcmp_curr_szB);
+              XPt_revcmp_szB);
 
    // How many children are significant?  Also calculate the number of child
    // entries to print -- there may be a need for an "in N places" line.
    n_sig_children = 0;
    while (n_sig_children < xpt->n_children &&
-          is_significant_XPt(xpt->children[n_sig_children], curr_total_szB)) {
+          is_significant_XPt(xpt->children[n_sig_children],
+                             snapshot_total_szB))
+   {
       n_sig_children++;
    }
    n_insig_children = xpt->n_children - n_sig_children;
@@ -1773,8 +1775,8 @@ static void pp_snapshot_XPt(Int fd, XPt* xpt, Int depth, Char* depth_str,
    } else {
       ip_desc = VG_(describe_IP)(xpt->ip-1, ip_desc, BUF_LEN);
    }
-   perc = make_perc(xpt->curr_szB, curr_total_szB);
-   FP("%sn%d: %lu %s\n", depth_str, n_child_entries, xpt->curr_szB, ip_desc);
+   perc = make_perc(xpt->szB, snapshot_total_szB);
+   FP("%sn%d: %lu %s\n", depth_str, n_child_entries, xpt->szB, ip_desc);
 
    // Indent.
    tl_assert(depth+1 < depth_str_len-1);    // -1 for end NUL char
@@ -1785,15 +1787,15 @@ static void pp_snapshot_XPt(Int fd, XPt* xpt, Int depth, Char* depth_str,
    for (i = 0; i < n_sig_children; i++) {
       XPt* child = xpt->children[i];
       pp_snapshot_XPt(fd, child, depth+1, depth_str, depth_str_len,
-         curr_heap_szB, curr_total_szB);
-      printed_children_szB += child->curr_szB;
+         snapshot_heap_szB, snapshot_total_szB);
+      printed_children_szB += child->szB;
    }
 
    // Print the extra "in N places" line, if any children were insignificant.
    if (n_insig_children > 0) {
       Char* s        = ( n_insig_children == 1 ? "," : "s, all" );
-      SizeT total_insig_children_szB = xpt->curr_szB - printed_children_szB;
-      perc = make_perc(total_insig_children_szB, curr_total_szB);
+      SizeT total_insig_children_szB = xpt->szB - printed_children_szB;
+      perc = make_perc(total_insig_children_szB, snapshot_total_szB);
       FP("%sn0: %lu in %d place%s below massif's threshold (%s)\n",
          depth_str, total_insig_children_szB, n_insig_children, s,
          make_perc(clo_threshold, 10000));
