@@ -323,7 +323,7 @@ typedef
       UInt  dict[4]; /* can represent up to 4 diff values in the line */
       UChar ix2s[N_LINE_W8s/4]; /* array of N_LINE_W8s 2-bit dict indexes */
       /* if dict[0] == 0 then dict[1] is the index of the CacheLineF
-	 to use */
+         to use */
    }
    CacheLineZ; /* compressed rep for a cache line */
 
@@ -354,7 +354,7 @@ typedef
    Each SecMap must hold a power-of-2 number of CacheLines.  Hence
    N_SECMAP_BITS must >= N_LINE_BITS.
 */
-#define N_SECMAP_BITS   12
+#define N_SECMAP_BITS   13
 #define N_SECMAP_ARANGE (1 << N_SECMAP_BITS)
 
 // # CacheLines held by a SecMap
@@ -365,8 +365,8 @@ typedef
       Bool mbHasLocks;  /* hint: any locks in range?  safe: True */
       Bool mbHasShared; /* hint: any ShM/ShR states in range?  safe: True */
       CacheLineZ  linesZ[N_SECMAP_ZLINES];
-      CacheLineF* linezF;
-      Int         linezF_size;
+      CacheLineF* linesF;
+      Int         linesF_size;
    }
    SecMap;
 
@@ -399,11 +399,11 @@ static Bool stepSecMapIter ( /*OUT*/UInt** pVal,
    tl_assert(itr->line_no >= 0 && itr->line_no < N_SECMAP_ZLINES);
    lineZ = &sm->linesZ[itr->line_no];
    if (lineZ->dict[0] == 0) {
-      tl_assert(sm->linezF);
-      tl_assert(sm->linezF_size > 0);
+      tl_assert(sm->linesF);
+      tl_assert(sm->linesF_size > 0);
       tl_assert(lineZ->dict[1] >= 0);
-      tl_assert(lineZ->dict[1] < sm->linezF_size);
-      lineF = &sm->linezF[ lineZ->dict[1] ];
+      tl_assert(lineZ->dict[1] < sm->linesF_size);
+      lineF = &sm->linesF[ lineZ->dict[1] ];
       tl_assert(lineF->inUse);
       tl_assert(itr->word_no >= 0 && itr->word_no < N_LINE_W8s);
       *pVal = &lineF->w32s[itr->word_no];
@@ -444,8 +444,10 @@ static Bool stepSecMapIter ( /*OUT*/UInt** pVal,
    with a bogus tag. */
 typedef
    struct {
-      CacheLine way0 [N_WAY_NENT];
+      CacheLine lyns0[N_WAY_NENT];
+      CacheLine lyns1[N_WAY_NENT];
       Addr      tags0[N_WAY_NENT];
+      Addr      tags1[N_WAY_NENT];
    }
    Cache;
 
@@ -1746,8 +1748,8 @@ static SecMap* shmem__alloc_SecMap ( void )
       for (j = 0; j < N_LINE_W8s/4; j++)
          sm->linesZ[i].ix2s[j] = 0; /* all reference dict[0] */
    }
-   sm->linezF      = NULL;
-   sm->linezF_size = 0;
+   sm->linesF      = NULL;
+   sm->linesF_size = 0;
    stats__secmaps_allocd++;
    stats__secmap_ga_space_covered += N_SECMAP_ARANGE;
    stats__secmap_linesZ_allocd += N_SECMAP_ZLINES;
@@ -2148,15 +2150,32 @@ static void shmem__sanity_check ( Char* who )
 
    // check the cache
    for (i = 0; i < N_WAY_NENT; i++) {
-      CacheLine* cl  = &cache_shmem.way0[i];
-      Addr       tag =  cache_shmem.tags0[i];
-      if (tag == 1)
-         continue;
-      if (!is_valid_scache_tag(tag)) BAD("14");
-      if (!is_sane_CacheLine(cl)) BAD("15");
-      if (tag & (N_LINE_W8s-1)) BAD("16");
-      for (j = i+1; j < N_WAY_NENT; j++)
-         if (cache_shmem.tags0[j] == tag) BAD("17");
+      CacheLine* cl;
+      Addr       tag; 
+      /* way0, dude */
+      cl  = &cache_shmem.lyns0[i];
+      tag =  cache_shmem.tags0[i];
+      if (tag != 1) {
+         if (!is_valid_scache_tag(tag)) BAD("14-0");
+         if (!is_sane_CacheLine(cl)) BAD("15-0");
+         if (tag & (N_LINE_W8s-1)) BAD("16-0");
+         for (j = i+1; j < N_WAY_NENT; j++)
+            if (cache_shmem.tags0[j] == tag) BAD("17-0");
+      }
+      /* way1 */
+      cl  = &cache_shmem.lyns1[i];
+      tag =  cache_shmem.tags1[i];
+      if (tag != 1) {
+         if (!is_valid_scache_tag(tag)) BAD("14-1");
+         if (!is_sane_CacheLine(cl)) BAD("15-1");
+         if (tag & (N_LINE_W8s-1)) BAD("16-1");
+         for (j = i+1; j < N_WAY_NENT; j++)
+            if (cache_shmem.tags1[j] == tag) BAD("17-1");
+      }
+      /* and also */
+      if (cache_shmem.tags0[i] != 1 && cache_shmem.tags1[i] != 1
+          && cache_shmem.tags0[i] == cache_shmem.tags1[i])
+         BAD("18");
    }
 
    return;
@@ -2637,12 +2656,12 @@ static void get_ZF_by_index ( /*OUT*/CacheLineZ** zp, /*OUT*/CacheLineF** fp,
    lineZ = &sm->linesZ[zix];
    if (lineZ->dict[0] == 0) {
       Int fix = lineZ->dict[1];
-      tl_assert(sm->linezF);
-      tl_assert(sm->linezF_size > 0);
-      tl_assert(fix >= 0 && fix < sm->linezF_size);
+      tl_assert(sm->linesF);
+      tl_assert(sm->linesF_size > 0);
+      tl_assert(fix >= 0 && fix < sm->linesF_size);
       *zp = NULL;
-      *fp = &sm->linezF[fix];
-      tl_assert(sm->linezF[fix].inUse);
+      *fp = &sm->linesF[fix];
+      tl_assert(sm->linesF[fix].inUse);
    } else {
       *zp = lineZ;
       *fp = NULL;
@@ -2666,10 +2685,10 @@ void find_ZF_for_reading ( /*OUT*/CacheLineZ** zp,
    lineF = NULL;
    if (lineZ->dict[0] == 0) {
       Word fix = lineZ->dict[1];
-      tl_assert(sm->linezF);
-      tl_assert(sm->linezF_size > 0);
-      tl_assert(fix >= 0 && fix < sm->linezF_size);
-      lineF = &sm->linezF[fix];
+      tl_assert(sm->linesF);
+      tl_assert(sm->linesF_size > 0);
+      tl_assert(fix >= 0 && fix < sm->linesF_size);
+      lineF = &sm->linesF[fix];
       tl_assert(lineF->inUse);
       lineZ = NULL;
    }
@@ -2696,10 +2715,10 @@ void find_Z_for_writing ( /*OUT*/SecMap** smp,
    /* If lineZ has an associated lineF, free it up. */
    if (lineZ->dict[0] == 0) {
       Word fix = lineZ->dict[1];
-      tl_assert(sm->linezF);
-      tl_assert(sm->linezF_size > 0);
-      tl_assert(fix >= 0 && fix < sm->linezF_size);
-      lineF = &sm->linezF[fix];
+      tl_assert(sm->linesF);
+      tl_assert(sm->linesF_size > 0);
+      tl_assert(fix >= 0 && fix < sm->linesF_size);
+      lineF = &sm->linesF[fix];
       tl_assert(lineF->inUse);
       lineF->inUse = False;
    }
@@ -2714,15 +2733,15 @@ void alloc_F_for_writing ( /*MOD*/SecMap* sm,
    Word        i, new_size;
    CacheLineF* nyu;
 
-   if (sm->linezF) {
-      tl_assert(sm->linezF_size > 0);
+   if (sm->linesF) {
+      tl_assert(sm->linesF_size > 0);
    } else {
-      tl_assert(sm->linezF_size == 0);
+      tl_assert(sm->linesF_size == 0);
    }
 
-   if (sm->linezF) {
-      for (i = 0; i < sm->linezF_size; i++) {
-         if (!sm->linezF[i].inUse) {
+   if (sm->linesF) {
+      for (i = 0; i < sm->linesF_size; i++) {
+         if (!sm->linesF[i].inUse) {
             *fixp = (Word)i;
             return;
          }
@@ -2730,35 +2749,35 @@ void alloc_F_for_writing ( /*MOD*/SecMap* sm,
    }
 
    /* No free F line found.  Expand existing array and try again. */
-   new_size = sm->linezF_size==0 ? 1 : 2 * sm->linezF_size;
+   new_size = sm->linesF_size==0 ? 1 : 2 * sm->linesF_size;
    nyu      = tc_zalloc( new_size * sizeof(CacheLineF) );
    tl_assert(nyu);
 
-   stats__secmap_linesF_allocd += (new_size - sm->linezF_size);
-   stats__secmap_linesF_bytes  += (new_size - sm->linezF_size)
+   stats__secmap_linesF_allocd += (new_size - sm->linesF_size);
+   stats__secmap_linesF_bytes  += (new_size - sm->linesF_size)
                                   * sizeof(CacheLineF);
 
    if (0)
    VG_(printf)("SM %p: expand F array from %d to %d\n", 
-               sm, (Int)sm->linezF_size, new_size);
+               sm, (Int)sm->linesF_size, new_size);
 
    for (i = 0; i < new_size; i++)
       nyu[i].inUse = False;
 
-   if (sm->linezF) {
-      for (i = 0; i < sm->linezF_size; i++) {
-         tl_assert(sm->linezF[i].inUse);
-         nyu[i] = sm->linezF[i];
+   if (sm->linesF) {
+      for (i = 0; i < sm->linesF_size; i++) {
+         tl_assert(sm->linesF[i].inUse);
+         nyu[i] = sm->linesF[i];
       }
-      VG_(memset)(sm->linezF, 0, sm->linezF_size * sizeof(CacheLineF) );
-      tc_free(sm->linezF);
+      VG_(memset)(sm->linesF, 0, sm->linesF_size * sizeof(CacheLineF) );
+      tc_free(sm->linesF);
    }
 
-   sm->linezF      = nyu;
-   sm->linezF_size = new_size;
+   sm->linesF      = nyu;
+   sm->linesF_size = new_size;
 
-   for (i = 0; i < sm->linezF_size; i++) {
-      if (!sm->linezF[i].inUse) {
+   for (i = 0; i < sm->linesF_size; i++) {
+      if (!sm->linesF[i].inUse) {
          *fixp = (Word)i;
          return;
       }
@@ -2803,6 +2822,7 @@ static Bool is_sane_CacheLine ( CacheLine* cl )
    return True;
 }
 
+__attribute__((unused))
 static void pp_CacheLine ( CacheLine* cl ) {
   Word i;
 #define FMT "%08x\n"
@@ -2918,49 +2938,6 @@ static void cacheline_normalise ( /*MOD*/CacheLine* cl )
 
 /* Write the cacheline 'wix' to backing store.  Where it ends up
    is determined by its tag field. */
-static void analyse ( UInt* ws, Word nWs )
-{
-
-static Word qq=0;
- static Word qqx[20];
-
- Word i, j, nDiff;
-
-  if (qq==0) { for (i = 0; i < 20; i++) qqx[i]=0; }
-  qq++;
-
-  nDiff = 1;
-  for (i = 1; i < nWs; i++) {
-    nDiff++;
-    for (j = 0; j < i; j++) {
-      if (ws[j] == ws[i])
-        break;
-    }
-    if (j < i)
-      nDiff--;
-  }
-
-  if (nDiff >= 19) nDiff=19;
-  qqx[nDiff]++;
-
-  if ((qq % 100000) == 0) {
-    tl_assert(qqx[0] == 0);
-    VG_(printf)("%lu   ", qq);
-    for (j = 1; j < 20; j++)
-      VG_(printf)("%lu ", qqx[j]);
-    VG_(printf)("\n");
-  }
-
-#if 0
-  if (nDiff >= 5) {
-  VG_(printf)("diff %ld\n", nDiff);
-  for (i = 0; i < nWs; i++)
-    VG_(printf)("%x ", ws[i]);
-  VG_(printf)("\n\n");
-  }
-#endif
-}
-
 static
 Bool sequentialise_into ( /*OUT*/UInt* dst, Word nDst, CacheLine* src )
 {
@@ -3039,7 +3016,7 @@ Bool sequentialise_into ( /*OUT*/UInt* dst, Word nDst, CacheLine* src )
 }
 
 
-static void cacheline_wback ( UWord wix )
+static void cacheline_wback ( UWord way, UWord wix )
 {
    Word        i, j;
    Bool        anyShared = False;
@@ -3052,10 +3029,19 @@ static void cacheline_wback ( UWord wix )
    UInt        shvals[N_LINE_W8s];
    UInt        sv;
 
-   tl_assert(wix >= 0 && wix < N_WAY_NENT);
-   //VG_(printf)("scache wback line %d\n", wix);
+   if (0)
+   VG_(printf)("scache wback way %d line %d\n", (Int)way, (Int)wix);
 
-   tag = cache_shmem.tags0[wix];
+   tl_assert(way >= 0 && way < 2);
+   tl_assert(wix >= 0 && wix < N_WAY_NENT);
+
+   if (way == 0) {
+      tag =  cache_shmem.tags0[wix];
+      cl  = &cache_shmem.lyns0[wix];
+   } else {
+      tag =  cache_shmem.tags1[wix];
+      cl  = &cache_shmem.lyns1[wix];
+   }
 
    /* The cache line may have been invalidated; if so, ignore it. */
    if (!is_valid_scache_tag(tag))
@@ -3073,7 +3059,6 @@ static void cacheline_wback ( UWord wix )
    lineZ = &sm->linesZ[zix];
 
    /* Generate the data to be stored */
-   cl = &cache_shmem.way0[wix];
    tl_assert(is_sane_CacheLine( cl ));
    anyShared = sequentialise_into( shvals, N_LINE_W8s, cl );
 
@@ -3105,10 +3090,10 @@ static void cacheline_wback ( UWord wix )
    if (i < N_LINE_W8s) {
       /* cannot use the compressed rep.  Use f rep instead. */
       alloc_F_for_writing( sm, &fix );
-      tl_assert(sm->linezF);
-      tl_assert(sm->linezF_size > 0);
-      tl_assert(fix >= 0 && fix < sm->linezF_size);
-      lineF = &sm->linezF[fix];
+      tl_assert(sm->linesF);
+      tl_assert(sm->linesF_size > 0);
+      tl_assert(fix >= 0 && fix < sm->linesF_size);
+      lineF = &sm->linesF[fix];
       tl_assert(!lineF->inUse);
       lineZ->dict[0] = lineZ->dict[2] = lineZ->dict[3] = 0;
       lineZ->dict[1] = (UInt)fix;
@@ -3130,17 +3115,27 @@ static void cacheline_wback ( UWord wix )
    associated with 'wix' is assumed to have already been filled in;
    hence that is used to determine where in the backing store to read
    from. */
-static void cacheline_fetch ( UWord wix )
+static void cacheline_fetch ( UWord way, UWord wix )
 {
-   Word    i;
-   Addr    tag;
+   Word        i;
+   Addr        tag;
+   CacheLine*  cl;
    CacheLineZ* lineZ;
    CacheLineF* lineF;
-   //VG_(printf)("scache fetch line %d\n", wix);
 
+   if (0)
+   VG_(printf)("scache fetch way %d line %d\n", (Int)way, (Int)wix);
+
+   tl_assert(way >= 0 && way < 2);
    tl_assert(wix >= 0 && wix < N_WAY_NENT);
 
-   tag = cache_shmem.tags0[wix];
+   if (way == 0) {
+      tag =  cache_shmem.tags0[wix];
+      cl  = &cache_shmem.lyns0[wix];
+   } else {
+      tag =  cache_shmem.tags1[wix];
+      cl  = &cache_shmem.lyns1[wix];
+   }
 
    /* reject nonsense requests */
    tl_assert(is_valid_scache_tag(tag));
@@ -3155,7 +3150,7 @@ static void cacheline_fetch ( UWord wix )
    if (lineF) {
       tl_assert(lineF->inUse);
       for (i = 0; i < N_LINE_W8s; i++) {
-         cache_shmem.way0[wix].w8[i] = lineF->w32s[i];
+         cl->w8[i] = lineF->w32s[i];
       }
       stats__cache_F_fetches++;
    } else {
@@ -3165,18 +3160,19 @@ static void cacheline_fetch ( UWord wix )
          tl_assert(ix >= 0 && ix <= 3);
          sv = lineZ->dict[ix];
          tl_assert(sv != 0);
-         cache_shmem.way0[wix].w8[i] = sv;
+         cl->w8[i] = sv;
       }
       stats__cache_Z_fetches++;
    }
-   cacheline_normalise( &cache_shmem.way0[wix] );
+   cacheline_normalise( cl );
 }
 
 static void shmem__flush_scache ( void ) {
    Word wix;
    if (0) VG_(printf)("scache flush\n");
    for (wix = 0; wix < N_WAY_NENT; wix++) {
-      cacheline_wback( wix );
+      cacheline_wback( 0, wix );
+      cacheline_wback( 1, wix );
    }
    stats__cache_flushes++;
 }
@@ -3184,8 +3180,10 @@ static void shmem__invalidate_scache ( void ) {
    Word wix;
    if (0) VG_(printf)("scache inval\n");
    tl_assert(!is_valid_scache_tag(1));
-   for (wix = 0; wix < N_WAY_NENT; wix++)
+   for (wix = 0; wix < N_WAY_NENT; wix++) {
       cache_shmem.tags0[wix] = 1/*INVALID*/;
+      cache_shmem.tags1[wix] = 1/*INVALID*/;
+   }
    stats__cache_invals++;
 }
 
@@ -3201,28 +3199,62 @@ static inline Bool aligned64 ( Addr a ) {
 static inline UWord get_cacheline_offset ( Addr a ) {
    return (UWord)(a & (N_LINE_W8s - 1));
 }
-static CacheLine* get_cacheline ( Addr a )
+
+static CacheLine* get_cacheline_MISS ( Addr a ); /* fwds */
+static inline CacheLine* get_cacheline ( Addr a )
 {
    /* tag is 'a' with the in-line offset masked out, 
       eg a[31]..a[4] 0000 */
-   Addr  tag = a & ~(N_LINE_W8s - 1);
-   UWord wix = (a >> N_LINE_BITS) & (N_WAY_NENT - 1);
+   Addr       tag = a & ~(N_LINE_W8s - 1);
+   UWord      wix = (a >> N_LINE_BITS) & (N_WAY_NENT - 1);
    stats__cache_totrefs++;
+   /* Check both Ways */
    if (LIKELY(tag == cache_shmem.tags0[wix]))
-      return &cache_shmem.way0[wix];
+      return &cache_shmem.lyns0[wix];
+   if (LIKELY(tag == cache_shmem.tags1[wix]))
+      return &cache_shmem.lyns1[wix];
+   return get_cacheline_MISS( a );
+}
+
+static CacheLine* get_cacheline_MISS ( Addr a )
+{
+   /* tag is 'a' with the in-line offset masked out, 
+      eg a[31]..a[4] 0000 */
+   static UWord seed = 0;
+
+   CacheLine* cl;
+   Addr*      tag_old_p;
+   UWord      way;
+   Addr       tag = a & ~(N_LINE_W8s - 1);
+   UWord      wix = (a >> N_LINE_BITS) & (N_WAY_NENT - 1);
+
+   /* Check both Ways */
+   tl_assert(tag != cache_shmem.tags0[wix]);
+   tl_assert(tag != cache_shmem.tags1[wix]);
+
    /* Dump the old line into the backing store. */
    stats__cache_totmisses++;
-   if (is_valid_scache_tag( cache_shmem.tags0[wix] )) {
-      //if (!is_sane_CacheLine( &cache_shmem .way0[wix]))
-      //pp_CacheLine( &cache_shmem .way0[wix]);
-      tl_assert(is_sane_CacheLine( &cache_shmem .way0[wix] ));
-      cacheline_wback( wix );
+
+   /* arbitrarily choose the way to dump (not very scientific) */
+   way = seed++ & 1;
+
+   if (way == 0) {
+     cl        = &cache_shmem.lyns0[wix];
+     tag_old_p = &cache_shmem.tags0[wix];
+   } else {
+     cl        = &cache_shmem.lyns1[wix];
+     tag_old_p = &cache_shmem.tags1[wix];
+   }
+
+   if (is_valid_scache_tag( *tag_old_p )) {
+      tl_assert(is_sane_CacheLine( cl ));
+      cacheline_wback( way, wix );
    }
    /* and reload the new one */
-   cache_shmem.tags0[wix] = tag;
-   cacheline_fetch( wix );
-   tl_assert(is_sane_CacheLine( &cache_shmem. way0[wix] ));
-   return &cache_shmem.way0[wix];
+   *tag_old_p = tag;
+   cacheline_fetch( way, wix );
+   tl_assert(is_sane_CacheLine( cl ));
+   return cl;
 }
 
 /////////////////////////////vvvvvvvvvvvvvvvvvvvvvvvvvvvvv
@@ -5220,6 +5252,7 @@ static WordSetID /* in univ_laog */ laog__preds ( Lock* lk ) {
    }
 }
 
+__attribute__((unused))
 static void laog__sanity_check ( void ) {
    Word i, ws_size;
    Word* ws_words;
@@ -6862,11 +6895,11 @@ static void tc_fini ( Int exitcode )
                   stats__secmaps_allocd,
                   stats__secmap_ga_space_covered);
       VG_(printf)("  linesZ: %10lu allocd (%10lu bytes occupied)\n",
-		  stats__secmap_linesZ_allocd,
-		  stats__secmap_linesZ_bytes);
+                  stats__secmap_linesZ_allocd,
+                  stats__secmap_linesZ_bytes);
       VG_(printf)("  linesF: %10lu allocd (%10lu bytes occupied)\n",
-		  stats__secmap_linesF_allocd,
-		  stats__secmap_linesF_bytes);
+                  stats__secmap_linesF_allocd,
+                  stats__secmap_linesF_bytes);
       VG_(printf)(" secmaps: %10lu iterator steppings\n",
                   stats__secmap_iterator_steppings);
 
@@ -6882,32 +6915,32 @@ static void tc_fini ( Int exitcode )
 
       VG_(printf)("\n");
       VG_(printf)("   cline: %10lu normalises\n",
-		  stats__cline_normalises );
+                  stats__cline_normalises );
       VG_(printf)("   cline:  reads 8/4/2/1: %10lu %10lu %10lu %10lu\n",
-		  stats__cline_read8s,
-		  stats__cline_read4s,
-		  stats__cline_read2s,
+                  stats__cline_read8s,
+                  stats__cline_read4s,
+                  stats__cline_read2s,
                   stats__cline_read1s );
       VG_(printf)("   cline: writes 8/4/2/1: %10lu %10lu %10lu %10lu\n",
-		  stats__cline_write8s,
-		  stats__cline_write4s,
-		  stats__cline_write2s,
+                  stats__cline_write8s,
+                  stats__cline_write4s,
+                  stats__cline_write2s,
                   stats__cline_write1s );
       VG_(printf)("   cline:   sets 8/4/2/1: %10lu %10lu %10lu %10lu\n",
-		  stats__cline_set8s,
-		  stats__cline_set4s,
-		  stats__cline_set2s,
+                  stats__cline_set8s,
+                  stats__cline_set4s,
+                  stats__cline_set2s,
                   stats__cline_set1s );
       VG_(printf)("   cline: get1s %lu, copy1s %lu\n",
-		  stats__cline_get1s, stats__cline_copy1s );
+                  stats__cline_get1s, stats__cline_copy1s );
 
       VG_(printf)("   cline:    splits: 8to4 %10lu, 4to2 %10lu, 2to1 %10lu\n",
-		 stats__cline_8to4splits,
-		 stats__cline_4to2splits,
+                 stats__cline_8to4splits,
+                 stats__cline_4to2splits,
                  stats__cline_2to1splits );
       VG_(printf)("   cline: pulldowns: 8to4 %10lu, 4to2 %10lu, 2to1 %10lu\n",
-		 stats__cline_8to4pulldown,
-		 stats__cline_4to2pulldown,
+                 stats__cline_8to4pulldown,
+                 stats__cline_4to2pulldown,
                  stats__cline_2to1pulldown );
       VG_(printf)("\n");
    }
