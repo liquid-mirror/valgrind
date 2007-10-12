@@ -653,10 +653,9 @@ static void free_XTree(XPt* xpt)
    n_dupd_xpts_freed++;
 }
 
-// Sanity checking:  we check snapshot XTrees when they are taken, deleted
-// and printed.  We periodically check the main heap XTree with
-// ms_expensive_sanity_check.
-//
+// Sanity checking:  we check snapshot XTrees after they are taken, before
+// they are deleted, and before they are printed.  We also periodically
+// check the main heap XTree with ms_expensive_sanity_check.
 static void sanity_check_XTree(XPt* xpt, XPt* parent)
 {
    Int i;
@@ -670,18 +669,15 @@ static void sanity_check_XTree(XPt* xpt, XPt* parent)
    // Check children counts look sane.
    tl_assert(xpt->n_children <= xpt->max_children);
 
-   // Check the sum of any children szBs equals the XPt's szB.
+   // Check the sum of any children szBs equals the XPt's szB.  Check the
+   // children at the same time.
    if (xpt->n_children > 0) {
       SizeT children_sum_szB = 0;
       for (i = 0; i < xpt->n_children; i++) {
+         sanity_check_XTree(xpt->children[i], xpt);
          children_sum_szB += xpt->children[i]->curr_szB;
       }
       tl_assert(children_sum_szB == xpt->curr_szB);
-   }
-
-   // Check each child.
-   for (i = 0; i < xpt->n_children; i++) {
-      sanity_check_XTree(xpt->children[i], xpt);
    }
 }
 
