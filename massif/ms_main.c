@@ -55,7 +55,7 @@
 //   many-xpts 0.05s  ma:23.5s (470.6x, -----)
 //
 // Don't dup children of insignificant XPts in dup_XTree.  Made many-xpts
-// more than 10x faster.
+// more than 10x faster (r6984):
 //   heap      0.59s  ma:20.3s (34.5x, -----)
 //   tinycc    0.49s  ma: 7.6s (15.4x, -----)
 //   many-xpts 0.04s  ma: 1.9s (46.2x, -----)
@@ -843,8 +843,7 @@ static XPt* get_XCon( ThreadId tid, Bool is_custom_alloc )
    // After this call, the IPs we want are in ips[0]..ips[n_ips-1].
    Int n_ips = get_IPs(tid, is_custom_alloc, ips);
 
-   // Now do the search/insertion of the XCon. 'L' is the loop counter,
-   // being the index into ips[].
+   // Now do the search/insertion of the XCon.
    for (i = 0; i < n_ips; i++) {
       Addr ip = ips[i];
       Int ch;
