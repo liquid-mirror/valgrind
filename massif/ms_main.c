@@ -54,6 +54,12 @@
 //   tinycc    0.45s  ma: 7.4s (16.4x, -----)
 //   many-xpts 0.05s  ma:23.5s (470.6x, -----)
 //
+// Don't dup children of insignificant XPts in dup_XTree.  Made many-xpts
+// more than 10x faster.
+//   heap      0.59s  ma:20.3s (34.5x, -----)
+//   tinycc    0.49s  ma: 7.6s (15.4x, -----)
+//   many-xpts 0.04s  ma: 1.9s (46.2x, -----)
+//
 // Todo:
 // - do snapshots on client requests
 // - C++ tests -- for each of the allocators, and overloaded versions of
@@ -577,30 +583,55 @@ static Int XPt_revcmp_curr_szB(void* n1, void* n2)
           :                                    0);
 }
 
+// Does the xpt account for >= 1% (or so) of total memory used?
+static Bool is_significant_XPt(XPt* xpt, SizeT curr_total_szB)
+{
+   // clo_threshold is measured in hundredths of a percent of total size,
+   // ie. 10,000ths of total size.  So clo_threshold=100 means that the
+   // threshold is 1% of total size.  If curr_total_szB is zero, we consider
+   // every XPt significant.  We also always consider the alloc_xpt to be
+   // significant.
+   tl_assert(xpt->curr_szB <= curr_total_szB);
+   return xpt == alloc_xpt || 0 == clo_threshold ||
+      (0 != curr_total_szB &&
+           // Nb: 10000 is a ULong to avoid possible overflow problems.
+           xpt->curr_szB * 10000ULL / curr_total_szB >= clo_threshold);
+}
+
 
 //------------------------------------------------------------//
 //--- XTree Operations                                     ---//
 //------------------------------------------------------------//
 
-// XXX: taking a full snapshot... could/should just snapshot the significant
-// parts.  Nb: then the amounts wouldn't add up, unless I represented the
-// "insignificant places" in XPts.  Might be worthwhile -- there can
-// be a lot of zero nodes in the XTree... (simpler: ignore all zero nodes
-// unless threshold=0?)
-static XPt* dup_XTree(XPt* xpt, XPt* parent)
+static XPt* dup_XTree(XPt* xpt, XPt* parent, SizeT total_szB)
 {
    Int  i;
    XPt* dup_xpt = VG_(malloc)(sizeof(XPt));
    dup_xpt->ip           = xpt->ip;
    dup_xpt->curr_szB     = xpt->curr_szB;
    dup_xpt->parent       = parent;           // Nb: not xpt->children!
-   dup_xpt->n_children   = xpt->n_children;
-   dup_xpt->max_children = xpt->n_children;  // Nb: don't copy max_children!
-   dup_xpt->children     = VG_(malloc)(dup_xpt->max_children * sizeof(XPt*));
-   for (i = 0; i < xpt->n_children; i++) {
-      dup_xpt->children[i] = dup_XTree(xpt->children[i], dup_xpt);
+   // If this node is not significant, there's no point duplicating its
+   // children.  And not doing so can make a huge difference, eg.
+   // it speeds up massif/perf/many-xpts by over 10x.
+   if (!is_significant_XPt(xpt, total_szB)) {
+      dup_xpt->n_children   = 0;
+      dup_xpt->max_children = 0;
+      dup_xpt->children     = NULL;
+   } else {
+      dup_xpt->n_children   = xpt->n_children;
+      dup_xpt->max_children = xpt->max_children;
+      // We copy n_children children (not max_children).  If n_children==0,
+      // don't bother allocating an 'children' array in the dup.
+      if (xpt->n_children > 0) {
+         dup_xpt->children = VG_(malloc)(dup_xpt->n_children * sizeof(XPt*));
+         for (i = 0; i < xpt->n_children; i++) {
+            dup_xpt->children[i] =
+               dup_XTree(xpt->children[i], dup_xpt, total_szB);
+         }
+      } else {
+         dup_xpt->children = NULL;
+      }
    }
-
    n_dupd_xpts++;
 
    return dup_xpt;
@@ -1175,7 +1206,9 @@ take_snapshot(Snapshot* snapshot, SnapshotKind kind, Time time,
    if (clo_heap) {
       snapshot->heap_szB = heap_szB;
       if (is_detailed) {
-         snapshot->alloc_xpt = dup_XTree(alloc_xpt, /*parent*/NULL);
+         // XXX: total_szB computed in various places -- factor it out
+         SizeT total_szB = heap_szB + clo_heap_admin*n_heap_blocks + stacks_szB;
+         snapshot->alloc_xpt = dup_XTree(alloc_xpt, /*parent*/NULL, total_szB);
          tl_assert(snapshot->alloc_xpt->curr_szB == heap_szB);
       }
       snapshot->heap_admin_szB = clo_heap_admin * n_heap_blocks;
@@ -1708,21 +1741,6 @@ static Char* make_perc(ULong x, ULong y)
    // something like "0 --%")
    if (' ' == mbuf[0]) mbuf[0] = '0';
    return mbuf;
-}
-
-// Does the xpt account for >= 1% (or so) of total memory used?
-static Bool is_significant_XPt(XPt* xpt, SizeT curr_total_szB)
-{
-   // clo_threshold is measured in hundredths of a percent of total size,
-   // ie. 10,000ths of total size.  So clo_threshold=100 means that the
-   // threshold is 1% of total size.  If curr_total_szB is zero, we consider
-   // every XPt significant.  We also always consider the alloc_xpt to be
-   // significant.
-   tl_assert(xpt->curr_szB <= curr_total_szB);
-   return xpt == alloc_xpt || 0 == clo_threshold ||
-      (0 != curr_total_szB &&
-           // Nb: 10000 is a ULong to avoid possible overflow problems.
-           xpt->curr_szB * 10000ULL / curr_total_szB >= clo_threshold);
 }
 
 static void pp_snapshot_XPt(Int fd, XPt* xpt, Int depth, Char* depth_str,
