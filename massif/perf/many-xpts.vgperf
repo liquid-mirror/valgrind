@@ -1,2 +1,2 @@
 prog: many-xpts
-vgopts: --tool=massif --time-unit=B --depth=100
+vgopts: --time-unit=B --depth=100
