@@ -2787,16 +2787,49 @@ void alloc_F_for_writing ( /*MOD*/SecMap* sm,
     tl_assert(0);
 }
 
+__attribute__((unused))
+static void pp_CacheLine ( CacheLine* cl ) {
+   Word i;
+   if (!cl) {
+      VG_(printf)("pp_CacheLine(NULL)\n");
+      return;
+   }
+#  define FMT "%08x\n"
+   for (i = 0; i < N_LINE_W64s; i++) {
+      Word iL = LEFTCHILD(i);
+      Word iR = RIGHTCHILD(i);
+      Word iLL = LEFTCHILD(iL);
+      Word iLR = RIGHTCHILD(iL);
+      Word iRL = LEFTCHILD(iR);
+      Word iRR = RIGHTCHILD(iR);
+      VG_(printf)(FMT, cl->w64[i]);
+      VG_(printf)("  "     FMT, cl->w32[iL]);
+      VG_(printf)("    "   FMT, cl->w16[iLL]);
+      VG_(printf)("      " FMT, cl->w8[LEFTCHILD(iLL)]);
+      VG_(printf)("      " FMT, cl->w8[RIGHTCHILD(iLL)]);
+      VG_(printf)("    "   FMT, cl->w16[iLR]);
+      VG_(printf)("      " FMT, cl->w8[LEFTCHILD(iLR)]);
+      VG_(printf)("      " FMT, cl->w8[RIGHTCHILD(iLR)]);
+      VG_(printf)("  "     FMT, cl->w32[iR]);
+      VG_(printf)("    "   FMT, cl->w16[iRL]);
+      VG_(printf)("      " FMT, cl->w8[LEFTCHILD(iRL)]);
+      VG_(printf)("      " FMT, cl->w8[RIGHTCHILD(iRL)]);
+      VG_(printf)("    "   FMT, cl->w16[iRR]);
+      VG_(printf)("      " FMT, cl->w8[LEFTCHILD(iRR)]);
+      VG_(printf)("      " FMT, cl->w8[RIGHTCHILD(iRR)]);
+   }
+#  undef FMT
+}
 
 /* Check that all paths from leaf to root are of the form 
-      InvalidU*  one-valid-value   InvalidD*
+      InvalidU*   one-valid-value   InvalidD*
 */
 static Bool is_sane_CacheLine ( CacheLine* cl )
 {
    Word i, j;
    UInt path[4];
 
-   if (!cl) return False;
+   if (!cl) goto bad;
 
    for (i = 0; i < N_LINE_W8s; i++) {
       path[0] = cl->w8[i];
@@ -2805,52 +2838,24 @@ static Bool is_sane_CacheLine ( CacheLine* cl )
       path[3] = cl->w64[ PARENT(PARENT(PARENT(i))) ];
       j = 0;
       while (1) {
-         if (j >= 4) return False;
+         if (j >= 4) goto bad;
          if (path[j] != SHVAL_InvalidU) break;
          j++;
       }
       tl_assert(j <= 3);
-      if (!is_SHVAL_valid(path[j])) return False;
+      if (!is_SHVAL_valid(path[j])) goto bad;
       j++;
       while (1) {
          if (j == 4) break;
-         if (path[j] != SHVAL_InvalidD) return False;
+         if (path[j] != SHVAL_InvalidD) goto bad;
          j++;
       }
       /* it's ok.  Move on to the next path. */
    }
    return True;
-}
-
-__attribute__((unused))
-static void pp_CacheLine ( CacheLine* cl ) {
-  Word i;
-#define FMT "%08x\n"
-  for (i = 0; i < N_LINE_W64s; i++) {
-    Word iL = LEFTCHILD(i);
-    Word iR = RIGHTCHILD(i);
-    Word iLL = LEFTCHILD(iL);
-    Word iLR = RIGHTCHILD(iL);
-    Word iRL = LEFTCHILD(iR);
-    Word iRR = RIGHTCHILD(iR);
-    VG_(printf)(FMT, cl->w64[i]);
-    VG_(printf)("  " FMT, cl->w32[iL]);
-    VG_(printf)("  " FMT, cl->w32[iR]);
-    VG_(printf)("    " FMT, cl->w16[iLL]);
-    VG_(printf)("    " FMT, cl->w16[iLR]);
-    VG_(printf)("    " FMT, cl->w16[iRL]);
-    VG_(printf)("    " FMT, cl->w16[iRR]);
-
-    VG_(printf)("      " FMT, cl->w8[LEFTCHILD(iLL)]);
-    VG_(printf)("      " FMT, cl->w8[RIGHTCHILD(iLL)]);
-    VG_(printf)("      " FMT, cl->w8[LEFTCHILD(iLR)]);
-    VG_(printf)("      " FMT, cl->w8[RIGHTCHILD(iLR)]);
-    VG_(printf)("      " FMT, cl->w8[LEFTCHILD(iRL)]);
-    VG_(printf)("      " FMT, cl->w8[RIGHTCHILD(iRL)]);
-    VG_(printf)("      " FMT, cl->w8[LEFTCHILD(iRR)]);
-    VG_(printf)("      " FMT, cl->w8[RIGHTCHILD(iRR)]);
-  }
-#undef FMT
+  bad:
+   pp_CacheLine(cl);
+   return False;
 }
 
 static void laog__pre_thread_acquires_lock ( Thread*, Lock* ); /* fwds */
@@ -3016,6 +3021,45 @@ Bool sequentialise_into ( /*OUT*/UInt* dst, Word nDst, CacheLine* src )
 }
 
 
+static void mb_tidy_one_cacheline ( void )
+{
+   Word       i;
+   UInt       shvals[N_LINE_W8s];
+   CacheLine* cl;
+   Addr       tag;
+
+   static UWord way = 0; /* 0 .. 1 */
+   static UWord lno = 0; /* 0 .. N_WAY_NENT-1 */
+
+   if (way == 0) {
+      tag =  cache_shmem.tags0[way];
+      cl  = &cache_shmem.lyns0[way];
+   } else {
+      tag =  cache_shmem.tags1[way];
+      cl  = &cache_shmem.lyns1[way];
+   }
+
+   /* move cursor on */
+   lno++;
+   if (lno == N_WAY_NENT) {
+      lno = 0;
+      way++;
+      if (way == 2) way = 0;
+   }
+   tl_assert(way >= 0 && way < 2);
+   tl_assert(lno >= 0 && lno < N_WAY_NENT);
+
+   if (is_valid_scache_tag(tag)) {
+      if (0) VG_(printf)("tidying %d %d\n", (Int)way, (Int)lno);
+      /* tidy up line (way,lno) */
+      (void)sequentialise_into( shvals, N_LINE_W8s, cl );
+      for (i = 0; i < N_LINE_W8s; i++)
+         cl->w8[i] = shvals[i];
+      cacheline_normalise( cl );
+   }
+}
+
+
 static void cacheline_wback ( UWord way, UWord wix )
 {
    Word        i, j;
@@ -3109,6 +3153,8 @@ static void cacheline_wback ( UWord way, UWord wix )
 
    if (anyShared)
       sm->mbHasShared = True;
+
+   /* mb_tidy_one_cacheline(); */
 }
 
 /* Fetch the cacheline 'wix' from the backing store.  The tag
@@ -3236,7 +3282,8 @@ static CacheLine* get_cacheline_MISS ( Addr a )
    stats__cache_totmisses++;
 
    /* arbitrarily choose the way to dump (not very scientific) */
-   way = seed++ & 1;
+   way = seed & 1;
+   seed++; if (seed == 1021) seed = 0; /* 1021 is prime */
 
    if (way == 0) {
      cl        = &cache_shmem.lyns0[wix];
@@ -3491,66 +3538,82 @@ static void shadow_mem_set8 ( Thread* uu_thr_acc, Addr a, UInt svNew ) {
 }
 static void shadow_mem_set16 ( Thread* uu_thr_acc, Addr a, UInt svNew ) {
    CacheLine* cl; 
-   UWord      ix16;
-   UInt       svOld;
+   UWord      ix16, ix8;
    stats__cline_set2s++;
    if (UNLIKELY(!aligned16(a))) goto slowcase;
    cl    = get_cacheline(a);
    ix16  = get_cacheline_offset(a) >> 1;
-   svOld = cl->w16[ix16];
-   if (UNLIKELY(is_SHVAL_Invalid(svOld))) {
-      if (svOld == SHVAL_InvalidD) goto slowcase;
-      pulldown_to_w16( cl, ix16 );
-      tl_assert(is_sane_CacheLine(cl));
-      svOld = cl->w16[ix16];
-      tl_assert(is_SHVAL_valid(svOld));
+   /* We can't indiscriminately write on the w16 node as in the w64
+      case, as that might make the node inconsistent with its parent.
+      So first, pull down to this level. */
+   if (cl->w16[ix16] == SHVAL_InvalidU) {
+      pulldown_to_w16(cl, ix16);
    }
    cl->w16[ix16] = svNew;
+   ix8 = LEFTCHILD(ix16);
+   cl->w8[ ix8+0 ] = SHVAL_InvalidU;
+   cl->w8[ ix8+1 ] = SHVAL_InvalidU;
    return;
-  slowcase: /* misaligned, or must go further down the tree */
+  slowcase: /* misaligned */
    stats__cline_2to1splits++;
    shadow_mem_set8( NULL/*unused*/, a + 0, svNew );
    shadow_mem_set8( NULL/*unused*/, a + 1, svNew );
 }
 static void shadow_mem_set32 ( Thread* uu_thr_acc, Addr a, UInt svNew ) {
    CacheLine* cl; 
-   UWord      ix32;
-   UInt       svOld;
+   UWord      ix32, ix16, ix8;
    stats__cline_set4s++;
    if (UNLIKELY(!aligned32(a))) goto slowcase;
    cl    = get_cacheline(a);
    ix32  = get_cacheline_offset(a) >> 2;
-   svOld = cl->w32[ix32];
-   if (UNLIKELY(is_SHVAL_Invalid(svOld))) {
-      if (svOld == SHVAL_InvalidD) goto slowcase;
-      pulldown_to_w32( cl, ix32 );
-      tl_assert(is_sane_CacheLine(cl));
-      svOld = cl->w32[ix32];
-      tl_assert(is_SHVAL_valid(svOld));
+   /* We can't indiscriminately write on the w32 node as in the w64
+      case, as that might make the node inconsistent with its parent.
+      So first, pull down to this level. */
+   if (cl->w32[ix32] == SHVAL_InvalidU) {
+      pulldown_to_w32(cl, ix32);
    }
    cl->w32[ix32] = svNew;
+   ix16 = LEFTCHILD(ix32);
+   cl->w16[ ix16+0 ] = SHVAL_InvalidU;
+   cl->w16[ ix16+1 ] = SHVAL_InvalidU;
+   ix8 = LEFTCHILD(ix16);
+   cl->w8[ ix8+0 ] = SHVAL_InvalidU;
+   cl->w8[ ix8+1 ] = SHVAL_InvalidU;
+   cl->w8[ ix8+2 ] = SHVAL_InvalidU;
+   cl->w8[ ix8+3 ] = SHVAL_InvalidU;
    return;
-  slowcase: /* misaligned, or must go further down the tree */
+  slowcase: /* misaligned */
    stats__cline_4to2splits++;
    shadow_mem_set16( NULL/*unused*/, a + 0, svNew );
    shadow_mem_set16( NULL/*unused*/, a + 2, svNew );
 }
 static void shadow_mem_set64 ( Thread* uu_thr_acc, Addr a, UInt svNew ) {
    CacheLine* cl; 
-   UWord      ix64;
-   UInt       svOld;
+   UWord      ix64, ix32, ix16, ix8;
    stats__cline_set8s++;
    if (UNLIKELY(!aligned64(a))) goto slowcase;
    cl    = get_cacheline(a);
    ix64  = get_cacheline_offset(a) >> 3;
-   svOld = cl->w64[ix64];
-   if (UNLIKELY(is_SHVAL_Invalid(svOld))) {
-      tl_assert(svOld == SHVAL_InvalidD);
-      goto slowcase;
-   }
    cl->w64[ix64] = svNew;
+   ix32 = LEFTCHILD(ix64);
+   cl->w32[ ix32+0 ] = SHVAL_InvalidU;
+   cl->w32[ ix32+1 ] = SHVAL_InvalidU;
+   ix16 = LEFTCHILD(ix32);
+   cl->w16[ ix16+0 ] = SHVAL_InvalidU;
+   cl->w16[ ix16+1 ] = SHVAL_InvalidU;
+   cl->w16[ ix16+2 ] = SHVAL_InvalidU;
+   cl->w16[ ix16+3 ] = SHVAL_InvalidU;
+   ix8 = LEFTCHILD(ix16);
+   cl->w8[ ix8+0 ] = SHVAL_InvalidU;
+   cl->w8[ ix8+1 ] = SHVAL_InvalidU;
+   cl->w8[ ix8+2 ] = SHVAL_InvalidU;
+   cl->w8[ ix8+3 ] = SHVAL_InvalidU;
+   cl->w8[ ix8+4 ] = SHVAL_InvalidU;
+   cl->w8[ ix8+5 ] = SHVAL_InvalidU;
+   cl->w8[ ix8+6 ] = SHVAL_InvalidU;
+   cl->w8[ ix8+7 ] = SHVAL_InvalidU;
    return;
-  slowcase: /* misaligned, or must go further down the tree */
+  slowcase: /* misaligned */
    stats__cline_8to4splits++;
    shadow_mem_set32( NULL/*unused*/, a + 0, svNew );
    shadow_mem_set32( NULL/*unused*/, a + 4, svNew );
@@ -3596,84 +3659,71 @@ static void shadow_mem_modify_range(
                UInt    opaque
             )
 {
-   if (len == 0) return;
-
-   while (!aligned64(a) && len > 0) {
-      fn8( thr, a, opaque );
-      a += 1;
-      len -= 1;
+   /* fast track a couple of common cases */
+   if (len == 4 && aligned32(a)) {
+      fn32( thr, a, opaque );
+      return;
    }
-
-   if (len == 0) return;
-
-   tl_assert(aligned64(a));
-
-   while (len >= 8) {
+   if (len == 8 && aligned64(a)) {
       fn64( thr, a, opaque );
-      a += 8;
-      len -= 8;
+      return;
    }
 
+   /* be completely general (but as efficient as possible) */
    if (len == 0) return;
 
-   while (len > 0) {
-      fn8( thr, a, opaque );
-      a += 1;
-      len -= 1;
-   }
-
-   tl_assert(len == 0);
-
-#if 0
-VG_(printf)("QQ %p %lu\n", a,len);
    if (!aligned16(a) && len >= 1) {
       fn8( thr, a, opaque );
       a += 1;
       len -= 1;
       tl_assert(aligned16(a));
    }
+   if (len == 0) return;
+
    if (!aligned32(a) && len >= 2) {
       fn16( thr, a, opaque );
       a += 2;
       len -= 2;
       tl_assert(aligned32(a));
    }
+   if (len == 0) return;
+
    if (!aligned64(a) && len >= 4) {
       fn32( thr, a, opaque );
       a += 4;
       len -= 4;
       tl_assert(aligned64(a));
    }
+   if (len == 0) return;
 
-   if (len >= 8)
+   if (len >= 8) {
       tl_assert(aligned64(a));
-
-   while (len >= 8) {
-      fn64( thr, a, opaque );
-      a += 8;
-      len -= 8;
+      while (len >= 8) {
+         fn64( thr, a, opaque );
+         a += 8;
+         len -= 8;
+      }
+      tl_assert(aligned64(a));
    }
+   if (len == 0) return;
 
-   if (len >= 8)
-      tl_assert(aligned64(a));
-
+   if (len >= 4)
+      tl_assert(aligned32(a));
    if (len >= 4) {
       fn32( thr, a, opaque );
       a += 4;
       len -= 4;
    }
+   if (len == 0) return;
 
-   if (len >= 4)
-      tl_assert(aligned32(a));
-
+   if (len >= 2)
+      tl_assert(aligned16(a));
    if (len >= 2) {
       fn16( thr, a, opaque );
       a += 2;
       len -= 2;
    }
-
-   if (len >= 2)
-      tl_assert(aligned16(a));
+   if (len == 0) return;
 
    if (len >= 1) {
       fn8( thr, a, opaque );
@@ -3681,7 +3731,6 @@ VG_(printf)("QQ %p %lu\n", a,len);
       len -= 1;
    }
    tl_assert(len == 0);
-#endif
 }
 
 /* Block-copy states (needed for implementing realloc()). */
@@ -6841,19 +6890,19 @@ static void tc_fini ( Int exitcode )
       }
 
       VG_(printf)("\n");
-      VG_(printf)(" hbefore: %10lu queries\n",        stats__hbefore_queries);
-      VG_(printf)(" hbefore: %10lu cache 0 hits\n",   stats__hbefore_cache0s);
-      VG_(printf)(" hbefore: %10lu cache > 0 hits\n", stats__hbefore_cacheNs);
-      VG_(printf)(" hbefore: %10lu graph searches\n", stats__hbefore_gsearches);
-      VG_(printf)(" hbefore: %10lu   of which slow\n",
+      VG_(printf)(" hbefore: %,10lu queries\n",        stats__hbefore_queries);
+      VG_(printf)(" hbefore: %,10lu cache 0 hits\n",   stats__hbefore_cache0s);
+      VG_(printf)(" hbefore: %,10lu cache > 0 hits\n", stats__hbefore_cacheNs);
+      VG_(printf)(" hbefore: %,10lu graph searches\n", stats__hbefore_gsearches);
+      VG_(printf)(" hbefore: %,10lu   of which slow\n",
                   stats__hbefore_gsearches - stats__hbefore_gsearchFs);
-      VG_(printf)(" hbefore: %10lu stack high water mark\n",
+      VG_(printf)(" hbefore: %,10lu stack high water mark\n",
                   stats__hbefore_stk_hwm);
-      VG_(printf)(" hbefore: %10lu cache invals\n",   stats__hbefore_invals);
-      VG_(printf)(" hbefore: %10lu probes\n",         stats__hbefore_probes);
+      VG_(printf)(" hbefore: %,10lu cache invals\n",   stats__hbefore_invals);
+      VG_(printf)(" hbefore: %,10lu probes\n",         stats__hbefore_probes);
 
       VG_(printf)("\n");
-      VG_(printf)("segments:       %10lu Segment objects allocated\n", 
+      VG_(printf)("segments:       %,10lu Segment objects allocated\n", 
                   stats__mk_Segment);
       VG_(printf)("locksets:         %8d unique lock sets\n",
                   (Int)TC_(cardinalityWSU)( univ_lsets ));
@@ -6875,73 +6924,73 @@ static void tc_fini ( Int exitcode )
                   (Int)(string_table ? TC_(sizeFM)( string_table ) : 0) );
 
       VG_(printf)("\n");
-      VG_(printf)("     msm: %10lu %10lu rd/wr_Excl_nochange\n",
+      VG_(printf)("     msm: %,12lu %,12lu rd/wr_Excl_nochange\n",
                   stats__msm_r32_Excl_nochange, stats__msm_w32_Excl_nochange);
-      VG_(printf)("     msm: %10lu %10lu rd/wr_Excl_transfer\n",
+      VG_(printf)("     msm: %,12lu %,12lu rd/wr_Excl_transfer\n",
                   stats__msm_r32_Excl_transfer, stats__msm_w32_Excl_transfer);
-      VG_(printf)("     msm: %10lu %10lu rd/wr_Excl_to_ShR/ShM\n",
+      VG_(printf)("     msm: %,12lu %,12lu rd/wr_Excl_to_ShR/ShM\n",
                   stats__msm_r32_Excl_to_ShR,   stats__msm_w32_Excl_to_ShM);
-      VG_(printf)("     msm: %10lu %10lu rd/wr_ShR_to_ShR/ShM\n",
+      VG_(printf)("     msm: %,12lu %,12lu rd/wr_ShR_to_ShR/ShM\n",
                   stats__msm_r32_ShR_to_ShR,    stats__msm_w32_ShR_to_ShM);
-      VG_(printf)("     msm: %10lu %10lu rd/wr_ShM_to_ShM\n",
+      VG_(printf)("     msm: %,12lu %,12lu rd/wr_ShM_to_ShM\n",
                   stats__msm_r32_ShM_to_ShM,    stats__msm_w32_ShM_to_ShM);
-      VG_(printf)("     msm: %10lu %10lu rd/wr_New_to_Excl\n",
+      VG_(printf)("     msm: %,12lu %,12lu rd/wr_New_to_Excl\n",
                   stats__msm_r32_New_to_Excl,   stats__msm_w32_New_to_Excl);
-      VG_(printf)("     msm: %10lu %10lu rd/wr_NoAccess\n",
+      VG_(printf)("     msm: %,12lu %,12lu rd/wr_NoAccess\n",
                   stats__msm_r32_NoAccess,      stats__msm_w32_NoAccess);
 
       VG_(printf)("\n");
-      VG_(printf)(" secmaps: %10lu allocd (%10lu g-a-range)\n",
+      VG_(printf)(" secmaps: %,10lu allocd (%,10lu g-a-range)\n",
                   stats__secmaps_allocd,
                   stats__secmap_ga_space_covered);
-      VG_(printf)("  linesZ: %10lu allocd (%10lu bytes occupied)\n",
+      VG_(printf)("  linesZ: %,10lu allocd (%,10lu bytes occupied)\n",
                   stats__secmap_linesZ_allocd,
                   stats__secmap_linesZ_bytes);
-      VG_(printf)("  linesF: %10lu allocd (%10lu bytes occupied)\n",
+      VG_(printf)("  linesF: %,10lu allocd (%,10lu bytes occupied)\n",
                   stats__secmap_linesF_allocd,
                   stats__secmap_linesF_bytes);
-      VG_(printf)(" secmaps: %10lu iterator steppings\n",
+      VG_(printf)(" secmaps: %,10lu iterator steppings\n",
                   stats__secmap_iterator_steppings);
 
       VG_(printf)("\n");
-      VG_(printf)("   cache: %,10lu totrefs (%,lu misses)\n",
+      VG_(printf)("   cache: %,lu totrefs (%,lu misses)\n",
                   stats__cache_totrefs, stats__cache_totmisses );
-      VG_(printf)("   cache: %8lu Z-fetch, %8lu F-fetch\n",
+      VG_(printf)("   cache: %,10lu Z-fetch, %,10lu F-fetch\n",
                   stats__cache_Z_fetches, stats__cache_F_fetches );
-      VG_(printf)("   cache: %8lu Z-wback, %8lu F-wback\n",
+      VG_(printf)("   cache: %,10lu Z-wback, %,10lu F-wback\n",
                   stats__cache_Z_wbacks, stats__cache_F_wbacks );
-      VG_(printf)("   cache: %8lu invals,  %8lu flushes\n",
+      VG_(printf)("   cache: %,10lu invals,  %,10lu flushes\n",
                   stats__cache_invals, stats__cache_flushes );
 
       VG_(printf)("\n");
-      VG_(printf)("   cline: %10lu normalises\n",
+      VG_(printf)("   cline: %,10lu normalises\n",
                   stats__cline_normalises );
-      VG_(printf)("   cline:  reads 8/4/2/1: %10lu %10lu %10lu %10lu\n",
+      VG_(printf)("   cline:  reads 8/4/2/1: %,12lu %,12lu %,12lu %,12lu\n",
                   stats__cline_read8s,
                   stats__cline_read4s,
                   stats__cline_read2s,
                   stats__cline_read1s );
-      VG_(printf)("   cline: writes 8/4/2/1: %10lu %10lu %10lu %10lu\n",
+      VG_(printf)("   cline: writes 8/4/2/1: %,12lu %,12lu %,12lu %,12lu\n",
                   stats__cline_write8s,
                   stats__cline_write4s,
                   stats__cline_write2s,
                   stats__cline_write1s );
-      VG_(printf)("   cline:   sets 8/4/2/1: %10lu %10lu %10lu %10lu\n",
+      VG_(printf)("   cline:   sets 8/4/2/1: %,12lu %,12lu %,12lu %,12lu\n",
                   stats__cline_set8s,
                   stats__cline_set4s,
                   stats__cline_set2s,
                   stats__cline_set1s );
-      VG_(printf)("   cline: get1s %lu, copy1s %lu\n",
+      VG_(printf)("   cline: get1s %,lu, copy1s %,lu\n",
                   stats__cline_get1s, stats__cline_copy1s );
-
-      VG_(printf)("   cline:    splits: 8to4 %10lu, 4to2 %10lu, 2to1 %10lu\n",
+      VG_(printf)("   cline:    splits: 8to4 %,12lu    4to2 %,12lu    2to1 %,12lu\n",
                  stats__cline_8to4splits,
                  stats__cline_4to2splits,
                  stats__cline_2to1splits );
-      VG_(printf)("   cline: pulldowns: 8to4 %10lu, 4to2 %10lu, 2to1 %10lu\n",
+      VG_(printf)("   cline: pulldowns: 8to4 %,12lu    4to2 %,12lu    2to1 %,12lu\n",
                  stats__cline_8to4pulldown,
                  stats__cline_4to2pulldown,
                  stats__cline_2to1pulldown );
+
       VG_(printf)("\n");
    }
 }
