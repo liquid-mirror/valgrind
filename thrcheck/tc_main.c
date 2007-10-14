@@ -3062,7 +3062,7 @@ static void mb_tidy_one_cacheline ( void )
 }
 
 
-static void cacheline_wback ( UWord way, UWord wix )
+static __attribute__((noinline)) void cacheline_wback ( UWord way, UWord wix )
 {
    Word        i, j;
    Bool        anyShared = False;
@@ -3164,7 +3164,7 @@ static void cacheline_wback ( UWord way, UWord wix )
    associated with 'wix' is assumed to have already been filled in;
    hence that is used to determine where in the backing store to read
    from. */
-static void cacheline_fetch ( UWord way, UWord wix )
+static __attribute__((noinline)) void cacheline_fetch ( UWord way, UWord wix )
 {
    Word        i;
    Addr        tag;
@@ -3249,9 +3249,9 @@ static inline UWord get_cacheline_offset ( Addr a ) {
    return (UWord)(a & (N_LINE_W8s - 1));
 }
 
-static CacheLine* get_cacheline_MISS ( Addr a ); /* fwds */
-__attribute__((noinline))
-static /*inline*/ CacheLine* get_cacheline ( Addr a )
+static __attribute__((noinline))
+       CacheLine* get_cacheline_MISS ( Addr a ); /* fwds */
+static inline CacheLine* get_cacheline ( Addr a )
 {
    /* tag is 'a' with the in-line offset masked out, 
       eg a[31]..a[4] 0000 */
@@ -3266,7 +3266,8 @@ static /*inline*/ CacheLine* get_cacheline ( Addr a )
    return get_cacheline_MISS( a );
 }
 
-static CacheLine* get_cacheline_MISS ( Addr a )
+static __attribute__((noinline))
+       CacheLine* get_cacheline_MISS ( Addr a )
 {
    /* tag is 'a' with the in-line offset masked out, 
       eg a[31]..a[4] 0000 */
@@ -3365,7 +3366,7 @@ static void shadow_mem_read8 ( Thread* thr_acc, Addr a, UInt uuOpaque ) {
    if (UNLIKELY(is_SHVAL_Invalid(svOld))) {
       tl_assert(svOld == SHVAL_InvalidU);
       pulldown_to_w8( cl, ix8 );
-      tl_assert(is_sane_CacheLine(cl));
+      /* EXPENSIVE: tl_assert(is_sane_CacheLine(cl)); */
       svOld = cl->w8[ix8];
    }
    svNew = msm__handle_read( thr_acc, a, svOld );
@@ -3383,7 +3384,7 @@ static void shadow_mem_read16 ( Thread* thr_acc, Addr a, UInt uuOpaque ) {
    if (UNLIKELY(is_SHVAL_Invalid(svOld))) {
       if (svOld == SHVAL_InvalidD) goto slowcase;
       pulldown_to_w16( cl, ix16 );
-      tl_assert(is_sane_CacheLine(cl));
+      /* EXPENSIVE: tl_assert(is_sane_CacheLine(cl)); */
       svOld = cl->w16[ix16];
    }
    svNew = msm__handle_read( thr_acc, a, svOld );
@@ -3406,7 +3407,7 @@ static void shadow_mem_read32 ( Thread* thr_acc, Addr a, UInt uuOpaque ) {
    if (UNLIKELY(is_SHVAL_Invalid(svOld))) {
       if (svOld == SHVAL_InvalidD) goto slowcase;
       pulldown_to_w32( cl, ix32 );
-      tl_assert(is_sane_CacheLine(cl));
+      /* EXPENSIVE: tl_assert(is_sane_CacheLine(cl)); */
       svOld = cl->w32[ix32];
    }
    svNew = msm__handle_read( thr_acc, a, svOld );
@@ -3450,7 +3451,7 @@ static void shadow_mem_write8 ( Thread* thr_acc, Addr a, UInt uuOpaque ) {
    if (UNLIKELY(is_SHVAL_Invalid(svOld))) {
       tl_assert(svOld == SHVAL_InvalidU);
       pulldown_to_w8( cl, ix8 );
-      tl_assert(is_sane_CacheLine(cl));
+      /* EXPENSIVE: tl_assert(is_sane_CacheLine(cl)); */
       svOld = cl->w8[ix8];
    }
    svNew = msm__handle_write( thr_acc, a, svOld );
@@ -3468,7 +3469,7 @@ static void shadow_mem_write16 ( Thread* thr_acc, Addr a, UInt uuOpaque ) {
    if (UNLIKELY(is_SHVAL_Invalid(svOld))) {
       if (svOld == SHVAL_InvalidD) goto slowcase;
       pulldown_to_w16( cl, ix16 );
-      tl_assert(is_sane_CacheLine(cl));
+      /* EXPENSIVE: tl_assert(is_sane_CacheLine(cl)); */
       svOld = cl->w16[ix16];
    }
    svNew = msm__handle_write( thr_acc, a, svOld );
@@ -3491,7 +3492,7 @@ static void shadow_mem_write32 ( Thread* thr_acc, Addr a, UInt uuOpaque ) {
    if (UNLIKELY(is_SHVAL_Invalid(svOld))) {
       if (svOld == SHVAL_InvalidD) goto slowcase;
       pulldown_to_w32( cl, ix32 );
-      tl_assert(is_sane_CacheLine(cl));
+      /* EXPENSIVE: tl_assert(is_sane_CacheLine(cl)); */
       svOld = cl->w32[ix32];
    }
    svNew = msm__handle_write( thr_acc, a, svOld );
@@ -3535,7 +3536,7 @@ static void shadow_mem_set8 ( Thread* uu_thr_acc, Addr a, UInt svNew ) {
    if (UNLIKELY(is_SHVAL_Invalid(svOld))) {
       tl_assert(svOld == SHVAL_InvalidU);
       pulldown_to_w8( cl, ix8 );
-      tl_assert(is_sane_CacheLine(cl));
+      /* EXPENSIVE: tl_assert(is_sane_CacheLine(cl)); */
       svOld = cl->w8[ix8];
       tl_assert(is_SHVAL_valid(svOld));
    }
@@ -3635,7 +3636,7 @@ static UInt shadow_mem_get8 ( Addr a ) {
    if (UNLIKELY(is_SHVAL_Invalid(sv))) {
       tl_assert(sv == SHVAL_InvalidU);
       pulldown_to_w8( cl, ix8 );
-      tl_assert(is_sane_CacheLine(cl));
+      /* tl_assert(is_sane_CacheLine(cl)); */
       sv = cl->w8[ix8];
    }
    tl_assert(is_SHVAL_valid(sv));
