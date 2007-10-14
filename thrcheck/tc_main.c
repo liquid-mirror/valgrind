@@ -1421,6 +1421,7 @@ static UInt dfsver_current = 0;
 static XArray* dfsver_stack = NULL;
 
 // FIXME: check this - is it really correct?
+__attribute__((noinline))
 static Bool happens_before_do_dfs_from_to ( Segment* src, Segment* dst )
 {
    Segment* here;
@@ -1501,6 +1502,7 @@ static Bool happens_before_do_dfs_from_to ( Segment* src, Segment* dst )
    }
 }
 
+__attribute__((noinline))
 static Bool happens_before_wrk ( SegmentID segid1, SegmentID segid2 )
 {
    Bool    reachable;
@@ -2893,12 +2895,6 @@ static void cacheline_normalise ( /*MOD*/CacheLine* cl )
 {
    Word i;
    UInt svL, svR;
-   for (i = 0; i < N_LINE_W64s; i++)
-      cl->w64[i] = SHVAL_InvalidD;
-   for (i = 0; i < N_LINE_W32s; i++)
-      cl->w32[i] = SHVAL_InvalidD;
-   for (i = 0; i < N_LINE_W16s; i++)
-      cl->w16[i] = SHVAL_InvalidD;
 
    /* build w16 layer from w8 layer.  We only expect to see valid
       SHVALs in the w8 layer. */
@@ -2911,6 +2907,8 @@ static void cacheline_normalise ( /*MOD*/CacheLine* cl )
          cl->w16[i] = svL;
          cl->w8[LEFTCHILD(i)]  = SHVAL_InvalidU;
          cl->w8[RIGHTCHILD(i)] = SHVAL_InvalidU;
+      } else {
+         cl->w16[i] = SHVAL_InvalidD;
       }
    }
 
@@ -2922,6 +2920,8 @@ static void cacheline_normalise ( /*MOD*/CacheLine* cl )
          cl->w32[i] = svL;
          cl->w16[LEFTCHILD(i)]  = SHVAL_InvalidU;
          cl->w16[RIGHTCHILD(i)] = SHVAL_InvalidU;
+      } else {
+         cl->w32[i] = SHVAL_InvalidD;
       }
    }
 
@@ -2933,10 +2933,12 @@ static void cacheline_normalise ( /*MOD*/CacheLine* cl )
          cl->w64[i] = svL;
          cl->w32[LEFTCHILD(i)]  = SHVAL_InvalidU;
          cl->w32[RIGHTCHILD(i)] = SHVAL_InvalidU;
+      } else {
+         cl->w64[i] = SHVAL_InvalidD;
       }
    }
 
-   tl_assert(is_sane_CacheLine(cl));
+   /* EXPENSIVE: tl_assert(is_sane_CacheLine(cl)); */
    stats__cline_normalises++;
 }
 
@@ -3103,7 +3105,7 @@ static void cacheline_wback ( UWord way, UWord wix )
    lineZ = &sm->linesZ[zix];
 
    /* Generate the data to be stored */
-   tl_assert(is_sane_CacheLine( cl ));
+   /* EXPENSIVE: tl_assert(is_sane_CacheLine( cl )); */
    anyShared = sequentialise_into( shvals, N_LINE_W8s, cl );
 
    lineZ->dict[0] = lineZ->dict[1] 
@@ -3112,7 +3114,6 @@ static void cacheline_wback ( UWord way, UWord wix )
    for (i = 0; i < N_LINE_W8s; i++) {
 
       sv = shvals[i];
-      tl_assert(sv != 0);
       for (j = 0; j < 4; j++) {
          if (sv == lineZ->dict[j])
             goto dict_ok;
@@ -3123,6 +3124,7 @@ static void cacheline_wback ( UWord way, UWord wix )
       }
       tl_assert(j >= 0 && j <= 4);
       if (j == 4) break; /* we'll have to use the f rep */
+      tl_assert(is_SHVAL_valid(sv));
       lineZ->dict[j] = sv;
      dict_ok:
       write_twobit_array( lineZ->ix2s, i, j );
@@ -3142,10 +3144,11 @@ static void cacheline_wback ( UWord way, UWord wix )
       lineZ->dict[0] = lineZ->dict[2] = lineZ->dict[3] = 0;
       lineZ->dict[1] = (UInt)fix;
       lineF->inUse = True;
-      sv = shvals[i];
-      tl_assert(sv != 0);
-      for (i = 0; i < N_LINE_W8s; i++)
+      for (i = 0; i < N_LINE_W8s; i++) {
+         sv = shvals[i];
+         tl_assert(is_SHVAL_valid(sv));
          lineF->w32s[i] = sv;
+      }
       stats__cache_F_wbacks++;
    } else {
       stats__cache_Z_wbacks++;
@@ -3247,7 +3250,8 @@ static inline UWord get_cacheline_offset ( Addr a ) {
 }
 
 static CacheLine* get_cacheline_MISS ( Addr a ); /* fwds */
-static inline CacheLine* get_cacheline ( Addr a )
+__attribute__((noinline))
+static /*inline*/ CacheLine* get_cacheline ( Addr a )
 {
    /* tag is 'a' with the in-line offset masked out, 
       eg a[31]..a[4] 0000 */
@@ -3294,13 +3298,14 @@ static CacheLine* get_cacheline_MISS ( Addr a )
    }
 
    if (is_valid_scache_tag( *tag_old_p )) {
-      tl_assert(is_sane_CacheLine( cl ));
+      /* EXPENSIVE and REDUNDANT: callee does it
+         tl_assert(is_sane_CacheLine( cl )); */
       cacheline_wback( way, wix );
    }
    /* and reload the new one */
    *tag_old_p = tag;
    cacheline_fetch( way, wix );
-   tl_assert(is_sane_CacheLine( cl ));
+   /* EXPENSIVE tl_assert(is_sane_CacheLine( cl )); */
    return cl;
 }
 
@@ -5219,6 +5224,7 @@ static void laog__show ( void ) {
    VG_(printf)("}\n");
 }
 
+__attribute__((noinline))
 static void laog__add_edge ( Lock* src, Lock* dst ) {
    Word       keyW;
    LAOGLinks* links;
@@ -5251,6 +5257,7 @@ static void laog__add_edge ( Lock* src, Lock* dst ) {
    }
 }
 
+__attribute__((noinline))
 static void laog__del_edge ( Lock* src, Lock* dst ) {
    Word       keyW;
    LAOGLinks* links;
@@ -5273,6 +5280,7 @@ static void laog__del_edge ( Lock* src, Lock* dst ) {
    }
 }
 
+__attribute__((noinline))
 static WordSetID /* in univ_laog */ laog__succs ( Lock* lk ) {
    Word       keyW;
    LAOGLinks* links;
@@ -5287,6 +5295,7 @@ static WordSetID /* in univ_laog */ laog__succs ( Lock* lk ) {
    }
 }
 
+__attribute__((noinline))
 static WordSetID /* in univ_laog */ laog__preds ( Lock* lk ) {
    Word       keyW;
    LAOGLinks* links;
@@ -5341,6 +5350,7 @@ VG_(printf)("laog sanity check\n");
 
 /* Return True iff there is a path in laog from 'src' to any of the
    elements in 'dst'. */
+__attribute__((noinline))
 static
 Bool laog__do_dfs_from_to ( Lock* src, WordSetID dsts /* univ_lsets */ )
 {
@@ -5396,6 +5406,7 @@ Bool laog__do_dfs_from_to ( Lock* src, WordSetID dsts /* univ_lsets */ )
    between 'lk' and the locks already held by 'thr' and issue a
    complaint if so.  Also, update the ordering graph appropriately.
 */
+__attribute__((noinline))
 static void laog__pre_thread_acquires_lock ( 
                Thread* thr, /* NB: BEFORE lock is added */
                Lock*   lk
@@ -5435,6 +5446,7 @@ static void laog__pre_thread_acquires_lock (
 
 /* Delete from 'laog' any pair mentioning a lock in locksToDelete */
 
+__attribute__((noinline))
 static void laog__handle_one_lock_deletion ( Lock* lk )
 {
    WordSetID preds, succs;
@@ -5460,6 +5472,7 @@ static void laog__handle_one_lock_deletion ( Lock* lk )
    }
 }
 
+__attribute__((noinline))
 static void laog__handle_lock_deletions (
                WordSetID /* in univ_laog */ locksToDelete
             )
