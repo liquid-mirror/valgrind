@@ -40,7 +40,9 @@ EXTRA_DIST = $(noinst_SCRIPTS) \
 	tc14_laog_dinphils.vgtest tc14_laog_dinphils.stderr.exp \
 		tc14_laog_dinphils.stdout.exp \
 	tc15_laog_lockdel.vgtest tc15_laog_lockdel.stderr.exp \
-		tc15_laog_lockdel.stdout.exp
+		tc15_laog_lockdel.stdout.exp \
+	tc16_byterace.vgtest tc16_byterace.stderr.exp \
+		tc16_byterace.stdout.exp
 
 check_PROGRAMS = \
 	hg01_all_ok \
@@ -63,7 +65,8 @@ check_PROGRAMS = \
 	tc12_rwl_trivial \
 	tc13_laog1 \
 	tc14_laog_dinphils \
-	tc15_laog_lockdel
+	tc15_laog_lockdel \
+	tc16_byterace
 
 # is this necessary?
 AM_CFLAGS	= $(WERROR) -Winline -Wall -Wshadow -g      $(AM_FLAG_M3264_PRI)
