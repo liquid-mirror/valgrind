@@ -3023,45 +3023,6 @@ Bool sequentialise_into ( /*OUT*/UInt* dst, Word nDst, CacheLine* src )
 }
 
 
-static void mb_tidy_one_cacheline ( void )
-{
-   Word       i;
-   UInt       shvals[N_LINE_W8s];
-   CacheLine* cl;
-   Addr       tag;
-
-   static UWord way = 0; /* 0 .. 1 */
-   static UWord lno = 0; /* 0 .. N_WAY_NENT-1 */
-
-   if (way == 0) {
-      tag =  cache_shmem.tags0[way];
-      cl  = &cache_shmem.lyns0[way];
-   } else {
-      tag =  cache_shmem.tags1[way];
-      cl  = &cache_shmem.lyns1[way];
-   }
-
-   /* move cursor on */
-   lno++;
-   if (lno == N_WAY_NENT) {
-      lno = 0;
-      way++;
-      if (way == 2) way = 0;
-   }
-   tl_assert(way >= 0 && way < 2);
-   tl_assert(lno >= 0 && lno < N_WAY_NENT);
-
-   if (is_valid_scache_tag(tag)) {
-      if (0) VG_(printf)("tidying %d %d\n", (Int)way, (Int)lno);
-      /* tidy up line (way,lno) */
-      (void)sequentialise_into( shvals, N_LINE_W8s, cl );
-      for (i = 0; i < N_LINE_W8s; i++)
-         cl->w8[i] = shvals[i];
-      cacheline_normalise( cl );
-   }
-}
-
-
 static __attribute__((noinline)) void cacheline_wback ( UWord way, UWord wix )
 {
    Word        i, j;
@@ -3395,6 +3356,7 @@ static void shadow_mem_read16 ( Thread* thr_acc, Addr a, UInt uuOpaque ) {
    shadow_mem_read8( thr_acc, a + 0, 0/*unused*/ );
    shadow_mem_read8( thr_acc, a + 1, 0/*unused*/ );
 }
+inline
 static void shadow_mem_read32 ( Thread* thr_acc, Addr a, UInt uuOpaque ) {
    CacheLine* cl; 
    UWord      ix32;
@@ -3480,6 +3442,7 @@ static void shadow_mem_write16 ( Thread* thr_acc, Addr a, UInt uuOpaque ) {
    shadow_mem_write8( thr_acc, a + 0, 0/*unused*/ );
    shadow_mem_write8( thr_acc, a + 1, 0/*unused*/ );
 }
+/* inline */
 static void shadow_mem_write32 ( Thread* thr_acc, Addr a, UInt uuOpaque ) {
    CacheLine* cl; 
    UWord      ix32;
@@ -4336,15 +4299,50 @@ void evhH__pre_thread_releases_lock ( Thread* thr,
 
 /*--------- Event handlers proper (evh__* functions) ---------*/
 
-/* FIXME: Horrible inefficient hack.  Get rid of it somehow. */
-// FIXME: get rid of the "if .." hack.  It exists because evim__new_mem
-// is called during initialisation (as notification of initial memory
-// layout) and VG_(get_running_tid)() returns VG_INVALID_THREADID at
-// that point.
+/* What is the Thread* for the currently running thread?  This is
+   absolutely performance critical.  We receive notifications from the
+   core for client code starts/stops, and cache the looked-up result
+   in 'current_Thread'.  Hence, for the vast majority of requests,
+   finding the current thread reduces to a read of a global variable,
+   provided get_current_Thread_in_C_C is inlined.
+
+   Outside of client code, current_Thread is NULL, and presumably
+   any uses of it will cause a segfault.  Hence:
+
+   - for uses definitely within client code, use
+     get_current_Thread_in_C_C.
+
+   - for all other uses, use get_current_Thread_general.
+*/
+
+static Thread* current_Thread = NULL;
+
+static void evh__start_client_code ( ThreadId tid, ULong nDisp ) {
+   if (0) VG_(printf)("start %d %llu\n", (Int)tid, nDisp);
+   tl_assert(current_Thread == NULL);
+   current_Thread = map_threads_lookup( tid );
+   tl_assert(current_Thread != NULL);
+}
+static void evh__stop_client_code ( ThreadId tid, ULong nDisp ) {
+   if (0) VG_(printf)(" stop %d %llu\n", (Int)tid, nDisp);
+   tl_assert(current_Thread != NULL);
+   current_Thread = NULL;
+}
+static inline Thread* get_current_Thread_in_C_C ( void ) {
+   return current_Thread;
+}
 static inline Thread* get_current_Thread ( void ) {
    ThreadId coretid;
    Thread*  thr;
+   thr = get_current_Thread_in_C_C();
+   if (LIKELY(thr))
+      return thr;
+   /* evidently not in client code.  Do it the slow way. */
    coretid = VG_(get_running_tid)();
+   /* FIXME: get rid of the following kludge.  It exists because
+      evim__new_mem is called during initialisation (as notification
+      of initial memory layout) and VG_(get_running_tid)() returns
+      VG_INVALID_THREADID at that point. */
    if (coretid == VG_INVALID_THREADID)
       coretid = 1; /* KLUDGE */
    thr = map_threads_lookup( coretid );
@@ -4711,57 +4709,57 @@ void evh__die_mem_heap ( Addr a, SizeT len ) {
 
 static VG_REGPARM(1)
 void evh__mem_help_read_1(Addr a) {
-   shadow_mem_read8( get_current_Thread(), a, 0/*unused*/ );
+   shadow_mem_read8( get_current_Thread_in_C_C(), a, 0/*unused*/ );
 }
 static VG_REGPARM(1)
 void evh__mem_help_read_2(Addr a) {
-   shadow_mem_read16( get_current_Thread(), a, 0/*unused*/ );
+   shadow_mem_read16( get_current_Thread_in_C_C(), a, 0/*unused*/ );
 }
 static VG_REGPARM(1)
 void evh__mem_help_read_4(Addr a) {
-   shadow_mem_read32( get_current_Thread(), a, 0/*unused*/ );
+   shadow_mem_read32( get_current_Thread_in_C_C(), a, 0/*unused*/ );
 }
 static VG_REGPARM(1)
 void evh__mem_help_read_8(Addr a) {
-   shadow_mem_read64( get_current_Thread(), a, 0/*unused*/ );
+   shadow_mem_read64( get_current_Thread_in_C_C(), a, 0/*unused*/ );
 }
 static VG_REGPARM(2)
 void evh__mem_help_read_N(Addr a, SizeT size) {
-   shadow_mem_read_range( get_current_Thread(), a, size );
+   shadow_mem_read_range( get_current_Thread_in_C_C(), a, size );
 }
 
 static VG_REGPARM(1)
 void evh__mem_help_write_1(Addr a) {
-   shadow_mem_write8( get_current_Thread(), a, 0/*unused*/ );
+   shadow_mem_write8( get_current_Thread_in_C_C(), a, 0/*unused*/ );
 }
 static VG_REGPARM(1)
 void evh__mem_help_write_2(Addr a) {
-   shadow_mem_write16( get_current_Thread(), a, 0/*unused*/ );
+   shadow_mem_write16( get_current_Thread_in_C_C(), a, 0/*unused*/ );
 }
 static VG_REGPARM(1)
 void evh__mem_help_write_4(Addr a) {
-   shadow_mem_write32( get_current_Thread(), a, 0/*unused*/ );
+   shadow_mem_write32( get_current_Thread_in_C_C(), a, 0/*unused*/ );
 }
 static VG_REGPARM(1)
 void evh__mem_help_write_8(Addr a) {
-   shadow_mem_write64( get_current_Thread(), a, 0/*unused*/ );
+   shadow_mem_write64( get_current_Thread_in_C_C(), a, 0/*unused*/ );
 }
 static VG_REGPARM(2)
 void evh__mem_help_write_N(Addr a, SizeT size) {
-   shadow_mem_write_range( get_current_Thread(), a, size );
+   shadow_mem_write_range( get_current_Thread_in_C_C(), a, size );
 }
 
 static void evh__bus_lock(void) {
    Thread* thr;
    if (0) VG_(printf)("evh__bus_lock()\n");
-   thr = map_threads_maybe_lookup( VG_(get_running_tid)() );
+   thr = get_current_Thread();
    tl_assert(thr); /* cannot fail - Thread* must already exist */
    evhH__post_thread_w_acquires_lock( thr, LK_nonRec, (Addr)&__bus_lock );
 }
 static void evh__bus_unlock(void) {
    Thread* thr;
    if (0) VG_(printf)("evh__bus_unlock()\n");
-   thr = map_threads_maybe_lookup( VG_(get_running_tid)() );
+   thr = get_current_Thread();
    tl_assert(thr); /* cannot fail - Thread* must already exist */
    evhH__pre_thread_releases_lock( thr, (Addr)&__bus_lock, False/*!isRDWR*/ );
 }
@@ -7086,6 +7084,9 @@ static void tc_pre_clo_init ( void )
 
    VG_(track_pre_thread_ll_create)( evh__pre_thread_ll_create );
    VG_(track_pre_thread_ll_exit)  ( evh__pre_thread_ll_exit );
+
+   VG_(track_start_client_code)( evh__start_client_code );
+   VG_(track_stop_client_code)( evh__stop_client_code );
 
    initialise_data_structures();
 
