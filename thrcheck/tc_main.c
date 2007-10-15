@@ -432,7 +432,7 @@ static Bool stepSecMapIter ( /*OUT*/UInt** pVal,
 
 /* ------ Cache ------ */
 
-#define N_WAY_BITS 12
+#define N_WAY_BITS 16
 #define N_WAY_NENT (1 << N_WAY_BITS)
 
 /* Each tag is the address of the associated CacheLine, rounded down
@@ -445,9 +445,7 @@ static Bool stepSecMapIter ( /*OUT*/UInt** pVal,
 typedef
    struct {
       CacheLine lyns0[N_WAY_NENT];
-      CacheLine lyns1[N_WAY_NENT];
       Addr      tags0[N_WAY_NENT];
-      Addr      tags1[N_WAY_NENT];
    }
    Cache;
 
@@ -2164,20 +2162,6 @@ static void shmem__sanity_check ( Char* who )
          for (j = i+1; j < N_WAY_NENT; j++)
             if (cache_shmem.tags0[j] == tag) BAD("17-0");
       }
-      /* way1 */
-      cl  = &cache_shmem.lyns1[i];
-      tag =  cache_shmem.tags1[i];
-      if (tag != 1) {
-         if (!is_valid_scache_tag(tag)) BAD("14-1");
-         if (!is_sane_CacheLine(cl)) BAD("15-1");
-         if (tag & (N_LINE_W8s-1)) BAD("16-1");
-         for (j = i+1; j < N_WAY_NENT; j++)
-            if (cache_shmem.tags1[j] == tag) BAD("17-1");
-      }
-      /* and also */
-      if (cache_shmem.tags0[i] != 1 && cache_shmem.tags1[i] != 1
-          && cache_shmem.tags0[i] == cache_shmem.tags1[i])
-         BAD("18");
    }
 
    return;
@@ -3023,7 +3007,7 @@ Bool sequentialise_into ( /*OUT*/UInt* dst, Word nDst, CacheLine* src )
 }
 
 
-static __attribute__((noinline)) void cacheline_wback ( UWord way, UWord wix )
+static __attribute__((noinline)) void cacheline_wback ( UWord wix )
 {
    Word        i, j;
    Bool        anyShared = False;
@@ -3037,18 +3021,12 @@ static __attribute__((noinline)) void cacheline_wback ( UWord way, UWord wix )
    UInt        sv;
 
    if (0)
-   VG_(printf)("scache wback way %d line %d\n", (Int)way, (Int)wix);
+   VG_(printf)("scache wback line %d\n", (Int)wix);
 
-   tl_assert(way >= 0 && way < 2);
    tl_assert(wix >= 0 && wix < N_WAY_NENT);
 
-   if (way == 0) {
-      tag =  cache_shmem.tags0[wix];
-      cl  = &cache_shmem.lyns0[wix];
-   } else {
-      tag =  cache_shmem.tags1[wix];
-      cl  = &cache_shmem.lyns1[wix];
-   }
+   tag =  cache_shmem.tags0[wix];
+   cl  = &cache_shmem.lyns0[wix];
 
    /* The cache line may have been invalidated; if so, ignore it. */
    if (!is_valid_scache_tag(tag))
@@ -3125,7 +3103,7 @@ static __attribute__((noinline)) void cacheline_wback ( UWord way, UWord wix )
    associated with 'wix' is assumed to have already been filled in;
    hence that is used to determine where in the backing store to read
    from. */
-static __attribute__((noinline)) void cacheline_fetch ( UWord way, UWord wix )
+static __attribute__((noinline)) void cacheline_fetch ( UWord wix )
 {
    Word        i;
    Addr        tag;
@@ -3134,18 +3112,12 @@ static __attribute__((noinline)) void cacheline_fetch ( UWord way, UWord wix )
    CacheLineF* lineF;
 
    if (0)
-   VG_(printf)("scache fetch way %d line %d\n", (Int)way, (Int)wix);
+   VG_(printf)("scache fetch line %d\n", (Int)wix);
 
-   tl_assert(way >= 0 && way < 2);
    tl_assert(wix >= 0 && wix < N_WAY_NENT);
 
-   if (way == 0) {
-      tag =  cache_shmem.tags0[wix];
-      cl  = &cache_shmem.lyns0[wix];
-   } else {
-      tag =  cache_shmem.tags1[wix];
-      cl  = &cache_shmem.lyns1[wix];
-   }
+   tag =  cache_shmem.tags0[wix];
+   cl  = &cache_shmem.lyns0[wix];
 
    /* reject nonsense requests */
    tl_assert(is_valid_scache_tag(tag));
@@ -3177,23 +3149,31 @@ static __attribute__((noinline)) void cacheline_fetch ( UWord way, UWord wix )
    cacheline_normalise( cl );
 }
 
-static void shmem__flush_scache ( void ) {
-   Word wix;
-   if (0) VG_(printf)("scache flush\n");
-   for (wix = 0; wix < N_WAY_NENT; wix++) {
-      cacheline_wback( 0, wix );
-      cacheline_wback( 1, wix );
-   }
-   stats__cache_flushes++;
-}
 static void shmem__invalidate_scache ( void ) {
    Word wix;
    if (0) VG_(printf)("scache inval\n");
    tl_assert(!is_valid_scache_tag(1));
    for (wix = 0; wix < N_WAY_NENT; wix++) {
       cache_shmem.tags0[wix] = 1/*INVALID*/;
-      cache_shmem.tags1[wix] = 1/*INVALID*/;
    }
+   stats__cache_invals++;
+}
+static void shmem__flush_and_invalidate_scache ( void ) {
+   Word wix;
+   Addr tag;
+   if (0) VG_(printf)("scache flush and invalidate\n");
+   tl_assert(!is_valid_scache_tag(1));
+   for (wix = 0; wix < N_WAY_NENT; wix++) {
+      tag = cache_shmem.tags0[wix];
+      if (tag == 1/*INVALID*/) {
+         /* already invalid; nothing to do */
+      } else {
+         tl_assert(is_valid_scache_tag(tag));
+         cacheline_wback( wix );
+      }
+      cache_shmem.tags0[wix] = 1/*INVALID*/;
+   }
+   stats__cache_flushes++;
    stats__cache_invals++;
 }
 
@@ -3219,12 +3199,11 @@ static inline CacheLine* get_cacheline ( Addr a )
    Addr       tag = a & ~(N_LINE_W8s - 1);
    UWord      wix = (a >> N_LINE_BITS) & (N_WAY_NENT - 1);
    stats__cache_totrefs++;
-   /* Check both Ways */
-   if (LIKELY(tag == cache_shmem.tags0[wix]))
+   if (LIKELY(tag == cache_shmem.tags0[wix])) {
       return &cache_shmem.lyns0[wix];
-   if (LIKELY(tag == cache_shmem.tags1[wix]))
-      return &cache_shmem.lyns1[wix];
-   return get_cacheline_MISS( a );
+   } else {
+      return get_cacheline_MISS( a );
+   }
 }
 
 static __attribute__((noinline))
@@ -3232,41 +3211,28 @@ static __attribute__((noinline))
 {
    /* tag is 'a' with the in-line offset masked out, 
       eg a[31]..a[4] 0000 */
-   static UWord seed = 0;
 
    CacheLine* cl;
    Addr*      tag_old_p;
-   UWord      way;
    Addr       tag = a & ~(N_LINE_W8s - 1);
    UWord      wix = (a >> N_LINE_BITS) & (N_WAY_NENT - 1);
 
-   /* Check both Ways */
    tl_assert(tag != cache_shmem.tags0[wix]);
-   tl_assert(tag != cache_shmem.tags1[wix]);
 
    /* Dump the old line into the backing store. */
    stats__cache_totmisses++;
 
-   /* arbitrarily choose the way to dump (not very scientific) */
-   way = seed & 1;
-   seed++; if (seed == 1021) seed = 0; /* 1021 is prime */
-
-   if (way == 0) {
-     cl        = &cache_shmem.lyns0[wix];
-     tag_old_p = &cache_shmem.tags0[wix];
-   } else {
-     cl        = &cache_shmem.lyns1[wix];
-     tag_old_p = &cache_shmem.tags1[wix];
-   }
+   cl        = &cache_shmem.lyns0[wix];
+   tag_old_p = &cache_shmem.tags0[wix];
 
    if (is_valid_scache_tag( *tag_old_p )) {
       /* EXPENSIVE and REDUNDANT: callee does it
          tl_assert(is_sane_CacheLine( cl )); */
-      cacheline_wback( way, wix );
+      cacheline_wback( wix );
    }
    /* and reload the new one */
    *tag_old_p = tag;
-   cacheline_fetch( way, wix );
+   cacheline_fetch( wix );
    /* EXPENSIVE tl_assert(is_sane_CacheLine( cl )); */
    return cl;
 }
@@ -3380,6 +3346,7 @@ static void shadow_mem_read32 ( Thread* thr_acc, Addr a, UInt uuOpaque ) {
    shadow_mem_read16( thr_acc, a + 0, 0/*unused*/ );
    shadow_mem_read16( thr_acc, a + 2, 0/*unused*/ );
 }
+inline
 static void shadow_mem_read64 ( Thread* thr_acc, Addr a, UInt uuOpaque ) {
    CacheLine* cl; 
    UWord      ix64;
@@ -3910,8 +3877,7 @@ static void shadow_mem_make_NoAccess ( Thread* thr, Addr aIN, SizeT len )
 
    /* --- Step 6 --- */
 
-   shmem__flush_scache();
-   shmem__invalidate_scache();
+   shmem__flush_and_invalidate_scache();
 
    /* --- Step 7 --- */
 
@@ -4564,8 +4530,7 @@ void evh__TC_PTHREAD_JOIN_POST ( ThreadId stay_tid, Thread* quit_thr )
       invalidate cache_shmem, so that subsequent memory references get
       up to date shadow values.
    */
-   shmem__flush_scache();
-   shmem__invalidate_scache();
+   shmem__flush_and_invalidate_scache();
 
    stats_SMs = stats_SMs_scanned = stats_reExcls = 0;
    TC_(initIterFM)( map_shmem );
