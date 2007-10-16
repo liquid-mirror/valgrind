@@ -640,6 +640,7 @@ static UInt run_thread_for_a_while ( ThreadId tid )
                                       VG_(clo_profile_flags) > 0 ? 1 : 0 )
    );
 
+   vg_assert(VG_(in_generated_code) == True);
    VG_(in_generated_code) = False;
 
    if (jumped) {
