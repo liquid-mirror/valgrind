@@ -64,6 +64,7 @@
 //   heap      0.59s  ma:20.3s (34.5x, -----)
 //   tinycc    0.49s  ma: 7.6s (15.4x, -----)
 //   many-xpts 0.13s  ma: 2.8s (21.6x, -----)
+//   konqueror 4:37 real  4:14 user
 //
 // Todo:
 // - for regtests, need to filter out code addresses in *.post.* files
@@ -1052,7 +1053,7 @@ static UInt cull_snapshots(void)
            j < clo_max_snapshots && !is_snapshot_in_use(&snapshots[j]); \
            j++) { }
 
-   VERB(1, "Culling...");
+   VERB(2, "Culling...");
 
    // First we remove enough snapshots by clearing them in-place.  Once
    // that's done, we can slide the remaining ones down.
@@ -1091,7 +1092,7 @@ static UInt cull_snapshots(void)
       if (VG_(clo_verbosity) > 1) {
          Char buf[64];
          VG_(snprintf)(buf, 64, " %3d (t-span = %lld)", i, min_timespan);
-         VERB_snapshot(1, buf, min_j);
+         VERB_snapshot(2, buf, min_j);
       }
       delete_snapshot(min_snapshot);
       n_deleted++;
@@ -1135,7 +1136,7 @@ static UInt cull_snapshots(void)
       if (is_uncullable_snapshot(&snapshots[i]) &&
           is_uncullable_snapshot(&snapshots[i-1]))
       {
-         VERB(1, "(Ignoring interval %d--%d when computing minimum)", i-1, i);
+         VERB(2, "(Ignoring interval %d--%d when computing minimum)", i-1, i);
       } else {
          Time timespan = snapshots[i].time - snapshots[i-1].time;
          tl_assert(timespan >= 0);
@@ -1149,12 +1150,12 @@ static UInt cull_snapshots(void)
 
    // Print remaining snapshots, if necessary.
    if (VG_(clo_verbosity) > 1) {
-      VERB(1, "Finished culling (%3d of %3d deleted)",
+      VERB(2, "Finished culling (%3d of %3d deleted)",
          n_deleted, clo_max_snapshots);
       for (i = 0; i < next_snapshot_i; i++) {
-         VERB_snapshot(1, "  post-cull", i);
+         VERB_snapshot(2, "  post-cull", i);
       }
-      VERB(1, "New time interval = %lld (between snapshots %d and %d)",
+      VERB(2, "New time interval = %lld (between snapshots %d and %d)",
          min_timespan, min_timespan_i-1, min_timespan_i);
    }
 
@@ -1314,11 +1315,11 @@ maybe_take_snapshot(SnapshotKind kind, Char* what)
 
    // Finish up verbosity and stats stuff.
    if (n_skipped_snapshots_since_last_snapshot > 0) {
-      VERB(1, "  (skipped %d snapshot%s)",
+      VERB(2, "  (skipped %d snapshot%s)",
          n_skipped_snapshots_since_last_snapshot,
          ( n_skipped_snapshots_since_last_snapshot == 1 ? "" : "s") );
    }
-   VERB_snapshot(1, what, next_snapshot_i);
+   VERB_snapshot(2, what, next_snapshot_i);
    n_skipped_snapshots_since_last_snapshot = 0;
 
    // Cull the entries, if our snapshot table is full.
@@ -1412,7 +1413,7 @@ void* new_block ( ThreadId tid, void* p, SizeT szB, SizeT alignB,
    VG_(HT_add_node)(malloc_list, hc);
 
    if (clo_heap) {
-      VERB(2, "<<< new_mem_heap (%lu)", szB);
+      VERB(3, "<<< new_mem_heap (%lu)", szB);
 
       // Update statistics.
       n_heap_allocs++;
@@ -1428,7 +1429,7 @@ void* new_block ( ThreadId tid, void* p, SizeT szB, SizeT alignB,
       // Maybe take a snapshot.
       maybe_take_snapshot(Normal, "  alloc");
 
-      VERB(2, ">>>");
+      VERB(3, ">>>");
    }
 
    return p;
@@ -1448,7 +1449,7 @@ void die_block ( void* p, Bool custom_free )
    die_szB = hc->szB;
 
    if (clo_heap) {
-      VERB(2, "<<< die_mem_heap");
+      VERB(3, "<<< die_mem_heap");
 
       // Update statistics
       n_heap_frees++;
@@ -1465,7 +1466,7 @@ void die_block ( void* p, Bool custom_free )
       // Maybe take a snapshot.
       maybe_take_snapshot(Normal, "dealloc");
 
-      VERB(2, ">>> (-%lu)", die_szB);
+      VERB(3, ">>> (-%lu)", die_szB);
    }
 
    // Actually free the chunk, and the heap block (if necessary)
@@ -1491,7 +1492,7 @@ void* renew_block ( ThreadId tid, void* p_old, SizeT new_szB )
    old_szB = hc->szB;
 
    if (clo_heap) {
-      VERB(2, "<<< renew_mem_heap (%lu)", new_szB);
+      VERB(3, "<<< renew_mem_heap (%lu)", new_szB);
 
       // Update statistics
       n_heap_reallocs++;
@@ -1546,7 +1547,7 @@ void* renew_block ( ThreadId tid, void* p_old, SizeT new_szB )
    if (clo_heap) {
       maybe_take_snapshot(Normal, "realloc");
 
-      VERB(2, ">>> (%ld)", new_szB - old_szB);
+      VERB(3, ">>> (%ld)", new_szB - old_szB);
    }
 
    return p_new;
@@ -1621,23 +1622,23 @@ static void update_stack_stats(SSizeT stack_szB_delta)
 static INLINE void new_mem_stack_2(Addr a, SizeT len, Char* what)
 {
    if (have_started_executing_code) {
-      VERB(2, "<<< new_mem_stack (%ld)", len);
+      VERB(3, "<<< new_mem_stack (%ld)", len);
       n_stack_allocs++;
       update_stack_stats(len);
       maybe_take_snapshot(Normal, what);
-      VERB(2, ">>>");
+      VERB(3, ">>>");
    }
 }
 
 static INLINE void die_mem_stack_2(Addr a, SizeT len, Char* what)
 {
    if (have_started_executing_code) {
-      VERB(2, "<<< die_mem_stack (%ld)", -len);
+      VERB(3, "<<< die_mem_stack (%ld)", -len);
       n_stack_frees++;
       maybe_take_snapshot(Peak,   "stkPEAK");
       update_stack_stats(-len);
       maybe_take_snapshot(Normal, what);
-      VERB(2, ">>>");
+      VERB(3, ">>>");
    }
 }
 
