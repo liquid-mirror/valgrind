@@ -697,16 +697,6 @@ static void sanity_check_XTree(XPt* xpt, XPt* parent)
 #define MAX_OVERESTIMATE   50
 #define MAX_IPS            (MAX_DEPTH + MAX_OVERESTIMATE)
 
-// XXX: look at the "(below main)"/"__libc_start_main" mess (m_stacktrace.c
-//      and m_demangle.c).  Don't hard-code "(below main)" in here.
-// [Nb: Josef wants --show-below-main to work for his fn entry/exit tracing]
-static Bool is_main_or_below_main(Char* fnname)
-{
-   if (VG_STREQ(fnname, "main"))         return True;
-   if (VG_STREQ(fnname, "(below main)")) return True;
-   return False;
-}
-
 // Get the stack trace for an XCon, filtering out uninteresting entries:
 // alloc-fns and entries above alloc-fns, and entries below main-or-below-main.
 //   Eg:       alloc-fn1 / alloc-fn2 / a / b / main / (below main) / c
@@ -764,6 +754,11 @@ Int get_IPs( ThreadId tid, Bool is_custom_alloc, Addr ips[])
 
       // Filter out entries that are below main, if necessary.
       // XXX: stats -- should record how often this happens.
+      // XXX: look at the "(below main)"/"__libc_start_main" mess
+      //      (m_stacktrace.c and m_demangle.c).  Don't hard-code "(below
+      //      main)" in here.
+      // [Nb: Josef wants --show-below-main to work for his fn entry/exit
+      //      tracing]
       if (should_hide_below_main) {
          for (i = n_ips-1; i >= 0; i--) {
             if (VG_(get_fnname)(ips[i], buf, BUF_LEN)) {
