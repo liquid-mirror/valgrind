@@ -260,7 +260,6 @@ static UInt n_real_snapshots       = 0;
 static UInt n_detailed_snapshots   = 0;
 static UInt n_peak_snapshots       = 0;
 static UInt n_skipped_snapshots    = 0;
-static UInt n_skipped_snapshots_since_last_snapshot = 0;
 
 
 //------------------------------------------------------------//
@@ -1238,7 +1237,8 @@ maybe_take_snapshot(SnapshotKind kind, Char* what)
    static Time min_time_interval = 0;
    // Zero allows startup snapshot.
    static Time earliest_possible_time_of_next_snapshot = 0;
-   static Int n_snapshots_since_last_detailed = 0;
+   static Int  n_snapshots_since_last_detailed         = 0;
+   static Int  n_skipped_snapshots_since_last_snapshot = 0;
 
    Snapshot* snapshot;
    Bool      is_detailed;
