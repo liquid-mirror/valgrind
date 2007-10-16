@@ -52,9 +52,9 @@ Number of snapshots: 8
 100.00% (150B) (heap allocation functions) malloc/new/new[], --alloc-fns, etc.
 ->100.00% (150B) 0x80483E3: main (realloc.c:12)
 | 
-->00.00% (0B) 0x80483A7: main (realloc.c:5)
-| 
 ->00.00% (0B) 0x80483BA: main (realloc.c:8)
+| 
+->00.00% (0B) 0x80483A7: main (realloc.c:5)
 | 
 ->00.00% (0B) 0x80483CD: main (realloc.c:10)
   

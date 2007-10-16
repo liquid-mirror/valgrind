@@ -33,6 +33,7 @@
 // Performance:
 //
 //   perl perf/vg_perf --tools=massif --reps=3 perf/{heap,tinycc} massif
+//   time valgrind --tool=massif --depth=100 konqueror
 //
 // The other benchmarks don't do much allocation, and so give similar speeds
 // to Nulgrind.
@@ -65,6 +66,13 @@
 //   tinycc    0.49s  ma: 7.6s (15.4x, -----)
 //   many-xpts 0.13s  ma: 2.8s (21.6x, -----)
 //   konqueror 4:37 real  4:14 user
+//
+// Minimised the number of dup'd XPts by introducing SXPts (r7004):
+//   heap      0.56s  ma:20.8s (37.2x, -----)
+//   tinycc    0.45s  ma: 7.1s (15.7x, -----)
+//   many-xpts 0.05s  ma: 1.6s (33.0x, -----)
+//   konqueror 3:45 real  3:35 user
+//
 //
 // Todo:
 // - for regtests, need to filter out code addresses in *.post.* files
@@ -250,24 +258,22 @@
 //  -  15,000 XPts            800,000 XPts
 //  -   1,800 top-XPts
 
-static UInt n_xpts                 = 0;
-static UInt n_dupd_xpts            = 0;
-static UInt n_dupd_xpts_freed      = 0;
 static UInt n_heap_allocs          = 0;
-static UInt n_heap_zero_allocs     = 0;
 static UInt n_heap_reallocs        = 0;
 static UInt n_heap_frees           = 0;
 static UInt n_stack_allocs         = 0;
 static UInt n_stack_frees          = 0;
+static UInt n_xpts                 = 0;
 static UInt n_xpt_init_expansions  = 0;
 static UInt n_xpt_later_expansions = 0;
-static UInt n_getXCon_redo         = 0;
-static UInt n_cullings             = 0;
+static UInt n_sxpt_allocs          = 0;
+static UInt n_sxpt_frees           = 0;
+static UInt n_skipped_snapshots    = 0;
 static UInt n_real_snapshots       = 0;
 static UInt n_detailed_snapshots   = 0;
 static UInt n_peak_snapshots       = 0;
-static UInt n_skipped_snapshots    = 0;
-
+static UInt n_cullings             = 0;
+static UInt n_XCon_redos           = 0;
 
 //------------------------------------------------------------//
 //--- Globals                                              ---//
@@ -472,6 +478,15 @@ static void ms_print_debug_usage(void)
 //   |    / \     |     the XTree will look like this.
 //   |   v   v    |
 //  child1   child2
+//
+// XTrees and XPts are mirrored by SXTrees and SXPts, where the 'S' is short
+// for "saved".  When the XTree is duplicated for a snapshot, we duplicate
+// it as an SXTree, which is similar but omits some things it does not need,
+// and aggregates up insignificant nodes.  This is important as an SXTree is
+// typically much smaller than an XTree.
+
+// XXX: make XPt and SXPt extensible arrays, to avoid having to do two
+// allocations per Pt.
 
 typedef struct _XPt XPt;
 struct _XPt {
@@ -491,6 +506,36 @@ struct _XPt {
    UInt  n_children;       // number of children
    UInt  max_children;     // capacity of children array
    XPt** children;         // pointers to children XPts
+};
+
+typedef
+   enum {
+      SigSXPt,
+      InsigSXPt
+   }
+   SXPtTag;
+
+typedef struct _SXPt SXPt;
+struct _SXPt {
+   SXPtTag tag;
+   SizeT szB;              // memory size for the node, be it Sig or Insig
+   union {
+      // An SXPt representing a single significant code location.  Much like
+      // an XPt, minus the fields that aren't necessary.
+      struct {
+         Addr   ip;
+         UInt   n_children;
+         SXPt** children;
+      } 
+      Sig;
+
+      // An SXPt representing one or more code locations, all below the
+      // significance threshold.
+      struct {
+         Int   n_xpts;     // number of aggregated XPts
+      } 
+      Insig;
+   };
 };
 
 // Fake XPt representing all allocation functions like malloc().  Acts as
@@ -519,31 +564,15 @@ static void* perm_malloc(SizeT n_bytes)
    return (void*)(hp - n_bytes);
 }
 
-__attribute__((unused))
-static void pp_XPt(XPt* xpt)
-{
-   Int i;
-
-   VG_(printf)("XPt (%p):\n", xpt);
-   VG_(printf)("- ip:         : %p\n", (void*)xpt->ip);
-   VG_(printf)("- szB         : %ld\n", xpt->szB);
-   VG_(printf)("- parent      : %p\n", xpt->parent);
-   VG_(printf)("- n_children  : %d\n", xpt->n_children);
-   VG_(printf)("- max_children: %d\n", xpt->max_children);
-   for (i = 0; i < xpt->n_children; i++) {
-      VG_(printf)("- children[%2d]: %p\n", i, xpt->children[i]);
-   }
-}
-
 static XPt* new_XPt(Addr ip, XPt* parent)
 {
    // XPts are never freed, so we can use perm_malloc to allocate them.
    // Note that we cannot use perm_malloc for the 'children' array, because
    // that needs to be resizable.
-   XPt* xpt          = perm_malloc(sizeof(XPt));
-   xpt->ip           = ip;
-   xpt->szB          = 0;
-   xpt->parent       = parent;
+   XPt* xpt    = perm_malloc(sizeof(XPt));
+   xpt->ip     = ip;
+   xpt->szB    = 0;
+   xpt->parent = parent;
 
    // We don't initially allocate any space for children.  We let that
    // happen on demand.  Many XPts (ie. all the bottom-XPts) don't have any
@@ -604,64 +633,104 @@ static Bool is_significant_XPt(XPt* xpt, SizeT total_szB)
            xpt->szB * 10000ULL / total_szB >= clo_threshold);
 }
 
-
 //------------------------------------------------------------//
 //--- XTree Operations                                     ---//
 //------------------------------------------------------------//
 
-static XPt* dup_XTree(XPt* xpt, XPt* parent, SizeT total_szB)
+// Duplicates an XTree as an SXTree.
+static SXPt* dup_XTree(XPt* xpt, SizeT total_szB)
 {
-   Int  i;
-   XPt* dup_xpt = VG_(malloc)(sizeof(XPt));
-   dup_xpt->ip     = xpt->ip;
-   dup_xpt->szB    = xpt->szB;
-   dup_xpt->parent = parent;              // Nb: not xpt->children!
-   // If this node is not significant, there's no point duplicating its
-   // children.  And not doing so can make a huge difference, eg.
-   // it speeds up massif/perf/many-xpts by over 10x.
-   if (!is_significant_XPt(xpt, total_szB)) {
-      dup_xpt->n_children   = 0;
-      dup_xpt->max_children = 0;
-      dup_xpt->children     = NULL;
-   } else {
-      dup_xpt->n_children   = xpt->n_children;
-      dup_xpt->max_children = xpt->max_children;
-      // We copy n_children children (not max_children).  If n_children==0,
-      // don't bother allocating an 'children' array in the dup.
-      if (xpt->n_children > 0) {
-         dup_xpt->children = VG_(malloc)(dup_xpt->n_children * sizeof(XPt*));
-         for (i = 0; i < xpt->n_children; i++) {
-            dup_xpt->children[i] =
-               dup_XTree(xpt->children[i], dup_xpt, total_szB);
-         }
-      } else {
-         dup_xpt->children = NULL;
+   Int  i, n_sig_children, n_insig_children, n_child_sxpts;
+   SizeT insig_children_szB;
+   SXPt* sxpt;
+
+   // Sort XPt's children by szB (reverse order:  biggest to smallest).
+   VG_(ssort)(xpt->children, xpt->n_children, sizeof(XPt*), XPt_revcmp_szB);
+
+   // Number of XPt children  Action for SXPT
+   // ------------------      ---------------
+   // 0 sig, 0 insig          alloc 0 children
+   // N sig, 0 insig          alloc N children, dup all
+   // N sig, M insig          alloc N+1, dup first N, aggregate remaining M
+   // 0 sig, M insig          alloc 1, aggregate M
+
+   // How many children are significant?  And do we need an aggregate SXPt?
+   n_sig_children = 0;
+   while (n_sig_children < xpt->n_children &&
+          is_significant_XPt(xpt->children[n_sig_children], total_szB))
+   {
+      n_sig_children++;
+   }
+   n_insig_children = xpt->n_children - n_sig_children;
+   n_child_sxpts = n_sig_children + ( n_insig_children > 0 ? 1 : 0 );
+
+   // Duplicate the XPt.
+   sxpt                 = VG_(malloc)(sizeof(SXPt));
+   n_sxpt_allocs++;
+   sxpt->tag            = SigSXPt;
+   sxpt->szB            = xpt->szB;
+   sxpt->Sig.ip         = xpt->ip;
+   sxpt->Sig.n_children = n_child_sxpts;
+
+   // Create the SXPt's children.
+   if (n_child_sxpts > 0) {
+      SizeT sig_children_szB = 0;
+      sxpt->Sig.children = VG_(malloc)(n_child_sxpts * sizeof(SXPt*));
+
+      // Duplicate the significant children.
+      for (i = 0; i < n_sig_children; i++) {
+         sxpt->Sig.children[i] = dup_XTree(xpt->children[i], total_szB);
+         sig_children_szB += sxpt->Sig.children[i]->szB;
       }
-   }
-   n_dupd_xpts++;
 
-   return dup_xpt;
+      // Create the SXPt for the insignificant children, if any, and put it
+      // in the last child entry.
+      insig_children_szB = sxpt->szB - sig_children_szB;
+      if (n_insig_children > 0) {
+         // Nb: We 'n_sxpt_allocs' here because creating an Insig SXPt
+         // doesn't involve a call to dup_XTree().
+         SXPt* insig_sxpt = VG_(malloc)(sizeof(SXPt));
+         n_sxpt_allocs++;
+         insig_sxpt->tag = InsigSXPt;
+         insig_sxpt->szB = insig_children_szB;
+         insig_sxpt->Insig.n_xpts = n_insig_children;
+         sxpt->Sig.children[n_sig_children] = insig_sxpt;
+      }
+   } else {
+      sxpt->Sig.children = NULL;
+   }
+
+   return sxpt;
 }
 
-static void free_XTree(XPt* xpt)
+static void free_SXTree(SXPt* sxpt)
 {
    Int  i;
-   // Free all children XPts, then the children array, then the XPt itself.
-   tl_assert(xpt != NULL);
-   for (i = 0; i < xpt->n_children; i++) {
-      XPt* child = xpt->children[i];
-      free_XTree(child);
-      xpt->children[i] = NULL;
-   }
-   VG_(free)(xpt->children);  xpt->children = NULL;
-   VG_(free)(xpt);            xpt           = NULL;
+   tl_assert(sxpt != NULL);
 
-   n_dupd_xpts_freed++;
+   switch (sxpt->tag) {
+    case SigSXPt:
+      // Free all children SXPts, then the children array.
+      for (i = 0; i < sxpt->Sig.n_children; i++) {
+         free_SXTree(sxpt->Sig.children[i]);
+         sxpt->Sig.children[i] = NULL;
+      }
+      VG_(free)(sxpt->Sig.children);  sxpt->Sig.children = NULL;
+      break;
+
+    case InsigSXPt:
+      break;
+
+    default: tl_assert2(0, "free_SXTree: unknown SXPt tag");
+   }
+   
+   // Free the SXPt itself.
+   VG_(free)(sxpt);     sxpt = NULL;
+   n_sxpt_frees++;
 }
 
-// Sanity checking:  we check snapshot XTrees after they are taken, before
-// they are deleted, and before they are printed.  We also periodically
-// check the main heap XTree with ms_expensive_sanity_check.
+// Sanity checking:  we periodically check the heap XTree with
+// ms_expensive_sanity_check.
 static void sanity_check_XTree(XPt* xpt, XPt* parent)
 {
    Int i;
@@ -684,6 +753,36 @@ static void sanity_check_XTree(XPt* xpt, XPt* parent)
          children_sum_szB += xpt->children[i]->szB;
       }
       tl_assert(children_sum_szB == xpt->szB);
+   }
+}
+
+// Sanity checking:  we check SXTrees (which are in snapshots) after
+// snapshots are created, before they are deleted, and before they are
+// printed.
+static void sanity_check_SXTree(SXPt* sxpt)
+{
+   Int i;
+
+   tl_assert(sxpt != NULL);
+
+   // Check the sum of any children szBs equals the SXPt's szB.  Check the
+   // children at the same time.
+   switch (sxpt->tag) {
+    case SigSXPt: {
+      if (sxpt->Sig.n_children > 0) {
+         SizeT children_sum_szB = 0;
+         for (i = 0; i < sxpt->Sig.n_children; i++) {
+            sanity_check_SXTree(sxpt->Sig.children[i]);
+            children_sum_szB += sxpt->Sig.children[i]->szB; 
+         }
+         tl_assert(children_sum_szB == sxpt->szB);
+      }
+      break;
+    }
+    case InsigSXPt:
+      break;         // do nothing
+
+    default: tl_assert2(0, "sanity_check_SXTree: unknown SXPt tag");
    }
 }
 
@@ -825,7 +924,7 @@ Int get_IPs( ThreadId tid, Bool is_custom_alloc, Addr ips[])
       {
          return n_ips;
       } else {
-         n_getXCon_redo++;
+         n_XCon_redos++;
       }
    }
 }
@@ -920,7 +1019,7 @@ typedef
       SizeT heap_szB;
       SizeT heap_admin_szB;
       SizeT stacks_szB;
-      XPt*  alloc_xpt;     // Heap XTree root, if a detailed snapshot,
+      SXPt* alloc_sxpt;    // Heap XTree root, if a detailed snapshot,
    }                       // otherwise NULL
    Snapshot;
 
@@ -935,7 +1034,7 @@ static Bool is_snapshot_in_use(Snapshot* snapshot)
       tl_assert(snapshot->heap_admin_szB == 0);
       tl_assert(snapshot->heap_szB       == 0);
       tl_assert(snapshot->stacks_szB     == 0);
-      tl_assert(snapshot->alloc_xpt      == NULL);
+      tl_assert(snapshot->alloc_sxpt     == NULL);
       return False;
    } else {
       tl_assert(snapshot->time           != UNUSED_SNAPSHOT_TIME);
@@ -945,7 +1044,7 @@ static Bool is_snapshot_in_use(Snapshot* snapshot)
 
 static Bool is_detailed_snapshot(Snapshot* snapshot)
 {
-   return (snapshot->alloc_xpt ? True : False);
+   return (snapshot->alloc_sxpt ? True : False);
 }
 
 static Bool is_uncullable_snapshot(Snapshot* snapshot)
@@ -957,8 +1056,8 @@ static Bool is_uncullable_snapshot(Snapshot* snapshot)
 
 static void sanity_check_snapshot(Snapshot* snapshot)
 {
-   if (snapshot->alloc_xpt) {
-      sanity_check_XTree(snapshot->alloc_xpt, /*parent*/NULL);
+   if (snapshot->alloc_sxpt) {
+      sanity_check_SXTree(snapshot->alloc_sxpt);
    }
 }
 
@@ -984,7 +1083,7 @@ static void clear_snapshot(Snapshot* snapshot)
    snapshot->heap_admin_szB = 0;
    snapshot->heap_szB       = 0;
    snapshot->stacks_szB     = 0;
-   snapshot->alloc_xpt      = NULL;
+   snapshot->alloc_sxpt     = NULL;
 }
 
 // This zeroes all the fields in the snapshot, and frees the heap XTree if
@@ -994,10 +1093,10 @@ static void delete_snapshot(Snapshot* snapshot)
    // Nb: if there's an XTree, we free it after calling clear_snapshot,
    // because clear_snapshot does a sanity check which includes checking the
    // XTree.
-   XPt* tmp_xpt = snapshot->alloc_xpt;
+   SXPt* tmp_sxpt = snapshot->alloc_sxpt;
    clear_snapshot(snapshot);
-   if (tmp_xpt) {
-      free_XTree(tmp_xpt);
+   if (tmp_sxpt) {
+      free_SXTree(tmp_sxpt);
    }
 }
 
@@ -1204,8 +1303,9 @@ take_snapshot(Snapshot* snapshot, SnapshotKind kind, Time time,
       if (is_detailed) {
          // XXX: total_szB computed in various places -- factor it out
          SizeT total_szB = heap_szB + clo_heap_admin*n_heap_blocks + stacks_szB;
-         snapshot->alloc_xpt = dup_XTree(alloc_xpt, /*parent*/NULL, total_szB);
-         tl_assert(snapshot->alloc_xpt->szB == heap_szB);
+         snapshot->alloc_sxpt = dup_XTree(alloc_xpt, total_szB);
+         tl_assert(           alloc_xpt->szB == heap_szB);
+         tl_assert(snapshot->alloc_sxpt->szB == heap_szB);
       }
       snapshot->heap_admin_szB = clo_heap_admin * n_heap_blocks;
    }
@@ -1412,7 +1512,6 @@ void* new_block ( ThreadId tid, void* p, SizeT szB, SizeT alignB,
 
       // Update statistics.
       n_heap_allocs++;
-      if (0 == szB) n_heap_zero_allocs++;
 
       // Update heap stats.
       update_heap_stats(hc->szB, /*n_heap_blocks_delta*/1);
@@ -1740,7 +1839,7 @@ static Char* make_perc(ULong x, ULong y)
    return mbuf;
 }
 
-static void pp_snapshot_XPt(Int fd, XPt* xpt, Int depth, Char* depth_str,
+static void pp_snapshot_SXPt(Int fd, SXPt* sxpt, Int depth, Char* depth_str,
                             Int depth_str_len,
                             SizeT snapshot_heap_szB, SizeT snapshot_total_szB)
 {
@@ -1749,63 +1848,64 @@ static void pp_snapshot_XPt(Int fd, XPt* xpt, Int depth, Char* depth_str,
    Char* perc;
    Char  ip_desc_array[BUF_LEN];
    Char* ip_desc = ip_desc_array;
-   SizeT printed_children_szB = 0;
-   Int   n_sig_children;
-   Int   n_insig_children;
-   Int   n_child_entries;
+   SXPt* pred  = NULL;
+   SXPt* child = NULL;
 
-   // Sort XPt's children by szB (reverse order:  biggest to smallest)
-   VG_(ssort)(xpt->children, xpt->n_children, sizeof(XPt*),
-              XPt_revcmp_szB);
+   switch (sxpt->tag) {
+    case SigSXPt:
+      // Print the SXPt itself.
+      if (sxpt->Sig.ip == 0) {
+         ip_desc =
+            "(heap allocation functions) malloc/new/new[], --alloc-fns, etc.";
+      } else {
+         // XXX: why the -1?
+         ip_desc = VG_(describe_IP)(sxpt->Sig.ip-1, ip_desc, BUF_LEN);
+      }
+      perc = make_perc(sxpt->szB, snapshot_total_szB);
+      FP("%sn%d: %lu %s\n",
+         depth_str, sxpt->Sig.n_children, sxpt->szB, ip_desc);
 
-   // How many children are significant?  Also calculate the number of child
-   // entries to print -- there may be a need for an "in N places" line.
-   n_sig_children = 0;
-   while (n_sig_children < xpt->n_children &&
-          is_significant_XPt(xpt->children[n_sig_children],
-                             snapshot_total_szB))
-   {
-      n_sig_children++;
-   }
-   n_insig_children = xpt->n_children - n_sig_children;
-   n_child_entries = n_sig_children + ( n_insig_children > 0 ? 1 : 0 );
+      // Indent.
+      tl_assert(depth+1 < depth_str_len-1);    // -1 for end NUL char
+      depth_str[depth+0] = ' ';
+      depth_str[depth+1] = '\0';
 
-   // Print the XPt entry.
-   if (xpt->ip == 0) {
-      ip_desc =
-         "(heap allocation functions) malloc/new/new[], --alloc-fns, etc.";
-   } else {
-      ip_desc = VG_(describe_IP)(xpt->ip-1, ip_desc, BUF_LEN);
-   }
-   perc = make_perc(xpt->szB, snapshot_total_szB);
-   FP("%sn%d: %lu %s\n", depth_str, n_child_entries, xpt->szB, ip_desc);
+      // Print the SXPt's children.  They should already be in sorted order.
+      for (i = 0; i < sxpt->Sig.n_children; i++) {
+         pred  = child;
+         child = sxpt->Sig.children[i];
 
-   // Indent.
-   tl_assert(depth+1 < depth_str_len-1);    // -1 for end NUL char
-   depth_str[depth+0] = ' ';
-   depth_str[depth+1] = '\0';
+         // Only the last child can be an Insig SXPt.
+         if (i < sxpt->Sig.n_children-1)
+            tl_assert(SigSXPt == child->tag);
 
-   // Print the children.
-   for (i = 0; i < n_sig_children; i++) {
-      XPt* child = xpt->children[i];
-      pp_snapshot_XPt(fd, child, depth+1, depth_str, depth_str_len,
-         snapshot_heap_szB, snapshot_total_szB);
-      printed_children_szB += child->szB;
-   }
+         // Sortedness check: if this child is a normal SXPt, check it's not
+         // bigger than its predecessor.
+         if (pred && SigSXPt == child->tag)
+            tl_assert(child->szB <= pred->szB);
 
-   // Print the extra "in N places" line, if any children were insignificant.
-   if (n_insig_children > 0) {
-      Char* s        = ( n_insig_children == 1 ? "," : "s, all" );
-      SizeT total_insig_children_szB = xpt->szB - printed_children_szB;
-      perc = make_perc(total_insig_children_szB, snapshot_total_szB);
+         // Ok, print the child.
+         pp_snapshot_SXPt(fd, child, depth+1, depth_str, depth_str_len,
+            snapshot_heap_szB, snapshot_total_szB);
+
+         // Unindent.
+         depth_str[depth+0] = '\0';
+         depth_str[depth+1] = '\0';
+      }
+      break;
+
+    case InsigSXPt: {
+      Char* s = ( sxpt->Insig.n_xpts == 1 ? "," : "s, all" );
+      perc = make_perc(sxpt->szB, snapshot_total_szB);
       FP("%sn0: %lu in %d place%s below massif's threshold (%s)\n",
-         depth_str, total_insig_children_szB, n_insig_children, s,
+         depth_str, sxpt->szB, sxpt->Insig.n_xpts, s,
          make_perc(clo_threshold, 10000));
-   }
+      break;
+    }
 
-   // Unindent.
-   depth_str[depth+0] = '\0';
-   depth_str[depth+1] = '\0';
+    default:
+      tl_assert2(0, "pp_snapshot_SXPt: unrecognised SXPt tag");
+   }
 }
 
 static void pp_snapshot(Int fd, Snapshot* snapshot, Int snapshot_n)
@@ -1829,9 +1929,9 @@ static void pp_snapshot(Int fd, Snapshot* snapshot, Int snapshot_n)
       depth_str[0] = '\0';   // Initialise depth_str to "".
 
       FP("heap_tree=%s\n", ( Peak == snapshot->kind ? "peak" : "detailed" ));
-      pp_snapshot_XPt(fd, snapshot->alloc_xpt, 0, depth_str,
-                      depth_str_len, snapshot->heap_szB,
-                      snapshot_total_szB);
+      pp_snapshot_SXPt(fd, snapshot->alloc_sxpt, 0, depth_str,
+                       depth_str_len, snapshot->heap_szB,
+                       snapshot_total_szB);
 
       VG_(free)(depth_str);
 
@@ -1906,9 +2006,6 @@ static void ms_fini(Int exit_status)
    // Stats
    tl_assert(n_xpts > 0);  // always have alloc_xpt
    VERB(1, "heap allocs:          %u", n_heap_allocs);
-   VERB(1, "heap zero allocs:     %u (%d%%)",
-      n_heap_zero_allocs,
-      ( n_heap_allocs ? n_heap_zero_allocs * 100 / n_heap_allocs : 0 ));
    VERB(1, "heap reallocs:        %u", n_heap_reallocs);
    VERB(1, "heap frees:           %u", n_heap_frees);
    VERB(1, "stack allocs:         %u", n_stack_allocs);
@@ -1917,16 +2014,16 @@ static void ms_fini(Int exit_status)
    VERB(1, "top-XPts:             %u (%d%%)",
       alloc_xpt->n_children,
       ( n_xpts ? alloc_xpt->n_children * 100 / n_xpts : 0));
-   VERB(1, "dup'd XPts:           %u", n_dupd_xpts);
-   VERB(1, "dup'd/freed XPts:     %u", n_dupd_xpts_freed);
    VERB(1, "XPt-init-expansions:  %u", n_xpt_init_expansions);
    VERB(1, "XPt-later-expansions: %u", n_xpt_later_expansions);
+   VERB(1, "SXPt allocs:          %u", n_sxpt_allocs);
+   VERB(1, "SXPt frees:           %u", n_sxpt_frees);
    VERB(1, "skipped snapshots:    %u", n_skipped_snapshots);
    VERB(1, "real snapshots:       %u", n_real_snapshots);
    VERB(1, "detailed snapshots:   %u", n_detailed_snapshots);
    VERB(1, "peak snapshots:       %u", n_peak_snapshots);
    VERB(1, "cullings:             %u", n_cullings);
-   VERB(1, "XCon_redos:           %u", n_getXCon_redo);
+   VERB(1, "XCon_redos:           %u", n_XCon_redos);
 }
 
 

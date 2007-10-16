@@ -22,17 +22,16 @@ Massif: realloc S.  5 (t:250, hp:150, ad:0, st:0)
 Massif: de-PEAK Sp  6 (t:250, hp:150, ad:0, st:0)
 Massif: dealloc S.  7 (t:400, hp:0, ad:0, st:0)
 Massif: heap allocs:          1
-Massif: heap zero allocs:     0 (0%)
 Massif: heap reallocs:        3
 Massif: heap frees:           1
 Massif: stack allocs:         0
 Massif: stack frees:          0
 Massif: XPts:                 5
 Massif: top-XPts:             4 (80%)
-Massif: dup'd XPts:           8
-Massif: dup'd/freed XPts:     0
 Massif: XPt-init-expansions:  1
 Massif: XPt-later-expansions: 0
+Massif: SXPt allocs:          8
+Massif: SXPt frees:           0
 Massif: skipped snapshots:    0
 Massif: real snapshots:       8
 Massif: detailed snapshots:   2
