@@ -61,6 +61,7 @@
 //   many-xpts 0.04s  ma: 1.9s (46.2x, -----)
 //
 // Todo:
+// - for regtests, need to filter out code addresses in *.post.* files
 // - do snapshots on client requests
 // - C++ tests -- for each of the allocators, and overloaded versions of
 //   them (see 'init_alloc_fns').
