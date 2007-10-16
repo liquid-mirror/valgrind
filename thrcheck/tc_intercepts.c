@@ -281,13 +281,14 @@ done.  No way the joiner can return before the thread is gone.
 /*----------------------------------------------------------------*/
 
 /* Handled:   pthread_mutex_init pthread_mutex_destroy
-              pthread_mutex_lock pthread_mutex_trylock
+              pthread_mutex_lock
+              pthread_mutex_trylock pthread_mutex_timedlock
               pthread_mutex_unlock
 
-   Unhandled: pthread_mutex_timedlock -- FIXME
-
-   FIXME: pthread_spin_init pthread_spin_destroy 
-   pthread_spin_lock pthread_spin_unlock pthread_spin_trylock
+   Unhandled: pthread_spin_init pthread_spin_destroy 
+              pthread_spin_lock
+              pthread_spin_trylock
+              pthread_spin_unlock
 */
 
 // pthread_mutex_init
@@ -365,8 +366,8 @@ PTH_FUNC(int, pthreadZumutexZulock, // pthread_mutex_lock
       fprintf(stderr, "<< pthread_mxlock %p", mutex); fflush(stderr);
    }
 
-   DO_CREQ_v_W(_VG_USERREQ__TC_PTHREAD_MUTEX_LOCK_PRE,
-               pthread_mutex_t*,mutex);
+   DO_CREQ_v_WW(_VG_USERREQ__TC_PTHREAD_MUTEX_LOCK_PRE,
+                pthread_mutex_t*,mutex, long,0/*!isTryLock*/);
 
    CALL_FN_W_W(ret, fn, mutex);
 
@@ -389,8 +390,12 @@ PTH_FUNC(int, pthreadZumutexZulock, // pthread_mutex_lock
 }
 
 
-// pthread_mutex_trylock.  AFAICS the handling needed here is identical
-// to that for pthread_mutex_lock.
+// pthread_mutex_trylock.  The handling needed here is very similar
+// to that for pthread_mutex_lock, except that we need to tell
+// the pre-lock creq that this is a trylock-style operation, and
+// therefore not to complain if the lock is nonrecursive and 
+// already locked by this thread -- because then it'll just fail
+// immediately with EBUSY.
 PTH_FUNC(int, pthreadZumutexZutrylock, // pthread_mutex_trylock
               pthread_mutex_t *mutex)
 {
@@ -401,8 +406,8 @@ PTH_FUNC(int, pthreadZumutexZutrylock, // pthread_mutex_trylock
       fprintf(stderr, "<< pthread_mxtrylock %p", mutex); fflush(stderr);
    }
 
-   DO_CREQ_v_W(_VG_USERREQ__TC_PTHREAD_MUTEX_LOCK_PRE,
-               pthread_mutex_t*,mutex);
+   DO_CREQ_v_WW(_VG_USERREQ__TC_PTHREAD_MUTEX_LOCK_PRE,
+                pthread_mutex_t*,mutex, long,1/*isTryLock*/);
 
    CALL_FN_W_W(ret, fn, mutex);
 
@@ -421,6 +426,44 @@ PTH_FUNC(int, pthreadZumutexZutrylock, // pthread_mutex_trylock
 
    if (TRACE_PTH_FNS) {
       fprintf(stderr, " :: mxtrylock -> %d >>\n", ret);
+   }
+   return ret;
+}
+
+
+// pthread_mutex_timedlock.  Identical logic to pthread_mutex_trylock.
+PTH_FUNC(int, pthreadZumutexZutimedlock, // pthread_mutex_timedlock
+	 pthread_mutex_t *mutex,
+         void* timeout)
+{
+   int    ret;
+   OrigFn fn;
+   VALGRIND_GET_ORIG_FN(fn);
+   if (TRACE_PTH_FNS) {
+      fprintf(stderr, "<< pthread_mxtimedlock %p %p", mutex, timeout); 
+      fflush(stderr);
+   }
+
+   DO_CREQ_v_WW(_VG_USERREQ__TC_PTHREAD_MUTEX_LOCK_PRE,
+                pthread_mutex_t*,mutex, long,1/*isTryLock-ish*/);
+
+   CALL_FN_W_WW(ret, fn, mutex,timeout);
+
+   /* There's a hole here: libpthread now knows the lock is locked,
+      but the tool doesn't, so some other thread could run and detect
+      that the lock has been acquired by someone (this thread).  Does
+      this matter?  Not sure, but I don't think so. */
+
+   if (ret == 0 /*success*/) {
+      DO_CREQ_v_W(_VG_USERREQ__TC_PTHREAD_MUTEX_LOCK_POST,
+                  pthread_mutex_t*,mutex);
+   } else { 
+      if (ret != ETIMEDOUT)
+         DO_PthAPIerror( "pthread_mutex_timedlock", ret );
+   }
+
+   if (TRACE_PTH_FNS) {
+      fprintf(stderr, " :: mxtimedlock -> %d >>\n", ret);
    }
    return ret;
 }
@@ -547,8 +590,9 @@ PTH_FUNC(int, pthreadZucondZutimedwaitZAZa, // pthread_cond_timedwait@*
       DO_CREQ_v_WW(_VG_USERREQ__TC_PTHREAD_COND_WAIT_POST,
                    pthread_cond_t*,cond, pthread_mutex_t*,mutex);
 
-   } else { 
-      DO_PthAPIerror( "pthread_cond_timedwait", ret );
+   } else {
+      if (ret != ETIMEDOUT)
+         DO_PthAPIerror( "pthread_cond_timedwait", ret );
    }
 
    if (TRACE_PTH_FNS) {
@@ -819,8 +863,8 @@ QT4_FUNC(void, ZuZZN6QMutex4lockEv, // _ZN6QMutex4lockEv == QMutex::lock()
       fprintf(stderr, "<< QMutex::lock %p", self); fflush(stderr);
    }
 
-   DO_CREQ_v_W(_VG_USERREQ__TC_PTHREAD_MUTEX_LOCK_PRE,
-               void*, self);
+   DO_CREQ_v_WW(_VG_USERREQ__TC_PTHREAD_MUTEX_LOCK_PRE,
+                void*,self, long,0/*!isTryLock*/);
 
    CALL_FN_v_W(fn, self);
 
@@ -869,8 +913,8 @@ QT4_FUNC(long, ZuZZN6QMutex7tryLockEv,
       fprintf(stderr, "<< QMutex::tryLock %p", self); fflush(stderr);
    }
 
-   DO_CREQ_v_W(_VG_USERREQ__TC_PTHREAD_MUTEX_LOCK_PRE,
-               void*, self);
+   DO_CREQ_v_WW(_VG_USERREQ__TC_PTHREAD_MUTEX_LOCK_PRE,
+                void*,self, long,1/*isTryLock*/);
 
    CALL_FN_W_W(ret, fn, self);
 

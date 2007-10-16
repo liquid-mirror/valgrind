@@ -54,14 +54,22 @@
    fun:pthread_join
    fun:pthread_join
 }
-#z{
-#z   thrcheck-glibc2X-pthjoin-2
-#z   Thrcheck:Race
-#z   fun:__free_tcb
-#z   fun:pthread_join
-#z   fun:pthread_join
-#z}
-#z
+{
+   thrcheck-glibc2X-pthjoin-2
+   Thrcheck:Race
+   fun:__deallocate_stack
+   fun:pthread_join
+   fun:pthread_join
+}
+{
+   thrcheck-glibc2X-pthjoin-3
+   Thrcheck:Race
+   fun:free_stacks
+   fun:__deallocate_stack
+   fun:pthread_join
+   fun:pthread_join
+}
+
 #z###--- IO_file ---###
 #z{
 #z   thrcheck-glibc2X-IOfile-1
@@ -129,6 +137,15 @@
    Thrcheck:Race
    fun:__lll_mutex_lock_wait
    fun:pthread_mutex_lock
+}
+
+###--- pthread_mutex_unlock ---###
+{
+   thrcheck-glibc2X-pthmxunlock-1
+   Thrcheck:Race
+   fun:__lll_mutex_unlock_wake
+   fun:pthread_mutex_unlock
+   fun:pthread_mutex_unlock
 }
 
 ###--- pthread_mutex_destroy ---###
@@ -225,20 +242,19 @@
    fun:pthread_mutex_trylock
 }
 
-#z###--- pthread_cond_timedwait ---###
-#z{
-#z   thrcheck-glibc2X-pthmxtimedwait-1
-#z   Thrcheck:Race
-#z   fun:pthread_cond_timedwait@@GLIBC_*
-#z   fun:pthread_cond_timedwait*
-#z}
-#z{
-#z   thrcheck-glibc2X-pthmxtimedwait-2
-#z   Thrcheck:Race
-#z   fun:__lll_mutex_lock_wait
-#z   fun:pthread_cond_timedwait@@GLIBC_*
-#z   fun:pthread_cond_timedwait*
-#z}
+###--- pthread_cond_timedwait ---###
+# ditto
+{
+   thrcheck-glibc2X-pthmxtimedwait-1
+   Thrcheck:Race
+   fun:pthread_cond_timedwait@@GLIBC_2.3.2
+}
+{
+   thrcheck-glibc2X-pthmxtimedwait-2
+   Thrcheck:Race
+   fun:__lll_mutex_unlock_wake
+   fun:pthread_cond_timedwait@@GLIBC_*
+}
 
 ###--- libpthread internal stuff ---###
 {
@@ -251,8 +267,7 @@
    thrcheck-glibc2X-libpthread-2
    Thrcheck:Race
    fun:__lll_mutex_unlock_wake
-   fun:_L_mutex_unlock_*
-   fun:__pthread_mutex_unlock_usercnt
+   fun:_L_*unlock_*
 }
 {
    thrcheck-glibc2X-libpthread-3
@@ -261,13 +276,13 @@
    fun:_L_mutex_lock_*
    fun:start_thread
 }
-#z{
-#z   thrcheck-glibc2X-libpthread-4
-#z   Thrcheck:Race
-#z   fun:__lll_mutex_lock_wait
-#z   fun:_L_mutex_lock_*
-#z   fun:pthread_mutex_lock
-#z}
+{
+  thrcheck-glibc2X-libpthread-4
+  Thrcheck:Race
+  fun:__lll_mutex_lock_wait
+  fun:_L_mutex_lock_*
+  fun:pthread_mutex_lock
+}
 {
    thrcheck-glibc2X-libpthread-5
    Thrcheck:Race
@@ -281,28 +296,28 @@
    fun:start_thread
    fun:*clone*
 }
-#z{
-#z   thrcheck-glibc2X-libpthread-7
-#z   Thrcheck:Race
-#z   fun:__deallocate_stack
-#z   fun:__free_tcb
-#z   fun:start_thread
-#z}
-#z{
-#z   thrcheck-glibc2X-libpthread-8
-#z   Thrcheck:Race
-#z   fun:__deallocate_stack
-#z   fun:pthread_join
-#z   fun:pthread_join
-#z}
-#z
-#z###--- fork ---###
-#z{
-#z   thrcheck-glibc2X-fork-1
-#z   Thrcheck:Race
-#z   fun:__reclaim_stacks
-#z   fun:fork
-#z}
+{
+   thrcheck-glibc2X-libpthread-7
+   Thrcheck:Race
+   fun:__deallocate_stack
+   fun:__free_tcb
+   fun:start_thread
+}
+{
+   thrcheck-glibc2X-libpthread-8
+   Thrcheck:Race
+   fun:__deallocate_stack
+   fun:__free_tcb
+   fun:pthread_join
+}
+
+###--- fork ---###
+{
+   thrcheck-glibc2X-fork-1
+   Thrcheck:Race
+   fun:__reclaim_stacks
+   fun:fork
+}
 
 ###--- glibc-2.5 specific ---###
 {

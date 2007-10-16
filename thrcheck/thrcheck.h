@@ -76,7 +76,7 @@ typedef
       _VG_USERREQ__TC_PTHREAD_MUTEX_DESTROY_PRE,  // pth_mx_t*
       _VG_USERREQ__TC_PTHREAD_MUTEX_UNLOCK_PRE,   // pth_mx_t*
       _VG_USERREQ__TC_PTHREAD_MUTEX_UNLOCK_POST,  // pth_mx_t*
-      _VG_USERREQ__TC_PTHREAD_MUTEX_LOCK_PRE,     // pth_mx_t*
+      _VG_USERREQ__TC_PTHREAD_MUTEX_LOCK_PRE,     // pth_mx_t*, long isTryLock
       _VG_USERREQ__TC_PTHREAD_MUTEX_LOCK_POST,    // pth_mx_t*
       _VG_USERREQ__TC_PTHREAD_COND_SIGNAL_PRE,    // pth_cond_t*
       _VG_USERREQ__TC_PTHREAD_COND_BROADCAST_PRE, // pth_cond_t*
@@ -94,12 +94,12 @@ typedef
    about the specified memory range, and resets it to New.  This is
    particularly useful for memory allocators that wish to recycle
    memory. */
-#define VALGRIND_TC_CLEAN_MEMORY(_qzz_start, _qzz_len)			\
-   do {									\
-     unsigned long _qzz_res;						\
-     VALGRIND_MAGIC_SEQUENCE(_qzz_res, 0, VG_USERREQ__TC_CLEAN_MEMORY,	\
-			     _qzz_start, _qzz_len, 0, 0);		\
-     (void)0;								\
+#define VALGRIND_TC_CLEAN_MEMORY(_qzz_start, _qzz_len)                    \
+   do {                                                                   \
+     unsigned long _qzz_res;                                              \
+     VALGRIND_DO_CLIENT_REQUEST(_qzz_res, 0, VG_USERREQ__TC_CLEAN_MEMORY, \
+                                _qzz_start, _qzz_len, 0, 0, 0);	          \
+     (void)0;                                                             \
    } while(0)
 
 #endif /* __THRCHECK_H */

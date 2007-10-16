@@ -2241,7 +2241,6 @@ static void record_error_FreeMemLock ( Thread* thr, Lock* lk );
 static void record_error_UnlockUnlocked ( Thread*, Lock* );
 static void record_error_UnlockForeign  ( Thread*, Thread*, Lock* );
 static void record_error_UnlockBogus    ( Thread*, Addr );
-static void record_error_DestroyLocked  ( Thread*, Lock* );
 static void record_error_PthAPIerror    ( Thread*, HChar*, Word, HChar* );
 static void record_error_LockOrder      ( Thread*, Lock*, Lock* );
 
@@ -4805,7 +4804,7 @@ void evh__TC_PTHREAD_MUTEX_DESTROY_PRE( ThreadId tid, void* mutex )
       tl_assert( lk->guestaddr == (Addr)mutex );
       if (lk->heldBy) {
          /* Basically act like we unlocked the lock */
-         record_error_DestroyLocked( thr, lk );
+         record_error_Misc( thr, "pthread_mutex_destroy of a locked mutex" );
          /* remove lock from locksets of all owning threads */
          remove_Lock_from_locksets_of_all_owning_Threads( lk );
          TC_(deleteBag)( lk->heldBy );
@@ -4820,7 +4819,8 @@ void evh__TC_PTHREAD_MUTEX_DESTROY_PRE( ThreadId tid, void* mutex )
       all__sanity_check("evh__tc_PTHREAD_MUTEX_DESTROY_PRE");
 }
 
-static void evh__TC_PTHREAD_MUTEX_LOCK_PRE ( ThreadId tid, void* mutex )
+static void evh__TC_PTHREAD_MUTEX_LOCK_PRE ( ThreadId tid,
+                                             void* mutex, Word isTryLock )
 {
    /* Just check the mutex is sane; nothing else to do. */
    // 'mutex' may be invalid - not checked by wrapper
@@ -4830,6 +4830,7 @@ static void evh__TC_PTHREAD_MUTEX_LOCK_PRE ( ThreadId tid, void* mutex )
       VG_(printf)("evh__tc_PTHREAD_MUTEX_LOCK_PRE(ctid=%d, mutex=%p)\n", 
                   (Int)tid, (void*)mutex );
 
+   tl_assert(isTryLock == 0 || isTryLock == 1);
    thr = map_threads_maybe_lookup( tid );
    tl_assert(thr); /* cannot fail - Thread* must already exist */
 
@@ -4841,12 +4842,15 @@ static void evh__TC_PTHREAD_MUTEX_LOCK_PRE ( ThreadId tid, void* mutex )
    }
 
    if ( lk 
+        && isTryLock == 0
         && (lk->kind == LK_nonRec || lk->kind == LK_rdwr)
         && lk->heldBy
         && lk->heldW
         && TC_(elemBag)( lk->heldBy, (Word)thr ) > 0 ) {
-      /* uh, it's a non-recursive lock and we already w-hold it.  Duh.
-         Deadlock coming up; but at least produce an error message. */
+      /* uh, it's a non-recursive lock and we already w-hold it, and
+         this is a real lock operation (not a speculative "tryLock"
+         kind of thing.  Duh.  Deadlock coming up; but at least
+         produce an error message. */
       record_error_Misc( thr, "Attempt to re-lock a "
                               "non-recursive lock I already hold" );
    }
@@ -5067,7 +5071,7 @@ void evh__TC_PTHREAD_RWLOCK_DESTROY_PRE( ThreadId tid, void* rwl )
       tl_assert( lk->guestaddr == (Addr)rwl );
       if (lk->heldBy) {
          /* Basically act like we unlocked the lock */
-         record_error_DestroyLocked( thr, lk );
+         record_error_Misc( thr, "pthread_rwlock_destroy of a locked mutex" );
          /* remove lock from locksets of all owning threads */
          remove_Lock_from_locksets_of_all_owning_Threads( lk );
          TC_(deleteBag)( lk->heldBy );
@@ -5961,14 +5965,15 @@ Bool tc_handle_client_request ( ThreadId tid, UWord* args, UWord* ret)
       /* --- --- User-visible client requests --- --- */
 
       case VG_USERREQ__TC_CLEAN_MEMORY:
-         if (1) VG_(printf)("VG_USERREQ__TC_CLEAN_MEMORY(%p,%d)\n",
+         if (0) VG_(printf)("VG_USERREQ__TC_CLEAN_MEMORY(%p,%d)\n",
                             args[1], args[2]);
          /* Call die_mem to (expensively) tidy up properly, if there
             are any held locks etc in the area */
-         // FIXME: next line causes firefox to stall - no idea why
-         //         evh__die_mem(args[1], args[2]);
-         /* and then set it to New */
-         evh__new_mem(args[1], args[2]);
+         if (args[2] > 0) { /* length */
+            evh__die_mem(args[1], args[2]);
+            /* and then set it to New */
+            evh__new_mem(args[1], args[2]);
+         }
          break;
 
       /* --- --- Client requests for Thrcheck's use only --- --- */
@@ -6059,8 +6064,8 @@ Bool tc_handle_client_request ( ThreadId tid, UWord* args, UWord* ret)
          evh__TC_PTHREAD_MUTEX_UNLOCK_POST( tid, (void*)args[1] );
          break;
 
-      case _VG_USERREQ__TC_PTHREAD_MUTEX_LOCK_PRE:     // pth_mx_t*
-         evh__TC_PTHREAD_MUTEX_LOCK_PRE( tid, (void*)args[1] );
+      case _VG_USERREQ__TC_PTHREAD_MUTEX_LOCK_PRE:     // pth_mx_t*, Word
+         evh__TC_PTHREAD_MUTEX_LOCK_PRE( tid, (void*)args[1], args[2] );
          break;
 
       case _VG_USERREQ__TC_PTHREAD_MUTEX_LOCK_POST:    // pth_mx_t*
@@ -6214,7 +6219,6 @@ typedef
       XE_UnlockUnlocked, // unlocking a not-locked lock
       XE_UnlockForeign,  // unlocking a lock held by some other thread
       XE_UnlockBogus,    // unlocking an address not known to be a lock
-      XE_DestroyLocked,  // pth_mx_destroy on locked lock
       XE_PthAPIerror,    // error from the POSIX pthreads API
       XE_LockOrder,      // lock order error
       XE_Misc            // misc other error (w/ string to describe it)
@@ -6253,10 +6257,6 @@ typedef
             Addr    lock_ga; /* purported address of the lock */
          } UnlockBogus;
          struct {
-            Thread* thr;  /* doing the unlocking */
-            Lock*   lock; /* lock (that is locked and now destroyed) */
-         } DestroyLocked;
-         struct {
             Thread* thr; 
             HChar*  fnname; /* persistent, in tool-arena */
             Word    err;    /* pth error code */
@@ -6289,7 +6289,6 @@ typedef
       XS_UnlockUnlocked,
       XS_UnlockForeign,
       XS_UnlockBogus,
-      XS_DestroyLocked,
       XS_PthAPIerror,
       XS_LockOrder,
       XS_Misc
@@ -6382,19 +6381,6 @@ static void record_error_UnlockBogus ( Thread* thr, Addr lock_ga ) {
                             XE_UnlockBogus, 0, NULL, &xe );
 }
 
-static void record_error_DestroyLocked ( Thread* thr, Lock* lk ) {
-   XError xe;
-   tl_assert( is_sane_Thread(thr) );
-   tl_assert( is_sane_LockN(lk) );
-   init_XError(&xe);
-   xe.tag = XE_DestroyLocked;
-   xe.XE.DestroyLocked.thr  = thr;
-   xe.XE.DestroyLocked.lock = mk_LockP_from_LockN(lk);
-   // FIXME: tid vs thr
-   VG_(maybe_record_error)( map_threads_reverse_lookup_SLOW(thr),
-                            XE_DestroyLocked, 0, NULL, &xe );
-}
-
 static 
 void record_error_LockOrder ( Thread* thr, Lock* before, Lock* after ) {
    XError xe;
@@ -6470,18 +6456,15 @@ static Bool tc_eq_Error ( VgRes not_used, Error* e1, Error* e2 )
       case XE_UnlockBogus:
          return xe1->XE.UnlockBogus.thr == xe2->XE.UnlockBogus.thr
                 && xe1->XE.UnlockBogus.lock_ga == xe2->XE.UnlockBogus.lock_ga;
-      case XE_DestroyLocked:
-         return xe1->XE.DestroyLocked.thr == xe2->XE.DestroyLocked.thr
-                && xe1->XE.DestroyLocked.lock == xe2->XE.DestroyLocked.lock;
       case XE_PthAPIerror:
          return xe1->XE.PthAPIerror.thr == xe2->XE.PthAPIerror.thr
                 && 0==VG_(strcmp)(xe1->XE.PthAPIerror.fnname,
                                   xe2->XE.PthAPIerror.fnname)
                 && xe1->XE.PthAPIerror.err == xe2->XE.PthAPIerror.err;
       case XE_LockOrder:
-         return xe1->XE.LockOrder.thr == xe2->XE.LockOrder.thr
-                && xe1->XE.LockOrder.before == xe2->XE.LockOrder.before
-                && xe1->XE.LockOrder.after == xe2->XE.LockOrder.after;
+         return xe1->XE.LockOrder.thr == xe2->XE.LockOrder.thr;
+             /* && xe1->XE.LockOrder.before == xe2->XE.LockOrder.before
+                && xe1->XE.LockOrder.after == xe2->XE.LockOrder.after; */
       case XE_Misc:
          return xe1->XE.Misc.thr == xe2->XE.Misc.thr
                 && 0==VG_(strcmp)(xe1->XE.Misc.errstr, xe2->XE.Misc.errstr);
@@ -6847,7 +6830,6 @@ static Char* tc_get_error_name ( Error* err )
       case XE_UnlockUnlocked: return "UnlockUnlocked";
       case XE_UnlockForeign:  return "UnlockForeign";
       case XE_UnlockBogus:    return "UnlockBogus";
-      case XE_DestroyLocked:  return "DestroyLocked";
       case XE_PthAPIerror:    return "PthAPIerror";
       case XE_LockOrder:      return "LockOrder";
       case XE_Misc:           return "Misc";
@@ -6867,7 +6849,6 @@ static Bool tc_recognised_suppression ( Char* name, Supp *su )
    TRY("UnlockUnlocked", XS_UnlockUnlocked);
    TRY("UnlockForeign",  XS_UnlockForeign);
    TRY("UnlockBogus",    XS_UnlockBogus);
-   TRY("DestroyLocked",  XS_DestroyLocked);
    TRY("PthAPIerror",    XS_PthAPIerror);
    TRY("LockOrder",      XS_LockOrder);
    TRY("Misc",           XS_Misc);
@@ -6891,7 +6872,6 @@ static Bool tc_error_matches_suppression ( Error* err, Supp* su )
    case XS_UnlockUnlocked: return VG_(get_error_kind)(err) == XE_UnlockUnlocked;
    case XS_UnlockForeign:  return VG_(get_error_kind)(err) == XE_UnlockForeign;
    case XS_UnlockBogus:    return VG_(get_error_kind)(err) == XE_UnlockBogus;
-   case XS_DestroyLocked:  return VG_(get_error_kind)(err) == XE_DestroyLocked;
    case XS_PthAPIerror:    return VG_(get_error_kind)(err) == XE_PthAPIerror;
    case XS_LockOrder:      return VG_(get_error_kind)(err) == XE_LockOrder;
    case XS_Misc:           return VG_(get_error_kind)(err) == XE_Misc;
