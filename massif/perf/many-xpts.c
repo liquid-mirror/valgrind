@@ -2,7 +2,7 @@
 
 #define nth_bit(x, n)   ((x >> n) & 1)
 #define Fn(N, Np1) \
-   void a##N(int x) { if (nth_bit(x, N)) a##Np1(x); else a##Np1(x); }
+   void* a##N(int x) { return ( nth_bit(x, N) ? a##Np1(x) : a##Np1(x) ); }
 
 // This test allocates a lot of heap memory, and every allocation features a
 // different stack trace -- the stack traces are effectively a
@@ -10,9 +10,9 @@
 // 'i', and if it's a 1 the first function is called, and if it's a 0 the
 // second function is called.
 
-void a999(int x)
+void* a999(int x)
 {
-   malloc(100);
+   return malloc(100);
 }
 
 Fn(17, 999)
@@ -43,8 +43,9 @@ int main(void)
       a0(i);
 
    // Do a lot of allocations so it gets dup'd a lot of times.
-   for (i = 0; i < 3000; i++) {
-      free(malloc(20000));
+   for (i = 0; i < 100000; i++) {
+      free(a1(234));
+      free(a2(111));
    }
 
    return 0;

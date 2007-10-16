@@ -60,6 +60,11 @@
 //   tinycc    0.49s  ma: 7.6s (15.4x, -----)
 //   many-xpts 0.04s  ma: 1.9s (46.2x, -----)
 //
+// Many many-xpts run for longer (r7001):
+//   heap      0.59s  ma:20.3s (34.5x, -----)
+//   tinycc    0.49s  ma: 7.6s (15.4x, -----)
+//   many-xpts 0.13s  ma: 2.8s (21.6x, -----)
+//
 // Todo:
 // - for regtests, need to filter out code addresses in *.post.* files
 // - do snapshots on client requests
