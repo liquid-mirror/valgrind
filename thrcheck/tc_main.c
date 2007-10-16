@@ -250,6 +250,8 @@ typedef
       /* EXPOSITION */
       /* Place where lock first came to the attention of Thrcheck. */
       ExeContext*   appeared_at;
+      /* Place where the lock was first locked. */
+      ExeContext*   first_locked_at;
       /* USEFUL-STATIC */
       Addr          guestaddr; /* Guest address of lock */
       LockKind      kind;      /* what kind of lock this is */
@@ -490,6 +492,8 @@ static Lock* __bus_lock_Lock = NULL;
 /*--- Simple helpers for the data structures                   ---*/
 /*----------------------------------------------------------------*/
 
+static ThreadId map_threads_maybe_reverse_lookup_SLOW ( Thread* ); /*fwds*/
+
 #define Thread_MAGIC   0x504fc5e5
 #define LockN_MAGIC    0x6545b557 /* normal nonpersistent locks */
 #define LockP_MAGIC    0x755b5456 /* persistent (copied) locks */
@@ -524,6 +528,7 @@ static Lock* mk_LockN ( LockKind kind, Addr guestaddr ) {
    lock->unique      = unique++;
    lock->magic       = LockN_MAGIC;
    lock->appeared_at = NULL;
+   lock->first_locked_at = NULL;
    lock->guestaddr   = guestaddr;
    lock->kind        = kind;
    lock->heldW       = False;
@@ -630,6 +635,18 @@ static void lockN_acquire_writer ( Lock* lk, Thread* thr )
 {
    tl_assert(is_sane_LockN(lk));
    tl_assert(is_sane_Thread(thr));
+
+   /* If it's never been locked before, note the first person to lock
+      it.  This is so as to produce better lock-order error
+      messages. */
+   if (lk->first_locked_at == NULL) {
+      ThreadId tid = map_threads_maybe_reverse_lookup_SLOW(thr);
+      if (tid != VG_INVALID_THREADID) {
+         lk->first_locked_at
+            = VG_(record_ExeContext(tid, 0/*first_ip_delta*/));
+      }
+   }
+
    switch (lk->kind) {
       case LK_nonRec:
       case_LK_nonRec:
@@ -669,6 +686,18 @@ static void lockN_acquire_reader ( Lock* lk, Thread* thr )
    /* lk must be free or already r-held. */
    tl_assert(lk->heldBy == NULL 
              || (lk->heldBy != NULL && !lk->heldW));
+
+   /* If it's never been locked before, note the first person to lock
+      it.  This is so as to produce better lock-order error
+      messages. */
+   if (lk->first_locked_at == NULL) {
+      ThreadId tid = map_threads_maybe_reverse_lookup_SLOW(thr);
+      if (tid != VG_INVALID_THREADID) {
+         lk->first_locked_at
+            = VG_(record_ExeContext(tid, 0/*first_ip_delta*/));
+      }
+   }
+
    if (lk->heldBy) {
       TC_(addToBag)(lk->heldBy, (Word)thr);
    } else {
@@ -2214,6 +2243,7 @@ static void record_error_UnlockForeign  ( Thread*, Thread*, Lock* );
 static void record_error_UnlockBogus    ( Thread*, Addr );
 static void record_error_DestroyLocked  ( Thread*, Lock* );
 static void record_error_PthAPIerror    ( Thread*, HChar*, Word, HChar* );
+static void record_error_LockOrder      ( Thread*, Lock*, Lock* );
 
 static void record_error_Misc ( Thread*, HChar* );
 
@@ -2346,7 +2376,7 @@ static ExeContext* maybe_get_lastlock_initpoint ( Addr ga )
    from old.  'thr_acc' and 'a' are supplied only so it can produce
    coherent error messages if necessary. */
 static
-UInt msm__handle_read ( Thread* thr_acc, Addr a, UInt wold )
+UInt msm__handle_read ( Thread* thr_acc, Addr a, UInt wold, Int szB )
 {
    tl_assert(is_sane_Thread(thr_acc));
 
@@ -2435,7 +2465,7 @@ UInt msm__handle_read ( Thread* thr_acc, Addr a, UInt wold )
       if (TC_(isEmptyWS)(univ_lsets, lset_new)
           && !TC_(isEmptyWS)(univ_lsets, lset_old)) {
          record_error_Race( thr_acc, a, 
-                            False/*isWrite*/, 4/*szB*/, wold, wnew,
+                            False/*isWrite*/, szB, wold, wnew,
                             maybe_get_lastlock_initpoint(a) );
       }
       stats__msm_r32_ShM_to_ShM++;
@@ -2470,7 +2500,7 @@ UInt msm__handle_read ( Thread* thr_acc, Addr a, UInt wold )
    resulting from a write to a location, and report any errors
    necessary on the way. */
 static
-UInt msm__handle_write ( Thread* thr_acc, Addr a, UInt wold )
+UInt msm__handle_write ( Thread* thr_acc, Addr a, UInt wold, Int szB )
 {
    tl_assert(is_sane_Thread(thr_acc));
 
@@ -2522,7 +2552,7 @@ UInt msm__handle_write ( Thread* thr_acc, Addr a, UInt wold )
          wnew = mk_SHVAL_ShM( tset, lset );
          if (TC_(isEmptyWS)(univ_lsets, lset)) {
             record_error_Race( thr_acc, 
-                               a, True/*isWrite*/, 4/*szB*/, wold, wnew,
+                               a, True/*isWrite*/, szB, wold, wnew,
                                maybe_get_lastlock_initpoint(a) );
          }
          stats__msm_w32_Excl_to_ShM++;
@@ -2552,7 +2582,7 @@ UInt msm__handle_write ( Thread* thr_acc, Addr a, UInt wold )
          record_last_lock_lossage(a,lset_old,lset_new);
       if (TC_(isEmptyWS)(univ_lsets, lset_new)) {
          record_error_Race( thr_acc, a, 
-                            True/*isWrite*/, 4/*szB*/, wold, wnew,
+                            True/*isWrite*/, szB, wold, wnew,
                             maybe_get_lastlock_initpoint(a) );
       }
       stats__msm_w32_ShR_to_ShM++;
@@ -2581,7 +2611,7 @@ UInt msm__handle_write ( Thread* thr_acc, Addr a, UInt wold )
       if (TC_(isEmptyWS)(univ_lsets, lset_new)
           && !TC_(isEmptyWS)(univ_lsets, lset_old)) {
          record_error_Race( thr_acc, a, 
-                            True/*isWrite*/, 4/*szB*/, wold, wnew,
+                            True/*isWrite*/, szB, wold, wnew,
                             maybe_get_lastlock_initpoint(a) );
       }
       stats__msm_w32_ShM_to_ShM++;
@@ -3296,7 +3326,7 @@ static void shadow_mem_read8 ( Thread* thr_acc, Addr a, UInt uuOpaque ) {
       /* EXPENSIVE: tl_assert(is_sane_CacheLine(cl)); */
       svOld = cl->w8[ix8];
    }
-   svNew = msm__handle_read( thr_acc, a, svOld );
+   svNew = msm__handle_read( thr_acc, a, svOld, 1 );
    cl->w8[ix8] = svNew;
 }
 static void shadow_mem_read16 ( Thread* thr_acc, Addr a, UInt uuOpaque ) {
@@ -3314,7 +3344,7 @@ static void shadow_mem_read16 ( Thread* thr_acc, Addr a, UInt uuOpaque ) {
       /* EXPENSIVE: tl_assert(is_sane_CacheLine(cl)); */
       svOld = cl->w16[ix16];
    }
-   svNew = msm__handle_read( thr_acc, a, svOld );
+   svNew = msm__handle_read( thr_acc, a, svOld, 2 );
    cl->w16[ix16] = svNew;
    return;
   slowcase: /* misaligned, or must go further down the tree */
@@ -3338,7 +3368,7 @@ static void shadow_mem_read32 ( Thread* thr_acc, Addr a, UInt uuOpaque ) {
       /* EXPENSIVE: tl_assert(is_sane_CacheLine(cl)); */
       svOld = cl->w32[ix32];
    }
-   svNew = msm__handle_read( thr_acc, a, svOld );
+   svNew = msm__handle_read( thr_acc, a, svOld, 4 );
    cl->w32[ix32] = svNew;
    return;
   slowcase: /* misaligned, or must go further down the tree */
@@ -3360,7 +3390,7 @@ static void shadow_mem_read64 ( Thread* thr_acc, Addr a, UInt uuOpaque ) {
       tl_assert(svOld == SHVAL_InvalidD);
       goto slowcase;
    }
-   svNew = msm__handle_read( thr_acc, a, svOld );
+   svNew = msm__handle_read( thr_acc, a, svOld, 8 );
    cl->w64[ix64] = svNew;
    return;
   slowcase: /* misaligned, or must go further down the tree */
@@ -3383,7 +3413,7 @@ static void shadow_mem_write8 ( Thread* thr_acc, Addr a, UInt uuOpaque ) {
       /* EXPENSIVE: tl_assert(is_sane_CacheLine(cl)); */
       svOld = cl->w8[ix8];
    }
-   svNew = msm__handle_write( thr_acc, a, svOld );
+   svNew = msm__handle_write( thr_acc, a, svOld, 1 );
    cl->w8[ix8] = svNew;
 }
 static void shadow_mem_write16 ( Thread* thr_acc, Addr a, UInt uuOpaque ) {
@@ -3401,7 +3431,7 @@ static void shadow_mem_write16 ( Thread* thr_acc, Addr a, UInt uuOpaque ) {
       /* EXPENSIVE: tl_assert(is_sane_CacheLine(cl)); */
       svOld = cl->w16[ix16];
    }
-   svNew = msm__handle_write( thr_acc, a, svOld );
+   svNew = msm__handle_write( thr_acc, a, svOld, 2 );
    cl->w16[ix16] = svNew;
    return;
   slowcase: /* misaligned, or must go further down the tree */
@@ -3409,7 +3439,6 @@ static void shadow_mem_write16 ( Thread* thr_acc, Addr a, UInt uuOpaque ) {
    shadow_mem_write8( thr_acc, a + 0, 0/*unused*/ );
    shadow_mem_write8( thr_acc, a + 1, 0/*unused*/ );
 }
-/* inline */
 static void shadow_mem_write32 ( Thread* thr_acc, Addr a, UInt uuOpaque ) {
    CacheLine* cl; 
    UWord      ix32;
@@ -3425,7 +3454,7 @@ static void shadow_mem_write32 ( Thread* thr_acc, Addr a, UInt uuOpaque ) {
       /* EXPENSIVE: tl_assert(is_sane_CacheLine(cl)); */
       svOld = cl->w32[ix32];
    }
-   svNew = msm__handle_write( thr_acc, a, svOld );
+   svNew = msm__handle_write( thr_acc, a, svOld, 4 );
    cl->w32[ix32] = svNew;
    return;
   slowcase: /* misaligned, or must go further down the tree */
@@ -3446,7 +3475,7 @@ static void shadow_mem_write64 ( Thread* thr_acc, Addr a, UInt uuOpaque ) {
       tl_assert(svOld == SHVAL_InvalidD);
       goto slowcase;
    }
-   svNew = msm__handle_write( thr_acc, a, svOld );
+   svNew = msm__handle_write( thr_acc, a, svOld, 8 );
    cl->w64[ix64] = svNew;
    return;
   slowcase: /* misaligned, or must go further down the tree */
@@ -3523,6 +3552,7 @@ static void shadow_mem_set32 ( Thread* uu_thr_acc, Addr a, UInt svNew ) {
    shadow_mem_set16( NULL/*unused*/, a + 0, svNew );
    shadow_mem_set16( NULL/*unused*/, a + 2, svNew );
 }
+inline
 static void shadow_mem_set64 ( Thread* uu_thr_acc, Addr a, UInt svNew ) {
    CacheLine* cl; 
    UWord      ix64, ix32, ix16, ix8;
@@ -5132,6 +5162,9 @@ static void evh__TC_PTHREAD_RWLOCK_UNLOCK_POST ( ThreadId tid, void* rwl )
 /* FIXME: here are some optimisations still to do in
           laog__pre_thread_acquires_lock.
 
+   The graph is structured so that if L1 --*--> L2 then L1 must be
+   acquired before L2.
+
    The common case is that some thread T holds (eg) L1 L2 and L3 and
    is repeatedly acquiring and releasing Ln, and there is no ordering
    error in what it is doing.  Hence it repeatly:
@@ -5283,7 +5316,7 @@ static void laog__sanity_check ( void ) {
    TC_(initIterFM)( laog );
    me = NULL;
    links = NULL;
-VG_(printf)("laog sanity check\n");
+   if (0) VG_(printf)("laog sanity check\n");
    while (TC_(nextIterFM)( laog, (Word*)&me, (Word*)&links )) {
       tl_assert(me);
       tl_assert(links);
@@ -5312,13 +5345,15 @@ VG_(printf)("laog sanity check\n");
    tl_assert(0);
 }
 
-/* Return True iff there is a path in laog from 'src' to any of the
-   elements in 'dst'. */
+/* If there is a path in laog from 'src' to any of the elements in
+   'dst', return an arbitrarily chosen element of 'dst' reachable from
+   'src'.  If no path exist from 'src' to any element in 'dst', return
+   NULL. */
 __attribute__((noinline))
 static
-Bool laog__do_dfs_from_to ( Lock* src, WordSetID dsts /* univ_lsets */ )
+Lock* laog__do_dfs_from_to ( Lock* src, WordSetID dsts /* univ_lsets */ )
 {
-   Bool      ret;
+   Lock*     ret;
    Word      i, ssz;
    XArray*   stack;   /* of Lock* */
    WordFM*   visited; /* Lock* -> void, iow, Set(Lock*) */
@@ -5331,8 +5366,9 @@ Bool laog__do_dfs_from_to ( Lock* src, WordSetID dsts /* univ_lsets */ )
    /* If the destination set is empty, we can never get there from
       'src' :-), so don't bother to try */
    if (TC_(isEmptyWS)( univ_lsets, dsts ))
-      return False;
+      return NULL;
 
+   ret     = NULL;
    stack   = VG_(newXA)( tc_zalloc, tc_free, sizeof(Lock*) );
    visited = TC_(newFM)( tc_zalloc, tc_free, NULL/*unboxedcmp*/ );
 
@@ -5342,12 +5378,12 @@ Bool laog__do_dfs_from_to ( Lock* src, WordSetID dsts /* univ_lsets */ )
 
       ssz = VG_(sizeXA)( stack );
 
-      if (ssz == 0) { ret = False; break; }
+      if (ssz == 0) { ret = NULL; break; }
 
       here = *(Lock**) VG_(indexXA)( stack, ssz-1 );
       VG_(dropTailXA)( stack, 1 );
 
-      if (TC_(elemWS)( univ_lsets, dsts, (Word)here )) { ret = True; break; }
+      if (TC_(elemWS)( univ_lsets, dsts, (Word)here )) { ret = here; break; }
 
       if (TC_(lookupFM)( visited, NULL, NULL, (Word)here ))
          continue;
@@ -5378,6 +5414,7 @@ static void laog__pre_thread_acquires_lock (
 {
    Word*    ls_words;
    Word     ls_size, i;
+   Lock*    other;
 
    /* It may be that 'thr' already holds 'lk' and is recursively
       relocking in.  In this case we just ignore the call. */
@@ -5394,9 +5431,14 @@ static void laog__pre_thread_acquires_lock (
       (rather than after, as we are doing here) at least one of those
       locks.
    */
-   if (laog__do_dfs_from_to(lk, thr->locksetA)) {
-      record_error_Misc( thr, "Lock acquisition order is inconsistent "
-                              "with previously observed ordering" );
+   other = laog__do_dfs_from_to(lk, thr->locksetA);
+   if (other) {
+      /* So we managed to find a path lk --*--> other in the graph,
+         which implies that 'lk' should have been acquired before
+         'other' but is in fact being acquired afterwards.  We present
+         the lk/other arguments to record_error_LockOrder in the order
+         in which they should have been acquired. */ 
+      record_error_LockOrder( thr, lk, other );
    }
 
    /* Second, add to laog the pairs
@@ -6174,6 +6216,7 @@ typedef
       XE_UnlockBogus,    // unlocking an address not known to be a lock
       XE_DestroyLocked,  // pth_mx_destroy on locked lock
       XE_PthAPIerror,    // error from the POSIX pthreads API
+      XE_LockOrder,      // lock order error
       XE_Misc            // misc other error (w/ string to describe it)
    }
    XErrorTag;
@@ -6221,6 +6264,11 @@ typedef
          } PthAPIerror;
          struct {
             Thread* thr;
+            Lock*   before; /* always locked first in prog. history */
+            Lock*   after;  /* was erroneously locked before 'before' */
+         } LockOrder;
+         struct {
+            Thread* thr;
             HChar*  errstr; /* persistent, in tool-arena */
          } Misc;
       } XE;
@@ -6243,6 +6291,7 @@ typedef
       XS_UnlockBogus,
       XS_DestroyLocked,
       XS_PthAPIerror,
+      XS_LockOrder,
       XS_Misc
    }
    XSuppTag;
@@ -6276,9 +6325,7 @@ static void record_error_Race ( Thread* thr,
    xe.XE.Race.thr         = thr;
    // FIXME: tid vs thr
    VG_(maybe_record_error)( map_threads_reverse_lookup_SLOW(thr),
-                            XE_Race, data_addr, 
-                            (isWrite ? "write to" : "read from"),
-                            &xe);
+                            XE_Race, data_addr, NULL, &xe );
 }
 
 static void record_error_FreeMemLock ( Thread* thr, Lock* lk ) {
@@ -6349,6 +6396,22 @@ static void record_error_DestroyLocked ( Thread* thr, Lock* lk ) {
 }
 
 static 
+void record_error_LockOrder ( Thread* thr, Lock* before, Lock* after ) {
+   XError xe;
+   tl_assert( is_sane_Thread(thr) );
+   tl_assert( is_sane_LockN(after) );
+   tl_assert( is_sane_LockN(before) );
+   init_XError(&xe);
+   xe.tag = XE_LockOrder;
+   xe.XE.LockOrder.thr    = thr;
+   xe.XE.LockOrder.before = mk_LockP_from_LockN(before);
+   xe.XE.LockOrder.after  = mk_LockP_from_LockN(after);
+   // FIXME: tid vs thr
+   VG_(maybe_record_error)( map_threads_reverse_lookup_SLOW(thr),
+                            XE_LockOrder, 0, NULL, &xe );
+}
+
+static 
 void record_error_PthAPIerror ( Thread* thr, HChar* fnname, 
                                 Word err, HChar* errstr ) {
    XError xe;
@@ -6381,7 +6444,6 @@ static void record_error_Misc ( Thread* thr, HChar* errstr ) {
 
 static Bool tc_eq_Error ( VgRes not_used, Error* e1, Error* e2 )
 {
-   Char   *e1s, *e2s;
    XError *xe1, *xe2;
 
    tl_assert(VG_(get_error_kind)(e1) == VG_(get_error_kind)(e2));
@@ -6393,9 +6455,8 @@ static Bool tc_eq_Error ( VgRes not_used, Error* e1, Error* e2 )
 
    switch (VG_(get_error_kind)(e1)) {
       case XE_Race:
-         //return VG_(get_error_tid)(e1) == VG_(get_error_tid)(e2);
-         break;
-         //return VG_(get_error_address)(e1) == VG_(get_error_address)(e2);
+         return xe1->XE.Race.szB == xe2->XE.Race.szB
+                && xe1->XE.Race.isWrite == xe2->XE.Race.isWrite;
       case XE_FreeMemLock:
          return xe1->XE.FreeMemLock.thr == xe2->XE.FreeMemLock.thr
                 && xe1->XE.FreeMemLock.lock == xe2->XE.FreeMemLock.lock;
@@ -6417,6 +6478,10 @@ static Bool tc_eq_Error ( VgRes not_used, Error* e1, Error* e2 )
                 && 0==VG_(strcmp)(xe1->XE.PthAPIerror.fnname,
                                   xe2->XE.PthAPIerror.fnname)
                 && xe1->XE.PthAPIerror.err == xe2->XE.PthAPIerror.err;
+      case XE_LockOrder:
+         return xe1->XE.LockOrder.thr == xe2->XE.LockOrder.thr
+                && xe1->XE.LockOrder.before == xe2->XE.LockOrder.before
+                && xe1->XE.LockOrder.after == xe2->XE.LockOrder.after;
       case XE_Misc:
          return xe1->XE.Misc.thr == xe2->XE.Misc.thr
                 && 0==VG_(strcmp)(xe1->XE.Misc.errstr, xe2->XE.Misc.errstr);
@@ -6424,11 +6489,8 @@ static Bool tc_eq_Error ( VgRes not_used, Error* e1, Error* e2 )
          tl_assert(0);
    }
 
-   e1s = VG_(get_error_string)(e1);
-   e2s = VG_(get_error_string)(e2);
-   if (e1s != e2s) return False;
-   if (0 != VG_(strcmp)(e1s, e2s)) return False;
-   return True;
+   /*NOTREACHED*/
+   tl_assert(0);
 }
 
 /* Announce (that is, print the point-of-creation) of the threads in
@@ -6528,6 +6590,32 @@ static void tc_pp_Error ( Error* err )
       break;
    }
 
+   case XE_LockOrder: {
+      tl_assert(xe);
+      tl_assert( is_sane_Thread( xe->XE.LockOrder.thr ) );
+      tl_assert( is_sane_LockP( xe->XE.LockOrder.after ) );
+      tl_assert( is_sane_LockP( xe->XE.LockOrder.before ) );
+      announce_one_thread( xe->XE.LockOrder.thr );
+      VG_(message)(Vg_UserMsg,
+                  "Thread #%d: lock order \"%p before %p\" violated",
+                  (Int)xe->XE.LockOrder.thr->errmsg_index,
+                  (void*)xe->XE.LockOrder.before->guestaddr,
+                  (void*)xe->XE.LockOrder.after->guestaddr);
+      VG_(pp_ExeContext)( VG_(get_error_where)(err) );
+      if (xe->XE.LockOrder.before->first_locked_at
+          && xe->XE.LockOrder.after->first_locked_at) {
+         VG_(message)(Vg_UserMsg,
+            "  Required order was established by acquisition of lock at %p",
+            (void*)xe->XE.LockOrder.before->guestaddr);
+         VG_(pp_ExeContext)( xe->XE.LockOrder.before->first_locked_at );
+         VG_(message)(Vg_UserMsg,
+            "  followed by a later acquisition of lock at %p", 
+            (void*)xe->XE.LockOrder.after->guestaddr);
+         VG_(pp_ExeContext)( xe->XE.LockOrder.after->first_locked_at );
+      }
+      break;
+   }
+
    case XE_PthAPIerror: {
       tl_assert(xe);
       tl_assert( is_sane_Thread( xe->XE.PthAPIerror.thr ) );
@@ -6624,6 +6712,8 @@ static void tc_pp_Error ( Error* err )
       Char      old_tset_buf[140], new_tset_buf[140];
       UInt      old_state, new_state;
       Thread*   thr_acc;
+      HChar*    what;
+      Int       szB;
       WordSetID tset_to_announce = TC_(emptyWS)( univ_tsets );
 
       /* First extract some essential info */
@@ -6631,6 +6721,8 @@ static void tc_pp_Error ( Error* err )
       old_state = xe->XE.Race.old_state;
       new_state = xe->XE.Race.new_state;
       thr_acc   = xe->XE.Race.thr;
+      what      = xe->XE.Race.isWrite ? "write" : "read";
+      szB       = xe->XE.Race.szB;
       tl_assert(is_sane_Thread(thr_acc));
       err_ga = VG_(get_error_address)(err);
 
@@ -6663,8 +6755,9 @@ static void tc_pp_Error ( Error* err )
                                           new_tset, (Word)old_thr );
          announce_threadset( tset_to_announce );
 
-         VG_(message)(Vg_UserMsg, "Possible data race during %s %p %(y",
-                      VG_(get_error_string)(err), err_ga, err_ga);
+         VG_(message)(Vg_UserMsg,
+                      "Possible data race during %s of size %d at %p",
+                      what, szB, err_ga);
          VG_(pp_ExeContext)( VG_(get_error_where)(err) );
          /* pp_AddrInfo(err_addr, &extra->addrinfo); */
          if (show_raw_states)
@@ -6692,8 +6785,9 @@ static void tc_pp_Error ( Error* err )
          tset_to_announce = TC_(unionWS)( univ_tsets, old_tset, new_tset );
          announce_threadset( tset_to_announce );
 
-         VG_(message)(Vg_UserMsg, "Possible data race during %s %p %(y",
-                      VG_(get_error_string)(err), err_ga, err_ga);
+         VG_(message)(Vg_UserMsg,
+                      "Possible data race during %s of size %d at %p",
+                      what, szB, err_ga);
          VG_(pp_ExeContext)( VG_(get_error_where)(err) );
          /* pp_AddrInfo(err_addr, &extra->addrinfo); */
          if (show_raw_states)
@@ -6726,8 +6820,9 @@ static void tc_pp_Error ( Error* err )
       }
       /* Hmm, unknown transition.  Just print what we do know. */
       else {
-         VG_(message)(Vg_UserMsg, "Possible data race during %s %p %(y",
-                      VG_(get_error_string)(err), err_ga, err_ga);
+         VG_(message)(Vg_UserMsg,
+                      "Possible data race during %s of size %d at %p",
+                      what, szB, err_ga);
          VG_(pp_ExeContext)( VG_(get_error_where)(err) );
 
          //pp_AddrInfo(err_addr, &extra->addrinfo);
@@ -6754,6 +6849,7 @@ static Char* tc_get_error_name ( Error* err )
       case XE_UnlockBogus:    return "UnlockBogus";
       case XE_DestroyLocked:  return "DestroyLocked";
       case XE_PthAPIerror:    return "PthAPIerror";
+      case XE_LockOrder:      return "LockOrder";
       case XE_Misc:           return "Misc";
       default: tl_assert(0); /* fill in missing case */
    }
@@ -6773,6 +6869,7 @@ static Bool tc_recognised_suppression ( Char* name, Supp *su )
    TRY("UnlockBogus",    XS_UnlockBogus);
    TRY("DestroyLocked",  XS_DestroyLocked);
    TRY("PthAPIerror",    XS_PthAPIerror);
+   TRY("LockOrder",      XS_LockOrder);
    TRY("Misc",           XS_Misc);
    return False;
 #  undef TRY
@@ -6796,6 +6893,7 @@ static Bool tc_error_matches_suppression ( Error* err, Supp* su )
    case XS_UnlockBogus:    return VG_(get_error_kind)(err) == XE_UnlockBogus;
    case XS_DestroyLocked:  return VG_(get_error_kind)(err) == XE_DestroyLocked;
    case XS_PthAPIerror:    return VG_(get_error_kind)(err) == XE_PthAPIerror;
+   case XS_LockOrder:      return VG_(get_error_kind)(err) == XE_LockOrder;
    case XS_Misc:           return VG_(get_error_kind)(err) == XE_Misc;
    //case XS_: return VG_(get_error_kind)(err) == XE_;
    default: tl_assert(0); /* fill in missing cases */
