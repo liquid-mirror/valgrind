@@ -87,6 +87,14 @@
 //   many-xpts 0.09s  ma: 2.0s (22.3x, -----)
 //   konqueror 0:42 real  0:34 user
 //
+// Don't do the significance test (which involves a division) for every
+// child, instead compute a threshold (which involves a division) which can
+// be reused for every child of an XPt (r7012):
+//   heap      0.60s  ma:12.4s (20.6x, -----)
+//   tinycc    0.48s  ma: 4.8s (10.1x, -----)
+//   many-xpts 0.10s  ma: 2.2s (22.1x, -----)
+//   konqueror 37.7s real  0:29.5s user
+//
 //
 // Todo:
 // - for regtests, need to filter out code addresses in *.post.* files
@@ -632,21 +640,6 @@ static Int SXPt_revcmp_szB(void* n1, void* n2)
           :                            0);
 }
 
-// Does the xpt account for >= 1% (or so) of total memory used?
-static Bool is_significant_XPt(XPt* xpt, SizeT total_szB)
-{
-   // clo_threshold is measured in hundredths of a percent of total size,
-   // ie. 10,000ths of total size.  So clo_threshold=100 means that the
-   // threshold is 1% of total size.  If total_szB is zero, we consider
-   // every XPt significant.  We also always consider the alloc_xpt to be
-   // significant.
-   tl_assert(xpt->szB <= total_szB);
-   return xpt == alloc_xpt || 0 == clo_threshold ||
-      (0 != total_szB &&
-           // Nb: 10000 is a ULong to avoid possible overflow problems.
-           xpt->szB * 10000ULL / total_szB >= clo_threshold);
-}
-
 //------------------------------------------------------------//
 //--- XTree Operations                                     ---//
 //------------------------------------------------------------//
@@ -655,7 +648,7 @@ static Bool is_significant_XPt(XPt* xpt, SizeT total_szB)
 static SXPt* dup_XTree(XPt* xpt, SizeT total_szB)
 {
    Int  i, n_sig_children, n_insig_children, n_child_sxpts;
-   SizeT insig_children_szB;
+   SizeT insig_children_szB, sig_child_threshold_szB;
    SXPt* sxpt;
 
    // Number of XPt children  Action for SXPT
@@ -665,10 +658,24 @@ static SXPt* dup_XTree(XPt* xpt, SizeT total_szB)
    // N sig, M insig          alloc N+1, dup first N, aggregate remaining M
    // 0 sig, M insig          alloc 1, aggregate M
 
+   // Work out how big a child must be to be significant.  If the current
+   // total_szB is zero, then we set it to 1, which means everything will be
+   // judged insignificant -- this is sensible, as there's no point showing
+   // any detail for this case.  Unless they used --threshold=0, in which
+   // case we show them everything because that's what they asked for.
+   //
+   // Nb: We do this once now, rather than once per child, because if we do
+   // that the cost of all the divisions adds up to something significant.
+   if (total_szB == 0 && clo_threshold != 0) {
+      sig_child_threshold_szB = 1;
+   } else {
+      sig_child_threshold_szB = (((ULong)total_szB) * clo_threshold) / 10000ULL;
+   }
+
    // How many children are significant?  And do we need an aggregate SXPt?
    n_sig_children = 0;
    for (i = 0; i < xpt->n_children; i++) {
-      if (is_significant_XPt(xpt->children[i], total_szB)) {
+      if (xpt->children[i]->szB >= sig_child_threshold_szB) {
          n_sig_children++;
       }
    }
@@ -692,7 +699,7 @@ static SXPt* dup_XTree(XPt* xpt, SizeT total_szB)
       // Duplicate the significant children.
       j = 0;
       for (i = 0; i < xpt->n_children; i++) {
-         if (is_significant_XPt(xpt->children[i], total_szB)) {
+         if (xpt->children[i]->szB >= sig_child_threshold_szB) {
             sxpt->Sig.children[j++] = dup_XTree(xpt->children[i], total_szB);
             sig_children_szB += xpt->children[i]->szB;
          }
