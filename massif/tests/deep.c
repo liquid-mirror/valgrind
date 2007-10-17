@@ -8,8 +8,8 @@
 // - In deep-C.vgtest, we have --alloc-fn=a3..a12, which means that get_XCon
 //   ends up with an empty stack trace after removing all the alloc-fns.
 //   It then redoes it. 
-// - In deep-D.vgtest, we have --alloc-fn=main..a12, which means we have an empty
-//   stack trace.  That's ok.
+// - In deep-D.vgtest, we have --alloc-fn=main..a12, which means we have a
+//   stack trace with a single "(below main)" entry.
 
 #include <stdlib.h>
 

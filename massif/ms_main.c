@@ -73,6 +73,14 @@
 //   many-xpts 0.05s  ma: 1.6s (33.0x, -----)
 //   konqueror 3:45 real  3:35 user
 //
+// Moved main-or-below-main filtering to the end, avoiding *many* calls to
+// VG_(get_fnname):
+//   heap      0.62s  ma:12.4s (20.0x, -----)
+//   tinycc    0.45s  ma: 5.1s (11.4x, -----)
+//   many-xpts 0.09s  ma: 2.1s (23.8x, -----)
+//   konqueror 0:46 real  0:36 user
+//
+//
 //
 // Todo:
 // - for regtests, need to filter out code addresses in *.post.* files
@@ -809,79 +817,43 @@ Int get_IPs( ThreadId tid, Bool is_custom_alloc, Addr ips[])
    Char buf[BUF_LEN];
    Int n_ips, i, n_alloc_fns_removed;
    Int overestimate;
-   Bool fewer_IPs_than_asked_for   = False;
-   Bool removed_below_main         = False;
-   Bool enough_IPs_after_filtering = False;
-
-   // XXX: get this properly
-   Bool should_hide_below_main     = /*!VG_(clo_show_below_main)*/True;
+   Bool redo;
 
    // We ask for a few more IPs than clo_depth suggests we need.  Then we
-   // remove every entry that is an alloc-fn or above an alloc-fn, and
-   // remove anything below main-or-below-main functions.  Depending on the
+   // remove every entry that is an alloc-fn.  Depending on the
    // circumstances, we may need to redo it all, asking for more IPs.
    // Details:
-   // - If the original stack trace is smaller than asked-for,   redo=False
-   // - Else if we see main-or-below-main in the stack trace,    redo=False
-   // - Else if after filtering we have more than clo_depth IPs, redo=False
+   // - If the original stack trace is smaller than asked-for, redo=False
+   // - Else if after filtering we have >= clo_depth IPs,      redo=False
    // - Else redo=True
    // In other words, to redo, we'd have to get a stack trace as big as we
-   // asked for, remove more than 'overestimate' alloc-fns, and not hit
-   // main-or-below-main.
-   //
-   // Nb: it's possible that an alloc-fn may be found in the overestimate
-   // portion, in which case the trace will be shrunk, even though it
-   // arguably shouldn't.  But it would require a very large chain of
-   // alloc-fns, and the best behaviour isn't all that clear, so we don't
-   // worry about it.
+   // asked for and remove more than 'overestimate' alloc-fns.
 
-   // Main loop
-   for (overestimate = 3; True; overestimate += 6) {
+   // Main loop.
+   redo = True;      // Assume this to begin with.
+   for (overestimate = 3; redo; overestimate += 6) {
       // This should never happen -- would require MAX_OVERESTIMATE
       // alloc-fns to be removed from the stack trace.
       if (overestimate > MAX_OVERESTIMATE)
          VG_(tool_panic)("get_IPs: ips[] too small, inc. MAX_OVERESTIMATE?");
 
-      // Ask for some more IPs than clo_depth suggests we need.
+      // Ask for more IPs than clo_depth suggests we need.
       n_ips = VG_(get_StackTrace)( tid, ips, clo_depth + overestimate );
       tl_assert(n_ips > 0);
 
-      // If we got fewer IPs than we asked for, redo=False
-      if (n_ips < clo_depth + overestimate) {
-         fewer_IPs_than_asked_for = True;
-      }
+      // If the original stack trace is smaller than asked-for, redo=False.
+      if (n_ips < clo_depth + overestimate) { redo = False; }
 
-      // Filter out entries that are below main, if necessary.
-      // XXX: stats -- should record how often this happens.
-      // XXX: look at the "(below main)"/"__libc_start_main" mess
-      //      (m_stacktrace.c and m_demangle.c).  Don't hard-code "(below
-      //      main)" in here.
-      // [Nb: Josef wants --show-below-main to work for his fn entry/exit
-      //      tracing]
-      if (should_hide_below_main) {
-         for (i = n_ips-1; i >= 0; i--) {
-            if (VG_(get_fnname)(ips[i], buf, BUF_LEN)) {
-               if (VG_STREQ(buf, "main")) {
-                  // We found main.  Ignore everything below it, and stop
-                  // looking.  redo=False.
-                  n_ips = i+1;
-                  removed_below_main = True;
-                  break;
-               } else if (VG_STREQ(buf, "(below main)")) {
-                  // We found "(below main)".  Ignore everything below it,
-                  // but keep looking.  redo=False.
-                  n_ips = i+1;
-                  removed_below_main = True;
-               }
-            }
-         }
-      }
+      // If it's a non-custom block, we will always remove the first stack
+      // trace entry (which will be one of malloc, __builtin_new, etc).
+      n_alloc_fns_removed = ( is_custom_alloc ? 0 : 1 );
 
-      // Filter out alloc fns.
-      n_alloc_fns_removed = 0;
-      for (i = 0; i < n_ips; i++) {
+      // Filter out alloc fns.  If it's a non-custom block, we remove the
+      // first entry (which will be one of malloc, __builtin_new, etc)
+      // without looking at it, because VG_(get_fnname) is expensive (it
+      // involves calls to VG_(malloc)/VG_(free)).
+      for (i = n_alloc_fns_removed; i < n_ips; i++) {
          if (VG_(get_fnname)(ips[i], buf, BUF_LEN)) {
-            // If it's an alloc-fn, we ignore it.
             if (is_alloc_fn(buf)) {
                n_alloc_fns_removed++;
             } else {
@@ -889,44 +861,23 @@ Int get_IPs( ThreadId tid, Bool is_custom_alloc, Addr ips[])
             }
          }
       }
-
-      // There must be at least one alloc function, unless the client used
-      // MALLOCLIKE_BLOCK.
-      if (!is_custom_alloc) {
-         if (n_alloc_fns_removed <= 0) {
-            // Hmm.  Print out the stack trace before aborting.
-            for (i = 0; i < n_ips; i++) {
-               if (VG_(get_fnname)(ips[i], buf, BUF_LEN)) {
-                  VG_(message)(Vg_DebugMsg, "--> %s", buf);
-               } else {
-                  VG_(message)(Vg_DebugMsg, "--> ???", buf);
-               }
-            }
-            tl_assert2(0, "Didn't find any alloc functions in the stack trace");
-         }
-      }
-
-      // Ignore the alloc fns;  shuffle the rest down.
+      // Remove the alloc fns by shuffling the rest down over them.
       n_ips -= n_alloc_fns_removed;
       for (i = 0; i < n_ips; i++) {
          ips[i] = ips[i + n_alloc_fns_removed];
       }
 
-      // Did we get enough IPs after filtering?  If so, redo=False.
+      // If after filtering we have >= clo_depth IPs, redo=False
       if (n_ips >= clo_depth) {
+         redo = False;
          n_ips = clo_depth;      // Ignore any IPs below --depth.
-         enough_IPs_after_filtering = True;
       }
 
-      if (fewer_IPs_than_asked_for ||
-          removed_below_main       ||
-          enough_IPs_after_filtering)
-      {
-         return n_ips;
-      } else {
+      if (redo) {
          n_XCon_redos++;
       }
    }
+   return n_ips;
 }
 
 // Gets an XCon and puts it in the tree.  Returns the XCon's bottom-XPt.
@@ -1814,14 +1765,14 @@ IRSB* ms_instrument ( VgCallbackClosure* closure,
 // XXX: do the filename properly, eventually
 static Char* massif_out_file = "massif.out";
 
-#define BUF_SIZE     1024
-Char buf[1024];
+#define FP_BUF_SIZE     1024
+Char FP_buf[FP_BUF_SIZE];
 
 // XXX: implement f{,n}printf in m_libcprint.c eventually, and use it here.
 // Then change Cachegrind to use it too.
 #define FP(format, args...) ({ \
-   VG_(snprintf)(buf, BUF_SIZE, format, ##args); \
-   VG_(write)(fd, (void*)buf, VG_(strlen)(buf)); \
+   VG_(snprintf)(FP_buf, FP_BUF_SIZE, format, ##args); \
+   VG_(write)(fd, (void*)FP_buf, VG_(strlen)(FP_buf)); \
 })
 
 // Nb: uses a static buffer, each call trashes the last string returned.
@@ -1858,6 +1809,20 @@ static void pp_snapshot_SXPt(Int fd, SXPt* sxpt, Int depth, Char* depth_str,
          ip_desc =
             "(heap allocation functions) malloc/new/new[], --alloc-fns, etc.";
       } else {
+         // If it's main-or-below-main, we (if appropriate) ignore everything
+         // below it by pretending it has no children.
+         // XXX: get this properly.  Also, don't hard-code "(below main)"
+         //      here -- look at the "(below main)"/"__libc_start_main" mess
+         //      (m_stacktrace.c and m_demangle.c).
+         // [Nb: Josef wants --show-below-main to work for his fn entry/exit
+         //      tracing]
+         Bool should_hide_below_main = /*!VG_(clo_show_below_main)*/True;
+         if (should_hide_below_main &&
+             VG_(get_fnname)(sxpt->Sig.ip, ip_desc, BUF_LEN) &&
+             (VG_STREQ(ip_desc, "main") || VG_STREQ(ip_desc, "(below main)")))
+         {
+            sxpt->Sig.n_children = 0;
+         }
          // XXX: why the -1?
          ip_desc = VG_(describe_IP)(sxpt->Sig.ip-1, ip_desc, BUF_LEN);
       }
