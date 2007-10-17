@@ -251,7 +251,8 @@ typedef
       /* Place where lock first came to the attention of Thrcheck. */
       ExeContext*   appeared_at;
       /* Place where the lock was first locked. */
-      ExeContext*   first_locked_at;
+      ExeContext*   acquired_at;
+      ExeContext*   acquired_at_laog;
       /* USEFUL-STATIC */
       Addr          guestaddr; /* Guest address of lock */
       LockKind      kind;      /* what kind of lock this is */
@@ -492,6 +493,10 @@ static Lock* __bus_lock_Lock = NULL;
 /*--- Simple helpers for the data structures                   ---*/
 /*----------------------------------------------------------------*/
 
+static UWord stats__lockN_acquires = 0;
+static UWord stats__lockN_releases = 0;
+static UWord stats__lockN_acquires_w_ExeContext = 0;
+
 static ThreadId map_threads_maybe_reverse_lookup_SLOW ( Thread* ); /*fwds*/
 
 #define Thread_MAGIC   0x504fc5e5
@@ -523,18 +528,19 @@ static Thread* mk_Thread ( SegmentID csegid ) {
 // Make a new lock which is unlocked (hence ownerless)
 static Lock* mk_LockN ( LockKind kind, Addr guestaddr ) {
    static ULong unique = 0;
-   Lock* lock        = tc_zalloc( sizeof(Lock) );
-   lock->admin       = admin_locks;
-   lock->unique      = unique++;
-   lock->magic       = LockN_MAGIC;
-   lock->appeared_at = NULL;
-   lock->first_locked_at = NULL;
-   lock->guestaddr   = guestaddr;
-   lock->kind        = kind;
-   lock->heldW       = False;
-   lock->heldBy      = NULL;
+   Lock* lock             = tc_zalloc( sizeof(Lock) );
+   lock->admin            = admin_locks;
+   lock->unique           = unique++;
+   lock->magic            = LockN_MAGIC;
+   lock->appeared_at      = NULL;
+   lock->acquired_at      = NULL;
+   lock->acquired_at_laog = NULL;
+   lock->guestaddr        = guestaddr;
+   lock->kind             = kind;
+   lock->heldW            = False;
+   lock->heldBy           = NULL;
    tl_assert(is_sane_LockN(lock));
-   admin_locks       = lock;
+   admin_locks            = lock;
    return lock;
 }
 static Segment* mk_Segment ( Thread* thr, Segment* prev, Segment* other ) {
@@ -636,16 +642,24 @@ static void lockN_acquire_writer ( Lock* lk, Thread* thr )
    tl_assert(is_sane_LockN(lk));
    tl_assert(is_sane_Thread(thr));
 
-   /* If it's never been locked before, note the first person to lock
-      it.  This is so as to produce better lock-order error
-      messages. */
-   if (lk->first_locked_at == NULL) {
+   stats__lockN_acquires++;
+
+   /* EXPOSITION only */
+   /* We need to keep recording snapshots of where the lock was
+      acquired, up till the point that the lock gets incorporated into
+      LAOG.  Before that point, .first_locked_laog is NULL.  When the
+      lock is incorporated into LAOG, .first_locked is copied into
+      .first_locked_laog and we stop snapshotting it after that.  it.
+      This is so as to produce better lock-order error messages. */
+   if (lk->acquired_at_laog == NULL) {
       ThreadId tid = map_threads_maybe_reverse_lookup_SLOW(thr);
       if (tid != VG_INVALID_THREADID) {
-         lk->first_locked_at
+         stats__lockN_acquires_w_ExeContext++;
+         lk->acquired_at
             = VG_(record_ExeContext(tid, 0/*first_ip_delta*/));
       }
    }
+   /* end EXPOSITION only */
 
    switch (lk->kind) {
       case LK_nonRec:
@@ -687,16 +701,24 @@ static void lockN_acquire_reader ( Lock* lk, Thread* thr )
    tl_assert(lk->heldBy == NULL 
              || (lk->heldBy != NULL && !lk->heldW));
 
-   /* If it's never been locked before, note the first person to lock
-      it.  This is so as to produce better lock-order error
-      messages. */
-   if (lk->first_locked_at == NULL) {
+   stats__lockN_acquires++;
+
+   /* EXPOSITION only */
+   /* We need to keep recording snapshots of where the lock was
+      acquired, up till the point that the lock gets incorporated into
+      LAOG.  Before that point, .first_locked_laog is NULL.  When the
+      lock is incorporated into LAOG, .first_locked is copied into
+      .first_locked_laog and we stop snapshotting it after that.  it.
+      This is so as to produce better lock-order error messages. */
+   if (lk->acquired_at_laog == NULL) {
       ThreadId tid = map_threads_maybe_reverse_lookup_SLOW(thr);
       if (tid != VG_INVALID_THREADID) {
-         lk->first_locked_at
+         stats__lockN_acquires_w_ExeContext++;
+         lk->acquired_at
             = VG_(record_ExeContext(tid, 0/*first_ip_delta*/));
       }
    }
+   /* end EXPOSITION only */
 
    if (lk->heldBy) {
       TC_(addToBag)(lk->heldBy, (Word)thr);
@@ -720,6 +742,7 @@ static void lockN_release ( Lock* lk, Thread* thr )
    tl_assert(is_sane_Thread(thr));
    /* lock must be held by someone */
    tl_assert(lk->heldBy);
+   stats__lockN_releases++;
    /* Remove it from the holder set */
    b = TC_(delFromBag)(lk->heldBy, (Word)thr);
    /* thr must actually have been a holder of lk */
@@ -2242,7 +2265,8 @@ static void record_error_UnlockUnlocked ( Thread*, Lock* );
 static void record_error_UnlockForeign  ( Thread*, Thread*, Lock* );
 static void record_error_UnlockBogus    ( Thread*, Addr );
 static void record_error_PthAPIerror    ( Thread*, HChar*, Word, HChar* );
-static void record_error_LockOrder      ( Thread*, Lock*, Lock* );
+static void record_error_LockOrder      ( Thread*, Addr, Addr,
+                                                   ExeContext*, ExeContext* );
 
 static void record_error_Misc ( Thread*, HChar* );
 
@@ -5230,6 +5254,18 @@ static void laog__add_edge ( Lock* src, Lock* dst ) {
    Word       keyW;
    LAOGLinks* links;
    if (0) VG_(printf)("laog__add_edge %p %p\n", src, dst);
+
+   /* EXPOSITION only: update the execontext snapshots */
+   if (src->acquired_at_laog == NULL) {
+      src->acquired_at_laog = src->acquired_at;
+      src->acquired_at = NULL;
+   }
+   if (dst->acquired_at_laog == NULL) {
+      dst->acquired_at_laog = dst->acquired_at;
+      dst->acquired_at = NULL;
+   }
+   /* end EXPOSITION only */
+
    /* Update the out edges for src */
    keyW  = 0;
    links = NULL;
@@ -5442,7 +5478,9 @@ static void laog__pre_thread_acquires_lock (
          'other' but is in fact being acquired afterwards.  We present
          the lk/other arguments to record_error_LockOrder in the order
          in which they should have been acquired. */ 
-      record_error_LockOrder( thr, lk, other );
+     record_error_LockOrder( thr, 
+                             lk->guestaddr,        other->guestaddr,
+                             lk->acquired_at_laog, other->acquired_at_laog );
    }
 
    /* Second, add to laog the pairs
@@ -6263,9 +6301,11 @@ typedef
             HChar*  errstr; /* persistent, in tool-arena */
          } PthAPIerror;
          struct {
-            Thread* thr;
-            Lock*   before; /* always locked first in prog. history */
-            Lock*   after;  /* was erroneously locked before 'before' */
+            Thread*     thr;
+            Addr        before_ga; /* always locked first in prog. history */
+            Addr        after_ga;
+            ExeContext* before_ec;
+            ExeContext* after_ec;
          } LockOrder;
          struct {
             Thread* thr;
@@ -6382,16 +6422,17 @@ static void record_error_UnlockBogus ( Thread* thr, Addr lock_ga ) {
 }
 
 static 
-void record_error_LockOrder ( Thread* thr, Lock* before, Lock* after ) {
+void record_error_LockOrder ( Thread* thr, Addr before_ga, Addr after_ga,
+                              ExeContext* before_ec, ExeContext* after_ec ) {
    XError xe;
    tl_assert( is_sane_Thread(thr) );
-   tl_assert( is_sane_LockN(after) );
-   tl_assert( is_sane_LockN(before) );
    init_XError(&xe);
    xe.tag = XE_LockOrder;
-   xe.XE.LockOrder.thr    = thr;
-   xe.XE.LockOrder.before = mk_LockP_from_LockN(before);
-   xe.XE.LockOrder.after  = mk_LockP_from_LockN(after);
+   xe.XE.LockOrder.thr       = thr;
+   xe.XE.LockOrder.before_ga = before_ga;
+   xe.XE.LockOrder.before_ec = before_ec;
+   xe.XE.LockOrder.after_ga  = after_ga;
+   xe.XE.LockOrder.after_ec  = after_ec;
    // FIXME: tid vs thr
    VG_(maybe_record_error)( map_threads_reverse_lookup_SLOW(thr),
                             XE_LockOrder, 0, NULL, &xe );
@@ -6576,25 +6617,22 @@ static void tc_pp_Error ( Error* err )
    case XE_LockOrder: {
       tl_assert(xe);
       tl_assert( is_sane_Thread( xe->XE.LockOrder.thr ) );
-      tl_assert( is_sane_LockP( xe->XE.LockOrder.after ) );
-      tl_assert( is_sane_LockP( xe->XE.LockOrder.before ) );
       announce_one_thread( xe->XE.LockOrder.thr );
       VG_(message)(Vg_UserMsg,
                   "Thread #%d: lock order \"%p before %p\" violated",
                   (Int)xe->XE.LockOrder.thr->errmsg_index,
-                  (void*)xe->XE.LockOrder.before->guestaddr,
-                  (void*)xe->XE.LockOrder.after->guestaddr);
+                  (void*)xe->XE.LockOrder.before_ga,
+                  (void*)xe->XE.LockOrder.after_ga);
       VG_(pp_ExeContext)( VG_(get_error_where)(err) );
-      if (xe->XE.LockOrder.before->first_locked_at
-          && xe->XE.LockOrder.after->first_locked_at) {
+      if (xe->XE.LockOrder.before_ec && xe->XE.LockOrder.after_ec) {
          VG_(message)(Vg_UserMsg,
             "  Required order was established by acquisition of lock at %p",
-            (void*)xe->XE.LockOrder.before->guestaddr);
-         VG_(pp_ExeContext)( xe->XE.LockOrder.before->first_locked_at );
+            (void*)xe->XE.LockOrder.before_ga);
+         VG_(pp_ExeContext)( xe->XE.LockOrder.before_ec );
          VG_(message)(Vg_UserMsg,
             "  followed by a later acquisition of lock at %p", 
-            (void*)xe->XE.LockOrder.after->guestaddr);
-         VG_(pp_ExeContext)( xe->XE.LockOrder.after->first_locked_at );
+            (void*)xe->XE.LockOrder.after_ga);
+         VG_(pp_ExeContext)( xe->XE.LockOrder.after_ec );
       }
       break;
    }
@@ -6978,6 +7016,13 @@ static void tc_fini ( Int exitcode )
                   stats__string_table_queries,
                   (Int)(string_table ? TC_(sizeFM)( string_table ) : 0) );
 
+      VG_(printf)("   locks: %,lu acquires (%,lu w/ExeContext), "
+                  "%,lu releases\n",
+                  stats__lockN_acquires,
+                  stats__lockN_acquires_w_ExeContext,
+                  stats__lockN_releases
+                 );
+
       VG_(printf)("\n");
       VG_(printf)("     msm: %,12lu %,12lu rd/wr_Excl_nochange\n",
                   stats__msm_r32_Excl_nochange, stats__msm_w32_Excl_nochange);
@@ -7010,11 +7055,11 @@ static void tc_fini ( Int exitcode )
       VG_(printf)("\n");
       VG_(printf)("   cache: %,lu totrefs (%,lu misses)\n",
                   stats__cache_totrefs, stats__cache_totmisses );
-      VG_(printf)("   cache: %,10lu Z-fetch, %,10lu F-fetch\n",
+      VG_(printf)("   cache: %,12lu Z-fetch, %,12lu F-fetch\n",
                   stats__cache_Z_fetches, stats__cache_F_fetches );
-      VG_(printf)("   cache: %,10lu Z-wback, %,10lu F-wback\n",
+      VG_(printf)("   cache: %,12lu Z-wback, %,12lu F-wback\n",
                   stats__cache_Z_wbacks, stats__cache_F_wbacks );
-      VG_(printf)("   cache: %,10lu invals,  %,10lu flushes\n",
+      VG_(printf)("   cache: %,12lu invals,  %,12lu flushes\n",
                   stats__cache_invals, stats__cache_flushes );
 
       VG_(printf)("\n");
