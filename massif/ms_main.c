@@ -74,12 +74,18 @@
 //   konqueror 3:45 real  3:35 user
 //
 // Moved main-or-below-main filtering to the end, avoiding *many* calls to
-// VG_(get_fnname):
+// VG_(get_fnname) (r7010):
 //   heap      0.62s  ma:12.4s (20.0x, -----)
 //   tinycc    0.45s  ma: 5.1s (11.4x, -----)
 //   many-xpts 0.09s  ma: 2.1s (23.8x, -----)
 //   konqueror 0:46 real  0:36 user
 //
+// Instead of sorting XPt children at duplication time, sort them at print
+// time (ie. many fewer sorts required) (r7011):
+//   heap      0.36s  ma:12.3s (34.1x, -----)
+//   tinycc    0.46s  ma: 4.8s (10.3x, -----)
+//   many-xpts 0.09s  ma: 2.0s (22.3x, -----)
+//   konqueror 0:42 real  0:34 user
 //
 //
 // Todo:
@@ -617,13 +623,13 @@ static void add_child_xpt(XPt* parent, XPt* child)
 }
 
 // Reverse comparison for a reverse sort -- biggest to smallest.
-static Int XPt_revcmp_szB(void* n1, void* n2)
+static Int SXPt_revcmp_szB(void* n1, void* n2)
 {
-   XPt* xpt1 = *(XPt**)n1;
-   XPt* xpt2 = *(XPt**)n2;
-   return ( xpt1->szB < xpt2->szB ?  1
-          : xpt1->szB > xpt2->szB ? -1
-          :                          0);
+   SXPt* sxpt1 = *(SXPt**)n1;
+   SXPt* sxpt2 = *(SXPt**)n2;
+   return ( sxpt1->szB < sxpt2->szB ?  1
+          : sxpt1->szB > sxpt2->szB ? -1
+          :                            0);
 }
 
 // Does the xpt account for >= 1% (or so) of total memory used?
@@ -652,9 +658,6 @@ static SXPt* dup_XTree(XPt* xpt, SizeT total_szB)
    SizeT insig_children_szB;
    SXPt* sxpt;
 
-   // Sort XPt's children by szB (reverse order:  biggest to smallest).
-   VG_(ssort)(xpt->children, xpt->n_children, sizeof(XPt*), XPt_revcmp_szB);
-
    // Number of XPt children  Action for SXPT
    // ------------------      ---------------
    // 0 sig, 0 insig          alloc 0 children
@@ -664,10 +667,10 @@ static SXPt* dup_XTree(XPt* xpt, SizeT total_szB)
 
    // How many children are significant?  And do we need an aggregate SXPt?
    n_sig_children = 0;
-   while (n_sig_children < xpt->n_children &&
-          is_significant_XPt(xpt->children[n_sig_children], total_szB))
-   {
-      n_sig_children++;
+   for (i = 0; i < xpt->n_children; i++) {
+      if (is_significant_XPt(xpt->children[i], total_szB)) {
+         n_sig_children++;
+      }
    }
    n_insig_children = xpt->n_children - n_sig_children;
    n_child_sxpts = n_sig_children + ( n_insig_children > 0 ? 1 : 0 );
@@ -682,13 +685,17 @@ static SXPt* dup_XTree(XPt* xpt, SizeT total_szB)
 
    // Create the SXPt's children.
    if (n_child_sxpts > 0) {
+      Int j;
       SizeT sig_children_szB = 0;
       sxpt->Sig.children = VG_(malloc)(n_child_sxpts * sizeof(SXPt*));
 
       // Duplicate the significant children.
-      for (i = 0; i < n_sig_children; i++) {
-         sxpt->Sig.children[i] = dup_XTree(xpt->children[i], total_szB);
-         sig_children_szB += sxpt->Sig.children[i]->szB;
+      j = 0;
+      for (i = 0; i < xpt->n_children; i++) {
+         if (is_significant_XPt(xpt->children[i], total_szB)) {
+            sxpt->Sig.children[j++] = dup_XTree(xpt->children[i], total_szB);
+            sig_children_szB += xpt->children[i]->szB;
+         }
       }
 
       // Create the SXPt for the insignificant children, if any, and put it
@@ -1795,7 +1802,7 @@ static void pp_snapshot_SXPt(Int fd, SXPt* sxpt, Int depth, Char* depth_str,
                             SizeT snapshot_heap_szB, SizeT snapshot_total_szB)
 {
    #define BUF_LEN   1024
-   Int   i;
+   Int   i, n_insig_children_sxpts;
    Char* perc;
    Char  ip_desc_array[BUF_LEN];
    Char* ip_desc = ip_desc_array;
@@ -1835,19 +1842,23 @@ static void pp_snapshot_SXPt(Int fd, SXPt* sxpt, Int depth, Char* depth_str,
       depth_str[depth+0] = ' ';
       depth_str[depth+1] = '\0';
 
+      // Sort SXPt's children by szB (reverse order:  biggest to smallest).
+      // Nb: we sort them here, rather than earlier (eg. in dup_XTree), for
+      // two reasons.  First, if we do it during dup_XTree, it can get
+      // expensive (eg. 15% of execution time for konqueror
+      // startup/shutdown).  Second, this way we get the Insig SXPt (if one
+      // is present) in its sorted position, not at the end.
+      VG_(ssort)(sxpt->Sig.children, sxpt->Sig.n_children, sizeof(SXPt*),
+                 SXPt_revcmp_szB);
+
       // Print the SXPt's children.  They should already be in sorted order.
+      n_insig_children_sxpts = 0;
       for (i = 0; i < sxpt->Sig.n_children; i++) {
          pred  = child;
          child = sxpt->Sig.children[i];
 
-         // Only the last child can be an Insig SXPt.
-         if (i < sxpt->Sig.n_children-1)
-            tl_assert(SigSXPt == child->tag);
-
-         // Sortedness check: if this child is a normal SXPt, check it's not
-         // bigger than its predecessor.
-         if (pred && SigSXPt == child->tag)
-            tl_assert(child->szB <= pred->szB);
+         if (InsigSXPt == child->tag)
+            n_insig_children_sxpts++;
 
          // Ok, print the child.
          pp_snapshot_SXPt(fd, child, depth+1, depth_str, depth_str_len,
@@ -1857,6 +1868,8 @@ static void pp_snapshot_SXPt(Int fd, SXPt* sxpt, Int depth, Char* depth_str,
          depth_str[depth+0] = '\0';
          depth_str[depth+1] = '\0';
       }
+      // There should be 0 or 1 Insig children SXPts.
+      tl_assert(n_insig_children_sxpts <= 1);
       break;
 
     case InsigSXPt: {
