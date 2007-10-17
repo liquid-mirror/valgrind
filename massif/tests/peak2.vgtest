@@ -1,4 +1,4 @@
 prog: peak
-vgopts: --stacks=no --time-unit=B --peak-inaccuracy=0
+vgopts: --stacks=no --time-unit=B -v -v --peak-inaccuracy=1000
 post: perl ../../massif/ms_print massif.out
 cleanup: rm massif.out

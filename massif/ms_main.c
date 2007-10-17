@@ -95,6 +95,13 @@
 //   many-xpts 0.10s  ma: 2.2s (22.1x, -----)
 //   konqueror 37.7s real  0:29.5s user
 //
+// By default, only snapshot a peak if it's 1% larger than the previous peak,
+// rather than snapshotting every peak.  Greatly reduces the number of peak
+// snapshots taken for larger programs like konqueror.
+//   heap      0.53s  ma:12.4s (23.5x, -----)
+//   tinycc    0.46s  ma: 4.9s (10.7x, -----)
+//   many-xpts 0.08s  ma: 2.0s (25.0x, -----)
+//   konqueror 29.6s real  0:21.0s user
 //
 // Todo:
 // - for regtests, need to filter out code addresses in *.post.* files
@@ -400,14 +407,15 @@ static Char* TimeUnit_to_string(TimeUnit time_unit)
    }
 }
 
-static Bool clo_heap          = True;
-static UInt clo_heap_admin    = 8;
-static Bool clo_stacks        = False;
-static UInt clo_depth         = 8;       // XXX: too low?
-static UInt clo_threshold     = 100;     // 100 == 1%
-static UInt clo_time_unit     = TimeMS;
-static UInt clo_detailed_freq = 10;
-static UInt clo_max_snapshots = 100;
+static Bool clo_heap            = True;
+static UInt clo_heap_admin      = 8;
+static Bool clo_stacks          = False;
+static UInt clo_depth           = 8;       // XXX: too low?
+static UInt clo_threshold       = 100;     // 100 == 1%
+static UInt clo_peak_inaccuracy = 100;     // 100 == 1%
+static UInt clo_time_unit       = TimeMS;
+static UInt clo_detailed_freq   = 10;
+static UInt clo_max_snapshots   = 100;
 
 static XArray* args_for_massif;
 
@@ -425,6 +433,10 @@ static Bool ms_process_cmd_line_option(Char* arg)
 
    // XXX: use a fractional number, so no division by 100
    else VG_NUM_CLO(arg, "--threshold",     clo_threshold)
+
+   // XXX: use a fractional number, so no division by 100
+   else VG_NUM_CLO(arg, "--peak-inaccuracy", clo_peak_inaccuracy)
+
    else VG_NUM_CLO(arg, "--detailed-freq", clo_detailed_freq)
    else VG_NUM_CLO(arg, "--max-snapshots", clo_max_snapshots)
 
@@ -454,6 +466,8 @@ static void ms_print_usage(void)
 "    --threshold=<n>           significance threshold, in 100ths of a percent\n"
 "                              (eg. <n>=100 shows nodes covering >= 1%% of\n"
 "                               total size, <n>=0 shows all nodes) [100]\n"
+"    --peak-inaccuracy=<n>     closeness of recorded peak to true peak,\n"
+"                               in 100ths of a percent\n"
 "    --time-unit=ms|B          time unit, milliseconds or bytes\n"
 "                               alloc'd/dealloc'd on the heap [ms]\n"
 "    --detailed-freq=<N>       every Nth snapshot should be detailed [10]\n"
@@ -1326,11 +1340,12 @@ maybe_take_snapshot(SnapshotKind kind, Char* what)
       // Because we're about to do a deallocation, we're coming down from a
       // local peak.  If it is (a) actually a global peak, and (b) a certain
       // amount bigger than the previous peak, then we take a peak snapshot.
-      //
-      // XXX: make the percentage configurable
+      // By not taking a snapshot for every peak, we save a lot of effort --
+      // because many peaks remain peak only for a short time.
       SizeT total_szB = heap_szB + clo_heap_admin*n_heap_blocks + stacks_szB;
-      double excess_over_previous_peak = 1.00;
-      if (total_szB <= peak_snapshot_total_szB * excess_over_previous_peak) {
+      SizeT excess_szB_for_new_peak =
+         (((ULong)peak_snapshot_total_szB) * clo_peak_inaccuracy) / 10000ULL;
+      if (total_szB <= peak_snapshot_total_szB + excess_szB_for_new_peak) {
          return;
       }
       is_detailed = True;
