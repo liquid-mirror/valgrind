@@ -351,14 +351,10 @@ static void init_alloc_fns(void)
    #define DO(x)  { Char* s = x; VG_(addToXA)(alloc_fns, &s); }
 
    // Ordered according to (presumed) frequency.
-   // Nb: The C++ "operator new*" ones are overloadable.  It's conceivable
-   // that someone would want to not consider them as allocators, in order
-   // to see what's happening beneath them.  But if they're not in
-   // alloc_fns, then when they're not overloaded they won't be seen as
-   // alloc-fns, which will screw things up.  So we always consider them to
-   // be, and tough luck for anyone who wants to see inside them.
-   // XXX: not actually necessarily true with the new (ie. old
-   // Massif1-style) alloc-fn approach.
+   // Nb: The C++ "operator new*" ones are overloadable.  We include them
+   // always anyway, because even if they're overloaded, it would be a
+   // prodigiously stupid overloading that caused them to not allocate
+   // memory.
    DO("malloc"                                              );
    DO("__builtin_new"                                       );
    DO("operator new(unsigned)"                              );
@@ -413,7 +409,7 @@ static Char* TimeUnit_to_string(TimeUnit time_unit)
 static Bool clo_heap            = True;
 static UInt clo_heap_admin      = 8;
 static Bool clo_stacks          = False;
-static UInt clo_depth           = 8;       // XXX: too low?
+static UInt clo_depth           = 30;      // XXX: too low?
 static UInt clo_threshold       = 100;     // 100 == 1%
 static UInt clo_peak_inaccuracy = 100;     // 100 == 1%
 static UInt clo_time_unit       = TimeMS;
@@ -464,7 +460,7 @@ static void ms_print_usage(void)
 "    --heap-admin=<number>     average admin bytes per heap block;"
 "                               ignored if --heap=no [8]\n"
 "    --stacks=no|yes           profile stack(s) [no]\n"
-"    --depth=<number>          depth of contexts [8]\n"
+"    --depth=<number>          depth of contexts [30]\n"
 "    --alloc-fn=<name>         specify <fn> as an alloc function [empty]\n"
 "    --threshold=<n>           significance threshold, in 100ths of a percent\n"
 "                              (eg. <n>=100 shows nodes covering >= 1%% of\n"
@@ -1269,9 +1265,6 @@ static Time get_time(void)
 
 // Take a snapshot, and only that -- decisions on whether to take a
 // snapshot, or what kind of snapshot, are made elsewhere.
-//
-// Note that with bigger depths, snapshots can be slow, eg. konqueror
-// snapshots can easily take 50ms!  [XXX: is that still true?]
 static void
 take_snapshot(Snapshot* snapshot, SnapshotKind kind, Time time,
               Bool is_detailed, Char* what)
@@ -1855,7 +1848,7 @@ static void pp_snapshot_SXPt(Int fd, SXPt* sxpt, Int depth, Char* depth_str,
          {
             sxpt->Sig.n_children = 0;
          }
-         // XXX: why the -1?
+         // We need the -1 to get the line number right, But I'm not sure why.
          ip_desc = VG_(describe_IP)(sxpt->Sig.ip-1, ip_desc, BUF_LEN);
       }
       perc = make_perc(sxpt->szB, snapshot_total_szB);
