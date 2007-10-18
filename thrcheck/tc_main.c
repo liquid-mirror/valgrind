@@ -302,29 +302,38 @@ typedef
 /* ------ CacheLine ------ */
 
 #define N_LINE_BITS      5 /* must be >= 3 */
-#define N_LINE_W8s       (1 << (N_LINE_BITS-0))
-#define N_LINE_W16s      (1 << (N_LINE_BITS-1))
-#define N_LINE_W32s      (1 << (N_LINE_BITS-2))
-#define N_LINE_W64s      (1 << (N_LINE_BITS-3))
-
-#define SIBLING(_x)    ((_x) ^ 1)
-#define PARENT(_x)     ( ((UWord)(_x)) >> 1)
-#define LEFTCHILD(_x)  (((_x) << 1) + 0)
-#define RIGHTCHILD(_x) (((_x) << 1) + 1)
+#define N_LINE_ARANGE    (1 << N_LINE_BITS)
+#define N_LINE_TREES     (N_LINE_ARANGE >> 3)
 
 typedef
    struct {
-      UInt w64[N_LINE_W64s];
-      UInt w32[N_LINE_W32s];
-      UInt w16[N_LINE_W16s];
-      UInt w8 [N_LINE_W8s];
+      UShort descrs[N_LINE_TREES];
+      UInt   svals[N_LINE_ARANGE]; // == N_LINE_TREES * 8
    }
    CacheLine;
+
+#define TREE_DESCR_16_0 (1<<0)
+#define TREE_DESCR_32_0 (1<<1)
+#define TREE_DESCR_16_1 (1<<2)
+#define TREE_DESCR_64   (1<<3)
+#define TREE_DESCR_16_2 (1<<4)
+#define TREE_DESCR_32_1 (1<<5)
+#define TREE_DESCR_16_3 (1<<6)
+#define TREE_DESCR_8_0  (1<<7)
+#define TREE_DESCR_8_1  (1<<8)
+#define TREE_DESCR_8_2  (1<<9)
+#define TREE_DESCR_8_3  (1<<10)
+#define TREE_DESCR_8_4  (1<<11)
+#define TREE_DESCR_8_5  (1<<12)
+#define TREE_DESCR_8_6  (1<<13)
+#define TREE_DESCR_8_7  (1<<14)
+#define TREE_DESCR_DTY  (1<<15)
 
 typedef
    struct {
       UInt  dict[4]; /* can represent up to 4 diff values in the line */
-      UChar ix2s[N_LINE_W8s/4]; /* array of N_LINE_W8s 2-bit dict indexes */
+      UChar ix2s[N_LINE_ARANGE/4]; /* array of N_LINE_ARANGE 2-bit
+                                      dict indexes */
       /* if dict[0] == 0 then dict[1] is the index of the CacheLineF
          to use */
    }
@@ -333,7 +342,7 @@ typedef
 typedef
    struct {
       Bool inUse;
-      UInt w32s[N_LINE_W8s];
+      UInt w32s[N_LINE_ARANGE];
    }
    CacheLineF; /* full rep for a cache line */
 
@@ -361,7 +370,7 @@ typedef
 #define N_SECMAP_ARANGE (1 << N_SECMAP_BITS)
 
 // # CacheLines held by a SecMap
-#define N_SECMAP_ZLINES (N_SECMAP_ARANGE / N_LINE_W8s)
+#define N_SECMAP_ZLINES (N_SECMAP_ARANGE / N_LINE_ARANGE)
 typedef
    struct {
       UInt magic;
@@ -385,9 +394,12 @@ static void initSecMapIter ( SecMapIter* itr ) {
    itr->word_no = 0;
 }
 
-/* Get the current val, and move to the next position. */
+/* Get the current val, and move to the next position.  This is called
+   a huge amount in some programs (eg OpenOffice).  Hence the
+   'inline'. */
 static UWord stats__secmap_iterator_steppings; /* fwds */
 
+inline
 static Bool stepSecMapIter ( /*OUT*/UInt** pVal, 
                              /*MOD*/SecMapIter* itr, SecMap* sm )
 {
@@ -395,23 +407,25 @@ static Bool stepSecMapIter ( /*OUT*/UInt** pVal,
    CacheLineF* lineF = NULL;
    /* Either it points to a valid place, or to (-1,-1) */
    stats__secmap_iterator_steppings++;
-   if (itr->line_no == -1 && itr->word_no == -1)
+   if (UNLIKELY(itr->line_no == -1)) {
+      tl_assert(itr->word_no == -1);
       return False;
+   }
    /* so now it must be a valid place in the SecMap. */
    if (0) VG_(printf)("%p %d %d\n", sm, (Int)itr->line_no, (Int)itr->word_no);
    tl_assert(itr->line_no >= 0 && itr->line_no < N_SECMAP_ZLINES);
    lineZ = &sm->linesZ[itr->line_no];
-   if (lineZ->dict[0] == 0) {
+   if (UNLIKELY(lineZ->dict[0] == 0)) {
       tl_assert(sm->linesF);
       tl_assert(sm->linesF_size > 0);
       tl_assert(lineZ->dict[1] >= 0);
       tl_assert(lineZ->dict[1] < sm->linesF_size);
       lineF = &sm->linesF[ lineZ->dict[1] ];
       tl_assert(lineF->inUse);
-      tl_assert(itr->word_no >= 0 && itr->word_no < N_LINE_W8s);
+      tl_assert(itr->word_no >= 0 && itr->word_no < N_LINE_ARANGE);
       *pVal = &lineF->w32s[itr->word_no];
       itr->word_no++;
-      if (itr->word_no == N_LINE_W8s)
+      if (itr->word_no == N_LINE_ARANGE)
          itr->word_no = 0;
    } else {
       tl_assert(itr->word_no >= 0 && itr->word_no <= 3);
@@ -649,7 +663,7 @@ static void lockN_acquire_writer ( Lock* lk, Thread* thr )
       acquired, up till the point that the lock gets incorporated into
       LAOG.  Before that point, .first_locked_laog is NULL.  When the
       lock is incorporated into LAOG, .first_locked is copied into
-      .first_locked_laog and we stop snapshotting it after that.  it.
+      .first_locked_laog and we stop snapshotting it after that.
       This is so as to produce better lock-order error messages. */
    if (lk->acquired_at_laog == NULL) {
       ThreadId tid = map_threads_maybe_reverse_lookup_SLOW(thr);
@@ -708,7 +722,7 @@ static void lockN_acquire_reader ( Lock* lk, Thread* thr )
       acquired, up till the point that the lock gets incorporated into
       LAOG.  Before that point, .first_locked_laog is NULL.  When the
       lock is incorporated into LAOG, .first_locked is copied into
-      .first_locked_laog and we stop snapshotting it after that.  it.
+      .first_locked_laog and we stop snapshotting it after that.
       This is so as to produce better lock-order error messages. */
    if (lk->acquired_at_laog == NULL) {
       ThreadId tid = map_threads_maybe_reverse_lookup_SLOW(thr);
@@ -781,7 +795,7 @@ static SegmentID alloc_SegmentID ( void ) {
 static inline Bool is_valid_scache_tag ( Addr tag ) {
    /* a valid tag should be naturally aligned to the start of
       a CacheLine. */
-   return 0 == (tag & (N_LINE_W8s - 1));
+   return 0 == (tag & (N_LINE_ARANGE - 1));
 }
 
 static inline Bool is_sane_SecMap ( SecMap* sm ) {
@@ -795,15 +809,11 @@ static inline Bool is_sane_SecMap ( SecMap* sm ) {
    01 TSegmentID:30                            Excl thread-segment
    00 0--(20)--0 10 0000 0000                  New
    00 0--(20)--0 01 0000 0000                  NoAccess
-   00 0--(20)--0 00 0000 0010  InvalidU - valid value is further up tree
-   00 0--(20)--0 00 0000 0100  InvalidD - valid value is further down tree
+   00 0--(20)--0 00 0000 0000                  Invalid
 
    TSID_BITS + LSID_BITS must equal 30.
    The elements in thread sets are Thread*, casted to Word.
    The elements in lock sets are Lock*, casted to Word.
-
-   InvalidU and InvalidD have somewhat strange values so as to
-   minimise the chance of confusing them with any other value.
 */
 
 #define N_LSID_BITS  17
@@ -822,10 +832,6 @@ static inline Bool is_sane_WordSetID_TSet ( WordSetID wset ) {
 }
 
 
-#define SHVAL_New      ((UInt)(2<<8))
-#define SHVAL_NoAccess ((UInt)(1<<8))
-#define SHVAL_InvalidU ((UInt)(1<<1))
-#define SHVAL_InvalidD ((UInt)(1<<2))
 static inline UInt mk_SHVAL_ShM ( WordSetID tset, WordSetID lset ) {
    tl_assert(is_sane_WordSetID_TSet(tset));
    tl_assert(is_sane_WordSetID_LSet(lset));
@@ -833,21 +839,21 @@ static inline UInt mk_SHVAL_ShM ( WordSetID tset, WordSetID lset ) {
                           | (lset << N_LSID_SHIFT));
 }
 static inline UInt mk_SHVAL_ShR ( WordSetID tset, WordSetID lset ) {
-   //if ((!is_sane_WordSetID(tset)) || (!is_sane_WordSetID(lset)))
-   //  VG_(printf)("XXXXXXXXXX %d %d\n", (Int)tset, (Int)lset);
+   /* if ((!is_sane_WordSetID(tset)) || (!is_sane_WordSetID(lset)))
+      VG_(printf)("XXXXXXXXXX %d %d\n", (Int)tset, (Int)lset); */
    tl_assert(is_sane_WordSetID_TSet(tset));
    tl_assert(is_sane_WordSetID_LSet(lset));
    return (UInt)( (2<<30) | (tset << N_TSID_SHIFT) 
-                          | (lset << N_LSID_SHIFT));
+                          | (lset << N_LSID_SHIFT) );
 }
 static inline UInt mk_SHVAL_Excl ( SegmentID tseg ) {
    tl_assert(is_sane_SegmentID(tseg));
    return (UInt)( (1<<30) | tseg );
 }
+#define SHVAL_New      ((UInt)(2<<8))
+#define SHVAL_NoAccess ((UInt)(1<<8))
+#define SHVAL_Invalid  ((UInt)(0<<8))
 
-static inline Bool is_SHVAL_Invalid ( UInt w32 ) {
-   return (w32 & ~( (1<<1)|(1<<2) )) == 0;
-}
 static inline Bool is_SHVAL_ShM ( UInt w32 ) { 
    return (w32 >> 30) == 3;
 }
@@ -1706,42 +1712,42 @@ static void segments__generate_vcg ( void )
 /*----------------------------------------------------------------*/
 
 
-static UWord stats__secmaps_allocd   = 0; // # SecMaps issued
+static UWord stats__secmaps_allocd       = 0; // # SecMaps issued
 static UWord stats__secmap_ga_space_covered = 0; // # ga bytes covered
 static UWord stats__secmap_linesZ_allocd = 0; // # CacheLineZ's issued
 static UWord stats__secmap_linesZ_bytes  = 0; // .. using this much storage
 static UWord stats__secmap_linesF_allocd = 0; // # CacheLineF's issued
 static UWord stats__secmap_linesF_bytes  = 0; //  .. using this much storage
 static UWord stats__secmap_iterator_steppings = 0; // # calls to stepSMIter
-static UWord stats__cache_Z_fetches    = 0; // # Z lines fetched
-static UWord stats__cache_Z_wbacks     = 0; // # Z lines written back
-static UWord stats__cache_F_fetches    = 0; // # F lines fetched
-static UWord stats__cache_F_wbacks     = 0; // # F lines written back
-static UWord stats__cache_invals       = 0; // # cache invals
-static UWord stats__cache_flushes      = 0; // # cache flushes
-static UWord stats__cache_totrefs      = 0; // # total accesses
-static UWord stats__cache_totmisses    = 0; // # misses
-static UWord stats__cline_normalises   = 0; // # calls to cacheline_normalise
-static UWord stats__cline_read8s       = 0; // # calls to s_m_read64
-static UWord stats__cline_read4s       = 0; // # calls to s_m_read32
-static UWord stats__cline_read2s       = 0; // # calls to s_m_read16
-static UWord stats__cline_read1s       = 0; // # calls to s_m_read8
-static UWord stats__cline_write8s      = 0; // # calls to s_m_write64
-static UWord stats__cline_write4s      = 0; // # calls to s_m_write32
-static UWord stats__cline_write2s      = 0; // # calls to s_m_write16
-static UWord stats__cline_write1s      = 0; // # calls to s_m_write8
-static UWord stats__cline_set8s        = 0; // # calls to s_m_set64
-static UWord stats__cline_set4s        = 0; // # calls to s_m_set32
-static UWord stats__cline_set2s        = 0; // # calls to s_m_set16
-static UWord stats__cline_set1s        = 0; // # calls to s_m_set8
-static UWord stats__cline_get1s        = 0; // # calls to s_m_get8
-static UWord stats__cline_copy1s       = 0; // # calls to s_m_copy8
-static UWord stats__cline_8to4splits   = 0; // # 64-bit accesses split
-static UWord stats__cline_4to2splits   = 0; // # 32-bit accesses split
-static UWord stats__cline_2to1splits   = 0; // # 16-bit accesses split
-static UWord stats__cline_8to4pulldown = 0; // # calls to pulldown_to_w32
-static UWord stats__cline_4to2pulldown = 0; // # calls to pulldown_to_w16
-static UWord stats__cline_2to1pulldown = 0; // # calls to pulldown_to_w8
+static UWord stats__cache_Z_fetches      = 0; // # Z lines fetched
+static UWord stats__cache_Z_wbacks       = 0; // # Z lines written back
+static UWord stats__cache_F_fetches      = 0; // # F lines fetched
+static UWord stats__cache_F_wbacks       = 0; // # F lines written back
+static UWord stats__cache_invals         = 0; // # cache invals
+static UWord stats__cache_flushes        = 0; // # cache flushes
+static UWord stats__cache_totrefs        = 0; // # total accesses
+static UWord stats__cache_totmisses      = 0; // # misses
+static UWord stats__cline_normalises     = 0; // # calls to cacheline_normalise
+static UWord stats__cline_read64s        = 0; // # calls to s_m_read64
+static UWord stats__cline_read32s        = 0; // # calls to s_m_read32
+static UWord stats__cline_read16s        = 0; // # calls to s_m_read16
+static UWord stats__cline_read8s         = 0; // # calls to s_m_read8
+static UWord stats__cline_write64s       = 0; // # calls to s_m_write64
+static UWord stats__cline_write32s       = 0; // # calls to s_m_write32
+static UWord stats__cline_write16s       = 0; // # calls to s_m_write16
+static UWord stats__cline_write8s        = 0; // # calls to s_m_write8
+static UWord stats__cline_set64s         = 0; // # calls to s_m_set64
+static UWord stats__cline_set32s         = 0; // # calls to s_m_set32
+static UWord stats__cline_set16s         = 0; // # calls to s_m_set16
+static UWord stats__cline_set8s          = 0; // # calls to s_m_set8
+static UWord stats__cline_get8s          = 0; // # calls to s_m_get8
+static UWord stats__cline_copy8s         = 0; // # calls to s_m_copy8
+static UWord stats__cline_64to32splits   = 0; // # 64-bit accesses split
+static UWord stats__cline_32to16splits   = 0; // # 32-bit accesses split
+static UWord stats__cline_16to8splits    = 0; // # 16-bit accesses split
+static UWord stats__cline_64to32pulldown = 0; // # calls to pulldown_to_32
+static UWord stats__cline_32to16pulldown = 0; // # calls to pulldown_to_16
+static UWord stats__cline_16to8pulldown  = 0; // # calls to pulldown_to_8
 
 
 static UInt shadow_mem_get8 ( Addr a ); /* fwds */
@@ -1797,7 +1803,7 @@ static SecMap* shmem__alloc_SecMap ( void )
       sm->linesZ[i].dict[1] = 0; /* completely invalid SHVAL */
       sm->linesZ[i].dict[2] = 0;
       sm->linesZ[i].dict[3] = 0;
-      for (j = 0; j < N_LINE_W8s/4; j++)
+      for (j = 0; j < N_LINE_ARANGE/4; j++)
          sm->linesZ[i].ix2s[j] = 0; /* all reference dict[0] */
    }
    sm->linesF      = NULL;
@@ -2210,7 +2216,7 @@ static void shmem__sanity_check ( Char* who )
       if (tag != 1) {
          if (!is_valid_scache_tag(tag)) BAD("14-0");
          if (!is_sane_CacheLine(cl)) BAD("15-0");
-         if (tag & (N_LINE_W8s-1)) BAD("16-0");
+         if (tag & (N_LINE_ARANGE-1)) BAD("16-0");
          for (j = i+1; j < N_WAY_NENT; j++)
             if (cache_shmem.tags0[j] == tag) BAD("17-0");
       }
@@ -2717,7 +2723,7 @@ void find_ZF_for_reading ( /*OUT*/CacheLineZ** zp,
    UWord   smoff = shmem__get_SecMap_offset(tag);
    /* since smoff is derived from a valid tag, it should be
       cacheline-aligned. */
-   tl_assert(0 == (smoff & (N_LINE_W8s - 1)));
+   tl_assert(0 == (smoff & (N_LINE_ARANGE - 1)));
    zix = smoff >> N_LINE_BITS;
    tl_assert(zix < N_SECMAP_ZLINES);
    lineZ = &sm->linesZ[zix];
@@ -2746,7 +2752,7 @@ void find_Z_for_writing ( /*OUT*/SecMap** smp,
    UWord   smoff = shmem__get_SecMap_offset(tag);
    /* since smoff is derived from a valid tag, it should be
       cacheline-aligned. */
-   tl_assert(0 == (smoff & (N_LINE_W8s - 1)));
+   tl_assert(0 == (smoff & (N_LINE_ARANGE - 1)));
    zix = smoff >> N_LINE_BITS;
    tl_assert(zix < N_SECMAP_ZLINES);
    lineZ = &sm->linesZ[zix];
@@ -2833,64 +2839,206 @@ static void pp_CacheLine ( CacheLine* cl ) {
       VG_(printf)("pp_CacheLine(NULL)\n");
       return;
    }
-#  define FMT "%08x\n"
-   for (i = 0; i < N_LINE_W64s; i++) {
-      Word iL = LEFTCHILD(i);
-      Word iR = RIGHTCHILD(i);
-      Word iLL = LEFTCHILD(iL);
-      Word iLR = RIGHTCHILD(iL);
-      Word iRL = LEFTCHILD(iR);
-      Word iRR = RIGHTCHILD(iR);
-      VG_(printf)(FMT, cl->w64[i]);
-      VG_(printf)("  "     FMT, cl->w32[iL]);
-      VG_(printf)("    "   FMT, cl->w16[iLL]);
-      VG_(printf)("      " FMT, cl->w8[LEFTCHILD(iLL)]);
-      VG_(printf)("      " FMT, cl->w8[RIGHTCHILD(iLL)]);
-      VG_(printf)("    "   FMT, cl->w16[iLR]);
-      VG_(printf)("      " FMT, cl->w8[LEFTCHILD(iLR)]);
-      VG_(printf)("      " FMT, cl->w8[RIGHTCHILD(iLR)]);
-      VG_(printf)("  "     FMT, cl->w32[iR]);
-      VG_(printf)("    "   FMT, cl->w16[iRL]);
-      VG_(printf)("      " FMT, cl->w8[LEFTCHILD(iRL)]);
-      VG_(printf)("      " FMT, cl->w8[RIGHTCHILD(iRL)]);
-      VG_(printf)("    "   FMT, cl->w16[iRR]);
-      VG_(printf)("      " FMT, cl->w8[LEFTCHILD(iRR)]);
-      VG_(printf)("      " FMT, cl->w8[RIGHTCHILD(iRR)]);
-   }
-#  undef FMT
+   for (i = 0; i < N_LINE_TREES; i++) 
+      VG_(printf)("   descr: %04lx\n", (UWord)cl->descrs[i]);
+   for (i = 0; i < N_LINE_ARANGE; i++) 
+      VG_(printf)("    sval: %08lx\n", (UWord)cl->svals[i]);
 }
 
-/* Check that all paths from leaf to root are of the form 
-      InvalidU*   one-valid-value   InvalidD*
-*/
+static UChar descr_to_validbits ( UShort descr )
+{
+   /* a.k.a Party Time for gcc's constant folder */
+#  define DESCR(b8_7, b8_6, b8_5, b8_4, b8_3, b8_2, b8_1, b8_0, \
+                b16_3, b32_1, b16_2, b64, b16_1, b32_0, b16_0)  \
+             ( (UShort) ( ( (b8_7)  << 14) | ( (b8_6)  << 13) | \
+                          ( (b8_5)  << 12) | ( (b8_4)  << 11) | \
+                          ( (b8_3)  << 10) | ( (b8_2)  << 9)  | \
+                          ( (b8_1)  << 8)  | ( (b8_0)  << 7)  | \
+                          ( (b16_3) << 6)  | ( (b32_1) << 5)  | \
+                          ( (b16_2) << 4)  | ( (b64)   << 3)  | \
+                          ( (b16_1) << 2)  | ( (b32_0) << 1)  | \
+                          ( (b16_0) << 0) ) )
+
+#  define BYTE(bit7, bit6, bit5, bit4, bit3, bit2, bit1, bit0) \
+             ( (UChar) ( ( (bit7) << 7) | ( (bit6) << 6) | \
+                         ( (bit5) << 5) | ( (bit4) << 4) | \
+                         ( (bit3) << 3) | ( (bit2) << 2) | \
+                         ( (bit1) << 1) | ( (bit0) << 0) ) )
+
+   /* these should all get folded out at compile time */
+   tl_assert(DESCR(1,0,0,0,0,0,0,0, 0,0,0, 0, 0,0,0) == TREE_DESCR_8_7);
+   tl_assert(DESCR(0,0,0,0,0,0,0,1, 0,0,0, 0, 0,0,0) == TREE_DESCR_8_0);
+   tl_assert(DESCR(0,0,0,0,0,0,0,0, 1,0,0, 0, 0,0,0) == TREE_DESCR_16_3);
+   tl_assert(DESCR(0,0,0,0,0,0,0,0, 0,1,0, 0, 0,0,0) == TREE_DESCR_32_1);
+   tl_assert(DESCR(0,0,0,0,0,0,0,0, 0,0,1, 0, 0,0,0) == TREE_DESCR_16_2);
+   tl_assert(DESCR(0,0,0,0,0,0,0,0, 0,0,0, 1, 0,0,0) == TREE_DESCR_64);
+   tl_assert(DESCR(0,0,0,0,0,0,0,0, 0,0,0, 0, 1,0,0) == TREE_DESCR_16_1);
+   tl_assert(DESCR(0,0,0,0,0,0,0,0, 0,0,0, 0, 0,1,0) == TREE_DESCR_32_0);
+   tl_assert(DESCR(0,0,0,0,0,0,0,0, 0,0,0, 0, 0,0,1) == TREE_DESCR_16_0);
+
+   switch (descr) {
+   /*
+              +--------------------------------- TREE_DESCR_8_7
+              |             +------------------- TREE_DESCR_8_0
+              |             |  +---------------- TREE_DESCR_16_3
+              |             |  | +-------------- TREE_DESCR_32_1
+              |             |  | | +------------ TREE_DESCR_16_2
+              |             |  | | |  +--------- TREE_DESCR_64
+              |             |  | | |  |  +------ TREE_DESCR_16_1
+              |             |  | | |  |  | +---- TREE_DESCR_32_0
+              |             |  | | |  |  | | +-- TREE_DESCR_16_0
+              |             |  | | |  |  | | |
+              |             |  | | |  |  | | |   GRANULARITY, 7 -> 0 */
+   case DESCR(1,1,1,1,1,1,1,1, 0,0,0, 0, 0,0,0): /* 8 8 8 8  8 8 8 8 */
+                                                 return BYTE(1,1,1,1,1,1,1,1);
+   case DESCR(1,1,0,0,1,1,1,1, 0,0,1, 0, 0,0,0): /* 8 8 16   8 8 8 8 */
+                                                 return BYTE(1,1,0,1,1,1,1,1);
+   case DESCR(0,0,1,1,1,1,1,1, 1,0,0, 0, 0,0,0): /* 16  8 8  8 8 8 8 */ 
+                                                 return BYTE(0,1,1,1,1,1,1,1);
+   case DESCR(0,0,0,0,1,1,1,1, 1,0,1, 0, 0,0,0): /* 16  16   8 8 8 8 */
+                                                 return BYTE(0,1,0,1,1,1,1,1);
+
+   case DESCR(1,1,1,1,1,1,0,0, 0,0,0, 0, 0,0,1): /* 8 8 8 8  8 8 16 */ 
+                                                 return BYTE(1,1,1,1,1,1,0,1);
+   case DESCR(1,1,0,0,1,1,0,0, 0,0,1, 0, 0,0,1): /* 8 8 16   8 8 16 */
+                                                 return BYTE(1,1,0,1,1,1,0,1);
+   case DESCR(0,0,1,1,1,1,0,0, 1,0,0, 0, 0,0,1): /* 16  8 8  8 8 16 */
+                                                 return BYTE(0,1,1,1,1,1,0,1);
+   case DESCR(0,0,0,0,1,1,0,0, 1,0,1, 0, 0,0,1): /* 16  16   8 8 16 */
+                                                 return BYTE(0,1,0,1,1,1,0,1);
+
+   case DESCR(1,1,1,1,0,0,1,1, 0,0,0, 0, 1,0,0): /* 8 8 8 8  16 8 8 */
+                                                 return BYTE(1,1,1,1,0,1,1,1);
+   case DESCR(1,1,0,0,0,0,1,1, 0,0,1, 0, 1,0,0): /* 8 8 16   16 8 8 */
+                                                 return BYTE(1,1,0,1,0,1,1,1);
+   case DESCR(0,0,1,1,0,0,1,1, 1,0,0, 0, 1,0,0): /* 16  8 8  16 8 8 */
+                                                 return BYTE(0,1,1,1,0,1,1,1);
+   case DESCR(0,0,0,0,0,0,1,1, 1,0,1, 0, 1,0,0): /* 16  16   16 8 8 */
+                                                 return BYTE(0,1,0,1,0,1,1,1);
+
+   case DESCR(1,1,1,1,0,0,0,0, 0,0,0, 0, 1,0,1): /* 8 8 8 8  16 16 */
+                                                 return BYTE(1,1,1,1,0,1,0,1);
+   case DESCR(1,1,0,0,0,0,0,0, 0,0,1, 0, 1,0,1): /* 8 8 16   16 16 */
+                                                 return BYTE(1,1,0,1,0,1,0,1);
+   case DESCR(0,0,1,1,0,0,0,0, 1,0,0, 0, 1,0,1): /* 16  8 8  16 16 */
+                                                 return BYTE(0,1,1,1,0,1,0,1);
+   case DESCR(0,0,0,0,0,0,0,0, 1,0,1, 0, 1,0,1): /* 16  16   16 16 */
+                                                 return BYTE(0,1,0,1,0,1,0,1);
+
+   case DESCR(0,0,0,0,1,1,1,1, 0,1,0, 0, 0,0,0): /* 32  8 8 8 8 */
+                                                 return BYTE(0,0,0,1,1,1,1,1);
+   case DESCR(0,0,0,0,1,1,0,0, 0,1,0, 0, 0,0,1): /* 32  8 8 16  */
+                                                 return BYTE(0,0,0,1,1,1,0,1);
+   case DESCR(0,0,0,0,0,0,1,1, 0,1,0, 0, 1,0,0): /* 32  16  8 8 */
+                                                 return BYTE(0,0,0,1,0,1,1,1);
+   case DESCR(0,0,0,0,0,0,0,0, 0,1,0, 0, 1,0,1): /* 32  16  16  */
+                                                 return BYTE(0,0,0,1,0,1,0,1);
+
+   case DESCR(1,1,1,1,0,0,0,0, 0,0,0, 0, 0,1,0): /* 8 8 8 8  32 */
+                                                 return BYTE(1,1,1,1,0,0,0,1);
+   case DESCR(1,1,0,0,0,0,0,0, 0,0,1, 0, 0,1,0): /* 8 8 16   32 */
+                                                 return BYTE(1,1,0,1,0,0,0,1);
+   case DESCR(0,0,1,1,0,0,0,0, 1,0,0, 0, 0,1,0): /* 16  8 8  32 */
+                                                 return BYTE(0,1,1,1,0,0,0,1);
+   case DESCR(0,0,0,0,0,0,0,0, 1,0,1, 0, 0,1,0): /* 16  16   32 */
+                                                 return BYTE(0,1,0,1,0,0,0,1);
+
+   case DESCR(0,0,0,0,0,0,0,0, 0,1,0, 0, 0,1,0): /* 32 32 */
+                                                 return BYTE(0,0,0,1,0,0,0,1);
+
+   case DESCR(0,0,0,0,0,0,0,0, 0,0,0, 1, 0,0,0): /* 64 */
+                                                 return BYTE(0,0,0,0,0,0,0,1);
+
+   default: return BYTE(0,0,0,0,0,0,0,0); 
+                   /* INVALID - any valid descr produces at least one
+                      valid bit in tree[0..7]*/
+   }
+   /* NOTREACHED*/
+   tl_assert(0);
+
+#  undef DESCR
+#  undef BYTE
+}
+
+static Bool is_sane_Descr ( UShort descr ) {
+   return descr_to_validbits(descr) != 0;
+}
+
+static void sprintf_Descr ( /*OUT*/UChar* dst, UShort descr ) {
+   VG_(sprintf)(dst, 
+                "%d%d%d%d%d%d%d%d %d%d%d %d %d%d%d",
+                (Int)((descr & TREE_DESCR_8_7) ? 1 : 0),
+                (Int)((descr & TREE_DESCR_8_6) ? 1 : 0),
+                (Int)((descr & TREE_DESCR_8_5) ? 1 : 0),
+                (Int)((descr & TREE_DESCR_8_4) ? 1 : 0),
+                (Int)((descr & TREE_DESCR_8_3) ? 1 : 0),
+                (Int)((descr & TREE_DESCR_8_2) ? 1 : 0),
+                (Int)((descr & TREE_DESCR_8_1) ? 1 : 0),
+                (Int)((descr & TREE_DESCR_8_0) ? 1 : 0),
+                (Int)((descr & TREE_DESCR_16_3) ? 1 : 0),
+                (Int)((descr & TREE_DESCR_32_1) ? 1 : 0),
+                (Int)((descr & TREE_DESCR_16_2) ? 1 : 0),
+                (Int)((descr & TREE_DESCR_64)   ? 1 : 0),
+                (Int)((descr & TREE_DESCR_16_1) ? 1 : 0),
+                (Int)((descr & TREE_DESCR_32_0) ? 1 : 0),
+                (Int)((descr & TREE_DESCR_16_0) ? 1 : 0)
+   );
+}
+static void sprintf_Byte ( /*OUT*/UChar* dst, UChar byte ) {
+   VG_(sprintf)(dst, "%d%d%d%d%d%d%d%d",
+                     (Int)((byte & 128) ? 1 : 0),
+                     (Int)((byte &  64) ? 1 : 0),
+                     (Int)((byte &  32) ? 1 : 0),
+                     (Int)((byte &  16) ? 1 : 0),
+                     (Int)((byte &   8) ? 1 : 0),
+                     (Int)((byte &   4) ? 1 : 0),
+                     (Int)((byte &   2) ? 1 : 0),
+                     (Int)((byte &   1) ? 1 : 0)
+   );
+}
+
+static Bool is_sane_Descr_and_Tree ( UShort descr, UInt* tree ) {
+   Word  i;
+   UChar validbits = descr_to_validbits(descr);
+   UChar buf[128], buf2[128];
+   if (validbits == 0)
+      goto bad;
+   for (i = 0; i < 8; i++) {
+      if (validbits & (1<<i)) {
+         if (!is_SHVAL_valid(tree[i]))
+            goto bad;
+      } else {
+         if (tree[i] != 0)
+            goto bad;
+      }
+   }
+   return True;
+  bad:
+   sprintf_Descr( buf, descr );
+   sprintf_Byte( buf2, validbits );
+   VG_(printf)("is_sane_Descr_and_Tree: bad tree {\n");
+   VG_(printf)("   validbits 0x%02lx    %s\n", (UWord)validbits, buf2);
+   VG_(printf)("       descr 0x%04lx  %s\n", (UWord)descr, buf);
+   for (i = 0; i < 8; i++)
+      VG_(printf)("   [%ld] 0x%08x\n", i, tree[i]);
+   VG_(printf)("}\n");
+   return 0;
+}
+
+
 static Bool is_sane_CacheLine ( CacheLine* cl )
 {
-   Word i, j;
-   UInt path[4];
+   Word tno, cloff;
 
    if (!cl) goto bad;
 
-   for (i = 0; i < N_LINE_W8s; i++) {
-      path[0] = cl->w8[i];
-      path[1] = cl->w16[ PARENT(i) ];
-      path[2] = cl->w32[ PARENT(PARENT(i)) ];
-      path[3] = cl->w64[ PARENT(PARENT(PARENT(i))) ];
-      j = 0;
-      while (1) {
-         if (j >= 4) goto bad;
-         if (path[j] != SHVAL_InvalidU) break;
-         j++;
-      }
-      tl_assert(j <= 3);
-      if (!is_SHVAL_valid(path[j])) goto bad;
-      j++;
-      while (1) {
-         if (j == 4) break;
-         if (path[j] != SHVAL_InvalidD) goto bad;
-         j++;
-      }
-      /* it's ok.  Move on to the next path. */
+   for (tno = 0, cloff = 0;  tno < N_LINE_TREES;  tno++, cloff += 8) {
+      UShort descr = cl->descrs[tno];
+      UInt*  tree  = &cl->svals[cloff];
+      if (!is_sane_Descr_and_Tree(descr, tree))
+         goto bad;
    }
+   tl_assert(cloff == N_LINE_ARANGE);
    return True;
   bad:
    pp_CacheLine(cl);
@@ -2926,133 +3074,139 @@ static void remove_Lock_from_locksets_of_all_owning_Threads( Lock* lk )
    TC_(doneIterBag)( lk->heldBy );
 }
 
+static UShort normalise_tree ( /*MOD*/UInt* tree ) {
+   Word   i;
+   UShort descr;
+   /* pre: incoming tree[0..7] does not have any invalid shvals, in
+      particular no zeroes. */
+   for (i = 0; i < 8; i++)
+      tl_assert(tree[i] != 0);
+   
+   descr = TREE_DESCR_8_7 | TREE_DESCR_8_6 | TREE_DESCR_8_5
+           | TREE_DESCR_8_4 | TREE_DESCR_8_3 | TREE_DESCR_8_2
+           | TREE_DESCR_8_1 | TREE_DESCR_8_0;
+   /* build 16-bit layer */
+   if (tree[1] == tree[0]) {
+      tree[1] = 0/*INVALID*/;
+      descr &= ~(TREE_DESCR_8_1 | TREE_DESCR_8_0);
+      descr |= TREE_DESCR_16_0;
+   }
+   if (tree[3] == tree[2]) {
+      tree[3] = 0/*INVALID*/;
+      descr &= ~(TREE_DESCR_8_3 | TREE_DESCR_8_2);
+      descr |= TREE_DESCR_16_1;
+   }
+   if (tree[5] == tree[4]) {
+      tree[5] = 0/*INVALID*/;
+      descr &= ~(TREE_DESCR_8_5 | TREE_DESCR_8_4);
+      descr |= TREE_DESCR_16_2;
+   }
+   if (tree[7] == tree[6]) {
+      tree[7] = 0/*INVALID*/;
+      descr &= ~(TREE_DESCR_8_7 | TREE_DESCR_8_6);
+      descr |= TREE_DESCR_16_3;
+   }
+   /* build 32-bit layer */
+   if (tree[2] == tree[0]
+       && (descr & TREE_DESCR_16_1) && (descr & TREE_DESCR_16_0)) {
+      tree[2] = 0; /* [3,1] must already be 0 */
+      descr &= ~(TREE_DESCR_16_1 | TREE_DESCR_16_0);
+      descr |= TREE_DESCR_32_0;
+   }
+   if (tree[6] == tree[4]
+       && (descr & TREE_DESCR_16_3) && (descr & TREE_DESCR_16_2)) {
+      tree[6] = 0; /* [7,5] must already be 0 */
+      descr &= ~(TREE_DESCR_16_3 | TREE_DESCR_16_2);
+      descr |= TREE_DESCR_32_1;
+   }
+   /* build 64-bit layer */
+   if (tree[4] == tree[0]
+       && (descr & TREE_DESCR_32_1) && (descr & TREE_DESCR_32_0)) {
+      tree[4] = 0; /* [7,6,5,3,2,1] must already be 0 */
+      descr &= ~(TREE_DESCR_32_1 | TREE_DESCR_32_0);
+      descr |= TREE_DESCR_64;
+   }
+   return descr;
+}
+
 /* This takes a cacheline where all the data is at the leaves
    (w8[..]) and builds a correctly normalised tree. */
 static void cacheline_normalise ( /*MOD*/CacheLine* cl )
 {
-   Word i;
-   UInt svL, svR;
-
-   /* build w16 layer from w8 layer.  We only expect to see valid
-      SHVALs in the w8 layer. */
-   for (i = 0; i < N_LINE_W16s; i++) {
-      svL = cl->w8[LEFTCHILD(i)];
-      svR = cl->w8[RIGHTCHILD(i)];
-      tl_assert(is_SHVAL_valid(svL));
-      tl_assert(is_SHVAL_valid(svR));
-      if (svL == svR) {
-         cl->w16[i] = svL;
-         cl->w8[LEFTCHILD(i)]  = SHVAL_InvalidU;
-         cl->w8[RIGHTCHILD(i)] = SHVAL_InvalidU;
-      } else {
-         cl->w16[i] = SHVAL_InvalidD;
-      }
+   Word tno, cloff;
+   for (tno = 0, cloff = 0;  tno < N_LINE_TREES;  tno++, cloff += 8) {
+      UInt* tree = &cl->svals[cloff];
+      cl->descrs[tno] = normalise_tree( tree );
    }
-
-   /* build w32 layer from w16 layer. */
-   for (i = 0; i < N_LINE_W32s; i++) {
-      svL = cl->w16[LEFTCHILD(i)];
-      svR = cl->w16[RIGHTCHILD(i)];
-      if (svL == svR && is_SHVAL_valid(svL) && is_SHVAL_valid(svR)) {
-         cl->w32[i] = svL;
-         cl->w16[LEFTCHILD(i)]  = SHVAL_InvalidU;
-         cl->w16[RIGHTCHILD(i)] = SHVAL_InvalidU;
-      } else {
-         cl->w32[i] = SHVAL_InvalidD;
-      }
-   }
-
-   /* build w64 layer from w32 layer. */
-   for (i = 0; i < N_LINE_W64s; i++) {
-      svL = cl->w32[LEFTCHILD(i)];
-      svR = cl->w32[RIGHTCHILD(i)];
-      if (svL == svR && is_SHVAL_valid(svL) && is_SHVAL_valid(svR)) {
-         cl->w64[i] = svL;
-         cl->w32[LEFTCHILD(i)]  = SHVAL_InvalidU;
-         cl->w32[RIGHTCHILD(i)] = SHVAL_InvalidU;
-      } else {
-         cl->w64[i] = SHVAL_InvalidD;
-      }
-   }
-
+   tl_assert(cloff == N_LINE_ARANGE);
    /* EXPENSIVE: tl_assert(is_sane_CacheLine(cl)); */
    stats__cline_normalises++;
 }
 
+
+static 
+UInt* sequentialise_tree ( /*MOD*/UInt* dst, /*OUT*/Bool* anyShared,
+                           UShort descr, UInt* tree ) {
+   UInt* dst0 = dst;
+   *anyShared = False;
+
+#  define PUT(_n,_v)                                \
+      do { Word i;                                  \
+           if (is_SHVAL_Sh(_v))                     \
+              *anyShared = True;                    \
+           for (i = 0; i < (_n); i++)               \
+                  *dst++ = (_v);                    \
+      } while (0)
+
+   /* byte 0 */
+   if (descr & TREE_DESCR_64)   PUT(8, tree[0]); else
+   if (descr & TREE_DESCR_32_0) PUT(4, tree[0]); else
+   if (descr & TREE_DESCR_16_0) PUT(2, tree[0]); else
+   if (descr & TREE_DESCR_8_0)  PUT(1, tree[0]);
+   /* byte 1 */
+   if (descr & TREE_DESCR_8_1)  PUT(1, tree[1]);
+   /* byte 2 */
+   if (descr & TREE_DESCR_16_1) PUT(2, tree[2]); else
+   if (descr & TREE_DESCR_8_2)  PUT(1, tree[2]);
+   /* byte 3 */
+   if (descr & TREE_DESCR_8_3)  PUT(1, tree[3]);
+   /* byte 4 */
+   if (descr & TREE_DESCR_32_1) PUT(4, tree[4]); else
+   if (descr & TREE_DESCR_16_2) PUT(2, tree[4]); else
+   if (descr & TREE_DESCR_8_4)  PUT(1, tree[4]);
+   /* byte 5 */
+   if (descr & TREE_DESCR_8_5)  PUT(1, tree[5]);
+   /* byte 6 */
+   if (descr & TREE_DESCR_16_3) PUT(2, tree[6]); else
+   if (descr & TREE_DESCR_8_6)  PUT(1, tree[6]);
+   /* byte 7 */
+   if (descr & TREE_DESCR_8_7)  PUT(1, tree[7]);
+
+#  undef PUT
+
+   tl_assert( (((Char*)dst) - ((Char*)dst0)) == 8 * sizeof(UInt) );
+   return dst;
+}
 
 /* Write the cacheline 'wix' to backing store.  Where it ends up
    is determined by its tag field. */
 static
 Bool sequentialise_into ( /*OUT*/UInt* dst, Word nDst, CacheLine* src )
 {
-   Word  i;
+   Word  tno, cloff;
    Bool  anyShared = False;
    UInt* dst0      = dst;
 
-#  define PUT(_n, _v)                       \
-      do { Word _k;                         \
-           for (_k = 0; _k < (_n); _k++) {  \
-              *dst++ = (_v);                \
-           }                                \
-           if (is_SHVAL_Sh(_v))             \
-              anyShared = True;             \
-      } while (0)
-
-   for (i = 0; i < N_LINE_W64s; i++) {
-      /* walk tree rooted at src->w64[i] */
-      if (src->w64[i] != SHVAL_InvalidD) {
-         PUT(8, src->w64[i]);
-      } else {
-         Word iL = LEFTCHILD(i);
-         Word iR = RIGHTCHILD(i);
-         /* Walk tree rooted at src->w32[iL] */
-         if (src->w32[iL] != SHVAL_InvalidD) {
-            PUT(4, src->w32[iL]);
-         } else {
-            Word iLL = LEFTCHILD(iL);
-            Word iLR = RIGHTCHILD(iL);
-            /* Walk tree rooted at src->w16[iLL] */
-            if (src->w16[iLL] != SHVAL_InvalidD) {
-               PUT(2, src->w16[iLL]);
-            } else {
-               PUT(1, src->w8[LEFTCHILD(iLL)]);
-               PUT(1, src->w8[RIGHTCHILD(iLL)]);
-            }
-            /* Walk tree rooted at src->w16[iLR] */
-            if (src->w16[iLR] != SHVAL_InvalidD) {
-               PUT(2, src->w16[iLR]);
-            } else {
-               PUT(1, src->w8[LEFTCHILD(iLR)]);
-               PUT(1, src->w8[RIGHTCHILD(iLR)]);
-            }
-         }
-         /* Walk tree rooted at src->w32[iR] */
-         if (src->w32[iR] != SHVAL_InvalidD) {
-            PUT(4, src->w32[iR]);
-         } else {
-            Word iRL = LEFTCHILD(iR);
-            Word iRR = RIGHTCHILD(iR);
-            /* Walk tree rooted at src->w16[iRL] */
-            if (src->w16[iRL] != SHVAL_InvalidD) {
-               PUT(2, src->w16[iRL]);
-            } else {
-               PUT(1, src->w8[LEFTCHILD(iRL)]);
-               PUT(1, src->w8[RIGHTCHILD(iRL)]);
-            }
-            /* Walk tree rooted at src->w16[iRR] */
-            if (src->w16[iRR] != SHVAL_InvalidD) {
-               PUT(2, src->w16[iRR]);
-            } else {
-               PUT(1, src->w8[LEFTCHILD(iRR)]);
-               PUT(1, src->w8[RIGHTCHILD(iRR)]);
-            }
-         }
-      }
+   for (tno = 0, cloff = 0;  tno < N_LINE_TREES;  tno++, cloff += 8) {
+      UShort descr = src->descrs[tno];
+      UInt*  tree  = &src->svals[cloff];
+      Bool   bTmp  = False;
+      dst = sequentialise_tree ( dst, &bTmp, descr, tree );
+      anyShared |= bTmp;
    }
+   tl_assert(cloff == N_LINE_ARANGE);
 
-#  undef PUT
-
-   /* Assert we wrote N_LINE_W8s shadow values. */
+   /* Assert we wrote N_LINE_ARANGE shadow values. */
    tl_assert( ((HChar*)dst) - ((HChar*)dst0) 
               == nDst * sizeof(UInt) );
 
@@ -3070,7 +3224,7 @@ static __attribute__((noinline)) void cacheline_wback ( UWord wix )
    CacheLineZ* lineZ;
    CacheLineF* lineF;
    Word        zix, fix;
-   UInt        shvals[N_LINE_W8s];
+   UInt        shvals[N_LINE_ARANGE];
    UInt        sv;
 
    if (0)
@@ -3098,12 +3252,12 @@ static __attribute__((noinline)) void cacheline_wback ( UWord wix )
 
    /* Generate the data to be stored */
    /* EXPENSIVE: tl_assert(is_sane_CacheLine( cl )); */
-   anyShared = sequentialise_into( shvals, N_LINE_W8s, cl );
+   anyShared = sequentialise_into( shvals, N_LINE_ARANGE, cl );
 
    lineZ->dict[0] = lineZ->dict[1] 
                   = lineZ->dict[2] = lineZ->dict[3] = 0;
 
-   for (i = 0; i < N_LINE_W8s; i++) {
+   for (i = 0; i < N_LINE_ARANGE; i++) {
 
       sv = shvals[i];
       for (j = 0; j < 4; j++) {
@@ -3123,9 +3277,9 @@ static __attribute__((noinline)) void cacheline_wback ( UWord wix )
 
    }
 
-   tl_assert(i >= 0 && i <= N_LINE_W8s);
+   tl_assert(i >= 0 && i <= N_LINE_ARANGE);
 
-   if (i < N_LINE_W8s) {
+   if (i < N_LINE_ARANGE) {
       /* cannot use the compressed rep.  Use f rep instead. */
       alloc_F_for_writing( sm, &fix );
       tl_assert(sm->linesF);
@@ -3136,7 +3290,7 @@ static __attribute__((noinline)) void cacheline_wback ( UWord wix )
       lineZ->dict[0] = lineZ->dict[2] = lineZ->dict[3] = 0;
       lineZ->dict[1] = (UInt)fix;
       lineF->inUse = True;
-      for (i = 0; i < N_LINE_W8s; i++) {
+      for (i = 0; i < N_LINE_ARANGE; i++) {
          sv = shvals[i];
          tl_assert(is_SHVAL_valid(sv));
          lineF->w32s[i] = sv;
@@ -3181,21 +3335,21 @@ static __attribute__((noinline)) void cacheline_fetch ( UWord wix )
    tl_assert( (lineZ && !lineF) || (!lineZ && lineF) );
 
    /* expand the data into the bottom layer of the tree, then get
-      cacheline_normalise to build the InvalidU/InvalidD structure. */
+      cacheline_normalise to build the descriptor array. */
    if (lineF) {
       tl_assert(lineF->inUse);
-      for (i = 0; i < N_LINE_W8s; i++) {
-         cl->w8[i] = lineF->w32s[i];
+      for (i = 0; i < N_LINE_ARANGE; i++) {
+         cl->svals[i] = lineF->w32s[i];
       }
       stats__cache_F_fetches++;
    } else {
-      for (i = 0; i < N_LINE_W8s; i++) {
+      for (i = 0; i < N_LINE_ARANGE; i++) {
          UInt sv;
          UWord ix = read_twobit_array( lineZ->ix2s, i );
          tl_assert(ix >= 0 && ix <= 3);
          sv = lineZ->dict[ix];
          tl_assert(sv != 0);
-         cl->w8[i] = sv;
+         cl->svals[i] = sv;
       }
       stats__cache_Z_fetches++;
    }
@@ -3240,7 +3394,13 @@ static inline Bool aligned64 ( Addr a ) {
    return 0 == (a & 7);
 }
 static inline UWord get_cacheline_offset ( Addr a ) {
-   return (UWord)(a & (N_LINE_W8s - 1));
+   return (UWord)(a & (N_LINE_ARANGE - 1));
+}
+static inline UWord get_treeno ( Addr a ) {
+   return get_cacheline_offset(a) >> 3;
+}
+static inline UWord get_tree_offset ( Addr a ) {
+   return a & 7;
 }
 
 static __attribute__((noinline))
@@ -3249,7 +3409,7 @@ static inline CacheLine* get_cacheline ( Addr a )
 {
    /* tag is 'a' with the in-line offset masked out, 
       eg a[31]..a[4] 0000 */
-   Addr       tag = a & ~(N_LINE_W8s - 1);
+   Addr       tag = a & ~(N_LINE_ARANGE - 1);
    UWord      wix = (a >> N_LINE_BITS) & (N_WAY_NENT - 1);
    stats__cache_totrefs++;
    if (LIKELY(tag == cache_shmem.tags0[wix])) {
@@ -3267,7 +3427,7 @@ static __attribute__((noinline))
 
    CacheLine* cl;
    Addr*      tag_old_p;
-   Addr       tag = a & ~(N_LINE_W8s - 1);
+   Addr       tag = a & ~(N_LINE_ARANGE - 1);
    UWord      wix = (a >> N_LINE_BITS) & (N_WAY_NENT - 1);
 
    tl_assert(tag != cache_shmem.tags0[wix]);
@@ -3292,343 +3452,599 @@ static __attribute__((noinline))
 
 /////////////////////////////vvvvvvvvvvvvvvvvvvvvvvvvvvvvv
 
-static void pulldown_to_w32 ( /*MOD*/CacheLine* cl, Word ix32 )
-{
-   Word ix64 = PARENT(ix32);
-   tl_assert(cl->w32[ix32] == SHVAL_InvalidU);
-   tl_assert(!is_SHVAL_Invalid(cl->w64[ix64]));
-   tl_assert(cl->w32[LEFTCHILD(ix64)]  == SHVAL_InvalidU);
-   tl_assert(cl->w32[RIGHTCHILD(ix64)] == SHVAL_InvalidU);
-   cl->w32[LEFTCHILD(ix64)]  = cl->w64[ix64];
-   cl->w32[RIGHTCHILD(ix64)] = cl->w64[ix64];
-   cl->w64[ix64] = SHVAL_InvalidD;
-   stats__cline_8to4pulldown++;
+static UShort pulldown_to_32 ( /*MOD*/UInt* tree, UWord toff, UShort descr ) {
+   stats__cline_64to32pulldown++;
+   switch (toff) {
+      case 0: case 4:
+         tl_assert(descr & TREE_DESCR_64);
+         tree[4] = tree[0];
+	 descr &= ~TREE_DESCR_64;
+	 descr |= (TREE_DESCR_32_1 | TREE_DESCR_32_0);
+         break;
+      default:
+         tl_assert(0);
+   }
+   return descr;
 }
 
-static void pulldown_to_w16 ( /*MOD*/CacheLine* cl, Word ix16 )
-{
-   Word ix32 = PARENT(ix16);
-   tl_assert(cl->w16[ix16] == SHVAL_InvalidU);
-   if (is_SHVAL_Invalid(cl->w32[ix32]))
-      pulldown_to_w32( cl, ix32 );
-   tl_assert(!is_SHVAL_Invalid(cl->w32[ix32]));
-   tl_assert(cl->w16[LEFTCHILD(ix32)]  == SHVAL_InvalidU);
-   tl_assert(cl->w16[RIGHTCHILD(ix32)] == SHVAL_InvalidU);
-   cl->w16[LEFTCHILD(ix32)]  = cl->w32[ix32];
-   cl->w16[RIGHTCHILD(ix32)] = cl->w32[ix32];
-   cl->w32[ix32] = SHVAL_InvalidD;
-   stats__cline_4to2pulldown++;
+static UShort pulldown_to_16 ( /*MOD*/UInt* tree, UWord toff, UShort descr ) {
+   stats__cline_32to16pulldown++;
+   switch (toff) {
+      case 0: case 2:
+         if (!(descr & TREE_DESCR_32_0)) {
+	   descr = pulldown_to_32(tree, 0, descr);
+         }
+         tl_assert(descr & TREE_DESCR_32_0);
+         tree[2] = tree[0];
+         descr &= ~TREE_DESCR_32_0;
+         descr |= (TREE_DESCR_16_1 | TREE_DESCR_16_0);
+         break;
+      case 4: case 6:
+         if (!(descr & TREE_DESCR_32_1)) {
+	   descr = pulldown_to_32(tree, 4, descr);
+         }
+         tl_assert(descr & TREE_DESCR_32_1);
+         tree[6] = tree[4];
+         descr &= ~TREE_DESCR_32_1;
+         descr |= (TREE_DESCR_16_3 | TREE_DESCR_16_2);
+         break;
+      default:
+         tl_assert(0);
+   }
+   return descr;
 }
 
-static void pulldown_to_w8 ( /*MOD*/CacheLine* cl, Word ix8 )
-{
-   Word ix16 = PARENT(ix8);
-   tl_assert(cl->w8[ix8] == SHVAL_InvalidU);
-   if (is_SHVAL_Invalid(cl->w16[ix16]))
-      pulldown_to_w16( cl, ix16 );
-   tl_assert(!is_SHVAL_Invalid(cl->w16[ix16]));
-   tl_assert(cl->w8[LEFTCHILD(ix16)]  == SHVAL_InvalidU);
-   tl_assert(cl->w8[RIGHTCHILD(ix16)] == SHVAL_InvalidU);
-   cl->w8[LEFTCHILD(ix16)]  = cl->w16[ix16];
-   cl->w8[RIGHTCHILD(ix16)] = cl->w16[ix16];
-   cl->w16[ix16] = SHVAL_InvalidD;
-   stats__cline_2to1pulldown++;
+static UShort pulldown_to_8 ( /*MOD*/UInt* tree, UWord toff, UShort descr ) {
+   stats__cline_16to8pulldown++;
+   switch (toff) {
+      case 0: case 1:
+         if (!(descr & TREE_DESCR_16_0)) {
+            descr = pulldown_to_16(tree, 0, descr);
+         }
+         tl_assert(descr & TREE_DESCR_16_0);
+         tree[1] = tree[0];
+         descr &= ~TREE_DESCR_16_0;
+         descr |= (TREE_DESCR_8_1 | TREE_DESCR_8_0);
+         break;
+      case 2: case 3:
+         if (!(descr & TREE_DESCR_16_1)) {
+            descr = pulldown_to_16(tree, 2, descr);
+         }
+         tl_assert(descr & TREE_DESCR_16_1);
+         tree[3] = tree[2];
+         descr &= ~TREE_DESCR_16_1;
+         descr |= (TREE_DESCR_8_3 | TREE_DESCR_8_2);
+         break;
+      case 4: case 5:
+         if (!(descr & TREE_DESCR_16_2)) {
+            descr = pulldown_to_16(tree, 4, descr);
+         }
+         tl_assert(descr & TREE_DESCR_16_2);
+         tree[5] = tree[4];
+         descr &= ~TREE_DESCR_16_2;
+         descr |= (TREE_DESCR_8_5 | TREE_DESCR_8_4);
+         break;
+      case 6: case 7:
+         if (!(descr & TREE_DESCR_16_3)) {
+            descr = pulldown_to_16(tree, 6, descr);
+         }
+         tl_assert(descr & TREE_DESCR_16_3);
+         tree[7] = tree[6];
+         descr &= ~TREE_DESCR_16_3;
+         descr |= (TREE_DESCR_8_7 | TREE_DESCR_8_6);
+         break;
+      default:
+         tl_assert(0);
+   }
+   return descr;
+}
+
+
+static UShort pullup_descr_to_16 ( UShort descr, UWord toff ) {
+   UShort mask;
+   switch (toff) {
+      case 0:
+         mask = TREE_DESCR_8_1 | TREE_DESCR_8_0;
+         tl_assert( (descr & mask) == mask );
+         descr &= ~mask;
+         descr |= TREE_DESCR_16_0;
+         break;
+      case 2:
+         mask = TREE_DESCR_8_3 | TREE_DESCR_8_2;
+         tl_assert( (descr & mask) == mask );
+         descr &= ~mask;
+         descr |= TREE_DESCR_16_1;
+         break;
+      case 4:
+         mask = TREE_DESCR_8_5 | TREE_DESCR_8_4;
+         tl_assert( (descr & mask) == mask );
+         descr &= ~mask;
+         descr |= TREE_DESCR_16_2;
+         break;
+      case 6:
+         mask = TREE_DESCR_8_7 | TREE_DESCR_8_6;
+         tl_assert( (descr & mask) == mask );
+         descr &= ~mask;
+         descr |= TREE_DESCR_16_3;
+         break;
+      default:
+         tl_assert(0);
+   }
+   return descr;
+}
+
+static UShort pullup_descr_to_32 ( UShort descr, UWord toff ) {
+   UShort mask;
+   switch (toff) {
+      case 0:
+         if (!(descr & TREE_DESCR_16_0))
+            descr = pullup_descr_to_16(descr, 0);
+         if (!(descr & TREE_DESCR_16_1))
+            descr = pullup_descr_to_16(descr, 2);
+         mask = TREE_DESCR_16_1 | TREE_DESCR_16_0;
+         tl_assert( (descr & mask) == mask );
+         descr &= ~mask;
+         descr |= TREE_DESCR_32_0;
+         break;
+      case 4:
+         if (!(descr & TREE_DESCR_16_2))
+            descr = pullup_descr_to_16(descr, 4);
+         if (!(descr & TREE_DESCR_16_3))
+            descr = pullup_descr_to_16(descr, 6);
+         mask = TREE_DESCR_16_3 | TREE_DESCR_16_2;
+         tl_assert( (descr & mask) == mask );
+         descr &= ~mask;
+         descr |= TREE_DESCR_32_1;
+         break;
+      default:
+         tl_assert(0);
+   }
+   return descr;
+}
+
+static Bool valid_value_is_above_me_32 ( UShort descr, UWord toff ) {
+   switch (toff) {
+      case 0: case 4:
+         return 0 != (descr & TREE_DESCR_64);
+      default:
+         tl_assert(0);
+   }
+}
+
+static Bool valid_value_is_below_me_16 ( UShort descr, UWord toff ) {
+   switch (toff) {
+      case 0:
+         return 0 != (descr & (TREE_DESCR_8_1 | TREE_DESCR_8_0));
+      case 2:
+         return 0 != (descr & (TREE_DESCR_8_3 | TREE_DESCR_8_2));
+      case 4:
+         return 0 != (descr & (TREE_DESCR_8_5 | TREE_DESCR_8_4));
+      case 6:
+         return 0 != (descr & (TREE_DESCR_8_7 | TREE_DESCR_8_6));
+      default:
+         tl_assert(0);
+   }
 }
 
 static void shadow_mem_read8 ( Thread* thr_acc, Addr a, UInt uuOpaque ) {
    CacheLine* cl; 
-   UWord      ix8;
+   UWord      cloff, tno, toff;
    UInt       svOld, svNew;
-   stats__cline_read1s++;
+   UShort     descr;
+   stats__cline_read8s++;
    cl    = get_cacheline(a);
-   ix8   = get_cacheline_offset(a) >> 0;
-   svOld = cl->w8[ix8];
-   if (UNLIKELY(is_SHVAL_Invalid(svOld))) {
-      tl_assert(svOld == SHVAL_InvalidU);
-      pulldown_to_w8( cl, ix8 );
+   cloff = get_cacheline_offset(a);
+   tno   = get_treeno(a);
+   toff  = get_tree_offset(a); /* == 0 .. 7 */
+   descr = cl->descrs[tno];
+   if (UNLIKELY( !(descr & (TREE_DESCR_8_0 << toff)) )) {
+      UInt* tree = &cl->svals[tno << 3];
+      cl->descrs[tno] = pulldown_to_8(tree, toff, descr);
       /* EXPENSIVE: tl_assert(is_sane_CacheLine(cl)); */
-      svOld = cl->w8[ix8];
    }
+   svOld = cl->svals[cloff];
    svNew = msm__handle_read( thr_acc, a, svOld, 1 );
-   cl->w8[ix8] = svNew;
+   cl->svals[cloff] = svNew;
 }
 static void shadow_mem_read16 ( Thread* thr_acc, Addr a, UInt uuOpaque ) {
    CacheLine* cl; 
-   UWord      ix16;
+   UWord      cloff, tno, toff;
    UInt       svOld, svNew;
-   stats__cline_read2s++;
+   UShort     descr;
+   stats__cline_read16s++;
    if (UNLIKELY(!aligned16(a))) goto slowcase;
    cl    = get_cacheline(a);
-   ix16  = get_cacheline_offset(a) >> 1;
-   svOld = cl->w16[ix16];
-   if (UNLIKELY(is_SHVAL_Invalid(svOld))) {
-      if (svOld == SHVAL_InvalidD) goto slowcase;
-      pulldown_to_w16( cl, ix16 );
+   cloff = get_cacheline_offset(a);
+   tno   = get_treeno(a);
+   toff  = get_tree_offset(a); /* == 0, 2, 4 or 6 */
+   descr = cl->descrs[tno];
+   if (UNLIKELY( !(descr & (TREE_DESCR_16_0 << toff)) )) {
+      if (valid_value_is_below_me_16(descr, toff)) {
+         goto slowcase;
+      } else {
+         UInt* tree = &cl->svals[tno << 3];
+         cl->descrs[tno] = pulldown_to_16(tree, toff, descr);
+      }
       /* EXPENSIVE: tl_assert(is_sane_CacheLine(cl)); */
-      svOld = cl->w16[ix16];
    }
+   svOld = cl->svals[cloff];
    svNew = msm__handle_read( thr_acc, a, svOld, 2 );
-   cl->w16[ix16] = svNew;
+   cl->svals[cloff] = svNew;
    return;
   slowcase: /* misaligned, or must go further down the tree */
-   stats__cline_2to1splits++;
+   stats__cline_16to8splits++;
    shadow_mem_read8( thr_acc, a + 0, 0/*unused*/ );
    shadow_mem_read8( thr_acc, a + 1, 0/*unused*/ );
 }
-inline
-static void shadow_mem_read32 ( Thread* thr_acc, Addr a, UInt uuOpaque ) {
+
+__attribute__((noinline))
+static void shadow_mem_read32_SLOW ( Thread* thr_acc, Addr a, UInt uuOpaque ) {
    CacheLine* cl; 
-   UWord      ix32;
+   UWord      cloff, tno, toff;
    UInt       svOld, svNew;
-   stats__cline_read4s++;
+   UShort     descr;
    if (UNLIKELY(!aligned32(a))) goto slowcase;
    cl    = get_cacheline(a);
-   ix32  = get_cacheline_offset(a) >> 2;
-   svOld = cl->w32[ix32];
-   if (UNLIKELY(is_SHVAL_Invalid(svOld))) {
-      if (svOld == SHVAL_InvalidD) goto slowcase;
-      pulldown_to_w32( cl, ix32 );
+   cloff = get_cacheline_offset(a);
+   tno   = get_treeno(a);
+   toff  = get_tree_offset(a); /* == 0 or 4 */
+   descr = cl->descrs[tno];
+   if (UNLIKELY( !(descr & (TREE_DESCR_32_0 << toff)) )) {
+      if (valid_value_is_above_me_32(descr, toff)) {
+         UInt* tree = &cl->svals[tno << 3];
+         cl->descrs[tno] = pulldown_to_32(tree, toff, descr);
+      } else {
+         goto slowcase;
+      }
       /* EXPENSIVE: tl_assert(is_sane_CacheLine(cl)); */
-      svOld = cl->w32[ix32];
    }
+   svOld = cl->svals[cloff];
    svNew = msm__handle_read( thr_acc, a, svOld, 4 );
-   cl->w32[ix32] = svNew;
+   cl->svals[cloff] = svNew;
    return;
   slowcase: /* misaligned, or must go further down the tree */
-   stats__cline_4to2splits++;
+   stats__cline_32to16splits++;
    shadow_mem_read16( thr_acc, a + 0, 0/*unused*/ );
    shadow_mem_read16( thr_acc, a + 2, 0/*unused*/ );
 }
 inline
+static void shadow_mem_read32 ( Thread* thr_acc, Addr a, UInt uuOpaque ) {
+   CacheLine* cl; 
+   UWord      cloff, tno, toff;
+   UShort     descr;
+   stats__cline_read32s++;
+   if (UNLIKELY(!aligned32(a))) goto slowcase;
+   cl    = get_cacheline(a);
+   cloff = get_cacheline_offset(a);
+   tno   = get_treeno(a);
+   toff  = get_tree_offset(a); /* == 0 or 4 */
+   descr = cl->descrs[tno];
+   if (UNLIKELY( !(descr & (TREE_DESCR_32_0 << toff)) )) goto slowcase;
+   { UInt* p = &cl->svals[cloff];
+     *p = msm__handle_read( thr_acc, a, *p, 4 );
+   }
+   return;
+  slowcase: /* misaligned, or not at this level in the tree */
+   shadow_mem_read32_SLOW( thr_acc, a, uuOpaque );
+}
+
 static void shadow_mem_read64 ( Thread* thr_acc, Addr a, UInt uuOpaque ) {
    CacheLine* cl; 
-   UWord      ix64;
+   UWord      cloff, tno, toff;
    UInt       svOld, svNew;
-   stats__cline_read8s++;
+   UShort     descr;
+   stats__cline_read64s++;
    if (UNLIKELY(!aligned64(a))) goto slowcase;
    cl    = get_cacheline(a);
-   ix64  = get_cacheline_offset(a) >> 3;
-   svOld = cl->w64[ix64];
-   if (UNLIKELY(is_SHVAL_Invalid(svOld))) {
-      tl_assert(svOld == SHVAL_InvalidD);
+   cloff = get_cacheline_offset(a);
+   tno   = get_treeno(a);
+   toff  = get_tree_offset(a); /* == 0, unused */
+   descr = cl->descrs[tno];
+   if (UNLIKELY( !(descr & TREE_DESCR_64) )) {
       goto slowcase;
    }
+   svOld = cl->svals[cloff];
    svNew = msm__handle_read( thr_acc, a, svOld, 8 );
-   cl->w64[ix64] = svNew;
+   cl->svals[cloff] = svNew;
    return;
   slowcase: /* misaligned, or must go further down the tree */
-   stats__cline_8to4splits++;
+   stats__cline_64to32splits++;
    shadow_mem_read32( thr_acc, a + 0, 0/*unused*/ );
    shadow_mem_read32( thr_acc, a + 4, 0/*unused*/ );
 }
 
 static void shadow_mem_write8 ( Thread* thr_acc, Addr a, UInt uuOpaque ) {
    CacheLine* cl; 
-   UWord      ix8;
+   UWord      cloff, tno, toff;
    UInt       svOld, svNew;
-   stats__cline_write1s++;
+   UShort     descr;
+   stats__cline_write8s++;
    cl    = get_cacheline(a);
-   ix8   = get_cacheline_offset(a) >> 0;
-   svOld = cl->w8[ix8];
-   if (UNLIKELY(is_SHVAL_Invalid(svOld))) {
-      tl_assert(svOld == SHVAL_InvalidU);
-      pulldown_to_w8( cl, ix8 );
+   cloff = get_cacheline_offset(a);
+   tno   = get_treeno(a);
+   toff  = get_tree_offset(a); /* == 0 .. 7 */
+   descr = cl->descrs[tno];
+   if (UNLIKELY( !(descr & (TREE_DESCR_8_0 << toff)) )) {
+      UInt* tree = &cl->svals[tno << 3];
+      cl->descrs[tno] = pulldown_to_8(tree, toff, descr);
       /* EXPENSIVE: tl_assert(is_sane_CacheLine(cl)); */
-      svOld = cl->w8[ix8];
    }
+   svOld = cl->svals[cloff];
    svNew = msm__handle_write( thr_acc, a, svOld, 1 );
-   cl->w8[ix8] = svNew;
+   cl->svals[cloff] = svNew;
 }
 static void shadow_mem_write16 ( Thread* thr_acc, Addr a, UInt uuOpaque ) {
    CacheLine* cl; 
-   UWord      ix16;
+   UWord      cloff, tno, toff;
    UInt       svOld, svNew;
-   stats__cline_write2s++;
+   UShort     descr;
+   stats__cline_write16s++;
    if (UNLIKELY(!aligned16(a))) goto slowcase;
    cl    = get_cacheline(a);
-   ix16  = get_cacheline_offset(a) >> 1;
-   svOld = cl->w16[ix16];
-   if (UNLIKELY(is_SHVAL_Invalid(svOld))) {
-      if (svOld == SHVAL_InvalidD) goto slowcase;
-      pulldown_to_w16( cl, ix16 );
+   cloff = get_cacheline_offset(a);
+   tno   = get_treeno(a);
+   toff  = get_tree_offset(a); /* == 0, 2, 4 or 6 */
+   descr = cl->descrs[tno];
+   if (UNLIKELY( !(descr & (TREE_DESCR_16_0 << toff)) )) {
+      if (valid_value_is_below_me_16(descr, toff)) {
+         goto slowcase;
+      } else {
+         UInt* tree = &cl->svals[tno << 3];
+         cl->descrs[tno] = pulldown_to_16(tree, toff, descr);
+      }
       /* EXPENSIVE: tl_assert(is_sane_CacheLine(cl)); */
-      svOld = cl->w16[ix16];
    }
+   svOld = cl->svals[cloff];
    svNew = msm__handle_write( thr_acc, a, svOld, 2 );
-   cl->w16[ix16] = svNew;
+   cl->svals[cloff] = svNew;
    return;
   slowcase: /* misaligned, or must go further down the tree */
-   stats__cline_2to1splits++;
+   stats__cline_16to8splits++;
    shadow_mem_write8( thr_acc, a + 0, 0/*unused*/ );
    shadow_mem_write8( thr_acc, a + 1, 0/*unused*/ );
 }
+
+#if 0
 static void shadow_mem_write32 ( Thread* thr_acc, Addr a, UInt uuOpaque ) {
    CacheLine* cl; 
-   UWord      ix32;
+   UWord      cloff, tno, toff;
    UInt       svOld, svNew;
-   stats__cline_write4s++;
+   UShort     descr;
+   stats__cline_write32s++;
    if (UNLIKELY(!aligned32(a))) goto slowcase;
    cl    = get_cacheline(a);
-   ix32  = get_cacheline_offset(a) >> 2;
-   svOld = cl->w32[ix32];
-   if (UNLIKELY(is_SHVAL_Invalid(svOld))) {
-      if (svOld == SHVAL_InvalidD) goto slowcase;
-      pulldown_to_w32( cl, ix32 );
+   cloff = get_cacheline_offset(a);
+   tno   = get_treeno(a);
+   toff  = get_tree_offset(a); /* == 0 or 4 */
+   descr = cl->descrs[tno];
+   if (UNLIKELY( !(descr & (TREE_DESCR_32_0 << toff)) )) {
+      if (valid_value_is_above_me_32(descr, toff)) {
+         UInt* tree = &cl->svals[tno << 3];
+         cl->descrs[tno] = pulldown_to_32(tree, toff, descr);
+      } else {
+         goto slowcase;
+      }
       /* EXPENSIVE: tl_assert(is_sane_CacheLine(cl)); */
-      svOld = cl->w32[ix32];
    }
+   svOld = cl->svals[cloff];
    svNew = msm__handle_write( thr_acc, a, svOld, 4 );
-   cl->w32[ix32] = svNew;
+   cl->svals[cloff] = svNew;
    return;
   slowcase: /* misaligned, or must go further down the tree */
-   stats__cline_4to2splits++;
+   stats__cline_32to16splits++;
    shadow_mem_write16( thr_acc, a + 0, 0/*unused*/ );
    shadow_mem_write16( thr_acc, a + 2, 0/*unused*/ );
 }
-static void shadow_mem_write64 ( Thread* thr_acc, Addr a, UInt uuOpaque ) {
+#else
+__attribute__((noinline))
+static void shadow_mem_write32_SLOW ( Thread* thr_acc, Addr a, UInt uuOpaque ) {
    CacheLine* cl; 
-   UWord      ix64;
+   UWord      cloff, tno, toff;
    UInt       svOld, svNew;
-   stats__cline_write8s++;
-   if (UNLIKELY(!aligned64(a))) goto slowcase;
+   UShort     descr;
+   if (UNLIKELY(!aligned32(a))) goto slowcase;
    cl    = get_cacheline(a);
-   ix64  = get_cacheline_offset(a) >> 3;
-   svOld = cl->w64[ix64];
-   if (UNLIKELY(is_SHVAL_Invalid(svOld))) {
-      tl_assert(svOld == SHVAL_InvalidD);
-      goto slowcase;
+   cloff = get_cacheline_offset(a);
+   tno   = get_treeno(a);
+   toff  = get_tree_offset(a); /* == 0 or 4 */
+   descr = cl->descrs[tno];
+   if (UNLIKELY( !(descr & (TREE_DESCR_32_0 << toff)) )) {
+      if (valid_value_is_above_me_32(descr, toff)) {
+         UInt* tree = &cl->svals[tno << 3];
+         cl->descrs[tno] = pulldown_to_32(tree, toff, descr);
+      } else {
+         goto slowcase;
+      }
+      /* EXPENSIVE: tl_assert(is_sane_CacheLine(cl)); */
    }
-   svNew = msm__handle_write( thr_acc, a, svOld, 8 );
-   cl->w64[ix64] = svNew;
+   svOld = cl->svals[cloff];
+   svNew = msm__handle_write( thr_acc, a, svOld, 4 );
+   cl->svals[cloff] = svNew;
    return;
   slowcase: /* misaligned, or must go further down the tree */
-   stats__cline_8to4splits++;
+   stats__cline_32to16splits++;
+   shadow_mem_write16( thr_acc, a + 0, 0/*unused*/ );
+   shadow_mem_write16( thr_acc, a + 2, 0/*unused*/ );
+}
+inline
+static void shadow_mem_write32 ( Thread* thr_acc, Addr a, UInt uuOpaque ) {
+   CacheLine* cl; 
+   UWord      cloff, tno, toff;
+   UShort     descr;
+   stats__cline_write32s++;
+   if (UNLIKELY(!aligned32(a))) goto slowcase;
+   cl    = get_cacheline(a);
+   cloff = get_cacheline_offset(a);
+   tno   = get_treeno(a);
+   toff  = get_tree_offset(a); /* == 0 or 4 */
+   descr = cl->descrs[tno];
+   if (UNLIKELY( !(descr & (TREE_DESCR_32_0 << toff)) )) goto slowcase;
+   { UInt* p = &cl->svals[cloff];
+     *p = msm__handle_write( thr_acc, a, *p, 4 );
+   }
+   return;
+  slowcase: /* misaligned, or must go further down the tree */
+   shadow_mem_write32_SLOW( thr_acc, a, uuOpaque );
+}
+#endif
+
+static void shadow_mem_write64 ( Thread* thr_acc, Addr a, UInt uuOpaque ) {
+   CacheLine* cl; 
+   UWord      cloff, tno, toff;
+   UInt       svOld, svNew;
+   UShort     descr;
+   stats__cline_write64s++;
+   if (UNLIKELY(!aligned64(a))) goto slowcase;
+   cl    = get_cacheline(a);
+   cloff = get_cacheline_offset(a);
+   tno   = get_treeno(a);
+   toff  = get_tree_offset(a); /* == 0, unused */
+   descr = cl->descrs[tno];
+   if (UNLIKELY( !(descr & TREE_DESCR_64) )) {
+      goto slowcase;
+   }
+   svOld = cl->svals[cloff];
+   svNew = msm__handle_write( thr_acc, a, svOld, 8 );
+   cl->svals[cloff] = svNew;
+   return;
+  slowcase: /* misaligned, or must go further down the tree */
+   stats__cline_64to32splits++;
    shadow_mem_write32( thr_acc, a + 0, 0/*unused*/ );
    shadow_mem_write32( thr_acc, a + 4, 0/*unused*/ );
 }
 
 static void shadow_mem_set8 ( Thread* uu_thr_acc, Addr a, UInt svNew ) {
    CacheLine* cl; 
-   UWord      ix8;
-   UInt       svOld;
-   stats__cline_set1s++;
+   UWord      cloff, tno, toff;
+   UShort     descr;
+   stats__cline_set8s++;
    cl    = get_cacheline(a);
-   ix8   = get_cacheline_offset(a) >> 0;
-   svOld = cl->w8[ix8];
-   if (UNLIKELY(is_SHVAL_Invalid(svOld))) {
-      tl_assert(svOld == SHVAL_InvalidU);
-      pulldown_to_w8( cl, ix8 );
+   cloff = get_cacheline_offset(a);
+   tno   = get_treeno(a);
+   toff  = get_tree_offset(a); /* == 0 .. 7 */
+   descr = cl->descrs[tno];
+   if (UNLIKELY( !(descr & (TREE_DESCR_8_0 << toff)) )) {
+      UInt* tree = &cl->svals[tno << 3];
+      cl->descrs[tno] = pulldown_to_8(tree, toff, descr);
       /* EXPENSIVE: tl_assert(is_sane_CacheLine(cl)); */
-      svOld = cl->w8[ix8];
-      tl_assert(is_SHVAL_valid(svOld));
    }
-   cl->w8[ix8] = svNew;
+   cl->svals[cloff] = svNew;
 }
 static void shadow_mem_set16 ( Thread* uu_thr_acc, Addr a, UInt svNew ) {
    CacheLine* cl; 
-   UWord      ix16, ix8;
-   stats__cline_set2s++;
+   UWord      cloff, tno, toff;
+   UShort     descr;
+   stats__cline_set16s++;
    if (UNLIKELY(!aligned16(a))) goto slowcase;
    cl    = get_cacheline(a);
-   ix16  = get_cacheline_offset(a) >> 1;
-   /* We can't indiscriminately write on the w16 node as in the w64
-      case, as that might make the node inconsistent with its parent.
-      So first, pull down to this level. */
-   if (cl->w16[ix16] == SHVAL_InvalidU) {
-      pulldown_to_w16(cl, ix16);
+   cloff = get_cacheline_offset(a);
+   tno   = get_treeno(a);
+   toff  = get_tree_offset(a); /* == 0, 2, 4 or 6 */
+   descr = cl->descrs[tno];
+   if (UNLIKELY( !(descr & (TREE_DESCR_16_0 << toff)) )) {
+      if (valid_value_is_below_me_16(descr, toff)) {
+         /* Writing at this level.  Need to fix up 'descr'. */
+         cl->descrs[tno] = pullup_descr_to_16(descr, toff);
+         /* At this point, the tree does not match cl->descr[tno] any
+            more.  The assignments below will fix it up. */
+      } else {
+         /* We can't indiscriminately write on the w16 node as in the
+            w64 case, as that might make the node inconsistent with
+            its parent.  So first, pull down to this level. */
+         UInt* tree = &cl->svals[tno << 3];
+         cl->descrs[tno] = pulldown_to_16(tree, toff, descr);
+         /* EXPENSIVE: tl_assert(is_sane_CacheLine(cl)); */
+      }
    }
-   cl->w16[ix16] = svNew;
-   ix8 = LEFTCHILD(ix16);
-   cl->w8[ ix8+0 ] = SHVAL_InvalidU;
-   cl->w8[ ix8+1 ] = SHVAL_InvalidU;
+   cl->svals[cloff + 0] = svNew;
+   cl->svals[cloff + 1] = 0;
    return;
   slowcase: /* misaligned */
-   stats__cline_2to1splits++;
-   shadow_mem_set8( NULL/*unused*/, a + 0, svNew );
-   shadow_mem_set8( NULL/*unused*/, a + 1, svNew );
+   stats__cline_16to8splits++;
+   shadow_mem_set8( uu_thr_acc, a + 0, svNew );
+   shadow_mem_set8( uu_thr_acc, a + 1, svNew );
 }
 static void shadow_mem_set32 ( Thread* uu_thr_acc, Addr a, UInt svNew ) {
    CacheLine* cl; 
-   UWord      ix32, ix16, ix8;
-   stats__cline_set4s++;
+   UWord      cloff, tno, toff;
+   UShort     descr;
+   stats__cline_set32s++;
    if (UNLIKELY(!aligned32(a))) goto slowcase;
    cl    = get_cacheline(a);
-   ix32  = get_cacheline_offset(a) >> 2;
-   /* We can't indiscriminately write on the w32 node as in the w64
-      case, as that might make the node inconsistent with its parent.
-      So first, pull down to this level. */
-   if (cl->w32[ix32] == SHVAL_InvalidU) {
-      pulldown_to_w32(cl, ix32);
+   cloff = get_cacheline_offset(a);
+   tno   = get_treeno(a);
+   toff  = get_tree_offset(a); /* == 0 or 4 */
+   descr = cl->descrs[tno];
+   if (UNLIKELY( !(descr & (TREE_DESCR_32_0 << toff)) )) {
+      if (valid_value_is_above_me_32(descr, toff)) {
+         /* We can't indiscriminately write on the w32 node as in the
+            w64 case, as that might make the node inconsistent with
+            its parent.  So first, pull down to this level. */
+         UInt* tree = &cl->svals[tno << 3];
+         cl->descrs[tno] = pulldown_to_32(tree, toff, descr);
+         /* EXPENSIVE: tl_assert(is_sane_CacheLine(cl)); */
+      } else {
+         /* Writing at this level.  Need to fix up 'descr'. */
+         cl->descrs[tno] = pullup_descr_to_32(descr, toff);
+         /* At this point, the tree does not match cl->descr[tno] any
+            more.  The assignments below will fix it up. */
+      }
    }
-   cl->w32[ix32] = svNew;
-   ix16 = LEFTCHILD(ix32);
-   cl->w16[ ix16+0 ] = SHVAL_InvalidU;
-   cl->w16[ ix16+1 ] = SHVAL_InvalidU;
-   ix8 = LEFTCHILD(ix16);
-   cl->w8[ ix8+0 ] = SHVAL_InvalidU;
-   cl->w8[ ix8+1 ] = SHVAL_InvalidU;
-   cl->w8[ ix8+2 ] = SHVAL_InvalidU;
-   cl->w8[ ix8+3 ] = SHVAL_InvalidU;
+   cl->svals[cloff + 0] = svNew;
+   cl->svals[cloff + 1] = 0;
+   cl->svals[cloff + 2] = 0;
+   cl->svals[cloff + 3] = 0;
    return;
   slowcase: /* misaligned */
-   stats__cline_4to2splits++;
-   shadow_mem_set16( NULL/*unused*/, a + 0, svNew );
-   shadow_mem_set16( NULL/*unused*/, a + 2, svNew );
+   stats__cline_32to16splits++;
+   shadow_mem_set16( uu_thr_acc, a + 0, svNew );
+   shadow_mem_set16( uu_thr_acc, a + 2, svNew );
 }
-inline
 static void shadow_mem_set64 ( Thread* uu_thr_acc, Addr a, UInt svNew ) {
    CacheLine* cl; 
-   UWord      ix64, ix32, ix16, ix8;
-   stats__cline_set8s++;
+   UWord      cloff, tno, toff;
+   stats__cline_set64s++;
    if (UNLIKELY(!aligned64(a))) goto slowcase;
    cl    = get_cacheline(a);
-   ix64  = get_cacheline_offset(a) >> 3;
-   cl->w64[ix64] = svNew;
-   ix32 = LEFTCHILD(ix64);
-   cl->w32[ ix32+0 ] = SHVAL_InvalidU;
-   cl->w32[ ix32+1 ] = SHVAL_InvalidU;
-   ix16 = LEFTCHILD(ix32);
-   cl->w16[ ix16+0 ] = SHVAL_InvalidU;
-   cl->w16[ ix16+1 ] = SHVAL_InvalidU;
-   cl->w16[ ix16+2 ] = SHVAL_InvalidU;
-   cl->w16[ ix16+3 ] = SHVAL_InvalidU;
-   ix8 = LEFTCHILD(ix16);
-   cl->w8[ ix8+0 ] = SHVAL_InvalidU;
-   cl->w8[ ix8+1 ] = SHVAL_InvalidU;
-   cl->w8[ ix8+2 ] = SHVAL_InvalidU;
-   cl->w8[ ix8+3 ] = SHVAL_InvalidU;
-   cl->w8[ ix8+4 ] = SHVAL_InvalidU;
-   cl->w8[ ix8+5 ] = SHVAL_InvalidU;
-   cl->w8[ ix8+6 ] = SHVAL_InvalidU;
-   cl->w8[ ix8+7 ] = SHVAL_InvalidU;
+   cloff = get_cacheline_offset(a);
+   tno   = get_treeno(a);
+   toff  = get_tree_offset(a); /* == 0 */
+   cl->descrs[tno] = TREE_DESCR_64;
+   cl->svals[cloff + 0] = svNew;
+   cl->svals[cloff + 1] = 0;
+   cl->svals[cloff + 2] = 0;
+   cl->svals[cloff + 3] = 0;
+   cl->svals[cloff + 4] = 0;
+   cl->svals[cloff + 5] = 0;
+   cl->svals[cloff + 6] = 0;
+   cl->svals[cloff + 7] = 0;
    return;
   slowcase: /* misaligned */
-   stats__cline_8to4splits++;
-   shadow_mem_set32( NULL/*unused*/, a + 0, svNew );
-   shadow_mem_set32( NULL/*unused*/, a + 4, svNew );
+   stats__cline_64to32splits++;
+   shadow_mem_set32( uu_thr_acc, a + 0, svNew );
+   shadow_mem_set32( uu_thr_acc, a + 4, svNew );
 }
 
 static UInt shadow_mem_get8 ( Addr a ) {
    CacheLine* cl; 
-   UWord      ix8;
-   UInt       sv;
-   stats__cline_get1s++;
-   cl  = get_cacheline(a);
-   ix8 = get_cacheline_offset(a) >> 0;
-   sv  = cl->w8[ix8];
-   if (UNLIKELY(is_SHVAL_Invalid(sv))) {
-      tl_assert(sv == SHVAL_InvalidU);
-      pulldown_to_w8( cl, ix8 );
-      /* tl_assert(is_sane_CacheLine(cl)); */
-      sv = cl->w8[ix8];
+   UWord      cloff, tno, toff;
+   UShort     descr;
+   stats__cline_get8s++;
+   cl    = get_cacheline(a);
+   cloff = get_cacheline_offset(a);
+   tno   = get_treeno(a);
+   toff  = get_tree_offset(a); /* == 0 .. 7 */
+   descr = cl->descrs[tno];
+   if (UNLIKELY( !(descr & (TREE_DESCR_8_0 << toff)) )) {
+      UInt* tree = &cl->svals[tno << 3];
+      cl->descrs[tno] = pulldown_to_8(tree, toff, descr);
    }
-   tl_assert(is_SHVAL_valid(sv));
-   return sv;
+   return cl->svals[cloff];
 }
 
 static void shadow_mem_copy8 ( Addr src, Addr dst, Bool normalise ) {
    UInt       sv;
-   stats__cline_copy1s++;
+   stats__cline_copy8s++;
    sv = shadow_mem_get8( src );
    shadow_mem_set8( NULL/*unused*/, dst, sv );
 }
@@ -7040,13 +7456,13 @@ static void tc_fini ( Int exitcode )
                   stats__msm_r32_NoAccess,      stats__msm_w32_NoAccess);
 
       VG_(printf)("\n");
-      VG_(printf)(" secmaps: %,10lu allocd (%,10lu g-a-range)\n",
+      VG_(printf)(" secmaps: %,10lu allocd (%,12lu g-a-range)\n",
                   stats__secmaps_allocd,
                   stats__secmap_ga_space_covered);
-      VG_(printf)("  linesZ: %,10lu allocd (%,10lu bytes occupied)\n",
+      VG_(printf)("  linesZ: %,10lu allocd (%,12lu bytes occupied)\n",
                   stats__secmap_linesZ_allocd,
                   stats__secmap_linesZ_bytes);
-      VG_(printf)("  linesF: %,10lu allocd (%,10lu bytes occupied)\n",
+      VG_(printf)("  linesF: %,10lu allocd (%,12lu bytes occupied)\n",
                   stats__secmap_linesF_allocd,
                   stats__secmap_linesF_bytes);
       VG_(printf)(" secmaps: %,10lu iterator steppings\n",
@@ -7066,30 +7482,30 @@ static void tc_fini ( Int exitcode )
       VG_(printf)("   cline: %,10lu normalises\n",
                   stats__cline_normalises );
       VG_(printf)("   cline:  reads 8/4/2/1: %,12lu %,12lu %,12lu %,12lu\n",
-                  stats__cline_read8s,
-                  stats__cline_read4s,
-                  stats__cline_read2s,
-                  stats__cline_read1s );
+                  stats__cline_read64s,
+                  stats__cline_read32s,
+                  stats__cline_read16s,
+                  stats__cline_read8s );
       VG_(printf)("   cline: writes 8/4/2/1: %,12lu %,12lu %,12lu %,12lu\n",
-                  stats__cline_write8s,
-                  stats__cline_write4s,
-                  stats__cline_write2s,
-                  stats__cline_write1s );
+                  stats__cline_write64s,
+                  stats__cline_write32s,
+                  stats__cline_write16s,
+                  stats__cline_write8s );
       VG_(printf)("   cline:   sets 8/4/2/1: %,12lu %,12lu %,12lu %,12lu\n",
-                  stats__cline_set8s,
-                  stats__cline_set4s,
-                  stats__cline_set2s,
-                  stats__cline_set1s );
+                  stats__cline_set64s,
+                  stats__cline_set32s,
+                  stats__cline_set16s,
+                  stats__cline_set8s );
       VG_(printf)("   cline: get1s %,lu, copy1s %,lu\n",
-                  stats__cline_get1s, stats__cline_copy1s );
+                  stats__cline_get8s, stats__cline_copy8s );
       VG_(printf)("   cline:    splits: 8to4 %,12lu    4to2 %,12lu    2to1 %,12lu\n",
-                 stats__cline_8to4splits,
-                 stats__cline_4to2splits,
-                 stats__cline_2to1splits );
+                 stats__cline_64to32splits,
+                 stats__cline_32to16splits,
+                 stats__cline_16to8splits );
       VG_(printf)("   cline: pulldowns: 8to4 %,12lu    4to2 %,12lu    2to1 %,12lu\n",
-                 stats__cline_8to4pulldown,
-                 stats__cline_4to2pulldown,
-                 stats__cline_2to1pulldown );
+                 stats__cline_64to32pulldown,
+                 stats__cline_32to16pulldown,
+                 stats__cline_16to8pulldown );
 
       VG_(printf)("\n");
    }
@@ -7185,6 +7601,11 @@ static void tc_pre_clo_init ( void )
    tl_assert( sizeof(UWord) == sizeof(Addr) );
    tc_mallocmeta_table
       = VG_(HT_construct)( "tc_malloc_metadata_table" );
+
+   /* a SecMap must contain an integral number of CacheLines */
+   tl_assert(0 == (N_SECMAP_ARANGE % N_LINE_ARANGE));
+   /* also ... a CacheLine holds an integral number of trees */
+   tl_assert(0 == (N_LINE_ARANGE % 8));
 }
 
 VG_DETERMINE_INTERFACE_VERSION(tc_pre_clo_init)
