@@ -109,8 +109,6 @@
 //
 // Todo -- critical for release:
 // - decide on a name!
-// - C++ tests -- for each of the allocators, and overloaded versions of
-//   them (see 'init_alloc_fns').
 // - do a graph-drawing test
 // - write a good basic test that shows how the tool works, suitable for
 //   documentation
@@ -214,6 +212,68 @@
 // Tests:
 // - tests/overloaded_new.cpp is there
 //
+// File format working notes:
+
+#if 0
+desc: --heap-admin=foo
+cmd: date
+time_unit: ms
+#-----------
+snapshot=0
+#-----------
+time=0
+mem_heap_B=0
+mem_heap_admin_B=0
+mem_stacks_B=0
+heap_tree=empty
+#-----------
+snapshot=1
+#-----------
+time=353
+mem_heap_B=5
+mem_heap_admin_B=0
+mem_stacks_B=0
+heap_tree=detailed
+n1: 5 (heap allocation functions) malloc/new/new[], --alloc-fns, etc.
+ n1: 5 0x27F6E0: _nl_normalize_codeset (in /lib/libc-2.3.5.so)
+  n1: 5 0x279DE6: _nl_load_locale_from_archive (in /lib/libc-2.3.5.so)
+   n1: 5 0x278E97: _nl_find_locale (in /lib/libc-2.3.5.so)
+    n1: 5 0x278871: setlocale (in /lib/libc-2.3.5.so)
+     n1: 5 0x8049821: (within /bin/date)
+      n0: 5 0x26ED5E: (below main) (in /lib/libc-2.3.5.so)
+
+
+n_events: n  time(ms)  total(B)    useful-heap(B)  admin-heap(B)  stacks(B)
+t_events: B
+n  0 0 0 0 0 
+td 0 0 0 0 0
+n1:
+
+Challenges:
+- how to specify and scale/abbreviate units on axes?
+- how to combine multiple values into the y-axis?
+
+--------------------------------------------------------------------------------Command:            date
+Massif arguments:   --heap-admin=foo
+ms_print arguments: massif.out
+--------------------------------------------------------------------------------
+    KB
+6.472^                                                       :#
+     |                                                       :#  ::  .    .
+     ...
+     |                                     ::@  :@    :@ :@:::#  ::  :    ::::
+   0 +-----------------------------------@---@---@-----@--@---#-------------->ms     0                                                                     713
+
+Number of snapshots: 50
+ Detailed snapshots: [2, 11, 13, 19, 25, 32 (peak)]
+--------------------------------------------------------------------------------  n       time(ms)         total(B)   useful-heap(B) admin-heap(B)    stacks(B)
+--------------------------------------------------------------------------------  0              0                0                0             0            0
+  1            345                5                5             0            0
+  2            353                5                5             0            0
+100.00% (5B) (heap allocation functions) malloc/new/new[], --alloc-fns, etc.
+->100.00% (5B) 0x27F6E0: _nl_normalize_codeset (in /lib/libc-2.3.5.so)
+#endif
+
 //---------------------------------------------------------------------------
 
 #include "pub_tool_basics.h"

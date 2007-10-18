@@ -14,36 +14,6 @@ struct s {
     int array[1000];
 };
 
-void* operator new (std::size_t n) throw (std::bad_alloc)
-{
-    return malloc(n);
-}
-
-void* operator new (std::size_t n, std::nothrow_t const &) throw ()
-{
-    return malloc(n);
-}
-
-void* operator new[] (std::size_t n) throw (std::bad_alloc)
-{
-    return malloc(n);
-}
-
-void* operator new[] (std::size_t n, std::nothrow_t const &) throw ()
-{
-    return malloc(n);
-}
-
-void operator delete (void* p)
-{
-    return free(p);
-}
-
-void operator delete[] (void* p)
-{
-    return free(p);
-}
-
 int main(void)
 {
     struct s* p1 = new                struct s;

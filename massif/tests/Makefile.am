@@ -19,9 +19,11 @@ EXTRA_DIST = $(noinst_SCRIPTS) \
 	custom_alloc.post.exp custom_alloc.stderr.exp custom_alloc.vgtest
 	ignoring.post.exp ignoring.stderr.exp ignoring.vgtest \
 	long-time.post.exp long-time.stderr.exp long-time.vgtest \
+	new-cpp.post.exp new-cpp.stderr.exp new-cpp.vgtest \
 	no-stack-no-heap.post.exp no-stack-no-heap.stderr.exp no-stack-no-heap.vgtest \
 	null.post.exp null.stderr.exp null.vgtest \
 	one.post.exp one.stderr.exp one.vgtest \
+	overloaded-new.post.exp overloaded-new.stderr.exp overloaded-new.vgtest \
 	params.post.exp params.stderr.exp params.vgtest \
 	peak.post.exp peak.stderr.exp peak.vgtest \
 	peak2.post.exp peak2.stderr.exp peak2.vgtest \
@@ -52,10 +54,16 @@ check_PROGRAMS = \
 	ignoring \
 	insig \
 	long-time \
+	new-cpp \
 	null \
 	one \
+	overloaded-new \
 	peak \
 	realloc \
 	thresholds \
 	zero
+
+# C++ tests
+new_cpp_SOURCES		= new-cpp.cpp
+overloaded_new_SOURCES	= overloaded-new.cpp
 
