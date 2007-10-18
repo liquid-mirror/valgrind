@@ -39,9 +39,9 @@ Number of snapshots: 8
   2            100              100              100             0            0
   3            100              100              100             0            0
 100.00% (100B) (heap allocation functions) malloc/new/new[], --alloc-fns, etc.
-->100.00% (100B) 0x80483BA: main (realloc.c:8)
+->100.00% (100B) 0x........: main (realloc.c:8)
 | 
-->00.00% (0B) 0x80483A7: main (realloc.c:5)
+->00.00% (0B) 0x........: main (realloc.c:5)
   
 --------------------------------------------------------------------------------
   n        time(B)         total(B)   useful-heap(B) admin-heap(B)    stacks(B)
@@ -50,13 +50,13 @@ Number of snapshots: 8
   5            250              150              150             0            0
   6            250              150              150             0            0
 100.00% (150B) (heap allocation functions) malloc/new/new[], --alloc-fns, etc.
-->100.00% (150B) 0x80483E3: main (realloc.c:12)
+->100.00% (150B) 0x........: main (realloc.c:12)
 | 
-->00.00% (0B) 0x80483A7: main (realloc.c:5)
+->00.00% (0B) 0x........: main (realloc.c:5)
 | 
-->00.00% (0B) 0x80483BA: main (realloc.c:8)
+->00.00% (0B) 0x........: main (realloc.c:8)
 | 
-->00.00% (0B) 0x80483CD: main (realloc.c:10)
+->00.00% (0B) 0x........: main (realloc.c:10)
   
 --------------------------------------------------------------------------------
   n        time(B)         total(B)   useful-heap(B) admin-heap(B)    stacks(B)

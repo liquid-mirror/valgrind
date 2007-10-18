@@ -37,9 +37,9 @@ Number of snapshots: 94
   0              0                0                0             0            0
   1      3,900,000        2,300,000        2,300,000             0            0
 100.00% (2300000B) (heap allocation functions) malloc/new/new[], --alloc-fns, etc.
-->52.17% (1200000B) 0x8048418: main (long-time.c:15)
+->52.17% (1200000B) 0x........: main (long-time.c:15)
 | 
-->47.83% (1100000B) 0x80483F7: main (long-time.c:13)
+->47.83% (1100000B) 0x........: main (long-time.c:13)
 | 
 ->00.00% (0B) in 1+ places, all below ms_print's threshold (01.00%)
 
@@ -53,7 +53,7 @@ Number of snapshots: 94
   6    863,100,000          900,000          900,000             0            0
   7    991,100,000          900,000          900,000             0            0
 100.00% (900000B) (heap allocation functions) malloc/new/new[], --alloc-fns, etc.
-->100.00% (900000B) 0x8048447: main (long-time.c:18)
+->100.00% (900000B) 0x........: main (long-time.c:18)
 | 
 ->00.00% (0B) in 1+ places, all below ms_print's threshold (01.00%)
 
@@ -104,9 +104,9 @@ Number of snapshots: 94
  37  4,854,200,000                0                0             0            0
  38  4,979,900,000        2,300,000        2,300,000             0            0
 100.00% (2300000B) (heap allocation functions) malloc/new/new[], --alloc-fns, etc.
-->52.17% (1200000B) 0x8048418: main (long-time.c:15)
+->52.17% (1200000B) 0x........: main (long-time.c:15)
 | 
-->47.83% (1100000B) 0x80483F7: main (long-time.c:13)
+->47.83% (1100000B) 0x........: main (long-time.c:13)
 | 
 ->00.00% (0B) in 1+ places, all below ms_print's threshold (01.00%)
 
@@ -119,9 +119,9 @@ Number of snapshots: 94
  42  5,483,900,000        2,300,000        2,300,000             0            0
  43  5,609,900,000        1,900,000        1,900,000             0            0
 100.00% (1900000B) (heap allocation functions) malloc/new/new[], --alloc-fns, etc.
-->57.89% (1100000B) 0x80483F7: main (long-time.c:13)
+->57.89% (1100000B) 0x........: main (long-time.c:13)
 | 
-->42.11% (800000B) 0x80483E4: main (long-time.c:12)
+->42.11% (800000B) 0x........: main (long-time.c:12)
 | 
 ->00.00% (0B) in 1+ places, all below ms_print's threshold (01.00%)
 
@@ -148,7 +148,7 @@ Number of snapshots: 94
  55  7,184,800,000          800,000          800,000             0            0
  56  7,311,100,000          900,000          900,000             0            0
 100.00% (900000B) (heap allocation functions) malloc/new/new[], --alloc-fns, etc.
-->100.00% (900000B) 0x8048447: main (long-time.c:18)
+->100.00% (900000B) 0x........: main (long-time.c:18)
 | 
 ->00.00% (0B) in 1+ places, all below ms_print's threshold (01.00%)
 
@@ -166,7 +166,7 @@ Number of snapshots: 94
  65  8,445,000,000        1,200,000        1,200,000             0            0
  66  8,570,700,000        1,100,000        1,100,000             0            0
 100.00% (1100000B) (heap allocation functions) malloc/new/new[], --alloc-fns, etc.
-->100.00% (1100000B) 0x80483F7: main (long-time.c:13)
+->100.00% (1100000B) 0x........: main (long-time.c:13)
 | 
 ->00.00% (0B) in 1+ places, all below ms_print's threshold (01.00%)
 
@@ -184,7 +184,7 @@ Number of snapshots: 94
  75  9,704,800,000          800,000          800,000             0            0
  76  9,831,100,000          900,000          900,000             0            0
 100.00% (900000B) (heap allocation functions) malloc/new/new[], --alloc-fns, etc.
-->100.00% (900000B) 0x8048447: main (long-time.c:18)
+->100.00% (900000B) 0x........: main (long-time.c:18)
 | 
 ->00.00% (0B) in 1+ places, all below ms_print's threshold (01.00%)
 
@@ -202,7 +202,7 @@ Number of snapshots: 94
  85 10,965,000,000        1,200,000        1,200,000             0            0
  86 11,090,700,000        1,100,000        1,100,000             0            0
 100.00% (1100000B) (heap allocation functions) malloc/new/new[], --alloc-fns, etc.
-->100.00% (1100000B) 0x80483F7: main (long-time.c:13)
+->100.00% (1100000B) 0x........: main (long-time.c:13)
 | 
 ->00.00% (0B) in 1+ places, all below ms_print's threshold (01.00%)
 

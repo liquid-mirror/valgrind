@@ -38,8 +38,8 @@ Number of snapshots: 11
   1            108              108              100             8            0
   2            108              108              100             8            0
 92.59% (100B) (heap allocation functions) malloc/new/new[], --alloc-fns, etc.
-->92.59% (100B) 0x80485A9: custom_alloc (custom_alloc.c:41)
-  ->92.59% (100B) 0x804862D: main (custom_alloc.c:60)
+->92.59% (100B) 0x........: custom_alloc (custom_alloc.c:41)
+  ->92.59% (100B) 0x........: main (custom_alloc.c:60)
     
 --------------------------------------------------------------------------------
   n        time(B)         total(B)   useful-heap(B) admin-heap(B)    stacks(B)
@@ -48,8 +48,8 @@ Number of snapshots: 11
   4            424              208              200             8            0
   5            424              208              200             8            0
 96.15% (200B) (heap allocation functions) malloc/new/new[], --alloc-fns, etc.
-->96.15% (200B) 0x80485A9: custom_alloc (custom_alloc.c:41)
-  ->96.15% (200B) 0x804864B: main (custom_alloc.c:63)
+->96.15% (200B) 0x........: custom_alloc (custom_alloc.c:41)
+  ->96.15% (200B) 0x........: main (custom_alloc.c:63)
   | 
   ->00.00% (0B) in 1+ places, all below ms_print's threshold (01.00%)
   

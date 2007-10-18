@@ -45,11 +45,11 @@ Number of snapshots: 24
   8          1,096            1,096            1,032            64            0
   9          1,105            1,105            1,033            72            0
 93.48% (1033B) (heap allocation functions) malloc/new/new[], --alloc-fns, etc.
-->90.50% (1000B) 0x80483A4: main (insig.c:8)
+->90.50% (1000B) 0x........: main (insig.c:8)
 | 
-->01.36% (15B) 0x80483B1: main (insig.c:9)
+->01.36% (15B) 0x........: main (insig.c:9)
 | 
-->01.09% (12B) 0x80483BE: main (insig.c:10)
+->01.09% (12B) 0x........: main (insig.c:10)
 | 
 ->00.54% (6B) in 1+ places, all below ms_print's threshold (01.00%)
 
@@ -67,13 +67,13 @@ Number of snapshots: 24
  18          1,186            1,186            1,042           144            0
  19          1,195            1,195            1,043           152            0
 87.28% (1043B) (heap allocation functions) malloc/new/new[], --alloc-fns, etc.
-->83.68% (1000B) 0x80483A4: main (insig.c:8)
+->83.68% (1000B) 0x........: main (insig.c:8)
 | 
 ->01.34% (16B) in 16 places, all below massif's threshold (01.00%)
 | 
-->01.26% (15B) 0x80483B1: main (insig.c:9)
+->01.26% (15B) 0x........: main (insig.c:9)
 | 
-->01.00% (12B) 0x80483BE: main (insig.c:10)
+->01.00% (12B) 0x........: main (insig.c:10)
   
 --------------------------------------------------------------------------------
   n        time(B)         total(B)   useful-heap(B) admin-heap(B)    stacks(B)

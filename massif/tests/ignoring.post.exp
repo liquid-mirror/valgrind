@@ -37,7 +37,7 @@ Number of snapshots: 88
   0              0                0                0             0            0
   1          1,008            1,008            1,000             8            0
 99.21% (1000B) (heap allocation functions) malloc/new/new[], --alloc-fns, etc.
-->99.21% (1000B) 0x80483D8: main (ignoring.c:13)
+->99.21% (1000B) 0x........: main (ignoring.c:13)
   
 --------------------------------------------------------------------------------
   n        time(B)         total(B)   useful-heap(B) admin-heap(B)    stacks(B)
@@ -45,7 +45,7 @@ Number of snapshots: 88
   2          5,104              508              500             8            0
   3          7,168              508              500             8            0
 98.43% (500B) (heap allocation functions) malloc/new/new[], --alloc-fns, etc.
-->98.43% (500B) 0x80483F9: main (ignoring.c:17)
+->98.43% (500B) 0x........: main (ignoring.c:17)
 | 
 ->00.00% (0B) in 1+ places, all below ms_print's threshold (01.00%)
 
@@ -58,7 +58,7 @@ Number of snapshots: 88
   7         15,424              508              500             8            0
   8         17,488              508              500             8            0
 98.43% (500B) (heap allocation functions) malloc/new/new[], --alloc-fns, etc.
-->98.43% (500B) 0x80483F9: main (ignoring.c:17)
+->98.43% (500B) 0x........: main (ignoring.c:17)
 | 
 ->00.00% (0B) in 1+ places, all below ms_print's threshold (01.00%)
 
@@ -84,9 +84,9 @@ Number of snapshots: 88
  25         53,866              766              750            16            0
  26         55,930              766              750            16            0
 97.91% (750B) (heap allocation functions) malloc/new/new[], --alloc-fns, etc.
-->65.27% (500B) 0x80483F9: main (ignoring.c:17)
+->65.27% (500B) 0x........: main (ignoring.c:17)
 | 
-->32.64% (250B) 0x8048412: main (ignoring.c:26)
+->32.64% (250B) 0x........: main (ignoring.c:26)
 | 
 ->00.00% (0B) in 1+ places, all below ms_print's threshold (01.00%)
 
@@ -99,9 +99,9 @@ Number of snapshots: 88
  30         64,186              766              750            16            0
  31         66,250              766              750            16            0
 97.91% (750B) (heap allocation functions) malloc/new/new[], --alloc-fns, etc.
-->65.27% (500B) 0x80483F9: main (ignoring.c:17)
+->65.27% (500B) 0x........: main (ignoring.c:17)
 | 
-->32.64% (250B) 0x8048412: main (ignoring.c:26)
+->32.64% (250B) 0x........: main (ignoring.c:26)
 | 
 ->00.00% (0B) in 1+ places, all below ms_print's threshold (01.00%)
 
@@ -114,9 +114,9 @@ Number of snapshots: 88
  35         74,506              766              750            16            0
  36         76,570              766              750            16            0
 97.91% (750B) (heap allocation functions) malloc/new/new[], --alloc-fns, etc.
-->65.27% (500B) 0x80483F9: main (ignoring.c:17)
+->65.27% (500B) 0x........: main (ignoring.c:17)
 | 
-->32.64% (250B) 0x8048412: main (ignoring.c:26)
+->32.64% (250B) 0x........: main (ignoring.c:26)
 | 
 ->00.00% (0B) in 1+ places, all below ms_print's threshold (01.00%)
 
@@ -129,9 +129,9 @@ Number of snapshots: 88
  40         84,826              766              750            16            0
  41         86,890              766              750            16            0
 97.91% (750B) (heap allocation functions) malloc/new/new[], --alloc-fns, etc.
-->65.27% (500B) 0x80483F9: main (ignoring.c:17)
+->65.27% (500B) 0x........: main (ignoring.c:17)
 | 
-->32.64% (250B) 0x8048412: main (ignoring.c:26)
+->32.64% (250B) 0x........: main (ignoring.c:26)
 | 
 ->00.00% (0B) in 1+ places, all below ms_print's threshold (01.00%)
 
@@ -144,9 +144,9 @@ Number of snapshots: 88
  45         95,146              766              750            16            0
  46         97,210              766              750            16            0
 97.91% (750B) (heap allocation functions) malloc/new/new[], --alloc-fns, etc.
-->65.27% (500B) 0x80483F9: main (ignoring.c:17)
+->65.27% (500B) 0x........: main (ignoring.c:17)
 | 
-->32.64% (250B) 0x8048412: main (ignoring.c:26)
+->32.64% (250B) 0x........: main (ignoring.c:26)
 | 
 ->00.00% (0B) in 1+ places, all below ms_print's threshold (01.00%)
 
@@ -160,9 +160,9 @@ Number of snapshots: 88
  51        108,562              766              750            16            0
  52        110,626              766              750            16            0
 97.91% (750B) (heap allocation functions) malloc/new/new[], --alloc-fns, etc.
-->65.27% (500B) 0x80483F9: main (ignoring.c:17)
+->65.27% (500B) 0x........: main (ignoring.c:17)
 | 
-->32.64% (250B) 0x8048412: main (ignoring.c:26)
+->32.64% (250B) 0x........: main (ignoring.c:26)
 | 
 ->00.00% (0B) in 1+ places, all below ms_print's threshold (01.00%)
 
@@ -180,9 +180,9 @@ Number of snapshots: 88
  61        129,202              766              750            16            0
  62        131,266              766              750            16            0
 97.91% (750B) (heap allocation functions) malloc/new/new[], --alloc-fns, etc.
-->65.27% (500B) 0x80483F9: main (ignoring.c:17)
+->65.27% (500B) 0x........: main (ignoring.c:17)
 | 
-->32.64% (250B) 0x8048412: main (ignoring.c:26)
+->32.64% (250B) 0x........: main (ignoring.c:26)
 | 
 ->00.00% (0B) in 1+ places, all below ms_print's threshold (01.00%)
 
@@ -200,9 +200,9 @@ Number of snapshots: 88
  71        149,842              766              750            16            0
  72        151,906              766              750            16            0
 97.91% (750B) (heap allocation functions) malloc/new/new[], --alloc-fns, etc.
-->65.27% (500B) 0x80483F9: main (ignoring.c:17)
+->65.27% (500B) 0x........: main (ignoring.c:17)
 | 
-->32.64% (250B) 0x8048412: main (ignoring.c:26)
+->32.64% (250B) 0x........: main (ignoring.c:26)
 | 
 ->00.00% (0B) in 1+ places, all below ms_print's threshold (01.00%)
 
@@ -220,9 +220,9 @@ Number of snapshots: 88
  81        170,482              766              750            16            0
  82        172,546              766              750            16            0
 97.91% (750B) (heap allocation functions) malloc/new/new[], --alloc-fns, etc.
-->65.27% (500B) 0x80483F9: main (ignoring.c:17)
+->65.27% (500B) 0x........: main (ignoring.c:17)
 | 
-->32.64% (250B) 0x8048412: main (ignoring.c:26)
+->32.64% (250B) 0x........: main (ignoring.c:26)
 | 
 ->00.00% (0B) in 1+ places, all below ms_print's threshold (01.00%)
 
