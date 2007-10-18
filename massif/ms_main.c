@@ -61,7 +61,7 @@
 //   tinycc    0.49s  ma: 7.6s (15.4x, -----)
 //   many-xpts 0.04s  ma: 1.9s (46.2x, -----)
 //
-// Many many-xpts run for longer (r7001):
+// Make many-xpts run for longer (r7001):
 //   heap      0.59s  ma:20.3s (34.5x, -----)
 //   tinycc    0.49s  ma: 7.6s (15.4x, -----)
 //   many-xpts 0.13s  ma: 2.8s (21.6x, -----)
@@ -97,11 +97,15 @@
 //
 // By default, only snapshot a peak if it's 1% larger than the previous peak,
 // rather than snapshotting every peak.  Greatly reduces the number of peak
-// snapshots taken for larger programs like konqueror.
+// snapshots taken for larger programs like konqueror (r7013):
 //   heap      0.53s  ma:12.4s (23.5x, -----)
 //   tinycc    0.46s  ma: 4.9s (10.7x, -----)
 //   many-xpts 0.08s  ma: 2.0s (25.0x, -----)
 //   konqueror 29.6s real  0:21.0s user
+//
+// Performance todos:
+// - get_XCon accounts for about 9% of konqueror startup time.  Try keeping
+//   XPt children sorted by 'ip' and use binary search in get_XCon.
 //
 // Todo:
 // - for regtests, need to filter out code addresses in *.post.* files
