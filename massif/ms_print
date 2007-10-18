@@ -30,8 +30,6 @@
 use warnings;
 use strict;
 
-# XXX: put commas in sizes in heap trees?
-
 #----------------------------------------------------------------------------
 # Global variables, main data structures
 #----------------------------------------------------------------------------
@@ -209,7 +207,8 @@ sub read_heap_tree($$$$$)
         # Nb: $details might have '%' in it, so don't embed directly in the
         # format string.
         printf(TMPFILE
-            "$this_prefix$arrow%05.2f%% (${bytes}B)%s\n", $perc, $details);
+            "$this_prefix$arrow%05.2f%% (%sB)%s\n", $perc, commify($bytes),
+            $details);
     }
 
     # Now read all the children.
@@ -232,9 +231,9 @@ sub read_heap_tree($$$$$)
         # the "in N places" line for them.
         if ($n_insig_children > 0) {
             $perc = safe_div_0(100 * $total_insig_children_szB, $mem_total_B);
-            printf(TMPFILE "%s->%05.2f%% (%dB) in %d+ places, all below "
+            printf(TMPFILE "%s->%05.2f%% (%sB) in %d+ places, all below "
                  . "ms_print's threshold (%05.2f%%)\n",
-                $this_prefix2, $perc, $total_insig_children_szB,
+                $this_prefix2, $perc, commify($total_insig_children_szB),
                 $n_insig_children, $threshold);
             print(TMPFILE "$this_prefix2\n");
         }
