@@ -770,6 +770,32 @@ static void lockN_release ( Lock* lk, Thread* thr )
    tl_assert(is_sane_LockN(lk));
 }
 
+static void remove_Lock_from_locksets_of_all_owning_Threads( Lock* lk )
+{
+   Thread* thr;
+   if (!lk->heldBy) {
+      tl_assert(!lk->heldW);
+      return;
+   }
+   /* for each thread that holds this lock do ... */
+   TC_(initIterBag)( lk->heldBy );
+   while (TC_(nextIterBag)( lk->heldBy, (Word*)&thr, NULL )) {
+      tl_assert(is_sane_Thread(thr));
+      tl_assert(TC_(elemWS)( univ_lsets,
+                             thr->locksetA, (Word)lk ));
+      thr->locksetA
+         = TC_(delFromWS)( univ_lsets, thr->locksetA, (Word)lk );
+
+      if (lk->heldW) {
+         tl_assert(TC_(elemWS)( univ_lsets,
+                                thr->locksetW, (Word)lk ));
+         thr->locksetW
+            = TC_(delFromWS)( univ_lsets, thr->locksetW, (Word)lk );
+      }
+   }
+   TC_(doneIterBag)( lk->heldBy );
+}
+
 /* --------- xxxID functions --------- */
 
 /* Proposal (for debugging sanity):
@@ -2106,29 +2132,6 @@ static void segments__sanity_check ( Char* who )
 #undef BAD
 }
 
-/* Generic template for iterating over all words in a SecMap:
-static void zzzzz ( SecMap* sm, void (*F)(UInt) )
-{
-   Word zi, zj;
-   CacheLineZ* lineZ;
-   CacheLineF* lineF;
-   for (zi = 0; zi < N_SECMAP_ZLINES; zi++) {
-      get_ZF_by_index( &lineZ, &lineF, sm, zi );
-      if (lineZ) {
-         tl_assert(!lineF);
-         for (zj = 0; zj < 4; zj++) {
-            if (lineZ->dict[zj])
-               F(lineZ->dict[zj]);
-         }
-      } else {
-         tl_assert(!lineZ);
-         for (zj = 0; zj < N_LINE_W8s; zj++) {
-            F( lineF->fw32[zj] );
-         }
-      }
-   }
-}
-*/
 
 /* Sanity check shadow memory, as far as possible */
 static void shmem__sanity_check ( Char* who )
@@ -2670,6 +2673,12 @@ UInt msm__handle_write ( Thread* thr_acc, Addr a, UInt wold, Int szB )
 /*--- Shadow value and address range handlers                  ---*/
 /*----------------------------------------------------------------*/
 
+static void laog__pre_thread_acquires_lock ( Thread*, Lock* ); /* fwds */
+static void laog__handle_lock_deletions    ( WordSetID ); /* fwds */
+
+
+/* ------------ CacheLineF and CacheLineZ related ------------ */
+
 static void write_twobit_array ( UChar* arr, UWord ix, UWord b2 ) {
    Word bix, shft, mask, prep;
    tl_assert((b2 & ~3) == 0);
@@ -2691,7 +2700,8 @@ static UWord read_twobit_array ( UChar* arr, UWord ix ) {
 
 /* Given a lineZ index and a SecMap, return the CacheLineZ* and CacheLineF*
    for that index. */
-static void get_ZF_by_index ( /*OUT*/CacheLineZ** zp, /*OUT*/CacheLineF** fp,
+static void get_ZF_by_index ( /*OUT*/CacheLineZ** zp,
+                              /*OUT*/CacheLineF** fp,
                               SecMap* sm, Int zix ) {
    CacheLineZ* lineZ;
    tl_assert(zp);
@@ -2713,9 +2723,8 @@ static void get_ZF_by_index ( /*OUT*/CacheLineZ** zp, /*OUT*/CacheLineF** fp,
    }
 }
 
-static 
-void find_ZF_for_reading ( /*OUT*/CacheLineZ** zp,
-                           /*OUT*/CacheLineF** fp, Addr tag ) {
+static void find_ZF_for_reading ( /*OUT*/CacheLineZ** zp,
+                                  /*OUT*/CacheLineF** fp, Addr tag ) {
    CacheLineZ* lineZ;
    CacheLineF* lineF;
    UWord   zix;
@@ -2741,10 +2750,9 @@ void find_ZF_for_reading ( /*OUT*/CacheLineZ** zp,
    *fp = lineF;
 }
 
-static
-void find_Z_for_writing ( /*OUT*/SecMap** smp,
-                          /*OUT*/Word* zixp,
-                          Addr tag ) {
+static void find_Z_for_writing ( /*OUT*/SecMap** smp,
+                                 /*OUT*/Word* zixp,
+                                 Addr tag ) {
    CacheLineZ* lineZ;
    CacheLineF* lineF;
    UWord   zix;
@@ -2771,10 +2779,8 @@ void find_Z_for_writing ( /*OUT*/SecMap** smp,
    *zixp = zix;
 }
 
-static
-void alloc_F_for_writing ( /*MOD*/SecMap* sm,
-                           /*OUT*/Word* fixp )
-{
+static 
+void alloc_F_for_writing ( /*MOD*/SecMap* sm, /*OUT*/Word* fixp ) {
    Word        i, new_size;
    CacheLineF* nyu;
 
@@ -2831,6 +2837,9 @@ void alloc_F_for_writing ( /*MOD*/SecMap* sm,
     /*NOTREACHED*/
     tl_assert(0);
 }
+
+
+/* ------------ CacheLine and implicit-tree related ------------ */
 
 __attribute__((unused))
 static void pp_CacheLine ( CacheLine* cl ) {
@@ -2960,6 +2969,7 @@ static UChar descr_to_validbits ( UShort descr )
 #  undef BYTE
 }
 
+__attribute__((unused))
 static Bool is_sane_Descr ( UShort descr ) {
    return descr_to_validbits(descr) != 0;
 }
@@ -3045,34 +3055,6 @@ static Bool is_sane_CacheLine ( CacheLine* cl )
    return False;
 }
 
-static void laog__pre_thread_acquires_lock ( Thread*, Lock* ); /* fwds */
-static void laog__handle_lock_deletions    ( WordSetID ); /* fwds */
-
-static void remove_Lock_from_locksets_of_all_owning_Threads( Lock* lk )
-{
-   Thread* thr;
-   if (!lk->heldBy) {
-      tl_assert(!lk->heldW);
-      return;
-   }
-   /* for each thread that holds this lock do ... */
-   TC_(initIterBag)( lk->heldBy );
-   while (TC_(nextIterBag)( lk->heldBy, (Word*)&thr, NULL )) {
-      tl_assert(is_sane_Thread(thr));
-      tl_assert(TC_(elemWS)( univ_lsets,
-                             thr->locksetA, (Word)lk ));
-      thr->locksetA
-         = TC_(delFromWS)( univ_lsets, thr->locksetA, (Word)lk );
-
-      if (lk->heldW) {
-         tl_assert(TC_(elemWS)( univ_lsets,
-                                thr->locksetW, (Word)lk ));
-         thr->locksetW
-            = TC_(delFromWS)( univ_lsets, thr->locksetW, (Word)lk );
-      }
-   }
-   TC_(doneIterBag)( lk->heldBy );
-}
 
 static UShort normalise_tree ( /*MOD*/UInt* tree ) {
    Word   i;
@@ -3131,7 +3113,7 @@ static UShort normalise_tree ( /*MOD*/UInt* tree ) {
 
 /* This takes a cacheline where all the data is at the leaves
    (w8[..]) and builds a correctly normalised tree. */
-static void cacheline_normalise ( /*MOD*/CacheLine* cl )
+static void normalise_CacheLine ( /*MOD*/CacheLine* cl )
 {
    Word tno, cloff;
    for (tno = 0, cloff = 0;  tno < N_LINE_TREES;  tno++, cloff += 8) {
@@ -3191,7 +3173,7 @@ UInt* sequentialise_tree ( /*MOD*/UInt* dst, /*OUT*/Bool* anyShared,
 /* Write the cacheline 'wix' to backing store.  Where it ends up
    is determined by its tag field. */
 static
-Bool sequentialise_into ( /*OUT*/UInt* dst, Word nDst, CacheLine* src )
+Bool sequentialise_CacheLine ( /*OUT*/UInt* dst, Word nDst, CacheLine* src )
 {
    Word  tno, cloff;
    Bool  anyShared = False;
@@ -3252,7 +3234,7 @@ static __attribute__((noinline)) void cacheline_wback ( UWord wix )
 
    /* Generate the data to be stored */
    /* EXPENSIVE: tl_assert(is_sane_CacheLine( cl )); */
-   anyShared = sequentialise_into( shvals, N_LINE_ARANGE, cl );
+   anyShared = sequentialise_CacheLine( shvals, N_LINE_ARANGE, cl );
 
    lineZ->dict[0] = lineZ->dict[1] 
                   = lineZ->dict[2] = lineZ->dict[3] = 0;
@@ -3353,7 +3335,7 @@ static __attribute__((noinline)) void cacheline_fetch ( UWord wix )
       }
       stats__cache_Z_fetches++;
    }
-   cacheline_normalise( cl );
+   normalise_CacheLine( cl );
 }
 
 static void shmem__invalidate_scache ( void ) {
@@ -3365,6 +3347,7 @@ static void shmem__invalidate_scache ( void ) {
    }
    stats__cache_invals++;
 }
+
 static void shmem__flush_and_invalidate_scache ( void ) {
    Word wix;
    Addr tag;
@@ -3383,6 +3366,9 @@ static void shmem__flush_and_invalidate_scache ( void ) {
    stats__cache_flushes++;
    stats__cache_invals++;
 }
+
+
+/* ------------ Basic shadow memory read/write ops ------------ */
 
 static inline Bool aligned16 ( Addr a ) {
    return 0 == (a & 1);
@@ -3449,8 +3435,6 @@ static __attribute__((noinline))
    /* EXPENSIVE tl_assert(is_sane_CacheLine( cl )); */
    return cl;
 }
-
-/////////////////////////////vvvvvvvvvvvvvvvvvvvvvvvvvvvvv
 
 static UShort pulldown_to_32 ( /*MOD*/UInt* tree, UWord toff, UShort descr ) {
    stats__cline_64to32pulldown++;
@@ -3728,6 +3712,7 @@ static void shadow_mem_read32 ( Thread* thr_acc, Addr a, UInt uuOpaque ) {
    shadow_mem_read32_SLOW( thr_acc, a, uuOpaque );
 }
 
+inline
 static void shadow_mem_read64 ( Thread* thr_acc, Addr a, UInt uuOpaque ) {
    CacheLine* cl; 
    UWord      cloff, tno, toff;
@@ -3804,38 +3789,6 @@ static void shadow_mem_write16 ( Thread* thr_acc, Addr a, UInt uuOpaque ) {
    shadow_mem_write8( thr_acc, a + 1, 0/*unused*/ );
 }
 
-#if 0
-static void shadow_mem_write32 ( Thread* thr_acc, Addr a, UInt uuOpaque ) {
-   CacheLine* cl; 
-   UWord      cloff, tno, toff;
-   UInt       svOld, svNew;
-   UShort     descr;
-   stats__cline_write32s++;
-   if (UNLIKELY(!aligned32(a))) goto slowcase;
-   cl    = get_cacheline(a);
-   cloff = get_cacheline_offset(a);
-   tno   = get_treeno(a);
-   toff  = get_tree_offset(a); /* == 0 or 4 */
-   descr = cl->descrs[tno];
-   if (UNLIKELY( !(descr & (TREE_DESCR_32_0 << toff)) )) {
-      if (valid_value_is_above_me_32(descr, toff)) {
-         UInt* tree = &cl->svals[tno << 3];
-         cl->descrs[tno] = pulldown_to_32(tree, toff, descr);
-      } else {
-         goto slowcase;
-      }
-      /* EXPENSIVE: tl_assert(is_sane_CacheLine(cl)); */
-   }
-   svOld = cl->svals[cloff];
-   svNew = msm__handle_write( thr_acc, a, svOld, 4 );
-   cl->svals[cloff] = svNew;
-   return;
-  slowcase: /* misaligned, or must go further down the tree */
-   stats__cline_32to16splits++;
-   shadow_mem_write16( thr_acc, a + 0, 0/*unused*/ );
-   shadow_mem_write16( thr_acc, a + 2, 0/*unused*/ );
-}
-#else
 __attribute__((noinline))
 static void shadow_mem_write32_SLOW ( Thread* thr_acc, Addr a, UInt uuOpaque ) {
    CacheLine* cl; 
@@ -3886,8 +3839,8 @@ static void shadow_mem_write32 ( Thread* thr_acc, Addr a, UInt uuOpaque ) {
   slowcase: /* misaligned, or must go further down the tree */
    shadow_mem_write32_SLOW( thr_acc, a, uuOpaque );
 }
-#endif
 
+inline
 static void shadow_mem_write64 ( Thread* thr_acc, Addr a, UInt uuOpaque ) {
    CacheLine* cl; 
    UWord      cloff, tno, toff;
@@ -4000,6 +3953,7 @@ static void shadow_mem_set32 ( Thread* uu_thr_acc, Addr a, UInt svNew ) {
    shadow_mem_set16( uu_thr_acc, a + 0, svNew );
    shadow_mem_set16( uu_thr_acc, a + 2, svNew );
 }
+inline
 static void shadow_mem_set64 ( Thread* uu_thr_acc, Addr a, UInt svNew ) {
    CacheLine* cl; 
    UWord      cloff, tno, toff;
@@ -4049,9 +4003,8 @@ static void shadow_mem_copy8 ( Addr src, Addr dst, Bool normalise ) {
    shadow_mem_set8( NULL/*unused*/, dst, sv );
 }
 
-/////////////////////////////^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-
+/* ------------ Shadow memory range setting ops ------------ */
 
 static void shadow_mem_modify_range(
                Thread* thr, 
