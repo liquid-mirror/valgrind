@@ -107,34 +107,33 @@
 // - get_XCon accounts for about 9% of konqueror startup time.  Try keeping
 //   XPt children sorted by 'ip' and use binary search in get_XCon.
 //
-// Todo:
-// - for regtests, need to filter out code addresses in *.post.* files
-// - do snapshots on client requests
+// Todo -- critical for release:
+// - decide on a name!
 // - C++ tests -- for each of the allocators, and overloaded versions of
 //   them (see 'init_alloc_fns').
-// - Add ability to draw multiple graphs, eg. heap-only, stack-only, total.
-//   Give each graph a title.  (try to do it generically!)
+// - do a graph-drawing test
+// - write a good basic test that shows how the tool works, suitable for
+//   documentation
+// - write documentation
 // - make file format more generic.  Obstacles:
 //   - unit prefixes are not generic
 //   - preset column widths for stats are not generic
 //   - preset column headers are not generic
 //   - "Massif arguments:" line is not generic
-// - do a graph-drawing test
-// - write a good basic test that shows how the tool works, suitable for
-//   documentation
 //
-// Possible ideas for the future:
+// Todo -- nice, but less critical:
+// - do snapshots on client requests
+// - Add ability to draw multiple graphs, eg. heap-only, stack-only, total.
+//   Give each graph a title.  (try to do it generically!)
+// - allow truncation of long fnnames if the exact line number is
+//   identified?  [hmm, could make getting the name of alloc-fns more
+//   difficult] [could dump full names to file, truncate in ms_print]
+//
+// Todo -- low priority:
 // - Consider 'instructions executed' as a time unit -- more regular than
 //   ms, less artificial than B (bug #121629).
 // - In each XPt, record both bytes and the number of allocations, and
 //   possibly the global number of allocations.
-//
-// Dumping the results to file:
-// - work out the file format (Josef wants Callgrind format, Donna wants
-//   XML, Nick wants something easy to read in Perl)
-// - allow truncation of long fnnames if the exact line number is
-//   identified?  [hmm, could make getting the name of alloc-fns more
-//   difficult] [could dump full names to file, truncate in ms_print]
 //
 // Examine and fix bugs on bugzilla:
 // IGNORE:
