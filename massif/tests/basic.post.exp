@@ -60,8 +60,8 @@ Number of snapshots: 73
  17          1,836            1,836            1,700           136            0
  18          1,944            1,944            1,800           144            0
  19          2,052            2,052            1,900           152            0
-92.59% (1900B) (heap allocation functions) malloc/new/new[], --alloc-fns, etc.
-->92.59% (1900B) 0x........: main (basic.c:14)
+92.59% (1,900B) (heap allocation functions) malloc/new/new[], --alloc-fns, etc.
+->92.59% (1,900B) 0x........: main (basic.c:14)
   
 --------------------------------------------------------------------------------
   n        time(B)         total(B)   useful-heap(B) admin-heap(B)    stacks(B)
@@ -76,8 +76,8 @@ Number of snapshots: 73
  27          2,916            2,916            2,700           216            0
  28          3,024            3,024            2,800           224            0
  29          3,132            3,132            2,900           232            0
-92.59% (2900B) (heap allocation functions) malloc/new/new[], --alloc-fns, etc.
-->92.59% (2900B) 0x........: main (basic.c:14)
+92.59% (2,900B) (heap allocation functions) malloc/new/new[], --alloc-fns, etc.
+->92.59% (2,900B) 0x........: main (basic.c:14)
   
 --------------------------------------------------------------------------------
   n        time(B)         total(B)   useful-heap(B) admin-heap(B)    stacks(B)
@@ -90,8 +90,8 @@ Number of snapshots: 73
  35          3,780            3,780            3,500           280            0
  36          3,888            3,888            3,600           288            0
  37          3,888            3,888            3,600           288            0
-92.59% (3600B) (heap allocation functions) malloc/new/new[], --alloc-fns, etc.
-->92.59% (3600B) 0x........: main (basic.c:14)
+92.59% (3,600B) (heap allocation functions) malloc/new/new[], --alloc-fns, etc.
+->92.59% (3,600B) 0x........: main (basic.c:14)
   
 --------------------------------------------------------------------------------
   n        time(B)         total(B)   useful-heap(B) admin-heap(B)    stacks(B)
@@ -106,8 +106,8 @@ Number of snapshots: 73
  45          4,752            3,024            2,800           224            0
  46          4,860            2,916            2,700           216            0
  47          4,968            2,808            2,600           208            0
-92.59% (2600B) (heap allocation functions) malloc/new/new[], --alloc-fns, etc.
-->92.59% (2600B) 0x........: main (basic.c:14)
+92.59% (2,600B) (heap allocation functions) malloc/new/new[], --alloc-fns, etc.
+->92.59% (2,600B) 0x........: main (basic.c:14)
   
 --------------------------------------------------------------------------------
   n        time(B)         total(B)   useful-heap(B) admin-heap(B)    stacks(B)
@@ -122,8 +122,8 @@ Number of snapshots: 73
  55          5,832            1,944            1,800           144            0
  56          5,940            1,836            1,700           136            0
  57          6,048            1,728            1,600           128            0
-92.59% (1600B) (heap allocation functions) malloc/new/new[], --alloc-fns, etc.
-->92.59% (1600B) 0x........: main (basic.c:14)
+92.59% (1,600B) (heap allocation functions) malloc/new/new[], --alloc-fns, etc.
+->92.59% (1,600B) 0x........: main (basic.c:14)
   
 --------------------------------------------------------------------------------
   n        time(B)         total(B)   useful-heap(B) admin-heap(B)    stacks(B)

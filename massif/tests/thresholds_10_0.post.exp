@@ -44,17 +44,17 @@ Number of snapshots: 10
   7          7,950            7,950            7,950             0            0
   8          9,950            9,950            9,950             0            0
   9         10,000           10,000           10,000             0            0
-100.00% (10000B) (heap allocation functions) malloc/new/new[], --alloc-fns, etc.
-->66.50% (6650B) 0x........: my_malloc1 (thresholds.c:23)
-| ->60.00% (6000B) 0x........: a7550 (thresholds.c:38)
-| | ->60.00% (6000B) 0x........: main (thresholds.c:52)
+100.00% (10,000B) (heap allocation functions) malloc/new/new[], --alloc-fns, etc.
+->66.50% (6,650B) 0x........: my_malloc1 (thresholds.c:23)
+| ->60.00% (6,000B) 0x........: a7550 (thresholds.c:38)
+| | ->60.00% (6,000B) 0x........: main (thresholds.c:52)
 | |   
 | ->06.50% (650B) in 3 places, all below massif's threshold (10.00%)
 |   
-->20.00% (2000B) 0x........: main (thresholds.c:55)
+->20.00% (2,000B) 0x........: main (thresholds.c:55)
 | 
-->13.00% (1300B) 0x........: my_malloc2 (thresholds.c:28)
-| ->13.00% (1300B) in 3 places, all below massif's threshold (10.00%)
+->13.00% (1,300B) 0x........: my_malloc2 (thresholds.c:28)
+| ->13.00% (1,300B) in 3 places, all below massif's threshold (10.00%)
 |   
 ->00.50% (50B) in 1 place, below massif's threshold (10.00%)
   

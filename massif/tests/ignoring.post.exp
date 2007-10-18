@@ -36,8 +36,8 @@ Number of snapshots: 88
 --------------------------------------------------------------------------------
   0              0                0                0             0            0
   1          1,008            1,008            1,000             8            0
-99.21% (1000B) (heap allocation functions) malloc/new/new[], --alloc-fns, etc.
-->99.21% (1000B) 0x........: main (ignoring.c:13)
+99.21% (1,000B) (heap allocation functions) malloc/new/new[], --alloc-fns, etc.
+->99.21% (1,000B) 0x........: main (ignoring.c:13)
   
 --------------------------------------------------------------------------------
   n        time(B)         total(B)   useful-heap(B) admin-heap(B)    stacks(B)

@@ -146,8 +146,8 @@ Number of snapshots: 76
  37          1,242            1,080            1,000            80            0
  38          1,251            1,089            1,001            88            0
  39          1,251            1,089            1,001            88            0
-91.92% (1001B) (heap allocation functions) malloc/new/new[], --alloc-fns, etc.
-->91.83% (1000B) 0x........: main (peak.c:8)
+91.92% (1,001B) (heap allocation functions) malloc/new/new[], --alloc-fns, etc.
+->91.83% (1,000B) 0x........: main (peak.c:8)
 | 
 ->00.09% (1B) in 1+ places, all below ms_print's threshold (01.00%)
 
@@ -161,8 +161,8 @@ Number of snapshots: 76
  44          1,494            1,296            1,200            96            0
  45          1,503            1,305            1,201           104            0
  46          1,503            1,305            1,201           104            0
-92.03% (1201B) (heap allocation functions) malloc/new/new[], --alloc-fns, etc.
-->91.95% (1200B) 0x........: main (peak.c:8)
+92.03% (1,201B) (heap allocation functions) malloc/new/new[], --alloc-fns, etc.
+->91.95% (1,200B) 0x........: main (peak.c:8)
 | 
 ->00.08% (1B) in 1+ places, all below ms_print's threshold (01.00%)
 
@@ -176,8 +176,8 @@ Number of snapshots: 76
  51          1,746            1,512            1,400           112            0
  52          1,755            1,521            1,401           120            0
  53          1,755            1,521            1,401           120            0
-92.11% (1401B) (heap allocation functions) malloc/new/new[], --alloc-fns, etc.
-->92.04% (1400B) 0x........: main (peak.c:8)
+92.11% (1,401B) (heap allocation functions) malloc/new/new[], --alloc-fns, etc.
+->92.04% (1,400B) 0x........: main (peak.c:8)
 | 
 ->00.07% (1B) in 1+ places, all below ms_print's threshold (01.00%)
 
@@ -191,8 +191,8 @@ Number of snapshots: 76
  58          1,998            1,728            1,600           128            0
  59          2,007            1,737            1,601           136            0
  60          2,007            1,737            1,601           136            0
-92.17% (1601B) (heap allocation functions) malloc/new/new[], --alloc-fns, etc.
-->92.11% (1600B) 0x........: main (peak.c:8)
+92.17% (1,601B) (heap allocation functions) malloc/new/new[], --alloc-fns, etc.
+->92.11% (1,600B) 0x........: main (peak.c:8)
 | 
 ->00.06% (1B) in 1+ places, all below ms_print's threshold (01.00%)
 
@@ -206,8 +206,8 @@ Number of snapshots: 76
  65          2,250            1,944            1,800           144            0
  66          2,259            1,953            1,801           152            0
  67          2,259            1,953            1,801           152            0
-92.22% (1801B) (heap allocation functions) malloc/new/new[], --alloc-fns, etc.
-->92.17% (1800B) 0x........: main (peak.c:8)
+92.22% (1,801B) (heap allocation functions) malloc/new/new[], --alloc-fns, etc.
+->92.17% (1,800B) 0x........: main (peak.c:8)
 | 
 ->00.05% (1B) in 1+ places, all below ms_print's threshold (01.00%)
 
@@ -221,8 +221,8 @@ Number of snapshots: 76
  72          2,502            2,160            2,000           160            0
  73          2,511            2,169            2,001           168            0
  74          2,511            2,169            2,001           168            0
-92.25% (2001B) (heap allocation functions) malloc/new/new[], --alloc-fns, etc.
-->92.21% (2000B) 0x........: main (peak.c:8)
+92.25% (2,001B) (heap allocation functions) malloc/new/new[], --alloc-fns, etc.
+->92.21% (2,000B) 0x........: main (peak.c:8)
 | 
 ->00.05% (1B) in 1+ places, all below ms_print's threshold (01.00%)
 

@@ -1,20 +1,3 @@
-
-Command line
-   ./peak
-Startup, with flags:
-   --command-line-only=yes
-   --memcheck:leak-check=no
-   --tool=massif
-   --stacks=no
-   --time-unit=B
-   -v
-   -v
-   --peak-inaccuracy=1000
-Contents of /proc/version:
-  Linux version 2.6.15-1.1833_FC4 (bhcompile@hs20-bc1-1.build.redhat.com) (gcc version 4.0.2 20051125 (Red Hat 4.0.2-8)) #1 Wed Mar 1 23:41:37 EST 2006
-Arch and hwcaps: X86, x86-sse1-sse2
-Page sizes: currently 4096, max supported 4096
-Valgrind library directory: /home/njn/grind/massif3/.in_place
 Massif: alloc-fns:
 Massif:   0: malloc
 Massif:   1: __builtin_new
@@ -30,36 +13,9 @@ Massif:   10: operator new(unsigned, std::nothrow_t const&)
 Massif:   11: operator new[](unsigned, std::nothrow_t const&)
 Massif:   12: operator new(unsigned long, std::nothrow_t const&)
 Massif:   13: operator new[](unsigned long, std::nothrow_t const&)
-TT/TC: VG_(init_tt_tc) (startup of code management)
-TT/TC: cache: 8 sectors of 9644544 bytes each = 77156352 total
-TT/TC: table: 524168 total entries, max occupancy 419328 (80%)
-Reading syms from /lib/ld-2.3.5.so (0x23C000)
-   svma 0x000023C000, avma 0x000023C000
-summarise_context(loc_start = 0x5D): cannot summarise(why=1):   
-0x66: 44(r3) u  u  u  c-36 u  u  c-44 c-40 c-4 u  u  u  u  u  u  u  u  u  u  u  
-summarise_context(loc_start = 0x66): cannot summarise(why=1):   
-0x69: 44(r3) u  u  u  c-36 u  u  u  c-40 c-4 u  u  u  u  u  u  u  u  u  u  u  
-summarise_context(loc_start = 0x69): cannot summarise(why=1):   
-0x78: 44(r3) u  u  u  c-36 u  u  u  u  c-4 u  u  u  u  u  u  u  u  u  u  u  
-Reading syms from /home/njn/grind/massif3/massif/tests/peak (0x8048000)
-   svma 0x0008048000, avma 0x0008048000
-Reading syms from /home/njn/grind/massif3/massif/massif-x86-linux (0x38000000)
-   svma 0x0038000000, avma 0x0038000000
-   object doesn't have a dynamic symbol table
 Massif: startup S.  0 (t:0, hp:0, ad:0, st:0)
-TT/TC: initialise sector 0
-Reading syms from /home/njn/grind/massif3/coregrind/vgpreload_core-x86-linux.so (0x4001000)
-   svma 0x0000000000, avma 0x0004001000
-Reading syms from /home/njn/grind/massif3/massif/vgpreload_massif-x86-linux.so (0x4003000)
-   svma 0x0000000000, avma 0x0004003000
-Reading syms from /lib/libc-2.3.5.so (0x25A000)
-   svma 0x000025A000, avma 0x000025A000
-summarise_context(loc_start = 0x34): cannot summarise(why=1):   
-0x4d: 0(r0) u  c60 c56 c52 u  c44 c40 c36 c-4 u  u  u  u  u  u  u  u  u  u  u  
-REDIR: 0x2bf41e (malloc) redirected to 0x4003e13 (malloc)
 Massif:   alloc S.  1 (t:108, hp:100, ad:8, st:0)
 Massif:   alloc S.  2 (t:117, hp:101, ad:16, st:0)
-REDIR: 0x2bd5e8 (free) redirected to 0x40049a4 (free)
 Massif: de-PEAK Sp  3 (t:117, hp:101, ad:16, st:0)
 Massif: dealloc S.  4 (t:126, hp:100, ad:8, st:0)
 Massif:   alloc S.  5 (t:234, hp:200, ad:16, st:0)
@@ -133,8 +89,6 @@ Massif:   alloc S. 72 (t:2502, hp:2000, ad:160, st:0)
 Massif:   alloc S. 73 (t:2511, hp:2001, ad:168, st:0)
 Massif: de-PEAK Sp 74 (t:2511, hp:2001, ad:168, st:0)
 Massif: dealloc S. 75 (t:2520, hp:2000, ad:160, st:0)
-Caught __NR_exit; running __libc_freeres()
-
 Massif: heap allocs:          40
 Massif: heap reallocs:        0
 Massif: heap frees:           20
@@ -152,39 +106,3 @@ Massif: detailed snapshots:   15
 Massif: peak snapshots:       15
 Massif: cullings:             0
 Massif: XCon_redos:           0
-translate:            fast SP updates identified: 0 (   --%)
-translate:   generic_known SP updates identified: 0 (   --%)
-translate: generic_unknown SP updates identified: 0 (   --%)
-    tt/tc: 2,987 tt lookups requiring 2,996 probes
-    tt/tc: 2,987 fast-cache updates, 2 flushes
- transtab: new        1,489 (32,900 -> 182,505; ratio 55:10) [0 scs]
- transtab: dumped     0 (0 -> ??)
- transtab: discarded  0 (0 -> ??)
-scheduler: 21,885 jumps (bb entries).
-scheduler: 0/1,610 major/minor sched events.
-   sanity: 1 cheap, 1 expensive checks.
-   exectx: 30,011 lists, 0 contexts (avg 0 per list)
-   exectx: 0 searches, 0 full compares (0 per 1000)
-   exectx: 0 cmp2, 0 cmp4, 0 cmpAll
- errormgr: 0 supplist searches, 0 comparisons during search
- errormgr: 0 errlist searches, 0 comparisons during search
-
------- Valgrind's internal memory use stats follow ------
-core    :  1 sbs,     3 bs,  1/1  free bs, 1048576 mmap,   65552 loan
-tool    :  1 sbs,   161 bs,  2/2  free bs, 1048576 mmap,  325904 loan
-symtab  :  3 sbs,   199 bs,  7/7  free bs, 3145728 mmap, 1949288 loan
-client  :  1 sbs,    21 bs,  1/1  free bs, 1048576 mmap,    2080 loan
-demangle:  0 sbs,     0 bs,  0/0  free bs,       0 mmap,       0 loan
-exectxt :  0 sbs,     0 bs,  0/0  free bs,       0 mmap,       0 loan
-errors  :  0 sbs,     0 bs,  0/0  free bs,       0 mmap,       0 loan
-ttaux   :  1 sbs,    75 bs, 13/13 free bs,   65536 mmap,    4624 loan
-------
-core    :  1048576 mmap'd,    65552/   65552 max/curr
-tool    :  1048576 mmap'd,   325920/  325904 max/curr
-symtab  :  3145728 mmap'd,  2020528/ 1949288 max/curr
-client  :  1048576 mmap'd,     2088/    2080 max/curr
-demangle:        0 mmap'd,        0/       0 max/curr
-exectxt :        0 mmap'd,        0/       0 max/curr
-errors  :        0 mmap'd,        0/       0 max/curr
-ttaux   :    65536 mmap'd,     4752/    4624 max/curr
-

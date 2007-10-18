@@ -44,8 +44,8 @@ Number of snapshots: 24
   7          1,087            1,087            1,031            56            0
   8          1,096            1,096            1,032            64            0
   9          1,105            1,105            1,033            72            0
-93.48% (1033B) (heap allocation functions) malloc/new/new[], --alloc-fns, etc.
-->90.50% (1000B) 0x........: main (insig.c:8)
+93.48% (1,033B) (heap allocation functions) malloc/new/new[], --alloc-fns, etc.
+->90.50% (1,000B) 0x........: main (insig.c:8)
 | 
 ->01.36% (15B) 0x........: main (insig.c:9)
 | 
@@ -66,8 +66,8 @@ Number of snapshots: 24
  17          1,177            1,177            1,041           136            0
  18          1,186            1,186            1,042           144            0
  19          1,195            1,195            1,043           152            0
-87.28% (1043B) (heap allocation functions) malloc/new/new[], --alloc-fns, etc.
-->83.68% (1000B) 0x........: main (insig.c:8)
+87.28% (1,043B) (heap allocation functions) malloc/new/new[], --alloc-fns, etc.
+->83.68% (1,000B) 0x........: main (insig.c:8)
 | 
 ->01.34% (16B) in 16 places, all below massif's threshold (01.00%)
 | 
