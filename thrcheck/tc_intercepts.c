@@ -825,7 +825,147 @@ PTH_FUNC(int, pthreadZurwlockZuunlock, // pthread_rwlock_unlock
 
 
 /*----------------------------------------------------------------*/
-/*---                                                          ---*/
+/*--- POSIX semaphores                                         ---*/
+/*----------------------------------------------------------------*/
+
+#include <semaphore.h>
+
+#define TRACE_SEM_FNS 0
+
+/* Handled: 
+     int sem_init(sem_t *sem, int pshared, unsigned value);
+     int sem_destroy(sem_t *sem);
+     int sem_wait(sem_t *sem);
+     int sem_post(sem_t *sem);
+
+   Unhandled:
+     int sem_trywait(sem_t *sem);
+     int sem_timedwait(sem_t *restrict sem,
+                       const struct timespec *restrict abs_timeout);
+*/
+
+/* glibc-2.5 has sem_init@@GLIBC_2.2.5; match sem_init@* */
+PTH_FUNC(int, semZuinitZAZa, sem_t* sem, int pshared, unsigned long value)
+{
+   OrigFn fn;
+   int    ret;
+   VALGRIND_GET_ORIG_FN(fn);
+
+   if (TRACE_SEM_FNS) {
+      fprintf(stderr, "<< sem_init(%p,%d,%lu) ", sem,pshared,value);
+      fflush(stderr);
+   }
+
+   CALL_FN_W_WWW(ret, fn, sem,pshared,value);
+
+   if (ret == 0) {
+      /* Probably overly paranoid, but still ... */
+      DO_CREQ_v_W(_VG_USERREQ__TC_POSIX_SEM_ZAPSTACK, sem_t*,sem);
+   } else {
+      DO_PthAPIerror( "sem_init", errno );
+   }
+
+   if (TRACE_SEM_FNS) {
+      fprintf(stderr, " sem_init -> %d >>\n", ret);
+      fflush(stderr);
+   }
+
+   return ret;
+}
+
+
+/* glibc-2.5 has sem_destroy@@GLIBC_2.2.5; match sem_destroy@* */
+PTH_FUNC(int, semZudestroyZAZa, sem_t* sem)
+{
+   OrigFn fn;
+   int    ret;
+   VALGRIND_GET_ORIG_FN(fn);
+
+   if (TRACE_SEM_FNS) {
+      fprintf(stderr, "<< sem_destroy(%p) ", sem);
+      fflush(stderr);
+   }
+
+   DO_CREQ_v_W(_VG_USERREQ__TC_POSIX_SEM_ZAPSTACK, sem_t*,sem);
+
+   CALL_FN_W_W(ret, fn, sem);
+
+   if (ret != 0) {
+      DO_PthAPIerror( "sem_destroy", errno );
+   }
+
+   if (TRACE_SEM_FNS) {
+      fprintf(stderr, " sem_destroy -> %d >>\n", ret);
+      fflush(stderr);
+   }
+
+   return ret;
+}
+
+
+/* glibc-2.5 has sem_wait; match sem_wait */
+/* wait: decrement semaphore - acquire lockage */
+PTH_FUNC(int, semZuwait, sem_t* sem)
+{
+   OrigFn fn;
+   int    ret;
+   VALGRIND_GET_ORIG_FN(fn);
+
+   if (TRACE_SEM_FNS) {
+      fprintf(stderr, "<< sem_wait(%p) ", sem);
+      fflush(stderr);
+   }
+
+   CALL_FN_W_W(ret, fn, sem);
+
+   if (ret == 0) {
+      DO_CREQ_v_W(_VG_USERREQ__TC_POSIX_SEMWAIT_POST, sem_t*,sem);
+   } else {
+      DO_PthAPIerror( "sem_wait", errno );
+   }
+
+   if (TRACE_SEM_FNS) {
+      fprintf(stderr, " sem_wait -> %d >>\n", ret);
+      fflush(stderr);
+   }
+
+   return ret;
+}
+
+
+/* glibc-2.5 has sem_post; match sem_post */
+/* post: increment semaphore - release lockage */
+PTH_FUNC(int, semZupost, sem_t* sem)
+{
+   OrigFn fn;
+   int    ret;
+
+   VALGRIND_GET_ORIG_FN(fn);
+
+   if (TRACE_SEM_FNS) {
+      fprintf(stderr, "<< sem_post(%p) ", sem);
+      fflush(stderr);
+   }
+
+   DO_CREQ_v_W(_VG_USERREQ__TC_POSIX_SEMPOST_PRE, sem_t*,sem);
+
+   CALL_FN_W_W(ret, fn, sem);
+
+   if (ret != 0) {
+      DO_PthAPIerror( "sem_post", errno );
+   }
+
+   if (TRACE_SEM_FNS) {
+      fprintf(stderr, " sem_post -> %d >>\n", ret);
+      fflush(stderr);
+   }
+
+   return ret;
+}
+
+
+/*----------------------------------------------------------------*/
+/*--- Qt 4 threading functions (w/ GNU name mangling)          ---*/
 /*----------------------------------------------------------------*/
 
 /* Handled:   QMutex::lock()

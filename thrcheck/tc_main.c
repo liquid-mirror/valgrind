@@ -113,6 +113,8 @@ static void all__sanity_check ( char* who ); /* fwds */
 // 2 = as 1 + segments at condition variable signal/broadcast/wait too
 static Int clo_happens_before = 2;  /* default setting */
 
+/* Generate .vcg output of the happens-before graph? */
+static Bool clo_gen_vcg = False;
 
 // FIXME: when a SecMap is completely set via and address range
 // setting operation to a non-ShR/M state, clear its .mbHasShared 
@@ -293,7 +295,7 @@ typedef
       struct _Segment* other;  /* Possibly a segment from some other 
                                   thread, which happened-before me */
       /* DEBUGGING ONLY: what does 'other' arise from?  
-         c=thread creation, j=join, s=cvsignal */
+         c=thread creation, j=join, s=cvsignal, S=semaphore */
       Char other_hint;
    }
    Segment;
@@ -1698,6 +1700,7 @@ static void segments__generate_vcg ( void )
          Green  -- thread creation, link to parent
          Red    -- thread exit, link to exiting thread
          Yellow -- signal edge
+         Ping   -- semaphore-up edge
    */
    Segment* seg;
    VG_(printf)(PFX "graph: { title: \"Segments\"\n");
@@ -1708,9 +1711,16 @@ static void segments__generate_vcg ( void )
    VG_(printf)(PFX "y: 20\n");
    VG_(printf)(PFX "color: lightgrey\n");
    for (seg = admin_segments; seg; seg=seg->admin) {
+
       VG_(printf)(PFX "node: { title: \"%p\" color: lightcyan "
-                  "textcolor: darkgreen label: \"Seg %x\\nThr %x\" }\n", 
-                  seg, seg, seg->thr);
+                  "textcolor: darkgreen label: \"Seg %x\\n", 
+                  seg, seg);
+      if (seg->thr->errmsg_index == 1) {
+         VG_(printf)("ROOT_THREAD\" }\n");
+      } else {
+         VG_(printf)("Thr# %d\" }\n", seg->thr->errmsg_index);
+      }
+
       if (seg->prev)
          VG_(printf)(PFX "edge: { sourcename: \"%p\" targetname: \"%p\""
                      "color: black }\n", seg->prev, seg );
@@ -1720,6 +1730,7 @@ static void segments__generate_vcg ( void )
             case 'c': colour = "darkgreen";  break; /* creation */
             case 'j': colour = "red";        break; /* join (exit) */
             case 's': colour = "orange";     break; /* signal */
+            case 'S': colour = "pink";       break; /* signal */
             case 'u': colour = "cyan";       break; /* unlock */
             default: tl_assert(0);
          }
@@ -5552,6 +5563,183 @@ static void evh__TC_PTHREAD_RWLOCK_UNLOCK_POST ( ThreadId tid, void* rwl )
 }
 
 
+/* --------------- events to do with semaphores --------------- */
+
+/* This is similar but not identical the handling for condition
+   variables. */
+
+/* For each semaphore, we maintain a stack of Segments.  When a 'post'
+   operation is done on a semaphore (unlocking, essentially), a new
+   segment is created for the posting thread, and the old segment is
+   pushed on the semaphore's stack.
+
+   Later, when a (probably different) thread completes 'wait' on the
+   semaphore, we pop a Segment off the semaphore's stack (which should
+   be nonempty).  We start a new segment for the thread and make it
+   also depend on the just-popped segment.  This mechanism creates
+   dependencies between posters and waiters of the semaphore.
+
+   It may not be necessary to use a stack - perhaps a bag of Segments
+   would do.  But we do need to keep track of how many unused-up posts
+   have happened for the semaphore.
+
+   Imagine T1 and T2 both post once on a semphore S, and T3 waits
+   twice on S.  T3 cannot complete its waits without both T1 and T2
+   posting.  The above mechanism will ensure that T3 acquires
+   dependencies on both T1 and T2.
+*/
+
+/* sem_t* -> XArray* Segment* */
+static WordFM* map_sem_to_Segment_stack = NULL;
+
+static void map_sem_to_Segment_stack_INIT ( void ) {
+   if (map_sem_to_Segment_stack == NULL) {
+      map_sem_to_Segment_stack = TC_(newFM)( tc_zalloc, tc_free, NULL );
+      tl_assert(map_sem_to_Segment_stack != NULL);
+   }
+}
+
+static void push_Segment_for_sem ( void* sem, Segment* seg ) {
+   XArray* xa;
+   tl_assert(seg);
+   map_sem_to_Segment_stack_INIT();
+   if (TC_(lookupFM)( map_sem_to_Segment_stack, 
+                      NULL, (Word*)&xa, (Word)sem )) {
+      tl_assert(xa);
+      VG_(addToXA)( xa, &seg );
+   } else {
+      xa = VG_(newXA)( tc_zalloc, tc_free, sizeof(Segment*) );
+      VG_(addToXA)( xa, &seg );
+      TC_(addToFM)( map_sem_to_Segment_stack, (Word)sem, (Word)xa );
+   }
+}
+
+static Segment* mb_pop_Segment_for_sem ( void* sem ) {
+   XArray*  xa;
+   Segment* seg;
+   map_sem_to_Segment_stack_INIT();
+   if (TC_(lookupFM)( map_sem_to_Segment_stack, 
+                      NULL, (Word*)&xa, (Word)sem )) {
+      /* xa is the stack for this semaphore. */
+      Word sz = VG_(sizeXA)( xa );
+      tl_assert(sz >= 0);
+      if (sz == 0)
+         return NULL; /* odd, the stack is empty */
+      seg = *(Segment**)VG_(indexXA)( xa, sz-1 );
+      tl_assert(seg);
+      VG_(dropTailXA)( xa, 1 );
+      return seg;
+   } else {
+      /* hmm, that's odd.  No stack for this semaphore. */
+      return NULL;
+   }
+}
+
+static void evh__TC_POSIX_SEM_ZAPSTACK ( ThreadId tid, void* sem )
+{
+   Segment* seg;
+
+   /* Empty out the semaphore's segment stack.  Occurs at
+      sem_init and sem_destroy time. */
+   if (SHOW_EVENTS >= 1)
+      VG_(printf)("evh__TC_POSIX_SEM_ZAPSTACK(ctid=%d, sem=%p)\n", 
+                  (Int)tid, (void*)sem );
+
+   /* This is stupid, but at least it's easy. */
+   do {
+     seg = mb_pop_Segment_for_sem( sem );
+   } while (seg);
+
+   tl_assert(!seg);
+}
+
+static void evh__TC_POSIX_SEMPOST_PRE ( ThreadId tid, void* sem )
+{
+   /* 'tid' has posted on 'sem'.  Start a new segment for this thread,
+      and push the old segment on a stack of segments associated with
+      'sem'.  This is later used by other thread(s) which successfully
+      exit from a sem_wait on the same sem; then they know what the
+      posting segment was, so a dependency edge back to it can be
+      constructed. */
+
+   Thread*   thr;
+   SegmentID new_segid;
+   Segment*  new_seg;
+
+   if (SHOW_EVENTS >= 1)
+      VG_(printf)("evh__TC_POSIX_SEMPOST_PRE(ctid=%d, sem=%p)\n", 
+                  (Int)tid, (void*)sem );
+
+   thr = map_threads_maybe_lookup( tid );
+   tl_assert(thr); /* cannot fail - Thread* must already exist */
+
+   // error-if: sem is bogus
+
+   if (clo_happens_before >= 2) {
+      /* create a new segment ... */
+      new_segid = 0; /* bogus */
+      new_seg   = NULL;
+      evhH__start_new_segment_for_thread( &new_segid, &new_seg, thr );
+      tl_assert( is_sane_SegmentID(new_segid) );
+      tl_assert( is_sane_Segment(new_seg) );
+      tl_assert( new_seg->thr == thr );
+      tl_assert( is_sane_Segment(new_seg->prev) );
+
+      /* ... and add the binding. */
+      push_Segment_for_sem( sem, new_seg->prev );
+   }
+}
+
+static void evh__TC_POSIX_SEMWAIT_POST ( ThreadId tid, void* sem )
+{
+   /* A sem_wait(sem) completed successfully.  Start a new segment for
+      this thread.  Pop the posting-segment for the 'sem' in the
+      mapping, and add a dependency edge from the new segment back to
+      it. */
+
+   Thread*   thr;
+   SegmentID new_segid;
+   Segment*  new_seg;
+   Segment*  posting_seg;
+
+   if (SHOW_EVENTS >= 1)
+      VG_(printf)("evh__TC_POSIX_SEMWAIT_POST(ctid=%d, sem=%p)\n", 
+                  (Int)tid, (void*)sem );
+
+   thr = map_threads_maybe_lookup( tid );
+   tl_assert(thr); /* cannot fail - Thread* must already exist */
+
+   // error-if: sem is bogus
+
+   if (clo_happens_before >= 2) {
+      /* create a new segment ... */
+      new_segid = 0; /* bogus */
+      new_seg   = NULL;
+      evhH__start_new_segment_for_thread( &new_segid, &new_seg, thr );
+      tl_assert( is_sane_SegmentID(new_segid) );
+      tl_assert( is_sane_Segment(new_seg) );
+      tl_assert( new_seg->thr == thr );
+      tl_assert( is_sane_Segment(new_seg->prev) );
+      tl_assert( new_seg->other == NULL);
+
+      /* and find out which thread posted last on sem; then add a
+         dependency edge back to it. */
+      posting_seg = mb_pop_Segment_for_sem( sem );
+      if (posting_seg) {
+         tl_assert(is_sane_Segment(posting_seg));
+         new_seg->other      = posting_seg;
+         new_seg->other_hint = 'S';
+      } else {
+         /* Hmm.  How can a wait on 'sem' succeed if nobody posted to
+            it?  If this happened it would surely be a bug in the
+            threads library. */
+         record_error_Misc( thr, "Bug in libpthread: sem_wait succeeded on"
+                                 " semaphore without prior sem_post");
+      }
+   }
+}
+
+
 /*--------------------------------------------------------------*/
 /*--- Lock acquisition order monitoring                      ---*/
 /*--------------------------------------------------------------*/
@@ -6525,6 +6713,18 @@ Bool tc_handle_client_request ( ThreadId tid, UWord* args, UWord* ret)
          evh__TC_PTHREAD_RWLOCK_UNLOCK_POST( tid, (void*)args[1] );
          break;
 
+      case _VG_USERREQ__TC_POSIX_SEMPOST_PRE: /* sem_t* */
+         evh__TC_POSIX_SEMPOST_PRE( tid, (void*)args[1] );
+         break;
+
+      case _VG_USERREQ__TC_POSIX_SEMWAIT_POST: /* sem_t* */
+         evh__TC_POSIX_SEMWAIT_POST( tid, (void*)args[1] );
+         break;
+
+      case _VG_USERREQ__TC_POSIX_SEM_ZAPSTACK: /* sem_t* */
+         evh__TC_POSIX_SEM_ZAPSTACK( tid, (void*)args[1] );
+         break;
+
       default:
          /* Unhandled Thrcheck client request! */
         tl_assert2(0, "unhandled Thrcheck client request!");
@@ -7306,6 +7506,11 @@ static Bool tc_process_cmd_line_option ( Char* arg )
    else if (VG_CLO_STREQ(arg, "--happens-before=condvars"))
       clo_happens_before = 2;
 
+   else if (VG_CLO_STREQ(arg, "--gen-vcg=no"))
+      clo_gen_vcg = False;
+   else if (VG_CLO_STREQ(arg, "--gen-vcg=yes"))
+      clo_gen_vcg = True;
+
    else 
       return VG_(replacement_malloc_process_cmd_line_option)(arg);
 
@@ -7324,6 +7529,8 @@ static void tc_print_usage ( void )
 static void tc_print_debug_usage ( void )
 {
    VG_(replacement_malloc_print_debug_usage)();
+   VG_(printf)("    --gen-vcg=no|yes          show happens-before graph "
+               "in .vcg format [no]\n");
 }
 
 static void tc_post_clo_init ( void )
@@ -7337,7 +7544,7 @@ static void tc_fini ( Int exitcode )
    if (sanity_flags)
       all__sanity_check("SK_(fini)");
 
-   if (0)
+   if (clo_gen_vcg)
       segments__generate_vcg();
 
    if (VG_(clo_verbosity) >= 2) {
