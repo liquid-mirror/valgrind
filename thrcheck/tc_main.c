@@ -96,6 +96,10 @@ static const Int sanity_flags
 //= SCE_THREADS | SCE_LOCKS | SCE_BIGRANGE | SCE_ACCESS;
 = 0;
 
+#define SCE_CACHELINE 0   /* don't sanity-check CacheLine stuff */
+//#define SCE_CACHELINE 1  /* do sanity-check CacheLine stuff */
+//#define inline __attribute__((noinline))
+
 static void all__sanity_check ( char* who ); /* fwds */
 
 #define TC_CLI__MALLOC_REDZONE_SZB 16 /* let's say */
@@ -115,6 +119,11 @@ static Int clo_happens_before = 2;  /* default setting */
 
 /* Generate .vcg output of the happens-before graph? */
 static Bool clo_gen_vcg = False;
+
+/* When comparing race errors for equality, should the race address be
+   taken into account?  For users, no, but for verification purposes
+   (regtesting) this is sometimes important. */
+static Bool clo_cmp_race_err_addrs = False;
 
 // FIXME: when a SecMap is completely set via and address range
 // setting operation to a non-ShR/M state, clear its .mbHasShared 
@@ -832,8 +841,8 @@ static inline Bool is_sane_SecMap ( SecMap* sm ) {
 
 /* Shadow value encodings:
 
-   11 WordSetID:TSID_BITS WordSetID:LSIT_BITS  ShM  thread-set lock-set
-   10 WordSetID:TSID_BITS WordSetID:LSIT_BITS  ShR  thread-set lock-set
+   11 WordSetID:TSID_BITS WordSetID:LSID_BITS  ShM  thread-set lock-set
+   10 WordSetID:TSID_BITS WordSetID:LSID_BITS  ShR  thread-set lock-set
    01 TSegmentID:30                            Excl thread-segment
    00 0--(20)--0 10 0000 0000                  New
    00 0--(20)--0 01 0000 0000                  NoAccess
@@ -860,19 +869,37 @@ static inline Bool is_sane_WordSetID_TSet ( WordSetID wset ) {
 }
 
 
+__attribute__((noinline))
+__attribute__((noreturn))
+static void mk_SHVAL_fail ( WordSetID tset, WordSetID lset, HChar* who ) {
+   VG_(printf)("\n");
+   VG_(printf)("Thrcheck: Fatal internal error -- cannot continue.\n");
+   VG_(printf)("Thrcheck: mk_SHVAL_ShR(tset=%d,lset=%d): FAILED\n",
+               (Int)tset, (Int)lset);
+   VG_(printf)("Thrcheck: max allowed tset=%d, lset=%d\n",
+               (Int)N_TSID_MASK, (Int)N_LSID_MASK);
+   VG_(printf)("Thrcheck: program has too many thread "
+              "sets or lock sets to track.\n");
+   tl_assert(0);
+}
+
 static inline UInt mk_SHVAL_ShM ( WordSetID tset, WordSetID lset ) {
-   tl_assert(is_sane_WordSetID_TSet(tset));
-   tl_assert(is_sane_WordSetID_LSet(lset));
-   return (UInt)( (3<<30) | (tset << N_TSID_SHIFT) 
-                          | (lset << N_LSID_SHIFT));
+   if (LIKELY(is_sane_WordSetID_TSet(tset) 
+              && is_sane_WordSetID_LSet(lset))) {
+      return (UInt)( (3<<30) | (tset << N_TSID_SHIFT) 
+                             | (lset << N_LSID_SHIFT));
+   } else {
+      mk_SHVAL_fail(tset, lset, "mk_SHVAL_ShM");
+   }
 }
 static inline UInt mk_SHVAL_ShR ( WordSetID tset, WordSetID lset ) {
-   /* if ((!is_sane_WordSetID(tset)) || (!is_sane_WordSetID(lset)))
-      VG_(printf)("XXXXXXXXXX %d %d\n", (Int)tset, (Int)lset); */
-   tl_assert(is_sane_WordSetID_TSet(tset));
-   tl_assert(is_sane_WordSetID_LSet(lset));
-   return (UInt)( (2<<30) | (tset << N_TSID_SHIFT) 
-                          | (lset << N_LSID_SHIFT) );
+   if (LIKELY(is_sane_WordSetID_TSet(tset) 
+              && is_sane_WordSetID_LSet(lset))) {
+      return (UInt)( (2<<30) | (tset << N_TSID_SHIFT) 
+                             | (lset << N_LSID_SHIFT) );
+   } else {
+      mk_SHVAL_fail(tset, lset, "mk_SHVAL_ShR");
+   }
 }
 static inline UInt mk_SHVAL_Excl ( SegmentID tseg ) {
    tl_assert(is_sane_SegmentID(tseg));
@@ -1794,9 +1821,6 @@ static inline Addr shmem__round_to_SecMap_base ( Addr a ) {
 }
 static inline UWord shmem__get_SecMap_offset ( Addr a ) {
    return a & (N_SECMAP_ARANGE - 1);
-}
-static inline Bool shmem__is_SecMap_base ( Addr a ) {
-   return shmem__get_SecMap_offset(a) == 0;
 }
 
 /*--------------- SecMap allocation --------------- */
@@ -3132,7 +3156,8 @@ static void normalise_CacheLine ( /*MOD*/CacheLine* cl )
       cl->descrs[tno] = normalise_tree( tree );
    }
    tl_assert(cloff == N_LINE_ARANGE);
-   /* EXPENSIVE: tl_assert(is_sane_CacheLine(cl)); */
+   if (SCE_CACHELINE)
+      tl_assert(is_sane_CacheLine(cl)); /* EXPENSIVE */
    stats__cline_normalises++;
 }
 
@@ -3244,7 +3269,8 @@ static __attribute__((noinline)) void cacheline_wback ( UWord wix )
    lineZ = &sm->linesZ[zix];
 
    /* Generate the data to be stored */
-   /* EXPENSIVE: tl_assert(is_sane_CacheLine( cl )); */
+   if (SCE_CACHELINE)
+      tl_assert(is_sane_CacheLine(cl)); /* EXPENSIVE */
    anyShared = sequentialise_CacheLine( shvals, N_LINE_ARANGE, cl );
 
    lineZ->dict[0] = lineZ->dict[1] 
@@ -3436,14 +3462,16 @@ static __attribute__((noinline))
    tag_old_p = &cache_shmem.tags0[wix];
 
    if (is_valid_scache_tag( *tag_old_p )) {
-      /* EXPENSIVE and REDUNDANT: callee does it
-         tl_assert(is_sane_CacheLine( cl )); */
+      /* EXPENSIVE and REDUNDANT: callee does it */
+      if (SCE_CACHELINE)
+         tl_assert(is_sane_CacheLine(cl)); /* EXPENSIVE */
       cacheline_wback( wix );
    }
    /* and reload the new one */
    *tag_old_p = tag;
    cacheline_fetch( wix );
-   /* EXPENSIVE tl_assert(is_sane_CacheLine( cl )); */
+   if (SCE_CACHELINE)
+      tl_assert(is_sane_CacheLine(cl)); /* EXPENSIVE */
    return cl;
 }
 
@@ -3635,7 +3663,8 @@ static void shadow_mem_read8 ( Thread* thr_acc, Addr a, UInt uuOpaque ) {
    if (UNLIKELY( !(descr & (TREE_DESCR_8_0 << toff)) )) {
       UInt* tree = &cl->svals[tno << 3];
       cl->descrs[tno] = pulldown_to_8(tree, toff, descr);
-      /* EXPENSIVE: tl_assert(is_sane_CacheLine(cl)); */
+      if (SCE_CACHELINE)
+         tl_assert(is_sane_CacheLine(cl)); /* EXPENSIVE */
    }
    svOld = cl->svals[cloff];
    svNew = msm__handle_read( thr_acc, a, svOld, 1 );
@@ -3660,7 +3689,8 @@ static void shadow_mem_read16 ( Thread* thr_acc, Addr a, UInt uuOpaque ) {
          UInt* tree = &cl->svals[tno << 3];
          cl->descrs[tno] = pulldown_to_16(tree, toff, descr);
       }
-      /* EXPENSIVE: tl_assert(is_sane_CacheLine(cl)); */
+      if (SCE_CACHELINE)
+         tl_assert(is_sane_CacheLine(cl)); /* EXPENSIVE */
    }
    svOld = cl->svals[cloff];
    svNew = msm__handle_read( thr_acc, a, svOld, 2 );
@@ -3691,7 +3721,8 @@ static void shadow_mem_read32_SLOW ( Thread* thr_acc, Addr a, UInt uuOpaque ) {
       } else {
          goto slowcase;
       }
-      /* EXPENSIVE: tl_assert(is_sane_CacheLine(cl)); */
+      if (SCE_CACHELINE)
+         tl_assert(is_sane_CacheLine(cl)); /* EXPENSIVE */
    }
    svOld = cl->svals[cloff];
    svNew = msm__handle_read( thr_acc, a, svOld, 4 );
@@ -3763,7 +3794,8 @@ static void shadow_mem_write8 ( Thread* thr_acc, Addr a, UInt uuOpaque ) {
    if (UNLIKELY( !(descr & (TREE_DESCR_8_0 << toff)) )) {
       UInt* tree = &cl->svals[tno << 3];
       cl->descrs[tno] = pulldown_to_8(tree, toff, descr);
-      /* EXPENSIVE: tl_assert(is_sane_CacheLine(cl)); */
+      if (SCE_CACHELINE)
+         tl_assert(is_sane_CacheLine(cl)); /* EXPENSIVE */
    }
    svOld = cl->svals[cloff];
    svNew = msm__handle_write( thr_acc, a, svOld, 1 );
@@ -3788,7 +3820,8 @@ static void shadow_mem_write16 ( Thread* thr_acc, Addr a, UInt uuOpaque ) {
          UInt* tree = &cl->svals[tno << 3];
          cl->descrs[tno] = pulldown_to_16(tree, toff, descr);
       }
-      /* EXPENSIVE: tl_assert(is_sane_CacheLine(cl)); */
+      if (SCE_CACHELINE)
+         tl_assert(is_sane_CacheLine(cl)); /* EXPENSIVE */
    }
    svOld = cl->svals[cloff];
    svNew = msm__handle_write( thr_acc, a, svOld, 2 );
@@ -3819,7 +3852,8 @@ static void shadow_mem_write32_SLOW ( Thread* thr_acc, Addr a, UInt uuOpaque ) {
       } else {
          goto slowcase;
       }
-      /* EXPENSIVE: tl_assert(is_sane_CacheLine(cl)); */
+      if (SCE_CACHELINE)
+         tl_assert(is_sane_CacheLine(cl)); /* EXPENSIVE */
    }
    svOld = cl->svals[cloff];
    svNew = msm__handle_write( thr_acc, a, svOld, 4 );
@@ -3890,7 +3924,8 @@ static void shadow_mem_set8 ( Thread* uu_thr_acc, Addr a, UInt svNew ) {
    if (UNLIKELY( !(descr & (TREE_DESCR_8_0 << toff)) )) {
       UInt* tree = &cl->svals[tno << 3];
       cl->descrs[tno] = pulldown_to_8(tree, toff, descr);
-      /* EXPENSIVE: tl_assert(is_sane_CacheLine(cl)); */
+      if (SCE_CACHELINE)
+         tl_assert(is_sane_CacheLine(cl)); /* EXPENSIVE */
    }
    cl->svals[cloff] = svNew;
 }
@@ -3917,7 +3952,8 @@ static void shadow_mem_set16 ( Thread* uu_thr_acc, Addr a, UInt svNew ) {
             its parent.  So first, pull down to this level. */
          UInt* tree = &cl->svals[tno << 3];
          cl->descrs[tno] = pulldown_to_16(tree, toff, descr);
-         /* EXPENSIVE: tl_assert(is_sane_CacheLine(cl)); */
+      if (SCE_CACHELINE)
+         tl_assert(is_sane_CacheLine(cl)); /* EXPENSIVE */
       }
    }
    cl->svals[cloff + 0] = svNew;
@@ -3946,7 +3982,8 @@ static void shadow_mem_set32 ( Thread* uu_thr_acc, Addr a, UInt svNew ) {
             its parent.  So first, pull down to this level. */
          UInt* tree = &cl->svals[tno << 3];
          cl->descrs[tno] = pulldown_to_32(tree, toff, descr);
-         /* EXPENSIVE: tl_assert(is_sane_CacheLine(cl)); */
+         if (SCE_CACHELINE)
+            tl_assert(is_sane_CacheLine(cl)); /* EXPENSIVE */
       } else {
          /* Writing at this level.  Need to fix up 'descr'. */
          cl->descrs[tno] = pullup_descr_to_32(descr, toff);
@@ -6932,6 +6969,8 @@ static void record_error_Race ( Thread* thr,
    xe.XE.Race.mb_lastlock = mb_lastlock;
    xe.XE.Race.thr         = thr;
    // FIXME: tid vs thr
+   tl_assert(isWrite == False || isWrite == True);
+   tl_assert(szB == 8 || szB == 4 || szB == 2 || szB == 1);
    VG_(maybe_record_error)( map_threads_reverse_lookup_SLOW(thr),
                             XE_Race, data_addr, NULL, &xe );
 }
@@ -7052,7 +7091,10 @@ static Bool tc_eq_Error ( VgRes not_used, Error* e1, Error* e2 )
    switch (VG_(get_error_kind)(e1)) {
       case XE_Race:
          return xe1->XE.Race.szB == xe2->XE.Race.szB
-                && xe1->XE.Race.isWrite == xe2->XE.Race.isWrite;
+                && xe1->XE.Race.isWrite == xe2->XE.Race.isWrite
+                && (clo_cmp_race_err_addrs 
+                       ? xe1->XE.Race.data_addr == xe2->XE.Race.data_addr
+                       : True);
       case XE_FreeMemLock:
          return xe1->XE.FreeMemLock.thr == xe2->XE.FreeMemLock.thr
                 && xe1->XE.FreeMemLock.lock == xe2->XE.FreeMemLock.lock;
@@ -7073,8 +7115,6 @@ static Bool tc_eq_Error ( VgRes not_used, Error* e1, Error* e2 )
                 && xe1->XE.PthAPIerror.err == xe2->XE.PthAPIerror.err;
       case XE_LockOrder:
          return xe1->XE.LockOrder.thr == xe2->XE.LockOrder.thr;
-             /* && xe1->XE.LockOrder.before == xe2->XE.LockOrder.before
-                && xe1->XE.LockOrder.after == xe2->XE.LockOrder.after; */
       case XE_Misc:
          return xe1->XE.Misc.thr == xe2->XE.Misc.thr
                 && 0==VG_(strcmp)(xe1->XE.Misc.errstr, xe2->XE.Misc.errstr);
@@ -7511,6 +7551,11 @@ static Bool tc_process_cmd_line_option ( Char* arg )
    else if (VG_CLO_STREQ(arg, "--gen-vcg=yes"))
       clo_gen_vcg = True;
 
+   else if (VG_CLO_STREQ(arg, "--cmp-race-err-addrs=no"))
+      clo_cmp_race_err_addrs = False;
+   else if (VG_CLO_STREQ(arg, "--cmp-race-err-addrs=yes"))
+      clo_cmp_race_err_addrs = True;
+
    else 
       return VG_(replacement_malloc_process_cmd_line_option)(arg);
 
@@ -7531,6 +7576,8 @@ static void tc_print_debug_usage ( void )
    VG_(replacement_malloc_print_debug_usage)();
    VG_(printf)("    --gen-vcg=no|yes          show happens-before graph "
                "in .vcg format [no]\n");
+   VG_(printf)("    --cmp-race-err-addrs=no|yes  are data addresses in "
+               "race errors significant? [no]\n");
 }
 
 static void tc_post_clo_init ( void )
