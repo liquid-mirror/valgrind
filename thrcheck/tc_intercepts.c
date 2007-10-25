@@ -844,7 +844,8 @@ PTH_FUNC(int, pthreadZurwlockZuunlock, // pthread_rwlock_unlock
                        const struct timespec *restrict abs_timeout);
 */
 
-/* glibc-2.5 has sem_init@@GLIBC_2.2.5; match sem_init@* */
+/* glibc-2.5 has sem_init@@GLIBC_2.2.5 (amd64-linux)
+             and sem_init@@GLIBC_2.1 (x86-linux): match sem_init@* */
 PTH_FUNC(int, semZuinitZAZa, sem_t* sem, int pshared, unsigned long value)
 {
    OrigFn fn;
@@ -874,7 +875,8 @@ PTH_FUNC(int, semZuinitZAZa, sem_t* sem, int pshared, unsigned long value)
 }
 
 
-/* glibc-2.5 has sem_destroy@@GLIBC_2.2.5; match sem_destroy@* */
+/* glibc-2.5 has sem_destroy@@GLIBC_2.2.5 (amd64-linux)
+             and sem_destroy@@GLIBC_2.1 (x86-linux); match sem_destroy@* */
 PTH_FUNC(int, semZudestroyZAZa, sem_t* sem)
 {
    OrigFn fn;
@@ -903,9 +905,10 @@ PTH_FUNC(int, semZudestroyZAZa, sem_t* sem)
 }
 
 
-/* glibc-2.5 has sem_wait; match sem_wait */
+/* glibc-2.5 has sem_wait (amd64-linux); match sem_wait
+             and sem_wait@@GLIBC_2.1 (x86-linux); match sem_wait@* */
 /* wait: decrement semaphore - acquire lockage */
-PTH_FUNC(int, semZuwait, sem_t* sem)
+static int sem_wait_WRK(sem_t* sem)
 {
    OrigFn fn;
    int    ret;
@@ -931,11 +934,18 @@ PTH_FUNC(int, semZuwait, sem_t* sem)
 
    return ret;
 }
+PTH_FUNC(int, semZuwait, sem_t* sem) { /* sem_wait */
+   return sem_wait_WRK(sem);
+}
+PTH_FUNC(int, semZuwaitZAZa, sem_t* sem) { /* sem_wait@* */
+   return sem_wait_WRK(sem);
+}
 
 
-/* glibc-2.5 has sem_post; match sem_post */
+/* glibc-2.5 has sem_post (amd64-linux); match sem_post
+             and sem_post@@GLIBC_2.1 (x86-linux); match sem_post@* */
 /* post: increment semaphore - release lockage */
-PTH_FUNC(int, semZupost, sem_t* sem)
+static int sem_post_WRK(sem_t* sem)
 {
    OrigFn fn;
    int    ret;
@@ -962,6 +972,13 @@ PTH_FUNC(int, semZupost, sem_t* sem)
 
    return ret;
 }
+PTH_FUNC(int, semZupost, sem_t* sem) { /* sem_post */
+   return sem_post_WRK(sem);
+}
+PTH_FUNC(int, semZupostZAZa, sem_t* sem) { /* sem_post@* */
+   return sem_post_WRK(sem);
+}
+
 
 
 /*----------------------------------------------------------------*/
