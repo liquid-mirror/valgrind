@@ -117,8 +117,9 @@ static void all__sanity_check ( char* who ); /* fwds */
 // 2 = as 1 + segments at condition variable signal/broadcast/wait too
 static Int clo_happens_before = 2;  /* default setting */
 
-/* Generate .vcg output of the happens-before graph? */
-static Bool clo_gen_vcg = False;
+/* Generate .vcg output of the happens-before graph?
+   0: no  1: yes, without VTSs  2: yes, with VTSs */
+static Int clo_gen_vcg = 0;
 
 /* When comparing race errors for equality, should the race address be
    taken into account?  For users, no, but for verification purposes
@@ -2118,10 +2119,14 @@ static void segments__generate_vcg ( void )
          VG_(printf)("Thr# %d", seg->thr->errmsg_index);
       }
 
-      show_VTS( vtsstr, sizeof(vtsstr)-1, seg->vts );
-      vtsstr[sizeof(vtsstr)-1] = 0;
+      if (clo_gen_vcg >= 2) {
+         show_VTS( vtsstr, sizeof(vtsstr)-1, seg->vts );
+         vtsstr[sizeof(vtsstr)-1] = 0;
+         VG_(printf)("\\n%s", vtsstr);
+      }
 
-      VG_(printf)("\\n%s\" }\n", vtsstr);
+      VG_(printf)("\" }\n", vtsstr);
+
       if (seg->prev)
          VG_(printf)(PFX "edge: { sourcename: \"%p\" targetname: \"%p\""
                      "color: black }\n", seg->prev, seg );
@@ -5863,9 +5868,13 @@ static void evh__TC_PTHREAD_COND_WAIT_POST ( ThreadId tid,
       } else {
          /* Hmm.  How can a wait on 'cond' succeed if nobody signalled
             it?  If this happened it would surely be a bug in the
-            threads library. */
-         // FIXME
-         tl_assert(0);
+            threads library.  Or one of those fabled "spurious
+            wakeups". */
+         record_error_Misc( thr, "Bug in libpthread: pthread_cond_wait "
+                                 "succeeded on"
+                                 " without prior pthread_cond_post");
+         tl_assert(new_seg->prev->vts);
+         new_seg->vts = tick_VTS( new_seg->thr, new_seg->prev->vts );
       }
    }
 }
@@ -6179,6 +6188,8 @@ static void evh__TC_POSIX_SEMWAIT_POST ( ThreadId tid, void* sem )
             threads library. */
          record_error_Misc( thr, "Bug in libpthread: sem_wait succeeded on"
                                  " semaphore without prior sem_post");
+         tl_assert(new_seg->prev->vts);
+         new_seg->vts = tick_VTS( new_seg->thr, new_seg->prev->vts );
       }
    }
 }
@@ -7169,6 +7180,20 @@ Bool tc_handle_client_request ( ThreadId tid, UWord* args, UWord* ret)
          evh__TC_POSIX_SEM_ZAPSTACK( tid, (void*)args[1] );
          break;
 
+      case _VG_USERREQ__TC_GET_MY_SEGMENT: { // -> Segment*
+         Thread*   thr;
+         SegmentID segid;
+         Segment*  seg;
+         thr = map_threads_maybe_lookup( tid );
+         tl_assert(thr); /* cannot fail */
+         segid = thr->csegid;
+         tl_assert(is_sane_SegmentID(segid));
+         seg = map_segments_lookup( segid );
+         tl_assert(seg);
+         *ret = (UWord)seg;
+         break;
+      }
+
       default:
          /* Unhandled Thrcheck client request! */
         tl_assert2(0, "unhandled Thrcheck client request!");
@@ -7954,9 +7979,11 @@ static Bool tc_process_cmd_line_option ( Char* arg )
       clo_happens_before = 2;
 
    else if (VG_CLO_STREQ(arg, "--gen-vcg=no"))
-      clo_gen_vcg = False;
+      clo_gen_vcg = 0;
    else if (VG_CLO_STREQ(arg, "--gen-vcg=yes"))
-      clo_gen_vcg = True;
+      clo_gen_vcg = 1;
+   else if (VG_CLO_STREQ(arg, "--gen-vcg=yes-w-vts"))
+      clo_gen_vcg = 2;
 
    else if (VG_CLO_STREQ(arg, "--cmp-race-err-addrs=no"))
       clo_cmp_race_err_addrs = False;
@@ -7981,7 +8008,7 @@ static void tc_print_usage ( void )
 static void tc_print_debug_usage ( void )
 {
    VG_(replacement_malloc_print_debug_usage)();
-   VG_(printf)("    --gen-vcg=no|yes          show happens-before graph "
+   VG_(printf)("    --gen-vcg=no|yes|yes-w-vts   show happens-before graph "
                "in .vcg format [no]\n");
    VG_(printf)("    --cmp-race-err-addrs=no|yes  are data addresses in "
                "race errors significant? [no]\n");
@@ -7998,7 +8025,7 @@ static void tc_fini ( Int exitcode )
    if (sanity_flags)
       all__sanity_check("SK_(fini)");
 
-   if (clo_gen_vcg)
+   if (clo_gen_vcg > 0)
       segments__generate_vcg();
 
    if (VG_(clo_verbosity) >= 2) {
