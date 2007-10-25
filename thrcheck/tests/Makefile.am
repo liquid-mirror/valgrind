@@ -42,7 +42,9 @@ EXTRA_DIST = $(noinst_SCRIPTS) \
 	tc16_byterace.vgtest tc16_byterace.stderr.exp \
 		tc16_byterace.stdout.exp \
 	tc17_sembar.vgtest tc17_sembar.stderr.exp \
-		tc17_sembar.stdout.exp
+		tc17_sembar.stdout.exp \
+	tc18_semabuse.vgtest tc18_semabuse.stderr.exp \
+		tc18_semabuse.stdout.exp
 
 check_PROGRAMS = \
 	hg01_all_ok \
@@ -67,7 +69,8 @@ check_PROGRAMS = \
 	tc14_laog_dinphils \
 	tc15_laog_lockdel \
 	tc16_byterace \
-	tc17_sembar
+	tc17_sembar \
+	tc18_semabuse
 
 # is this necessary?
 AM_CFLAGS	= $(WERROR) -Winline -Wall -Wshadow -g      $(AM_FLAG_M3264_PRI)
