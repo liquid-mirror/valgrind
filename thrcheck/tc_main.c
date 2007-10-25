@@ -303,6 +303,7 @@ typedef
       struct _Segment* prev;   /* The previous segment in this thread */
       struct _Segment* other;  /* Possibly a segment from some other 
                                   thread, which happened-before me */
+      XArray*          vts;    /* XArray of ScalarTS */
       /* DEBUGGING ONLY: what does 'other' arise from?  
          c=thread creation, j=join, s=cvsignal, S=semaphore */
       Char other_hint;
@@ -574,6 +575,7 @@ static Segment* mk_Segment ( Thread* thr, Segment* prev, Segment* other ) {
    seg->thr        = thr;
    seg->prev       = prev;
    seg->other      = other;
+   seg->vts        = NULL;
    seg->other_hint = ' ';
    seg->magic      = Segment_MAGIC;
    seg->admin      = admin_segments;
@@ -1279,6 +1281,7 @@ static void hbefore__invalidate_cache ( void );
 static void shmem__set_mbHasLocks ( Addr a, Bool b );
 static Bool shmem__get_mbHasLocks ( Addr a );
 static void shadow_mem_set8 ( Thread* uu_thr_acc, Addr a, UInt svNew );
+static XArray* singleton_VTS ( Thread* thr, UWord tym );
 
 static void initialise_data_structures ( void )
 {
@@ -1343,7 +1346,11 @@ static void initialise_data_structures ( void )
    thr = mk_Thread( segid );
    seg->thr = thr;
 
-   /* and bind it in the thread-map table */
+   /* Give the thread a starting-off vector timestamp. */
+   seg->vts = singleton_VTS( seg->thr, 1 );
+
+   /* and bind it in the thread-map table.
+      FIXME: assumes root ThreadId == 1. */
    map_threads[1] = thr;
 
    tl_assert(VG_INVALID_THREADID == 0);
@@ -1482,6 +1489,8 @@ static void map_locks_delete ( Addr ga )
 /*--- the DAG of thread segments                               ---*/
 /*----------------------------------------------------------------*/
 
+static void segments__generate_vcg ( void ); /* fwds */
+
 /*--------------- SegmentID to Segment* maps ---------------*/
 
 static Segment* map_segments_lookup ( SegmentID segid )
@@ -1511,6 +1520,351 @@ static void map_segments_add ( SegmentID segid, Segment* seg )
    tl_assert( !TC_(lookupFM)( map_segments, NULL, NULL, segid ));
    TC_(addToFM)( map_segments, (Word)segid, (Word)seg );
 }
+
+/*--------------- to do with Vector Timestamps ---------------*/
+
+/* Scalar Timestamp */
+typedef
+   struct {
+      Thread* thr;
+      UWord   tym;
+   }
+   ScalarTS;
+
+/* Vector Timestamp = XArray* ScalarTS */
+
+static Bool is_sane_VTS ( XArray* vts )
+{
+   UWord     i, n;
+   ScalarTS  *st1, *st2;
+   n = VG_(sizeXA)( vts );
+   if (n >= 2) {
+      for (i = 0; i < n-1; i++) {
+         st1 = VG_(indexXA)( vts, i );
+         st2 = VG_(indexXA)( vts, i+1 );
+         if (st1->thr >= st2->thr)
+            return False;
+         if (st1->tym == 0 || st2->tym == 0)
+            return False;
+      }
+   }
+   return True;
+}
+
+static XArray* new_VTS ( void ) {
+   return VG_(newXA)( tc_zalloc, tc_free, sizeof(ScalarTS) );
+}
+static XArray* singleton_VTS ( Thread* thr, UWord tym ) {
+   ScalarTS st;
+   XArray*  vts;
+   tl_assert(thr);
+   tl_assert(tym >= 1);
+   vts = new_VTS();
+   tl_assert(vts);
+   st.thr = thr;
+   st.tym = tym;
+   VG_(addToXA)( vts, &st );
+   return vts;
+}
+
+
+static Bool cmpGEQ_VTS ( XArray* a, XArray* b )
+{
+   Word     ia, ib, useda, usedb;
+   UWord    tyma, tymb;
+   Thread*  thr;
+   ScalarTS *tmpa, *tmpb;
+
+   Bool all_leq = True;
+   Bool all_geq = True;
+
+   tl_assert(a);
+   tl_assert(b);
+   useda = VG_(sizeXA)( a );
+   usedb = VG_(sizeXA)( b );
+
+   ia = ib = 0;
+
+   while (1) {
+
+      /* This logic is to enumerate triples (thr, tyma, tymb) drawn
+         from a and b in order, where thr is the next Thread*
+         occurring in either a or b, and tyma/b are the relevant
+         scalar timestamps, taking into account implicit zeroes. */
+      tl_assert(ia >= 0 && ia <= useda);
+      tl_assert(ib >= 0 && ib <= usedb);
+      tmpa = tmpb = NULL;
+
+      if (ia == useda && ib == usedb) {
+         /* both empty - done */
+         break;
+      }
+      else
+      if (ia == useda && ib != usedb) {
+         /* a empty, use up b */
+         tmpb = VG_(indexXA)( b, ib );
+         thr  = tmpb->thr;
+         tyma = 0;
+         tymb = tmpb->tym;
+         ib++;
+      }
+      else
+      if (ia != useda && ib == usedb) {
+         /* b empty, use up a */
+         tmpa = VG_(indexXA)( a, ia );
+         thr  = tmpa->thr;
+         tyma = tmpa->tym;
+         tymb = 0;
+         ia++;
+      }
+      else {
+         /* both not empty; extract lowest-Thread*'d triple */
+         tmpa = VG_(indexXA)( a, ia );
+         tmpb = VG_(indexXA)( b, ib );
+         if (tmpa->thr < tmpb->thr) {
+            /* a has the lowest unconsidered Thread* */
+            thr  = tmpa->thr;
+            tyma = tmpa->tym;
+            tymb = 0;
+            ia++;
+         }
+         else
+         if (tmpa->thr > tmpb->thr) {
+            /* b has the lowest unconsidered Thread* */
+            thr  = tmpb->thr;
+            tyma = 0;
+            tymb = tmpb->tym;
+            ib++;
+         } else {
+            /* they both next mention the same Thread* */
+            tl_assert(tmpa->thr == tmpb->thr);
+            thr  = tmpa->thr; /* == tmpb->thr */
+            tyma = tmpa->tym;
+            tymb = tmpb->tym;
+            ia++;
+            ib++;
+         }
+      }
+
+      /* having laboriously determined (thr, tyma, tymb), do something
+         useful with it. */
+      if (tyma < tymb)
+         all_geq = False;
+      if (tyma > tymb)
+         all_leq = False;
+   }
+
+   if (all_leq && all_geq)
+      return True; /* PordEQ */
+   /* now we know they aren't equal, so either all_leq or all_geq or
+      both are false. */
+   if (all_leq)
+      return False; /* PordLT */
+   if (all_geq)
+      return True; /* PordGT */
+   /* hmm, neither all_geq or all_leq.  This means unordered. */
+   return False; /* PordUN */
+}
+
+
+/* Compute max((tick(thra,a),b) into a new XArray.  a and b are
+   unchanged.  If neither a nor b supply a value for 'thra',
+   assert. */
+static
+XArray* tickL_and_joinR_VTS ( Thread* thra, XArray* a, XArray* b )
+{
+   Word     ia, ib, useda, usedb, ticks_found;
+   UWord    tyma, tymb, tymMax;
+   Thread*  thr;
+   XArray*  res;
+   ScalarTS *tmpa, *tmpb;
+
+   tl_assert(a);
+   tl_assert(b);
+   tl_assert(thra);
+   useda = VG_(sizeXA)( a );
+   usedb = VG_(sizeXA)( b );
+
+   res = new_VTS();
+   ia = ib = ticks_found = 0;
+
+   while (1) {
+
+      /* This logic is to enumerate triples (thr, tyma, tymb) drawn
+         from a and b in order, where thr is the next Thread*
+         occurring in either a or b, and tyma/b are the relevant
+         scalar timestamps, taking into account implicit zeroes. */
+      tl_assert(ia >= 0 && ia <= useda);
+      tl_assert(ib >= 0 && ib <= usedb);
+      tmpa = tmpb = NULL;
+
+      if (ia == useda && ib == usedb) {
+         /* both empty - done */
+         break;
+      }
+      else
+      if (ia == useda && ib != usedb) {
+         /* a empty, use up b */
+         tmpb = VG_(indexXA)( b, ib );
+         thr  = tmpb->thr;
+         tyma = 0;
+         tymb = tmpb->tym;
+         ib++;
+      }
+      else
+      if (ia != useda && ib == usedb) {
+         /* b empty, use up a */
+         tmpa = VG_(indexXA)( a, ia );
+         thr  = tmpa->thr;
+         tyma = tmpa->tym;
+         tymb = 0;
+         ia++;
+      }
+      else {
+         /* both not empty; extract lowest-Thread*'d triple */
+         tmpa = VG_(indexXA)( a, ia );
+         tmpb = VG_(indexXA)( b, ib );
+         if (tmpa->thr < tmpb->thr) {
+            /* a has the lowest unconsidered Thread* */
+            thr  = tmpa->thr;
+            tyma = tmpa->tym;
+            tymb = 0;
+            ia++;
+         }
+         else
+         if (tmpa->thr > tmpb->thr) {
+            /* b has the lowest unconsidered Thread* */
+            thr  = tmpb->thr;
+            tyma = 0;
+            tymb = tmpb->tym;
+            ib++;
+         } else {
+            /* they both next mention the same Thread* */
+            tl_assert(tmpa->thr == tmpb->thr);
+            thr  = tmpa->thr; /* == tmpb->thr */
+            tyma = tmpa->tym;
+            tymb = tmpb->tym;
+            ia++;
+            ib++;
+         }
+      }
+
+      /* having laboriously determined (thr, tyma, tymb), do something
+         useful with it. */
+      if (thr == thra) {
+         if (tyma > 0) {
+            /* VTS 'a' actually supplied this value; it is not a
+               default zero.  Do the required 'tick' action. */
+            tyma++;
+            ticks_found++;
+         } else {
+            /* 'a' didn't supply this value, so 'b' must have. */
+            tl_assert(tymb > 0);
+         }
+      }
+      tymMax = tyma > tymb ? tyma : tymb;
+      if (tymMax > 0) {
+         ScalarTS st;
+         st.thr = thr;
+         st.tym = tymMax;
+         VG_(addToXA)( res, &st );
+      }
+
+   }
+
+   tl_assert(is_sane_VTS( res ));
+
+   if (thra != NULL) {
+      tl_assert(ticks_found == 1);
+   } else {
+      tl_assert(ticks_found == 0);
+   }
+
+   return res;
+}
+
+
+/* Do 'vts[me]++', so to speak.  If 'me' does not have an entry in
+   'vts', set it to 1 in the returned VTS. */
+
+static XArray* tick_VTS ( Thread* me, XArray* vts ) {
+   ScalarTS* here = NULL;
+   ScalarTS  tmp;
+   XArray*   res;
+   Word      i, n; 
+   tl_assert(me);
+   tl_assert(is_sane_VTS(vts));
+   if (0) VG_(printf)("tick vts thrno %ld szin %d\n",
+                      (Word)me->errmsg_index, (Int)VG_(sizeXA)(vts) );
+   res = new_VTS();
+   n = VG_(sizeXA)( vts );
+   for (i = 0; i < n; i++) {
+      here = VG_(indexXA)( vts, i );
+      if (me < here->thr) {
+         /* We just went past 'me', without seeing it. */
+         tmp.thr = me;
+         tmp.tym = 1;
+         VG_(addToXA)( res, &tmp );
+         tmp = *here;
+         VG_(addToXA)( res, &tmp );
+         i++;
+         break;
+      } 
+      else if (me == here->thr) {
+         tmp = *here;
+         tmp.tym++;
+         VG_(addToXA)( res, &tmp );
+         i++;
+         break;
+      }
+      else /* me > here->thr */ {
+         tmp = *here;
+         VG_(addToXA)( res, &tmp );
+      }
+   }
+   tl_assert(i >= 0 && i <= n);
+   if (i == n && here && here->thr < me) {
+      tmp.thr = me;
+      tmp.tym = 1;
+      VG_(addToXA)( res, &tmp );
+   } else {
+      for (/*keepgoing*/; i < n; i++) {
+         here = VG_(indexXA)( vts, i );
+         tmp = *here;
+         VG_(addToXA)( res, &tmp );
+      }
+   }
+   tl_assert(is_sane_VTS(res));
+   if (0) VG_(printf)("tick vts thrno %ld szou %d\n",
+                      (Word)me->errmsg_index, (Int)VG_(sizeXA)(res) );
+   return res;
+}
+
+static void show_VTS ( HChar* buf, Int nBuf, XArray* vts ) {
+   ScalarTS* st;
+   HChar     unit[64];
+   Word      i, n;
+   Int       avail = nBuf;
+   tl_assert(avail > 16);
+   buf[0] = '[';
+   buf[1] = 0;
+   n = VG_(sizeXA)( vts );
+   for (i = 0; i < n; i++) {
+      tl_assert(avail >= 10);
+      st = VG_(indexXA)( vts, i );
+      VG_(memset)(unit, 0, sizeof(unit));
+      VG_(sprintf)(unit, i < n-1 ? "%ld:%ld " : "%ld:%ld",
+                         (Word)st->thr->errmsg_index, st->tym);
+      if (avail < VG_(strlen)(unit) + 10/*let's say*/) {
+         VG_(strcat)(buf, " ...]");
+         return;
+      }
+      VG_(strcat)(buf, unit);
+      avail -= VG_(strlen)(unit);
+   }
+   VG_(strcat)(buf, "]");
+}
+
 
 /*------------ searching the happens-before graph ------------*/
 
@@ -1614,18 +1968,9 @@ static Bool happens_before_do_dfs_from_to ( Segment* src, Segment* dst )
 }
 
 __attribute__((noinline))
-static Bool happens_before_wrk ( SegmentID segid1, SegmentID segid2 )
+static Bool happens_before_wrk ( Segment* seg1, Segment* seg2 )
 {
-   Bool    reachable;
-   Segment *seg1, *seg2;
-   tl_assert(is_sane_SegmentID(segid1));
-   tl_assert(is_sane_SegmentID(segid2));
-   tl_assert(segid1 != segid2);
-   seg1 = map_segments_lookup(segid1);
-   seg2 = map_segments_lookup(segid2);
-   tl_assert(is_sane_Segment(seg1));
-   tl_assert(is_sane_Segment(seg2));
-   tl_assert(seg1 != seg2);
+   Bool reachable;
 
    { static Int nnn = 0;
      if (SHOW_EXPENSIVE_STUFF && (nnn++ % 1000) == 0)
@@ -1640,13 +1985,9 @@ static Bool happens_before_wrk ( SegmentID segid1, SegmentID segid2 )
    if (dfsver_stack == NULL) {
      dfsver_stack = VG_(newXA)( tc_zalloc, tc_free, sizeof(Segment*) );
      tl_assert(dfsver_stack);
-  }
+   }
 
    reachable = happens_before_do_dfs_from_to( seg2, seg1 );
-
-   if (0)
-   VG_(printf)("happens_before 0x%x 0x%x: %s\n",
-               (Int)segid1, (Int)segid2, reachable ? "Y" : "N");
 
    return reachable;
 }
@@ -1675,8 +2016,9 @@ static void hbefore__invalidate_cache ( void )
 
 static Bool happens_before ( SegmentID segid1, SegmentID segid2 )
 {
-   Bool hb;
-   Int  i, j, iNSERT_POINT;
+   Bool    hbG, hbV;
+   Int     i, j, iNSERT_POINT;
+   Segment *seg1, *seg2;
    tl_assert(is_sane_SegmentID(segid1));
    tl_assert(is_sane_SegmentID(segid2));
    tl_assert(segid1 != segid2);
@@ -1701,7 +2043,34 @@ static Bool happens_before ( SegmentID segid1, SegmentID segid2 )
    }
    /* Not found.  Search the graph and add an entry to the cache. */
    stats__hbefore_gsearches++;
-   hb = happens_before_wrk( segid1, segid2 );
+
+   seg1 = map_segments_lookup(segid1);
+   seg2 = map_segments_lookup(segid2);
+   tl_assert(is_sane_Segment(seg1));
+   tl_assert(is_sane_Segment(seg2));
+   tl_assert(seg1 != seg2);
+   tl_assert(seg1->vts);
+   tl_assert(seg2->vts);
+
+   hbV = cmpGEQ_VTS( seg2->vts, seg1->vts );
+   if (0) {
+      /* Crosscheck the vector-timestamp comparison result against that
+         obtained from the explicit graph approach.  Can be very
+         slow. */
+      hbG = happens_before_wrk( seg1, seg2 );
+   } else {
+      /* Assume the vector-timestamp comparison result is correct, and
+         use it as-is. */
+      hbG = hbV;
+   }
+
+   if (hbV != hbG) {
+      VG_(printf)("seg1 %p  seg2 %p  hbV %d  hbG %d\n", 
+                  seg1,seg2,(Int)hbV,(Int)hbG);
+      segments__generate_vcg();
+   }
+   tl_assert(hbV == hbG);
+
    iNSERT_POINT = (1*HBEFORE__N_CACHE)/4 - 1;
    /* if (iNSERT_POINT > 4) iNSERT_POINT = 4; */
 
@@ -1710,11 +2079,11 @@ static Bool happens_before ( SegmentID segid1, SegmentID segid2 )
    }
    hbefore__cache[iNSERT_POINT].segid1 = segid1;
    hbefore__cache[iNSERT_POINT].segid2 = segid2;
-   hbefore__cache[iNSERT_POINT].result = hb;
+   hbefore__cache[iNSERT_POINT].result = hbG;
 
    if (0)
    VG_(printf)("hb %d %d\n", (Int)segid1-(1<<24), (Int)segid2-(1<<24));
-   return hb;
+   return hbG;
 }
 
 /*--------------- generating .vcg output ---------------*/
@@ -1727,9 +2096,10 @@ static void segments__generate_vcg ( void )
          Green  -- thread creation, link to parent
          Red    -- thread exit, link to exiting thread
          Yellow -- signal edge
-         Ping   -- semaphore-up edge
+         Pink   -- semaphore-up edge
    */
    Segment* seg;
+   HChar vtsstr[128];
    VG_(printf)(PFX "graph: { title: \"Segments\"\n");
    VG_(printf)(PFX "orientation: top_to_bottom\n");
    VG_(printf)(PFX "height: 900\n");
@@ -1740,14 +2110,18 @@ static void segments__generate_vcg ( void )
    for (seg = admin_segments; seg; seg=seg->admin) {
 
       VG_(printf)(PFX "node: { title: \"%p\" color: lightcyan "
-                  "textcolor: darkgreen label: \"Seg %x\\n", 
+                  "textcolor: darkgreen label: \"Seg %p\\n", 
                   seg, seg);
       if (seg->thr->errmsg_index == 1) {
-         VG_(printf)("ROOT_THREAD\" }\n");
+         VG_(printf)("ROOT_THREAD");
       } else {
-         VG_(printf)("Thr# %d\" }\n", seg->thr->errmsg_index);
+         VG_(printf)("Thr# %d", seg->thr->errmsg_index);
       }
 
+      show_VTS( vtsstr, sizeof(vtsstr)-1, seg->vts );
+      vtsstr[sizeof(vtsstr)-1] = 0;
+
+      VG_(printf)("\\n%s\" }\n", vtsstr);
       if (seg->prev)
          VG_(printf)(PFX "edge: { sourcename: \"%p\" targetname: \"%p\""
                      "color: black }\n", seg->prev, seg );
@@ -1757,7 +2131,7 @@ static void segments__generate_vcg ( void )
             case 'c': colour = "darkgreen";  break; /* creation */
             case 'j': colour = "red";        break; /* join (exit) */
             case 's': colour = "orange";     break; /* signal */
-            case 'S': colour = "pink";       break; /* signal */
+            case 'S': colour = "pink";       break; /* sem_post->wait */
             case 'u': colour = "cyan";       break; /* unlock */
             default: tl_assert(0);
          }
@@ -1947,7 +2321,8 @@ static void shmem__set_mbHasShared ( Addr a, Bool b )
 /*--- Sanity checking the data structures                      ---*/
 /*----------------------------------------------------------------*/
 
-static Bool is_sane_CacheLine ( CacheLine* cl );
+static Bool is_sane_CacheLine ( CacheLine* cl ); /* fwds */
+static Bool cmpGEQ_VTS ( XArray* a, XArray* b ); /* fwds */
 
 /* REQUIRED INVARIANTS:
 
@@ -2158,6 +2533,13 @@ static void segments__sanity_check ( Char* who )
    for (seg = admin_segments; seg; seg = seg->admin) {
       if (!is_sane_Segment(seg)) BAD("2");
       if (!is_sane_Thread(seg->thr)) BAD("3");
+      if (!seg->vts) BAD("4");
+      if (seg->prev && seg->prev->vts
+          && !cmpGEQ_VTS(seg->vts, seg->prev->vts))
+         BAD("5");
+      if (seg->other && seg->other->vts
+          && !cmpGEQ_VTS(seg->vts, seg->other->vts))
+         BAD("6");
    }
    return;
   bad:
@@ -3481,8 +3863,8 @@ static UShort pulldown_to_32 ( /*MOD*/UInt* tree, UWord toff, UShort descr ) {
       case 0: case 4:
          tl_assert(descr & TREE_DESCR_64);
          tree[4] = tree[0];
-	 descr &= ~TREE_DESCR_64;
-	 descr |= (TREE_DESCR_32_1 | TREE_DESCR_32_0);
+         descr &= ~TREE_DESCR_64;
+         descr |= (TREE_DESCR_32_1 | TREE_DESCR_32_0);
          break;
       default:
          tl_assert(0);
@@ -3495,7 +3877,7 @@ static UShort pulldown_to_16 ( /*MOD*/UInt* tree, UWord toff, UShort descr ) {
    switch (toff) {
       case 0: case 2:
          if (!(descr & TREE_DESCR_32_0)) {
-	   descr = pulldown_to_32(tree, 0, descr);
+            descr = pulldown_to_32(tree, 0, descr);
          }
          tl_assert(descr & TREE_DESCR_32_0);
          tree[2] = tree[0];
@@ -3504,7 +3886,7 @@ static UShort pulldown_to_16 ( /*MOD*/UInt* tree, UWord toff, UShort descr ) {
          break;
       case 4: case 6:
          if (!(descr & TREE_DESCR_32_1)) {
-	   descr = pulldown_to_32(tree, 4, descr);
+            descr = pulldown_to_32(tree, 4, descr);
          }
          tl_assert(descr & TREE_DESCR_32_1);
          tree[6] = tree[4];
@@ -4889,6 +5271,8 @@ void evh__pre_thread_ll_create ( ThreadId parent, ThreadId child )
          /* Make the child's new segment depend on the parent */
          seg_c->other = map_segments_lookup( thr_p->csegid );
          seg_c->other_hint = 'c';
+         seg_c->vts = tick_VTS( thr_c, seg_c->other->vts );
+         tl_assert(seg_c->prev == NULL);
          /* and start a new segment for the parent. */
          { SegmentID new_segid = 0; /* bogus */
            Segment*  new_seg   = NULL;
@@ -4896,6 +5280,8 @@ void evh__pre_thread_ll_create ( ThreadId parent, ThreadId child )
                                                thr_p );
            tl_assert(is_sane_SegmentID(new_segid));
            tl_assert(is_sane_Segment(new_seg));
+           new_seg->vts = tick_VTS( thr_p, new_seg->prev->vts );
+           tl_assert(new_seg->other == NULL);
          }
       }
    }
@@ -4965,6 +5351,9 @@ void evh__TC_PTHREAD_JOIN_POST ( ThreadId stay_tid, Thread* quit_thr )
       tl_assert(new_seg->other == NULL);
       new_seg->other = map_segments_lookup( thr_q->csegid );
       new_seg->other_hint = 'j';
+      tl_assert(new_seg->thr == thr_s);
+      new_seg->vts = tickL_and_joinR_VTS( thr_s, new_seg->prev->vts,
+                                                 new_seg->other->vts );
    }
 
    // FIXME: error-if: exiting thread holds any locks
@@ -5394,6 +5783,8 @@ static void evh__TC_PTHREAD_COND_SIGNAL_PRE ( ThreadId tid, void* cond )
       tl_assert( is_sane_Segment(new_seg) );
       tl_assert( new_seg->thr == thr );
       tl_assert( is_sane_Segment(new_seg->prev) );
+      tl_assert( new_seg->prev->vts );
+      new_seg->vts = tick_VTS( new_seg->thr, new_seg->prev->vts );
 
       /* ... and add the binding. */
       TC_(addToFM)( map_cond_to_Segment, (Word)cond,
@@ -5460,8 +5851,15 @@ static void evh__TC_PTHREAD_COND_WAIT_POST ( ThreadId tid,
                              NULL, (Word*)&signalling_seg, (Word)cond );
       if (found) {
          tl_assert(is_sane_Segment(signalling_seg));
+         tl_assert(new_seg->prev);
+         tl_assert(new_seg->prev->vts);
          new_seg->other      = signalling_seg;
          new_seg->other_hint = 's';
+         tl_assert(new_seg->other->vts);
+         new_seg->vts = tickL_and_joinR_VTS( 
+                           new_seg->thr, 
+                           new_seg->prev->vts,
+                           new_seg->other->vts );
       } else {
          /* Hmm.  How can a wait on 'cond' succeed if nobody signalled
             it?  If this happened it would surely be a bug in the
@@ -5721,6 +6119,8 @@ static void evh__TC_POSIX_SEMPOST_PRE ( ThreadId tid, void* sem )
       tl_assert( is_sane_Segment(new_seg) );
       tl_assert( new_seg->thr == thr );
       tl_assert( is_sane_Segment(new_seg->prev) );
+      tl_assert( new_seg->prev->vts );
+      new_seg->vts = tick_VTS( new_seg->thr, new_seg->prev->vts );
 
       /* ... and add the binding. */
       push_Segment_for_sem( sem, new_seg->prev );
@@ -5764,8 +6164,15 @@ static void evh__TC_POSIX_SEMWAIT_POST ( ThreadId tid, void* sem )
       posting_seg = mb_pop_Segment_for_sem( sem );
       if (posting_seg) {
          tl_assert(is_sane_Segment(posting_seg));
+         tl_assert(new_seg->prev);
+         tl_assert(new_seg->prev->vts);
          new_seg->other      = posting_seg;
          new_seg->other_hint = 'S';
+         tl_assert(new_seg->other->vts);
+         new_seg->vts = tickL_and_joinR_VTS( 
+                           new_seg->thr, 
+                           new_seg->prev->vts,
+                           new_seg->other->vts );
       } else {
          /* Hmm.  How can a wait on 'sem' succeed if nobody posted to
             it?  If this happened it would surely be a bug in the
