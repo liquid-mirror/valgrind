@@ -1,6 +1,4 @@
 
-# FIXME: this is completely bogus (a copy of Helgrind's one)
-
 # For AM_FLAG_M3264_PRI
 include $(top_srcdir)/Makefile.flags.am
 
@@ -42,7 +40,9 @@ EXTRA_DIST = $(noinst_SCRIPTS) \
 	tc15_laog_lockdel.vgtest tc15_laog_lockdel.stderr.exp \
 		tc15_laog_lockdel.stdout.exp \
 	tc16_byterace.vgtest tc16_byterace.stderr.exp \
-		tc16_byterace.stdout.exp
+		tc16_byterace.stdout.exp \
+	tc17_sembar.vgtest tc17_sembar.stderr.exp \
+		tc17_sembar.stdout.exp
 
 check_PROGRAMS = \
 	hg01_all_ok \
@@ -66,7 +66,8 @@ check_PROGRAMS = \
 	tc13_laog1 \
 	tc14_laog_dinphils \
 	tc15_laog_lockdel \
-	tc16_byterace
+	tc16_byterace \
+	tc17_sembar
 
 # is this necessary?
 AM_CFLAGS	= $(WERROR) -Winline -Wall -Wshadow -g      $(AM_FLAG_M3264_PRI)
