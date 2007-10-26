@@ -44,7 +44,9 @@ EXTRA_DIST = $(noinst_SCRIPTS) \
 	tc17_sembar.vgtest tc17_sembar.stderr.exp \
 		tc17_sembar.stdout.exp \
 	tc18_semabuse.vgtest tc18_semabuse.stderr.exp \
-		tc18_semabuse.stdout.exp
+		tc18_semabuse.stdout.exp \
+	tc19_shadowmem.vgtest tc19_shadowmem.stderr.exp \
+		tc19_shadowmem.stdout.exp
 
 check_PROGRAMS = \
 	hg01_all_ok \
@@ -70,9 +72,14 @@ check_PROGRAMS = \
 	tc15_laog_lockdel \
 	tc16_byterace \
 	tc17_sembar \
-	tc18_semabuse
+	tc18_semabuse \
+	tc19_shadowmem
 
-# is this necessary?
-AM_CFLAGS	= $(WERROR) -Winline -Wall -Wshadow -g      $(AM_FLAG_M3264_PRI)
+AM_CPPFLAGS = -I$(top_srcdir) -I$(top_srcdir)/include \
+                -I$(top_srcdir)/coregrind -I$(top_builddir)/include \
+                -I@VEX_DIR@/pub
+
+# are these necessary?
+AM_CFLAGS	= $(WERROR) -Winline -Wall -Wshadow -g $(AM_FLAG_M3264_PRI)
 
 LDADD		= -lpthread
