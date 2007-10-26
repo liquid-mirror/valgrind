@@ -103,7 +103,7 @@ gomp_barrier_wait (gomp_barrier_t *bar)
           sem_wait (&bar->sem2); // 2 down
         }
       pthread_mutex_unlock (&bar->mutex1);
-      /* Resultat professionnel!  First we made this thread have an
+      /* «Résultats professionnels!»  First we made this thread have an
          obvious (Thrcheck-visible) dependency on all other threads
          calling gomp_barrier_wait.  Then, we released them all again,
          so they all have a (visible) dependency on this thread.
@@ -133,46 +133,80 @@ gomp_barrier_wait (gomp_barrier_t *bar)
    are arriving at the barrier and by mutex2 whilst they are leaving,
    but not consistently by either of them.  Oh well. */
 
-gomp_barrier_t bar;
+static gomp_barrier_t bar;
+
+/* What's with the volatile here?  It stops gcc compiling
+   "if (myid == 4) { unprotected = 99; }" and
+   "if (myid == 3) { unprotected = 88; }" into a conditional
+   load followed by a store.  The cmov/store sequence reads and
+   writes memory in all threads and cause Thrcheck to (correctly)
+   report a race, the underlying cause of which is that gcc is
+   generating non threadsafe code.  
+
+   (The lack of) thread safe code generation by gcc is currently a
+   hot topic.  See the following discussions:
+     http://gcc.gnu.org/ml/gcc/2007-10/msg00266.html
+     http://lkml.org/lkml/2007/10/24/673
+   and this is interesting background:
+     www.hpl.hp.com/techreports/2004/HPL-2004-209.pdf
+*/
+volatile static long unprotected = 0;
 
 void* child ( void* argV )
 {
+   long myid = (long)argV;
+   //   assert(myid >= 2 && myid <= 5);
+
+   /* First, we all wait to get to this point. */
    gomp_barrier_wait( &bar );
+
+   /* Now, thread #4 writes to 'unprotected' and so becomes its
+      owner. */
+   if (myid == 4) {
+      unprotected = 99;
+   }
+
+   /* Now we all wait again. */
    gomp_barrier_wait( &bar );
-   gomp_barrier_wait( &bar );
-   gomp_barrier_wait( &bar );
-   gomp_barrier_wait( &bar );
-   gomp_barrier_wait( &bar );
-   gomp_barrier_wait( &bar );
+
+   /* This time, thread #3 writes to 'unprotected'.  If all goes well,
+      Thrcheck sees the dependency through the barrier back to thread
+      #4 before it, and so thread #3 becomes the exclusive owner of
+      'unprotected'. */
+   if (myid == 3) {
+      unprotected = 88;
+   }
+
+   /* And just to be on the safe side ... */
    gomp_barrier_wait( &bar );
    return NULL;
 }
 
-#define NNN 4
 
 int main (int argc, char *argv[])
 {
-  int j;
    long i; int res;
-   pthread_t thr[NNN];
+   pthread_t thr[4];
    fprintf(stderr, "starting\n");
 
-   for (j = 0; j < 1; j++) {
-   gomp_barrier_init( &bar, NNN );
+   gomp_barrier_init( &bar, 4 );
 
-   for (i = 0; i < NNN; i++) {
-      res = pthread_create( &thr[i], NULL, child, (void*)i );
+   for (i = 0; i < 4; i++) {
+      res = pthread_create( &thr[i], NULL, child, (void*)(i+2) );
       assert(!res);
    }
 
-   for (i = 0; i < NNN; i++) {
+   for (i = 0; i < 4; i++) {
       res = pthread_join( thr[i], NULL );
       assert(!res);
    }
 
    gomp_barrier_destroy( &bar );
-   }
-   fprintf(stderr, "done\n");
+
+   /* And finally here, the root thread can get exclusive ownership
+      back from thread #4, because #4 has exited by this point and so
+      we have a dependency edge back to the write it did. */
+   fprintf(stderr, "done, result is %ld, should be 88\n", unprotected);
 
    return 0;
 }
