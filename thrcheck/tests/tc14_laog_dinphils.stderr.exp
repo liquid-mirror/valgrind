@@ -6,7 +6,19 @@ Thread #6 was created
    by 0x........: pthread_create@* (tc_intercepts.c:...)
    by 0x........: main (tc14_laog_dinphils.c:34)
 
-Thread #6: Lock acquisition order is inconsistent with previously observed ordering
+Thread #6: lock order "0x........ before 0x........" violated
+   at 0x........: pthread_mutex_lock (tc_intercepts.c:...)
+   by 0x........: dine (tc14_laog_dinphils.c:19)
+   by 0x........: mythread_wrapper (tc_intercepts.c:...)
+   by 0x........: ...
+   by 0x........: ...
+  Required order was established by acquisition of lock at 0x........
+   at 0x........: pthread_mutex_lock (tc_intercepts.c:...)
+   by 0x........: dine (tc14_laog_dinphils.c:18)
+   by 0x........: mythread_wrapper (tc_intercepts.c:...)
+   by 0x........: ...
+   by 0x........: ...
+  followed by a later acquisition of lock at 0x........
    at 0x........: pthread_mutex_lock (tc_intercepts.c:...)
    by 0x........: dine (tc14_laog_dinphils.c:19)
    by 0x........: mythread_wrapper (tc_intercepts.c:...)

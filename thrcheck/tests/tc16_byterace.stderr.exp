@@ -8,7 +8,7 @@ Thread #2 was created
    by 0x........: pthread_create@* (tc_intercepts.c:...)
    by 0x........: main (tc16_byterace.c:22)
 
-Possible data race during write to 0x........ 
+Possible data race during write of size 1 at 0x........
    at 0x........: main (tc16_byterace.c:34)
   Old state: shared-readonly by threads #1, #2
   New state: shared-modified by threads #1, #2
