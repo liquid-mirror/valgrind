@@ -23,7 +23,8 @@ endif
 VGPRELOAD_THRCHECK_SOURCES_COMMON = tc_intercepts.c
 
 vgpreload_thrcheck_x86_linux_so_SOURCES      = $(VGPRELOAD_THRCHECK_SOURCES_COMMON)
-vgpreload_thrcheck_x86_linux_so_CPPFLAGS     = $(AM_CPPFLAGS_X86_LINUX)
+vgpreload_thrcheck_x86_linux_so_CPPFLAGS     = $(AM_CPPFLAGS_X86_LINUX) \
+						-fno-omit-frame-pointer
 vgpreload_thrcheck_x86_linux_so_CFLAGS       = $(AM_CFLAGS_X86_LINUX) $(AM_CFLAGS_PIC)
 vgpreload_thrcheck_x86_linux_so_DEPENDENCIES = $(LIBREPLACEMALLOC_X86_LINUX)
 vgpreload_thrcheck_x86_linux_so_LDFLAGS      = \
@@ -74,7 +75,7 @@ THRCHECK_SOURCES_COMMON = tc_wordfm.c tc_wordset.c tc_main.c
 
 thrcheck_x86_linux_SOURCES      = $(THRCHECK_SOURCES_COMMON)
 thrcheck_x86_linux_CPPFLAGS     = $(AM_CPPFLAGS_X86_LINUX)
-thrcheck_x86_linux_CFLAGS       = $(AM_CFLAGS_X86_LINUX)
+thrcheck_x86_linux_CFLAGS       = $(AM_CFLAGS_X86_LINUX) -fomit-frame-pointer
 thrcheck_x86_linux_DEPENDENCIES = $(COREGRIND_LIBS_X86_LINUX)
 thrcheck_x86_linux_LDADD        = $(TOOL_LDADD_X86_LINUX)
 thrcheck_x86_linux_LDFLAGS      = $(TOOL_LDFLAGS_X86_LINUX)
@@ -119,10 +120,3 @@ tcincludedir = $(includedir)/valgrind
 tcinclude_HEADERS = thrcheck.h
 
 noinst_HEADERS = tc_wordfm.h tc_wordset.h
-
-tc_intercepts.o: CFLAGS += -fno-omit-frame-pointer
-
-# later
-# tc_main.o: CFLAGS += -fomit-frame-pointer
-# tc_wordfm.o: CFLAGS += -fomit-frame-pointer
-# tc_wordset.o: CFLAGS += -fomit-frame-pointer
