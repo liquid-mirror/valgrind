@@ -70,45 +70,81 @@
    fun:pthread_join
 }
 
-#z###--- IO_file ---###
-#z{
-#z   thrcheck-glibc2X-IOfile-1
-#z   Thrcheck:Race
-#z   fun:_IO_file_xsputn*
-#z   fun:vfprintf
-#z   fun:*printf
-#z}
-#z{
-#z   thrcheck-glibc2X-IOfile-2
-#z   Thrcheck:Race
-#z   fun:_IO_file_overflow*
-#z   fun:_IO_file_xsputn*
-#z   fun:*printf
-#z}
-#z{
-#z   thrcheck-glibc2X-IOfile-3
-#z   Thrcheck:Race
-#z   fun:new_do_write
-#z   fun:_IO_do_write*
-#z   fun:_IO_file_xsputn*
-#z   fun:*printf
-#z}
-#z{
-#z   thrcheck-glibc2X-IOfile-4
-#z   Thrcheck:Race
-#z   fun:new_do_write
-#z   fun:_IO_file_xsputn*
-#z   fun:*printf
-#z}
-#z{
-#z   thrcheck-glibc2X-IOfile-5
-#z   Thrcheck:Race
-#z   fun:new_do_write
-#z   fun:_IO_do_write*
-#z   fun:_IO_file_overflow*
-#z   fun:_IO_file_xsputn*
-#z}
-#z
+###--- IO_file ---###
+# I'm pretty sure these are because Thrcheck cannot see
+# glibc's acquisition/releasing of locks for stdio.
+{
+   thrcheck-glibc2X-IOfile-1
+   Thrcheck:Race
+   fun:_IO_file_xsputn*
+   fun:*vfprintf
+   fun:*printf
+}
+{
+   thrcheck-glibc2X-IOfile-2
+   Thrcheck:Race
+   fun:vfprintf
+   fun:*printf
+}
+{
+   thrcheck-glibc2X-IOfile-3
+   Thrcheck:Race
+   fun:mempcpy
+   fun:vfprintf
+   fun:*printf
+}
+{
+   thrcheck-glibc2X-IOfile-4
+   Thrcheck:Race
+   fun:buffered_vfprintf
+   fun:vfprintf
+   fun:*printf
+}
+{
+   thrcheck-glibc2X-IOfile-5
+   Thrcheck:Race
+   fun:new_do_write
+   fun:_IO_do_write*
+   fun:_IO_file_xsputn*
+   fun:*printf
+}
+{
+   thrcheck-glibc2X-IOfile-6
+   Thrcheck:Race
+   fun:mempcpy
+   fun:_IO_file_xsputn*
+   fun:*printf
+}
+{
+   thrcheck-glibc2X-IOfile-7
+   Thrcheck:Race
+   fun:new_do_write
+   fun:_IO_do_write*
+   fun:_IO_file_overflow*
+   fun:_IO_file_xsputn*
+}
+{
+   thrcheck-glibc2X-IOfile-8
+   Thrcheck:Race
+   fun:_IO_file_overflow*
+   fun:_IO_file_xsputn*
+   fun:*fprintf
+}
+{
+   thrcheck-glibc2X-IOfile-9
+   Thrcheck:Race
+   fun:new_do_write
+   fun:_IO_file_xsputn*
+   fun:*vfprintf
+}
+{
+   thrcheck-glibc2X-IOfile-10
+   Thrcheck:Race
+   fun:__lll_mutex_unlock_wake
+   fun:*printf
+}
+
+
 #z###--- thread creation ---###
 #z{
 #z   thrcheck-glibc2X-creation-1
@@ -254,6 +290,14 @@
    Thrcheck:Race
    fun:__lll_mutex_unlock_wake
    fun:pthread_cond_timedwait@@GLIBC_*
+}
+
+###--- pthread_rwlock_*lock ---###
+# ditto
+{
+   thrcheck-glibc2X-pthrwlock{rd,wr,un}lock-1
+   Thrcheck:Race
+   fun:pthread_rwlock_*lock
 }
 
 ###--- libpthread internal stuff ---###
