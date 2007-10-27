@@ -90,7 +90,8 @@ typedef
       _VG_USERREQ__TC_PTHREAD_RWLOCK_UNLOCK_POST, // pth_rwlk_t*
       _VG_USERREQ__TC_POSIX_SEMPOST_PRE,          // sem_t*
       _VG_USERREQ__TC_POSIX_SEMWAIT_POST,         // sem_t*
-      _VG_USERREQ__TC_POSIX_SEM_ZAPSTACK          // sem_t*
+      _VG_USERREQ__TC_POSIX_SEM_ZAPSTACK,         // sem_t*
+      _VG_USERREQ__TC_GET_MY_SEGMENT              // -> Segment*
    } Vg_TCheckClientRequest;
 
 /* Clean memory state.  This makes Thrcheck forget everything it knew
