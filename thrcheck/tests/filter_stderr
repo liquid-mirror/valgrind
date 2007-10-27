@@ -17,4 +17,8 @@ sed "s/tc_intercepts.c:[0-9]*/tc_intercepts.c:.../"  |
 sed "s/lib64/lib/g" | 
 sed "s/libpthread.*so/libpthread\.\.\./g" |
 
+# Change (eg) "pthread_create@@GLIBC_2.2.5" into "pthread_create@GLIBC"
+#    and (eg) "pthread_create@GLIBC_2.1"    into "pthread_create@GLIBC"
+sed "s/@@*GLIBC_2[0123456789\.]*/@GLIBC_/g" |
+
 $dir/../../tests/filter_test_paths

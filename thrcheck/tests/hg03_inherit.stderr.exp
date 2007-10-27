@@ -4,7 +4,7 @@ Thread #1 is the program's root thread
 Thread #3 was created
    at 0x........: clone (in /...libc...)
    by 0x........: ...
-   by 0x........: pthread_create@@GLIBC_2.2.5 (in /lib/libpthread...)
+   by 0x........: pthread_create@GLIBC_ (in /lib/libpthread...)
    by 0x........: pthread_create@* (tc_intercepts.c:...)
    by 0x........: main (hg03_inherit.c:46)
 
