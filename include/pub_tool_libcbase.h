@@ -42,8 +42,9 @@ extern Bool VG_(isdigit) ( Char c );
    Converting strings to numbers
    ------------------------------------------------------------------ */
 
-extern Long  VG_(atoll)   ( Char* str );     // base 10
-extern Long  VG_(atoll36) ( Char* str );     // base 36
+extern Long  VG_(atoll)   ( Char* str ); // base 10
+extern Long  VG_(atoll16) ( Char* str ); // base 16; leading 0x accepted
+extern Long  VG_(atoll36) ( Char* str ); // base 36
 
 /* ---------------------------------------------------------------------
    String functions and macros
