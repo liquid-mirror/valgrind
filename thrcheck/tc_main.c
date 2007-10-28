@@ -47,6 +47,7 @@
 #include "pub_tool_machine.h"
 #include "pub_tool_options.h"
 #include "pub_tool_xarray.h"
+#include "pub_tool_stacktrace.h"
 
 #include "thrcheck.h"
 
@@ -125,6 +126,12 @@ static Int clo_gen_vcg = 0;
    taken into account?  For users, no, but for verification purposes
    (regtesting) this is sometimes important. */
 static Bool clo_cmp_race_err_addrs = False;
+
+/* Tracing memory accesses, so we can see what's going on.
+   clo_trace_addr is the address to monitor.  clo_trace_level = 0 for
+   no tracing, 1 for summary, 2 for detailed. */
+static Addr clo_trace_addr  = 0;
+static Int  clo_trace_level = 0;
 
 // FIXME: when a SecMap is completely set via and address range
 // setting operation to a non-ShR/M state, clear its .mbHasShared 
@@ -675,9 +682,9 @@ static void lockN_acquire_writer ( Lock* lk, Thread* thr )
    /* EXPOSITION only */
    /* We need to keep recording snapshots of where the lock was
       acquired, up till the point that the lock gets incorporated into
-      LAOG.  Before that point, .first_locked_laog is NULL.  When the
-      lock is incorporated into LAOG, .first_locked is copied into
-      .first_locked_laog and we stop snapshotting it after that.
+      LAOG.  Before that point, .acquired_at_laog is NULL.  When the
+      lock is incorporated into LAOG, .acquired_at is copied into
+      .acquired_at_laog and we stop snapshotting it after that.
       This is so as to produce better lock-order error messages. */
    if (lk->acquired_at_laog == NULL) {
       ThreadId tid = map_threads_maybe_reverse_lookup_SLOW(thr);
@@ -734,9 +741,9 @@ static void lockN_acquire_reader ( Lock* lk, Thread* thr )
    /* EXPOSITION only */
    /* We need to keep recording snapshots of where the lock was
       acquired, up till the point that the lock gets incorporated into
-      LAOG.  Before that point, .first_locked_laog is NULL.  When the
-      lock is incorporated into LAOG, .first_locked is copied into
-      .first_locked_laog and we stop snapshotting it after that.
+      LAOG.  Before that point, .acquired_at_laog is NULL.  When the
+      lock is incorporated into LAOG, .acquired_at is copied into
+      .acquired_at_laog and we stop snapshotting it after that.
       This is so as to produce better lock-order error messages. */
    if (lk->acquired_at_laog == NULL) {
       ThreadId tid = map_threads_maybe_reverse_lookup_SLOW(thr);
@@ -969,8 +976,12 @@ static inline WordSetID un_SHVAL_Sh_lset ( UInt w32 ) {
 /*--- Print out the primary data structures                    ---*/
 /*----------------------------------------------------------------*/
 
-static void get_ZF_by_index ( /*OUT*/CacheLineZ** zp, /*OUT*/CacheLineF** fp,
-                              SecMap* sm, Int zix ); /* fwds */
+static WordSetID del_BHL ( WordSetID lockset ); /* fwds */
+static 
+void get_ZF_by_index ( /*OUT*/CacheLineZ** zp, /*OUT*/CacheLineF** fp,
+                       SecMap* sm, Int zix ); /* fwds */
+static 
+Segment* map_segments_maybe_lookup ( SegmentID segid ); /* fwds */
 
 #define PP_THREADS      (1<<1)
 #define PP_LOCKS        (1<<2)
@@ -1176,6 +1187,49 @@ static void show_shadow_w32 ( /*OUT*/Char* buf, Int nBuf, UInt w32 )
    else
    if (is_SHVAL_Excl(w32)) {
       VG_(sprintf)(buf, "Excl(%u)", un_SHVAL_Excl(w32));
+   }
+   else
+   if (is_SHVAL_New(w32)) {
+      VG_(sprintf)(buf, "%s", "New");
+   }
+   else
+   if (is_SHVAL_NoAccess(w32)) {
+      VG_(sprintf)(buf, "%s", "NoAccess");
+   }
+   else {
+      VG_(sprintf)(buf, "Invalid-shadow-word(%u)", w32);
+   }
+}
+
+static
+void show_shadow_w32_for_user ( /*OUT*/Char* buf, Int nBuf, UInt w32 )
+{
+   tl_assert(nBuf-1 >= 99);
+   VG_(memset)(buf, 0, nBuf);
+   if (is_SHVAL_ShM(w32)) {
+      WordSetID tset = un_SHVAL_ShM_tset(w32);
+      WordSetID lset = del_BHL( un_SHVAL_ShM_lset(w32) );
+      VG_(sprintf)(buf, "ShMod(#Tset=%d,#Lset=%d)", 
+                   TC_(cardinalityWS)(univ_tsets, tset),
+                   TC_(cardinalityWS)(univ_lsets, lset));
+   }
+   else
+   if (is_SHVAL_ShR(w32)) {
+      WordSetID tset = un_SHVAL_ShR_tset(w32);
+      WordSetID lset = del_BHL( un_SHVAL_ShR_lset(w32) );
+      VG_(sprintf)(buf, "ShRO(#Tset=%d,#Lset=%d)", 
+                   TC_(cardinalityWS)(univ_tsets, tset),
+                   TC_(cardinalityWS)(univ_lsets, lset));
+   }
+   else
+   if (is_SHVAL_Excl(w32)) {
+      SegmentID segid  = un_SHVAL_Excl(w32);
+      Segment*  mb_seg = map_segments_maybe_lookup(segid);
+      if (mb_seg && mb_seg->thr && is_sane_Thread(mb_seg->thr)) {
+         VG_(sprintf)(buf, "Exclusive(thr#%d)", mb_seg->thr->errmsg_index);
+      } else {
+         VG_(sprintf)(buf, "Exclusive(segid=%u)", un_SHVAL_Excl(w32));
+      }
    }
    else
    if (is_SHVAL_New(w32)) {
@@ -2668,26 +2722,26 @@ static void all__sanity_check ( char* who )
 /*--- the core memory state machine (msm__* functions)         ---*/
 /*----------------------------------------------------------------*/
 
-static UWord stats__msm_r32_Excl_nochange = 0;
-static UWord stats__msm_r32_Excl_transfer = 0;
-static UWord stats__msm_r32_Excl_to_ShR   = 0;
-static UWord stats__msm_r32_ShR_to_ShR    = 0;
-static UWord stats__msm_r32_ShM_to_ShM    = 0;
-static UWord stats__msm_r32_New_to_Excl   = 0;
-static UWord stats__msm_r32_NoAccess      = 0;
+static UWord stats__msm_read_Excl_nochange = 0;
+static UWord stats__msm_read_Excl_transfer = 0;
+static UWord stats__msm_read_Excl_to_ShR   = 0;
+static UWord stats__msm_read_ShR_to_ShR    = 0;
+static UWord stats__msm_read_ShM_to_ShM    = 0;
+static UWord stats__msm_read_New_to_Excl   = 0;
+static UWord stats__msm_read_NoAccess      = 0;
 
-static UWord stats__msm_w32_Excl_nochange = 0;
-static UWord stats__msm_w32_Excl_transfer = 0;
-static UWord stats__msm_w32_Excl_to_ShM   = 0;
-static UWord stats__msm_w32_ShR_to_ShM    = 0;
-static UWord stats__msm_w32_ShM_to_ShM    = 0;
-static UWord stats__msm_w32_New_to_Excl   = 0;
-static UWord stats__msm_w32_NoAccess      = 0;
+static UWord stats__msm_write_Excl_nochange = 0;
+static UWord stats__msm_write_Excl_transfer = 0;
+static UWord stats__msm_write_Excl_to_ShM   = 0;
+static UWord stats__msm_write_ShR_to_ShM    = 0;
+static UWord stats__msm_write_ShM_to_ShM    = 0;
+static UWord stats__msm_write_New_to_Excl   = 0;
+static UWord stats__msm_write_NoAccess      = 0;
 
 /* fwds */
 static void record_error_Race ( Thread* thr, 
                                 Addr data_addr, Bool isWrite, Int szB,
-                                UInt old_w32, UInt new_w32, 
+                                UInt old_sv, UInt new_sv, 
                                 ExeContext* mb_lastlock );
 
 static void record_error_FreeMemLock ( Thread* thr, Lock* lk );
@@ -2700,11 +2754,15 @@ static void record_error_LockOrder      ( Thread*, Addr, Addr,
                                                    ExeContext*, ExeContext* );
 
 static void record_error_Misc ( Thread*, HChar* );
+static void announce_one_thread ( Thread* thr ); /* fwds */
 
-static WordSetID add_BHL ( WordSetID lockset )
-{
+static WordSetID add_BHL ( WordSetID lockset ) {
    return TC_(addToWS)( univ_lsets, lockset, (Word)__bus_lock_Lock );
 }
+static WordSetID del_BHL ( WordSetID lockset ) {
+   return TC_(delFromWS)( univ_lsets, lockset, (Word)__bus_lock_Lock );
+}
+
 
 /* Last-lock-lossage records.  This mechanism exists to help explain
    to programmers why we are complaining about a race.  The idea is to
@@ -2761,7 +2819,7 @@ void record_last_lock_lossage ( Addr ga_of_access,
    /* This is slow, but at least it's simple.  The bus hardware lock
       just confuses the logic, so remove it from the locksets we're
       considering before doing anything else. */
-   lset_new = TC_(delFromWS)( univ_lsets, lset_new, (Word)__bus_lock_Lock );
+   lset_new = del_BHL( lset_new );
 
    if (!TC_(isEmptyWS)( univ_lsets, lset_new )) {
       /* The post-transition lock set is not empty.  So we are not
@@ -2774,7 +2832,7 @@ void record_last_lock_lossage ( Addr ga_of_access,
    card_new = TC_(cardinalityWS)( univ_lsets, lset_new );
    tl_assert(card_new == 0);
 
-   lset_old = TC_(delFromWS)( univ_lsets, lset_old, (Word)__bus_lock_Lock );
+   lset_old = del_BHL( lset_old );
    card_old = TC_(cardinalityWS)( univ_lsets, lset_old );
 
    if (0) VG_(printf)(" X2: %d (card %d) -> %d (card %d)\n",
@@ -2823,6 +2881,68 @@ static ExeContext* maybe_get_lastlock_initpoint ( Addr ga )
 }
 
 
+static void msm__show_state_change ( Thread* thr_acc, Addr a, Int szB,
+                                     Char howC,
+                                     UInt sv_old, UInt sv_new )
+{
+   ThreadId tid;
+   UChar txt_old[100], txt_new[100];
+   Char* how = "";
+   tl_assert(is_sane_Thread(thr_acc));
+   tl_assert(clo_trace_level == 1 || clo_trace_level == 2);
+   switch (howC) {
+      case 'r': how = "rd"; break;
+      case 'w': how = "wr"; break;
+      case 'p': how = "pa"; break;
+      default: tl_assert(0);
+   }
+   show_shadow_w32_for_user(txt_old, sizeof(txt_old), sv_old);
+   show_shadow_w32_for_user(txt_new, sizeof(txt_new), sv_new);
+   txt_old[sizeof(txt_old)-1] = 0;
+   txt_new[sizeof(txt_new)-1] = 0;
+   if (clo_trace_level == 2) {
+      /* show everything */
+      announce_one_thread( thr_acc );
+      VG_(message)(Vg_UserMsg, 
+                   "TRACE: %p %s %d thr#%d :: %s --> %s",
+                   a, how, szB, thr_acc->errmsg_index, txt_old, txt_new );
+      tid = map_threads_maybe_reverse_lookup_SLOW(thr_acc);
+      if (tid != VG_INVALID_THREADID) {
+         VG_(get_and_pp_StackTrace)( tid, 8 );
+      }
+      VG_(message)(Vg_UserMsg, "");
+   } else {
+      /* Just print one line */
+      VG_(message)(Vg_UserMsg, 
+                   "TRACE: %p %s %d thr#%d :: %22s --> %22s",
+                   a, how, szB, thr_acc->errmsg_index, txt_old, txt_new );
+   }
+}
+
+
+/* Here are some MSM stats from startup/shutdown of OpenOffice.
+
+     msm:  489,734,723   80,278,862 rd/wr_Excl_nochange
+     msm:    3,171,542       93,738 rd/wr_Excl_transfer
+     msm:       45,036          167 rd/wr_Excl_to_ShR/ShM
+     msm:   13,352,594          285 rd/wr_ShR_to_ShR/ShM
+     msm:    1,125,879      815,779 rd/wr_ShM_to_ShM
+     msm:    7,561,842  250,629,935 rd/wr_New_to_Excl
+     msm:       17,778            0 rd/wr_NoAccess
+
+   This says how the clauses should be ordered for greatest speed:
+
+   * the vast majority of memory reads (490 million out of a total of
+     515 million) are of memory in an exclusive state, and the state
+     is unchanged.  All other read accesses are insignificant by
+     comparison.
+
+   * 75% (251 million out of a total of 332 million) writes are 'first
+     time' writes, which take New memory into exclusive ownership.
+     Almost all the rest (80 million) are accesses to exclusive state,
+     which remains unchanged.  All other write accesses are
+     insignificant. */
+
 /* The core MSM.  If 'wold' is the old 32-bit shadow word for a
    location, return the new shadow word that would result for a read
    of the location, and report any errors necessary on the way.  This
@@ -2832,12 +2952,14 @@ static ExeContext* maybe_get_lastlock_initpoint ( Addr ga )
 static
 UInt msm__handle_read ( Thread* thr_acc, Addr a, UInt wold, Int szB )
 {
+   UInt wnew = SHVAL_Invalid;
+
    tl_assert(is_sane_Thread(thr_acc));
 
    if (0) VG_(printf)("read thr=%p %p\n", thr_acc, a);
 
    /* Exclusive */
-   if (is_SHVAL_Excl(wold)) {
+   if (LIKELY(is_SHVAL_Excl(wold))) {
       /* read Excl(segid) 
            |  segid_old == segid-of-thread
            -> no change
@@ -2848,20 +2970,19 @@ UInt msm__handle_read ( Thread* thr_acc, Addr a, UInt wold, Int szB )
       */
       SegmentID segid_old = un_SHVAL_Excl(wold);
       tl_assert(is_sane_SegmentID(segid_old));
-      if (segid_old == thr_acc->csegid) {
+      if (LIKELY(segid_old == thr_acc->csegid)) {
          /* no change */
-         stats__msm_r32_Excl_nochange++;
-         return wold;
+         stats__msm_read_Excl_nochange++;
+         /*NOCHANGE*/return wold;
       }
       if (happens_before(segid_old, thr_acc->csegid)) {
          /* -> Excl(segid-of-this-thread) */
-         UInt wnew = mk_SHVAL_Excl(thr_acc->csegid);
-         stats__msm_r32_Excl_transfer++;
-         return wnew;
+         wnew = mk_SHVAL_Excl(thr_acc->csegid);
+         stats__msm_read_Excl_transfer++;
+         goto changed;
       }
       /* else */ {
          /* Enter the shared-readonly (ShR) state. */
-         UInt      wnew;
          WordSetID tset, lset;
          /* This location has been accessed by precisely two threads.
             Make an appropriate tset. */
@@ -2872,8 +2993,8 @@ UInt msm__handle_read ( Thread* thr_acc, Addr a, UInt wold, Int szB )
          tset = TC_(doubletonWS)( univ_tsets, (Word)thr_old, (Word)thr_acc );
          lset = add_BHL( thr_acc->locksetA ); /* read ==> use all locks */
          wnew = mk_SHVAL_ShR( tset, lset );
-         stats__msm_r32_Excl_to_ShR++;
-         return wnew;
+         stats__msm_read_Excl_to_ShR++;
+         goto changed;
       }
       /*NOTREACHED*/
    } 
@@ -2892,11 +3013,11 @@ UInt msm__handle_read ( Thread* thr_acc, Addr a, UInt wold, Int szB )
                                              lset_old, 
                                              add_BHL(thr_acc->locksetA)
                                              /* read ==> use all locks */ );
-      UInt      wnew     = mk_SHVAL_ShR( tset_new, lset_new );
+      /*UInt*/  wnew     = mk_SHVAL_ShR( tset_new, lset_new );
       if (lset_old != lset_new)
          record_last_lock_lossage(a,lset_old,lset_new);
-      stats__msm_r32_ShR_to_ShR++;
-      return wnew;
+      stats__msm_read_ShR_to_ShR++;
+      goto changed;
    }
 
    /* Shared-Modified */
@@ -2913,7 +3034,7 @@ UInt msm__handle_read ( Thread* thr_acc, Addr a, UInt wold, Int szB )
                                              lset_old,
                                              add_BHL(thr_acc->locksetA)
                                              /* read ==> use all locks */ ); 
-      UInt      wnew     = mk_SHVAL_ShM( tset_new, lset_new );
+      /*UInt*/  wnew     = mk_SHVAL_ShM( tset_new, lset_new );
       if (lset_old != lset_new)
          record_last_lock_lossage(a,lset_old,lset_new);
       if (TC_(isEmptyWS)(univ_lsets, lset_new)
@@ -2922,16 +3043,16 @@ UInt msm__handle_read ( Thread* thr_acc, Addr a, UInt wold, Int szB )
                             False/*isWrite*/, szB, wold, wnew,
                             maybe_get_lastlock_initpoint(a) );
       }
-      stats__msm_r32_ShM_to_ShM++;
-      return wnew;
+      stats__msm_read_ShM_to_ShM++;
+      goto changed;
    }
  
    /* New */
    if (is_SHVAL_New(wold)) {
       /* read New -> Excl(segid) */
-      UInt wnew = mk_SHVAL_Excl( thr_acc->csegid );
-      stats__msm_r32_New_to_Excl++;
-      return wnew;
+      wnew = mk_SHVAL_Excl( thr_acc->csegid );
+      stats__msm_read_New_to_Excl++;
+      goto changed;
    } 
 
    /* NoAccess */
@@ -2942,12 +3063,21 @@ UInt msm__handle_read ( Thread* thr_acc, Addr a, UInt wold, Int szB )
       VG_(printf)(
          "msm__handle_read_aligned_32(thr=%p, addr=%p): NoAccess\n",
          thr_acc, (void*)a );
-      stats__msm_r32_NoAccess++;
-      return wold; /* no change */
+      stats__msm_read_NoAccess++;
+      /*NOCHANGE*/return wold; /* no change */
    }
 
    /* hmm, bogus state */
    tl_assert(0);
+
+  changed:
+   if (UNLIKELY(clo_trace_level > 0)) {
+      if (a <= clo_trace_addr && clo_trace_addr < a+szB
+          && wold != wnew) {
+         msm__show_state_change( thr_acc, a, szB, 'r', wold, wnew );
+      }
+   }
+   return wnew;
 }
 
 /* Similar to msm__handle_read, compute a new 32-bit shadow word
@@ -2956,17 +3086,21 @@ UInt msm__handle_read ( Thread* thr_acc, Addr a, UInt wold, Int szB )
 static
 UInt msm__handle_write ( Thread* thr_acc, Addr a, UInt wold, Int szB )
 {
+   UInt wnew = SHVAL_Invalid;
+
    tl_assert(is_sane_Thread(thr_acc));
 
    if (0) VG_(printf)("write32 thr=%p %p\n", thr_acc, a);
 
    /* New */
-   if (is_SHVAL_New(wold)) {
+   if (LIKELY(is_SHVAL_New(wold))) {
       /* write New -> Excl(segid) */
-      UInt wnew = mk_SHVAL_Excl( thr_acc->csegid );
-      stats__msm_w32_New_to_Excl++;
-      return wnew;
+      wnew = mk_SHVAL_Excl( thr_acc->csegid );
+      stats__msm_write_New_to_Excl++;
+      goto changed;
    }
+
+   /* Exclusive */
    if (is_SHVAL_Excl(wold)) {
       // I believe is identical to case for read Excl
       // apart from enters ShM rather than ShR 
@@ -2982,18 +3116,17 @@ UInt msm__handle_write ( Thread* thr_acc, Addr a, UInt wold, Int szB )
       tl_assert(is_sane_SegmentID(segid_old));
       if (segid_old == thr_acc->csegid) {
          /* no change */
-         stats__msm_w32_Excl_nochange++;
-         return wold;
+         stats__msm_write_Excl_nochange++;
+         /*NOCHANGE*/return wold;
       }
       if (happens_before(segid_old, thr_acc->csegid)) {
          /* -> Excl(segid-of-this-thread) */
-         UInt wnew = mk_SHVAL_Excl(thr_acc->csegid);
-         stats__msm_w32_Excl_transfer++;
-         return wnew;
+         wnew = mk_SHVAL_Excl(thr_acc->csegid);
+         stats__msm_write_Excl_transfer++;
+         goto changed;
       }
       /* else */ {
          /* Enter the shared-modified (ShM) state. */
-         UInt      wnew;
          WordSetID tset, lset;
          /* This location has been accessed by precisely two threads.
             Make an appropriate tset. */
@@ -3009,8 +3142,8 @@ UInt msm__handle_write ( Thread* thr_acc, Addr a, UInt wold, Int szB )
                                a, True/*isWrite*/, szB, wold, wnew,
                                maybe_get_lastlock_initpoint(a) );
          }
-         stats__msm_w32_Excl_to_ShM++;
-         return wnew;
+         stats__msm_write_Excl_to_ShM++;
+         goto changed;
       }
       /*NOTREACHED*/
    } 
@@ -3031,7 +3164,7 @@ UInt msm__handle_write ( Thread* thr_acc, Addr a, UInt wold, Int szB )
                               thr_acc->locksetW
                               /* write ==> use only w-held locks */
                            );
-      UInt      wnew     = mk_SHVAL_ShM( tset_new, lset_new );
+      /*UInt*/  wnew     = mk_SHVAL_ShM( tset_new, lset_new );
       if (lset_old != lset_new)
          record_last_lock_lossage(a,lset_old,lset_new);
       if (TC_(isEmptyWS)(univ_lsets, lset_new)) {
@@ -3039,8 +3172,8 @@ UInt msm__handle_write ( Thread* thr_acc, Addr a, UInt wold, Int szB )
                             True/*isWrite*/, szB, wold, wnew,
                             maybe_get_lastlock_initpoint(a) );
       }
-      stats__msm_w32_ShR_to_ShM++;
-      return wnew;
+      stats__msm_write_ShR_to_ShM++;
+      goto changed;
    }
 
    /* Shared-Modified */
@@ -3059,7 +3192,7 @@ UInt msm__handle_write ( Thread* thr_acc, Addr a, UInt wold, Int szB )
                               thr_acc->locksetW 
                               /* write ==> use only w-held locks */
                            ); 
-      UInt      wnew     = mk_SHVAL_ShM( tset_new, lset_new );
+      /*UInt*/  wnew     = mk_SHVAL_ShM( tset_new, lset_new );
       if (lset_old != lset_new)
          record_last_lock_lossage(a,lset_old,lset_new);
       if (TC_(isEmptyWS)(univ_lsets, lset_new)
@@ -3068,8 +3201,8 @@ UInt msm__handle_write ( Thread* thr_acc, Addr a, UInt wold, Int szB )
                             True/*isWrite*/, szB, wold, wnew,
                             maybe_get_lastlock_initpoint(a) );
       }
-      stats__msm_w32_ShM_to_ShM++;
-      return wnew;
+      stats__msm_write_ShM_to_ShM++;
+      goto changed;
    }
 
    /* NoAccess */
@@ -3080,14 +3213,23 @@ UInt msm__handle_write ( Thread* thr_acc, Addr a, UInt wold, Int szB )
       VG_(printf)(
          "msm__handle_write_aligned_32(thr=%p, addr=%p): NoAccess\n",
          thr_acc, (void*)a );
-      stats__msm_w32_NoAccess++;
-      return wold;
+      stats__msm_write_NoAccess++;
+      /*NOCHANGE*/return wold;
    } 
 
    /* hmm, bogus state */
    VG_(printf)("msm__handle_write_aligned_32: bogus old state 0x%x\n", 
                wold);
    tl_assert(0);
+
+  changed:
+   if (UNLIKELY(clo_trace_level > 0)) {
+      if (a <= clo_trace_addr && clo_trace_addr < a+szB
+          && wold != wnew) {
+         msm__show_state_change( thr_acc, a, szB, 'w', wold, wnew );
+      }
+   }
+   return wnew;
 }
 
 
@@ -3097,7 +3239,7 @@ UInt msm__handle_write ( Thread* thr_acc, Addr a, UInt wold, Int szB )
 
 static void laog__pre_thread_acquires_lock ( Thread*, Lock* ); /* fwds */
 static void laog__handle_lock_deletions    ( WordSetID ); /* fwds */
-
+static inline Thread* get_current_Thread ( void ); /* fwds */
 
 /* ------------ CacheLineF and CacheLineZ related ------------ */
 
@@ -4435,6 +4577,15 @@ static void shadow_mem_copy8 ( Addr src, Addr dst, Bool normalise ) {
    UInt       sv;
    stats__cline_copy8s++;
    sv = shadow_mem_get8( src );
+
+   if (UNLIKELY(clo_trace_level > 0)) {
+      if (dst == clo_trace_addr) {
+         Thread* thr    = get_current_Thread();
+         UInt    sv_old = shadow_mem_get8( dst );
+         msm__show_state_change( thr, dst, 1, 'w', sv_old, sv );
+      }
+   }
+
    shadow_mem_set8( NULL/*unused*/, dst, sv );
 }
 
@@ -4565,6 +4716,12 @@ static void shadow_mem_write_range ( Thread* thr, Addr a, SizeT len ) {
 
 static void shadow_mem_make_New ( Thread* thr, Addr a, SizeT len )
 {
+   if (UNLIKELY(clo_trace_level > 0)) {
+      if (len > 0 && a <= clo_trace_addr && clo_trace_addr < a+len) {
+         UInt sv_old = shadow_mem_get8( clo_trace_addr );
+         msm__show_state_change( thr, a, (Int)len, 'p', sv_old, SHVAL_New );
+      }
+   }
    shadow_mem_modify_range( thr, a, len, 
                             shadow_mem_set8,
                             shadow_mem_set16,
@@ -4675,6 +4832,13 @@ static void shadow_mem_make_NoAccess ( Thread* thr, Addr aIN, SizeT len )
 
    /* --- Step 2 --- */
 
+   if (UNLIKELY(clo_trace_level > 0)) {
+      if (len > 0 && firstA <= clo_trace_addr && clo_trace_addr <= lastA) {
+         UInt sv_old = shadow_mem_get8( clo_trace_addr );
+         msm__show_state_change( thr, firstA, (Int)len, 'p',
+                                      sv_old, SHVAL_NoAccess );
+      }
+   }
    shadow_mem_modify_range( thr, firstA, len, 
                             shadow_mem_set8,
                             shadow_mem_set16,
@@ -5135,7 +5299,7 @@ void evhH__pre_thread_releases_lock ( Thread* thr,
    - for uses definitely within client code, use
      get_current_Thread_in_C_C.
 
-   - for all other uses, use get_current_Thread_general.
+   - for all other uses, use get_current_Thread.
 */
 
 static Thread* current_Thread = NULL;
@@ -7387,7 +7551,7 @@ static UInt tc_update_extra ( Error* err )
 
 static void record_error_Race ( Thread* thr, 
                                 Addr data_addr, Bool isWrite, Int szB,
-                                UInt old_w32, UInt new_w32,
+                                UInt old_sv, UInt new_sv,
                                 ExeContext* mb_lastlock ) {
    XError xe;
    tl_assert( is_sane_Thread(thr) );
@@ -7396,8 +7560,8 @@ static void record_error_Race ( Thread* thr,
    xe.XE.Race.data_addr   = data_addr;
    xe.XE.Race.szB         = szB;
    xe.XE.Race.isWrite     = isWrite;
-   xe.XE.Race.new_state   = new_w32;
-   xe.XE.Race.old_state   = old_w32;
+   xe.XE.Race.new_state   = new_sv;
+   xe.XE.Race.old_state   = old_sv;
    xe.XE.Race.mb_lastlock = mb_lastlock;
    xe.XE.Race.thr         = thr;
    // FIXME: tid vs thr
@@ -7990,6 +8154,13 @@ static Bool tc_process_cmd_line_option ( Char* arg )
    else if (VG_CLO_STREQ(arg, "--cmp-race-err-addrs=yes"))
       clo_cmp_race_err_addrs = True;
 
+   else if (VG_CLO_STREQN(13, arg, "--trace-addr=")) {
+      clo_trace_addr = VG_(atoll16)(&arg[13]);
+      if (clo_trace_level == 0)
+         clo_trace_level = 1;
+   }
+   else VG_BNUM_CLO(arg, "--trace-level", clo_trace_level, 0, 2)
+
    else 
       return VG_(replacement_malloc_process_cmd_line_option)(arg);
 
@@ -8001,6 +8172,8 @@ static void tc_print_usage ( void )
    VG_(printf)(
 "    --happens-before=none|threads|condvars   [condvars] consider no events,\n"
 "      thread create/join, thread create/join/cvsignal/cvwait as sync points\n"
+"    --trace-addr=0xXXYYZZ     show all state changes for address 0xXXYYZZ\n"
+"    --trace-level=0|1|2       verbosity level of --trace-addr [1]\n"
    );
    VG_(replacement_malloc_print_usage)();
 }
@@ -8082,19 +8255,19 @@ static void tc_fini ( Int exitcode )
 
       VG_(printf)("\n");
       VG_(printf)("     msm: %,12lu %,12lu rd/wr_Excl_nochange\n",
-                  stats__msm_r32_Excl_nochange, stats__msm_w32_Excl_nochange);
+                  stats__msm_read_Excl_nochange, stats__msm_write_Excl_nochange);
       VG_(printf)("     msm: %,12lu %,12lu rd/wr_Excl_transfer\n",
-                  stats__msm_r32_Excl_transfer, stats__msm_w32_Excl_transfer);
+                  stats__msm_read_Excl_transfer, stats__msm_write_Excl_transfer);
       VG_(printf)("     msm: %,12lu %,12lu rd/wr_Excl_to_ShR/ShM\n",
-                  stats__msm_r32_Excl_to_ShR,   stats__msm_w32_Excl_to_ShM);
+                  stats__msm_read_Excl_to_ShR,   stats__msm_write_Excl_to_ShM);
       VG_(printf)("     msm: %,12lu %,12lu rd/wr_ShR_to_ShR/ShM\n",
-                  stats__msm_r32_ShR_to_ShR,    stats__msm_w32_ShR_to_ShM);
+                  stats__msm_read_ShR_to_ShR,    stats__msm_write_ShR_to_ShM);
       VG_(printf)("     msm: %,12lu %,12lu rd/wr_ShM_to_ShM\n",
-                  stats__msm_r32_ShM_to_ShM,    stats__msm_w32_ShM_to_ShM);
+                  stats__msm_read_ShM_to_ShM,    stats__msm_write_ShM_to_ShM);
       VG_(printf)("     msm: %,12lu %,12lu rd/wr_New_to_Excl\n",
-                  stats__msm_r32_New_to_Excl,   stats__msm_w32_New_to_Excl);
+                  stats__msm_read_New_to_Excl,   stats__msm_write_New_to_Excl);
       VG_(printf)("     msm: %,12lu %,12lu rd/wr_NoAccess\n",
-                  stats__msm_r32_NoAccess,      stats__msm_w32_NoAccess);
+                  stats__msm_read_NoAccess,      stats__msm_write_NoAccess);
 
       VG_(printf)("\n");
       VG_(printf)(" secmaps: %,10lu allocd (%,12lu g-a-range)\n",
