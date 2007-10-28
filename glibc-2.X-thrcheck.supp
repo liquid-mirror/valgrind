@@ -3,399 +3,115 @@
 # Suppressions for the Thrcheck tool when using 
 # a glibc-2.{2,3,4,5,6} system
 
-#z###--- ld.so stuff ---###
-#z{
-#z   thrcheck-glibc2X-ldso-1
-#z   Thrcheck:Race
-#z   fun:_dl_lookup_symbol_x
-#z   fun:_dl_fixup
-#z   fun:_dl_runtime_resolve
-#z}
-#z{
-#z   thrcheck-glibc2X-ldso-2
-#z   Thrcheck:Race
-#z   fun:do_lookup_x
-#z   fun:_dl_lookup_symbol_x
-#z   fun:_dl_fixup
-#z}
-#z{
-#z   thrcheck-glibc2X-ldso-3
-#z   Thrcheck:Race
-#z   fun:_dl_map_object_deps
-#z   fun:dl_open_worker
-#z   fun:_dl_catch_error
-#z}
-#z{
-#z   thrcheck-glibc2X-ldso-4
-#z   Thrcheck:Race
-#z   fun:setup_direct
-#z   fun:_dl_map_object_deps
-#z   fun:dl_open_worker
-#z}
-#z{
-#z   thrcheck-glibc2X-ldso-5
-#z   Thrcheck:Race
-#z   fun:_dl_map_object_from_fd
-#z   fun:_dl_map_object
-#z   fun:dl_open_worker
-#z}
-#z{
-#z   thrcheck-glibc2X-ldso-6
-#z   Thrcheck:Race
-#z   fun:_dl_map_object
-#z   fun:dl_open_worker
-#z   fun:_dl_catch_error
-#z}
-
-###--- pthread_join ---###
+######------ glibc-2.5 specific ------######
 {
-   thrcheck-glibc2X-pthjoin-1
+   thrcheck-glibc25-01
    Thrcheck:Race
-   fun:pthread_join
-   fun:pthread_join
+   obj:/lib*/ld-2.5.so
+   obj:/lib*/ld-2.5.so
+   obj:/lib*/ld-2.5.so
 }
 {
-   thrcheck-glibc2X-pthjoin-2
+   thrcheck-glibc25-02
    Thrcheck:Race
-   fun:__deallocate_stack
-   fun:pthread_join
-   fun:pthread_join
+   obj:/lib*/ld-2.5.so
+   obj:/lib*/libc-2.5.so
+   obj:/lib*/ld-2.5.so
 }
 {
-   thrcheck-glibc2X-pthjoin-3
+   thrcheck-glibc25-03
    Thrcheck:Race
-   fun:free_stacks
-   fun:__deallocate_stack
-   fun:pthread_join
-   fun:pthread_join
+   obj:/lib*/ld-2.5.so
+   obj:/lib*/libc-2.5.so
+   obj:/lib*/libc-2.5.so
+}
+{
+   thrcheck-glibc25-04
+   Thrcheck:Race
+   obj:/lib*/libc-2.5.so
+   obj:/lib*/libc-2.5.so
+}
+{
+   thrcheck-glibc25-05
+   Thrcheck:Race
+   obj:/lib*/libpthread-2.5.so
+   obj:/lib*/libpthread-2.5.so
+   obj:/lib*/libpthread-2.5.so
+}
+{
+   thrcheck-glibc25-06
+   Thrcheck:Race
+   obj:/lib*/libpthread-2.5.so
+   obj:/lib*/libpthread-2.5.so
+   obj:/lib*/libc-2.5.so
+}
+{
+   thrcheck-glibc25-07
+   Thrcheck:Race
+   obj:/lib*/ld-2.5.so
+   obj:/lib*/libc-2.5.so
+   obj:/lib*/libdl-2.5.so
+}
+{
+   thrcheck-glibc25-08
+   Thrcheck:Race
+   obj:/lib*/libpthread-2.5.so
+   obj:/lib*/libc-2.5.so
 }
 
-###--- IO_file ---###
-# I'm pretty sure these are because Thrcheck cannot see
-# glibc's acquisition/releasing of locks for stdio.
+# These are very ugly.  They are needed to suppress errors inside (eg)
+# NPTL's pthread_cond_signal.  Why only one stack frame -- at least we
+# should see the wrapper calling the real functions, right?
+# Unfortunately, no: the real functions are handwritten assembly (in
+# the glibc-2.5 sources) and does not create a proper stack frame.
+# Therefore it's only one level of unwinding before we're back out in
+# user code rather than the 2 levels you'd expect.
 {
-   thrcheck-glibc2X-IOfile-1
+   thrcheck-glibc25-10
    Thrcheck:Race
-   fun:_IO_file_xsputn*
-   fun:*vfprintf
-   fun:*printf
+   obj:/lib*/libpthread-2.5.so
+   fun:pthread_*
 }
 {
-   thrcheck-glibc2X-IOfile-2
-   Thrcheck:Race
-   fun:vfprintf
-   fun:*printf
-}
-{
-   thrcheck-glibc2X-IOfile-3
-   Thrcheck:Race
-   fun:mempcpy
-   fun:vfprintf
-   fun:*printf
-}
-{
-   thrcheck-glibc2X-IOfile-4
-   Thrcheck:Race
-   fun:buffered_vfprintf
-   fun:vfprintf
-   fun:*printf
-}
-{
-   thrcheck-glibc2X-IOfile-5
-   Thrcheck:Race
-   fun:new_do_write
-   fun:_IO_do_write*
-   fun:_IO_file_xsputn*
-   fun:*printf
-}
-{
-   thrcheck-glibc2X-IOfile-6
-   Thrcheck:Race
-   fun:mempcpy
-   fun:_IO_file_xsputn*
-   fun:*printf
-}
-{
-   thrcheck-glibc2X-IOfile-7
-   Thrcheck:Race
-   fun:new_do_write
-   fun:_IO_do_write*
-   fun:_IO_file_overflow*
-   fun:_IO_file_xsputn*
-}
-{
-   thrcheck-glibc2X-IOfile-8
-   Thrcheck:Race
-   fun:_IO_file_overflow*
-   fun:_IO_file_xsputn*
-   fun:*fprintf
-}
-{
-   thrcheck-glibc2X-IOfile-9
-   Thrcheck:Race
-   fun:new_do_write
-   fun:_IO_file_xsputn*
-   fun:*vfprintf
-}
-{
-   thrcheck-glibc2X-IOfile-10
-   Thrcheck:Race
-   fun:__lll_mutex_unlock_wake
-   fun:*printf
-}
-
-
-#z###--- thread creation ---###
-#z{
-#z   thrcheck-glibc2X-creation-1
-#z   Thrcheck:Race
-#z   fun:start_thread
-#z   fun:clone
-#z}
-
-###--- thread exit ---###
-{
-   thrcheck-glibc2X-exit-1
-   Thrcheck:Race
-   fun:_dl_fini
-   fun:exit
-}
-
-###--- pthread_mutex_lock ---###
-{
-   thrcheck-glibc2X-pthmxlock-1
-   Thrcheck:Race
-   fun:pthread_mutex_lock
-   fun:pthread_mutex_lock
-}
-{
-   thrcheck-glibc2X-pthmxlock-2
-   Thrcheck:Race
-   fun:__lll_mutex_lock_wait
-   fun:pthread_mutex_lock
-}
-
-###--- pthread_mutex_unlock ---###
-{
-   thrcheck-glibc2X-pthmxunlock-1
-   Thrcheck:Race
-   fun:__lll_mutex_unlock_wake
-   fun:pthread_mutex_unlock
-   fun:pthread_mutex_unlock
-}
-
-###--- pthread_mutex_destroy ---###
-{
-   thrcheck-glibc2X-pthmxdestroy-1
-   Thrcheck:Race
-   fun:pthread_mutex_destroy
-   fun:pthread_mutex_destroy
-}
-
-###--- pthread_create ---###
-{
-   thrcheck-glibc2X-pthcreate-1
-   Thrcheck:Race
-   fun:pthread_create@@GLIBC_*
-   fun:pthread_create@*
-}
-#z{
-#z   thrcheck-glibc2X-pthcreate-2
-#z   Thrcheck:Race
-#z   fun:do_clone
-#z   fun:pthread_create@@GLIBC_*
-#z   fun:pthread_create@*
-#z}
-
-###--- pthread_cond_signal ---###
-#
-# This is very ugly.  It is needed to suppress errors inside 
-# NPTL's pthread_cond_signal.  Why only one stack frame -- 
-# at least we should see the wrapper calling the real function,
-# right?  Unfortunately, no: the real function is handwritten
-# assembly (in the glibc-2.5 sources) and does not create a proper
-# stack frame.  Therefore it's only one level of unwinding before
-# we're back out in user code rather than the 2 levels you'd expect.
-{
-   thrcheck-glibc2X-condsig-1
-   Thrcheck:Race
-   fun:pthread_cond_signal@@GLIBC_2.3.2
-}
-{
-   thrcheck-glibc2X-condsig-2
-   Thrcheck:Race
-   fun:__lll_mutex_unlock_wake
-   fun:pthread_cond_signal@@GLIBC_2.3.2
-}
-
-###--- pthread_cond_broadcast ---###
-# ditto
-{
-   thrcheck-glibc2X-condbcast-1
-   Thrcheck:Race
-   fun:pthread_cond_broadcast@@GLIBC_2.3.2
-}
-
-###--- pthread_cond_wait ---###
-# ditto
-{
-   thrcheck-glibc2X-pthcondwait-1
-   Thrcheck:Race
-   fun:pthread_cond_wait@@GLIBC_2.3.2
-}
-#z{
-#z   thrcheck-glibc2X-pthcondwait-2
-#z   Thrcheck:Race
-#z   fun:pthread_cond_wait@@GLIBC_*
-#z   fun:pthread_cond_wait*
-#z}
-{
-   thrcheck-glibc2X-pthcondwait-3
-   Thrcheck:Race
-   fun:__pthread_mutex*lock*
-   fun:pthread_cond_wait@@GLIBC_2.3.2
-}
-{
-   thrcheck-glibc2X-pthcondwait-4
-   Thrcheck:Race
-   fun:__lll_mutex_unlock_wake
-   fun:pthread_cond_wait@@GLIBC_2.3.2
-}
-
-###--- pthread_cond_destroy ---###
-# ditto
-{
-   thrcheck-glibc2X-pthconddestroy-1
-   Thrcheck:Race
-   fun:pthread_cond_destroy@@GLIBC_2.3.2
-}
-
-###--- pthread_mutex_trylock ---###
-{
-   thrcheck-glibc2X-pthmxtrylock-1
-   Thrcheck:Race
-   fun:pthread_mutex_trylock
-   fun:pthread_mutex_trylock
-}
-
-###--- pthread_cond_timedwait ---###
-# ditto
-{
-   thrcheck-glibc2X-pthmxtimedwait-1
-   Thrcheck:Race
-   fun:pthread_cond_timedwait@@GLIBC_2.3.2
-}
-{
-   thrcheck-glibc2X-pthmxtimedwait-2
-   Thrcheck:Race
-   fun:__lll_mutex_unlock_wake
-   fun:pthread_cond_timedwait@@GLIBC_*
-}
-
-###--- pthread_rwlock_*lock ---###
-# ditto
-{
-   thrcheck-glibc2X-pthrwlock{rd,wr,un}lock-1
-   Thrcheck:Race
-   fun:pthread_rwlock_*lock
-}
-
-###--- libpthread internal stuff ---###
-{
-   thrcheck-glibc2X-libpthread-1
-   Thrcheck:Race
-   fun:__pthread_mutex_unlock_usercnt
-   fun:pthread_mutex_unlock
-}
-{
-   thrcheck-glibc2X-libpthread-2
-   Thrcheck:Race
-   fun:__lll_mutex_unlock_wake
-   fun:_L_*unlock_*
-}
-{
-   thrcheck-glibc2X-libpthread-3
-   Thrcheck:Race
-   fun:__lll_mutex_lock_wait
-   fun:_L_mutex_lock_*
-   fun:start_thread
-}
-{
-  thrcheck-glibc2X-libpthread-4
-  Thrcheck:Race
-  fun:__lll_mutex_lock_wait
-  fun:_L_mutex_lock_*
-  fun:pthread_mutex_lock
-}
-{
-   thrcheck-glibc2X-libpthread-5
+   thrcheck-glibc25-11
    Thrcheck:Race
    fun:mythread_wrapper
-   fun:start_thread
+   obj:/lib*/libpthread-2.5.so
 }
 {
-   thrcheck-glibc2X-libpthread-6
+   thrcheck-glibc25-12
    Thrcheck:Race
-   fun:__deallocate_stack
-   fun:start_thread
-   fun:*clone*
+   fun:pthread_cond_*@@GLIBC_2.3.2
 }
 {
-   thrcheck-glibc2X-libpthread-7
+   thrcheck-glibc25-13
    Thrcheck:Race
-   fun:__deallocate_stack
-   fun:__free_tcb
-   fun:start_thread
+   fun:__lll_mutex_*
 }
 {
-   thrcheck-glibc2X-libpthread-8
+   thrcheck-glibc25-14
    Thrcheck:Race
-   fun:__deallocate_stack
-   fun:__free_tcb
-   fun:pthread_join
+   fun:pthread_rwlock_*lock*
 }
 
-###--- fork ---###
-{
-   thrcheck-glibc2X-fork-1
-   Thrcheck:Race
-   fun:__reclaim_stacks
-   fun:fork
-}
 
-###--- glibc-2.5 specific ---###
-{
-   thrcheck-glibc25-ld25-64bit-1
-   Thrcheck:Race
-   obj:/lib64/ld-2.5.so
-   obj:/lib64/ld-2.5.so
-   obj:/lib64/ld-2.5.so
-}
-{
-   thrcheck-glibc25-ld25-32bit-1
-   Thrcheck:Race
-   obj:/lib/ld-2.5.so
-   obj:/lib/ld-2.5.so
-   obj:/lib/ld-2.5.so
-}
+#aa###--- glibc-2.6.1 specific ---###
+#aa{
+#aa   thrcheck-glibc26-ld261-64bit-1
+#aa   Thrcheck:Race
+#aa   obj:/lib64/ld-2.6.1.so
+#aa   obj:/lib64/ld-2.6.1.so
+#aa   obj:/lib64/ld-2.6.1.so
+#aa}
+#aa{
+#aa   thrcheck-glibc26-ld261-32bit-1
+#aa   Thrcheck:Race
+#aa   obj:/lib/ld-2.6.1.so
+#aa   obj:/lib/ld-2.6.1.so
+#aa   obj:/lib/ld-2.6.1.so
+#aa}
 
-###--- glibc-2.6.1 specific ---###
-{
-   thrcheck-glibc26-ld261-64bit-1
-   Thrcheck:Race
-   obj:/lib64/ld-2.6.1.so
-   obj:/lib64/ld-2.6.1.so
-   obj:/lib64/ld-2.6.1.so
-}
-{
-   thrcheck-glibc26-ld261-32bit-1
-   Thrcheck:Race
-   obj:/lib/ld-2.6.1.so
-   obj:/lib/ld-2.6.1.so
-   obj:/lib/ld-2.6.1.so
-}
-
-###--- qt4 specific ---###
+######------ qt4 specific (GNU mangling) ------######
 {
    thrcheck-qt4-QMutex::lock()-twice
    Thrcheck:Race
