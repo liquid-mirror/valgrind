@@ -2902,6 +2902,7 @@ static void msm__show_state_change ( Thread* thr_acc, Addr a, Int szB,
    txt_new[sizeof(txt_new)-1] = 0;
    if (clo_trace_level == 2) {
       /* show everything */
+      VG_(message)(Vg_UserMsg, "");
       announce_one_thread( thr_acc );
       VG_(message)(Vg_UserMsg, 
                    "TRACE: %p %s %d thr#%d :: %s --> %s",
@@ -2910,7 +2911,6 @@ static void msm__show_state_change ( Thread* thr_acc, Addr a, Int szB,
       if (tid != VG_INVALID_THREADID) {
          VG_(get_and_pp_StackTrace)( tid, 8 );
       }
-      VG_(message)(Vg_UserMsg, "");
    } else {
       /* Just print one line */
       VG_(message)(Vg_UserMsg, 
