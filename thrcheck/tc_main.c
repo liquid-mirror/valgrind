@@ -269,9 +269,9 @@ typedef
       /* EXPOSITION */
       /* Place where lock first came to the attention of Thrcheck. */
       ExeContext*   appeared_at;
-      /* Place where the lock was first locked. */
+      /* Place where the lock most recently made an unlocked->locked
+         transition. */
       ExeContext*   acquired_at;
-      ExeContext*   acquired_at_laog;
       /* USEFUL-STATIC */
       Addr          guestaddr; /* Guest address of lock */
       LockKind      kind;      /* what kind of lock this is */
@@ -568,7 +568,6 @@ static Lock* mk_LockN ( LockKind kind, Addr guestaddr ) {
    lock->magic            = LockN_MAGIC;
    lock->appeared_at      = NULL;
    lock->acquired_at      = NULL;
-   lock->acquired_at_laog = NULL;
    lock->guestaddr        = guestaddr;
    lock->kind             = kind;
    lock->heldW            = False;
@@ -621,8 +620,11 @@ static Bool is_sane_Lock_BASE ( Lock* lock )
       default: return False; 
    }
    if (lock->heldBy == NULL) {
+      if (lock->acquired_at != NULL) return False;
       /* Unheld.  We arbitrarily require heldW to be False. */
       return !lock->heldW;
+   } else {
+      if (lock->acquired_at == NULL) return False;
    }
 
    /* If heldBy is non-NULL, we require it to contain at least one
@@ -681,18 +683,15 @@ static void lockN_acquire_writer ( Lock* lk, Thread* thr )
 
    /* EXPOSITION only */
    /* We need to keep recording snapshots of where the lock was
-      acquired, up till the point that the lock gets incorporated into
-      LAOG.  Before that point, .acquired_at_laog is NULL.  When the
-      lock is incorporated into LAOG, .acquired_at is copied into
-      .acquired_at_laog and we stop snapshotting it after that.
-      This is so as to produce better lock-order error messages. */
-   if (lk->acquired_at_laog == NULL) {
-      ThreadId tid = map_threads_maybe_reverse_lookup_SLOW(thr);
-      if (tid != VG_INVALID_THREADID) {
-         stats__lockN_acquires_w_ExeContext++;
-         lk->acquired_at
-            = VG_(record_ExeContext(tid, 0/*first_ip_delta*/));
-      }
+      acquired, so as to produce better lock-order error messages. */
+   if (lk->acquired_at == NULL) {
+      ThreadId tid;
+      tl_assert(lk->heldBy == NULL);
+      tid = map_threads_maybe_reverse_lookup_SLOW(thr);
+      lk->acquired_at
+         = VG_(record_ExeContext(tid, 0/*first_ip_delta*/));
+   } else {
+      tl_assert(lk->heldBy != NULL);
    }
    /* end EXPOSITION only */
 
@@ -740,18 +739,15 @@ static void lockN_acquire_reader ( Lock* lk, Thread* thr )
 
    /* EXPOSITION only */
    /* We need to keep recording snapshots of where the lock was
-      acquired, up till the point that the lock gets incorporated into
-      LAOG.  Before that point, .acquired_at_laog is NULL.  When the
-      lock is incorporated into LAOG, .acquired_at is copied into
-      .acquired_at_laog and we stop snapshotting it after that.
-      This is so as to produce better lock-order error messages. */
-   if (lk->acquired_at_laog == NULL) {
-      ThreadId tid = map_threads_maybe_reverse_lookup_SLOW(thr);
-      if (tid != VG_INVALID_THREADID) {
-         stats__lockN_acquires_w_ExeContext++;
-         lk->acquired_at
-            = VG_(record_ExeContext(tid, 0/*first_ip_delta*/));
-      }
+      acquired, so as to produce better lock-order error messages. */
+   if (lk->acquired_at == NULL) {
+      ThreadId tid;
+      tl_assert(lk->heldBy == NULL);
+      tid = map_threads_maybe_reverse_lookup_SLOW(thr);
+      lk->acquired_at
+         = VG_(record_ExeContext(tid, 0/*first_ip_delta*/));
+   } else {
+      tl_assert(lk->heldBy != NULL);
    }
    /* end EXPOSITION only */
 
@@ -783,10 +779,12 @@ static void lockN_release ( Lock* lk, Thread* thr )
    /* thr must actually have been a holder of lk */
    tl_assert(b);
    /* normalise */
+   tl_assert(lk->acquired_at);
    if (TC_(isEmptyBag)(lk->heldBy)) {
       TC_(deleteBag)(lk->heldBy);
-      lk->heldBy = NULL;
-      lk->heldW = False;
+      lk->heldBy      = NULL;
+      lk->heldW       = False;
+      lk->acquired_at = NULL;
    }
    tl_assert(is_sane_LockN(lk));
 }
@@ -6399,6 +6397,33 @@ typedef
 /* lock order acquisition graph */
 static WordFM* laog = NULL; /* WordFM Lock* LAOGLinks* */
 
+/* EXPOSITION ONLY: for each edge in 'laog', record the two places
+   where that edge was created, so that we can show the user later if
+   we need to. */
+typedef
+   struct {
+      Addr        src_ga; /* Lock guest addresses for */
+      Addr        dst_ga; /* src/dst of the edge */
+      ExeContext* src_ec; /* And corresponding places where that */
+      ExeContext* dst_ec; /* ordering was established */
+   }
+   LAOGLinkExposition;
+
+static Word cmp_LAOGLinkExposition ( Word llx1W, Word llx2W ) {
+   /* Compare LAOGLinkExposition*s by (src_ga,dst_ga) field pair. */
+   LAOGLinkExposition* llx1 = (LAOGLinkExposition*)llx1W;
+   LAOGLinkExposition* llx2 = (LAOGLinkExposition*)llx2W;
+   if (llx1->src_ga < llx2->src_ga) return -1;
+   if (llx1->src_ga > llx2->src_ga) return  1;
+   if (llx1->dst_ga < llx2->dst_ga) return -1;
+   if (llx1->dst_ga > llx2->dst_ga) return  1;
+   return 0;
+}
+
+static WordFM* laog_exposition = NULL; /* WordFM LAOGLinkExposition* NULL */
+/* end EXPOSITION ONLY */
+
+
 static void laog__show ( void ) {
    Word i, ws_size;
    Word* ws_words;
@@ -6429,26 +6454,29 @@ __attribute__((noinline))
 static void laog__add_edge ( Lock* src, Lock* dst ) {
    Word       keyW;
    LAOGLinks* links;
+   Bool       presentF, presentR;
    if (0) VG_(printf)("laog__add_edge %p %p\n", src, dst);
 
-   /* EXPOSITION only: update the execontext snapshots */
-   if (src->acquired_at_laog == NULL) {
-      src->acquired_at_laog = src->acquired_at;
-      src->acquired_at = NULL;
-   }
-   if (dst->acquired_at_laog == NULL) {
-      dst->acquired_at_laog = dst->acquired_at;
-      dst->acquired_at = NULL;
-   }
-   /* end EXPOSITION only */
+   /* Take the opportunity to sanity check the graph.  Record in
+      presentF if there is already a src->dst mapping in this node's
+      forwards links, and presentR if there is already a src->dst
+      mapping in this node's backwards links.  They should agree!
+      Also, we need to know whether the edge was already present so as
+      to decide whether or not to update the link details mapping.  We
+      can compute presentF and presentR essentially for free, so may
+      as well do this always. */
+   presentF = presentR = False;
 
    /* Update the out edges for src */
    keyW  = 0;
    links = NULL;
    if (TC_(lookupFM)( laog, &keyW, (Word*)&links, (Word)src )) {
+      WordSetID outs_new;
       tl_assert(links);
       tl_assert(keyW == (Word)src);
-      links->outs = TC_(addToWS)( univ_laog, links->outs, (Word)dst );
+      outs_new = TC_(addToWS)( univ_laog, links->outs, (Word)dst );
+      presentF = outs_new == links->outs;
+      links->outs = outs_new;
    } else {
       links = tc_zalloc(sizeof(LAOGLinks));
       links->inns = TC_(emptyWS)( univ_laog );
@@ -6459,14 +6487,45 @@ static void laog__add_edge ( Lock* src, Lock* dst ) {
    keyW  = 0;
    links = NULL;
    if (TC_(lookupFM)( laog, &keyW, (Word*)&links, (Word)dst )) {
+      WordSetID inns_new;
       tl_assert(links);
       tl_assert(keyW == (Word)dst);
-      links->inns = TC_(addToWS)( univ_laog, links->inns, (Word)src );
+      inns_new = TC_(addToWS)( univ_laog, links->inns, (Word)src );
+      presentR = inns_new == links->inns;
+      links->inns = inns_new;
    } else {
       links = tc_zalloc(sizeof(LAOGLinks));
       links->inns = TC_(singletonWS)( univ_laog, (Word)src );
       links->outs = TC_(emptyWS)( univ_laog );
       TC_(addToFM)( laog, (Word)dst, (Word)links );
+   }
+
+   tl_assert( (presentF && presentR) || (!presentF && !presentR) );
+
+   if (!presentF && src->acquired_at && dst->acquired_at) {
+      LAOGLinkExposition expo;
+      /* If this edge is entering the graph, and we have acquired_at
+         information for both src and dst, record those acquisition
+         points.  Hence, if there is later a violation of this
+         ordering, we can show the user the two places in which the
+         required src-dst ordering was previously established. */
+      if (0) VG_(printf)("acquire edge %p %p\n", 
+                         src->guestaddr, dst->guestaddr);
+      expo.src_ga = src->guestaddr;
+      expo.dst_ga = dst->guestaddr;
+      expo.src_ec = NULL;
+      expo.dst_ec = NULL;
+      tl_assert(laog_exposition);
+      if (TC_(lookupFM)( laog_exposition, NULL, NULL, (Word)&expo )) {
+         /* we already have it; do nothing */
+      } else {
+         LAOGLinkExposition* expo2 = tc_zalloc(sizeof(LAOGLinkExposition));
+         expo2->src_ga = src->guestaddr;
+         expo2->dst_ga = dst->guestaddr;
+         expo2->src_ec = src->acquired_at;
+         expo2->dst_ec = dst->acquired_at;
+         TC_(addToFM)( laog_exposition, (Word)expo2, (Word)NULL );
+      }
    }
 }
 
@@ -6640,6 +6699,9 @@ static void laog__pre_thread_acquires_lock (
 
    if (!laog)
       laog = TC_(newFM)( tc_zalloc, tc_free, NULL/*unboxedcmp*/ );
+   if (!laog_exposition)
+      laog_exposition = TC_(newFM)( tc_zalloc, tc_free, 
+                                    cmp_LAOGLinkExposition );
 
    /* First, the check.  Complain if there is any path in laog from lk
       to any of the locks already held by thr, since if any such path
@@ -6649,22 +6711,48 @@ static void laog__pre_thread_acquires_lock (
    */
    other = laog__do_dfs_from_to(lk, thr->locksetA);
    if (other) {
+      LAOGLinkExposition key, *found;
       /* So we managed to find a path lk --*--> other in the graph,
          which implies that 'lk' should have been acquired before
          'other' but is in fact being acquired afterwards.  We present
          the lk/other arguments to record_error_LockOrder in the order
-         in which they should have been acquired. */ 
-     record_error_LockOrder( thr, 
-                             lk->guestaddr,        other->guestaddr,
-                             lk->acquired_at_laog, other->acquired_at_laog );
+         in which they should have been acquired. */
+      /* Go look in the laog_exposition mapping, to find the allocation
+         points for this edge, so we can show the user. */
+      key.src_ga = lk->guestaddr;
+      key.dst_ga = other->guestaddr;
+      key.src_ec = NULL;
+      key.dst_ec = NULL;
+      found = NULL;
+      if (TC_(lookupFM)( laog_exposition, (Word*)&found, NULL, (Word)&key )) {
+         tl_assert(found != &key);
+         tl_assert(found->src_ga == key.src_ga);
+         tl_assert(found->dst_ga == key.dst_ga);
+         tl_assert(found->src_ec);
+         tl_assert(found->dst_ec);
+         record_error_LockOrder( thr, 
+                                 lk->guestaddr, other->guestaddr,
+                                 found->src_ec, found->dst_ec );
+      } else {
+         /* Hmm.  This can't happen (can it?) */
+         record_error_LockOrder( thr, 
+                                 lk->guestaddr,        other->guestaddr,
+                                 NULL, NULL );
+      }
    }
 
    /* Second, add to laog the pairs
         (old, lk)  |  old <- locks already held by thr
+      Since both old and lk are currently held by thr, their acquired_at
+      fields must be non-NULL.
    */
+   tl_assert(lk->acquired_at);
    TC_(getPayloadWS)( &ls_words, &ls_size, univ_lsets, thr->locksetA );
-   for (i = 0; i < ls_size; i++)
-      laog__add_edge( (Lock*)ls_words[i], lk );
+   for (i = 0; i < ls_size; i++) {
+      Lock* old = (Lock*)ls_words[i];
+      tl_assert(old->acquired_at);
+      laog__add_edge( old, lk );
+   }
 }
 
 
@@ -6690,8 +6778,12 @@ static void laog__handle_one_lock_deletion ( Lock* lk )
 
    for (i = 0; i < preds_size; i++) {
       for (j = 0; j < succs_size; j++) {
-         if (preds_words[i] != succs_words[j])
+         if (preds_words[i] != succs_words[j]) {
+            /* This can pass unlocked locks to laog__add_edge, since
+               we're deleting stuff.  So their acquired_at fields may
+               be NULL. */
             laog__add_edge( (Lock*)preds_words[i], (Lock*)succs_words[j] );
+         }
       }
    }
 }
@@ -6703,6 +6795,12 @@ static void laog__handle_lock_deletions (
 {
    Word  i, ws_size;
    Word* ws_words;
+
+   if (!laog)
+      laog = TC_(newFM)( tc_zalloc, tc_free, NULL/*unboxedcmp*/ );
+   if (!laog_exposition)
+      laog_exposition = TC_(newFM)( tc_zalloc, tc_free, 
+                                    cmp_LAOGLinkExposition );
 
    TC_(getPayloadWS)( &ws_words, &ws_size, univ_lsets, locksToDelete );
    for (i = 0; i < ws_size; i++)
@@ -7425,9 +7523,12 @@ static Lock* mk_LockP_from_LockN ( Lock* lkn )
       *lkp = *lkn;
       lkp->admin = NULL;
       lkp->magic = LockP_MAGIC;
-      /* Forget about the bag of lock holders - don't copy that. */
+      /* Forget about the bag of lock holders - don't copy that.
+         Also, acquired_at should be NULL whenever heldBy is, and vice
+         versa. */
       lkp->heldW  = False;
       lkp->heldBy = NULL;
+      lkp->acquired_at = NULL;
       TC_(addToFM)( yaWFM, (Word)lkp, (Word)lkp );
    }
    tl_assert( is_sane_LockP(lkp) );
