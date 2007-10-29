@@ -106,6 +106,11 @@ static void all__sanity_check ( char* who ); /* fwds */
 #define TC_CLI__MALLOC_REDZONE_SZB 16 /* let's say */
 
 
+/* This has to do with printing error messages.  See comments on
+   announce_threadset() and summarise_threadset(). */
+#define N_THREADS_TO_ANNOUNCE 5
+
+
 // FIXME: don't hardwire initial entries for root thread.
 // Instead, let the pre_thread_ll_create handler do this.
 
@@ -7823,22 +7828,65 @@ static Bool tc_eq_Error ( VgRes not_used, Error* e1, Error* e2 )
    tl_assert(0);
 }
 
-/* Announce (that is, print the point-of-creation) of the threads in
-   'tset'.  Only do this once, as we only want to see these
-   announcements once each. */
-
-static void announce_threadset ( WordSetID tset )
+/* Given a WordSetID in univ_tsets (that is, a Thread set ID), produce
+   an XArray* with the corresponding Thread*'s sorted by their
+   errmsg_index fields.  This is for printing out thread sets in
+   repeatable orders, which is important for for repeatable regression
+   testing.  The returned XArray* is dynamically allocated (of course)
+   and so must be tc_freed by the caller. */
+static Int cmp_Thread_by_errmsg_index ( void* thr1V, void* thr2V ) {
+   Thread* thr1 = *(Thread**)thr1V;
+   Thread* thr2 = *(Thread**)thr2V;
+   if (thr1->errmsg_index < thr2->errmsg_index) return -1;
+   if (thr1->errmsg_index > thr2->errmsg_index) return  1;
+   return 0;
+}
+static XArray* /* of Thread* */ get_sorted_thread_set ( WordSetID tset )
 {
-   Thread* thr;
+   XArray* xa;
    Word*   ts_words;
    Word    ts_size, i;
+   xa = VG_(newXA)( tc_zalloc, tc_free, sizeof(Thread*) );
+   tl_assert(xa);
    TC_(getPayloadWS)( &ts_words, &ts_size, univ_tsets, tset );
    tl_assert(ts_words);
    tl_assert(ts_size >= 0);
-   // FIXME: announce the threads in order of their errmsg_index
-   // fields
+   /* This isn't a very clever scheme, but we don't expect this to be
+      called very often. */
    for (i = 0; i < ts_size; i++) {
-      thr = (Thread*)ts_words[i];
+      Thread* thr = (Thread*)ts_words[i];
+      tl_assert(is_sane_Thread(thr));
+      VG_(addToXA)( xa, (void*)&thr );
+   }
+   tl_assert(ts_size == VG_(sizeXA)( xa ));
+   VG_(setCmpFnXA)( xa, cmp_Thread_by_errmsg_index );
+   VG_(sortXA)( xa );
+   return xa;
+}
+
+
+/* Announce (that is, print the point-of-creation) of the threads in
+   'tset'.  Only do this once, as we only want to see these
+   announcements once each.  Also, first sort the threads by their
+   errmsg_index fields, and show only the first N_THREADS_TO_ANNOUNCE.
+   That's because we only want to bother to announce threads
+   enumerated by summarise_threadset() below, and that in turn does
+   the same: it sorts them and then only shows the first
+   N_THREADS_TO_ANNOUNCE. */
+
+static void announce_threadset ( WordSetID tset )
+{
+   const Word limit = N_THREADS_TO_ANNOUNCE;
+   Thread* thr;
+   XArray* sorted;
+   Word    ts_size, i, loopmax;
+   sorted = get_sorted_thread_set( tset );
+   ts_size = VG_(sizeXA)( sorted );
+   tl_assert(ts_size >= 0);
+   loopmax = limit < ts_size  ? limit  : ts_size; /* min(limit, ts_size) */
+   tl_assert(loopmax >= 0 && loopmax <= limit);
+   for (i = 0; i < loopmax; i++) {
+      thr = *(Thread**)VG_(indexXA)( sorted, i );
       tl_assert(is_sane_Thread(thr));
       tl_assert(thr->errmsg_index >= 1);
       if (thr->announced)
@@ -7858,34 +7906,35 @@ static void announce_threadset ( WordSetID tset )
       VG_(message)(Vg_UserMsg, "");
       thr->announced = True;
    }
+   VG_(deleteXA)( sorted );
 }
-
 static void announce_one_thread ( Thread* thr ) {
    announce_threadset( TC_(singletonWS)(univ_tsets, (Word)thr ));
 }
 
+/* Generate into buf[0 .. nBuf-1] a 1-line summary of a thread set, of
+   the form "#1, #3, #77, #78, #79 and 42 others".  The first
+   N_THREADS_TO_ANNOUNCE are listed explicitly (as '#n') and the
+   leftovers lumped into the 'and n others' bit. */
+
 static void summarise_threadset ( WordSetID tset, Char* buf, UInt nBuf )
 {
-   const Word limit = 5;
+   const Word limit = N_THREADS_TO_ANNOUNCE;
    Thread* thr;
-   Word*   ts_words;
-   Word    ts_size, i;
+   XArray* sorted;
+   Word    ts_size, i, loopmax;
    UInt    off = 0;
-   Word    loopmax;
    tl_assert(nBuf > 0);
    tl_assert(nBuf >= 40 + 20*limit);
    tl_assert(buf);
-   TC_(getPayloadWS)( &ts_words, &ts_size, univ_tsets, tset );
-   tl_assert(ts_words);
+   sorted = get_sorted_thread_set( tset );
+   ts_size = VG_(sizeXA)( sorted );
    tl_assert(ts_size >= 0);
    loopmax = limit < ts_size  ? limit  : ts_size; /* min(limit, ts_size) */
    tl_assert(loopmax >= 0 && loopmax <= limit);
-
    VG_(memset)(buf, 0, nBuf);
-   // FIXME: list the threads in order of their errmsg_index
-   // fields
    for (i = 0; i < loopmax; i++) {
-      thr = (Thread*)ts_words[i];
+      thr = *(Thread**)VG_(indexXA)( sorted, i );
       tl_assert(is_sane_Thread(thr));
       tl_assert(thr->errmsg_index >= 1);
       off += VG_(sprintf)(&buf[off], "#%d", (Int)thr->errmsg_index);
@@ -7899,6 +7948,7 @@ static void summarise_threadset ( WordSetID tset, Char* buf, UInt nBuf )
    }
    tl_assert(off < nBuf);
    tl_assert(buf[nBuf-1] == 0);
+   VG_(deleteXA)( sorted );
 }
 
 static void tc_pp_Error ( Error* err )
