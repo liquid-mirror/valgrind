@@ -155,19 +155,19 @@ Possible data race during write of size 1 at 0x........
   Reason:    this thread, #13, holds no locks at all
 ---------- char gran, 0 .. 99, skip 6 ----------
 
-Thread #15 was created
-   at 0x........: clone (in /...libc...)
-   by 0x........: ...
-   by 0x........: pthread_create@GLIBC_ (in /lib/libpthread...)
-   by 0x........: pthread_create@* (tc_intercepts.c:...)
-   by 0x........: main (tc19_shadowmem.c:173)
-
 Thread #14 was created
    at 0x........: clone (in /...libc...)
    by 0x........: ...
    by 0x........: pthread_create@GLIBC_ (in /lib/libpthread...)
    by 0x........: pthread_create@* (tc_intercepts.c:...)
    by 0x........: main (tc19_shadowmem.c:172)
+
+Thread #15 was created
+   at 0x........: clone (in /...libc...)
+   by 0x........: ...
+   by 0x........: pthread_create@GLIBC_ (in /lib/libpthread...)
+   by 0x........: pthread_create@* (tc_intercepts.c:...)
+   by 0x........: main (tc19_shadowmem.c:173)
 
 Possible data race during write of size 1 at 0x........
    at 0x........: child8 (tc19_shadowmem.c:35)
@@ -176,7 +176,7 @@ Possible data race during write of size 1 at 0x........
    by 0x........: ...
    by 0x........: ...
   Old state: owned exclusively by thread #14
-  New state: shared-modified by threads #15, #14
+  New state: shared-modified by threads #14, #15
   Reason:    this thread, #15, holds no locks at all
 ---------- char gran, 0 .. 99, skip 7 ----------
 
@@ -1655,19 +1655,19 @@ Possible data race during write of size 1 at 0x........
   Reason:    this thread, #133, holds no locks at all
 ---------- char gran, 0 .. 99, skip 66 ----------
 
-Thread #135 was created
-   at 0x........: clone (in /...libc...)
-   by 0x........: ...
-   by 0x........: pthread_create@GLIBC_ (in /lib/libpthread...)
-   by 0x........: pthread_create@* (tc_intercepts.c:...)
-   by 0x........: main (tc19_shadowmem.c:173)
-
 Thread #134 was created
    at 0x........: clone (in /...libc...)
    by 0x........: ...
    by 0x........: pthread_create@GLIBC_ (in /lib/libpthread...)
    by 0x........: pthread_create@* (tc_intercepts.c:...)
    by 0x........: main (tc19_shadowmem.c:172)
+
+Thread #135 was created
+   at 0x........: clone (in /...libc...)
+   by 0x........: ...
+   by 0x........: pthread_create@GLIBC_ (in /lib/libpthread...)
+   by 0x........: pthread_create@* (tc_intercepts.c:...)
+   by 0x........: main (tc19_shadowmem.c:173)
 
 Possible data race during write of size 1 at 0x........
    at 0x........: child8 (tc19_shadowmem.c:35)
@@ -1676,7 +1676,7 @@ Possible data race during write of size 1 at 0x........
    by 0x........: ...
    by 0x........: ...
   Old state: owned exclusively by thread #134
-  New state: shared-modified by threads #135, #134
+  New state: shared-modified by threads #134, #135
   Reason:    this thread, #135, holds no locks at all
 ---------- char gran, 0 .. 99, skip 67 ----------
 
@@ -1780,19 +1780,19 @@ Possible data race during write of size 1 at 0x........
   Reason:    this thread, #143, holds no locks at all
 ---------- char gran, 0 .. 99, skip 71 ----------
 
-Thread #145 was created
-   at 0x........: clone (in /...libc...)
-   by 0x........: ...
-   by 0x........: pthread_create@GLIBC_ (in /lib/libpthread...)
-   by 0x........: pthread_create@* (tc_intercepts.c:...)
-   by 0x........: main (tc19_shadowmem.c:173)
-
 Thread #144 was created
    at 0x........: clone (in /...libc...)
    by 0x........: ...
    by 0x........: pthread_create@GLIBC_ (in /lib/libpthread...)
    by 0x........: pthread_create@* (tc_intercepts.c:...)
    by 0x........: main (tc19_shadowmem.c:172)
+
+Thread #145 was created
+   at 0x........: clone (in /...libc...)
+   by 0x........: ...
+   by 0x........: pthread_create@GLIBC_ (in /lib/libpthread...)
+   by 0x........: pthread_create@* (tc_intercepts.c:...)
+   by 0x........: main (tc19_shadowmem.c:173)
 
 Possible data race during write of size 1 at 0x........
    at 0x........: child8 (tc19_shadowmem.c:35)
@@ -1801,7 +1801,7 @@ Possible data race during write of size 1 at 0x........
    by 0x........: ...
    by 0x........: ...
   Old state: owned exclusively by thread #144
-  New state: shared-modified by threads #145, #144
+  New state: shared-modified by threads #144, #145
   Reason:    this thread, #145, holds no locks at all
 ---------- char gran, 0 .. 99, skip 72 ----------
 
@@ -2055,19 +2055,19 @@ Possible data race during write of size 1 at 0x........
   Reason:    this thread, #165, holds no locks at all
 ---------- char gran, 0 .. 99, skip 82 ----------
 
-Thread #167 was created
-   at 0x........: clone (in /...libc...)
-   by 0x........: ...
-   by 0x........: pthread_create@GLIBC_ (in /lib/libpthread...)
-   by 0x........: pthread_create@* (tc_intercepts.c:...)
-   by 0x........: main (tc19_shadowmem.c:173)
-
 Thread #166 was created
    at 0x........: clone (in /...libc...)
    by 0x........: ...
    by 0x........: pthread_create@GLIBC_ (in /lib/libpthread...)
    by 0x........: pthread_create@* (tc_intercepts.c:...)
    by 0x........: main (tc19_shadowmem.c:172)
+
+Thread #167 was created
+   at 0x........: clone (in /...libc...)
+   by 0x........: ...
+   by 0x........: pthread_create@GLIBC_ (in /lib/libpthread...)
+   by 0x........: pthread_create@* (tc_intercepts.c:...)
+   by 0x........: main (tc19_shadowmem.c:173)
 
 Possible data race during write of size 1 at 0x........
    at 0x........: child8 (tc19_shadowmem.c:35)
@@ -2076,7 +2076,7 @@ Possible data race during write of size 1 at 0x........
    by 0x........: ...
    by 0x........: ...
   Old state: owned exclusively by thread #166
-  New state: shared-modified by threads #167, #166
+  New state: shared-modified by threads #166, #167
   Reason:    this thread, #167, holds no locks at all
 ---------- char gran, 0 .. 99, skip 83 ----------
 
@@ -2105,19 +2105,19 @@ Possible data race during write of size 1 at 0x........
   Reason:    this thread, #169, holds no locks at all
 ---------- char gran, 0 .. 99, skip 84 ----------
 
-Thread #171 was created
-   at 0x........: clone (in /...libc...)
-   by 0x........: ...
-   by 0x........: pthread_create@GLIBC_ (in /lib/libpthread...)
-   by 0x........: pthread_create@* (tc_intercepts.c:...)
-   by 0x........: main (tc19_shadowmem.c:173)
-
 Thread #170 was created
    at 0x........: clone (in /...libc...)
    by 0x........: ...
    by 0x........: pthread_create@GLIBC_ (in /lib/libpthread...)
    by 0x........: pthread_create@* (tc_intercepts.c:...)
    by 0x........: main (tc19_shadowmem.c:172)
+
+Thread #171 was created
+   at 0x........: clone (in /...libc...)
+   by 0x........: ...
+   by 0x........: pthread_create@GLIBC_ (in /lib/libpthread...)
+   by 0x........: pthread_create@* (tc_intercepts.c:...)
+   by 0x........: main (tc19_shadowmem.c:173)
 
 Possible data race during write of size 1 at 0x........
    at 0x........: child8 (tc19_shadowmem.c:35)
@@ -2126,7 +2126,7 @@ Possible data race during write of size 1 at 0x........
    by 0x........: ...
    by 0x........: ...
   Old state: owned exclusively by thread #170
-  New state: shared-modified by threads #171, #170
+  New state: shared-modified by threads #170, #171
   Reason:    this thread, #171, holds no locks at all
 ---------- char gran, 0 .. 99, skip 85 ----------
 
@@ -2230,19 +2230,19 @@ Possible data race during write of size 1 at 0x........
   Reason:    this thread, #179, holds no locks at all
 ---------- char gran, 0 .. 99, skip 89 ----------
 
-Thread #181 was created
-   at 0x........: clone (in /...libc...)
-   by 0x........: ...
-   by 0x........: pthread_create@GLIBC_ (in /lib/libpthread...)
-   by 0x........: pthread_create@* (tc_intercepts.c:...)
-   by 0x........: main (tc19_shadowmem.c:173)
-
 Thread #180 was created
    at 0x........: clone (in /...libc...)
    by 0x........: ...
    by 0x........: pthread_create@GLIBC_ (in /lib/libpthread...)
    by 0x........: pthread_create@* (tc_intercepts.c:...)
    by 0x........: main (tc19_shadowmem.c:172)
+
+Thread #181 was created
+   at 0x........: clone (in /...libc...)
+   by 0x........: ...
+   by 0x........: pthread_create@GLIBC_ (in /lib/libpthread...)
+   by 0x........: pthread_create@* (tc_intercepts.c:...)
+   by 0x........: main (tc19_shadowmem.c:173)
 
 Possible data race during write of size 1 at 0x........
    at 0x........: child8 (tc19_shadowmem.c:35)
@@ -2251,7 +2251,7 @@ Possible data race during write of size 1 at 0x........
    by 0x........: ...
    by 0x........: ...
   Old state: owned exclusively by thread #180
-  New state: shared-modified by threads #181, #180
+  New state: shared-modified by threads #180, #181
   Reason:    this thread, #181, holds no locks at all
 ---------- char gran, 0 .. 99, skip 90 ----------
 
