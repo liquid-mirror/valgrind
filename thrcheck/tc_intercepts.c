@@ -37,6 +37,12 @@
 /* RUNS ON SIMULATED CPU
    Interceptors for pthread_* functions, so that tc_main can see
    significant thread events. 
+
+   Important: when adding a function wrapper to this file, remember to
+   add a test case to tc20_verifywrap.c.  A common cause of failure is
+   for wrappers to not engage on different distros, and
+   tc20_verifywrap essentially checks that each wrapper is really
+   doing something.
 */
 
 #include "pub_tool_basics.h"
@@ -142,6 +148,8 @@ static char* lame_strerror ( long err )
       case EBUSY:       return "EBUSY: Device or resource busy";
       case ETIMEDOUT:   return "ETIMEDOUT: Connection timed out";
       case EDEADLK:     return "EDEADLK: Resource deadlock would occur";
+      case EOPNOTSUPP:  return "EOPNOTSUPP: Operation not supported on "
+                               "transport endpoint"; /* honest, guv */
       default:          return "tc_intercepts.c: lame_strerror(): "
                                "unhandled case -- please fix me!";
    }

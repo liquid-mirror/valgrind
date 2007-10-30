@@ -5812,6 +5812,7 @@ void evh__TC_PTHREAD_MUTEX_DESTROY_PRE( ThreadId tid, void* mutex )
          TC_(deleteBag)( lk->heldBy );
          lk->heldBy = NULL;
          lk->heldW = False;
+         lk->acquired_at = NULL;
       }
       tl_assert( !lk->heldBy );
       tl_assert( is_sane_LockN(lk) );
