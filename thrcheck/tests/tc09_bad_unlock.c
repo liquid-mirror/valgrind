@@ -16,10 +16,10 @@ void nearly_main ( void )
 {
    pthread_t child;
    pthread_mutex_t mx1, mx2;
-   int bogus[100];
-
+   int bogus[100], i;
+   /* fill bogus with values which will cause glibc's pth_mx_unlock to fail */
+   for (i = 0; i < 100; i++) bogus[i] = 0xFFFFFFFF;
    /* Unlocking a lock that is already unlocked */
-
    pthread_mutex_init( &mx1, NULL );
    pthread_mutex_lock( &mx1 );
    pthread_mutex_unlock( &mx1 );
