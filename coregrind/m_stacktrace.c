@@ -240,7 +240,29 @@ UInt VG_(get_StackTrace2) ( ThreadId tid_if_known,
          continue;
       }
 
-      /* No luck there.  We have to give up. */
+      /* Last-ditch hack (evidently GDB does something similar).  We
+         are in the middle of nowhere and we have a nonsense value for
+         the frame pointer.  If the stack pointer is still valid,
+         assume that what it points at is a return address.  Yes,
+         desperate measures.  Could do better here:
+         - check that the supposed return address is in
+           an executable page
+         - check that the supposed return address is just after a call insn
+         - given those two checks, don't just consider *sp as the return 
+           address; instead scan a likely section of stack (eg sp .. sp+256)
+           and use suitable values found there.
+      */
+      if (fp_min <= sp && sp < fp_max) {
+         ip = ((UWord*)sp)[0];
+         ips[i++] = ip;
+         if (debug)
+            VG_(printf)("     ipsH[%d]=%08p\n", i-1, ips[i-1]);
+         ip = ip - 1;
+         sp += 8;
+         continue;
+      }
+
+      /* No luck at all.  We have to give up. */
       break;
    }
 
