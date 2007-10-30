@@ -30,108 +30,70 @@
 //---------------------------------------------------------------------------
 // XXX:
 //---------------------------------------------------------------------------
-// Performance:
-//
-//   perl perf/vg_perf --tools=massif --reps=3 perf/{heap,tinycc} massif
-//   time valgrind --tool=massif --depth=100 konqueror
-//
-// The other benchmarks don't do much allocation, and so give similar speeds
-// to Nulgrind.
-//
-// Initial slowdown (r6976 + r6979):
-//   heap      0.24s  ma:26.7s (111.4x, -----)
-//   tinycc    0.44s  ma:10.7s (24.4x, -----)
-//   many-xpts 0.11s  ma:32.8s (298.0x, -----)
-//
-// Changed alloc_fns from an OSet to an XArray (r6981):
-//   heap      0.24s  ma:19.4s (80.6x, -----)
-//   tinycc    0.49s  ma: 7.8s (16.0x, -----)
-//   many-xpts 0.12s  ma:26.8s (223.4x, -----)
-//
-// Changed get_IPs so that all alloc_fns in a chain must be mentioned, not
-// just the bottom one, greatly reducing the number of calls to is_alloc_fn
-// (r6983):
-//   heap      0.24s  ma:18.8s (78.5x, -----)
-//   tinycc    0.45s  ma: 7.4s (16.4x, -----)
-//   many-xpts 0.05s  ma:23.5s (470.6x, -----)
-//
-// Don't dup children of insignificant XPts in dup_XTree.  Made many-xpts
-// more than 10x faster (r6984):
-//   heap      0.59s  ma:20.3s (34.5x, -----)
-//   tinycc    0.49s  ma: 7.6s (15.4x, -----)
-//   many-xpts 0.04s  ma: 1.9s (46.2x, -----)
-//
-// Make many-xpts run for longer (r7001):
-//   heap      0.59s  ma:20.3s (34.5x, -----)
-//   tinycc    0.49s  ma: 7.6s (15.4x, -----)
-//   many-xpts 0.13s  ma: 2.8s (21.6x, -----)
-//   konqueror 4:37 real  4:14 user
-//
-// Minimised the number of dup'd XPts by introducing SXPts (r7004):
-//   heap      0.56s  ma:20.8s (37.2x, -----)
-//   tinycc    0.45s  ma: 7.1s (15.7x, -----)
-//   many-xpts 0.05s  ma: 1.6s (33.0x, -----)
-//   konqueror 3:45 real  3:35 user
-//
-// Moved main-or-below-main filtering to the end, avoiding *many* calls to
-// VG_(get_fnname) (r7010):
-//   heap      0.62s  ma:12.4s (20.0x, -----)
-//   tinycc    0.45s  ma: 5.1s (11.4x, -----)
-//   many-xpts 0.09s  ma: 2.1s (23.8x, -----)
-//   konqueror 0:46 real  0:36 user
-//
-// Instead of sorting XPt children at duplication time, sort them at print
-// time (ie. many fewer sorts required) (r7011):
-//   heap      0.36s  ma:12.3s (34.1x, -----)
-//   tinycc    0.46s  ma: 4.8s (10.3x, -----)
-//   many-xpts 0.09s  ma: 2.0s (22.3x, -----)
-//   konqueror 0:42 real  0:34 user
-//
-// Don't do the significance test (which involves a division) for every
-// child, instead compute a threshold (which involves a division) which can
-// be reused for every child of an XPt (r7012):
-//   heap      0.60s  ma:12.4s (20.6x, -----)
-//   tinycc    0.48s  ma: 4.8s (10.1x, -----)
-//   many-xpts 0.10s  ma: 2.2s (22.1x, -----)
-//   konqueror 37.7s real  0:29.5s user
-//
-// By default, only snapshot a peak if it's 1% larger than the previous peak,
-// rather than snapshotting every peak.  Greatly reduces the number of peak
-// snapshots taken for larger programs like konqueror (r7013):
-//   heap      0.53s  ma:12.4s (23.5x, -----)
-//   tinycc    0.46s  ma: 4.9s (10.7x, -----)
-//   many-xpts 0.08s  ma: 2.0s (25.0x, -----)
-//   konqueror 29.6s real  0:21.0s user
-//
-// Performance todos:
-// - get_XCon accounts for about 9% of konqueror startup time.  Try keeping
-//   XPt children sorted by 'ip' and use binary search in get_XCon.
-//
 // Todo -- critical for release:
-// - decide on a name!
+// - decide on a name!  (This is the only thing blocking a merge with the
+//   trunk)
 // - do a graph-drawing test
 // - write a good basic test that shows how the tool works, suitable for
 //   documentation
 // - write documentation
+// - make --threshold and --peak-inaccuracy fractional
+// - do filename properly, clean up Valgrind-wide log file naming mess
+// - currently recording asked-for sizes of heap blocks, not actual sizes.
+//   Should add the difference to heap-admin, and change heap-admin name to
+//   something else (heap-extra?).
+//
+// Todo -- nice, but less critical:
 // - make file format more generic.  Obstacles:
 //   - unit prefixes are not generic
 //   - preset column widths for stats are not generic
 //   - preset column headers are not generic
 //   - "Massif arguments:" line is not generic
-//
-// Todo -- nice, but less critical:
 // - do snapshots on client requests
+//   - (Michael Meeks): have an interactive way to request a dump
+//     (callgrind_control-style)
+//     - "profile now"
+//     - "show me the extra allocations since the last snapshot"
+//     - "start/stop logging" (eg. quickly skip boring bits)
 // - Add ability to draw multiple graphs, eg. heap-only, stack-only, total.
 //   Give each graph a title.  (try to do it generically!)
 // - allow truncation of long fnnames if the exact line number is
 //   identified?  [hmm, could make getting the name of alloc-fns more
 //   difficult] [could dump full names to file, truncate in ms_print]
+// - make --show-below-main=no work
+//
+// Performance:
+// - To run the benchmarks:
+//
+//     perl perf/vg_perf --tools=massif --reps=3 perf/{heap,tinycc} massif
+//     time valgrind --tool=massif --depth=100 konqueror
+//
+//   The other benchmarks don't do much allocation, and so give similar speeds
+//   to Nulgrind.
+//
+//   Timing results on 'nevermore' (njn's machine) as of r7013:
+//
+//     heap      0.53s  ma:12.4s (23.5x, -----)
+//     tinycc    0.46s  ma: 4.9s (10.7x, -----)
+//     many-xpts 0.08s  ma: 2.0s (25.0x, -----)
+//     konqueror 29.6s real  0:21.0s user
+//
+// - get_XCon accounts for about 9% of konqueror startup time.  Try
+//   keeping XPt children sorted by 'ip' and use binary search in get_XCon.
+//   Requires factoring out binary search code from various places into a
+//   VG_(bsearch) function.  
 //
 // Todo -- low priority:
 // - Consider 'instructions executed' as a time unit -- more regular than
 //   ms, less artificial than B (bug #121629).
 // - In each XPt, record both bytes and the number of allocations, and
 //   possibly the global number of allocations.
+// - (Artur Wisz) add a feature to Massif to ignore any heap blocks larger
+//   than a certain size!  Because: "linux's malloc allows to set a
+//   MMAP_THRESHOLD value, so we set it to 4096 - all blocks above that will
+//   be handled directly by the kernel, and are guaranteed to be returned to
+//   the system when freed. So we needed to profile only blocks below this
+//   limit."
 //
 // Examine and fix bugs on bugzilla:
 // IGNORE:
@@ -174,44 +136,6 @@
 // 146456   (update_XCon): Assertion 'xpt->curr_space >= -space_delta' failed.
 //   - better sanity-checking should help this greatly
 //
-// Michael Meeks:
-// - wants an interactive way to request a dump (callgrind_control-style)
-//   - "profile now"
-//   - "show me the extra allocations since the last snapshot"
-//   - "start/stop logging" (eg. quickly skip boring bits)
-//
-// Artur Wisz:
-// - added a feature to Massif to ignore any heap blocks larger than a
-//   certain size!  Because:
-//     "linux's malloc allows to set a MMAP_THRESHOLD value, so we
-//      set it to 4096 - all blocks above that will be handled directly by
-//      the kernel, and are guaranteed to be returned to the system when
-//      freed. So we needed to profile only blocks below this limit."
-//
-// Other:
-//   - am I recording asked-for sizes or actual rounded-up sizes?
-//     [asked-for.  Should probably be actual.  But that might be
-//     confusing...]
-//   - could conceivably remove XPts that have their szB reduced to zero.
-//   - allow the output file name to be changed
-//
-// Docs:
-// - Mention that complex functions names are best protected with single
-//   quotes, eg:
-//       --alloc-fn='operator new(unsigned, std::nothrow_t const&)'
-//   [XXX: that doesn't work if the option is in a .valgrindrc file or in
-//    $VALGRIND_OPTS.  In m_commandline.c:add_args_from_string() need to
-//    respect single quotes...]
-// - Explain the --threshold=0 case -- entries with zero bytes must have
-//   allocated some memory and then freed it all again.
-// - Explain that no peak will be taken if no deallocations are done.
-// - Explain how the stack is computed -- size is assumed to be zero when
-//   code starts executing, which isn't true, but reflects what you have
-//   control over in a normal program.
-//
-// Tests:
-// - tests/overloaded_new.cpp is there
-//
 // File format working notes:
 
 #if 0
@@ -245,9 +169,15 @@ n1: 5 (heap allocation functions) malloc/new/new[], --alloc-fns, etc.
 
 n_events: n  time(ms)  total(B)    useful-heap(B)  admin-heap(B)  stacks(B)
 t_events: B
-n  0 0 0 0 0 
-td 0 0 0 0 0
-n1:
+n 0 0 0 0 0 
+n 0 0 0 0 0
+t1: 5 <string...>
+ t1: 6 <string...>
+
+Ideas:
+- each snapshot specifies an x-axis value and one or more y-axis values.
+- can display the y-axis values separately if you like
+- can completely separate connection between snapshots and trees.
 
 Challenges:
 - how to specify and scale/abbreviate units on axes?
@@ -469,7 +399,7 @@ static Char* TimeUnit_to_string(TimeUnit time_unit)
 static Bool clo_heap            = True;
 static UInt clo_heap_admin      = 8;
 static Bool clo_stacks          = False;
-static UInt clo_depth           = 30;      // XXX: too low?
+static UInt clo_depth           = 30;
 static UInt clo_threshold       = 100;     // 100 == 1%
 static UInt clo_peak_inaccuracy = 100;     // 100 == 1%
 static UInt clo_time_unit       = TimeMS;
