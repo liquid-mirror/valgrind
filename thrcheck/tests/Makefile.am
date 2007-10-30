@@ -9,16 +9,21 @@ EXTRA_DIST = $(noinst_SCRIPTS) \
 		hg01_all_ok.stderr.exp-glibc25-amd64 \
 	hg02_deadlock.vgtest hg02_deadlock.stdout.exp \
 		hg02_deadlock.stderr.exp-glibc25-amd64 \
+		hg02_deadlock.stderr.exp-glibc25-x86 \
 	hg03_inherit.vgtest hg03_inherit.stdout.exp \
 		hg03_inherit.stderr.exp-glibc25-amd64 \
+		hg03_inherit.stderr.exp-glibc25-x86 \
 	hg04_race.vgtest hg04_race.stdout.exp \
 		hg04_race.stderr.exp-glibc25-amd64 \
+		hg04_race.stderr.exp-glibc25-x86 \
 	hg05_race2.vgtest hg05_race2.stdout.exp \
 		hg05_race2.stderr.exp-glibc25-amd64 \
+		hg05_race2.stderr.exp-glibc25-x86 \
 	hg06_readshared.vgtest hg06_readshared.stdout.exp \
 		hg06_readshared.stderr.exp-glibc25-amd64 \
 	tc01_simple_race.vgtest tc01_simple_race.stdout.exp \
 		tc01_simple_race.stderr.exp-glibc25-amd64 \
+		tc01_simple_race.stderr.exp-glibc25-x86 \
 	tc02_simple_tls.vgtest tc02_simple_tls.stdout.exp \
 		tc02_simple_tls.stderr.exp-glibc25-amd64 \
 	tc03_re_excl.vgtest tc03_re_excl.stdout.exp \
@@ -27,14 +32,17 @@ EXTRA_DIST = $(noinst_SCRIPTS) \
 		tc04_free_lock.stderr.exp-glibc25-amd64 \
 	tc05_simple_race.vgtest tc05_simple_race.stdout.exp \
 		tc05_simple_race.stderr.exp-glibc25-amd64 \
+		tc05_simple_race.stderr.exp-glibc25-x86 \
 	tc06_two_races.vgtest tc06_two_races.stdout.exp \
 		tc06_two_races.stderr.exp-glibc25-amd64 \
+		tc06_two_races.stderr.exp-glibc25-x86 \
 	tc07_hbl1.vgtest tc07_hbl1.stdout.exp \
 		tc07_hbl1.stderr.exp-glibc25-amd64 \
 	tc08_hbl2.vgtest tc08_hbl2.stdout.exp \
 		tc08_hbl2.stderr.exp-glibc25-amd64 \
 	tc09_bad_unlock.vgtest tc09_bad_unlock.stdout.exp \
 		tc09_bad_unlock.stderr.exp-glibc25-amd64 \
+		tc09_bad_unlock.stderr.exp-glibc25-x86 \
 	tc10_rec_lock.vgtest tc10_rec_lock.stdout.exp \
 		tc10_rec_lock.stderr.exp-glibc25-amd64 \
 	tc11_XCHG.vgtest tc11_XCHG.stdout.exp \
@@ -45,16 +53,22 @@ EXTRA_DIST = $(noinst_SCRIPTS) \
 		tc13_laog1.stderr.exp-glibc25-amd64 \
 	tc14_laog_dinphils.vgtest tc14_laog_dinphils.stdout.exp \
 		tc14_laog_dinphils.stderr.exp-glibc25-amd64 \
+		tc14_laog_dinphils.stderr.exp-glibc25-x86 \
 	tc15_laog_lockdel.vgtest tc15_laog_lockdel.stdout.exp \
 		tc15_laog_lockdel.stderr.exp-glibc25-amd64 \
 	tc16_byterace.vgtest tc16_byterace.stdout.exp \
 		tc16_byterace.stderr.exp-glibc25-amd64 \
+		tc16_byterace.stderr.exp-glibc25-x86 \
 	tc17_sembar.vgtest tc17_sembar.stdout.exp \
 		tc17_sembar.stderr.exp-glibc25-amd64 \
+		tc17_sembar.stderr.exp-glibc25-x86 \
 	tc18_semabuse.vgtest tc18_semabuse.stdout.exp \
 		tc18_semabuse.stderr.exp-glibc25-amd64 \
+		tc18_semabuse.stderr.exp-glibc25-x86 \
 	tc19_shadowmem.vgtest tc19_shadowmem.stdout.exp \
-		tc19_shadowmem.stderr.exp-glibc25-amd64
+		tc19_shadowmem.stderr.exp-glibc25-amd64 \
+		tc19_shadowmem.stderr.exp-glibc25-x86
+
 
 check_PROGRAMS = \
 	hg01_all_ok \
