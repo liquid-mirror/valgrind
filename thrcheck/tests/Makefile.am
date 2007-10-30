@@ -69,8 +69,9 @@ EXTRA_DIST = $(noinst_SCRIPTS) \
 		tc19_shadowmem.stderr.exp-glibc25-amd64 \
 		tc19_shadowmem.stderr.exp-glibc25-x86 \
 	tc20_verifywrap.vgtest tc20_verifywrap.stdout.exp \
-		tc20_verifywrap.stderr.exp-glibc25-amd64
-
+		tc20_verifywrap.stderr.exp-glibc25-amd64 \
+	tc21_pthonce.vgtest tc21_pthonce.stdout.exp \
+		tc21_pthonce.stderr.exp-glibc25-amd64
 
 check_PROGRAMS = \
 	hg01_all_ok \
@@ -98,7 +99,8 @@ check_PROGRAMS = \
 	tc17_sembar \
 	tc18_semabuse \
 	tc19_shadowmem \
-	tc20_verifywrap
+	tc20_verifywrap \
+	tc21_pthonce
 
 AM_CPPFLAGS = -I$(top_srcdir) -I$(top_srcdir)/include \
                 -I$(top_srcdir)/coregrind -I$(top_builddir)/include \

@@ -1,0 +1,6 @@
+welcome: Welcome
+child: Hi, I'm thread 0
+child: Hi, I'm thread 1
+child: Hi, I'm thread 2
+child: Hi, I'm thread 3
+main: Goodbye
