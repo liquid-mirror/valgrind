@@ -76,6 +76,8 @@
 // FIXME pth_cond_wait/timedwait wrappers.  Even if these fail,
 // the thread still holds the lock.
 
+/* ------------ Debug/trace options ------------ */
+
 // this is:
 // shadow_mem_make_NoAccess: 29156 SMs, 1728 scanned
 // happens_before_wrk: 1000
@@ -90,34 +92,33 @@
 #define SCE_LOCKS    (1<<1)  // Sanity check at lock events
 #define SCE_BIGRANGE (1<<2)  // Sanity check at big mem range events
 #define SCE_ACCESS   (1<<3)  // Sanity check at mem accesses
+#define SCE_LAOG     (1<<4)  // Sanity check at significant LAOG events
 
 #define SCE_BIGRANGE_T 256  // big mem range minimum size
 
-static const Int sanity_flags
-//= SCE_THREADS | SCE_LOCKS | SCE_BIGRANGE | SCE_ACCESS;
-= 0;
 
-#define SCE_CACHELINE 0   /* don't sanity-check CacheLine stuff */
-//#define SCE_CACHELINE 1  /* do sanity-check CacheLine stuff */
-//#define inline __attribute__((noinline))
+/* For the shadow mem cache stuff we may want more intrusive
+   checks.  Unfortunately there's no almost-zero-cost way to make them
+   selectable at run time.  Hence set the #if 0 to #if 1 and
+   rebuild if you want them. */
+#if 0
+#  define SCE_CACHELINE 1  /* do sanity-check CacheLine stuff */
+#  define inline __attribute__((noinline))
+   /* probably want to ditch -fomit-frame-pointer too */
+#else
+#  define SCE_CACHELINE 0   /* don't sanity-check CacheLine stuff */
+#endif
 
 static void all__sanity_check ( char* who ); /* fwds */
 
 #define TC_CLI__MALLOC_REDZONE_SZB 16 /* let's say */
 
-
-/* This has to do with printing error messages.  See comments on
-   announce_threadset() and summarise_threadset(). */
-#define N_THREADS_TO_ANNOUNCE 5
-
-
-// FIXME: don't hardwire initial entries for root thread.
-// Instead, let the pre_thread_ll_create handler do this.
-
 // 0 for none, 1 for dump at end of run
 #define SHOW_DATA_STRUCTURES 0
 
-// FIXME move this somewhere sane
+
+/* ------------ Command line options ------------ */
+
 // 0 = no segments at all
 // 1 = segments at thread create/join
 // 2 = as 1 + segments at condition variable signal/broadcast/wait too
@@ -137,6 +138,21 @@ static Bool clo_cmp_race_err_addrs = False;
    no tracing, 1 for summary, 2 for detailed. */
 static Addr clo_trace_addr  = 0;
 static Int  clo_trace_level = 0;
+
+/* Sanity check level.  This is an or-ing of
+   SCE_{THREADS,LOCKS,BIGRANGE,ACCESS,LAOG}. */
+static Int clo_sanity_flags = 0;
+
+/* This has to do with printing error messages.  See comments on
+   announce_threadset() and summarise_threadset().  Perhaps it
+   should be a command line option. */
+#define N_THREADS_TO_ANNOUNCE 5
+
+
+/* ------------ Misc comments ------------ */
+
+// FIXME: don't hardwire initial entries for root thread.
+// Instead, let the pre_thread_ll_create handler do this.
 
 // FIXME: when a SecMap is completely set via and address range
 // setting operation to a non-ShR/M state, clear its .mbHasShared 
@@ -534,7 +550,6 @@ static Lock* __bus_lock_Lock = NULL;
 
 static UWord stats__lockN_acquires = 0;
 static UWord stats__lockN_releases = 0;
-static UWord stats__lockN_acquires_w_ExeContext = 0;
 
 static ThreadId map_threads_maybe_reverse_lookup_SLOW ( Thread* ); /*fwds*/
 
@@ -2383,8 +2398,11 @@ static void shmem__set_mbHasShared ( Addr a, Bool b )
 /*--- Sanity checking the data structures                      ---*/
 /*----------------------------------------------------------------*/
 
+static UWord stats__sanity_checks = 0;
+
 static Bool is_sane_CacheLine ( CacheLine* cl ); /* fwds */
 static Bool cmpGEQ_VTS ( XArray* a, XArray* b ); /* fwds */
+static void laog__sanity_check ( Char* who ); /* fwds */
 
 /* REQUIRED INVARIANTS:
 
@@ -2466,6 +2484,7 @@ static Bool thread_is_a_holder_of_Lock ( Thread* thr, Lock* lk )
 }
 
 /* Sanity check Threads, as far as possible */
+__attribute__((noinline))
 static void threads__sanity_check ( Char* who )
 {
 #define BAD(_str) do { how = (_str); goto bad; } while (0)
@@ -2507,6 +2526,7 @@ static void threads__sanity_check ( Char* who )
 
 
 /* Sanity check Locks, as far as possible */
+__attribute__((noinline))
 static void locks__sanity_check ( Char* who )
 {
 #define BAD(_str) do { how = (_str); goto bad; } while (0)
@@ -2577,6 +2597,7 @@ static void locks__sanity_check ( Char* who )
 
 
 /* Sanity check Segments, as far as possible */
+__attribute__((noinline))
 static void segments__sanity_check ( Char* who )
 {
 #define BAD(_str) do { how = (_str); goto bad; } while (0)
@@ -2613,14 +2634,23 @@ static void segments__sanity_check ( Char* who )
 
 
 /* Sanity check shadow memory, as far as possible */
+static Int cmp_Addr_for_ssort ( void* p1, void* p2 ) {
+   Addr a1 = *(Addr*)p1;
+   Addr a2 = *(Addr*)p2;
+   if (a1 < a2) return -1;
+   if (a1 > a2) return 1;
+   return 0;
+}
+__attribute__((noinline))
 static void shmem__sanity_check ( Char* who )
 {
 #define BAD(_str) do { how = (_str); goto bad; } while (0)
    Char*   how = "no error";
    Word    smga;
    SecMap* sm;
-   Word    i, j, ws_size;
+   Word    i, j, ws_size, n_valid_tags;
    Word*   ws_words;
+   Addr*   valid_tags;
    TC_(initIterFM)( map_shmem );
    // for sm in SecMaps {
    while (TC_(nextIterFM)( map_shmem, (Word*)&smga, (Word*)&sm )) {
@@ -2653,7 +2683,7 @@ static void shmem__sanity_check ( Char* who )
             WordSetID lset = un_SHVAL_Sh_lset(w32);
             if (!TC_(plausibleWS)( univ_tsets, tset )) BAD("5");
             if (!TC_(saneWS_SLOW)( univ_tsets, tset )) BAD("6");
-            if (TC_(isEmptyWS)( univ_tsets, tset )) BAD("7");
+            if (TC_(cardinalityWS)( univ_tsets, tset ) < 2) BAD("7");
             if (!TC_(plausibleWS)( univ_lsets, lset )) BAD("8");
             if (!TC_(saneWS_SLOW)( univ_lsets, lset )) BAD("9");
             TC_(getPayloadWS)( &ws_words, &ws_size, univ_lsets, lset );
@@ -2689,6 +2719,9 @@ static void shmem__sanity_check ( Char* who )
    TC_(doneIterFM)( map_shmem );
 
    // check the cache
+   valid_tags   = tc_zalloc(N_WAY_NENT * sizeof(Addr));
+   n_valid_tags = 0;
+   tl_assert(valid_tags);
    for (i = 0; i < N_WAY_NENT; i++) {
       CacheLine* cl;
       Addr       tag; 
@@ -2698,12 +2731,23 @@ static void shmem__sanity_check ( Char* who )
       if (tag != 1) {
          if (!is_valid_scache_tag(tag)) BAD("14-0");
          if (!is_sane_CacheLine(cl)) BAD("15-0");
+         /* A valid tag should be of the form 
+            X---X line_number:N_WAY_BITS 0:N_LINE_BITS */
          if (tag & (N_LINE_ARANGE-1)) BAD("16-0");
-         for (j = i+1; j < N_WAY_NENT; j++)
-            if (cache_shmem.tags0[j] == tag) BAD("17-0");
+         if ( i != ((tag >> N_LINE_BITS) & (N_WAY_NENT-1)) ) BAD("16-1");
+         valid_tags[n_valid_tags++] = tag;
       }
    }
-
+   tl_assert(n_valid_tags <= N_WAY_NENT);
+   if (n_valid_tags > 1) {
+      /* Check that the valid tags are unique */
+      VG_(ssort)( valid_tags, n_valid_tags, sizeof(Addr), cmp_Addr_for_ssort );
+      for (i = 0; i < n_valid_tags-1; i++) {
+         if (valid_tags[i] >= valid_tags[i+1])
+            BAD("16-2");
+      }
+   }
+   tc_free(valid_tags);
    return;
   bad:
    VG_(printf)("shmem__sanity_check: who=\"%s\", bad=\"%s\"\n", who, how);
@@ -2713,11 +2757,13 @@ static void shmem__sanity_check ( Char* who )
 
 static void all__sanity_check ( char* who )
 {
+   stats__sanity_checks++;
    if (0) VG_(printf)("all__sanity_check(%s)\n", who);
    threads__sanity_check(who);
    locks__sanity_check(who);
    segments__sanity_check(who);
    shmem__sanity_check(who);
+   laog__sanity_check(who);
 }
 
 
@@ -5344,7 +5390,7 @@ void evh__new_mem ( Addr a, SizeT len ) {
    if (SHOW_EVENTS >= 2)
       VG_(printf)("evh__new_mem(%p, %lu)\n", (void*)a, len );
    shadow_mem_make_New( get_current_Thread(), a, len );
-   if (len >= SCE_BIGRANGE_T && (sanity_flags & SCE_BIGRANGE))
+   if (len >= SCE_BIGRANGE_T && (clo_sanity_flags & SCE_BIGRANGE))
       all__sanity_check("evh__new_mem-post");
 }
 
@@ -5356,7 +5402,7 @@ void evh__new_mem_w_perms ( Addr a, SizeT len,
                   (void*)a, len, (Int)rr, (Int)ww, (Int)xx );
    if (rr || ww || xx)
       shadow_mem_make_New( get_current_Thread(), a, len );
-   if (len >= SCE_BIGRANGE_T && (sanity_flags & SCE_BIGRANGE))
+   if (len >= SCE_BIGRANGE_T && (clo_sanity_flags & SCE_BIGRANGE))
       all__sanity_check("evh__new_mem_w_perms-post");
 }
 
@@ -5371,7 +5417,7 @@ void evh__set_perms ( Addr a, SizeT len,
       NoAccess, else leave it alone. */
    if (!(rr || ww))
       shadow_mem_make_NoAccess( get_current_Thread(), a, len );
-   if (len >= SCE_BIGRANGE_T && (sanity_flags & SCE_BIGRANGE))
+   if (len >= SCE_BIGRANGE_T && (clo_sanity_flags & SCE_BIGRANGE))
       all__sanity_check("evh__set_perms-post");
 }
 
@@ -5380,7 +5426,7 @@ void evh__die_mem ( Addr a, SizeT len ) {
    if (SHOW_EVENTS >= 2)
       VG_(printf)("evh__die_mem(%p, %lu)\n", (void*)a, len );
    shadow_mem_make_NoAccess( get_current_Thread(), a, len );
-   if (len >= SCE_BIGRANGE_T && (sanity_flags & SCE_BIGRANGE))
+   if (len >= SCE_BIGRANGE_T && (clo_sanity_flags & SCE_BIGRANGE))
       all__sanity_check("evh__die_mem-post");
 }
 
@@ -5458,7 +5504,7 @@ void evh__pre_thread_ll_create ( ThreadId parent, ThreadId child )
       }
    }
 
-   if (sanity_flags & SCE_THREADS)
+   if (clo_sanity_flags & SCE_THREADS)
       all__sanity_check("evh__pre_thread_create-post");
 }
 
@@ -5487,7 +5533,7 @@ void evh__pre_thread_ll_exit ( ThreadId quit_tid )
       entry, in order that the Valgrind core can re-use it. */
    map_threads_delete( quit_tid );
 
-   if (sanity_flags & SCE_THREADS)
+   if (clo_sanity_flags & SCE_THREADS)
       all__sanity_check("evh__pre_thread_ll_exit-post");
 }
 
@@ -5636,7 +5682,7 @@ void evh__TC_PTHREAD_JOIN_POST ( ThreadId stay_tid, Thread* quit_thr )
    tl_assert( map_threads_maybe_reverse_lookup_SLOW(thr_q)
               == VG_INVALID_THREADID);
 
-   if (sanity_flags & SCE_THREADS)
+   if (clo_sanity_flags & SCE_THREADS)
       all__sanity_check("evh__post_thread_join-post");
 }
 
@@ -5648,7 +5694,7 @@ void evh__pre_mem_read ( CorePart part, ThreadId tid, Char* s,
       VG_(printf)("evh__pre_mem_read(ctid=%d, \"%s\", %p, %lu)\n", 
                   (Int)tid, s, (void*)a, size );
    shadow_mem_read_range( map_threads_lookup(tid), a, size);
-   if (size >= SCE_BIGRANGE_T && (sanity_flags & SCE_BIGRANGE))
+   if (size >= SCE_BIGRANGE_T && (clo_sanity_flags & SCE_BIGRANGE))
       all__sanity_check("evh__pre_mem_read-post");
 }
 
@@ -5662,7 +5708,7 @@ void evh__pre_mem_read_asciiz ( CorePart part, ThreadId tid,
    // FIXME: think of a less ugly hack
    len = VG_(strlen)( (Char*) a );
    shadow_mem_read_range( map_threads_lookup(tid), a, len+1 );
-   if (len >= SCE_BIGRANGE_T && (sanity_flags & SCE_BIGRANGE))
+   if (len >= SCE_BIGRANGE_T && (clo_sanity_flags & SCE_BIGRANGE))
       all__sanity_check("evh__pre_mem_read_asciiz-post");
 }
 
@@ -5673,7 +5719,7 @@ void evh__pre_mem_write ( CorePart part, ThreadId tid, Char* s,
       VG_(printf)("evh__pre_mem_write(ctid=%d, \"%s\", %p, %lu)\n", 
                   (Int)tid, s, (void*)a, size );
    shadow_mem_write_range( map_threads_lookup(tid), a, size);
-   if (size >= SCE_BIGRANGE_T && (sanity_flags & SCE_BIGRANGE))
+   if (size >= SCE_BIGRANGE_T && (clo_sanity_flags & SCE_BIGRANGE))
       all__sanity_check("evh__pre_mem_write-post");
 }
 
@@ -5688,7 +5734,7 @@ void evh__new_mem_heap ( Addr a, SizeT len, Bool is_inited ) {
    } else {
       shadow_mem_make_New(get_current_Thread(), a, len);
    }
-   if (len >= SCE_BIGRANGE_T && (sanity_flags & SCE_BIGRANGE))
+   if (len >= SCE_BIGRANGE_T && (clo_sanity_flags & SCE_BIGRANGE))
       all__sanity_check("evh__pre_mem_read-post");
 }
 
@@ -5697,7 +5743,7 @@ void evh__die_mem_heap ( Addr a, SizeT len ) {
    if (SHOW_EVENTS >= 1)
       VG_(printf)("evh__die_mem_heap(%p, %lu)\n", (void*)a, len );
    shadow_mem_make_NoAccess( get_current_Thread(), a, len );
-   if (len >= SCE_BIGRANGE_T && (sanity_flags & SCE_BIGRANGE))
+   if (len >= SCE_BIGRANGE_T && (clo_sanity_flags & SCE_BIGRANGE))
       all__sanity_check("evh__pre_mem_read-post");
 }
 
@@ -5777,7 +5823,7 @@ void evh__TC_PTHREAD_MUTEX_INIT_POST( ThreadId tid,
    tl_assert(mbRec == 0 || mbRec == 1);
    map_locks_lookup_or_create( mbRec ? LK_mbRec : LK_nonRec,
                                (Addr)mutex, tid );
-   if (sanity_flags & SCE_LOCKS)
+   if (clo_sanity_flags & SCE_LOCKS)
       all__sanity_check("evh__tc_PTHREAD_MUTEX_INIT_POST");
 }
 
@@ -5818,7 +5864,7 @@ void evh__TC_PTHREAD_MUTEX_DESTROY_PRE( ThreadId tid, void* mutex )
       tl_assert( is_sane_LockN(lk) );
    }
 
-   if (sanity_flags & SCE_LOCKS)
+   if (clo_sanity_flags & SCE_LOCKS)
       all__sanity_check("evh__tc_PTHREAD_MUTEX_DESTROY_PRE");
 }
 
@@ -6058,7 +6104,7 @@ void evh__TC_PTHREAD_RWLOCK_INIT_POST( ThreadId tid, void* rwl )
       VG_(printf)("evh__tc_PTHREAD_RWLOCK_INIT_POST(ctid=%d, %p)\n", 
                   (Int)tid, (void*)rwl );
    map_locks_lookup_or_create( LK_rdwr, (Addr)rwl, tid );
-   if (sanity_flags & SCE_LOCKS)
+   if (clo_sanity_flags & SCE_LOCKS)
       all__sanity_check("evh__tc_PTHREAD_RWLOCK_INIT_POST");
 }
 
@@ -6098,7 +6144,7 @@ void evh__TC_PTHREAD_RWLOCK_DESTROY_PRE( ThreadId tid, void* rwl )
       tl_assert( is_sane_LockN(lk) );
    }
 
-   if (sanity_flags & SCE_LOCKS)
+   if (clo_sanity_flags & SCE_LOCKS)
       all__sanity_check("evh__tc_PTHREAD_RWLOCK_DESTROY_PRE");
 }
 
@@ -6430,12 +6476,12 @@ static WordFM* laog_exposition = NULL; /* WordFM LAOGLinkExposition* NULL */
 /* end EXPOSITION ONLY */
 
 
-static void laog__show ( void ) {
+static void laog__show ( Char* who ) {
    Word i, ws_size;
    Word* ws_words;
    Lock* me;
    LAOGLinks* links;
-   VG_(printf)("laog {\n");
+   VG_(printf)("laog (requested by %s) {\n", who);
    TC_(initIterFM)( laog );
    me = NULL;
    links = NULL;
@@ -6588,12 +6634,14 @@ static WordSetID /* in univ_laog */ laog__preds ( Lock* lk ) {
    }
 }
 
-__attribute__((unused))
-static void laog__sanity_check ( void ) {
+__attribute__((noinline))
+static void laog__sanity_check ( Char* who ) {
    Word i, ws_size;
    Word* ws_words;
    Lock* me;
    LAOGLinks* links;
+   if ( !laog )
+      return; /* nothing much we can do */
    TC_(initIterFM)( laog );
    me = NULL;
    links = NULL;
@@ -6622,7 +6670,8 @@ static void laog__sanity_check ( void ) {
    return;
 
   bad:
-   laog__show();
+   VG_(printf)("laog__sanity_check(%s) FAILED\n", who);
+   laog__show(who);
    tl_assert(0);
 }
 
@@ -6759,6 +6808,9 @@ static void laog__pre_thread_acquires_lock (
       tl_assert(old->acquired_at);
       laog__add_edge( old, lk );
    }
+
+   if (clo_sanity_flags & SCE_LAOG)
+      all__sanity_check("laog__pre_thread_acquires_lock-post");
 }
 
 
@@ -6811,6 +6863,9 @@ static void laog__handle_lock_deletions (
    TC_(getPayloadWS)( &ws_words, &ws_size, univ_lsets, locksToDelete );
    for (i = 0; i < ws_size; i++)
       laog__handle_one_lock_deletion( (Lock*)ws_words[i] );
+
+   if (clo_sanity_flags & SCE_LAOG)
+      all__sanity_check("laog__handle_lock_deletions-post");
 }
 
 
@@ -8313,6 +8368,28 @@ static Bool tc_process_cmd_line_option ( Char* arg )
    }
    else VG_BNUM_CLO(arg, "--trace-level", clo_trace_level, 0, 2)
 
+   /* "stuvw" --> stuvw (binary) */
+   else if (VG_CLO_STREQN(18, arg, "--tc-sanity-flags=")) {
+      Int j;
+      char* opt = & arg[18];
+   
+      if (5 != VG_(strlen)(opt)) {
+         VG_(message)(Vg_UserMsg, 
+                      "--tc-sanity-flags argument must have 5 digits");
+         return False;
+      }
+      for (j = 0; j < 5; j++) {
+         if      ('0' == opt[j]) { /* do nothing */ }
+         else if ('1' == opt[j]) clo_sanity_flags |= (1 << (5-1-j));
+         else {
+            VG_(message)(Vg_UserMsg, "--tc-sanity-flags argument can "
+                                     "only contain 0s and 1s");
+            return False;
+         }
+      }
+      VG_(printf)("XXX sanity flags: 0x%x\n", clo_sanity_flags);
+   }
+
    else 
       return VG_(replacement_malloc_process_cmd_line_option)(arg);
 
@@ -8337,6 +8414,16 @@ static void tc_print_debug_usage ( void )
                "in .vcg format [no]\n");
    VG_(printf)("    --cmp-race-err-addrs=no|yes  are data addresses in "
                "race errors significant? [no]\n");
+   VG_(printf)("    --tc-sanity-flags=<XXXXX> sanity check "
+               "  at events (X = 0|1) [00000]\n");
+   VG_(printf)("    --tc-sanity-flags values:\n");
+   VG_(printf)("       10000   after changes to "
+               "lock-order-acquisition-graph\n");
+   VG_(printf)("       01000   at memory accesses (NB: not curently used)\n");
+   VG_(printf)("       00100   at mem permission setting for "
+               "ranges >= %d bytes\n", SCE_BIGRANGE_T);
+   VG_(printf)("       00010   at lock/unlock events\n");
+   VG_(printf)("       00001   at thread create/join events\n");
 }
 
 static void tc_post_clo_init ( void )
@@ -8347,7 +8434,7 @@ static void tc_fini ( Int exitcode )
 {
    if (SHOW_DATA_STRUCTURES)
       pp_everything( PP_ALL, "SK_(fini)" );
-   if (sanity_flags)
+   if (clo_sanity_flags)
       all__sanity_check("SK_(fini)");
 
    if (clo_gen_vcg > 0)
@@ -8377,33 +8464,36 @@ static void tc_fini ( Int exitcode )
       VG_(printf)(" hbefore: %,10lu probes\n",         stats__hbefore_probes);
 
       VG_(printf)("\n");
-      VG_(printf)("segments:       %,10lu Segment objects allocated\n", 
+      VG_(printf)("        segments: %,8lu Segment objects allocated\n", 
                   stats__mk_Segment);
-      VG_(printf)("locksets:         %8d unique lock sets\n",
+      VG_(printf)("        locksets: %,8d unique lock sets\n",
                   (Int)TC_(cardinalityWSU)( univ_lsets ));
-      VG_(printf)("threadsets:       %8d unique thread sets\n",
+      VG_(printf)("      threadsets: %,8d unique thread sets\n",
                   (Int)TC_(cardinalityWSU)( univ_tsets ));
-      VG_(printf)("univ_laog:        %8d unique lock sets\n",
+      VG_(printf)("       univ_laog: %,8d unique lock sets\n",
                   (Int)TC_(cardinalityWSU)( univ_laog ));
 
-      VG_(printf)("L(ast)L(ock) map: %8lu inserts (%d map size)\n", 
+      VG_(printf)("L(ast)L(ock) map: %,8lu inserts (%d map size)\n", 
                   stats__ga_LL_adds,
                   (Int)(ga_to_lastlock ? TC_(sizeFM)( ga_to_lastlock ) : 0) );
 
-      VG_(printf)("LockN-to-P map:   %8lu queries (%d map size)\n", 
+      VG_(printf)("  LockN-to-P map: %,8lu queries (%d map size)\n", 
                   stats__ga_LockN_to_P_queries,
                   (Int)(yaWFM ? TC_(sizeFM)( yaWFM ) : 0) );
 
-      VG_(printf)("string table map: %8lu queries (%d map size)\n", 
+      VG_(printf)("string table map: %,8lu queries (%d map size)\n", 
                   stats__string_table_queries,
                   (Int)(string_table ? TC_(sizeFM)( string_table ) : 0) );
-
-      VG_(printf)("   locks: %,lu acquires (%,lu w/ExeContext), "
+      VG_(printf)("            LAOG: %,8d map size\n", 
+                  (Int)(laog ? TC_(sizeFM)( laog ) : 0));
+      VG_(printf)(" LAOG exposition: %,8d map size\n", 
+                  (Int)(laog_exposition ? TC_(sizeFM)( laog_exposition ) : 0));
+      VG_(printf)("           locks: %,8lu acquires, "
                   "%,lu releases\n",
                   stats__lockN_acquires,
-                  stats__lockN_acquires_w_ExeContext,
                   stats__lockN_releases
                  );
+      VG_(printf)("   sanity checks: %,8lu\n", stats__sanity_checks);
 
       VG_(printf)("\n");
       VG_(printf)("     msm: %,12lu %,12lu rd/wr_Excl_nochange\n",
