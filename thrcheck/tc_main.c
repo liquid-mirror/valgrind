@@ -109,7 +109,7 @@
 #  define SCE_CACHELINE 0   /* don't sanity-check CacheLine stuff */
 #endif
 
-static void all__sanity_check ( char* who ); /* fwds */
+static void all__sanity_check ( Char* who ); /* fwds */
 
 #define TC_CLI__MALLOC_REDZONE_SZB 16 /* let's say */
 
@@ -2755,15 +2755,17 @@ static void shmem__sanity_check ( Char* who )
 #undef BAD
 }
 
-static void all__sanity_check ( char* who )
-{
+static void all_except_Locks__sanity_check ( Char* who ) {
    stats__sanity_checks++;
-   if (0) VG_(printf)("all__sanity_check(%s)\n", who);
+   if (0) VG_(printf)("all_except_Locks__sanity_check(%s)\n", who);
    threads__sanity_check(who);
-   locks__sanity_check(who);
    segments__sanity_check(who);
    shmem__sanity_check(who);
    laog__sanity_check(who);
+}
+static void all__sanity_check ( Char* who ) {
+   all_except_Locks__sanity_check(who);
+   locks__sanity_check(who);
 }
 
 
@@ -5142,7 +5144,8 @@ void evhH__post_thread_w_acquires_lock ( Thread* thr,
    goto noerror;
 
   noerror:
-   /* check lock order acquisition graph, and update */
+   /* check lock order acquisition graph, and update.  This has to
+      happen before the lock is added to the thread's locksetA/W. */
    laog__pre_thread_acquires_lock( thr, lk );
    /* update the thread's held-locks set */
    thr->locksetA = TC_(addToWS)( univ_lsets, thr->locksetA, (Word)lk );
@@ -5210,7 +5213,8 @@ void evhH__post_thread_r_acquires_lock ( Thread* thr,
    goto noerror;
 
   noerror:
-   /* check lock order acquisition graph, and update */
+   /* check lock order acquisition graph, and update.  This has to
+      happen before the lock is added to the thread's locksetA/W. */
    laog__pre_thread_acquires_lock( thr, lk );
    /* update the thread's held-locks set */
    thr->locksetA = TC_(addToWS)( univ_lsets, thr->locksetA, (Word)lk );
@@ -6809,8 +6813,13 @@ static void laog__pre_thread_acquires_lock (
       laog__add_edge( old, lk );
    }
 
+   /* Why "except_Locks" ?  We're here because a lock is being
+      acquired by a thread, and we're in an inconsistent state here.
+      See the call points in evhH__post_thread_{r,w}_acquires_lock.
+      When called in this inconsistent state, locks__sanity_check duly
+      barfs. */
    if (clo_sanity_flags & SCE_LAOG)
-      all__sanity_check("laog__pre_thread_acquires_lock-post");
+      all_except_Locks__sanity_check("laog__pre_thread_acquires_lock-post");
 }
 
 
@@ -8387,7 +8396,7 @@ static Bool tc_process_cmd_line_option ( Char* arg )
             return False;
          }
       }
-      VG_(printf)("XXX sanity flags: 0x%x\n", clo_sanity_flags);
+      if (0) VG_(printf)("XXX sanity flags: 0x%x\n", clo_sanity_flags);
    }
 
    else 
