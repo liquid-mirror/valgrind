@@ -40,19 +40,35 @@
 
 #include <pthread.h>
 
-#define  NUM_THREADS 4
+/* With more than 2 threads, the precise error reports vary between
+   platforms, in terms of the number of races detected.  Make life
+   simple and just have 2 threads and so just 1 race. */
+#define  NUM_THREADS 2
 
 static pthread_once_t welcome_once_block = PTHREAD_ONCE_INIT;
 
 static int unprotected1 = 0;
 static int unprotected2 = 0;
 
+/* This is a hack: delay threads except the first enough so as to
+   ensure threads[0] gets to the pthread_once call first.  This is so
+   as to ensure that this test produces results which aren't
+   scheduling sensitive.  (sigh) */
+void maybe_stall ( int myid )
+{
+   assert(myid >= 0 && myid < NUM_THREADS);
+   if (myid > 0)
+      sleep(1);
+}
+
 void welcome(void) {
    printf("welcome: Welcome\n");
    unprotected1++; /* this is harmless */
 }
-void maybe_stall ( int myid );
-void* child ( void* argV ) { int r; maybe_stall( *(int*)argV );
+
+void* child ( void* argV ) { 
+   int r; 
+   maybe_stall( *(int*)argV );
    r= pthread_once(&welcome_once_block, welcome); assert(!r);
    printf("child: Hi, I'm thread %d\n", *(int*)argV);
    unprotected2++; /* whereas this is a race */
@@ -73,19 +89,8 @@ int main ( void ) {
 
    for (i = 0; i < NUM_THREADS; i++) {
       pthread_join(threads[i], NULL);
-      //printf("main: joined to thread %d\n", i);
+      /* printf("main: joined to thread %d\n", i); */
    }
    printf("main: Goodbye\n");
    return 0;
-}
-
-/* This is a hack: delay threads except the first enough so as to
-   ensure threads[0] gets to the pthread_once call first.  This is so
-   as to ensure that this test produces results which aren't
-   scheduling sensitive.  (sigh) */
-void maybe_stall ( int myid )
-{
-   assert(myid >= 0 && myid < NUM_THREADS);
-   if (myid > 0)
-      sleep(1);
 }
