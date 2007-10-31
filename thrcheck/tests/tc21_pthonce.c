@@ -51,9 +51,9 @@ void welcome(void) {
    printf("welcome: Welcome\n");
    unprotected1++; /* this is harmless */
 }
-
-void* child ( void* argV ) {
-   int r= pthread_once(&welcome_once_block, welcome); assert(!r);
+void maybe_stall ( int myid );
+void* child ( void* argV ) { int r; maybe_stall( *(int*)argV );
+   r= pthread_once(&welcome_once_block, welcome); assert(!r);
    printf("child: Hi, I'm thread %d\n", *(int*)argV);
    unprotected2++; /* whereas this is a race */
    return NULL;
@@ -77,4 +77,15 @@ int main ( void ) {
    }
    printf("main: Goodbye\n");
    return 0;
+}
+
+/* This is a hack: delay threads except the first enough so as to
+   ensure threads[0] gets to the pthread_once call first.  This is so
+   as to ensure that this test produces results which aren't
+   scheduling sensitive.  (sigh) */
+void maybe_stall ( int myid )
+{
+   assert(myid >= 0 && myid < NUM_THREADS);
+   if (myid > 0)
+      sleep(1);
 }
