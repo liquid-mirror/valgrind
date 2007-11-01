@@ -46,7 +46,13 @@
         : "memory", "cc" \
      )
 #else
-#  error "Fix Me for this platform"
+#  define XCHG_M_R(_addr,_lval) \
+      do { int tmp = *(int*)(& _addr); \
+           *(int*)(& _addr) = (_lval); \
+           _lval = tmp; \
+      } while (0)
+#  define XCHG_M_R_with_redundant_LOCK(_addr,_lval) \
+      XCHG_M_R(_addr,_lval)
 #endif
 
 int x = 0;
