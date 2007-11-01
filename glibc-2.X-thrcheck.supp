@@ -5,61 +5,61 @@
 
 ######------ glibc-2.5 specific ------######
 {
-   thrcheck-glibc25-01
+   thrcheck-glibc25-001
    Thrcheck:Race
    obj:/lib*/ld-2.5.so
    obj:/lib*/ld-2.5.so
    obj:/lib*/ld-2.5.so
 }
 {
-   thrcheck-glibc25-02
+   thrcheck-glibc25-002
    Thrcheck:Race
    obj:/lib*/ld-2.5.so
    obj:/lib*/libc-2.5.so
    obj:/lib*/ld-2.5.so
 }
 {
-   thrcheck-glibc25-03
+   thrcheck-glibc25-003
    Thrcheck:Race
    obj:/lib*/ld-2.5.so
    obj:/lib*/libc-2.5.so
    obj:/lib*/libc-2.5.so
 }
 {
-   thrcheck-glibc25-04
+   thrcheck-glibc25-004
    Thrcheck:Race
    obj:/lib*/libc-2.5.so
    obj:/lib*/libc-2.5.so
 }
 {
-   thrcheck-glibc25-05
-   Thrcheck:Race
-   obj:/lib*/libpthread-2.5.so
-   obj:/lib*/libpthread-2.5.so
-   obj:/lib*/libpthread-2.5.so
-}
-{
-   thrcheck-glibc25-06
+   thrcheck-glibc25-005
    Thrcheck:Race
    obj:/lib*/libpthread-2.5.so
    obj:/lib*/libpthread-2.5.so
+   obj:/lib*/libpthread-2.5.so
+}
+{
+   thrcheck-glibc25-006
+   Thrcheck:Race
+   obj:/lib*/libpthread-2.5.so
+   obj:/lib*/libpthread-2.5.so
    obj:/lib*/libc-2.5.so
 }
 {
-   thrcheck-glibc25-07
+   thrcheck-glibc25-007
    Thrcheck:Race
    obj:/lib*/ld-2.5.so
    obj:/lib*/libc-2.5.so
    obj:/lib*/libdl-2.5.so
 }
 {
-   thrcheck-glibc25-08
+   thrcheck-glibc25-008
    Thrcheck:Race
    obj:/lib*/libpthread-2.5.so
    obj:/lib*/libc-2.5.so
 }
 {
-   thrcheck-glibc25-09
+   thrcheck-glibc25-009
    Thrcheck:Race
    obj:/lib*/libc-2.5.so
    fun:*
@@ -74,74 +74,99 @@
 # Therefore it's only one level of unwinding before we're back out in
 # user code rather than the 2 levels you'd expect.
 {
-   thrcheck-glibc25-10
+   thrcheck-glibc25-101
    Thrcheck:Race
    obj:/lib*/libpthread-2.5.so
    fun:pthread_*
 }
 {
-   thrcheck-glibc25-11
+   thrcheck-glibc25-102
    Thrcheck:Race
    fun:mythread_wrapper
    obj:/lib*/libpthread-2.5.so
 }
 {
-   thrcheck-glibc25-12
+   thrcheck-glibc25-103
    Thrcheck:Race
    fun:pthread_cond_*@@GLIBC_2.3.2
 }
 {
-   thrcheck-glibc25-13
+   thrcheck-glibc25-104
    Thrcheck:Race
    fun:__lll_mutex_*
 }
 {
-   thrcheck-glibc25-14
+   thrcheck-glibc25-105
    Thrcheck:Race
    fun:pthread_rwlock_*lock*
 }
 
 ######------ glibc-2.4 specific ------######
 {
-   thrcheck-glibc24-01
+   thrcheck-glibc24-001
    Thrcheck:Race
    obj:/lib*/ld-2.4.so
    obj:/lib*/ld-2.4.so
    obj:/lib*/ld-2.4.so
 }
 {
-   thrcheck-glibc24-04
+   thrcheck-glibc24-003
+   Thrcheck:Race
+   obj:/lib*/ld-2.4.so
+   obj:/lib*/libc-2.4.so
+   obj:/lib*/libc-2.4.so
+}
+{
+   thrcheck-glibc24-004
    Thrcheck:Race
    obj:/lib*/libc-2.4.so
    obj:/lib*/libc-2.4.so
 }
 {
-   thrcheck-glibc24-05
+   thrcheck-glibc24-005
    Thrcheck:Race
    obj:/lib*/libpthread-2.4.so
    obj:/lib*/libpthread-2.4.so
    obj:/lib*/libpthread-2.4.so
 }
 {
-   thrcheck-glibc24-08
+   thrcheck-glibc24-006
+   Thrcheck:Race
+   obj:/lib*/libpthread-2.4.so
+   obj:/lib*/libpthread-2.4.so
+   obj:/lib*/libc-2.4.so
+}
+{
+   thrcheck-glibc24-008
    Thrcheck:Race
    obj:/lib*/libpthread-2.4.so
    obj:/lib*/libc-2.4.so
+}
+{
+   thrcheck-glibc24-010
+   Thrcheck:Race
+   obj:/lib*/ld-2.4.so
+   obj:/lib*/libpthread-2.4.so
+}
+{
+   thrcheck-glibc24-011
+   Thrcheck:Race
+   obj:/lib*/libc-2.4.so
+   obj:/lib*/libpthread-2.4.so
 }
 
 {
-   thrcheck-glibc24-10
+   thrcheck-glibc24-101
    Thrcheck:Race
    obj:/lib*/libpthread-2.4.so
    fun:pthread_*
 }
 {
-   thrcheck-glibc24-11
+   thrcheck-glibc24-102
    Thrcheck:Race
    fun:mythread_wrapper
    obj:/lib*/libpthread-2.4.so
 }
-
 
 #aa###--- glibc-2.6.1 specific ---###
 #aa{
