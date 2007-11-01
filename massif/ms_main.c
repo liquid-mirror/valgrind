@@ -2076,6 +2076,12 @@ static void ms_post_clo_init(void)
 
 static void ms_pre_clo_init(void)
 {
+   VG_(tool_panic)(
+      "*** *** ***\n"
+      "The MASSIF2 branch was merged into the trunk in revision r7069.\n"
+      "This branch is now dead.  Please use Massif from the trunk.\n"
+      "*** *** ***\n");
+
    VG_(details_name)            ("Massif");
    VG_(details_version)         (NULL);
    VG_(details_description)     ("a space profiler");
