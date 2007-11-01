@@ -3,7 +3,10 @@
 # Suppressions for the Thrcheck tool when using 
 # a glibc-2.{2,3,4,5,6} system
 
-######------ glibc-2.5 specific ------######
+######------------ glibc-2.5 specific ------------######
+#
+## NB.  This is the "reference set".  Derived sets for
+## glibc 2.4, 2.3 and 2.6 follow below.
 {
    thrcheck-glibc25-001
    Thrcheck:Race
@@ -101,7 +104,8 @@
    fun:pthread_rwlock_*lock*
 }
 
-######------ glibc-2.4 specific ------######
+######------------ glibc-2.4 specific ------------######
+#
 {
    thrcheck-glibc24-001
    Thrcheck:Race
@@ -168,21 +172,59 @@
    obj:/lib*/libpthread-2.4.so
 }
 
-#aa###--- glibc-2.6.1 specific ---###
-#aa{
-#aa   thrcheck-glibc26-ld261-64bit-1
-#aa   Thrcheck:Race
-#aa   obj:/lib64/ld-2.6.1.so
-#aa   obj:/lib64/ld-2.6.1.so
-#aa   obj:/lib64/ld-2.6.1.so
-#aa}
-#aa{
-#aa   thrcheck-glibc26-ld261-32bit-1
-#aa   Thrcheck:Race
-#aa   obj:/lib/ld-2.6.1.so
-#aa   obj:/lib/ld-2.6.1.so
-#aa   obj:/lib/ld-2.6.1.so
-#aa}
+######------------ glibc-2.6 specific ---------######
+#
+{
+   thrcheck-glibc26-001
+   Thrcheck:Race
+   obj:/lib*/ld-2.6.*so
+   obj:/lib*/ld-2.6.*so
+   obj:/lib*/ld-2.6.*so
+}
+{
+   thrcheck-glibc26-003
+   Thrcheck:Race
+   obj:/lib*/ld-2.6.*so
+   obj:/lib*/libc-2.6.*so
+   obj:/lib*/libc-2.6.*so
+}
+{
+   thrcheck-glibc26-004
+   Thrcheck:Race
+   obj:/lib*/libc-2.6.*so
+   obj:/lib*/libc-2.6.*so
+}
+{
+   thrcheck-glibc26-006
+   Thrcheck:Race
+   obj:/lib*/libpthread-2.6.*so
+   obj:/lib*/libpthread-2.6.*so
+   obj:/lib*/libc-2.6.*so
+}
+{
+   thrcheck-glibc26-008
+   Thrcheck:Race
+   obj:/lib*/libpthread-2.6.*so
+   obj:/lib*/libc-2.6.*so
+}
+
+{
+   thrcheck-glibc26-101
+   Thrcheck:Race
+   obj:/lib*/libpthread-2.6.*so
+   fun:pthread_*
+}
+{
+   thrcheck-glibc26-102
+   Thrcheck:Race
+   fun:mythread_wrapper
+   obj:/lib*/libpthread-2.6.*so
+}
+{
+   thrcheck-glibc26-106
+   Thrcheck:Race
+   fun:__lll_lock_wait
+}
 
 ######------ qt4 specific (GNU mangling) ------######
 {
