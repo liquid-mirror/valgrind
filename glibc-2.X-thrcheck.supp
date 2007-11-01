@@ -101,6 +101,47 @@
    fun:pthread_rwlock_*lock*
 }
 
+######------ glibc-2.4 specific ------######
+{
+   thrcheck-glibc24-01
+   Thrcheck:Race
+   obj:/lib*/ld-2.4.so
+   obj:/lib*/ld-2.4.so
+   obj:/lib*/ld-2.4.so
+}
+{
+   thrcheck-glibc24-04
+   Thrcheck:Race
+   obj:/lib*/libc-2.4.so
+   obj:/lib*/libc-2.4.so
+}
+{
+   thrcheck-glibc24-05
+   Thrcheck:Race
+   obj:/lib*/libpthread-2.4.so
+   obj:/lib*/libpthread-2.4.so
+   obj:/lib*/libpthread-2.4.so
+}
+{
+   thrcheck-glibc24-08
+   Thrcheck:Race
+   obj:/lib*/libpthread-2.4.so
+   obj:/lib*/libc-2.4.so
+}
+
+{
+   thrcheck-glibc24-10
+   Thrcheck:Race
+   obj:/lib*/libpthread-2.4.so
+   fun:pthread_*
+}
+{
+   thrcheck-glibc24-11
+   Thrcheck:Race
+   fun:mythread_wrapper
+   obj:/lib*/libpthread-2.4.so
+}
+
 
 #aa###--- glibc-2.6.1 specific ---###
 #aa{
