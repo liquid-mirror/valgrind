@@ -228,27 +228,56 @@
 
 ######--------- glibc-2.3 specific ---------######
 {
-   thrcheck-glibc23-01
+   thrcheck-glibc23-001
    Thrcheck:Race
    obj:/lib*/ld-2.3.*so
    obj:/lib*/ld-2.3.*so
    obj:/lib*/ld-2.3.*so
 }
 {
-   thrcheck-glibc23-04
+   thrcheck-glibc23-002
+   Thrcheck:Race
+   obj:/lib*/ld-2.3.*so
+   obj:/lib*/libc-2.3.*so
+   obj:/lib*/ld-2.3.*so
+}
+{
+   thrcheck-glibc23-004
    Thrcheck:Race
    obj:/lib*/libc-2.3.*so
+   obj:/lib*/libc-2.3.*so
+}
+{
+   thrcheck-glibc23-006
+   Thrcheck:Race
+   obj:/lib*/libpthread-2.3.*so
+   obj:/lib*/libpthread-2.3.*so
+   obj:/lib*/libc-2.3.*so
+}
+{
+   thrcheck-glibc23-009
+   Thrcheck:Race
+   obj:/lib*/libc-2.3.*so
+   obj:/lib*/ld-2.3.*so
    obj:/lib*/libc-2.3.*so
 }
 
 {
-   thrcheck-glibc23-10
+   thrcheck-glibc23-012
+   Thrcheck:Race
+   obj:/lib*/ld-2.3.*so
+   obj:/lib*/ld-2.3.*so
+   obj:/lib*/libc-2.3.*so
+}
+
+{
+   thrcheck-glibc23-100
    Thrcheck:Race
    obj:/lib*/libpthread-2.3.*so
    fun:pthread_*
 }
 {
-   thrcheck-glibc23-11
+   thrcheck-glibc23-101
    Thrcheck:Race
    fun:mythread_wrapper
    obj:/lib*/libpthread-2.3.*so
