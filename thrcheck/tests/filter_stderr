@@ -11,7 +11,7 @@ $dir/../../tests/filter_addresses                       |
 sed "/^Thrcheck, a thread error detector/ , /./ d" |
 
 # Anonymise line numbers in tc_intercepts.c
-sed "s/tc_intercepts.c:[0-9]*/tc_intercepts.c:.../"  |
+sed "s/tc_intercepts.c:[0-9]*/tc_intercepts.c:.../g"  |
 
 # Change (eg) "/lib64/libpthread-2.5.so" into "/lib/libpthread..."
 sed "s/lib64/lib/g" | 
@@ -20,5 +20,11 @@ sed "s/libpthread.*so/libpthread\.\.\./g" |
 # Change (eg) "pthread_create@@GLIBC_2.2.5" into "pthread_create@GLIBC"
 #    and (eg) "pthread_create@GLIBC_2.1"    into "pthread_create@GLIBC"
 sed "s/@@*GLIBC_2[0123456789\.]*/@GLIBC_/g" |
+
+# Tidy up in cases where glibc (+ libdl + libpthread + ld) have
+# been built with debugging information, hence source locs are present
+sed "s/(createthread.c:[0-9]*)/(in \/lib\/libpthread...)/g" |
+sed "s/(clone.S:[0-9]*)/(in \/...libc...)/g" |
+sed "s/start_thread (pthread_create.c:[0-9]*)$/.../g" |
 
 $dir/../../tests/filter_test_paths
