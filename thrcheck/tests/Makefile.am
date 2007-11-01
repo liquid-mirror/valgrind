@@ -41,6 +41,7 @@ EXTRA_DIST = $(noinst_SCRIPTS) \
 	tc08_hbl2.vgtest tc08_hbl2.stdout.exp \
 		tc08_hbl2.stderr.exp-glibc25-amd64 \
 	tc09_bad_unlock.vgtest tc09_bad_unlock.stdout.exp \
+		tc09_bad_unlock.stderr.exp-glibc23-amd64 \
 		tc09_bad_unlock.stderr.exp-glibc25-amd64 \
 		tc09_bad_unlock.stderr.exp-glibc25-x86 \
 	tc10_rec_lock.vgtest tc10_rec_lock.stdout.exp \
@@ -69,6 +70,7 @@ EXTRA_DIST = $(noinst_SCRIPTS) \
 		tc19_shadowmem.stderr.exp-glibc25-amd64 \
 		tc19_shadowmem.stderr.exp-glibc25-x86 \
 	tc20_verifywrap.vgtest tc20_verifywrap.stdout.exp \
+		tc20_verifywrap.stderr.exp-glibc23-amd64 \
 		tc20_verifywrap.stderr.exp-glibc25-amd64 \
 		tc20_verifywrap.stderr.exp-glibc25-x86 \
 	tc21_pthonce.vgtest tc21_pthonce.stdout.exp \

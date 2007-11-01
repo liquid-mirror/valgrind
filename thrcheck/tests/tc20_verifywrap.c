@@ -20,6 +20,10 @@
 #include <pthread.h>
 #include <semaphore.h>
 
+#if !defined(__GLIBC_PREREQ)
+# error "This program needs __GLIBC_PREREQ (in /usr/include/features.h)"
+#endif
+
 short unprotected = 0;
 
 void* lazy_child ( void* v ) {
@@ -44,6 +48,14 @@ int main ( void )
    pthread_rwlock_t rwl2;
    pthread_rwlock_t rwl3;
    sem_t s1;
+
+#  if __GLIBC_PREREQ(2,4)
+   fprintf(stderr, 
+           "\n\n------ This is output for >= glibc 2.4 ------\n");
+#  else
+   fprintf(stderr,
+           "\n\n------ This is output for < glibc 2.4 ------\n");
+#  endif
 
    /* --------- pthread_create/join --------- */
 
@@ -77,16 +89,27 @@ int main ( void )
 
    /* make pthread_mutex_init fail */
    memset( &mxa, 0xFF, sizeof(mxa) );
-   r= pthread_mutex_init( &mx, &mxa ); assert(r);
+   r= pthread_mutex_init( &mx, &mxa );
+#  if __GLIBC_PREREQ(2,4)
+   assert(r); /* glibc >= 2.4: the call should fail */
+#  else
+   assert(!r); /* glibc < 2.4: oh well, glibc didn't bounce this */
+#  endif
 
    /* make pthread_mutex_destroy fail */
    r= pthread_mutex_init( &mx2, NULL ); assert(!r);
    r= pthread_mutex_lock( &mx2 ); assert(!r);
    r= pthread_mutex_destroy( &mx2 ); assert(r);
 
-   /* make pthread_mutex_lock fail */
+   /* make pthread_mutex_lock fail (skipped on < glibc 2.4 because it
+      doesn't fail, hence hangs the test) */
+#  if __GLIBC_PREREQ(2,4)
    memset( &mx3, 0xFF, sizeof(mx3) );
    r= pthread_mutex_lock( &mx3 ); assert(r);
+#  else
+   fprintf(stderr, "\nmake pthread_mutex_lock fail: "
+                   "skipped on glibc < 2.4\n\n");
+#  endif
 
    /* make pthread_mutex_trylock fail */
    memset( &mx3, 0xFF, sizeof(mx3) );
@@ -99,7 +122,12 @@ int main ( void )
 
    /* make pthread_mutex_unlock fail */
    memset( &mx3, 0xFF, sizeof(mx3) );
-   r= pthread_mutex_unlock( &mx3 ); assert(r);
+   r= pthread_mutex_unlock( &mx3 );
+#  if __GLIBC_PREREQ(2,4)
+   assert(r);
+#  else
+   assert(!r);
+#  endif
 
    /* --------- pthread_cond_wait et al --------- */
 
