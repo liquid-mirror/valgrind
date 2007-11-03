@@ -11,72 +11,546 @@
 command line.</para>
 
 
+
+
 <sect1 id="tc-manual.overview" xreflabel="Overview">
 <title>Overview</title>
 
-<para>Thrcheck is a Valgrind tool for detecting threading errors in C,
-C++ and Fortran programs that use the POSIX Pthreads library.</para>
+<para>Thrcheck is a Valgrind tool for detecting synchronisation errors
+in C, C++ and Fortran programs that use the POSIX pthreads
+threading primitives.</para>
 
-<para>The main abstractions in POSIX Pthreads are: a set of threads
-sharing a common address space, mutexes (locks), condition variables
-(inter-thread event notifications), thread creation, thread joinage
-and thread exit.</para>
+<para>The main abstractions in POSIX pthreads are: a set of threads
+sharing a common address space, thread creation, thread joinage,
+thread exit, mutexes (locks), condition variables (inter-thread event
+notifications), reader-writer locks, and semaphores.</para>
 
-<para>Thrcheck can detect three the following three classes of
-errors:</para>
+<para>Thrcheck is aware of all these abstractions and tracks their
+effects as accurately as it can.  Currently it does not correctly
+handle pthread barriers and pthread spinlocks, although it will not
+object if you use them.  On x86 and amd64 platforms, it understands
+and partially handles implicit locking arising from the use of the
+LOCK instruction prefix.
+</para>
+
+<para>Thrcheck can detect three classes of errors, which are discussed
+in detail in the next three sections:</para>
 
 <orderedlist>
  <listitem>
-  <para>Misuses of the POSIX Pthreads API.  Because the tool observes all
-  significant thread events (creation, joinage, exit, lock, unlock,
-  wait, signal, broadcast), it can report various common problems:</para>
-  <itemizedlist>
-   <listitem><para>unlocking a not-locked mutex</para></listitem>
-   <listitem><para>unlocking a mutex held by a different
-                   thread</para></listitem>
-   <listitem><para>recursively locking a non-recursive mutex</para></listitem>
-   <listitem><para>waiting for a condition variable without holding
-                   the associated mutex</para></listitem>
-   <listitem><para>inconsistent association of mutex and condition
-                   variables in pthread_cond_wait</para></listitem>
-   <listitem><para>threads which exit while holding locked 
-                   mutexes</para></listitem>
-   <listitem><para>deallocation of memory that contains a
-                   locked mutex</para></listitem>
-  </itemizedlist>
+  <para>Section FIXME: Misuses of the POSIX pthreads API.</para>
  </listitem>
-
  <listitem>
-  <para>Potential deadlocks arising from lock ordering problems.  If
-  threads must acquire more than one lock before accessing some shared
-  resource, then all threads must acquire those locks in the same
-  order.  Not doing so risks deadlock.  Detecting such inconsistencies
-  is useful because, whilst actual deadlocks are fairly obvious,
-  potential deadlocks may never be discovered during testing and could
-  later lead to hard-to-diagnose in-service failures.
-  </para>
-  <para>
-  Detecting such problems is a simple matter of keeping track of
-  observed lock acquisition orderings and reporting when new
-  acquisitions violate the existing ordering.</para>
+  <para>Section FIXME: Potential deadlocks arising from lock ordering
+  problems.</para>
  </listitem>
-
  <listitem>
-  <para>Data races.  A data race happens, or could happen, when two threads
-  access a shared memory location without using suitable locks to
-  ensure single-threaded access.  Such missing locking can cause
-  obscure timing dependent bugs.  Ensuring programs are race-free is
-  one of the central difficulties of threaded programming.</para>
+  <para>Section FIXME: Data races -- accessing memory without adequate
+  locking.</para>
  </listitem>
 </orderedlist>
+
+<para>Section FIXME contains guidance on how to get the best out of Thrcheck.
+This is really a discussion about debugging strategies and how to
+organise your program to enhance its verifiability.</para>
+
+<para>Section FIXME contains a summary of command-line options.</para>
+
+<para>Finally, Section FIXME contains a brief list of areas in which Thrcheck
+could be improved.</para>
 
 </sect1>
 
 
-<sect1 id="tc-manual.data-races" xreflabel="Data Races">
-<title>Data Races</title>
 
-This section describes Thrcheck's data race detection in more detail.
+
+<sect1 id="tc-manual.api-checks" xreflabel="API Checks">
+<title>Detected errors: Misuses of the POSIX pthreads API</title>
+
+<para>Thrcheck intercepts calls to many POSIX pthreads functions, and
+is therefore able to report on various common problems.  Although
+these are unglamourous errors, their presence can lead to undefined
+program behaviour and hard-to-find bugs later in execution.  The
+detected errors include:</para>
+
+<itemizedlist>
+ <listitem><para>unlocking an invalid mutex</para></listitem>
+ <listitem><para>unlocking a not-locked mutex</para></listitem>
+ <listitem><para>unlocking a mutex held by a different
+                 thread</para></listitem>
+ <listitem><para>destroying an invalid or a locked mutex</para></listitem>
+ <listitem><para>recursively locking a non-recursive mutex</para></listitem>
+ <listitem><para>deallocation of memory that contains a
+                 locked mutex</para></listitem>
+ <listitem><para>passing mutex arguments to functions expecting
+                 reader-writer lock arguments, and vice
+                 versa</para></listitem>
+ <listitem><para>when a POSIX pthread function fails with an
+                 error code that must be handled</para></listitem>
+</itemizedlist>
+
+<para>Checks pertaining to the validity of mutexes are generally also
+performed for reader-writer locks.</para>
+
+<para>Reported errors always contain a primary stack trace indicating
+where the error was detected.  They may also contain auxiliary stack
+traces giving additional information.  In particular, most errors
+relating to mutexes will also tell you where that mutex first came to
+Thrcheck's attention (the "<computeroutput>was first observed
+at</computeroutput>" part), so you have a chance of figuring out which
+mutex it is referring to.  For example:</para>
+
+<programlisting><![CDATA[
+Thread #1 unlocked a not-locked lock at 0x7FEFFFA90
+   at 0x4C2408D: pthread_mutex_unlock (tc_intercepts.c:492)
+   by 0x40073A: nearly_main (tc09_bad_unlock.c:27)
+   by 0x40079B: main (tc09_bad_unlock.c:50)
+  Lock at 0x7FEFFFA90 was first observed
+   at 0x4C25D01: pthread_mutex_init (tc_intercepts.c:326)
+   by 0x40071F: nearly_main (tc09_bad_unlock.c:23)
+   by 0x40079B: main (tc09_bad_unlock.c:50)
+]]></programlisting>
+
+<para>Thrcheck has a way of summarising thread identities, as
+evidenced here by the text "<computeroutput>Thread
+#1</computeroutput>".  This is so that it can speak about threads and
+sets of threads without overwhelming you with details.  See FIXME
+below for details.</para>
+
+</sect1>
+
+
+
+
+<sect1 id="tc-manual.lock-orders" xreflabel="Lock Orders">
+<title>Detected errors: Inconsistent Lock Orderings</title>
+
+<para>In this section, and in general, to "acquire" a lock simply
+means to lock that lock, and to "release" a lock means to unlock
+it.</para>
+
+<para>Thrcheck monitors the order in which threads acquire locks.
+This allows it to detect potential deadlocks which could arise from
+the formation of cycles of locks.  Detecting such inconsistencies is
+useful because, whilst actual deadlocks are fairly obvious, potential
+deadlocks may never be discovered during testing and could later lead
+to hard-to-diagnose in-service failures.</para>
+
+<para>The simplest example of such a problem is as
+follows.</para>
+
+<itemizedlist>
+ <listitem><para>Imagine some shared resource R, which, for whatever
+  reason, is guarded by two locks, L1 and L2, which must both be held
+  when R is accessed.</para>
+ </listitem>
+ <listitem><para>Suppose a thread acquires L1, then L2, and proceeds
+  to access R.  The implication of this is that all threads in the
+  program must acquire the two locks in the order first L1 then L2.
+  Not doing so risks deadlock.</para>
+ </listitem>
+ <listitem><para>The deadlock could happen if two threads -- call them
+  T1 and T2 -- both want to access R.  Suppose T1 acquires L1 first,
+  and T2 acquires L2 first.  Then T1 tries to acquire L2, and T2 tries
+  to acquire L1, but those locks are both already held.  So T1 and T2
+  become deadlocked.</para>
+ </listitem>
+</itemizedlist>
+
+<para>Thrcheck builds a directed graph indicating the order in which
+locks have been acquired in the past.  When a thread acquires a new
+lock, the graph is updated, and then checked to see if it now contains
+a cycle.  Presence of a cycle indicates a potential deadlock involving
+the locks in the cycle.</para>
+
+<para>In simple situations, where the cycle only contains two locks,
+Thrcheck will show where the required order was established:</para>
+
+<programlisting><![CDATA[
+Thread #1: lock order "0x7FEFFFAB0 before 0x7FEFFFA80" violated
+   at 0x4C23C91: pthread_mutex_lock (tc_intercepts.c:388)
+   by 0x40081F: main (tc13_laog1.c:24)
+  Required order was established by acquisition of lock at 0x7FEFFFAB0
+   at 0x4C23C91: pthread_mutex_lock (tc_intercepts.c:388)
+   by 0x400748: main (tc13_laog1.c:17)
+  followed by a later acquisition of lock at 0x7FEFFFA80
+   at 0x4C23C91: pthread_mutex_lock (tc_intercepts.c:388)
+   by 0x400773: main (tc13_laog1.c:18)
+]]></programlisting>
+
+<para>When there are more than two locks in the cycle, the error is
+equally serious.  However, at present Thrcheck does not show the locks
+involved, so as to avoid flooding you with information.  That could be
+fixed in future.  For example, here is a an example involving a cycle
+of five locks from a naive implementation the famous Dining
+Philosophers problem
+(see <computeroutput>thrcheck/tests/tc14_laog_dinphils.c</computeroutput>).
+In this case Thrcheck has detected that all 5 philosophers could
+simultaneously pick up their left fork and then deadlock whilst
+waiting to pick up their right forks.</para>
+
+<programlisting><![CDATA[
+Thread #6: lock order "0x6010C0 before 0x601160" violated
+   at 0x4C23C91: pthread_mutex_lock (tc_intercepts.c:388)
+   by 0x4007C0: dine (tc14_laog_dinphils.c:19)
+   by 0x4C25DF7: mythread_wrapper (tc_intercepts.c:178)
+   by 0x4E2F09D: start_thread (in /lib64/libpthread-2.5.so)
+   by 0x51054CC: clone (in /lib64/libc-2.5.so)
+]]></programlisting>
+
+</sect1>
+
+
+
+
+<sect1 id="tc-manual.data-races" xreflabel="Data Races">
+<title>Detected errors: Data Races</title>
+
+<para>A data race happens, or could happen, when two threads
+access a shared memory location without using suitable locks to
+ensure single-threaded access.  Such missing locking can cause
+obscure timing dependent bugs.  Ensuring programs are race-free is
+one of the central difficulties of threaded programming.</para>
+
+<para>Reliably detecting races is a difficult problem, and most
+of Thrcheck's internals are devoted to do dealing with it.  
+As a consequence this section is somewhat long and involved.
+We begin with a simple example.</para>
+
+
+<sect2 id="tc-manual.data-races.example" xreflabel="Simple Race">
+<title>A simple data race</title>
+
+<para>About the simplest possible example of a race is as follows.  In
+this program, it is impossible to know what the value
+of <computeroutput>var</computeroutput> is at the end of the program.
+Is it 2 ?  Or 1 ?</para>
+
+<programlisting><![CDATA[
+#include <pthread.h>
+
+int var = 0;
+
+void* child_fn ( void* arg ) {
+   var++; /* Unprotected relative to parent */ /* this is line 6 */
+   return NULL;
+}
+
+int main ( void ) {
+   pthread_t child;
+   pthread_create(&child, NULL, child_fn, NULL);
+   var++; /* Unprotected relative to child */ /* this is line 13 */
+   pthread_join(child, NULL);
+   return 0;
+}
+]]></programlisting>
+
+<para>The problem is there is nothing to
+stop <computeroutput>var</computeroutput> being updated simultaneously
+by both threads.  A correct program would 
+protect <computeroutput>var</computeroutput> with a lock of type
+<computeroutput>pthread_mutex_t</computeroutput>, which is acquired
+before each access and released afterwards.  Thrcheck's output for
+this program is:</para>
+
+<programlisting><![CDATA[
+Thread #1 is the program's root thread
+
+Thread #2 was created
+   at 0x510548E: clone (in /lib64/libc-2.5.so)
+   by 0x4E2F305: do_clone (in /lib64/libpthread-2.5.so)
+   by 0x4E2F7C5: pthread_create@@GLIBC_2.2.5 (in /lib64/libpthread-2.5.so)
+   by 0x4C23870: pthread_create@* (tc_intercepts.c:198)
+   by 0x4005F1: main (simple_race.c:12)
+
+Possible data race during write of size 4 at 0x601034
+   at 0x4005F2: main (simple_race.c:13)
+  Old state: shared-readonly by threads #1, #2
+  New state: shared-modified by threads #1, #2
+  Reason:    this thread, #1, holds no consistent locks
+  Location 0x601034 has never been protected by any lock
+]]></programlisting>
+
+<para>This is quite a lot of detail for an apparently simple error.
+The last clause is the main error message.  It says there is a race as
+a result of a write of size 4 (bytes), at 0x601034, which is
+presumably the address of <computeroutput>var</computeroutput>,
+happening in function <computeroutput>main</computeroutput> at line 13
+in the program.</para>
+
+<para>Note that it is purely by chance that the race is
+reported for the parent thread's access.  It could equally have been
+reported instead for the child's access, at line 6.  The error will
+only be reported for one of the locations, since neither the parent
+nor child is, by itself, incorrect.  It is only when both access
+<computeroutput>var</computeroutput> without a lock that an error
+exists.</para>
+
+<para>The error message shows some other interesting details.  The
+sections below explain them.  Here we merely note their presence:</para>
+
+<itemizedlist>
+ <listitem><para>Thrcheck maintains some kind of state machine for the
+  memory location in question, hence the "<computeroutput>Old
+  state:</computeroutput>" and "<computeroutput>New
+  state:</computeroutput>" lines.</para>
+ </listitem>
+ <listitem><para>Thrcheck keeps track of which threads have accessed
+  the location: "<computeroutput>threads #1, #2</computeroutput>".
+  Before printing the main error message, it prints the creation
+  points of these two threads, so you can see which threads it is
+  referring to.</para>
+ </listitem>
+ <listitem><para>Thrcheck tries to provide an explaination of why the
+  race exists: "<computeroutput>Location 0x601034 has never been
+  protected by any lock</computeroutput>".</para>
+ </listitem>
+</itemizedlist>
+
+<para>Understanding the memory state machine is central to
+understanding Thrcheck's race-detection algorithm.  The next two
+subsections explain this.</para>
+
+</sect2>
+
+
+<sect2 id="tc-manual.data-races.memstates" xreflabel="Memory States">
+<title>Thrcheck's Memory State Machine</title>
+
+<para>Thrcheck tracks the state of every byte of memory used by your
+program.  There are a number of states, but only three are
+interesting:</para>
+
+<itemizedlist>
+ <listitem><para>Exclusive: memory in this state is regarded as owned
+  exclusively by one particular thread.  That thread may read and
+  write it without a lock.  Even in highly threaded programs, the
+  majority of locations never leave the Exclusive state, since most
+  data is thread-private.</para>
+ </listitem>
+ <listitem><para>Shared-Readonly: memory in this state is regarded as
+  shared by multiple threads.  In this state, any thread may read the
+  memory without a lock, reflecting the fact that readonly data may
+  safely be shared between threads without locking.</para>
+ </listitem>
+ <listitem><para>Shared-Modified: memory in this state is regarded as
+  shared by multiple threads, at least one of which has written to it.
+  All participating threads must hold at least one lock in common when
+  accessing the memory.  If no such lock exists, Thrcheck reports a
+  race error.</para>
+ </listitem>
+</itemizedlist>
+
+<para>Let's review the simple example above with this in mind.  When
+the program starts, <computeroutput>var</computeroutput> is not in any
+of these states.  Either the parent or child thread gets to its
+<computeroutput>var++</computeroutput> first, and thereby
+thereby gets Exclusive ownership of the location.</para>
+
+<para>The later-running thread now arrives at
+its <computeroutput>var++</computeroutput> statement.  It first reads
+the existing value from memory.
+Because <computeroutput>var</computeroutput> is currently marked as
+owned exclusively by the other thread, its state is changed to
+shared-readonly by both threads.</para>
+
+<para>This same thread adds one to the value it has and stores it back
+in <computeroutput>var</computeroutput>.  This causes another state
+change, this time to the shared-modified state.  Because Thrcheck has
+also been tracking which threads hold which locks, it can see that
+<computeroutput>var</computeroutput> is in shared-modified state but
+no lock has been used to consistently protect it.  Hence a race is
+reported exactly at the transition from shared-readonly to
+shared-modified.</para>
+
+<para>The essence of the algorithm is this.  Thrcheck keeps track of
+each memory location that has been accessed by more than one thread.
+For each such location it incrementally infers the set of locks which
+have consistently been used to protect that location.  If the
+location's lockset becomes empty, and at some point one of the threads
+attempts to write to it, a race is then reported.</para>
+
+<para>This technique is known as "lockset inference" and was
+introduced in FIXME.  It has been widely implemented since then.
+Thrcheck incorporates several refinements aimed at reducing the false
+error rate generated by a naive version of the algorithm.  In section
+FIXME a summary of the complete algorithm used by Thrcheck is
+presented.  First, however, it is important to understand details of
+transitions pertaining to the Exclusive-ownership state.</para>
+
+</sect2>
+
+
+
+<sect2 id="tc-manual.data-races.exclusive" xreflabel="Excl Transfers">
+<title>Transfers of Exclusive Ownership Between Threads</title>
+
+<para>As presented, the algorithm is far too strict.  It reports many
+errors in perfectly correct, widely used parallel programming
+constructions, for example, using child worker threads and worker
+thread pools.</para>
+
+<para>To avoid these false errors, we must refine the algorithm so
+that it keeps memory in an Exclusive ownership state in cases where it
+would otherwise decay into a shared-readonly or shared-modified state.
+Recall that Exclusive ownership is special in that it grants the
+owning thread the right to access memory without use of any locks.  In
+order to support worker-thread and worker-thread-pool idioms, we will
+allow threads to steal exclusive ownership of memory from other
+threads under certain circumstances.</para>
+
+<para>Here's an example.  Imagine a parent thread creates child
+threads to do units of work.  For each unit of work, the parent
+allocates a work buffer, fills it in, and creates the child thread,
+handing it a pointer to the buffer.  The child reads/writes the buffer
+and eventually exits, and the waiting parent then extracts the results
+from the buffer:</para>
+
+<programlisting><![CDATA[
+typedef ... Buffer;
+
+pthread_t child;
+Buffer    buf;
+
+/* ---- Parent ---- */                          /* ---- Child ---- */
+
+/* parent writes workload into buf */
+pthread_create( &child, child_fn, &buf );
+
+/* parent does not read */                      void child_fn ( Buffer* buf ) {
+/* or write buf */                                 /* read/write buf */
+                                                }
+
+pthread_join ( child );
+/* parent reads results from buf */
+]]></programlisting>
+
+<para>Although <computeroutput>buf</computeroutput> is accessed by
+both threads, neither uses locks, yet the program is race-free.  The
+essential observation is that the child's creation and exit create
+synchronisation events between it and the parent.  These force the
+child's accesses to <computeroutput>buf</computeroutput> to happen
+after the parent initialises <computeroutput>buf</computeroutput>, and
+before the parent reads the results
+from <computeroutput>buf</computeroutput>.</para>
+
+<para>To model this, Thrcheck allows the child to steal, from the
+parent, exclusive ownership of any memory exclusively owned by the
+parent before the pthread_create call.  Similarly, once the parent's
+pthread_join call returns, it can steal back ownership of memory
+exclusively owned by the child.  In this way ownership
+of <computeroutput>buf</computeroutput> is transferred from parent to
+child and back, so the basic algorithm does not report any races
+despite the absence of any locking.</para>
+
+<para>Note that the child may only steal memory owned by the parent
+prior to the pthread_create call.  If the child attempts to read or
+write memory which is also accessed by the parent in between the
+pthread_create and pthread_join calls, an error is still
+reported.</para>
+
+<para>This technique was introduced in FIXME with the name Thread
+Lifetime Segments.  Thrcheck implements an extended version of it.
+Specifically, Thrcheck allows transfer of exclusive ownership in the
+following situations:</para>
+
+<itemizedlist>
+ <listitem><para>At thread creation: a child can acquire ownership of
+  memory held exclusively by the parent prior to the child's
+  creation.</para>
+ </listitem>
+ <listitem><para>At thread joining: the joiner (thread not exiting)
+  can acquire ownership of memory held exclusively by the joinee
+  (thread that is exiting) at the point it exited.</para>
+ </listitem>
+ <listitem><para>At condition variable signallings and broadcasts.  A
+  thread Twait which completes a pthread_cond_wait call as a result of
+  a signal or broadcast on the same condition variable by some other
+  thread Tsig, may acquire ownership of memory held exclusively by
+  Tsig prior to the pthread_cond_signal/broadcast
+  call.</para>
+ </listitem>
+ <listitem><para>At semaphore posts (sem_post) calls.  A thread Twait
+  which completes a sem_wait call call as a result of a sem_post call
+  on the same semaphore by some other thread Tpost, may acquire
+  ownership of memory held exclusively by Tpost prior to the sem_post
+  call.</para>
+ </listitem>
+</itemizedlist>
+
+
+
+</sect2>
+
+<sect2 id="tc-manual.data-races.re-excl" xreflabel="Re-Excl Transfers">
+<title>Reacquisition of Exclusive States</title>
+
+<para>Another common idiom is to partition the lifetime of the program
+as a whole into several distinct phases.  In some of those phases, a
+memory location may be accessed by multiple threads and so require
+locking.  In other phases only one thread exists and so can access the
+memory without locking.  For example:</para>
+
+<programlisting><![CDATA[
+int             var = 0;                         /* shared variable */
+pthread_mutex_t mx  = PTHREAD_MUTEX_INITIALIZER; /* guard for var */
+pthread_t       child;
+
+/* ---- Parent ---- */                          /* ---- Child ---- */
+
+var += 1; /* no lock used */
+
+pthread_create( &child, child_fn, NULL );
+
+                                                void child_fn ( void* uu ) {
+pthread_mutex_lock(&mx);                           pthread_mutex_lock(&mx);         
+var += 2;                                          var += 3;
+pthread_mutex_unlock(&mx);                         pthread_mutex_unlock(&mx);
+                                                }
+
+pthread_join ( child );
+
+var += 4; /* no lock used */
+]]></programlisting>
+
+<para>This program is correct, but using only the mechanisms described
+so far, Thrcheck would report an error at
+<computeroutput>var += 4;</computeroutput>.  This is because, by that
+point, <computeroutput>var</computeroutput> is marked as being in the
+state "shared-modified with a singleton
+lockset <computeroutput>{mx}</computeroutput>".  Really, what we want
+is for <computeroutput>var</computeroutput> to return to the parent
+thread's exclusive ownership after the child thread has exited.</para>
+
+<para>To make this possible, for every memory location Thrcheck also keeps
+track of all the threads that have accessed that location
+-- its threadset.  When a thread Tquitter joins back to Tstayer,
+Thrcheck examines the locksets of all memory in shared-modified or
+shared-readable state.  In each such lockset, if Tquitter is
+mentioned, it is removed and replaced by Tstayer.  If, as a result, a
+lockset becomes a singleton set containing Tstayer, then the
+location's state is changed to belongs-exclusively-to-Tstayer.</para>
+
+<para>In our example, the result is exactly as we desire:
+<computeroutput>var</computeroutput> is reacquired exclusively by the
+parent after the child exits.</para>
+
+<para>More generally, when a group of threads merges back to a single
+thread via a cascade of pthread_join calls, any memory shared by the
+group (or a subset of it) ends up being owned exclusively by the sole
+surviving thread.  This significantly enhances Thrcheck's flexibility,
+since it means that memory can transition arbitrarily many times
+between exclusive and shared states over the lifetime of the program.
+Moreover, locations may be protected by different locks during
+different phases of shared ownership.</para>
+
+
+
+
+
+</sect2>
+
+<para>-------------------------------------------------</para>
 
 <para>In short, what Thrcheck does is to look for memory locations
 which are accessed by more than one thread.  For each such location,
@@ -199,6 +673,26 @@ without excessive space and time overheads.</para>
 </sect1>
 
 
+
+<sect1 id="tc-manual.effective-use" xreflabel="Thrcheck Effective Use">
+<title>Hints and Tips for Effective Use of Thrcheck</title>
+
+
+<para>Thrcheck can be very helpful in finding and resolving
+threading-related problems.  Like all sophisticated tools, it is most
+effective when you have some level of understanding of what the tool
+is doing.  Thrcheck will be less effective when you merely throw an
+existing threaded program at it and try to make sense of any reported
+errors.  It will be more effective if you design threaded programs
+from the start in a way that helps Thrcheck verify correctness.  The
+same is true for finding memory errors with Memcheck, but applies more
+here, because thread checking is a harder problem.</para>
+
+</sect1>
+
+
+
+
 <sect1 id="tc-manual.options" xreflabel="Thrcheck Options">
 <title>Thrcheck Options</title>
 
@@ -276,6 +770,13 @@ important to document:</para>
                  </para></listitem>
 </itemizedlist>
 
+Inconsistent cv/mx associations
+Thread exiting whilst holding locks
+
+waiting for a condition variable without holding
+                   the associated mutex
+
+better printing of lock cycles
 </sect1>
 
 </chapter>
