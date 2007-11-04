@@ -478,12 +478,12 @@ following situations:</para>
  </listitem>
 </itemizedlist>
 
-
-
 </sect2>
 
+
+
 <sect2 id="tc-manual.data-races.re-excl" xreflabel="Re-Excl Transfers">
-<title>Reacquisition of Exclusive States</title>
+<title>Restoration of Exclusive Ownership</title>
 
 <para>Another common idiom is to partition the lifetime of the program
 as a whole into several distinct phases.  In some of those phases, a
@@ -539,34 +539,33 @@ parent after the child exits.</para>
 thread via a cascade of pthread_join calls, any memory shared by the
 group (or a subset of it) ends up being owned exclusively by the sole
 surviving thread.  This significantly enhances Thrcheck's flexibility,
-since it means that memory can transition arbitrarily many times
-between exclusive and shared states over the lifetime of the program.
-Moreover, locations may be protected by different locks during
-different phases of shared ownership.</para>
-
-
-
-
+since it means that each memory location may make arbitrarily many
+transitions between exclusive and shared ownership.  Furthermore, a
+different lock may protect the location during each period of shared
+ownership.</para>
 
 </sect2>
 
-<para>-------------------------------------------------</para>
 
-<para>In short, what Thrcheck does is to look for memory locations
-which are accessed by more than one thread.  For each such location,
-Thrcheck records which of the program's (pthread_mutex_)locks were
-held by the accessing thread at the time of each access.  The hope is
-to discover that there is indeed at least one lock which is
-consistently used by all threads to protect that location.  If no such
-lock can be found, then there is apparently no consistent locking
-strategy being applied for that location, and so a possible data race
-might result.</para>
 
-<para>In practice this discipline is far too simplistic,
-and is unusable since it reports many races in some widely used
-and known-correct programming disciplines.  Thrcheck's checking
-therefore incorporates many refinements to this basic idea, and
-can be summarised as follows:</para>
+<sect2 id="tc-manual.data-races.summary" xreflabel="Race Det Summary">
+<title>A Summary of the Race Detection Algorithm</title>
+
+<para>Thrcheck looks for memory locations which are accessed by more
+than one thread.  For each such location, Thrcheck records which of
+the program's locks were held by the accessing thread at the time of
+each access.  The hope is to discover that there is indeed at least
+one lock which is consistently used by all threads to protect that
+location.  If no such lock can be found, then there is apparently no
+consistent locking strategy being applied for that location, and so a
+possible data race might result.  Thrcheck accordingly reports an
+error.</para>
+
+<para>In practice this discipline is far too simplistic, and is
+unusable since it reports many races in some widely used and
+known-correct programming disciplines.  Thrcheck's checking therefore
+incorporates many refinements to this basic idea, and can be
+summarised as follows:</para>
 
 <para>The following thread events are intercepted and monitored:</para>
 
@@ -576,11 +575,14 @@ can be summarised as follows:</para>
  </listitem>
  <listitem>
   <para>lock acquisition and release (pthread_mutex_lock,
-        pthread_mutex_unlock, and variants)</para>
+        pthread_mutex_unlock, pthread_rwlock_rdlock,
+        pthread_rwlock_wrlock,
+        pthread_rwlock_unlock)</para>
  </listitem>
  <listitem>
   <para>inter-thread event notifications (pthread_cond_wait,
-        pthread_cond_signal, pthread_cond_broadcast)</para>
+        pthread_cond_signal, pthread_cond_broadcast, 
+        sem_wait, sem_post)</para>
  </listitem>
 </itemizedlist>
 
@@ -600,7 +602,7 @@ monitored:</para>
 
 <para>By observing the above events, Thrcheck can infer certain
 aspects of the program's locking discipline.  Programs which adhere to
-the are considered to be acceptable:
+the following rules are considered to be acceptable:
 </para>
 
 <itemizedlist>
@@ -633,60 +635,364 @@ However, two exemptions apply:</para>
 <itemizedlist>
  <listitem>
   <para>A thread Y can acquire exclusive ownership of memory
-  previously owned exclusively by a different thread X providing the
+  previously owned exclusively by a different thread X providing
   X's last access and Y's first access are separated by one of the
-  following synchronization events: X creates thread Y, or X uses a
-  condition-variable to signal at Y, and Y is waiting for that event.
-  </para>
+  following synchronization events:</para>
+  <itemizedlist>
+   <listitem><para>X creates thread Y</para></listitem>
+   <listitem><para>X joins back to Y</para></listitem>
+   <listitem><para>X uses a condition-variable to signal at Y, and Y is
+   waiting for that event</para></listitem>
+   <listitem><para>Y completes a semaphore wait as a result of X signalling 
+   on that same semaphore</para></listitem>
+  </itemizedlist>
   <para>
   This refinement allows Thrcheck to correctly track the ownership
   state of inter-thread buffers used in the worker-thread and
-  worker-thread-pool concurrent programming idioms (styles).
-</para>
+  worker-thread-pool concurrent programming idioms (styles).</para>
  </listitem>
  <listitem>
-  <para>Similarly, if Y later joins back to X, memory exclusively
-  owned by Y becomes exclusively owned by X instead.  Also, memory
-  that has been shared only by X and Y becomes exclusively owned by X.
-  More generally, memory that has been shared by X, Y and some
-  arbitrary other set S of threads is re-marked as shared by X and S.
-  Hence, under the right circumstances, memory shared amongst multiple
-  threads, all of which join into just one, can revert to the
-  exclusive ownership state.</para>
+  <para>Similarly, if thread Y joins back to thread X, memory
+  exclusively owned by Y becomes exclusively owned by X instead.
+  Also, memory that has been shared only by X and Y becomes
+  exclusively owned by X.  More generally, memory that has been shared
+  by X, Y and some arbitrary other set S of threads is re-marked as
+  shared by X and S.  Hence, under the right circumstances, memory
+  shared amongst multiple threads, all of which join into just one,
+  can revert to the exclusive ownership state.</para>
   <para>
   In effect, each memory location may make arbitrarily many
   transitions between exclusive and shared ownership.  Furthermore, a
   different lock may protect the location during each period of shared
   ownership.  This significantly enhances the flexibility of the
-  algorithm.
-  </para>
+  algorithm.</para>
  </listitem>
 </itemizedlist>
 
 <para>The ownership state, accessing thread-set and related lock-set
-for each memory location are tracked at 32-bit granularity.  This keeps
-the memory overhead tolerable, but it means the algorithm is imprecise
-for 16- and 8-bit memory accesses.  Future work may lead to an
-implementation capable of tracking memory at 8-bit granularity
-without excessive space and time overheads.</para>
+for each memory location are tracked at 8-bit granularity.  This means
+the algorithm is precise even for 16- and 8-bit memory
+accesses.</para>
+
+<para>Thrcheck correctly handles reader-writer locks in this
+framework.  Locations shared between multiple threads can be protected
+during reads by locks held in either read-mode or write-mode, but can
+only be protected during writes by locks held in write-mode.  Normal
+POSIX mutexes are treated as if they are reader-writer locks which are
+only ever held in write-mode.</para>
+
+<para>Thrcheck correctly handles POSIX mutexes for which recursive
+locking is allowed.</para>
+
+<para>Thrcheck partially correctly handles x86 and amd64 memory access
+instructions preceded by a LOCK prefix.  Writes are correctly handled,
+by pretending that the LOCK prefix implies acquisition and release of
+a magic "bus hardware lock" mutex before and after the instruction.
+This unfortunately requires subsequent reads from such locations to
+also use a LOCK prefix, which is not required by the real hardware.
+Thrcheck does not offer any equivalent handling for atomic sequences
+on PowerPC/POWER platforms created by the use of lwarx/stwcx
+instructions.</para>
+
+</sect2>
+
+
+
+<sect2 id="tc-manual.data-races.errmsgs" xreflabel="Race Error Messages">
+<title>Interpreting Race Error Messages</title>
+
+<para>Thrcheck's race detection algorithm collects a lot of
+information, and tries to present it in a helpful way when a race is
+detected.  Here's an example:</para>
+
+<programlisting><![CDATA[
+Thread #2 was created
+   at 0x510548E: clone (in /lib64/libc-2.5.so)
+   by 0x4E2F305: do_clone (in /lib64/libpthread-2.5.so)
+   by 0x4E2F7C5: pthread_create@@GLIBC_2.2.5 (in /lib64/libpthread-2.5.so)
+   by 0x4C23870: pthread_create@* (tc_intercepts.c:198)
+   by 0x400CEF: main (tc17_sembar.c:195)
+
+// And the same for threads #3, #4 and #5 -- omitted for conciseness
+
+Possible data race during read of size 4 at 0x602174
+   at 0x400BE5: gomp_barrier_wait (tc17_sembar.c:122)
+   by 0x400C44: child (tc17_sembar.c:161)
+   by 0x4C25DF7: mythread_wrapper (tc_intercepts.c:178)
+   by 0x4E2F09D: start_thread (in /lib64/libpthread-2.5.so)
+   by 0x51054CC: clone (in /lib64/libc-2.5.so)
+  Old state: shared-modified by threads #2, #3, #4, #5
+  New state: shared-modified by threads #2, #3, #4, #5
+  Reason:    this thread, #2, holds no consistent locks
+  Last consistently used lock for 0x602174 was first observed
+   at 0x4C25D01: pthread_mutex_init (tc_intercepts.c:326)
+   by 0x4009E4: gomp_barrier_init (tc17_sembar.c:46)
+   by 0x400CBC: main (tc17_sembar.c:192)
+]]></programlisting>
+
+<para>Thrcheck first announces the creation points of any threads
+referenced in the error message.  This is so it can speak concisely
+about threads and sets of threads without repeatedly printing their
+creation point call stacks.  Each thread is only ever announced once,
+the first time it appears in any Thrcheck error message.</para>
+
+<para>The main error message begins at the text
+"<computeroutput>Possible data race during read</computeroutput>".
+At the start is information you would expect to see -- address and
+size of the racing access, whether a read or a write, and the call
+stack at the point it was detected.</para>
+
+<para>More interesting is the state transition caused by this access.
+This memory is already in the shared-modified state, and up to now has
+been consistently protected by at least one lock.  However, the thread
+making the access in question (thread #2, here) does not hold any
+locks in common with those held during all previous accesses to the
+location -- "no consistent locks", in other words.</para>
+
+<para>Finally, Thrcheck shows the lock which has protected this
+location in all previous accesses.  (If there is more than one, only
+one is shown).  This can be a useful hint, because it typically shows
+the lock that the programmers intended to use to protect the location,
+but in this case forgot.</para>
+
+<para>Here are some more examples of race reports.  This not an
+exhaustive list of combinations, but should give you some insight into
+how to interpret the output.</para>
+
+<programlisting><![CDATA[
+Possible data race during write ...
+  Old state: shared-readonly by threads #1, #2, #3
+  New state: shared-modified by threads #1, #2, #3
+  Reason:    this thread, #3, holds no consistent locks
+  Location ... has never been protected by any lock
+]]></programlisting>
+
+<para>The location is shared by 3 threads, all of which have been
+reading it without locking ("has never been protected by any lock").
+Now one of them is writing it.  Regardless of whether the writer has a
+lock or not, this is still an error, because the write races against
+the previously observed reads.</para>
+
+<programlisting><![CDATA[
+Possible data race during read ...
+  Old state: shared-modified by threads #1, #2, #3
+  New state: shared-modified by threads #1, #2, #3
+  Reason:    this thread, #3, holds no consistent locks
+  Last consistently used lock for ... was first observed ...
+]]></programlisting>
+
+<para>The location is shared by 3 threads, all of which have been
+reading and writing it while (as required) holding at least one lock
+in common.  Now it is being read without that lock being held.  In the
+"Last consistently used lock" part, Thrcheck offers its best guess as
+to the identity of the lock that should have been used.</para>
+
+<programlisting><![CDATA[
+Possible data race during write ...
+  Old state: owned exclusively by thread #4
+  New state: shared-modified by threads #4, #5
+  Reason:    this thread, #5, holds no locks at all
+]]></programlisting>
+
+<para>A location that has so far been accessed exclusively by thread
+#4 has now been written by thread #5, without use of any lock.  This
+can be a sign that the programmer did not consider the possibility of
+the location being shared between threads, or, alternatively, forgot
+to use the appropriate lock.</para>
+
+<para>Note that thread #4 exclusively owns the location, and so has
+the right to access it without holding a lock.  However, this message
+does not say that thread #4 is not using a lock for this location.
+Indeed, it could be using a lock for the location because it intends
+to make it available to other threads, one of which is thread #5 --
+and thread #5 has forgotten to use the lock.</para>
+
+<para>Also, this message implies that Thrcheck did not see any
+synchronisation event between threads #4 and #5 that would have
+allowed #5 to acquire exclusive ownership from #4.  See FIXME for a
+discussion of transfers of exclusive ownership states between
+threads.</para>
+
+</sect2>
+
 
 </sect1>
-
-
 
 <sect1 id="tc-manual.effective-use" xreflabel="Thrcheck Effective Use">
 <title>Hints and Tips for Effective Use of Thrcheck</title>
 
-
 <para>Thrcheck can be very helpful in finding and resolving
 threading-related problems.  Like all sophisticated tools, it is most
-effective when you have some level of understanding of what the tool
-is doing.  Thrcheck will be less effective when you merely throw an
+effective when you understand how to play to its strengths.</para>
+
+<para>Thrcheck will be less effective when you merely throw an
 existing threaded program at it and try to make sense of any reported
 errors.  It will be more effective if you design threaded programs
 from the start in a way that helps Thrcheck verify correctness.  The
 same is true for finding memory errors with Memcheck, but applies more
-here, because thread checking is a harder problem.</para>
+here, because thread checking is a harder problem.  Consequently it is
+much easier to write a correct program for which Thrcheck falsely
+reports (threading) errors than it is to write a correct program for
+which Memcheck falsely reports (memory) errors.</para>
+
+<para>With that in mind, here are some tips, listed most important first,
+for getting reliable results and avoiding false errors.  The first two
+are critical.  Any violations of them will swamp you with huge numbers
+of false data-race errors.</para>
+
+
+<orderedlist>
+
+  <listitem>
+    <para>Make sure your application, and all the libraries it uses,
+    use the POSIX threading primitives.  Thrcheck needs to be able to
+    see all events pertaining to thread creation, exit, locking and
+    other syncronisation events.  To do so it intercepts many POSIX
+    pthread_ functions.</para>
+
+    <para>Do not roll your own threading primitives (mutexes, etc)
+    from combinations of the Linux futex syscall, counters and wotnot.
+    These throw Thrcheck's internal what's-going-on models way off
+    course and will give bogus results.</para>
+
+    <para>Also, do not reimplement existing POSIX abstractions using
+    other POSIX abstractions.  For example, don't build your own
+    semaphore routines or reader-writer locks from POSIX mutexes and
+    condition variables.  Instead use POSIX reader-writer locks and
+    semaphores directly, since Thrcheck supports them directly.</para>
+
+    <para>Thrcheck directly supports the following POSIX threading
+    abstractions: mutexes, reader-writer locks, condition variables
+    (but see below), and semaphores.  Currently spinlocks and barriers
+    are not supported, although they could be in future.  See below
+    for a "safe" alternative implementation of barriers.</para>
+
+    <para>At the time of writing, the following popular Linux packages
+    are known to implement their own threading primitives:</para>
+
+    <itemizedlist>
+      <listitem><para>Qt version 4.X.  Qt 3.X is fine, but not 4.X.
+      Thrcheck contains partial direct support for Qt 4.X threading,
+      but this is not yet in a usable state.  Assistance from folks
+      knowledgeable in Qt 4 threading internals would be
+      appreciated.</para></listitem>
+
+      <listitem><para>Runtime support library for GNU OpenMP (part of
+      GCC), at least GCC versions 4.2 and 4.3.  With some minor effort
+      of modifying the GNU OpenMP runtime support sources, it is
+      possible to use Thrcheck on GNU OpenMP compiled codes.  Please
+      contact the Valgrind authors for details.</para></listitem>
+    </itemizedlist>
+  </listitem>
+
+  <listitem>
+    <para>Avoid memory recycling.  If you can't avoid it, you must use
+    tell Thrcheck what is going on via the VALGRIND_HG_CLEAN_MEMORY
+    client request
+    (in <computeroutput>thrcheck.h</computeroutput>).</para>
+
+    <para>Thrcheck is aware of standard memory allocation and
+    deallocation that occurs via malloc/free/new/delete and from entry
+    and exit of stack frames.  In particular, when memory is
+    deallocated via free, delete, or function exit, Thrcheck considers
+    that memory clean, so when it is eventually reallocated, its
+    history is irrelevant.</para>
+
+    <para>However, it is common practice to implement memory recycling
+    schemes.  In these, memory to be freed is not handed to
+    malloc/delete, but instead put into a pool of free buffers to be
+    handed out again as required.  The problem is that Thrcheck has no
+    way to know that such memory is logically no longer in use, and
+    its history is irrelevant.  Hence you must make that explicit,
+    using the VALGRIND_HG_CLEAN_MEMORY client request to specify the
+    relevant address ranges.  It's easiest to put these requests into
+    the pool manager code, and use them either when memory is returned
+    to the pool, or is allocated from it.</para>
+  </listitem>
+
+  <listitem>
+    <para>Avoid POSIX condition variables.  If you can, use POSIX
+    semaphores (sem_t, sem_post, sem_wait) to do inter-thread event
+    signalling.  Semaphores with an initial value of zero are
+    particularly useful for this.</para>
+
+    <para>Thrcheck only partially correctly handles POSIX condition
+    variables.  This is because Thrcheck can see inter-thread
+    dependencies between a pthread_cond_wait call and a
+    pthread_cond_signal/broadcast call only if the waiting thread
+    actually gets to the rendezvous first (so that it actually calls
+    pthread_cond_wait).  It can't see dependencies between the threads
+    if the signaller arrives first.  In the latter case, POSIX
+    guidelines imply that the associated boolean condition still
+    provides an inter-thread synchronisation event, but one which is
+    invisible to Thrcheck.</para>
+
+    <para>The result of Thrcheck missing some inter-thread
+    synchronisation events is to cause it to report false positives.
+    That's because missing such events reduces the extent to which it
+    can transfer exclusive memory ownership between threads.  So
+    memory may end up in a shared-modified state when that was not
+    intended by the application programmers.</para>
+
+    <para>The root cause of this synchronisation lossage is
+    particularly hard to understand, so an example is helpful.  It was
+    discussed at length by Arndt Muehlenfeldt [FIXME].  The canonical
+    POSIX-recommended usage scheme for condition variables is as
+    follows:</para>
+
+<programlisting><![CDATA[
+b   is a Boolean condition, which is False most of the time
+cv  is a condition variable
+mx  is its associated mutex
+
+Signaller:                             Waiter:
+
+lock(mx)                               lock(mx)
+b = True                               while (b == False)
+signal(cv)                                wait(cv,mx)
+unlock(mx)                             unlock(mx)
+]]></programlisting>
+
+    <para>Assume <computeroutput>b</computeroutput> is False most of
+    the time.  If the waiter arrives at the rendezvous first, it
+    enters its while-loop, waits for the signaller to signal, and
+    eventually proceeds.  Thrcheck sees the signal, notes the
+    dependency, and all is well.</para>
+
+    <para>If the signaller arrives
+    first, <computeroutput>b</computeroutput> is set to true, and the
+    signal disappears into nowhere.  When the waiter later arrives, it
+    does not enter its while-loop and simply carries on.  But even in
+    this case, the waiter code following the while-loop cannot execute
+    until the signaller sets <computeroutput>b</computeroutput> to
+    True.  Hence there is still the same inter-thread dependency, but
+    this time it is through an arbitrary in-memory condition, and
+    Thrcheck cannot see it.</para>
+
+    <para>By comparison, Thrcheck's detection of inter-thread
+    dependencies caused by semaphore operations is believed to be
+    exactly correct.</para>
+
+    <para>As far as I know, a solution to this problem that does not
+    require source-level annotation of condition-variable wait loops
+    is beyond the current state of the art.</para>
+  </listitem>
+
+  <listitem>
+    <para>Make sure you are using a supported Linux distribution.  At
+    present, Thrcheck only properly supports x86-linux and amd64-linux
+    with glibc-2.3 or later.  The latter restriction really says that
+    we only support the NPTL threading library.  The old LinuxThreads
+    library is not supported.</para>
+
+    <para>Unsupported targets may work to varying degrees.  In
+    particular ppc32-linux and ppc64-linux running NTPL should work,
+    but you will get false race errors because Thrcheck does not know
+    how to properly handle atomic instruction sequences created using
+    the lwarx/stwcx instructions.</para>
+  </listitem>
+
+</orderedlist>
 
 </sect1>
 
