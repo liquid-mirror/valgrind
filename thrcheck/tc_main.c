@@ -5515,6 +5515,7 @@ void evh__pre_thread_ll_create ( ThreadId parent, ThreadId child )
 static
 void evh__pre_thread_ll_exit ( ThreadId quit_tid )
 {
+   Int     nHeld;
    Thread* thr_q;
    if (SHOW_EVENTS >= 1)
       VG_(printf)("evh__pre_thread_ll_exit(thr=%d)\n",
@@ -5529,10 +5530,25 @@ void evh__pre_thread_ll_exit ( ThreadId quit_tid )
       finished, and so we need to consider the possibility that it
       lingers indefinitely and continues to interact with other
       threads. */
+   /* However, it might have rendezvous'd with a thread that called
+      pthread_join with this one as arg, prior to this point (that's
+      how NPTL works).  In which case there has already been a prior
+      sync event.  So in any case, just let the thread exit.  On NPTL,
+      all thread exits go through here. */
    tl_assert(is_sane_ThreadId(quit_tid));
    thr_q = map_threads_maybe_lookup( quit_tid );
    tl_assert(thr_q != NULL);
-   // FIXME: error-if: exiting thread holds any locks
+
+   /* Complain if this thread holds any locks. */
+   nHeld = TC_(cardinalityWS)( univ_lsets, thr_q->locksetA );
+   tl_assert(nHeld >= 0);
+   if (nHeld > 0) {
+      HChar buf[80];
+      VG_(sprintf)(buf, "Exiting thread still holds %d lock%s",
+                        nHeld, nHeld > 1 ? "s" : "");
+      record_error_Misc( thr_q, buf );
+   }
+
    /* About the only thing we do need to do is clear the map_threads
       entry, in order that the Valgrind core can re-use it. */
    map_threads_delete( quit_tid );
