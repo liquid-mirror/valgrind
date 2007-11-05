@@ -1025,6 +1025,29 @@ unlock(mx)                             unlock(mx)
   </listitem>
 
   <listitem>
+    <para>Round up all finished threads using pthread_join.  Avoid
+    detaching threads: don't create threads in the detached state, and
+    don't call pthread_detach on existing threads.</para>
+
+    <para>Using pthread_join to round up finished threads provides a
+    clear synchronisation point that both Thrcheck and programmers can
+    see.  This synchronisation point allows Thrcheck to adjust its
+    memory ownership
+    models <link linkend="tc-manual.data-races.exclusive">as described
+    extensively above</link>, which helps Thrcheck produce more
+    accurate error reports.</para>
+
+    <para>If you don't call pthread_join on a thread, Thrcheck has no
+    way to know when it finishes, relative to any significant
+    synchronisation points for other threads in the program.  So it
+    assumes that the thread lingers indefinitely and can potentially
+    interfere indefinitely with the memory state of the program.  It
+    has every right to assume that -- after all, it might really be
+    the case that, for scheduling reasons, the exiting thread did run
+    very slowly in the last stages of its life.</para>
+  </listitem>
+
+  <listitem>
     <para>POSIX requires that implementations of standard I/O (printf,
     fprintf, fwrite, fread, etc) are thread safe.  Unfortunately GNU
     libc implements this by using internal locking primitives that
