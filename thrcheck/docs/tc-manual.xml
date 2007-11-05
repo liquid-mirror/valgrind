@@ -327,7 +327,7 @@ sections below explain them.  Here we merely note their presence:</para>
 </itemizedlist>
 
 <para>Understanding the memory state machine is central to
-understanding Thrcheck's race-detection algorithm.  The next two
+understanding Thrcheck's race-detection algorithm.  The next three
 subsections explain this.</para>
 
 </sect2>
@@ -1226,6 +1226,14 @@ some time.</para>
     </computeroutput>
     and <computeroutput>http://lkml.org/lkml/2007/10/24/673</computeroutput>.
     </para>
+  </listitem>
+  <listitem><para>Don't update the lock-order graph, and don't check
+    for errors, when a "try"-style lock operation happens (eg
+    pthread_mutex_trylock).  Such calls do not add any real
+    restrictions to the locking order, since they can always fail to
+    acquire the lock, resulting in the caller going off and doing Plan
+    B (presumably it will have a Plan B).  Doing such checks could
+    generate false lock-order errors and confuse users.</para>
   </listitem>
 
 </itemizedlist>
