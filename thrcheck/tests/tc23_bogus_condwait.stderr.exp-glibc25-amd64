@@ -1,0 +1,31 @@
+
+Thread #1 is the program's root thread
+
+Thread #1: pthread_cond_wait called with invalid mutex
+   at 0x........: pthread_cond_wait@* (tc_intercepts.c:...)
+   by 0x........: main (tc23_bogus_condwait.c:62)
+
+Thread #1: pthread_cond_wait called with un-held mutex
+   at 0x........: pthread_cond_wait@* (tc_intercepts.c:...)
+   by 0x........: main (tc23_bogus_condwait.c:65)
+
+Thread #1: pthread_cond_wait called with mutex of type pthread_rwlock_t*
+   at 0x........: pthread_cond_wait@* (tc_intercepts.c:...)
+   by 0x........: main (tc23_bogus_condwait.c:68)
+
+Thread #3 was created
+   at 0x........: clone (in /...libc...)
+   by 0x........: ...
+   by 0x........: pthread_create@GLIBC_ (in /lib/libpthread...)
+   by 0x........: pthread_create@* (tc_intercepts.c:...)
+   by 0x........: main (tc23_bogus_condwait.c:71)
+
+Thread #3: Exiting thread still holds 1 lock
+   at 0x........: start_thread (in /lib/libpthread...)
+   by 0x........: ...
+
+Thread #1: pthread_cond_wait called with mutex held by a different thread
+   at 0x........: pthread_cond_wait@* (tc_intercepts.c:...)
+   by 0x........: main (tc23_bogus_condwait.c:73)
+
+ERROR SUMMARY: 5 errors from 5 contexts (suppressed: 0 from 0)
