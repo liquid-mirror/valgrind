@@ -5,10 +5,13 @@
 #include <pthread.h>
 #include <assert.h>
 #include <unistd.h>
+#include <semaphore.h>
 
 pthread_mutex_t mx[4];
 pthread_cond_t cv;
 pthread_rwlock_t rwl;
+
+sem_t quit_now;
 
 void* rescue_me ( void* uu )
 {
@@ -24,18 +27,19 @@ void* rescue_me ( void* uu )
   sleep(1);
   pthread_cond_signal( &cv );
 
-  /* wait for grabber and main, then unblock the fourth wait */
-  sleep(1+1);
+  /* wait for, and unblock, the fourth wait */
+  sleep(1);
   pthread_cond_signal( &cv );
 
+  sem_wait( &quit_now );
   return NULL;
 }
 
 void* grab_the_lock ( void* uu )
 {
    int r= pthread_mutex_lock( &mx[2] ); assert(!r);
-   /* tc correctly complains that the thread is exiting whilst still
-      holding a lock.  A bit tricky to fix - we just live with it. */
+   sem_wait( &quit_now );
+   r= pthread_mutex_unlock( &mx[2] ); assert(!r);
    return NULL;
 }
 
@@ -52,9 +56,12 @@ int main ( void )
   r= pthread_cond_init(&cv, NULL); assert(!r);
   r= pthread_rwlock_init(&rwl, NULL); assert(!r);
 
-  r= pthread_create( &my_rescuer, NULL, rescue_me, NULL );
-  assert(!r);
+  r= sem_init( &quit_now, 0,0 ); assert(!r);
 
+  r= pthread_create( &grabber, NULL, grab_the_lock, NULL ); assert(!r);
+  sleep(1); /* let the grabber get there first */
+
+  r= pthread_create( &my_rescuer, NULL, rescue_me, NULL );  assert(!r);
   /* Do stupid things and hope that rescue_me gets us out of
      trouble */
 
@@ -68,9 +75,10 @@ int main ( void )
   r= pthread_cond_wait(&cv, (pthread_mutex_t*)&rwl );
 
   /* mx is held by someone else. */
-  r= pthread_create( &grabber, NULL, grab_the_lock, NULL ); assert(!r);
-  sleep(1); /* let the grabber get there first */
   r= pthread_cond_wait(&cv, &mx[2] );
+
+  r= sem_post( &quit_now ); assert(!r);
+  r= sem_post( &quit_now ); assert(!r);
 
   r= pthread_join( my_rescuer, NULL ); assert(!r);
   r= pthread_join( grabber, NULL ); assert(!r);
