@@ -86,6 +86,19 @@
                                  _arg1,_arg2,0,0,0);     \
    } while (0)
 
+#define DO_CREQ_W_WW(_resF, _creqF, _ty1F,_arg1F, _ty2F,_arg2F)	\
+   do {                                                  \
+      Word _res, _arg1, _arg2;                           \
+      assert(sizeof(_ty1F) == sizeof(Word));             \
+      assert(sizeof(_ty2F) == sizeof(Word));             \
+      _arg1 = (Word)(_arg1F);                            \
+      _arg2 = (Word)(_arg2F);                            \
+      VALGRIND_DO_CLIENT_REQUEST(_res, 2,                \
+                                 (_creqF),               \
+                                 _arg1,_arg2,0,0,0);     \
+      _resF = _res;                                      \
+   } while (0)
+
 #define DO_CREQ_v_WWW(_creqF, _ty1F,_arg1F,              \
 		      _ty2F,_arg2F, _ty3F, _arg3F)       \
    do {                                                  \
@@ -525,6 +538,8 @@ PTH_FUNC(int, pthreadZucondZuwaitZAZa, // pthread_cond_wait@*
 {
    int ret;
    OrigFn fn;
+   unsigned long mutex_is_valid;
+
    VALGRIND_GET_ORIG_FN(fn);
 
    if (TRACE_PTH_FNS) {
@@ -532,26 +547,39 @@ PTH_FUNC(int, pthreadZucondZuwaitZAZa, // pthread_cond_wait@*
       fflush(stderr);
    }
 
+   /* Tell the tool a cond-wait is about to happen, so it can check
+      for bogus argument values.  In return it tells us whether it
+      thinks the mutex is valid or not. */
+   DO_CREQ_W_WW(mutex_is_valid,
+                _VG_USERREQ__TC_PTHREAD_COND_WAIT_PRE,
+                pthread_cond_t*,cond, pthread_mutex_t*,mutex);
+   assert(mutex_is_valid == 1 || mutex_is_valid == 0);
+
    /* Tell the tool we're about to drop the mutex.  This reflects the
       fact that in a cond_wait, we show up holding the mutex, and the
       call atomically drops the mutex and waits for the cv to be
       signalled. */
-   DO_CREQ_v_W(_VG_USERREQ__TC_PTHREAD_MUTEX_UNLOCK_PRE,
-               pthread_mutex_t*,mutex);
+   if (mutex_is_valid) {
+      DO_CREQ_v_W(_VG_USERREQ__TC_PTHREAD_MUTEX_UNLOCK_PRE,
+                  pthread_mutex_t*,mutex);
+   }
 
    CALL_FN_W_WW(ret, fn, cond,mutex);
 
-   /* And now we have the mutex again, regardless of the error code
-      returned. */
-   // FIXME: but only if we actually had it before the call
-   DO_CREQ_v_W(_VG_USERREQ__TC_PTHREAD_MUTEX_LOCK_POST,
-               pthread_mutex_t*,mutex);
+   /* these conditionals look stupid, but compare w/ same logic for
+      pthread_cond_timedwait below */
+   if (ret == 0 && mutex_is_valid) {
+      /* and now we have the mutex again */
+      DO_CREQ_v_W(_VG_USERREQ__TC_PTHREAD_MUTEX_LOCK_POST,
+                  pthread_mutex_t*,mutex);
+   }
 
-   if (ret == 0) {
+   if (ret == 0 && mutex_is_valid) {
       DO_CREQ_v_WW(_VG_USERREQ__TC_PTHREAD_COND_WAIT_POST,
                    pthread_cond_t*,cond, pthread_mutex_t*,mutex);
+   }
 
-   } else { 
+   if (ret != 0) {
       DO_PthAPIerror( "pthread_cond_wait", ret );
    }
 
@@ -570,6 +598,7 @@ PTH_FUNC(int, pthreadZucondZutimedwaitZAZa, // pthread_cond_timedwait@*
 {
    int ret;
    OrigFn fn;
+   unsigned long mutex_is_valid;
    VALGRIND_GET_ORIG_FN(fn);
 
    if (TRACE_PTH_FNS) {
@@ -578,29 +607,38 @@ PTH_FUNC(int, pthreadZucondZutimedwaitZAZa, // pthread_cond_timedwait@*
       fflush(stderr);
    }
 
+   /* Tell the tool a cond-wait is about to happen, so it can check
+      for bogus argument values.  In return it tells us whether it
+      thinks the mutex is valid or not. */
+   DO_CREQ_W_WW(mutex_is_valid,
+                _VG_USERREQ__TC_PTHREAD_COND_WAIT_PRE,
+                pthread_cond_t*,cond, pthread_mutex_t*,mutex);
+   assert(mutex_is_valid == 1 || mutex_is_valid == 0);
+
    /* Tell the tool we're about to drop the mutex.  This reflects the
       fact that in a cond_wait, we show up holding the mutex, and the
       call atomically drops the mutex and waits for the cv to be
       signalled. */
-   DO_CREQ_v_W(_VG_USERREQ__TC_PTHREAD_MUTEX_UNLOCK_PRE,
-               pthread_mutex_t*,mutex);
+   if (mutex_is_valid) {
+      DO_CREQ_v_W(_VG_USERREQ__TC_PTHREAD_MUTEX_UNLOCK_PRE,
+                  pthread_mutex_t*,mutex);
+   }
 
    CALL_FN_W_WWW(ret, fn, cond,mutex,abstime);
 
-   /* And now we have the mutex again, regardless of the error code
-      returned.  In particular we still have it even if
-      ret==ETIMEDOUT. */
-   // FIXME: but only if we actually had it before the call
-   DO_CREQ_v_W(_VG_USERREQ__TC_PTHREAD_MUTEX_LOCK_POST,
-               pthread_mutex_t*,mutex);
+   if ((ret == 0 || ret == ETIMEDOUT) && mutex_is_valid) {
+      /* and now we have the mutex again */
+      DO_CREQ_v_W(_VG_USERREQ__TC_PTHREAD_MUTEX_LOCK_POST,
+                  pthread_mutex_t*,mutex);
+   }
 
-   if (ret == 0) {
+   if (ret == 0 && mutex_is_valid) {
       DO_CREQ_v_WW(_VG_USERREQ__TC_PTHREAD_COND_WAIT_POST,
                    pthread_cond_t*,cond, pthread_mutex_t*,mutex);
+   }
 
-   } else {
-      if (ret != ETIMEDOUT)
-         DO_PthAPIerror( "pthread_cond_timedwait", ret );
+   if (ret != 0 && ret != ETIMEDOUT) {
+      DO_PthAPIerror( "pthread_cond_timedwait", ret );
    }
 
    if (TRACE_PTH_FNS) {

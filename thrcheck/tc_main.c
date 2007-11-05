@@ -5918,7 +5918,7 @@ static void evh__TC_PTHREAD_MUTEX_LOCK_PRE ( ThreadId tid,
         && TC_(elemBag)( lk->heldBy, (Word)thr ) > 0 ) {
       /* uh, it's a non-recursive lock and we already w-hold it, and
          this is a real lock operation (not a speculative "tryLock"
-         kind of thing.  Duh.  Deadlock coming up; but at least
+         kind of thing).  Duh.  Deadlock coming up; but at least
          produce an error message. */
       record_error_Misc( thr, "Attempt to re-lock a "
                               "non-recursive lock I already hold" );
@@ -6031,10 +6031,15 @@ static void evh__TC_PTHREAD_COND_SIGNAL_PRE ( ThreadId tid, void* cond )
    }
 }
 
-static void evh__TC_PTHREAD_COND_WAIT_PRE ( ThreadId tid,
+/* returns True if it reckons 'mutex' is valid and held by this
+   thread, else False */
+static Bool evh__TC_PTHREAD_COND_WAIT_PRE ( ThreadId tid,
                                             void* cond, void* mutex )
 {
    Thread* thr;
+   Lock*   lk;
+   Bool    lk_valid = True;
+
    if (SHOW_EVENTS >= 1)
       VG_(printf)("evh__tc_PTHREAD_COND_WAIT_PRE"
                   "(ctid=%d, cond=%p, mutex=%p)\n", 
@@ -6044,7 +6049,41 @@ static void evh__TC_PTHREAD_COND_WAIT_PRE ( ThreadId tid,
    thr = map_threads_maybe_lookup( tid );
    tl_assert(thr); /* cannot fail - Thread* must already exist */
 
+   lk = map_locks_maybe_lookup( (Addr)mutex );
+
+   /* Check for stupid mutex arguments.  There are various ways to be
+      a bozo.  Only complain once, though, even if more than one thing
+      is wrong. */
+   if (lk == NULL) {
+      lk_valid = False;
+      record_error_Misc( 
+         thr, 
+         "pthread_cond_wait called with invalid mutex" );
+   } else {
+      tl_assert( is_sane_LockN(lk) );
+      if (lk->kind == LK_rdwr) {
+         lk_valid = False;
+         record_error_Misc( 
+            thr, "pthread_cond_wait called with mutex "
+                 "of type pthread_rwlock_t*" );
+      } else
+         if (lk->heldBy == NULL) {
+         lk_valid = False;
+         record_error_Misc( 
+            thr, "pthread_cond_wait called with un-held mutex");
+      } else
+      if (lk->heldBy != NULL
+          && TC_(elemBag)( lk->heldBy, (Word)thr ) == 0) {
+         lk_valid = False;
+         record_error_Misc( 
+            thr, "pthread_cond_wait called with mutex "
+                 "held by a different thread" );
+      }
+   }
+
    // error-if: cond is also associated with a different mutex
+
+   return lk_valid;
 }
 
 static void evh__TC_PTHREAD_COND_WAIT_POST ( ThreadId tid,
@@ -7477,17 +7516,22 @@ Bool tc_handle_client_request ( ThreadId tid, UWord* args, UWord* ret)
          evh__TC_PTHREAD_COND_SIGNAL_PRE( tid, (void*)args[1] );
          break;
 
-      /* Entry into pthread_cond_wait, cond=arg[1], mutex=arg[2] */
-      case _VG_USERREQ__TC_PTHREAD_COND_WAIT_PRE:
-         evh__TC_PTHREAD_COND_WAIT_PRE( tid,
-                                         (void*)args[1], (void*)args[2] );
+      /* Entry into pthread_cond_wait, cond=arg[1], mutex=arg[2].
+         Returns a flag indicating whether or not the mutex is believed to be
+         valid for this operation. */
+      case _VG_USERREQ__TC_PTHREAD_COND_WAIT_PRE: {
+         Bool mutex_is_valid
+            = evh__TC_PTHREAD_COND_WAIT_PRE( tid, (void*)args[1], 
+                                                  (void*)args[2] );
+         *ret = mutex_is_valid ? 1 : 0;
          break;
+      }
 
       /* Thread successfully completed pthread_cond_wait, cond=arg[1],
          mutex=arg[2] */
       case _VG_USERREQ__TC_PTHREAD_COND_WAIT_POST:
          evh__TC_PTHREAD_COND_WAIT_POST( tid,
-                                          (void*)args[1], (void*)args[2] );
+                                         (void*)args[1], (void*)args[2] );
          break;
 
       case _VG_USERREQ__TC_PTHREAD_RWLOCK_INIT_POST:
@@ -8371,7 +8415,7 @@ static Bool tc_process_cmd_line_option ( Char* arg )
       clo_happens_before = 0;
    else if (VG_CLO_STREQ(arg, "--happens-before=threads"))
       clo_happens_before = 1;
-   else if (VG_CLO_STREQ(arg, "--happens-before=condvars"))
+   else if (VG_CLO_STREQ(arg, "--happens-before=all"))
       clo_happens_before = 2;
 
    else if (VG_CLO_STREQ(arg, "--gen-vcg=no"))
@@ -8424,8 +8468,8 @@ static Bool tc_process_cmd_line_option ( Char* arg )
 static void tc_print_usage ( void )
 {
    VG_(printf)(
-"    --happens-before=none|threads|condvars   [condvars] consider no events,\n"
-"      thread create/join, thread create/join/cvsignal/cvwait as sync points\n"
+"    --happens-before=none|threads|all   [all] consider no events, thread\n"
+"      create/join, create/join/cvsignal/cvwait/semwait/post as sync points\n"
 "    --trace-addr=0xXXYYZZ     show all state changes for address 0xXXYYZZ\n"
 "    --trace-level=0|1|2       verbosity level of --trace-addr [1]\n"
    );
