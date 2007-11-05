@@ -1048,19 +1048,6 @@ unlock(mx)                             unlock(mx)
   </listitem>
 
   <listitem>
-    <para>POSIX requires that implementations of standard I/O (printf,
-    fprintf, fwrite, fread, etc) are thread safe.  Unfortunately GNU
-    libc implements this by using internal locking primitives that
-    Thrcheck is unable to intercept.  Consequently Thrcheck generates
-    many false race reports when you use these functions.</para>
-
-    <para>Thrcheck attempts to hide these errors using the standard
-    Valgrind error-suppression mechanism.  So, at least for simple
-    test cases, you don't see any.  Nevertheless, some may slip
-    through.  Just something to be aware of.</para>
-  </listitem>
-
-  <listitem>
     <para>Perform thread debugging (with Thrcheck) and memory
     debugging (with Memcheck) together.</para>
 
@@ -1081,6 +1068,34 @@ unlock(mx)                             unlock(mx)
     <para>Since this circularity is obviously unresolvable, at least
     bear in mind that Memcheck and Thrcheck are to some extent
     complementary, and you may need to use them together.</para>
+  </listitem>
+
+  <listitem>
+    <para>POSIX requires that implementations of standard I/O (printf,
+    fprintf, fwrite, fread, etc) are thread safe.  Unfortunately GNU
+    libc implements this by using internal locking primitives that
+    Thrcheck is unable to intercept.  Consequently Thrcheck generates
+    many false race reports when you use these functions.</para>
+
+    <para>Thrcheck attempts to hide these errors using the standard
+    Valgrind error-suppression mechanism.  So, at least for simple
+    test cases, you don't see any.  Nevertheless, some may slip
+    through.  Just something to be aware of.</para>
+  </listitem>
+
+  <listitem>
+    <para>Thrcheck's error checks do not work properly inside the
+    system threading library itself
+    (<computeroutput>libpthread.so</computeroutput>), and it usually
+    observes large numbers of (false) errors in there.  Valgrind's
+    suppression system then filters these out, so you should not see
+    them.</para>
+
+    <para>If you see any race errors reported
+    where <computeroutput>libpthread.so</computeroutput> or
+    <computeroutput>ld.so</computeroutput> is the object associated
+    with the innermost stack frame, please file a bug report at
+    http://www.valgrind.org.</para>
   </listitem>
 
 </orderedlist>
