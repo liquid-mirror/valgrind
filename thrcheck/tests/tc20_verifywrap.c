@@ -255,7 +255,6 @@ int main ( void )
 
    /* At this point it should complain about deallocation
       of memory containing locked locks:
-         mx4
          rwl3
    */
 

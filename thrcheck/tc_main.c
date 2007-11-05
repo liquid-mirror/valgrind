@@ -6058,25 +6058,25 @@ static Bool evh__TC_PTHREAD_COND_WAIT_PRE ( ThreadId tid,
       lk_valid = False;
       record_error_Misc( 
          thr, 
-         "pthread_cond_wait called with invalid mutex" );
+         "pthread_cond_{timed}wait called with invalid mutex" );
    } else {
       tl_assert( is_sane_LockN(lk) );
       if (lk->kind == LK_rdwr) {
          lk_valid = False;
          record_error_Misc( 
-            thr, "pthread_cond_wait called with mutex "
+            thr, "pthread_cond_{timed}wait called with mutex "
                  "of type pthread_rwlock_t*" );
       } else
          if (lk->heldBy == NULL) {
          lk_valid = False;
          record_error_Misc( 
-            thr, "pthread_cond_wait called with un-held mutex");
+            thr, "pthread_cond_{timed}wait called with un-held mutex");
       } else
       if (lk->heldBy != NULL
           && TC_(elemBag)( lk->heldBy, (Word)thr ) == 0) {
          lk_valid = False;
          record_error_Misc( 
-            thr, "pthread_cond_wait called with mutex "
+            thr, "pthread_cond_{timed}wait called with mutex "
                  "held by a different thread" );
       }
    }
