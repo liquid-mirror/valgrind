@@ -78,8 +78,10 @@ EXTRA_DIST = $(noinst_SCRIPTS) \
 		tc21_pthonce.stderr.exp-glibc25-x86 \
 	tc22_exit_w_lock.vgtest tc22_exit_w_lock.stdout.exp \
 		tc22_exit_w_lock.stderr.exp-glibc25-amd64 \
+		tc22_exit_w_lock.stderr.exp-glibc25-x86 \
 	tc23_bogus_condwait.vgtest tc23_bogus_condwait.stdout.exp \
-		tc23_bogus_condwait.stderr.exp-glibc25-amd64
+		tc23_bogus_condwait.stderr.exp-glibc25-amd64 \
+		tc23_bogus_condwait.stderr.exp-glibc25-x86
 
 check_PROGRAMS = \
 	hg01_all_ok \

@@ -68,12 +68,9 @@ Thread #1's call to pthread_mutex_unlock failed
 ---------------- pthread_cond_wait et al ----------------
 
 
-Thread #1 unlocked a not-locked lock at 0x........ 
+Thread #1: pthread_cond_{timed}wait called with un-held mutex
    at 0x........: pthread_cond_wait@* (tc_intercepts.c:...)
    by 0x........: main (tc20_verifywrap.c:147)
-  Lock at 0x........ was first observed
-   at 0x........: pthread_mutex_init (tc_intercepts.c:...)
-   by 0x........: main (tc20_verifywrap.c:145)
 
 Thread #1's call to pthread_cond_wait failed
    with error code 1 (EPERM: Operation not permitted)
@@ -85,6 +82,10 @@ FIXME: can't figure out how to verify wrap of pthread_cond_signal
 
 FIXME: can't figure out how to verify wrap of pthread_broadcast_signal
 
+
+Thread #1: pthread_cond_{timed}wait called with un-held mutex
+   at 0x........: pthread_cond_timedwait@* (tc_intercepts.c:...)
+   by 0x........: main (tc20_verifywrap.c:165)
 
 Thread #1's call to pthread_cond_timedwait failed
    with error code 22 (EINVAL: Invalid argument)
@@ -146,15 +147,9 @@ FIXME: can't figure out how to verify wrap of sem_post
 
 
 Thread #1 deallocated location 0x........ containing a locked lock
-   at 0x........: main (tc20_verifywrap.c:262)
+   at 0x........: main (tc20_verifywrap.c:261)
   Lock at 0x........ was first observed
    at 0x........: pthread_rwlock_init (tc_intercepts.c:...)
    by 0x........: main (tc20_verifywrap.c:216)
-
-Thread #1 deallocated location 0x........ containing a locked lock
-   at 0x........: main (tc20_verifywrap.c:262)
-  Lock at 0x........ was first observed
-   at 0x........: pthread_mutex_init (tc_intercepts.c:...)
-   by 0x........: main (tc20_verifywrap.c:145)
 
 ERROR SUMMARY: 20 errors from 20 contexts (suppressed: 0 from 0)
