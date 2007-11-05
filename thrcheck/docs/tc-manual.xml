@@ -894,8 +894,9 @@ of false data-race errors.</para>
     <para>Thrcheck directly supports the following POSIX threading
     abstractions: mutexes, reader-writer locks, condition variables
     (but see below), and semaphores.  Currently spinlocks and barriers
-    are not supported, although they could be in future.  See below
-    for a "safe" alternative implementation of barriers.</para>
+    are not supported, although they could be in future.  A prototype
+    "safe" implementation of barriers, based on semaphores, is
+    available: please contact the Valgrind authors for details.</para>
 
     <para>At the time of writing, the following popular Linux packages
     are known to implement their own threading primitives:</para>
@@ -1013,8 +1014,8 @@ unlock(mx)                             unlock(mx)
     <para>Make sure you are using a supported Linux distribution.  At
     present, Thrcheck only properly supports x86-linux and amd64-linux
     with glibc-2.3 or later.  The latter restriction means we only
-    support the NPTL threading library.  The old LinuxThreads library
-    is not supported.</para>
+    support glibc's NPTL threading implementation.  The old
+    LinuxThreads implementation is not supported.</para>
 
     <para>Unsupported targets may work to varying degrees.  In
     particular ppc32-linux and ppc64-linux running NTPL should work,
@@ -1034,6 +1035,29 @@ unlock(mx)                             unlock(mx)
     Valgrind error-suppression mechanism.  So, at least for simple
     test cases, you don't see any.  Nevertheless, some may slip
     through.  Just something to be aware of.</para>
+  </listitem>
+
+  <listitem>
+    <para>Perform thread debugging (with Thrcheck) and memory
+    debugging (with Memcheck) together.</para>
+
+    <para>Thrcheck tracks the state of memory in detail, and memory
+    management bugs in the application are liable to cause confusion.
+    In extreme cases, applications which do many invalid reads and
+    writes (particularly to freed memory) have been known to crash
+    Thrcheck.  So, ideally, you should make your application
+    Memcheck-clean before using Thrcheck.</para>
+
+    <para>It may be impossible to make your application Memcheck-clean
+    unless you first remove threading bugs.  In particular, it may be
+    difficult to remove all reads and writes to freed memory in
+    multithreaded C++ destructor sequences at program termination.
+    So, ideally, you should make your application Thrcheck-clean
+    before using Memcheck.</para>
+
+    <para>Since this circularity is obviously unresolvable, at least
+    bear in mind that Memcheck and Thrcheck are to some extent
+    complementary, and you may need to use them together.</para>
   </listitem>
 
 </orderedlist>
@@ -1234,6 +1258,11 @@ some time.</para>
     acquire the lock, resulting in the caller going off and doing Plan
     B (presumably it will have a Plan B).  Doing such checks could
     generate false lock-order errors and confuse users.</para>
+  </listitem>
+  <listitem><para> Performance can be very poor.  Slowdowns on the
+    order of 100:1 are not unusual.  There is quite some scope for
+    performance improvements, though.
+    </para>
   </listitem>
 
 </itemizedlist>
