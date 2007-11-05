@@ -1,7 +1,7 @@
 
 /* Expect 5 errors total (4 re cvs, 1 re exiting w/lock.).
    Tests passing bogus mutexes to pthread_cond_wait. */
-
+#define _GNU_SOURCE 1 /* needed by glibc <= 2.3 for pthread_rwlock_* */
 #include <pthread.h>
 #include <assert.h>
 #include <unistd.h>
