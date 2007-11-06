@@ -281,7 +281,8 @@ static WordSet add_or_dealloc_WordVec( WordSetU* wsu, WordVec* wv_new )
       causes failures on a 64-bit platform. */
    tl_assert(wv_new->owner == wsu);
    have = TC_(lookupFM)( wsu->vec2ix, 
-                         (Word*)&wv_old, (Word*)&ix_old, (Word)wv_new );
+                         (Word*)(void*)&wv_old, (Word*)&ix_old,
+                         (Word)wv_new );
    if (have) {
       tl_assert(wv_old != wv_new);
       tl_assert(wv_old);
