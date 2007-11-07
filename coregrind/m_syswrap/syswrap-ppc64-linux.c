@@ -333,17 +333,18 @@ static SysRes do_clone ( ThreadId ptid,
       ctst->client_stack_szB = ctst->client_stack_highest_word - seg->start;
 
       if (debug)
-	 VG_(printf)("\ntid %d: guessed client stack range %p-%p\n",
+	 VG_(printf)("\ntid %d: guessed client stack range %#lx-%#lx\n",
 		     ctid, seg->start, VG_PGROUNDUP(sp));
    } else {
-      VG_(message)(Vg_UserMsg, "!? New thread %d starts with R1(%p) unmapped\n",
+      VG_(message)(Vg_UserMsg,
+                   "!? New thread %d starts with R1(%#lx) unmapped\n",
 		   ctid, sp);
       ctst->client_stack_szB  = 0;
    }
 
    if (flags & VKI_CLONE_SETTLS) {
       if (debug)
-         VG_(printf)("clone child has SETTLS: tls at %p\n", child_tls);
+         VG_(printf)("clone child has SETTLS: tls at %#lx\n", child_tls);
       ctst->arch.vex.guest_GPR13 = child_tls;
    }
 
@@ -433,7 +434,7 @@ PRE(sys_socketcall)
 #  define ARG2_5  (((UWord*)ARG2)[5])
 
    *flags |= SfMayBlock;
-   PRINT("sys_socketcall ( %d, %p )",ARG1,ARG2);
+   PRINT("sys_socketcall ( %ld, %#lx )",ARG1,ARG2);
    PRE_REG_READ2(long, "socketcall", int, call, unsigned long *, args);
 
    switch (ARG1 /* request */) {
@@ -684,7 +685,7 @@ PRE(sys_mmap)
 {
    SysRes r;
 
-   PRINT("sys_mmap ( %p, %llu, %d, %d, %d, %d )",
+   PRINT("sys_mmap ( %#lx, %llu, %ld, %ld, %ld, %ld )",
          ARG1, (ULong)ARG2, ARG3, ARG4, ARG5, ARG6 );
    PRE_REG_READ6(long, "mmap",
                  unsigned long, start, unsigned long, length,
@@ -769,7 +770,8 @@ static Addr deref_Addr ( ThreadId tid, Addr a, Char* s )
 
 PRE(sys_ipc)
 {
-  PRINT("sys_ipc ( %d, %d, %d, %d, %p, %d )", ARG1,ARG2,ARG3,ARG4,ARG5,ARG6);
+  PRINT("sys_ipc ( %ld, %ld, %ld, %ld, %#lx, %ld )", 
+        ARG1,ARG2,ARG3,ARG4,ARG5,ARG6);
   // XXX: this is simplistic -- some args are not used in all circumstances.
   PRE_REG_READ6(int, "ipc",
 		vki_uint, call, int, first, int, second, int, third,
@@ -919,7 +921,8 @@ PRE(sys_clone)
 {
    UInt cloneflags;
 
-   PRINT("sys_clone ( %x, %p, %p, %p, %p )",ARG1,ARG2,ARG3,ARG4,ARG5);
+   PRINT("sys_clone ( %lx, %#lx, %#lx, %#lx, %#lx )",
+         ARG1,ARG2,ARG3,ARG4,ARG5);
    PRE_REG_READ5(int, "clone",
                  unsigned long, flags,
                  void *,        child_stack,
