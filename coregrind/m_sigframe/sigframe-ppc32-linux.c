@@ -510,14 +510,14 @@ static Bool extend ( ThreadState *tst, Addr addr, SizeT size )
    if (VG_(extend_stack)(addr, tst->client_stack_szB)) {
       stackseg = VG_(am_find_nsegment)(addr);
       if (0 && stackseg)
-	 VG_(printf)("frame=%p seg=%p-%p\n",
+	 VG_(printf)("frame=%#lx seg=%#lx-%#lx\n",
 		     addr, stackseg->start, stackseg->end);
    }
 
    if (stackseg == NULL || !stackseg->hasR || !stackseg->hasW) {
       VG_(message)(
          Vg_UserMsg,
-         "Can't extend stack to %p during signal delivery for thread %d:",
+         "Can't extend stack to %#lx during signal delivery for thread %d:",
          addr, tid);
       if (stackseg == NULL)
          VG_(message)(Vg_UserMsg, "  no stack segment");
@@ -780,14 +780,14 @@ void VG_(sigframe_create)( ThreadId tid,
 //..    /* tst->m_esp  = esp; */
 //..    SET_SIGNAL_ESP(tid, esp);
 //.. 
-//..    //VG_(printf)("handler = %p\n", handler);
+//..    //VG_(printf)("handler = %#lx\n", handler);
 //..    tst->arch.vex.guest_CIA = (Addr) handler;
 //..    /* This thread needs to be marked runnable, but we leave that the
 //..       caller to do. */
 
    if (0)
-      VG_(printf)("pushed signal frame; %R1 now = %p, "
-                  "next %%CIA = %p, status=%d\n", 
+      VG_(printf)("pushed signal frame; %%R1 now = %#lx, "
+                  "next %%CIA = %#x, status=%d\n", 
 		  sp, tst->arch.vex.guest_CIA, tst->status);
 }
 
@@ -936,7 +936,7 @@ void VG_(sigframe_destroy)( ThreadId tid, Bool isRT )
 
    if (VG_(clo_trace_signals))
       VG_(message)(Vg_DebugMsg,
-                   "vg_pop_signal_frame (thread %d): isRT=%d valid magic; EIP=%p",
+                   "vg_pop_signal_frame (thread %d): isRT=%d valid magic; EIP=%#lx",
                    tid, has_siginfo, tst->arch.vex.guest_CIA);
 
    /* tell the tools */
