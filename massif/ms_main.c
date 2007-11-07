@@ -985,8 +985,8 @@ static void hp_census(void)
          census->xtree_snapshots[i] =
             VG_(calloc)(xtree_size+1, sizeof(XPtSnapshot));
          if (0 && VG_(clo_verbosity) > 1)
-            VG_(printf)("calloc: %d (%d B)\n", xtree_size+1,
-                        (xtree_size+1) * sizeof(XPtSnapshot));
+            VG_(printf)("calloc: %d (%ld B)\n", xtree_size+1,
+                        (Word)((xtree_size+1) * sizeof(XPtSnapshot)));
 
          // Take space-snapshot: copy 'curr_space' for every XPt in the
          // XTree into the snapshot array, along with pointers to the XPts.

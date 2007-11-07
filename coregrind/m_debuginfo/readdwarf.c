@@ -1125,8 +1125,8 @@ void ML_(read_debuginfo_dwarf2)
       
       /* Fill ui with offset in .debug_line and compdir */
       if (0)
-         VG_(printf)( "Reading UnitInfo at 0x%x.....\n", 
-                      block_img - debuginfo_img );
+         VG_(printf)( "Reading UnitInfo at 0x%lx.....\n", 
+                      (Word)(block_img - debuginfo_img) );
       read_unitinfo_dwarf2( &ui, block_img, debugabbrev_img, debugstr_img, si );
       if (0)
          VG_(printf)( "   => LINES=0x%llx    NAME=%s     DIR=%s\n", 

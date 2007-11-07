@@ -159,8 +159,8 @@ void show_raw_elf_symbol ( Int i,
       case STT_HIPROC:  VG_(printf)("hip "); break;
       default:          VG_(printf)("??? "); break;
    }
-   VG_(printf)(": val %#10lx, %ssz %4d  %s\n",
-               sym_addr, space, sym->st_size,
+   VG_(printf)(": val %#10lx, %ssz %4lld  %s\n",
+               sym_addr, space, (Long)sym->st_size,
                ( sym->st_name ? sym_name : (Char*)"NONAME" ) ); 
 }               
 
@@ -410,8 +410,8 @@ void read_elf_symtab__normal(
       return;
    }
 
-   TRACE_SYMTAB("\nReading (ELF, standard) %s (%d entries)\n", tab_name, 
-                o_symtab_sz/sizeof(ElfXX_Sym) );
+   TRACE_SYMTAB("\nReading (ELF, standard) %s (%ld entries)\n", tab_name, 
+                (Word)(o_symtab_sz/sizeof(ElfXX_Sym)) );
 
    /* Perhaps should start at i = 1; ELF docs suggest that entry
       0 always denotes 'unknown symbol'. */
@@ -513,8 +513,8 @@ void read_elf_symtab__ppc64_linux(
       return;
    }
 
-   TRACE_SYMTAB("\nReading (ELF, ppc64-linux) %s (%d entries)\n", tab_name, 
-                o_symtab_sz/sizeof(ElfXX_Sym) );
+   TRACE_SYMTAB("\nReading (ELF, ppc64-linux) %s (%ld entries)\n", tab_name, 
+                (Word)(o_symtab_sz/sizeof(ElfXX_Sym)) );
 
    oset = VG_(OSetGen_Create)( offsetof(TempSym,key), 
                                (OSetCmp_t)cmp_TempSymKey, 
@@ -996,8 +996,9 @@ Bool ML_(read_elf_debug_info) ( struct _SegInfo* si )
       si->soname = "NONE";
    }
 
-   TRACE_SYMTAB("shoff = %d,  shnum = %d,  size = %d,  n_vg_oimage = %d\n",
-                ehdr->e_shoff, ehdr->e_shnum, sizeof(ElfXX_Shdr), n_oimage );
+   TRACE_SYMTAB("shoff = %lld,  shnum = %d,  size = %ld,  n_vg_oimage = %d\n",
+                (Long)ehdr->e_shoff, ehdr->e_shnum, 
+                (Word)sizeof(ElfXX_Shdr), n_oimage );
 
    if (ehdr->e_shoff + ehdr->e_shnum*sizeof(ElfXX_Shdr) > n_oimage) {
       ML_(symerr)("ELF section header is beyond image end?!");

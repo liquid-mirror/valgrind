@@ -273,12 +273,14 @@ static void lc_markstack_push_WRK(Addr ptr, Int clique)
 	 if (sh_no != clique) {
 	    if (VG_DEBUG_CLIQUE) {
 	       if (lc_markstack[sh_no].indirect)
-		  VG_(printf)("  clique %d joining clique %d adding %u+%lu bytes\n", 
-			      sh_no, clique, 
-			      lc_shadows[sh_no]->szB, lc_markstack[sh_no].indirect);
+		  VG_(printf)(
+                     "  clique %d joining clique %d adding %lu+%lu bytes\n", 
+		     sh_no, clique, 
+		     (UWord)lc_shadows[sh_no]->szB,
+                     lc_markstack[sh_no].indirect);
 	       else
-		  VG_(printf)("  %d joining %d adding %u\n", 
-			      sh_no, clique, lc_shadows[sh_no]->szB);
+		  VG_(printf)("  %d joining %d adding %lu\n", 
+			      sh_no, clique, (UWord)lc_shadows[sh_no]->szB);
 	    }
 
 	    lc_markstack[clique].indirect += lc_shadows[sh_no]->szB;

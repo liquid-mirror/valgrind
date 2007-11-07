@@ -672,7 +672,7 @@ VG_(debugLog_vprintf) (
          }
          i++;
       }
-parse_fieldwidth:
+     parse_fieldwidth:
       /* Compute the field length. */
       while (format[i] >= '0' && format[i] <= '9') {
          width *= 10;
@@ -748,24 +748,6 @@ parse_fieldwidth:
             ret += myvprintf_str_XML_simplistic(send, send_arg2, str);
             break;
          }
-
-//         case 'y': { /* %y - print symbol */
-//            Char buf[100];
-//            Char *cp = buf;
-//            Addr a = va_arg(vargs, Addr);
-//
-//            if (flags & VG_MSG_PAREN)
-//               *cp++ = '(';
-//            if (VG_(get_fnname_w_offset)(a, cp, sizeof(buf)-4)) {
-//               if (flags & VG_MSG_PAREN) {
-//                  cp += VG_(strlen)(cp);
-//                  *cp++ = ')';
-//                  *cp = '\0';
-//               }
-//               ret += myvprintf_str(send, send_arg2, flags, width, buf, 0);
-//            }
-//            break;
-//         }
          default:
             break;
       }

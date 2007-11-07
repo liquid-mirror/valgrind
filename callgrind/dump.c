@@ -1018,7 +1018,7 @@ static void qsort(BBCC **a, int n, int (*cmp)(BBCC**,BBCC**))
 	int s, r;
 	BBCC* v;
 
-	CLG_DEBUG(8, "  qsort(%d,%d)\n", a-qsort_start, n);
+	CLG_DEBUG(8, "  qsort(%ld,%d)\n", (Word)(a-qsort_start), n);
 
 	if (n < 7) {	 /* Insertion sort on smallest arrays */
 		for (pm = a+1; pm < a+n; pm++)
@@ -1027,7 +1027,8 @@ static void qsort(BBCC **a, int n, int (*cmp)(BBCC**,BBCC**))
 
 		CLG_DEBUGIF(8) {
 		    for (pm = a; pm < a+n; pm++) {
-			VG_(printf)("   %3d BB %#lx, ", pm - qsort_start,
+                        VG_(printf)("   %3ld BB %#lx, ",
+                                    (Word)(pm - qsort_start),
 				    bb_addr((*pm)->bb));      
 			CLG_(print_cxt)(9, (*pm)->cxt, (*pm)->rec_index);
 		    }
@@ -1085,21 +1086,22 @@ static void qsort(BBCC **a, int n, int (*cmp)(BBCC**,BBCC**))
 	    CLG_(print_cxt)(9, (*pv)->cxt, (*pv)->rec_index);
 
 	    s = pb-pa+1;
-	    VG_(printf)("    Lower %d - %d:\n", a-qsort_start, a+s-1-qsort_start);
+	    VG_(printf)("    Lower %ld - %ld:\n", 
+                        (Word)(a-qsort_start), (Word)(a+s-1-qsort_start));
 	    for (r=0;r<s;r++) {
 		pm = a+r;
-		VG_(printf)("     %3d BB %#lx, ", 
-			    pm-qsort_start,bb_addr((*pm)->bb));
+		VG_(printf)("     %3ld BB %#lx, ", 
+			    (Word)(pm-qsort_start),bb_addr((*pm)->bb));
 		CLG_(print_cxt)(9, (*pm)->cxt, (*pm)->rec_index);
 	    }
 
 	    s = pd-pc+1;
-	    VG_(printf)("    Upper %d - %d:\n", 
-			a+n-s-qsort_start, a+n-1-qsort_start);
+	    VG_(printf)("    Upper %ld - %ld:\n", 
+			(Word)(a+n-s-qsort_start), (Word)(a+n-1-qsort_start));
 	    for (r=0;r<s;r++) {
 		pm = a+n-s+r;
-		VG_(printf)("     %3d BB %#lx, ", 
-			    pm-qsort_start,bb_addr((*pm)->bb));
+		VG_(printf)("     %3ld BB %#lx, ", 
+			    (Word)(pm-qsort_start),bb_addr((*pm)->bb));
 		CLG_(print_cxt)(9, (*pm)->cxt, (*pm)->rec_index);
 	    }
 	}
