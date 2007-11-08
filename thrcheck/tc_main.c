@@ -6999,6 +6999,7 @@ void* handle_alloc ( ThreadId tid,
    Addr        p;
    MallocMeta* md;
 
+   tl_assert( ((SSizeT)szB) >= 0 );
    p = (Addr)VG_(cli_malloc)(alignB, szB);
    if (!p) {
       return NULL;
@@ -7023,23 +7024,33 @@ void* handle_alloc ( ThreadId tid,
    return (void*)p;
 }
 
+/* Re the checks for less-than-zero (also in tc_cli__realloc below):
+   Cast to a signed type to catch any unexpectedly negative args.
+   We're assuming here that the size asked for is not greater than
+   2^31 bytes (for 32-bit platforms) or 2^63 bytes (for 64-bit
+   platforms). */
 static void* tc_cli__malloc ( ThreadId tid, SizeT n ) {
+   if (((SSizeT)n) < 0) return NULL;
    return handle_alloc ( tid, n, VG_(clo_alignment),
                          /*is_zeroed*/False );
 }
 static void* tc_cli____builtin_new ( ThreadId tid, SizeT n ) {
+   if (((SSizeT)n) < 0) return NULL;
    return handle_alloc ( tid, n, VG_(clo_alignment),
                          /*is_zeroed*/False );
 }
 static void* tc_cli____builtin_vec_new ( ThreadId tid, SizeT n ) {
+   if (((SSizeT)n) < 0) return NULL;
    return handle_alloc ( tid, n, VG_(clo_alignment), 
                          /*is_zeroed*/False );
 }
 static void* tc_cli__memalign ( ThreadId tid, SizeT align, SizeT n ) {
+   if (((SSizeT)n) < 0) return NULL;
    return handle_alloc ( tid, n, align, 
                          /*is_zeroed*/False );
 }
 static void* tc_cli__calloc ( ThreadId tid, SizeT nmemb, SizeT size1 ) {
+   if ( ((SSizeT)nmemb) < 0 || ((SSizeT)size1) < 0 ) return NULL;
    return handle_alloc ( tid, nmemb*size1, VG_(clo_alignment),
                          /*is_zeroed*/True );
 }
@@ -7092,6 +7103,8 @@ static void* tc_cli__realloc ( ThreadId tid, void* payloadV, SizeT new_size )
    SizeT      i;
 
    Addr payload = (Addr)payloadV;
+
+   if (((SSizeT)new_size) < 0) return NULL;
 
    md = (MallocMeta*) VG_(HT_lookup)( tc_mallocmeta_table, (UWord)payload );
    if (!md)
