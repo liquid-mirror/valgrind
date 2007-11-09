@@ -179,7 +179,7 @@ follows.</para>
 <para>Thrcheck builds a directed graph indicating the order in which
 locks have been acquired in the past.  When a thread acquires a new
 lock, the graph is updated, and then checked to see if it now contains
-a cycle.  Presence of a cycle indicates a potential deadlock involving
+a cycle.  The presence of a cycle indicates a potential deadlock involving
 the locks in the cycle.</para>
 
 <para>In simple situations, where the cycle only contains two locks,
@@ -544,11 +544,12 @@ var += 4; /* no lock used */
 
 <para>This program is correct, but using only the mechanisms described
 so far, Thrcheck would report an error at
-<computeroutput>var += 4;</computeroutput>.  This is because, by that
+<computeroutput>var += 4</computeroutput>.  This is because, by that
 point, <computeroutput>var</computeroutput> is marked as being in the
-state "shared-modified with a singleton
-lockset <computeroutput>{mx}</computeroutput>".  Really, what we want
-is for <computeroutput>var</computeroutput> to return to the parent
+state "shared-modified and protected by the
+lock <computeroutput>mx</computeroutput>", but is being accessed
+without locking.  Really, what we want is
+for <computeroutput>var</computeroutput> to return to the parent
 thread's exclusive ownership after the child thread has exited.</para>
 
 <para>To make this possible, for every memory location Thrcheck also keeps
