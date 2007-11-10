@@ -8692,6 +8692,15 @@ static void tc_pre_clo_init ( void )
                                    tc_instrument,
                                    tc_fini);
 
+   VG_(printf)(
+"\n"
+"Thrcheck was merged into the svn trunk on 9 Nov 2007 and was\n"
+"renamed to Helgrind at the same time.  This branch\n"
+"(valgrind/branches/THRCHECK) is no longer in use.  Please check out\n"
+"and build the trunk, then run with --tool=helgrind instead.\n\n"
+);
+   VG_(exit)(1);
+
    VG_(needs_core_errors)         ();
    VG_(needs_tool_errors)         (tc_eq_Error,
                                    tc_pp_Error,
