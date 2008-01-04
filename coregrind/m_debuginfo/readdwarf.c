@@ -75,7 +75,7 @@ static void free_WordArray ( WordArray* wa )
 {
    if (wa->tab) {
       vg_assert(wa->tab_size > 0);
-      VG_(arena_free)(VG_AR_SYMTAB, wa->tab);
+      VG_(arena_free)(VG_AR_DINFO, wa->tab);
    }
    init_WordArray(wa);
 }
@@ -97,14 +97,14 @@ static void addto_WordArray ( WordArray* wa, Word w )
       vg_assert( (wa->tab_size == 0 && wa->tab == NULL)
                  || (wa->tab_size != 0 && wa->tab != NULL) );
       new_size = wa->tab_size == 0 ? 8 : 2 * wa->tab_size;
-      new_tab  = VG_(arena_malloc)(VG_AR_SYMTAB, 
+      new_tab  = VG_(arena_malloc)(VG_AR_DINFO, 
                                    new_size * sizeof(Word));
       vg_assert(new_tab != NULL);
       for (i = 0; i < wa->tab_used; i++)
          new_tab[i] = wa->tab[i];
       wa->tab_size = new_size;
       if (wa->tab)
-         VG_(arena_free)(VG_AR_SYMTAB, wa->tab);
+         VG_(arena_free)(VG_AR_DINFO, wa->tab);
       wa->tab = new_tab;
    }
 
@@ -1948,10 +1948,10 @@ static void ppUnwindContext ( UnwindContext* ctx )
 }
 
 static void* symtab_alloc ( SizeT szB ) {
-   return VG_(arena_malloc)( VG_AR_SYMTAB, szB );
+   return VG_(arena_malloc)( VG_AR_DINFO, szB );
 }
 static void symtab_free ( void* v ) {
-   VG_(arena_free)( VG_AR_SYMTAB, v );
+   VG_(arena_free)( VG_AR_DINFO, v );
 }
 
 static void initUnwindContext ( /*OUT*/UnwindContext* ctx )

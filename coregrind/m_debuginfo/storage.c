@@ -152,7 +152,7 @@ UChar* ML_(addStr) ( struct _SegInfo* si, UChar* str, Int len )
    if (si->strchunks == NULL || 
        (si->strchunks->strtab_used 
         + space_needed) > SEGINFO_STRCHUNKSIZE) {
-      chunk = VG_(arena_malloc)(VG_AR_SYMTAB, sizeof(*chunk));
+      chunk = VG_(arena_malloc)(VG_AR_DINFO, sizeof(*chunk));
       chunk->strtab_used = 0;
       chunk->next = si->strchunks;
       si->strchunks = chunk;
@@ -181,11 +181,11 @@ void ML_(addSym) ( struct _SegInfo* si, DiSym* sym )
    if (si->symtab_used == si->symtab_size) {
       new_sz = 2 * si->symtab_size;
       if (new_sz == 0) new_sz = 500;
-      new_tab = VG_(arena_malloc)(VG_AR_SYMTAB, new_sz * sizeof(DiSym) );
+      new_tab = VG_(arena_malloc)(VG_AR_DINFO, new_sz * sizeof(DiSym) );
       if (si->symtab != NULL) {
          for (i = 0; i < si->symtab_used; i++)
             new_tab[i] = si->symtab[i];
-         VG_(arena_free)(VG_AR_SYMTAB, si->symtab);
+         VG_(arena_free)(VG_AR_DINFO, si->symtab);
       }
       si->symtab = new_tab;
       si->symtab_size = new_sz;
@@ -210,11 +210,11 @@ static void addLoc ( struct _SegInfo* si, DiLoc* loc )
    if (si->loctab_used == si->loctab_size) {
       new_sz = 2 * si->loctab_size;
       if (new_sz == 0) new_sz = 500;
-      new_tab = VG_(arena_malloc)(VG_AR_SYMTAB, new_sz * sizeof(DiLoc) );
+      new_tab = VG_(arena_malloc)(VG_AR_DINFO, new_sz * sizeof(DiLoc) );
       if (si->loctab != NULL) {
          for (i = 0; i < si->loctab_used; i++)
             new_tab[i] = si->loctab[i];
-         VG_(arena_free)(VG_AR_SYMTAB, si->loctab);
+         VG_(arena_free)(VG_AR_DINFO, si->loctab);
       }
       si->loctab = new_tab;
       si->loctab_size = new_sz;
@@ -366,11 +366,11 @@ void ML_(addDiCfSI) ( struct _SegInfo* si, DiCfSI* cfsi )
    if (si->cfsi_used == si->cfsi_size) {
       new_sz = 2 * si->cfsi_size;
       if (new_sz == 0) new_sz = 20;
-      new_tab = VG_(arena_malloc)(VG_AR_SYMTAB, new_sz * sizeof(DiCfSI) );
+      new_tab = VG_(arena_malloc)(VG_AR_DINFO, new_sz * sizeof(DiCfSI) );
       if (si->cfsi != NULL) {
          for (i = 0; i < si->cfsi_used; i++)
             new_tab[i] = si->cfsi[i];
-         VG_(arena_free)(VG_AR_SYMTAB, si->cfsi);
+         VG_(arena_free)(VG_AR_DINFO, si->cfsi);
       }
       si->cfsi = new_tab;
       si->cfsi_size = new_sz;

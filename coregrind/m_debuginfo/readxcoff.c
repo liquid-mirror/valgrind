@@ -494,10 +494,10 @@ Bool get_csect_bounds ( UChar* start, UWord n_entries,
 }
 
 static void* malloc_AR_SYMTAB ( SizeT nbytes ) {
-   return VG_(arena_malloc)(VG_AR_SYMTAB, nbytes);
+   return VG_(arena_malloc)(VG_AR_DINFO, nbytes);
 }
 static void free_AR_SYMTAB ( void* ptr ) {
-   return VG_(arena_free)(VG_AR_SYMTAB, ptr);
+   return VG_(arena_free)(VG_AR_DINFO, ptr);
 }
 
 /* Read symbol and line number info for the given text section.  (This
@@ -2455,7 +2455,7 @@ Bool ML_(read_xcoff_debug_info) ( struct _SegInfo* si,
             si->soname = so;
          } else {
             /* no member name, hence soname = "archive.a" */
-            si->soname = VG_(arena_strdup)(VG_AR_SYMTAB, p);
+            si->soname = VG_(arena_strdup)(VG_AR_DINFO, p);
          }
       }
       if (SHOW)

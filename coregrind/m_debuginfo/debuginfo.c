@@ -119,13 +119,13 @@ SegInfo* alloc_SegInfo(Addr start, SizeT size, OffT foffset,
 
    vg_assert(filename);
 
-   si = VG_(arena_calloc)(VG_AR_SYMTAB, 1, sizeof(SegInfo));
+   si = VG_(arena_calloc)(VG_AR_DINFO, 1, sizeof(SegInfo));
    si->text_start_avma = start;
    si->text_size       = size;
    si->foffset         = foffset;
-   si->filename        = VG_(arena_strdup)(VG_AR_SYMTAB, filename);
+   si->filename        = VG_(arena_strdup)(VG_AR_DINFO, filename);
    si->memname         = memname 
-                           ?  VG_(arena_strdup)(VG_AR_SYMTAB, memname)
+                           ?  VG_(arena_strdup)(VG_AR_DINFO, memname)
                            :  NULL;
 
    /* Everything else -- pointers, sizes, arrays -- is zeroed by calloc.
@@ -151,17 +151,17 @@ static void free_SegInfo ( SegInfo* si )
 {
    struct strchunk *chunk, *next;
    vg_assert(si != NULL);
-   if (si->filename)   VG_(arena_free)(VG_AR_SYMTAB, si->filename);
-   if (si->symtab)     VG_(arena_free)(VG_AR_SYMTAB, si->symtab);
-   if (si->loctab)     VG_(arena_free)(VG_AR_SYMTAB, si->loctab);
-   if (si->cfsi)       VG_(arena_free)(VG_AR_SYMTAB, si->cfsi);
+   if (si->filename)   VG_(arena_free)(VG_AR_DINFO, si->filename);
+   if (si->symtab)     VG_(arena_free)(VG_AR_DINFO, si->symtab);
+   if (si->loctab)     VG_(arena_free)(VG_AR_DINFO, si->loctab);
+   if (si->cfsi)       VG_(arena_free)(VG_AR_DINFO, si->cfsi);
    if (si->cfsi_exprs) VG_(deleteXA)(si->cfsi_exprs);
 
    for (chunk = si->strchunks; chunk != NULL; chunk = next) {
       next = chunk->next;
-      VG_(arena_free)(VG_AR_SYMTAB, chunk);
+      VG_(arena_free)(VG_AR_DINFO, chunk);
    }
-   VG_(arena_free)(VG_AR_SYMTAB, si);
+   VG_(arena_free)(VG_AR_DINFO, si);
 }
 
 
@@ -354,7 +354,7 @@ void VG_(di_notify_mmap)( Addr a, Bool allow_SkFileV )
    if (!filename)
       return;
 
-   filename = VG_(arena_strdup)( VG_AR_SYMTAB, filename );
+   filename = VG_(arena_strdup)( VG_AR_DINFO, filename );
 
    ok = (seg->kind == SkFileC || (seg->kind == SkFileV && allow_SkFileV))
         && seg->offset == 0
@@ -365,7 +365,7 @@ void VG_(di_notify_mmap)( Addr a, Bool allow_SkFileV )
         && ML_(is_elf_object_file)( (const void*)seg->start );
 
    if (!ok) {
-      VG_(arena_free)(VG_AR_SYMTAB, filename);
+      VG_(arena_free)(VG_AR_DINFO, filename);
       return;
    }
 
@@ -379,7 +379,7 @@ void VG_(di_notify_mmap)( Addr a, Bool allow_SkFileV )
 
    /* acquire_syms_for_range makes its own copy of filename, so is
       safe to free it. */
-   VG_(arena_free)(VG_AR_SYMTAB, filename);
+   VG_(arena_free)(VG_AR_DINFO, filename);
 }
 
 

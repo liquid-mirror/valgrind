@@ -477,10 +477,10 @@ static Word cmp_TempSymKey ( TempSymKey* key1, TempSym* elem2 ) {
    return (Word)VG_(strcmp)(key1->name, elem2->key.name);
 }
 static void* oset_malloc ( SizeT szB ) { 
-   return VG_(arena_malloc)(VG_AR_SYMTAB, szB);
+   return VG_(arena_malloc)(VG_AR_DINFO, szB);
 }
 static void oset_free ( void* p ) {
-   VG_(arena_free)(VG_AR_SYMTAB, p);
+   VG_(arena_free)(VG_AR_DINFO, p);
 }
 
 static
@@ -776,7 +776,7 @@ Addr open_debug_file( Char* name, UInt crc, UInt* size )
 static
 Addr find_debug_file( Char* objpath, Char* debugname, UInt crc, UInt* size )
 {
-   Char *objdir = VG_(arena_strdup)(VG_AR_SYMTAB, objpath);
+   Char *objdir = VG_(arena_strdup)(VG_AR_DINFO, objpath);
    Char *objdirptr;
    Char *debugpath;
    Addr addr = 0;
@@ -784,7 +784,7 @@ Addr find_debug_file( Char* objpath, Char* debugname, UInt crc, UInt* size )
    if ((objdirptr = VG_(strrchr)(objdir, '/')) != NULL)
       *objdirptr = '\0';
 
-   debugpath = VG_(arena_malloc)(VG_AR_SYMTAB, VG_(strlen)(objdir) + VG_(strlen)(debugname) + 16);
+   debugpath = VG_(arena_malloc)(VG_AR_DINFO, VG_(strlen)(objdir) + VG_(strlen)(debugname) + 16);
    
    VG_(sprintf)(debugpath, "%s/%s", objdir, debugname);
 
@@ -796,8 +796,8 @@ Addr find_debug_file( Char* objpath, Char* debugname, UInt crc, UInt* size )
       }
    }
 
-   VG_(arena_free)(VG_AR_SYMTAB, debugpath);
-   VG_(arena_free)(VG_AR_SYMTAB, objdir);
+   VG_(arena_free)(VG_AR_DINFO, debugpath);
+   VG_(arena_free)(VG_AR_DINFO, objdir);
    
    return addr;
 }
@@ -925,7 +925,7 @@ Bool ML_(read_elf_debug_info) ( struct _SegInfo* si )
 
 	    if (stroff != -1 && strtab != 0) {
 	       TRACE_SYMTAB("soname=%s\n", strtab+stroff);
-	       si->soname = VG_(arena_strdup)(VG_AR_SYMTAB, strtab+stroff);
+	       si->soname = VG_(arena_strdup)(VG_AR_DINFO, strtab+stroff);
 	    }
 	 }
 

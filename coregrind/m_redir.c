@@ -280,9 +280,9 @@ static OSet* activeSet = NULL;
 
 static void maybe_add_active ( Active /*by value; callee copies*/ );
 
-static void*  symtab_zalloc(SizeT);
-static void   symtab_free(void*);
-static HChar* symtab_strdup(HChar*);
+static void*  dinfo_zalloc(SizeT);
+static void   dinfo_free(void*);
+static HChar* dinfo_strdup(HChar*);
 static Bool   is_plausible_guest_addr(Addr);
 static Bool   is_aix5_glink_idiom(Addr);
 
@@ -365,10 +365,10 @@ void VG_(redir_notify_new_SegInfo)( SegInfo* newsi )
             the following loop, and complain at that point. */
          continue;
       }
-      spec = symtab_zalloc(sizeof(Spec));
+      spec = dinfo_zalloc(sizeof(Spec));
       vg_assert(spec);
-      spec->from_sopatt = symtab_strdup(demangled_sopatt);
-      spec->from_fnpatt = symtab_strdup(demangled_fnpatt);
+      spec->from_sopatt = dinfo_strdup(demangled_sopatt);
+      spec->from_fnpatt = dinfo_strdup(demangled_fnpatt);
       vg_assert(spec->from_sopatt);
       vg_assert(spec->from_fnpatt);
       spec->to_addr = sym_addr;
@@ -412,7 +412,7 @@ void VG_(redir_notify_new_SegInfo)( SegInfo* newsi )
 
    /* Ok.  Now specList holds the list of specs from the SegInfo. 
       Build a new TopSpec, but don't add it to topSpecs yet. */
-   newts = symtab_zalloc(sizeof(TopSpec));
+   newts = dinfo_zalloc(sizeof(TopSpec));
    vg_assert(newts);
    newts->next    = NULL; /* not significant */
    newts->seginfo = newsi;
@@ -680,7 +680,7 @@ void VG_(redir_notify_delete_SegInfo)( SegInfo* delsi )
 
    /* Traverse the actives, copying the addresses of those we intend
       to delete into tmpSet. */
-   tmpSet = VG_(OSetWord_Create)(symtab_zalloc, symtab_free);
+   tmpSet = VG_(OSetWord_Create)(dinfo_zalloc, dinfo_free);
 
    ts->mark = True;
 
@@ -729,10 +729,10 @@ void VG_(redir_notify_delete_SegInfo)( SegInfo* delsi )
    /* The Actives set is now cleaned up.  Free up this TopSpec and
       everything hanging off it. */
    for (sp = ts->specs; sp; sp = sp_next) {
-      if (sp->from_sopatt) symtab_free(sp->from_sopatt);
-      if (sp->from_fnpatt) symtab_free(sp->from_fnpatt);
+      if (sp->from_sopatt) dinfo_free(sp->from_sopatt);
+      if (sp->from_fnpatt) dinfo_free(sp->from_fnpatt);
       sp_next = sp->next;
-      symtab_free(sp);
+      dinfo_free(sp);
    }
 
    if (tsPrev == NULL) {
@@ -741,7 +741,7 @@ void VG_(redir_notify_delete_SegInfo)( SegInfo* delsi )
    } else {
       tsPrev->next = ts->next;
    }
-   symtab_free(ts);
+   dinfo_free(ts);
 
    if (VG_(clo_trace_redir))
       show_redir_state("after VG_(redir_notify_delete_SegInfo)");
@@ -798,11 +798,11 @@ static void add_hardwired_spec ( HChar* sopatt, HChar* fnpatt,
                                  Addr   to_addr,
                                  HChar* mandatory )
 {
-   Spec* spec = symtab_zalloc(sizeof(Spec));
+   Spec* spec = dinfo_zalloc(sizeof(Spec));
    vg_assert(spec);
 
    if (topSpecs == NULL) {
-      topSpecs = symtab_zalloc(sizeof(TopSpec));
+      topSpecs = dinfo_zalloc(sizeof(TopSpec));
       vg_assert(topSpecs);
       /* symtab_zalloc sets all fields to zero */
    }
@@ -839,8 +839,8 @@ void VG_(redir_initialise) ( void )
    // Initialise active mapping.
    activeSet = VG_(OSetGen_Create)(offsetof(Active, from_addr),
                                    NULL,     // Use fast comparison
-                                   symtab_zalloc,
-                                   symtab_free);
+                                   dinfo_zalloc,
+                                   dinfo_free);
 
    // The rest of this function just adds initial Specs.   
 
@@ -937,23 +937,23 @@ void VG_(redir_initialise) ( void )
 /*--- MISC HELPERS                                         ---*/
 /*------------------------------------------------------------*/
 
-static void* symtab_zalloc(SizeT n) {
+static void* dinfo_zalloc(SizeT n) {
    void* p;
    vg_assert(n > 0);
-   p = VG_(arena_malloc)(VG_AR_SYMTAB, n);
+   p = VG_(arena_malloc)(VG_AR_DINFO, n);
    tl_assert(p);
    VG_(memset)(p, 0, n);
    return p;
 }
 
-static void symtab_free(void* p) {
+static void dinfo_free(void* p) {
    tl_assert(p);
-   return VG_(arena_free)(VG_AR_SYMTAB, p);
+   return VG_(arena_free)(VG_AR_DINFO, p);
 }
 
-static HChar* symtab_strdup(HChar* str)
+static HChar* dinfo_strdup(HChar* str)
 {
-   return VG_(arena_strdup)(VG_AR_SYMTAB, str);
+   return VG_(arena_strdup)(VG_AR_DINFO, str);
 }
 
 /* Really this should be merged with translations_allowable_from_seg

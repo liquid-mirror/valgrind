@@ -176,11 +176,11 @@ void ML_(read_debuginfo_stabs) ( SegInfo* si,    OffT debug_offset,
                   qbuflen = 16;
                while ((qidx + qlen) >= qbuflen)
                   qbuflen *= 2;
-               n = VG_(arena_malloc)(VG_AR_SYMTAB, qbuflen);
+               n = VG_(arena_malloc)(VG_AR_DINFO, qbuflen);
                VG_(memcpy)(n, qbuf, qidx);
                
                if (qbuf != NULL)
-                  VG_(arena_free)(VG_AR_SYMTAB, qbuf);
+                  VG_(arena_free)(VG_AR_DINFO, qbuf);
                qbuf = n;
             }
 
@@ -207,7 +207,7 @@ void ML_(read_debuginfo_stabs) ( SegInfo* si,    OffT debug_offset,
          if (qbuf != NULL) {
             i--;                        /* overstepped */
             string = ML_(addStr)(si, qbuf, qidx);
-            VG_(arena_free)(VG_AR_SYMTAB, qbuf);
+            VG_(arena_free)(VG_AR_DINFO, qbuf);
             if (contdebug)
                VG_(printf)("made composite: \"%s\"\n", string);
          }
