@@ -69,7 +69,7 @@ typedef
 #define MAX_LOC_SIZE   ((1 << LOC_SIZE_BITS) - 1)
 
 /* Number used to detect line number overflows; if one line is
-   60000-odd smaller than the previous, is was probably an overflow.
+   60000-odd smaller than the previous, it was probably an overflow.
  */
 #define OVERFLOW_DIFFERENCE     (LINENO_OVERFLOW - 5000)
 
@@ -217,6 +217,24 @@ extern void ML_(ppCfiExpr)( XArray* src, Int ix );
 
 struct _SegInfo {
    struct _SegInfo* next;	/* list of SegInfos */
+
+   /* begin NEW STUFF */
+   Bool  have_rx_map;
+   Bool  have_rw_map;
+
+   Addr  rx_map_avma;
+   SizeT rx_map_size;
+   OffT  rx_map_foff;
+   Addr  rw_map_avma;
+   SizeT rw_map_size;
+   OffT  rw_map_foff;
+
+   Bool mark; /* marked for deletion? */
+
+  /* If have_dinfo is False, then all fields except "*rx_map*" and "*rw_map*"
+     are invalid and should not be consulted. */
+   Bool  have_dinfo;
+   /* end NEW STUFF */
 
    /* Description of the mapped segment. */
    Addr   text_start_avma;

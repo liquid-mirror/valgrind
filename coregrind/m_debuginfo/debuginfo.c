@@ -42,6 +42,7 @@
 #include "pub_core_libcbase.h"
 #include "pub_core_libcassert.h"
 #include "pub_core_libcprint.h"
+#include "pub_core_libcfile.h"
 #include "pub_core_mallocfree.h"
 #include "pub_core_options.h"
 #include "pub_core_redir.h"       // VG_(redir_notify_{new,delete}_SegInfo)
@@ -237,7 +238,7 @@ static void discard_syms_in_range ( Addr start, SizeT length )
    }
 }
 
-
+#if 0
 /* Create a new SegInfo with the specific address/length/vma offset,
    then snarf whatever info we can from the given filename into it. */
 static
@@ -281,6 +282,114 @@ SegInfo* acquire_syms_for_range(
 
    return si;
 }
+#endif
+
+static Bool ranges_overlap (Addr s1, SizeT len1, Addr s2, SizeT len2 )
+{
+   Addr e1, e2;
+   if (len1 == 0 || len2 == 0) 
+      return False;
+   e1 = s1 + len1 - 1;
+   e2 = s2 + len2 - 1;
+   /* Assert that we don't have wraparound.  If we do it would imply
+      that file sections are getting mapped around the end of the
+      address space, which sounds unlikely. */
+   vg_assert(s1 <= e1);
+   vg_assert(s2 <= e2);
+   if (e1 < s2 || e2 < s1) return False;
+   return True;
+}
+
+static Bool do_SegInfos_overlap ( SegInfo* si1, SegInfo* si2 )
+{
+   vg_assert(si1);
+   vg_assert(si2);
+
+   if (si1->have_rx_map && si2->have_rx_map
+       && ranges_overlap(si1->rx_map_avma, si1->rx_map_size,
+                         si2->rx_map_avma, si2->rx_map_size))
+      return True;
+
+   if (si1->have_rx_map && si2->have_rw_map
+       && ranges_overlap(si1->rx_map_avma, si1->rx_map_size,
+                         si2->rw_map_avma, si2->rw_map_size))
+      return True;
+
+   if (si1->have_rw_map && si2->have_rx_map
+       && ranges_overlap(si1->rw_map_avma, si1->rw_map_size,
+                         si2->rx_map_avma, si2->rx_map_size))
+      return True;
+
+   if (si1->have_rw_map && si2->have_rw_map
+       && ranges_overlap(si1->rw_map_avma, si1->rw_map_size,
+                         si2->rw_map_avma, si2->rw_map_size))
+      return True;
+
+   return False;
+}
+
+static void discard_marked_SegInfos ( void )
+{
+   SegInfo* curr;
+
+   while (True) {
+
+      curr = segInfo_list;
+      while (True) {
+         if (curr == NULL)
+            break;
+         if (curr->mark)
+            break;
+	 curr = curr->next;
+      }
+
+      if (!curr) break;
+      discard_SegInfo( curr );
+
+   }
+}
+
+static void discard_SegInfos_which_overlap_with ( SegInfo* siRef )
+{
+   SegInfo* si;
+   /* Mark all the SegInfos in segInfo_list that need to be deleted.
+      First, clear all the mark bits; then set them if they overlap
+      with siRef.  Since siRef itself is in this list we at least
+      expect its own mark bit to be set. */
+   for (si = segInfo_list; si; si = si->next) {
+      si->mark = do_SegInfos_overlap( si, siRef );
+      if (si == siRef) {
+         vg_assert(si->mark);
+         si->mark = False;
+      }
+   }
+   discard_marked_SegInfos();
+}
+
+/* Find the existing SegInfo for (memname,filename) or if not found,
+   create one.  In the latter case memname and filename are strdup'd
+   into VG_AR_DINFO, and the new SegInfo is added to segInfo_list. */
+static
+SegInfo* find_or_create_SegInfo_for ( UChar* filename, UChar* memname )
+{
+   SegInfo* si;
+   vg_assert(filename);
+   for (si = segInfo_list; si; si = si->next) {
+      vg_assert(si->filename);
+      if (0==VG_(strcmp)(si->filename, filename)
+          && ( (memname && si->memname) 
+                  ? 0==VG_(strcmp)(memname, si->memname)
+                  : True ))
+         break;
+   }
+   if (!si) {
+      si = alloc_SegInfo(0,0,0, filename, memname);
+      vg_assert(si);
+      si->next = segInfo_list;
+      segInfo_list = si;
+   }
+   return si;
+}
 
 
 /*--------------------------------------------------------------*/
@@ -308,14 +417,72 @@ void VG_(di_notify_mmap)( Addr a, Bool allow_SkFileV )
 {
    NSegment const * seg;
    HChar*    filename;
-   Bool      ok;
+   Bool      ok, is_rx_map, is_rw_map;
+   SegInfo*  si;
+   SysRes    fd;
+   Int       nread;
+   HChar     buf1k[1024];
+   Bool      debug = False;
 
-   /* If this mapping is at the beginning of a file, isn't part of
-      Valgrind, is at least readable and seems to contain an object
-      file, then try reading symbols from it.
+   /* In short, figure out if this mapping is of interest to us, and
+      if so, try to guess what ld.so is doing and when/if we should
+      read debug info. */
+   seg = VG_(am_find_nsegment)(a);
+   vg_assert(seg);
 
-      Getting this heuristic right is critical.  On x86-linux, objects
-      are typically mapped twice:
+   if (debug)
+      VG_(printf)("di_notify_mmap-1: %p-%p %c%c%c\n",
+                  seg->start, seg->end, 
+                  seg->hasR ? 'r' : '-',
+                  seg->hasW ? 'w' : '-',seg->hasX ? 'x' : '-' );
+
+   /* guaranteed by aspacemgr-linux.c, sane_NSegment() */
+   vg_assert(seg->end > seg->start);
+
+   /* Ignore non-file mappings */
+   if ( ! (seg->kind == SkFileC
+           || (seg->kind == SkFileV && allow_SkFileV)) )
+      return;
+
+   /* If the file doesn't have a name, we're hosed.  Give up. */
+   filename = VG_(am_get_filename)( (NSegment*)seg );
+   if (!filename)
+      return;
+
+   if (debug)
+      VG_(printf)("di_notify_mmap-2: %s\n", filename);
+
+   /* Peer at the first few bytes of the file, to see if it is an ELF
+      object file. */
+   VG_(memset)(buf1k, 0, sizeof(buf1k));
+   fd = VG_(open)( filename, VKI_O_RDONLY, 0 );
+   if (fd.isError) {
+      ML_(symerr)("can't open file to inspect ELF header");
+      return;
+   }
+   nread = VG_(read)( fd.res, buf1k, sizeof(buf1k) );
+   VG_(close)( fd.res );
+
+   if (nread <= 0) {
+      ML_(symerr)("can't read file to inspect ELF header");
+      return;
+   }
+   vg_assert(nread > 0 && nread <= sizeof(buf1k) );
+
+   /* We're only interested in mappings of ELF object files. */
+   if (!ML_(is_elf_object_file)( buf1k, (SizeT)nread ))
+      return;
+
+   /* Now we have to guess if this is a text-like mapping, a data-like
+      mapping, neither or both.  The rules are:
+
+        text if:   x86-linux    r and x
+                   other-linux  r and x and not w
+
+        data if:   x86-linux    r and w
+                   other-linux  r and w and not x
+
+      Background: On x86-linux, objects are typically mapped twice:
 
       1b8fb000-1b8ff000 r-xp 00000000 08:02 4471477 vgpreload_memcheck.so
       1b8ff000-1b900000 rw-p 00004000 08:02 4471477 vgpreload_memcheck.so
@@ -333,53 +500,87 @@ void VG_(di_notify_mmap)( Addr a, Bool allow_SkFileV )
       to redirect to addresses in that third segment, which is wrong
       and causes crashes.
 
-      ------ 
       JRS 28 Dec 05: unfortunately icc 8.1 on x86 has been seen to
       produce executables with a single rwx segment rather than a
       (r-x,rw-) pair. That means the rules have to be modified thusly:
 
       x86-linux:   consider if r and x
-      all others:  consider if r and x and NOT w
+      all others:  consider if r and x and not w
    */
+   is_rx_map = False;
+   is_rw_map = False;
 #  if defined(VGP_x86_linux)
-   Bool      require_no_W = False;
+   is_rx_map = seg->hasR && seg->hasX;
+   is_rw_map = seg->hasR && seg->hasW;
+#  elif defined(VGP_amd64_linux) \
+        || defined(VGP_ppc32_linux) || defined(VGP_ppc64_linux)
+   is_rx_map = seg->hasR && seg->hasX && !seg->hasW;
+   is_rw_map = seg->hasR && seg->hasW && !seg->hasX;
 #  else
-   Bool      require_no_W = True;
+#    error "Unknown platform"
 #  endif
 
-   seg = VG_(am_find_nsegment)(a);
-   vg_assert(seg);
+   if (debug)
+      VG_(printf)("di_notify_mmap-3: is_rx_map %d, is_rw_map %d\n",
+                  (Int)is_rx_map, (Int)is_rw_map);
 
-   filename = VG_(am_get_filename)( (NSegment*)seg );
-   if (!filename)
+   /* If it is neither text-ish nor data-ish, we're not interested. */
+   if (!(is_rx_map || is_rw_map))
       return;
 
-   filename = VG_(arena_strdup)( VG_AR_DINFO, filename );
+   /* See if we have a SegInfo for this filename.  If not,
+      create one. */
+   si = find_or_create_SegInfo_for( filename, NULL/*membername*/ );
+   vg_assert(si);
 
-   ok = (seg->kind == SkFileC || (seg->kind == SkFileV && allow_SkFileV))
-        && seg->offset == 0
-        && seg->fnIdx != -1
-        && seg->hasR
-        && seg->hasX
-        && (require_no_W ? (!seg->hasW) : True)
-        && ML_(is_elf_object_file)( (const void*)seg->start );
-
-   if (!ok) {
-      VG_(arena_free)(VG_AR_DINFO, filename);
-      return;
+   if (is_rx_map) {
+      /* We have a text-like mapping.  Note the details. */
+      if (!si->have_rx_map) {
+         si->have_rx_map = True;
+         si->rx_map_avma = a;
+         si->rx_map_size = seg->end + 1 - seg->start;
+         si->rx_map_foff = seg->offset;
+      } else {
+         /* FIXME: complain about a second text-like mapping */
+      }
    }
 
-   /* Dump any info previously associated with the range. */
-   discard_syms_in_range( seg->start, seg->end + 1 - seg->start );
+   if (is_rw_map) {
+      /* We have a data-like mapping.  Note the details. */
+      if (!si->have_rw_map) {
+         si->have_rw_map = True;
+         si->rw_map_avma = a;
+         si->rw_map_size = seg->end + 1 - seg->start;
+         si->rw_map_foff = seg->offset;
+      } else {
+         /* FIXME: complain about a second data-like mapping */
+      }
+   }
 
-   /* .. and acquire new info. */
-   acquire_syms_for_range( seg->start, seg->end + 1 - seg->start, 
-                           seg->offset, filename,
-                           /* XCOFF only */ NULL, 0, 0, False );
+   if (si->have_rx_map && si->have_rw_map && !si->have_dinfo) {
+      /* We're going to read symbols and debug info for the vma ranges
+         [rx_map_avma,+rx_map_size) and [rw_map_avma,+rw_map_size).
+         First get rid of any other SegInfos which overlap either of
+         those ranges (to avoid total confusion). */
+      discard_SegInfos_which_overlap_with( si );
 
-   /* acquire_syms_for_range makes its own copy of filename, so is
-      safe to free it. */
-   VG_(arena_free)(VG_AR_DINFO, filename);
+      /* .. and acquire new info. */
+      ok = ML_(read_elf_debug_info)( si );
+
+      if (ok) {
+         /* prepare read data for use */
+         ML_(canonicaliseTables) ( si );
+         /* notify m_redir about it */
+         VG_(redir_notify_new_SegInfo)( si );
+         /* Note that we succeeded */
+         si->have_dinfo = True;
+      } else {
+         /* Something went wrong (eg. bad ELF file).  Should we delete
+            this SegInfo?  No - it contains info on the rw/rx mappings,
+            at least. */
+      }
+
+   }
 }
 
 

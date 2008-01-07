@@ -106,10 +106,13 @@
 /* Identify an ELF object file by peering at the first few bytes of
    it. */
 
-Bool ML_(is_elf_object_file)( const void* buf )
+Bool ML_(is_elf_object_file)( void* image, SizeT n_image )
 {
-   ElfXX_Ehdr* ehdr = (ElfXX_Ehdr*)buf;
+   ElfXX_Ehdr* ehdr = (ElfXX_Ehdr*)image;
    Int ok = 1;
+
+   if (n_image < sizeof(ElfXX_Ehdr))
+      return False;
 
    ok &= (ehdr->e_ident[EI_MAG0] == 0x7F
           && ehdr->e_ident[EI_MAG1] == 'E'
@@ -730,7 +733,7 @@ calc_gnu_debuglink_crc32(UInt crc, const UChar *buf, Int len)
  * not match the value from the main object file.
  */
 static
-Addr open_debug_file( Char* name, UInt crc, UInt* size )
+Addr open_debug_file( Char* name, UInt crc, UWord* size )
 {
    SysRes fd, sres;
    struct vki_stat stat_buf;
@@ -774,7 +777,7 @@ Addr open_debug_file( Char* name, UInt crc, UInt* size )
  * Try to find a separate debug file for a given object file.
  */
 static
-Addr find_debug_file( Char* objpath, Char* debugname, UInt crc, UInt* size )
+Addr find_debug_file( Char* objpath, Char* debugname, UInt crc, UWord* size )
 {
    Char *objdir = VG_(arena_strdup)(VG_AR_DINFO, objpath);
    Char *objdirptr;
@@ -803,6 +806,22 @@ Addr find_debug_file( Char* objpath, Char* debugname, UInt crc, UInt* size )
 }
 
 
+static Bool contained_within ( Addr outer, UWord n_outer,
+                               Addr inner, UWord n_inner )
+{
+   if (n_outer == 0 || n_inner == 0)
+      return False;
+   /* Simplistic .. assumes no wraparound (reasonably enough) */
+   if (inner >= outer && inner+n_inner <= outer+n_outer)
+      return True;
+   return False;
+}
+
+static void* INDEX_BIS ( void* base, Word index, Word scale ) {
+   return (void*)( ((UChar*)base) + index * scale );
+}
+
+
 /* The central function for reading ELF debug info.  For the
    object/exe specified by the SegInfo, find ELF sections, then read
    the symbols, line number info, file name info, CFA (stack-unwind
@@ -811,24 +830,64 @@ Addr find_debug_file( Char* objpath, Char* debugname, UInt crc, UInt* size )
 */
 Bool ML_(read_elf_debug_info) ( struct _SegInfo* si )
 {
-   Bool          res;
-   ElfXX_Ehdr*   ehdr;       /* The ELF header                   */
-   ElfXX_Shdr*   shdr;       /* The section table                */
-   UChar*        sh_strtab;  /* The section table's string table */
+   Bool          res, ok;
    SysRes        fd, sres;
-   Int           i;
-   Bool          ok;
-   Addr          oimage;
-   UInt          n_oimage;
+   Word          i;
    OffT          offset_oimage = 0;
    Addr          dimage = 0;
-   UInt          n_dimage = 0;
+   UWord         n_dimage = 0;
    OffT          offset_dimage = 0;
+   Bool          debug = 1||False;
+
+   /* Image addresses for the ELF file we're working with. */
+   Addr          oimage   = 0;
+   UWord         n_oimage = 0;
+
+   /* ELF header for the main file.  Should == oimage since is at
+      start of file. */
+   ElfXX_Ehdr* ehdr_img = NULL;
+
+   /* Program header table image addr, # entries, entry size */
+   ElfXX_Phdr* phdr_img     = NULL;
+   UWord       phdr_nent    = 0;
+   UWord       phdr_ent_szB = 0;
+
+   /* Section header image addr, # entries, entry size.  Also the
+      associated string table. */
+   ElfXX_Shdr* shdr_img        = NULL;
+   UWord       shdr_nent       = 0;
+   UWord       shdr_ent_szB    = 0;
+   UChar*      shdr_strtab_img = NULL;
+
+   vg_assert(si);
+   vg_assert(si->have_rx_map == True);
+   vg_assert(si->have_rw_map == True);
+   vg_assert(si->have_dinfo == False);
+   vg_assert(si->filename);
+   vg_assert(!si->memname);
+   vg_assert(!si->symtab);
+   vg_assert(!si->loctab);
+   vg_assert(!si->cfsi);
+   vg_assert(!si->cfsi_exprs);
+   vg_assert(!si->strchunks);
+   vg_assert(!si->soname);
+
+   /* ----------------------------------------------------------
+      Phase 1.  At this point, there is very little information in
+      the SegInfo.  We only know that something that looks like an
+      ELF file has been mapped rx-ishly as recorded with the 
+      si->*rx_map* fields and has also been mapped rw-ishly as
+      recorded with the si->*rw_map* fields.  In this phase we
+      examine the file's ELF Program Header, and, by comparing that
+      against the si->*r{w,x}_map* info, try to figure out the AVMAs
+      for the sections we care about, that should have been mapped:
+      text, data, got, plt, and toc.
+      ---------------------------------------------------------- */
 
    oimage = (Addr)NULL;
    if (VG_(clo_verbosity) > 1 || VG_(clo_trace_redir))
       VG_(message)(Vg_DebugMsg, "Reading syms from %s (%p)", 
-                                si->filename, si->text_start_avma );
+                                si->filename, si->rx_map_avma );
 
    /* mmap the object image aboard, so that we can read symbols and
       line number info out of it.  It will be munmapped immediately
@@ -841,7 +900,7 @@ Bool ML_(read_elf_debug_info) ( struct _SegInfo* si )
    }
 
    n_oimage = VG_(fsize)(fd.res);
-   if (n_oimage < 0) {
+   if (n_oimage <= 0) {
       ML_(symerr)("Can't stat .so/.exe (to determine its size)?!");
       VG_(close)(fd.res);
       return False;
@@ -859,134 +918,270 @@ Bool ML_(read_elf_debug_info) ( struct _SegInfo* si )
    }
 
    oimage = sres.res;
+   /* Check against wraparound.  am_mmap_file_float_valgrind should
+      not produce a wrapped-around mapping. */
+   vg_assert(n_oimage > 0);
+   vg_assert(oimage + n_oimage > oimage);
 
    if (0) {
       VG_(printf)("read_elf_debug_info: OIMAGE = %p - %p\n", 
                   (void*)oimage, (void*)(oimage + (UWord)n_oimage));
    }
 
-   /* Ok, the object image is safely in oimage[0 .. n_oimage-1]. 
-      Now verify that it is a valid ELF .so or executable image.
-   */
-   res = False;
-   ok = (n_oimage >= sizeof(ElfXX_Ehdr));
-   ehdr = (ElfXX_Ehdr*)oimage;
+   /* Ok, the object image is safely in oimage[0 .. n_oimage-1].  Now
+      verify that it is a valid ELF .so or executable image. */
+   res      = False;
+   ok       = (n_oimage >= sizeof(ElfXX_Ehdr));
+   ehdr_img = (ElfXX_Ehdr*)oimage;
 
    if (ok)
-      ok &= ML_(is_elf_object_file)(ehdr);
+      ok &= ML_(is_elf_object_file)(ehdr_img, n_oimage);
 
    if (!ok) {
-      ML_(symerr)("Invalid ELF header, or missing stringtab/sectiontab.");
+      ML_(symerr)("Invalid ELF Header");
       goto out;
    }
 
-   /* Walk the LOAD headers in the phdr and update the SegInfo to
-      include them all, so that this segment also contains data and
-      bss memory.  Also computes correct symbol offset value for this
-      ELF file. */
-   if (ehdr->e_phoff + ehdr->e_phnum*sizeof(ElfXX_Phdr) > n_oimage) {
-      ML_(symerr)("ELF program header is beyond image end?!");
+   /* Find where the program and section header tables are, and give
+      up if either is missing or outside the image (bogus). */
+   phdr_img     = (ElfXX_Phdr*)( ((UChar*)ehdr_img) + ehdr_img->e_phoff );
+   phdr_nent    = ehdr_img->e_phnum;
+   phdr_ent_szB = ehdr_img->e_phentsize;
+
+   shdr_img     = (ElfXX_Shdr*)( ((UChar*)ehdr_img) + ehdr_img->e_shoff );
+   shdr_nent    = ehdr_img->e_shnum;
+   shdr_ent_szB = ehdr_img->e_shentsize;
+
+   if (debug) {
+      VG_(printf)("object: img %p n_oimage %ld\n",
+                  (void*)oimage, n_oimage);
+      VG_(printf)("phdr:   img %p nent %ld ent_szB %ld\n",
+                  phdr_img, phdr_nent, phdr_ent_szB);
+      VG_(printf)("shdr:   img %p nent %ld ent_szB %ld\n",
+                  shdr_img, shdr_nent, shdr_ent_szB);
+   }
+
+   if (phdr_nent == 0
+       || !contained_within(
+             oimage, n_oimage,
+             (Addr)phdr_img, phdr_nent * phdr_ent_szB)) {
+      ML_(symerr)("Missing or invalid ELF Program Header Table");
       goto out;
    }
+
+   if (shdr_nent == 0
+       || !contained_within(
+             oimage, n_oimage,
+             (Addr)shdr_img, shdr_nent * shdr_ent_szB)) {
+      ML_(symerr)("Missing or invalid ELF Section Header Table");
+      goto out;
+   }
+
+   /* Also find the section header's string table, and validate. */
+   /* checked previously by is_elf_object_file: */
+   vg_assert( ehdr_img->e_shstrndx != SHN_UNDEF );
+
+   shdr_strtab_img
+      = (UChar*)( ((UChar*)ehdr_img)
+                  + shdr_img[ehdr_img->e_shstrndx].sh_offset);
+   if (!contained_within( oimage, n_oimage,
+                          (Addr)shdr_strtab_img,
+                          1/*bogus, but we don't know the real size*/ )) {
+      ML_(symerr)("Invalid ELF Section Header String Table");
+      goto out;
+   }
+
+   if (debug) {
+      VG_(printf)("shdr:   string table at %p\n", shdr_strtab_img );
+   }
+
+   /* Do another amazingly tedious thing: find out the .soname for
+      this object.  Apparently requires looking through the program
+      header table. */
+   vg_assert(si->soname == NULL);
+
    {
-      Bool offset_set = False;
+//zz      Bool offset_set = False;
       ElfXX_Addr prev_addr = 0;
       Addr baseaddr = 0;
 
-      vg_assert(si->soname == NULL);
+      for (i = 0; i < phdr_nent; i++) {
+         ElfXX_Phdr* phdr = INDEX_BIS( phdr_img, i, phdr_ent_szB );
 
-      for (i = 0; i < ehdr->e_phnum; i++) {
-	 ElfXX_Phdr *o_phdr;
-	 ElfXX_Addr mapped, mapped_end;
-
-	 o_phdr = &((ElfXX_Phdr *)(oimage + ehdr->e_phoff))[i];
+         /* Make sure the PT_LOADable entries are in order */
+         if (phdr->p_type == PT_LOAD) {
+            if (debug)
+               VG_(printf)("Comparing %p %p\n", prev_addr, phdr->p_vaddr);
+            if (phdr->p_vaddr < prev_addr) {
+               ML_(symerr)("ELF Program Headers are not in ascending order");
+               goto out;
+            }
+            prev_addr = phdr->p_vaddr;
+         }
 
          /* Try to get the soname.  If there isn't one, use "NONE".
             The seginfo needs to have some kind of soname in order to
             facilitate writing redirect functions, since all redirect
             specifications require a soname (pattern). */
-	 if (o_phdr->p_type == PT_DYNAMIC && si->soname == NULL) {
-	    const ElfXX_Dyn *dyn = (const ElfXX_Dyn *)(oimage + o_phdr->p_offset);
-	    Int stroff = -1;
-	    Char *strtab = NULL;
-	    Int j;
-	    
-	    for(j = 0; dyn[j].d_tag != DT_NULL; j++) {
-	       switch(dyn[j].d_tag) {
-	       case DT_SONAME:
-		  stroff = dyn[j].d_un.d_val;
-		  break;
+	 if (phdr->p_type == PT_DYNAMIC && si->soname == NULL) {
+            ElfXX_Dyn* dyn_img = (ElfXX_Dyn*)( ((UChar*)ehdr_img)
+                                               + phdr->p_offset);
+	    Word   stroff = -1;
+	    UChar* strtab = NULL;
+	    Word   j;
 
+	    for (j = 0; dyn_img[j].d_tag != DT_NULL; j++) {
+	       switch (dyn_img[j].d_tag) {
+	       case DT_SONAME:
+		  stroff = dyn_img[j].d_un.d_val;
+		  break;
 	       case DT_STRTAB:
-		  strtab = (Char *)oimage + dyn[j].d_un.d_ptr - baseaddr;
+                  strtab = ((UChar*)ehdr_img)
+                           + dyn_img[j].d_un.d_ptr - baseaddr;
 		  break;
 	       }
 	    }
 
-	    if (stroff != -1 && strtab != 0) {
+	    if (stroff != -1 && strtab != NULL) {
+               if (debug)
+                  VG_(printf)("Got soname=%s\n", strtab+stroff);
 	       TRACE_SYMTAB("soname=%s\n", strtab+stroff);
 	       si->soname = VG_(arena_strdup)(VG_AR_DINFO, strtab+stroff);
 	    }
 	 }
 
-	 if (o_phdr->p_type != PT_LOAD)
-	    continue;
-
-	 if (!offset_set) {
-	    offset_set = True;
-	    offset_oimage = si->text_start_avma - o_phdr->p_vaddr;
-	    baseaddr = o_phdr->p_vaddr;
-	 }
-
-         // Make sure the Phdrs are in order
-	 if (o_phdr->p_vaddr < prev_addr) {
-	    ML_(symerr)("ELF Phdrs are out of order!?");
-            goto out;
-	 }
-	 prev_addr = o_phdr->p_vaddr;
-
-         // Get the data and bss start/size if appropriate
-	 mapped = o_phdr->p_vaddr + offset_oimage;
-	 mapped_end = mapped + o_phdr->p_memsz;
-	 if (si->data_start_avma == 0 &&
-	     (o_phdr->p_flags & (PF_R|PF_W|PF_X)) == (PF_R|PF_W)) {
-	    si->data_start_avma = mapped;
-	    si->data_size       = o_phdr->p_filesz;
-	    si->bss_start_avma  = mapped + o_phdr->p_filesz;
-	    if (o_phdr->p_memsz > o_phdr->p_filesz)
-	       si->bss_size = o_phdr->p_memsz - o_phdr->p_filesz;
-	    else
-	       si->bss_size = 0;
-	 }
-
-         mapped = mapped & ~(VKI_PAGE_SIZE-1);
-	 mapped_end = (mapped_end + VKI_PAGE_SIZE - 1) & ~(VKI_PAGE_SIZE-1);
-
-	 if (VG_(needs).data_syms 
-             && mapped >= si->text_start_avma 
-             && mapped <= (si->text_start_avma + si->text_size)
-             && mapped_end > (si->text_start_avma + si->text_size)) {
-            /* XXX jrs 2007 Jan 11: what's going on here?  If data
-               syms are involved, surely we shouldn't be messing with
-               the segment's text_size unless there is an assumption
-               that the data segment has been mapped immediately after
-               the text segment.  Which doesn't sound good to me. */
-	    UInt newsz = mapped_end - si->text_start_avma;
-	    if (newsz > si->text_size) {
-	       if (0)
-		  VG_(printf)("extending mapping %p..%p %d -> ..%p %d\n", 
-			      si->text_start_avma, 
-                              si->text_start_avma + si->text_size, 
-                              si->text_size,
-			      si->text_start_avma + newsz, newsz);
-
-	       si->text_size = newsz;
-	    }
-	 }
+//zz	 if (o_phdr->p_type != PT_LOAD)
+//zz	    continue;
+//zz
+//zz	 if (!offset_set) {
+//zz	    offset_set = True;
+//zz	    offset_oimage = si->text_start_avma - o_phdr->p_vaddr;
+//zz	    baseaddr = o_phdr->p_vaddr;
+//zz	 }
+//zz
+//zz         // Get the data and bss start/size if appropriate
+//zz	 mapped = o_phdr->p_vaddr + offset_oimage;
+//zz	 mapped_end = mapped + o_phdr->p_memsz;
+//zz	 if (si->data_start_avma == 0 &&
+//zz	     (o_phdr->p_flags & (PF_R|PF_W|PF_X)) == (PF_R|PF_W)) {
+//zz	    si->data_start_avma = mapped;
+//zz	    si->data_size       = o_phdr->p_filesz;
+//zz	    si->bss_start_avma  = mapped + o_phdr->p_filesz;
+//zz	    if (o_phdr->p_memsz > o_phdr->p_filesz)
+//zz	       si->bss_size = o_phdr->p_memsz - o_phdr->p_filesz;
+//zz	    else
+//zz	       si->bss_size = 0;
+//zz	 }
+//zz
+//zz         mapped = mapped & ~(VKI_PAGE_SIZE-1);
+//zz	 mapped_end = (mapped_end + VKI_PAGE_SIZE - 1) & ~(VKI_PAGE_SIZE-1);
+//zz
+//zz	 if (VG_(needs).data_syms 
+//zz             && mapped >= si->text_start_avma 
+//zz             && mapped <= (si->text_start_avma + si->text_size)
+//zz             && mapped_end > (si->text_start_avma + si->text_size)) {
+//zz            /* XXX jrs 2007 Jan 11: what's going on here?  If data
+//zz               syms are involved, surely we shouldn't be messing with
+//zz               the segment's text_size unless there is an assumption
+//zz               that the data segment has been mapped immediately after
+//zz               the text segment.  Which doesn't sound good to me. */
+//zz	    UInt newsz = mapped_end - si->text_start_avma;
+//zz	    if (newsz > si->text_size) {
+//zz	       if (0)
+//zz		  VG_(printf)("extending mapping %p..%p %d -> ..%p %d\n", 
+//zz			      si->text_start_avma, 
+//zz                              si->text_start_avma + si->text_size, 
+//zz                              si->text_size,
+//zz			      si->text_start_avma + newsz, newsz);
+//zz
+//zz	       si->text_size = newsz;
+//zz	    }
+//zz	 }
       }
    }
 
-   si->text_bias = offset_oimage;
+
+   /* Now read the section table. */
+   if (debug) {
+      VG_(printf)("rx: foffsets %ld .. %ld\n",
+                  si->rx_map_foff, si->rx_map_foff + si->rx_map_size - 1 );
+      VG_(printf)("rw: foffsets %ld .. %ld\n",
+                  si->rw_map_foff, si->rw_map_foff + si->rw_map_size - 1 );
+   }
+   for (i = 0; i < shdr_nent; i++) {
+      ElfXX_Shdr* shdr = INDEX_BIS( shdr_img, i, shdr_ent_szB );
+      UChar* name = shdr_strtab_img + shdr->sh_name;
+      Addr   svma = shdr->sh_addr;
+      OffT   foff = shdr->sh_offset;
+      UWord  size = shdr->sh_size;
+      Bool   bits = !(shdr->sh_type == SHT_NOBITS);
+      Bool   inrx = size > 0 && foff >= si->rx_map_foff
+                             && foff < si->rx_map_foff + si->rx_map_size;
+      Bool   inrw = size > 0 && foff >= si->rw_map_foff
+                             && foff < si->rw_map_foff + si->rw_map_size;
+
+      if (debug)
+         VG_(printf)("section %2ld  %s %s  foff %6ld .. %6ld  "
+                     "  svma %p  name \"%s\"\n", 
+                     i, inrx ? "rx" : "  ", inrw ? "rw" : "  ",
+                     foff, foff+size-1, (void*)svma, name );
+
+      /* Check for sane-sized segments.  SHT_NOBITS sections have zero
+         size in the file. */
+      if ((foff >= n_oimage) || (foff + (bits ? size : 0) > n_oimage)) {
+         ML_(symerr)("ELF Section extends beyond image end");
+         goto out;
+      }
+
+#     define BAD(_secname)                                 \
+         do { ML_(symerr)("Can't make sense of " _secname  \
+                          " section mapping");             \
+              goto out;                                    \
+         } while (0)
+
+      /* Find avma-s for .text, .data, .opd */
+
+      /* Accept .text only when mapped as rx */
+      if (0 == VG_(strcmp)(name, ".text")) {
+         if (inrx /* && !inrw */ && size > 0 && si->text_size == 0) {
+            si->text_start_avma = si->rx_map_avma + foff - si->rx_map_foff;
+            si->text_size = size;
+            si->text_bias = si->text_start_avma - svma;
+            if (debug)
+               VG_(printf)("acquiring .text avma = %p\n", si->text_start_avma);
+         } else {
+            BAD(".text");
+         }
+     }
+
+      /* Accept .data only when mapped as rw */
+      if (0 == VG_(strcmp)(name, ".data")) {
+         if (/*!inrx && */ inrw && size > 0 && si->data_size == 0) {
+            si->data_start_avma = si->rw_map_avma + foff - si->rw_map_foff;
+            si->data_size = size;
+            if (debug)
+               VG_(printf)("acquiring .data avma = %p\n", si->data_start_avma);
+         } else {
+            BAD(".data");
+         }
+     }
+
+      /* Accept .opd only when mapped as rw */
+      if (0 == VG_(strcmp)(name, ".opd")) {
+         if (!inrx && inrw && size > 0 && si->opd_size == 0) {
+            si->opd_start_avma = si->rw_map_avma + foff - si->rw_map_foff;
+            si->opd_size = size;
+            if (debug)
+               VG_(printf)("acquiring .opd avma = %p\n", si->opd_start_avma);
+         } else {
+            BAD(".opd");
+         }
+     }
+
+#    undef BAD
+
+   }
+
 
    if (VG_(clo_verbosity) > 2 || VG_(clo_trace_redir))
       VG_(message)(Vg_DebugMsg, "   svma %010p, avma %010p", 
@@ -1001,15 +1196,8 @@ Bool ML_(read_elf_debug_info) ( struct _SegInfo* si )
    }
 
    TRACE_SYMTAB("shoff = %d,  shnum = %d,  size = %d,  n_vg_oimage = %d\n",
-                ehdr->e_shoff, ehdr->e_shnum, sizeof(ElfXX_Shdr), n_oimage );
-
-   if (ehdr->e_shoff + ehdr->e_shnum*sizeof(ElfXX_Shdr) > n_oimage) {
-      ML_(symerr)("ELF section header is beyond image end?!");
-      goto out;
-   }
-
-   shdr = (ElfXX_Shdr*)(oimage + ehdr->e_shoff);
-   sh_strtab = (UChar*)(oimage + shdr[ehdr->e_shstrndx].sh_offset);
+                ehdr_img->e_shoff, ehdr_img->e_shnum, 
+                sizeof(ElfXX_Shdr), n_oimage );
 
    /* Find interesting sections, read the symbol table(s), read any debug
       information */
@@ -1055,7 +1243,6 @@ Bool ML_(read_elf_debug_info) ( struct _SegInfo* si )
       UInt       ehframe_sz      = 0;
 
       /* Section actual virtual addresses */
-      Addr       dummy_avma      = 0;
       Addr       ehframe_avma    = 0;
 
       /* Find all interesting sections */
@@ -1072,21 +1259,21 @@ Bool ML_(read_elf_debug_info) ( struct _SegInfo* si )
 	 transiently mapped aboard for inspection, it's always safe to
 	 inspect that area. */
 
-      for (i = 0; i < ehdr->e_shnum; i++) {
+      for (i = 0; i < ehdr_img->e_shnum; i++) {
 
-#        define FIND(sec_name, sec_size, sec_filea, sec_vma) \
-         if (0 == VG_(strcmp)(sec_name, sh_strtab + shdr[i].sh_name)) { \
+#        define FIND(sec_name, sec_size, sec_filea) \
+         if (0 == VG_(strcmp)(sec_name, shdr_strtab_img \
+                                        + shdr_img[i].sh_name)) { \
             Bool nobits; \
-            sec_vma   = (Addr)(offset_oimage + shdr[i].sh_addr); \
-            sec_filea = (void*)(oimage + shdr[i].sh_offset); \
-            sec_size  = shdr[i].sh_size; \
-            nobits = shdr[i].sh_type == SHT_NOBITS; \
+            sec_filea = (void*)(oimage + shdr_img[i].sh_offset); \
+            sec_size  = shdr_img[i].sh_size; \
+            nobits = shdr_img[i].sh_type == SHT_NOBITS; \
             TRACE_SYMTAB( "%18s: filea %p .. %p, vma %p .. %p\n", \
                           sec_name, (UChar*)sec_filea, \
-                                    ((UChar*)sec_filea) + sec_size - 1, \
-                          sec_vma, sec_vma + sec_size - 1); \
+                          ((UChar*)sec_filea) + sec_size - 1); \
             /* SHT_NOBITS sections have zero size in the file. */ \
-            if ( shdr[i].sh_offset + (nobits ? 0 : sec_size) > n_oimage ) { \
+            if ( shdr_img[i].sh_offset \
+                 + (nobits ? 0 : sec_size) > n_oimage ) { \
                ML_(symerr)("   section beyond image end?!"); \
                goto out; \
             } \
@@ -1094,29 +1281,29 @@ Bool ML_(read_elf_debug_info) ( struct _SegInfo* si )
 
          /* Nb: must find where .got and .plt sections will be in the
           * executable image, not in the object image transiently loaded. */
-         /*   NAME              SIZE           IMAGE addr       AVMA */
-         FIND(".dynsym",        dynsym_sz,     dynsym_img,      dummy_avma)
-         FIND(".dynstr",        dynstr_sz,     dynstr_img,      dummy_avma)
-         FIND(".symtab",        symtab_sz,     symtab_img,      dummy_avma)
-         FIND(".strtab",        strtab_sz,     strtab_img,      dummy_avma)
+         /*   NAME              SIZE           IMAGE addr */
+         FIND(".dynsym",        dynsym_sz,     dynsym_img)
+         FIND(".dynstr",        dynstr_sz,     dynstr_img)
+         FIND(".symtab",        symtab_sz,     symtab_img)
+         FIND(".strtab",        strtab_sz,     strtab_img)
 
-         FIND(".gnu_debuglink", debuglink_sz,  debuglink_img,   dummy_avma)
+         FIND(".gnu_debuglink", debuglink_sz,  debuglink_img)
 
-         FIND(".stab",          stab_sz,       stab_img,        dummy_avma)
-         FIND(".stabstr",       stabstr_sz,    stabstr_img,     dummy_avma)
+         FIND(".stab",          stab_sz,       stab_img)
+         FIND(".stabstr",       stabstr_sz,    stabstr_img)
 
-         FIND(".debug_line",    debug_line_sz, debug_line_img,  dummy_avma)
-         FIND(".debug_info",    debug_info_sz, debug_info_img,  dummy_avma)
-         FIND(".debug_abbrev",  debug_abbv_sz, debug_abbv_img,  dummy_avma)
-         FIND(".debug_str",     debug_str_sz,  debug_str_img,   dummy_avma)
+         FIND(".debug_line",    debug_line_sz, debug_line_img)
+         FIND(".debug_info",    debug_info_sz, debug_info_img)
+         FIND(".debug_abbrev",  debug_abbv_sz, debug_abbv_img)
+         FIND(".debug_str",     debug_str_sz,  debug_str_img)
 
-         FIND(".debug",         dwarf1d_sz,    dwarf1d_img,     dummy_avma)
-         FIND(".line",          dwarf1l_sz,    dwarf1l_img,     dummy_avma)
-         FIND(".eh_frame",      ehframe_sz,    ehframe_img,     ehframe_avma)
+         FIND(".debug",         dwarf1d_sz,    dwarf1d_img)
+         FIND(".line",          dwarf1l_sz,    dwarf1l_img)
+         FIND(".eh_frame",      ehframe_sz,    ehframe_img)
 
-         FIND(".got",           si->got_size,  dummy_filea_img, si->got_start_avma)
-         FIND(".plt",           si->plt_size,  dummy_filea_img, si->plt_start_avma)
-         FIND(".opd",           si->opd_size,  opd_filea_img,   si->opd_start_avma)
+         FIND(".got",           si->got_size,  dummy_filea_img)
+         FIND(".plt",           si->plt_size,  dummy_filea_img)
+         FIND(".opd",           si->opd_size,  opd_filea_img)
 
 #        undef FIND
       }
@@ -1134,20 +1321,22 @@ Bool ML_(read_elf_debug_info) ( struct _SegInfo* si )
          /* See if we can find a matching debug file */
          dimage = find_debug_file(si->filename, debuglink_img, crc, &n_dimage);
          if (dimage != 0) {
-            ehdr = (ElfXX_Ehdr*)dimage;
+            ElfXX_Ehdr* ehdr_dimg = (ElfXX_Ehdr*)dimage;
 
             if (n_dimage >= sizeof(ElfXX_Ehdr) 
-                && ML_(is_elf_object_file(ehdr))
-                && ehdr->e_phoff + ehdr->e_phnum*sizeof(ElfXX_Phdr) <= n_dimage
-                && ehdr->e_shoff + ehdr->e_shnum*sizeof(ElfXX_Shdr) <= n_dimage)
+                && ML_(is_elf_object_file(ehdr_dimg, n_dimage))
+                && ehdr_dimg->e_phoff + ehdr_dimg->e_phnum*sizeof(ElfXX_Phdr) <= n_dimage
+                && ehdr_dimg->e_shoff + ehdr_dimg->e_shnum*sizeof(ElfXX_Shdr) <= n_dimage)
             {
                Bool need_symtab = (NULL == symtab_img);
-               Bool need_stabs = (NULL == stab_img);
+               Bool need_stabs  = (NULL == stab_img);
                Bool need_dwarf2 = (NULL == debug_info_img);
                Bool need_dwarf1 = (NULL == dwarf1d_img);
+               ElfXX_Shdr* shdr;
+               UChar* sh_strtab;
 
-               for (i = 0; i < ehdr->e_phnum; i++) {
-                  ElfXX_Phdr *o_phdr = &((ElfXX_Phdr *)(dimage + ehdr->e_phoff))[i];
+               for (i = 0; i < ehdr_dimg->e_phnum; i++) {
+                  ElfXX_Phdr *o_phdr = &((ElfXX_Phdr *)(dimage + ehdr_dimg->e_phoff))[i];
                   if (o_phdr->p_type == PT_LOAD) {
                      offset_dimage = si->text_start_avma - o_phdr->p_vaddr;
                      break;
@@ -1158,14 +1347,14 @@ Bool ML_(read_elf_debug_info) ( struct _SegInfo* si )
                if (need_symtab)
                   symtab_offset = offset_dimage;
 
-               shdr = (ElfXX_Shdr*)(dimage + ehdr->e_shoff);
-               sh_strtab = (UChar*)(dimage + shdr[ehdr->e_shstrndx].sh_offset);
+               shdr = (ElfXX_Shdr*)(dimage + ehdr_dimg->e_shoff);
+               sh_strtab = (UChar*)(dimage + shdr[ehdr_dimg->e_shstrndx].sh_offset);
 
                /* Same deal as previous FIND, except simpler - doesn't
                   look for avma, only oimage address. */
 
                /* Find all interesting sections */
-               for (i = 0; i < ehdr->e_shnum; i++) {
+               for (i = 0; i < ehdr_dimg->e_shnum; i++) {
 
 #                 define FIND(condition, sec_name, sec_size, sec_filea)	\
                   if (condition \
