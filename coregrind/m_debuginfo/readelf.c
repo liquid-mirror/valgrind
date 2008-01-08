@@ -833,15 +833,15 @@ Bool ML_(read_elf_debug_info) ( struct _DebugInfo* di )
    Bool          res, ok;
    SysRes        fd, sres;
    Word          i;
-   OffT          offset_oimage = 0;
-   Addr          dimage = 0;
-   UWord         n_dimage = 0;
-   OffT          offset_dimage = 0;
    Bool          debug = False;
 
    /* Image addresses for the ELF file we're working with. */
    Addr          oimage   = 0;
    UWord         n_oimage = 0;
+
+   /* Ditto for any ELF debuginfo file that we might happen to load. */
+   Addr          dimage   = 0;
+   UWord         n_dimage = 0;
 
    /* ELF header for the main file.  Should == oimage since is at
       start of file. */
@@ -1007,9 +1007,8 @@ Bool ML_(read_elf_debug_info) ( struct _DebugInfo* di )
    vg_assert(di->soname == NULL);
 
    {
-//zz      Bool offset_set = False;
       ElfXX_Addr prev_addr = 0;
-      Addr baseaddr = 0;
+      Addr       baseaddr = 0;
 
       for (i = 0; i < phdr_nent; i++) {
          ElfXX_Phdr* phdr = INDEX_BIS( phdr_img, i, phdr_ent_szB );
@@ -1147,12 +1146,11 @@ Bool ML_(read_elf_debug_info) ( struct _DebugInfo* di )
 
       /* Find avma-s for: .text .data .bss .plt .got .opd .eh_frame */
 
-      /* Accept .text where mapped as rx */
+      /* Accept .text where mapped as rx (code) */
       if (0 == VG_(strcmp)(name, ".text")) {
          if (inrx && size > 0 && di->text_size == 0) {
             di->text_avma = di->rx_map_avma + foff - di->rx_map_foff;
-            di->text_size = //di->rx_map_size; //size;
-                            size;
+            di->text_size = size;
             di->text_bias = VG_PGROUNDDN(di->text_avma) - VG_PGROUNDDN(svma);
             if (debug)
                VG_(printf)("acquiring .text avma = %p\n", di->text_avma);
@@ -1161,7 +1159,7 @@ Bool ML_(read_elf_debug_info) ( struct _DebugInfo* di )
          }
       }
 
-      /* Accept .data where mapped as rw */
+      /* Accept .data where mapped as rw (data) */
       if (0 == VG_(strcmp)(name, ".data")) {
          if (inrw && size > 0 && di->data_size == 0) {
             di->data_avma = di->rw_map_avma + foff - di->rw_map_foff;
@@ -1174,7 +1172,7 @@ Bool ML_(read_elf_debug_info) ( struct _DebugInfo* di )
          }
       }
 
-      /* Accept .bss where mapped as rw */
+      /* Accept .bss where mapped as rw (data) */
       if (0 == VG_(strcmp)(name, ".bss")) {
          if (inrw && size > 0 && di->bss_size == 0) {
             di->bss_avma = di->rw_map_avma + foff - di->rw_map_foff;
@@ -1186,7 +1184,31 @@ Bool ML_(read_elf_debug_info) ( struct _DebugInfo* di )
          }
       }
 
-      /* Accept .opd where mapped as rw */
+      /* Accept .got where mapped as rw (data) */
+      if (0 == VG_(strcmp)(name, ".got")) {
+         if (inrw && size > 0 && di->got_size == 0) {
+            di->got_avma = di->rw_map_avma + foff - di->rw_map_foff;
+            di->got_size = size;
+            if (debug)
+               VG_(printf)("acquiring .got avma = %p\n", di->got_avma);
+         } else {
+            BAD(".got");
+         }
+      }
+
+      /* Accept .plt where mapped as rx (code) */
+      if (0 == VG_(strcmp)(name, ".plt")) {
+         if (inrx && size > 0 && di->plt_size == 0) {
+            di->plt_avma = di->rx_map_avma + foff - di->rx_map_foff;
+            di->plt_size = size;
+            if (debug)
+               VG_(printf)("acquiring .plt avma = %p\n", di->plt_avma);
+         } else {
+            BAD(".plt");
+         }
+      }
+
+      /* Accept .opd where mapped as rw (data) */
       if (0 == VG_(strcmp)(name, ".opd")) {
          if (inrw && size > 0 && di->opd_size == 0) {
             di->opd_avma = di->rw_map_avma + foff - di->rw_map_foff;
@@ -1198,10 +1220,10 @@ Bool ML_(read_elf_debug_info) ( struct _DebugInfo* di )
          }
       }
 
-      /* Accept .eh_frame where mapped as rx */
+      /* Accept .eh_frame where mapped as rx (code) (?!) */
       if (0 == VG_(strcmp)(name, ".eh_frame")) {
          if (inrx && size > 0 && di->ehframe_size == 0) {
-            di->ehframe_avma = VG_PGROUNDDN(di->rx_map_avma + foff - di->rx_map_foff);
+            di->ehframe_avma = di->rx_map_avma + foff - di->rx_map_foff;
             di->ehframe_size = size;
             if (debug)
                VG_(printf)("acquiring .eh_frame avma = %p\n", di->ehframe_avma);
@@ -1236,13 +1258,14 @@ Bool ML_(read_elf_debug_info) ( struct _DebugInfo* di )
    /* Find interesting sections, read the symbol table(s), read any debug
       information */
    {
-      /* IMAGE addresses: pointers to start of sections (in the
-         oimage, not in the running image) -- image addresses */
+      /* IMAGE addresses: pointers to start of sections in the
+         transiently loaded oimage, not in the fragments of the file
+         mapped in by the guest's dynamic linker. */
       UChar*     strtab_img      = NULL; /* .strtab */
       ElfXX_Sym* symtab_img      = NULL; /* .symtab */
       UChar*     dynstr_img      = NULL; /* .dynstr */
       ElfXX_Sym* dynsym_img      = NULL; /* .dynsym */
-      Char*      debuglink_img   = NULL; /* .gnu_debuglink */
+      UChar*     debuglink_img   = NULL; /* .gnu_debuglink */
       UChar*     stab_img        = NULL; /* .stab         (stabs)  */
       UChar*     stabstr_img     = NULL; /* .stabstr      (stabs)  */
       UChar*     debug_line_img  = NULL; /* .debug_line   (dwarf2) */
@@ -1252,69 +1275,58 @@ Bool ML_(read_elf_debug_info) ( struct _DebugInfo* di )
       UChar*     dwarf1d_img     = NULL; /* .debug        (dwarf1) */
       UChar*     dwarf1l_img     = NULL; /* .line         (dwarf1) */
       UChar*     ehframe_img     = NULL; /* .eh_frame     (dwarf2) */
-      UChar*     opd_filea_img   = NULL; /* .opd          (dwarf2, ppc64-linux) */
-      UChar*     dummy_filea_img = NULL;
-
-      OffT       symtab_offset   = offset_oimage;
-      OffT       dynsym_offset   = offset_oimage;
-      OffT       debug_offset    = offset_oimage;
-      OffT       opd_offset      = offset_oimage;
+      UChar*     opd_img         = NULL; /* .opd          (dwarf2, ppc64-linux) */
 
       /* Section sizes, in bytes */
-      UInt       strtab_sz       = 0;
-      UInt       symtab_sz       = 0;
-      UInt       dynstr_sz       = 0;
-      UInt       dynsym_sz       = 0;
-      UInt       debuglink_sz    = 0;
-      UInt       stab_sz         = 0;
-      UInt       stabstr_sz      = 0;
-      UInt       debug_line_sz   = 0;
-      UInt       debug_info_sz   = 0;
-      UInt       debug_abbv_sz   = 0;
-      UInt       debug_str_sz    = 0;
-      UInt       dwarf1d_sz      = 0;
-      UInt       dwarf1l_sz      = 0;
-      UInt       ehframe_sz      = 0;
-
-      /* Section actual virtual addresses */
-      Addr       ehframe_avma    = 0;
+      SizeT      strtab_sz       = 0;
+      SizeT      symtab_sz       = 0;
+      SizeT      dynstr_sz       = 0;
+      SizeT      dynsym_sz       = 0;
+      SizeT      debuglink_sz    = 0;
+      SizeT      stab_sz         = 0;
+      SizeT      stabstr_sz      = 0;
+      SizeT      debug_line_sz   = 0;
+      SizeT      debug_info_sz   = 0;
+      SizeT      debug_abbv_sz   = 0;
+      SizeT      debug_str_sz    = 0;
+      SizeT      dwarf1d_sz      = 0;
+      SizeT      dwarf1l_sz      = 0;
+      SizeT      ehframe_sz      = 0;
 
       /* Find all interesting sections */
 
       /* What FIND does: it finds the section called SEC_NAME.  The
-	 size of it is assigned to SEC_SIZE.  The address that it will
-	 appear in the running image is assigned to SEC_VMA (note,
-	 this will be meaningless for sections which are not marked
-	 loadable.  Even for sections which are marked loadable, the
+	 size of it is assigned to SEC_SIZE.  The address of the
+	 section in the transiently loaded oimage is assigned to
+	 SEC_FILEA.  Even for sections which are marked loadable, the
 	 client's ld.so may not have loaded them yet, so there is no
-	 guarantee that we can safely prod around in any such area)
-	 The address of the section in the transiently loaded oimage
-	 is assigned to SEC_FILEA.  Because the entire object file is
-	 transiently mapped aboard for inspection, it's always safe to
-	 inspect that area. */
+	 guarantee that we can safely prod around in any such area).
+	 Because the entire object file is transiently mapped aboard
+	 for inspection, it's always safe to inspect that area. */
 
       for (i = 0; i < ehdr_img->e_shnum; i++) {
 
-#        define FIND(sec_name, sec_size, sec_filea) \
-         if (0 == VG_(strcmp)(sec_name, shdr_strtab_img \
-                                        + shdr_img[i].sh_name)) { \
-            Bool nobits; \
-            sec_filea = (void*)(oimage + shdr_img[i].sh_offset); \
-            sec_size  = shdr_img[i].sh_size; \
-            nobits = shdr_img[i].sh_type == SHT_NOBITS; \
-            TRACE_SYMTAB( "%18s: filea %p .. %p, vma %p .. %p\n", \
-                          sec_name, (UChar*)sec_filea, \
-                          ((UChar*)sec_filea) + sec_size - 1); \
-            /* SHT_NOBITS sections have zero size in the file. */ \
-            if ( shdr_img[i].sh_offset \
-                 + (nobits ? 0 : sec_size) > n_oimage ) { \
-               ML_(symerr)("   section beyond image end?!"); \
-               goto out; \
+#        define FIND(sec_name, sec_size, sec_img) \
+         do { ElfXX_Shdr* shdr \
+                 = INDEX_BIS( shdr_img, i, shdr_ent_szB ); \
+            if (0 == VG_(strcmp)(sec_name, shdr_strtab_img \
+                                           + shdr->sh_name)) { \
+               Bool nobits; \
+               sec_img  = (void*)(oimage + shdr->sh_offset); \
+               sec_size = shdr->sh_size; \
+               nobits   = shdr->sh_type == SHT_NOBITS; \
+               TRACE_SYMTAB( "%18s: filea %p .. %p, vma %p .. %p\n", \
+                             sec_name, (UChar*)sec_img, \
+                             ((UChar*)sec_img) + sec_size - 1); \
+               /* SHT_NOBITS sections have zero size in the file. */ \
+               if ( shdr->sh_offset \
+                    + (nobits ? 0 : sec_size) > n_oimage ) { \
+                  ML_(symerr)("   section beyond image end?!"); \
+                  goto out; \
+               } \
             } \
-         }
+         } while (0);
 
-         /* Nb: must find where .got and .plt sections will be in the
-          * executable image, not in the object image transiently loaded. */
          /*   NAME              SIZE           IMAGE addr */
          FIND(".dynsym",        dynsym_sz,     dynsym_img)
          FIND(".dynstr",        dynstr_sz,     dynstr_img)
@@ -1335,10 +1347,6 @@ Bool ML_(read_elf_debug_info) ( struct _DebugInfo* di )
          FIND(".line",          dwarf1l_sz,    dwarf1l_img)
          FIND(".eh_frame",      ehframe_sz,    ehframe_img)
 
-         FIND(".got",           di->got_size,  dummy_filea_img)
-         FIND(".plt",           di->plt_size,  dummy_filea_img)
-         FIND(".opd",           di->opd_size,  opd_filea_img)
-
 #        undef FIND
       }
          
@@ -1354,75 +1362,117 @@ Bool ML_(read_elf_debug_info) ( struct _DebugInfo* di )
 
          /* See if we can find a matching debug file */
          dimage = find_debug_file(di->filename, debuglink_img, crc, &n_dimage);
-         if (dimage != 0) {
-            ElfXX_Ehdr* ehdr_dimg = (ElfXX_Ehdr*)dimage;
 
-            if (n_dimage >= sizeof(ElfXX_Ehdr) 
-                && ML_(is_elf_object_file(ehdr_dimg, n_dimage))
-                && ehdr_dimg->e_phoff + ehdr_dimg->e_phnum*sizeof(ElfXX_Phdr) <= n_dimage
-                && ehdr_dimg->e_shoff + ehdr_dimg->e_shnum*sizeof(ElfXX_Shdr) <= n_dimage)
-            {
-               Bool need_symtab = (NULL == symtab_img);
-               Bool need_stabs  = (NULL == stab_img);
-               Bool need_dwarf2 = (NULL == debug_info_img);
-               Bool need_dwarf1 = (NULL == dwarf1d_img);
-               ElfXX_Shdr* shdr;
-               UChar* sh_strtab;
+         if (dimage != 0 
+             && n_dimage >= sizeof(ElfXX_Ehdr)
+             && ML_(is_elf_object_file)((void*)dimage, n_dimage)) {
 
-               for (i = 0; i < ehdr_dimg->e_phnum; i++) {
-                  ElfXX_Phdr *o_phdr = &((ElfXX_Phdr *)(dimage + ehdr_dimg->e_phoff))[i];
-                  if (o_phdr->p_type == PT_LOAD) {
-                     offset_dimage = di->text_avma - o_phdr->p_vaddr;
-                     break;
-                  }
+            /* Pull out and validate program header and section header info */
+            ElfXX_Ehdr* ehdr_dimg        = (ElfXX_Ehdr*)dimage;
+            ElfXX_Phdr* phdr_dimg        = (ElfXX_Phdr*)( ((UChar*)ehdr_dimg)
+                                                          + ehdr_dimg->e_phoff );
+            UWord       phdr_dnent       = ehdr_dimg->e_phnum;
+            UWord       phdr_dent_szB    = ehdr_dimg->e_phentsize;
+            ElfXX_Shdr* shdr_dimg        = (ElfXX_Shdr*)( ((UChar*)ehdr_dimg)
+                                                          + ehdr_dimg->e_shoff );
+            UWord       shdr_dnent       = ehdr_dimg->e_shnum;
+            UWord       shdr_dent_szB    = ehdr_dimg->e_shentsize;
+            UChar*      shdr_strtab_dimg = NULL;
+
+            Bool need_symtab, need_stabs, need_dwarf2, need_dwarf1;
+
+            if (phdr_dnent == 0
+                || !contained_within(
+                       dimage, n_dimage,
+                       (Addr)phdr_dimg, phdr_dnent * phdr_dent_szB)) {
+               ML_(symerr)("Missing or invalid ELF Program Header Table (debuginfo file)");
+               goto out;
+            }
+
+            if (shdr_dnent == 0
+                || !contained_within(
+                       dimage, n_dimage,
+                       (Addr)shdr_dimg, shdr_dnent * shdr_dent_szB)) {
+               ML_(symerr)("Missing or invalid ELF Section Header Table (debuginfo file)");
+               goto out;
+            }
+
+            /* Also find the section header's string table, and validate. */
+            /* checked previously by is_elf_object_file: */
+            vg_assert( ehdr_dimg->e_shstrndx != SHN_UNDEF );
+
+            shdr_strtab_dimg
+               = (UChar*)( ((UChar*)ehdr_dimg)
+                           + shdr_dimg[ehdr_dimg->e_shstrndx].sh_offset);
+            if (!contained_within( dimage, n_dimage,
+                                   (Addr)shdr_strtab_dimg,
+                                   1/*bogus, but we don't know the real size*/ )) {
+               ML_(symerr)("Invalid ELF Section Header String Table (debuginfo file)");
+               goto out;
+            }
+
+            need_symtab = (NULL == symtab_img);
+            need_stabs  = (NULL == stab_img);
+            need_dwarf2 = (NULL == debug_info_img);
+            need_dwarf1 = (NULL == dwarf1d_img);
+
+            for (i = 0; i < ehdr_dimg->e_phnum; i++) {
+               ElfXX_Phdr* phdr 
+                  = INDEX_BIS( (void*)(dimage + ehdr_dimg->e_phoff), i, phdr_ent_szB );
+               if (phdr->p_type == PT_LOAD) {
+                  //offset_dimage = di->text_avma - phdr->p_vaddr;
+                  // FIXME: update di->text_bias at this point?
+                  // or can we assume the SVMAs in the debuginfo
+                  // file (hence, the biases) are the same as
+                  // established from the main file?
+                  break;
                }
+            }
 
-               debug_offset = offset_dimage;
-               if (need_symtab)
-                  symtab_offset = offset_dimage;
+            /* Same deal as previous FIND, except only do it for those
+               sections for which we didn't find anything useful in
+               the main file. */
 
-               shdr = (ElfXX_Shdr*)(dimage + ehdr_dimg->e_shoff);
-               sh_strtab = (UChar*)(dimage + shdr[ehdr_dimg->e_shstrndx].sh_offset);
+            /* Find all interesting sections */
+            for (i = 0; i < ehdr_dimg->e_shnum; i++) {
 
-               /* Same deal as previous FIND, except simpler - doesn't
-                  look for avma, only oimage address. */
-
-               /* Find all interesting sections */
-               for (i = 0; i < ehdr_dimg->e_shnum; i++) {
-
-#                 define FIND(condition, sec_name, sec_size, sec_filea)	\
+#              define FIND(condition, sec_name, sec_size, sec_img)	\
+               do { ElfXX_Shdr* shdr \
+                       = INDEX_BIS( shdr_dimg, i, shdr_dent_szB ); \
                   if (condition \
-                      && 0 == VG_(strcmp)(sec_name, sh_strtab + shdr[i].sh_name)) { \
+                      && 0 == VG_(strcmp)(sec_name, \
+                                          shdr_strtab_dimg + shdr->sh_name)) { \
                      Bool nobits; \
-                     if (0 != sec_filea) \
+                     if (0 != sec_img) \
                         VG_(core_panic)("repeated section!\n"); \
-                     sec_filea = (void*)(dimage + shdr[i].sh_offset); \
-                     sec_size  = shdr[i].sh_size; \
-                     nobits = shdr[i].sh_type == SHT_NOBITS; \
+                     sec_img  = (void*)(dimage + shdr->sh_offset); \
+                     sec_size = shdr->sh_size; \
+                     nobits   = shdr->sh_type == SHT_NOBITS; \
                      TRACE_SYMTAB( "%18s: filea %p .. %p\n", \
-                                   sec_name, (UChar*)sec_filea, \
-                                             ((UChar*)sec_filea) + sec_size - 1); \
+                                   sec_name, (UChar*)sec_img, \
+                                             ((UChar*)sec_img) + sec_size - 1); \
                      /* SHT_NOBITS sections have zero size in the file. */ \
-                     if ( shdr[i].sh_offset + (nobits ? 0 : sec_size) > n_dimage ) { \
+                     if ( shdr->sh_offset \
+                          + (nobits ? 0 : sec_size) > n_dimage ) { \
                         ML_(symerr)("   section beyond image end?!"); \
                         goto out; \
                      } \
-                  }
+                  } \
+               } while (0);
 
-                  /*   ??           NAME             SIZE           IMAGE addr */
-                  FIND(need_symtab, ".symtab",       symtab_sz,     symtab_img)
-                  FIND(need_symtab, ".strtab",       strtab_sz,     strtab_img)
-                  FIND(need_stabs,  ".stab",         stab_sz,       stab_img)
-                  FIND(need_stabs,  ".stabstr",      stabstr_sz,    stabstr_img)
-                  FIND(need_dwarf2, ".debug_line",   debug_line_sz, debug_line_img)
-                  FIND(need_dwarf2, ".debug_info",   debug_info_sz, debug_info_img)
-                  FIND(need_dwarf2, ".debug_abbrev", debug_abbv_sz, debug_abbv_img)
-                  FIND(need_dwarf2, ".debug_str",    debug_str_sz,  debug_str_img)
-                  FIND(need_dwarf1, ".debug",        dwarf1d_sz,    dwarf1d_img)
-                  FIND(need_dwarf1, ".line",         dwarf1l_sz,    dwarf1l_img)
+               /* NEEDED?        NAME             SIZE           IMAGE addr */
+               FIND(need_symtab, ".symtab",       symtab_sz,     symtab_img)
+               FIND(need_symtab, ".strtab",       strtab_sz,     strtab_img)
+               FIND(need_stabs,  ".stab",         stab_sz,       stab_img)
+               FIND(need_stabs,  ".stabstr",      stabstr_sz,    stabstr_img)
+               FIND(need_dwarf2, ".debug_line",   debug_line_sz, debug_line_img)
+               FIND(need_dwarf2, ".debug_info",   debug_info_sz, debug_info_img)
+               FIND(need_dwarf2, ".debug_abbrev", debug_abbv_sz, debug_abbv_img)
+               FIND(need_dwarf2, ".debug_str",    debug_str_sz,  debug_str_img)
+               FIND(need_dwarf1, ".debug",        dwarf1d_sz,    dwarf1d_img)
+               FIND(need_dwarf1, ".line",         dwarf1l_sz,    dwarf1l_img)
 
-#                 undef FIND
-               }
+#              undef FIND
             }
          }
       }
@@ -1441,14 +1491,14 @@ Bool ML_(read_elf_debug_info) ( struct _DebugInfo* di )
          read_elf_symtab = read_elf_symtab__normal;
 #        endif
          read_elf_symtab(di, "symbol table",
-                         symtab_img, symtab_sz, di->text_bias, /*symtab_offset,*/
+                         symtab_img, symtab_sz, di->text_bias,
                          strtab_img, strtab_sz, 
-                         opd_filea_img, opd_offset);
+                         opd_img, di->data_bias/*opd_offset*/);
 
          read_elf_symtab(di, "dynamic symbol table",
-                         dynsym_img, dynsym_sz, di->text_bias, /*dynsym_offset,*/
+                         dynsym_img, dynsym_sz, di->text_bias,
                          dynstr_img, dynstr_sz, 
-                         opd_filea_img, opd_offset);
+                         opd_img, di->data_bias/*opd_offset*/);
       }
 
       /* Read .eh_frame (call-frame-info) if any */
@@ -1462,7 +1512,7 @@ Bool ML_(read_elf_debug_info) ( struct _DebugInfo* di )
          we ignore it. */
 #     if !defined(VGP_amd64_linux)
       if (stab_img && stabstr_img) {
-         ML_(read_debuginfo_stabs) ( di, debug_offset, stab_img, stab_sz, 
+         ML_(read_debuginfo_stabs) ( di, di->text_bias, stab_img, stab_sz, 
                                          stabstr_img, stabstr_sz );
       }
 #     endif
@@ -1473,7 +1523,7 @@ Bool ML_(read_elf_debug_info) ( struct _DebugInfo* di )
          before using it. */
       if (debug_info_img && debug_abbv_img && debug_line_img
                                            /* && debug_str_img */) {
-         ML_(read_debuginfo_dwarf2) ( di, di->text_bias, /*debug_offset,*/ 
+         ML_(read_debuginfo_dwarf2) ( di, di->text_bias,
                                       debug_info_img,   debug_info_sz,
                                       debug_abbv_img,
                                       debug_line_img,   debug_line_sz,
