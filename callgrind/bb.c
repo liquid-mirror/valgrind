@@ -196,22 +196,22 @@ static __inline__
 obj_node* obj_of_address(Addr addr)
 {
   obj_node* obj;
-  SegInfo* si;
+  DebugInfo* di;
   OffT offset;
 
-  si = VG_(find_seginfo)(addr);
-  obj = CLG_(get_obj_node)( si );
+  di = VG_(find_seginfo)(addr);
+  obj = CLG_(get_obj_node)( di );
 
   /* Update symbol offset in object if remapped */
-  offset = si ? VG_(seginfo_sym_offset)(si):0;
+  offset = di ? VG_(seginfo_sym_offset)(di):0;
   if (obj->offset != offset) {
-      Addr start = si ? VG_(seginfo_start)(si) : 0;
+      Addr start = di ? VG_(seginfo_start)(di) : 0;
 
       CLG_DEBUG(0, "Mapping changed for '%s': %p -> %p\n",
 		obj->name, obj->start, start);
 
       /* Size should be the same, and offset diff == start diff */
-      CLG_ASSERT( obj->size == (si ? VG_(seginfo_size)(si) : 0) );
+      CLG_ASSERT( obj->size == (di ? VG_(seginfo_size)(di) : 0) );
       CLG_ASSERT( obj->start - start == obj->offset - offset );
       obj->offset = offset;
       obj->start = start;

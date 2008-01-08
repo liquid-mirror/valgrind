@@ -137,7 +137,7 @@ void ML_(ppDiCfSI) ( XArray* /* of CfiExpr */ exprs, DiCfSI* si )
    a chunking memory allocator rather than reallocating, so the
    pointers are stable.
 */
-UChar* ML_(addStr) ( struct _SegInfo* si, UChar* str, Int len )
+UChar* ML_(addStr) ( struct _DebugInfo* di, UChar* str, Int len )
 {
    struct strchunk *chunk;
    Int    space_needed;
@@ -149,15 +149,15 @@ UChar* ML_(addStr) ( struct _SegInfo* si, UChar* str, Int len )
    space_needed = 1 + len;
 
    // Allocate a new strtab chunk if necessary
-   if (si->strchunks == NULL || 
-       (si->strchunks->strtab_used 
+   if (di->strchunks == NULL || 
+       (di->strchunks->strtab_used 
         + space_needed) > SEGINFO_STRCHUNKSIZE) {
       chunk = VG_(arena_malloc)(VG_AR_DINFO, sizeof(*chunk));
       chunk->strtab_used = 0;
-      chunk->next = si->strchunks;
-      si->strchunks = chunk;
+      chunk->next = di->strchunks;
+      di->strchunks = chunk;
    }
-   chunk = si->strchunks;
+   chunk = di->strchunks;
 
    p = &chunk->strtab[chunk->strtab_used];
    VG_(memcpy)(p, str, len);
@@ -170,7 +170,7 @@ UChar* ML_(addStr) ( struct _SegInfo* si, UChar* str, Int len )
 
 /* Add a symbol to the symbol table. 
 */
-void ML_(addSym) ( struct _SegInfo* si, DiSym* sym )
+void ML_(addSym) ( struct _DebugInfo* di, DiSym* sym )
 {
    UInt   new_sz, i;
    DiSym* new_tab;
@@ -178,28 +178,28 @@ void ML_(addSym) ( struct _SegInfo* si, DiSym* sym )
    /* Ignore zero-sized syms. */
    if (sym->size == 0) return;
 
-   if (si->symtab_used == si->symtab_size) {
-      new_sz = 2 * si->symtab_size;
+   if (di->symtab_used == di->symtab_size) {
+      new_sz = 2 * di->symtab_size;
       if (new_sz == 0) new_sz = 500;
       new_tab = VG_(arena_malloc)(VG_AR_DINFO, new_sz * sizeof(DiSym) );
-      if (si->symtab != NULL) {
-         for (i = 0; i < si->symtab_used; i++)
-            new_tab[i] = si->symtab[i];
-         VG_(arena_free)(VG_AR_DINFO, si->symtab);
+      if (di->symtab != NULL) {
+         for (i = 0; i < di->symtab_used; i++)
+            new_tab[i] = di->symtab[i];
+         VG_(arena_free)(VG_AR_DINFO, di->symtab);
       }
-      si->symtab = new_tab;
-      si->symtab_size = new_sz;
+      di->symtab = new_tab;
+      di->symtab_size = new_sz;
    }
 
-   si->symtab[si->symtab_used] = *sym;
-   si->symtab_used++;
-   vg_assert(si->symtab_used <= si->symtab_size);
+   di->symtab[di->symtab_used] = *sym;
+   di->symtab_used++;
+   vg_assert(di->symtab_used <= di->symtab_size);
 }
 
 
 /* Add a location to the location table. 
 */
-static void addLoc ( struct _SegInfo* si, DiLoc* loc )
+static void addLoc ( struct _DebugInfo* di, DiLoc* loc )
 {
    UInt   new_sz, i;
    DiLoc* new_tab;
@@ -207,28 +207,28 @@ static void addLoc ( struct _SegInfo* si, DiLoc* loc )
    /* Zero-sized locs should have been ignored earlier */
    vg_assert(loc->size > 0);
 
-   if (si->loctab_used == si->loctab_size) {
-      new_sz = 2 * si->loctab_size;
+   if (di->loctab_used == di->loctab_size) {
+      new_sz = 2 * di->loctab_size;
       if (new_sz == 0) new_sz = 500;
       new_tab = VG_(arena_malloc)(VG_AR_DINFO, new_sz * sizeof(DiLoc) );
-      if (si->loctab != NULL) {
-         for (i = 0; i < si->loctab_used; i++)
-            new_tab[i] = si->loctab[i];
-         VG_(arena_free)(VG_AR_DINFO, si->loctab);
+      if (di->loctab != NULL) {
+         for (i = 0; i < di->loctab_used; i++)
+            new_tab[i] = di->loctab[i];
+         VG_(arena_free)(VG_AR_DINFO, di->loctab);
       }
-      si->loctab = new_tab;
-      si->loctab_size = new_sz;
+      di->loctab = new_tab;
+      di->loctab_size = new_sz;
    }
 
-   si->loctab[si->loctab_used] = *loc;
-   si->loctab_used++;
-   vg_assert(si->loctab_used <= si->loctab_size);
+   di->loctab[di->loctab_used] = *loc;
+   di->loctab_used++;
+   vg_assert(di->loctab_used <= di->loctab_size);
 }
 
 
 /* Top-level place to call to add a source-location mapping entry.
 */
-void ML_(addLineInfo) ( struct _SegInfo* si,
+void ML_(addLineInfo) ( struct _DebugInfo* di,
                         UChar*   filename,
                         UChar*   dirname, /* NULL == directory is unknown */
                         Addr     this,
@@ -273,16 +273,15 @@ void ML_(addLineInfo) ( struct _SegInfo* si,
        size = 1;
    }
 
-   /* vg_assert(this < si->text_start_avma + si->size 
-                && next-1 >= si->text_start_avma); */
-   if (this >= si->text_start_avma + si->text_size 
-       || next-1 < si->text_start_avma) {
+   /* vg_assert(this < di->text_avma + di->size 
+                && next-1 >= di->text_avma); */
+   if (this >= di->text_avma + di->text_size || next-1 < di->text_avma) {
        if (0)
           VG_(message)(Vg_DebugMsg, 
                        "warning: ignoring line info entry falling "
-                       "outside current SegInfo: %p %p %p %p",
-                       si->text_start_avma, 
-                       si->text_start_avma + si->text_size, 
+                       "outside current DebugInfo: %p %p %p %p",
+                       di->text_avma, 
+                       di->text_avma + di->text_size, 
                        this, next-1);
        return;
    }
@@ -314,13 +313,13 @@ void ML_(addLineInfo) ( struct _SegInfo* si,
 		       "addLoc: addr %p, size %d, line %d, file %s",
 		       this,size,lineno,filename);
 
-   addLoc ( si, &loc );
+   addLoc ( di, &loc );
 }
 
 
 /* Top-level place to call to add a CFI summary record.  The supplied
    DiCfSI is copied. */
-void ML_(addDiCfSI) ( struct _SegInfo* si, DiCfSI* cfsi )
+void ML_(addDiCfSI) ( struct _DebugInfo* di, DiCfSI* cfsi )
 {
    static const Bool debug = False;
    UInt    new_sz, i;
@@ -328,7 +327,7 @@ void ML_(addDiCfSI) ( struct _SegInfo* si, DiCfSI* cfsi )
 
    if (debug) {
       VG_(printf)("adding DiCfSI: ");
-      ML_(ppDiCfSI)(si->cfsi_exprs, cfsi);
+      ML_(ppDiCfSI)(di->cfsi_exprs, cfsi);
    }
 
    /* sanity */
@@ -339,11 +338,11 @@ void ML_(addDiCfSI) ( struct _SegInfo* si, DiCfSI* cfsi )
       broken. */
    vg_assert(cfsi->len < 5000000);
 
-   /* Rule out ones which are completely outside the segment.  These
-      probably indicate some kind of bug, but for the meantime ignore
-      them. */
-   if ( cfsi->base + cfsi->len - 1  <  si->text_start_avma
-        || si->text_start_avma + si->text_size - 1  <  cfsi->base ) {
+   /* Rule out ones which are completely outside the text segment.
+      These probably indicate some kind of bug, but for the meantime
+      ignore them. */
+   if ( cfsi->base + cfsi->len - 1  <  di->text_avma
+        || di->text_avma + di->text_size - 1  <  cfsi->base ) {
       static Int complaints = 3;
       if (VG_(clo_trace_cfi) || complaints > 0) {
          complaints--;
@@ -353,32 +352,32 @@ void ML_(addDiCfSI) ( struct _SegInfo* si, DiCfSI* cfsi )
                "warning: DiCfSI %p .. %p outside segment %p .. %p",
                cfsi->base, 
                cfsi->base + cfsi->len - 1,
-               si->text_start_avma,
-               si->text_start_avma + si->text_size - 1 
+               di->text_avma,
+               di->text_avma + di->text_size - 1 
             );
          }
          if (VG_(clo_trace_cfi)) 
-            ML_(ppDiCfSI)(si->cfsi_exprs, cfsi);
+            ML_(ppDiCfSI)(di->cfsi_exprs, cfsi);
       }
       return;
    }
 
-   if (si->cfsi_used == si->cfsi_size) {
-      new_sz = 2 * si->cfsi_size;
+   if (di->cfsi_used == di->cfsi_size) {
+      new_sz = 2 * di->cfsi_size;
       if (new_sz == 0) new_sz = 20;
       new_tab = VG_(arena_malloc)(VG_AR_DINFO, new_sz * sizeof(DiCfSI) );
-      if (si->cfsi != NULL) {
-         for (i = 0; i < si->cfsi_used; i++)
-            new_tab[i] = si->cfsi[i];
-         VG_(arena_free)(VG_AR_DINFO, si->cfsi);
+      if (di->cfsi != NULL) {
+         for (i = 0; i < di->cfsi_used; i++)
+            new_tab[i] = di->cfsi[i];
+         VG_(arena_free)(VG_AR_DINFO, di->cfsi);
       }
-      si->cfsi = new_tab;
-      si->cfsi_size = new_sz;
+      di->cfsi = new_tab;
+      di->cfsi_size = new_sz;
    }
 
-   si->cfsi[si->cfsi_used] = *cfsi;
-   si->cfsi_used++;
-   vg_assert(si->cfsi_used <= si->cfsi_size);
+   di->cfsi[di->cfsi_used] = *cfsi;
+   di->cfsi_used++;
+   vg_assert(di->cfsi_used <= di->cfsi_size);
 }
 
 
@@ -528,7 +527,7 @@ static Int compare_DiSym ( void* va, void* vb )
    so we can misdescribe memcmp() as bcmp()).  This is hard to avoid.
    It's mentioned in the FAQ file.
  */
-static DiSym* prefersym ( struct _SegInfo* si, DiSym* a, DiSym* b )
+static DiSym* prefersym ( struct _DebugInfo* di, DiSym* a, DiSym* b )
 {
    Int lena, lenb;		/* full length */
    Int vlena, vlenb;		/* length without version */
@@ -578,7 +577,7 @@ static DiSym* prefersym ( struct _SegInfo* si, DiSym* a, DiSym* b )
       return b;
 }
 
-static void canonicaliseSymtab ( struct _SegInfo* si )
+static void canonicaliseSymtab ( struct _DebugInfo* di )
 {
    Int   i, j, n_merged, n_truncated;
    Addr  s1, s2, e1, e2;
@@ -586,11 +585,11 @@ static void canonicaliseSymtab ( struct _SegInfo* si )
 #  define SWAP(ty,aa,bb) \
       do { ty tt = (aa); (aa) = (bb); (bb) = tt; } while (0)
 
-   if (si->symtab_used == 0)
+   if (di->symtab_used == 0)
       return;
 
-   VG_(ssort)(si->symtab, si->symtab_used, 
-                          sizeof(*si->symtab), compare_DiSym);
+   VG_(ssort)(di->symtab, di->symtab_used, 
+                          sizeof(*di->symtab), compare_DiSym);
 
   cleanup_more:
  
@@ -598,19 +597,19 @@ static void canonicaliseSymtab ( struct _SegInfo* si )
       using prefersym() (see it for details). */
    do {
       n_merged = 0;
-      j = si->symtab_used;
-      si->symtab_used = 0;
+      j = di->symtab_used;
+      di->symtab_used = 0;
       for (i = 0; i < j; i++) {
          if (i < j-1
-             && si->symtab[i].addr   == si->symtab[i+1].addr
-             && si->symtab[i].size   == si->symtab[i+1].size) {
+             && di->symtab[i].addr   == di->symtab[i+1].addr
+             && di->symtab[i].size   == di->symtab[i+1].size) {
             n_merged++;
             /* merge the two into one */
-	    si->symtab[si->symtab_used++] 
-               = *prefersym(si, &si->symtab[i], &si->symtab[i+1]);
+	    di->symtab[di->symtab_used++] 
+               = *prefersym(di, &di->symtab[i], &di->symtab[i+1]);
             i++;
          } else {
-            si->symtab[si->symtab_used++] = si->symtab[i];
+            di->symtab[di->symtab_used++] = di->symtab[i];
          }
       }
       TRACE_SYMTAB( "%d merged\n", n_merged);
@@ -620,29 +619,29 @@ static void canonicaliseSymtab ( struct _SegInfo* si )
    /* Detect and "fix" overlapping address ranges. */
    n_truncated = 0;
 
-   for (i = 0; i < ((Int)si->symtab_used) -1; i++) {
+   for (i = 0; i < ((Int)di->symtab_used) -1; i++) {
 
-      vg_assert(si->symtab[i].addr <= si->symtab[i+1].addr);
+      vg_assert(di->symtab[i].addr <= di->symtab[i+1].addr);
 
       /* Check for common (no overlap) case. */ 
-      if (si->symtab[i].addr + si->symtab[i].size 
-          <= si->symtab[i+1].addr)
+      if (di->symtab[i].addr + di->symtab[i].size 
+          <= di->symtab[i+1].addr)
          continue;
 
       /* There's an overlap.  Truncate one or the other. */
-      if (si->trace_symtab) {
+      if (di->trace_symtab) {
          VG_(printf)("overlapping address ranges in symbol table\n\t");
-         ML_(ppSym)( i, &si->symtab[i] );
+         ML_(ppSym)( i, &di->symtab[i] );
          VG_(printf)("\t");
-         ML_(ppSym)( i+1, &si->symtab[i+1] );
+         ML_(ppSym)( i+1, &di->symtab[i+1] );
          VG_(printf)("\n");
       }
 
       /* Truncate one or the other. */
-      s1 = si->symtab[i].addr;
-      s2 = si->symtab[i+1].addr;
-      e1 = s1 + si->symtab[i].size - 1;
-      e2 = s2 + si->symtab[i+1].size - 1;
+      s1 = di->symtab[i].addr;
+      s2 = di->symtab[i+1].addr;
+      e1 = s1 + di->symtab[i].size - 1;
+      e2 = s2 + di->symtab[i+1].size - 1;
       if (s1 < s2) {
          e1 = s2-1;
       } else {
@@ -657,19 +656,19 @@ static void canonicaliseSymtab ( struct _SegInfo* si )
               up back at cleanup_more, which will take care of it. */
 	 }
       }
-      si->symtab[i].addr   = s1;
-      si->symtab[i+1].addr = s2;
-      si->symtab[i].size   = e1 - s1 + 1;
-      si->symtab[i+1].size = e2 - s2 + 1;
+      di->symtab[i].addr   = s1;
+      di->symtab[i+1].addr = s2;
+      di->symtab[i].size   = e1 - s1 + 1;
+      di->symtab[i+1].size = e2 - s2 + 1;
       vg_assert(s1 <= s2);
-      vg_assert(si->symtab[i].size > 0);
-      vg_assert(si->symtab[i+1].size > 0);
+      vg_assert(di->symtab[i].size > 0);
+      vg_assert(di->symtab[i+1].size > 0);
       /* It may be that the i+1 entry now needs to be moved further
          along to maintain the address order requirement. */
       j = i+1;
-      while (j < ((Int)si->symtab_used)-1 
-             && si->symtab[j].addr > si->symtab[j+1].addr) {
-         SWAP(DiSym,si->symtab[j],si->symtab[j+1]);
+      while (j < ((Int)di->symtab_used)-1 
+             && di->symtab[j].addr > di->symtab[j+1].addr) {
+         SWAP(DiSym,di->symtab[j],di->symtab[j+1]);
          j++;
       }
       n_truncated++;
@@ -678,14 +677,14 @@ static void canonicaliseSymtab ( struct _SegInfo* si )
    if (n_truncated > 0) goto cleanup_more;
 
    /* Ensure relevant postconditions hold. */
-   for (i = 0; i < ((Int)si->symtab_used)-1; i++) {
+   for (i = 0; i < ((Int)di->symtab_used)-1; i++) {
       /* No zero-sized symbols. */
-      vg_assert(si->symtab[i].size > 0);
+      vg_assert(di->symtab[i].size > 0);
       /* In order. */
-      vg_assert(si->symtab[i].addr < si->symtab[i+1].addr);
+      vg_assert(di->symtab[i].addr < di->symtab[i+1].addr);
       /* No overlaps. */
-      vg_assert(si->symtab[i].addr + si->symtab[i].size - 1
-                < si->symtab[i+1].addr);
+      vg_assert(di->symtab[i].addr + di->symtab[i].size - 1
+                < di->symtab[i+1].addr);
    }
 #  undef SWAP
 }
@@ -705,34 +704,34 @@ static Int compare_DiLoc ( void* va, void* vb )
    return 0;
 }
 
-static void canonicaliseLoctab ( struct _SegInfo* si )
+static void canonicaliseLoctab ( struct _DebugInfo* di )
 {
    Int i, j;
 
 #  define SWAP(ty,aa,bb) \
       do { ty tt = (aa); (aa) = (bb); (bb) = tt; } while (0);
 
-   if (si->loctab_used == 0)
+   if (di->loctab_used == 0)
       return;
 
    /* Sort by start address. */
-   VG_(ssort)(si->loctab, si->loctab_used, 
-                          sizeof(*si->loctab), compare_DiLoc);
+   VG_(ssort)(di->loctab, di->loctab_used, 
+                          sizeof(*di->loctab), compare_DiLoc);
 
    /* If two adjacent entries overlap, truncate the first. */
-   for (i = 0; i < ((Int)si->loctab_used)-1; i++) {
-      vg_assert(si->loctab[i].size < 10000);
-      if (si->loctab[i].addr + si->loctab[i].size > si->loctab[i+1].addr) {
+   for (i = 0; i < ((Int)di->loctab_used)-1; i++) {
+      vg_assert(di->loctab[i].size < 10000);
+      if (di->loctab[i].addr + di->loctab[i].size > di->loctab[i+1].addr) {
          /* Do this in signed int32 because the actual .size fields
             are only 12 bits. */
-         Int new_size = si->loctab[i+1].addr - si->loctab[i].addr;
+         Int new_size = di->loctab[i+1].addr - di->loctab[i].addr;
          if (new_size < 0) {
-            si->loctab[i].size = 0;
+            di->loctab[i].size = 0;
          } else
          if (new_size > MAX_LOC_SIZE) {
-           si->loctab[i].size = MAX_LOC_SIZE;
+           di->loctab[i].size = MAX_LOC_SIZE;
          } else {
-           si->loctab[i].size = (UShort)new_size;
+           di->loctab[i].size = (UShort)new_size;
          }
       }
    }
@@ -740,29 +739,29 @@ static void canonicaliseLoctab ( struct _SegInfo* si )
    /* Zap any zero-sized entries resulting from the truncation
       process. */
    j = 0;
-   for (i = 0; i < (Int)si->loctab_used; i++) {
-      if (si->loctab[i].size > 0) {
+   for (i = 0; i < (Int)di->loctab_used; i++) {
+      if (di->loctab[i].size > 0) {
          if (j != i)
-            si->loctab[j] = si->loctab[i];
+            di->loctab[j] = di->loctab[i];
          j++;
       }
    }
-   si->loctab_used = j;
+   di->loctab_used = j;
 
    /* Ensure relevant postconditions hold. */
-   for (i = 0; i < ((Int)si->loctab_used)-1; i++) {
+   for (i = 0; i < ((Int)di->loctab_used)-1; i++) {
       /* 
       VG_(printf)("%d   (%d) %d 0x%x\n", 
-                   i, si->loctab[i+1].confident, 
-                   si->loctab[i+1].size, si->loctab[i+1].addr );
+                   i, di->loctab[i+1].confident, 
+                   di->loctab[i+1].size, di->loctab[i+1].addr );
       */
       /* No zero-sized symbols. */
-      vg_assert(si->loctab[i].size > 0);
+      vg_assert(di->loctab[i].size > 0);
       /* In order. */
-      vg_assert(si->loctab[i].addr < si->loctab[i+1].addr);
+      vg_assert(di->loctab[i].addr < di->loctab[i+1].addr);
       /* No overlaps. */
-      vg_assert(si->loctab[i].addr + si->loctab[i].size - 1
-                < si->loctab[i+1].addr);
+      vg_assert(di->loctab[i].addr + di->loctab[i].size - 1
+                < di->loctab[i+1].addr);
    }
 #  undef SWAP
 }
@@ -788,87 +787,87 @@ static Int compare_DiCfSI ( void* va, void* vb )
    return 0;
 }
 
-static void canonicaliseCFI ( struct _SegInfo* si )
+static void canonicaliseCFI ( struct _DebugInfo* di )
 {
    Int   i, j;
    const Addr minAddr = 0;
    const Addr maxAddr = ~minAddr;
 
-   /* Note: take care in here.  si->cfsi can be NULL, in which
+   /* Note: take care in here.  di->cfsi can be NULL, in which
       case _used and _size fields will be zero. */
-   if (si->cfsi == NULL) {
-      vg_assert(si->cfsi_used == 0);
-      vg_assert(si->cfsi_size == 0);
+   if (di->cfsi == NULL) {
+      vg_assert(di->cfsi_used == 0);
+      vg_assert(di->cfsi_size == 0);
    }
 
    /* Set cfsi_minaddr and cfsi_maxaddr to summarise the entire
       address range contained in cfsi[0 .. cfsi_used-1]. */
-   si->cfsi_minaddr = maxAddr; 
-   si->cfsi_maxaddr = minAddr;
-   for (i = 0; i < (Int)si->cfsi_used; i++) {
-      Addr here_min = si->cfsi[i].base;
-      Addr here_max = si->cfsi[i].base + si->cfsi[i].len - 1;
-      if (here_min < si->cfsi_minaddr)
-         si->cfsi_minaddr = here_min;
-      if (here_max > si->cfsi_maxaddr)
-         si->cfsi_maxaddr = here_max;
+   di->cfsi_minaddr = maxAddr; 
+   di->cfsi_maxaddr = minAddr;
+   for (i = 0; i < (Int)di->cfsi_used; i++) {
+      Addr here_min = di->cfsi[i].base;
+      Addr here_max = di->cfsi[i].base + di->cfsi[i].len - 1;
+      if (here_min < di->cfsi_minaddr)
+         di->cfsi_minaddr = here_min;
+      if (here_max > di->cfsi_maxaddr)
+         di->cfsi_maxaddr = here_max;
    }
 
-   if (si->trace_cfi)
+   if (di->trace_cfi)
       VG_(printf)("canonicaliseCfiSI: %d entries, %p .. %p\n", 
-                  si->cfsi_used,
-	          si->cfsi_minaddr, si->cfsi_maxaddr);
+                  di->cfsi_used,
+	          di->cfsi_minaddr, di->cfsi_maxaddr);
 
    /* Sort the cfsi array by base address. */
-   VG_(ssort)(si->cfsi, si->cfsi_used, sizeof(*si->cfsi), compare_DiCfSI);
+   VG_(ssort)(di->cfsi, di->cfsi_used, sizeof(*di->cfsi), compare_DiCfSI);
 
    /* If two adjacent entries overlap, truncate the first. */
-   for (i = 0; i < (Int)si->cfsi_used-1; i++) {
-      if (si->cfsi[i].base + si->cfsi[i].len > si->cfsi[i+1].base) {
-         Int new_len = si->cfsi[i+1].base - si->cfsi[i].base;
+   for (i = 0; i < (Int)di->cfsi_used-1; i++) {
+      if (di->cfsi[i].base + di->cfsi[i].len > di->cfsi[i+1].base) {
+         Int new_len = di->cfsi[i+1].base - di->cfsi[i].base;
          /* how could it be otherwise?  The entries are sorted by the
             .base field. */         
          vg_assert(new_len >= 0);
-	 vg_assert(new_len <= si->cfsi[i].len);
-         si->cfsi[i].len = new_len;
+	 vg_assert(new_len <= di->cfsi[i].len);
+         di->cfsi[i].len = new_len;
       }
    }
 
    /* Zap any zero-sized entries resulting from the truncation
       process. */
    j = 0;
-   for (i = 0; i < (Int)si->cfsi_used; i++) {
-      if (si->cfsi[i].len > 0) {
+   for (i = 0; i < (Int)di->cfsi_used; i++) {
+      if (di->cfsi[i].len > 0) {
          if (j != i)
-            si->cfsi[j] = si->cfsi[i];
+            di->cfsi[j] = di->cfsi[i];
          j++;
       }
    }
-   /* VG_(printf)("XXXXXXXXXXXXX %d %d\n", si->cfsi_used, j); */
-   si->cfsi_used = j;
+   /* VG_(printf)("XXXXXXXXXXXXX %d %d\n", di->cfsi_used, j); */
+   di->cfsi_used = j;
 
    /* Ensure relevant postconditions hold. */
-   for (i = 0; i < (Int)si->cfsi_used; i++) {
+   for (i = 0; i < (Int)di->cfsi_used; i++) {
       /* No zero-length ranges. */
-      vg_assert(si->cfsi[i].len > 0);
+      vg_assert(di->cfsi[i].len > 0);
       /* Makes sense w.r.t. summary address range */
-      vg_assert(si->cfsi[i].base >= si->cfsi_minaddr);
-      vg_assert(si->cfsi[i].base + si->cfsi[i].len - 1
-                <= si->cfsi_maxaddr);
+      vg_assert(di->cfsi[i].base >= di->cfsi_minaddr);
+      vg_assert(di->cfsi[i].base + di->cfsi[i].len - 1
+                <= di->cfsi_maxaddr);
 
-      if (i < si->cfsi_used - 1) {
+      if (i < di->cfsi_used - 1) {
          /*
-         if (!(si->cfsi[i].base < si->cfsi[i+1].base)) {
+         if (!(di->cfsi[i].base < di->cfsi[i+1].base)) {
             VG_(printf)("\nOOO cfsis:\n");
-            ML_(ppCfiSI)(&si->cfsi[i]);
-            ML_(ppCfiSI)(&si->cfsi[i+1]);
+            ML_(ppCfiSI)(&di->cfsi[i]);
+            ML_(ppCfiSI)(&di->cfsi[i+1]);
          }
          */
          /* In order. */
-         vg_assert(si->cfsi[i].base < si->cfsi[i+1].base);
+         vg_assert(di->cfsi[i].base < di->cfsi[i+1].base);
          /* No overlaps. */
-         vg_assert(si->cfsi[i].base + si->cfsi[i].len - 1
-                   < si->cfsi[i+1].base);
+         vg_assert(di->cfsi[i].base + di->cfsi[i].len - 1
+                   < di->cfsi[i+1].base);
       }
    }
 
@@ -877,11 +876,11 @@ static void canonicaliseCFI ( struct _SegInfo* si )
 
 /* Canonicalise the tables held by 'si', in preparation for use.  Call
    this after finishing adding entries to these tables. */
-void ML_(canonicaliseTables) ( struct _SegInfo* si )
+void ML_(canonicaliseTables) ( struct _DebugInfo* di )
 {
-   canonicaliseSymtab ( si );
-   canonicaliseLoctab ( si );
-   canonicaliseCFI ( si );
+   canonicaliseSymtab ( di );
+   canonicaliseLoctab ( di );
+   canonicaliseCFI ( di );
 }
 
 
@@ -892,22 +891,22 @@ void ML_(canonicaliseTables) ( struct _SegInfo* si )
 /* Find a symbol-table index containing the specified pointer, or -1
    if not found.  Binary search.  */
 
-Int ML_(search_one_symtab) ( struct _SegInfo* si, Addr ptr,
+Int ML_(search_one_symtab) ( struct _DebugInfo* di, Addr ptr,
                              Bool match_anywhere_in_fun )
 {
    Addr a_mid_lo, a_mid_hi;
    Int  mid, size, 
         lo = 0, 
-        hi = si->symtab_used-1;
+        hi = di->symtab_used-1;
    while (True) {
       /* current unsearched space is from lo to hi, inclusive. */
       if (lo > hi) return -1; /* not found */
       mid      = (lo + hi) / 2;
-      a_mid_lo = si->symtab[mid].addr;
+      a_mid_lo = di->symtab[mid].addr;
       size = ( match_anywhere_in_fun
-             ? si->symtab[mid].size
+             ? di->symtab[mid].size
              : 1);
-      a_mid_hi = ((Addr)si->symtab[mid].addr) + size - 1;
+      a_mid_hi = ((Addr)di->symtab[mid].addr) + size - 1;
 
       if (ptr < a_mid_lo) { hi = mid-1; continue; } 
       if (ptr > a_mid_hi) { lo = mid+1; continue; }
@@ -920,18 +919,18 @@ Int ML_(search_one_symtab) ( struct _SegInfo* si, Addr ptr,
 /* Find a location-table index containing the specified pointer, or -1
    if not found.  Binary search.  */
 
-Int ML_(search_one_loctab) ( struct _SegInfo* si, Addr ptr )
+Int ML_(search_one_loctab) ( struct _DebugInfo* di, Addr ptr )
 {
    Addr a_mid_lo, a_mid_hi;
    Int  mid, 
         lo = 0, 
-        hi = si->loctab_used-1;
+        hi = di->loctab_used-1;
    while (True) {
       /* current unsearched space is from lo to hi, inclusive. */
       if (lo > hi) return -1; /* not found */
       mid      = (lo + hi) / 2;
-      a_mid_lo = si->loctab[mid].addr;
-      a_mid_hi = ((Addr)si->loctab[mid].addr) + si->loctab[mid].size - 1;
+      a_mid_lo = di->loctab[mid].addr;
+      a_mid_hi = ((Addr)di->loctab[mid].addr) + di->loctab[mid].size - 1;
 
       if (ptr < a_mid_lo) { hi = mid-1; continue; } 
       if (ptr > a_mid_hi) { lo = mid+1; continue; }
@@ -944,18 +943,18 @@ Int ML_(search_one_loctab) ( struct _SegInfo* si, Addr ptr )
 /* Find a CFI-table index containing the specified pointer, or -1
    if not found.  Binary search.  */
 
-Int ML_(search_one_cfitab) ( struct _SegInfo* si, Addr ptr )
+Int ML_(search_one_cfitab) ( struct _DebugInfo* di, Addr ptr )
 {
    Addr a_mid_lo, a_mid_hi;
    Int  mid, size, 
         lo = 0, 
-        hi = si->cfsi_used-1;
+        hi = di->cfsi_used-1;
    while (True) {
       /* current unsearched space is from lo to hi, inclusive. */
       if (lo > hi) return -1; /* not found */
       mid      = (lo + hi) / 2;
-      a_mid_lo = si->cfsi[mid].base;
-      size     = si->cfsi[mid].len;
+      a_mid_lo = di->cfsi[mid].base;
+      size     = di->cfsi[mid].len;
       a_mid_hi = a_mid_lo + size - 1;
       vg_assert(a_mid_hi >= a_mid_lo);
       if (ptr < a_mid_lo) { hi = mid-1; continue; } 

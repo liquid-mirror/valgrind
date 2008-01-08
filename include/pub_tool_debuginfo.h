@@ -76,7 +76,7 @@ extern Bool VG_(get_fnname_if_entry) ( Addr a, Char* fnname, Int n_fnname );
 
 /* Succeeds if the address is within a shared object or the main executable.
    It doesn't matter if debug info is present or not. */
-extern Bool VG_(get_objname)  ( Addr a, Char* objname,  Int n_objname  );
+extern Bool VG_(get_objname)  ( Addr a, Char* objname,  Int n_objname );
 
 /* Puts into 'buf' info about the code address %eip:  the address, function
    name (if known) and filename/line number (if known), like this:
@@ -93,30 +93,30 @@ extern Char* VG_(describe_IP)(Addr eip, Char* buf, Int n_buf);
 /*====================================================================*/
 
 /* A way to get information about what segments are mapped */
-typedef struct _SegInfo SegInfo;
+typedef struct _DebugInfo DebugInfo;
 
-/* Returns NULL if the SegInfo isn't found.  It doesn't matter if debug info
+/* Returns NULL if the DebugInfo isn't found.  It doesn't matter if debug info
    is present or not. */
-extern       SegInfo* VG_(find_seginfo)      ( Addr a );
+extern       DebugInfo* VG_(find_seginfo)      ( Addr a );
 
-/* Fish bits out of SegInfos. */
-extern       Addr     VG_(seginfo_start)     ( const SegInfo *si );
-extern       SizeT    VG_(seginfo_size)      ( const SegInfo *si );
-extern const UChar*   VG_(seginfo_soname)    ( const SegInfo *si );
-extern const UChar*   VG_(seginfo_filename)  ( const SegInfo *si );
-extern       ULong    VG_(seginfo_sym_offset)( const SegInfo *si );
+/* Fish bits out of DebugInfos. */
+extern       Addr     VG_(seginfo_start)     ( const DebugInfo *di );
+extern       SizeT    VG_(seginfo_size)      ( const DebugInfo *di );
+extern const UChar*   VG_(seginfo_soname)    ( const DebugInfo *di );
+extern const UChar*   VG_(seginfo_filename)  ( const DebugInfo *di );
+extern       ULong    VG_(seginfo_sym_offset)( const DebugInfo *di );
 
 /* Function for traversing the seginfo list.  When called with NULL it
    returns the first element; otherwise it returns the given element's
    successor. */
-extern const SegInfo* VG_(next_seginfo)      ( const SegInfo *si );
+extern const DebugInfo* VG_(next_seginfo)    ( const DebugInfo *di );
 
-/* Functions for traversing all the symbols in a SegInfo.  _howmany
+/* Functions for traversing all the symbols in a DebugInfo.  _howmany
    tells how many there are.  _getidx retrieves the n'th, for n in 0
    .. _howmany-1.  You may not modify the function name thereby
    acquired; if you want to do so, first strdup it. */
-extern Int  VG_(seginfo_syms_howmany) ( const SegInfo *si );
-extern void VG_(seginfo_syms_getidx)  ( const SegInfo *si, 
+extern Int  VG_(seginfo_syms_howmany) ( const DebugInfo *di );
+extern void VG_(seginfo_syms_getidx)  ( const DebugInfo *di, 
                                         Int idx,
                                         /*OUT*/Addr*   addr,
                                         /*OUT*/Addr*   tocptr,

@@ -68,7 +68,7 @@ static void make_path_relative(Char* const path)
 void describe_addr(Addr const a, SizeT const len, AddrInfo* const ai)
 {
    Addr       stack_min, stack_max;
-   SegInfo*   sg;
+   DebugInfo* sg;
 
    /* Perhaps it's on a thread's stack? */
    ai->stack_tid = thread_lookup_stackaddr(a, &stack_min, &stack_max);
@@ -89,7 +89,7 @@ void describe_addr(Addr const a, SizeT const len, AddrInfo* const ai)
       int i, n;
 
       ai->akind   = eSegment;
-      ai->seginfo = sg;
+      ai->debuginfo = sg;
       ai->name[0] = 0;
       ai->size = 1;
       ai->rwoffset = 0;

@@ -43,7 +43,7 @@
    -------------------- */
 extern
 void ML_(read_debuginfo_dwarf2)
-        ( struct _SegInfo* si, OffT debug_offset,
+        ( struct _DebugInfo* di, OffT debug_offset,
           UChar* debuginfo,   Int debug_info_sz,  /* .debug_info */
           UChar* debugabbrev,                     /* .debug_abbrev */
           UChar* debugline,   Int debug_line_sz,  /* .debug_line */
@@ -53,7 +53,7 @@ void ML_(read_debuginfo_dwarf2)
    DWARF1 reader
    -------------------- */
 extern
-void ML_(read_debuginfo_dwarf1) ( struct _SegInfo* si,
+void ML_(read_debuginfo_dwarf1) ( struct _DebugInfo* di,
                                   UChar* dwarf1d, Int dwarf1d_sz,
                                   UChar* dwarf1l, Int dwarf1l_sz );
 
@@ -62,7 +62,7 @@ void ML_(read_debuginfo_dwarf1) ( struct _SegInfo* si,
    -------------------- */
 extern
 void ML_(read_callframe_info_dwarf3)
-    ( /*OUT*/struct _SegInfo* si, 
+    ( /*OUT*/struct _DebugInfo* di, 
       UChar* ehframe, Int ehframe_sz, Addr ehframe_addr );
 
 

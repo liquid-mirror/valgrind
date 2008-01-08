@@ -210,48 +210,103 @@ extern void ML_(ppCfiExpr)( XArray* src, Int ix );
 /* --------------------- SEGINFO --------------------- */
 
 /* This is the top-level data type.  It's a structure which contains
-   information pertaining to one mapped text segment.  This type is
+   information pertaining to one mapped ELF object.  This type is
    exported only abstractly - in pub_tool_debuginfo.h. */
 
 #define SEGINFO_STRCHUNKSIZE (64*1024)
 
-struct _SegInfo {
-   struct _SegInfo* next;	/* list of SegInfos */
+struct _DebugInfo {
 
-   /* begin NEW STUFF */
-   Bool  have_rx_map;
-   Bool  have_rw_map;
+   /* Admin stuff */
 
-   Addr  rx_map_avma;
-   SizeT rx_map_size;
-   OffT  rx_map_foff;
-   Addr  rw_map_avma;
-   SizeT rw_map_size;
+   struct _DebugInfo* next;   /* list of DebugInfos */
+   Bool               mark;   /* marked for deletion? */
+
+   /* Used for debugging only - indicate what stuff to dump whilst
+      reading stuff into the seginfo.  Are computed as early in the
+      lifetime of the DebugInfo as possible -- at the point when it is
+      created.  Use these when deciding what to spew out; do not use
+      the global VG_(clo_blah) flags. */
+
+   Bool trace_symtab; /* symbols, our style */
+   Bool trace_cfi;    /* dwarf frame unwind, our style */
+   Bool ddump_syms;   /* mimic /usr/bin/readelf --syms */
+   Bool ddump_line;   /* mimic /usr/bin/readelf --debug-dump=line */
+   Bool ddump_frames; /* mimic /usr/bin/readelf --debug-dump=frames */
+
+   /* Fields that must be filled in before we can start reading
+      anything from the ELF file.  These fields are filled in by
+      VG_(di_notify_mmap) and its immediate helpers. */
+
+   UChar* filename; /* in mallocville (VG_AR_DINFO) */
+   UChar* memname;  /* also in VG_AR_DINFO.  AIX5 only: .a member name */
+
+   Bool  have_rx_map; /* did we see a r?x mapping yet for the file? */
+   Bool  have_rw_map; /* did we see a rw? mapping yet for the file? */
+
+   Addr  rx_map_avma; /* these fields record the file offset, length */
+   SizeT rx_map_size; /* and map address of the r?x mapping we believe */
+   OffT  rx_map_foff; /* is the .text segment mapping */
+
+   Addr  rw_map_avma; /* ditto, for the rw? mapping we believe is the */
+   SizeT rw_map_size; /* .data segment mapping */
    OffT  rw_map_foff;
 
-   Bool mark; /* marked for deletion? */
+   /* Once both a rw? and r?x mapping for .filename have been
+      observed, we can go on to read the symbol tables and debug info.
+      .have_dinfo flags when that has happened. */
+   /* If have_dinfo is False, then all fields except "*rx_map*" and
+      "*rw_map*" are invalid and should not be consulted. */
+   Bool  have_dinfo; /* initially False */
 
-  /* If have_dinfo is False, then all fields except "*rx_map*" and "*rw_map*"
-     are invalid and should not be consulted. */
-   Bool  have_dinfo;
-   /* end NEW STUFF */
+   /* All the rest of the fields in this structure are filled in once
+      we have committed to reading the symbols and debug info (that
+      is, at the point where .have_dinfo is set to True). */
 
-   /* Description of the mapped segment. */
-   Addr   text_start_avma;
-   UInt   text_size;
-   UChar* filename; /* in mallocville */
-   UChar* memname;  /* malloc'd.  AIX5 only: .a member name */
-   OffT   foffset;  /* file offset for mapped text section - UNUSED */
+   /* The file's soname.  FIXME: ensure this is always allocated in
+      VG_AR_DINFO. */
    UChar* soname;
+
+   /* Description of some important mapped sections.  In each case if
+      the _size field is zero, the section isn't present.  Certainly
+      text_ is mandatory on all platforms; not sure about the rest
+      though. */
+   /* .text */
+   Addr   text_avma;
+   SizeT  text_size;
+   OffT   text_bias;
+   /* .data */
+   Addr   data_avma;
+   SizeT  data_size;
+   OffT   data_bias;
+   /* .bss */
+   Addr   bss_avma;
+   SizeT  bss_size;
+   /* .plt */
+   Addr	  plt_avma;
+   SizeT  plt_size;
+   /* .got */
+   Addr   got_avma;
+   SizeT  got_size;
+   /* .opd -- needed on ppc64-linux */
+   Addr   opd_avma;
+   SizeT  opd_size;
+   /* .ehframe -- needed on amd64-linux */
+   Addr   ehframe_avma;
+   SizeT  ehframe_size;
+
+   /* Sorted tables of stuff we snarfed from the file.  This is the
+      eventual product of reading the debug info.  All this stuff
+      lives in VG_AR_DINFO. */
 
    /* An expandable array of symbols. */
    DiSym*  symtab;
-   UInt    symtab_used;
-   UInt    symtab_size;
+   UWord   symtab_used;
+   UWord   symtab_size;
    /* An expandable array of locations. */
    DiLoc*  loctab;
-   UInt    loctab_used;
-   UInt    loctab_size;
+   UWord   loctab_used;
+   UWord   loctab_size;
    /* An expandable array of CFI summary info records.  Also includes
       summary address bounds, showing the min and max address covered
       by any of the records, as an aid to fast searching.  And, if the
@@ -268,40 +323,9 @@ struct _SegInfo {
       into this are stable (the arrays are not reallocated). */
    struct strchunk {
       UInt   strtab_used;
-      struct strchunk *next;
+      struct strchunk* next;
       UChar  strtab[SEGINFO_STRCHUNKSIZE];
    } *strchunks;
-
-   /* 'text_bias' is what needs to be added to an address in the
-      address space of the library as stored on disk [a so-called
-      stated VMA] (which is not 0-based for executables or prelinked
-      libraries) to get an address in memory for the object loaded at
-      'text_start_avma'.  At least for text symbols. */
-   OffT   text_bias;
-
-   /* Bounds of data, BSS, PLT, GOT and OPD (for ppc64-linux) so that
-      tools can see what section an address is in.  In the running
-      image! */
-   Addr	  plt_start_avma;
-   UInt   plt_size;
-   Addr   got_start_avma;
-   UInt   got_size;
-   Addr   opd_start_avma;
-   UInt   opd_size;
-   Addr   data_start_avma;
-   UInt   data_size;
-   Addr   bss_start_avma;
-   UInt   bss_size;
-
-   /* Used for debugging only - indicate what stuff to dump whilst
-      reading stuff into the seginfo.  Are computed as early in the
-      lifetime of the SegInfo as possible.  Use these when deciding
-      what to spew out; do not use the global VG_(clo_blah) flags. */
-   Bool trace_symtab; /* symbols, our style */
-   Bool trace_cfi;    /* dwarf frame unwind, our style */
-   Bool ddump_syms;   /* mimic /usr/bin/readelf --syms */
-   Bool ddump_line;   /* mimic /usr/bin/readelf --debug-dump=line */
-   Bool ddump_frames; /* mimic /usr/bin/readelf --debug-dump=frames */
 };
 
 /* --------------------- functions --------------------- */
@@ -309,40 +333,40 @@ struct _SegInfo {
 /* ------ Adding ------ */
 
 /* Add a symbol to si's symbol table. */
-extern void ML_(addSym) ( struct _SegInfo* si, DiSym* sym );
+extern void ML_(addSym) ( struct _DebugInfo* di, DiSym* sym );
 
-/* Add a line-number record to a SegInfo. */
+/* Add a line-number record to a DebugInfo. */
 extern
-void ML_(addLineInfo) ( struct _SegInfo* si, 
+void ML_(addLineInfo) ( struct _DebugInfo* di, 
                         UChar*   filename, 
                         UChar*   dirname,  /* NULL is allowable */
                         Addr this, Addr next, Int lineno, Int entry);
 
 /* Add a CFI summary record.  The supplied DiCfSI is copied. */
-extern void ML_(addDiCfSI) ( struct _SegInfo* si, DiCfSI* cfsi );
+extern void ML_(addDiCfSI) ( struct _DebugInfo* di, DiCfSI* cfsi );
 
-/* Add a string to the string table of a SegInfo.  If len==-1,
+/* Add a string to the string table of a DebugInfo.  If len==-1,
    ML_(addStr) will itself measure the length of the string. */
-extern UChar* ML_(addStr) ( struct _SegInfo* si, UChar* str, Int len );
+extern UChar* ML_(addStr) ( struct _DebugInfo* di, UChar* str, Int len );
 
-/* Canonicalise the tables held by 'si', in preparation for use.  Call
+/* Canonicalise the tables held by 'di', in preparation for use.  Call
    this after finishing adding entries to these tables. */
-extern void ML_(canonicaliseTables) ( struct _SegInfo* si );
+extern void ML_(canonicaliseTables) ( struct _DebugInfo* di );
 
 /* ------ Searching ------ */
 
 /* Find a symbol-table index containing the specified pointer, or -1
    if not found.  Binary search.  */
-extern Int ML_(search_one_symtab) ( struct _SegInfo* si, Addr ptr,
+extern Int ML_(search_one_symtab) ( struct _DebugInfo* di, Addr ptr,
                                     Bool match_anywhere_in_fun );
 
 /* Find a location-table index containing the specified pointer, or -1
    if not found.  Binary search.  */
-extern Int ML_(search_one_loctab) ( struct _SegInfo* si, Addr ptr );
+extern Int ML_(search_one_loctab) ( struct _DebugInfo* di, Addr ptr );
 
 /* Find a CFI-table index containing the specified pointer, or -1 if
    not found.  Binary search.  */
-extern Int ML_(search_one_cfitab) ( struct _SegInfo* si, Addr ptr );
+extern Int ML_(search_one_cfitab) ( struct _DebugInfo* di, Addr ptr );
 
 /* ------ Misc ------ */
 
@@ -358,7 +382,7 @@ extern void ML_(ppDiCfSI) ( XArray* /* of CfiExpr */ exprs, DiCfSI* si );
 
 
 #define TRACE_SYMTAB(format, args...) \
-   if (si->trace_symtab) { VG_(printf)(format, ## args); }
+   if (di->trace_symtab) { VG_(printf)(format, ## args); }
 
 
 #endif /* ndef __PRIV_STORAGE_H */

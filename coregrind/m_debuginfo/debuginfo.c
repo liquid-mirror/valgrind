@@ -96,38 +96,30 @@
 /*--- Root structure                                       ---*/
 /*------------------------------------------------------------*/
 
-/* The root structure for the entire symbol table system.  It is a
-   linked list of SegInfos.  Note that this entire mechanism assumes
-   that what we read from /proc/self/maps doesn't contain overlapping
-   address ranges, and as a result the SegInfos in this list describe
-   disjoint address ranges.
-*/
-static SegInfo* segInfo_list = NULL;
+/* The root structure for the entire debug info system.  It is a
+   linked list of DebugInfos. */
+static DebugInfo* debugInfo_list = NULL;
 
 
 /*------------------------------------------------------------*/
 /*--- Notification (acquire/discard) helpers               ---*/
 /*------------------------------------------------------------*/
 
-/* Allocate and zero out a new SegInfo record. */
+/* Allocate and zero out a new DebugInfo record. */
 static 
-SegInfo* alloc_SegInfo(Addr start, SizeT size, OffT foffset, 
-                       const UChar* filename,
-                       const UChar* memname)
+DebugInfo* alloc_DebugInfo( const UChar* filename,
+                            const UChar* memname )
 {
-   Bool     traceme;
-   SegInfo* si;
+   Bool       traceme;
+   DebugInfo* di;
 
    vg_assert(filename);
 
-   si = VG_(arena_calloc)(VG_AR_DINFO, 1, sizeof(SegInfo));
-   si->text_start_avma = start;
-   si->text_size       = size;
-   si->foffset         = foffset;
-   si->filename        = VG_(arena_strdup)(VG_AR_DINFO, filename);
-   si->memname         = memname 
-                           ?  VG_(arena_strdup)(VG_AR_DINFO, memname)
-                           :  NULL;
+   di = VG_(arena_calloc)(VG_AR_DINFO, 1, sizeof(DebugInfo));
+   di->filename  = VG_(arena_strdup)(VG_AR_DINFO, filename);
+   di->memname   = memname 
+                      ?  VG_(arena_strdup)(VG_AR_DINFO, memname)
+                      :  NULL;
 
    /* Everything else -- pointers, sizes, arrays -- is zeroed by calloc.
       Now set up the debugging-output flags. */
@@ -136,41 +128,41 @@ SegInfo* alloc_SegInfo(Addr start, SizeT size, OffT foffset,
         || (memname && VG_(string_match)( VG_(clo_trace_symtab_patt), 
                                           memname ));
    if (traceme) {
-      si->trace_symtab = VG_(clo_trace_symtab);
-      si->trace_cfi    = VG_(clo_trace_cfi);
-      si->ddump_syms   = VG_(clo_debug_dump_syms);
-      si->ddump_line   = VG_(clo_debug_dump_line);
-      si->ddump_frames = VG_(clo_debug_dump_frames);
+      di->trace_symtab = VG_(clo_trace_symtab);
+      di->trace_cfi    = VG_(clo_trace_cfi);
+      di->ddump_syms   = VG_(clo_debug_dump_syms);
+      di->ddump_line   = VG_(clo_debug_dump_line);
+      di->ddump_frames = VG_(clo_debug_dump_frames);
    }
 
-   return si;
+   return di;
 }
 
 
-/* Free a SegInfo, and also all the stuff hanging off it. */
-static void free_SegInfo ( SegInfo* si )
+/* Free a DebugInfo, and also all the stuff hanging off it. */
+static void free_DebugInfo ( DebugInfo* di )
 {
    struct strchunk *chunk, *next;
-   vg_assert(si != NULL);
-   if (si->filename)   VG_(arena_free)(VG_AR_DINFO, si->filename);
-   if (si->symtab)     VG_(arena_free)(VG_AR_DINFO, si->symtab);
-   if (si->loctab)     VG_(arena_free)(VG_AR_DINFO, si->loctab);
-   if (si->cfsi)       VG_(arena_free)(VG_AR_DINFO, si->cfsi);
-   if (si->cfsi_exprs) VG_(deleteXA)(si->cfsi_exprs);
+   vg_assert(di != NULL);
+   if (di->filename)   VG_(arena_free)(VG_AR_DINFO, di->filename);
+   if (di->symtab)     VG_(arena_free)(VG_AR_DINFO, di->symtab);
+   if (di->loctab)     VG_(arena_free)(VG_AR_DINFO, di->loctab);
+   if (di->cfsi)       VG_(arena_free)(VG_AR_DINFO, di->cfsi);
+   if (di->cfsi_exprs) VG_(deleteXA)(di->cfsi_exprs);
 
-   for (chunk = si->strchunks; chunk != NULL; chunk = next) {
+   for (chunk = di->strchunks; chunk != NULL; chunk = next) {
       next = chunk->next;
       VG_(arena_free)(VG_AR_DINFO, chunk);
    }
-   VG_(arena_free)(VG_AR_DINFO, si);
+   VG_(arena_free)(VG_AR_DINFO, di);
 }
 
 
-/* 'si' is a member of segInfo_list.  Find it, remove it from the
+/* 'si' is a member of debugInfo_list.  Find it, remove it from the
    list, notify m_redir that this has happened, and free all storage
    reachable from it.
 */
-static void discard_SegInfo ( SegInfo* si )
+static void discard_DebugInfo ( DebugInfo* di )
 {
 #  if defined(VGP_ppc32_aix5)
    HChar* reason = "__unload";
@@ -180,23 +172,23 @@ static void discard_SegInfo ( SegInfo* si )
    HChar* reason = "munmap";
 #  endif
 
-   SegInfo** prev_next_ptr = &segInfo_list;
-   SegInfo*  curr          =  segInfo_list;
+   DebugInfo** prev_next_ptr = &debugInfo_list;
+   DebugInfo*  curr          =  debugInfo_list;
 
    while (curr) {
-      if (curr == si) {
+      if (curr == di) {
          // Found it;  remove from list and free it.
          if (VG_(clo_verbosity) > 1 || VG_(clo_trace_redir))
             VG_(message)(Vg_DebugMsg, 
                          "Discarding syms at %p-%p in %s due to %s()", 
-                         si->text_start_avma, 
-                         si->text_start_avma + si->text_size,
+                         di->text_avma, 
+                         di->text_avma + di->text_size,
                          curr->filename ? curr->filename : (UChar*)"???",
                          reason);
          vg_assert(*prev_next_ptr == curr);
          *prev_next_ptr = curr->next;
-         VG_(redir_notify_delete_SegInfo)( curr );
-         free_SegInfo(curr);
+         VG_(redir_notify_delete_DebugInfo)( curr );
+         free_DebugInfo(curr);
          return;
       }
       prev_next_ptr = &curr->next;
@@ -207,24 +199,24 @@ static void discard_SegInfo ( SegInfo* si )
 }
 
 
-/* Repeatedly scan segInfo_list, looking for segInfos intersecting
-   [start,start+length), and call discard_SegInfo to get rid of them.
-   This modifies the list, hence the multiple iterations.
-   JRS 20060401: I don't understand that last sentence. */
+/* Repeatedly scan debugInfo_list, looking for DebugInfos intersecting
+   [start,start+length), and call discard_DebugInfo to get rid of
+   them.  This modifies the list, hence the multiple iterations.
+*/
 static void discard_syms_in_range ( Addr start, SizeT length )
 {
-   Bool found;
-   SegInfo* curr;
+   Bool       found;
+   DebugInfo* curr;
 
    while (True) {
       found = False;
 
-      curr = segInfo_list;
+      curr = debugInfo_list;
       while (True) {
          if (curr == NULL)
             break;
-         if (start+length - 1 < curr->text_start_avma 
-             || curr->text_start_avma + curr->text_size - 1 < start) {
+         if (start+length - 1 < curr->text_avma 
+             || curr->text_avma + curr->text_size - 1 < start) {
             /* no overlap */
 	 } else {
 	    found = True;
@@ -234,7 +226,7 @@ static void discard_syms_in_range ( Addr start, SizeT length )
       }
 
       if (!found) break;
-      discard_SegInfo( curr );
+      discard_DebugInfo( curr );
    }
 }
 
@@ -300,43 +292,43 @@ static Bool ranges_overlap (Addr s1, SizeT len1, Addr s2, SizeT len2 )
    return True;
 }
 
-static Bool do_SegInfos_overlap ( SegInfo* si1, SegInfo* si2 )
+static Bool do_DebugInfos_overlap ( DebugInfo* di1, DebugInfo* di2 )
 {
-   vg_assert(si1);
-   vg_assert(si2);
+   vg_assert(di1);
+   vg_assert(di2);
 
-   if (si1->have_rx_map && si2->have_rx_map
-       && ranges_overlap(si1->rx_map_avma, si1->rx_map_size,
-                         si2->rx_map_avma, si2->rx_map_size))
+   if (di1->have_rx_map && di2->have_rx_map
+       && ranges_overlap(di1->rx_map_avma, di1->rx_map_size,
+                         di2->rx_map_avma, di2->rx_map_size))
       return True;
 
-   if (si1->have_rx_map && si2->have_rw_map
-       && ranges_overlap(si1->rx_map_avma, si1->rx_map_size,
-                         si2->rw_map_avma, si2->rw_map_size))
+   if (di1->have_rx_map && di2->have_rw_map
+       && ranges_overlap(di1->rx_map_avma, di1->rx_map_size,
+                         di2->rw_map_avma, di2->rw_map_size))
       return True;
 
-   if (si1->have_rw_map && si2->have_rx_map
-       && ranges_overlap(si1->rw_map_avma, si1->rw_map_size,
-                         si2->rx_map_avma, si2->rx_map_size))
+   if (di1->have_rw_map && di2->have_rx_map
+       && ranges_overlap(di1->rw_map_avma, di1->rw_map_size,
+                         di2->rx_map_avma, di2->rx_map_size))
       return True;
 
-   if (si1->have_rw_map && si2->have_rw_map
-       && ranges_overlap(si1->rw_map_avma, si1->rw_map_size,
-                         si2->rw_map_avma, si2->rw_map_size))
+   if (di1->have_rw_map && di2->have_rw_map
+       && ranges_overlap(di1->rw_map_avma, di1->rw_map_size,
+                         di2->rw_map_avma, di2->rw_map_size))
       return True;
 
    return False;
 }
 
-static void discard_marked_SegInfos ( void )
+static void discard_marked_DebugInfos ( void )
 {
-   SegInfo* curr;
+   DebugInfo* curr;
 
    while (True) {
 
-      curr = segInfo_list;
+      curr = debugInfo_list;
       while (True) {
-         if (curr == NULL)
+         if (!curr)
             break;
          if (curr->mark)
             break;
@@ -344,51 +336,52 @@ static void discard_marked_SegInfos ( void )
       }
 
       if (!curr) break;
-      discard_SegInfo( curr );
+      discard_DebugInfo( curr );
 
    }
 }
 
-static void discard_SegInfos_which_overlap_with ( SegInfo* siRef )
+static void discard_DebugInfos_which_overlap_with ( DebugInfo* diRef )
 {
-   SegInfo* si;
-   /* Mark all the SegInfos in segInfo_list that need to be deleted.
-      First, clear all the mark bits; then set them if they overlap
-      with siRef.  Since siRef itself is in this list we at least
-      expect its own mark bit to be set. */
-   for (si = segInfo_list; si; si = si->next) {
-      si->mark = do_SegInfos_overlap( si, siRef );
-      if (si == siRef) {
-         vg_assert(si->mark);
-         si->mark = False;
+   DebugInfo* di;
+   /* Mark all the DebugInfos in debugInfo_list that need to be
+      deleted.  First, clear all the mark bits; then set them if they
+      overlap with siRef.  Since siRef itself is in this list we at
+      least expect its own mark bit to be set. */
+   for (di = debugInfo_list; di; di = di->next) {
+      di->mark = do_DebugInfos_overlap( di, diRef );
+      if (di == diRef) {
+         vg_assert(di->mark);
+         di->mark = False;
       }
    }
-   discard_marked_SegInfos();
+   discard_marked_DebugInfos();
 }
 
-/* Find the existing SegInfo for (memname,filename) or if not found,
+/* Find the existing DebugInfo for (memname,filename) or if not found,
    create one.  In the latter case memname and filename are strdup'd
-   into VG_AR_DINFO, and the new SegInfo is added to segInfo_list. */
+   into VG_AR_DINFO, and the new DebugInfo is added to
+   debugInfo_list. */
 static
-SegInfo* find_or_create_SegInfo_for ( UChar* filename, UChar* memname )
+DebugInfo* find_or_create_DebugInfo_for ( UChar* filename, UChar* memname )
 {
-   SegInfo* si;
+   DebugInfo* di;
    vg_assert(filename);
-   for (si = segInfo_list; si; si = si->next) {
-      vg_assert(si->filename);
-      if (0==VG_(strcmp)(si->filename, filename)
-          && ( (memname && si->memname) 
-                  ? 0==VG_(strcmp)(memname, si->memname)
+   for (di = debugInfo_list; di; di = di->next) {
+      vg_assert(di->filename);
+      if (0==VG_(strcmp)(di->filename, filename)
+          && ( (memname && di->memname) 
+                  ? 0==VG_(strcmp)(memname, di->memname)
                   : True ))
          break;
    }
-   if (!si) {
-      si = alloc_SegInfo(0,0,0, filename, memname);
-      vg_assert(si);
-      si->next = segInfo_list;
-      segInfo_list = si;
+   if (!di) {
+      di = alloc_DebugInfo(filename, memname);
+      vg_assert(di);
+      di->next = debugInfo_list;
+      debugInfo_list = di;
    }
-   return si;
+   return di;
 }
 
 
@@ -416,13 +409,13 @@ SegInfo* find_or_create_SegInfo_for ( UChar* filename, UChar* memname )
 void VG_(di_notify_mmap)( Addr a, Bool allow_SkFileV )
 {
    NSegment const * seg;
-   HChar*    filename;
-   Bool      ok, is_rx_map, is_rw_map;
-   SegInfo*  si;
-   SysRes    fd;
-   Int       nread;
-   HChar     buf1k[1024];
-   Bool      debug = False;
+   HChar*     filename;
+   Bool       ok, is_rx_map, is_rw_map;
+   DebugInfo* di;
+   SysRes     fd;
+   Int        nread;
+   HChar      buf1k[1024];
+   Bool       debug = False;
 
    /* In short, figure out if this mapping is of interest to us, and
       if so, try to guess what ld.so is doing and when/if we should
@@ -528,18 +521,18 @@ void VG_(di_notify_mmap)( Addr a, Bool allow_SkFileV )
    if (!(is_rx_map || is_rw_map))
       return;
 
-   /* See if we have a SegInfo for this filename.  If not,
+   /* See if we have a DebugInfo for this filename.  If not,
       create one. */
-   si = find_or_create_SegInfo_for( filename, NULL/*membername*/ );
-   vg_assert(si);
+   di = find_or_create_DebugInfo_for( filename, NULL/*membername*/ );
+   vg_assert(di);
 
    if (is_rx_map) {
       /* We have a text-like mapping.  Note the details. */
-      if (!si->have_rx_map) {
-         si->have_rx_map = True;
-         si->rx_map_avma = a;
-         si->rx_map_size = seg->end + 1 - seg->start;
-         si->rx_map_foff = seg->offset;
+      if (!di->have_rx_map) {
+         di->have_rx_map = True;
+         di->rx_map_avma = a;
+         di->rx_map_size = seg->end + 1 - seg->start;
+         di->rx_map_foff = seg->offset;
       } else {
          /* FIXME: complain about a second text-like mapping */
       }
@@ -547,37 +540,37 @@ void VG_(di_notify_mmap)( Addr a, Bool allow_SkFileV )
 
    if (is_rw_map) {
       /* We have a data-like mapping.  Note the details. */
-      if (!si->have_rw_map) {
-         si->have_rw_map = True;
-         si->rw_map_avma = a;
-         si->rw_map_size = seg->end + 1 - seg->start;
-         si->rw_map_foff = seg->offset;
+      if (!di->have_rw_map) {
+         di->have_rw_map = True;
+         di->rw_map_avma = a;
+         di->rw_map_size = seg->end + 1 - seg->start;
+         di->rw_map_foff = seg->offset;
       } else {
          /* FIXME: complain about a second data-like mapping */
       }
    }
 
-   if (si->have_rx_map && si->have_rw_map && !si->have_dinfo) {
+   if (di->have_rx_map && di->have_rw_map && !di->have_dinfo) {
       /* We're going to read symbols and debug info for the vma ranges
          [rx_map_avma,+rx_map_size) and [rw_map_avma,+rw_map_size).
-         First get rid of any other SegInfos which overlap either of
+         First get rid of any other DebugInfos which overlap either of
          those ranges (to avoid total confusion). */
-      discard_SegInfos_which_overlap_with( si );
+      discard_DebugInfos_which_overlap_with( di );
 
       /* .. and acquire new info. */
-      ok = ML_(read_elf_debug_info)( si );
+      ok = ML_(read_elf_debug_info)( di );
 
       if (ok) {
          /* prepare read data for use */
-         ML_(canonicaliseTables) ( si );
+         ML_(canonicaliseTables)( di );
          /* notify m_redir about it */
-         VG_(redir_notify_new_SegInfo)( si );
+         VG_(redir_notify_new_DebugInfo)( di );
          /* Note that we succeeded */
-         si->have_dinfo = True;
+         di->have_dinfo = True;
       } else {
          /* Something went wrong (eg. bad ELF file).  Should we delete
-            this SegInfo?  No - it contains info on the rw/rx mappings,
-            at least. */
+            this DebugInfo?  No - it contains info on the rw/rx
+            mappings, at least. */
       }
 
    }
@@ -652,7 +645,7 @@ void VG_(di_aix5_notify_segchange)(
       /* Dump all the segInfos whose text segments intersect
          code_start/code_len. */
       while (True) {
-         for (si = segInfo_list; si; si = si->next) {
+         for (si = debugInfo_list; si; si = si->next) {
             if (code_start + code_len <= si->text_start_avma
                 || si->text_start_avma + si->text_size <= code_start)
                continue; /* no overlap */
@@ -684,52 +677,49 @@ void VG_(di_aix5_notify_segchange)(
 /*------------------------------------------------------------*/
 
 /* Search all symtabs that we know about to locate ptr.  If found, set
-   *psi to the relevant SegInfo, and *symno to the symtab entry number
-   within that.  If not found, *psi is set to NULL.  */
-static void search_all_symtabs ( Addr ptr, /*OUT*/SegInfo** psi, 
+   *pdi to the relevant DebugInfo, and *symno to the symtab entry
+   *number within that.  If not found, *psi is set to NULL. */
+static void search_all_symtabs ( Addr ptr, /*OUT*/DebugInfo** pdi,
                                            /*OUT*/Int* symno,
                                  Bool match_anywhere_in_fun )
 {
-   Int      sno;
-   SegInfo* si;
-
-   for (si = segInfo_list; si != NULL; si = si->next) {
-      if (si->text_start_avma <= ptr 
-          && ptr < si->text_start_avma + si->text_size) {
-         sno = ML_(search_one_symtab) ( si, ptr, match_anywhere_in_fun );
+   Int        sno;
+   DebugInfo* di;
+   for (di = debugInfo_list; di != NULL; di = di->next) {
+      if (di->text_avma <= ptr 
+          && ptr < di->text_avma + di->text_size) {
+         sno = ML_(search_one_symtab) ( di, ptr, match_anywhere_in_fun );
          if (sno == -1) goto not_found;
          *symno = sno;
-         *psi = si;
+         *pdi = di;
          return;
       }
    }
   not_found:
-   *psi = NULL;
+   *pdi = NULL;
 }
 
 
 /* Search all loctabs that we know about to locate ptr.  If found, set
-   *psi to the relevant SegInfo, and *locno to the loctab entry number
-   within that.  If not found, *psi is set to NULL.
-*/
-static void search_all_loctabs ( Addr ptr, /*OUT*/SegInfo** psi,
+   *pdi to the relevant DebugInfo, and *locno to the loctab entry
+   *number within that.  If not found, *pdi is set to NULL. */
+static void search_all_loctabs ( Addr ptr, /*OUT*/DebugInfo** pdi,
                                            /*OUT*/Int* locno )
 {
-   Int      lno;
-   SegInfo* si;
-
-   for (si = segInfo_list; si != NULL; si = si->next) {
-      if (si->text_start_avma <= ptr 
-          && ptr < si->text_start_avma + si->text_size) {
-         lno = ML_(search_one_loctab) ( si, ptr );
+   Int        lno;
+   DebugInfo* di;
+   for (di = debugInfo_list; di != NULL; di = di->next) {
+      if (di->text_avma <= ptr 
+          && ptr < di->text_avma + di->text_size) {
+         lno = ML_(search_one_loctab) ( di, ptr );
          if (lno == -1) goto not_found;
          *locno = lno;
-         *psi = si;
+         *pdi = di;
          return;
       }
    }
   not_found:
-   *psi = NULL;
+   *pdi = NULL;
 }
 
 
@@ -742,21 +732,21 @@ static
 Bool get_fnname ( Bool demangle, Addr a, Char* buf, Int nbuf,
                   Bool match_anywhere_in_fun, Bool show_offset)
 {
-   SegInfo* si;
-   Int      sno;
-   Int      offset;
+   DebugInfo* di;
+   Int        sno;
+   Int        offset;
 
-   search_all_symtabs ( a, &si, &sno, match_anywhere_in_fun );
-   if (si == NULL) 
+   search_all_symtabs ( a, &di, &sno, match_anywhere_in_fun );
+   if (di == NULL) 
       return False;
    if (demangle) {
       VG_(demangle) ( True/*do C++ demangle*/,
-                      si->symtab[sno].name, buf, nbuf );
+                      di->symtab[sno].name, buf, nbuf );
    } else {
-      VG_(strncpy_safely) ( buf, si->symtab[sno].name, nbuf );
+      VG_(strncpy_safely) ( buf, di->symtab[sno].name, nbuf );
    }
 
-   offset = a - si->symtab[sno].addr;
+   offset = a - di->symtab[sno].addr;
    if (show_offset && offset != 0) {
       Char     buf2[12];
       Char*    symend = buf + VG_(strlen)(buf);
@@ -782,8 +772,8 @@ Bool get_fnname ( Bool demangle, Addr a, Char* buf, Int nbuf,
    guest_code_addr.  Returns 0 if not known. */
 Addr VG_(get_tocptr) ( Addr guest_code_addr )
 {
-   SegInfo* si;
-   Int      sno;
+   DebugInfo* si;
+   Int        sno;
    search_all_symtabs ( guest_code_addr, 
                         &si, &sno, True/*match_anywhere_in_fun*/ );
    if (si == NULL) 
@@ -853,26 +843,25 @@ Bool VG_(get_fnname_Z_demangle_only) ( Addr a, Char* buf, Int nbuf )
 #  undef N_TMPBUF
 }
 
-/* Map a code address to the name of a shared object file or the executable.
-   Returns False if no idea; otherwise True.  Doesn't require debug info.
-   Caller supplies buf and nbuf. */
+/* Map a code address to the name of a shared object file or the
+   executable.  Returns False if no idea; otherwise True.  Doesn't
+   require debug info.  Caller supplies buf and nbuf. */
 Bool VG_(get_objname) ( Addr a, Char* buf, Int nbuf )
 {
-   Int used;
-   SegInfo* si;
-
+   Int        used;
+   DebugInfo* di;
    vg_assert(nbuf > 0);
-   for (si = segInfo_list; si != NULL; si = si->next) {
-      if (si->text_start_avma <= a 
-          && a < si->text_start_avma + si->text_size) {
-         VG_(strncpy_safely)(buf, si->filename, nbuf);
-         if (si->memname) {
+   for (di = debugInfo_list; di != NULL; di = di->next) {
+      if (di->text_avma <= a 
+          && a < di->text_avma + di->text_size) {
+         VG_(strncpy_safely)(buf, di->filename, nbuf);
+         if (di->memname) {
             used = VG_(strlen)(buf);
             if (used < nbuf) 
                VG_(strncpy_safely)(&buf[used], "(", nbuf-used);
             used = VG_(strlen)(buf);
             if (used < nbuf) 
-               VG_(strncpy_safely)(&buf[used], si->memname, nbuf-used);
+               VG_(strncpy_safely)(&buf[used], di->memname, nbuf-used);
             used = VG_(strlen)(buf);
             if (used < nbuf) 
                VG_(strncpy_safely)(&buf[used], ")", nbuf-used);
@@ -884,16 +873,15 @@ Bool VG_(get_objname) ( Addr a, Char* buf, Int nbuf )
    return False;
 }
 
-/* Map a code address to its SegInfo.  Returns NULL if not found.  Doesn't
+/* Map a code address to its DebugInfo.  Returns NULL if not found.  Doesn't
    require debug info. */
-SegInfo* VG_(find_seginfo) ( Addr a )
+DebugInfo* VG_(find_seginfo) ( Addr a )
 {
-   SegInfo* si;
-
-   for (si = segInfo_list; si != NULL; si = si->next) {
-      if (si->text_start_avma <= a 
-          && a < si->text_start_avma + si->text_size) {
-         return si;
+   DebugInfo* di;
+   for (di = debugInfo_list; di != NULL; di = di->next) {
+      if (di->text_avma <= a 
+          && a < di->text_avma + di->text_size) {
+         return di;
       }
    }
    return NULL;
@@ -902,7 +890,7 @@ SegInfo* VG_(find_seginfo) ( Addr a )
 /* Map a code address to a filename.  Returns True if successful.  */
 Bool VG_(get_filename)( Addr a, Char* filename, Int n_filename )
 {
-   SegInfo* si;
+   DebugInfo* si;
    Int      locno;
    search_all_loctabs ( a, &si, &locno );
    if (si == NULL) 
@@ -914,7 +902,7 @@ Bool VG_(get_filename)( Addr a, Char* filename, Int n_filename )
 /* Map a code address to a line number.  Returns True if successful. */
 Bool VG_(get_linenum)( Addr a, UInt* lineno )
 {
-   SegInfo* si;
+   DebugInfo* si;
    Int      locno;
    search_all_loctabs ( a, &si, &locno );
    if (si == NULL) 
@@ -933,7 +921,7 @@ Bool VG_(get_filename_linenum) ( Addr a,
                                  /*OUT*/Bool* dirname_available,
                                  /*OUT*/UInt* lineno )
 {
-   SegInfo* si;
+   DebugInfo* si;
    Int      locno;
 
    vg_assert( (dirname == NULL && dirname_available == NULL)
@@ -982,12 +970,12 @@ Bool VG_(lookup_symbol_SLOW)(UChar* sopatt, UChar* name, Addr* pEnt, Addr* pToc)
 {
    Bool     require_pToc = False;
    Int      i;
-   SegInfo* si;
+   DebugInfo* si;
    Bool     debug = False;
 #  if defined(VG_PLAT_USES_PPCTOC)
    require_pToc = True;
 #  endif
-   for (si = segInfo_list; si; si = si->next) {
+   for (si = debugInfo_list; si; si = si->next) {
       if (debug)
          VG_(printf)("lookup_symbol_SLOW: considering %s\n", si->soname);
       if (!VG_(string_match)(sopatt, si->soname)) {
@@ -1260,7 +1248,7 @@ UWord evalCfiExpr ( XArray* exprs, Int ix,
    previous frame, if possible. */
 /* Returns True if OK.  If not OK, *{ip,sp,fp}P are not changed. */
 /* NOTE: this function may rearrange the order of entries in the
-   SegInfo list. */
+   DebugInfo list. */
 Bool VG_(use_CF_info) ( /*MOD*/Addr* ipP,
                         /*MOD*/Addr* spP,
                         /*MOD*/Addr* fpP,
@@ -1269,7 +1257,7 @@ Bool VG_(use_CF_info) ( /*MOD*/Addr* ipP,
 {
    Bool     ok;
    Int      i;
-   SegInfo* si;
+   DebugInfo* si;
    DiCfSI*  cfsi = NULL;
    Addr     cfa, ipHere, spHere, fpHere, ipPrev, spPrev, fpPrev;
 
@@ -1281,11 +1269,11 @@ Bool VG_(use_CF_info) ( /*MOD*/Addr* ipP,
 
    if (0) VG_(printf)("search for %p\n", *ipP);
 
-   for (si = segInfo_list; si != NULL; si = si->next) {
+   for (si = debugInfo_list; si != NULL; si = si->next) {
       n_steps++;
 
-      /* Use the per-SegInfo summary address ranges to skip
-	 inapplicable SegInfos quickly. */
+      /* Use the per-DebugInfo summary address ranges to skip
+	 inapplicable DebugInfos quickly. */
       if (si->cfsi_used == 0)
          continue;
       if (*ipP < si->cfsi_minaddr || *ipP > si->cfsi_maxaddr)
@@ -1307,16 +1295,16 @@ Bool VG_(use_CF_info) ( /*MOD*/Addr* ipP,
 
    /* Start of performance-enhancing hack: once every 16 (chosen
       hackily after profiling) successful searches, move the found
-      SegInfo one step closer to the start of the list.  This makes
+      DebugInfo one step closer to the start of the list.  This makes
       future searches cheaper.  For starting konqueror on amd64, this
       in fact reduces the total amount of searching done by the above
-      find-the-right-SegInfo loop by more than a factor of 20. */
+      find-the-right-DebugInfo loop by more than a factor of 20. */
    if ((n_search & 0xF) == 0) {
       /* Move si one step closer to the start of the list. */
-      SegInfo* si0 = segInfo_list;
-      SegInfo* si1 = NULL;
-      SegInfo* si2 = NULL;
-      SegInfo* tmp;
+      DebugInfo* si0 = debugInfo_list;
+      DebugInfo* si1 = NULL;
+      DebugInfo* si2 = NULL;
+      DebugInfo* tmp;
       while (True) {
          if (si0 == NULL) break;
          if (si0 == si) break;
@@ -1427,71 +1415,71 @@ Bool VG_(use_CF_info) ( /*MOD*/Addr* ipP,
 
 
 /*------------------------------------------------------------*/
-/*--- SegInfo accessor functions                           ---*/
+/*--- DebugInfo accessor functions                         ---*/
 /*------------------------------------------------------------*/
 
-const SegInfo* VG_(next_seginfo)(const SegInfo* si)
+const DebugInfo* VG_(next_seginfo)(const DebugInfo* di)
 {
-   if (si == NULL)
-      return segInfo_list;
-   return si->next;
+   if (di == NULL)
+      return debugInfo_list;
+   return di->next;
 }
 
-Addr VG_(seginfo_start)(const SegInfo* si)
+Addr VG_(seginfo_start)(const DebugInfo* di)
 {
-   return si->text_start_avma;
+   return di->text_avma;
 }
 
-SizeT VG_(seginfo_size)(const SegInfo* si)
+SizeT VG_(seginfo_size)(const DebugInfo* di)
 {
-   return si->text_size;
+   return di->text_size;
 }
 
-const UChar* VG_(seginfo_soname)(const SegInfo* si)
+const UChar* VG_(seginfo_soname)(const DebugInfo* di)
 {
-   return si->soname;
+   return di->soname;
 }
 
-const UChar* VG_(seginfo_filename)(const SegInfo* si)
+const UChar* VG_(seginfo_filename)(const DebugInfo* di)
 {
-   return si->filename;
+   return di->filename;
 }
 
-ULong VG_(seginfo_sym_offset)(const SegInfo* si)
+ULong VG_(seginfo_sym_offset)(const DebugInfo* di)
 {
-   return si->text_bias;
+   return di->text_bias;
 }
 
 VgSectKind VG_(seginfo_sect_kind)(Addr a)
 {
-   SegInfo* si;
+   DebugInfo* di;
    VgSectKind ret = Vg_SectUnknown;
 
-   for (si = segInfo_list; si != NULL; si = si->next) {
-      if (a >= si->text_start_avma 
-          && a < si->text_start_avma + si->text_size) {
+   for (di = debugInfo_list; di != NULL; di = di->next) {
+      if (a >= di->text_avma 
+          && a < di->text_avma + di->text_size) {
 
 	 if (0)
 	    VG_(printf)(
-               "addr=%p si=%p %s got=%p %d  plt=%p %d data=%p %d bss=%p %d\n",
-               a, si, si->filename, 
-               si->got_start_avma,  si->got_size,
-               si->plt_start_avma,  si->plt_size,
-               si->data_start_avma, si->data_size,
-               si->bss_start_avma,  si->bss_size);
+               "addr=%p di=%p %s got=%p %ld  plt=%p %ld data=%p %ld bss=%p %ld\n",
+               a, di, di->filename,
+               di->got_avma,  di->got_size,
+               di->plt_avma,  di->plt_size,
+               di->data_avma, di->data_size,
+               di->bss_avma,  di->bss_size);
 
 	 ret = Vg_SectText;
 
-	 if (a >= si->data_start_avma && a < si->data_start_avma + si->data_size)
+	 if (a >= di->data_avma && a < di->data_avma + di->data_size)
 	    ret = Vg_SectData;
 	 else 
-         if (a >= si->bss_start_avma && a < si->bss_start_avma + si->bss_size)
+         if (a >= di->bss_avma && a < di->bss_avma + di->bss_size)
 	    ret = Vg_SectBSS;
 	 else 
-         if (a >= si->plt_start_avma && a < si->plt_start_avma + si->plt_size)
+         if (a >= di->plt_avma && a < di->plt_avma + di->plt_size)
 	    ret = Vg_SectPLT;
 	 else 
-         if (a >= si->got_start_avma && a < si->got_start_avma + si->got_size)
+         if (a >= di->got_avma && a < di->got_avma + di->got_size)
 	    ret = Vg_SectGOT;
       }
    }
@@ -1526,12 +1514,12 @@ Char* VG_(seginfo_sect_kind_name)(Addr a, Char* buf, UInt n_buf)
    return buf;
 }
 
-Int VG_(seginfo_syms_howmany) ( const SegInfo *si )
+Int VG_(seginfo_syms_howmany) ( const DebugInfo *si )
 {
    return si->symtab_used;
 }
 
-void VG_(seginfo_syms_getidx) ( const SegInfo *si, 
+void VG_(seginfo_syms_getidx) ( const DebugInfo *si, 
                                       Int idx,
                                /*OUT*/Addr*   addr,
                                /*OUT*/Addr*   tocptr,

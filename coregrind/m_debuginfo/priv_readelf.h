@@ -48,7 +48,7 @@ extern Bool ML_(is_elf_object_file)( void* image, SizeT n_image );
    info) and anything else we want, into the tables within the
    supplied SegInfo.
 */
-extern Bool ML_(read_elf_debug_info) ( struct _SegInfo* si );
+extern Bool ML_(read_elf_debug_info) ( struct _DebugInfo* di );
 
 
 #endif /* ndef __PRIV_READELF_H */

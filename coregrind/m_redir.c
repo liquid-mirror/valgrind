@@ -239,9 +239,9 @@ typedef
 typedef
    struct _TopSpec {
       struct _TopSpec* next; /* linked list */
-      SegInfo* seginfo;      /* symbols etc */
-      Spec*    specs;        /* specs pulled out of seginfo */
-      Bool     mark; /* transient temporary used during deletion */
+      DebugInfo* seginfo;    /* symbols etc */
+      Spec*      specs;      /* specs pulled out of seginfo */
+      Bool       mark; /* transient temporary used during deletion */
    }
    TopSpec;
 
@@ -302,19 +302,19 @@ void generate_and_add_actives (
         /* spec list and the owning TopSpec */
         Spec*    specs, 
         TopSpec* parent_spec,
-	/* seginfo and the owning TopSpec */
-        SegInfo* si,
+	/* debuginfo and the owning TopSpec */
+        DebugInfo* di,
         TopSpec* parent_sym 
      );
 
-/* Notify m_redir of the arrival of a new SegInfo.  This is fairly
+/* Notify m_redir of the arrival of a new DebugInfo.  This is fairly
    complex, but the net effect is to (1) add a new entry to the
    topspecs list, and (2) figure out what new binding are now active,
    and, as a result, add them to the actives mapping. */
 
 #define N_DEMANGLED 256
 
-void VG_(redir_notify_new_SegInfo)( SegInfo* newsi )
+void VG_(redir_notify_new_DebugInfo)( DebugInfo* newsi )
 {
    Bool         ok, isWrap;
    Int          i, nsyms;
@@ -341,7 +341,7 @@ void VG_(redir_notify_new_SegInfo)( SegInfo* newsi )
    for (ts = topSpecs; ts; ts = ts->next)
       vg_assert(ts->seginfo != newsi);
 
-   /* scan this SegInfo's symbol table, pulling out and demangling
+   /* scan this DebugInfo's symbol table, pulling out and demangling
       any specs found */
 
    specList = NULL; /* the spec list we're building up */
@@ -410,7 +410,7 @@ void VG_(redir_notify_new_SegInfo)( SegInfo* newsi )
       }
    }
 
-   /* Ok.  Now specList holds the list of specs from the SegInfo. 
+   /* Ok.  Now specList holds the list of specs from the DebugInfo. 
       Build a new TopSpec, but don't add it to topSpecs yet. */
    newts = dinfo_zalloc(sizeof(TopSpec));
    vg_assert(newts);
@@ -458,7 +458,7 @@ void VG_(redir_notify_new_SegInfo)( SegInfo* newsi )
    topSpecs = newts;
 
    if (VG_(clo_trace_redir))
-      show_redir_state("after VG_(redir_notify_new_SegInfo)");
+      show_redir_state("after VG_(redir_notify_new_DebugInfo)");
 }
 
 #undef N_DEMANGLED
@@ -475,7 +475,7 @@ void generate_and_add_actives (
         Spec*    specs, 
         TopSpec* parent_spec,
 	/* seginfo and the owning TopSpec */
-        SegInfo* si,
+        DebugInfo* di,
         TopSpec* parent_sym 
      )
 {
@@ -493,7 +493,7 @@ void generate_and_add_actives (
    for (sp = specs; sp; sp = sp->next) {
       sp->done = False;
       sp->mark = VG_(string_match)( sp->from_sopatt, 
-                                    VG_(seginfo_soname)(si) );
+                                    VG_(seginfo_soname)(di) );
       anyMark = anyMark || sp->mark;
    }
 
@@ -503,9 +503,9 @@ void generate_and_add_actives (
 
    /* Iterate outermost over the symbols in the seginfo, in the hope
       of trashing the caches less. */
-   nsyms = VG_(seginfo_syms_howmany)( si );
+   nsyms = VG_(seginfo_syms_howmany)( di );
    for (i = 0; i < nsyms; i++) {
-      VG_(seginfo_syms_getidx)( si, i, &sym_addr, NULL, NULL, &sym_name );
+      VG_(seginfo_syms_getidx)( di, i, &sym_addr, NULL, NULL, &sym_name );
 
       /* On AIX, we cannot redirect calls to a so-called glink
          function for reasons which are not obvious - something to do
@@ -565,7 +565,7 @@ void generate_and_add_actives (
       VG_(printf)(
       "%swas not found whilst processing\n", v);
       VG_(printf)(
-      "%ssymbols from the object with soname: %s\n", v, VG_(seginfo_soname)(si));
+      "%ssymbols from the object with soname: %s\n", v, VG_(seginfo_soname)(di));
       VG_(printf)(
       "%s\n", v);
       VG_(printf)(
@@ -632,9 +632,9 @@ static void maybe_add_active ( Active act )
          paranoia (but, I believe, unnecessarily), discard 'to' as
          well. */
       VG_(discard_translations)( (Addr64)act.from_addr, 1,
-                                 "redir_new_SegInfo(from_addr)");
+                                 "redir_new_DebugInfo(from_addr)");
       VG_(discard_translations)( (Addr64)act.to_addr, 1,
-                                 "redir_new_SegInfo(to_addr)");
+                                 "redir_new_DebugInfo(to_addr)");
    }
    return;
 
@@ -647,11 +647,11 @@ static void maybe_add_active ( Active act )
 }
 
 
-/* Notify m_redir of the deletion of a SegInfo.  This is relatively
+/* Notify m_redir of the deletion of a DebugInfo.  This is relatively
    simple -- just get rid of all actives derived from it, and free up
    the associated list elements. */
 
-void VG_(redir_notify_delete_SegInfo)( SegInfo* delsi )
+void VG_(redir_notify_delete_DebugInfo)( DebugInfo* delsi )
 {
    TopSpec* ts;
    TopSpec* tsPrev;
@@ -675,7 +675,7 @@ void VG_(redir_notify_delete_SegInfo)( SegInfo* delsi )
      ts = ts->next;
    }
 
-   vg_assert(ts); /* else we don't have the deleted SegInfo */
+   vg_assert(ts); /* else we don't have the deleted DebugInfo */
    vg_assert(ts->seginfo == delsi);
 
    /* Traverse the actives, copying the addresses of those we intend
@@ -710,9 +710,9 @@ void VG_(redir_notify_delete_SegInfo)( SegInfo* delsi )
          /* While we have our hands on both the 'from' and 'to'
             of this Active, do paranoid stuff with tt/tc. */
          VG_(discard_translations)( (Addr64)act->from_addr, 1,
-                                    "redir_del_SegInfo(from_addr)");
+                                    "redir_del_DebugInfo(from_addr)");
          VG_(discard_translations)( (Addr64)act->to_addr, 1,
-                                    "redir_del_SegInfo(to_addr)");
+                                    "redir_del_DebugInfo(to_addr)");
       }
    }
 
@@ -744,7 +744,7 @@ void VG_(redir_notify_delete_SegInfo)( SegInfo* delsi )
    dinfo_free(ts);
 
    if (VG_(clo_trace_redir))
-      show_redir_state("after VG_(redir_notify_delete_SegInfo)");
+      show_redir_state("after VG_(redir_notify_delete_DebugInfo)");
 }
 
 
@@ -828,12 +828,12 @@ static void add_hardwired_spec ( HChar* sopatt, HChar* fnpatt,
 /* Initialise the redir system, and create the initial Spec list and
    for amd64-linux a couple of permanent active mappings.  The initial
    Specs are not converted into Actives yet, on the (checked)
-   assumption that no SegInfos have so far been created, and so when
+   assumption that no DebugInfos have so far been created, and so when
    they are created, that will happen. */
 
 void VG_(redir_initialise) ( void )
 {
-   // Assert that there are no SegInfos so far
+   // Assert that there are no DebugInfos so far
    vg_assert( VG_(next_seginfo)(NULL) == NULL );
 
    // Initialise active mapping.
