@@ -237,9 +237,9 @@ Bool get_elf_symbol_info (
    if (!plausible
        && ELFXX_ST_TYPE(sym->st_info) == STT_NOTYPE
        && sym->st_size > 0
-       && si->opd_start_avma != 0
-       && sym_addr >= si->opd_start_avma
-       && sym_addr <  si->opd_start_avma + si->opd_size)
+       && di->opd_avma != 0
+       && sym_addr >= di->opd_avma
+       && sym_addr <  di->opd_avma + di->opd_size)
       plausible = True;
 #  endif
 
@@ -350,7 +350,7 @@ Bool get_elf_symbol_info (
    /* Here's yet another ppc64-linux hack.  Get rid of leading dot if
       the symbol is outside .opd. */
 #  if defined(VGP_ppc64_linux)
-   if (si->opd_avma != 0
+   if (di->opd_avma != 0
        && !is_in_opd
        && sym_name[0] == '.') {
       vg_assert(!(*from_opd_out));
