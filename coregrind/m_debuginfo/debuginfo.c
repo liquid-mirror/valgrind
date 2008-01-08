@@ -215,8 +215,9 @@ static void discard_syms_in_range ( Addr start, SizeT length )
       while (True) {
          if (curr == NULL)
             break;
-         if (start+length - 1 < curr->text_avma 
-             || curr->text_avma + curr->text_size - 1 < start) {
+         if (curr->text_size > 0
+             && (start+length - 1 < curr->text_avma 
+                 || curr->text_avma + curr->text_size - 1 < start)) {
             /* no overlap */
 	 } else {
 	    found = True;
@@ -581,6 +582,7 @@ void VG_(di_notify_mmap)( Addr a, Bool allow_SkFileV )
    [a, a+len).  */
 void VG_(di_notify_munmap)( Addr a, SizeT len )
 {
+   if (0) VG_(printf)("DISCARD %p %p\n", a, a+len);
    discard_syms_in_range(a, len);
 }
 

@@ -837,7 +837,7 @@ Bool ML_(read_elf_debug_info) ( struct _DebugInfo* di )
    Addr          dimage = 0;
    UWord         n_dimage = 0;
    OffT          offset_dimage = 0;
-   Bool          debug = 1||False;
+   Bool          debug = False;
 
    /* Image addresses for the ELF file we're working with. */
    Addr          oimage   = 0;
@@ -871,6 +871,12 @@ Bool ML_(read_elf_debug_info) ( struct _DebugInfo* di )
    vg_assert(!di->cfsi_exprs);
    vg_assert(!di->strchunks);
    vg_assert(!di->soname);
+
+   /* If these don't hold true, it means that m_syswrap/m_aspacemgr
+      managed to do a mapping where the start isn't page aligned.
+      Which sounds pretty bogus to me. */
+   vg_assert(VG_IS_PAGE_ALIGNED(di->rx_map_avma));
+   vg_assert(VG_IS_PAGE_ALIGNED(di->rw_map_avma));
 
    /* ----------------------------------------------------------
       Phase 1.  At this point, there is very little information in
@@ -1139,36 +1145,50 @@ Bool ML_(read_elf_debug_info) ( struct _DebugInfo* di )
               goto out;                                    \
          } while (0)
 
-      /* Find avma-s for .text, .data, .opd */
+      /* Find avma-s for: .text .data .bss .plt .got .opd .eh_frame */
 
-      /* Accept .text only when mapped as rx */
+      /* Accept .text where mapped as rx */
       if (0 == VG_(strcmp)(name, ".text")) {
-         if (inrx /* && !inrw */ && size > 0 && di->text_size == 0) {
+         if (inrx && size > 0 && di->text_size == 0) {
             di->text_avma = di->rx_map_avma + foff - di->rx_map_foff;
-            di->text_size = size;
-            di->text_bias = di->text_avma - svma;
+            di->text_size = //di->rx_map_size; //size;
+                            size;
+            di->text_bias = VG_PGROUNDDN(di->text_avma) - VG_PGROUNDDN(svma);
             if (debug)
                VG_(printf)("acquiring .text avma = %p\n", di->text_avma);
          } else {
             BAD(".text");
          }
-     }
+      }
 
-      /* Accept .data only when mapped as rw */
+      /* Accept .data where mapped as rw */
       if (0 == VG_(strcmp)(name, ".data")) {
-         if (/*!inrx && */ inrw && size > 0 && di->data_size == 0) {
+         if (inrw && size > 0 && di->data_size == 0) {
             di->data_avma = di->rw_map_avma + foff - di->rw_map_foff;
             di->data_size = size;
+            di->data_bias = di->data_avma - svma;
             if (debug)
                VG_(printf)("acquiring .data avma = %p\n", di->data_avma);
          } else {
             BAD(".data");
          }
-     }
+      }
 
-      /* Accept .opd only when mapped as rw */
+      /* Accept .bss where mapped as rw */
+      if (0 == VG_(strcmp)(name, ".bss")) {
+         if (inrw && size > 0 && di->bss_size == 0) {
+            di->bss_avma = di->rw_map_avma + foff - di->rw_map_foff;
+            di->bss_size = size;
+            if (debug)
+               VG_(printf)("acquiring .bss avma = %p\n", di->bss_avma);
+         } else {
+            BAD(".bss");
+         }
+      }
+
+      /* Accept .opd where mapped as rw */
       if (0 == VG_(strcmp)(name, ".opd")) {
-         if (!inrx && inrw && size > 0 && di->opd_size == 0) {
+         if (inrw && size > 0 && di->opd_size == 0) {
             di->opd_avma = di->rw_map_avma + foff - di->rw_map_foff;
             di->opd_size = size;
             if (debug)
@@ -1176,12 +1196,26 @@ Bool ML_(read_elf_debug_info) ( struct _DebugInfo* di )
          } else {
             BAD(".opd");
          }
-     }
+      }
+
+      /* Accept .eh_frame where mapped as rx */
+      if (0 == VG_(strcmp)(name, ".eh_frame")) {
+         if (inrx && size > 0 && di->ehframe_size == 0) {
+            di->ehframe_avma = VG_PGROUNDDN(di->rx_map_avma + foff - di->rx_map_foff);
+            di->ehframe_size = size;
+            if (debug)
+               VG_(printf)("acquiring .eh_frame avma = %p\n", di->ehframe_avma);
+         } else {
+            BAD(".eh_frame");
+         }
+      }
 
 #    undef BAD
 
    }
 
+   if (0) VG_(printf)("YYYY text_: avma %p  size %ld  bias %p\n", 
+                      di->text_avma, di->text_size, di->text_bias);
 
    if (VG_(clo_verbosity) > 2 || VG_(clo_trace_redir))
       VG_(message)(Vg_DebugMsg, "   svma %010p, avma %010p", 
@@ -1407,12 +1441,12 @@ Bool ML_(read_elf_debug_info) ( struct _DebugInfo* di )
          read_elf_symtab = read_elf_symtab__normal;
 #        endif
          read_elf_symtab(di, "symbol table",
-                         symtab_img, symtab_sz, symtab_offset,
+                         symtab_img, symtab_sz, di->text_bias, /*symtab_offset,*/
                          strtab_img, strtab_sz, 
                          opd_filea_img, opd_offset);
 
          read_elf_symtab(di, "dynamic symbol table",
-                         dynsym_img, dynsym_sz, dynsym_offset,
+                         dynsym_img, dynsym_sz, di->text_bias, /*dynsym_offset,*/
                          dynstr_img, dynstr_sz, 
                          opd_filea_img, opd_offset);
       }
@@ -1420,7 +1454,7 @@ Bool ML_(read_elf_debug_info) ( struct _DebugInfo* di )
       /* Read .eh_frame (call-frame-info) if any */
       if (ehframe_img) {
          ML_(read_callframe_info_dwarf3)
-            ( di, ehframe_img, ehframe_sz, ehframe_avma );
+            ( di, ehframe_img, di->ehframe_size, di->ehframe_avma );
       }
 
       /* Read the stabs and/or dwarf2 debug information, if any.  It
@@ -1439,7 +1473,7 @@ Bool ML_(read_elf_debug_info) ( struct _DebugInfo* di )
          before using it. */
       if (debug_info_img && debug_abbv_img && debug_line_img
                                            /* && debug_str_img */) {
-         ML_(read_debuginfo_dwarf2) ( di, debug_offset, 
+         ML_(read_debuginfo_dwarf2) ( di, di->text_bias, /*debug_offset,*/ 
                                       debug_info_img,   debug_info_sz,
                                       debug_abbv_img,
                                       debug_line_img,   debug_line_sz,

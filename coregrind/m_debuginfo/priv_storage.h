@@ -207,7 +207,7 @@ extern Int ML_(CfiExpr_DwReg) ( XArray* dst, Int reg );
 
 extern void ML_(ppCfiExpr)( XArray* src, Int ix );
 
-/* --------------------- SEGINFO --------------------- */
+/* --------------------- DEBUGINFO --------------------- */
 
 /* This is the top-level data type.  It's a structure which contains
    information pertaining to one mapped ELF object.  This type is
