@@ -1455,38 +1455,46 @@ ULong VG_(seginfo_sym_offset)(const DebugInfo* di)
 VgSectKind VG_(seginfo_sect_kind)(Addr a)
 {
    DebugInfo* di;
-   VgSectKind ret = Vg_SectUnknown;
 
    for (di = debugInfo_list; di != NULL; di = di->next) {
-      if (a >= di->text_avma 
-          && a < di->text_avma + di->text_size) {
 
-	 if (0)
-	    VG_(printf)(
-               "addr=%p di=%p %s got=%p %ld  plt=%p %ld data=%p %ld bss=%p %ld\n",
-               a, di, di->filename,
-               di->got_avma,  di->got_size,
-               di->plt_avma,  di->plt_size,
-               di->data_avma, di->data_size,
-               di->bss_avma,  di->bss_size);
+      if (0)
+         VG_(printf)(
+            "addr=%p di=%p %s got=%p,%ld plt=%p,%ld data=%p,%ld bss=%p,%ld\n",
+            a, di, di->filename,
+            di->got_avma,  di->got_size,
+            di->plt_avma,  di->plt_size,
+            di->data_avma, di->data_size,
+            di->bss_avma,  di->bss_size);
 
-	 ret = Vg_SectText;
+      if (di->text_size > 0
+          && a >= di->text_avma && a < di->text_avma + di->text_size)
+         return Vg_SectText;
 
-	 if (a >= di->data_avma && a < di->data_avma + di->data_size)
-	    ret = Vg_SectData;
-	 else 
-         if (a >= di->bss_avma && a < di->bss_avma + di->bss_size)
-	    ret = Vg_SectBSS;
-	 else 
-         if (a >= di->plt_avma && a < di->plt_avma + di->plt_size)
-	    ret = Vg_SectPLT;
-	 else 
-         if (a >= di->got_avma && a < di->got_avma + di->got_size)
-	    ret = Vg_SectGOT;
-      }
+      if (di->data_size > 0
+          && a >= di->data_avma && a < di->data_avma + di->data_size)
+         return Vg_SectData;
+
+      if (di->bss_size > 0
+          && a >= di->bss_avma && a < di->bss_avma + di->bss_size)
+         return Vg_SectBSS;
+
+      if (di->plt_size > 0
+          && a >= di->plt_avma && a < di->plt_avma + di->plt_size)
+         return Vg_SectPLT;
+
+      if (di->got_size > 0
+          && a >= di->got_avma && a < di->got_avma + di->got_size)
+         return Vg_SectGOT;
+
+      if (di->opd_size > 0
+          && a >= di->opd_avma && a < di->opd_avma + di->opd_size)
+         return Vg_SectOPD;
+
+      /* we could also check for .eh_frame, if anyone really cares */
    }
 
-   return ret;
+   return Vg_SectUnknown;
 }
 
 Char* VG_(seginfo_sect_kind_name)(Addr a, Char* buf, UInt n_buf)
@@ -1509,6 +1517,9 @@ Char* VG_(seginfo_sect_kind_name)(Addr a, Char* buf, UInt n_buf)
          break;
       case Vg_SectPLT:
          VG_(snprintf)(buf, n_buf, "PLT");
+         break;
+      case Vg_SectOPD:
+         VG_(snprintf)(buf, n_buf, "OPD");
          break;
       default:
          vg_assert(0);

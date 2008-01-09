@@ -130,7 +130,8 @@ typedef
       Vg_SectData,
       Vg_SectBSS,
       Vg_SectGOT,
-      Vg_SectPLT
+      Vg_SectPLT,
+      Vg_SectOPD
    }
    VgSectKind;
 
