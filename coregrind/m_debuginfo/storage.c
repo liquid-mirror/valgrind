@@ -52,12 +52,35 @@
 /*------------------------------------------------------------*/
 
 /* Show a non-fatal debug info reading error.  Use vg_panic if
-   terminal. */
-void ML_(symerr) ( HChar* msg )
+   terminal.  'serious' errors are shown regardless of the
+   verbosity setting. */
+void ML_(symerr) ( struct _DebugInfo* di, Bool serious, HChar* msg )
 {
-   if (VG_(clo_verbosity) > 1)
+   /* XML mode hides everything :-( */
+   if (VG_(clo_xml))
+      return;
+
+   if (serious) {
+
+      VG_(message)(Vg_DebugMsg, "WARNING: Serious error when "
+                                "reading debug info");
+      if (VG_(clo_verbosity) < 2) {
+         /* Need to show what the file name is, at verbosity levels 2
+            or below, since that won't already have been shown */
+         VG_(message)(Vg_DebugMsg, 
+                      "When reading debug info from %s:",
+                      (di && di->filename) ? di->filename : (UChar*)"???");
+      }
       VG_(message)(Vg_DebugMsg, "%s", msg);
+
+   } else { /* !serious */
+
+      if (VG_(clo_verbosity) >= 2)
+         VG_(message)(Vg_DebugMsg, "%s", msg);
+
+   }
 }
+
 
 /* Print a symbol. */
 void ML_(ppSym) ( Int idx, DiSym* sym )

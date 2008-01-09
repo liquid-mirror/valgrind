@@ -413,7 +413,7 @@ void read_elf_symtab__normal(
       Char buf[80];
       vg_assert(VG_(strlen)(tab_name) < 40);
       VG_(sprintf)(buf, "   object doesn't have a %s", tab_name);
-      ML_(symerr)(buf);
+      ML_(symerr)(di, False, buf);
       return;
    }
 
@@ -517,7 +517,7 @@ void read_elf_symtab__ppc64_linux(
       Char buf[80];
       vg_assert(VG_(strlen)(tab_name) < 40);
       VG_(sprintf)(buf, "   object doesn't have a %s", tab_name);
-      ML_(symerr)(buf);
+      ML_(symerr)(di, False, buf);
       return;
    }
 
@@ -934,13 +934,13 @@ Bool ML_(read_elf_debug_info) ( struct _DebugInfo* di )
 
    fd = VG_(open)(di->filename, VKI_O_RDONLY, 0);
    if (fd.isError) {
-      ML_(symerr)("Can't open .so/.exe to read symbols?!");
+      ML_(symerr)(di, True, "Can't open .so/.exe to read symbols?!");
       return False;
    }
 
    n_oimage = VG_(fsize)(fd.res);
    if (n_oimage <= 0) {
-      ML_(symerr)("Can't stat .so/.exe (to determine its size)?!");
+      ML_(symerr)(di, True, "Can't stat .so/.exe (to determine its size)?!");
       VG_(close)(fd.res);
       return False;
    }
@@ -977,7 +977,7 @@ Bool ML_(read_elf_debug_info) ( struct _DebugInfo* di )
       ok &= ML_(is_elf_object_file)(ehdr_img, n_oimage);
 
    if (!ok) {
-      ML_(symerr)("Invalid ELF Header");
+      ML_(symerr)(di, True, "Invalid ELF Header");
       goto out;
    }
 
@@ -1004,7 +1004,7 @@ Bool ML_(read_elf_debug_info) ( struct _DebugInfo* di )
        || !contained_within(
              oimage, n_oimage,
              (Addr)phdr_img, phdr_nent * phdr_ent_szB)) {
-      ML_(symerr)("Missing or invalid ELF Program Header Table");
+      ML_(symerr)(di, True, "Missing or invalid ELF Program Header Table");
       goto out;
    }
 
@@ -1012,7 +1012,7 @@ Bool ML_(read_elf_debug_info) ( struct _DebugInfo* di )
        || !contained_within(
              oimage, n_oimage,
              (Addr)shdr_img, shdr_nent * shdr_ent_szB)) {
-      ML_(symerr)("Missing or invalid ELF Section Header Table");
+      ML_(symerr)(di, True, "Missing or invalid ELF Section Header Table");
       goto out;
    }
 
@@ -1026,7 +1026,7 @@ Bool ML_(read_elf_debug_info) ( struct _DebugInfo* di )
    if (!contained_within( oimage, n_oimage,
                           (Addr)shdr_strtab_img,
                           1/*bogus, but we don't know the real size*/ )) {
-      ML_(symerr)("Invalid ELF Section Header String Table");
+      ML_(symerr)(di, True, "Invalid ELF Section Header String Table");
       goto out;
    }
 
@@ -1050,7 +1050,8 @@ Bool ML_(read_elf_debug_info) ( struct _DebugInfo* di )
             if (debug)
                VG_(printf)("Comparing %p %p\n", prev_svma, phdr->p_vaddr);
             if (phdr->p_vaddr < prev_svma) {
-               ML_(symerr)("ELF Program Headers are not in ascending order");
+               ML_(symerr)(di, True,
+                           "ELF Program Headers are not in ascending order");
                goto out;
             }
             prev_svma = phdr->p_vaddr;
@@ -1177,12 +1178,13 @@ Bool ML_(read_elf_debug_info) ( struct _DebugInfo* di )
       /* Check for sane-sized segments.  SHT_NOBITS sections have zero
          size in the file. */
       if ((foff >= n_oimage) || (foff + (bits ? size : 0) > n_oimage)) {
-         ML_(symerr)("ELF Section extends beyond image end");
+         ML_(symerr)(di, True, "ELF Section extends beyond image end");
          goto out;
       }
 
 #     define BAD(_secname)                                 \
-         do { ML_(symerr)("Can't make sense of " _secname  \
+         do { ML_(symerr)(di, True,                        \
+                          "Can't make sense of " _secname  \
                           " section mapping");             \
               goto out;                                    \
          } while (0)
@@ -1222,6 +1224,11 @@ Bool ML_(read_elf_debug_info) ( struct _DebugInfo* di )
             di->bss_size = size;
             if (debug)
                VG_(printf)("acquiring .bss avma = %p\n", di->bss_avma);
+         } else
+         if ((!inrw) && (!inrx) && size > 0 && di->bss_size == 0) {
+            /* File contains a .bss, but it didn't get mapped.  Ignore. */
+            di->bss_avma = 0;
+            di->bss_size = 0;
          } else {
             BAD(".bss");
          }
@@ -1252,7 +1259,7 @@ Bool ML_(read_elf_debug_info) ( struct _DebugInfo* di )
             BAD(".plt");
          }
       }
-#     elif defined(VGP_ppc32_linux) || defined(VGP_ppc64_linux)
+#     elif defined(VGP_ppc32_linux)
       /* Accept .plt where mapped as rw (data) */
       if (0 == VG_(strcmp)(name, ".plt")) {
          if (inrw && size > 0 && di->plt_size == 0) {
@@ -1260,6 +1267,25 @@ Bool ML_(read_elf_debug_info) ( struct _DebugInfo* di )
             di->plt_size = size;
             if (debug)
                VG_(printf)("acquiring .plt avma = %p\n", di->plt_avma);
+         } else {
+            BAD(".plt");
+         }
+      }
+#     elif defined(VGP_ppc64_linux)
+      /* Accept .plt where mapped as rw (data), or unmapped */
+      if (0 == VG_(strcmp)(name, ".plt")) {
+         if (inrw && size > 0 && di->plt_size == 0) {
+            di->plt_avma = di->rw_map_avma + foff - di->rw_map_foff;
+            di->plt_size = size;
+            if (debug)
+               VG_(printf)("acquiring .plt avma = %p\n", di->plt_avma);
+         } else 
+         if ((!inrw) && (!inrx) && size > 0 && di->plt_size == 0) {
+            /* File contains a .plt, but it didn't get mapped.
+               Presumably it is not required on this platform.  At
+               least don't reject the situation as invalid. */
+            di->plt_avma = 0;
+            di->plt_size = 0;
          } else {
             BAD(".plt");
          }
@@ -1382,7 +1408,8 @@ Bool ML_(read_elf_debug_info) ( struct _DebugInfo* di )
                /* SHT_NOBITS sections have zero size in the file. */ \
                if ( shdr->sh_offset \
                     + (nobits ? 0 : sec_size) > n_oimage ) { \
-                  ML_(symerr)("   section beyond image end?!"); \
+                  ML_(symerr)(di, True, \
+                              "   section beyond image end?!");	\
                   goto out; \
                } \
             } \
@@ -1448,7 +1475,8 @@ Bool ML_(read_elf_debug_info) ( struct _DebugInfo* di )
                 || !contained_within(
                        dimage, n_dimage,
                        (Addr)phdr_dimg, phdr_dnent * phdr_dent_szB)) {
-               ML_(symerr)("Missing or invalid ELF Program Header Table"
+               ML_(symerr)(di, True,
+                           "Missing or invalid ELF Program Header Table"
                            " (debuginfo file)");
                goto out;
             }
@@ -1457,7 +1485,8 @@ Bool ML_(read_elf_debug_info) ( struct _DebugInfo* di )
                 || !contained_within(
                        dimage, n_dimage,
                        (Addr)shdr_dimg, shdr_dnent * shdr_dent_szB)) {
-               ML_(symerr)("Missing or invalid ELF Section Header Table"
+               ML_(symerr)(di, True,
+                           "Missing or invalid ELF Section Header Table"
                            " (debuginfo file)");
                goto out;
             }
@@ -1473,7 +1502,8 @@ Bool ML_(read_elf_debug_info) ( struct _DebugInfo* di )
                     dimage, n_dimage,
                     (Addr)shdr_strtab_dimg,
                     1/*bogus, but we don't know the real size*/ )) {
-               ML_(symerr)("Invalid ELF Section Header String Table"
+               ML_(symerr)(di, True, 
+                           "Invalid ELF Section Header String Table"
                            " (debuginfo file)");
                goto out;
             }
@@ -1523,7 +1553,8 @@ Bool ML_(read_elf_debug_info) ( struct _DebugInfo* di )
                      /* SHT_NOBITS sections have zero size in the file. */ \
                      if ( shdr->sh_offset \
                           + (nobits ? 0 : sec_size) > n_dimage ) { \
-                        ML_(symerr)("   section beyond image end?!"); \
+                        ML_(symerr)(di, True, \
+                                    "   section beyond image end?!"); \
                         goto out; \
                      } \
                   } \

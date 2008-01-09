@@ -451,14 +451,14 @@ void VG_(di_notify_mmap)( Addr a, Bool allow_SkFileV )
    VG_(memset)(buf1k, 0, sizeof(buf1k));
    fd = VG_(open)( filename, VKI_O_RDONLY, 0 );
    if (fd.isError) {
-      ML_(symerr)("can't open file to inspect ELF header");
+      ML_(symerr)(NULL, True, "can't open file to inspect ELF header");
       return;
    }
    nread = VG_(read)( fd.res, buf1k, sizeof(buf1k) );
    VG_(close)( fd.res );
 
    if (nread <= 0) {
-      ML_(symerr)("can't read file to inspect ELF header");
+      ML_(symerr)(NULL, True, "can't read file to inspect ELF header");
       return;
    }
    vg_assert(nread > 0 && nread <= sizeof(buf1k) );

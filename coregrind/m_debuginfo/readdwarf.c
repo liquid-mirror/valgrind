@@ -497,7 +497,8 @@ void read_dwarf2_lineblock ( struct _DebugInfo* di, OffT debug_offset,
 
    /* Check the length of the block.  */
    if (info.li_length > noLargerThan) {
-      ML_(symerr)("DWARF line info appears to be corrupt "
+      ML_(symerr)(di, True,
+                  "DWARF line info appears to be corrupt "
                   "- the section is too small");
       goto out;
    }
@@ -510,7 +511,8 @@ void read_dwarf2_lineblock ( struct _DebugInfo* di, OffT debug_offset,
                   (Int)info.li_version);
 
    if (info.li_version != 2) {
-      ML_(symerr)("Only DWARF version 2 line info "
+      ML_(symerr)(di, True,
+                  "Only DWARF version 2 line info "
                   "is currently supported.");
       goto out;
    }
@@ -642,7 +644,8 @@ void read_dwarf2_lineblock ( struct _DebugInfo* di, OffT debug_offset,
       VG_(printf)("\n");
 
    if (*data != 0) {
-      ML_(symerr)("can't find NUL at end of DWARF2 directory table");
+      ML_(symerr)(di, True,
+                  "can't find NUL at end of DWARF2 directory table");
       goto out;
    }
    data ++;
@@ -683,7 +686,8 @@ void read_dwarf2_lineblock ( struct _DebugInfo* di, OffT debug_offset,
       VG_(printf)("\n");
 
    if (*data != 0) {
-      ML_(symerr)("can't find NUL at end of DWARF2 file name table");
+      ML_(symerr)(di, True,
+                  "can't find NUL at end of DWARF2 file name table");
       goto out;
    }
    data ++;
@@ -1132,7 +1136,8 @@ void ML_(read_debuginfo_dwarf2)
 
    /* Make sure we at least have a header for the first block */
    if (debug_info_sz < 4) {
-     ML_(symerr)( "Last block truncated in .debug_info; ignoring" );
+      ML_(symerr)( di, True, 
+                   "Last block truncated in .debug_info; ignoring" );
       return;
    }
 
@@ -1146,14 +1151,16 @@ void ML_(read_debuginfo_dwarf2)
       blklen     = read_initial_length_field( block_img, &blklen_is_64 );
       blklen_len = blklen_is_64 ? 12 : 4;
       if ( block_img + blklen + blklen_len > end_img ) {
-         ML_(symerr)( "Last block truncated in .debug_info; ignoring" );
+         ML_(symerr)( di, True,
+                      "Last block truncated in .debug_info; ignoring" );
          return;
       }
 
       /* version should be 2 */
       ver = *((UShort*)( block_img + blklen_len ));
       if ( ver != 2 ) {
-         ML_(symerr)( "Ignoring non-dwarf2 block in .debug_info" );
+         ML_(symerr)( di, True,
+                      "Ignoring non-dwarf2 block in .debug_info" );
          continue;
       }
       

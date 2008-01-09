@@ -371,8 +371,10 @@ extern Int ML_(search_one_cfitab) ( struct _DebugInfo* di, Addr ptr );
 /* ------ Misc ------ */
 
 /* Show a non-fatal debug info reading error.  Use vg_panic if
-   terminal. */
-extern void ML_(symerr) ( HChar* msg );
+   terminal.  'serious' errors are always shown, not 'serious' ones
+   are shown only at verbosity level 2 and above. */
+extern 
+void ML_(symerr) ( struct _DebugInfo* di, Bool serious, HChar* msg );
 
 /* Print a symbol. */
 extern void ML_(ppSym) ( Int idx, DiSym* sym );
