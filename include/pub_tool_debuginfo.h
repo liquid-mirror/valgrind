@@ -74,6 +74,14 @@ extern Bool VG_(get_filename_linenum)
    entry points within it. */
 extern Bool VG_(get_fnname_if_entry) ( Addr a, Char* fnname, Int n_fnname );
 
+/* Looks up 'a' in the collection of data symbols, and if found puts
+   its name (or as much as will fit) into dname[0 .. n_dname-1]
+   including zero terminator.  Also the 'a's offset from the symbol
+   start is put into *offset. */
+extern Bool VG_(get_dataname_and_offset)( Addr a,
+                                          /*OUT*/Char* dname, Int n_dname,
+                                          /*OUT*/OffT* offset );
+
 /* Succeeds if the address is within a shared object or the main executable.
    It doesn't matter if debug info is present or not. */
 extern Bool VG_(get_objname)  ( Addr a, Char* objname,  Int n_objname );
@@ -86,7 +94,6 @@ extern Bool VG_(get_objname)  ( Addr a, Char* objname,  Int n_objname );
    'n_buf' gives length of 'buf'.  Returns 'buf'.
 */
 extern Char* VG_(describe_IP)(Addr eip, Char* buf, Int n_buf);
-
 
 /*====================================================================*/
 /*=== Obtaining segment information                                ===*/
@@ -121,8 +128,8 @@ extern void VG_(seginfo_syms_getidx)  ( const DebugInfo *di,
                                         /*OUT*/Addr*   addr,
                                         /*OUT*/Addr*   tocptr,
                                         /*OUT*/UInt*   size,
-                                        /*OUT*/HChar** name );
-
+                                        /*OUT*/HChar** name,
+                                        /*OUT*/Bool*   isText );
 typedef
    enum {
       Vg_SectUnknown,

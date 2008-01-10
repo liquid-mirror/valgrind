@@ -915,10 +915,11 @@ void ML_(canonicaliseTables) ( struct _DebugInfo* di )
    if not found.  Binary search.  */
 
 Int ML_(search_one_symtab) ( struct _DebugInfo* di, Addr ptr,
-                             Bool match_anywhere_in_fun )
+                             Bool match_anywhere_in_sym,
+                             Bool findText )
 {
    Addr a_mid_lo, a_mid_hi;
-   Int  mid, size, 
+   Word mid, size, 
         lo = 0, 
         hi = di->symtab_used-1;
    while (True) {
@@ -926,7 +927,7 @@ Int ML_(search_one_symtab) ( struct _DebugInfo* di, Addr ptr,
       if (lo > hi) return -1; /* not found */
       mid      = (lo + hi) / 2;
       a_mid_lo = di->symtab[mid].addr;
-      size = ( match_anywhere_in_fun
+      size = ( match_anywhere_in_sym
              ? di->symtab[mid].size
              : 1);
       a_mid_hi = ((Addr)di->symtab[mid].addr) + size - 1;
@@ -934,7 +935,11 @@ Int ML_(search_one_symtab) ( struct _DebugInfo* di, Addr ptr,
       if (ptr < a_mid_lo) { hi = mid-1; continue; } 
       if (ptr > a_mid_hi) { lo = mid+1; continue; }
       vg_assert(ptr >= a_mid_lo && ptr <= a_mid_hi);
-      return mid;
+      /* Found a symbol with the correct address range.  But is it
+         of the right kind (text vs data) ? */
+      if (  findText   &&   di->symtab[mid].isText  ) return mid;
+      if ( (!findText) && (!di->symtab[mid].isText) ) return mid;
+      return -1;
    }
 }
 
@@ -945,7 +950,7 @@ Int ML_(search_one_symtab) ( struct _DebugInfo* di, Addr ptr,
 Int ML_(search_one_loctab) ( struct _DebugInfo* di, Addr ptr )
 {
    Addr a_mid_lo, a_mid_hi;
-   Int  mid, 
+   Word mid, 
         lo = 0, 
         hi = di->loctab_used-1;
    while (True) {

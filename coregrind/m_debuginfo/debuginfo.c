@@ -680,22 +680,42 @@ void VG_(di_aix5_notify_segchange)(
 
 /* Search all symtabs that we know about to locate ptr.  If found, set
    *pdi to the relevant DebugInfo, and *symno to the symtab entry
-   *number within that.  If not found, *psi is set to NULL. */
+   *number within that.  If not found, *psi is set to NULL.
+   If findText==True,  only text symbols are searched for.
+   If findText==False, only data symbols are searched for.
+*/
 static void search_all_symtabs ( Addr ptr, /*OUT*/DebugInfo** pdi,
                                            /*OUT*/Int* symno,
-                                 Bool match_anywhere_in_fun )
+                                 Bool match_anywhere_in_sym,
+                                 Bool findText )
 {
    Int        sno;
    DebugInfo* di;
+   Bool       inRange;
+
    for (di = debugInfo_list; di != NULL; di = di->next) {
-      if (di->text_avma <= ptr 
-          && ptr < di->text_avma + di->text_size) {
-         sno = ML_(search_one_symtab) ( di, ptr, match_anywhere_in_fun );
-         if (sno == -1) goto not_found;
-         *symno = sno;
-         *pdi = di;
-         return;
+
+      if (findText) {
+         inRange = di->text_size > 0
+                   && di->text_avma <= ptr 
+                   && ptr < di->text_avma + di->text_size;
+      } else {
+         inRange = di->data_size > 0
+                   && di->data_avma <= ptr 
+                   && ptr < di->data_avma + di->data_size + di->bss_size;
       }
+
+      /* Note this short-circuit check relies on the assumption that
+         .bss is mapped immediately after .data. */
+      if (!inRange) continue;
+
+      sno = ML_(search_one_symtab) ( 
+               di, ptr, match_anywhere_in_sym, findText );
+      if (sno == -1) goto not_found;
+      *symno = sno;
+      *pdi = di;
+      return;
+
    }
   not_found:
    *pdi = NULL;
@@ -729,16 +749,19 @@ static void search_all_loctabs ( Addr ptr, /*OUT*/DebugInfo** pdi,
    plausible symbol name.  Returns False if no idea; otherwise True.
    Caller supplies buf and nbuf.  If demangle is False, don't do
    demangling, regardless of VG_(clo_demangle) -- probably because the
-   call has come from VG_(get_fnname_nodemangle)(). */
+   call has come from VG_(get_fnname_nodemangle)().  findText
+   indicates whether we're looking for a text symbol or a data symbol
+   -- caller must choose one kind or the other. */
 static
-Bool get_fnname ( Bool demangle, Addr a, Char* buf, Int nbuf,
-                  Bool match_anywhere_in_fun, Bool show_offset)
+Bool get_sym_name ( Bool demangle, Addr a, Char* buf, Int nbuf,
+                    Bool match_anywhere_in_sym, Bool show_offset,
+                    Bool findText, /*OUT*/OffT* offsetP )
 {
    DebugInfo* di;
    Int        sno;
    Int        offset;
 
-   search_all_symtabs ( a, &di, &sno, match_anywhere_in_fun );
+   search_all_symtabs ( a, &di, &sno, match_anywhere_in_sym, findText );
    if (di == NULL) 
       return False;
    if (demangle) {
@@ -749,6 +772,8 @@ Bool get_fnname ( Bool demangle, Addr a, Char* buf, Int nbuf,
    }
 
    offset = a - di->symtab[sno].addr;
+   if (offsetP) *offsetP = (OffT)offset;
+
    if (show_offset && offset != 0) {
       Char     buf2[12];
       Char*    symend = buf + VG_(strlen)(buf);
@@ -777,7 +802,9 @@ Addr VG_(get_tocptr) ( Addr guest_code_addr )
    DebugInfo* si;
    Int        sno;
    search_all_symtabs ( guest_code_addr, 
-                        &si, &sno, True/*match_anywhere_in_fun*/ );
+                        &si, &sno,
+                        True/*match_anywhere_in_fun*/,
+                        True/*consider text symbols only*/ );
    if (si == NULL) 
       return 0;
    else
@@ -788,18 +815,22 @@ Addr VG_(get_tocptr) ( Addr guest_code_addr )
    match anywhere in function, but don't show offsets. */
 Bool VG_(get_fnname) ( Addr a, Char* buf, Int nbuf )
 {
-   return get_fnname ( /*demangle*/True, a, buf, nbuf,
-                       /*match_anywhere_in_fun*/True, 
-                       /*show offset?*/False );
+   return get_sym_name ( /*demangle*/True, a, buf, nbuf,
+                         /*match_anywhere_in_fun*/True, 
+                         /*show offset?*/False,
+                         /*text syms only*/True,
+                         /*offsetP*/NULL );
 }
 
 /* This is available to tools... always demangle C++ names,
    match anywhere in function, and show offset if nonzero. */
 Bool VG_(get_fnname_w_offset) ( Addr a, Char* buf, Int nbuf )
 {
-   return get_fnname ( /*demangle*/True, a, buf, nbuf,
-                       /*match_anywhere_in_fun*/True, 
-                       /*show offset?*/True );
+   return get_sym_name ( /*demangle*/True, a, buf, nbuf,
+                         /*match_anywhere_in_fun*/True, 
+                         /*show offset?*/True,
+                         /*text syms only*/True,
+                         /*offsetP*/NULL );
 }
 
 /* This is available to tools... always demangle C++ names,
@@ -807,18 +838,22 @@ Bool VG_(get_fnname_w_offset) ( Addr a, Char* buf, Int nbuf )
    and don't show offsets. */
 Bool VG_(get_fnname_if_entry) ( Addr a, Char* buf, Int nbuf )
 {
-   return get_fnname ( /*demangle*/True, a, buf, nbuf,
-                       /*match_anywhere_in_fun*/False, 
-                       /*show offset?*/False );
+   return get_sym_name ( /*demangle*/True, a, buf, nbuf,
+                         /*match_anywhere_in_fun*/False, 
+                         /*show offset?*/False,
+                         /*text syms only*/True,
+                         /*offsetP*/NULL );
 }
 
 /* This is only available to core... don't demangle C++ names,
    match anywhere in function, and don't show offsets. */
 Bool VG_(get_fnname_nodemangle) ( Addr a, Char* buf, Int nbuf )
 {
-   return get_fnname ( /*demangle*/False, a, buf, nbuf,
-                       /*match_anywhere_in_fun*/True, 
-                       /*show offset?*/False );
+   return get_sym_name ( /*demangle*/False, a, buf, nbuf,
+                         /*match_anywhere_in_fun*/True, 
+                         /*show offset?*/False,
+                         /*text syms only*/True,
+                         /*offsetP*/NULL );
 }
 
 /* This is only available to core... don't demangle C++ names, but do
@@ -830,9 +865,11 @@ Bool VG_(get_fnname_Z_demangle_only) ( Addr a, Char* buf, Int nbuf )
    Char tmpbuf[N_TMPBUF];
    Bool ok;
    vg_assert(nbuf > 0);
-   ok = get_fnname ( /*demangle*/False, a, tmpbuf, N_TMPBUF,
-                     /*match_anywhere_in_fun*/True, 
-                     /*show offset?*/False );
+   ok = get_sym_name ( /*demangle*/False, a, tmpbuf, N_TMPBUF,
+                       /*match_anywhere_in_fun*/True, 
+                       /*show offset?*/False,
+                       /*text syms only*/True,
+                       /*offsetP*/NULL );
    tmpbuf[N_TMPBUF-1] = 0; /* paranoia */
    if (!ok) 
       return False;
@@ -844,6 +881,28 @@ Bool VG_(get_fnname_Z_demangle_only) ( Addr a, Char* buf, Int nbuf )
    return True;
 #  undef N_TMPBUF
 }
+
+/* Looks up 'a' in the collection of data symbols, and if found puts
+   its name (or as much as will fit) into dname[0 .. n_dname-1]
+   including zero terminator.  Also the 'a's offset from the symbol
+   start is put into *offset. */
+Bool VG_(get_dataname_and_offset)( Addr a,
+                                   /*OUT*/Char* dname, Int n_dname,
+                                   /*OUT*/OffT* offset )
+{
+   Bool ok;
+   vg_assert(n_dname > 1);
+   ok = get_sym_name ( /*demangle*/False, a, dname, n_dname,
+                       /*match_anywhere_in_sym*/True, 
+                       /*show offset?*/False,
+                       /*data syms only please*/False,
+                       offset );
+   if (!ok)
+      return False;
+   dname[n_dname-1] = 0;
+   return True;
+}
+
 
 /* Map a code address to the name of a shared object file or the
    executable.  Returns False if no idea; otherwise True.  Doesn't
@@ -1537,13 +1596,15 @@ void VG_(seginfo_syms_getidx) ( const DebugInfo *si,
                                /*OUT*/Addr*   addr,
                                /*OUT*/Addr*   tocptr,
                                /*OUT*/UInt*   size,
-                               /*OUT*/HChar** name )
+                               /*OUT*/HChar** name,
+                               /*OUT*/Bool*   isText )
 {
    vg_assert(idx >= 0 && idx < si->symtab_used);
    if (addr)   *addr   = si->symtab[idx].addr;
    if (tocptr) *tocptr = si->symtab[idx].tocptr;
    if (size)   *size   = si->symtab[idx].size;
    if (name)   *name   = (HChar*)si->symtab[idx].name;
+   if (isText) *isText = si->symtab[idx].isText;
 }
 
 

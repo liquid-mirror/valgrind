@@ -103,9 +103,10 @@ void describe_addr(Addr const a, SizeT const len, AddrInfo* const ai)
          HChar* name;
          Char filename[256];
          Int linenum;
+         Bool isText;
 
-         VG_(seginfo_syms_getidx)(sg, i, &addr, &tocptr, &size, &name);
-         if (addr <= a && a < addr + size)
+         VG_(seginfo_syms_getidx)(sg, i, &addr, &tocptr, &size, &name, &isText);
+         if (isText && addr <= a && a < addr + size)
          {
             ai->size     = size;
             ai->rwoffset = a - addr;

@@ -327,6 +327,7 @@ void VG_(redir_notify_new_DebugInfo)( DebugInfo* newsi )
    HChar        demangled_sopatt[N_DEMANGLED];
    HChar        demangled_fnpatt[N_DEMANGLED];
    Bool         check_ppcTOCs = False;
+   Bool         isText;
    const UChar* newsi_soname;
 
 #  if defined(VG_PLAT_USES_PPCTOC)
@@ -349,9 +350,12 @@ void VG_(redir_notify_new_DebugInfo)( DebugInfo* newsi )
    nsyms = VG_(seginfo_syms_howmany)( newsi );
    for (i = 0; i < nsyms; i++) {
       VG_(seginfo_syms_getidx)( newsi, i, &sym_addr, &sym_toc, 
-                                          NULL, &sym_name );
+                                          NULL, &sym_name, &isText );
       ok = VG_(maybe_Z_demangle)( sym_name, demangled_sopatt, N_DEMANGLED,
                                   demangled_fnpatt, N_DEMANGLED, &isWrap );
+      /* ignore data symbols */
+      if (!isText)
+         continue;
       if (!ok) {
          /* It's not a full-scale redirect, but perhaps it is a load-notify
             fn?  Let the load-notify department see it. */
@@ -384,9 +388,11 @@ void VG_(redir_notify_new_DebugInfo)( DebugInfo* newsi )
    if (check_ppcTOCs) {
       for (i = 0; i < nsyms; i++) {
          VG_(seginfo_syms_getidx)( newsi, i, &sym_addr, &sym_toc, 
-                                             NULL, &sym_name );
-         ok = VG_(maybe_Z_demangle)( sym_name, demangled_sopatt, N_DEMANGLED,
-                                     demangled_fnpatt, N_DEMANGLED, &isWrap );
+                                             NULL, &sym_name, &isText );
+         ok = isText
+              && VG_(maybe_Z_demangle)( 
+                    sym_name, demangled_sopatt, N_DEMANGLED,
+                    demangled_fnpatt, N_DEMANGLED, &isWrap );
          if (!ok)
             /* not a redirect.  Ignore. */
             continue;
@@ -480,7 +486,7 @@ void generate_and_add_actives (
      )
 {
    Spec*  sp;
-   Bool   anyMark;
+   Bool   anyMark, isText;
    Active act;
    Int    nsyms, i;
    Addr   sym_addr;
@@ -505,7 +511,12 @@ void generate_and_add_actives (
       of trashing the caches less. */
    nsyms = VG_(seginfo_syms_howmany)( di );
    for (i = 0; i < nsyms; i++) {
-      VG_(seginfo_syms_getidx)( di, i, &sym_addr, NULL, NULL, &sym_name );
+      VG_(seginfo_syms_getidx)( di, i,
+                                &sym_addr, NULL, NULL, &sym_name, &isText );
+
+      /* ignore data symbols */
+      if (!isText)
+         continue;
 
       /* On AIX, we cannot redirect calls to a so-called glink
          function for reasons which are not obvious - something to do

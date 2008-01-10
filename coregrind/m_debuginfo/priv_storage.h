@@ -359,7 +359,8 @@ extern void ML_(canonicaliseTables) ( struct _DebugInfo* di );
 /* Find a symbol-table index containing the specified pointer, or -1
    if not found.  Binary search.  */
 extern Int ML_(search_one_symtab) ( struct _DebugInfo* di, Addr ptr,
-                                    Bool match_anywhere_in_fun );
+                                    Bool match_anywhere_in_sym,
+                                    Bool findText );
 
 /* Find a location-table index containing the specified pointer, or -1
    if not found.  Binary search.  */

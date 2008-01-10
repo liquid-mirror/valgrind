@@ -44,6 +44,7 @@
 #include "pub_tool_tooliface.h"
 #include "pub_tool_threadstate.h"
 #include "pub_tool_oset.h"
+#include "pub_tool_debuginfo.h"     // VG_(get_dataname_and_offset)
 
 #include "mc_include.h"
 #include "memcheck.h"   /* for client requests */
@@ -2629,6 +2630,7 @@ typedef
       Addr_Unknown,       // classification yielded nothing useful
       Addr_Stack,          
       Addr_Block,
+      Addr_GlobalData
    }
    AddrTag;
 
@@ -2656,6 +2658,13 @@ struct _AddrInfo {
          OffT        rwoffset;
          ExeContext* lastchange;
       } Block;
+
+      // In a global .data symbol.  This holds the first 63 chars of
+      // the variable's (zero terminated), plus an offset.
+      struct {
+         Char name[64];
+         OffT offset;
+      } GlobalData;
 
       // Classification yielded nothing useful.
       struct { } Unknown;
@@ -2832,6 +2841,17 @@ static void mc_pp_AddrInfo ( Addr a, AddrInfo* ai, Bool maybe_gcc )
          VG_(pp_ExeContext)(ai->Addr.Block.lastchange);
          break;
       }
+
+      case Addr_GlobalData:
+         VG_(message)(Vg_UserMsg, 
+                      "%sAddress 0x%llx is %llu bytes "
+                        "inside global var \"%t\"%s", 
+                      xpre, 
+                      (ULong)a, 
+                      (ULong)ai->Addr.GlobalData.offset,
+                      ai->Addr.GlobalData.name, 
+                      xpost);
+         break;
 
       default:
          VG_(tool_panic)("mc_pp_AddrInfo");
@@ -3330,9 +3350,9 @@ static void describe_addr ( Addr a, AddrInfo* ai )
    tl_assert(Addr_Undescribed == ai->tag);
 
    /* Perhaps it's a user-def'd block? */
-   if (client_perm_maybe_describe( a, ai ))
+   if (client_perm_maybe_describe( a, ai )) {
       return;
-
+   }
    /* Perhaps it's on a thread's stack? */
    VG_(thread_stack_reset_iter)();
    while ( VG_(thread_stack_next)(&tid, &stack_min, &stack_max) ) {
@@ -3368,6 +3388,17 @@ static void describe_addr ( Addr a, AddrInfo* ai )
          ai->Addr.Block.lastchange = mc->where;
          return;
       }
+   }
+   /* Perhaps it's in global data? */
+   VG_(memset)( &ai->Addr.GlobalData.name, 0, sizeof(ai->Addr.GlobalData.name));
+   if (VG_(get_dataname_and_offset)(
+          a, &ai->Addr.GlobalData.name[0],
+             sizeof(ai->Addr.GlobalData.name)-1,
+             &ai->Addr.GlobalData.offset )) {
+      ai->tag = Addr_GlobalData;
+      tl_assert( ai->Addr.GlobalData.name
+                    [ sizeof(ai->Addr.GlobalData.name)-1 ] == 0);
+      return;
    }
    /* Clueless ... */
    ai->tag = Addr_Unknown;
