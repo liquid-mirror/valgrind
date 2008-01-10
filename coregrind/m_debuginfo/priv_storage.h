@@ -50,8 +50,9 @@ typedef
    struct { 
       Addr  addr;   /* lowest address of entity */
       Addr  tocptr; /* ppc64-linux only: value that R2 should have */
-      UInt  size;   /* size in bytes */
       UChar *name;  /* name */
+      UInt  size;   /* size in bytes */
+      Bool  isText;
    }
    DiSym;
 

@@ -139,7 +139,7 @@ Bool ML_(is_elf_object_file)( void* image, SizeT n_image )
 
 static
 void show_raw_elf_symbol ( Int i, 
-                           ElfXX_Sym* sym, Char* sym_name, Addr sym_addr,
+                           ElfXX_Sym* sym, Char* sym_name, Addr sym_svma,
                            Bool ppc64_linux_format )
 {
    HChar* space = ppc64_linux_format ? "                  " : "";
@@ -162,8 +162,8 @@ void show_raw_elf_symbol ( Int i,
       case STT_HIPROC:  VG_(printf)("hip "); break;
       default:          VG_(printf)("??? "); break;
    }
-   VG_(printf)(": val %010p, %ssz %4d  %s\n",
-               sym_addr, space, sym->st_size,
+   VG_(printf)(": svma %010p, %ssz %4d  %s\n",
+               sym_svma, space, sym->st_size,
                ( sym->st_name ? sym_name : (Char*)"NONAME" ) ); 
 }               
 
@@ -172,6 +172,12 @@ void show_raw_elf_symbol ( Int i,
    relevant info to the _OUT arguments.  For {x86,amd64,ppc32}-linux
    this is straightforward - the name, address, size are copied out
    unchanged.
+
+   There is a bit of a kludge re data symbols (see KLUDGED BSS CHECK
+   below): we assume that the .bss is mapped immediately after .data,
+   and so accept any data symbol which exists in the range [start of
+   .data, size of .data + size of .bss).  I don't know if this is
+   really correct/justifiable, or not.
 
    For ppc64-linux it's more complex.  If the symbol is seen to be in
    the .opd section, it is taken to be a function descriptor, and so
@@ -195,24 +201,26 @@ Bool get_elf_symbol_info (
         struct _DebugInfo* di, /* containing DebugInfo */
         ElfXX_Sym* sym,        /* ELF symbol */
         Char*      sym_name,   /* name */
-        Addr       sym_addr,   /* declared address */
+        Addr       sym_svma,   /* address as stated in the object file */
         UChar*     opd_img,    /* oimage of .opd sec (ppc64-linux only) */
         OffT       opd_bias,   /* for biasing AVMAs found in .opd */
         /* OUTPUTS */
         Char** sym_name_out,   /* name we should record */
-        Addr*  sym_addr_out,   /* addr we should record */
+        Addr*  sym_avma_out,   /* addr we should record */
         Int*   sym_size_out,   /* symbol size */
         Addr*  sym_tocptr_out, /* ppc64-linux only: R2 value to be
                                   used on entry */
-        Bool*  from_opd_out    /* ppc64-linux only: did we deref an
-                                  .opd entry? */ 
+        Bool*  from_opd_out,   /* ppc64-linux only: did we deref an
+                                  .opd entry? */
+        Bool*  is_text_out     /* is this a text symbol? */
      )
 {
    Bool plausible, is_in_opd;
 
    /* Set defaults */
    *sym_name_out   = sym_name;
-   *sym_addr_out   = sym_addr;
+   *sym_avma_out   = sym_svma; /* we will bias this shortly */
+   *is_text_out    = True;
    *sym_size_out   = (Int)sym->st_size;
    *sym_tocptr_out = 0; /* unknown/inapplicable */
    *from_opd_out   = False;
@@ -226,20 +234,29 @@ Bool get_elf_symbol_info (
         )
         &&
         (ELFXX_ST_TYPE(sym->st_info) == STT_FUNC 
-         || (VG_(needs).data_syms 
-             && ELFXX_ST_TYPE(sym->st_info) == STT_OBJECT)
+         || ELFXX_ST_TYPE(sym->st_info) == STT_OBJECT
         );
+
+   /* Now bias sym_avma_out accordingly */
+   if (ELFXX_ST_TYPE(sym->st_info) == STT_OBJECT) {
+      *is_text_out = False;
+      *sym_avma_out += di->data_bias;
+   } else {
+      *is_text_out = True;
+      *sym_avma_out += di->text_bias;
+   }
 
 #  if defined(VGP_ppc64_linux)
    /* Allow STT_NOTYPE in the very special case where we're running on
       ppc64-linux and the symbol is one which the .opd-chasing hack
       below will chase. */
    if (!plausible
+       && *is_text_out
        && ELFXX_ST_TYPE(sym->st_info) == STT_NOTYPE
        && sym->st_size > 0
-       && di->opd_avma != 0
-       && sym_addr >= di->opd_avma
-       && sym_addr <  di->opd_avma + di->opd_size)
+       && di->opd_size > 0
+       && *sym_svma_out >= di->opd_avma
+       && *sym_svma_out <  di->opd_avma + di->opd_size)
       plausible = True;
 #  endif
 
@@ -266,15 +283,15 @@ Bool get_elf_symbol_info (
 
    /* If it's apparently in a GOT or PLT, it's really a reference to a
       symbol defined elsewhere, so ignore it. */
-   if (di->got_avma != 0
-       && sym_addr >= di->got_avma 
-       && sym_addr <  di->got_avma + di->got_size) {
+   if (di->got_size > 0
+       && *sym_avma_out >= di->got_avma 
+       && *sym_avma_out <  di->got_avma + di->got_size) {
       TRACE_SYMTAB("    ignore -- in GOT: %s\n", sym_name);
       return False;
    }
-   if (di->plt_avma != 0
-       && sym_addr >= di->plt_avma
-       && sym_addr <  di->plt_avma + di->plt_size) {
+   if (di->plt_size > 0
+       && *sym_avma_out >= di->plt_avma
+       && *sym_avma_out <  di->plt_avma + di->plt_size) {
       TRACE_SYMTAB("    ignore -- in PLT: %s\n", sym_name);
       return False;
    }
@@ -289,9 +306,9 @@ Bool get_elf_symbol_info (
    */
    is_in_opd = False;
 
-   if (di->opd_avma != 0
-       && sym_addr >= di->opd_avma
-       && sym_addr <  di->opd_avma + di->opd_size) {
+   if (di->opd_size > 0
+       && *sym_avma_out >= di->opd_avma
+       && *sym_avma_out <  di->opd_avma + di->opd_size) {
 #     if !defined(VGP_ppc64_linux)
       TRACE_SYMTAB("    ignore -- in OPD: %s\n", sym_name);
       return False;
@@ -299,19 +316,19 @@ Bool get_elf_symbol_info (
       Int    offset_in_opd;
       ULong* fn_descr;
 
-      if (0) VG_(printf)("opdXXX: opd_bias %p, sym_addr %p\n", 
-                         (void*)(opd_bias), (void*)sym_addr);
+      if (0) VG_(printf)("opdXXX: opd_bias %p, sym_svma_out %p\n", 
+                         (void*)(opd_bias), (void*)*sym_avma_out);
 
-      if (!VG_IS_8_ALIGNED(sym_addr)) {
+      if (!VG_IS_8_ALIGNED(*sym_avma_out)) {
          TRACE_SYMTAB("    ignore -- not 8-aligned: %s\n", sym_name);
          return False;
       }
 
-      /* sym_addr is a vma pointing into the .opd section.  We know
-         the vma of the opd section start, so we can figure out how
-         far into the opd section this is. */
+      /* *sym_avma_out is a vma pointing into the .opd section.  We
+         know the vma of the opd section start, so we can figure out
+         how far into the opd section this is. */
 
-      offset_in_opd = (Addr)sym_addr - (Addr)(di->opd_avma);
+      offset_in_opd = (Addr)(*sym_avma_out) - (Addr)(di->opd_avma);
       if (offset_in_opd < 0 || offset_in_opd >= di->opd_size) {
          TRACE_SYMTAB("    ignore -- invalid OPD offset: %s\n", sym_name);
          return False;
@@ -337,16 +354,15 @@ Bool get_elf_symbol_info (
          OK for fn_descr[0], but surely we need to use the data bias
          and not the text bias for fn_descr[1] ?  Oh Well.
       */
-      sym_addr        = fn_descr[0] + opd_bias;
-      *sym_addr_out   = sym_addr;
+      *sym_avma_out   = fn_descr[0] + opd_bias;
       *sym_tocptr_out = fn_descr[1] + opd_bias;
       *from_opd_out   = True;
       is_in_opd = True;
 
       /* Do a final sanity check: if the symbol falls outside the
-         DebugInfo's mapped range, ignore it.  Since sym_addr has been
-         updated, that can be achieved simply by falling through to
-         the test below. */
+         DebugInfo's mapped range, ignore it.  Since *sym_avma_out has
+         been updated, that can be achieved simply by falling through
+         to the test below. */
 
 #     endif /* ppc64-linux nasty hack */
    }
@@ -354,7 +370,7 @@ Bool get_elf_symbol_info (
    /* Here's yet another ppc64-linux hack.  Get rid of leading dot if
       the symbol is outside .opd. */
 #  if defined(VGP_ppc64_linux)
-   if (di->opd_avma != 0
+   if (di->opd_size > 0
        && !is_in_opd
        && sym_name[0] == '.') {
       vg_assert(!(*from_opd_out));
@@ -364,13 +380,28 @@ Bool get_elf_symbol_info (
 
    /* If no part of the symbol falls within the mapped range,
       ignore it. */
-   if (*sym_addr_out + *sym_size_out <= di->text_avma
-       || *sym_addr_out >= di->text_avma + di->text_size) {
-      TRACE_SYMTAB( "ignore -- %p .. %p outside mapped range %p .. %p\n",
-                    *sym_addr_out, *sym_addr_out + *sym_size_out,
-                    di->text_avma,
-                    di->text_avma + di->text_size);
-      return False;
+   if (*is_text_out) {
+      if (*sym_avma_out + *sym_size_out <= di->text_avma
+          || *sym_avma_out >= di->text_avma + di->text_size) {
+         TRACE_SYMTAB(
+            "ignore -- %p .. %p outside .text svma range %p .. %p\n",
+            *sym_avma_out, *sym_avma_out + *sym_size_out,
+            di->text_avma,
+            di->text_avma + di->text_size);
+         return False;
+      }
+   } else {
+      /* KLUDGED BSS CHECK -- see comments at start of fn */
+      if (*sym_avma_out + *sym_size_out <= di->data_avma
+          || *sym_avma_out >= di->data_avma + di->data_size
+                                            + di->bss_size) {
+         TRACE_SYMTAB(
+            "ignore -- %p .. %p outside .data svma range %p .. %p\n",
+            *sym_avma_out, *sym_avma_out + *sym_size_out,
+            di->data_avma,
+            di->data_avma + di->data_size);
+         return False;
+      }
    }
 
 #  if defined(VGP_ppc64_linux)
@@ -378,9 +409,9 @@ Bool get_elf_symbol_info (
       section.  This would completely mess up function redirection and
       intercepting.  This assert ensures that any symbols that make it
       into the symbol table on ppc64-linux don't point into .opd. */
-   if (di->opd_avma != 0) {
-      vg_assert(*sym_addr_out + *sym_size_out <= di->opd_avma
-                || *sym_addr_out >= di->opd_avma + di->opd_size);
+   if (di->opd_size > 0) {
+      vg_assert(*sym_avma_out + *sym_size_out <= di->opd_avma
+                || *sym_avma_out >= di->opd_avma + di->opd_size);
    }
 #  endif
 
@@ -401,11 +432,11 @@ void read_elf_symtab__normal(
      )
 {
    Word       i;
-   Addr       sym_addr, sym_addr_really;
+   Addr       sym_svma, sym_avma_really;
    Char      *sym_name, *sym_name_really;
    Int        sym_size;
    Addr       sym_tocptr;
-   Bool       from_opd;
+   Bool       from_opd, is_text;
    DiSym      risym;
    ElfXX_Sym *sym;
 
@@ -417,38 +448,40 @@ void read_elf_symtab__normal(
       return;
    }
 
-   TRACE_SYMTAB("\nReading (ELF, standard) %s (%d entries)\n", tab_name, 
-                symtab_szB/sizeof(ElfXX_Sym) );
+   TRACE_SYMTAB("\n--- Reading (ELF, standard) %s (%d entries)---\n",
+                tab_name, symtab_szB/sizeof(ElfXX_Sym) );
 
    /* Perhaps should start at i = 1; ELF docs suggest that entry
       0 always denotes 'unknown symbol'. */
    for (i = 1; i < (Word)(symtab_szB/sizeof(ElfXX_Sym)); i++) {
       sym      = & symtab_img[i];
       sym_name = (UChar*)(strtab_img + sym->st_name);
-      sym_addr = di->text_bias + sym->st_value;
+      sym_svma = sym->st_value;
 
       if (di->trace_symtab)
-         show_raw_elf_symbol(i, sym, sym_name, sym_addr, False);
+         show_raw_elf_symbol(i, sym, sym_name, sym_svma, False);
 
-      if (get_elf_symbol_info(di, sym, sym_name, sym_addr,
+      if (get_elf_symbol_info(di, sym, sym_name, sym_svma,
                               opd_img, di->text_bias,
                               &sym_name_really, 
-                              &sym_addr_really,
+                              &sym_avma_really,
                               &sym_size,
                               &sym_tocptr,
-                              &from_opd)) {
+                              &from_opd, &is_text)) {
 
-         risym.addr   = sym_addr_really;
+         risym.addr   = sym_avma_really;
          risym.size   = sym_size;
          risym.name   = ML_(addStr) ( di, sym_name_really, -1 );
          risym.tocptr = sym_tocptr;
+         risym.isText = is_text;
          vg_assert(risym.name != NULL);
          vg_assert(risym.tocptr == 0); /* has no role except on ppc64-linux */
          ML_(addSym) ( di, &risym );
 
          if (di->trace_symtab) {
-            VG_(printf)("    record [%4d]:          "
-                        " val %010p, sz %4d  %s\n",
+            VG_(printf)("    rec(%c) [%4d]:          "
+                        "  val %010p, sz %4d  %s\n",
+                        is_text ? 't' : 'd',
                         i, (void*)risym.addr, (Int)risym.size, 
                            (HChar*)risym.name
             );
@@ -501,11 +534,11 @@ void read_elf_symtab__ppc64_linux(
 {
    Word        i;
    Int         old_size;
-   Addr        sym_addr, sym_addr_really;
+   Addr        sym_svma, sym_avma_really;
    Char       *sym_name, *sym_name_really;
    Int         sym_size;
    Addr        sym_tocptr, old_tocptr;
-   Bool        from_opd, modify_size, modify_tocptr;
+   Bool        from_opd, modify_size, modify_tocptr, is_text;
    DiSym       risym;
    ElfXX_Sym  *sym;
    OSet       *oset;
@@ -521,8 +554,8 @@ void read_elf_symtab__ppc64_linux(
       return;
    }
 
-   TRACE_SYMTAB("\nReading (ELF, ppc64-linux) %s (%d entries)\n", tab_name, 
-                symtab_szB/sizeof(ElfXX_Sym) );
+   TRACE_SYMTAB("\n--- Reading (ELF, ppc64-linux) %s (%d entries) ---\n",
+                tab_name, symtab_szB/sizeof(ElfXX_Sym) );
 
    oset = VG_(OSetGen_Create)( offsetof(TempSym,key), 
                                (OSetCmp_t)cmp_TempSymKey, 
@@ -534,21 +567,21 @@ void read_elf_symtab__ppc64_linux(
    for (i = 1; i < (Word)(symtab_szB/sizeof(ElfXX_Sym)); i++) {
       sym      = & symtab_img[i];
       sym_name = (Char*)(strtab_img + sym->st_name);
-      sym_addr = di->text_bias + sym->st_value;
+      sym_svma = sym->st_value;
 
       if (di->trace_symtab)
-         show_raw_elf_symbol(i, sym, sym_name, sym_addr, True);
+         show_raw_elf_symbol(i, sym, sym_name, sym_svma, True);
 
-      if (get_elf_symbol_info(di, sym, sym_name, sym_addr,
+      if (get_elf_symbol_info(di, sym, sym_name, sym_svma,
                               opd_img, di->text_bias,
                               &sym_name_really, 
-                              &sym_addr_really,
+                              &sym_avma_really,
                               &sym_size,
                               &sym_tocptr,
-                              &from_opd)) {
+                              &from_opd, &is_text)) {
 
          /* Check if we've seen this (name,addr) key before. */
-         key.addr = sym_addr_really;
+         key.addr = sym_avma_really;
          key.name = sym_name_really;
          prev = VG_(OSetGen_Lookup)( oset, &key );
 
@@ -644,12 +677,14 @@ void read_elf_symtab__ppc64_linux(
       risym.size   = elem->size;
       risym.name   = ML_(addStr) ( di, elem->key.name, -1 );
       risym.tocptr = elem->tocptr;
+      risym.isText = True;
       vg_assert(risym.name != NULL);
 
       ML_(addSym) ( di, &risym );
       if (di->trace_symtab) {
-         VG_(printf)("    record [%4d]:          "
-                     " val %010p, toc %010p, sz %4d  %s\n",
+         VG_(printf)("    rec(%c) [%4d]:          "
+                     "  val %010p, toc %010p, sz %4d  %s\n",
+                     is_text ? 't' : 'd',
                      i, (void*) risym.addr,
                         (void*) risym.tocptr,
                         (Int)   risym.size, 
@@ -866,7 +901,6 @@ Bool ML_(read_elf_debug_info) ( struct _DebugInfo* di )
    Bool          res, ok;
    SysRes        fd, sres;
    Word          i;
-   Bool          debug = False;
 
    /* Image addresses for the ELF file we're working with. */
    Addr          oimage   = 0;
@@ -991,14 +1025,18 @@ Bool ML_(read_elf_debug_info) ( struct _DebugInfo* di )
    shdr_nent    = ehdr_img->e_shnum;
    shdr_ent_szB = ehdr_img->e_shentsize;
 
-   if (debug) {
-      VG_(printf)("object: img %p n_oimage %ld\n",
-                  (void*)oimage, n_oimage);
-      VG_(printf)("phdr:   img %p nent %ld ent_szB %ld\n",
-                  phdr_img, phdr_nent, phdr_ent_szB);
-      VG_(printf)("shdr:   img %p nent %ld ent_szB %ld\n",
-                  shdr_img, shdr_nent, shdr_ent_szB);
-   }
+   TRACE_SYMTAB("\n");
+   TRACE_SYMTAB("------ start ELF OBJECT ------------------------------\n");
+   TRACE_SYMTAB("------ name = %s\n", di->filename);
+   TRACE_SYMTAB("\n");
+
+   TRACE_SYMTAB("--- Basic facts about the object ---\n");
+   TRACE_SYMTAB("object: img %p n_oimage %ld\n",
+               (void*)oimage, n_oimage);
+   TRACE_SYMTAB("phdr:   img %p nent %ld ent_szB %ld\n",
+               phdr_img, phdr_nent, phdr_ent_szB);
+   TRACE_SYMTAB("shdr:   img %p nent %ld ent_szB %ld\n",
+               shdr_img, shdr_nent, shdr_ent_szB);
 
    if (phdr_nent == 0
        || !contained_within(
@@ -1030,15 +1068,14 @@ Bool ML_(read_elf_debug_info) ( struct _DebugInfo* di )
       goto out;
    }
 
-   if (debug) {
-      VG_(printf)("shdr:   string table at %p\n", shdr_strtab_img );
-   }
+   TRACE_SYMTAB("shdr:   string table at %p\n", shdr_strtab_img );
 
    /* Do another amazingly tedious thing: find out the .soname for
       this object.  Apparently requires looking through the program
       header table. */
+   TRACE_SYMTAB("\n");
+   TRACE_SYMTAB("--- Looking for the soname ---\n");
    vg_assert(di->soname == NULL);
-
    {
       ElfXX_Addr prev_svma = 0;
 
@@ -1047,8 +1084,7 @@ Bool ML_(read_elf_debug_info) ( struct _DebugInfo* di )
 
          /* Make sure the PT_LOADable entries are in order */
          if (phdr->p_type == PT_LOAD) {
-            if (debug)
-               VG_(printf)("Comparing %p %p\n", prev_svma, phdr->p_vaddr);
+            TRACE_SYMTAB("PT_LOAD in order?: %p %p\n", prev_svma, phdr->p_vaddr);
             if (phdr->p_vaddr < prev_svma) {
                ML_(symerr)(di, True,
                            "ELF Program Headers are not in ascending order");
@@ -1092,9 +1128,7 @@ Bool ML_(read_elf_debug_info) ( struct _DebugInfo* di )
                }
             }
             if (stroff != -1 && strtab != NULL) {
-               if (debug)
-                  VG_(printf)("Got soname=%s\n", strtab+stroff);
-               TRACE_SYMTAB("soname=%s\n", strtab+stroff);
+               TRACE_SYMTAB("Found soname = %s\n", strtab+stroff);
                di->soname = VG_(arena_strdup)(VG_AR_DINFO, strtab+stroff);
             }
          }
@@ -1149,14 +1183,21 @@ Bool ML_(read_elf_debug_info) ( struct _DebugInfo* di )
       }
    }
 
+   /* If, after looking at all the program headers, we still didn't 
+      find a soname, add a fake one. */
+   if (di->soname == NULL) {
+      TRACE_SYMTAB("No soname found; using (fake) \"NONE\"\n");
+      di->soname = "NONE";
+   }
+
 
    /* Now read the section table. */
-   if (debug) {
-      VG_(printf)("rx: foffsets %ld .. %ld\n",
-                  di->rx_map_foff, di->rx_map_foff + di->rx_map_size - 1 );
-      VG_(printf)("rw: foffsets %ld .. %ld\n",
-                  di->rw_map_foff, di->rw_map_foff + di->rw_map_size - 1 );
-   }
+   TRACE_SYMTAB("\n");
+   TRACE_SYMTAB("--- Examining the section headers and program headers ---\n");
+   TRACE_SYMTAB("rx: foffsets %ld .. %ld\n",
+               di->rx_map_foff, di->rx_map_foff + di->rx_map_size - 1 );
+   TRACE_SYMTAB("rw: foffsets %ld .. %ld\n",
+               di->rw_map_foff, di->rw_map_foff + di->rw_map_size - 1 );
    for (i = 0; i < shdr_nent; i++) {
       ElfXX_Shdr* shdr = INDEX_BIS( shdr_img, i, shdr_ent_szB );
       UChar* name = shdr_strtab_img + shdr->sh_name;
@@ -1169,11 +1210,10 @@ Bool ML_(read_elf_debug_info) ( struct _DebugInfo* di )
       Bool   inrw = size > 0 && foff >= di->rw_map_foff
                              && foff < di->rw_map_foff + di->rw_map_size;
 
-      if (debug)
-         VG_(printf)("section %2ld  %s %s  foff %6ld .. %6ld  "
-                     "  svma %p  name \"%s\"\n", 
-                     i, inrx ? "rx" : "  ", inrw ? "rw" : "  ",
-                     foff, foff+size-1, (void*)svma, name );
+      TRACE_SYMTAB(" [sec %2ld]  %s %s  foff %6ld .. %6ld  "
+                  "  svma %p  name \"%s\"\n", 
+                  i, inrx ? "rx" : "  ", inrw ? "rw" : "  ",
+                  foff, foff+size-1, (void*)svma, name );
 
       /* Check for sane-sized segments.  SHT_NOBITS sections have zero
          size in the file. */
@@ -1197,8 +1237,10 @@ Bool ML_(read_elf_debug_info) ( struct _DebugInfo* di )
             di->text_avma = di->rx_map_avma + foff - di->rx_map_foff;
             di->text_size = size;
             di->text_bias = VG_PGROUNDDN(di->text_avma) - VG_PGROUNDDN(svma);
-            if (debug)
-               VG_(printf)("acquiring .text avma = %p\n", di->text_avma);
+            TRACE_SYMTAB("acquiring .text avma = %p .. %p\n", 
+                         di->text_avma, 
+                         di->text_avma + di->text_size - 1);
+            TRACE_SYMTAB("acquiring .text bias = %p\n", di->text_bias);
          } else {
             BAD(".text");
          }
@@ -1209,9 +1251,11 @@ Bool ML_(read_elf_debug_info) ( struct _DebugInfo* di )
          if (inrw && size > 0 && di->data_size == 0) {
             di->data_avma = di->rw_map_avma + foff - di->rw_map_foff;
             di->data_size = size;
-            di->data_bias = di->data_avma - svma;
-            if (debug)
-               VG_(printf)("acquiring .data avma = %p\n", di->data_avma);
+            di->data_bias = VG_PGROUNDDN(di->data_avma) - VG_PGROUNDDN(svma);
+            TRACE_SYMTAB("acquiring .data avma = %p .. %p\n", 
+                         di->data_avma,
+                         di->data_avma + di->data_size - 1);
+            TRACE_SYMTAB("acquiring .data bias = %p\n", di->data_bias);
          } else {
             BAD(".data");
          }
@@ -1222,8 +1266,9 @@ Bool ML_(read_elf_debug_info) ( struct _DebugInfo* di )
          if (inrw && size > 0 && di->bss_size == 0) {
             di->bss_avma = di->rw_map_avma + foff - di->rw_map_foff;
             di->bss_size = size;
-            if (debug)
-               VG_(printf)("acquiring .bss avma = %p\n", di->bss_avma);
+            TRACE_SYMTAB("acquiring .bss avma = %p .. %p\n", 
+                         di->bss_avma,
+                         di->bss_avma + di->bss_size - 1);
          } else
          if ((!inrw) && (!inrx) && size > 0 && di->bss_size == 0) {
             /* File contains a .bss, but it didn't get mapped.  Ignore. */
@@ -1239,8 +1284,7 @@ Bool ML_(read_elf_debug_info) ( struct _DebugInfo* di )
          if (inrw && size > 0 && di->got_size == 0) {
             di->got_avma = di->rw_map_avma + foff - di->rw_map_foff;
             di->got_size = size;
-            if (debug)
-               VG_(printf)("acquiring .got avma = %p\n", di->got_avma);
+            TRACE_SYMTAB("acquiring .got avma = %p\n", di->got_avma);
          } else {
             BAD(".got");
          }
@@ -1253,8 +1297,7 @@ Bool ML_(read_elf_debug_info) ( struct _DebugInfo* di )
          if (inrx && size > 0 && di->plt_size == 0) {
             di->plt_avma = di->rx_map_avma + foff - di->rx_map_foff;
             di->plt_size = size;
-            if (debug)
-               VG_(printf)("acquiring .plt avma = %p\n", di->plt_avma);
+            TRACE_SYMTAB("acquiring .plt avma = %p\n", di->plt_avma);
          } else {
             BAD(".plt");
          }
@@ -1265,8 +1308,7 @@ Bool ML_(read_elf_debug_info) ( struct _DebugInfo* di )
          if (inrw && size > 0 && di->plt_size == 0) {
             di->plt_avma = di->rw_map_avma + foff - di->rw_map_foff;
             di->plt_size = size;
-            if (debug)
-               VG_(printf)("acquiring .plt avma = %p\n", di->plt_avma);
+            TRACE_SYMTAB("acquiring .plt avma = %p\n", di->plt_avma);
          } else {
             BAD(".plt");
          }
@@ -1277,8 +1319,7 @@ Bool ML_(read_elf_debug_info) ( struct _DebugInfo* di )
          if (inrw && size > 0 && di->plt_size == 0) {
             di->plt_avma = di->rw_map_avma + foff - di->rw_map_foff;
             di->plt_size = size;
-            if (debug)
-               VG_(printf)("acquiring .plt avma = %p\n", di->plt_avma);
+            TRACE_SYMTAB("acquiring .plt avma = %p\n", di->plt_avma);
          } else 
          if ((!inrw) && (!inrx) && size > 0 && di->plt_size == 0) {
             /* File contains a .plt, but it didn't get mapped.
@@ -1299,8 +1340,7 @@ Bool ML_(read_elf_debug_info) ( struct _DebugInfo* di )
          if (inrw && size > 0 && di->opd_size == 0) {
             di->opd_avma = di->rw_map_avma + foff - di->rw_map_foff;
             di->opd_size = size;
-            if (debug)
-               VG_(printf)("acquiring .opd avma = %p\n", di->opd_avma);
+            TRACE_SYMTAB("acquiring .opd avma = %p\n", di->opd_avma);
          } else {
             BAD(".opd");
          }
@@ -1311,8 +1351,7 @@ Bool ML_(read_elf_debug_info) ( struct _DebugInfo* di )
          if (inrx && size > 0 && di->ehframe_size == 0) {
             di->ehframe_avma = di->rx_map_avma + foff - di->rx_map_foff;
             di->ehframe_size = size;
-            if (debug)
-               VG_(printf)("acquiring .eh_frame avma = %p\n", di->ehframe_avma);
+            TRACE_SYMTAB("acquiring .eh_frame avma = %p\n", di->ehframe_avma);
          } else {
             BAD(".eh_frame");
          }
@@ -1330,16 +1369,8 @@ Bool ML_(read_elf_debug_info) ( struct _DebugInfo* di )
                                 di->text_avma - di->text_bias,
                                 di->text_avma );
 
-   /* If, after looking at all the program headers, we still didn't 
-      find a soname, add a fake one. */
-   if (di->soname == NULL) {
-      TRACE_SYMTAB("soname(fake)=\"NONE\"\n");
-      di->soname = "NONE";
-   }
-
-   TRACE_SYMTAB("shoff = %d,  shnum = %d,  size = %d,  n_vg_oimage = %d\n",
-                ehdr_img->e_shoff, ehdr_img->e_shnum, 
-                sizeof(ElfXX_Shdr), n_oimage );
+   TRACE_SYMTAB("\n");
+   TRACE_SYMTAB("--- Finding image addresses for debug-info sections ---\n");
 
    /* Find interesting sections, read the symbol table(s), read any debug
       information */
@@ -1402,7 +1433,7 @@ Bool ML_(read_elf_debug_info) ( struct _DebugInfo* di )
                sec_img  = (void*)(oimage + shdr->sh_offset); \
                sec_size = shdr->sh_size; \
                nobits   = shdr->sh_type == SHT_NOBITS; \
-               TRACE_SYMTAB( "%18s: filea %p .. %p, vma %p .. %p\n", \
+               TRACE_SYMTAB( "%18s:  img %p .. %p\n", \
                              sec_name, (UChar*)sec_img, \
                              ((UChar*)sec_img) + sec_size - 1); \
                /* SHT_NOBITS sections have zero size in the file. */ \
@@ -1546,7 +1577,7 @@ Bool ML_(read_elf_debug_info) ( struct _DebugInfo* di )
                      sec_img  = (void*)(dimage + shdr->sh_offset); \
                      sec_size = shdr->sh_size; \
                      nobits   = shdr->sh_type == SHT_NOBITS; \
-                     TRACE_SYMTAB( "%18s: filea %p .. %p\n", \
+                     TRACE_SYMTAB( "%18s: dimg %p .. %p\n", \
                                    sec_name, \
                                    (UChar*)sec_img, \
                                    ((UChar*)sec_img) + sec_size - 1); \
@@ -1641,6 +1672,12 @@ Bool ML_(read_elf_debug_info) ( struct _DebugInfo* di )
 
   out: {
    SysRes m_res;
+
+   TRACE_SYMTAB("\n");
+   TRACE_SYMTAB("------ name = %s\n", di->filename);
+   TRACE_SYMTAB("------ end ELF OBJECT ------------------------------\n");
+   TRACE_SYMTAB("\n");
+
    /* Last, but not least, heave the image(s) back overboard. */
    if (dimage) {
       m_res = VG_(am_munmap_valgrind) ( dimage, n_dimage );

@@ -1523,6 +1523,7 @@ HChar* read_symbol_table (
          di.addr   = addr;
          di.size   = size;
          di.tocptr = s->r2known ? s->r2value : 0;
+         di.isText = True;
          vg_assert(!is_empty_Name(s->name));
          nlen = s->name.len;
          vg_assert(nlen > 0);
