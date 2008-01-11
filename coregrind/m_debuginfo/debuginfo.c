@@ -1511,81 +1511,6 @@ ULong VG_(seginfo_sym_offset)(const DebugInfo* di)
    return di->text_bias;
 }
 
-VgSectKind VG_(seginfo_sect_kind)(Addr a)
-{
-   DebugInfo* di;
-
-   for (di = debugInfo_list; di != NULL; di = di->next) {
-
-      if (0)
-         VG_(printf)(
-            "addr=%p di=%p %s got=%p,%ld plt=%p,%ld data=%p,%ld bss=%p,%ld\n",
-            a, di, di->filename,
-            di->got_avma,  di->got_size,
-            di->plt_avma,  di->plt_size,
-            di->data_avma, di->data_size,
-            di->bss_avma,  di->bss_size);
-
-      if (di->text_size > 0
-          && a >= di->text_avma && a < di->text_avma + di->text_size)
-         return Vg_SectText;
-
-      if (di->data_size > 0
-          && a >= di->data_avma && a < di->data_avma + di->data_size)
-         return Vg_SectData;
-
-      if (di->bss_size > 0
-          && a >= di->bss_avma && a < di->bss_avma + di->bss_size)
-         return Vg_SectBSS;
-
-      if (di->plt_size > 0
-          && a >= di->plt_avma && a < di->plt_avma + di->plt_size)
-         return Vg_SectPLT;
-
-      if (di->got_size > 0
-          && a >= di->got_avma && a < di->got_avma + di->got_size)
-         return Vg_SectGOT;
-
-      if (di->opd_size > 0
-          && a >= di->opd_avma && a < di->opd_avma + di->opd_size)
-         return Vg_SectOPD;
-
-      /* we could also check for .eh_frame, if anyone really cares */
-   }
-
-   return Vg_SectUnknown;
-}
-
-Char* VG_(seginfo_sect_kind_name)(Addr a, Char* buf, UInt n_buf)
-{
-   switch (VG_(seginfo_sect_kind)(a)) {
-      case Vg_SectUnknown:
-         VG_(snprintf)(buf, n_buf, "Unknown");
-         break;
-      case Vg_SectText:
-         VG_(snprintf)(buf, n_buf, "Text");
-         break;
-      case Vg_SectData:
-         VG_(snprintf)(buf, n_buf, "Data");
-         break;
-      case Vg_SectBSS:
-         VG_(snprintf)(buf, n_buf, "BSS");
-         break;
-      case Vg_SectGOT:
-         VG_(snprintf)(buf, n_buf, "GOT");
-         break;
-      case Vg_SectPLT:
-         VG_(snprintf)(buf, n_buf, "PLT");
-         break;
-      case Vg_SectOPD:
-         VG_(snprintf)(buf, n_buf, "OPD");
-         break;
-      default:
-         vg_assert(0);
-   }
-   return buf;
-}
-
 Int VG_(seginfo_syms_howmany) ( const DebugInfo *si )
 {
    return si->symtab_used;
@@ -1605,6 +1530,115 @@ void VG_(seginfo_syms_getidx) ( const DebugInfo *si,
    if (size)   *size   = si->symtab[idx].size;
    if (name)   *name   = (HChar*)si->symtab[idx].name;
    if (isText) *isText = si->symtab[idx].isText;
+}
+
+
+/*------------------------------------------------------------*/
+/*--- SectKind query functions                             ---*/
+/*------------------------------------------------------------*/
+
+/* Convert a VgSectKind to a string, which must be copied if you want
+   to change it. */
+const HChar* VG_(pp_SectKind)( VgSectKind kind )
+{
+   switch (kind) {
+      case Vg_SectUnknown: return "Unknown";
+      case Vg_SectText:    return "Text";
+      case Vg_SectData:    return "Data";
+      case Vg_SectBSS:     return "BSS";
+      case Vg_SectGOT:     return "GOT";
+      case Vg_SectPLT:     return "PLT";
+      case Vg_SectOPD:     return "OPD";
+      default:             vg_assert(0);
+   }
+}
+
+/* Given an address 'a', make a guess of which section of which object
+   it comes from.  If name is non-NULL, then the last n_name-1
+   characters of the object's name is put in name[0 .. n_name-2], and
+   name[n_name-1] is set to zero (guaranteed zero terminated). */
+
+VgSectKind VG_(seginfo_sect_kind)( /*OUT*/UChar* name, SizeT n_name, 
+                                   Addr a)
+{
+   DebugInfo* di;
+   VgSectKind res = Vg_SectUnknown;
+
+   for (di = debugInfo_list; di != NULL; di = di->next) {
+
+      if (0)
+         VG_(printf)(
+            "addr=%p di=%p %s got=%p,%ld plt=%p,%ld data=%p,%ld bss=%p,%ld\n",
+            a, di, di->filename,
+            di->got_avma,  di->got_size,
+            di->plt_avma,  di->plt_size,
+            di->data_avma, di->data_size,
+            di->bss_avma,  di->bss_size);
+
+      if (di->text_size > 0
+          && a >= di->text_avma && a < di->text_avma + di->text_size) {
+         res = Vg_SectText;
+         break;
+      }
+      if (di->data_size > 0
+          && a >= di->data_avma && a < di->data_avma + di->data_size) {
+         res = Vg_SectData;
+         break;
+      }
+      if (di->bss_size > 0
+          && a >= di->bss_avma && a < di->bss_avma + di->bss_size) {
+         res = Vg_SectBSS;
+         break;
+      }
+      if (di->plt_size > 0
+          && a >= di->plt_avma && a < di->plt_avma + di->plt_size) {
+         res = Vg_SectPLT;
+         break;
+      }
+      if (di->got_size > 0
+          && a >= di->got_avma && a < di->got_avma + di->got_size) {
+         res = Vg_SectGOT;
+         break;
+      }
+      if (di->opd_size > 0
+          && a >= di->opd_avma && a < di->opd_avma + di->opd_size) {
+         res = Vg_SectOPD;
+         break;
+      }
+      /* we could also check for .eh_frame, if anyone really cares */
+   }
+
+   vg_assert( (di == NULL && res == Vg_SectUnknown)
+              || (di != NULL && res != Vg_SectUnknown) );
+
+   if (name) {
+
+      vg_assert(n_name >= 8);
+
+      if (di && di->filename) {
+         Int i, j;
+         Int fnlen = VG_(strlen)(di->filename);
+         Int start_at = 1 + fnlen - n_name;
+         if (start_at < 0) start_at = 0;
+         vg_assert(start_at < fnlen);
+         i = start_at; j = 0;
+         while (True) {
+            vg_assert(j >= 0 && j+1 < n_name);
+            vg_assert(i >= 0 && i <= fnlen);
+            name[j] = di->filename[i];
+            name[j+1] = 0;
+            if (di->filename[i] == 0) break;
+            i++; j++;
+         }
+      } else {
+         VG_(snprintf)(name, n_name, "%s", "???");
+      }
+
+      name[n_name-1] = 0;
+   }
+
+   return res;
+
 }
 
 

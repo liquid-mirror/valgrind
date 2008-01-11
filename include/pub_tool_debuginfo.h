@@ -130,6 +130,9 @@ extern void VG_(seginfo_syms_getidx)  ( const DebugInfo *di,
                                         /*OUT*/UInt*   size,
                                         /*OUT*/HChar** name,
                                         /*OUT*/Bool*   isText );
+
+/* A simple enumeration to describe the 'kind' of various kinds of
+   segments that arise from the mapping of object files. */
 typedef
    enum {
       Vg_SectUnknown,
@@ -142,9 +145,18 @@ typedef
    }
    VgSectKind;
 
-extern VgSectKind VG_(seginfo_sect_kind)(Addr);
+/* Convert a VgSectKind to a string, which must be copied if you want
+   to change it. */
+extern
+const HChar* VG_(pp_SectKind)( VgSectKind kind );
 
-extern Char* VG_(seginfo_sect_kind_name)(Addr a, Char* buf, UInt n_buf);
+/* Given an address 'a', make a guess of which section of which object
+   it comes from.  If name is non-NULL, then the last n_name-1
+   characters of the object's name is put in name[0 .. n_name-2], and
+   name[n_name-1] is set to zero (guaranteed zero terminated). */
+extern 
+VgSectKind VG_(seginfo_sect_kind)( /*OUT*/UChar* name, SizeT n_name, 
+                                   Addr a);
 
 
 #endif   // __PUB_TOOL_DEBUGINFO_H

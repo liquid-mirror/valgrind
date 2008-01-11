@@ -141,7 +141,7 @@ static BB* new_bb(obj_node* obj, OffT offset,
    new->jmp         = (CJmpInfo*) &(new->instr[instr_count]);
    new->instr_len   = 0;
    new->cost_count  = 0;
-   new->sect_kind   = VG_(seginfo_sect_kind)(offset + obj->offset);
+   new->sect_kind   = VG_(seginfo_sect_kind)(NULL, 0, offset + obj->offset);
    new->fn          = 0;
    new->line        = 0;
    new->is_entry    = 0;

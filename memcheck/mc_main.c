@@ -2626,11 +2626,12 @@ typedef enum {
 /* The classification of a faulting address. */
 typedef 
    enum { 
-      Addr_Undescribed,   // as-yet unclassified
-      Addr_Unknown,       // classification yielded nothing useful
-      Addr_Stack,          
-      Addr_Block,
-      Addr_GlobalData
+      Addr_Undescribed, // as-yet unclassified
+      Addr_Unknown,     // classification yielded nothing useful
+      Addr_Stack,       // on a thread's stack       
+      Addr_Block,       // in malloc'd/free'd block
+      Addr_GlobalData,  // in a global data sym
+      Addr_SectKind     // last-ditch classification attempt
    }
    AddrTag;
 
@@ -2665,6 +2666,13 @@ struct _AddrInfo {
          Char name[64];
          OffT offset;
       } GlobalData;
+
+      // Could only narrow it down to be the PLT/GOT/etc of a given
+      // object.  Better than nothing, perhaps.
+      struct {
+         Char       objname[64];
+         VgSectKind kind;
+      } SectKind;
 
       // Classification yielded nothing useful.
       struct { } Unknown;
@@ -2850,6 +2858,16 @@ static void mc_pp_AddrInfo ( Addr a, AddrInfo* ai, Bool maybe_gcc )
                       (ULong)a, 
                       (ULong)ai->Addr.GlobalData.offset,
                       ai->Addr.GlobalData.name, 
+                      xpost);
+         break;
+
+      case Addr_SectKind:
+         VG_(message)(Vg_UserMsg, 
+                      "%sAddress 0x%llx is in the %t segment of %t%s",
+                      xpre, 
+                      (ULong)a, 
+                      VG_(pp_SectKind)(ai->Addr.SectKind.kind),
+                      ai->Addr.SectKind.objname, 
                       xpost);
          break;
 
@@ -3343,9 +3361,10 @@ static Bool client_perm_maybe_describe( Addr a, AddrInfo* ai );
    putting the result in ai. */
 static void describe_addr ( Addr a, AddrInfo* ai )
 {
-   MC_Chunk* mc;
-   ThreadId  tid;
-   Addr      stack_min, stack_max;
+   MC_Chunk*  mc;
+   ThreadId   tid;
+   Addr       stack_min, stack_max;
+   VgSectKind sect;
 
    tl_assert(Addr_Undescribed == ai->tag);
 
@@ -3398,6 +3417,20 @@ static void describe_addr ( Addr a, AddrInfo* ai )
       ai->tag = Addr_GlobalData;
       tl_assert( ai->Addr.GlobalData.name
                     [ sizeof(ai->Addr.GlobalData.name)-1 ] == 0);
+      return;
+   }
+   /* last ditch attempt at classification */
+   tl_assert( sizeof(ai->Addr.SectKind.objname) > 4 );
+   VG_(memset)( &ai->Addr.SectKind.objname, 
+                0, sizeof(ai->Addr.SectKind.objname));
+   VG_(strcpy)( ai->Addr.SectKind.objname, "???" );
+   sect = VG_(seginfo_sect_kind)( &ai->Addr.SectKind.objname[0],
+                                  sizeof(ai->Addr.SectKind.objname)-1, a);
+   if (sect != Vg_SectUnknown) {
+      ai->tag = Addr_SectKind;
+      ai->Addr.SectKind.kind = sect;
+      tl_assert( ai->Addr.SectKind.objname
+                    [ sizeof(ai->Addr.SectKind.objname)-1 ] == 0);
       return;
    }
    /* Clueless ... */

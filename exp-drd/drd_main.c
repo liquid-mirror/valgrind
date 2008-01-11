@@ -524,7 +524,8 @@ IRSB* drd_instrument(VgCallbackClosure* const closure,
       switch (st->tag)
       {
       case Ist_IMark:
-         instrument = VG_(seginfo_sect_kind)(st->Ist.IMark.addr) != Vg_SectPLT;
+         instrument = VG_(seginfo_sect_kind)(NULL, 0, st->Ist.IMark.addr)
+                      != Vg_SectPLT;
          break;
 
       case Ist_AbiHint:
