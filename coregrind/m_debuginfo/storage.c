@@ -556,6 +556,11 @@ static DiSym* prefersym ( struct _DebugInfo* di, DiSym* a, DiSym* b )
    Int vlena, vlenb;		/* length without version */
    const UChar *vpa, *vpb;
 
+   Bool preferA = False;
+   Bool preferB = False;
+
+   vg_assert(a->addr == b->addr);
+
    vlena = lena = VG_(strlen)(a->name);
    vlenb = lenb = VG_(strlen)(b->name);
 
@@ -567,37 +572,57 @@ static DiSym* prefersym ( struct _DebugInfo* di, DiSym* a, DiSym* b )
    if (vpb)
       vlenb = vpb - b->name;
 
-   TRACE_SYMTAB("choosing between '%s' and '%s'\n", a->name, b->name);
-
    /* MPI hack: prefer PMPI_Foo over MPI_Foo */
    if (0==VG_(strncmp)(a->name, "MPI_", 4)
        && 0==VG_(strncmp)(b->name, "PMPI_", 5)
-       && 0==VG_(strcmp)(a->name, 1+b->name))
-      return b;
-   else
+       && 0==VG_(strcmp)(a->name, 1+b->name)) {
+      preferB = True; goto out;
+   } 
    if (0==VG_(strncmp)(b->name, "MPI_", 4)
        && 0==VG_(strncmp)(a->name, "PMPI_", 5)
-       && 0==VG_(strcmp)(b->name, 1+a->name))
-      return a;
+       && 0==VG_(strcmp)(b->name, 1+a->name)) {
+      preferA = True; goto out;
+   }
 
    /* Select the shortest unversioned name */
-   if (vlena < vlenb)
-      return a;
-   else if (vlenb < vlena)
-      return b;
+   if (vlena < vlenb) {
+      preferA = True; goto out;
+   } 
+   if (vlenb < vlena) {
+      preferB = True; goto out;
+   }
 
    /* Equal lengths; select the versioned name */
-   if (vpa && !vpb)
-      return a;
-   if (vpb && !vpa)
-      return b;
+   if (vpa && !vpb) {
+      preferA = True; goto out;
+   }
+   if (vpb && !vpa) {
+      preferB = True; goto out;
+   }
 
    /* Either both versioned or neither is versioned; select them
       alphabetically */
-   if (VG_(strcmp)(a->name, b->name) < 0)
+   if (VG_(strcmp)(a->name, b->name) < 0) {
+      preferA = True; goto out;
+   }
+   /* else */ {
+      preferB = True; goto out;
+   }
+   /*NOTREACHED*/
+   vg_assert(0);
+  out:
+   if (preferA && !preferB) {
+      TRACE_SYMTAB("sym at %p: prefer '%s' over '%s'\n",
+                   a->addr, a->name, b->name );
       return a;
-   else
+   }
+   if (preferB && !preferA) {
+      TRACE_SYMTAB("sym at %p: prefer '%s' over '%s'\n",
+                   b->addr, b->name, a->name );
       return b;
+   }
+   /*NOTREACHED*/
+   vg_assert(0);
 }
 
 static void canonicaliseSymtab ( struct _DebugInfo* di )
