@@ -451,7 +451,10 @@ void VG_(di_notify_mmap)( Addr a, Bool allow_SkFileV )
    VG_(memset)(buf1k, 0, sizeof(buf1k));
    fd = VG_(open)( filename, VKI_O_RDONLY, 0 );
    if (fd.isError) {
-      ML_(symerr)(NULL, True, "can't open file to inspect ELF header");
+      DebugInfo fake_di;
+      VG_(memset)(&fake_di, 0, sizeof(fake_di));
+      fake_di.filename = filename;
+      ML_(symerr)(&fake_di, True, "can't open file to inspect ELF header");
       return;
    }
    nread = VG_(read)( fd.res, buf1k, sizeof(buf1k) );

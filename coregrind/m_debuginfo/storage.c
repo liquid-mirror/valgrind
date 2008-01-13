@@ -64,7 +64,7 @@ void ML_(symerr) ( struct _DebugInfo* di, Bool serious, HChar* msg )
 
       VG_(message)(Vg_DebugMsg, "WARNING: Serious error when "
                                 "reading debug info");
-      if (VG_(clo_verbosity) < 2) {
+      if (True || VG_(clo_verbosity) < 2) {
          /* Need to show what the file name is, at verbosity levels 2
             or below, since that won't already have been shown */
          VG_(message)(Vg_DebugMsg, 
