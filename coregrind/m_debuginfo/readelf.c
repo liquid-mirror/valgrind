@@ -1325,8 +1325,11 @@ Bool ML_(read_elf_debug_info) ( struct _DebugInfo* di )
             di->text_svma = svma;
             di->text_avma = di->rx_map_avma + foff - di->rx_map_foff;
             di->text_size = size;
-            di->text_bias = VG_PGROUNDDN(di->text_avma) - VG_PGROUNDDN(svma);
-            TRACE_SYMTAB("acquiring .text avma = %p .. %p\n", 
+            di->text_bias = di->text_avma - svma;
+            TRACE_SYMTAB("acquiring .text svma = %p .. %p\n",
+                         di->text_svma, 
+                         di->text_svma + di->text_size - 1);
+            TRACE_SYMTAB("acquiring .text avma = %p .. %p\n",
                          di->text_avma, 
                          di->text_avma + di->text_size - 1);
             TRACE_SYMTAB("acquiring .text bias = %p\n", di->text_bias);
@@ -1341,7 +1344,10 @@ Bool ML_(read_elf_debug_info) ( struct _DebugInfo* di )
             di->data_svma = svma;
             di->data_avma = di->rw_map_avma + foff - di->rw_map_foff;
             di->data_size = size;
-            di->data_bias = VG_PGROUNDDN(di->data_avma) - VG_PGROUNDDN(svma);
+            di->data_bias = di->data_avma - svma;
+            TRACE_SYMTAB("acquiring .data svma = %p .. %p\n", 
+                         di->data_svma,
+                         di->data_svma + di->data_size - 1);
             TRACE_SYMTAB("acquiring .data avma = %p .. %p\n", 
                          di->data_avma,
                          di->data_avma + di->data_size - 1);
@@ -1357,7 +1363,10 @@ Bool ML_(read_elf_debug_info) ( struct _DebugInfo* di )
             di->sdata_svma = svma;
             di->sdata_avma = di->rw_map_avma + foff - di->rw_map_foff;
             di->sdata_size = size;
-            di->sdata_bias = VG_PGROUNDDN(di->sdata_avma) - VG_PGROUNDDN(svma);
+            di->sdata_bias = di->sdata_avma - svma;
+            TRACE_SYMTAB("acquiring .sdata svma = %p .. %p\n", 
+                         di->sdata_svma,
+                         di->sdata_svma + di->sdata_size - 1);
             TRACE_SYMTAB("acquiring .sdata avma = %p .. %p\n", 
                          di->sdata_avma,
                          di->sdata_avma + di->sdata_size - 1);
@@ -1373,13 +1382,15 @@ Bool ML_(read_elf_debug_info) ( struct _DebugInfo* di )
             di->bss_svma = svma;
             di->bss_avma = di->rw_map_avma + foff - di->rw_map_foff;
             di->bss_size = size;
-            di->bss_bias = VG_PGROUNDDN(di->bss_avma) - VG_PGROUNDDN(svma);
+            di->bss_bias = di->bss_avma - svma;
             bss_align = alyn;
+            TRACE_SYMTAB("acquiring .bss svma = %p .. %p\n", 
+                         di->bss_svma,
+                         di->bss_svma + di->bss_size - 1);
             TRACE_SYMTAB("acquiring .bss avma = %p .. %p\n", 
                          di->bss_avma,
                          di->bss_avma + di->bss_size - 1);
             TRACE_SYMTAB("acquiring .bss bias = %p\n", di->bss_bias);
-            TRACE_SYMTAB("acquiring .bss svma = %p\n", di->bss_svma);
          } else
          if ((!inrw) && (!inrx) && size > 0 && di->bss_size == 0) {
             /* File contains a .bss, but it didn't get mapped.  Ignore. */
@@ -1396,8 +1407,8 @@ Bool ML_(read_elf_debug_info) ( struct _DebugInfo* di )
       /* Accept .sbss where mapped as rw (data) */
       if (0 == VG_(strcmp)(name, ".sbss")) {
          if (inrw && size > 0 && sbss_size == 0) {
-            sbss_size = size;
-            sbss_svma = svma;
+            sbss_size  = size;
+            sbss_svma  = svma;
             sbss_align = alyn;
          } else {
             BAD(".sbss");
@@ -1501,7 +1512,8 @@ Bool ML_(read_elf_debug_info) ( struct _DebugInfo* di )
          /* but don't mess with .bss avma or bias */
          TRACE_SYMTAB("found .sbss of size %ld immediately preceding .bss\n",
                       sbss_size);
-         TRACE_SYMTAB("revised .bss svma %p\n", di->bss_svma);
+         TRACE_SYMTAB("revised .bss svma %p .. %p\n", 
+                      di->bss_svma, di->bss_svma + di->bss_size - 1);
          TRACE_SYMTAB("revised .bss avma %p .. %p\n",
                       di->bss_avma, di->bss_avma + di->bss_size - 1);
       }
@@ -1513,7 +1525,8 @@ Bool ML_(read_elf_debug_info) ( struct _DebugInfo* di )
          /* but don't mess with .bss avma or bias */
          TRACE_SYMTAB("found .sbss of size %ld immediately following .bss\n",
                       sbss_size);
-         TRACE_SYMTAB("revised .bss svma %p (is unchanged)\n", di->bss_svma);
+         TRACE_SYMTAB("revised .bss svma %p .. %p\n", 
+                      di->bss_svma, di->bss_svma + di->bss_size - 1);
          TRACE_SYMTAB("revised .bss avma %p .. %p\n",
                       di->bss_avma, di->bss_avma + di->bss_size - 1);
       }
