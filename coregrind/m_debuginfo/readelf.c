@@ -1508,27 +1508,30 @@ Bool ML_(read_elf_debug_info) ( struct _DebugInfo* di )
           == di->bss_svma) {
          /* Immediately precedes .bss */
          di->bss_size += (di->bss_svma - sbss_svma);
+         di->bss_bias += (di->bss_svma - sbss_svma);
          di->bss_svma -= (di->bss_svma - sbss_svma);
          /* but don't mess with .bss avma or bias */
          TRACE_SYMTAB("found .sbss of size %ld immediately preceding .bss\n",
                       sbss_size);
-         TRACE_SYMTAB("revised .bss svma %p .. %p\n", 
+         TRACE_SYMTAB("revised .bss svma = %p .. %p\n", 
                       di->bss_svma, di->bss_svma + di->bss_size - 1);
-         TRACE_SYMTAB("revised .bss avma %p .. %p\n",
+         TRACE_SYMTAB("revised .bss avma = %p .. %p\n",
                       di->bss_avma, di->bss_avma + di->bss_size - 1);
+         TRACE_SYMTAB("revised .bss bias = %p\n", di->bss_bias);
       }
       else
-         if (round_Addr_upwards(di->bss_svma + di->bss_size, sbss_align)
-             == sbss_svma) {
+      if (round_Addr_upwards(di->bss_svma + di->bss_size, sbss_align)
+          == sbss_svma) {
          /* Immediately follows .bss */
          di->bss_size += (sbss_svma - di->bss_svma);
          /* but don't mess with .bss avma or bias */
          TRACE_SYMTAB("found .sbss of size %ld immediately following .bss\n",
                       sbss_size);
-         TRACE_SYMTAB("revised .bss svma %p .. %p\n", 
+         TRACE_SYMTAB("revised .bss svma = %p .. %p\n", 
                       di->bss_svma, di->bss_svma + di->bss_size - 1);
-         TRACE_SYMTAB("revised .bss avma %p .. %p\n",
+         TRACE_SYMTAB("revised .bss avma = %p .. %p\n",
                       di->bss_avma, di->bss_avma + di->bss_size - 1);
+         TRACE_SYMTAB("revised .bss bias = %p\n", di->bss_bias);
       }
       else {
          /* Can't ascertain relative position.  Complain and
