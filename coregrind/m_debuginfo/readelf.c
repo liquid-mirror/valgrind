@@ -216,6 +216,7 @@ Bool get_elf_symbol_info (
      )
 {
    Bool plausible, is_in_opd;
+   Bool in_text, in_data, in_sdata, in_bss;
 
    /* Set defaults */
    *sym_name_out   = sym_name;
@@ -238,6 +239,8 @@ Bool get_elf_symbol_info (
         );
 
    /* Now bias sym_avma_out accordingly */
+#if 0
+   /* This works, but seems a bit crude */
    if (ELFXX_ST_TYPE(sym->st_info) == STT_OBJECT) {
       *is_text_out = False;
       *sym_avma_out += di->data_bias;
@@ -245,6 +248,38 @@ Bool get_elf_symbol_info (
       *is_text_out = True;
       *sym_avma_out += di->text_bias;
    }
+#else
+   /* Try to figure out exactly which section the symbol is from and
+      bias accordingly.  Screws up if the previously deduced section
+      svma address ranges are wrong. */
+   if (di->text_size > 0
+       && sym_svma >= di->text_svma 
+       && sym_svma < di->text_svma + di->text_size) {
+      *is_text_out = True;
+      *sym_avma_out += di->text_bias;
+   } else
+   if (di->data_size > 0
+       && sym_svma >= di->data_svma 
+       && sym_svma < di->data_svma + di->data_size) {
+      *is_text_out = False;
+      *sym_avma_out += di->data_bias;
+   } else
+   if (di->sdata_size > 0
+       && sym_svma >= di->sdata_svma 
+       && sym_svma < di->sdata_svma + di->sdata_size) {
+      *is_text_out = False;
+      *sym_avma_out += di->sdata_bias;
+   } else
+   if (di->bss_size > 0
+       && sym_svma >= di->bss_svma 
+       && sym_svma < di->bss_svma + di->bss_size) {
+      *is_text_out = False;
+      *sym_avma_out += di->bss_bias;
+   } else {
+      *is_text_out = True;
+      *sym_avma_out += di->text_bias;
+   }
+#endif
 
 #  if defined(VGP_ppc64_linux)
    /* Allow STT_NOTYPE in the very special case where we're running on
@@ -255,8 +290,8 @@ Bool get_elf_symbol_info (
        && ELFXX_ST_TYPE(sym->st_info) == STT_NOTYPE
        && sym->st_size > 0
        && di->opd_size > 0
-       && *sym_svma_out >= di->opd_avma
-       && *sym_svma_out <  di->opd_avma + di->opd_size)
+       && *sym_avma_out >= di->opd_avma
+       && *sym_avma_out <  di->opd_avma + di->opd_size)
       plausible = True;
 #  endif
 
@@ -315,9 +350,11 @@ Bool get_elf_symbol_info (
 #     else
       Int    offset_in_opd;
       ULong* fn_descr;
+      Bool   details = 1||False;
 
-      if (0) VG_(printf)("opdXXX: opd_bias %p, sym_svma_out %p\n", 
-                         (void*)(opd_bias), (void*)*sym_avma_out);
+      if (details)
+         TRACE_SYMTAB("opdXXX: opd_bias %p, sym_svma_out %p\n", 
+                      (void*)(opd_bias), (void*)*sym_avma_out);
 
       if (!VG_IS_8_ALIGNED(*sym_avma_out)) {
          TRACE_SYMTAB("    ignore -- not 8-aligned: %s\n", sym_name);
@@ -342,9 +379,11 @@ Bool get_elf_symbol_info (
 
       fn_descr = (ULong*)(opd_img + offset_in_opd);
 
-      if (0) VG_(printf)("opdXXY: offset %d,  fn_descr %p\n", 
-                         offset_in_opd, fn_descr);
-      if (0) VG_(printf)("opdXXZ: *fn_descr %p\n", (void*)(fn_descr[0]));
+      if (details) 
+         TRACE_SYMTAB("opdXXY: offset %d,  fn_descr %p\n", 
+                      offset_in_opd, fn_descr);
+      if (details) 
+         TRACE_SYMTAB("opdXXZ: *fn_descr %p\n", (void*)(fn_descr[0]));
 
       /* opd_bias is the what we have to add to SVMAs found in .opd to
          get plausible .text AVMAs for the entry point, and .data
@@ -380,9 +419,30 @@ Bool get_elf_symbol_info (
 
    /* If no part of the symbol falls within the mapped range,
       ignore it. */
+   
+   in_text 
+      = di->text_size > 0
+        && !(*sym_avma_out + *sym_size_out <= di->text_avma
+             || *sym_avma_out >= di->text_avma + di->text_size);
+
+   in_data 
+      = di->data_size > 0
+        && !(*sym_avma_out + *sym_size_out <= di->data_avma
+             || *sym_avma_out >= di->data_avma + di->data_size);
+
+   in_sdata 
+      = di->sdata_size > 0
+        && !(*sym_avma_out + *sym_size_out <= di->sdata_avma
+             || *sym_avma_out >= di->sdata_avma + di->sdata_size);
+
+   in_bss 
+      = di->bss_size > 0
+        && !(*sym_avma_out + *sym_size_out <= di->bss_avma
+             || *sym_avma_out >= di->bss_avma + di->bss_size);
+
+
    if (*is_text_out) {
-      if (*sym_avma_out + *sym_size_out <= di->text_avma
-          || *sym_avma_out >= di->text_avma + di->text_size) {
+      if (!in_text) {
          TRACE_SYMTAB(
             "ignore -- %p .. %p outside .text svma range %p .. %p\n",
             *sym_avma_out, *sym_avma_out + *sym_size_out,
@@ -391,15 +451,10 @@ Bool get_elf_symbol_info (
          return False;
       }
    } else {
-      /* KLUDGED BSS CHECK -- see comments at start of fn */
-      if (*sym_avma_out + *sym_size_out <= di->data_avma
-          || *sym_avma_out >= di->data_avma + di->data_size
-                                            + di->bss_size) {
+     if (!(in_data || in_sdata || in_bss)) {
          TRACE_SYMTAB(
-            "ignore -- %p .. %p outside .data svma range %p .. %p\n",
-            *sym_avma_out, *sym_avma_out + *sym_size_out,
-            di->data_avma,
-            di->data_avma + di->data_size);
+            "ignore -- %p .. %p outside .data / .sdata / .bss svma ranges\n",
+            *sym_avma_out, *sym_avma_out + *sym_size_out);
          return False;
       }
    }
@@ -508,6 +563,7 @@ typedef
       Addr       tocptr;
       Int        size;
       Bool       from_opd;
+      Bool       is_text;
    }
    TempSym;
 
@@ -651,6 +707,7 @@ void read_elf_symtab__ppc64_linux(
             elem->tocptr   = sym_tocptr;
             elem->size     = sym_size;
             elem->from_opd = from_opd;
+            elem->is_text  = is_text;
             VG_(OSetGen_Insert)(oset, elem);
             if (di->trace_symtab) {
                VG_(printf)("   to-oset [%4d]:          "
@@ -677,14 +734,14 @@ void read_elf_symtab__ppc64_linux(
       risym.size   = elem->size;
       risym.name   = ML_(addStr) ( di, elem->key.name, -1 );
       risym.tocptr = elem->tocptr;
-      risym.isText = True;
+      risym.isText = elem->is_text;
       vg_assert(risym.name != NULL);
 
       ML_(addSym) ( di, &risym );
       if (di->trace_symtab) {
          VG_(printf)("    rec(%c) [%4d]:          "
                      "  val %010p, toc %010p, sz %4d  %s\n",
-                     is_text ? 't' : 'd',
+                     risym.isText ? 't' : 'd',
                      i, (void*) risym.addr,
                         (void*) risym.tocptr,
                         (Int)   risym.size, 
@@ -864,6 +921,16 @@ static void* INDEX_BIS ( void* base, Word index, Word scale ) {
    return (void*)( ((UChar*)base) + index * scale );
 }
 
+static Addr round_Addr_upwards ( Addr a, UInt align ) 
+{
+   if (align > 0) {
+      vg_assert(-1 != VG_(log2)(align));
+      a = VG_ROUNDUP(a, align);
+   }
+   return a;
+}
+
+
 /* Find the file offset corresponding to SVMA by using the program
    headers.  This is taken from binutils-2.17/binutils/readelf.c
    offset_from_vma(). */
@@ -925,6 +992,14 @@ Bool ML_(read_elf_debug_info) ( struct _DebugInfo* di )
    UWord       shdr_nent       = 0;
    UWord       shdr_ent_szB    = 0;
    UChar*      shdr_strtab_img = NULL;
+
+   /* To do with figuring out where .sbss is relative to .bss.  A
+      kludge at the best of times. */
+   SizeT sbss_size;
+   Addr  sbss_svma;
+   UInt  bss_align;
+   UInt  sbss_align;
+
 
    vg_assert(di);
    vg_assert(di->have_rx_map == True);
@@ -1190,6 +1265,10 @@ Bool ML_(read_elf_debug_info) ( struct _DebugInfo* di )
       di->soname = "NONE";
    }
 
+   /*SizeT*/ sbss_size  = 0;
+   /*Addr */ sbss_svma  = 0;
+   /*UInt */ bss_align  = 0;
+   /*UInt */ sbss_align = 0;
 
    /* Now read the section table. */
    TRACE_SYMTAB("\n");
@@ -1198,27 +1277,36 @@ Bool ML_(read_elf_debug_info) ( struct _DebugInfo* di )
                di->rx_map_foff, di->rx_map_foff + di->rx_map_size - 1 );
    TRACE_SYMTAB("rw: foffsets %ld .. %ld\n",
                di->rw_map_foff, di->rw_map_foff + di->rw_map_size - 1 );
+
    for (i = 0; i < shdr_nent; i++) {
       ElfXX_Shdr* shdr = INDEX_BIS( shdr_img, i, shdr_ent_szB );
       UChar* name = shdr_strtab_img + shdr->sh_name;
       Addr   svma = shdr->sh_addr;
       OffT   foff = shdr->sh_offset;
       UWord  size = shdr->sh_size;
+      UInt   alyn = shdr->sh_addralign;
       Bool   bits = !(shdr->sh_type == SHT_NOBITS);
       Bool   inrx = size > 0 && foff >= di->rx_map_foff
                              && foff < di->rx_map_foff + di->rx_map_size;
       Bool   inrw = size > 0 && foff >= di->rw_map_foff
                              && foff < di->rw_map_foff + di->rw_map_size;
 
-      TRACE_SYMTAB(" [sec %2ld]  %s %s  foff %6ld .. %6ld  "
+      TRACE_SYMTAB(" [sec %2ld]  %s %s  al%2u  foff %6ld .. %6ld  "
                   "  svma %p  name \"%s\"\n", 
-                  i, inrx ? "rx" : "  ", inrw ? "rw" : "  ",
+                  i, inrx ? "rx" : "  ", inrw ? "rw" : "  ", alyn,
                   foff, foff+size-1, (void*)svma, name );
 
       /* Check for sane-sized segments.  SHT_NOBITS sections have zero
          size in the file. */
       if ((foff >= n_oimage) || (foff + (bits ? size : 0) > n_oimage)) {
          ML_(symerr)(di, True, "ELF Section extends beyond image end");
+         goto out;
+      }
+
+      /* Check for a sane alignment value. */
+      if (alyn > 0 && -1 == VG_(log2)(alyn)) {
+         ML_(symerr)(di, True, "ELF Section contains invalid "
+                               ".sh_addralign value");
          goto out;
       }
 
@@ -1234,6 +1322,7 @@ Bool ML_(read_elf_debug_info) ( struct _DebugInfo* di )
       /* Accept .text where mapped as rx (code) */
       if (0 == VG_(strcmp)(name, ".text")) {
          if (inrx && size > 0 && di->text_size == 0) {
+            di->text_svma = svma;
             di->text_avma = di->rx_map_avma + foff - di->rx_map_foff;
             di->text_size = size;
             di->text_bias = VG_PGROUNDDN(di->text_avma) - VG_PGROUNDDN(svma);
@@ -1249,6 +1338,7 @@ Bool ML_(read_elf_debug_info) ( struct _DebugInfo* di )
       /* Accept .data where mapped as rw (data) */
       if (0 == VG_(strcmp)(name, ".data")) {
          if (inrw && size > 0 && di->data_size == 0) {
+            di->data_svma = svma;
             di->data_avma = di->rw_map_avma + foff - di->rw_map_foff;
             di->data_size = size;
             di->data_bias = VG_PGROUNDDN(di->data_avma) - VG_PGROUNDDN(svma);
@@ -1261,21 +1351,56 @@ Bool ML_(read_elf_debug_info) ( struct _DebugInfo* di )
          }
       }
 
+      /* Accept .sdata where mapped as rw (data) */
+      if (0 == VG_(strcmp)(name, ".sdata")) {
+         if (inrw && size > 0 && di->sdata_size == 0) {
+            di->sdata_svma = svma;
+            di->sdata_avma = di->rw_map_avma + foff - di->rw_map_foff;
+            di->sdata_size = size;
+            di->sdata_bias = VG_PGROUNDDN(di->sdata_avma) - VG_PGROUNDDN(svma);
+            TRACE_SYMTAB("acquiring .sdata avma = %p .. %p\n", 
+                         di->sdata_avma,
+                         di->sdata_avma + di->sdata_size - 1);
+            TRACE_SYMTAB("acquiring .sdata bias = %p\n", di->sdata_bias);
+         } else {
+            BAD(".sdata");
+         }
+      }
+
       /* Accept .bss where mapped as rw (data) */
       if (0 == VG_(strcmp)(name, ".bss")) {
          if (inrw && size > 0 && di->bss_size == 0) {
+            di->bss_svma = svma;
             di->bss_avma = di->rw_map_avma + foff - di->rw_map_foff;
             di->bss_size = size;
+            di->bss_bias = VG_PGROUNDDN(di->bss_avma) - VG_PGROUNDDN(svma);
+            bss_align = alyn;
             TRACE_SYMTAB("acquiring .bss avma = %p .. %p\n", 
                          di->bss_avma,
                          di->bss_avma + di->bss_size - 1);
+            TRACE_SYMTAB("acquiring .bss bias = %p\n", di->bss_bias);
+            TRACE_SYMTAB("acquiring .bss svma = %p\n", di->bss_svma);
          } else
          if ((!inrw) && (!inrx) && size > 0 && di->bss_size == 0) {
             /* File contains a .bss, but it didn't get mapped.  Ignore. */
+            di->bss_svma = 0;
             di->bss_avma = 0;
             di->bss_size = 0;
+            di->bss_bias = 0;
+            bss_align = 0;
          } else {
             BAD(".bss");
+         }
+      }
+
+      /* Accept .sbss where mapped as rw (data) */
+      if (0 == VG_(strcmp)(name, ".sbss")) {
+         if (inrw && size > 0 && sbss_size == 0) {
+            sbss_size = size;
+            sbss_svma = svma;
+            sbss_align = alyn;
+         } else {
+            BAD(".sbss");
          }
       }
 
@@ -1361,6 +1486,49 @@ Bool ML_(read_elf_debug_info) ( struct _DebugInfo* di )
 
    }
 
+   /* We found a .sbss section too.  If if immediately adjoins the
+      .bss, pretend it's a part of .bss.  This is a hack.  Fortunately
+      .sbss (small-items .bss section) seems to exist on
+      ppc32/64-linux, so if this screws up it at least won't affect
+      the main x86/amd64-linux ports. */
+   if (di->bss_size > 0 && sbss_size > 0) {
+
+      if (round_Addr_upwards(sbss_svma + sbss_size, bss_align) 
+          == di->bss_svma) {
+         /* Immediately precedes .bss */
+         di->bss_size += (di->bss_svma - sbss_svma);
+         di->bss_svma -= (di->bss_svma - sbss_svma);
+         /* but don't mess with .bss avma or bias */
+         TRACE_SYMTAB("found .sbss of size %ld immediately preceding .bss\n",
+                      sbss_size);
+         TRACE_SYMTAB("revised .bss svma %p\n", di->bss_svma);
+         TRACE_SYMTAB("revised .bss avma %p .. %p\n",
+                      di->bss_avma, di->bss_avma + di->bss_size - 1);
+      }
+      else
+         if (round_Addr_upwards(di->bss_svma + di->bss_size, sbss_align)
+             == sbss_svma) {
+         /* Immediately follows .bss */
+         di->bss_size += (sbss_svma - di->bss_svma);
+         /* but don't mess with .bss avma or bias */
+         TRACE_SYMTAB("found .sbss of size %ld immediately following .bss\n",
+                      sbss_size);
+         TRACE_SYMTAB("revised .bss svma %p (is unchanged)\n", di->bss_svma);
+         TRACE_SYMTAB("revised .bss avma %p .. %p\n",
+                      di->bss_avma, di->bss_avma + di->bss_size - 1);
+      }
+      else {
+         /* Can't ascertain relative position.  Complain and
+            ignore. */
+         TRACE_SYMTAB("found .sbss of size %ld but not immediately "
+                      "preceding/following .bss\n",
+                      sbss_size);
+         TRACE_SYMTAB("therefore ignoring it\n");
+         ML_(symerr)(di, True, ".sbss which is not adjacent to .bss");
+      }
+
+   }
+
    if (0) VG_(printf)("YYYY text_: avma %p  size %ld  bias %p\n", 
                       di->text_avma, di->text_size, di->text_bias);
 
@@ -1440,7 +1608,7 @@ Bool ML_(read_elf_debug_info) ( struct _DebugInfo* di )
                if ( shdr->sh_offset \
                     + (nobits ? 0 : sec_size) > n_oimage ) { \
                   ML_(symerr)(di, True, \
-                              "   section beyond image end?!");	\
+                              "   section beyond image end?!"); \
                   goto out; \
                } \
             } \

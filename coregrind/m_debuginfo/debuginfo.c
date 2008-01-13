@@ -700,9 +700,17 @@ static void search_all_symtabs ( Addr ptr, /*OUT*/DebugInfo** pdi,
                    && di->text_avma <= ptr 
                    && ptr < di->text_avma + di->text_size;
       } else {
-         inRange = di->data_size > 0
-                   && di->data_avma <= ptr 
-                   && ptr < di->data_avma + di->data_size + di->bss_size;
+         inRange = (di->data_size > 0
+                    && di->data_avma <= ptr 
+                    && ptr < di->data_avma + di->data_size)
+                   ||
+                   (di->sdata_size > 0
+                    && di->sdata_avma <= ptr 
+                    && ptr < di->sdata_avma + di->sdata_size)
+                   ||
+                   (di->bss_size > 0
+                    && di->bss_avma <= ptr 
+                    && ptr < di->bss_avma + di->bss_size);
       }
 
       /* Note this short-circuit check relies on the assumption that

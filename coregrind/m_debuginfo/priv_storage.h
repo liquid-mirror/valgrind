@@ -274,15 +274,24 @@ struct _DebugInfo {
       though. */
    /* .text */
    Addr   text_avma;
+   Addr   text_svma;
    SizeT  text_size;
    OffT   text_bias;
    /* .data */
+   Addr   data_svma;
    Addr   data_avma;
    SizeT  data_size;
    OffT   data_bias;
+   /* .sdata */
+   Addr   sdata_svma;
+   Addr   sdata_avma;
+   SizeT  sdata_size;
+   OffT   sdata_bias;
    /* .bss */
+   Addr   bss_svma;
    Addr   bss_avma;
    SizeT  bss_size;
+   OffT   bss_bias;
    /* .plt */
    Addr	  plt_avma;
    SizeT  plt_size;
