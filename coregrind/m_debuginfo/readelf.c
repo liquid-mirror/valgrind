@@ -711,7 +711,7 @@ void read_elf_symtab__ppc64_linux(
             VG_(OSetGen_Insert)(oset, elem);
             if (di->trace_symtab) {
                VG_(printf)("   to-oset [%4d]:          "
-                           " val %010p, toc %010p, sz %4d  %s\n",
+                           "  val %010p, toc %010p, sz %4d  %s\n",
                            i, (void*) elem->key.addr,
                               (void*) elem->tocptr,
                               (Int)   elem->size, 
@@ -740,7 +740,7 @@ void read_elf_symtab__ppc64_linux(
       ML_(addSym) ( di, &risym );
       if (di->trace_symtab) {
          VG_(printf)("    rec(%c) [%4d]:          "
-                     "  val %010p, toc %010p, sz %4d  %s\n",
+                     "   val %010p, toc %010p, sz %4d  %s\n",
                      risym.isText ? 't' : 'd',
                      i, (void*) risym.addr,
                         (void*) risym.tocptr,
@@ -1270,6 +1270,10 @@ Bool ML_(read_elf_debug_info) ( struct _DebugInfo* di )
    /*UInt */ bss_align  = 0;
    /*UInt */ sbss_align = 0;
 
+   UInt data_align = 0;
+   SizeT bss_totsize = 0;
+   Addr  gen_bss_lowest_svma = ~((Addr)0);
+
    /* Now read the section table. */
    TRACE_SYMTAB("\n");
    TRACE_SYMTAB("--- Examining the section headers and program headers ---\n");
@@ -1341,6 +1345,7 @@ Bool ML_(read_elf_debug_info) ( struct _DebugInfo* di )
       /* Accept .data where mapped as rw (data) */
       if (0 == VG_(strcmp)(name, ".data")) {
          if (inrw && size > 0 && di->data_size == 0) {
+if (alyn > data_align) data_align = alyn;
             di->data_svma = svma;
             di->data_avma = di->rw_map_avma + foff - di->rw_map_foff;
             di->data_size = size;
@@ -1360,6 +1365,7 @@ Bool ML_(read_elf_debug_info) ( struct _DebugInfo* di )
       /* Accept .sdata where mapped as rw (data) */
       if (0 == VG_(strcmp)(name, ".sdata")) {
          if (inrw && size > 0 && di->sdata_size == 0) {
+if (alyn > data_align) data_align = alyn;
             di->sdata_svma = svma;
             di->sdata_avma = di->rw_map_avma + foff - di->rw_map_foff;
             di->sdata_size = size;
@@ -1379,6 +1385,9 @@ Bool ML_(read_elf_debug_info) ( struct _DebugInfo* di )
       /* Accept .bss where mapped as rw (data) */
       if (0 == VG_(strcmp)(name, ".bss")) {
          if (inrw && size > 0 && di->bss_size == 0) {
+bss_totsize += round_Addr_upwards(size, alyn);
+if (svma < gen_bss_lowest_svma) gen_bss_lowest_svma = svma;
+TRACE_SYMTAB("increasing total bss-like size to %ld\n", bss_totsize);
             di->bss_svma = svma;
             di->bss_avma = di->rw_map_avma + foff - di->rw_map_foff;
             di->bss_size = size;
@@ -1407,11 +1416,25 @@ Bool ML_(read_elf_debug_info) ( struct _DebugInfo* di )
       /* Accept .sbss where mapped as rw (data) */
       if (0 == VG_(strcmp)(name, ".sbss")) {
          if (inrw && size > 0 && sbss_size == 0) {
+bss_totsize += round_Addr_upwards(size, alyn);
+if (svma < gen_bss_lowest_svma) gen_bss_lowest_svma = svma;
+TRACE_SYMTAB("increasing total bss-like size to %ld\n", bss_totsize);
             sbss_size  = size;
             sbss_svma  = svma;
             sbss_align = alyn;
          } else {
             BAD(".sbss");
+         }
+      }
+
+      /* Accept .sbss where mapped as rw (data) */
+      if (0 == VG_(strcmp)(name, ".dynbss")) {
+	if (inrw && size > 0 /* && sbss_size == 0*/) {
+bss_totsize += round_Addr_upwards(size, alyn);
+if (svma < gen_bss_lowest_svma) gen_bss_lowest_svma = svma;
+TRACE_SYMTAB("increasing total bss-like size to %ld\n", bss_totsize);
+         } else {
+            BAD(".dynbss");
          }
       }
 
@@ -1497,6 +1520,7 @@ Bool ML_(read_elf_debug_info) ( struct _DebugInfo* di )
 
    }
 
+#if 0
    /* We found a .sbss section too.  If if immediately adjoins the
       .bss, pretend it's a part of .bss.  This is a hack.  Fortunately
       .sbss (small-items .bss section) seems to exist on
@@ -1544,6 +1568,28 @@ Bool ML_(read_elf_debug_info) ( struct _DebugInfo* di )
       }
 
    }
+#endif
+
+#if 1
+   /* Kludge: ignore all previous computations for .bss avma range,
+      and simply assume that .bss immediately follows .data/.sdata.*/
+   if (1) {
+      SizeT data_al = round_Addr_upwards(di->data_avma, data_align)
+                      - di->data_avma;
+      TRACE_SYMTAB("data_al = %ld\n", data_al);
+      bss_totsize += data_al;
+
+      di->bss_svma = gen_bss_lowest_svma;
+      di->bss_size = bss_totsize;
+      di->bss_avma = di->data_avma + (di->bss_svma - di->data_svma);
+      di->bss_bias = di->data_bias;
+      TRACE_SYMTAB("kludged .bss svma = %p .. %p\n", 
+                   di->bss_svma, di->bss_svma + di->bss_size - 1);
+      TRACE_SYMTAB("kludged .bss avma = %p .. %p\n",
+                   di->bss_avma, di->bss_avma + di->bss_size - 1);
+      TRACE_SYMTAB("kludged .bss bias = %p\n", di->bss_bias);
+   }
+#endif
 
    if (0) VG_(printf)("YYYY text_: avma %p  size %ld  bias %p\n", 
                       di->text_avma, di->text_size, di->text_bias);
