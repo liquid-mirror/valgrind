@@ -327,7 +327,7 @@ Char* lookupDir ( Int filename_index,
 /* Handled an extended line op starting at 'data'.  Returns the number
    of bytes that 'data' should be advanced by. */
 static 
-Word process_extended_line_op( struct _DebugInfo* di, OffT debug_offset,
+Word process_extended_line_op( struct _DebugInfo* di,
                                WordArray* filenames, 
                                WordArray* dirnames, 
                                WordArray* fnidx2dir, 
@@ -357,7 +357,7 @@ Word process_extended_line_op( struct _DebugInfo* di, OffT debug_offset,
    switch (op_code) {
       case DW_LNE_end_sequence:
          if (0) VG_(printf)("1001: si->o %p, smr.a %p\n", 
-                            debug_offset, state_machine_regs.address );
+                            di->text_bias, state_machine_regs.address );
          /* JRS: added for compliance with spec; is pointless due to
             reset_state_machine below */
          state_machine_regs.end_sequence = 1; 
@@ -375,8 +375,8 @@ Word process_extended_line_op( struct _DebugInfo* di, OffT debug_offset,
                   filename, 
                   lookupDir( state_machine_regs.last_file,
                              fnidx2dir, dirnames ),
-                  debug_offset + state_machine_regs.last_address, 
-                  debug_offset + state_machine_regs.address, 
+                  di->text_bias + state_machine_regs.last_address, 
+                  di->text_bias + state_machine_regs.address, 
                   state_machine_regs.last_line, 0
                );
             }
@@ -430,7 +430,7 @@ Word process_extended_line_op( struct _DebugInfo* di, OffT debug_offset,
  * Output: - si debug info structures get updated
  */
 static 
-void read_dwarf2_lineblock ( struct _DebugInfo* di, OffT debug_offset,
+void read_dwarf2_lineblock ( struct _DebugInfo* di,
                              UnitInfo* ui, 
                              UChar*    theBlock, /* IMAGE */
                              Int       noLargerThan )
@@ -719,7 +719,7 @@ void read_dwarf2_lineblock ( struct _DebugInfo* di, OffT debug_offset,
          if (0) VG_(printf)("smr.a += %p\n", adv );
          adv = (op_code % info.li_line_range) + info.li_line_base;
          if (0) VG_(printf)("1002: di->o %p, smr.a %p\n", 
-                            debug_offset, state_machine_regs.address );
+                            di->text_bias, state_machine_regs.address );
          state_machine_regs.line += adv;
 
          if (di->ddump_line)
@@ -742,8 +742,8 @@ void read_dwarf2_lineblock ( struct _DebugInfo* di, OffT debug_offset,
                   filename,
                   lookupDir( state_machine_regs.last_file,
                              &fnidx2dir, &dirnames ),
-                  debug_offset + state_machine_regs.last_address, 
-                  debug_offset + state_machine_regs.address, 
+                  di->text_bias + state_machine_regs.last_address, 
+                  di->text_bias + state_machine_regs.address, 
                   state_machine_regs.last_line, 
                   0
                );
@@ -760,13 +760,13 @@ void read_dwarf2_lineblock ( struct _DebugInfo* di, OffT debug_offset,
       switch (op_code) {
          case DW_LNS_extended_op:
             data += process_extended_line_op (
-                       di, debug_offset, &filenames, &dirnames, &fnidx2dir,
+                       di, &filenames, &dirnames, &fnidx2dir,
                        data, info.li_default_is_stmt);
             break;
 
          case DW_LNS_copy:
             if (0) VG_(printf)("1002: di->o %p, smr.a %p\n", 
-                               debug_offset, state_machine_regs.address );
+                               di->text_bias, state_machine_regs.address );
             if (state_machine_regs.is_stmt) {
                /* only add a statement if there was a previous boundary */
                if (state_machine_regs.last_address) {
@@ -781,8 +781,8 @@ void read_dwarf2_lineblock ( struct _DebugInfo* di, OffT debug_offset,
                      filename,
                      lookupDir( state_machine_regs.last_file,
                                 &fnidx2dir, &dirnames ),
-                     debug_offset + state_machine_regs.last_address, 
-                     debug_offset + state_machine_regs.address,
+                     di->text_bias + state_machine_regs.last_address, 
+                     di->text_bias + state_machine_regs.address,
                      state_machine_regs.last_line, 
                      0
                   );
@@ -1120,7 +1120,7 @@ void read_unitinfo_dwarf2( /*OUT*/UnitInfo* ui,
  * Output: update si to contain all the dwarf2 debug infos
  */
 void ML_(read_debuginfo_dwarf2) 
-        ( struct _DebugInfo* di, OffT debug_offset,
+        ( struct _DebugInfo* di,
           UChar* debuginfo_img,   Int debug_info_sz, /* .debug_info */
           UChar* debugabbrev_img,                    /* .debug_abbrev */
           UChar* debugline_img,   Int debug_line_sz, /* .debug_line */
@@ -1182,8 +1182,8 @@ void ML_(read_debuginfo_dwarf2)
                      debug_line_sz, ui.stmt_list, ui.name );
       /* Read the .debug_line block for this compile unit */
       read_dwarf2_lineblock( 
-         di, debug_offset, &ui, debugline_img + ui.stmt_list, 
-                                debug_line_sz - ui.stmt_list );
+         di, &ui, debugline_img + ui.stmt_list, 
+                  debug_line_sz - ui.stmt_list );
    }
 }
 
@@ -3492,8 +3492,7 @@ static CIE the_CIEs[N_CIEs];
 
 
 void ML_(read_callframe_info_dwarf3)
-        ( /*OUT*/struct _DebugInfo* di, 
-          UChar* ehframe_image, Int ehframe_sz, Addr ehframe_avma )
+        ( /*OUT*/struct _DebugInfo* di, UChar* ehframe_image )
 {
    Int    nbytes;
    HChar* how = NULL;
@@ -3507,10 +3506,11 @@ void ML_(read_callframe_info_dwarf3)
 
    if (di->trace_cfi) {
       VG_(printf)("\n-----------------------------------------------\n");
-      VG_(printf)("CFI info: szB %d, _avma %p, _image %p\n",
-	          ehframe_sz, (void*)ehframe_avma, (void*)ehframe_image );
+      VG_(printf)("CFI info: szB %ld, _avma %p, _image %p\n",
+                  di->ehframe_size, (void*)di->ehframe_avma, 
+                  (void*)ehframe_image );
       VG_(printf)("CFI info: name %s\n",
-		  di->filename );
+                  di->filename );
    }
 
    /* Loop over CIEs/FDEs */
@@ -3541,11 +3541,11 @@ void ML_(read_callframe_info_dwarf3)
       Bool   dw64;
 
       /* Are we done? */
-      if (data == ehframe_image + ehframe_sz)
+      if (data == ehframe_image + di->ehframe_size)
          return;
 
       /* Overshot the end?  Means something is wrong */
-      if (data > ehframe_image + ehframe_sz) {
+      if (data > ehframe_image + di->ehframe_size) {
          how = "overran the end of .eh_frame";
          goto bad;
       }
@@ -3747,7 +3747,7 @@ void ML_(read_callframe_info_dwarf3)
 	 }
 
          if (the_CIEs[this_CIE].ilen < 0
-             || the_CIEs[this_CIE].ilen > ehframe_sz) {
+             || the_CIEs[this_CIE].ilen > di->ehframe_size) {
             how = "implausible # cie initial insns";
             goto bad;
          }
@@ -3763,7 +3763,7 @@ void ML_(read_callframe_info_dwarf3)
             AddressDecodingInfo adi;
             adi.encoding      = the_CIEs[this_CIE].address_encoding;
             adi.ehframe_image = ehframe_image;
-            adi.ehframe_avma  = ehframe_avma;
+            adi.ehframe_avma  = di->ehframe_avma;
             adi.text_bias     = di->text_bias;
             show_CF_instructions( the_CIEs[this_CIE].instrs, 
                                   the_CIEs[this_CIE].ilen, &adi,
@@ -3810,7 +3810,7 @@ void ML_(read_callframe_info_dwarf3)
 
          adi.encoding      = the_CIEs[cie].address_encoding;
          adi.ehframe_image = ehframe_image;
-         adi.ehframe_avma  = ehframe_avma;
+         adi.ehframe_avma  = di->ehframe_avma;
          adi.text_bias     = di->text_bias;
          fde_initloc = read_encoded_Addr(&nbytes, &adi, data);
          data += nbytes;
@@ -3819,7 +3819,7 @@ void ML_(read_callframe_info_dwarf3)
 
          adi.encoding      = the_CIEs[cie].address_encoding & 0xf;
          adi.ehframe_image = ehframe_image;
-         adi.ehframe_avma  = ehframe_avma;
+         adi.ehframe_avma  = di->ehframe_avma;
          adi.text_bias     = di->text_bias;
 
          /* WAS (incorrectly):
@@ -3872,7 +3872,7 @@ void ML_(read_callframe_info_dwarf3)
             VG_(printf)("fde.ilen        = %d\n", (Int)fde_ilen);
 	 }
 
-         if (fde_ilen < 0 || fde_ilen > ehframe_sz) {
+         if (fde_ilen < 0 || fde_ilen > di->ehframe_size) {
             how = "implausible # fde insns";
             goto bad;
          }
@@ -3881,7 +3881,7 @@ void ML_(read_callframe_info_dwarf3)
 
          adi.encoding      = the_CIEs[cie].address_encoding;
          adi.ehframe_image = ehframe_image;
-         adi.ehframe_avma  = ehframe_avma;
+         adi.ehframe_avma  = di->ehframe_avma;
          adi.text_bias     = di->text_bias;
 
          if (di->trace_cfi)

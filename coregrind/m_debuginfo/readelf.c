@@ -999,7 +999,9 @@ Bool ML_(read_elf_debug_info) ( struct _DebugInfo* di )
    Addr  sbss_svma;
    UInt  bss_align;
    UInt  sbss_align;
-
+   UInt  data_align;
+   SizeT bss_totsize;
+   Addr  gen_bss_lowest_svma;
 
    vg_assert(di);
    vg_assert(di->have_rx_map == True);
@@ -1270,9 +1272,9 @@ Bool ML_(read_elf_debug_info) ( struct _DebugInfo* di )
    /*UInt */ bss_align  = 0;
    /*UInt */ sbss_align = 0;
 
-   UInt data_align = 0;
-   SizeT bss_totsize = 0;
-   Addr  gen_bss_lowest_svma = ~((Addr)0);
+   /* UInt */  data_align = 0;
+   /* SizeT */ bss_totsize = 0;
+   /* Addr */  gen_bss_lowest_svma = ~((Addr)0);
 
    /* Now read the section table. */
    TRACE_SYMTAB("\n");
@@ -1867,8 +1869,7 @@ TRACE_SYMTAB("increasing total bss-like size to %ld\n", bss_totsize);
       /* Read .eh_frame (call-frame-info) if any */
       if (ehframe_img) {
          vg_assert(ehframe_sz == di->ehframe_size);
-         ML_(read_callframe_info_dwarf3)
-            ( di, ehframe_img, di->ehframe_size, di->ehframe_avma );
+         ML_(read_callframe_info_dwarf3)( di, ehframe_img );
       }
 
       /* Read the stabs and/or dwarf2 debug information, if any.  It
@@ -1887,7 +1888,7 @@ TRACE_SYMTAB("increasing total bss-like size to %ld\n", bss_totsize);
          before using it. */
       if (debug_info_img && debug_abbv_img && debug_line_img
                                            /* && debug_str_img */) {
-         ML_(read_debuginfo_dwarf2) ( di, di->text_bias,
+         ML_(read_debuginfo_dwarf2) ( di,
                                       debug_info_img,   debug_info_sz,
                                       debug_abbv_img,
                                       debug_line_img,   debug_line_sz,
