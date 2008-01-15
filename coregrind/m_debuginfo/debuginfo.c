@@ -177,7 +177,7 @@ static void discard_DebugInfo ( DebugInfo* di )
 
    while (curr) {
       if (curr == di) {
-         // Found it;  remove from list and free it.
+         /* Found it;  remove from list and free it. */
          if (VG_(clo_verbosity) > 1 || VG_(clo_trace_redir))
             VG_(message)(Vg_DebugMsg, 
                          "Discarding syms at %p-%p in %s due to %s()", 
@@ -195,13 +195,14 @@ static void discard_DebugInfo ( DebugInfo* di )
       curr          =  curr->next;
    }
 
-   // Not found.
+   /* Not found. */
 }
 
 
-/* Repeatedly scan debugInfo_list, looking for DebugInfos intersecting
-   [start,start+length), and call discard_DebugInfo to get rid of
-   them.  This modifies the list, hence the multiple iterations.
+/* Repeatedly scan debugInfo_list, looking for DebugInfos with text
+   AVMAs intersecting [start,start+length), and call discard_DebugInfo
+   to get rid of them.  This modifies the list, hence the multiple
+   iterations.
 */
 static void discard_syms_in_range ( Addr start, SizeT length )
 {
@@ -231,52 +232,10 @@ static void discard_syms_in_range ( Addr start, SizeT length )
    }
 }
 
-#if 0
-/* Create a new SegInfo with the specific address/length/vma offset,
-   then snarf whatever info we can from the given filename into it. */
-static
-SegInfo* acquire_syms_for_range( 
-            /* ALL        */ Addr  seg_addr, 
-            /* ALL        */ SizeT seg_len,
-            /* ELF only   */ OffT  seg_offset, 
-            /* ALL        */ const UChar* seg_filename,
-            /* XCOFF only */ const UChar* seg_memname,
-	    /* XCOFF only */ Addr  data_addr,
-	    /* XCOFF only */ SizeT data_len,
-	    /* XCOFF only */ Bool  is_mainexe
-         )
-{
-   Bool     ok;
-   SegInfo* si = alloc_SegInfo(seg_addr, seg_len, seg_offset, 
-                               seg_filename, seg_memname);
-#  if defined(VGO_linux)
-   ok = ML_(read_elf_debug_info) ( si );
-#  elif defined(VGO_aix5)
-   ok = ML_(read_xcoff_debug_info) ( si, data_addr, data_len, is_mainexe );
-#  else
-#    error Unknown OS
-#  endif
 
-   if (!ok) {
-      // Something went wrong (eg. bad ELF file).
-      free_SegInfo( si );
-      si = NULL;
-
-   } else {
-      // Prepend si to segInfo_list
-      si->next = segInfo_list;
-      segInfo_list = si;
-
-      ML_(canonicaliseTables) ( si );
-
-      /* notify m_redir about it */
-      VG_(redir_notify_new_SegInfo)( si );
-   }
-
-   return si;
-}
-#endif
-
+/* Does [s1,+len1) overlap [s2,+len2) ?  Note: does not handle
+   wraparound at the end of the address space -- just asserts in that
+   case. */
 static Bool ranges_overlap (Addr s1, SizeT len1, Addr s2, SizeT len2 )
 {
    Addr e1, e2;
@@ -293,6 +252,9 @@ static Bool ranges_overlap (Addr s1, SizeT len1, Addr s2, SizeT len2 )
    return True;
 }
 
+
+/* Do the basic rx_ and rw_ mappings of the two DebugInfos overlap in
+   any way? */
 static Bool do_DebugInfos_overlap ( DebugInfo* di1, DebugInfo* di2 )
 {
    vg_assert(di1);
@@ -321,6 +283,9 @@ static Bool do_DebugInfos_overlap ( DebugInfo* di1, DebugInfo* di2 )
    return False;
 }
 
+
+/* Discard all elements of debugInfo_list whose .mark bit is set.
+*/
 static void discard_marked_DebugInfos ( void )
 {
    DebugInfo* curr;
@@ -342,6 +307,13 @@ static void discard_marked_DebugInfos ( void )
    }
 }
 
+
+/* Discard any elements of debugInfo_list which overlap with diRef.
+   Clearly diRef must have its rx_ and rw_ mapping information set to
+   something sane. */
+#if defined(VGO_aix5)
+__attribute__((unused))
+#endif
 static void discard_DebugInfos_which_overlap_with ( DebugInfo* diRef )
 {
    DebugInfo* di;
@@ -358,6 +330,7 @@ static void discard_DebugInfos_which_overlap_with ( DebugInfo* diRef )
    }
    discard_marked_DebugInfos();
 }
+
 
 /* Find the existing DebugInfo for (memname,filename) or if not found,
    create one.  In the latter case memname and filename are strdup'd
@@ -630,38 +603,42 @@ void VG_(di_aix5_notify_segchange)(
                Bool   is_mainexe,
                Bool   acquire )
 {
-   SegInfo* si;
-
    if (acquire) {
 
-      acquire_syms_for_range(
-         /* ALL        */ code_start, 
-         /* ALL        */ code_len,
-         /* ELF only   */ 0,
-         /* ALL        */ file_name,
-         /* XCOFF only */ mem_name,
-         /* XCOFF only */ data_start,
-         /* XCOFF only */ data_len,
-         /* XCOFF only */ is_mainexe 
-      );
+      Bool       ok;
+      DebugInfo* di;
+      di = find_or_create_DebugInfo_for( file_name, mem_name );
+      vg_assert(di);
+
+      di->text_svma = 0; /* don't know yet */
+      di->text_bias = 0; /* don't know yet */
+      di->text_avma = code_start;
+      di->text_size = code_len;
+      di->data_svma = 0; /* don't know yet */
+      di->data_bias = 0; /* don't know yet */
+      di->data_avma = data_start;
+      di->data_size = data_len;
+
+      ok = ML_(read_xcoff_debug_info) ( di, is_mainexe );
+
+      if (ok) {
+         /* prepare read data for use */
+         ML_(canonicaliseTables)( di );
+         /* notify m_redir about it */
+         VG_(redir_notify_new_DebugInfo)( di );
+         /* Note that we succeeded */
+         di->have_dinfo = True;
+      } else {
+         /*  Something went wrong (eg. bad XCOFF file). */
+         discard_DebugInfo( di );
+         di = NULL;
+      }
 
    } else {
 
-      /* Dump all the segInfos whose text segments intersect
+      /* Dump all the debugInfos whose text segments intersect
          code_start/code_len. */
-      while (True) {
-         for (si = debugInfo_list; si; si = si->next) {
-            if (code_start + code_len <= si->text_start_avma
-                || si->text_start_avma + si->text_size <= code_start)
-               continue; /* no overlap */
-            else 
-               break;
-         }
-         if (si == NULL)
-            break;
-         /* Need to delete 'si' */
-         discard_SegInfo(si);
-      }
+      discard_syms_in_range( code_start, code_len );
 
    }
 }
