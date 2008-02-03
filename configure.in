@@ -1027,6 +1027,9 @@ AC_OUTPUT(
    exp-drd/Makefile
    exp-drd/docs/Makefile
    exp-drd/tests/Makefile
+   exp-vcov/Makefile
+   exp-vcov/tests/Makefile
+   exp-vcov/docs/Makefile
 ) 
 
 cat<<EOF

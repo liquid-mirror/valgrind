@@ -478,6 +478,66 @@ void VG_(di_aix5_notify_segchange)(
 /*------------------------------------------------------------*/
 
 /*------------------------------------------------------------*/
+/*--- Iterating through SegInfos                           ---*/
+/*------------------------------------------------------------*/
+
+UInt VG_(seginfo_num_locs) ( const SegInfo *si )
+{
+   return si->loctab_used;
+}
+
+Bool VG_(seginfo_locN_addr)( const SegInfo *si, UInt n, Addr* addr )
+{
+   if (n < 0 || n > si->loctab_used)
+      return False;
+   else {
+      *addr = si->loctab[n].addr;
+      return True;
+   }
+}
+
+Bool VG_(seginfo_locN_size)( const SegInfo *si, UInt n, UInt* size)
+{
+   if (n < 0 || n > si->loctab_used)
+      return False;
+   else {
+      *size = si->loctab[n].size;
+      return True;
+   }
+}
+
+Bool VG_(seginfo_locN_line)( const SegInfo *si, UInt n, UInt* line)
+{
+   if (n < 0 || n > si->loctab_used)
+      return False;
+   else {
+      *line = si->loctab[n].lineno;
+      return True;
+   }
+}
+
+Bool VG_(seginfo_locN_filename)( const SegInfo *si, UInt n, Char** filename)
+{
+   if (n < 0 || n > si->loctab_used)
+      return False;
+   else {
+      *filename = si->loctab[n].filename;
+      return True;
+   }
+}
+
+Bool VG_(seginfo_locN_dirname)( const SegInfo *si, UInt n, Char** dirname)
+{
+   if (n < 0 || n > si->loctab_used)
+      return False;
+   else {
+      *dirname = si->loctab[n].dirname;
+      return True;
+   }
+}
+
+
+/*------------------------------------------------------------*/
 /*--- Use of symbol table & location info to create        ---*/
 /*--- plausible-looking stack dumps.                       ---*/
 /*------------------------------------------------------------*/

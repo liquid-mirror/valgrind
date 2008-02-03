@@ -1,0 +1,294 @@
+#! /lusr/bin/perl -w
+
+##--------------------------------------------------------------------##
+##--- VCov: annotating source files                 vc_annotate.in ---##
+##--------------------------------------------------------------------##
+
+#  This file is part of VCov, a Valgrind tool for measuring execution
+#  coverage.
+#
+#  Copyright (C) 2005-2008 Nicholas Nethercote
+#     njn@valgrind.org
+#
+#  This program is free software; you can redistribute it and/or
+#  modify it under the terms of the GNU General Public License as
+#  published by the Free Software Foundation; either version 2 of the
+#  License, or (at your option) any later version.
+#
+#  This program is distributed in the hope that it will be useful, but
+#  WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+#  General Public License for more details.
+#
+#  You should have received a copy of the GNU General Public License
+#  along with this program; if not, write to the Free Software
+#  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA
+#  02111-1307, USA.
+#
+#  The GNU General Public License is contained in the file COPYING.
+
+use strict;
+
+# XXX: this needs to be converted from 'vc_annotate' to 'vc_annotate.in'
+# before being distributed.
+
+# Version number
+my $version = "3.4.0.SVN";
+
+# Usage message.
+my $usage = <<END
+usage: vc_annotate [options] source-files
+
+  options for the user, with defaults in [ ], are:
+    -h --help             show this message
+    -v --version          show version
+
+  VCov is Copyright (C) 2005-2008 Nicholas Nethercote.
+  Both are licensed under the GNU General Public License, version 2.
+  Bug reports, feedback, admiration, abuse, etc, to: njn\@valgrind.org.
+                                                
+END
+;
+
+# Coverage data file.
+my $input_file = undef;
+
+# List of user-specified source files to annotate.
+my @srcfiles;
+
+# Directories in which to look for annotation files.
+my @include_dirs = ("");
+
+# Files chosen for annotation on the command line.  
+# key = basename (trimmed of any directory), value = full filename
+# XXX: needed?  see @srcfiles above
+my %user_ann_files;
+
+# CCs, organised by filename and line_num for easy annotation.
+# hash(filename => hash(line_num => insn_exec_count))
+my %all_CCs;
+
+# Used in various places.
+my $fancy = '-' x 80 . "\n";
+
+
+#-----------------------------------------------------------------------------
+sub process_cmd_line() 
+#-----------------------------------------------------------------------------
+{
+    for my $arg (@ARGV) { 
+        # Option handling
+        if ($arg =~ /^-/) {
+            # --version
+            if ($arg =~ /^-v$|^--version$/) {
+                die("vc_annotate-$version\n");
+            } else {            # -h and --help fall under this case
+                die($usage);
+            }
+
+        # Argument handling -- annotation file checking and selection.
+        # Stick filenames into a hash for quick 'n easy lookup throughout.
+        } else {
+            if (not defined $input_file) {
+                # First non-option argument is the output file.
+                $input_file = $arg;
+            } else {
+                # Subsequent non-option arguments are source files.
+                my $readable = 0;
+                foreach my $include_dir (@include_dirs) {
+                    if (-r $include_dir . $arg) {
+                        $readable = 1;
+                    }
+                }
+                $readable or die("File $arg not found in any of: @include_dirs\n");
+                $user_ann_files{$arg} = 1;
+            }
+        }
+    }
+
+    # Must have chosen an input file
+    if (not defined $input_file) {
+        die($usage);
+    }
+}
+
+#-----------------------------------------------------------------------------
+sub read_coverage_file() 
+#-----------------------------------------------------------------------------
+{
+    open(INPUTFILE, "< $input_file") 
+         || die "Cannot open $input_file for reading\n";
+
+    my $curr_filename = undef;
+    my $curr_file_CCs = {};     # hash(line_num => insn_exec_count)
+
+    while (<INPUTFILE>) {
+        # Execution count lines.
+        if (s/^(\d+) (\d+)$//) {
+            my $line_num = $1;
+            my $n_execs  = $2;
+            # Add line number to the file_CCs.
+            if (defined $curr_file_CCs->{$line_num}) {
+                die("$input_file:$.: line $line_num seen already"); 
+            }
+            $curr_file_CCs->{$line_num} = $n_execs;
+
+        # We test for fl= lines second, because they're much less common.
+        } elsif (/^fl=(.*)$/) {
+            my $next_filename = $1;
+            # Write-back CCs for the previous file, if there was one.
+            if (defined $curr_filename) {
+                $all_CCs{$curr_filename} = $curr_file_CCs 
+            };
+            # Setup the CCs for the next file.
+            $curr_filename = $next_filename;
+            if (defined $all_CCs{$curr_filename}) {
+                die("$input_file:$.: file $curr_filename seen already"); 
+            }
+            $curr_file_CCs = {};
+
+        } else {
+            die("$input_file:$.: parse error\n");
+        }
+    }
+    # Write-back CCs for the final file, if there was one.
+    if (defined $curr_filename) {
+        $all_CCs{$curr_filename} = $curr_file_CCs 
+    };
+    close(INPUTFILE);
+}
+
+#-----------------------------------------------------------------------------
+sub print_per_file_output()
+#-----------------------------------------------------------------------------
+{
+    # Totals for each file.  This is an array of hashrefs.
+    my @file_totals;
+    
+    my ($n_total_executed_lines, $n_total_unexecuted_lines) = (0, 0);
+
+    foreach my $src_file (keys %all_CCs) {
+        # If $src_file more recent than $infile, issue a warning.  (Field #9
+        # is the time of the last modification.)
+        if ((stat $src_file)[9] > (stat $input_file)[9]) {
+            warn("warning: Source file '$src_file'\n");
+            warn("         is more recent than data file '$input_file'.\n");
+            warn("         Its annotations may be incorrect.\n");
+        }
+        my ($n_executed_lines, $n_unexecuted_lines) = (0, 0);
+        my $file_CCs = $all_CCs{$src_file};
+        # Count the number of executed and non-executed lines.
+        foreach my $n_execs (values( %$file_CCs )) {
+            if ($n_execs > 0) {
+                $n_total_executed_lines++;
+                $n_executed_lines++;
+            } else {
+                $n_total_unexecuted_lines++;
+                $n_unexecuted_lines++;
+            }
+        }
+        # Record the counts.
+        push(@file_totals,
+            {"filename" => $src_file,
+             "n_executed_lines"   => $n_executed_lines,
+             "n_unexecuted_lines" => $n_unexecuted_lines}
+        ); 
+    }
+
+    # Sort files so that the files with the most unexecuted lines come
+    # first.  Nb: $a and $b are the args to the sort function (Perl creates
+    # them automatically).
+    @file_totals =
+        sort
+            {$b->{"n_unexecuted_lines"} <=> $a->{"n_unexecuted_lines"}}
+            @file_totals;
+
+    # Subroutine for printing the percentages.
+    sub print_percentage($$) {
+        my ($n_executed_lines, $n_unexecuted_lines) = @_;
+
+        my $n_executable_lines = $n_executed_lines + $n_unexecuted_lines;
+
+        printf("%5.1f%% (%4d of %4d lines)",
+           ( $n_executable_lines == 0
+             ? 0
+             : 100 * $n_executed_lines / $n_executable_lines ),
+           $n_executed_lines,
+           $n_executable_lines);
+    }
+    
+    # Print the total coverage.
+    my $n_total_executable_lines =
+        $n_total_executed_lines + $n_total_unexecuted_lines;
+    print($fancy);
+    print("Total coverage\n");
+    print($fancy);
+    print_percentage($n_total_executed_lines, $n_total_unexecuted_lines);
+    print("\n\n");
+
+    # Print the per-file counts.
+    print($fancy);
+    print("Per-file coverage (files with the most unexecuted lines are shown first)\n");
+    print($fancy);
+    foreach my $f (@file_totals) {
+        print_percentage($f->{"n_executed_lines"}, $f->{"n_unexecuted_lines"});
+        printf(": %s\n", $f->{"filename"});
+    }
+    print("\n");
+}
+
+#-----------------------------------------------------------------------------
+sub annotate_source_files()
+#-----------------------------------------------------------------------------
+{
+    # Do the annotations.
+    foreach my $src_file (keys %all_CCs) {
+        my $file_CCs = $all_CCs{$src_file};
+
+        my ($lines, $executable_lines, $executed_lines) = (0,0,0);
+
+        if (open(SRCFILE, "< $src_file")) {
+            print($fancy);
+            print("$src_file\n");
+            print($fancy);
+            while (<SRCFILE>) {
+                my $linenum = $.;
+                my $n_execs = $file_CCs->{$linenum};
+                my $ann;
+                if (defined $n_execs) {
+                    if (0 == $n_execs) {
+                        $ann = "#####";
+                    } else {
+                        $ann = sprintf("%d", $n_execs);
+                        $executed_lines++;
+                    }
+                    $executable_lines++;
+                } else {
+                    $ann = "-";
+                }
+                printf("%9s:%5d:%s", $ann, $linenum, $_);
+                $lines++;
+            }
+            close(SRCFILE);
+
+        } else {
+            print("warning: source file $src_file not found, skipping\n");
+        }
+        print("\n");
+    }
+}
+
+#----------------------------------------------------------------------------
+# "main()"
+#----------------------------------------------------------------------------
+process_cmd_line();
+
+read_coverage_file();
+
+print_per_file_output();
+
+annotate_source_files();
+
+##--------------------------------------------------------------------##
+##--- end                                                          ---##
+##--------------------------------------------------------------------##

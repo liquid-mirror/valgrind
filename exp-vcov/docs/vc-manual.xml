@@ -1,0 +1,55 @@
+<?xml version="1.0"?> <!-- -*- sgml -*- -->
+<!DOCTYPE chapter PUBLIC "-//OASIS//DTD DocBook XML V4.2//EN"
+  "http://www.oasis-open.org/docbook/xml/4.2/docbookx.dtd">
+
+<chapter id="vc-manual" xreflabel="VCov">
+
+<title>VCov: a coverage testing tool</title>
+
+<para>VCov is a coverage testing tool.  It works quite like gcov,
+but has the big advantage that you don't have to recompile your program in
+order to use it.</para>
+
+<para>Things to cover here:</para>
+
+<orderedlist>
+
+ <listitem>
+  <para>What coverage is good for</para>
+ </listitem>
+
+ <listitem>
+  <para>Different kinds: line vs branch/decision vs path.
+        "Code Coverage Analysis" by Steve Cornett is a good explanation of
+        these basic kinds and other kinds (http://www.bullseye.com/coverage.html).
+  </para>
+ </listitem>
+
+ <listitem>
+  <para>Stuff about debug info, compiling without optimisation</para>
+ </listitem>
+
+ <listitem>
+  <para>What coverage is good for</para>
+ </listitem>
+
+ <listitem>
+  <para>Gives instruction execution counts, not line execution counts.
+  Implications of this, inaccuracies.</para>
+ </listitem>
+
+ <listitem>
+  <para>Command line options</para>
+ </listitem>
+
+ <listitem>
+  <para>Created data files</para>
+ </listitem>
+
+ <listitem>
+  <para>using vc_annotate, .vcov files</para>
+ </listitem>
+
+</orderedlist>
+
+</chapter>

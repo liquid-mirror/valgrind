@@ -123,6 +123,17 @@ extern void VG_(seginfo_syms_getidx)  ( const SegInfo *si,
                                         /*OUT*/UInt*   size,
                                         /*OUT*/HChar** name );
 
+// These ones allow iterating through all the locs in a segment, and getting
+// attributes of each one.  The first one says how many locs are in the
+// segment.  The others get an attribute of a loc;  they return False if 'n'
+// is not a valid loc number.
+extern UInt VG_(seginfo_num_locs)      ( const SegInfo *seg );
+extern Bool VG_(seginfo_locN_addr)     ( const SegInfo *seg, UInt n, Addr* );
+extern Bool VG_(seginfo_locN_size)     ( const SegInfo *seg, UInt n, UInt* );
+extern Bool VG_(seginfo_locN_line)     ( const SegInfo *seg, UInt n, UInt* );
+extern Bool VG_(seginfo_locN_filename) ( const SegInfo *seg, UInt n, Char** );
+extern Bool VG_(seginfo_locN_dirname)  ( const SegInfo *seg, UInt n, Char** );
+
 typedef
    enum {
       Vg_SectUnknown,
