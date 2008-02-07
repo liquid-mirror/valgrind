@@ -50,6 +50,7 @@
 #include "priv_storage.h"
 #include "priv_readelf.h"          /* self */
 #include "priv_readdwarf.h"        /* 'cos ELF contains DWARF */
+#include "priv_readdwarf3.h"
 #include "priv_readstabs.h"        /* and stabs, if we're unlucky */
 
 /* --- !!! --- EXTERNAL HEADERS start --- !!! --- */
@@ -503,7 +504,7 @@ void read_elf_symtab__normal(
       return;
    }
 
-   TRACE_SYMTAB("\n--- Reading (ELF, standard) %s (%d entries)---\n",
+   TRACE_SYMTAB("\n--- Reading (ELF, standard) %s (%d entries) ---\n",
                 tab_name, symtab_szB/sizeof(ElfXX_Sym) );
 
    /* Perhaps should start at i = 1; ELF docs suggest that entry
@@ -1102,12 +1103,7 @@ Bool ML_(read_elf_debug_info) ( struct _DebugInfo* di )
    shdr_nent    = ehdr_img->e_shnum;
    shdr_ent_szB = ehdr_img->e_shentsize;
 
-   TRACE_SYMTAB("\n");
-   TRACE_SYMTAB("------ start ELF OBJECT ------------------------------\n");
-   TRACE_SYMTAB("------ name = %s\n", di->filename);
-   TRACE_SYMTAB("\n");
-
-   TRACE_SYMTAB("--- Basic facts about the object ---\n");
+   TRACE_SYMTAB("------ Basic facts about the object ------\n");
    TRACE_SYMTAB("object: img %p n_oimage %ld\n",
                (void*)oimage, n_oimage);
    TRACE_SYMTAB("phdr:   img %p nent %ld ent_szB %ld\n",
@@ -1151,7 +1147,7 @@ Bool ML_(read_elf_debug_info) ( struct _DebugInfo* di )
       this object.  Apparently requires looking through the program
       header table. */
    TRACE_SYMTAB("\n");
-   TRACE_SYMTAB("--- Looking for the soname ---\n");
+   TRACE_SYMTAB("------ Looking for the soname ------\n");
    vg_assert(di->soname == NULL);
    {
       ElfXX_Addr prev_svma = 0;
@@ -1278,7 +1274,8 @@ Bool ML_(read_elf_debug_info) ( struct _DebugInfo* di )
 
    /* Now read the section table. */
    TRACE_SYMTAB("\n");
-   TRACE_SYMTAB("--- Examining the section headers and program headers ---\n");
+   TRACE_SYMTAB("------ Examining the section headers "
+                "and program headers ------\n");
    TRACE_SYMTAB("rx: foffsets %ld .. %ld\n",
                di->rx_map_foff, di->rx_map_foff + di->rx_map_size - 1 );
    TRACE_SYMTAB("rw: foffsets %ld .. %ld\n",
@@ -1602,7 +1599,8 @@ TRACE_SYMTAB("increasing total bss-like size to %ld\n", bss_totsize);
                                 di->text_avma );
 
    TRACE_SYMTAB("\n");
-   TRACE_SYMTAB("--- Finding image addresses for debug-info sections ---\n");
+   TRACE_SYMTAB("------ Finding image addresses "
+                "for debug-info sections ------\n");
 
    /* Find interesting sections, read the symbol table(s), read any debug
       information */
@@ -1610,22 +1608,24 @@ TRACE_SYMTAB("increasing total bss-like size to %ld\n", bss_totsize);
       /* IMAGE addresses: pointers to start of sections in the
          transiently loaded oimage, not in the fragments of the file
          mapped in by the guest's dynamic linker. */
-      UChar*     strtab_img      = NULL; /* .strtab */
-      ElfXX_Sym* symtab_img      = NULL; /* .symtab */
-      UChar*     dynstr_img      = NULL; /* .dynstr */
-      ElfXX_Sym* dynsym_img      = NULL; /* .dynsym */
-      UChar*     debuglink_img   = NULL; /* .gnu_debuglink */
-      UChar*     stab_img        = NULL; /* .stab         (stabs)  */
-      UChar*     stabstr_img     = NULL; /* .stabstr      (stabs)  */
-      UChar*     debug_line_img  = NULL; /* .debug_line   (dwarf2) */
-      UChar*     debug_info_img  = NULL; /* .debug_info   (dwarf2) */
-      UChar*     debug_abbv_img  = NULL; /* .debug_abbrev (dwarf2) */
-      UChar*     debug_str_img   = NULL; /* .debug_str    (dwarf2) */
-      UChar*     dwarf1d_img     = NULL; /* .debug        (dwarf1) */
-      UChar*     dwarf1l_img     = NULL; /* .line         (dwarf1) */
-      UChar*     ehframe_img     = NULL; /* .eh_frame     (dwarf2) */
-      UChar*     opd_img         = NULL; /* .opd (dwarf2, ppc64-linux) */
-
+      UChar*     strtab_img       = NULL; /* .strtab */
+      ElfXX_Sym* symtab_img       = NULL; /* .symtab */
+      UChar*     dynstr_img       = NULL; /* .dynstr */
+      ElfXX_Sym* dynsym_img       = NULL; /* .dynsym */
+      UChar*     debuglink_img    = NULL; /* .gnu_debuglink */
+      UChar*     stab_img         = NULL; /* .stab         (stabs)  */
+      UChar*     stabstr_img      = NULL; /* .stabstr      (stabs)  */
+      UChar*     debug_line_img   = NULL; /* .debug_line   (dwarf2) */
+      UChar*     debug_info_img   = NULL; /* .debug_info   (dwarf2) */
+      UChar*     debug_abbv_img   = NULL; /* .debug_abbrev (dwarf2) */
+      UChar*     debug_str_img    = NULL; /* .debug_str    (dwarf2) */
+      UChar*     debug_ranges_img = NULL; /* .debug_ranges (dwarf2) */
+      UChar*     debug_loc_img    = NULL; /* .debug_loc    (dwarf2) */
+      UChar*     dwarf1d_img      = NULL; /* .debug        (dwarf1) */
+      UChar*     dwarf1l_img      = NULL; /* .line         (dwarf1) */
+      UChar*     ehframe_img      = NULL; /* .eh_frame     (dwarf2) */
+      UChar*     opd_img          = NULL; /* .opd (dwarf2,
+                                                   ppc64-linux) */
       /* Section sizes, in bytes */
       SizeT      strtab_sz       = 0;
       SizeT      symtab_sz       = 0;
@@ -1638,6 +1638,8 @@ TRACE_SYMTAB("increasing total bss-like size to %ld\n", bss_totsize);
       SizeT      debug_info_sz   = 0;
       SizeT      debug_abbv_sz   = 0;
       SizeT      debug_str_sz    = 0;
+      SizeT      debug_ranges_sz = 0;
+      SizeT      debug_loc_sz    = 0;
       SizeT      dwarf1d_sz      = 0;
       SizeT      dwarf1l_sz      = 0;
       SizeT      ehframe_sz      = 0;
@@ -1678,27 +1680,29 @@ TRACE_SYMTAB("increasing total bss-like size to %ld\n", bss_totsize);
             } \
          } while (0);
 
-         /*   NAME              SIZE           IMAGE addr */
-         FIND(".dynsym",        dynsym_sz,     dynsym_img)
-         FIND(".dynstr",        dynstr_sz,     dynstr_img)
-         FIND(".symtab",        symtab_sz,     symtab_img)
-         FIND(".strtab",        strtab_sz,     strtab_img)
+         /*   NAME              SIZE             IMAGE addr */
+         FIND(".dynsym",        dynsym_sz,       dynsym_img)
+         FIND(".dynstr",        dynstr_sz,       dynstr_img)
+         FIND(".symtab",        symtab_sz,       symtab_img)
+         FIND(".strtab",        strtab_sz,       strtab_img)
 
-         FIND(".gnu_debuglink", debuglink_sz,  debuglink_img)
+         FIND(".gnu_debuglink", debuglink_sz,    debuglink_img)
 
-         FIND(".stab",          stab_sz,       stab_img)
-         FIND(".stabstr",       stabstr_sz,    stabstr_img)
+         FIND(".stab",          stab_sz,         stab_img)
+         FIND(".stabstr",       stabstr_sz,      stabstr_img)
 
-         FIND(".debug_line",    debug_line_sz, debug_line_img)
-         FIND(".debug_info",    debug_info_sz, debug_info_img)
-         FIND(".debug_abbrev",  debug_abbv_sz, debug_abbv_img)
-         FIND(".debug_str",     debug_str_sz,  debug_str_img)
+         FIND(".debug_line",    debug_line_sz,   debug_line_img)
+         FIND(".debug_info",    debug_info_sz,   debug_info_img)
+         FIND(".debug_abbrev",  debug_abbv_sz,   debug_abbv_img)
+         FIND(".debug_str",     debug_str_sz,    debug_str_img)
+         FIND(".debug_ranges",  debug_ranges_sz, debug_ranges_img)
+         FIND(".debug_loc",     debug_loc_sz,    debug_loc_img)
 
-         FIND(".debug",         dwarf1d_sz,    dwarf1d_img)
-         FIND(".line",          dwarf1l_sz,    dwarf1l_img)
-         FIND(".eh_frame",      ehframe_sz,    ehframe_img)
+         FIND(".debug",         dwarf1d_sz,      dwarf1d_img)
+         FIND(".line",          dwarf1l_sz,      dwarf1l_img)
+         FIND(".eh_frame",      ehframe_sz,      ehframe_img)
 
-         FIND(".opd",           opd_sz_unused, opd_img)
+         FIND(".opd",           opd_sz_unused,   opd_img)
 
 #        undef FIND
       }
@@ -1832,6 +1836,9 @@ TRACE_SYMTAB("increasing total bss-like size to %ld\n", bss_totsize);
                FIND(need_dwarf2, ".debug_info",   debug_info_sz, debug_info_img)
                FIND(need_dwarf2, ".debug_abbrev", debug_abbv_sz, debug_abbv_img)
                FIND(need_dwarf2, ".debug_str",    debug_str_sz,  debug_str_img)
+               FIND(need_dwarf2, ".debug_ranges", debug_ranges_sz, 
+                                                               debug_ranges_img)
+               FIND(need_dwarf2, ".debug_str",    debug_loc_sz,  debug_loc_img)
                FIND(need_dwarf1, ".debug",        dwarf1d_sz,    dwarf1d_img)
                FIND(need_dwarf1, ".line",         dwarf1l_sz,    dwarf1l_img)
 
@@ -1888,11 +1895,24 @@ TRACE_SYMTAB("increasing total bss-like size to %ld\n", bss_totsize);
          before using it. */
       if (debug_info_img && debug_abbv_img && debug_line_img
                                            /* && debug_str_img */) {
-         ML_(read_debuginfo_dwarf2) ( di,
-                                      debug_info_img,   debug_info_sz,
-                                      debug_abbv_img,
-                                      debug_line_img,   debug_line_sz,
-                                      debug_str_img );
+
+         /* The old reader: line numbers and unwind info only */
+         ML_(read_debuginfo_dwarf3) ( di,
+                                      debug_info_img, debug_info_sz,
+                                      debug_abbv_img, debug_abbv_sz,
+                                      debug_line_img, debug_line_sz,
+                                      debug_str_img,  debug_str_sz );
+
+         /* The new reader: read the DIEs in .debug_info to acquire
+            information on variable types and locations. */
+         ML_(new_dwarf3_reader) ( di,
+                                  debug_info_img,   debug_info_sz,
+                                  debug_abbv_img,   debug_abbv_sz,
+                                  debug_line_img,   debug_line_sz,
+                                  debug_str_img,    debug_str_sz,
+                                  debug_ranges_img, debug_ranges_sz,
+                                  debug_loc_img,    debug_loc_sz );
+
       }
       if (dwarf1d_img && dwarf1l_img) {
          ML_(read_debuginfo_dwarf1) ( di, dwarf1d_img, dwarf1d_sz, 
@@ -1903,11 +1923,6 @@ TRACE_SYMTAB("increasing total bss-like size to %ld\n", bss_totsize);
 
   out: {
    SysRes m_res;
-
-   TRACE_SYMTAB("\n");
-   TRACE_SYMTAB("------ name = %s\n", di->filename);
-   TRACE_SYMTAB("------ end ELF OBJECT ------------------------------\n");
-   TRACE_SYMTAB("\n");
 
    /* Last, but not least, heave the image(s) back overboard. */
    if (dimage) {
