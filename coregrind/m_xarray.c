@@ -118,7 +118,18 @@ Int VG_(addToXA) ( XArray* xao, void* elem )
          vg_assert(!xa->arr);
       if (xa->totsizeE > 0)
          vg_assert(xa->arr);
-      newsz = xa->totsizeE==0 ? 2 : 2 * xa->totsizeE;
+      if (xa->totsizeE == 0) {
+         /* No point in having tiny (eg) 2-byte allocations for the
+            element array, since all allocs are rounded up to 8 anyway.
+            Hence increase the initial array size for tiny elements in
+            an attempt to avoid reallocations of size 2, 4, 8 if the
+            array does start to fill up. */
+         if (xa->elemSzB == 1) newsz = 8;
+         else if (xa->elemSzB == 2) newsz = 4;
+         else newsz = 2;
+      } else {
+         newsz = 2 * xa->totsizeE;
+      }
       if (0) 
          VG_(printf)("addToXA: increasing from %ld to %ld\n", 
                      xa->totsizeE, newsz);
@@ -133,8 +144,13 @@ Int VG_(addToXA) ( XArray* xao, void* elem )
    }
    vg_assert(xa->usedsizeE < xa->totsizeE);
    vg_assert(xa->arr);
-   VG_(memcpy)( ((UChar*)xa->arr) + xa->usedsizeE * xa->elemSzB,
-                elem, xa->elemSzB );
+   if (xa->elemSzB == 1) {
+      /* calling memcpy is just stupid, hence */
+      * (((UChar*)xa->arr) + xa->usedsizeE) = * ((UChar*) elem);
+   } else {
+      VG_(memcpy)( ((UChar*)xa->arr) + xa->usedsizeE * xa->elemSzB,
+                   elem, xa->elemSzB );
+   }
    xa->usedsizeE++;
    xa->sorted = False;
    return xa->usedsizeE-1;
