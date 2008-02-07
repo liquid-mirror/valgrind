@@ -119,15 +119,26 @@ struct _Error {
    // NULL if unsuppressed; or ptr to suppression record.
    Supp* supp;
    Int count;
-   ThreadId tid;
 
    // The tool-specific part
+   ThreadId tid;           // Initialised by core
    ExeContext* where;      // Initialised by core
    ErrorKind ekind;        // Used by ALL.  Must be in the range (0..)
    Addr addr;              // Used frequently
    Char* string;           // Used frequently
    void* extra;            // For any tool-specific extras
 };
+
+
+
+/* Note, VG_(get_error_tid) only produces a meaningful result at the
+   time that the error is handed to VG_(maybe_record_error), since the
+   same tid may be reassigned later to a new thread.  Caveat
+   Caller. */
+ThreadId VG_(get_error_tid) ( Error* err )
+{
+   return err->tid;
+}
 
 ExeContext* VG_(get_error_where) ( Error* err )
 {

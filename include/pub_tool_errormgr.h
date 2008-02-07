@@ -55,7 +55,11 @@ typedef
    Error;
 
 /* Useful in VG_(tdict).tool_error_matches_suppression(),
- * VG_(tdict).tool_pp_Error(), etc */
+ * VG_(tdict).tool_pp_Error(), etc.  Note, VG_(get_error_tid) only
+   produces a meaningful result at the time that the error is
+   handed to VG_(maybe_record_error), since the same tid may be
+   reassigned later to a new thread.  Caveat Caller. */
+ThreadId    VG_(get_error_tid)     ( Error* err );
 ExeContext* VG_(get_error_where)   ( Error* err );
 ErrorKind   VG_(get_error_kind)    ( Error* err );
 Addr        VG_(get_error_address) ( Error* err );
