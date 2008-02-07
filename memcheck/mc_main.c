@@ -2628,9 +2628,10 @@ typedef
    enum { 
       Addr_Undescribed, // as-yet unclassified
       Addr_Unknown,     // classification yielded nothing useful
-      Addr_Stack,       // on a thread's stack       
       Addr_Block,       // in malloc'd/free'd block
-      Addr_GlobalData,  // in a global data sym
+      Addr_Stack,       // on a thread's stack       
+      Addr_DataSym,     // in a global data sym
+      Addr_Variable,    // variable described by the debug info
       Addr_SectKind     // last-ditch classification attempt
    }
    AddrTag;
@@ -2665,7 +2666,12 @@ struct _AddrInfo {
       struct {
          Char name[64];
          OffT offset;
-      } GlobalData;
+      } DataSym;
+
+      // Is described by Dwarf debug info.  Arbitrary string.
+      struct {
+         Char descr[64];
+      } Variable;
 
       // Could only narrow it down to be the PLT/GOT/etc of a given
       // object.  Better than nothing, perhaps.
@@ -2850,15 +2856,20 @@ static void mc_pp_AddrInfo ( Addr a, AddrInfo* ai, Bool maybe_gcc )
          break;
       }
 
-      case Addr_GlobalData:
+      case Addr_DataSym:
          VG_(message)(Vg_UserMsg, 
                       "%sAddress 0x%llx is %llu bytes "
-                        "inside global var \"%t\"%s", 
+                        "inside data symbol \"%t\"%s", 
                       xpre, 
                       (ULong)a, 
-                      (ULong)ai->Addr.GlobalData.offset,
-                      ai->Addr.GlobalData.name, 
+                      (ULong)ai->Addr.DataSym.offset,
+                      ai->Addr.DataSym.name, 
                       xpost);
+         break;
+
+      case Addr_Variable:
+         VG_(message)(Vg_UserMsg,
+                      "%s%s%s", xpre, ai->Addr.Variable.descr, xpost);
          break;
 
       case Addr_SectKind:
@@ -3359,7 +3370,11 @@ static Bool client_perm_maybe_describe( Addr a, AddrInfo* ai );
 
 /* Describe an address as best you can, for error messages,
    putting the result in ai. */
-static void describe_addr ( Addr a, AddrInfo* ai )
+static void describe_addr ( Addr a, 
+                            Addr ip_at_error,
+                            Addr sp_at_error,
+                            Addr fp_at_error,
+                            /*OUT*/AddrInfo* ai )
 {
    MC_Chunk*  mc;
    ThreadId   tid;
@@ -3371,15 +3386,6 @@ static void describe_addr ( Addr a, AddrInfo* ai )
    /* Perhaps it's a user-def'd block? */
    if (client_perm_maybe_describe( a, ai )) {
       return;
-   }
-   /* Perhaps it's on a thread's stack? */
-   VG_(thread_stack_reset_iter)();
-   while ( VG_(thread_stack_next)(&tid, &stack_min, &stack_max) ) {
-      if (stack_min <= a && a <= stack_max) {
-         ai->tag            = Addr_Stack;
-         ai->Addr.Stack.tid = tid;
-         return;
-      }
    }
    /* Search for a recently freed block which might bracket it. */
    mc = MC_(get_freed_list_head)();
@@ -3408,16 +3414,39 @@ static void describe_addr ( Addr a, AddrInfo* ai )
          return;
       }
    }
-   /* Perhaps it's in global data? */
-   VG_(memset)( &ai->Addr.GlobalData.name, 0, sizeof(ai->Addr.GlobalData.name));
-   if (VG_(get_dataname_and_offset)(
-          a, &ai->Addr.GlobalData.name[0],
-             sizeof(ai->Addr.GlobalData.name)-1,
-             &ai->Addr.GlobalData.offset )) {
-      ai->tag = Addr_GlobalData;
-      tl_assert( ai->Addr.GlobalData.name
-                    [ sizeof(ai->Addr.GlobalData.name)-1 ] == 0);
+   /* Perhaps the variable type/location data describes it? */
+   VG_(memset)( &ai->Addr.Variable.descr, 
+                0, sizeof(ai->Addr.Variable.descr));
+   if (VG_(get_data_description)(
+             a, ip_at_error, sp_at_error, fp_at_error,
+             &ai->Addr.Variable.descr[0],
+             sizeof(ai->Addr.Variable.descr)-1 )) {
+      ai->tag = Addr_Variable;
+      tl_assert( ai->Addr.Variable.descr
+                    [ sizeof(ai->Addr.Variable.descr)-1 ] == 0);
       return;
+   }
+   /* Have a look at the low level data symbols - perhaps it's in
+      there. */
+   VG_(memset)( &ai->Addr.DataSym.name,
+                0, sizeof(ai->Addr.DataSym.name));
+   if (VG_(get_datasym_and_offset)(
+             a, &ai->Addr.DataSym.name[0],
+             sizeof(ai->Addr.DataSym.name)-1,
+             &ai->Addr.DataSym.offset )) {
+      ai->tag = Addr_DataSym;
+      tl_assert( ai->Addr.DataSym.name
+                    [ sizeof(ai->Addr.DataSym.name)-1 ] == 0);
+      return;
+   }
+   /* Perhaps it's on a thread's stack? */
+   VG_(thread_stack_reset_iter)();
+   while ( VG_(thread_stack_next)(&tid, &stack_min, &stack_max) ) {
+      if (stack_min <= a && a <= stack_max) {
+         ai->tag            = Addr_Stack;
+         ai->Addr.Stack.tid = tid;
+         return;
+      }
    }
    /* last ditch attempt at classification */
    tl_assert( sizeof(ai->Addr.SectKind.objname) > 4 );
@@ -3443,6 +3472,11 @@ static UInt mc_update_extra( Error* err )
 {
    MC_Error* extra = VG_(get_error_extra)(err);
 
+   ThreadId tid = VG_(get_error_tid)(err);
+   Addr ip_at_error = VG_(get_IP)( tid );
+   Addr sp_at_error = VG_(get_SP)( tid );
+   Addr fp_at_error = VG_(get_FP)( tid );
+
    switch (VG_(get_error_kind)(err)) {
    // These ones don't have addresses associated with them, and so don't
    // need any updating.
@@ -3459,22 +3493,33 @@ static UInt mc_update_extra( Error* err )
 
    // These ones always involve a memory address.
    case Err_Addr:
-      describe_addr ( VG_(get_error_address)(err), &extra->Err.Addr.ai );
+      describe_addr ( VG_(get_error_address)(err),
+                      ip_at_error, sp_at_error, fp_at_error,
+                      &extra->Err.Addr.ai );
       return sizeof(MC_Error);
    case Err_MemParam:
-      describe_addr ( VG_(get_error_address)(err), &extra->Err.MemParam.ai );
+      describe_addr ( VG_(get_error_address)(err),
+                      ip_at_error, sp_at_error, fp_at_error,
+                      &extra->Err.MemParam.ai );
       return sizeof(MC_Error);
    case Err_Jump:
-      describe_addr ( VG_(get_error_address)(err), &extra->Err.Jump.ai );
+      describe_addr ( VG_(get_error_address)(err),
+                      ip_at_error, sp_at_error, fp_at_error,
+                      &extra->Err.Jump.ai );
       return sizeof(MC_Error);
    case Err_User:
-      describe_addr ( VG_(get_error_address)(err), &extra->Err.User.ai );
+      describe_addr ( VG_(get_error_address)(err),
+                      ip_at_error, sp_at_error, fp_at_error,
+                      &extra->Err.User.ai );
       return sizeof(MC_Error);
    case Err_Free:
-      describe_addr ( VG_(get_error_address)(err), &extra->Err.Free.ai );
+      describe_addr ( VG_(get_error_address)(err),
+                      ip_at_error, sp_at_error, fp_at_error,
+                      &extra->Err.Free.ai );
       return sizeof(MC_Error);
    case Err_IllegalMempool:
       describe_addr ( VG_(get_error_address)(err),
+                      ip_at_error, sp_at_error, fp_at_error,
                       &extra->Err.IllegalMempool.ai );
       return sizeof(MC_Error);
 
