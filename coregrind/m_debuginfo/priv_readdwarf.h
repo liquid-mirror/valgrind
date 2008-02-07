@@ -39,15 +39,15 @@
 
 
 /* --------------------
-   DWARF2 reader
+   DWARF3 reader
    -------------------- */
 extern
-void ML_(read_debuginfo_dwarf2)
+void ML_(read_debuginfo_dwarf3)
         ( struct _DebugInfo* di,
-          UChar* debuginfo,   Int debug_info_sz,  /* .debug_info */
-          UChar* debugabbrev,                     /* .debug_abbrev */
-          UChar* debugline,   Int debug_line_sz,  /* .debug_line */
-          UChar* debugstr );
+          UChar* debug_info_img, Word debug_info_sz,  /* .debug_info */
+          UChar* debug_abbv_img, Word debug_abbv_sz,  /* .debug_abbrev */
+          UChar* debug_line_img, Word debug_line_sz,  /* .debug_line */
+          UChar* debug_str_img,  Word debug_str_sz ); /* .debug_str */
 
 /* --------------------
    DWARF1 reader
