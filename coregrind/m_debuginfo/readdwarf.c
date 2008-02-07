@@ -203,6 +203,7 @@ typedef struct
 } LineSMR;
 
 
+/* FIXME: duplicated in readdwarf3.c */
 static 
 ULong read_leb128 ( UChar* data, Int* length_return, Int sign )
 {
@@ -229,7 +230,7 @@ ULong read_leb128 ( UChar* data, Int* length_return, Int sign )
     * length_return = num_read;
 
   if (sign && (shift < 64) && (byte & 0x40))
-    result |= (-1ULL) << shift;
+    result |= -(1ULL << shift);
 
   return result;
 }
@@ -237,6 +238,7 @@ ULong read_leb128 ( UChar* data, Int* length_return, Int sign )
 /* Small helper functions easier to use
  * value is returned and the given pointer is
  * moved past end of leb128 data */
+/* FIXME: duplicated in readdwarf3.c */
 static ULong read_leb128U( UChar **data )
 {
   Int len;
@@ -246,6 +248,7 @@ static ULong read_leb128U( UChar **data )
 }
 
 /* Same for signed data */
+/* FIXME: duplicated in readdwarf3.c */
 static Long read_leb128S( UChar **data )
 {
    Int len;
@@ -1112,27 +1115,29 @@ void read_unitinfo_dwarf2( /*OUT*/UnitInfo* ui,
 ////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////
 
-
-/* Collect the debug info from dwarf2 debugging sections
+/* Collect the debug info from DWARF3 debugging sections
  * of a given module.
  * 
  * Inputs: given .debug_xxx sections
- * Output: update si to contain all the dwarf2 debug infos
+ * Output: update di to contain all the DWARF3 debug infos
  */
-void ML_(read_debuginfo_dwarf2) 
+void ML_(read_debuginfo_dwarf3)
         ( struct _DebugInfo* di,
-          UChar* debuginfo_img,   Int debug_info_sz, /* .debug_info */
-          UChar* debugabbrev_img,                    /* .debug_abbrev */
-          UChar* debugline_img,   Int debug_line_sz, /* .debug_line */
-          UChar* debugstr_img )                      /* .debug_str */
+          UChar* debug_info_img, Word debug_info_sz, /* .debug_info */
+          UChar* debug_abbv_img, Word debug_abbv_sz, /* .debug_abbrev */
+          UChar* debug_line_img, Word debug_line_sz, /* .debug_line */
+          UChar* debug_str_img,  Word debug_str_sz ) /* .debug_str */
 {
    UnitInfo ui;
    UShort   ver;
    UChar*   block_img;
-   UChar*   end_img = debuginfo_img + debug_info_sz;
+   UChar*   end1_img;
    ULong    blklen;
    Bool     blklen_is_64;
-   Int      blklen_len = 0;
+   Int      blklen_len;
+
+   end1_img  = debug_info_img + debug_info_sz;
+   blklen_len = 0;
 
    /* Make sure we at least have a header for the first block */
    if (debug_info_sz < 4) {
@@ -1142,15 +1147,16 @@ void ML_(read_debuginfo_dwarf2)
    }
 
    /* Iterate on all the blocks we find in .debug_info */
-   for ( block_img = debuginfo_img; block_img < end_img - 4; 
-                                    block_img += blklen + blklen_len ) {
+   for ( block_img = debug_info_img; 
+         block_img < end1_img - 4; 
+         block_img += blklen + blklen_len ) {
 
       /* Read the compilation unit header in .debug_info section - See
          p 70 */
       /* This block length */
       blklen     = read_initial_length_field( block_img, &blklen_is_64 );
       blklen_len = blklen_is_64 ? 12 : 4;
-      if ( block_img + blklen + blklen_len > end_img ) {
+      if ( block_img + blklen + blklen_len > end1_img ) {
          ML_(symerr)( di, True,
                       "Last block truncated in .debug_info; ignoring" );
          return;
@@ -1167,8 +1173,9 @@ void ML_(read_debuginfo_dwarf2)
       /* Fill ui with offset in .debug_line and compdir */
       if (0)
          VG_(printf)( "Reading UnitInfo at 0x%x.....\n", 
-                      block_img - debuginfo_img );
-      read_unitinfo_dwarf2( &ui, block_img, debugabbrev_img, debugstr_img, di );
+                      block_img - debug_info_img );
+      read_unitinfo_dwarf2( &ui, block_img, 
+                                 debug_abbv_img, debug_str_img, di );
       if (0)
          VG_(printf)( "   => LINES=0x%llx    NAME=%s     DIR=%s\n", 
                       ui.stmt_list, ui.name, ui.compdir );
@@ -1182,8 +1189,8 @@ void ML_(read_debuginfo_dwarf2)
                      debug_line_sz, ui.stmt_list, ui.name );
       /* Read the .debug_line block for this compile unit */
       read_dwarf2_lineblock( 
-         di, &ui, debugline_img + ui.stmt_list, 
-                  debug_line_sz - ui.stmt_list );
+         di, &ui, debug_line_img + ui.stmt_list, 
+                  debug_line_sz  - ui.stmt_list );
    }
 }
 
@@ -1778,7 +1785,7 @@ void ML_(read_debuginfo_dwarf1) (
 #  define SP_REG         1
 #  define RA_REG_DEFAULT 8     // CAB: What's a good default ?
 #else
-#  error Unknown platform
+#  error "Unknown platform"
 #endif
 
 /* the number of regs we are prepared to unwind */
