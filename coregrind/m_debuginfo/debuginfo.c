@@ -49,11 +49,13 @@
 #include "pub_core_aspacemgr.h"
 #include "pub_core_machine.h"     // VG_PLAT_USES_PPCTOC
 #include "pub_core_xarray.h"
+#include "pub_core_oset.h"
 #include "priv_storage.h"
 #include "priv_readdwarf.h"
 #include "priv_readstabs.h"
 #if defined(VGO_linux)
 # include "priv_readelf.h"
+# include "priv_readdwarf3.h"
 #elif defined(VGO_aix5)
 # include "pub_core_debuglog.h"
 # include "pub_core_libcproc.h"
@@ -528,6 +530,14 @@ void VG_(di_notify_mmap)( Addr a, Bool allow_SkFileV )
    }
 
    if (di->have_rx_map && di->have_rw_map && !di->have_dinfo) {
+
+      vg_assert(di->filename);
+      TRACE_SYMTAB("\n");
+      TRACE_SYMTAB("------ start ELF OBJECT "
+                   "------------------------------\n");
+      TRACE_SYMTAB("------ name = %s\n", di->filename);
+      TRACE_SYMTAB("\n");
+
       /* We're going to read symbols and debug info for the vma ranges
          [rx_map_avma,+rx_map_size) and [rw_map_avma,+rw_map_size).
          First get rid of any other DebugInfos which overlap either of
@@ -538,17 +548,27 @@ void VG_(di_notify_mmap)( Addr a, Bool allow_SkFileV )
       ok = ML_(read_elf_debug_info)( di );
 
       if (ok) {
+         TRACE_SYMTAB("\n------ Canonicalising the "
+                      "acquired info ------\n");
          /* prepare read data for use */
          ML_(canonicaliseTables)( di );
          /* notify m_redir about it */
+         TRACE_SYMTAB("\n------ Notifying m_redir ------\n");
          VG_(redir_notify_new_DebugInfo)( di );
          /* Note that we succeeded */
          di->have_dinfo = True;
       } else {
+         TRACE_SYMTAB("\n------ ELF reading failed ------\n");
          /* Something went wrong (eg. bad ELF file).  Should we delete
             this DebugInfo?  No - it contains info on the rw/rx
             mappings, at least. */
       }
+
+      TRACE_SYMTAB("\n");
+      TRACE_SYMTAB("------ name = %s\n", di->filename);
+      TRACE_SYMTAB("------ end ELF OBJECT "
+                   "------------------------------\n");
+      TRACE_SYMTAB("\n");
 
    }
 }
@@ -694,7 +714,8 @@ static void search_all_symtabs ( Addr ptr, /*OUT*/DebugInfo** pdi,
       }
 
       /* Note this short-circuit check relies on the assumption that
-         .bss is mapped immediately after .data. */
+         .bss is mapped immediately after .data.  This is an assumption
+         that readelf.c makes anyway. */
       if (!inRange) continue;
 
       sno = ML_(search_one_symtab) ( 
@@ -870,17 +891,17 @@ Bool VG_(get_fnname_Z_demangle_only) ( Addr a, Char* buf, Int nbuf )
 #  undef N_TMPBUF
 }
 
-/* Looks up 'a' in the collection of data symbols, and if found puts
-   its name (or as much as will fit) into dname[0 .. n_dname-1]
-   including zero terminator.  Also the 'a's offset from the symbol
-   start is put into *offset. */
-Bool VG_(get_dataname_and_offset)( Addr a,
-                                   /*OUT*/Char* dname, Int n_dname,
-                                   /*OUT*/OffT* offset )
+/* Looks up data_addr in the collection of data symbols, and if found
+   puts its name (or as much as will fit) into dname[0 .. n_dname-1],
+   which is guaranteed to be zero terminated.  Also data_addr's offset
+   from the symbol start is put into *offset. */
+Bool VG_(get_datasym_and_offset)( Addr data_addr,
+                                  /*OUT*/Char* dname, Int n_dname,
+                                  /*OUT*/OffT* offset )
 {
    Bool ok;
    vg_assert(n_dname > 1);
-   ok = get_sym_name ( /*demangle*/False, a, dname, n_dname,
+   ok = get_sym_name ( /*demangle*/False, data_addr, dname, n_dname,
                        /*match_anywhere_in_sym*/True, 
                        /*show offset?*/False,
                        /*data syms only please*/False,
@@ -889,6 +910,183 @@ Bool VG_(get_dataname_and_offset)( Addr a,
       return False;
    dname[n_dname-1] = 0;
    return True;
+}
+
+/* Try to form some description of data_addr by looking at the DWARF3
+   debug info we have.  This only looks at stack locations (for the
+   top frame of the thread from which ip/sp/fp are taken) and at
+   global variables.  Result (or as much as will fit) is put into into
+   dname[0 .. n_dname-1] and is guaranteed to be zero terminated. */
+
+/* Evaluate the location expression/list for var, to see whether or
+   not data_addr falls within the variable.  If so also return the
+   offset of data_addr from the start of the variable.*/
+static Bool data_address_is_in_var ( /*OUT*/UWord* offset,
+                                     DiVariable*   var,
+                                     RegSummary*   regs,
+                                     Addr          data_addr )
+{
+   SizeT    var_szB;
+   GXResult res;
+   vg_assert(var->name);
+   vg_assert(var->typeV);
+   vg_assert(var->gexprV);
+   var_szB = ML_(sizeOfD3Type)(var->typeV);
+
+   if (1) {
+      VG_(printf)("VVVV: find loc: %s :: ", var->name );
+      ML_(pp_D3Type_C_ishly)( var->typeV );
+      VG_(printf)("\n");
+   }
+
+   res = ML_(evaluate_GX)( var->gexprV, var->fbGXv, regs );
+
+   if (1) VG_(printf)("VVVV: -> 0x%lx %s\n", res.res, 
+                      res.failure ? res.failure : "(success)");
+   if (!res.failure && res.res <= data_addr
+                    && data_addr < res.res + var_szB) {
+      *offset = res.res - data_addr;
+      return True;
+   } else {
+      return False;
+   }
+}
+Bool VG_(get_data_description)( Addr data_addr,
+                                Addr ip, Addr sp, Addr fp,
+                                /*OUT*/Char* dname, Int n_dname )
+{
+   DebugInfo* di;
+   RegSummary regs;
+   DebugInfo* di_for_ip;
+
+   vg_assert(n_dname > 1);
+   dname[n_dname-1] = 0;
+
+   if (0) VG_(printf)("GDnO: dataaddr %p, ip at error %p\n",
+                      data_addr, ip );
+
+   /* Loop over the DebugInfos we have.  Check data_addr against the
+      outermost scope of all of them (as that should be a global
+      scope).  Also, identify the di which contains the PC address.
+      That will be the one in which we need to look to find info on
+      nested scopes. */
+
+   regs.ip = ip;
+   regs.sp = sp;
+   regs.fp = fp;
+
+   di_for_ip = NULL;
+   for (di = debugInfo_list; di != NULL; di = di->next) {
+      OSet*        global_scope;
+      Int          gs_size;
+      Addr         zero;
+      DiAddrRange* global_arange;
+      Word         i;
+      XArray*      vars;
+
+      /* text segment missing? unlikely, but handle it .. */
+      if (di->text_size == 0)
+         continue;
+      /* Ok.  So does this text mapping bracket the ip? */
+      if (di->text_avma <= ip && ip < di->text_avma + di->text_size)
+         di_for_ip = di;
+      /* any var info at all? */
+      if (!di->varinfo)
+         continue;
+      /* perhaps this object didn't contribute any vars at all? */
+      if (VG_(sizeXA)( di->varinfo ) == 0)
+         continue;
+      global_scope = *(OSet**)VG_(indexXA)( di->varinfo, 0 );
+      vg_assert(global_scope);
+      gs_size = VG_(OSetGen_Size)( global_scope );
+      /* The global scope might be completely empty if this
+         compilation unit declared locals but nothing global. */
+      if (gs_size == 0)
+          continue;
+      /* But if it isn't empty, then it must contain exactly one
+         element, which covers the entire address range. */
+      vg_assert(gs_size == 1);
+      /* Fish out the global scope and check it is as expected. */
+      zero = 0;
+      global_arange 
+         = VG_(OSetGen_Lookup)( global_scope, &zero );
+      /* The global range from (Addr)0 to ~(Addr)0 must exist */
+      vg_assert(global_arange);
+      vg_assert(global_arange->aMin ==  (Addr)0);
+      vg_assert(global_arange->aMax == ~(Addr)0);
+      /* Any vars in this range? */
+      if (!global_arange->vars)
+         continue;
+      /* Ok, there are some vars in the global scope of this
+         DebugInfo.  Wade through them and see if the data addresses
+         of any of them bracket data_addr. */
+      vars = global_arange->vars;
+      for (i = 0; i < VG_(sizeXA)( vars ); i++) {
+         SizeT offset;
+         DiVariable* var = (DiVariable*)VG_(indexXA)( vars, i );
+         vg_assert(var->name);
+         if (data_address_is_in_var( &offset, var, &regs, data_addr )) {
+            VG_(snprintf)(
+               dname, (SizeT)n_dname,
+               "Address 0x%lx is %lu bytes inside global var \"%s\"",
+               data_addr, offset, var->name);
+            dname[n_dname-1] = 0;
+            return True;
+         }
+      }
+   }
+
+   if (0) {
+      VG_(printf)("di_for_ip %p\n", di_for_ip);
+      VG_(printf)("vi %p\n", di_for_ip->varinfo);
+      VG_(printf)("vi size %d\n", (Int)VG_(sizeXA)(di_for_ip->varinfo));
+   }
+
+   /* Now that we've considered all the globals in scope, consider the
+      locals. */
+   if (di_for_ip && di_for_ip->varinfo) {
+      Word i;
+      /* Work through the scopes from most deeply nested outwards,
+         looking for code address ranges that bracket 'ip'.  The
+         variables on each such address range found are in scope right
+         now.  Don't descend to level zero as that is the global
+         scope. */
+      /* "for each scope, working outwards ..." */
+      for (i = VG_(sizeXA)(di_for_ip->varinfo) - 1; i >= 1; i--) {
+         XArray*      vars;
+         Word         j;
+         DiAddrRange* arange;
+         OSet*        this_scope 
+            = *(OSet**)VG_(indexXA)( di_for_ip->varinfo, i );
+         if (!this_scope)
+            continue;
+         /* Find the set of variables in this scope that
+            bracket the program counter. */
+         arange = VG_(OSetGen_LookupWithCmp)(
+                     this_scope, &ip, 
+                     ML_(cmp_for_DiAddrRange_range)
+                  );
+         if (!arange)
+            continue;
+         vg_assert(arange->aMin <= ip && ip <= arange->aMax);
+         vars = arange->vars;
+         for (j = 0; j < VG_(sizeXA)( vars ); j++) {
+            DiVariable* var = (DiVariable*)VG_(indexXA)( vars, j );
+            SizeT       offset;
+            if (data_address_is_in_var( &offset, var, &regs, data_addr )) {
+               VG_(snprintf)(
+                  dname, (SizeT)n_dname,
+                  "Address 0x%lx is %lu bytes inside local var \"%s\"",
+                  data_addr, offset, var->name);
+               dname[n_dname-1] = 0;
+               return True;
+            }
+         }
+      }
+   }
+
+   /* We didn't find anything useful. */
+   return False;
 }
 
 
@@ -1322,7 +1520,7 @@ Bool VG_(use_CF_info) ( /*MOD*/Addr* ipP,
       n_steps++;
 
       /* Use the per-DebugInfo summary address ranges to skip
-	 inapplicable DebugInfos quickly. */
+         inapplicable DebugInfos quickly. */
       if (si->cfsi_used == 0)
          continue;
       if (*ipP < si->cfsi_minaddr || *ipP > si->cfsi_maxaddr)

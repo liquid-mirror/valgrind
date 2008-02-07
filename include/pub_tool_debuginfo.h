@@ -74,17 +74,26 @@ extern Bool VG_(get_filename_linenum)
    entry points within it. */
 extern Bool VG_(get_fnname_if_entry) ( Addr a, Char* fnname, Int n_fnname );
 
-/* Looks up 'a' in the collection of data symbols, and if found puts
-   its name (or as much as will fit) into dname[0 .. n_dname-1]
-   including zero terminator.  Also the 'a's offset from the symbol
-   start is put into *offset. */
-extern Bool VG_(get_dataname_and_offset)( Addr a,
-                                          /*OUT*/Char* dname, Int n_dname,
-                                          /*OUT*/OffT* offset );
+/* Looks up data_addr in the collection of data symbols, and if found
+   puts its name (or as much as will fit) into dname[0 .. n_dname-1],
+   which is guaranteed to be zero terminated.  Also data_addr's offset
+   from the symbol start is put into *offset. */
+extern Bool VG_(get_datasym_and_offset)( Addr data_addr,
+                                         /*OUT*/Char* dname, Int n_dname,
+                                         /*OUT*/OffT* offset );
+
+/* Try to form some description of data_addr by looking at the DWARF3
+   debug info we have.  This only looks at stack locations (for the
+   top frame of the thread from which ip/sp/fp are taken) and at
+   global variables.  Result (or as much as will fit) is put into into
+   dname[0 .. n_dname-1] and is guaranteed to be zero terminated. */
+extern Bool VG_(get_data_description)( Addr data_addr,
+                                       Addr ip, Addr sp, Addr fp,
+                                       /*OUT*/Char* dname, Int n_dname );
 
 /* Succeeds if the address is within a shared object or the main executable.
    It doesn't matter if debug info is present or not. */
-extern Bool VG_(get_objname)  ( Addr a, Char* objname,  Int n_objname );
+extern Bool VG_(get_objname)  ( Addr a, Char* objname, Int n_objname );
 
 /* Puts into 'buf' info about the code address %eip:  the address, function
    name (if known) and filename/line number (if known), like this:
