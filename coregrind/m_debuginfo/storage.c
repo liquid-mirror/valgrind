@@ -44,6 +44,11 @@
 #include "pub_core_libcprint.h"
 #include "pub_core_mallocfree.h"
 #include "pub_core_xarray.h"
+#include "pub_core_oset.h"
+
+//FIXME: get rid of this
+#include "priv_readdwarf3.h"  // ML_(pp_D3Type_C_ishly)
+
 #include "priv_storage.h"          /* self */
 
 
@@ -515,6 +520,134 @@ void ML_(ppCfiExpr)( XArray* src, Int ix )
 }
 
 
+/* Add a variable description to the variable table. */
+static void* dinfo_zalloc ( SizeT szB ) {
+   void* v;
+   vg_assert(szB > 0);
+   v = VG_(arena_malloc)( VG_AR_DINFO, szB );
+   vg_assert(v);
+   VG_(memset)(v, 0, szB);
+   return v;
+}
+static void dinfo_free ( void* v ) {
+   VG_(arena_free)( VG_AR_DINFO, v );
+}
+static Word cmp_for_DiAddrRange ( const void* keyV, const void* elemV ) {
+   const Addr* key = (const Addr*)keyV;
+   const DiAddrRange* elem = (const DiAddrRange*)elemV;
+   if (0)
+      VG_(printf)("cmp_for_DiAddrRange: %p vs %p\n", *key, elem->aMin);
+   if ((*key) < elem->aMin) return -1;
+   if ((*key) > elem->aMin) return 1;
+   return 0;
+}
+Word ML_(cmp_for_DiAddrRange_range) ( const void* keyV, const void* elemV ) {
+   const Addr* key = (const Addr*)keyV;
+   const DiAddrRange* elem = (const DiAddrRange*)elemV;
+   if (0)
+      VG_(printf)("cmp_for_DiAddrRange_range: %p vs %p\n", *key, elem->aMin);
+   if ((*key) < elem->aMin) return -1;
+   if ((*key) > elem->aMax) return 1;
+   return 0;
+}
+
+/* 'inner' is an XArray of DiAddrRange.  Find the entry corresponding
+    to [aMin,aMax].  If that doesn't exist, create one.  Take care to
+    preserve the invariant that none of the address ranges overlap.
+    That's unlikely to be the case unless the DWARF3 from which these
+    calls results contains bogus range info; however in the interests
+    of robustness, do handle the case. */
+static DiAddrRange* find_or_create_arange ( 
+                       OSet* /* of DiAddrRange */ inner,
+                       Addr aMin, 
+                       Addr aMax
+                    )
+{
+   DiAddrRange* old = VG_(OSetGen_Lookup)( inner, &aMin );
+   if (!old) {
+      DiAddrRange tmp;
+      tmp.aMin = aMin;
+      tmp.aMax = aMax;
+      tmp.vars = VG_(newXA)( dinfo_zalloc, dinfo_free, sizeof(DiVariable) );
+      old = VG_(OSetGen_AllocNode)( inner, sizeof(DiAddrRange) );
+      vg_assert(old);
+      *old = tmp;
+      VG_(OSetGen_Insert)( inner, old );
+   }
+   return old;
+}
+
+void ML_(addVar)( struct _DebugInfo* di,
+                  Int    level,
+                  Addr   aMin,
+                  Addr   aMax,
+                  UChar* name,
+                  void*  typeV,  /* actually D3Type* */
+                  void*  gexprV, /* actually GExpr* */
+                  void*  fbGXv,  /* actually GExpr*.  SHARED. */
+                  Bool   show )
+{
+   OSet* /* of DiAddrRange */ inner;
+   DiAddrRange* range;
+   DiVariable   var;
+
+   if (0) {
+      VG_(printf)("  ML_(addVar): level %d  %p-%p  %s :: ",
+                  level, aMin, aMax, name );
+      ML_(pp_D3Type_C_ishly)( typeV );
+      VG_(printf)("\n  Var=");
+      ML_(pp_GX)(gexprV);
+      VG_(printf)("\n");
+      if (fbGXv) {
+         VG_(printf)("  FrB=");
+         ML_(pp_GX)( fbGXv );
+         VG_(printf)("\n");
+      } else {
+         VG_(printf)("  FrB=none\n");
+      }
+      VG_(printf)("\n");
+   }
+
+   vg_assert(level >= 0);
+   vg_assert(aMin <= aMax);
+   vg_assert(name);
+   vg_assert(typeV);
+   vg_assert(gexprV);
+
+   if (!di->varinfo) {
+      di->varinfo = VG_(newXA)( dinfo_zalloc, dinfo_free, sizeof(OSet*) );
+   }
+
+   vg_assert(level < 256); /* arbitrary; stay sane */
+   /* Expand the top level array enough to map this level */
+   while ( VG_(sizeXA)(di->varinfo) <= level ) {
+      inner = VG_(OSetGen_Create)( offsetof(DiAddrRange,aMin), 
+                                   cmp_for_DiAddrRange,
+                                   dinfo_zalloc, dinfo_free );
+      if (0) VG_(printf)("create: inner = %p, adding at %ld\n",
+                         inner, VG_(sizeXA)(di->varinfo));
+      VG_(addToXA)( di->varinfo, &inner );
+   }
+
+   vg_assert( VG_(sizeXA)(di->varinfo) > level );
+   inner = *(OSet**)VG_(indexXA)( di->varinfo, level );
+   vg_assert(inner);
+
+   /* Now we need to find the relevant DiAddrRange within 'inner',
+      or create one if not present. */
+   /* DiAddrRange* */ range = find_or_create_arange( inner, aMin, aMax );
+   /* DiVariable var; */
+   var.name   = name;
+   var.typeV  = typeV;
+   var.gexprV = gexprV;
+   var.fbGXv  = fbGXv;
+   vg_assert(range);
+   vg_assert(range->vars);
+   vg_assert(range->aMin == aMin);
+   VG_(addToXA)( range->vars, &var );
+}
+
+
 /*------------------------------------------------------------*/
 /*--- Canonicalisers                                       ---*/
 /*------------------------------------------------------------*/
@@ -539,7 +672,7 @@ static Int compare_DiSym ( void* va, void* vb )
 /* Two symbols have the same address.  Which name do we prefer?
 
    The general rule is to prefer the shorter symbol name.  If the
-   symbol contains a '@', which means its versioned, then the length
+   symbol contains a '@', which means it is versioned, then the length
    up to the '@' is used for length comparison purposes (so
    "foo@GLIBC_2.4.2" is considered shorter than "foobar"), but if two
    symbols have the same length, the one with the version string is
@@ -552,6 +685,7 @@ static Int compare_DiSym ( void* va, void* vb )
  */
 static DiSym* prefersym ( struct _DebugInfo* di, DiSym* a, DiSym* b )
 {
+   Int cmp;
    Int lena, lenb;		/* full length */
    Int vlena, vlenb;		/* length without version */
    const UChar *vpa, *vpb;
@@ -602,12 +736,20 @@ static DiSym* prefersym ( struct _DebugInfo* di, DiSym* a, DiSym* b )
 
    /* Either both versioned or neither is versioned; select them
       alphabetically */
-   if (VG_(strcmp)(a->name, b->name) < 0) {
+   cmp = VG_(strcmp)(a->name, b->name);
+   if (cmp < 0) {
       preferA = True; goto out;
    }
-   /* else */ {
+   if (cmp > 0) {
       preferB = True; goto out;
    }
+   /* If we get here, they are the same (?!).  That's very odd.  In
+      this case we could choose either (arbitrarily), but might as
+      well choose the one with the lowest DiSym* address, so as to try
+      and make the comparison mechanism more stable (a la sorting
+      parlance).  Also, skip the diagnostic printing in this case. */
+   return a <= b  ? a  : b;
+
    /*NOTREACHED*/
    vg_assert(0);
   out:

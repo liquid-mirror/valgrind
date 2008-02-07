@@ -208,6 +208,28 @@ extern Int ML_(CfiExpr_DwReg) ( XArray* dst, Int reg );
 
 extern void ML_(ppCfiExpr)( XArray* src, Int ix );
 
+/* --------------------- VARIABLES --------------------- */
+
+typedef
+   struct {
+      Addr    aMin;
+      Addr    aMax;
+      XArray* /* of DiVariable */ vars;
+   }
+   DiAddrRange;
+
+typedef
+   struct {
+      UChar* name;   /* freestanding, in AR_DINFO */
+      void*  typeV;  /* FIXME: make this D3Type* */
+      void*  gexprV; /* FIXME: make this GExpr* */
+      void*  fbGXv;  /* FIXME: make this GExpr*.  SHARED. */
+   }
+   DiVariable;
+
+Word 
+ML_(cmp_for_DiAddrRange_range) ( const void* keyV, const void* elemV );
+
 /* --------------------- DEBUGINFO --------------------- */
 
 /* This is the top-level data type.  It's a structure which contains
@@ -336,6 +358,29 @@ struct _DebugInfo {
       struct strchunk* next;
       UChar  strtab[SEGINFO_STRCHUNKSIZE];
    } *strchunks;
+
+   /* Variable scope information, as harvested from Dwarf3 files.
+
+      In short it's an
+
+         array of (array of PC address ranges and variables)
+
+      The outer array indexes over scopes, with Entry 0 containing
+      information on variables which exist for any value of the program
+      counter (PC) -- that is, the outermost scope.  Entries 1, 2, 3,
+      etc contain information on increasinly deeply nested variables.
+
+      Each inner array is an array of (an address range, and a set
+      of variables that are in scope over that address range).  
+
+      The address ranges may not overlap.
+ 
+      Since Entry 0 in the outer array holds information on variables
+      that exist for any value of the PC (that is, global vars), it
+      follows that Entry 0's inner array can only have one address
+      range pair, one that covers the entire address space.
+   */
+   XArray* /* of OSet of DiAddrRange */varinfo;
 };
 
 /* --------------------- functions --------------------- */
@@ -358,6 +403,16 @@ extern void ML_(addDiCfSI) ( struct _DebugInfo* di, DiCfSI* cfsi );
 /* Add a string to the string table of a DebugInfo.  If len==-1,
    ML_(addStr) will itself measure the length of the string. */
 extern UChar* ML_(addStr) ( struct _DebugInfo* di, UChar* str, Int len );
+
+extern void ML_(addVar)( struct _DebugInfo* di,
+                         Int    level,
+                         Addr   aMin,
+                         Addr   aMax,
+                         UChar* name,
+                         void*  type,  /* actually D3Type* */
+                         void*  gexpr, /* actually GExpr* */
+                         void*  fbGXv, /* actually GExpr*.  SHARED. */
+                         Bool   show );
 
 /* Canonicalise the tables held by 'di', in preparation for use.  Call
    this after finishing adding entries to these tables. */
