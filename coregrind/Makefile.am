@@ -141,6 +141,7 @@ noinst_HEADERS = \
 	m_debuginfo/priv_storage.h	\
 	m_debuginfo/priv_readstabs.h	\
 	m_debuginfo/priv_readdwarf.h	\
+	m_debuginfo/priv_readdwarf3.h	\
 	m_debuginfo/priv_readelf.h	\
 	m_debuginfo/priv_readxcoff.h	\
 	m_demangle/ansidecl.h	\
@@ -217,6 +218,7 @@ COREGRIND_LINUX_SOURCE = \
 	m_initimg/initimg-linux.c \
 	m_debuginfo/readelf.c \
 	m_debuginfo/readdwarf.c \
+	m_debuginfo/readdwarf3.c \
 	m_debuginfo/readstabs.c \
 	m_syswrap/syswrap-generic.c
 
