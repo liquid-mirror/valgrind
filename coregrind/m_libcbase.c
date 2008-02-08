@@ -519,23 +519,39 @@ void* VG_(memmove)(void *dest, const void *src, SizeT sz)
    return dest;
 }
 
-void* VG_(memset) ( void *dest, Int c, SizeT sz )
+void* VG_(memset) ( void *destV, Int c, SizeT sz )
 {
-   Char *d = (Char *)dest;
-   while (sz >= 4) {
-      d[0] = c;
-      d[1] = c;
-      d[2] = c;
-      d[3] = c;
-      d += 4;
-      sz -= 4;
-   }
-   while (sz > 0) {
+   Int   c4;
+   Char* d = (Char*)destV;
+   while ((!VG_IS_4_ALIGNED(d)) && sz >= 1) {
       d[0] = c;
       d++;
       sz--;
    }
-   return dest;
+   if (sz == 0)
+      return destV;
+   c4 = c & 0xFF;
+   c4 |= (c4 << 8);
+   c4 |= (c4 << 16);
+   while (sz >= 16) {
+      ((Int*)d)[0] = c4;
+      ((Int*)d)[1] = c4;
+      ((Int*)d)[2] = c4;
+      ((Int*)d)[3] = c4;
+      d += 16;
+      sz -= 16;
+   }
+   while (sz >= 4) {
+      ((Int*)d)[0] = c4;
+      d += 4;
+      sz -= 4;
+   }
+   while (sz >= 1) {
+      d[0] = c;
+      d++;
+      sz--;
+   }
+   return destV;
 }
 
 Int VG_(memcmp) ( const void* s1, const void* s2, SizeT n )
