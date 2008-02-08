@@ -53,7 +53,6 @@
 #include "pub_core_libcbase.h"
 #include "pub_core_libcassert.h"
 #include "pub_core_libcprint.h"
-#include "pub_core_mallocfree.h"
 #include "pub_core_libcfile.h"     /* stat, open, close */
 #include "pub_core_aspacemgr.h"    /* for mmaping debuginfo files */
 #include "pub_core_options.h"      /* VG_(clo_trace_symtab) */

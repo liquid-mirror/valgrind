@@ -43,14 +43,15 @@
 #include "pub_core_libcassert.h"
 #include "pub_core_libcprint.h"
 #include "pub_core_libcfile.h"
-#include "pub_core_mallocfree.h"
 #include "pub_core_options.h"
 #include "pub_core_redir.h"       // VG_(redir_notify_{new,delete}_SegInfo)
 #include "pub_core_aspacemgr.h"
 #include "pub_core_machine.h"     // VG_PLAT_USES_PPCTOC
 #include "pub_core_xarray.h"
 #include "pub_core_oset.h"
+#include "priv_misc.h"            /* dinfo_zalloc/free */
 #include "priv_storage.h"
+#include "priv_tytypes.h"
 #include "priv_readdwarf.h"
 #include "priv_readstabs.h"
 #if defined(VGO_linux)
@@ -117,11 +118,10 @@ DebugInfo* alloc_DebugInfo( const UChar* filename,
 
    vg_assert(filename);
 
-   di = VG_(arena_calloc)(VG_AR_DINFO, 1, sizeof(DebugInfo));
-   di->filename  = VG_(arena_strdup)(VG_AR_DINFO, filename);
-   di->memname   = memname 
-                      ?  VG_(arena_strdup)(VG_AR_DINFO, memname)
-                      :  NULL;
+   di = ML_(dinfo_zalloc)(sizeof(DebugInfo));
+   di->filename  = ML_(dinfo_strdup)(filename);
+   di->memname   = memname ? ML_(dinfo_strdup)(memname)
+                           : NULL;
 
    /* Everything else -- pointers, sizes, arrays -- is zeroed by calloc.
       Now set up the debugging-output flags. */
@@ -146,17 +146,17 @@ static void free_DebugInfo ( DebugInfo* di )
 {
    struct strchunk *chunk, *next;
    vg_assert(di != NULL);
-   if (di->filename)   VG_(arena_free)(VG_AR_DINFO, di->filename);
-   if (di->symtab)     VG_(arena_free)(VG_AR_DINFO, di->symtab);
-   if (di->loctab)     VG_(arena_free)(VG_AR_DINFO, di->loctab);
-   if (di->cfsi)       VG_(arena_free)(VG_AR_DINFO, di->cfsi);
+   if (di->filename)   ML_(dinfo_free)(di->filename);
+   if (di->symtab)     ML_(dinfo_free)(di->symtab);
+   if (di->loctab)     ML_(dinfo_free)(di->loctab);
+   if (di->cfsi)       ML_(dinfo_free)(di->cfsi);
    if (di->cfsi_exprs) VG_(deleteXA)(di->cfsi_exprs);
 
    for (chunk = di->strchunks; chunk != NULL; chunk = next) {
       next = chunk->next;
-      VG_(arena_free)(VG_AR_DINFO, chunk);
+      ML_(dinfo_free)(chunk);
    }
-   VG_(arena_free)(VG_AR_DINFO, di);
+   ML_(dinfo_free)(di);
 }
 
 
@@ -931,11 +931,11 @@ static Bool data_address_is_in_var ( /*OUT*/UWord* offset,
    vg_assert(var->name);
    vg_assert(var->typeV);
    vg_assert(var->gexprV);
-   var_szB = ML_(sizeOfD3Type)(var->typeV);
+   var_szB = ML_(sizeOfType)(var->typeV);
 
    if (1) {
       VG_(printf)("VVVV: find loc: %s :: ", var->name );
-      ML_(pp_D3Type_C_ishly)( var->typeV );
+      ML_(pp_Type_C_ishly)( var->typeV );
       VG_(printf)("\n");
    }
 

@@ -42,11 +42,11 @@
 #include "pub_core_libcfile.h"
 #include "pub_core_aspacemgr.h"    /* for mmaping debuginfo files */
 #include "pub_core_machine.h"      /* VG_ELF_CLASS */
-#include "pub_core_mallocfree.h"
 #include "pub_core_options.h"
 #include "pub_core_oset.h"
 #include "pub_core_tooliface.h"    /* VG_(needs) */
 #include "pub_core_xarray.h"
+#include "priv_misc.h"             /* dinfo_zalloc/free/strdup */
 #include "priv_storage.h"
 #include "priv_readelf.h"          /* self */
 #include "priv_readdwarf.h"        /* 'cos ELF contains DWARF */
@@ -573,12 +573,6 @@ static Word cmp_TempSymKey ( TempSymKey* key1, TempSym* elem2 ) {
    if (key1->addr > elem2->key.addr) return 1;
    return (Word)VG_(strcmp)(key1->name, elem2->key.name);
 }
-static void* oset_malloc ( SizeT szB ) { 
-   return VG_(arena_malloc)(VG_AR_DINFO, szB);
-}
-static void oset_free ( void* p ) {
-   VG_(arena_free)(VG_AR_DINFO, p);
-}
 
 static
 __attribute__((unused)) /* not referred to on all targets */
@@ -616,7 +610,7 @@ void read_elf_symtab__ppc64_linux(
 
    oset = VG_(OSetGen_Create)( offsetof(TempSym,key), 
                                (OSetCmp_t)cmp_TempSymKey, 
-                               oset_malloc, oset_free );
+                               ML_(dinfo_zalloc), ML_(dinfo_free) );
    vg_assert(oset);
 
    /* Perhaps should start at i = 1; ELF docs suggest that entry
@@ -878,7 +872,7 @@ Addr open_debug_file( Char* name, UInt crc, UWord* size )
 static
 Addr find_debug_file( Char* objpath, Char* debugname, UInt crc, UWord* size )
 {
-   Char *objdir = VG_(arena_strdup)(VG_AR_DINFO, objpath);
+   Char *objdir = ML_(dinfo_strdup)(objpath);
    Char *objdirptr;
    Char *debugpath;
    Addr addr = 0;
@@ -886,8 +880,7 @@ Addr find_debug_file( Char* objpath, Char* debugname, UInt crc, UWord* size )
    if ((objdirptr = VG_(strrchr)(objdir, '/')) != NULL)
       *objdirptr = '\0';
 
-   debugpath = VG_(arena_malloc)(
-                  VG_AR_DINFO, 
+   debugpath = ML_(dinfo_zalloc)(
                   VG_(strlen)(objdir) + VG_(strlen)(debugname) + 16);
    
    VG_(sprintf)(debugpath, "%s/%s", objdir, debugname);
@@ -900,8 +893,8 @@ Addr find_debug_file( Char* objpath, Char* debugname, UInt crc, UWord* size )
       }
    }
 
-   VG_(arena_free)(VG_AR_DINFO, debugpath);
-   VG_(arena_free)(VG_AR_DINFO, objdir);
+   ML_(dinfo_free)(debugpath);
+   ML_(dinfo_free)(objdir);
    
    return addr;
 }
@@ -1202,7 +1195,7 @@ Bool ML_(read_elf_debug_info) ( struct _DebugInfo* di )
             }
             if (stroff != -1 && strtab != NULL) {
                TRACE_SYMTAB("Found soname = %s\n", strtab+stroff);
-               di->soname = VG_(arena_strdup)(VG_AR_DINFO, strtab+stroff);
+               di->soname = ML_(dinfo_strdup)(strtab+stroff);
             }
          }
 

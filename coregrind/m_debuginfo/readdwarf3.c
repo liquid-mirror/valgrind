@@ -8,7 +8,7 @@
    This file is part of Valgrind, a dynamic binary instrumentation
    framework.
 
-   Copyright (C) 2008-2008 OpenWorks LLP and others; see below
+   Copyright (C) 2008-2008 OpenWorks LLP and others
       info@open-works.co.uk
 
    This program is free software; you can redistribute it and/or
@@ -32,12 +32,6 @@
    University of California nor the names of its contributors may be
    used to endorse or promote products derived from this software
    without prior written permission.
-
-   -------------
-
-   Some of this code (DWARF3 enumerations) is taken from FSF's
-   gdb-6.6/include/elf/dwarf2.h, which is Copyright (C) 1992 to 2006
-   Free Software Foundation, Inc and is also GPL-2-or-later.
 */
 
 /* Current hacks:
@@ -59,35 +53,14 @@
 #include "pub_core_libcbase.h"
 #include "pub_core_libcassert.h"
 #include "pub_core_libcprint.h"
-#include "pub_core_mallocfree.h"
 #include "pub_core_options.h"
 #include "pub_core_xarray.h"
+#include "priv_misc.h"             /* dinfo_zalloc/free/strdup */
 #include "priv_storage.h"
+#include "priv_tytypes.h"
+#include "priv_d3basics.h"
 #include "priv_readdwarf3.h"       /* self */
 
-#ifdef HAVE_BUILTIN_EXPECT
-#define LIKELY(cond)   __builtin_expect(!!(cond),1)
-#define UNLIKELY(cond) __builtin_expect(!!(cond),0)
-#else
-#define LIKELY(cond)   (cond)
-#define UNLIKELY(cond) (cond)
-#endif
-
-// FIXME common these up 
-static void* dinfo_zalloc ( SizeT szB ) {
-   void* v;
-   vg_assert(szB > 0);
-   v = VG_(arena_malloc)( VG_AR_DINFO, szB );
-   vg_assert(v);
-   VG_(memset)(v, 0, szB);
-   return v;
-}
-static void dinfo_free ( void* v ) {
-   VG_(arena_free)( VG_AR_DINFO, v );
-}
-static UChar* dinfo_strdup ( UChar* str ) {
-   return VG_(arena_strdup)( VG_AR_DINFO, str );
-}
 
 /*------------------------------------------------------------*/
 /*--- The "new" DWARF3 reader -- enumerations and types    ---*/
@@ -97,1149 +70,11 @@ static UChar* dinfo_strdup ( UChar* str ) {
    if (td3) { VG_(printf)(format, ## args); }
 
 
-/* This stuff is taken from gdb-6.6/include/elf/dwarf2.h, which is
-   GPL2+.
-*/
-/* Tag names and codes.  */
-typedef enum 
-  {
-    DW_TAG_padding = 0x00,
-    DW_TAG_array_type = 0x01,
-    DW_TAG_class_type = 0x02,
-    DW_TAG_entry_point = 0x03,
-    DW_TAG_enumeration_type = 0x04,
-    DW_TAG_formal_parameter = 0x05,
-    DW_TAG_imported_declaration = 0x08,
-    DW_TAG_label = 0x0a,
-    DW_TAG_lexical_block = 0x0b,
-    DW_TAG_member = 0x0d,
-    DW_TAG_pointer_type = 0x0f,
-    DW_TAG_reference_type = 0x10,
-    DW_TAG_compile_unit = 0x11,
-    DW_TAG_string_type = 0x12,
-    DW_TAG_structure_type = 0x13,
-    DW_TAG_subroutine_type = 0x15,
-    DW_TAG_typedef = 0x16,
-    DW_TAG_union_type = 0x17,
-    DW_TAG_unspecified_parameters = 0x18,
-    DW_TAG_variant = 0x19,
-    DW_TAG_common_block = 0x1a,
-    DW_TAG_common_inclusion = 0x1b,
-    DW_TAG_inheritance = 0x1c,
-    DW_TAG_inlined_subroutine = 0x1d,
-    DW_TAG_module = 0x1e,
-    DW_TAG_ptr_to_member_type = 0x1f,
-    DW_TAG_set_type = 0x20,
-    DW_TAG_subrange_type = 0x21,
-    DW_TAG_with_stmt = 0x22,
-    DW_TAG_access_declaration = 0x23,
-    DW_TAG_base_type = 0x24,
-    DW_TAG_catch_block = 0x25,
-    DW_TAG_const_type = 0x26,
-    DW_TAG_constant = 0x27,
-    DW_TAG_enumerator = 0x28,
-    DW_TAG_file_type = 0x29,
-    DW_TAG_friend = 0x2a,
-    DW_TAG_namelist = 0x2b,
-    DW_TAG_namelist_item = 0x2c,
-    DW_TAG_packed_type = 0x2d,
-    DW_TAG_subprogram = 0x2e,
-    DW_TAG_template_type_param = 0x2f,
-    DW_TAG_template_value_param = 0x30,
-    DW_TAG_thrown_type = 0x31,
-    DW_TAG_try_block = 0x32,
-    DW_TAG_variant_part = 0x33,
-    DW_TAG_variable = 0x34,
-    DW_TAG_volatile_type = 0x35,
-    /* DWARF 3.  */
-    DW_TAG_dwarf_procedure = 0x36,
-    DW_TAG_restrict_type = 0x37,
-    DW_TAG_interface_type = 0x38,
-    DW_TAG_namespace = 0x39,
-    DW_TAG_imported_module = 0x3a,
-    DW_TAG_unspecified_type = 0x3b,
-    DW_TAG_partial_unit = 0x3c,
-    DW_TAG_imported_unit = 0x3d,
-    DW_TAG_condition = 0x3f,
-    DW_TAG_shared_type = 0x40,
-    /* SGI/MIPS Extensions.  */
-    DW_TAG_MIPS_loop = 0x4081,
-    /* HP extensions.  See: ftp://ftp.hp.com/pub/lang/tools/WDB/wdb-4.0.tar.gz .  */
-    DW_TAG_HP_array_descriptor = 0x4090,
-    /* GNU extensions.  */
-    DW_TAG_format_label = 0x4101,	/* For FORTRAN 77 and Fortran 90.  */
-    DW_TAG_function_template = 0x4102,	/* For C++.  */
-    DW_TAG_class_template = 0x4103,	/* For C++.  */
-    DW_TAG_GNU_BINCL = 0x4104,
-    DW_TAG_GNU_EINCL = 0x4105,
-    /* Extensions for UPC.  See: http://upc.gwu.edu/~upc.  */
-    DW_TAG_upc_shared_type = 0x8765,
-    DW_TAG_upc_strict_type = 0x8766,
-    DW_TAG_upc_relaxed_type = 0x8767,
-    /* PGI (STMicroelectronics) extensions.  No documentation available.  */
-    DW_TAG_PGI_kanji_type      = 0xA000,
-    DW_TAG_PGI_interface_block = 0xA020
-  }
-  DW_TAG;
-
-#define DW_TAG_lo_user	0x4080
-#define DW_TAG_hi_user	0xffff
-
-/* Flag that tells whether entry has a child or not.  */
-typedef enum
-  {
-    DW_children_no = 0,
-    DW_children_yes = 1
-  }
-  DW_children;
-
-/* Source language names and codes.  */
-typedef enum dwarf_source_language
-  {
-    DW_LANG_C89 = 0x0001,
-    DW_LANG_C = 0x0002,
-    DW_LANG_Ada83 = 0x0003,
-    DW_LANG_C_plus_plus = 0x0004,
-    DW_LANG_Cobol74 = 0x0005,
-    DW_LANG_Cobol85 = 0x0006,
-    DW_LANG_Fortran77 = 0x0007,
-    DW_LANG_Fortran90 = 0x0008,
-    DW_LANG_Pascal83 = 0x0009,
-    DW_LANG_Modula2 = 0x000a,
-    /* DWARF 3.  */
-    DW_LANG_Java = 0x000b,
-    DW_LANG_C99 = 0x000c,
-    DW_LANG_Ada95 = 0x000d,
-    DW_LANG_Fortran95 = 0x000e,
-    DW_LANG_PLI = 0x000f,
-    DW_LANG_ObjC = 0x0010,
-    DW_LANG_ObjC_plus_plus = 0x0011,
-    DW_LANG_UPC = 0x0012,
-    DW_LANG_D = 0x0013,
-    /* MIPS.  */
-    DW_LANG_Mips_Assembler = 0x8001,
-    /* UPC.  */
-    DW_LANG_Upc = 0x8765
-  }
-  DW_LANG;
-
-/* Form names and codes.  */
-typedef enum
-  {
-    DW_FORM_addr = 0x01,
-    DW_FORM_block2 = 0x03,
-    DW_FORM_block4 = 0x04,
-    DW_FORM_data2 = 0x05,
-    DW_FORM_data4 = 0x06,
-    DW_FORM_data8 = 0x07,
-    DW_FORM_string = 0x08,
-    DW_FORM_block = 0x09,
-    DW_FORM_block1 = 0x0a,
-    DW_FORM_data1 = 0x0b,
-    DW_FORM_flag = 0x0c,
-    DW_FORM_sdata = 0x0d,
-    DW_FORM_strp = 0x0e,
-    DW_FORM_udata = 0x0f,
-    DW_FORM_ref_addr = 0x10,
-    DW_FORM_ref1 = 0x11,
-    DW_FORM_ref2 = 0x12,
-    DW_FORM_ref4 = 0x13,
-    DW_FORM_ref8 = 0x14,
-    DW_FORM_ref_udata = 0x15,
-    DW_FORM_indirect = 0x16
-  }
-  DW_FORM;
-
-/* Attribute names and codes.  */
-typedef enum
-  {
-    DW_AT_sibling = 0x01,
-    DW_AT_location = 0x02,
-    DW_AT_name = 0x03,
-    DW_AT_ordering = 0x09,
-    DW_AT_subscr_data = 0x0a,
-    DW_AT_byte_size = 0x0b,
-    DW_AT_bit_offset = 0x0c,
-    DW_AT_bit_size = 0x0d,
-    DW_AT_element_list = 0x0f,
-    DW_AT_stmt_list = 0x10,
-    DW_AT_low_pc = 0x11,
-    DW_AT_high_pc = 0x12,
-    DW_AT_language = 0x13,
-    DW_AT_member = 0x14,
-    DW_AT_discr = 0x15,
-    DW_AT_discr_value = 0x16,
-    DW_AT_visibility = 0x17,
-    DW_AT_import = 0x18,
-    DW_AT_string_length = 0x19,
-    DW_AT_common_reference = 0x1a,
-    DW_AT_comp_dir = 0x1b,
-    DW_AT_const_value = 0x1c,
-    DW_AT_containing_type = 0x1d,
-    DW_AT_default_value = 0x1e,
-    DW_AT_inline = 0x20,
-    DW_AT_is_optional = 0x21,
-    DW_AT_lower_bound = 0x22,
-    DW_AT_producer = 0x25,
-    DW_AT_prototyped = 0x27,
-    DW_AT_return_addr = 0x2a,
-    DW_AT_start_scope = 0x2c,
-    DW_AT_stride_size = 0x2e,
-    DW_AT_upper_bound = 0x2f,
-    DW_AT_abstract_origin = 0x31,
-    DW_AT_accessibility = 0x32,
-    DW_AT_address_class = 0x33,
-    DW_AT_artificial = 0x34,
-    DW_AT_base_types = 0x35,
-    DW_AT_calling_convention = 0x36,
-    DW_AT_count = 0x37,
-    DW_AT_data_member_location = 0x38,
-    DW_AT_decl_column = 0x39,
-    DW_AT_decl_file = 0x3a,
-    DW_AT_decl_line = 0x3b,
-    DW_AT_declaration = 0x3c,
-    DW_AT_discr_list = 0x3d,
-    DW_AT_encoding = 0x3e,
-    DW_AT_external = 0x3f,
-    DW_AT_frame_base = 0x40,
-    DW_AT_friend = 0x41,
-    DW_AT_identifier_case = 0x42,
-    DW_AT_macro_info = 0x43,
-    DW_AT_namelist_items = 0x44,
-    DW_AT_priority = 0x45,
-    DW_AT_segment = 0x46,
-    DW_AT_specification = 0x47,
-    DW_AT_static_link = 0x48,
-    DW_AT_type = 0x49,
-    DW_AT_use_location = 0x4a,
-    DW_AT_variable_parameter = 0x4b,
-    DW_AT_virtuality = 0x4c,
-    DW_AT_vtable_elem_location = 0x4d,
-    /* DWARF 3 values.  */
-    DW_AT_allocated     = 0x4e,
-    DW_AT_associated    = 0x4f,
-    DW_AT_data_location = 0x50,
-    DW_AT_stride        = 0x51,
-    DW_AT_entry_pc      = 0x52,
-    DW_AT_use_UTF8      = 0x53,
-    DW_AT_extension     = 0x54,
-    DW_AT_ranges        = 0x55,
-    DW_AT_trampoline    = 0x56,
-    DW_AT_call_column   = 0x57,
-    DW_AT_call_file     = 0x58,
-    DW_AT_call_line     = 0x59,
-    DW_AT_description   = 0x5a,
-    DW_AT_binary_scale  = 0x5b,
-    DW_AT_decimal_scale = 0x5c,
-    DW_AT_small         = 0x5d,
-    DW_AT_decimal_sign  = 0x5e,
-    DW_AT_digit_count   = 0x5f,
-    DW_AT_picture_string = 0x60,
-    DW_AT_mutable       = 0x61,
-    DW_AT_threads_scaled = 0x62,
-    DW_AT_explicit      = 0x63,
-    DW_AT_object_pointer = 0x64,
-    DW_AT_endianity     = 0x65,
-    DW_AT_elemental     = 0x66,
-    DW_AT_pure          = 0x67,
-    DW_AT_recursive     = 0x68,
-    /* SGI/MIPS extensions.  */
-    DW_AT_MIPS_fde = 0x2001,
-    DW_AT_MIPS_loop_begin = 0x2002,
-    DW_AT_MIPS_tail_loop_begin = 0x2003,
-    DW_AT_MIPS_epilog_begin = 0x2004,
-    DW_AT_MIPS_loop_unroll_factor = 0x2005,
-    DW_AT_MIPS_software_pipeline_depth = 0x2006,
-    DW_AT_MIPS_linkage_name = 0x2007,
-    DW_AT_MIPS_stride = 0x2008,
-    DW_AT_MIPS_abstract_name = 0x2009,
-    DW_AT_MIPS_clone_origin = 0x200a,
-    DW_AT_MIPS_has_inlines = 0x200b,
-    /* HP extensions.  */
-    DW_AT_HP_block_index         = 0x2000,
-    DW_AT_HP_unmodifiable        = 0x2001, /* Same as DW_AT_MIPS_fde.  */
-    DW_AT_HP_actuals_stmt_list   = 0x2010,
-    DW_AT_HP_proc_per_section    = 0x2011,
-    DW_AT_HP_raw_data_ptr        = 0x2012,
-    DW_AT_HP_pass_by_reference   = 0x2013,
-    DW_AT_HP_opt_level           = 0x2014,
-    DW_AT_HP_prof_version_id     = 0x2015,
-    DW_AT_HP_opt_flags           = 0x2016,
-    DW_AT_HP_cold_region_low_pc  = 0x2017,
-    DW_AT_HP_cold_region_high_pc = 0x2018,
-    DW_AT_HP_all_variables_modifiable = 0x2019,
-    DW_AT_HP_linkage_name        = 0x201a,
-    DW_AT_HP_prof_flags          = 0x201b,  /* In comp unit of procs_info for -g.  */
-    /* GNU extensions.  */
-    DW_AT_sf_names   = 0x2101,
-    DW_AT_src_info   = 0x2102,
-    DW_AT_mac_info   = 0x2103,
-    DW_AT_src_coords = 0x2104,
-    DW_AT_body_begin = 0x2105,
-    DW_AT_body_end   = 0x2106,
-    DW_AT_GNU_vector = 0x2107,
-    /* VMS extensions.  */
-    DW_AT_VMS_rtnbeg_pd_address = 0x2201,
-    /* UPC extension.  */
-    DW_AT_upc_threads_scaled = 0x3210,
-    /* PGI (STMicroelectronics) extensions.  */
-    DW_AT_PGI_lbase    = 0x3a00,
-    DW_AT_PGI_soffset  = 0x3a01,
-    DW_AT_PGI_lstride  = 0x3a02
-  }
-  DW_AT;
-
-#define DW_AT_lo_user	0x2000	/* Implementation-defined range start.  */
-#define DW_AT_hi_user	0x3ff0	/* Implementation-defined range end.  */
-
-/* Type encodings.  */
-typedef enum
-  {
-    DW_ATE_void = 0x0,
-    DW_ATE_address = 0x1,
-    DW_ATE_boolean = 0x2,
-    DW_ATE_complex_float = 0x3,
-    DW_ATE_float = 0x4,
-    DW_ATE_signed = 0x5,
-    DW_ATE_signed_char = 0x6,
-    DW_ATE_unsigned = 0x7,
-    DW_ATE_unsigned_char = 0x8,
-    /* DWARF 3.  */
-    DW_ATE_imaginary_float = 0x9,
-    DW_ATE_packed_decimal = 0xa,
-    DW_ATE_numeric_string = 0xb,
-    DW_ATE_edited = 0xc,
-    DW_ATE_signed_fixed = 0xd,
-    DW_ATE_unsigned_fixed = 0xe,
-    DW_ATE_decimal_float = 0xf,
-    /* HP extensions.  */
-    DW_ATE_HP_float80            = 0x80, /* Floating-point (80 bit).  */
-    DW_ATE_HP_complex_float80    = 0x81, /* Complex floating-point (80 bit).  */
-    DW_ATE_HP_float128           = 0x82, /* Floating-point (128 bit).  */
-    DW_ATE_HP_complex_float128   = 0x83, /* Complex floating-point (128 bit).  */
-    DW_ATE_HP_floathpintel       = 0x84, /* Floating-point (82 bit IA64).  */
-    DW_ATE_HP_imaginary_float80  = 0x85,
-    DW_ATE_HP_imaginary_float128 = 0x86
-  }
-  DW_ATE;
-
-
-/* Expression operations. */
-typedef enum
-  {
-    DW_OP_addr = 0x03,
-    DW_OP_deref = 0x06,
-    DW_OP_const1u = 0x08,
-    DW_OP_const1s = 0x09,
-    DW_OP_const2u = 0x0a,
-    DW_OP_const2s = 0x0b,
-    DW_OP_const4u = 0x0c,
-    DW_OP_const4s = 0x0d,
-    DW_OP_const8u = 0x0e,
-    DW_OP_const8s = 0x0f,
-    DW_OP_constu = 0x10,
-    DW_OP_consts = 0x11,
-    DW_OP_dup = 0x12,
-    DW_OP_drop = 0x13,
-    DW_OP_over = 0x14,
-    DW_OP_pick = 0x15,
-    DW_OP_swap = 0x16,
-    DW_OP_rot = 0x17,
-    DW_OP_xderef = 0x18,
-    DW_OP_abs = 0x19,
-    DW_OP_and = 0x1a,
-    DW_OP_div = 0x1b,
-    DW_OP_minus = 0x1c,
-    DW_OP_mod = 0x1d,
-    DW_OP_mul = 0x1e,
-    DW_OP_neg = 0x1f,
-    DW_OP_not = 0x20,
-    DW_OP_or = 0x21,
-    DW_OP_plus = 0x22,
-    DW_OP_plus_uconst = 0x23,
-    DW_OP_shl = 0x24,
-    DW_OP_shr = 0x25,
-    DW_OP_shra = 0x26,
-    DW_OP_xor = 0x27,
-    DW_OP_bra = 0x28,
-    DW_OP_eq = 0x29,
-    DW_OP_ge = 0x2a,
-    DW_OP_gt = 0x2b,
-    DW_OP_le = 0x2c,
-    DW_OP_lt = 0x2d,
-    DW_OP_ne = 0x2e,
-    DW_OP_skip = 0x2f,
-    DW_OP_lit0 = 0x30,
-    DW_OP_lit1 = 0x31,
-    DW_OP_lit2 = 0x32,
-    DW_OP_lit3 = 0x33,
-    DW_OP_lit4 = 0x34,
-    DW_OP_lit5 = 0x35,
-    DW_OP_lit6 = 0x36,
-    DW_OP_lit7 = 0x37,
-    DW_OP_lit8 = 0x38,
-    DW_OP_lit9 = 0x39,
-    DW_OP_lit10 = 0x3a,
-    DW_OP_lit11 = 0x3b,
-    DW_OP_lit12 = 0x3c,
-    DW_OP_lit13 = 0x3d,
-    DW_OP_lit14 = 0x3e,
-    DW_OP_lit15 = 0x3f,
-    DW_OP_lit16 = 0x40,
-    DW_OP_lit17 = 0x41,
-    DW_OP_lit18 = 0x42,
-    DW_OP_lit19 = 0x43,
-    DW_OP_lit20 = 0x44,
-    DW_OP_lit21 = 0x45,
-    DW_OP_lit22 = 0x46,
-    DW_OP_lit23 = 0x47,
-    DW_OP_lit24 = 0x48,
-    DW_OP_lit25 = 0x49,
-    DW_OP_lit26 = 0x4a,
-    DW_OP_lit27 = 0x4b,
-    DW_OP_lit28 = 0x4c,
-    DW_OP_lit29 = 0x4d,
-    DW_OP_lit30 = 0x4e,
-    DW_OP_lit31 = 0x4f,
-    DW_OP_reg0 = 0x50,
-    DW_OP_reg1 = 0x51,
-    DW_OP_reg2 = 0x52,
-    DW_OP_reg3 = 0x53,
-    DW_OP_reg4 = 0x54,
-    DW_OP_reg5 = 0x55,
-    DW_OP_reg6 = 0x56,
-    DW_OP_reg7 = 0x57,
-    DW_OP_reg8 = 0x58,
-    DW_OP_reg9 = 0x59,
-    DW_OP_reg10 = 0x5a,
-    DW_OP_reg11 = 0x5b,
-    DW_OP_reg12 = 0x5c,
-    DW_OP_reg13 = 0x5d,
-    DW_OP_reg14 = 0x5e,
-    DW_OP_reg15 = 0x5f,
-    DW_OP_reg16 = 0x60,
-    DW_OP_reg17 = 0x61,
-    DW_OP_reg18 = 0x62,
-    DW_OP_reg19 = 0x63,
-    DW_OP_reg20 = 0x64,
-    DW_OP_reg21 = 0x65,
-    DW_OP_reg22 = 0x66,
-    DW_OP_reg23 = 0x67,
-    DW_OP_reg24 = 0x68,
-    DW_OP_reg25 = 0x69,
-    DW_OP_reg26 = 0x6a,
-    DW_OP_reg27 = 0x6b,
-    DW_OP_reg28 = 0x6c,
-    DW_OP_reg29 = 0x6d,
-    DW_OP_reg30 = 0x6e,
-    DW_OP_reg31 = 0x6f,
-    DW_OP_breg0 = 0x70,
-    DW_OP_breg1 = 0x71,
-    DW_OP_breg2 = 0x72,
-    DW_OP_breg3 = 0x73,
-    DW_OP_breg4 = 0x74,
-    DW_OP_breg5 = 0x75,
-    DW_OP_breg6 = 0x76,
-    DW_OP_breg7 = 0x77,
-    DW_OP_breg8 = 0x78,
-    DW_OP_breg9 = 0x79,
-    DW_OP_breg10 = 0x7a,
-    DW_OP_breg11 = 0x7b,
-    DW_OP_breg12 = 0x7c,
-    DW_OP_breg13 = 0x7d,
-    DW_OP_breg14 = 0x7e,
-    DW_OP_breg15 = 0x7f,
-    DW_OP_breg16 = 0x80,
-    DW_OP_breg17 = 0x81,
-    DW_OP_breg18 = 0x82,
-    DW_OP_breg19 = 0x83,
-    DW_OP_breg20 = 0x84,
-    DW_OP_breg21 = 0x85,
-    DW_OP_breg22 = 0x86,
-    DW_OP_breg23 = 0x87,
-    DW_OP_breg24 = 0x88,
-    DW_OP_breg25 = 0x89,
-    DW_OP_breg26 = 0x8a,
-    DW_OP_breg27 = 0x8b,
-    DW_OP_breg28 = 0x8c,
-    DW_OP_breg29 = 0x8d,
-    DW_OP_breg30 = 0x8e,
-    DW_OP_breg31 = 0x8f,
-    DW_OP_regx = 0x90,
-    DW_OP_fbreg = 0x91,
-    DW_OP_bregx = 0x92,
-    DW_OP_piece = 0x93,
-    DW_OP_deref_size = 0x94,
-    DW_OP_xderef_size = 0x95,
-    DW_OP_nop = 0x96,
-    /* DWARF 3 extensions.  */
-    DW_OP_push_object_address = 0x97,
-    DW_OP_call2 = 0x98,
-    DW_OP_call4 = 0x99,
-    DW_OP_call_ref = 0x9a,
-    DW_OP_form_tls_address = 0x9b,
-    DW_OP_call_frame_cfa = 0x9c,
-    DW_OP_bit_piece = 0x9d,
-    /* GNU extensions.  */
-    DW_OP_GNU_push_tls_address = 0xe0,
-    /* HP extensions.  */
-    DW_OP_HP_unknown     = 0xe0, /* Ouch, the same as GNU_push_tls_address.  */
-    DW_OP_HP_is_value    = 0xe1,
-    DW_OP_HP_fltconst4   = 0xe2,
-    DW_OP_HP_fltconst8   = 0xe3,
-    DW_OP_HP_mod_range   = 0xe4,
-    DW_OP_HP_unmod_range = 0xe5,
-    DW_OP_HP_tls         = 0xe6
-  }
-  DW_OP;
-
-
-static HChar* pp_DW_children ( DW_children hashch )
-{
-   switch (hashch) {
-      case DW_children_no:  return "no children";
-      case DW_children_yes: return "has children";
-      default:              return "DW_children_???";
-   }
-}
-
-static HChar* pp_DW_TAG ( DW_TAG tag )
-{
-   switch (tag) {
-      case DW_TAG_padding:            return "DW_TAG_padding";
-      case DW_TAG_array_type:         return "DW_TAG_array_type";
-      case DW_TAG_class_type:         return "DW_TAG_class_type";
-      case DW_TAG_entry_point:        return "DW_TAG_entry_point";
-      case DW_TAG_enumeration_type:   return "DW_TAG_enumeration_type";
-      case DW_TAG_formal_parameter:   return "DW_TAG_formal_parameter";
-      case DW_TAG_imported_declaration: 
-         return "DW_TAG_imported_declaration";
-      case DW_TAG_label:              return "DW_TAG_label";
-      case DW_TAG_lexical_block:      return "DW_TAG_lexical_block";
-      case DW_TAG_member:             return "DW_TAG_member";
-      case DW_TAG_pointer_type:       return "DW_TAG_pointer_type";
-      case DW_TAG_reference_type:     return "DW_TAG_reference_type";
-      case DW_TAG_compile_unit:       return "DW_TAG_compile_unit";
-      case DW_TAG_string_type:        return "DW_TAG_string_type";
-      case DW_TAG_structure_type:     return "DW_TAG_structure_type";
-      case DW_TAG_subroutine_type:    return "DW_TAG_subroutine_type";
-      case DW_TAG_typedef:            return "DW_TAG_typedef";
-      case DW_TAG_union_type:         return "DW_TAG_union_type";
-      case DW_TAG_unspecified_parameters: 
-         return "DW_TAG_unspecified_parameters";
-      case DW_TAG_variant:            return "DW_TAG_variant";
-      case DW_TAG_common_block:       return "DW_TAG_common_block";
-      case DW_TAG_common_inclusion:   return "DW_TAG_common_inclusion";
-      case DW_TAG_inheritance:        return "DW_TAG_inheritance";
-      case DW_TAG_inlined_subroutine:
-         return "DW_TAG_inlined_subroutine";
-      case DW_TAG_module:             return "DW_TAG_module";
-      case DW_TAG_ptr_to_member_type: return "DW_TAG_ptr_to_member_type";
-      case DW_TAG_set_type:           return "DW_TAG_set_type";
-      case DW_TAG_subrange_type:      return "DW_TAG_subrange_type";
-      case DW_TAG_with_stmt:          return "DW_TAG_with_stmt";
-      case DW_TAG_access_declaration: return "DW_TAG_access_declaration";
-      case DW_TAG_base_type:          return "DW_TAG_base_type";
-      case DW_TAG_catch_block:        return "DW_TAG_catch_block";
-      case DW_TAG_const_type:         return "DW_TAG_const_type";
-      case DW_TAG_constant:           return "DW_TAG_constant";
-      case DW_TAG_enumerator:         return "DW_TAG_enumerator";
-      case DW_TAG_file_type:          return "DW_TAG_file_type";
-      case DW_TAG_friend:             return "DW_TAG_friend";
-      case DW_TAG_namelist:           return "DW_TAG_namelist";
-      case DW_TAG_namelist_item:      return "DW_TAG_namelist_item";
-      case DW_TAG_packed_type:        return "DW_TAG_packed_type";
-      case DW_TAG_subprogram:         return "DW_TAG_subprogram";
-      case DW_TAG_template_type_param:
-         return "DW_TAG_template_type_param";
-      case DW_TAG_template_value_param:
-         return "DW_TAG_template_value_param";
-      case DW_TAG_thrown_type:        return "DW_TAG_thrown_type";
-      case DW_TAG_try_block:          return "DW_TAG_try_block";
-      case DW_TAG_variant_part:       return "DW_TAG_variant_part";
-      case DW_TAG_variable:           return "DW_TAG_variable";
-      case DW_TAG_volatile_type:      return "DW_TAG_volatile_type";
-      /* DWARF 3.  */
-      case DW_TAG_dwarf_procedure:    return "DW_TAG_dwarf_procedure";
-      case DW_TAG_restrict_type:      return "DW_TAG_restrict_type";
-      case DW_TAG_interface_type:     return "DW_TAG_interface_type";
-      case DW_TAG_namespace:          return "DW_TAG_namespace";
-      case DW_TAG_imported_module:    return "DW_TAG_imported_module";
-      case DW_TAG_unspecified_type:   return "DW_TAG_unspecified_type";
-      case DW_TAG_partial_unit:       return "DW_TAG_partial_unit";
-      case DW_TAG_imported_unit:      return "DW_TAG_imported_unit";
-      case DW_TAG_condition:          return "DW_TAG_condition";
-      case DW_TAG_shared_type:        return "DW_TAG_shared_type";
-      /* SGI/MIPS Extensions.  */
-      case DW_TAG_MIPS_loop:          return "DW_TAG_MIPS_loop";
-      /* HP extensions.  See:
-         ftp://ftp.hp.com/pub/lang/tools/WDB/wdb-4.0.tar.gz .  */
-      case DW_TAG_HP_array_descriptor:
-         return "DW_TAG_HP_array_descriptor";
-      /* GNU extensions.  */
-      case DW_TAG_format_label:       return "DW_TAG_format_label";
-      case DW_TAG_function_template:  return "DW_TAG_function_template";
-      case DW_TAG_class_template:     return "DW_TAG_class_template";
-      case DW_TAG_GNU_BINCL:          return "DW_TAG_GNU_BINCL";
-      case DW_TAG_GNU_EINCL:          return "DW_TAG_GNU_EINCL";
-      /* Extensions for UPC.  See: http://upc.gwu.edu/~upc.  */
-      case DW_TAG_upc_shared_type:    return "DW_TAG_upc_shared_type";
-      case DW_TAG_upc_strict_type:    return "DW_TAG_upc_strict_type";
-      case DW_TAG_upc_relaxed_type:   return "DW_TAG_upc_relaxed_type";
-      /* PGI (STMicroelectronics) extensions.  No documentation available.  */
-      case DW_TAG_PGI_kanji_type:     return "DW_TAG_PGI_kanji_type";
-      case DW_TAG_PGI_interface_block:
-         return "DW_TAG_PGI_interface_block";
-      default:                        return "DW_TAG_???";
-   }
-}
-
-static HChar* pp_DW_FORM ( DW_FORM form )
-{
-   switch (form) {
-      case DW_FORM_addr:      return "DW_FORM_addr";
-      case DW_FORM_block2:    return "DW_FORM_block2";
-      case DW_FORM_block4:    return "DW_FORM_block4";
-      case DW_FORM_data2:     return "DW_FORM_data2";
-      case DW_FORM_data4:     return "DW_FORM_data4";
-      case DW_FORM_data8:     return "DW_FORM_data8";
-      case DW_FORM_string:    return "DW_FORM_string";
-      case DW_FORM_block:     return "DW_FORM_block";
-      case DW_FORM_block1:    return "DW_FORM_block1";
-      case DW_FORM_data1:     return "DW_FORM_data1";
-      case DW_FORM_flag:      return "DW_FORM_flag";
-      case DW_FORM_sdata:     return "DW_FORM_sdata";
-      case DW_FORM_strp:      return "DW_FORM_strp";
-      case DW_FORM_udata:     return "DW_FORM_udata";
-      case DW_FORM_ref_addr:  return "DW_FORM_ref_addr";
-      case DW_FORM_ref1:      return "DW_FORM_ref1";
-      case DW_FORM_ref2:      return "DW_FORM_ref2";
-      case DW_FORM_ref4:      return "DW_FORM_ref4";
-      case DW_FORM_ref8:      return "DW_FORM_ref8";
-      case DW_FORM_ref_udata: return "DW_FORM_ref_udata";
-      case DW_FORM_indirect:  return "DW_FORM_indirect";
-      default:                return "DW_FORM_???";
-   }
-}
-
-static HChar* pp_DW_AT ( DW_AT attr )
-{
-   switch (attr) {
-      case DW_AT_sibling:             return "DW_AT_sibling";
-      case DW_AT_location:            return "DW_AT_location";
-      case DW_AT_name: return "DW_AT_name";
-      case DW_AT_ordering: return "DW_AT_ordering";
-      case DW_AT_subscr_data: return "DW_AT_subscr_data";
-      case DW_AT_byte_size: return "DW_AT_byte_size";
-      case DW_AT_bit_offset: return "DW_AT_bit_offset";
-      case DW_AT_bit_size: return "DW_AT_bit_size";
-      case DW_AT_element_list: return "DW_AT_element_list";
-      case DW_AT_stmt_list: return "DW_AT_stmt_list";
-      case DW_AT_low_pc: return "DW_AT_low_pc";
-      case DW_AT_high_pc: return "DW_AT_high_pc";
-      case DW_AT_language: return "DW_AT_language";
-      case DW_AT_member: return "DW_AT_member";
-      case DW_AT_discr: return "DW_AT_discr";
-      case DW_AT_discr_value: return "DW_AT_discr_value";
-      case DW_AT_visibility: return "DW_AT_visibility";
-      case DW_AT_import: return "DW_AT_import";
-      case DW_AT_string_length: return "DW_AT_string_length";
-      case DW_AT_common_reference: return "DW_AT_common_reference";
-      case DW_AT_comp_dir: return "DW_AT_comp_dir";
-      case DW_AT_const_value: return "DW_AT_const_value";
-      case DW_AT_containing_type: return "DW_AT_containing_type";
-      case DW_AT_default_value: return "DW_AT_default_value";
-      case DW_AT_inline: return "DW_AT_inline";
-      case DW_AT_is_optional: return "DW_AT_is_optional";
-      case DW_AT_lower_bound: return "DW_AT_lower_bound";
-      case DW_AT_producer: return "DW_AT_producer";
-      case DW_AT_prototyped: return "DW_AT_prototyped";
-      case DW_AT_return_addr: return "DW_AT_return_addr";
-      case DW_AT_start_scope: return "DW_AT_start_scope";
-      case DW_AT_stride_size: return "DW_AT_stride_size";
-      case DW_AT_upper_bound: return "DW_AT_upper_bound";
-      case DW_AT_abstract_origin: return "DW_AT_abstract_origin";
-      case DW_AT_accessibility: return "DW_AT_accessibility";
-      case DW_AT_address_class: return "DW_AT_address_class";
-      case DW_AT_artificial: return "DW_AT_artificial";
-      case DW_AT_base_types: return "DW_AT_base_types";
-      case DW_AT_calling_convention: return "DW_AT_calling_convention";
-      case DW_AT_count: return "DW_AT_count";
-      case DW_AT_data_member_location: return "DW_AT_data_member_location";
-      case DW_AT_decl_column: return "DW_AT_decl_column";
-      case DW_AT_decl_file: return "DW_AT_decl_file";
-      case DW_AT_decl_line: return "DW_AT_decl_line";
-      case DW_AT_declaration: return "DW_AT_declaration";
-      case DW_AT_discr_list: return "DW_AT_discr_list";
-      case DW_AT_encoding: return "DW_AT_encoding";
-      case DW_AT_external: return "DW_AT_external";
-      case DW_AT_frame_base: return "DW_AT_frame_base";
-      case DW_AT_friend: return "DW_AT_friend";
-      case DW_AT_identifier_case: return "DW_AT_identifier_case";
-      case DW_AT_macro_info: return "DW_AT_macro_info";
-      case DW_AT_namelist_items: return "DW_AT_namelist_items";
-      case DW_AT_priority: return "DW_AT_priority";
-      case DW_AT_segment: return "DW_AT_segment";
-      case DW_AT_specification: return "DW_AT_specification";
-      case DW_AT_static_link: return "DW_AT_static_link";
-      case DW_AT_type: return "DW_AT_type";
-      case DW_AT_use_location: return "DW_AT_use_location";
-      case DW_AT_variable_parameter: return "DW_AT_variable_parameter";
-      case DW_AT_virtuality: return "DW_AT_virtuality";
-      case DW_AT_vtable_elem_location: return "DW_AT_vtable_elem_location";
-      /* DWARF 3 values.  */
-      case DW_AT_allocated: return "DW_AT_allocated";
-      case DW_AT_associated: return "DW_AT_associated";
-      case DW_AT_data_location: return "DW_AT_data_location";
-      case DW_AT_stride: return "DW_AT_stride";
-      case DW_AT_entry_pc: return "DW_AT_entry_pc";
-      case DW_AT_use_UTF8: return "DW_AT_use_UTF8";
-      case DW_AT_extension: return "DW_AT_extension";
-      case DW_AT_ranges: return "DW_AT_ranges";
-      case DW_AT_trampoline: return "DW_AT_trampoline";
-      case DW_AT_call_column: return "DW_AT_call_column";
-      case DW_AT_call_file: return "DW_AT_call_file";
-      case DW_AT_call_line: return "DW_AT_call_line";
-      case DW_AT_description: return "DW_AT_description";
-      case DW_AT_binary_scale: return "DW_AT_binary_scale";
-      case DW_AT_decimal_scale: return "DW_AT_decimal_scale";
-      case DW_AT_small: return "DW_AT_small";
-      case DW_AT_decimal_sign: return "DW_AT_decimal_sign";
-      case DW_AT_digit_count: return "DW_AT_digit_count";
-      case DW_AT_picture_string: return "DW_AT_picture_string";
-      case DW_AT_mutable: return "DW_AT_mutable";
-      case DW_AT_threads_scaled: return "DW_AT_threads_scaled";
-      case DW_AT_explicit: return "DW_AT_explicit";
-      case DW_AT_object_pointer: return "DW_AT_object_pointer";
-      case DW_AT_endianity: return "DW_AT_endianity";
-      case DW_AT_elemental: return "DW_AT_elemental";
-      case DW_AT_pure: return "DW_AT_pure";
-      case DW_AT_recursive: return "DW_AT_recursive";
-      /* SGI/MIPS extensions.  */
-      /* case DW_AT_MIPS_fde: return "DW_AT_MIPS_fde"; */
-      /* DW_AT_MIPS_fde == DW_AT_HP_unmodifiable */
-      case DW_AT_MIPS_loop_begin: return "DW_AT_MIPS_loop_begin";
-      case DW_AT_MIPS_tail_loop_begin: return "DW_AT_MIPS_tail_loop_begin";
-      case DW_AT_MIPS_epilog_begin: return "DW_AT_MIPS_epilog_begin";
-      case DW_AT_MIPS_loop_unroll_factor: return "DW_AT_MIPS_loop_unroll_factor";
-      case DW_AT_MIPS_software_pipeline_depth: return "DW_AT_MIPS_software_pipeline_depth";
-      case DW_AT_MIPS_linkage_name: return "DW_AT_MIPS_linkage_name";
-      case DW_AT_MIPS_stride: return "DW_AT_MIPS_stride";
-      case DW_AT_MIPS_abstract_name: return "DW_AT_MIPS_abstract_name";
-      case DW_AT_MIPS_clone_origin: return "DW_AT_MIPS_clone_origin";
-      case DW_AT_MIPS_has_inlines: return "DW_AT_MIPS_has_inlines";
-      /* HP extensions.  */
-      case DW_AT_HP_block_index: return "DW_AT_HP_block_index";
-      case DW_AT_HP_unmodifiable: return "DW_AT_HP_unmodifiable";
-      case DW_AT_HP_actuals_stmt_list: return "DW_AT_HP_actuals_stmt_list";
-      case DW_AT_HP_proc_per_section: return "DW_AT_HP_proc_per_section";
-      case DW_AT_HP_raw_data_ptr: return "DW_AT_HP_raw_data_ptr";
-      case DW_AT_HP_pass_by_reference: return "DW_AT_HP_pass_by_reference";
-      case DW_AT_HP_opt_level: return "DW_AT_HP_opt_level";
-      case DW_AT_HP_prof_version_id: return "DW_AT_HP_prof_version_id";
-      case DW_AT_HP_opt_flags: return "DW_AT_HP_opt_flags";
-      case DW_AT_HP_cold_region_low_pc: return "DW_AT_HP_cold_region_low_pc";
-      case DW_AT_HP_cold_region_high_pc: return "DW_AT_HP_cold_region_high_pc";
-      case DW_AT_HP_all_variables_modifiable: return "DW_AT_HP_all_variables_modifiable";
-      case DW_AT_HP_linkage_name: return "DW_AT_HP_linkage_name";
-      case DW_AT_HP_prof_flags: return "DW_AT_HP_prof_flags";
-      /* GNU extensions.  */
-      case DW_AT_sf_names: return "DW_AT_sf_names";
-      case DW_AT_src_info: return "DW_AT_src_info";
-      case DW_AT_mac_info: return "DW_AT_mac_info";
-      case DW_AT_src_coords: return "DW_AT_src_coords";
-      case DW_AT_body_begin: return "DW_AT_body_begin";
-      case DW_AT_body_end: return "DW_AT_body_end";
-      case DW_AT_GNU_vector: return "DW_AT_GNU_vector";
-      /* VMS extensions.  */
-      case DW_AT_VMS_rtnbeg_pd_address: return "DW_AT_VMS_rtnbeg_pd_address";
-      /* UPC extension.  */
-      case DW_AT_upc_threads_scaled: return "DW_AT_upc_threads_scaled";
-      /* PGI (STMicroelectronics) extensions.  */
-      case DW_AT_PGI_lbase: return "DW_AT_PGI_lbase";
-      case DW_AT_PGI_soffset: return "DW_AT_PGI_soffset";
-      case DW_AT_PGI_lstride: return "DW_AT_PGI_lstride";
-      default: return "DW_AT_???";
-   }
-}
 
 ////////////////////////////////////////////////////////////////
 
 #define D3_INVALID_CUOFF  ((void*)(-1UL))
 #define D3_FAKEVOID_CUOFF ((void*)(-2UL))
-
-typedef  struct _D3TyAdmin   D3TyAdmin;
-typedef  struct _D3TyAtom    D3TyAtom;
-typedef  struct _D3TyField   D3TyField;
-typedef  struct _D3TyBounds  D3TyBounds;
-typedef  struct _D3Expr      D3Expr;
-typedef  struct _D3Type      D3Type;
-
-#define D3TyBounds_MAGIC 0x06ff1eb9UL
-
-typedef
-   enum { D3TyA_Atom=10, D3TyA_Field, 
-          D3TyA_Bounds, D3TyA_Expr, D3TyA_Type } 
-   D3TyAdminTag;
-
-struct _D3TyAdmin {
-   UWord        cuOff;
-   void*        payload;
-   D3TyAdmin*   next;
-   D3TyAdminTag tag;
-};
-
-struct _D3TyAtom {
-   UChar* name;
-   Long   value;
-};
-
-struct _D3TyField {
-   UChar*  name;
-   D3Type* typeR;
-   D3Expr* loc;
-   Bool    isStruct;
-};
-
-struct _D3TyBounds {
-   UInt magic;
-   Bool knownL;
-   Bool knownU;
-   Long boundL;
-   Long boundU;
-};
-
-struct _D3Expr {
-   UChar* bytes;
-   UWord  nbytes;
-};
-
-struct _D3Type {
-   enum { D3Ty_Base=30, D3Ty_PorR, D3Ty_Ref, D3Ty_TyDef, D3Ty_StOrUn, 
-          D3Ty_Enum, D3Ty_Array, D3Ty_Fn, D3Ty_Qual, D3Ty_Void } tag;
-   union {
-      struct {
-         UChar* name;
-         Int    szB;
-         UChar  enc; /* S:signed U:unsigned F:floating */
-      } Base;
-      struct {
-         Int     szB;
-         D3Type* typeR;
-         Bool    isPtr;
-      } PorR;
-      struct {
-         UChar*  name;
-         D3Type* typeR; /* MAY BE NULL, denoting unknown */
-      } TyDef;
-      struct {
-         UChar*  name;
-         UWord   szB;
-         XArray* /* of D3TyField* */ fields;
-         Bool    complete;
-         Bool    isStruct;
-      } StOrUn;
-      struct {
-         UChar*  name;
-         Int     szB;
-         XArray* /* of D3TyAtom* */ atomRs;
-      } Enum;
-      struct {
-         D3Type* typeR;
-         XArray* /* of D3TyBounds* */ bounds;
-      } Array;
-      struct {
-      } Fn;
-      struct {
-         UChar   qual; /* C:const V:volatile */
-         D3Type* typeR;
-      } Qual;
-      struct {
-         Bool isFake; /* True == introduced by the reader */
-      } Void;
-   } D3Ty;
-};
-
-static D3TyAdmin* new_D3TyAdmin ( UWord cuOff, D3TyAdmin* next ) {
-   D3TyAdmin* admin = dinfo_zalloc( sizeof(D3TyAdmin) );
-   admin->cuOff = cuOff;
-   admin->next  = next;
-   return admin;
-}
-static D3TyAtom* new_D3TyAtom ( UChar* name, Long value ) {
-   D3TyAtom* atom = dinfo_zalloc( sizeof(D3TyAtom) );
-   atom->name  = name;
-   atom->value = value;
-   return atom;
-}
-static D3TyField* new_D3TyField ( UChar* name,
-                                  D3Type* typeR, D3Expr* loc ) {
-   D3TyField* field = dinfo_zalloc( sizeof(D3TyField) );
-   field->name  = name;
-   field->typeR = typeR;
-   field->loc   = loc;
-   return field;
-}
-static D3TyBounds* new_D3TyBounds ( void ) {
-   D3TyBounds* bounds = dinfo_zalloc( sizeof(D3TyBounds) );
-   bounds->magic = D3TyBounds_MAGIC;
-   return bounds;
-}
-static D3Expr* new_D3Expr ( UChar* bytes, UWord nbytes ) {
-   D3Expr* expr = dinfo_zalloc( sizeof(D3Expr) );
-   expr->bytes = bytes;
-   expr->nbytes = nbytes;
-   return expr;
-}
-static D3Type* new_D3Type ( void ) {
-   D3Type* type = dinfo_zalloc( sizeof(D3Type) );
-   return type;
-}
-
-static void pp_XArray_of_pointersOrRefs ( XArray* xa ) {
-   Word i;
-   VG_(printf)("{");
-   for (i = 0; i < VG_(sizeXA)(xa); i++) {
-      void* ptr = *(void**) VG_(indexXA)(xa, i);
-      VG_(printf)("0x%05lx", ptr);
-      if (i+1 < VG_(sizeXA)(xa))
-         VG_(printf)(",");
-   }
-   VG_(printf)("}");
-}
-static void pp_D3TyAtom ( D3TyAtom* atom ) {
-   VG_(printf)("D3TyAtom(%lld,\"%s\")", atom->value, atom->name);
-}
-static void pp_D3Expr ( D3Expr* expr ) {
-   VG_(printf)("D3Expr(%p,%lu)", expr->bytes, expr->nbytes);
-}
-static void pp_D3TyField ( D3TyField* field ) {
-   VG_(printf)("D3TyField(0x%05lx,%p,\"%s\")",
-               field->typeR, field->loc,
-               field->name ? field->name : (UChar*)"");
-}
-static void pp_D3TyBounds ( D3TyBounds* bounds ) {
-   vg_assert(bounds->magic == D3TyBounds_MAGIC);
-   VG_(printf)("D3TyBounds[");
-   if (bounds->knownL)
-      VG_(printf)("%lld", bounds->boundL);
-   else
-      VG_(printf)("??");
-   VG_(printf)(",");
-   if (bounds->knownU)
-      VG_(printf)("%lld", bounds->boundU);
-   else
-      VG_(printf)("??");
-   VG_(printf)("]");
-}
-
-static void pp_D3TyBounds_C_ishly ( D3TyBounds* bounds ) {
-   vg_assert(bounds->magic == D3TyBounds_MAGIC);
-   if (bounds->knownL && bounds->knownU && bounds->boundL == 0) {
-      VG_(printf)("[%lld]", 1 + bounds->boundU);
-   }
-   else
-   if (bounds->knownL && (!bounds->knownU) && bounds->boundL == 0) {
-      VG_(printf)("[]");
-   }
-   else
-      pp_D3TyBounds( bounds );
-}
-
-
-static void pp_D3Type ( D3Type* ty )
-{
-   switch (ty->tag) {
-      case D3Ty_Base:
-         VG_(printf)("D3Ty_Base(%d,%c,\"%s\")",
-                     ty->D3Ty.Base.szB, ty->D3Ty.Base.enc,
-                     ty->D3Ty.Base.name ? ty->D3Ty.Base.name
-                                        : (UChar*)"(null)" );
-         break;
-      case D3Ty_PorR:
-         VG_(printf)("D3Ty_PorR(%d,%c,0x%05lx)",
-                     ty->D3Ty.PorR.szB, 
-                     ty->D3Ty.PorR.isPtr ? 'P' : 'R',
-                     ty->D3Ty.PorR.typeR);
-         break;
-      case D3Ty_Enum:
-         VG_(printf)("D3Ty_Enum(%d,%p,\"%s\")",
-                     ty->D3Ty.Enum.szB, ty->D3Ty.Enum.atomRs,
-                     ty->D3Ty.Enum.name ? ty->D3Ty.Enum.name
-                                        : (UChar*)"" );
-         if (ty->D3Ty.Enum.atomRs)
-            pp_XArray_of_pointersOrRefs( ty->D3Ty.Enum.atomRs );
-         break;
-      case D3Ty_StOrUn:
-         if (ty->D3Ty.StOrUn.complete) {
-            VG_(printf)("D3Ty_StOrUn(%d,%c,%p,\"%s\")",
-                        ty->D3Ty.StOrUn.szB, 
-                        ty->D3Ty.StOrUn.isStruct ? 'S' : 'U',
-                        ty->D3Ty.StOrUn.fields,
-                        ty->D3Ty.StOrUn.name ? ty->D3Ty.StOrUn.name
-                                             : (UChar*)"" );
-            if (ty->D3Ty.StOrUn.fields)
-               pp_XArray_of_pointersOrRefs( ty->D3Ty.StOrUn.fields );
-         } else {
-            VG_(printf)("D3Ty_StOrUn(INCOMPLETE,\"%s\")",
-                        ty->D3Ty.StOrUn.name);
-         }
-         break;
-      case D3Ty_Array:
-         VG_(printf)("D3Ty_Array(0x%05lx,%p)",
-                     ty->D3Ty.Array.typeR, ty->D3Ty.Array.bounds);
-         if (ty->D3Ty.Array.bounds)
-            pp_XArray_of_pointersOrRefs( ty->D3Ty.Array.bounds );
-         break;
-      case D3Ty_TyDef:
-         VG_(printf)("D3Ty_TyDef(0x%05lx,\"%s\")",
-                     ty->D3Ty.TyDef.typeR,
-                     ty->D3Ty.TyDef.name ? ty->D3Ty.TyDef.name
-                                         : (UChar*)"" );
-         break;
-      case D3Ty_Fn:
-         VG_(printf)("D3Ty_Fn");
-         break;
-      case D3Ty_Qual:
-         VG_(printf)("D3Ty_Qual(%c,0x%05lx)", ty->D3Ty.Qual.qual,
-                     ty->D3Ty.Qual.typeR);
-         break;
-      case D3Ty_Void:
-         VG_(printf)("D3Ty_Void%s",
-                     ty->D3Ty.Void.isFake ? "(fake)" : "");
-         break;
-      default: VG_(printf)("pp_D3Type:???");
-         break;
-   }
-}
-static void pp_D3TyAdmin ( D3TyAdmin* admin ) {
-  if (admin->cuOff != (UWord)D3_INVALID_CUOFF) {
-      VG_(printf)("<%05lx,%p> ", admin->cuOff, admin->payload);
-   } else {
-      VG_(printf)("<INVAL,%p> ", admin->payload);
-   }
-   switch (admin->tag) {
-      case D3TyA_Type:   pp_D3Type(admin->payload);       break;
-      case D3TyA_Atom:   pp_D3TyAtom(admin->payload);     break;
-      case D3TyA_Expr:   pp_D3Expr(admin->payload);       break;
-      case D3TyA_Field:  pp_D3TyField(admin->payload);    break;
-      case D3TyA_Bounds: pp_D3TyBounds(admin->payload);   break;
-      default:           VG_(printf)("pp_D3TyAdmin:???"); break;
-   }
-}
-
-/* NOTE: this assumes that the types have all been 'resolved' (that
-   is, inter-type references expressed as .debug_info offsets have
-   been converted into pointers) */
-void ML_(pp_D3Type_C_ishly) ( void* /* D3Type* */ tyV )
-{
-   D3Type* ty = (D3Type*)tyV;
-
-   switch (ty->tag) {
-      case D3Ty_Base:
-         if (!ty->D3Ty.Base.name) goto unhandled;
-         VG_(printf)("%s", ty->D3Ty.Base.name);
-         break;
-      case D3Ty_PorR:
-         ML_(pp_D3Type_C_ishly)(ty->D3Ty.PorR.typeR);
-         VG_(printf)("%s", ty->D3Ty.PorR.isPtr ? "*" : "&");
-         break;
-      case D3Ty_Enum:
-         if (!ty->D3Ty.Enum.name) goto unhandled;
-         VG_(printf)("enum %s", ty->D3Ty.Enum.name);
-         break;
-      case D3Ty_StOrUn:
-         if (!ty->D3Ty.StOrUn.name) goto unhandled;
-         VG_(printf)("%s %s",
-                     ty->D3Ty.StOrUn.isStruct ? "struct" : "union",
-                     ty->D3Ty.StOrUn.name);
-         break;
-      case D3Ty_Array:
-         ML_(pp_D3Type_C_ishly)(ty->D3Ty.Array.typeR);
-         if (ty->D3Ty.Array.bounds) {
-            Word    w;
-            XArray* xa = ty->D3Ty.Array.bounds;
-            for (w = 0; w < VG_(sizeXA)(xa); w++) {
-               pp_D3TyBounds_C_ishly( *(D3TyBounds**)VG_(indexXA)(xa, w) );
-            }
-         } else {
-            VG_(printf)("%s", "[??]");
-         }
-         break;
-      case D3Ty_TyDef:
-         if (!ty->D3Ty.TyDef.name) goto unhandled;
-         VG_(printf)("%s", ty->D3Ty.TyDef.name);
-         break;
-      case D3Ty_Fn:
-         VG_(printf)("%s", "<function_type>");
-         break;
-      case D3Ty_Qual:
-         switch (ty->D3Ty.Qual.qual) {
-            case 'C': VG_(printf)("const "); break;
-            case 'V': VG_(printf)("volatile "); break;
-            default: goto unhandled;
-         }
-         ML_(pp_D3Type_C_ishly)(ty->D3Ty.Qual.typeR);
-         break;
-      case D3Ty_Void:
-         VG_(printf)("%svoid",
-                     ty->D3Ty.Void.isFake ? "fake" : "");
-         break;
-      default: VG_(printf)("pp_D3Type_C_ishly:???");
-         break;
-   }
-   return;
-
-  unhandled:
-   pp_D3Type(ty);
-}
-
-
-/* How big is this type?  (post-resolved only) */
-/* FIXME: check all pointers before dereferencing */
-SizeT ML_(sizeOfD3Type)( void* /* D3Type */ tyV )
-{
-   SizeT   eszB;
-   Word    i;
-   D3Type* ty = (D3Type*)tyV;
-   switch (ty->tag) {
-      case D3Ty_Base:
-         return ty->D3Ty.Base.szB;
-      case D3Ty_Qual:
-         return ML_(sizeOfD3Type)( ty->D3Ty.Qual.typeR );
-      case D3Ty_TyDef:
-         if (!ty->D3Ty.TyDef.typeR)
-            return 0; /*UNKNOWN*/
-         return ML_(sizeOfD3Type)( ty->D3Ty.TyDef.typeR );
-      case D3Ty_PorR:
-         vg_assert(ty->D3Ty.PorR.szB == 4 || ty->D3Ty.PorR.szB == 8);
-         return ty->D3Ty.PorR.szB;
-      case D3Ty_StOrUn:
-         return ty->D3Ty.StOrUn.szB;
-      case D3Ty_Enum:
-         return ty->D3Ty.Enum.szB;
-      case D3Ty_Array:
-         if (!ty->D3Ty.Array.typeR)
-            return 0;
-         eszB = ML_(sizeOfD3Type)( ty->D3Ty.Array.typeR );
-         for (i = 0; i < VG_(sizeXA)( ty->D3Ty.Array.bounds ); i++) {
-            D3TyBounds* bo
-               = *(D3TyBounds**)VG_(indexXA)(ty->D3Ty.Array.bounds, i);
-            vg_assert(bo);
-            if (!(bo->knownL && bo->knownU))
-               return 0;
-            eszB *= (SizeT)( bo->boundU - bo->boundL + 1 );
-         }
-         return eszB;
-      default:
-         VG_(printf)("ML_(sizeOfD3Type): unhandled: ");
-         pp_D3Type(tyV);
-         VG_(printf)("\n");
-         vg_assert(0);
-   }
-}
-
-
 /*------------------------------------------------------------*/
 /*--- The "new" DWARF3 reader                              ---*/
 /*------------------------------------------------------------*/
@@ -1486,7 +321,8 @@ static XArray* unitary_range_list ( Addr aMin, Addr aMax ) {
    AddrRange pair;
    vg_assert(aMin <= aMax);
    /* Who frees this xa?  varstack_preen() does. */
-   xa = VG_(newXA)( dinfo_zalloc, dinfo_free, sizeof(AddrRange) );
+   xa = VG_(newXA)( ML_(dinfo_zalloc), ML_(dinfo_free),
+                    sizeof(AddrRange) );
    pair.aMin = aMin;
    pair.aMax = aMax;
    VG_(addToXA)( xa, &pair );
@@ -1620,6 +456,7 @@ ULong read_leb128 ( UChar* data, Int* length_return, Int sign )
  * value is returned and the given pointer is
  * moved past end of leb128 data */
 /* FIXME: duplicated in readdwarf.c */
+#if 0
 static ULong read_leb128U( UChar **data )
 {
   Int len;
@@ -1627,6 +464,7 @@ static ULong read_leb128U( UChar **data )
   *data += len;
   return val;
 }
+#endif
 
 /* Same for signed data */
 /* FIXME: duplicated in readdwarf.c */
@@ -1817,7 +655,7 @@ static GExpr* make_singleton_GX ( UChar* block, UWord nbytes )
         + sizeof(UShort) /*nbytes*/    + nbytes
         + sizeof(UChar); /*isEnd*/
 
-   gx = dinfo_zalloc( sizeof(GExpr) + bytesReqd );
+   gx = ML_(dinfo_zalloc)( sizeof(GExpr) + bytesReqd );
    vg_assert(gx);
 
    p = pstart = &gx->payload[0];
@@ -1860,7 +698,8 @@ static GExpr* make_general_GX ( CUConst* cc,
    set_position_of_Cursor( &loc, (Word)debug_loc_offset );
 
    /* Who frees this xa?  It is freed before this fn exits. */
-   xa = VG_(newXA)( dinfo_zalloc, dinfo_free, sizeof(UChar) );
+   xa = VG_(newXA)( ML_(dinfo_zalloc), ML_(dinfo_free),
+                    sizeof(UChar) );
 
    { UChar c = 1; /*biasMe*/ VG_(addToXA)( xa, &c ); }
 
@@ -1923,7 +762,7 @@ static GExpr* make_general_GX ( CUConst* cc,
    nbytes = VG_(sizeXA)( xa );
    vg_assert(nbytes >= 1);
 
-   gx = dinfo_zalloc( sizeof(GExpr) + nbytes );
+   gx = ML_(dinfo_zalloc)( sizeof(GExpr) + nbytes );
    vg_assert(gx);
    VG_(memcpy)( &gx->payload[0], (UChar*)VG_(indexXA)(xa,0), nbytes );
    vg_assert( &gx->payload[nbytes] 
@@ -1944,7 +783,8 @@ static XArray* /* of AddrRange */ empty_range_list ( void )
 {
    XArray* xa; /* XArray of AddrRange */
    /* Who frees this xa?  varstack_preen() does. */
-   xa = VG_(newXA)( dinfo_zalloc, dinfo_free, sizeof(AddrRange) );
+   xa = VG_(newXA)( ML_(dinfo_zalloc), ML_(dinfo_free),
+                    sizeof(AddrRange) );
    return xa;
 }
 
@@ -1975,7 +815,8 @@ static XArray* /* of AddrRange */
    set_position_of_Cursor( &ranges, (Word)debug_ranges_offset );
 
    /* Who frees this xa?  varstack_preen() does. */
-   xa = VG_(newXA)( dinfo_zalloc, dinfo_free, sizeof(AddrRange) );
+   xa = VG_(newXA)( ML_(dinfo_zalloc), ML_(dinfo_free),
+                    sizeof(AddrRange) );
    base = 0;
    while (True) {
       /* Read a (host-)word pair.  This is something of a hack since
@@ -2280,7 +1121,7 @@ void get_Form_contents ( /*OUT*/ULong* cts,
       }
       default:
          VG_(printf)("get_Form_contents: unhandled %lld (%s)\n",
-                     form, pp_DW_FORM(form));
+                     form, ML_(pp_DW_FORM)(form));
          c->barf("get_Form_contents: unhandled DW_FORM");
    }
 }
@@ -2293,13 +1134,13 @@ void get_Form_contents ( /*OUT*/ULong* cts,
 typedef
    struct _TempVar {
       struct _TempVar* next;
-      UChar*  name; /* in AR_DINFO */
-      Addr    pcMin;
-      Addr    pcMax;
-      Int     level;
-      D3Type* typeR;
-      GExpr*  gexpr; /* for this variable */
-      GExpr*  fbGX;  /* to find the frame base of the enclosing fn, if
+      UChar* name; /* in AR_DINFO */
+      Addr   pcMin;
+      Addr   pcMax;
+      Int    level;
+      Type*  typeR;
+      GExpr* gexpr; /* for this variable */
+      GExpr* fbGX;  /* to find the frame base of the enclosing fn, if
                         any */
    }
    TempVar;
@@ -2625,13 +1466,13 @@ static void parse_var_DIE ( /*OUT*/TempVar** tempvars,
    }
 
    if (dtag == DW_TAG_variable || dtag == DW_TAG_formal_parameter) {
-      UChar*  name        = NULL;
-      D3Type* typeR       = D3_INVALID_CUOFF;
-      Bool    external    = False;
-      GExpr*  gexpr       = NULL;
-      Int     n_attrs     = 0;
-      Bool    has_abs_ori = False;
-      Bool    declaration = False;
+      UChar* name        = NULL;
+      Type*  typeR       = D3_INVALID_CUOFF;
+      Bool   external    = False;
+      GExpr* gexpr       = NULL;
+      Int    n_attrs     = 0;
+      Bool   has_abs_ori = False;
+      Bool   declaration = False;
       while (True) {
          DW_AT   attr = (DW_AT)  get_ULEB128( c_abbv );
          DW_FORM form = (DW_FORM)get_ULEB128( c_abbv );
@@ -2640,7 +1481,7 @@ static void parse_var_DIE ( /*OUT*/TempVar** tempvars,
                             cc, c_die, False/*td3*/, form );
          n_attrs++;
          if (attr == DW_AT_name && ctsMemSzB > 0) {
-            name = dinfo_strdup( (UChar*)(UWord)cts );
+            name = ML_(dinfo_strdup)( (UChar*)(UWord)cts );
          }
          if (attr == DW_AT_location
              && ((ctsMemSzB > 0 && ctsSzB == 0)
@@ -2652,7 +1493,7 @@ static void parse_var_DIE ( /*OUT*/TempVar** tempvars,
             *gexprs = gexpr;
          }
          if (attr == DW_AT_type && ctsSzB > 0) {
-            typeR = (D3Type*)(UWord)cts;
+            typeR = (Type*)(UWord)cts;
          }
          if (attr == DW_AT_external && ctsSzB > 0 && cts > 0) {
             external = True;
@@ -2678,8 +1519,9 @@ static void parse_var_DIE ( /*OUT*/TempVar** tempvars,
          vg_assert(parser->sp >= 0);
 
          if (!name)
-            name = dinfo_strdup( dtag == DW_TAG_variable 
-                                 ? "<anon_variable>" : "<anon_formal>" );
+            name = ML_(dinfo_strdup)(
+                      dtag == DW_TAG_variable ? "<anon_variable>"
+                                              : "<anon_formal>" );
 
 	 /* If this is a local variable (non-external), try to find
             the GExpr for the DW_AT_frame_base of the containing
@@ -2718,7 +1560,7 @@ static void parse_var_DIE ( /*OUT*/TempVar** tempvars,
          xa = parser->ranges[external ? 0 : parser->sp];
          for (i = 0; i < VG_(sizeXA)( xa ); i++) {
             AddrRange* r = (AddrRange*) VG_(indexXA)( xa, i );
-            TempVar* tv = dinfo_zalloc( sizeof(TempVar) );
+            TempVar* tv = ML_(dinfo_zalloc)( sizeof(TempVar) );
             tv->name  = name;
             tv->pcMin = r->aMin;
             tv->pcMax = r->aMax;
@@ -2838,12 +1680,12 @@ static void parse_var_DIE ( /*OUT*/TempVar** tempvars,
    set_position_of_Cursor( c_die,  saved_die_c_offset );
    set_position_of_Cursor( c_abbv, saved_abbv_c_offset );
    VG_(printf)("\nparse_var_DIE: confused by:\n");
-   VG_(printf)(" <%d><%lx>: %s\n", level, posn, pp_DW_TAG( dtag ) );
+   VG_(printf)(" <%d><%lx>: %s\n", level, posn, ML_(pp_DW_TAG)( dtag ) );
    while (True) {
       DW_AT   attr = (DW_AT)  get_ULEB128( c_abbv );
       DW_FORM form = (DW_FORM)get_ULEB128( c_abbv );
       if (attr == 0 && form == 0) break;
-      VG_(printf)("     %18s: ", pp_DW_AT(attr));
+      VG_(printf)("     %18s: ", ML_(pp_DW_AT)(attr));
       /* Get the form contents, so as to print them */
       get_Form_contents( &cts, &ctsSzB, &ctsMemSzB,
                          cc, c_die, True, form );
@@ -2868,10 +1710,10 @@ typedef
 	 Established once per compilation unit. */
       UChar language;
       /* A stack of types which are currently under construction */
-      Int     sp; /* [sp] is innermost active entry; sp==-1 for empty
-                     stack */
-      D3Type* qparent[N_D3_TYPE_STACK];
-      Int     qlevel[N_D3_TYPE_STACK];
+      Int   sp; /* [sp] is innermost active entry; sp==-1 for empty
+                   stack */
+      Type* qparent[N_D3_TYPE_STACK];
+      Int   qlevel[N_D3_TYPE_STACK];
 
    }
    D3TypeParser;
@@ -2881,7 +1723,7 @@ static void typestack_show ( D3TypeParser* parser, HChar* str ) {
    VG_(printf)("  typestack (%s) {\n", str);
    for (i = 0; i <= parser->sp; i++) {
       VG_(printf)("    [%ld] (level %d): ", i, parser->qlevel[i]);
-      pp_D3Type( parser->qparent[i] );
+      ML_(pp_Type)( parser->qparent[i] );
       VG_(printf)("\n");
    }
    VG_(printf)("  }\n");
@@ -2917,7 +1759,7 @@ static Bool typestack_is_empty ( D3TypeParser* parser ) {
 static void typestack_push ( CUConst* cc,
                              D3TypeParser* parser,
                              Bool td3,
-                             D3Type* parent, Int level ) {
+                             Type* parent, Int level ) {
    if (0)
    TRACE_D3("BBBBAAAA typestack_push[newsp=%d]: %d  %p\n",
             parser->sp+1, level, parent);
@@ -2955,7 +1797,7 @@ static void typestack_push ( CUConst* cc,
    it.
 */
 __attribute__((noinline))
-static void parse_type_DIE ( /*OUT*/D3TyAdmin** admin,
+static void parse_type_DIE ( /*OUT*/TyAdmin** admin,
                              /*MOD*/D3TypeParser* parser,
                              DW_TAG dtag,
                              UWord posn,
@@ -2965,14 +1807,14 @@ static void parse_type_DIE ( /*OUT*/D3TyAdmin** admin,
                              CUConst* cc,
                              Bool td3 )
 {
-   ULong       cts;
-   Int         ctsSzB;
-   UWord       ctsMemSzB;
-   D3Type*     type   = NULL;
-   D3TyAtom*   atom   = NULL;
-   D3TyField*  field  = NULL;
-   D3Expr*     expr   = NULL;
-   D3TyBounds* bounds = NULL;
+   ULong     cts;
+   Int       ctsSzB;
+   UWord     ctsMemSzB;
+   Type*     type   = NULL;
+   TyAtom*   atom   = NULL;
+   TyField*  field  = NULL;
+   D3Expr*   expr   = NULL;
+   TyBounds* bounds = NULL;
 
    Word saved_die_c_offset  = get_position_of_Cursor( c_die );
    Word saved_abbv_c_offset = get_position_of_Cursor( c_abbv );
@@ -2982,17 +1824,16 @@ static void parse_type_DIE ( /*OUT*/D3TyAdmin** admin,
       its children. */
    typestack_preen( parser, td3, level-1 );
 
-   if (dtag == DW_TAG_base_type
-       || dtag == DW_TAG_pointer_type
-       || dtag == DW_TAG_reference_type
-       || dtag == DW_TAG_typedef
-       || dtag == DW_TAG_array_type
-       || dtag == DW_TAG_subrange_type
-       || dtag == DW_TAG_enumeration_type
-       || dtag == DW_TAG_structure_type
-       || dtag == DW_TAG_union_type) {
-      if (0) 
-         TRACE_D3("YYYYXXXX offset=%ld %s\n", posn, pp_DW_TAG(dtag));
+   if (0 && (dtag == DW_TAG_base_type
+             || dtag == DW_TAG_pointer_type
+             || dtag == DW_TAG_reference_type
+             || dtag == DW_TAG_typedef
+             || dtag == DW_TAG_array_type
+             || dtag == DW_TAG_subrange_type
+             || dtag == DW_TAG_enumeration_type
+             || dtag == DW_TAG_structure_type
+             || dtag == DW_TAG_union_type)) {
+      TRACE_D3("YYYYXXXX offset=%ld %s\n", posn, ML_(pp_DW_TAG)(dtag));
    }
 
    if (dtag == DW_TAG_compile_unit) {
@@ -3033,8 +1874,8 @@ static void parse_type_DIE ( /*OUT*/D3TyAdmin** admin,
 
    if (dtag == DW_TAG_base_type) {
       /* We can pick up a new base type any time. */
-      type = new_D3Type();
-      type->tag = D3Ty_Base;
+      type = ML_(new_Type)();
+      type->tag = Ty_Base;
       while (True) {
          DW_AT   attr = (DW_AT)  get_ULEB128( c_abbv );
          DW_FORM form = (DW_FORM)get_ULEB128( c_abbv );
@@ -3042,20 +1883,21 @@ static void parse_type_DIE ( /*OUT*/D3TyAdmin** admin,
          get_Form_contents( &cts, &ctsSzB, &ctsMemSzB,
                             cc, c_die, False/*td3*/, form );
          if (attr == DW_AT_name && ctsMemSzB > 0) {
-            type->D3Ty.Base.name = dinfo_strdup( (UChar*)(UWord)cts );
+            type->Ty.Base.name
+               = ML_(dinfo_strdup)( (UChar*)(UWord)cts );
          }
          if (attr == DW_AT_byte_size && ctsSzB > 0) {
-            type->D3Ty.Base.szB = cts;
+            type->Ty.Base.szB = cts;
          }
          if (attr == DW_AT_encoding && ctsSzB > 0) {
             switch (cts) {
                case DW_ATE_unsigned: case DW_ATE_unsigned_char:
                case DW_ATE_boolean:/* FIXME - is this correct? */
-                  type->D3Ty.Base.enc = 'U'; break;
+                  type->Ty.Base.enc = 'U'; break;
                case DW_ATE_signed: case DW_ATE_signed_char:
-                  type->D3Ty.Base.enc = 'S'; break;
+                  type->Ty.Base.enc = 'S'; break;
                case DW_ATE_float:
-                  type->D3Ty.Base.enc = 'F'; break;
+                  type->Ty.Base.enc = 'F'; break;
                default:
                   goto bad_DIE;
             }
@@ -3063,24 +1905,24 @@ static void parse_type_DIE ( /*OUT*/D3TyAdmin** admin,
       }
       /* Do we have something that looks sane? */
       if (/* must have a name */
-          type->D3Ty.Base.name == NULL
+          type->Ty.Base.name == NULL
           /* and a plausible size */
-          || type->D3Ty.Base.szB < 1 || type->D3Ty.Base.szB > 16
+          || type->Ty.Base.szB < 1 || type->Ty.Base.szB > 16
           /* and a plausible encoding */
-          || (type->D3Ty.Base.enc != 'U'
-              && type->D3Ty.Base.enc != 'S' 
-              && type->D3Ty.Base.enc != 'F'))
+          || (type->Ty.Base.enc != 'U'
+              && type->Ty.Base.enc != 'S' 
+              && type->Ty.Base.enc != 'F'))
          goto bad_DIE;
       else
          goto acquire_Type;
    }
 
    if (dtag == DW_TAG_pointer_type || dtag == DW_TAG_reference_type) {
-      type = new_D3Type();
-      type->tag = D3Ty_PorR;
+      type = ML_(new_Type)();
+      type->tag = Ty_PorR;
       /* target type defaults to void */
-      type->D3Ty.PorR.typeR = D3_FAKEVOID_CUOFF;
-      type->D3Ty.PorR.isPtr = dtag == DW_TAG_pointer_type;
+      type->Ty.PorR.typeR = D3_FAKEVOID_CUOFF;
+      type->Ty.PorR.isPtr = dtag == DW_TAG_pointer_type;
       while (True) {
          DW_AT   attr = (DW_AT)  get_ULEB128( c_abbv );
          DW_FORM form = (DW_FORM)get_ULEB128( c_abbv );
@@ -3088,26 +1930,27 @@ static void parse_type_DIE ( /*OUT*/D3TyAdmin** admin,
          get_Form_contents( &cts, &ctsSzB, &ctsMemSzB,
                             cc, c_die, False/*td3*/, form );
          if (attr == DW_AT_byte_size && ctsSzB > 0) {
-            type->D3Ty.PorR.szB = cts;
+            type->Ty.PorR.szB = cts;
          }
          if (attr == DW_AT_type && ctsSzB > 0) {
-            type->D3Ty.PorR.typeR = (D3Type*)(UWord)cts;
+            type->Ty.PorR.typeR = (Type*)(UWord)cts;
          }
       }
       /* Do we have something that looks sane? */
-      if (type->D3Ty.PorR.szB != sizeof(Word))
+      if (type->Ty.PorR.szB != sizeof(Word))
          goto bad_DIE;
       else
          goto acquire_Type;
    }
 
    if (dtag == DW_TAG_enumeration_type) {
-      /* Create a new D3Type to hold the results. */
-      type = new_D3Type();
-      type->tag = D3Ty_Enum;
-      type->D3Ty.Enum.name = NULL;
-      type->D3Ty.Enum.atomRs
-         = VG_(newXA)( dinfo_zalloc, dinfo_free, sizeof(D3TyAtom*) );
+      /* Create a new Type to hold the results. */
+      type = ML_(new_Type)();
+      type->tag = Ty_Enum;
+      type->Ty.Enum.name = NULL;
+      type->Ty.Enum.atomRs
+         = VG_(newXA)( ML_(dinfo_zalloc), ML_(dinfo_free),
+                       sizeof(TyAtom*) );
       while (True) {
          DW_AT   attr = (DW_AT)  get_ULEB128( c_abbv );
          DW_FORM form = (DW_FORM)get_ULEB128( c_abbv );
@@ -3115,14 +1958,15 @@ static void parse_type_DIE ( /*OUT*/D3TyAdmin** admin,
          get_Form_contents( &cts, &ctsSzB, &ctsMemSzB,
                             cc, c_die, False/*td3*/, form );
          if (attr == DW_AT_name && ctsMemSzB > 0) {
-            type->D3Ty.Enum.name = dinfo_strdup( (UChar*)(UWord)cts );
+            type->Ty.Enum.name
+               = ML_(dinfo_strdup)( (UChar*)(UWord)cts );
          }
          if (attr == DW_AT_byte_size && ctsSzB > 0) {
-            type->D3Ty.Enum.szB = cts;
+            type->Ty.Enum.szB = cts;
          }
       }
       /* Do we have something that looks sane? */
-      if (type->D3Ty.Enum.szB == 0 /* we must know the size */
+      if (type->Ty.Enum.szB == 0 /* we must know the size */
           /* But the name can be present, or not */)
          goto bad_DIE;
       /* On't stack! */
@@ -3132,7 +1976,7 @@ static void parse_type_DIE ( /*OUT*/D3TyAdmin** admin,
 
    if (dtag == DW_TAG_enumerator) {
       Bool have_value = False;
-      atom = new_D3TyAtom( NULL, 0 );
+      atom = ML_(new_TyAtom)( NULL, 0 );
       while (True) {
          DW_AT   attr = (DW_AT)  get_ULEB128( c_abbv );
          DW_FORM form = (DW_FORM)get_ULEB128( c_abbv );
@@ -3140,7 +1984,7 @@ static void parse_type_DIE ( /*OUT*/D3TyAdmin** admin,
          get_Form_contents( &cts, &ctsSzB, &ctsMemSzB,
                             cc, c_die, False/*td3*/, form );
          if (attr == DW_AT_name && ctsMemSzB > 0) {
-            atom->name = dinfo_strdup( (UChar*)(UWord)cts );
+            atom->name = ML_(dinfo_strdup)( (UChar*)(UWord)cts );
          }
          if (attr == DW_AT_const_value && ctsSzB > 0) {
             atom->value = cts;
@@ -3154,10 +1998,10 @@ static void parse_type_DIE ( /*OUT*/D3TyAdmin** admin,
       if (typestack_is_empty(parser)) goto bad_DIE;
       vg_assert(parser->qparent[parser->sp]);
       if (level != parser->qlevel[parser->sp]+1) goto bad_DIE;
-      if (parser->qparent[parser->sp]->tag != D3Ty_Enum) goto bad_DIE;
+      if (parser->qparent[parser->sp]->tag != Ty_Enum) goto bad_DIE;
       /* Record this child in the parent */
-      vg_assert(parser->qparent[parser->sp]->D3Ty.Enum.atomRs);
-      VG_(addToXA)( parser->qparent[parser->sp]->D3Ty.Enum.atomRs, &atom );
+      vg_assert(parser->qparent[parser->sp]->Ty.Enum.atomRs);
+      VG_(addToXA)( parser->qparent[parser->sp]->Ty.Enum.atomRs, &atom );
       /* And record the child itself */
       goto acquire_Atom;
    }
@@ -3166,14 +2010,15 @@ static void parse_type_DIE ( /*OUT*/D3TyAdmin** admin,
       Bool have_szB = False;
       Bool is_decl  = False;
       Bool is_spec  = False;
-      /* Create a new D3Type to hold the results. */
-      type = new_D3Type();
-      type->tag = D3Ty_StOrUn;
-      type->D3Ty.StOrUn.name = NULL;
-      type->D3Ty.StOrUn.fields
-         = VG_(newXA)( dinfo_zalloc, dinfo_free, sizeof(D3TyAtom*) );
-      type->D3Ty.StOrUn.complete = True;
-      type->D3Ty.StOrUn.isStruct = dtag == DW_TAG_structure_type;
+      /* Create a new Type to hold the results. */
+      type = ML_(new_Type)();
+      type->tag = Ty_StOrUn;
+      type->Ty.StOrUn.name = NULL;
+      type->Ty.StOrUn.fields
+         = VG_(newXA)( ML_(dinfo_zalloc), ML_(dinfo_free),
+                       sizeof(TyAtom*) );
+      type->Ty.StOrUn.complete = True;
+      type->Ty.StOrUn.isStruct = dtag == DW_TAG_structure_type;
       while (True) {
          DW_AT   attr = (DW_AT)  get_ULEB128( c_abbv );
          DW_FORM form = (DW_FORM)get_ULEB128( c_abbv );
@@ -3181,10 +2026,11 @@ static void parse_type_DIE ( /*OUT*/D3TyAdmin** admin,
          get_Form_contents( &cts, &ctsSzB, &ctsMemSzB,
                             cc, c_die, False/*td3*/, form );
          if (attr == DW_AT_name && ctsMemSzB > 0) {
-            type->D3Ty.StOrUn.name = dinfo_strdup( (UChar*)(UWord)cts );
+            type->Ty.StOrUn.name
+               = ML_(dinfo_strdup)( (UChar*)(UWord)cts );
          }
          if (attr == DW_AT_byte_size && ctsSzB >= 0) {
-            type->D3Ty.StOrUn.szB = cts;
+            type->Ty.StOrUn.szB = cts;
             have_szB = True;
          }
          if (attr == DW_AT_declaration && ctsSzB > 0 && cts > 0) {
@@ -3198,9 +2044,9 @@ static void parse_type_DIE ( /*OUT*/D3TyAdmin** admin,
       if (is_decl && (!is_spec)) {
          /* It's a DW_AT_declaration.  We require the name but
             nothing else. */
-         if (type->D3Ty.StOrUn.name == NULL)
+         if (type->Ty.StOrUn.name == NULL)
             goto bad_DIE;
-         type->D3Ty.StOrUn.complete = False;
+         type->Ty.StOrUn.complete = False;
          goto acquire_Type;
       }
       if ((!is_decl) /* && (!is_spec) */) {
@@ -3224,7 +2070,7 @@ static void parse_type_DIE ( /*OUT*/D3TyAdmin** admin,
          members must have a DW_AT_data_member_location expression
          whereas union members must not. */
       Bool parent_is_struct;
-      field = new_D3TyField( NULL, NULL, NULL );
+      field = ML_(new_TyField)( NULL, NULL, NULL );
       field->typeR = D3_INVALID_CUOFF;
       expr  = NULL;
       while (True) {
@@ -3234,26 +2080,27 @@ static void parse_type_DIE ( /*OUT*/D3TyAdmin** admin,
          get_Form_contents( &cts, &ctsSzB, &ctsMemSzB,
                             cc, c_die, False/*td3*/, form );
          if (attr == DW_AT_name && ctsMemSzB > 0) {
-            field->name = dinfo_strdup( (UChar*)(UWord)cts );
+            field->name = ML_(dinfo_strdup)( (UChar*)(UWord)cts );
          }
          if (attr == DW_AT_type && ctsSzB > 0) {
-            field->typeR = (D3Type*)(UWord)cts;
+            field->typeR = (Type*)(UWord)cts;
          }
          if (attr == DW_AT_data_member_location && ctsMemSzB > 0) {
-            expr = new_D3Expr( (UChar*)(UWord)cts, (UWord)ctsMemSzB );
+           expr = ML_(new_D3Expr)( (UChar*)(UWord)cts, (UWord)ctsMemSzB );
          }
       }
       /* Do we have a plausible parent? */
       if (typestack_is_empty(parser)) goto bad_DIE;
       vg_assert(parser->qparent[parser->sp]);
       if (level != parser->qlevel[parser->sp]+1) goto bad_DIE;
-      if (parser->qparent[parser->sp]->tag != D3Ty_StOrUn) goto bad_DIE;
+      if (parser->qparent[parser->sp]->tag != Ty_StOrUn) goto bad_DIE;
       /* Do we have something that looks sane?  If this a member of a
          struct, we must have a location expression; but if a member
          of a union that is irrelevant and so we reject it. */
-      parent_is_struct = parser->qparent[parser->sp]->D3Ty.StOrUn.isStruct;
+      parent_is_struct
+         = parser->qparent[parser->sp]->Ty.StOrUn.isStruct;
       if (!field->name)
-         field->name = dinfo_strdup("<anon_field>");
+         field->name = ML_(dinfo_strdup)("<anon_field>");
       if ((!field->name) || (field->typeR == D3_INVALID_CUOFF))
          goto bad_DIE;
       if (parent_is_struct && (!expr))
@@ -3264,18 +2111,20 @@ static void parse_type_DIE ( /*OUT*/D3TyAdmin** admin,
       field->isStruct = parent_is_struct;
       if (expr)
          field->loc = expr;
-      vg_assert(parser->qparent[parser->sp]->D3Ty.StOrUn.fields);
-      VG_(addToXA)( parser->qparent[parser->sp]->D3Ty.StOrUn.fields, &field );
+      vg_assert(parser->qparent[parser->sp]->Ty.StOrUn.fields);
+      VG_(addToXA)( parser->qparent[parser->sp]->Ty.StOrUn.fields,
+                    &field );
       /* And record the child itself */
       goto acquire_Field_and_Expr;
    }
 
    if (dtag == DW_TAG_array_type) {
-      type = new_D3Type();
-      type->tag = D3Ty_Array;
-      type->D3Ty.Array.typeR = D3_INVALID_CUOFF;
-      type->D3Ty.Array.bounds
-         = VG_(newXA)( dinfo_zalloc, dinfo_free, sizeof(D3TyBounds*) );
+      type = ML_(new_Type)();
+      type->tag = Ty_Array;
+      type->Ty.Array.typeR = D3_INVALID_CUOFF;
+      type->Ty.Array.bounds
+         = VG_(newXA)( ML_(dinfo_zalloc), ML_(dinfo_free),
+                       sizeof(TyBounds*) );
       while (True) {
          DW_AT   attr = (DW_AT)  get_ULEB128( c_abbv );
          DW_FORM form = (DW_FORM)get_ULEB128( c_abbv );
@@ -3283,10 +2132,10 @@ static void parse_type_DIE ( /*OUT*/D3TyAdmin** admin,
          get_Form_contents( &cts, &ctsSzB, &ctsMemSzB,
                             cc, c_die, False/*td3*/, form );
          if (attr == DW_AT_type && ctsSzB > 0) {
-            type->D3Ty.Array.typeR = (D3Type*)(UWord)cts;
+            type->Ty.Array.typeR = (Type*)(UWord)cts;
          }
       }
-      if (type->D3Ty.Array.typeR == D3_INVALID_CUOFF)
+      if (type->Ty.Array.typeR == D3_INVALID_CUOFF)
          goto bad_DIE;
       /* On't stack! */
       typestack_push( cc, parser, td3, type, level );
@@ -3308,7 +2157,7 @@ static void parse_type_DIE ( /*OUT*/D3TyAdmin** admin,
          default:  vg_assert(0); /* assured us by handling of
                                     DW_TAG_compile_unit in this fn */
       }
-      bounds = new_D3TyBounds();
+      bounds = ML_(new_TyBounds)();
       while (True) {
          DW_AT   attr = (DW_AT)  get_ULEB128( c_abbv );
          DW_FORM form = (DW_FORM)get_ULEB128( c_abbv );
@@ -3336,7 +2185,7 @@ static void parse_type_DIE ( /*OUT*/D3TyAdmin** admin,
       if (typestack_is_empty(parser)) goto bad_DIE;
       vg_assert(parser->qparent[parser->sp]);
       if (level != parser->qlevel[parser->sp]+1) goto bad_DIE;
-      if (parser->qparent[parser->sp]->tag != D3Ty_Array) goto bad_DIE;
+      if (parser->qparent[parser->sp]->tag != Ty_Array) goto bad_DIE;
 
       /* Figure out if we have a definite range or not */
       if (have_lower && have_upper && (!have_count)) {
@@ -3356,18 +2205,19 @@ static void parse_type_DIE ( /*OUT*/D3TyAdmin** admin,
       }
 
       /* Record this bound in the parent */
-      vg_assert(parser->qparent[parser->sp]->D3Ty.Array.bounds);
-      VG_(addToXA)( parser->qparent[parser->sp]->D3Ty.Array.bounds, &bounds );
+      vg_assert(parser->qparent[parser->sp]->Ty.Array.bounds);
+      VG_(addToXA)( parser->qparent[parser->sp]->Ty.Array.bounds,
+                    &bounds );
       /* And record the child itself */
       goto acquire_Bounds;
    }
 
    if (dtag == DW_TAG_typedef) {
       /* We can pick up a new base type any time. */
-      type = new_D3Type();
-      type->tag = D3Ty_TyDef;
-      type->D3Ty.TyDef.name = NULL;
-      type->D3Ty.TyDef.typeR = D3_INVALID_CUOFF;
+      type = ML_(new_Type)();
+      type->tag = Ty_TyDef;
+      type->Ty.TyDef.name = NULL;
+      type->Ty.TyDef.typeR = D3_INVALID_CUOFF;
       while (True) {
          DW_AT   attr = (DW_AT)  get_ULEB128( c_abbv );
          DW_FORM form = (DW_FORM)get_ULEB128( c_abbv );
@@ -3375,15 +2225,16 @@ static void parse_type_DIE ( /*OUT*/D3TyAdmin** admin,
          get_Form_contents( &cts, &ctsSzB, &ctsMemSzB,
                             cc, c_die, False/*td3*/, form );
          if (attr == DW_AT_name && ctsMemSzB > 0) {
-            type->D3Ty.TyDef.name = dinfo_strdup( (UChar*)(UWord)cts );
+            type->Ty.TyDef.name
+               = ML_(dinfo_strdup)( (UChar*)(UWord)cts );
          }
          if (attr == DW_AT_type && ctsSzB > 0) {
-            type->D3Ty.TyDef.typeR = (D3Type*)(UWord)cts;
+            type->Ty.TyDef.typeR = (Type*)(UWord)cts;
          }
       }
       /* Do we have something that looks sane? */
       if (/* must have a name */
-          type->D3Ty.TyDef.name == NULL
+          type->Ty.TyDef.name == NULL
           /* but the referred-to type can be absent */)
          goto bad_DIE;
       else
@@ -3393,19 +2244,19 @@ static void parse_type_DIE ( /*OUT*/D3TyAdmin** admin,
    if (dtag == DW_TAG_subroutine_type) {
       /* function type? just record that one fact and ask no
          further questions. */
-      type = new_D3Type();
-      type->tag = D3Ty_Fn;
+      type = ML_(new_Type)();
+      type->tag = Ty_Fn;
       goto acquire_Type;
    }
 
    if (dtag == DW_TAG_volatile_type || dtag == DW_TAG_const_type) {
       Int have_ty = 0;
-      type = new_D3Type();
-      type->tag = D3Ty_Qual;
-      type->D3Ty.Qual.qual
+      type = ML_(new_Type)();
+      type->tag = Ty_Qual;
+      type->Ty.Qual.qual
          = dtag == DW_TAG_volatile_type ? 'V' : 'C';
       /* target type defaults to 'void' */
-      type->D3Ty.Qual.typeR = D3_FAKEVOID_CUOFF;
+      type->Ty.Qual.typeR = D3_FAKEVOID_CUOFF;
       while (True) {
          DW_AT   attr = (DW_AT)  get_ULEB128( c_abbv );
          DW_FORM form = (DW_FORM)get_ULEB128( c_abbv );
@@ -3413,7 +2264,7 @@ static void parse_type_DIE ( /*OUT*/D3TyAdmin** admin,
          get_Form_contents( &cts, &ctsSzB, &ctsMemSzB,
                             cc, c_die, False/*td3*/, form );
          if (attr == DW_AT_type && ctsSzB > 0) {
-            type->D3Ty.Qual.typeR = (D3Type*)(UWord)cts;
+            type->Ty.Qual.typeR = (Type*)(UWord)cts;
             have_ty++;
          }
       }
@@ -3434,9 +2285,9 @@ static void parse_type_DIE ( /*OUT*/D3TyAdmin** admin,
    if (0) VG_(printf)("YYYY Acquire Type\n");
    vg_assert(type); vg_assert(!atom); vg_assert(!field);
    vg_assert(!expr); vg_assert(!bounds);
-   *admin            = new_D3TyAdmin( posn, *admin );
+   *admin            = ML_(new_TyAdmin)( posn, *admin );
    (*admin)->payload = type;
-   (*admin)->tag     = D3TyA_Type;
+   (*admin)->tag     = TyA_Type;
    return;
    /*NOTREACHED*/
 
@@ -3444,9 +2295,9 @@ static void parse_type_DIE ( /*OUT*/D3TyAdmin** admin,
    if (0) VG_(printf)("YYYY Acquire Atom\n");
    vg_assert(!type); vg_assert(atom); vg_assert(!field);
    vg_assert(!expr); vg_assert(!bounds);
-   *admin            = new_D3TyAdmin( posn, *admin );
+   *admin            = ML_(new_TyAdmin)( posn, *admin );
    (*admin)->payload = atom;
-   (*admin)->tag     = D3TyA_Atom;
+   (*admin)->tag     = TyA_Atom;
    return;
    /*NOTREACHED*/
 
@@ -3456,14 +2307,14 @@ static void parse_type_DIE ( /*OUT*/D3TyAdmin** admin,
    vg_assert(!type); vg_assert(!atom); vg_assert(field); 
    /*vg_assert(expr);*/ vg_assert(!bounds);
    if (expr) {
-      *admin            = new_D3TyAdmin( (UWord)D3_INVALID_CUOFF,
-                                          *admin );
+      *admin            = ML_(new_TyAdmin)( (UWord)D3_INVALID_CUOFF,
+                                            *admin );
       (*admin)->payload = expr;
-      (*admin)->tag     = D3TyA_Expr;
+      (*admin)->tag     = TyA_Expr;
    }
-   *admin            = new_D3TyAdmin( posn, *admin );
+   *admin            = ML_(new_TyAdmin)( posn, *admin );
    (*admin)->payload = field;
-   (*admin)->tag     = D3TyA_Field;
+   (*admin)->tag     = TyA_Field;
    return;
    /*NOTREACHED*/
 
@@ -3471,9 +2322,9 @@ static void parse_type_DIE ( /*OUT*/D3TyAdmin** admin,
    if (0) VG_(printf)("YYYY Acquire Bounds\n");
    vg_assert(!type); vg_assert(!atom); vg_assert(!field);
    vg_assert(!expr); vg_assert(bounds);
-   *admin            = new_D3TyAdmin( posn, *admin );
+   *admin            = ML_(new_TyAdmin)( posn, *admin );
    (*admin)->payload = bounds;
-   (*admin)->tag     = D3TyA_Bounds;
+   (*admin)->tag     = TyA_Bounds;
    return;
    /*NOTREACHED*/
 
@@ -3481,12 +2332,12 @@ static void parse_type_DIE ( /*OUT*/D3TyAdmin** admin,
    set_position_of_Cursor( c_die,  saved_die_c_offset );
    set_position_of_Cursor( c_abbv, saved_abbv_c_offset );
    VG_(printf)("\nparse_type_DIE: confused by:\n");
-   VG_(printf)(" <%d><%lx>: %s\n", level, posn, pp_DW_TAG( dtag ) );
+   VG_(printf)(" <%d><%lx>: %s\n", level, posn, ML_(pp_DW_TAG)( dtag ) );
    while (True) {
       DW_AT   attr = (DW_AT)  get_ULEB128( c_abbv );
       DW_FORM form = (DW_FORM)get_ULEB128( c_abbv );
       if (attr == 0 && form == 0) break;
-      VG_(printf)("     %18s: ", pp_DW_AT(attr));
+      VG_(printf)("     %18s: ", ML_(pp_DW_AT)(attr));
       /* Get the form contents, so as to print them */
       get_Form_contents( &cts, &ctsSzB, &ctsMemSzB,
                          cc, c_die, True, form );
@@ -3502,8 +2353,8 @@ static void parse_type_DIE ( /*OUT*/D3TyAdmin** admin,
 // Type Resolver
 
 static Int cmp_D3TyAdmin_by_cuOff ( void* v1, void* v2 ) {
-   D3TyAdmin* a1 = *(D3TyAdmin**)v1;
-   D3TyAdmin* a2 = *(D3TyAdmin**)v2;
+   TyAdmin* a1 = *(TyAdmin**)v1;
+   TyAdmin* a2 = *(TyAdmin**)v2;
    if (a1->cuOff < a2->cuOff) return -1;
    if (a1->cuOff > a2->cuOff) return 1;
    return 0;
@@ -3519,11 +2370,11 @@ static Int cmp_D3TyAdmin_by_cuOff ( void* v1, void* v2 ) {
    Otherwise (conceptually fails) and returns False. */
 static Bool resolve_binding ( /*OUT*/void** payload,
                               XArray* map, void* cuOff,
-                              D3TyAdminTag tag, 
+                              TyAdminTag tag, 
                               Bool allow_invalid ) {
-   Bool      found;
-   Word      ixLo, ixHi;
-   D3TyAdmin dummy, *dummyP, *admin;
+   Bool    found;
+   Word    ixLo, ixHi;
+   TyAdmin dummy, *dummyP, *admin;
 
    if (cuOff == D3_INVALID_CUOFF && allow_invalid) {
       *payload = NULL;
@@ -3539,7 +2390,7 @@ static Bool resolve_binding ( /*OUT*/void** payload,
    /* If this doesn't hold, we must have seen more than one DIE with
       the same cuOff(set).  Which isn't possible. */
    vg_assert(ixLo == ixHi);
-   admin = *(D3TyAdmin**)VG_(indexXA)( map, ixLo );
+   admin = *(TyAdmin**)VG_(indexXA)( map, ixLo );
    /* All payload pointers should be non-NULL.  Ensured by assertion in
       loop in resolve_type_entities that creates 'map'.  Hence it is
       safe to return NULL to indicate 'not found'. */
@@ -3553,15 +2404,16 @@ static Bool resolve_binding ( /*OUT*/void** payload,
    return True;
 }
 
-static void resolve_type_entities ( /*MOD*/D3TyAdmin* admin,
+static void resolve_type_entities ( /*MOD*/TyAdmin* admin,
                                     /*MOD*/TempVar* vars )
 {
-   Bool  ok;
-   void* payload;
-   D3TyAdmin* adp;
+   Bool     ok;
+   void*    payload;
+   TyAdmin* adp;
    XArray* /* of D3TyAdmin* */ map;
 
-   map = VG_(newXA)( dinfo_zalloc, dinfo_free, sizeof(D3TyAdmin*) );
+   map = VG_(newXA)( ML_(dinfo_zalloc), ML_(dinfo_free),
+                     sizeof(TyAdmin*) );
    for (adp = admin; adp; adp = adp->next) {
       vg_assert(adp);
       vg_assert(adp->payload != NULL);
@@ -3576,81 +2428,81 @@ static void resolve_type_entities ( /*MOD*/D3TyAdmin* admin,
    for (adp = admin; adp; adp = adp->next) {
       vg_assert(adp->payload);
       switch (adp->tag) {
-      case D3TyA_Bounds: {
-         D3TyBounds* bounds = (D3TyBounds*)adp->payload;
+      case TyA_Bounds: {
+         TyBounds* bounds = (TyBounds*)adp->payload;
          if (bounds->knownL && bounds->knownU 
              && bounds->knownL > bounds->knownU) goto baaad;
          break;
       }
-      case D3TyA_Atom: {
-         D3TyAtom* atom = (D3TyAtom*)adp->payload;
+      case TyA_Atom: {
+         TyAtom* atom = (TyAtom*)adp->payload;
          if (!atom->name) goto baaad;
          break;
       }
-      case D3TyA_Expr: {
+      case TyA_Expr: {
          D3Expr* expr = (D3Expr*)adp->payload;
          if (!expr->bytes) goto baaad;
          break;
       }
-      case D3TyA_Field: {
-         D3TyField* field = (D3TyField*)adp->payload;
+      case TyA_Field: {
+         TyField* field = (TyField*)adp->payload;
          if (!field->name) goto baaad;
          if ( (field->isStruct && (!field->loc)) 
               || ((!field->isStruct) && field->loc))
             goto baaad;
          ok = resolve_binding( &payload, map, field->typeR,
-                               D3TyA_Type, False/*!allow_invalid*/ );
+                               TyA_Type, False/*!allow_invalid*/ );
          if (!ok) goto baaad;
          field->typeR = payload;
          break;
       }
-      case D3TyA_Type: {
+      case TyA_Type: {
          UChar   enc;
 #if 0
          Word    i;
 #endif
          XArray* xa;
-         D3Type* ty = (D3Type*)adp->payload;
+         Type* ty = (Type*)adp->payload;
          switch (ty->tag) {
-            case D3Ty_Base:
-               enc = ty->D3Ty.Base.enc;
-               if ((!ty->D3Ty.Base.name) 
-                   || ty->D3Ty.Base.szB < 1 || ty->D3Ty.Base.szB > 16
+            case Ty_Base:
+               enc = ty->Ty.Base.enc;
+               if ((!ty->Ty.Base.name) 
+                   || ty->Ty.Base.szB < 1 || ty->Ty.Base.szB > 16
                    || (enc != 'S' && enc != 'U' && enc != 'F'))
                   goto baaad;
                break;
-            case D3Ty_TyDef:
-               if (!ty->D3Ty.TyDef.name) goto baaad;
+            case Ty_TyDef:
+               if (!ty->Ty.TyDef.name) goto baaad;
                ok = resolve_binding( &payload, map,
-                                     ty->D3Ty.TyDef.typeR, 
-                                     D3TyA_Type,
+                                     ty->Ty.TyDef.typeR, 
+                                     TyA_Type,
                                      True/*allow_invalid*/ );
                if (!ok) goto baaad;
-               ty->D3Ty.TyDef.typeR = payload;
+               ty->Ty.TyDef.typeR = payload;
                break;
-            case D3Ty_PorR:
-               if (ty->D3Ty.PorR.szB != sizeof(Word)) goto baaad;
+            case Ty_PorR:
+               if (ty->Ty.PorR.szB != sizeof(Word)) goto baaad;
                ok = resolve_binding( &payload, map,
-                                     ty->D3Ty.PorR.typeR, 
-                                     D3TyA_Type,
+                                     ty->Ty.PorR.typeR, 
+                                     TyA_Type,
                                      False/*!allow_invalid*/ );
                if (!ok) goto baaad;
-               ty->D3Ty.PorR.typeR = payload;
+               ty->Ty.PorR.typeR = payload;
                break;
-            case D3Ty_Array:
-               if (!ty->D3Ty.Array.bounds) goto baaad;
+            case Ty_Array:
+               if (!ty->Ty.Array.bounds) goto baaad;
                ok = resolve_binding( &payload, map,
-                                     ty->D3Ty.Array.typeR, 
-                                     D3TyA_Type,
+                                     ty->Ty.Array.typeR, 
+                                     TyA_Type,
                                      False/*!allow_invalid*/ );
                if (!ok) goto baaad;
-               ty->D3Ty.Array.typeR = payload;
+               ty->Ty.Array.typeR = payload;
                break;
-            case D3Ty_Enum:
-               if ((!ty->D3Ty.Enum.atomRs)
-                   || ty->D3Ty.Enum.szB < 1 
-                   || ty->D3Ty.Enum.szB > 8) goto baaad;
-               xa = ty->D3Ty.Enum.atomRs;
+            case Ty_Enum:
+               if ((!ty->Ty.Enum.atomRs)
+                   || ty->Ty.Enum.szB < 1 
+                   || ty->Ty.Enum.szB > 8) goto baaad;
+               xa = ty->Ty.Enum.atomRs;
 #if 0
                for (i = 0; i < VG_(sizeXA)(xa); i++) {
                   void** ppAtom = VG_(indexXA)(xa,i);
@@ -3662,8 +2514,8 @@ static void resolve_type_entities ( /*MOD*/D3TyAdmin* admin,
                }
 #endif
                break;
-            case D3Ty_StOrUn:
-               xa = ty->D3Ty.StOrUn.fields;
+            case Ty_StOrUn:
+               xa = ty->Ty.StOrUn.fields;
                if (!xa) goto baaad;
 #if 0
                for (i = 0; i < VG_(sizeXA)(xa); i++) {
@@ -3676,21 +2528,21 @@ static void resolve_type_entities ( /*MOD*/D3TyAdmin* admin,
                }
 #endif
                break;
-            case D3Ty_Fn:
+            case Ty_Fn:
                break;
-            case D3Ty_Qual:
-               if (ty->D3Ty.Qual.qual != 'C' 
-                   && ty->D3Ty.Qual.qual != 'V') goto baaad;
+            case Ty_Qual:
+               if (ty->Ty.Qual.qual != 'C' 
+                   && ty->Ty.Qual.qual != 'V') goto baaad;
                ok = resolve_binding( &payload, map,
-                                     ty->D3Ty.Qual.typeR, 
-                                     D3TyA_Type,
+                                     ty->Ty.Qual.typeR, 
+                                     TyA_Type,
                                      False/*!allow_invalid*/ );
                if (!ok) goto baaad;
-               ty->D3Ty.Qual.typeR = payload;
+               ty->Ty.Qual.typeR = payload;
                break;
-            case D3Ty_Void:
-               if (ty->D3Ty.Void.isFake != False 
-                   && ty->D3Ty.Void.isFake != True) goto baaad;
+            case Ty_Void:
+               if (ty->Ty.Void.isFake != False 
+                   && ty->Ty.Void.isFake != True) goto baaad;
                break;
             default:
                goto baaad;
@@ -3700,7 +2552,7 @@ static void resolve_type_entities ( /*MOD*/D3TyAdmin* admin,
       baaad:
       default:
          VG_(printf)("valgrind: bad D3TyAdmin: ");
-         pp_D3TyAdmin(adp);
+         ML_(pp_TyAdmin)(adp);
          VG_(printf)("\n");
       }
    }
@@ -3709,7 +2561,7 @@ static void resolve_type_entities ( /*MOD*/D3TyAdmin* admin,
    for (; vars; vars = vars->next) {
       payload = NULL;
       ok = resolve_binding( &payload, map, vars->typeR,
-                            D3TyA_Type, True/*allow_invalid*/ );
+                            TyA_Type, True/*allow_invalid*/ );
 //if (!ok) VG_(printf)("Can't resolve type reference 0x%lx\n", (UWord)vars->typeR);
 //vg_assert(ok);
       vars->typeR = payload;
@@ -3722,7 +2574,7 @@ static void resolve_type_entities ( /*MOD*/D3TyAdmin* admin,
 /////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////
 
-static void read_DIE ( /*OUT*/D3TyAdmin** admin,
+static void read_DIE ( /*OUT*/TyAdmin** admin,
                        /*OUT*/TempVar** tempvars,
                        /*OUT*/GExpr** gexprs,
                        /*MOD*/D3TypeParser* typarser,
@@ -3743,7 +2595,7 @@ static void read_DIE ( /*OUT*/D3TyAdmin** admin,
    atag      = get_ULEB128( &abbv );
    TRACE_D3("\n");
    TRACE_D3(" <%d><%lx>: Abbrev Number: %llu (%s)\n",
-            level, posn, abbv_code, pp_DW_TAG( atag ) );
+            level, posn, abbv_code, ML_(pp_DW_TAG)( atag ) );
 
    if (atag == 0)
       cc->barf("read_DIE: invalid zero tag on DIE");
@@ -3768,7 +2620,7 @@ static void read_DIE ( /*OUT*/D3TyAdmin** admin,
       ULong at_name = get_ULEB128( &abbv );
       ULong at_form = get_ULEB128( &abbv );
       if (at_name == 0 && at_form == 0) break;
-      TRACE_D3("     %18s: ", pp_DW_AT(at_name));
+      TRACE_D3("     %18s: ", ML_(pp_DW_AT)(at_name));
       /* Get the form contents, but ignore them; the only purpose is
          to print them, if td3 is True */
       get_Form_contents( &cts, &ctsSzB, &ctsMemSzB,
@@ -3841,21 +2693,23 @@ void new_dwarf3_reader_wrk (
    UChar* debug_loc_img,    SizeT debug_loc_sz
 )
 {
-   D3TyAdmin *admin, *adminp;
+   TyAdmin *admin, *adminp;
    TempVar *tempvars, *varp, *varp2;
    GExpr *gexprs, *gexpr;
    Cursor abbv; /* for showing .debug_abbrev */
    Cursor info; /* primary cursor for parsing .debug_info */
    Cursor ranges; /* for showing .debug_ranges */
-   Cursor loc; /* for showing .debug_loc */
    D3TypeParser typarser;
    D3VarParser varparser;
-   Addr  dr_base, dl_base;
-   UWord dr_offset, dl_offset;
+   Addr  dr_base;
+   UWord dr_offset;
    Bool td3 = di->trace_symtab;
 
 #if 0
    /* Display .debug_loc */
+   Addr  dl_base;
+   UWord dl_offset;
+   Cursor loc; /* for showing .debug_loc */
    TRACE_SYMTAB("\n");
    TRACE_SYMTAB("\n------ The contents of .debug_loc ------\n");
    TRACE_SYMTAB("    Offset   Begin    End      Expression\n");
@@ -3968,13 +2822,14 @@ void new_dwarf3_reader_wrk (
          atag = get_ULEB128( &abbv );
          has_children = get_UChar( &abbv );
          TRACE_D3("   %llu      %s    [%s]\n", 
-                  acode, pp_DW_TAG(atag), pp_DW_children(has_children));
+                  acode, ML_(pp_DW_TAG)(atag),
+                         ML_(pp_DW_children)(has_children));
          while (True) {
             ULong at_name = get_ULEB128( &abbv );
             ULong at_form = get_ULEB128( &abbv );
             if (at_name == 0 && at_form == 0) break;
             TRACE_D3("    %18s %s\n", 
-                     pp_DW_AT(at_name), pp_DW_FORM(at_form));
+                     ML_(pp_DW_AT)(at_name), ML_(pp_DW_FORM)(at_form));
          }
       }
    }
@@ -3994,12 +2849,12 @@ void new_dwarf3_reader_wrk (
       it would need to have a .debug_info section 4GB long for that to
       happen. */
    admin = NULL;
-   { D3Type* tVoid = new_D3Type();
-     tVoid->tag = D3Ty_Void;
-     tVoid->D3Ty.Void.isFake = True;
-     admin = new_D3TyAdmin( (UWord)D3_FAKEVOID_CUOFF, admin );
+   { Type* tVoid = ML_(new_Type)();
+     tVoid->tag = Ty_Void;
+     tVoid->Ty.Void.isFake = True;
+     admin = ML_(new_TyAdmin)( (UWord)D3_FAKEVOID_CUOFF, admin );
      admin->payload = tVoid;
-     admin->tag     = D3TyA_Type;
+     admin->tag     = TyA_Type;
    }
 
    tempvars = NULL;
@@ -4094,7 +2949,7 @@ void new_dwarf3_reader_wrk (
       necessary, but makes it easier to read. */
    vg_assert(admin);
    if (admin) { 
-      D3TyAdmin *next, *prev = NULL;
+      TyAdmin *next, *prev = NULL;
       for (adminp = admin; adminp; adminp = next) {
          next = adminp->next;
          adminp->next = prev;
@@ -4119,7 +2974,7 @@ void new_dwarf3_reader_wrk (
    TRACE_D3("------ Acquired the following type entities: ------\n");
    for (adminp = admin; adminp; adminp = adminp->next) {
       TRACE_D3("   ");
-      if (td3) pp_D3TyAdmin( adminp );
+      if (td3) ML_(pp_TyAdmin)( adminp );
       TRACE_D3("\n");
    }
    TRACE_D3("\n");
@@ -4140,7 +2995,7 @@ void new_dwarf3_reader_wrk (
          VG_(printf)("  addVar: level %d  %p-%p  %s :: ",
                      varp->level, varp->pcMin, varp->pcMax, varp->name );
          if (varp->typeR) {
-            ML_(pp_D3Type_C_ishly)( varp->typeR );
+            ML_(pp_Type_C_ishly)( varp->typeR );
          } else {
             VG_(printf)("!!type=NULL!!");
          }
@@ -4182,7 +3037,7 @@ void new_dwarf3_reader_wrk (
                 varp->name, (void*)varp->typeR,
                 varp->gexpr, varp->fbGX, td3 
          );
-      dinfo_free(varp);
+      ML_(dinfo_free)(varp);
    }
    tempvars = NULL;
 

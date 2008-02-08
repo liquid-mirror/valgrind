@@ -37,9 +37,9 @@
 #include "pub_core_libcbase.h"
 #include "pub_core_libcassert.h"
 #include "pub_core_libcprint.h"
-#include "pub_core_mallocfree.h"
 #include "pub_core_options.h"
 #include "pub_core_xarray.h"
+#include "priv_misc.h"             /* dinfo_zalloc/free/strdup */
 #include "priv_storage.h"
 #include "priv_readdwarf.h"        /* self */
 
@@ -75,7 +75,7 @@ static void free_WordArray ( WordArray* wa )
 {
    if (wa->tab) {
       vg_assert(wa->tab_size > 0);
-      VG_(arena_free)(VG_AR_DINFO, wa->tab);
+      ML_(dinfo_free)(wa->tab);
    }
    init_WordArray(wa);
 }
@@ -97,14 +97,13 @@ static void addto_WordArray ( WordArray* wa, Word w )
       vg_assert( (wa->tab_size == 0 && wa->tab == NULL)
                  || (wa->tab_size != 0 && wa->tab != NULL) );
       new_size = wa->tab_size == 0 ? 8 : 2 * wa->tab_size;
-      new_tab  = VG_(arena_malloc)(VG_AR_DINFO, 
-                                   new_size * sizeof(Word));
+      new_tab  = ML_(dinfo_zalloc)(new_size * sizeof(Word));
       vg_assert(new_tab != NULL);
       for (i = 0; i < wa->tab_used; i++)
          new_tab[i] = wa->tab[i];
       wa->tab_size = new_size;
       if (wa->tab)
-         VG_(arena_free)(VG_AR_DINFO, wa->tab);
+         ML_(dinfo_free)(wa->tab);
       wa->tab = new_tab;
    }
 
@@ -1961,13 +1960,6 @@ static void ppUnwindContext ( UnwindContext* ctx )
    VG_(printf)("\n");
 }
 
-static void* symtab_alloc ( SizeT szB ) {
-   return VG_(arena_malloc)( VG_AR_DINFO, szB );
-}
-static void symtab_free ( void* v ) {
-   VG_(arena_free)( VG_AR_DINFO, v );
-}
-
 static void initUnwindContext ( /*OUT*/UnwindContext* ctx )
 {
    Int i;
@@ -2046,7 +2038,7 @@ static Bool summarise_context( /*OUT*/DiCfSI* si,
       src = ctx->exprs;
       dst = debuginfo->cfsi_exprs;
       if (src && (VG_(sizeXA)(src) > 0) && (!dst)) {
-         dst = VG_(newXA)( symtab_alloc, symtab_free,
+         dst = VG_(newXA)( ML_(dinfo_zalloc), ML_(dinfo_free),
                            sizeof(CfiExpr) );
          vg_assert(dst);
          debuginfo->cfsi_exprs = dst;
@@ -2088,7 +2080,8 @@ static Bool summarise_context( /*OUT*/DiCfSI* si,
          src = ctx->exprs;                                    \
          dst = debuginfo->cfsi_exprs;                         \
          if (src && (VG_(sizeXA)(src) > 0) && (!dst)) {       \
-            dst = VG_(newXA)( symtab_alloc, symtab_free,      \
+            dst = VG_(newXA)( ML_(dinfo_zalloc),              \
+                              ML_(dinfo_free),                \
                               sizeof(CfiExpr) );              \
             vg_assert(dst);                                   \
             debuginfo->cfsi_exprs = dst;                      \
@@ -3901,7 +3894,7 @@ void ML_(read_callframe_info_dwarf3)
          ctx.data_a_f = the_CIEs[cie].data_a_f;
          ctx.initloc  = fde_initloc;
          ctx.ra_reg   = the_CIEs[cie].ra_reg;
-         ctx.exprs    = VG_(newXA)( symtab_alloc, symtab_free, 
+         ctx.exprs    = VG_(newXA)( ML_(dinfo_zalloc), ML_(dinfo_free), 
                                     sizeof(CfiExpr) );
          vg_assert(ctx.exprs);
 

@@ -1,7 +1,6 @@
 
 /*--------------------------------------------------------------------*/
-/*--- Read DWARF3 ".debug_info" sections (DIE trees).              ---*/
-/*---                                            priv_readdwarf3.h ---*/
+/*--- Misc simple stuff lacking a better home.        priv_misc.h ---*/
 /*--------------------------------------------------------------------*/
 
 /*
@@ -34,47 +33,27 @@
    without prior written permission.
 */
 
-#ifndef __PRIV_READDWARF3_H
-#define __PRIV_READDWARF3_H
+#ifndef __PRIV_MISC_H
+#define __PRIV_MISC_H
 
 
-/* Read DWARF3 ".debug_info" sections. */
-void 
-ML_(new_dwarf3_reader) (
-   struct _DebugInfo* di,
-   UChar* debug_info_img,   SizeT debug_info_sz,
-   UChar* debug_abbv_img,   SizeT debug_abbv_sz,
-   UChar* debug_line_img,   SizeT debug_line_sz,
-   UChar* debug_str_img,    SizeT debug_str_sz,
-   UChar* debug_ranges_img, SizeT debug_ranges_sz,
-   UChar* debug_loc_img,    SizeT debug_loc_sz
-);
+#ifdef HAVE_BUILTIN_EXPECT
+#define LIKELY(cond)   __builtin_expect(!!(cond),1)
+#define UNLIKELY(cond) __builtin_expect(!!(cond),0)
+#else
+#define LIKELY(cond)   (cond)
+#define UNLIKELY(cond) (cond)
+#endif
 
-typedef
-   struct _GExpr { 
-      struct _GExpr* next;
-      UChar payload[0];
-   }
-   GExpr;
 
-/* Show a so-called guarded expression */
-void ML_(pp_GX) ( GExpr* gx );
+/* Allocate(zeroed), free, strdup, all in VG_AR_DINFO. */
+void*  ML_(dinfo_zalloc)( SizeT szB );
+void   ML_(dinfo_free)( void* v );
+UChar* ML_(dinfo_strdup)( const UChar* str );
 
-/* Evaluate a guarded expression, using 'ip' to select which of the
-   embedded DWARF3 location expressions to use. */
 
-typedef
-   struct { Addr ip; Addr sp; Addr fp; }
-   RegSummary;
-
-typedef
-   struct { UWord res; HChar* failure; }
-   GXResult;
-
-GXResult ML_(evaluate_GX)( GExpr* gx, GExpr* fbGX, RegSummary* regs );
-
-#endif /* ndef __PRIV_READDWARF3_H */
+#endif /* ndef __PRIV_MISC_H */
 
 /*--------------------------------------------------------------------*/
-/*--- end                                        priv_readdwarf3.h ---*/
+/*--- end                                              priv_misc.h ---*/
 /*--------------------------------------------------------------------*/

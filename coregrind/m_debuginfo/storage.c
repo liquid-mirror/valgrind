@@ -42,14 +42,16 @@
 #include "pub_core_libcassert.h"
 #include "pub_core_libcbase.h"
 #include "pub_core_libcprint.h"
-#include "pub_core_mallocfree.h"
 #include "pub_core_xarray.h"
 #include "pub_core_oset.h"
 
-//FIXME: get rid of this
-#include "priv_readdwarf3.h"  // ML_(pp_D3Type_C_ishly)
+#include "priv_storage.h"      /* self */
 
-#include "priv_storage.h"          /* self */
+//FIXME: get rid of this
+#include "priv_readdwarf3.h"  // ML_(pp_GX)
+
+#include "priv_misc.h"         /* dinfo_zalloc/free/strdup */
+#include "priv_tytypes.h"
 
 
 /*------------------------------------------------------------*/
@@ -180,7 +182,7 @@ UChar* ML_(addStr) ( struct _DebugInfo* di, UChar* str, Int len )
    if (di->strchunks == NULL || 
        (di->strchunks->strtab_used 
         + space_needed) > SEGINFO_STRCHUNKSIZE) {
-      chunk = VG_(arena_malloc)(VG_AR_DINFO, sizeof(*chunk));
+      chunk = ML_(dinfo_zalloc)(sizeof(*chunk));
       chunk->strtab_used = 0;
       chunk->next = di->strchunks;
       di->strchunks = chunk;
@@ -209,11 +211,11 @@ void ML_(addSym) ( struct _DebugInfo* di, DiSym* sym )
    if (di->symtab_used == di->symtab_size) {
       new_sz = 2 * di->symtab_size;
       if (new_sz == 0) new_sz = 500;
-      new_tab = VG_(arena_malloc)(VG_AR_DINFO, new_sz * sizeof(DiSym) );
+      new_tab = ML_(dinfo_zalloc)( new_sz * sizeof(DiSym) );
       if (di->symtab != NULL) {
          for (i = 0; i < di->symtab_used; i++)
             new_tab[i] = di->symtab[i];
-         VG_(arena_free)(VG_AR_DINFO, di->symtab);
+         ML_(dinfo_free)(di->symtab);
       }
       di->symtab = new_tab;
       di->symtab_size = new_sz;
@@ -238,11 +240,11 @@ static void addLoc ( struct _DebugInfo* di, DiLoc* loc )
    if (di->loctab_used == di->loctab_size) {
       new_sz = 2 * di->loctab_size;
       if (new_sz == 0) new_sz = 500;
-      new_tab = VG_(arena_malloc)(VG_AR_DINFO, new_sz * sizeof(DiLoc) );
+      new_tab = ML_(dinfo_zalloc)( new_sz * sizeof(DiLoc) );
       if (di->loctab != NULL) {
          for (i = 0; i < di->loctab_used; i++)
             new_tab[i] = di->loctab[i];
-         VG_(arena_free)(VG_AR_DINFO, di->loctab);
+         ML_(dinfo_free)(di->loctab);
       }
       di->loctab = new_tab;
       di->loctab_size = new_sz;
@@ -393,11 +395,11 @@ void ML_(addDiCfSI) ( struct _DebugInfo* di, DiCfSI* cfsi )
    if (di->cfsi_used == di->cfsi_size) {
       new_sz = 2 * di->cfsi_size;
       if (new_sz == 0) new_sz = 20;
-      new_tab = VG_(arena_malloc)(VG_AR_DINFO, new_sz * sizeof(DiCfSI) );
+      new_tab = ML_(dinfo_zalloc)( new_sz * sizeof(DiCfSI) );
       if (di->cfsi != NULL) {
          for (i = 0; i < di->cfsi_used; i++)
             new_tab[i] = di->cfsi[i];
-         VG_(arena_free)(VG_AR_DINFO, di->cfsi);
+         ML_(dinfo_free)(di->cfsi);
       }
       di->cfsi = new_tab;
       di->cfsi_size = new_sz;
@@ -520,18 +522,6 @@ void ML_(ppCfiExpr)( XArray* src, Int ix )
 }
 
 
-/* Add a variable description to the variable table. */
-static void* dinfo_zalloc ( SizeT szB ) {
-   void* v;
-   vg_assert(szB > 0);
-   v = VG_(arena_malloc)( VG_AR_DINFO, szB );
-   vg_assert(v);
-   VG_(memset)(v, 0, szB);
-   return v;
-}
-static void dinfo_free ( void* v ) {
-   VG_(arena_free)( VG_AR_DINFO, v );
-}
 static Word cmp_for_DiAddrRange ( const void* keyV, const void* elemV ) {
    const Addr* key = (const Addr*)keyV;
    const DiAddrRange* elem = (const DiAddrRange*)elemV;
@@ -568,7 +558,8 @@ static DiAddrRange* find_or_create_arange (
       DiAddrRange tmp;
       tmp.aMin = aMin;
       tmp.aMax = aMax;
-      tmp.vars = VG_(newXA)( dinfo_zalloc, dinfo_free, sizeof(DiVariable) );
+      tmp.vars = VG_(newXA)( ML_(dinfo_zalloc), ML_(dinfo_free),
+                             sizeof(DiVariable) );
       old = VG_(OSetGen_AllocNode)( inner, sizeof(DiAddrRange) );
       vg_assert(old);
       *old = tmp;
@@ -594,7 +585,7 @@ void ML_(addVar)( struct _DebugInfo* di,
    if (0) {
       VG_(printf)("  ML_(addVar): level %d  %p-%p  %s :: ",
                   level, aMin, aMax, name );
-      ML_(pp_D3Type_C_ishly)( typeV );
+      ML_(pp_Type_C_ishly)( typeV );
       VG_(printf)("\n  Var=");
       ML_(pp_GX)(gexprV);
       VG_(printf)("\n");
@@ -615,7 +606,8 @@ void ML_(addVar)( struct _DebugInfo* di,
    vg_assert(gexprV);
 
    if (!di->varinfo) {
-      di->varinfo = VG_(newXA)( dinfo_zalloc, dinfo_free, sizeof(OSet*) );
+      di->varinfo = VG_(newXA)( ML_(dinfo_zalloc), ML_(dinfo_free),
+                                sizeof(OSet*) );
    }
 
    vg_assert(level < 256); /* arbitrary; stay sane */
@@ -623,7 +615,7 @@ void ML_(addVar)( struct _DebugInfo* di,
    while ( VG_(sizeXA)(di->varinfo) <= level ) {
       inner = VG_(OSetGen_Create)( offsetof(DiAddrRange,aMin), 
                                    cmp_for_DiAddrRange,
-                                   dinfo_zalloc, dinfo_free );
+                                   ML_(dinfo_zalloc), ML_(dinfo_free) );
       if (0) VG_(printf)("create: inner = %p, adding at %ld\n",
                          inner, VG_(sizeXA)(di->varinfo));
       VG_(addToXA)( di->varinfo, &inner );

@@ -38,8 +38,8 @@
 #include "pub_core_libcbase.h"
 #include "pub_core_libcassert.h"
 #include "pub_core_libcprint.h"
-#include "pub_core_mallocfree.h"
 #include "pub_core_xarray.h"
+#include "priv_misc.h"             /* dinfo_zalloc/free/strdup */
 #include "priv_storage.h"
 #include "priv_readstabs.h"        /* self */
 
@@ -176,11 +176,11 @@ void ML_(read_debuginfo_stabs) ( DebugInfo* di,  OffT debug_offset,
                   qbuflen = 16;
                while ((qidx + qlen) >= qbuflen)
                   qbuflen *= 2;
-               n = VG_(arena_malloc)(VG_AR_DINFO, qbuflen);
+               n = ML_(dinfo_zalloc)(qbuflen);
                VG_(memcpy)(n, qbuf, qidx);
                
                if (qbuf != NULL)
-                  VG_(arena_free)(VG_AR_DINFO, qbuf);
+                  ML_(dinfo_free)(qbuf);
                qbuf = n;
             }
 
@@ -207,7 +207,7 @@ void ML_(read_debuginfo_stabs) ( DebugInfo* di,  OffT debug_offset,
          if (qbuf != NULL) {
             i--;                        /* overstepped */
             string = ML_(addStr)(di, qbuf, qidx);
-            VG_(arena_free)(VG_AR_DINFO, qbuf);
+            ML_(dinfo_free)(qbuf);
             if (contdebug)
                VG_(printf)("made composite: \"%s\"\n", string);
          }
