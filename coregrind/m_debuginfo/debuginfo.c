@@ -37,19 +37,20 @@
 #include "pub_core_basics.h"
 #include "pub_core_vki.h"
 #include "pub_core_threadstate.h"
-#include "pub_core_debuginfo.h"   /* self */
+#include "pub_core_debuginfo.h"  /* self */
 #include "pub_core_demangle.h"
 #include "pub_core_libcbase.h"
 #include "pub_core_libcassert.h"
 #include "pub_core_libcprint.h"
 #include "pub_core_libcfile.h"
 #include "pub_core_options.h"
-#include "pub_core_redir.h"       // VG_(redir_notify_{new,delete}_SegInfo)
+#include "pub_core_redir.h"      // VG_(redir_notify_{new,delete}_SegInfo)
 #include "pub_core_aspacemgr.h"
-#include "pub_core_machine.h"     // VG_PLAT_USES_PPCTOC
+#include "pub_core_machine.h"    // VG_PLAT_USES_PPCTOC
 #include "pub_core_xarray.h"
 #include "pub_core_oset.h"
-#include "priv_misc.h"            /* dinfo_zalloc/free */
+#include "pub_core_stacktrace.h" // VG_(get_StackTrace)
+#include "priv_misc.h"           /* dinfo_zalloc/free */
 #include "priv_storage.h"
 #include "priv_tytypes.h"
 #include "priv_readdwarf.h"
@@ -102,6 +103,51 @@
 /* The root structure for the entire debug info system.  It is a
    linked list of DebugInfos. */
 static DebugInfo* debugInfo_list = NULL;
+
+
+/* Find 'di' in the debugInfo_list and move it one step closer the the
+   front of the list, so as to make subsequent searches for it
+   cheaper.  When used in a controlled way, makes a major improvement
+   in some DebugInfo-search-intensive situations, most notably stack
+   unwinding on amd64-linux. */
+static void move_DebugInfo_one_step_forward ( DebugInfo* di )
+{
+   DebugInfo *di0, *di1, *di2;
+   if (di == debugInfo_list)
+      return; /* already at head of list */
+   vg_assert(di != NULL);
+   di0 = debugInfo_list;
+   di1 = NULL;
+   di2 = NULL;
+   while (True) {
+      if (di0 == NULL || di0 == di) break;
+      di2 = di1;
+      di1 = di0;
+      di0 = di0->next;
+   }
+   vg_assert(di0 == di);
+   if (di0 != NULL && di1 != NULL && di2 != NULL) {
+      DebugInfo* tmp;
+      /* di0 points to di, di1 to its predecessor, and di2 to di1's
+         predecessor.  Swap di0 and di1, that is, move di0 one step
+         closer to the start of the list. */
+      vg_assert(di2->next == di1);
+      vg_assert(di1->next == di0);
+      tmp = di0->next;
+      di2->next = di0;
+      di0->next = di1;
+      di1->next = tmp;
+   }
+   else
+   if (di0 != NULL && di1 != NULL && di2 == NULL) {
+      /* it's second in the list. */
+      vg_assert(debugInfo_list == di1);
+      vg_assert(di1->next == di0);
+      di1->next = di0->next;
+      di0->next = di1;
+      debugInfo_list = di0;
+   }
+}
 
 
 /*------------------------------------------------------------*/
@@ -912,15 +958,15 @@ Bool VG_(get_datasym_and_offset)( Addr data_addr,
    return True;
 }
 
-/* Try to form some description of data_addr by looking at the DWARF3
-   debug info we have.  This only looks at stack locations (for the
-   top frame of the thread from which ip/sp/fp are taken) and at
-   global variables.  Result (or as much as will fit) is put into into
-   dname[0 .. n_dname-1] and is guaranteed to be zero terminated. */
+/////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////
+/// begin Generate data description from DWARF3 debug info
 
 /* Evaluate the location expression/list for var, to see whether or
    not data_addr falls within the variable.  If so also return the
-   offset of data_addr from the start of the variable.*/
+   offset of data_addr from the start of the variable.  Note that
+   regs, which supplies ip,sp,fp values, will be NULL for global
+   variables, and non-NULL for local variables. */
 static Bool data_address_is_in_var ( /*OUT*/UWord* offset,
                                      DiVariable*   var,
                                      RegSummary*   regs,
@@ -928,12 +974,13 @@ static Bool data_address_is_in_var ( /*OUT*/UWord* offset,
 {
    SizeT    var_szB;
    GXResult res;
+   Bool     show = False;
    vg_assert(var->name);
    vg_assert(var->typeV);
    vg_assert(var->gexprV);
    var_szB = ML_(sizeOfType)(var->typeV);
 
-   if (1) {
+   if (show) {
       VG_(printf)("VVVV: find loc: %s :: ", var->name );
       ML_(pp_Type_C_ishly)( var->typeV );
       VG_(printf)("\n");
@@ -941,41 +988,149 @@ static Bool data_address_is_in_var ( /*OUT*/UWord* offset,
 
    res = ML_(evaluate_GX)( var->gexprV, var->fbGXv, regs );
 
-   if (1) VG_(printf)("VVVV: -> 0x%lx %s\n", res.res, 
-                      res.failure ? res.failure : "(success)");
+   if (show) VG_(printf)("VVVV: -> 0x%lx %s\n", res.res, 
+                         res.failure ? res.failure : "(success)");
    if (!res.failure && res.res <= data_addr
                     && data_addr < res.res + var_szB) {
-      *offset = res.res - data_addr;
+      *offset = data_addr - res.res;
       return True;
    } else {
       return False;
    }
 }
-Bool VG_(get_data_description)( Addr data_addr,
-                                Addr ip, Addr sp, Addr fp,
-                                /*OUT*/Char* dname, Int n_dname )
+
+/* Determine if data_addr is a local variable in the frame
+   characterised by (ip,sp,fp), and if so write its description into
+   dname[0..n_dname-1], and return True.  If not, return False. */
+static 
+Bool consider_vars_in_frame ( /*OUT*/Char* dname, Int n_dname,
+                              Addr data_addr,
+                              Addr ip, Addr sp, Addr fp )
 {
+   Word       i;
    DebugInfo* di;
    RegSummary regs;
-   DebugInfo* di_for_ip;
 
-   vg_assert(n_dname > 1);
-   dname[n_dname-1] = 0;
+   static UInt n_search = 0;
+   static UInt n_steps = 0;
+   n_search++;
 
-   if (0) VG_(printf)("GDnO: dataaddr %p, ip at error %p\n",
-                      data_addr, ip );
+   /* first, find the DebugInfo that pertains to 'ip'. */
+   for (di = debugInfo_list; di; di = di->next) {
+      n_steps++;
+      /* text segment missing? unlikely, but handle it .. */
+      if (di->text_size == 0)
+         continue;
+      /* Ok.  So does this text mapping bracket the ip? */
+      if (di->text_avma <= ip && ip < di->text_avma + di->text_size)
+         break;
+   }
+ 
+   /* Didn't find it.  Strange -- means ip is a code address outside
+      of any mapped text segment.  Unlikely but not impossible -- app
+      could be generating code to run. */
+   if (!di)
+      return False;
 
-   /* Loop over the DebugInfos we have.  Check data_addr against the
-      outermost scope of all of them (as that should be a global
-      scope).  Also, identify the di which contains the PC address.
-      That will be the one in which we need to look to find info on
-      nested scopes. */
+   if (0 && ((n_search & 0x1) == 0))
+      VG_(printf)("consider_vars_in_frame: %u searches, "
+                  "%u DebugInfos looked at\n", 
+                  n_search, n_steps);
+   /* Start of performance-enhancing hack: once every ??? (chosen
+      hackily after profiling) successful searches, move the found
+      DebugInfo one step closer to the start of the list.  This makes
+      future searches cheaper. */
+   if ((n_search & 0xFFFF) == 0) {
+      /* Move si one step closer to the start of the list. */
+      move_DebugInfo_one_step_forward( di );
+   }
+   /* End of performance-enhancing hack. */
 
+   /* any var info at all? */
+   if (!di->varinfo)
+      return False;
+
+   /* Work through the scopes from most deeply nested outwards,
+      looking for code address ranges that bracket 'ip'.  The
+      variables on each such address range found are in scope right
+      now.  Don't descend to level zero as that is the global
+      scope. */
    regs.ip = ip;
    regs.sp = sp;
    regs.fp = fp;
 
-   di_for_ip = NULL;
+   /* "for each scope, working outwards ..." */
+   for (i = VG_(sizeXA)(di->varinfo) - 1; i >= 1; i--) {
+      XArray*      vars;
+      Word         j;
+      DiAddrRange* arange;
+      OSet*        this_scope 
+         = *(OSet**)VG_(indexXA)( di->varinfo, i );
+      if (!this_scope)
+         continue;
+      /* Find the set of variables in this scope that
+         bracket the program counter. */
+      arange = VG_(OSetGen_LookupWithCmp)(
+                  this_scope, &ip, 
+                  ML_(cmp_for_DiAddrRange_range)
+               );
+      if (!arange)
+         continue;
+      /* stay sane */
+      vg_assert(arange->aMin <= arange->aMax);
+      /* It must bracket the ip we asked for, else
+         ML_(cmp_for_DiAddrRange_range) is somehow broken. */
+      vg_assert(arange->aMin <= ip && ip <= arange->aMax);
+      /* But it mustn't cover the entire address range.  We only
+         expect that to happen for the global scope (level 0), which
+         we're not looking at here. */
+      vg_assert(! (arange->aMin == (Addr)0
+                   && arange->aMax == ~(Addr)0) );
+      vars = arange->vars;
+      for (j = 0; j < VG_(sizeXA)( vars ); j++) {
+         DiVariable* var = (DiVariable*)VG_(indexXA)( vars, j );
+         SizeT       offset;
+         if (data_address_is_in_var( &offset, var, &regs, data_addr )) {
+            VG_(snprintf)(
+               dname, (SizeT)n_dname,
+               "Address 0x%lx is %lu bytes inside local var \"%s\"",
+               data_addr, offset, var->name);
+            dname[n_dname-1] = 0;
+            return True;
+         }
+      }
+   }
+
+   return False;
+}
+
+/* Try to form some description of data_addr by looking at the DWARF3
+   debug info we have.  This considers all global variables, and all
+   frames in the stacks of all threads.  Result (or as much as will
+   fit) is put into into dname[0 .. n_dname-1] and is guaranteed to be
+   zero terminated. */
+Bool VG_(get_data_description)( Addr data_addr,
+                                /*OUT*/Char* dname, Int n_dname )
+{
+#  define N_FRAMES 8
+   Addr ips[N_FRAMES], sps[N_FRAMES], fps[N_FRAMES];
+   UInt n_frames;
+
+   Addr       stack_min, stack_max;
+   ThreadId   tid;
+   Bool       found;
+   DebugInfo* di;
+   Word       j;
+
+   vg_assert(n_dname > 1);
+   dname[n_dname-1] = 0;
+
+   if (0) VG_(printf)("GDD: dataaddr %p\n", data_addr);
+
+   /* First, see if data_addr is (or is part of) a global variable.
+      Loop over the DebugInfos we have.  Check data_addr against the
+      outermost scope of all of them, as that should be a global
+      scope. */
    for (di = debugInfo_list; di != NULL; di = di->next) {
       OSet*        global_scope;
       Int          gs_size;
@@ -987,9 +1142,6 @@ Bool VG_(get_data_description)( Addr data_addr,
       /* text segment missing? unlikely, but handle it .. */
       if (di->text_size == 0)
          continue;
-      /* Ok.  So does this text mapping bracket the ip? */
-      if (di->text_avma <= ip && ip < di->text_avma + di->text_size)
-         di_for_ip = di;
       /* any var info at all? */
       if (!di->varinfo)
          continue;
@@ -1012,8 +1164,8 @@ Bool VG_(get_data_description)( Addr data_addr,
          = VG_(OSetGen_Lookup)( global_scope, &zero );
       /* The global range from (Addr)0 to ~(Addr)0 must exist */
       vg_assert(global_arange);
-      vg_assert(global_arange->aMin ==  (Addr)0);
-      vg_assert(global_arange->aMax == ~(Addr)0);
+      vg_assert(global_arange->aMin == (Addr)0
+                && global_arange->aMax == ~(Addr)0);
       /* Any vars in this range? */
       if (!global_arange->vars)
          continue;
@@ -1025,7 +1177,15 @@ Bool VG_(get_data_description)( Addr data_addr,
          SizeT offset;
          DiVariable* var = (DiVariable*)VG_(indexXA)( vars, i );
          vg_assert(var->name);
-         if (data_address_is_in_var( &offset, var, &regs, data_addr )) {
+         /* Note we use a NULL RegSummary* here.  It can't make any
+            sense for a global variable to have a location expression
+            which depends on a SP/FP/IP value.  So don't supply any.
+            This means, if the evaluation of the location
+            expression/list requires a register, we have to let it
+            fail. */
+         if (data_address_is_in_var( &offset, var, 
+                                     NULL/* RegSummary* */, 
+                                     data_addr )) {
             VG_(snprintf)(
                dname, (SizeT)n_dname,
                "Address 0x%lx is %lu bytes inside global var \"%s\"",
@@ -1036,59 +1196,49 @@ Bool VG_(get_data_description)( Addr data_addr,
       }
    }
 
-   if (0) {
-      VG_(printf)("di_for_ip %p\n", di_for_ip);
-      VG_(printf)("vi %p\n", di_for_ip->varinfo);
-      VG_(printf)("vi size %d\n", (Int)VG_(sizeXA)(di_for_ip->varinfo));
-   }
+   /* Ok, well it's not a global variable.  So now let's snoop around
+      in the stacks of all the threads.  First try to figure out which
+      thread's stack data_addr is in. */
 
-   /* Now that we've considered all the globals in scope, consider the
-      locals. */
-   if (di_for_ip && di_for_ip->varinfo) {
-      Word i;
-      /* Work through the scopes from most deeply nested outwards,
-         looking for code address ranges that bracket 'ip'.  The
-         variables on each such address range found are in scope right
-         now.  Don't descend to level zero as that is the global
-         scope. */
-      /* "for each scope, working outwards ..." */
-      for (i = VG_(sizeXA)(di_for_ip->varinfo) - 1; i >= 1; i--) {
-         XArray*      vars;
-         Word         j;
-         DiAddrRange* arange;
-         OSet*        this_scope 
-            = *(OSet**)VG_(indexXA)( di_for_ip->varinfo, i );
-         if (!this_scope)
-            continue;
-         /* Find the set of variables in this scope that
-            bracket the program counter. */
-         arange = VG_(OSetGen_LookupWithCmp)(
-                     this_scope, &ip, 
-                     ML_(cmp_for_DiAddrRange_range)
-                  );
-         if (!arange)
-            continue;
-         vg_assert(arange->aMin <= ip && ip <= arange->aMax);
-         vars = arange->vars;
-         for (j = 0; j < VG_(sizeXA)( vars ); j++) {
-            DiVariable* var = (DiVariable*)VG_(indexXA)( vars, j );
-            SizeT       offset;
-            if (data_address_is_in_var( &offset, var, &regs, data_addr )) {
-               VG_(snprintf)(
-                  dname, (SizeT)n_dname,
-                  "Address 0x%lx is %lu bytes inside local var \"%s\"",
-                  data_addr, offset, var->name);
-               dname[n_dname-1] = 0;
-               return True;
-            }
-         }
+   /* Perhaps it's on a thread's stack? */
+   found = False;
+   VG_(thread_stack_reset_iter)(&tid);
+   while ( VG_(thread_stack_next)(&tid, &stack_min, &stack_max) ) {
+      if (stack_min >= stack_max)
+         continue; /* ignore obviously stupid cases */
+      if (stack_min - VG_STACK_REDZONE_SZB <= data_addr
+          && data_addr <= stack_max) {
+         found = True;
+         break;
+      }
+   }
+   if (!found)
+      return False;
+
+   /* We conclude data_addr is in thread tid's stack.  Unwind the
+      stack to get a bunch of (ip,sp,fp) triples describing the
+      frames, and for each frame, consider the local variables. */
+
+   n_frames = VG_(get_StackTrace)( tid, ips, N_FRAMES,
+                                   sps, fps, 0/*first_ip_delta*/ );
+   vg_assert(n_frames >= 0 && n_frames <= N_FRAMES);
+   for (j = 0; j < n_frames; j++) {
+      if (consider_vars_in_frame( dname, n_dname,
+                                  data_addr,
+                                  ips[j], sps[j], fps[j] )) {
+         dname[n_dname-1] = 0;
+         return True;
       }
    }
 
    /* We didn't find anything useful. */
    return False;
+#  undef N_FRAMES
 }
 
+/// end Generate data description from DWARF3 debug info
+/////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////
 
 /* Map a code address to the name of a shared object file or the
    executable.  Returns False if no idea; otherwise True.  Doesn't
@@ -1537,37 +1687,20 @@ Bool VG_(use_CF_info) ( /*MOD*/Addr* ipP,
    if (cfsi == NULL)
       return False;
 
-   if (0 && ((n_search & 0xFFFFF) == 0))
-      VG_(printf)("%u %u\n", n_search, n_steps);
+   if (0 && ((n_search & 0x7FFFF) == 0))
+      VG_(printf)("VG_(use_CF_info): %u searches, "
+                  "%u DebugInfos looked at\n", 
+                  n_search, n_steps);
 
-   /* Start of performance-enhancing hack: once every 16 (chosen
+   /* Start of performance-enhancing hack: once every 64 (chosen
       hackily after profiling) successful searches, move the found
       DebugInfo one step closer to the start of the list.  This makes
       future searches cheaper.  For starting konqueror on amd64, this
       in fact reduces the total amount of searching done by the above
       find-the-right-DebugInfo loop by more than a factor of 20. */
-   if ((n_search & 0xF) == 0) {
+   if ((n_search & 0x3F) == 0) {
       /* Move si one step closer to the start of the list. */
-      DebugInfo* si0 = debugInfo_list;
-      DebugInfo* si1 = NULL;
-      DebugInfo* si2 = NULL;
-      DebugInfo* tmp;
-      while (True) {
-         if (si0 == NULL) break;
-         if (si0 == si) break;
-         si2 = si1;
-         si1 = si0;
-         si0 = si0->next;
-      }
-      if (si0 == si && si0 != NULL && si1 != NULL && si2 != NULL) {
-         /* si0 points to si, si1 to its predecessor, and si2 to si1's
-            predecessor.  Swap si0 and si1, that is, move si0 one step
-            closer to the start of the list. */
-         tmp = si0->next;
-         si2->next = si0;
-         si0->next = si1;
-         si1->next = tmp;
-      }
+      move_DebugInfo_one_step_forward( si );
    }
    /* End of performance-enhancing hack. */
 

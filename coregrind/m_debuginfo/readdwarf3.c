@@ -480,12 +480,13 @@ static Long read_leb128S( UChar **data )
    and {FP,SP}_REG decls */
 static Bool get_Dwarf_Reg( /*OUT*/Addr* a, Word regno, RegSummary* regs )
 {
+   vg_assert(regs);
 #  if defined(VGP_amd64_linux)
-   if (regno == 6) { *a = regs->fp; return True; }
-   if (regno == 7) { *a = regs->sp; return True; }
+   if (regno == 6/*RBP*/) { *a = regs->fp; return True; }
+   if (regno == 7/*RSP*/) { *a = regs->sp; return True; }
 #  elif defined(VGP_x86_linux)
-   if (regno == 5) { *a = regs->fp; return True; }
-   if (regno == 4) { *a = regs->sp; return True; }
+   if (regno == 5/*EBP*/) { *a = regs->fp; return True; }
+   if (regno == 4/*ESP*/) { *a = regs->sp; return True; }
 #  else
 #    error "Unknown platform"
 #  endif
@@ -499,30 +500,30 @@ GXResult evaluate_Dwarf3_Expr ( UChar* expr, UWord exprszB,
 {
 #  define N_EXPR_STACK 20
 
-#  define FAIL(_str)                                       \
-      do {                                                 \
-         GXResult res;                                     \
-         res.res = 0;                                      \
-         res.failure = (_str);                             \
-         return res;                                       \
+#  define FAIL(_str)                                          \
+      do {                                                    \
+         GXResult res;                                        \
+         res.res = 0;                                         \
+         res.failure = (_str);                                \
+         return res;                                          \
       } while (0)
 
-#  define PUSH(_arg)                                       \
-      do {                                                 \
-         vg_assert(sp >= -1 && sp < N_EXPR_STACK);         \
-         if (sp == N_EXPR_STACK-1)                         \
+#  define PUSH(_arg)                                          \
+      do {                                                    \
+         vg_assert(sp >= -1 && sp < N_EXPR_STACK);            \
+         if (sp == N_EXPR_STACK-1)                            \
             FAIL("evaluate_Dwarf3_Expr: stack overflow(1)");  \
-         sp++;                                             \
-         stack[sp] = (_arg);                               \
+         sp++;                                                \
+         stack[sp] = (_arg);                                  \
       } while (0)
 
-#  define POP(_lval)                                       \
-      do {                                                 \
-         vg_assert(sp >= -1 && sp < N_EXPR_STACK);         \
-         if (sp == -1)                                     \
+#  define POP(_lval)                                          \
+      do {                                                    \
+         vg_assert(sp >= -1 && sp < N_EXPR_STACK);            \
+         if (sp == -1)                                        \
             FAIL("evaluate_Dwarf3_Expr: stack underflow(1)"); \
-         _lval = stack[sp];                                \
-         sp--;                                             \
+         _lval = stack[sp];                                   \
+         sp--;                                                \
       } while (0)
 
    UChar    opcode;
@@ -574,6 +575,8 @@ GXResult evaluate_Dwarf3_Expr ( UChar* expr, UWord exprszB,
             PUSH( fbval.res + sw1 );
             break;
          case DW_OP_breg0 ... DW_OP_breg31:
+            if (!regs)
+               FAIL("evaluate_Dwarf3_Expr: DW_OP_breg* but no reg info");
             a1 = 0;
             if (!get_Dwarf_Reg( &a1, opcode - DW_OP_breg0, regs ))
                FAIL("evaluate_Dwarf3_Expr: unhandled DW_OP_breg*");
@@ -605,14 +608,19 @@ GXResult evaluate_Dwarf3_Expr ( UChar* expr, UWord exprszB,
 #  undef N_EXPR_STACK
 }
 
-/* Evaluate a guarded expression, using 'ip' to select which of the
-   embedded DWARF3 location expressions to use. */
+/* Evaluate a guarded expression, using regs->ip to select which of
+   the embedded DWARF3 location expressions to use.  If regs is NULL,
+   then we assume (and check) that there is only one guard and that it
+   covers the entire address range, i.o.w. that there's only one guard
+   and it always evaluates to True, so we don't need to know
+   regs->ip. */
 GXResult ML_(evaluate_GX)( GExpr* gx, GExpr* fbGX, RegSummary* regs )
 {
    GXResult res;
    Addr     aMin, aMax;
    UChar    uc;
    UShort   nbytes;
+   UWord    nGuards = 0;
    UChar* p = &gx->payload[0];
    uc = *p++; /*biasMe*/
    vg_assert(uc == 0 || uc == 1);
@@ -631,9 +639,22 @@ GXResult ML_(evaluate_GX)( GExpr* gx, GExpr* fbGX, RegSummary* regs )
       aMin   = * (Addr*)p;   p += sizeof(Addr);
       aMax   = * (Addr*)p;   p += sizeof(Addr);
       nbytes = * (UShort*)p; p += sizeof(UShort);
-      if (aMin <= regs->ip && regs->ip <= aMax) {
-         /* found a matching range.  Evaluate the expression. */
-         return evaluate_Dwarf3_Expr( p, (UWord)nbytes, fbGX, regs );
+      nGuards++;
+      if (regs == NULL) {
+         vg_assert(aMin == (Addr)0);
+         vg_assert(aMax == ~(Addr)0);
+         /* Assert this is the first guard. */
+         vg_assert(nGuards == 1);
+         res = evaluate_Dwarf3_Expr( p, (UWord)nbytes, fbGX, regs );
+         /* Now check there are no more guards. */
+         p += (UWord)nbytes;
+         vg_assert(*p == 1); /*isEnd*/
+         return res;
+      } else {
+         if (aMin <= regs->ip && regs->ip <= aMax) {
+            /* found a matching range.  Evaluate the expression. */
+            return evaluate_Dwarf3_Expr( p, (UWord)nbytes, fbGX, regs );
+         }
       }
       /* else keep searching */
       p += (UWord)nbytes;

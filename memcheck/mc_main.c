@@ -3371,6 +3371,7 @@ static Bool client_perm_maybe_describe( Addr a, AddrInfo* ai );
 /* Describe an address as best you can, for error messages,
    putting the result in ai. */
 static void describe_addr ( Addr a, 
+                            /* FIXME: get rid of the next 3 args */
                             Addr ip_at_error,
                             Addr sp_at_error,
                             Addr fp_at_error,
@@ -3418,7 +3419,7 @@ static void describe_addr ( Addr a,
    VG_(memset)( &ai->Addr.Variable.descr, 
                 0, sizeof(ai->Addr.Variable.descr));
    if (VG_(get_data_description)(
-             a, ip_at_error, sp_at_error, fp_at_error,
+             a,
              &ai->Addr.Variable.descr[0],
              sizeof(ai->Addr.Variable.descr)-1 )) {
       ai->tag = Addr_Variable;
@@ -3440,9 +3441,9 @@ static void describe_addr ( Addr a,
       return;
    }
    /* Perhaps it's on a thread's stack? */
-   VG_(thread_stack_reset_iter)();
+   VG_(thread_stack_reset_iter)(&tid);
    while ( VG_(thread_stack_next)(&tid, &stack_min, &stack_max) ) {
-      if (stack_min <= a && a <= stack_max) {
+      if (stack_min - VG_STACK_REDZONE_SZB <= a && a <= stack_max) {
          ai->tag            = Addr_Stack;
          ai->Addr.Stack.tid = tid;
          return;
