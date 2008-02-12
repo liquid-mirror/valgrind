@@ -50,29 +50,6 @@ ML_(new_dwarf3_reader) (
    UChar* debug_loc_img,    SizeT debug_loc_sz
 );
 
-typedef
-   struct _GExpr { 
-      struct _GExpr* next;
-      UChar payload[0];
-   }
-   GExpr;
-
-/* Show a so-called guarded expression */
-void ML_(pp_GX) ( GExpr* gx );
-
-/* Evaluate a guarded expression, using 'ip' to select which of the
-   embedded DWARF3 location expressions to use. */
-
-typedef
-   struct { Addr ip; Addr sp; Addr fp; }
-   RegSummary;
-
-typedef
-   struct { UWord res; HChar* failure; }
-   GXResult;
-
-GXResult ML_(evaluate_GX)( GExpr* gx, GExpr* fbGX, RegSummary* regs );
-
 #endif /* ndef __PRIV_READDWARF3_H */
 
 /*--------------------------------------------------------------------*/

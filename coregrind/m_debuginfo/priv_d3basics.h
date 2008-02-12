@@ -540,6 +540,93 @@ HChar* ML_(pp_DW_TAG)      ( DW_TAG tag );
 HChar* ML_(pp_DW_FORM)     ( DW_FORM form );
 HChar* ML_(pp_DW_AT)       ( DW_AT attr );
 
+
+/* --- To do with evaluation of Dwarf expressions --- */
+
+/* Guarded Dwarf3 expressions, which can be linked together to form a
+   list.  The payload field contains a variable length array of bytes
+   which hold the guarded expressions.  The length can be inferred by
+   inspecting the payload bytes and so does not need to be stored
+   explicitly.
+
+   Guarded-Expression format is similar but not identical to the
+   DWARF3 location-list format.  The format of each returned block is:
+
+      UChar biasMe;
+      UChar isEnd;
+      followed by zero or more of
+
+      (Addr aMin;  Addr aMax;  UShort nbytes;  ..bytes..;  UChar isEnd)
+
+   '..bytes..' is an standard DWARF3 location expression which is
+   valid when aMin <= pc <= aMax (possibly after suitable biasing).
+
+   The number of bytes in '..bytes..' is nbytes.
+
+   The end of the sequence is marked by an isEnd == 1 value.  All
+   previous isEnd values must be zero.
+
+   biasMe is 1 if the aMin/aMax fields need this DebugInfo's text_bias
+   added before use, and 0 if the GX is this is not necessary (is
+   ready to go).
+
+   Hence the block can be quickly parsed and is self-describing.  Note
+   that aMax is 1 less than the corresponding value in a DWARF3
+   location list.  Zero length ranges, with aMax == aMin-1, are not
+   allowed.
+*/
+typedef
+   struct _GExpr { 
+      struct _GExpr* next;
+      UChar payload[0];
+   }
+   GExpr;
+
+/* Show a so-called guarded expression */
+void ML_(pp_GX) ( GExpr* gx );
+
+/* Evaluation of a DWARF3 expression (and hence of a GExpr) may
+   require knowing a suitably contextualising set of values for the
+   instruction, frame and stack pointer (and, in general, all
+   registers, though we punt on such generality here).  Here's a
+   struct to carry the bare essentials. */
+typedef
+   struct { Addr ip; Addr sp; Addr fp; }
+   RegSummary;
+
+/* This describes the result of evaluating a DWARF3 expression.  If
+   .failure is NULL, then evaluation succeeded and produced .res as
+   the result.  Else .failure is a zero terminated const string
+   summarising the reason for failure.  */
+typedef
+   struct { UWord res; HChar* failure; }
+   GXResult;
+
+/* Evaluate a guarded expression.  If regs is NULL, then gx is assumed
+   (and checked) to contain just a single guarded expression, which a
+   guard which covers the entire address space and so always evaluates
+   to True (iow, gx is a single unconditional expression).  If regs is
+   non-NULL then its 'ip' value is used to select which of the
+   embedded DWARF3 location expressions to use, and that is duly
+   evaluated.
+
+   If as part of the evaluation, a frame base value needs to be
+   computed, then fbGX can provide an expression for it.  If fbGX is
+   NULL but the frame base is still needed, then evaluation of gx as a
+   whole will fail. */
+GXResult ML_(evaluate_GX)( GExpr* gx, GExpr* fbGX, RegSummary* regs );
+
+/* This is a subsidiary of ML_(evaluate_GX), which just evaluates a
+   single standard DWARF3 expression.  Conventions w.r.t regs and fbGX
+   are as for ML_(evaluate_GX).  If push_initial_zero is True, then an
+   initial zero word is pushed on the evaluation stack at the start.
+   This is needed for computing structure field offsets.  Note that
+   ML_(evaluate_GX) and ML_(evaluate_Dwarf3_Expr) are mutually
+   recursive. */
+GXResult ML_(evaluate_Dwarf3_Expr) ( UChar* expr, UWord exprszB, 
+                                     GExpr* fbGX, RegSummary* regs,
+                                     Bool push_initial_zero );
+
 #endif /* ndef __PRIV_D3BASICS_H */
 
 /*--------------------------------------------------------------------*/

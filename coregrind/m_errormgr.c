@@ -130,16 +130,6 @@ struct _Error {
 };
 
 
-
-/* Note, VG_(get_error_tid) only produces a meaningful result at the
-   time that the error is handed to VG_(maybe_record_error), since the
-   same tid may be reassigned later to a new thread.  Caveat
-   Caller. */
-ThreadId VG_(get_error_tid) ( Error* err )
-{
-   return err->tid;
-}
-
 ExeContext* VG_(get_error_where) ( Error* err )
 {
    return err->where;

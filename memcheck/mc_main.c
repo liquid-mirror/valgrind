@@ -3376,12 +3376,7 @@ static Bool client_perm_maybe_describe( Addr a, AddrInfo* ai );
 
 /* Describe an address as best you can, for error messages,
    putting the result in ai. */
-static void describe_addr ( Addr a, 
-                            /* FIXME: get rid of the next 3 args */
-                            Addr ip_at_error,
-                            Addr sp_at_error,
-                            Addr fp_at_error,
-                            /*OUT*/AddrInfo* ai )
+static void describe_addr ( Addr a, /*OUT*/AddrInfo* ai )
 {
    MC_Chunk*  mc;
    ThreadId   tid;
@@ -3486,11 +3481,6 @@ static UInt mc_update_extra( Error* err )
 {
    MC_Error* extra = VG_(get_error_extra)(err);
 
-   ThreadId tid = VG_(get_error_tid)(err);
-   Addr ip_at_error = VG_(get_IP)( tid );
-   Addr sp_at_error = VG_(get_SP)( tid );
-   Addr fp_at_error = VG_(get_FP)( tid );
-
    switch (VG_(get_error_kind)(err)) {
    // These ones don't have addresses associated with them, and so don't
    // need any updating.
@@ -3500,40 +3490,34 @@ static UInt mc_update_extra( Error* err )
    case Err_Overlap:
    case Err_RegParam:
    // For Err_Leaks the returned size does not matter -- they are always
-   // shown with VG_(unique_error)() so they 'extra' not copied.  But we make it
-   // consistent with the others.
+   // shown with VG_(unique_error)() so they 'extra' not copied.  But
+   // we make it consistent with the others.
    case Err_Leak:
       return sizeof(MC_Error);
 
    // These ones always involve a memory address.
    case Err_Addr:
       describe_addr ( VG_(get_error_address)(err),
-                      ip_at_error, sp_at_error, fp_at_error,
                       &extra->Err.Addr.ai );
       return sizeof(MC_Error);
    case Err_MemParam:
       describe_addr ( VG_(get_error_address)(err),
-                      ip_at_error, sp_at_error, fp_at_error,
                       &extra->Err.MemParam.ai );
       return sizeof(MC_Error);
    case Err_Jump:
       describe_addr ( VG_(get_error_address)(err),
-                      ip_at_error, sp_at_error, fp_at_error,
                       &extra->Err.Jump.ai );
       return sizeof(MC_Error);
    case Err_User:
       describe_addr ( VG_(get_error_address)(err),
-                      ip_at_error, sp_at_error, fp_at_error,
                       &extra->Err.User.ai );
       return sizeof(MC_Error);
    case Err_Free:
       describe_addr ( VG_(get_error_address)(err),
-                      ip_at_error, sp_at_error, fp_at_error,
                       &extra->Err.Free.ai );
       return sizeof(MC_Error);
    case Err_IllegalMempool:
       describe_addr ( VG_(get_error_address)(err),
-                      ip_at_error, sp_at_error, fp_at_error,
                       &extra->Err.IllegalMempool.ai );
       return sizeof(MC_Error);
 

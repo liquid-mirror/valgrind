@@ -38,15 +38,11 @@
 #include "pub_core_libcbase.h"
 #include "pub_core_libcprint.h"
 #include "pub_core_xarray.h"   /* to keep priv_tytypes.h happy */
+
 #include "priv_misc.h"         /* dinfo_zalloc/free/strdup */
+#include "priv_d3basics.h"     /* ML_(evaluate_Dwarf3_Expr) et al */
 #include "priv_tytypes.h"      /* self */
 
-///////////////// HACK - get rid of this
-#include "priv_readdwarf3.h"  // GXResult
-GXResult evaluate_Dwarf3_Expr ( UChar* expr, UWord exprszB, 
-                                GExpr* fbGX, RegSummary* regs,
-                                Bool push_initial_zero );
-/////////////////
 
 TyAdmin* ML_(new_TyAdmin) ( UWord cuOff, TyAdmin* next ) {
    TyAdmin* admin = ML_(dinfo_zalloc)( sizeof(TyAdmin) );
@@ -369,7 +365,7 @@ XArray* /*UChar*/ ML_(describe_type)( /*OUT*/OffT* residual_offset,
                field = *(TyField**)VG_(indexXA)( fields, i );
                vg_assert(field);
                vg_assert(field->loc);
-               res = evaluate_Dwarf3_Expr(
+               res = ML_(evaluate_Dwarf3_Expr)(
                        field->loc->bytes, field->loc->nbytes,
                        NULL/*fbGX*/, NULL/*RegSummary*/,
                        True/*push_initial_zero*/ );

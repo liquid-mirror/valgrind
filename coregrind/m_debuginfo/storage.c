@@ -45,13 +45,10 @@
 #include "pub_core_xarray.h"
 #include "pub_core_oset.h"
 
+#include "priv_misc.h"         /* dinfo_zalloc/free/strdup */
+#include "priv_d3basics.h"     /* ML_(pp_GX) */
 #include "priv_tytypes.h"
 #include "priv_storage.h"      /* self */
-
-//FIXME: get rid of this
-#include "priv_readdwarf3.h"  // ML_(pp_GX)
-
-#include "priv_misc.h"         /* dinfo_zalloc/free/strdup */
 
 
 /*------------------------------------------------------------*/
