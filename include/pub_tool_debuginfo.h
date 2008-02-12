@@ -85,10 +85,12 @@ extern Bool VG_(get_datasym_and_offset)( Addr data_addr,
 /* Try to form some description of data_addr by looking at the DWARF3
    debug info we have.  This considers all global variables, and all
    frames in the stacks of all threads.  Result (or as much as will
-   fit) is put into into dname[0 .. n_dname-1] and is guaranteed to be
-   zero terminated. */
-extern Bool VG_(get_data_description)( Addr data_addr,
-                                       /*OUT*/Char* dname, Int n_dname );
+   fit) is put into into dname{1,2}[0 .. n_dname-1] and is guaranteed
+   to be zero terminated. */
+extern Bool VG_(get_data_description)( /*OUT*/Char* dname1,
+                                       /*OUT*/Char* dname2,
+                                       Int  n_dname,
+                                       Addr data_addr );
 
 /* Succeeds if the address is within a shared object or the main executable.
    It doesn't matter if debug info is present or not. */

@@ -999,13 +999,169 @@ static Bool data_address_is_in_var ( /*OUT*/UWord* offset,
    }
 }
 
+
+/* Format the acquired information into dname1[0 .. n_dname-1] and
+   dname2[0 .. n_dname-1] in an understandable way.  Not so easy.
+   If frameNo is -1, this is assumed to be a global variable; else
+   a local variable. */
+static void format_message ( /*OUT*/Char* dname1,
+                             /*OUT*/Char* dname2,
+                             Int      n_dname,
+                             Addr     data_addr,
+                             DiVariable* var,
+                             OffT     var_offset,
+                             OffT     residual_offset,
+                             XArray* /*UChar*/ described,
+                             Int      frameNo, 
+                             ThreadId tid )
+{
+   Bool have_descr, have_srcloc;
+   UChar* vo_plural = var_offset == 1 ? "" : "s";
+   UChar* ro_plural = residual_offset == 1 ? "" : "s";
+
+   vg_assert(frameNo >= -1);
+   vg_assert(dname1 && dname2 && n_dname > 1);
+   vg_assert(described);
+   vg_assert(var && var->name);
+   have_descr = VG_(sizeXA)(described) > 0
+                && *(UChar*)VG_(indexXA)(described,0) != '\0';
+   have_srcloc = var->fileName && var->lineNo > 0;
+
+   dname1[0] = dname2[0] = '\0';
+
+   /* ------ local cases ------ */
+
+   if ( frameNo >= 0 && (!have_srcloc) && (!have_descr) ) {
+      /* no srcloc, no description:
+         Address 0x7fefff6cf is 543 bytes inside local var "a",
+         in frame #1 of thread 1
+      */
+      VG_(snprintf)(
+         dname1, n_dname,
+         "Address 0x%lx is %lu byte%s inside local var \"%s\",",
+         data_addr, var_offset, vo_plural, var->name );
+      VG_(snprintf)(
+         dname2, n_dname,
+         "in frame #%d of thread %d", frameNo, (Int)tid);
+   } 
+   else
+   if ( frameNo >= 0 && have_srcloc && (!have_descr) ) {
+      /* no description:
+         Address 0x7fefff6cf is 543 bytes inside local var "a"
+         declared at dsyms7.c:17, in frame #1 of thread 1
+      */
+      VG_(snprintf)(
+         dname1, n_dname,
+         "Address 0x%lx is %lu byte%s inside local var \"%s\"",
+         data_addr, var_offset, vo_plural, var->name );
+      VG_(snprintf)(
+         dname2, n_dname,
+         "declared at %s:%d, in frame #%d of thread %d",
+         var->fileName, var->lineNo, frameNo, (Int)tid);
+   }
+   else
+   if ( frameNo >= 0 && (!have_srcloc) && have_descr ) {
+      /* no srcloc:
+         Address 0x7fefff6cf is 2 bytes inside a[3].xyzzy[21].c2
+         in frame #1 of thread 1
+      */
+      VG_(snprintf)(
+         dname1, n_dname,
+         "Address 0x%lx is %lu byte%s inside %s%s",
+         data_addr, residual_offset, ro_plural, var->name,
+         VG_(indexXA)(described,0) );
+      VG_(snprintf)(
+         dname2, n_dname,
+         "in frame #%d of thread %d", frameNo, (Int)tid);
+   } 
+   else
+   if ( frameNo >= 0 && have_srcloc && have_descr ) {
+     /* Address 0x7fefff6cf is 2 bytes inside a[3].xyzzy[21].c2,
+        declared at dsyms7.c:17, in frame #1 of thread 1 */
+      VG_(snprintf)(
+         dname1, n_dname,
+         "Address 0x%lx is %lu byte%s inside %s%s,",
+         data_addr, residual_offset, ro_plural, var->name,
+         VG_(indexXA)(described,0) );
+      VG_(snprintf)(
+         dname2, n_dname,
+         "declared at %s:%d, in frame #%d of thread %d",
+         var->fileName, var->lineNo, frameNo, (Int)tid);
+   }
+   else
+   /* ------ global cases ------ */
+   if ( frameNo >= -1 && (!have_srcloc) && (!have_descr) ) {
+      /* no srcloc, no description:
+         Address 0x7fefff6cf is 543 bytes inside global var "a"
+      */
+      VG_(snprintf)(
+         dname1, n_dname,
+         "Address 0x%lx is %lu byte%s inside global var \"%s\"",
+         data_addr, var_offset, vo_plural, var->name );
+   } 
+   else
+   if ( frameNo >= -1 && have_srcloc && (!have_descr) ) {
+      /* no description:
+         Address 0x7fefff6cf is 543 bytes inside global var "a"
+         declared at dsyms7.c:17
+      */
+      VG_(snprintf)(
+         dname1, n_dname,
+         "Address 0x%lx is %lu byte%s inside global var \"%s\"",
+         data_addr, var_offset, vo_plural, var->name );
+      VG_(snprintf)(
+         dname2, n_dname,
+         "declared at %s:%d",
+         var->fileName, var->lineNo);
+   }
+   else
+   if ( frameNo >= -1 && (!have_srcloc) && have_descr ) {
+      /* no srcloc:
+         Address 0x7fefff6cf is 2 bytes inside a[3].xyzzy[21].c2,
+         a global variable
+      */
+      VG_(snprintf)(
+         dname1, n_dname,
+         "Address 0x%lx is %lu byte%s inside %s%s,",
+         data_addr, residual_offset, ro_plural, var->name,
+         VG_(indexXA)(described,0) );
+      VG_(snprintf)(
+         dname2, n_dname,
+         "a global variable");
+   } 
+   else
+   if ( frameNo >= -1 && have_srcloc && have_descr ) {
+     /* Address 0x7fefff6cf is 2 bytes inside a[3].xyzzy[21].c2,
+        a global variable declared at dsyms7.c:17 */
+      VG_(snprintf)(
+         dname1, n_dname,
+         "Address 0x%lx is %lu byte%s inside %s%s,",
+         data_addr, residual_offset, ro_plural, var->name,
+         VG_(indexXA)(described,0) );
+      VG_(snprintf)(
+         dname2, n_dname,
+         "a global variable declared at %s:%d",
+         var->fileName, var->lineNo);
+   }
+   else 
+      vg_assert(0);
+
+   dname1[n_dname-1] = dname2[n_dname-1] = 0;
+}
+
+
 /* Determine if data_addr is a local variable in the frame
    characterised by (ip,sp,fp), and if so write its description into
-   dname[0..n_dname-1], and return True.  If not, return False. */
+   dname{1,2}[0..n_dname-1], and return True.  If not, return
+   False. */
 static 
-Bool consider_vars_in_frame ( /*OUT*/Char* dname, Int n_dname,
+Bool consider_vars_in_frame ( /*OUT*/Char* dname1,
+                              /*OUT*/Char* dname2,
+                              Int n_dname,
                               Addr data_addr,
-                              Addr ip, Addr sp, Addr fp )
+                              Addr ip, Addr sp, Addr fp,
+                              /* shown to user: */
+                              ThreadId tid, Int frameNo )
 {
    Word       i;
    DebugInfo* di;
@@ -1091,14 +1247,13 @@ Bool consider_vars_in_frame ( /*OUT*/Char* dname, Int n_dname,
          DiVariable* var = (DiVariable*)VG_(indexXA)( vars, j );
          SizeT       offset;
          if (data_address_is_in_var( &offset, var, &regs, data_addr )) {
-            XArray* xa = ML_(describe_type)( var->type, offset );
-            VG_(snprintf)(
-               dname, (SizeT)n_dname,
-               "Address 0x%lx is %lu bytes inside local var "
-               "\"%s\" (%s) declared at %s:%d",
-               data_addr, offset, var->name, VG_(indexXA)(xa,0),
-               var->fileName ? var->fileName : "(unknown)", var->lineNo );
-            dname[n_dname-1] = 0;
+            OffT residual_offset = 0;
+            XArray* described = ML_(describe_type)( &residual_offset,
+                                                    var->type, offset );
+            format_message( dname1, dname2, n_dname, 
+                            data_addr, var, offset, residual_offset,
+                            described, frameNo, tid );
+            VG_(deleteXA)( described );
             return True;
          }
       }
@@ -1110,10 +1265,12 @@ Bool consider_vars_in_frame ( /*OUT*/Char* dname, Int n_dname,
 /* Try to form some description of data_addr by looking at the DWARF3
    debug info we have.  This considers all global variables, and all
    frames in the stacks of all threads.  Result (or as much as will
-   fit) is put into into dname[0 .. n_dname-1] and is guaranteed to be
-   zero terminated. */
-Bool VG_(get_data_description)( Addr data_addr,
-                                /*OUT*/Char* dname, Int n_dname )
+   fit) is put into into dname{1,2}[0 .. n_dname-1] and is guaranteed
+   to be zero terminated. */
+Bool VG_(get_data_description)( /*OUT*/Char* dname1,
+                                /*OUT*/Char* dname2,
+                                Int  n_dname,
+                                Addr data_addr )
 {
 #  define N_FRAMES 8
    Addr ips[N_FRAMES], sps[N_FRAMES], fps[N_FRAMES];
@@ -1126,7 +1283,7 @@ Bool VG_(get_data_description)( Addr data_addr,
    Word       j;
 
    vg_assert(n_dname > 1);
-   dname[n_dname-1] = 0;
+   dname1[n_dname-1] = dname2[n_dname-1] = 0;
 
    if (0) VG_(printf)("GDD: dataaddr %p\n", data_addr);
 
@@ -1189,11 +1346,14 @@ Bool VG_(get_data_description)( Addr data_addr,
          if (data_address_is_in_var( &offset, var, 
                                      NULL/* RegSummary* */, 
                                      data_addr )) {
-            VG_(snprintf)(
-               dname, (SizeT)n_dname,
-               "Address 0x%lx is %lu bytes inside global var \"%s\"",
-               data_addr, offset, var->name);
-            dname[n_dname-1] = 0;
+            OffT residual_offset = 0;
+            XArray* described = ML_(describe_type)( &residual_offset,
+                                                    var->type, offset );
+            format_message( dname1, dname2, n_dname, 
+                            data_addr, var, offset, residual_offset,
+                            described, -1/*frameNo*/, tid );
+            VG_(deleteXA)( described );
+            dname1[n_dname-1] = dname2[n_dname-1] = 0;
             return True;
          }
       }
@@ -1215,8 +1375,10 @@ Bool VG_(get_data_description)( Addr data_addr,
          break;
       }
    }
-   if (!found)
+   if (!found) {
+      dname1[n_dname-1] = dname2[n_dname-1] = 0;
       return False;
+   }
 
    /* We conclude data_addr is in thread tid's stack.  Unwind the
       stack to get a bunch of (ip,sp,fp) triples describing the
@@ -1226,15 +1388,16 @@ Bool VG_(get_data_description)( Addr data_addr,
                                    sps, fps, 0/*first_ip_delta*/ );
    vg_assert(n_frames >= 0 && n_frames <= N_FRAMES);
    for (j = 0; j < n_frames; j++) {
-      if (consider_vars_in_frame( dname, n_dname,
+      if (consider_vars_in_frame( dname1, dname2, n_dname,
                                   data_addr,
-                                  ips[j], sps[j], fps[j] )) {
-         dname[n_dname-1] = 0;
+                                  ips[j], sps[j], fps[j], tid, j )) {
+         dname1[n_dname-1] = dname2[n_dname-1] = 0;
          return True;
       }
    }
 
    /* We didn't find anything useful. */
+   dname1[n_dname-1] = dname2[n_dname-1] = 0;
    return False;
 #  undef N_FRAMES
 }

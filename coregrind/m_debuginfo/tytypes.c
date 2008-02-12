@@ -340,7 +340,10 @@ static void copy_UWord_into_XA ( XArray* /* of UChar */ xa,
 }
 
 
-XArray* /*UChar*/ ML_(describe_type)( Type* ty, OffT offset )
+/* Describe where in the type 'offset' falls.  Caller must
+   deallocate the resulting XArray. */
+XArray* /*UChar*/ ML_(describe_type)( /*OUT*/OffT* residual_offset,
+                                      Type* ty, OffT offset )
 {
    XArray* xa = VG_(newXA)( ML_(dinfo_zalloc), ML_(dinfo_free),
                             sizeof(UChar) );
@@ -447,10 +450,7 @@ XArray* /*UChar*/ ML_(describe_type)( Type* ty, OffT offset )
    }
 
   done:
-   if (offset > 0) {
-      copy_bytes_into_XA( xa, " +", 2 );
-      copy_UWord_into_XA( xa, offset );
-   }
+   *residual_offset = offset;
    copy_bytes_into_XA( xa, "\0", 1 );
    return xa;
 }

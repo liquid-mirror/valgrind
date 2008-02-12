@@ -151,8 +151,10 @@ void ML_(pp_Type_C_ishly) ( Type* ty );
 /* FIXME: check all pointers before dereferencing */
 SizeT ML_(sizeOfType)( Type* ty );
 
-/* Describe where in the type 'offset' falls. */
-XArray* /*UChar*/ ML_(describe_type)( Type* ty, OffT offset );
+/* Describe where in the type 'offset' falls.  Caller must
+   deallocate the resulting XArray. */
+XArray* /*UChar*/ ML_(describe_type)( /*OUT*/OffT* residual_offset,
+                                      Type* ty, OffT offset );
 
 
 #endif /* ndef __PRIV_TYTYPES_H */

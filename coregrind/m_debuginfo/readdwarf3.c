@@ -1350,7 +1350,19 @@ void read_filename_table( /*MOD*/D3VarParser* parser,
                           CUConst* cc, UWord debug_line_offset,
                           Bool td3 )
 {
+   Bool   is_dw64;
    Cursor c;
+   Word   i;
+   ULong  unit_length;
+   UShort version;
+   ULong  header_length;
+   UChar  minimum_instruction_length;
+   UChar  default_is_stmt;
+   Char   line_base;
+   UChar  line_range;
+   UChar  opcode_base;
+   UChar* str;
+
    vg_assert(parser && cc && cc->barf);
    if ((!cc->debug_line_img) 
        || cc->debug_line_sz <= debug_line_offset)
@@ -1360,20 +1372,20 @@ void read_filename_table( /*MOD*/D3VarParser* parser,
                 cc->debug_line_sz, debug_line_offset, cc->barf, 
                 "Overrun whilst reading .debug_line section(1)" );
 
-   Bool is_dw64;
-   ULong unit_length = get_Initial_Length( &is_dw64, &c, "read_filename_table: invalid initial-length field" );
-   UShort version = get_UShort( &c );
+   unit_length 
+      = get_Initial_Length( &is_dw64, &c,
+           "read_filename_table: invalid initial-length field" );
+   version = get_UShort( &c );
    if (version != 2)
      cc->barf("read_filename_table: Only DWARF version 2 line info "
               "is currently supported.");
-   ULong header_length = (ULong)get_Dwarfish_UWord( &c, is_dw64 );
-   UChar minimum_instruction_length = get_UChar( &c );
-   UChar default_is_stmt = get_UChar( &c );
-   Char line_base = (Char)get_UChar( &c );
-   UChar line_range = get_UChar( &c );
-   UChar opcode_base = get_UChar( &c );
+   header_length = (ULong)get_Dwarfish_UWord( &c, is_dw64 );
+   minimum_instruction_length = get_UChar( &c );
+   default_is_stmt            = get_UChar( &c );
+   line_base                  = (Char)get_UChar( &c );
+   line_range                 = get_UChar( &c );
+   opcode_base                = get_UChar( &c );
    /* skip over "standard_opcode_lengths" */
-   Word i;
    for (i = 1; i < (Word)opcode_base; i++)
      (void)get_UChar( &c );
 
@@ -1388,7 +1400,7 @@ void read_filename_table( /*MOD*/D3VarParser* parser,
    vg_assert( VG_(sizeXA)( parser->filenameTable ) == 0 );
    /* Add a dummy index-zero entry.  DWARF3 numbers its files
       from 1, for some reason. */
-   UChar* str = ML_(dinfo_strdup)( "<unknown>" );;
+   str = ML_(dinfo_strdup)( "<unknown>" );;
    VG_(addToXA)( parser->filenameTable, &str );
    while (peek_UChar(&c) != 0) {
       str = get_AsciiZ(&c);

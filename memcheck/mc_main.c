@@ -2668,9 +2668,11 @@ struct _AddrInfo {
          OffT offset;
       } DataSym;
 
-      // Is described by Dwarf debug info.  Arbitrary string.
+      // Is described by Dwarf debug info.  Arbitrary strings.  Must
+      // be the same length.
       struct {
-         Char descr[128];
+         Char descr1[96];
+         Char descr2[96];
       } Variable;
 
       // Could only narrow it down to be the PLT/GOT/etc of a given
@@ -2868,8 +2870,12 @@ static void mc_pp_AddrInfo ( Addr a, AddrInfo* ai, Bool maybe_gcc )
          break;
 
       case Addr_Variable:
-         VG_(message)(Vg_UserMsg,
-                      "%s%s%s", xpre, ai->Addr.Variable.descr, xpost);
+         if (ai->Addr.Variable.descr1[0] != '\0')
+            VG_(message)(Vg_UserMsg, "%s%s%s",
+                         xpre, ai->Addr.Variable.descr1, xpost);
+         if (ai->Addr.Variable.descr2[0] != '\0')
+            VG_(message)(Vg_UserMsg, "%s%s%s",
+                         xpre, ai->Addr.Variable.descr2, xpost);
          break;
 
       case Addr_SectKind:
@@ -3416,15 +3422,22 @@ static void describe_addr ( Addr a,
       }
    }
    /* Perhaps the variable type/location data describes it? */
-   VG_(memset)( &ai->Addr.Variable.descr, 
-                0, sizeof(ai->Addr.Variable.descr));
+   tl_assert(sizeof(ai->Addr.Variable.descr1) 
+             == sizeof(ai->Addr.Variable.descr2));
+   VG_(memset)( &ai->Addr.Variable.descr1, 
+                0, sizeof(ai->Addr.Variable.descr1));
+   VG_(memset)( &ai->Addr.Variable.descr2, 
+                0, sizeof(ai->Addr.Variable.descr2));
    if (VG_(get_data_description)(
-             a,
-             &ai->Addr.Variable.descr[0],
-             sizeof(ai->Addr.Variable.descr)-1 )) {
+             &ai->Addr.Variable.descr1[0],
+             &ai->Addr.Variable.descr2[0],
+             sizeof(ai->Addr.Variable.descr1)-1, 
+             a )) {
       ai->tag = Addr_Variable;
-      tl_assert( ai->Addr.Variable.descr
-                    [ sizeof(ai->Addr.Variable.descr)-1 ] == 0);
+      tl_assert( ai->Addr.Variable.descr1
+                    [ sizeof(ai->Addr.Variable.descr1)-1 ] == 0);
+      tl_assert( ai->Addr.Variable.descr2
+                    [ sizeof(ai->Addr.Variable.descr2)-1 ] == 0);
       return;
    }
    /* Have a look at the low level data symbols - perhaps it's in
