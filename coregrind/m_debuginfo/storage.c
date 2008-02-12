@@ -45,13 +45,13 @@
 #include "pub_core_xarray.h"
 #include "pub_core_oset.h"
 
+#include "priv_tytypes.h"
 #include "priv_storage.h"      /* self */
 
 //FIXME: get rid of this
 #include "priv_readdwarf3.h"  // ML_(pp_GX)
 
 #include "priv_misc.h"         /* dinfo_zalloc/free/strdup */
-#include "priv_tytypes.h"
 
 
 /*------------------------------------------------------------*/
@@ -573,9 +573,11 @@ void ML_(addVar)( struct _DebugInfo* di,
                   Addr   aMin,
                   Addr   aMax,
                   UChar* name,
-                  void*  typeV,  /* actually D3Type* */
+                  Type*  type,
                   void*  gexprV, /* actually GExpr* */
                   void*  fbGXv,  /* actually GExpr*.  SHARED. */
+                  UChar* fileName, /* where decl'd - may be NULL */
+                  Int    lineNo, /* where decl'd - may be zero */
                   Bool   show )
 {
    OSet* /* of DiAddrRange */ inner;
@@ -585,7 +587,7 @@ void ML_(addVar)( struct _DebugInfo* di,
    if (0) {
       VG_(printf)("  ML_(addVar): level %d  %p-%p  %s :: ",
                   level, aMin, aMax, name );
-      ML_(pp_Type_C_ishly)( typeV );
+      ML_(pp_Type_C_ishly)( type );
       VG_(printf)("\n  Var=");
       ML_(pp_GX)(gexprV);
       VG_(printf)("\n");
@@ -602,7 +604,7 @@ void ML_(addVar)( struct _DebugInfo* di,
    vg_assert(level >= 0);
    vg_assert(aMin <= aMax);
    vg_assert(name);
-   vg_assert(typeV);
+   vg_assert(type);
    vg_assert(gexprV);
 
    if (!di->varinfo) {
@@ -629,10 +631,12 @@ void ML_(addVar)( struct _DebugInfo* di,
       or create one if not present. */
    /* DiAddrRange* */ range = find_or_create_arange( inner, aMin, aMax );
    /* DiVariable var; */
-   var.name   = name;
-   var.typeV  = typeV;
-   var.gexprV = gexprV;
-   var.fbGXv  = fbGXv;
+   var.name     = name;
+   var.type     = type;
+   var.gexprV   = gexprV;
+   var.fbGXv    = fbGXv;
+   var.fileName = fileName;
+   var.lineNo   = lineNo;
    vg_assert(range);
    vg_assert(range->vars);
    vg_assert(range->aMin == aMin);

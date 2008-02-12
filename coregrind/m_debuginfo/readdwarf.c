@@ -40,6 +40,7 @@
 #include "pub_core_options.h"
 #include "pub_core_xarray.h"
 #include "priv_misc.h"             /* dinfo_zalloc/free/strdup */
+#include "priv_tytypes.h"
 #include "priv_storage.h"
 #include "priv_readdwarf.h"        /* self */
 

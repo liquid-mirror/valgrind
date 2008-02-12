@@ -145,11 +145,14 @@ void ML_(pp_D3Expr)   ( D3Expr* expr );
 /* NOTE: this assumes that the types have all been 'resolved' (that
    is, inter-type references expressed as .debug_info offsets have
    been converted into pointers) */
-void ML_(pp_Type_C_ishly) ( void* /* Type* */ tyV );
+void ML_(pp_Type_C_ishly) ( Type* ty );
 
 /* How big is this type?  (post-resolved only) */
 /* FIXME: check all pointers before dereferencing */
-SizeT ML_(sizeOfType)( void* /* Type */ tyV );
+SizeT ML_(sizeOfType)( Type* ty );
+
+/* Describe where in the type 'offset' falls. */
+XArray* /*UChar*/ ML_(describe_type)( Type* ty, OffT offset );
 
 
 #endif /* ndef __PRIV_TYTYPES_H */

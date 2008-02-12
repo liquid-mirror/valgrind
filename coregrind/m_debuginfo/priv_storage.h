@@ -37,8 +37,8 @@
 /* See comment at top of debuginfo.c for explanation of
    the _svma / _avma / _image / _bias naming scheme.
 */
-/* Note this is not freestanding; needs pub_core_xarray.h to be
-   included before it. */
+/* Note this is not freestanding; needs pub_core_xarray.h and
+   priv_tytypes.h to be included before it. */
 
 #ifndef __PRIV_STORAGE_H
 #define __PRIV_STORAGE_H
@@ -221,9 +221,11 @@ typedef
 typedef
    struct {
       UChar* name;   /* freestanding, in AR_DINFO */
-      void*  typeV;  /* FIXME: make this D3Type* */
+      Type*  type;
       void*  gexprV; /* FIXME: make this GExpr* */
       void*  fbGXv;  /* FIXME: make this GExpr*.  SHARED. */
+      UChar* fileName; /* where declared; may be NULL. */
+      Int    lineNo;   /* where declared; may be zero. */
    }
    DiVariable;
 
@@ -409,9 +411,11 @@ extern void ML_(addVar)( struct _DebugInfo* di,
                          Addr   aMin,
                          Addr   aMax,
                          UChar* name,
-                         void*  type,  /* actually D3Type* */
+                         Type*  type,
                          void*  gexpr, /* actually GExpr* */
                          void*  fbGXv, /* actually GExpr*.  SHARED. */
+                         UChar* fileName, /* where decl'd - may be NULL */
+                         Int    lineNo, /* where decl'd - may be zero */
                          Bool   show );
 
 /* Canonicalise the tables held by 'di', in preparation for use.  Call

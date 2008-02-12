@@ -35,11 +35,18 @@
 
 #include "pub_core_basics.h"
 #include "pub_core_libcassert.h"
+#include "pub_core_libcbase.h"
 #include "pub_core_libcprint.h"
 #include "pub_core_xarray.h"   /* to keep priv_tytypes.h happy */
 #include "priv_misc.h"         /* dinfo_zalloc/free/strdup */
 #include "priv_tytypes.h"      /* self */
 
+///////////////// HACK - get rid of this
+#include "priv_readdwarf3.h"  // GXResult
+GXResult evaluate_Dwarf3_Expr ( UChar* expr, UWord exprszB, 
+                                GExpr* fbGX, RegSummary* regs,
+                                Bool push_initial_zero );
+/////////////////
 
 TyAdmin* ML_(new_TyAdmin) ( UWord cuOff, TyAdmin* next ) {
    TyAdmin* admin = ML_(dinfo_zalloc)( sizeof(TyAdmin) );
@@ -212,10 +219,8 @@ void ML_(pp_TyAdmin) ( TyAdmin* admin ) {
 /* NOTE: this assumes that the types have all been 'resolved' (that
    is, inter-type references expressed as .debug_info offsets have
    been converted into pointers) */
-void ML_(pp_Type_C_ishly) ( void* /* Type* */ tyV )
+void ML_(pp_Type_C_ishly) ( Type* ty )
 {
-   Type* ty = (Type*)tyV;
-
    switch (ty->tag) {
       case Ty_Base:
          if (!ty->Ty.Base.name) goto unhandled;
@@ -278,11 +283,10 @@ void ML_(pp_Type_C_ishly) ( void* /* Type* */ tyV )
 
 /* How big is this type?  (post-resolved only) */
 /* FIXME: check all pointers before dereferencing */
-SizeT ML_(sizeOfType)( void* /* Type */ tyV )
+SizeT ML_(sizeOfType)( Type* ty )
 {
-   SizeT   eszB;
-   Word    i;
-   Type* ty = (Type*)tyV;
+   SizeT eszB;
+   Word  i;
    switch (ty->tag) {
       case Ty_Base:
          return ty->Ty.Base.szB;
@@ -314,10 +318,141 @@ SizeT ML_(sizeOfType)( void* /* Type */ tyV )
          return eszB;
       default:
          VG_(printf)("ML_(sizeOfType): unhandled: ");
-         ML_(pp_Type)(tyV);
+         ML_(pp_Type)(ty);
          VG_(printf)("\n");
          vg_assert(0);
    }
+}
+
+
+static void copy_bytes_into_XA ( XArray* /* of UChar */ xa, 
+                                 void* bytes, Word nbytes ) {
+   Word i;
+   for (i = 0; i < nbytes; i++)
+      VG_(addToXA)( xa, & ((UChar*)bytes)[i] );
+}
+static void copy_UWord_into_XA ( XArray* /* of UChar */ xa,
+                                 UWord uw ) {
+   UChar buf[32];
+   VG_(memset)(buf, 0, sizeof(buf));
+   VG_(sprintf)(buf, "%lu", uw);
+   copy_bytes_into_XA( xa, buf, VG_(strlen)(buf));
+}
+
+
+XArray* /*UChar*/ ML_(describe_type)( Type* ty, OffT offset )
+{
+   XArray* xa = VG_(newXA)( ML_(dinfo_zalloc), ML_(dinfo_free),
+                            sizeof(UChar) );
+   vg_assert(xa);
+
+   while (True) {
+      vg_assert(ty);
+
+      switch (ty->tag) {
+
+         case Ty_Base:
+            goto done;
+
+         case Ty_StOrUn: {
+            Word     i;
+            GXResult res;
+            TyField  *field = NULL, *fields;
+            SizeT    offMin = 0, offMax1 = 0;
+            if (!ty->Ty.StOrUn.isStruct) goto done;
+            fields = ty->Ty.StOrUn.fields;
+            if ((!fields) || VG_(sizeXA)(fields) == 0) goto done;
+            for (i = 0; i < VG_(sizeXA)( fields ); i++ ) {
+               field = *(TyField**)VG_(indexXA)( fields, i );
+               vg_assert(field);
+               vg_assert(field->loc);
+               res = evaluate_Dwarf3_Expr(
+                       field->loc->bytes, field->loc->nbytes,
+                       NULL/*fbGX*/, NULL/*RegSummary*/,
+                       True/*push_initial_zero*/ );
+               if (0) VG_(printf)("QQQ %lu %s\n", res.res,res.failure);
+               if (res.failure)
+                  continue;
+               offMin = res.res;
+               offMax1 = offMin + ML_(sizeOfType)( field->typeR );
+               if (offMin == offMax1)
+                  continue;
+               vg_assert(offMin < offMax1);
+               if (offset >= offMin && offset < offMax1)
+                  break;
+            }
+            /* Did we find a suitable field? */
+            vg_assert(i >= 0 && i <= VG_(sizeXA)( fields ));
+            if (i == VG_(sizeXA)( fields ))
+               goto done; /* No.  Give up. */
+            /* Yes.  'field' is it. */
+            if (!field->name) goto done;
+            copy_bytes_into_XA( xa, ".", 1 );
+            copy_bytes_into_XA( xa, field->name,
+                                VG_(strlen)(field->name) );
+            offset -= offMin;
+            ty = field->typeR;
+            if (!ty) goto done;
+            /* keep going; look inside the field. */
+            break;
+         }
+
+         case Ty_Array: {
+            TyBounds* bounds;
+            UWord size, eszB, ix;
+            /* Just deal with the simple, common C-case: 1-D array,
+               zero based, known size. */
+            if (!(ty->Ty.Array.typeR && ty->Ty.Array.bounds))
+               goto done;
+            if (VG_(sizeXA)( ty->Ty.Array.bounds ) != 1) goto done;
+            bounds = *(TyBounds**)VG_(indexXA)( ty->Ty.Array.bounds, 0 );
+            vg_assert(bounds);
+            vg_assert(bounds->magic == TyBounds_MAGIC);
+            if (!(bounds->knownL && bounds->knownU && bounds->boundL == 0
+                  && bounds->boundU >= bounds->boundL))
+               goto done;
+            size = bounds->boundU - bounds->boundL + 1;
+            vg_assert(size >= 1);
+            eszB = ML_(sizeOfType)( ty->Ty.Array.typeR );
+            if (eszB == 0) goto done;
+            ix = offset / eszB;
+            copy_bytes_into_XA( xa, "[", 1 );
+            copy_UWord_into_XA( xa, ix );
+            copy_bytes_into_XA( xa, "]", 1 );
+            ty = ty->Ty.Array.typeR;
+            offset -= ix * eszB;
+            /* keep going; look inside the array element. */
+            break;
+         }
+
+         case Ty_Qual: {
+            if (!ty->Ty.Qual.typeR) goto done;
+            ty = ty->Ty.Qual.typeR;
+            break;
+         }
+
+         case Ty_TyDef: {
+            if (!ty->Ty.TyDef.typeR) goto done;
+            ty = ty->Ty.TyDef.typeR;
+            break;
+         }
+
+         default: {
+            VG_(printf)("ML_(describe_type): unhandled: ");
+            ML_(pp_Type)(ty);
+            VG_(printf)("\n");
+            vg_assert(0);
+         }
+      }
+   }
+
+  done:
+   if (offset > 0) {
+      copy_bytes_into_XA( xa, " +", 2 );
+      copy_UWord_into_XA( xa, offset );
+   }
+   copy_bytes_into_XA( xa, "\0", 1 );
+   return xa;
 }
 
 /*--------------------------------------------------------------------*/

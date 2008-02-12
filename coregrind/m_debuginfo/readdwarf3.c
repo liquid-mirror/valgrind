@@ -56,8 +56,8 @@
 #include "pub_core_options.h"
 #include "pub_core_xarray.h"
 #include "priv_misc.h"             /* dinfo_zalloc/free/strdup */
-#include "priv_storage.h"
 #include "priv_tytypes.h"
+#include "priv_storage.h"
 #include "priv_d3basics.h"
 #include "priv_readdwarf3.h"       /* self */
 
@@ -222,9 +222,28 @@ static Long get_SLEB128 ( Cursor* c ) {
    return result;
 }
 
+/* Assume 'c' points to the start of a string.  Return the absolute
+   address of whatever it points at, and advance it past the
+   terminating zero.  This makes it safe for the caller to then strdup
+   the returned value, since (w.r.t. image overruns) the process of
+   advancing past the terminating zero will already have "vetted" the
+   string. */
+static UChar* get_AsciiZ ( Cursor* c ) {
+   UChar  uc;
+   UChar* res = get_address_of_Cursor(c);
+   do { uc = get_UChar(c); } while (uc != 0);
+   return res;
+}
+
 static ULong peek_ULEB128 ( Cursor* c ) {
    Word here = c->region_next;
    ULong r = get_ULEB128( c );
+   c->region_next = here;
+   return r;
+}
+static UChar peek_UChar ( Cursor* c ) {
+   Word here = c->region_next;
+   UChar r = get_UChar( c );
    c->region_next = here;
    return r;
 }
@@ -277,6 +296,9 @@ typedef
       /* Where is .debug_loc ? */
       UChar* debug_loc_img;
       UWord  debug_loc_sz;
+      /* Where is .debug_line? */
+      UChar* debug_line_img;
+      UWord  debug_line_sz;
       /* --- a cache for set_abbv_Cursor --- */
       /* abbv_code == (ULong)-1 for an unused entry. */
       struct { ULong abbv_code; UWord posn; } saC_cache[N_ABBV_CACHE];
@@ -456,7 +478,6 @@ ULong read_leb128 ( UChar* data, Int* length_return, Int sign )
  * value is returned and the given pointer is
  * moved past end of leb128 data */
 /* FIXME: duplicated in readdwarf.c */
-#if 0
 static ULong read_leb128U( UChar **data )
 {
   Int len;
@@ -464,7 +485,6 @@ static ULong read_leb128U( UChar **data )
   *data += len;
   return val;
 }
-#endif
 
 /* Same for signed data */
 /* FIXME: duplicated in readdwarf.c */
@@ -494,9 +514,10 @@ static Bool get_Dwarf_Reg( /*OUT*/Addr* a, Word regno, RegSummary* regs )
 }
 
 
-static
+//static
 GXResult evaluate_Dwarf3_Expr ( UChar* expr, UWord exprszB, 
-                                GExpr* fbGX, RegSummary* regs )
+                                GExpr* fbGX, RegSummary* regs,
+                                Bool push_initial_zero )
 {
 #  define N_EXPR_STACK 20
 
@@ -533,11 +554,15 @@ GXResult evaluate_Dwarf3_Expr ( UChar* expr, UWord exprszB,
    GXResult fbval;
    Addr     a1;
    Word     sw1;
+   UWord    uw1;
 
    sp = -1;
    vg_assert(expr);
    vg_assert(exprszB >= 0);
    limit = expr + exprszB;
+
+   if (push_initial_zero)
+      PUSH(0);
 
    while (True) {
 
@@ -583,6 +608,11 @@ GXResult evaluate_Dwarf3_Expr ( UChar* expr, UWord exprszB,
             sw1 = (Word)read_leb128S( &expr );
             a1 += sw1;
             PUSH( a1 );
+            break;
+         case DW_OP_plus_uconst:
+            POP(uw1);
+            uw1 += (UWord)read_leb128U( &expr );
+            PUSH(uw1);
             break;
          default:
             if (!VG_(clo_xml))
@@ -645,7 +675,8 @@ GXResult ML_(evaluate_GX)( GExpr* gx, GExpr* fbGX, RegSummary* regs )
          vg_assert(aMax == ~(Addr)0);
          /* Assert this is the first guard. */
          vg_assert(nGuards == 1);
-         res = evaluate_Dwarf3_Expr( p, (UWord)nbytes, fbGX, regs );
+         res = evaluate_Dwarf3_Expr( p, (UWord)nbytes, fbGX, regs,
+                                     False/*push_initial_zero*/ );
          /* Now check there are no more guards. */
          p += (UWord)nbytes;
          vg_assert(*p == 1); /*isEnd*/
@@ -653,7 +684,8 @@ GXResult ML_(evaluate_GX)( GExpr* gx, GExpr* fbGX, RegSummary* regs )
       } else {
          if (aMin <= regs->ip && regs->ip <= aMax) {
             /* found a matching range.  Evaluate the expression. */
-            return evaluate_Dwarf3_Expr( p, (UWord)nbytes, fbGX, regs );
+            return evaluate_Dwarf3_Expr( p, (UWord)nbytes, fbGX, regs,
+                                         False/*push_initial_zero*/ );
          }
       }
       /* else keep searching */
@@ -1102,12 +1134,10 @@ void get_Form_contents ( /*OUT*/ULong* cts,
          break;
       }
       case DW_FORM_string: {
-         UInt u32;
-         UChar* str = get_address_of_Cursor(c);
-         do { u32 = get_UChar(c); } while (u32 != 0);
+         UChar* str = get_AsciiZ(c);
          TRACE_D3("%s", str);
          *cts = (ULong)(UWord)str;
-         /* strlen is safe because get_UChar already 'vetted' the
+         /* strlen is safe because get_AsciiZ already 'vetted' the
             entire string */
          *ctsMemSzB = 1 + (ULong)VG_(strlen)(str);
          break;
@@ -1162,7 +1192,9 @@ typedef
       Type*  typeR;
       GExpr* gexpr; /* for this variable */
       GExpr* fbGX;  /* to find the frame base of the enclosing fn, if
-                        any */
+                       any */
+      UChar* fName; /* declaring file name, or NULL */
+      Int    fLine; /* declaring file line number, or zero */
    }
    TempVar;
 
@@ -1192,6 +1224,9 @@ typedef
       Bool    isFunc[N_D3_VAR_STACK]; /* from DW_AT_subprogram? */
       GExpr*  fbGX[N_D3_VAR_STACK];   /* if isFunc, contains the FB
                                          expr, else NULL */
+      /* The file name table.  Is a mapping from integer index to the
+         (permanent) copy of the string, iow a non-img area. */
+      XArray* /* of UChar* */ filenameTable;
    }
    D3VarParser;
 
@@ -1309,6 +1344,66 @@ static GExpr* get_GX ( CUConst* cc, Bool td3,
    return gexpr;
 }
 
+
+static 
+void read_filename_table( /*MOD*/D3VarParser* parser,
+                          CUConst* cc, UWord debug_line_offset,
+                          Bool td3 )
+{
+   Cursor c;
+   vg_assert(parser && cc && cc->barf);
+   if ((!cc->debug_line_img) 
+       || cc->debug_line_sz <= debug_line_offset)
+      cc->barf("read_filename_table: .debug_line is missing?");
+
+   init_Cursor( &c, cc->debug_line_img, 
+                cc->debug_line_sz, debug_line_offset, cc->barf, 
+                "Overrun whilst reading .debug_line section(1)" );
+
+   Bool is_dw64;
+   ULong unit_length = get_Initial_Length( &is_dw64, &c, "read_filename_table: invalid initial-length field" );
+   UShort version = get_UShort( &c );
+   if (version != 2)
+     cc->barf("read_filename_table: Only DWARF version 2 line info "
+              "is currently supported.");
+   ULong header_length = (ULong)get_Dwarfish_UWord( &c, is_dw64 );
+   UChar minimum_instruction_length = get_UChar( &c );
+   UChar default_is_stmt = get_UChar( &c );
+   Char line_base = (Char)get_UChar( &c );
+   UChar line_range = get_UChar( &c );
+   UChar opcode_base = get_UChar( &c );
+   /* skip over "standard_opcode_lengths" */
+   Word i;
+   for (i = 1; i < (Word)opcode_base; i++)
+     (void)get_UChar( &c );
+
+   /* skip over the directory names table */
+   while (peek_UChar(&c) != 0) {
+     (void)get_AsciiZ(&c);
+   }
+   (void)get_UChar(&c); /* skip terminating zero */
+
+   /* Read and record the file names table */
+   vg_assert(parser->filenameTable);
+   vg_assert( VG_(sizeXA)( parser->filenameTable ) == 0 );
+   /* Add a dummy index-zero entry.  DWARF3 numbers its files
+      from 1, for some reason. */
+   UChar* str = ML_(dinfo_strdup)( "<unknown>" );;
+   VG_(addToXA)( parser->filenameTable, &str );
+   while (peek_UChar(&c) != 0) {
+      str = get_AsciiZ(&c);
+      TRACE_D3("  read_filename_table: %ld %s\n",
+               VG_(sizeXA)(parser->filenameTable), str);
+      str = ML_(dinfo_strdup)( str );
+      VG_(addToXA)( parser->filenameTable, &str );
+      (void)get_ULEB128( &c ); /* skip directory index # */
+      (void)get_ULEB128( &c ); /* skip last mod time */
+      (void)get_ULEB128( &c ); /* file size */
+   }
+   /* We're done!  The rest of it is not interesting. */
+}
+
+
 __attribute__((noinline))
 static void parse_var_DIE ( /*OUT*/TempVar** tempvars,
                             /*OUT*/GExpr** gexprs,
@@ -1354,6 +1449,9 @@ static void parse_var_DIE ( /*OUT*/TempVar** tempvars,
          if (attr == DW_AT_ranges && ctsSzB > 0) {
             rangeoff = cts;
             have_range = True;
+         }
+         if (attr == DW_AT_stmt_list && ctsSzB > 0) {
+            read_filename_table( parser, cc, (UWord)cts, td3 );
          }
       }
       /* Now, does this give us an opportunity to find this
@@ -1494,6 +1592,8 @@ static void parse_var_DIE ( /*OUT*/TempVar** tempvars,
       Int    n_attrs     = 0;
       Bool   has_abs_ori = False;
       Bool   declaration = False;
+      Int    lineNo      = 0;
+      UChar* fileName    = NULL;
       while (True) {
          DW_AT   attr = (DW_AT)  get_ULEB128( c_abbv );
          DW_FORM form = (DW_FORM)get_ULEB128( c_abbv );
@@ -1524,6 +1624,19 @@ static void parse_var_DIE ( /*OUT*/TempVar** tempvars,
          }
          if (attr == DW_AT_declaration && ctsSzB > 0 && cts > 0) {
             declaration = True;
+         }
+         if (attr == DW_AT_decl_line && ctsSzB > 0) {
+            lineNo = (Int)cts;
+         }
+         if (attr == DW_AT_decl_file && ctsSzB > 0) {
+            Int ftabIx = (Int)cts;
+            if (ftabIx >= 1
+                && ftabIx < VG_(sizeXA)( parser->filenameTable )) {
+               fileName = *(UChar**)
+                          VG_(indexXA)( parser->filenameTable, ftabIx );
+               vg_assert(fileName);
+            }
+            if (0) VG_(printf)("XXX filename = %s\n", fileName);
          }
       }
       /* We'll collect it if it has a type and a location.  Doesn't
@@ -1589,6 +1702,8 @@ static void parse_var_DIE ( /*OUT*/TempVar** tempvars,
             tv->typeR = typeR;
             tv->gexpr = gexpr;
             tv->fbGX  = fbGX;
+            tv->fName = fileName;
+            tv->fLine = lineNo;
             tv->next  = *tempvars;
             *tempvars = tv;
          }
@@ -2107,7 +2222,9 @@ static void parse_type_DIE ( /*OUT*/TyAdmin** admin,
             field->typeR = (Type*)(UWord)cts;
          }
          if (attr == DW_AT_data_member_location && ctsMemSzB > 0) {
-           expr = ML_(new_D3Expr)( (UChar*)(UWord)cts, (UWord)ctsMemSzB );
+            UChar* copy = ML_(dinfo_memdup)( (UChar*)(UWord)cts, 
+                                             (UWord)ctsMemSzB );
+            expr = ML_(new_D3Expr)( copy, (UWord)ctsMemSzB );
          }
       }
       /* Do we have a plausible parent? */
@@ -2727,6 +2844,10 @@ void new_dwarf3_reader_wrk (
    Bool td3 = di->trace_symtab;
 
 #if 0
+   /* This doesn't work properly because it assumes all entries are
+      packed end to end, with no holes.  But that doesn't always
+      appear to be the case, so it loses sync.  And the D3 spec
+      doesn't appear to require a no-hole situation either. */
    /* Display .debug_loc */
    Addr  dl_base;
    UWord dl_offset;
@@ -2915,6 +3036,8 @@ void new_dwarf3_reader_wrk (
       cu_start_offset = get_position_of_Cursor( &info );
       TRACE_D3("\n");
       TRACE_D3("  Compilation Unit @ offset 0x%lx:\n", cu_start_offset);
+      /* parse_CU_header initialises the CU's set_abbv_Cursor cache
+         (saC_cache) */
       parse_CU_Header( &cc, td3, &info,
                        (UChar*)debug_abbv_img, debug_abbv_sz );
       cc.debug_str_img    = debug_str_img;
@@ -2923,6 +3046,8 @@ void new_dwarf3_reader_wrk (
       cc.debug_ranges_sz  = debug_ranges_sz;
       cc.debug_loc_img    = debug_loc_img;
       cc.debug_loc_sz     = debug_loc_sz;
+      cc.debug_line_img   = debug_line_img;
+      cc.debug_line_sz    = debug_line_sz;
       cc.cu_start_offset  = cu_start_offset;
       /* The CU's svma can be deduced by looking at the AT_low_pc
          value in the top level TAG_compile_unit, which is the topmost
@@ -2938,6 +3063,18 @@ void new_dwarf3_reader_wrk (
       varstack_push( &cc, &varparser, td3, 
                      unitary_range_list(0UL, ~0UL),
                      -1, False/*isFunc*/, NULL/*fbGX*/ );
+
+      /* And set up the file name table.  When we come across the top
+         level DIE for this CU (which is what the next call to
+         read_DIE should process) we will copy all the file names out
+         of the .debug_line img area and use this table to look up the
+         copies when we later see filename numbers in DW_TAG_variables
+         etc. */
+      vg_assert(!varparser.filenameTable );
+      varparser.filenameTable 
+         = VG_(newXA)( ML_(dinfo_zalloc), ML_(dinfo_free),
+                       sizeof(UChar*) );
+      vg_assert(varparser.filenameTable );
 
       /* Now read the one-and-only top-level DIE for this CU. */
       vg_assert(varparser.sp == 0);
@@ -2964,6 +3101,10 @@ void new_dwarf3_reader_wrk (
 
       TRACE_D3("set_abbv_Cursor cache: %lu queries, %lu misses\n",
                cc.saC_cache_queries, cc.saC_cache_misses);
+
+      vg_assert(varparser.filenameTable );
+      VG_(deleteXA)( varparser.filenameTable );
+      varparser.filenameTable = NULL;
    }
 
    /* Put the type entry list the right way round.  Not strictly
@@ -3030,6 +3171,9 @@ void new_dwarf3_reader_wrk (
          } else {
             VG_(printf)("  FrB=none\n");
          }
+         VG_(printf)("  declared at: %s:%d\n",
+                     varp->fName ? varp->fName : (UChar*)"(null)",
+                     varp->fLine );
          VG_(printf)("\n");
       }
 
@@ -3056,7 +3200,8 @@ void new_dwarf3_reader_wrk (
                 varp->pcMin + (varp->level==0 ? 0 : di->text_bias),
                 varp->pcMax + (varp->level==0 ? 0 : di->text_bias), 
                 varp->name, (void*)varp->typeR,
-                varp->gexpr, varp->fbGX, td3 
+                varp->gexpr, varp->fbGX,
+                varp->fName, varp->fLine, td3 
          );
       ML_(dinfo_free)(varp);
    }

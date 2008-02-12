@@ -51,8 +51,8 @@
 #include "pub_core_oset.h"
 #include "pub_core_stacktrace.h" // VG_(get_StackTrace)
 #include "priv_misc.h"           /* dinfo_zalloc/free */
-#include "priv_storage.h"
 #include "priv_tytypes.h"
+#include "priv_storage.h"
 #include "priv_readdwarf.h"
 #include "priv_readstabs.h"
 #if defined(VGO_linux)
@@ -976,13 +976,13 @@ static Bool data_address_is_in_var ( /*OUT*/UWord* offset,
    GXResult res;
    Bool     show = False;
    vg_assert(var->name);
-   vg_assert(var->typeV);
+   vg_assert(var->type);
    vg_assert(var->gexprV);
-   var_szB = ML_(sizeOfType)(var->typeV);
+   var_szB = ML_(sizeOfType)(var->type);
 
    if (show) {
       VG_(printf)("VVVV: find loc: %s :: ", var->name );
-      ML_(pp_Type_C_ishly)( var->typeV );
+      ML_(pp_Type_C_ishly)( var->type );
       VG_(printf)("\n");
    }
 
@@ -1091,10 +1091,13 @@ Bool consider_vars_in_frame ( /*OUT*/Char* dname, Int n_dname,
          DiVariable* var = (DiVariable*)VG_(indexXA)( vars, j );
          SizeT       offset;
          if (data_address_is_in_var( &offset, var, &regs, data_addr )) {
+            XArray* xa = ML_(describe_type)( var->type, offset );
             VG_(snprintf)(
                dname, (SizeT)n_dname,
-               "Address 0x%lx is %lu bytes inside local var \"%s\"",
-               data_addr, offset, var->name);
+               "Address 0x%lx is %lu bytes inside local var "
+               "\"%s\" (%s) declared at %s:%d",
+               data_addr, offset, var->name, VG_(indexXA)(xa,0),
+               var->fileName ? var->fileName : "(unknown)", var->lineNo );
             dname[n_dname-1] = 0;
             return True;
          }

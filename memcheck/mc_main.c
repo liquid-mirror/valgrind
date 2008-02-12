@@ -2664,19 +2664,19 @@ struct _AddrInfo {
       // In a global .data symbol.  This holds the first 63 chars of
       // the variable's (zero terminated), plus an offset.
       struct {
-         Char name[64];
+         Char name[128];
          OffT offset;
       } DataSym;
 
       // Is described by Dwarf debug info.  Arbitrary string.
       struct {
-         Char descr[64];
+         Char descr[128];
       } Variable;
 
       // Could only narrow it down to be the PLT/GOT/etc of a given
       // object.  Better than nothing, perhaps.
       struct {
-         Char       objname[64];
+         Char       objname[128];
          VgSectKind kind;
       } SectKind;
 

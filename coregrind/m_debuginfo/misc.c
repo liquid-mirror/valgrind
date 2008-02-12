@@ -54,6 +54,12 @@ void ML_(dinfo_free) ( void* v ) {
 UChar* ML_(dinfo_strdup) ( const UChar* str ) {
    return VG_(arena_strdup)( VG_AR_DINFO, str );
 }
+UChar* ML_(dinfo_memdup)( UChar* mem, UWord nbytes ) {
+   UChar* r = VG_(arena_malloc)( VG_AR_DINFO, nbytes );
+   if (nbytes > 0)
+      VG_(memcpy)( r, mem, nbytes );
+   return r;
+}
 
 /*--------------------------------------------------------------------*/
 /*--- end                                                   misc.c ---*/

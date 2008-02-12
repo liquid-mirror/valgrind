@@ -50,7 +50,7 @@
 void*  ML_(dinfo_zalloc)( SizeT szB );
 void   ML_(dinfo_free)( void* v );
 UChar* ML_(dinfo_strdup)( const UChar* str );
-
+UChar* ML_(dinfo_memdup)( UChar* mem, UWord nbytes );
 
 #endif /* ndef __PRIV_MISC_H */
 
