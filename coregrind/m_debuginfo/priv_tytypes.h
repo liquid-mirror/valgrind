@@ -58,12 +58,12 @@ struct _TyAdmin {
 
 /* an enumeration value */
 struct _TyAtom {
-   UChar* name; /* AR_DINFO, unshared */
+   UChar* name; /* in DebugInfo.strchunks */
    Long   value;
 };
 
 struct _TyField {
-   UChar*  name; /* AR_DINFO, unshared */
+   UChar*  name; /* in DebugInfo.strchunks */
    Type*   typeR;
    D3Expr* loc;
    Bool    isStruct;
@@ -78,7 +78,7 @@ struct _TyBounds {
 };
 
 struct _D3Expr {
-   UChar* bytes; /* AR_DINFO, unshared */
+   UChar* bytes; /* in DebugInfo.strchunks */
    UWord  nbytes;
 };
 
@@ -87,7 +87,7 @@ struct _Type {
           Ty_Enum, Ty_Array, Ty_Fn, Ty_Qual, Ty_Void } tag;
    union {
       struct {
-         UChar* name; /* AR_DINFO, unshared */
+         UChar* name; /* in DebugInfo.strchunks */
          Int    szB;
          UChar  enc; /* S:signed U:unsigned F:floating */
       } Base;
@@ -97,18 +97,18 @@ struct _Type {
          Bool  isPtr;
       } PorR;
       struct {
-         UChar* name;  /* AR_DINFO, unshared */
+         UChar* name;  /* in DebugInfo.strchunks */
          Type*  typeR; /* MAY BE NULL, denoting unknown */
       } TyDef;
       struct {
-         UChar*  name; /* AR_DINFO, unshared */
+         UChar*  name; /* in DebugInfo.strchunks */
          UWord   szB;
          XArray* /* of TyField* */ fields;
          Bool    complete;
          Bool    isStruct;
       } StOrUn;
       struct {
-         UChar*  name; /* AR_DINFO, unshared */
+         UChar*  name; /* in DebugInfo.strchunks */
          Int     szB;
          XArray* /* of TyAtom* */ atomRs;
       } Enum;

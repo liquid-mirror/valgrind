@@ -55,7 +55,7 @@
 #include "pub_core_libcprint.h"
 #include "pub_core_options.h"
 #include "pub_core_xarray.h"
-#include "priv_misc.h"             /* dinfo_zalloc/free/strdup */
+#include "priv_misc.h"             /* dinfo_zalloc/free */
 #include "priv_tytypes.h"
 #include "priv_d3basics.h"
 #include "priv_storage.h"
@@ -224,10 +224,10 @@ static Long get_SLEB128 ( Cursor* c ) {
 
 /* Assume 'c' points to the start of a string.  Return the absolute
    address of whatever it points at, and advance it past the
-   terminating zero.  This makes it safe for the caller to then strdup
-   the returned value, since (w.r.t. image overruns) the process of
-   advancing past the terminating zero will already have "vetted" the
-   string. */
+   terminating zero.  This makes it safe for the caller to then copy
+   the string with ML_(addStr), since (w.r.t. image overruns) the
+   process of advancing past the terminating zero will already have
+   "vetted" the string. */
 static UChar* get_AsciiZ ( Cursor* c ) {
    UChar  uc;
    UChar* res = get_address_of_Cursor(c);
@@ -299,6 +299,8 @@ typedef
       /* Where is .debug_line? */
       UChar* debug_line_img;
       UWord  debug_line_sz;
+      /* --- Needed so we can add stuff to the string table. --- */
+      struct _DebugInfo* di;
       /* --- a cache for set_abbv_Cursor --- */
       /* abbv_code == (ULong)-1 for an unused entry. */
       struct { ULong abbv_code; UWord posn; } saC_cache[N_ABBV_CACHE];
@@ -1143,13 +1145,13 @@ void read_filename_table( /*MOD*/D3VarParser* parser,
    vg_assert( VG_(sizeXA)( parser->filenameTable ) == 0 );
    /* Add a dummy index-zero entry.  DWARF3 numbers its files
       from 1, for some reason. */
-   str = ML_(dinfo_strdup)( "<unknown>" );;
+   str = ML_(addStr)( cc->di, "<unknown>", -1 );
    VG_(addToXA)( parser->filenameTable, &str );
    while (peek_UChar(&c) != 0) {
       str = get_AsciiZ(&c);
       TRACE_D3("  read_filename_table: %ld %s\n",
                VG_(sizeXA)(parser->filenameTable), str);
-      str = ML_(dinfo_strdup)( str );
+      str = ML_(addStr)( cc->di, str, -1 );
       VG_(addToXA)( parser->filenameTable, &str );
       (void)get_ULEB128( &c ); /* skip directory index # */
       (void)get_ULEB128( &c ); /* skip last mod time */
@@ -1357,7 +1359,7 @@ static void parse_var_DIE ( /*OUT*/TempVar** tempvars,
                             cc, c_die, False/*td3*/, form );
          n_attrs++;
          if (attr == DW_AT_name && ctsMemSzB > 0) {
-            name = ML_(dinfo_strdup)( (UChar*)(UWord)cts );
+            name = ML_(addStr)( cc->di, (UChar*)(UWord)cts, -1 );
          }
          if (attr == DW_AT_location
              && ((ctsMemSzB > 0 && ctsSzB == 0)
@@ -1408,9 +1410,10 @@ static void parse_var_DIE ( /*OUT*/TempVar** tempvars,
          vg_assert(parser->sp >= 0);
 
          if (!name)
-            name = ML_(dinfo_strdup)(
-                      dtag == DW_TAG_variable ? "<anon_variable>"
-                                              : "<anon_formal>" );
+            name = ML_(addStr)(
+                      cc->di, dtag == DW_TAG_variable 
+                                 ? "<anon_variable>"
+                                 : "<anon_formal>", -1 );
 
 	 /* If this is a local variable (non-external), try to find
             the GExpr for the DW_AT_frame_base of the containing
@@ -1775,7 +1778,7 @@ static void parse_type_DIE ( /*OUT*/TyAdmin** admin,
                             cc, c_die, False/*td3*/, form );
          if (attr == DW_AT_name && ctsMemSzB > 0) {
             type->Ty.Base.name
-               = ML_(dinfo_strdup)( (UChar*)(UWord)cts );
+               = ML_(addStr)( cc->di, (UChar*)(UWord)cts, -1 );
          }
          if (attr == DW_AT_byte_size && ctsSzB > 0) {
             type->Ty.Base.szB = cts;
@@ -1850,7 +1853,7 @@ static void parse_type_DIE ( /*OUT*/TyAdmin** admin,
                             cc, c_die, False/*td3*/, form );
          if (attr == DW_AT_name && ctsMemSzB > 0) {
             type->Ty.Enum.name
-               = ML_(dinfo_strdup)( (UChar*)(UWord)cts );
+               = ML_(addStr)( cc->di, (UChar*)(UWord)cts, -1 );
          }
          if (attr == DW_AT_byte_size && ctsSzB > 0) {
             type->Ty.Enum.szB = cts;
@@ -1875,7 +1878,7 @@ static void parse_type_DIE ( /*OUT*/TyAdmin** admin,
          get_Form_contents( &cts, &ctsSzB, &ctsMemSzB,
                             cc, c_die, False/*td3*/, form );
          if (attr == DW_AT_name && ctsMemSzB > 0) {
-            atom->name = ML_(dinfo_strdup)( (UChar*)(UWord)cts );
+            atom->name = ML_(addStr)( cc->di, (UChar*)(UWord)cts, -1 );
          }
          if (attr == DW_AT_const_value && ctsSzB > 0) {
             atom->value = cts;
@@ -1918,7 +1921,7 @@ static void parse_type_DIE ( /*OUT*/TyAdmin** admin,
                             cc, c_die, False/*td3*/, form );
          if (attr == DW_AT_name && ctsMemSzB > 0) {
             type->Ty.StOrUn.name
-               = ML_(dinfo_strdup)( (UChar*)(UWord)cts );
+               = ML_(addStr)( cc->di, (UChar*)(UWord)cts, -1 );
          }
          if (attr == DW_AT_byte_size && ctsSzB >= 0) {
             type->Ty.StOrUn.szB = cts;
@@ -1971,14 +1974,14 @@ static void parse_type_DIE ( /*OUT*/TyAdmin** admin,
          get_Form_contents( &cts, &ctsSzB, &ctsMemSzB,
                             cc, c_die, False/*td3*/, form );
          if (attr == DW_AT_name && ctsMemSzB > 0) {
-            field->name = ML_(dinfo_strdup)( (UChar*)(UWord)cts );
+            field->name = ML_(addStr)( cc->di, (UChar*)(UWord)cts, -1 );
          }
          if (attr == DW_AT_type && ctsSzB > 0) {
             field->typeR = (Type*)(UWord)cts;
          }
          if (attr == DW_AT_data_member_location && ctsMemSzB > 0) {
-            UChar* copy = ML_(dinfo_memdup)( (UChar*)(UWord)cts, 
-                                             (UWord)ctsMemSzB );
+            UChar* copy = ML_(addStr)( cc->di, (UChar*)(UWord)cts, 
+                                               (Int)ctsMemSzB );
             expr = ML_(new_D3Expr)( copy, (UWord)ctsMemSzB );
          }
       }
@@ -1993,7 +1996,7 @@ static void parse_type_DIE ( /*OUT*/TyAdmin** admin,
       parent_is_struct
          = parser->qparent[parser->sp]->Ty.StOrUn.isStruct;
       if (!field->name)
-         field->name = ML_(dinfo_strdup)("<anon_field>");
+         field->name = ML_(addStr)(cc->di, "<anon_field>", -1);
       if ((!field->name) || (field->typeR == D3_INVALID_CUOFF))
          goto bad_DIE;
       if (parent_is_struct && (!expr))
@@ -2119,7 +2122,7 @@ static void parse_type_DIE ( /*OUT*/TyAdmin** admin,
                             cc, c_die, False/*td3*/, form );
          if (attr == DW_AT_name && ctsMemSzB > 0) {
             type->Ty.TyDef.name
-               = ML_(dinfo_strdup)( (UChar*)(UWord)cts );
+               = ML_(addStr)( cc->di, (UChar*)(UWord)cts, -1 );
          }
          if (attr == DW_AT_type && ctsSzB > 0) {
             type->Ty.TyDef.typeR = (Type*)(UWord)cts;
@@ -2810,6 +2813,7 @@ void new_dwarf3_reader_wrk (
       cc.debug_line_img   = debug_line_img;
       cc.debug_line_sz    = debug_line_sz;
       cc.cu_start_offset  = cu_start_offset;
+      cc.di = di;
       /* The CU's svma can be deduced by looking at the AT_low_pc
          value in the top level TAG_compile_unit, which is the topmost
          DIE.  We'll leave it for the 'varparser' to acquire that info

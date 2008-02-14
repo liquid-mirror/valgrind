@@ -192,6 +192,7 @@ DebugInfo* alloc_DebugInfo( const UChar* filename,
 /* Free a DebugInfo, and also all the stuff hanging off it. */
 static void free_DebugInfo ( DebugInfo* di )
 {
+   Word i, j;
    struct strchunk *chunk, *next;
    vg_assert(di != NULL);
    if (di->filename)   ML_(dinfo_free)(di->filename);
@@ -206,19 +207,17 @@ static void free_DebugInfo ( DebugInfo* di )
    }
 
    { TyAdmin *admin1, *admin2;
+     GExpr *gexpr1, *gexpr2;
      for (admin1 = di->tyadmins; admin1; admin1 = admin2) {
         admin2 = admin1->next;
-        //ML_(dinfo_free)(admin1);
         ML_(delete_TyAdmin_and_payload)(admin1);
      }
-     GExpr *gexpr1, *gexpr2;
      for (gexpr1 = di->gexprs; gexpr1; gexpr1 = gexpr2) {
         gexpr2 = gexpr1->next;
         ML_(dinfo_free)(gexpr1);
      }
    }
 
-   Word i, j;
    if (di->varinfo) {
       for (i = 0; i < VG_(sizeXA)(di->varinfo); i++) {
          OSet* scope = *(OSet**)VG_(indexXA)(di->varinfo, i);
@@ -233,13 +232,11 @@ static void free_DebugInfo ( DebugInfo* di )
             for (j = 0; j < VG_(sizeXA)( arange->vars ); j++) {
                DiVariable* var = (DiVariable*)VG_(indexXA)(arange->vars,j);
                vg_assert(var);
-               /////////////////////////////
-               //if (var->name && 0xDD != *(var->name)) 
-               //   ML_(dinfo_free)(var->name);
-               // var->name gets used more than once .. can't free it
-               /////////////////////////////
+               /* Nothing to free in var: all the pointer fields refer
+                  to stuff either on an admin list, or in .strchunks */
             }
-            ML_(dinfo_free)(arange->vars);
+            VG_(deleteXA)(arange->vars);
+            /* Don't free arange itself, as OSetGen_Destroy does that */
          }
          VG_(OSetGen_Destroy)(scope);
       }
@@ -1021,7 +1018,7 @@ static Bool data_address_is_in_var ( /*OUT*/UWord* offset,
    Bool     show = False;
    vg_assert(var->name);
    vg_assert(var->type);
-   vg_assert(var->gexprV);
+   vg_assert(var->gexpr);
    var_szB = ML_(sizeOfType)(var->type);
 
    if (show) {
@@ -1030,7 +1027,7 @@ static Bool data_address_is_in_var ( /*OUT*/UWord* offset,
       VG_(printf)("\n");
    }
 
-   res = ML_(evaluate_GX)( var->gexprV, var->fbGXv, regs );
+   res = ML_(evaluate_GX)( var->gexpr, var->fbGX, regs );
 
    if (show) VG_(printf)("VVVV: -> 0x%lx %s\n", res.res, 
                          res.failure ? res.failure : "(success)");

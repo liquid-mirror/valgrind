@@ -170,8 +170,11 @@ UChar* ML_(addStr) ( struct _DebugInfo* di, UChar* str, Int len )
    Int    space_needed;
    UChar* p;
 
-   if (len == -1)
+   if (len == -1) {
       len = VG_(strlen)(str);
+   } else {
+      vg_assert(len >= 0);
+   }
 
    space_needed = 1 + len;
 
@@ -571,8 +574,8 @@ void ML_(addVar)( struct _DebugInfo* di,
                   Addr   aMax,
                   UChar* name,
                   Type*  type,
-                  void*  gexprV, /* actually GExpr* */
-                  void*  fbGXv,  /* actually GExpr*.  SHARED. */
+                  GExpr* gexpr,
+                  GExpr* fbGX,
                   UChar* fileName, /* where decl'd - may be NULL */
                   Int    lineNo, /* where decl'd - may be zero */
                   Bool   show )
@@ -586,11 +589,11 @@ void ML_(addVar)( struct _DebugInfo* di,
                   level, aMin, aMax, name );
       ML_(pp_Type_C_ishly)( type );
       VG_(printf)("\n  Var=");
-      ML_(pp_GX)(gexprV);
+      ML_(pp_GX)(gexpr);
       VG_(printf)("\n");
-      if (fbGXv) {
+      if (fbGX) {
          VG_(printf)("  FrB=");
-         ML_(pp_GX)( fbGXv );
+         ML_(pp_GX)( fbGX );
          VG_(printf)("\n");
       } else {
          VG_(printf)("  FrB=none\n");
@@ -602,7 +605,7 @@ void ML_(addVar)( struct _DebugInfo* di,
    vg_assert(aMin <= aMax);
    vg_assert(name);
    vg_assert(type);
-   vg_assert(gexprV);
+   vg_assert(gexpr);
 
    if (!di->varinfo) {
       di->varinfo = VG_(newXA)( ML_(dinfo_zalloc), ML_(dinfo_free),
@@ -630,8 +633,8 @@ void ML_(addVar)( struct _DebugInfo* di,
    /* DiVariable var; */
    var.name     = name;
    var.type     = type;
-   var.gexprV   = gexprV;
-   var.fbGXv    = fbGXv;
+   var.gexpr    = gexpr;
+   var.fbGX     = fbGX;
    var.fileName = fileName;
    var.lineNo   = lineNo;
    vg_assert(range);

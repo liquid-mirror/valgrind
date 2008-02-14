@@ -220,11 +220,12 @@ typedef
 
 typedef
    struct {
-      UChar* name;   /* freestanding, in AR_DINFO */
-      Type*  type;
-      void*  gexprV; /* FIXME: make this GExpr* */
-      void*  fbGXv;  /* FIXME: make this GExpr*.  SHARED. */
-      UChar* fileName; /* where declared; may be NULL. */
+      UChar* name;  /* in DebugInfo.strchunks */
+      Type*  type;  /* on DebugInfo.admin list */
+      GExpr* gexpr; /* on DebugInfo.gexprs list */
+      GExpr* fbGX;  /* SHARED. */
+      UChar* fileName; /* where declared; may be NULL. in
+                          DebugInfo.strchunks */
       Int    lineNo;   /* where declared; may be zero. */
    }
    DiVariable;
@@ -416,8 +417,8 @@ extern void ML_(addVar)( struct _DebugInfo* di,
                          Addr   aMax,
                          UChar* name,
                          Type*  type,
-                         void*  gexpr, /* actually GExpr* */
-                         void*  fbGXv, /* actually GExpr*.  SHARED. */
+                         GExpr* gexpr,
+                         GExpr* fbGX, /* SHARED. */
                          UChar* fileName, /* where decl'd - may be NULL */
                          Int    lineNo, /* where decl'd - may be zero */
                          Bool   show );

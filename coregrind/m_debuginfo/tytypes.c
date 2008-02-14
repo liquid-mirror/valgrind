@@ -81,13 +81,11 @@ Type* ML_(new_Type) ( void ) {
 }
 
 void ML_(delete_TyAtom)( TyAtom* atom ) {
-   if (atom->name)
-      ML_(dinfo_free)(atom->name);
+   /* .name is in DebugInfo.strchunks */
    ML_(dinfo_free)(atom);
 }
 void ML_(delete_TyField)( TyField* field ) {
-   if (field->name)
-      ML_(dinfo_free)(field->name);
+   /* .name is in DebugInfo.strchunks */
    /* typeR and loc will be on the admin list; no need to free */
    ML_(dinfo_free)(field);
 }
@@ -95,35 +93,31 @@ void ML_(delete_TyBounds)( TyBounds* bounds ) {
    ML_(dinfo_free)(bounds);
 }
 void ML_(delete_D3Expr)( D3Expr* expr ) {
-   if (expr->bytes)
-      ML_(dinfo_free)(expr->bytes);
+   /* .bytes is in DebugInfo.strchunks */
    ML_(dinfo_free)(expr);
 }
+__attribute__((noinline))
 void ML_(delete_Type)( Type* ty ) {
    switch (ty->tag) {
       case Ty_Base:
-         if (ty->Ty.Base.name)
-            ML_(dinfo_free)(ty->Ty.Base.name);
+         /* .name is in DebugInfo.strchunks */
          break;
       case Ty_PorR:
          /* typeR will be on the admin list */
          break;
       case Ty_TyDef:
-         if (ty->Ty.TyDef.name)
-            ML_(dinfo_free)(ty->Ty.TyDef.name);
+         /* .name is in DebugInfo.strchunks */
          /* typeR will be on the admin list */
          break;
       case Ty_StOrUn:
-         if (ty->Ty.StOrUn.name)
-            ML_(dinfo_free)(ty->Ty.StOrUn.name);
+         /* .name is in DebugInfo.strchunks */
          /* Just dump the containing XArray.  The fields themselves
             will be on the admin list. */
          if (ty->Ty.StOrUn.fields)
             VG_(deleteXA)(ty->Ty.StOrUn.fields);
          break;
       case Ty_Enum:
-         if (ty->Ty.Enum.name)
-            ML_(dinfo_free)(ty->Ty.Enum.name);
+         /* .name is in DebugInfo.strchunks */
          if (ty->Ty.Enum.atomRs)
             VG_(deleteXA)( ty->Ty.Enum.atomRs);
          /* Just dump the containing XArray.  The atoms themselves
