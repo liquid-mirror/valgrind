@@ -499,7 +499,7 @@ static GExpr* make_general_GX ( CUConst* cc,
    xa = VG_(newXA)( ML_(dinfo_zalloc), ML_(dinfo_free),
                     sizeof(UChar) );
 
-   { UChar c = 1; /*biasMe*/ VG_(addToXA)( xa, &c ); }
+   { UChar c = 1; /*biasMe*/ VG_(addBytesToXA)( xa, &c, sizeof(c) ); }
 
    base = 0;
    while (True) {
@@ -536,26 +536,26 @@ static GExpr* make_general_GX ( CUConst* cc,
          UShort s;
          UChar  c;
          c = 0; /* !isEnd*/
-         VG_(addToXA)( xa, &c );
+         VG_(addBytesToXA)( xa, &c, sizeof(c) );
          w = w1    + base + svma_of_referencing_CU;
-         ML_(copy_bytes_into_XA)( xa, &w, sizeof(w) );
+         VG_(addBytesToXA)( xa, &w, sizeof(w) );
          w = w2 -1 + base + svma_of_referencing_CU;
-         ML_(copy_bytes_into_XA)( xa, &w, sizeof(w) );
+         VG_(addBytesToXA)( xa, &w, sizeof(w) );
          s = (UShort)len;
-         ML_(copy_bytes_into_XA)( xa, &s, sizeof(s) );
+         VG_(addBytesToXA)( xa, &s, sizeof(s) );
       }
 
       while (len > 0) {
          UChar byte = get_UChar( &loc );
          TRACE_D3("%02x", (UInt)byte);
          if (acquire)
-            VG_(addToXA)( xa, &byte );
+            VG_(addBytesToXA)( xa, &byte, 1 );
          len--;
       }
       TRACE_D3("\n");
    }
 
-   { UChar c = 1; /*isEnd*/ VG_(addToXA)( xa, &c ); }
+   { UChar c = 1; /*isEnd*/ VG_(addBytesToXA)( xa, &c, sizeof(c) ); }
 
    nbytes = VG_(sizeXA)( xa );
    vg_assert(nbytes >= 1);

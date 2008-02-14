@@ -104,13 +104,8 @@ inline void* VG_(indexXA) ( XArray* xao, Word n )
    return ((char*)xa->arr) + n * xa->elemSzB;
 }
 
-Int VG_(addToXA) ( XArray* xao, void* elem )
+static inline void ensureSpaceXA ( struct _XArray* xa )
 {
-   struct _XArray* xa = (struct _XArray*)xao;
-   vg_assert(xa);
-   vg_assert(elem);
-   vg_assert(xa->totsizeE >= 0);
-   vg_assert(xa->usedsizeE >= 0 && xa->usedsizeE <= xa->totsizeE);
    if (xa->usedsizeE == xa->totsizeE) {
       void* tmp;
       Word  newsz;
@@ -142,18 +137,44 @@ Int VG_(addToXA) ( XArray* xao, void* elem )
       xa->arr = tmp;
       xa->totsizeE = newsz;
    }
+}
+
+Int VG_(addToXA) ( XArray* xao, void* elem )
+{
+   struct _XArray* xa = (struct _XArray*)xao;
+   vg_assert(xa);
+   vg_assert(elem);
+   vg_assert(xa->totsizeE >= 0);
+   vg_assert(xa->usedsizeE >= 0 && xa->usedsizeE <= xa->totsizeE);
+   ensureSpaceXA( xa );
    vg_assert(xa->usedsizeE < xa->totsizeE);
    vg_assert(xa->arr);
-   if (xa->elemSzB == 1) {
-      /* calling memcpy is just stupid, hence */
-      * (((UChar*)xa->arr) + xa->usedsizeE) = * ((UChar*) elem);
-   } else {
-      VG_(memcpy)( ((UChar*)xa->arr) + xa->usedsizeE * xa->elemSzB,
-                   elem, xa->elemSzB );
-   }
+   VG_(memcpy)( ((UChar*)xa->arr) + xa->usedsizeE * xa->elemSzB,
+                elem, xa->elemSzB );
    xa->usedsizeE++;
    xa->sorted = False;
    return xa->usedsizeE-1;
+}
+
+Int VG_(addBytesToXA) ( XArray* xao, void* bytesV, Int nbytes )
+{
+   Int r, i;
+   struct _XArray* xa = (struct _XArray*)xao;
+   vg_assert(xa);
+   vg_assert(xa->elemSzB == 1);
+   vg_assert(nbytes >= 0);
+   vg_assert(xa->totsizeE >= 0);
+   vg_assert(xa->usedsizeE >= 0 && xa->usedsizeE <= xa->totsizeE);
+   r = xa->usedsizeE;
+   for (i = 0; i < nbytes; i++) {
+      ensureSpaceXA( xa );
+      vg_assert(xa->usedsizeE < xa->totsizeE);
+      vg_assert(xa->arr);
+      * (((UChar*)xa->arr) + xa->usedsizeE) = ((UChar*)bytesV)[i];
+      xa->usedsizeE++;
+   }
+   xa->sorted = False;
+   return r;
 }
 
 void VG_(sortXA) ( XArray* xao )

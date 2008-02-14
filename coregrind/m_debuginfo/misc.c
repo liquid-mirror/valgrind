@@ -60,14 +60,6 @@ UChar* ML_(dinfo_strdup) ( const UChar* str ) {
 }
 
 
-void ML_(copy_bytes_into_XA) ( XArray* /* of UChar */ xa, 
-                               void* bytes, Word nbytes ) {
-   Word i;
-   for (i = 0; i < nbytes; i++)
-      VG_(addToXA)( xa, & ((UChar*)bytes)[i] );
-}
-
-
 /*--------------------------------------------------------------------*/
 /*--- end                                                   misc.c ---*/
 /*--------------------------------------------------------------------*/

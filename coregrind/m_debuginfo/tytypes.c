@@ -402,7 +402,7 @@ static void copy_UWord_into_XA ( XArray* /* of UChar */ xa,
    UChar buf[32];
    VG_(memset)(buf, 0, sizeof(buf));
    VG_(sprintf)(buf, "%lu", uw);
-   ML_(copy_bytes_into_XA)( xa, buf, VG_(strlen)(buf));
+   VG_(addBytesToXA)( xa, buf, VG_(strlen)(buf));
 }
 
 /* Describe where in the type 'offset' falls.  Caller must
@@ -455,9 +455,9 @@ XArray* /*UChar*/ ML_(describe_type)( /*OUT*/OffT* residual_offset,
                goto done; /* No.  Give up. */
             /* Yes.  'field' is it. */
             if (!field->name) goto done;
-            ML_(copy_bytes_into_XA)( xa, ".", 1 );
-            ML_(copy_bytes_into_XA)( xa, field->name,
-                                     VG_(strlen)(field->name) );
+            VG_(addBytesToXA)( xa, ".", 1 );
+            VG_(addBytesToXA)( xa, field->name,
+                               VG_(strlen)(field->name) );
             offset -= offMin;
             ty = field->typeR;
             if (!ty) goto done;
@@ -484,9 +484,9 @@ XArray* /*UChar*/ ML_(describe_type)( /*OUT*/OffT* residual_offset,
             eszB = ML_(sizeOfType)( ty->Ty.Array.typeR );
             if (eszB == 0) goto done;
             ix = offset / eszB;
-            ML_(copy_bytes_into_XA)( xa, "[", 1 );
+            VG_(addBytesToXA)( xa, "[", 1 );
             copy_UWord_into_XA( xa, ix );
-            ML_(copy_bytes_into_XA)( xa, "]", 1 );
+            VG_(addBytesToXA)( xa, "]", 1 );
             ty = ty->Ty.Array.typeR;
             offset -= ix * eszB;
             /* keep going; look inside the array element. */
@@ -516,7 +516,7 @@ XArray* /*UChar*/ ML_(describe_type)( /*OUT*/OffT* residual_offset,
 
   done:
    *residual_offset = offset;
-   ML_(copy_bytes_into_XA)( xa, "\0", 1 );
+   VG_(addBytesToXA)( xa, "\0", 1 );
    return xa;
 }
 

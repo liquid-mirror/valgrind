@@ -51,10 +51,6 @@ void*  ML_(dinfo_zalloc)( SizeT szB );
 void   ML_(dinfo_free)( void* v );
 UChar* ML_(dinfo_strdup)( const UChar* str );
 
-/* Copy bytes into an XArray of what are assumed to be, well,
-   bytes. */
-void ML_(copy_bytes_into_XA) ( XArray* /* of UChar */ xa, 
-                               void* bytes, Word nbytes );
 
 #endif /* ndef __PRIV_MISC_H */
 
