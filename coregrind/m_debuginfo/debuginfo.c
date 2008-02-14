@@ -204,6 +204,48 @@ static void free_DebugInfo ( DebugInfo* di )
       next = chunk->next;
       ML_(dinfo_free)(chunk);
    }
+
+   { TyAdmin *admin1, *admin2;
+     for (admin1 = di->tyadmins; admin1; admin1 = admin2) {
+        admin2 = admin1->next;
+        //ML_(dinfo_free)(admin1);
+        ML_(delete_TyAdmin_and_payload)(admin1);
+     }
+     GExpr *gexpr1, *gexpr2;
+     for (gexpr1 = di->gexprs; gexpr1; gexpr1 = gexpr2) {
+        gexpr2 = gexpr1->next;
+        ML_(dinfo_free)(gexpr1);
+     }
+   }
+
+   Word i, j;
+   if (di->varinfo) {
+      for (i = 0; i < VG_(sizeXA)(di->varinfo); i++) {
+         OSet* scope = *(OSet**)VG_(indexXA)(di->varinfo, i);
+         if (!scope) continue;
+         // iterate over all entries in 'scope'
+         VG_(OSetGen_ResetIter)(scope);
+         while (True) {
+            DiAddrRange* arange = VG_(OSetGen_Next)(scope);
+            if (!arange) break;
+            // for each var in 'arange'
+            vg_assert(arange->vars);
+            for (j = 0; j < VG_(sizeXA)( arange->vars ); j++) {
+               DiVariable* var = (DiVariable*)VG_(indexXA)(arange->vars,j);
+               vg_assert(var);
+               /////////////////////////////
+               //if (var->name && 0xDD != *(var->name)) 
+               //   ML_(dinfo_free)(var->name);
+               // var->name gets used more than once .. can't free it
+               /////////////////////////////
+            }
+            ML_(dinfo_free)(arange->vars);
+         }
+         VG_(OSetGen_Destroy)(scope);
+      }
+      VG_(deleteXA)(di->varinfo);
+   }
+
    ML_(dinfo_free)(di);
 }
 
@@ -1531,7 +1573,8 @@ Bool VG_(get_filename_linenum) ( Addr a,
    Therefore specify "*" to search all the objects.  On TOC-afflicted
    platforms, a symbol is deemed to be found only if it has a nonzero
    TOC pointer.  */
-Bool VG_(lookup_symbol_SLOW)(UChar* sopatt, UChar* name, Addr* pEnt, Addr* pToc)
+Bool VG_(lookup_symbol_SLOW)(UChar* sopatt, UChar* name, 
+                             Addr* pEnt, Addr* pToc)
 {
    Bool     require_pToc = False;
    Int      i;

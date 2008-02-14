@@ -58,12 +58,12 @@ struct _TyAdmin {
 
 /* an enumeration value */
 struct _TyAtom {
-   UChar* name;
+   UChar* name; /* AR_DINFO, unshared */
    Long   value;
 };
 
 struct _TyField {
-   UChar*  name;
+   UChar*  name; /* AR_DINFO, unshared */
    Type*   typeR;
    D3Expr* loc;
    Bool    isStruct;
@@ -78,7 +78,7 @@ struct _TyBounds {
 };
 
 struct _D3Expr {
-   UChar* bytes;
+   UChar* bytes; /* AR_DINFO, unshared */
    UWord  nbytes;
 };
 
@@ -87,7 +87,7 @@ struct _Type {
           Ty_Enum, Ty_Array, Ty_Fn, Ty_Qual, Ty_Void } tag;
    union {
       struct {
-         UChar* name;
+         UChar* name; /* AR_DINFO, unshared */
          Int    szB;
          UChar  enc; /* S:signed U:unsigned F:floating */
       } Base;
@@ -97,18 +97,18 @@ struct _Type {
          Bool  isPtr;
       } PorR;
       struct {
-         UChar* name;
+         UChar* name;  /* AR_DINFO, unshared */
          Type*  typeR; /* MAY BE NULL, denoting unknown */
       } TyDef;
       struct {
-         UChar*  name;
+         UChar*  name; /* AR_DINFO, unshared */
          UWord   szB;
          XArray* /* of TyField* */ fields;
          Bool    complete;
          Bool    isStruct;
       } StOrUn;
       struct {
-         UChar*  name;
+         UChar*  name; /* AR_DINFO, unshared */
          Int     szB;
          XArray* /* of TyAtom* */ atomRs;
       } Enum;
@@ -134,6 +134,8 @@ TyField*  ML_(new_TyField)  ( UChar* name, Type* typeR, D3Expr* loc );
 TyBounds* ML_(new_TyBounds) ( void );
 Type*     ML_(new_Type)     ( void );
 D3Expr*   ML_(new_D3Expr)   ( UChar* bytes, UWord nbytes );
+
+void ML_(delete_TyAdmin_and_payload) ( TyAdmin* ad );
 
 void ML_(pp_TyAdmin)  ( TyAdmin* admin );
 void ML_(pp_TyAtom)   ( TyAtom* atom );

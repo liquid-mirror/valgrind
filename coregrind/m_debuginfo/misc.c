@@ -37,6 +37,8 @@
 #include "pub_core_libcbase.h"
 #include "pub_core_libcassert.h"
 #include "pub_core_mallocfree.h"
+#include "pub_core_xarray.h"
+
 #include "priv_misc.h"            /* self */
 
 
@@ -48,18 +50,30 @@ void* ML_(dinfo_zalloc) ( SizeT szB ) {
    VG_(memset)(v, 0, szB);
    return v;
 }
+
 void ML_(dinfo_free) ( void* v ) {
    VG_(arena_free)( VG_AR_DINFO, v );
 }
+
 UChar* ML_(dinfo_strdup) ( const UChar* str ) {
    return VG_(arena_strdup)( VG_AR_DINFO, str );
 }
+
 UChar* ML_(dinfo_memdup)( UChar* mem, UWord nbytes ) {
    UChar* r = VG_(arena_malloc)( VG_AR_DINFO, nbytes );
    if (nbytes > 0)
       VG_(memcpy)( r, mem, nbytes );
    return r;
 }
+
+
+void ML_(copy_bytes_into_XA) ( XArray* /* of UChar */ xa, 
+                               void* bytes, Word nbytes ) {
+   Word i;
+   for (i = 0; i < nbytes; i++)
+      VG_(addToXA)( xa, & ((UChar*)bytes)[i] );
+}
+
 
 /*--------------------------------------------------------------------*/
 /*--- end                                                   misc.c ---*/

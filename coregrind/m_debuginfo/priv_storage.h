@@ -351,7 +351,7 @@ struct _DebugInfo {
    UInt    cfsi_size;
    Addr    cfsi_minaddr;
    Addr    cfsi_maxaddr;
-   XArray* cfsi_exprs; /* XArray of CfSiExpr */
+   XArray* cfsi_exprs; /* XArray of CfiExpr */
 
    /* Expandable arrays of characters -- the string table.  Pointers
       into this are stable (the arrays are not reallocated). */
@@ -383,6 +383,10 @@ struct _DebugInfo {
       range pair, one that covers the entire address space.
    */
    XArray* /* of OSet of DiAddrRange */varinfo;
+
+   /* For the purposes of deletion: */
+   TyAdmin* tyadmins;
+   GExpr*   gexprs;
 };
 
 /* --------------------- functions --------------------- */

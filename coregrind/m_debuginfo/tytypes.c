@@ -80,6 +80,88 @@ Type* ML_(new_Type) ( void ) {
    return type;
 }
 
+void ML_(delete_TyAtom)( TyAtom* atom ) {
+   if (atom->name)
+      ML_(dinfo_free)(atom->name);
+   ML_(dinfo_free)(atom);
+}
+void ML_(delete_TyField)( TyField* field ) {
+   if (field->name)
+      ML_(dinfo_free)(field->name);
+   /* typeR and loc will be on the admin list; no need to free */
+   ML_(dinfo_free)(field);
+}
+void ML_(delete_TyBounds)( TyBounds* bounds ) {
+   ML_(dinfo_free)(bounds);
+}
+void ML_(delete_D3Expr)( D3Expr* expr ) {
+   if (expr->bytes)
+      ML_(dinfo_free)(expr->bytes);
+   ML_(dinfo_free)(expr);
+}
+void ML_(delete_Type)( Type* ty ) {
+   switch (ty->tag) {
+      case Ty_Base:
+         if (ty->Ty.Base.name)
+            ML_(dinfo_free)(ty->Ty.Base.name);
+         break;
+      case Ty_PorR:
+         /* typeR will be on the admin list */
+         break;
+      case Ty_TyDef:
+         if (ty->Ty.TyDef.name)
+            ML_(dinfo_free)(ty->Ty.TyDef.name);
+         /* typeR will be on the admin list */
+         break;
+      case Ty_StOrUn:
+         if (ty->Ty.StOrUn.name)
+            ML_(dinfo_free)(ty->Ty.StOrUn.name);
+         /* Just dump the containing XArray.  The fields themselves
+            will be on the admin list. */
+         if (ty->Ty.StOrUn.fields)
+            VG_(deleteXA)(ty->Ty.StOrUn.fields);
+         break;
+      case Ty_Enum:
+         if (ty->Ty.Enum.name)
+            ML_(dinfo_free)(ty->Ty.Enum.name);
+         if (ty->Ty.Enum.atomRs)
+            VG_(deleteXA)( ty->Ty.Enum.atomRs);
+         /* Just dump the containing XArray.  The atoms themselves
+            will be on the admin list. */
+         break;
+      case Ty_Array:
+         if (ty->Ty.Array.bounds)
+            VG_(deleteXA)( ty->Ty.Array.bounds);
+         /* Just dump the containing XArray.  The bounds themselves
+            will be on the admin list. */
+         break;
+      case Ty_Fn:
+         break;
+      case Ty_Qual:
+         /* typeR will be on the admin list */
+         break;
+      case Ty_Void:
+         break;
+      default:
+         vg_assert(0);
+   }
+}
+
+void ML_(delete_TyAdmin_and_payload) ( TyAdmin* ad ) {
+   vg_assert(ad->payload);
+   switch (ad->tag) {
+      case TyA_Type:   ML_(delete_Type)(ad->payload);     break;
+      case TyA_Atom:   ML_(delete_TyAtom)(ad->payload);   break;
+      case TyA_Expr:   ML_(delete_D3Expr)(ad->payload);   break;
+      case TyA_Field:  ML_(delete_TyField)(ad->payload);  break;
+      case TyA_Bounds: ML_(delete_TyBounds)(ad->payload); break;
+      default:         vg_assert(0);
+   }
+   ML_(dinfo_free)(ad);
+}
+
+
+
 static void pp_XArray_of_pointersOrRefs ( XArray* xa ) {
    Word i;
    VG_(printf)("{");
@@ -321,20 +403,13 @@ SizeT ML_(sizeOfType)( Type* ty )
 }
 
 
-static void copy_bytes_into_XA ( XArray* /* of UChar */ xa, 
-                                 void* bytes, Word nbytes ) {
-   Word i;
-   for (i = 0; i < nbytes; i++)
-      VG_(addToXA)( xa, & ((UChar*)bytes)[i] );
-}
 static void copy_UWord_into_XA ( XArray* /* of UChar */ xa,
                                  UWord uw ) {
    UChar buf[32];
    VG_(memset)(buf, 0, sizeof(buf));
    VG_(sprintf)(buf, "%lu", uw);
-   copy_bytes_into_XA( xa, buf, VG_(strlen)(buf));
+   ML_(copy_bytes_into_XA)( xa, buf, VG_(strlen)(buf));
 }
-
 
 /* Describe where in the type 'offset' falls.  Caller must
    deallocate the resulting XArray. */
@@ -386,9 +461,9 @@ XArray* /*UChar*/ ML_(describe_type)( /*OUT*/OffT* residual_offset,
                goto done; /* No.  Give up. */
             /* Yes.  'field' is it. */
             if (!field->name) goto done;
-            copy_bytes_into_XA( xa, ".", 1 );
-            copy_bytes_into_XA( xa, field->name,
-                                VG_(strlen)(field->name) );
+            ML_(copy_bytes_into_XA)( xa, ".", 1 );
+            ML_(copy_bytes_into_XA)( xa, field->name,
+                                     VG_(strlen)(field->name) );
             offset -= offMin;
             ty = field->typeR;
             if (!ty) goto done;
@@ -415,9 +490,9 @@ XArray* /*UChar*/ ML_(describe_type)( /*OUT*/OffT* residual_offset,
             eszB = ML_(sizeOfType)( ty->Ty.Array.typeR );
             if (eszB == 0) goto done;
             ix = offset / eszB;
-            copy_bytes_into_XA( xa, "[", 1 );
+            ML_(copy_bytes_into_XA)( xa, "[", 1 );
             copy_UWord_into_XA( xa, ix );
-            copy_bytes_into_XA( xa, "]", 1 );
+            ML_(copy_bytes_into_XA)( xa, "]", 1 );
             ty = ty->Ty.Array.typeR;
             offset -= ix * eszB;
             /* keep going; look inside the array element. */
@@ -447,7 +522,7 @@ XArray* /*UChar*/ ML_(describe_type)( /*OUT*/OffT* residual_offset,
 
   done:
    *residual_offset = offset;
-   copy_bytes_into_XA( xa, "\0", 1 );
+   ML_(copy_bytes_into_XA)( xa, "\0", 1 );
    return xa;
 }
 

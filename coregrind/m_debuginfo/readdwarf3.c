@@ -57,8 +57,8 @@
 #include "pub_core_xarray.h"
 #include "priv_misc.h"             /* dinfo_zalloc/free/strdup */
 #include "priv_tytypes.h"
-#include "priv_storage.h"
 #include "priv_d3basics.h"
+#include "priv_storage.h"
 #include "priv_readdwarf3.h"       /* self */
 
 
@@ -387,12 +387,6 @@ static XArray* unitary_range_list ( Addr aMin, Addr aMax ) {
    location list.  Zero length ranges, with aMax == aMin-1, are not
    allowed.
 */
-static void copy_bytes_into_XA ( XArray* /* of UChar */ xa, 
-                                 void* bytes, Word nbytes ) {
-   Word i;
-   for (i = 0; i < nbytes; i++)
-      VG_(addToXA)( xa, & ((UChar*)bytes)[i] );
-}
 void ML_(pp_GX) ( GExpr* gx ) {
    Addr   aMin, aMax;
    UChar  uc;
@@ -542,11 +536,11 @@ static GExpr* make_general_GX ( CUConst* cc,
          c = 0; /* !isEnd*/
          VG_(addToXA)( xa, &c );
          w = w1    + base + svma_of_referencing_CU;
-         copy_bytes_into_XA( xa, &w, sizeof(w) );
+         ML_(copy_bytes_into_XA)( xa, &w, sizeof(w) );
          w = w2 -1 + base + svma_of_referencing_CU;
-         copy_bytes_into_XA( xa, &w, sizeof(w) );
+         ML_(copy_bytes_into_XA)( xa, &w, sizeof(w) );
          s = (UShort)len;
-         copy_bytes_into_XA( xa, &s, sizeof(s) );
+         ML_(copy_bytes_into_XA)( xa, &s, sizeof(s) );
       }
 
       while (len > 0) {
@@ -2750,7 +2744,7 @@ void new_dwarf3_reader_wrk (
       have at least one type entry to refer to.  D3_FAKEVOID_CUOFF is
       huge and presumably will not occur in any valid DWARF3 file --
       it would need to have a .debug_info section 4GB long for that to
-      happen. */
+      happen.  These type entries end up in the DebugInfo. */
    admin = NULL;
    { Type* tVoid = ML_(new_Type)();
      tVoid->tag = Ty_Void;
@@ -2760,7 +2754,13 @@ void new_dwarf3_reader_wrk (
      admin->tag     = TyA_Type;
    }
 
+   /* List of variables we're accumulating.  These don't end up in the
+      DebugInfo; instead their contents are handed to ML_(addVar) and
+      the list elements are then deleted. */
    tempvars = NULL;
+
+   /* List of GExprs we're accumulating.  These wind up in the
+      DebugInfo. */
    gexprs = NULL;
 
    /* We need a D3TypeParser to keep track of partially constructed
@@ -2968,7 +2968,12 @@ void new_dwarf3_reader_wrk (
    }
    tempvars = NULL;
 
-   /* FIXME: record adminp in di so it can be freed later */
+   /* record the TyAdmins and the GExprs in di so they can be freed
+      later */
+   vg_assert(!di->tyadmins);
+   di->tyadmins = admin;
+   vg_assert(!di->gexprs);
+   di->gexprs = gexprs;
 }
 
 
