@@ -76,6 +76,32 @@ XArray* VG_(newXA) ( void*(*alloc_fn)(SizeT),
    return xa;
 }
 
+XArray* VG_(cloneXA)( XArray* xao )
+{
+   struct _XArray* xa = (struct _XArray*)xao;
+   struct _XArray* nyu;
+   vg_assert(xa);
+   vg_assert(xa->alloc);
+   vg_assert(xa->free);
+   vg_assert(xa->elemSzB >= 1);
+   nyu = xa->alloc( sizeof(struct _XArray) );
+   if (!nyu)
+      return NULL;
+   /* Copy everything verbatim ... */
+   *nyu = *xa;
+   /* ... except we have to clone the contents-array */
+   if (nyu->arr) {
+      nyu->arr = nyu->alloc( nyu->totsizeE * nyu->elemSzB );
+      if (!nyu->arr) {
+         nyu->free(nyu);
+         return NULL;
+      }
+      VG_(memcpy)( nyu->arr, xa->arr, nyu->totsizeE * nyu->elemSzB );
+   }
+   /* We're done! */
+   return nyu;
+}
+
 void VG_(deleteXA) ( XArray* xao )
 {
    struct _XArray* xa = (struct _XArray*)xao;

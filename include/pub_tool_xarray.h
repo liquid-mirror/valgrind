@@ -99,6 +99,11 @@ extern void* VG_(indexXA) ( XArray*, Word );
    than n elements in the array. */
 extern void VG_(dropTailXA) ( XArray*, Word );
 
+/* Make a new, completely independent copy of the given XArray, using
+   the existing allocation function to allocate the new space.
+   Returns NULL if the allocation function didn't manage to allocate
+   space (but did return NULL rather than merely abort.) */
+extern XArray* VG_(cloneXA)( XArray* xa );
 
 #endif   // __PUB_TOOL_XARRAY_H
 
