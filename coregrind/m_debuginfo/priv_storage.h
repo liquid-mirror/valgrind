@@ -350,8 +350,8 @@ struct _DebugInfo {
    DiCfSI* cfsi;
    UInt    cfsi_used;
    UInt    cfsi_size;
-   Addr    cfsi_minaddr;
-   Addr    cfsi_maxaddr;
+   Addr    cfsi_minavma;
+   Addr    cfsi_maxavma;
    XArray* cfsi_exprs; /* XArray of CfiExpr */
 
    /* Expandable arrays of characters -- the string table.  Pointers

@@ -708,6 +708,39 @@ void ML_(addVar)( struct _DebugInfo* di,
    vg_assert(type);
    vg_assert(gexpr);
 
+   /* Ignore any variables whose aMin .. aMax (that is, range of text
+      addresses for which they actually exist) falls outside the text
+      segment.  Is this indicative of a bug in the reader?  Maybe. */
+   if (di->text_size > 0 
+       && level > 0
+       && (aMax < di->text_avma 
+           || aMin >= di->text_avma + di->text_size)) {
+      if (VG_(clo_verbosity) >= 0) {
+         VG_(message)(Vg_DebugMsg, 
+            "warning: addVar: in range %p .. %p outside "
+            "segment %p .. %p (%s)",
+            aMin, aMax,
+            di->text_avma, di->text_avma + di->text_size -1,
+            name
+         );
+      }
+      return;
+   }
+
+   /* If the type's size is zero (which can mean unknown size), ignore
+      it.  We will never be able to actually relate a data address to
+      a data object with zero size, so there's no point in storing
+      info on it. */
+   if (ML_(sizeOfType)(type) == 0) {
+      if (VG_(clo_verbosity) >= 0) {
+         VG_(message)(Vg_DebugMsg, 
+            "warning: addVar: zero or unknown size (%s)",
+            name
+         );
+      }
+      return;
+   }
+
    if (!di->varinfo) {
       di->varinfo = VG_(newXA)( ML_(dinfo_zalloc), ML_(dinfo_free),
                                 sizeof(OSet*) );
@@ -726,7 +759,9 @@ void ML_(addVar)( struct _DebugInfo* di,
       VG_(addToXA)( di->varinfo, &scope );
       /* Add a single range covering the entire address space.  At
          level 0 we require this doesn't get split.  At levels above 0
-         we require that any additions to it cause it to get split. */
+         we require that any additions to it cause it to get split.
+         All of these invariants get checked both add_var_to_arange
+         and after reading is complete, in canonicaliseVarInfo. */
       nyu = VG_(OSetGen_AllocNode)( scope, sizeof(DiAddrRange) );
       vg_assert(nyu);
       nyu->aMin = (Addr)0;
@@ -1162,8 +1197,8 @@ static Int compare_DiCfSI ( void* va, void* vb )
 static void canonicaliseCFI ( struct _DebugInfo* di )
 {
    Int   i, j;
-   const Addr minAddr = 0;
-   const Addr maxAddr = ~minAddr;
+   const Addr minAvma = 0;
+   const Addr maxAvma = ~minAvma;
 
    /* Note: take care in here.  di->cfsi can be NULL, in which
       case _used and _size fields will be zero. */
@@ -1172,23 +1207,23 @@ static void canonicaliseCFI ( struct _DebugInfo* di )
       vg_assert(di->cfsi_size == 0);
    }
 
-   /* Set cfsi_minaddr and cfsi_maxaddr to summarise the entire
+   /* Set cfsi_minavma and cfsi_maxavma to summarise the entire
       address range contained in cfsi[0 .. cfsi_used-1]. */
-   di->cfsi_minaddr = maxAddr; 
-   di->cfsi_maxaddr = minAddr;
+   di->cfsi_minavma = maxAvma; 
+   di->cfsi_maxavma = minAvma;
    for (i = 0; i < (Int)di->cfsi_used; i++) {
       Addr here_min = di->cfsi[i].base;
       Addr here_max = di->cfsi[i].base + di->cfsi[i].len - 1;
-      if (here_min < di->cfsi_minaddr)
-         di->cfsi_minaddr = here_min;
-      if (here_max > di->cfsi_maxaddr)
-         di->cfsi_maxaddr = here_max;
+      if (here_min < di->cfsi_minavma)
+         di->cfsi_minavma = here_min;
+      if (here_max > di->cfsi_maxavma)
+         di->cfsi_maxavma = here_max;
    }
 
    if (di->trace_cfi)
       VG_(printf)("canonicaliseCfiSI: %d entries, %p .. %p\n", 
                   di->cfsi_used,
-	          di->cfsi_minaddr, di->cfsi_maxaddr);
+	          di->cfsi_minavma, di->cfsi_maxavma);
 
    /* Sort the cfsi array by base address. */
    VG_(ssort)(di->cfsi, di->cfsi_used, sizeof(*di->cfsi), compare_DiCfSI);
@@ -1223,9 +1258,9 @@ static void canonicaliseCFI ( struct _DebugInfo* di )
       /* No zero-length ranges. */
       vg_assert(di->cfsi[i].len > 0);
       /* Makes sense w.r.t. summary address range */
-      vg_assert(di->cfsi[i].base >= di->cfsi_minaddr);
+      vg_assert(di->cfsi[i].base >= di->cfsi_minavma);
       vg_assert(di->cfsi[i].base + di->cfsi[i].len - 1
-                <= di->cfsi_maxaddr);
+                <= di->cfsi_maxavma);
 
       if (i < di->cfsi_used - 1) {
          /*

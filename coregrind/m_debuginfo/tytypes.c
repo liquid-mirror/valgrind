@@ -360,6 +360,7 @@ SizeT ML_(sizeOfType)( Type* ty )
    Word  i;
    switch (ty->tag) {
       case Ty_Base:
+         vg_assert(ty->Ty.Base.szB > 0);
          return ty->Ty.Base.szB;
       case Ty_Qual:
          return ML_(sizeOfType)( ty->Ty.Qual.typeR );
@@ -425,7 +426,7 @@ XArray* /*UChar*/ ML_(describe_type)( /*OUT*/OffT* residual_offset,
             Word     i;
             GXResult res;
             TyField  *field = NULL, *fields;
-            SizeT    offMin = 0, offMax1 = 0;
+            OffT     offMin = 0, offMax1 = 0;
             if (!ty->Ty.StOrUn.isStruct) goto done;
             fields = ty->Ty.StOrUn.fields;
             if ((!fields) || VG_(sizeXA)(fields) == 0) goto done;

@@ -472,6 +472,14 @@ GXResult ML_(evaluate_Dwarf3_Expr) ( UChar* expr, UWord exprszB,
             sw1 = (Word)read_leb128S( &expr );
             PUSH( fbval.res + sw1 );
             break;
+         /* DW_OP_breg* denotes 'contents of specified register, plus
+            constant offset'.  So provided we know what the register's
+            value is, we can evaluate this.  Contrast DW_OP_reg*,
+            which indicates that denoted location is in a register
+            itself.  For DW_OP_reg* we must always fail, since this
+            function is intended to compute a memory address of some
+            kind.  See D3 Spec sec 2.6.1 ("Register Name Operations")
+            for details. */
          case DW_OP_breg0 ... DW_OP_breg31:
             if (!regs)
                FAIL("evaluate_Dwarf3_Expr: DW_OP_breg* but no reg info");
@@ -493,6 +501,7 @@ GXResult ML_(evaluate_Dwarf3_Expr) ( UChar* expr, UWord exprszB,
                             "Warning: DWARF3 CFI reader: unhandled DW_OP_ "
                             "opcode 0x%x", (Int)opcode); 
             FAIL("evaluate_Dwarf3_Expr: unhandled DW_OP_");
+            /*NOTREACHED*/
       }
 
    }

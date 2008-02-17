@@ -1152,7 +1152,8 @@ Bool ML_(read_elf_debug_info) ( struct _DebugInfo* di )
 
          /* Make sure the PT_LOADable entries are in order */
          if (phdr->p_type == PT_LOAD) {
-            TRACE_SYMTAB("PT_LOAD in order?: %p %p\n", prev_svma, phdr->p_vaddr);
+            TRACE_SYMTAB("PT_LOAD in order?: %p %p\n",
+                         prev_svma, phdr->p_vaddr);
             if (phdr->p_vaddr < prev_svma) {
                ML_(symerr)(di, True,
                            "ELF Program Headers are not in ascending order");

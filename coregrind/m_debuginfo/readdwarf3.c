@@ -34,19 +34,55 @@
    without prior written permission.
 */
 
-/* Current hacks:
-      DW_TAG_{const,volatile}_type no DW_AT_type is allowed; it is
-         assumed to mean "const void" or "volatile void" respectively.
-         GDB appears to interpret them like this, anyway.
+/* REFERENCE (without which this code will not make much sense):
+
+   DWARF Debugging Information Format, Version 3, 
+   dated 20 December 2005 (the "D3 spec").
+
+   Available at http://www.dwarfstd.org/Dwarf3.pdf.  There's also a
+   .doc (MS Word) version, but for some reason the section numbers
+   between the Word and PDF versions differ by 1 in the first digit.
+   All section references in this code are to the PDF version.
+
+   CURRENT HACKS:
+
+   DW_TAG_{const,volatile}_type no DW_AT_type is allowed; it is
+      assumed to mean "const void" or "volatile void" respectively.
+      GDB appears to interpret them like this, anyway.
+
+   In many cases it is important to know the svma of a CU (the "base
+   address of the CU", as the D3 spec calls it).  There are some
+   situations in which the spec implies this value is unknown, but the
+   Dwarf3 produced by gcc-4.1 seems to assume is not unknown but
+   merely zero when not explicitly stated.  So we too have to make
+   that assumption.
+
+   TODO, 2008 Feb 17:
 
    get rid of cu_svma_known and document the assumed-zero svma hack.
 
-   (text)-bias the code ranges handed to ML_(addVar); add check that
-   they actually fall into the text segment
+   ML_(sizeOfType): differentiate between zero sized types and types
+   for which the size is unknown.  Is this important?  I don't know.
 
-   parse all the types first, then resolve, then parse all the vars,
-   so that when we come to add vars, we know what their types are.
-   This is important, else we cannot know their sizes.
+   DW_AT_array_types: deal with explicit sizes (currently we compute
+   the size from the bounds and the element size, although that's
+   fragile, if the bounds incompletely specified, or completely
+   absent)
+
+   Document reason for difference (by 1) of stack preening depth in
+   parse_var_DIE vs parse_type_DIE.
+
+   Don't hand to ML_(addVars), vars whose locations are entirely in
+   registers (DW_OP_reg*).  This is merely a space-saving
+   optimisation, as ML_(evaluate_Dwarf3_Expr) should handle these
+   expressions correctly, by failing to evaluate them and hence
+   effectively ignoring the variable with which they are associated.
+
+   Deal with DW_AT_array_types which have element size != stride
+
+   In some cases, the info for a variable is split between two
+   different DIEs (generally a declarer and a definer).  We punt on
+   these.  Could do better here.
 */
 
 #include "pub_core_basics.h"
@@ -118,11 +154,11 @@ static Bool is_at_end_Cursor ( Cursor* c ) {
    return c->region_next >= c->region_szB;
 }
 
-static Word get_position_of_Cursor ( Cursor* c ) {
+static inline UWord get_position_of_Cursor ( Cursor* c ) {
    vg_assert(is_sane_Cursor(c));
    return c->region_next;
 }
-static void set_position_of_Cursor ( Cursor* c, Word pos ) {
+static inline void set_position_of_Cursor ( Cursor* c, UWord pos ) {
    c->region_next = pos;
    vg_assert(is_sane_Cursor(c));
 }
@@ -466,7 +502,7 @@ static GExpr* make_singleton_GX ( UChar* block, UWord nbytes )
    VG_(memcpy)(p, block, nbytes); p += nbytes;
    * ((UChar*)p)  = 1;          /*isEnd*/  p += sizeof(UChar);
 
-   vg_assert(p - pstart == bytesReqd);
+   vg_assert( (SizeT)(p - pstart) == bytesReqd);
    vg_assert( &gx->payload[bytesReqd] 
               == ((UChar*)gx) + sizeof(GExpr) + bytesReqd );
 
@@ -493,7 +529,7 @@ static GExpr* make_general_GX ( CUConst* cc,
    init_Cursor( &loc, cc->debug_loc_img, 
                 cc->debug_loc_sz, 0, cc->barf,
                 "Overrun whilst reading .debug_loc section(2)" );
-   set_position_of_Cursor( &loc, (Word)debug_loc_offset );
+   set_position_of_Cursor( &loc, debug_loc_offset );
 
    /* Who frees this xa?  It is freed before this fn exits. */
    xa = VG_(newXA)( ML_(dinfo_zalloc), ML_(dinfo_free),
@@ -610,7 +646,7 @@ static XArray* /* of AddrRange */
    init_Cursor( &ranges, cc->debug_ranges_img, 
                 cc->debug_ranges_sz, 0, cc->barf,
                 "Overrun whilst reading .debug_ranges section(2)" );
-   set_position_of_Cursor( &ranges, (Word)debug_ranges_offset );
+   set_position_of_Cursor( &ranges, debug_ranges_offset );
 
    /* Who frees this xa?  varstack_preen() does. */
    xa = VG_(newXA)( ML_(dinfo_zalloc), ML_(dinfo_free),
@@ -1177,8 +1213,8 @@ static void parse_var_DIE ( /*OUT*/TempVar** tempvars,
    Int         ctsSzB;
    UWord       ctsMemSzB;
 
-   Word saved_die_c_offset  = get_position_of_Cursor( c_die );
-   Word saved_abbv_c_offset = get_position_of_Cursor( c_abbv );
+   UWord saved_die_c_offset  = get_position_of_Cursor( c_die );
+   UWord saved_abbv_c_offset = get_position_of_Cursor( c_abbv );
 
    varstack_preen( parser, td3, level );
 
@@ -1238,6 +1274,8 @@ static void parse_var_DIE ( /*OUT*/TempVar** tempvars,
             invalid, and we can legitimately stop and complain. */
       }
 #else
+      /* .. whereas The Reality is, simply assume the SVMA is zero
+         if it isn't specified. */
       if (level == 0) {
          vg_assert(!cc->cu_svma_known);
          cc->cu_svma_known = True;
@@ -1415,7 +1453,7 @@ static void parse_var_DIE ( /*OUT*/TempVar** tempvars,
                                  ? "<anon_variable>"
                                  : "<anon_formal>", -1 );
 
-	 /* If this is a local variable (non-external), try to find
+         /* If this is a local variable (non-external), try to find
             the GExpr for the DW_AT_frame_base of the containing
             function.  It should have been pushed on the stack at the
             time we encountered its DW_TAG_subprogram DIE, so the way
@@ -1437,10 +1475,12 @@ static void parse_var_DIE ( /*OUT*/TempVar** tempvars,
                }
             }
             if (!found) {
-               VG_(printf)(
-                  "parse_var_DIE: found non-external variable "
-                  "outside DW_TAG_subprogram\n");
-	       // FIXME             goto bad_DIE;
+               if (VG_(clo_verbosity) >= 0) {
+                  VG_(message)(Vg_DebugMsg, 
+                     "warning: parse_var_DIE: non-external variable "
+                     "outside DW_TAG_subprogram");
+               }
+               // FIXME             goto bad_DIE;
             }
          }
 
@@ -1507,7 +1547,7 @@ static void parse_var_DIE ( /*OUT*/TempVar** tempvars,
              DW_AT_type        : <13e>
          <2><2c3>: Abbrev Number: 13 (DW_TAG_formal_parameter)
              DW_AT_type        : <133>
-	*/
+        */
         /* ignore */
       }
       else
@@ -1601,7 +1641,7 @@ static void parse_var_DIE ( /*OUT*/TempVar** tempvars,
 typedef
    struct {
       /* What source language?  'C'=C/C++, 'F'=Fortran, '?'=other
-	 Established once per compilation unit. */
+         Established once per compilation unit. */
       UChar language;
       /* A stack of types which are currently under construction */
       Int   sp; /* [sp] is innermost active entry; sp==-1 for empty
@@ -1710,8 +1750,8 @@ static void parse_type_DIE ( /*OUT*/TyAdmin** admin,
    D3Expr*   expr   = NULL;
    TyBounds* bounds = NULL;
 
-   Word saved_die_c_offset  = get_position_of_Cursor( c_die );
-   Word saved_abbv_c_offset = get_position_of_Cursor( c_abbv );
+   UWord saved_die_c_offset  = get_position_of_Cursor( c_die );
+   UWord saved_abbv_c_offset = get_position_of_Cursor( c_abbv );
 
    /* If we've returned to a level at or above any previously noted
       parent, un-note it, so we don't believe we're still collecting
@@ -2354,9 +2394,6 @@ static void resolve_type_entities ( /*MOD*/TyAdmin* admin,
       }
       case TyA_Type: {
          UChar   enc;
-#if 0
-         Word    i;
-#endif
          XArray* xa;
          Type* ty = (Type*)adp->payload;
          switch (ty->tag) {
@@ -2399,30 +2436,10 @@ static void resolve_type_entities ( /*MOD*/TyAdmin* admin,
                    || ty->Ty.Enum.szB < 1 
                    || ty->Ty.Enum.szB > 8) goto baaad;
                xa = ty->Ty.Enum.atomRs;
-#if 0
-               for (i = 0; i < VG_(sizeXA)(xa); i++) {
-                  void** ppAtom = VG_(indexXA)(xa,i);
-                  ok = resolve_binding( &payload, map,
-                                        *ppAtom, D3TyA_Atom,
-                                        False/*!allow_invalid*/ );
-                  if (!ok) goto baaad;
-                  *ppAtom = payload;
-               }
-#endif
                break;
             case Ty_StOrUn:
                xa = ty->Ty.StOrUn.fields;
                if (!xa) goto baaad;
-#if 0
-               for (i = 0; i < VG_(sizeXA)(xa); i++) {
-                  void** ppField = VG_(indexXA)(xa,i);
-                  ok = resolve_binding( &payload, map,
-                                        *ppField, D3TyA_Field,
-                                        False/*!allow_invalid*/ );
-                  if (!ok) goto baaad;
-                  *ppField = payload;
-               }
-#endif
                break;
             case Ty_Fn:
                break;
@@ -2458,8 +2475,11 @@ static void resolve_type_entities ( /*MOD*/TyAdmin* admin,
       payload = NULL;
       ok = resolve_binding( &payload, map, vars->typeR,
                             TyA_Type, True/*allow_invalid*/ );
-//if (!ok) VG_(printf)("Can't resolve type reference 0x%lx\n", (UWord)vars->typeR);
-//vg_assert(ok);
+
+      if (0 && !ok)
+         VG_(printf)("Can't resolve type reference 0x%lx\n",
+                     (UWord)vars->typeR);
+      //vg_assert(ok);
       vars->typeR = payload;
    }
 
@@ -2481,8 +2501,8 @@ static void read_DIE ( /*OUT*/TyAdmin** admin,
    ULong  atag, abbv_code;
    UWord  posn;
    UInt   has_children;
-   Word   start_die_c_offset, start_abbv_c_offset;
-   Word   after_die_c_offset, after_abbv_c_offset;
+   UWord  start_die_c_offset, start_abbv_c_offset;
+   UWord  after_die_c_offset, after_abbv_c_offset;
 
    /* --- Deal with this DIE --- */
    posn      = get_position_of_Cursor( c );
@@ -2779,7 +2799,7 @@ void new_dwarf3_reader_wrk (
 
    TRACE_D3("\n------ Parsing .debug_info section ------\n");
    while (True) {
-      Word    cu_start_offset, cu_offset_now;
+      UWord   cu_start_offset, cu_offset_now;
       CUConst cc;
       if (is_at_end_Cursor( &info ))
          break;

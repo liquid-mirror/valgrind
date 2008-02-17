@@ -1444,7 +1444,7 @@ Bool VG_(use_CF_info) ( /*MOD*/Addr* ipP,
          inapplicable DebugInfos quickly. */
       if (si->cfsi_used == 0)
          continue;
-      if (*ipP < si->cfsi_minaddr || *ipP > si->cfsi_maxaddr)
+      if (*ipP < si->cfsi_minavma || *ipP > si->cfsi_maxavma)
          continue;
 
       i = ML_(search_one_cfitab)( si, *ipP );
