@@ -2974,10 +2974,10 @@ void new_dwarf3_reader_wrk (
 
    /* record the TyAdmins and the GExprs in di so they can be freed
       later */
-   vg_assert(!di->tyadmins);
-   di->tyadmins = admin;
-   vg_assert(!di->gexprs);
-   di->gexprs = gexprs;
+   vg_assert(!di->admin_tyadmins);
+   di->admin_tyadmins = admin;
+   vg_assert(!di->admin_gexprs);
+   di->admin_gexprs = gexprs;
 }
 
 

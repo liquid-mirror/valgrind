@@ -522,67 +522,168 @@ void ML_(ppCfiExpr)( XArray* src, Int ix )
 }
 
 
-static Word cmp_for_DiAddrRange ( const void* keyV, const void* elemV ) {
+Word ML_(cmp_for_DiAddrRange_range) ( const void* keyV,
+                                      const void* elemV ) {
    const Addr* key = (const Addr*)keyV;
    const DiAddrRange* elem = (const DiAddrRange*)elemV;
    if (0)
-      VG_(printf)("cmp_for_DiAddrRange: %p vs %p\n", *key, elem->aMin);
-   if ((*key) < elem->aMin) return -1;
-   if ((*key) > elem->aMin) return 1;
-   return 0;
-}
-Word ML_(cmp_for_DiAddrRange_range) ( const void* keyV, const void* elemV ) {
-   const Addr* key = (const Addr*)keyV;
-   const DiAddrRange* elem = (const DiAddrRange*)elemV;
-   if (0)
-      VG_(printf)("cmp_for_DiAddrRange_range: %p vs %p\n", *key, elem->aMin);
+      VG_(printf)("cmp_for_DiAddrRange_range: %p vs %p\n",
+                  *key, elem->aMin);
    if ((*key) < elem->aMin) return -1;
    if ((*key) > elem->aMax) return 1;
    return 0;
 }
 
-/* 'inner' is an XArray of DiAddrRange.  Find the entry corresponding
-    to [aMin,aMax].  If that doesn't exist, create one.  Take care to
-    preserve the invariant that none of the address ranges overlap.
-    That's unlikely to be the case unless the DWARF3 from which these
-    calls results contains bogus range info; however in the interests
-    of robustness, do handle the case. */
-static DiAddrRange* find_or_create_arange ( 
-                       OSet* /* of DiAddrRange */ inner,
-                       Addr aMin, 
-                       Addr aMax
-                    )
+static
+void show_scope ( OSet* /* of DiAddrRange */ scope, HChar* who )
 {
-   DiAddrRange* old = VG_(OSetGen_Lookup)( inner, &aMin );
-   if (!old) {
-      DiAddrRange tmp;
-      tmp.aMin = aMin;
-      tmp.aMax = aMax;
-      tmp.vars = VG_(newXA)( ML_(dinfo_zalloc), ML_(dinfo_free),
-                             sizeof(DiVariable) );
-      old = VG_(OSetGen_AllocNode)( inner, sizeof(DiAddrRange) );
-      vg_assert(old);
-      *old = tmp;
-      VG_(OSetGen_Insert)( inner, old );
+   DiAddrRange* range;
+   VG_(printf)("Scope \"%s\" = {\n", who);
+   VG_(OSetGen_ResetIter)( scope );
+   while (True) {
+      range = VG_(OSetGen_Next)( scope );
+      if (!range) break;
+      VG_(printf)("   %p .. %p: %lu vars\n", range->aMin, range->aMax,
+                  range->vars ? VG_(sizeXA)(range->vars) : 0);
    }
-   return old;
+   VG_(printf)("}\n");
 }
 
+/* 'inner' is an XArray of DiAddrRange.  Find the entry corresponding
+    to [aMin,aMax].  If that doesn't exist, create one.  Take care to
+    preserve the invariant that none of the address ranges have the
+    same starting value (aMin).  That's unlikely to be the case unless
+    the DWARF3 from which these calls results contains bogus range
+    info; however in the interests of robustness, do handle the
+    case. */
+static void add_var_to_arange ( 
+               /*MOD*/OSet* /* of DiAddrRange */ scope,
+               Addr aMin, 
+               Addr aMax,
+               DiVariable* var
+            )
+{
+   DiAddrRange *first, *last;
+   DiAddrRange *range, *rangep;
+   vg_assert(aMin <= aMax);
+
+   if (0) VG_(printf)("add_var_to_arange: %p .. %p\n", aMin, aMax);
+   if (0) show_scope( scope, "add_var_to_arange(1)" );
+
+   /* See if the lower end of the range (aMin) falls exactly on an
+      existing range boundary.  If not, find the range it does fall
+      into, and split it (copying the variables in the process), so
+      that aMin does exactly fall on a range boundary. */
+   first = VG_(OSetGen_Lookup)( scope, &aMin );
+   /* It must be present, since the presented OSet must cover
+      the entire address range. */
+   vg_assert(first);
+   vg_assert(first->aMin <= first->aMax);
+   vg_assert(first->aMin <= aMin && aMin <= first->aMax);
+
+   if (first->aMin < aMin) {
+      DiAddrRange* nyu;
+      /* Ok.  We'll have to split 'first'. */
+      /* truncate the upper end of 'first' */
+      Addr tmp = first->aMax;
+      first->aMax = aMin-1;
+      vg_assert(first->aMin <= first->aMax);
+      /* create a new range */
+      nyu = VG_(OSetGen_AllocNode)( scope, sizeof(DiAddrRange) );
+      vg_assert(nyu);
+      nyu->aMin = aMin;
+      nyu->aMax = tmp;
+      vg_assert(nyu->aMin <= nyu->aMax);
+      /* copy vars into it */
+      vg_assert(first->vars);
+      nyu->vars = VG_(cloneXA)( first->vars );
+      vg_assert(nyu->vars);
+      VG_(OSetGen_Insert)( scope, nyu );
+      first = nyu;
+   }
+
+   vg_assert(first->aMin == aMin);
+
+   /* Now do exactly the same for the upper end (aMax): if it doesn't
+      fall on a boundary, cause it to do so by splitting the range it
+      does currently fall into. */
+   last = VG_(OSetGen_Lookup)( scope, &aMax );
+   vg_assert(last->aMin <= last->aMax);
+   vg_assert(last->aMin <= aMax && aMax <= last->aMax);
+
+   if (aMax < last->aMax) {
+      DiAddrRange* nyu;
+      /* We have to split 'last'. */
+      /* truncate the lower end of 'last' */
+      Addr tmp = last->aMin;
+      last->aMin = aMax+1;
+      vg_assert(last->aMin <= last->aMax);
+      /* create a new range */
+      nyu = VG_(OSetGen_AllocNode)( scope, sizeof(DiAddrRange) );
+      vg_assert(nyu);
+      nyu->aMin = tmp;
+      nyu->aMax = aMax;
+      vg_assert(nyu->aMin <= nyu->aMax);
+      /* copy vars into it */
+      vg_assert(last->vars);
+      nyu->vars = VG_(cloneXA)( last->vars );
+      vg_assert(nyu->vars);
+      VG_(OSetGen_Insert)( scope, nyu );
+      last = nyu;
+   }
+
+   vg_assert(aMax == last->aMax);
+
+   /* Great.  Now we merely need to iterate over the segments from
+      'first' to 'last' inclusive, and add 'var' to the variable set
+      of each of them. */
+   if (0) show_scope( scope, "add_var_to_arange(2)" );
+
+   range = rangep = NULL;
+   VG_(OSetGen_ResetIterAt)( scope, &aMin );
+   while (True) {
+      range = VG_(OSetGen_Next)( scope );
+      if (!range) break;
+      if (range->aMin >= aMax) break;
+      if (0) VG_(printf)("have range %p %p\n", 
+                         range->aMin, range->aMax);
+
+      /* Sanity checks */
+      if (!rangep) {
+         /* This is the first in the range */
+         vg_assert(range->aMin == aMin);
+      } else {
+         vg_assert(rangep->aMax + 1 == range->aMin);
+      }
+
+      vg_assert(range->vars);
+      VG_(addToXA)( range->vars, var );
+
+      rangep = range;
+   }
+   /* Done.  We should have seen at least one range. */
+   vg_assert(rangep);
+   vg_assert(rangep->aMax == aMax);
+}
+
+/* Top-level place to call to add a variable description (as extracted
+   from a DWARF3 .debug_info section. */
 void ML_(addVar)( struct _DebugInfo* di,
                   Int    level,
                   Addr   aMin,
                   Addr   aMax,
-                  UChar* name,
+                  UChar* name, /* in di's .strchunks */
                   Type*  type,
                   GExpr* gexpr,
                   GExpr* fbGX,
-                  UChar* fileName, /* where decl'd - may be NULL */
+                  UChar* fileName, /* where decl'd - may be NULL.
+                                      in di's .strchunks */
                   Int    lineNo, /* where decl'd - may be zero */
                   Bool   show )
 {
-   OSet* /* of DiAddrRange */ inner;
-   DiAddrRange* range;
-   DiVariable   var;
+   OSet* /* of DiAddrRange */ scope;
+   DiVariable var;
+   Bool       all;
 
    if (0) {
       VG_(printf)("  ML_(addVar): level %d  %p-%p  %s :: ",
@@ -615,32 +716,117 @@ void ML_(addVar)( struct _DebugInfo* di,
    vg_assert(level < 256); /* arbitrary; stay sane */
    /* Expand the top level array enough to map this level */
    while ( VG_(sizeXA)(di->varinfo) <= level ) {
-      inner = VG_(OSetGen_Create)( offsetof(DiAddrRange,aMin), 
-                                   cmp_for_DiAddrRange,
+      DiAddrRange* nyu;
+      scope = VG_(OSetGen_Create)( offsetof(DiAddrRange,aMin), 
+                                   ML_(cmp_for_DiAddrRange_range),
                                    ML_(dinfo_zalloc), ML_(dinfo_free) );
-      if (0) VG_(printf)("create: inner = %p, adding at %ld\n",
-                         inner, VG_(sizeXA)(di->varinfo));
-      VG_(addToXA)( di->varinfo, &inner );
+      vg_assert(scope);
+      if (0) VG_(printf)("create: scope = %p, adding at %ld\n",
+                         scope, VG_(sizeXA)(di->varinfo));
+      VG_(addToXA)( di->varinfo, &scope );
+      /* Add a single range covering the entire address space.  At
+         level 0 we require this doesn't get split.  At levels above 0
+         we require that any additions to it cause it to get split. */
+      nyu = VG_(OSetGen_AllocNode)( scope, sizeof(DiAddrRange) );
+      vg_assert(nyu);
+      nyu->aMin = (Addr)0;
+      nyu->aMax = ~(Addr)0;
+      nyu->vars = VG_(newXA)( ML_(dinfo_zalloc), ML_(dinfo_free),
+                              sizeof(DiVariable) );
+      vg_assert(nyu->vars);
+      VG_(OSetGen_Insert)( scope, nyu );
    }
 
    vg_assert( VG_(sizeXA)(di->varinfo) > level );
-   inner = *(OSet**)VG_(indexXA)( di->varinfo, level );
-   vg_assert(inner);
+   scope = *(OSet**)VG_(indexXA)( di->varinfo, level );
+   vg_assert(scope);
 
-   /* Now we need to find the relevant DiAddrRange within 'inner',
-      or create one if not present. */
-   /* DiAddrRange* */ range = find_or_create_arange( inner, aMin, aMax );
-   /* DiVariable var; */
    var.name     = name;
    var.type     = type;
    var.gexpr    = gexpr;
    var.fbGX     = fbGX;
    var.fileName = fileName;
    var.lineNo   = lineNo;
-   vg_assert(range);
-   vg_assert(range->vars);
-   vg_assert(range->aMin == aMin);
-   VG_(addToXA)( range->vars, &var );
+
+   all = aMin == (Addr)0 && aMax == ~(Addr)0;
+   vg_assert(level == 0 ? all : !all);
+
+   add_var_to_arange( /*MOD*/scope, aMin, aMax, &var );
+}
+
+
+/* This really just checks the constructed data structure, as there is
+   no canonicalisation to do. */
+static void canonicaliseVarInfo ( struct _DebugInfo* di )
+{
+   Word i, nInThisScope;
+
+   if (!di->varinfo)
+      return;
+
+   for (i = 0; i < VG_(sizeXA)(di->varinfo); i++) {
+
+      DiAddrRange *range, *rangep;
+      OSet* scope = *(OSet**)VG_(indexXA)(di->varinfo, i);
+      if (!scope) continue;
+
+      /* Deal with the global-scope case. */
+      if (i == 0) {
+         Addr zero = 0;
+         vg_assert(VG_(OSetGen_Size)( scope ) == 1);
+         range = VG_(OSetGen_Lookup)( scope, &zero );
+         vg_assert(range);
+         vg_assert(range->aMin == (Addr)0);
+         vg_assert(range->aMax == ~(Addr)0);
+         continue;
+      }
+
+      /* All the rest of this is for the local-scope case. */
+      /* iterate over all entries in 'scope' */
+      nInThisScope = 0;
+      range = rangep = NULL;
+      VG_(OSetGen_ResetIter)(scope);
+      while (True) {
+         range = VG_(OSetGen_Next)(scope);
+         if (!range) {
+           /* We just saw the last one.  There must have been at
+              least one entry in the range. */
+           vg_assert(rangep);
+           vg_assert(rangep->aMax == ~(Addr)0);
+           break;
+         }
+
+         vg_assert(range->aMin <= range->aMax);
+         vg_assert(range->vars);
+
+         if (!rangep) {
+           /* This is the first entry in the range. */
+           vg_assert(range->aMin == 0);
+         } else {
+           vg_assert(rangep->aMax + 1 == range->aMin);
+         }
+
+         rangep = range;
+         nInThisScope++;
+      } /* iterating over ranges in a given scope */
+
+      /* If there's only one entry in this (local) scope, it must
+         cover the entire address space (obviously), but it must not
+         contain any vars. */
+
+      vg_assert(nInThisScope > 0);
+      if (nInThisScope == 1) {
+         Addr zero = 0;
+         vg_assert(VG_(OSetGen_Size)( scope ) == 1);
+         range = VG_(OSetGen_Lookup)( scope, &zero );
+         vg_assert(range);
+         vg_assert(range->aMin == (Addr)0);
+         vg_assert(range->aMax == ~(Addr)0);
+         vg_assert(range->vars);
+         vg_assert(VG_(sizeXA)(range->vars) == 0);
+      }
+
+   } /* iterate over scopes */
 }
 
 
@@ -1060,13 +1246,14 @@ static void canonicaliseCFI ( struct _DebugInfo* di )
 }
 
 
-/* Canonicalise the tables held by 'si', in preparation for use.  Call
+/* Canonicalise the tables held by 'di', in preparation for use.  Call
    this after finishing adding entries to these tables. */
 void ML_(canonicaliseTables) ( struct _DebugInfo* di )
 {
    canonicaliseSymtab ( di );
    canonicaliseLoctab ( di );
    canonicaliseCFI ( di );
+   canonicaliseVarInfo ( di );
 }
 
 

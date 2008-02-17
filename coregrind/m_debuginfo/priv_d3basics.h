@@ -587,7 +587,7 @@ void ML_(pp_GX) ( GExpr* gx );
 
 /* Evaluation of a DWARF3 expression (and hence of a GExpr) may
    require knowing a suitably contextualising set of values for the
-   instruction, frame and stack pointer (and, in general, all
+   instruction, frame and stack pointers (and, in general, all
    registers, though we punt on such generality here).  Here's a
    struct to carry the bare essentials. */
 typedef
@@ -603,10 +603,10 @@ typedef
    GXResult;
 
 /* Evaluate a guarded expression.  If regs is NULL, then gx is assumed
-   (and checked) to contain just a single guarded expression, which a
+   (and checked) to contain just a single guarded expression, with a
    guard which covers the entire address space and so always evaluates
    to True (iow, gx is a single unconditional expression).  If regs is
-   non-NULL then its 'ip' value is used to select which of the
+   non-NULL then its .ip value is used to select which of the
    embedded DWARF3 location expressions to use, and that is duly
    evaluated.
 

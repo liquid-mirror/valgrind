@@ -80,24 +80,23 @@ Type* ML_(new_Type) ( void ) {
    return type;
 }
 
-void ML_(delete_TyAtom)( TyAtom* atom ) {
+static void delete_TyAtom ( TyAtom* atom ) {
    /* .name is in DebugInfo.strchunks */
    ML_(dinfo_free)(atom);
 }
-void ML_(delete_TyField)( TyField* field ) {
+static void delete_TyField ( TyField* field ) {
    /* .name is in DebugInfo.strchunks */
    /* typeR and loc will be on the admin list; no need to free */
    ML_(dinfo_free)(field);
 }
-void ML_(delete_TyBounds)( TyBounds* bounds ) {
+static void delete_TyBounds ( TyBounds* bounds ) {
    ML_(dinfo_free)(bounds);
 }
-void ML_(delete_D3Expr)( D3Expr* expr ) {
+static void delete_D3Expr ( D3Expr* expr ) {
    /* .bytes is in DebugInfo.strchunks */
    ML_(dinfo_free)(expr);
 }
-__attribute__((noinline))
-void ML_(delete_Type)( Type* ty ) {
+static void delete_Type ( Type* ty ) {
    switch (ty->tag) {
       case Ty_Base:
          /* .name is in DebugInfo.strchunks */
@@ -144,11 +143,11 @@ void ML_(delete_Type)( Type* ty ) {
 void ML_(delete_TyAdmin_and_payload) ( TyAdmin* ad ) {
    vg_assert(ad->payload);
    switch (ad->tag) {
-      case TyA_Type:   ML_(delete_Type)(ad->payload);     break;
-      case TyA_Atom:   ML_(delete_TyAtom)(ad->payload);   break;
-      case TyA_Expr:   ML_(delete_D3Expr)(ad->payload);   break;
-      case TyA_Field:  ML_(delete_TyField)(ad->payload);  break;
-      case TyA_Bounds: ML_(delete_TyBounds)(ad->payload); break;
+      case TyA_Type:   delete_Type(ad->payload);     break;
+      case TyA_Atom:   delete_TyAtom(ad->payload);   break;
+      case TyA_Expr:   delete_D3Expr(ad->payload);   break;
+      case TyA_Field:  delete_TyField(ad->payload);  break;
+      case TyA_Bounds: delete_TyBounds(ad->payload); break;
       default:         vg_assert(0);
    }
    ML_(dinfo_free)(ad);

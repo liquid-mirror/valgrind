@@ -385,9 +385,16 @@ struct _DebugInfo {
    */
    XArray* /* of OSet of DiAddrRange */varinfo;
 
-   /* For the purposes of deletion: */
-   TyAdmin* tyadmins;
-   GExpr*   gexprs;
+   /* These are lists of the relevant typed objects, held here
+      expressly for the purposes of visiting each object exactly once
+      when we need to delete them. */
+
+   /* A list of TyAdmin structs, and the payloads that they refer
+      to. */
+   TyAdmin* admin_tyadmins;
+
+   /* A list of guarded DWARF3 expressions. */
+   GExpr*   admin_gexprs;
 };
 
 /* --------------------- functions --------------------- */
