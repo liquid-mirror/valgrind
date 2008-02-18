@@ -83,6 +83,16 @@
    In some cases, the info for a variable is split between two
    different DIEs (generally a declarer and a definer).  We punt on
    these.  Could do better here.
+
+   Improve performance.  The number of type entities that end up in
+   the list of TyAdmins rapidly becomes huge (eg, for
+   libQtGui.so.4.3.2 (amd64-linux, size 80729047 bytes), there are
+   786860 entries in the list).  Mostly this seems to be caused by g++
+   adding type DIEs for all the basic types once for each source file
+   contributing to the compilation unit, and for a large library they
+   add up quickly.  That causes both a lot of work for this reader
+   module, and also wastes vast amounts of memory storing this
+   duplicated information.  We could surely do a lot better here.
 */
 
 #include "pub_core_basics.h"
@@ -1758,18 +1768,6 @@ static void parse_type_DIE ( /*OUT*/TyAdmin** admin,
       its children. */
    typestack_preen( parser, td3, level-1 );
 
-   if (0 && (dtag == DW_TAG_base_type
-             || dtag == DW_TAG_pointer_type
-             || dtag == DW_TAG_reference_type
-             || dtag == DW_TAG_typedef
-             || dtag == DW_TAG_array_type
-             || dtag == DW_TAG_subrange_type
-             || dtag == DW_TAG_enumeration_type
-             || dtag == DW_TAG_structure_type
-             || dtag == DW_TAG_union_type)) {
-      TRACE_D3("YYYYXXXX offset=%ld %s\n", posn, ML_(pp_DW_TAG)(dtag));
-   }
-
    if (dtag == DW_TAG_compile_unit) {
       /* See if we can find DW_AT_language, since it is important for
          establishing array bounds (see DW_TAG_subrange_type below in
@@ -2304,6 +2302,7 @@ static Int cmp_D3TyAdmin_by_cuOff ( void* v1, void* v2 ) {
    D3_INVALID_CUOFF, return NULL in *payload.
 
    Otherwise (conceptually fails) and returns False. */
+__attribute__((noinline))
 static Bool resolve_binding ( /*OUT*/void** payload,
                               XArray* map, void* cuOff,
                               TyAdminTag tag, 
@@ -2340,6 +2339,7 @@ static Bool resolve_binding ( /*OUT*/void** payload,
    return True;
 }
 
+__attribute__((noinline))
 static void resolve_type_entities ( /*MOD*/TyAdmin* admin,
                                     /*MOD*/TempVar* vars )
 {
@@ -2359,6 +2359,9 @@ static void resolve_type_entities ( /*MOD*/TyAdmin* admin,
    }
 
    VG_(setCmpFnXA)( map, cmp_D3TyAdmin_by_cuOff );
+   if (0) 
+      VG_(printf)("XXXXXX sorting map with %d entries\n",
+                  (Int)VG_(sizeXA)(map));
    VG_(sortXA)( map );
 
    for (adp = admin; adp; adp = adp->next) {
@@ -2977,8 +2980,10 @@ void new_dwarf3_reader_wrk (
            0x0-0x11D (pre-biasing, of course). */
          vg_assert(varp->pcMax < ~(Addr)0);
       }
-      /* NOTE: re "if": this is a hack.  Really, if the type didn't
-         get resolved, something's broken earlier on. */
+      /* NOTE: re "if": this is a hack.  If typeR is NULL then the
+         type didn't get resolved.  Really, in that case something's
+         broken earlier on, and should be fixed, rather than just
+         skipping the variable. */
       if (varp->typeR)
          ML_(addVar)(
             di, varp->level, 
