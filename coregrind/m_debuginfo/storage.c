@@ -303,11 +303,12 @@ void ML_(addLineInfo) ( struct _DebugInfo* di,
        size = 1;
    }
 
-   /* vg_assert(this < di->text_avma + di->size 
-                && next-1 >= di->text_avma); */
-   if (!di->text_present
-       || this >= di->text_avma + di->text_size 
-       || next-1 < di->text_avma) {
+   /* Rule out ones which are completely outside the r-x mapped area.
+      See "Comment_Regarding_Text_Range_Checks" elsewhere in this file
+      for background and rationale. */
+   vg_assert(di->have_rx_map && di->have_rw_map);
+   if (next-1 < di->rx_map_avma
+       || this >= di->rx_map_avma + di->rx_map_size ) {
        if (0)
           VG_(message)(Vg_DebugMsg, 
                        "warning: ignoring line info entry falling "
@@ -370,12 +371,12 @@ void ML_(addDiCfSI) ( struct _DebugInfo* di, DiCfSI* cfsi )
       broken. */
    vg_assert(cfsi->len < 5000000);
 
-   /* Rule out ones which are completely outside the text segment.
-      These probably indicate some kind of bug, but for the meantime
-      ignore them. */
-   if ( !di->text_present
-        || cfsi->base + cfsi->len - 1  <  di->text_avma
-        || di->text_avma + di->text_size - 1  <  cfsi->base ) {
+   /* Rule out ones which are completely outside the r-x mapped area.
+      See "Comment_Regarding_Text_Range_Checks" elsewhere in this file
+      for background and rationale. */
+   vg_assert(di->have_rx_map && di->have_rw_map);
+   if (cfsi->base + cfsi->len - 1 < di->rx_map_avma
+       || cfsi->base >= di->rx_map_avma + di->rx_map_size) {
       static Int complaints = 3;
       if (VG_(clo_trace_cfi) || complaints > 0) {
          complaints--;
@@ -711,14 +712,25 @@ void ML_(addVar)( struct _DebugInfo* di,
    vg_assert(type);
    vg_assert(gexpr);
 
-   /* Ignore any variables whose aMin .. aMax (that is, range of text
+   /* "Comment_Regarding_Text_Range_Checks" (is referred to elsewhere)
+      ----------------------------------------------------------------
+      Ignore any variables whose aMin .. aMax (that is, range of text
       addresses for which they actually exist) falls outside the text
-      segment.  Is this indicative of a bug in the reader?  Maybe. */
-   if (di->text_present
-       && di->text_size > 0 
-       && level > 0
-       && (aMax < di->text_avma 
-           || aMin >= di->text_avma + di->text_size)) {
+      segment.  Is this indicative of a bug in the reader?  Maybe.
+      (LATER): instead of restricting strictly to the .text segment,
+      be a bit more relaxed, and accept any variable whose text range
+      falls inside the r-x mapped area.  This is useful because .text
+      is not always the only instruction-carrying segment: others are:
+      .init .plt __libc_freeres_fn and .fini.  This implicitly assumes
+      that those extra sections have the same bias as .text, but that
+      seems a reasonable assumption to me. */
+   /* This is assured us by top level steering logic in debuginfo.c,
+      and it is re-checked at the start of
+      ML_(read_elf_debug_info). */
+   vg_assert(di->have_rx_map && di->have_rw_map);
+   if (level > 0
+       && (aMax < di->rx_map_avma
+           || aMin >= di->rx_map_avma + di->rx_map_size)) {
       if (VG_(clo_verbosity) >= 0) {
          VG_(message)(Vg_DebugMsg, 
             "warning: addVar: in range %p .. %p outside "
