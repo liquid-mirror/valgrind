@@ -255,30 +255,35 @@ Bool get_elf_symbol_info (
    /* Try to figure out exactly which section the symbol is from and
       bias accordingly.  Screws up if the previously deduced section
       svma address ranges are wrong. */
-   if (di->text_size > 0
+   if (di->text_present
+       && di->text_size > 0
        && sym_svma >= di->text_svma 
        && sym_svma < di->text_svma + di->text_size) {
       *is_text_out = True;
       *sym_avma_out += di->text_bias;
    } else
-   if (di->data_size > 0
+   if (di->data_present
+       && di->data_size > 0
        && sym_svma >= di->data_svma 
        && sym_svma < di->data_svma + di->data_size) {
       *is_text_out = False;
       *sym_avma_out += di->data_bias;
    } else
-   if (di->sdata_size > 0
+   if (di->sdata_present
+       && di->sdata_size > 0
        && sym_svma >= di->sdata_svma 
        && sym_svma < di->sdata_svma + di->sdata_size) {
       *is_text_out = False;
       *sym_avma_out += di->sdata_bias;
    } else
-   if (di->bss_size > 0
+   if (di->bss_present
+       && di->bss_size > 0
        && sym_svma >= di->bss_svma 
        && sym_svma < di->bss_svma + di->bss_size) {
       *is_text_out = False;
       *sym_avma_out += di->bss_bias;
    } else {
+      /* Assume it's in .text.  Is this a good idea? */
       *is_text_out = True;
       *sym_avma_out += di->text_bias;
    }
@@ -292,6 +297,7 @@ Bool get_elf_symbol_info (
        && *is_text_out
        && ELFXX_ST_TYPE(sym->st_info) == STT_NOTYPE
        && sym->st_size > 0
+       && di->opd_present
        && di->opd_size > 0
        && *sym_avma_out >= di->opd_avma
        && *sym_avma_out <  di->opd_avma + di->opd_size)
@@ -321,13 +327,15 @@ Bool get_elf_symbol_info (
 
    /* If it's apparently in a GOT or PLT, it's really a reference to a
       symbol defined elsewhere, so ignore it. */
-   if (di->got_size > 0
+   if (di->got_present
+       && di->got_size > 0
        && *sym_avma_out >= di->got_avma 
        && *sym_avma_out <  di->got_avma + di->got_size) {
       TRACE_SYMTAB("    ignore -- in GOT: %s\n", sym_name);
       return False;
    }
-   if (di->plt_size > 0
+   if (di->plt_present
+       && di->plt_size > 0
        && *sym_avma_out >= di->plt_avma
        && *sym_avma_out <  di->plt_avma + di->plt_size) {
       TRACE_SYMTAB("    ignore -- in PLT: %s\n", sym_name);
@@ -344,7 +352,8 @@ Bool get_elf_symbol_info (
    */
    is_in_opd = False;
 
-   if (di->opd_size > 0
+   if (di->opd_present
+       && di->opd_size > 0
        && *sym_avma_out >= di->opd_avma
        && *sym_avma_out <  di->opd_avma + di->opd_size) {
 #     if !defined(VGP_ppc64_linux)
@@ -424,22 +433,26 @@ Bool get_elf_symbol_info (
       ignore it. */
    
    in_text 
-      = di->text_size > 0
+      = di->text_present
+        && di->text_size > 0
         && !(*sym_avma_out + *sym_size_out <= di->text_avma
              || *sym_avma_out >= di->text_avma + di->text_size);
 
    in_data 
-      = di->data_size > 0
+      = di->data_present
+        && di->data_size > 0
         && !(*sym_avma_out + *sym_size_out <= di->data_avma
              || *sym_avma_out >= di->data_avma + di->data_size);
 
    in_sdata 
-      = di->sdata_size > 0
+      = di->sdata_present
+        && di->sdata_size > 0
         && !(*sym_avma_out + *sym_size_out <= di->sdata_avma
              || *sym_avma_out >= di->sdata_avma + di->sdata_size);
 
    in_bss 
-      = di->bss_size > 0
+      = di->bss_present
+        && di->bss_size > 0
         && !(*sym_avma_out + *sym_size_out <= di->bss_avma
              || *sym_avma_out >= di->bss_avma + di->bss_size);
 
@@ -467,7 +480,7 @@ Bool get_elf_symbol_info (
       section.  This would completely mess up function redirection and
       intercepting.  This assert ensures that any symbols that make it
       into the symbol table on ppc64-linux don't point into .opd. */
-   if (di->opd_size > 0) {
+   if (di->opd_present && di->opd_size > 0) {
       vg_assert(*sym_avma_out + *sym_size_out <= di->opd_avma
                 || *sym_avma_out >= di->opd_avma + di->opd_size);
    }
@@ -827,7 +840,7 @@ calc_gnu_debuglink_crc32(UInt crc, const UChar *buf, Int len)
  * not match the value from the main object file.
  */
 static
-Addr open_debug_file( Char* name, UInt crc, UWord* size )
+Addr open_debug_file( Char* name, UInt crc, /*OUT*/UWord* size )
 {
    SysRes fd, sres;
    struct vki_stat stat_buf;
@@ -843,7 +856,7 @@ Addr open_debug_file( Char* name, UInt crc, UWord* size )
    }
 
    if (VG_(clo_verbosity) > 1)
-      VG_(message)(Vg_DebugMsg, "Reading debug info from %s...", name);
+      VG_(message)(Vg_DebugMsg, "Reading debug info from %s ..", name);
 
    *size = stat_buf.st_size;
    
@@ -861,7 +874,7 @@ Addr open_debug_file( Char* name, UInt crc, UWord* size )
       vg_assert(!res.isError);
       if (VG_(clo_verbosity) > 1)
          VG_(message)(Vg_DebugMsg, 
-            "... CRC mismatch (computed %08x wanted %08x)", calccrc, crc);
+            ".. CRC mismatch (computed %08x wanted %08x)", calccrc, crc);
       return 0;
    }
    
@@ -872,7 +885,9 @@ Addr open_debug_file( Char* name, UInt crc, UWord* size )
  * Try to find a separate debug file for a given object file.
  */
 static
-Addr find_debug_file( Char* objpath, Char* debugname, UInt crc, UWord* size )
+Addr find_debug_file( struct _DebugInfo* di,
+                      Char* objpath, Char* debugname, 
+                      UInt crc, /*OUT*/UWord* size )
 {
    Char *objdir = ML_(dinfo_strdup)(objpath);
    Char *objdirptr;
@@ -883,7 +898,7 @@ Addr find_debug_file( Char* objpath, Char* debugname, UInt crc, UWord* size )
       *objdirptr = '\0';
 
    debugpath = ML_(dinfo_zalloc)(
-                  VG_(strlen)(objdir) + VG_(strlen)(debugname) + 16);
+                  VG_(strlen)(objdir) + VG_(strlen)(debugname) + 32);
    
    VG_(sprintf)(debugpath, "%s/%s", objdir, debugname);
 
@@ -893,6 +908,11 @@ Addr find_debug_file( Char* objpath, Char* debugname, UInt crc, UWord* size )
          VG_(sprintf)(debugpath, "/usr/lib/debug%s/%s", objdir, debugname);
          addr = open_debug_file(debugpath, crc, size);
       }
+   }
+
+   if (addr) {
+      TRACE_SYMTAB("\n");
+      TRACE_SYMTAB("------ Found a debuginfo file: %s\n", debugpath);
    }
 
    ML_(dinfo_free)(debugpath);
@@ -1002,6 +1022,8 @@ Bool ML_(read_elf_debug_info) ( struct _DebugInfo* di )
    vg_assert(di);
    vg_assert(di->have_rx_map == True);
    vg_assert(di->have_rw_map == True);
+   vg_assert(di->rx_map_size > 0);
+   vg_assert(di->rw_map_size > 0);
    vg_assert(di->have_dinfo == False);
    vg_assert(di->filename);
    vg_assert(!di->memname);
@@ -1019,15 +1041,15 @@ Bool ML_(read_elf_debug_info) ( struct _DebugInfo* di )
    vg_assert(VG_IS_PAGE_ALIGNED(di->rw_map_avma));
 
    /* ----------------------------------------------------------
-      Phase 1.  At this point, there is very little information in
-      the DebugInfo.  We only know that something that looks like an
-      ELF file has been mapped rx-ishly as recorded with the 
-      di->*rx_map* fields and has also been mapped rw-ishly as
-      recorded with the di->*rw_map* fields.  In this phase we
-      examine the file's ELF Program Header, and, by comparing that
-      against the di->*r{w,x}_map* info, try to figure out the AVMAs
-      for the sections we care about, that should have been mapped:
-      text, data, got, plt, and toc.
+      At this point, there is very little information in the
+      DebugInfo.  We only know that something that looks like an ELF
+      file has been mapped rx-ishly as recorded with the di->*rx_map*
+      fields and has also been mapped rw-ishly as recorded with the
+      di->*rw_map* fields.  First we examine the file's ELF Program
+      Header, and, by comparing that against the di->*r{w,x}_map*
+      info, try to figure out the AVMAs for the sections we care
+      about, that should have been mapped: text, data, sdata, bss got,
+      plt, and toc.
       ---------------------------------------------------------- */
 
    oimage = (Addr)NULL;
@@ -1201,56 +1223,8 @@ Bool ML_(read_elf_debug_info) ( struct _DebugInfo* di )
                di->soname = ML_(dinfo_strdup)(strtab+stroff);
             }
          }
-
-//zz         if (o_phdr->p_type != PT_LOAD)
-//zz            continue;
-//zz
-//zz         if (!offset_set) {
-//zz            offset_set = True;
-//zz            offset_oimage = si->text_start_avma - o_phdr->p_vaddr;
-//zz            baseaddr = o_phdr->p_vaddr;
-//zz         }
-//zz
-//zz         // Get the data and bss start/size if appropriate
-//zz         mapped = o_phdr->p_vaddr + offset_oimage;
-//zz         mapped_end = mapped + o_phdr->p_memsz;
-//zz         if (si->data_start_avma == 0 &&
-//zz             (o_phdr->p_flags & (PF_R|PF_W|PF_X)) == (PF_R|PF_W)) {
-//zz            si->data_start_avma = mapped;
-//zz            si->data_size       = o_phdr->p_filesz;
-//zz            si->bss_start_avma  = mapped + o_phdr->p_filesz;
-//zz            if (o_phdr->p_memsz > o_phdr->p_filesz)
-//zz               si->bss_size = o_phdr->p_memsz - o_phdr->p_filesz;
-//zz            else
-//zz               si->bss_size = 0;
-//zz         }
-//zz
-//zz         mapped = mapped & ~(VKI_PAGE_SIZE-1);
-//zz         mapped_end = (mapped_end + VKI_PAGE_SIZE - 1) & ~(VKI_PAGE_SIZE-1);
-//zz
-//zz         if (VG_(needs).data_syms 
-//zz             && mapped >= si->text_start_avma 
-//zz             && mapped <= (si->text_start_avma + si->text_size)
-//zz             && mapped_end > (si->text_start_avma + si->text_size)) {
-//zz            /* XXX jrs 2007 Jan 11: what's going on here?  If data
-//zz               syms are involved, surely we shouldn't be messing with
-//zz               the segment's text_size unless there is an assumption
-//zz               that the data segment has been mapped immediately after
-//zz               the text segment.  Which doesn't sound good to me. */
-//zz            UInt newsz = mapped_end - si->text_start_avma;
-//zz            if (newsz > si->text_size) {
-//zz               if (0)
-//zz                  VG_(printf)("extending mapping %p..%p %d -> ..%p %d\n", 
-//zz                              si->text_start_avma, 
-//zz                              si->text_start_avma + si->text_size, 
-//zz                              si->text_size,
-//zz                              si->text_start_avma + newsz, newsz);
-//zz
-//zz               si->text_size = newsz;
-//zz            }
-//zz         }
-      }
-   }
+      } /* for (i = 0; i < phdr_nent; i++) ... */
+   } /* look for the soname */
 
    /* If, after looking at all the program headers, we still didn't 
       find a soname, add a fake one. */
@@ -1285,10 +1259,10 @@ Bool ML_(read_elf_debug_info) ( struct _DebugInfo* di )
       UWord  size = shdr->sh_size;
       UInt   alyn = shdr->sh_addralign;
       Bool   bits = !(shdr->sh_type == SHT_NOBITS);
-      Bool   inrx = size > 0 && foff >= di->rx_map_foff
-                             && foff < di->rx_map_foff + di->rx_map_size;
-      Bool   inrw = size > 0 && foff >= di->rw_map_foff
-                             && foff < di->rw_map_foff + di->rw_map_size;
+      Bool   inrx = foff >= di->rx_map_foff
+                    && foff < di->rx_map_foff + di->rx_map_size;
+      Bool   inrw = foff >= di->rw_map_foff
+                    && foff < di->rw_map_foff + di->rw_map_size;
 
       TRACE_SYMTAB(" [sec %2ld]  %s %s  al%2u  foff %6ld .. %6ld  "
                   "  svma %p  name \"%s\"\n", 
@@ -1316,11 +1290,13 @@ Bool ML_(read_elf_debug_info) ( struct _DebugInfo* di )
               goto out;                                    \
          } while (0)
 
-      /* Find avma-s for: .text .data .bss .plt .got .opd .eh_frame */
+      /* Find avma-s for: .text .data .sdata .bss .plt .got .opd
+         and .eh_frame */
 
       /* Accept .text where mapped as rx (code) */
       if (0 == VG_(strcmp)(name, ".text")) {
-         if (inrx && size > 0 && di->text_size == 0) {
+         if (inrx && size > 0 && !di->text_present) {
+            di->text_present = True;
             di->text_svma = svma;
             di->text_avma = di->rx_map_avma + foff - di->rx_map_foff;
             di->text_size = size;
@@ -1337,10 +1313,12 @@ Bool ML_(read_elf_debug_info) ( struct _DebugInfo* di )
          }
       }
 
-      /* Accept .data where mapped as rw (data) */
+      /* Accept .data where mapped as rw (data), even if zero-sized */
       if (0 == VG_(strcmp)(name, ".data")) {
-         if (inrw && size > 0 && di->data_size == 0) {
-if (alyn > data_align) data_align = alyn;
+         if (inrw && size >= 0 && !di->data_present) {
+            if (alyn > data_align)
+               data_align = alyn;
+            di->data_present = True;
             di->data_svma = svma;
             di->data_avma = di->rw_map_avma + foff - di->rw_map_foff;
             di->data_size = size;
@@ -1359,8 +1337,10 @@ if (alyn > data_align) data_align = alyn;
 
       /* Accept .sdata where mapped as rw (data) */
       if (0 == VG_(strcmp)(name, ".sdata")) {
-         if (inrw && size > 0 && di->sdata_size == 0) {
-if (alyn > data_align) data_align = alyn;
+         if (inrw && size > 0 && !di->sdata_present) {
+            if (alyn > data_align)
+               data_align = alyn;
+            di->sdata_present = True;
             di->sdata_svma = svma;
             di->sdata_avma = di->rw_map_avma + foff - di->rw_map_foff;
             di->sdata_size = size;
@@ -1377,12 +1357,15 @@ if (alyn > data_align) data_align = alyn;
          }
       }
 
-      /* Accept .bss where mapped as rw (data) */
+      /* Accept .bss where mapped as rw (data), even if zero-sized */
       if (0 == VG_(strcmp)(name, ".bss")) {
-         if (inrw && size > 0 && di->bss_size == 0) {
-bss_totsize += round_Addr_upwards(size, alyn);
-if (svma < gen_bss_lowest_svma) gen_bss_lowest_svma = svma;
-TRACE_SYMTAB("increasing total bss-like size to %ld\n", bss_totsize);
+         if (inrw && size >= 0 && !di->bss_present) {
+            bss_totsize += round_Addr_upwards(size, alyn);
+            if (svma < gen_bss_lowest_svma)
+               gen_bss_lowest_svma = svma;
+            TRACE_SYMTAB("increasing total bss-like size to %ld\n",
+                         bss_totsize);
+            di->bss_present = True;
             di->bss_svma = svma;
             di->bss_avma = di->rw_map_avma + foff - di->rw_map_foff;
             di->bss_size = size;
@@ -1396,8 +1379,9 @@ TRACE_SYMTAB("increasing total bss-like size to %ld\n", bss_totsize);
                          di->bss_avma + di->bss_size - 1);
             TRACE_SYMTAB("acquiring .bss bias = %p\n", di->bss_bias);
          } else
-         if ((!inrw) && (!inrx) && size > 0 && di->bss_size == 0) {
+         if ((!inrw) && (!inrx) && size > 0 && !di->bss_present) {
             /* File contains a .bss, but it didn't get mapped.  Ignore. */
+            di->bss_present = False;
             di->bss_svma = 0;
             di->bss_avma = 0;
             di->bss_size = 0;
@@ -1411,9 +1395,11 @@ TRACE_SYMTAB("increasing total bss-like size to %ld\n", bss_totsize);
       /* Accept .sbss where mapped as rw (data) */
       if (0 == VG_(strcmp)(name, ".sbss")) {
          if (inrw && size > 0 && sbss_size == 0) {
-bss_totsize += round_Addr_upwards(size, alyn);
-if (svma < gen_bss_lowest_svma) gen_bss_lowest_svma = svma;
-TRACE_SYMTAB("increasing total bss-like size to %ld\n", bss_totsize);
+            bss_totsize += round_Addr_upwards(size, alyn);
+            if (svma < gen_bss_lowest_svma)
+               gen_bss_lowest_svma = svma;
+            TRACE_SYMTAB("increasing total bss-like size to %ld\n",
+                         bss_totsize);
             sbss_size  = size;
             sbss_svma  = svma;
             sbss_align = alyn;
@@ -1422,12 +1408,14 @@ TRACE_SYMTAB("increasing total bss-like size to %ld\n", bss_totsize);
          }
       }
 
-      /* Accept .sbss where mapped as rw (data) */
+      /* Accept .dynbss where mapped as rw (data) */
       if (0 == VG_(strcmp)(name, ".dynbss")) {
 	if (inrw && size > 0 /* && sbss_size == 0*/) {
-bss_totsize += round_Addr_upwards(size, alyn);
-if (svma < gen_bss_lowest_svma) gen_bss_lowest_svma = svma;
-TRACE_SYMTAB("increasing total bss-like size to %ld\n", bss_totsize);
+           bss_totsize += round_Addr_upwards(size, alyn);
+           if (svma < gen_bss_lowest_svma)
+              gen_bss_lowest_svma = svma;
+           TRACE_SYMTAB("increasing total bss-like size to %ld\n",
+                        bss_totsize);
          } else {
             BAD(".dynbss");
          }
@@ -1435,7 +1423,8 @@ TRACE_SYMTAB("increasing total bss-like size to %ld\n", bss_totsize);
 
       /* Accept .got where mapped as rw (data) */
       if (0 == VG_(strcmp)(name, ".got")) {
-         if (inrw && size > 0 && di->got_size == 0) {
+         if (inrw && size > 0 && !di->got_present) {
+            di->got_present = True;
             di->got_avma = di->rw_map_avma + foff - di->rw_map_foff;
             di->got_size = size;
             TRACE_SYMTAB("acquiring .got avma = %p\n", di->got_avma);
@@ -1448,7 +1437,8 @@ TRACE_SYMTAB("increasing total bss-like size to %ld\n", bss_totsize);
 #     if defined(VGP_x86_linux) || defined(VGP_amd64_linux)
       /* Accept .plt where mapped as rx (code) */
       if (0 == VG_(strcmp)(name, ".plt")) {
-         if (inrx && size > 0 && di->plt_size == 0) {
+         if (inrx && size > 0 && !di->plt_present) {
+            di->plt_present = True;
             di->plt_avma = di->rx_map_avma + foff - di->rx_map_foff;
             di->plt_size = size;
             TRACE_SYMTAB("acquiring .plt avma = %p\n", di->plt_avma);
@@ -1459,7 +1449,8 @@ TRACE_SYMTAB("increasing total bss-like size to %ld\n", bss_totsize);
 #     elif defined(VGP_ppc32_linux)
       /* Accept .plt where mapped as rw (data) */
       if (0 == VG_(strcmp)(name, ".plt")) {
-         if (inrw && size > 0 && di->plt_size == 0) {
+         if (inrw && size > 0 && !di->plt_present) {
+            di->plt_present = True;
             di->plt_avma = di->rw_map_avma + foff - di->rw_map_foff;
             di->plt_size = size;
             TRACE_SYMTAB("acquiring .plt avma = %p\n", di->plt_avma);
@@ -1470,15 +1461,17 @@ TRACE_SYMTAB("increasing total bss-like size to %ld\n", bss_totsize);
 #     elif defined(VGP_ppc64_linux)
       /* Accept .plt where mapped as rw (data), or unmapped */
       if (0 == VG_(strcmp)(name, ".plt")) {
-         if (inrw && size > 0 && di->plt_size == 0) {
+         if (inrw && size > 0 && !di->plt_present) {
+            di->plt_present = True;
             di->plt_avma = di->rw_map_avma + foff - di->rw_map_foff;
             di->plt_size = size;
             TRACE_SYMTAB("acquiring .plt avma = %p\n", di->plt_avma);
          } else 
-         if ((!inrw) && (!inrx) && size > 0 && di->plt_size == 0) {
+         if ((!inrw) && (!inrx) && size > 0 && !di->plt_present) {
             /* File contains a .plt, but it didn't get mapped.
                Presumably it is not required on this platform.  At
                least don't reject the situation as invalid. */
+            di->plt_present = True;
             di->plt_avma = 0;
             di->plt_size = 0;
          } else {
@@ -1491,7 +1484,8 @@ TRACE_SYMTAB("increasing total bss-like size to %ld\n", bss_totsize);
 
       /* Accept .opd where mapped as rw (data) */
       if (0 == VG_(strcmp)(name, ".opd")) {
-         if (inrw && size > 0 && di->opd_size == 0) {
+         if (inrw && size > 0 && !di->opd_present) {
+            di->opd_present = True;
             di->opd_avma = di->rw_map_avma + foff - di->rw_map_foff;
             di->opd_size = size;
             TRACE_SYMTAB("acquiring .opd avma = %p\n", di->opd_avma);
@@ -1502,7 +1496,8 @@ TRACE_SYMTAB("increasing total bss-like size to %ld\n", bss_totsize);
 
       /* Accept .eh_frame where mapped as rx (code) (?!) */
       if (0 == VG_(strcmp)(name, ".eh_frame")) {
-         if (inrx && size > 0 && di->ehframe_size == 0) {
+         if (inrx && size > 0 && !di->ehframe_present) {
+            di->ehframe_present = True;
             di->ehframe_avma = di->rx_map_avma + foff - di->rx_map_foff;
             di->ehframe_size = size;
             TRACE_SYMTAB("acquiring .eh_frame avma = %p\n", di->ehframe_avma);
@@ -1515,57 +1510,6 @@ TRACE_SYMTAB("increasing total bss-like size to %ld\n", bss_totsize);
 
    }
 
-#if 0
-   /* We found a .sbss section too.  If if immediately adjoins the
-      .bss, pretend it's a part of .bss.  This is a hack.  Fortunately
-      .sbss (small-items .bss section) seems to exist on
-      ppc32/64-linux, so if this screws up it at least won't affect
-      the main x86/amd64-linux ports. */
-   if (di->bss_size > 0 && sbss_size > 0) {
-
-      if (round_Addr_upwards(sbss_svma + sbss_size, bss_align) 
-          == di->bss_svma) {
-         /* Immediately precedes .bss */
-         di->bss_size += (di->bss_svma - sbss_svma);
-         di->bss_bias += (di->bss_svma - sbss_svma);
-         di->bss_svma -= (di->bss_svma - sbss_svma);
-         /* but don't mess with .bss avma or bias */
-         TRACE_SYMTAB("found .sbss of size %ld immediately preceding .bss\n",
-                      sbss_size);
-         TRACE_SYMTAB("revised .bss svma = %p .. %p\n", 
-                      di->bss_svma, di->bss_svma + di->bss_size - 1);
-         TRACE_SYMTAB("revised .bss avma = %p .. %p\n",
-                      di->bss_avma, di->bss_avma + di->bss_size - 1);
-         TRACE_SYMTAB("revised .bss bias = %p\n", di->bss_bias);
-      }
-      else
-      if (round_Addr_upwards(di->bss_svma + di->bss_size, sbss_align)
-          == sbss_svma) {
-         /* Immediately follows .bss */
-         di->bss_size += (sbss_svma - di->bss_svma);
-         /* but don't mess with .bss avma or bias */
-         TRACE_SYMTAB("found .sbss of size %ld immediately following .bss\n",
-                      sbss_size);
-         TRACE_SYMTAB("revised .bss svma = %p .. %p\n", 
-                      di->bss_svma, di->bss_svma + di->bss_size - 1);
-         TRACE_SYMTAB("revised .bss avma = %p .. %p\n",
-                      di->bss_avma, di->bss_avma + di->bss_size - 1);
-         TRACE_SYMTAB("revised .bss bias = %p\n", di->bss_bias);
-      }
-      else {
-         /* Can't ascertain relative position.  Complain and
-            ignore. */
-         TRACE_SYMTAB("found .sbss of size %ld but not immediately "
-                      "preceding/following .bss\n",
-                      sbss_size);
-         TRACE_SYMTAB("therefore ignoring it\n");
-         ML_(symerr)(di, True, ".sbss which is not adjacent to .bss");
-      }
-
-   }
-#endif
-
-#if 1
    /* Kludge: ignore all previous computations for .bss avma range,
       and simply assume that .bss immediately follows .data/.sdata.*/
    if (1) {
@@ -1573,7 +1517,6 @@ TRACE_SYMTAB("increasing total bss-like size to %ld\n", bss_totsize);
                       - di->data_avma;
       TRACE_SYMTAB("data_al = %ld\n", data_al);
       bss_totsize += data_al;
-
       di->bss_svma = gen_bss_lowest_svma;
       di->bss_size = bss_totsize;
       di->bss_avma = di->data_avma + (di->bss_svma - di->data_svma);
@@ -1584,7 +1527,6 @@ TRACE_SYMTAB("increasing total bss-like size to %ld\n", bss_totsize);
                    di->bss_avma, di->bss_avma + di->bss_size - 1);
       TRACE_SYMTAB("kludged .bss bias = %p\n", di->bss_bias);
    }
-#endif
 
    if (0) VG_(printf)("YYYY text_: avma %p  size %ld  bias %p\n", 
                       di->text_avma, di->text_size, di->text_bias);
@@ -1714,7 +1656,8 @@ TRACE_SYMTAB("increasing total bss-like size to %ld\n", bss_totsize);
          crc = *(UInt *)(debuglink_img + crc_offset);
 
          /* See if we can find a matching debug file */
-         dimage = find_debug_file(di->filename, debuglink_img, crc, &n_dimage);
+         dimage = find_debug_file( di, di->filename, debuglink_img,
+                                   crc, &n_dimage );
 
          if (dimage != 0 
              && n_dimage >= sizeof(ElfXX_Ehdr)
@@ -1834,7 +1777,7 @@ TRACE_SYMTAB("increasing total bss-like size to %ld\n", bss_totsize);
                FIND(need_dwarf2, ".debug_str",    debug_str_sz,  debug_str_img)
                FIND(need_dwarf2, ".debug_ranges", debug_ranges_sz, 
                                                                debug_ranges_img)
-               FIND(need_dwarf2, ".debug_str",    debug_loc_sz,  debug_loc_img)
+               FIND(need_dwarf2, ".debug_loc",    debug_loc_sz,  debug_loc_img)
                FIND(need_dwarf1, ".debug",        dwarf1d_sz,    dwarf1d_img)
                FIND(need_dwarf1, ".line",         dwarf1l_sz,    dwarf1l_img)
 

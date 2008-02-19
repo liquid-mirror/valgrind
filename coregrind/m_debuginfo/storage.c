@@ -305,7 +305,9 @@ void ML_(addLineInfo) ( struct _DebugInfo* di,
 
    /* vg_assert(this < di->text_avma + di->size 
                 && next-1 >= di->text_avma); */
-   if (this >= di->text_avma + di->text_size || next-1 < di->text_avma) {
+   if (!di->text_present
+       || this >= di->text_avma + di->text_size 
+       || next-1 < di->text_avma) {
        if (0)
           VG_(message)(Vg_DebugMsg, 
                        "warning: ignoring line info entry falling "
@@ -371,7 +373,8 @@ void ML_(addDiCfSI) ( struct _DebugInfo* di, DiCfSI* cfsi )
    /* Rule out ones which are completely outside the text segment.
       These probably indicate some kind of bug, but for the meantime
       ignore them. */
-   if ( cfsi->base + cfsi->len - 1  <  di->text_avma
+   if ( !di->text_present
+        || cfsi->base + cfsi->len - 1  <  di->text_avma
         || di->text_avma + di->text_size - 1  <  cfsi->base ) {
       static Int complaints = 3;
       if (VG_(clo_trace_cfi) || complaints > 0) {
@@ -711,7 +714,8 @@ void ML_(addVar)( struct _DebugInfo* di,
    /* Ignore any variables whose aMin .. aMax (that is, range of text
       addresses for which they actually exist) falls outside the text
       segment.  Is this indicative of a bug in the reader?  Maybe. */
-   if (di->text_size > 0 
+   if (di->text_present
+       && di->text_size > 0 
        && level > 0
        && (aMax < di->text_avma 
            || aMin >= di->text_avma + di->text_size)) {
@@ -971,12 +975,12 @@ static DiSym* prefersym ( struct _DebugInfo* di, DiSym* a, DiSym* b )
    vg_assert(0);
   out:
    if (preferA && !preferB) {
-      TRACE_SYMTAB("sym at %p: prefer '%s' over '%s'\n",
+      TRACE_SYMTAB("sym at %p: prefer '%s' to '%s'\n",
                    a->addr, a->name, b->name );
       return a;
    }
    if (preferB && !preferA) {
-      TRACE_SYMTAB("sym at %p: prefer '%s' over '%s'\n",
+      TRACE_SYMTAB("sym at %p: prefer '%s' to '%s'\n",
                    b->addr, b->name, a->name );
       return b;
    }
@@ -1019,7 +1023,7 @@ static void canonicaliseSymtab ( struct _DebugInfo* di )
             di->symtab[di->symtab_used++] = di->symtab[i];
          }
       }
-      TRACE_SYMTAB( "%d merged\n", n_merged);
+      TRACE_SYMTAB( "canonicaliseSymtab: %d symbols merged\n", n_merged);
    }
    while (n_merged > 0);
 

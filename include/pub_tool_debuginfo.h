@@ -112,16 +112,16 @@ extern Char* VG_(describe_IP)(Addr eip, Char* buf, Int n_buf);
 /* A way to get information about what segments are mapped */
 typedef struct _DebugInfo DebugInfo;
 
-/* Returns NULL if the DebugInfo isn't found.  It doesn't matter if debug info
-   is present or not. */
+/* Returns NULL if the DebugInfo isn't found.  It doesn't matter if
+   debug info is present or not. */
 extern       DebugInfo* VG_(find_seginfo)      ( Addr a );
 
 /* Fish bits out of DebugInfos. */
-extern       Addr     VG_(seginfo_start)     ( const DebugInfo *di );
-extern       SizeT    VG_(seginfo_size)      ( const DebugInfo *di );
-extern const UChar*   VG_(seginfo_soname)    ( const DebugInfo *di );
-extern const UChar*   VG_(seginfo_filename)  ( const DebugInfo *di );
-extern       ULong    VG_(seginfo_sym_offset)( const DebugInfo *di );
+extern       Addr     VG_(seginfo_get_text_avma)( const DebugInfo *di );
+extern       SizeT    VG_(seginfo_get_text_size)( const DebugInfo *di );
+extern const UChar*   VG_(seginfo_soname)       ( const DebugInfo *di );
+extern const UChar*   VG_(seginfo_filename)     ( const DebugInfo *di );
+extern       ULong    VG_(seginfo_get_text_bias)( const DebugInfo *di );
 
 /* Function for traversing the seginfo list.  When called with NULL it
    returns the first element; otherwise it returns the given element's
@@ -135,7 +135,7 @@ extern const DebugInfo* VG_(next_seginfo)    ( const DebugInfo *di );
 extern Int  VG_(seginfo_syms_howmany) ( const DebugInfo *di );
 extern void VG_(seginfo_syms_getidx)  ( const DebugInfo *di, 
                                         Int idx,
-                                        /*OUT*/Addr*   addr,
+                                        /*OUT*/Addr*   avma,
                                         /*OUT*/Addr*   tocptr,
                                         /*OUT*/UInt*   size,
                                         /*OUT*/HChar** name,

@@ -109,21 +109,14 @@
 
 
 /*------------------------------------------------------------*/
-/*--- The "new" DWARF3 reader -- enumerations and types    ---*/
+/*--- The "new" DWARF3 reader                              ---*/
 /*------------------------------------------------------------*/
 
 #define TRACE_D3(format, args...) \
    if (td3) { VG_(printf)(format, ## args); }
 
-
-
-////////////////////////////////////////////////////////////////
-
 #define D3_INVALID_CUOFF  ((void*)(-1UL))
 #define D3_FAKEVOID_CUOFF ((void*)(-2UL))
-/*------------------------------------------------------------*/
-/*--- The "new" DWARF3 reader                              ---*/
-/*------------------------------------------------------------*/
 
 typedef
    struct {
@@ -541,6 +534,9 @@ static GExpr* make_general_GX ( CUConst* cc,
                 "Overrun whilst reading .debug_loc section(2)" );
    set_position_of_Cursor( &loc, debug_loc_offset );
 
+   TRACE_D3("make_general_GX (.debug_loc_offset = %lu, img = %p) {\n",
+            debug_loc_offset, get_address_of_Cursor( &loc ) );
+
    /* Who frees this xa?  It is freed before this fn exits. */
    xa = VG_(newXA)( ML_(dinfo_zalloc), ML_(dinfo_free),
                     sizeof(UChar) );
@@ -558,6 +554,7 @@ static GExpr* make_general_GX ( CUConst* cc,
       UWord w1 = get_UWord( &loc );
       UWord w2 = get_UWord( &loc );
 
+      TRACE_D3("   %08lx %08lx\n", w1, w2);
       if (w1 == 0 && w2 == 0)
          break; /* end of list */
 
@@ -571,8 +568,13 @@ static GExpr* make_general_GX ( CUConst* cc,
       /* else enumerate [w1+base, w2+base) */
       /* w2 is 1 past end of range, as per D3 defn for "DW_AT_high_pc"
          (sec 2.17.2) */
-      if (w1 > w2)
+      if (w1 > w2) {
+         TRACE_D3("negative range is for .debug_loc expr at "
+                  "file offset %lu\n", 
+                  debug_loc_offset);
          cc->barf( "negative range in .debug_loc section" );
+      }
+
       /* ignore zero length ranges */
       acquire = w1 < w2;
       len     = (UWord)get_UShort( &loc );
@@ -615,6 +617,9 @@ static GExpr* make_general_GX ( CUConst* cc,
    VG_(deleteXA)( xa );
 
    gx->next = NULL;
+
+   TRACE_D3("}\n");
+
    return gx;
 }
 
@@ -1110,7 +1115,7 @@ static void varstack_push ( CUConst* cc,
 /* cts, ctsSzB, ctsMemSzB are derived from a DW_AT_location and so
    refer either to a location expression or to a location list.
    Figure out which, and in both cases bundle the expression or
-   location list into a so-called GExpr (guarded expression. */
+   location list into a so-called GExpr (guarded expression). */
 __attribute__((noinline))
 static GExpr* get_GX ( CUConst* cc, Bool td3, 
                        ULong cts, Int ctsSzB, UWord ctsMemSzB )

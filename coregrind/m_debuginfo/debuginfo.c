@@ -314,7 +314,8 @@ static void discard_syms_in_range ( Addr start, SizeT length )
       while (True) {
          if (curr == NULL)
             break;
-         if (curr->text_size > 0
+         if (curr->text_present
+             && curr->text_size > 0
              && (start+length - 1 < curr->text_avma 
                  || curr->text_avma + curr->text_size - 1 < start)) {
             /* no overlap */
@@ -792,26 +793,27 @@ static void search_all_symtabs ( Addr ptr, /*OUT*/DebugInfo** pdi,
    for (di = debugInfo_list; di != NULL; di = di->next) {
 
       if (findText) {
-         inRange = di->text_size > 0
+         inRange = di->text_present
+                   && di->text_size > 0
                    && di->text_avma <= ptr 
                    && ptr < di->text_avma + di->text_size;
       } else {
-         inRange = (di->data_size > 0
+         inRange = (di->data_present
+                    && di->data_size > 0
                     && di->data_avma <= ptr 
                     && ptr < di->data_avma + di->data_size)
                    ||
-                   (di->sdata_size > 0
+                   (di->sdata_present
+                    && di->sdata_size > 0
                     && di->sdata_avma <= ptr 
                     && ptr < di->sdata_avma + di->sdata_size)
                    ||
-                   (di->bss_size > 0
+                   (di->bss_present
+                    && di->bss_size > 0
                     && di->bss_avma <= ptr 
                     && ptr < di->bss_avma + di->bss_size);
       }
 
-      /* Note this short-circuit check relies on the assumption that
-         .bss is mapped immediately after .data.  This is an assumption
-         that readelf.c makes anyway. */
       if (!inRange) continue;
 
       sno = ML_(search_one_symtab) ( 
@@ -836,7 +838,8 @@ static void search_all_loctabs ( Addr ptr, /*OUT*/DebugInfo** pdi,
    Int        lno;
    DebugInfo* di;
    for (di = debugInfo_list; di != NULL; di = di->next) {
-      if (di->text_avma <= ptr 
+      if (di->text_present
+          && di->text_avma <= ptr 
           && ptr < di->text_avma + di->text_size) {
          lno = ML_(search_one_loctab) ( di, ptr );
          if (lno == -1) goto not_found;
@@ -1017,7 +1020,8 @@ Bool VG_(get_objname) ( Addr a, Char* buf, Int nbuf )
    DebugInfo* di;
    vg_assert(nbuf > 0);
    for (di = debugInfo_list; di != NULL; di = di->next) {
-      if (di->text_avma <= a 
+      if (di->text_present
+          && di->text_avma <= a 
           && a < di->text_avma + di->text_size) {
          VG_(strncpy_safely)(buf, di->filename, nbuf);
          if (di->memname) {
@@ -1044,7 +1048,8 @@ DebugInfo* VG_(find_seginfo) ( Addr a )
 {
    DebugInfo* di;
    for (di = debugInfo_list; di != NULL; di = di->next) {
-      if (di->text_avma <= a 
+      if (di->text_present
+          && di->text_avma <= a 
           && a < di->text_avma + di->text_size) {
          return di;
       }
@@ -1785,7 +1790,7 @@ Bool consider_vars_in_frame ( /*OUT*/Char* dname1,
    for (di = debugInfo_list; di; di = di->next) {
       n_steps++;
       /* text segment missing? unlikely, but handle it .. */
-      if (di->text_size == 0)
+      if (!di->text_present || di->text_size == 0)
          continue;
       /* Ok.  So does this text mapping bracket the ip? */
       if (di->text_avma <= ip && ip < di->text_avma + di->text_size)
@@ -1915,7 +1920,7 @@ Bool VG_(get_data_description)( /*OUT*/Char* dname1,
       XArray*      vars;
 
       /* text segment missing? unlikely, but handle it .. */
-      if (di->text_size == 0)
+      if (!di->text_present || di->text_size == 0)
          continue;
       /* any var info at all? */
       if (!di->varinfo)
@@ -2029,14 +2034,14 @@ const DebugInfo* VG_(next_seginfo)(const DebugInfo* di)
    return di->next;
 }
 
-Addr VG_(seginfo_start)(const DebugInfo* di)
+Addr VG_(seginfo_get_text_avma)(const DebugInfo* di)
 {
-   return di->text_avma;
+   return di->text_present ? di->text_avma : 0; 
 }
 
-SizeT VG_(seginfo_size)(const DebugInfo* di)
+SizeT VG_(seginfo_get_text_size)(const DebugInfo* di)
 {
-   return di->text_size;
+   return di->text_present ? di->text_size : 0; 
 }
 
 const UChar* VG_(seginfo_soname)(const DebugInfo* di)
@@ -2049,9 +2054,9 @@ const UChar* VG_(seginfo_filename)(const DebugInfo* di)
    return di->filename;
 }
 
-ULong VG_(seginfo_sym_offset)(const DebugInfo* di)
+ULong VG_(seginfo_get_text_bias)(const DebugInfo* di)
 {
-   return di->text_bias;
+   return di->text_present ? di->text_bias : 0;
 }
 
 Int VG_(seginfo_syms_howmany) ( const DebugInfo *si )
@@ -2061,14 +2066,14 @@ Int VG_(seginfo_syms_howmany) ( const DebugInfo *si )
 
 void VG_(seginfo_syms_getidx) ( const DebugInfo *si, 
                                       Int idx,
-                               /*OUT*/Addr*   addr,
+                               /*OUT*/Addr*   avma,
                                /*OUT*/Addr*   tocptr,
                                /*OUT*/UInt*   size,
                                /*OUT*/HChar** name,
                                /*OUT*/Bool*   isText )
 {
    vg_assert(idx >= 0 && idx < si->symtab_used);
-   if (addr)   *addr   = si->symtab[idx].addr;
+   if (avma)   *avma   = si->symtab[idx].addr;
    if (tocptr) *tocptr = si->symtab[idx].tocptr;
    if (size)   *size   = si->symtab[idx].size;
    if (name)   *name   = (HChar*)si->symtab[idx].name;
@@ -2118,32 +2123,44 @@ VgSectKind VG_(seginfo_sect_kind)( /*OUT*/UChar* name, SizeT n_name,
             di->data_avma, di->data_size,
             di->bss_avma,  di->bss_size);
 
-      if (di->text_size > 0
+      if (di->text_present
+          && di->text_size > 0
           && a >= di->text_avma && a < di->text_avma + di->text_size) {
          res = Vg_SectText;
          break;
       }
-      if (di->data_size > 0
+      if (di->data_present
+          && di->data_size > 0
           && a >= di->data_avma && a < di->data_avma + di->data_size) {
          res = Vg_SectData;
          break;
       }
-      if (di->bss_size > 0
+      if (di->sdata_present
+          && di->sdata_size > 0
+          && a >= di->sdata_avma && a < di->sdata_avma + di->sdata_size) {
+         res = Vg_SectData;
+         break;
+      }
+      if (di->bss_present
+          && di->bss_size > 0
           && a >= di->bss_avma && a < di->bss_avma + di->bss_size) {
          res = Vg_SectBSS;
          break;
       }
-      if (di->plt_size > 0
+      if (di->plt_present
+          && di->plt_size > 0
           && a >= di->plt_avma && a < di->plt_avma + di->plt_size) {
          res = Vg_SectPLT;
          break;
       }
-      if (di->got_size > 0
+      if (di->got_present
+          && di->got_size > 0
           && a >= di->got_avma && a < di->got_avma + di->got_size) {
          res = Vg_SectGOT;
          break;
       }
-      if (di->opd_size > 0
+      if (di->opd_present
+          && di->opd_size > 0
           && a >= di->opd_avma && a < di->opd_avma + di->opd_size) {
          res = Vg_SectOPD;
          break;

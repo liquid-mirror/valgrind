@@ -203,15 +203,17 @@ obj_node* obj_of_address(Addr addr)
   obj = CLG_(get_obj_node)( di );
 
   /* Update symbol offset in object if remapped */
-  offset = di ? VG_(seginfo_sym_offset)(di):0;
+  /* FIXME (or at least check this) 2008 Feb 19: 'offset' is
+     only correct for text symbols, not for data symbols */
+  offset = di ? VG_(seginfo_get_text_bias)(di):0;
   if (obj->offset != offset) {
-      Addr start = di ? VG_(seginfo_start)(di) : 0;
+      Addr start = di ? VG_(seginfo_get_text_avma)(di) : 0;
 
       CLG_DEBUG(0, "Mapping changed for '%s': %p -> %p\n",
 		obj->name, obj->start, start);
 
       /* Size should be the same, and offset diff == start diff */
-      CLG_ASSERT( obj->size == (di ? VG_(seginfo_size)(di) : 0) );
+      CLG_ASSERT( obj->size == (di ? VG_(seginfo_get_text_size)(di) : 0) );
       CLG_ASSERT( obj->start - start == obj->offset - offset );
       obj->offset = offset;
       obj->start = start;

@@ -293,40 +293,50 @@ struct _DebugInfo {
       VG_AR_DINFO. */
    UChar* soname;
 
-   /* Description of some important mapped sections.  In each case if
-      the _size field is zero, the section isn't present.  Certainly
-      text_ is mandatory on all platforms; not sure about the rest
-      though. */
+   /* Description of some important mapped segments.  The presence or
+      absence of the mapping is denoted by the _present field, since
+      in some obscure circumstances (to do with data/sdata/bss) it is
+      possible for the mapping to be present but have zero size.
+      Certainly text_ is mandatory on all platforms; not sure about
+      the rest though. */
    /* .text */
+   Bool   text_present;
    Addr   text_avma;
    Addr   text_svma;
    SizeT  text_size;
    OffT   text_bias;
    /* .data */
+   Bool   data_present;
    Addr   data_svma;
    Addr   data_avma;
    SizeT  data_size;
    OffT   data_bias;
    /* .sdata */
+   Bool   sdata_present;
    Addr   sdata_svma;
    Addr   sdata_avma;
    SizeT  sdata_size;
    OffT   sdata_bias;
    /* .bss */
+   Bool   bss_present;
    Addr   bss_svma;
    Addr   bss_avma;
    SizeT  bss_size;
    OffT   bss_bias;
    /* .plt */
+   Bool   plt_present;
    Addr	  plt_avma;
    SizeT  plt_size;
    /* .got */
+   Bool   got_present;
    Addr   got_avma;
    SizeT  got_size;
-   /* .opd -- needed on ppc64-linux */
+   /* .opd -- needed on ppc64-linux for finding symbols */
+   Bool   opd_present;
    Addr   opd_avma;
    SizeT  opd_size;
-   /* .ehframe -- needed on amd64-linux */
+   /* .ehframe -- needed on amd64-linux for stack unwinding */
+   Bool   ehframe_present;
    Addr   ehframe_avma;
    SizeT  ehframe_size;
 

@@ -194,9 +194,12 @@ obj_node* new_obj_node(DebugInfo* di, obj_node* next)
    }
    CLG_(stat).distinct_objs ++;
    new->number  = CLG_(stat).distinct_objs;
-   new->start   = di ? VG_(seginfo_start)(di) : 0;
-   new->size    = di ? VG_(seginfo_size)(di) : 0;
-   new->offset  = di ? VG_(seginfo_sym_offset)(di) : 0;
+   /* JRS 2008 Feb 19: maybe rename .start/.size/.offset to
+      .text_avma/.text_size/.test_bias to make it clearer what these
+      fields really mean */
+   new->start   = di ? VG_(seginfo_get_text_avma)(di) : 0;
+   new->size    = di ? VG_(seginfo_get_text_size)(di) : 0;
+   new->offset  = di ? VG_(seginfo_get_text_bias)(di) : 0;
    new->next    = next;
 
    // not only used for debug output (see static.c)
