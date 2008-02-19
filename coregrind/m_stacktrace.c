@@ -330,7 +330,7 @@ UInt VG_(get_StackTrace_wrk) ( ThreadId tid_if_known,
 #     undef M_VG_ERRTXT
    }
 
-   if (sps) sps[0] = sp;
+   if (sps) sps[0] = fp; /* NB. not sp */
    if (fps) fps[0] = fp;
    ips[0] = ip;
    i = 1;
@@ -389,7 +389,7 @@ UInt VG_(get_StackTrace_wrk) ( ThreadId tid_if_known,
 #           endif
 
             fp = (((UWord*)fp)[0]);
-            if (sps) sps[i] = sp;
+            if (sps) sps[i] = fp; /* NB. not sp */
             if (fps) fps[i] = fp;
             ips[i++] = ip;
             if (debug)

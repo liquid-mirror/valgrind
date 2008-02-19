@@ -1530,7 +1530,7 @@ void ML_(read_debuginfo_dwarf1) (
    the CFA]. 
 
    JRS: on amd64, the dwarf register numbering is, as per
-   gdb-6.3/gdb/tdep-amd64.c and also amd64-abi-0.98.pdf:
+   gdb-6.3/gdb/amd64-tdep.c and also amd64-abi-0.98.pdf:
 
       0    1    2    3    4    5    6    7
       RAX  RDX  RCX  RBX  RSI  RDI  RBP  RSP

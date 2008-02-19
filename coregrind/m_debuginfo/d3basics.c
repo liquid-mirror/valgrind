@@ -379,6 +379,16 @@ static Bool get_Dwarf_Reg( /*OUT*/Addr* a, Word regno, RegSummary* regs )
 #  elif defined(VGP_x86_linux)
    if (regno == 5/*EBP*/) { *a = regs->fp; return True; }
    if (regno == 4/*ESP*/) { *a = regs->sp; return True; }
+#  elif defined(VGP_ppc32_linux)
+   if (regno == 1/*SP*/) { *a = regs->sp; return True; }
+   VG_(printf)("get_Dwarf_Reg(ppc32-linux)(%ld)\n", regno);
+   if (regno == 31) return False;
+   vg_assert(0);
+#  elif defined(VGP_ppc64_linux)
+   if (regno == 1/*SP*/) { *a = regs->sp; return True; }
+   VG_(printf)("get_Dwarf_Reg(ppc64-linux)(%ld)\n", regno);
+   if (regno == 31) return False;
+   vg_assert(0);
 #  else
 #    error "Unknown platform"
 #  endif
@@ -490,6 +500,12 @@ GXResult ML_(evaluate_Dwarf3_Expr) ( UChar* expr, UWord exprszB,
             a1 += sw1;
             PUSH( a1 );
             break;
+         /* As per comment on DW_OP_breg*, the following denote that
+            the value in question is in a register, not in memory.  So
+            we simply return failure. */
+         case DW_OP_reg0 ... DW_OP_reg31:
+            FAIL("evaluate_Dwarf3_Expr: DW_OP_reg* (value is in a register)");
+            break;
          case DW_OP_plus_uconst:
             POP(uw1);
             uw1 += (UWord)read_leb128U( &expr );
@@ -498,8 +514,8 @@ GXResult ML_(evaluate_Dwarf3_Expr) ( UChar* expr, UWord exprszB,
          default:
             if (!VG_(clo_xml))
                VG_(message)(Vg_DebugMsg, 
-                            "Warning: DWARF3 CFI reader: unhandled DW_OP_ "
-                            "opcode 0x%x", (Int)opcode); 
+                            "warning: evaluate_Dwarf3_Expr: unhandled "
+                            "DW_OP_ 0x%x", (Int)opcode); 
             FAIL("evaluate_Dwarf3_Expr: unhandled DW_OP_");
             /*NOTREACHED*/
       }

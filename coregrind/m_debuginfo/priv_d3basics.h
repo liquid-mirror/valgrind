@@ -589,7 +589,8 @@ void ML_(pp_GX) ( GExpr* gx );
    require knowing a suitably contextualising set of values for the
    instruction, frame and stack pointers (and, in general, all
    registers, though we punt on such generality here).  Here's a
-   struct to carry the bare essentials. */
+   struct to carry the bare essentials.  ip, fp and sp are expected to
+   be provided for all platforms. */
 typedef
    struct { Addr ip; Addr sp; Addr fp; }
    RegSummary;
