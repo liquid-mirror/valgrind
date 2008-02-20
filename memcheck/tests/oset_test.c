@@ -347,7 +347,7 @@ static Char *blockToStr(void *p)
    return buf;
 }
 
-static Word blockCmp(void* vkey, void* velem)
+static Word blockCmp(const void* vkey, const void* velem)
 {
    Addr   key  = *(Addr*)vkey;
    Block* elem = (Block*)velem;
@@ -369,8 +369,8 @@ void example2(void)
    // Create a dynamic OSet of Blocks.  This one uses slow (custom)
    // comparisons.
    OSet* oset = VG_(OSetGen_Create)(offsetof(Block, first),
-                                  blockCmp,
-                                  (void*)malloc, free);
+                                    blockCmp,
+                                    malloc, free);
 
    // Try some operations on an empty OSet to ensure they don't screw up.
    vg_assert( ! VG_(OSetGen_Contains)(oset, &v) );

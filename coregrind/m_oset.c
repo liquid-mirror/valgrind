@@ -786,7 +786,7 @@ void VG_(OSetGen_ResetIterAt)(AvlTree* oset, void* k)
    Word    cmpresS; /* signed */
    UWord   cmpresU; /* unsigned */
 
-   tl_assert(oset);
+   vg_assert(oset);
    stackClear(oset);
 
    if (!oset->root)
@@ -833,7 +833,7 @@ void VG_(OSetGen_ResetIterAt)(AvlTree* oset, void* k)
    if (stackPop(oset, &n, &i)) {
       // If we've pushed something to stack and did not find the exact key,
       // we must fix the top element of stack.
-      tl_assert(i == 2);
+      vg_assert(i == 2);
       stackPush(oset, n, 3);
       // the stack looks like {2, 2, ..., 2, 3}
    }
