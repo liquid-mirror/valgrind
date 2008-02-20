@@ -202,6 +202,7 @@ COREGRIND_SOURCES_COMMON = \
 	m_xarray.c \
 	m_aspacemgr/aspacemgr-common.c \
 	m_debuginfo/misc.c \
+	m_debuginfo/d3basics.c \
 	m_debuginfo/storage.c \
 	m_debuginfo/debuginfo.c \
 	m_debuginfo/tytypes.c \
@@ -222,7 +223,6 @@ COREGRIND_LINUX_SOURCE = \
 	m_aspacemgr/aspacemgr-linux.c \
 	m_initimg/initimg-linux.c \
 	m_debuginfo/readelf.c \
-	m_debuginfo/d3basics.c \
 	m_debuginfo/readdwarf.c \
 	m_debuginfo/readdwarf3.c \
 	m_debuginfo/readstabs.c \

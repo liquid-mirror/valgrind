@@ -635,10 +635,10 @@ void VG_(di_notify_mmap)( Addr a, Bool allow_SkFileV )
       TRACE_SYMTAB("------ name = %s\n", di->filename);
       TRACE_SYMTAB("\n");
 
-      /* We're going to read symbols and debug info for the vma ranges
-         [rx_map_avma,+rx_map_size) and [rw_map_avma,+rw_map_size).
-         First get rid of any other DebugInfos which overlap either of
-         those ranges (to avoid total confusion). */
+      /* We're going to read symbols and debug info for the avma
+         ranges [rx_map_avma, +rx_map_size) and [rw_map_avma,
+         +rw_map_size).  First get rid of any other DebugInfos which
+         overlap either of those ranges (to avoid total confusion). */
       discard_DebugInfos_which_overlap_with( di );
 
       /* .. and acquire new info. */
@@ -735,6 +735,16 @@ void VG_(di_aix5_notify_segchange)(
       di->data_bias = 0; /* don't know yet */
       di->data_avma = data_start;
       di->data_size = data_len;
+
+      /* These need to be filled in in order to keep various
+         assertions in storage.c happy.  In particular see
+         "Comment_Regarding_Text_Range_Checks" in that file. */
+      di->have_rx_map = True;
+      di->rx_map_avma = code_start;
+      di->rx_map_size = code_len;
+      di->have_rw_map = True;
+      di->rw_map_avma = data_start;
+      di->rw_map_size = data_len;
 
       ok = ML_(read_xcoff_debug_info) ( di, is_mainexe );
 

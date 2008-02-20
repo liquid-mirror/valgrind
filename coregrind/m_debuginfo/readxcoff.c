@@ -49,7 +49,6 @@
 
 #include "pub_core_basics.h"
 #include "pub_core_vki.h"          /* struct vki_stat et al */
-#include "pub_core_debuginfo.h"
 #include "pub_core_libcbase.h"
 #include "pub_core_libcassert.h"
 #include "pub_core_libcprint.h"
@@ -57,6 +56,9 @@
 #include "pub_core_aspacemgr.h"    /* for mmaping debuginfo files */
 #include "pub_core_options.h"      /* VG_(clo_trace_symtab) */
 #include "pub_core_xarray.h"
+#include "priv_misc.h"
+#include "priv_tytypes.h"
+#include "priv_d3basics.h"
 #include "priv_storage.h"
 #include "priv_readxcoff.h"        /* self */
 
@@ -492,19 +494,12 @@ Bool get_csect_bounds ( UChar* start, UWord n_entries,
    return False;
 }
 
-static void* malloc_AR_SYMTAB ( SizeT nbytes ) {
-   return VG_(arena_malloc)(VG_AR_DINFO, nbytes);
-}
-static void free_AR_SYMTAB ( void* ptr ) {
-   return VG_(arena_free)(VG_AR_DINFO, ptr);
-}
-
 /* Read symbol and line number info for the given text section.  (This
    is the central routine for XCOFF reading.)  Returns NULL on
    success, or the text of an error message otherwise. */
 static 
 HChar* read_symbol_table ( 
-          /*MOD*/DebugInfo* di,
+          /*MOD*/struct _DebugInfo* di,
 
           /* location of symbol table */
           UChar* oi_symtab, UWord oi_nent_symtab,
@@ -574,7 +569,8 @@ HChar* read_symbol_table (
       add the rest to 'syms'.
       ---------------------------------------------------------- */
 
-   syms = VG_(newXA)( malloc_AR_SYMTAB, free_AR_SYMTAB, sizeof(XCoffSym) );
+   syms = VG_(newXA)( ML_(dinfo_zalloc), ML_(dinfo_free), 
+                      sizeof(XCoffSym) );
 
    if (SHOW && SHOW_SYMS_P1) {
       VG_(printf)("--- BEGIN Phase1 (find text symbol starts) ---\n");
@@ -1684,7 +1680,7 @@ static void show_loader_section ( UChar* oi_start, UWord size )
    we get here.
 */
 static 
-Bool read_xcoff_mapped_object ( DebugInfo* di,
+Bool read_xcoff_mapped_object ( struct _DebugInfo* di,
                                 UChar* oimage, UWord n_oimage )
 {
 #define BAD(_msg)  do { ML_(symerr)(di, True/*serious*/,_msg); \
@@ -2138,7 +2134,7 @@ static ULong ascii_to_ULong ( void* vbuf, Int nbuf )
 
 /* Returns True on success, False if any kind of problem. */
 static
-Bool read_xcoff_o_or_a ( /*MOD*/DebugInfo* di,
+Bool read_xcoff_o_or_a ( /*MOD*/struct _DebugInfo* di,
                          HChar* a_name, HChar* o_name )
 {
    UChar* image   = NULL;
@@ -2412,8 +2408,8 @@ Bool read_xcoff_o_or_a ( /*MOD*/DebugInfo* di,
 
    and all other fields should be zeroed.
 */
-Bool ML_(read_xcoff_debug_info) ( DebugInfo* di,
-                                  Bool       is_mainexe )
+Bool ML_(read_xcoff_debug_info) ( struct _DebugInfo* di,
+                                  Bool is_mainexe )
 {
    Bool ok;
 
@@ -2458,14 +2454,14 @@ Bool ML_(read_xcoff_debug_info) ( DebugInfo* di,
          if (di->memname) {
             /* set the soname to "archive.a(member.o)" */
             Int nbytes = VG_(strlen)(p) + 1 + VG_(strlen)(di->memname) + 1 + 1;
-            UChar* so = malloc_AR_SYMTAB(nbytes);
+            UChar* so = ML_(dinfo_zalloc)(nbytes);
             vg_assert(so);
             VG_(sprintf)(so, "%s(%s)", p, di->memname);
             vg_assert(VG_(strlen)(so) == nbytes-1);
             di->soname = so;
          } else {
             /* no member name, hence soname = "archive.a" */
-            di->soname = VG_(arena_strdup)(VG_AR_DINFO, p);
+            di->soname = ML_(dinfo_strdup)(p);
          }
       }
       if (SHOW)
