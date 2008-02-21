@@ -996,6 +996,11 @@ typedef
                        any */
       UChar* fName; /* declaring file name, or NULL */
       Int    fLine; /* declaring file line number, or zero */
+      /* offset in .debug_info (for debug printing only).  NB:
+         approximate value ONLY!  NOT TO BE RELIED ON.  Is only stored
+         so as to help readers make sense of the debug printed
+         output. */
+      UWord  dioff; 
    }
    TempVar;
 
@@ -1523,6 +1528,7 @@ static void parse_var_DIE ( /*OUT*/TempVar** tempvars,
             tv->fName = fileName;
             tv->fLine = lineNo;
             tv->next  = *tempvars;
+            tv->dioff = saved_die_c_offset - 2; /* NB! NOT EXACT! */
             *tempvars = tv;
          }
          TRACE_D3("  Recording this variable, with %ld PC range(s)\n",
@@ -2558,9 +2564,9 @@ static void read_DIE ( /*OUT*/TyAdmin** admin,
 
    /* We're set up to look at the fields of this DIE.  Hand it off to
       any parser(s) that want to see it.  Since they will in general
-      advance both the DIE and abbrev cursors, remember where their
-      current settings so that we can then back up and do one final
-      pass over the DIE, to print out its contents. */
+      advance both the DIE and abbrev cursors, remember their current
+      settings so that we can then back up and do one final pass over
+      the DIE, to print out its contents. */
 
    start_die_c_offset  = get_position_of_Cursor( c );
    start_abbv_c_offset = get_position_of_Cursor( &abbv );
@@ -3003,6 +3009,8 @@ void new_dwarf3_reader_wrk (
          } else {
             VG_(printf)("  FrB=none\n");
          }
+         VG_(printf)("  .debug_info offset = <%lx> "
+                     "(or thereabouts; not exact)\n", varp->dioff);
          VG_(printf)("  declared at: %s:%d\n",
                      varp->fName ? varp->fName : (UChar*)"(null)",
                      varp->fLine );

@@ -377,7 +377,7 @@ void ML_(addDiCfSI) ( struct _DebugInfo* di, DiCfSI* cfsi )
    vg_assert(di->have_rx_map && di->have_rw_map);
    if (cfsi->base + cfsi->len - 1 < di->rx_map_avma
        || cfsi->base >= di->rx_map_avma + di->rx_map_size) {
-      static Int complaints = 3;
+      static Int complaints = 10;
       if (VG_(clo_trace_cfi) || complaints > 0) {
          complaints--;
          if (VG_(clo_verbosity) > 1) {
@@ -747,12 +747,14 @@ void ML_(addVar)( struct _DebugInfo* di,
       it.  We will never be able to actually relate a data address to
       a data object with zero size, so there's no point in storing
       info on it. */
-   if (ML_(sizeOfType)(type) == 0) {
-      if (VG_(clo_verbosity) >= 0) {
+   if (ML_(sizeOfType)(type).b != True) {
+      static Int complaints = 10;
+      if (VG_(clo_verbosity) >= 2 && complaints > 0) {
          VG_(message)(Vg_DebugMsg, 
-            "warning: addVar: zero or unknown size (%s)",
+            "warning: addVar: unknown size (%s)",
             name
          );
+         complaints--;
       }
       return;
    }

@@ -1597,18 +1597,33 @@ static Bool data_address_is_in_var ( /*OUT*/UWord* offset,
                                      RegSummary*   regs,
                                      Addr          data_addr )
 {
-   SizeT    var_szB;
-   GXResult res;
-   Bool     show = False;
+   MaybeUWord muw;
+   SizeT      var_szB;
+   GXResult   res;
+   Bool       show = False;
    vg_assert(var->name);
    vg_assert(var->type);
    vg_assert(var->gexpr);
-   var_szB = ML_(sizeOfType)(var->type);
+
+   /* Figure out how big the variable is. */
+   muw = ML_(sizeOfType)(var->type);
+   /* if this var has a type whose size is unknown, it should never
+      have been added.  ML_(addVar) should have rejected it. */
+   vg_assert(muw.b == True);
+
+   var_szB = muw.w;
 
    if (show) {
       VG_(printf)("VVVV: find loc: %s :: ", var->name );
       ML_(pp_Type_C_ishly)( var->type );
       VG_(printf)("\n");
+   }
+
+   /* ignore zero-sized vars; they can never match anything. */
+   if (var_szB == 0) {
+      if (show)
+         VG_(printf)("VVVV: -> Fail (variable is zero sized)\n");
+      return False;
    }
 
    res = ML_(evaluate_GX)( var->gexpr, var->fbGX, regs );

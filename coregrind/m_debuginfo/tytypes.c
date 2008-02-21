@@ -352,40 +352,63 @@ void ML_(pp_Type_C_ishly) ( Type* ty )
 }
 
 
+static MaybeUWord mk_MaybeUWord_Nothing ( void ) {
+   MaybeUWord muw;
+   muw.w = 0;
+   muw.b = False;
+   return muw;
+}
+static MaybeUWord mk_MaybeUWord_Just ( UWord w ) {
+   MaybeUWord muw;
+   muw.w = w;
+   muw.b = True;
+   return muw;
+}
+static MaybeUWord mul_MaybeUWord ( MaybeUWord muw1, MaybeUWord muw2 ) {
+   if (!muw1.b) { vg_assert(muw1.w == 0); return muw1; }
+   if (!muw2.b) { vg_assert(muw2.w == 0); return muw2; }
+   muw1.w *= muw2.w;
+   return muw1;
+}
+
 /* How big is this type?  (post-resolved only) */
 /* FIXME: check all pointers before dereferencing */
-SizeT ML_(sizeOfType)( Type* ty )
+MaybeUWord ML_(sizeOfType)( Type* ty )
 {
-   SizeT eszB;
-   Word  i;
+   Word       i;
+   MaybeUWord eszB;
    switch (ty->tag) {
       case Ty_Base:
          vg_assert(ty->Ty.Base.szB > 0);
-         return ty->Ty.Base.szB;
+         return mk_MaybeUWord_Just( ty->Ty.Base.szB );
       case Ty_Qual:
          return ML_(sizeOfType)( ty->Ty.Qual.typeR );
       case Ty_TyDef:
          if (!ty->Ty.TyDef.typeR)
-            return 0; /*UNKNOWN*/
+            return mk_MaybeUWord_Nothing(); /*UNKNOWN*/
          return ML_(sizeOfType)( ty->Ty.TyDef.typeR );
       case Ty_PorR:
          vg_assert(ty->Ty.PorR.szB == 4 || ty->Ty.PorR.szB == 8);
-         return ty->Ty.PorR.szB;
+         return mk_MaybeUWord_Just( ty->Ty.PorR.szB );
       case Ty_StOrUn:
-         return ty->Ty.StOrUn.szB;
+         return ty->Ty.StOrUn.complete
+                   ? mk_MaybeUWord_Just( ty->Ty.StOrUn.szB )
+                   : mk_MaybeUWord_Nothing();
       case Ty_Enum:
-         return ty->Ty.Enum.szB;
+         return mk_MaybeUWord_Just( ty->Ty.Enum.szB );
       case Ty_Array:
          if (!ty->Ty.Array.typeR)
-            return 0;
+            return mk_MaybeUWord_Nothing(); /*UNKNOWN*/
          eszB = ML_(sizeOfType)( ty->Ty.Array.typeR );
          for (i = 0; i < VG_(sizeXA)( ty->Ty.Array.bounds ); i++) {
             TyBounds* bo
                = *(TyBounds**)VG_(indexXA)(ty->Ty.Array.bounds, i);
             vg_assert(bo);
             if (!(bo->knownL && bo->knownU))
-               return 0;
-            eszB *= (SizeT)( bo->boundU - bo->boundL + 1 );
+               return mk_MaybeUWord_Nothing(); /*UNKNOWN*/
+            eszB = mul_MaybeUWord( 
+                      eszB,
+                      mk_MaybeUWord_Just( bo->boundU - bo->boundL + 1 ));
          }
          return eszB;
       default:
@@ -423,10 +446,11 @@ XArray* /*UChar*/ ML_(describe_type)( /*OUT*/OffT* residual_offset,
             goto done;
 
          case Ty_StOrUn: {
-            Word     i;
-            GXResult res;
-            TyField  *field = NULL, *fields;
-            OffT     offMin = 0, offMax1 = 0;
+            Word       i;
+            GXResult   res;
+            MaybeUWord muw;
+            TyField    *field = NULL, *fields;
+            OffT       offMin = 0, offMax1 = 0;
             if (!ty->Ty.StOrUn.isStruct) goto done;
             fields = ty->Ty.StOrUn.fields;
             if ((!fields) || VG_(sizeXA)(fields) == 0) goto done;
@@ -445,8 +469,11 @@ XArray* /*UChar*/ ML_(describe_type)( /*OUT*/OffT* residual_offset,
                }
                if (res.kind != GXR_Value)
                   continue;
-               offMin = res.word;
-               offMax1 = offMin + ML_(sizeOfType)( field->typeR );
+               muw = ML_(sizeOfType)( field->typeR );
+               if (muw.b != True)
+                  goto done; /* size of field is unknown (?!) */
+               offMin  = res.word;
+               offMax1 = offMin + muw.w;
                if (offMin == offMax1)
                   continue;
                vg_assert(offMin < offMax1);
@@ -470,8 +497,9 @@ XArray* /*UChar*/ ML_(describe_type)( /*OUT*/OffT* residual_offset,
          }
 
          case Ty_Array: {
-            TyBounds* bounds;
-            UWord size, eszB, ix;
+            MaybeUWord muw;
+            TyBounds*  bounds;
+            UWord      size, eszB, ix;
             /* Just deal with the simple, common C-case: 1-D array,
                zero based, known size. */
             if (!(ty->Ty.Array.typeR && ty->Ty.Array.bounds))
@@ -485,7 +513,10 @@ XArray* /*UChar*/ ML_(describe_type)( /*OUT*/OffT* residual_offset,
                goto done;
             size = bounds->boundU - bounds->boundL + 1;
             vg_assert(size >= 1);
-            eszB = ML_(sizeOfType)( ty->Ty.Array.typeR );
+            muw = ML_(sizeOfType)( ty->Ty.Array.typeR );
+            if (muw.b != True)
+               goto done; /* size of element type not known */
+            eszB = muw.w;
             if (eszB == 0) goto done;
             ix = offset / eszB;
             VG_(addBytesToXA)( xa, "[", 1 );
