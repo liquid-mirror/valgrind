@@ -408,9 +408,8 @@ GXResult ML_(evaluate_Dwarf3_Expr) ( UChar* expr, UWord exprszB,
 
 #  define FAIL(_str)                                          \
       do {                                                    \
-         GXResult res;                                        \
-         res.res = 0;                                         \
-         res.failure = (_str);                                \
+         res.kind = GXR_Failure;                              \
+         res.word = (UWord)(_str);                            \
          return res;                                          \
       } while (0)
 
@@ -436,15 +435,43 @@ GXResult ML_(evaluate_Dwarf3_Expr) ( UChar* expr, UWord exprszB,
    UChar*   limit;
    Int      sp; /* # of top element: valid is -1 .. N_EXPR_STACK-1 */
    Addr     stack[N_EXPR_STACK]; /* stack of addresses, as per D3 spec */
-   GXResult fbval;
+   GXResult fbval, res;
    Addr     a1;
    Word     sw1;
    UWord    uw1;
+   Bool     ok;
 
    sp = -1;
    vg_assert(expr);
    vg_assert(exprszB >= 0);
    limit = expr + exprszB;
+
+   /* Deal with the case where the entire expression is a single
+      Register Name Operation (D3 spec sec 2.6.1).  Then the
+      denotation of the expression as a whole is a register name. */
+   if (exprszB == 1
+       && expr[0] >= DW_OP_reg0 && expr[0] <= DW_OP_reg31) {
+      res.kind = GXR_RegNo;
+      res.word = (UWord)(expr[0] - DW_OP_reg0);
+      return res;
+   }
+   if (exprszB > 1
+       && expr[0] == DW_OP_regx) {
+      /* JRS: 2008Feb20: I believe the following is correct, but would
+         like to see a test case show up before enabling it. */
+      vg_assert(0);
+      expr++;
+      res.kind = GXR_RegNo;
+      res.word = (UWord)read_leb128U( &expr );
+      if (expr != limit)
+         FAIL("evaluate_Dwarf3_Expr: DW_OP_regx*: invalid expr size");
+      else
+         return res;
+      /*NOTREACHED*/
+   }
+
+   /* Evidently this expresion denotes a value, not a register name.
+      So evaluate it accordingly. */
 
    if (push_initial_zero)
       PUSH(0);
@@ -479,19 +506,37 @@ GXResult ML_(evaluate_Dwarf3_Expr) ( UChar* expr, UWord exprszB,
                FAIL("evaluate_Dwarf3_Expr: DW_OP_fbreg with "
                     "no expr for fbreg present");
             fbval = ML_(evaluate_GX)(fbGX, NULL, regs);
-            if (fbval.failure)
-               return fbval;
+            /* Convert fbval into something we can use.  If we got a
+               Value, no problem.  However, as per D3 spec sec 3.3.5
+               (Low Level Information) sec 2, we could also get a
+               RegNo, and that is taken to mean the value in the
+               indicated register.  So we have to manually
+               "dereference" it. */
+            a1 = 0;
+            switch (fbval.kind) {
+               case GXR_Failure:
+                  return fbval; /* propagate failure */
+               case GXR_Value:
+                  a1 = fbval.word; break; /* use as-is */
+               case GXR_RegNo:
+                  ok = get_Dwarf_Reg( &a1, fbval.word, regs );
+                  if (!ok) return fbval; /* propagate failure */
+                  break;
+               default:
+                  vg_assert(0);
+            }
             sw1 = (Word)read_leb128S( &expr );
-            PUSH( fbval.res + sw1 );
+            PUSH( a1 + sw1 );
             break;
          /* DW_OP_breg* denotes 'contents of specified register, plus
             constant offset'.  So provided we know what the register's
             value is, we can evaluate this.  Contrast DW_OP_reg*,
             which indicates that denoted location is in a register
-            itself.  For DW_OP_reg* we must always fail, since this
-            function is intended to compute a memory address of some
-            kind.  See D3 Spec sec 2.6.1 ("Register Name Operations")
-            for details. */
+            itself.  If DW_OP_reg* shows up here the expression is
+            malformed, since we are evaluating for value now, and
+            DW_OP_reg* denotes a register location, not a value.  See
+            D3 Spec sec 2.6.1 ("Register Name Operations") for
+            details. */
          case DW_OP_breg0 ... DW_OP_breg31:
             if (!regs)
                FAIL("evaluate_Dwarf3_Expr: DW_OP_breg* but no reg info");
@@ -504,9 +549,11 @@ GXResult ML_(evaluate_Dwarf3_Expr) ( UChar* expr, UWord exprszB,
             break;
          /* As per comment on DW_OP_breg*, the following denote that
             the value in question is in a register, not in memory.  So
-            we simply return failure. */
+            we simply return failure. (iow, the expression is
+            malformed). */
          case DW_OP_reg0 ... DW_OP_reg31:
-            FAIL("evaluate_Dwarf3_Expr: DW_OP_reg* (value is in a register)");
+            FAIL("evaluate_Dwarf3_Expr: DW_OP_reg* "
+                 "whilst evaluating for a value");
             break;
          case DW_OP_plus_uconst:
             POP(uw1);
@@ -525,13 +572,10 @@ GXResult ML_(evaluate_Dwarf3_Expr) ( UChar* expr, UWord exprszB,
    }
 
    vg_assert(sp >= 0 && sp < N_EXPR_STACK);
-
-   { GXResult res; 
-     res.res = stack[sp];
-     res.failure = NULL;
-     return res;
-   }
-
+   res.word = stack[sp];
+   res.kind = GXR_Value;
+   return res;
+ 
 #  undef POP
 #  undef PUSH
 #  undef FAIL
@@ -558,8 +602,8 @@ GXResult ML_(evaluate_GX)( GExpr* gx, GExpr* fbGX, RegSummary* regs )
       uc = *p++;
       if (uc == 1) { /*isEnd*/
          /* didn't find any matching range. */
-         res.res = 0;
-         res.failure = "no matching range";
+         res.kind = GXR_Failure;
+         res.word = (UWord)"no matching range";
          return res;
       }
       vg_assert(uc == 0);
@@ -589,6 +633,21 @@ GXResult ML_(evaluate_GX)( GExpr* gx, GExpr* fbGX, RegSummary* regs )
       }
       /* else keep searching */
       p += (UWord)nbytes;
+   }
+}
+
+
+void ML_(pp_GXResult) ( GXResult res )
+{
+   switch (res.kind) {
+      case GXR_Failure:
+         VG_(printf)("GXR_Failure(%s)", (HChar*)res.word); break;
+      case GXR_Value:
+         VG_(printf)("GXR_Value(0x%lx)", res.word); break;
+      case GXR_RegNo:
+         VG_(printf)("GXR_RegNo(%lu)", res.word); break;
+      default:
+         VG_(printf)("GXR_???"); break;
    }
 }
 

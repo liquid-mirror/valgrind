@@ -438,10 +438,14 @@ XArray* /*UChar*/ ML_(describe_type)( /*OUT*/OffT* residual_offset,
                        field->loc->bytes, field->loc->nbytes,
                        NULL/*fbGX*/, NULL/*RegSummary*/,
                        True/*push_initial_zero*/ );
-               if (0) VG_(printf)("QQQ %lu %s\n", res.res,res.failure);
-               if (res.failure)
+               if (0) {
+                  VG_(printf)("QQQ ");
+                  ML_(pp_GXResult)(res);
+                  VG_(printf)("\n");
+               }
+               if (res.kind != GXR_Value)
                   continue;
-               offMin = res.res;
+               offMin = res.word;
                offMax1 = offMin + ML_(sizeOfType)( field->typeR );
                if (offMin == offMax1)
                   continue;

@@ -595,13 +595,19 @@ typedef
    struct { Addr ip; Addr sp; Addr fp; }
    RegSummary;
 
-/* This describes the result of evaluating a DWARF3 expression.  If
-   .failure is NULL, then evaluation succeeded and produced .res as
-   the result.  Else .failure is a zero terminated const string
-   summarising the reason for failure.  */
+/* This describes the result of evaluating a DWARF3 expression.
+   GXR_Failure: failed; .word is an asciiz string summarising why
+   GXR_Value:   evaluated to a value, in .word
+   GXR_RegNo:   evaluated to a DWARF3 register number, in .word
+*/
 typedef
-   struct { UWord res; HChar* failure; }
+   struct { 
+      enum { GXR_Failure, GXR_Value, GXR_RegNo } kind;
+      UWord word;
+   }
    GXResult;
+
+void ML_(pp_GXResult) ( GXResult res );
 
 /* Evaluate a guarded expression.  If regs is NULL, then gx is assumed
    (and checked) to contain just a single guarded expression, with a

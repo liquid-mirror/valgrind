@@ -1613,11 +1613,16 @@ static Bool data_address_is_in_var ( /*OUT*/UWord* offset,
 
    res = ML_(evaluate_GX)( var->gexpr, var->fbGX, regs );
 
-   if (show) VG_(printf)("VVVV: -> 0x%lx %s\n", res.res, 
-                         res.failure ? res.failure : "(success)");
-   if (!res.failure && res.res <= data_addr
-                    && data_addr < res.res + var_szB) {
-      *offset = data_addr - res.res;
+   if (show) {
+      VG_(printf)("VVVV: -> ");
+      ML_(pp_GXResult)( res );
+      VG_(printf)("\n");
+   }
+
+   if (res.kind == GXR_Value 
+       && res.word <= data_addr
+       && data_addr < res.word + var_szB) {
+      *offset = data_addr - res.word;
       return True;
    } else {
       return False;
