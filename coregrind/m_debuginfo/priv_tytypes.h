@@ -89,7 +89,7 @@ struct _Type {
       struct {
          UChar* name; /* in DebugInfo.strchunks */
          Int    szB;
-         UChar  enc; /* S:signed U:unsigned F:floating */
+         UChar  enc; /* S:signed U:unsigned F:floating C:complex float */
       } Base;
       struct {
          Int   szB;

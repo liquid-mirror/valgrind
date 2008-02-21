@@ -166,6 +166,11 @@ static inline void set_position_of_Cursor ( Cursor* c, UWord pos ) {
    vg_assert(is_sane_Cursor(c));
 }
 
+static /*signed*/Word get_remaining_length_Cursor ( Cursor* c ) {
+   vg_assert(is_sane_Cursor(c));
+   return c->region_szB - c->region_next;
+}
+
 static UChar* get_address_of_Cursor ( Cursor* c ) {
    vg_assert(is_sane_Cursor(c));
    return &c->region_start_img[ c->region_next ];
@@ -1835,6 +1840,8 @@ static void parse_type_DIE ( /*OUT*/TyAdmin** admin,
                   type->Ty.Base.enc = 'S'; break;
                case DW_ATE_float:
                   type->Ty.Base.enc = 'F'; break;
+               case DW_ATE_complex_float:
+                  type->Ty.Base.enc = 'C'; break;
                default:
                   goto bad_DIE;
             }
@@ -1843,15 +1850,28 @@ static void parse_type_DIE ( /*OUT*/TyAdmin** admin,
       /* Do we have something that looks sane? */
       if (/* must have a name */
           type->Ty.Base.name == NULL
-          /* and a plausible size */
-          || type->Ty.Base.szB < 1 || type->Ty.Base.szB > 16
+          /* and a plausible size.  Yes, really 32: "complex long
+             double" apparently has size=32 */
+          || type->Ty.Base.szB < 0 || type->Ty.Base.szB > 32
           /* and a plausible encoding */
           || (type->Ty.Base.enc != 'U'
               && type->Ty.Base.enc != 'S' 
-              && type->Ty.Base.enc != 'F'))
+              && type->Ty.Base.enc != 'F'
+              && type->Ty.Base.enc != 'C'))
          goto bad_DIE;
-      else
-         goto acquire_Type;
+      /* Last minute hack: if we see this
+         <1><515>: DW_TAG_base_type
+             DW_AT_byte_size   : 0
+             DW_AT_encoding    : 5
+             DW_AT_name        : void
+         convert it into a real Void type. */
+      if (type->Ty.Base.szB == 0
+          && 0 == VG_(strcmp)("void", type->Ty.Base.name)) {
+         VG_(memset)(type, 0, sizeof(*type));
+         type->tag = Ty_Void;
+         type->Ty.Void.isFake = False; /* it's a real one! */
+      }
+      goto acquire_Type;
    }
 
    if (dtag == DW_TAG_pointer_type || dtag == DW_TAG_reference_type) {
@@ -1860,6 +1880,14 @@ static void parse_type_DIE ( /*OUT*/TyAdmin** admin,
       /* target type defaults to void */
       type->Ty.PorR.typeR = D3_FAKEVOID_CUOFF;
       type->Ty.PorR.isPtr = dtag == DW_TAG_pointer_type;
+      /* Pointer types don't *have* to specify their size, in which
+         case we assume it's a machine word.  But if they do specify
+         it, it must be a machine word :-) This probably assumes that
+         the word size of the Dwarf3 we're reading is the same size as
+         that on the machine.  gcc appears to give a size whereas icc9
+         doesn't. */
+      if (type->Ty.PorR.isPtr)
+         type->Ty.PorR.szB = sizeof(Word);
       while (True) {
          DW_AT   attr = (DW_AT)  get_ULEB128( c_abbv );
          DW_FORM form = (DW_FORM)get_ULEB128( c_abbv );
@@ -2408,8 +2436,8 @@ static void resolve_type_entities ( /*MOD*/TyAdmin* admin,
             case Ty_Base:
                enc = ty->Ty.Base.enc;
                if ((!ty->Ty.Base.name) 
-                   || ty->Ty.Base.szB < 1 || ty->Ty.Base.szB > 16
-                   || (enc != 'S' && enc != 'U' && enc != 'F'))
+                   || ty->Ty.Base.szB < 1 || ty->Ty.Base.szB > 32
+                   || (enc != 'S' && enc != 'U' && enc != 'F' && enc != 'C'))
                   goto baaad;
                break;
             case Ty_TyDef:
@@ -2809,8 +2837,19 @@ void new_dwarf3_reader_wrk (
    while (True) {
       UWord   cu_start_offset, cu_offset_now;
       CUConst cc;
-      if (is_at_end_Cursor( &info ))
+
+      /* It seems icc9 finishes the DIE info before debug_info_sz
+         bytes have been used up.  So be flexible, and declare the
+         sequence complete if there is not enough remaining bytes to
+         hold even the smallest conceivable CU header.  (11 bytes I
+         reckon). */
+      Word avail = get_remaining_length_Cursor( &info );
+      if (avail < 11) {
+         if (avail > 0)
+            TRACE_D3("new_dwarf3_reader_wrk: warning: "
+                     "%ld unused bytes after end of DIEs\n", avail);
          break;
+      }
 
       /* Check the varparser's stack is in a sane state. */
       { Int i;
@@ -2875,7 +2914,7 @@ void new_dwarf3_reader_wrk (
                 &info, td3, &cc, 0 );
 
       cu_offset_now = get_position_of_Cursor( &info );
-      if (0) TRACE_D3("offset now %ld, d-i-size %ld\n",
+      if (1) TRACE_D3("offset now %ld, d-i-size %ld\n",
                       cu_offset_now, debug_info_sz);
       if (cu_offset_now > debug_info_sz)
          barf("toplevel DIEs beyond end of CU");

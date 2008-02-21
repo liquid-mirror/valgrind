@@ -560,6 +560,20 @@ GXResult ML_(evaluate_Dwarf3_Expr) ( UChar* expr, UWord exprszB,
             uw1 += (UWord)read_leb128U( &expr );
             PUSH(uw1);
             break;
+         case DW_OP_GNU_push_tls_address:
+            /* GDB contains the following cryptic comment: */
+            /* Variable is at a constant offset in the thread-local
+            storage block into the objfile for the current thread and
+            the dynamic linker module containing this expression. Here
+            we return returns the offset from that base.  The top of the
+            stack has the offset from the beginning of the thread
+            control block at which the variable is located.  Nothing
+            should follow this operator, so the top of stack would be
+            returned.  */
+            /* But no spec resulting from Googling.  Punt for now. */
+            FAIL("warning: evaluate_Dwarf3_Expr: unhandled "         
+                 "DW_OP_GNU_push_tls_address");
+            /*NOTREACHED*/
          default:
             if (!VG_(clo_xml))
                VG_(message)(Vg_DebugMsg, 
