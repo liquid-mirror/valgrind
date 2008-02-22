@@ -48,6 +48,7 @@
 #include "pub_tool_options.h"
 #include "pub_tool_xarray.h"
 #include "pub_tool_stacktrace.h"
+#include "pub_tool_debuginfo.h"  /* VG_(get_data_description) */
 
 #include "helgrind.h"
 
@@ -7823,6 +7824,8 @@ typedef
             SVal  old_state;
             ExeContext* mb_lastlock;
             Thread* thr;
+            Char  descr1[96];
+            Char  descr2[96];
          } Race;
          struct {
             Thread* thr;  /* doing the freeing */
@@ -7912,6 +7915,20 @@ static void record_error_Race ( Thread* thr,
    // FIXME: tid vs thr
    tl_assert(isWrite == False || isWrite == True);
    tl_assert(szB == 8 || szB == 4 || szB == 2 || szB == 1);
+
+   tl_assert(sizeof(xe.XE.Race.descr1) == sizeof(xe.XE.Race.descr2));
+   xe.XE.Race.descr1[0] = xe.XE.Race.descr2[0] = 0;
+   if (VG_(get_data_description)(
+             &xe.XE.Race.descr1[0],
+             &xe.XE.Race.descr2[0],
+             sizeof(xe.XE.Race.descr1)-1,
+             data_addr )) {
+      tl_assert( xe.XE.Race.descr1
+                    [ sizeof(xe.XE.Race.descr1)-1 ] == 0);
+      tl_assert( xe.XE.Race.descr2
+                    [ sizeof(xe.XE.Race.descr2)-1 ] == 0);
+   }
+
    VG_(maybe_record_error)( map_threads_reverse_lookup_SLOW(thr),
                             XE_Race, data_addr, NULL, &xe );
 }
@@ -8446,6 +8463,12 @@ static void hg_pp_Error ( Error* err )
                       "  Old state 0x%08x=%s, new state 0x%08x=%s",
                       old_state, old_buf, new_state, new_buf);
       }
+
+      /* If we have a better description of the address, show it. */
+      if (xe->XE.Race.descr1[0] != 0)
+         VG_(message)(Vg_UserMsg, "  %s", &xe->XE.Race.descr1);
+      if (xe->XE.Race.descr2[0] != 0)
+         VG_(message)(Vg_UserMsg, "  %s", &xe->XE.Race.descr2);
 
       break; /* case XE_Race */
    } /* case XE_Race */

@@ -1678,12 +1678,12 @@ static void format_message ( /*OUT*/Char* dname1,
 
    if ( frameNo >= 0 && (!have_srcloc) && (!have_descr) ) {
       /* no srcloc, no description:
-         Address 0x7fefff6cf is 543 bytes inside local var "a",
+         Location 0x7fefff6cf is 543 bytes inside local var "a",
          in frame #1 of thread 1
       */
       VG_(snprintf)(
          dname1, n_dname,
-         "Address 0x%lx is %lu byte%s inside local var \"%s\",",
+         "Location 0x%lx is %lu byte%s inside local var \"%s\",",
          data_addr, var_offset, vo_plural, var->name );
       VG_(snprintf)(
          dname2, n_dname,
@@ -1692,12 +1692,12 @@ static void format_message ( /*OUT*/Char* dname1,
    else
    if ( frameNo >= 0 && have_srcloc && (!have_descr) ) {
       /* no description:
-         Address 0x7fefff6cf is 543 bytes inside local var "a"
+         Location 0x7fefff6cf is 543 bytes inside local var "a"
          declared at dsyms7.c:17, in frame #1 of thread 1
       */
       VG_(snprintf)(
          dname1, n_dname,
-         "Address 0x%lx is %lu byte%s inside local var \"%s\"",
+         "Location 0x%lx is %lu byte%s inside local var \"%s\"",
          data_addr, var_offset, vo_plural, var->name );
       VG_(snprintf)(
          dname2, n_dname,
@@ -1707,12 +1707,12 @@ static void format_message ( /*OUT*/Char* dname1,
    else
    if ( frameNo >= 0 && (!have_srcloc) && have_descr ) {
       /* no srcloc:
-         Address 0x7fefff6cf is 2 bytes inside a[3].xyzzy[21].c2
+         Location 0x7fefff6cf is 2 bytes inside a[3].xyzzy[21].c2
          in frame #1 of thread 1
       */
       VG_(snprintf)(
          dname1, n_dname,
-         "Address 0x%lx is %lu byte%s inside %s%s",
+         "Location 0x%lx is %lu byte%s inside %s%s",
          data_addr, residual_offset, ro_plural, var->name,
          VG_(indexXA)(described,0) );
       VG_(snprintf)(
@@ -1721,11 +1721,11 @@ static void format_message ( /*OUT*/Char* dname1,
    } 
    else
    if ( frameNo >= 0 && have_srcloc && have_descr ) {
-     /* Address 0x7fefff6cf is 2 bytes inside a[3].xyzzy[21].c2,
+     /* Location 0x7fefff6cf is 2 bytes inside a[3].xyzzy[21].c2,
         declared at dsyms7.c:17, in frame #1 of thread 1 */
       VG_(snprintf)(
          dname1, n_dname,
-         "Address 0x%lx is %lu byte%s inside %s%s,",
+         "Location 0x%lx is %lu byte%s inside %s%s,",
          data_addr, residual_offset, ro_plural, var->name,
          VG_(indexXA)(described,0) );
       VG_(snprintf)(
@@ -1737,22 +1737,22 @@ static void format_message ( /*OUT*/Char* dname1,
    /* ------ global cases ------ */
    if ( frameNo >= -1 && (!have_srcloc) && (!have_descr) ) {
       /* no srcloc, no description:
-         Address 0x7fefff6cf is 543 bytes inside global var "a"
+         Location 0x7fefff6cf is 543 bytes inside global var "a"
       */
       VG_(snprintf)(
          dname1, n_dname,
-         "Address 0x%lx is %lu byte%s inside global var \"%s\"",
+         "Location 0x%lx is %lu byte%s inside global var \"%s\"",
          data_addr, var_offset, vo_plural, var->name );
    } 
    else
    if ( frameNo >= -1 && have_srcloc && (!have_descr) ) {
       /* no description:
-         Address 0x7fefff6cf is 543 bytes inside global var "a"
+         Location 0x7fefff6cf is 543 bytes inside global var "a"
          declared at dsyms7.c:17
       */
       VG_(snprintf)(
          dname1, n_dname,
-         "Address 0x%lx is %lu byte%s inside global var \"%s\"",
+         "Location 0x%lx is %lu byte%s inside global var \"%s\"",
          data_addr, var_offset, vo_plural, var->name );
       VG_(snprintf)(
          dname2, n_dname,
@@ -1762,12 +1762,12 @@ static void format_message ( /*OUT*/Char* dname1,
    else
    if ( frameNo >= -1 && (!have_srcloc) && have_descr ) {
       /* no srcloc:
-         Address 0x7fefff6cf is 2 bytes inside a[3].xyzzy[21].c2,
+         Location 0x7fefff6cf is 2 bytes inside a[3].xyzzy[21].c2,
          a global variable
       */
       VG_(snprintf)(
          dname1, n_dname,
-         "Address 0x%lx is %lu byte%s inside %s%s,",
+         "Location 0x%lx is %lu byte%s inside %s%s,",
          data_addr, residual_offset, ro_plural, var->name,
          VG_(indexXA)(described,0) );
       VG_(snprintf)(
@@ -1776,11 +1776,11 @@ static void format_message ( /*OUT*/Char* dname1,
    } 
    else
    if ( frameNo >= -1 && have_srcloc && have_descr ) {
-     /* Address 0x7fefff6cf is 2 bytes inside a[3].xyzzy[21].c2,
+     /* Location 0x7fefff6cf is 2 bytes inside a[3].xyzzy[21].c2,
         a global variable declared at dsyms7.c:17 */
       VG_(snprintf)(
          dname1, n_dname,
-         "Address 0x%lx is %lu byte%s inside %s%s,",
+         "Location 0x%lx is %lu byte%s inside %s%s,",
          data_addr, residual_offset, ro_plural, var->name,
          VG_(indexXA)(described,0) );
       VG_(snprintf)(
