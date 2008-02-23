@@ -109,7 +109,9 @@
 
 
 /*------------------------------------------------------------*/
-/*--- The "new" DWARF3 reader                              ---*/
+/*---                                                      ---*/
+/*--- Basic machinery for parsing DIEs.                    ---*/
+/*---                                                      ---*/
 /*------------------------------------------------------------*/
 
 #define TRACE_D3(format, args...) \
@@ -304,6 +306,35 @@ static UWord get_UWord ( Cursor* c ) {
 }
 
 
+/* Read a DWARF3 'Initial Length' field */
+static ULong get_Initial_Length ( /*OUT*/Bool* is64,
+                                  Cursor* c, 
+                                  HChar* barfMsg )
+{
+   ULong w64;
+   UInt  w32;
+   *is64 = False;
+   w32 = get_UInt( c );
+   if (w32 >= 0xFFFFFFF0 && w32 < 0xFFFFFFFF) {
+      c->barf( barfMsg );
+   }
+   else if (w32 == 0xFFFFFFFF) {
+      *is64 = True;
+      w64   = get_ULong( c );
+   } else {
+      *is64 = False;
+      w64 = (ULong)w32;
+   }
+   return w64;
+}
+
+
+/*------------------------------------------------------------*/
+/*---                                                      ---*/
+/*--- "CUConst" structure                                  ---*/
+/*---                                                      ---*/
+/*------------------------------------------------------------*/
+
 #define N_ABBV_CACHE 32
 
 /* Holds information that is constant through the parsing of a
@@ -354,52 +385,11 @@ typedef
    CUConst;
 
 
-/* Read a DWARF3 'Initial Length' field */
-static ULong get_Initial_Length ( /*OUT*/Bool* is64,
-                                  Cursor* c, 
-                                  HChar* barfMsg )
-{
-   ULong w64;
-   UInt  w32;
-   *is64 = False;
-   w32 = get_UInt( c );
-   if (w32 >= 0xFFFFFFF0 && w32 < 0xFFFFFFFF) {
-      c->barf( barfMsg );
-   }
-   else if (w32 == 0xFFFFFFFF) {
-      *is64 = True;
-      w64   = get_ULong( c );
-   } else {
-      *is64 = False;
-      w64 = (ULong)w32;
-   }
-   return w64;
-}
-
-
-/* Denotes an address range.  Both aMin and aMax are included in the
-   range; hence a complete range is (0, ~0) and an empty range is any
-   (X, X-1) for X > 0.*/
-typedef 
-   struct { Addr aMin; Addr aMax; }
-   AddrRange;
-
-static XArray* unitary_range_list ( Addr aMin, Addr aMax ) {
-   XArray*   xa;
-   AddrRange pair;
-   vg_assert(aMin <= aMax);
-   /* Who frees this xa?  varstack_preen() does. */
-   xa = VG_(newXA)( ML_(dinfo_zalloc), ML_(dinfo_free),
-                    sizeof(AddrRange) );
-   pair.aMin = aMin;
-   pair.aMax = aMax;
-   VG_(addToXA)( xa, &pair );
-   return xa;
-}
-
-//////////////////////////////////////////////////////////////////
-//////////////////////////////////////////////////////////////////
-/// begin GUARDED EXPRESSIONS
+/*------------------------------------------------------------*/
+/*---                                                      ---*/
+/*--- Helper functions for Guarded Expressions             ---*/
+/*---                                                      ---*/
+/*------------------------------------------------------------*/
 
 /* Parse the location list starting at img-offset 'debug_loc_offset'
    in .debug_loc.  Results are biased with 'svma_of_referencing_CU'
@@ -628,9 +618,20 @@ static GExpr* make_general_GX ( CUConst* cc,
    return gx;
 }
 
-/// end GUARDED EXPRESSIONS
-//////////////////////////////////////////////////////////////////
-//////////////////////////////////////////////////////////////////
+
+/*------------------------------------------------------------*/
+/*---                                                      ---*/
+/*--- Helper functions for range lists and CU headers      ---*/
+/*---                                                      ---*/
+/*------------------------------------------------------------*/
+
+/* Denotes an address range.  Both aMin and aMax are included in the
+   range; hence a complete range is (0, ~0) and an empty range is any
+   (X, X-1) for X > 0.*/
+typedef 
+   struct { Addr aMin; Addr aMax; }
+   AddrRange;
+
 
 __attribute__((noinline))
 static XArray* /* of AddrRange */ empty_range_list ( void )
@@ -639,6 +640,21 @@ static XArray* /* of AddrRange */ empty_range_list ( void )
    /* Who frees this xa?  varstack_preen() does. */
    xa = VG_(newXA)( ML_(dinfo_zalloc), ML_(dinfo_free),
                     sizeof(AddrRange) );
+   return xa;
+}
+
+
+static XArray* unitary_range_list ( Addr aMin, Addr aMax )
+{
+   XArray*   xa;
+   AddrRange pair;
+   vg_assert(aMin <= aMax);
+   /* Who frees this xa?  varstack_preen() does. */
+   xa = VG_(newXA)( ML_(dinfo_zalloc), ML_(dinfo_free),
+                    sizeof(AddrRange) );
+   pair.aMin = aMin;
+   pair.aMax = aMax;
+   VG_(addToXA)( xa, &pair );
    return xa;
 }
 
@@ -979,28 +995,29 @@ void get_Form_contents ( /*OUT*/ULong* cts,
 }
 
 
-/////////////////////////////////////////////////////////////
-/////////////////////////////////////////////////////////////
-// Variable location parser
+/*------------------------------------------------------------*/
+/*---                                                      ---*/
+/*--- Parsing of variable-related DIEs                     ---*/
+/*---                                                      ---*/
+/*------------------------------------------------------------*/
 
 typedef
    struct _TempVar {
       struct _TempVar* next;
-      UChar* name; /* in AR_DINFO */
-      Addr   pcMin;
-      Addr   pcMax;
-      Int    level;
-      Type*  typeR;
-      GExpr* gexpr; /* for this variable */
-      GExpr* fbGX;  /* to find the frame base of the enclosing fn, if
-                       any */
-      UChar* fName; /* declaring file name, or NULL */
-      Int    fLine; /* declaring file line number, or zero */
-      /* offset in .debug_info (for debug printing only).  NB:
-         approximate value ONLY!  NOT TO BE RELIED ON.  Is only stored
-         so as to help readers make sense of the debug printed
-         output. */
-      UWord  dioff; 
+      UChar*  name; /* in DebugInfo's .strchunks */
+      XArray* ranges; /* of AddrRange.  UNIQUE PTR in AR_DINFO. */
+      Int     level;
+      Type*   typeR;
+      GExpr*  gexpr; /* for this variable */
+      GExpr*  fbGX;  /* to find the frame base of the enclosing fn, if
+                        any */
+      UChar*  fName; /* declaring file name, or NULL */
+      Int     fLine; /* declaring file line number, or zero */
+      /* offset in .debug_info, so that abstract instances can be
+         found to satisfy references from concrete instances. */
+      UWord   dioff;
+      UWord   absOri; /* so the absOri fields refer to dioff fields
+                         in some other, related TempVar. */
    }
    TempVar;
 
@@ -1410,7 +1427,7 @@ static void parse_var_DIE ( /*OUT*/TempVar** tempvars,
       Bool   external    = False;
       GExpr* gexpr       = NULL;
       Int    n_attrs     = 0;
-      Bool   has_abs_ori = False;
+      UWord  abs_ori     = (UWord)D3_INVALID_CUOFF;
       Bool   declaration = False;
       Int    lineNo      = 0;
       UChar* fileName    = NULL;
@@ -1440,7 +1457,7 @@ static void parse_var_DIE ( /*OUT*/TempVar** tempvars,
             external = True;
          }
          if (attr == DW_AT_abstract_origin && ctsSzB > 0) {
-            has_abs_ori = True;
+            abs_ori = (UWord)cts;
          }
          if (attr == DW_AT_declaration && ctsSzB > 0 && cts > 0) {
             declaration = True;
@@ -1459,24 +1476,30 @@ static void parse_var_DIE ( /*OUT*/TempVar** tempvars,
             if (0) VG_(printf)("XXX filename = %s\n", fileName);
          }
       }
-      /* We'll collect it if it has a type and a location.  Doesn't
-         even have to have a name. */
-      if (gexpr && typeR != D3_INVALID_CUOFF) {
-         /* Add this variable to the set of variables associated with
-            each address range at the top of the stack. */
-         GExpr*  fbGX = NULL;
-         Word    i;
-         XArray* /* of AddrRange */ xa;
+      /* We'll collect it under if one of the following three
+         conditions holds:
+         (1) has location and type    -> completed
+         (2) has type only            -> is an abstract instance
+         (3) has location and abs_ori -> is a concrete instance
+         Name, filename and line number are all option frills.
+      */
+      if ( /* 1 */ (gexpr && typeR != D3_INVALID_CUOFF) 
+           /* 2 */ || (typeR != D3_INVALID_CUOFF)
+           /* 3 */ || (gexpr && abs_ori != (UWord)D3_INVALID_CUOFF) ) {
+
+         /* Add this variable to the list of interesting looking
+            variables.  Crucially, note along with it the address
+            range(s) associated with the variable, which for locals
+            will be the address ranges at the top of the varparser's
+            stack. */
+         GExpr*   fbGX = NULL;
+         Word     i;
+         XArray*  /* of AddrRange */ xa;
+         TempVar* tv;
          /* Stack can't be empty; we put a dummy entry on it for the
             entire address range before starting with the DIEs for
             this CU. */
          vg_assert(parser->sp >= 0);
-
-         if (!name)
-            name = ML_(addStr)(
-                      cc->di, dtag == DW_TAG_variable 
-                                 ? "<anon_variable>"
-                                 : "<anon_formal>", -1 );
 
          /* If this is a local variable (non-external), try to find
             the GExpr for the DW_AT_frame_base of the containing
@@ -1505,7 +1528,13 @@ static void parse_var_DIE ( /*OUT*/TempVar** tempvars,
                      "warning: parse_var_DIE: non-external variable "
                      "outside DW_TAG_subprogram");
                }
-               // FIXME             goto bad_DIE;
+               /* goto bad_DIE; */
+               /* This seems to happen a lot.  Just ignore it -- if,
+                  when we come to evaluation of the location (guarded)
+                  expression, it requires a frame base value, and
+                  there's no expression for that, then evaluation as a
+                  whole will fail.  Harmless - a bit of a waste of
+                  cycles but nothing more. */
             }
          }
 
@@ -1515,30 +1544,29 @@ static void parse_var_DIE ( /*OUT*/TempVar** tempvars,
             address space.  It is asserted elsewhere that level 0 
             always covers the entire address space. */
          xa = parser->ranges[external ? 0 : parser->sp];
-         for (i = 0; i < VG_(sizeXA)( xa ); i++) {
-            AddrRange* r = (AddrRange*) VG_(indexXA)( xa, i );
-            TempVar* tv = ML_(dinfo_zalloc)( sizeof(TempVar) );
-            tv->name  = name;
-            tv->pcMin = r->aMin;
-            tv->pcMax = r->aMax;
-            tv->level = external ? 0 : parser->sp;
-            tv->typeR = typeR;
-            tv->gexpr = gexpr;
-            tv->fbGX  = fbGX;
-            tv->fName = fileName;
-            tv->fLine = lineNo;
-            tv->next  = *tempvars;
-            tv->dioff = saved_die_c_offset - 2; /* NB! NOT EXACT! */
-            *tempvars = tv;
-         }
+         tv = ML_(dinfo_zalloc)( sizeof(TempVar) );
+         tv->name   = name;
+         tv->ranges = xa;
+         tv->level  = external ? 0 : parser->sp;
+         tv->typeR  = typeR;
+         tv->gexpr  = gexpr;
+         tv->fbGX   = fbGX;
+         tv->fName  = fileName;
+         tv->fLine  = lineNo;
+         tv->dioff  = posn;
+         tv->absOri = abs_ori;
+         tv->ranges = VG_(cloneXA)( xa ); /* free when 'tv' freed */
+
+         tv->next  = *tempvars;
+         *tempvars = tv;
+
          TRACE_D3("  Recording this variable, with %ld PC range(s)\n",
                   VG_(sizeXA)(xa) );
       }
-#if 0
-      else
-      if ((dtag == DW_TAG_variable || dtag == DW_TAG_formal_parameter)
-          && name && typeR != D3_INVALID_CUOFF && !gexpr) {
-         /* We have a variable with a name and a type, but no
+
+      /* Here are some other weird cases seen in the wild:
+
+            We have a variable with a name and a type, but no
             location.  I guess that's a sign that it has been
             optimised away.  Ignore it.  Here's an example:
 
@@ -1556,13 +1584,10 @@ static void parse_var_DIE ( /*OUT*/TempVar** tempvars,
                 DW_AT_type        : <5d3>
 
             whereas n1 and n2 do have locations specified.
-         */
-         /* ignore */
-      }
-      else 
-      if (dtag == DW_TAG_formal_parameter
-          && typeR != D3_INVALID_CUOFF && !name && !gexpr) {
-         /* We see a DW_TAG_formal_parameter with a type, but
+
+            ---------------------------------------------
+
+            We see a DW_TAG_formal_parameter with a type, but
             no name and no location.  It's probably part of a function type
             construction, thusly, hence ignore it:
          <1><2b4>: Abbrev Number: 12 (DW_TAG_subroutine_type)
@@ -1573,67 +1598,47 @@ static void parse_var_DIE ( /*OUT*/TempVar** tempvars,
              DW_AT_type        : <13e>
          <2><2c3>: Abbrev Number: 13 (DW_TAG_formal_parameter)
              DW_AT_type        : <133>
-        */
-        /* ignore */
-      }
-      else
-      if ((dtag == DW_TAG_variable || dtag == DW_TAG_formal_parameter)
-          && has_abs_ori && n_attrs == 1) {
-         /* Is very minimal, like this:
+
+            ---------------------------------------------
+
+            Is very minimal, like this:
             <4><81d>: Abbrev Number: 44 (DW_TAG_variable)
                 DW_AT_abstract_origin: <7ba>
-            What that signifies I have no idea.  Ignore. */
-         /* ignore */
-      }
-      else
-      if ((dtag == DW_TAG_variable || dtag == DW_TAG_formal_parameter)
-          && has_abs_ori && gexpr && n_attrs == 2) {
-         /* Is very minimal, like this:
+            What that signifies I have no idea.  Ignore.
+
+            ----------------------------------------------
+
+            Is very minimal, like this:
             <200f>: DW_TAG_formal_parameter
                 DW_AT_abstract_ori: <1f4c>
                 DW_AT_location    : 13440
             What that signifies I have no idea.  Ignore. 
             It might be significant, though: the variable at least
             has a location and so might exist somewhere.
-            Maybe we should handle this.*/
-         /* ignore */
-      }
-      else
-      if (dtag == DW_TAG_variable && declaration && !gexpr) {
-         /* <22407>: DW_TAG_variable
+            Maybe we should handle this.
+
+            ---------------------------------------------
+
+            <22407>: DW_TAG_variable
               DW_AT_name        : (indirect string, offset: 0x6579):
                                   vgPlain_trampoline_stuff_start
               DW_AT_decl_file   : 29
               DW_AT_decl_line   : 56
               DW_AT_external    : 1
               DW_AT_declaration : 1
-         */
-         /* ignore */
-      }
-      else
-      if (dtag == DW_TAG_variable && gexpr && n_attrs == 1) {
-         /* Nameless and typeless variable that has a location?  Who
+
+            Nameless and typeless variable that has a location?  Who
             knows.  Not me.
             <2><3d178>: Abbrev Number: 22 (DW_TAG_variable)
                  DW_AT_location    : 9 byte block: 3 c0 c7 13 38 0 0 0 0
                                      (DW_OP_addr: 3813c7c0)
-         */
-         /* ignore */
-      }
-      else
-      if (dtag == DW_TAG_variable && n_attrs == 0) {
-         /* No, really.  Check it out.  gcc is quite simply borked.
+
+            No, really.  Check it out.  gcc is quite simply borked.
             <3><168cc>: Abbrev Number: 141 (DW_TAG_variable)
             // followed by no attributes, and the next DIE is a sibling,
             // not a child
-         */
-         /* ignore */
-      }
-      else
-         goto bad_DIE;
-#endif
+            */
    }
-
    return;
 
   bad_DIE:
@@ -1657,10 +1662,11 @@ static void parse_var_DIE ( /*OUT*/TempVar** tempvars,
 }
 
 
-/////////////////////////////////////////////////////////////
-/////////////////////////////////////////////////////////////
-// Type parser.  Sometimes maintains a pointer to a type
-// currently under construction.
+/*------------------------------------------------------------*/
+/*---                                                      ---*/
+/*--- Parsing of type-related DIEs                         ---*/
+/*---                                                      ---*/
+/*------------------------------------------------------------*/
 
 #define N_D3_TYPE_STACK 16
 
@@ -1744,7 +1750,6 @@ static void typestack_push ( CUConst* cc,
    if (td3)
       typestack_show( parser, "after push" );
 }
-
 
 
 /* Parse a type-related DIE.  'parser' holds the current parser state.
@@ -2321,9 +2326,12 @@ static void parse_type_DIE ( /*OUT*/TyAdmin** admin,
    /*NOTREACHED*/
 }
 
-/////////////////////////////////////////////////////////////
-/////////////////////////////////////////////////////////////
-// Type Resolver
+
+/*------------------------------------------------------------*/
+/*---                                                      ---*/
+/*--- Resolution of references to type DIEs                ---*/
+/*---                                                      ---*/
+/*------------------------------------------------------------*/
 
 static Int cmp_D3TyAdmin_by_cuOff ( void* v1, void* v2 ) {
    TyAdmin* a1 = *(TyAdmin**)v1;
@@ -2529,8 +2537,19 @@ static void resolve_type_entities ( /*MOD*/TyAdmin* admin,
 }
 
 
-/////////////////////////////////////////////////////////////
-/////////////////////////////////////////////////////////////
+/*------------------------------------------------------------*/
+/*---                                                      ---*/
+/*--- Parsing of Compilation Units                         ---*/
+/*---                                                      ---*/
+/*------------------------------------------------------------*/
+
+static Int cmp_TempVar_by_dioff ( void* v1, void* v2 ) {
+   TempVar* t1 = *(TempVar**)v1;
+   TempVar* t2 = *(TempVar**)v2;
+   if (t1->dioff < t2->dioff) return -1;
+   if (t1->dioff > t2->dioff) return 1;
+   return 0;
+}
 
 static void read_DIE ( /*OUT*/TyAdmin** admin,
                        /*OUT*/TempVar** tempvars,
@@ -2661,7 +2680,10 @@ void new_dwarf3_reader_wrk (
    D3VarParser varparser;
    Addr  dr_base;
    UWord dr_offset;
+   Word  i;
    Bool td3 = di->trace_symtab;
+   XArray* /* of AddrRange */ xa;
+   XArray* /* of TempVar* */ dioff_lookup_tab;
 
 #if 0
    /* This doesn't work properly because it assumes all entries are
@@ -2858,16 +2880,14 @@ void new_dwarf3_reader_wrk (
       }
 
       /* Check the varparser's stack is in a sane state. */
-      { Int i;
-        vg_assert(varparser.sp == -1);
-        for (i = 0; i < N_D3_VAR_STACK; i++) {
-           vg_assert(varparser.ranges[i] == NULL);
-           vg_assert(varparser.level[i] == 0);
-        }
-        for (i = 0; i < N_D3_TYPE_STACK; i++) {
-           vg_assert(typarser.qparent[i] == NULL);
-           vg_assert(typarser.qlevel[i] == 0);
-        }
+      vg_assert(varparser.sp == -1);
+      for (i = 0; i < N_D3_VAR_STACK; i++) {
+         vg_assert(varparser.ranges[i] == NULL);
+         vg_assert(varparser.level[i] == 0);
+      }
+      for (i = 0; i < N_D3_TYPE_STACK; i++) {
+         vg_assert(typarser.qparent[i] == NULL);
+         vg_assert(typarser.qlevel[i] == 0);
       }
 
       cu_start_offset = get_position_of_Cursor( &info );
@@ -2986,21 +3006,48 @@ void new_dwarf3_reader_wrk (
    }
 
    TRACE_D3("\n");
-   TRACE_D3("------ Acquired the following variables: ------\n");
-   for (varp = tempvars; varp; varp = varp2) {
-      varp2 = varp->next;
+   TRACE_D3("------ Acquired the following variables: ------\n\n");
+
+   /* Park (pointers to) all the vars in an XArray, so we can look up
+      abstract origins quickly.  The array is sorted (hence, looked-up
+      by) the .dioff fields.  Since the .dioffs should be instrictly
+      ascending order, there is no need to sort the array after
+      construction.  The ascendingness is however asserted for. */
+   dioff_lookup_tab
+      = VG_(newXA)( ML_(dinfo_zalloc), ML_(dinfo_free), 
+                    sizeof(TempVar*) );
+   vg_assert(dioff_lookup_tab);
+   varp2 = NULL;
+   for (varp = tempvars; varp; varp = varp->next) {
+      if (varp2)
+         vg_assert(varp2->dioff < varp->dioff);
+      VG_(addToXA)( dioff_lookup_tab, &varp );
+      varp2 = varp;
+   }
+   VG_(setCmpFnXA)( dioff_lookup_tab, cmp_TempVar_by_dioff );
+   VG_(sortXA)( dioff_lookup_tab ); /* POINTLESS; FIXME: rm */
+
+   /* Now visit each var.  Collect up as much info as possible for
+      each var and hand it to ML_(addVar). */
+   for (varp = tempvars; varp; varp = varp->next) {
 
       /* Possibly show .. */
       if (td3) {
-         VG_(printf)("  addVar: level %d  %p-%p  %s :: ",
-                     varp->level, varp->pcMin, varp->pcMax, varp->name );
+         VG_(printf)("<%lx> addVar: level %d: %s :: ",
+                     varp->dioff,
+                     varp->level,
+                     varp->name ? varp->name : (UChar*)"<anonymous>" );
          if (varp->typeR) {
             ML_(pp_Type_C_ishly)( varp->typeR );
          } else {
-            VG_(printf)("!!type=NULL!!");
+            VG_(printf)("NULL");
          }
-         VG_(printf)("\n  Var=");
-         ML_(pp_GX)(varp->gexpr);
+         VG_(printf)("\n  Loc=");
+         if (varp->gexpr) {
+            ML_(pp_GX)(varp->gexpr);
+         } else {
+            VG_(printf)("NULL");
+         }
          VG_(printf)("\n");
          if (varp->fbGX) {
             VG_(printf)("  FrB=");
@@ -3009,45 +3056,127 @@ void new_dwarf3_reader_wrk (
          } else {
             VG_(printf)("  FrB=none\n");
          }
-         VG_(printf)("  .debug_info offset = <%lx> "
-                     "(or thereabouts; not exact)\n", varp->dioff);
          VG_(printf)("  declared at: %s:%d\n",
-                     varp->fName ? varp->fName : (UChar*)"(null)",
+                     varp->fName ? varp->fName : (UChar*)"NULL",
                      varp->fLine );
-         VG_(printf)("\n");
+         if (varp->absOri != (UWord)D3_INVALID_CUOFF)
+            VG_(printf)("  abstract origin: <%lx>\n", varp->absOri);
       }
+
+      /* Skip variables which have no location.  These must be
+         abstract instances; they are useless as-is since with no
+         location they have no specified memory location.  They will
+         presumably be referred to via the absOri fields of other
+         variables. */
+      if (!varp->gexpr) {
+         TRACE_D3("  SKIP (no location)\n\n");
+         continue;
+      }
+
+      /* So it has a location, at least.  If it refers to some other
+         entry through its absOri field, pull in further info through
+         that. */
+      if (varp->absOri != (UWord)D3_INVALID_CUOFF) {
+         Bool found;
+         Word ixFirst, ixLast;
+         TempVar key;
+         TempVar* keyp = &key;
+         TempVar *varAI;
+         VG_(memset)(&key, 0, sizeof(key)); /* not necessary */
+         key.dioff = varp->absOri; /* this is what we want to find */
+         found = VG_(lookupXA)( dioff_lookup_tab, &keyp,
+                                &ixFirst, &ixLast );
+         if (!found)
+            barf("DW_AT_abstract_origin can't be resolved");
+         /* If the following fails, there is more than one entry with
+            the same dioff.  Which can't happen. */
+         vg_assert(ixFirst == ixLast);
+         varAI = *(TempVar**)VG_(indexXA)( dioff_lookup_tab, ixFirst );
+         /* stay sane */
+         vg_assert(varAI);
+         vg_assert(varAI->dioff == varp->absOri);
+
+         /* Copy what useful info we can. */
+         if (varAI->typeR && !varp->typeR)
+            varp->typeR = varAI->typeR;
+         if (varAI->name && !varp->name)
+            varp->name = varAI->name;
+         if (varAI->fName && !varp->fName)
+            varp->fName = varAI->fName;
+         if (varAI->fLine > 0 && varp->fLine == 0)
+            varp->fLine = varAI->fLine;
+      }
+
+      /* Give it a name if it doesn't have one. */
+      if (!varp->name)
+         varp->name = ML_(addStr)( di, "<anonymous>", -1 );
+
+      /* So now does it have enough info to be useful? */
+      /* NOTE: re typeR: this is a hack.  If typeR is NULL then the
+         type didn't get resolved.  Really, in that case something's
+         broken earlier on, and should be fixed, rather than just
+         skipping the variable. */
+      if (!varp->typeR) continue;
+      vg_assert(varp->gexpr);
+      vg_assert(varp->name);
+      vg_assert(varp->typeR);
+      vg_assert(varp->level >= 0);
+      vg_assert(varp->ranges);
+
+      /* Ok.  So we're going to keep it.  Call ML_(addVar) once for
+         each address range in which the variable exists. */
+      xa = varp->ranges;
+      if (varp->level == 0)
+         vg_assert( VG_(sizeXA)(xa) == 1 );
 
       /* Level 0 is the global address range.  So at level 0 we don't
          want to bias pcMin/pcMax; but at all other levels we do since
          those are derived from svmas in the Dwarf we're reading.  Be
          paranoid ... */
-      vg_assert(varp->level >= 0);
-      vg_assert(varp->pcMin <= varp->pcMax);
-      if (varp->level == 0) {
-         vg_assert(varp->pcMin == (Addr)0);
-         vg_assert(varp->pcMax == ~(Addr)0);
-      } else {
-        /* vg_assert(varp->pcMin > (Addr)0);
-           No .. we can legitmately expect to see ranges like 
-           0x0-0x11D (pre-biasing, of course). */
-         vg_assert(varp->pcMax < ~(Addr)0);
-      }
-      /* NOTE: re "if": this is a hack.  If typeR is NULL then the
-         type didn't get resolved.  Really, in that case something's
-         broken earlier on, and should be fixed, rather than just
-         skipping the variable. */
-      if (varp->typeR)
+      TRACE_D3("  ACQUIRE for range(s) ");
+      for (i = 0; i < VG_(sizeXA)( xa ); i++) {
+         AddrRange* range = VG_(indexXA)(xa, i);
+         Addr pcMin = range->aMin;
+         Addr pcMax = range->aMax;
+         vg_assert(pcMin <= pcMax);
+         if (varp->level == 0) {
+            vg_assert(pcMin == (Addr)0);
+            vg_assert(pcMax == ~(Addr)0);
+         } else {
+             /* vg_assert(pcMin > (Addr)0);
+                No .. we can legitimately expect to see ranges like 
+                0x0-0x11D (pre-biasing, of course). */
+             vg_assert(pcMax < ~(Addr)0);
+         }
+
+         if (i > 0 && (i%2) == 0) TRACE_D3("\n                       ");
+         TRACE_D3("[%p,%p] ", pcMin, pcMax );
+
          ML_(addVar)(
             di, varp->level, 
-                varp->pcMin + (varp->level==0 ? 0 : di->text_bias),
-                varp->pcMax + (varp->level==0 ? 0 : di->text_bias), 
+                pcMin + (varp->level==0 ? 0 : di->text_bias),
+                pcMax + (varp->level==0 ? 0 : di->text_bias), 
                 varp->name, (void*)varp->typeR,
                 varp->gexpr, varp->fbGX,
                 varp->fName, varp->fLine, td3 
          );
+      }
+
+      TRACE_D3("\n\n");
+      /* and move on to the next var */
+   }
+
+   /* Now free all the TempVars */
+   for (varp = tempvars; varp; varp = varp2) {
+      varp2 = varp->next;
+      vg_assert(varp->ranges);
+      VG_(deleteXA)(varp->ranges);
       ML_(dinfo_free)(varp);
    }
    tempvars = NULL;
+
+   /* And get rid of the temporary mapping table. */
+   VG_(deleteXA)( dioff_lookup_tab );
 
    /* record the TyAdmins and the GExprs in di so they can be freed
       later */
@@ -3059,7 +3188,9 @@ void new_dwarf3_reader_wrk (
 
 
 /*------------------------------------------------------------*/
+/*---                                                      ---*/
 /*--- The "new" DWARF3 reader -- top level control logic   ---*/
+/*---                                                      ---*/
 /*------------------------------------------------------------*/
 
 /* --- !!! --- EXTERNAL HEADERS start --- !!! --- */
