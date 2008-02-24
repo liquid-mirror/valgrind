@@ -585,6 +585,17 @@ static void add_var_to_arange (
    vg_assert(first->aMin <= first->aMax);
    vg_assert(first->aMin <= aMin && aMin <= first->aMax);
 
+   /* Fast track common case, which is that the range specified for
+      the variable exactly coincides with one already-existing
+      range. */
+   if (first->aMin == aMin && first->aMax == aMax) {
+      vg_assert(first->vars);
+      VG_(addToXA)( first->vars, var );
+      return;
+   }
+
+   /* We have to get into splitting ranges, which is complex
+      and slow. */
    if (first->aMin < aMin) {
       DiAddrRange* nyu;
       /* Ok.  We'll have to split 'first'. */
@@ -669,6 +680,7 @@ static void add_var_to_arange (
    vg_assert(rangep);
    vg_assert(rangep->aMax == aMax);
 }
+
 
 /* Top-level place to call to add a variable description (as extracted
    from a DWARF3 .debug_info section. */

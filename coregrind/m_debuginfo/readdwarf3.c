@@ -84,16 +84,32 @@
    different DIEs (generally a declarer and a definer).  We punt on
    these.  Could do better here.
 
-   Improve performance.  The number of type entities that end up in
-   the list of TyAdmins rapidly becomes huge (eg, for
-   libQtGui.so.4.3.2 (amd64-linux, size 80729047 bytes), there are
-   786860 entries in the list).  Mostly this seems to be caused by g++
-   adding type DIEs for all the basic types once for each source file
-   contributing to the compilation unit, and for a large library they
-   add up quickly.  That causes both a lot of work for this reader
-   module, and also wastes vast amounts of memory storing this
-   duplicated information.  We could surely do a lot better here.
-*/
+   POTENTIAL PERFORMANCE IMPROVEMENTS:
+
+   The number of type entities that end up in the list of TyAdmins
+   rapidly becomes huge (eg, for libQtGui.so.4.3.2 (amd64-linux, size
+   80729047 bytes), there are 786860 entries in the list).  Mostly
+   this seems to be caused by g++ adding type DIEs for all the basic
+   types once for each source file contributing to the compilation
+   unit, and for a large library they add up quickly.  That causes
+   both a lot of work for this reader module, and also wastes vast
+   amounts of memory storing this duplicated information.  We could
+   surely do a lot better here.
+
+   Handle interaction between read_DIE and parse_{var,type}_DIE
+   better.  Currently read_DIE reads the entire DIE just to find where
+   the end is (and for debug printing), so that it can later reliably
+   move the cursor to the end regardless of what parse_{var,type}_DIE
+   do.  This means many DIEs (most, even?) are read twice.  It would
+   be smarter to make parse_{var,type}_DIE return a Bool indicating
+   whether or not they advanced the DIE cursor, and only if they
+   didn't should read_DIE itself read through the DIE.
+
+   More generally, reduce the amount of memory allocated and freed
+   while reading Dwarf3 type/variable information.  Even modest (20MB)
+   objects cause this module to allocate and free hundreds of
+   thousands of small blocks, and ML_(arena_malloc) and its various
+   groupies always show up at the top of performance profiles. */
 
 #include "pub_core_basics.h"
 #include "pub_core_libcbase.h"
@@ -1005,7 +1021,19 @@ typedef
    struct _TempVar {
       struct _TempVar* next;
       UChar*  name; /* in DebugInfo's .strchunks */
-      XArray* ranges; /* of AddrRange.  UNIQUE PTR in AR_DINFO. */
+      /* Represent ranges economically.  nRanges is the number of
+         ranges.  Cases:
+         0: .rngOneMin .rngOneMax .manyRanges are all zero
+         1: .rngOneMin .rngOneMax hold the range; .rngMany is NULL
+         2: .rngOneMin .rngOneMax are zero; .rngMany holds the ranges.
+         This is merely an optimisation to avoid having to allocate
+         and free the XArray in the common (98%) of cases where there
+         is zero or one address ranges. */
+      UWord   nRanges;
+      Addr    rngOneMin;
+      Addr    rngOneMax;
+      XArray* rngMany; /* of AddrRange.  UNIQUE PTR in AR_DINFO. */
+      /* --- */
       Int     level;
       Type*   typeR;
       GExpr*  gexpr; /* for this variable */
@@ -1021,7 +1049,7 @@ typedef
    }
    TempVar;
 
-#define N_D3_VAR_STACK 16
+#define N_D3_VAR_STACK 24
 
 typedef
    struct {
@@ -1066,10 +1094,14 @@ static void varstack_show ( D3VarParser* parser, HChar* str ) {
          vg_assert(parser->fbGX[i] == NULL);
       }
       VG_(printf)(": ");
-      for (j = 0; j < VG_(sizeXA)( xa ); j++) {
-         AddrRange* range = (AddrRange*) VG_(indexXA)( xa, j );
-         vg_assert(range);
-         VG_(printf)("[%p,%p] ", range->aMin, range->aMax);
+      if (VG_(sizeXA)( xa ) == 0) {
+         VG_(printf)("** empty PC range array **");
+      } else {
+         for (j = 0; j < VG_(sizeXA)( xa ); j++) {
+            AddrRange* range = (AddrRange*) VG_(indexXA)( xa, j );
+            vg_assert(range);
+            VG_(printf)("[%p,%p] ", range->aMin, range->aMax);
+         }
       }
       VG_(printf)("\n");
    }
@@ -1493,7 +1525,7 @@ static void parse_var_DIE ( /*OUT*/TempVar** tempvars,
             will be the address ranges at the top of the varparser's
             stack. */
          GExpr*   fbGX = NULL;
-         Word     i;
+         Word     i, nRanges;
          XArray*  /* of AddrRange */ xa;
          TempVar* tv;
          /* Stack can't be empty; we put a dummy entry on it for the
@@ -1544,9 +1576,11 @@ static void parse_var_DIE ( /*OUT*/TempVar** tempvars,
             address space.  It is asserted elsewhere that level 0 
             always covers the entire address space. */
          xa = parser->ranges[external ? 0 : parser->sp];
+         nRanges = VG_(sizeXA)(xa);
+         vg_assert(nRanges >= 0);
+
          tv = ML_(dinfo_zalloc)( sizeof(TempVar) );
          tv->name   = name;
-         tv->ranges = xa;
          tv->level  = external ? 0 : parser->sp;
          tv->typeR  = typeR;
          tv->gexpr  = gexpr;
@@ -1555,13 +1589,37 @@ static void parse_var_DIE ( /*OUT*/TempVar** tempvars,
          tv->fLine  = lineNo;
          tv->dioff  = posn;
          tv->absOri = abs_ori;
-         tv->ranges = VG_(cloneXA)( xa ); /* free when 'tv' freed */
+
+         /* See explanation on definition of type TempVar for the
+            reason for this elaboration. */
+         tv->nRanges = nRanges;
+         tv->rngOneMin = 0;
+         tv->rngOneMax = 0;
+         tv->rngMany = NULL;
+         if (nRanges == 1) {
+            AddrRange* range = VG_(indexXA)(xa, 0);
+            tv->rngOneMin = range->aMin;
+            tv->rngOneMax = range->aMax;
+         }
+         else if (nRanges > 1) {
+            tv->rngMany = VG_(cloneXA)( xa ); /* free when 'tv' freed */
+         }
 
          tv->next  = *tempvars;
          *tempvars = tv;
 
          TRACE_D3("  Recording this variable, with %ld PC range(s)\n",
                   VG_(sizeXA)(xa) );
+         /* collect stats on how effective the ->ranges special
+            casing is */
+         if (0) {
+           static Int ntot=0, ngt=0;
+           ntot++;
+           if (tv->rngMany) ngt++;
+           if (0 == (ntot % 100000))
+              VG_(printf)("XXXX %d tot, %d cloned\n", ntot, ngt);
+         }
+
       }
 
       /* Here are some other weird cases seen in the wild:
@@ -2682,7 +2740,6 @@ void new_dwarf3_reader_wrk (
    UWord dr_offset;
    Word  i;
    Bool td3 = di->trace_symtab;
-   XArray* /* of AddrRange */ xa;
    XArray* /* of TempVar* */ dioff_lookup_tab;
 
 #if 0
@@ -3121,45 +3178,67 @@ void new_dwarf3_reader_wrk (
       vg_assert(varp->name);
       vg_assert(varp->typeR);
       vg_assert(varp->level >= 0);
-      vg_assert(varp->ranges);
 
       /* Ok.  So we're going to keep it.  Call ML_(addVar) once for
          each address range in which the variable exists. */
-      xa = varp->ranges;
-      if (varp->level == 0)
-         vg_assert( VG_(sizeXA)(xa) == 1 );
-
-      /* Level 0 is the global address range.  So at level 0 we don't
-         want to bias pcMin/pcMax; but at all other levels we do since
-         those are derived from svmas in the Dwarf we're reading.  Be
-         paranoid ... */
       TRACE_D3("  ACQUIRE for range(s) ");
-      for (i = 0; i < VG_(sizeXA)( xa ); i++) {
-         AddrRange* range = VG_(indexXA)(xa, i);
-         Addr pcMin = range->aMin;
-         Addr pcMax = range->aMax;
-         vg_assert(pcMin <= pcMax);
-         if (varp->level == 0) {
-            vg_assert(pcMin == (Addr)0);
-            vg_assert(pcMax == ~(Addr)0);
-         } else {
-             /* vg_assert(pcMin > (Addr)0);
-                No .. we can legitimately expect to see ranges like 
-                0x0-0x11D (pre-biasing, of course). */
-             vg_assert(pcMax < ~(Addr)0);
-         }
+      { AddrRange  oneRange;
+        AddrRange* varPcRanges;
+        Word       nVarPcRanges;
+        /* Set up to iterate over address ranges, however
+           represented. */
+        if (varp->nRanges == 0 || varp->nRanges == 1) {
+           vg_assert(!varp->rngMany);
+           if (varp->nRanges == 0) {
+              vg_assert(varp->rngOneMin == 0);
+              vg_assert(varp->rngOneMax == 0);
+           }
+           nVarPcRanges = varp->nRanges;
+           oneRange.aMin = varp->rngOneMin;
+           oneRange.aMax = varp->rngOneMax;
+           varPcRanges = &oneRange;
+        } else {
+           vg_assert(varp->rngMany);
+           vg_assert(varp->rngOneMin == 0);
+           vg_assert(varp->rngOneMax == 0);
+           nVarPcRanges = VG_(sizeXA)(varp->rngMany);
+           vg_assert(nVarPcRanges >= 2);
+           vg_assert(nVarPcRanges == (Word)varp->nRanges);
+           varPcRanges = VG_(indexXA)(varp->rngMany, 0);
+        }
+        if (varp->level == 0)
+           vg_assert( nVarPcRanges == 1 );
+        /* and iterate */
+        for (i = 0; i < nVarPcRanges; i++) {
+           Addr pcMin = varPcRanges[i].aMin;
+           Addr pcMax = varPcRanges[i].aMax;
+           vg_assert(pcMin <= pcMax);
+           /* Level 0 is the global address range.  So at level 0 we
+              don't want to bias pcMin/pcMax; but at all other levels
+              we do since those are derived from svmas in the Dwarf
+              we're reading.  Be paranoid ... */
+           if (varp->level == 0) {
+              vg_assert(pcMin == (Addr)0);
+              vg_assert(pcMax == ~(Addr)0);
+           } else {
+              /* vg_assert(pcMin > (Addr)0);
+                 No .. we can legitimately expect to see ranges like 
+                 0x0-0x11D (pre-biasing, of course). */
+              vg_assert(pcMax < ~(Addr)0);
+           }
 
-         if (i > 0 && (i%2) == 0) TRACE_D3("\n                       ");
-         TRACE_D3("[%p,%p] ", pcMin, pcMax );
+           if (i > 0 && (i%2) == 0) TRACE_D3("\n                       ");
+           TRACE_D3("[%p,%p] ", pcMin, pcMax );
 
-         ML_(addVar)(
-            di, varp->level, 
-                pcMin + (varp->level==0 ? 0 : di->text_bias),
-                pcMax + (varp->level==0 ? 0 : di->text_bias), 
-                varp->name, (void*)varp->typeR,
-                varp->gexpr, varp->fbGX,
-                varp->fName, varp->fLine, td3 
-         );
+           ML_(addVar)(
+              di, varp->level, 
+                  pcMin + (varp->level==0 ? 0 : di->text_bias),
+                  pcMax + (varp->level==0 ? 0 : di->text_bias), 
+                  varp->name, (void*)varp->typeR,
+                  varp->gexpr, varp->fbGX,
+                  varp->fName, varp->fLine, td3 
+           );
+        }
       }
 
       TRACE_D3("\n\n");
@@ -3169,8 +3248,8 @@ void new_dwarf3_reader_wrk (
    /* Now free all the TempVars */
    for (varp = tempvars; varp; varp = varp2) {
       varp2 = varp->next;
-      vg_assert(varp->ranges);
-      VG_(deleteXA)(varp->ranges);
+      if (varp->rngMany)
+         VG_(deleteXA)(varp->rngMany);
       ML_(dinfo_free)(varp);
    }
    tempvars = NULL;
