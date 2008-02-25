@@ -149,7 +149,7 @@ void ML_(pp_D3Expr)   ( D3Expr* expr );
    been converted into pointers) */
 void ML_(pp_Type_C_ishly) ( Type* ty );
 
-/* How big is this type?  (post-resolved only)  If . b in the
+/* How big is this type?  (post-resolved only)  If .b in the
    returned struct is False, the size is unknown. */
 /* FIXME: check all pointers before dereferencing */
 

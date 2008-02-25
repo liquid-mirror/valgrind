@@ -553,13 +553,12 @@ void show_scope ( OSet* /* of DiAddrRange */ scope, HChar* who )
    VG_(printf)("}\n");
 }
 
-/* 'inner' is an XArray of DiAddrRange.  Find the entry corresponding
-    to [aMin,aMax].  If that doesn't exist, create one.  Take care to
-    preserve the invariant that none of the address ranges have the
-    same starting value (aMin).  That's unlikely to be the case unless
-    the DWARF3 from which these calls results contains bogus range
-    info; however in the interests of robustness, do handle the
-    case. */
+/* Add the variable 'var' to 'scope' for the address range [aMin,aMax]
+   (inclusive of aMin and aMax).  Split existing ranges as required if
+   aMin or aMax or both don't match existing range boundaries, and add
+   'var' to all required ranges.  Take great care to preserve the
+   invariant that the ranges in 'scope' cover the entire address range
+   exactly once, with no overlaps and no holes. */
 static void add_var_to_arange ( 
                /*MOD*/OSet* /* of DiAddrRange */ scope,
                Addr aMin, 
