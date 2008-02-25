@@ -1290,7 +1290,7 @@ static void parse_var_DIE ( /*OUT*/TempVar** tempvars,
    UWord saved_die_c_offset  = get_position_of_Cursor( c_die );
    UWord saved_abbv_c_offset = get_position_of_Cursor( c_abbv );
 
-   varstack_preen( parser, td3, level );
+   varstack_preen( parser, td3, level-1 );
 
    if (dtag == DW_TAG_compile_unit) {
       Bool have_lo    = False;
