@@ -567,8 +567,12 @@ static void add_var_to_arange (
                DiVariable* var
             )
 {
-   DiAddrRange *first, *last;
-   DiAddrRange *range, *rangep;
+   DiAddrRange *first, *last, *range;
+   /* These xx variables are for assertion checking only; they don't
+      contribute anything to the actual work of this function. */
+   DiAddrRange *xxRangep, *xxFirst, *xxLast;
+   UWord       xxIters;
+
    vg_assert(aMin <= aMax);
 
    if (0) VG_(printf)("add_var_to_arange: %p .. %p\n", aMin, aMax);
@@ -649,36 +653,55 @@ static void add_var_to_arange (
 
    vg_assert(aMax == last->aMax);
 
+   xxFirst = (DiAddrRange*)VG_(OSetGen_Lookup)(scope, &aMin);
+   xxLast  = (DiAddrRange*)VG_(OSetGen_Lookup)(scope, &aMax);
+   vg_assert(xxFirst);
+   vg_assert(xxLast);
+   vg_assert(xxFirst->aMin == aMin);
+   vg_assert(xxLast->aMax == aMax);
+   if (xxFirst != xxLast)
+      vg_assert(xxFirst->aMax < xxLast->aMin);
+
    /* Great.  Now we merely need to iterate over the segments from
       'first' to 'last' inclusive, and add 'var' to the variable set
       of each of them. */
-   if (0) show_scope( scope, "add_var_to_arange(2)" );
+   if (0) {
+      static UWord ctr = 0;
+      ctr++;
+      VG_(printf)("ctr = %lu\n", ctr);
+      if (ctr >= 33263) show_scope( scope, "add_var_to_arange(2)" );
+   }
 
-   range = rangep = NULL;
+   xxIters = 0;
+   range = xxRangep = NULL;
    VG_(OSetGen_ResetIterAt)( scope, &aMin );
    while (True) {
-      range = VG_(OSetGen_Next)( scope );
+      xxRangep = range;
+      range    = VG_(OSetGen_Next)( scope );
       if (!range) break;
-      if (range->aMin >= aMax) break;
+      if (range->aMin > aMax) break;
+      xxIters++;
       if (0) VG_(printf)("have range %p %p\n", 
                          range->aMin, range->aMax);
 
       /* Sanity checks */
-      if (!rangep) {
+      if (!xxRangep) {
          /* This is the first in the range */
          vg_assert(range->aMin == aMin);
       } else {
-         vg_assert(rangep->aMax + 1 == range->aMin);
+         vg_assert(xxRangep->aMax + 1 == range->aMin);
       }
 
       vg_assert(range->vars);
       VG_(addToXA)( range->vars, var );
-
-      rangep = range;
    }
    /* Done.  We should have seen at least one range. */
-   vg_assert(rangep);
-   vg_assert(rangep->aMax == aMax);
+   vg_assert(xxIters >= 1);
+   if (xxIters == 1) vg_assert(xxFirst == xxLast);
+   if (xxFirst == xxLast) vg_assert(xxIters == 1);
+   vg_assert(xxRangep);
+   vg_assert(xxRangep->aMax == aMax);
+   vg_assert(xxRangep == xxLast);
 }
 
 
