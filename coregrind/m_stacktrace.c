@@ -136,6 +136,11 @@ UInt VG_(get_StackTrace_wrk) ( ThreadId tid_if_known,
     * This most frequently happens at the end of a function when
     * a tail call occurs and we wind up using the CFI info for the
     * next function which is completely wrong.
+    *
+    * Note that VG_(get_data_description) (in m_debuginfo) has to take
+    * this same problem into account when unwinding the stack to
+    * examine local variable descriptions (as documented therein in
+    * comments).
     */
    while (True) {
 
@@ -208,6 +213,11 @@ UInt VG_(get_StackTrace_wrk) ( ThreadId tid_if_known,
     * This most frequently happens at the end of a function when
     * a tail call occurs and we wind up using the CFI info for the
     * next function which is completely wrong.
+    *
+    * Note that VG_(get_data_description) (in m_debuginfo) has to take
+    * this same problem into account when unwinding the stack to
+    * examine local variable descriptions (as documented therein in
+    * comments).
     */
    while (True) {
 

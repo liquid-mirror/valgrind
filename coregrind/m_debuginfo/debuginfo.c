@@ -1815,7 +1815,7 @@ Bool consider_vars_in_frame ( /*OUT*/Char* dname1,
    static UInt n_search = 0;
    static UInt n_steps = 0;
    n_search++;
-
+   if (0) VG_(printf)("QQQQ: cvif: ip,sp,fp %p,%p,%p\n", ip,sp,fp);
    /* first, find the DebugInfo that pertains to 'ip'. */
    for (di = debugInfo_list; di; di = di->next) {
       n_steps++;
@@ -1867,6 +1867,7 @@ Bool consider_vars_in_frame ( /*OUT*/Char* dname1,
       DiAddrRange* arange;
       OSet*        this_scope 
          = *(OSet**)VG_(indexXA)( di->varinfo, i );
+      if (0) VG_(printf)("QQQQ: considering scope %ld\n", (Word)i);
       if (!this_scope)
          continue;
       /* Find the set of variables in this scope that
@@ -1935,7 +1936,7 @@ Bool VG_(get_data_description)( /*OUT*/Char* dname1,
    vg_assert(n_dname > 1);
    dname1[n_dname-1] = dname2[n_dname-1] = 0;
 
-   if (0) VG_(printf)("GDD: dataaddr %p\n", data_addr);
+   if (0) VG_(printf)("get_data_description: dataaddr %p\n", data_addr);
 
    /* First, see if data_addr is (or is part of) a global variable.
       Loop over the DebugInfos we have.  Check data_addr against the
@@ -2033,14 +2034,29 @@ Bool VG_(get_data_description)( /*OUT*/Char* dname1,
    /* We conclude data_addr is in thread tid's stack.  Unwind the
       stack to get a bunch of (ip,sp,fp) triples describing the
       frames, and for each frame, consider the local variables. */
-
    n_frames = VG_(get_StackTrace)( tid, ips, N_FRAMES,
                                    sps, fps, 0/*first_ip_delta*/ );
+   /* Re ip_delta in the next loop: There's a subtlety in the meaning
+      of the IP values in a stack obtained from VG_(get_StackTrace).
+      The innermost value really is simply the thread's program
+      counter at the time the snapshot was taken.  However, all the
+      other values are actually return addresses, and so point just
+      after the call instructions.  Hence they notionally reflect not
+      what the program counters were at the time those calls were
+      made, but what they will be when those calls return.  This can
+      be of significance should an address range happen to end at the
+      end of a call instruction -- we may ignore the range when in
+      fact it should be considered.  Hence, back up the IPs by 1 for
+      all non-innermost IPs.  Note that VG_(get_StackTrace_wrk) itself
+      has to use the same trick in order to use CFI data to unwind the
+      stack (as documented therein in comments). */
    vg_assert(n_frames >= 0 && n_frames <= N_FRAMES);
    for (j = 0; j < n_frames; j++) {
+      Word ip_delta = j == 0 ? 0 : 1;
       if (consider_vars_in_frame( dname1, dname2, n_dname,
                                   data_addr,
-                                  ips[j], sps[j], fps[j], tid, j )) {
+                                  ips[j] - ip_delta, 
+                                  sps[j], fps[j], tid, j )) {
          dname1[n_dname-1] = dname2[n_dname-1] = 0;
          return True;
       }
