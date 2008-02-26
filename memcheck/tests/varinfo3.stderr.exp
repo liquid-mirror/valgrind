@@ -1,0 +1,64 @@
+
+Uninitialised byte(s) found during client check request
+   at 0x........: croak (varinfo3.c:25)
+   by 0x........: foo (varinfo3.c:49)
+   by 0x........: main (varinfo3.c:61)
+ Location 0x........ is 0 bytes inside static_global_def[1],
+ declared at varinfo3.c:30, in frame #0 of thread 1
+
+Uninitialised byte(s) found during client check request
+   at 0x........: croak (varinfo3.c:25)
+   by 0x........: foo (varinfo3.c:50)
+   by 0x........: main (varinfo3.c:61)
+ Location 0x........ is 0 bytes inside nonstatic_global_def[2],
+ a global variable declared at varinfo3.c:31
+
+Uninitialised byte(s) found during client check request
+   at 0x........: croak (varinfo3.c:25)
+   by 0x........: foo (varinfo3.c:51)
+   by 0x........: main (varinfo3.c:61)
+ Location 0x........ is 0 bytes inside static_global_undef[3],
+ declared at varinfo3.c:32, in frame #0 of thread 1
+
+Uninitialised byte(s) found during client check request
+   at 0x........: croak (varinfo3.c:25)
+   by 0x........: foo (varinfo3.c:52)
+   by 0x........: main (varinfo3.c:61)
+ Location 0x........ is 0 bytes inside nonstatic_global_undef[4],
+ a global variable declared at varinfo3.c:33
+
+Uninitialised byte(s) found during client check request
+   at 0x........: croak (varinfo3.c:25)
+   by 0x........: bar (varinfo3.c:37)
+   by 0x........: foo (varinfo3.c:53)
+   by 0x........: main (varinfo3.c:61)
+ Address 0x........ is 5 bytes inside data symbol "static_local_def.2751"
+
+Uninitialised byte(s) found during client check request
+   at 0x........: croak (varinfo3.c:25)
+   by 0x........: bar (varinfo3.c:38)
+   by 0x........: foo (varinfo3.c:53)
+   by 0x........: main (varinfo3.c:61)
+ Location 0x........ is 0 bytes inside nonstatic_local_def[6],
+ declared at varinfo3.c:46, in frame #2 of thread 1
+
+Uninitialised byte(s) found during client check request
+   at 0x........: croak (varinfo3.c:25)
+   by 0x........: bar (varinfo3.c:39)
+   by 0x........: foo (varinfo3.c:53)
+   by 0x........: main (varinfo3.c:61)
+ Address 0x........ is 7 bytes inside data symbol "static_local_undef.2753"
+
+Uninitialised byte(s) found during client check request
+   at 0x........: croak (varinfo3.c:25)
+   by 0x........: bar (varinfo3.c:40)
+   by 0x........: foo (varinfo3.c:53)
+   by 0x........: main (varinfo3.c:61)
+ Location 0x........ is 0 bytes inside nonstatic_local_undef[8],
+ declared at varinfo3.c:48, in frame #2 of thread 1
+
+ERROR SUMMARY: 8 errors from 8 contexts (suppressed: 0 from 0)
+malloc/free: in use at exit: 0 bytes in 0 blocks.
+malloc/free: 0 allocs, 0 frees, 0 bytes allocated.
+For a detailed leak analysis,  rerun with: --leak-check=yes
+For counts of detected errors, rerun with: -v

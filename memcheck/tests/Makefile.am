@@ -129,6 +129,10 @@ EXTRA_DIST = $(noinst_SCRIPTS) \
 	toobig-allocs.stderr.exp toobig-allocs.vgtest \
 	trivialleak.stderr.exp trivialleak.vgtest \
 	metadata.stderr.exp metadata.stdout.exp metadata.vgtest \
+	varinfo1.vgtest varinfo1.stdout.exp varinfo1.stderr.exp \
+	varinfo2.vgtest varinfo2.stdout.exp varinfo2.stderr.exp \
+	varinfo3.vgtest varinfo3.stdout.exp varinfo3.stderr.exp \
+	varinfo4.vgtest varinfo4.stdout.exp varinfo4.stderr.exp \
 	vcpu_bz2.stdout.exp vcpu_bz2.stderr.exp vcpu_bz2.vgtest \
 	vcpu_fbench.stdout.exp vcpu_fbench.stderr.exp vcpu_fbench.vgtest \
 	vcpu_fnfns.stdout.exp vcpu_fnfns.stderr.exp vcpu_fnfns.vgtest \
@@ -181,6 +185,7 @@ check_PROGRAMS = \
 	supp_unknown supp1 supp2 suppfree \
 	trivialleak \
 	mismatches new_override metadata \
+	varinfo1 varinfo2 varinfo3 varinfo4 \
 	vcpu_bz2 vcpu_fbench vcpu_fnfns \
 	xml1 \
 	wrap1 wrap2 wrap3 wrap4 wrap5 wrap6 wrap7 wrap7so.so wrap8 \
