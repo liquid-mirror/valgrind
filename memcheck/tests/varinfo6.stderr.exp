@@ -1,0 +1,27 @@
+
+Uninitialised byte(s) found during client check request
+   at 0x........: croak (varinfo6.c:24)
+   by 0x........: mainSort (varinfo6.c:2989)
+   by 0x........: BZ2_blockSort (varinfo6.c:3132)
+   by 0x........: BZ2_compressBlock (varinfo6.c:4060)
+   by 0x........: handle_compress (varinfo6.c:4778)
+   by 0x........: BZ2_bzCompress (varinfo6.c:4848)
+   by 0x........: BZ2_bzBuffToBuffCompress (varinfo6.c:5655)
+   by 0x........: main (varinfo6.c:6505)
+ Location 0x........ is 2 bytes inside local var "budget"
+ declared at varinfo6.c:3104, in frame #2 of thread 1
+
+Uninitialised byte(s) found during client check request
+   at 0x........: croak (varinfo6.c:24)
+   by 0x........: BZ2_decompress (varinfo6.c:1689)
+   by 0x........: BZ2_bzDecompress (varinfo6.c:5218)
+   by 0x........: BZ2_bzBuffToBuffDecompress (varinfo6.c:5703)
+   by 0x........: main (varinfo6.c:6520)
+ Location 0x........ is 2 bytes inside local var "i"
+ declared at varinfo6.c:1507, in frame #1 of thread 1
+
+ERROR SUMMARY: 10216 errors from 2 contexts (suppressed: 0 from 0)
+malloc/free: in use at exit: 0 bytes in 0 blocks.
+malloc/free: 37 allocs, 37 frees, 24,358,500 bytes allocated.
+For a detailed leak analysis,  rerun with: --leak-check=yes
+For counts of detected errors, rerun with: -v
