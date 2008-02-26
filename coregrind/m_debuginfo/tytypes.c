@@ -208,6 +208,10 @@ static void pp_TyBounds_C_ishly ( TyBounds* bounds ) {
 
 void ML_(pp_Type) ( Type* ty )
 {
+   if (!ty) {
+      VG_(printf)("**type=NULL**");
+      return;
+   }
    switch (ty->tag) {
       case Ty_Base:
          VG_(printf)("Ty_Base(%d,%c,\"%s\")",
@@ -292,6 +296,10 @@ void ML_(pp_TyAdmin) ( TyAdmin* admin ) {
    been converted into pointers) */
 void ML_(pp_Type_C_ishly) ( Type* ty )
 {
+   if (!ty) {
+      VG_(printf)("**type=NULL**");
+      return;
+   }
    switch (ty->tag) {
       case Ty_Base:
          if (!ty->Ty.Base.name) goto unhandled;
@@ -377,6 +385,7 @@ MaybeUWord ML_(sizeOfType)( Type* ty )
 {
    Word       i;
    MaybeUWord eszB;
+   vg_assert(ty);
    switch (ty->tag) {
       case Ty_Base:
          vg_assert(ty->Ty.Base.szB > 0);

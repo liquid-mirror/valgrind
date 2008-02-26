@@ -8,7 +8,7 @@
    This file is part of Valgrind, a dynamic binary instrumentation
    framework.
 
-   Copyright (C) 2008-2008 OpenWorks LLP and others
+   Copyright (C) 2008-2008 OpenWorks LLP
       info@open-works.co.uk
 
    This program is free software; you can redistribute it and/or
@@ -1260,7 +1260,7 @@ void read_filename_table( /*MOD*/D3VarParser* parser,
    vg_assert( VG_(sizeXA)( parser->filenameTable ) == 0 );
    /* Add a dummy index-zero entry.  DWARF3 numbers its files
       from 1, for some reason. */
-   str = ML_(addStr)( cc->di, "<unknown>", -1 );
+   str = ML_(addStr)( cc->di, "<unknown_file>", -1 );
    VG_(addToXA)( parser->filenameTable, &str );
    while (peek_UChar(&c) != 0) {
       str = get_AsciiZ(&c);
@@ -1921,6 +1921,13 @@ static void parse_type_DIE ( /*OUT*/TyAdmin** admin,
             }
          }
       }
+
+      /* Invent a name if it doesn't have one.  gcc-4.3
+         -ftree-vectorize is observed to emit nameless base types. */
+      if (!type->Ty.Base.name)
+         type->Ty.Base.name 
+            = ML_(addStr)( cc->di, "<anon_base_type>", -1 );
+
       /* Do we have something that looks sane? */
       if (/* must have a name */
           type->Ty.Base.name == NULL
@@ -1948,12 +1955,17 @@ static void parse_type_DIE ( /*OUT*/TyAdmin** admin,
       goto acquire_Type;
    }
 
-   if (dtag == DW_TAG_pointer_type || dtag == DW_TAG_reference_type) {
+   if (dtag == DW_TAG_pointer_type || dtag == DW_TAG_reference_type
+       || dtag == DW_TAG_ptr_to_member_type) {
+      /* This seems legit for _pointer_type and _reference_type.  I
+         don't know if rolling _ptr_to_member_type in here really is
+         legit, but it's better than not handling it at all. */
       type = ML_(new_Type)();
       type->tag = Ty_PorR;
       /* target type defaults to void */
       type->Ty.PorR.typeR = D3_FAKEVOID_CUOFF;
-      type->Ty.PorR.isPtr = dtag == DW_TAG_pointer_type;
+      type->Ty.PorR.isPtr = dtag == DW_TAG_pointer_type
+                            || dtag == DW_TAG_ptr_to_member_type;
       /* Pointer types don't *have* to specify their size, in which
          case we assume it's a machine word.  But if they do specify
          it, it must be a machine word :-) This probably assumes that
@@ -3105,7 +3117,7 @@ void new_dwarf3_reader_wrk (
          VG_(printf)("<%lx> addVar: level %d: %s :: ",
                      varp->dioff,
                      varp->level,
-                     varp->name ? varp->name : (UChar*)"<anonymous>" );
+                     varp->name ? varp->name : (UChar*)"<anon_var>" );
          if (varp->typeR) {
             ML_(pp_Type_C_ishly)( varp->typeR );
          } else {
@@ -3178,7 +3190,7 @@ void new_dwarf3_reader_wrk (
 
       /* Give it a name if it doesn't have one. */
       if (!varp->name)
-         varp->name = ML_(addStr)( di, "<anonymous>", -1 );
+         varp->name = ML_(addStr)( di, "<anon_var>", -1 );
 
       /* So now does it have enough info to be useful? */
       /* NOTE: re typeR: this is a hack.  If typeR is NULL then the
