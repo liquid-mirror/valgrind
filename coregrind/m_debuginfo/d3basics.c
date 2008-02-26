@@ -402,6 +402,7 @@ static Bool get_Dwarf_Reg( /*OUT*/Addr* a, Word regno, RegSummary* regs )
    priv_d3basics.h. */
 GXResult ML_(evaluate_Dwarf3_Expr) ( UChar* expr, UWord exprszB, 
                                      GExpr* fbGX, RegSummary* regs,
+                                     Addr data_bias,
                                      Bool push_initial_zero )
 {
 #  define N_EXPR_STACK 20
@@ -496,16 +497,19 @@ GXResult ML_(evaluate_Dwarf3_Expr) ( UChar* expr, UWord exprszB,
       opcode = *expr++;
       switch (opcode) {
          case DW_OP_addr:
-            /* FIXME: surely this is an svma?  Should be t- or d-
-               biased before being pushed? */
-            PUSH( *(Addr*)expr ); 
+            /* Presumably what is given in the Dwarf3 is a SVMA (how
+               could it be otherwise?)  So we add the data bias on
+               before pushing the result.  FIXME: how can we be sure
+               the data bias is intended, not the text bias?  I don't
+               know. */
+            PUSH( *(Addr*)expr + data_bias ); 
             expr += sizeof(Addr);
             break;
          case DW_OP_fbreg:
             if (!fbGX)
                FAIL("evaluate_Dwarf3_Expr: DW_OP_fbreg with "
                     "no expr for fbreg present");
-            fbval = ML_(evaluate_GX)(fbGX, NULL, regs);
+            fbval = ML_(evaluate_GX)(fbGX, NULL, regs, data_bias);
             /* Convert fbval into something we can use.  If we got a
                Value, no problem.  However, as per D3 spec sec 3.3.5
                (Low Level Information) sec 2, we could also get a
@@ -599,7 +603,8 @@ GXResult ML_(evaluate_Dwarf3_Expr) ( UChar* expr, UWord exprszB,
 
 /* Evaluate a so-called Guarded (DWARF3) expression.  See detailed
    description in priv_d3basics.h. */
-GXResult ML_(evaluate_GX)( GExpr* gx, GExpr* fbGX, RegSummary* regs )
+GXResult ML_(evaluate_GX)( GExpr* gx, GExpr* fbGX,
+                           RegSummary* regs, Addr data_bias )
 {
    GXResult res;
    Addr     aMin, aMax;
@@ -631,7 +636,7 @@ GXResult ML_(evaluate_GX)( GExpr* gx, GExpr* fbGX, RegSummary* regs )
          /* Assert this is the first guard. */
          vg_assert(nGuards == 1);
          res = ML_(evaluate_Dwarf3_Expr)(
-                  p, (UWord)nbytes, fbGX, regs,
+                  p, (UWord)nbytes, fbGX, regs, data_bias,
                   False/*push_initial_zero*/ );
          /* Now check there are no more guards. */
          p += (UWord)nbytes;
@@ -641,7 +646,7 @@ GXResult ML_(evaluate_GX)( GExpr* gx, GExpr* fbGX, RegSummary* regs )
          if (aMin <= regs->ip && regs->ip <= aMax) {
             /* found a matching range.  Evaluate the expression. */
             return ML_(evaluate_Dwarf3_Expr)(
-                      p, (UWord)nbytes, fbGX, regs,
+                      p, (UWord)nbytes, fbGX, regs, data_bias,
                       False/*push_initial_zero*/ );
          }
       }

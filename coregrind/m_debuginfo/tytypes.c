@@ -473,10 +473,18 @@ XArray* /*UChar*/ ML_(describe_type)( /*OUT*/OffT* residual_offset,
                field = *(TyField**)VG_(indexXA)( fields, i );
                vg_assert(field);
                vg_assert(field->loc);
+               /* Re data_bias in this call, we should really send in
+                  a legitimate value.  But the expression is expected
+                  to be a constant expression, evaluation of which
+                  will not need to use DW_OP_addr and hence we can
+                  avoid the trouble of plumbing the data bias through
+                  to this point (if, indeed, it has any meaning; from
+                  which DebugInfo would we take the data bias? */
                res = ML_(evaluate_Dwarf3_Expr)(
                        field->loc->bytes, field->loc->nbytes,
                        NULL/*fbGX*/, NULL/*RegSummary*/,
-                       True/*push_initial_zero*/ );
+                       0/*data_bias*/,
+                       True/*push_initial_zero*/);
                if (0) {
                   VG_(printf)("QQQ ");
                   ML_(pp_GXResult)(res);

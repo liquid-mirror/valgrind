@@ -84,6 +84,13 @@
    different DIEs (generally a declarer and a definer).  We punt on
    these.  Could do better here.
 
+   The 'data_bias' argument passed to the expression evaluator
+   (ML_(evaluate_Dwarf3_Expr)) should really be changed to a
+   MaybeUWord, to make it clear when we do vs don't know what it is
+   for the evaluation of an expression.  At the moment zero is passed
+   for this parameter in the don't know case.  That's a bit fragile
+   and obscure; using a MaybeUWord would be clearer.
+
    POTENTIAL PERFORMANCE IMPROVEMENTS:
 
    The number of type entities that end up in the list of TyAdmins

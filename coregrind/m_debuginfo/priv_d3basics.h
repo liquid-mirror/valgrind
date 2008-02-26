@@ -621,7 +621,8 @@ void ML_(pp_GXResult) ( GXResult res );
    computed, then fbGX can provide an expression for it.  If fbGX is
    NULL but the frame base is still needed, then evaluation of gx as a
    whole will fail. */
-GXResult ML_(evaluate_GX)( GExpr* gx, GExpr* fbGX, RegSummary* regs );
+GXResult ML_(evaluate_GX)( GExpr* gx, GExpr* fbGX,
+                           RegSummary* regs, Addr data_bias );
 
 /* This is a subsidiary of ML_(evaluate_GX), which just evaluates a
    single standard DWARF3 expression.  Conventions w.r.t regs and fbGX
@@ -632,6 +633,7 @@ GXResult ML_(evaluate_GX)( GExpr* gx, GExpr* fbGX, RegSummary* regs );
    recursive. */
 GXResult ML_(evaluate_Dwarf3_Expr) ( UChar* expr, UWord exprszB, 
                                      GExpr* fbGX, RegSummary* regs,
+                                     Addr data_bias,
                                      Bool push_initial_zero );
 
 #endif /* ndef __PRIV_D3BASICS_H */

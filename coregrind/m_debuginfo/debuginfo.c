@@ -1595,7 +1595,8 @@ Bool VG_(use_CF_info) ( /*MOD*/Addr* ipP,
 static Bool data_address_is_in_var ( /*OUT*/UWord* offset,
                                      DiVariable*   var,
                                      RegSummary*   regs,
-                                     Addr          data_addr )
+                                     Addr          data_addr,
+                                     Addr          data_bias )
 {
    MaybeUWord muw;
    SizeT      var_szB;
@@ -1626,7 +1627,7 @@ static Bool data_address_is_in_var ( /*OUT*/UWord* offset,
       return False;
    }
 
-   res = ML_(evaluate_GX)( var->gexpr, var->fbGX, regs );
+   res = ML_(evaluate_GX)( var->gexpr, var->fbGX, regs, data_bias );
 
    if (show) {
       VG_(printf)("VVVV: -> ");
@@ -1897,7 +1898,8 @@ Bool consider_vars_in_frame ( /*OUT*/Char* dname1,
       for (j = 0; j < VG_(sizeXA)( vars ); j++) {
          DiVariable* var = (DiVariable*)VG_(indexXA)( vars, j );
          SizeT       offset;
-         if (data_address_is_in_var( &offset, var, &regs, data_addr )) {
+         if (data_address_is_in_var( &offset, var, &regs, data_addr,
+                                     di->data_bias )) {
             OffT residual_offset = 0;
             XArray* described = ML_(describe_type)( &residual_offset,
                                                     var->type, offset );
@@ -1996,7 +1998,7 @@ Bool VG_(get_data_description)( /*OUT*/Char* dname1,
             fail. */
          if (data_address_is_in_var( &offset, var, 
                                      NULL/* RegSummary* */, 
-                                     data_addr )) {
+                                     data_addr, di->data_bias )) {
             OffT residual_offset = 0;
             XArray* described = ML_(describe_type)( &residual_offset,
                                                     var->type, offset );
