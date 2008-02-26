@@ -1246,9 +1246,11 @@ Bool ML_(read_elf_debug_info) ( struct _DebugInfo* di )
    TRACE_SYMTAB("\n");
    TRACE_SYMTAB("------ Examining the section headers "
                 "and program headers ------\n");
-   TRACE_SYMTAB("rx: foffsets %ld .. %ld\n",
+   TRACE_SYMTAB("rx: at %p are mapped foffsets %ld .. %ld\n",
+               di->rx_map_avma,
                di->rx_map_foff, di->rx_map_foff + di->rx_map_size - 1 );
-   TRACE_SYMTAB("rw: foffsets %ld .. %ld\n",
+   TRACE_SYMTAB("rw: at %p are mapped foffsets %ld .. %ld\n",
+               di->rw_map_avma,
                di->rw_map_foff, di->rw_map_foff + di->rw_map_size - 1 );
 
    for (i = 0; i < shdr_nent; i++) {
@@ -1494,11 +1496,19 @@ Bool ML_(read_elf_debug_info) ( struct _DebugInfo* di )
          }
       }
 
-      /* Accept .eh_frame where mapped as rx (code) (?!) */
+      /* Accept .eh_frame where mapped as rx (code).  This seems to be
+         the common case.  However, if that doesn't pan out, try for
+         rw (data) instead. */
       if (0 == VG_(strcmp)(name, ".eh_frame")) {
          if (inrx && size > 0 && !di->ehframe_present) {
             di->ehframe_present = True;
             di->ehframe_avma = di->rx_map_avma + foff - di->rx_map_foff;
+            di->ehframe_size = size;
+            TRACE_SYMTAB("acquiring .eh_frame avma = %p\n", di->ehframe_avma);
+         } else
+         if (inrw && size > 0 && !di->ehframe_present) {
+            di->ehframe_present = True;
+            di->ehframe_avma = di->rw_map_avma + foff - di->rw_map_foff;
             di->ehframe_size = size;
             TRACE_SYMTAB("acquiring .eh_frame avma = %p\n", di->ehframe_avma);
          } else {
