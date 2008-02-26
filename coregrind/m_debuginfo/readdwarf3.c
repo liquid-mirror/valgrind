@@ -105,6 +105,11 @@
    whether or not they advanced the DIE cursor, and only if they
    didn't should read_DIE itself read through the DIE.
 
+   ML_(addVar) and add_var_to_arange: quite a lot of DiAddrRanges have
+   zero variables in their .vars XArray.  Rather than have an XArray
+   with zero elements (which uses 2 malloc'd blocks), allow the .vars
+   pointer to be NULL in this case.
+
    More generally, reduce the amount of memory allocated and freed
    while reading Dwarf3 type/variable information.  Even modest (20MB)
    objects cause this module to allocate and free hundreds of
