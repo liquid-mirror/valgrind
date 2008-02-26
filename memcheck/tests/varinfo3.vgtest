@@ -1,1 +1,2 @@
 prog: varinfo3
+stderr_filter: filter_varinfo3

@@ -19,7 +19,8 @@ endif
 DIST_SUBDIRS = ${VG_ARCH_ALL} .
 
 noinst_SCRIPTS = filter_allocs filter_leak_check_size \
-		 filter_stderr filter_stderr_backtrace filter_xml
+		 filter_stderr filter_stderr_backtrace filter_xml \
+		 filter_varinfo3
 
 EXTRA_DIST = $(noinst_SCRIPTS) \
 	addressable.stderr.exp addressable.stdout.exp addressable.vgtest \
