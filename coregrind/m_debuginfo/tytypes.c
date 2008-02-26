@@ -442,6 +442,12 @@ XArray* /*UChar*/ ML_(describe_type)( /*OUT*/OffT* residual_offset,
 
       switch (ty->tag) {
 
+         /* These are all atomic types; there is nothing useful we can
+            do. */
+         case Ty_Enum:
+         case Ty_Fn:
+         case Ty_Void:
+         case Ty_PorR:
          case Ty_Base:
             goto done;
 
@@ -546,6 +552,7 @@ XArray* /*UChar*/ ML_(describe_type)( /*OUT*/OffT* residual_offset,
             VG_(printf)("\n");
             vg_assert(0);
          }
+
       }
    }
 

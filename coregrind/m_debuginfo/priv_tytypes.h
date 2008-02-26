@@ -83,7 +83,7 @@ struct _D3Expr {
 };
 
 struct _Type {
-   enum { Ty_Base=30, Ty_PorR, Ty_Ref, Ty_TyDef, Ty_StOrUn, 
+   enum { Ty_Base=30, Ty_PorR, Ty_TyDef, Ty_StOrUn, 
           Ty_Enum, Ty_Array, Ty_Fn, Ty_Qual, Ty_Void } tag;
    union {
       struct {
