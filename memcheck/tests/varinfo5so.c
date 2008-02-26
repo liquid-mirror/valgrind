@@ -25,7 +25,7 @@ void croak ( void* aV )
   char* undefp = malloc(1);
   char saved = *a;
   assert(undefp);
-  *(char*)a = *undefp;
+  *a = *undefp;
   VALGRIND_CHECK_MEM_IS_DEFINED(a, 1);
   *a = saved;
   free(undefp);

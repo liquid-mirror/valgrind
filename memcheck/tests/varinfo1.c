@@ -18,11 +18,16 @@
    its best guess as to what "a" actually is.  a must be
    addressible. */
 
-void croak ( void* a )
+void croak ( void* aV )
 {
-  volatile char undef;
-  *(char*)a = undef;
+  char* a = (char*)aV;
+  char* undefp = malloc(1);
+  char saved = *a;
+  assert(undefp);
+  *a = *undefp;
   VALGRIND_CHECK_MEM_IS_DEFINED(a, 1);
+  *a = saved;
+  free(undefp);
 }
 
 #include <stdio.h>

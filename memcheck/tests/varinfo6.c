@@ -1,4 +1,12 @@
 
+/* Test the variable identification machinery in a non-toy sized
+   program.  Also, the croak() call in BZ2_decompress causes Valgrind
+   to try to describe a local variable (i) that has at least a dozen
+   independent live ranges (hence, is really that many independent
+   variables).  Hence it tests the machinery's ability to correctly
+   handle a variable which has multiple live ranges and hence multiple
+   non-overlapping areas in which it actually exists.
+*/
 
 /* Relevant compile flags are:
 
@@ -16,15 +24,17 @@
    its best guess as to what "a" actually is.  a must be
    addressible. */
 
-void croak ( void* a )
+void croak ( void* aV )
 {
-  volatile char saved = *(char*)a;
-  volatile char undef;
-  *(char*)a = undef;
+  char* a = (char*)aV;
+  char* undefp = malloc(1);
+  char saved = *a;
+  assert(undefp);
+  *a = *undefp;
   VALGRIND_CHECK_MEM_IS_DEFINED(a, 1);
-  *(char*)a = saved;
+  *a = saved;
+  free(undefp);
 }
-
 
 // This benchmark is basically bzip2 (mashed to be a single file)
 // compressing and decompressing some data.  It tests Valgrind's handling of
@@ -2810,7 +2820,7 @@ void mainQSort3 ( UInt32* ptr,
 #define SETMASK (1 << 21)
 #define CLEARMASK (~(SETMASK))
 
-static __attribute__((noinline))
+/*static*/ __attribute__((noinline))
 void mainSort ( UInt32* ptr, 
                 UChar*  block,
                 UInt16* quadrant, 
@@ -3092,6 +3102,7 @@ croak( 2 + (char*)budget );
       ftab [ 0 .. 65536 ] destroyed
       arr1 [0 .. nblock-1] holds sorted order
 */
+__attribute__((noinline))
 void BZ2_blockSort ( EState* s )
 {
    UInt32* ptr    = s->ptr; 
@@ -4043,6 +4054,7 @@ void sendMTFValues ( EState* s )
 
 
 /*---------------------------------------------------*/
+__attribute__((noinline))
 void BZ2_compressBlock ( EState* s, Bool is_last_block )
 {
    if (s->nblock > 0) {
