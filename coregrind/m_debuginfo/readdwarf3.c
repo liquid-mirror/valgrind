@@ -2132,7 +2132,10 @@ static void parse_type_DIE ( /*OUT*/TyAdmin** admin,
       if (parser->qparent[parser->sp]->tag != Ty_StOrUn) goto bad_DIE;
       /* Do we have something that looks sane?  If this a member of a
          struct, we must have a location expression; but if a member
-         of a union that is irrelevant and so we reject it. */
+         of a union that is irrelevant (D3 spec sec 5.6.6).  We ought
+         to reject in the latter case, but some compilers have been
+         observed to emit constant-zero expressions.  So just ignore
+         them. */
       parent_is_struct
          = parser->qparent[parser->sp]->Ty.StOrUn.isStruct;
       if (!field->name)
@@ -2141,8 +2144,12 @@ static void parse_type_DIE ( /*OUT*/TyAdmin** admin,
          goto bad_DIE;
       if (parent_is_struct && (!expr))
          goto bad_DIE;
-      if ((!parent_is_struct) && expr)
-         goto bad_DIE;
+      if ((!parent_is_struct) && expr) {
+         /* If this is a union type, pretend we haven't seen the data
+            member location expression, as it is by definition
+            redundant (it must be zero). */
+         expr = NULL;
+      }
       /* Record this child in the parent */
       field->isStruct = parent_is_struct;
       if (expr)
