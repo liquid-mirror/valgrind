@@ -1853,15 +1853,20 @@ Bool ML_(read_elf_debug_info) ( struct _DebugInfo* di )
                                       debug_str_img,  debug_str_sz );
 
          /* The new reader: read the DIEs in .debug_info to acquire
-            information on variable types and locations. */
-         ML_(new_dwarf3_reader) ( di,
-                                  debug_info_img,   debug_info_sz,
-                                  debug_abbv_img,   debug_abbv_sz,
-                                  debug_line_img,   debug_line_sz,
-                                  debug_str_img,    debug_str_sz,
-                                  debug_ranges_img, debug_ranges_sz,
-                                  debug_loc_img,    debug_loc_sz );
-
+            information on variable types and locations.  But only if
+            the tool asks for it, or the user requests it on the
+            command line. */
+         if (VG_(needs).var_info /* the tool requires it */
+             || VG_(clo_read_var_info) /* the user asked for it */) {
+            ML_(new_dwarf3_reader)(
+               di, debug_info_img,   debug_info_sz,
+                   debug_abbv_img,   debug_abbv_sz,
+                   debug_line_img,   debug_line_sz,
+                   debug_str_img,    debug_str_sz,
+                   debug_ranges_img, debug_ranges_sz,
+                   debug_loc_img,    debug_loc_sz
+            );
+         }
       }
       if (dwarf1d_img && dwarf1l_img) {
          ML_(read_debuginfo_dwarf1) ( di, dwarf1d_img, dwarf1d_sz, 

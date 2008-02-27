@@ -8819,7 +8819,7 @@ static void hg_pre_clo_init ( void )
                                    hg_cli__realloc,
                                    HG_CLI__MALLOC_REDZONE_SZB );
 
-   VG_(needs_data_syms)();
+   VG_(needs_var_info)();
 
    //VG_(needs_xml_output)          ();
 

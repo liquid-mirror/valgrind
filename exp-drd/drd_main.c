@@ -736,7 +736,7 @@ void drd_pre_clo_init(void)
    VG_(track_pre_thread_ll_exit)   (drd_thread_finished);
 
    // Other stuff.
-   VG_(needs_data_syms)();
+   VG_(needs_var_info)();
 
    drd_register_malloc_wrappers(drd_start_using_mem, drd_stop_using_mem);
 
