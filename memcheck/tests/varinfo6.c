@@ -2996,7 +2996,7 @@ void mainSort ( UInt32* ptr,
          for (j = ftab[ss << 8] & CLEARMASK; j < copyStart[ss]; j++) {
             k = ptr[j]-1; if (k < 0) k += nblock;
             c1 = block[k];
-croak( 2 + (char*)budget );
+croak( 2 + (char*)budget ); /* should identify decl in calling frame */
             if (!bigDone[c1])
                ptr[ copyStart[c1]++ ] = k;
          }

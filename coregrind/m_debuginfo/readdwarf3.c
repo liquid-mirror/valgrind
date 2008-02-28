@@ -1462,6 +1462,21 @@ static void parse_var_DIE ( /*OUT*/TempVar** tempvars,
                                         rangeoff, cc->cu_svma ),
                         level, isFunc, fbGX );
       } else
+      if (have_lo && (!have_hi1) && (!have_range)) {
+         /* This scope is bogus.  The D3 spec sec 3.4 (Lexical Block
+            Entries) says fairly clearly that a scope must have either
+            _range or (_low_pc and _high_pc). */
+         /* The spec is a bit ambiguous though.  Perhaps a single byte
+            range is intended?  See sec 2.17 (Code Addresses And Ranges) */
+         /* This case is here because icc9 produced this:
+         <2><13bd>: DW_TAG_lexical_block
+            DW_AT_decl_line   : 5229
+            DW_AT_decl_column : 37
+            DW_AT_decl_file   : 1
+            DW_AT_low_pc      : 0x401b03
+         */
+         /* Ignore (seems safe than pushing a single byte range) */
+      } else
          goto bad_DIE;
    }
 

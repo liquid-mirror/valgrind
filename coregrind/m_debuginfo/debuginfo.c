@@ -1615,7 +1615,8 @@ static Bool data_address_is_in_var ( /*OUT*/UWord* offset,
    var_szB = muw.w;
 
    if (show) {
-      VG_(printf)("VVVV: find loc: %s :: ", var->name );
+      VG_(printf)("VVVV: data_address_%p_is_in_var: %s :: ",
+                  data_addr, var->name );
       ML_(pp_Type_C_ishly)( var->type );
       VG_(printf)("\n");
    }
@@ -1812,11 +1813,13 @@ Bool consider_vars_in_frame ( /*OUT*/Char* dname1,
    Word       i;
    DebugInfo* di;
    RegSummary regs;
+   Bool debug = False;
 
    static UInt n_search = 0;
    static UInt n_steps = 0;
    n_search++;
-   if (0) VG_(printf)("QQQQ: cvif: ip,sp,fp %p,%p,%p\n", ip,sp,fp);
+   if (debug)
+      VG_(printf)("QQQQ: cvif: ip,sp,fp %p,%p,%p\n", ip,sp,fp);
    /* first, find the DebugInfo that pertains to 'ip'. */
    for (di = debugInfo_list; di; di = di->next) {
       n_steps++;
@@ -1868,7 +1871,8 @@ Bool consider_vars_in_frame ( /*OUT*/Char* dname1,
       DiAddrRange* arange;
       OSet*        this_scope 
          = *(OSet**)VG_(indexXA)( di->varinfo, i );
-      if (0) VG_(printf)("QQQQ: considering scope %ld\n", (Word)i);
+      if (debug)
+         VG_(printf)("QQQQ:   considering scope %ld\n", (Word)i);
       if (!this_scope)
          continue;
       /* Find the set of variables in this scope that
@@ -1898,6 +1902,9 @@ Bool consider_vars_in_frame ( /*OUT*/Char* dname1,
       for (j = 0; j < VG_(sizeXA)( vars ); j++) {
          DiVariable* var = (DiVariable*)VG_(indexXA)( vars, j );
          SizeT       offset;
+         if (debug)
+            VG_(printf)("QQQQ:    var:name=%s %p-%p %p\n", 
+                        var->name,arange->aMin,arange->aMax,ip);
          if (data_address_is_in_var( &offset, var, &regs, data_addr,
                                      di->data_bias )) {
             OffT residual_offset = 0;
@@ -1939,7 +1946,6 @@ Bool VG_(get_data_description)( /*OUT*/Char* dname1,
    dname1[n_dname-1] = dname2[n_dname-1] = 0;
 
    if (0) VG_(printf)("get_data_description: dataaddr %p\n", data_addr);
-
    /* First, see if data_addr is (or is part of) a global variable.
       Loop over the DebugInfos we have.  Check data_addr against the
       outermost scope of all of them, as that should be a global
@@ -2082,6 +2088,31 @@ Bool VG_(get_data_description)( /*OUT*/Char* dname1,
       if (consider_vars_in_frame( dname1, dname2, n_dname,
                                   data_addr,
                                   ips[j] - ip_delta, 
+                                  sps[j], fps[j], tid, j )) {
+         dname1[n_dname-1] = dname2[n_dname-1] = 0;
+         return True;
+      }
+      /* Now, it appears that gcc sometimes appears to produce
+         location lists whose ranges don't actually cover the call
+         instruction, even though the address of the variable in
+         question is passed as a parameter in the call.  AFAICS this
+         is simply a bug in gcc - how can the variable be claimed not
+         exist in memory (on the stack) for the duration of a call in
+         which its address is passed?  But anyway, in the particular
+         case I investigated (memcheck/tests/varinfo6.c, call to croak
+         on line 2999, local var budget declared at line 3115
+         appearing not to exist across the call to mainSort on line
+         3143, "gcc.orig (GCC) 3.4.4 20050721 (Red Hat 3.4.4-2)" on
+         amd64), the variable's location list does claim it exists
+         starting at the first byte of the first instruction after the
+         call instruction.  So, call consider_vars_in_frame a second
+         time, but this time don't subtract 1 from the IP.  GDB
+         handles this example with no difficulty, which leads me to
+         believe that either (1) I misunderstood something, or (2) GDB
+         has an equivalent kludge. */
+      if (consider_vars_in_frame( dname1, dname2, n_dname,
+                                  data_addr,
+                                  ips[j], 
                                   sps[j], fps[j], tid, j )) {
          dname1[n_dname-1] = dname2[n_dname-1] = 0;
          return True;

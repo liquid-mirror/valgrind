@@ -630,6 +630,8 @@ GXResult ML_(evaluate_GX)( GExpr* gx, GExpr* fbGX,
       aMax   = * (Addr*)p;   p += sizeof(Addr);
       nbytes = * (UShort*)p; p += sizeof(UShort);
       nGuards++;
+      if (0) VG_(printf)("           guard %d: %p %p\n", 
+                         (Int)nGuards, aMin,aMax);
       if (regs == NULL) {
          vg_assert(aMin == (Addr)0);
          vg_assert(aMax == ~(Addr)0);
