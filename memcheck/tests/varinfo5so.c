@@ -18,7 +18,7 @@
 /* Cause memcheck to complain about the address "a" and so to print
    its best guess as to what "a" actually is.  a must be
    addressible. */
-
+__attribute__((noinline))
 void croak ( void* aV )
 {
   char* a = (char*)aV;
@@ -43,7 +43,7 @@ char global_u2[10];
 
 char global_i2[10] = { 1,2,3,4,5,6,7,8,9,10 };
 
-
+__attribute__((noinline))
 static int varinfo1_main ( void )
 {
   int local;
@@ -61,7 +61,7 @@ static int varinfo1_main ( void )
 }
 
 /* ------------ varinfo2 ------------ */
-
+__attribute__((noinline))
 static void foo2 ( void )
 {
   int var;
@@ -75,7 +75,7 @@ static void foo2 ( void )
   }
   croak( 1 + (char*)&var );
 }
-
+__attribute__((noinline))
 static int varinfo2_main ( void )
 {
   foo2();
@@ -88,7 +88,7 @@ static char static_global_def[10]    = {0,0,0,0,0, 0,0,0,0,0};
        char nonstatic_global_def[10] = {0,0,0,0,0, 0,0,0,0,0};
 static char static_global_undef[10];
        char nonstatic_global_undef[10];
-
+__attribute__((noinline))
 static void bar3 ( char* p1, char* p2, char* p3, char* p4 )
 {
    croak(p1);
@@ -96,7 +96,7 @@ static void bar3 ( char* p1, char* p2, char* p3, char* p4 )
    croak(p3);
    croak(p4);
 }
-
+__attribute__((noinline))
 static void foo3 ( void )
 {
    static char static_local_def[10]    = {0,0,0,0,0, 0,0,0,0,0};
@@ -112,7 +112,7 @@ static void foo3 ( void )
          7 + (char*)&static_local_undef,
          8 + (char*)&nonstatic_local_undef );
 }
-
+__attribute__((noinline))
 static int varinfo3_main ( void )
 {
   foo3();
@@ -140,7 +140,7 @@ static int blah4 ( int x, int y )
   memset(a, 0, sizeof(a));
   return a[3].xyzzy[x*y].c1;
 }
-
+__attribute__((noinline))
 static int varinfo4_main ( void )
 {
   fprintf(stderr, "answer is %d\n", blah4(3,7) );
