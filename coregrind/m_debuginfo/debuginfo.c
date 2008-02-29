@@ -727,14 +727,20 @@ void VG_(di_aix5_notify_segchange)(
       di = find_or_create_DebugInfo_for( file_name, mem_name );
       vg_assert(di);
 
-      di->text_svma = 0; /* don't know yet */
-      di->text_bias = 0; /* don't know yet */
-      di->text_avma = code_start;
-      di->text_size = code_len;
-      di->data_svma = 0; /* don't know yet */
-      di->data_bias = 0; /* don't know yet */
-      di->data_avma = data_start;
-      di->data_size = data_len;
+      if (code_len > 0) {
+         di->text_present = True;
+         di->text_svma = 0; /* don't know yet */
+         di->text_bias = 0; /* don't know yet */
+         di->text_avma = code_start;
+         di->text_size = code_len;
+      }
+      if (data_len > 0) {
+         di->data_present = True;
+         di->data_svma = 0; /* don't know yet */
+         di->data_bias = 0; /* don't know yet */
+         di->data_avma = data_start;
+         di->data_size = data_len;
+      }
 
       /* These need to be filled in in order to keep various
          assertions in storage.c happy.  In particular see
@@ -765,7 +771,8 @@ void VG_(di_aix5_notify_segchange)(
 
       /* Dump all the debugInfos whose text segments intersect
          code_start/code_len. */
-      discard_syms_in_range( code_start, code_len );
+      if (code_len > 0)
+         discard_syms_in_range( code_start, code_len );
 
    }
 }

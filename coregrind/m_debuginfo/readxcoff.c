@@ -93,7 +93,7 @@
 
 #define SHOW_AR_DETAILS 0  /* show details of .a file internals */
 
-#define SHOW  VG_(clo_trace_symtab)
+#define SHOW  di->trace_symtab
 
 /* A small stack of filenames is maintained for dealing
    with BINCL/EINCL symbol table entries. */
@@ -1546,7 +1546,8 @@ HChar* read_symbol_table (
 }
 
 
-static void show_loader_section ( UChar* oi_start, UWord size )
+static void show_loader_section ( struct _DebugInfo* di,
+                                  UChar* oi_start, UWord size )
 {
    Int i, j;
    LDHDR* hdr = (LDHDR*)oi_start;
@@ -2024,7 +2025,7 @@ Bool read_xcoff_mapped_object ( struct _DebugInfo* di,
                      i, name_of_scnhdr_s_flags(t_scnhdr[i].s_flags) );
       switch (t_scnhdr[i].s_flags & 0xFFFF) {
          case STYP_LOADER:
-            show_loader_section( oimage + t_scnhdr[i].s_scnptr, 
+            show_loader_section( di, oimage + t_scnhdr[i].s_scnptr, 
                                  t_scnhdr[i].s_size );
             break;
          default:
