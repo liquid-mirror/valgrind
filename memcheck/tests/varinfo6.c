@@ -6470,8 +6470,8 @@ static HWord g_serviceFn ( HWord arg1, HWord arg2 )
       default:
          assert(0);
    }
+   return 0;
 }
-
 static char *bzerrorstrings[] = {
        "OK"
        ,"SEQUENCE_ERROR"
