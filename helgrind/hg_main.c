@@ -1336,7 +1336,7 @@ static void show_sval ( /*OUT*/Char* buf, Int nBuf, SVal sv )
       SegmentSet ss = get_SHVAL_SS(sv);
       LockSet    ls = get_SHVAL_LS(sv);
       UWord n_segments = SS_get_size(ss);
-      int n_locks    = HG_(cardinalityWS)(univ_lsets, ls);
+      Int n_locks    = HG_(cardinalityWS)(univ_lsets, ls);
       VG_(sprintf)(buf, "%c #SS=%d #LS=%d ", 
                    is_w ? 'W' : 'R', n_segments, n_locks);
 
@@ -1348,7 +1348,7 @@ static void show_sval ( /*OUT*/Char* buf, Int nBuf, SVal sv )
          }
          S = SS_get_element(ss, i);
          VG_(sprintf)(buf + VG_(strlen)(buf), "S%d/T%d ", 
-                      (int)S, SEG_get(S)->thr->errmsg_index);
+                      (Int)S, SEG_get(S)->thr->errmsg_index);
       }
    } else {
       VG_(sprintf)(buf, "Invalid-shadow-word(%u)", sv);
@@ -3142,7 +3142,9 @@ SVal memory_state_machine(Bool is_w, Thread* thr, Addr a, SVal sv_old, Int sz)
 
       if (oldLS != newLS) { 
          // if the lockset changed, remember when it happened
-         record_last_lock_lossage(a, oldLS, newLS);
+         if (0) // FIXME.  Do we want this functionality?  If so,
+            // it can be very slow.
+            record_last_lock_lossage(a, oldLS, newLS);
       }
       goto done;
    }
