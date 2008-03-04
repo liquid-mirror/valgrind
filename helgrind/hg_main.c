@@ -1030,15 +1030,15 @@ static void mk_SHVAL_fail ( WordSetID tset, WordSetID lset, HChar* who ) {
 #define SHVAL_Invalid   ((SVal)(0))
 #define SHVAL_Race      ((SVal)(1ULL << 62))
 
-typedef  ULong      SegmentSet;
-typedef  WordSetID  LockSet;
+typedef  UInt       SegmentSet;
+typedef  WordSetID  LockSet;  /* UInt */
 
 static inline Bool SS_valid (SegmentSet ss) {
-   return ss < (1ULL << SEGMENT_SET_BITS);
+   return ss < (1 << SEGMENT_SET_BITS);
 }
 
 static inline Bool SS_is_singleton (SegmentSet ss) {
-   return (ss & (1ULL << (SEGMENT_SET_BITS-1))) != 0;
+   return (ss & (1 << (SEGMENT_SET_BITS-1))) != 0;
 }
 
 static inline UWord SS_get_size (SegmentSet ss) {
@@ -1049,14 +1049,14 @@ static inline UWord SS_get_size (SegmentSet ss) {
 
 static inline SegmentSet SS_mk_singleton (SegmentID ss) {
    tl_assert(SEG_id_is_sane(ss));
-   ss |= (1ULL << (SEGMENT_SET_BITS-1));
+   ss |= (1 << (SEGMENT_SET_BITS-1));
    tl_assert(SS_is_singleton(ss));
    return ss;
 }
 
 static inline SegmentID SS_get_singleton (SegmentSet ss) {
    tl_assert(SS_is_singleton(ss));
-   ss &= ~(1ULL << (SEGMENT_SET_BITS-1));
+   ss &= ~(1 << (SEGMENT_SET_BITS-1));
    tl_assert(SEG_id_is_sane(ss));
    return ss;
 }
@@ -1071,7 +1071,7 @@ static inline SegmentID SS_get_element (SegmentSet ss, UWord i) {
 }
 
 static inline Bool LS_valid (LockSet ls) {
-   return ls < (1ULL << LOCK_SET_BITS);
+   return ls < (1 << LOCK_SET_BITS);
 }
 
 static inline SVal mk_SHVAL_RW (Bool is_w, SegmentSet ss, LockSet ls) {
@@ -1108,15 +1108,15 @@ static inline LockSet get_SHVAL_LS (SVal sv) {
 }
 
 static inline Bool is_SHVAL_RW (SVal sv) {
-  return (sv >> 63) != 0;
+   return (sv >> 63) != 0;
 } 
 static inline Bool is_SHVAL_R (SVal sv) {
-  tl_assert(is_SHVAL_RW(sv));
-  return ((sv >> 62) & 1) == 0;
+   tl_assert(is_SHVAL_RW(sv));
+   return ((sv >> 62) & 1) == 0;
 }
 static inline Bool is_SHVAL_W (SVal sv) {
-  tl_assert(is_SHVAL_RW(sv));
-  return ((sv >> 62) & 1) == 1;
+   tl_assert(is_SHVAL_RW(sv));
+   return ((sv >> 62) & 1) == 1;
 }
 
 static inline Bool is_SHVAL_Shared (SVal sv) {
