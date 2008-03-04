@@ -38,7 +38,13 @@
    - Consider what to do about BHL all over again
 
    - Consider what to do about last-lock-lossage mechanism.
-     Should it be removed?  
+     Should it be removed?
+
+   - get rid of SVal-cache dirty bits?  Basically pointless; almost
+     all lines become dirty and have to be written back.  Quantify.
+
+   - get rid of 64-bit mod in happens_before hash calculation
+     (is very expensive on 32-bit platforms)
 */
 
 #include "pub_tool_basics.h"
@@ -1439,7 +1445,7 @@ static void pp_everything ( Int flags, Char* caller )
 
 /* fwds */
 static void shmem__invalidate_scache ( void );
-static void hbefore__invalidate_cache ( void );
+static void hbefore__invalidate_htable ( void );
 static void shmem__set_mbHasLocks ( Addr a, Bool b );
 static Bool shmem__get_mbHasLocks ( Addr a );
 static void shadow_mem_set8 ( Thread* uu_thr_acc, Addr a, SVal svNew );
@@ -1468,7 +1474,7 @@ static void initialise_data_structures ( void )
    /* re <=: < on 64-bit platforms, == on 32-bit ones */
    tl_assert(sizeof(SegmentID) <= sizeof(Word));
    tl_assert(sizeof(Segment*) == sizeof(Word));
-   hbefore__invalidate_cache();
+   hbefore__invalidate_htable();
 
    tl_assert(sizeof(Addr) == sizeof(Word));
    tl_assert(map_locks == NULL);
@@ -1998,9 +2004,7 @@ static void show_VTS ( HChar* buf, Int nBuf, XArray* vts ) {
 /*------------ searching the happens-before graph ------------*/
 
 static UWord stats__hbefore_queries   = 0; // total # queries
-static UWord stats__hbefore_cache0s   = 0; // hits at cache[0]
-static UWord stats__hbefore_cacheNs   = 0; // hits at cache[> 0]
-static UWord stats__hbefore_probes    = 0; // # checks in cache
+static UWord stats__hbefore_hits      = 0; // hits at hash table
 static UWord stats__hbefore_gsearches = 0; // # searches in graph
 static UWord stats__hbefore_gsearchFs = 0; // # fast searches in graph
 static UWord stats__hbefore_invals    = 0; // # cache invals
@@ -2121,55 +2125,56 @@ static Bool happens_before_wrk ( Segment* seg1, Segment* seg2 )
    return reachable;
 }
 
-/*--------------- the happens_before cache ---------------*/
+/*--------------- the happens_before hash table  ---------------*/
 
-#define HBEFORE__N_CACHE 64
-typedef 
-   struct { SegmentID segid1; SegmentID segid2; Bool result; } 
-   HBeforeCacheEnt;
 
-static HBeforeCacheEnt hbefore__cache[HBEFORE__N_CACHE];
 
-static void hbefore__invalidate_cache ( void ) 
-{
-   Int i;
-   SegmentID bogus = 0;
-   tl_assert(!SEG_id_is_sane(bogus));
+// HBEFORE__N_HTABLE should be a prime number 
+// #define HBEFORE__N_HTABLE 104729
+// #define HBEFORE__N_HTABLE 399989
+// #define HBEFORE__N_HTABLE 49999
+ #define HBEFORE__N_HTABLE 19997
+
+
+// Simple closed hash table with prime size. 
+// Each entry is a 64-bit value: 
+// bits 0-31:  SegmentID-2
+// bits 32-62: SegmentID-1
+// bit 63:     happens-before(SegmentID-1, SegmentID-2)
+static ULong hbefore__hash_table[HBEFORE__N_HTABLE];
+static void hbefore__invalidate_htable ( void )
+{  
    stats__hbefore_invals++;
-   for (i = 0; i < HBEFORE__N_CACHE; i++) {
-      hbefore__cache[i].segid1 = bogus;
-      hbefore__cache[i].segid2 = bogus;
-      hbefore__cache[i].result = False;
-   }
+   VG_(memset)(hbefore__hash_table, 0, sizeof(hbefore__hash_table));
 }
+
+
 
 static Bool happens_before ( SegmentID segid1, SegmentID segid2 )
 {
+   ULong seg_1_and_2 = ((ULong)segid1) << 32 | (ULong)(segid2);
    Bool    hbG, hbV;
-   Int     i, j, iNSERT_POINT;
    Segment *seg1, *seg2;
    tl_assert(SEG_id_is_sane(segid1));
    tl_assert(SEG_id_is_sane(segid2));
    tl_assert(segid1 != segid2);
    stats__hbefore_queries++;
-   stats__hbefore_probes++;
-   if (segid1 == hbefore__cache[0].segid1 
-       && segid2 == hbefore__cache[0].segid2) {
-      stats__hbefore_cache0s++;
-      return hbefore__cache[0].result;
-   }
-   for (i = 1; i < HBEFORE__N_CACHE; i++) {
-      stats__hbefore_probes++;
-      if (segid1 == hbefore__cache[i].segid1 
-          && segid2 == hbefore__cache[i].segid2) {
-         /* Found it.  Move it 1 step closer to the front. */
-         HBeforeCacheEnt tmp = hbefore__cache[i];
-         hbefore__cache[i]   = hbefore__cache[i-1];
-         hbefore__cache[i-1] = tmp;
-         stats__hbefore_cacheNs++;
-         return tmp.result;
+   { // try hash table
+     // Hmm, % on ULong is OK on 64-bit machine (32ish cycles on Core2) 
+     // but really bad on 32-bit (there is a call to umoddi3 and that
+     // can be many tens of instructions)
+      ULong cached = hbefore__hash_table[seg_1_and_2 % HBEFORE__N_HTABLE];
+      if (cached == seg_1_and_2) {
+         stats__hbefore_hits++;
+         return False;
+      }
+
+      if (cached == (seg_1_and_2 | (1ULL << 63))) {
+         stats__hbefore_hits++;
+         return True;
       }
    }
+
    /* Not found.  Search the graph and add an entry to the cache. */
    stats__hbefore_gsearches++;
 
@@ -2200,18 +2205,12 @@ static Bool happens_before ( SegmentID segid1, SegmentID segid2 )
    }
    tl_assert(hbV == hbG);
 
-   iNSERT_POINT = (1*HBEFORE__N_CACHE)/4 - 1;
-   /* if (iNSERT_POINT > 4) iNSERT_POINT = 4; */
-
-   for (j = HBEFORE__N_CACHE-1; j > iNSERT_POINT; j--) {
-      hbefore__cache[j] = hbefore__cache[j-1];
+   { // remember the results in the hash table 
+      ULong cache = hbG ? (seg_1_and_2 | (1ULL << 63)) : seg_1_and_2;
+      hbefore__hash_table[seg_1_and_2 % HBEFORE__N_HTABLE] = cache;
    }
-   hbefore__cache[iNSERT_POINT].segid1 = segid1;
-   hbefore__cache[iNSERT_POINT].segid2 = segid2;
-   hbefore__cache[iNSERT_POINT].result = hbG;
-
    if (0)
-   VG_(printf)("hb %d %d\n", (Int)segid1-(1<<24), (Int)segid2-(1<<24));
+   VG_(printf)("hb %d %d\n", (Int)segid1, (Int)segid2);
    return hbG;
 }
 
@@ -8414,15 +8413,13 @@ static void hg_fini ( Int exitcode )
 
       VG_(printf)("\n");
       VG_(printf)(" hbefore: %,10lu queries\n",        stats__hbefore_queries);
-      VG_(printf)(" hbefore: %,10lu cache 0 hits\n",   stats__hbefore_cache0s);
-      VG_(printf)(" hbefore: %,10lu cache > 0 hits\n", stats__hbefore_cacheNs);
+      VG_(printf)(" hbefore: %,10lu hash table hits\n",   stats__hbefore_hits);
       VG_(printf)(" hbefore: %,10lu graph searches\n", stats__hbefore_gsearches);
       VG_(printf)(" hbefore: %,10lu   of which slow\n",
                   stats__hbefore_gsearches - stats__hbefore_gsearchFs);
       VG_(printf)(" hbefore: %,10lu stack high water mark\n",
                   stats__hbefore_stk_hwm);
       VG_(printf)(" hbefore: %,10lu cache invals\n",   stats__hbefore_invals);
-      VG_(printf)(" hbefore: %,10lu probes\n",         stats__hbefore_probes);
 
       VG_(printf)("\n");
       VG_(printf)("        segments: %,8lu Segment objects allocated\n", 
