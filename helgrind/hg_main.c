@@ -3046,21 +3046,18 @@ static void msm__show_state_change ( Thread* thr_acc, Addr a, Int szB,
 static 
 SVal memory_state_machine(Bool is_w, Thread* thr, Addr a, SVal sv_old, Int sz)
 {
-   Bool hb_all = False;
-   UWord oldSS_size = 0;
-   Bool was_w, now_w;
+   UWord      i;
+   Bool       was_w, now_w;
    SegmentSet oldSS;
    LockSet    oldLS;
-   Bool is_race = False;
-   SVal sv_new = SHVAL_Invalid;
-   Bool do_trace = clo_trace_level > 0 
-         && a >= clo_trace_addr 
-         && a < (clo_trace_addr+sz);
-
+   Bool       hb_all     = False;
+   UWord      oldSS_size = 0;
+   Bool       is_race    = False;
+   SVal       sv_new     = SHVAL_Invalid;
+   Bool       do_trace   = clo_trace_level > 0 
+                           && a >= clo_trace_addr 
+                           && a < (clo_trace_addr+sz);
    SegmentID  currS = thr->csegid;
-
-
-   UWord i;
    SegmentSet newSS = 0;
    LockSet    newLS = 0;
 
@@ -3068,14 +3065,13 @@ SVal memory_state_machine(Bool is_w, Thread* thr, Addr a, SVal sv_old, Int sz)
    LockSet    currLS = is_w ? thr->locksetW
                             : thr->locksetA;
 
-   if (sv_old == SHVAL_Race) {
+   if (UNLIKELY(sv_old == SHVAL_Race)) {
       // we already reported a race, don't bother again. 
       sv_new = sv_old;
       goto done;
    }
 
-
-   if (__bus_lock_Lock->heldBy
+   if (UNLIKELY(__bus_lock_Lock->heldBy)
        && (is_SHVAL_New(sv_old) || is_SHVAL_R(sv_old))) {
       // BHL is held and we are in 'Read' or 'New' state. 
       // User is doing something very smart with LOCK prefix.
@@ -3097,17 +3093,66 @@ SVal memory_state_machine(Bool is_w, Thread* thr, Addr a, SVal sv_old, Int sz)
       // - Any other write is a race.
    }
 
-
-
    tl_assert(is_sane_Thread(thr));
 
-   // NoAccess
-   if (is_SHVAL_NoAccess(sv_old)) {
-      // TODO: complain
-      sv_new = sv_old;
+   // Read or Write
+   if (LIKELY(is_SHVAL_RW(sv_old))) {
+      was_w = is_SHVAL_W(sv_old);
+      oldSS = get_SHVAL_SS(sv_old);
+      oldLS = get_SHVAL_LS(sv_old);
+
+      oldSS_size = SS_get_size(oldSS);
+      // update the segment set and compute hb_all
+      hb_all = True;
+      newSS = SS_mk_singleton(currS);
+      for (i = 0; i < oldSS_size; i++) {
+         SegmentID S = SS_get_element(oldSS, i);
+         Bool hb = False;
+         if (S == currS  // Same segment. 
+             || SEG_get(S)->thr == thr // Same thread. 
+             || happens_before(S, currS)) {
+                // different thread, but happens-before
+            hb = True;
+         }
+         if (do_trace) {
+            VG_(printf)("HB(S%d/T%d,cur)=%d\n",
+                        S, SEG_get(S)->thr->errmsg_index, hb);
+         }
+
+         if (!hb) {
+            hb_all = False;
+            // Not happened-before. Leave this segment in SS.
+            if (SS_is_singleton(newSS)) {
+               tl_assert(currS != S);
+               newSS = HG_(doubletonWS)(univ_ssets, currS, S);
+            } else {
+               newSS = HG_(addToWS)(univ_ssets, newSS, S);
+            }
+         }
+      } 
+
+      // update lock set. 
+      if (hb_all) {
+         newLS = currLS;
+      } else {
+         newLS = HG_(intersectWS)(univ_lsets, oldLS, currLS);
+      }
+
+      // update the state 
+      now_w = is_w || (was_w && !hb_all);
+
+      // generate new SVal
+      sv_new = mk_SHVAL_RW(now_w, newSS, newLS);
+
+      is_race = now_w && !SS_is_singleton(newSS)
+                      && HG_(isEmptyWS)(univ_lsets, newLS);
+
+      if (oldLS != newLS) { 
+         // if the lockset changed, remember when it happened
+         record_last_lock_lossage(a, oldLS, newLS);
+      }
       goto done;
    }
-
 
    // New
    if (is_SHVAL_New(sv_old)) {
@@ -3116,69 +3161,20 @@ SVal memory_state_machine(Bool is_w, Thread* thr, Addr a, SVal sv_old, Int sz)
       goto done;
    }
 
-
-   // Read or Write
-   tl_assert(is_SHVAL_RW(sv_old));
-   was_w = is_SHVAL_W(sv_old);
-   oldSS = get_SHVAL_SS(sv_old);
-   oldLS = get_SHVAL_LS(sv_old);
-
-
-   oldSS_size = SS_get_size(oldSS);
-   // update the segment set and compute hb_all
-   hb_all = True;
-   newSS = SS_mk_singleton(currS);
-   for (i = 0; i < oldSS_size; i++) {
-      SegmentID S = SS_get_element(oldSS, i);
-      Bool hb = False;
-      if (S == currS  // Same segment. 
-          || SEG_get(S)->thr == thr // Same thread. 
-          || happens_before(S, currS)) { // different thread, but happens-before
-         hb = True;
-      }
-      if (do_trace) {
-         VG_(printf)("HB(S%d/T%d,cur)=%d\n",
-                     S, SEG_get(S)->thr->errmsg_index, hb);
-      }
-
-      if(!hb) {
-         hb_all = False;
-         // Not happened-before. Leave this segment in SS.
-         if (SS_is_singleton(newSS)) {
-            tl_assert(currS != S);
-            newSS = HG_(doubletonWS)(univ_ssets, currS, S);
-         } else {
-            newSS = HG_(addToWS)(univ_ssets, newSS, S);
-         }
-      }
-   } 
-
-   // update lock set. 
-   if (hb_all) {
-      newLS = currLS;
-   } else {
-      newLS = HG_(intersectWS)(univ_lsets, oldLS, currLS);
+   // NoAccess
+   if (is_SHVAL_NoAccess(sv_old)) {
+      // TODO: complain
+      sv_new = sv_old;
+      goto done;
    }
 
-   // update the state 
-   now_w = is_w || (was_w && !hb_all);
-
-   // generate new SVal
-   sv_new = mk_SHVAL_RW(now_w, newSS, newLS);
-
-   is_race = now_w 
-         && !SS_is_singleton(newSS)
-         && HG_(isEmptyWS)(univ_lsets, newLS);
-
-   if (oldLS != newLS) { 
-      // if the lockset changed, remember when it happened
-      record_last_lock_lossage(a, oldLS, newLS);
-   }
+   /*NOTREACHED*/
+   tl_assert(0);
 
   done:
 
    if (do_trace) {
-      char buf[200];
+      HChar buf[200];
 
       VG_(printf)("RW-Locks held: ");
       show_lockset(thr->locksetA);
