@@ -35,12 +35,10 @@
 */
 
 /* JRS: TODO 2008 Mar 03:
-   - get rid of HG_(elementOfWS) since it breaks representational
-     abstraction on WordSets
-
-   - Check 64-bit SVal compression parameters are optimal
-
    - Consider what to do about BHL all over again
+
+   - Consider what to do about last-lock-lossage mechanism.
+     Should it be removed?  
 */
 
 #include "pub_tool_basics.h"
@@ -1482,7 +1480,7 @@ static void initialise_data_structures ( void )
    HG_(addToFM)( map_locks, (Word)&__bus_lock, (Word)__bus_lock_Lock );
 
    tl_assert(univ_ssets == NULL);
-   univ_ssets = HG_(newWordSetU)( hg_zalloc, hg_free, 8/*cacheSize*/ );
+   univ_ssets = HG_(newWordSetU)( hg_zalloc, hg_free, 32/*cacheSize*/ );
    tl_assert(univ_ssets != NULL);
 
    tl_assert(univ_lsets == NULL);
