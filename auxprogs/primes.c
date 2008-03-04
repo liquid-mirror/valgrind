@@ -1,6 +1,8 @@
 
 #include <stdio.h>
 #include <math.h>
+#include <stdlib.h>
+#include <assert.h>
 
 int isprime ( int n )
 {
@@ -13,8 +15,14 @@ int isprime ( int n )
 
 int main ( int argc, char** argv )
 {
-   int i;
-   for (i = 79000; i < 81000; i++)
+  int i, start;
+   if (argc != 2) {
+      fprintf(stderr, "usage: %s <number>\n", argv[0]);
+      return 1;
+   }
+   start = atoi(argv[1]);
+   assert(start >= 2);
+   for (i = start; i < start+2000; i++)
      if (isprime(i)) { printf ( "%d ", i ); fflush(stdout); }
    return 0;
 }
