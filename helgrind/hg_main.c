@@ -7685,6 +7685,21 @@ static void record_error_Race ( Thread* thr,
    tl_assert(isWrite == False || isWrite == True);
    tl_assert(szB == 8 || szB == 4 || szB == 2 || szB == 1);
 
+   /* If the PC is in something that looks like a PLT section, ignore
+      any reported races.  It appears that ld.so does intentionally
+      racey things in PLTs and it's simplest just to ignore it. */
+   if (1) {
+      ThreadId tid = map_threads_maybe_reverse_lookup_SLOW(thr);
+      if (tid != VG_INVALID_THREADID) {
+         Addr ip_at_error = VG_(get_IP)( tid );
+         if (VG_(seginfo_sect_kind)(NULL, 0, ip_at_error) == Vg_SectPLT) {
+            /* ignore this race. */
+            return;
+         }
+      }
+   }
+
+   /* Ok, so we're really going to collect this race. */
    tl_assert(sizeof(xe.XE.Race.descr1) == sizeof(xe.XE.Race.descr2));
    xe.XE.Race.descr1[0] = xe.XE.Race.descr2[0] = 0;
    if (VG_(get_data_description)(
