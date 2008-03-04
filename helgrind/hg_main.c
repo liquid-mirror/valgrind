@@ -1018,51 +1018,46 @@ static void mk_SHVAL_fail ( WordSetID tset, WordSetID lset, HChar* who ) {
 
 //------------- segment set, lock set --------------
 
-const int SEGMENT_SET_BITS = 26;
-const int LOCK_SET_BITS    = 24;
+#define SEGMENT_SET_BITS 26
+#define LOCK_SET_BITS    24
 
-const SVal  SHVAL_New      = ((SVal)(2<<8));
-const SVal  SHVAL_NoAccess = ((SVal)(1<<8));
-const SVal  SHVAL_Invalid  = ((SVal)(0));
-const SVal  SHVAL_Race     = ((SVal)(1ULL << 62));
+#define SHVAL_New       ((SVal)(2<<8))
+#define SHVAL_NoAccess  ((SVal)(1<<8))
+#define SHVAL_Invalid   ((SVal)(0))
+#define SHVAL_Race      ((SVal)(1ULL << 62))
 
-typedef ULong SegmentSet;
-typedef  WordSetID LockSet;
+typedef  ULong      SegmentSet;
+typedef  WordSetID  LockSet;
 
 static inline Bool SS_valid (SegmentSet ss) {
-  return ss < (1ULL << SEGMENT_SET_BITS);
+   return ss < (1ULL << SEGMENT_SET_BITS);
 }
 
-static inline Bool SS_is_singleton (SegmentSet ss)
-{
+static inline Bool SS_is_singleton (SegmentSet ss) {
    return (ss & (1ULL << (SEGMENT_SET_BITS-1))) != 0;
 }
 
-static inline UWord SS_get_size (SegmentSet ss) 
-{
+static inline UWord SS_get_size (SegmentSet ss) {
    if (SS_is_singleton(ss)) return 1;
    tl_assert(HG_(cardinalityWSU)(univ_ssets) > ss);
    return HG_(cardinalityWS)(univ_ssets, ss);
 }
 
-static inline SegmentSet SS_mk_singleton (SegmentID ss)
-{
+static inline SegmentSet SS_mk_singleton (SegmentID ss) {
    tl_assert(SEG_id_is_sane(ss));
    ss |= (1ULL << (SEGMENT_SET_BITS-1));
    tl_assert(SS_is_singleton(ss));
    return ss;
 }
 
-static inline SegmentID SS_get_singleton (SegmentSet ss)
-{
+static inline SegmentID SS_get_singleton (SegmentSet ss) {
    tl_assert(SS_is_singleton(ss));
    ss &= ~(1ULL << (SEGMENT_SET_BITS-1));
    tl_assert(SEG_id_is_sane(ss));
    return ss;
 }
 
-static inline SegmentID SS_get_element (SegmentSet ss, UWord i)
-{
+static inline SegmentID SS_get_element (SegmentSet ss, UWord i) {
    UWord nWords, *words;
    if (SS_is_singleton(ss))
       return SS_get_singleton(ss);
@@ -1071,11 +1066,9 @@ static inline SegmentID SS_get_element (SegmentSet ss, UWord i)
    return words[i];
 }
 
-
 static inline Bool LS_valid (LockSet ls) {
-  return ls < (1ULL << LOCK_SET_BITS);
+   return ls < (1ULL << LOCK_SET_BITS);
 }
-
 
 static inline SVal mk_SHVAL_RW (Bool is_w, SegmentSet ss, LockSet ls) {
    SVal res;
@@ -1089,19 +1082,19 @@ static inline SVal mk_SHVAL_RW (Bool is_w, SegmentSet ss, LockSet ls) {
    return res;
 }
 static inline SVal mk_SHVAL_R (SegmentSet ss, LockSet ls) {
-  return mk_SHVAL_RW(False, ss, ls);
+   return mk_SHVAL_RW(False, ss, ls);
 }
 static inline SVal mk_SHVAL_W (SegmentSet ss, LockSet ls) {
-  return mk_SHVAL_RW(True, ss, ls);
+   return mk_SHVAL_RW(True, ss, ls);
 }
 
 static inline SegmentSet get_SHVAL_SS (SVal sv) {
-  SegmentSet ss;
-  int shift = 62 - SEGMENT_SET_BITS;
-  int mask  = (1 << SEGMENT_SET_BITS) - 1;
-  ss = (sv >> shift) & mask;
-  tl_assert(SS_valid(ss));
-  return ss;
+   SegmentSet ss;
+   Int   shift = 62 - SEGMENT_SET_BITS;
+   ULong mask  = (1 << SEGMENT_SET_BITS) - 1;
+   ss = (sv >> shift) & mask;
+   tl_assert(SS_valid(ss));
+   return ss;
 }
 static inline LockSet get_SHVAL_LS (SVal sv) {
   LockSet ls;
@@ -1131,8 +1124,8 @@ static inline Bool is_SHVAL_NoAccess(SVal sv) {return sv == SHVAL_NoAccess;}
 static inline Bool is_SHVAL_Race    (SVal sv) {return sv == SHVAL_Race;}
 
 static inline Bool is_SHVAL_valid ( SVal sv) {
-   return is_SHVAL_RW(sv) || sv == SHVAL_Race 
-         || sv == SHVAL_New || sv == SHVAL_NoAccess;
+   return is_SHVAL_RW(sv) || is_SHVAL_Race(sv)
+          || is_SHVAL_New(sv) || is_SHVAL_NoAccess(sv);
 }
 
 
@@ -3065,7 +3058,7 @@ SVal memory_state_machine(Bool is_w, Thread* thr, Addr a, SVal sv_old, Int sz)
    LockSet    currLS = is_w ? thr->locksetW
                             : thr->locksetA;
 
-   if (UNLIKELY(sv_old == SHVAL_Race)) {
+   if (UNLIKELY(is_SHVAL_Race(sv_old))) {
       // we already reported a race, don't bother again. 
       sv_new = sv_old;
       goto done;
