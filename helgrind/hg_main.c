@@ -365,7 +365,7 @@ typedef
 
 /* ------ CacheLine ------ */
 
-#define N_LINE_BITS      5 /* must be >= 3 */
+#define N_LINE_BITS      6 /* must be >= 3 */
 #define N_LINE_ARANGE    (1 << N_LINE_BITS)
 #define N_LINE_TREES     (N_LINE_ARANGE >> 3)
 
