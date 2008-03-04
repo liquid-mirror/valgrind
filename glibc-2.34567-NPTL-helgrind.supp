@@ -433,3 +433,11 @@
    fun:_ZN6QMutex4lockEv
    fun:_ZN6QMutex4lockEv
 }
+
+#####------- intentional races in hg_intercepts.c. ------######
+# KCC: suppress  intentional race on line 218 of hg_intercepts.c
+{
+   helgrind-hg_intercepts-001
+   Helgrind:Race
+   fun:pthread_create*
+}

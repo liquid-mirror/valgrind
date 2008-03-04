@@ -167,6 +167,7 @@ struct _WordSetU {
       UWord     n_isEmpty;
       UWord     n_isSingleton;
       UWord     n_anyElementOf;
+      UWord     n_elementOf;
       UWord     n_isSubsetOf;
    };
 
@@ -508,6 +509,7 @@ void HG_(ppWSUstats) ( WordSetU* wsu, HChar* name )
    VG_(printf)("      isEmpty      %10u\n",   wsu->n_isEmpty);
    VG_(printf)("      isSingleton  %10u\n",   wsu->n_isSingleton);
    VG_(printf)("      anyElementOf %10u\n",   wsu->n_anyElementOf);
+   VG_(printf)("      elementOf    %10u\n",   wsu->n_elementOf);
    VG_(printf)("      isSubsetOf   %10u\n",   wsu->n_isSubsetOf);
 }
 
