@@ -132,6 +132,15 @@
 #  define SCE_CACHELINE 0   /* don't sanity-check CacheLine stuff */
 #endif
 
+/* For the SegmentID, SegmentSet and SVal stuff we may want more
+   intrusive checks.  Again there's no zero cost way to do this.  Set
+   the #if 0 to #if 1 and rebuild if you want them. */
+#if 0
+#  define SCE_SVALS 1 /* sanity-check shadow value stuff */
+#else
+#  define SCE_SVALS 0
+#endif
+
 static void all__sanity_check ( Char* who ); /* fwds */
 
 #define HG_CLI__MALLOC_REDZONE_SZB 16 /* let's say */
@@ -597,11 +606,9 @@ static UWord stats__mk_Segment = 0;
 // TODO: when we reach limit of N1*N2 segments we need to start 
 // recycling old segments instead of exiting. 
 
-enum {
-   SEGMENT_ID_MAX           = 1 << 24, // N1*N2
-   SEGMENT_ID_CHUNK_SIZE    = 1 << 14, // N2
-   SEGMENT_ID_N_CHUNKS      = SEGMENT_ID_MAX / SEGMENT_ID_CHUNK_SIZE // N1
-};
+#define SEGMENT_ID_MAX        (1 << 24) // N1*N2
+#define SEGMENT_ID_CHUNK_SIZE (1 << 14) // N2
+#define SEGMENT_ID_N_CHUNKS   (SEGMENT_ID_MAX / SEGMENT_ID_CHUNK_SIZE) // N1
 
 static struct {
    UInt    size; 
@@ -645,7 +652,8 @@ static inline Bool SEG_id_is_sane(SegmentID n)
 
 static inline Segment *SEG_get(SegmentID n)
 {  
-   tl_assert(SEG_id_is_sane(n));
+   if (SCE_SVALS)
+      tl_assert(SEG_id_is_sane(n));
    return &SegmentArray.chunks[n / SEGMENT_ID_CHUNK_SIZE]
                               [n % SEGMENT_ID_CHUNK_SIZE];
 }
@@ -1048,9 +1056,11 @@ static inline UWord SS_get_size (SegmentSet ss) {
 }
 
 static inline SegmentSet SS_mk_singleton (SegmentID ss) {
-   tl_assert(SEG_id_is_sane(ss));
+   if (SCE_SVALS)
+      tl_assert(SEG_id_is_sane(ss));
    ss |= (1 << (SEGMENT_SET_BITS-1));
-   tl_assert(SS_is_singleton(ss));
+   if (SCE_SVALS)
+      tl_assert(SS_is_singleton(ss));
    return ss;
 }
 
@@ -1063,7 +1073,8 @@ static inline SegmentID SS_get_singleton (SegmentSet ss) {
 
 static inline SegmentID SS_get_singleton_UNCHECKED (SegmentSet ss) {
    ss &= ~(1 << (SEGMENT_SET_BITS-1));
-   tl_assert(SEG_id_is_sane(ss));
+   if (SCE_SVALS)
+      tl_assert(SEG_id_is_sane(ss));
    return ss;
 }
 
@@ -1082,8 +1093,10 @@ static inline Bool LS_valid (LockSet ls) {
 
 static inline SVal mk_SHVAL_RW (Bool is_w, SegmentSet ss, LockSet ls) {
    SVal res;
-   tl_assert(SS_valid(ss));
-   tl_assert(LS_valid(ls));
+   if (SCE_SVALS) {
+      tl_assert(SS_valid(ss));
+      tl_assert(LS_valid(ls));
+   }
    res = (1ULL << 63) 
          |  ((SVal)is_w << 62) 
          |  ((SVal)ss << (62-SEGMENT_SET_BITS)) 
@@ -3057,10 +3070,10 @@ SegmentSet do_SS_update_SINGLE ( /*OUT*/Bool* hb_all_p,
    tl_assert(SS_is_singleton(oldSS));
    stats__msm_oldSS_single++;
    S = SS_get_singleton_UNCHECKED(oldSS);
-   if (S == currS  // Same segment. 
-       || SEG_get(S)->thr == thr // Same thread. 
-       || happens_before(S, currS)) {
-          // different thread, but happens-before
+   if (LIKELY(S == currS  // Same segment. 
+              || SEG_get(S)->thr == thr // Same thread. 
+              || happens_before(S, currS))) {
+                 // different thread, but happens-before
       *hb_all_p = True;
       newSS = SS_mk_singleton(currS);
       if (UNLIKELY(do_trace)) {
