@@ -3038,15 +3038,64 @@ static void msm__show_state_change ( Thread* thr_acc, Addr a, Int szB,
 // This routine is not (yet) fully optimized for performance. 
 // TODO: handle state with one segment in segment set separately 
 // for better performance. 
+
+static inline
+SegmentSet do_SS_update ( /*OUT*/Bool* hb_all_p, 
+                          Thread* thr,
+                          Bool do_trace,
+                          SegmentSet oldSS, SegmentID currS )
+{
+   UWord i;
+   UWord oldSS_size = 0;
+   SegmentSet newSS = 0;
+   oldSS_size = SS_get_size(oldSS);
+
+   if (oldSS_size == 1) {
+      stats__msm_oldSS_single++;
+   } else {
+      tl_assert(oldSS_size > 1);
+      stats__msm_oldSS_multi++;
+   }
+
+   // update the segment set and compute hb_all
+   *hb_all_p = True;
+   newSS = SS_mk_singleton(currS);
+   for (i = 0; i < oldSS_size; i++) {
+      SegmentID S = SS_get_element(oldSS, i);
+      Bool hb = False;
+      if (S == currS  // Same segment. 
+          || SEG_get(S)->thr == thr // Same thread. 
+          || happens_before(S, currS)) {
+             // different thread, but happens-before
+         hb = True;
+      }
+      if (do_trace) {
+         VG_(printf)("HB(S%d/T%d,cur)=%d\n",
+                     S, SEG_get(S)->thr->errmsg_index, hb);
+      }
+
+      if (!hb) {
+         *hb_all_p = False;
+         // Not happened-before. Leave this segment in SS.
+         if (SS_is_singleton(newSS)) {
+            tl_assert(currS != S);
+            newSS = HG_(doubletonWS)(univ_ssets, currS, S);
+         } else {
+            newSS = HG_(addToWS)(univ_ssets, newSS, S);
+         }
+      }
+   }
+   return newSS; 
+}
+
+
 static 
 SVal msm_handle_write(Thread* thr, Addr a, SVal sv_old, Int sz)
 {
-   UWord      i;
    Bool       was_w;
    SegmentSet oldSS;
    LockSet    oldLS;
    Bool       hb_all     = False;
-   UWord      oldSS_size = 0;
    Bool       is_race    = False;
    SVal       sv_new     = SHVAL_Invalid;
    Bool       do_trace   = clo_trace_level > 0 
@@ -3094,67 +3143,24 @@ SVal msm_handle_write(Thread* thr, Addr a, SVal sv_old, Int sz)
    // Read or Write
    if (LIKELY(is_SHVAL_RW(sv_old))) {
       was_w = is_SHVAL_W(sv_old);
-      oldSS = get_SHVAL_SS(sv_old);
-      oldLS = get_SHVAL_LS(sv_old);
-
-      oldSS_size = SS_get_size(oldSS);
-      if (oldSS_size == 1) {
-         stats__msm_oldSS_single++;
-      } else {
-         tl_assert(oldSS_size > 1);
-         stats__msm_oldSS_multi++;
-      }
 
       // update the segment set and compute hb_all
-      hb_all = True;
-      newSS = SS_mk_singleton(currS);
-      for (i = 0; i < oldSS_size; i++) {
-         SegmentID S = SS_get_element(oldSS, i);
-         Bool hb = False;
-         if (S == currS  // Same segment. 
-             || SEG_get(S)->thr == thr // Same thread. 
-             || happens_before(S, currS)) {
-                // different thread, but happens-before
-            hb = True;
-         }
-         if (do_trace) {
-            VG_(printf)("HB(S%d/T%d,cur)=%d\n",
-                        S, SEG_get(S)->thr->errmsg_index, hb);
-         }
-
-         if (!hb) {
-            hb_all = False;
-            // Not happened-before. Leave this segment in SS.
-            if (SS_is_singleton(newSS)) {
-               tl_assert(currS != S);
-               newSS = HG_(doubletonWS)(univ_ssets, currS, S);
-            } else {
-               newSS = HG_(addToWS)(univ_ssets, newSS, S);
-            }
-         }
-      } 
+      oldSS = get_SHVAL_SS(sv_old);
+      newSS = do_SS_update( &hb_all, thr, do_trace, oldSS, currS );
 
       // update lock set. 
       if (hb_all) {
          newLS = currLS;
       } else {
+         oldLS = get_SHVAL_LS(sv_old);
          newLS = HG_(intersectWS)(univ_lsets, oldLS, currLS);
       }
-
-      // update the state 
 
       // generate new SVal
       sv_new = mk_SHVAL_W(newSS, newLS);
 
       is_race = !SS_is_singleton(newSS)
                 && HG_(isEmptyWS)(univ_lsets, newLS);
-
-      if (oldLS != newLS) { 
-         // if the lockset changed, remember when it happened
-         if (0) // FIXME.  Do we want this functionality?  If so,
-            // it can be very slow.
-            record_last_lock_lossage(a, oldLS, newLS);
-      }
 
       if      ( (!was_w) ) stats__msm_R_to_W++;
       else if ( (was_w)  ) stats__msm_W_to_W++;
@@ -3233,12 +3239,10 @@ SVal msm_handle_write(Thread* thr, Addr a, SVal sv_old, Int sz)
 static 
 SVal msm_handle_read(Thread* thr, Addr a, SVal sv_old, Int sz)
 {
-   UWord      i;
    Bool       was_w, now_w;
    SegmentSet oldSS;
    LockSet    oldLS;
    Bool       hb_all     = False;
-   UWord      oldSS_size = 0;
    Bool       is_race    = False;
    SVal       sv_new     = SHVAL_Invalid;
    Bool       do_trace   = clo_trace_level > 0 
@@ -3286,50 +3290,16 @@ SVal msm_handle_read(Thread* thr, Addr a, SVal sv_old, Int sz)
    // Read or Write
    if (LIKELY(is_SHVAL_RW(sv_old))) {
       was_w = is_SHVAL_W(sv_old);
-      oldSS = get_SHVAL_SS(sv_old);
-      oldLS = get_SHVAL_LS(sv_old);
-
-      oldSS_size = SS_get_size(oldSS);
-      if (oldSS_size == 1) {
-         stats__msm_oldSS_single++;
-      } else {
-         tl_assert(oldSS_size > 1);
-         stats__msm_oldSS_multi++;
-      }
 
       // update the segment set and compute hb_all
-      hb_all = True;
-      newSS = SS_mk_singleton(currS);
-      for (i = 0; i < oldSS_size; i++) {
-         SegmentID S = SS_get_element(oldSS, i);
-         Bool hb = False;
-         if (S == currS  // Same segment. 
-             || SEG_get(S)->thr == thr // Same thread. 
-             || happens_before(S, currS)) {
-                // different thread, but happens-before
-            hb = True;
-         }
-         if (do_trace) {
-            VG_(printf)("HB(S%d/T%d,cur)=%d\n",
-                        S, SEG_get(S)->thr->errmsg_index, hb);
-         }
-
-         if (!hb) {
-            hb_all = False;
-            // Not happened-before. Leave this segment in SS.
-            if (SS_is_singleton(newSS)) {
-               tl_assert(currS != S);
-               newSS = HG_(doubletonWS)(univ_ssets, currS, S);
-            } else {
-               newSS = HG_(addToWS)(univ_ssets, newSS, S);
-            }
-         }
-      } 
+      oldSS = get_SHVAL_SS(sv_old);
+      newSS = do_SS_update( &hb_all, thr, do_trace, oldSS, currS );
 
       // update lock set. 
       if (hb_all) {
          newLS = currLS;
       } else {
+         oldLS = get_SHVAL_LS(sv_old);
          newLS = HG_(intersectWS)(univ_lsets, oldLS, currLS);
       }
 
@@ -3341,13 +3311,6 @@ SVal msm_handle_read(Thread* thr, Addr a, SVal sv_old, Int sz)
 
       is_race = now_w && !SS_is_singleton(newSS)
                       && HG_(isEmptyWS)(univ_lsets, newLS);
-
-      if (oldLS != newLS) { 
-         // if the lockset changed, remember when it happened
-         if (0) // FIXME.  Do we want this functionality?  If so,
-            // it can be very slow.
-            record_last_lock_lossage(a, oldLS, newLS);
-      }
 
       if      ( (!was_w) && (!now_w) ) stats__msm_R_to_R++;
       else if ( (!was_w) && (now_w) )  stats__msm_R_to_W++;
