@@ -1061,6 +1061,12 @@ static inline SegmentID SS_get_singleton (SegmentSet ss) {
    return ss;
 }
 
+static inline SegmentID SS_get_singleton_UNCHECKED (SegmentSet ss) {
+   ss &= ~(1 << (SEGMENT_SET_BITS-1));
+   tl_assert(SEG_id_is_sane(ss));
+   return ss;
+}
+
 static inline SegmentID SS_get_element (SegmentSet ss, UWord i) {
    UWord nWords, *words;
    if (SS_is_singleton(ss))
@@ -3038,26 +3044,59 @@ static void msm__show_state_change ( Thread* thr_acc, Addr a, Int szB,
 // This routine is not (yet) fully optimized for performance. 
 // TODO: handle state with one segment in segment set separately 
 // for better performance. 
-
 static inline
-SegmentSet do_SS_update ( /*OUT*/Bool* hb_all_p, 
-                          Thread* thr,
-                          Bool do_trace,
-                          SegmentSet oldSS, SegmentID currS )
+SegmentSet do_SS_update_SINGLE ( /*OUT*/Bool* hb_all_p, 
+                                 Thread* thr,
+                                 Bool do_trace,
+                                 SegmentSet oldSS, SegmentID currS )
 {
+   // update the segment set and compute hb_all
+   /* case where oldSS is a single segment */
+   SegmentSet newSS;
+   SegmentID S;
+   tl_assert(SS_is_singleton(oldSS));
+   stats__msm_oldSS_single++;
+   S = SS_get_singleton_UNCHECKED(oldSS);
+   if (S == currS  // Same segment. 
+       || SEG_get(S)->thr == thr // Same thread. 
+       || happens_before(S, currS)) {
+          // different thread, but happens-before
+      *hb_all_p = True;
+      newSS = SS_mk_singleton(currS);
+      if (UNLIKELY(do_trace)) {
+         VG_(printf)("HB(S%d/T%d,cur)=1\n",
+                     S, SEG_get(S)->thr->errmsg_index);
+      }
+   } else {
+      *hb_all_p = False;
+      // Not happened-before. Leave this segment in SS.
+      tl_assert(currS != S);
+      newSS = HG_(doubletonWS)(univ_ssets, currS, S);
+      if (UNLIKELY(do_trace)) {
+         VG_(printf)("HB(S%d/T%d,cur)=0\n",
+                     S, SEG_get(S)->thr->errmsg_index);
+      }
+   }
+   return newSS;
+}
+
+static __attribute__((noinline))
+SegmentSet do_SS_update_MULTI ( /*OUT*/Bool* hb_all_p, 
+                                Thread* thr,
+                                Bool do_trace,
+                                SegmentSet oldSS, SegmentID currS )
+{
+   // update the segment set and compute hb_all
+   /* General case */
+
    UWord i;
    UWord oldSS_size = 0;
    SegmentSet newSS = 0;
+
    oldSS_size = SS_get_size(oldSS);
+   tl_assert(oldSS_size > 1);
+   stats__msm_oldSS_multi++;
 
-   if (oldSS_size == 1) {
-      stats__msm_oldSS_single++;
-   } else {
-      tl_assert(oldSS_size > 1);
-      stats__msm_oldSS_multi++;
-   }
-
-   // update the segment set and compute hb_all
    *hb_all_p = True;
    newSS = SS_mk_singleton(currS);
    for (i = 0; i < oldSS_size; i++) {
@@ -3085,8 +3124,9 @@ SegmentSet do_SS_update ( /*OUT*/Bool* hb_all_p,
          }
       }
    }
-   return newSS; 
+   return newSS;
 }
+
 
 
 static 
@@ -3146,7 +3186,11 @@ SVal msm_handle_write(Thread* thr, Addr a, SVal sv_old, Int sz)
 
       // update the segment set and compute hb_all
       oldSS = get_SHVAL_SS(sv_old);
-      newSS = do_SS_update( &hb_all, thr, do_trace, oldSS, currS );
+      if (LIKELY(SS_is_singleton(oldSS))) {
+         newSS = do_SS_update_SINGLE( &hb_all, thr, do_trace, oldSS, currS );
+      } else {
+         newSS = do_SS_update_MULTI( &hb_all, thr, do_trace, oldSS, currS );
+      }
 
       // update lock set. 
       if (hb_all) {
@@ -3293,7 +3337,11 @@ SVal msm_handle_read(Thread* thr, Addr a, SVal sv_old, Int sz)
 
       // update the segment set and compute hb_all
       oldSS = get_SHVAL_SS(sv_old);
-      newSS = do_SS_update( &hb_all, thr, do_trace, oldSS, currS );
+      if (LIKELY(SS_is_singleton(oldSS))) {
+         newSS = do_SS_update_SINGLE( &hb_all, thr, do_trace, oldSS, currS );
+      } else {
+         newSS = do_SS_update_MULTI( &hb_all, thr, do_trace, oldSS, currS );
+      }
 
       // update lock set. 
       if (hb_all) {
