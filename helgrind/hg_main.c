@@ -2832,21 +2832,16 @@ static void all__sanity_check ( Char* who ) {
 /*--- the core memory state machine (msm__* functions)         ---*/
 /*----------------------------------------------------------------*/
 
-static UWord stats__msm_read_Excl_nochange = 0;
-static UWord stats__msm_read_Excl_transfer = 0;
-static UWord stats__msm_read_Excl_to_ShR   = 0;
-static UWord stats__msm_read_ShR_to_ShR    = 0;
-static UWord stats__msm_read_ShM_to_ShM    = 0;
-static UWord stats__msm_read_New_to_Excl   = 0;
-static UWord stats__msm_read_NoAccess      = 0;
-
-static UWord stats__msm_write_Excl_nochange = 0;
-static UWord stats__msm_write_Excl_transfer = 0;
-static UWord stats__msm_write_Excl_to_ShM   = 0;
-static UWord stats__msm_write_ShR_to_ShM    = 0;
-static UWord stats__msm_write_ShM_to_ShM    = 0;
-static UWord stats__msm_write_New_to_Excl   = 0;
-static UWord stats__msm_write_NoAccess      = 0;
+static UWord stats__msm_BHL_hack    = 0;
+static UWord stats__msm_Race        = 0;
+static UWord stats__msm_R_to_R      = 0;
+static UWord stats__msm_R_to_W      = 0;
+static UWord stats__msm_W_to_R      = 0;
+static UWord stats__msm_W_to_W      = 0;
+static UWord stats__msm_New_to_W    = 0;
+static UWord stats__msm_New_to_R    = 0;
+static UWord stats__msm_wr_NoAccess = 0;
+static UWord stats__msm_rd_NoAccess = 0;
 
 /* fwds */
 static void record_error_Race ( Thread* thr, 
@@ -3065,12 +3060,14 @@ SVal memory_state_machine(Bool is_w, Thread* thr, Addr a, SVal sv_old, Int sz)
 
    if (UNLIKELY(is_SHVAL_Race(sv_old))) {
       // we already reported a race, don't bother again. 
+      stats__msm_Race++;
       sv_new = sv_old;
       goto done;
    }
 
    if (UNLIKELY(__bus_lock_Lock->heldBy)
        && (is_SHVAL_New(sv_old) || is_SHVAL_R(sv_old))) {
+      stats__msm_BHL_hack++;
       // BHL is held and we are in 'Read' or 'New' state. 
       // User is doing something very smart with LOCK prefix.
       // Just ignore this memory location. 
@@ -3151,11 +3148,19 @@ SVal memory_state_machine(Bool is_w, Thread* thr, Addr a, SVal sv_old, Int sz)
             // it can be very slow.
             record_last_lock_lossage(a, oldLS, newLS);
       }
+
+      if      ( (!was_w) && (!now_w) ) stats__msm_R_to_R++;
+      else if ( (!was_w) && (now_w) )  stats__msm_R_to_W++;
+      else if ( (was_w)  && (!now_w) ) stats__msm_W_to_R++;
+      else if ( (was_w)  && (now_w) )  stats__msm_W_to_W++;
+
       goto done;
    }
 
    // New
    if (is_SHVAL_New(sv_old)) {
+      if (is_w) stats__msm_New_to_W++; 
+           else stats__msm_New_to_R++;
       newSS = SS_mk_singleton(currS);
       sv_new = mk_SHVAL_RW(is_w, newSS, currLS);
       goto done;
@@ -3164,6 +3169,8 @@ SVal memory_state_machine(Bool is_w, Thread* thr, Addr a, SVal sv_old, Int sz)
    // NoAccess
    if (is_SHVAL_NoAccess(sv_old)) {
       // TODO: complain
+      if (is_w) stats__msm_wr_NoAccess++; 
+           else stats__msm_rd_NoAccess++;
       sv_new = sv_old;
       goto done;
    }
@@ -8462,20 +8469,16 @@ static void hg_fini ( Int exitcode )
       VG_(printf)("   sanity checks: %,8lu\n", stats__sanity_checks);
 
       VG_(printf)("\n");
-      VG_(printf)("     msm: %,12lu %,12lu rd/wr_Excl_nochange\n",
-                  stats__msm_read_Excl_nochange, stats__msm_write_Excl_nochange);
-      VG_(printf)("     msm: %,12lu %,12lu rd/wr_Excl_transfer\n",
-                  stats__msm_read_Excl_transfer, stats__msm_write_Excl_transfer);
-      VG_(printf)("     msm: %,12lu %,12lu rd/wr_Excl_to_ShR/ShM\n",
-                  stats__msm_read_Excl_to_ShR,   stats__msm_write_Excl_to_ShM);
-      VG_(printf)("     msm: %,12lu %,12lu rd/wr_ShR_to_ShR/ShM\n",
-                  stats__msm_read_ShR_to_ShR,    stats__msm_write_ShR_to_ShM);
-      VG_(printf)("     msm: %,12lu %,12lu rd/wr_ShM_to_ShM\n",
-                  stats__msm_read_ShM_to_ShM,    stats__msm_write_ShM_to_ShM);
-      VG_(printf)("     msm: %,12lu %,12lu rd/wr_New_to_Excl\n",
-                  stats__msm_read_New_to_Excl,   stats__msm_write_New_to_Excl);
-      VG_(printf)("     msm: %,12lu %,12lu rd/wr_NoAccess\n",
-                  stats__msm_read_NoAccess,      stats__msm_write_NoAccess);
+      VG_(printf)("     msm: %,12lu %,12lu  BHL-skipped, Race\n",
+                  stats__msm_BHL_hack, stats__msm_Race);
+      VG_(printf)("     msm: %,12lu %,12lu  R_to_R,   R_to_W\n",
+                  stats__msm_R_to_R, stats__msm_R_to_W);
+      VG_(printf)("     msm: %,12lu %,12lu  W_to_R,   W_to_W\n",
+                  stats__msm_W_to_R, stats__msm_W_to_W);
+      VG_(printf)("     msm: %,12lu %,12lu  New_to_R, New_to_W\n",
+                  stats__msm_New_to_R, stats__msm_New_to_W);
+      VG_(printf)("     msm: %,12lu %,12lu  rd_NoAccess, wr_NoAccess\n",
+                  stats__msm_rd_NoAccess, stats__msm_rd_NoAccess);
 
       VG_(printf)("\n");
       VG_(printf)(" secmaps: %,10lu allocd (%,12lu g-a-range)\n",
