@@ -2832,16 +2832,18 @@ static void all__sanity_check ( Char* who ) {
 /*--- the core memory state machine (msm__* functions)         ---*/
 /*----------------------------------------------------------------*/
 
-static UWord stats__msm_BHL_hack    = 0;
-static UWord stats__msm_Race        = 0;
-static UWord stats__msm_R_to_R      = 0;
-static UWord stats__msm_R_to_W      = 0;
-static UWord stats__msm_W_to_R      = 0;
-static UWord stats__msm_W_to_W      = 0;
-static UWord stats__msm_New_to_W    = 0;
-static UWord stats__msm_New_to_R    = 0;
-static UWord stats__msm_wr_NoAccess = 0;
-static UWord stats__msm_rd_NoAccess = 0;
+static UWord stats__msm_BHL_hack     = 0;
+static UWord stats__msm_Race         = 0;
+static UWord stats__msm_R_to_R       = 0;
+static UWord stats__msm_R_to_W       = 0;
+static UWord stats__msm_W_to_R       = 0;
+static UWord stats__msm_W_to_W       = 0;
+static UWord stats__msm_New_to_W     = 0;
+static UWord stats__msm_New_to_R     = 0;
+static UWord stats__msm_wr_NoAccess  = 0;
+static UWord stats__msm_rd_NoAccess  = 0;
+static UWord stats__msm_oldSS_single = 0;
+static UWord stats__msm_oldSS_multi  = 0;
 
 /* fwds */
 static void record_error_Race ( Thread* thr, 
@@ -3097,6 +3099,13 @@ SVal memory_state_machine(Bool is_w, Thread* thr, Addr a, SVal sv_old, Int sz)
       oldLS = get_SHVAL_LS(sv_old);
 
       oldSS_size = SS_get_size(oldSS);
+      if (oldSS_size == 1) {
+         stats__msm_oldSS_single++;
+      } else {
+         tl_assert(oldSS_size > 1);
+         stats__msm_oldSS_multi++;
+      }
+
       // update the segment set and compute hb_all
       hb_all = True;
       newSS = SS_mk_singleton(currS);
@@ -8479,6 +8488,8 @@ static void hg_fini ( Int exitcode )
                   stats__msm_New_to_R, stats__msm_New_to_W);
       VG_(printf)("     msm: %,12lu %,12lu  rd_NoAccess, wr_NoAccess\n",
                   stats__msm_rd_NoAccess, stats__msm_rd_NoAccess);
+      VG_(printf)("     msm: %,12lu %,12lu  oldSS_single, oldSS_multi\n",
+                  stats__msm_oldSS_single, stats__msm_oldSS_multi);
 
       VG_(printf)("\n");
       VG_(printf)(" secmaps: %,10lu allocd (%,12lu g-a-range)\n",
