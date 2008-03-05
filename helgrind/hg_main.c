@@ -3039,10 +3039,10 @@ static void msm__show_state_change ( Thread* thr_acc, Addr a, Int szB,
 // TODO: handle state with one segment in segment set separately 
 // for better performance. 
 static 
-SVal memory_state_machine(Bool is_w, Thread* thr, Addr a, SVal sv_old, Int sz)
+SVal msm_handle_write(Thread* thr, Addr a, SVal sv_old, Int sz)
 {
    UWord      i;
-   Bool       was_w, now_w;
+   Bool       was_w;
    SegmentSet oldSS;
    LockSet    oldLS;
    Bool       hb_all     = False;
@@ -3057,8 +3057,7 @@ SVal memory_state_machine(Bool is_w, Thread* thr, Addr a, SVal sv_old, Int sz)
    LockSet    newLS = 0;
 
    // current locks. 
-   LockSet    currLS = is_w ? thr->locksetW
-                            : thr->locksetA;
+   LockSet    currLS = thr->locksetW;
 
    if (UNLIKELY(is_SHVAL_Race(sv_old))) {
       // we already reported a race, don't bother again. 
@@ -3143,13 +3142,12 @@ SVal memory_state_machine(Bool is_w, Thread* thr, Addr a, SVal sv_old, Int sz)
       }
 
       // update the state 
-      now_w = is_w || (was_w && !hb_all);
 
       // generate new SVal
-      sv_new = mk_SHVAL_RW(now_w, newSS, newLS);
+      sv_new = mk_SHVAL_W(newSS, newLS);
 
-      is_race = now_w && !SS_is_singleton(newSS)
-                      && HG_(isEmptyWS)(univ_lsets, newLS);
+      is_race = !SS_is_singleton(newSS)
+                && HG_(isEmptyWS)(univ_lsets, newLS);
 
       if (oldLS != newLS) { 
          // if the lockset changed, remember when it happened
@@ -3158,28 +3156,24 @@ SVal memory_state_machine(Bool is_w, Thread* thr, Addr a, SVal sv_old, Int sz)
             record_last_lock_lossage(a, oldLS, newLS);
       }
 
-      if      ( (!was_w) && (!now_w) ) stats__msm_R_to_R++;
-      else if ( (!was_w) && (now_w) )  stats__msm_R_to_W++;
-      else if ( (was_w)  && (!now_w) ) stats__msm_W_to_R++;
-      else if ( (was_w)  && (now_w) )  stats__msm_W_to_W++;
+      if      ( (!was_w) ) stats__msm_R_to_W++;
+      else if ( (was_w)  ) stats__msm_W_to_W++;
 
       goto done;
    }
 
    // New
    if (is_SHVAL_New(sv_old)) {
-      if (is_w) stats__msm_New_to_W++; 
-           else stats__msm_New_to_R++;
+      stats__msm_New_to_W++; 
       newSS = SS_mk_singleton(currS);
-      sv_new = mk_SHVAL_RW(is_w, newSS, currLS);
+      sv_new = mk_SHVAL_W(newSS, currLS);
       goto done;
    }
 
    // NoAccess
    if (is_SHVAL_NoAccess(sv_old)) {
       // TODO: complain
-      if (is_w) stats__msm_wr_NoAccess++; 
-           else stats__msm_rd_NoAccess++;
+      stats__msm_wr_NoAccess++; 
       sv_new = sv_old;
       goto done;
    }
@@ -3208,7 +3202,7 @@ SVal memory_state_machine(Bool is_w, Thread* thr, Addr a, SVal sv_old, Int sz)
       show_sval(buf, sizeof(buf), sv_new);
       VG_(message)(Vg_UserMsg, "TRACE: %p S%d/T%d %c %llx %s", a, 
                    (int)currS, thr->errmsg_index, 
-                   is_w ? 'w' : 'r', sv_new, buf);
+                   'w' , sv_new, buf);
       if (clo_trace_level >= 2) {
          ThreadId tid = map_threads_maybe_reverse_lookup_SLOW(thr);
          if (tid != VG_INVALID_THREADID) {
@@ -3226,7 +3220,7 @@ SVal memory_state_machine(Bool is_w, Thread* thr, Addr a, SVal sv_old, Int sz)
    if (is_race) {
       // ok, now record the race. 
       record_error_Race( thr, 
-                         a, is_w, sz, sv_old, sv_new,
+                         a, True, sz, sv_old, sv_new,
                          maybe_get_lastlock_initpoint(a) );
       // put this in Race state
       sv_new = SHVAL_Race;
@@ -3236,6 +3230,199 @@ SVal memory_state_machine(Bool is_w, Thread* thr, Addr a, SVal sv_old, Int sz)
 }
 
 
+static 
+SVal msm_handle_read(Thread* thr, Addr a, SVal sv_old, Int sz)
+{
+   UWord      i;
+   Bool       was_w, now_w;
+   SegmentSet oldSS;
+   LockSet    oldLS;
+   Bool       hb_all     = False;
+   UWord      oldSS_size = 0;
+   Bool       is_race    = False;
+   SVal       sv_new     = SHVAL_Invalid;
+   Bool       do_trace   = clo_trace_level > 0 
+                           && a >= clo_trace_addr 
+                           && a < (clo_trace_addr+sz);
+   SegmentID  currS = thr->csegid;
+   SegmentSet newSS = 0;
+   LockSet    newLS = 0;
+
+   // current locks. 
+   LockSet    currLS = thr->locksetA;
+
+   if (UNLIKELY(is_SHVAL_Race(sv_old))) {
+      // we already reported a race, don't bother again. 
+      stats__msm_Race++;
+      sv_new = sv_old;
+      goto done;
+   }
+
+   if (UNLIKELY(__bus_lock_Lock->heldBy)
+       && (is_SHVAL_New(sv_old) || is_SHVAL_R(sv_old))) {
+      stats__msm_BHL_hack++;
+      // BHL is held and we are in 'Read' or 'New' state. 
+      // User is doing something very smart with LOCK prefix.
+      // Just ignore this memory location. 
+      sv_new = SHVAL_Race;
+
+      // VG_(printf)("Ignoring memory %p accessed with LOCK prefix at\n", a);
+      // VG_(get_and_pp_StackTrace)(map_threads_reverse_lookup_SLOW(thr), 5);
+
+      goto done; 
+      // TODO: a better scheme might be: 
+      // When we see a first write with BHL held we do: 
+      // - If we are in state 'Read' or 'New', change the state to 'BHL'. 
+      // - If we are in state 'Write', report a race.
+      //
+      // When we are in state BHL: 
+      // - Any read keeps us in state 'BHL'. 
+      // - Any write with BHL held keeps us in state 'BHL'. 
+      // - Any other write is a race.
+   }
+
+   tl_assert(is_sane_Thread(thr));
+
+   // Read or Write
+   if (LIKELY(is_SHVAL_RW(sv_old))) {
+      was_w = is_SHVAL_W(sv_old);
+      oldSS = get_SHVAL_SS(sv_old);
+      oldLS = get_SHVAL_LS(sv_old);
+
+      oldSS_size = SS_get_size(oldSS);
+      if (oldSS_size == 1) {
+         stats__msm_oldSS_single++;
+      } else {
+         tl_assert(oldSS_size > 1);
+         stats__msm_oldSS_multi++;
+      }
+
+      // update the segment set and compute hb_all
+      hb_all = True;
+      newSS = SS_mk_singleton(currS);
+      for (i = 0; i < oldSS_size; i++) {
+         SegmentID S = SS_get_element(oldSS, i);
+         Bool hb = False;
+         if (S == currS  // Same segment. 
+             || SEG_get(S)->thr == thr // Same thread. 
+             || happens_before(S, currS)) {
+                // different thread, but happens-before
+            hb = True;
+         }
+         if (do_trace) {
+            VG_(printf)("HB(S%d/T%d,cur)=%d\n",
+                        S, SEG_get(S)->thr->errmsg_index, hb);
+         }
+
+         if (!hb) {
+            hb_all = False;
+            // Not happened-before. Leave this segment in SS.
+            if (SS_is_singleton(newSS)) {
+               tl_assert(currS != S);
+               newSS = HG_(doubletonWS)(univ_ssets, currS, S);
+            } else {
+               newSS = HG_(addToWS)(univ_ssets, newSS, S);
+            }
+         }
+      } 
+
+      // update lock set. 
+      if (hb_all) {
+         newLS = currLS;
+      } else {
+         newLS = HG_(intersectWS)(univ_lsets, oldLS, currLS);
+      }
+
+      // update the state 
+      now_w = was_w && !hb_all;
+
+      // generate new SVal
+      sv_new = mk_SHVAL_RW(now_w, newSS, newLS);
+
+      is_race = now_w && !SS_is_singleton(newSS)
+                      && HG_(isEmptyWS)(univ_lsets, newLS);
+
+      if (oldLS != newLS) { 
+         // if the lockset changed, remember when it happened
+         if (0) // FIXME.  Do we want this functionality?  If so,
+            // it can be very slow.
+            record_last_lock_lossage(a, oldLS, newLS);
+      }
+
+      if      ( (!was_w) && (!now_w) ) stats__msm_R_to_R++;
+      else if ( (!was_w) && (now_w) )  stats__msm_R_to_W++;
+      else if ( (was_w)  && (!now_w) ) stats__msm_W_to_R++;
+      else if ( (was_w)  && (now_w) )  stats__msm_W_to_W++;
+
+      goto done;
+   }
+
+   // New
+   if (is_SHVAL_New(sv_old)) {
+      stats__msm_New_to_R++;
+      newSS = SS_mk_singleton(currS);
+      sv_new = mk_SHVAL_R(newSS, currLS);
+      goto done;
+   }
+
+   // NoAccess
+   if (is_SHVAL_NoAccess(sv_old)) {
+      // TODO: complain
+      stats__msm_rd_NoAccess++;
+      sv_new = sv_old;
+      goto done;
+   }
+
+   /*NOTREACHED*/
+   tl_assert(0);
+
+  done:
+
+   if (do_trace) {
+      HChar buf[200];
+
+      VG_(printf)("RW-Locks held: ");
+      show_lockset(thr->locksetA);
+      VG_(printf)("\n");
+      if (thr->locksetA != thr->locksetW) {
+         VG_(printf)(" W-Locks held: ");
+         show_lockset(thr->locksetW);
+         VG_(printf)("\n");
+      }
+
+      if (__bus_lock_Lock->heldBy) {
+         VG_(printf)("BHL is held\n");
+      }
+
+      show_sval(buf, sizeof(buf), sv_new);
+      VG_(message)(Vg_UserMsg, "TRACE: %p S%d/T%d %c %llx %s", a, 
+                   (int)currS, thr->errmsg_index, 
+                   'r', sv_new, buf);
+      if (clo_trace_level >= 2) {
+         ThreadId tid = map_threads_maybe_reverse_lookup_SLOW(thr);
+         if (tid != VG_INVALID_THREADID) {
+            VG_(get_and_pp_StackTrace)( tid, 15);
+         }
+      }
+   }
+
+   if (clo_trace_level > 0 && !do_trace) {
+      // if we are tracing something, don't report a race on anything else.
+      is_race = False;
+   }
+
+   // report the race if needed
+   if (is_race) {
+      // ok, now record the race. 
+      record_error_Race( thr, 
+                         a, False, sz, sv_old, sv_new,
+                         maybe_get_lastlock_initpoint(a) );
+      // put this in Race state
+      sv_new = SHVAL_Race;
+   }
+
+   return sv_new; 
+}
 
 
 /*----------------------------------------------------------------*/
@@ -4201,7 +4388,7 @@ static void shadow_mem_read8 ( Thread* thr_acc, Addr a, SVal uuOpaque ) {
          tl_assert(is_sane_CacheLine(cl)); /* EXPENSIVE */
    }
    svOld = cl->svals[cloff];
-   svNew = memory_state_machine( False /*!is_w*/, thr_acc, a, svOld, 1 );
+   svNew = msm_handle_read( thr_acc, a, svOld, 1 );
    cl->svals[cloff] = svNew;
 }
 static void shadow_mem_read16 ( Thread* thr_acc, Addr a, SVal uuOpaque ) {
@@ -4227,7 +4414,7 @@ static void shadow_mem_read16 ( Thread* thr_acc, Addr a, SVal uuOpaque ) {
          tl_assert(is_sane_CacheLine(cl)); /* EXPENSIVE */
    }
    svOld = cl->svals[cloff];
-   svNew = memory_state_machine( False /*!is_w*/,  thr_acc, a, svOld, 2 );
+   svNew = msm_handle_read( thr_acc, a, svOld, 2 );
    cl->svals[cloff] = svNew;
    return;
   slowcase: /* misaligned, or must go further down the tree */
@@ -4259,7 +4446,7 @@ static void shadow_mem_read32_SLOW ( Thread* thr_acc, Addr a, SVal uuOpaque ) {
          tl_assert(is_sane_CacheLine(cl)); /* EXPENSIVE */
    }
    svOld = cl->svals[cloff];
-   svNew = memory_state_machine( False /*!is_w*/,  thr_acc, a, svOld, 4 );
+   svNew = msm_handle_read( thr_acc, a, svOld, 4 );
    cl->svals[cloff] = svNew;
    return;
   slowcase: /* misaligned, or must go further down the tree */
@@ -4281,7 +4468,7 @@ static void shadow_mem_read32 ( Thread* thr_acc, Addr a, SVal uuOpaque ) {
    descr = cl->descrs[tno];
    if (UNLIKELY( !(descr & (TREE_DESCR_32_0 << toff)) )) goto slowcase;
    { SVal* p = &cl->svals[cloff];
-     *p = memory_state_machine( False /*!is_w*/,  thr_acc, a, *p, 4 );
+     *p = msm_handle_read( thr_acc, a, *p, 4 );
    }
    return;
   slowcase: /* misaligned, or not at this level in the tree */
@@ -4305,7 +4492,7 @@ static void shadow_mem_read64 ( Thread* thr_acc, Addr a, SVal uuOpaque ) {
       goto slowcase;
    }
    svOld = cl->svals[cloff];
-   svNew = memory_state_machine( False /*!is_w*/,  thr_acc, a, svOld, 8 );
+   svNew = msm_handle_read( thr_acc, a, svOld, 8 );
    cl->svals[cloff] = svNew;
    return;
   slowcase: /* misaligned, or must go further down the tree */
@@ -4332,7 +4519,7 @@ static void shadow_mem_write8 ( Thread* thr_acc, Addr a, SVal uuOpaque ) {
          tl_assert(is_sane_CacheLine(cl)); /* EXPENSIVE */
    }
    svOld = cl->svals[cloff];
-   svNew = memory_state_machine( True /*is_w*/,  thr_acc, a, svOld, 1 );
+   svNew = msm_handle_write( thr_acc, a, svOld, 1 );
    cl->svals[cloff] = svNew;
 }
 static void shadow_mem_write16 ( Thread* thr_acc, Addr a, SVal uuOpaque ) {
@@ -4358,7 +4545,7 @@ static void shadow_mem_write16 ( Thread* thr_acc, Addr a, SVal uuOpaque ) {
          tl_assert(is_sane_CacheLine(cl)); /* EXPENSIVE */
    }
    svOld = cl->svals[cloff];
-   svNew = memory_state_machine( True /*is_w*/,  thr_acc, a, svOld, 2 );
+   svNew = msm_handle_write( thr_acc, a, svOld, 2 );
    cl->svals[cloff] = svNew;
    return;
   slowcase: /* misaligned, or must go further down the tree */
@@ -4390,7 +4577,7 @@ static void shadow_mem_write32_SLOW ( Thread* thr_acc, Addr a, SVal uuOpaque ) {
          tl_assert(is_sane_CacheLine(cl)); /* EXPENSIVE */
    }
    svOld = cl->svals[cloff];
-   svNew = memory_state_machine( True /*is_w*/,  thr_acc, a, svOld, 4 );
+   svNew = msm_handle_write( thr_acc, a, svOld, 4 );
    cl->svals[cloff] = svNew;
    return;
   slowcase: /* misaligned, or must go further down the tree */
@@ -4412,7 +4599,7 @@ static void shadow_mem_write32 ( Thread* thr_acc, Addr a, SVal uuOpaque ) {
    descr = cl->descrs[tno];
    if (UNLIKELY( !(descr & (TREE_DESCR_32_0 << toff)) )) goto slowcase;
    { SVal* p = &cl->svals[cloff];
-     *p = memory_state_machine( True /*is_w*/,  thr_acc, a, *p, 4 );
+     *p = msm_handle_write( thr_acc, a, *p, 4 );
    }
    return;
   slowcase: /* misaligned, or must go further down the tree */
@@ -4436,7 +4623,7 @@ static void shadow_mem_write64 ( Thread* thr_acc, Addr a, SVal uuOpaque ) {
       goto slowcase;
    }
    svOld = cl->svals[cloff];
-   svNew = memory_state_machine( True /*is_w*/,  thr_acc, a, svOld, 8 );
+   svNew = msm_handle_write( thr_acc, a, svOld, 8 );
    cl->svals[cloff] = svNew;
    return;
   slowcase: /* misaligned, or must go further down the tree */
