@@ -1127,15 +1127,14 @@ static inline LockSet get_SHVAL_LS (SVal sv) {
 }
 
 static inline Bool is_SHVAL_RW (SVal sv) {
+   /* Top 2 bits are 10 (R) or 11 (W) */
    return (sv >> 63) != 0;
 } 
 static inline Bool is_SHVAL_R (SVal sv) {
-   tl_assert(is_SHVAL_RW(sv));
-   return ((sv >> 62) & 1) == 0;
+   return ((sv >> 62) & 3) == 2; /* == 10 (R) */
 }
 static inline Bool is_SHVAL_W (SVal sv) {
-   tl_assert(is_SHVAL_RW(sv));
-   return ((sv >> 62) & 1) == 1;
+   return ((sv >> 62) & 3) == 3; /* == 11 (W) */
 }
 
 static inline Bool is_SHVAL_Shared (SVal sv) {
