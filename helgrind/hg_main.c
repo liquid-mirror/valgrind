@@ -1120,10 +1120,10 @@ static inline SegmentSet get_SHVAL_SS (SVal sv) {
    return ss;
 }
 static inline LockSet get_SHVAL_LS (SVal sv) {
-  LockSet ls;
-  ls = sv & ((1ULL << LOCK_SET_BITS) - 1);
-  tl_assert(LS_valid(ls));
-  return ls;
+   LockSet ls;
+   ls = sv & ((1ULL << LOCK_SET_BITS) - 1);
+   tl_assert(LS_valid(ls));
+   return ls;
 }
 
 static inline Bool is_SHVAL_RW (SVal sv) {
@@ -3906,87 +3906,80 @@ static void normalise_CacheLine ( /*MOD*/CacheLine* cl )
 }
 
 
-static 
-SVal* sequentialise_tree ( /*MOD*/SVal* dst, /*OUT*/Bool* anyShared,
-                           UShort descr, SVal* tree ) {
-   SVal* dst0 = dst;
-   *anyShared = False;
-
-#  define PUT(_n,_v)                                \
-      do { Word i;                                  \
-           if (is_SHVAL_Shared(_v))                 \
-              *anyShared = True;                    \
-           for (i = 0; i < (_n); i++)               \
-                  *dst++ = (_v);                    \
-      } while (0)
-
-   /* byte 0 */
-   if (descr & TREE_DESCR_64)   PUT(8, tree[0]); else
-   if (descr & TREE_DESCR_32_0) PUT(4, tree[0]); else
-   if (descr & TREE_DESCR_16_0) PUT(2, tree[0]); else
-   if (descr & TREE_DESCR_8_0)  PUT(1, tree[0]);
-   /* byte 1 */
-   if (descr & TREE_DESCR_8_1)  PUT(1, tree[1]);
-   /* byte 2 */
-   if (descr & TREE_DESCR_16_1) PUT(2, tree[2]); else
-   if (descr & TREE_DESCR_8_2)  PUT(1, tree[2]);
-   /* byte 3 */
-   if (descr & TREE_DESCR_8_3)  PUT(1, tree[3]);
-   /* byte 4 */
-   if (descr & TREE_DESCR_32_1) PUT(4, tree[4]); else
-   if (descr & TREE_DESCR_16_2) PUT(2, tree[4]); else
-   if (descr & TREE_DESCR_8_4)  PUT(1, tree[4]);
-   /* byte 5 */
-   if (descr & TREE_DESCR_8_5)  PUT(1, tree[5]);
-   /* byte 6 */
-   if (descr & TREE_DESCR_16_3) PUT(2, tree[6]); else
-   if (descr & TREE_DESCR_8_6)  PUT(1, tree[6]);
-   /* byte 7 */
-   if (descr & TREE_DESCR_8_7)  PUT(1, tree[7]);
-
-#  undef PUT
-
-   tl_assert( (((Char*)dst) - ((Char*)dst0)) == 8 * sizeof(SVal) );
-   return dst;
-}
+typedef struct { UChar count; SVal sval; } CountedSVal;
 
 /* Write the cacheline 'wix' to backing store.  Where it ends up
    is determined by its tag field. */
 static
-Bool sequentialise_CacheLine ( /*OUT*/SVal* dst, Word nDst, CacheLine* src )
+Bool sequentialise_CacheLine ( /*OUT*/CountedSVal* dst,
+                               /*OUT*/Word* dstUsedP,
+                               Word nDst, CacheLine* src )
 {
-   Word  tno, cloff;
+   Word  tno, cloff, dstUsed;
    Bool  anyShared = False;
-   SVal* dst0      = dst;
+
+   tl_assert(nDst == N_LINE_ARANGE);
+   dstUsed = 0;
 
    for (tno = 0, cloff = 0;  tno < N_LINE_TREES;  tno++, cloff += 8) {
       UShort descr = src->descrs[tno];
       SVal*  tree  = &src->svals[cloff];
-      Bool   bTmp  = False;
-      dst = sequentialise_tree ( dst, &bTmp, descr, tree );
-      anyShared |= bTmp;
+
+      /* sequentialise the tree described by (descr,tree). */
+#     define PUT(_n,_v)                                \
+         do { if (is_SHVAL_Shared(_v))                 \
+                 anyShared = True;                     \
+              dst[dstUsed  ].count = (_n);             \
+              dst[dstUsed++].sval  = (_v);             \
+         } while (0)
+
+      /* byte 0 */
+      if (descr & TREE_DESCR_64)   PUT(8, tree[0]); else
+      if (descr & TREE_DESCR_32_0) PUT(4, tree[0]); else
+      if (descr & TREE_DESCR_16_0) PUT(2, tree[0]); else
+      if (descr & TREE_DESCR_8_0)  PUT(1, tree[0]);
+      /* byte 1 */
+      if (descr & TREE_DESCR_8_1)  PUT(1, tree[1]);
+      /* byte 2 */
+      if (descr & TREE_DESCR_16_1) PUT(2, tree[2]); else
+      if (descr & TREE_DESCR_8_2)  PUT(1, tree[2]);
+      /* byte 3 */
+      if (descr & TREE_DESCR_8_3)  PUT(1, tree[3]);
+      /* byte 4 */
+      if (descr & TREE_DESCR_32_1) PUT(4, tree[4]); else
+      if (descr & TREE_DESCR_16_2) PUT(2, tree[4]); else
+      if (descr & TREE_DESCR_8_4)  PUT(1, tree[4]);
+      /* byte 5 */
+      if (descr & TREE_DESCR_8_5)  PUT(1, tree[5]);
+      /* byte 6 */
+      if (descr & TREE_DESCR_16_3) PUT(2, tree[6]); else
+      if (descr & TREE_DESCR_8_6)  PUT(1, tree[6]);
+      /* byte 7 */
+      if (descr & TREE_DESCR_8_7)  PUT(1, tree[7]);
+
+#     undef PUT
+      /* END sequentialise the tree described by (descr,tree). */
+
    }
    tl_assert(cloff == N_LINE_ARANGE);
+   tl_assert(dstUsed <= nDst);
 
-   /* Assert we wrote N_LINE_ARANGE shadow values. */
-   tl_assert( ((HChar*)dst) - ((HChar*)dst0)
-              == (Word)(nDst * sizeof(SVal)) );
-
+   *dstUsedP = dstUsed;
    return anyShared;
 }
 
 
 static __attribute__((noinline)) void cacheline_wback ( UWord wix )
 {
-   Word        i, j;
+   Word        i, j, k, m;
    Bool        anyShared = False;
    Addr        tag;
    SecMap*     sm;
    CacheLine*  cl;
    CacheLineZ* lineZ;
    CacheLineF* lineF;
-   Word        zix, fix;
-   SVal        shvals[N_LINE_ARANGE];
+   Word        zix, fix, csvalsUsed;
+   CountedSVal csvals[N_LINE_ARANGE];
    SVal        sv;
 
    if (0)
@@ -4015,28 +4008,43 @@ static __attribute__((noinline)) void cacheline_wback ( UWord wix )
    /* Generate the data to be stored */
    if (SCE_CACHELINE)
       tl_assert(is_sane_CacheLine(cl)); /* EXPENSIVE */
-   anyShared = sequentialise_CacheLine( shvals, N_LINE_ARANGE, cl );
+
+   csvalsUsed = -1;
+   anyShared = sequentialise_CacheLine( csvals, &csvalsUsed, 
+                                        N_LINE_ARANGE, cl );
+   tl_assert(csvalsUsed >= 1 && csvalsUsed <= N_LINE_ARANGE);
+   if (0) VG_(printf)("%lu ", csvalsUsed);
 
    lineZ->dict[0] = lineZ->dict[1] 
                   = lineZ->dict[2] = lineZ->dict[3] = 0;
 
-   for (i = 0; i < N_LINE_ARANGE; i++) {
+   /* i indexes actual shadow values, k is cursor in csvals */
+   i = 0;
+   for (k = 0; k < csvalsUsed; k++) {
 
-      sv = shvals[i];
+      sv = csvals[k].sval;
+      if (SCE_SVALS)
+         tl_assert(csvals[k].count >= 1 && csvals[k].count <= 8);
+      /* do we already have it? */
       for (j = 0; j < 4; j++) {
          if (sv == lineZ->dict[j])
             goto dict_ok;
       }
+      /* no.  look for a free slot. */
       for (j = 0; j < 4; j++) {
          if (lineZ->dict[j] == 0)
             break;
       }
       tl_assert(j >= 0 && j <= 4);
       if (j == 4) break; /* we'll have to use the f rep */
-      tl_assert(is_SHVAL_valid(sv));
+      if (SCE_SVALS)
+         tl_assert(is_SHVAL_valid(sv));
       lineZ->dict[j] = sv;
      dict_ok:
-      write_twobit_array( lineZ->ix2s, i, j );
+      for (m = csvals[k].count; m > 0; m--) {
+         write_twobit_array( lineZ->ix2s, i, j );
+         i++;
+      }
 
    }
 
@@ -4053,11 +4061,19 @@ static __attribute__((noinline)) void cacheline_wback ( UWord wix )
       lineZ->dict[0] = lineZ->dict[2] = lineZ->dict[3] = 0;
       lineZ->dict[1] = (SVal)fix;
       lineF->inUse = True;
-      for (i = 0; i < N_LINE_ARANGE; i++) {
-         sv = shvals[i];
-         tl_assert(is_SHVAL_valid(sv));
-         lineF->w32s[i] = sv;
+      i = 0;
+      for (k = 0; k < csvalsUsed; k++) {
+         if (SCE_SVALS)
+            tl_assert(csvals[k].count >= 1 && csvals[k].count <= 8);
+         sv = csvals[k].sval;
+         if (SCE_SVALS)
+            tl_assert(is_SHVAL_valid(sv));
+         for (m = csvals[k].count; m > 0; m--) {
+            lineF->w32s[i] = sv;
+            i++;
+         }
       }
+      tl_assert(i == N_LINE_ARANGE);
       stats__cache_F_wbacks++;
    } else {
       stats__cache_Z_wbacks++;
