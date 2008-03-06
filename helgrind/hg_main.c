@@ -3814,7 +3814,6 @@ static Bool is_sane_Descr_and_Tree ( UShort descr, SVal* tree ) {
    return 0;
 }
 
-
 static Bool is_sane_CacheLine ( CacheLine* cl )
 {
    Word tno, cloff;
@@ -3834,14 +3833,15 @@ static Bool is_sane_CacheLine ( CacheLine* cl )
    return False;
 }
 
-
-static UShort normalise_tree ( /*MOD*/SVal* tree ) {
-   Word   i;
+static UShort normalise_tree ( /*MOD*/SVal* tree )
+{
    UShort descr;
    /* pre: incoming tree[0..7] does not have any invalid shvals, in
       particular no zeroes. */
-   for (i = 0; i < 8; i++)
-      tl_assert(tree[i] != 0);
+   if (UNLIKELY(tree[7] == 0 || tree[6] == 0 || tree[5] == 0
+                || tree[4] == 0 || tree[3] == 0 || tree[2] == 0
+                || tree[1] == 0 || tree[0] == 0))
+      tl_assert(0);
    
    descr = TREE_DESCR_8_7 | TREE_DESCR_8_6 | TREE_DESCR_8_5
            | TREE_DESCR_8_4 | TREE_DESCR_8_3 | TREE_DESCR_8_2
@@ -4125,7 +4125,7 @@ static __attribute__((noinline)) void cacheline_fetch ( UWord wix )
       for (i = 0; i < N_LINE_ARANGE; i++) {
          SVal sv;
          UWord ix = read_twobit_array( lineZ->ix2s, i );
-         tl_assert(ix >= 0 && ix <= 3);
+         /* correct, but expensive: tl_assert(ix >= 0 && ix <= 3); */
          sv = lineZ->dict[ix];
          tl_assert(sv != 0);
          cl->svals[i] = sv;
