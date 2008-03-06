@@ -3457,10 +3457,9 @@ static void laog__handle_lock_deletions    ( WordSetID ); /* fwds */
 static inline Thread* get_current_Thread ( void ); /* fwds */
 
 /* ------------ CacheLineF and CacheLineZ related ------------ */
-
+inline
 static void write_twobit_array ( UChar* arr, UWord ix, UWord b2 ) {
    Word bix, shft, mask, prep;
-   tl_assert((b2 & ~3) == 0);
    tl_assert(ix >= 0);
    bix  = ix >> 2;
    shft = 2 * (ix & 3); /* 0, 2, 4 or 6 */
@@ -3469,6 +3468,7 @@ static void write_twobit_array ( UChar* arr, UWord ix, UWord b2 ) {
    arr[bix] = (arr[bix] & ~mask) | prep;
 }
 
+inline
 static UWord read_twobit_array ( UChar* arr, UWord ix ) {
    Word bix, shft;
    tl_assert(ix >= 0);
@@ -3908,8 +3908,6 @@ static void normalise_CacheLine ( /*MOD*/CacheLine* cl )
 
 typedef struct { UChar count; SVal sval; } CountedSVal;
 
-/* Write the cacheline 'wix' to backing store.  Where it ends up
-   is determined by its tag field. */
 static
 Bool sequentialise_CacheLine ( /*OUT*/CountedSVal* dst,
                                /*OUT*/Word* dstUsedP,
@@ -3968,7 +3966,8 @@ Bool sequentialise_CacheLine ( /*OUT*/CountedSVal* dst,
    return anyShared;
 }
 
-
+/* Write the cacheline 'wix' to backing store.  Where it ends up
+   is determined by its tag field. */
 static __attribute__((noinline)) void cacheline_wback ( UWord wix )
 {
    Word        i, j, k, m;
@@ -4026,20 +4025,18 @@ static __attribute__((noinline)) void cacheline_wback ( UWord wix )
       if (SCE_SVALS)
          tl_assert(csvals[k].count >= 1 && csvals[k].count <= 8);
       /* do we already have it? */
-      for (j = 0; j < 4; j++) {
-         if (sv == lineZ->dict[j])
-            goto dict_ok;
-      }
+      if (sv == lineZ->dict[0]) { j = 0; goto dict_ok; }
+      if (sv == lineZ->dict[1]) { j = 1; goto dict_ok; }
+      if (sv == lineZ->dict[2]) { j = 2; goto dict_ok; }
+      if (sv == lineZ->dict[3]) { j = 3; goto dict_ok; }
       /* no.  look for a free slot. */
-      for (j = 0; j < 4; j++) {
-         if (lineZ->dict[j] == 0)
-            break;
-      }
-      tl_assert(j >= 0 && j <= 4);
-      if (j == 4) break; /* we'll have to use the f rep */
       if (SCE_SVALS)
          tl_assert(is_SHVAL_valid(sv));
-      lineZ->dict[j] = sv;
+      if (lineZ->dict[0] == 0) { lineZ->dict[0] = sv; j = 0; goto dict_ok; }
+      if (lineZ->dict[1] == 0) { lineZ->dict[1] = sv; j = 1; goto dict_ok; }
+      if (lineZ->dict[2] == 0) { lineZ->dict[2] = sv; j = 2; goto dict_ok; }
+      if (lineZ->dict[3] == 0) { lineZ->dict[3] = sv; j = 3; goto dict_ok; }
+      break; /* we'll have to use the f rep */
      dict_ok:
       for (m = csvals[k].count; m > 0; m--) {
          write_twobit_array( lineZ->ix2s, i, j );
@@ -4048,10 +4045,15 @@ static __attribute__((noinline)) void cacheline_wback ( UWord wix )
 
    }
 
-   tl_assert(i >= 0 && i <= N_LINE_ARANGE);
+   if (LIKELY(i == N_LINE_ARANGE)) {
+      /* Construction of the compressed representation was
+         successful. */
+      stats__cache_Z_wbacks++;
+   } else {
+      /* Cannot use the compressed(z) representation.  Use the full(f)
+         rep instead. */
 
-   if (i < N_LINE_ARANGE) {
-      /* cannot use the compressed rep.  Use f rep instead. */
+      tl_assert(i >= 0 && i < N_LINE_ARANGE);
       alloc_F_for_writing( sm, &fix );
       tl_assert(sm->linesF);
       tl_assert(sm->linesF_size > 0);
@@ -4075,8 +4077,6 @@ static __attribute__((noinline)) void cacheline_wback ( UWord wix )
       }
       tl_assert(i == N_LINE_ARANGE);
       stats__cache_F_wbacks++;
-   } else {
-      stats__cache_Z_wbacks++;
    }
 
    if (anyShared)
