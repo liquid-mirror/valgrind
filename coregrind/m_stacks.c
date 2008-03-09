@@ -152,6 +152,10 @@ static Stack* find_stack_by_addr(Addr sp)
    if (0 && 0 == (n_searches % 10000))
       VG_(printf)("(hgdev) %lu searches, %lu steps, %lu fails\n",
                   n_searches, n_steps+1, n_fails);
+   /* fast track common case */
+   if (i && sp >= i->start && sp <= i->end)
+      return i;
+   /* else search the list */
    while (i) {
       n_steps++;
       if (sp >= i->start && sp <= i->end) {
