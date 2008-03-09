@@ -45,6 +45,8 @@
      all lines become dirty and have to be written back.  Quantify.
      (I think they are not present anyway)
 
+   - Have something like mk_SHVAL_fail instead of merely asserting
+
    STUFF I DON'T UNDERSTAND:
 
    Make sense of ignore-n/ignore-i.  What exactly does this do?
@@ -228,9 +230,6 @@ static UWord clo_ignore_i = 0;
    Original Eraser paper also says "all active locks".
 */
 
-// Major stuff to fix:
-// - reader-writer locks
-
 /* Thread async exit:
    
    remove the map_threads entry
@@ -392,14 +391,14 @@ typedef
    }
    Segment;
 
-/**
-  This structure contains data from 
-  VG_USERREQ__HG_BENIGN_RACE or VG_USERREQ__HG_EXPECT_RACE client request. 
 
-  These two client requests are similar: they both suppress reports about a
-  data race. The only difference is that for VG_USERREQ__HG_EXPECT_RACE 
-  helgrind will complain if the race was not detected (useful for unit tests). 
-*/
+/* This structure contains data from VG_USERREQ__HG_BENIGN_RACE or
+   VG_USERREQ__HG_EXPECT_RACE client request.
+
+   These two client requests are similar: they both suppress reports
+   about a data race. The only difference is that for
+   VG_USERREQ__HG_EXPECT_RACE helgrind will complain if the race was
+   not detected (useful for unit tests). */
 typedef 
    struct {
       Addr   ptr;    ///< Pointer from the client request. 
@@ -994,51 +993,6 @@ static inline Bool is_sane_SecMap ( SecMap* sm ) {
    return sm != NULL && sm->magic == SecMap_MAGIC;
 }
 
-/* Shadow value encodings:
-
-   11 WordSetID:TSID_BITS WordSetID:LSID_BITS  ShM  thread-set lock-set
-   10 WordSetID:TSID_BITS WordSetID:LSID_BITS  ShR  thread-set lock-set
-   01 TSegmentID:30                            Excl thread-segment
-   00 0--(20)--0 10 0000 0000                  New
-   00 0--(20)--0 01 0000 0000                  NoAccess
-   00 0--(20)--0 00 0000 0000                  Invalid
-
-   TSID_BITS + LSID_BITS must equal 30.
-   The elements in thread sets are Thread*, casted to Word.
-   The elements in lock sets are Lock*, casted to Word.
-*/
-
-#define N_LSID_BITS  17
-#define N_LSID_MASK  ((1 << (N_LSID_BITS)) - 1)
-#define N_LSID_SHIFT 0
-
-#define N_TSID_BITS  (30 - (N_LSID_BITS))
-#define N_TSID_MASK  ((1 << (N_TSID_BITS)) - 1)
-#define N_TSID_SHIFT (N_LSID_BITS)
-
-static inline Bool is_sane_WordSetID_LSet ( WordSetID wset ) {
-   return wset >= 0 && wset <= N_LSID_MASK;
-}
-static inline Bool is_sane_WordSetID_TSet ( WordSetID wset ) {
-   return wset >= 0 && wset <= N_TSID_MASK;
-}
-
-
-__attribute__((noinline))
-__attribute__((noreturn))
-static void mk_SHVAL_fail ( WordSetID tset, WordSetID lset, HChar* who ) {
-   VG_(printf)("\n");
-   VG_(printf)("Helgrind: Fatal internal error -- cannot continue.\n");
-   VG_(printf)("Helgrind: mk_SHVAL_ShR(tset=%d,lset=%d): FAILED\n",
-               (Int)tset, (Int)lset);
-   VG_(printf)("Helgrind: max allowed tset=%d, lset=%d\n",
-               (Int)N_TSID_MASK, (Int)N_LSID_MASK);
-   VG_(printf)("Helgrind: program has too many thread "
-              "sets or lock sets to track.\n");
-   tl_assert(0);
-}
-
-
 
 //
 //   SVal:
@@ -1048,7 +1002,6 @@ static void mk_SHVAL_fail ( WordSetID tset, WordSetID lset, HChar* who ) {
 // 
 //   0100000000000000000000000000000000000000000000000000000000000000 Race
 //   0000000000000000000000000000000000000000000000000000001000000000 New
-//   0000000000000000000000000000000000000000000000000000000100000000 NoAccess
 //   0000000000000000000000000000000000000000000000000000000000000000 Invalid
 //   \______________________________64______________________________/
 //
@@ -1068,11 +1021,10 @@ static void mk_SHVAL_fail ( WordSetID tset, WordSetID lset, HChar* who ) {
 
 //------------- segment set, lock set --------------
 
-#define SEGMENT_SET_BITS 26
-#define LOCK_SET_BITS    24
+#define N_SEG_SEG_BITS 26
+#define N_LOCK_SET_BITS    24
 
 #define SHVAL_New       ((SVal)(2<<8))
-#define SHVAL_NoAccess  ((SVal)(1<<8))
 #define SHVAL_Invalid   ((SVal)(0))
 #define SHVAL_Race      ((SVal)(1ULL << 62))
 
@@ -1080,11 +1032,11 @@ typedef  UInt       SegmentSet;
 typedef  WordSetID  LockSet;  /* UInt */
 
 static inline Bool SS_valid (SegmentSet ss) {
-   return ss < (1 << SEGMENT_SET_BITS);
+   return ss < (1 << N_SEG_SEG_BITS);
 }
 
 static inline Bool SS_is_singleton (SegmentSet ss) {
-   return (ss & (1 << (SEGMENT_SET_BITS-1))) != 0;
+   return (ss & (1 << (N_SEG_SEG_BITS-1))) != 0;
 }
 
 static inline UWord SS_get_size (SegmentSet ss) {
@@ -1096,7 +1048,7 @@ static inline UWord SS_get_size (SegmentSet ss) {
 static inline SegmentSet SS_mk_singleton (SegmentID ss) {
    if (SCE_SVALS)
       tl_assert(SEG_id_is_sane(ss));
-   ss |= (1 << (SEGMENT_SET_BITS-1));
+   ss |= (1 << (N_SEG_SEG_BITS-1));
    if (SCE_SVALS)
       tl_assert(SS_is_singleton(ss));
    return ss;
@@ -1104,13 +1056,13 @@ static inline SegmentSet SS_mk_singleton (SegmentID ss) {
 
 static inline SegmentID SS_get_singleton (SegmentSet ss) {
    tl_assert(SS_is_singleton(ss));
-   ss &= ~(1 << (SEGMENT_SET_BITS-1));
+   ss &= ~(1 << (N_SEG_SEG_BITS-1));
    tl_assert(SEG_id_is_sane(ss));
    return ss;
 }
 
 static inline SegmentID SS_get_singleton_UNCHECKED (SegmentSet ss) {
-   ss &= ~(1 << (SEGMENT_SET_BITS-1));
+   ss &= ~(1 << (N_SEG_SEG_BITS-1));
    if (SCE_SVALS)
       tl_assert(SEG_id_is_sane(ss));
    return ss;
@@ -1126,7 +1078,7 @@ static inline SegmentID SS_get_element (SegmentSet ss, UWord i) {
 }
 
 static inline Bool LS_valid (LockSet ls) {
-   return ls < (1 << LOCK_SET_BITS);
+   return ls < (1 << N_LOCK_SET_BITS);
 }
 
 static inline SVal mk_SHVAL_RW (Bool is_w, SegmentSet ss, LockSet ls) {
@@ -1137,7 +1089,7 @@ static inline SVal mk_SHVAL_RW (Bool is_w, SegmentSet ss, LockSet ls) {
    }
    res = (1ULL << 63) 
          |  ((SVal)is_w << 62) 
-         |  ((SVal)ss << (62-SEGMENT_SET_BITS)) 
+         |  ((SVal)ss << (62-N_SEG_SEG_BITS)) 
          |  ((SVal)ls);
    //  VG_(printf)("XX %llx\n", res);
    return res;
@@ -1151,15 +1103,15 @@ static inline SVal mk_SHVAL_W (SegmentSet ss, LockSet ls) {
 
 static inline SegmentSet get_SHVAL_SS (SVal sv) {
    SegmentSet ss;
-   Int   shift = 62 - SEGMENT_SET_BITS;
-   ULong mask  = (1 << SEGMENT_SET_BITS) - 1;
+   Int   shift = 62 - N_SEG_SEG_BITS;
+   ULong mask  = (1 << N_SEG_SEG_BITS) - 1;
    ss = (sv >> shift) & mask;
    tl_assert(SS_valid(ss));
    return ss;
 }
 static inline LockSet get_SHVAL_LS (SVal sv) {
    LockSet ls;
-   ls = sv & ((1ULL << LOCK_SET_BITS) - 1);
+   ls = sv & ((1ULL << N_LOCK_SET_BITS) - 1);
    tl_assert(LS_valid(ls));
    return ls;
 }
@@ -1179,13 +1131,12 @@ static inline Bool is_SHVAL_Shared (SVal sv) {
    return is_SHVAL_RW(sv) && !SS_is_singleton(get_SHVAL_SS(sv));
 }
 
-static inline Bool is_SHVAL_New     (SVal sv) {return sv == SHVAL_New;}
-static inline Bool is_SHVAL_NoAccess(SVal sv) {return sv == SHVAL_NoAccess;}
-static inline Bool is_SHVAL_Race    (SVal sv) {return sv == SHVAL_Race;}
+static inline Bool is_SHVAL_New  (SVal sv) {return sv == SHVAL_New;}
+static inline Bool is_SHVAL_Race (SVal sv) {return sv == SHVAL_Race;}
 
 static inline Bool is_SHVAL_valid ( SVal sv) {
-   return is_SHVAL_RW(sv) || is_SHVAL_Race(sv)
-          || is_SHVAL_New(sv) || is_SHVAL_NoAccess(sv);
+   return is_SHVAL_RW(sv) || is_SHVAL_New(sv)
+          || is_SHVAL_Race(sv);
 }
 
 
@@ -1386,8 +1337,6 @@ static void show_sval ( /*OUT*/Char* buf, Int nBuf, SVal sv )
    VG_(memset)(buf, 0, nBuf);
    if (is_SHVAL_New(sv)) {
       VG_(sprintf)(buf, "%s", "New");
-   } else if (is_SHVAL_NoAccess(sv)) {
-      VG_(sprintf)(buf, "%s", "NoAccess");
    } else if (is_SHVAL_Race(sv)) {
       VG_(sprintf)(buf, "%s", "Race");
    } else if (is_SHVAL_RW(sv)) {
@@ -2655,7 +2604,7 @@ static SecMap* shmem__alloc_SecMap ( void )
    sm->mbHasLocks  = False; /* dangerous */
    sm->mbHasShared = False; /* dangerous */
    for (i = 0; i < N_SECMAP_ZLINES; i++) {
-      sm->linesZ[i].dict[0] = SHVAL_NoAccess;
+      sm->linesZ[i].dict[0] = SHVAL_New;
       sm->linesZ[i].dict[1] = 0; /* completely invalid SHVAL */
       sm->linesZ[i].dict[2] = 0;
       sm->linesZ[i].dict[3] = 0;
@@ -2910,7 +2859,7 @@ static void locks__sanity_check ( Char* who )
       // FIXME: this could legitimately arise from a buggy guest
       // that attempts to lock in (eg) freed memory.  Detect this
       // and warn about it in the pre/post-mutex-lock event handler.
-      if (is_SHVAL_NoAccess(shadow_mem_get8(lk->guestaddr))) BAD("5");
+      //if (is_SHVAL_NoAccess(shadow_mem_get8(lk->guestaddr))) BAD("5");
       // look at all threads mentioned as holders of this lock.  Ensure
       // this lock is mentioned in their locksets.
       if (lk->heldBy) {
@@ -3008,7 +2957,7 @@ static void shmem__sanity_check ( Char* who )
       SecMapIter itr;
       SVal*      sv_p = NULL;
       Bool       mbHasShared = False;
-      Bool       allNoAccess = True;
+      //Bool       allNoAccess = True;
       if (!is_sane_SecMap(sm)) BAD("1");
       // sm properly aligned
       if (smga != shmem__round_to_SecMap_base(smga)) BAD("2");
@@ -3018,8 +2967,8 @@ static void shmem__sanity_check ( Char* who )
          SVal sv = *sv_p;
          if (is_SHVAL_Shared(sv)) 
             mbHasShared = True;
-         if (!is_SHVAL_NoAccess(sv))
-            allNoAccess = False;
+         //if (!is_SHVAL_NoAccess(sv))
+         //   allNoAccess = False;
 
          if (is_SHVAL_RW(sv)) {
             LockSet    LS = get_SHVAL_LS(sv);
@@ -3046,7 +2995,7 @@ static void shmem__sanity_check ( Char* who )
                if (!is_sane_LockN(lk)) BAD("10");
             }
          }
-         else if (is_SHVAL_NoAccess(sv) || is_SHVAL_New(sv) || is_SHVAL_Race(sv)) {
+         else if (is_SHVAL_New(sv) || is_SHVAL_Race(sv)) {
             /* nothing to check */
          }
          else {
@@ -3126,8 +3075,6 @@ static UWord stats__msm_W_to_R       = 0;
 static UWord stats__msm_W_to_W       = 0;
 static UWord stats__msm_New_to_W     = 0;
 static UWord stats__msm_New_to_R     = 0;
-static UWord stats__msm_wr_NoAccess  = 0;
-static UWord stats__msm_rd_NoAccess  = 0;
 static UWord stats__msm_oldSS_single = 0;
 static UWord stats__msm_oldSS_multi  = 0;
 
@@ -3540,14 +3487,6 @@ SVal msm_handle_write(Thread* thr, Addr a, SVal sv_old, Int sz)
       goto done;
    }
 
-   // NoAccess
-   if (is_SHVAL_NoAccess(sv_old)) {
-      // TODO: complain
-      stats__msm_wr_NoAccess++; 
-      sv_new = sv_old;
-      goto done;
-   }
-
    /*NOTREACHED*/
    tl_assert(0);
 
@@ -3683,14 +3622,6 @@ SVal msm_handle_read(Thread* thr, Addr a, SVal sv_old, Int sz)
       stats__msm_New_to_R++;
       newSS = SS_mk_singleton(currS);
       sv_new = mk_SHVAL_R(newSS, currLS);
-      goto done;
-   }
-
-   // NoAccess
-   if (is_SHVAL_NoAccess(sv_old)) {
-      // TODO: complain
-      stats__msm_rd_NoAccess++;
-      sv_new = sv_old;
       goto done;
    }
 
@@ -5380,15 +5311,9 @@ static void shadow_mem_make_NoAccess ( Thread* thr, Addr aIN, SizeT len )
       if (len > 0 && firstA <= clo_trace_addr && clo_trace_addr <= lastA) {
          SVal sv_old = shadow_mem_get8( clo_trace_addr );
          msm__show_state_change( thr, firstA, (Int)len, 'p',
-                                      sv_old, SHVAL_NoAccess );
+                                      sv_old, SHVAL_New );
       }
    }
-   shadow_mem_modify_range( thr, firstA, len, 
-                            shadow_mem_set8,
-                            shadow_mem_set16,
-                            shadow_mem_set32,
-                            shadow_mem_set64,
-                            SHVAL_NoAccess/*opaque*/ );
 
    for (sma = firstSM; sma <= lastSM; sma += N_SECMAP_ARANGE) {
       /* Is this sm entirely within the deleted range? */
@@ -5476,8 +5401,15 @@ static void shadow_mem_make_NoAccess ( Thread* thr, Addr aIN, SizeT len )
         map_locks_delete(lk->guestaddr);
         unset_mu_is_cv(lk->guestaddr);
         /* release storage (incl. associated .heldBy Bag) */
+        /* XXX NO: we must let locks live forever now.  Consider this:
+           client frees memory containing a lock.  However, a SVal
+           could reference a LockSet which references this Lock.  If
+           we free the Lock then we have a dangling pointer.  Since
+           scanning all shadow memory so as to remove this Lock from
+           all LockSets is unfeasibly expensive, it's simpler just to
+           let the lock live forever. */
         { Lock* tmp = lk->admin;
-          del_LockN(lk);
+          //del_LockN(lk);
           lk = tmp;
         }
      }
@@ -9221,8 +9153,6 @@ static void hg_fini ( Int exitcode )
                   stats__msm_W_to_R, stats__msm_W_to_W);
       VG_(printf)("     msm: %,12lu %,12lu  New_to_R, New_to_W\n",
                   stats__msm_New_to_R, stats__msm_New_to_W);
-      VG_(printf)("     msm: %,12lu %,12lu  rd_NoAccess, wr_NoAccess\n",
-                  stats__msm_rd_NoAccess, stats__msm_rd_NoAccess);
       VG_(printf)("     msm: %,12lu %,12lu  oldSS_single, oldSS_multi\n",
                   stats__msm_oldSS_single, stats__msm_oldSS_multi);
 
