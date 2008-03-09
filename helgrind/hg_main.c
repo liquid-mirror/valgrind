@@ -4231,9 +4231,36 @@ static __attribute__((noinline)) void cacheline_wback ( UWord wix )
       if (lineZ->dict[3] == 0) { lineZ->dict[3] = sv; j = 3; goto dict_ok; }
       break; /* we'll have to use the f rep */
      dict_ok:
-      for (m = csvals[k].count; m > 0; m--) {
-         write_twobit_array( lineZ->ix2s, i, j );
-         i++;
+      m = csvals[k].count;
+      if (m == 8) {
+         write_twobit_array( lineZ->ix2s, i+0, j );
+         write_twobit_array( lineZ->ix2s, i+1, j );
+         write_twobit_array( lineZ->ix2s, i+2, j );
+         write_twobit_array( lineZ->ix2s, i+3, j );
+         write_twobit_array( lineZ->ix2s, i+4, j );
+         write_twobit_array( lineZ->ix2s, i+5, j );
+         write_twobit_array( lineZ->ix2s, i+6, j );
+         write_twobit_array( lineZ->ix2s, i+7, j );
+         i += 8;
+      }
+      else if (m == 4) {
+         write_twobit_array( lineZ->ix2s, i+0, j );
+         write_twobit_array( lineZ->ix2s, i+1, j );
+         write_twobit_array( lineZ->ix2s, i+2, j );
+         write_twobit_array( lineZ->ix2s, i+3, j );
+         i += 4;
+      }
+      else if (m == 1) {
+         write_twobit_array( lineZ->ix2s, i+0, j );
+         i += 1;
+      }
+      else if (m == 2) {
+         write_twobit_array( lineZ->ix2s, i+0, j );
+         write_twobit_array( lineZ->ix2s, i+1, j );
+         i += 2;
+      }
+      else {
+         tl_assert(0); /* 8 4 2 or 1 are the only legitimate values for m */
       }
 
    }
