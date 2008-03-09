@@ -1,0 +1,31 @@
+
+Building Firefox-2.0.0.12 from source, for testing Helgrind
+-----------------------------------------------------------
+
+wget
+ftp://ftp.mozilla.org/pub/firefox/releases/2.0.0.12/source/firefox-2.0.0.12-source.tar.bz2
+
+bzip2 -dc firefox-2.0.0.12-source.tar.bz2 | tar xvf -
+
+mv mozilla firefox-2.0.0.12
+
+mkdir InstFirefox20012
+export XYZZYFOOBAR=`pwd`/InstFirefox20012
+
+cd firefox-2.0.0.12
+
+./configure --prefix=$XYZZYFOOBAR --enable-application=browser \
+    --enable-optimize="-O -g"
+
+make -j 2
+make install
+
+cd ../InstFirefox20012
+
+MOZ_NO_REMOTE=1 NO_EM_RESTART=1 \
+LD_LIBRARY_PATH=`pwd`/lib/firefox-2.0.0.12:\
+`pwd`/lib/firefox-2.0.0.12/components:\
+`pwd`/lib/firefox-2.0.0.12/plugins \
+/home/sewardj/VgTRUNK/hgdev/Inst/bin/valgrind --tool=helgrind \
+--trace-children=no -v ./lib/firefox-2.0.0.12/firefox-bin
+
