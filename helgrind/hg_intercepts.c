@@ -718,6 +718,41 @@ PTH_FUNC(int, pthreadZucondZubroadcastZAZa, // pthread_cond_broadcast@*
    return ret;
 }
 
+/*----------------------------------------------------------------*/
+/*--- pthread_barrier_t functions                              ---*/
+/*----------------------------------------------------------------*/
+PTH_FUNC(int, pthreadZubarrierZuwait, // pthread_barrier_wait. 
+              pthread_barrier_t* b)
+{
+   int ret;
+   OrigFn fn;
+   VALGRIND_GET_ORIG_FN(fn);
+
+   if (TRACE_PTH_FNS) {
+      fprintf(stderr, "<< pthread_barrier_wait %p", b);
+      fflush(stderr);
+   }
+
+   // We blocked, signal. 
+   DO_CREQ_v_W(_VG_USERREQ__HG_PTHREAD_COND_BROADCAST_PRE,
+               void*,b);
+   CALL_FN_W_W(ret, fn, b);
+
+   // FIXME: handle ret 
+
+   // We unblocked, finish wait. 
+   DO_CREQ_v_WW(_VG_USERREQ__HG_PTHREAD_COND_WAIT_POST,
+               void *, b, void *, b);
+
+   if (TRACE_PTH_FNS) {
+      fprintf(stderr, "  pthread_barrier_wait -> %d >>\n", ret);
+   }
+
+   return ret;
+}
+
+
+
 
 /*----------------------------------------------------------------*/
 /*--- pthread_rwlock_t functions                               ---*/

@@ -34,7 +34,8 @@
    without prior written permission.
 */
 
-/* JRS: TODO 2008 Mar 03:
+/* JRS: TODO 2008 Mar 09:
+
    - Consider what to do about BHL all over again
 
    - Consider what to do about last-lock-lossage mechanism.
@@ -42,9 +43,16 @@
 
    - get rid of SVal-cache dirty bits?  Basically pointless; almost
      all lines become dirty and have to be written back.  Quantify.
+     (I think they are not present anyway)
 
-   - get rid of 64-bit mod in happens_before hash calculation
-     (is very expensive on 32-bit platforms)
+   STUFF I DON'T UNDERSTAND:
+
+   Make sense of ignore-n/ignore-i.  What exactly does this do?
+   Why shift by the secmap size before modding?
+
+   How does the pthread_barrier_wait wrapper create the correct
+   segments?  In particular, why does it use the same client requests
+   as for pthread_cond_* operations?
 */
 
 #include "pub_tool_basics.h"
@@ -176,6 +184,14 @@ static Int  clo_trace_level = 0;
    SCE_{THREADS,LOCKS,BIGRANGE,ACCESS,LAOG}. */
 static Int clo_sanity_flags = 0;
 
+/* If clo_ignore_n == 0, the state machine ignores all memory addresses. 
+   If clo_ignore_n >= 2, the addresses are ignored if 
+           (addr mod clo_ignore_n != clo_ignore_i)
+  
+  TODO: Find a better (descriptive) name for command line parameters. */
+static UWord clo_ignore_n = 1;
+static UWord clo_ignore_i = 0;
+
 /* This has to do with printing error messages.  See comments on
    announce_threadset() and summarise_threadset().  Perhaps it
    should be a command line option. */
@@ -294,6 +310,7 @@ typedef
       /* Place where parent was when this thread was created. */
       ExeContext* created_at;
       Bool        announced;
+      Bool        ignore_reads; 
       /* Index for generating references in error messages. */
       Int         errmsg_index;
    }
@@ -374,6 +391,25 @@ typedef
       Char other_hint;
    }
    Segment;
+
+/**
+  This structure contains data from 
+  VG_USERREQ__HG_BENIGN_RACE or VG_USERREQ__HG_EXPECT_RACE client request. 
+
+  These two client requests are similar: they both suppress reports about a
+  data race. The only difference is that for VG_USERREQ__HG_EXPECT_RACE 
+  helgrind will complain if the race was not detected (useful for unit tests). 
+*/
+typedef 
+   struct {
+      Addr   ptr;    ///< Pointer from the client request. 
+      HChar* descr; ///< Arbitrary text supplied by client. 
+      HChar* file;  ///< File name (for debug output). 
+      Int    line;  ///< Line number (for debug output)
+      Bool detected; ///< Will be set once an error with 'ptr' is detected. 
+      Bool is_benign; ///< True iff VG_USERREQ__HG_BENIGN_RACE was called. 
+   }
+   ExpectedError;
 
 
 /* ------ CacheLine ------ */
@@ -573,6 +609,8 @@ static WordSetU* univ_laog  = NULL; /* sets of Lock*, for LAOG */
    so it can participate in lock sets in the usual way. */
 static Int   __bus_lock = 0;
 static Lock* __bus_lock_Lock = NULL;
+
+static WordFM *map_expected_errors = NULL; /* WordFM Addr ExpectedError */
 
 
 
@@ -1155,7 +1193,7 @@ static inline Bool is_SHVAL_valid ( SVal sv) {
 /*--- Print out the primary data structures                    ---*/
 /*----------------------------------------------------------------*/
 
-static WordSetID del_BHL ( WordSetID lockset ); /* fwds */
+// static WordSetID del_BHL ( WordSetID lockset ); /* fwds */
 static 
 void get_ZF_by_index ( /*OUT*/CacheLineZ** zp, /*OUT*/CacheLineF** fp,
                        SecMap* sm, UInt zix ); /* fwds */
@@ -1514,6 +1552,10 @@ static void initialise_data_structures ( void )
    tl_assert(univ_laog == NULL);
    univ_laog = HG_(newWordSetU)( hg_zalloc, hg_free, 24/*cacheSize*/ );
    tl_assert(univ_laog != NULL);
+
+   tl_assert(map_expected_errors == NULL);
+   map_expected_errors = HG_(newFM)( hg_zalloc, hg_free, NULL /*unboxed cmp*/);
+   tl_assert(map_expected_errors != NULL);
 
    /* Set up entries for the root thread */
    // FIXME: this assumes that the first real ThreadId is 1
@@ -2018,6 +2060,225 @@ static void show_VTS ( HChar* buf, Int nBuf, XArray* vts ) {
    VG_(strcat)(buf, "]");
 }
 
+/*------------ handle expected errors -----------------------*/
+
+// See definition of ExpectedError for details. 
+
+static ExpectedError *get_expected_error (Addr ptr)
+{
+  ExpectedError *expected_error = NULL;
+  if (HG_(lookupFM)( map_expected_errors,
+                     NULL/*keyP*/, (Word*)&expected_error, (Word)ptr)) {
+    tl_assert(expected_error->ptr == ptr);
+    VG_(printf)("Found expected race: %s:%d %p\t%s\n",
+                expected_error->file, expected_error->line, ptr, expected_error->descr);
+    return expected_error;
+  }
+  return NULL;
+}
+
+static Bool maybe_set_expected_error (Addr   ptr,
+                                      HChar* description, 
+                                      HChar* file, 
+                                      Int    line, 
+                                      Bool   is_benign)
+{
+   ExpectedError *error = NULL;
+//   VG_(printf)("Expected data race: %s:%d %p\t", file, line, ptr);
+   if (HG_(lookupFM)( map_expected_errors,
+                      NULL/*keyP*/, (Word*)&error, (Word)ptr)) {
+//     VG_(printf)("Found\n");
+     tl_assert(error);
+     return False;
+   }
+   /* create a new one */
+//   VG_(printf)("New\n");
+   error = (ExpectedError*)hg_zalloc(sizeof(ExpectedError));
+   error->ptr = ptr;
+   error->detected = False;
+   error->is_benign = is_benign;
+   error->descr = description;
+   error->file  = file; /* need to copy?*/
+   error->line  = line;
+   tl_assert(error);
+   HG_(addToFM)( map_expected_errors, (Word)ptr, (Word)error );
+   return True;
+}
+
+/*------- mem trace -------------------------------------------*/
+/* a client may request to trace certain memory (for better debugging) */
+static WordFM *mem_trace_map = NULL;
+static void mem_trace_on(Word mem, ThreadId tid)
+{
+   if (clo_trace_level <= 0) return;
+   if (!mem_trace_map) {
+      mem_trace_map = HG_(newFM)( hg_zalloc, hg_free, NULL);
+   }
+   HG_(addToFM)(mem_trace_map, mem, mem);
+   VG_(printf)("trace on: %p\n", mem);
+   if (clo_trace_level >= 2) {
+      VG_(get_and_pp_StackTrace)( tid, 15);
+   }
+}
+
+static inline void mem_trace_off(Addr first, Addr last) 
+{
+   Bool cont = True;
+   Addr a;
+   if (LIKELY(!mem_trace_map)) return;
+   // Turn memory trace off for all addresses in range [first, last].
+   while(cont) {
+      cont = False;
+      HG_(initIterAtFM)(mem_trace_map, first);
+      while (HG_(nextIterFM)(mem_trace_map, (Word*)&a, NULL) && a <= last) {
+         HG_(delFromFM)(mem_trace_map, NULL, NULL, a);
+         cont = True;
+         // we deleted one address from the map. Repeat everything again.
+         break;
+      }
+   }
+}
+
+static Bool mem_trace_is_on(Word mem)
+{
+   return mem_trace_map != NULL 
+         && HG_(lookupFM)(mem_trace_map, NULL, NULL, mem);
+}
+
+
+/*---------- MU is used as CV -------------------------*/
+
+/* In some cases mutexes are used in such a way that 
+ regular lockset algorithms will always report a race even though 
+ the code is perfectly synchronized. 
+ We can treat such mutexes as pure happens-before detectors do. 
+ For example, see test61. 
+
+*/
+
+static WordFM *mu_is_cv_map = NULL;
+static void set_mu_is_cv(Word mu)
+{
+   if (!mu_is_cv_map) {
+      mu_is_cv_map = HG_(newFM) (hg_zalloc, hg_free, NULL);
+   }
+   HG_(addToFM)(mu_is_cv_map, mu, mu);
+//   VG_(printf)("mu is cv: %p\n", mu);
+}
+
+static void unset_mu_is_cv(Word mu)
+{
+   if (mu_is_cv_map) {
+      HG_(delFromFM)(mu_is_cv_map, NULL, NULL, mu);
+   }
+}
+
+static Bool mu_is_cv(Word mu)
+{
+   return mu_is_cv_map != NULL
+         && HG_(lookupFM)(mu_is_cv_map, NULL, NULL, mu);
+}
+
+
+/*------- PCQ (aka ProducerConsumerQueue, Message queue) ------ */
+/*
+  Producer-consumer queue (aka Message queue) creates 
+  happens-before relation. 
+  Put() is like posting a semaphore and 
+  Get() is like waiting on that semaphore. 
+
+  When Get() is called, helgrind has to find the corresponding Put().
+  Current implementation will work only for FIFO queues. 
+
+  For each PCQ we maintain a structure that contains the number 
+  of puts and the number of gets. 
+  The n-th Put() corresponds to n-th Get(). 
+
+
+  TODO:
+  Currently we reuse semaphore routines evh__HG_POSIX_SEM_*.  
+  It's better to have separate implementations for Put()/Get(). 
+
+*/
+typedef struct {
+   Word  client_pcq; // just for consistency checking. 
+   Word  n_puts;
+   Word  n_gets; 
+} PCQ;
+
+static WordFM *pcq_map = NULL; // WordFM client_pcq my_pcq
+
+// Create PCQ for client_pcq. Should be called 
+// when the client creates its PCQ. 
+static void pcq_create(Word client_pcq)
+{
+   PCQ *my_pcq;
+   if (pcq_map == NULL) {
+      // first time init. 
+      pcq_map = HG_(newFM)( hg_zalloc, hg_free, NULL);
+      tl_assert(pcq_map != NULL);
+   }
+
+   my_pcq = (PCQ*) hg_zalloc(sizeof(PCQ));
+   my_pcq->client_pcq = client_pcq;
+   my_pcq->n_puts     = 0;
+   my_pcq->n_gets     = 0;
+
+   tl_assert(!HG_(lookupFM)(pcq_map, NULL, NULL, client_pcq));
+   HG_(addToFM)(pcq_map, client_pcq, (Word)my_pcq);
+}
+
+// Destroy PCQ (called when client PCQ is destroyed). 
+static void pcq_destroy(Word client_pcq)
+{
+   PCQ *my_pcq;
+   Word old_client_pcq;
+   Bool found = HG_(delFromFM)(pcq_map, &old_client_pcq, 
+                               (Word*)&my_pcq, client_pcq);
+   tl_assert(found == True);
+   tl_assert(old_client_pcq == client_pcq);
+   tl_assert(my_pcq->client_pcq == client_pcq);
+}
+
+// fwds
+static void evh__HG_POSIX_SEM_WAIT_POST ( ThreadId tid, void* sem );
+static void evh__HG_POSIX_SEM_POST_PRE ( ThreadId tid, void* sem );
+
+// Handle PCQ::Put().
+static void pcq_put(ThreadId tid, Word client_pcq)
+{
+   PCQ *my_pcq;
+   Word old_client_pcq;
+   Bool found = HG_(lookupFM)(pcq_map, &old_client_pcq, 
+                              (Word*)&my_pcq, client_pcq);
+   tl_assert(found == True);
+   tl_assert(old_client_pcq == client_pcq);
+   tl_assert(my_pcq->client_pcq == client_pcq);
+
+   evh__HG_POSIX_SEM_POST_PRE(tid, 
+                              (void*)((client_pcq << 5) ^ my_pcq->n_puts)
+                              );
+   my_pcq->n_puts++;
+}
+
+// Handle PCQ::Get(). 
+static void pcq_get(ThreadId tid, Word client_pcq)
+{
+   PCQ *my_pcq;
+   Word old_client_pcq;
+   Bool found = HG_(lookupFM)(pcq_map, &old_client_pcq, 
+                              (Word*)&my_pcq, client_pcq);
+   tl_assert(found == True);
+   tl_assert(old_client_pcq == client_pcq);
+   tl_assert(my_pcq->client_pcq == client_pcq);
+
+   evh__HG_POSIX_SEM_WAIT_POST(tid,
+                              (void*)((client_pcq << 5) ^ my_pcq->n_gets)
+                               );
+   my_pcq->n_gets++;
+}
+
+
 
 /*------------ searching the happens-before graph ------------*/
 
@@ -2357,6 +2618,7 @@ static inline UWord shmem__get_SecMap_offset ( Addr a ) {
 }
 
 /*--------------- SecMap allocation --------------- */
+static inline Bool address_may_be_ignored ( Addr a ); // fwds
 
 static HChar* shmem__bigchunk_next = NULL;
 static HChar* shmem__bigchunk_end1 = NULL;
@@ -2449,6 +2711,9 @@ static void shmem__set_mbHasLocks ( Addr a, Bool b )
    SecMap* sm;
    Addr aKey = shmem__round_to_SecMap_base(a);
    tl_assert(b == False || b == True);
+   // avoid creating a SecMap for memory that we ignore.
+   if (b == False && clo_ignore_n != 1 && address_may_be_ignored(a)) return;
+
    if (HG_(lookupFM)( map_shmem,
                       NULL/*keyP*/, (Word*)&sm, (Word)aKey )) {
       /* Found; address of SecMap is in sm */
@@ -2466,6 +2731,9 @@ static void shmem__set_mbHasShared ( Addr a, Bool b )
    SecMap* sm;
    Addr aKey = shmem__round_to_SecMap_base(a);
    tl_assert(b == False || b == True);
+   // avoid creating a SecMap for memory that we ignore.
+   if (b == False && clo_ignore_n != 1 && address_may_be_ignored(a)) return;
+
    if (HG_(lookupFM)( map_shmem,
                       NULL/*keyP*/, (Word*)&sm, (Word)aKey )) {
       /* Found; address of SecMap is in sm */
@@ -2883,13 +3151,13 @@ static void announce_one_thread ( Thread* thr ); /* fwds */
 
 // KCC: If you agree with the new scheme of handling BHL, 
 // KCC: add_BHL/del_BHL could be deleted completely. 
-
+// KCC: Now these functions are commented out to avoid compiler warnings.
 //static WordSetID add_BHL ( WordSetID lockset ) {
 //   return HG_(addToWS)( univ_lsets, lockset, (Word)__bus_lock_Lock );
 //}
-static WordSetID del_BHL ( WordSetID lockset ) {
-   return HG_(delFromWS)( univ_lsets, lockset, (Word)__bus_lock_Lock );
-}
+//static WordSetID del_BHL ( WordSetID lockset ) {
+//   return HG_(delFromWS)( univ_lsets, lockset, (Word)__bus_lock_Lock );
+//}
 
 
 /* Last-lock-lossage records.  This mechanism exists to help explain
@@ -2928,6 +3196,7 @@ static UWord stats__ga_LL_adds = 0;
 
 static WordFM* ga_to_lastlock = NULL; /* GuestAddr -> ExeContext* */
 
+#if 0 // commented out to avoid a compiler warning about unused function
 static 
 void record_last_lock_lossage ( Addr ga_of_access,
                                 WordSetID lset_old, WordSetID lset_new )
@@ -2990,6 +3259,7 @@ void record_last_lock_lossage ( Addr ga_of_access,
       stats__ga_LL_adds++;
    }
 }
+#endif // #if 0
 
 /* This queries the table (ga_to_lastlock) made by
    record_last_lock_lossage, when constructing error messages.  It
@@ -3140,6 +3410,35 @@ SegmentSet do_SS_update_MULTI ( /*OUT*/Bool* hb_all_p,
 }
 
 
+static void msm_do_trace(Thread *thr, Addr a, SVal sv_new, Bool is_w) 
+{
+   HChar buf[200];
+
+   VG_(printf)("RW-Locks held: ");
+   show_lockset(thr->locksetA);
+   VG_(printf)("\n");
+   if (thr->locksetA != thr->locksetW) {
+      VG_(printf)(" W-Locks held: ");
+      show_lockset(thr->locksetW);
+      VG_(printf)("\n");
+   }
+
+   if (__bus_lock_Lock->heldBy) {
+      VG_(printf)("BHL is held\n");
+   }
+
+   show_sval(buf, sizeof(buf), sv_new);
+   VG_(message)(Vg_UserMsg, "TRACE: %p S%d/T%d %c %llx %s", a, 
+                (int)thr->csegid, thr->errmsg_index, 
+                is_w ? 'w' : 'r', sv_new, buf);
+   if (clo_trace_level >= 2) {
+      ThreadId tid = map_threads_maybe_reverse_lookup_SLOW(thr);
+      if (tid != VG_INVALID_THREADID) {
+         VG_(get_and_pp_StackTrace)( tid, 15);
+      }
+   }
+}
+
 
 static 
 SVal msm_handle_write(Thread* thr, Addr a, SVal sv_old, Int sz)
@@ -3159,6 +3458,15 @@ SVal msm_handle_write(Thread* thr, Addr a, SVal sv_old, Int sz)
 
    // current locks. 
    LockSet    currLS = thr->locksetW;
+
+   // Check if trace was requested for this address by a client request.
+   if (UNLIKELY(clo_trace_level > 0 && mem_trace_is_on(a))) {
+      do_trace = True;
+   }
+
+   if (UNLIKELY(clo_ignore_n != 1)) {
+      tl_assert(!address_may_be_ignored(a));
+   }
 
    if (UNLIKELY(is_SHVAL_Race(sv_old))) {
       // we already reported a race, don't bother again. 
@@ -3246,31 +3554,7 @@ SVal msm_handle_write(Thread* thr, Addr a, SVal sv_old, Int sz)
   done:
 
    if (do_trace) {
-      HChar buf[200];
-
-      VG_(printf)("RW-Locks held: ");
-      show_lockset(thr->locksetA);
-      VG_(printf)("\n");
-      if (thr->locksetA != thr->locksetW) {
-         VG_(printf)(" W-Locks held: ");
-         show_lockset(thr->locksetW);
-         VG_(printf)("\n");
-      }
-
-      if (__bus_lock_Lock->heldBy) {
-         VG_(printf)("BHL is held\n");
-      }
-
-      show_sval(buf, sizeof(buf), sv_new);
-      VG_(message)(Vg_UserMsg, "TRACE: %p S%d/T%d %c %llx %s", a, 
-                   (int)currS, thr->errmsg_index, 
-                   'w' , sv_new, buf);
-      if (clo_trace_level >= 2) {
-         ThreadId tid = map_threads_maybe_reverse_lookup_SLOW(thr);
-         if (tid != VG_INVALID_THREADID) {
-            VG_(get_and_pp_StackTrace)( tid, 15);
-         }
-      }
+      msm_do_trace(thr, a, sv_new, True);
    }
 
    if (clo_trace_level > 0 && !do_trace) {
@@ -3310,6 +3594,20 @@ SVal msm_handle_read(Thread* thr, Addr a, SVal sv_old, Int sz)
 
    // current locks. 
    LockSet    currLS = thr->locksetA;
+
+   // Check if trace was requested for this address by a client request.
+   if (UNLIKELY(clo_trace_level > 0 && mem_trace_is_on(a))) {
+      do_trace = True;
+   }
+
+   if (UNLIKELY(clo_ignore_n != 1)) {
+      tl_assert(!address_may_be_ignored(a));
+   }
+
+   if (UNLIKELY(thr->ignore_reads)) {
+      sv_new = sv_old;
+      goto done;
+   }
 
    if (UNLIKELY(is_SHVAL_Race(sv_old))) {
       // we already reported a race, don't bother again. 
@@ -3402,31 +3700,7 @@ SVal msm_handle_read(Thread* thr, Addr a, SVal sv_old, Int sz)
   done:
 
    if (do_trace) {
-      HChar buf[200];
-
-      VG_(printf)("RW-Locks held: ");
-      show_lockset(thr->locksetA);
-      VG_(printf)("\n");
-      if (thr->locksetA != thr->locksetW) {
-         VG_(printf)(" W-Locks held: ");
-         show_lockset(thr->locksetW);
-         VG_(printf)("\n");
-      }
-
-      if (__bus_lock_Lock->heldBy) {
-         VG_(printf)("BHL is held\n");
-      }
-
-      show_sval(buf, sizeof(buf), sv_new);
-      VG_(message)(Vg_UserMsg, "TRACE: %p S%d/T%d %c %llx %s", a, 
-                   (int)currS, thr->errmsg_index, 
-                   'r', sv_new, buf);
-      if (clo_trace_level >= 2) {
-         ThreadId tid = map_threads_maybe_reverse_lookup_SLOW(thr);
-         if (tid != VG_INVALID_THREADID) {
-            VG_(get_and_pp_StackTrace)( tid, 15);
-         }
-      }
+      msm_do_trace(thr, a, sv_new, False);
    }
 
    if (clo_trace_level > 0 && !do_trace) {
@@ -4167,6 +4441,26 @@ static void shmem__flush_and_invalidate_scache ( void ) {
 
 /* ------------ Basic shadow memory read/write ops ------------ */
 
+// handle clo_ignore_n and clo_ignore_i.
+static inline Bool address_may_be_ignored ( Addr a ) {
+   UWord w = (UWord)a;
+   UWord n = clo_ignore_n;
+   UWord i = clo_ignore_i;
+   const Int sh = N_SECMAP_BITS;
+   tl_assert(n != 1); // must not be called if clo_ignore_n == 1
+   if (n == 0) return True;
+   // Optimize for the case when clo_ignore_n is a power of two.
+   if ((n & (n-1)) == 0) return (((w >> sh) & (n-1)) != i);
+   // Optimize for some more values. 
+   if (n == 3)  return (((w >> sh) % 3) != i);
+   if (n == 7)  return (((w >> sh) % 7) != i);
+   if (n == 13) return (((w >> sh) % 13) != i);
+   // general case: slow (division). 
+   if (((w >> sh) % n) != i) return True;
+   return False;
+}
+
+
 static inline Bool aligned16 ( Addr a ) {
    return 0 == (a & 1);
 }
@@ -4414,6 +4708,7 @@ static void shadow_mem_read8 ( Thread* thr_acc, Addr a, SVal uuOpaque ) {
    UWord      cloff, tno, toff;
    SVal       svOld, svNew;
    UShort     descr;
+   if (UNLIKELY(clo_ignore_n != 1 && address_may_be_ignored(a))) return;
    stats__cline_read8s++;
    cl    = get_cacheline(a);
    cloff = get_cacheline_offset(a);
@@ -4435,6 +4730,7 @@ static void shadow_mem_read16 ( Thread* thr_acc, Addr a, SVal uuOpaque ) {
    UWord      cloff, tno, toff;
    SVal       svOld, svNew;
    UShort     descr;
+   if (UNLIKELY(clo_ignore_n != 1 && address_may_be_ignored(a))) return;
    stats__cline_read16s++;
    if (UNLIKELY(!aligned16(a))) goto slowcase;
    cl    = get_cacheline(a);
@@ -4468,6 +4764,7 @@ static void shadow_mem_read32_SLOW ( Thread* thr_acc, Addr a, SVal uuOpaque ) {
    UWord      cloff, tno, toff;
    SVal       svOld, svNew;
    UShort     descr;
+   if (UNLIKELY(clo_ignore_n != 1 && address_may_be_ignored(a))) return;
    if (UNLIKELY(!aligned32(a))) goto slowcase;
    cl    = get_cacheline(a);
    cloff = get_cacheline_offset(a);
@@ -4498,6 +4795,7 @@ static void shadow_mem_read32 ( Thread* thr_acc, Addr a, SVal uuOpaque ) {
    CacheLine* cl; 
    UWord      cloff, tno, toff;
    UShort     descr;
+   if (UNLIKELY(clo_ignore_n != 1 && address_may_be_ignored(a))) return;
    stats__cline_read32s++;
    if (UNLIKELY(!aligned32(a))) goto slowcase;
    cl    = get_cacheline(a);
@@ -4520,6 +4818,7 @@ static void shadow_mem_read64 ( Thread* thr_acc, Addr a, SVal uuOpaque ) {
    UWord      cloff, tno, toff;
    SVal       svOld, svNew;
    UShort     descr;
+   if (UNLIKELY(clo_ignore_n != 1 && address_may_be_ignored(a))) return;
    stats__cline_read64s++;
    if (UNLIKELY(!aligned64(a))) goto slowcase;
    cl    = get_cacheline(a);
@@ -4545,6 +4844,7 @@ static void shadow_mem_write8 ( Thread* thr_acc, Addr a, SVal uuOpaque ) {
    UWord      cloff, tno, toff;
    SVal       svOld, svNew;
    UShort     descr;
+   if (UNLIKELY(clo_ignore_n != 1 && address_may_be_ignored(a))) return;
    stats__cline_write8s++;
    cl    = get_cacheline(a);
    cloff = get_cacheline_offset(a);
@@ -4566,6 +4866,7 @@ static void shadow_mem_write16 ( Thread* thr_acc, Addr a, SVal uuOpaque ) {
    UWord      cloff, tno, toff;
    SVal       svOld, svNew;
    UShort     descr;
+   if (UNLIKELY(clo_ignore_n != 1 && address_may_be_ignored(a))) return;
    stats__cline_write16s++;
    if (UNLIKELY(!aligned16(a))) goto slowcase;
    cl    = get_cacheline(a);
@@ -4599,6 +4900,7 @@ static void shadow_mem_write32_SLOW ( Thread* thr_acc, Addr a, SVal uuOpaque ) {
    UWord      cloff, tno, toff;
    SVal       svOld, svNew;
    UShort     descr;
+   if (UNLIKELY(clo_ignore_n != 1 && address_may_be_ignored(a))) return;
    if (UNLIKELY(!aligned32(a))) goto slowcase;
    cl    = get_cacheline(a);
    cloff = get_cacheline_offset(a);
@@ -4629,6 +4931,7 @@ static void shadow_mem_write32 ( Thread* thr_acc, Addr a, SVal uuOpaque ) {
    CacheLine* cl; 
    UWord      cloff, tno, toff;
    UShort     descr;
+   if (UNLIKELY(clo_ignore_n != 1 && address_may_be_ignored(a))) return;
    stats__cline_write32s++;
    if (UNLIKELY(!aligned32(a))) goto slowcase;
    cl    = get_cacheline(a);
@@ -4651,6 +4954,7 @@ static void shadow_mem_write64 ( Thread* thr_acc, Addr a, SVal uuOpaque ) {
    UWord      cloff, tno, toff;
    SVal       svOld, svNew;
    UShort     descr;
+   if (UNLIKELY(clo_ignore_n != 1 && address_may_be_ignored(a))) return;
    stats__cline_write64s++;
    if (UNLIKELY(!aligned64(a))) goto slowcase;
    cl    = get_cacheline(a);
@@ -4675,6 +4979,7 @@ static void shadow_mem_set8 ( Thread* uu_thr_acc, Addr a, SVal svNew ) {
    CacheLine* cl; 
    UWord      cloff, tno, toff;
    UShort     descr;
+   if (UNLIKELY(clo_ignore_n != 1 && address_may_be_ignored(a))) return;
    stats__cline_set8s++;
    cl    = get_cacheline(a);
    cloff = get_cacheline_offset(a);
@@ -4693,6 +4998,7 @@ static void shadow_mem_set16 ( Thread* uu_thr_acc, Addr a, SVal svNew ) {
    CacheLine* cl; 
    UWord      cloff, tno, toff;
    UShort     descr;
+   if (UNLIKELY(clo_ignore_n != 1 && address_may_be_ignored(a))) return;
    stats__cline_set16s++;
    if (UNLIKELY(!aligned16(a))) goto slowcase;
    cl    = get_cacheline(a);
@@ -4728,6 +5034,7 @@ static void shadow_mem_set32 ( Thread* uu_thr_acc, Addr a, SVal svNew ) {
    CacheLine* cl; 
    UWord      cloff, tno, toff;
    UShort     descr;
+   if (UNLIKELY(clo_ignore_n != 1 && address_may_be_ignored(a))) return;
    stats__cline_set32s++;
    if (UNLIKELY(!aligned32(a))) goto slowcase;
    cl    = get_cacheline(a);
@@ -4765,6 +5072,7 @@ inline
 static void shadow_mem_set64 ( Thread* uu_thr_acc, Addr a, SVal svNew ) {
    CacheLine* cl; 
    UWord      cloff, tno, toff;
+   if (UNLIKELY(clo_ignore_n != 1 && address_may_be_ignored(a))) return;
    stats__cline_set64s++;
    if (UNLIKELY(!aligned64(a))) goto slowcase;
    cl    = get_cacheline(a);
@@ -5063,6 +5371,9 @@ static void shadow_mem_make_NoAccess ( Thread* thr, Addr aIN, SizeT len )
       }
    }
 
+   // turn off memory trace
+   mem_trace_off(firstA, lastA);
+
    /* --- Step 2 --- */
 
    if (UNLIKELY(clo_trace_level > 0)) {
@@ -5163,6 +5474,7 @@ static void shadow_mem_make_NoAccess ( Thread* thr, Addr aIN, SizeT len )
         }
         /* and get it out of map_locks */
         map_locks_delete(lk->guestaddr);
+        unset_mu_is_cv(lk->guestaddr);
         /* release storage (incl. associated .heldBy Bag) */
         { Lock* tmp = lk->admin;
           del_LockN(lk);
@@ -5186,6 +5498,10 @@ static void shadow_mem_make_NoAccess ( Thread* thr, Addr aIN, SizeT len )
 /*----------------------------------------------------------------*/
 
 /*--------- Event handler helpers (evhH__* functions) ---------*/
+
+
+static void evhH__do_cv_signal(Thread *thr, Word cond);
+static Bool evhH__do_cv_wait(Thread *thr, Word cond, Bool must_match_signal);
 
 /* Create a new segment for 'thr', making it depend (.prev) on its
    existing segment, bind together the SegmentID and Segment, and
@@ -5291,6 +5607,12 @@ void evhH__post_thread_w_acquires_lock ( Thread* thr,
    /* update the thread's held-locks set */
    thr->locksetA = HG_(addToWS)( univ_lsets, thr->locksetA, (Word)lk );
    thr->locksetW = HG_(addToWS)( univ_lsets, thr->locksetW, (Word)lk );
+
+   if (mu_is_cv(lock_ga)) {
+      // VG_(printf)("mu is cv: w-lock %p\n", lock_ga);
+      evhH__do_cv_wait(thr, lock_ga, False);
+   }
+
    /* fall through */
 
   error:
@@ -5360,6 +5682,12 @@ void evhH__post_thread_r_acquires_lock ( Thread* thr,
    /* update the thread's held-locks set */
    thr->locksetA = HG_(addToWS)( univ_lsets, thr->locksetA, (Word)lk );
    /* but don't update thr->locksetW, since lk is only rd-held */
+
+   if (mu_is_cv(lock_ga)) {
+      // VG_(printf)("mu is cv: r-lock %p\n", lock_ga);
+      evhH__do_cv_wait(thr, lock_ga, False);
+   }
+
    /* fall through */
 
   error:
@@ -5470,6 +5798,11 @@ void evhH__pre_thread_releases_lock ( Thread* thr,
          = HG_(delFromWS)( univ_lsets, thr->locksetA, (Word)lock );
       thr->locksetW
          = HG_(delFromWS)( univ_lsets, thr->locksetW, (Word)lock );
+   }
+
+   if (mu_is_cv(lock_ga) ) {
+      // VG_(printf)("mu is cv: unlock %p\n", lock_ga);
+      evhH__do_cv_signal(thr, lock_ga);
    }
    /* fall through */
 
@@ -6027,6 +6360,125 @@ static void map_cond_to_Segment_INIT ( void ) {
    }
 }
 
+void evhH__do_cv_signal(Thread *thr, Word cond)
+{
+   static Thread *fake_thread; 
+   SegmentID new_segid;
+   Segment*  new_seg;
+   SegmentID fake_segid;
+   Segment*  fake_seg;
+   Segment *signalling_seg = NULL;
+
+   map_cond_to_Segment_INIT();
+   if (clo_happens_before < 2) return;
+   /* create a new segment ... */
+   new_segid = 0; /* bogus */
+   new_seg   = NULL;
+   evhH__start_new_segment_for_thread( &new_segid, &new_seg, thr );
+   tl_assert( SEG_id_is_sane(new_segid) );
+   tl_assert( is_sane_Segment(new_seg) );
+   tl_assert( new_seg->thr == thr );
+   tl_assert( is_sane_Segment(new_seg->prev) );
+   tl_assert( new_seg->prev->vts );
+   new_seg->vts = tick_VTS( new_seg->thr, new_seg->prev->vts );
+
+   /* ... and add the binding. */
+
+   if (fake_thread == NULL) {
+      SegmentID segid = mk_Segment(NULL, NULL, NULL);
+      Segment  *seg   = SEG_get(segid);
+      fake_thread     = mk_Thread(segid);
+      seg->thr        = fake_thread;
+      seg->vts        = singleton_VTS(seg->thr, 1);
+   }
+
+
+   // create a fake segment.                                         
+   evhH__start_new_segment_for_thread(&fake_segid, &fake_seg, fake_thread);
+   tl_assert( SEG_id_is_sane(fake_segid) );
+   tl_assert( is_sane_Segment(fake_seg) );
+   tl_assert( fake_seg->prev != NULL );
+   tl_assert( fake_seg->other == NULL );
+   fake_seg->vts = NULL;
+   fake_seg->other = new_seg->prev;
+
+
+   HG_(lookupFM)( map_cond_to_Segment, 
+                  NULL, (Word*)&signalling_seg,
+                  (Word)cond );
+   if (signalling_seg != 0) {
+      fake_seg->prev = signalling_seg; 
+
+   }
+   fake_seg->vts  = tickL_and_joinR_VTS(fake_thread, 
+                                        fake_seg->prev->vts, 
+                                        fake_seg->other->vts);
+   HG_(addToFM)( map_cond_to_Segment, (Word)cond, (Word)(fake_seg) );
+   // FIXME. test67 gives false negative. 
+   // But this looks more like a feature than a bug. 
+   //
+   // FIXME. At this point the old signalling_seg is not needed any more
+   // if we use only VTS. If we stop using HB graph, we can have only
+   // one fake segment for a CV. 
+
+}
+
+
+Bool evhH__do_cv_wait(Thread *thr, Word cond, Bool must_match_signal)
+{
+   SegmentID new_segid;
+   Segment*  new_seg;
+   Segment*  signalling_seg;
+   Bool      found;
+   map_cond_to_Segment_INIT();
+   if (clo_happens_before >= 2) {
+      /* create a new segment ... */
+      new_segid = 0; /* bogus */
+      new_seg   = NULL;
+      evhH__start_new_segment_for_thread( &new_segid, &new_seg, thr );
+      tl_assert( SEG_id_is_sane(new_segid) );
+      tl_assert( is_sane_Segment(new_seg) );
+      tl_assert( new_seg->thr == thr );
+      tl_assert( is_sane_Segment(new_seg->prev) );
+      tl_assert( new_seg->other == NULL);
+
+      /* and find out which thread signalled us; then add a dependency
+         edge back to it. */
+      signalling_seg = NULL;
+      found = HG_(lookupFM)( map_cond_to_Segment, 
+                             NULL, (Word*)&signalling_seg,
+                                   (Word)cond );
+      if (found) {
+         tl_assert(is_sane_Segment(signalling_seg));
+         tl_assert(new_seg->prev);
+         tl_assert(new_seg->prev->vts);
+         new_seg->other      = signalling_seg;
+         new_seg->other_hint = 's';
+         tl_assert(new_seg->other->vts);
+         new_seg->vts = tickL_and_joinR_VTS( 
+                           new_seg->thr, 
+                           new_seg->prev->vts,
+                           new_seg->other->vts );
+         return True;
+      } else {
+         if (must_match_signal) {
+            /* Hmm.  How can a wait on 'cond' succeed if nobody signalled
+               it?  If this happened it would surely be a bug in the
+               threads library.  Or one of those fabled "spurious
+               wakeups". */
+            record_error_Misc( thr, "Bug in libpthread: pthread_cond_wait "
+                               "succeeded on"
+                               " without prior pthread_cond_post");
+         }
+         tl_assert(new_seg->prev->vts);
+         new_seg->vts = tick_VTS( new_seg->thr, new_seg->prev->vts );
+         return False;
+      }
+   }
+   return False;
+}
+
+
 static void evh__HG_PTHREAD_COND_SIGNAL_PRE ( ThreadId tid, void* cond )
 {
    /* 'tid' has signalled on 'cond'.  Start a new segment for this
@@ -6037,8 +6489,6 @@ static void evh__HG_PTHREAD_COND_SIGNAL_PRE ( ThreadId tid, void* cond )
       back to it can be constructed. */
 
    Thread*   thr;
-   SegmentID new_segid;
-   Segment*  new_seg;
 
    if (SHOW_EVENTS >= 1)
       VG_(printf)("evh__HG_PTHREAD_COND_SIGNAL_PRE(ctid=%d, cond=%p)\n", 
@@ -6051,22 +6501,8 @@ static void evh__HG_PTHREAD_COND_SIGNAL_PRE ( ThreadId tid, void* cond )
    // error-if: mutex is bogus
    // error-if: mutex is not locked
 
-   if (clo_happens_before >= 2) {
-      /* create a new segment ... */
-      new_segid = 0; /* bogus */
-      new_seg   = NULL;
-      evhH__start_new_segment_for_thread( &new_segid, &new_seg, thr );
-      tl_assert( SEG_id_is_sane(new_segid) );
-      tl_assert( is_sane_Segment(new_seg) );
-      tl_assert( new_seg->thr == thr );
-      tl_assert( is_sane_Segment(new_seg->prev) );
-      tl_assert( new_seg->prev->vts );
-      new_seg->vts = tick_VTS( new_seg->thr, new_seg->prev->vts );
 
-      /* ... and add the binding. */
-      HG_(addToFM)( map_cond_to_Segment, (Word)cond,
-                                         (Word)(new_seg->prev) );
-   }
+   evhH__do_cv_signal(thr, (Word)cond);
 }
 
 /* returns True if it reckons 'mutex' is valid and held by this
@@ -6133,10 +6569,6 @@ static void evh__HG_PTHREAD_COND_WAIT_POST ( ThreadId tid,
       the new segment back to it. */
 
    Thread*   thr;
-   SegmentID new_segid;
-   Segment*  new_seg;
-   Segment*  signalling_seg;
-   Bool      found;
 
    if (SHOW_EVENTS >= 1)
       VG_(printf)("evh__HG_PTHREAD_COND_WAIT_POST"
@@ -6149,46 +6581,7 @@ static void evh__HG_PTHREAD_COND_WAIT_POST ( ThreadId tid,
 
    // error-if: cond is also associated with a different mutex
 
-   if (clo_happens_before >= 2) {
-      /* create a new segment ... */
-      new_segid = 0; /* bogus */
-      new_seg   = NULL;
-      evhH__start_new_segment_for_thread( &new_segid, &new_seg, thr );
-      tl_assert( SEG_id_is_sane(new_segid) );
-      tl_assert( is_sane_Segment(new_seg) );
-      tl_assert( new_seg->thr == thr );
-      tl_assert( is_sane_Segment(new_seg->prev) );
-      tl_assert( new_seg->other == NULL);
-
-      /* and find out which thread signalled us; then add a dependency
-         edge back to it. */
-      signalling_seg = NULL;
-      found = HG_(lookupFM)( map_cond_to_Segment, 
-                             NULL, (Word*)&signalling_seg,
-                                   (Word)cond );
-      if (found) {
-         tl_assert(is_sane_Segment(signalling_seg));
-         tl_assert(new_seg->prev);
-         tl_assert(new_seg->prev->vts);
-         new_seg->other      = signalling_seg;
-         new_seg->other_hint = 's';
-         tl_assert(new_seg->other->vts);
-         new_seg->vts = tickL_and_joinR_VTS( 
-                           new_seg->thr, 
-                           new_seg->prev->vts,
-                           new_seg->other->vts );
-      } else {
-         /* Hmm.  How can a wait on 'cond' succeed if nobody signalled
-            it?  If this happened it would surely be a bug in the
-            threads library.  Or one of those fabled "spurious
-            wakeups". */
-         record_error_Misc( thr, "Bug in libpthread: pthread_cond_wait "
-                                 "succeeded on"
-                                 " without prior pthread_cond_post");
-         tl_assert(new_seg->prev->vts);
-         new_seg->vts = tick_VTS( new_seg->thr, new_seg->prev->vts );
-      }
-   }
+   evhH__do_cv_wait(thr, (Word)cond, True);
 }
 
 
@@ -7707,6 +8100,84 @@ Bool hg_handle_client_request ( ThreadId tid, UWord* args, UWord* ret)
          break;
       }
 
+      case _VG_USERREQ__HG_GET_THREAD_ID: { // -> Thread ID
+         Thread*   thr;
+         thr = map_threads_maybe_lookup( tid );
+         tl_assert(thr); /* cannot fail */
+         *ret = (UWord)thr->errmsg_index;
+         break;
+      }
+
+      case _VG_USERREQ__HG_GET_SEGMENT_ID: { // -> SegmentID
+         Thread*   thr;
+         thr = map_threads_maybe_lookup( tid );
+         tl_assert(thr); /* cannot fail */
+         *ret = (UWord)thr->csegid;
+         break;
+      }
+
+
+
+      case VG_USERREQ__HG_EXPECT_RACE: { // void*, char*, char *, int
+        Addr ptr    = (Addr)args[1];
+        char *descr = (char*)args[2];
+        char *file  = (char*)args[3];
+        int line    = (int)  args[4];
+        maybe_set_expected_error(ptr, descr, file, line, False);
+        break;
+      }
+
+      case VG_USERREQ__HG_BENIGN_RACE: { // void*, char*, char *, int
+        Addr ptr    = (Addr)args[1];
+        char *descr = (char*)args[2];
+        char *file  = (char*)args[3];
+        int line    = (int)  args[4];
+        maybe_set_expected_error(ptr, descr, file, line, True);
+        break;
+      }
+
+
+      case VG_USERREQ__HG_PCQ_CREATE: // void *
+         pcq_create(args[1]);
+         break;
+      case VG_USERREQ__HG_PCQ_DESTROY: // void *
+         pcq_destroy(args[1]);
+         break;
+      case VG_USERREQ__HG_PCQ_PUT: // void *
+         pcq_put(tid, args[1]);
+         break;
+      case VG_USERREQ__HG_PCQ_GET: // void *
+         pcq_get(tid, args[1]);
+         break;
+
+
+      case VG_USERREQ__HG_TRACE_MEM:  // void *
+         mem_trace_on(args[1], tid);
+         break;
+
+      case VG_USERREQ__HG_MUTEX_IS_USED_AS_CONDVAR: // void *
+         set_mu_is_cv(args[1]);
+         break;
+      
+      // These two client requests are useful to mark a section of code 
+      // were user wants helgrind to ignore all reads. 
+      // For and example of such case, see test69. 
+      case VG_USERREQ__HG_IGNORE_READS_BEGIN: {
+         Thread *thr = map_threads_maybe_lookup( tid );
+         tl_assert(thr); /* cannot fail */
+         tl_assert(!thr->ignore_reads);
+         thr->ignore_reads = True;
+         break;
+      }
+      case VG_USERREQ__HG_IGNORE_READS_END: {
+         Thread *thr = map_threads_maybe_lookup( tid );
+         tl_assert(thr); /* cannot fail */
+         tl_assert(thr->ignore_reads);
+         thr->ignore_reads = False;
+         break;
+      }
+
+
       default:
          /* Unhandled Helgrind client request! */
         tl_assert2(0, "unhandled Helgrind client request!");
@@ -7936,6 +8407,16 @@ static void record_error_Race ( Thread* thr,
          }
       }
    }
+
+
+   if (1) { // Do not print an error if it is expected or benign. 
+      ExpectedError *expected_error = get_expected_error((Word)data_addr);
+      if (expected_error) {
+         expected_error->detected = True;
+         return;
+      }
+   }
+
 
    /* Ok, so we're really going to collect this race. */
    tl_assert(sizeof(xe.XE.Race.descr1) == sizeof(xe.XE.Race.descr2));
@@ -8558,6 +9039,15 @@ static Bool hg_process_cmd_line_option ( Char* arg )
    else if (VG_CLO_STREQ(arg, "--happens-before=all"))
       clo_happens_before = 2;
 
+   else if (VG_CLO_STREQN(11, arg, "--ignore-n=")) {
+      clo_ignore_n = VG_(atoll)(&arg[11]);
+      tl_assert(clo_ignore_n == 0 || (clo_ignore_n > 0 && clo_ignore_i < clo_ignore_n));
+   }
+   else if (VG_CLO_STREQN(11, arg, "--ignore-i=")) {
+      clo_ignore_i = VG_(atoll)(&arg[11]);
+      tl_assert(clo_ignore_n == 0 || (clo_ignore_n > 0 && clo_ignore_i < clo_ignore_n));
+   }
+
    else if (VG_CLO_STREQ(arg, "--gen-vcg=no"))
       clo_gen_vcg = 0;
    else if (VG_CLO_STREQ(arg, "--gen-vcg=yes"))
@@ -8649,6 +9139,25 @@ static void hg_fini ( Int exitcode )
 
    if (clo_gen_vcg > 0)
       segments__generate_vcg();
+
+
+   if (1) {
+      // If we expected some errors but not detected them -- complain.
+      Addr ptr;
+      ExpectedError *expected_error;
+      HG_(initIterFM)( map_expected_errors );
+      while (HG_(nextIterFM)( map_expected_errors, (Word*)&ptr,
+                              (Word*)&expected_error )) {
+         if(expected_error->detected == False && !expected_error->is_benign) {
+            VG_(printf)("Expected race was not detected: %s:%d %p\t%s\n", 
+                        expected_error->file, expected_error->line, 
+                        ptr, expected_error->descr);
+         }
+      }
+      HG_(doneIterFM) ( map_expected_errors );
+   }
+
+
 
    if (VG_(clo_verbosity) >= 2) {
 
@@ -8876,5 +9385,4 @@ VG_DETERMINE_INTERFACE_VERSION(hg_pre_clo_init)
 /*--- end                                                hg_main.c ---*/
 /*--------------------------------------------------------------------*/
 
-// KCC: settings for VIM. remove if don't like. 
 // vim:shiftwidth=3:softtabstop=3:expandtab

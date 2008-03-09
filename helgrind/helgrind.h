@@ -63,6 +63,17 @@
 typedef
    enum {
       VG_USERREQ__HG_CLEAN_MEMORY = VG_USERREQ_TOOL_BASE('H','G'),
+      VG_USERREQ__HG_BENIGN_RACE,                /* void*, char*, char*, int */
+      VG_USERREQ__HG_EXPECT_RACE,                /* void*, char*, char*, int */
+      VG_USERREQ__HG_PCQ_CREATE,                 /* void* */
+      VG_USERREQ__HG_PCQ_DESTROY,                /* void* */
+      VG_USERREQ__HG_PCQ_PUT,                    /* void* */
+      VG_USERREQ__HG_PCQ_GET,                    /* void* */
+      VG_USERREQ__HG_TRACE_MEM,                  /* void* */
+      VG_USERREQ__HG_MUTEX_IS_USED_AS_CONDVAR,   /* void* */
+      VG_USERREQ__HG_IGNORE_READS_BEGIN,         /* none */
+      VG_USERREQ__HG_IGNORE_READS_END,           /* none */
+
 
       /* The rest are for Helgrind's internal use.  Not for end-user
          use.  Do not use them unless you are a Valgrind developer. */
@@ -92,7 +103,9 @@ typedef
       _VG_USERREQ__HG_POSIX_SEM_DESTROY_PRE,      /* sem_t* */
       _VG_USERREQ__HG_POSIX_SEM_POST_PRE,         /* sem_t* */
       _VG_USERREQ__HG_POSIX_SEM_WAIT_POST,        /* sem_t* */
-      _VG_USERREQ__HG_GET_MY_SEGMENT              /* -> Segment* */
+      _VG_USERREQ__HG_GET_MY_SEGMENT,             /* -> Segment* */
+      _VG_USERREQ__HG_GET_THREAD_ID,              /* -> Thread ID */
+      _VG_USERREQ__HG_GET_SEGMENT_ID              /* -> Segment ID */
    } Vg_TCheckClientRequest;
 
 /* Clean memory state.  This makes Helgrind forget everything it knew
