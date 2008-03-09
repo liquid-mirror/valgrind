@@ -47,6 +47,21 @@
 
    - Have something like mk_SHVAL_fail instead of merely asserting
 
+   - More comments re deletion of memory containing Locks.
+
+     New proposal: Locks are never deleted, and entries never removed
+     from map_locks.  Instead have a .dormant bit in Lock indicating
+     that they are have been freed by the user.
+
+     (Later): remove map_locks.  Instead, on each SecMap have a set of
+     Locks which are known to live, or have lived, in that SecMap
+     (that is, their GA is in that SecMap).
+
+     This effectively means that we allocate one Lock entry for every
+     address that the client uses for a lock, and remember it forever.
+
+   - Fix command line ordering assumptions for --ignore-i= vs --ignore-n=
+
    STUFF I DON'T UNDERSTAND:
 
    Make sense of ignore-n/ignore-i.  What exactly does this do?
@@ -487,7 +502,6 @@ typedef
    struct {
       UInt magic;
       Bool mbHasLocks;  /* hint: any locks in range?  safe: True */
-      Bool mbHasShared; /* hint: any ShM/ShR states in range?  safe: True */
       CacheLineZ  linesZ[N_SECMAP_ZLINES];
       CacheLineF* linesF;
       UInt linesF_size;
@@ -2602,7 +2616,6 @@ static SecMap* shmem__alloc_SecMap ( void )
    tl_assert(sm);
    sm->magic       = SecMap_MAGIC;
    sm->mbHasLocks  = False; /* dangerous */
-   sm->mbHasShared = False; /* dangerous */
    for (i = 0; i < N_SECMAP_ZLINES; i++) {
       sm->linesZ[i].dict[0] = SHVAL_New;
       sm->linesZ[i].dict[1] = 0; /* completely invalid SHVAL */
@@ -2673,26 +2686,6 @@ static void shmem__set_mbHasLocks ( Addr a, Bool b )
       HG_(addToFM)( map_shmem, (Word)aKey, (Word)sm );
    }
    sm->mbHasLocks = b;
-}
-
-static void shmem__set_mbHasShared ( Addr a, Bool b )
-{
-   SecMap* sm;
-   Addr aKey = shmem__round_to_SecMap_base(a);
-   tl_assert(b == False || b == True);
-   // avoid creating a SecMap for memory that we ignore.
-   if (b == False && clo_ignore_n != 1 && address_may_be_ignored(a)) return;
-
-   if (HG_(lookupFM)( map_shmem,
-                      NULL/*keyP*/, (Word*)&sm, (Word)aKey )) {
-      /* Found; address of SecMap is in sm */
-   } else {
-      /* create a new one */
-      sm = shmem__alloc_SecMap();
-      tl_assert(sm);
-      HG_(addToFM)( map_shmem, (Word)aKey, (Word)sm );
-   }
-   sm->mbHasShared = b;
 }
 
 
@@ -2956,7 +2949,7 @@ static void shmem__sanity_check ( Char* who )
    while (HG_(nextIterFM)( map_shmem, &smga, (Word*)&sm )) {
       SecMapIter itr;
       SVal*      sv_p = NULL;
-      Bool       mbHasShared = False;
+      //Bool       mbHasShared = False;
       //Bool       allNoAccess = True;
       if (!is_sane_SecMap(sm)) BAD("1");
       // sm properly aligned
@@ -2965,8 +2958,8 @@ static void shmem__sanity_check ( Char* who )
       initSecMapIter( &itr );
       while (stepSecMapIter( &sv_p, &itr, sm )) {
          SVal sv = *sv_p;
-         if (is_SHVAL_Shared(sv)) 
-            mbHasShared = True;
+         //if (is_SHVAL_Shared(sv)) 
+         //   mbHasShared = True;
          //if (!is_SHVAL_NoAccess(sv))
          //   allNoAccess = False;
 
@@ -3004,7 +2997,7 @@ static void shmem__sanity_check ( Char* who )
          }
       } /* iterating over a SecMap */
       // Check essential safety property
-      if (mbHasShared && !sm->mbHasShared) BAD("13");
+      //if (mbHasShared && !sm->mbHasShared) BAD("13");
       // This is optional - check that destroyed memory has its hint
       // bits cleared.  NB won't work properly unless full, eager
       // GCing of SecMaps is implemented
@@ -4114,12 +4107,11 @@ static void normalise_CacheLine ( /*MOD*/CacheLine* cl )
 typedef struct { UChar count; SVal sval; } CountedSVal;
 
 static
-Bool sequentialise_CacheLine ( /*OUT*/CountedSVal* dst,
+void sequentialise_CacheLine ( /*OUT*/CountedSVal* dst,
                                /*OUT*/Word* dstUsedP,
                                Word nDst, CacheLine* src )
 {
    Word  tno, cloff, dstUsed;
-   Bool  anyShared = False;
 
    tl_assert(nDst == N_LINE_ARANGE);
    dstUsed = 0;
@@ -4130,9 +4122,7 @@ Bool sequentialise_CacheLine ( /*OUT*/CountedSVal* dst,
 
       /* sequentialise the tree described by (descr,tree). */
 #     define PUT(_n,_v)                                \
-         do { if (is_SHVAL_Shared(_v))                 \
-                 anyShared = True;                     \
-              dst[dstUsed  ].count = (_n);             \
+         do { dst[dstUsed  ].count = (_n);             \
               dst[dstUsed++].sval  = (_v);             \
          } while (0)
 
@@ -4168,7 +4158,6 @@ Bool sequentialise_CacheLine ( /*OUT*/CountedSVal* dst,
    tl_assert(dstUsed <= nDst);
 
    *dstUsedP = dstUsed;
-   return anyShared;
 }
 
 /* Write the cacheline 'wix' to backing store.  Where it ends up
@@ -4176,7 +4165,6 @@ Bool sequentialise_CacheLine ( /*OUT*/CountedSVal* dst,
 static __attribute__((noinline)) void cacheline_wback ( UWord wix )
 {
    Word        i, j, k, m;
-   Bool        anyShared = False;
    Addr        tag;
    SecMap*     sm;
    CacheLine*  cl;
@@ -4214,8 +4202,8 @@ static __attribute__((noinline)) void cacheline_wback ( UWord wix )
       tl_assert(is_sane_CacheLine(cl)); /* EXPENSIVE */
 
    csvalsUsed = -1;
-   anyShared = sequentialise_CacheLine( csvals, &csvalsUsed, 
-                                        N_LINE_ARANGE, cl );
+   sequentialise_CacheLine( csvals, &csvalsUsed, 
+                            N_LINE_ARANGE, cl );
    tl_assert(csvalsUsed >= 1 && csvalsUsed <= N_LINE_ARANGE);
    if (0) VG_(printf)("%lu ", csvalsUsed);
 
@@ -4284,8 +4272,8 @@ static __attribute__((noinline)) void cacheline_wback ( UWord wix )
       stats__cache_F_wbacks++;
    }
 
-   if (anyShared)
-      sm->mbHasShared = True;
+   //if (anyShared)
+   //   sm->mbHasShared = True;
 
    /* mb_tidy_one_cacheline(); */
 }
@@ -5320,7 +5308,7 @@ static void shadow_mem_make_NoAccess ( Thread* thr, Addr aIN, SizeT len )
       if (firstA <= sma && sma + N_SECMAP_ARANGE - 1 <= lastA) {
          /* Yes.  Clear the hint bits. */
          shmem__set_mbHasLocks( sma, False );
-         shmem__set_mbHasShared( sma, False );
+         //shmem__set_mbHasShared( sma, False );
       }
    }
 
@@ -8971,13 +8959,17 @@ static Bool hg_process_cmd_line_option ( Char* arg )
    else if (VG_CLO_STREQ(arg, "--happens-before=all"))
       clo_happens_before = 2;
 
+   /* FIXME this is bad.  It assumes that --ignore-n= occurs before
+      --ignore-i= on the command line. */
    else if (VG_CLO_STREQN(11, arg, "--ignore-n=")) {
       clo_ignore_n = VG_(atoll)(&arg[11]);
-      tl_assert(clo_ignore_n == 0 || (clo_ignore_n > 0 && clo_ignore_i < clo_ignore_n));
+      tl_assert(clo_ignore_n == 0 || (clo_ignore_n > 0 
+                                      && clo_ignore_i < clo_ignore_n));
    }
    else if (VG_CLO_STREQN(11, arg, "--ignore-i=")) {
       clo_ignore_i = VG_(atoll)(&arg[11]);
-      tl_assert(clo_ignore_n == 0 || (clo_ignore_n > 0 && clo_ignore_i < clo_ignore_n));
+      tl_assert(clo_ignore_n == 0 || (clo_ignore_n > 0 
+                                      && clo_ignore_i < clo_ignore_n));
    }
 
    else if (VG_CLO_STREQ(arg, "--gen-vcg=no"))
