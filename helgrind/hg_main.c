@@ -469,7 +469,7 @@ typedef
 typedef
    struct {
       Bool inUse;
-      SVal w32s[N_LINE_ARANGE];
+      SVal w64s[N_LINE_ARANGE];
    }
    CacheLineF; /* full rep for a cache line */
 
@@ -549,7 +549,7 @@ static Bool stepSecMapIter ( /*OUT*/SVal** pVal,
       lineF = &sm->linesF[ lineZ->dict[1] ];
       tl_assert(lineF->inUse);
       tl_assert(itr->word_no >= 0 && itr->word_no < N_LINE_ARANGE);
-      *pVal = &lineF->w32s[itr->word_no];
+      *pVal = &lineF->w64s[itr->word_no];
       itr->word_no++;
       if (itr->word_no == N_LINE_ARANGE)
          itr->word_no = 0;
@@ -4291,7 +4291,7 @@ static __attribute__((noinline)) void cacheline_wback ( UWord wix )
          if (SCE_SVALS)
             tl_assert(is_SHVAL_valid(sv));
          for (m = csvals[k].count; m > 0; m--) {
-            lineF->w32s[i] = sv;
+            lineF->w64s[i] = sv;
             i++;
          }
       }
@@ -4338,7 +4338,7 @@ static __attribute__((noinline)) void cacheline_fetch ( UWord wix )
    if (lineF) {
       tl_assert(lineF->inUse);
       for (i = 0; i < N_LINE_ARANGE; i++) {
-         cl->svals[i] = lineF->w32s[i];
+         cl->svals[i] = lineF->w64s[i];
       }
       stats__cache_F_fetches++;
    } else {
@@ -5819,6 +5819,46 @@ void evh__new_mem ( Addr a, SizeT len ) {
       all__sanity_check("evh__new_mem-post");
 }
 
+// Hacky stack filter; ignore references in the lowest page of
+// a thread's stack.  This picks up basically all stack references
+// that threads ever make (iow, ignoring the lowest 2, 3, .. pages
+// hardly succeeds in filtering out any more than just the first
+// page)
+#define HACKY_FILTER 1
+#define HACKY_FILTER_SIZE (1*4096)
+// skip ref at 'a' if
+// (a - sp + VG_STACK_REDZONE_SZB) <=u HACKY_FILTER_SIZE
+
+static
+void evh__new_mem_stack ( Addr a, SizeT len ) {
+   if (SHOW_EVENTS >= 2)
+      VG_(printf)("evh__new_mem_stack(%p, %lu)\n", (void*)a, len );
+#if 0
+   // This is simply wrong
+   ThreadId coretid = VG_(get_running_tid)();
+   if (coretid != VG_INVALID_THREADID) {
+      Addr sp_min1 = VG_(get_SP)(coretid) - VG_STACK_REDZONE_SZB;
+      VG_(printf)("QQQ %p\n", sp_min1);
+      if (a > sp_min1 && a+len <= sp_min1 + HACKY_FILTER_SIZE) {
+         VG_(printf)("XXX skip %p %lu\n", a, len);
+         return;
+      }
+   }
+#endif
+#if 0
+   // This isn't right either
+   if (len <= HACKY_FILTER_SIZE) {
+     //VG_(printf)("XXX skip %p %lu\n", a, len);
+      return;
+   }
+   a += HACKY_FILTER_SIZE;
+   len -= HACKY_FILTER_SIZE;
+#endif
+   shadow_mem_make_New( get_current_Thread(), a, len );
+   if (len >= SCE_BIGRANGE_T && (clo_sanity_flags & SCE_BIGRANGE))
+      all__sanity_check("evh__new_mem_stack-post");
+}
+
 static
 void evh__new_mem_w_perms ( Addr a, SizeT len, 
                             Bool rr, Bool ww, Bool xx ) {
@@ -6087,45 +6127,78 @@ void evh__die_mem_heap ( Addr a, SizeT len ) {
 
 // thread async exit?
 
-static VG_REGPARM(1)
-void evh__mem_help_read_1(Addr a) {
+// skip ref at 'a' if
+// (a - sp + VG_STACK_REDZONE_SZB) <=u HACKY_FILTER_SIZE
+
+static VG_REGPARM(2)
+void evh__mem_help_read_1(Addr a, Addr sp) {
+   if (HACKY_FILTER 
+       && ((UWord)(a - sp + VG_STACK_REDZONE_SZB)) <= HACKY_FILTER_SIZE)
+      return;
    shadow_mem_read8( get_current_Thread_in_C_C(), a, 0/*unused*/ );
 }
-static VG_REGPARM(1)
-void evh__mem_help_read_2(Addr a) {
+static VG_REGPARM(2)
+void evh__mem_help_read_2(Addr a, Addr sp) {
+   if (HACKY_FILTER 
+       && ((UWord)(a - sp + VG_STACK_REDZONE_SZB)) <= HACKY_FILTER_SIZE)
+      return;
    shadow_mem_read16( get_current_Thread_in_C_C(), a, 0/*unused*/ );
 }
-static VG_REGPARM(1)
-void evh__mem_help_read_4(Addr a) {
+static VG_REGPARM(2)
+void evh__mem_help_read_4(Addr a, Addr sp) {
+   if (HACKY_FILTER 
+       && ((UWord)(a - sp + VG_STACK_REDZONE_SZB)) <= HACKY_FILTER_SIZE)
+      return;
    shadow_mem_read32( get_current_Thread_in_C_C(), a, 0/*unused*/ );
 }
-static VG_REGPARM(1)
-void evh__mem_help_read_8(Addr a) {
+static VG_REGPARM(2)
+void evh__mem_help_read_8(Addr a, Addr sp) {
+   if (HACKY_FILTER 
+       && ((UWord)(a - sp + VG_STACK_REDZONE_SZB)) <= HACKY_FILTER_SIZE)
+      return;
    shadow_mem_read64( get_current_Thread_in_C_C(), a, 0/*unused*/ );
 }
-static VG_REGPARM(2)
-void evh__mem_help_read_N(Addr a, SizeT size) {
+static VG_REGPARM(3)
+void evh__mem_help_read_N(Addr a, SizeT size, Addr sp) {
+   if (HACKY_FILTER 
+       && ((UWord)(a - sp + VG_STACK_REDZONE_SZB)) <= HACKY_FILTER_SIZE)
+      return;
    shadow_mem_read_range( get_current_Thread_in_C_C(), a, size );
 }
 
-static VG_REGPARM(1)
-void evh__mem_help_write_1(Addr a) {
+static VG_REGPARM(2)
+void evh__mem_help_write_1(Addr a, Addr sp) {
+   if (HACKY_FILTER
+       && ((UWord)(a - sp + VG_STACK_REDZONE_SZB)) <= HACKY_FILTER_SIZE)
+      return;
    shadow_mem_write8( get_current_Thread_in_C_C(), a, 0/*unused*/ );
 }
-static VG_REGPARM(1)
-void evh__mem_help_write_2(Addr a) {
+static VG_REGPARM(2)
+void evh__mem_help_write_2(Addr a, Addr sp) {
+   if (HACKY_FILTER
+       && ((UWord)(a - sp + VG_STACK_REDZONE_SZB)) <= HACKY_FILTER_SIZE)
+      return;
    shadow_mem_write16( get_current_Thread_in_C_C(), a, 0/*unused*/ );
 }
-static VG_REGPARM(1)
-void evh__mem_help_write_4(Addr a) {
+static VG_REGPARM(2)
+void evh__mem_help_write_4(Addr a, Addr sp) {
+   if (HACKY_FILTER
+       && ((UWord)(a - sp + VG_STACK_REDZONE_SZB)) <= HACKY_FILTER_SIZE)
+      return;
    shadow_mem_write32( get_current_Thread_in_C_C(), a, 0/*unused*/ );
 }
-static VG_REGPARM(1)
-void evh__mem_help_write_8(Addr a) {
+static VG_REGPARM(2)
+void evh__mem_help_write_8(Addr a, Addr sp) {
+   if (HACKY_FILTER
+       && ((UWord)(a - sp + VG_STACK_REDZONE_SZB)) <= HACKY_FILTER_SIZE)
+      return;
    shadow_mem_write64( get_current_Thread_in_C_C(), a, 0/*unused*/ );
 }
-static VG_REGPARM(2)
-void evh__mem_help_write_N(Addr a, SizeT size) {
+static VG_REGPARM(3)
+void evh__mem_help_write_N(Addr a, SizeT size, Addr sp) {
+   if (HACKY_FILTER
+       && ((UWord)(a - sp + VG_STACK_REDZONE_SZB)) <= HACKY_FILTER_SIZE)
+      return;
    shadow_mem_write_range( get_current_Thread_in_C_C(), a, size );
 }
 
@@ -7597,7 +7670,8 @@ static void instrument_mem_access ( IRSB*   bbOut,
                                     IRExpr* addr,
                                     Int     szB,
                                     Bool    isStore,
-                                    Int     hWordTy_szB )
+                                    Int     hWordTy_szB,
+                                    VexGuestLayout* layout )
 {
    IRType   tyAddr   = Ity_INVALID;
    HChar*   hName    = NULL;
@@ -7605,6 +7679,8 @@ static void instrument_mem_access ( IRSB*   bbOut,
    Int      regparms = 0;
    IRExpr** argv     = NULL;
    IRDirty* di       = NULL;
+   IRTemp   sp;
+   IRExpr*  spE;
 
    tl_assert(isIRAtom(addr));
    tl_assert(hWordTy_szB == 4 || hWordTy_szB == 8);
@@ -7612,36 +7688,57 @@ static void instrument_mem_access ( IRSB*   bbOut,
    tyAddr = typeOfIRExpr( bbOut->tyenv, addr );
    tl_assert(tyAddr == Ity_I32 || tyAddr == Ity_I64);
 
+   /* Get the guest's stack pointer, so we can pass it to the helper.
+      How do we know this is up to date?  Presumably because SP is
+      flushed to guest state before every memory reference. */
+   tl_assert(sizeof(void*) == layout->sizeof_SP);
+   tl_assert(sizeof(void*) == hWordTy_szB);
+   if (layout->sizeof_SP == 4) {
+      sp = newIRTemp(bbOut->tyenv, Ity_I32);
+      addStmtToIRSB(
+         bbOut,
+         IRStmt_WrTmp( sp, IRExpr_Get( layout->offset_SP, Ity_I32 ) )
+      );
+   } else {
+      tl_assert(layout->sizeof_SP == 8);
+      sp = newIRTemp(bbOut->tyenv, Ity_I64);
+      addStmtToIRSB(
+         bbOut,
+         IRStmt_WrTmp( sp, IRExpr_Get( layout->offset_SP, Ity_I64 ) )
+      );
+   }
+   spE = IRExpr_RdTmp( sp );
+
    /* So the effective address is in 'addr' now. */
-   regparms = 1; // unless stated otherwise
+   regparms = 2; // unless stated otherwise
    if (isStore) {
       switch (szB) {
          case 1:
             hName = "evh__mem_help_write_1";
             hAddr = &evh__mem_help_write_1;
-            argv = mkIRExprVec_1( addr );
+            argv = mkIRExprVec_2( addr, spE );
             break;
          case 2:
             hName = "evh__mem_help_write_2";
             hAddr = &evh__mem_help_write_2;
-            argv = mkIRExprVec_1( addr );
+            argv = mkIRExprVec_2( addr, spE );
             break;
          case 4:
             hName = "evh__mem_help_write_4";
             hAddr = &evh__mem_help_write_4;
-            argv = mkIRExprVec_1( addr );
+            argv = mkIRExprVec_2( addr, spE );
             break;
          case 8:
             hName = "evh__mem_help_write_8";
             hAddr = &evh__mem_help_write_8;
-            argv = mkIRExprVec_1( addr );
+            argv = mkIRExprVec_2( addr, spE );
             break;
          default:
             tl_assert(szB > 8 && szB <= 512); /* stay sane */
-            regparms = 2;
+            regparms = 3;
             hName = "evh__mem_help_write_N";
             hAddr = &evh__mem_help_write_N;
-            argv = mkIRExprVec_2( addr, mkIRExpr_HWord( szB ));
+            argv = mkIRExprVec_3( addr, mkIRExpr_HWord( szB ), spE);
             break;
       }
    } else {
@@ -7649,29 +7746,29 @@ static void instrument_mem_access ( IRSB*   bbOut,
          case 1:
             hName = "evh__mem_help_read_1";
             hAddr = &evh__mem_help_read_1;
-            argv = mkIRExprVec_1( addr );
+            argv = mkIRExprVec_2( addr, spE );
             break;
          case 2:
             hName = "evh__mem_help_read_2";
             hAddr = &evh__mem_help_read_2;
-            argv = mkIRExprVec_1( addr );
+            argv = mkIRExprVec_2( addr, spE );
             break;
          case 4:
             hName = "evh__mem_help_read_4";
             hAddr = &evh__mem_help_read_4;
-            argv = mkIRExprVec_1( addr );
+            argv = mkIRExprVec_2( addr, spE );
             break;
          case 8:
             hName = "evh__mem_help_read_8";
             hAddr = &evh__mem_help_read_8;
-            argv = mkIRExprVec_1( addr );
+            argv = mkIRExprVec_2( addr, spE );
             break;
          default: 
             tl_assert(szB > 8 && szB <= 512); /* stay sane */
-            regparms = 2;
+            regparms = 3;
             hName = "evh__mem_help_read_N";
             hAddr = &evh__mem_help_read_N;
-            argv = mkIRExprVec_2( addr, mkIRExpr_HWord( szB ));
+            argv = mkIRExprVec_3( addr, mkIRExpr_HWord( szB ), spE);
             break;
       }
    }
@@ -7768,7 +7865,8 @@ IRSB* hg_instrument ( VgCallbackClosure* closure,
                st->Ist.Store.addr, 
                sizeofIRType(typeOfIRExpr(bbIn->tyenv, st->Ist.Store.data)),
                True/*isStore*/,
-               sizeofIRType(hWordTy)
+               sizeofIRType(hWordTy),
+               layout
             );
             break;
 
@@ -7780,7 +7878,8 @@ IRSB* hg_instrument ( VgCallbackClosure* closure,
                   data->Iex.Load.addr,
                   sizeofIRType(data->Iex.Load.ty),
                   False/*!isStore*/,
-                  sizeofIRType(hWordTy)
+                  sizeofIRType(hWordTy),
+                  layout
                );
             }
             break;
@@ -7798,13 +7897,13 @@ IRSB* hg_instrument ( VgCallbackClosure* closure,
                if (d->mFx == Ifx_Read || d->mFx == Ifx_Modify) {
                   instrument_mem_access( 
                      bbOut, d->mAddr, dataSize, False/*!isStore*/,
-                     sizeofIRType(hWordTy)
+                     sizeofIRType(hWordTy), layout
                   );
                }
                if (d->mFx == Ifx_Write || d->mFx == Ifx_Modify) {
                   instrument_mem_access( 
                      bbOut, d->mAddr, dataSize, True/*isStore*/,
-                     sizeofIRType(hWordTy)
+                     sizeofIRType(hWordTy), layout
                   );
                }
             } else {
@@ -9226,6 +9325,9 @@ static void hg_fini ( Int exitcode )
                  stats__cline_64to32pulldown,
                  stats__cline_32to16pulldown,
                  stats__cline_16to8pulldown );
+      if (0)
+      VG_(printf)("   cline: sizeof(CacheLineZ) %ld, covers %ld bytes of arange\n",
+                  (Word)sizeof(CacheLineZ), (Word)N_LINE_ARANGE);
 
       VG_(printf)("\n");
    }
@@ -9284,7 +9386,7 @@ static void hg_pre_clo_init ( void )
    VG_(track_new_mem_stack_signal)( evh__die_mem );
    VG_(track_new_mem_brk)         ( evh__new_mem );
    VG_(track_new_mem_mmap)        ( evh__new_mem_w_perms );
-   VG_(track_new_mem_stack)       ( evh__new_mem );
+   VG_(track_new_mem_stack)       ( evh__new_mem_stack );
 
    // FIXME: surely this isn't thread-aware
    VG_(track_copy_mem_remap)      ( shadow_mem_copy_range );
