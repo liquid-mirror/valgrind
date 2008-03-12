@@ -416,7 +416,7 @@ typedef
    not detected (useful for unit tests). */
 typedef 
    struct {
-      Addr   ptr;    ///< Pointer from the client request. 
+      Addr   addr;  ///< Data address (of race to ignore)
       HChar* descr; ///< Arbitrary text supplied by client. 
       HChar* file;  ///< File name (for debug output). 
       Int    line;  ///< Line number (for debug output)
@@ -2032,9 +2032,10 @@ static ExpectedError *get_expected_error (Addr ptr)
   ExpectedError *expected_error = NULL;
   if (HG_(lookupFM)( map_expected_errors,
                      NULL/*keyP*/, (Word*)&expected_error, (Word)ptr)) {
-    tl_assert(expected_error->ptr == ptr);
+    tl_assert(expected_error->addr == ptr);
     VG_(printf)("Found expected race: %s:%d %p\t%s\n",
-                expected_error->file, expected_error->line, ptr, expected_error->descr);
+                expected_error->file, expected_error->line, 
+                ptr, expected_error->descr);
     return expected_error;
   }
   return NULL;
@@ -2057,7 +2058,7 @@ static Bool maybe_set_expected_error (Addr   ptr,
    /* create a new one */
 //   VG_(printf)("New\n");
    error = (ExpectedError*)hg_zalloc(sizeof(ExpectedError));
-   error->ptr = ptr;
+   error->addr = ptr;
    error->detected = False;
    error->is_benign = is_benign;
    error->descr = description;
@@ -8162,26 +8163,23 @@ Bool hg_handle_client_request ( ThreadId tid, UWord* args, UWord* ret)
          break;
       }
 
-
-
       case VG_USERREQ__HG_EXPECT_RACE: { // void*, char*, char *, int
-        Addr ptr    = (Addr)args[1];
-        char *descr = (char*)args[2];
-        char *file  = (char*)args[3];
-        int line    = (int)  args[4];
+        Addr   ptr   = (Addr)  args[1];
+        HChar* descr = (HChar*)args[2];
+        HChar* file  = (HChar*)args[3];
+        Int    line  = (Int)   args[4];
         maybe_set_expected_error(ptr, descr, file, line, False);
         break;
       }
 
       case VG_USERREQ__HG_BENIGN_RACE: { // void*, char*, char *, int
-        Addr ptr    = (Addr)args[1];
-        char *descr = (char*)args[2];
-        char *file  = (char*)args[3];
-        int line    = (int)  args[4];
+        Addr   ptr   = (Addr)  args[1];
+        HChar* descr = (HChar*)args[2];
+        HChar* file  = (HChar*)args[3];
+        Int    line  = (Int)   args[4];
         maybe_set_expected_error(ptr, descr, file, line, True);
         break;
       }
-
 
       case VG_USERREQ__HG_PCQ_CREATE: // void *
          pcq_create(args[1]);
@@ -8195,7 +8193,6 @@ Bool hg_handle_client_request ( ThreadId tid, UWord* args, UWord* ret)
       case VG_USERREQ__HG_PCQ_GET: // void *
          pcq_get(tid, args[1]);
          break;
-
 
       case VG_USERREQ__HG_TRACE_MEM:  // void *
          mem_trace_on(args[1], tid);
@@ -8222,7 +8219,6 @@ Bool hg_handle_client_request ( ThreadId tid, UWord* args, UWord* ret)
          thr->ignore_reads = False;
          break;
       }
-
 
       default:
          /* Unhandled Helgrind client request! */
