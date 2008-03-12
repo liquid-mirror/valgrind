@@ -199,13 +199,15 @@ static IRTemp findShadowTmp ( MCEnv* mce, IRTemp orig )
    necessary to give a new value to a shadow once it has been tested
    for undefinedness, but unfortunately IR's SSA property disallows
    this.  Instead we must abandon the old shadow, allocate a new one
-   and use that instead. */
-static void newShadowTmp ( MCEnv* mce, IRTemp orig )
+   and use that instead.  Returns the new temp. */
+static IRTemp newShadowTmp ( MCEnv* mce, IRTemp orig )
 {
+   IRTemp newv;
    tl_assert(orig < mce->n_originalTmps);
-   mce->tmpMap[orig] 
-      = newIRTemp(mce->bb->tyenv, 
-                  shadowType(mce->bb->tyenv->types[orig]));
+   newv = newIRTemp(mce->bb->tyenv, 
+                    shadowType(mce->bb->tyenv->types[orig]));
+   mce->tmpMap[orig] = newv;
+   return newv;
 }
 
 
@@ -253,6 +255,26 @@ static Bool sameKindedAtoms ( IRAtom* a1, IRAtom* a2 )
    if (a1->tag == Iex_Const && a2->tag == Iex_Const)
       return True;
    return False;
+}
+
+/* (used for sanity checks only): check that atom/vatom are
+   respectively valid original and shadow atoms, and that vatom is
+   currently the shadow of atom. */
+static Bool isAtomPairOV ( MCEnv* mce, IRAtom* atom, IRAtom* vatom )
+{
+   if (!isOriginalAtom(mce,atom)) return False;
+   if (!isShadowAtom(mce,vatom)) return False;
+   if (!sameKindedAtoms(atom,vatom)) return False;
+   if (atom->tag == Iex_RdTmp) {
+      IRTemp otmp;
+      /* assured by sameKindedAtoms */
+      tl_assert(vatom->tag == Iex_RdTmp);
+      otmp = atom->Iex.RdTmp.tmp;
+      tl_assert(otmp >= 0 && otmp < mce->n_originalTmps);
+      return mce->tmpMap[otmp] == vatom->Iex.RdTmp.tmp;
+   } else {
+      return True;
+   }
 }
 
 
@@ -319,13 +341,74 @@ static IRExpr* definedOfType ( IRType ty ) {
 #define mkV128(_n)               IRExpr_Const(IRConst_V128(_n))
 #define mkexpr(_tmp)             IRExpr_RdTmp((_tmp))
 
-/* bind the given expression to a new temporary, and return the
+/* Bind the given expression to a new temporary, and return the
    temporary.  This effectively converts an arbitrary expression into
    an atom. */
 static IRAtom* assignNew ( MCEnv* mce, IRType ty, IRExpr* e ) {
+   IRType tyE = typeOfIRExpr(mce->bb->tyenv, e);
+   tl_assert(tyE == ty); /* so 'ty' is redundant (!) */
    IRTemp t = newIRTemp(mce->bb->tyenv, ty);
    assign(mce->bb, t, e);
    return mkexpr(t);
+}
+
+/* Allocate a new shadow temporary for 'atom', and assign to it the
+   value in 'vatom'.  Except if 'atom' is a literal, in which case do
+   nothing. */
+static void setShadowTo ( MCEnv* mce, IRAtom* atom, IRAtom* vatom ) {
+   tl_assert(isOriginalAtom(mce,atom));
+   tl_assert(isShadowAtom(mce,vatom));
+   tl_assert(typeOfIRExpr(mce->bb->tyenv, vatom)
+             == shadowType(typeOfIRExpr(mce->bb->tyenv, atom)));
+   if (atom->tag == Iex_RdTmp) {
+      IRTemp tv = newShadowTmp(mce, atom->Iex.RdTmp.tmp);
+      assign(mce->bb, tv, vatom);
+   }
+}
+
+/* Variant of setShadowTo which creates a new shadow for 'atom'
+   and marks it as defined. */
+static void setShadowToDefined ( MCEnv* mce, IRAtom* atom ) {
+   IRType vty = shadowType(typeOfIRExpr(mce->bb->tyenv, atom));
+   setShadowTo(mce, atom, definedOfType(vty));
+}
+
+/* Set the annotations on a dirty helper to indicate that the stack,
+   frame and instruction pointers might be read.  This is the
+   behaviour of all 'emit-a-complaint' style functions we might
+   call. */
+static void setHelperAnns ( MCEnv* mce, IRDirty* di ) {
+   di->nFxState = 2;
+   di->fxState[0].fx     = Ifx_Read;
+   di->fxState[0].offset = mce->layout->offset_SP;
+   di->fxState[0].size   = mce->layout->sizeof_SP;
+   di->fxState[1].fx     = Ifx_Read;
+   di->fxState[1].offset = mce->layout->offset_IP;
+   di->fxState[1].size   = mce->layout->sizeof_IP;
+}
+
+/* Generate a call to a definedness-error helper function.  'cond' is
+   the guarding expression and is assumed to have Ity_I1, something
+   that post-instrumentation IR sanity checking will check. */
+static void gen_check_fail_call ( MCEnv* mce, IRAtom* cond, Int errszB )
+{
+   IRDirty* di;
+   switch (errszB) {
+      case 8:
+         di = unsafeIRDirty_0_N( 
+                 0/*regparms*/, 
+                 "MC_(helperc_value_check8_fail)",
+                 VG_(fnptr_to_fnentry)( &MC_(helperc_value_check8_fail) ),
+                 mkIRExprVec_0() 
+              );
+         break;
+      default:
+         tl_assert(0);
+   }
+   /* cond will be 0 if all defined, and 1 if any not defined. */
+   di->guard = cond;
+   setHelperAnns( mce, di );
+   stmt( mce->bb, IRStmt_Dirty(di));
 }
 
 
@@ -851,22 +934,6 @@ static IRAtom* doCmpORD ( MCEnv*  mce,
 /*--- Emit a test and complaint if something is undefined. ---*/
 /*------------------------------------------------------------*/
 
-/* Set the annotations on a dirty helper to indicate that the stack
-   pointer and instruction pointers might be read.  This is the
-   behaviour of all 'emit-a-complaint' style functions we might
-   call. */
-
-static void setHelperAnns ( MCEnv* mce, IRDirty* di ) {
-   di->nFxState = 2;
-   di->fxState[0].fx     = Ifx_Read;
-   di->fxState[0].offset = mce->layout->offset_SP;
-   di->fxState[0].size   = mce->layout->sizeof_SP;
-   di->fxState[1].fx     = Ifx_Read;
-   di->fxState[1].offset = mce->layout->offset_IP;
-   di->fxState[1].size   = mce->layout->sizeof_IP;
-}
-
-
 /* Check the supplied **original** atom for undefinedness, and emit a
    complaint if so.  Once that happens, mark it as defined.  This is
    possible because the atom is either a tmp or literal.  If it's a
@@ -1129,15 +1196,13 @@ IRExpr* shadow_GETI ( MCEnv* mce,
 
 
 /*------------------------------------------------------------*/
-/*--- Generating approximations for unknown operations,    ---*/
-/*--- using lazy-propagate semantics                       ---*/
+/*--- Building general-PCast trees                         ---*/
 /*------------------------------------------------------------*/
 
-/* Lazy propagation of undefinedness from two values, resulting in the
-   specified shadow type. 
-*/
+/* Lazy pessimistic propagation of undefinedness from two values,
+   resulting in the specified shadow type.  ("general PCast") */
 static
-IRAtom* mkLazy2 ( MCEnv* mce, IRType finalVty, IRAtom* va1, IRAtom* va2 )
+IRAtom* genPCast2 ( MCEnv* mce, IRType finalVty, IRAtom* va1, IRAtom* va2 )
 {
    IRAtom* at;
    IRType t1 = typeOfIRExpr(mce->bb->tyenv, va1);
@@ -1151,7 +1216,7 @@ IRAtom* mkLazy2 ( MCEnv* mce, IRType finalVty, IRAtom* va1, IRAtom* va2 )
 
    /* I64 x I64 -> I64 */
    if (t1 == Ity_I64 && t2 == Ity_I64 && finalVty == Ity_I64) {
-      if (0) VG_(printf)("mkLazy2: I64 x I64 -> I64\n");
+      if (0) VG_(printf)("genPCast2: I64 x I64 -> I64\n");
       at = mkUifU(mce, Ity_I64, va1, va2);
       at = mkPCastTo(mce, Ity_I64, at);
       return at;
@@ -1159,14 +1224,14 @@ IRAtom* mkLazy2 ( MCEnv* mce, IRType finalVty, IRAtom* va1, IRAtom* va2 )
 
    /* I64 x I64 -> I32 */
    if (t1 == Ity_I64 && t2 == Ity_I64 && finalVty == Ity_I32) {
-      if (0) VG_(printf)("mkLazy2: I64 x I64 -> I32\n");
+      if (0) VG_(printf)("genPCast2: I64 x I64 -> I32\n");
       at = mkUifU(mce, Ity_I64, va1, va2);
       at = mkPCastTo(mce, Ity_I32, at);
       return at;
    }
 
    if (0) {
-      VG_(printf)("mkLazy2 ");
+      VG_(printf)("genPCast2 ");
       ppIRType(t1);
       VG_(printf)("_");
       ppIRType(t2);
@@ -1185,8 +1250,8 @@ IRAtom* mkLazy2 ( MCEnv* mce, IRType finalVty, IRAtom* va1, IRAtom* va2 )
 
 /* 3-arg version of the above. */
 static
-IRAtom* mkLazy3 ( MCEnv* mce, IRType finalVty, 
-                  IRAtom* va1, IRAtom* va2, IRAtom* va3 )
+IRAtom* genPCast3 ( MCEnv* mce, IRType finalVty, 
+                    IRAtom* va1, IRAtom* va2, IRAtom* va3 )
 {
    IRAtom* at;
    IRType t1 = typeOfIRExpr(mce->bb->tyenv, va1);
@@ -1204,7 +1269,7 @@ IRAtom* mkLazy3 ( MCEnv* mce, IRType finalVty,
    /* Standard FP idiom: rm x FParg1 x FParg2 -> FPresult */
    if (t1 == Ity_I32 && t2 == Ity_I64 && t3 == Ity_I64 
        && finalVty == Ity_I64) {
-      if (0) VG_(printf)("mkLazy3: I32 x I64 x I64 -> I64\n");
+      if (0) VG_(printf)("genPCast3: I32 x I64 x I64 -> I64\n");
       /* Widen 1st arg to I64.  Since 1st arg is typically a rounding
          mode indication which is fully defined, this should get
          folded out later. */
@@ -1220,7 +1285,7 @@ IRAtom* mkLazy3 ( MCEnv* mce, IRType finalVty,
    /* I32 x I64 x I64 -> I32 */
    if (t1 == Ity_I32 && t2 == Ity_I64 && t3 == Ity_I64 
        && finalVty == Ity_I32) {
-      if (0) VG_(printf)("mkLazy3: I32 x I64 x I64 -> I64\n");
+      if (0) VG_(printf)("genPCast3: I32 x I64 x I64 -> I64\n");
       at = mkPCastTo(mce, Ity_I64, va1);
       at = mkUifU(mce, Ity_I64, at, va2);
       at = mkUifU(mce, Ity_I64, at, va3);
@@ -1229,7 +1294,7 @@ IRAtom* mkLazy3 ( MCEnv* mce, IRType finalVty,
    }
 
    if (1) {
-      VG_(printf)("mkLazy3: ");
+      VG_(printf)("genPCast3: ");
       ppIRType(t1);
       VG_(printf)(" x ");
       ppIRType(t2);
@@ -1254,8 +1319,8 @@ IRAtom* mkLazy3 ( MCEnv* mce, IRType finalVty,
 
 /* 4-arg version of the above. */
 static
-IRAtom* mkLazy4 ( MCEnv* mce, IRType finalVty, 
-                  IRAtom* va1, IRAtom* va2, IRAtom* va3, IRAtom* va4 )
+IRAtom* genPCast4 ( MCEnv* mce, IRType finalVty, 
+                    IRAtom* va1, IRAtom* va2, IRAtom* va3, IRAtom* va4 )
 {
    IRAtom* at;
    IRType t1 = typeOfIRExpr(mce->bb->tyenv, va1);
@@ -1275,7 +1340,7 @@ IRAtom* mkLazy4 ( MCEnv* mce, IRType finalVty,
    /* Standard FP idiom: rm x FParg1 x FParg2 x FParg3 -> FPresult */
    if (t1 == Ity_I32 && t2 == Ity_I64 && t3 == Ity_I64 && t4 == Ity_I64
        && finalVty == Ity_I64) {
-      if (0) VG_(printf)("mkLazy4: I32 x I64 x I64 x I64 -> I64\n");
+      if (0) VG_(printf)("genPCast4: I32 x I64 x I64 x I64 -> I64\n");
       /* Widen 1st arg to I64.  Since 1st arg is typically a rounding
          mode indication which is fully defined, this should get
          folded out later. */
@@ -1290,7 +1355,7 @@ IRAtom* mkLazy4 ( MCEnv* mce, IRType finalVty,
    }
 
    if (1) {
-      VG_(printf)("mkLazy4: ");
+      VG_(printf)("genPCast4: ");
       ppIRType(t1);
       VG_(printf)(" x ");
       ppIRType(t2);
@@ -1313,8 +1378,8 @@ IRAtom* mkLazy4 ( MCEnv* mce, IRType finalVty,
    arguments should be ignored (via the .mcx_mask field). 
 */
 static
-IRAtom* mkLazyN ( MCEnv* mce, 
-                  IRAtom** exprvec, IRType finalVtype, IRCallee* cee )
+IRAtom* genPCastN ( MCEnv* mce, 
+                    IRAtom** exprvec, IRType finalVtype, IRCallee* cee )
 {
    Int     i;
    IRAtom* here;
@@ -1356,6 +1421,133 @@ IRAtom* mkLazyN ( MCEnv* mce,
       }
    }
    return mkPCastTo(mce, finalVtype, curr );
+}
+
+
+/*------------------------------------------------------------*/
+/*--- Generating approximations for unknown operations,    ---*/
+/*--- for both lazy (silently propagate undefinedness) and ---*/
+/*--- strict (check & report undefinedness, the propogate  ---*/
+/*--- definedness) semantics.                              ---*/
+/*------------------------------------------------------------*/
+
+/* Generate IR to pessimistically fold the definedness of atom1,2,3
+   together.  If that produces an undefined result, call a helper
+   function as specified by 'reportErrAtSize' to complain.  Finally,
+   set the shadows for atom1,2,3 (if appropriate) to indicate that
+   this value is now defined, so as to avoid error cascades.  Finally
+   return a defined shadow value at 'finalVty'.
+
+   We don't care what 'reportErrAtSize' is, in the sense that we're
+   combining the shadows for atom1/2/3 into a single bit result.  But
+   we do need to use 'reportErrAtSize' to decide which helper fn to
+   call, so that the user gets a complaint about an undefined value,
+   which is claimed to be of a size which makes sense to the user.
+   eg, it's confusing to emit a complaint about use of uninitialised
+   value of size 2 if the actual data involved is 8(byte).  Let the
+   caller of mkStrict3 therefore supply a suitable hint in
+   'reportErrAtSize'. */
+
+static IRExpr* mkStrict3 ( MCEnv*  mce, 
+                           IRType  finalVty,
+                           IRAtom* atom1, 
+                           IRAtom* atom2,
+                           IRAtom* atom3,
+                           Int     reportErrAtSize )
+{
+   IRAtom *combined, *cond, *vatom1, *vatom2, *vatom3;
+   tl_assert(isOriginalAtom(mce,atom1));
+   tl_assert(isOriginalAtom(mce,atom2));
+   tl_assert(isOriginalAtom(mce,atom3));
+   vatom1 = expr2vbits( mce, atom1 );
+   vatom2 = expr2vbits( mce, atom2 );
+   vatom3 = expr2vbits( mce, atom3 );
+   tl_assert(isShadowAtom(mce,vatom1));
+   tl_assert(isShadowAtom(mce,vatom2));
+   tl_assert(isShadowAtom(mce,vatom3));
+   tl_assert(sameKindedAtoms(atom1,vatom1));
+   tl_assert(sameKindedAtoms(atom2,vatom2));
+   tl_assert(sameKindedAtoms(atom3,vatom3));
+
+   combined = genPCast3(mce, Ity_I32, vatom1, vatom2, vatom3);
+   tl_assert(isShadowAtom(mce,combined));
+   cond = mkPCastTo( mce, Ity_I1, combined );
+   tl_assert(isShadowAtom(mce,cond));
+
+   /* cond will be 0 if all defined, and 1 if any not defined. */
+   gen_check_fail_call(mce, cond, reportErrAtSize);
+
+   setShadowToDefined(mce, atom1);
+   setShadowToDefined(mce, atom2);
+   setShadowToDefined(mce, atom3);
+   return definedOfType(finalVty);
+}
+
+
+static IRExpr* mkLazy3 ( MCEnv*  mce, 
+                         IRType  finalVty,
+                         IRAtom* atom1, 
+                         IRAtom* atom2,
+                         IRAtom* atom3 )
+{
+   IRAtom *vatom1, *vatom2, *vatom3;
+   tl_assert(isOriginalAtom(mce,atom1));
+   tl_assert(isOriginalAtom(mce,atom2));
+   tl_assert(isOriginalAtom(mce,atom3));
+   vatom1 = expr2vbits( mce, atom1 );
+   vatom2 = expr2vbits( mce, atom2 );
+   vatom3 = expr2vbits( mce, atom3 );
+   tl_assert(isShadowAtom(mce,vatom1));
+   tl_assert(isShadowAtom(mce,vatom2));
+   tl_assert(isShadowAtom(mce,vatom3));
+   tl_assert(sameKindedAtoms(atom1,vatom1));
+   tl_assert(sameKindedAtoms(atom2,vatom2));
+   tl_assert(sameKindedAtoms(atom3,vatom3));
+   return genPCast3(mce, finalVty, vatom1, vatom2, vatom3);
+}
+
+
+/* 4-way version of mkStrict3 */
+
+static IRExpr* mkStrict4 ( MCEnv*  mce, 
+                           IRType  finalVty,
+                           IRAtom* atom1, 
+                           IRAtom* atom2,
+                           IRAtom* atom3,
+                           IRAtom* atom4,
+                           Int     reportErrAtSize )
+{
+   IRAtom *combined, *cond, *vatom1, *vatom2, *vatom3, *vatom4;
+   tl_assert(isOriginalAtom(mce,atom1));
+   tl_assert(isOriginalAtom(mce,atom2));
+   tl_assert(isOriginalAtom(mce,atom3));
+   tl_assert(isOriginalAtom(mce,atom4));
+   vatom1 = expr2vbits( mce, atom1 );
+   vatom2 = expr2vbits( mce, atom2 );
+   vatom3 = expr2vbits( mce, atom3 );
+   vatom4 = expr2vbits( mce, atom4 );
+   tl_assert(isShadowAtom(mce,vatom1));
+   tl_assert(isShadowAtom(mce,vatom2));
+   tl_assert(isShadowAtom(mce,vatom3));
+   tl_assert(isShadowAtom(mce,vatom4));
+   tl_assert(sameKindedAtoms(atom1,vatom1));
+   tl_assert(sameKindedAtoms(atom2,vatom2));
+   tl_assert(sameKindedAtoms(atom3,vatom3));
+   tl_assert(sameKindedAtoms(atom4,vatom4));
+
+   combined = genPCast4(mce, Ity_I32, vatom1, vatom2, vatom3, vatom4);
+   tl_assert(isShadowAtom(mce,combined));
+   cond = mkPCastTo( mce, Ity_I1, combined );
+   tl_assert(isShadowAtom(mce,cond));
+
+   /* cond will be 0 if all defined, and 1 if any not defined. */
+   gen_check_fail_call(mce, cond, reportErrAtSize);
+
+   setShadowToDefined(mce, atom1);
+   setShadowToDefined(mce, atom2);
+   setShadowToDefined(mce, atom3);
+   setShadowToDefined(mce, atom4);
+   return definedOfType(finalVty);
 }
 
 
@@ -1642,7 +1834,7 @@ IRAtom* unary64Fx2 ( MCEnv* mce, IRAtom* vatomX )
 }
 
 static
-IRAtom* binary64F0x2 ( MCEnv* mce, IRAtom* vatomX, IRAtom* vatomY )
+IRAtom* lazyBinary64F0x2 ( MCEnv* mce, IRAtom* vatomX, IRAtom* vatomY )
 {
    IRAtom* at;
    tl_assert(isShadowAtom(mce, vatomX));
@@ -1653,6 +1845,33 @@ IRAtom* binary64F0x2 ( MCEnv* mce, IRAtom* vatomX, IRAtom* vatomY )
    at = assignNew(mce, Ity_V128, binop(Iop_SetV128lo64, vatomX, at));
    return at;
 }
+static
+IRAtom* strictBinary64F0x2 ( MCEnv* mce, IRAtom* atomX, IRAtom* vatomX,
+                                         IRAtom* atomY, IRAtom* vatomY )
+{
+   IRAtom *defd64, *vXlo, *vYlo, *vRlo, *vXnew, *vYnew;
+   tl_assert(isAtomPairOV(mce, atomX, vatomX));
+   tl_assert(isAtomPairOV(mce, atomY, vatomY));
+
+   vXlo = assignNew(mce, Ity_I64, unop(Iop_V128to64, vatomX));
+   vYlo = assignNew(mce, Ity_I64, unop(Iop_V128to64, vatomY));
+   vRlo = genPCast2(mce, Ity_I1, vXlo, vYlo);
+   gen_check_fail_call(mce, vRlo, 8);
+
+   defd64 = definedOfType(Ity_I64);
+   vXnew  = assignNew(mce, Ity_V128, 
+                           binop(Iop_SetV128lo64, vatomX, defd64));
+   vYnew  = assignNew(mce, Ity_V128,
+                           binop(Iop_SetV128lo64, vatomY, defd64));
+
+   setShadowTo(mce, atomX, vXnew);
+   setShadowTo(mce, atomY, vYnew);
+   /* return vXnew because the copy-though part (upper half) is
+      defined to come from the first operand, not the second, for
+      64F0x2 style primops */
+   return vXnew;
+}
+
 
 static
 IRAtom* unary64F0x2 ( MCEnv* mce, IRAtom* vatomX )
@@ -1817,30 +2036,18 @@ IRAtom* expr2vbits_Qop ( MCEnv* mce,
                          IRAtom* atom1, IRAtom* atom2, 
                          IRAtom* atom3, IRAtom* atom4 )
 {
-   IRAtom* vatom1 = expr2vbits( mce, atom1 );
-   IRAtom* vatom2 = expr2vbits( mce, atom2 );
-   IRAtom* vatom3 = expr2vbits( mce, atom3 );
-   IRAtom* vatom4 = expr2vbits( mce, atom4 );
-
    tl_assert(isOriginalAtom(mce,atom1));
    tl_assert(isOriginalAtom(mce,atom2));
    tl_assert(isOriginalAtom(mce,atom3));
    tl_assert(isOriginalAtom(mce,atom4));
-   tl_assert(isShadowAtom(mce,vatom1));
-   tl_assert(isShadowAtom(mce,vatom2));
-   tl_assert(isShadowAtom(mce,vatom3));
-   tl_assert(isShadowAtom(mce,vatom4));
-   tl_assert(sameKindedAtoms(atom1,vatom1));
-   tl_assert(sameKindedAtoms(atom2,vatom2));
-   tl_assert(sameKindedAtoms(atom3,vatom3));
-   tl_assert(sameKindedAtoms(atom4,vatom4));
    switch (op) {
       case Iop_MAddF64:
       case Iop_MAddF64r32:
       case Iop_MSubF64:
       case Iop_MSubF64r32:
          /* I32(rm) x F64 x F64 x F64 -> F64 */
-         return mkLazy4(mce, Ity_I64, vatom1, vatom2, vatom3, vatom4);
+         return mkStrict4(mce, Ity_I64, atom1, atom2, atom3,
+                                        atom4, 8/*errszB*/);
       default:
          ppIROp(op);
          VG_(tool_panic)("memcheck:expr2vbits_Qop");
@@ -1853,19 +2060,9 @@ IRAtom* expr2vbits_Triop ( MCEnv* mce,
                            IROp op,
                            IRAtom* atom1, IRAtom* atom2, IRAtom* atom3 )
 {
-   IRAtom* vatom1 = expr2vbits( mce, atom1 );
-   IRAtom* vatom2 = expr2vbits( mce, atom2 );
-   IRAtom* vatom3 = expr2vbits( mce, atom3 );
-
    tl_assert(isOriginalAtom(mce,atom1));
    tl_assert(isOriginalAtom(mce,atom2));
    tl_assert(isOriginalAtom(mce,atom3));
-   tl_assert(isShadowAtom(mce,vatom1));
-   tl_assert(isShadowAtom(mce,vatom2));
-   tl_assert(isShadowAtom(mce,vatom3));
-   tl_assert(sameKindedAtoms(atom1,vatom1));
-   tl_assert(sameKindedAtoms(atom2,vatom2));
-   tl_assert(sameKindedAtoms(atom3,vatom3));
    switch (op) {
       case Iop_AddF64:
       case Iop_AddF64r32:
@@ -1882,11 +2079,11 @@ IRAtom* expr2vbits_Triop ( MCEnv* mce,
       case Iop_PRemF64:
       case Iop_PRem1F64:
          /* I32(rm) x F64 x F64 -> F64 */
-         return mkLazy3(mce, Ity_I64, vatom1, vatom2, vatom3);
+         return mkStrict3(mce, Ity_I64, atom1, atom2, atom3, 8/*errszB*/);
       case Iop_PRemC3210F64:
       case Iop_PRem1C3210F64:
          /* I32(rm) x F64 x F64 -> I32 */
-         return mkLazy3(mce, Ity_I32, vatom1, vatom2, vatom3);
+         return mkStrict3(mce, Ity_I32, atom1, atom2, atom3, 8/*errszB*/);
       default:
          ppIROp(op);
          VG_(tool_panic)("memcheck:expr2vbits_Triop");
@@ -2113,17 +2310,18 @@ IRAtom* expr2vbits_Binop ( MCEnv* mce,
       case Iop_Add64Fx2:
          return binary64Fx2(mce, vatom1, vatom2);      
 
+      case Iop_Add64F0x2:
       case Iop_Sub64F0x2:
       case Iop_Mul64F0x2:
+      case Iop_Div64F0x2:
+         return strictBinary64F0x2(mce, atom1, vatom1, atom2, vatom2);      
       case Iop_Min64F0x2:
       case Iop_Max64F0x2:
-      case Iop_Div64F0x2:
       case Iop_CmpLT64F0x2:
       case Iop_CmpLE64F0x2:
       case Iop_CmpEQ64F0x2:
       case Iop_CmpUN64F0x2:
-      case Iop_Add64F0x2:
-         return binary64F0x2(mce, vatom1, vatom2);      
+         return lazyBinary64F0x2(mce, vatom1, vatom2);      
 
       case Iop_Sub32Fx4:
       case Iop_Mul32Fx4:
@@ -2235,29 +2433,29 @@ IRAtom* expr2vbits_Binop ( MCEnv* mce,
       case Iop_2xm1F64:
       case Iop_SqrtF64:
          /* I32(rm) x I64/F64 -> I64/F64 */
-         return mkLazy2(mce, Ity_I64, vatom1, vatom2);
+         return genPCast2(mce, Ity_I64, vatom1, vatom2);
 
       case Iop_F64toI32:
       case Iop_F64toF32:
          /* First arg is I32 (rounding mode), second is F64 (data). */
-         return mkLazy2(mce, Ity_I32, vatom1, vatom2);
+         return genPCast2(mce, Ity_I32, vatom1, vatom2);
 
       case Iop_F64toI16:
          /* First arg is I32 (rounding mode), second is F64 (data). */
-         return mkLazy2(mce, Ity_I16, vatom1, vatom2);
+         return genPCast2(mce, Ity_I16, vatom1, vatom2);
 
       case Iop_CmpF64:
-         return mkLazy2(mce, Ity_I32, vatom1, vatom2);
+         return genPCast2(mce, Ity_I32, vatom1, vatom2);
 
       /* non-FP after here */
 
       case Iop_DivModU64to32:
       case Iop_DivModS64to32:
-         return mkLazy2(mce, Ity_I64, vatom1, vatom2);
+         return genPCast2(mce, Ity_I64, vatom1, vatom2);
 
       case Iop_DivModU128to64:
       case Iop_DivModS128to64:
-         return mkLazy2(mce, Ity_I128, vatom1, vatom2);
+         return genPCast2(mce, Ity_I128, vatom1, vatom2);
 
       case Iop_16HLto32:
          return assignNew(mce, Ity_I32, binop(op, vatom1, vatom2));
@@ -2294,11 +2492,11 @@ IRAtom* expr2vbits_Binop ( MCEnv* mce,
 
       case Iop_DivS32:
       case Iop_DivU32:
-         return mkLazy2(mce, Ity_I32, vatom1, vatom2);
+         return genPCast2(mce, Ity_I32, vatom1, vatom2);
 
       case Iop_DivS64:
       case Iop_DivU64:
-         return mkLazy2(mce, Ity_I64, vatom1, vatom2);
+         return genPCast2(mce, Ity_I64, vatom1, vatom2);
 
       case Iop_Add32:
          if (mce->bogusLiterals)
@@ -2754,9 +2952,9 @@ IRExpr* expr2vbits ( MCEnv* mce, IRExpr* e )
                                       e->Iex.Load.addr, 0/*addr bias*/ );
 
       case Iex_CCall:
-         return mkLazyN( mce, e->Iex.CCall.args, 
-                              e->Iex.CCall.retty,
-                              e->Iex.CCall.cee );
+         return genPCastN( mce, e->Iex.CCall.args, 
+                                e->Iex.CCall.retty,
+                                e->Iex.CCall.cee );
 
       case Iex_Mux0X:
          return expr2vbits_Mux0X( mce, e->Iex.Mux0X.cond, e->Iex.Mux0X.expr0, 
