@@ -1505,15 +1505,15 @@ static void initialise_data_structures ( void )
    HG_(addToFM)( map_locks, (Word)&__bus_lock, (Word)__bus_lock_Lock );
 
    tl_assert(univ_ssets == NULL);
-   univ_ssets = HG_(newWordSetU)( hg_zalloc, hg_free, 32/*cacheSize*/ );
+   univ_ssets = HG_(newWordSetU)( hg_zalloc, hg_free, 64/*cacheSize*/ );
    tl_assert(univ_ssets != NULL);
 
    tl_assert(univ_lsets == NULL);
-   univ_lsets = HG_(newWordSetU)( hg_zalloc, hg_free, 8/*cacheSize*/ );
+   univ_lsets = HG_(newWordSetU)( hg_zalloc, hg_free, 12/*cacheSize*/ );
    tl_assert(univ_lsets != NULL);
 
    tl_assert(univ_laog == NULL);
-   univ_laog = HG_(newWordSetU)( hg_zalloc, hg_free, 24/*cacheSize*/ );
+   univ_laog = HG_(newWordSetU)( hg_zalloc, hg_free, 32/*cacheSize*/ );
    tl_assert(univ_laog != NULL);
 
    tl_assert(map_expected_errors == NULL);
@@ -5208,6 +5208,24 @@ static void shadow_mem_make_New ( Thread* thr, Addr a, SizeT len )
          msm__show_state_change( thr, a, (Int)len, 'p', sv_old, SHVAL_New );
       }
    }
+
+   if (0) {
+     static UWord n_New_in_cache = 0;
+     static UWord n_New_not_in_cache = 0;
+     /* tag is 'a' with the in-line offset masked out, 
+        eg a[31]..a[4] 0000 */
+     Addr       tag = a & ~(N_LINE_ARANGE - 1);
+     UWord      wix = (a >> N_LINE_BITS) & (N_WAY_NENT - 1);
+     if (LIKELY(tag == cache_shmem.tags0[wix])) {
+        n_New_in_cache++;
+     } else {
+        n_New_not_in_cache++;
+     }
+     if (0 == ((n_New_in_cache + n_New_not_in_cache) % 100000))
+        VG_(printf)("shadow_mem_make_New: IN %lu OUT %lu\n",
+                    n_New_in_cache, n_New_not_in_cache );
+   }
+
    shadow_mem_modify_range( thr, a, len, 
                             shadow_mem_set8,
                             shadow_mem_set16,
@@ -5385,7 +5403,7 @@ static void shadow_mem_make_NoAccess ( Thread* thr, Addr aIN, SizeT len )
 
    /* --- Step 6 --- */
 
-   shmem__flush_and_invalidate_scache();
+   if (0) shmem__flush_and_invalidate_scache();
 
    /* --- Step 7 --- */
 
@@ -9379,7 +9397,7 @@ static void hg_pre_clo_init ( void )
    //VG_(needs_xml_output)          ();
 
    VG_(track_new_mem_startup)     ( evh__new_mem_w_perms );
-   VG_(track_new_mem_stack_signal)( evh__die_mem );
+   VG_(track_new_mem_stack_signal)( evh__new_mem );
    VG_(track_new_mem_brk)         ( evh__new_mem );
    VG_(track_new_mem_mmap)        ( evh__new_mem_w_perms );
    VG_(track_new_mem_stack)       ( evh__new_mem_stack );

@@ -58,7 +58,7 @@ typedef
    from caching those entries in the first place.  Hence use .dynMax
    to allow the size of the cache(s) to be set differently for each
    different WordSetU. */
-#define N_WCACHE_STAT_MAX 32
+#define N_WCACHE_STAT_MAX 64
 typedef
    struct {
       WCacheEnt ent[N_WCACHE_STAT_MAX];
