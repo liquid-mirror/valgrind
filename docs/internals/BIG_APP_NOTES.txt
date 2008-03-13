@@ -29,3 +29,12 @@ LD_LIBRARY_PATH=`pwd`/lib/firefox-2.0.0.12:\
 /home/sewardj/VgTRUNK/hgdev/Inst/bin/valgrind --tool=helgrind \
 --trace-children=no -v ./lib/firefox-2.0.0.12/firefox-bin
 
+# start and then quit firefox a couple of times before measuring
+# it, analysing results, etc.  This is because (I think) the new
+# build is probably a different version from whatever you used 
+# before and so on the first run, the new build wants to mess with
+# ~/.mozilla (or something) and that makes it take much longer than
+# subsequent runs.
+
+# XXX I still need to mention how to annotate firefox's recycling
+# allocator so as to avoid a lot of errors
