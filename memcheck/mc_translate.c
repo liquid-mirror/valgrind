@@ -41,6 +41,12 @@
 #include "pub_tool_mallocfree.h"
 #include "pub_tool_libcbase.h"
 
+/* 13 March 08: unfortunately, the new strict FP checks can cause a
+   call to a helper (report-an-error) function to happen at points
+   where the guest IP is not up to date.  So the stack unwinder sees
+   an IP for the error which is a few bytes earlier than it is really
+   and hence shows the wrong line number. */
+
 /* This file implements the Memcheck instrumentation, and in
    particular contains the core of its undefined value detection
    machinery.  For a comprehensive background of the terminology,
@@ -285,7 +291,7 @@ static Bool isAtomPairOV ( MCEnv* mce, IRAtom* atom, IRAtom* vatom )
 /* Shadow state is always accessed using integer types.  This returns
    an integer type with the same size (as per sizeofIRType) as the
    given type.  The only valid shadow types are Bit, I8, I16, I32,
-   I64, V128. */
+   I64, I128, V128. */
 
 static IRType shadowType ( IRType ty )
 {
@@ -669,6 +675,15 @@ static IRAtom* mkPCastTo( MCEnv* mce, IRType dst_ty, IRAtom* vbits )
             that with zero. */
          IRAtom* tmp2 = assignNew(mce, Ity_I64, unop(Iop_128HIto64, vbits));
          IRAtom* tmp3 = assignNew(mce, Ity_I64, unop(Iop_128to64, vbits));
+         IRAtom* tmp4 = assignNew(mce, Ity_I64, binop(Iop_Or64, tmp2, tmp3));
+         tmp1         = assignNew(mce, Ity_I1, 
+                                       unop(Iop_CmpNEZ64, tmp4));
+         break;
+      }
+      case Ity_V128: {
+         /* Same deal as with I128. */
+         IRAtom* tmp2 = assignNew(mce, Ity_I64, unop(Iop_V128HIto64, vbits));
+         IRAtom* tmp3 = assignNew(mce, Ity_I64, unop(Iop_V128to64, vbits));
          IRAtom* tmp4 = assignNew(mce, Ity_I64, binop(Iop_Or64, tmp2, tmp3));
          tmp1         = assignNew(mce, Ity_I1, 
                                        unop(Iop_CmpNEZ64, tmp4));
@@ -1230,6 +1245,14 @@ IRAtom* genPCast2 ( MCEnv* mce, IRType finalVty, IRAtom* va1, IRAtom* va2 )
       return at;
    }
 
+   /* V128 x V128 -> I32 */
+   if (t1 == Ity_V128 && t2 == Ity_V128 && finalVty == Ity_I32) {
+      if (0) VG_(printf)("genPCast2: V128 x V128 -> I32\n");
+      at = mkUifUV128(mce, va1, va2);
+      at = mkPCastTo(mce, Ity_I32, at);
+      return at;
+   }
+
    if (0) {
       VG_(printf)("genPCast2 ");
       ppIRType(t1);
@@ -1551,6 +1574,38 @@ static IRExpr* mkStrict4 ( MCEnv*  mce,
 }
 
 
+/* 2-way version of mkStrict2 */
+
+static IRExpr* mkStrict2 ( MCEnv*  mce, 
+                           IRType  finalVty,
+                           IRAtom* atom1, 
+                           IRAtom* atom2,
+                           Int     reportErrAtSize )
+{
+   IRAtom *combined, *cond, *vatom1, *vatom2;
+   tl_assert(isOriginalAtom(mce,atom1));
+   tl_assert(isOriginalAtom(mce,atom2));
+   vatom1 = expr2vbits( mce, atom1 );
+   vatom2 = expr2vbits( mce, atom2 );
+   tl_assert(isShadowAtom(mce,vatom1));
+   tl_assert(isShadowAtom(mce,vatom2));
+   tl_assert(sameKindedAtoms(atom1,vatom1));
+   tl_assert(sameKindedAtoms(atom2,vatom2));
+
+   combined = genPCast2(mce, Ity_I32, vatom1, vatom2);
+   tl_assert(isShadowAtom(mce,combined));
+   cond = mkPCastTo( mce, Ity_I1, combined );
+   tl_assert(isShadowAtom(mce,cond));
+
+   /* cond will be 0 if all defined, and 1 if any not defined. */
+   gen_check_fail_call(mce, cond, reportErrAtSize);
+
+   setShadowToDefined(mce, atom1);
+   setShadowToDefined(mce, atom2);
+   return definedOfType(finalVty);
+}
+
+
 /*------------------------------------------------------------*/
 /*--- Generating expensive sequences for exact carry-chain ---*/
 /*--- propagation in add/sub and related operations.       ---*/
@@ -1814,7 +1869,7 @@ IRAtom* unary32F0x4 ( MCEnv* mce, IRAtom* vatomX )
 /* --- ... and ... 64Fx2 versions of the same ... --- */
 
 static
-IRAtom* binary64Fx2 ( MCEnv* mce, IRAtom* vatomX, IRAtom* vatomY )
+IRAtom* lazyBinary64Fx2 ( MCEnv* mce, IRAtom* vatomX, IRAtom* vatomY )
 {
    IRAtom* at;
    tl_assert(isShadowAtom(mce, vatomX));
@@ -1823,6 +1878,8 @@ IRAtom* binary64Fx2 ( MCEnv* mce, IRAtom* vatomX, IRAtom* vatomY )
    at = assignNew(mce, Ity_V128, mkPCast64x2(mce, at));
    return at;
 }
+/* No need for an explicit strictBinary64Fx2; generic mkStrict2 does
+   everything we need. */
 
 static
 IRAtom* unary64Fx2 ( MCEnv* mce, IRAtom* vatomX )
@@ -2298,17 +2355,18 @@ IRAtom* expr2vbits_Binop ( MCEnv* mce,
       case Iop_QNarrow16Ux8:
          return vectorNarrowV128(mce, op, vatom1, vatom2);
 
+      case Iop_Add64Fx2:
       case Iop_Sub64Fx2:
       case Iop_Mul64Fx2:
+      case Iop_Div64Fx2:
+         return mkStrict2(mce, Ity_V128, atom1, atom2, 8/*errszB*/);
       case Iop_Min64Fx2:
       case Iop_Max64Fx2:
-      case Iop_Div64Fx2:
       case Iop_CmpLT64Fx2:
       case Iop_CmpLE64Fx2:
       case Iop_CmpEQ64Fx2:
       case Iop_CmpUN64Fx2:
-      case Iop_Add64Fx2:
-         return binary64Fx2(mce, vatom1, vatom2);      
+         return lazyBinary64Fx2(mce, vatom1, vatom2);      
 
       case Iop_Add64F0x2:
       case Iop_Sub64F0x2:
