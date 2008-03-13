@@ -2412,7 +2412,10 @@ static Bool happens_before ( SegmentID segid1, SegmentID segid2 )
    tl_assert(SEG_id_is_sane(segid2));
    tl_assert(segid1 != segid2);
    stats__hbefore_queries++;
-   hash = (ROL32(segid1,19) ^ ROL32(segid2,13)) % HBEFORE__N_HTABLE;
+   hash = ROL32(segid1,19) ^ ROL32(segid2,13);
+   /* make sure % is done at 32 bits, since % on a 64-bit
+      value on a 32-bit machine is very expensive. */
+   hash %= HBEFORE__N_HTABLE;
    { // try hash table
      // Hmm, % on ULong is OK on 64-bit machine (32ish cycles on Core2) 
      // but really bad on 32-bit (there is a call to umoddi3 and that
@@ -2549,6 +2552,8 @@ static UWord stats__cache_invals         = 0; // # cache invals
 static UWord stats__cache_flushes        = 0; // # cache flushes
 static UWord stats__cache_totrefs        = 0; // # total accesses
 static UWord stats__cache_totmisses      = 0; // # misses
+static ULong stats__cache_make_New_arange = 0; // total arange made New
+static ULong stats__cache_make_New_inZrep = 0; // arange New'd on Z reps
 static UWord stats__cline_normalises     = 0; // # calls to cacheline_normalise
 static UWord stats__cline_read64s        = 0; // # calls to s_m_read64
 static UWord stats__cline_read32s        = 0; // # calls to s_m_read32
@@ -3728,9 +3733,10 @@ static void find_ZF_for_reading ( /*OUT*/CacheLineZ** zp,
    *fp = lineF;
 }
 
-static void find_Z_for_writing ( /*OUT*/SecMap** smp,
-                                 /*OUT*/Word* zixp,
-                                 Addr tag ) {
+static __attribute__((noinline))
+void find_Z_for_writing ( /*OUT*/SecMap** smp,
+                          /*OUT*/Word* zixp,
+                          Addr tag ) {
    CacheLineZ* lineZ;
    CacheLineF* lineF;
    UWord   zix;
@@ -3757,7 +3763,7 @@ static void find_Z_for_writing ( /*OUT*/SecMap** smp,
    *zixp = zix;
 }
 
-static 
+static __attribute__((noinline))
 void alloc_F_for_writing ( /*MOD*/SecMap* sm, /*OUT*/Word* fixp ) {
    UInt        i, new_size;
    CacheLineF* nyu;
@@ -4419,6 +4425,12 @@ static inline Bool aligned64 ( Addr a ) {
 }
 static inline UWord get_cacheline_offset ( Addr a ) {
    return (UWord)(a & (N_LINE_ARANGE - 1));
+}
+static inline Addr cacheline_ROUNDUP ( Addr a ) {
+   return VG_ROUNDUP(a, N_LINE_ARANGE);
+}
+static inline Addr cacheline_ROUNDDN ( Addr a ) {
+   return VG_ROUNDDN(a, N_LINE_ARANGE);
 }
 static inline UWord get_treeno ( Addr a ) {
    return get_cacheline_offset(a) >> 3;
@@ -5202,6 +5214,11 @@ static void shadow_mem_write_range ( Thread* thr, Addr a, SizeT len ) {
 
 static void shadow_mem_make_New ( Thread* thr, Addr a, SizeT len )
 {
+   stats__cache_make_New_arange += (ULong)len;
+
+   if (0 && len > 500)
+      VG_(printf)("make New      ( %p, %ld )\n", a, len );
+
    if (UNLIKELY(clo_trace_level > 0)) {
       if (len > 0 && a <= clo_trace_addr && clo_trace_addr < a+len) {
          SVal sv_old = shadow_mem_get8( clo_trace_addr );
@@ -5226,12 +5243,83 @@ static void shadow_mem_make_New ( Thread* thr, Addr a, SizeT len )
                     n_New_in_cache, n_New_not_in_cache );
    }
 
-   shadow_mem_modify_range( thr, a, len, 
-                            shadow_mem_set8,
-                            shadow_mem_set16,
-                            shadow_mem_set32,
-                            shadow_mem_set64,
-                            SHVAL_New/*opaque*/ );
+   if (LIKELY(len < 2 * N_LINE_ARANGE)) {
+      shadow_mem_modify_range( thr, a, len, 
+                               shadow_mem_set8,
+                               shadow_mem_set16,
+                               shadow_mem_set32,
+                               shadow_mem_set64,
+                               SHVAL_New/*opaque*/ );
+   } else {
+      Addr  before_start  = a;
+      Addr  aligned_start = cacheline_ROUNDUP(a);
+      Addr  after_start   = cacheline_ROUNDDN(a + len);
+      UWord before_len    = aligned_start - before_start;
+      UWord aligned_len   = after_start - aligned_start;
+      UWord after_len     = a + len - after_start;
+      tl_assert(before_start <= aligned_start);
+      tl_assert(aligned_start <= after_start);
+      tl_assert(before_len < N_LINE_ARANGE);
+      tl_assert(after_len < N_LINE_ARANGE);
+      tl_assert(get_cacheline_offset(aligned_start) == 0);
+      if (get_cacheline_offset(a) == 0) {
+         tl_assert(before_len == 0);
+         tl_assert(a == aligned_start);
+      }
+      if (get_cacheline_offset(a+len) == 0) {
+         tl_assert(after_len == 0);
+         tl_assert(after_start == a+len);
+      }
+      if (before_len > 0) {
+         shadow_mem_modify_range( thr, before_start, before_len, 
+                                  shadow_mem_set8,
+                                  shadow_mem_set16,
+                                  shadow_mem_set32,
+                                  shadow_mem_set64,
+                                  SHVAL_New/*opaque*/ );
+      }
+      if (after_len > 0) {
+         shadow_mem_modify_range( thr, after_start, after_len, 
+                                  shadow_mem_set8,
+                                  shadow_mem_set16,
+                                  shadow_mem_set32,
+                                  shadow_mem_set64,
+                                  SHVAL_New/*opaque*/ );
+      }
+      stats__cache_make_New_inZrep += (ULong)aligned_len;
+
+      while (1) {
+         if (aligned_start >= after_start)
+            break;
+         tl_assert(get_cacheline_offset(aligned_start) == 0);
+         Addr  tag = aligned_start & ~(N_LINE_ARANGE - 1);
+         UWord wix = (aligned_start >> N_LINE_BITS) & (N_WAY_NENT - 1);
+         if (tag == cache_shmem.tags0[wix]) {
+            UWord i;
+            for (i = 0; i < N_LINE_ARANGE / 8; i++)
+               shadow_mem_set64( thr, aligned_start + i * 8, SHVAL_New );
+         } else {
+            UWord i;
+            Word zix;
+            SecMap* sm;
+            CacheLineZ* lineZ;
+            /* This line is not in the cache.  Do not force it in; instead
+               modify it in-place. */
+            find_Z_for_writing( &sm, &zix, tag );
+            tl_assert(sm);
+            tl_assert(zix >= 0 && zix < N_SECMAP_ZLINES);
+            lineZ = &sm->linesZ[zix];
+            lineZ->dict[0] = SHVAL_New;
+            lineZ->dict[1] = lineZ->dict[2] = lineZ->dict[3] = 0;
+            for (i = 0; i < N_LINE_ARANGE/4; i++)
+               lineZ->ix2s[i] = 0; /* all refer to dict[0] */
+         }
+         aligned_start += N_LINE_ARANGE;
+         aligned_len -= N_LINE_ARANGE;
+      }
+      tl_assert(aligned_start == after_start);
+      tl_assert(aligned_len == 0);
+   }
 }
 
 
@@ -9304,12 +9392,15 @@ static void hg_fini ( Int exitcode )
       VG_(printf)("\n");
       VG_(printf)("   cache: %,lu totrefs (%,lu misses)\n",
                   stats__cache_totrefs, stats__cache_totmisses );
-      VG_(printf)("   cache: %,12lu Z-fetch, %,12lu F-fetch\n",
+      VG_(printf)("   cache: %,12lu Z-fetch,    %,12lu F-fetch\n",
                   stats__cache_Z_fetches, stats__cache_F_fetches );
-      VG_(printf)("   cache: %,12lu Z-wback, %,12lu F-wback\n",
+      VG_(printf)("   cache: %,12lu Z-wback,    %,12lu F-wback\n",
                   stats__cache_Z_wbacks, stats__cache_F_wbacks );
-      VG_(printf)("   cache: %,12lu invals,  %,12lu flushes\n",
+      VG_(printf)("   cache: %,12lu invals,     %,12lu flushes\n",
                   stats__cache_invals, stats__cache_flushes );
+      VG_(printf)("   cache: %,12llu arange New, %,12llu direct-to-Zreps\n",
+                  stats__cache_make_New_arange,
+                  stats__cache_make_New_inZrep);
 
       VG_(printf)("\n");
       VG_(printf)("   cline: %,10lu normalises\n",
