@@ -305,6 +305,46 @@ static WordSet add_or_dealloc_WordVec( WordSetU* wsu, WordVec* wv_new )
    }
 }
 
+// Similar to add_or_dealloc_WordVec, but different allocation policy: 
+// If wv_new is already in wsu, just return it's index and do not deallocate. 
+// Else allocate new WordVec, and copy wv_new there. 
+static WordSet find_or_alloc_and_add_WordVec( WordSetU* wsu, WordVec* wv_new )
+{
+   Bool     have;
+   WordVec* wv_old;
+   UWord/*Set*/ ix_old = -1;
+   tl_assert(wv_new->owner == wsu);
+   have = HG_(lookupFM)( wsu->vec2ix, 
+                         (Word*)&wv_old, (Word*)&ix_old,
+                         (Word)wv_new );
+   if (have) {
+      tl_assert(wv_old != wv_new);
+      tl_assert(wv_old);
+      tl_assert(wv_old->owner == wsu);
+      tl_assert(ix_old < wsu->ix2vec_used);
+      tl_assert(wsu->ix2vec[ix_old] == wv_old);
+      return (WordSet)ix_old;
+   } else {
+      // allocate new WordVec and copy contents from wv_new.
+      WordVec *wv_tmp = new_WV_of_size( wsu, wv_new->size );
+      UInt i;
+      for (i = 0; i < wv_new->size; i++) {
+         wv_tmp->words[i] = wv_new->words[i];
+      }
+      wv_new = wv_tmp;
+      ensure_ix2vec_space( wsu );
+      tl_assert(wsu->ix2vec);
+      tl_assert(wsu->ix2vec_used < wsu->ix2vec_size);
+      wsu->ix2vec[wsu->ix2vec_used] = wv_new;
+      HG_(addToFM)( wsu->vec2ix, (Word)wv_new, (Word)wsu->ix2vec_used );
+      if (0) VG_(printf)("aodW %d\n", (Int)wsu->ix2vec_used );
+      wsu->ix2vec_used++;
+      tl_assert(wsu->ix2vec_used <= wsu->ix2vec_size);
+      return (WordSet)(wsu->ix2vec_used - 1);
+   }
+}
+
+
 
 WordSetU* HG_(newWordSetU) ( void* (*alloc_nofail)( SizeT ),
                              void  (*dealloc)(void*),
@@ -494,10 +534,15 @@ void HG_(ppWS) ( WordSetU* wsu, WordSet ws )
 
 void HG_(ppWSUstats) ( WordSetU* wsu, HChar* name )
 {
+   int i;
+   int d_size = 10;
+   int size_distribution[10] = {0};
+
+
    VG_(printf)("   WordSet \"%s\":\n", name);
-   VG_(printf)("      addTo        %10u (%u uncached)\n",
+   VG_(printf)("      addTo        %,10u (%,u uncached)\n",
                wsu->n_add, wsu->n_add_uncached);
-   VG_(printf)("      delFrom      %10u (%u uncached)\n", 
+   VG_(printf)("      delFrom      %,10u (%,u uncached)\n", 
                wsu->n_del, wsu->n_del_uncached);
    VG_(printf)("      union        %10u\n", wsu->n_union);
    VG_(printf)("      intersect    %10u (%u uncached) [nb. incl isSubsetOf]\n", 
@@ -511,13 +556,32 @@ void HG_(ppWSUstats) ( WordSetU* wsu, HChar* name )
    VG_(printf)("      anyElementOf %10u\n",   wsu->n_anyElementOf);
    VG_(printf)("      elementOf    %10u\n",   wsu->n_elementOf);
    VG_(printf)("      isSubsetOf   %10u\n",   wsu->n_isSubsetOf);
+
+
+   // compute and print size distributions 
+   for (i = 0; i < (int)HG_(cardinalityWSU)(wsu); i++) {
+      WordVec *wv = do_ix2vec( wsu, i );
+      int size = wv->size;
+      if (size >= d_size) size = d_size-1;
+      size_distribution[size]++;
+   }
+   tl_assert(size_distribution[0] == 1);
+   for (i = 1; i < d_size; i++) {
+      if (size_distribution[i] == 0) continue;
+      if(i == d_size-1)
+         VG_(printf)("      size[>=%d] %10d\n",  i,  size_distribution[i]);
+      else
+         VG_(printf)("      size[%d]   %10d\n",  i,  size_distribution[i]);
+   }
 }
 
 WordSet HG_(addToWS) ( WordSetU* wsu, WordSet ws, UWord w )
 {
    UWord    k, j;
-   WordVec* wv_new;
-   WordVec* wv;
+   WordVec* wv = do_ix2vec( wsu, ws ); ;
+   UWord    wv_new_arr[wv->size+1]; // C99 array. 
+   WordVec  wv_new_ = {wsu, wv_new_arr, wv->size+1};  
+   WordVec  *wv_new = &wv_new_;
    WordSet  result = (WordSet)(-1); /* bogus */
 
    wsu->n_add++;
@@ -525,7 +589,6 @@ WordSet HG_(addToWS) ( WordSetU* wsu, WordSet ws, UWord w )
    wsu->n_add_uncached++;
 
    /* If already present, this is a no-op. */
-   wv = do_ix2vec( wsu, ws );
    for (k = 0; k < wv->size; k++) {
       if (wv->words[k] == w) {
          result = ws;
@@ -533,7 +596,6 @@ WordSet HG_(addToWS) ( WordSetU* wsu, WordSet ws, UWord w )
       }
    }
    /* Ok, not present.  Build a new one ... */
-   wv_new = new_WV_of_size( wsu, wv->size + 1 );
    k = j = 0;
    for (; k < wv->size && wv->words[k] < w; k++) {
       wv_new->words[j++] = wv->words[k];
@@ -546,7 +608,7 @@ WordSet HG_(addToWS) ( WordSetU* wsu, WordSet ws, UWord w )
    tl_assert(j == wv_new->size);
 
    /* Find any existing copy, or add the new one. */
-   result = add_or_dealloc_WordVec( wsu, wv_new );
+   result = find_or_alloc_and_add_WordVec(wsu, wv_new);
    tl_assert(result != (WordSet)(-1));
 
   out:
@@ -554,12 +616,15 @@ WordSet HG_(addToWS) ( WordSetU* wsu, WordSet ws, UWord w )
    return result;
 }
 
+
 WordSet HG_(delFromWS) ( WordSetU* wsu, WordSet ws, UWord w )
 {
    UWord    i, j, k;
-   WordVec* wv_new;
    WordSet  result = (WordSet)(-1); /* bogus */
    WordVec* wv = do_ix2vec( wsu, ws );
+   UWord    wv_new_arr[wv->size-1]; // C99 array. 
+   WordVec  wv_new_ = {wsu, wv_new_arr, wv->size-1};  
+   WordVec  *wv_new = &wv_new_;
 
    wsu->n_del++;
 
@@ -586,7 +651,6 @@ WordSet HG_(delFromWS) ( WordSetU* wsu, WordSet ws, UWord w )
    tl_assert(i >= 0 && i < wv->size);
    tl_assert(wv->size > 0);
 
-   wv_new = new_WV_of_size( wsu, wv->size - 1 );
    j = k = 0;
    for (; j < wv->size; j++) {
       if (j == i)
@@ -595,7 +659,7 @@ WordSet HG_(delFromWS) ( WordSetU* wsu, WordSet ws, UWord w )
    }
    tl_assert(k == wv_new->size);
 
-   result = add_or_dealloc_WordVec( wsu, wv_new );
+   result = find_or_alloc_and_add_WordVec(wsu, wv_new);
    if (wv->size == 1) {
       tl_assert(result == wsu->empty);
    }
@@ -854,3 +918,4 @@ void show_WS ( WordSetU* wsu, WordSet ws )
 /*--------------------------------------------------------------------*/
 /*--- end                                             hg_wordset.c ---*/
 /*--------------------------------------------------------------------*/
+// vim:shiftwidth=3:softtabstop=3:expandtab

@@ -209,6 +209,14 @@ static Int clo_sanity_flags = 0;
 static UWord clo_ignore_n = 1;
 static UWord clo_ignore_i = 0;
 
+
+/* Max number of segments in a segment set. 
+   The default value is large enough, but allows to stay sane.
+   Must be >= 4.
+ */
+static UInt   clo_max_segment_set_size = 20;
+
+
 /* This has to do with printing error messages.  See comments on
    announce_threadset() and summarise_threadset().  Perhaps it
    should be a command line option. */
@@ -260,17 +268,22 @@ static UWord clo_ignore_i = 0;
 /*--- Some very basic stuff                                    ---*/
 /*----------------------------------------------------------------*/
 
+static UWord stat__hg_zalloc = 0;
+static UWord stat__hg_free = 0;
+
 static void* hg_zalloc ( SizeT n ) {
    void* p;
    tl_assert(n > 0);
    p = VG_(malloc)( n );
    tl_assert(p);
    VG_(memset)(p, 0, n);
+   stat__hg_zalloc++;
    return p;
 }
 static void hg_free ( void* p ) {
    tl_assert(p);
    VG_(free)(p);
+   stat__hg_free++;
 }
 
 /* Round a up to the next multiple of N.  N must be a power of 2 */
@@ -2121,13 +2134,17 @@ static Bool mem_trace_is_on(Word mem)
 */
 
 static WordFM *mu_is_cv_map = NULL;
-static void set_mu_is_cv(Word mu)
+static void set_mu_is_cv(Word mu, ThreadId tid)
 {
+   ExeContext *context = NULL;
+   // context = VG_(record_ExeContext(tid, -1/*first_ip_delta*/));
    if (!mu_is_cv_map) {
       mu_is_cv_map = HG_(newFM) (hg_zalloc, hg_free, NULL);
    }
-   HG_(addToFM)(mu_is_cv_map, mu, mu);
-//   VG_(printf)("mu is cv: %p\n", mu);
+   HG_(addToFM)(mu_is_cv_map, mu, (Word)context);
+   // HG_(addToFM)(mu_is_cv_map, mu, (Word)context);
+//   VG_(printf)("set_mu_is_cv: %p\n", mu);
+//   VG_(get_and_pp_StackTrace)( tid, 15);
 }
 
 static void unset_mu_is_cv(Word mu)
@@ -2139,8 +2156,17 @@ static void unset_mu_is_cv(Word mu)
 
 static Bool mu_is_cv(Word mu)
 {
-   return mu_is_cv_map != NULL
-         && HG_(lookupFM)(mu_is_cv_map, NULL, NULL, mu);
+   ExeContext *context;
+   Word       w;
+   Bool res = mu_is_cv_map != NULL
+         && HG_(lookupFM)(mu_is_cv_map, &w, (Word*)&context, mu);
+
+   if (res && context) {
+      VG_(printf)("mu_is_cv: ");
+      VG_(pp_ExeContext)(context);
+   }
+
+   return res;
 }
 
 
@@ -3076,6 +3102,9 @@ static UWord stats__msm_New_to_W     = 0;
 static UWord stats__msm_New_to_R     = 0;
 static UWord stats__msm_oldSS_single = 0;
 static UWord stats__msm_oldSS_multi  = 0;
+static UWord stats__msm_oldSS_multi_shortcut  = 0;
+static UWord stats__msm_oldSS_multi_add       = 0;
+static UWord stats__msm_oldSS_multi_del       = 0;
 
 /* fwds */
 static void record_error_Race ( Thread* thr, 
@@ -3318,17 +3347,37 @@ SegmentSet do_SS_update_MULTI ( /*OUT*/Bool* hb_all_p,
    /* General case */
 
    UWord i;
-   UWord oldSS_size = 0;
+   UWord oldSS_size = SS_get_size(oldSS);
    SegmentSet newSS = 0;
+   SegmentID add_vec[oldSS_size+1]; // C99 array. 
+   SegmentID del_vec[oldSS_size+1]; // C99 array. 
+   UInt add_size = 0, del_size = 0;
 
-   oldSS_size = SS_get_size(oldSS);
    tl_assert(oldSS_size > 1);
    stats__msm_oldSS_multi++;
 
    *hb_all_p = True;
-   newSS = SS_mk_singleton(currS);
+
+   tl_assert(oldSS_size <= clo_max_segment_set_size);
+
+   // fill in the arrays add_vec/del_vec and try a shortcut
+   add_vec[add_size++] = currS;
    for (i = 0; i < oldSS_size; i++) {
       SegmentID S = SS_get_element(oldSS, i);
+      if (currS == S) {
+         // shortcut: 
+         // currS is already contained in oldSS, so we don't need to add it. 
+         // Since oldSS is a max frontier 
+         // (i.e. for each two different segments S1 and S2 from oldSS
+         // neither HB(S1,S2) nor HB(S2,S1)) 
+         // we don't need to remove anything. 
+         // So, return oldSS unchanged. 
+         stats__msm_oldSS_multi_shortcut++;
+         // none of the segments in SS happend-before currS
+         *hb_all_p = False;
+         return oldSS;
+      }
+      // compute happens-before
       Bool hb = False;
       if (S == currS  // Same segment. 
           || SEG_get(S)->thr == thr // Same thread. 
@@ -3336,21 +3385,69 @@ SegmentSet do_SS_update_MULTI ( /*OUT*/Bool* hb_all_p,
              // different thread, but happens-before
          hb = True;
       }
+      // trace 
       if (do_trace) {
          VG_(printf)("HB(S%d/T%d,cur)=%d\n",
                      S, SEG_get(S)->thr->errmsg_index, hb);
       }
-
+      // fill in add_vec or del_vec
       if (!hb) {
          *hb_all_p = False;
-         // Not happened-before. Leave this segment in SS.
-         if (SS_is_singleton(newSS)) {
-            tl_assert(currS != S);
-            newSS = HG_(doubletonWS)(univ_ssets, currS, S);
+         add_vec[add_size++] = S;
+      } else {
+         del_vec[del_size++] = S;
+      }
+   }
+
+   // check if we've got a singleton. 
+   if (add_size == 1) {
+      // add_size == 1 means that currS happend-after all segments in oldSS
+      tl_assert(*hb_all_p == True && del_size == oldSS_size);
+      return SS_mk_singleton(currS);
+   }  
+   tl_assert(add_size >= 2);
+
+   // we couldn't have added more than one segment to the set. 
+   tl_assert(add_size <= clo_max_segment_set_size+1);
+  
+   if (add_size == clo_max_segment_set_size + 1) {
+      // we've hit the limit of SS size and can't add one more segment. 
+      add_size--;
+      tl_assert(del_size == 0);
+      // we will remove the first segment from the old set 
+      // (this segment is likely the oldest one) 
+      del_vec[del_size++] = add_vec[1];
+
+      // now del_size==1 and add_size >= 4 (clo_max_segment_set_size >= 4)
+      // so we are guaranteed to go to 'del' path below.
+   }
+
+   if (add_size - 1 <= del_size + 1) {
+      tl_assert(add_size <= clo_max_segment_set_size);
+      // create new segment set by adding segments to an empty set. 
+      // Requires add_size-1 set operations. 
+      for (i = 1; i < add_size; i++) {
+         SegmentID S = add_vec[i];
+         if (i == 1) {
+            newSS = HG_(doubletonWS)(univ_ssets, add_vec[0], S);
          } else {
             newSS = HG_(addToWS)(univ_ssets, newSS, S);
          }
       }
+      stats__msm_oldSS_multi_add++;
+   } else {
+      tl_assert(oldSS_size < clo_max_segment_set_size || del_size > 0);
+      // create new segment by removing segments from oldSS
+      // and then adding curS. 
+      // Requires del_size+1 set operations. 
+      newSS = oldSS;
+      for (i = 0; i < del_size; i++) {
+         newSS = HG_(delFromWS)(univ_ssets, newSS, del_vec[i]);
+      }
+      newSS = HG_(addToWS)(univ_ssets, newSS, currS);
+
+      tl_assert(SS_get_size(newSS) == add_size);
+      stats__msm_oldSS_multi_del++;
    }
    return newSS;
 }
@@ -8305,7 +8402,7 @@ Bool hg_handle_client_request ( ThreadId tid, UWord* args, UWord* ret)
          break;
 
       case VG_USERREQ__HG_MUTEX_IS_USED_AS_CONDVAR: // void *
-         set_mu_is_cv(args[1]);
+         set_mu_is_cv(args[1], tid);
          break;
       
       // These two client requests are useful to mark a section of code 
@@ -9199,6 +9296,10 @@ static Bool hg_process_cmd_line_option ( Char* arg )
       tl_assert(clo_ignore_n == 0 || (clo_ignore_n > 0 
                                       && clo_ignore_i < clo_ignore_n));
    }
+   else if (VG_CLO_STREQN(23, arg, "--max-segment-set-size=")) {
+      clo_max_segment_set_size = VG_(atoll)(&arg[23]);
+      tl_assert(clo_max_segment_set_size >= 4);
+   }
 
    else if (VG_CLO_STREQ(arg, "--gen-vcg=no"))
       clo_gen_vcg = 0;
@@ -9323,6 +9424,11 @@ static void hg_fini ( Int exitcode )
       }
 
       VG_(printf)("\n");
+      VG_(printf)(" zalloc/free: %,10lu %,10lu\n", 
+                  stat__hg_zalloc, stat__hg_free);
+
+
+      VG_(printf)("\n");
       VG_(printf)(" hbefore: %,10lu queries\n",        stats__hbefore_queries);
       VG_(printf)(" hbefore: %,10lu hash table hits\n",   stats__hbefore_hits);
       VG_(printf)(" hbefore: %,10lu graph searches\n", stats__hbefore_gsearches);
@@ -9365,16 +9471,20 @@ static void hg_fini ( Int exitcode )
       VG_(printf)("   sanity checks: %,8lu\n", stats__sanity_checks);
 
       VG_(printf)("\n");
-      VG_(printf)("     msm: %,12lu %,12lu  BHL-skipped, Race\n",
+      VG_(printf)("     msm: %,14lu %,14lu  BHL-skipped, Race\n",
                   stats__msm_BHL_hack, stats__msm_Race);
-      VG_(printf)("     msm: %,12lu %,12lu  R_to_R,   R_to_W\n",
+      VG_(printf)("     msm: %,14lu %,14lu  R_to_R,   R_to_W\n",
                   stats__msm_R_to_R, stats__msm_R_to_W);
-      VG_(printf)("     msm: %,12lu %,12lu  W_to_R,   W_to_W\n",
+      VG_(printf)("     msm: %,14lu %,14lu  W_to_R,   W_to_W\n",
                   stats__msm_W_to_R, stats__msm_W_to_W);
-      VG_(printf)("     msm: %,12lu %,12lu  New_to_R, New_to_W\n",
+      VG_(printf)("     msm: %,14lu %,14lu  New_to_R, New_to_W\n",
                   stats__msm_New_to_R, stats__msm_New_to_W);
-      VG_(printf)("     msm: %,12lu %,12lu  oldSS_single, oldSS_multi\n",
-                  stats__msm_oldSS_single, stats__msm_oldSS_multi);
+      VG_(printf)("     msm: %,14lu                 SS_update_single\n", 
+                  stats__msm_oldSS_single);
+      VG_(printf)("     msm: %,14lu %,14lu  SS_update_multi, shortcut\n", 
+                  stats__msm_oldSS_multi, stats__msm_oldSS_multi_shortcut);
+      VG_(printf)("     msm: %,14lu %,14lu  SS_update_add,  SS_update_del\n", 
+                  stats__msm_oldSS_multi_add, stats__msm_oldSS_multi_del);
 
       VG_(printf)("\n");
       VG_(printf)(" secmaps: %,10lu allocd (%,12lu g-a-range)\n",
@@ -9392,13 +9502,13 @@ static void hg_fini ( Int exitcode )
       VG_(printf)("\n");
       VG_(printf)("   cache: %,lu totrefs (%,lu misses)\n",
                   stats__cache_totrefs, stats__cache_totmisses );
-      VG_(printf)("   cache: %,12lu Z-fetch,    %,12lu F-fetch\n",
+      VG_(printf)("   cache: %,14lu Z-fetch,    %,14lu F-fetch\n",
                   stats__cache_Z_fetches, stats__cache_F_fetches );
-      VG_(printf)("   cache: %,12lu Z-wback,    %,12lu F-wback\n",
+      VG_(printf)("   cache: %,14lu Z-wback,    %,14lu F-wback\n",
                   stats__cache_Z_wbacks, stats__cache_F_wbacks );
-      VG_(printf)("   cache: %,12lu invals,     %,12lu flushes\n",
+      VG_(printf)("   cache: %,14lu invals,     %,14lu flushes\n",
                   stats__cache_invals, stats__cache_flushes );
-      VG_(printf)("   cache: %,12llu arange New, %,12llu direct-to-Zreps\n",
+      VG_(printf)("   cache: %,14llu arange_New  %,14llu direct-to-Zreps\n",
                   stats__cache_make_New_arange,
                   stats__cache_make_New_inZrep);
 
