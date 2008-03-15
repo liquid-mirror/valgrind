@@ -8547,8 +8547,13 @@ typedef
             SVal  old_state;
             ExeContext* mb_lastlock;
             Thread* thr;
-            Char  descr1[96];
-            Char  descr2[96];
+            /* Describe addr in a variable, or data sym */
+            HChar descr1[96];
+            HChar descr2[96];
+            /* Describe addr in a malloc'd block */
+            SizeT       block_szB;
+            OffT        block_rwoffset;
+            ExeContext* block_allocdAt;
          } Race;
          struct {
             Thread* thr;  /* doing the freeing */
@@ -8616,7 +8621,27 @@ static UInt hg_update_extra ( Error* err )
    tl_assert(xe);
 
    if (xe->tag == XE_Race) {
+      MallocMeta* md;
+
       tl_assert(sizeof(xe->XE.Race.descr1) == sizeof(xe->XE.Race.descr2));
+
+      /* Perhaps in a malloc'd block? */
+      xe->XE.Race.descr1[0] = xe->XE.Race.descr2[0] = 0;
+      VG_(HT_ResetIter)(hg_mallocmeta_table);
+      while ( (md = VG_(HT_Next)(hg_mallocmeta_table)) ) {
+         if (md->payload <= xe->XE.Race.data_addr
+             && xe->XE.Race.data_addr < md->payload + md->szB) {
+            xe->XE.Race.block_szB
+               = md->szB;
+            xe->XE.Race.block_rwoffset
+               = (Word)xe->XE.Race.data_addr - (Word)md->payload;
+            xe->XE.Race.block_allocdAt
+               = md->where;
+            goto out;
+         }
+      }
+
+      /* Perhaps the variable type/location data describes it? */
       xe->XE.Race.descr1[0] = xe->XE.Race.descr2[0] = 0;
       if (VG_(get_data_description)(
                 &xe->XE.Race.descr1[0],
@@ -8627,9 +8652,15 @@ static UInt hg_update_extra ( Error* err )
                        [ sizeof(xe->XE.Race.descr1)-1 ] == 0);
          tl_assert( xe->XE.Race.descr2
                        [ sizeof(xe->XE.Race.descr2)-1 ] == 0);
+         goto out;
       }
-   }
 
+      /* No description.  Bummer. */
+      xe->XE.Race.descr1[0] = xe->XE.Race.descr2[0] = 0;
+
+   } /* if (xe->tag == XE_Race) */
+
+  out:
    return sizeof(XError);
 }
 
@@ -8641,15 +8672,18 @@ static void record_error_Race ( Thread* thr,
    tl_assert( is_sane_Thread(thr) );
    init_XError(&xe);
    xe.tag = XE_Race;
-   xe.XE.Race.data_addr   = data_addr;
-   xe.XE.Race.szB         = szB;
-   xe.XE.Race.isWrite     = isWrite;
-   xe.XE.Race.new_state   = new_sv;
-   xe.XE.Race.old_state   = old_sv;
-   xe.XE.Race.mb_lastlock = mb_lastlock;
-   xe.XE.Race.thr         = thr;
-   xe.XE.Race.descr1[0]   = 0;
-   xe.XE.Race.descr2[0]   = 0;
+   xe.XE.Race.data_addr      = data_addr;
+   xe.XE.Race.szB            = szB;
+   xe.XE.Race.isWrite        = isWrite;
+   xe.XE.Race.new_state      = new_sv;
+   xe.XE.Race.old_state      = old_sv;
+   xe.XE.Race.mb_lastlock    = mb_lastlock;
+   xe.XE.Race.thr            = thr;
+   xe.XE.Race.descr1[0]      = 0;
+   xe.XE.Race.descr2[0]      = 0;
+   xe.XE.Race.block_szB      = 0;
+   xe.XE.Race.block_rwoffset = 0;
+   xe.XE.Race.block_allocdAt = NULL;
 
    // FIXME: tid vs thr
    tl_assert(isWrite == False || isWrite == True);
@@ -9199,6 +9233,15 @@ static void hg_pp_Error ( Error* err )
          VG_(message)(Vg_UserMsg, "  %s", &xe->XE.Race.descr1);
       if (xe->XE.Race.descr2[0] != 0)
          VG_(message)(Vg_UserMsg, "  %s", &xe->XE.Race.descr2);
+      if (xe->XE.Race.block_allocdAt) {
+         VG_(message)(Vg_UserMsg,
+            "  Location 0x%lx is %,ld bytes inside a block of "
+            "size %,lu alloc'd",
+            xe->XE.Race.data_addr, 
+            xe->XE.Race.block_rwoffset, xe->XE.Race.block_szB
+         );
+         VG_(pp_ExeContext)( xe->XE.Race.block_allocdAt );
+      }
 
       break; /* case XE_Race */
    } /* case XE_Race */
