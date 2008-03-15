@@ -8612,11 +8612,24 @@ typedef
 /* Updates the copy with address info if necessary. */
 static UInt hg_update_extra ( Error* err )
 {
-   XError* extra = (XError*)VG_(get_error_extra)(err);
-   tl_assert(extra);
-   //if (extra != NULL && Undescribed == extra->addrinfo.akind) {
-   //   describe_addr ( VG_(get_error_address)(err), &(extra->addrinfo) );
-   //}
+   XError* xe = (XError*)VG_(get_error_extra)(err);
+   tl_assert(xe);
+
+   if (xe->tag == XE_Race) {
+      tl_assert(sizeof(xe->XE.Race.descr1) == sizeof(xe->XE.Race.descr2));
+      xe->XE.Race.descr1[0] = xe->XE.Race.descr2[0] = 0;
+      if (VG_(get_data_description)(
+                &xe->XE.Race.descr1[0],
+                &xe->XE.Race.descr2[0],
+                sizeof(xe->XE.Race.descr1)-1,
+                xe->XE.Race.data_addr )) {
+         tl_assert( xe->XE.Race.descr1
+                       [ sizeof(xe->XE.Race.descr1)-1 ] == 0);
+         tl_assert( xe->XE.Race.descr2
+                       [ sizeof(xe->XE.Race.descr2)-1 ] == 0);
+      }
+   }
+
    return sizeof(XError);
 }
 
@@ -8635,6 +8648,9 @@ static void record_error_Race ( Thread* thr,
    xe.XE.Race.old_state   = old_sv;
    xe.XE.Race.mb_lastlock = mb_lastlock;
    xe.XE.Race.thr         = thr;
+   xe.XE.Race.descr1[0]   = 0;
+   xe.XE.Race.descr2[0]   = 0;
+
    // FIXME: tid vs thr
    tl_assert(isWrite == False || isWrite == True);
    tl_assert(szB == 8 || szB == 4 || szB == 2 || szB == 1);
@@ -8653,28 +8669,13 @@ static void record_error_Race ( Thread* thr,
       }
    }
 
-
-   if (1) { // Do not print an error if it is expected or benign. 
+   /* Do not collect this error if it is expected or benign */
+   if (1) {
       ExpectedError *expected_error = get_expected_error((Word)data_addr);
       if (expected_error) {
          expected_error->detected = True;
          return;
       }
-   }
-
-
-   /* Ok, so we're really going to collect this race. */
-   tl_assert(sizeof(xe.XE.Race.descr1) == sizeof(xe.XE.Race.descr2));
-   xe.XE.Race.descr1[0] = xe.XE.Race.descr2[0] = 0;
-   if (VG_(get_data_description)(
-             &xe.XE.Race.descr1[0],
-             &xe.XE.Race.descr2[0],
-             sizeof(xe.XE.Race.descr1)-1,
-             data_addr )) {
-      tl_assert( xe.XE.Race.descr1
-                    [ sizeof(xe.XE.Race.descr1)-1 ] == 0);
-      tl_assert( xe.XE.Race.descr2
-                    [ sizeof(xe.XE.Race.descr2)-1 ] == 0);
    }
 
    VG_(maybe_record_error)( map_threads_reverse_lookup_SLOW(thr),
