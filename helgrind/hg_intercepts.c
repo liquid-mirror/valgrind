@@ -54,7 +54,7 @@
 
 
 /*----------------------------------------------------------------*/
-/*---                                                          ---*/
+/*--- Basic stuff                                              ---*/
 /*----------------------------------------------------------------*/
 
 #define PTH_FUNC(ret_ty, f, args...) \
@@ -1335,6 +1335,146 @@ QT4_FUNC(void, ZuZZN14QReadWriteLock6unlockEv,
       fprintf(stderr, " :: Q::unlock :: done >>\n");
    }
 }
+
+
+/*----------------------------------------------------------------*/
+/*--- Replace glibc's wretched optimised string fns (again!)   ---*/
+/*----------------------------------------------------------------*/
+
+#include "pub_tool_redir.h"   /* VG_REPLACE_FUNCTION_ZU */
+
+/* Why we have to do all this nonsense:
+
+   Some implementations of strlen may read up to 7 bytes past the end
+   of the string thus touching memory which may not belong to this
+   string.
+
+   Such race is benign because the data read past the end of the
+   string is not used.
+*/
+
+/* BEGIN tiresome boilerplate.  All this stuff is copied from
+   memcheck/mc_replace_strmem.c.  If you update that, consider
+   updating this too (and vice versa). */
+
+/* --- Soname of the standard C library. --- */
+
+#if defined(VGO_linux)
+#  define  m_libc_soname     libcZdsoZa              // libc.so*
+#elif defined(VGP_ppc32_aix5)
+   /* AIX has both /usr/lib/libc.a and /usr/lib/libc_r.a. */
+#  define  m_libc_soname     libcZaZdaZLshrZdoZR     // libc*.a(shr.o)
+#elif defined(VGP_ppc64_aix5)
+#  define  m_libc_soname     libcZaZdaZLshrZu64ZdoZR // libc*.a(shr_64.o)
+#else
+#  error "Unknown platform"
+#endif
+
+/* --- Sonames for Linux ELF linkers. --- */
+
+#define  m_ld_linux_so_2         ldZhlinuxZdsoZd2           // ld-linux.so.2
+#define  m_ld_linux_x86_64_so_2  ldZhlinuxZhx86Zh64ZdsoZd2  // ld-linux-x86-64.so.2
+#define  m_ld64_so_1             ld64ZdsoZd1                // ld64.so.1
+#define  m_ld_so_1               ldZdsoZd1                  // ld.so.1
+
+/* END tiresome boilerplate */
+
+
+#define MEMCPY(soname, fnname) \
+   void* VG_REPLACE_FUNCTION_ZU(soname,fnname) \
+            ( void *dst, const void *src, SizeT len ); \
+   void* VG_REPLACE_FUNCTION_ZU(soname,fnname) \
+            ( void *dst, const void *src, SizeT len ) \
+   { \
+      register char *d; \
+      register char *s; \
+      \
+      if (len == 0) \
+         return dst; \
+      \
+      if ( dst > src ) { \
+         d = (char *)dst + len - 1; \
+         s = (char *)src + len - 1; \
+         while ( len >= 4 ) { \
+            *d-- = *s--; \
+            *d-- = *s--; \
+            *d-- = *s--; \
+            *d-- = *s--; \
+            len -= 4; \
+         } \
+         while ( len-- ) { \
+            *d-- = *s--; \
+         } \
+      } else if ( dst < src ) { \
+         d = (char *)dst; \
+         s = (char *)src; \
+         while ( len >= 4 ) { \
+            *d++ = *s++; \
+            *d++ = *s++; \
+            *d++ = *s++; \
+            *d++ = *s++; \
+            len -= 4; \
+         } \
+         while ( len-- ) { \
+            *d++ = *s++; \
+         } \
+      } \
+      return dst; \
+   }
+
+MEMCPY(m_libc_soname, memcpy)
+MEMCPY(m_ld_so_1,     memcpy) /* ld.so.1 */
+MEMCPY(m_ld64_so_1,   memcpy) /* ld64.so.1 */
+/* icc9 blats these around all over the place.  Not only in the main
+   executable but various .so's.  They are highly tuned and read
+   memory beyond the source boundary (although work correctly and
+   never go across page boundaries), so give errors when run natively,
+   at least for misaligned source arg.  Just intercepting in the exe
+   only until we understand more about the problem.  See
+   http://bugs.kde.org/show_bug.cgi?id=139776
+ */
+MEMCPY(NONE, _intel_fast_memcpy)
+
+
+#define STRCHR(soname, fnname) \
+   char* VG_REPLACE_FUNCTION_ZU(soname,fnname) ( const char* s, int c ); \
+   char* VG_REPLACE_FUNCTION_ZU(soname,fnname) ( const char* s, int c ) \
+   { \
+      UChar  ch = (UChar)((UInt)c); \
+      UChar* p  = (UChar*)s; \
+      while (True) { \
+         if (*p == ch) return p; \
+         if (*p == 0) return NULL; \
+         p++; \
+      } \
+   }
+
+// Apparently index() is the same thing as strchr()
+STRCHR(m_libc_soname,          strchr)
+STRCHR(m_ld_linux_so_2,        strchr)
+STRCHR(m_ld_linux_x86_64_so_2, strchr)
+STRCHR(m_libc_soname,          index)
+STRCHR(m_ld_linux_so_2,        index)
+STRCHR(m_ld_linux_x86_64_so_2, index)
+
+
+// Note that this replacement often doesn't get used because gcc inlines
+// calls to strlen() with its own built-in version.  This can be very
+// confusing if you aren't expecting it.  Other small functions in this file
+// may also be inline by gcc.
+#define STRLEN(soname, fnname) \
+   SizeT VG_REPLACE_FUNCTION_ZU(soname,fnname)( const char* str ); \
+   SizeT VG_REPLACE_FUNCTION_ZU(soname,fnname)( const char* str ) \
+   { \
+      SizeT i = 0; \
+      while (str[i] != 0) i++; \
+      return i; \
+   }
+
+STRLEN(m_libc_soname,          strlen)
+STRLEN(m_ld_linux_so_2,        strlen)
+STRLEN(m_ld_linux_x86_64_so_2, strlen)
+
 
 
 /*--------------------------------------------------------------------*/
