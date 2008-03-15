@@ -2073,6 +2073,28 @@ Bool VG_(get_data_description)( /*OUT*/Char* dname1,
       }
    }
    if (!found) {
+      /* Last ditch attempt at identification if it's not on any
+         thread's stack *and* it isn't a global variable: see if it is
+         inside a data symbol.  That's better than returning
+         completely emptyhanded.  Get the name temporarily into dname2
+         and then format the message properly in dname1. */
+      OffT datasym_offset = 0;
+      dname2[0] = 0;
+      if (VG_(get_datasym_and_offset)( data_addr, &dname2[0], n_dname-1, 
+                                       &datasym_offset )) {
+         dname2[n_dname-1] = 0;
+         dname1[0] = 0;
+         VG_(snprintf)(
+            dname1, n_dname,
+            "Address 0x%llx is %llu bytes "
+            "inside data symbol \"%t\"",
+            (ULong)data_addr, (ULong)datasym_offset, &dname2[0]
+         );
+         dname2[0] = 0; /* need to pretend we didn't mess with it */
+         dname1[n_dname-1] = 0;
+         return True;
+      }
+      /* Ok, we really didn't find anything useful. */
       dname1[n_dname-1] = dname2[n_dname-1] = 0;
       return False;
    }
@@ -2139,6 +2161,7 @@ Bool VG_(get_data_description)( /*OUT*/Char* dname1,
    /* We didn't find anything useful. */
    dname1[n_dname-1] = dname2[n_dname-1] = 0;
    return False;
+
 #  undef N_FRAMES
 }
 
