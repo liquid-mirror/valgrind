@@ -166,6 +166,7 @@ struct _WordSetU {
       UWord     n_doubleton;
       UWord     n_isEmpty;
       UWord     n_isSingleton;
+      UWord     n_isSorE;
       UWord     n_anyElementOf;
       UWord     n_elementOf;
       UWord     n_isSubsetOf;
@@ -252,7 +253,7 @@ static void ensure_ix2vec_space ( WordSetU* wsu )
 /* Index into a WordSetU, doing the obvious range check.  Failure of
    the assertions marked XXX and YYY is an indication of passing the
    wrong WordSetU* in the public API of this module. */
-static WordVec* do_ix2vec ( WordSetU* wsu, WordSet ws )
+static inline WordVec* do_ix2vec ( WordSetU* wsu, WordSet ws )
 {
    WordVec* wv;
    tl_assert(wsu->ix2vec_used <= wsu->ix2vec_size);
@@ -408,6 +409,16 @@ Bool HG_(isSingletonWS) ( WordSetU* wsu, WordSet ws, UWord w )
    return (Bool)(wv->size == 1 && wv->words[0] == w);
 }
 
+Bool HG_(isSingletonOrEmptyWS) ( WordSetU* wsu, WordSet ws, UWord w )
+{
+   WordVec* wv;
+   tl_assert(wsu);
+   wsu->n_isSorE++;
+   wv = do_ix2vec( wsu, ws );
+   if (wv->size == 0) return True;
+   return (Bool)(wv->size == 1 && wv->words[0] == w);
+}
+
 UWord HG_(cardinalityWS) ( WordSetU* wsu, WordSet ws )
 {
    WordVec* wv;
@@ -534,10 +545,9 @@ void HG_(ppWS) ( WordSetU* wsu, WordSet ws )
 
 void HG_(ppWSUstats) ( WordSetU* wsu, HChar* name )
 {
-   int i;
-   int d_size = 10;
-   int size_distribution[10] = {0};
-
+   Int i;
+   Int d_size = 10;
+   Int size_distribution[10] = {0,0,0,0,0,0,0,0,0,0};
 
    VG_(printf)("   WordSet \"%s\":\n", name);
    VG_(printf)("      addTo        %,10u (%,u uncached)\n",
@@ -553,15 +563,15 @@ void HG_(ppWSUstats) ( WordSetU* wsu, HChar* name )
    VG_(printf)("      doubleton    %10u\n",   wsu->n_doubleton);
    VG_(printf)("      isEmpty      %10u\n",   wsu->n_isEmpty);
    VG_(printf)("      isSingleton  %10u\n",   wsu->n_isSingleton);
+   VG_(printf)("      isSorEmpty   %10u\n",   wsu->n_isSorE);
    VG_(printf)("      anyElementOf %10u\n",   wsu->n_anyElementOf);
    VG_(printf)("      elementOf    %10u\n",   wsu->n_elementOf);
    VG_(printf)("      isSubsetOf   %10u\n",   wsu->n_isSubsetOf);
 
-
    // compute and print size distributions 
    for (i = 0; i < (int)HG_(cardinalityWSU)(wsu); i++) {
       WordVec *wv = do_ix2vec( wsu, i );
-      int size = wv->size;
+      Int size = wv->size;
       if (size >= d_size) size = d_size-1;
       size_distribution[size]++;
    }

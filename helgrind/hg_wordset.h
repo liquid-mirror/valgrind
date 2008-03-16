@@ -73,6 +73,7 @@ WordSet HG_(intersectWS)    ( WordSetU*, WordSet, WordSet );
 WordSet HG_(minusWS)        ( WordSetU*, WordSet, WordSet );
 Bool    HG_(isEmptyWS)      ( WordSetU*, WordSet );
 Bool    HG_(isSingletonWS)  ( WordSetU*, WordSet, UWord );
+Bool    HG_(isSingletonOrEmptyWS) ( WordSetU*, WordSet, UWord );
 UWord   HG_(anyElementOfWS) ( WordSetU*, WordSet );
 UWord   HG_(cardinalityWS)  ( WordSetU*, WordSet );
 Bool    HG_(elemWS)         ( WordSetU*, WordSet, UWord );

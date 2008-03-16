@@ -3161,9 +3161,9 @@ static void announce_one_thread ( Thread* thr ); /* fwds */
 //static WordSetID add_BHL ( WordSetID lockset ) {
 //   return HG_(addToWS)( univ_lsets, lockset, (Word)__bus_lock_Lock );
 //}
-//static WordSetID del_BHL ( WordSetID lockset ) {
-//   return HG_(delFromWS)( univ_lsets, lockset, (Word)__bus_lock_Lock );
-//}
+static inline WordSetID del_BHL ( WordSetID lockset ) {
+   return HG_(delFromWS)( univ_lsets, lockset, (Word)__bus_lock_Lock );
+}
 
 
 /* Last-lock-lossage records.  This mechanism exists to help explain
@@ -3202,8 +3202,7 @@ static UWord stats__ga_LL_adds = 0;
 
 static WordFM* ga_to_lastlock = NULL; /* GuestAddr -> ExeContext* */
 
-#if 0 // commented out to avoid a compiler warning about unused function
-static 
+static __attribute((noinline))
 void record_last_lock_lossage ( Addr ga_of_access,
                                 WordSetID lset_old, WordSetID lset_new )
 {
@@ -3219,18 +3218,17 @@ void record_last_lock_lossage ( Addr ga_of_access,
                       HG_(cardinalityWS)(univ_lsets,lset_new),
                       ga_of_access );
 
+   /* If the new lockset is neither empty nor contains merely the bus
+      lock (that is, it contains at least one "real" lock), we're not
+      interested. */
+   if (!HG_(isSingletonOrEmptyWS)(univ_lsets, lset_new, (Word)__bus_lock_Lock))
+      return;
+
    /* This is slow, but at least it's simple.  The bus hardware lock
       just confuses the logic, so remove it from the locksets we're
       considering before doing anything else. */
    lset_new = del_BHL( lset_new );
-
-   if (!HG_(isEmptyWS)( univ_lsets, lset_new )) {
-      /* The post-transition lock set is not empty.  So we are not
-         interested.  We're only interested in spotting transitions
-         that make locksets become empty. */
-      return;
-   }
-
+   
    /* lset_new is now empty */
    card_new = HG_(cardinalityWS)( univ_lsets, lset_new );
    tl_assert(card_new == 0);
@@ -3265,7 +3263,7 @@ void record_last_lock_lossage ( Addr ga_of_access,
       stats__ga_LL_adds++;
    }
 }
-#endif // #if 0
+
 
 /* This queries the table (ga_to_lastlock) made by
    record_last_lock_lossage, when constructing error messages.  It
@@ -3592,6 +3590,8 @@ SVal msm_handle_write(Thread* thr, Addr a, SVal sv_old, Int sz)
       } else {
          oldLS = get_SHVAL_LS(sv_old);
          newLS = HG_(intersectWS)(univ_lsets, oldLS, currLS);
+         if (oldLS != newLS)
+            record_last_lock_lossage( a, oldLS, newLS );
       }
 
       // generate new SVal
@@ -3725,6 +3725,8 @@ SVal msm_handle_read(Thread* thr, Addr a, SVal sv_old, Int sz)
       } else {
          oldLS = get_SHVAL_LS(sv_old);
          newLS = HG_(intersectWS)(univ_lsets, oldLS, currLS);
+         if (oldLS != newLS)
+            record_last_lock_lossage( a, oldLS, newLS );
       }
 
       // update the state 
@@ -9274,6 +9276,16 @@ static void hg_pp_Error ( Error* err )
                       old_state, old_buf, new_state, new_buf);
       }
 #endif /* 0 */
+      /* show the last lock lossage info */
+      if (xe->XE.Race.mb_lastlock) {
+         VG_(message)(Vg_UserMsg, "  Last consistently used lock for %p was "
+                                  "first observed", err_ga);
+         VG_(pp_ExeContext)(xe->XE.Race.mb_lastlock);
+      } else {
+         VG_(message)(Vg_UserMsg, "  Location 0x%lX has never been protected "
+                                  "by any lock", err_ga);
+      }
+
       /* If we have a better description of the address, show it. */
       if (xe->XE.Race.descr1[0] != 0)
          VG_(message)(Vg_UserMsg, "  %s", &xe->XE.Race.descr1);
@@ -9281,7 +9293,7 @@ static void hg_pp_Error ( Error* err )
          VG_(message)(Vg_UserMsg, "  %s", &xe->XE.Race.descr2);
       if (xe->XE.Race.block_allocdAt) {
          VG_(message)(Vg_UserMsg,
-            "  Location 0x%lx is %,ld bytes inside a block of "
+            "  Location 0x%lX is %,ld bytes inside a block of "
             "size %,lu alloc'd",
             xe->XE.Race.data_addr, 
             xe->XE.Race.block_rwoffset, xe->XE.Race.block_szB
