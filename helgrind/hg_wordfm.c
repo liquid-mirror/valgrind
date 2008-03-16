@@ -581,7 +581,8 @@ static void avl_free ( AvlNode* nd,
 void HG_(deleteFM) ( WordFM* fm, void(*kFin)(UWord), void(*vFin)(UWord) )
 {
    void(*dealloc)(void*) = fm->dealloc;
-   avl_free( fm->root, kFin, vFin, dealloc );
+   if (fm->root)
+      avl_free( fm->root, kFin, vFin, dealloc );
    VG_(memset)(fm, 0, sizeof(WordFM) );
    dealloc(fm);
 }
@@ -782,43 +783,36 @@ WordFM* HG_(dopyFM) ( WordFM* fm, UWord(*dopyK)(UWord), UWord(*dopyV)(UWord) )
 //---                       Implementation                       ---//
 //------------------------------------------------------------------//
 
-/* A trivial container, to make it opaque. */
-struct _WordBag { 
-   WordFM* fm; 
-};
+/* A WordBag is just a WordFM, but we typedef-void it for the
+   interface, to make it opaque. */
 
 WordBag* HG_(newBag) ( void* (*alloc_nofail)( SizeT ),
                        void  (*dealloc)(void*) )
 {
-   WordBag* bag = alloc_nofail(sizeof(WordBag));
-   bag->fm = HG_(newFM)( alloc_nofail, dealloc, NULL );
-   return bag;
+   return HG_(newFM)( alloc_nofail, dealloc, NULL );
 }
 
 void HG_(deleteBag) ( WordBag* bag )
 {
-   void (*dealloc)(void*) = bag->fm->dealloc;
-   HG_(deleteFM)( bag->fm, NULL, NULL );
-   VG_(memset)(bag, 0, sizeof(WordBag));
-   dealloc(bag);
+   HG_(deleteFM)( bag, NULL, NULL );
 }
 
 void HG_(addToBag)( WordBag* bag, UWord w )
 {
    UWord key, count;
-   if (HG_(lookupFM)(bag->fm, &key, &count, w)) {
+   if (HG_(lookupFM)(bag, &key, &count, w)) {
       tl_assert(key == w);
       tl_assert(count >= 1);
-      HG_(addToFM)(bag->fm, w, count+1);
+      HG_(addToFM)(bag, w, count+1);
    } else {
-      HG_(addToFM)(bag->fm, w, 1);
+      HG_(addToFM)(bag, w, 1);
    }
 }
 
 UWord HG_(elemBag) ( WordBag* bag, UWord w )
 {
    UWord key, count;
-   if (HG_(lookupFM)( bag->fm, &key, &count, w)) {
+   if (HG_(lookupFM)( bag, &key, &count, w)) {
       tl_assert(key == w);
       tl_assert(count >= 1);
       return count;
@@ -829,7 +823,7 @@ UWord HG_(elemBag) ( WordBag* bag, UWord w )
 
 UWord HG_(sizeUniqueBag) ( WordBag* bag )
 {
-   return HG_(sizeFM)( bag->fm );
+   return HG_(sizeFM)( bag );
 }
 
 static UWord sizeTotalBag_wrk ( AvlNode* nd )
@@ -845,8 +839,8 @@ static UWord sizeTotalBag_wrk ( AvlNode* nd )
 }
 UWord HG_(sizeTotalBag)( WordBag* bag )
 {
-   if (bag->fm->root)
-      return sizeTotalBag_wrk(bag->fm->root);
+   if (((WordFM*)bag)->root)
+      return sizeTotalBag_wrk(((WordFM*)bag)->root);
    else
       return 0;
 }
@@ -854,14 +848,14 @@ UWord HG_(sizeTotalBag)( WordBag* bag )
 Bool HG_(delFromBag)( WordBag* bag, UWord w )
 {
    UWord key, count;
-   if (HG_(lookupFM)(bag->fm, &key, &count, w)) {
+   if (HG_(lookupFM)(bag, &key, &count, w)) {
       tl_assert(key == w);
       tl_assert(count >= 1);
       if (count > 1) {
-         HG_(addToFM)(bag->fm, w, count-1);
+         HG_(addToFM)(bag, w, count-1);
       } else {
          tl_assert(count == 1);
-         HG_(delFromFM)( bag->fm, NULL, NULL, w );
+         HG_(delFromFM)(bag, NULL, NULL, w);
       }
       return True;
    } else {
@@ -871,15 +865,15 @@ Bool HG_(delFromBag)( WordBag* bag, UWord w )
 
 Bool HG_(isEmptyBag)( WordBag* bag )
 {
-   return HG_(sizeFM)(bag->fm) == 0;
+   return HG_(sizeFM)(bag) == 0;
 }
 
 Bool HG_(isSingletonTotalBag)( WordBag* bag )
 {
    AvlNode* nd;
-   if (HG_(sizeFM)(bag->fm) != 1)
+   if (HG_(sizeFM)(bag) != 1)
       return False;
-   nd = bag->fm->root;
+   nd = ((WordFM*)bag)->root;
    tl_assert(nd);
    tl_assert(!nd->child[0]);
    tl_assert(!nd->child[1]);
@@ -890,7 +884,7 @@ UWord HG_(anyElementOfBag)( WordBag* bag )
 {
    /* Return an arbitrarily chosen element in the bag.  We might as
       well return the one at the root of the underlying AVL tree. */
-   AvlNode* nd = bag->fm->root;
+   AvlNode* nd = ((WordFM*)bag)->root;
    tl_assert(nd); /* if this fails, 'bag' is empty - caller is in error. */
    tl_assert(nd->val >= 1);
    return nd->key;
@@ -898,17 +892,17 @@ UWord HG_(anyElementOfBag)( WordBag* bag )
 
 void HG_(initIterBag)( WordBag* bag )
 {
-   HG_(initIterFM)(bag->fm);
+   HG_(initIterFM)(bag);
 }
 
 Bool HG_(nextIterBag)( WordBag* bag, /*OUT*/UWord* pVal, /*OUT*/UWord* pCount )
 {
-   return HG_(nextIterFM)( bag->fm, pVal, pCount );
+   return HG_(nextIterFM)( bag, pVal, pCount );
 }
 
 void HG_(doneIterBag)( WordBag* bag )
 {
-   HG_(doneIterFM)( bag->fm );
+   HG_(doneIterFM)( bag );
 }
 
 //------------------------------------------------------------------//

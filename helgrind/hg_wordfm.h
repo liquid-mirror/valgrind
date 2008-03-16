@@ -136,7 +136,7 @@ WordFM* HG_(dopyFM) ( WordFM* fm,
 //---                      Public interface                      ---//
 //------------------------------------------------------------------//
 
-typedef  struct _WordBag  WordBag; /* opaque */
+typedef  void  WordBag; /* opaque */
 
 /* Allocate and initialise a WordBag */
 WordBag* HG_(newBag) ( void* (*alloc_nofail)( SizeT ),
