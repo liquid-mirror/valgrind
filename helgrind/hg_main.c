@@ -5786,7 +5786,8 @@ void evhH__post_thread_w_acquires_lock ( Thread* thr,
   noerror:
    /* check lock order acquisition graph, and update.  This has to
       happen before the lock is added to the thread's locksetA/W. */
-   laog__pre_thread_acquires_lock( thr, lk );
+   if (lk != __bus_lock_Lock)
+      laog__pre_thread_acquires_lock( thr, lk );
    /* update the thread's held-locks set */
    thr->locksetA = HG_(addToWS)( univ_lsets, thr->locksetA, (Word)lk );
    thr->locksetW = HG_(addToWS)( univ_lsets, thr->locksetW, (Word)lk );
@@ -5861,6 +5862,7 @@ void evhH__post_thread_r_acquires_lock ( Thread* thr,
   noerror:
    /* check lock order acquisition graph, and update.  This has to
       happen before the lock is added to the thread's locksetA/W. */
+   tl_assert(lk != __bus_lock_Lock); /* bus lock only ever acquired as W */
    laog__pre_thread_acquires_lock( thr, lk );
    /* update the thread's held-locks set */
    thr->locksetA = HG_(addToWS)( univ_lsets, thr->locksetA, (Word)lk );
@@ -7555,6 +7557,18 @@ static void laog__pre_thread_acquires_lock (
    UWord*   ls_words;
    Word     ls_size, i;
    Lock*    other;
+
+   /* There's no point in tracking the BHL with this mechanism, as
+      that just wastes time, and the lock is always at the "top" of
+      any hierarchy in which it appears (since it is only transiently
+      locked for one instruction).  So just insist the callers don't
+      provide it. */
+   if (UNLIKELY(lk == __bus_lock_Lock)) {
+      tl_assert(lk->guestaddr == (Addr)&__bus_lock); /* as it should be */
+      tl_assert(0); /* caller should never supply this arg */
+   } else {
+      tl_assert(lk->guestaddr != (Addr)&__bus_lock);
+   }
 
    /* It may be that 'thr' already holds 'lk' and is recursively
       relocking in.  In this case we just ignore the call. */
@@ -9374,7 +9388,8 @@ static Bool hg_process_cmd_line_option ( Char* arg )
    }
    else if (VG_CLO_STREQN(23, arg, "--max-segment-set-size=")) {
       clo_max_segment_set_size = VG_(atoll)(&arg[23]);
-      tl_assert(clo_max_segment_set_size >= 4);
+      if (clo_max_segment_set_size < 4)
+         clo_max_segment_set_size = 4;
    }
 
    else if (VG_CLO_STREQ(arg, "--gen-vcg=no"))
@@ -9431,6 +9446,9 @@ static void hg_print_usage ( void )
 "      create/join, create/join/cvsignal/cvwait/semwait/post as sync points\n"
 "    --trace-addr=0xXXYYZZ     show all state changes for address 0xXXYYZZ\n"
 "    --trace-level=0|1|2       verbosity level of --trace-addr [1]\n"
+"    --max-segment-set-size=<N>  limit mem use by limiting SegSet sizes [20]\n"
+"    --ignore-n=<N>            speedup hack; add documentation\n"
+"    --ignore-i=<N>            speedup hack; add documentation\n"
    );
    VG_(replacement_malloc_print_usage)();
 }
@@ -9500,11 +9518,6 @@ static void hg_fini ( Int exitcode )
       }
 
       VG_(printf)("\n");
-      VG_(printf)(" zalloc/free: %,10lu %,10lu\n", 
-                  stat__hg_zalloc, stat__hg_free);
-
-
-      VG_(printf)("\n");
       VG_(printf)(" hbefore: %,10lu queries\n",        stats__hbefore_queries);
       VG_(printf)(" hbefore: %,10lu hash table hits\n",   stats__hbefore_hits);
       VG_(printf)(" hbefore: %,10lu graph searches\n", stats__hbefore_gsearches);
@@ -9515,36 +9528,38 @@ static void hg_fini ( Int exitcode )
       VG_(printf)(" hbefore: %,10lu cache invals\n",   stats__hbefore_invals);
 
       VG_(printf)("\n");
-      VG_(printf)("        segments: %,8lu Segment objects allocated\n", 
+      VG_(printf)("        segments: %,11lu Segment objects allocated\n", 
                   stats__mk_Segment);
-      VG_(printf)("        locksets: %,8d unique lock sets\n",
-                  (Int)HG_(cardinalityWSU)( univ_lsets ));
-      VG_(printf)("     segmentsets: %,8d unique segment sets\n",
-                  (Int)HG_(cardinalityWSU)( univ_ssets ));
-      VG_(printf)("       univ_laog: %,8d unique lock sets\n",
-                  (Int)HG_(cardinalityWSU)( univ_laog ));
+      VG_(printf)("        locksets: %,11ld unique lock sets\n",
+                  (Word)HG_(cardinalityWSU)( univ_lsets ));
+      VG_(printf)("     segmentsets: %,11ld unique segment sets\n",
+                  (Word)HG_(cardinalityWSU)( univ_ssets ));
+      VG_(printf)("       univ_laog: %,11ld unique lock sets\n",
+                  (Word)HG_(cardinalityWSU)( univ_laog ));
 
-      VG_(printf)("L(ast)L(ock) map: %,8lu inserts (%d map size)\n", 
+      VG_(printf)("L(ast)L(ock) map: %,11lu inserts (%,ld map size)\n", 
                   stats__ga_LL_adds,
-                  (Int)(ga_to_lastlock ? HG_(sizeFM)( ga_to_lastlock ) : 0) );
+                  (Word)(ga_to_lastlock ? HG_(sizeFM)( ga_to_lastlock ) : 0) );
 
-      VG_(printf)("  LockN-to-P map: %,8lu queries (%d map size)\n", 
+      VG_(printf)("  LockN-to-P map: %,11lu queries (%,ld map size)\n", 
                   stats__ga_LockN_to_P_queries,
-                  (Int)(yaWFM ? HG_(sizeFM)( yaWFM ) : 0) );
+                  (Word)(yaWFM ? HG_(sizeFM)( yaWFM ) : 0) );
 
-      VG_(printf)("string table map: %,8lu queries (%d map size)\n", 
+      VG_(printf)("string table map: %,11lu queries (%,ld map size)\n", 
                   stats__string_table_queries,
-                  (Int)(string_table ? HG_(sizeFM)( string_table ) : 0) );
-      VG_(printf)("            LAOG: %,8d map size\n", 
-                  (Int)(laog ? HG_(sizeFM)( laog ) : 0));
-      VG_(printf)(" LAOG exposition: %,8d map size\n", 
-                  (Int)(laog_exposition ? HG_(sizeFM)( laog_exposition ) : 0));
-      VG_(printf)("           locks: %,8lu acquires, "
+                  (Word)(string_table ? HG_(sizeFM)( string_table ) : 0) );
+      VG_(printf)("            LAOG: %,11ld map size\n", 
+                  (Word)(laog ? HG_(sizeFM)( laog ) : 0));
+      VG_(printf)(" LAOG exposition: %,11ld map size\n", 
+                  (Word)(laog_exposition ? HG_(sizeFM)( laog_exposition ) : 0));
+      VG_(printf)("           locks: %,11lu acquires, "
                   "%,lu releases\n",
                   stats__lockN_acquires,
                   stats__lockN_releases
                  );
-      VG_(printf)("   sanity checks: %,8lu\n", stats__sanity_checks);
+      VG_(printf)("   sanity checks: %,11lu\n", stats__sanity_checks);
+      VG_(printf)("     zalloc/free: %,11lu zallocs, %,lu frees\n", 
+                  stat__hg_zalloc, stat__hg_free);
 
       VG_(printf)("\n");
       VG_(printf)("     msm: %,14lu %,14lu  BHL-skipped, Race\n",
@@ -9559,7 +9574,7 @@ static void hg_fini ( Int exitcode )
                   stats__msm_oldSS_single);
       VG_(printf)("     msm: %,14lu %,14lu  SS_update_multi, shortcut\n", 
                   stats__msm_oldSS_multi, stats__msm_oldSS_multi_shortcut);
-      VG_(printf)("     msm: %,14lu %,14lu  SS_update_add,  SS_update_del\n", 
+      VG_(printf)("     msm: %,14lu %,14lu  SS_update_add, SS_update_del\n", 
                   stats__msm_oldSS_multi_add, stats__msm_oldSS_multi_del);
 
       VG_(printf)("\n");
@@ -9593,17 +9608,17 @@ static void hg_fini ( Int exitcode )
       VG_(printf)("\n");
       VG_(printf)("   cline: %,10lu normalises\n",
                   stats__cline_normalises );
-      VG_(printf)("   cline:  reads 8/4/2/1: %,12lu %,12lu %,12lu %,12lu\n",
+      VG_(printf)("   cline:  rds 8/4/2/1: %,13lu %,13lu %,13lu %,13lu\n",
                   stats__cline_read64s,
                   stats__cline_read32s,
                   stats__cline_read16s,
                   stats__cline_read8s );
-      VG_(printf)("   cline: writes 8/4/2/1: %,12lu %,12lu %,12lu %,12lu\n",
+      VG_(printf)("   cline:  wrs 8/4/2/1: %,13lu %,13lu %,13lu %,13lu\n",
                   stats__cline_write64s,
                   stats__cline_write32s,
                   stats__cline_write16s,
                   stats__cline_write8s );
-      VG_(printf)("   cline:   sets 8/4/2/1: %,12lu %,12lu %,12lu %,12lu\n",
+      VG_(printf)("   cline: sets 8/4/2/1: %,13lu %,13lu %,13lu %,13lu\n",
                   stats__cline_set64s,
                   stats__cline_set32s,
                   stats__cline_set16s,
