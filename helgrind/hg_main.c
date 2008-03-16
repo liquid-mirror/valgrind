@@ -41,10 +41,6 @@
    - Consider what to do about last-lock-lossage mechanism.
      Should it be removed?
 
-   - get rid of SVal-cache dirty bits?  Basically pointless; almost
-     all lines become dirty and have to be written back.  Quantify.
-     (I think they are not present anyway)
-
    - Have something like mk_SHVAL_fail instead of merely asserting
 
    - More comments re deletion of memory containing Locks.
@@ -61,6 +57,9 @@
      address that the client uses for a lock, and remember it forever.
 
    - Fix command line ordering assumptions for --ignore-i= vs --ignore-n=
+
+   - Specialise the heldBy field in Locks for the case where the lock
+     is only held by one thread.
 
    STUFF I DON'T UNDERSTAND:
 
@@ -214,7 +213,7 @@ static UWord clo_ignore_i = 0;
    The default value is large enough, but allows to stay sane.
    Must be >= 4.
  */
-static UInt   clo_max_segment_set_size = 20;
+static UInt clo_max_segment_set_size = 20;
 
 
 /* This has to do with printing error messages.  See comments on
@@ -907,8 +906,8 @@ static void lockN_acquire_writer ( Lock* lk, Thread* thr )
          goto case_LK_nonRec;
       default: 
          tl_assert(0);
-  }
-  tl_assert(is_sane_LockN(lk));
+   }
+   tl_assert(is_sane_LockN(lk));
 }
 
 static void lockN_acquire_reader ( Lock* lk, Thread* thr )
@@ -2562,7 +2561,8 @@ static void segments__generate_vcg ( void )
 /*--- shadow memory (low level handlers) (shmem__* fns)        ---*/
 /*----------------------------------------------------------------*/
 
-
+static UWord stats__secmaps_search       = 0; // # SM finds
+static UWord stats__secmaps_search_slow  = 0; // # SM lookupFMs
 static UWord stats__secmaps_allocd       = 0; // # SecMaps issued
 static UWord stats__secmap_ga_space_covered = 0; // # ga bytes covered
 static UWord stats__secmap_linesZ_allocd = 0; // # CacheLineZ's issued
@@ -2665,21 +2665,57 @@ static SecMap* shmem__alloc_SecMap ( void )
    return sm;
 }
 
-static SecMap* shmem__find_or_alloc_SecMap ( Addr ga )
+typedef struct { Addr gaKey; SecMap* sm; } SMCacheEnt;
+static SMCacheEnt smCache[3] = { {1,NULL}, {1,NULL}, {1,NULL} };
+
+static SecMap* shmem__find_SecMap ( Addr ga ) 
 {
    SecMap* sm    = NULL;
    Addr    gaKey = shmem__round_to_SecMap_base(ga);
+   // Cache
+   stats__secmaps_search++;
+   if (LIKELY(gaKey == smCache[0].gaKey))
+      return smCache[0].sm;
+   if (LIKELY(gaKey == smCache[1].gaKey)) {
+      SMCacheEnt tmp = smCache[0];
+      smCache[0] = smCache[1];
+      smCache[1] = tmp;
+      return smCache[0].sm;
+   }
+   if (gaKey == smCache[2].gaKey) {
+      SMCacheEnt tmp = smCache[1];
+      smCache[1] = smCache[2];
+      smCache[2] = tmp;
+      return smCache[1].sm;
+   }
+   // end Cache
+   stats__secmaps_search_slow++;
    if (HG_(lookupFM)( map_shmem,
                       NULL/*keyP*/, (Word*)&sm, (Word)gaKey )) {
-      /* Found; address of SecMap is in sm */
-      tl_assert(sm);
+      tl_assert(sm != NULL);
+      smCache[2] = smCache[1];
+      smCache[1] = smCache[0];
+      smCache[0].gaKey = gaKey;
+      smCache[0].sm    = sm;
+   } else {
+      tl_assert(sm == NULL);
+   }
+   return sm;
+}
+
+static SecMap* shmem__find_or_alloc_SecMap ( Addr ga )
+{
+   SecMap* sm = shmem__find_SecMap ( ga );
+   if (LIKELY(sm)) {
+      return sm;
    } else {
       /* create a new one */
+      Addr gaKey = shmem__round_to_SecMap_base(ga);
       sm = shmem__alloc_SecMap();
       tl_assert(sm);
       HG_(addToFM)( map_shmem, (Word)gaKey, (Word)sm );
+      return sm;
    }
-   return sm;
 }
 
 
@@ -2689,10 +2725,8 @@ static SecMap* shmem__find_or_alloc_SecMap ( Addr ga )
 
 static Bool shmem__get_mbHasLocks ( Addr a )
 {
-   SecMap* sm;
-   Addr aKey = shmem__round_to_SecMap_base(a);
-   if (HG_(lookupFM)( map_shmem,
-                      NULL/*keyP*/, (Word*)&sm, (Word)aKey )) {
+   SecMap* sm = shmem__find_SecMap ( a );
+   if (sm) {
       /* Found */
       return sm->mbHasLocks;
    } else {
@@ -2703,20 +2737,17 @@ static Bool shmem__get_mbHasLocks ( Addr a )
 static void shmem__set_mbHasLocks ( Addr a, Bool b )
 {
    SecMap* sm;
-   Addr aKey = shmem__round_to_SecMap_base(a);
-   tl_assert(b == False || b == True);
-   // avoid creating a SecMap for memory that we ignore.
-   if (b == False && clo_ignore_n != 1 && address_may_be_ignored(a)) return;
+   Addr    aKey;
 
-   if (HG_(lookupFM)( map_shmem,
-                      NULL/*keyP*/, (Word*)&sm, (Word)aKey )) {
-      /* Found; address of SecMap is in sm */
-   } else {
-      /* create a new one */
-      sm = shmem__alloc_SecMap();
-      tl_assert(sm);
-      HG_(addToFM)( map_shmem, (Word)aKey, (Word)sm );
-   }
+   // avoid creating a SecMap for memory that we ignore.
+   if (UNLIKELY(b == False && clo_ignore_n != 1 && address_may_be_ignored(a)))
+      return;
+
+   tl_assert(b == False || b == True);
+   aKey = shmem__round_to_SecMap_base(a);
+
+   sm = shmem__find_or_alloc_SecMap(a);
+   tl_assert(sm);
    sm->mbHasLocks = b;
 }
 
@@ -5526,6 +5557,7 @@ static void shadow_mem_make_NoAccess ( Thread* thr, Addr aIN, SizeT len )
 
    /* --- Step 2 --- */
 
+   // Get rid of this (perhaps)
    if (UNLIKELY(clo_trace_level > 0)) {
       if (len > 0 && firstA <= clo_trace_addr && clo_trace_addr <= lastA) {
          SVal sv_old = shadow_mem_get8( clo_trace_addr );
@@ -9542,6 +9574,8 @@ static void hg_fini ( Int exitcode )
                   stats__secmap_linesF_bytes);
       VG_(printf)(" secmaps: %,10lu iterator steppings\n",
                   stats__secmap_iterator_steppings);
+      VG_(printf)(" secmaps: %,10lu searches (%,12lu slow)\n",
+                  stats__secmaps_search, stats__secmaps_search_slow);
 
       VG_(printf)("\n");
       VG_(printf)("   cache: %,lu totrefs (%,lu misses)\n",
