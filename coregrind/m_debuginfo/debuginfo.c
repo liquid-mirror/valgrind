@@ -1702,7 +1702,7 @@ static void format_message ( /*OUT*/Char* dname1,
       */
       VG_(snprintf)(
          dname1, n_dname,
-         "Location 0x%lx is %lu byte%s inside local var \"%s\",",
+         "Location 0x%lX is %lu byte%s inside local var \"%s\",",
          data_addr, var_offset, vo_plural, var->name );
       VG_(snprintf)(
          dname2, n_dname,
@@ -1716,7 +1716,7 @@ static void format_message ( /*OUT*/Char* dname1,
       */
       VG_(snprintf)(
          dname1, n_dname,
-         "Location 0x%lx is %lu byte%s inside local var \"%s\"",
+         "Location 0x%lX is %lu byte%s inside local var \"%s\"",
          data_addr, var_offset, vo_plural, var->name );
       VG_(snprintf)(
          dname2, n_dname,
@@ -1731,7 +1731,7 @@ static void format_message ( /*OUT*/Char* dname1,
       */
       VG_(snprintf)(
          dname1, n_dname,
-         "Location 0x%lx is %lu byte%s inside %s%s",
+         "Location 0x%lX is %lu byte%s inside %s%s",
          data_addr, residual_offset, ro_plural, var->name,
          VG_(indexXA)(described,0) );
       VG_(snprintf)(
@@ -1744,7 +1744,7 @@ static void format_message ( /*OUT*/Char* dname1,
         declared at dsyms7.c:17, in frame #1 of thread 1 */
       VG_(snprintf)(
          dname1, n_dname,
-         "Location 0x%lx is %lu byte%s inside %s%s,",
+         "Location 0x%lX is %lu byte%s inside %s%s,",
          data_addr, residual_offset, ro_plural, var->name,
          VG_(indexXA)(described,0) );
       VG_(snprintf)(
@@ -1760,7 +1760,7 @@ static void format_message ( /*OUT*/Char* dname1,
       */
       VG_(snprintf)(
          dname1, n_dname,
-         "Location 0x%lx is %lu byte%s inside global var \"%s\"",
+         "Location 0x%lX is %lu byte%s inside global var \"%s\"",
          data_addr, var_offset, vo_plural, var->name );
    } 
    else
@@ -1771,7 +1771,7 @@ static void format_message ( /*OUT*/Char* dname1,
       */
       VG_(snprintf)(
          dname1, n_dname,
-         "Location 0x%lx is %lu byte%s inside global var \"%s\"",
+         "Location 0x%lX is %lu byte%s inside global var \"%s\"",
          data_addr, var_offset, vo_plural, var->name );
       VG_(snprintf)(
          dname2, n_dname,
@@ -1786,7 +1786,7 @@ static void format_message ( /*OUT*/Char* dname1,
       */
       VG_(snprintf)(
          dname1, n_dname,
-         "Location 0x%lx is %lu byte%s inside %s%s,",
+         "Location 0x%lX is %lu byte%s inside %s%s,",
          data_addr, residual_offset, ro_plural, var->name,
          VG_(indexXA)(described,0) );
       VG_(snprintf)(
@@ -1799,7 +1799,7 @@ static void format_message ( /*OUT*/Char* dname1,
         a global variable declared at dsyms7.c:17 */
       VG_(snprintf)(
          dname1, n_dname,
-         "Location 0x%lx is %lu byte%s inside %s%s,",
+         "Location 0x%lX is %lu byte%s inside %s%s,",
          data_addr, residual_offset, ro_plural, var->name,
          VG_(indexXA)(described,0) );
       VG_(snprintf)(
@@ -2086,7 +2086,7 @@ Bool VG_(get_data_description)( /*OUT*/Char* dname1,
          dname1[0] = 0;
          VG_(snprintf)(
             dname1, n_dname,
-            "Address 0x%llx is %llu bytes "
+            "Address 0x%llX is %llu bytes "
             "inside data symbol \"%t\"",
             (ULong)data_addr, (ULong)datasym_offset, &dname2[0]
          );
