@@ -1,7 +1,7 @@
 
 /*--------------------------------------------------------------------*/
 /*--- pthread intercepts for thread checking.                      ---*/
-/*---                                              tc_intercepts.c ---*/
+/*---                                              hg_intercepts.c ---*/
 /*--------------------------------------------------------------------*/
 
 /*
@@ -1380,6 +1380,8 @@ QT4_FUNC(void, ZuZZN14QReadWriteLock6unlockEv,
 /* END tiresome boilerplate */
 
 
+// --- MEMCPY -----------------------------------------------------
+//
 #define MEMCPY(soname, fnname) \
    void* VG_REPLACE_FUNCTION_ZU(soname,fnname) \
             ( void *dst, const void *src, SizeT len ); \
@@ -1436,6 +1438,8 @@ MEMCPY(m_ld64_so_1,   memcpy) /* ld64.so.1 */
 MEMCPY(NONE, _intel_fast_memcpy)
 
 
+// --- STRCHR and INDEX -------------------------------------------
+//
 #define STRCHR(soname, fnname) \
    char* VG_REPLACE_FUNCTION_ZU(soname,fnname) ( const char* s, int c ); \
    char* VG_REPLACE_FUNCTION_ZU(soname,fnname) ( const char* s, int c ) \
@@ -1458,6 +1462,35 @@ STRCHR(m_ld_linux_so_2,        index)
 STRCHR(m_ld_linux_x86_64_so_2, index)
 
 
+// --- STRCMP -----------------------------------------------------
+//
+#define STRCMP(soname, fnname) \
+   int VG_REPLACE_FUNCTION_ZU(soname,fnname) \
+          ( const char* s1, const char* s2 ); \
+   int VG_REPLACE_FUNCTION_ZU(soname,fnname) \
+          ( const char* s1, const char* s2 ) \
+   { \
+      register unsigned char c1; \
+      register unsigned char c2; \
+      while (True) { \
+         c1 = *(unsigned char *)s1; \
+         c2 = *(unsigned char *)s2; \
+         if (c1 != c2) break; \
+         if (c1 == 0) break; \
+         s1++; s2++; \
+      } \
+      if ((unsigned char)c1 < (unsigned char)c2) return -1; \
+      if ((unsigned char)c1 > (unsigned char)c2) return 1; \
+      return 0; \
+   }
+
+STRCMP(m_libc_soname,          strcmp)
+STRCMP(m_ld_linux_x86_64_so_2, strcmp)
+STRCMP(m_ld64_so_1,            strcmp)
+
+
+// --- STRLEN -----------------------------------------------------
+//
 // Note that this replacement often doesn't get used because gcc inlines
 // calls to strlen() with its own built-in version.  This can be very
 // confusing if you aren't expecting it.  Other small functions in this file
@@ -1476,7 +1509,6 @@ STRLEN(m_ld_linux_so_2,        strlen)
 STRLEN(m_ld_linux_x86_64_so_2, strlen)
 
 
-
 /*--------------------------------------------------------------------*/
-/*--- end                                          tc_intercepts.c ---*/
+/*--- end                                          hg_intercepts.c ---*/
 /*--------------------------------------------------------------------*/
