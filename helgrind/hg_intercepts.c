@@ -1509,6 +1509,23 @@ STRLEN(m_ld_linux_so_2,        strlen)
 STRLEN(m_ld_linux_x86_64_so_2, strlen)
 
 
+// --- STRCPY -----------------------------------------------------
+//
+#define STRCPY(soname, fnname) \
+   char* VG_REPLACE_FUNCTION_ZU(soname, fnname) ( char* dst, const char* src ); \
+   char* VG_REPLACE_FUNCTION_ZU(soname, fnname) ( char* dst, const char* src ) \
+   { \
+      Char* dst_orig = dst; \
+      \
+      while (*src) *dst++ = *src++; \
+      *dst = 0; \
+      \
+      return dst_orig; \
+   }
+
+STRCPY(m_libc_soname, strcpy)
+
+
 /*--------------------------------------------------------------------*/
 /*--- end                                          hg_intercepts.c ---*/
 /*--------------------------------------------------------------------*/
