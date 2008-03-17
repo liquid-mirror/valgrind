@@ -94,7 +94,97 @@
 #include "hg_wordset.h"
 
 /*----------------------------------------------------------------*/
-/*---                                                          ---*/
+/*--- Documentation on CacheLine/CacheLineZ/CacheLineF stuff   ---*/
+/*----------------------------------------------------------------*/
+
+/* This comment describes how the shadow value cache and compressed
+   shadow value representation works.  Note that all line sizes etc
+   are defined by constants as shown; the actual numbers shown are
+   merely indicate the current settings.
+
+   Outside the cache, SVals are stored in a compressed representation
+   ------------------------------------------------------------------
+
+   Top level of the representation is "map_shmem", which is a WordFM
+   from Addr to SecMap*.  Each SecMap* holds SVals for N_SECMAP_ARANGE
+   bytes of address range (naturally aligned, of course).  The Addr in
+   the WordFM is the lowest guest address in the SecMap.
+
+   SecMaps are never deleted; once created they last forever.
+
+   To find a secmap call shmem_find_SecMap.  This basically does
+   lookupFM in map_shmem; except it uses a tiny 3 element cache which
+   cuts out about 95% of the lookupFMs.
+
+   Currently each SecMap covers N_SECMAP_ARANGE (2^13, 8192) bytes of
+   address space.
+
+   A SecMap contains an array of CacheLineZ.  (Z = compressed, F =
+   full).  Each CacheLineZ covers N_LINE_ARANGE (curr. 64) bytes of
+   address space, so currently each SecMap contains 128 CacheLineZs.
+
+   A CacheLineZ holds 64 SVals in the common case where there are only
+   4 or fewer different values.  In this case, the SVals are stored in
+   .dict[0 .. 3], and .ix2s[] is an array of 64 2-bit indexes into
+   dict[], once for each of the 64 SVals.  This gives a compression
+   ratio of (64 * sizeof(SVal)) : (4 * sizeof(SVal) + 64 * 0.25),
+   which is 512:48, or 10.67:1.
+
+   In 0%-20% of the lines, each 64-group of SVals has more than 4
+   different values.  In that case the group is stored uncompressed in
+   a CacheLineF (full representation).  CacheLineF is just an array of
+   64 SVals + an "in use" Boolean.
+
+   Each SecMap has an attached array of CacheLineFs (.linesF,
+   .linesF_size).  When data will not fit in a CacheLineZ, the
+   SecMap's CacheLineF array is searched to find a free entry (.inUse
+   == False).  The CacheLineZ's dict[0] entry is set to zero (an
+   impossible SVal) to indicate that the data is really in a
+   CacheLineF.  The dict[1] gives the index in .linesF of the
+   CacheLineF.  (This is why it is important that no valid SVal has
+   value zero).
+
+   Inside the cache
+   ----------------
+
+   The SVal cache is an array of N_WAY_NENT (2^16) entries organised
+   as a direct mapped cache.  Each entry covers 64 bytes of address
+   space, so that each CacheLine exactly covers one CacheLineZ/F in
+   the outside-of-cache representation.
+
+   Lines are moved into the cache by cacheline_fetch and out by
+   cacheline_wback.  These decompress/compress respectively.  Inside
+   the cache, the SVals for each 8 bytes of address space are referred
+   to as a "tree".  For each 8 bytes of address space, there are 8
+   SVals in CacheLine.svals[], and one 16-bit descriptor for the 8
+   SVals.  The descriptor indicates which of the 8 SVals are valid
+   right now.  For example, if all of the 8 SVals are the same, then
+   the descriptor is TREE_DESCR_64, which indicates that only the
+   first SVal in the group of 8 is valid.  This means it is possible
+   to do a single msm_handle_{read,write} call and get a new value for
+   the implied 8 SVals.
+
+   If it is necessary to split a 64 bit group (say, into 2 32-bit
+   pieces) because the two pieces require different SVals, then the
+   tree's [0] entry is copied to [0] and [4] and the tree's descriptor
+   is changed to (TREE_DESCR_32_0 | TREE_DESCR_32_1).  This is called
+   a "pulldown" and it means that subsequent msm_handle_{read,write}
+   calls have to be done for each 32-bit chunk individually.  Values
+   can get pulled down to 16- and 8-bit granularity if needed.
+
+   The point of this complexity is to minimise the number of calls to
+   msm_handle_{read,write} by doing them at the highest level of
+   granularity (up to 8-byte) that is possible.  So it supports doing
+   byte level shadow values if necessary whilst being efficient in the
+   common case where 32/64-bit accesses happen and all 4/8 SVals in
+   the range are the same.
+
+   At the same time, by using a SVal cache, these large (64-bit per
+   byte) SVals can be stored in a relatively space efficient way.
+*/
+
+/*----------------------------------------------------------------*/
+/*--- Preamble                                                 ---*/
 /*----------------------------------------------------------------*/
 
 /* Note this needs to be compiled with -fno-strict-aliasing, since it
