@@ -36,5 +36,27 @@ LD_LIBRARY_PATH=`pwd`/lib/firefox-2.0.0.12:\
 # ~/.mozilla (or something) and that makes it take much longer than
 # subsequent runs.
 
-# XXX I still need to mention how to annotate firefox's recycling
-# allocator so as to avoid a lot of errors
+# Patch the recycling allocator thusly (is this still necessary) ?
+
+
+$ diff -U3 ./xpcom/ds/nsRecyclingAllocator.cpp-ORIG ./xpcom/ds/nsRecyclingAllocator.cpp
+--- ./xpcom/ds/nsRecyclingAllocator.cpp-ORIG    2008-03-14 19:09:17.000000000 +0100
++++ ./xpcom/ds/nsRecyclingAllocator.cpp 2008-03-14 19:39:34.000000000 +0100
+@@ -156,7 +156,7 @@
+         mLock = nsnull;
+     }
+ }
+-
++#include "/home/sewardj/VgTRUNK/hgde2/Inst/include/valgrind/helgrind.h"
+ // Allocation and free routines
+ void*
+ nsRecyclingAllocator::Malloc(PRSize bytes, PRBool zeroit)
+@@ -169,7 +169,7 @@
+     if (freeBlock)
+     {
+         void *data = DATA(freeBlock);
+-
++if (bytes > 0) VALGRIND_HG_CLEAN_MEMORY(data,bytes);
+         if (zeroit)
+             memset(data, 0, bytes);
+         return data;
