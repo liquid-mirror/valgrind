@@ -172,18 +172,26 @@ struct _WordSetU {
       UWord     n_isSubsetOf;
    };
 
-/* Create a new WordVec of the given size. */
-
+/* Create a new WordVec of the given size.  The WordVec and the array
+   of UWord its .words field points at, are allocated in the same
+   piece of memory, so as to reduce allocator overheads.  We have to
+   be careful to ensure that the pointed-to array is suitably aligned,
+   but that should be OK since WordVec has a size of 3 machine words.
+   To be on the safe side this is asserted for. */
 static WordVec* new_WV_of_size ( WordSetU* wsu, UWord sz )
 {
+   HChar*   allocated_mem;
    WordVec* wv;
    tl_assert(sz >= 0);
-   wv = wsu->alloc( sizeof(WordVec) );
+   tl_assert(0 == (sizeof(WordVec) % sizeof(UWord)));
+   allocated_mem = wsu->alloc( sizeof(WordVec) + (SizeT)sz * sizeof(UWord));
+   wv = (WordVec*) allocated_mem;
    wv->owner = wsu;
    wv->words = NULL;
    wv->size = sz;
    if (sz > 0) {
-     wv->words = wsu->alloc( (SizeT)sz * sizeof(UWord) );
+      wv->words = (UWord*)(allocated_mem + sizeof(WordVec));
+      tl_assert(0 == (UWord)(wv->words) % sizeof(UWord));
    }
    return wv;
 }
@@ -191,9 +199,6 @@ static WordVec* new_WV_of_size ( WordSetU* wsu, UWord sz )
 static void delete_WV ( WordVec* wv )
 {
    void (*dealloc)(void*) = wv->owner->dealloc;
-   if (wv->words) {
-      dealloc(wv->words);
-   }
    dealloc(wv);
 }
 static void delete_WV_for_FM ( UWord wv ) {
@@ -497,24 +502,29 @@ Bool HG_(elemWS) ( WordSetU* wsu, WordSet ws, UWord w )
 
 WordSet HG_(doubletonWS) ( WordSetU* wsu, UWord w1, UWord w2 )
 {
-   WordVec* wv;
+   UWord    wv_arr[2];
+   WordVec  wv_;
+   WordVec  *wv = &wv_;
+
+   wv_.owner = wsu;
+   wv_.words = wv_arr;
+   wv_.size  = 2;
+
    wsu->n_doubleton++;
    if (w1 == w2) {
-      wv = new_WV_of_size(wsu, 1);
+      wv->size = 1;
       wv->words[0] = w1;
    }
    else if (w1 < w2) {
-      wv = new_WV_of_size(wsu, 2);
       wv->words[0] = w1;
       wv->words[1] = w2;
    }
    else {
       tl_assert(w1 > w2);
-      wv = new_WV_of_size(wsu, 2);
       wv->words[0] = w2;
       wv->words[1] = w1;
    }
-   return add_or_dealloc_WordVec( wsu, wv );
+   return find_or_alloc_and_add_WordVec( wsu, wv );
 }
 
 WordSet HG_(singletonWS) ( WordSetU* wsu, UWord w )
@@ -569,7 +579,7 @@ void HG_(ppWSUstats) ( WordSetU* wsu, HChar* name )
    VG_(printf)("      isSubsetOf   %10u\n",   wsu->n_isSubsetOf);
 
    // compute and print size distributions 
-   for (i = 0; i < (int)HG_(cardinalityWSU)(wsu); i++) {
+   for (i = 0; i < (Int)HG_(cardinalityWSU)(wsu); i++) {
       WordVec *wv = do_ix2vec( wsu, i );
       Int size = wv->size;
       if (size >= d_size) size = d_size-1;
