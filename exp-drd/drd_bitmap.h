@@ -172,7 +172,7 @@ struct bm_cache_elem
   struct bitmap2* bm2;
 };
 
-#define N_CACHE_ELEM 2
+#define N_CACHE_ELEM 4
 
 /* Complete bitmap. */
 struct bitmap
@@ -216,7 +216,30 @@ void bm_update_cache(struct bitmap* const bm,
 {
   tl_assert(bm);
 
-  bm->cache[1] = bm->cache[0];
+#if N_CACHE_ELEM > 8
+#error Please update the code below.
+#endif
+#if N_CACHE_ELEM >= 8
+    bm->cache[7] = bm->cache[6];
+#endif
+#if N_CACHE_ELEM >= 7
+    bm->cache[6] = bm->cache[5];
+#endif
+#if N_CACHE_ELEM >= 6
+    bm->cache[5] = bm->cache[4];
+#endif
+#if N_CACHE_ELEM >= 5
+    bm->cache[4] = bm->cache[3];
+#endif
+#if N_CACHE_ELEM >= 4
+    bm->cache[3] = bm->cache[2];
+#endif
+#if N_CACHE_ELEM >= 3
+    bm->cache[2] = bm->cache[1];
+#endif
+#if N_CACHE_ELEM >= 2
+    bm->cache[1] = bm->cache[0];
+#endif
   bm->cache[0].a1  = a1;
   bm->cache[0].bm2 = bm2;
 }
