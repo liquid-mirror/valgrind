@@ -23,8 +23,8 @@
 */
 
 
-#ifndef __DRD_BITMAP3_H
-#define __DRD_BITMAP3_H
+#ifndef __DRD_BITMAP_H
+#define __DRD_BITMAP_H
 
 
 #include "pub_tool_oset.h"
@@ -75,7 +75,7 @@
 #define UWORD_HIGHEST_ADDRESS(a) ((a) | (BITS_PER_UWORD - 1))
 
 
-/* Local constants. */
+/* Local variables. */
 
 static ULong s_bitmap2_creation_count;
 
@@ -151,58 +151,154 @@ static __inline__ UWord bm0_is_any_set(const UWord* bm0,
 /*********************************************************************/
 
 
+/* Second level bitmap. */
 struct bitmap2
 {
-  Addr           addr; ///< address >> ADDR0_BITS
+  Addr           addr;   ///< address >> ADDR0_BITS
+  int            refcnt;
   struct bitmap1 bm1;
+};
+
+/* One node of bitmap::oset. */
+struct bitmap2ref
+{
+  Addr            addr; ///< address >> ADDR0_BITS
+  struct bitmap2* bm2;
 };
 
 /* Complete bitmap. */
 struct bitmap
 {
-  Addr            last_lookup_a1;
-  struct bitmap2* last_lookup_result;
-  OSet*           oset;
+  Addr               last_lookup_a1;
+  struct bitmap2ref* last_lookup_bm2ref;
+  struct bitmap2*    last_lookup_bm2;
+  OSet*              oset;
 };
 
-/** Look up the address a1 in bitmap bm.
+
+static struct bitmap2* bm2_new(const UWord a1);
+static struct bitmap2* bm2_make_exclusive(struct bitmap* const bm,
+                                          struct bitmap2ref* const bm2ref);
+
+
+#if 0
+/** Bitmap invariant check.
+ *
+ *  @return 1 if the invariant is satisfied, 0 if not.
+ */
+static __inline__
+int bm_check(const struct bitmap* const bm)
+{
+  tl_assert(bm);
+
+  return (bm->last_lookup_a1 == 0
+          || (VG_(OSetGen_Lookup)(bm->oset, &bm->last_lookup_a1)
+              == bm->last_lookup_bm2ref
+              && bm->last_lookup_bm2ref->bm2
+              && bm->last_lookup_a1 == bm->last_lookup_bm2ref->bm2->addr
+              && bm->last_lookup_bm2ref->bm2->refcnt >= 1)
+          );
+}
+#endif
+
+/** Look up the address a1 in bitmap bm and return a pointer to a potentially
+ *  shared second level bitmap. The bitmap where the returned pointer points
+ *  at may not be modified by the caller.
+ *
  *  @param a1 client address shifted right by ADDR0_BITS.
  *  @param bm bitmap pointer.
  */
 static __inline__
-struct bitmap2* bm2_lookup(const struct bitmap* const bm, const UWord a1)
+const struct bitmap2* bm2_lookup(const struct bitmap* const bm, const UWord a1)
 {
-  struct bitmap2* result;
+  struct bitmap2ref* bm2ref;
+
+  tl_assert(bm);
   if (a1 == bm->last_lookup_a1)
   {
-    return bm->last_lookup_result;
+    return bm->last_lookup_bm2;
   }
-  result = VG_(OSetGen_Lookup)(bm->oset, &a1);
-  if (result)
+  bm2ref = VG_(OSetGen_Lookup)(bm->oset, &a1);
+  if (bm2ref)
   {
+    struct bitmap2* const bm2 = bm2ref->bm2;
     ((struct bitmap*)bm)->last_lookup_a1     = a1;
-    ((struct bitmap*)bm)->last_lookup_result = result;
+    ((struct bitmap*)bm)->last_lookup_bm2ref = bm2ref;
+    ((struct bitmap*)bm)->last_lookup_bm2    = bm2;
+    return bm2;
   }
-  return result;
+  return 0;
 }
 
+/** Look up the address a1 in bitmap bm and return a pointer to a second
+ *  level bitmap that is not shared and hence may be modified.
+ *
+ *  @param a1 client address shifted right by ADDR0_BITS.
+ *  @param bm bitmap pointer.
+ */
+static __inline__
+struct bitmap2*
+bm2_lookup_exclusive(const struct bitmap* const bm, const UWord a1)
+{
+  struct bitmap2ref* bm2ref;
+  struct bitmap2* bm2;
+
+  if (bm->last_lookup_a1 == a1)
+  {
+    if (bm->last_lookup_bm2->refcnt == 1)
+    {
+      return bm->last_lookup_bm2;
+    }
+    else
+    {
+      bm2 = bm2_make_exclusive((struct bitmap*)bm, bm->last_lookup_bm2ref);
+      return bm2;
+    }
+  }
+  else
+  {
+    bm2ref = VG_(OSetGen_Lookup)(bm->oset, &a1);
+    if (bm2ref)
+    {
+      bm2 = bm2ref->bm2;
+      if (bm2->refcnt > 1)
+      {
+        bm2 = bm2_make_exclusive((struct bitmap*)bm, bm2ref);
+      }
+      return bm2;
+    }
+  }
+  return 0;
+}
+
+/** Look up the address a1 in bitmap bm. The returned second level bitmap has
+ *  reference count one and hence may be modified.
+ *
+ *  @param a1 client address shifted right by ADDR0_BITS.
+ *  @param bm bitmap pointer.
+ */
 static __inline__
 struct bitmap2* bm2_insert(const struct bitmap* const bm, const UWord a1)
 {
-  struct bitmap2* const bm2 = VG_(OSetGen_AllocNode)(bm->oset, sizeof(*bm2));
-  bm2->addr = a1;
+  struct bitmap2ref* bm2ref;
+  struct bitmap2* bm2;
+
+  bm2ref       = VG_(OSetGen_AllocNode)(bm->oset, sizeof(*bm2ref));
+  bm2ref->addr = a1;
+  bm2          = bm2_new(a1);
+  bm2ref->bm2  = bm2;
   VG_(memset)(&bm2->bm1, 0, sizeof(bm2->bm1));
-  VG_(OSetGen_Insert)(bm->oset, bm2);
+  VG_(OSetGen_Insert)(bm->oset, bm2ref);
   
   ((struct bitmap*)bm)->last_lookup_a1     = a1;
-  ((struct bitmap*)bm)->last_lookup_result = bm2;
-  
-  s_bitmap2_creation_count++;
-  
+  ((struct bitmap*)bm)->last_lookup_bm2ref = bm2ref;
+  ((struct bitmap*)bm)->last_lookup_bm2    = bm2;
+
   return bm2;
 }
 
 /** Look up the address a1 in bitmap bm, and insert it if not found.
+ *  The returned second level bitmap may not be modified.
  *
  *  @param a1 client address shifted right by ADDR0_BITS.
  *  @param bm bitmap pointer.
@@ -211,22 +307,54 @@ static __inline__
 struct bitmap2* bm2_lookup_or_insert(const struct bitmap* const bm,
                                      const UWord a1)
 {
+  struct bitmap2ref* bm2ref;
   struct bitmap2* bm2;
 
+  tl_assert(bm);
+  tl_assert(a1);
   if (a1 == bm->last_lookup_a1)
   {
-    return bm->last_lookup_result;
+    return bm->last_lookup_bm2;
   }
 
-  bm2 = VG_(OSetGen_Lookup)(bm->oset, &a1);
-  if (bm2 == 0)
+  bm2ref = VG_(OSetGen_Lookup)(bm->oset, &a1);
+  if (bm2ref == 0)
   {
     bm2 = bm2_insert(bm, a1);
   }
-  ((struct bitmap*)bm)->last_lookup_a1     = a1;
-  ((struct bitmap*)bm)->last_lookup_result = bm2;
+  else
+  {
+    bm2 = bm2ref->bm2;
+    ((struct bitmap*)bm)->last_lookup_a1     = a1;
+    ((struct bitmap*)bm)->last_lookup_bm2ref = bm2ref;
+    ((struct bitmap*)bm)->last_lookup_bm2    = bm2;
+  }
+  return bm2;
+}
+
+/** Look up the address a1 in bitmap bm, and insert it if not found.
+ *  The returned second level bitmap may be modified.
+ *
+ *  @param a1 client address shifted right by ADDR0_BITS.
+ *  @param bm bitmap pointer.
+ */
+static __inline__
+struct bitmap2* bm2_lookup_or_insert_exclusive(struct bitmap* const bm,
+                                               const UWord a1)
+{
+  struct bitmap2* bm2;
+
+  tl_assert(bm);
+  bm2 = (struct bitmap2*)bm2_lookup_or_insert(bm, a1);
+  tl_assert(bm2);
+  if (bm2->refcnt > 1)
+  {
+    struct bitmap2ref* bm2ref;
+    bm2ref = VG_(OSetGen_Lookup)(bm->oset, &a1);
+    bm2 = bm2_make_exclusive(bm, bm2ref);
+  }
   return bm2;
 }
 
 
-#endif /* __DRD_BITMAP3_H */
+#endif /* __DRD_BITMAP_H */

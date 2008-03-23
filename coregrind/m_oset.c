@@ -76,9 +76,10 @@
 // concurrent uses would screw things up.
 
 #include "pub_core_basics.h"
-#include "pub_core_libcbase.h"
 #include "pub_core_libcassert.h"
+#include "pub_core_libcbase.h"
 #include "pub_core_libcprint.h"
+#include "pub_core_mallocfree.h"
 #include "pub_core_oset.h"
 
 /*--------------------------------------------------------------------*/
@@ -294,7 +295,7 @@ AvlTree* VG_(OSetGen_Create)(OffT _keyOff, OSetCmp_t _cmp,
    vg_assert(_free);
    if (!_cmp) vg_assert(0 == _keyOff);    // If no cmp, offset must be zero
 
-   t           = _alloc(sizeof(AvlTree));
+   t           = VG_(malloc)(sizeof(AvlTree));
    t->keyOff   = _keyOff;
    t->cmp      = _cmp;
    t->alloc    = _alloc;
@@ -344,7 +345,7 @@ void VG_(OSetGen_Destroy)(AvlTree* t)
    vg_assert(sz == t->nElems);
 
    /* Free the AvlTree itself. */
-   t->free(t);
+   VG_(free)(t);
 }
 
 void VG_(OSetWord_Destroy)(AvlTree* t)
@@ -366,6 +367,11 @@ void* VG_(OSetGen_AllocNode)(AvlTree* t, SizeT elemSize)
 void VG_(OSetGen_FreeNode)(AvlTree* t, void* e)
 {
    t->free( node_of_elem(e) );
+}
+
+void* VG_(OSetGen_NodeToElem)(void* node)
+{
+  return elem_of_node(node);
 }
 
 /*--------------------------------------------------------------------*/

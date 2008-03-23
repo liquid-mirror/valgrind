@@ -28,6 +28,9 @@
 #define vgPlain_memset                 memset
 #define vgPlain_memcpy                 memcpy
 
+static void* VG_(malloc)( SizeT nbytes ) { return malloc(nbytes); }
+static void  VG_(free)  ( void* p )      { return free(p); }
+
 #include "coregrind/m_oset.c"
 
 #define NN  1000       // Size of OSets being created
