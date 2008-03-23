@@ -58,6 +58,7 @@ static ULong s_bitmap_creation_count;
 
 struct bitmap* bm_new()
 {
+  unsigned i;
   struct bitmap* bm;
 
   // If this assert fails, fix the definition of BITS_PER_BITS_PER_UWORD
@@ -66,10 +67,12 @@ struct bitmap* bm_new()
 
   bm = VG_(malloc)(sizeof(*bm));
   tl_assert(bm);
-  bm->last_lookup_a1     = 0;
-  bm->last_lookup_bm2ref = 0;
-  bm->last_lookup_bm2    = 0;
-  bm->oset               = VG_(OSetGen_Create)(0, 0, bm2ref_new, bm2ref_del);
+  for (i = 0; i < N_CACHE_ELEM; i++)
+  {
+    bm->cache[i].a1  = 0;
+    bm->cache[i].bm2 = 0;
+  }
+  bm->oset = VG_(OSetGen_Create)(0, 0, bm2ref_new, bm2ref_del);
 
   s_bitmap_creation_count++;
 
@@ -427,6 +430,9 @@ void bm_clear(const struct bitmap* const bm,
     if (p2)
     {
       Addr c = b;
+      /* If the first address in the bitmap that must be cleared does not */
+      /* start on an UWord boundary, start clearing the first addresses   */
+      /* by calling bm1_clear().                                          */
       if (UWORD_LSB(c))
       {
         Addr c_next = UWORD_MSB(c) + BITS_PER_UWORD;
@@ -435,6 +441,7 @@ void bm_clear(const struct bitmap* const bm,
         bm1_clear(&p2->bm1, c, c_next);
         c = c_next;
       }
+      /* If some UWords have to be cleared entirely, do this now. */
       if (UWORD_LSB(c) == 0)
       {
         const Addr c_next = UWORD_MSB(b_next);
@@ -450,6 +457,9 @@ void bm_clear(const struct bitmap* const bm,
           c = c_next;
         }
       }
+      /* If the last address in the bitmap that must be cleared does not */
+      /* fall on an UWord boundary, clear the last addresses by calling  */
+      /* bm1_clear().                                                    */
       if (c != b_next)
       {
         bm1_clear(&p2->bm1, c, b_next);
@@ -833,9 +843,7 @@ struct bitmap2* bm2_make_exclusive(struct bitmap* const bm,
   VG_(memcpy)(&bm2_copy->bm1, &bm2->bm1, sizeof(bm2->bm1));
   bm2ref->bm2 = bm2_copy;
 
-  bm->last_lookup_a1     = a1;
-  bm->last_lookup_bm2ref = bm2ref;
-  bm->last_lookup_bm2    = bm2_copy;
+  bm_update_cache(bm, a1, bm2_copy);
 
   return bm2_copy;
 }

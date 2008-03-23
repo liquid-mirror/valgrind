@@ -166,13 +166,19 @@ struct bitmap2ref
   struct bitmap2* bm2;
 };
 
+struct bm_cache_elem
+{
+  Addr            a1;
+  struct bitmap2* bm2;
+};
+
+#define N_CACHE_ELEM 2
+
 /* Complete bitmap. */
 struct bitmap
 {
-  Addr               last_lookup_a1;
-  struct bitmap2ref* last_lookup_bm2ref;
-  struct bitmap2*    last_lookup_bm2;
-  OSet*              oset;
+  struct bm_cache_elem cache[N_CACHE_ELEM];
+  OSet*                oset;
 };
 
 
@@ -189,17 +195,31 @@ static struct bitmap2* bm2_make_exclusive(struct bitmap* const bm,
 static __inline__
 int bm_check(const struct bitmap* const bm)
 {
+  struct bitmap2_ref* bm2ref;
+
   tl_assert(bm);
 
-  return (bm->last_lookup_a1 == 0
-          || (VG_(OSetGen_Lookup)(bm->oset, &bm->last_lookup_a1)
-              == bm->last_lookup_bm2ref
-              && bm->last_lookup_bm2ref->bm2
-              && bm->last_lookup_a1 == bm->last_lookup_bm2ref->bm2->addr
-              && bm->last_lookup_bm2ref->bm2->refcnt >= 1)
+  return (bm->cache[0].a1 == 0
+          && bm->cache[1].a1 == 0
+          || ((bm2ref = VG_(OSetGen_Lookup)(bm->oset, &bm->last_lookup_a1))
+              && bm2ref->bm2
+              && bm->last_lookup_a1 == bm2ref->bm2->addr
+              && bm2ref->bm2->refcnt >= 1)
           );
 }
 #endif
+
+static __inline__
+void bm_update_cache(struct bitmap* const bm,
+                     const UWord a1,
+                     struct bitmap2* const bm2)
+{
+  tl_assert(bm);
+
+  bm->cache[1] = bm->cache[0];
+  bm->cache[0].a1  = a1;
+  bm->cache[0].bm2 = bm2;
+}
 
 /** Look up the address a1 in bitmap bm and return a pointer to a potentially
  *  shared second level bitmap. The bitmap where the returned pointer points
@@ -214,17 +234,19 @@ const struct bitmap2* bm2_lookup(const struct bitmap* const bm, const UWord a1)
   struct bitmap2ref* bm2ref;
 
   tl_assert(bm);
-  if (a1 == bm->last_lookup_a1)
+  if (a1 == bm->cache[0].a1)
   {
-    return bm->last_lookup_bm2;
+    return bm->cache[0].bm2;
+  }
+  if (a1 == bm->cache[1].a1)
+  {
+    return bm->cache[1].bm2;
   }
   bm2ref = VG_(OSetGen_Lookup)(bm->oset, &a1);
   if (bm2ref)
   {
     struct bitmap2* const bm2 = bm2ref->bm2;
-    ((struct bitmap*)bm)->last_lookup_a1     = a1;
-    ((struct bitmap*)bm)->last_lookup_bm2ref = bm2ref;
-    ((struct bitmap*)bm)->last_lookup_bm2    = bm2;
+    bm_update_cache(*(struct bitmap**)&bm, a1, bm2);
     return bm2;
   }
   return 0;
@@ -243,16 +265,21 @@ bm2_lookup_exclusive(const struct bitmap* const bm, const UWord a1)
   struct bitmap2ref* bm2ref;
   struct bitmap2* bm2;
 
-  if (bm->last_lookup_a1 == a1)
+  bm2ref = 0;
+  if (bm->cache[0].a1 == a1)
   {
-    if (bm->last_lookup_bm2->refcnt == 1)
+    bm2 = bm->cache[0].bm2;
+    if (bm2->refcnt > 1)
     {
-      return bm->last_lookup_bm2;
+      bm2ref = VG_(OSetGen_Lookup)(bm->oset, &a1);
     }
-    else
+  }
+  else if (bm->cache[1].a1 == a1)
+  {
+    bm2 = bm->cache[1].bm2;
+    if (bm2->refcnt > 1)
     {
-      bm2 = bm2_make_exclusive((struct bitmap*)bm, bm->last_lookup_bm2ref);
-      return bm2;
+      bm2ref = VG_(OSetGen_Lookup)(bm->oset, &a1);
     }
   }
   else
@@ -261,14 +288,22 @@ bm2_lookup_exclusive(const struct bitmap* const bm, const UWord a1)
     if (bm2ref)
     {
       bm2 = bm2ref->bm2;
-      if (bm2->refcnt > 1)
-      {
-        bm2 = bm2_make_exclusive((struct bitmap*)bm, bm2ref);
-      }
-      return bm2;
+    }
+    else
+    {
+      return 0;
     }
   }
-  return 0;
+
+  tl_assert(bm2);
+
+  if (bm2->refcnt > 1)
+  {
+    tl_assert(bm2ref);
+    bm2 = bm2_make_exclusive(*(struct bitmap**)&bm, bm2ref);
+  }
+
+  return bm2;
 }
 
 /** Look up the address a1 in bitmap bm. The returned second level bitmap has
@@ -290,9 +325,7 @@ struct bitmap2* bm2_insert(const struct bitmap* const bm, const UWord a1)
   VG_(memset)(&bm2->bm1, 0, sizeof(bm2->bm1));
   VG_(OSetGen_Insert)(bm->oset, bm2ref);
   
-  ((struct bitmap*)bm)->last_lookup_a1     = a1;
-  ((struct bitmap*)bm)->last_lookup_bm2ref = bm2ref;
-  ((struct bitmap*)bm)->last_lookup_bm2    = bm2;
+  bm_update_cache(*(struct bitmap**)&bm, a1, bm2);
 
   return bm2;
 }
@@ -307,16 +340,14 @@ struct bitmap2* bm2_insert_addref(const struct bitmap* const bm,
   struct bitmap2ref* bm2ref;
 
   tl_assert(bm);
-  tl_assert(VG_(OSetGen_Lookup)(bm->oset, &bm2->addr) == 0);
+  //tl_assert(VG_(OSetGen_Lookup)(bm->oset, &bm2->addr) == 0);
   bm2ref       = VG_(OSetGen_AllocNode)(bm->oset, sizeof(*bm2ref));
   bm2ref->addr = bm2->addr;
   bm2ref->bm2  = bm2;
   bm2->refcnt++;
   VG_(OSetGen_Insert)(bm->oset, bm2ref);
   
-  ((struct bitmap*)bm)->last_lookup_a1     = bm2->addr;
-  ((struct bitmap*)bm)->last_lookup_bm2ref = bm2ref;
-  ((struct bitmap*)bm)->last_lookup_bm2    = bm2;
+  bm_update_cache(*(struct bitmap**)&bm, bm2->addr, bm2);
 
   return bm2;
 }
@@ -336,22 +367,26 @@ struct bitmap2* bm2_lookup_or_insert(const struct bitmap* const bm,
 
   tl_assert(bm);
   tl_assert(a1);
-  if (a1 == bm->last_lookup_a1)
+  if (a1 == bm->cache[0].a1)
   {
-    return bm->last_lookup_bm2;
+    bm2 = bm->cache[0].bm2;
   }
-
-  bm2ref = VG_(OSetGen_Lookup)(bm->oset, &a1);
-  if (bm2ref == 0)
+  else if (a1 == bm->cache[1].a1)
   {
-    bm2 = bm2_insert(bm, a1);
+    bm2 = bm->cache[1].bm2;
   }
   else
   {
-    bm2 = bm2ref->bm2;
-    ((struct bitmap*)bm)->last_lookup_a1     = a1;
-    ((struct bitmap*)bm)->last_lookup_bm2ref = bm2ref;
-    ((struct bitmap*)bm)->last_lookup_bm2    = bm2;
+    bm2ref = VG_(OSetGen_Lookup)(bm->oset, &a1);
+    if (bm2ref)
+    {
+      bm2 = bm2ref->bm2;
+    }
+    else
+    {
+      bm2 = bm2_insert(bm, a1);
+    }
+    bm_update_cache(*(struct bitmap**)&bm, a1, bm2);
   }
   return bm2;
 }
