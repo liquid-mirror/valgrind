@@ -58,9 +58,6 @@
 
    - Fix command line ordering assumptions for --ignore-i= vs --ignore-n=
 
-   - Specialise the heldBy field in Locks for the case where the lock
-     is only held by one thread.
-
    STUFF I DON'T UNDERSTAND:
 
    Make sense of ignore-n/ignore-i.  What exactly does this do?
@@ -462,20 +459,22 @@ typedef
       ExeContext*   appeared_at;
       /* If the lock is held, place where the lock most recently made
          an unlocked->locked transition.  Must be sync'd with .heldBy:
-         either both NULL or both non-NULL. */
+         if acquired_at is NULL then .heldBy must be empty, and vice
+         versa. */
       ExeContext*   acquired_at;
       /* USEFUL-STATIC */
       Addr          guestaddr; /* Guest address of lock */
       LockKind      kind;      /* what kind of lock this is */
       /* USEFUL-DYNAMIC */
-      Bool          heldW; 
-      WordBag*      heldBy; /* bag of threads that hold this lock */
-      /* .heldBy is NULL: lock is unheld, and .heldW is meaningless
-                          but arbitrarily set to False
-         .heldBy is non-NULL:
-            .heldW is True:  lock is w-held by threads in heldBy
-            .heldW is False: lock is r-held by threads in heldBy
-            Either way, heldBy may not validly be an empty Bag.
+      Bool    heldW; 
+      WordBag heldBy; /* bag of threads that hold this lock */
+      /* HG_(isEmptyBag)(.heldBy) == True
+         means:  lock is unheld, and heldW is meaningless
+                 but arbitrarily set to False
+         HG_(isEmptyBag)(.heldBy) == False
+         means:
+            lock is w-held by threads in .heldBy   if .heldW is True
+            lock is r-held by threads in .heldBy   if .heldW is False
 
          for LK_nonRec, r-holdings are not allowed, and w-holdings may
          only have sizeTotal(heldBy) == 1
@@ -483,7 +482,8 @@ typedef
          for LK_mbRec, r-holdings are not allowed, and w-holdings may
          only have sizeUnique(heldBy) == 1
 
-         for LK_rdwr, w-holdings may only have sizeTotal(heldBy) == 1 */
+         for LK_rdwr, w-holdings may only have sizeTotal(.heldBy) == 1
+      */
    }
    Lock;
 
@@ -847,7 +847,7 @@ static Lock* mk_LockN ( LockKind kind, Addr guestaddr ) {
    lock->guestaddr        = guestaddr;
    lock->kind             = kind;
    lock->heldW            = False;
-   lock->heldBy           = NULL;
+   HG_(initBag)(&lock->heldBy, hg_zalloc, hg_free);
    tl_assert(is_sane_LockN(lock));
    admin_locks            = lock;
    return lock;
@@ -894,7 +894,7 @@ static Bool is_sane_Lock_BASE ( Lock* lock )
       case LK_mbRec: case LK_nonRec: case LK_rdwr: break; 
       default: return False; 
    }
-   if (lock->heldBy == NULL) {
+   if (HG_(isEmptyBag)(&lock->heldBy)) {
       if (lock->acquired_at != NULL) return False;
       /* Unheld.  We arbitrarily require heldW to be False. */
       return !lock->heldW;
@@ -902,18 +902,13 @@ static Bool is_sane_Lock_BASE ( Lock* lock )
       if (lock->acquired_at == NULL) return False;
    }
 
-   /* If heldBy is non-NULL, we require it to contain at least one
-      thread. */
-   if (HG_(isEmptyBag)(lock->heldBy))
-      return False;
-
    /* Lock is either r- or w-held. */
-   if (!is_sane_Bag_of_Threads(lock->heldBy)) 
+   if (!is_sane_Bag_of_Threads(&lock->heldBy)) 
       return False;
    if (lock->heldW) {
       /* Held in write-mode */
       if ((lock->kind == LK_nonRec || lock->kind == LK_rdwr)
-          && !HG_(isSingletonTotalBag)(lock->heldBy))
+          && !HG_(isSingletonTotalBag)(&lock->heldBy))
          return False;
    } else {
       /* Held in read-mode */
@@ -937,14 +932,13 @@ static inline Bool is_sane_LockNorP ( Lock* lock ) {
 
 /* Release storage for a Lock.  Also release storage in .heldBy, if
    any. */
-static void del_LockN ( Lock* lk ) 
-{
-   tl_assert(is_sane_LockN(lk));
-   if (lk->heldBy)
-      HG_(deleteBag)( lk->heldBy );
-   VG_(memset)(lk, 0xAA, sizeof(*lk));
-   hg_free(lk);
-}
+//static void del_LockN ( Lock* lk ) 
+//{
+//   tl_assert(is_sane_LockN(lk));
+//   HG_(finiBag)( &lk->heldBy );
+//   VG_(memset)(lk, 0xAA, sizeof(*lk));
+//   hg_free(lk);
+//}
 
 /* Update 'lk' to reflect that 'thr' now has a write-acquisition of
    it.  This is done strictly: only combinations resulting from
@@ -961,38 +955,39 @@ static void lockN_acquire_writer ( Lock* lk, Thread* thr )
       acquired, so as to produce better lock-order error messages. */
    if (lk->acquired_at == NULL) {
       ThreadId tid;
-      tl_assert(lk->heldBy == NULL);
+      tl_assert(HG_(isEmptyBag)(&lk->heldBy));
       tid = map_threads_maybe_reverse_lookup_SLOW(thr);
       lk->acquired_at
          = VG_(record_ExeContext(tid, 0/*first_ip_delta*/));
    } else {
-      tl_assert(lk->heldBy != NULL);
+      tl_assert(!HG_(isEmptyBag)(&lk->heldBy));
    }
    /* end EXPOSITION only */
 
    switch (lk->kind) {
       case LK_nonRec:
       case_LK_nonRec:
-         tl_assert(lk->heldBy == NULL); /* can't w-lock recursively */
+         /* can't w-lock recursively */
+         tl_assert(HG_(isEmptyBag)(&lk->heldBy));
          tl_assert(!lk->heldW);
-         lk->heldW  = True;
-         lk->heldBy = HG_(newBag)( hg_zalloc, hg_free );
-         HG_(addToBag)( lk->heldBy, (Word)thr );
+         lk->heldW = True;
+         HG_(addToBag)( &lk->heldBy, (Word)thr );
          break;
       case LK_mbRec:
-         if (lk->heldBy == NULL)
+         if (HG_(isEmptyBag)(&lk->heldBy))
             goto case_LK_nonRec;
          /* 2nd and subsequent locking of a lock by its owner */
          tl_assert(lk->heldW);
          /* assert: lk is only held by one thread .. */
-         tl_assert(HG_(sizeUniqueBag(lk->heldBy)) == 1);
+         tl_assert(HG_(sizeUniqueBag(&lk->heldBy)) == 1);
          /* assert: .. and that thread is 'thr'. */
-         tl_assert(HG_(elemBag)(lk->heldBy, (Word)thr)
-                   == HG_(sizeTotalBag)(lk->heldBy));
-         HG_(addToBag)(lk->heldBy, (Word)thr);
+         tl_assert(HG_(elemBag)(&lk->heldBy, (Word)thr)
+                   == HG_(sizeTotalBag)(&lk->heldBy));
+         HG_(addToBag)(&lk->heldBy, (Word)thr);
          break;
       case LK_rdwr:
-         tl_assert(lk->heldBy == NULL && !lk->heldW); /* must be unheld */
+         /* must be unheld */
+         tl_assert(HG_(isEmptyBag)(&lk->heldBy) && !lk->heldW);
          goto case_LK_nonRec;
       default: 
          tl_assert(0);
@@ -1007,8 +1002,8 @@ static void lockN_acquire_reader ( Lock* lk, Thread* thr )
    /* can only add reader to a reader-writer lock. */
    tl_assert(lk->kind == LK_rdwr);
    /* lk must be free or already r-held. */
-   tl_assert(lk->heldBy == NULL 
-             || (lk->heldBy != NULL && !lk->heldW));
+   tl_assert(HG_(isEmptyBag)(&lk->heldBy) 
+             || (!HG_(isEmptyBag)(&lk->heldBy) && !lk->heldW));
 
    stats__lockN_acquires++;
 
@@ -1017,21 +1012,20 @@ static void lockN_acquire_reader ( Lock* lk, Thread* thr )
       acquired, so as to produce better lock-order error messages. */
    if (lk->acquired_at == NULL) {
       ThreadId tid;
-      tl_assert(lk->heldBy == NULL);
+      tl_assert(HG_(isEmptyBag)(&lk->heldBy));
       tid = map_threads_maybe_reverse_lookup_SLOW(thr);
       lk->acquired_at
          = VG_(record_ExeContext(tid, 0/*first_ip_delta*/));
    } else {
-      tl_assert(lk->heldBy != NULL);
+      tl_assert(!HG_(isEmptyBag)(&lk->heldBy));
    }
    /* end EXPOSITION only */
 
-   if (lk->heldBy) {
-      HG_(addToBag)(lk->heldBy, (Word)thr);
+   if (!HG_(isEmptyBag)(&lk->heldBy)) {
+      HG_(addToBag)(&lk->heldBy, (Word)thr);
    } else {
-      lk->heldW  = False;
-      lk->heldBy = HG_(newBag)( hg_zalloc, hg_free );
-      HG_(addToBag)( lk->heldBy, (Word)thr );
+      lk->heldW = False;
+      HG_(addToBag)( &lk->heldBy, (Word)thr );
    }
    tl_assert(!lk->heldW);
    tl_assert(is_sane_LockN(lk));
@@ -1047,17 +1041,15 @@ static void lockN_release ( Lock* lk, Thread* thr )
    tl_assert(is_sane_LockN(lk));
    tl_assert(is_sane_Thread(thr));
    /* lock must be held by someone */
-   tl_assert(lk->heldBy);
+   tl_assert(!HG_(isEmptyBag)(&lk->heldBy));
    stats__lockN_releases++;
    /* Remove it from the holder set */
-   b = HG_(delFromBag)(lk->heldBy, (Word)thr);
+   b = HG_(delFromBag)(&lk->heldBy, (Word)thr);
    /* thr must actually have been a holder of lk */
    tl_assert(b);
    /* normalise */
    tl_assert(lk->acquired_at);
-   if (HG_(isEmptyBag)(lk->heldBy)) {
-      HG_(deleteBag)(lk->heldBy);
-      lk->heldBy      = NULL;
+   if (HG_(isEmptyBag)(&lk->heldBy)) {
       lk->heldW       = False;
       lk->acquired_at = NULL;
    }
@@ -1067,13 +1059,13 @@ static void lockN_release ( Lock* lk, Thread* thr )
 static void remove_Lock_from_locksets_of_all_owning_Threads( Lock* lk )
 {
    Thread* thr;
-   if (!lk->heldBy) {
+   if (HG_(isEmptyBag)(&lk->heldBy)) {
       tl_assert(!lk->heldW);
       return;
    }
    /* for each thread that holds this lock do ... */
-   HG_(initIterBag)( lk->heldBy );
-   while (HG_(nextIterBag)( lk->heldBy, (Word*)&thr, NULL )) {
+   HG_(initIterBag)( &lk->heldBy );
+   while (HG_(nextIterBag)( &lk->heldBy, (Word*)&thr, NULL )) {
       tl_assert(is_sane_Thread(thr));
       tl_assert(HG_(elemWS)( univ_lsets,
                              thr->locksetA, (Word)lk ));
@@ -1087,7 +1079,7 @@ static void remove_Lock_from_locksets_of_all_owning_Threads( Lock* lk )
             = HG_(delFromWS)( univ_lsets, thr->locksetW, (Word)lk );
       }
    }
-   HG_(doneIterBag)( lk->heldBy );
+   HG_(doneIterBag)( &lk->heldBy );
 }
 
 /* --------- xxxID functions --------- */
@@ -1358,15 +1350,15 @@ static void pp_Lock ( Int d, Lock* lk )
    space(d+3); VG_(printf)("unique %llu\n", lk->unique);
    space(d+3); VG_(printf)("kind   %s\n", show_LockKind(lk->kind));
    space(d+3); VG_(printf)("heldW  %s\n", lk->heldW ? "yes" : "no");
-   space(d+3); VG_(printf)("heldBy %p", lk->heldBy);
-   if (lk->heldBy) {
+   //space(d+3); VG_(printf)("heldBy %p", lk->heldBy);
+   if (!HG_(isEmptyBag)(&lk->heldBy)) {
       Thread* thr;
       Word    count;
       VG_(printf)(" { ");
-      HG_(initIterBag)( lk->heldBy );
-      while (HG_(nextIterBag)( lk->heldBy, (Word*)&thr, &count ))
+      HG_(initIterBag)( &lk->heldBy );
+      while (HG_(nextIterBag)( &lk->heldBy, (Word*)&thr, &count ))
          VG_(printf)("%lu:%p ", count, thr);
-      HG_(doneIterBag)( lk->heldBy );
+      HG_(doneIterBag)( &lk->heldBy );
       VG_(printf)("}");
    }
    VG_(printf)("\n");
@@ -2925,10 +2917,7 @@ static void laog__sanity_check ( Char* who ); /* fwds */
 /* Return True iff 'thr' holds 'lk' in some mode. */
 static Bool thread_is_a_holder_of_Lock ( Thread* thr, Lock* lk )
 {
-   if (lk->heldBy)
-      return HG_(elemBag)( lk->heldBy, (Word)thr ) > 0;
-   else
-      return False;
+   return HG_(elemBag)( &lk->heldBy, (Word)thr ) > 0;
 }
 
 /* Sanity check Threads, as far as possible */
@@ -3008,11 +2997,11 @@ static void locks__sanity_check ( Char* who )
       //if (is_SHVAL_NoAccess(shadow_mem_get8(lk->guestaddr))) BAD("5");
       // look at all threads mentioned as holders of this lock.  Ensure
       // this lock is mentioned in their locksets.
-      if (lk->heldBy) {
+      if (!HG_(isEmptyBag)( &lk->heldBy )) {
          Thread* thr;
          Word    count;
-         HG_(initIterBag)( lk->heldBy );
-         while (HG_(nextIterBag)( lk->heldBy, 
+         HG_(initIterBag)( &lk->heldBy );
+         while (HG_(nextIterBag)( &lk->heldBy, 
                                   (Word*)&thr, &count )) {
             // is_sane_LockN above ensures these
             tl_assert(count >= 1);
@@ -3027,7 +3016,7 @@ static void locks__sanity_check ( Char* who )
                 && HG_(elemWS)(univ_lsets, thr->locksetW, (Word)lk)) 
                BAD("8");
          }
-         HG_(doneIterBag)( lk->heldBy );
+         HG_(doneIterBag)( &lk->heldBy );
       } else {
          /* lock not held by anybody */
          if (lk->heldW) BAD("9"); /* should be False if !heldBy */
@@ -3585,7 +3574,7 @@ static void msm_do_trace(Thread *thr, Addr a, SVal sv_new, Bool is_w)
       VG_(printf)("\n");
    }
 
-   if (__bus_lock_Lock->heldBy) {
+   if (!HG_(isEmptyBag)(&__bus_lock_Lock->heldBy)) {
       VG_(printf)("BHL is held\n");
    }
 
@@ -3637,8 +3626,8 @@ SVal msm_handle_write(Thread* thr, Addr a, SVal sv_old, Int sz)
       goto done;
    }
 
-   if (UNLIKELY(__bus_lock_Lock->heldBy)
-       && (is_SHVAL_New(sv_old) || is_SHVAL_R(sv_old))) {
+   if (UNLIKELY(!HG_(isEmptyBag_UNCHECKED)(&__bus_lock_Lock->heldBy)
+                && (is_SHVAL_New(sv_old) || is_SHVAL_R(sv_old)))) {
       stats__msm_BHL_hack++;
       // BHL is held and we are in 'Read' or 'New' state. 
       // User is doing something very smart with LOCK prefix.
@@ -3772,8 +3761,8 @@ SVal msm_handle_read(Thread* thr, Addr a, SVal sv_old, Int sz)
       goto done;
    }
 
-   if (UNLIKELY(__bus_lock_Lock->heldBy)
-       && (is_SHVAL_New(sv_old) || is_SHVAL_R(sv_old))) {
+   if (UNLIKELY(!HG_(isEmptyBag_UNCHECKED)(&__bus_lock_Lock->heldBy))
+                && (is_SHVAL_New(sv_old) || is_SHVAL_R(sv_old))) {
       stats__msm_BHL_hack++;
       // BHL is held and we are in 'Read' or 'New' state. 
       // User is doing something very smart with LOCK prefix.
@@ -5694,13 +5683,13 @@ static void shadow_mem_make_NoAccess ( Thread* thr, Addr aIN, SizeT len )
          one of the threads that holds it; really we should mention
          them all, but that's too much hassle.  So choose one
          arbitrarily. */
-      if (lk->heldBy) {
-         tl_assert(!HG_(isEmptyBag)(lk->heldBy));
-         record_error_FreeMemLock( (Thread*)HG_(anyElementOfBag)(lk->heldBy),
-                                   lk );
+      if (!HG_(isEmptyBag)(&lk->heldBy)) {
+         record_error_FreeMemLock( 
+            (Thread*)HG_(anyElementOfBag)(&lk->heldBy),
+            lk
+         );
          /* remove lock from locksets of all owning threads */
          remove_Lock_from_locksets_of_all_owning_Threads( lk );
-         /* Leave lk->heldBy in place; del_Lock below will free it up. */
       }
    }
    HG_(doneIterFM)( map_locks );
@@ -5832,7 +5821,7 @@ void evhH__post_thread_w_acquires_lock ( Thread* thr,
    tl_assert( is_sane_LockN(lk) );
    shmem__set_mbHasLocks( lock_ga, True );
 
-   if (lk->heldBy == NULL) {
+   if (HG_(isEmptyBag)(&lk->heldBy)) {
       /* the lock isn't held.  Simple. */
       tl_assert(!lk->heldW);
       lockN_acquire_writer( lk, thr );
@@ -5841,7 +5830,6 @@ void evhH__post_thread_w_acquires_lock ( Thread* thr,
 
    /* So the lock is already held.  If held as a r-lock then
       libpthread must be buggy. */
-   tl_assert(lk->heldBy);
    if (!lk->heldW) {
       record_error_Misc( thr, "Bug in libpthread: write lock "
                               "granted on rwlock which is currently rd-held");
@@ -5850,9 +5838,9 @@ void evhH__post_thread_w_acquires_lock ( Thread* thr,
 
    /* So the lock is held in w-mode.  If it's held by some other
       thread, then libpthread must be buggy. */
-   tl_assert(HG_(sizeUniqueBag)(lk->heldBy) == 1); /* from precondition */
+   tl_assert(HG_(sizeUniqueBag)(&lk->heldBy) == 1); /* from precondition */
 
-   if (thr != (Thread*)HG_(anyElementOfBag)(lk->heldBy)) {
+   if (thr != (Thread*)HG_(anyElementOfBag)(&lk->heldBy)) {
       record_error_Misc( thr, "Bug in libpthread: write lock "
                               "granted on mutex/rwlock which is currently "
                               "wr-held by a different thread");
@@ -5929,7 +5917,7 @@ void evhH__post_thread_r_acquires_lock ( Thread* thr,
    tl_assert( is_sane_LockN(lk) );
    shmem__set_mbHasLocks( lock_ga, True );
 
-   if (lk->heldBy == NULL) {
+   if (HG_(isEmptyBag)(&lk->heldBy)) {
       /* the lock isn't held.  Simple. */
       tl_assert(!lk->heldW);
       lockN_acquire_reader( lk, thr );
@@ -5938,7 +5926,6 @@ void evhH__post_thread_r_acquires_lock ( Thread* thr,
 
    /* So the lock is already held.  If held as a w-lock then
       libpthread must be buggy. */
-   tl_assert(lk->heldBy);
    if (lk->heldW) {
       record_error_Misc( thr, "Bug in libpthread: read lock "
                               "granted on rwlock which is "
@@ -6017,7 +6004,7 @@ void evhH__pre_thread_releases_lock ( Thread* thr,
                               "pthread_rwlock_t* argument " );
    }
 
-   if (!lock->heldBy) {
+   if (HG_(isEmptyBag)(&lock->heldBy)) {
       /* The lock is not held.  This indicates a serious bug in the
          client. */
       tl_assert(!lock->heldW);
@@ -6029,14 +6016,14 @@ void evhH__pre_thread_releases_lock ( Thread* thr,
 
    /* The lock is held.  Is this thread one of the holders?  If not,
       report a bug in the client. */
-   n = HG_(elemBag)( lock->heldBy, (Word)thr );
+   n = HG_(elemBag)( &lock->heldBy, (Word)thr );
    tl_assert(n >= 0);
    if (n == 0) {
       /* We are not a current holder of the lock.  This is a bug in
          the guest, and (per POSIX pthread rules) the unlock
          attempt will fail.  So just complain and do nothing
          else. */
-      Thread* realOwner = (Thread*)HG_(anyElementOfBag)( lock->heldBy );
+      Thread* realOwner = (Thread*)HG_(anyElementOfBag)( &lock->heldBy );
       tl_assert(is_sane_Thread(realOwner));
       tl_assert(realOwner != thr);
       tl_assert(!HG_(elemWS)( univ_lsets, thr->locksetA, (Word)lock ));
@@ -6054,8 +6041,8 @@ void evhH__pre_thread_releases_lock ( Thread* thr,
    tl_assert(n >= 0);
 
    if (n > 0) {
-      tl_assert(lock->heldBy);
-      tl_assert(n == HG_(elemBag)( lock->heldBy, (Word)thr )); 
+      tl_assert(!HG_(isEmptyBag)(&lock->heldBy));
+      tl_assert(n == HG_(elemBag)( &lock->heldBy, (Word)thr )); 
       /* We still hold the lock.  So either it's a recursive lock 
          or a rwlock which is currently r-held. */
       tl_assert(lock->kind == LK_mbRec
@@ -6067,9 +6054,8 @@ void evhH__pre_thread_releases_lock ( Thread* thr,
          tl_assert(!HG_(elemWS)( univ_lsets, thr->locksetW, (Word)lock ));
    } else {
       /* We no longer hold the lock. */
-      if (lock->heldBy) {
-         tl_assert(0 == HG_(elemBag)( lock->heldBy, (Word)thr ));
-      }
+      tl_assert(HG_(isEmptyBag)(&lock->heldBy));
+      tl_assert(0 == HG_(elemBag)( &lock->heldBy, (Word)thr ));
       /* update this thread's lockset accordingly. */
       thr->locksetA
          = HG_(delFromWS)( univ_lsets, thr->locksetA, (Word)lock );
@@ -6591,17 +6577,16 @@ void evh__HG_PTHREAD_MUTEX_DESTROY_PRE( ThreadId tid, void* mutex )
    if (lk) {
       tl_assert( is_sane_LockN(lk) );
       tl_assert( lk->guestaddr == (Addr)mutex );
-      if (lk->heldBy) {
+      if (!HG_(isEmptyBag)(&lk->heldBy)) {
          /* Basically act like we unlocked the lock */
          record_error_Misc( thr, "pthread_mutex_destroy of a locked mutex" );
          /* remove lock from locksets of all owning threads */
          remove_Lock_from_locksets_of_all_owning_Threads( lk );
-         HG_(deleteBag)( lk->heldBy );
-         lk->heldBy = NULL;
+         HG_(emptyOutBag)( &lk->heldBy );
          lk->heldW = False;
          lk->acquired_at = NULL;
       }
-      tl_assert( !lk->heldBy );
+      tl_assert( HG_(isEmptyBag)(&lk->heldBy) );
       tl_assert( is_sane_LockN(lk) );
    }
 
@@ -6634,9 +6619,9 @@ static void evh__HG_PTHREAD_MUTEX_LOCK_PRE ( ThreadId tid,
    if ( lk 
         && isTryLock == 0
         && (lk->kind == LK_nonRec || lk->kind == LK_rdwr)
-        && lk->heldBy
+        && !HG_(isEmptyBag)(&lk->heldBy)
         && lk->heldW
-        && HG_(elemBag)( lk->heldBy, (Word)thr ) > 0 ) {
+        && HG_(elemBag)( &lk->heldBy, (Word)thr ) > 0 ) {
       /* uh, it's a non-recursive lock and we already w-hold it, and
          this is a real lock operation (not a speculative "tryLock"
          kind of thing).  Duh.  Deadlock coming up; but at least
@@ -6891,13 +6876,13 @@ static Bool evh__HG_PTHREAD_COND_WAIT_PRE ( ThreadId tid,
             thr, "pthread_cond_{timed}wait called with mutex "
                  "of type pthread_rwlock_t*" );
       } else
-         if (lk->heldBy == NULL) {
+         if (HG_(isEmptyBag)(&lk->heldBy)) {
          lk_valid = False;
          record_error_Misc( 
             thr, "pthread_cond_{timed}wait called with un-held mutex");
       } else
-      if (lk->heldBy != NULL
-          && HG_(elemBag)( lk->heldBy, (Word)thr ) == 0) {
+      if (!HG_(isEmptyBag)(&lk->heldBy)
+          && HG_(elemBag)( &lk->heldBy, (Word)thr ) == 0) {
          lk_valid = False;
          record_error_Misc( 
             thr, "pthread_cond_{timed}wait called with mutex "
@@ -6972,17 +6957,16 @@ void evh__HG_PTHREAD_RWLOCK_DESTROY_PRE( ThreadId tid, void* rwl )
    if (lk) {
       tl_assert( is_sane_LockN(lk) );
       tl_assert( lk->guestaddr == (Addr)rwl );
-      if (lk->heldBy) {
+      if (!HG_(isEmptyBag)(&lk->heldBy)) {
          /* Basically act like we unlocked the lock */
          record_error_Misc( thr, "pthread_rwlock_destroy of a locked mutex" );
          /* remove lock from locksets of all owning threads */
          remove_Lock_from_locksets_of_all_owning_Threads( lk );
-         HG_(deleteBag)( lk->heldBy );
-         lk->heldBy = NULL;
+         HG_(emptyOutBag)( &lk->heldBy );
          lk->heldW = False;
          lk->acquired_at = NULL;
       }
-      tl_assert( !lk->heldBy );
+      tl_assert( HG_(isEmptyBag)(&lk->heldBy) );
       tl_assert( is_sane_LockN(lk) );
    }
 
@@ -8630,10 +8614,10 @@ static Lock* mk_LockP_from_LockN ( Lock* lkn )
       lkp->admin = NULL;
       lkp->magic = LockP_MAGIC;
       /* Forget about the bag of lock holders - don't copy that.
-         Also, acquired_at should be NULL whenever heldBy is, and vice
-         versa. */
+         Also, acquired_at should be NULL whenever heldBy is empty,
+         and vice versa. */
       lkp->heldW  = False;
-      lkp->heldBy = NULL;
+      VG_(memset)( &lkp->heldBy, 0, sizeof(lkp->heldBy) );
       lkp->acquired_at = NULL;
       HG_(addToFM)( yaWFM, (Word)lkp, (Word)lkp );
    }

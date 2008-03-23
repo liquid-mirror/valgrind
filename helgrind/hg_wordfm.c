@@ -531,7 +531,7 @@ static void initFM ( WordFM* fm,
                      void    (*dealloc)(void*),
                      Word    (*kCmp)(UWord,UWord) )
 {
-   fm->root         = 0;
+   fm->root         = NULL;
    fm->kCmp         = kCmp;
    fm->alloc_nofail = alloc_nofail;
    fm->dealloc      = dealloc;
@@ -642,6 +642,23 @@ UWord HG_(sizeFM) ( WordFM* fm )
 {
    // Hmm, this is a bad way to do this
    return fm->root ? size_avl_nonNull( fm->root ) : 0;
+}
+
+Bool HG_(isEmptyFM)( WordFM* fm )
+{
+   return fm->root == NULL;
+}
+
+Bool HG_(anyElementOfFM) ( WordFM* fm,
+                           /*OUT*/UWord* keyP, /*OUT*/UWord* valP )
+{
+   if (!fm->root)
+      return False;
+   if (keyP)
+      *keyP = fm->root->key;
+   if (valP)
+      *valP = fm->root->val;
+   return True;
 }
 
 // set up FM for iteration
@@ -783,47 +800,139 @@ WordFM* HG_(dopyFM) ( WordFM* fm, UWord(*dopyK)(UWord), UWord(*dopyV)(UWord) )
 //---                       Implementation                       ---//
 //------------------------------------------------------------------//
 
-/* A WordBag is just a WordFM, but we typedef-void it for the
-   interface, to make it opaque. */
+//struct _WordBag {
+//   void*   (*alloc_nofail)( SizeT );
+//   void    (*dealloc)(void*);
+//   UWord   firstWord;
+//   UWord   firstCount;
+//   WordFM* rest;
+//   /* When zero, the next call to HG_(nextIterBag) gives
+//      (.firstWord, .firstCount).  When nonzero, such calls traverse
+//      .rest. */
+//   UWord   iterCount;
+//};
 
-WordBag* HG_(newBag) ( void* (*alloc_nofail)( SizeT ),
-                       void  (*dealloc)(void*) )
-{
-   return HG_(newFM)( alloc_nofail, dealloc, NULL );
+/* Representational invariants.  Either:
+
+   * bag is empty
+       firstWord == firstCount == 0
+       rest == NULL
+
+   * bag contains just one unique element
+       firstCount > 0
+       rest == NULL
+
+   * bag contains more than one unique element
+       firstCount > 0
+       rest != NULL
+
+   If rest != NULL, then 
+   (1) firstWord != any .key in rest, and
+   (2) all .val in rest > 0
+*/
+
+static inline Bool is_plausible_WordBag ( WordBag* bag ) {
+   if (bag->firstWord == 0 && bag->firstCount == 0 && bag->rest == NULL)
+      return True;
+   if (bag->firstCount > 0 && bag->rest == NULL)
+      return True;
+   if (bag->firstCount > 0 && bag->rest != NULL)
+      /* really should check (1) and (2) now, but that's
+         v. expensive */
+      return True;
+   return False;
 }
 
-void HG_(deleteBag) ( WordBag* bag )
+void HG_(initBag) ( WordBag* bag,
+                    void* (*alloc_nofail)( SizeT ),
+                    void  (*dealloc)(void*) )
 {
-   HG_(deleteFM)( bag, NULL, NULL );
+   bag->alloc_nofail = alloc_nofail;
+   bag->dealloc      = dealloc;
+   bag->firstWord    = 0;
+   bag->firstCount   = 0;
+   bag->rest         = NULL;
+   bag->iterCount    = 0;
+}
+
+void HG_(emptyOutBag) ( WordBag* bag )
+{
+   if (bag->rest)
+      HG_(deleteFM)( bag->rest, NULL, NULL );
+   /* Don't zero out the alloc and dealloc function pointers, since we
+      want to be able to keep on using this bag later, without having
+      to call HG_(initBag) again. */
+   bag->firstWord    = 0;
+   bag->firstCount   = 0;
+   bag->rest         = NULL;
+   bag->iterCount    = 0;
 }
 
 void HG_(addToBag)( WordBag* bag, UWord w )
 {
-   UWord key, count;
-   if (HG_(lookupFM)(bag, &key, &count, w)) {
-      tl_assert(key == w);
-      tl_assert(count >= 1);
-      HG_(addToFM)(bag, w, count+1);
-   } else {
-      HG_(addToFM)(bag, w, 1);
+   tl_assert(is_plausible_WordBag(bag));
+   /* case where the bag is completely empty */
+   if (bag->firstCount == 0) {
+      tl_assert(bag->firstWord == 0 && bag->rest == NULL);
+      bag->firstWord  = w;
+      bag->firstCount = 1;
+      return;
+   }
+   /* there must be at least one element in it */
+   tl_assert(bag->firstCount > 0);
+   if (bag->firstWord == w) {
+      bag->firstCount++;
+      return;
+   }
+   /* it's not the Distinguished Element.  Try the rest */
+   { UWord key, count;
+     if (bag->rest == NULL) {
+        bag->rest = HG_(newFM)( bag->alloc_nofail, bag->dealloc,
+                                NULL/*unboxed uword cmp*/ );
+     }
+     tl_assert(bag->rest);
+     if (HG_(lookupFM)(bag->rest, &key, &count, w)) {
+        tl_assert(key == w);
+        tl_assert(count >= 1);
+        HG_(addToFM)(bag->rest, w, count+1);
+     } else {
+        HG_(addToFM)(bag->rest, w, 1);
+     }
    }
 }
 
 UWord HG_(elemBag) ( WordBag* bag, UWord w )
 {
-   UWord key, count;
-   if (HG_(lookupFM)( bag, &key, &count, w)) {
-      tl_assert(key == w);
-      tl_assert(count >= 1);
-      return count;
-   } else {
+   tl_assert(is_plausible_WordBag(bag));
+   if (bag->firstCount == 0) {
       return 0;
+   }
+   if (w == bag->firstWord) {
+      return bag->firstCount;
+   }
+   if (!bag->rest) {
+      return 0;
+   }
+   { UWord key, count;
+     if (HG_(lookupFM)( bag->rest, &key, &count, w)) {
+        tl_assert(key == w);
+        tl_assert(count >= 1);
+        return count;
+     } else {
+        return 0;
+     }
    }
 }
 
 UWord HG_(sizeUniqueBag) ( WordBag* bag )
 {
-   return HG_(sizeFM)( bag );
+   tl_assert(is_plausible_WordBag(bag));
+   if (bag->firstCount == 0) {
+      tl_assert(bag->firstWord == 0);
+      tl_assert(bag->rest == NULL);
+      return 0;
+   }
+   return 1 + (bag->rest ? HG_(sizeFM)( bag->rest ) : 0);
 }
 
 static UWord sizeTotalBag_wrk ( AvlNode* nd )
@@ -839,71 +948,165 @@ static UWord sizeTotalBag_wrk ( AvlNode* nd )
 }
 UWord HG_(sizeTotalBag)( WordBag* bag )
 {
-   if (((WordFM*)bag)->root)
-      return sizeTotalBag_wrk(((WordFM*)bag)->root);
-   else
+   UWord res;
+   tl_assert(is_plausible_WordBag(bag));
+   if (bag->firstCount == 0) {
+      tl_assert(bag->firstWord == 0);
+      tl_assert(bag->rest == NULL);
       return 0;
+   }
+   res = bag->firstCount;
+   if (bag->rest && bag->rest->root)
+      res += sizeTotalBag_wrk( bag->rest->root );
+   return res;
 }
 
 Bool HG_(delFromBag)( WordBag* bag, UWord w )
 {
-   UWord key, count;
-   if (HG_(lookupFM)(bag, &key, &count, w)) {
-      tl_assert(key == w);
-      tl_assert(count >= 1);
-      if (count > 1) {
-         HG_(addToFM)(bag, w, count-1);
-      } else {
-         tl_assert(count == 1);
-         HG_(delFromFM)(bag, NULL, NULL, w);
+   tl_assert(is_plausible_WordBag(bag));
+
+   /* Case: bag is empty */
+   if (bag->firstCount == 0) {
+      /* empty */
+      tl_assert(bag->firstWord == 0 && bag->rest == NULL);
+      return False;
+   }
+   tl_assert(bag->firstCount > 0);
+
+   /* Case: deleting from the distinguished (word,count) */
+   if (w == bag->firstWord) {
+      Bool  b;
+      UWord tmpWord, tmpCount;
+      if (bag->firstCount > 1) {
+         /* Easy. */
+         bag->firstCount--;
+         return True;
       }
+      tl_assert(bag->firstCount == 1);
+      /* Now it gets complex.  Since the distinguished (word,count)
+         pair is about to disappear, we have to get a new one from
+         'rest'. */
+      if (bag->rest == NULL) {
+         /* Resulting bag really is completely empty. */
+         bag->firstWord = 0;
+         bag->firstCount = 0;
+         return True;
+      }
+      /* Get a new distinguished element from 'rest'. This must be
+         possible if 'rest' is non-NULL. */
+      b = HG_(anyElementOfFM)( bag->rest, &bag->firstWord, &bag->firstCount );
+      tl_assert(b);
+      tl_assert(bag->firstCount > 0);
+      b = HG_(delFromFM)( bag->rest, &tmpWord, &tmpCount, bag->firstWord );
+      tl_assert(b);
+      tl_assert(tmpWord == bag->firstWord);
+      tl_assert(tmpCount == bag->firstCount);
+      if (HG_(isEmptyFM)( bag->rest )) {
+         HG_(deleteFM)( bag->rest, NULL, NULL );
+         bag->rest = NULL;
+      }
+      return True;
+   }
+
+   /* Case: deleting from 'rest' */
+   tl_assert(bag->firstCount > 0);
+   tl_assert(bag->firstWord != w);
+   if (bag->rest) { 
+      UWord key, count;
+      if (HG_(lookupFM)(bag->rest, &key, &count, w)) {
+         tl_assert(key == w);
+         tl_assert(count >= 1);
+         if (count > 1) {
+            HG_(addToFM)(bag->rest, w, count-1);
+         } else {
+            tl_assert(count == 1);
+            HG_(delFromFM)(bag->rest, NULL, NULL, w);
+            if (HG_(isEmptyFM)( bag->rest )) {
+               HG_(deleteFM)( bag->rest, NULL, NULL );
+               bag->rest = NULL;
+            }
+         }
+         return True;
+      } else {
+         return False;
+      }
+   } else {
+      return False;
+   }
+   /*NOTREACHED*/
+   tl_assert(0);
+}
+
+Bool HG_(isEmptyBag)( WordBag* bag )
+{
+   tl_assert(is_plausible_WordBag(bag));
+   if (bag->firstCount == 0) {
+      tl_assert(bag->firstWord == 0);
+      tl_assert(bag->rest == NULL);
       return True;
    } else {
       return False;
    }
 }
 
-Bool HG_(isEmptyBag)( WordBag* bag )
-{
-   return HG_(sizeFM)(bag) == 0;
-}
-
 Bool HG_(isSingletonTotalBag)( WordBag* bag )
 {
-   AvlNode* nd;
-   if (HG_(sizeFM)(bag) != 1)
-      return False;
-   nd = ((WordFM*)bag)->root;
-   tl_assert(nd);
-   tl_assert(!nd->child[0]);
-   tl_assert(!nd->child[1]);
-   return nd->val == 1;
+   tl_assert(is_plausible_WordBag(bag));
+   return bag->firstCount > 0 && bag->rest == NULL;
 }
 
 UWord HG_(anyElementOfBag)( WordBag* bag )
 {
-   /* Return an arbitrarily chosen element in the bag.  We might as
-      well return the one at the root of the underlying AVL tree. */
-   AvlNode* nd = ((WordFM*)bag)->root;
-   tl_assert(nd); /* if this fails, 'bag' is empty - caller is in error. */
-   tl_assert(nd->val >= 1);
-   return nd->key;
+   tl_assert(is_plausible_WordBag(bag));
+   if (bag->firstCount > 0) {
+      return bag->firstWord;
+   }
+   /* The bag is empty, so the caller is in error, and we should
+      assert. */
+   tl_assert(0);
 }
 
 void HG_(initIterBag)( WordBag* bag )
 {
-   HG_(initIterFM)(bag);
+   tl_assert(is_plausible_WordBag(bag));
+   bag->iterCount = 0;
 }
 
 Bool HG_(nextIterBag)( WordBag* bag, /*OUT*/UWord* pVal, /*OUT*/UWord* pCount )
 {
-   return HG_(nextIterFM)( bag, pVal, pCount );
+   Bool b;
+   if (bag->iterCount == 0) {
+      /* Emitting (.firstWord, .firstCount) if we have it. */
+      if (bag->firstCount == 0) {
+         /* empty */
+         return False;
+      }
+      if (pVal) *pVal = bag->firstWord;
+      if (pCount) *pCount = bag->firstCount;
+      bag->iterCount = 1;
+      return True;
+   }
+
+   /* else emitting from .rest, if present */
+   if (!bag->rest)
+      return False;
+
+   if (bag->iterCount == 1)
+      HG_(initIterFM)( bag->rest );
+
+   b = HG_(nextIterFM)( bag->rest, pVal, pCount );
+   bag->iterCount++;
+
+   return b;
 }
 
 void HG_(doneIterBag)( WordBag* bag )
 {
-   HG_(doneIterFM)( bag );
+   bag->iterCount = 0;
+   if (bag->rest)
+      HG_(doneIterFM)( bag->rest );
 }
+
 
 //------------------------------------------------------------------//
 //---             end WordBag (unboxed words only)               ---//
@@ -952,6 +1155,18 @@ int search_all_elements_in_range_2(WordFM *map, long beg, long end)
    }
    HG_(doneIterFM)(map);
    return n_found;
+}
+
+void showBag ( WordBag* bag )
+{
+   UWord val, count;
+   printf("Bag{");
+   HG_(initIterBag)( bag );
+   while (HG_(nextIterBag)( bag, &val, &count )) {
+      printf(" %lux%lu ", count, val );
+   }
+   HG_(doneIterBag)( bag );
+   printf("}"); fflush(stdout);
 }
 
 int main(void)
@@ -1018,6 +1233,82 @@ int main(void)
    printf("Delete the map\n");
    HG_(deleteFM)(map, NULL, NULL);
    printf("Ok!\n");
+
+   printf("\nBEGIN testing WordBag\n");
+   WordBag bag;
+   Bool b;
+
+   HG_(initBag)( &bag, malloc, free );
+   
+   printf("operations on an empty bag\n");
+   printf(" show:       " ); showBag( &bag ); printf("\n");
+   printf(" elem:       %lu\n", HG_(elemBag)( &bag, 42 ));
+   printf(" isEmpty:    %lu\n", (UWord) HG_(isEmptyBag)( &bag ));
+   printf(" iSTB:       %lu\n", (UWord) HG_(isSingletonTotalBag)( &bag ));
+   printf(" sizeUnique: %lu\n", HG_(sizeUniqueBag)( &bag ));
+   printf(" sizeTotal:  %lu\n", HG_(sizeTotalBag)( &bag ));
+   printf(" delFrom:    %lu\n", (UWord)HG_(delFromBag)( &bag, 42 ));
+
+   assert( HG_(isEmptyBag)( &bag ));
+   printf("\noperations on bag { 41 }\n");
+   HG_(addToBag)( &bag, 41 );
+   printf(" show:       " ); showBag( &bag ); printf("\n");
+   printf(" elem:       %lu\n", HG_(elemBag)( &bag, 42 ));
+   printf(" isEmpty:    %lu\n", (UWord) HG_(isEmptyBag)( &bag ));
+   printf(" iSTB:       %lu\n", (UWord) HG_(isSingletonTotalBag)( &bag ));
+   printf(" sizeUnique: %lu\n", HG_(sizeUniqueBag)( &bag ));
+   printf(" sizeTotal:  %lu\n", HG_(sizeTotalBag)( &bag ));
+   printf(" delFrom:    %lu\n", (UWord)HG_(delFromBag)( &bag, 42 ));
+
+   b = HG_(delFromBag)( &bag, 41 ); assert(b);
+
+   printf("\noperations on bag { 41,41 }\n");
+   HG_(addToBag)( &bag, 41 );
+   HG_(addToBag)( &bag, 41 );
+   printf(" show:       " ); showBag( &bag ); printf("\n");
+   printf(" elem:       %lu\n", HG_(elemBag)( &bag, 42 ));
+   printf(" isEmpty:    %lu\n", (UWord) HG_(isEmptyBag)( &bag ));
+   printf(" iSTB:       %lu\n", (UWord) HG_(isSingletonTotalBag)( &bag ));
+   printf(" sizeUnique: %lu\n", HG_(sizeUniqueBag)( &bag ));
+   printf(" sizeTotal:  %lu\n", HG_(sizeTotalBag)( &bag ));
+   printf(" delFrom:    %lu\n", (UWord)HG_(delFromBag)( &bag, 42 ));
+
+   printf("\noperations on bag { 41,41, 42, 43,43 }\n");
+   HG_(addToBag)( &bag, 42 );
+   HG_(addToBag)( &bag, 43 );
+   HG_(addToBag)( &bag, 43 );
+   printf(" show:       " ); showBag( &bag ); printf("\n");
+   printf(" elem:       %lu\n", HG_(elemBag)( &bag, 42 ));
+   printf(" isEmpty:    %lu\n", (UWord) HG_(isEmptyBag)( &bag ));
+   printf(" iSTB:       %lu\n", (UWord) HG_(isSingletonTotalBag)( &bag ));
+   printf(" sizeUnique: %lu\n", HG_(sizeUniqueBag)( &bag ));
+   printf(" sizeTotal:  %lu\n", HG_(sizeTotalBag)( &bag ));
+   printf(" delFrom:    %lu\n", (UWord)HG_(delFromBag)( &bag, 42 ));
+
+   b = HG_(delFromBag)( &bag, 41 ); assert(b);
+   printf(" after del of 41: " ); showBag( &bag ); printf("\n");
+   b = HG_(delFromBag)( &bag, 41 ); assert(b);
+   printf(" after del of 41: " ); showBag( &bag ); printf("\n");
+   b = HG_(delFromBag)( &bag, 43 ); assert(b);
+   printf(" after del of 43: " ); showBag( &bag ); printf("\n");
+   b = HG_(delFromBag)( &bag, 42 ); assert(!b); // already gone
+   printf(" after del of 42: " ); showBag( &bag ); printf("\n");
+   b = HG_(delFromBag)( &bag, 43 ); assert(b);
+   printf(" after del of 43: " ); showBag( &bag ); printf("\n");
+
+   HG_(emptyOutBag)( &bag );
+
+   printf("\noperations on now empty bag\n");
+   printf(" show:       " ); showBag( &bag ); printf("\n");
+   printf(" elem:       %lu\n", HG_(elemBag)( &bag, 42 ));
+   printf(" isEmpty:    %lu\n", (UWord) HG_(isEmptyBag)( &bag ));
+   printf(" iSTB:       %lu\n", (UWord) HG_(isSingletonTotalBag)( &bag ));
+   printf(" sizeUnique: %lu\n", HG_(sizeUniqueBag)( &bag ));
+   printf(" sizeTotal:  %lu\n", HG_(sizeTotalBag)( &bag ));
+   printf(" delFrom:    %lu\n", (UWord)HG_(delFromBag)( &bag, 42 ));
+
+   printf("\nEND testing WordBag\n");
+
    return 0;
 }
 

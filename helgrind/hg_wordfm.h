@@ -97,8 +97,16 @@ Bool HG_(delFromFM) ( WordFM* fm,
 Bool HG_(lookupFM) ( WordFM* fm, 
                      /*OUT*/UWord* keyP, /*OUT*/UWord* valP, UWord key );
 
-// How many elements are there in fm?
+// How many elements are there in fm?  Note; slow; O(# elems in the fm)
 UWord HG_(sizeFM) ( WordFM* fm );
+
+// Is the fm empty?  Fast (constant-time)
+Bool HG_(isEmptyFM)( WordFM* fm );
+
+// If fm is non-empty, return an arbitrarily chosen key/value pair
+// through *keyP/*valP, and return True.  If empty return False.
+Bool HG_(anyElementOfFM) ( WordFM* fm,
+                           /*OUT*/UWord* keyP, /*OUT*/UWord* valP );
 
 // set up FM for iteration
 void HG_(initIterFM) ( WordFM* fm );
@@ -136,14 +144,34 @@ WordFM* HG_(dopyFM) ( WordFM* fm,
 //---                      Public interface                      ---//
 //------------------------------------------------------------------//
 
-typedef  void  WordBag; /* opaque */
+//typedef  struct _WordBag  WordBag; /* opaque */
 
-/* Allocate and initialise a WordBag */
-WordBag* HG_(newBag) ( void* (*alloc_nofail)( SizeT ),
-                       void  (*dealloc)(void*) );
+// FIXME! find some way to turn this back into an abstract type.
+typedef
+   struct {
+      void*   (*alloc_nofail)( SizeT );
+      void    (*dealloc)(void*);
+      UWord   firstWord;
+      UWord   firstCount;
+      WordFM* rest;
+      /* When zero, the next call to HG_(nextIterBag) gives
+         (.firstWord, .firstCount).  When nonzero, such calls traverse
+         .rest. */
+      UWord   iterCount;
+   }
+   WordBag;
 
-/* Free up the Bag. */
-void HG_(deleteBag) ( WordBag* );
+
+/* Initialise a WordBag and make it empty.  Only do this once for each
+   bag, at the start of its lifetime. */
+void HG_(initBag) ( WordBag* bag,
+                    void* (*alloc_nofail)( SizeT ),
+                    void  (*dealloc)(void*) );
+
+/* Remove all elements from a bag, thereby making it empty, and free
+   all associated memory.  This can be done as many times as required,
+   but only after the initial HG_(initBag) call. */
+void HG_(emptyOutBag) ( WordBag* bag );
 
 /* Add a word. */
 void HG_(addToBag)( WordBag*, UWord );
@@ -157,6 +185,11 @@ Bool HG_(delFromBag)( WordBag*, UWord );
 /* Is the bag empty? */
 Bool HG_(isEmptyBag)( WordBag* );
 
+/* Is the bag empty, skipping all sanity checks? */
+static inline Bool HG_(isEmptyBag_UNCHECKED)( WordBag* bag ) {
+   return bag->firstCount == 0;
+}
+
 /* Does the bag have exactly one element? */
 Bool HG_(isSingletonTotalBag)( WordBag* );
 
@@ -164,8 +197,8 @@ Bool HG_(isSingletonTotalBag)( WordBag* );
 UWord HG_(anyElementOfBag)( WordBag* );
 
 /* How many different / total elements are in the bag? */
-UWord HG_(sizeUniqueBag)( WordBag* ); /* fast */
-UWord HG_(sizeTotalBag)( WordBag* );  /* warning: slow */
+UWord HG_(sizeUniqueBag)( WordBag* ); /* warning: slow */
+UWord HG_(sizeTotalBag)( WordBag* );  /* warning: very slow */
 
 /* Iterating over the elements of a bag. */
 void HG_(initIterBag)( WordBag* );
