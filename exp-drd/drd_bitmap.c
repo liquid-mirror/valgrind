@@ -631,37 +631,35 @@ void bm_swap(struct bitmap* const bm1, struct bitmap* const bm2)
   bm2->oset = tmp;
 }
 
+/** Merge bitmaps *lhs and *rhs into *lhs. */
 void bm_merge2(struct bitmap* const lhs,
                const struct bitmap* const rhs)
 {
   struct bitmap2* bm2l;
-  const struct bitmap2ref* bm2l_ref;
-  const struct bitmap2* bm2r;
+  struct bitmap2ref* bm2l_ref;
+  struct bitmap2* bm2r;
   const struct bitmap2ref* bm2r_ref;
 
-  // First step: allocate any missing bitmaps in *lhs.
-  VG_(OSetGen_ResetIter)(rhs->oset);
-  for ( ; (bm2r_ref = VG_(OSetGen_Next)(rhs->oset)) != 0; )
-  {
-    bm2r = bm2r_ref->bm2;
-    bm2_lookup_or_insert(lhs, bm2r->addr);
-  }
-
-  VG_(OSetGen_ResetIter)(lhs->oset);
   VG_(OSetGen_ResetIter)(rhs->oset);
 
   for ( ; (bm2r_ref = VG_(OSetGen_Next)(rhs->oset)) != 0; )
   {
     bm2r = bm2r_ref->bm2;
-    do
+    bm2l_ref = VG_(OSetGen_Lookup)(lhs->oset, &bm2r->addr);
+    if (bm2l_ref)
     {
-      bm2l_ref = VG_(OSetGen_Next)(lhs->oset);
       bm2l = bm2l_ref->bm2;
-    } while (bm2l->addr < bm2r->addr);
-
-    tl_assert(bm2l->addr == bm2r->addr);
-
-    bm2_merge(bm2l, bm2r);
+      if (bm2l != bm2r)
+      {
+        if (bm2l->refcnt > 1)
+          bm2l = bm2_make_exclusive(lhs, bm2l_ref);
+        bm2_merge(bm2l, bm2r);
+      }
+    }
+    else
+    {
+      bm2_insert_addref(lhs, bm2r);
+    }
   }
 }
 
@@ -847,7 +845,10 @@ static void bm2_merge(struct bitmap2* const bm2l,
 {
   unsigned k;
 
+  tl_assert(bm2l);
+  tl_assert(bm2r);
   tl_assert(bm2l->addr == bm2r->addr);
+  tl_assert(bm2l->refcnt == 1);
 
   for (k = 0; k < BITMAP1_UWORD_COUNT; k++)
   {

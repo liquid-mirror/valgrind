@@ -297,6 +297,30 @@ struct bitmap2* bm2_insert(const struct bitmap* const bm, const UWord a1)
   return bm2;
 }
 
+/** Insert a new node in bitmap bm that points to the second level bitmap
+ *  *bm2. This means that *bm2 becomes shared over two or more bitmaps.
+ */
+static __inline__
+struct bitmap2* bm2_insert_addref(const struct bitmap* const bm,
+                                  struct bitmap2* const bm2)
+{
+  struct bitmap2ref* bm2ref;
+
+  tl_assert(bm);
+  tl_assert(VG_(OSetGen_Lookup)(bm->oset, &bm2->addr) == 0);
+  bm2ref       = VG_(OSetGen_AllocNode)(bm->oset, sizeof(*bm2ref));
+  bm2ref->addr = bm2->addr;
+  bm2ref->bm2  = bm2;
+  bm2->refcnt++;
+  VG_(OSetGen_Insert)(bm->oset, bm2ref);
+  
+  ((struct bitmap*)bm)->last_lookup_a1     = bm2->addr;
+  ((struct bitmap*)bm)->last_lookup_bm2ref = bm2ref;
+  ((struct bitmap*)bm)->last_lookup_bm2    = bm2;
+
+  return bm2;
+}
+
 /** Look up the address a1 in bitmap bm, and insert it if not found.
  *  The returned second level bitmap may not be modified.
  *
