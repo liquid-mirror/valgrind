@@ -68,6 +68,10 @@
 #  error "Unknown platform"
 #endif
 
+/* --- Soname of libjemalloc. --- */
+
+#define m_jemalloc_soname libjemallocZdsoZa /* libjemalloc.so* */
+
 /* --- Soname of the GNU C++ library. --- */
 
 #define  m_libstdcxx_soname  libstdcZpZpZa           // libstdc++*
@@ -203,6 +207,7 @@ static void init(void) __attribute__((constructor));
 //     (from_so, from_fn,  v's replacement)
 
 // malloc
+ALLOC_or_NULL(m_jemalloc_soname,  malloc,      malloc);
 ALLOC_or_NULL(m_libstdcxx_soname, malloc,      malloc);
 ALLOC_or_NULL(m_libc_soname,      malloc,      malloc);
 #if defined(VGP_ppc32_aix5) || defined(VGP_ppc64_aix5)
@@ -319,6 +324,7 @@ ALLOC_or_BOMB(m_libc_soname,       __builtin_vec_new, __builtin_vec_new );
    }
 
 // free
+FREE(m_jemalloc_soname,   free,                 free );
 FREE(m_libstdcxx_soname,  free,                 free );
 FREE(m_libc_soname,       free,                 free );
 #if defined(VGP_ppc32_aix5) || defined(VGP_ppc64_aix5)
@@ -394,6 +400,7 @@ FREE(m_libc_soname,       _ZdaPvRKSt9nothrow_t, __builtin_vec_delete );
       return v; \
    }
 
+CALLOC(m_jemalloc_soname, calloc);
 CALLOC(m_libc_soname, calloc);
 #if defined(VGP_ppc32_aix5) || defined(VGP_ppc64_aix5)
 CALLOC(m_libc_soname, calloc_common);
@@ -426,6 +433,7 @@ CALLOC(m_libc_soname, calloc_common);
       return v; \
    }
 
+REALLOC(m_jemalloc_soname, realloc);
 REALLOC(m_libc_soname, realloc);
 #if defined(VGP_ppc32_aix5) || defined(VGP_ppc64_aix5)
 REALLOC(m_libc_soname, realloc_common);
@@ -457,6 +465,7 @@ REALLOC(m_libc_soname, realloc_common);
       return v; \
    }
 
+MEMALIGN(m_jemalloc_soname, memalign);
 MEMALIGN(m_libc_soname, memalign);
 
 
@@ -483,6 +492,7 @@ static int local__getpagesize ( void ) {
                 ((SizeT)pszB, size); \
    }
 
+VALLOC(m_jemalloc_soname, valloc);
 VALLOC(m_libc_soname, valloc);
 
 
@@ -566,6 +576,7 @@ MALLOC_TRIM(m_libc_soname, malloc_trim);
       return VKI_ENOMEM; \
    }
 
+POSIX_MEMALIGN(m_jemalloc_soname, posix_memalign);
 POSIX_MEMALIGN(m_libc_soname, posix_memalign);
 #if defined(VGP_ppc32_aix5) || defined(VGP_ppc64_aix5)
 /* 27 Nov 07: it appears that xlc links into executables, a
@@ -596,6 +607,7 @@ POSIX_MEMALIGN(m_libc_soname, memalign_common);
       return pszB; \
    }
 
+MALLOC_USABLE_SIZE(m_jemalloc_soname, malloc_usable_size);
 MALLOC_USABLE_SIZE(m_libc_soname, malloc_usable_size);
 
 
