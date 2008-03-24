@@ -424,7 +424,6 @@ struct bitmap2* bm2_lookup_or_insert(const struct bitmap* const bm,
   struct bitmap2* bm2;
 
   tl_assert(bm);
-  tl_assert(a1);
   bm2 = bm_cache_lookup(bm, a1);
   if (bm2 == 0)
   {
