@@ -43,8 +43,6 @@ struct bitmap2;
 
 /* Local function declarations. */
 
-static void* bm2ref_new(const SizeT size);
-static void bm2ref_del(void* node);
 static void bm2_merge(struct bitmap2* const bm2l,
                       const struct bitmap2* const bm2r);
 
@@ -72,7 +70,7 @@ struct bitmap* bm_new()
     bm->cache[i].a1  = 0;
     bm->cache[i].bm2 = 0;
   }
-  bm->oset = VG_(OSetGen_Create)(0, 0, bm2ref_new, bm2ref_del);
+  bm->oset = VG_(OSetGen_Create)(0, 0, VG_(malloc), VG_(free));
 
   s_bitmap_creation_count++;
 
@@ -81,7 +79,22 @@ struct bitmap* bm_new()
 
 void bm_delete(struct bitmap* const bm)
 {
+  struct bitmap2*    bm2;
+  struct bitmap2ref* bm2ref;
+
   tl_assert(bm);
+
+  VG_(OSetGen_ResetIter)(bm->oset);
+  for ( ; (bm2ref = VG_(OSetGen_Next)(bm->oset)) != 0; )
+  {
+    bm2 = bm2ref->bm2;
+    tl_assert(bm2->refcnt >= 1);
+    if (--bm2->refcnt == 0)
+    {
+      VG_(free)(bm2);
+    }
+  }
+
   VG_(OSetGen_Destroy)(bm->oset);
   VG_(free)(bm);
 }
@@ -771,33 +784,6 @@ ULong bm_get_bitmap_creation_count(void)
 ULong bm_get_bitmap2_creation_count(void)
 {
   return s_bitmap2_creation_count;
-}
-
-/** Allocate memory for a tree node, without initializing the tree node. */
-static void* bm2ref_new(const SizeT size)
-{
-  void* node = VG_(malloc)(size);
-  return node;
-}
-
-/** Deallocate the tree node, decrement the reference count of the second
- *  level bitmap and deallocate the second level bitmap memory if the reference
- *  count reached zero.
- */
-static void bm2ref_del(void* node)
-{
-  struct bitmap2*    bm2;
-  struct bitmap2ref* bm2ref;
-
-  bm2ref = VG_(OSetGen_NodeToElem)(node);
-  tl_assert(bm2ref);
-  bm2 = bm2ref->bm2;
-  tl_assert(bm2->refcnt >= 1);
-  if (--bm2->refcnt == 0)
-  {
-    VG_(free)(bm2);
-  }
-  VG_(free)(node);
 }
 
 /** Allocate and initialize a second level bitmap. */

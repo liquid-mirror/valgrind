@@ -187,7 +187,6 @@ extern OSet* VG_(OSetGen_Create)    ( OffT keyOff, OSetCmp_t cmp,
 extern void  VG_(OSetGen_Destroy)   ( OSet* os );
 extern void* VG_(OSetGen_AllocNode) ( OSet* os, SizeT elemSize );
 extern void  VG_(OSetGen_FreeNode)  ( OSet* os, void* elem );
-extern void* VG_(OSetGen_NodeToElem)( void* node );
 
 /*--------------------------------------------------------------------*/
 /*--- Operations on OSets (Gen)                                    ---*/
