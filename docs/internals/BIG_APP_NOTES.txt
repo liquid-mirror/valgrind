@@ -60,3 +60,40 @@ $ diff -U3 ./xpcom/ds/nsRecyclingAllocator.cpp-ORIG ./xpcom/ds/nsRecyclingAlloca
          if (zeroit)
              memset(data, 0, bytes);
          return data;
+
+
+
+Building OpenOffice 2.4 from source
+-----------------------------------
+
+svn co svn://svn.gnome.org/svn/ooo-build/trunk ooo-build
+
+cd ooo-build
+
+export ARCH_FLAGS="-g -O"
+
+./autogen.sh --with-distro=SUSE-10.2 --with-java=no
+--disable-gstreamer --disable-mono --with-max-jobs=2 --with-num-cpus=2
+
+./download
+
+make
+
+# make now runs the 'inner' configure (of OOo proper) and
+# invariably fails.  To fix, install 987,654,321 packages you never 
+# heard of before, that OOo absolutely needs, and go back to the
+# autogen step.  You probably need to do this ten times or more.
+
+# eventually you might get through the inner configure.  After
+# a couple of hours of flat out computation on both cores of
+# a fast Core 2, the build might complete successfully.
+
+# in the likely event of even all that not working, go on to #go-oo
+# at irc.freenode.org and ask questions
+
+# eventually ...
+
+./bin/ooinstall ~/Tools/OOPlay/Inst01
+cd ~/Tools/OOPlay/Inst01
+valgrind -v ./program/soffice.bin
+
