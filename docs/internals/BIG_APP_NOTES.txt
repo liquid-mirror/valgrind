@@ -75,6 +75,8 @@ export ARCH_FLAGS="-g -O"
 ./autogen.sh --with-distro=SUSE-10.2 --with-java=no
 --disable-gstreamer --disable-mono --with-max-jobs=2 --with-num-cpus=2
 
+# --with-alloc=system is used by default
+
 ./download
 
 make
@@ -97,3 +99,25 @@ make
 cd ~/Tools/OOPlay/Inst01
 valgrind -v ./program/soffice.bin
 
+
+# Hacking OOo
+
+# Use two shells, (C)ompile and (R)un.  In (C):
+#
+cd build/ooh680-m12
+. ./LinuxX86Env.Set.sh
+solenv/bin/linkoo ~/Tools/OOPlay/Inst01
+#
+# This replaces all the .so's in the install tree with symlinks 
+# back into the build tree, so you can then re-run without 
+# having to endlessly reinstall.  It also creates 'ooenv' in
+# ~/Tools/OOPlay/Inst01/program, which needs to be sourced
+# once before running.
+#
+# So having changed something in OOo, eg in svx/, do:
+#
+(cd svx && build)
+#
+# Meanwhile in the (R)un shell:
+source ooenv  # just once!
+valgrind [args] ./soffice.bin
