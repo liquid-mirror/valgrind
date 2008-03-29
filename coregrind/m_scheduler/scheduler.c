@@ -530,33 +530,39 @@ void VG_(scheduler_init_phase2) ( ThreadId tid_main,
 /* Do various guest state alignment checks prior to running a thread.
    Specifically, check that what we have matches Vex's guest state
    layout requirements. */
-static void do_pre_run_checks ( volatile ThreadState* tst )
+static void do_pre_run_checks ( ThreadState* tst )
 {
-   Addr a_vex    = (Addr) & tst->arch.vex;
-   Addr a_vexsh  = (Addr) & tst->arch.vex_shadow;
-   Addr a_spill  = (Addr) & tst->arch.vex_spill;
-   UInt sz_vex   = (UInt) sizeof tst->arch.vex;
-   UInt sz_vexsh = (UInt) sizeof tst->arch.vex_shadow;
-   UInt sz_spill = (UInt) sizeof tst->arch.vex_spill;
+   Addr a_vex     = (Addr) & tst->arch.vex;
+   Addr a_vexsh1  = (Addr) & tst->arch.vex_shadow1;
+   Addr a_vexsh2  = (Addr) & tst->arch.vex_shadow2;
+   Addr a_spill   = (Addr) & tst->arch.vex_spill;
+   UInt sz_vex    = (UInt) sizeof tst->arch.vex;
+   UInt sz_vexsh1 = (UInt) sizeof tst->arch.vex_shadow1;
+   UInt sz_vexsh2 = (UInt) sizeof tst->arch.vex_shadow2;
+   UInt sz_spill  = (UInt) sizeof tst->arch.vex_spill;
 
    if (0)
    VG_(printf)("%p %d %p %d %p %d\n",
-               (void*)a_vex, sz_vex, (void*)a_vexsh, sz_vexsh,
+               (void*)a_vex, sz_vex, (void*)a_vexsh1, sz_vexsh1,
                (void*)a_spill, sz_spill );
 
    vg_assert(VG_IS_8_ALIGNED(sz_vex));
-   vg_assert(VG_IS_8_ALIGNED(sz_vexsh));
+   vg_assert(VG_IS_8_ALIGNED(sz_vexsh1));
+   vg_assert(VG_IS_8_ALIGNED(sz_vexsh2));
    vg_assert(VG_IS_16_ALIGNED(sz_spill));
 
    vg_assert(VG_IS_4_ALIGNED(a_vex));
-   vg_assert(VG_IS_4_ALIGNED(a_vexsh));
+   vg_assert(VG_IS_4_ALIGNED(a_vexsh1));
+   vg_assert(VG_IS_4_ALIGNED(a_vexsh2));
    vg_assert(VG_IS_4_ALIGNED(a_spill));
 
-   vg_assert(sz_vex == sz_vexsh);
-   vg_assert(a_vex + sz_vex == a_vexsh);
+   vg_assert(sz_vex == sz_vexsh1);
+   vg_assert(sz_vex == sz_vexsh2);
+   vg_assert(a_vex + 1 * sz_vex == a_vexsh1);
+   vg_assert(a_vex + 2 * sz_vex == a_vexsh2);
 
    vg_assert(sz_spill == LibVEX_N_SPILL_BYTES);
-   vg_assert(a_vex + 2 * sz_vex == a_spill);
+   vg_assert(a_vex + 3 * sz_vex == a_spill);
 
 #  if defined(VGA_ppc32) || defined(VGA_ppc64)
    /* ppc guest_state vector regs must be 16 byte aligned for
@@ -583,7 +589,7 @@ static UInt run_thread_for_a_while ( ThreadId tid )
    vg_assert(!VG_(is_exiting)(tid));
 
    tst = VG_(get_ThreadState)(tid);
-   do_pre_run_checks(tst);
+   do_pre_run_checks( (ThreadState*)tst );
    /* end Paranoia */
 
    trc = 0;
@@ -686,7 +692,7 @@ static UInt run_noredir_translation ( Addr hcode, ThreadId tid )
    vg_assert(!VG_(is_exiting)(tid));
 
    tst = VG_(get_ThreadState)(tid);
-   do_pre_run_checks(tst);
+   do_pre_run_checks( (ThreadState*)tst );
    /* end Paranoia */
 
 #  if defined(VGA_ppc32) || defined(VGA_ppc64)

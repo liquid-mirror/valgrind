@@ -96,8 +96,9 @@ typedef
       /* Saved machine context. */
       VexGuestArchState vex;
 
-      /* Saved shadow context. */
-      VexGuestArchState vex_shadow;
+      /* Saved shadow context (2 copies). */
+      VexGuestArchState vex_shadow1;
+      VexGuestArchState vex_shadow2;
 
       /* Spill area. */
       UChar vex_spill[LibVEX_N_SPILL_BYTES];

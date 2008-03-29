@@ -99,7 +99,8 @@ struct vg_sigframe
 
    /* XXX This is wrong.  Surely we should store the shadow values
       into the shadow memory behind the actual values? */
-   VexGuestX86State vex_shadow;
+   VexGuestX86State vex_shadow1;
+   VexGuestX86State vex_shadow2;
 
    /* HACK ALERT */
    VexGuestX86State vex;
@@ -443,7 +444,8 @@ static void build_vg_sigframe(struct vg_sigframe *frame,
 {
    frame->sigNo_private = sigNo;
    frame->magicPI       = 0x31415927;
-   frame->vex_shadow    = tst->arch.vex_shadow;
+   frame->vex_shadow1   = tst->arch.vex_shadow1;
+   frame->vex_shadow2   = tst->arch.vex_shadow2;
    /* HACK ALERT */
    frame->vex           = tst->arch.vex;
    /* end HACK ALERT */
@@ -622,13 +624,14 @@ Bool restore_vg_sigframe ( ThreadState *tst,
       *sigNo = VKI_SIGSEGV;
       return False;
    }
-   tst->sig_mask        = frame->mask;
-   tst->tmp_sig_mask    = frame->mask;
-   tst->arch.vex_shadow = frame->vex_shadow;
+   tst->sig_mask         = frame->mask;
+   tst->tmp_sig_mask     = frame->mask;
+   tst->arch.vex_shadow1 = frame->vex_shadow1;
+   tst->arch.vex_shadow2 = frame->vex_shadow2;
    /* HACK ALERT */
-   tst->arch.vex        = frame->vex;
+   tst->arch.vex         = frame->vex;
    /* end HACK ALERT */
-   *sigNo               = frame->sigNo_private;
+   *sigNo                = frame->sigNo_private;
    return True;
 }
 
