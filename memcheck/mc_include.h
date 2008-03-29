@@ -297,11 +297,11 @@ extern Int MC_(clo_free_fill);
 /*------------------------------------------------------------*/
 
 /* Functions defined in mc_main.c */
-extern VG_REGPARM(1) void MC_(helperc_complain_undef) ( HWord );
-extern void MC_(helperc_value_check8_fail) ( void );
-extern void MC_(helperc_value_check4_fail) ( void );
-extern void MC_(helperc_value_check1_fail) ( void );
-extern void MC_(helperc_value_check0_fail) ( void );
+extern VG_REGPARM(2) void MC_(helperc_complain_undef) ( HWord, UWord );
+extern VG_REGPARM(1) void MC_(helperc_value_check8_fail) ( UWord );
+extern VG_REGPARM(1) void MC_(helperc_value_check4_fail) ( UWord );
+extern VG_REGPARM(1) void MC_(helperc_value_check1_fail) ( UWord );
+extern VG_REGPARM(1) void MC_(helperc_value_check0_fail) ( UWord );
 
 extern VG_REGPARM(1) void MC_(helperc_STOREV64be) ( Addr, ULong );
 extern VG_REGPARM(1) void MC_(helperc_STOREV64le) ( Addr, ULong );
@@ -320,6 +320,15 @@ extern VG_REGPARM(1) UWord MC_(helperc_LOADV16le) ( Addr );
 extern VG_REGPARM(1) UWord MC_(helperc_LOADV8)    ( Addr );
 
 extern void MC_(helperc_MAKE_STACK_UNINIT) ( Addr base, UWord len );
+
+VG_REGPARM(2) void  MC_(helperc_b_store1)( Addr a, UWord d32 );
+VG_REGPARM(2) void  MC_(helperc_b_store2)( Addr a, UWord d32 );
+VG_REGPARM(2) void  MC_(helperc_b_store4)( Addr a, UWord d32 );
+VG_REGPARM(2) void  MC_(helperc_b_store8)( Addr a, UWord d32 );
+VG_REGPARM(1) UWord MC_(helperc_b_load1)( Addr a );
+VG_REGPARM(1) UWord MC_(helperc_b_load2)( Addr a );
+VG_REGPARM(1) UWord MC_(helperc_b_load4)( Addr a );
+VG_REGPARM(1) UWord MC_(helperc_b_load8)( Addr a );
 
 /* Functions defined in mc_translate.c */
 extern
