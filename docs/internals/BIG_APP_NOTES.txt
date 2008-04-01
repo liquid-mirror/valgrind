@@ -73,8 +73,10 @@ cd ooo-build
 export ARCH_FLAGS="-g -O"
 
 ./autogen.sh --with-distro=SUSE-10.2 --with-java=no
---disable-gstreamer --disable-mono --with-max-jobs=2 --with-num-cpus=2
+--disable-gstreamer --disable-mono
 
+#  --with-max-jobs=2 --with-num-cpus=2 sounds good on paper, but often
+#  cause the build to fail
 # --with-alloc=system is used by default
 
 ./download
@@ -105,8 +107,8 @@ valgrind -v ./program/soffice.bin
 # Use two shells, (C)ompile and (R)un.  In (C):
 #
 cd build/ooh680-m12
-. ./LinuxX86Env.Set.sh
-solenv/bin/linkoo ~/Tools/OOPlay/Inst01
+. ./LinuxX86Env.Set.sh  (or ". ./LinuxX86-64Env.Set.sh")
+./solenv/bin/linkoo ~/Tools/OOPlay/Inst01
 #
 # This replaces all the .so's in the install tree with symlinks 
 # back into the build tree, so you can then re-run without 
@@ -120,4 +122,56 @@ solenv/bin/linkoo ~/Tools/OOPlay/Inst01
 #
 # Meanwhile in the (R)un shell:
 source ooenv  # just once!
+# appears to complain aobut "ulimit -c", but OK nevertheless
+
 valgrind [args] ./soffice.bin
+
+
+# These are packages I had to install on a fairly vanilla OpenSUSE
+# 10.3 in order to get a build working
+
+perl-Archive-Zip-1.20
+cups-devel-1.2.12
+libjpeg-devel-6.2.0
+libxslt-devel
+  libgcrypt-devel
+  liggpg-error-devel
+  libxml2-devel
+  readline-devel
+python-devel
+  blt
+  python-tk
+libcurl-devel
+  libidn-devel
+boost-devel
+unixODBC-devel
+mozilla-xulrunner181-devel
+  mozilla-nspr-devel
+  mozilla-nss-devel
+  mozilla-xulrunner181
+neon-devel
+gnome-vfs2-devel
+  avahi-devel
+  dbus-1-devel
+  dbus-1-glib
+  gconf2-devel
+  hal-devel
+  indent
+  libblkid-devel
+  libbonobo-devel
+  libcom_err-devel
+  libext2fs-devel
+  libidl-devel
+  libusb-devel
+  libuuid-devel
+  orbit2-devel
+  popt-devel
+qt3-devel
+  liblcms-devel
+  libmnt-devel
+
+export QTDIR=/usr/lib/qt3
+
+kdebase3-devel
+  (tons of stuff)
+
