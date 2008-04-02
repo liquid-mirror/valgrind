@@ -5416,7 +5416,7 @@ static inline Thread* get_current_Thread ( void ) {
 }
 
 static
-void evh__new_mem ( Addr a, SizeT len ) {
+void evh__new_mem ( Addr a, SizeT len, UInt ec_uniq ) {
    if (SHOW_EVENTS >= 2)
       VG_(printf)("evh__new_mem(%p, %lu)\n", (void*)a, len );
    shadow_mem_make_New( get_current_Thread(), a, len );
@@ -7515,7 +7515,7 @@ Bool hg_handle_client_request ( ThreadId tid, UWord* args, UWord* ret)
          if (args[2] > 0) { /* length */
             evh__die_mem(args[1], args[2]);
             /* and then set it to New */
-            evh__new_mem(args[1], args[2]);
+            evh__new_mem(args[1], args[2], 0/*ec_uniq*/);
          }
          break;
 
@@ -8821,7 +8821,7 @@ static void hg_pre_clo_init ( void )
    //VG_(needs_xml_output)          ();
 
    VG_(track_new_mem_startup)     ( evh__new_mem_w_perms );
-   VG_(track_new_mem_stack_signal)( evh__die_mem );
+   VG_(track_new_mem_stack_signal)( evh__new_mem );
    VG_(track_new_mem_brk)         ( evh__new_mem );
    VG_(track_new_mem_mmap)        ( evh__new_mem_w_perms );
    VG_(track_new_mem_stack)       ( evh__new_mem );

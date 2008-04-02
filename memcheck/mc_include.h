@@ -102,7 +102,7 @@ extern VgHashTable MC_(mempool_list);
 /* Shadow memory functions */
 extern Bool MC_(check_mem_is_noaccess)( Addr a, SizeT len, Addr* bad_addr );
 extern void MC_(make_mem_noaccess) ( Addr a, SizeT len );
-extern void MC_(make_mem_undefined)( Addr a, SizeT len );
+extern void MC_(make_mem_undefined)( Addr a, SizeT len, UInt otag );
 extern void MC_(make_mem_defined)  ( Addr a, SizeT len );
 extern void MC_(copy_address_range_state) ( Addr src, Addr dst, SizeT len );
 
@@ -319,7 +319,8 @@ extern VG_REGPARM(1) UWord MC_(helperc_LOADV16be) ( Addr );
 extern VG_REGPARM(1) UWord MC_(helperc_LOADV16le) ( Addr );
 extern VG_REGPARM(1) UWord MC_(helperc_LOADV8)    ( Addr );
 
-extern void MC_(helperc_MAKE_STACK_UNINIT) ( Addr base, UWord len );
+extern void MC_(helperc_MAKE_STACK_UNINIT) ( Addr base, UWord len,
+                                                        UInt otag );
 
 VG_REGPARM(2) void  MC_(helperc_b_store1)( Addr a, UWord d32 );
 VG_REGPARM(2) void  MC_(helperc_b_store2)( Addr a, UWord d32 );

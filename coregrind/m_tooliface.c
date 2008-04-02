@@ -272,74 +272,77 @@ void VG_(needs_final_IR_tidy_pass)(
 }
 
 /*--------------------------------------------------------------------*/
-/* Tracked events */
+/* Tracked events.  Digit 'n' on DEFn is the REGPARMness. */
 
-#define DEF(fn, args...) \
-void VG_(fn)(void(*f)(args)) \
-{ \
+#define DEF0(fn, args...) \
+void VG_(fn)(void(*f)(args)) { \
+   VG_(tdict).fn = f; \
+}
+
+#define DEF1(fn, args...) \
+void VG_(fn)(VG_REGPARM(1) void(*f)(args)) { \
    VG_(tdict).fn = f; \
 }
 
 #define DEF2(fn, args...) \
-void VG_(fn)(VG_REGPARM(1) void(*f)(args)) \
-{ \
+void VG_(fn)(VG_REGPARM(2) void(*f)(args)) { \
    VG_(tdict).fn = f; \
 }
 
-DEF(track_new_mem_startup,       Addr, SizeT, Bool, Bool, Bool)
-DEF(track_new_mem_stack_signal,  Addr, SizeT)
-DEF(track_new_mem_brk,           Addr, SizeT)
-DEF(track_new_mem_mmap,          Addr, SizeT, Bool, Bool, Bool)
+DEF0(track_new_mem_startup,       Addr, SizeT, Bool, Bool, Bool)
+DEF0(track_new_mem_stack_signal,  Addr, SizeT, UInt)
+DEF0(track_new_mem_brk,           Addr, SizeT, UInt)
+DEF0(track_new_mem_mmap,          Addr, SizeT, Bool, Bool, Bool)
 
-DEF(track_copy_mem_remap,        Addr, Addr, SizeT)
-DEF(track_change_mem_mprotect,   Addr, SizeT, Bool, Bool, Bool)
-DEF(track_die_mem_stack_signal,  Addr, SizeT)
-DEF(track_die_mem_brk,           Addr, SizeT)
-DEF(track_die_mem_munmap,        Addr, SizeT)
+DEF0(track_copy_mem_remap,        Addr, Addr, SizeT)
+DEF0(track_change_mem_mprotect,   Addr, SizeT, Bool, Bool, Bool)
+DEF0(track_die_mem_stack_signal,  Addr, SizeT)
+DEF0(track_die_mem_brk,           Addr, SizeT)
+DEF0(track_die_mem_munmap,        Addr, SizeT)
 
-DEF2(track_new_mem_stack_4,      Addr)
-DEF2(track_new_mem_stack_8,      Addr)
-DEF2(track_new_mem_stack_12,     Addr)
-DEF2(track_new_mem_stack_16,     Addr)
-DEF2(track_new_mem_stack_32,     Addr)
-DEF2(track_new_mem_stack_112,    Addr)
-DEF2(track_new_mem_stack_128,    Addr)
-DEF2(track_new_mem_stack_144,    Addr)
-DEF2(track_new_mem_stack_160,    Addr)
-DEF (track_new_mem_stack,        Addr, SizeT)
+DEF2(track_new_mem_stack_4,       Addr, UInt)
+DEF2(track_new_mem_stack_8,       Addr, UInt)
+DEF2(track_new_mem_stack_12,      Addr, UInt)
+DEF2(track_new_mem_stack_16,      Addr, UInt)
+DEF2(track_new_mem_stack_32,      Addr, UInt)
+DEF2(track_new_mem_stack_112,     Addr, UInt)
+DEF2(track_new_mem_stack_128,     Addr, UInt)
+DEF2(track_new_mem_stack_144,     Addr, UInt)
+DEF2(track_new_mem_stack_160,     Addr, UInt)
+DEF0(track_new_mem_stack,         Addr, SizeT, UInt)
 
-DEF2(track_die_mem_stack_4,      Addr)
-DEF2(track_die_mem_stack_8,      Addr)
-DEF2(track_die_mem_stack_12,     Addr)
-DEF2(track_die_mem_stack_16,     Addr)
-DEF2(track_die_mem_stack_32,     Addr)
-DEF2(track_die_mem_stack_112,    Addr)
-DEF2(track_die_mem_stack_128,    Addr)
-DEF2(track_die_mem_stack_144,    Addr)
-DEF2(track_die_mem_stack_160,    Addr)
-DEF (track_die_mem_stack,        Addr, SizeT)
+DEF1(track_die_mem_stack_4,       Addr)
+DEF1(track_die_mem_stack_8,       Addr)
+DEF1(track_die_mem_stack_12,      Addr)
+DEF1(track_die_mem_stack_16,      Addr)
+DEF1(track_die_mem_stack_32,      Addr)
+DEF1(track_die_mem_stack_112,     Addr)
+DEF1(track_die_mem_stack_128,     Addr)
+DEF1(track_die_mem_stack_144,     Addr)
+DEF1(track_die_mem_stack_160,     Addr)
+DEF0(track_die_mem_stack,         Addr, SizeT)
 
-DEF(track_ban_mem_stack,         Addr, SizeT)
+DEF0(track_ban_mem_stack,         Addr, SizeT)
 
-DEF(track_pre_mem_read,          CorePart, ThreadId, Char*, Addr, SizeT)
-DEF(track_pre_mem_read_asciiz,   CorePart, ThreadId, Char*, Addr)
-DEF(track_pre_mem_write,         CorePart, ThreadId, Char*, Addr, SizeT)
-DEF(track_post_mem_write,        CorePart, ThreadId, Addr, SizeT)
+DEF0(track_pre_mem_read,          CorePart, ThreadId, Char*, Addr, SizeT)
+DEF0(track_pre_mem_read_asciiz,   CorePart, ThreadId, Char*, Addr)
+DEF0(track_pre_mem_write,         CorePart, ThreadId, Char*, Addr, SizeT)
+DEF0(track_post_mem_write,        CorePart, ThreadId, Addr, SizeT)
 
-DEF(track_pre_reg_read,          CorePart, ThreadId, Char*, OffT, SizeT)
-DEF(track_post_reg_write,        CorePart, ThreadId,        OffT, SizeT)
+DEF0(track_pre_reg_read,          CorePart, ThreadId, Char*, OffT, SizeT)
+DEF0(track_post_reg_write,        CorePart, ThreadId,        OffT, SizeT)
 
-DEF(track_post_reg_write_clientcall_return, ThreadId, OffT, SizeT, Addr)
+DEF0(track_post_reg_write_clientcall_return, ThreadId, OffT, SizeT, Addr)
 
-DEF(track_start_client_code,     ThreadId, ULong)
-DEF(track_stop_client_code,      ThreadId, ULong)
+DEF0(track_start_client_code,     ThreadId, ULong)
+DEF0(track_stop_client_code,      ThreadId, ULong)
 
-DEF(track_pre_thread_ll_create,  ThreadId, ThreadId)
-DEF(track_pre_thread_first_insn, ThreadId)
-DEF(track_pre_thread_ll_exit,    ThreadId)
+DEF0(track_pre_thread_ll_create,  ThreadId, ThreadId)
+DEF0(track_pre_thread_first_insn, ThreadId)
+DEF0(track_pre_thread_ll_exit,    ThreadId)
 
-DEF(track_pre_deliver_signal,    ThreadId, Int sigNo, Bool)
-DEF(track_post_deliver_signal,   ThreadId, Int sigNo)
+DEF0(track_pre_deliver_signal,    ThreadId, Int sigNo, Bool)
+DEF0(track_post_deliver_signal,   ThreadId, Int sigNo)
 
 /*--------------------------------------------------------------------*/
 /*--- end                                                          ---*/

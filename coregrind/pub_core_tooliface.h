@@ -162,8 +162,8 @@ typedef struct {
 
    // -- Event tracking functions ------------------------------------
    void (*track_new_mem_startup)     (Addr, SizeT, Bool, Bool, Bool);
-   void (*track_new_mem_stack_signal)(Addr, SizeT);
-   void (*track_new_mem_brk)         (Addr, SizeT);
+   void (*track_new_mem_stack_signal)(Addr, SizeT, UInt);
+   void (*track_new_mem_brk)         (Addr, SizeT, UInt);
    void (*track_new_mem_mmap)        (Addr, SizeT, Bool, Bool, Bool);
 
    void (*track_copy_mem_remap)      (Addr src, Addr dst, SizeT);
@@ -172,16 +172,16 @@ typedef struct {
    void (*track_die_mem_brk)         (Addr, SizeT);
    void (*track_die_mem_munmap)      (Addr, SizeT);
 
-   void VG_REGPARM(1) (*track_new_mem_stack_4)  (Addr);
-   void VG_REGPARM(1) (*track_new_mem_stack_8)  (Addr);
-   void VG_REGPARM(1) (*track_new_mem_stack_12) (Addr);
-   void VG_REGPARM(1) (*track_new_mem_stack_16) (Addr);
-   void VG_REGPARM(1) (*track_new_mem_stack_32) (Addr);
-   void VG_REGPARM(1) (*track_new_mem_stack_112)(Addr);
-   void VG_REGPARM(1) (*track_new_mem_stack_128)(Addr);
-   void VG_REGPARM(1) (*track_new_mem_stack_144)(Addr);
-   void VG_REGPARM(1) (*track_new_mem_stack_160)(Addr);
-   void (*track_new_mem_stack)(Addr, SizeT);
+   void VG_REGPARM(2) (*track_new_mem_stack_4)  (Addr,UInt);
+   void VG_REGPARM(2) (*track_new_mem_stack_8)  (Addr,UInt);
+   void VG_REGPARM(2) (*track_new_mem_stack_12) (Addr,UInt);
+   void VG_REGPARM(2) (*track_new_mem_stack_16) (Addr,UInt);
+   void VG_REGPARM(2) (*track_new_mem_stack_32) (Addr,UInt);
+   void VG_REGPARM(2) (*track_new_mem_stack_112)(Addr,UInt);
+   void VG_REGPARM(2) (*track_new_mem_stack_128)(Addr,UInt);
+   void VG_REGPARM(2) (*track_new_mem_stack_144)(Addr,UInt);
+   void VG_REGPARM(2) (*track_new_mem_stack_160)(Addr,UInt);
+   void (*track_new_mem_stack)(Addr,SizeT,UInt);
 
    void VG_REGPARM(1) (*track_die_mem_stack_4)  (Addr);
    void VG_REGPARM(1) (*track_die_mem_stack_8)  (Addr);

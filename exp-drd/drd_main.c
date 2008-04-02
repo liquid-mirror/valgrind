@@ -458,7 +458,8 @@ static void drd_post_mem_write(const CorePart part,
   }
 }
 
-static void drd_start_using_mem(const Addr a1, const SizeT len)
+static void drd_start_using_mem(const Addr a1, const SizeT len,
+                                               UInt ec_uniq)
 {
   const Addr a2 = a1 + len;
 
@@ -491,16 +492,18 @@ void drd_start_using_mem_w_perms(const Addr a, const SizeT len,
 {
   thread_set_vg_running_tid(VG_(get_running_tid)());
 
-  drd_start_using_mem(a, len);
+  drd_start_using_mem(a, len, 0/*ec_uniq*/);
 }
 
 /* Called by the core when the stack of a thread grows, to indicate that */
 /* the addresses in range [ a, a + len [ may now be used by the client.  */
 /* Assumption: stacks grow downward.                                     */
-static void drd_start_using_mem_stack(const Addr a, const SizeT len)
+static void drd_start_using_mem_stack(const Addr a, const SizeT len,
+                                      UInt ec_uniq)
 {
   thread_set_stack_min(thread_get_running_tid(), a - VG_STACK_REDZONE_SZB);
-  drd_start_using_mem(a - VG_STACK_REDZONE_SZB, len + VG_STACK_REDZONE_SZB);
+  drd_start_using_mem(a - VG_STACK_REDZONE_SZB, 
+                      len + VG_STACK_REDZONE_SZB, ec_uniq);
 }
 
 /* Called by the core when the stack of a thread shrinks, to indicate that */
@@ -513,10 +516,11 @@ static void drd_stop_using_mem_stack(const Addr a, const SizeT len)
   drd_stop_using_mem(a - VG_STACK_REDZONE_SZB, len + VG_STACK_REDZONE_SZB);
 }
 
-static void drd_start_using_mem_stack_signal(const Addr a, const SizeT len)
+static void drd_start_using_mem_stack_signal(const Addr a, const SizeT len,
+                                             UInt ec_uniq)
 {
   thread_set_vg_running_tid(VG_(get_running_tid)());
-  drd_start_using_mem(a, len);
+  drd_start_using_mem(a, len, ec_uniq);
 }
 
 static void drd_stop_using_mem_stack_signal(Addr a, SizeT len)

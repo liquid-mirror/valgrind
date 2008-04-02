@@ -469,12 +469,15 @@ typedef
    Memory events (Nb: to track heap allocation/freeing, a tool must replace
    malloc() et al.  See above how to do this.)
 
-   These ones occur at startup, upon some signals, and upon some syscalls
- */
+   These ones occur at startup, upon some signals, and upon some syscalls.
+
+   For the 'new_mem' ones, the core is at liberty to pass zero for the
+   otag, denoting 'unknown origin', if desired.
+*/
 void VG_(track_new_mem_startup)     (void(*f)(Addr a, SizeT len,
                                               Bool rr, Bool ww, Bool xx));
-void VG_(track_new_mem_stack_signal)(void(*f)(Addr a, SizeT len));
-void VG_(track_new_mem_brk)         (void(*f)(Addr a, SizeT len));
+void VG_(track_new_mem_stack_signal)(void(*f)(Addr a, SizeT len, UInt otag));
+void VG_(track_new_mem_brk)         (void(*f)(Addr a, SizeT len, UInt otag));
 void VG_(track_new_mem_mmap)        (void(*f)(Addr a, SizeT len,
                                               Bool rr, Bool ww, Bool xx));
 
@@ -495,16 +498,17 @@ void VG_(track_die_mem_munmap)      (void(*f)(Addr a, SizeT len));
 
    Nb: all the specialised ones must use the VG_REGPARM(n) attribute.
  */
-void VG_(track_new_mem_stack_4)  (VG_REGPARM(1) void(*f)(Addr new_ESP));
-void VG_(track_new_mem_stack_8)  (VG_REGPARM(1) void(*f)(Addr new_ESP));
-void VG_(track_new_mem_stack_12) (VG_REGPARM(1) void(*f)(Addr new_ESP));
-void VG_(track_new_mem_stack_16) (VG_REGPARM(1) void(*f)(Addr new_ESP));
-void VG_(track_new_mem_stack_32) (VG_REGPARM(1) void(*f)(Addr new_ESP));
-void VG_(track_new_mem_stack_112)(VG_REGPARM(1) void(*f)(Addr new_ESP));
-void VG_(track_new_mem_stack_128)(VG_REGPARM(1) void(*f)(Addr new_ESP));
-void VG_(track_new_mem_stack_144)(VG_REGPARM(1) void(*f)(Addr new_ESP));
-void VG_(track_new_mem_stack_160)(VG_REGPARM(1) void(*f)(Addr new_ESP));
-void VG_(track_new_mem_stack)                  (void(*f)(Addr a, SizeT len));
+void VG_(track_new_mem_stack_4)  (VG_REGPARM(2) void(*f)(Addr new_ESP, UInt otag));
+void VG_(track_new_mem_stack_8)  (VG_REGPARM(2) void(*f)(Addr new_ESP, UInt otag));
+void VG_(track_new_mem_stack_12) (VG_REGPARM(2) void(*f)(Addr new_ESP, UInt otag));
+void VG_(track_new_mem_stack_16) (VG_REGPARM(2) void(*f)(Addr new_ESP, UInt otag));
+void VG_(track_new_mem_stack_32) (VG_REGPARM(2) void(*f)(Addr new_ESP, UInt otag));
+void VG_(track_new_mem_stack_112)(VG_REGPARM(2) void(*f)(Addr new_ESP, UInt otag));
+void VG_(track_new_mem_stack_128)(VG_REGPARM(2) void(*f)(Addr new_ESP, UInt otag));
+void VG_(track_new_mem_stack_144)(VG_REGPARM(2) void(*f)(Addr new_ESP, UInt otag));
+void VG_(track_new_mem_stack_160)(VG_REGPARM(2) void(*f)(Addr new_ESP, UInt otag));
+void VG_(track_new_mem_stack)                  (void(*f)(Addr a, SizeT len,
+                                                                 UInt otag));
 
 void VG_(track_die_mem_stack_4)  (VG_REGPARM(1) void(*f)(Addr die_ESP));
 void VG_(track_die_mem_stack_8)  (VG_REGPARM(1) void(*f)(Addr die_ESP));

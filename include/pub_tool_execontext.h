@@ -81,6 +81,17 @@ extern Bool VG_(eq_ExeContext) ( VgRes res, ExeContext* e1, ExeContext* e2 );
 // Print an ExeContext.
 extern void VG_(pp_ExeContext) ( ExeContext* ec );
 
+// Get the 32-bit unique reference number for this ExeContext.
+// Guaranteed to be nonzero.
+extern UInt VG_(get_ExeContext_uniq)( ExeContext* e );
+
+// How many entries (frames) in this ExeContext?
+extern Int VG_(get_ExeContext_n_ips)( ExeContext* e );
+
+// Find the ExeContext that has the given uniq, if any
+extern ExeContext* VG_(get_ExeContext_from_uniq)( UInt uniq );
+
+
 #endif   // __PUB_TOOL_EXECONTEXT_H
 
 /*--------------------------------------------------------------------*/

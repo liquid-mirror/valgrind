@@ -225,7 +225,9 @@ void VG_(acquire_BigLock)(ThreadId tid, HChar* who)
    vg_assert(VG_(running_tid) == VG_INVALID_THREADID);
    VG_(running_tid) = tid;
 
-   VG_(unknown_SP_update)(VG_(get_SP(tid)), VG_(get_SP(tid)));
+   { Addr gsp = VG_(get_SP)(tid);
+     VG_(unknown_SP_update)(gsp, gsp, 0/*unknown origin*/);
+   }
 
    if (VG_(clo_trace_sched)) {
       HChar buf[150];

@@ -3220,6 +3220,7 @@ static
 void do_AbiHint ( MCEnv* mce, IRExpr* base, Int len )
 {
    IRDirty* di;
+   tl_assert(0); //FIXME -- 3rd arg to helper
    di = unsafeIRDirty_0_N(
            0/*regparms*/,
            "MC_(helperc_MAKE_STACK_UNINIT)",
@@ -3585,7 +3586,7 @@ IRSB* MC_(instrument) ( VgCallbackClosure* closure,
 /* This exploits the observation that Memcheck often produces
    repeated conditional calls of the form
 
-   Dirty G MC_(helperc_value_check0/1/4/8_fail)()
+   Dirty G MC_(helperc_value_check0/1/4/8_fail)(UInt otag)
 
    with the same guard expression G guarding the same helper call.
    The second and subsequent calls are redundant.  This usually
@@ -3879,12 +3880,13 @@ static IRAtom* gen_maxU32 ( MCEnv* mce, IRAtom* b1, IRAtom* b2 )
 static IRAtom* gen_load_b ( MCEnv* mce, Int szB, 
                             IRAtom* baseaddr, Int offset )
 {
-   void*   hFun;
-   HChar*  hName;
-   IRTemp  bTmp;
-   IRType  aTy   = typeOfIRExpr( mce->bb->tyenv, baseaddr );
-   IROp    opAdd = aTy == Ity_I32 ? Iop_Add32 : Iop_Add64;
-   IRAtom* ea    = baseaddr;
+   void*    hFun;
+   HChar*   hName;
+   IRTemp   bTmp;
+   IRDirty* di;
+   IRType   aTy   = typeOfIRExpr( mce->bb->tyenv, baseaddr );
+   IROp     opAdd = aTy == Ity_I32 ? Iop_Add32 : Iop_Add64;
+   IRAtom*  ea    = baseaddr;
    if (offset != 0) {
       IRAtom* off = aTy == Ity_I32 ? mkU32( offset )
                                    : mkU64( (Long)(Int)offset );
@@ -3908,8 +3910,7 @@ static IRAtom* gen_load_b ( MCEnv* mce, Int szB,
       default:
          tl_assert(0);
    }
-   IRDirty* di
-      = unsafeIRDirty_1_N(
+   di = unsafeIRDirty_1_N(
            bTmp, 1/*regparms*/, hName, VG_(fnptr_to_fnentry)( hFun ),
            mkIRExprVec_1( ea )
         );
@@ -3924,11 +3925,12 @@ static IRAtom* gen_load_b ( MCEnv* mce, Int szB,
 static void gen_store_b ( MCEnv* mce, Int szB,
                           IRAtom* baseaddr, Int offset, IRAtom* dataB )
 {
-   void*   hFun;
-   HChar*  hName;
-   IRType  aTy   = typeOfIRExpr( mce->bb->tyenv, baseaddr );
-   IROp    opAdd = aTy == Ity_I32 ? Iop_Add32 : Iop_Add64;
-   IRAtom* ea    = baseaddr;
+   void*    hFun;
+   HChar*   hName;
+   IRDirty* di;
+   IRType   aTy   = typeOfIRExpr( mce->bb->tyenv, baseaddr );
+   IROp     opAdd = aTy == Ity_I32 ? Iop_Add32 : Iop_Add64;
+   IRAtom*  ea    = baseaddr;
    if (offset != 0) {
       IRAtom* off = aTy == Ity_I32 ? mkU32( offset )
                                    : mkU64( (Long)(Int)offset );
@@ -3953,8 +3955,7 @@ static void gen_store_b ( MCEnv* mce, Int szB,
       default:
          tl_assert(0);
    }
-   IRDirty* di
-      = unsafeIRDirty_0_N( 2/*regparms*/,
+   di = unsafeIRDirty_0_N( 2/*regparms*/,
            hName, VG_(fnptr_to_fnentry)( hFun ),
            mkIRExprVec_2( ea, dataB )
         );
@@ -3983,36 +3984,36 @@ static IRAtom* schemeE ( MCEnv* mce, IRExpr* e )
    switch (e->tag) {
 
       case Iex_GetI: {
-         IRRegArray* descr = e->Iex.GetI.descr;
-         IRType equivIntTy = get_reg_array_equiv_int_type(descr);
+         IRRegArray* descr_b;
+         IRAtom      *t1, *t2, *t3, *t4;
+         IRRegArray* descr      = e->Iex.GetI.descr;
+         IRType      equivIntTy = get_reg_array_equiv_int_type(descr);
          /* If this array is unshadowable for whatever reason, use the
             usual approximation. */
          if (equivIntTy == Ity_INVALID)
             return mkU32(0);
          tl_assert(sizeofIRType(equivIntTy) >= 4);
          tl_assert(sizeofIRType(equivIntTy) == sizeofIRType(descr->elemTy));
-         IRRegArray* descr_b 
-            = mkIRRegArray( descr->base, equivIntTy, descr->nElems );
+         descr_b = mkIRRegArray( descr->base, equivIntTy, descr->nElems );
          /* Do a shadow indexed get of the same size, giving t1.  Take
             the bottom 32 bits of it, giving t2.  Compute into t3 the
             origin for the index (almost certainly zero, but there's
             no harm in being completely general here, since iropt will
             remove any useless code), and fold it in, giving a final
             value t4. */
-         IRAtom* t1
-             = assignNew( 'B', mce, equivIntTy, 
-                           IRExpr_GetI( descr_b, e->Iex.GetI.ix, 
-                                                 e->Iex.GetI.bias ));
-         IRAtom* t2 = narrowTo32( mce, t1 );
-         IRAtom* t3 = schemeE( mce, e->Iex.GetI.ix );
-         IRAtom* t4 = gen_maxU32( mce, t2, t3 );
+         t1 = assignNew( 'B', mce, equivIntTy, 
+                          IRExpr_GetI( descr_b, e->Iex.GetI.ix, 
+                                                e->Iex.GetI.bias ));
+         t2 = narrowTo32( mce, t1 );
+         t3 = schemeE( mce, e->Iex.GetI.ix );
+         t4 = gen_maxU32( mce, t2, t3 );
          return t4;
       }
       case Iex_CCall: {
          Int i;
-         IRAtom* here;
+         IRAtom*  here;
          IRExpr** args = e->Iex.CCall.args;
-         IRAtom* curr = mkU32(0);
+         IRAtom*  curr = mkU32(0);
          for (i = 0; args[i]; i++) {
             tl_assert(i < 32);
             tl_assert(isOriginalAtom(mce, args[i]));
@@ -4033,8 +4034,9 @@ static IRAtom* schemeE ( MCEnv* mce, IRExpr* e )
          return curr;
       }
       case Iex_Load: {
+         Int dszB;
          tl_assert(e->Iex.Load.end == Iend_LE);
-         Int dszB = sizeofIRType(e->Iex.Load.ty);
+         dszB = sizeofIRType(e->Iex.Load.ty);
          /* assert that the B value for the address is already
             available (somewhere) */
          tl_assert(isIRAtom(e->Iex.Load.addr));
@@ -4139,11 +4141,12 @@ static void do_origins_Dirty ( MCEnv* mce, IRDirty* d )
       gOff = d->fxState[i].offset;
       tl_assert(gSz > 0);
       while (True) {
+         Int b_offset;
          if (gSz == 0) break;
          n = gSz <= 4 ? gSz : 4;
          /* update 'curr' with maxU32 of the state slice 
             gOff .. gOff+n-1 */
-         Int b_offset = get_shadow_offset(gOff, 4);
+         b_offset = get_shadow_offset(gOff, 4);
          if (b_offset != -1) {
             here = assignNew( 'B',mce,
                                Ity_I32,
@@ -4215,10 +4218,11 @@ static void do_origins_Dirty ( MCEnv* mce, IRDirty* d )
       gOff = d->fxState[i].offset;
       tl_assert(gSz > 0);
       while (True) {
+         Int b_offset;
          if (gSz == 0) break;
          n = gSz <= 4 ? gSz : 4;
          /* Write 'curr' to the state slice gOff .. gOff+n-1 */
-         Int b_offset = get_shadow_offset(gOff, 4);
+         b_offset = get_shadow_offset(gOff, 4);
          if (b_offset != -1) {
            stmt( 'B', mce, IRStmt_Put(b_offset + 2*mce->layout->total_sizeB,
                                       curr ));
@@ -4251,6 +4255,8 @@ static void schemeS ( MCEnv* mce, IRStmt* st )
    switch (st->tag) {
 
       case Ist_PutI: {
+         IRRegArray* descr_b;
+         IRAtom      *t1, *t2, *t3, *t4;
          IRRegArray* descr = st->Ist.PutI.descr;
          IRType equivIntTy = get_reg_array_equiv_int_type(descr);
          /* If this array is unshadowable for whatever reason,
@@ -4259,15 +4265,15 @@ static void schemeS ( MCEnv* mce, IRStmt* st )
             break;
          tl_assert(sizeofIRType(equivIntTy) >= 4);
          tl_assert(sizeofIRType(equivIntTy) == sizeofIRType(descr->elemTy));
-         IRRegArray* descr_b 
+         descr_b
             = mkIRRegArray( descr->base, equivIntTy, descr->nElems );
          /* Compute a value to Put - the conjoinment of the origin for
             the data to be Put-ted (obviously) and of the index value
             (not so obviously). */
-         IRAtom* t1 = schemeE( mce, st->Ist.PutI.data );
-         IRAtom* t2 = schemeE( mce, st->Ist.PutI.ix );
-         IRAtom* t3 = gen_maxU32( mce, t1, t2 );
-         IRAtom* t4 = zWidenFrom32( mce, equivIntTy, t3 );
+         t1 = schemeE( mce, st->Ist.PutI.data );
+         t2 = schemeE( mce, st->Ist.PutI.ix );
+         t3 = gen_maxU32( mce, t1, t2 );
+         t4 = zWidenFrom32( mce, equivIntTy, t3 );
          stmt( 'B', mce, IRStmt_PutI( descr_b, st->Ist.PutI.ix,
                                       st->Ist.PutI.bias, t4 ));
          break;
@@ -4276,13 +4282,15 @@ static void schemeS ( MCEnv* mce, IRStmt* st )
          do_origins_Dirty( mce, st->Ist.Dirty.details );
          break;
       case Ist_Store: {
+         Int     dszB;
+         IRAtom* dataB;
          tl_assert(st->Ist.Store.end == Iend_LE);
          /* assert that the B value for the address is already
             available (somewhere) */
          tl_assert(isIRAtom(st->Ist.Store.addr));
-         Int dszB = sizeofIRType(
-                    typeOfIRExpr(mce->bb->tyenv, st->Ist.Store.data ));
-         IRAtom* dataB = schemeE( mce, st->Ist.Store.data );
+         dszB = sizeofIRType(
+                   typeOfIRExpr(mce->bb->tyenv, st->Ist.Store.data ));
+         dataB = schemeE( mce, st->Ist.Store.data );
          gen_store_b( mce, dszB, st->Ist.Store.addr, 0/*offset*/, dataB );
          break;
       }
