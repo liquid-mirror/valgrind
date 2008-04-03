@@ -924,6 +924,9 @@ static void complainIfUndefined ( MCEnv* mce, IRAtom* atom )
 
    /* Get the origin info for the value we are about to check. */
    origin = schemeE( mce, atom );
+   if (mce->hWordTy == Ity_I64) {
+      origin = assignNew( 'B', mce, Ity_I64, unop(Iop_32Uto64, origin) );
+   }
 
    switch (sz) {
       case 0:
@@ -3214,18 +3217,29 @@ void do_shadow_Dirty ( MCEnv* mce, IRDirty* d )
    notify the A/V bit machinery of this fact.
 
    We call 
-   void MC_(helperc_MAKE_STACK_UNINIT) ( Addr base, UWord len );
+   void MC_(helperc_MAKE_STACK_UNINIT) ( Addr base, UWord len,
+                                                    UInt otag );
 */
 static
-void do_AbiHint ( MCEnv* mce, IRExpr* base, Int len )
+void do_AbiHint ( MCEnv* mce, IRExpr* base, Int len, Addr64 guest_IP )
 {
    IRDirty* di;
-   tl_assert(0); //FIXME -- 3rd arg to helper
+   /* This pretty much duplicates mk_otag_Expr in m_translate.c.  Oh
+      well. */
+   UInt otag;
+   ExeContext* ec
+      = VG_(make_depth_1_ExeContext_from_Addr)( (Addr)guest_IP );
+   tl_assert(ec);
+   otag = VG_(get_ExeContext_uniq)( ec );
+   tl_assert(otag > 0);
+   /* Ok, we have an otag. */
+
    di = unsafeIRDirty_0_N(
            0/*regparms*/,
            "MC_(helperc_MAKE_STACK_UNINIT)",
            VG_(fnptr_to_fnentry)( &MC_(helperc_MAKE_STACK_UNINIT) ),
-           mkIRExprVec_2( base, mkIRExpr_HWord( (UInt)len) )
+           mkIRExprVec_3( base, mkIRExpr_HWord( (UInt)len),
+                                mkIRExpr_HWord( (HWord)otag ) )
         );
    stmt( 'V', mce, IRStmt_Dirty(di) );
 }
@@ -3358,6 +3372,10 @@ IRSB* MC_(instrument) ( VgCallbackClosure* closure,
    IRStmt* st;
    MCEnv   mce;
    IRSB*   bb;
+
+   /* Set up stuff for tracking the guest IP */
+   Bool   curr_IP_known = False;
+   Addr64 curr_IP       = 0;
 
    if (gWordTy != hWordTy) {
       /* We don't currently support this case. */
@@ -3521,8 +3539,14 @@ IRSB* MC_(instrument) ( VgCallbackClosure* closure,
             complainIfUndefined( &mce, st->Ist.Exit.guard );
             break;
 
-         case Ist_NoOp:
          case Ist_IMark:
+            /* Generate no instrumentation, but do note the guest
+               address of this instruction */
+            curr_IP_known = True;
+            curr_IP       = st->Ist.IMark.addr;
+            break;
+
+         case Ist_NoOp:
          case Ist_MBE:
             break;
 
@@ -3531,7 +3555,13 @@ IRSB* MC_(instrument) ( VgCallbackClosure* closure,
             break;
 
          case Ist_AbiHint:
-            do_AbiHint( &mce, st->Ist.AbiHint.base, st->Ist.AbiHint.len );
+            /* If this assert fails, we've got a bad IR block, one in
+               which an AbiHint isn't preceded by an IMark.  But an
+               IMark is supposed to be at the start of *every*
+               instruction's IR.  Hence this should never fail. */
+            tl_assert(curr_IP_known);
+            do_AbiHint( &mce, st->Ist.AbiHint.base, st->Ist.AbiHint.len, 
+                              curr_IP );
             break;
 
          default:
@@ -3737,10 +3767,28 @@ static IRTemp findShadowTmpB ( MCEnv* mce, IRTemp orig )
 }
 
 #include "libvex_guest_x86.h"
+#include "libvex_guest_amd64.h"
 
 static IRType get_reg_array_equiv_int_type ( IRRegArray* arr )
 {
-#if defined(VGA_x86)
+#if defined(VGA_amd64)
+   /* Ignore the FP tag array - pointless to shadow, and in any case
+      the elements are too small */
+   if (arr->base == offsetof(VexGuestAMD64State,guest_FPTAG)
+       && arr->elemTy == Ity_I8 && arr->nElems == 8)
+     return Ity_INVALID;
+
+   /* The FP register array */
+   if (arr->base == offsetof(VexGuestAMD64State,guest_FPREG[0])
+       && arr->elemTy == Ity_F64 && arr->nElems == 8)
+     return Ity_I64;
+
+   VG_(printf)("get_reg_array_equiv_int_type: unhandled: ");
+   ppIRRegArray(arr);
+   VG_(printf)("\n");
+   tl_assert(0);
+
+#elif defined(VGA_x86)
    /* Ignore the FP tag array - pointless to shadow, and in any case
       the elements are too small */
    if (arr->base == offsetof(VexGuestX86State,guest_FPTAG)
@@ -3763,7 +3811,141 @@ static IRType get_reg_array_equiv_int_type ( IRRegArray* arr )
 
 static Int get_shadow_offset ( Int offset, Int szB )
 {
-#if defined(VGA_x86)
+#if defined(VGA_amd64)
+   Bool do_adcb_h_hack = True;
+   Bool is1248 = szB == 1 || szB == 2 || szB == 4 || szB == 8;
+
+   if (offset == offsetof(VexGuestAMD64State,guest_RAX) && is1248)
+      return offset;
+   if (offset == offsetof(VexGuestAMD64State,guest_RCX) && is1248)
+      return offset;
+   if (offset == offsetof(VexGuestAMD64State,guest_RDX) && is1248)
+      return offset;
+   if (offset == offsetof(VexGuestAMD64State,guest_RBX) && is1248)
+      return offset;
+   if (offset == offsetof(VexGuestAMD64State,guest_RSP) && is1248)
+      return offset;
+   if (offset == offsetof(VexGuestAMD64State,guest_RBP) && is1248)
+      return offset;
+   if (offset == offsetof(VexGuestAMD64State,guest_RSI) && is1248)
+      return offset;
+   if (offset == offsetof(VexGuestAMD64State,guest_RDI) && is1248)
+      return offset;
+   if (offset == offsetof(VexGuestAMD64State,guest_R8) && is1248)
+      return offset;
+   if (offset == offsetof(VexGuestAMD64State,guest_R9) && is1248)
+      return offset;
+   if (offset == offsetof(VexGuestAMD64State,guest_R10) && is1248)
+      return offset;
+   if (offset == offsetof(VexGuestAMD64State,guest_R11) && is1248)
+      return offset;
+   if (offset == offsetof(VexGuestAMD64State,guest_R12) && is1248)
+      return offset;
+   if (offset == offsetof(VexGuestAMD64State,guest_R13) && is1248)
+      return offset;
+   if (offset == offsetof(VexGuestAMD64State,guest_R14) && is1248)
+      return offset;
+   if (offset == offsetof(VexGuestAMD64State,guest_R15) && is1248)
+      return offset;
+
+   if (offset == offsetof(VexGuestAMD64State,guest_CC_DEP1) && is1248)
+      return offset;
+   if (offset == offsetof(VexGuestAMD64State,guest_CC_DEP2) && is1248)
+      return offset;
+
+   if (offset == offsetof(VexGuestAMD64State,guest_CC_OP) && is1248)
+      return -1; /* CC_OP is always defined -- this slot is used for %AH */
+   if (offset == offsetof(VexGuestAMD64State,guest_DFLAG) && is1248)
+      return -1; /* DFLAG is always defined -- this slot is used for %CH */
+   if (offset == offsetof(VexGuestAMD64State,guest_CC_NDEP) && is1248)
+      return -1; /* CC_NDEP is always defined -- this slot is used for %BH */
+   if (offset == offsetof(VexGuestAMD64State,guest_RIP) && is1248)
+      return -1; /* RIP is always defined */
+   if (offset == offsetof(VexGuestAMD64State,guest_FS_ZERO) && is1248)
+      return -1; /* FS_ZERO is always defined */
+   if (offset == offsetof(VexGuestAMD64State,guest_IDFLAG) && is1248)
+      return -1; /* IDFLAG is always defined -- this slot is used for %DH */
+
+   // Treat %ah, %ch, %dh, %bh as independent registers.  To do this
+   // requires finding 4 unused 32-bit slots in the second-shadow
+   // guest state.  How about: CC_OP DFLAG IDFLAG CC_NDEP since none of
+   // those are tracked.
+   tl_assert(sizeof( ((VexGuestAMD64State*)0)->guest_CC_OP ) == 8);
+   tl_assert(sizeof( ((VexGuestAMD64State*)0)->guest_DFLAG ) == 8);
+   tl_assert(sizeof( ((VexGuestAMD64State*)0)->guest_IDFLAG ) == 8);
+   tl_assert(sizeof( ((VexGuestAMD64State*)0)->guest_CC_NDEP ) == 8);
+   if (offset == 1+ offsetof(VexGuestAMD64State,guest_RAX) && szB==1) {
+      if (do_adcb_h_hack)
+         return offsetof(VexGuestAMD64State,guest_CC_OP);
+      VG_(printf)("Approx: get_shadow_offset: %%AH\n");
+      return -1;
+   }
+   if (offset == 1+ offsetof(VexGuestAMD64State,guest_RCX) && szB==1) {
+      if (do_adcb_h_hack)
+         return offsetof(VexGuestAMD64State,guest_DFLAG);
+      VG_(printf)("Approx: get_shadow_offset: %%CH\n");
+      return -1;
+   }
+   if (offset == 1+ offsetof(VexGuestAMD64State,guest_RDX) && szB==1) {
+      if (do_adcb_h_hack)
+         return offsetof(VexGuestAMD64State,guest_IDFLAG);
+      VG_(printf)("Approx: get_shadow_offset: %%DH\n");
+      return -1;
+   }
+   if (offset == 1+ offsetof(VexGuestAMD64State,guest_RBX) && szB==1) {
+      if (do_adcb_h_hack)
+         return offsetof(VexGuestAMD64State,guest_CC_NDEP);
+      VG_(printf)("Approx: get_shadow_offset: %%BH\n");
+      return -1;
+   }
+
+   // skip XMM admin stuff
+   if (offset == offsetof(VexGuestAMD64State,guest_SSEROUND) && szB==8)
+      return -1; /* SSEROUND is always defined */
+
+   // skip XMM accesses, for now
+   if (offset >= offsetof(VexGuestAMD64State,guest_XMM0)
+       && offset <= offsetof(VexGuestAMD64State,guest_XMM15)
+       && (szB == 4 || szB == 8 || szB==16))
+      return -1;
+
+   // skip MMX accesses to FP regs
+   if (offset >= offsetof(VexGuestAMD64State,guest_FPREG[0])
+       && offset <= offsetof(VexGuestAMD64State,guest_FPREG[7])
+       && szB==8)
+      return -1;
+
+   // skip FP admin stuff
+   if (offset == offsetof(VexGuestAMD64State,guest_FTOP) && szB==4)
+      return -1;
+   //if (offset == offsetof(VexGuestAMD64State,guest_FC3210) && szB==4)
+   //   return -1;
+   if (offset == offsetof(VexGuestAMD64State,guest_FPROUND) && szB==8)
+      return -1;
+   if (offset == offsetof(VexGuestAMD64State,guest_EMWARN) && szB==4)
+      return -1;
+
+   // map high halves of %RAX,%RCX,%RDX,%RBX to the whole register
+   if (offset == 4+ offsetof(VexGuestAMD64State,guest_RAX) && szB==4)
+      return offset-4; /* High half of RAX - probably CPUID reference */
+   if (offset == 4+ offsetof(VexGuestAMD64State,guest_RCX) && szB==4)
+      return offset-4; /* High half of RCX - probably CPUID reference */
+   if (offset == 4+ offsetof(VexGuestAMD64State,guest_RDX) && szB==4)
+      return offset-4; /* High half of RDX - probably CPUID reference */
+   if (offset == 4+ offsetof(VexGuestAMD64State,guest_RBX) && szB==4)
+      return offset-4; /* High half of RBX - probably CPUID reference */
+
+   VG_(printf)("ZZ: FTOP %ld\n", offsetof(VexGuestAMD64State,guest_FTOP));
+   VG_(printf)("ZZ: FPROUND %ld\n", offsetof(VexGuestAMD64State,guest_FPROUND));
+   VG_(printf)("ZZ: FC3210 %ld\n", offsetof(VexGuestAMD64State,guest_FC3210));
+   VG_(printf)("ZZ: EMWARN %ld\n", offsetof(VexGuestAMD64State,guest_EMWARN));
+   VG_(printf)("ZZ: TISTART %ld\n", offsetof(VexGuestAMD64State,guest_TISTART));
+
+
+   VG_(printf)("get_shadow_offset(off=%d,sz=%d)\n", offset,szB);
+   tl_assert(0);
+
+#elif defined(VGA_x86)
    Bool do_adcb_h_hack = True;
    Bool is124 = szB == 1 || szB == 2 || szB == 4;
    if (offset == offsetof(VexGuestX86State,guest_EAX) && is124)
@@ -3782,22 +3964,23 @@ static Int get_shadow_offset ( Int offset, Int szB )
       return offset;
    if (offset == offsetof(VexGuestX86State,guest_EDI) && is124)
       return offset;
-   if (offset == offsetof(VexGuestX86State,guest_CC_OP) && is124)
-      return -1; /* CC_OP is always defined */
    if (offset == offsetof(VexGuestX86State,guest_CC_DEP1) && is124)
       return offset;
    if (offset == offsetof(VexGuestX86State,guest_CC_DEP2) && is124)
       return offset;
+
+   if (offset == offsetof(VexGuestX86State,guest_CC_OP) && is124)
+      return -1; /* CC_OP is always defined -- this slot is used for %AH */
    if (offset == offsetof(VexGuestX86State,guest_CC_NDEP) && is124)
-      return -1; /* CC_NDEP is always defined -- this slot is used for %AH */
+      return -1; /* CC_NDEP is always defined */
    if (offset == offsetof(VexGuestX86State,guest_DFLAG) && is124)
       return -1; /* DFLAG is always defined -- this slot is used for %CH */
    if (offset == offsetof(VexGuestX86State,guest_EIP) && is124)
-      return -1; /* EIP is always defined -- this slot is used for %DH */
+      return -1; /* EIP is always defined */
    if (offset == offsetof(VexGuestX86State,guest_IDFLAG) && is124)
-      return -1; /* IDFLAG is always defined -- this slot is used for %BH */
+      return -1; /* IDFLAG is always defined -- this slot is used for %DH */
    if (offset == offsetof(VexGuestX86State,guest_ACFLAG) && is124)
-      return -1; /* ACFLAG is always defined */
+      return -1; /* ACFLAG is always defined -- this slot is used for %BH */
 
    // Treat %ah, %ch, %dh, %bh as independent registers.  To do this
    // requires finding 4 unused 32-bit slots in the second-shadow
@@ -3850,7 +4033,7 @@ static Int get_shadow_offset ( Int offset, Int szB )
    if (offset == offsetof(VexGuestX86State,guest_EMWARN) && szB==4)
       return -1;
 
-   // skip MMX accesses to FP regs
+   // skip MMX accesses to FP regs for now
    if (offset >= offsetof(VexGuestX86State,guest_FPREG[0])
        && offset <= offsetof(VexGuestX86State,guest_FPREG[7])
        && szB==8)
@@ -3863,6 +4046,7 @@ static Int get_shadow_offset ( Int offset, Int szB )
    VG_(printf)("get_shadow_offset(off=%d,sz=%d)\n", offset,szB);
    tl_assert(0);
 #else
+   VG_(printf)("get_shadow_offset(off=%d,sz=%d)\n", offset,szB);
    tl_assert(0);
 #endif
 }
@@ -3907,7 +4091,11 @@ static IRAtom* gen_load_b ( MCEnv* mce, Int szB,
       case 8: hFun  = (void*)&MC_(helperc_b_load8);
               hName = "MC_(helperc_b_load8)";
               break;
+      case 16: hFun  = (void*)&MC_(helperc_b_load16);
+               hName = "MC_(helperc_b_load16)";
+               break;
       default:
+         VG_(printf)("mc_translate.c: gen_load_b: unhandled szB == %d\n", szB);
          tl_assert(0);
    }
    di = unsafeIRDirty_1_N(
@@ -3918,9 +4106,14 @@ static IRAtom* gen_load_b ( MCEnv* mce, Int szB,
       neither guest state nor guest memory. */
    stmt( 'B', mce, IRStmt_Dirty(di) );
    if (mce->hWordTy == Ity_I64) {
-      assign( 'B', mce, bTmp, unop(Iop_64to32, mkexpr(bTmp)) );
+      /* 64-bit host */
+      IRTemp bTmp32 = newIRTemp(mce->bb->tyenv, Ity_I32);
+      assign( 'B', mce, bTmp32, unop(Iop_64to32, mkexpr(bTmp)) );
+      return mkexpr(bTmp32);
+   } else {
+      /* 32-bit host */
+      return mkexpr(bTmp);
    }
-   return mkexpr(bTmp);
 }
 static void gen_store_b ( MCEnv* mce, Int szB,
                           IRAtom* baseaddr, Int offset, IRAtom* dataB )
@@ -3952,6 +4145,9 @@ static void gen_store_b ( MCEnv* mce, Int szB,
       case 8: hFun  = (void*)&MC_(helperc_b_store8);
               hName = "MC_(helperc_b_store8)";
               break;
+      case 16: hFun  = (void*)&MC_(helperc_b_store16);
+               hName = "MC_(helperc_b_store16)";
+               break;
       default:
          tl_assert(0);
    }
@@ -4253,6 +4449,14 @@ static void do_origins_Dirty ( MCEnv* mce, IRDirty* d )
 static void schemeS ( MCEnv* mce, IRStmt* st )
 {
    switch (st->tag) {
+
+      case Ist_AbiHint:
+         /* The value-check instrumenter handles this - by arranging
+            to pass an origin-check tag to
+            MC_(helperc_MAKE_STACK_UNINIT).  This is all that needs to
+            happen for origin tracking w.r.t. AbiHints.  So there is
+            nothing to do here. */
+         break;
 
       case Ist_PutI: {
          IRRegArray* descr_b;

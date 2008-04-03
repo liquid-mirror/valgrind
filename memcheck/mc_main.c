@@ -2427,6 +2427,8 @@ void MC_(helperc_MAKE_STACK_UNINIT) ( Addr base, UWord len, UInt otag )
       directly into the vabits array.  (If the sm was distinguished, this
       will make a copy and then write to it.)
    */
+   goto slowcase; /* FIXME */
+
    if (LIKELY( len == 128 && VG_IS_8_ALIGNED(base) )) {
       /* Now we know the address range is suitably sized and aligned. */
       UWord a_lo = (UWord)(base);
@@ -2523,6 +2525,7 @@ void MC_(helperc_MAKE_STACK_UNINIT) ( Addr base, UWord len, UInt otag )
    }
 
    /* else fall into slow case */
+  slowcase:
    MC_(make_mem_undefined)(base, len, otag);
 }
 
@@ -5235,11 +5238,8 @@ static void done_prof_mem ( void ) { }
 /*--- Origin tracking: load handlers       ---*/
 /*--------------------------------------------*/
 
-__attribute__((noinline))
-static UInt merge_origins ( UInt or1, UInt or2 ) {
-   if (or1 == 0) return or2;
-   if (or2 == 0) return or1;
-   return or1 < or2 ? or1 : or2;
+static inline UInt merge_origins ( UInt or1, UInt or2 ) {
+   return or1 > or2 ? or1 : or2;
 }
 
 UWord VG_REGPARM(1) MC_(helperc_b_load1)( Addr a ) {
@@ -5271,8 +5271,7 @@ UWord VG_REGPARM(1) MC_(helperc_b_load2)( Addr a ) {
       /* Handle misaligned case, slowly. */
       UInt oLo   = (UInt)MC_(helperc_b_load1)( a + 0 );
       UInt oHi   = (UInt)MC_(helperc_b_load1)( a + 1 );
-      UInt oBoth = merge_origins(oLo, oHi);
-      return (UWord)oBoth;
+      return merge_origins(oLo, oHi);
    }
 
    lineoff = (a % (OC_W32S_PER_LINE * 4)) / 4;
@@ -5301,8 +5300,7 @@ UWord VG_REGPARM(1) MC_(helperc_b_load4)( Addr a ) {
       /* Handle misaligned case, slowly. */
       UInt oLo   = (UInt)MC_(helperc_b_load2)( a + 0 );
       UInt oHi   = (UInt)MC_(helperc_b_load2)( a + 2 );
-      UInt oBoth = merge_origins(oLo, oHi);
-      return (UWord)oBoth;
+      return merge_origins(oLo, oHi);
    }
 
    lineoff = (a % (OC_W32S_PER_LINE * 4)) / 4;
@@ -5321,11 +5319,43 @@ UWord VG_REGPARM(1) MC_(helperc_b_load4)( Addr a ) {
 }
 
 UWord VG_REGPARM(1) MC_(helperc_b_load8)( Addr a ) {
-   UInt oLo   = (UInt)MC_(helperc_b_load4)( a + 0 );
-   UInt oHi   = (UInt)MC_(helperc_b_load4)( a + 4 );
+   OCacheLine* line;
+   UChar descrLo, descrHi, descr;
+   UWord lineoff;
+
+   if (UNLIKELY(a & 7)) {
+      /* Handle misaligned case, slowly. */
+      UInt oLo   = (UInt)MC_(helperc_b_load4)( a + 0 );
+      UInt oHi   = (UInt)MC_(helperc_b_load4)( a + 4 );
+      return merge_origins(oLo, oHi);
+   }
+
+   lineoff = (a % (OC_W32S_PER_LINE * 4)) / 4;
+   tl_assert(lineoff == 0 || lineoff == 2); /*since 8-aligned*/
+
+   line = find_OCacheLine( a );
+
+   descrLo = line->descr[lineoff + 0];
+   descrHi = line->descr[lineoff + 1];
+   descr   = descrLo | descrHi;
+   tl_assert(descr < 0x10);
+
+   if (0 == descr) {
+      return 0; /* both 32-bit chunks are defined */
+   } else {
+      UInt oLo = descrLo == 0 ? 0 : line->w32[lineoff + 0];
+      UInt oHi = descrHi == 0 ? 0 : line->w32[lineoff + 1];
+      return merge_origins(oLo, oHi);
+   }
+}
+
+UWord VG_REGPARM(1) MC_(helperc_b_load16)( Addr a ) {
+   UInt oLo   = (UInt)MC_(helperc_b_load8)( a + 0 );
+   UInt oHi   = (UInt)MC_(helperc_b_load8)( a + 8 );
    UInt oBoth = merge_origins(oLo, oHi);
    return (UWord)oBoth;
 }
+
 
 /*--------------------------------------------*/
 /*--- Origin tracking: store handlers      ---*/
@@ -5399,9 +5429,37 @@ void VG_REGPARM(2) MC_(helperc_b_store4)( Addr a, UWord d32 ) {
 }
 
 void VG_REGPARM(2) MC_(helperc_b_store8)( Addr a, UWord d32 ) {
-   MC_(helperc_b_store4)( a + 0, d32 );
-   MC_(helperc_b_store4)( a + 4, d32 );
+   OCacheLine* line;
+   UWord lineoff;
+
+   if (UNLIKELY(a & 7)) {
+      /* Handle misaligned case, slowly. */
+      MC_(helperc_b_store4)( a + 0, d32 );
+      MC_(helperc_b_store4)( a + 4, d32 );
+      return;
+   }
+
+   lineoff = (a % (OC_W32S_PER_LINE * 4)) / 4;
+   tl_assert(lineoff == 0 || lineoff == 2); /*since 8-aligned*/
+
+   line = find_OCacheLine( a );
+
+   if (d32 == 0) {
+      line->descr[lineoff + 0] = 0;
+      line->descr[lineoff + 1] = 0;
+   } else {
+      line->descr[lineoff + 0] = 0xF;
+      line->descr[lineoff + 1] = 0xF;
+      line->w32[lineoff + 0] = d32;
+      line->w32[lineoff + 1] = d32;
+   }
 }
+
+void VG_REGPARM(2) MC_(helperc_b_store16)( Addr a, UWord d32 ) {
+   MC_(helperc_b_store8)( a + 0, d32 );
+   MC_(helperc_b_store8)( a + 8, d32 );
+}
+
 
 /*--------------------------------------------*/
 /*--- Origin tracking: sarp handlers       ---*/

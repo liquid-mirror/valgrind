@@ -53,9 +53,6 @@ extern void VG_(print_ExeContext_stats) ( void );
 extern
 /*StackTrace*/Addr* VG_(get_ExeContext_StackTrace) ( ExeContext* e );
 
-// Make an ExeContext containing just 'a', and nothing else
-ExeContext* VG_(make_depth_1_ExeContext_from_Addr)( Addr a );
-
 
 #endif   // __PUB_CORE_EXECONTEXT_H
 

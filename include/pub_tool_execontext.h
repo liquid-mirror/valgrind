@@ -91,6 +91,9 @@ extern Int VG_(get_ExeContext_n_ips)( ExeContext* e );
 // Find the ExeContext that has the given uniq, if any
 extern ExeContext* VG_(get_ExeContext_from_uniq)( UInt uniq );
 
+// Make an ExeContext containing just 'a', and nothing else
+ExeContext* VG_(make_depth_1_ExeContext_from_Addr)( Addr a );
+
 
 #endif   // __PUB_TOOL_EXECONTEXT_H
 
