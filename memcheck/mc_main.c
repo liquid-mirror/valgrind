@@ -2380,11 +2380,64 @@ static void mc_die_mem_stack ( Addr a, SizeT len )
    with defined values and g could mistakenly read them.  So the RZ
    also needs to be nuked on function calls.
 */
-void MC_(helperc_MAKE_STACK_UNINIT) ( Addr base, UWord len, UInt otag )
+
+
+/* Here's a simple cache to hold nia -> otag mappings.  It could be
+   improved so as to have a lower miss rate. */
+
+static UWord stats__nia_cache_queries = 0;
+static UWord stats__nia_cache_misses  = 0;
+
+typedef
+   struct { UWord arg1; UWord res; }
+   WCacheEnt;
+
+#define N_NIA_TO_OTAG_CACHE 511
+
+static WCacheEnt nia_to_otag_cache[N_NIA_TO_OTAG_CACHE];
+
+static void init_nia_to_otag_cache ( void ) {
+   VG_(memset)( &nia_to_otag_cache, 0, sizeof(nia_to_otag_cache) );
+}
+
+static inline UInt convert_nia_to_otag ( Addr nia )
 {
+   UWord i;
+   UInt        otag;
+   ExeContext* ec;
+
+   tl_assert( sizeof(nia_to_otag_cache[0].arg1) == sizeof(nia) );
+
+   stats__nia_cache_queries++;
+   i = nia % N_NIA_TO_OTAG_CACHE;
+   tl_assert(i >= 0 && i < N_NIA_TO_OTAG_CACHE);
+
+   if (LIKELY( nia_to_otag_cache[i].arg1 == nia ))
+      return nia_to_otag_cache[i].res;
+
+   stats__nia_cache_misses++;
+   ec = VG_(make_depth_1_ExeContext_from_Addr)(nia);
+   tl_assert(ec);
+   otag = VG_(get_ExeContext_uniq)(ec);
+   tl_assert(otag > 0);
+
+   nia_to_otag_cache[i].arg1 = nia;
+   nia_to_otag_cache[i].res  = (UWord)otag;
+   return otag;
+}
+
+
+
+void MC_(helperc_MAKE_STACK_UNINIT) ( Addr base, UWord len, Addr nia )
+{
+   UInt otag;
    tl_assert(sizeof(UWord) == sizeof(SizeT));
    if (0)
-      VG_(printf)("helperc_MAKE_STACK_UNINIT %p %lu\n", base, len );
+      VG_(printf)("helperc_MAKE_STACK_UNINIT (%p,%lu,nia=%p)\n",
+                  base, len, nia );
+
+   otag = convert_nia_to_otag ( nia );
+   tl_assert(otag > 0);
 
 #  if 0
    /* Really slow version */
@@ -5635,6 +5688,9 @@ static void mc_fini ( Int exitcode )
                       - stats__ocacheline_found_at_N,
                    stats__ocacheline_found_at_1, 
                    stats__ocacheline_found_at_N );
+      VG_(message)(Vg_DebugMsg,
+                   " niacache: %,12lu finds  %,12lu misses",
+                   stats__nia_cache_queries, stats__nia_cache_misses);
    }
 
    if (0) {
@@ -5767,6 +5823,7 @@ static void mc_pre_clo_init(void)
    tl_assert(-1 != VG_(log2)(BYTES_PER_SEC_VBIT_NODE));
 
    init_OCache();
+   init_nia_to_otag_cache();
 }
 
 VG_DETERMINE_INTERFACE_VERSION(mc_pre_clo_init)

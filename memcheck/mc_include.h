@@ -320,7 +320,7 @@ extern VG_REGPARM(1) UWord MC_(helperc_LOADV16le) ( Addr );
 extern VG_REGPARM(1) UWord MC_(helperc_LOADV8)    ( Addr );
 
 extern void MC_(helperc_MAKE_STACK_UNINIT) ( Addr base, UWord len,
-                                                        UInt otag );
+                                                        Addr nia );
 
 VG_REGPARM(2) void  MC_(helperc_b_store1) ( Addr a, UWord d32 );
 VG_REGPARM(2) void  MC_(helperc_b_store2) ( Addr a, UWord d32 );

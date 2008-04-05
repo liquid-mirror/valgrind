@@ -3220,6 +3220,7 @@ void do_shadow_Dirty ( MCEnv* mce, IRDirty* d )
    void MC_(helperc_MAKE_STACK_UNINIT) ( Addr base, UWord len,
                                                     UInt otag );
 */
+#if 0
 static
 void do_AbiHint ( MCEnv* mce, IRExpr* base, Int len, Addr64 guest_IP )
 {
@@ -3243,6 +3244,28 @@ void do_AbiHint ( MCEnv* mce, IRExpr* base, Int len, Addr64 guest_IP )
         );
    stmt( 'V', mce, IRStmt_Dirty(di) );
 }
+#else
+/* We have an ABI hint telling us that [base .. base+len-1] is to
+   become undefined ("writable").  Generate code to call a helper to
+   notify the A/V bit machinery of this fact.
+
+   We call 
+   void MC_(helperc_MAKE_STACK_UNINIT) ( Addr base, UWord len,
+                                                    Addr nia );
+*/
+static
+void do_AbiHint ( MCEnv* mce, IRExpr* base, Int len, IRExpr* nia )
+{
+   IRDirty* di;
+   di = unsafeIRDirty_0_N(
+           0/*regparms*/,
+           "MC_(helperc_MAKE_STACK_UNINIT)",
+           VG_(fnptr_to_fnentry)( &MC_(helperc_MAKE_STACK_UNINIT) ),
+           mkIRExprVec_3( base, mkIRExpr_HWord( (UInt)len), nia )
+        );
+   stmt( 'V', mce, IRStmt_Dirty(di) );
+}
+#endif
 
 
 /*------------------------------------------------------------*/
@@ -3347,7 +3370,8 @@ static Bool checkForBogusLiterals ( /*FLAT*/ IRStmt* st )
       case Ist_Exit:
          return isBogusAtom(st->Ist.Exit.guard);
       case Ist_AbiHint:
-         return isBogusAtom(st->Ist.AbiHint.base);
+         return isBogusAtom(st->Ist.AbiHint.base)
+                || isBogusAtom(st->Ist.AbiHint.nia);
       case Ist_NoOp:
       case Ist_IMark:
       case Ist_MBE:
@@ -3560,8 +3584,9 @@ IRSB* MC_(instrument) ( VgCallbackClosure* closure,
                IMark is supposed to be at the start of *every*
                instruction's IR.  Hence this should never fail. */
             tl_assert(curr_IP_known);
-            do_AbiHint( &mce, st->Ist.AbiHint.base, st->Ist.AbiHint.len, 
-                              curr_IP );
+            do_AbiHint( &mce, st->Ist.AbiHint.base,
+                              st->Ist.AbiHint.len,
+                              st->Ist.AbiHint.nia );
             break;
 
          default:
@@ -4452,7 +4477,7 @@ static void schemeS ( MCEnv* mce, IRStmt* st )
 
       case Ist_AbiHint:
          /* The value-check instrumenter handles this - by arranging
-            to pass an origin-check tag to
+            to pass the address of the next instruction to
             MC_(helperc_MAKE_STACK_UNINIT).  This is all that needs to
             happen for origin tracking w.r.t. AbiHints.  So there is
             nothing to do here. */
