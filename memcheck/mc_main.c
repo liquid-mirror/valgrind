@@ -1965,6 +1965,23 @@ void make_aligned_word64_noaccess ( Addr a )
 }
 
 
+static inline void set_aligned_word64_Origin_to_undef ( Addr a, UInt otag )
+{
+   //// BEGIN inlined, specialised version of MC_(helperc_b_store8)
+   //// Set the origins for a+0 .. a+7
+   { OCacheLine* line;
+     UWord lineoff = (a % (OC_W32S_PER_LINE * 4)) / 4;
+     tl_assert(lineoff >= 0 
+               && lineoff < OC_W32S_PER_LINE -1/*'cos 8-aligned*/);
+     line = find_OCacheLine( a );
+     line->descr[lineoff+0] = 0xF;
+     line->descr[lineoff+1] = 0xF;
+     line->w32[lineoff+0]   = otag;
+     line->w32[lineoff+1]   = otag;
+   }
+   //// END inlined, specialised version of MC_(helperc_b_store8)
+}
+
 /*------------------------------------------------------------*/
 /*--- Stack pointer adjustment                             ---*/
 /*------------------------------------------------------------*/
@@ -2389,15 +2406,33 @@ static UWord stats__nia_cache_queries = 0;
 static UWord stats__nia_cache_misses  = 0;
 
 typedef
-   struct { UWord arg1; UWord res; }
+   struct { UWord arg0; UWord res0; 
+            UWord arg1; UWord res1; }
    WCacheEnt;
 
 #define N_NIA_TO_OTAG_CACHE 511
 
 static WCacheEnt nia_to_otag_cache[N_NIA_TO_OTAG_CACHE];
 
-static void init_nia_to_otag_cache ( void ) {
-   VG_(memset)( &nia_to_otag_cache, 0, sizeof(nia_to_otag_cache) );
+static void init_nia_to_otag_cache ( void )
+{
+   UWord       i;
+   Addr        zero_addr = 0;
+   ExeContext* zero_ec;
+   UInt        zero_otag;
+   /* Fill all the slots with an entry for address zero, and the
+      relevant otags accordingly.  Hence the cache is initially filled
+      with valid data. */
+   zero_ec = VG_(make_depth_1_ExeContext_from_Addr)(zero_addr);
+   tl_assert(zero_ec);
+   zero_otag = VG_(get_ExeContext_uniq)(zero_ec);
+   tl_assert(zero_otag > 0);
+   for (i = 0; i < N_NIA_TO_OTAG_CACHE; i++) {
+      nia_to_otag_cache[i].arg0 = zero_addr;
+      nia_to_otag_cache[i].res0 = zero_otag;
+      nia_to_otag_cache[i].arg1 = zero_addr;
+      nia_to_otag_cache[i].res1 = zero_otag;
+   }
 }
 
 static inline UInt convert_nia_to_otag ( Addr nia )
@@ -2412,8 +2447,16 @@ static inline UInt convert_nia_to_otag ( Addr nia )
    i = nia % N_NIA_TO_OTAG_CACHE;
    tl_assert(i >= 0 && i < N_NIA_TO_OTAG_CACHE);
 
-   if (LIKELY( nia_to_otag_cache[i].arg1 == nia ))
-      return nia_to_otag_cache[i].res;
+   if (LIKELY( nia_to_otag_cache[i].arg0 == nia ))
+      return nia_to_otag_cache[i].res0;
+
+   if (LIKELY( nia_to_otag_cache[i].arg1 == nia )) {
+#     define SWAP(_w1,_w2) { UWord _t = _w1; _w1 = _w2; _w2 = _t; }
+      SWAP( nia_to_otag_cache[i].arg0, nia_to_otag_cache[i].arg1 );
+      SWAP( nia_to_otag_cache[i].res0, nia_to_otag_cache[i].res1 );
+#     undef SWAP
+      return nia_to_otag_cache[i].res0;
+   }
 
    stats__nia_cache_misses++;
    ec = VG_(make_depth_1_ExeContext_from_Addr)(nia);
@@ -2421,8 +2464,11 @@ static inline UInt convert_nia_to_otag ( Addr nia )
    otag = VG_(get_ExeContext_uniq)(ec);
    tl_assert(otag > 0);
 
-   nia_to_otag_cache[i].arg1 = nia;
-   nia_to_otag_cache[i].res  = (UWord)otag;
+   nia_to_otag_cache[i].arg1 = nia_to_otag_cache[i].arg0;
+   nia_to_otag_cache[i].res1 = nia_to_otag_cache[i].res0;
+
+   nia_to_otag_cache[i].arg0 = nia;
+   nia_to_otag_cache[i].res0  = (UWord)otag;
    return otag;
 }
 
@@ -2444,7 +2490,7 @@ void MC_(helperc_MAKE_STACK_UNINIT) ( Addr base, UWord len, Addr nia )
    MC_(make_mem_undefined)(base, len, otag);
 #  endif
 
-#  if 1
+#  if 0
    /* Slow(ish) version, which is fairly easily seen to be correct.
    */
    if (LIKELY( VG_IS_8_ALIGNED(base) && len==128 )) {
@@ -2480,7 +2526,6 @@ void MC_(helperc_MAKE_STACK_UNINIT) ( Addr base, UWord len, Addr nia )
       directly into the vabits array.  (If the sm was distinguished, this
       will make a copy and then write to it.)
    */
-   goto slowcase; /* FIXME */
 
    if (LIKELY( len == 128 && VG_IS_8_ALIGNED(base) )) {
       /* Now we know the address range is suitably sized and aligned. */
@@ -2514,6 +2559,24 @@ void MC_(helperc_MAKE_STACK_UNINIT) ( Addr base, UWord len, Addr nia )
             p[13] = VA_BITS16_UNDEFINED;
             p[14] = VA_BITS16_UNDEFINED;
             p[15] = VA_BITS16_UNDEFINED;
+
+            set_aligned_word64_Origin_to_undef( base + 8 * 0, otag );
+            set_aligned_word64_Origin_to_undef( base + 8 * 1, otag );
+            set_aligned_word64_Origin_to_undef( base + 8 * 2, otag );
+            set_aligned_word64_Origin_to_undef( base + 8 * 3, otag );
+            set_aligned_word64_Origin_to_undef( base + 8 * 4, otag );
+            set_aligned_word64_Origin_to_undef( base + 8 * 5, otag );
+            set_aligned_word64_Origin_to_undef( base + 8 * 6, otag );
+            set_aligned_word64_Origin_to_undef( base + 8 * 7, otag );
+            set_aligned_word64_Origin_to_undef( base + 8 * 8, otag );
+            set_aligned_word64_Origin_to_undef( base + 8 * 9, otag );
+            set_aligned_word64_Origin_to_undef( base + 8 * 10, otag );
+            set_aligned_word64_Origin_to_undef( base + 8 * 11, otag );
+            set_aligned_word64_Origin_to_undef( base + 8 * 12, otag );
+            set_aligned_word64_Origin_to_undef( base + 8 * 13, otag );
+            set_aligned_word64_Origin_to_undef( base + 8 * 14, otag );
+            set_aligned_word64_Origin_to_undef( base + 8 * 15, otag );
+
             return;
          }
       }
@@ -2524,6 +2587,7 @@ void MC_(helperc_MAKE_STACK_UNINIT) ( Addr base, UWord len, Addr nia )
       /* Now we know the address range is suitably sized and aligned. */
       UWord a_lo = (UWord)(base);
       UWord a_hi = (UWord)(base + 288 - 1);
+tl_assert(0); //FIXME
       tl_assert(a_lo < a_hi);             // paranoia: detect overflow
       if (a_hi < MAX_PRIMARY_ADDRESS) {
          // Now we know the entire range is within the main primary map.
@@ -2578,7 +2642,6 @@ void MC_(helperc_MAKE_STACK_UNINIT) ( Addr base, UWord len, Addr nia )
    }
 
    /* else fall into slow case */
-  slowcase:
    MC_(make_mem_undefined)(base, len, otag);
 }
 
