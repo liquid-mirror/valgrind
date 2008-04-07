@@ -3834,242 +3834,201 @@ static IRType get_reg_array_equiv_int_type ( IRRegArray* arr )
 #endif
 }
 
+
 static Int get_shadow_offset ( Int offset, Int szB )
 {
 #if defined(VGA_amd64)
-   Bool do_adcb_h_hack = True;
-   Bool is1248 = szB == 1 || szB == 2 || szB == 4 || szB == 8;
 
-   if (offset == offsetof(VexGuestAMD64State,guest_RAX) && is1248)
-      return offset;
-   if (offset == offsetof(VexGuestAMD64State,guest_RCX) && is1248)
-      return offset;
-   if (offset == offsetof(VexGuestAMD64State,guest_RDX) && is1248)
-      return offset;
-   if (offset == offsetof(VexGuestAMD64State,guest_RBX) && is1248)
-      return offset;
-   if (offset == offsetof(VexGuestAMD64State,guest_RSP) && is1248)
-      return offset;
-   if (offset == offsetof(VexGuestAMD64State,guest_RBP) && is1248)
-      return offset;
-   if (offset == offsetof(VexGuestAMD64State,guest_RSI) && is1248)
-      return offset;
-   if (offset == offsetof(VexGuestAMD64State,guest_RDI) && is1248)
-      return offset;
-   if (offset == offsetof(VexGuestAMD64State,guest_R8) && is1248)
-      return offset;
-   if (offset == offsetof(VexGuestAMD64State,guest_R9) && is1248)
-      return offset;
-   if (offset == offsetof(VexGuestAMD64State,guest_R10) && is1248)
-      return offset;
-   if (offset == offsetof(VexGuestAMD64State,guest_R11) && is1248)
-      return offset;
-   if (offset == offsetof(VexGuestAMD64State,guest_R12) && is1248)
-      return offset;
-   if (offset == offsetof(VexGuestAMD64State,guest_R13) && is1248)
-      return offset;
-   if (offset == offsetof(VexGuestAMD64State,guest_R14) && is1248)
-      return offset;
-   if (offset == offsetof(VexGuestAMD64State,guest_R15) && is1248)
-      return offset;
+#define GOF(_fieldname) (offsetof(VexGuestAMD64State,guest_##_fieldname))
+#define SZB(_fieldname) (sizeof(((VexGuestAMD64State*)0)->guest_##_fieldname))
+   Int  o      = offset;
+   Int  sz     = szB;
+   Bool is1248 = sz == 8 || sz == 4 || sz == 2 || sz == 1;
 
-   if (offset == offsetof(VexGuestAMD64State,guest_CC_DEP1) && is1248)
-      return offset;
-   if (offset == offsetof(VexGuestAMD64State,guest_CC_DEP2) && is1248)
-      return offset;
+   // FIXME: this assumes the host is little endian.  Assert for it.
+   if (o == GOF(RAX) && is1248) return o;
+   if (o == GOF(RCX) && is1248) return o;
+   if (o == GOF(RDX) && is1248) return o;
+   if (o == GOF(RBX) && is1248) return o;
+   if (o == GOF(RSP) && is1248) return o;
+   if (o == GOF(RBP) && is1248) return o;
+   if (o == GOF(RSI) && is1248) return o;
+   if (o == GOF(RDI) && is1248) return o;
+   if (o == GOF(R8)  && is1248) return o;
+   if (o == GOF(R9)  && is1248) return o;
+   if (o == GOF(R10) && is1248) return o;
+   if (o == GOF(R11) && is1248) return o;
+   if (o == GOF(R12) && is1248) return o;
+   if (o == GOF(R13) && is1248) return o;
+   if (o == GOF(R14) && is1248) return o;
+   if (o == GOF(R15) && is1248) return o;
 
-   if (offset == offsetof(VexGuestAMD64State,guest_CC_OP) && is1248)
-      return -1; /* CC_OP is always defined -- this slot is used for %AH */
-   if (offset == offsetof(VexGuestAMD64State,guest_DFLAG) && is1248)
-      return -1; /* DFLAG is always defined -- this slot is used for %CH */
-   if (offset == offsetof(VexGuestAMD64State,guest_CC_NDEP) && is1248)
-      return -1; /* CC_NDEP is always defined -- this slot is used for %BH */
-   if (offset == offsetof(VexGuestAMD64State,guest_RIP) && is1248)
-      return -1; /* RIP is always defined */
-   if (offset == offsetof(VexGuestAMD64State,guest_FS_ZERO) && is1248)
-      return -1; /* FS_ZERO is always defined */
-   if (offset == offsetof(VexGuestAMD64State,guest_IDFLAG) && is1248)
-      return -1; /* IDFLAG is always defined -- this slot is used for %DH */
+   if (o == GOF(CC_DEP1) && sz == 8) return o;
+   if (o == GOF(CC_DEP2) && sz == 8) return o;
 
-   // Treat %ah, %ch, %dh, %bh as independent registers.  To do this
-   // requires finding 4 unused 32-bit slots in the second-shadow
-   // guest state.  How about: CC_OP DFLAG IDFLAG CC_NDEP since none of
-   // those are tracked.
-   tl_assert(sizeof( ((VexGuestAMD64State*)0)->guest_CC_OP ) == 8);
-   tl_assert(sizeof( ((VexGuestAMD64State*)0)->guest_DFLAG ) == 8);
-   tl_assert(sizeof( ((VexGuestAMD64State*)0)->guest_IDFLAG ) == 8);
-   tl_assert(sizeof( ((VexGuestAMD64State*)0)->guest_CC_NDEP ) == 8);
-   if (offset == 1+ offsetof(VexGuestAMD64State,guest_RAX) && szB==1) {
-      if (do_adcb_h_hack)
-         return offsetof(VexGuestAMD64State,guest_CC_OP);
-      VG_(printf)("Approx: get_shadow_offset: %%AH\n");
-      return -1;
-   }
-   if (offset == 1+ offsetof(VexGuestAMD64State,guest_RCX) && szB==1) {
-      if (do_adcb_h_hack)
-         return offsetof(VexGuestAMD64State,guest_DFLAG);
-      VG_(printf)("Approx: get_shadow_offset: %%CH\n");
-      return -1;
-   }
-   if (offset == 1+ offsetof(VexGuestAMD64State,guest_RDX) && szB==1) {
-      if (do_adcb_h_hack)
-         return offsetof(VexGuestAMD64State,guest_IDFLAG);
-      VG_(printf)("Approx: get_shadow_offset: %%DH\n");
-      return -1;
-   }
-   if (offset == 1+ offsetof(VexGuestAMD64State,guest_RBX) && szB==1) {
-      if (do_adcb_h_hack)
-         return offsetof(VexGuestAMD64State,guest_CC_NDEP);
-      VG_(printf)("Approx: get_shadow_offset: %%BH\n");
-      return -1;
-   }
+   if (o == GOF(CC_OP)   && sz == 8) return -1; /* slot used for %AH */
+   if (o == GOF(CC_NDEP) && sz == 8) return -1; /* slot used for %BH */
+   if (o == GOF(DFLAG)   && sz == 8) return -1; /* slot used for %CH */
+   if (o == GOF(RIP)     && sz == 8) return -1; /* slot unused */
+   if (o == GOF(IDFLAG)  && sz == 8) return -1; /* slot used for %DH */
+   if (o == GOF(FS_ZERO) && sz == 8) return -1; /* slot unused */
 
-   // skip XMM admin stuff
-   if (offset == offsetof(VexGuestAMD64State,guest_SSEROUND) && szB==8)
-      return -1; /* SSEROUND is always defined */
+   /* Treat %AH, %BH, %CH, %DH as independent registers.  To do this
+      requires finding 4 unused 32-bit slots in the second-shadow
+      guest state, respectively: CC_OP CC_NDEP DFLAG IDFLAG, since
+      none of those are tracked. */
+   tl_assert(SZB(CC_OP)   == 8);
+   tl_assert(SZB(CC_NDEP) == 8);
+   tl_assert(SZB(IDFLAG)  == 8);
+   tl_assert(SZB(DFLAG)   == 8);
 
-   // skip XMM accesses, for now
-   if (offset >= offsetof(VexGuestAMD64State,guest_XMM0)
-       && offset <= offsetof(VexGuestAMD64State,guest_XMM15)
-       && (szB == 4 || szB == 8 || szB==16))
-      return -1;
+   if (o == 1+ GOF(RAX) && szB == 1) return GOF(CC_OP);
+   if (o == 1+ GOF(RBX) && szB == 1) return GOF(CC_NDEP);
+   if (o == 1+ GOF(RCX) && szB == 1) return GOF(DFLAG);
+   if (o == 1+ GOF(RDX) && szB == 1) return GOF(IDFLAG);
 
-   // skip MMX accesses to FP regs
-   if (offset >= offsetof(VexGuestAMD64State,guest_FPREG[0])
-       && offset <= offsetof(VexGuestAMD64State,guest_FPREG[7])
-       && szB==8)
-      return -1;
+   /* skip XMM and FP admin stuff */
+   if (o == GOF(SSEROUND) && szB == 8) return -1;
+   if (o == GOF(FTOP)     && szB == 4) return -1;
+   if (o == GOF(FPROUND)  && szB == 8) return -1;
+   if (o == GOF(EMWARN)   && szB == 4) return -1;
+   /* The amd64 front end doesn't actually use FC3210.  It should
+      be done away with.
+      if (offset == offsetof(VexGuestAMD64State,guest_FC3210) && szB==4)
+        return -1;
+   */
 
-   // skip FP admin stuff
-   if (offset == offsetof(VexGuestAMD64State,guest_FTOP) && szB==4)
-      return -1;
-   //if (offset == offsetof(VexGuestAMD64State,guest_FC3210) && szB==4)
-   //   return -1;
-   if (offset == offsetof(VexGuestAMD64State,guest_FPROUND) && szB==8)
-      return -1;
-   if (offset == offsetof(VexGuestAMD64State,guest_EMWARN) && szB==4)
-      return -1;
+   /* XMM registers */
+   if (o >= GOF(XMM0)  && o+sz <= GOF(XMM0) +SZB(XMM0))  return GOF(XMM0);
+   if (o >= GOF(XMM1)  && o+sz <= GOF(XMM1) +SZB(XMM1))  return GOF(XMM1);
+   if (o >= GOF(XMM2)  && o+sz <= GOF(XMM2) +SZB(XMM2))  return GOF(XMM2);
+   if (o >= GOF(XMM3)  && o+sz <= GOF(XMM3) +SZB(XMM3))  return GOF(XMM3);
+   if (o >= GOF(XMM4)  && o+sz <= GOF(XMM4) +SZB(XMM4))  return GOF(XMM4);
+   if (o >= GOF(XMM5)  && o+sz <= GOF(XMM5) +SZB(XMM5))  return GOF(XMM5);
+   if (o >= GOF(XMM6)  && o+sz <= GOF(XMM6) +SZB(XMM6))  return GOF(XMM6);
+   if (o >= GOF(XMM7)  && o+sz <= GOF(XMM7) +SZB(XMM7))  return GOF(XMM7);
+   if (o >= GOF(XMM8)  && o+sz <= GOF(XMM8) +SZB(XMM8))  return GOF(XMM8);
+   if (o >= GOF(XMM9)  && o+sz <= GOF(XMM9) +SZB(XMM9))  return GOF(XMM9);
+   if (o >= GOF(XMM10) && o+sz <= GOF(XMM10)+SZB(XMM10)) return GOF(XMM10);
+   if (o >= GOF(XMM11) && o+sz <= GOF(XMM11)+SZB(XMM11)) return GOF(XMM11);
+   if (o >= GOF(XMM12) && o+sz <= GOF(XMM12)+SZB(XMM12)) return GOF(XMM12);
+   if (o >= GOF(XMM13) && o+sz <= GOF(XMM13)+SZB(XMM13)) return GOF(XMM13);
+   if (o >= GOF(XMM14) && o+sz <= GOF(XMM14)+SZB(XMM14)) return GOF(XMM14);
+   if (o >= GOF(XMM15) && o+sz <= GOF(XMM15)+SZB(XMM15)) return GOF(XMM15);
 
-   // map high halves of %RAX,%RCX,%RDX,%RBX to the whole register
-   if (offset == 4+ offsetof(VexGuestAMD64State,guest_RAX) && szB==4)
-      return offset-4; /* High half of RAX - probably CPUID reference */
-   if (offset == 4+ offsetof(VexGuestAMD64State,guest_RCX) && szB==4)
-      return offset-4; /* High half of RCX - probably CPUID reference */
-   if (offset == 4+ offsetof(VexGuestAMD64State,guest_RDX) && szB==4)
-      return offset-4; /* High half of RDX - probably CPUID reference */
-   if (offset == 4+ offsetof(VexGuestAMD64State,guest_RBX) && szB==4)
-      return offset-4; /* High half of RBX - probably CPUID reference */
+   /* MMX accesses to FP regs */
+   if (o == GOF(FPREG[0]) && sz == 8) return o;
+   if (o == GOF(FPREG[1]) && sz == 8) return o;
+   if (o == GOF(FPREG[2]) && sz == 8) return o;
+   if (o == GOF(FPREG[3]) && sz == 8) return o;
+   if (o == GOF(FPREG[4]) && sz == 8) return o;
+   if (o == GOF(FPREG[5]) && sz == 8) return o;
+   if (o == GOF(FPREG[6]) && sz == 8) return o;
+   if (o == GOF(FPREG[7]) && sz == 8) return o;
 
-   VG_(printf)("ZZ: FTOP %ld\n", offsetof(VexGuestAMD64State,guest_FTOP));
-   VG_(printf)("ZZ: FPROUND %ld\n", offsetof(VexGuestAMD64State,guest_FPROUND));
-   VG_(printf)("ZZ: FC3210 %ld\n", offsetof(VexGuestAMD64State,guest_FC3210));
-   VG_(printf)("ZZ: EMWARN %ld\n", offsetof(VexGuestAMD64State,guest_EMWARN));
-   VG_(printf)("ZZ: TISTART %ld\n", offsetof(VexGuestAMD64State,guest_TISTART));
+   /* Map high halves of %RAX,%RCX,%RDX,%RBX to the whole register.
+      This is needed because the general handling of dirty helper
+      calls is done in 4 byte chunks.  Hence we will see these.
+      Currently we only expect to see artefacts from CPUID. */
+   if (o == 4+ GOF(RAX) && sz == 4) return GOF(RAX);
+   if (o == 4+ GOF(RCX) && sz == 4) return GOF(RCX);
+   if (o == 4+ GOF(RDX) && sz == 4) return GOF(RDX);
+   if (o == 4+ GOF(RBX) && sz == 4) return GOF(RBX);
 
-
-   VG_(printf)("get_shadow_offset(off=%d,sz=%d)\n", offset,szB);
+   VG_(printf)("get_shadow_offset(amd64)(off=%d,sz=%d)\n", offset,szB);
    tl_assert(0);
+#undef GOF
+#undef SZB
+
 
 #elif defined(VGA_x86)
-   Bool do_adcb_h_hack = True;
-   Bool is124 = szB == 1 || szB == 2 || szB == 4;
-   if (offset == offsetof(VexGuestX86State,guest_EAX) && is124)
-      return offset;
-   if (offset == offsetof(VexGuestX86State,guest_ECX) && is124)
-      return offset;
-   if (offset == offsetof(VexGuestX86State,guest_EDX) && is124)
-      return offset;
-   if (offset == offsetof(VexGuestX86State,guest_EBX) && is124)
-      return offset;
-   if (offset == offsetof(VexGuestX86State,guest_ESP) && is124)
-      return offset;
-   if (offset == offsetof(VexGuestX86State,guest_EBP) && is124)
-      return offset;
-   if (offset == offsetof(VexGuestX86State,guest_ESI) && is124)
-      return offset;
-   if (offset == offsetof(VexGuestX86State,guest_EDI) && is124)
-      return offset;
-   if (offset == offsetof(VexGuestX86State,guest_CC_DEP1) && is124)
-      return offset;
-   if (offset == offsetof(VexGuestX86State,guest_CC_DEP2) && is124)
-      return offset;
 
-   if (offset == offsetof(VexGuestX86State,guest_CC_OP) && is124)
-      return -1; /* CC_OP is always defined -- this slot is used for %AH */
-   if (offset == offsetof(VexGuestX86State,guest_CC_NDEP) && is124)
-      return -1; /* CC_NDEP is always defined */
-   if (offset == offsetof(VexGuestX86State,guest_DFLAG) && is124)
-      return -1; /* DFLAG is always defined -- this slot is used for %CH */
-   if (offset == offsetof(VexGuestX86State,guest_EIP) && is124)
-      return -1; /* EIP is always defined */
-   if (offset == offsetof(VexGuestX86State,guest_IDFLAG) && is124)
-      return -1; /* IDFLAG is always defined -- this slot is used for %DH */
-   if (offset == offsetof(VexGuestX86State,guest_ACFLAG) && is124)
-      return -1; /* ACFLAG is always defined -- this slot is used for %BH */
+#define GOF(_fieldname) (offsetof(VexGuestX86State,guest_##_fieldname))
+#define SZB(_fieldname) (sizeof(((VexGuestX86State*)0)->guest_##_fieldname))
 
-   // Treat %ah, %ch, %dh, %bh as independent registers.  To do this
-   // requires finding 4 unused 32-bit slots in the second-shadow
-   // guest state.  How about: CC_OP DFLAG IDFLAG ACFLAG since none of
-   // those are tracked.
-   tl_assert(sizeof( ((VexGuestX86State*)0)->guest_CC_OP ) == 4);
-   tl_assert(sizeof( ((VexGuestX86State*)0)->guest_DFLAG ) == 4);
-   tl_assert(sizeof( ((VexGuestX86State*)0)->guest_IDFLAG ) == 4);
-   tl_assert(sizeof( ((VexGuestX86State*)0)->guest_ACFLAG ) == 4);
-   if (offset == 1+ offsetof(VexGuestX86State,guest_EAX) && szB==1) {
-      if (do_adcb_h_hack)
-         return offsetof(VexGuestX86State,guest_CC_OP);
-      VG_(printf)("Approx: get_shadow_offset: %%AH\n");
-      return -1;
-   }
-   if (offset == 1+ offsetof(VexGuestX86State,guest_ECX) && szB==1) {
-      if (do_adcb_h_hack)
-         return offsetof(VexGuestX86State,guest_DFLAG);
-      VG_(printf)("Approx: get_shadow_offset: %%CH\n");
-      return -1;
-   }
-   if (offset == 1+ offsetof(VexGuestX86State,guest_EDX) && szB==1) {
-      if (do_adcb_h_hack)
-         return offsetof(VexGuestX86State,guest_IDFLAG);
-      VG_(printf)("Approx: get_shadow_offset: %%DH\n");
-      return -1;
-   }
-   if (offset == 1+ offsetof(VexGuestX86State,guest_EBX) && szB==1) {
-      if (do_adcb_h_hack)
-         return offsetof(VexGuestX86State,guest_ACFLAG);
-      VG_(printf)("Approx: get_shadow_offset: %%BH\n");
-      return -1;
-   }
+   Int  o     = offset;
+   Int  sz    = szB;
+   Bool is124 = sz == 4 || sz == 2 || sz == 1;
 
-   // skip %gs and other segment related stuff
-   if (offset == offsetof(VexGuestX86State,guest_GS) && szB==2)
-      return -1;
-   if (offset == offsetof(VexGuestX86State,guest_LDT) && szB==4)
-      return -1;
-   if (offset == offsetof(VexGuestX86State,guest_GDT) && szB==4)
-      return -1;
+   if (o == GOF(EAX) && is124) return o;
+   if (o == GOF(ECX) && is124) return o;
+   if (o == GOF(EDX) && is124) return o;
+   if (o == GOF(EBX) && is124) return o;
+   if (o == GOF(ESP) && is124) return o;
+   if (o == GOF(EBP) && is124) return o;
+   if (o == GOF(ESI) && is124) return o;
+   if (o == GOF(EDI) && is124) return o;
 
-   // skip FP admin stuff
-   if (offset == offsetof(VexGuestX86State,guest_FTOP) && szB==4)
-      return -1;
-   if (offset == offsetof(VexGuestX86State,guest_FC3210) && szB==4)
-      return -1;
-   if (offset == offsetof(VexGuestX86State,guest_FPROUND) && szB==4)
-      return -1;
-   if (offset == offsetof(VexGuestX86State,guest_EMWARN) && szB==4)
-      return -1;
+   if (o == GOF(CC_DEP1) && sz == 4) return o;
+   if (o == GOF(CC_DEP2) && sz == 4) return o;
 
-   // skip MMX accesses to FP regs for now
-   if (offset >= offsetof(VexGuestX86State,guest_FPREG[0])
-       && offset <= offsetof(VexGuestX86State,guest_FPREG[7])
-       && szB==8)
-      return -1;
+   if (o == GOF(CC_OP)   && sz == 4) return -1; /* slot used for %AH */
+   if (o == GOF(CC_NDEP) && sz == 4) return -1; /* slot used for %BH */
+   if (o == GOF(DFLAG)   && sz == 4) return -1; /* slot used for %CH */
+   if (o == GOF(EIP)     && sz == 4) return -1; /* slot unused */
+   if (o == GOF(IDFLAG)  && sz == 4) return -1; /* slot used for %DH */
+   if (o == GOF(ACFLAG)  && sz == 4) return -1; /* slot unused */
 
-   // ignore SSE for now
-   if (offset == offsetof(VexGuestX86State,guest_SSEROUND) && szB==4)
-      return -1;
+   /* Treat %AH, %BH, %CH, %DH as independent registers.  To do this
+      requires finding 4 unused 32-bit slots in the second-shadow
+      guest state, respectively: CC_OP CC_NDEP DFLAG IDFLAG since none
+      of those are tracked. */
+   tl_assert(SZB(CC_OP)   == 4);
+   tl_assert(SZB(CC_NDEP) == 4);
+   tl_assert(SZB(IDFLAG)  == 4);
+   tl_assert(SZB(ACFLAG)  == 4);
+   if (o == 1+ GOF(EAX) && szB == 1) return GOF(CC_OP);
+   //if (o == 1+ GOF(EBX) && szB == 1) return GOF(CC_NDEP);
+   if (o == 1+ GOF(ECX) && szB == 1) return GOF(DFLAG);
+   if (o == 1+ GOF(EDX) && szB == 1) return GOF(IDFLAG);
 
-   VG_(printf)("get_shadow_offset(off=%d,sz=%d)\n", offset,szB);
+   /* skip XMM and FP admin stuff */
+   if (o == GOF(SSEROUND) && szB == 4) return -1;
+   if (o == GOF(FTOP)     && szB == 4) return -1;
+   if (o == GOF(FPROUND)  && szB == 4) return -1;
+   if (o == GOF(EMWARN)   && szB == 4) return -1;
+   if (o == GOF(FC3210)   && szB == 4) return -1;
+
+   /* XMM registers */
+   if (o >= GOF(XMM0)  && o+sz <= GOF(XMM0)+SZB(XMM0)) return GOF(XMM0);
+   if (o >= GOF(XMM1)  && o+sz <= GOF(XMM1)+SZB(XMM1)) return GOF(XMM1);
+   if (o >= GOF(XMM2)  && o+sz <= GOF(XMM2)+SZB(XMM2)) return GOF(XMM2);
+   if (o >= GOF(XMM3)  && o+sz <= GOF(XMM3)+SZB(XMM3)) return GOF(XMM3);
+   if (o >= GOF(XMM4)  && o+sz <= GOF(XMM4)+SZB(XMM4)) return GOF(XMM4);
+   if (o >= GOF(XMM5)  && o+sz <= GOF(XMM5)+SZB(XMM5)) return GOF(XMM5);
+   if (o >= GOF(XMM6)  && o+sz <= GOF(XMM6)+SZB(XMM6)) return GOF(XMM6);
+   if (o >= GOF(XMM7)  && o+sz <= GOF(XMM7)+SZB(XMM7)) return GOF(XMM7);
+
+   /* MMX accesses to FP regs.  Need to allow for 32-bit references
+      due to dirty helpers for frstor etc, which reference the entire
+      64-byte block in one go. */
+   if (o >= GOF(FPREG[0])
+       && o+sz <= GOF(FPREG[0])+SZB(FPREG[0])) return GOF(FPREG[0]);
+   if (o >= GOF(FPREG[1])
+       && o+sz <= GOF(FPREG[1])+SZB(FPREG[1])) return GOF(FPREG[1]);
+   if (o >= GOF(FPREG[2])
+       && o+sz <= GOF(FPREG[2])+SZB(FPREG[2])) return GOF(FPREG[2]);
+   if (o >= GOF(FPREG[3])
+       && o+sz <= GOF(FPREG[3])+SZB(FPREG[3])) return GOF(FPREG[3]);
+   if (o >= GOF(FPREG[4])
+       && o+sz <= GOF(FPREG[4])+SZB(FPREG[4])) return GOF(FPREG[4]);
+   if (o >= GOF(FPREG[5])
+       && o+sz <= GOF(FPREG[5])+SZB(FPREG[5])) return GOF(FPREG[5]);
+   if (o >= GOF(FPREG[6])
+       && o+sz <= GOF(FPREG[6])+SZB(FPREG[6])) return GOF(FPREG[6]);
+   if (o >= GOF(FPREG[7])
+       && o+sz <= GOF(FPREG[7])+SZB(FPREG[7])) return GOF(FPREG[7]);
+
+   /* skip %gs and other segment related stuff */
+   if (o == GOF(GS) && sz == 2) return -1;
+   if (o == GOF(LDT) && sz == 4) return -1;
+   if (o == GOF(GDT) && sz == 4) return -1;
+
+   VG_(printf)("get_shadow_offset(x86)(off=%d,sz=%d)\n", offset,szB);
    tl_assert(0);
+#undef GOF
+#undef SZB
+
 #else
    VG_(printf)("get_shadow_offset(off=%d,sz=%d)\n", offset,szB);
    tl_assert(0);
