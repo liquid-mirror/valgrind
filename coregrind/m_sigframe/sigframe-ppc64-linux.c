@@ -97,7 +97,8 @@
 struct vg_sig_private {
    UInt magicPI;
    UInt sigNo_private;
-   VexGuestPPC64State shadow;
+   VexGuestPPC64State vex_shadow1;
+   VexGuestPPC64State vex_shadow2;
 };
 
 /* Structure put on stack for all signal handlers. */
@@ -133,8 +134,10 @@ struct rt_sigframe {
 */
 static Bool extend ( ThreadState *tst, Addr addr, SizeT size )
 {
-   ThreadId tid = tst->tid;
-   NSegment const *stackseg = NULL;
+   UInt            otag;
+   ExeContext*     here;
+   ThreadId        tid = tst->tid;
+   NSegment const* stackseg = NULL;
 
    if (VG_(extend_stack)(addr, tst->client_stack_szB)) {
       stackseg = VG_(am_find_nsegment)(addr);
@@ -164,8 +167,13 @@ static Bool extend ( ThreadState *tst, Addr addr, SizeT size )
 
    /* For tracking memory events, indicate the entire frame has been
       allocated. */
+   here = VG_(record_ExeContext)(tid, 0/*first_ip_delta*/);
+   vg_assert(here);
+   otag = VG_(get_ExeContext_uniq)(here);
+   vg_assert(otag > 0);
+
    VG_TRACK( new_mem_stack_signal, addr - VG_STACK_REDZONE_SZB,
-             size + VG_STACK_REDZONE_SZB );
+             size + VG_STACK_REDZONE_SZB, otag );
 
    return True;
 }
@@ -300,7 +308,8 @@ void VG_(sigframe_create)( ThreadId tid,
    priv = &frame->priv;
    priv->magicPI       = 0x31415927;
    priv->sigNo_private = sigNo;
-   priv->shadow        = tst->arch.vex_shadow;
+   priv->vex_shadow1   = tst->arch.vex_shadow1;
+   priv->vex_shadow2   = tst->arch.vex_shadow2;
 
    if (0)
       VG_(printf)("pushed signal frame; %R1 now = %p, "
@@ -364,7 +373,8 @@ void VG_(sigframe_destroy)( ThreadId tid, Bool isRT )
    LibVEX_GuestPPC64_put_XER( frame->uc.uc_mcontext.gp_regs[VKI_PT_XER], 
                               &tst->arch.vex );
 
-   tst->arch.vex_shadow = priv->shadow;
+   tst->arch.vex_shadow1 = priv->vex_shadow1;
+   tst->arch.vex_shadow2 = priv->vex_shadow2;
 
    VG_TRACK(die_mem_stack_signal, sp, frame_size);
 
