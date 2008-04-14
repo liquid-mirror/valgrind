@@ -2559,7 +2559,6 @@ void MC_(helperc_MAKE_STACK_UNINIT) ( Addr base, UWord len, Addr nia )
             p[13] = VA_BITS16_UNDEFINED;
             p[14] = VA_BITS16_UNDEFINED;
             p[15] = VA_BITS16_UNDEFINED;
-
             set_aligned_word64_Origin_to_undef( base + 8 * 0, otag );
             set_aligned_word64_Origin_to_undef( base + 8 * 1, otag );
             set_aligned_word64_Origin_to_undef( base + 8 * 2, otag );
@@ -2576,7 +2575,6 @@ void MC_(helperc_MAKE_STACK_UNINIT) ( Addr base, UWord len, Addr nia )
             set_aligned_word64_Origin_to_undef( base + 8 * 13, otag );
             set_aligned_word64_Origin_to_undef( base + 8 * 14, otag );
             set_aligned_word64_Origin_to_undef( base + 8 * 15, otag );
-
             return;
          }
       }
@@ -2587,7 +2585,6 @@ void MC_(helperc_MAKE_STACK_UNINIT) ( Addr base, UWord len, Addr nia )
       /* Now we know the address range is suitably sized and aligned. */
       UWord a_lo = (UWord)(base);
       UWord a_hi = (UWord)(base + 288 - 1);
-tl_assert(0); //FIXME
       tl_assert(a_lo < a_hi);             // paranoia: detect overflow
       if (a_hi < MAX_PRIMARY_ADDRESS) {
          // Now we know the entire range is within the main primary map.
@@ -2636,6 +2633,42 @@ tl_assert(0); //FIXME
             p[33] = VA_BITS16_UNDEFINED;
             p[34] = VA_BITS16_UNDEFINED;
             p[35] = VA_BITS16_UNDEFINED;
+            set_aligned_word64_Origin_to_undef( base + 8 * 0, otag );
+            set_aligned_word64_Origin_to_undef( base + 8 * 1, otag );
+            set_aligned_word64_Origin_to_undef( base + 8 * 2, otag );
+            set_aligned_word64_Origin_to_undef( base + 8 * 3, otag );
+            set_aligned_word64_Origin_to_undef( base + 8 * 4, otag );
+            set_aligned_word64_Origin_to_undef( base + 8 * 5, otag );
+            set_aligned_word64_Origin_to_undef( base + 8 * 6, otag );
+            set_aligned_word64_Origin_to_undef( base + 8 * 7, otag );
+            set_aligned_word64_Origin_to_undef( base + 8 * 8, otag );
+            set_aligned_word64_Origin_to_undef( base + 8 * 9, otag );
+            set_aligned_word64_Origin_to_undef( base + 8 * 10, otag );
+            set_aligned_word64_Origin_to_undef( base + 8 * 11, otag );
+            set_aligned_word64_Origin_to_undef( base + 8 * 12, otag );
+            set_aligned_word64_Origin_to_undef( base + 8 * 13, otag );
+            set_aligned_word64_Origin_to_undef( base + 8 * 14, otag );
+            set_aligned_word64_Origin_to_undef( base + 8 * 15, otag );
+            set_aligned_word64_Origin_to_undef( base + 8 * 16, otag );
+            set_aligned_word64_Origin_to_undef( base + 8 * 17, otag );
+            set_aligned_word64_Origin_to_undef( base + 8 * 18, otag );
+            set_aligned_word64_Origin_to_undef( base + 8 * 19, otag );
+            set_aligned_word64_Origin_to_undef( base + 8 * 20, otag );
+            set_aligned_word64_Origin_to_undef( base + 8 * 21, otag );
+            set_aligned_word64_Origin_to_undef( base + 8 * 22, otag );
+            set_aligned_word64_Origin_to_undef( base + 8 * 23, otag );
+            set_aligned_word64_Origin_to_undef( base + 8 * 24, otag );
+            set_aligned_word64_Origin_to_undef( base + 8 * 25, otag );
+            set_aligned_word64_Origin_to_undef( base + 8 * 26, otag );
+            set_aligned_word64_Origin_to_undef( base + 8 * 27, otag );
+            set_aligned_word64_Origin_to_undef( base + 8 * 28, otag );
+            set_aligned_word64_Origin_to_undef( base + 8 * 29, otag );
+            set_aligned_word64_Origin_to_undef( base + 8 * 30, otag );
+            set_aligned_word64_Origin_to_undef( base + 8 * 31, otag );
+            set_aligned_word64_Origin_to_undef( base + 8 * 32, otag );
+            set_aligned_word64_Origin_to_undef( base + 8 * 33, otag );
+            set_aligned_word64_Origin_to_undef( base + 8 * 34, otag );
+            set_aligned_word64_Origin_to_undef( base + 8 * 35, otag );
             return;
          }
       }

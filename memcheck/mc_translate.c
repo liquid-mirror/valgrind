@@ -3794,22 +3794,35 @@ static IRTemp findShadowTmpB ( MCEnv* mce, IRTemp orig )
 #include "libvex_guest_x86.h"
 #include "libvex_guest_amd64.h"
 #include "libvex_guest_ppc32.h"
+#include "libvex_guest_ppc64.h"
 
 static IRType get_reg_array_equiv_int_type ( IRRegArray* arr )
 {
-#if defined(VGA_amd64)
+#if defined(VGA_ppc64)
+   /* The redir stack. */
+   if (arr->base == offsetof(VexGuestPPC64State,guest_REDIR_STACK[0])
+       && arr->elemTy == Ity_I64
+       && arr->nElems == VEX_GUEST_PPC64_REDIR_STACK_SIZE)
+      return Ity_I64;
+
+   VG_(printf)("get_reg_array_equiv_int_type(ppc64): unhandled: ");
+   ppIRRegArray(arr);
+   VG_(printf)("\n");
+   tl_assert(0);
+
+#elif defined(VGA_amd64)
    /* Ignore the FP tag array - pointless to shadow, and in any case
       the elements are too small */
    if (arr->base == offsetof(VexGuestAMD64State,guest_FPTAG)
        && arr->elemTy == Ity_I8 && arr->nElems == 8)
-     return Ity_INVALID;
+      return Ity_INVALID;
 
    /* The FP register array */
    if (arr->base == offsetof(VexGuestAMD64State,guest_FPREG[0])
        && arr->elemTy == Ity_F64 && arr->nElems == 8)
-     return Ity_I64;
+      return Ity_I64;
 
-   VG_(printf)("get_reg_array_equiv_int_type: unhandled: ");
+   VG_(printf)("get_reg_array_equiv_int_type(amd64): unhandled: ");
    ppIRRegArray(arr);
    VG_(printf)("\n");
    tl_assert(0);
@@ -3819,14 +3832,14 @@ static IRType get_reg_array_equiv_int_type ( IRRegArray* arr )
       the elements are too small */
    if (arr->base == offsetof(VexGuestX86State,guest_FPTAG)
        && arr->elemTy == Ity_I8 && arr->nElems == 8)
-     return Ity_INVALID;
+      return Ity_INVALID;
 
    /* The FP register array */
    if (arr->base == offsetof(VexGuestX86State,guest_FPREG[0])
        && arr->elemTy == Ity_F64 && arr->nElems == 8)
-     return Ity_I64;
+      return Ity_I64;
 
-   VG_(printf)("get_reg_array_equiv_int_type: unhandled: ");
+   VG_(printf)("get_reg_array_equiv_int_type(x86): unhandled: ");
    ppIRRegArray(arr);
    VG_(printf)("\n");
    tl_assert(0);
@@ -3838,7 +3851,163 @@ static IRType get_reg_array_equiv_int_type ( IRRegArray* arr )
 
 static Int get_shadow_offset ( Int offset, Int szB )
 {
-#if defined(VGA_ppc32)
+#if defined(VGA_ppc64)
+
+#define GOF(_fieldname) (offsetof(VexGuestPPC64State,guest_##_fieldname))
+#define SZB(_fieldname) (sizeof(((VexGuestPPC64State*)0)->guest_##_fieldname))
+   Int  o      = offset;
+   Int  sz     = szB;
+   tl_assert(sz > 0);
+
+   // FIXME: this assumes the host is big endian.  Assert for it.
+   if (o == GOF(GPR0) && sz == 8) return o;
+   if (o == GOF(GPR1) && sz == 8) return o;
+   if (o == GOF(GPR2) && sz == 8) return o;
+   if (o == GOF(GPR3) && sz == 8) return o;
+   if (o == GOF(GPR4) && sz == 8) return o;
+   if (o == GOF(GPR5) && sz == 8) return o;
+   if (o == GOF(GPR6) && sz == 8) return o;
+   if (o == GOF(GPR7) && sz == 8) return o;
+   if (o == GOF(GPR8) && sz == 8) return o;
+   if (o == GOF(GPR9) && sz == 8) return o;
+   if (o == GOF(GPR10) && sz == 8) return o;
+   if (o == GOF(GPR11) && sz == 8) return o;
+   if (o == GOF(GPR12) && sz == 8) return o;
+   if (o == GOF(GPR13) && sz == 8) return o;
+   if (o == GOF(GPR14) && sz == 8) return o;
+   if (o == GOF(GPR15) && sz == 8) return o;
+   if (o == GOF(GPR16) && sz == 8) return o;
+   if (o == GOF(GPR17) && sz == 8) return o;
+   if (o == GOF(GPR18) && sz == 8) return o;
+   if (o == GOF(GPR19) && sz == 8) return o;
+   if (o == GOF(GPR20) && sz == 8) return o;
+   if (o == GOF(GPR21) && sz == 8) return o;
+   if (o == GOF(GPR22) && sz == 8) return o;
+   if (o == GOF(GPR23) && sz == 8) return o;
+   if (o == GOF(GPR24) && sz == 8) return o;
+   if (o == GOF(GPR25) && sz == 8) return o;
+   if (o == GOF(GPR26) && sz == 8) return o;
+   if (o == GOF(GPR27) && sz == 8) return o;
+   if (o == GOF(GPR28) && sz == 8) return o;
+   if (o == GOF(GPR29) && sz == 8) return o;
+   if (o == GOF(GPR30) && sz == 8) return o;
+   if (o == GOF(GPR31) && sz == 8) return o;
+
+   if (o == GOF(LR)  && sz == 8) return o;
+   if (o == GOF(CTR) && sz == 8) return o;
+
+   if (o == GOF(CIA)       && sz == 8) return -1;
+   if (o == GOF(CIA_AT_SC) && sz == 8) return -1;
+   if (o == GOF(RESVN)     && sz == 8) return -1;
+   if (o == GOF(FPROUND)   && sz == 4) return -1;
+   if (o == GOF(EMWARN)    && sz == 4) return -1;
+   if (o == GOF(TISTART)   && sz == 8) return -1;
+   if (o == GOF(TILEN)     && sz == 8) return -1;
+   if (o == GOF(VSCR)      && sz == 4) return -1;
+   if (o == GOF(VRSAVE)    && sz == 4) return -1;
+   if (o == GOF(REDIR_SP)  && sz == 8) return -1;
+
+   tl_assert(SZB(FPR0) == 8);
+   if (o == GOF(FPR0) && sz == 8) return o;
+   if (o == GOF(FPR1) && sz == 8) return o;
+   if (o == GOF(FPR2) && sz == 8) return o;
+   if (o == GOF(FPR3) && sz == 8) return o;
+   if (o == GOF(FPR4) && sz == 8) return o;
+   if (o == GOF(FPR5) && sz == 8) return o;
+   if (o == GOF(FPR6) && sz == 8) return o;
+   if (o == GOF(FPR7) && sz == 8) return o;
+   if (o == GOF(FPR8) && sz == 8) return o;
+   if (o == GOF(FPR9) && sz == 8) return o;
+   if (o == GOF(FPR10) && sz == 8) return o;
+   if (o == GOF(FPR11) && sz == 8) return o;
+   if (o == GOF(FPR12) && sz == 8) return o;
+   if (o == GOF(FPR13) && sz == 8) return o;
+   if (o == GOF(FPR14) && sz == 8) return o;
+   if (o == GOF(FPR15) && sz == 8) return o;
+   if (o == GOF(FPR16) && sz == 8) return o;
+   if (o == GOF(FPR17) && sz == 8) return o;
+   if (o == GOF(FPR18) && sz == 8) return o;
+   if (o == GOF(FPR19) && sz == 8) return o;
+   if (o == GOF(FPR20) && sz == 8) return o;
+   if (o == GOF(FPR21) && sz == 8) return o;
+   if (o == GOF(FPR22) && sz == 8) return o;
+   if (o == GOF(FPR23) && sz == 8) return o;
+   if (o == GOF(FPR24) && sz == 8) return o;
+   if (o == GOF(FPR25) && sz == 8) return o;
+   if (o == GOF(FPR26) && sz == 8) return o;
+   if (o == GOF(FPR27) && sz == 8) return o;
+   if (o == GOF(FPR28) && sz == 8) return o;
+   if (o == GOF(FPR29) && sz == 8) return o;
+   if (o == GOF(FPR30) && sz == 8) return o;
+   if (o == GOF(FPR31) && sz == 8) return o;
+
+   /* For the various byte sized XER/CR pieces, use offset 8
+      in VR0 .. VR31. */
+   tl_assert(SZB(VR0) == 16);
+   if (o == GOF(XER_SO) && sz == 1) return 8 +GOF(VR0);
+   if (o == GOF(XER_OV) && sz == 1) return 8 +GOF(VR1);
+   if (o == GOF(XER_CA) && sz == 1) return 8 +GOF(VR2);
+   if (o == GOF(XER_BC) && sz == 1) return 8 +GOF(VR3);
+
+   if (o == GOF(CR0_321) && sz == 1) return 8 +GOF(VR4);
+   if (o == GOF(CR0_0)   && sz == 1) return 8 +GOF(VR5);
+   if (o == GOF(CR1_321) && sz == 1) return 8 +GOF(VR6);
+   if (o == GOF(CR1_0)   && sz == 1) return 8 +GOF(VR7);
+   if (o == GOF(CR2_321) && sz == 1) return 8 +GOF(VR8);
+   if (o == GOF(CR2_0)   && sz == 1) return 8 +GOF(VR9);
+   if (o == GOF(CR3_321) && sz == 1) return 8 +GOF(VR10);
+   if (o == GOF(CR3_0)   && sz == 1) return 8 +GOF(VR11);
+   if (o == GOF(CR4_321) && sz == 1) return 8 +GOF(VR12);
+   if (o == GOF(CR4_0)   && sz == 1) return 8 +GOF(VR13);
+   if (o == GOF(CR5_321) && sz == 1) return 8 +GOF(VR14);
+   if (o == GOF(CR5_0)   && sz == 1) return 8 +GOF(VR15);
+   if (o == GOF(CR6_321) && sz == 1) return 8 +GOF(VR16);
+   if (o == GOF(CR6_0)   && sz == 1) return 8 +GOF(VR17);
+   if (o == GOF(CR7_321) && sz == 1) return 8 +GOF(VR18);
+   if (o == GOF(CR7_0)   && sz == 1) return 8 +GOF(VR19);
+
+   /* Vector registers .. use offset 0 in VR0 .. VR31. */
+   if (o >= GOF(VR0)  && o+sz <= GOF(VR0) +SZB(VR0))  return 0+ GOF(VR0);
+   if (o >= GOF(VR1)  && o+sz <= GOF(VR1) +SZB(VR1))  return 0+ GOF(VR1);
+   if (o >= GOF(VR2)  && o+sz <= GOF(VR2) +SZB(VR2))  return 0+ GOF(VR2);
+   if (o >= GOF(VR3)  && o+sz <= GOF(VR3) +SZB(VR3))  return 0+ GOF(VR3);
+   if (o >= GOF(VR4)  && o+sz <= GOF(VR4) +SZB(VR4))  return 0+ GOF(VR4);
+   if (o >= GOF(VR5)  && o+sz <= GOF(VR5) +SZB(VR5))  return 0+ GOF(VR5);
+   if (o >= GOF(VR6)  && o+sz <= GOF(VR6) +SZB(VR6))  return 0+ GOF(VR6);
+   if (o >= GOF(VR7)  && o+sz <= GOF(VR7) +SZB(VR7))  return 0+ GOF(VR7);
+   if (o >= GOF(VR8)  && o+sz <= GOF(VR8) +SZB(VR8))  return 0+ GOF(VR8);
+   if (o >= GOF(VR9)  && o+sz <= GOF(VR9) +SZB(VR9))  return 0+ GOF(VR9);
+   if (o >= GOF(VR10) && o+sz <= GOF(VR10)+SZB(VR10)) return 0+ GOF(VR10);
+   if (o >= GOF(VR11) && o+sz <= GOF(VR11)+SZB(VR11)) return 0+ GOF(VR11);
+   if (o >= GOF(VR12) && o+sz <= GOF(VR12)+SZB(VR12)) return 0+ GOF(VR12);
+   if (o >= GOF(VR13) && o+sz <= GOF(VR13)+SZB(VR13)) return 0+ GOF(VR13);
+   if (o >= GOF(VR14) && o+sz <= GOF(VR14)+SZB(VR14)) return 0+ GOF(VR14);
+   if (o >= GOF(VR15) && o+sz <= GOF(VR15)+SZB(VR15)) return 0+ GOF(VR15);
+   if (o >= GOF(VR16) && o+sz <= GOF(VR16)+SZB(VR16)) return 0+ GOF(VR16);
+   if (o >= GOF(VR17) && o+sz <= GOF(VR17)+SZB(VR17)) return 0+ GOF(VR17);
+   if (o >= GOF(VR18) && o+sz <= GOF(VR18)+SZB(VR18)) return 0+ GOF(VR18);
+   if (o >= GOF(VR19) && o+sz <= GOF(VR19)+SZB(VR19)) return 0+ GOF(VR19);
+   if (o >= GOF(VR20) && o+sz <= GOF(VR20)+SZB(VR20)) return 0+ GOF(VR20);
+   if (o >= GOF(VR21) && o+sz <= GOF(VR21)+SZB(VR21)) return 0+ GOF(VR21);
+   if (o >= GOF(VR22) && o+sz <= GOF(VR22)+SZB(VR22)) return 0+ GOF(VR22);
+   if (o >= GOF(VR23) && o+sz <= GOF(VR23)+SZB(VR23)) return 0+ GOF(VR23);
+   if (o >= GOF(VR24) && o+sz <= GOF(VR24)+SZB(VR24)) return 0+ GOF(VR24);
+   if (o >= GOF(VR25) && o+sz <= GOF(VR25)+SZB(VR25)) return 0+ GOF(VR25);
+   if (o >= GOF(VR26) && o+sz <= GOF(VR26)+SZB(VR26)) return 0+ GOF(VR26);
+   if (o >= GOF(VR27) && o+sz <= GOF(VR27)+SZB(VR27)) return 0+ GOF(VR27);
+   if (o >= GOF(VR28) && o+sz <= GOF(VR28)+SZB(VR28)) return 0+ GOF(VR28);
+   if (o >= GOF(VR29) && o+sz <= GOF(VR29)+SZB(VR29)) return 0+ GOF(VR29);
+   if (o >= GOF(VR30) && o+sz <= GOF(VR30)+SZB(VR30)) return 0+ GOF(VR30);
+   if (o >= GOF(VR31) && o+sz <= GOF(VR31)+SZB(VR31)) return 0+ GOF(VR31);
+
+   VG_(printf)("get_shadow_offset(ppc64)(off=%d,sz=%d)\n", offset,szB);
+   tl_assert(0);
+#undef GOF
+#undef SZB
+
+
+
+#elif defined(VGA_ppc32)
 
 #define GOF(_fieldname) (offsetof(VexGuestPPC32State,guest_##_fieldname))
 #define SZB(_fieldname) (sizeof(((VexGuestPPC32State*)0)->guest_##_fieldname))
@@ -3951,7 +4120,7 @@ static Int get_shadow_offset ( Int offset, Int szB )
    if (o == GOF(CR7_321) && sz == 1) return 8 +GOF(VR18);
    if (o == GOF(CR7_0)   && sz == 1) return 8 +GOF(VR19);
 
-   /* Vector Hreegisters .. use offset 0 in VR0 .. VR31. */
+   /* Vector registers .. use offset 0 in VR0 .. VR31. */
    if (o >= GOF(VR0)  && o+sz <= GOF(VR0) +SZB(VR0))  return 0+ GOF(VR0);
    if (o >= GOF(VR1)  && o+sz <= GOF(VR1) +SZB(VR1))  return 0+ GOF(VR1);
    if (o >= GOF(VR2)  && o+sz <= GOF(VR2) +SZB(VR2))  return 0+ GOF(VR2);
