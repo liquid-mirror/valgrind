@@ -35,11 +35,12 @@
 #include "pub_tool_libcprint.h"
 #include "pub_tool_tooliface.h"
 #include "pub_tool_machine.h"     // VG_(fnptr_to_fnentry)
-#include "mc_include.h"
-
 #include "pub_tool_xarray.h"
 #include "pub_tool_mallocfree.h"
 #include "pub_tool_libcbase.h"
+
+#include "mc_include.h"
+
 
 /* This file implements the Memcheck instrumentation, and in
    particular contains the core of its undefined value detection
@@ -3791,585 +3792,11 @@ static IRTemp findShadowTmpB ( MCEnv* mce, IRTemp orig )
    return mce->tmpMapB[orig];
 }
 
-#include "libvex_guest_x86.h"
-#include "libvex_guest_amd64.h"
-#include "libvex_guest_ppc32.h"
-#include "libvex_guest_ppc64.h"
-
-static IRType get_reg_array_equiv_int_type ( IRRegArray* arr )
-{
-#if defined(VGA_ppc64)
-   /* The redir stack. */
-   if (arr->base == offsetof(VexGuestPPC64State,guest_REDIR_STACK[0])
-       && arr->elemTy == Ity_I64
-       && arr->nElems == VEX_GUEST_PPC64_REDIR_STACK_SIZE)
-      return Ity_I64;
-
-   VG_(printf)("get_reg_array_equiv_int_type(ppc64): unhandled: ");
-   ppIRRegArray(arr);
-   VG_(printf)("\n");
-   tl_assert(0);
-
-#elif defined(VGA_amd64)
-   /* Ignore the FP tag array - pointless to shadow, and in any case
-      the elements are too small */
-   if (arr->base == offsetof(VexGuestAMD64State,guest_FPTAG)
-       && arr->elemTy == Ity_I8 && arr->nElems == 8)
-      return Ity_INVALID;
-
-   /* The FP register array */
-   if (arr->base == offsetof(VexGuestAMD64State,guest_FPREG[0])
-       && arr->elemTy == Ity_F64 && arr->nElems == 8)
-      return Ity_I64;
-
-   VG_(printf)("get_reg_array_equiv_int_type(amd64): unhandled: ");
-   ppIRRegArray(arr);
-   VG_(printf)("\n");
-   tl_assert(0);
-
-#elif defined(VGA_x86)
-   /* Ignore the FP tag array - pointless to shadow, and in any case
-      the elements are too small */
-   if (arr->base == offsetof(VexGuestX86State,guest_FPTAG)
-       && arr->elemTy == Ity_I8 && arr->nElems == 8)
-      return Ity_INVALID;
-
-   /* The FP register array */
-   if (arr->base == offsetof(VexGuestX86State,guest_FPREG[0])
-       && arr->elemTy == Ity_F64 && arr->nElems == 8)
-      return Ity_I64;
-
-   VG_(printf)("get_reg_array_equiv_int_type(x86): unhandled: ");
-   ppIRRegArray(arr);
-   VG_(printf)("\n");
-   tl_assert(0);
-#else
-   tl_assert(0);
-#endif
-}
-
-
-static Int get_shadow_offset ( Int offset, Int szB )
-{
-#if defined(VGA_ppc64)
-
-#define GOF(_fieldname) (offsetof(VexGuestPPC64State,guest_##_fieldname))
-#define SZB(_fieldname) (sizeof(((VexGuestPPC64State*)0)->guest_##_fieldname))
-   Int  o      = offset;
-   Int  sz     = szB;
-   tl_assert(sz > 0);
-
-   // FIXME: this assumes the host is big endian.  Assert for it.
-   if (o == GOF(GPR0) && sz == 8) return o;
-   if (o == GOF(GPR1) && sz == 8) return o;
-   if (o == GOF(GPR2) && sz == 8) return o;
-   if (o == GOF(GPR3) && sz == 8) return o;
-   if (o == GOF(GPR4) && sz == 8) return o;
-   if (o == GOF(GPR5) && sz == 8) return o;
-   if (o == GOF(GPR6) && sz == 8) return o;
-   if (o == GOF(GPR7) && sz == 8) return o;
-   if (o == GOF(GPR8) && sz == 8) return o;
-   if (o == GOF(GPR9) && sz == 8) return o;
-   if (o == GOF(GPR10) && sz == 8) return o;
-   if (o == GOF(GPR11) && sz == 8) return o;
-   if (o == GOF(GPR12) && sz == 8) return o;
-   if (o == GOF(GPR13) && sz == 8) return o;
-   if (o == GOF(GPR14) && sz == 8) return o;
-   if (o == GOF(GPR15) && sz == 8) return o;
-   if (o == GOF(GPR16) && sz == 8) return o;
-   if (o == GOF(GPR17) && sz == 8) return o;
-   if (o == GOF(GPR18) && sz == 8) return o;
-   if (o == GOF(GPR19) && sz == 8) return o;
-   if (o == GOF(GPR20) && sz == 8) return o;
-   if (o == GOF(GPR21) && sz == 8) return o;
-   if (o == GOF(GPR22) && sz == 8) return o;
-   if (o == GOF(GPR23) && sz == 8) return o;
-   if (o == GOF(GPR24) && sz == 8) return o;
-   if (o == GOF(GPR25) && sz == 8) return o;
-   if (o == GOF(GPR26) && sz == 8) return o;
-   if (o == GOF(GPR27) && sz == 8) return o;
-   if (o == GOF(GPR28) && sz == 8) return o;
-   if (o == GOF(GPR29) && sz == 8) return o;
-   if (o == GOF(GPR30) && sz == 8) return o;
-   if (o == GOF(GPR31) && sz == 8) return o;
-
-   if (o == GOF(LR)  && sz == 8) return o;
-   if (o == GOF(CTR) && sz == 8) return o;
-
-   if (o == GOF(CIA)       && sz == 8) return -1;
-   if (o == GOF(CIA_AT_SC) && sz == 8) return -1;
-   if (o == GOF(RESVN)     && sz == 8) return -1;
-   if (o == GOF(FPROUND)   && sz == 4) return -1;
-   if (o == GOF(EMWARN)    && sz == 4) return -1;
-   if (o == GOF(TISTART)   && sz == 8) return -1;
-   if (o == GOF(TILEN)     && sz == 8) return -1;
-   if (o == GOF(VSCR)      && sz == 4) return -1;
-   if (o == GOF(VRSAVE)    && sz == 4) return -1;
-   if (o == GOF(REDIR_SP)  && sz == 8) return -1;
-
-   tl_assert(SZB(FPR0) == 8);
-   if (o == GOF(FPR0) && sz == 8) return o;
-   if (o == GOF(FPR1) && sz == 8) return o;
-   if (o == GOF(FPR2) && sz == 8) return o;
-   if (o == GOF(FPR3) && sz == 8) return o;
-   if (o == GOF(FPR4) && sz == 8) return o;
-   if (o == GOF(FPR5) && sz == 8) return o;
-   if (o == GOF(FPR6) && sz == 8) return o;
-   if (o == GOF(FPR7) && sz == 8) return o;
-   if (o == GOF(FPR8) && sz == 8) return o;
-   if (o == GOF(FPR9) && sz == 8) return o;
-   if (o == GOF(FPR10) && sz == 8) return o;
-   if (o == GOF(FPR11) && sz == 8) return o;
-   if (o == GOF(FPR12) && sz == 8) return o;
-   if (o == GOF(FPR13) && sz == 8) return o;
-   if (o == GOF(FPR14) && sz == 8) return o;
-   if (o == GOF(FPR15) && sz == 8) return o;
-   if (o == GOF(FPR16) && sz == 8) return o;
-   if (o == GOF(FPR17) && sz == 8) return o;
-   if (o == GOF(FPR18) && sz == 8) return o;
-   if (o == GOF(FPR19) && sz == 8) return o;
-   if (o == GOF(FPR20) && sz == 8) return o;
-   if (o == GOF(FPR21) && sz == 8) return o;
-   if (o == GOF(FPR22) && sz == 8) return o;
-   if (o == GOF(FPR23) && sz == 8) return o;
-   if (o == GOF(FPR24) && sz == 8) return o;
-   if (o == GOF(FPR25) && sz == 8) return o;
-   if (o == GOF(FPR26) && sz == 8) return o;
-   if (o == GOF(FPR27) && sz == 8) return o;
-   if (o == GOF(FPR28) && sz == 8) return o;
-   if (o == GOF(FPR29) && sz == 8) return o;
-   if (o == GOF(FPR30) && sz == 8) return o;
-   if (o == GOF(FPR31) && sz == 8) return o;
-
-   /* For the various byte sized XER/CR pieces, use offset 8
-      in VR0 .. VR31. */
-   tl_assert(SZB(VR0) == 16);
-   if (o == GOF(XER_SO) && sz == 1) return 8 +GOF(VR0);
-   if (o == GOF(XER_OV) && sz == 1) return 8 +GOF(VR1);
-   if (o == GOF(XER_CA) && sz == 1) return 8 +GOF(VR2);
-   if (o == GOF(XER_BC) && sz == 1) return 8 +GOF(VR3);
-
-   if (o == GOF(CR0_321) && sz == 1) return 8 +GOF(VR4);
-   if (o == GOF(CR0_0)   && sz == 1) return 8 +GOF(VR5);
-   if (o == GOF(CR1_321) && sz == 1) return 8 +GOF(VR6);
-   if (o == GOF(CR1_0)   && sz == 1) return 8 +GOF(VR7);
-   if (o == GOF(CR2_321) && sz == 1) return 8 +GOF(VR8);
-   if (o == GOF(CR2_0)   && sz == 1) return 8 +GOF(VR9);
-   if (o == GOF(CR3_321) && sz == 1) return 8 +GOF(VR10);
-   if (o == GOF(CR3_0)   && sz == 1) return 8 +GOF(VR11);
-   if (o == GOF(CR4_321) && sz == 1) return 8 +GOF(VR12);
-   if (o == GOF(CR4_0)   && sz == 1) return 8 +GOF(VR13);
-   if (o == GOF(CR5_321) && sz == 1) return 8 +GOF(VR14);
-   if (o == GOF(CR5_0)   && sz == 1) return 8 +GOF(VR15);
-   if (o == GOF(CR6_321) && sz == 1) return 8 +GOF(VR16);
-   if (o == GOF(CR6_0)   && sz == 1) return 8 +GOF(VR17);
-   if (o == GOF(CR7_321) && sz == 1) return 8 +GOF(VR18);
-   if (o == GOF(CR7_0)   && sz == 1) return 8 +GOF(VR19);
-
-   /* Vector registers .. use offset 0 in VR0 .. VR31. */
-   if (o >= GOF(VR0)  && o+sz <= GOF(VR0) +SZB(VR0))  return 0+ GOF(VR0);
-   if (o >= GOF(VR1)  && o+sz <= GOF(VR1) +SZB(VR1))  return 0+ GOF(VR1);
-   if (o >= GOF(VR2)  && o+sz <= GOF(VR2) +SZB(VR2))  return 0+ GOF(VR2);
-   if (o >= GOF(VR3)  && o+sz <= GOF(VR3) +SZB(VR3))  return 0+ GOF(VR3);
-   if (o >= GOF(VR4)  && o+sz <= GOF(VR4) +SZB(VR4))  return 0+ GOF(VR4);
-   if (o >= GOF(VR5)  && o+sz <= GOF(VR5) +SZB(VR5))  return 0+ GOF(VR5);
-   if (o >= GOF(VR6)  && o+sz <= GOF(VR6) +SZB(VR6))  return 0+ GOF(VR6);
-   if (o >= GOF(VR7)  && o+sz <= GOF(VR7) +SZB(VR7))  return 0+ GOF(VR7);
-   if (o >= GOF(VR8)  && o+sz <= GOF(VR8) +SZB(VR8))  return 0+ GOF(VR8);
-   if (o >= GOF(VR9)  && o+sz <= GOF(VR9) +SZB(VR9))  return 0+ GOF(VR9);
-   if (o >= GOF(VR10) && o+sz <= GOF(VR10)+SZB(VR10)) return 0+ GOF(VR10);
-   if (o >= GOF(VR11) && o+sz <= GOF(VR11)+SZB(VR11)) return 0+ GOF(VR11);
-   if (o >= GOF(VR12) && o+sz <= GOF(VR12)+SZB(VR12)) return 0+ GOF(VR12);
-   if (o >= GOF(VR13) && o+sz <= GOF(VR13)+SZB(VR13)) return 0+ GOF(VR13);
-   if (o >= GOF(VR14) && o+sz <= GOF(VR14)+SZB(VR14)) return 0+ GOF(VR14);
-   if (o >= GOF(VR15) && o+sz <= GOF(VR15)+SZB(VR15)) return 0+ GOF(VR15);
-   if (o >= GOF(VR16) && o+sz <= GOF(VR16)+SZB(VR16)) return 0+ GOF(VR16);
-   if (o >= GOF(VR17) && o+sz <= GOF(VR17)+SZB(VR17)) return 0+ GOF(VR17);
-   if (o >= GOF(VR18) && o+sz <= GOF(VR18)+SZB(VR18)) return 0+ GOF(VR18);
-   if (o >= GOF(VR19) && o+sz <= GOF(VR19)+SZB(VR19)) return 0+ GOF(VR19);
-   if (o >= GOF(VR20) && o+sz <= GOF(VR20)+SZB(VR20)) return 0+ GOF(VR20);
-   if (o >= GOF(VR21) && o+sz <= GOF(VR21)+SZB(VR21)) return 0+ GOF(VR21);
-   if (o >= GOF(VR22) && o+sz <= GOF(VR22)+SZB(VR22)) return 0+ GOF(VR22);
-   if (o >= GOF(VR23) && o+sz <= GOF(VR23)+SZB(VR23)) return 0+ GOF(VR23);
-   if (o >= GOF(VR24) && o+sz <= GOF(VR24)+SZB(VR24)) return 0+ GOF(VR24);
-   if (o >= GOF(VR25) && o+sz <= GOF(VR25)+SZB(VR25)) return 0+ GOF(VR25);
-   if (o >= GOF(VR26) && o+sz <= GOF(VR26)+SZB(VR26)) return 0+ GOF(VR26);
-   if (o >= GOF(VR27) && o+sz <= GOF(VR27)+SZB(VR27)) return 0+ GOF(VR27);
-   if (o >= GOF(VR28) && o+sz <= GOF(VR28)+SZB(VR28)) return 0+ GOF(VR28);
-   if (o >= GOF(VR29) && o+sz <= GOF(VR29)+SZB(VR29)) return 0+ GOF(VR29);
-   if (o >= GOF(VR30) && o+sz <= GOF(VR30)+SZB(VR30)) return 0+ GOF(VR30);
-   if (o >= GOF(VR31) && o+sz <= GOF(VR31)+SZB(VR31)) return 0+ GOF(VR31);
-
-   VG_(printf)("get_shadow_offset(ppc64)(off=%d,sz=%d)\n", offset,szB);
-   tl_assert(0);
-#undef GOF
-#undef SZB
-
-
-
-#elif defined(VGA_ppc32)
-
-#define GOF(_fieldname) (offsetof(VexGuestPPC32State,guest_##_fieldname))
-#define SZB(_fieldname) (sizeof(((VexGuestPPC32State*)0)->guest_##_fieldname))
-   Int  o      = offset;
-   Int  sz     = szB;
-   tl_assert(sz > 0);
-
-   // FIXME: this assumes the host is big endian.  Assert for it.
-   if (o == GOF(GPR0) && sz == 4) return o;
-   if (o == GOF(GPR1) && sz == 4) return o;
-   if (o == GOF(GPR2) && sz == 4) return o;
-   if (o == GOF(GPR3) && sz == 4) return o;
-   if (o == GOF(GPR4) && sz == 4) return o;
-   if (o == GOF(GPR5) && sz == 4) return o;
-   if (o == GOF(GPR6) && sz == 4) return o;
-   if (o == GOF(GPR7) && sz == 4) return o;
-   if (o == GOF(GPR8) && sz == 4) return o;
-   if (o == GOF(GPR9) && sz == 4) return o;
-   if (o == GOF(GPR10) && sz == 4) return o;
-   if (o == GOF(GPR11) && sz == 4) return o;
-   if (o == GOF(GPR12) && sz == 4) return o;
-   if (o == GOF(GPR13) && sz == 4) return o;
-   if (o == GOF(GPR14) && sz == 4) return o;
-   if (o == GOF(GPR15) && sz == 4) return o;
-   if (o == GOF(GPR16) && sz == 4) return o;
-   if (o == GOF(GPR17) && sz == 4) return o;
-   if (o == GOF(GPR18) && sz == 4) return o;
-   if (o == GOF(GPR19) && sz == 4) return o;
-   if (o == GOF(GPR20) && sz == 4) return o;
-   if (o == GOF(GPR21) && sz == 4) return o;
-   if (o == GOF(GPR22) && sz == 4) return o;
-   if (o == GOF(GPR23) && sz == 4) return o;
-   if (o == GOF(GPR24) && sz == 4) return o;
-   if (o == GOF(GPR25) && sz == 4) return o;
-   if (o == GOF(GPR26) && sz == 4) return o;
-   if (o == GOF(GPR27) && sz == 4) return o;
-   if (o == GOF(GPR28) && sz == 4) return o;
-   if (o == GOF(GPR29) && sz == 4) return o;
-   if (o == GOF(GPR30) && sz == 4) return o;
-   if (o == GOF(GPR31) && sz == 4) return o;
-
-   if (o == GOF(LR)  && sz == 4) return o;
-   if (o == GOF(CTR) && sz == 4) return o;
-
-   if (o == GOF(CIA)       && sz == 4) return -1;
-   if (o == GOF(CIA_AT_SC) && sz == 4) return -1;
-   if (o == GOF(RESVN)     && sz == 4) return -1;
-   if (o == GOF(FPROUND)   && sz == 4) return -1;
-   if (o == GOF(EMWARN)    && sz == 4) return -1;
-   if (o == GOF(TISTART)   && sz == 4) return -1;
-   if (o == GOF(TILEN)     && sz == 4) return -1;
-   if (o == GOF(VSCR)      && sz == 4) return -1;
-
-   tl_assert(SZB(FPR0) == 8);
-   if (o == GOF(FPR0) && sz == 8) return o;
-   if (o == GOF(FPR1) && sz == 8) return o;
-   if (o == GOF(FPR2) && sz == 8) return o;
-   if (o == GOF(FPR3) && sz == 8) return o;
-   if (o == GOF(FPR4) && sz == 8) return o;
-   if (o == GOF(FPR5) && sz == 8) return o;
-   if (o == GOF(FPR6) && sz == 8) return o;
-   if (o == GOF(FPR7) && sz == 8) return o;
-   if (o == GOF(FPR8) && sz == 8) return o;
-   if (o == GOF(FPR9) && sz == 8) return o;
-   if (o == GOF(FPR10) && sz == 8) return o;
-   if (o == GOF(FPR11) && sz == 8) return o;
-   if (o == GOF(FPR12) && sz == 8) return o;
-   if (o == GOF(FPR13) && sz == 8) return o;
-   if (o == GOF(FPR14) && sz == 8) return o;
-   if (o == GOF(FPR15) && sz == 8) return o;
-   if (o == GOF(FPR16) && sz == 8) return o;
-   if (o == GOF(FPR17) && sz == 8) return o;
-   if (o == GOF(FPR18) && sz == 8) return o;
-   if (o == GOF(FPR19) && sz == 8) return o;
-   if (o == GOF(FPR20) && sz == 8) return o;
-   if (o == GOF(FPR21) && sz == 8) return o;
-   if (o == GOF(FPR22) && sz == 8) return o;
-   if (o == GOF(FPR23) && sz == 8) return o;
-   if (o == GOF(FPR24) && sz == 8) return o;
-   if (o == GOF(FPR25) && sz == 8) return o;
-   if (o == GOF(FPR26) && sz == 8) return o;
-   if (o == GOF(FPR27) && sz == 8) return o;
-   if (o == GOF(FPR28) && sz == 8) return o;
-   if (o == GOF(FPR29) && sz == 8) return o;
-   if (o == GOF(FPR30) && sz == 8) return o;
-   if (o == GOF(FPR31) && sz == 8) return o;
-
-   /* For the various byte sized XER/CR pieces, use offset 8
-      in VR0 .. VR31. */
-   tl_assert(SZB(VR0) == 16);
-   if (o == GOF(XER_SO) && sz == 1) return 8 +GOF(VR0);
-   if (o == GOF(XER_OV) && sz == 1) return 8 +GOF(VR1);
-   if (o == GOF(XER_CA) && sz == 1) return 8 +GOF(VR2);
-   if (o == GOF(XER_BC) && sz == 1) return 8 +GOF(VR3);
-
-   if (o == GOF(CR0_321) && sz == 1) return 8 +GOF(VR4);
-   if (o == GOF(CR0_0)   && sz == 1) return 8 +GOF(VR5);
-   if (o == GOF(CR1_321) && sz == 1) return 8 +GOF(VR6);
-   if (o == GOF(CR1_0)   && sz == 1) return 8 +GOF(VR7);
-   if (o == GOF(CR2_321) && sz == 1) return 8 +GOF(VR8);
-   if (o == GOF(CR2_0)   && sz == 1) return 8 +GOF(VR9);
-   if (o == GOF(CR3_321) && sz == 1) return 8 +GOF(VR10);
-   if (o == GOF(CR3_0)   && sz == 1) return 8 +GOF(VR11);
-   if (o == GOF(CR4_321) && sz == 1) return 8 +GOF(VR12);
-   if (o == GOF(CR4_0)   && sz == 1) return 8 +GOF(VR13);
-   if (o == GOF(CR5_321) && sz == 1) return 8 +GOF(VR14);
-   if (o == GOF(CR5_0)   && sz == 1) return 8 +GOF(VR15);
-   if (o == GOF(CR6_321) && sz == 1) return 8 +GOF(VR16);
-   if (o == GOF(CR6_0)   && sz == 1) return 8 +GOF(VR17);
-   if (o == GOF(CR7_321) && sz == 1) return 8 +GOF(VR18);
-   if (o == GOF(CR7_0)   && sz == 1) return 8 +GOF(VR19);
-
-   /* Vector registers .. use offset 0 in VR0 .. VR31. */
-   if (o >= GOF(VR0)  && o+sz <= GOF(VR0) +SZB(VR0))  return 0+ GOF(VR0);
-   if (o >= GOF(VR1)  && o+sz <= GOF(VR1) +SZB(VR1))  return 0+ GOF(VR1);
-   if (o >= GOF(VR2)  && o+sz <= GOF(VR2) +SZB(VR2))  return 0+ GOF(VR2);
-   if (o >= GOF(VR3)  && o+sz <= GOF(VR3) +SZB(VR3))  return 0+ GOF(VR3);
-   if (o >= GOF(VR4)  && o+sz <= GOF(VR4) +SZB(VR4))  return 0+ GOF(VR4);
-   if (o >= GOF(VR5)  && o+sz <= GOF(VR5) +SZB(VR5))  return 0+ GOF(VR5);
-   if (o >= GOF(VR6)  && o+sz <= GOF(VR6) +SZB(VR6))  return 0+ GOF(VR6);
-   if (o >= GOF(VR7)  && o+sz <= GOF(VR7) +SZB(VR7))  return 0+ GOF(VR7);
-   if (o >= GOF(VR8)  && o+sz <= GOF(VR8) +SZB(VR8))  return 0+ GOF(VR8);
-   if (o >= GOF(VR9)  && o+sz <= GOF(VR9) +SZB(VR9))  return 0+ GOF(VR9);
-   if (o >= GOF(VR10) && o+sz <= GOF(VR10)+SZB(VR10)) return 0+ GOF(VR10);
-   if (o >= GOF(VR11) && o+sz <= GOF(VR11)+SZB(VR11)) return 0+ GOF(VR11);
-   if (o >= GOF(VR12) && o+sz <= GOF(VR12)+SZB(VR12)) return 0+ GOF(VR12);
-   if (o >= GOF(VR13) && o+sz <= GOF(VR13)+SZB(VR13)) return 0+ GOF(VR13);
-   if (o >= GOF(VR14) && o+sz <= GOF(VR14)+SZB(VR14)) return 0+ GOF(VR14);
-   if (o >= GOF(VR15) && o+sz <= GOF(VR15)+SZB(VR15)) return 0+ GOF(VR15);
-   if (o >= GOF(VR16) && o+sz <= GOF(VR16)+SZB(VR16)) return 0+ GOF(VR16);
-   if (o >= GOF(VR17) && o+sz <= GOF(VR17)+SZB(VR17)) return 0+ GOF(VR17);
-   if (o >= GOF(VR18) && o+sz <= GOF(VR18)+SZB(VR18)) return 0+ GOF(VR18);
-   if (o >= GOF(VR19) && o+sz <= GOF(VR19)+SZB(VR19)) return 0+ GOF(VR19);
-   if (o >= GOF(VR20) && o+sz <= GOF(VR20)+SZB(VR20)) return 0+ GOF(VR20);
-   if (o >= GOF(VR21) && o+sz <= GOF(VR21)+SZB(VR21)) return 0+ GOF(VR21);
-   if (o >= GOF(VR22) && o+sz <= GOF(VR22)+SZB(VR22)) return 0+ GOF(VR22);
-   if (o >= GOF(VR23) && o+sz <= GOF(VR23)+SZB(VR23)) return 0+ GOF(VR23);
-   if (o >= GOF(VR24) && o+sz <= GOF(VR24)+SZB(VR24)) return 0+ GOF(VR24);
-   if (o >= GOF(VR25) && o+sz <= GOF(VR25)+SZB(VR25)) return 0+ GOF(VR25);
-   if (o >= GOF(VR26) && o+sz <= GOF(VR26)+SZB(VR26)) return 0+ GOF(VR26);
-   if (o >= GOF(VR27) && o+sz <= GOF(VR27)+SZB(VR27)) return 0+ GOF(VR27);
-   if (o >= GOF(VR28) && o+sz <= GOF(VR28)+SZB(VR28)) return 0+ GOF(VR28);
-   if (o >= GOF(VR29) && o+sz <= GOF(VR29)+SZB(VR29)) return 0+ GOF(VR29);
-   if (o >= GOF(VR30) && o+sz <= GOF(VR30)+SZB(VR30)) return 0+ GOF(VR30);
-   if (o >= GOF(VR31) && o+sz <= GOF(VR31)+SZB(VR31)) return 0+ GOF(VR31);
-
-   VG_(printf)("get_shadow_offset(ppc32)(off=%d,sz=%d)\n", offset,szB);
-   tl_assert(0);
-#undef GOF
-#undef SZB
-
-
-#elif defined(VGA_amd64)
-
-#define GOF(_fieldname) (offsetof(VexGuestAMD64State,guest_##_fieldname))
-#define SZB(_fieldname) (sizeof(((VexGuestAMD64State*)0)->guest_##_fieldname))
-   Int  o      = offset;
-   Int  sz     = szB;
-   Bool is1248 = sz == 8 || sz == 4 || sz == 2 || sz == 1;
-   tl_assert(sz > 0);
-
-   // FIXME: this assumes the host is little endian.  Assert for it.
-   if (o == GOF(RAX) && is1248) return o;
-   if (o == GOF(RCX) && is1248) return o;
-   if (o == GOF(RDX) && is1248) return o;
-   if (o == GOF(RBX) && is1248) return o;
-   if (o == GOF(RSP) && is1248) return o;
-   if (o == GOF(RBP) && is1248) return o;
-   if (o == GOF(RSI) && is1248) return o;
-   if (o == GOF(RDI) && is1248) return o;
-   if (o == GOF(R8)  && is1248) return o;
-   if (o == GOF(R9)  && is1248) return o;
-   if (o == GOF(R10) && is1248) return o;
-   if (o == GOF(R11) && is1248) return o;
-   if (o == GOF(R12) && is1248) return o;
-   if (o == GOF(R13) && is1248) return o;
-   if (o == GOF(R14) && is1248) return o;
-   if (o == GOF(R15) && is1248) return o;
-
-   if (o == GOF(CC_DEP1) && sz == 8) return o;
-   if (o == GOF(CC_DEP2) && sz == 8) return o;
-
-   if (o == GOF(CC_OP)   && sz == 8) return -1; /* slot used for %AH */
-   if (o == GOF(CC_NDEP) && sz == 8) return -1; /* slot used for %BH */
-   if (o == GOF(DFLAG)   && sz == 8) return -1; /* slot used for %CH */
-   if (o == GOF(RIP)     && sz == 8) return -1; /* slot unused */
-   if (o == GOF(IDFLAG)  && sz == 8) return -1; /* slot used for %DH */
-   if (o == GOF(FS_ZERO) && sz == 8) return -1; /* slot unused */
-
-   /* Treat %AH, %BH, %CH, %DH as independent registers.  To do this
-      requires finding 4 unused 32-bit slots in the second-shadow
-      guest state, respectively: CC_OP CC_NDEP DFLAG IDFLAG, since
-      none of those are tracked. */
-   tl_assert(SZB(CC_OP)   == 8);
-   tl_assert(SZB(CC_NDEP) == 8);
-   tl_assert(SZB(IDFLAG)  == 8);
-   tl_assert(SZB(DFLAG)   == 8);
-
-   if (o == 1+ GOF(RAX) && szB == 1) return GOF(CC_OP);
-   if (o == 1+ GOF(RBX) && szB == 1) return GOF(CC_NDEP);
-   if (o == 1+ GOF(RCX) && szB == 1) return GOF(DFLAG);
-   if (o == 1+ GOF(RDX) && szB == 1) return GOF(IDFLAG);
-
-   /* skip XMM and FP admin stuff */
-   if (o == GOF(SSEROUND) && szB == 8) return -1;
-   if (o == GOF(FTOP)     && szB == 4) return -1;
-   if (o == GOF(FPROUND)  && szB == 8) return -1;
-   if (o == GOF(EMWARN)   && szB == 4) return -1;
-   /* The amd64 front end doesn't actually use FC3210.  It should
-      be done away with.
-      if (offset == offsetof(VexGuestAMD64State,guest_FC3210) && szB==4)
-        return -1;
-   */
-
-   /* XMM registers */
-   if (o >= GOF(XMM0)  && o+sz <= GOF(XMM0) +SZB(XMM0))  return GOF(XMM0);
-   if (o >= GOF(XMM1)  && o+sz <= GOF(XMM1) +SZB(XMM1))  return GOF(XMM1);
-   if (o >= GOF(XMM2)  && o+sz <= GOF(XMM2) +SZB(XMM2))  return GOF(XMM2);
-   if (o >= GOF(XMM3)  && o+sz <= GOF(XMM3) +SZB(XMM3))  return GOF(XMM3);
-   if (o >= GOF(XMM4)  && o+sz <= GOF(XMM4) +SZB(XMM4))  return GOF(XMM4);
-   if (o >= GOF(XMM5)  && o+sz <= GOF(XMM5) +SZB(XMM5))  return GOF(XMM5);
-   if (o >= GOF(XMM6)  && o+sz <= GOF(XMM6) +SZB(XMM6))  return GOF(XMM6);
-   if (o >= GOF(XMM7)  && o+sz <= GOF(XMM7) +SZB(XMM7))  return GOF(XMM7);
-   if (o >= GOF(XMM8)  && o+sz <= GOF(XMM8) +SZB(XMM8))  return GOF(XMM8);
-   if (o >= GOF(XMM9)  && o+sz <= GOF(XMM9) +SZB(XMM9))  return GOF(XMM9);
-   if (o >= GOF(XMM10) && o+sz <= GOF(XMM10)+SZB(XMM10)) return GOF(XMM10);
-   if (o >= GOF(XMM11) && o+sz <= GOF(XMM11)+SZB(XMM11)) return GOF(XMM11);
-   if (o >= GOF(XMM12) && o+sz <= GOF(XMM12)+SZB(XMM12)) return GOF(XMM12);
-   if (o >= GOF(XMM13) && o+sz <= GOF(XMM13)+SZB(XMM13)) return GOF(XMM13);
-   if (o >= GOF(XMM14) && o+sz <= GOF(XMM14)+SZB(XMM14)) return GOF(XMM14);
-   if (o >= GOF(XMM15) && o+sz <= GOF(XMM15)+SZB(XMM15)) return GOF(XMM15);
-
-   /* MMX accesses to FP regs */
-   if (o == GOF(FPREG[0]) && sz == 8) return o;
-   if (o == GOF(FPREG[1]) && sz == 8) return o;
-   if (o == GOF(FPREG[2]) && sz == 8) return o;
-   if (o == GOF(FPREG[3]) && sz == 8) return o;
-   if (o == GOF(FPREG[4]) && sz == 8) return o;
-   if (o == GOF(FPREG[5]) && sz == 8) return o;
-   if (o == GOF(FPREG[6]) && sz == 8) return o;
-   if (o == GOF(FPREG[7]) && sz == 8) return o;
-
-   /* Map high halves of %RAX,%RCX,%RDX,%RBX to the whole register.
-      This is needed because the general handling of dirty helper
-      calls is done in 4 byte chunks.  Hence we will see these.
-      Currently we only expect to see artefacts from CPUID. */
-   if (o == 4+ GOF(RAX) && sz == 4) return GOF(RAX);
-   if (o == 4+ GOF(RCX) && sz == 4) return GOF(RCX);
-   if (o == 4+ GOF(RDX) && sz == 4) return GOF(RDX);
-   if (o == 4+ GOF(RBX) && sz == 4) return GOF(RBX);
-
-   VG_(printf)("get_shadow_offset(amd64)(off=%d,sz=%d)\n", offset,szB);
-   tl_assert(0);
-#undef GOF
-#undef SZB
-
-
-#elif defined(VGA_x86)
-
-#define GOF(_fieldname) (offsetof(VexGuestX86State,guest_##_fieldname))
-#define SZB(_fieldname) (sizeof(((VexGuestX86State*)0)->guest_##_fieldname))
-
-   Int  o     = offset;
-   Int  sz    = szB;
-   Bool is124 = sz == 4 || sz == 2 || sz == 1;
-   tl_assert(sz > 0);
-
-   if (o == GOF(EAX) && is124) return o;
-   if (o == GOF(ECX) && is124) return o;
-   if (o == GOF(EDX) && is124) return o;
-   if (o == GOF(EBX) && is124) return o;
-   if (o == GOF(ESP) && is124) return o;
-   if (o == GOF(EBP) && is124) return o;
-   if (o == GOF(ESI) && is124) return o;
-   if (o == GOF(EDI) && is124) return o;
-
-   if (o == GOF(CC_DEP1) && sz == 4) return o;
-   if (o == GOF(CC_DEP2) && sz == 4) return o;
-
-   if (o == GOF(CC_OP)   && sz == 4) return -1; /* slot used for %AH */
-   if (o == GOF(CC_NDEP) && sz == 4) return -1; /* slot used for %BH */
-   if (o == GOF(DFLAG)   && sz == 4) return -1; /* slot used for %CH */
-   if (o == GOF(EIP)     && sz == 4) return -1; /* slot unused */
-   if (o == GOF(IDFLAG)  && sz == 4) return -1; /* slot used for %DH */
-   if (o == GOF(ACFLAG)  && sz == 4) return -1; /* slot unused */
-
-   /* Treat %AH, %BH, %CH, %DH as independent registers.  To do this
-      requires finding 4 unused 32-bit slots in the second-shadow
-      guest state, respectively: CC_OP CC_NDEP DFLAG IDFLAG since none
-      of those are tracked. */
-   tl_assert(SZB(CC_OP)   == 4);
-   tl_assert(SZB(CC_NDEP) == 4);
-   tl_assert(SZB(IDFLAG)  == 4);
-   tl_assert(SZB(ACFLAG)  == 4);
-   if (o == 1+ GOF(EAX) && szB == 1) return GOF(CC_OP);
-   //if (o == 1+ GOF(EBX) && szB == 1) return GOF(CC_NDEP);
-   if (o == 1+ GOF(ECX) && szB == 1) return GOF(DFLAG);
-   if (o == 1+ GOF(EDX) && szB == 1) return GOF(IDFLAG);
-
-   /* skip XMM and FP admin stuff */
-   if (o == GOF(SSEROUND) && szB == 4) return -1;
-   if (o == GOF(FTOP)     && szB == 4) return -1;
-   if (o == GOF(FPROUND)  && szB == 4) return -1;
-   if (o == GOF(EMWARN)   && szB == 4) return -1;
-   if (o == GOF(FC3210)   && szB == 4) return -1;
-
-   /* XMM registers */
-   if (o >= GOF(XMM0)  && o+sz <= GOF(XMM0)+SZB(XMM0)) return GOF(XMM0);
-   if (o >= GOF(XMM1)  && o+sz <= GOF(XMM1)+SZB(XMM1)) return GOF(XMM1);
-   if (o >= GOF(XMM2)  && o+sz <= GOF(XMM2)+SZB(XMM2)) return GOF(XMM2);
-   if (o >= GOF(XMM3)  && o+sz <= GOF(XMM3)+SZB(XMM3)) return GOF(XMM3);
-   if (o >= GOF(XMM4)  && o+sz <= GOF(XMM4)+SZB(XMM4)) return GOF(XMM4);
-   if (o >= GOF(XMM5)  && o+sz <= GOF(XMM5)+SZB(XMM5)) return GOF(XMM5);
-   if (o >= GOF(XMM6)  && o+sz <= GOF(XMM6)+SZB(XMM6)) return GOF(XMM6);
-   if (o >= GOF(XMM7)  && o+sz <= GOF(XMM7)+SZB(XMM7)) return GOF(XMM7);
-
-   /* MMX accesses to FP regs.  Need to allow for 32-bit references
-      due to dirty helpers for frstor etc, which reference the entire
-      64-byte block in one go. */
-   if (o >= GOF(FPREG[0])
-       && o+sz <= GOF(FPREG[0])+SZB(FPREG[0])) return GOF(FPREG[0]);
-   if (o >= GOF(FPREG[1])
-       && o+sz <= GOF(FPREG[1])+SZB(FPREG[1])) return GOF(FPREG[1]);
-   if (o >= GOF(FPREG[2])
-       && o+sz <= GOF(FPREG[2])+SZB(FPREG[2])) return GOF(FPREG[2]);
-   if (o >= GOF(FPREG[3])
-       && o+sz <= GOF(FPREG[3])+SZB(FPREG[3])) return GOF(FPREG[3]);
-   if (o >= GOF(FPREG[4])
-       && o+sz <= GOF(FPREG[4])+SZB(FPREG[4])) return GOF(FPREG[4]);
-   if (o >= GOF(FPREG[5])
-       && o+sz <= GOF(FPREG[5])+SZB(FPREG[5])) return GOF(FPREG[5]);
-   if (o >= GOF(FPREG[6])
-       && o+sz <= GOF(FPREG[6])+SZB(FPREG[6])) return GOF(FPREG[6]);
-   if (o >= GOF(FPREG[7])
-       && o+sz <= GOF(FPREG[7])+SZB(FPREG[7])) return GOF(FPREG[7]);
-
-   /* skip %gs and other segment related stuff */
-   if (o == GOF(GS) && sz == 2) return -1;
-   if (o == GOF(LDT) && sz == 4) return -1;
-   if (o == GOF(GDT) && sz == 4) return -1;
-
-   VG_(printf)("get_shadow_offset(x86)(off=%d,sz=%d)\n", offset,szB);
-   tl_assert(0);
-#undef GOF
-#undef SZB
-
-#else
-   VG_(printf)("get_shadow_offset(off=%d,sz=%d)\n", offset,szB);
-   tl_assert(0);
-#endif
-}
-
 static IRAtom* gen_maxU32 ( MCEnv* mce, IRAtom* b1, IRAtom* b2 )
 {
-#if 0
-   IRAtom* b3 = assignNew( 'B', mce, Ity_I1, binop(Iop_CmpLT32U, b1, b2));
-   IRAtom* b4 = assignNew( 'B', mce, Ity_I8, unop(Iop_1Uto8, b3));
-   return assignNew( 'B', mce, Ity_I32, IRExpr_Mux0X(b4,b1,b2));
-#else
    return assignNew( 'B', mce, Ity_I32, binop(Iop_Max32U, b1, b2) );
-#endif
 }
+
 static IRAtom* gen_load_b ( MCEnv* mce, Int szB, 
                             IRAtom* baseaddr, Int offset )
 {
@@ -4492,7 +3919,8 @@ static IRAtom* schemeE ( MCEnv* mce, IRExpr* e )
          IRRegArray* descr_b;
          IRAtom      *t1, *t2, *t3, *t4;
          IRRegArray* descr      = e->Iex.GetI.descr;
-         IRType      equivIntTy = get_reg_array_equiv_int_type(descr);
+         IRType equivIntTy 
+            = MC_(get_otrack_reg_array_equiv_int_type)(descr);
          /* If this array is unshadowable for whatever reason, use the
             usual approximation. */
          if (equivIntTy == Ity_INVALID)
@@ -4581,9 +4009,10 @@ static IRAtom* schemeE ( MCEnv* mce, IRExpr* e )
       case Iex_RdTmp:
          return mkexpr( findShadowTmpB( mce, e->Iex.RdTmp.tmp ));
       case Iex_Get: {
-         Int b_offset
-            = get_shadow_offset( e->Iex.Get.offset,
-                                 sizeofIRType(e->Iex.Get.ty) );
+         Int b_offset = MC_(get_otrack_shadow_offset)( 
+                           e->Iex.Get.offset,
+                           sizeofIRType(e->Iex.Get.ty) 
+                        );
          tl_assert(b_offset >= -1
                    && b_offset <= mce->layout->total_sizeB -4);
          if (b_offset >= 0) {
@@ -4658,7 +4087,7 @@ static void do_origins_Dirty ( MCEnv* mce, IRDirty* d )
          n = gSz <= 4 ? gSz : 4;
          /* update 'curr' with maxU32 of the state slice 
             gOff .. gOff+n-1 */
-         b_offset = get_shadow_offset(gOff, 4);
+         b_offset = MC_(get_otrack_shadow_offset)(gOff, 4);
          if (b_offset != -1) {
             here = assignNew( 'B',mce,
                                Ity_I32,
@@ -4734,7 +4163,7 @@ static void do_origins_Dirty ( MCEnv* mce, IRDirty* d )
          if (gSz == 0) break;
          n = gSz <= 4 ? gSz : 4;
          /* Write 'curr' to the state slice gOff .. gOff+n-1 */
-         b_offset = get_shadow_offset(gOff, 4);
+         b_offset = MC_(get_otrack_shadow_offset)(gOff, 4);
          if (b_offset != -1) {
            stmt( 'B', mce, IRStmt_Put(b_offset + 2*mce->layout->total_sizeB,
                                       curr ));
@@ -4778,7 +4207,8 @@ static void schemeS ( MCEnv* mce, IRStmt* st )
          IRRegArray* descr_b;
          IRAtom      *t1, *t2, *t3, *t4;
          IRRegArray* descr = st->Ist.PutI.descr;
-         IRType equivIntTy = get_reg_array_equiv_int_type(descr);
+         IRType equivIntTy
+            = MC_(get_otrack_reg_array_equiv_int_type)(descr);
          /* If this array is unshadowable for whatever reason,
             generate no code. */
          if (equivIntTy == Ity_INVALID)
@@ -4815,9 +4245,10 @@ static void schemeS ( MCEnv* mce, IRStmt* st )
       }
       case Ist_Put: {
          Int b_offset
-            = get_shadow_offset(
+            = MC_(get_otrack_shadow_offset)(
                  st->Ist.Put.offset,
-                 sizeofIRType(typeOfIRExpr(mce->bb->tyenv, st->Ist.Put.data)) );
+                 sizeofIRType(typeOfIRExpr(mce->bb->tyenv, st->Ist.Put.data))
+              );
          if (b_offset >= 0) {
             /* FIXME: this isn't an atom! */
             stmt( 'B', mce, IRStmt_Put(b_offset + 2*mce->layout->total_sizeB, 

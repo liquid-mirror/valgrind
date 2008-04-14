@@ -118,6 +118,15 @@ extern void  MC_(__builtin_delete)     ( ThreadId tid, void* p );
 extern void  MC_(__builtin_vec_delete) ( ThreadId tid, void* p );
 extern void* MC_(realloc)              ( ThreadId tid, void* p, SizeT new_size );
 
+/*------------------------------------------------------------*/
+/*--- Origin tracking translate-time support               ---*/
+/*------------------------------------------------------------*/
+
+/* See detailed comments in mc_machine.c. */
+extern 
+Int MC_(get_otrack_shadow_offset) ( Int offset, Int szB );
+extern 
+IRType MC_(get_otrack_reg_array_equiv_int_type) ( IRRegArray* arr );
 
 /*------------------------------------------------------------*/
 /*--- Profiling of memory events                           ---*/
