@@ -1557,7 +1557,8 @@ void MC_(make_mem_noaccess) ( Addr a, SizeT len )
    PROF_EVENT(40, "MC_(make_mem_noaccess)");
    DEBUG("MC_(make_mem_noaccess)(%p, %lu)\n", a, len);
    set_address_range_perms ( a, len, VA_BITS16_NOACCESS, SM_DIST_NOACCESS );
-   ocache_sarp_Clear_Origins ( a, len );
+   if (UNLIKELY( MC_(clo_mc_level) == 3 ))
+      ocache_sarp_Clear_Origins ( a, len );
 }
 
 void MC_(make_mem_undefined) ( Addr a, SizeT len, UInt otag )
@@ -1565,7 +1566,8 @@ void MC_(make_mem_undefined) ( Addr a, SizeT len, UInt otag )
    PROF_EVENT(41, "MC_(make_mem_undefined)");
    DEBUG("MC_(make_mem_undefined)(%p, %lu)\n", a, len);
    set_address_range_perms ( a, len, VA_BITS16_UNDEFINED, SM_DIST_UNDEFINED );
-   ocache_sarp_Set_Origins ( a, len, otag );
+   if (UNLIKELY( MC_(clo_mc_level) == 3 ))
+      ocache_sarp_Set_Origins ( a, len, otag );
 }
 
 void MC_(make_mem_defined) ( Addr a, SizeT len )
@@ -1573,7 +1575,8 @@ void MC_(make_mem_defined) ( Addr a, SizeT len )
    PROF_EVENT(42, "MC_(make_mem_defined)");
    DEBUG("MC_(make_mem_defined)(%p, %lu)\n", a, len);
    set_address_range_perms ( a, len, VA_BITS16_DEFINED, SM_DIST_DEFINED );
-   ocache_sarp_Clear_Origins ( a, len );
+   if (UNLIKELY( MC_(clo_mc_level) == 3 ))
+      ocache_sarp_Clear_Origins ( a, len );
 }
 
 /* For each byte in [a,a+len), if the byte is addressable, make it be
@@ -1844,6 +1847,7 @@ void make_aligned_word32_undefined ( Addr a, UInt otag )
 
    //// BEGIN inlined, specialised version of MC_(helperc_b_store4)
    //// Set the origins for a+0 .. a+3
+   if (UNLIKELY( MC_(clo_mc_level) == 3 ))
    { OCacheLine* line;
      UWord lineoff = (a % (OC_W32S_PER_LINE * 4)) / 4;
      tl_assert(lineoff >= 0 && lineoff < OC_W32S_PER_LINE);
@@ -1879,6 +1883,7 @@ void make_aligned_word32_noaccess ( Addr a )
 
    //// BEGIN inlined, specialised version of MC_(helperc_b_store4)
    //// Set the origins for a+0 .. a+3.  FIXME: is this necessary?
+   if (UNLIKELY( MC_(clo_mc_level) == 3 ))
    { OCacheLine* line;
      UWord lineoff = (a % (OC_W32S_PER_LINE * 4)) / 4;
      tl_assert(lineoff >= 0 && lineoff < OC_W32S_PER_LINE);
@@ -1914,6 +1919,7 @@ void make_aligned_word64_undefined ( Addr a, UInt otag )
 
    //// BEGIN inlined, specialised version of MC_(helperc_b_store8)
    //// Set the origins for a+0 .. a+7
+   if (UNLIKELY( MC_(clo_mc_level) == 3 ))
    { OCacheLine* line;
      UWord lineoff = (a % (OC_W32S_PER_LINE * 4)) / 4;
      tl_assert(lineoff >= 0 
@@ -1952,6 +1958,7 @@ void make_aligned_word64_noaccess ( Addr a )
 
    //// BEGIN inlined, specialised version of MC_(helperc_b_store8)
    //// Clear the origins for a+0 .. a+7.  FIXME: is this necessary?
+   if (UNLIKELY( MC_(clo_mc_level) == 3 ))
    { OCacheLine* line;
      UWord lineoff = (a % (OC_W32S_PER_LINE * 4)) / 4;
      tl_assert(lineoff >= 0 
@@ -2482,8 +2489,12 @@ void MC_(helperc_MAKE_STACK_UNINIT) ( Addr base, UWord len, Addr nia )
       VG_(printf)("helperc_MAKE_STACK_UNINIT (%p,%lu,nia=%p)\n",
                   base, len, nia );
 
-   otag = convert_nia_to_otag ( nia );
-   tl_assert(otag > 0);
+   if (UNLIKELY( MC_(clo_mc_level) == 3 )) {
+      otag = convert_nia_to_otag ( nia );
+      tl_assert(otag > 0);
+   } else {
+      otag = 0;
+   }
 
 #  if 0
    /* Really slow version */
@@ -2559,22 +2570,24 @@ void MC_(helperc_MAKE_STACK_UNINIT) ( Addr base, UWord len, Addr nia )
             p[13] = VA_BITS16_UNDEFINED;
             p[14] = VA_BITS16_UNDEFINED;
             p[15] = VA_BITS16_UNDEFINED;
-            set_aligned_word64_Origin_to_undef( base + 8 * 0, otag );
-            set_aligned_word64_Origin_to_undef( base + 8 * 1, otag );
-            set_aligned_word64_Origin_to_undef( base + 8 * 2, otag );
-            set_aligned_word64_Origin_to_undef( base + 8 * 3, otag );
-            set_aligned_word64_Origin_to_undef( base + 8 * 4, otag );
-            set_aligned_word64_Origin_to_undef( base + 8 * 5, otag );
-            set_aligned_word64_Origin_to_undef( base + 8 * 6, otag );
-            set_aligned_word64_Origin_to_undef( base + 8 * 7, otag );
-            set_aligned_word64_Origin_to_undef( base + 8 * 8, otag );
-            set_aligned_word64_Origin_to_undef( base + 8 * 9, otag );
-            set_aligned_word64_Origin_to_undef( base + 8 * 10, otag );
-            set_aligned_word64_Origin_to_undef( base + 8 * 11, otag );
-            set_aligned_word64_Origin_to_undef( base + 8 * 12, otag );
-            set_aligned_word64_Origin_to_undef( base + 8 * 13, otag );
-            set_aligned_word64_Origin_to_undef( base + 8 * 14, otag );
-            set_aligned_word64_Origin_to_undef( base + 8 * 15, otag );
+            if (UNLIKELY( MC_(clo_mc_level) == 3 )) {
+               set_aligned_word64_Origin_to_undef( base + 8 * 0, otag );
+               set_aligned_word64_Origin_to_undef( base + 8 * 1, otag );
+               set_aligned_word64_Origin_to_undef( base + 8 * 2, otag );
+               set_aligned_word64_Origin_to_undef( base + 8 * 3, otag );
+               set_aligned_word64_Origin_to_undef( base + 8 * 4, otag );
+               set_aligned_word64_Origin_to_undef( base + 8 * 5, otag );
+               set_aligned_word64_Origin_to_undef( base + 8 * 6, otag );
+               set_aligned_word64_Origin_to_undef( base + 8 * 7, otag );
+               set_aligned_word64_Origin_to_undef( base + 8 * 8, otag );
+               set_aligned_word64_Origin_to_undef( base + 8 * 9, otag );
+               set_aligned_word64_Origin_to_undef( base + 8 * 10, otag );
+               set_aligned_word64_Origin_to_undef( base + 8 * 11, otag );
+               set_aligned_word64_Origin_to_undef( base + 8 * 12, otag );
+               set_aligned_word64_Origin_to_undef( base + 8 * 13, otag );
+               set_aligned_word64_Origin_to_undef( base + 8 * 14, otag );
+               set_aligned_word64_Origin_to_undef( base + 8 * 15, otag );
+            }
             return;
          }
       }
@@ -2633,42 +2646,44 @@ void MC_(helperc_MAKE_STACK_UNINIT) ( Addr base, UWord len, Addr nia )
             p[33] = VA_BITS16_UNDEFINED;
             p[34] = VA_BITS16_UNDEFINED;
             p[35] = VA_BITS16_UNDEFINED;
-            set_aligned_word64_Origin_to_undef( base + 8 * 0, otag );
-            set_aligned_word64_Origin_to_undef( base + 8 * 1, otag );
-            set_aligned_word64_Origin_to_undef( base + 8 * 2, otag );
-            set_aligned_word64_Origin_to_undef( base + 8 * 3, otag );
-            set_aligned_word64_Origin_to_undef( base + 8 * 4, otag );
-            set_aligned_word64_Origin_to_undef( base + 8 * 5, otag );
-            set_aligned_word64_Origin_to_undef( base + 8 * 6, otag );
-            set_aligned_word64_Origin_to_undef( base + 8 * 7, otag );
-            set_aligned_word64_Origin_to_undef( base + 8 * 8, otag );
-            set_aligned_word64_Origin_to_undef( base + 8 * 9, otag );
-            set_aligned_word64_Origin_to_undef( base + 8 * 10, otag );
-            set_aligned_word64_Origin_to_undef( base + 8 * 11, otag );
-            set_aligned_word64_Origin_to_undef( base + 8 * 12, otag );
-            set_aligned_word64_Origin_to_undef( base + 8 * 13, otag );
-            set_aligned_word64_Origin_to_undef( base + 8 * 14, otag );
-            set_aligned_word64_Origin_to_undef( base + 8 * 15, otag );
-            set_aligned_word64_Origin_to_undef( base + 8 * 16, otag );
-            set_aligned_word64_Origin_to_undef( base + 8 * 17, otag );
-            set_aligned_word64_Origin_to_undef( base + 8 * 18, otag );
-            set_aligned_word64_Origin_to_undef( base + 8 * 19, otag );
-            set_aligned_word64_Origin_to_undef( base + 8 * 20, otag );
-            set_aligned_word64_Origin_to_undef( base + 8 * 21, otag );
-            set_aligned_word64_Origin_to_undef( base + 8 * 22, otag );
-            set_aligned_word64_Origin_to_undef( base + 8 * 23, otag );
-            set_aligned_word64_Origin_to_undef( base + 8 * 24, otag );
-            set_aligned_word64_Origin_to_undef( base + 8 * 25, otag );
-            set_aligned_word64_Origin_to_undef( base + 8 * 26, otag );
-            set_aligned_word64_Origin_to_undef( base + 8 * 27, otag );
-            set_aligned_word64_Origin_to_undef( base + 8 * 28, otag );
-            set_aligned_word64_Origin_to_undef( base + 8 * 29, otag );
-            set_aligned_word64_Origin_to_undef( base + 8 * 30, otag );
-            set_aligned_word64_Origin_to_undef( base + 8 * 31, otag );
-            set_aligned_word64_Origin_to_undef( base + 8 * 32, otag );
-            set_aligned_word64_Origin_to_undef( base + 8 * 33, otag );
-            set_aligned_word64_Origin_to_undef( base + 8 * 34, otag );
-            set_aligned_word64_Origin_to_undef( base + 8 * 35, otag );
+            if (UNLIKELY( MC_(clo_mc_level) == 3 )) {
+               set_aligned_word64_Origin_to_undef( base + 8 * 0, otag );
+               set_aligned_word64_Origin_to_undef( base + 8 * 1, otag );
+               set_aligned_word64_Origin_to_undef( base + 8 * 2, otag );
+               set_aligned_word64_Origin_to_undef( base + 8 * 3, otag );
+               set_aligned_word64_Origin_to_undef( base + 8 * 4, otag );
+               set_aligned_word64_Origin_to_undef( base + 8 * 5, otag );
+               set_aligned_word64_Origin_to_undef( base + 8 * 6, otag );
+               set_aligned_word64_Origin_to_undef( base + 8 * 7, otag );
+               set_aligned_word64_Origin_to_undef( base + 8 * 8, otag );
+               set_aligned_word64_Origin_to_undef( base + 8 * 9, otag );
+               set_aligned_word64_Origin_to_undef( base + 8 * 10, otag );
+               set_aligned_word64_Origin_to_undef( base + 8 * 11, otag );
+               set_aligned_word64_Origin_to_undef( base + 8 * 12, otag );
+               set_aligned_word64_Origin_to_undef( base + 8 * 13, otag );
+               set_aligned_word64_Origin_to_undef( base + 8 * 14, otag );
+               set_aligned_word64_Origin_to_undef( base + 8 * 15, otag );
+               set_aligned_word64_Origin_to_undef( base + 8 * 16, otag );
+               set_aligned_word64_Origin_to_undef( base + 8 * 17, otag );
+               set_aligned_word64_Origin_to_undef( base + 8 * 18, otag );
+               set_aligned_word64_Origin_to_undef( base + 8 * 19, otag );
+               set_aligned_word64_Origin_to_undef( base + 8 * 20, otag );
+               set_aligned_word64_Origin_to_undef( base + 8 * 21, otag );
+               set_aligned_word64_Origin_to_undef( base + 8 * 22, otag );
+               set_aligned_word64_Origin_to_undef( base + 8 * 23, otag );
+               set_aligned_word64_Origin_to_undef( base + 8 * 24, otag );
+               set_aligned_word64_Origin_to_undef( base + 8 * 25, otag );
+               set_aligned_word64_Origin_to_undef( base + 8 * 26, otag );
+               set_aligned_word64_Origin_to_undef( base + 8 * 27, otag );
+               set_aligned_word64_Origin_to_undef( base + 8 * 28, otag );
+               set_aligned_word64_Origin_to_undef( base + 8 * 29, otag );
+               set_aligned_word64_Origin_to_undef( base + 8 * 30, otag );
+               set_aligned_word64_Origin_to_undef( base + 8 * 31, otag );
+               set_aligned_word64_Origin_to_undef( base + 8 * 32, otag );
+               set_aligned_word64_Origin_to_undef( base + 8 * 33, otag );
+               set_aligned_word64_Origin_to_undef( base + 8 * 34, otag );
+               set_aligned_word64_Origin_to_undef( base + 8 * 35, otag );
+            }
             return;
          }
       }
