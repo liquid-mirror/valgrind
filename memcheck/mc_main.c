@@ -2752,7 +2752,7 @@ static MC_ReadResult is_mem_defined ( Addr a, SizeT len, Addr* bad_addr )
          // --undef-value-errors=yes.
          if (bad_addr != NULL) *bad_addr = a;
          if      ( VA_BITS2_NOACCESS == vabits2 ) return MC_AddrErr; 
-         else if ( MC_(clo_undef_value_errors)  ) return MC_ValueErr;
+         else if ( MC_(clo_mc_level) >= 2       ) return MC_ValueErr;
       }
       a++;
    }
@@ -2779,7 +2779,7 @@ static Bool mc_is_defined_asciiz ( Addr a, Addr* bad_addr )
          // --undef-value-errors=yes.
          if (bad_addr != NULL) *bad_addr = a;
          if      ( VA_BITS2_NOACCESS == vabits2 ) return MC_AddrErr; 
-         else if ( MC_(clo_undef_value_errors)  ) return MC_ValueErr;
+         else if ( MC_(clo_mc_level) >= 2       ) return MC_ValueErr;
       }
       /* Ok, a is safe to read. */
       if (* ((UChar*)a) == 0) {
@@ -3297,9 +3297,15 @@ static void mc_pp_Error ( Error* err )
       } 
       
       case Err_Value:
-         mc_pp_msg("UninitValue", err,
-                   "Use of uninitialised value of size %d (otag %u)",
-                   extra->Err.Value.szB, extra->Err.Value.otag);
+         if (extra->Err.Value.otag == 0) {
+            mc_pp_msg("UninitValue", err,
+                      "Use of uninitialised value of size %d",
+                      extra->Err.Value.szB);
+         } else {
+            mc_pp_msg("UninitValue", err,
+                      "Use of uninitialised value of size %d (otag %u)",
+                      extra->Err.Value.szB, extra->Err.Value.otag);
+         }
          if (extra->Err.Value.origin_ec) {
             if (extra->Err.Value.is_stack_origin) {
                VG_(message)(Vg_UserMsg, "  Uninitialised value originates "
@@ -3313,10 +3319,16 @@ static void mc_pp_Error ( Error* err )
          break;
 
       case Err_Cond:
-         mc_pp_msg("UninitCondition", err,
-                   "Conditional jump or move depends"
-                   " on uninitialised value(s) (otag %u)",
-                   extra->Err.Cond.otag);
+         if (extra->Err.Cond.otag == 0) {
+            mc_pp_msg("UninitCondition", err,
+                      "Conditional jump or move depends"
+                      " on uninitialised value(s)");
+         } else {
+            mc_pp_msg("UninitCondition", err,
+                      "Conditional jump or move depends"
+                      " on uninitialised value(s) (otag %u)",
+                      extra->Err.Cond.otag);
+         }
          if (extra->Err.Cond.origin_ec) {
             if (extra->Err.Cond.is_stack_origin) {
                VG_(message)(Vg_UserMsg, "  Uninitialised value originates "
@@ -3543,7 +3555,7 @@ static void mc_record_address_error ( ThreadId tid, Addr a, Int szB,
 static void mc_record_value_error ( ThreadId tid, Int szB, UInt otag )
 {
    MC_Error extra;
-   tl_assert(MC_(clo_undef_value_errors));
+   tl_assert( MC_(clo_mc_level) >= 2 );
    extra.Err.Value.szB             = szB;
    extra.Err.Value.otag            = otag;
    extra.Err.Value.origin_ec       = NULL;  /* Filled in later */
@@ -3554,7 +3566,7 @@ static void mc_record_value_error ( ThreadId tid, Int szB, UInt otag )
 static void mc_record_cond_error ( ThreadId tid, UInt otag )
 {
    MC_Error extra;
-   tl_assert(MC_(clo_undef_value_errors));
+   tl_assert( MC_(clo_mc_level) >= 2 );
    extra.Err.Cond.otag            = otag;
    extra.Err.Cond.origin_ec       = NULL;  /* Filled in later */
    extra.Err.Cond.is_stack_origin = False; /* Filled in later */
@@ -3582,7 +3594,7 @@ static void mc_record_memparam_error ( ThreadId tid, Addr a,
    MC_Error extra;
    tl_assert(VG_INVALID_THREADID != tid);
    if (!isAddrErr) 
-      tl_assert(MC_(clo_undef_value_errors));
+      tl_assert( MC_(clo_mc_level) >= 2 );
    extra.Err.MemParam.isAddrErr = isAddrErr;
    extra.Err.MemParam.ai.tag    = Addr_Undescribed;
    VG_(maybe_record_error)( tid, Err_MemParam, a, msg, &extra );
@@ -4776,9 +4788,12 @@ static void init_shadow_memory ( void )
 
 static Bool mc_cheap_sanity_check ( void )
 {
-   /* nothing useful we can rapidly check */
    n_sanity_cheap++;
    PROF_EVENT(490, "cheap_sanity_check");
+   /* Check for sane operating level */
+   if (MC_(clo_mc_level) < 1 || MC_(clo_mc_level) > 3)
+      return False;
+   /* nothing else useful we can rapidly check */
    return True;
 }
 
@@ -4795,6 +4810,10 @@ static Bool mc_expensive_sanity_check ( void )
 
    n_sanity_expensive++;
    PROF_EVENT(491, "expensive_sanity_check");
+
+   /* Check for sane operating level */
+   if (MC_(clo_mc_level) < 1 || MC_(clo_mc_level) > 3)
+      return False;
 
    /* Check that the 3 distinguished SMs are still as they should be. */
 
@@ -4824,7 +4843,7 @@ static Bool mc_expensive_sanity_check ( void )
 
    /* If we're not checking for undefined value errors, the secondary V bit
     * table should be empty. */
-   if (!MC_(clo_undef_value_errors)) {
+   if (MC_(clo_mc_level) == 1) {
       if (0 != VG_(OSetGen_Size)(secVBitTable))
          return False;
    }
@@ -4881,18 +4900,50 @@ LeakCheckMode MC_(clo_leak_check)             = LC_Summary;
 VgRes         MC_(clo_leak_resolution)        = Vg_LowRes;
 Bool          MC_(clo_show_reachable)         = False;
 Bool          MC_(clo_workaround_gcc296_bugs) = False;
-Bool          MC_(clo_undef_value_errors)     = True;
 Int           MC_(clo_malloc_fill)            = -1;
 Int           MC_(clo_free_fill)              = -1;
+Int           MC_(clo_mc_level)               = 2;
 
 static Bool mc_process_cmd_line_options(Char* arg)
 {
+   tl_assert( MC_(clo_mc_level) >= 1 && MC_(clo_mc_level) <= 3 );
+
+   /* Set MC_(clo_mc_level):
+         1 = A bit tracking only
+         2 = A and V bit tracking, but no V bit origins
+         3 = A and V bit tracking, and V bit origins
+
+      Do this by inspecting --undef-value-errors= and
+      --track-origins=.  Reject the case --undef-value-errors=no
+      --track-origins=yes as meaningless.
+   */
+   if (0 == VG_(strcmp)(arg, "--undef-value-errors=no")) {
+      if (MC_(clo_mc_level) == 3)
+         goto mc_level_error;
+      MC_(clo_mc_level) = 1;
+      return True;
+   }
+   if (0 == VG_(strcmp)(arg, "--undef-value-errors=yes")) {
+      if (MC_(clo_mc_level) == 1)
+         MC_(clo_mc_level) = 2;
+      return True;
+   }
+   if (0 == VG_(strcmp)(arg, "--track-origins=no")) {
+      if (MC_(clo_mc_level) == 3)
+         MC_(clo_mc_level) = 2;
+      return True;
+   }
+   if (0 == VG_(strcmp)(arg, "--track-origins=yes")) {
+      if (MC_(clo_mc_level) == 1)
+         goto mc_level_error;
+      MC_(clo_mc_level) = 3;
+      return True;
+   }
+
 	VG_BOOL_CLO(arg, "--partial-loads-ok",      MC_(clo_partial_loads_ok))
    else VG_BOOL_CLO(arg, "--show-reachable",        MC_(clo_show_reachable))
    else VG_BOOL_CLO(arg, "--workaround-gcc296-bugs",MC_(clo_workaround_gcc296_bugs))
 
-   else VG_BOOL_CLO(arg, "--undef-value-errors",    MC_(clo_undef_value_errors))
-   
    else VG_BNUM_CLO(arg, "--freelist-vol",  MC_(clo_freelist_vol), 
                                             0, 10*1000*1000*1000LL)
    
@@ -4947,6 +4998,12 @@ static Bool mc_process_cmd_line_options(Char* arg)
       return VG_(replacement_malloc_process_cmd_line_option)(arg);
 
    return True;
+   /*NOTREACHED*/
+
+  mc_level_error:
+   VG_(message)(Vg_DebugMsg, "ERROR: --track-origins=yes has no effect "
+                             "when --undef-value-errors=no");
+   return False;
 }
 
 static void mc_print_usage(void)
@@ -4956,6 +5013,7 @@ static void mc_print_usage(void)
 "    --leak-resolution=low|med|high   how much bt merging in leak check [low]\n"
 "    --show-reachable=no|yes          show reachable blocks in leak check? [no]\n"
 "    --undef-value-errors=no|yes      check for undefined value errors [yes]\n"
+"    --track-origins=no|yes           show origins of undefined values? [no]\n"
 "    --partial-loads-ok=no|yes        too hard to explain here; see manual [no]\n"
 "    --freelist-vol=<number>          volume of freed blocks queue [10000000]\n"
 "    --workaround-gcc296-bugs=no|yes  self explanatory [no]\n"
@@ -5897,7 +5955,7 @@ static void mc_pre_clo_init(void)
    VG_(track_pre_mem_write)       ( check_mem_is_addressable );
    VG_(track_post_mem_write)      ( mc_post_mem_write );
 
-   if (MC_(clo_undef_value_errors))
+   if (MC_(clo_mc_level) >= 2)
       VG_(track_pre_reg_read)     ( mc_pre_reg_read );
 
    VG_(track_post_reg_write)                  ( mc_post_reg_write );

@@ -279,18 +279,6 @@ extern Bool MC_(clo_show_reachable);
  * default: NO */
 extern Bool MC_(clo_workaround_gcc296_bugs);
 
-/* Do undefined value checking? "No" gives Addrcheck-style behaviour, ie.
- * faster but fewer errors found.  Note that although Addrcheck had 1 bit
- * per byte overhead vs the old Memcheck's 9 bits per byte, with this mode
- * and compressed V bits, no memory is saved with this mode -- it's still
- * 2 bits per byte overhead.  This is a little wasteful -- it could be done
- * with 1 bit per byte -- but lets us reuse the many shadow memory access
- * functions.  Note also that in this mode the secondary V bit table is
- * never used.
- *
- * default: YES */
-extern Bool MC_(clo_undef_value_errors);
-
 /* Fill malloc-d/free-d client blocks with a specific value?  -1 if
    not, else 0x00 .. 0xFF indicating the fill value to use.  Can be
    useful for causing programs with bad heap corruption to fail in
@@ -299,6 +287,31 @@ extern Bool MC_(clo_undef_value_errors);
    causes them to contain the specified values. */
 extern Int MC_(clo_malloc_fill);
 extern Int MC_(clo_free_fill);
+
+/* Indicates the level of instrumentation/checking done by Memcheck.
+
+   1 = No undefined value checking, Addrcheck-style behaviour only:
+       only address checking is done.  This is faster but finds fewer
+       errors.  Note that although Addrcheck had 1 bit per byte
+       overhead vs the old Memcheck's 9 bits per byte, with this mode
+       and compressed V bits, no memory is saved with this mode --
+       it's still 2 bits per byte overhead.  This is a little wasteful
+       -- it could be done with 1 bit per byte -- but lets us reuse
+       the many shadow memory access functions.  Note that in this
+       mode neither the secondary V bit table nor the origin-tag cache
+       are used.
+
+   2 = Address checking and Undefined value checking are performed,
+       but origins are not tracked.  So the origin-tag cache is not
+       used in this mode.  This setting is the default and corresponds
+       to the "normal" Memcheck behaviour that has shipped for years.
+
+   3 = Address checking, undefined value checking, and origins for
+       undefined values are tracked.
+
+   The default is 2.
+*/
+extern Int MC_(clo_mc_level);
 
 
 /*------------------------------------------------------------*/

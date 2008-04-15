@@ -903,7 +903,7 @@ static void complainIfUndefined ( MCEnv* mce, IRAtom* atom )
    IRAtom*  origin;
 
    // Don't do V bit tests if we're not reporting undefined value errors.
-   if (!MC_(clo_undef_value_errors))
+   if (MC_(clo_mc_level) == 1)
       return;
 
    /* Since the original expression is atomic, there's no duplicated
@@ -923,10 +923,16 @@ static void complainIfUndefined ( MCEnv* mce, IRAtom* atom )
    cond = mkPCastTo( mce, Ity_I1, vatom );
    /* cond will be 0 if all defined, and 1 if any not defined. */
 
-   /* Get the origin info for the value we are about to check. */
-   origin = schemeE( mce, atom );
-   if (mce->hWordTy == Ity_I64) {
-      origin = assignNew( 'B', mce, Ity_I64, unop(Iop_32Uto64, origin) );
+   /* Get the origin info for the value we are about to check.  At
+      least, if we are doing origin tracking.  If not, use a dummy
+      zero origin. */
+   if (MC_(clo_mc_level) == 3) {
+      origin = schemeE( mce, atom );
+      if (mce->hWordTy == Ity_I64) {
+         origin = assignNew( 'B', mce, Ity_I64, unop(Iop_32Uto64, origin) );
+      }
+   } else {
+      origin = mce->hWordTy == Ity_I64  ? mkU64(0)  : mkU32(0);
    }
 
    switch (sz) {
@@ -1038,7 +1044,7 @@ void do_shadow_PUT ( MCEnv* mce,  Int offset,
    // Don't do shadow PUTs if we're not doing undefined value checking.
    // Their absence lets Vex's optimiser remove all the shadow computation
    // that they depend on, which includes GETs of the shadow registers.
-   if (!MC_(clo_undef_value_errors))
+   if (MC_(clo_mc_level) == 1)
       return;
    
    if (atom) {
@@ -1078,7 +1084,7 @@ void do_shadow_PUTI ( MCEnv* mce,
    // Don't do shadow PUTIs if we're not doing undefined value checking.
    // Their absence lets Vex's optimiser remove all the shadow computation
    // that they depend on, which includes GETIs of the shadow registers.
-   if (!MC_(clo_undef_value_errors))
+   if (MC_(clo_mc_level) == 1)
       return;
    
    tl_assert(isOriginalAtom(mce,atom));
@@ -2893,7 +2899,7 @@ void do_shadow_Store ( MCEnv* mce,
    // If we're not doing undefined value checking, pretend that this value
    // is "all valid".  That lets Vex's optimiser remove some of the V bit
    // shadow computation ops that precede it.
-   if (!MC_(clo_undef_value_errors)) {
+   if (MC_(clo_mc_level) == 1) {
       switch (ty) {
          case Ity_V128: c = IRConst_V128(V_BITS16_DEFINED); break; // V128 weirdness
          case Ity_I64:  c = IRConst_U64 (V_BITS64_DEFINED); break;
@@ -3408,12 +3414,16 @@ IRSB* MC_(instrument) ( VgCallbackClosure* closure,
    }
 
    /* Check we're not completely nuts */
-   tl_assert(sizeof(UWord) == sizeof(void*));
-   tl_assert(sizeof(Word)  == sizeof(void*));
-   tl_assert(sizeof(ULong) == 8);
-   tl_assert(sizeof(Long)  == 8);
-   tl_assert(sizeof(UInt)  == 4);
-   tl_assert(sizeof(Int)   == 4);
+   tl_assert(sizeof(UWord)  == sizeof(void*));
+   tl_assert(sizeof(Word)   == sizeof(void*));
+   tl_assert(sizeof(Addr)   == sizeof(void*));
+   tl_assert(sizeof(ULong)  == 8);
+   tl_assert(sizeof(Long)   == 8);
+   tl_assert(sizeof(Addr64) == 8);
+   tl_assert(sizeof(UInt)   == 4);
+   tl_assert(sizeof(Int)    == 4);
+
+   tl_assert(MC_(clo_mc_level) >= 1 && MC_(clo_mc_level) <= 3);
 
    /* Set up SB */
    bb = deepCopyIRSBExceptStmts(bb_in);
@@ -3527,7 +3537,8 @@ IRSB* MC_(instrument) ( VgCallbackClosure* closure,
          VG_(printf)("\n");
       }
 
-      schemeS( &mce, st );
+      if (MC_(clo_mc_level) == 3)
+         schemeS( &mce, st );
 
       /* Generate instrumentation code for each stmt ... */
 
@@ -3913,6 +3924,8 @@ static IRAtom* zWidenFrom32 ( MCEnv* mce, IRType dstTy, IRAtom* e ) {
 
 static IRAtom* schemeE ( MCEnv* mce, IRExpr* e )
 {
+   tl_assert(MC_(clo_mc_level) == 3);
+
    switch (e->tag) {
 
       case Iex_GetI: {
@@ -4193,6 +4206,8 @@ static void do_origins_Dirty ( MCEnv* mce, IRDirty* d )
 
 static void schemeS ( MCEnv* mce, IRStmt* st )
 {
+   tl_assert(MC_(clo_mc_level) == 3);
+
    switch (st->tag) {
 
       case Ist_AbiHint:
