@@ -892,6 +892,7 @@ IRSB* drd_instrument(VgCallbackClosure* const closure,
     case Ist_IMark:
       instrument = VG_(seginfo_sect_kind)(NULL, 0, st->Ist.IMark.addr)
         != Vg_SectPLT;
+      addStmtToIRSB(bb, st);
       break;
 
     case Ist_MBE:
