@@ -1136,9 +1136,9 @@ static Bool parse_ignore_ranges ( UChar* str0 )
 static void mc_record_address_error  ( ThreadId tid, Addr a,
                                        Int size, Bool isWrite );
 static void mc_record_core_mem_error ( ThreadId tid, Bool isAddrErr, Char* s );
-static void mc_record_regparam_error ( ThreadId tid, Char* msg );
+static void mc_record_regparam_error ( ThreadId tid, Char* msg, UInt otag );
 static void mc_record_memparam_error ( ThreadId tid, Addr a,
-                                       Bool isAddrErr, Char* msg );
+                                       Bool isAddrErr, Char* msg, UInt otag );
 static void mc_record_jump_error     ( ThreadId tid, Addr a );
 
 static
@@ -2718,7 +2718,8 @@ Bool MC_(check_mem_is_noaccess) ( Addr a, SizeT len, Addr* bad_addr )
    return True;
 }
 
-static Bool is_mem_addressable ( Addr a, SizeT len, Addr* bad_addr )
+static Bool is_mem_addressable ( Addr a, SizeT len, 
+                                 /*OUT*/Addr* bad_addr )
 {
    SizeT i;
    UWord vabits2;
@@ -2736,13 +2737,18 @@ static Bool is_mem_addressable ( Addr a, SizeT len, Addr* bad_addr )
    return True;
 }
 
-static MC_ReadResult is_mem_defined ( Addr a, SizeT len, Addr* bad_addr )
+static MC_ReadResult is_mem_defined ( Addr a, SizeT len,
+                                      /*OUT*/Addr* bad_addr,
+                                      /*OUT*/UInt* otag )
 {
    SizeT i;
    UWord vabits2;
 
    PROF_EVENT(64, "is_mem_defined");
    DEBUG("is_mem_defined\n");
+
+   if (otag)     *otag = 0;
+   if (bad_addr) *bad_addr = 0;
    for (i = 0; i < len; i++) {
       PROF_EVENT(65, "is_mem_defined(loop)");
       vabits2 = get_vabits2(a);
@@ -2750,9 +2756,18 @@ static MC_ReadResult is_mem_defined ( Addr a, SizeT len, Addr* bad_addr )
          // Error!  Nb: Report addressability errors in preference to
          // definedness errors.  And don't report definedeness errors unless
          // --undef-value-errors=yes.
-         if (bad_addr != NULL) *bad_addr = a;
-         if      ( VA_BITS2_NOACCESS == vabits2 ) return MC_AddrErr; 
-         else if ( MC_(clo_mc_level) >= 2       ) return MC_ValueErr;
+         if (bad_addr) {
+            *bad_addr = a;
+         }
+         if (VA_BITS2_NOACCESS == vabits2) {
+            return MC_AddrErr;
+         }
+         if (MC_(clo_mc_level) >= 2) {
+            if (otag && MC_(clo_mc_level) == 3) {
+               *otag = MC_(helperc_b_load1)( a );
+            }
+            return MC_ValueErr;
+         }
       }
       a++;
    }
@@ -2764,12 +2779,15 @@ static MC_ReadResult is_mem_defined ( Addr a, SizeT len, Addr* bad_addr )
    examine the actual bytes, to find the end, until we're sure it is
    safe to do so. */
 
-static Bool mc_is_defined_asciiz ( Addr a, Addr* bad_addr )
+static Bool mc_is_defined_asciiz ( Addr a, Addr* bad_addr, UInt* otag )
 {
    UWord vabits2;
 
    PROF_EVENT(66, "mc_is_defined_asciiz");
    DEBUG("mc_is_defined_asciiz\n");
+
+   if (otag)     *otag = 0;
+   if (bad_addr) *bad_addr = 0;
    while (True) {
       PROF_EVENT(67, "mc_is_defined_asciiz(loop)");
       vabits2 = get_vabits2(a);
@@ -2777,9 +2795,18 @@ static Bool mc_is_defined_asciiz ( Addr a, Addr* bad_addr )
          // Error!  Nb: Report addressability errors in preference to
          // definedness errors.  And don't report definedeness errors unless
          // --undef-value-errors=yes.
-         if (bad_addr != NULL) *bad_addr = a;
-         if      ( VA_BITS2_NOACCESS == vabits2 ) return MC_AddrErr; 
-         else if ( MC_(clo_mc_level) >= 2       ) return MC_ValueErr;
+         if (bad_addr) {
+            *bad_addr = a;
+         }
+         if (VA_BITS2_NOACCESS == vabits2) {
+            return MC_AddrErr;
+         }
+         if (MC_(clo_mc_level) >= 2) {
+            if (otag && MC_(clo_mc_level) == 3) {
+               *otag = MC_(helperc_b_load1)( a );
+            }
+            return MC_ValueErr;
+         }
       }
       /* Ok, a is safe to read. */
       if (* ((UChar*)a) == 0) {
@@ -2804,7 +2831,8 @@ void check_mem_is_addressable ( CorePart part, ThreadId tid, Char* s,
    if (!ok) {
       switch (part) {
       case Vg_CoreSysCall:
-         mc_record_memparam_error ( tid, bad_addr, /*isAddrErr*/True, s );
+         mc_record_memparam_error ( tid, bad_addr, 
+                                    /*isAddrErr*/True, s, 0/*otag*/ );
          break;
 
       case Vg_CoreSignal:
@@ -2821,15 +2849,17 @@ static
 void check_mem_is_defined ( CorePart part, ThreadId tid, Char* s,
                             Addr base, SizeT size )
 {     
+   UInt otag = 0;
    Addr bad_addr;
-   MC_ReadResult res = is_mem_defined ( base, size, &bad_addr );
+   MC_ReadResult res = is_mem_defined ( base, size, &bad_addr, &otag );
 
    if (MC_Ok != res) {
       Bool isAddrErr = ( MC_AddrErr == res ? True : False );
 
       switch (part) {
       case Vg_CoreSysCall:
-         mc_record_memparam_error ( tid, bad_addr, isAddrErr, s );
+         mc_record_memparam_error ( tid, bad_addr, isAddrErr, s,
+                                    isAddrErr ? 0 : otag );
          break;
       
       /* If we're being asked to jump to a silly address, record an error 
@@ -2850,12 +2880,14 @@ void check_mem_is_defined_asciiz ( CorePart part, ThreadId tid,
 {
    MC_ReadResult res;
    Addr bad_addr = 0;   // shut GCC up
+   UInt otag = 0;
 
    tl_assert(part == Vg_CoreSysCall);
-   res = mc_is_defined_asciiz ( (Addr)str, &bad_addr );
+   res = mc_is_defined_asciiz ( (Addr)str, &bad_addr, &otag );
    if (MC_Ok != res) {
       Bool isAddrErr = ( MC_AddrErr == res ? True : False );
-      mc_record_memparam_error ( tid, bad_addr, isAddrErr, s );
+      mc_record_memparam_error ( tid, bad_addr, isAddrErr, s,
+                                 isAddrErr ? 0 : otag );
    }
 }
 
@@ -2895,6 +2927,30 @@ void mc_post_mem_write(CorePart part, ThreadId tid, Addr a, SizeT len)
 /*--- Register event handlers                              ---*/
 /*------------------------------------------------------------*/
 
+/* Try and get a nonzero origin for the guest state section of thread
+   tid characterised by (offset,size).  Return 0 if nothing to show
+   for it. */
+static UInt mb_get_origin_for_guest_offset ( ThreadId tid,
+                                             Int offset, SizeT size )
+{
+   Int   sh2off;
+   UChar area[6];
+   UInt  otag;
+   sh2off = MC_(get_otrack_shadow_offset)( offset, size );
+   if (sh2off == -1)
+      return 0;  /* This piece of guest state is not tracked */
+   tl_assert(sh2off >= 0);
+   tl_assert(0 == (sh2off % 4));
+   area[0] = 0x31;
+   area[5] = 0x27;
+   VG_(get_shadow_regs_area)( tid, &area[1], 2/*shadowno*/,sh2off,4 );
+   tl_assert(area[0] == 0x31);
+   tl_assert(area[5] == 0x27);
+   otag = *(UInt*)&area[1];
+   return otag;
+}
+
+
 /* When some chunk of guest state is written, mark the corresponding
    shadow area as valid.  This is used to initialise arbitrarily large
    chunks of guest state, hence the _SIZE value, which has to be as
@@ -2928,6 +2984,7 @@ static void mc_pre_reg_read ( CorePart part, ThreadId tid, Char* s,
 {
    Int   i;
    Bool  bad;
+   UInt  otag;
 
    UChar area[16];
    tl_assert(size <= 16);
@@ -2942,8 +2999,13 @@ static void mc_pre_reg_read ( CorePart part, ThreadId tid, Char* s,
       }
    }
 
-   if (bad)
-      mc_record_regparam_error ( tid, s );
+   if (!bad)
+      return;
+
+   /* We've found some undefinedness.  See if we can also find an
+      origin for it. */
+   otag = mb_get_origin_for_guest_offset( tid, offset, size );
+   mc_record_regparam_error ( tid, s, otag );
 }
 
 
@@ -3096,18 +3158,30 @@ struct _MC_Error {
 
       // System call register input contains undefined bytes.
       struct {
+         // Origin info
+         UInt  otag;  // origin tag
+         ExeContext* origin_ec; // filled in later
+         Bool is_stack_origin; // filled in later
       } RegParam;
 
       // System call memory input contains undefined/unaddressable bytes
       struct {
          Bool     isAddrErr;  // Addressability or definedness error?
          AddrInfo ai;
+         // Origin info
+         UInt  otag;  // origin tag
+         ExeContext* origin_ec; // filled in later
+         Bool is_stack_origin; // filled in later
       } MemParam;
 
       // Problem found from a client request like CHECK_MEM_IS_ADDRESSABLE.
       struct {
          Bool     isAddrErr;  // Addressability or definedness error?
          AddrInfo ai;
+         // Origin info
+         UInt  otag;  // origin tag
+         ExeContext* origin_ec; // filled in later
+         Bool is_stack_origin; // filled in later
       } User;
 
       // Program tried to free() something that's not a heap block (this
@@ -3281,6 +3355,19 @@ static void mc_pp_msg( Char* xml_name, Error* err, const HChar* format, ... )
    VG_(pp_ExeContext)( VG_(get_error_where)(err) );
 }
 
+static void mc_pp_origin ( ExeContext* ec, Bool is_stack_origin )
+{
+   tl_assert(ec);
+   if (is_stack_origin) {
+      VG_(message)(Vg_UserMsg, " Uninitialised value originates "
+                               "from a stack allocation");
+   } else {
+      VG_(message)(Vg_UserMsg, " Uninitialised value originates "
+                               "from a heap block allocated");
+   }
+   VG_(pp_ExeContext)( ec );
+}
+
 static void mc_pp_Error ( Error* err )
 {
    MC_Error* extra = VG_(get_error_extra)(err);
@@ -3306,16 +3393,9 @@ static void mc_pp_Error ( Error* err )
                       "Use of uninitialised value of size %d (otag %u)",
                       extra->Err.Value.szB, extra->Err.Value.otag);
          }
-         if (extra->Err.Value.origin_ec) {
-            if (extra->Err.Value.is_stack_origin) {
-               VG_(message)(Vg_UserMsg, "  Uninitialised value originates "
-                                        "from a stack allocation");
-            } else {
-               VG_(message)(Vg_UserMsg, "  Uninitialised value originates "
-                                        "from a heap block allocated");
-            }
-            VG_(pp_ExeContext)( extra->Err.Value.origin_ec );
-         }
+         if (extra->Err.Value.origin_ec)
+            mc_pp_origin( extra->Err.Value.origin_ec,
+                          extra->Err.Value.is_stack_origin );
          break;
 
       case Err_Cond:
@@ -3329,22 +3409,18 @@ static void mc_pp_Error ( Error* err )
                       " on uninitialised value(s) (otag %u)",
                       extra->Err.Cond.otag);
          }
-         if (extra->Err.Cond.origin_ec) {
-            if (extra->Err.Cond.is_stack_origin) {
-               VG_(message)(Vg_UserMsg, "  Uninitialised value originates "
-                                        "from a stack allocation");
-            } else {
-               VG_(message)(Vg_UserMsg, "  Uninitialised value originates "
-                                        "from a heap block allocated");
-            }
-            VG_(pp_ExeContext)( extra->Err.Cond.origin_ec );
-         }
+         if (extra->Err.Cond.origin_ec)
+            mc_pp_origin( extra->Err.Cond.origin_ec,
+                          extra->Err.Cond.is_stack_origin );
          break;
 
       case Err_RegParam:
          mc_pp_msg("SyscallParam", err,
                    "Syscall param %s contains uninitialised byte(s)",
                    VG_(get_error_string)(err));
+         if (extra->Err.RegParam.origin_ec)
+            mc_pp_origin( extra->Err.RegParam.origin_ec,
+                          extra->Err.RegParam.is_stack_origin );
          break;
 
       case Err_MemParam:
@@ -3355,6 +3431,9 @@ static void mc_pp_Error ( Error* err )
                      ? "unaddressable" : "uninitialised" ));
          mc_pp_AddrInfo(VG_(get_error_address)(err),
                         &extra->Err.MemParam.ai, False);
+         if (extra->Err.MemParam.origin_ec && !extra->Err.MemParam.isAddrErr)
+            mc_pp_origin( extra->Err.MemParam.origin_ec,
+                          extra->Err.MemParam.is_stack_origin );
          break;
 
       case Err_User:
@@ -3364,6 +3443,9 @@ static void mc_pp_Error ( Error* err )
                      ? "Unaddressable" : "Uninitialised" ));
          mc_pp_AddrInfo(VG_(get_error_address)(err), &extra->Err.User.ai,
                         False);
+         if (extra->Err.User.origin_ec && !extra->Err.User.isAddrErr)
+            mc_pp_origin( extra->Err.User.origin_ec,
+                          extra->Err.User.is_stack_origin );
          break;
 
       case Err_Free:
@@ -3556,6 +3638,8 @@ static void mc_record_value_error ( ThreadId tid, Int szB, UInt otag )
 {
    MC_Error extra;
    tl_assert( MC_(clo_mc_level) >= 2 );
+   if (otag > 0)
+      tl_assert( MC_(clo_mc_level) == 3 );
    extra.Err.Value.szB             = szB;
    extra.Err.Value.otag            = otag;
    extra.Err.Value.origin_ec       = NULL;  /* Filled in later */
@@ -3567,6 +3651,8 @@ static void mc_record_cond_error ( ThreadId tid, UInt otag )
 {
    MC_Error extra;
    tl_assert( MC_(clo_mc_level) >= 2 );
+   if (otag > 0)
+      tl_assert( MC_(clo_mc_level) == 3 );
    extra.Err.Cond.otag            = otag;
    extra.Err.Cond.origin_ec       = NULL;  /* Filled in later */
    extra.Err.Cond.is_stack_origin = False; /* Filled in later */
@@ -3582,21 +3668,34 @@ static void mc_record_core_mem_error ( ThreadId tid, Bool isAddrErr, Char* msg )
    VG_(maybe_record_error)( tid, Err_CoreMem, /*addr*/0, msg, /*extra*/NULL );
 }
 
-static void mc_record_regparam_error ( ThreadId tid, Char* msg )
+static void mc_record_regparam_error ( ThreadId tid, Char* msg, UInt otag )
 {
+   MC_Error extra;
    tl_assert(VG_INVALID_THREADID != tid);
-   VG_(maybe_record_error)( tid, Err_RegParam, /*addr*/0, msg, /*extra*/NULL );
+   if (otag > 0)
+      tl_assert( MC_(clo_mc_level) == 3 );
+   extra.Err.RegParam.otag            = otag;
+   extra.Err.RegParam.origin_ec       = NULL;  /* Filled in later */
+   extra.Err.RegParam.is_stack_origin = False; /* Filled in later */
+   VG_(maybe_record_error)( tid, Err_RegParam, /*addr*/0, msg, &extra );
 }
 
 static void mc_record_memparam_error ( ThreadId tid, Addr a, 
-                                       Bool isAddrErr, Char* msg )
+                                       Bool isAddrErr, Char* msg, UInt otag )
 {
    MC_Error extra;
    tl_assert(VG_INVALID_THREADID != tid);
    if (!isAddrErr) 
       tl_assert( MC_(clo_mc_level) >= 2 );
-   extra.Err.MemParam.isAddrErr = isAddrErr;
-   extra.Err.MemParam.ai.tag    = Addr_Undescribed;
+   if (otag != 0) {
+      tl_assert( MC_(clo_mc_level) == 3 );
+      tl_assert( !isAddrErr );
+   }
+   extra.Err.MemParam.isAddrErr       = isAddrErr;
+   extra.Err.MemParam.ai.tag          = Addr_Undescribed;
+   extra.Err.MemParam.otag            = otag;
+   extra.Err.MemParam.origin_ec       = NULL;  /* Filled in later */
+   extra.Err.MemParam.is_stack_origin = False; /* Filled in later */
    VG_(maybe_record_error)( tid, Err_MemParam, a, msg, &extra );
 }
 
@@ -3665,13 +3764,23 @@ Bool MC_(record_leak_error) ( ThreadId tid, UInt n_this_record,
                        /*allow_GDB_attach*/False, /*count_error*/False );
 }
 
-static void mc_record_user_error ( ThreadId tid, Addr a, Bool isAddrErr )
+static void mc_record_user_error ( ThreadId tid, Addr a,
+                                   Bool isAddrErr, UInt otag )
 {
    MC_Error extra;
-
+   if (otag != 0) {
+      tl_assert(!isAddrErr);
+      tl_assert( MC_(clo_mc_level) == 3 );
+   }
+   if (!isAddrErr) {
+      tl_assert( MC_(clo_mc_level) >= 2 );
+   }
    tl_assert(VG_INVALID_THREADID != tid);
-   extra.Err.User.isAddrErr = isAddrErr;
-   extra.Err.User.ai.tag    = Addr_Undescribed;
+   extra.Err.User.isAddrErr       = isAddrErr;
+   extra.Err.User.ai.tag          = Addr_Undescribed;
+   extra.Err.User.otag            = otag;
+   extra.Err.User.origin_ec       = NULL;  /* Filled in later */
+   extra.Err.User.is_stack_origin = False; /* Filled in later */
    VG_(maybe_record_error)( tid, Err_User, a, /*s*/NULL, &extra );
 }
 
@@ -3863,6 +3972,21 @@ static void describe_addr ( Addr a, /*OUT*/AddrInfo* ai )
    return;
 }
 
+/* Fill in *origin_ec and *is_stack_origin as specified by otag, or
+   NULL/zero them if otag does not refer to a known origin. */
+static void update_origin ( /*OUT*/ExeContext** origin_ec,
+                            /*OUT*/Bool* is_stack_origin, UInt otag )
+{
+   *origin_ec = NULL;
+   *is_stack_origin = False;
+   if (otag != 0) {
+      *origin_ec = VG_(get_ExeContext_from_uniq)( otag );
+      if (*origin_ec)
+         *is_stack_origin
+            = 1 == VG_(get_ExeContext_n_ips)(*origin_ec);
+   }
+}
+
 /* Updates the copy with address info if necessary (but not for all errors). */
 static UInt mc_update_extra( Error* err )
 {
@@ -3875,7 +3999,6 @@ static UInt mc_update_extra( Error* err )
    //case Err_Value:
    //case Err_Cond:
    case Err_Overlap:
-   case Err_RegParam:
    // For Err_Leaks the returned size does not matter -- they are always
    // shown with VG_(unique_error)() so they 'extra' not copied.  But
    // we make it consistent with the others.
@@ -3886,26 +4009,19 @@ static UInt mc_update_extra( Error* err )
    // origin tag.  Note that it is a kludge to assume that 
    // a length-1 trace indicates a stack origin.  FIXME.
    case Err_Value:
-      extra->Err.Value.origin_ec = NULL;
-      extra->Err.Value.is_stack_origin = False;
-      if (extra->Err.Value.otag != 0) {
-         extra->Err.Value.origin_ec
-            = VG_(get_ExeContext_from_uniq)( extra->Err.Value.otag );
-         if (extra->Err.Value.origin_ec)
-            extra->Err.Value.is_stack_origin
-               = 1 == VG_(get_ExeContext_n_ips)(extra->Err.Value.origin_ec);
-      }
+      update_origin( &extra->Err.Value.origin_ec,
+                     &extra->Err.Value.is_stack_origin,
+                     extra->Err.Value.otag );
       return sizeof(MC_Error);
    case Err_Cond:
-      extra->Err.Cond.origin_ec = NULL;
-      extra->Err.Cond.is_stack_origin = False;
-      if (extra->Err.Cond.otag != 0) {
-         extra->Err.Cond.origin_ec
-            = VG_(get_ExeContext_from_uniq)( extra->Err.Cond.otag );
-         if (extra->Err.Cond.origin_ec)
-            extra->Err.Cond.is_stack_origin
-               = 1 == VG_(get_ExeContext_n_ips)(extra->Err.Cond.origin_ec);
-      }
+      update_origin( &extra->Err.Cond.origin_ec,
+                     &extra->Err.Cond.is_stack_origin,
+                     extra->Err.Cond.otag );
+      return sizeof(MC_Error);
+   case Err_RegParam:
+      update_origin( &extra->Err.RegParam.origin_ec,
+                     &extra->Err.RegParam.is_stack_origin,
+                     extra->Err.RegParam.otag );
       return sizeof(MC_Error);
 
    // These ones always involve a memory address.
@@ -3916,6 +4032,9 @@ static UInt mc_update_extra( Error* err )
    case Err_MemParam:
       describe_addr ( VG_(get_error_address)(err),
                       &extra->Err.MemParam.ai );
+      update_origin( &extra->Err.MemParam.origin_ec,
+                     &extra->Err.MemParam.is_stack_origin,
+                     extra->Err.MemParam.otag );
       return sizeof(MC_Error);
    case Err_Jump:
       describe_addr ( VG_(get_error_address)(err),
@@ -3924,6 +4043,9 @@ static UInt mc_update_extra( Error* err )
    case Err_User:
       describe_addr ( VG_(get_error_address)(err),
                       &extra->Err.User.ai );
+      update_origin( &extra->Err.User.origin_ec,
+                     &extra->Err.User.is_stack_origin,
+                     extra->Err.User.otag );
       return sizeof(MC_Error);
    case Err_Free:
       describe_addr ( VG_(get_error_address)(err),
@@ -4718,7 +4840,7 @@ Bool mc_is_valid_aligned_word ( Addr a )
    } else {
       tl_assert(VG_IS_8_ALIGNED(a));
    }
-   if (is_mem_defined( a, sizeof(UWord), NULL ) == MC_Ok
+   if (is_mem_defined( a, sizeof(UWord), NULL, NULL) == MC_Ok
        && !in_ignored_range(a)) {
       return True;
    } else {
@@ -5187,17 +5309,18 @@ static Bool mc_handle_client_request ( ThreadId tid, UWord* arg, UWord* ret )
       case VG_USERREQ__CHECK_MEM_IS_ADDRESSABLE:
          ok = is_mem_addressable ( arg[1], arg[2], &bad_addr );
          if (!ok)
-            mc_record_user_error ( tid, bad_addr, /*isAddrErr*/True );
+            mc_record_user_error ( tid, bad_addr, /*isAddrErr*/True, 0 );
          *ret = ok ? (UWord)NULL : bad_addr;
          break;
 
       case VG_USERREQ__CHECK_MEM_IS_DEFINED: {
          MC_ReadResult res;
-         res = is_mem_defined ( arg[1], arg[2], &bad_addr );
+         UInt otag = 0;
+         res = is_mem_defined ( arg[1], arg[2], &bad_addr, &otag );
          if (MC_AddrErr == res)
-            mc_record_user_error ( tid, bad_addr, /*isAddrErr*/True );
+            mc_record_user_error ( tid, bad_addr, /*isAddrErr*/True, 0 );
          else if (MC_ValueErr == res)
-            mc_record_user_error ( tid, bad_addr, /*isAddrErr*/False );
+            mc_record_user_error ( tid, bad_addr, /*isAddrErr*/False, otag );
          *ret = ( res==MC_Ok ? (UWord)NULL : bad_addr );
          break;
       }
