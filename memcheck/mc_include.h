@@ -319,12 +319,26 @@ extern Int MC_(clo_mc_level);
 /*------------------------------------------------------------*/
 
 /* Functions defined in mc_main.c */
-extern VG_REGPARM(2) void MC_(helperc_complain_undef) ( HWord, UWord );
-extern VG_REGPARM(1) void MC_(helperc_value_check8_fail) ( UWord );
-extern VG_REGPARM(1) void MC_(helperc_value_check4_fail) ( UWord );
-extern VG_REGPARM(1) void MC_(helperc_value_check1_fail) ( UWord );
-extern VG_REGPARM(1) void MC_(helperc_value_check0_fail) ( UWord );
 
+/* For the fail_w_o functions, the UWord arg is actually the 32-bit
+   origin tag and should really be UInt, but to be simple and safe
+   considering it's called from generated code, just claim it to be a
+   UWord. */
+extern VG_REGPARM(2) void MC_(helperc_value_checkN_fail_w_o) ( HWord, UWord );
+extern VG_REGPARM(1) void MC_(helperc_value_check8_fail_w_o) ( UWord );
+extern VG_REGPARM(1) void MC_(helperc_value_check4_fail_w_o) ( UWord );
+extern VG_REGPARM(1) void MC_(helperc_value_check1_fail_w_o) ( UWord );
+extern VG_REGPARM(1) void MC_(helperc_value_check0_fail_w_o) ( UWord );
+
+/* And call these ones instead to report an uninitialised value error
+   but with no origin available. */
+extern VG_REGPARM(1) void MC_(helperc_value_checkN_fail_no_o) ( HWord );
+extern VG_REGPARM(0) void MC_(helperc_value_check8_fail_no_o) ( void );
+extern VG_REGPARM(0) void MC_(helperc_value_check4_fail_no_o) ( void );
+extern VG_REGPARM(0) void MC_(helperc_value_check1_fail_no_o) ( void );
+extern VG_REGPARM(0) void MC_(helperc_value_check0_fail_no_o) ( void );
+
+/* V-bits load/store helpers */
 extern VG_REGPARM(1) void MC_(helperc_STOREV64be) ( Addr, ULong );
 extern VG_REGPARM(1) void MC_(helperc_STOREV64le) ( Addr, ULong );
 extern VG_REGPARM(2) void MC_(helperc_STOREV32be) ( Addr, UWord );
@@ -344,6 +358,7 @@ extern VG_REGPARM(1) UWord MC_(helperc_LOADV8)    ( Addr );
 extern void MC_(helperc_MAKE_STACK_UNINIT) ( Addr base, UWord len,
                                                         Addr nia );
 
+/* Origin tag load/store helpers */
 VG_REGPARM(2) void  MC_(helperc_b_store1) ( Addr a, UWord d32 );
 VG_REGPARM(2) void  MC_(helperc_b_store2) ( Addr a, UWord d32 );
 VG_REGPARM(2) void  MC_(helperc_b_store4) ( Addr a, UWord d32 );

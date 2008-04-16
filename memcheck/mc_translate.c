@@ -901,6 +901,10 @@ static void complainIfUndefined ( MCEnv* mce, IRAtom* atom )
    IRDirty* di;
    IRAtom*  cond;
    IRAtom*  origin;
+   void*    fn;
+   HChar*   nm;
+   IRExpr** args;
+   Int      nargs;
 
    // Don't do V bit tests if we're not reporting undefined value errors.
    if (MC_(clo_mc_level) == 1)
@@ -932,51 +936,91 @@ static void complainIfUndefined ( MCEnv* mce, IRAtom* atom )
          origin = assignNew( 'B', mce, Ity_I64, unop(Iop_32Uto64, origin) );
       }
    } else {
-      origin = mce->hWordTy == Ity_I64  ? mkU64(0)  : mkU32(0);
+      origin = NULL;
    }
+
+   fn    = NULL;
+   nm    = NULL;
+   args  = NULL;
+   nargs = -1;
 
    switch (sz) {
       case 0:
-         di = unsafeIRDirty_0_N(
-                 1/*regparms*/,
-                 "MC_(helperc_value_check0_fail)",
-                 VG_(fnptr_to_fnentry)( &MC_(helperc_value_check0_fail) ),
-                 mkIRExprVec_1(origin)
-              );
+         if (origin) {
+            fn    = &MC_(helperc_value_check0_fail_w_o);
+            nm    = "MC_(helperc_value_check0_fail_w_o)";
+            args  = mkIRExprVec_1(origin);
+            nargs = 1;
+         } else {
+            fn    = &MC_(helperc_value_check0_fail_no_o);
+            nm    = "MC_(helperc_value_check0_fail_no_o)";
+            args  = mkIRExprVec_0();
+            nargs = 0;
+         }
          break;
       case 1:
-         di = unsafeIRDirty_0_N(
-                 1/*regparms*/,
-                 "MC_(helperc_value_check1_fail)",
-                 VG_(fnptr_to_fnentry)( &MC_(helperc_value_check1_fail) ),
-                 mkIRExprVec_1(origin)
-              );
+         if (origin) {
+            fn    = &MC_(helperc_value_check1_fail_w_o);
+            nm    = "MC_(helperc_value_check1_fail_w_o)";
+            args  = mkIRExprVec_1(origin);
+            nargs = 1;
+         } else {
+            fn    = &MC_(helperc_value_check1_fail_no_o);
+            nm    = "MC_(helperc_value_check1_fail_no_o)";
+            args  = mkIRExprVec_0();
+            nargs = 0;
+         }
          break;
       case 4:
-         di = unsafeIRDirty_0_N(
-                 1/*regparms*/,
-                 "MC_(helperc_value_check4_fail)",
-                 VG_(fnptr_to_fnentry)( &MC_(helperc_value_check4_fail) ),
-                 mkIRExprVec_1(origin)
-              );
+         if (origin) {
+            fn    = &MC_(helperc_value_check4_fail_w_o);
+            nm    = "MC_(helperc_value_check4_fail_w_o)";
+            args  = mkIRExprVec_1(origin);
+            nargs = 1;
+         } else {
+            fn    = &MC_(helperc_value_check4_fail_no_o);
+            nm    = "MC_(helperc_value_check4_fail_no_o)";
+            args  = mkIRExprVec_0();
+            nargs = 0;
+         }
          break;
       case 8:
-         di = unsafeIRDirty_0_N(
-                 1/*regparms*/, 
-                 "MC_(helperc_value_check8_fail)",
-                 VG_(fnptr_to_fnentry)( &MC_(helperc_value_check8_fail) ),
-                 mkIRExprVec_1(origin)
-              );
+         if (origin) {
+            fn    = &MC_(helperc_value_check8_fail_w_o);
+            nm    = "MC_(helperc_value_check8_fail_w_o)";
+            args  = mkIRExprVec_1(origin);
+            nargs = 1;
+         } else {
+            fn    = &MC_(helperc_value_check8_fail_no_o);
+            nm    = "MC_(helperc_value_check8_fail_no_o)";
+            args  = mkIRExprVec_0();
+            nargs = 0;
+         }
          break;
       default:
-         di = unsafeIRDirty_0_N(
-                 2/*regparms*/,
-                 "MC_(helperc_complain_undef)",
-                 VG_(fnptr_to_fnentry)( &MC_(helperc_complain_undef) ),
-                 mkIRExprVec_2( mkIRExpr_HWord( sz ), origin )
-              );
+         if (origin) {
+            fn    = &MC_(helperc_value_checkN_fail_w_o);
+            nm    = "MC_(helperc_value_checkN_fail_w_o)";
+            args  = mkIRExprVec_2( mkIRExpr_HWord( sz ), origin);
+            nargs = 2;
+         } else {
+            fn    = &MC_(helperc_value_checkN_fail_no_o);
+            nm    = "MC_(helperc_value_checkN_fail_no_o)";
+            args  = mkIRExprVec_1( mkIRExpr_HWord( sz ) );
+            nargs = 1;
+         }
          break;
    }
+
+   tl_assert(fn);
+   tl_assert(nm);
+   tl_assert(args);
+   tl_assert(nargs >= 0 && nargs <= 2);
+   tl_assert( (MC_(clo_mc_level) == 3 && origin != NULL)
+              || (MC_(clo_mc_level) == 2 && origin == NULL) );
+
+   di = unsafeIRDirty_0_N( nargs/*regparms*/, nm, 
+                           VG_(fnptr_to_fnentry)( fn ), args );
    di->guard = cond;
    setHelperAnns( mce, di );
    stmt( 'V', mce, IRStmt_Dirty(di));
@@ -3225,39 +3269,6 @@ void do_shadow_Dirty ( MCEnv* mce, IRDirty* d )
 
    We call 
    void MC_(helperc_MAKE_STACK_UNINIT) ( Addr base, UWord len,
-                                                    UInt otag );
-*/
-#if 0
-static
-void do_AbiHint ( MCEnv* mce, IRExpr* base, Int len, Addr64 guest_IP )
-{
-   IRDirty* di;
-   /* This pretty much duplicates mk_otag_Expr in m_translate.c.  Oh
-      well. */
-   UInt otag;
-   ExeContext* ec
-      = VG_(make_depth_1_ExeContext_from_Addr)( (Addr)guest_IP );
-   tl_assert(ec);
-   otag = VG_(get_ExeContext_uniq)( ec );
-   tl_assert(otag > 0);
-   /* Ok, we have an otag. */
-
-   di = unsafeIRDirty_0_N(
-           0/*regparms*/,
-           "MC_(helperc_MAKE_STACK_UNINIT)",
-           VG_(fnptr_to_fnentry)( &MC_(helperc_MAKE_STACK_UNINIT) ),
-           mkIRExprVec_3( base, mkIRExpr_HWord( (UInt)len),
-                                mkIRExpr_HWord( (HWord)otag ) )
-        );
-   stmt( 'V', mce, IRStmt_Dirty(di) );
-}
-#else
-/* We have an ABI hint telling us that [base .. base+len-1] is to
-   become undefined ("writable").  Generate code to call a helper to
-   notify the A/V bit machinery of this fact.
-
-   We call 
-   void MC_(helperc_MAKE_STACK_UNINIT) ( Addr base, UWord len,
                                                     Addr nia );
 */
 static
@@ -3272,7 +3283,6 @@ void do_AbiHint ( MCEnv* mce, IRExpr* base, Int len, IRExpr* nia )
         );
    stmt( 'V', mce, IRStmt_Dirty(di) );
 }
-#endif
 
 
 /*------------------------------------------------------------*/

@@ -4740,30 +4740,57 @@ void MC_(helperc_STOREV8) ( Addr a, UWord vbits8 )
 /*--- Value-check failure handlers.                        ---*/
 /*------------------------------------------------------------*/
 
-VG_REGPARM(1) void MC_(helperc_value_check0_fail) ( UWord origin )
-{
-  mc_record_cond_error ( VG_(get_running_tid)(), (UInt)origin );
+/* Call these ones when an origin is available ... */
+VG_REGPARM(1)
+void MC_(helperc_value_check0_fail_w_o) ( UWord origin ) {
+   mc_record_cond_error ( VG_(get_running_tid)(), (UInt)origin );
 }
 
-VG_REGPARM(1) void MC_(helperc_value_check1_fail) ( UWord origin )
-{
-  mc_record_value_error ( VG_(get_running_tid)(), 1, (UInt)origin );
+VG_REGPARM(1)
+void MC_(helperc_value_check1_fail_w_o) ( UWord origin ) {
+   mc_record_value_error ( VG_(get_running_tid)(), 1, (UInt)origin );
 }
 
-VG_REGPARM(1) void MC_(helperc_value_check4_fail) ( UWord origin )
-{
-  mc_record_value_error ( VG_(get_running_tid)(), 4, (UInt)origin );
+VG_REGPARM(1)
+void MC_(helperc_value_check4_fail_w_o) ( UWord origin ) {
+   mc_record_value_error ( VG_(get_running_tid)(), 4, (UInt)origin );
 }
 
-VG_REGPARM(1) void MC_(helperc_value_check8_fail) ( UWord origin )
-{
-  mc_record_value_error ( VG_(get_running_tid)(), 8, (UInt)origin );
+VG_REGPARM(1)
+void MC_(helperc_value_check8_fail_w_o) ( UWord origin ) {
+   mc_record_value_error ( VG_(get_running_tid)(), 8, (UInt)origin );
 }
 
 VG_REGPARM(2) 
-void MC_(helperc_complain_undef) ( HWord sz, UWord origin )
-{
-  mc_record_value_error ( VG_(get_running_tid)(), (Int)sz, (UInt)origin );
+void MC_(helperc_value_checkN_fail_w_o) ( HWord sz, UWord origin ) {
+   mc_record_value_error ( VG_(get_running_tid)(), (Int)sz, (UInt)origin );
+}
+
+/* ... and these when an origin isn't available. */
+
+VG_REGPARM(0)
+void MC_(helperc_value_check0_fail_no_o) ( void ) {
+   mc_record_cond_error ( VG_(get_running_tid)(), 0/*origin*/ );
+}
+
+VG_REGPARM(0)
+void MC_(helperc_value_check1_fail_no_o) ( void ) {
+   mc_record_value_error ( VG_(get_running_tid)(), 1, 0/*origin*/ );
+}
+
+VG_REGPARM(0)
+void MC_(helperc_value_check4_fail_no_o) ( void ) {
+   mc_record_value_error ( VG_(get_running_tid)(), 4, 0/*origin*/ );
+}
+
+VG_REGPARM(0)
+void MC_(helperc_value_check8_fail_no_o) ( void ) {
+   mc_record_value_error ( VG_(get_running_tid)(), 8, 0/*origin*/ );
+}
+
+VG_REGPARM(1) 
+void MC_(helperc_value_checkN_fail_no_o) ( HWord sz ) {
+   mc_record_value_error ( VG_(get_running_tid)(), (Int)sz, 0/*origin*/ );
 }
 
 
