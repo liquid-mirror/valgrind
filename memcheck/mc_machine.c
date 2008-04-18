@@ -569,10 +569,10 @@ Int MC_(get_otrack_shadow_offset) ( Int offset, Int szB )
       of those are tracked. */
    tl_assert(SZB(CC_OP)   == 4);
    tl_assert(SZB(CC_NDEP) == 4);
+   tl_assert(SZB(DFLAG)   == 4);
    tl_assert(SZB(IDFLAG)  == 4);
-   tl_assert(SZB(ACFLAG)  == 4);
    if (o == 1+ GOF(EAX) && szB == 1) return GOF(CC_OP);
-   //if (o == 1+ GOF(EBX) && szB == 1) return GOF(CC_NDEP);
+   if (o == 1+ GOF(EBX) && szB == 1) return GOF(CC_NDEP);
    if (o == 1+ GOF(ECX) && szB == 1) return GOF(DFLAG);
    if (o == 1+ GOF(EDX) && szB == 1) return GOF(IDFLAG);
 
@@ -613,8 +613,17 @@ Int MC_(get_otrack_shadow_offset) ( Int offset, Int szB )
    if (o >= GOF(FPREG[7])
        && o+sz <= GOF(FPREG[7])+SZB(FPREG[7])) return GOF(FPREG[7]);
 
-   /* skip %gs and other segment related stuff */
+   /* skip %GS and other segment related stuff.  We could shadow
+      guest_LDT and guest_GDT, although it seems pointless.
+      guest_CS .. guest_SS are too small to shadow directly and it
+      also seems pointless to shadow them indirectly (that is, in 
+      the style of %AH .. %DH). */
+   if (o == GOF(CS) && sz == 2) return -1;
+   if (o == GOF(DS) && sz == 2) return -1;
+   if (o == GOF(ES) && sz == 2) return -1;
+   if (o == GOF(FS) && sz == 2) return -1;
    if (o == GOF(GS) && sz == 2) return -1;
+   if (o == GOF(SS) && sz == 2) return -1;
    if (o == GOF(LDT) && sz == 4) return -1;
    if (o == GOF(GDT) && sz == 4) return -1;
 
