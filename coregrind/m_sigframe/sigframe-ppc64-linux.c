@@ -134,8 +134,6 @@ struct rt_sigframe {
 */
 static Bool extend ( ThreadState *tst, Addr addr, SizeT size )
 {
-   UInt            otag;
-   ExeContext*     here;
    ThreadId        tid = tst->tid;
    NSegment const* stackseg = NULL;
 
@@ -167,13 +165,8 @@ static Bool extend ( ThreadState *tst, Addr addr, SizeT size )
 
    /* For tracking memory events, indicate the entire frame has been
       allocated. */
-   here = VG_(record_ExeContext)(tid, 0/*first_ip_delta*/);
-   vg_assert(here);
-   otag = VG_(get_ExeContext_uniq)(here);
-   vg_assert(otag > 0);
-
    VG_TRACK( new_mem_stack_signal, addr - VG_STACK_REDZONE_SZB,
-             size + VG_STACK_REDZONE_SZB, otag );
+             size + VG_STACK_REDZONE_SZB, tid );
 
    return True;
 }

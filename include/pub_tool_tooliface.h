@@ -471,13 +471,13 @@ typedef
 
    These ones occur at startup, upon some signals, and upon some syscalls.
 
-   For the 'new_mem' ones, the core is at liberty to pass zero for the
-   otag, denoting 'unknown origin', if desired.
+   For the new_mem_brk and new_mem_stack_signal, the supplied ThreadId
+   indicates the thread for whom the new memory is being allocated.
 */
 void VG_(track_new_mem_startup)     (void(*f)(Addr a, SizeT len,
                                               Bool rr, Bool ww, Bool xx));
-void VG_(track_new_mem_stack_signal)(void(*f)(Addr a, SizeT len, UInt otag));
-void VG_(track_new_mem_brk)         (void(*f)(Addr a, SizeT len, UInt otag));
+void VG_(track_new_mem_stack_signal)(void(*f)(Addr a, SizeT len, ThreadId tid));
+void VG_(track_new_mem_brk)         (void(*f)(Addr a, SizeT len, ThreadId tid));
 void VG_(track_new_mem_mmap)        (void(*f)(Addr a, SizeT len,
                                               Bool rr, Bool ww, Bool xx));
 

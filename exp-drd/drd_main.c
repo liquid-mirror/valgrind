@@ -458,8 +458,7 @@ static void drd_post_mem_write(const CorePart part,
   }
 }
 
-static void drd_start_using_mem(const Addr a1, const SizeT len,
-                                               UInt ec_uniq)
+static void drd_start_using_mem(const Addr a1, const SizeT len)
 {
   const Addr a2 = a1 + len;
 
@@ -469,6 +468,20 @@ static void drd_start_using_mem(const Addr a1, const SizeT len,
   {
     drd_trace_mem_access(a1, len, eStart);
   }
+}
+
+static void drd_start_using_mem_w_otag(const Addr a1,
+                                       const SizeT len,
+                                       UInt ec_uniq)
+{
+  drd_start_using_mem(a1, len);
+}
+
+static void drd_start_using_mem_w_tid(const Addr a1,
+                                      const SizeT len,
+                                      ThreadId tid)
+{
+  drd_start_using_mem(a1, len);
 }
 
 static void drd_stop_using_mem(const Addr a1, const SizeT len)
@@ -492,7 +505,7 @@ void drd_start_using_mem_w_perms(const Addr a, const SizeT len,
 {
   thread_set_vg_running_tid(VG_(get_running_tid)());
 
-  drd_start_using_mem(a, len, 0/*ec_uniq*/);
+  drd_start_using_mem(a, len);
 }
 
 /* Called by the core when the stack of a thread grows, to indicate that */
@@ -502,8 +515,8 @@ static void drd_start_using_mem_stack(const Addr a, const SizeT len,
                                       UInt ec_uniq)
 {
   thread_set_stack_min(thread_get_running_tid(), a - VG_STACK_REDZONE_SZB);
-  drd_start_using_mem(a - VG_STACK_REDZONE_SZB, 
-                      len + VG_STACK_REDZONE_SZB, ec_uniq);
+  drd_start_using_mem_w_otag(a - VG_STACK_REDZONE_SZB, 
+                             len + VG_STACK_REDZONE_SZB, ec_uniq);
 }
 
 /* Called by the core when the stack of a thread shrinks, to indicate that */
@@ -516,11 +529,12 @@ static void drd_stop_using_mem_stack(const Addr a, const SizeT len)
   drd_stop_using_mem(a - VG_STACK_REDZONE_SZB, len + VG_STACK_REDZONE_SZB);
 }
 
-static void drd_start_using_mem_stack_signal(const Addr a, const SizeT len,
-                                             UInt ec_uniq)
+static void drd_start_using_mem_stack_signal(
+               const Addr a, const SizeT len,
+               ThreadId tid_for_whom_the_signal_frame_is_being_constructed)
 {
   thread_set_vg_running_tid(VG_(get_running_tid)());
-  drd_start_using_mem(a, len, ec_uniq);
+  drd_start_using_mem(a, len);
 }
 
 static void drd_stop_using_mem_stack_signal(Addr a, SizeT len)
@@ -1054,7 +1068,7 @@ void drd_pre_clo_init(void)
   VG_(track_pre_mem_read)         (drd_pre_mem_read);
   VG_(track_pre_mem_read_asciiz)  (drd_pre_mem_read_asciiz);
   VG_(track_post_mem_write)       (drd_post_mem_write);
-  VG_(track_new_mem_brk)          (drd_start_using_mem);
+  VG_(track_new_mem_brk)          (drd_start_using_mem_w_tid);
   VG_(track_new_mem_mmap)         (drd_start_using_mem_w_perms);
   VG_(track_new_mem_stack)        (drd_start_using_mem_stack);
   VG_(track_new_mem_stack_signal) (drd_start_using_mem_stack_signal);
@@ -1069,7 +1083,7 @@ void drd_pre_clo_init(void)
   VG_(track_pre_thread_ll_exit)   (drd_thread_finished);
 
   // Other stuff.
-  drd_register_malloc_wrappers(drd_start_using_mem, drd_stop_using_mem);
+  drd_register_malloc_wrappers(drd_start_using_mem_w_otag, drd_stop_using_mem);
 
   drd_clientreq_init();
 

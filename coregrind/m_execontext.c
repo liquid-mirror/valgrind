@@ -303,11 +303,12 @@ static ExeContext* record_ExeContext_wrk ( ThreadId tid, Word first_ip_delta,
    vg_assert(sizeof(void*) == sizeof(UWord));
    vg_assert(sizeof(void*) == sizeof(Addr));
 
+   vg_assert(VG_(is_valid_tid)(tid));
+
    vg_assert(VG_(clo_backtrace_size) >= 1 &&
              VG_(clo_backtrace_size) <= VG_DEEPEST_BACKTRACE);
 
    if (first_ip_only) {
-      vg_assert(VG_(is_valid_tid)(tid));
       n_ips = 1;
       ips[0] = VG_(get_IP)(tid);
    } else {

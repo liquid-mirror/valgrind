@@ -220,7 +220,7 @@ void* MC_(new_block) ( ThreadId tid,
    else {
       UInt otag = VG_(get_ExeContext_uniq)(ec);
       tl_assert(otag > 0);
-      MC_(make_mem_undefined)( p, szB, otag );
+      MC_(make_mem_undefined_w_otag)( p, szB, otag );
    }
 
    return (void*)p;
@@ -408,9 +408,9 @@ void* MC_(realloc) ( ThreadId tid, void* p_old, SizeT new_szB )
          /* First half kept and copied, second half new, red zones as normal */
          MC_(make_mem_noaccess)( a_new-MC_MALLOC_REDZONE_SZB, 
                                  MC_MALLOC_REDZONE_SZB );
-         MC_(copy_address_range_state)( (Addr)p_old, a_new, mc->szB );
-         MC_(make_mem_undefined)( a_new+mc->szB, new_szB-mc->szB, otag );
-         MC_(make_mem_noaccess) ( a_new+new_szB, MC_MALLOC_REDZONE_SZB );
+         MC_(copy_address_range_state) ( (Addr)p_old, a_new, mc->szB );
+         MC_(make_mem_undefined_w_otag)( a_new+mc->szB, new_szB-mc->szB, otag );
+         MC_(make_mem_noaccess)        ( a_new+new_szB, MC_MALLOC_REDZONE_SZB );
 
          /* Possibly fill new area with specified junk */
          if (MC_(clo_malloc_fill) != -1) {

@@ -1561,13 +1561,27 @@ void MC_(make_mem_noaccess) ( Addr a, SizeT len )
       ocache_sarp_Clear_Origins ( a, len );
 }
 
-void MC_(make_mem_undefined) ( Addr a, SizeT len, UInt otag )
+void MC_(make_mem_undefined_w_otag) ( Addr a, SizeT len, UInt otag )
 {
    PROF_EVENT(41, "MC_(make_mem_undefined)");
    DEBUG("MC_(make_mem_undefined)(%p, %lu)\n", a, len);
    set_address_range_perms ( a, len, VA_BITS16_UNDEFINED, SM_DIST_UNDEFINED );
    if (UNLIKELY( MC_(clo_mc_level) == 3 ))
       ocache_sarp_Set_Origins ( a, len, otag );
+}
+
+static
+void make_mem_undefined_w_tid ( Addr a, SizeT len, ThreadId tid )
+{
+   UInt        otag;
+   ExeContext* here;
+   /* VG_(record_ExeContext) checks for validity of tid, and asserts
+      if it is invalid.  So no need to do it here. */
+   here = VG_(record_ExeContext)( tid, 0/*first_ip_delta*/ );
+   tl_assert(here);
+   otag = VG_(get_ExeContext_uniq)(here);
+   tl_assert(otag > 0);
+   MC_(make_mem_undefined_w_otag) ( a, len, otag );
 }
 
 void MC_(make_mem_defined) ( Addr a, SizeT len )
@@ -1837,7 +1851,7 @@ void make_aligned_word32_undefined ( Addr a, UInt otag )
 #else
    if (UNLIKELY(a > MAX_PRIMARY_ADDRESS)) {
       PROF_EVENT(301, "make_aligned_word32_undefined-slow1");
-      MC_(make_mem_undefined)(a, 4, otag);
+      MC_(make_mem_undefined_w_otag)(a, 4, otag);
       return;
    }
 
@@ -1909,7 +1923,7 @@ void make_aligned_word64_undefined ( Addr a, UInt otag )
 #else
    if (UNLIKELY(a > MAX_PRIMARY_ADDRESS)) {
       PROF_EVENT(321, "make_aligned_word64_undefined-slow1");
-      MC_(make_mem_undefined)(a, 8, otag);
+      MC_(make_mem_undefined_w_otag)(a, 8, otag);
       return;
    }
 
@@ -1999,7 +2013,7 @@ static void VG_REGPARM(2) mc_new_mem_stack_4(Addr new_SP, UInt otag)
    if (VG_IS_4_ALIGNED( -VG_STACK_REDZONE_SZB + new_SP )) {
       make_aligned_word32_undefined ( -VG_STACK_REDZONE_SZB + new_SP, otag );
    } else {
-      MC_(make_mem_undefined) ( -VG_STACK_REDZONE_SZB + new_SP, 4, otag );
+      MC_(make_mem_undefined_w_otag) ( -VG_STACK_REDZONE_SZB + new_SP, 4, otag );
    }
 }
 
@@ -2022,7 +2036,7 @@ static void VG_REGPARM(2) mc_new_mem_stack_8(Addr new_SP, UInt otag)
       make_aligned_word32_undefined ( -VG_STACK_REDZONE_SZB + new_SP  , otag );
       make_aligned_word32_undefined ( -VG_STACK_REDZONE_SZB + new_SP+4, otag );
    } else {
-      MC_(make_mem_undefined) ( -VG_STACK_REDZONE_SZB + new_SP, 8, otag );
+      MC_(make_mem_undefined_w_otag) ( -VG_STACK_REDZONE_SZB + new_SP, 8, otag );
    }
 }
 
@@ -2052,7 +2066,7 @@ static void VG_REGPARM(2) mc_new_mem_stack_12(Addr new_SP, UInt otag)
       make_aligned_word32_undefined ( -VG_STACK_REDZONE_SZB + new_SP  , otag );
       make_aligned_word64_undefined ( -VG_STACK_REDZONE_SZB + new_SP+4, otag );
    } else {
-      MC_(make_mem_undefined) ( -VG_STACK_REDZONE_SZB + new_SP, 12, otag );
+      MC_(make_mem_undefined_w_otag) ( -VG_STACK_REDZONE_SZB + new_SP, 12, otag );
    }
 }
 
@@ -2090,7 +2104,7 @@ static void VG_REGPARM(2) mc_new_mem_stack_16(Addr new_SP, UInt otag)
       make_aligned_word64_undefined ( -VG_STACK_REDZONE_SZB + new_SP+4 , otag );
       make_aligned_word32_undefined ( -VG_STACK_REDZONE_SZB + new_SP+12, otag );
    } else {
-      MC_(make_mem_undefined) ( -VG_STACK_REDZONE_SZB + new_SP, 16, otag );
+      MC_(make_mem_undefined_w_otag) ( -VG_STACK_REDZONE_SZB + new_SP, 16, otag );
    }
 }
 
@@ -2129,7 +2143,7 @@ static void VG_REGPARM(2) mc_new_mem_stack_32(Addr new_SP, UInt otag)
       make_aligned_word64_undefined ( -VG_STACK_REDZONE_SZB + new_SP+20, otag );
       make_aligned_word32_undefined ( -VG_STACK_REDZONE_SZB + new_SP+28, otag );
    } else {
-      MC_(make_mem_undefined) ( -VG_STACK_REDZONE_SZB + new_SP, 32, otag );
+      MC_(make_mem_undefined_w_otag) ( -VG_STACK_REDZONE_SZB + new_SP, 32, otag );
    }
 }
 
@@ -2174,7 +2188,7 @@ static void VG_REGPARM(2) mc_new_mem_stack_112(Addr new_SP, UInt otag)
       make_aligned_word64_undefined ( -VG_STACK_REDZONE_SZB + new_SP+96, otag );
       make_aligned_word64_undefined ( -VG_STACK_REDZONE_SZB + new_SP+104, otag );
    } else {
-      MC_(make_mem_undefined) ( -VG_STACK_REDZONE_SZB + new_SP, 112, otag );
+      MC_(make_mem_undefined_w_otag) ( -VG_STACK_REDZONE_SZB + new_SP, 112, otag );
    }
 }
 
@@ -2222,7 +2236,7 @@ static void VG_REGPARM(2) mc_new_mem_stack_128(Addr new_SP, UInt otag)
       make_aligned_word64_undefined ( -VG_STACK_REDZONE_SZB + new_SP+112, otag );
       make_aligned_word64_undefined ( -VG_STACK_REDZONE_SZB + new_SP+120, otag );
    } else {
-      MC_(make_mem_undefined) ( -VG_STACK_REDZONE_SZB + new_SP, 128, otag );
+      MC_(make_mem_undefined_w_otag) ( -VG_STACK_REDZONE_SZB + new_SP, 128, otag );
    }
 }
 
@@ -2274,7 +2288,7 @@ static void VG_REGPARM(2) mc_new_mem_stack_144(Addr new_SP, UInt otag)
       make_aligned_word64_undefined ( -VG_STACK_REDZONE_SZB + new_SP+128, otag );
       make_aligned_word64_undefined ( -VG_STACK_REDZONE_SZB + new_SP+136, otag );
    } else {
-      MC_(make_mem_undefined) ( -VG_STACK_REDZONE_SZB + new_SP, 144, otag );
+      MC_(make_mem_undefined_w_otag) ( -VG_STACK_REDZONE_SZB + new_SP, 144, otag );
    }
 }
 
@@ -2330,7 +2344,7 @@ static void VG_REGPARM(2) mc_new_mem_stack_160(Addr new_SP, UInt otag)
       make_aligned_word64_undefined ( -VG_STACK_REDZONE_SZB + new_SP+144, otag );
       make_aligned_word64_undefined ( -VG_STACK_REDZONE_SZB + new_SP+152, otag );
    } else {
-      MC_(make_mem_undefined) ( -VG_STACK_REDZONE_SZB + new_SP, 160, otag );
+      MC_(make_mem_undefined_w_otag) ( -VG_STACK_REDZONE_SZB + new_SP, 160, otag );
    }
 }
 
@@ -2366,7 +2380,7 @@ static void VG_REGPARM(1) mc_die_mem_stack_160(Addr new_SP)
 static void mc_new_mem_stack ( Addr a, SizeT len, UInt otag )
 {
    PROF_EVENT(115, "new_mem_stack");
-   MC_(make_mem_undefined) ( -VG_STACK_REDZONE_SZB + a, len, otag );
+   MC_(make_mem_undefined_w_otag) ( -VG_STACK_REDZONE_SZB + a, len, otag );
 }
 
 static void mc_die_mem_stack ( Addr a, SizeT len )
@@ -2690,7 +2704,7 @@ void MC_(helperc_MAKE_STACK_UNINIT) ( Addr base, UWord len, Addr nia )
    }
 
    /* else fall into slow case */
-   MC_(make_mem_undefined)(base, len, otag);
+   MC_(make_mem_undefined_w_otag)(base, len, otag);
 }
 
 
@@ -5377,16 +5391,10 @@ static Bool mc_handle_client_request ( ThreadId tid, UWord* arg, UWord* ret )
          *ret = -1;
          break;
 
-      case VG_USERREQ__MAKE_MEM_UNDEFINED: {
-         UInt        otag;
-         ExeContext* here = VG_(record_ExeContext)( tid, 0/*first_ip_delta*/ );
-         tl_assert(here);
-         otag = VG_(get_ExeContext_uniq)(here);
-         tl_assert(otag > 0);
-         MC_(make_mem_undefined) ( arg[1], arg[2], otag );
+      case VG_USERREQ__MAKE_MEM_UNDEFINED:
+         make_mem_undefined_w_tid ( arg[1], arg[2], tid );
          *ret = -1;
          break;
-      }
 
       case VG_USERREQ__MAKE_MEM_DEFINED:
          MC_(make_mem_defined) ( arg[1], arg[2] );
@@ -6066,8 +6074,8 @@ static void mc_pre_clo_init(void)
    VG_(needs_xml_output)          ();
 
    VG_(track_new_mem_startup)     ( mc_new_mem_startup );
-   VG_(track_new_mem_stack_signal)( MC_(make_mem_undefined) );
-   VG_(track_new_mem_brk)         ( MC_(make_mem_undefined) );
+   VG_(track_new_mem_stack_signal)( make_mem_undefined_w_tid );
+   VG_(track_new_mem_brk)         ( make_mem_undefined_w_tid );
    VG_(track_new_mem_mmap)        ( mc_new_mem_mmap );
    
    VG_(track_copy_mem_remap)      ( MC_(copy_address_range_state) );
