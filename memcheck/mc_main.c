@@ -1710,6 +1710,7 @@ static UWord stats__ocacheline_find        = 0;
 static UWord stats__ocacheline_found_at_1  = 0;
 static UWord stats__ocacheline_found_at_N  = 0;
 static UWord stats__ocacheline_misses      = 0;
+static UWord stats__ocacheline_movefwds    = 0;
 
 
 /* Cache of 32-bit values, one every 32 bits of address space */
@@ -1754,7 +1755,7 @@ typedef
 
 static OCache ocache;
 static UWord  ocache_event_ctr = 0;
-#define OC_MOVE_FORWARDS_EVERY 1024
+#define OC_MOVE_FORWARDS_EVERY_BITS 7
 
 static void init_OCache ( void ) {
    UWord line, set;
@@ -1768,9 +1769,8 @@ static void init_OCache ( void ) {
 static void moveLineForwards ( OCacheSet* set, UWord lineno )
 {
    OCacheLine tmp;
-   tl_assert(lineno >= 0 && lineno < OC_LINES_PER_SET);
-   if (lineno == 0)
-      return;
+   stats__ocacheline_movefwds++;
+   tl_assert(lineno > 0 && lineno < OC_LINES_PER_SET);
    tmp = set->line[lineno-1];
    set->line[lineno-1] = set->line[lineno];
    set->line[lineno] = tmp;
@@ -1803,7 +1803,8 @@ static OCacheLine* find_OCacheLine_SLOW ( Addr a )
             stats__ocacheline_found_at_1++;
          else
             stats__ocacheline_found_at_N++;
-         if (0 == (ocache_event_ctr++ & OC_MOVE_FORWARDS_EVERY)) {
+         if (UNLIKELY(0 == (ocache_event_ctr++ 
+                            & ((1<<OC_MOVE_FORWARDS_EVERY_BITS)-1)))) {
             moveLineForwards( &ocache.set[setno], line );
             line--;
          }
@@ -1824,8 +1825,7 @@ static OCacheLine* find_OCacheLine_SLOW ( Addr a )
    return &ocache.set[setno].line[line];
 }
 
-inline
-static OCacheLine* find_OCacheLine ( Addr a )
+static INLINE OCacheLine* find_OCacheLine ( Addr a )
 {
    UWord setno = (a % (OC_W32S_PER_LINE * OC_N_SETS * 4)) 
                  / (OC_W32S_PER_LINE * 4);
@@ -1842,7 +1842,7 @@ static OCacheLine* find_OCacheLine ( Addr a )
    return find_OCacheLine_SLOW( a );
 }
 
-static inline void set_aligned_word64_Origin_to_undef ( Addr a, UInt otag )
+static INLINE void set_aligned_word64_Origin_to_undef ( Addr a, UInt otag )
 {
    //// BEGIN inlined, specialised version of MC_(helperc_b_store8)
    //// Set the origins for a+0 .. a+7
@@ -6271,7 +6271,7 @@ static void mc_fini ( Int exitcode )
          max_shmem_szB / 1024, max_shmem_szB / (1024 * 1024));
 
       VG_(message)(Vg_DebugMsg,
-                   "   ocache: %,12lu finds  %,12lu misses", 
+                   "   ocache: %,12lu refs   %,12lu misses", 
                    stats__ocacheline_find, 
                    stats__ocacheline_misses );
       VG_(message)(Vg_DebugMsg,
@@ -6281,6 +6281,10 @@ static void mc_fini ( Int exitcode )
                       - stats__ocacheline_found_at_N,
                    stats__ocacheline_found_at_1, 
                    stats__ocacheline_found_at_N );
+      VG_(message)(Vg_DebugMsg,
+                   "   ocache: %,12lu sizeB  %,12lu move-line-forwards",
+                   (UWord)sizeof(OCache),
+                   stats__ocacheline_movefwds);
       VG_(message)(Vg_DebugMsg,
                    " niacache: %,12lu finds  %,12lu misses",
                    stats__nia_cache_queries, stats__nia_cache_misses);
