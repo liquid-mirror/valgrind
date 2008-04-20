@@ -3275,6 +3275,14 @@ static
 void do_AbiHint ( MCEnv* mce, IRExpr* base, Int len, IRExpr* nia )
 {
    IRDirty* di;
+   /* Minor optimisation: if not doing origin tracking, ignore the
+      supplied nia and pass zero instead.  This is on the basis that
+      MC_(helperc_MAKE_STACK_UNINIT) will ignore it anyway, and we can
+      almost always generate a shorter instruction to put zero into a
+      register than any other value. */
+   if (MC_(clo_mc_level) < 3)
+      nia = mkIRExpr_HWord(0);
+
    di = unsafeIRDirty_0_N(
            0/*regparms*/,
            "MC_(helperc_MAKE_STACK_UNINIT)",
@@ -3752,10 +3760,14 @@ Bool check_or_add ( XArray* /*of Pair*/ pairs, IRExpr* guard, void* entry )
 static Bool is_helperc_value_checkN_fail ( HChar* name )
 {
    return
-      0==VG_(strcmp)(name, "MC_(helperc_value_check0_fail)")
-      || 0==VG_(strcmp)(name, "MC_(helperc_value_check1_fail)")
-      || 0==VG_(strcmp)(name, "MC_(helperc_value_check4_fail)")
-      || 0==VG_(strcmp)(name, "MC_(helperc_value_check8_fail)");
+      0==VG_(strcmp)(name, "MC_(helperc_value_check0_fail_no_o)")
+      || 0==VG_(strcmp)(name, "MC_(helperc_value_check1_fail_no_o)")
+      || 0==VG_(strcmp)(name, "MC_(helperc_value_check4_fail_no_o)")
+      || 0==VG_(strcmp)(name, "MC_(helperc_value_check8_fail_no_o)")
+      || 0==VG_(strcmp)(name, "MC_(helperc_value_check0_fail_w_o)")
+      || 0==VG_(strcmp)(name, "MC_(helperc_value_check1_fail_w_o)")
+      || 0==VG_(strcmp)(name, "MC_(helperc_value_check4_fail_w_o)")
+      || 0==VG_(strcmp)(name, "MC_(helperc_value_check8_fail_w_o)");
 }
 
 IRSB* MC_(final_tidy) ( IRSB* sb_in )

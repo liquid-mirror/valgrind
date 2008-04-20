@@ -315,7 +315,8 @@ void VG_(unknown_SP_update)( Addr old_SP, Addr new_SP, UInt otag )
                 "will not be shown.");
       }
    } else if (delta < 0) {
-      VG_TRACK( new_mem_stack, new_SP, -delta, otag );
+      VG_TRACK( new_mem_stack_w_otag, new_SP, -delta, otag );
+      VG_TRACK( new_mem_stack,        new_SP, -delta );
 
    } else if (delta > 0) {
       VG_TRACK( die_mem_stack, old_SP,  delta );

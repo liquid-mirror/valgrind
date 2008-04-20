@@ -5416,12 +5416,12 @@ static inline Thread* get_current_Thread ( void ) {
 }
 
 static
-void evh__new_mem_w_otag ( Addr a, SizeT len, UInt ec_uniq ) {
+void evh__new_mem ( Addr a, SizeT len ) {
    if (SHOW_EVENTS >= 2)
-      VG_(printf)("evh__new_mem_w_otag(%p, %lu)\n", (void*)a, len );
+      VG_(printf)("evh__new_mem(%p, %lu)\n", (void*)a, len );
    shadow_mem_make_New( get_current_Thread(), a, len );
    if (len >= SCE_BIGRANGE_T && (clo_sanity_flags & SCE_BIGRANGE))
-      all__sanity_check("evh__new_mem_w_otag-post");
+      all__sanity_check("evh__new_mem-post");
 }
 
 static
@@ -7524,7 +7524,7 @@ Bool hg_handle_client_request ( ThreadId tid, UWord* args, UWord* ret)
          if (args[2] > 0) { /* length */
             evh__die_mem(args[1], args[2]);
             /* and then set it to New */
-            evh__new_mem_w_otag(args[1], args[2], 0/*ec_uniq*/);
+            evh__new_mem(args[1], args[2]);
          }
          break;
 
@@ -8833,7 +8833,7 @@ static void hg_pre_clo_init ( void )
    VG_(track_new_mem_stack_signal)( evh__new_mem_w_tid );
    VG_(track_new_mem_brk)         ( evh__new_mem_w_tid );
    VG_(track_new_mem_mmap)        ( evh__new_mem_w_perms );
-   VG_(track_new_mem_stack)       ( evh__new_mem_w_otag );
+   VG_(track_new_mem_stack)       ( evh__new_mem );
 
    // FIXME: surely this isn't thread-aware
    VG_(track_copy_mem_remap)      ( shadow_mem_copy_range );

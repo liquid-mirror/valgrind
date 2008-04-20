@@ -172,16 +172,27 @@ typedef struct {
    void (*track_die_mem_brk)         (Addr, SizeT);
    void (*track_die_mem_munmap)      (Addr, SizeT);
 
-   void VG_REGPARM(2) (*track_new_mem_stack_4)  (Addr,UInt);
-   void VG_REGPARM(2) (*track_new_mem_stack_8)  (Addr,UInt);
-   void VG_REGPARM(2) (*track_new_mem_stack_12) (Addr,UInt);
-   void VG_REGPARM(2) (*track_new_mem_stack_16) (Addr,UInt);
-   void VG_REGPARM(2) (*track_new_mem_stack_32) (Addr,UInt);
-   void VG_REGPARM(2) (*track_new_mem_stack_112)(Addr,UInt);
-   void VG_REGPARM(2) (*track_new_mem_stack_128)(Addr,UInt);
-   void VG_REGPARM(2) (*track_new_mem_stack_144)(Addr,UInt);
-   void VG_REGPARM(2) (*track_new_mem_stack_160)(Addr,UInt);
-   void (*track_new_mem_stack)(Addr,SizeT,UInt);
+   void VG_REGPARM(2) (*track_new_mem_stack_4_w_otag)  (Addr,UInt);
+   void VG_REGPARM(2) (*track_new_mem_stack_8_w_otag)  (Addr,UInt);
+   void VG_REGPARM(2) (*track_new_mem_stack_12_w_otag) (Addr,UInt);
+   void VG_REGPARM(2) (*track_new_mem_stack_16_w_otag) (Addr,UInt);
+   void VG_REGPARM(2) (*track_new_mem_stack_32_w_otag) (Addr,UInt);
+   void VG_REGPARM(2) (*track_new_mem_stack_112_w_otag)(Addr,UInt);
+   void VG_REGPARM(2) (*track_new_mem_stack_128_w_otag)(Addr,UInt);
+   void VG_REGPARM(2) (*track_new_mem_stack_144_w_otag)(Addr,UInt);
+   void VG_REGPARM(2) (*track_new_mem_stack_160_w_otag)(Addr,UInt);
+   void (*track_new_mem_stack_w_otag)(Addr,SizeT,UInt);
+
+   void VG_REGPARM(1) (*track_new_mem_stack_4)  (Addr);
+   void VG_REGPARM(1) (*track_new_mem_stack_8)  (Addr);
+   void VG_REGPARM(1) (*track_new_mem_stack_12) (Addr);
+   void VG_REGPARM(1) (*track_new_mem_stack_16) (Addr);
+   void VG_REGPARM(1) (*track_new_mem_stack_32) (Addr);
+   void VG_REGPARM(1) (*track_new_mem_stack_112)(Addr);
+   void VG_REGPARM(1) (*track_new_mem_stack_128)(Addr);
+   void VG_REGPARM(1) (*track_new_mem_stack_144)(Addr);
+   void VG_REGPARM(1) (*track_new_mem_stack_160)(Addr);
+   void (*track_new_mem_stack)(Addr,SizeT);
 
    void VG_REGPARM(1) (*track_die_mem_stack_4)  (Addr);
    void VG_REGPARM(1) (*track_die_mem_stack_8)  (Addr);

@@ -511,12 +511,11 @@ void drd_start_using_mem_w_perms(const Addr a, const SizeT len,
 /* Called by the core when the stack of a thread grows, to indicate that */
 /* the addresses in range [ a, a + len [ may now be used by the client.  */
 /* Assumption: stacks grow downward.                                     */
-static void drd_start_using_mem_stack(const Addr a, const SizeT len,
-                                      UInt ec_uniq)
+static void drd_start_using_mem_stack(const Addr a, const SizeT len)
 {
   thread_set_stack_min(thread_get_running_tid(), a - VG_STACK_REDZONE_SZB);
-  drd_start_using_mem_w_otag(a - VG_STACK_REDZONE_SZB, 
-                             len + VG_STACK_REDZONE_SZB, ec_uniq);
+  drd_start_using_mem(a - VG_STACK_REDZONE_SZB, 
+                      len + VG_STACK_REDZONE_SZB);
 }
 
 /* Called by the core when the stack of a thread shrinks, to indicate that */

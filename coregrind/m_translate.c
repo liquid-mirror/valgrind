@@ -275,20 +275,34 @@ IRSB* vg_SP_update_pass ( void*             closureV,
 
 #  define DO_NEW(syze, tmpp)                                            \
       do {                                                              \
+         Bool vanilla, w_otag;                                          \
          vg_assert(curr_IP_known);                                      \
-         if (!VG_(tdict).track_new_mem_stack_##syze)                    \
+         vanilla = NULL != VG_(tdict).track_new_mem_stack_##syze;       \
+         w_otag  = NULL != VG_(tdict).track_new_mem_stack_##syze##_w_otag; \
+         vg_assert(!(vanilla && w_otag)); /* can't have both */         \
+         if (!(vanilla || w_otag))                                      \
             goto generic;                                               \
                                                                         \
          /* I don't know if it's really necessary to say that the */    \
          /* call reads the stack pointer.  But anyway, we do. */        \
-         dcall = unsafeIRDirty_0_N(                                     \
-                    2/*regparms*/,                                      \
-                    "track_new_mem_stack_" #syze,                       \
-                    VG_(fnptr_to_fnentry)(                              \
-                       VG_(tdict).track_new_mem_stack_##syze ),         \
-                    mkIRExprVec_2(IRExpr_RdTmp(tmpp),                   \
-                    mk_otag_Expr(curr_IP))                              \
-                 );                                                     \
+         if (w_otag) {                                                  \
+            dcall = unsafeIRDirty_0_N(                                  \
+                       2/*regparms*/,                                   \
+                       "track_new_mem_stack_" #syze "_w_otag",          \
+                       VG_(fnptr_to_fnentry)(                           \
+                          VG_(tdict).track_new_mem_stack_##syze##_w_otag ), \
+                       mkIRExprVec_2(IRExpr_RdTmp(tmpp),                \
+                                     mk_otag_Expr(curr_IP))             \
+                    );                                                  \
+         } else {                                                       \
+            dcall = unsafeIRDirty_0_N(                                  \
+                       1/*regparms*/,                                   \
+                       "track_new_mem_stack_" #syze ,                   \
+                       VG_(fnptr_to_fnentry)(                           \
+                          VG_(tdict).track_new_mem_stack_##syze ),      \
+                       mkIRExprVec_1(IRExpr_RdTmp(tmpp))                \
+                    );                                                  \
+         }                                                              \
          dcall->nFxState = 1;                                           \
          dcall->fxState[0].fx     = Ifx_Read;                           \
          dcall->fxState[0].offset = layout->offset_SP;                  \
@@ -456,14 +470,15 @@ IRSB* vg_SP_update_pass ( void*             closureV,
                 we must assume it can be anything allowed in flat IR (tmp
                 or const).
          */
-         IRTemp old_SP;
+         IRTemp  old_SP;
          n_SP_updates_generic_unknown++;
 
          // Nb: if all is well, this generic case will typically be
          // called something like every 1000th SP update.  If it's more than
          // that, the above code may be missing some cases.
         generic:
-         /* Pass both the old and new SP values to this helper. */
+         /* Pass both the old and new SP values to this helper.  Also,
+            pass an origin tag, even if it isn't needed. */
          old_SP = newIRTemp(bb->tyenv, typeof_SP);
          addStmtToIRSB( 
             bb,
@@ -517,7 +532,7 @@ IRSB* vg_SP_update_pass ( void*             closureV,
                        VG_(fnptr_to_fnentry)( &VG_(unknown_SP_update) ),
                        mkIRExprVec_3( IRExpr_RdTmp(old_SP),
                                       IRExpr_RdTmp(new_SP), 
-                                      mk_otag_Expr(curr_IP))
+                                      mk_otag_Expr(curr_IP) )
                     );
             addStmtToIRSB( bb, IRStmt_Dirty(dcall) );
             /* 5 */

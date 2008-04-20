@@ -1722,7 +1722,7 @@ static INLINE void die_mem_stack_2(Addr a, SizeT len, Char* what)
    }
 }
 
-static void new_mem_stack(Addr a, SizeT len, UInt ec_uniq)
+static void new_mem_stack(Addr a, SizeT len)
 {
    new_mem_stack_2(a, len, "stk-new");
 }
@@ -1732,7 +1732,7 @@ static void die_mem_stack(Addr a, SizeT len)
    die_mem_stack_2(a, len, "stk-die");
 }
 
-static void new_mem_stack_signal(Addr a, SizeT len, UInt ec_uniq)
+static void new_mem_stack_signal(Addr a, SizeT len, ThreadId tid)
 {
    new_mem_stack_2(a, len, "sig-new");
 }
