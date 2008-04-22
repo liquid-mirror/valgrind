@@ -6054,7 +6054,12 @@ void evhH__pre_thread_releases_lock ( Thread* thr,
          tl_assert(!HG_(elemWS)( univ_lsets, thr->locksetW, (Word)lock ));
    } else {
       /* We no longer hold the lock. */
-      tl_assert(HG_(isEmptyBag)(&lock->heldBy));
+      if (!isRDWR) {
+         // This is a pure Mutex and it should not be held by anyone.
+         // We can not do the same for rw-locks since a reader lock
+         // can be held by other thread.
+         tl_assert(HG_(isEmptyBag)(&lock->heldBy));
+      }
       tl_assert(0 == HG_(elemBag)( &lock->heldBy, (Word)thr ));
       /* update this thread's lockset accordingly. */
       thr->locksetA
