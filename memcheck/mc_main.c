@@ -73,6 +73,11 @@ static void ocache_sarp_Clear_Origins ( Addr, UWord ); /* fwds */
 #define PERF_FAST_STACK    1
 #define PERF_FAST_STACK2   1
 
+/* Change this to 1 to enable assertions on origin tracking cache fast
+   paths */
+#define OC_ENABLE_ASSERTIONS 0
+
+
 /*------------------------------------------------------------*/
 /*--- V bits and A bits                                    ---*/
 /*------------------------------------------------------------*/
@@ -1715,12 +1720,25 @@ static UWord stats__ocacheline_movefwds    = 0;
 
 /* Cache of 32-bit values, one every 32 bits of address space */
 
-#define OC_W32S_PER_LINE 4
+#define OC_BITS_PER_LINE 5
+#define OC_W32S_PER_LINE (1 << (OC_BITS_PER_LINE - 2))
+
+static INLINE UWord oc_line_offset ( Addr a ) {
+   return (a >> 2) & (OC_W32S_PER_LINE - 1);
+}
+
 #define OC_LINES_PER_SET 2
-//#define OC_N_SETS        (1<<18)
-//#define OC_N_SETS        (1<<19)
-#define OC_N_SETS        (1<<20)
-//#define OC_N_SETS        (1<<22)
+
+#define OC_N_SET_BITS    20
+#define OC_N_SETS        (1 << OC_N_SET_BITS)
+
+/* These settings give:
+   64 bit host: ocache:  100,663,296 sizeB    67,108,864 useful
+   32 bit host: ocache:   92,274,688 sizeB    67,108,864 useful
+*/
+
+#define OC_MOVE_FORWARDS_EVERY_BITS 7
+
 
 typedef
    struct {
@@ -1729,17 +1747,6 @@ typedef
       UChar descr[OC_W32S_PER_LINE];
    }
    OCacheLine;
-
-#if 0
-static Bool isZeroLine ( OCacheLine* line ) {
-   UWord i;
-   for (i = 0; i < OC_W32S_PER_LINE; i++) {
-      if (line->w32[i] != 0)
-         return False;
-   }
-   return True;
-}
-#endif
 
 typedef
    struct {
@@ -1755,9 +1762,9 @@ typedef
 
 static OCache ocache;
 static UWord  ocache_event_ctr = 0;
-#define OC_MOVE_FORWARDS_EVERY_BITS 7
 
-static void init_OCache ( void ) {
+static void init_OCache ( void )
+{
    UWord line, set;
    for (set = 0; set < OC_N_SETS; set++) {
       for (line = 0; line < OC_LINES_PER_SET; line++) {
@@ -1789,12 +1796,10 @@ __attribute__((noinline))
 static OCacheLine* find_OCacheLine_SLOW ( Addr a )
 {
    UWord line;
-   UWord setno = (a % (OC_W32S_PER_LINE * OC_N_SETS * 4)) 
-                 / (OC_W32S_PER_LINE * 4);
-   UWord tag = a - (a % (OC_W32S_PER_LINE * 4));
-
+   UWord setno   = (a >> OC_BITS_PER_LINE) & (OC_N_SETS - 1);
+   UWord tagmask = ~((1 << OC_BITS_PER_LINE) - 1);
+   UWord tag     = a & tagmask;
    tl_assert(setno >= 0 && setno < OC_N_SETS);
-   tl_assert(0 == (tag & (4 * OC_W32S_PER_LINE - 1)));
 
    /* we already tried line == 0; skip therefore. */
    for (line = 1; line < OC_LINES_PER_SET; line++) {
@@ -1827,13 +1832,16 @@ static OCacheLine* find_OCacheLine_SLOW ( Addr a )
 
 static INLINE OCacheLine* find_OCacheLine ( Addr a )
 {
-   UWord setno = (a % (OC_W32S_PER_LINE * OC_N_SETS * 4)) 
-                 / (OC_W32S_PER_LINE * 4);
-   UWord tag = a - (a % (OC_W32S_PER_LINE * 4));
+   UWord setno   = (a >> OC_BITS_PER_LINE) & (OC_N_SETS - 1);
+   UWord tagmask = ~((1 << OC_BITS_PER_LINE) - 1);
+   UWord tag     = a & tagmask;
 
    stats__ocacheline_find++;
-   //   tl_assert(setno >= 0 && setno < OC_N_SETS);
-   //tl_assert(0 == (tag & (4 * OC_W32S_PER_LINE - 1)));
+
+   if (OC_ENABLE_ASSERTIONS) {
+      tl_assert(setno >= 0 && setno < OC_N_SETS);
+      tl_assert(0 == (tag & (4 * OC_W32S_PER_LINE - 1)));
+   }
 
    if (LIKELY(ocache.set[setno].line[0].tag == tag)) {
       return &ocache.set[setno].line[0];
@@ -1847,9 +1855,11 @@ static INLINE void set_aligned_word64_Origin_to_undef ( Addr a, UInt otag )
    //// BEGIN inlined, specialised version of MC_(helperc_b_store8)
    //// Set the origins for a+0 .. a+7
    { OCacheLine* line;
-     UWord lineoff = (a % (OC_W32S_PER_LINE * 4)) / 4;
-     tl_assert(lineoff >= 0 
-               && lineoff < OC_W32S_PER_LINE -1/*'cos 8-aligned*/);
+     UWord lineoff = oc_line_offset(a);
+     if (OC_ENABLE_ASSERTIONS) {
+        tl_assert(lineoff >= 0 
+                  && lineoff < OC_W32S_PER_LINE -1/*'cos 8-aligned*/);
+     }
      line = find_OCacheLine( a );
      line->descr[lineoff+0] = 0xF;
      line->descr[lineoff+1] = 0xF;
@@ -1898,8 +1908,10 @@ void make_aligned_word32_undefined_w_otag ( Addr a, UInt otag )
    //// BEGIN inlined, specialised version of MC_(helperc_b_store4)
    //// Set the origins for a+0 .. a+3
    { OCacheLine* line;
-     UWord lineoff = (a % (OC_W32S_PER_LINE * 4)) / 4;
-     tl_assert(lineoff >= 0 && lineoff < OC_W32S_PER_LINE);
+     UWord lineoff = oc_line_offset(a);
+     if (OC_ENABLE_ASSERTIONS) {
+        tl_assert(lineoff >= 0 && lineoff < OC_W32S_PER_LINE);
+     }
      line = find_OCacheLine( a );
      line->descr[lineoff] = 0xF;
      line->w32[lineoff]   = otag;
@@ -1932,8 +1944,10 @@ void make_aligned_word32_noaccess ( Addr a )
    //// Set the origins for a+0 .. a+3.
    if (UNLIKELY( MC_(clo_mc_level) == 3 )) {
       OCacheLine* line;
-      UWord lineoff = (a % (OC_W32S_PER_LINE * 4)) / 4;
-      tl_assert(lineoff >= 0 && lineoff < OC_W32S_PER_LINE);
+      UWord lineoff = oc_line_offset(a);
+      if (OC_ENABLE_ASSERTIONS) {
+         tl_assert(lineoff >= 0 && lineoff < OC_W32S_PER_LINE);
+      }
       line = find_OCacheLine( a );
       line->descr[lineoff] = 0;
    }
@@ -1953,7 +1967,7 @@ static INLINE void make_aligned_word64_undefined ( Addr a )
    PROF_EVENT(320, "make_aligned_word64_undefined");
 
 #ifndef PERF_FAST_STACK2
-   MC_(make_mem_undefined)(a, 8);
+   make_mem_undefined(a, 8);
 #else
    if (UNLIKELY(a > MAX_PRIMARY_ADDRESS)) {
       PROF_EVENT(321, "make_aligned_word64_undefined-slow1");
@@ -1974,7 +1988,7 @@ void make_aligned_word64_undefined_w_otag ( Addr a, UInt otag )
    //// BEGIN inlined, specialised version of MC_(helperc_b_store8)
    //// Set the origins for a+0 .. a+7
    { OCacheLine* line;
-     UWord lineoff = (a % (OC_W32S_PER_LINE * 4)) / 4;
+     UWord lineoff = oc_line_offset(a);
      tl_assert(lineoff >= 0 
                && lineoff < OC_W32S_PER_LINE -1/*'cos 8-aligned*/);
      line = find_OCacheLine( a );
@@ -2011,7 +2025,7 @@ void make_aligned_word64_noaccess ( Addr a )
    //// Clear the origins for a+0 .. a+7.
    if (UNLIKELY( MC_(clo_mc_level) == 3 )) {
       OCacheLine* line;
-      UWord lineoff = (a % (OC_W32S_PER_LINE * 4)) / 4;
+      UWord lineoff = oc_line_offset(a);
       tl_assert(lineoff >= 0 
                 && lineoff < OC_W32S_PER_LINE -1/*'cos 8-aligned*/);
       line = find_OCacheLine( a );
@@ -5852,24 +5866,28 @@ static void done_prof_mem ( void ) { }
 /*--- Origin tracking: load handlers       ---*/
 /*--------------------------------------------*/
 
-static inline UInt merge_origins ( UInt or1, UInt or2 ) {
+static INLINE UInt merge_origins ( UInt or1, UInt or2 ) {
    return or1 > or2 ? or1 : or2;
 }
 
 UWord VG_REGPARM(1) MC_(helperc_b_load1)( Addr a ) {
    OCacheLine* line;
    UChar descr;
-   UWord lineoff = (a % (OC_W32S_PER_LINE * 4)) / 4;
+   UWord lineoff = oc_line_offset(a);
    UWord byteoff = a & 3; /* 0, 1, 2 or 3 */
 
-   tl_assert(lineoff >= 0 && lineoff < OC_W32S_PER_LINE);
+   if (OC_ENABLE_ASSERTIONS) {
+      tl_assert(lineoff >= 0 && lineoff < OC_W32S_PER_LINE);
+   }
 
    line = find_OCacheLine( a );
 
    descr = line->descr[lineoff];
-   tl_assert(descr < 0x10);
+   if (OC_ENABLE_ASSERTIONS) {
+      tl_assert(descr < 0x10);
+   }
 
-   if (0 == (descr & (1 << byteoff)))  {
+   if (LIKELY(0 == (descr & (1 << byteoff))))  {
       return 0;
    } else {
       return line->w32[lineoff];
@@ -5888,17 +5906,20 @@ UWord VG_REGPARM(1) MC_(helperc_b_load2)( Addr a ) {
       return merge_origins(oLo, oHi);
    }
 
-   lineoff = (a % (OC_W32S_PER_LINE * 4)) / 4;
+   lineoff = oc_line_offset(a);
    byteoff = a & 3; /* 0 or 2 */
 
-   tl_assert(lineoff >= 0 && lineoff < OC_W32S_PER_LINE);
-
+   if (OC_ENABLE_ASSERTIONS) {
+      tl_assert(lineoff >= 0 && lineoff < OC_W32S_PER_LINE);
+   }
    line = find_OCacheLine( a );
 
    descr = line->descr[lineoff];
-   tl_assert(descr < 0x10);
+   if (OC_ENABLE_ASSERTIONS) {
+      tl_assert(descr < 0x10);
+   }
 
-   if (0 == (descr & (3 << byteoff))) {
+   if (LIKELY(0 == (descr & (3 << byteoff)))) {
       return 0;
    } else {
       return line->w32[lineoff];
@@ -5917,15 +5938,19 @@ UWord VG_REGPARM(1) MC_(helperc_b_load4)( Addr a ) {
       return merge_origins(oLo, oHi);
    }
 
-   lineoff = (a % (OC_W32S_PER_LINE * 4)) / 4;
-   tl_assert(lineoff >= 0 && lineoff < OC_W32S_PER_LINE);
+   lineoff = oc_line_offset(a);
+   if (OC_ENABLE_ASSERTIONS) {
+      tl_assert(lineoff >= 0 && lineoff < OC_W32S_PER_LINE);
+   }
 
    line = find_OCacheLine( a );
 
    descr = line->descr[lineoff];
-   tl_assert(descr < 0x10);
+   if (OC_ENABLE_ASSERTIONS) {
+      tl_assert(descr < 0x10);
+   }
 
-   if (0 == descr) {
+   if (LIKELY(0 == descr)) {
       return 0;
    } else {
       return line->w32[lineoff];
@@ -5944,17 +5969,21 @@ UWord VG_REGPARM(1) MC_(helperc_b_load8)( Addr a ) {
       return merge_origins(oLo, oHi);
    }
 
-   lineoff = (a % (OC_W32S_PER_LINE * 4)) / 4;
-   tl_assert(lineoff == 0 || lineoff == 2); /*since 8-aligned*/
+   lineoff = oc_line_offset(a);
+   if (OC_ENABLE_ASSERTIONS) {
+      tl_assert(lineoff == (lineoff & 6)); /*0,2,4,6*//*since 8-aligned*/
+   }
 
    line = find_OCacheLine( a );
 
    descrLo = line->descr[lineoff + 0];
    descrHi = line->descr[lineoff + 1];
    descr   = descrLo | descrHi;
-   tl_assert(descr < 0x10);
+   if (OC_ENABLE_ASSERTIONS) {
+      tl_assert(descr < 0x10);
+   }
 
-   if (0 == descr) {
+   if (LIKELY(0 == descr)) {
       return 0; /* both 32-bit chunks are defined */
    } else {
       UInt oLo = descrLo == 0 ? 0 : line->w32[lineoff + 0];
@@ -5977,10 +6006,12 @@ UWord VG_REGPARM(1) MC_(helperc_b_load16)( Addr a ) {
 
 void VG_REGPARM(2) MC_(helperc_b_store1)( Addr a, UWord d32 ) {
    OCacheLine* line;
-   UWord lineoff = (a % (OC_W32S_PER_LINE * 4)) / 4;
+   UWord lineoff = oc_line_offset(a);
    UWord byteoff = a & 3; /* 0, 1, 2 or 3 */
 
-   tl_assert(lineoff >= 0 && lineoff < OC_W32S_PER_LINE);
+   if (OC_ENABLE_ASSERTIONS) {
+      tl_assert(lineoff >= 0 && lineoff < OC_W32S_PER_LINE);
+   }
 
    line = find_OCacheLine( a );
 
@@ -6003,10 +6034,12 @@ void VG_REGPARM(2) MC_(helperc_b_store2)( Addr a, UWord d32 ) {
       return;
    }
 
-   lineoff = (a % (OC_W32S_PER_LINE * 4)) / 4;
+   lineoff = oc_line_offset(a);
    byteoff = a & 3; /* 0 or 2 */
 
-   tl_assert(lineoff >= 0 && lineoff < OC_W32S_PER_LINE);
+   if (OC_ENABLE_ASSERTIONS) {
+      tl_assert(lineoff >= 0 && lineoff < OC_W32S_PER_LINE);
+   }
 
    line = find_OCacheLine( a );
 
@@ -6029,8 +6062,10 @@ void VG_REGPARM(2) MC_(helperc_b_store4)( Addr a, UWord d32 ) {
       return;
    }
 
-   lineoff = (a % (OC_W32S_PER_LINE * 4)) / 4;
-   tl_assert(lineoff >= 0 && lineoff < OC_W32S_PER_LINE);
+   lineoff = oc_line_offset(a);
+   if (OC_ENABLE_ASSERTIONS) {
+      tl_assert(lineoff >= 0 && lineoff < OC_W32S_PER_LINE);
+   }
 
    line = find_OCacheLine( a );
 
@@ -6053,8 +6088,10 @@ void VG_REGPARM(2) MC_(helperc_b_store8)( Addr a, UWord d32 ) {
       return;
    }
 
-   lineoff = (a % (OC_W32S_PER_LINE * 4)) / 4;
-   tl_assert(lineoff == 0 || lineoff == 2); /*since 8-aligned*/
+   lineoff = oc_line_offset(a);
+   if (OC_ENABLE_ASSERTIONS) {
+      tl_assert(lineoff == (lineoff & 6)); /*0,2,4,6*//*since 8-aligned*/
+   }
 
    line = find_OCacheLine( a );
 
@@ -6275,16 +6312,19 @@ static void mc_fini ( Int exitcode )
                    stats__ocacheline_find, 
                    stats__ocacheline_misses );
       VG_(message)(Vg_DebugMsg,
-                   "   ocache: %,12lu at 0   %,12lu at 1   %,12lu at 2+", 
+                   "   ocache: %,12lu at 0   %,12lu at 1", 
                    stats__ocacheline_find - stats__ocacheline_misses 
                       - stats__ocacheline_found_at_1 
                       - stats__ocacheline_found_at_N,
-                   stats__ocacheline_found_at_1, 
-                   stats__ocacheline_found_at_N );
+                   stats__ocacheline_found_at_1 );
       VG_(message)(Vg_DebugMsg,
-                   "   ocache: %,12lu sizeB  %,12lu move-line-forwards",
+                   "   ocache: %,12lu at 2+  %,12lu move-fwds", 
+                   stats__ocacheline_found_at_N,
+                   stats__ocacheline_movefwds );
+      VG_(message)(Vg_DebugMsg,
+                   "   ocache: %,12lu sizeB  %,12lu useful",
                    (UWord)sizeof(OCache),
-                   stats__ocacheline_movefwds);
+                   4 * OC_W32S_PER_LINE * OC_LINES_PER_SET * OC_N_SETS );
       VG_(message)(Vg_DebugMsg,
                    " niacache: %,12lu finds  %,12lu misses",
                    stats__nia_cache_queries, stats__nia_cache_misses);
