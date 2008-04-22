@@ -1711,6 +1711,117 @@ void MC_(copy_address_range_state) ( Addr src, Addr dst, SizeT len )
 /*--- Origin tracking stuff - cache basics                 ---*/
 /*------------------------------------------------------------*/
 
+/* Some background comments on the origin tracking implementation
+   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+   Note that this implementation draws inspiration from the "origin
+   tracking by value piggybacking" scheme described in "Tracking Bad
+   Apples: Reporting the Origin of Null and Undefined Value Errors"
+   (Michael Bond, Nicholas Nethercote, Stephen Kent, Samuel Guyer,
+   Kathryn McKinley, OOPSLA07, Montreal, Oct 2007) but in fact it is
+   implemented completely differently.
+
+   This implementation tracks the defining point of all values using
+   so called "origin tags", which are 32-bit integers, rather than
+   using the values themselves to encode the origins.  The latter,
+   so-called value piggybacking", is what the OOPSLA07 paper
+   describes.
+
+   Origin tags, as tracked by the machinery below, are 32-bit unsigned
+   ints (UInts), regardless of the machine's word size.
+
+   > Question: why is otag a UInt?  Wouldn't a UWord be better?  Isn't
+   > it really just the address of the relevant ExeContext?
+
+   Well, it's not the address, but a value which has a 1-1 mapping
+   with ExeContexts, and is guaranteed not to be zero, since zero
+   denotes (to memcheck) "unknown origin or defined value".  So these
+   UInts are just numbers starting at 1; each ExeContext is given a
+   number when it is created.
+
+   Making these otags 32-bit regardless of the machine's word size
+   makes the 64-bit implementation easier (next para).  And it doesn't
+   really limit us in any way, since for the tags to overflow would
+   require that the program somehow caused 2^32-1 different
+   ExeContexts to be created, in which case it is probably in deep
+   trouble.  Not to mention V will have soaked up many tens of
+   gigabytes of memory merely to store them all.
+
+   So having 64-bit origins doesn't really buy you anything, and has
+   the following downsides:
+
+   Suppose that instead, an otag is a UWord.  This would mean that, on
+   a 64-bit target,
+
+   1. It becomes hard to shadow any element of guest state which is
+      smaller than 8 bytes.  To do so means you'd need to find some
+      8-byte-sized hole in the guest state which you don't want to
+      shadow, and use that instead to hold the otag.  On ppc64, the
+      condition code register(s) are split into 20 UChar sized pieces,
+      all of which need to be tracked (guest_XER_SO .. guest_CR7_0)
+      and so that would entail finding 160 bytes somewhere else in the
+      guest state.
+
+      Even on x86, I want to track origins for %AH .. %DH (bits 15:8
+      of %EAX .. %EDX) that are separate from %AL .. %DL (bits 7:0 of
+      same) and so I had to look for 4 untracked otag-sized areas in
+      the guest state to make that possible.
+
+      The same problem exists of course when origin tags are only 32
+      bits, but it's less extreme.
+
+   2. (More compelling) it doubles the size of the origin shadow
+      memory.  Given that the shadow memory is organised as a fixed
+      size cache, and that accuracy of tracking is limited by origins
+      falling out the cache due to space conflicts, this isn't good.
+
+   > Another question: is the origin tracking perfect, or are there
+   > cases where it fails to determine an origin?
+
+   It is imperfect for at least for the following reasons, and
+   probably more:
+
+   * Insufficient capacity in the origin cache.  When a line is
+     evicted from the cache it is gone forever, and so subsequent
+     queries for the line produce zero, indicating no origin
+     information.  Interestingly, a line containing all zeroes can be
+     evicted "free" from the cache, since it contains no useful
+     information, so there is scope perhaps for some cleverer cache
+     management schemes.
+
+   * The origin cache only stores one otag per 32-bits of address
+     space, plus 4 bits indicating which of the 4 bytes has that tag
+     and which are considered defined.  The result is that if two
+     undefined bytes in the same word are stored in memory, the first
+     stored byte's origin will be lost and replaced by the origin for
+     the second byte.
+
+   * Nonzero origin tags for defined values.  Consider a binary
+     operator application op(x,y).  Suppose y is undefined (and so has
+     a valid nonzero origin tag), and x is defined, but erroneously
+     has a nonzero origin tag (defined values should have tag zero).
+     If the erroneous tag has a numeric value greater than y's tag,
+     then the rule for propagating origin tags though binary
+     operations, which is simply to take the unsigned max of the two
+     tags, will erroneously propagate x's tag rather than y's.
+
+   * Some obscure uses of x86/amd64 byte registers can cause lossage
+     or confusion of origins.  %AH .. %DH are treated as different
+     from, and unrelated to, their parent registers, %EAX .. %EDX.
+     So some wierd sequences like
+
+        movb undefined-value, %AH
+        movb defined-value, %AL
+        .. use %AX or %EAX ..
+
+     will cause the origin attributed to %AH to be ignored, since %AL,
+     %AX, %EAX are treated as the same register, and %AH as a
+     completely separate one.
+
+   But having said all that, it actually seems to work fairly well in
+   practice.
+*/
+
 static UWord stats__ocacheline_find        = 0;
 static UWord stats__ocacheline_found_at_1  = 0;
 static UWord stats__ocacheline_found_at_N  = 0;
