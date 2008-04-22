@@ -71,9 +71,11 @@ svn co svn://svn.gnome.org/svn/ooo-build/trunk ooo-build
 cd ooo-build
 
 export ARCH_FLAGS="-g -O"
+#export ARCH_FLAGS="-g -O -fno-inline -fno-inline-functions"  
+# very slow, and not helpful
 
 ./autogen.sh --with-distro=SUSE-10.2 --with-java=no
---disable-gstreamer --disable-mono
+   --disable-gstreamer --disable-mono
 
 #  --with-max-jobs=2 --with-num-cpus=2 sounds good on paper, but often
 #  cause the build to fail
@@ -97,8 +99,8 @@ make
 
 # eventually ...
 
-./bin/ooinstall ~/Tools/OOPlay/Inst01
-cd ~/Tools/OOPlay/Inst01
+./bin/ooinstall ~/OOoBuild/Inst01
+cd ~/OOoBuild/Inst01
 valgrind -v ./program/soffice.bin
 
 
@@ -108,12 +110,12 @@ valgrind -v ./program/soffice.bin
 #
 cd build/ooh680-m12
 . ./LinuxX86Env.Set.sh  (or ". ./LinuxX86-64Env.Set.sh")
-./solenv/bin/linkoo ~/Tools/OOPlay/Inst01
+./solenv/bin/linkoo ~/OOoBuild/Inst01
 #
 # This replaces all the .so's in the install tree with symlinks 
 # back into the build tree, so you can then re-run without 
 # having to endlessly reinstall.  It also creates 'ooenv' in
-# ~/Tools/OOPlay/Inst01/program, which needs to be sourced
+# ~/OOoBuild/Inst01/program, which needs to be sourced
 # once before running.
 #
 # So having changed something in OOo, eg in svx/, do:
