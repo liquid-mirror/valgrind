@@ -1822,12 +1822,16 @@ void MC_(copy_address_range_state) ( Addr src, Addr dst, SizeT len )
    practice.
 */
 
-static UWord stats__ocacheline_find        = 0;
-static UWord stats__ocacheline_found_at_1  = 0;
-static UWord stats__ocacheline_found_at_N  = 0;
-static UWord stats__ocacheline_misses      = 0;
-static UWord stats__ocacheline_movefwds    = 0;
+static UWord stats_ocacheL1_find           = 0;
+static UWord stats_ocacheL1_found_at_1     = 0;
+static UWord stats_ocacheL1_found_at_N     = 0;
+static UWord stats_ocacheL1_misses         = 0;
+static UWord stats_ocacheL1_lossage        = 0;
+static UWord stats_ocacheL1_movefwds       = 0;
 
+static UWord stats__ocacheL2_refs          = 0;
+static UWord stats__ocacheL2_misses        = 0;
+static UWord stats__ocacheL2_n_nodes_max   = 0;
 
 /* Cache of 32-bit values, one every 32 bits of address space */
 
@@ -1836,6 +1840,9 @@ static UWord stats__ocacheline_movefwds    = 0;
 
 static INLINE UWord oc_line_offset ( Addr a ) {
    return (a >> 2) & (OC_W32S_PER_LINE - 1);
+}
+static INLINE Bool is_valid_oc_tag ( Addr tag ) {
+   return 0 == (tag & ((1 << OC_BITS_PER_LINE) - 1));
 }
 
 #define OC_LINES_PER_SET 2
@@ -1859,6 +1866,23 @@ typedef
    }
    OCacheLine;
 
+/* Classify and also sanity-check 'line'.  Return 'e' (empty) if not
+   in use, 'n' (nonzero) if it contains at least one valid origin tag,
+   and 'z' if all the represented tags are zero. */
+static UChar classify_OCacheLine ( OCacheLine* line )
+{
+   UWord i;
+   if (line->tag == 1/*invalid*/)
+      return 'e'; /* EMPTY */
+   tl_assert(is_valid_oc_tag(line->tag));
+   for (i = 0; i < OC_W32S_PER_LINE; i++) {
+      tl_assert(0 == ((~0xF) & line->descr[i]));
+      if (line->w32[i] > 0 && line->descr[i] > 0)
+         return 'n'; /* NONZERO - contains useful info */
+   }
+   return 'z'; /* ZERO - no useful info */
+}
+
 typedef
    struct {
       OCacheLine line[OC_LINES_PER_SET];
@@ -1874,6 +1898,7 @@ typedef
 static OCache ocache;
 static UWord  ocache_event_ctr = 0;
 
+static void init_ocacheL2 ( void ); /* fwds */
 static void init_OCache ( void )
 {
    UWord line, set;
@@ -1882,12 +1907,13 @@ static void init_OCache ( void )
          ocache.set[set].line[line].tag = 1/*invalid*/;
       }
    }
+   init_ocacheL2();
 }
 
 static void moveLineForwards ( OCacheSet* set, UWord lineno )
 {
    OCacheLine tmp;
-   stats__ocacheline_movefwds++;
+   stats_ocacheL1_movefwds++;
    tl_assert(lineno > 0 && lineno < OC_LINES_PER_SET);
    tmp = set->line[lineno-1];
    set->line[lineno-1] = set->line[lineno];
@@ -1903,9 +1929,83 @@ static void zeroise_OCacheLine ( OCacheLine* line, Addr tag ) {
    line->tag = tag;
 }
 
+//////////////////////////////////////////////////////////////
+//// OCache backing store
+
+static OSet* ocacheL2 = NULL;
+
+static void* ocacheL2_malloc ( SizeT szB ) {
+   return VG_(malloc)(szB);
+}
+static void ocacheL2_free ( void* v ) {
+   VG_(free)( v );
+}
+
+/* Stats: # nodes currently in tree */
+static UWord stats__ocacheL2_n_nodes = 0;
+
+static void init_ocacheL2 ( void )
+{
+   tl_assert(!ocacheL2);
+   tl_assert(sizeof(Word) == sizeof(Addr)); /* since OCacheLine.tag :: Addr */
+   tl_assert(0 == offsetof(OCacheLine,tag));
+   ocacheL2 
+      = VG_(OSetGen_Create)( offsetof(OCacheLine,tag), 
+                             NULL, /* fast cmp */
+                             ocacheL2_malloc, ocacheL2_free );
+   tl_assert(ocacheL2);
+   stats__ocacheL2_n_nodes = 0;
+}
+
+/* Find line with the given tag in the tree, or NULL if not found. */
+static OCacheLine* ocacheL2_find_tag ( Addr tag )
+{
+   OCacheLine* line;
+   tl_assert(is_valid_oc_tag(tag));
+   stats__ocacheL2_refs++;
+   line = VG_(OSetGen_Lookup)( ocacheL2, &tag );
+   return line;
+}
+
+/* Delete the line with the given tag from the tree, if it is present, and
+   free up the associated memory. */
+static void ocacheL2_del_tag ( Addr tag )
+{
+   OCacheLine* line;
+   tl_assert(is_valid_oc_tag(tag));
+   stats__ocacheL2_refs++;
+   line = VG_(OSetGen_Remove)( ocacheL2, &tag );
+   if (line) {
+      VG_(OSetGen_FreeNode)(ocacheL2, line);
+      tl_assert(stats__ocacheL2_n_nodes > 0);
+      stats__ocacheL2_n_nodes--;
+   }
+}
+
+/* Add a copy of the given line to the tree.  It must not already be
+   present. */
+static void ocacheL2_add_line ( OCacheLine* line )
+{
+   OCacheLine* copy;
+   tl_assert(is_valid_oc_tag(line->tag));
+   copy = VG_(OSetGen_AllocNode)( ocacheL2, sizeof(OCacheLine) );
+   tl_assert(copy);
+   *copy = *line;
+   stats__ocacheL2_refs++;
+   VG_(OSetGen_Insert)( ocacheL2, copy );
+   stats__ocacheL2_n_nodes++;
+   if (stats__ocacheL2_n_nodes > stats__ocacheL2_n_nodes_max)
+      stats__ocacheL2_n_nodes_max = stats__ocacheL2_n_nodes;
+}
+
+////
+//////////////////////////////////////////////////////////////
+
 __attribute__((noinline))
 static OCacheLine* find_OCacheLine_SLOW ( Addr a )
 {
+   OCacheLine *victim, *inL2;
+   UChar c;
    UWord line;
    UWord setno   = (a >> OC_BITS_PER_LINE) & (OC_N_SETS - 1);
    UWord tagmask = ~((1 << OC_BITS_PER_LINE) - 1);
@@ -1915,10 +2015,11 @@ static OCacheLine* find_OCacheLine_SLOW ( Addr a )
    /* we already tried line == 0; skip therefore. */
    for (line = 1; line < OC_LINES_PER_SET; line++) {
       if (ocache.set[setno].line[line].tag == tag) {
-         if (line == 1)
-            stats__ocacheline_found_at_1++;
-         else
-            stats__ocacheline_found_at_N++;
+         if (line == 1) {
+            stats_ocacheL1_found_at_1++;
+         } else {
+            stats_ocacheL1_found_at_N++;
+         }
          if (UNLIKELY(0 == (ocache_event_ctr++ 
                             & ((1<<OC_MOVE_FORWARDS_EVERY_BITS)-1)))) {
             moveLineForwards( &ocache.set[setno], line );
@@ -1928,13 +2029,58 @@ static OCacheLine* find_OCacheLine_SLOW ( Addr a )
       }
    }
 
-   /* A miss.  Use the last slot. */
-   stats__ocacheline_misses++;
+   /* A miss.  Use the last slot.  Implicitly this means we're
+      ejecting the line in the last slot. */
+   stats_ocacheL1_misses++;
    tl_assert(line == OC_LINES_PER_SET);
    line--;
    tl_assert(line > 0);
 
-   zeroise_OCacheLine( &ocache.set[setno].line[line], tag );
+   /* First, move the to-be-ejected line to the L2 cache. */
+   victim = &ocache.set[setno].line[line];
+   c = classify_OCacheLine(victim);
+   switch (c) {
+      case 'e':
+         /* the line is empty (has invalid tag); ignore it. */
+         break;
+      case 'z':
+         /* line contains zeroes.  We must ensure the backing store is
+            updated accordingly, either by copying the line there
+            verbatim, or by ensuring it isn't present there.  We
+            chosse the latter on the basis that it reduces the size of
+            the backing store. */
+         ocacheL2_del_tag( victim->tag );
+         break;
+      case 'n':
+         /* line contains at least one real, useful origin.  Copy it
+            to the backing store. */
+         stats_ocacheL1_lossage++;
+         inL2 = ocacheL2_find_tag( victim->tag );
+         if (inL2) {
+            *inL2 = *victim;
+         } else {
+            ocacheL2_add_line( victim );
+         }
+         break;
+      default:
+         tl_assert(0);
+   }
+
+   /* Now we must reload the L1 cache from the backing tree, if
+      possible. */
+   tl_assert(tag != victim->tag); /* stay sane */
+   inL2 = ocacheL2_find_tag( tag );
+   if (inL2) {
+      /* We're in luck.  It's in the L2. */
+      ocache.set[setno].line[line] = *inL2;
+   } else {
+      /* Missed at both levels of the cache hierarchy.  We have to
+         declare it as full of zeroes (unknown origins). */
+      stats__ocacheL2_misses++;
+      zeroise_OCacheLine( &ocache.set[setno].line[line], tag );
+   }
+
+   /* Move it one forwards */
    moveLineForwards( &ocache.set[setno], line );
    line--;
 
@@ -1947,7 +2093,7 @@ static INLINE OCacheLine* find_OCacheLine ( Addr a )
    UWord tagmask = ~((1 << OC_BITS_PER_LINE) - 1);
    UWord tag     = a & tagmask;
 
-   stats__ocacheline_find++;
+   stats_ocacheL1_find++;
 
    if (OC_ENABLE_ASSERTIONS) {
       tl_assert(setno >= 0 && setno < OC_N_SETS);
@@ -6419,25 +6565,34 @@ static void mc_fini ( Int exitcode )
          max_shmem_szB / 1024, max_shmem_szB / (1024 * 1024));
 
       VG_(message)(Vg_DebugMsg,
-                   "   ocache: %,12lu refs   %,12lu misses", 
-                   stats__ocacheline_find, 
-                   stats__ocacheline_misses );
+                   " ocacheL1: %,12lu refs   %,12lu misses (%,lu lossage)", 
+                   stats_ocacheL1_find, 
+                   stats_ocacheL1_misses,
+                   stats_ocacheL1_lossage );
       VG_(message)(Vg_DebugMsg,
-                   "   ocache: %,12lu at 0   %,12lu at 1", 
-                   stats__ocacheline_find - stats__ocacheline_misses 
-                      - stats__ocacheline_found_at_1 
-                      - stats__ocacheline_found_at_N,
-                   stats__ocacheline_found_at_1 );
+                   " ocacheL1: %,12lu at 0   %,12lu at 1", 
+                   stats_ocacheL1_find - stats_ocacheL1_misses 
+                      - stats_ocacheL1_found_at_1 
+                      - stats_ocacheL1_found_at_N,
+                   stats_ocacheL1_found_at_1 );
       VG_(message)(Vg_DebugMsg,
-                   "   ocache: %,12lu at 2+  %,12lu move-fwds", 
-                   stats__ocacheline_found_at_N,
-                   stats__ocacheline_movefwds );
+                   " ocacheL1: %,12lu at 2+  %,12lu move-fwds", 
+                   stats_ocacheL1_found_at_N,
+                   stats_ocacheL1_movefwds );
       VG_(message)(Vg_DebugMsg,
-                   "   ocache: %,12lu sizeB  %,12lu useful",
+                   " ocacheL1: %,12lu sizeB  %,12lu useful",
                    (UWord)sizeof(OCache),
                    4 * OC_W32S_PER_LINE * OC_LINES_PER_SET * OC_N_SETS );
       VG_(message)(Vg_DebugMsg,
-                   " niacache: %,12lu finds  %,12lu misses",
+                   " ocacheL2: %,12lu refs   %,12lu misses", 
+                   stats__ocacheL2_refs, 
+                   stats__ocacheL2_misses );
+      VG_(message)(Vg_DebugMsg,
+                   " ocacheL2:    %,9lu max nodes %,9lu curr nodes",
+                   stats__ocacheL2_n_nodes_max,
+                   stats__ocacheL2_n_nodes );
+      VG_(message)(Vg_DebugMsg,
+                   " niacache: %,12lu refs   %,12lu misses",
                    stats__nia_cache_queries, stats__nia_cache_misses);
    }
 
