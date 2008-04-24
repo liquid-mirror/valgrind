@@ -3962,7 +3962,8 @@ static IRAtom* schemeE ( MCEnv* mce, IRExpr* e )
             return mkU32(0);
          tl_assert(sizeofIRType(equivIntTy) >= 4);
          tl_assert(sizeofIRType(equivIntTy) == sizeofIRType(descr->elemTy));
-         descr_b = mkIRRegArray( descr->base, equivIntTy, descr->nElems );
+         descr_b = mkIRRegArray( descr->base + 2*mce->layout->total_sizeB,
+                                 equivIntTy, descr->nElems );
          /* Do a shadow indexed get of the same size, giving t1.  Take
             the bottom 32 bits of it, giving t2.  Compute into t3 the
             origin for the index (almost certainly zero, but there's
@@ -4253,7 +4254,8 @@ static void schemeS ( MCEnv* mce, IRStmt* st )
          tl_assert(sizeofIRType(equivIntTy) >= 4);
          tl_assert(sizeofIRType(equivIntTy) == sizeofIRType(descr->elemTy));
          descr_b
-            = mkIRRegArray( descr->base, equivIntTy, descr->nElems );
+            = mkIRRegArray( descr->base + 2*mce->layout->total_sizeB,
+                            equivIntTy, descr->nElems );
          /* Compute a value to Put - the conjoinment of the origin for
             the data to be Put-ted (obviously) and of the index value
             (not so obviously). */
