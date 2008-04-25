@@ -3892,14 +3892,24 @@ static void mc_pp_msg( Char* xml_name, Error* err, const HChar* format, ... )
 static void mc_pp_origin ( ExeContext* ec, Bool is_stack_origin )
 {
    tl_assert(ec);
+   HChar* xpre  = VG_(clo_xml) ? "  <what>" : " ";
+   HChar* xpost = VG_(clo_xml) ? "</what>"  : "";
+   if (VG_(clo_xml)) {
+      VG_(message)(Vg_UserMsg, "  <origin>");
+   }
    if (is_stack_origin) {
-      VG_(message)(Vg_UserMsg, " Uninitialised value originates "
-                               "from a stack allocation");
+      VG_(message)(Vg_UserMsg, "%sUninitialised value originates "
+                               "from a stack allocation%s",
+                               xpre, xpost);
    } else {
-      VG_(message)(Vg_UserMsg, " Uninitialised value originates "
-                               "from a heap block allocated");
+      VG_(message)(Vg_UserMsg, "%sUninitialised value originates "
+                               "from a heap block allocated%s",
+                               xpre, xpost);
    }
    VG_(pp_ExeContext)( ec );
+   if (VG_(clo_xml)) {
+      VG_(message)(Vg_UserMsg, "  </origin>");
+   }
 }
 
 static void mc_pp_Error ( Error* err )
