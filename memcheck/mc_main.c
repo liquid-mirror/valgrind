@@ -3547,6 +3547,13 @@ static void mc_pre_reg_read ( CorePart part, ThreadId tid, Char* s,
 /*--- Error types                                          ---*/
 /*------------------------------------------------------------*/
 
+/* Did we show to the user, any errors for which an uninitialised
+   value origin could have been collected (but wasn't) ?  If yes,
+   then, at the end of the run, print a 1 line message advising that a
+   rerun with --track-origins=yes might help. */
+static Bool any_value_errors = False;
+
+
 // Different kinds of blocks.
 typedef enum {
    Block_Mallocd = 111,
@@ -3891,9 +3898,9 @@ static void mc_pp_msg( Char* xml_name, Error* err, const HChar* format, ... )
 
 static void mc_pp_origin ( ExeContext* ec, Bool is_stack_origin )
 {
-   tl_assert(ec);
    HChar* xpre  = VG_(clo_xml) ? "  <what>" : " ";
    HChar* xpost = VG_(clo_xml) ? "</what>"  : "";
+   tl_assert(ec);
    if (VG_(clo_xml)) {
       VG_(message)(Vg_UserMsg, "  <origin>");
    }
@@ -3928,7 +3935,8 @@ static void mc_pp_Error ( Error* err )
       } 
       
       case Err_Value:
-         if (extra->Err.Value.otag == 0) {
+         any_value_errors = True;
+         if (1 || extra->Err.Value.otag == 0) {
             mc_pp_msg("UninitValue", err,
                       "Use of uninitialised value of size %d",
                       extra->Err.Value.szB);
@@ -3943,7 +3951,8 @@ static void mc_pp_Error ( Error* err )
          break;
 
       case Err_Cond:
-         if (extra->Err.Cond.otag == 0) {
+         any_value_errors = True;
+         if (1 || extra->Err.Cond.otag == 0) {
             mc_pp_msg("UninitCondition", err,
                       "Conditional jump or move depends"
                       " on uninitialised value(s)");
@@ -3959,6 +3968,7 @@ static void mc_pp_Error ( Error* err )
          break;
 
       case Err_RegParam:
+         any_value_errors = True;
          mc_pp_msg("SyscallParam", err,
                    "Syscall param %s contains uninitialised byte(s)",
                    VG_(get_error_string)(err));
@@ -3968,6 +3978,8 @@ static void mc_pp_Error ( Error* err )
          break;
 
       case Err_MemParam:
+         if (!extra->Err.MemParam.isAddrErr)
+            any_value_errors = True;
          mc_pp_msg("SyscallParam", err,
                    "Syscall param %s points to %s byte(s)",
                    VG_(get_error_string)(err),
@@ -3981,6 +3993,8 @@ static void mc_pp_Error ( Error* err )
          break;
 
       case Err_User:
+         if (!extra->Err.User.isAddrErr)
+            any_value_errors = True;
          mc_pp_msg("ClientCheck", err,
                    "%s byte(s) found during client check request", 
                    ( extra->Err.User.isAddrErr
@@ -6383,7 +6397,6 @@ void VG_REGPARM(2) MC_(helperc_b_store16)( Addr a, UWord d32 ) {
 /*--- Origin tracking: sarp handlers       ---*/
 /*--------------------------------------------*/
 
-// FIXME: reconsider what origin to store for the 1/2 cases
 __attribute__((noinline))
 static void ocache_sarp_Set_Origins ( Addr a, UWord len, UInt otag ) {
    if ((a & 1) && len >= 1) {
@@ -6519,6 +6532,15 @@ static void mc_fini ( Int exitcode )
       VG_(message)(Vg_UserMsg, 
                    "For counts of detected errors, rerun with: -v");
    }
+
+
+   if (any_value_errors && !VG_(clo_xml) && VG_(clo_verbosity) >= 1
+       && MC_(clo_mc_level) == 2) {
+      VG_(message)(Vg_UserMsg,
+                   "Use --track-origins=yes to see where "
+                   "uninitialised values come from");
+   }
+
    if (MC_(clo_leak_check) != LC_Off)
       mc_detect_memory_leaks(1/*bogus ThreadId*/, MC_(clo_leak_check));
 
@@ -6574,36 +6596,38 @@ static void mc_fini ( Int exitcode )
          " memcheck: max shadow mem size:   %dk, %dM",
          max_shmem_szB / 1024, max_shmem_szB / (1024 * 1024));
 
-      VG_(message)(Vg_DebugMsg,
-                   " ocacheL1: %,12lu refs   %,12lu misses (%,lu lossage)", 
-                   stats_ocacheL1_find, 
-                   stats_ocacheL1_misses,
-                   stats_ocacheL1_lossage );
-      VG_(message)(Vg_DebugMsg,
-                   " ocacheL1: %,12lu at 0   %,12lu at 1", 
-                   stats_ocacheL1_find - stats_ocacheL1_misses 
-                      - stats_ocacheL1_found_at_1 
-                      - stats_ocacheL1_found_at_N,
-                   stats_ocacheL1_found_at_1 );
-      VG_(message)(Vg_DebugMsg,
-                   " ocacheL1: %,12lu at 2+  %,12lu move-fwds", 
-                   stats_ocacheL1_found_at_N,
-                   stats_ocacheL1_movefwds );
-      VG_(message)(Vg_DebugMsg,
-                   " ocacheL1: %,12lu sizeB  %,12lu useful",
-                   (UWord)sizeof(OCache),
-                   4 * OC_W32S_PER_LINE * OC_LINES_PER_SET * OC_N_SETS );
-      VG_(message)(Vg_DebugMsg,
-                   " ocacheL2: %,12lu refs   %,12lu misses", 
-                   stats__ocacheL2_refs, 
-                   stats__ocacheL2_misses );
-      VG_(message)(Vg_DebugMsg,
-                   " ocacheL2:    %,9lu max nodes %,9lu curr nodes",
-                   stats__ocacheL2_n_nodes_max,
-                   stats__ocacheL2_n_nodes );
-      VG_(message)(Vg_DebugMsg,
-                   " niacache: %,12lu refs   %,12lu misses",
-                   stats__nia_cache_queries, stats__nia_cache_misses);
+      if (MC_(clo_mc_level) >= 3) {
+         VG_(message)(Vg_DebugMsg,
+                      " ocacheL1: %,12lu refs   %,12lu misses (%,lu lossage)", 
+                      stats_ocacheL1_find, 
+                      stats_ocacheL1_misses,
+                      stats_ocacheL1_lossage );
+         VG_(message)(Vg_DebugMsg,
+                      " ocacheL1: %,12lu at 0   %,12lu at 1", 
+                      stats_ocacheL1_find - stats_ocacheL1_misses 
+                         - stats_ocacheL1_found_at_1 
+                         - stats_ocacheL1_found_at_N,
+                      stats_ocacheL1_found_at_1 );
+         VG_(message)(Vg_DebugMsg,
+                      " ocacheL1: %,12lu at 2+  %,12lu move-fwds", 
+                      stats_ocacheL1_found_at_N,
+                      stats_ocacheL1_movefwds );
+         VG_(message)(Vg_DebugMsg,
+                      " ocacheL1: %,12lu sizeB  %,12lu useful",
+                      (UWord)sizeof(OCache),
+                      4 * OC_W32S_PER_LINE * OC_LINES_PER_SET * OC_N_SETS );
+         VG_(message)(Vg_DebugMsg,
+                      " ocacheL2: %,12lu refs   %,12lu misses", 
+                      stats__ocacheL2_refs, 
+                      stats__ocacheL2_misses );
+         VG_(message)(Vg_DebugMsg,
+                      " ocacheL2:    %,9lu max nodes %,9lu curr nodes",
+                      stats__ocacheL2_n_nodes_max,
+                      stats__ocacheL2_n_nodes );
+         VG_(message)(Vg_DebugMsg,
+                      " niacache: %,12lu refs   %,12lu misses",
+                      stats__nia_cache_queries, stats__nia_cache_misses);
+      }
    }
 
    if (0) {
