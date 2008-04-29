@@ -43,20 +43,26 @@
 
 #include "mc_include.h"
 
+#undef MC_SIZEOF_GUEST_STATE
+
 #if defined(VGA_x86)
 # include "libvex_guest_x86.h"
+# define MC_SIZEOF_GUEST_STATE sizeof(VexGuestX86State)
 #endif
 
 #if defined(VGA_amd64)
 # include "libvex_guest_amd64.h"
+# define MC_SIZEOF_GUEST_STATE sizeof(VexGuestAMD64State)
 #endif
 
 #if defined(VGA_ppc32)
 # include "libvex_guest_ppc32.h"
+# define MC_SIZEOF_GUEST_STATE sizeof(VexGuestPPC32State)
 #endif
 
 #if defined(VGA_ppc64)
 # include "libvex_guest_ppc64.h"
+# define MC_SIZEOF_GUEST_STATE sizeof(VexGuestPPC64State)
 #endif
 
 static inline Bool host_is_big_endian ( void ) {
@@ -77,7 +83,7 @@ static inline Bool host_is_little_endian ( void ) {
    shadow area), or -1 if this piece of guest state is not to be
    tracked.
 
-   Since origin tags are 32-bits long, we expect any returns value
+   Since origin tags are 32-bits long, we expect any returned value
    (except -1) to be a multiple of 4, between 0 and
    sizeof(guest-state)-4 inclusive.
 
@@ -101,7 +107,20 @@ static inline Bool host_is_little_endian ( void ) {
    This function is dependent on the host's endianness, hence we
    assert that the use case is supported.
 */
+static Int get_otrack_shadow_offset_wrk ( Int offset, Int szB ); /*fwds*/
+
 Int MC_(get_otrack_shadow_offset) ( Int offset, Int szB )
+{
+   Int cand = get_otrack_shadow_offset_wrk( offset, szB );
+   if (cand == -1) 
+      return cand;
+   tl_assert(0 == (cand & 3));
+   tl_assert(cand <= MC_SIZEOF_GUEST_STATE-4);
+   return cand;
+}
+
+
+static Int get_otrack_shadow_offset_wrk ( Int offset, Int szB )
 {
    /* -------------------- ppc64 -------------------- */
 
@@ -112,43 +131,51 @@ Int MC_(get_otrack_shadow_offset) ( Int offset, Int szB )
 #  define SZB(_fieldname) \
       (sizeof(((VexGuestPPC64State*)0)->guest_##_fieldname))
 
-   Int  o  = offset;
-   Int  sz = szB;
+   Int  sz   = szB;
+   Int  o    = offset;
    tl_assert(sz > 0);
    tl_assert(host_is_big_endian());
 
-   if (o == GOF(GPR0) && sz == 8) return o;
-   if (o == GOF(GPR1) && sz == 8) return o;
-   if (o == GOF(GPR2) && sz == 8) return o;
-   if (o == GOF(GPR3) && sz == 8) return o;
-   if (o == GOF(GPR4) && sz == 8) return o;
-   if (o == GOF(GPR5) && sz == 8) return o;
-   if (o == GOF(GPR6) && sz == 8) return o;
-   if (o == GOF(GPR7) && sz == 8) return o;
-   if (o == GOF(GPR8) && sz == 8) return o;
-   if (o == GOF(GPR9) && sz == 8) return o;
-   if (o == GOF(GPR10) && sz == 8) return o;
-   if (o == GOF(GPR11) && sz == 8) return o;
-   if (o == GOF(GPR12) && sz == 8) return o;
-   if (o == GOF(GPR13) && sz == 8) return o;
-   if (o == GOF(GPR14) && sz == 8) return o;
-   if (o == GOF(GPR15) && sz == 8) return o;
-   if (o == GOF(GPR16) && sz == 8) return o;
-   if (o == GOF(GPR17) && sz == 8) return o;
-   if (o == GOF(GPR18) && sz == 8) return o;
-   if (o == GOF(GPR19) && sz == 8) return o;
-   if (o == GOF(GPR20) && sz == 8) return o;
-   if (o == GOF(GPR21) && sz == 8) return o;
-   if (o == GOF(GPR22) && sz == 8) return o;
-   if (o == GOF(GPR23) && sz == 8) return o;
-   if (o == GOF(GPR24) && sz == 8) return o;
-   if (o == GOF(GPR25) && sz == 8) return o;
-   if (o == GOF(GPR26) && sz == 8) return o;
-   if (o == GOF(GPR27) && sz == 8) return o;
-   if (o == GOF(GPR28) && sz == 8) return o;
-   if (o == GOF(GPR29) && sz == 8) return o;
-   if (o == GOF(GPR30) && sz == 8) return o;
-   if (o == GOF(GPR31) && sz == 8) return o;
+   if (sz == 8 || sz == 4) {
+      /* The point of this is to achieve
+         if ((o == GOF(GPRn) && sz == 8) || (o == 4+GOF(GPRn) && sz == 4))
+            return GOF(GPRn);
+         by testing ox instead of o, and setting ox back 4 bytes when sz == 4.
+      */
+      Bool ox = sz == 8 ? o : (o - 4);
+      if (ox == GOF(GPR0)) return ox;
+      if (ox == GOF(GPR1)) return ox;
+      if (ox == GOF(GPR2)) return ox;
+      if (ox == GOF(GPR3)) return ox;
+      if (ox == GOF(GPR4)) return ox;
+      if (ox == GOF(GPR5)) return ox;
+      if (ox == GOF(GPR6)) return ox;
+      if (ox == GOF(GPR7)) return ox;
+      if (ox == GOF(GPR8)) return ox;
+      if (ox == GOF(GPR9)) return ox;
+      if (ox == GOF(GPR10)) return ox;
+      if (ox == GOF(GPR11)) return ox;
+      if (ox == GOF(GPR12)) return ox;
+      if (ox == GOF(GPR13)) return ox;
+      if (ox == GOF(GPR14)) return ox;
+      if (ox == GOF(GPR15)) return ox;
+      if (ox == GOF(GPR16)) return ox;
+      if (ox == GOF(GPR17)) return ox;
+      if (ox == GOF(GPR18)) return ox;
+      if (ox == GOF(GPR19)) return ox;
+      if (ox == GOF(GPR20)) return ox;
+      if (ox == GOF(GPR21)) return ox;
+      if (ox == GOF(GPR22)) return ox;
+      if (ox == GOF(GPR23)) return ox;
+      if (ox == GOF(GPR24)) return ox;
+      if (ox == GOF(GPR25)) return ox;
+      if (ox == GOF(GPR26)) return ox;
+      if (ox == GOF(GPR27)) return ox;
+      if (ox == GOF(GPR28)) return ox;
+      if (ox == GOF(GPR29)) return ox;
+      if (ox == GOF(GPR30)) return ox;
+      if (ox == GOF(GPR31)) return ox;
+   }
 
    if (o == GOF(LR)  && sz == 8) return o;
    if (o == GOF(CTR) && sz == 8) return o;
