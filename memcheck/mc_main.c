@@ -1626,6 +1626,9 @@ static void make_mem_defined_if_addressable ( Addr a, SizeT len )
       vabits2 = get_vabits2( a+i );
       if (LIKELY(VA_BITS2_NOACCESS != vabits2)) {
          set_vabits2(a+i, VA_BITS2_DEFINED);
+         if (UNLIKELY(MC_(clo_mc_level) >= 3)) {
+            MC_(helperc_b_store1)( a+i, 0 ); /* clear the origin tag */
+         } 
       }
    }
 }
