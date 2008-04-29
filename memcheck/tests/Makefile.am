@@ -103,6 +103,8 @@ EXTRA_DIST = $(noinst_SCRIPTS) \
 	origin4-many.vgtest origin4-many.stdout.exp \
 	origin4-many.stderr.exp-x86-glibc25 \
 	origin4-many.stderr.exp-amd64-glibc25 \
+	origin5-bz2.vgtest origin5-bz2.stdout.exp \
+	origin5-bz2.stderr.exp \
 	oset_test.stderr.exp oset_test.stdout.exp oset_test.vgtest \
 	overlap.stderr.exp overlap.stdout.exp overlap.vgtest \
 	partiallydefinedeq.vgtest partiallydefinedeq.stderr.exp \
@@ -187,7 +189,7 @@ check_PROGRAMS = \
 	nanoleak nanoleak2 new_nothrow \
 	noisy_child \
 	null_socket oset_test \
-	origin1-yes origin2-not-quite origin3-no origin4-many \
+	origin1-yes origin2-not-quite origin3-no origin4-many origin5-bz2 \
 	overlap \
 	partiallydefinedeq \
 	partial_load pdb-realloc pdb-realloc2 \
@@ -242,6 +244,8 @@ varinfo5_CFLAGS		= $(AM_FLAG_M3264_PRI) $(AM_CFLAGS) -O -g
 varinfo6_CFLAGS		= $(AM_FLAG_M3264_PRI) $(AM_CFLAGS) -O -g
 # This requires optimisation in order to get just one resulting error
 origin4_many_CFLAGS	= $(AM_FLAG_M3264_PRI) $(AM_CFLAGS) -O -g
+# Apply -O so as to run in reasonable time
+origin5_bz2_CFLAGS	= $(AM_FLAG_M3264_PRI) $(AM_CFLAGS) -O -g
 
 # C++ tests
 mismatches_SOURCES	= mismatches.cpp
