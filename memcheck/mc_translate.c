@@ -330,11 +330,19 @@ void assign ( HChar cat, MCEnv* mce, IRTemp tmp, IRExpr* expr ) {
 #define mkV128(_n)               IRExpr_Const(IRConst_V128(_n))
 #define mkexpr(_tmp)             IRExpr_RdTmp((_tmp))
 
-/* bind the given expression to a new temporary, and return the
+/* Bind the given expression to a new temporary, and return the
    temporary.  This effectively converts an arbitrary expression into
-   an atom. */
+   an atom.
+
+   'ty' is the type of 'e' and hence the type that the new temporary
+   needs to be.  But passing it is redundant, since we can deduce the
+   type merely by inspecting 'e'.  So at least that fact to assert
+   that the two types agree. */
 static IRAtom* assignNew ( HChar cat, MCEnv* mce, IRType ty, IRExpr* e ) {
-   IRTemp t = newIRTemp(mce->bb->tyenv, ty);
+   IRTemp t;
+   IRType tyE = typeOfIRExpr(mce->bb->tyenv, e);
+   tl_assert(tyE == ty); /* so 'ty' is redundant (!) */
+   t = newIRTemp(mce->bb->tyenv, ty);
    assign(cat, mce, t, e);
    return mkexpr(t);
 }
@@ -3422,10 +3430,6 @@ IRSB* MC_(instrument) ( VgCallbackClosure* closure,
    MCEnv   mce;
    IRSB*   bb;
 
-   /* Set up stuff for tracking the guest IP */
-   Bool   curr_IP_known = False;
-   Addr64 curr_IP       = 0;
-
    if (gWordTy != hWordTy) {
       /* We don't currently support this case. */
       VG_(tool_panic)("host/guest word size mismatch");
@@ -3594,10 +3598,6 @@ IRSB* MC_(instrument) ( VgCallbackClosure* closure,
             break;
 
          case Ist_IMark:
-            /* Generate no instrumentation, but do note the guest
-               address of this instruction */
-            curr_IP_known = True;
-            curr_IP       = st->Ist.IMark.addr;
             break;
 
          case Ist_NoOp:
@@ -3609,11 +3609,6 @@ IRSB* MC_(instrument) ( VgCallbackClosure* closure,
             break;
 
          case Ist_AbiHint:
-            /* If this assert fails, we've got a bad IR block, one in
-               which an AbiHint isn't preceded by an IMark.  But an
-               IMark is supposed to be at the start of *every*
-               instruction's IR.  Hence this should never fail. */
-            tl_assert(curr_IP_known);
             do_AbiHint( &mce, st->Ist.AbiHint.base,
                               st->Ist.AbiHint.len,
                               st->Ist.AbiHint.nia );
