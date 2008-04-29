@@ -196,17 +196,17 @@ static void update_SP_aliases(Long delta)
 /* Given a guest IP, get an origin tag for a 1-element stack trace,
    and wrap it up in an IR atom that can be passed as the origin-tag
    value for a stack-adjustment helper function. */
-static IRExpr* mk_otag_Expr ( Addr64 guest_IP )
+static IRExpr* mk_ecu_Expr ( Addr64 guest_IP )
 {
-   UInt otag;
+   UInt ecu;
    ExeContext* ec
       = VG_(make_depth_1_ExeContext_from_Addr)( (Addr)guest_IP );
    vg_assert(ec);
-   otag = VG_(get_ExeContext_uniq)( ec );
-   vg_assert(otag > 0);
-   /* This is always safe to do, since otag is only 32 bits, and
+   ecu = VG_(get_ECU_from_ExeContext)( ec );
+   vg_assert(VG_(is_plausible_ECU)(ecu));
+   /* This is always safe to do, since ecu is only 32 bits, and
       HWord is 32 or 64. */
-   return mkIRExpr_HWord( (HWord)otag );
+   return mkIRExpr_HWord( (HWord)ecu );
 }
 
 
@@ -275,24 +275,24 @@ IRSB* vg_SP_update_pass ( void*             closureV,
 
 #  define DO_NEW(syze, tmpp)                                            \
       do {                                                              \
-         Bool vanilla, w_otag;                                          \
+         Bool vanilla, w_ecu;                                           \
          vg_assert(curr_IP_known);                                      \
          vanilla = NULL != VG_(tdict).track_new_mem_stack_##syze;       \
-         w_otag  = NULL != VG_(tdict).track_new_mem_stack_##syze##_w_otag; \
-         vg_assert(!(vanilla && w_otag)); /* can't have both */         \
-         if (!(vanilla || w_otag))                                      \
+         w_ecu   = NULL != VG_(tdict).track_new_mem_stack_##syze##_w_ECU; \
+         vg_assert(!(vanilla && w_ecu)); /* can't have both */          \
+         if (!(vanilla || w_ecu))                                       \
             goto generic;                                               \
                                                                         \
          /* I don't know if it's really necessary to say that the */    \
          /* call reads the stack pointer.  But anyway, we do. */        \
-         if (w_otag) {                                                  \
+         if (w_ecu) {                                                   \
             dcall = unsafeIRDirty_0_N(                                  \
                        2/*regparms*/,                                   \
-                       "track_new_mem_stack_" #syze "_w_otag",          \
+                       "track_new_mem_stack_" #syze "_w_ECU",           \
                        VG_(fnptr_to_fnentry)(                           \
-                          VG_(tdict).track_new_mem_stack_##syze##_w_otag ), \
+                          VG_(tdict).track_new_mem_stack_##syze##_w_ECU ), \
                        mkIRExprVec_2(IRExpr_RdTmp(tmpp),                \
-                                     mk_otag_Expr(curr_IP))             \
+                                     mk_ecu_Expr(curr_IP))              \
                     );                                                  \
          } else {                                                       \
             dcall = unsafeIRDirty_0_N(                                  \
@@ -496,7 +496,7 @@ IRSB* vg_SP_update_pass ( void*             closureV,
                        "VG_(unknown_SP_update)", 
                        VG_(fnptr_to_fnentry)( &VG_(unknown_SP_update) ),
                        mkIRExprVec_3( IRExpr_RdTmp(old_SP), st->Ist.Put.data,
-                                      mk_otag_Expr(curr_IP) ) 
+                                      mk_ecu_Expr(curr_IP) ) 
                     );
             addStmtToIRSB( bb, IRStmt_Dirty(dcall) );
             /* don't forget the original assignment */
@@ -532,7 +532,7 @@ IRSB* vg_SP_update_pass ( void*             closureV,
                        VG_(fnptr_to_fnentry)( &VG_(unknown_SP_update) ),
                        mkIRExprVec_3( IRExpr_RdTmp(old_SP),
                                       IRExpr_RdTmp(new_SP), 
-                                      mk_otag_Expr(curr_IP) )
+                                      mk_ecu_Expr(curr_IP) )
                     );
             addStmtToIRSB( bb, IRStmt_Dirty(dcall) );
             /* 5 */

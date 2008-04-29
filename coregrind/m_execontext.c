@@ -77,9 +77,10 @@ struct _ExeContext {
    struct _ExeContext* chain;
    /* A 32-bit unsigned integer that uniquely identifies this
       ExeContext.  Memcheck uses these for origin tracking.  Values
-      must be nonzero (else Memcheck's origin tracking is hosed) and
-      must be unique.  Hence they start at 1. */
-   UInt uniq;
+      must be nonzero (else Memcheck's origin tracking is hosed), must
+      be a multiple of four, and must be unique.  Hence they start at
+      4. */
+   UInt ecu;
    /* Variable-length array.  The size is 'n_ips'; at
       least 1, at most VG_DEEPEST_BACKTRACE.  [0] is the current IP,
       [1] is its caller, [2] is the caller of [1], etc. */
@@ -93,8 +94,8 @@ static ExeContext** ec_htab; /* array [ec_htab_size] of ExeContext* */
 static SizeT        ec_htab_size;     /* one of the values in ec_primes */
 static SizeT        ec_htab_size_idx; /* 0 .. N_EC_PRIMES-1 */
 
-/* .uniq serial number */
-static UInt ec_uniq_ctr = 1; /* We must never issue zero */
+/* ECU serial number */
+static UInt ec_next_ecu = 4; /* We must never issue zero */
 
 
 /* Stats only: the number of times the system was searched to locate a
@@ -401,8 +402,14 @@ static ExeContext* record_ExeContext_wrk2 ( Addr* ips, UInt n_ips )
    for (i = 0; i < n_ips; i++)
       new_ec->ips[i] = ips[i];
 
-   new_ec->uniq  = ec_uniq_ctr++;
-   vg_assert(new_ec->uniq > 0);
+   vg_assert(VG_(is_plausible_ECU)(ec_next_ecu));
+   new_ec->ecu = ec_next_ecu;
+   ec_next_ecu += 4;
+   if (ec_next_ecu == 0) {
+      /* Urr.  Now we're hosed; we emitted 2^30 ExeContexts already
+         and have run out of numbers.  Not sure what to do. */
+      VG_(core_panic)("m_execontext: more than 2^30 ExeContexts created");
+   }
 
    new_ec->n_ips = n_ips;
    new_ec->chain = ec_htab[hash];
@@ -436,9 +443,10 @@ ExeContext* VG_(make_depth_1_ExeContext_from_Addr)( Addr a ) {
 StackTrace VG_(get_ExeContext_StackTrace) ( ExeContext* e ) {
    return e->ips;
 }  
-UInt VG_(get_ExeContext_uniq)( ExeContext* e ) {
-   vg_assert(e->uniq > 0);
-   return e->uniq;
+
+UInt VG_(get_ECU_from_ExeContext)( ExeContext* e ) {
+   vg_assert(VG_(is_plausible_ECU)(e->ecu));
+   return e->ecu;
 }
 
 Int VG_(get_ExeContext_n_ips)( ExeContext* e ) {
@@ -446,14 +454,15 @@ Int VG_(get_ExeContext_n_ips)( ExeContext* e ) {
    return e->n_ips;
 }
 
-ExeContext* VG_(get_ExeContext_from_uniq)( UInt uniq )
+ExeContext* VG_(get_ExeContext_from_ECU)( UInt ecu )
 {
    UWord i;
    ExeContext* ec;
+   vg_assert(VG_(is_plausible_ECU)(ecu));
    vg_assert(ec_htab_size > 0);
    for (i = 0; i < ec_htab_size; i++) {
       for (ec = ec_htab[i]; ec; ec = ec->chain) {
-         if (ec->uniq == uniq)
+         if (ec->ecu == ecu)
             return ec;
       }
    }

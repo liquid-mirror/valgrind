@@ -218,9 +218,9 @@ void* MC_(new_block) ( ThreadId tid,
    if (is_zeroed)
       MC_(make_mem_defined)( p, szB );
    else {
-      UInt otag = VG_(get_ExeContext_uniq)(ec);
-      tl_assert(otag > 0);
-      MC_(make_mem_undefined_w_otag)( p, szB, otag );
+      UInt ecu = VG_(get_ECU_from_ExeContext)(ec);
+      tl_assert(VG_(is_plausible_ECU)(ecu));
+      MC_(make_mem_undefined_w_otag)( p, szB, ecu | MC_OKIND_HEAP );
    }
 
    return (void*)p;
@@ -397,19 +397,20 @@ void* MC_(realloc) ( ThreadId tid, void* p_old, SizeT new_szB )
       a_new = (Addr)VG_(cli_malloc)(VG_(clo_alignment), new_szB);
 
       if (a_new) {
-         UInt        otag;
+         UInt        ecu;
          ExeContext* ec;
 
          ec = VG_(record_ExeContext)(tid, 0/*first_ip_delta*/);
          tl_assert(ec);
-         otag = VG_(get_ExeContext_uniq)(ec);
-         tl_assert(otag > 0);
+         ecu = VG_(get_ECU_from_ExeContext)(ec);
+         tl_assert(VG_(is_plausible_ECU)(ecu));
 
          /* First half kept and copied, second half new, red zones as normal */
          MC_(make_mem_noaccess)( a_new-MC_MALLOC_REDZONE_SZB, 
                                  MC_MALLOC_REDZONE_SZB );
          MC_(copy_address_range_state) ( (Addr)p_old, a_new, mc->szB );
-         MC_(make_mem_undefined_w_otag)( a_new+mc->szB, new_szB-mc->szB, otag );
+         MC_(make_mem_undefined_w_otag)( a_new+mc->szB, new_szB-mc->szB,
+                                                        ecu | MC_OKIND_HEAP );
          MC_(make_mem_noaccess)        ( a_new+new_szB, MC_MALLOC_REDZONE_SZB );
 
          /* Possibly fill new area with specified junk */

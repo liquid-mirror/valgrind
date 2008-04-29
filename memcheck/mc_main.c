@@ -1583,18 +1583,26 @@ void MC_(make_mem_undefined_w_otag) ( Addr a, SizeT len, UInt otag )
 }
 
 static
-void make_mem_undefined_w_tid ( Addr a, SizeT len, ThreadId tid )
+void make_mem_undefined_w_tid_and_okind ( Addr a, SizeT len,
+                                          ThreadId tid, UInt okind )
 {
-   UInt        otag;
+   UInt        ecu;
    ExeContext* here;
    /* VG_(record_ExeContext) checks for validity of tid, and asserts
       if it is invalid.  So no need to do it here. */
+   tl_assert(okind <= 3);
    here = VG_(record_ExeContext)( tid, 0/*first_ip_delta*/ );
    tl_assert(here);
-   otag = VG_(get_ExeContext_uniq)(here);
-   tl_assert(otag > 0);
-   MC_(make_mem_undefined_w_otag) ( a, len, otag );
+   ecu = VG_(get_ECU_from_ExeContext)(here);
+   tl_assert(VG_(is_plausible_ECU)(ecu));
+   MC_(make_mem_undefined_w_otag) ( a, len, ecu | okind );
 }
+
+static
+void make_mem_undefined_w_tid ( Addr a, SizeT len, ThreadId tid ) {
+   make_mem_undefined_w_tid_and_okind ( a, len, tid, MC_OKIND_UNKNOWN );
+}
+
 
 void MC_(make_mem_defined) ( Addr a, SizeT len )
 {
@@ -2300,8 +2308,9 @@ void make_aligned_word64_noaccess ( Addr a )
 
 /*--------------- adjustment by 4 bytes ---------------*/
 
-static void VG_REGPARM(2) mc_new_mem_stack_4_w_otag(Addr new_SP, UInt otag)
+static void VG_REGPARM(2) mc_new_mem_stack_4_w_ECU(Addr new_SP, UInt ecu)
 {
+   UInt otag = ecu | MC_OKIND_STACK;
    PROF_EVENT(110, "new_mem_stack_4");
    if (VG_IS_4_ALIGNED( -VG_STACK_REDZONE_SZB + new_SP )) {
       make_aligned_word32_undefined_w_otag ( -VG_STACK_REDZONE_SZB + new_SP, otag );
@@ -2332,8 +2341,9 @@ static void VG_REGPARM(1) mc_die_mem_stack_4(Addr new_SP)
 
 /*--------------- adjustment by 8 bytes ---------------*/
 
-static void VG_REGPARM(2) mc_new_mem_stack_8_w_otag(Addr new_SP, UInt otag)
+static void VG_REGPARM(2) mc_new_mem_stack_8_w_ECU(Addr new_SP, UInt ecu)
 {
+   UInt otag = ecu | MC_OKIND_STACK;
    PROF_EVENT(111, "new_mem_stack_8");
    if (VG_IS_8_ALIGNED( -VG_STACK_REDZONE_SZB + new_SP )) {
       make_aligned_word64_undefined_w_otag ( -VG_STACK_REDZONE_SZB + new_SP, otag );
@@ -2373,8 +2383,9 @@ static void VG_REGPARM(1) mc_die_mem_stack_8(Addr new_SP)
 
 /*--------------- adjustment by 12 bytes ---------------*/
 
-static void VG_REGPARM(2) mc_new_mem_stack_12_w_otag(Addr new_SP, UInt otag)
+static void VG_REGPARM(2) mc_new_mem_stack_12_w_ECU(Addr new_SP, UInt ecu)
 {
+   UInt otag = ecu | MC_OKIND_STACK;
    PROF_EVENT(112, "new_mem_stack_12");
    if (VG_IS_8_ALIGNED( -VG_STACK_REDZONE_SZB + new_SP )) {
       make_aligned_word64_undefined_w_otag ( -VG_STACK_REDZONE_SZB + new_SP  , otag );
@@ -2429,8 +2440,9 @@ static void VG_REGPARM(1) mc_die_mem_stack_12(Addr new_SP)
 
 /*--------------- adjustment by 16 bytes ---------------*/
 
-static void VG_REGPARM(2) mc_new_mem_stack_16_w_otag(Addr new_SP, UInt otag)
+static void VG_REGPARM(2) mc_new_mem_stack_16_w_ECU(Addr new_SP, UInt ecu)
 {
+   UInt otag = ecu | MC_OKIND_STACK;
    PROF_EVENT(113, "new_mem_stack_16");
    if (VG_IS_8_ALIGNED( -VG_STACK_REDZONE_SZB + new_SP )) {
       /* Have 8-alignment at +0, hence do 8 at +0 and 8 at +8. */
@@ -2484,8 +2496,9 @@ static void VG_REGPARM(1) mc_die_mem_stack_16(Addr new_SP)
 
 /*--------------- adjustment by 32 bytes ---------------*/
 
-static void VG_REGPARM(2) mc_new_mem_stack_32_w_otag(Addr new_SP, UInt otag)
+static void VG_REGPARM(2) mc_new_mem_stack_32_w_ECU(Addr new_SP, UInt ecu)
 {
+   UInt otag = ecu | MC_OKIND_STACK;
    PROF_EVENT(114, "new_mem_stack_32");
    if (VG_IS_8_ALIGNED( -VG_STACK_REDZONE_SZB + new_SP )) {
       /* Straightforward */
@@ -2552,8 +2565,9 @@ static void VG_REGPARM(1) mc_die_mem_stack_32(Addr new_SP)
 
 /*--------------- adjustment by 112 bytes ---------------*/
 
-static void VG_REGPARM(2) mc_new_mem_stack_112_w_otag(Addr new_SP, UInt otag)
+static void VG_REGPARM(2) mc_new_mem_stack_112_w_ECU(Addr new_SP, UInt ecu)
 {
+   UInt otag = ecu | MC_OKIND_STACK;
    PROF_EVENT(115, "new_mem_stack_112");
    if (VG_IS_8_ALIGNED( -VG_STACK_REDZONE_SZB + new_SP )) {
       make_aligned_word64_undefined_w_otag ( -VG_STACK_REDZONE_SZB + new_SP   , otag );
@@ -2623,8 +2637,9 @@ static void VG_REGPARM(1) mc_die_mem_stack_112(Addr new_SP)
 
 /*--------------- adjustment by 128 bytes ---------------*/
 
-static void VG_REGPARM(2) mc_new_mem_stack_128_w_otag(Addr new_SP, UInt otag)
+static void VG_REGPARM(2) mc_new_mem_stack_128_w_ECU(Addr new_SP, UInt ecu)
 {
+   UInt otag = ecu | MC_OKIND_STACK;
    PROF_EVENT(116, "new_mem_stack_128");
    if (VG_IS_8_ALIGNED( -VG_STACK_REDZONE_SZB + new_SP )) {
       make_aligned_word64_undefined_w_otag ( -VG_STACK_REDZONE_SZB + new_SP   , otag );
@@ -2700,8 +2715,9 @@ static void VG_REGPARM(1) mc_die_mem_stack_128(Addr new_SP)
 
 /*--------------- adjustment by 144 bytes ---------------*/
 
-static void VG_REGPARM(2) mc_new_mem_stack_144_w_otag(Addr new_SP, UInt otag)
+static void VG_REGPARM(2) mc_new_mem_stack_144_w_ECU(Addr new_SP, UInt ecu)
 {
+   UInt otag = ecu | MC_OKIND_STACK;
    PROF_EVENT(117, "new_mem_stack_144");
    if (VG_IS_8_ALIGNED( -VG_STACK_REDZONE_SZB + new_SP )) {
       make_aligned_word64_undefined_w_otag ( -VG_STACK_REDZONE_SZB + new_SP,     otag );
@@ -2783,8 +2799,9 @@ static void VG_REGPARM(1) mc_die_mem_stack_144(Addr new_SP)
 
 /*--------------- adjustment by 160 bytes ---------------*/
 
-static void VG_REGPARM(2) mc_new_mem_stack_160_w_otag(Addr new_SP, UInt otag)
+static void VG_REGPARM(2) mc_new_mem_stack_160_w_ECU(Addr new_SP, UInt ecu)
 {
+   UInt otag = ecu | MC_OKIND_STACK;
    PROF_EVENT(118, "new_mem_stack_160");
    if (VG_IS_8_ALIGNED( -VG_STACK_REDZONE_SZB + new_SP )) {
       make_aligned_word64_undefined_w_otag ( -VG_STACK_REDZONE_SZB + new_SP,     otag );
@@ -2872,8 +2889,9 @@ static void VG_REGPARM(1) mc_die_mem_stack_160(Addr new_SP)
 
 /*--------------- adjustment by N bytes ---------------*/
 
-static void mc_new_mem_stack_w_otag ( Addr a, SizeT len, UInt otag )
+static void mc_new_mem_stack_w_ECU ( Addr a, SizeT len, UInt ecu )
 {
+   UInt otag = ecu | MC_OKIND_STACK;
    PROF_EVENT(115, "new_mem_stack_w_otag");
    MC_(make_mem_undefined_w_otag) ( -VG_STACK_REDZONE_SZB + a, len, otag );
 }
@@ -2921,77 +2939,77 @@ static void mc_die_mem_stack ( Addr a, SizeT len )
 */
 
 
-/* Here's a simple cache to hold nia -> otag mappings.  It could be
+/* Here's a simple cache to hold nia -> ECU mappings.  It could be
    improved so as to have a lower miss rate. */
 
 static UWord stats__nia_cache_queries = 0;
 static UWord stats__nia_cache_misses  = 0;
 
 typedef
-   struct { UWord arg0; UWord res0; 
-            UWord arg1; UWord res1; }
+   struct { UWord nia0; UWord ecu0;   /* nia0 maps to ecu0 */
+            UWord nia1; UWord ecu1; } /* nia1 maps to ecu1 */
    WCacheEnt;
 
-#define N_NIA_TO_OTAG_CACHE 511
+#define N_NIA_TO_ECU_CACHE 511
 
-static WCacheEnt nia_to_otag_cache[N_NIA_TO_OTAG_CACHE];
+static WCacheEnt nia_to_ecu_cache[N_NIA_TO_ECU_CACHE];
 
-static void init_nia_to_otag_cache ( void )
+static void init_nia_to_ecu_cache ( void )
 {
    UWord       i;
    Addr        zero_addr = 0;
    ExeContext* zero_ec;
-   UInt        zero_otag;
+   UInt        zero_ecu;
    /* Fill all the slots with an entry for address zero, and the
       relevant otags accordingly.  Hence the cache is initially filled
       with valid data. */
    zero_ec = VG_(make_depth_1_ExeContext_from_Addr)(zero_addr);
    tl_assert(zero_ec);
-   zero_otag = VG_(get_ExeContext_uniq)(zero_ec);
-   tl_assert(zero_otag > 0);
-   for (i = 0; i < N_NIA_TO_OTAG_CACHE; i++) {
-      nia_to_otag_cache[i].arg0 = zero_addr;
-      nia_to_otag_cache[i].res0 = zero_otag;
-      nia_to_otag_cache[i].arg1 = zero_addr;
-      nia_to_otag_cache[i].res1 = zero_otag;
+   zero_ecu = VG_(get_ECU_from_ExeContext)(zero_ec);
+   tl_assert(VG_(is_plausible_ECU)(zero_ecu));
+   for (i = 0; i < N_NIA_TO_ECU_CACHE; i++) {
+      nia_to_ecu_cache[i].nia0 = zero_addr;
+      nia_to_ecu_cache[i].ecu0 = zero_ecu;
+      nia_to_ecu_cache[i].nia1 = zero_addr;
+      nia_to_ecu_cache[i].ecu1 = zero_ecu;
    }
 }
 
-static inline UInt convert_nia_to_otag ( Addr nia )
+static inline UInt convert_nia_to_ecu ( Addr nia )
 {
    UWord i;
-   UInt        otag;
+   UInt        ecu;
    ExeContext* ec;
 
-   tl_assert( sizeof(nia_to_otag_cache[0].arg1) == sizeof(nia) );
+   tl_assert( sizeof(nia_to_ecu_cache[0].nia1) == sizeof(nia) );
 
    stats__nia_cache_queries++;
-   i = nia % N_NIA_TO_OTAG_CACHE;
-   tl_assert(i >= 0 && i < N_NIA_TO_OTAG_CACHE);
+   i = nia % N_NIA_TO_ECU_CACHE;
+   tl_assert(i >= 0 && i < N_NIA_TO_ECU_CACHE);
 
-   if (LIKELY( nia_to_otag_cache[i].arg0 == nia ))
-      return nia_to_otag_cache[i].res0;
+   if (LIKELY( nia_to_ecu_cache[i].nia0 == nia ))
+      return nia_to_ecu_cache[i].ecu0;
 
-   if (LIKELY( nia_to_otag_cache[i].arg1 == nia )) {
+   if (LIKELY( nia_to_ecu_cache[i].nia1 == nia )) {
 #     define SWAP(_w1,_w2) { UWord _t = _w1; _w1 = _w2; _w2 = _t; }
-      SWAP( nia_to_otag_cache[i].arg0, nia_to_otag_cache[i].arg1 );
-      SWAP( nia_to_otag_cache[i].res0, nia_to_otag_cache[i].res1 );
+      SWAP( nia_to_ecu_cache[i].nia0, nia_to_ecu_cache[i].nia1 );
+      SWAP( nia_to_ecu_cache[i].ecu0, nia_to_ecu_cache[i].ecu1 );
 #     undef SWAP
-      return nia_to_otag_cache[i].res0;
+      return nia_to_ecu_cache[i].ecu0;
    }
 
    stats__nia_cache_misses++;
    ec = VG_(make_depth_1_ExeContext_from_Addr)(nia);
    tl_assert(ec);
-   otag = VG_(get_ExeContext_uniq)(ec);
-   tl_assert(otag > 0);
+   ecu = VG_(get_ECU_from_ExeContext)(ec);
+   tl_assert(VG_(is_plausible_ECU)(ecu));
 
-   nia_to_otag_cache[i].arg1 = nia_to_otag_cache[i].arg0;
-   nia_to_otag_cache[i].res1 = nia_to_otag_cache[i].res0;
+   nia_to_ecu_cache[i].nia1 = nia_to_ecu_cache[i].nia0;
+   nia_to_ecu_cache[i].ecu1 = nia_to_ecu_cache[i].ecu0;
 
-   nia_to_otag_cache[i].arg0 = nia;
-   nia_to_otag_cache[i].res0  = (UWord)otag;
-   return otag;
+   nia_to_ecu_cache[i].nia0 = nia;
+   nia_to_ecu_cache[i].ecu0 = (UWord)ecu;
+   return ecu;
 }
 
 
@@ -3008,8 +3026,9 @@ void MC_(helperc_MAKE_STACK_UNINIT) ( Addr base, UWord len, Addr nia )
                   base, len, nia );
 
    if (UNLIKELY( MC_(clo_mc_level) == 3 )) {
-      otag = convert_nia_to_otag ( nia );
-      tl_assert(otag > 0);
+      UInt ecu = convert_nia_to_ecu ( nia );
+      tl_assert(VG_(is_plausible_ECU)(ecu));
+      otag = ecu | MC_OKIND_STACK;
    } else {
       tl_assert(nia == 0);
       otag = 0;
@@ -3665,17 +3684,15 @@ struct _MC_Error {
       struct {
          SizeT szB;   // size of value in bytes
          // Origin info
-         UInt  otag;  // origin tag
+         UInt        otag;      // origin tag
          ExeContext* origin_ec; // filled in later
-         Bool is_stack_origin; // filled in later
       } Value;
 
       // Use of an undefined value in a conditional branch or move.
       struct {
          // Origin info
-         UInt  otag;  // origin tag
+         UInt        otag;      // origin tag
          ExeContext* origin_ec; // filled in later
-         Bool is_stack_origin; // filled in later
       } Cond;
 
       // Addressability error in core (signal-handling) operation.
@@ -3700,9 +3717,8 @@ struct _MC_Error {
       // System call register input contains undefined bytes.
       struct {
          // Origin info
-         UInt  otag;  // origin tag
+         UInt        otag;      // origin tag
          ExeContext* origin_ec; // filled in later
-         Bool is_stack_origin; // filled in later
       } RegParam;
 
       // System call memory input contains undefined/unaddressable bytes
@@ -3710,9 +3726,8 @@ struct _MC_Error {
          Bool     isAddrErr;  // Addressability or definedness error?
          AddrInfo ai;
          // Origin info
-         UInt  otag;  // origin tag
+         UInt        otag;      // origin tag
          ExeContext* origin_ec; // filled in later
-         Bool is_stack_origin; // filled in later
       } MemParam;
 
       // Problem found from a client request like CHECK_MEM_IS_ADDRESSABLE.
@@ -3720,9 +3735,8 @@ struct _MC_Error {
          Bool     isAddrErr;  // Addressability or definedness error?
          AddrInfo ai;
          // Origin info
-         UInt  otag;  // origin tag
+         UInt        otag;      // origin tag
          ExeContext* origin_ec; // filled in later
-         Bool is_stack_origin; // filled in later
       } User;
 
       // Program tried to free() something that's not a heap block (this
@@ -3896,23 +3910,27 @@ static void mc_pp_msg( Char* xml_name, Error* err, const HChar* format, ... )
    VG_(pp_ExeContext)( VG_(get_error_where)(err) );
 }
 
-static void mc_pp_origin ( ExeContext* ec, Bool is_stack_origin )
+static void mc_pp_origin ( ExeContext* ec, UInt okind )
 {
+   HChar* src   = NULL;
    HChar* xpre  = VG_(clo_xml) ? "  <what>" : " ";
    HChar* xpost = VG_(clo_xml) ? "</what>"  : "";
    tl_assert(ec);
+
+   switch (okind) {
+      case MC_OKIND_STACK:   src = " by a stack allocation"; break;
+      case MC_OKIND_HEAP:    src = " by a heap allocation"; break;
+      case MC_OKIND_USER:    src = " by a client request"; break;
+      case MC_OKIND_UNKNOWN: src = ""; break;
+   }
+   tl_assert(src); /* guards against invalid 'okind' */
+
    if (VG_(clo_xml)) {
       VG_(message)(Vg_UserMsg, "  <origin>");
    }
-   if (is_stack_origin) {
-      VG_(message)(Vg_UserMsg, "%sUninitialised value originates "
-                               "from a stack allocation%s",
-                               xpre, xpost);
-   } else {
-      VG_(message)(Vg_UserMsg, "%sUninitialised value originates "
-                               "from a heap block allocated%s",
-                               xpre, xpost);
-   }
+
+   VG_(message)(Vg_UserMsg, "%sUninitialised value was created%s%s",
+                            xpre, src, xpost);
    VG_(pp_ExeContext)( ec );
    if (VG_(clo_xml)) {
       VG_(message)(Vg_UserMsg, "  </origin>");
@@ -3947,7 +3965,7 @@ static void mc_pp_Error ( Error* err )
          }
          if (extra->Err.Value.origin_ec)
             mc_pp_origin( extra->Err.Value.origin_ec,
-                          extra->Err.Value.is_stack_origin );
+                          extra->Err.Value.otag & 3 );
          break;
 
       case Err_Cond:
@@ -3964,7 +3982,7 @@ static void mc_pp_Error ( Error* err )
          }
          if (extra->Err.Cond.origin_ec)
             mc_pp_origin( extra->Err.Cond.origin_ec,
-                          extra->Err.Cond.is_stack_origin );
+                          extra->Err.Cond.otag & 3 );
          break;
 
       case Err_RegParam:
@@ -3974,7 +3992,7 @@ static void mc_pp_Error ( Error* err )
                    VG_(get_error_string)(err));
          if (extra->Err.RegParam.origin_ec)
             mc_pp_origin( extra->Err.RegParam.origin_ec,
-                          extra->Err.RegParam.is_stack_origin );
+                          extra->Err.RegParam.otag & 3 );
          break;
 
       case Err_MemParam:
@@ -3989,7 +4007,7 @@ static void mc_pp_Error ( Error* err )
                         &extra->Err.MemParam.ai, False);
          if (extra->Err.MemParam.origin_ec && !extra->Err.MemParam.isAddrErr)
             mc_pp_origin( extra->Err.MemParam.origin_ec,
-                          extra->Err.MemParam.is_stack_origin );
+                          extra->Err.MemParam.otag & 3 );
          break;
 
       case Err_User:
@@ -4003,7 +4021,7 @@ static void mc_pp_Error ( Error* err )
                         False);
          if (extra->Err.User.origin_ec && !extra->Err.User.isAddrErr)
             mc_pp_origin( extra->Err.User.origin_ec,
-                          extra->Err.User.is_stack_origin );
+                          extra->Err.User.otag & 3 );
          break;
 
       case Err_Free:
@@ -4198,10 +4216,9 @@ static void mc_record_value_error ( ThreadId tid, Int szB, UInt otag )
    tl_assert( MC_(clo_mc_level) >= 2 );
    if (otag > 0)
       tl_assert( MC_(clo_mc_level) == 3 );
-   extra.Err.Value.szB             = szB;
-   extra.Err.Value.otag            = otag;
-   extra.Err.Value.origin_ec       = NULL;  /* Filled in later */
-   extra.Err.Value.is_stack_origin = False; /* Filled in later */
+   extra.Err.Value.szB       = szB;
+   extra.Err.Value.otag      = otag;
+   extra.Err.Value.origin_ec = NULL;  /* Filled in later */
    VG_(maybe_record_error)( tid, Err_Value, /*addr*/0, /*s*/NULL, &extra );
 }
 
@@ -4211,9 +4228,8 @@ static void mc_record_cond_error ( ThreadId tid, UInt otag )
    tl_assert( MC_(clo_mc_level) >= 2 );
    if (otag > 0)
       tl_assert( MC_(clo_mc_level) == 3 );
-   extra.Err.Cond.otag            = otag;
-   extra.Err.Cond.origin_ec       = NULL;  /* Filled in later */
-   extra.Err.Cond.is_stack_origin = False; /* Filled in later */
+   extra.Err.Cond.otag      = otag;
+   extra.Err.Cond.origin_ec = NULL;  /* Filled in later */
    VG_(maybe_record_error)( tid, Err_Cond, /*addr*/0, /*s*/NULL, &extra );
 }
 
@@ -4232,9 +4248,8 @@ static void mc_record_regparam_error ( ThreadId tid, Char* msg, UInt otag )
    tl_assert(VG_INVALID_THREADID != tid);
    if (otag > 0)
       tl_assert( MC_(clo_mc_level) == 3 );
-   extra.Err.RegParam.otag            = otag;
-   extra.Err.RegParam.origin_ec       = NULL;  /* Filled in later */
-   extra.Err.RegParam.is_stack_origin = False; /* Filled in later */
+   extra.Err.RegParam.otag      = otag;
+   extra.Err.RegParam.origin_ec = NULL;  /* Filled in later */
    VG_(maybe_record_error)( tid, Err_RegParam, /*addr*/0, msg, &extra );
 }
 
@@ -4249,11 +4264,10 @@ static void mc_record_memparam_error ( ThreadId tid, Addr a,
       tl_assert( MC_(clo_mc_level) == 3 );
       tl_assert( !isAddrErr );
    }
-   extra.Err.MemParam.isAddrErr       = isAddrErr;
-   extra.Err.MemParam.ai.tag          = Addr_Undescribed;
-   extra.Err.MemParam.otag            = otag;
-   extra.Err.MemParam.origin_ec       = NULL;  /* Filled in later */
-   extra.Err.MemParam.is_stack_origin = False; /* Filled in later */
+   extra.Err.MemParam.isAddrErr = isAddrErr;
+   extra.Err.MemParam.ai.tag    = Addr_Undescribed;
+   extra.Err.MemParam.otag      = otag;
+   extra.Err.MemParam.origin_ec = NULL;  /* Filled in later */
    VG_(maybe_record_error)( tid, Err_MemParam, a, msg, &extra );
 }
 
@@ -4334,11 +4348,10 @@ static void mc_record_user_error ( ThreadId tid, Addr a,
       tl_assert( MC_(clo_mc_level) >= 2 );
    }
    tl_assert(VG_INVALID_THREADID != tid);
-   extra.Err.User.isAddrErr       = isAddrErr;
-   extra.Err.User.ai.tag          = Addr_Undescribed;
-   extra.Err.User.otag            = otag;
-   extra.Err.User.origin_ec       = NULL;  /* Filled in later */
-   extra.Err.User.is_stack_origin = False; /* Filled in later */
+   extra.Err.User.isAddrErr = isAddrErr;
+   extra.Err.User.ai.tag    = Addr_Undescribed;
+   extra.Err.User.otag      = otag;
+   extra.Err.User.origin_ec = NULL;  /* Filled in later */
    VG_(maybe_record_error)( tid, Err_User, a, /*s*/NULL, &extra );
 }
 
@@ -4530,18 +4543,15 @@ static void describe_addr ( Addr a, /*OUT*/AddrInfo* ai )
    return;
 }
 
-/* Fill in *origin_ec and *is_stack_origin as specified by otag, or
-   NULL/zero them if otag does not refer to a known origin. */
+/* Fill in *origin_ec as specified by otag, or NULL it out if otag
+   does not refer to a known origin. */
 static void update_origin ( /*OUT*/ExeContext** origin_ec,
-                            /*OUT*/Bool* is_stack_origin, UInt otag )
+                            UInt otag )
 {
+   UInt ecu = otag & ~3;
    *origin_ec = NULL;
-   *is_stack_origin = False;
-   if (otag != 0) {
-      *origin_ec = VG_(get_ExeContext_from_uniq)( otag );
-      if (*origin_ec)
-         *is_stack_origin
-            = 1 == VG_(get_ExeContext_n_ips)(*origin_ec);
+   if (VG_(is_plausible_ECU)(ecu)) {
+      *origin_ec = VG_(get_ExeContext_from_ECU)( ecu );
    }
 }
 
@@ -4568,17 +4578,14 @@ static UInt mc_update_extra( Error* err )
    // a length-1 trace indicates a stack origin.  FIXME.
    case Err_Value:
       update_origin( &extra->Err.Value.origin_ec,
-                     &extra->Err.Value.is_stack_origin,
                      extra->Err.Value.otag );
       return sizeof(MC_Error);
    case Err_Cond:
       update_origin( &extra->Err.Cond.origin_ec,
-                     &extra->Err.Cond.is_stack_origin,
                      extra->Err.Cond.otag );
       return sizeof(MC_Error);
    case Err_RegParam:
       update_origin( &extra->Err.RegParam.origin_ec,
-                     &extra->Err.RegParam.is_stack_origin,
                      extra->Err.RegParam.otag );
       return sizeof(MC_Error);
 
@@ -4591,7 +4598,6 @@ static UInt mc_update_extra( Error* err )
       describe_addr ( VG_(get_error_address)(err),
                       &extra->Err.MemParam.ai );
       update_origin( &extra->Err.MemParam.origin_ec,
-                     &extra->Err.MemParam.is_stack_origin,
                      extra->Err.MemParam.otag );
       return sizeof(MC_Error);
    case Err_Jump:
@@ -4602,7 +4608,6 @@ static UInt mc_update_extra( Error* err )
       describe_addr ( VG_(get_error_address)(err),
                       &extra->Err.User.ai );
       update_origin( &extra->Err.User.origin_ec,
-                     &extra->Err.User.is_stack_origin,
                      extra->Err.User.otag );
       return sizeof(MC_Error);
    case Err_Free:
@@ -5921,7 +5926,7 @@ static Bool mc_handle_client_request ( ThreadId tid, UWord* arg, UWord* ret )
          break;
 
       case VG_USERREQ__MAKE_MEM_UNDEFINED:
-         make_mem_undefined_w_tid ( arg[1], arg[2], tid );
+         make_mem_undefined_w_tid_and_okind ( arg[1], arg[2], tid, MC_OKIND_USER );
          *ret = -1;
          break;
 
@@ -6482,17 +6487,17 @@ static void mc_post_clo_init ( void )
    if (MC_(clo_mc_level) == 3) {
       /* We're doing origin tracking. */
 #     ifdef PERF_FAST_STACK
-      VG_(track_new_mem_stack_4_w_otag)   ( mc_new_mem_stack_4_w_otag   );
-      VG_(track_new_mem_stack_8_w_otag)   ( mc_new_mem_stack_8_w_otag   );
-      VG_(track_new_mem_stack_12_w_otag)  ( mc_new_mem_stack_12_w_otag  );
-      VG_(track_new_mem_stack_16_w_otag)  ( mc_new_mem_stack_16_w_otag  );
-      VG_(track_new_mem_stack_32_w_otag)  ( mc_new_mem_stack_32_w_otag  );
-      VG_(track_new_mem_stack_112_w_otag) ( mc_new_mem_stack_112_w_otag );
-      VG_(track_new_mem_stack_128_w_otag) ( mc_new_mem_stack_128_w_otag );
-      VG_(track_new_mem_stack_144_w_otag) ( mc_new_mem_stack_144_w_otag );
-      VG_(track_new_mem_stack_160_w_otag) ( mc_new_mem_stack_160_w_otag );
+      VG_(track_new_mem_stack_4_w_ECU)   ( mc_new_mem_stack_4_w_ECU   );
+      VG_(track_new_mem_stack_8_w_ECU)   ( mc_new_mem_stack_8_w_ECU   );
+      VG_(track_new_mem_stack_12_w_ECU)  ( mc_new_mem_stack_12_w_ECU  );
+      VG_(track_new_mem_stack_16_w_ECU)  ( mc_new_mem_stack_16_w_ECU  );
+      VG_(track_new_mem_stack_32_w_ECU)  ( mc_new_mem_stack_32_w_ECU  );
+      VG_(track_new_mem_stack_112_w_ECU) ( mc_new_mem_stack_112_w_ECU );
+      VG_(track_new_mem_stack_128_w_ECU) ( mc_new_mem_stack_128_w_ECU );
+      VG_(track_new_mem_stack_144_w_ECU) ( mc_new_mem_stack_144_w_ECU );
+      VG_(track_new_mem_stack_160_w_ECU) ( mc_new_mem_stack_160_w_ECU );
 #     endif
-      VG_(track_new_mem_stack_w_otag)     ( mc_new_mem_stack_w_otag     );
+      VG_(track_new_mem_stack_w_ECU)     ( mc_new_mem_stack_w_ECU     );
    } else {
       /* Not doing origin tracking */
 #     ifdef PERF_FAST_STACK
@@ -6751,7 +6756,7 @@ static void mc_pre_clo_init(void)
    tl_assert(-1 != VG_(log2)(BYTES_PER_SEC_VBIT_NODE));
 
    init_OCache();
-   init_nia_to_otag_cache();
+   init_nia_to_ecu_cache();
 }
 
 VG_DETERMINE_INTERFACE_VERSION(mc_pre_clo_init)

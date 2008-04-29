@@ -172,16 +172,16 @@ typedef struct {
    void (*track_die_mem_brk)         (Addr, SizeT);
    void (*track_die_mem_munmap)      (Addr, SizeT);
 
-   void VG_REGPARM(2) (*track_new_mem_stack_4_w_otag)  (Addr,UInt);
-   void VG_REGPARM(2) (*track_new_mem_stack_8_w_otag)  (Addr,UInt);
-   void VG_REGPARM(2) (*track_new_mem_stack_12_w_otag) (Addr,UInt);
-   void VG_REGPARM(2) (*track_new_mem_stack_16_w_otag) (Addr,UInt);
-   void VG_REGPARM(2) (*track_new_mem_stack_32_w_otag) (Addr,UInt);
-   void VG_REGPARM(2) (*track_new_mem_stack_112_w_otag)(Addr,UInt);
-   void VG_REGPARM(2) (*track_new_mem_stack_128_w_otag)(Addr,UInt);
-   void VG_REGPARM(2) (*track_new_mem_stack_144_w_otag)(Addr,UInt);
-   void VG_REGPARM(2) (*track_new_mem_stack_160_w_otag)(Addr,UInt);
-   void (*track_new_mem_stack_w_otag)(Addr,SizeT,UInt);
+   void VG_REGPARM(2) (*track_new_mem_stack_4_w_ECU)  (Addr,UInt);
+   void VG_REGPARM(2) (*track_new_mem_stack_8_w_ECU)  (Addr,UInt);
+   void VG_REGPARM(2) (*track_new_mem_stack_12_w_ECU) (Addr,UInt);
+   void VG_REGPARM(2) (*track_new_mem_stack_16_w_ECU) (Addr,UInt);
+   void VG_REGPARM(2) (*track_new_mem_stack_32_w_ECU) (Addr,UInt);
+   void VG_REGPARM(2) (*track_new_mem_stack_112_w_ECU)(Addr,UInt);
+   void VG_REGPARM(2) (*track_new_mem_stack_128_w_ECU)(Addr,UInt);
+   void VG_REGPARM(2) (*track_new_mem_stack_144_w_ECU)(Addr,UInt);
+   void VG_REGPARM(2) (*track_new_mem_stack_160_w_ECU)(Addr,UInt);
+   void (*track_new_mem_stack_w_ECU)(Addr,SizeT,UInt);
 
    void VG_REGPARM(1) (*track_new_mem_stack_4)  (Addr);
    void VG_REGPARM(1) (*track_new_mem_stack_8)  (Addr);

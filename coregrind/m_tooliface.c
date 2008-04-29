@@ -100,7 +100,7 @@ VgNeeds VG_(needs) = {
 /* static */
 Bool VG_(sanity_check_needs)(Char** failmsg)
 {
-   Bool any_new_mem_stack_N, any_new_mem_stack_N_w_otag;
+   Bool any_new_mem_stack_N, any_new_mem_stack_N_w_ECU;
    Bool any_new_mem_stack_w_conflicting_otags;
    Bool any_die_mem_stack_N;
 
@@ -137,43 +137,43 @@ Bool VG_(sanity_check_needs)(Char** failmsg)
       return False;
    }
 
-   /* Check that new_mem_stack_w_otag is defined if any
-      new_mem_stack_N_w_otag are. */
-   any_new_mem_stack_N_w_otag
-      = VG_(tdict).track_new_mem_stack_4_w_otag   ||
-        VG_(tdict).track_new_mem_stack_8_w_otag   ||
-        VG_(tdict).track_new_mem_stack_12_w_otag  ||
-        VG_(tdict).track_new_mem_stack_16_w_otag  ||
-        VG_(tdict).track_new_mem_stack_32_w_otag  ||
-        VG_(tdict).track_new_mem_stack_112_w_otag ||
-        VG_(tdict).track_new_mem_stack_128_w_otag ||
-        VG_(tdict).track_new_mem_stack_144_w_otag ||
-        VG_(tdict).track_new_mem_stack_160_w_otag;
+   /* Check that new_mem_stack_w_ECU is defined if any
+      new_mem_stack_N_w_ECU are. */
+   any_new_mem_stack_N_w_ECU
+      = VG_(tdict).track_new_mem_stack_4_w_ECU   ||
+        VG_(tdict).track_new_mem_stack_8_w_ECU   ||
+        VG_(tdict).track_new_mem_stack_12_w_ECU  ||
+        VG_(tdict).track_new_mem_stack_16_w_ECU  ||
+        VG_(tdict).track_new_mem_stack_32_w_ECU  ||
+        VG_(tdict).track_new_mem_stack_112_w_ECU ||
+        VG_(tdict).track_new_mem_stack_128_w_ECU ||
+        VG_(tdict).track_new_mem_stack_144_w_ECU ||
+        VG_(tdict).track_new_mem_stack_160_w_ECU;
 
-   if (any_new_mem_stack_N_w_otag && ! VG_(tdict).track_new_mem_stack_w_otag) {
-      *failmsg = "Tool error: one of the specialised 'new_mem_stack_N_w_otag'\n"
-                 "   events tracked, but not the generic 'new_mem_stack_w_otag' one.\n"
-                 "   'new_mem_stack_w_otag' should be defined\n";
+   if (any_new_mem_stack_N_w_ECU && ! VG_(tdict).track_new_mem_stack_w_ECU) {
+      *failmsg = "Tool error: one of the specialised 'new_mem_stack_N_w_ECU'\n"
+                 "   events tracked, but not the generic 'new_mem_stack_w_ECU' one.\n"
+                 "   'new_mem_stack_w_ECU' should be defined\n";
       return False;
    }
 
    /* Check that in no cases are both with- and without-otag versions of the
       same new_mem_stack_ function defined. */
    any_new_mem_stack_w_conflicting_otags
-      = (VG_(tdict).track_new_mem_stack_4   && VG_(tdict).track_new_mem_stack_4_w_otag)   ||
-        (VG_(tdict).track_new_mem_stack_8   && VG_(tdict).track_new_mem_stack_8_w_otag)   ||
-        (VG_(tdict).track_new_mem_stack_12  && VG_(tdict).track_new_mem_stack_12_w_otag)  ||
-        (VG_(tdict).track_new_mem_stack_16  && VG_(tdict).track_new_mem_stack_16_w_otag)  ||
-        (VG_(tdict).track_new_mem_stack_32  && VG_(tdict).track_new_mem_stack_32_w_otag)  ||
-        (VG_(tdict).track_new_mem_stack_112 && VG_(tdict).track_new_mem_stack_112_w_otag) ||
-        (VG_(tdict).track_new_mem_stack_128 && VG_(tdict).track_new_mem_stack_128_w_otag) ||
-        (VG_(tdict).track_new_mem_stack_144 && VG_(tdict).track_new_mem_stack_144_w_otag) ||
-        (VG_(tdict).track_new_mem_stack_160 && VG_(tdict).track_new_mem_stack_160_w_otag) ||
-        (VG_(tdict).track_new_mem_stack     && VG_(tdict).track_new_mem_stack_w_otag);
+      = (VG_(tdict).track_new_mem_stack_4   && VG_(tdict).track_new_mem_stack_4_w_ECU)   ||
+        (VG_(tdict).track_new_mem_stack_8   && VG_(tdict).track_new_mem_stack_8_w_ECU)   ||
+        (VG_(tdict).track_new_mem_stack_12  && VG_(tdict).track_new_mem_stack_12_w_ECU)  ||
+        (VG_(tdict).track_new_mem_stack_16  && VG_(tdict).track_new_mem_stack_16_w_ECU)  ||
+        (VG_(tdict).track_new_mem_stack_32  && VG_(tdict).track_new_mem_stack_32_w_ECU)  ||
+        (VG_(tdict).track_new_mem_stack_112 && VG_(tdict).track_new_mem_stack_112_w_ECU) ||
+        (VG_(tdict).track_new_mem_stack_128 && VG_(tdict).track_new_mem_stack_128_w_ECU) ||
+        (VG_(tdict).track_new_mem_stack_144 && VG_(tdict).track_new_mem_stack_144_w_ECU) ||
+        (VG_(tdict).track_new_mem_stack_160 && VG_(tdict).track_new_mem_stack_160_w_ECU) ||
+        (VG_(tdict).track_new_mem_stack     && VG_(tdict).track_new_mem_stack_w_ECU);
 
    if (any_new_mem_stack_w_conflicting_otags) {
       *failmsg = "Tool error: tool supplies both a 'new_mem_stack_N' and a\n"
-                 "   'new_mem_stack_N_w_otag' function for some N (or none),\n"
+                 "   'new_mem_stack_N_w_ECU' function for some N (or none),\n"
                  "   but you can only have one or the other (not both)\n";
       return False;
    }
@@ -351,16 +351,16 @@ DEF0(track_die_mem_stack_signal,  Addr, SizeT)
 DEF0(track_die_mem_brk,           Addr, SizeT)
 DEF0(track_die_mem_munmap,        Addr, SizeT)
 
-DEF2(track_new_mem_stack_4_w_otag,    Addr, UInt)
-DEF2(track_new_mem_stack_8_w_otag,    Addr, UInt)
-DEF2(track_new_mem_stack_12_w_otag,   Addr, UInt)
-DEF2(track_new_mem_stack_16_w_otag,   Addr, UInt)
-DEF2(track_new_mem_stack_32_w_otag,   Addr, UInt)
-DEF2(track_new_mem_stack_112_w_otag,  Addr, UInt)
-DEF2(track_new_mem_stack_128_w_otag,  Addr, UInt)
-DEF2(track_new_mem_stack_144_w_otag,  Addr, UInt)
-DEF2(track_new_mem_stack_160_w_otag,  Addr, UInt)
-DEF0(track_new_mem_stack_w_otag,      Addr, SizeT, UInt)
+DEF2(track_new_mem_stack_4_w_ECU,    Addr, UInt)
+DEF2(track_new_mem_stack_8_w_ECU,    Addr, UInt)
+DEF2(track_new_mem_stack_12_w_ECU,   Addr, UInt)
+DEF2(track_new_mem_stack_16_w_ECU,   Addr, UInt)
+DEF2(track_new_mem_stack_32_w_ECU,   Addr, UInt)
+DEF2(track_new_mem_stack_112_w_ECU,  Addr, UInt)
+DEF2(track_new_mem_stack_128_w_ECU,  Addr, UInt)
+DEF2(track_new_mem_stack_144_w_ECU,  Addr, UInt)
+DEF2(track_new_mem_stack_160_w_ECU,  Addr, UInt)
+DEF0(track_new_mem_stack_w_ECU,      Addr, SizeT, UInt)
 
 DEF1(track_new_mem_stack_4,       Addr)
 DEF1(track_new_mem_stack_8,       Addr)

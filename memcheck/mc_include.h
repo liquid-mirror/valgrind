@@ -128,6 +128,41 @@ Int MC_(get_otrack_shadow_offset) ( Int offset, Int szB );
 extern 
 IRType MC_(get_otrack_reg_array_equiv_int_type) ( IRRegArray* arr );
 
+/* Constants which are used as the lowest 2 bits in origin tags.
+   
+   An origin tag comprises an upper 30-bit ECU field and a lower 2-bit
+   'kind' field.  The ECU field is a number given out by m_execontext
+   and has a 1-1 mapping with ExeContext*s.  An ECU can be used
+   directly as an origin tag (otag), but in fact we want to put
+   additional information 'kind' field to indicate roughly where the
+   tag came from.  This helps print more understandable error messages
+   for the user -- it has no other purpose.
+
+   Hence the following 2-bit constants are needed for 'kind' field. 
+
+   To summarise:
+
+   * Both ECUs and origin tags are represented as 32-bit words
+
+   * m_execontext and the core-tool interface deal purely in ECUs.
+     They have no knowledge of origin tags - that is a purely
+     Memcheck-internal matter.
+
+   * all valid ECUs have the lowest 2 bits zero and at least
+     one of the upper 30 bits nonzero (see VG_(is_plausible_ECU))
+
+   * to convert from an ECU to an otag, OR in one of the MC_OKIND_
+     constants below
+
+   * to convert an otag back to an ECU, AND it with ~3
+*/
+
+#define MC_OKIND_UNKNOWN  0  /* unknown origin */
+#define MC_OKIND_HEAP     1  /* this is a heap origin */
+#define MC_OKIND_STACK    2  /* this is a stack origin */
+#define MC_OKIND_USER     3  /* arises from user-supplied client req */
+
+
 /*------------------------------------------------------------*/
 /*--- Profiling of memory events                           ---*/
 /*------------------------------------------------------------*/
