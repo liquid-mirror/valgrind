@@ -101,12 +101,12 @@ EXTRA_DIST = $(noinst_SCRIPTS) \
 	origin3-no.vgtest origin3-no.stdout.exp \
 	origin3-no.stderr.exp \
 	origin4-many.vgtest origin4-many.stdout.exp \
-	origin4-many.stderr.exp-x86-glibc25 \
-	origin4-many.stderr.exp-amd64-glibc25 \
+	origin4-many.stderr.exp-glibc25-x86 \
+	origin4-many.stderr.exp-glibc25-amd64 \
 	origin5-bz2.vgtest origin5-bz2.stdout.exp \
-	origin5-bz2.stderr.exp-x86-glibc25 \
-	origin5-bz2.stderr.exp-amd64-glibc25 \
-	origin5-bz2.stderr.exp-ppc64-glibc27 \
+	origin5-bz2.stderr.exp-glibc25-x86 \
+	origin5-bz2.stderr.exp-glibc25-amd64 \
+	origin5-bz2.stderr.exp-glibc27-ppc64 \
 	oset_test.stderr.exp oset_test.stdout.exp oset_test.vgtest \
 	overlap.stderr.exp overlap.stdout.exp overlap.vgtest \
 	partiallydefinedeq.vgtest partiallydefinedeq.stderr.exp \
