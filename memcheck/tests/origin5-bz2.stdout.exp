@@ -1,15 +1,15 @@
 22323 bytes read
 bar
-    block 1: crc = 0x3EE781DE, combined CRC = 0x3EE781DE, size = 22373
+    block 1: crc = 0xA212ABF8, combined CRC = 0xA212ABF8, size = 22373
     too repetitive; using fallback sorting algorithm
-      22373 in block, 13509 after MTF & 1-2 coding, 79+2 syms in use
-      pass 1: size is 17126, grp uses are 37 63 3 89 7 72 
-      pass 2: size is 6508, grp uses are 24 76 4 91 14 62 
-      pass 3: size is 6485, grp uses are 21 69 4 89 17 71 
-      pass 4: size is 6475, grp uses are 21 69 4 84 22 71 
-      bytes: mapping 19, selectors 66, code lengths 131, codes 6472
-    final combined CRC = 0x3EE781DE
-   6714 after compression
+      22373 in block, 13504 after MTF & 1-2 coding, 79+2 syms in use
+      pass 1: size is 17143, grp uses are 38 62 2 92 6 71 
+      pass 2: size is 6506, grp uses are 28 71 0 86 9 77 
+      pass 3: size is 6479, grp uses are 26 70 0 81 11 83 
+      pass 4: size is 6469, grp uses are 26 69 0 74 17 85 
+      bytes: mapping 19, selectors 66, code lengths 134, codes 6465
+    final combined CRC = 0xA212ABF8
+   6710 after compression
 bit 0   -5  DATA_ERROR_MAGIC 
 bit 1   -5  DATA_ERROR_MAGIC 
 bit 2   -5  DATA_ERROR_MAGIC 

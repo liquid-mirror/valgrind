@@ -6454,6 +6454,8 @@ static char *bzerrorstrings[] = {
        ,"???"   /* for future */
 };
 
+#include "../memcheck.h"
+
 // If given a cmd line arg, behave as a correctness regtest
 // (run fast and be verbose).  If not, run for a long time
 // which is what is needed for the performance suite.
@@ -6462,9 +6464,8 @@ int main ( int argc, char** argv )
    int   r;
    int   bit;
    int   i;
-   char* undef;
    int regtest;
-   volatile char undefS;
+
    assert(argc == 1 || argc == 2);
    regtest = argc==2;
    serviceFn = g_serviceFn;
@@ -6473,10 +6474,9 @@ int main ( int argc, char** argv )
    nIn = vex_strlen(inbuf)+1;
    vex_printf( "%d bytes read\n", nIn );
 
-   undef = malloc(1); assert(undef);
-   //inbuf[10] = *undef;
-   inbuf[10] = undefS;
-   free(undef);
+   /* Make inbuf[10] be undefined, so as to check that this source
+      eventually shows up in various places. */
+   VALGRIND_MAKE_MEM_UNDEFINED(&inbuf[10], sizeof(char));
 
    if (inbuf[10] == 11) vex_printf("foo\n"); else vex_printf("bar\n");
 
