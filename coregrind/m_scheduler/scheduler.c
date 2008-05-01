@@ -558,11 +558,17 @@ static void do_pre_run_checks ( ThreadState* tst )
    vg_assert(VG_IS_4_ALIGNED(a_vexsh2));
    vg_assert(VG_IS_4_ALIGNED(a_spill));
 
+   /* Check that the guest state and its two shadows have the same
+      size, and that there are no holes in between.  The latter is
+      important because Memcheck assumes that it can reliably access
+      the shadows by indexing off a pointer to the start of the
+      primary guest state area. */
    vg_assert(sz_vex == sz_vexsh1);
    vg_assert(sz_vex == sz_vexsh2);
    vg_assert(a_vex + 1 * sz_vex == a_vexsh1);
    vg_assert(a_vex + 2 * sz_vex == a_vexsh2);
-
+   /* Also check there's no hole between the second shadow area and
+      the spill area. */
    vg_assert(sz_spill == LibVEX_N_SPILL_BYTES);
    vg_assert(a_vex + 3 * sz_vex == a_spill);
 
@@ -576,6 +582,8 @@ static void do_pre_run_checks ( ThreadState* tst )
    vg_assert(VG_IS_16_ALIGNED(& tst->arch.vex.guest_VR1));
    vg_assert(VG_IS_16_ALIGNED(& tst->arch.vex_shadow1.guest_VR1));
    vg_assert(VG_IS_16_ALIGNED(& tst->arch.vex_shadow2.guest_VR1));
+   /* and the spill area must also be 16-aligned */
+   vg_assert(VG_IS_16_ALIGNED(a_spill));
 #  endif   
 }
 

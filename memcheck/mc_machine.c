@@ -347,6 +347,8 @@ static Int get_otrack_shadow_offset_wrk ( Int offset, Int szB )
    if (o == GOF(TISTART)   && sz == 4) return -1;
    if (o == GOF(TILEN)     && sz == 4) return -1;
    if (o == GOF(VSCR)      && sz == 4) return -1;
+   if (o == GOF(REDIR_SP)  && sz == 4) return -1;
+   if (o == GOF(SPRG3_RO)  && sz == 4) return -1;
 
    tl_assert(SZB(FPR0) == 8);
    if (o == GOF(FPR0) && sz == 8) return o;
@@ -694,6 +696,12 @@ IRType MC_(get_otrack_reg_array_equiv_int_type) ( IRRegArray* arr )
 
    /* -------------------- ppc32 -------------------- */
 #  elif defined(VGA_ppc32)
+   /* The redir stack. */
+   if (arr->base == offsetof(VexGuestPPC32State,guest_REDIR_STACK[0])
+       && arr->elemTy == Ity_I32
+       && arr->nElems == VEX_GUEST_PPC32_REDIR_STACK_SIZE)
+      return Ity_I32;
+
    VG_(printf)("get_reg_array_equiv_int_type(ppc32): unhandled: ");
    ppIRRegArray(arr);
    VG_(printf)("\n");

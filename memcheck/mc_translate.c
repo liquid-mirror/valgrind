@@ -3928,6 +3928,8 @@ static IRAtom* narrowTo32 ( MCEnv* mce, IRAtom* e ) {
    IRType eTy = typeOfIRExpr(mce->bb->tyenv, e);
    if (eTy == Ity_I64)
       return assignNew( 'B', mce, Ity_I32, unop(Iop_64to32, e) );
+   if (eTy == Ity_I32)
+      return e;
    tl_assert(0);
 }
 

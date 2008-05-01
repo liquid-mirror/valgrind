@@ -94,11 +94,11 @@ typedef
       /* --- BEGIN vex-mandated guest state --- */
 
       /* Saved machine context. */
-      VexGuestArchState vex;
+      VexGuestArchState __attribute__((aligned(16))) vex;
 
       /* Saved shadow context (2 copies). */
-      VexGuestArchState vex_shadow1;
-      VexGuestArchState vex_shadow2;
+      VexGuestArchState __attribute__((aligned(16))) vex_shadow1;
+      VexGuestArchState __attribute__((aligned(16))) vex_shadow2;
 
       /* Spill area. */
       UChar vex_spill[LibVEX_N_SPILL_BYTES];
