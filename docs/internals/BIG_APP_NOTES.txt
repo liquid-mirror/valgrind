@@ -63,8 +63,8 @@ $ diff -U3 ./xpcom/ds/nsRecyclingAllocator.cpp-ORIG ./xpcom/ds/nsRecyclingAlloca
 
 
 
-Building OpenOffice 2.4 from source
------------------------------------
+Building OpenOffice 2.4/3.0 from source
+---------------------------------------
 
 svn co svn://svn.gnome.org/svn/ooo-build/trunk ooo-build
 
@@ -127,6 +127,12 @@ source ooenv  # just once!
 # appears to complain aobut "ulimit -c", but OK nevertheless
 
 valgrind [args] ./soffice.bin
+
+
+## More notes, 2 May 08
+export DOWNLOADCACHE=~/DOWNLOADS/OOo to cache downloaded tarballs
+##export CONFIGURE_FLAGS=--disable-mediawiki is needed for dev300-m10
+##or not -- causes the build to fail later.  Don't use this.
 
 
 # These are packages I had to install on a fairly vanilla OpenSUSE
