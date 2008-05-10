@@ -479,7 +479,7 @@ static Int  n_errs_shown = 0;
 /* Top-level entry point to the error management subsystem.
    All detected errors are notified here; this routine decides if/when the
    user should see the error. */
-void VG_(maybe_record_error) ( ThreadId tid, 
+Bool VG_(maybe_record_error) ( ThreadId tid, 
                                ErrorKind ekind, Addr a, Char* s, void* extra )
 {
           Error  err;
@@ -526,7 +526,7 @@ void VG_(maybe_record_error) ( ThreadId tid,
          VG_(message)(Vg_UserMsg, "");
          stopping_message = True;
       }
-      return;
+      return False;
    }
 
    /* After M_COLLECT_ERRORS_SLOWLY_AFTER different errors have
@@ -575,7 +575,7 @@ void VG_(maybe_record_error) ( ThreadId tid,
             errors       = p;
 	 }
 
-         return;
+         return False;
       }
       p_prev = p;
       p      = p->next;
@@ -633,10 +633,12 @@ void VG_(maybe_record_error) ( ThreadId tid,
       is_first_shown_context = False;
       n_errs_shown++;
       do_actions_on_error(p, /*allow_db_attach*/True);
+      return True;
    } else {
       n_errs_suppressed++;
       p->supp->count++;
    }
+   return False;
 }
 
 /* Second top-level entry point to the error management subsystem, for

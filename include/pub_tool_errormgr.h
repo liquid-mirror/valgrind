@@ -71,8 +71,11 @@ void*       VG_(get_error_extra)   ( Error* err );
    won't be copied if it's NULL).
 
    If no 'a', 's' or 'extra' of interest needs to be recorded, just use
-   NULL for them.  */
-extern void VG_(maybe_record_error) ( ThreadId tid, ErrorKind ekind,
+   NULL for them.  
+   
+   Return True if the error has been actually recorded.
+   */
+extern Bool VG_(maybe_record_error) ( ThreadId tid, ErrorKind ekind,
                                       Addr a, Char* s, void* extra );
 
 /* Similar to VG_(maybe_record_error)(), except this one doesn't record the

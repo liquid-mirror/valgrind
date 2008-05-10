@@ -303,6 +303,20 @@ static UWord clo_ignore_i = 0;
 static UInt clo_max_segment_set_size = 20;
 
 
+// If true, segment set recycling is enabled. 
+static Bool clo_ss_recycle = True;
+
+// If true, we record the contexts of 
+//   - last lock lossage and 
+//   - segment creation
+static Bool clo_more_context = True;
+
+// If true, Helgrind starts behaving almost like 
+// a pure happens-before detector (i.e. it creates a happens-before
+// arc between each matching Unlock and Lock operations). 
+// Very time and memory consuming! 
+static Bool clo_pure_happens_before = False;
+
 /* This has to do with printing error messages.  See comments on
    announce_threadset() and summarise_threadset().  Perhaps it
    should be a command line option. */
@@ -384,6 +398,10 @@ static void hg_free ( void* p ) {
 #define LIKELY(cond)   (cond)
 #define UNLIKELY(cond) (cond)
 #endif
+
+// Paranoia:  it's critical for performance that the requested inlining
+// occurs.  So try extra hard.
+#define INLINE    inline __attribute__((always_inline))
 
 
 /*----------------------------------------------------------------*/
@@ -502,6 +520,7 @@ typedef
       struct _Segment* other;  /* Possibly a segment from some other 
                                   thread, which happened-before me */
       XArray*          vts;    /* XArray of ScalarTS */
+      ExeContext       *context; 
       /* DEBUGGING ONLY: what does 'other' arise from?  
          c=thread creation, j=join, s=cvsignal, S=semaphore */
       Char other_hint;
@@ -817,6 +836,24 @@ static inline Segment *SEG_maybe_get(SegmentID n)
    return &SegmentArray.chunks[n / SEGMENT_ID_CHUNK_SIZE]
                               [n % SEGMENT_ID_CHUNK_SIZE];
 }
+
+static void SEG_set_context(SegmentID n, ExeContext *context) 
+{
+   if (SCE_SVALS)
+      tl_assert(SEG_id_is_sane(n));
+   SegmentArray.chunks[n / SEGMENT_ID_CHUNK_SIZE]
+                      [n % SEGMENT_ID_CHUNK_SIZE].context = context;
+}
+
+static ExeContext *SEG_get_context(SegmentID n) 
+{
+   if (SCE_SVALS)
+      tl_assert(SEG_id_is_sane(n));
+   return SegmentArray.chunks[n / SEGMENT_ID_CHUNK_SIZE]
+                             [n % SEGMENT_ID_CHUNK_SIZE].context;
+}
+
+
 /* --------- Constructors --------- */
 
 static inline Bool is_sane_LockN ( Lock* lock ); /* fwds */
@@ -940,6 +977,7 @@ static inline Bool is_sane_LockNorP ( Lock* lock ) {
 //   hg_free(lk);
 //}
 
+
 /* Update 'lk' to reflect that 'thr' now has a write-acquisition of
    it.  This is done strictly: only combinations resulting from
    correct program and libpthread behaviour are allowed. */
@@ -957,8 +995,7 @@ static void lockN_acquire_writer ( Lock* lk, Thread* thr )
       ThreadId tid;
       tl_assert(HG_(isEmptyBag)(&lk->heldBy));
       tid = map_threads_maybe_reverse_lookup_SLOW(thr);
-      lk->acquired_at
-         = VG_(record_ExeContext(tid, 0/*first_ip_delta*/));
+      lk->acquired_at = VG_(record_ExeContext(tid, 0/*first_ip_delta*/));
    } else {
       tl_assert(!HG_(isEmptyBag)(&lk->heldBy));
    }
@@ -1014,8 +1051,8 @@ static void lockN_acquire_reader ( Lock* lk, Thread* thr )
       ThreadId tid;
       tl_assert(HG_(isEmptyBag)(&lk->heldBy));
       tid = map_threads_maybe_reverse_lookup_SLOW(thr);
-      lk->acquired_at
-         = VG_(record_ExeContext(tid, 0/*first_ip_delta*/));
+      lk->acquired_at = 
+          VG_(record_ExeContext(tid, 0/*first_ip_delta*/));
    } else {
       tl_assert(!HG_(isEmptyBag)(&lk->heldBy));
    }
@@ -1104,11 +1141,11 @@ static inline Bool is_sane_SecMap ( SecMap* sm ) {
 
 //
 //   SVal:
-//   10SSSSSSSSSSSSSSSSSSSSSSSSSSrrrrrrrrrrrrLLLLLLLLLLLLLLLLLLLLLLLL Read
-//   11SSSSSSSSSSSSSSSSSSSSSSSSSSrrrrrrrrrrrrLLLLLLLLLLLLLLLLLLLLLLLL Write
+//   10SSSSSSSSSSSSSSSSSSSSSSSSSSrrrrTrrrrrrrLLLLLLLLLLLLLLLLLLLLLLLL Read
+//   11SSSSSSSSSSSSSSSSSSSSSSSSSSrrrrTrrrrrrrLLLLLLLLLLLLLLLLLLLLLLLL Write
 //     \_______ 26 _____________/            \________ 24 __________/
 // 
-//   0100000000000000000000000000000000000000000000000000000000000000 Race
+//   0100000000000000000000000000000000000000000000000000000000000001 Ignore
 //   0000000000000000000000000000000000000000000000000000001000000000 New
 //   0000000000000000000000000000000000000000000000000000000000000000 Invalid
 //   \______________________________64______________________________/
@@ -1116,6 +1153,7 @@ static inline Bool is_sane_SecMap ( SecMap* sm ) {
 //   r - reserved bits 
 //   S - segment set bits 
 //   L - lock set bits 
+//   T - trace bit
 //
 //   It's crucial that no valid SVal has a value of zero, since zero
 //   has a special meaning for the LineZ/LineF mechanism (see
@@ -1125,16 +1163,23 @@ static inline Bool is_sane_SecMap ( SecMap* sm ) {
 //   S: 
 //   1SSSSSSSSSSSSSSSSSSSSSSS Just one segment. 
 //   0SSSSSSSSSSSSSSSSSSSSSSS A real segment set. 
+//
+//   T (trace bit):
+//   When set, the trace bit indicates that we want to trace each access 
+//   to this memory (we output the trace only when the state changes).
+//
+//
 //   
 
 //------------- segment set, lock set --------------
 
 #define N_SEG_SEG_BITS 26
 #define N_LOCK_SET_BITS    24
+#define TRACE_BIT_POSITION 31
 
 #define SHVAL_New       ((SVal)(2<<8))
 #define SHVAL_Invalid   ((SVal)(0))
-#define SHVAL_Race      ((SVal)(1ULL << 62))
+#define SHVAL_Ignore      ((SVal)((1ULL << 62)+1))
 
 typedef  UInt       SegmentSet;
 typedef  WordSetID  LockSet;  /* UInt */
@@ -1185,6 +1230,27 @@ static inline SegmentID SS_get_element (SegmentSet ss, UWord i) {
    return words[i];
 }
 
+// increment the ref count for a non-singleton SS. 
+static inline void SS_ref(SegmentSet ss, UWord sz) {
+   tl_assert(!SS_is_singleton(ss));
+   HG_(refWS) (univ_ssets, ss, sz);
+}
+
+
+// decrement the ref count of a non-singleton SS and return 
+// the new value of ref count
+static inline UInt SS_unref(SegmentSet ss, UWord sz) {
+   tl_assert(!SS_is_singleton(ss));
+   return HG_(unrefWS) (univ_ssets, ss, sz);
+}
+
+// recycle a non-singleton SS which has refcount zero.
+static inline void SS_recycle(SegmentSet ss) {
+   tl_assert(!SS_is_singleton(ss));
+   HG_(recycleWS)(univ_ssets, ss);
+}
+
+
 static inline Bool LS_valid (LockSet ls) {
    return ls < (1 << N_LOCK_SET_BITS);
 }
@@ -1208,6 +1274,15 @@ static inline SVal mk_SHVAL_R (SegmentSet ss, LockSet ls) {
 static inline SVal mk_SHVAL_W (SegmentSet ss, LockSet ls) {
    return mk_SHVAL_RW(True, ss, ls);
 }
+
+static inline Bool get_SHVAL_TRACE_BIT (SVal sv) {
+   return (sv >> TRACE_BIT_POSITION) & 1;
+}
+
+static inline SVal set_SHVAL_TRACE_BIT (SVal sv, Bool trace_bit) {
+   return sv | ((SVal)trace_bit << TRACE_BIT_POSITION);
+}
+
 
 static inline SegmentSet get_SHVAL_SS (SVal sv) {
    SegmentSet ss;
@@ -1240,11 +1315,39 @@ static inline Bool is_SHVAL_Shared (SVal sv) {
 }
 
 static inline Bool is_SHVAL_New  (SVal sv) {return sv == SHVAL_New;}
-static inline Bool is_SHVAL_Race (SVal sv) {return sv == SHVAL_Race;}
+static inline Bool is_SHVAL_Ignore (SVal sv) {return sv == SHVAL_Ignore;}
 
 static inline Bool is_SHVAL_valid ( SVal sv) {
    return is_SHVAL_RW(sv) || is_SHVAL_New(sv)
-          || is_SHVAL_Race(sv);
+          || is_SHVAL_Ignore(sv)
+          ;
+}
+
+
+static inline Bool is_SHVAL_valid_SLOW ( SVal sv) {
+   if (!is_SHVAL_valid(sv)) return False;
+#if 0
+   if (clo_ss_recycle && is_SHVAL_RW(sv)) {
+      SegmentSet SS = get_SHVAL_SS(sv); 
+      if (!SS_is_singleton(SS)) {
+         if (!(HG_(saneWS_SLOW(univ_ssets, SS)))) {
+            VG_(printf)("not sane: %llx %llx\n", sv, (sv >> 26) & 15);
+            return False;
+         }
+      }
+   }
+#endif   
+   return True;
+}
+
+// If sv has a non-singleton SS, increment it's refcount by 1.
+static inline void SHVAL_SS_ref(SVal sv) {
+   if (LIKELY(is_SHVAL_RW(sv))) {
+      SegmentSet ss = get_SHVAL_SS(sv);
+      if (UNLIKELY(!SS_is_singleton(ss))) {
+         SS_ref(ss, 1);
+      }
+   }
 }
 
 
@@ -1431,9 +1534,16 @@ static void show_lockset(LockSet ls)
    UWord* word;
    UWord  nWords, i;
    HG_(getPayloadWS)( &word, &nWords, univ_lsets, ls );
+   if(nWords == 0) {
+      VG_(message)(Vg_UserMsg, "   None");
+   }
+
    for (i = 0; i < nWords; i++) {
       Lock* lk = (Lock*)word[i];
-      VG_(printf)("L:%p/%p ", lk, lk->guestaddr);
+      VG_(message)(Vg_UserMsg, "   L:%p/%p", lk, lk->guestaddr);
+      if (lk->acquired_at) {
+         VG_(pp_ExeContext)(lk->acquired_at);
+      }  
    }
 }
 
@@ -1445,8 +1555,8 @@ static void show_sval ( /*OUT*/Char* buf, Int nBuf, SVal sv )
    VG_(memset)(buf, 0, nBuf);
    if (is_SHVAL_New(sv)) {
       VG_(sprintf)(buf, "%s", "New");
-   } else if (is_SHVAL_Race(sv)) {
-      VG_(sprintf)(buf, "%s", "Race");
+   } else if (is_SHVAL_Ignore(sv)) {
+      VG_(sprintf)(buf, "%s", "Ignore");
    } else if (is_SHVAL_RW(sv)) {
       UWord i;
       Bool is_w     = is_SHVAL_W(sv);
@@ -1454,8 +1564,8 @@ static void show_sval ( /*OUT*/Char* buf, Int nBuf, SVal sv )
       LockSet    ls = get_SHVAL_LS(sv);
       UWord n_segments = SS_get_size(ss);
       Int n_locks    = HG_(cardinalityWS)(univ_lsets, ls);
-      VG_(sprintf)(buf, "%c #SS=%d #LS=%d ", 
-                   is_w ? 'W' : 'R', n_segments, n_locks);
+      VG_(sprintf)(buf, "%s; #SS=%d; #LS=%d; ", 
+                   is_w ? "Write" : "Read", n_segments, n_locks);
 
       for (i = 0; i < n_segments; i++) {
          SegmentID S;
@@ -1464,7 +1574,8 @@ static void show_sval ( /*OUT*/Char* buf, Int nBuf, SVal sv )
             break;
          }
          S = SS_get_element(ss, i);
-         VG_(sprintf)(buf + VG_(strlen)(buf), "S%d/T%d ", 
+         if (i > 0)  VG_(sprintf)(buf + VG_(strlen)(buf), ", ");
+         VG_(sprintf)(buf + VG_(strlen)(buf), "S%d/T%d", 
                       (Int)S, SEG_get(S)->thr->errmsg_index);
       }
    } else {
@@ -2166,17 +2277,22 @@ static Bool maybe_set_expected_error (Addr   ptr,
 /*------- mem trace -------------------------------------------*/
 /* a client may request to trace certain memory (for better debugging) */
 static WordFM *mem_trace_map = NULL;
-static void mem_trace_on(Word mem, ThreadId tid)
+static void mem_trace_on(UWord mem, ThreadId tid)
 {
-   if (clo_trace_level <= 0) return;
+   Thread *thr =  map_threads_lookup( tid );
+   if (clo_trace_level <= 0 && mem != 0xDEADBEAFUL) return;
    if (!mem_trace_map) {
       mem_trace_map = HG_(newFM)( hg_zalloc, hg_free, NULL);
    }
    HG_(addToFM)(mem_trace_map, mem, mem);
-   VG_(printf)("trace on: %p\n", mem);
-   if (clo_trace_level >= 2) {
+   VG_(message)(Vg_UserMsg, "ENABLED TRACE {{{: %p; S%d/T%d", mem, 
+               (Int)thr->csegid,
+               (Int)thr->errmsg_index);
+   if (clo_trace_level >= 2 || mem == 0xDEADBEAF) {
       VG_(get_and_pp_StackTrace)( tid, 15);
    }
+   VG_(message)(Vg_UserMsg, "}}}");
+   VG_(message)(Vg_UserMsg, "");
 }
 
 static inline void mem_trace_off(Addr first, Addr last) 
@@ -2239,7 +2355,10 @@ static Bool mu_is_cv(Word mu)
 {
    ExeContext *context;
    Word       w;
-   Bool res = mu_is_cv_map != NULL
+   Bool res = False;
+   if (clo_pure_happens_before) return True;
+   
+   res = mu_is_cv_map != NULL
          && HG_(lookupFM)(mu_is_cv_map, &w, (Word*)&context, mu);
 
    if (res && context) {
@@ -3130,7 +3249,7 @@ static void shmem__sanity_check ( Char* who )
                if (!is_sane_LockN(lk)) BAD("10");
             }
          }
-         else if (is_SHVAL_New(sv) || is_SHVAL_Race(sv)) {
+         else if (is_SHVAL_New(sv) || is_SHVAL_Ignore(sv)) {
             /* nothing to check */
          }
          else {
@@ -3203,7 +3322,7 @@ static void all__sanity_check ( Char* who ) {
 /*----------------------------------------------------------------*/
 
 static UWord stats__msm_BHL_hack     = 0;
-static UWord stats__msm_Race         = 0;
+static UWord stats__msm_Ignore       = 0;
 static UWord stats__msm_R_to_R       = 0;
 static UWord stats__msm_R_to_W       = 0;
 static UWord stats__msm_W_to_R       = 0;
@@ -3217,7 +3336,7 @@ static UWord stats__msm_oldSS_multi_add       = 0;
 static UWord stats__msm_oldSS_multi_del       = 0;
 
 /* fwds */
-static void record_error_Race ( Thread* thr, 
+static Bool record_error_Race ( Thread* thr, 
                                 Addr data_addr, Bool isWrite, Int szB,
                                 SVal old_sv, SVal new_sv,
                                 ExeContext* mb_lastlock );
@@ -3446,12 +3565,13 @@ SegmentSet do_SS_update_SINGLE ( /*OUT*/Bool* hb_all_p,
 }
 
 static __attribute__((noinline))
-SegmentSet do_SS_update_MULTI ( /*OUT*/Bool* hb_all_p, 
+SegmentSet do_SS_update_MULTI ( /*OUT*/Bool* hb_all_p,
+                                /*OUT*/Bool* oldSS_has_active_segment,
                                 Thread* thr,
                                 Bool do_trace,
                                 SegmentSet oldSS, SegmentID currS )
 {
-   // update the segment set and compute hb_all
+   // update the segment set; compute hb_all and oldSS_has_active_segment. 
    /* General case */
 
    UWord i;
@@ -3468,11 +3588,14 @@ SegmentSet do_SS_update_MULTI ( /*OUT*/Bool* hb_all_p,
 
    tl_assert(oldSS_size <= clo_max_segment_set_size);
 
+   *oldSS_has_active_segment = False;
+
    // fill in the arrays add_vec/del_vec and try a shortcut
    add_vec[add_size++] = currS;
    for (i = 0; i < oldSS_size; i++) {
       SegmentID S = SS_get_element(oldSS, i);
       if (currS == S) {
+         *oldSS_has_active_segment = True;
          // shortcut: 
          // currS is already contained in oldSS, so we don't need to add it. 
          // Since oldSS is a max frontier 
@@ -3487,8 +3610,13 @@ SegmentSet do_SS_update_MULTI ( /*OUT*/Bool* hb_all_p,
       }
       // compute happens-before
       Bool hb = False;
-      if (S == currS  // Same segment. 
-          || SEG_get(S)->thr == thr // Same thread. 
+      Thread *thr_of_S = SEG_get(S)->thr;
+
+      if (thr_of_S->csegid == S) {
+         *oldSS_has_active_segment = True;
+      }
+
+      if (thr_of_S == thr // Same thread. 
           || happens_before(S, currS)) {
              // different thread, but happens-before
          hb = True;
@@ -3560,68 +3688,118 @@ SegmentSet do_SS_update_MULTI ( /*OUT*/Bool* hb_all_p,
    return newSS;
 }
 
-
-static void msm_do_trace(Thread *thr, Addr a, SVal sv_new, Bool is_w) 
-{
-   HChar buf[200];
-
-   VG_(printf)("RW-Locks held: ");
-   show_lockset(thr->locksetA);
-   VG_(printf)("\n");
-   if (thr->locksetA != thr->locksetW) {
-      VG_(printf)(" W-Locks held: ");
-      show_lockset(thr->locksetW);
-      VG_(printf)("\n");
-   }
-
-   if (!HG_(isEmptyBag)(&__bus_lock_Lock->heldBy)) {
-      VG_(printf)("BHL is held\n");
-   }
-
-   show_sval(buf, sizeof(buf), sv_new);
-   VG_(message)(Vg_UserMsg, "TRACE: %p S%d/T%d %c %llx %s", a, 
-                (int)thr->csegid, thr->errmsg_index, 
-                is_w ? 'w' : 'r', sv_new, buf);
-   if (clo_trace_level >= 2) {
-      ThreadId tid = map_threads_maybe_reverse_lookup_SLOW(thr);
-      if (tid != VG_INVALID_THREADID) {
-         VG_(get_and_pp_StackTrace)( tid, 15);
+static inline SegmentSet do_SS_update ( /*OUT*/Bool* hb_all_p, 
+                                        /*OUT*/Bool* may_recycle_oldSS_p,
+                                Thread* thr,
+                                Bool do_trace,
+                                SegmentSet oldSS, SegmentID currS,
+                                UWord sz)
+{  
+   SegmentSet newSS;
+   Bool oldSS_has_active_segment = False;
+   if (LIKELY(SS_is_singleton(oldSS))) {
+      // we don't care if oldSS contains an active segment since oldSS 
+      // is a singleton and we don't want to recycle it. 
+      newSS = do_SS_update_SINGLE( hb_all_p, thr, do_trace, oldSS, currS );
+      if (UNLIKELY(clo_ss_recycle && !SS_is_singleton(newSS))) {
+         // newSS is not singleton => newSS != oldSS. 
+         SS_ref(newSS, sz);
+         tl_assert(HG_(saneWS_SLOW)(univ_ssets, newSS));
+      }
+   } else {
+      newSS = do_SS_update_MULTI( hb_all_p, &oldSS_has_active_segment,
+                                  thr, do_trace, oldSS, currS );
+      if (clo_ss_recycle && newSS != oldSS) {
+         if (!SS_is_singleton(newSS)) {
+            SS_ref(newSS, sz);
+            tl_assert(HG_(saneWS_SLOW)(univ_ssets, newSS));
+         }
+         if (SS_unref(oldSS, sz) == 0 && !oldSS_has_active_segment) {
+            // reference count dropped to zero and oldSS does not contain 
+            // active segments. There is no way for this SS to appear again. 
+            // Tell the caller that oldSS can be recycled. 
+            *may_recycle_oldSS_p = True;
+         }
       }
    }
+   return newSS;
 }
 
 
-static 
-SVal msm_handle_write(Thread* thr, Addr a, SVal sv_old, Int sz)
+
+
+static void msm_do_trace(Thread *thr, 
+                         Addr a, 
+                         SVal sv_old, 
+                         SVal sv_new, 
+                         Bool is_w,
+                         int trace_level
+                         ) 
 {
-   Bool       was_w;
-   SegmentSet oldSS;
+   HChar buf[200];
+   if (sv_old == sv_new) {
+      // don't trace if the state is unchanged.
+      return; 
+   }
+   show_sval(buf, sizeof(buf), sv_new);
+   VG_(message)(Vg_UserMsg, "TRACE {{{: Access = {%p S%d/T%d %s} State = {%s}", a, 
+                (int)thr->csegid, thr->errmsg_index, 
+                is_w ? "write" : "read", buf);
+   if (trace_level >= 2) {
+      ThreadId tid = map_threads_maybe_reverse_lookup_SLOW(thr);
+      if (tid != VG_INVALID_THREADID) {
+         VG_(message)(Vg_UserMsg, " Access stack trace:");
+         VG_(get_and_pp_StackTrace)( tid, 15);
+      }
+   }
+
+   VG_(message)(Vg_UserMsg, " Locks held:");
+   show_lockset(is_w ? thr->locksetW : thr->locksetA);
+   if (!HG_(isEmptyBag)(&__bus_lock_Lock->heldBy)) {
+      VG_(message)(Vg_UserMsg, " BHL is held\n");
+   }
+
+   VG_(message)(Vg_UserMsg, "}}}");
+   VG_(message)(Vg_UserMsg, ""); // empty line
+}
+
+static INLINE 
+SVal memory_state_machine(Bool is_w, Thread* thr, Addr a, SVal sv_old, Int sz)
+{
+   SegmentSet oldSS = 0;
    LockSet    oldLS;
-   Bool       hb_all     = False;
-   Bool       is_race    = False;
-   SVal       sv_new     = SHVAL_Invalid;
-   Bool       do_trace   = clo_trace_level > 0 
-                           && a >= clo_trace_addr 
-                           && a < (clo_trace_addr+sz);
+   Bool       hb_all      = False;
+   Bool       is_race     = False;
+   SVal       sv_new      = SHVAL_Invalid;
+   int        trace_level = 
+                   (a >= clo_trace_addr  && a < (clo_trace_addr+sz))
+                   ? clo_trace_level : 0;
    SegmentID  currS = thr->csegid;
    SegmentSet newSS = 0;
    LockSet    newLS = 0;
+   Bool       may_recycle_oldSS = False;
 
    // current locks. 
-   LockSet    currLS = thr->locksetW;
+   LockSet    currLS = is_w ? thr->locksetW : thr->locksetA;
 
    // Check if trace was requested for this address by a client request.
    if (UNLIKELY(clo_trace_level > 0 && mem_trace_is_on(a))) {
-      do_trace = True;
+      trace_level = clo_trace_level;
    }
 
    if (UNLIKELY(clo_ignore_n != 1)) {
       tl_assert(!address_may_be_ignored(a));
    }
 
-   if (UNLIKELY(is_SHVAL_Race(sv_old))) {
+   if (UNLIKELY(!is_w && thr->ignore_reads)) {
+      sv_new = sv_old;
+      goto done;
+   }
+
+
+   if (UNLIKELY(is_SHVAL_Ignore(sv_old))) {
       // we already reported a race, don't bother again. 
-      stats__msm_Race++;
+      stats__msm_Ignore++;
       sv_new = sv_old;
       goto done;
    }
@@ -3632,7 +3810,7 @@ SVal msm_handle_write(Thread* thr, Addr a, SVal sv_old, Int sz)
       // BHL is held and we are in 'Read' or 'New' state. 
       // User is doing something very smart with LOCK prefix.
       // Just ignore this memory location. 
-      sv_new = SHVAL_Race;
+      sv_new = SHVAL_Ignore;
 
       // VG_(printf)("Ignoring memory %p accessed with LOCK prefix at\n", a);
       // VG_(get_and_pp_StackTrace)(map_threads_reverse_lookup_SLOW(thr), 5);
@@ -3653,15 +3831,20 @@ SVal msm_handle_write(Thread* thr, Addr a, SVal sv_old, Int sz)
 
    // Read or Write
    if (LIKELY(is_SHVAL_RW(sv_old))) {
+      Bool       was_w, now_w;
+      // check the trace bit
+      if (UNLIKELY(get_SHVAL_TRACE_BIT(sv_old))) { 
+         trace_level = 2;
+      }
+      
       was_w = is_SHVAL_W(sv_old);
 
+      tl_assert(is_SHVAL_valid_SLOW(sv_old));
       // update the segment set and compute hb_all
       oldSS = get_SHVAL_SS(sv_old);
-      if (LIKELY(SS_is_singleton(oldSS))) {
-         newSS = do_SS_update_SINGLE( &hb_all, thr, do_trace, oldSS, currS );
-      } else {
-         newSS = do_SS_update_MULTI( &hb_all, thr, do_trace, oldSS, currS );
-      }
+      newSS = do_SS_update(&hb_all, &may_recycle_oldSS, 
+                           thr, trace_level >= 1, oldSS, currS, sz);
+
 
       // update lock set. 
       if (hb_all) {
@@ -3669,150 +3852,16 @@ SVal msm_handle_write(Thread* thr, Addr a, SVal sv_old, Int sz)
       } else {
          oldLS = get_SHVAL_LS(sv_old);
          newLS = HG_(intersectWS)(univ_lsets, oldLS, currLS);
-         if (oldLS != newLS)
-            record_last_lock_lossage( a, oldLS, newLS );
-      }
-
-      // generate new SVal
-      sv_new = mk_SHVAL_W(newSS, newLS);
-
-      is_race = !SS_is_singleton(newSS)
-                && HG_(isEmptyWS)(univ_lsets, newLS);
-
-      if      ( (!was_w) ) stats__msm_R_to_W++;
-      else if ( (was_w)  ) stats__msm_W_to_W++;
-
-      goto done;
-   }
-
-   // New
-   if (is_SHVAL_New(sv_old)) {
-      stats__msm_New_to_W++; 
-      newSS = SS_mk_singleton(currS);
-      sv_new = mk_SHVAL_W(newSS, currLS);
-      goto done;
-   }
-
-   /*NOTREACHED*/
-   tl_assert(0);
-
-  done:
-
-   if (do_trace) {
-      msm_do_trace(thr, a, sv_new, True);
-   }
-
-   if (clo_trace_level > 0 && !do_trace) {
-      // if we are tracing something, don't report a race on anything else.
-      is_race = False;
-   }
-
-   // report the race if needed
-   if (is_race) {
-      // ok, now record the race. 
-      record_error_Race( thr, 
-                         a, True, sz, sv_old, sv_new,
-                         maybe_get_lastlock_initpoint(a) );
-      // put this in Race state
-      sv_new = SHVAL_Race;
-   }
-
-   return sv_new; 
-}
-
-
-static 
-SVal msm_handle_read(Thread* thr, Addr a, SVal sv_old, Int sz)
-{
-   Bool       was_w, now_w;
-   SegmentSet oldSS;
-   LockSet    oldLS;
-   Bool       hb_all     = False;
-   Bool       is_race    = False;
-   SVal       sv_new     = SHVAL_Invalid;
-   Bool       do_trace   = clo_trace_level > 0 
-                           && a >= clo_trace_addr 
-                           && a < (clo_trace_addr+sz);
-   SegmentID  currS = thr->csegid;
-   SegmentSet newSS = 0;
-   LockSet    newLS = 0;
-
-   // current locks. 
-   LockSet    currLS = thr->locksetA;
-
-   // Check if trace was requested for this address by a client request.
-   if (UNLIKELY(clo_trace_level > 0 && mem_trace_is_on(a))) {
-      do_trace = True;
-   }
-
-   if (UNLIKELY(clo_ignore_n != 1)) {
-      tl_assert(!address_may_be_ignored(a));
-   }
-
-   if (UNLIKELY(thr->ignore_reads)) {
-      sv_new = sv_old;
-      goto done;
-   }
-
-   if (UNLIKELY(is_SHVAL_Race(sv_old))) {
-      // we already reported a race, don't bother again. 
-      stats__msm_Race++;
-      sv_new = sv_old;
-      goto done;
-   }
-
-   if (UNLIKELY(!HG_(isEmptyBag_UNCHECKED)(&__bus_lock_Lock->heldBy))
-                && (is_SHVAL_New(sv_old) || is_SHVAL_R(sv_old))) {
-      stats__msm_BHL_hack++;
-      // BHL is held and we are in 'Read' or 'New' state. 
-      // User is doing something very smart with LOCK prefix.
-      // Just ignore this memory location. 
-      sv_new = SHVAL_Race;
-
-      // VG_(printf)("Ignoring memory %p accessed with LOCK prefix at\n", a);
-      // VG_(get_and_pp_StackTrace)(map_threads_reverse_lookup_SLOW(thr), 5);
-
-      goto done; 
-      // TODO: a better scheme might be: 
-      // When we see a first write with BHL held we do: 
-      // - If we are in state 'Read' or 'New', change the state to 'BHL'. 
-      // - If we are in state 'Write', report a race.
-      //
-      // When we are in state BHL: 
-      // - Any read keeps us in state 'BHL'. 
-      // - Any write with BHL held keeps us in state 'BHL'. 
-      // - Any other write is a race.
-   }
-
-   tl_assert(is_sane_Thread(thr));
-
-   // Read or Write
-   if (LIKELY(is_SHVAL_RW(sv_old))) {
-      was_w = is_SHVAL_W(sv_old);
-
-      // update the segment set and compute hb_all
-      oldSS = get_SHVAL_SS(sv_old);
-      if (LIKELY(SS_is_singleton(oldSS))) {
-         newSS = do_SS_update_SINGLE( &hb_all, thr, do_trace, oldSS, currS );
-      } else {
-         newSS = do_SS_update_MULTI( &hb_all, thr, do_trace, oldSS, currS );
-      }
-
-      // update lock set. 
-      if (hb_all) {
-         newLS = currLS;
-      } else {
-         oldLS = get_SHVAL_LS(sv_old);
-         newLS = HG_(intersectWS)(univ_lsets, oldLS, currLS);
-         if (oldLS != newLS)
+         if (clo_more_context && oldLS != newLS)
             record_last_lock_lossage( a, oldLS, newLS );
       }
 
       // update the state 
-      now_w = was_w && !hb_all;
+      now_w = is_w ? True : (was_w && !hb_all);
 
       // generate new SVal
       sv_new = mk_SHVAL_RW(now_w, newSS, newLS);
+      sv_new = set_SHVAL_TRACE_BIT(sv_new, get_SHVAL_TRACE_BIT(sv_old));
 
       is_race = now_w && !SS_is_singleton(newSS)
                       && HG_(isEmptyWS)(univ_lsets, newLS);
@@ -3827,9 +3876,9 @@ SVal msm_handle_read(Thread* thr, Addr a, SVal sv_old, Int sz)
 
    // New
    if (is_SHVAL_New(sv_old)) {
-      stats__msm_New_to_R++;
+      stats__msm_New_to_W++; 
       newSS = SS_mk_singleton(currS);
-      sv_new = mk_SHVAL_R(newSS, currLS);
+      sv_new = mk_SHVAL_RW(is_w, newSS, currLS);
       goto done;
    }
 
@@ -3838,26 +3887,60 @@ SVal msm_handle_read(Thread* thr, Addr a, SVal sv_old, Int sz)
 
   done:
 
-   if (do_trace) {
-      msm_do_trace(thr, a, sv_new, False);
+   if (trace_level >= 1) {
+      msm_do_trace(thr, a, sv_old, sv_new, is_w, trace_level);
    }
 
-   if (clo_trace_level > 0 && !do_trace) {
+   if (clo_trace_level > 0 && trace_level == 0) {
       // if we are tracing something, don't report a race on anything else.
+      is_race = False;
+   }
+
+   if (is_race && get_SHVAL_TRACE_BIT(sv_old)) {
+      // Race is found for the second time. 
+      // Stop tracing and start ignoring this memory location.
+      VG_(message)(Vg_UserMsg, "Race on %p is found again", a);
+      sv_new = SHVAL_Ignore;
       is_race = False;
    }
 
    // report the race if needed
    if (is_race) {
       // ok, now record the race. 
-      record_error_Race( thr, 
-                         a, False, sz, sv_old, sv_new,
+      Bool race_was_recorded = 
+            record_error_Race( thr, 
+                         a, is_w, sz, sv_old, sv_new,
                          maybe_get_lastlock_initpoint(a) );
-      // put this in Race state
-      sv_new = SHVAL_Race;
+      // never recycle segment sets in sv_old/sv_new
+      SHVAL_SS_ref(sv_old);
+      SHVAL_SS_ref(sv_new);
+      may_recycle_oldSS = False;
+      if (race_was_recorded) {
+         // if we did record a race and if this mem was not traced before, 
+         // turn tracing on.
+         sv_new = mk_SHVAL_RW(is_w, SS_mk_singleton(currS), currLS);
+         sv_new = set_SHVAL_TRACE_BIT(sv_new, True);
+         msm_do_trace(thr, a, sv_old, sv_new, is_w, 2);
+      } else {
+         // put this in Ignore state
+         sv_new = SHVAL_Ignore;
+      }
+   }
+
+   if (may_recycle_oldSS) {
+      SS_recycle(oldSS);
    }
 
    return sv_new; 
+}
+
+static SVal msm_handle_write(Thread* thr, Addr a, SVal sv_old, Int sz)
+{
+   return memory_state_machine(True, thr, a, sv_old, sz);
+}
+static SVal msm_handle_read(Thread* thr, Addr a, SVal sv_old, Int sz)
+{
+   return memory_state_machine(False, thr, a, sv_old, sz);
 }
 
 
@@ -5787,6 +5870,10 @@ void evhH__start_new_segment_for_thread ( /*OUT*/SegmentID* new_segidP,
    *new_segidP = mk_Segment( thr, cur_seg, NULL/*other*/ );
    *new_segP   = SEG_get(*new_segidP);
    thr->csegid = *new_segidP;
+
+   ThreadId tid = map_threads_maybe_reverse_lookup_SLOW(thr);
+   if (clo_more_context && tid != VG_INVALID_THREADID)
+     SEG_set_context(*new_segidP, VG_(record_ExeContext(tid,-1/*first_ip_delta*/)));
 }
 
 
@@ -6267,6 +6354,14 @@ void evh__pre_thread_ll_create ( ThreadId parent, ThreadId child )
         first_ip_delta = -3;
 #       endif
         thr_c->created_at = VG_(record_ExeContext)(parent, first_ip_delta);
+
+        if (clo_trace_level >= 1) {
+           VG_(message)(Vg_UserMsg, "Created thread: T%d", thr_c->errmsg_index);
+           if (clo_trace_level >= 2) {
+              VG_(pp_ExeContext)(thr_c->created_at);
+           }
+           VG_(message)(Vg_UserMsg, "");
+        }
       }
 
       /* Now, mess with segments. */ 
@@ -8791,7 +8886,7 @@ static UInt hg_update_extra ( Error* err )
    return sizeof(XError);
 }
 
-static void record_error_Race ( Thread* thr, 
+static Bool record_error_Race ( Thread* thr, 
                                 Addr data_addr, Bool isWrite, Int szB,
                                 SVal old_sv, SVal new_sv,
                                 ExeContext* mb_lastlock ) {
@@ -8825,7 +8920,7 @@ static void record_error_Race ( Thread* thr,
          Addr ip_at_error = VG_(get_IP)( tid );
          if (VG_(seginfo_sect_kind)(NULL, 0, ip_at_error) == Vg_SectPLT) {
             /* ignore this race. */
-            return;
+            return False;
          }
       }
    }
@@ -8835,12 +8930,14 @@ static void record_error_Race ( Thread* thr,
       ExpectedError *expected_error = get_expected_error((Word)data_addr);
       if (expected_error) {
          expected_error->detected = True;
-         return;
+         return False;
       }
    }
 
-   VG_(maybe_record_error)( map_threads_reverse_lookup_SLOW(thr),
+   Bool res = VG_(maybe_record_error)( map_threads_reverse_lookup_SLOW(thr),
                             XE_Race, data_addr, NULL, &xe );
+
+   return res;
 }
 
 static void record_error_FreeMemLock ( Thread* thr, Lock* lk ) {
@@ -9221,8 +9318,21 @@ static void hg_pp_Error ( Error* err )
                    thr_acc->errmsg_index, 
                    what, szB, err_ga);
       VG_(pp_ExeContext)( VG_(get_error_where)(err) );
-      VG_(message)(Vg_UserMsg, "  old state: %llx %s", old_state, old_buf);
-      VG_(message)(Vg_UserMsg, "  new state: %llx %s", new_state, new_buf);
+      VG_(message)(Vg_UserMsg, "  old state = {%s}", old_buf);
+      VG_(message)(Vg_UserMsg, "  new state = {%s}", new_buf);
+
+      if (is_SHVAL_RW(old_state)) {
+         SegmentSet SS = get_SHVAL_SS(old_state);
+         for (i = 0; i < (int)SS_get_size(SS); i++) {
+            SegmentID segid = SS_get_element(SS, i);
+            ExeContext *context = SEG_get_context(segid);
+            if(context) {
+               VG_(message)(Vg_UserMsg, " SS%d/T%d:", segid,
+                            SEG_get(segid)->thr->errmsg_index);
+               VG_(pp_ExeContext)(context);
+            }
+         }
+      }
 
 
       // KCC:
@@ -9379,6 +9489,8 @@ static void hg_pp_Error ( Error* err )
          );
          VG_(pp_ExeContext)( xe->XE.Race.block_allocdAt );
       }
+      // print an empty line after the race report 
+      VG_(message)(Vg_UserMsg, "");
 
       break; /* case XE_Race */
    } /* case XE_Race */
@@ -9483,6 +9595,21 @@ static Bool hg_process_cmd_line_option ( Char* arg )
          clo_max_segment_set_size = 4;
    }
 
+   else if (VG_CLO_STREQ(arg, "--ss-recycle=yes"))
+      clo_ss_recycle = True;
+   else if (VG_CLO_STREQ(arg, "--ss-recycle=no"))
+      clo_ss_recycle = False;
+  
+   else if (VG_CLO_STREQ(arg, "--more-context=yes"))
+      clo_more_context = True;
+   else if (VG_CLO_STREQ(arg, "--more-context=no"))
+      clo_more_context = False;
+
+   else if (VG_CLO_STREQ(arg, "--pure-happens-before=yes"))
+      clo_pure_happens_before = True;
+   else if (VG_CLO_STREQ(arg, "--pure-happens-before=no"))
+      clo_pure_happens_before = False;
+
    else if (VG_CLO_STREQ(arg, "--gen-vcg=no"))
       clo_gen_vcg = 0;
    else if (VG_CLO_STREQ(arg, "--gen-vcg=yes"))
@@ -9540,6 +9667,10 @@ static void hg_print_usage ( void )
 "    --max-segment-set-size=<N>  limit mem use by limiting SegSet sizes [20]\n"
 "    --ignore-n=<N>            speedup hack; add documentation\n"
 "    --ignore-i=<N>            speedup hack; add documentation\n"
+"    --ss-recycle=no|yes [yes] recycle segment sets\n"
+"    --pure-happens-before=no|yes [no]  be a pure-happens-before detector\n"
+"    --more-context=no|yes [yes]       record context at lock lossage\n"
+"                                      and at segment creation\n"
    );
    VG_(replacement_malloc_print_usage)();
 }
@@ -9653,8 +9784,8 @@ static void hg_fini ( Int exitcode )
                   stat__hg_zalloc, stat__hg_free);
 
       VG_(printf)("\n");
-      VG_(printf)("     msm: %,14lu %,14lu  BHL-skipped, Race\n",
-                  stats__msm_BHL_hack, stats__msm_Race);
+      VG_(printf)("     msm: %,14lu %,14lu  BHL-skipped, Ignore\n",
+                  stats__msm_BHL_hack, stats__msm_Ignore);
       VG_(printf)("     msm: %,14lu %,14lu  R_to_R,   R_to_W\n",
                   stats__msm_R_to_R, stats__msm_R_to_W);
       VG_(printf)("     msm: %,14lu %,14lu  W_to_R,   W_to_W\n",

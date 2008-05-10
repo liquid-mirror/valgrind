@@ -83,6 +83,12 @@ WordSet HG_(isSubsetOf)     ( WordSetU*, WordSet, WordSet );
 
 Bool    HG_(plausibleWS)    ( WordSetU*, WordSet );
 Bool    HG_(saneWS_SLOW)    ( WordSetU*, WordSet );
+void    HG_(refWS)          ( WordSetU*, WordSet, UWord );
+UWord   HG_(unrefWS)        ( WordSetU*, WordSet, UWord );
+UWord   HG_(getRefWS)       ( WordSetU*, WordSet );
+void    HG_(recycleWS)      ( WordSetU*, WordSet );
+
+
 
 void    HG_(ppWS)           ( WordSetU*, WordSet );
 void    HG_(getPayloadWS)   ( /*OUT*/UWord** words, /*OUT*/UWord* nWords, 

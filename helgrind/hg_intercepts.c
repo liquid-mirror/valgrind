@@ -1075,14 +1075,14 @@ PTH_FUNC(int, semZudestroyZAZa, sem_t* sem)
 /* glibc-2.5 has sem_wait (amd64-linux); match sem_wait
              and sem_wait@@GLIBC_2.1 (x86-linux); match sem_wait@* */
 /* wait: decrement semaphore - acquire lockage */
-static int sem_wait_WRK(sem_t* sem)
+static int sem_wait_WRK(sem_t* sem, const char *name, int is_try)
 {
    OrigFn fn;
    int    ret;
    VALGRIND_GET_ORIG_FN(fn);
 
    if (TRACE_SEM_FNS) {
-      fprintf(stderr, "<< sem_wait(%p) ", sem);
+      fprintf(stderr, "<< %s(%p) ", name, sem);
       fflush(stderr);
    }
 
@@ -1091,22 +1091,32 @@ static int sem_wait_WRK(sem_t* sem)
    if (ret == 0) {
       DO_CREQ_v_W(_VG_USERREQ__HG_POSIX_SEM_WAIT_POST, sem_t*,sem);
    } else {
-      DO_PthAPIerror( "sem_wait", errno );
+      if (!is_try) {
+         DO_PthAPIerror( name, errno );
+      }
    }
 
    if (TRACE_SEM_FNS) {
-      fprintf(stderr, " sem_wait -> %d >>\n", ret);
+      fprintf(stderr, " %s -> %d >>\n", name, ret);
       fflush(stderr);
    }
 
    return ret;
 }
 PTH_FUNC(int, semZuwait, sem_t* sem) { /* sem_wait */
-   return sem_wait_WRK(sem);
+   return sem_wait_WRK(sem, "sem_wait", 0);
 }
 PTH_FUNC(int, semZuwaitZAZa, sem_t* sem) { /* sem_wait@* */
-   return sem_wait_WRK(sem);
+   return sem_wait_WRK(sem, "sem_wait", 0);
 }
+PTH_FUNC(int, semZutrywait, sem_t* sem) { /* sem_trywait */
+   return sem_wait_WRK(sem, "sem_trywait", 1);
+}
+PTH_FUNC(int, semZutrywaitZAZa, sem_t* sem) { /* sem_trywait@* */
+   return sem_wait_WRK(sem, "sem_trywait", 1);
+}
+
+
 
 
 /* glibc-2.5 has sem_post (amd64-linux); match sem_post

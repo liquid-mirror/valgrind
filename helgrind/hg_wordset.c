@@ -75,6 +75,11 @@ typedef
       (_zzcache).inUse = 0;                                          \
    } while (0)
 
+#define WCache_INVAL(_zzcache)                                       \
+   do {                                                              \
+      (_zzcache).inUse = 0;                                          \
+   } while (0)
+
 #define WCache_LOOKUP_AND_RETURN(_retty,_zzcache,_zzarg1,_zzarg2)    \
    do {                                                              \
       UWord   _i;                                                    \
@@ -132,8 +137,11 @@ typedef
       WordSetU* owner; /* for sanity checking */
       UWord*    words;
       UWord     size; /* Really this should be SizeT */
+      UWord     refcount; 
    }
    WordVec;
+
+#define N_RECYCLE_CACHE_MAX 32
 
 /* ix2vec[0 .. ix2vec_used-1] are pointers to the lock sets (WordVecs)
    really.  vec2ix is the inverse mapping, mapping WordVec* to the
@@ -152,6 +160,9 @@ struct _WordSetU {
       WCache    cache_delFrom;
       WCache    cache_intersect;
       WCache    cache_minus;
+      /* recycle cache */
+      UWord     recycle_cache[N_RECYCLE_CACHE_MAX];
+      UInt      recycle_cache_n;
       /* Stats */
       UWord     n_add;
       UWord     n_add_uncached;
@@ -170,6 +181,7 @@ struct _WordSetU {
       UWord     n_anyElementOf;
       UWord     n_elementOf;
       UWord     n_isSubsetOf;
+      UWord     n_recycle;
    };
 
 /* Create a new WordVec of the given size.  The WordVec and the array
@@ -189,6 +201,7 @@ static WordVec* new_WV_of_size ( WordSetU* wsu, UWord sz )
    wv->owner = wsu;
    wv->words = NULL;
    wv->size = sz;
+   wv->refcount = 0;
    if (sz > 0) {
       wv->words = (UWord*)(allocated_mem + sizeof(WordVec));
       tl_assert(0 == (UWord)(wv->words) % sizeof(UWord));
@@ -460,6 +473,84 @@ void HG_(getPayloadWS) ( /*OUT*/UWord** words, /*OUT*/UWord* nWords,
    *words  = wv->words;
 }
 
+
+// Increment the refcount of ws by sz. 
+void    HG_(refWS)          ( WordSetU *wsu, WordSet ws, UWord sz)
+{
+   WordVec* wv;
+   tl_assert(wsu);
+   wv = do_ix2vec( wsu, ws );
+   tl_assert(wv->size >= 0);
+   wv->refcount += sz;
+}
+
+// Decrement the refcount of ws by sz and return the new refcount value.
+UWord    HG_(unrefWS)        ( WordSetU *wsu, WordSet ws, UWord sz)
+{
+   WordVec* wv;
+   tl_assert(wsu);
+   wv = do_ix2vec( wsu, ws );
+   tl_assert(wv->size >= 0);
+   tl_assert(wv->refcount >= sz);
+   wv->refcount -= sz;
+   return wv->refcount;
+}
+
+// Get the current refcount of ws.
+UWord    HG_(getRefWS)        ( WordSetU *wsu, WordSet ws)
+{
+   WordVec* wv;
+   tl_assert(wsu);
+   wv = do_ix2vec( wsu, ws );
+   tl_assert(wv->size >= 0);
+   return wv->refcount;
+}
+
+
+/*
+   WordSet Recycling. 
+   Once HG_(recycleWS) is called on a ws, 
+   the memory allocated for ws is freed and ws is removed from vec2ix. 
+   The slot wsu->ix2vec[ws] is assigned NULL and remains NULL forever. 
+   We also have to flush cashes (otherwise if the user creates a new set 
+   equal to the recycled one, cache may return the index of the recycled ws). 
+
+   We maintain a cache os WordSets to recycle and do recycling 
+   every N_RECYCLE_CACHE_MAX call to HG_(recycleWS). 
+   This is done to minimize the number of addTo/delFrom/etc cache invals.
+
+   Possible improvement to this scheme: 
+   - Do not call deleteWV, instead maintain our own free list (?). 
+   - Recycle the slot wsu->ix2vec[ws] (will complicate sanity checking). 
+*/
+void    HG_(recycleWS)      ( WordSetU *wsu, WordSet ws) 
+{
+   tl_assert(wsu);
+
+   if (wsu->recycle_cache_n == N_RECYCLE_CACHE_MAX) {
+      // cache is full, do the recycling
+      UInt i;
+      for (i = 0; i < wsu->recycle_cache_n; i++) {
+         WordSet ws_to_recycle = wsu->recycle_cache[i];
+         WordVec *wv = do_ix2vec( wsu, ws_to_recycle );
+         tl_assert(wv->size >= 0);
+         tl_assert(wv->refcount == 0);
+         HG_(delFromFM)(wsu->vec2ix, NULL, NULL, (Word)wv);
+         delete_WV(wv);
+         wsu->ix2vec[ws_to_recycle] = NULL; 
+         wsu->n_recycle++;
+      }
+      WCache_INVAL(wsu->cache_addTo);
+      WCache_INVAL(wsu->cache_delFrom);
+      WCache_INVAL(wsu->cache_intersect);
+      WCache_INVAL(wsu->cache_minus);
+      wsu->recycle_cache_n = 0;
+   }
+   tl_assert(wsu->recycle_cache_n < N_RECYCLE_CACHE_MAX);
+   wsu->recycle_cache[wsu->recycle_cache_n++] = ws;
+}
+
+
 Bool HG_(plausibleWS) ( WordSetU* wsu, WordSet ws )
 {
    if (wsu == NULL) return False;
@@ -475,9 +566,18 @@ Bool HG_(saneWS_SLOW) ( WordSetU* wsu, WordSet ws )
    if (wsu == NULL) return False;
    if (ws < 0 || ws >= wsu->ix2vec_used)
       return False;
-   wv = do_ix2vec( wsu, ws );
-   /* can never happen .. do_ix2vec will assert instead.  Oh well. */
-   if (wv->owner != wsu) return False;
+   if (wsu->ix2vec_used > wsu->ix2vec_size) 
+      return False;
+   if (wsu->ix2vec_used > 0)
+      if (!wsu->ix2vec)
+         return False;
+   if ((ws >= wsu->ix2vec_used))
+      return False;
+   wv = wsu->ix2vec[ws];
+   if (!wv) 
+      return False;
+   if (wv->owner != wsu) 
+      return False;
    if (wv->size < 0) return False;
    if (wv->size > 0) {
       for (i = 0; i < wv->size-1; i++) {
@@ -564,22 +664,25 @@ void HG_(ppWSUstats) ( WordSetU* wsu, HChar* name )
                wsu->n_add, wsu->n_add_uncached);
    VG_(printf)("      delFrom      %,10u (%,u uncached)\n", 
                wsu->n_del, wsu->n_del_uncached);
-   VG_(printf)("      union        %10u\n", wsu->n_union);
-   VG_(printf)("      intersect    %10u (%u uncached) [nb. incl isSubsetOf]\n", 
+   VG_(printf)("      union        %,10u\n", wsu->n_union);
+   VG_(printf)("      intersect    %,10u (%u uncached) [nb. incl isSubsetOf]\n", 
                wsu->n_intersect, wsu->n_intersect_uncached);
-   VG_(printf)("      minus        %10u (%u uncached)\n",
+   VG_(printf)("      minus        %,10u (%u uncached)\n",
                wsu->n_minus, wsu->n_minus_uncached);
-   VG_(printf)("      elem         %10u\n",   wsu->n_elem);
-   VG_(printf)("      doubleton    %10u\n",   wsu->n_doubleton);
-   VG_(printf)("      isEmpty      %10u\n",   wsu->n_isEmpty);
-   VG_(printf)("      isSingleton  %10u\n",   wsu->n_isSingleton);
-   VG_(printf)("      isSorEmpty   %10u\n",   wsu->n_isSorE);
-   VG_(printf)("      anyElementOf %10u\n",   wsu->n_anyElementOf);
-   VG_(printf)("      elementOf    %10u\n",   wsu->n_elementOf);
-   VG_(printf)("      isSubsetOf   %10u\n",   wsu->n_isSubsetOf);
+   VG_(printf)("      elem         %,10u\n",   wsu->n_elem);
+   VG_(printf)("      doubleton    %,10u\n",   wsu->n_doubleton);
+   VG_(printf)("      isEmpty      %,10u\n",   wsu->n_isEmpty);
+   VG_(printf)("      isSingleton  %,10u\n",   wsu->n_isSingleton);
+   VG_(printf)("      isSorEmpty   %,10u\n",   wsu->n_isSorE);
+   VG_(printf)("      anyElementOf %,10u\n",   wsu->n_anyElementOf);
+   VG_(printf)("      elementOf    %,10u\n",   wsu->n_elementOf);
+   VG_(printf)("      isSubsetOf   %,10u\n",   wsu->n_isSubsetOf);
+   VG_(printf)("      cardinality  %,10u\n",   (int)HG_(cardinalityWSU)(wsu));
+   VG_(printf)("      recycle      %,10u\n",   wsu->n_recycle);
 
    // compute and print size distributions 
    for (i = 0; i < (Int)HG_(cardinalityWSU)(wsu); i++) {
+      if (!HG_(saneWS_SLOW(wsu, i))) continue;
       WordVec *wv = do_ix2vec( wsu, i );
       Int size = wv->size;
       if (size >= d_size) size = d_size-1;
