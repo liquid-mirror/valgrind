@@ -356,7 +356,7 @@ m_syswrap/syscall-ppc64-aix5.S:		 libvex_guest_offsets.h
 m_syswrap/syswrap-main.c: 		 libvex_guest_offsets.h
 
 libvex_guest_offsets.h:
-	$(MAKE) -C @VEX_DIR@ CC="$(CC)" AR="$(AR)" pub/libvex_guest_offsets.h
+	$(MAKE) -C @VEX_DIR@ CC="$(CC)" BUILD_CC="$(BUILD_CC)" AR="$(AR)" pub/libvex_guest_offsets.h
 
 VGPRELOAD_CORE_SOURCES_COMMON = vg_preloaded.c
 
@@ -391,7 +391,7 @@ vgpreload_core_ppc64_aix5_so_CFLAGS = $(AM_CFLAGS_PPC64_AIX5) $(AM_CFLAGS_PIC)
 vgpreload_core_ppc64_aix5_so_LDFLAGS = $(PRELOAD_LDFLAGS_PPC64_AIX5)
 
 clean-local:
-	$(MAKE) -C @VEX_DIR@ CC="$(CC)" AR="$(AR)" clean
+	$(MAKE) -C @VEX_DIR@ CC="$(CC)" BUILD_CC="$(BUILD_CC)" AR="$(AR)" clean
 
 MANUAL_DEPS = $(noinst_HEADERS) $(include_HEADERS)
 

@@ -1,0 +1,40 @@
+Index: VEX/auxprogs/genoffsets.c
+===================================================================
+--- VEX/auxprogs/genoffsets.c	(revision 1849)
++++ VEX/auxprogs/genoffsets.c	(working copy)
+@@ -56,6 +56,12 @@
+ 
+ Int main ( void )
+ {
++  assert(sizeof(UChar)  ==  1);
++  assert(sizeof(UShort) ==  2);
++  assert(sizeof(UInt)   ==  4);
++  assert(sizeof(ULong)  ==  8);
++  assert(sizeof(U128)   == 16);
++
+   // x86
+   printf("#define OFFSET_x86_EAX %3d\n", 
+          offsetof(VexGuestX86State,guest_EAX));
+Index: VEX/Makefile
+===================================================================
+--- VEX/Makefile	(revision 1849)
++++ VEX/Makefile	(working copy)
+@@ -67,6 +67,9 @@
+ ifndef CC
+    CC = gcc 
+ endif 
++ifndef BUILD_CC
++   CC = gcc
++endif
+ ifndef AR
+    AR = ar 
+ endif
+@@ -179,7 +182,7 @@
+ 	@echo
+ 
+ pub/libvex_guest_offsets.h:
+-	$(CC) -Wall -g -o auxprogs/genoffsets auxprogs/genoffsets.c
++	$(BUILD_CC) -Wall -g -o auxprogs/genoffsets auxprogs/genoffsets.c
+ 	./auxprogs/genoffsets > pub/libvex_guest_offsets.h
+ 
+ 

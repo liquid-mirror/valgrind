@@ -60,6 +60,20 @@ AC_PROG_CPP
 AC_PROG_CXX
 AC_PROG_RANLIB
 
+# If no AR variable was specified, look up the name of the archiver. Otherwise
+# do not touch the AR variable.
+if test "x$AR" = "x"; then
+  AC_PATH_PROGS([AR], ["${LD%ld}ar" "ar"], [ar])
+fi
+AC_ARG_VAR([AR],[Archiver command])
+
+# If no BUILD_CC variable was specified, look up the name of the native C
+# compiler. Otherwise do not touch the BUILD_CC variable.
+if test "x$BUILD_CC" = "x"; then
+  AC_PATH_PROGS([BUILD_CC], [gcc cc xlc])
+fi
+AC_ARG_VAR([BUILD_CC],[Native compiler])
+
 # Check for the compiler support
 if test "${GCC}" != "yes" ; then
    AC_MSG_ERROR([Valgrind relies on GCC to be compiled])
@@ -1145,8 +1159,8 @@ AM_CONDITIONAL(BUILD_SSSE3_TESTS, test x$ac_have_as_ssse3 = xyes)
 AC_CACHE_CHECK([for TLS support], vg_cv_tls,
 	       [AC_ARG_ENABLE(tls, [  --enable-tls            platform supports TLS],
 		[vg_cv_tls=$enableval],
-               	[AC_RUN_IFELSE([AC_LANG_PROGRAM([[static __thread int foo;]],
-                                                [[return foo;]])],
+               	[AC_LINK_IFELSE([AC_LANG_PROGRAM([[static __thread int foo;]],
+                                                 [[return foo;]])],
                                [vg_cv_tls=yes],
                                [vg_cv_tls=no])])])
 
