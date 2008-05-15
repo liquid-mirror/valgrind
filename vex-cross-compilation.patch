@@ -2,7 +2,15 @@ Index: VEX/auxprogs/genoffsets.c
 ===================================================================
 --- VEX/auxprogs/genoffsets.c	(revision 1849)
 +++ VEX/auxprogs/genoffsets.c	(working copy)
-@@ -56,6 +56,12 @@
+@@ -44,6 +44,7 @@
+    without prior written permission.
+ */
+ 
++#include <assert.h>
+ #include <stdio.h>
+ 
+ /* A program which generates various guest state offsets. */
+@@ -56,6 +57,12 @@
  
  Int main ( void )
  {
