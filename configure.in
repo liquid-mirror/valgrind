@@ -67,13 +67,6 @@ if test "x$AR" = "x"; then
 fi
 AC_ARG_VAR([AR],[Archiver command])
 
-# If no BUILD_CC variable was specified, look up the name of the native C
-# compiler. Otherwise do not touch the BUILD_CC variable.
-if test "x$BUILD_CC" = "x"; then
-  AC_PATH_PROGS([BUILD_CC], [gcc cc xlc])
-fi
-AC_ARG_VAR([BUILD_CC],[Native compiler])
-
 # Check for the compiler support
 if test "${GCC}" != "yes" ; then
    AC_MSG_ERROR([Valgrind relies on GCC to be compiled])
