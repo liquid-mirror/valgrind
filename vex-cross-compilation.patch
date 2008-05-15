@@ -1,7 +1,7 @@
-Index: pub/libvex_guest_offsets_in.h
+Index: VEX/pub/libvex_guest_offsets_in.h
 ===================================================================
---- pub/libvex_guest_offsets_in.h	(revision 0)
-+++ pub/libvex_guest_offsets_in.h	(revision 0)
+--- VEX/pub/libvex_guest_offsets_in.h	(revision 0)
++++ VEX/pub/libvex_guest_offsets_in.h	(revision 0)
 @@ -0,0 +1,60 @@
 +#define OFFSET_x86_EAX   0
 +#define OFFSET_x86_EBX  12
@@ -63,10 +63,10 @@ Index: pub/libvex_guest_offsets_in.h
 +#define OFFSET_ppc64_CIA      1024
 +#define OFFSET_ppc64_CR0_0    1053
 +
-Index: auxprogs/verifyoffsets.c
+Index: VEX/auxprogs/verifyoffsets.c
 ===================================================================
---- auxprogs/verifyoffsets.c	(revision 0)
-+++ auxprogs/verifyoffsets.c	(revision 0)
+--- VEX/auxprogs/verifyoffsets.c	(revision 0)
++++ VEX/auxprogs/verifyoffsets.c	(revision 0)
 @@ -0,0 +1,245 @@
 +
 +/*--------------------------------------------------------------------*/
@@ -313,10 +313,10 @@ Index: auxprogs/verifyoffsets.c
 +
 +  return 0;
 +}
-Index: Makefile
+Index: VEX/Makefile
 ===================================================================
---- Makefile	(revision 1849)
-+++ Makefile	(working copy)
+--- VEX/Makefile	(revision 1849)
++++ VEX/Makefile	(working copy)
 @@ -179,8 +179,8 @@
  	@echo
  
