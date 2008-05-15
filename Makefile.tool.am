@@ -51,43 +51,43 @@ COREGRIND_LIBS_PPC64_AIX5 = \
 ##.PHONY:  @VEX_DIR@/libvex.a
 
 @VEX_DIR@/libvex_x86_linux.a: @VEX_DIR@/priv/main/vex_svnversion.h
-	$(MAKE) -C @VEX_DIR@ CC="$(CC)" BUILD_CC="$(BUILD_CC)" AR="$(AR)" \
+	$(MAKE) -C @VEX_DIR@ CC="$(CC)" BUILD_CC="$(BUILD_CC)" RANLIB="$(RANLIB)" \
 	libvex_x86_linux.a \
 	EXTRA_CFLAGS="$(AM_CFLAGS_X86_LINUX) @FLAG_WDECL_AFTER_STMT@ \
 			@FLAG_FNO_STACK_PROTECTOR@"
 
 @VEX_DIR@/libvex_amd64_linux.a: @VEX_DIR@/priv/main/vex_svnversion.h
-	$(MAKE) -C @VEX_DIR@ CC="$(CC)" BUILD_CC="$(BUILD_CC)" AR="$(AR)" \
+	$(MAKE) -C @VEX_DIR@ CC="$(CC)" BUILD_CC="$(BUILD_CC)" RANLIB="$(RANLIB)" \
 	libvex_amd64_linux.a \
 	EXTRA_CFLAGS="$(AM_CFLAGS_AMD64_LINUX) @FLAG_WDECL_AFTER_STMT@ \
 			@FLAG_FNO_STACK_PROTECTOR@"
 
 @VEX_DIR@/libvex_ppc32_linux.a: @VEX_DIR@/priv/main/vex_svnversion.h
-	$(MAKE) -C @VEX_DIR@ CC="$(CC)" BUILD_CC="$(BUILD_CC)" AR="$(AR)" \
+	$(MAKE) -C @VEX_DIR@ CC="$(CC)" BUILD_CC="$(BUILD_CC)" RANLIB="$(RANLIB)" \
 	libvex_ppc32_linux.a \
 	EXTRA_CFLAGS="$(AM_CFLAGS_PPC32_LINUX) @FLAG_WDECL_AFTER_STMT@ \
 			@FLAG_FNO_STACK_PROTECTOR@"
 
 @VEX_DIR@/libvex_ppc64_linux.a: @VEX_DIR@/priv/main/vex_svnversion.h
-	$(MAKE) -C @VEX_DIR@ CC="$(CC)" BUILD_CC="$(BUILD_CC)" AR="$(AR)" \
+	$(MAKE) -C @VEX_DIR@ CC="$(CC)" BUILD_CC="$(BUILD_CC)" RANLIB="$(RANLIB)" \
 	libvex_ppc64_linux.a \
 	EXTRA_CFLAGS="$(AM_CFLAGS_PPC64_LINUX) @FLAG_WDECL_AFTER_STMT@ \
 			@FLAG_FNO_STACK_PROTECTOR@"
 
 @VEX_DIR@/libvex_ppc32_aix5.a: @VEX_DIR@/priv/main/vex_svnversion.h
-	$(MAKE) -C @VEX_DIR@ CC="$(CC)" BUILD_CC="$(BUILD_CC)" AR="$(AR) -X32" \
+	$(MAKE) -C @VEX_DIR@ CC="$(CC)" BUILD_CC="$(BUILD_CC)" RANLIB="$(RANLIB) -X32" \
 	libvex_ppc32_aix5.a \
 	EXTRA_CFLAGS="$(AM_CFLAGS_PPC32_AIX5) @FLAG_WDECL_AFTER_STMT@ \
 			@FLAG_FNO_STACK_PROTECTOR@"
 
 @VEX_DIR@/libvex_ppc64_aix5.a: @VEX_DIR@/priv/main/vex_svnversion.h
-	$(MAKE) -C @VEX_DIR@ CC="$(CC)" BUILD_CC="$(BUILD_CC)" AR="$(AR) -X64" \
+	$(MAKE) -C @VEX_DIR@ CC="$(CC)" BUILD_CC="$(BUILD_CC)" RANLIB="$(RANLIB) -X64" \
 	libvex_ppc64_aix5.a \
 	EXTRA_CFLAGS="$(AM_CFLAGS_PPC64_AIX5) @FLAG_WDECL_AFTER_STMT@ \
 			@FLAG_FNO_STACK_PROTECTOR@"
 
 @VEX_DIR@/priv/main/vex_svnversion.h:
-	$(MAKE) -C @VEX_DIR@ CC="$(CC)" version
+	$(MAKE) -C @VEX_DIR@ CC="$(CC)" BUILD_CC="$(BUILD_CC)" version
 
 TOOL_LDADD_COMMON = -lgcc
 TOOL_LDFLAGS_COMMON_LINUX = -static \

@@ -298,7 +298,7 @@ libcoregrind_ppc32_aix5_a_SOURCES = \
 libcoregrind_ppc32_aix5_a_CPPFLAGS = $(AM_CPPFLAGS_PPC32_AIX5)
 libcoregrind_ppc32_aix5_a_CFLAGS = $(AM_CFLAGS_PPC32_AIX5)
 libcoregrind_ppc32_aix5_a_CCASFLAGS = $(AM_CCASFLAGS_PPC32_AIX5)
-libcoregrind_ppc32_aix5_a_AR = $(AR) -X32 cru
+libcoregrind_ppc32_aix5_a_AR = $(RANLIB) -X32 cru
 
 libcoregrind_ppc64_aix5_a_SOURCES = \
 	$(COREGRIND_SOURCES_COMMON) \
@@ -312,7 +312,7 @@ libcoregrind_ppc64_aix5_a_SOURCES = \
 libcoregrind_ppc64_aix5_a_CPPFLAGS = $(AM_CPPFLAGS_PPC64_AIX5)
 libcoregrind_ppc64_aix5_a_CFLAGS = $(AM_CFLAGS_PPC64_AIX5)
 libcoregrind_ppc64_aix5_a_CCASFLAGS = $(AM_CCASFLAGS_PPC64_AIX5)
-libcoregrind_ppc64_aix5_a_AR = $(AR) -X64 cru
+libcoregrind_ppc64_aix5_a_AR = $(RANLIB) -X64 cru
 
 
 libreplacemalloc_toolpreload_x86_linux_a_SOURCES = m_replacemalloc/vg_replace_malloc.c
@@ -334,12 +334,12 @@ libreplacemalloc_toolpreload_ppc64_linux_a_CFLAGS = $(AM_CFLAGS_PPC64_LINUX) -fp
 libreplacemalloc_toolpreload_ppc32_aix5_a_SOURCES = m_replacemalloc/vg_replace_malloc.c
 libreplacemalloc_toolpreload_ppc32_aix5_a_CPPFLAGS = $(AM_CPPFLAGS_PPC32_AIX5)
 libreplacemalloc_toolpreload_ppc32_aix5_a_CFLAGS = $(AM_CFLAGS_PPC32_AIX5) -fpic -fno-omit-frame-pointer
-libreplacemalloc_toolpreload_ppc32_aix5_a_AR = $(AR) -X32 cru
+libreplacemalloc_toolpreload_ppc32_aix5_a_AR = $(RANLIB) -X32 cru
 
 libreplacemalloc_toolpreload_ppc64_aix5_a_SOURCES = m_replacemalloc/vg_replace_malloc.c
 libreplacemalloc_toolpreload_ppc64_aix5_a_CPPFLAGS = $(AM_CPPFLAGS_PPC64_AIX5)
 libreplacemalloc_toolpreload_ppc64_aix5_a_CFLAGS = $(AM_CFLAGS_PPC64_AIX5) -fpic -fno-omit-frame-pointer
-libreplacemalloc_toolpreload_ppc64_aix5_a_AR = $(AR) -X64 cru
+libreplacemalloc_toolpreload_ppc64_aix5_a_AR = $(RANLIB) -X64 cru
 
 m_dispatch/dispatch-x86-linux.S:	 libvex_guest_offsets.h
 m_dispatch/dispatch-amd64-linux.S:	 libvex_guest_offsets.h
@@ -356,7 +356,7 @@ m_syswrap/syscall-ppc64-aix5.S:		 libvex_guest_offsets.h
 m_syswrap/syswrap-main.c: 		 libvex_guest_offsets.h
 
 libvex_guest_offsets.h:
-	$(MAKE) -C @VEX_DIR@ CC="$(CC)" BUILD_CC="$(BUILD_CC)" AR="$(AR)" pub/libvex_guest_offsets.h
+	$(MAKE) -C @VEX_DIR@ CC="$(CC)" BUILD_CC="$(BUILD_CC)" RANLIB="$(RANLIB)" pub/libvex_guest_offsets.h
 
 VGPRELOAD_CORE_SOURCES_COMMON = vg_preloaded.c
 
@@ -391,7 +391,7 @@ vgpreload_core_ppc64_aix5_so_CFLAGS = $(AM_CFLAGS_PPC64_AIX5) $(AM_CFLAGS_PIC)
 vgpreload_core_ppc64_aix5_so_LDFLAGS = $(PRELOAD_LDFLAGS_PPC64_AIX5)
 
 clean-local:
-	$(MAKE) -C @VEX_DIR@ CC="$(CC)" BUILD_CC="$(BUILD_CC)" AR="$(AR)" clean
+	$(MAKE) -C @VEX_DIR@ CC="$(CC)" RANLIB="$(RANLIB)" clean
 
 MANUAL_DEPS = $(noinst_HEADERS) $(include_HEADERS)
 
