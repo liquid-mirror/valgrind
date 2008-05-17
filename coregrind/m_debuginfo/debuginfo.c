@@ -2325,13 +2325,13 @@ VgSectKind VG_(seginfo_sect_kind)( /*OUT*/UChar* name, SizeT n_name,
          vg_assert(start_at < fnlen);
          i = start_at; j = 0;
          while (True) {
-            vg_assert(j >= 0 && j+1 < n_name);
+            vg_assert(j >= 0 && j < n_name);
             vg_assert(i >= 0 && i <= fnlen);
             name[j] = di->filename[i];
-            name[j+1] = 0;
             if (di->filename[i] == 0) break;
             i++; j++;
          }
+         vg_assert(i == fnlen);
       } else {
          VG_(snprintf)(name, n_name, "%s", "???");
       }
