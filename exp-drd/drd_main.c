@@ -834,10 +834,12 @@ void drd_barrier_post_wait(const DrdThreadId tid, const Addr barrier,
 static
 void drd_post_clo_init(void)
 {
-#  if defined(VGP_x86_linux) || defined(VGP_amd64_linux)
+#  if defined(VGP_x86_linux)   \
+   || defined(VGP_amd64_linux) \
+   || defined(VGP_ppc64_linux)
   /* fine */
 #  else
-  VG_(printf)("\nWARNING: DRD has only been tested on x86-linux and amd64-linux.\n\n");
+  VG_(printf)("\nWARNING: DRD has not been tested on this platform.\n\n");
 #  endif
 
   if (s_drd_var_info)
@@ -977,10 +979,13 @@ IRSB* drd_instrument(VgCallbackClosure* const closure,
     switch (st->tag)
     {
     case Ist_IMark:
-      instrument = VG_(seginfo_sect_kind)(NULL, 0, st->Ist.IMark.addr)
-        != Vg_SectPLT;
+    {
+      const VgSectKind sk = VG_(seginfo_sect_kind)(NULL, 0, st->Ist.IMark.addr);
+      tl_assert(sk != Vg_SectUnknown);
+      instrument = sk != Vg_SectPLT;
       addStmtToIRSB(bb, st);
       break;
+    }
 
     case Ist_MBE:
       switch (st->Ist.MBE.event)
