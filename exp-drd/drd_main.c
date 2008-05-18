@@ -980,8 +980,7 @@ IRSB* drd_instrument(VgCallbackClosure* const closure,
     {
     case Ist_IMark:
     {
-      const VgSectKind sk = VG_(seginfo_sect_kind)(NULL, 0, st->Ist.IMark.addr);
-      tl_assert(sk != Vg_SectUnknown);
+      const VgSectKind sk = VG_(seginfo_sect_kind)(0, 0, st->Ist.IMark.addr);
       instrument = sk != Vg_SectPLT;
       addStmtToIRSB(bb, st);
       break;
