@@ -270,7 +270,7 @@ Index: VEX/Makefile
 -	./auxprogs/genoffsets > pub/libvex_guest_offsets.h
 +pub/libvex_guest_offsets.h: auxprogs/genoffsets.c Makefile
 +	$(CC) -Wall -g -S -o auxprogs/genoffsets.s auxprogs/genoffsets.c
-+	sed -n 's/^\(#define.*\)\$$*\(.*\)$$/\1\2/p' auxprogs/genoffsets.s \
++	sed -n 's/^\(#define.*\) \$$*\([0-9]*\)$$/\1 \2/p' auxprogs/genoffsets.s\
 +	  > pub/libvex_guest_offsets.h
  
  
