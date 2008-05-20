@@ -554,6 +554,34 @@ void drd_stop_using_nonstack_mem(const Addr a1, const SizeT len)
   drd_stop_using_mem(a1, len, False);
 }
 
+/** Suppress data race reports on all addresses contained in .plt sections
+ *  inside the address range [ a, a + len [.
+ */
+static void suppress_plt(const Addr a, const SizeT len)
+{
+  const DebugInfo* di;
+
+#if 0
+  VG_(printf)("Evaluating range @ 0x%lx size %ld\n", a, len);
+#endif
+
+  for (di = VG_(next_seginfo)(0); di; di = VG_(next_seginfo)(di))
+  {
+    Addr  avma;
+    SizeT size;
+
+    avma = VG_(seginfo_get_plt_avma)(di);
+    size = VG_(seginfo_get_plt_size)(di);
+    if (a <= avma && avma + size <= a + len)
+    {
+#if 0
+      VG_(printf)("Suppressing plt @ 0x%lx size %ld\n", avma, size);
+#endif
+      drd_start_suppression(avma, avma + size, ".plt");
+    }
+  }
+}
+
 static
 void drd_start_using_mem_w_perms(const Addr a, const SizeT len,
                                  const Bool rr, const Bool ww, const Bool xx)
@@ -561,6 +589,8 @@ void drd_start_using_mem_w_perms(const Addr a, const SizeT len,
   thread_set_vg_running_tid(VG_(get_running_tid)());
 
   drd_start_using_mem(a, len);
+
+  suppress_plt(a, len);
 }
 
 /* Called by the core when the stack of a thread grows, to indicate that */
