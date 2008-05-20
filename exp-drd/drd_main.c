@@ -575,9 +575,19 @@ static void suppress_plt(const Addr a, const SizeT len)
     if (a <= avma && avma + size <= a + len)
     {
 #if 0
-      VG_(printf)("Suppressing plt @ 0x%lx size %ld\n", avma, size);
+      VG_(printf)("Suppressing .plt @ 0x%lx size %ld\n", avma, size);
 #endif
       drd_start_suppression(avma, avma + size, ".plt");
+    }
+
+    avma = VG_(seginfo_get_gotplt_avma)(di);
+    size = VG_(seginfo_get_gotplt_size)(di);
+    if (a <= avma && avma + size <= a + len)
+    {
+#if 0
+      VG_(printf)("Suppressing .got.plt @ 0x%lx size %ld\n", avma, size);
+#endif
+      drd_start_suppression(avma, avma + size, ".gotplt");
     }
   }
 }
@@ -1008,14 +1018,6 @@ IRSB* drd_instrument(VgCallbackClosure* const closure,
 
     switch (st->tag)
     {
-    case Ist_IMark:
-    {
-      const VgSectKind sk = VG_(seginfo_sect_kind)(0, 0, st->Ist.IMark.addr);
-      instrument = sk != Vg_SectPLT;
-      addStmtToIRSB(bb, st);
-      break;
-    }
-
     case Ist_MBE:
       switch (st->Ist.MBE.event)
       {
