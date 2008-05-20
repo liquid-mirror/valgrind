@@ -2201,6 +2201,16 @@ SizeT VG_(seginfo_get_plt_size)(const DebugInfo* di)
    return di->plt_present ? di->plt_size : 0; 
 }
 
+Addr VG_(seginfo_get_gotplt_avma)(const DebugInfo* di)
+{
+   return di->gotplt_present ? di->gotplt_avma : 0; 
+}
+
+SizeT VG_(seginfo_get_gotplt_size)(const DebugInfo* di)
+{
+   return di->gotplt_present ? di->gotplt_size : 0; 
+}
+
 const UChar* VG_(seginfo_soname)(const DebugInfo* di)
 {
    return di->soname;
