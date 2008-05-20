@@ -147,7 +147,15 @@ void
 ML_(notify_aspacem_and_tool_of_mmap) ( Addr a, SizeT len, UInt prot, 
                                        UInt flags, Int fd, Off64T offset )
 {
-   Bool rr, ww, xx, d;
+  ML_(notify_aspacem_of_mmap)(a, len, prot, flags, fd, offset);
+  ML_(notify_tool_of_mmap)(a, len, prot, flags, fd, offset);
+}
+
+void 
+ML_(notify_aspacem_of_mmap) ( Addr a, SizeT len, UInt prot, 
+			      UInt flags, Int fd, Off64T offset )
+{
+   Bool d;
 
    /* 'a' is the return value from a real kernel mmap, hence: */
    vg_assert(VG_IS_PAGE_ALIGNED(a));
@@ -156,15 +164,27 @@ ML_(notify_aspacem_and_tool_of_mmap) ( Addr a, SizeT len, UInt prot,
 
    d = VG_(am_notify_client_mmap)( a, len, prot, flags, fd, offset );
 
+   if (d)
+      VG_(discard_translations)( (Addr64)a, (ULong)len,
+                                 "ML_(notify_aspacem_and_tool_of_mmap)" );
+}
+
+void
+ML_(notify_tool_of_mmap) ( Addr a, SizeT len, UInt prot, 
+			   UInt flags, Int fd, Off64T offset )
+{
+   Bool rr, ww, xx;
+
+   /* 'a' is the return value from a real kernel mmap, hence: */
+   vg_assert(VG_IS_PAGE_ALIGNED(a));
+   /* whereas len is whatever the syscall supplied.  So: */
+   len = VG_PGROUNDUP(len);
+
    rr = toBool(prot & VKI_PROT_READ);
    ww = toBool(prot & VKI_PROT_WRITE);
    xx = toBool(prot & VKI_PROT_EXEC);
 
    VG_TRACK( new_mem_mmap, a, len, rr, ww, xx );
-
-   if (d)
-      VG_(discard_translations)( (Addr64)a, (ULong)len,
-                                 "ML_(notify_aspacem_and_tool_of_mmap)" );
 }
 
 /* Expand (or shrink) an existing mapping, potentially moving it at
@@ -1909,8 +1929,8 @@ ML_(generic_PRE_sys_mmap) ( ThreadId tid,
    }
 
    if (!sres.isError) {
-      /* Notify aspacem and the tool. */
-      ML_(notify_aspacem_and_tool_of_mmap)( 
+      /* Notify aspacem. */
+      ML_(notify_aspacem_of_mmap)( 
          (Addr)sres.res, /* addr kernel actually assigned */
          arg2, arg3, 
          arg4, /* the original flags value */
@@ -1918,6 +1938,13 @@ ML_(generic_PRE_sys_mmap) ( ThreadId tid,
       );
       /* Load symbols? */
       VG_(di_notify_mmap)( (Addr)sres.res, False/*allow_SkFileV*/ );
+      /* Notify the tool. */
+      ML_(notify_tool_of_mmap)( 
+         (Addr)sres.res, /* addr kernel actually assigned */
+         arg2, arg3, 
+         arg4, /* the original flags value */
+         arg5, arg6 
+      );
    }
 
    /* Stay sane */
