@@ -2321,6 +2321,12 @@ VgSectKind VG_(seginfo_sect_kind)( /*OUT*/UChar* name, SizeT n_name,
          res = Vg_SectGOT;
          break;
       }
+      if (di->gotplt_present
+          && di->gotplt_size > 0
+          && a >= di->gotplt_avma && a < di->gotplt_avma + di->gotplt_size) {
+         res = Vg_SectGOTPLT;
+         break;
+      }
       if (di->opd_present
           && di->opd_size > 0
           && a >= di->opd_avma && a < di->opd_avma + di->opd_size) {

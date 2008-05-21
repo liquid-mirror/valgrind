@@ -155,6 +155,7 @@ typedef
       Vg_SectBSS,
       Vg_SectGOT,
       Vg_SectPLT,
+      Vg_SectGOTPLT,
       Vg_SectOPD
    }
    VgSectKind;
