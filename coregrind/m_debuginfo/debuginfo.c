@@ -2186,11 +2186,6 @@ SizeT VG_(seginfo_get_text_size)(const DebugInfo* di)
    return di->text_present ? di->text_size : 0; 
 }
 
-ULong VG_(seginfo_get_text_bias)(const DebugInfo* di)
-{
-   return di->text_present ? di->text_bias : 0;
-}
-
 Addr VG_(seginfo_get_plt_avma)(const DebugInfo* di)
 {
    return di->plt_present ? di->plt_avma : 0; 
@@ -2219,6 +2214,11 @@ const UChar* VG_(seginfo_soname)(const DebugInfo* di)
 const UChar* VG_(seginfo_filename)(const DebugInfo* di)
 {
    return di->filename;
+}
+
+ULong VG_(seginfo_get_text_bias)(const DebugInfo* di)
+{
+   return di->text_present ? di->text_bias : 0;
 }
 
 Int VG_(seginfo_syms_howmany) ( const DebugInfo *si )
