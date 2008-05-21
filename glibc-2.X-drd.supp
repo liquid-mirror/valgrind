@@ -1,6 +1,12 @@
 {
    dl
    exp-drd:ConflictingAccess
+   fun:_dl_fixup
+   fun:_dl_runtime_resolve
+}
+{
+   dl
+   exp-drd:ConflictingAccess
    fun:_dl_fini
    fun:exit
 }
