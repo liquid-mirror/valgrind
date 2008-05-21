@@ -554,10 +554,16 @@ void drd_stop_using_nonstack_mem(const Addr a1, const SizeT len)
   drd_stop_using_mem(a1, len, False);
 }
 
-/** Suppress data race reports on all addresses contained in .plt sections
- *  inside the address range [ a, a + len [.
+/** Suppress data race reports on all addresses contained in .plt and
+ *  .got.plt sections inside the address range [ a, a + len [. The data in
+ *  these sections is modified by _dl_relocate_object() every time a function
+ *  in a shared library is called for the first time. Since the first call
+ *  to a function in a shared library can happen from a multithreaded context,
+ *  such calls can cause conflicting accesses. See also Ulrich Drepper's
+ *  paper "How to Write Shared Libraries" for more information about relocation
+ *  (http://people.redhat.com/drepper/dsohowto.pdf).
  */
-static void suppress_plt(const Addr a, const SizeT len)
+static void suppress_relocation_conflicts(const Addr a, const SizeT len)
 {
   const DebugInfo* di;
 
@@ -577,6 +583,7 @@ static void suppress_plt(const Addr a, const SizeT len)
 #if 0
       VG_(printf)("Suppressing .plt @ 0x%lx size %ld\n", avma, size);
 #endif
+      tl_assert(VG_(seginfo_sect_kind)(NULL, 0, avma) == Vg_SectPLT);
       drd_start_suppression(avma, avma + size, ".plt");
     }
 
@@ -587,6 +594,7 @@ static void suppress_plt(const Addr a, const SizeT len)
 #if 0
       VG_(printf)("Suppressing .got.plt @ 0x%lx size %ld\n", avma, size);
 #endif
+      tl_assert(VG_(seginfo_sect_kind)(NULL, 0, avma) == Vg_SectGOTPLT);
       drd_start_suppression(avma, avma + size, ".gotplt");
     }
   }
@@ -600,7 +608,7 @@ void drd_start_using_mem_w_perms(const Addr a, const SizeT len,
 
   drd_start_using_mem(a, len);
 
-  suppress_plt(a, len);
+  suppress_relocation_conflicts(a, len);
 }
 
 /* Called by the core when the stack of a thread grows, to indicate that */
