@@ -550,7 +550,9 @@ void VG_(di_notify_mmap)( Addr a, Bool allow_SkFileV )
    nread = VG_(read)( fd.res, buf1k, sizeof(buf1k) );
    VG_(close)( fd.res );
 
-   if (nread <= 0) {
+   if (nread == 0)
+      return;
+   if (nread < 0) {
       DebugInfo fake_di;
       VG_(memset)(&fake_di, 0, sizeof(fake_di));
       fake_di.filename = filename;
