@@ -59,6 +59,16 @@
 #include "priv_syswrap-generic.h"
 
 
+/* Local function declarations. */
+
+static
+void notify_aspacem_of_mmap(Addr a, SizeT len, UInt prot, 
+                            UInt flags, Int fd, Off64T offset);
+static
+void notify_tool_of_mmap(Addr a, SizeT len, UInt prot, 
+                         UInt flags, Int fd, Off64T offset);
+
+
 /* Returns True iff address range is something the client can
    plausibly mess with: all of it is either already belongs to the
    client or is free or a reservation. */
@@ -147,13 +157,13 @@ void
 ML_(notify_aspacem_and_tool_of_mmap) ( Addr a, SizeT len, UInt prot, 
                                        UInt flags, Int fd, Off64T offset )
 {
-  ML_(notify_aspacem_of_mmap)(a, len, prot, flags, fd, offset);
-  ML_(notify_tool_of_mmap)(a, len, prot, flags, fd, offset);
+   notify_aspacem_of_mmap(a, len, prot, flags, fd, offset);
+   notify_tool_of_mmap(a, len, prot, flags, fd, offset);
 }
 
-void 
-ML_(notify_aspacem_of_mmap) ( Addr a, SizeT len, UInt prot, 
-			      UInt flags, Int fd, Off64T offset )
+static
+void notify_aspacem_of_mmap(Addr a, SizeT len, UInt prot, 
+                            UInt flags, Int fd, Off64T offset)
 {
    Bool d;
 
@@ -169,9 +179,9 @@ ML_(notify_aspacem_of_mmap) ( Addr a, SizeT len, UInt prot,
                                  "ML_(notify_aspacem_and_tool_of_mmap)" );
 }
 
-void
-ML_(notify_tool_of_mmap) ( Addr a, SizeT len, UInt prot, 
-			   UInt flags, Int fd, Off64T offset )
+static
+void notify_tool_of_mmap(Addr a, SizeT len, UInt prot, 
+                         UInt flags, Int fd, Off64T offset)
 {
    Bool rr, ww, xx;
 
@@ -1930,7 +1940,7 @@ ML_(generic_PRE_sys_mmap) ( ThreadId tid,
 
    if (!sres.isError) {
       /* Notify aspacem. */
-      ML_(notify_aspacem_of_mmap)( 
+      notify_aspacem_of_mmap( 
          (Addr)sres.res, /* addr kernel actually assigned */
          arg2, arg3, 
          arg4, /* the original flags value */
@@ -1939,7 +1949,7 @@ ML_(generic_PRE_sys_mmap) ( ThreadId tid,
       /* Load symbols? */
       VG_(di_notify_mmap)( (Addr)sres.res, False/*allow_SkFileV*/ );
       /* Notify the tool. */
-      ML_(notify_tool_of_mmap)( 
+      notify_tool_of_mmap(
          (Addr)sres.res, /* addr kernel actually assigned */
          arg2, arg3, 
          arg4, /* the original flags value */
