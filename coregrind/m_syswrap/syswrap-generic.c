@@ -65,8 +65,7 @@ static
 void notify_aspacem_of_mmap(Addr a, SizeT len, UInt prot, 
                             UInt flags, Int fd, Off64T offset);
 static
-void notify_tool_of_mmap(Addr a, SizeT len, UInt prot, 
-                         UInt flags, Int fd, Off64T offset);
+void notify_tool_of_mmap(Addr a, SizeT len, UInt prot, Off64T offset);
 
 
 /* Returns True iff address range is something the client can
@@ -158,7 +157,7 @@ ML_(notify_aspacem_and_tool_of_mmap) ( Addr a, SizeT len, UInt prot,
                                        UInt flags, Int fd, Off64T offset )
 {
    notify_aspacem_of_mmap(a, len, prot, flags, fd, offset);
-   notify_tool_of_mmap(a, len, prot, flags, fd, offset);
+   notify_tool_of_mmap(a, len, prot, offset);
 }
 
 static
@@ -176,12 +175,11 @@ void notify_aspacem_of_mmap(Addr a, SizeT len, UInt prot,
 
    if (d)
       VG_(discard_translations)( (Addr64)a, (ULong)len,
-                                 "ML_(notify_aspacem_and_tool_of_mmap)" );
+                                 "ML_(notify_aspacem_of_mmap)" );
 }
 
 static
-void notify_tool_of_mmap(Addr a, SizeT len, UInt prot, 
-                         UInt flags, Int fd, Off64T offset)
+void notify_tool_of_mmap(Addr a, SizeT len, UInt prot, Off64T offset)
 {
    Bool rr, ww, xx;
 
@@ -1942,18 +1940,20 @@ ML_(generic_PRE_sys_mmap) ( ThreadId tid,
       /* Notify aspacem. */
       notify_aspacem_of_mmap( 
          (Addr)sres.res, /* addr kernel actually assigned */
-         arg2, arg3, 
+         arg2, /* length */
+         arg3, /* prot */
          arg4, /* the original flags value */
-         arg5, arg6 
+         arg5, /* fd */
+         arg6  /* offset */
       );
       /* Load symbols? */
       VG_(di_notify_mmap)( (Addr)sres.res, False/*allow_SkFileV*/ );
       /* Notify the tool. */
       notify_tool_of_mmap(
          (Addr)sres.res, /* addr kernel actually assigned */
-         arg2, arg3, 
-         arg4, /* the original flags value */
-         arg5, arg6 
+         arg2, /* length */
+         arg3, /* prot */
+         arg6  /* offset */
       );
    }
 
