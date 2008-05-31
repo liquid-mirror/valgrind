@@ -124,7 +124,6 @@ vex_primary_sources = \
 	VEX/LICENSE.GPL \
 	VEX/Makefile \
 	VEX/auxprogs/genoffsets.c \
-	VEX/auxprogs/verifyoffsets.c \
 	VEX/pub/libvex_guest_amd64.h \
 	VEX/pub/libvex_ir.h \
 	VEX/pub/libvex_guest_ppc32.h \
