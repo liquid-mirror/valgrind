@@ -184,7 +184,8 @@ typedef
    enum { 
       NoName,     /* Error case */
       ObjName,    /* Name is of an shared object file. */
-      FunName     /* Name is of a function. */
+      FunName,    /* Name is of a function. */
+      Wildcard    /* Wildcard '*', i.e. any number of functions. */
    }
    SuppLocTy;
 
@@ -927,7 +928,12 @@ static Bool setLocationTy ( SuppLoc* p )
       p->ty = ObjName;
       return True;
    }
-   VG_(printf)("location should start with fun: or obj:\n");
+   if (VG_(strncmp)(p->name, "*", 1) == 0) {
+      // leave the name 
+      p->ty = Wildcard;
+      return True;
+   }
+   VG_(printf)("location should start with 'fun:', 'obj:' or '*'\n");
    return False;
 }
 
@@ -1083,14 +1089,21 @@ static void load_one_suppressions_file ( Char* filename )
             eof = VG_(get_line) ( fd, buf, N_BUF );
          } while (!eof && !VG_STREQ(buf, "}"));
       }
+      tl_assert(i >= 1);
+      while (i > 0 && tmp_callers[i-1].ty == Wildcard) {
+         i--;
+      }
+      if (i == 0) {
+         BOMB("the stack trace contains only wildcards");
+      }
 
       // Copy tmp_callers[] into supp->callers[]
       supp->n_callers = i;
       supp->callers = VG_(arena_malloc)(VG_AR_CORE, i*sizeof(SuppLoc));
+
       for (i = 0; i < supp->n_callers; i++) {
          supp->callers[i] = tmp_callers[i];
       }
-
       supp->next = suppressions;
       suppressions = supp;
    }
@@ -1148,23 +1161,26 @@ Bool supp_matches_error(Supp* su, Error* err)
 static
 Bool supp_matches_callers(Error* err, Supp* su)
 {
-   Int i;
+   Int err_i, su_i;
    Char caller_name[ERRTXT_LEN];
-   StackTrace ips = VG_(extract_StackTrace)(err->where);
+   StackTrace ips    = VG_(extract_StackTrace)(err->where);
+   UInt       n_ips  = VG_(extract_StackTraceSize)(err->where);
+   Bool has_asterisk = False;
 
-   for (i = 0; i < su->n_callers; i++) {
-      Addr a = ips[i];
-      vg_assert(su->callers[i].name != NULL);
+   err_i = 0;
+   su_i = 0;
+   while (su_i < su->n_callers && err_i < n_ips) {
+      Addr a = ips[err_i];
+      vg_assert(su->callers[su_i].name != NULL);
       // The string to be used in the unknown case ("???") can be anything
       // that couldn't be a valid function or objname.  --gen-suppressions
       // prints 'obj:*' for such an entry, which will match any string we
       // use.
-      switch (su->callers[i].ty) {
+      switch (su->callers[su_i].ty) {
          case ObjName: 
             if (!VG_(get_objname)(a, caller_name, ERRTXT_LEN))
                VG_(strcpy)(caller_name, "???");
             break; 
-
          case FunName: 
             // Nb: mangled names used in suppressions.  Do, though,
             // Z-demangle them, since otherwise it's possible to wind
@@ -1174,11 +1190,32 @@ Bool supp_matches_callers(Error* err, Supp* su)
             if (!VG_(get_fnname_Z_demangle_only)(a, caller_name, ERRTXT_LEN))
                VG_(strcpy)(caller_name, "???");
             break;
-         default: VG_(tool_panic)("supp_matches_callers");
+         case Wildcard:
+            has_asterisk = True;
+            su_i++;
+            continue;
+            break;
+         default:
+            VG_(tool_panic)("supp_matches_callers");
       }
-      if (0) VG_(printf)("cmp %s %s\n", su->callers[i].name, caller_name);
-      if (!VG_(string_match)(su->callers[i].name, caller_name))
-         return False;
+      tl_assert(su->callers[su_i].ty != Wildcard);
+      if (0) VG_(printf)("cmp %s %s\n", su->callers[su_i].name, caller_name);
+      if (!VG_(string_match)(su->callers[su_i].name, caller_name)) {
+         if (!has_asterisk)
+            return False;
+         // we are handling asterisk, just go to the next element of ips. 
+         err_i++;
+         continue;
+      }
+      // we found a match, no more asterisk... 
+      has_asterisk = False;
+      su_i++;
+      err_i++;
+   }
+
+   if (has_asterisk) {
+      // we were still trying to match asterisk. No match. 
+      return False;
    }
 
    /* If we reach here, it's a match */
@@ -1193,6 +1230,7 @@ static Supp* is_suppressible_error ( Error* err )
 {
    Supp* su;
    Supp* su_prev;
+   Supp* result = NULL;
 
    /* stats gathering */
    em_supplist_searches++;
@@ -1202,6 +1240,8 @@ static Supp* is_suppressible_error ( Error* err )
    for (su = suppressions; su != NULL; su = su->next) {
       em_supplist_cmps++;
       if (supp_matches_error(su, err) && supp_matches_callers(err, su)) {
+         result = su;
+#if 1
          /* got a match.  Move this entry to the head of the list
             in the hope of making future searches cheaper. */
          if (su_prev) {
@@ -1210,11 +1250,15 @@ static Supp* is_suppressible_error ( Error* err )
             su->next = suppressions;
             suppressions = su;
          }
-         return su;
+         return result;
+#else 
+        // used for testing the suppressions mechanism.
+        VG_(printf)("Found match: %s\n", su->sname);
+#endif
       }
       su_prev = su;
    }
-   return NULL;      /* no matches */
+   return result;
 }
 
 /* Show accumulated error-list and suppression-list search stats. 

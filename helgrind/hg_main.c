@@ -317,6 +317,18 @@ static Bool clo_more_context = True;
 // Very time and memory consuming! 
 static Bool clo_pure_happens_before = False;
 
+// If true, all races inside a C++ destructor will be ignored. 
+static Bool clo_ignore_in_dtor = False;
+
+// Print no more than this number of traces after a race has been detected.
+static UInt clo_trace_after_race = 50;
+
+
+// Size of context for locks. Usually should be less than --num-callers 
+// since collecting context for locks is quite expensive. 
+static UInt clo_exe_context_for_locks = 9;
+
+
 /* This has to do with printing error messages.  See comments on
    announce_threadset() and summarise_threadset().  Perhaps it
    should be a command line option. */
@@ -995,7 +1007,9 @@ static void lockN_acquire_writer ( Lock* lk, Thread* thr )
       ThreadId tid;
       tl_assert(HG_(isEmptyBag)(&lk->heldBy));
       tid = map_threads_maybe_reverse_lookup_SLOW(thr);
-      lk->acquired_at = VG_(record_ExeContext(tid, 0/*first_ip_delta*/));
+      lk->acquired_at = VG_(record_depth_N_ExeContext)
+                           (tid, 0/*first_ip_delta*/, 
+                                 clo_exe_context_for_locks);
    } else {
       tl_assert(!HG_(isEmptyBag)(&lk->heldBy));
    }
@@ -1051,8 +1065,9 @@ static void lockN_acquire_reader ( Lock* lk, Thread* thr )
       ThreadId tid;
       tl_assert(HG_(isEmptyBag)(&lk->heldBy));
       tid = map_threads_maybe_reverse_lookup_SLOW(thr);
-      lk->acquired_at = 
-          VG_(record_ExeContext(tid, 0/*first_ip_delta*/));
+      lk->acquired_at
+         = VG_(record_depth_N_ExeContext)
+              (tid, 0/*first_ip_delta*/, clo_exe_context_for_locks);
    } else {
       tl_assert(!HG_(isEmptyBag)(&lk->heldBy));
    }
@@ -2280,7 +2295,7 @@ static WordFM *mem_trace_map = NULL;
 static void mem_trace_on(UWord mem, ThreadId tid)
 {
    Thread *thr =  map_threads_lookup( tid );
-   if (clo_trace_level <= 0 && mem != 0xDEADBEAFUL) return;
+   if (clo_trace_level <= 0) return;
    if (!mem_trace_map) {
       mem_trace_map = HG_(newFM)( hg_zalloc, hg_free, NULL);
    }
@@ -2288,7 +2303,7 @@ static void mem_trace_on(UWord mem, ThreadId tid)
    VG_(message)(Vg_UserMsg, "ENABLED TRACE {{{: %p; S%d/T%d", mem, 
                (Int)thr->csegid,
                (Int)thr->errmsg_index);
-   if (clo_trace_level >= 2 || mem == 0xDEADBEAF) {
+   if (clo_trace_level >= 2) {
       VG_(get_and_pp_StackTrace)( tid, 15);
    }
    VG_(message)(Vg_UserMsg, "}}}");
@@ -2334,7 +2349,7 @@ static WordFM *mu_is_cv_map = NULL;
 static void set_mu_is_cv(Word mu, ThreadId tid)
 {
    ExeContext *context = NULL;
-   // context = VG_(record_ExeContext(tid, -1/*first_ip_delta*/));
+   // context = VG_(record_ExeContext)(tid, -1/*first_ip_delta*/);
    if (!mu_is_cv_map) {
       mu_is_cv_map = HG_(newFM) (hg_zalloc, hg_free, NULL);
    }
@@ -3547,7 +3562,7 @@ SegmentSet do_SS_update_SINGLE ( /*OUT*/Bool* hb_all_p,
                  // different thread, but happens-before
       *hb_all_p = True;
       newSS = SS_mk_singleton(currS);
-      if (UNLIKELY(do_trace)) {
+      if (UNLIKELY(0 && do_trace)) {
          VG_(printf)("HB(S%d/T%d,cur)=1\n",
                      S, SEG_get(S)->thr->errmsg_index);
       }
@@ -3556,7 +3571,7 @@ SegmentSet do_SS_update_SINGLE ( /*OUT*/Bool* hb_all_p,
       // Not happened-before. Leave this segment in SS.
       tl_assert(currS != S);
       newSS = HG_(doubletonWS)(univ_ssets, currS, S);
-      if (UNLIKELY(do_trace)) {
+      if (UNLIKELY(0 && do_trace)) {
          VG_(printf)("HB(S%d/T%d,cur)=0\n",
                      S, SEG_get(S)->thr->errmsg_index);
       }
@@ -3622,7 +3637,7 @@ SegmentSet do_SS_update_MULTI ( /*OUT*/Bool* hb_all_p,
          hb = True;
       }
       // trace 
-      if (do_trace) {
+      if (0 && do_trace) {
          VG_(printf)("HB(S%d/T%d,cur)=%d\n",
                      S, SEG_get(S)->thr->errmsg_index, hb);
       }
@@ -3726,7 +3741,31 @@ static inline SegmentSet do_SS_update ( /*OUT*/Bool* hb_all_p,
 }
 
 
+// One such object is associated with each traced address.
+typedef struct {
+   UInt n_accesses;
+   // more fields are likely to be added in the future. 
+} TraceInfo;
 
+
+static WordFM *trace_info_map; // addr->TraceInfo;
+
+static TraceInfo *get_trace_info(Addr a)
+{
+   UWord  key, val;
+   TraceInfo *res;
+   if (!trace_info_map) {
+      trace_info_map = HG_(newFM)( hg_zalloc, hg_free, NULL);
+   }
+
+   if (HG_(lookupFM)(trace_info_map, &key, &val, a)) {
+      tl_assert(key == (UWord)a);
+      return (TraceInfo*)val;
+   }
+   res = (TraceInfo*)hg_zalloc(sizeof(TraceInfo)); // zero-initialized
+   HG_(addToFM)(trace_info_map, (UWord)a, (UWord)res);
+   return res;
+}
 
 static void msm_do_trace(Thread *thr, 
                          Addr a, 
@@ -3741,8 +3780,20 @@ static void msm_do_trace(Thread *thr,
       // don't trace if the state is unchanged.
       return; 
    }
+   
+   TraceInfo *info = get_trace_info(a);
+   info->n_accesses++;
+
+   if (info->n_accesses > clo_trace_after_race) {
+      // we already printed too many traces
+      return;
+   }
+
+
    show_sval(buf, sizeof(buf), sv_new);
-   VG_(message)(Vg_UserMsg, "TRACE {{{: Access = {%p S%d/T%d %s} State = {%s}", a, 
+   VG_(message)(Vg_UserMsg, 
+                "TRACE[%d] {{{: Access = {%p S%d/T%d %s} State = {%s}", 
+                info->n_accesses, a, 
                 (int)thr->csegid, thr->errmsg_index, 
                 is_w ? "write" : "read", buf);
    if (trace_level >= 2) {
@@ -3761,6 +3812,9 @@ static void msm_do_trace(Thread *thr,
 
    VG_(message)(Vg_UserMsg, "}}}");
    VG_(message)(Vg_UserMsg, ""); // empty line
+
+
+
 }
 
 static INLINE 
@@ -3899,7 +3953,8 @@ SVal memory_state_machine(Bool is_w, Thread* thr, Addr a, SVal sv_old, Int sz)
    if (is_race && get_SHVAL_TRACE_BIT(sv_old)) {
       // Race is found for the second time. 
       // Stop tracing and start ignoring this memory location.
-      VG_(message)(Vg_UserMsg, "Race on %p is found again", a);
+      VG_(message)(Vg_UserMsg, "Race on %p is found again after %u accesses",
+                   a, get_trace_info(a)->n_accesses);
       sv_new = SHVAL_Ignore;
       is_race = False;
    }
@@ -5873,7 +5928,8 @@ void evhH__start_new_segment_for_thread ( /*OUT*/SegmentID* new_segidP,
 
    ThreadId tid = map_threads_maybe_reverse_lookup_SLOW(thr);
    if (clo_more_context && tid != VG_INVALID_THREADID)
-     SEG_set_context(*new_segidP, VG_(record_ExeContext(tid,-1/*first_ip_delta*/)));
+      SEG_set_context(*new_segidP,
+                      VG_(record_ExeContext)(tid,-1/*first_ip_delta*/));
 }
 
 
@@ -8886,11 +8942,25 @@ static UInt hg_update_extra ( Error* err )
    return sizeof(XError);
 }
 
+// Ugly. Need to return a value from apply_StackTrace()...
+static Bool destructor_detected = False;
+// A callback to be passed to apply_StackTrace(). 
+// A function is a DTOR iff it contains '::~'.
+static void detect_destructor(UInt n, Addr ip)
+{
+   static UChar buf[4096];
+   VG_(describe_IP)(ip, buf, sizeof(buf));
+   if (VG_(strstr)(buf, "::~")) {
+      destructor_detected = True;
+   }
+}
+
 static Bool record_error_Race ( Thread* thr, 
                                 Addr data_addr, Bool isWrite, Int szB,
                                 SVal old_sv, SVal new_sv,
                                 ExeContext* mb_lastlock ) {
    XError xe;
+   ThreadId tid = map_threads_maybe_reverse_lookup_SLOW(thr);
    tl_assert( is_sane_Thread(thr) );
    init_XError(&xe);
    xe.tag = XE_Race;
@@ -8915,7 +8985,6 @@ static Bool record_error_Race ( Thread* thr,
       any reported races.  It appears that ld.so does intentionally
       racey things in PLTs and it's simplest just to ignore it. */
    if (1) {
-      ThreadId tid = map_threads_maybe_reverse_lookup_SLOW(thr);
       if (tid != VG_INVALID_THREADID) {
          Addr ip_at_error = VG_(get_IP)( tid );
          if (VG_(seginfo_sect_kind)(NULL, 0, ip_at_error) == Vg_SectPLT) {
@@ -8934,9 +9003,20 @@ static Bool record_error_Race ( Thread* thr,
       }
    }
 
+   destructor_detected = False;
+   if (1) {
+      // check if the stack trace contains a DTOR
+      ExeContext *context = VG_(record_ExeContext)(tid,-1/*first_ip_delta*/);
+      VG_(apply_ExeContext)(detect_destructor, context, 1000);
+      if (destructor_detected && clo_ignore_in_dtor) return False;
+   }
+
    Bool res = VG_(maybe_record_error)( map_threads_reverse_lookup_SLOW(thr),
                             XE_Race, data_addr, NULL, &xe );
 
+   if (res && destructor_detected) {
+      VG_(message)(Vg_UserMsg, "NOTE: this race was detected inside a DTOR");
+   }
    return res;
 }
 
@@ -9594,6 +9674,12 @@ static Bool hg_process_cmd_line_option ( Char* arg )
       if (clo_max_segment_set_size < 4)
          clo_max_segment_set_size = 4;
    }
+   else if (VG_CLO_STREQN(19, arg, "--trace-after-race=")) {
+      clo_trace_after_race = VG_(atoll)(&arg[19]);
+   }
+   else if (VG_CLO_STREQN(24, arg, "--exe-context-for-locks=")) {
+      clo_exe_context_for_locks = VG_(atoll)(&arg[24]);
+   }
 
    else if (VG_CLO_STREQ(arg, "--ss-recycle=yes"))
       clo_ss_recycle = True;
@@ -9604,6 +9690,11 @@ static Bool hg_process_cmd_line_option ( Char* arg )
       clo_more_context = True;
    else if (VG_CLO_STREQ(arg, "--more-context=no"))
       clo_more_context = False;
+
+   else if (VG_CLO_STREQ(arg, "--ignore-in-dtor=yes"))
+      clo_ignore_in_dtor = True;
+   else if (VG_CLO_STREQ(arg, "--ignore-in-dtor=no"))
+      clo_ignore_in_dtor = False;
 
    else if (VG_CLO_STREQ(arg, "--pure-happens-before=yes"))
       clo_pure_happens_before = True;

@@ -164,6 +164,16 @@ void VG_(pp_ExeContext) ( ExeContext* ec )
 }
 
 
+void VG_(apply_ExeContext)( void(*action)(UInt n, Addr ip),
+                            ExeContext* ec, UInt n_ips ) 
+{
+   VG_(apply_StackTrace)(action, ec->ips, 
+                         n_ips < ec->n_ips ? n_ips : ec->n_ips);
+}
+
+
+
+
 /* Compare two ExeContexts, comparing all callers. */
 Bool VG_(eq_ExeContext) ( VgRes res, ExeContext* e1, ExeContext* e2 )
 {
@@ -281,7 +291,8 @@ static void resize_ec_htab ( void )
 }
 
 static ExeContext* record_ExeContext_wrk ( ThreadId tid, Word first_ip_delta,
-                                           Bool first_ip_only )
+                                           Bool first_ip_only, 
+                                           UInt n_ips_requested )
 {
    Int         i;
    Addr        ips[VG_DEEPEST_BACKTRACE];
@@ -298,21 +309,21 @@ static ExeContext* record_ExeContext_wrk ( ThreadId tid, Word first_ip_delta,
    vg_assert(sizeof(void*) == sizeof(Addr));
 
    init_ExeContext_storage();
-   vg_assert(VG_(clo_backtrace_size) >= 1 &&
-             VG_(clo_backtrace_size) <= VG_DEEPEST_BACKTRACE);
+   vg_assert(n_ips_requested >= 1 &&
+             n_ips_requested <= VG_DEEPEST_BACKTRACE);
 
    if (first_ip_only) {
       vg_assert(VG_(is_valid_tid)(tid));
       n_ips = 1;
       ips[0] = VG_(get_IP)(tid);
    } else {
-      n_ips = VG_(get_StackTrace)( tid, ips, VG_(clo_backtrace_size),
+      n_ips = VG_(get_StackTrace)( tid, ips, n_ips_requested,
                                    NULL/*array to dump SP values in*/,
                                    NULL/*array to dump FP values in*/,
                                    first_ip_delta );
    }
 
-   tl_assert(n_ips >= 1 && n_ips <= VG_(clo_backtrace_size));
+   tl_assert(n_ips >= 1 && n_ips <= n_ips_requested);
 
    /* Now figure out if we've seen this one before.  First hash it so
       as to determine the list number. */
@@ -393,12 +404,23 @@ static ExeContext* record_ExeContext_wrk ( ThreadId tid, Word first_ip_delta,
 
 ExeContext* VG_(record_ExeContext)( ThreadId tid, Word first_ip_delta ) {
    return record_ExeContext_wrk( tid, first_ip_delta,
-                                      False/*!first_ip_only*/ );
+                                      False/*!first_ip_only*/, 
+                                      VG_(clo_backtrace_size) );
 }
+
+ExeContext* VG_(record_depth_N_ExeContext)( ThreadId tid, 
+                                            Word first_ip_delta, 
+                                            UInt n_ips_requested ) {
+   return record_ExeContext_wrk( tid, first_ip_delta,
+                                      False/*!first_ip_only*/, 
+                                      n_ips_requested );
+}
+
+
 
 ExeContext* VG_(record_depth_1_ExeContext)( ThreadId tid ) {
    return record_ExeContext_wrk( tid, 0/*first_ip_delta*/,
-                                      True/*first_ip_only*/ );
+                                      True/*first_ip_only*/, 1);
 }
 
 
@@ -406,6 +428,12 @@ StackTrace VG_(extract_StackTrace) ( ExeContext* e )
 {                                  
    return e->ips;
 }  
+
+UInt VG_(extract_StackTraceSize) ( ExeContext* e )
+{                                  
+   return e->n_ips;
+}  
+
 
 /*--------------------------------------------------------------------*/
 /*--- end                                           m_execontext.c ---*/

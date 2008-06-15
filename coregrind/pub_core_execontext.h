@@ -52,6 +52,9 @@ extern void VG_(print_ExeContext_stats) ( void );
 // pub_core_stacktrace.h also.)
 extern /*StackTrace*/Addr* VG_(extract_StackTrace) ( ExeContext* e );
 
+// Return the number of elements in ExeContext.
+extern UInt VG_(extract_StackTraceSize) ( ExeContext* e );
+
 #endif   // __PUB_CORE_EXECONTEXT_H
 
 /*--------------------------------------------------------------------*/

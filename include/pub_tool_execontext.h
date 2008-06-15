@@ -57,6 +57,13 @@ typedef
 extern 
 ExeContext* VG_(record_ExeContext) ( ThreadId tid, Word first_ip_delta );
 
+// Same as record_ExeContext, but request 'n_ips_requested' ips 
+// instead of the value of --num-callers. 
+extern 
+ExeContext* VG_(record_depth_N_ExeContext) ( ThreadId tid,
+                                             Word first_ip_delta,
+                                             UInt n_ips_requested );
+
 // Trivial version of VG_(record_ExeContext), which just records the
 // thread's current program counter but does not do any stack
 // unwinding.  This is useful in some rare cases when we suspect the
@@ -72,7 +79,7 @@ ExeContext* VG_(record_depth_1_ExeContext)( ThreadId tid );
 extern void VG_(apply_ExeContext)( void(*action)(UInt n, Addr ip),
                                    ExeContext* ec, UInt n_ips );
 
-// Compare two ExeContexts.  Number of callers considered depends on `res':
+// Compare two ExeContexts.  Number of callers considered depends on 'res':
 //   Vg_LowRes:  2
 //   Vg_MedRes:  4
 //   Vg_HighRes: all
