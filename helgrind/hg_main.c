@@ -326,7 +326,7 @@ static UInt clo_trace_after_race = 50;
 
 // Size of context for locks. Usually should be less than --num-callers 
 // since collecting context for locks is quite expensive. 
-static UInt clo_exe_context_for_locks = 9;
+static UInt clo_num_callers_for_locks = 9;
 
 
 /* This has to do with printing error messages.  See comments on
@@ -1009,7 +1009,7 @@ static void lockN_acquire_writer ( Lock* lk, Thread* thr )
       tid = map_threads_maybe_reverse_lookup_SLOW(thr);
       lk->acquired_at = VG_(record_depth_N_ExeContext)
                            (tid, 0/*first_ip_delta*/, 
-                                 clo_exe_context_for_locks);
+                                 clo_num_callers_for_locks);
    } else {
       tl_assert(!HG_(isEmptyBag)(&lk->heldBy));
    }
@@ -1067,7 +1067,7 @@ static void lockN_acquire_reader ( Lock* lk, Thread* thr )
       tid = map_threads_maybe_reverse_lookup_SLOW(thr);
       lk->acquired_at
          = VG_(record_depth_N_ExeContext)
-              (tid, 0/*first_ip_delta*/, clo_exe_context_for_locks);
+              (tid, 0/*first_ip_delta*/, clo_num_callers_for_locks);
    } else {
       tl_assert(!HG_(isEmptyBag)(&lk->heldBy));
    }
@@ -9677,8 +9677,8 @@ static Bool hg_process_cmd_line_option ( Char* arg )
    else if (VG_CLO_STREQN(19, arg, "--trace-after-race=")) {
       clo_trace_after_race = VG_(atoll)(&arg[19]);
    }
-   else if (VG_CLO_STREQN(24, arg, "--exe-context-for-locks=")) {
-      clo_exe_context_for_locks = VG_(atoll)(&arg[24]);
+   else if (VG_CLO_STREQN(24, arg, "--num-callers-for-locks=")) {
+      clo_num_callers_for_locks = VG_(atoll)(&arg[24]);
    }
 
    else if (VG_CLO_STREQ(arg, "--ss-recycle=yes"))
@@ -9753,15 +9753,21 @@ static void hg_print_usage ( void )
    VG_(printf)(
 "    --happens-before=none|threads|all   [all] consider no events, thread\n"
 "      create/join, create/join/cvsignal/cvwait/semwait/post as sync points\n"
-"    --trace-addr=0xXXYYZZ     show all state changes for address 0xXXYYZZ\n"
-"    --trace-level=0|1|2       verbosity level of --trace-addr [1]\n"
-"    --max-segment-set-size=<N>  limit mem use by limiting SegSet sizes [20]\n"
-"    --ignore-n=<N>            speedup hack; add documentation\n"
-"    --ignore-i=<N>            speedup hack; add documentation\n"
-"    --ss-recycle=no|yes [yes] recycle segment sets\n"
-"    --pure-happens-before=no|yes [no]  be a pure-happens-before detector\n"
-"    --more-context=no|yes [yes]       record context at lock lossage\n"
-"                                      and at segment creation\n"
+"    --trace-addr=0xXXYYZZ    show all state changes for address 0xXXYYZZ\n"
+"    --trace-level=0|1|2      verbosity level of --trace-addr [1]\n"
+"    --max-segment-set-size=<N>\n"
+"                             limit mem use by limiting SegSet sizes [20]\n"
+"    --ignore-n=<N>           speedup hack; add documentation\n"
+"    --ignore-i=<N>           speedup hack; add documentation\n"
+"    --ss-recycle=no|yes      recycle segment sets [yes]\n"
+"    --pure-happens-before=no|yes\n"
+"                             be a pure-happens-before detector  [no]\n"
+"    --more-context=no|yes    record context at lock lossage\n"
+"                             and at segment creation  [yes]\n"
+"    --ignore-in-dtor=no|yes  suppress races involving C++ destructors [no]\n"
+"    --trace-after-race=<N>   limits tracing of racey addresses  [50]\n"
+"    --num-callers-for-locks=<N>  show <N> callers in stack traces\n"
+"                                 for lock acquisitions/releases [9]\n"
    );
    VG_(replacement_malloc_print_usage)();
 }
