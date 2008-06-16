@@ -1579,8 +1579,8 @@ static void show_sval ( /*OUT*/Char* buf, Int nBuf, SVal sv )
       LockSet    ls = get_SHVAL_LS(sv);
       UWord n_segments = SS_get_size(ss);
       Int n_locks    = HG_(cardinalityWS)(univ_lsets, ls);
-      VG_(sprintf)(buf, "%s; #SS=%d; #LS=%d; ", 
-                   is_m ? "Modified" : "ReadOnly", n_segments, n_locks);
+      VG_(sprintf)(buf, "%s; #LS=%d; #SS=%d; ", 
+                   is_m ? "Modified" : "ReadOnly", n_locks, (Int)n_segments);
 
       for (i = 0; i < n_segments; i++) {
          SegmentID S;
@@ -1590,8 +1590,8 @@ static void show_sval ( /*OUT*/Char* buf, Int nBuf, SVal sv )
          }
          S = SS_get_element(ss, i);
          if (i > 0)  VG_(sprintf)(buf + VG_(strlen)(buf), ", ");
-         VG_(sprintf)(buf + VG_(strlen)(buf), "S%d/T%d", 
-                      (Int)S, SEG_get(S)->thr->errmsg_index);
+         VG_(sprintf)(buf + VG_(strlen)(buf), "T%d/S%d", 
+                      (Int)SEG_get(S)->thr->errmsg_index, (Int)S);
       }
    } else {
       VG_(sprintf)(buf, "Invalid-shadow-word(%u)", sv);
@@ -3796,7 +3796,7 @@ static void msm_do_trace(Thread *thr,
                 "TRACE[%d] {{{: Access = {%p S%d/T%d %s} State = {%s}", 
                 info->n_accesses, a, 
                 (Int)thr->csegid, thr->errmsg_index, 
-                is_w ? "write" : "read", buf);
+                is_w ? "wr" : "rd", buf);
    if (trace_level >= 2) {
       ThreadId tid = map_threads_maybe_reverse_lookup_SLOW(thr);
       if (tid != VG_INVALID_THREADID) {
@@ -9181,11 +9181,11 @@ static void announce_one_thread ( Thread* thr ) {
                                about the identity of the root
                                thread*/) {
       tl_assert(thr->created_at == NULL);
-      VG_(message)(Vg_UserMsg, "Thread #%d is the program's root thread",
+      VG_(message)(Vg_UserMsg, "Thread T%d is the program's root thread",
                    thr->errmsg_index);
    } else {
       tl_assert(thr->created_at != NULL);
-      VG_(message)(Vg_UserMsg, "Thread #%d was created",
+      VG_(message)(Vg_UserMsg, "Thread T%d was created",
                    thr->errmsg_index);
       VG_(pp_ExeContext)( thr->created_at );
    }
