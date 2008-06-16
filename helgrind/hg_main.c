@@ -1157,7 +1157,7 @@ static inline Bool is_sane_SecMap ( SecMap* sm ) {
 //
 //   SVal:
 //   10SSSSSSSSSSSSSSSSSSSSSSSSSSrrrrTrrrrrrrLLLLLLLLLLLLLLLLLLLLLLLL Read
-//   11SSSSSSSSSSSSSSSSSSSSSSSSSSrrrrTrrrrrrrLLLLLLLLLLLLLLLLLLLLLLLL Write
+//   11SSSSSSSSSSSSSSSSSSSSSSSSSSrrrrTrrrrrrrLLLLLLLLLLLLLLLLLLLLLLLL Mod
 //     \_______ 26 _____________/            \________ 24 __________/
 // 
 //   0100000000000000000000000000000000000000000000000000000000000001 Ignore
@@ -1188,13 +1188,13 @@ static inline Bool is_sane_SecMap ( SecMap* sm ) {
 
 //------------- segment set, lock set --------------
 
-#define N_SEG_SEG_BITS 26
+#define N_SEG_SEG_BITS     26
 #define N_LOCK_SET_BITS    24
 #define TRACE_BIT_POSITION 31
 
 #define SHVAL_New       ((SVal)(2<<8))
 #define SHVAL_Invalid   ((SVal)(0))
-#define SHVAL_Ignore      ((SVal)((1ULL << 62)+1))
+#define SHVAL_Ignore    ((SVal)((1ULL << 62)+1))
 
 typedef  UInt       SegmentSet;
 typedef  WordSetID  LockSet;  /* UInt */
@@ -1270,24 +1270,24 @@ static inline Bool LS_valid (LockSet ls) {
    return ls < (1 << N_LOCK_SET_BITS);
 }
 
-static inline SVal mk_SHVAL_RW (Bool is_w, SegmentSet ss, LockSet ls) {
+static inline SVal mk_SHVAL_RM (Bool is_m, SegmentSet ss, LockSet ls) {
    SVal res;
    if (SCE_SVALS) {
       tl_assert(SS_valid(ss));
       tl_assert(LS_valid(ls));
    }
    res = (1ULL << 63) 
-         |  ((SVal)is_w << 62) 
+         |  ((SVal)is_m << 62) 
          |  ((SVal)ss << (62-N_SEG_SEG_BITS)) 
          |  ((SVal)ls);
    //  VG_(printf)("XX %llx\n", res);
    return res;
 }
 static inline SVal mk_SHVAL_R (SegmentSet ss, LockSet ls) {
-   return mk_SHVAL_RW(False, ss, ls);
+   return mk_SHVAL_RM(False, ss, ls);
 }
-static inline SVal mk_SHVAL_W (SegmentSet ss, LockSet ls) {
-   return mk_SHVAL_RW(True, ss, ls);
+static inline SVal mk_SHVAL_M (SegmentSet ss, LockSet ls) {
+   return mk_SHVAL_RM(True, ss, ls);
 }
 
 static inline Bool get_SHVAL_TRACE_BIT (SVal sv) {
@@ -1314,26 +1314,26 @@ static inline LockSet get_SHVAL_LS (SVal sv) {
    return ls;
 }
 
-static inline Bool is_SHVAL_RW (SVal sv) {
-   /* Top 2 bits are 10 (R) or 11 (W) */
+static inline Bool is_SHVAL_RM (SVal sv) {
+   /* Top 2 bits are 10 (R) or 11 (M) */
    return (sv >> 63) != 0;
 } 
 static inline Bool is_SHVAL_R (SVal sv) {
    return ((sv >> 62) & 3) == 2; /* == 10 (R) */
 }
-static inline Bool is_SHVAL_W (SVal sv) {
+static inline Bool is_SHVAL_M (SVal sv) {
    return ((sv >> 62) & 3) == 3; /* == 11 (W) */
 }
 
 static inline Bool is_SHVAL_Shared (SVal sv) {
-   return is_SHVAL_RW(sv) && !SS_is_singleton(get_SHVAL_SS(sv));
+   return is_SHVAL_RM(sv) && !SS_is_singleton(get_SHVAL_SS(sv));
 }
 
-static inline Bool is_SHVAL_New  (SVal sv) {return sv == SHVAL_New;}
+static inline Bool is_SHVAL_New    (SVal sv) {return sv == SHVAL_New;}
 static inline Bool is_SHVAL_Ignore (SVal sv) {return sv == SHVAL_Ignore;}
 
 static inline Bool is_SHVAL_valid ( SVal sv) {
-   return is_SHVAL_RW(sv) || is_SHVAL_New(sv)
+   return is_SHVAL_RM(sv) || is_SHVAL_New(sv)
           || is_SHVAL_Ignore(sv)
           ;
 }
@@ -1342,7 +1342,7 @@ static inline Bool is_SHVAL_valid ( SVal sv) {
 static inline Bool is_SHVAL_valid_SLOW ( SVal sv) {
    if (!is_SHVAL_valid(sv)) return False;
 #if 0
-   if (clo_ss_recycle && is_SHVAL_RW(sv)) {
+   if (clo_ss_recycle && is_SHVAL_RM(sv)) {
       SegmentSet SS = get_SHVAL_SS(sv); 
       if (!SS_is_singleton(SS)) {
          if (!(HG_(saneWS_SLOW(univ_ssets, SS)))) {
@@ -1357,7 +1357,7 @@ static inline Bool is_SHVAL_valid_SLOW ( SVal sv) {
 
 // If sv has a non-singleton SS, increment it's refcount by 1.
 static inline void SHVAL_SS_ref(SVal sv) {
-   if (LIKELY(is_SHVAL_RW(sv))) {
+   if (LIKELY(is_SHVAL_RM(sv))) {
       SegmentSet ss = get_SHVAL_SS(sv);
       if (UNLIKELY(!SS_is_singleton(ss))) {
          SS_ref(ss, 1);
@@ -1572,15 +1572,15 @@ static void show_sval ( /*OUT*/Char* buf, Int nBuf, SVal sv )
       VG_(sprintf)(buf, "%s", "New");
    } else if (is_SHVAL_Ignore(sv)) {
       VG_(sprintf)(buf, "%s", "Ignore");
-   } else if (is_SHVAL_RW(sv)) {
+   } else if (is_SHVAL_RM(sv)) {
       UWord i;
-      Bool is_w     = is_SHVAL_W(sv);
+      Bool is_m     = is_SHVAL_M(sv);
       SegmentSet ss = get_SHVAL_SS(sv);
       LockSet    ls = get_SHVAL_LS(sv);
       UWord n_segments = SS_get_size(ss);
       Int n_locks    = HG_(cardinalityWS)(univ_lsets, ls);
       VG_(sprintf)(buf, "%s; #SS=%d; #LS=%d; ", 
-                   is_w ? "Write" : "Read", n_segments, n_locks);
+                   is_m ? "Modified" : "ReadOnly", n_segments, n_locks);
 
       for (i = 0; i < n_segments; i++) {
          SegmentID S;
@@ -3239,7 +3239,7 @@ static void shmem__sanity_check ( Char* who )
          //if (!is_SHVAL_NoAccess(sv))
          //   allNoAccess = False;
 
-         if (is_SHVAL_RW(sv)) {
+         if (is_SHVAL_RM(sv)) {
             LockSet    LS = get_SHVAL_LS(sv);
             SegmentSet SS = get_SHVAL_SS(sv);
             // check segment set
@@ -3339,10 +3339,10 @@ static void all__sanity_check ( Char* who ) {
 static UWord stats__msm_BHL_hack     = 0;
 static UWord stats__msm_Ignore       = 0;
 static UWord stats__msm_R_to_R       = 0;
-static UWord stats__msm_R_to_W       = 0;
-static UWord stats__msm_W_to_R       = 0;
-static UWord stats__msm_W_to_W       = 0;
-static UWord stats__msm_New_to_W     = 0;
+static UWord stats__msm_R_to_M       = 0;
+static UWord stats__msm_M_to_R       = 0;
+static UWord stats__msm_M_to_M       = 0;
+static UWord stats__msm_New_to_M     = 0;
 static UWord stats__msm_New_to_R     = 0;
 static UWord stats__msm_oldSS_single = 0;
 static UWord stats__msm_oldSS_multi  = 0;
@@ -3703,12 +3703,13 @@ SegmentSet do_SS_update_MULTI ( /*OUT*/Bool* hb_all_p,
    return newSS;
 }
 
-static inline SegmentSet do_SS_update ( /*OUT*/Bool* hb_all_p, 
-                                        /*OUT*/Bool* may_recycle_oldSS_p,
-                                Thread* thr,
-                                Bool do_trace,
-                                SegmentSet oldSS, SegmentID currS,
-                                UWord sz)
+inline
+static SegmentSet do_SS_update ( /*OUT*/Bool* hb_all_p, 
+                                 /*OUT*/Bool* may_recycle_oldSS_p,
+                                 Thread* thr,
+                                 Bool do_trace,
+                                 SegmentSet oldSS, SegmentID currS,
+                                 UWord sz)
 {  
    SegmentSet newSS;
    Bool oldSS_has_active_segment = False;
@@ -3772,7 +3773,7 @@ static void msm_do_trace(Thread *thr,
                          SVal sv_old, 
                          SVal sv_new, 
                          Bool is_w,
-                         int trace_level
+                         Int trace_level
                          ) 
 {
    HChar buf[200];
@@ -3794,7 +3795,7 @@ static void msm_do_trace(Thread *thr,
    VG_(message)(Vg_UserMsg, 
                 "TRACE[%d] {{{: Access = {%p S%d/T%d %s} State = {%s}", 
                 info->n_accesses, a, 
-                (int)thr->csegid, thr->errmsg_index, 
+                (Int)thr->csegid, thr->errmsg_index, 
                 is_w ? "write" : "read", buf);
    if (trace_level >= 2) {
       ThreadId tid = map_threads_maybe_reverse_lookup_SLOW(thr);
@@ -3884,14 +3885,14 @@ SVal memory_state_machine(Bool is_w, Thread* thr, Addr a, SVal sv_old, Int sz)
    tl_assert(is_sane_Thread(thr));
 
    // Read or Write
-   if (LIKELY(is_SHVAL_RW(sv_old))) {
-      Bool       was_w, now_w;
+   if (LIKELY(is_SHVAL_RM(sv_old))) {
+      Bool was_m, now_m;
       // check the trace bit
       if (UNLIKELY(get_SHVAL_TRACE_BIT(sv_old))) { 
          trace_level = 2;
       }
       
-      was_w = is_SHVAL_W(sv_old);
+      was_m = is_SHVAL_M(sv_old);
 
       tl_assert(is_SHVAL_valid_SLOW(sv_old));
       // update the segment set and compute hb_all
@@ -3911,28 +3912,28 @@ SVal memory_state_machine(Bool is_w, Thread* thr, Addr a, SVal sv_old, Int sz)
       }
 
       // update the state 
-      now_w = is_w ? True : (was_w && !hb_all);
+      now_m = is_w ? True : (was_m && !hb_all);
 
       // generate new SVal
-      sv_new = mk_SHVAL_RW(now_w, newSS, newLS);
+      sv_new = mk_SHVAL_RM(now_m, newSS, newLS);
       sv_new = set_SHVAL_TRACE_BIT(sv_new, get_SHVAL_TRACE_BIT(sv_old));
 
-      is_race = now_w && !SS_is_singleton(newSS)
+      is_race = now_m && !SS_is_singleton(newSS)
                       && HG_(isEmptyWS)(univ_lsets, newLS);
 
-      if      ( (!was_w) && (!now_w) ) stats__msm_R_to_R++;
-      else if ( (!was_w) && (now_w) )  stats__msm_R_to_W++;
-      else if ( (was_w)  && (!now_w) ) stats__msm_W_to_R++;
-      else if ( (was_w)  && (now_w) )  stats__msm_W_to_W++;
+      if      ( (!was_m) && (!now_m) ) stats__msm_R_to_R++;
+      else if ( (!was_m) && (now_m) )  stats__msm_R_to_M++;
+      else if ( (was_m)  && (!now_m) ) stats__msm_M_to_R++;
+      else if ( (was_m)  && (now_m) )  stats__msm_M_to_M++;
 
       goto done;
    }
 
    // New
    if (is_SHVAL_New(sv_old)) {
-      stats__msm_New_to_W++; 
+      stats__msm_New_to_M++; 
       newSS = SS_mk_singleton(currS);
-      sv_new = mk_SHVAL_RW(is_w, newSS, currLS);
+      sv_new = mk_SHVAL_RM(is_w, newSS, currLS);
       goto done;
    }
 
@@ -3973,7 +3974,7 @@ SVal memory_state_machine(Bool is_w, Thread* thr, Addr a, SVal sv_old, Int sz)
       if (race_was_recorded) {
          // if we did record a race and if this mem was not traced before, 
          // turn tracing on.
-         sv_new = mk_SHVAL_RW(is_w, SS_mk_singleton(currS), currLS);
+         sv_new = mk_SHVAL_RM(is_w, SS_mk_singleton(currS), currLS);
          sv_new = set_SHVAL_TRACE_BIT(sv_new, True);
          msm_do_trace(thr, a, sv_old, sv_new, is_w, 2);
       } else {
@@ -9197,7 +9198,7 @@ static int add_threads_from_sval_to_array (SVal sv, XArray *xa)
 {
    UWord i;
    SegmentSet SS;
-   if (!is_SHVAL_RW(sv)) return 0;
+   if (!is_SHVAL_RM(sv)) return 0;
    SS = get_SHVAL_SS(sv);
    for (i = 0; i < SS_get_size(SS); i++) {
       SegmentID segid = SS_get_element(SS, i);
@@ -9401,7 +9402,7 @@ static void hg_pp_Error ( Error* err )
       VG_(message)(Vg_UserMsg, "  old state = {%s}", old_buf);
       VG_(message)(Vg_UserMsg, "  new state = {%s}", new_buf);
 
-      if (is_SHVAL_RW(old_state)) {
+      if (is_SHVAL_RM(old_state)) {
          SegmentSet SS = get_SHVAL_SS(old_state);
          for (i = 0; i < (int)SS_get_size(SS); i++) {
             SegmentID segid = SS_get_element(SS, i);
@@ -9883,12 +9884,12 @@ static void hg_fini ( Int exitcode )
       VG_(printf)("\n");
       VG_(printf)("     msm: %,14lu %,14lu  BHL-skipped, Ignore\n",
                   stats__msm_BHL_hack, stats__msm_Ignore);
-      VG_(printf)("     msm: %,14lu %,14lu  R_to_R,   R_to_W\n",
-                  stats__msm_R_to_R, stats__msm_R_to_W);
-      VG_(printf)("     msm: %,14lu %,14lu  W_to_R,   W_to_W\n",
-                  stats__msm_W_to_R, stats__msm_W_to_W);
-      VG_(printf)("     msm: %,14lu %,14lu  New_to_R, New_to_W\n",
-                  stats__msm_New_to_R, stats__msm_New_to_W);
+      VG_(printf)("     msm: %,14lu %,14lu  R_to_R,   R_to_M\n",
+                  stats__msm_R_to_R, stats__msm_R_to_M);
+      VG_(printf)("     msm: %,14lu %,14lu  M_to_R,   M_to_M\n",
+                  stats__msm_M_to_R, stats__msm_M_to_M);
+      VG_(printf)("     msm: %,14lu %,14lu  New_to_R, New_to_M\n",
+                  stats__msm_New_to_R, stats__msm_New_to_M);
       VG_(printf)("     msm: %,14lu                 SS_update_single\n", 
                   stats__msm_oldSS_single);
       VG_(printf)("     msm: %,14lu %,14lu  SS_update_multi, shortcut\n", 
