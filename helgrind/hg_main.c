@@ -2308,13 +2308,13 @@ static void mem_trace_on(UWord mem, ThreadId tid)
       mem_trace_map = HG_(newFM)( hg_zalloc, hg_free, NULL);
    }
    HG_(addToFM)(mem_trace_map, mem, mem);
-   VG_(message)(Vg_UserMsg, "ENABLED TRACE {{: %p; S%d/T%d", mem, 
+   VG_(message)(Vg_UserMsg, "ENABLED TRACE {{{: %p; S%d/T%d", mem, 
                (Int)thr->csegid,
                (Int)thr->errmsg_index);
    if (clo_trace_level >= 2) {
       VG_(get_and_pp_StackTrace)( tid, 15);
    }
-   VG_(message)(Vg_UserMsg, "}}");
+   VG_(message)(Vg_UserMsg, "}}}");
    VG_(message)(Vg_UserMsg, "");
 }
 
@@ -3801,7 +3801,7 @@ static void msm_do_trace(Thread *thr,
 
    show_sval(buf, sizeof(buf), sv_new);
    VG_(message)(Vg_UserMsg, 
-                "TRACE[%d] {{: Access{T%d/S%d %s %p} -> new State{%s}", 
+                "TRACE[%d] {{{: Access{T%d/S%d %s %p} -> new State{%s}", 
                 info->n_accesses,
                 (Int)thr->errmsg_index, 
                 (Int)thr->csegid, 
@@ -3820,7 +3820,7 @@ static void msm_do_trace(Thread *thr,
       VG_(message)(Vg_UserMsg, " BHL is held\n");
    }
 
-   VG_(message)(Vg_UserMsg, "}}");
+   VG_(message)(Vg_UserMsg, "}}}");
    VG_(message)(Vg_UserMsg, ""); // empty line
 
 
