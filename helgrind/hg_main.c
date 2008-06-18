@@ -1555,7 +1555,9 @@ static void show_lockset(LockSet ls)
 
    for (i = 0; i < nWords; i++) {
       Lock* lk = (Lock*)word[i];
-      VG_(message)(Vg_UserMsg, "   L:%p/%p", lk, lk->guestaddr);
+      //      VG_(message)(Vg_UserMsg, "   L:%p/%p", lk, lk->guestaddr);
+      VG_(message)(Vg_UserMsg, "   Lock located at %p and first observed",
+                               lk->guestaddr);
       if (lk->acquired_at) {
          VG_(pp_ExeContext)(lk->acquired_at);
       }  
@@ -1579,8 +1581,14 @@ static void show_sval ( /*OUT*/Char* buf, Int nBuf, SVal sv )
       LockSet    ls = get_SHVAL_LS(sv);
       UWord n_segments = SS_get_size(ss);
       Int n_locks    = HG_(cardinalityWS)(univ_lsets, ls);
+#if 0
+      HChar* name    = is_m ? (n_segments > 1 ? "ShM" : "ExM")
+                            : (n_segments > 1 ? "ShR" : "ExR" );
+#else
+      HChar* name    = is_m ? "Mod" : "RdO";
+#endif
       VG_(sprintf)(buf, "%s; #LS=%d; #SS=%d; ", 
-                   is_m ? "Modified" : "ReadOnly", n_locks, (Int)n_segments);
+                   name, n_locks, (Int)n_segments);
 
       for (i = 0; i < n_segments; i++) {
          SegmentID S;
@@ -2300,13 +2308,13 @@ static void mem_trace_on(UWord mem, ThreadId tid)
       mem_trace_map = HG_(newFM)( hg_zalloc, hg_free, NULL);
    }
    HG_(addToFM)(mem_trace_map, mem, mem);
-   VG_(message)(Vg_UserMsg, "ENABLED TRACE {{{: %p; S%d/T%d", mem, 
+   VG_(message)(Vg_UserMsg, "ENABLED TRACE {{: %p; S%d/T%d", mem, 
                (Int)thr->csegid,
                (Int)thr->errmsg_index);
    if (clo_trace_level >= 2) {
       VG_(get_and_pp_StackTrace)( tid, 15);
    }
-   VG_(message)(Vg_UserMsg, "}}}");
+   VG_(message)(Vg_UserMsg, "}}");
    VG_(message)(Vg_UserMsg, "");
 }
 
@@ -3793,10 +3801,11 @@ static void msm_do_trace(Thread *thr,
 
    show_sval(buf, sizeof(buf), sv_new);
    VG_(message)(Vg_UserMsg, 
-                "TRACE[%d] {{{: Access = {%p S%d/T%d %s} State = {%s}", 
-                info->n_accesses, a, 
-                (Int)thr->csegid, thr->errmsg_index, 
-                is_w ? "wr" : "rd", buf);
+                "TRACE[%d] {{: Access{T%d/S%d %s %p} -> new State{%s}", 
+                info->n_accesses,
+                (Int)thr->errmsg_index, 
+                (Int)thr->csegid, 
+                is_w ? "wr" : "rd", a, buf);
    if (trace_level >= 2) {
       ThreadId tid = map_threads_maybe_reverse_lookup_SLOW(thr);
       if (tid != VG_INVALID_THREADID) {
@@ -3811,7 +3820,7 @@ static void msm_do_trace(Thread *thr,
       VG_(message)(Vg_UserMsg, " BHL is held\n");
    }
 
-   VG_(message)(Vg_UserMsg, "}}}");
+   VG_(message)(Vg_UserMsg, "}}");
    VG_(message)(Vg_UserMsg, ""); // empty line
 
 
@@ -9407,9 +9416,10 @@ static void hg_pp_Error ( Error* err )
          for (i = 0; i < (int)SS_get_size(SS); i++) {
             SegmentID segid = SS_get_element(SS, i);
             ExeContext *context = SEG_get_context(segid);
-            if(context) {
-               VG_(message)(Vg_UserMsg, " SS%d/T%d:", segid,
-                            SEG_get(segid)->thr->errmsg_index);
+            if (context) {
+               VG_(message)(Vg_UserMsg, " T%d/S%d starts", 
+                            (Int)SEG_get(segid)->thr->errmsg_index,
+                            (Int)segid);
                VG_(pp_ExeContext)(context);
             }
          }
