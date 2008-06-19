@@ -1291,7 +1291,7 @@ static inline SVal mk_SHVAL_M (SegmentSet ss, LockSet ls) {
 }
 
 static inline Bool get_SHVAL_TRACE_BIT (SVal sv) {
-   return (sv >> TRACE_BIT_POSITION) & 1;
+   return 1 == ((sv >> TRACE_BIT_POSITION) & 1);
 }
 
 static inline SVal set_SHVAL_TRACE_BIT (SVal sv, Bool trace_bit) {
