@@ -7,7 +7,7 @@
    This file is part of Valgrind, a dynamic binary instrumentation
    framework.
 
-   Copyright (C) 2000-2007 Julian Seward
+   Copyright (C) 2000-2008 Julian Seward
       jseward@acm.org
 
    This program is free software; you can redistribute it and/or
@@ -40,7 +40,7 @@
 /* The version number indicates binary-incompatible changes to the
    interface;  if the core and tool versions don't match, Valgrind
    will abort.  */
-#define VG_CORE_INTERFACE_VERSION   10
+#define VG_CORE_INTERFACE_VERSION   11
 
 typedef struct _ToolInfo {
    Int	sizeof_ToolInfo;
@@ -303,6 +303,9 @@ extern void VG_(needs_tool_errors) (
    // Print error context.
    void (*pp_Error)(Error* err),
 
+   // Should the core indicate which ThreadId each error comes from?
+   Bool show_ThreadIDs_for_errors,
+
    // Should fill in any details that could be postponed until after the
    // decision whether to ignore the error (ie. details not affecting the
    // result of VG_(tdict).tool_eq_Error()).  This saves time when errors
@@ -413,8 +416,8 @@ extern void VG_(needs_sanity_checks) (
    Bool(*expensive_sanity_check)(void)
 );
 
-/* Do we need to see data symbols? */
-extern void VG_(needs_data_syms) ( void );
+/* Do we need to see variable type and location information? */
+extern void VG_(needs_var_info) ( void );
 
 /* Does the tool replace malloc() and friends with its own versions?
    This has to be combined with the use of a vgpreload_<tool>.so module
@@ -466,12 +469,15 @@ typedef
    Memory events (Nb: to track heap allocation/freeing, a tool must replace
    malloc() et al.  See above how to do this.)
 
-   These ones occur at startup, upon some signals, and upon some syscalls
- */
+   These ones occur at startup, upon some signals, and upon some syscalls.
+
+   For the new_mem_brk and new_mem_stack_signal, the supplied ThreadId
+   indicates the thread for whom the new memory is being allocated.
+*/
 void VG_(track_new_mem_startup)     (void(*f)(Addr a, SizeT len,
                                               Bool rr, Bool ww, Bool xx));
-void VG_(track_new_mem_stack_signal)(void(*f)(Addr a, SizeT len));
-void VG_(track_new_mem_brk)         (void(*f)(Addr a, SizeT len));
+void VG_(track_new_mem_stack_signal)(void(*f)(Addr a, SizeT len, ThreadId tid));
+void VG_(track_new_mem_brk)         (void(*f)(Addr a, SizeT len, ThreadId tid));
 void VG_(track_new_mem_mmap)        (void(*f)(Addr a, SizeT len,
                                               Bool rr, Bool ww, Bool xx));
 
@@ -491,7 +497,29 @@ void VG_(track_die_mem_munmap)      (void(*f)(Addr a, SizeT len));
    specialised cases are defined, the general case must be defined too.
 
    Nb: all the specialised ones must use the VG_REGPARM(n) attribute.
- */
+
+   For the _new functions, a tool may specify with with-ECU
+   (ExeContext Unique) or without-ECU version for each size, but not
+   both.  If the with-ECU version is supplied, then the core will
+   arrange to pass, as the ecu argument, a 32-bit int which uniquely
+   identifies the instruction moving the stack pointer down.  This
+   32-bit value is as obtained from VG_(get_ECU_from_ExeContext).
+   VG_(get_ExeContext_from_ECU) can then be used to retrieve the
+   associated depth-1 ExeContext for the location.  All this
+   complexity is provided to support origin tracking in Memcheck.
+*/
+void VG_(track_new_mem_stack_4_w_ECU)  (VG_REGPARM(2) void(*f)(Addr new_ESP, UInt ecu));
+void VG_(track_new_mem_stack_8_w_ECU)  (VG_REGPARM(2) void(*f)(Addr new_ESP, UInt ecu));
+void VG_(track_new_mem_stack_12_w_ECU) (VG_REGPARM(2) void(*f)(Addr new_ESP, UInt ecu));
+void VG_(track_new_mem_stack_16_w_ECU) (VG_REGPARM(2) void(*f)(Addr new_ESP, UInt ecu));
+void VG_(track_new_mem_stack_32_w_ECU) (VG_REGPARM(2) void(*f)(Addr new_ESP, UInt ecu));
+void VG_(track_new_mem_stack_112_w_ECU)(VG_REGPARM(2) void(*f)(Addr new_ESP, UInt ecu));
+void VG_(track_new_mem_stack_128_w_ECU)(VG_REGPARM(2) void(*f)(Addr new_ESP, UInt ecu));
+void VG_(track_new_mem_stack_144_w_ECU)(VG_REGPARM(2) void(*f)(Addr new_ESP, UInt ecu));
+void VG_(track_new_mem_stack_160_w_ECU)(VG_REGPARM(2) void(*f)(Addr new_ESP, UInt ecu));
+void VG_(track_new_mem_stack_w_ECU)                  (void(*f)(Addr a, SizeT len,
+                                                                       UInt ecu));
+
 void VG_(track_new_mem_stack_4)  (VG_REGPARM(1) void(*f)(Addr new_ESP));
 void VG_(track_new_mem_stack_8)  (VG_REGPARM(1) void(*f)(Addr new_ESP));
 void VG_(track_new_mem_stack_12) (VG_REGPARM(1) void(*f)(Addr new_ESP));
@@ -544,13 +572,14 @@ void VG_(track_post_reg_write_clientcall_return)(
 /* Scheduler events (not exhaustive) */
 
 /* Called when 'tid' starts or stops running client code blocks.
-   Gives the total dispatched block count at that event.  Note, this is
-   not the same as 'tid' holding the BigLock (the lock that ensures that
-   only one thread runs at a time): a thread can hold the lock for other
-   purposes (making translations, etc) yet not be running client blocks.
-   Obviously though, a thread must hold the lock in order to run client
-   code blocks, so the times bracketed by 'thread_run'..'thread_runstate'
-   are a subset of the times when thread 'tid' holds the cpu lock.
+   Gives the total dispatched block count at that event.  Note, this
+   is not the same as 'tid' holding the BigLock (the lock that ensures
+   that only one thread runs at a time): a thread can hold the lock
+   for other purposes (making translations, etc) yet not be running
+   client blocks.  Obviously though, a thread must hold the lock in
+   order to run client code blocks, so the times bracketed by
+   'start_client_code'..'stop_client_code' are a subset of the times
+   when thread 'tid' holds the cpu lock.
 */
 void VG_(track_start_client_code)(
         void(*f)(ThreadId tid, ULong blocks_dispatched)
@@ -562,11 +591,43 @@ void VG_(track_stop_client_code)(
 
 /* Thread events (not exhaustive)
 
-   Called during thread create, before the new thread has run any
-   instructions (or touched any memory).
- */
-void VG_(track_post_thread_create)(void(*f)(ThreadId tid, ThreadId child));
-void VG_(track_post_thread_join)  (void(*f)(ThreadId joiner, ThreadId joinee));
+   ll_create: low level thread creation.  Called before the new thread
+   has run any instructions (or touched any memory).  In fact, called
+   immediately before the new thread has come into existence; the new
+   thread can be assumed to exist when notified by this call.
+
+   ll_exit: low level thread exit.  Called after the exiting thread
+   has run its last instruction.
+
+   The _ll_ part makes it clear these events are not to do with
+   pthread_create or pthread_exit/pthread_join (etc), which are a
+   higher level abstraction synthesised by libpthread.  What you can
+   be sure of from _ll_create/_ll_exit is the absolute limits of each
+   thread's lifetime, and hence be assured that all memory references
+   made by the thread fall inside the _ll_create/_ll_exit pair.  This
+   is important for tools that need a 100% accurate account of which
+   thread is responsible for every memory reference in the process.
+
+   pthread_create/join/exit do not give this property.  Calls/returns
+   to/from them happen arbitrarily far away from the relevant
+   low-level thread create/quit event.  In general a few hundred
+   instructions; hence a few hundred(ish) memory references could get
+   misclassified each time.
+
+   pre_thread_first_insn: is called when the thread is all set up and
+   ready to go (stack in place, etc) but has not executed its first
+   instruction yet.  Gives threading tools a chance to ask questions
+   about the thread (eg, what is its initial client stack pointer)
+   that are not easily answered at pre_thread_ll_create time.
+
+   For a given thread, the call sequence is:
+      ll_create (in the parent's context)
+      first_insn (in the child's context)
+      ll_exit (in the child's context)
+*/
+void VG_(track_pre_thread_ll_create) (void(*f)(ThreadId tid, ThreadId child));
+void VG_(track_pre_thread_first_insn)(void(*f)(ThreadId tid));
+void VG_(track_pre_thread_ll_exit)   (void(*f)(ThreadId tid));
 
 
 /* Signal events (not exhaustive)

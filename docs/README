@@ -138,6 +138,8 @@ xmltex
   tetex
   xaw3d
 passivetex
+xpdf
+  xpdf-tools
 
 pdfxmltex still bombs when building the print docs.  On SuSE 10.1 I
 edited /etc/texmf/web2c/texmf.cnf and changed
@@ -145,6 +147,8 @@ edited /etc/texmf/web2c/texmf.cnf and changed
 to
   pool_size.pdfxmltex = 1500000
 and that fixes it.
+
+It is also reported that the print docs build OK on Fedora Core 5.
 
 
 Notes [Nov. 2005]

@@ -45,6 +45,11 @@ static UInt myrandom( void )
   return seed;
 }
 
+static void* allocate_node(SizeT szB)
+{ return malloc(szB); }
+
+static void free_node(void* p)
+{ return free(p); }
 
 
 //---------------------------------------------------------------------------
@@ -78,8 +83,8 @@ void example1(void)
    // Create a static OSet of Ints.  This one uses fast (built-in)
    // comparisons.
    OSet* oset = VG_(OSetGen_Create)(0,
-                                  NULL,
-                                  (void*)malloc, free);
+                                    NULL,
+                                    allocate_node, free_node);
 
    // Try some operations on an empty OSet to ensure they don't screw up.
    vg_assert( ! VG_(OSetGen_Contains)(oset, &v) );
@@ -212,7 +217,7 @@ void example1b(void)
 
    // Create a static OSet of Ints.  This one uses fast (built-in)
    // comparisons.
-   OSet* oset = VG_(OSetWord_Create)( (void*)malloc, free);
+   OSet* oset = VG_(OSetWord_Create)(allocate_node, free_node);
 
    // Try some operations on an empty OSet to ensure they don't screw up.
    vg_assert( ! VG_(OSetWord_Contains)(oset, v) );
@@ -347,10 +352,10 @@ static Char *blockToStr(void *p)
    return buf;
 }
 
-static Word blockCmp(void* vkey, void* velem)
+static Word blockCmp(const void* vkey, const void* velem)
 {
-   Addr   key  = *(Addr*)vkey;
-   Block* elem = (Block*)velem;
+   Addr   key  = *(const Addr*)vkey;
+   const Block* elem = (const Block*)velem;
 
    assert(elem->first <= elem->last);
    if (key < elem->first) return -1;
@@ -369,8 +374,8 @@ void example2(void)
    // Create a dynamic OSet of Blocks.  This one uses slow (custom)
    // comparisons.
    OSet* oset = VG_(OSetGen_Create)(offsetof(Block, first),
-                                  blockCmp,
-                                  (void*)malloc, free);
+                                    blockCmp,
+                                    allocate_node, free_node);
 
    // Try some operations on an empty OSet to ensure they don't screw up.
    vg_assert( ! VG_(OSetGen_Contains)(oset, &v) );

@@ -7,7 +7,7 @@
    This file is part of MemCheck, a heavyweight Valgrind tool for
    detecting memory errors.
 
-   Copyright (C) 2000-2007 Julian Seward 
+   Copyright (C) 2000-2008 Julian Seward 
       jseward@acm.org
 
    This program is free software; you can redistribute it and/or
@@ -65,7 +65,7 @@ static
 void scan_all_valid_memory_catcher ( Int sigNo, Addr addr )
 {
    if (0)
-      VG_(printf)("OUCH! sig=%d addr=%#lx\n", sigNo, addr);
+      VG_(printf)("OUCH! sig=%d addr=%p\n", sigNo, addr);
    if (sigNo == VKI_SIGSEGV || sigNo == VKI_SIGBUS)
       __builtin_longjmp(memscan_jmpbuf, 1);
 }
@@ -215,7 +215,9 @@ static Int lc_compar(void* n1, void* n2)
 {
    MC_Chunk* mc1 = *(MC_Chunk**)n1;
    MC_Chunk* mc2 = *(MC_Chunk**)n2;
-   return (mc1->data < mc2->data ? -1 : 1);
+   if (mc1->data < mc2->data) return -1;
+   if (mc1->data > mc2->data) return  1;
+   return 0;
 }
 
 /* If ptr is pointing to a heap-allocated block which hasn't been seen
@@ -232,7 +234,7 @@ static void lc_markstack_push_WRK(Addr ptr, Int clique)
    sh_no = find_shadow_for(ptr, lc_shadows, lc_n_shadows);
 
    if (VG_DEBUG_LEAKCHECK)
-      VG_(printf)("ptr=%#lx -> block %d\n", ptr, sh_no);
+      VG_(printf)("ptr=%p -> block %d\n", ptr, sh_no);
 
    if (sh_no == -1)
       return;
@@ -245,7 +247,7 @@ static void lc_markstack_push_WRK(Addr ptr, Int clique)
 
    if (lc_markstack[sh_no].state == Unreached) {
       if (0)
-	 VG_(printf)("pushing %#lx-%#lx\n", lc_shadows[sh_no]->data, 
+	 VG_(printf)("pushing %p-%p\n", lc_shadows[sh_no]->data, 
 		     lc_shadows[sh_no]->data + lc_shadows[sh_no]->szB);
 
       tl_assert(lc_markstack[sh_no].next == -1);
@@ -257,7 +259,7 @@ static void lc_markstack_push_WRK(Addr ptr, Int clique)
 
    if (clique != -1) {
       if (0)
-	 VG_(printf)("mopup: %d: %#lx is %d\n", 
+	 VG_(printf)("mopup: %d: %p is %d\n", 
 		     sh_no, lc_shadows[sh_no]->data, lc_markstack[sh_no].state);
 
       /* An unmarked block - add it to the clique.  Add its size to
@@ -273,14 +275,12 @@ static void lc_markstack_push_WRK(Addr ptr, Int clique)
 	 if (sh_no != clique) {
 	    if (VG_DEBUG_CLIQUE) {
 	       if (lc_markstack[sh_no].indirect)
-		  VG_(printf)(
-                     "  clique %d joining clique %d adding %lu+%lu bytes\n", 
-		     sh_no, clique, 
-		     (UWord)lc_shadows[sh_no]->szB,
-                     lc_markstack[sh_no].indirect);
+		  VG_(printf)("  clique %d joining clique %d adding %lu+%lu bytes\n", 
+			      sh_no, clique, 
+			      lc_shadows[sh_no]->szB, lc_markstack[sh_no].indirect);
 	       else
 		  VG_(printf)("  %d joining %d adding %lu\n", 
-			      sh_no, clique, (UWord)lc_shadows[sh_no]->szB);
+			      sh_no, clique, lc_shadows[sh_no]->szB);
 	    }
 
 	    lc_markstack[clique].indirect += lc_shadows[sh_no]->szB;
@@ -327,7 +327,7 @@ static void lc_scan_memory_WRK(Addr start, SizeT len, Int clique)
    vki_sigset_t sigmask;
 
    if (VG_DEBUG_LEAKCHECK)
-      VG_(printf)("scan %#lx-%#lx\n", start, start+len);
+      VG_(printf)("scan %p-%p\n", start, start+len);
    VG_(sigprocmask)(VKI_SIG_SETMASK, NULL, &sigmask);
    VG_(set_fault_catcher)(scan_all_valid_memory_catcher);
 
@@ -357,7 +357,7 @@ static void lc_scan_memory_WRK(Addr start, SizeT len, Int clique)
 	    addr = *(Addr *)ptr;
 	    lc_markstack_push_WRK(addr, clique);
 	 } else if (0 && VG_DEBUG_LEAKCHECK)
-	    VG_(printf)("%#lx not valid\n", ptr);
+	    VG_(printf)("%p not valid\n", ptr);
 	 ptr += sizeof(Addr);
       } else {
 	 /* We need to restore the signal mask, because we were
@@ -415,7 +415,7 @@ static void full_report(ThreadId tid)
       pass), then the cliques are merged. */
    for (i = 0; i < lc_n_shadows; i++) {
       if (VG_DEBUG_CLIQUE)
-	 VG_(printf)("cliques: %d at %#lx -> Loss state %d\n",
+	 VG_(printf)("cliques: %d at %p -> Loss state %d\n",
 		     i, lc_shadows[i]->data, lc_markstack[i].state);
       if (lc_markstack[i].state != Unreached)
 	 continue;
@@ -423,7 +423,7 @@ static void full_report(ThreadId tid)
       tl_assert(lc_markstack_top == -1);
 
       if (VG_DEBUG_CLIQUE)
-	 VG_(printf)("%d: gathering clique %#lx\n", i, lc_shadows[i]->data);
+	 VG_(printf)("%d: gathering clique %p\n", i, lc_shadows[i]->data);
       
       lc_markstack_push_WRK(lc_shadows[i]->data, i);
 
@@ -694,10 +694,22 @@ void MC_(do_detect_memory_leaks) (
       tl_assert( lc_shadows[i]->data <= lc_shadows[i+1]->data);
    }
 
-   /* Sanity check -- make sure they don't overlap */
+   /* Sanity check -- make sure they don't overlap.  But do allow
+      exact duplicates.  If this assertion fails, it may mean that the
+      application has done something stupid with
+      VALGRIND_MALLOCLIKE_BLOCK client requests, specifically, has
+      made overlapping requests (which are nonsensical).  Another way
+      to screw up is to use VALGRIND_MALLOCLIKE_BLOCK for stack
+      locations; again nonsensical. */
    for (i = 0; i < lc_n_shadows-1; i++) {
-      tl_assert( lc_shadows[i]->data + lc_shadows[i]->szB
-                 <= lc_shadows[i+1]->data );
+      tl_assert( /* normal case - no overlap */
+                 (lc_shadows[i]->data + lc_shadows[i]->szB
+                  <= lc_shadows[i+1]->data )
+                 ||
+                 /* degenerate case: exact duplicates */
+                 (lc_shadows[i]->data == lc_shadows[i+1]->data
+                  && lc_shadows[i]->szB == lc_shadows[i+1]->szB)
+               );
    }
 
    if (lc_n_shadows == 0) {
@@ -771,7 +783,7 @@ void MC_(do_detect_memory_leaks) (
         }
 
         if (0)
-           VG_(printf)("ACCEPT %2d  %#lx %#lx\n", i, seg->start, seg->end);
+           VG_(printf)("ACCEPT %2d  %p %p\n", i, seg->start, seg->end);
         lc_scan_memory(seg->start, seg->end+1 - seg->start);
      }
    }

@@ -1,18 +1,18 @@
 /*
    ----------------------------------------------------------------
 
-   Notice that the following BSD-style license applies to this one
-   file (helgrind.h) only.  The rest of Valgrind is licensed under the
-   terms of the GNU General Public License, version 2, unless
-   otherwise indicated.  See the COPYING file in the source
-   distribution for details.
+   Notice that the above BSD-style license applies to this one file
+   (helgrind.h) only.  The entire rest of Valgrind is licensed under
+   the terms of the GNU General Public License, version 2.  See the
+   COPYING file in the source distribution for details.
 
    ----------------------------------------------------------------
 
-   This file is part of helgrind, a Valgrind tool for detecting
-   data races in threaded programs.
+   This file is part of Helgrind, a Valgrind tool for detecting errors
+   in threaded programs.
 
-   Copyright (C) 2002-2007 Nicholas Nethercote.  All rights reserved.
+   Copyright (C) 2007-2008 OpenWorks LLP
+      info@open-works.co.uk
 
    Redistribution and use in source and binary forms, with or without
    modification, are permitted provided that the following conditions
@@ -63,30 +63,48 @@
 typedef
    enum {
       VG_USERREQ__HG_CLEAN_MEMORY = VG_USERREQ_TOOL_BASE('H','G'),
-      VG_USERREQ__HG_KNOWN_RACE
-   } Vg_HelgrindClientRequest;
+
+      /* The rest are for Helgrind's internal use.  Not for end-user
+         use.  Do not use them unless you are a Valgrind developer. */
+
+      /* Notify the tool what this thread's pthread_t is. */
+      _VG_USERREQ__HG_SET_MY_PTHREAD_T = VG_USERREQ_TOOL_BASE('H','G') 
+                                         + 256,
+      _VG_USERREQ__HG_PTH_API_ERROR,              /* char*, int */
+      _VG_USERREQ__HG_PTHREAD_JOIN_POST,          /* pthread_t of quitter */
+      _VG_USERREQ__HG_PTHREAD_MUTEX_INIT_POST,    /* pth_mx_t*, long mbRec */
+      _VG_USERREQ__HG_PTHREAD_MUTEX_DESTROY_PRE,  /* pth_mx_t* */
+      _VG_USERREQ__HG_PTHREAD_MUTEX_UNLOCK_PRE,   /* pth_mx_t* */
+      _VG_USERREQ__HG_PTHREAD_MUTEX_UNLOCK_POST,  /* pth_mx_t* */
+      _VG_USERREQ__HG_PTHREAD_MUTEX_LOCK_PRE, /* pth_mx_t*, long isTryLock */
+      _VG_USERREQ__HG_PTHREAD_MUTEX_LOCK_POST,    /* pth_mx_t* */
+      _VG_USERREQ__HG_PTHREAD_COND_SIGNAL_PRE,    /* pth_cond_t* */
+      _VG_USERREQ__HG_PTHREAD_COND_BROADCAST_PRE, /* pth_cond_t* */
+      _VG_USERREQ__HG_PTHREAD_COND_WAIT_PRE,     /* pth_cond_t*, pth_mx_t* */
+      _VG_USERREQ__HG_PTHREAD_COND_WAIT_POST,    /* pth_cond_t*, pth_mx_t* */
+      _VG_USERREQ__HG_PTHREAD_RWLOCK_INIT_POST,   /* pth_rwlk_t* */
+      _VG_USERREQ__HG_PTHREAD_RWLOCK_DESTROY_PRE, /* pth_rwlk_t* */
+      _VG_USERREQ__HG_PTHREAD_RWLOCK_LOCK_PRE,    /* pth_rwlk_t*, long isW */
+      _VG_USERREQ__HG_PTHREAD_RWLOCK_LOCK_POST,   /* pth_rwlk_t*, long isW */
+      _VG_USERREQ__HG_PTHREAD_RWLOCK_UNLOCK_PRE,  /* pth_rwlk_t* */
+      _VG_USERREQ__HG_PTHREAD_RWLOCK_UNLOCK_POST, /* pth_rwlk_t* */
+      _VG_USERREQ__HG_POSIX_SEM_INIT_POST,        /* sem_t*, ulong value */
+      _VG_USERREQ__HG_POSIX_SEM_DESTROY_PRE,      /* sem_t* */
+      _VG_USERREQ__HG_POSIX_SEM_POST_PRE,         /* sem_t* */
+      _VG_USERREQ__HG_POSIX_SEM_WAIT_POST,        /* sem_t* */
+      _VG_USERREQ__HG_GET_MY_SEGMENT              /* -> Segment* */
+   } Vg_TCheckClientRequest;
 
 /* Clean memory state.  This makes Helgrind forget everything it knew
-   about the specified memory range, and resets it to virgin.  This is
-   particularly useful for memory allocators who wish to recycle
+   about the specified memory range, and resets it to New.  This is
+   particularly useful for memory allocators that wish to recycle
    memory. */
-#define VALGRIND_HG_CLEAN_MEMORY(_qzz_start, _qzz_len)			\
-   do {									\
-     unsigned int _qzz_res;						\
-     VALGRIND_MAGIC_SEQUENCE(_qzz_res, 0, VG_USERREQ__HG_CLEAN_MEMORY,	\
-			     _qzz_start, _qzz_len, 0, 0);		\
-     (void)0;								\
-   } while(0)
-
-/* Mark memory as known racy.  This puts the memory range specified
-   into the error state, so that data race errors are not reported
-   against it. */
-#define VALGRIND_HG_KNOWN_RACE(_qzz_start, _qzz_len)			\
-   do {									\
-     unsigned int _qzz_res;						\
-     VALGRIND_MAGIC_SEQUENCE(_qzz_res, 0, VG_USERREQ__HG_KNOWN_RACE,	\
-			     _qzz_start, _qzz_len, 0, 0);		\
-     (void)0;								\
+#define VALGRIND_HG_CLEAN_MEMORY(_qzz_start, _qzz_len)                    \
+   do {                                                                   \
+     unsigned long _qzz_res;                                              \
+     VALGRIND_DO_CLIENT_REQUEST(_qzz_res, 0, VG_USERREQ__HG_CLEAN_MEMORY, \
+                                _qzz_start, _qzz_len, 0, 0, 0);	          \
+     (void)0;                                                             \
    } while(0)
 
 #endif /* __HELGRIND_H */

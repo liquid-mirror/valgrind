@@ -10,7 +10,7 @@
    This file is part of Valgrind, a dynamic binary instrumentation
    framework.
 
-   Copyright (C) 2000-2007 Julian Seward 
+   Copyright (C) 2000-2008 Julian Seward 
       jseward@acm.org
 
    This program is free software; you can redistribute it and/or
@@ -603,7 +603,7 @@ void VG_(am_show_nsegments) ( Int logLevel, HChar* who )
    has one.  The returned name's storage cannot be assumed to be
    persistent, so the caller should immediately copy the name
    elsewhere. */
-HChar* VG_(am_get_filename)( NSegment* seg )
+HChar* VG_(am_get_filename)( NSegment const * seg )
 {
    Int i;
    aspacem_assert(seg);

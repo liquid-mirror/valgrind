@@ -7,6 +7,9 @@ INSN_TESTS = insn_basic insn_mmx insn_sse insn_sse2 insn_fpu
 if BUILD_SSE3_TESTS
  INSN_TESTS += insn_sse3
 endif
+if BUILD_SSSE3_TESTS
+ INSN_TESTS += insn_ssse3
+endif
 
 # Explicitly include insn_sse3 even if ! BUILD_SSE3_TESTS, 
 # to avoid packaging screwups if 'make dist' is run on a machine
@@ -26,24 +29,34 @@ EXTRA_DIST = $(noinst_SCRIPTS) \
 	$(addsuffix .stdout.exp,$(INSN_TESTS)) \
 	$(addsuffix .vgtest,$(INSN_TESTS)) \
 	insn_sse3.stdout.exp insn_sse3.stderr.exp insn_sse3.vgtest \
+	insn_ssse3.stdout.exp insn_ssse3.stderr.exp insn_ssse3.vgtest \
 	jrcxz.stderr.exp jrcxz.stdout.exp jrcxz.vgtest \
 	looper.stderr.exp looper.stdout.exp looper.vgtest \
 	nibz_bennee_mmap.stderr.exp nibz_bennee_mmap.stdout.exp \
 	nibz_bennee_mmap.vgtest \
 	rcl-amd64.vgtest rcl-amd64.stdout.exp rcl-amd64.stderr.exp \
+	redundantRexW.vgtest redundantRexW.stdout.exp \
+	redundantRexW.stderr.exp \
 	smc1.stderr.exp smc1.stdout.exp smc1.vgtest \
 	shrld.stderr.exp shrld.stdout.exp shrld.vgtest \
+	ssse3_misaligned.stderr.exp ssse3_misaligned.stdout.exp \
+	ssse3_misaligned.vgtest \
+	ssse3_misaligned.c \
 	slahf-amd64.stderr.exp slahf-amd64.stdout.exp \
-	slahf-amd64.stderr.vgtest
-
+	slahf-amd64.vgtest
 
 check_PROGRAMS = \
 	bug127521-64 bug132813-amd64 bug137714-amd64 bug132918 \
 	clc \
 	faultstatus fcmovnu fxtract $(INSN_TESTS) looper jrcxz \
-	rcl-amd64 smc1 shrld \
+	rcl-amd64 \
+	redundantRexW \
+	smc1 shrld \
 	nibz_bennee_mmap \
 	slahf-amd64
+if BUILD_SSSE3_TESTS
+ check_PROGRAMS += ssse3_misaligned
+endif
 
 AM_CFLAGS   = $(WERROR) -Winline -Wall -Wshadow -g -I$(top_srcdir)/include
 		@FLAG_M64@
@@ -61,6 +74,8 @@ insn_sse2_SOURCES	= insn_sse2.def
 insn_sse2_LDADD		= -lm
 insn_sse3_SOURCES	= insn_sse3.def
 insn_sse3_LDADD		= -lm
+insn_ssse3_SOURCES	= insn_ssse3.def
+insn_ssse3_LDADD	= -lm
 insn_fpu_SOURCES	= insn_fpu.def
 insn_fpu_LDADD		= -lm
 fxtract_LDADD		= -lm

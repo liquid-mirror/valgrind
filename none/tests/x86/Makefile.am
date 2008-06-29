@@ -7,6 +7,9 @@ INSN_TESTS = insn_basic insn_fpu insn_cmov insn_mmx insn_mmxext \
 if BUILD_SSE3_TESTS
  INSN_TESTS += insn_sse3
 endif
+if BUILD_SSSE3_TESTS
+ INSN_TESTS += insn_ssse3
+endif
 
 # Explicitly include insn_sse3 even if ! BUILD_SSE3_TESTS, 
 # to avoid packaging screwups if 'make dist' is run on a machine
@@ -20,6 +23,8 @@ EXTRA_DIST = $(noinst_SCRIPTS) \
 	bug132813-x86.stderr.exp bug132813-x86.stdout.exp bug132813-x86.vgtest \
 	bug135421-x86.stderr.exp bug135421-x86.stdout.exp bug135421-x86.vgtest \
 	bug137714-x86.stderr.exp bug137714-x86.stdout.exp bug137714-x86.vgtest \
+	bug152818-x86.vgtest bug152818-x86.stdout.exp \
+	bug152818-x86.stderr.exp \
 	cpuid.stderr.exp cpuid.stdout.exp cpuid.vgtest \
 	cmpxchg8b.stderr.exp cmpxchg8b.stdout.exp cmpxchg8b.vgtest \
 	cse_fail.stderr.exp cse_fail.stdout.exp cse_fail.vgtest \
@@ -35,6 +40,7 @@ EXTRA_DIST = $(noinst_SCRIPTS) \
 	$(addsuffix .stdout.exp,$(INSN_TESTS)) \
 	$(addsuffix .vgtest,$(INSN_TESTS)) \
 	insn_sse3.stdout.exp insn_sse3.stderr.exp insn_sse3.vgtest \
+	insn_ssse3.stdout.exp insn_ssse3.stderr.exp insn_ssse3.vgtest \
 	jcxz.stdout.exp jcxz.stderr.exp jcxz.vgtest \
 	lahf.stdout.exp lahf.stderr.exp lahf.vgtest \
 	looper.stderr.exp looper.stdout.exp looper.vgtest \
@@ -44,6 +50,9 @@ EXTRA_DIST = $(noinst_SCRIPTS) \
 	seg_override.stderr.exp seg_override.stdout.exp seg_override.vgtest \
 	sigcontext.stdout.exp sigcontext.stderr.exp sigcontext.vgtest \
 	smc1.stderr.exp smc1.stdout.exp smc1.vgtest \
+	ssse3_misaligned.stderr.exp ssse3_misaligned.stdout.exp \
+	ssse3_misaligned.vgtest \
+	ssse3_misaligned.c \
 	yield.stderr.exp yield.stdout.exp yield.disabled
 
 check_PROGRAMS = \
@@ -53,12 +62,16 @@ check_PROGRAMS = \
 	bug132813-x86 \
 	bug135421-x86 \
 	bug137714-x86 \
+	bug152818-x86 \
 	cmpxchg8b cpuid cse_fail \
 	faultstatus fcmovnu fpu_lazy_eflags fxtract \
 	getseg incdec_alt $(INSN_TESTS) \
 	jcxz \
 	lahf looper movx int pushpopseg sbbmisc \
 	seg_override sigcontext smc1 yield
+if BUILD_SSSE3_TESTS
+ check_PROGRAMS += ssse3_misaligned
+endif
 
 AM_CFLAGS    = $(WERROR) -Winline -Wall -Wshadow \
 		@FLAG_M32@ -g -I$(top_srcdir)/include \

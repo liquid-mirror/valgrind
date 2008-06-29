@@ -7,13 +7,12 @@ usage: valgrind [options] prog-and-args
     --version                 show version
     -q --quiet                run silently; only print error msgs
     -v --verbose              be more verbose, incl counts of errors
-    --trace-children=no|yes   Valgrind-ise child processes? [no]
+    --trace-children=no|yes   Valgrind-ise child processes (follow execve)? [no]
+    --child-silent-after-fork=no|yes  omit child output between fork & exec? [no]
     --track-fds=no|yes        track open file descriptors? [no]
     --time-stamp=no|yes       add timestamps to log messages? [no]
     --log-fd=<number>         log messages to file descriptor [2=stderr]
-    --log-file=<file>         log messages to <file>.<pid>
-    --log-file-exactly=<file> log messages to <file>
-    --log-file-qualifier=<VAR> incorporate $VAR in logfile name [none]
+    --log-file=<file>         log messages to <file>
     --log-socket=ipaddr:port  log messages to socket ipaddr:port
 
   uncommon user options for all Valgrind tools:
@@ -37,10 +36,12 @@ usage: valgrind [options] prog-and-args
     --suppressions=<filename> suppress errors described in <filename>
     --gen-suppressions=no|yes|all    print suppressions for errors? [no]
     --db-attach=no|yes        start debugger when errors detected? [no]
-    --db-command=<command>    command to start debugger [gdb -nw %f %p]
+    --db-command=<command>    command to start debugger [/usr/bin/gdb -nw %f %p]
     --input-fd=<number>       file descriptor for input [0=stdin]
     --max-stackframe=<number> assume stack switch for SP changes larger
                               than <number> bytes [2000000]
+    --main-stacksize=<number> set size of main thread's stack (in bytes)
+                              [use current 'ulimit' value]
 
   user options for Nulgrind:
     (none)
@@ -62,6 +63,7 @@ usage: valgrind [options] prog-and-args
     --trace-sched=no|yes      show thread scheduler details? [no]
     --wait-for-gdb=yes|no     pause on startup to wait for gdb attach
     --sym-offsets=yes|no      show syms in form 'name+offset' ? [no]
+    --read-var-info=yes|no    read variable type & location info? [no]
     --command-line-only=no|yes  only use command line options [no]
 
     --vex-iropt-verbosity             0 .. 9 [0]
@@ -91,7 +93,7 @@ usage: valgrind [options] prog-and-args
 
   Extra options read from ~/.valgrindrc, $VALGRIND_OPTS, ./.valgrindrc
 
-  Valgrind is Copyright (C) 2000-2007 Julian Seward et al.
+  Valgrind is Copyright (C) 2000-2008 Julian Seward et al.
   and licensed under the GNU General Public License, version 2.
   Bug reports, feedback, admiration, abuse, etc, to: www.valgrind.org.
 

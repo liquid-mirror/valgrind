@@ -7,7 +7,7 @@
    This file is part of Valgrind, a dynamic binary instrumentation
    framework.
 
-   Copyright (C) 2000-2007 Julian Seward 
+   Copyright (C) 2000-2008 Julian Seward 
       jseward@acm.org
 
    This program is free software; you can redistribute it and/or
@@ -79,34 +79,44 @@ void VG_(set_IP) ( ThreadId tid, Addr ip )
 }
 
 
-void VG_(get_shadow_regs_area) ( ThreadId tid, OffT offset, SizeT size,
-                                 UChar* area )
+void
+VG_(get_shadow_regs_area) ( ThreadId tid, 
+                            /*DST*/UChar* dst,
+                            /*SRC*/Int shadowNo, OffT offset, SizeT size )
 {
+   void*        src;
    ThreadState* tst;
-
+   vg_assert(shadowNo == 1 || shadowNo == 2);
    vg_assert(VG_(is_valid_tid)(tid));
-   tst = & VG_(threads)[tid];
-
    // Bounds check
    vg_assert(0 <= offset && offset < sizeof(VexGuestArchState));
    vg_assert(offset + size <= sizeof(VexGuestArchState));
-
-   VG_(memcpy)( area, (void*)(((Addr)&(tst->arch.vex_shadow)) + offset), size);
+   // Copy
+   tst = & VG_(threads)[tid];
+   src = shadowNo == 1
+            ? (void*)(((Addr)&(tst->arch.vex_shadow1)) + offset)
+            : (void*)(((Addr)&(tst->arch.vex_shadow2)) + offset);
+   VG_(memcpy)( dst, src, size);
 }
 
-void VG_(set_shadow_regs_area) ( ThreadId tid, OffT offset, SizeT size,
-                                 const UChar* area )
+void
+VG_(set_shadow_regs_area) ( ThreadId tid, 
+                            /*DST*/Int shadowNo, OffT offset, SizeT size,
+                            /*SRC*/const UChar* src )
 {
+   void*        dst;
    ThreadState* tst;
-
+   vg_assert(shadowNo == 1 || shadowNo == 2);
    vg_assert(VG_(is_valid_tid)(tid));
-   tst = & VG_(threads)[tid];
-
    // Bounds check
    vg_assert(0 <= offset && offset < sizeof(VexGuestArchState));
    vg_assert(offset + size <= sizeof(VexGuestArchState));
-
-   VG_(memcpy)( (void*)(((Addr)(&tst->arch.vex_shadow)) + offset), area, size);
+   // Copy
+   tst = & VG_(threads)[tid];
+   dst = shadowNo == 1
+            ? (void*)(((Addr)&(tst->arch.vex_shadow1)) + offset)
+            : (void*)(((Addr)&(tst->arch.vex_shadow2)) + offset);
+   VG_(memcpy)( dst, src, size);
 }
 
 
@@ -193,26 +203,41 @@ void VG_(apply_to_GP_regs)(void (*f)(UWord))
    }
 }
 
-static ThreadId thread_stack_iter = VG_INVALID_THREADID;
-
-void VG_(thread_stack_reset_iter)(void)
+void VG_(thread_stack_reset_iter)(/*OUT*/ThreadId* tid)
 {
-   thread_stack_iter = 1;
+   *tid = (ThreadId)(-1);
 }
 
-Bool VG_(thread_stack_next)(ThreadId* tid, Addr* stack_min, Addr* stack_max)
+Bool VG_(thread_stack_next)(/*MOD*/ThreadId* tid,
+                            /*OUT*/Addr* stack_min, 
+                            /*OUT*/Addr* stack_max)
 {
    ThreadId i;
-   for (i = thread_stack_iter; i < VG_N_THREADS; i++) {
+   for (i = (*tid)+1; i < VG_N_THREADS; i++) {
+      if (i == VG_INVALID_THREADID)
+         continue;
       if (VG_(threads)[i].status != VgTs_Empty) {
          *tid       = i;
          *stack_min = VG_(get_SP)(i);
          *stack_max = VG_(threads)[i].client_stack_highest_word;
-         thread_stack_iter = i + 1;
          return True;
       }
    }
    return False;
+}
+
+Addr VG_(thread_get_stack_max)(ThreadId tid)
+{
+   vg_assert(0 <= tid && tid < VG_N_THREADS && tid != VG_INVALID_THREADID);
+   vg_assert(VG_(threads)[tid].status != VgTs_Empty);
+   return VG_(threads)[tid].client_stack_highest_word;
+}
+
+SizeT VG_(thread_get_stack_size)(ThreadId tid)
+{
+   vg_assert(0 <= tid && tid < VG_N_THREADS && tid != VG_INVALID_THREADID);
+   vg_assert(VG_(threads)[tid].status != VgTs_Empty);
+   return VG_(threads)[tid].client_stack_szB;
 }
 
 //-------------------------------------------------------------
@@ -547,7 +572,7 @@ void VG_(machine_ppc32_set_clszB)( Int szB )
    vg_assert(vai.ppc_cache_line_szB == 0
              || vai.ppc_cache_line_szB == szB);
 
-   vg_assert(szB == 32 || szB == 128);
+   vg_assert(szB == 32 || szB == 64 || szB == 128);
    vai.ppc_cache_line_szB = szB;
 }
 #endif
@@ -565,7 +590,7 @@ void VG_(machine_ppc64_set_clszB)( Int szB )
    vg_assert(vai.ppc_cache_line_szB == 0
              || vai.ppc_cache_line_szB == szB);
 
-   vg_assert(szB == 32 || szB == 128);
+   vg_assert(szB == 32 || szB == 64 || szB == 128);
    vai.ppc_cache_line_szB = szB;
 }
 #endif

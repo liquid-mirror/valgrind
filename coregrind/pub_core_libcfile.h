@@ -7,7 +7,7 @@
    This file is part of Valgrind, a dynamic binary instrumentation
    framework.
 
-   Copyright (C) 2000-2007 Julian Seward
+   Copyright (C) 2000-2008 Julian Seward
       jseward@acm.org
 
    This program is free software; you can redistribute it and/or
@@ -71,7 +71,8 @@ extern Int VG_(getsockopt)  ( Int sd, Int level, Int optname, void *optval,
 extern Int VG_(access) ( HChar* path, Bool irusr, Bool iwusr, Bool ixusr );
 
 /* Is the file executable?  Returns: 0 = success, non-0 is failure */
-extern Int VG_(check_executable)(HChar* f);
+extern Int VG_(check_executable)(/*OUT*/Bool* is_setuid,
+                                 HChar* f, Bool allow_setuid);
 
 extern SysRes VG_(pread) ( Int fd, void* buf, Int count, Int offset );
 

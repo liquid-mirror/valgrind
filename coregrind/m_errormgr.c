@@ -7,7 +7,7 @@
    This file is part of Valgrind, a dynamic binary instrumentation
    framework.
 
-   Copyright (C) 2000-2007 Julian Seward 
+   Copyright (C) 2000-2008 Julian Seward 
       jseward@acm.org
 
    This program is free software; you can redistribute it and/or
@@ -119,15 +119,16 @@ struct _Error {
    // NULL if unsuppressed; or ptr to suppression record.
    Supp* supp;
    Int count;
-   ThreadId tid;
 
    // The tool-specific part
+   ThreadId tid;           // Initialised by core
    ExeContext* where;      // Initialised by core
    ErrorKind ekind;        // Used by ALL.  Must be in the range (0..)
    Addr addr;              // Used frequently
    Char* string;           // Used frequently
    void* extra;            // For any tool-specific extras
 };
+
 
 ExeContext* VG_(get_error_where) ( Error* err )
 {
@@ -293,7 +294,8 @@ static void pp_Error ( Error* err )
    }
 
    if (!VG_(clo_xml)) {
-      if (err->tid > 0 && err->tid != last_tid_printed) {
+     if (VG_(tdict).tool_show_ThreadIDs_for_errors
+         && err->tid > 0 && err->tid != last_tid_printed) {
          VG_(message)(Vg_UserMsg, "Thread %d:", err->tid );
          last_tid_printed = err->tid;
       }
@@ -380,7 +382,7 @@ void construct_error ( Error* err, ThreadId tid, ErrorKind ekind, Addr a,
    err->count    = 1;
    err->tid      = tid;
    if (NULL == where)
-      err->where = VG_(record_ExeContext)( tid );
+     err->where = VG_(record_ExeContext)( tid, 0 );
    else
       err->where = where;
 
@@ -440,7 +442,8 @@ static void gen_suppression(Error* err)
    }
 
    // Print stack trace elements
-   VG_(apply_StackTrace)(printSuppForIp, VG_(extract_StackTrace)(ec), stop_at);
+   VG_(apply_StackTrace)(printSuppForIp,
+                         VG_(get_ExeContext_StackTrace)(ec), stop_at);
 
    VG_(printf)("}\n");
 }
@@ -454,7 +457,7 @@ void do_actions_on_error(Error* err, Bool allow_db_attach)
    if (allow_db_attach &&
        VG_(is_action_requested)( "Attach to debugger", & VG_(clo_db_attach) ))
    {   
-      VG_(printf)("starting debugger\n");
+      if (0) VG_(printf)("starting debugger\n");
       VG_(start_debugger)( err->tid );
    }  
    /* Or maybe we want to generate the error's suppression? */
@@ -786,7 +789,7 @@ void VG_(show_all_errors) ( void )
       pp_Error( p_min );
 
       if ((i+1 == VG_(clo_dump_error))) {
-         StackTrace ips = VG_(extract_StackTrace)(p_min->where);
+         StackTrace ips = VG_(get_ExeContext_StackTrace)(p_min->where);
          VG_(translate) ( 0 /* dummy ThreadId; irrelevant due to debugging*/,
                           ips[0], /*debugging*/True, 0xFE/*verbosity*/,
                           /*bbs_done*/0,
@@ -1146,7 +1149,7 @@ Bool supp_matches_callers(Error* err, Supp* su)
 {
    Int i;
    Char caller_name[ERRTXT_LEN];
-   StackTrace ips = VG_(extract_StackTrace)(err->where);
+   StackTrace ips = VG_(get_ExeContext_StackTrace)(err->where);
 
    for (i = 0; i < su->n_callers; i++) {
       Addr a = ips[i];

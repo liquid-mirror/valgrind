@@ -6,13 +6,16 @@ INSN_TESTS = insn_basic insn_fpu insn_cmov insn_mmx insn_mmxext insn_sse insn_ss
 
 EXTRA_DIST = $(noinst_SCRIPTS) \
 	bug133694.vgtest bug133694.stderr.exp bug133694.stdout.exp \
+	bug152022.vgtest bug152022.stderr.exp bug152022.stdout.exp \
 	espindola2.vgtest espindola2.stderr.exp \
 	fpeflags.stderr.exp fpeflags.vgtest \
+	fxsave.vgtest fxsave.stdout.exp fxsave.stderr.exp \
 	$(addsuffix .stderr.exp,$(INSN_TESTS)) \
 	$(addsuffix .stdout.exp,$(INSN_TESTS)) \
 	$(addsuffix .vgtest,$(INSN_TESTS)) \
 	int3-x86.vgtest int3-x86.stderr.exp int3-x86.stdout.exp \
 	pushfpopf.stderr.exp pushfpopf.stdout.exp pushfpopf.vgtest \
+	pushfw_x86.vgtest pushfw_x86.stdout.exp pushfw_x86.stderr.exp \
 	pushpopmem.stderr.exp pushpopmem.stdout.exp pushpopmem.vgtest \
 	scalar.stderr.exp scalar.stderr.exp2 scalar.vgtest \
 	scalar_fork.stderr.exp scalar_fork.vgtest \
@@ -31,10 +34,14 @@ EXTRA_DIST = $(noinst_SCRIPTS) \
 
 check_PROGRAMS = \
 	bug133694 \
+	bug152022 \
 	espindola2 \
+	fxsave \
 	int3-x86 \
 	scalar_exit_group scalar_fork scalar_supp scalar_vfork \
-	fpeflags pushfpopf pushpopmem scalar sse_memory tronical \
+	fpeflags pushfpopf \
+	pushfw_x86 \
+	pushpopmem scalar sse_memory tronical \
 	more_x86_fp fprem xor-undef-x86
 
 AM_CPPFLAGS  = -I$(top_srcdir)/include

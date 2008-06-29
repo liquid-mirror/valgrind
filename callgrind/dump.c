@@ -6,7 +6,7 @@
 /*
    This file is part of Callgrind, a Valgrind tool for call tracing.
 
-   Copyright (C) 2002-2007, Josef Weidendorfer (Josef.Weidendorfer@gmx.de)
+   Copyright (C) 2002-2008, Josef Weidendorfer (Josef.Weidendorfer@gmx.de)
 
    This program is free software; you can redistribute it and/or
    modify it under the terms of the GNU General Public License as
@@ -36,8 +36,8 @@
 /* Dump Part Counter */
 static Int out_counter = 0;
 
-static Char* dump_file_base = 0;
-static Char* base_directory = 0;
+static Char* out_file = 0;
+static Char* out_directory = 0;
 static Bool dumps_initialized = False;
 
 /* Command */
@@ -62,16 +62,16 @@ Int CLG_(get_dump_counter)(void)
   return out_counter;
 }
 
-Char* CLG_(get_dump_file_base)()
+Char* CLG_(get_out_file)()
 {
     CLG_ASSERT(dumps_initialized);
-    return dump_file_base;
+    return out_file;
 }
 
-Char* CLG_(get_base_directory)()
+Char* CLG_(get_out_directory)()
 {
     CLG_ASSERT(dumps_initialized);
-    return base_directory;
+    return out_directory;
 }
 
 /*------------------------------------------------------------*/
@@ -434,7 +434,7 @@ void init_debug_cache(void)
     }
 }
 
-static __inline__
+static /* __inline__ */
 Bool get_debug_pos(BBCC* bbcc, Addr addr, AddrPos* p)
 {
     Char file[FILENAME_LEN];
@@ -477,7 +477,7 @@ Bool get_debug_pos(BBCC* bbcc, Addr addr, AddrPos* p)
     p->addr = addr - bbcc->bb->obj->offset;
     p->bb_addr = bbcc->bb->offset;
 
-    CLG_DEBUG(3, "  get_debug_pos(%#lx): BB %#lx, fn '%s', file '%s', line %u\n",
+    CLG_DEBUG(3, "  get_debug_pos(%p): BB %p, fn '%s', file '%s', line %u\n",
 	     addr, bb_addr(bbcc->bb), bbcc->cxt->fn[0]->name,
 	     p->file->name, p->line);
 
@@ -519,7 +519,7 @@ static void init_fcost(AddrCost* c, Addr addr, Addr bbaddr, file_node* file)
 static void fprint_apos(Int fd, AddrPos* curr, AddrPos* last, file_node* func_file)
 {
     CLG_ASSERT(curr->file != 0);
-    CLG_DEBUG(2, "    print_apos(file '%s', line %d, bb %#lx, addr %#lx) fnFile '%s'\n",
+    CLG_DEBUG(2, "    print_apos(file '%s', line %d, bb %p, addr %p) fnFile '%s'\n",
 	     curr->file->name, curr->line, curr->bb_addr, curr->addr,
 	     func_file->name);
 
@@ -569,7 +569,7 @@ void fprint_pos(Int fd, AddrPos* curr, AddrPos* last)
 		    p = VG_(sprintf)(outbuf, "%d ", diff);
 	    }
 	    else
-		p = VG_(sprintf)(outbuf, "%#lx ", curr->addr);
+		p = VG_(sprintf)(outbuf, "%p ", curr->addr);
 	}
 
 	if (CLG_(clo).dump_bb) {
@@ -584,7 +584,7 @@ void fprint_pos(Int fd, AddrPos* curr, AddrPos* last)
 		    p += VG_(sprintf)(outbuf+p, "%d ", diff);
 	    }
 	    else
-		p += VG_(sprintf)(outbuf+p, "%#lx ", curr->bb_addr);
+		p += VG_(sprintf)(outbuf+p, "%p ", curr->bb_addr);
 	}
 
 	if (CLG_(clo).dump_line) {
@@ -630,7 +630,7 @@ void fprint_cost(int fd, EventMapping* es, ULong* cost)
 static void fprint_fcost(Int fd, AddrCost* c, AddrPos* last)
 {
   CLG_DEBUGIF(3) {
-    CLG_DEBUG(2, "   print_fcost(file '%s', line %d, bb %#lx, addr %#lx):\n",
+    CLG_DEBUG(2, "   print_fcost(file '%s', line %d, bb %p, addr %p):\n",
 	     c->p.file->name, c->p.line, c->p.bb_addr, c->p.addr);
     CLG_(print_cost)(-5, CLG_(sets).full, c->cost);
   }
@@ -1018,7 +1018,7 @@ static void qsort(BBCC **a, int n, int (*cmp)(BBCC**,BBCC**))
 	int s, r;
 	BBCC* v;
 
-	CLG_DEBUG(8, "  qsort(%ld,%d)\n", (Word)(a-qsort_start), n);
+	CLG_DEBUG(8, "  qsort(%d,%d)\n", a-qsort_start, n);
 
 	if (n < 7) {	 /* Insertion sort on smallest arrays */
 		for (pm = a+1; pm < a+n; pm++)
@@ -1027,8 +1027,7 @@ static void qsort(BBCC **a, int n, int (*cmp)(BBCC**,BBCC**))
 
 		CLG_DEBUGIF(8) {
 		    for (pm = a; pm < a+n; pm++) {
-                        VG_(printf)("   %3ld BB %#lx, ",
-                                    (Word)(pm - qsort_start),
+			VG_(printf)("   %3d BB %p, ", pm - qsort_start,
 				    bb_addr((*pm)->bb));      
 			CLG_(print_cxt)(9, (*pm)->cxt, (*pm)->rec_index);
 		    }
@@ -1082,26 +1081,25 @@ static void qsort(BBCC **a, int n, int (*cmp)(BBCC**,BBCC**))
 	if ((s = a+n-1-pd)>0) { for(r=0;r<s;r++) swap(pc+r, a+n-s+r); }	    
 
 	CLG_DEBUGIF(8) {
-	  VG_(printf)("   PV BB %#lx, ", bb_addr((*pv)->bb));
+	  VG_(printf)("   PV BB %p, ", bb_addr((*pv)->bb));
 	    CLG_(print_cxt)(9, (*pv)->cxt, (*pv)->rec_index);
 
 	    s = pb-pa+1;
-	    VG_(printf)("    Lower %ld - %ld:\n", 
-                        (Word)(a-qsort_start), (Word)(a+s-1-qsort_start));
+	    VG_(printf)("    Lower %d - %d:\n", a-qsort_start, a+s-1-qsort_start);
 	    for (r=0;r<s;r++) {
 		pm = a+r;
-		VG_(printf)("     %3ld BB %#lx, ", 
-			    (Word)(pm-qsort_start),bb_addr((*pm)->bb));
+		VG_(printf)("     %3d BB %p, ", 
+			    pm-qsort_start,bb_addr((*pm)->bb));
 		CLG_(print_cxt)(9, (*pm)->cxt, (*pm)->rec_index);
 	    }
 
 	    s = pd-pc+1;
-	    VG_(printf)("    Upper %ld - %ld:\n", 
-			(Word)(a+n-s-qsort_start), (Word)(a+n-1-qsort_start));
+	    VG_(printf)("    Upper %d - %d:\n", 
+			a+n-s-qsort_start, a+n-1-qsort_start);
 	    for (r=0;r<s;r++) {
 		pm = a+n-s+r;
-		VG_(printf)("     %3ld BB %#lx, ", 
-			    (Word)(pm-qsort_start),bb_addr((*pm)->bb));
+		VG_(printf)("     %3d BB %p, ", 
+			    pm-qsort_start,bb_addr((*pm)->bb));
 		CLG_(print_cxt)(9, (*pm)->cxt, (*pm)->rec_index);
 	    }
 	}
@@ -1284,7 +1282,7 @@ static int new_dumpfile(Char buf[BUF_LEN], int tid, Char* trigger)
     CLG_ASSERT(filename != 0);
 
     if (!CLG_(clo).combine_dumps) {
-	i = VG_(sprintf)(filename, "%s.%d", dump_file_base, VG_(getpid)());
+	i = VG_(sprintf)(filename, "%s", out_file);
     
 	if (trigger)
 	    i += VG_(sprintf)(filename+i, ".%d", out_counter);
@@ -1295,7 +1293,7 @@ static int new_dumpfile(Char buf[BUF_LEN], int tid, Char* trigger)
 	res = VG_(open)(filename, VKI_O_WRONLY|VKI_O_TRUNC, 0);
     }
     else {
-	VG_(sprintf)(filename, "%s.%d", dump_file_base, VG_(getpid)());
+	VG_(sprintf)(filename, "%s", out_file);
         res = VG_(open)(filename, VKI_O_WRONLY|VKI_O_APPEND, 0);
 	if (!res.isError && out_counter>1)
 	    appending = True;
@@ -1551,7 +1549,7 @@ static void print_bbccs_of_thread(thread_info* ti)
 	/* FIXME: Specify Object of BB if different to object of fn */
 	int i, pos = 0;
 	ULong ecounter = (*p)->ecounter_sum;
-	pos = VG_(sprintf)(print_buf, "bb=%#lx ", (*p)->bb->offset);
+	pos = VG_(sprintf)(print_buf, "bb=%p ", (*p)->bb->offset);
 	for(i = 0; i<(*p)->bb->cjmp_count;i++) {
 	    pos += VG_(sprintf)(print_buf+pos, "%d %llu ", 
 				(*p)->bb->jmp[i].instr,
@@ -1658,69 +1656,43 @@ void init_cmdbuf(void)
 }
 
 /*
- * Set up file names for dump output: base_directory, dump_file_base
- * The final filename of a dump is constructed at dump time from
- * the PID, thread ID and dump counter.
+ * Set up file names for dump output: <out_directory>, <out_file>.
+ * <out_file> is derived from the output format string, which defaults
+ * to "callgrind.out.%p", where %p is replaced with the PID.
+ * For the final file name, on intermediate dumps a counter is appended,
+ * and further, if separate dumps per thread are requested, the thread ID.
  *
- * These always will contain a full absolute path.
- * If no prefix is given (via option "--base=<prefix>"), the current
- * working directory at program start is used, otherwise <prefix> can
- * be relative to cwd or absolute.
+ * <out_file> always starts with a full absolute path.
+ * If the output format string represents a relative path, the current
+ * working directory at program start is used.
  */
 void CLG_(init_dumps)()
 {
-   Int size;
+   Int lastSlash, i;
    SysRes res;
 
-   if (!CLG_(clo).filename_base)
-     CLG_(clo).filename_base = DEFAULT_DUMPNAME;
+   if (!CLG_(clo).out_format)
+     CLG_(clo).out_format = DEFAULT_OUTFORMAT;
+
+   // Setup output filename.
+   out_file =
+       VG_(expand_file_name)("--callgrind-out-file", CLG_(clo).out_format);
 
    /* get base directory for dump/command/result files */
-   if (CLG_(clo).filename_base[0] == '/') {
-       int lastSlash = 0, i =1;
-       while(CLG_(clo).filename_base[i]) {
-	 for(; CLG_(clo).filename_base[i] &&
-	       CLG_(clo).filename_base[i] != '/'; i++);
-	   if (CLG_(clo).filename_base[i] != '/') break;
-	   lastSlash = i;
-	   i++;
-       }
-       i = lastSlash;
-       base_directory = (Char*) CLG_MALLOC(i+1);
-       VG_(strncpy)(base_directory, CLG_(clo).filename_base, i);
-       base_directory[i] = 0;
-
-       dump_file_base = CLG_(clo).filename_base;
+   CLG_ASSERT(out_file[0] == '/');
+   lastSlash = 0;
+   i = 1;
+   while(out_file[i]) {
+       if (out_file[i] == '/') lastSlash = i;
+       i++;
    }
-   else {
-       size = 100;
-       base_directory = 0;
-
-       /* getcwd() fails if the buffer isn't big enough -- keep doubling size
-          until it succeeds. */
-       while (NULL == base_directory) {
-           base_directory = CLG_MALLOC(size);
-           if (!VG_(get_startup_wd)(base_directory, size)) {
-               VG_(free)(base_directory);
-               base_directory = 0;
-               size *= 2;
-           }
-           /* in fact, this loop could run forever (or at least till
-              CLG_MALLOC fails) if VG_(getcwd) returns False for any
-              reason other than the buffer is too small.  So be
-              safe: */
-           tl_assert( size < 100 * 200 );
-       }
-
-       size = VG_(strlen)(base_directory) + VG_(strlen)(CLG_(clo).filename_base) +2;
-       dump_file_base = (Char*) CLG_MALLOC(size);
-       CLG_ASSERT(dump_file_base != 0);
-       VG_(sprintf)(dump_file_base, "%s/%s",
-		    base_directory, CLG_(clo).filename_base);
-   }
+   i = lastSlash;
+   out_directory = (Char*) CLG_MALLOC(i+1);
+   VG_(strncpy)(out_directory, out_file, i);
+   out_directory[i] = 0;
 
    /* allocate space big enough for final filenames */
-   filename = (Char*) CLG_MALLOC(VG_(strlen)(dump_file_base)+32);
+   filename = (Char*) CLG_MALLOC(VG_(strlen)(out_file)+32);
    CLG_ASSERT(filename != 0);
        
    /* Make sure the output base file can be written.
@@ -1729,7 +1701,7 @@ void CLG_(init_dumps)()
     * file: This is probably because of missing rights,
     * and trace parts wouldn't be allowed to be written, too.
     */ 
-    VG_(sprintf)(filename, "%s.%d", dump_file_base, VG_(getpid)());
+    VG_(strcpy)(filename, out_file);
     res = VG_(open)(filename, VKI_O_WRONLY|VKI_O_TRUNC, 0);
     if (res.isError) { 
 	res = VG_(open)(filename, VKI_O_CREAT|VKI_O_WRONLY,

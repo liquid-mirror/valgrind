@@ -8,7 +8,7 @@
    This file is part of Cachegrind, a Valgrind tool for cache
    profiling programs.
 
-   Copyright (C) 2002-2007 Nicholas Nethercote
+   Copyright (C) 2002-2008 Nicholas Nethercote
       njn@valgrind.org
 
    This program is free software; you can redistribute it and/or
@@ -65,8 +65,9 @@
 /*--- Options                                              ---*/
 /*------------------------------------------------------------*/
 
-static Bool clo_cache_sim  = True;  /* do cache simulation? */
-static Bool clo_branch_sim = False; /* do branch simulation? */
+static Bool  clo_cache_sim  = True;  /* do cache simulation? */
+static Bool  clo_branch_sim = False; /* do branch simulation? */
+static Char* clo_cachegrind_out_file = "cachegrind.out.%p";
 
 /*------------------------------------------------------------*/
 /*--- Types and Data Structures                            ---*/
@@ -111,7 +112,7 @@ typedef struct {
 } LineCC;
 
 // First compare file, then fn, then line.
-static Word cmp_CodeLoc_LineCC(void *vloc, void *vcc)
+static Word cmp_CodeLoc_LineCC(const void *vloc, const void *vcc)
 {
    Word res;
    CodeLoc* a = (CodeLoc*)vloc;
@@ -181,7 +182,7 @@ static Int  no_debugs           = 0;
 /*--- String table operations                              ---*/
 /*------------------------------------------------------------*/
 
-static Word stringCmp( void* key, void* elem )
+static Word stringCmp( const void* key, const void* elem )
 {
    return VG_(strcmp)(*(Char**)key, *(Char**)elem);
 }
@@ -1255,23 +1256,20 @@ static CacheCC  Dw_total;
 static BranchCC Bc_total;
 static BranchCC Bi_total;
 
-// The output file base name specified by the user using the
-// --cachegrind-out-file switch.  This is combined with the
-// process ID and optional user-supplied qualifier (from 
-// --log-file-qualifier) to produce the name stored in 
-// cachegrind_out_file.
-static Char* cachegrind_out_file_basename = "cachegrind.out";
-
-// The final, completed name for the output file.
-static Char* cachegrind_out_file = NULL;
-
-
 static void fprint_CC_table_and_calc_totals(void)
 {
    Int     i, fd;
    SysRes  sres;
    Char    buf[512], *currFile = NULL, *currFn = NULL;
    LineCC* lineCC;
+
+   // Setup output filename.  Nb: it's important to do this now, ie. as late
+   // as possible.  If we do it at start-up and the program forks and the
+   // output file format string contains a %p (pid) specifier, both the
+   // parent and child will incorrectly write to the same file;  this
+   // happened in 3.3.0.
+   Char* cachegrind_out_file =
+      VG_(expand_file_name)("--cachegrind-out-file", clo_cachegrind_out_file);
 
    sres = VG_(open)(cachegrind_out_file, VKI_O_CREAT|VKI_O_TRUNC|VKI_O_WRONLY,
                                          VKI_S_IRUSR|VKI_S_IWUSR);
@@ -1283,9 +1281,11 @@ static void fprint_CC_table_and_calc_totals(void)
          cachegrind_out_file );
       VG_(message)(Vg_UserMsg,
          "       ... so simulation results will be missing.");
+      VG_(free)(cachegrind_out_file);
       return;
    } else {
       fd = sres.res;
+      VG_(free)(cachegrind_out_file);
    }
 
    // "desc:" lines (giving I1/D1/L2 cache configuration).  The spaces after
@@ -1691,7 +1691,7 @@ static Bool cg_process_cmd_line_option(Char* arg)
    else if (VG_CLO_STREQN(5, arg, "--L2="))
       parse_cache_opt(&clo_L2_cache, &arg[5]);
    else if (VG_CLO_STREQN(22, arg, "--cachegrind-out-file=")) {
-      cachegrind_out_file_basename = &arg[22];
+      clo_cachegrind_out_file = &arg[22];
    }
    else VG_BOOL_CLO(arg, "--cache-sim",  clo_cache_sim)
    else VG_BOOL_CLO(arg, "--branch-sim", clo_branch_sim)
@@ -1709,8 +1709,7 @@ static void cg_print_usage(void)
 "    --L2=<size>,<assoc>,<line_size>  set L2 cache manually\n"
 "    --cache-sim=yes|no  [yes]        collect cache stats?\n"
 "    --branch-sim=yes|no [no]         collect branch prediction stats?\n"
-"    --cachegrind-out-file=<file>     write profile data to <file>.<pid>\n"
-"                                     [cachegrind.out.<pid>]\n"
+"    --cachegrind-out-file=<file>     output file name [cachegrind.out.%%p]\n"
    );
 }
 
@@ -1725,8 +1724,6 @@ static void cg_print_debug_usage(void)
 /*--- Setup                                                        ---*/
 /*--------------------------------------------------------------------*/
 
-static Char base_dir[VKI_PATH_MAX];
-
 static void cg_post_clo_init(void); /* just below */
 
 static void cg_pre_clo_init(void)
@@ -1735,7 +1732,7 @@ static void cg_pre_clo_init(void)
    VG_(details_version)         (NULL);
    VG_(details_description)     ("a cache and branch-prediction profiler");
    VG_(details_copyright_author)(
-      "Copyright (C) 2002-2007, and GNU GPL'd, by Nicholas Nethercote et al.");
+      "Copyright (C) 2002-2008, and GNU GPL'd, by Nicholas Nethercote et al.");
    VG_(details_bug_reports_to)  (VG_BUGS_TO);
    VG_(details_avg_translation_sizeB) ( 500 );
 
@@ -1751,9 +1748,7 @@ static void cg_pre_clo_init(void)
 
 static void cg_post_clo_init(void)
 {
-   HChar* qual = NULL;
    cache_t I1c, D1c, L2c; 
-   Int filename_szB;
 
    /* Can't disable both cache and branch profiling */
    if ((!clo_cache_sim) && (!clo_branch_sim)) {
@@ -1763,42 +1758,6 @@ static void cg_post_clo_init(void)
                    "You must select cache profiling, or branch profiling, or both.");
       VG_(exit)(2);
    }
-
-   /* Get working directory */
-   tl_assert( VG_(get_startup_wd)(base_dir, VKI_PATH_MAX) );
-
-   /* Do we have a --log-file-qualifier= to consider? */
-   if (VG_(clo_log_file_qualifier)) {
-      qual = VG_(getenv)(VG_(clo_log_file_qualifier));
-   }
-
-   /* Block is big enough for 
-        dir name ++ cachegrind_out_file_basename
-                 ++ ".<pid>" 
-                 ++ the log file qualifier, if in use */
-   filename_szB 
-      = VG_(strlen)(base_dir) 
-        + 1  /* "/" */
-        + VG_(strlen)(cachegrind_out_file_basename)
-        + 11  /* "." <pid>, assuming sizeof(pid) <= 4 */
-        + (qual  ? (10 + VG_(strlen)(qual))  : 0)
-        + 1; /* to guarantee checkable zero at the end */
-
-   tl_assert(filename_szB > 0);
-   cachegrind_out_file 
-      = VG_(calloc)( sizeof(Char), filename_szB );
-
-   if (qual) {
-      VG_(sprintf)(cachegrind_out_file, "%s/%s.%d.lfq.%s",
-                   base_dir, cachegrind_out_file_basename, 
-                   VG_(getpid)(), qual);
-   } else {
-      VG_(sprintf)(cachegrind_out_file, "%s/%s.%d",
-                   base_dir, cachegrind_out_file_basename, 
-                   VG_(getpid)());
-   }
-
-   tl_assert( cachegrind_out_file[filename_szB-1] == 0 );
 
    CC_table =
       VG_(OSetGen_Create)(offsetof(LineCC, loc),

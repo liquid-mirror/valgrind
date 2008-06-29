@@ -8,9 +8,9 @@
    This file is part of Valgrind, a dynamic binary instrumentation
    framework.
 
-   Copyright (C) 2000-2007 Nicholas Nethercote
+   Copyright (C) 2000-2008 Nicholas Nethercote
       njn@valgrind.org
-   Copyright (C) 2004-2007 Paul Mackerras
+   Copyright (C) 2004-2008 Paul Mackerras
       paulus@samba.org
 
    This program is free software; you can redistribute it and/or
@@ -94,7 +94,8 @@
 struct vg_sig_private {
    UInt magicPI;
    UInt sigNo_private;
-   VexGuestPPC32State shadow;
+   VexGuestPPC32State vex_shadow1;
+   VexGuestPPC32State vex_shadow2;
 };
 
 /* Structure put on stack for signal handlers with SA_SIGINFO clear. */
@@ -504,20 +505,20 @@ void stack_mcontext ( struct vki_mcontext *mc,
 */
 static Bool extend ( ThreadState *tst, Addr addr, SizeT size )
 {
-   ThreadId tid = tst->tid;
-   NSegment const *stackseg = NULL;
+   ThreadId        tid = tst->tid;
+   NSegment const* stackseg = NULL;
 
    if (VG_(extend_stack)(addr, tst->client_stack_szB)) {
       stackseg = VG_(am_find_nsegment)(addr);
       if (0 && stackseg)
-	 VG_(printf)("frame=%#lx seg=%#lx-%#lx\n",
+	 VG_(printf)("frame=%p seg=%p-%p\n",
 		     addr, stackseg->start, stackseg->end);
    }
 
    if (stackseg == NULL || !stackseg->hasR || !stackseg->hasW) {
       VG_(message)(
          Vg_UserMsg,
-         "Can't extend stack to %#lx during signal delivery for thread %d:",
+         "Can't extend stack to %p during signal delivery for thread %d:",
          addr, tid);
       if (stackseg == NULL)
          VG_(message)(Vg_UserMsg, "  no stack segment");
@@ -536,7 +537,7 @@ static Bool extend ( ThreadState *tst, Addr addr, SizeT size )
    /* For tracking memory events, indicate the entire frame has been
       allocated. */
    VG_TRACK( new_mem_stack_signal, addr - VG_STACK_REDZONE_SZB,
-             size + VG_STACK_REDZONE_SZB );
+             size + VG_STACK_REDZONE_SZB, tid );
 
    return True;
 }
@@ -665,6 +666,7 @@ static Bool extend ( ThreadState *tst, Addr addr, SizeT size )
 void VG_(sigframe_create)( ThreadId tid, 
                            Addr sp_top_of_frame,
                            const vki_siginfo_t *siginfo,
+                           const struct vki_ucontext *siguc,
                            void *handler, 
                            UInt flags,
                            const vki_sigset_t *mask,
@@ -760,7 +762,8 @@ void VG_(sigframe_create)( ThreadId tid,
 
    priv->magicPI       = 0x31415927;
    priv->sigNo_private = sigNo;
-   priv->shadow        = tst->arch.vex_shadow;
+   priv->vex_shadow1   = tst->arch.vex_shadow1;
+   priv->vex_shadow2   = tst->arch.vex_shadow2;
 
    SET_SIGNAL_GPR(tid, 1, sp);
    SET_SIGNAL_GPR(tid, 3, sigNo);
@@ -780,14 +783,14 @@ void VG_(sigframe_create)( ThreadId tid,
 //..    /* tst->m_esp  = esp; */
 //..    SET_SIGNAL_ESP(tid, esp);
 //.. 
-//..    //VG_(printf)("handler = %#lx\n", handler);
+//..    //VG_(printf)("handler = %p\n", handler);
 //..    tst->arch.vex.guest_CIA = (Addr) handler;
 //..    /* This thread needs to be marked runnable, but we leave that the
 //..       caller to do. */
 
    if (0)
-      VG_(printf)("pushed signal frame; %%R1 now = %#lx, "
-                  "next %%CIA = %#x, status=%d\n", 
+      VG_(printf)("pushed signal frame; %R1 now = %p, "
+                  "next %%CIA = %p, status=%d\n", 
 		  sp, tst->arch.vex.guest_CIA, tst->status);
 }
 
@@ -930,13 +933,14 @@ void VG_(sigframe_destroy)( ThreadId tid, Bool isRT )
    tst->arch.vex.guest_CTR = mc->mc_gregs[VKI_PT_CTR];
    LibVEX_GuestPPC32_put_XER( mc->mc_gregs[VKI_PT_XER], &tst->arch.vex );
 
-   tst->arch.vex_shadow = priv->shadow;
+   tst->arch.vex_shadow1 = priv->vex_shadow1;
+   tst->arch.vex_shadow2 = priv->vex_shadow2;
 
    VG_TRACK(die_mem_stack_signal, sp, frame_size);
 
    if (VG_(clo_trace_signals))
       VG_(message)(Vg_DebugMsg,
-                   "vg_pop_signal_frame (thread %d): isRT=%d valid magic; EIP=%#lx",
+                   "vg_pop_signal_frame (thread %d): isRT=%d valid magic; EIP=%p",
                    tid, has_siginfo, tst->arch.vex.guest_CIA);
 
    /* tell the tools */

@@ -8,17 +8,24 @@ TOOLS =		memcheck \
 		callgrind \
 		massif \
 		lackey \
-		none
+		none \
+		helgrind
 
-# Temporary: we want to compile Helgrind, but not regtest it.
+EXP_TOOLS = 	exp-omega \
+		exp-drd
+
 # Put docs last because building the HTML is slow and we want to get
 # everything else working before we try it.
-SUBDIRS = include coregrind . tests perf auxprogs $(TOOLS) helgrind docs
+SUBDIRS = include coregrind . tests perf auxprogs $(TOOLS) $(EXP_TOOLS) docs
 DIST_SUBDIRS  = $(SUBDIRS)
 
 SUPP_FILES = \
 	glibc-2.2.supp glibc-2.3.supp glibc-2.4.supp glibc-2.5.supp \
-	glibc-2.6.supp aix5libc.supp xfree-3.supp xfree-4.supp
+	glibc-2.6.supp glibc-2.7.supp glibc-2.X.supp.in \
+	aix5libc.supp xfree-3.supp xfree-4.supp \
+	glibc-2.34567-NPTL-helgrind.supp \
+	glibc-2.2-LinuxThreads-helgrind.supp \
+	glibc-2.X-drd.supp
 
 dist_val_DATA = $(SUPP_FILES) default.supp
 
@@ -61,7 +68,11 @@ default.supp: $(SUPP_FILES)
 
 ## Preprend @PERL@ because tests/vg_regtest isn't executable
 regtest: check
+	@PERL@ tests/vg_regtest $(TOOLS) $(EXP_TOOLS)
+nonexp-regtest: check
 	@PERL@ tests/vg_regtest $(TOOLS)
+exp-regtest: check
+	@PERL@ tests/vg_regtest $(EXP_TOOLS)
 
 ## Preprend @PERL@ because tests/vg_per isn't executable
 perf: check

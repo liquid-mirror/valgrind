@@ -7,7 +7,7 @@
    This file is part of Valgrind, a dynamic binary instrumentation
    framework.
 
-   Copyright (C) 2006-2007 OpenWorks LLP
+   Copyright (C) 2006-2008 OpenWorks LLP
       info@open-works.co.uk
 
    This program is free software; you can redistribute it and/or
@@ -105,7 +105,7 @@ static VgSchedReturnCode thread_wrapper(Word /*ThreadId*/ tidW)
       VG_(printf)("thread tid %d started: stack = %p\n",
                   tid, &tid);
 
-   VG_TRACK ( post_thread_create, tst->os_state.parent, tid );
+   VG_TRACK( pre_thread_first_insn, tid );
 
    tst->os_state.lwpid = VG_(gettid)();
    tst->os_state.threadgroup = VG_(getpid)();
@@ -338,12 +338,27 @@ void VG_(cleanup_thread) ( ThreadArchState* arch )
 #define PRE(name)       DEFN_PRE_TEMPLATE(ppc64_aix5, name)
 #define POST(name)      DEFN_POST_TEMPLATE(ppc64_aix5, name)
 
+DECL_TEMPLATE(ppc64_aix5, sys__clock_gettime);
 DECL_TEMPLATE(ppc64_aix5, sys__fp_fpscrx64_);
 DECL_TEMPLATE(ppc64_aix5, sys_kload);
 DECL_TEMPLATE(ppc64_aix5, sys_kunload64);
 DECL_TEMPLATE(ppc64_aix5, sys_thread_setstate);
 DECL_TEMPLATE(ppc64_aix5, sys_FAKE_SIGRETURN);
 
+
+PRE(sys__clock_gettime)
+{
+   /* Seems like ARG2 points at a destination buffer? */
+   /* _clock_gettime (UNDOCUMENTED) ( 0, 0xA, 0x2FF21808 ) */
+   PRINT("_clock_gettime (UNDOCUMENTED) ( %d, %p, %p )", ARG1, ARG2, ARG3 );
+   PRE_REG_READ3(int, "_clock_gettime", int, arg1, int, arg2, void*, arg3);
+   PRE_MEM_WRITE( "_clock_gettime(dst)", ARG2, sizeof(struct timespec) );
+}
+POST(sys__clock_gettime)
+{
+   vg_assert(SUCCESS);
+   POST_MEM_WRITE( ARG2, sizeof(struct timespec) );
+}
 
 PRE(sys__fp_fpscrx64_)
 {
@@ -638,6 +653,7 @@ AIX5SCTabEntry aix5_ppc64_syscall_table[]
 = {
     AIXXY(__NR_AIX5___libc_sbrk,        sys___libc_sbrk),
     AIXX_(__NR_AIX5___msleep,           sys___msleep),
+    PLAXY(__NR_AIX5__clock_gettime,     sys__clock_gettime),
     AIXX_(__NR_AIX5__exit,              sys__exit),
     PLAX_(__NR_AIX5__fp_fpscrx64_,      sys__fp_fpscrx64_),
     AIXX_(__NR_AIX5__getpid,            sys__getpid),
@@ -645,6 +661,7 @@ AIX5SCTabEntry aix5_ppc64_syscall_table[]
     AIXX_(__NR_AIX5__pause,             sys__pause),
     AIXXY(__NR_AIX5__poll,              sys__poll),
     AIXX_(__NR_AIX5__select,            sys__select),
+    AIXX_(__NR_AIX5__sem_wait,          sys__sem_wait),
     AIXXY(__NR_AIX5__sigaction,         sys__sigaction),
     AIXX_(__NR_AIX5__thread_self,       sys__thread_self),
     AIXX_(__NR_AIX5_access,             sys_access),
@@ -660,6 +677,8 @@ AIX5SCTabEntry aix5_ppc64_syscall_table[]
     AIXX_(__NR_AIX5_close,              sys_close),
     AIXX_(__NR_AIX5_connext,            sys_connext),
     AIXX_(__NR_AIX5_execve,             sys_execve),
+    AIXXY(__NR_AIX5_finfo,              sys_finfo),
+    AIXXY(__NR_AIX5_fstatfs,            sys_fstatfs),
     AIXXY(__NR_AIX5_fstatx,             sys_fstatx),
     AIXXY(__NR_AIX5_getdirent,          sys_getdirent),
     AIXXY(__NR_AIX5_getdirent64,        sys_getdirent64),
@@ -683,6 +702,7 @@ AIX5SCTabEntry aix5_ppc64_syscall_table[]
     AIXXY(__NR_AIX5_kread,              sys_kread),
     AIXXY(__NR_AIX5_kreadv,             sys_kreadv),
     AIXX_(__NR_AIX5_kthread_ctl,        sys_kthread_ctl),
+    AIXX_(__NR_AIX5_ktruncate,          sys_ktruncate),
     PLAXY(__NR_AIX5_kunload64,          sys_kunload64),
     AIXXY(__NR_AIX5_kwaitpid,           sys_kwaitpid),
     AIXX_(__NR_AIX5_kwrite,             sys_kwrite),
@@ -690,6 +710,7 @@ AIX5SCTabEntry aix5_ppc64_syscall_table[]
     AIXX_(__NR_AIX5_lseek,              sys_lseek),
     AIXX_(__NR_AIX5_mkdir,              sys_mkdir),
     AIXXY(__NR_AIX5_mmap,               sys_mmap),
+    AIXXY(__NR_AIX5_mntctl,             sys_mntctl),
     AIXXY(__NR_AIX5_mprotect,           sys_mprotect),
     AIXXY(__NR_AIX5_munmap,             sys_munmap),
     AIXXY(__NR_AIX5_ngetpeername,       sys_ngetpeername),
@@ -701,6 +722,8 @@ AIX5SCTabEntry aix5_ppc64_syscall_table[]
     AIXX_(__NR_AIX5_privcheck,          sys_privcheck),
     AIXX_(__NR_AIX5_rename,             sys_rename),
     AIXXY(__NR_AIX5_sbrk,               sys_sbrk),
+    AIXXY(__NR_AIX5_sem_init,           sys_sem_init),
+    AIXXY(__NR_AIX5_sem_post,           sys_sem_post),
     AIXX_(__NR_AIX5_send,               sys_send),
     AIXX_(__NR_AIX5_setgid,             sys_setgid),
     AIXX_(__NR_AIX5_setsockopt,         sys_setsockopt),

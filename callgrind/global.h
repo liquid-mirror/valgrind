@@ -50,7 +50,7 @@
 /*--- Command line options                                 ---*/
 /*------------------------------------------------------------*/
 
-#define DEFAULT_DUMPNAME    "callgrind.out"
+#define DEFAULT_OUTFORMAT   "callgrind.out.%p"
 #define DEFAULT_COMMANDNAME "callgrind.cmd"
 #define DEFAULT_RESULTNAME  "callgrind.res"
 #define DEFAULT_INFONAME    "/tmp/callgrind.info"
@@ -59,7 +59,7 @@ typedef struct _CommandLineOptions CommandLineOptions;
 struct _CommandLineOptions {
 
   /* Dump format options */
-  Char* filename_base;   /* Base name for dumps */
+  Char* out_format;      /* Format string for callgrind output file name */
   Bool combine_dumps;    /* Dump trace parts into same file? */
   Bool compress_strings;
   Bool compress_events;
@@ -705,7 +705,7 @@ void CLG_(init_eventsets)(Int user);
 
 /* from main.c */
 Bool CLG_(get_debug_info)(Addr, Char filename[FILENAME_LEN],
-			 Char fn_name[FN_NAME_LEN], UInt*, SegInfo**);
+			 Char fn_name[FN_NAME_LEN], UInt*, DebugInfo**);
 void CLG_(collectBlockInfo)(IRSB* bbIn, UInt*, UInt*, Bool*);
 void CLG_(set_instrument_state)(Char*,Bool);
 void CLG_(dump_profile)(Char* trigger,Bool only_current_thread);
@@ -738,7 +738,7 @@ void CLG_(set_current_fn_array)(fn_array*);
 UInt* CLG_(get_fn_entry)(Int n);
 
 void      CLG_(init_obj_table)(void);
-obj_node* CLG_(get_obj_node)(SegInfo* si);
+obj_node* CLG_(get_obj_node)(DebugInfo* si);
 file_node* CLG_(get_file_node)(obj_node*, Char* filename);
 fn_node*  CLG_(get_fn_node)(BB* bb);
 
@@ -801,8 +801,8 @@ void CLG_(run_post_signal_on_call_stack_bottom)(void);
 /* from dump.c */
 extern FullCost CLG_(total_cost);
 void CLG_(init_dumps)(void);
-Char* CLG_(get_dump_file_base)(void);
-Char* CLG_(get_base_directory)(void);
+Char* CLG_(get_out_file)(void);
+Char* CLG_(get_out_directory)(void);
 
 /*------------------------------------------------------------*/
 /*--- Exported global variables                            ---*/

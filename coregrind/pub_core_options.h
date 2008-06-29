@@ -7,7 +7,7 @@
    This file is part of Valgrind, a dynamic binary instrumentation
    framework.
 
-   Copyright (C) 2000-2007 Julian Seward
+   Copyright (C) 2000-2008 Julian Seward
       jseward@acm.org
 
    This program is free software; you can redistribute it and/or
@@ -40,7 +40,7 @@
 #include "pub_tool_options.h"
 
 /* The max number of suppression files. */
-#define VG_CLO_MAX_SFILES 10
+#define VG_CLO_MAX_SFILES 100
 
 /* Should we stop collecting errors if too many appear?  default: YES */
 extern Bool  VG_(clo_error_limit);
@@ -61,6 +61,12 @@ extern Int   VG_(clo_sanity_level);
 extern Bool  VG_(clo_demangle);
 /* Simulate child processes? default: NO */
 extern Bool  VG_(clo_trace_children);
+/* After a fork, the child's output can become confusingly
+   intermingled with the parent's output.  This is especially
+   problematic when VG_(clo_xml) is True.  Setting
+   VG_(clo_child_silent_after_fork) causes children to fall silent
+   after fork() calls. */
+extern Bool  VG_(clo_child_silent_after_fork);
 
 /* Where logging output is to be sent to.
 
@@ -68,16 +74,11 @@ extern Bool  VG_(clo_trace_children);
    taken from the command line.  (fd 2, stderr, is the default.)
    clo_log_name is irrelevant.
 
-   With --log-file/--log-file-exactly, clo_log_name holds the log-file
-   name, and is taken from the command line.  clo_log_fd is then
-   made to hold the relevant file id, by opening clo_log_name
-   (concatenated with the process ID) for writing.
-
-   With --log-file, there is an additional twist: if
-   clo_log_file_qualifier is non-NULL, the contents of the environment
-   variable specified by clo_log_file_qualifier is incorporated into
-   the logfile name.  This is useful in that it allows the logfile
-   name to incorporate environmental information.
+   With --log-file, clo_log_name holds the log-file name, and is taken from
+   the command line (and possibly has process ID/env var contents in it, if
+   the %p or %q format specifiers are used).  clo_log_fd is then made to
+   hold the relevant file id, by opening clo_log_name (concatenated with the
+   process ID) for writing.
 
    With --log-socket, clo_log_name holds the hostname:portnumber pair,
    and is taken from the command line.  clo_log_fd is then made to hold
@@ -88,7 +89,6 @@ extern Bool  VG_(clo_trace_children);
    (stderr). */
 extern Int   VG_(clo_log_fd);
 extern Char* VG_(clo_log_name);
-/* extern Char* VG_(clo_log_file_qualifier); moved to pub_tool_options.h */
 
 /* Add timestamps to log messages?  default: NO */
 extern Bool  VG_(clo_time_stamp);
@@ -131,12 +131,12 @@ extern Bool  VG_(clo_trace_pthreads);
 /* Display gory details for the k'th most popular error.  default:
    Infinity. */
 extern Int   VG_(clo_dump_error);
-/* Number of parents of a backtrace.  Default: 8.  */
-extern Int   VG_(clo_backtrace_size);
 /* Engage miscellaneous weird hacks needed for some progs. */
 extern Char* VG_(clo_sim_hints);
 /* Show symbols in the form 'name+offset' ?  Default: NO */
 extern Bool VG_(clo_sym_offsets);
+/* Read DWARF3 variable info even if tool doesn't ask for it? */
+extern Bool VG_(clo_read_var_info);
 
 /* Track open file descriptors? */
 extern Bool  VG_(clo_track_fds);
@@ -157,6 +157,9 @@ extern Bool VG_(clo_show_emwarns);
    consider a stack switch to have happened?  Default: 2000000 bytes
    NB: must be host-word-sized to be correct (hence Word). */
 extern Word VG_(clo_max_stackframe);
+/* How large should Valgrind allow the primary thread's guest stack to
+   be? */
+extern Word VG_(clo_main_stacksize);
 
 /* Delay startup to allow GDB to be attached?  Default: NO */
 extern Bool VG_(clo_wait_for_gdb);
@@ -185,10 +188,12 @@ extern HChar* VG_(clo_kernel_variant);
 
 /* Call this if the executable is missing.  This function prints an
    error message, then shuts down the entire system. */
+__attribute__((noreturn))
 extern void VG_(err_missing_prog) ( void );
 
 /* Similarly - complain and stop if there is some kind of config
    error. */
+__attribute__((noreturn))
 extern void VG_(err_config_error) ( Char* msg );
 
 

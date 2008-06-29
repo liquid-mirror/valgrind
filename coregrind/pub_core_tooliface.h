@@ -7,7 +7,7 @@
    This file is part of Valgrind, a dynamic binary instrumentation
    framework.
 
-   Copyright (C) 2000-2007 Julian Seward
+   Copyright (C) 2000-2008 Julian Seward
       jseward@acm.org
 
    This program is free software; you can redistribute it and/or
@@ -88,7 +88,7 @@ typedef
       Bool client_requests;
       Bool syscall_wrapper;
       Bool sanity_checks;
-      Bool data_syms;
+      Bool var_info;
       Bool malloc_replacement;
       Bool xml_output;
       Bool final_IR_tidy_pass;
@@ -118,6 +118,7 @@ typedef struct {
    // VG_(needs).tool_errors
    Bool  (*tool_eq_Error)                    (VgRes, Error*, Error*);
    void  (*tool_pp_Error)                    (Error*);
+   Bool  tool_show_ThreadIDs_for_errors;
    UInt  (*tool_update_extra)                (Error*);
    Bool  (*tool_recognised_suppression)      (Char*, Supp*);
    Bool  (*tool_read_extra_suppression_info) (Int, Char*, Int, Supp*);
@@ -161,8 +162,8 @@ typedef struct {
 
    // -- Event tracking functions ------------------------------------
    void (*track_new_mem_startup)     (Addr, SizeT, Bool, Bool, Bool);
-   void (*track_new_mem_stack_signal)(Addr, SizeT);
-   void (*track_new_mem_brk)         (Addr, SizeT);
+   void (*track_new_mem_stack_signal)(Addr, SizeT, ThreadId);
+   void (*track_new_mem_brk)         (Addr, SizeT, ThreadId);
    void (*track_new_mem_mmap)        (Addr, SizeT, Bool, Bool, Bool);
 
    void (*track_copy_mem_remap)      (Addr src, Addr dst, SizeT);
@@ -170,6 +171,17 @@ typedef struct {
    void (*track_die_mem_stack_signal)(Addr, SizeT);
    void (*track_die_mem_brk)         (Addr, SizeT);
    void (*track_die_mem_munmap)      (Addr, SizeT);
+
+   void VG_REGPARM(2) (*track_new_mem_stack_4_w_ECU)  (Addr,UInt);
+   void VG_REGPARM(2) (*track_new_mem_stack_8_w_ECU)  (Addr,UInt);
+   void VG_REGPARM(2) (*track_new_mem_stack_12_w_ECU) (Addr,UInt);
+   void VG_REGPARM(2) (*track_new_mem_stack_16_w_ECU) (Addr,UInt);
+   void VG_REGPARM(2) (*track_new_mem_stack_32_w_ECU) (Addr,UInt);
+   void VG_REGPARM(2) (*track_new_mem_stack_112_w_ECU)(Addr,UInt);
+   void VG_REGPARM(2) (*track_new_mem_stack_128_w_ECU)(Addr,UInt);
+   void VG_REGPARM(2) (*track_new_mem_stack_144_w_ECU)(Addr,UInt);
+   void VG_REGPARM(2) (*track_new_mem_stack_160_w_ECU)(Addr,UInt);
+   void (*track_new_mem_stack_w_ECU)(Addr,SizeT,UInt);
 
    void VG_REGPARM(1) (*track_new_mem_stack_4)  (Addr);
    void VG_REGPARM(1) (*track_new_mem_stack_8)  (Addr);
@@ -180,7 +192,7 @@ typedef struct {
    void VG_REGPARM(1) (*track_new_mem_stack_128)(Addr);
    void VG_REGPARM(1) (*track_new_mem_stack_144)(Addr);
    void VG_REGPARM(1) (*track_new_mem_stack_160)(Addr);
-   void (*track_new_mem_stack)(Addr, SizeT);
+   void (*track_new_mem_stack)(Addr,SizeT);
 
    void VG_REGPARM(1) (*track_die_mem_stack_4)  (Addr);
    void VG_REGPARM(1) (*track_die_mem_stack_8)  (Addr);
@@ -207,8 +219,9 @@ typedef struct {
    void (*track_start_client_code)(ThreadId, ULong);
    void (*track_stop_client_code) (ThreadId, ULong);
 
-   void (*track_post_thread_create)(ThreadId, ThreadId);
-   void (*track_post_thread_join)  (ThreadId, ThreadId);
+   void (*track_pre_thread_ll_create)(ThreadId, ThreadId);
+   void (*track_pre_thread_first_insn)(ThreadId);
+   void (*track_pre_thread_ll_exit)  (ThreadId);
 
    void (*track_pre_deliver_signal) (ThreadId, Int sigNo, Bool);
    void (*track_post_deliver_signal)(ThreadId, Int sigNo);

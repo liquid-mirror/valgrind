@@ -7,7 +7,7 @@
    This file is part of Valgrind, a dynamic binary instrumentation
    framework.
 
-   Copyright (C) 2000-2007 Julian Seward 
+   Copyright (C) 2000-2008 Julian Seward 
       jseward@acm.org
 
    This program is free software; you can redistribute it and/or
@@ -428,6 +428,10 @@ Int VG_(geteuid) ( void )
    /* ASSUMES SYSCALL ALWAYS SUCCEEDS */
 #  if defined(VGP_ppc32_aix5) || defined(VGP_ppc64_aix5)
    return VG_(do_syscall1)(__NR_AIX5_getuidx, 1) . res;
+#  elif defined(__NR_geteuid32)
+   // We use the 32-bit version if it's supported.  Otherwise, IDs greater
+   // than 65536 cause problems, as bug #151209 showed.
+   return VG_(do_syscall0)(__NR_geteuid32) . res;
 #  else
    return VG_(do_syscall0)(__NR_geteuid) . res;
 #  endif
@@ -438,6 +442,10 @@ Int VG_(getegid) ( void )
    /* ASSUMES SYSCALL ALWAYS SUCCEEDS */
 #  if defined(VGP_ppc32_aix5) || defined(VGP_ppc64_aix5)
    return VG_(do_syscall1)(__NR_AIX5_getgidx, 1) . res;
+#  elif defined(__NR_getegid32)
+   // We use the 32-bit version if it's supported.  Otherwise, IDs greater
+   // than 65536 cause problems, as bug #151209 showed.
+   return VG_(do_syscall0)(__NR_getegid32) . res;
 #  else
    return VG_(do_syscall0)(__NR_getegid) . res;
 #  endif
@@ -533,10 +541,21 @@ UInt VG_(read_millisecond_timer) ( void )
    now += (ULong)(nsec / 1000);
 #  else
 
-   struct vki_timeval tv_now;
+   struct vki_timespec ts_now;
    SysRes res;
-   res = VG_(do_syscall2)(__NR_gettimeofday, (UWord)&tv_now, (UWord)NULL);
-   now = tv_now.tv_sec * 1000000ULL + tv_now.tv_usec;
+   res = VG_(do_syscall2)(__NR_clock_gettime, VKI_CLOCK_MONOTONIC,
+                          (UWord)&ts_now);
+   if (res.isError == 0)
+   {
+     now = ts_now.tv_sec * 1000000ULL + ts_now.tv_nsec / 1000;
+   }
+   else
+   {
+     struct vki_timeval tv_now;
+     res = VG_(do_syscall2)(__NR_gettimeofday, (UWord)&tv_now, (UWord)NULL);
+     vg_assert(! res.isError);
+     now = tv_now.tv_sec * 1000000ULL + tv_now.tv_usec;
+   }
 #  endif
    
    if (base == 0)

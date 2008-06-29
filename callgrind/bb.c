@@ -6,7 +6,7 @@
 /*
    This file is part of Callgrind, a Valgrind tool for call tracing.
 
-   Copyright (C) 2002-2007, Josef Weidendorfer (Josef.Weidendorfer@gmx.de)
+   Copyright (C) 2002-2008, Josef Weidendorfer (Josef.Weidendorfer@gmx.de)
 
    This program is free software; you can redistribute it and/or
    modify it under the terms of the GNU General Public License as
@@ -141,7 +141,7 @@ static BB* new_bb(obj_node* obj, OffT offset,
    new->jmp         = (CJmpInfo*) &(new->instr[instr_count]);
    new->instr_len   = 0;
    new->cost_count  = 0;
-   new->sect_kind   = VG_(seginfo_sect_kind)(offset + obj->offset);
+   new->sect_kind   = VG_(seginfo_sect_kind)(NULL, 0, offset + obj->offset);
    new->fn          = 0;
    new->line        = 0;
    new->is_entry    = 0;
@@ -187,7 +187,7 @@ BB* lookup_bb(obj_node* obj, OffT offset)
       bb = bb->next;
     }
 
-    CLG_DEBUG(5, "  lookup_bb (Obj %s, off %#lx): %p\n",
+    CLG_DEBUG(5, "  lookup_bb (Obj %s, off %p): %p\n",
 	     obj->name, offset, bb);
     return bb;
 }
@@ -196,22 +196,24 @@ static __inline__
 obj_node* obj_of_address(Addr addr)
 {
   obj_node* obj;
-  SegInfo* si;
+  DebugInfo* di;
   OffT offset;
 
-  si = VG_(find_seginfo)(addr);
-  obj = CLG_(get_obj_node)( si );
+  di = VG_(find_seginfo)(addr);
+  obj = CLG_(get_obj_node)( di );
 
   /* Update symbol offset in object if remapped */
-  offset = si ? VG_(seginfo_sym_offset)(si):0;
+  /* FIXME (or at least check this) 2008 Feb 19: 'offset' is
+     only correct for text symbols, not for data symbols */
+  offset = di ? VG_(seginfo_get_text_bias)(di):0;
   if (obj->offset != offset) {
-      Addr start = si ? VG_(seginfo_start)(si) : 0;
+      Addr start = di ? VG_(seginfo_get_text_avma)(di) : 0;
 
-      CLG_DEBUG(0, "Mapping changed for '%s': %#lx -> %#lx\n",
+      CLG_DEBUG(0, "Mapping changed for '%s': %p -> %p\n",
 		obj->name, obj->start, start);
 
       /* Size should be the same, and offset diff == start diff */
-      CLG_ASSERT( obj->size == (si ? VG_(seginfo_size)(si) : 0) );
+      CLG_ASSERT( obj->size == (di ? VG_(seginfo_get_text_size)(di) : 0) );
       CLG_ASSERT( obj->start - start == obj->offset - offset );
       obj->offset = offset;
       obj->start = start;
@@ -242,7 +244,7 @@ BB* CLG_(get_bb)(Addr addr, IRSB* bbIn, /*OUT*/ Bool *seen_before)
   UInt n_instrs, n_jmps;
   Bool cjmp_inverted = False;
 
-  CLG_DEBUG(5, "+ get_bb(BB %#lx)\n", addr);
+  CLG_DEBUG(5, "+ get_bb(BB %p)\n", addr);
 
   obj = obj_of_address(addr);
   bb = lookup_bb(obj, addr - obj->offset);
@@ -269,13 +271,13 @@ BB* CLG_(get_bb)(Addr addr, IRSB* bbIn, /*OUT*/ Bool *seen_before)
     CLG_ASSERT(bb->cjmp_count == n_jmps );
     CLG_(stat).bb_retranslations++;
 
-    CLG_DEBUG(5, "- get_bb(BB %#lx): seen before.\n", addr);
+    CLG_DEBUG(5, "- get_bb(BB %p): seen before.\n", addr);
     return bb;
   }
 
   bb = new_bb(obj, addr - obj->offset, n_instrs, n_jmps, cjmp_inverted);
 
-  CLG_DEBUG(5, "- get_bb(BB %#lx)\n", addr);
+  CLG_DEBUG(5, "- get_bb(BB %p)\n", addr);
 
   return bb;
 }
@@ -303,7 +305,7 @@ void CLG_(delete_bb)(Addr addr)
     }
 
     if (bb == NULL) {
-	CLG_DEBUG(3, "  delete_bb (Obj %s, off %lx): NOT FOUND\n",
+	CLG_DEBUG(3, "  delete_bb (Obj %s, off %p): NOT FOUND\n",
 		  obj->name, offset);
 
 	/* we didn't find it.
@@ -324,7 +326,7 @@ void CLG_(delete_bb)(Addr addr)
        bp->next = bb->next;
     }
 
-    CLG_DEBUG(3, "  delete_bb (Obj %s, off %#lx): %p, BBCC head: %p\n",
+    CLG_DEBUG(3, "  delete_bb (Obj %s, off %p): %p, BBCC head: %p\n",
 	      obj->name, offset, bb, bb->bbcc_list);
 
     if (bb->bbcc_list == 0) {

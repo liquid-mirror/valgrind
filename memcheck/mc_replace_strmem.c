@@ -9,7 +9,7 @@
    This file is part of MemCheck, a heavyweight Valgrind tool for
    detecting memory errors.
 
-   Copyright (C) 2000-2007 Julian Seward 
+   Copyright (C) 2000-2008 Julian Seward 
       jseward@acm.org
 
    This program is free software; you can redistribute it and/or
@@ -171,7 +171,7 @@ STRCHR(m_ld_linux_x86_64_so_2, index)
       while (*dst) dst++; \
       while (*src) *dst++ = *src++; \
       *dst = 0; \
- \
+      \
       /* This is a bit redundant, I think;  any overlap and the strcat will */ \
       /* go forever... or until a seg fault occurs. */ \
       if (is_overlap(dst_orig,  \
@@ -179,7 +179,7 @@ STRCHR(m_ld_linux_x86_64_so_2, index)
                      (Addr)dst-(Addr)dst_orig+1,  \
                      (Addr)src-(Addr)src_orig+1)) \
          RECORD_OVERLAP_ERROR("strcat", dst_orig, src_orig, 0); \
- \
+      \
       return dst_orig; \
    }
 
@@ -195,11 +195,11 @@ STRCAT(m_libc_soname, strcat)
       const Char* src_orig = src; \
             Char* dst_orig = dst; \
       SizeT m = 0; \
- \
+      \
       while (*dst) dst++; \
       while (m < n && *src) { m++; *dst++ = *src++; } /* concat <= n chars */ \
       *dst = 0;                                       /* always add null   */ \
- \
+      \
       /* This checks for overlap after copying, unavoidable without */ \
       /* pre-counting lengths... should be ok */ \
       if (is_overlap(dst_orig,  \
@@ -207,7 +207,7 @@ STRCAT(m_libc_soname, strcat)
                      (Addr)dst-(Addr)dst_orig+1,  \
                      (Addr)src-(Addr)src_orig+1)) \
          RECORD_OVERLAP_ERROR("strncat", dst_orig, src_orig, n); \
- \
+      \
       return dst_orig; \
    }
 
@@ -250,10 +250,10 @@ STRLEN(m_ld_linux_x86_64_so_2, strlen)
    { \
       const Char* src_orig = src; \
             Char* dst_orig = dst; \
- \
+      \
       while (*src) *dst++ = *src++; \
       *dst = 0; \
- \
+      \
       /* This checks for overlap after copying, unavoidable without */ \
       /* pre-counting length... should be ok */ \
       if (is_overlap(dst_orig,  \
@@ -261,7 +261,7 @@ STRLEN(m_ld_linux_x86_64_so_2, strlen)
                      (Addr)dst-(Addr)dst_orig+1,  \
                      (Addr)src-(Addr)src_orig+1)) \
          RECORD_OVERLAP_ERROR("strcpy", dst_orig, src_orig, 0); \
- \
+      \
       return dst_orig; \
    }
 
@@ -277,7 +277,7 @@ STRCPY(m_libc_soname, strcpy)
       const Char* src_orig = src; \
             Char* dst_orig = dst; \
       SizeT m = 0; \
- \
+      \
       while (m   < n && *src) { m++; *dst++ = *src++; } \
       /* Check for overlap after copying; all n bytes of dst are relevant, */ \
       /* but only m+1 bytes of src if terminator was found */ \
@@ -303,10 +303,10 @@ STRNCPY(m_libc_soname, strncpy)
          if (*s1 == 0 && *s2 == 0) return 0; \
          if (*s1 == 0) return -1; \
          if (*s2 == 0) return 1; \
- \
+         \
          if (*(unsigned char*)s1 < *(unsigned char*)s2) return -1; \
          if (*(unsigned char*)s1 > *(unsigned char*)s2) return 1; \
- \
+         \
          s1++; s2++; n++; \
       } \
    }
@@ -362,13 +362,13 @@ MEMCHR(m_libc_soname, memchr)
    { \
       register char *d; \
       register char *s; \
- \
+      \
       if (len == 0) \
          return dst; \
- \
+      \
       if (is_overlap(dst, src, len, len)) \
          RECORD_OVERLAP_ERROR("memcpy", dst, src, len); \
- \
+      \
       if ( dst > src ) { \
          d = (char *)dst + len - 1; \
          s = (char *)src + len - 1; \
@@ -401,6 +401,7 @@ MEMCHR(m_libc_soname, memchr)
 
 MEMCPY(m_libc_soname, memcpy)
 MEMCPY(m_ld_so_1,     memcpy) /* ld.so.1 */
+MEMCPY(m_ld64_so_1,   memcpy) /* ld64.so.1 */
 /* icc9 blats these around all over the place.  Not only in the main
    executable but various .so's.  They are highly tuned and read
    memory beyond the source boundary (although work correctly and
@@ -423,7 +424,7 @@ MEMCPY(NONE, _intel_fast_memcpy)
       unsigned char b0; \
       unsigned char* s1 = (unsigned char*)s1V; \
       unsigned char* s2 = (unsigned char*)s2V; \
- \
+      \
       while (n != 0) { \
          a0 = s1[0]; \
          b0 = s2[0]; \
@@ -450,10 +451,10 @@ MEMCMP(m_ld_so_1, bcmp)
    { \
       const Char* src_orig = src; \
             Char* dst_orig = dst; \
- \
+      \
       while (*src) *dst++ = *src++; \
       *dst = 0; \
- \
+      \
       /* This checks for overlap after copying, unavoidable without */ \
       /* pre-counting length... should be ok */ \
       if (is_overlap(dst_orig,  \
@@ -461,7 +462,7 @@ MEMCMP(m_ld_so_1, bcmp)
                      (Addr)dst-(Addr)dst_orig+1,  \
                      (Addr)src-(Addr)src_orig+1)) \
          RECORD_OVERLAP_ERROR("stpcpy", dst_orig, src_orig, 0); \
- \
+      \
       return dst; \
    }
 
@@ -677,9 +678,55 @@ GLIBC25_MEMPCPY(m_libc_soname, mempcpy)
 GLIBC25_MEMPCPY(m_ld_so_1,     mempcpy) /* ld.so.1 */
 
 
+#define GLIBC26___MEMCPY_CHK(soname, fnname) \
+   void* VG_REPLACE_FUNCTION_ZU(soname,fnname) \
+            (void* dst, const void* src, SizeT len, SizeT dstlen ); \
+   void* VG_REPLACE_FUNCTION_ZU(soname,fnname) \
+            (void* dst, const void* src, SizeT len, SizeT dstlen ) \
+   { \
+      extern void _exit(int status); \
+      register char *d; \
+      register char *s; \
+      \
+      if (dstlen < len) goto badness; \
+      \
+      if (len == 0) \
+         return dst; \
+      \
+      if (is_overlap(dst, src, len, len)) \
+         RECORD_OVERLAP_ERROR("memcpy_chk", dst, src, len); \
+      \
+      if ( dst > src ) { \
+         d = (char *)dst + len - 1; \
+         s = (char *)src + len - 1; \
+         while ( len-- ) { \
+            *d-- = *s--; \
+         } \
+      } else if ( dst < src ) { \
+         d = (char *)dst; \
+         s = (char *)src; \
+         while ( len-- ) { \
+            *d++ = *s++; \
+         } \
+      } \
+      return dst; \
+     badness: \
+      VALGRIND_PRINTF_BACKTRACE( \
+         "*** memcpy_chk: buffer overflow detected ***: " \
+         "program terminated"); \
+     _exit(127); \
+     /*NOTREACHED*/ \
+     return NULL; \
+   }
+
+GLIBC26___MEMCPY_CHK(m_libc_soname, __memcpy_chk)
+
+
 /*------------------------------------------------------------*/
 /*--- Improve definedness checking of process environment  ---*/
 /*------------------------------------------------------------*/
+
+#if defined(VGO_linux)
 
 /* putenv */
 int VG_WRAP_FUNCTION_ZU(m_libc_soname, putenv) (char* string);
@@ -738,50 +785,60 @@ int VG_WRAP_FUNCTION_ZU(m_libc_soname, setenv)
     return result;
 }
 
+#endif /* defined(VGO_linux) */
+
+
 /*------------------------------------------------------------*/
 /*--- AIX stuff only after this point                      ---*/
 /*------------------------------------------------------------*/
 
-/* Generate replacements for strcat, strncat, strcpy, strncpy,
+/* Generate replacements for strcat, strncat, strcpy, strncpy, strcmp
    in the given soname. */
-#define Str4FNs(_soname)       \
+#define Str5FNs(_soname)       \
     STRCAT(_soname, strcat)    \
    STRNCAT(_soname, strncat)   \
     STRCPY(_soname, strcpy)    \
-   STRNCPY(_soname, strncpy)
+   STRNCPY(_soname, strncpy)   \
+    STRCMP(_soname, strcmp)
 
 #if defined(VGP_ppc32_aix5)
-Str4FNs(NONE)                             /* in main exe */
-Str4FNs(libCZdaZLshrcoreZdoZR)            /* libC.a(shrcore.o) */
-Str4FNs(libX11ZdaZLshr4ZdoZR)             /* libX11.a(shr4.o) */
-Str4FNs(libXmZdaZLshrZaZdoZR)             /* libXm.a(shr*.o) */
-Str4FNs(libXtZdaZLshr4ZdoZR)              /* libXt.a(shr4.o) */
-Str4FNs(libppeZurZdaZLdynamicZdoZR)       /* libppe_r.a(dynamic.o) */
-Str4FNs(libodmZdaZLshrZdoZR)              /* libodm.a(shr.o) */
-Str4FNs(libmpiZurZdaZLmpicoreZurZdoZR)    /* libmpi_r.a(mpicore_r.o) */
-Str4FNs(libmpiZurZdaZLmpipoeZurZdoZR)     /* libmpi_r.a(mpipoe_r.o) */
-Str4FNs(libmpiZurZdaZLmpciZurZdoZR)       /* libmpi_r.a(mpci_r.o) */
-Str4FNs(libslurmZdso)                     /* libslurm.so */
-Str4FNs(libglibZdso)                      /* libglib.so */
-Str4FNs(libIMZdaZLshrZdoZR)               /* libIM.a(shr.o) */
-Str4FNs(libiconvZdaZLshr4ZdoZR)           /* libiconv.a(shr4.o) */
-Str4FNs(libGLZdaZLshrZdoZR)               /* libGL.a(shr.o) */
-Str4FNs(libgdkZdso)                       /* libgdk.so */
-Str4FNs(libcursesZdaZLshr42ZdoZR)         /* libcurses.a(shr42.o) */
-Str4FNs(libqtZda)                         /* libqt.a */
+Str5FNs(NONE)                             /* in main exe */
+Str5FNs(libCZdaZLshrcoreZdoZR)            /* libC.a(shrcore.o) */
+Str5FNs(libX11ZdaZLshr4ZdoZR)             /* libX11.a(shr4.o) */
+Str5FNs(libXmZdaZLshrZaZdoZR)             /* libXm.a(shr*.o) */
+Str5FNs(libXtZdaZLshr4ZdoZR)              /* libXt.a(shr4.o) */
+Str5FNs(libppeZurZdaZLdynamicZdoZR)       /* libppe_r.a(dynamic.o) */
+Str5FNs(libodmZdaZLshrZdoZR)              /* libodm.a(shr.o) */
+Str5FNs(libmpiZurZdaZLmpicoreZurZdoZR)    /* libmpi_r.a(mpicore_r.o) */
+Str5FNs(libmpiZurZdaZLmpipoeZurZdoZR)     /* libmpi_r.a(mpipoe_r.o) */
+Str5FNs(libmpiZurZdaZLmpciZurZdoZR)       /* libmpi_r.a(mpci_r.o) */
+Str5FNs(libslurmZdso)                     /* libslurm.so */
+Str5FNs(libglibZdso)                      /* libglib.so */
+Str5FNs(libIMZdaZLshrZdoZR)               /* libIM.a(shr.o) */
+Str5FNs(libiconvZdaZLshr4ZdoZR)           /* libiconv.a(shr4.o) */
+Str5FNs(libGLZdaZLshrZdoZR)               /* libGL.a(shr.o) */
+Str5FNs(libgdkZdso)                       /* libgdk.so */
+Str5FNs(libcursesZdaZLshr42ZdoZR)         /* libcurses.a(shr42.o) */
+Str5FNs(libqtZda)                         /* libqt.a */
+Str5FNs(ZaZLlibglibZhZaZdsoZaZR)          /* *(libglib-*.so*) */
+Str5FNs(ZaZLlibfontconfigZdsoZaZR)        /* *(libfontconfig.so*) */
+Str5FNs(libQtZaa)                         /* libQt*.a */
 #endif
 #if defined(VGP_ppc64_aix5)
-Str4FNs(NONE)                             /* in main exe */
-Str4FNs(libX11ZdaZLshrZu64ZdoZR)          /* libX11.a(shr_64.o) */
-Str4FNs(libiconvZdaZLshr4Zu64ZdoZR)       /* libiconv.a(shr4_64.o) */
-Str4FNs(libGLZdaZLshrZu64ZdoZR)           /* libGL.a(shr_64.o) */
-Str4FNs(libppeZurZdaZLdynamic64ZdoZR)     /* libppe_r.a(dynamic64.o) */
-Str4FNs(libodmZdaZLshrZu64ZdoZR)          /* libodm.a(shr_64.o) */
-Str4FNs(libmpiZurZdaZLmpicore64ZurZdoZR)  /* libmpi_r.a(mpicore64_r.o) */
-Str4FNs(libmpiZurZdaZLmpipoe64ZurZdoZR)   /* libmpi_r.a(mpipoe64_r.o) */
-Str4FNs(libCZdaZLshrcoreZu64ZdoZR)        /* libC.a(shrcore_64.o) */
-Str4FNs(libmpiZurZdaZLmpci64ZurZdoZR)     /* libmpi_r.a(mpci64_r.o) */
-Str4FNs(libqtZda)                         /* libqt.a */
+Str5FNs(NONE)                             /* in main exe */
+Str5FNs(libX11ZdaZLshrZu64ZdoZR)          /* libX11.a(shr_64.o) */
+Str5FNs(libiconvZdaZLshr4Zu64ZdoZR)       /* libiconv.a(shr4_64.o) */
+Str5FNs(libGLZdaZLshrZu64ZdoZR)           /* libGL.a(shr_64.o) */
+Str5FNs(libppeZurZdaZLdynamic64ZdoZR)     /* libppe_r.a(dynamic64.o) */
+Str5FNs(libodmZdaZLshrZu64ZdoZR)          /* libodm.a(shr_64.o) */
+Str5FNs(libmpiZurZdaZLmpicore64ZurZdoZR)  /* libmpi_r.a(mpicore64_r.o) */
+Str5FNs(libmpiZurZdaZLmpipoe64ZurZdoZR)   /* libmpi_r.a(mpipoe64_r.o) */
+Str5FNs(libCZdaZLshrcoreZu64ZdoZR)        /* libC.a(shrcore_64.o) */
+Str5FNs(libmpiZurZdaZLmpci64ZurZdoZR)     /* libmpi_r.a(mpci64_r.o) */
+Str5FNs(libqtZda)                         /* libqt.a */
+Str5FNs(ZaZLlibglibZhZaZdsoZaZR)          /* *(libglib-*.so*) */
+Str5FNs(ZaZLlibfontconfigZdsoZaZR)        /* *(libfontconfig.so*) */
+Str5FNs(libQtZaa)                         /* libQt*.a */
 #endif
 
 

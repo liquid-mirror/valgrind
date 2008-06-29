@@ -7,7 +7,7 @@
    This file is part of Valgrind, a dynamic binary instrumentation
    framework.
 
-   Copyright (C) 2000-2007 Julian Seward
+   Copyright (C) 2000-2008 Julian Seward
       jseward@acm.org
 
    This program is free software; you can redistribute it and/or
@@ -83,10 +83,14 @@ extern void VG_(set_IP) ( ThreadId tid, Addr ip );
 
 // For get/set, 'area' is where the asked-for shadow state will be copied
 // into/from.
-extern void VG_(get_shadow_regs_area) ( ThreadId tid, OffT guest_state_offset,
-                                        SizeT size, UChar* area );
-extern void VG_(set_shadow_regs_area) ( ThreadId tid, OffT guest_state_offset,
-                                        SizeT size, const UChar* area );
+void
+VG_(get_shadow_regs_area) ( ThreadId tid, 
+                            /*DST*/UChar* dst,
+                            /*SRC*/Int shadowNo, OffT offset, SizeT size );
+void
+VG_(set_shadow_regs_area) ( ThreadId tid, 
+                            /*DST*/Int shadowNo, OffT offset, SizeT size,
+                            /*SRC*/const UChar* src );
 
 // Apply a function 'f' to all the general purpose registers in all the
 // current threads.
@@ -94,11 +98,19 @@ extern void VG_(set_shadow_regs_area) ( ThreadId tid, OffT guest_state_offset,
 // doing leak checking.
 extern void VG_(apply_to_GP_regs)(void (*f)(UWord val));
 
-// This iterator lets you inspect each live thread's stack bounds.  The
-// params are all 'out' params.  Returns False at the end.
-extern void VG_(thread_stack_reset_iter) ( void );
-extern Bool VG_(thread_stack_next)       ( ThreadId* tid, Addr* stack_min,
-                                                          Addr* stack_max );
+// This iterator lets you inspect each live thread's stack bounds.
+// Returns False at the end.  'tid' is the iterator and you can only
+// safely change it by making calls to these functions.
+extern void VG_(thread_stack_reset_iter) ( /*OUT*/ThreadId* tid );
+extern Bool VG_(thread_stack_next)       ( /*MOD*/ThreadId* tid,
+                                           /*OUT*/Addr* stack_min, 
+                                           /*OUT*/Addr* stack_max );
+
+// Returns .client_stack_highest_word for the given thread
+extern Addr VG_(thread_get_stack_max) ( ThreadId tid );
+
+// Returns how many bytes have been allocated for the stack of the given thread
+extern Addr VG_(thread_get_stack_size) ( ThreadId tid );
 
 // Given a pointer to a function as obtained by "& functionname" in C,
 // produce a pointer to the actual entry point for the function.  For
