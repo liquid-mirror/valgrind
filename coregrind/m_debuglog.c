@@ -652,7 +652,7 @@ VG_(debugLog_vprintf) (
          i++;
       }
       /* If ',' follows '%', commas will be inserted. */
-      if (format[i] == ',') {
+      if (format[i] == ',' || format[i] == '\'') {
          flags |= VG_MSG_COMMA;
          i++;
       }
