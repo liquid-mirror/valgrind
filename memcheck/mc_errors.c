@@ -302,7 +302,7 @@ static void mc_pp_AddrInfo ( Addr a, AddrInfo* ai, Bool maybe_gcc )
             relative = "inside";
          }
          VG_(message)(Vg_UserMsg, 
-            "%sAddress 0x%lx is %,lu bytes %s a %s of size %,lu %s%s",
+            "%sAddress 0x%lx is %'lu bytes %s a %s of size %'lu %s%s",
             xpre,
             a, delta, relative, ai->Addr.Block.block_desc,
             block_szB,
@@ -317,11 +317,11 @@ static void mc_pp_AddrInfo ( Addr a, AddrInfo* ai, Bool maybe_gcc )
       case Addr_DataSym:
          VG_(message)(Vg_UserMsg, 
                       "%sAddress 0x%llx is %llu bytes "
-                        "inside data symbol \"%t\"%s", 
+                        "inside data symbol \"%s\"%s", 
                       xpre, 
                       (ULong)a, 
                       (ULong)ai->Addr.DataSym.offset,
-                      ai->Addr.DataSym.name, 
+                      VG_(ToXML)(ai->Addr.DataSym.name),
                       xpost);
          break;
 
@@ -336,11 +336,11 @@ static void mc_pp_AddrInfo ( Addr a, AddrInfo* ai, Bool maybe_gcc )
 
       case Addr_SectKind:
          VG_(message)(Vg_UserMsg, 
-                      "%sAddress 0x%llx is in the %t segment of %t%s",
+                      "%sAddress 0x%llx is in the %s segment of %s%s",
                       xpre, 
                       (ULong)a, 
-                      VG_(pp_SectKind)(ai->Addr.SectKind.kind),
-                      ai->Addr.SectKind.objname, 
+                      VG_(ToXML)(VG_(pp_SectKind)(ai->Addr.SectKind.kind)),
+                      VG_(ToXML)(ai->Addr.SectKind.objname),
                       xpost);
          break;
 
@@ -568,16 +568,16 @@ void MC_(pp_Error) ( Error* err )
          LossRecord* l               = extra->Err.Leak.lossRecord;
 
          if (VG_(clo_xml)) {
-            VG_(message)(Vg_UserMsg, "  <kind>%t</kind>",
-                         xml_leak_kind(l->loss_mode));
+            VG_(message)(Vg_UserMsg, "  <kind>%s</kind>",
+                         VG_(ToXML)(xml_leak_kind(l->loss_mode)));
          } else {
             VG_(message)(Vg_UserMsg, "");
          }
 
          if (l->indirect_bytes) {
             VG_(message)(Vg_UserMsg, 
-               "%s%,lu (%,lu direct, %,lu indirect) bytes in %,u blocks"
-               " are %s in loss record %,u of %,u%s",
+               "%s%'lu (%'lu direct, %'lu indirect) bytes in %'u blocks"
+               " are %s in loss record %'u of %'u%s",
                xpre,
                l->total_bytes + l->indirect_bytes, 
                l->total_bytes, l->indirect_bytes, l->num_blocks,
@@ -594,14 +594,14 @@ void MC_(pp_Error) ( Error* err )
          } else {
             VG_(message)(
                Vg_UserMsg, 
-               "%s%,lu bytes in %,u blocks are %s in loss record %,u of %,u%s",
+               "%s%'lu bytes in %'u blocks are %s in loss record %'u of %'u%s",
                xpre,
                l->total_bytes, l->num_blocks,
                str_leak_lossmode(l->loss_mode), n_this_record, n_total_records,
                xpost
             );
             if (VG_(clo_xml)) {
-               VG_(message)(Vg_UserMsg, "  <leakedbytes>%d</leakedbytes>", 
+               VG_(message)(Vg_UserMsg, "  <leakedbytes>%ld</leakedbytes>",
                                         l->total_bytes);
                VG_(message)(Vg_UserMsg, "  <leakedblocks>%d</leakedblocks>", 
                                         l->num_blocks);
