@@ -1193,8 +1193,8 @@ void ML_(fixup_guest_state_to_restart_syscall) ( ThreadArchState* arch )
 
       if (p[0] != 0x44 || p[1] != 0x0 || p[2] != 0x0 || p[3] != 0x02)
          VG_(message)(Vg_DebugMsg,
-                      "?! restarting over syscall at %#lx %02x %02x %02x %02x\n",
-                      arch->vex.guest_CIA, p[0], p[1], p[2], p[3]);
+                      "?! restarting over syscall at %#llx %02x %02x %02x %02x\n",
+                      arch->vex.guest_CIA + 0ULL, p[0], p[1], p[2], p[3]);
 
       vg_assert(p[0] == 0x44 && p[1] == 0x0 && p[2] == 0x0 && p[3] == 0x2);
    }

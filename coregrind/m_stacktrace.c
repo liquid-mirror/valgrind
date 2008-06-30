@@ -407,7 +407,7 @@ UInt VG_(get_StackTrace_wrk) ( ThreadId tid_if_known,
             if (fps) fps[i] = fp;
             ips[i++] = ip;
             if (debug)
-               VG_(printf)("     ipsF[%d]=%#08x\n", i-1, ips[i-1]);
+               VG_(printf)("     ipsF[%d]=%#08lx\n", i-1, ips[i-1]);
             continue;
          }
 
