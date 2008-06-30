@@ -886,22 +886,22 @@ static int xml_result_buf_pos;
 
 static void append_to_xml_result_buf(const HChar ch, void* arg2)
 {
-  if (xml_result_buf_pos
-      <= sizeof(xml_result_buf) / sizeof(xml_result_buf[0]) - 2)
-  {
-    xml_result_buf[xml_result_buf_pos++] = ch;
-  }
+   if (xml_result_buf_pos
+       <= sizeof(xml_result_buf) / sizeof(xml_result_buf[0]) - 2)
+   {
+      xml_result_buf[xml_result_buf_pos++] = ch;
+   }
 }
 
 /* Convert a string such that it can be inserted into an XML output stream. */
 extern HChar* VG_(ToXML)(const HChar* str)
 {
-  if (str == NULL)
-    str = "(null)";
-  xml_result_buf_pos = 0;
-  myvprintf_str_XML_simplistic(append_to_xml_result_buf, NULL, str);
-  xml_result_buf[xml_result_buf_pos] = 0;
-  return xml_result_buf;
+   if (str == NULL)
+      str = "(null)";
+   xml_result_buf_pos = 0;
+   myvprintf_str_XML_simplistic(append_to_xml_result_buf, NULL, str);
+   xml_result_buf[xml_result_buf_pos] = 0;
+   return xml_result_buf;
 }
 
 /*--------------------------------------------------------------------*/
