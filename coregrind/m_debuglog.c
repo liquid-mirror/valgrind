@@ -49,8 +49,6 @@
 #include "pub_core_basics.h"     /* basic types */
 #include "pub_core_vkiscnums.h"  /* for syscall numbers */
 #include "pub_core_debuglog.h"   /* our own iface */
-#include "pub_core_libcassert.h" /* vg_assert() */
-#include "pub_tool_libcprint.h"  /* VG_(ToXML)() */
 #include "valgrind.h"            /* for RUNNING_ON_VALGRIND */
 
 /*------------------------------------------------------------*/
@@ -450,7 +448,6 @@ static void emit ( HChar* buf, Int n )
 #define VG_MSG_COMMA    16 /* Add commas to numbers (for %d, %u) */
 #define VG_MSG_ALTFORMAT 32 /* Convert the value to alternate format */
 
-
 /* Copy a string into the buffer. */
 static 
 UInt myvprintf_str ( void(*send)(HChar,void*),
@@ -500,7 +497,6 @@ UInt myvprintf_str ( void(*send)(HChar,void*),
 
 
 /* Copy a string into the buffer, escaping bad XML chars. */
-static 
 UInt myvprintf_str_XML_simplistic ( void(*send)(HChar,void*),
                                     void* send_arg2,
                                     const HChar* str )
@@ -657,7 +653,7 @@ VG_(debugLog_vprintf) (
             break;
          case ',':
          case '\'':
-            /* If ',' follows '%', commas will be inserted. */
+            /* If ',' or '\'' follows '%', commas will be inserted. */
             flags |= VG_MSG_COMMA;
             break;
          case '-':
@@ -881,28 +877,7 @@ void VG_(debugLog) ( Int level, const HChar* modulename,
    va_end(vargs);
 }
 
-static HChar xml_result_buf[256];
-static int xml_result_buf_pos;
 
-static void append_to_xml_result_buf(const HChar ch, void* arg2)
-{
-   if (xml_result_buf_pos
-       <= sizeof(xml_result_buf) / sizeof(xml_result_buf[0]) - 2)
-   {
-      xml_result_buf[xml_result_buf_pos++] = ch;
-   }
-}
-
-/* Convert a string such that it can be inserted into an XML output stream. */
-extern HChar* VG_(ToXML)(const HChar* str)
-{
-   if (str == NULL)
-      str = "(null)";
-   xml_result_buf_pos = 0;
-   myvprintf_str_XML_simplistic(append_to_xml_result_buf, NULL, str);
-   xml_result_buf[xml_result_buf_pos] = 0;
-   return xml_result_buf;
-}
 
 /*--------------------------------------------------------------------*/
 /*--- end                                           m_debuglog.c ---*/

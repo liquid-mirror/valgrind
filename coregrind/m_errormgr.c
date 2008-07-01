@@ -699,6 +699,7 @@ static Bool show_used_suppressions ( void )
 {
    Supp  *su;
    Bool  any_supp;
+   HChar xml_sname[128];
 
    if (VG_(clo_xml))
       VG_(message)(Vg_DebugMsg, "<suppcounts>");
@@ -714,7 +715,8 @@ static Bool show_used_suppressions ( void )
                       "    <count>%d</count>\n"
                       "    <name>%s</name>\n"
                       "  </pair>", 
-                      su->count, VG_(ToXML)(su->sname));
+                      su->count,
+                      VG_(ToXML)(xml_sname, sizeof(xml_sname), su->sname));
       } else {
          VG_(message)(Vg_DebugMsg, "supp: %6d %s", su->count, su->sname);
       }

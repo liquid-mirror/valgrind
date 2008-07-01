@@ -84,6 +84,11 @@ UInt VG_(debugLog_vprintf) (
         va_list vargs
      );
 
+/* Copy a string into the buffer, escaping bad XML chars. */
+UInt myvprintf_str_XML_simplistic ( void(*send)(HChar,void*),
+                                    void* send_arg2,
+                                    const HChar* str );
+
 
 #endif   // __PUB_CORE_DEBUGLOG_H
 

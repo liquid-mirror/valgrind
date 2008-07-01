@@ -90,7 +90,7 @@ extern UInt VG_(message)    ( VgMsgKind kind, const HChar* format, ... ) PRINTF_
 extern UInt VG_(vmessage)   ( VgMsgKind kind, const HChar* format, va_list vargs ) PRINTF_CHECK(2, 0);
 
 /* Convert a string such that it can be inserted into an XML output stream. */
-extern HChar* VG_(ToXML)(const HChar* const str);
+extern HChar* VG_(ToXML)(HChar* buf, Int size, const HChar* str);
 
 
 #endif   // __PUB_TOOL_LIBCPRINT_H

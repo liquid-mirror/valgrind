@@ -262,6 +262,7 @@ static void mc_pp_AddrInfo ( Addr a, AddrInfo* ai, Bool maybe_gcc )
 {
    HChar* xpre  = VG_(clo_xml) ? "  <auxwhat>" : " ";
    HChar* xpost = VG_(clo_xml) ? "</auxwhat>"  : "";
+   HChar xml_buf[256];
 
    switch (ai->tag) {
       case Addr_Unknown:
@@ -321,7 +322,8 @@ static void mc_pp_AddrInfo ( Addr a, AddrInfo* ai, Bool maybe_gcc )
                       xpre, 
                       (ULong)a, 
                       (ULong)ai->Addr.DataSym.offset,
-                      VG_(ToXML)(ai->Addr.DataSym.name),
+                      VG_(ToXML)(xml_buf, sizeof(xml_buf),
+                                 ai->Addr.DataSym.name),
                       xpost);
          break;
 
@@ -339,8 +341,10 @@ static void mc_pp_AddrInfo ( Addr a, AddrInfo* ai, Bool maybe_gcc )
                       "%sAddress 0x%llx is in the %s segment of %s%s",
                       xpre, 
                       (ULong)a, 
-                      VG_(ToXML)(VG_(pp_SectKind)(ai->Addr.SectKind.kind)),
-                      VG_(ToXML)(ai->Addr.SectKind.objname),
+                      VG_(ToXML)(xml_buf, sizeof(xml_buf),
+                                 VG_(pp_SectKind)(ai->Addr.SectKind.kind)),
+                      VG_(ToXML)(xml_buf, sizeof(xml_buf),
+                                 ai->Addr.SectKind.objname),
                       xpost);
          break;
 
@@ -420,6 +424,7 @@ static void mc_pp_origin ( ExeContext* ec, UInt okind )
 void MC_(pp_Error) ( Error* err )
 {
    MC_Error* extra = VG_(get_error_extra)(err);
+   HChar xml_buf[256];
 
    switch (VG_(get_error_kind)(err)) {
       case Err_CoreMem: {
@@ -569,7 +574,8 @@ void MC_(pp_Error) ( Error* err )
 
          if (VG_(clo_xml)) {
             VG_(message)(Vg_UserMsg, "  <kind>%s</kind>",
-                         VG_(ToXML)(xml_leak_kind(l->loss_mode)));
+                         VG_(ToXML)(xml_buf, sizeof(xml_buf),
+                                    xml_leak_kind(l->loss_mode)));
          } else {
             VG_(message)(Vg_UserMsg, "");
          }
