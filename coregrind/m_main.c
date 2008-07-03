@@ -734,9 +734,6 @@ static void print_file_vars(Char* format)
 	       // Get the env var name, print its contents.
 	       Char* qualname;
                Char* qual;
-               Char xml_qualname[256];
-               Char xml_qual[256];
-
                i++;
                qualname = &format[i];
                while (True) {
@@ -750,11 +747,9 @@ static void print_file_vars(Char* format)
                   i++;
                }
 
-	       VG_(message)(Vg_UserMsg, "<logfilequalifier> <var>%s</var> "
-			    "<value>%s</value> </logfilequalifier>",
-			    VG_(ToXML)(xml_qualname, sizeof(xml_qualname),
-				       qualname),
-			    VG_(ToXML)(xml_qual, sizeof(xml_qual), qual));
+	       VG_(xml_message)(Vg_UserMsg, "<logfilequalifier> <var>%t</var> "
+			    "<value>%t</value> </logfilequalifier>",
+			    qualname,qual);
 	       format[i] = '}';
 	       i++;
 	    }
@@ -855,13 +850,10 @@ static void print_preamble(Bool logging_to_fd, const char* toolname)
    }
    else
    if (VG_(clo_xml)) {
-      HChar xml_buf[256];
-
       VG_(message)(Vg_UserMsg, "");
       VG_(message)(Vg_UserMsg, "<pid>%d</pid>", VG_(getpid)());
       VG_(message)(Vg_UserMsg, "<ppid>%d</ppid>", VG_(getppid)());
-      VG_(message)(Vg_UserMsg, "<tool>%s</tool>",
-                   VG_(ToXML)(xml_buf, sizeof(xml_buf), toolname));
+      VG_(xml_message)(Vg_UserMsg, "<tool>%t</tool>", toolname);
       if (VG_(clo_log_name))
          print_file_vars(VG_(clo_log_name));
       if (VG_(clo_xml_user_comment)) {
@@ -876,31 +868,26 @@ static void print_preamble(Bool logging_to_fd, const char* toolname)
 
       VG_(message)(Vg_UserMsg, "  <vargv>");
       if (VG_(name_of_launcher))
-         VG_(message)(Vg_UserMsg, "    <exe>%s</exe>", 
-                      VG_(ToXML)(xml_buf, sizeof(xml_buf),
-                                 VG_(name_of_launcher)));
+         VG_(xml_message)(Vg_UserMsg, "    <exe>%t</exe>", 
+                          VG_(name_of_launcher));
       else
-         VG_(message)(Vg_UserMsg, "    <exe>%s</exe>",
-                      VG_(ToXML)(xml_buf, sizeof(xml_buf),
-                                 "(launcher name unknown)"));
+         VG_(xml_message)(Vg_UserMsg, "    <exe>%t</exe>",
+                          "(launcher name unknown)");
       for (i = 0; i < VG_(sizeXA)( VG_(args_for_valgrind) ); i++) {
-         VG_(message)(Vg_UserMsg, 
-                      "    <arg>%s</arg>", 
-                      VG_(ToXML)(xml_buf, sizeof(xml_buf),
-                                 * (HChar**) VG_(indexXA)( VG_(args_for_valgrind), i )));
+         VG_(xml_message)(Vg_UserMsg, 
+                          "    <arg>%t</arg>", 
+                          * (HChar**) VG_(indexXA)( VG_(args_for_valgrind), i ));
       }
       VG_(message)(Vg_UserMsg, "  </vargv>");
 
       VG_(message)(Vg_UserMsg, "  <argv>");
       if (VG_(args_the_exename))
-         VG_(message)(Vg_UserMsg, "    <exe>%s</exe>", 
-                      VG_(ToXML)(xml_buf, sizeof(xml_buf),
-                                 VG_(args_the_exename)));
+         VG_(xml_message)(Vg_UserMsg, "    <exe>%t</exe>", 
+                          VG_(args_the_exename));
       for (i = 0; i < VG_(sizeXA)( VG_(args_for_client) ); i++) {
-         VG_(message)(Vg_UserMsg,
-                      "    <arg>%s</arg>", 
-                      VG_(ToXML)(xml_buf, sizeof(xml_buf),
-                                 * (HChar**) VG_(indexXA)( VG_(args_for_client), i )));
+         VG_(xml_message)(Vg_UserMsg,
+                          "    <arg>%t</arg>", 
+                          * (HChar**) VG_(indexXA)( VG_(args_for_client), i ));
       }
       VG_(message)(Vg_UserMsg, "  </argv>");
 
@@ -1946,14 +1933,13 @@ Int valgrind_main ( Int argc, HChar **argv, HChar **envp )
    //--------------------------------------------------------------
    if (VG_(clo_xml)) {
       HChar buf[50];
-      HChar xml_buf[256];
-
       VG_(elapsed_wallclock_time)(buf);
-      VG_(message)(Vg_UserMsg, "<status>\n"
-                               "  <state>RUNNING</state>\n"
-                               "  <time>%s</time>\n"
-                               "</status>", 
-                   VG_(ToXML)(xml_buf, sizeof(xml_buf), buf));
+      VG_(xml_message)(Vg_UserMsg,
+                       "<status>\n"
+                       "  <state>RUNNING</state>\n"
+                       "  <time>%t</time>\n"
+                       "</status>", 
+                       buf);
       VG_(message)(Vg_UserMsg, "");
    }
 
@@ -2055,18 +2041,17 @@ void shutdown_actions_NORETURN( ThreadId tid,
 
    if (VG_(clo_xml)) {
       HChar buf[50];
-      HChar xml_buf[256];
-
       if (VG_(needs).core_errors || VG_(needs).tool_errors) {
          VG_(show_error_counts_as_XML)();
          VG_(message)(Vg_UserMsg, "");
       }
       VG_(elapsed_wallclock_time)(buf);
-      VG_(message)(Vg_UserMsg, "<status>\n"
-                               "  <state>FINISHED</state>\n"
-                               "  <time>%s</time>\n"
-                               "</status>", 
-                   VG_(ToXML)(xml_buf, sizeof(xml_buf), buf));
+      VG_(xml_message)(Vg_UserMsg,
+                       "<status>\n"
+                       "  <state>FINISHED</state>\n"
+                       "  <time>%t</time>\n"
+                       "</status>", 
+                       buf);
       VG_(message)(Vg_UserMsg, "");
    }
 

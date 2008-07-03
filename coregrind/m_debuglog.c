@@ -497,9 +497,10 @@ UInt myvprintf_str ( void(*send)(HChar,void*),
 
 
 /* Copy a string into the buffer, escaping bad XML chars. */
+static 
 UInt myvprintf_str_XML_simplistic ( void(*send)(HChar,void*),
                                     void* send_arg2,
-                                    const HChar* str )
+                                    HChar* str )
 {
    UInt   ret = 0;
    Int    i;

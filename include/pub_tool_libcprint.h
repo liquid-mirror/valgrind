@@ -84,13 +84,20 @@ typedef
    }
    VgMsgKind;
 
-/* Send a single-part message.  Appends a newline. */
-extern UInt VG_(message)    ( VgMsgKind kind, const HChar* format, ... ) PRINTF_CHECK(2, 3);
+/* Send a single-part XML message.  Appends a newline. The format
+   specification may contain any ISO C format specifier or %t.
+   No attempt is made to let the compiler verify consistency of the
+   format string and the argument list. */
+extern UInt VG_(xml_message)( VgMsgKind kind, const HChar* format, ... );
+/* Send a single-part message.  Appends a newline. The format
+   specification may contain any ISO C format specifier. The gcc compiler
+   will verify consistency of the format string and the argument list. */
+extern UInt VG_(message)( VgMsgKind kind, const HChar* format, ... )
+  PRINTF_CHECK(2, 3);
 
-extern UInt VG_(vmessage)   ( VgMsgKind kind, const HChar* format, va_list vargs ) PRINTF_CHECK(2, 0);
+extern UInt VG_(vmessage)( VgMsgKind kind, const HChar* format, va_list vargs )
+  PRINTF_CHECK(2, 0);
 
-/* Convert a string such that it can be inserted into an XML output stream. */
-extern HChar* VG_(ToXML)(HChar* buf, Int size, const HChar* str);
 
 
 #endif   // __PUB_TOOL_LIBCPRINT_H

@@ -285,47 +285,6 @@ void VG_(percentify)(ULong n, ULong m, UInt d, Int n_buf, char buf[])
 
 
 /* ---------------------------------------------------------------------
-   ToXML()
-   ------------------------------------------------------------------ */
-
-struct xml_buf {
-  HChar* cur;
-  HChar* end;
-};
-
-static void append_to_xml_buf(const HChar ch, void* arg2)
-{
-   struct xml_buf* const xml_buf = arg2;
-
-   if (xml_buf->cur < xml_buf->end)
-   {
-      *xml_buf->cur++ = ch;
-   }
-   else
-   {
-      /* Make sure that it gets noticed if a buffer is too small. */
-      vg_assert(False);
-   }
-}
-
-/* Convert a string such that it can be inserted into an XML output stream. */
-
-extern HChar* VG_(ToXML)(HChar* const buf, const Int size,
-                         const HChar* str)
-{
-   static struct xml_buf xml_buf;
-
-   if (str == NULL)
-      str = "(null)";
-   xml_buf.cur = buf;
-   xml_buf.end = buf + size - 1;
-   myvprintf_str_XML_simplistic(append_to_xml_buf, &xml_buf, str);
-   *xml_buf.cur++ = 0;
-   return buf;
-}
-
-
-/* ---------------------------------------------------------------------
    elapsed_wallclock_time()
    ------------------------------------------------------------------ */
 
@@ -403,6 +362,17 @@ UInt VG_(vmessage) ( VgMsgKind kind, const HChar* format, va_list vargs )
       send_bytes_to_logging_sink( myprintf_buf.buf, myprintf_buf.n );
    }
 
+   return count;
+}
+
+/* Send a single-part XML message. */
+UInt VG_(xml_message) ( VgMsgKind kind, const HChar* format, ... )
+{
+   UInt count;
+   va_list vargs;
+   va_start(vargs,format);
+   count = VG_(vmessage) ( kind, format, vargs );
+   va_end(vargs);
    return count;
 }
 

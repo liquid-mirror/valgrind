@@ -262,7 +262,6 @@ static void mc_pp_AddrInfo ( Addr a, AddrInfo* ai, Bool maybe_gcc )
 {
    HChar* xpre  = VG_(clo_xml) ? "  <auxwhat>" : " ";
    HChar* xpost = VG_(clo_xml) ? "</auxwhat>"  : "";
-   HChar xml_buf[256];
 
    switch (ai->tag) {
       case Addr_Unknown:
@@ -316,15 +315,14 @@ static void mc_pp_AddrInfo ( Addr a, AddrInfo* ai, Bool maybe_gcc )
       }
 
       case Addr_DataSym:
-         VG_(message)(Vg_UserMsg, 
-                      "%sAddress 0x%llx is %llu bytes "
-                        "inside data symbol \"%s\"%s", 
-                      xpre, 
-                      (ULong)a, 
-                      (ULong)ai->Addr.DataSym.offset,
-                      VG_(ToXML)(xml_buf, sizeof(xml_buf),
-                                 ai->Addr.DataSym.name),
-                      xpost);
+         VG_(xml_message)(Vg_UserMsg,
+                          "%sAddress 0x%llx is %llu bytes "
+                          "inside data symbol \"%t\"%s",
+                          xpre,
+                          (ULong)a,
+                          (ULong)ai->Addr.DataSym.offset,
+                          ai->Addr.DataSym.name,
+                          xpost);
          break;
 
       case Addr_Variable:
@@ -337,15 +335,13 @@ static void mc_pp_AddrInfo ( Addr a, AddrInfo* ai, Bool maybe_gcc )
          break;
 
       case Addr_SectKind:
-         VG_(message)(Vg_UserMsg, 
-                      "%sAddress 0x%llx is in the %s segment of %s%s",
-                      xpre, 
-                      (ULong)a, 
-                      VG_(ToXML)(xml_buf, sizeof(xml_buf),
-                                 VG_(pp_SectKind)(ai->Addr.SectKind.kind)),
-                      VG_(ToXML)(xml_buf, sizeof(xml_buf),
-                                 ai->Addr.SectKind.objname),
-                      xpost);
+         VG_(xml_message)(Vg_UserMsg,
+                          "%sAddress 0x%llx is in the %t segment of %t%s",
+                          xpre,
+                          (ULong)a, 
+                          VG_(pp_SectKind)(ai->Addr.SectKind.kind),
+                          ai->Addr.SectKind.objname,
+                          xpost);
          break;
 
       default:
@@ -424,7 +420,6 @@ static void mc_pp_origin ( ExeContext* ec, UInt okind )
 void MC_(pp_Error) ( Error* err )
 {
    MC_Error* extra = VG_(get_error_extra)(err);
-   HChar xml_buf[256];
 
    switch (VG_(get_error_kind)(err)) {
       case Err_CoreMem: {
@@ -573,9 +568,8 @@ void MC_(pp_Error) ( Error* err )
          LossRecord* l               = extra->Err.Leak.lossRecord;
 
          if (VG_(clo_xml)) {
-            VG_(message)(Vg_UserMsg, "  <kind>%s</kind>",
-                         VG_(ToXML)(xml_buf, sizeof(xml_buf),
-                                    xml_leak_kind(l->loss_mode)));
+            VG_(xml_message)(Vg_UserMsg, "  <kind>%t</kind>",
+                             xml_leak_kind(l->loss_mode));
          } else {
             VG_(message)(Vg_UserMsg, "");
          }
