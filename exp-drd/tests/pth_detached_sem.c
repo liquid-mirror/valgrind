@@ -13,7 +13,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
-#include "../drd_clientreq.h"
 
 
 static sem_t s_sem;

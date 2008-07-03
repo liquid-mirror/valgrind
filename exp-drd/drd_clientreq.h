@@ -1,40 +1,43 @@
+/*
+  This file is part of drd, a data race detector.
+
+  Copyright (C) 2006-2008 Bart Van Assche
+  bart.vanassche@gmail.com
+
+  This program is free software; you can redistribute it and/or
+  modify it under the terms of the GNU General Public License as
+  published by the Free Software Foundation; either version 2 of the
+  License, or (at your option) any later version.
+
+  This program is distributed in the hope that it will be useful, but
+  WITHOUT ANY WARRANTY; without even the implied warranty of
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+  General Public License for more details.
+
+  You should have received a copy of the GNU General Public License
+  along with this program; if not, write to the Free Software
+  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA
+  02111-1307, USA.
+
+  The GNU General Public License is contained in the file COPYING.
+*/
+
+
 #ifndef __DRD_CLIENTREQ_H
 #define __DRD_CLIENTREQ_H
 
 
-#include "valgrind.h" // VG_USERREQ_TOOL_BASE()
-
-
-#define DRD_IGNORE_VAR(x) { int res; VALGRIND_DO_CLIENT_REQUEST(res, 0, VG_USERREQ__DRD_START_SUPPRESSION, &(x), sizeof(x), 0, 0, 0); }
-#define DRD_TRACE_VAR(x)  { int res; VALGRIND_DO_CLIENT_REQUEST(res, 0, VG_USERREQ__DRD_START_TRACE_ADDR, &(x), sizeof(x), 0, 0, 0); }
+#include "drd.h"
 
 
 enum {
-  /* Ask the core the thread ID assigned by Valgrind. */
-  VG_USERREQ__GET_THREAD_SELF = VG_USERREQ_TOOL_BASE('D', 'R'),
-  /* args: none. */
-
-  /* To tell the drd tool to suppress data race detection on the specified */
-  /* address range. */
-  VG_USERREQ__DRD_START_SUPPRESSION,
-  /* args: start address, size in bytes */
-  /* To tell the drd tool no longer to suppress data race detection on the */
-  /* specified address range. */
-  VG_USERREQ__DRD_FINISH_SUPPRESSION,
-  /* args: start address, size in bytes */
   /* Ask drd to suppress data race reports on all currently allocated stack */
   /* data of the current thread.                                            */
-  VG_USERREQ__DRD_SUPPRESS_CURRENT_STACK,
+  VG_USERREQ__DRD_SUPPRESS_CURRENT_STACK = VG_USERREQ_TOOL_BASE('D', 'r'),
   /* args: none */
   /* To ask the drd tool to start a new segment in the specified thread. */
   VG_USERREQ__DRD_START_NEW_SEGMENT,
   /* args: POSIX thread ID. */
-  /* To ask the drd tool to trace all accesses to the specified range. */
-  VG_USERREQ__DRD_START_TRACE_ADDR,
-  /* args: Addr, SizeT. */
-  /* To ask the drd tool to stop tracing accesses to the specified range. */
-  VG_USERREQ__DRD_STOP_TRACE_ADDR,
-  /* args: Addr, SizeT. */
   /* Let the drd tool stop recording memory accesses in the calling thread. */
   VG_USERREQ__DRD_STOP_RECORDING,
   /* args: none. */
@@ -184,5 +187,8 @@ typedef enum
     pthread_barrier = 1,
     gomp_barrier = 2
   } BarrierT;
+
+void drd_clientreq_init(void);
+
 
 #endif //  __DRD_CLIENTREQ_H

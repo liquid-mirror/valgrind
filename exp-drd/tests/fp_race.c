@@ -28,7 +28,7 @@
 #include <stdio.h>      // printf()
 #include <pthread.h>
 #include <unistd.h>    // usleep()
-#include "../drd_clientreq.h"
+
 
 
 // Local functions declarations.

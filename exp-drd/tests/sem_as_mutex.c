@@ -29,7 +29,7 @@
 #include <pthread.h>
 #include <semaphore.h>
 #include <unistd.h>    // usleep()
-#include "../drd_clientreq.h"
+
 
 
 // Local functions declarations.

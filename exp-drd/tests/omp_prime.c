@@ -10,7 +10,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>  // getopt()
-#include "../drd_clientreq.h"
 
 
 static int is_prime(int* const pflag, int v)
@@ -58,6 +57,7 @@ int main(int argc, char **argv)
   if (optind + 1 != argc)
   {
     fprintf(stderr, "Error: wrong number of arguments.\n");
+    return 1;
   }
   n = atoi(argv[optind]);
 

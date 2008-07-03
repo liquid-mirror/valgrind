@@ -100,6 +100,10 @@ DRD_SOURCES_COMMON =    \
   drd_semaphore.c       \
   drd_suppression.c
 
+drdincludedir = $(includedir)/valgrind
+
+drdinclude_HEADERS = drd.h
+
 noinst_HEADERS =        \
   drd_barrier.h         \
   drd_bitmap.h          \
@@ -116,7 +120,6 @@ noinst_HEADERS =        \
   drd_thread.h          \
   drd_track.h           \
   drd_vc.h              \
-  priv_drd_clientreq.h  \
   pub_drd_bitmap.h
 
 exp_drd_x86_linux_SOURCES        = $(DRD_SOURCES_COMMON)

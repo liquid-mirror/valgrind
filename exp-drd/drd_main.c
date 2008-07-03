@@ -39,7 +39,6 @@
 #include "drd_track.h"
 #include "drd_vc.h"
 #include "libvex_guest_offsets.h"
-#include "priv_drd_clientreq.h"
 #include "pub_drd_bitmap.h"
 #include "pub_tool_vki.h"         // Must be included before pub_tool_libcproc
 #include "pub_tool_basics.h"
@@ -525,7 +524,7 @@ static void suppress_relocation_conflicts(const Addr a, const SizeT len)
 
     avma = VG_(seginfo_get_plt_avma)(di);
     size = VG_(seginfo_get_plt_size)(di);
-    if (a <= avma && avma + size <= a + len)
+    if (size > 0 && a <= avma && avma + size <= a + len)
     {
 #if 0
       VG_(printf)("Suppressing .plt @ 0x%lx size %ld\n", avma, size);
@@ -536,7 +535,7 @@ static void suppress_relocation_conflicts(const Addr a, const SizeT len)
 
     avma = VG_(seginfo_get_gotplt_avma)(di);
     size = VG_(seginfo_get_gotplt_size)(di);
-    if (a <= avma && avma + size <= a + len)
+    if (size > 0 && a <= avma && avma + size <= a + len)
     {
 #if 0
       VG_(printf)("Suppressing .got.plt @ 0x%lx size %ld\n", avma, size);
@@ -831,16 +830,11 @@ void drd_barrier_post_wait(const DrdThreadId tid, const Addr barrier,
 static
 void drd_post_clo_init(void)
 {
-#  if defined(VGP_x86_linux) || defined(VGP_amd64_linux)
+#  if defined(VGP_x86_linux) || defined(VGP_amd64_linux) \
+      || defined(VGP_ppc32_linux) || defined(VGP_ppc64_linux)
   /* fine */
-#  elif defined(VGP_ppc32_linux) || defined(VGP_ppc64_linux)
-  VG_(printf)(
-"\nWARNING: support for PowerPC-specific atomic instructions like lwarx and\n"
-"stwcx is not yet complete. As a result, false positives will be reported on\n"
-"code that uses these instructions. This will happen e.g. when printf() is\n"
-"called from more than one thread.\n\n");
 #  else
-  VG_(printf)("\nWARNING: DRD has only been tested on x86-linux and amd64-linux.\n\n");
+  VG_(printf)("\nWARNING: DRD has only been tested on Linux.\n\n");
 #  endif
 
   if (s_drd_var_info)
@@ -1053,16 +1047,30 @@ IRSB* drd_instrument(VgCallbackClosure* const closure,
 
     switch (st->tag)
     {
+    /* Note: the code for not instrumenting the code in .plt          */
+    /* sections is only necessary on CentOS 3.0 x86 (kernel 2.4.21    */
+    /* + glibc 2.3.2 + NPTL 0.60 + binutils 2.14.90.0.4).             */
+    /* This is because on this platform dynamic library symbols are   */
+    /* relocated in another way than by later binutils versions. The  */
+    /* linker e.g. does not generate .got.plt sections on CentOS 3.0. */
+    case Ist_IMark:
+      instrument = VG_(seginfo_sect_kind)(NULL, 0, st->Ist.IMark.addr)
+        != Vg_SectPLT;
+      addStmtToIRSB(bb, st);
+      break;
+
     case Ist_MBE:
       switch (st->Ist.MBE.event)
       {
       case Imbe_Fence:
         break; /* not interesting */
       case Imbe_BusLock:
+      case Imbe_SnoopedStoreBegin:
         tl_assert(! bus_locked);
         bus_locked = True;
         break;
       case Imbe_BusUnlock:
+      case Imbe_SnoopedStoreEnd:
         tl_assert(bus_locked);
         bus_locked = False;
         break;
