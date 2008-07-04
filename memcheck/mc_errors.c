@@ -315,14 +315,14 @@ static void mc_pp_AddrInfo ( Addr a, AddrInfo* ai, Bool maybe_gcc )
       }
 
       case Addr_DataSym:
-         VG_(xml_message)(Vg_UserMsg,
-                          "%sAddress 0x%llx is %llu bytes "
-                          "inside data symbol \"%t\"%s",
-                          xpre,
-                          (ULong)a,
-                          (ULong)ai->Addr.DataSym.offset,
-                          ai->Addr.DataSym.name,
-                          xpost);
+         VG_(message_no_f_c)(Vg_UserMsg,
+                             "%sAddress 0x%llx is %llu bytes "
+                             "inside data symbol \"%t\"%s",
+                             xpre,
+                             (ULong)a,
+                             (ULong)ai->Addr.DataSym.offset,
+                             ai->Addr.DataSym.name,
+                             xpost);
          break;
 
       case Addr_Variable:
@@ -335,13 +335,13 @@ static void mc_pp_AddrInfo ( Addr a, AddrInfo* ai, Bool maybe_gcc )
          break;
 
       case Addr_SectKind:
-         VG_(xml_message)(Vg_UserMsg,
-                          "%sAddress 0x%llx is in the %t segment of %t%s",
-                          xpre,
-                          (ULong)a, 
-                          VG_(pp_SectKind)(ai->Addr.SectKind.kind),
-                          ai->Addr.SectKind.objname,
-                          xpost);
+         VG_(message_no_f_c)(Vg_UserMsg,
+                             "%sAddress 0x%llx is in the %t segment of %t%s",
+                             xpre,
+                             (ULong)a, 
+                             VG_(pp_SectKind)(ai->Addr.SectKind.kind),
+                             ai->Addr.SectKind.objname,
+                             xpost);
          break;
 
       default:
@@ -568,8 +568,8 @@ void MC_(pp_Error) ( Error* err )
          LossRecord* l               = extra->Err.Leak.lossRecord;
 
          if (VG_(clo_xml)) {
-            VG_(xml_message)(Vg_UserMsg, "  <kind>%t</kind>",
-                             xml_leak_kind(l->loss_mode));
+            VG_(message_no_f_c)(Vg_UserMsg, "  <kind>%t</kind>",
+                                xml_leak_kind(l->loss_mode));
          } else {
             VG_(message)(Vg_UserMsg, "");
          }

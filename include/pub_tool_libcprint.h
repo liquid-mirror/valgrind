@@ -84,11 +84,11 @@ typedef
    }
    VgMsgKind;
 
-/* Send a single-part XML message.  Appends a newline. The format
+/* Send a single-part message.  Appends a newline. The format
    specification may contain any ISO C format specifier or %t.
    No attempt is made to let the compiler verify consistency of the
    format string and the argument list. */
-extern UInt VG_(xml_message)( VgMsgKind kind, const HChar* format, ... );
+extern UInt VG_(message_no_f_c)( VgMsgKind kind, const HChar* format, ... );
 /* Send a single-part message.  Appends a newline. The format
    specification may contain any ISO C format specifier. The gcc compiler
    will verify consistency of the format string and the argument list. */

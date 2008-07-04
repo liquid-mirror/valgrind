@@ -365,8 +365,8 @@ UInt VG_(vmessage) ( VgMsgKind kind, const HChar* format, va_list vargs )
    return count;
 }
 
-/* Send a single-part XML message. */
-UInt VG_(xml_message) ( VgMsgKind kind, const HChar* format, ... )
+/* Send a simple single-part XML message. */
+UInt VG_(message_no_f_c) ( VgMsgKind kind, const HChar* format, ... )
 {
    UInt count;
    va_list vargs;
