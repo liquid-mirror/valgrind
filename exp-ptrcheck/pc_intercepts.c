@@ -1,14 +1,14 @@
 
 /*--------------------------------------------------------------------*/
-/*--- Annelid: a pointer-use checker.              an_intercepts.c ---*/
+/*--- Ptrcheck: a pointer-use checker.             pc_intercepts.c ---*/
 /*--------------------------------------------------------------------*/
 
 /*
-   This file is part of Annelid, a Valgrind skin for checking pointer
+   This file is part of Ptrcheck, a Valgrind tool for checking pointer
    use in programs.
 
-   Copyright (C) 2003 Nicholas Nethercote
-      njn25@cam.ac.uk
+   Copyright (C) 2003-2008 Nicholas Nethercote
+      njn@valgrind.org
 
    This program is free software; you can redistribute it and/or
    modify it under the terms of the GNU General Public License as
@@ -34,5 +34,5 @@
 */
 
 /*--------------------------------------------------------------------*/
-/*--- end                                          an_intercepts.c ---*/
+/*--- end                                          pc_intercepts.c ---*/
 /*--------------------------------------------------------------------*/

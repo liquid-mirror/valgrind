@@ -1,14 +1,14 @@
 
 /*--------------------------------------------------------------------*/
-/*--- Interval skip list for segments.                   an_list.c ---*/
+/*--- Interval skip list for segments.                   pc_list.c ---*/
 /*--------------------------------------------------------------------*/
 
 /*
-   This file is part of Annelid, a Valgrind skin for checking pointer
+   This file is part of Ptrcheck, a Valgrind tool for checking pointer
    use in programs.
 
-   Copyright (C) 2003 Nicholas Nethercote
-      njn25@cam.ac.uk
+   Copyright (C) 2003-2008 Nicholas Nethercote
+      njn@valgrind.org
 
    This file is derived from a C++ interval skip-list implementation by Eric
    Hanson, which had this copyright notice:
@@ -46,9 +46,9 @@
 #include "pub_tool_execontext.h"
 #include "pub_tool_hashtable.h"
 
-#include "an_list.h"
+#include "pc_list.h"
 
-#ifdef OUTSIDE_ANNELID
+#ifdef OUTSIDE_PTRCHECK
  #include <assert.h>
  #include <stdio.h>
  #include <stdlib.h>
@@ -1169,5 +1169,5 @@ void ISList__insertI(ISList* o, Interval* I)
 }
 
 /*--------------------------------------------------------------------*/
-/*--- end                                                an_list.c ---*/
+/*--- end                                                pc_list.c ---*/
 /*--------------------------------------------------------------------*/

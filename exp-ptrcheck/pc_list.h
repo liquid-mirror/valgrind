@@ -1,14 +1,14 @@
 
 /*--------------------------------------------------------------------*/
-/*--- Interval skip list header.                         an_list.h ---*/
+/*--- Interval skip list header.                         pc_list.h ---*/
 /*--------------------------------------------------------------------*/
 
 /*
-   This file is part of Annelid, a Valgrind skin for checking pointer
+   This file is part of Ptrcheck, a Valgrind tool for checking pointer
    use in programs.
 
-   Copyright (C) 2003 Nicholas Nethercote
-      njn25@cam.ac.uk
+   Copyright (C) 2003-2008 Nicholas Nethercote
+      njn@valgrind.org
 
    This file is derived from a C++ interval skip-list implementation by Eric
    Hanson, which had this copyright notice:
@@ -90,5 +90,5 @@ extern void    ISList__print       (ISList* o);
 extern void    ISList__destruct    (ISList* o);
 
 /*--------------------------------------------------------------------*/
-/*--- end                                                an_list.h ---*/
+/*--- end                                                pc_list.h ---*/
 /*--------------------------------------------------------------------*/

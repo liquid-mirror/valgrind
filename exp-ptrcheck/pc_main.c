@@ -1,14 +1,14 @@
 
 /*--------------------------------------------------------------------*/
-/*--- Annelid: a pointer-use checker.                    an_main.c ---*/
+/*--- Ptrcheck: a pointer-use checker.                   pc_main.c ---*/
 /*--------------------------------------------------------------------*/
 
 /*
-   This file is part of Annelid, a Valgrind skin for checking pointer
+   This file is part of Ptrcheck, a Valgrind tool for checking pointer
    use in programs.
 
-   Copyright (C) 2003 Nicholas Nethercote
-      njn25@cam.ac.uk
+   Copyright (C) 2003-2008 Nicholas Nethercote
+      njn@valgrind.org
 
    This program is free software; you can redistribute it and/or
    modify it under the terms of the GNU General Public License as
@@ -205,11 +205,11 @@
 #include "pub_tool_oset.h"
 #include "pub_tool_vkiscnums.h"
 
-#include "an_list.h"
+#include "pc_list.h"
 
 //#include "vg_profile.c"
 
-#define AN_MALLOC_REDZONE_SZB 0  /* no need for client heap redzones */
+#define PC_MALLOC_REDZONE_SZB 0  /* no need for client heap redzones */
 
 
 //zz /*------------------------------------------------------------*/
@@ -747,7 +747,7 @@ Bool is_known_segment(Seg seg)
    return (UNKNOWN != seg && BOTTOM != seg && NONPTR != seg);
 }
 
-//zz static Char* an_name_UOpcode(Int opc)
+//zz static Char* pc_name_UOpcode(Int opc)
 //zz {
 //zz    if (opc >= 0) return VG_(name_UOpcode)(True, opc);
 //zz 
@@ -756,7 +756,7 @@ Bool is_known_segment(Seg seg)
 //zz    else if (-opc == VGOFF_(helper_div_64_32))    return  "DIV";
 //zz    else if (-opc == VGOFF_(helper_idiv_64_32))   return "IDIV";
 //zz 
-//zz    else VG_(skin_panic)("an_name_UOpcode");
+//zz    else VG_(skin_panic)("pc_name_UOpcode");
 //zz }
       
 static void pp_Error ( Error* err )
@@ -983,37 +983,37 @@ static void print_extra_suppression_info ( Error* err )
 /*--- malloc() et al replacements                          ---*/
 /*------------------------------------------------------------*/
 
-static void* an_replace_malloc ( ThreadId tid, SizeT n )
+static void* pc_replace_malloc ( ThreadId tid, SizeT n )
 {
    return alloc_and_new_mem_heap ( tid, n, VG_(clo_alignment),
                                         /*is_zeroed*/False );
 }
 
-static void* an_replace___builtin_new ( ThreadId tid, SizeT n )
+static void* pc_replace___builtin_new ( ThreadId tid, SizeT n )
 {
    return alloc_and_new_mem_heap ( tid, n, VG_(clo_alignment),
                                            /*is_zeroed*/False );
 }
 
-static void* an_replace___builtin_vec_new ( ThreadId tid, SizeT n )
+static void* pc_replace___builtin_vec_new ( ThreadId tid, SizeT n )
 {
    return alloc_and_new_mem_heap ( tid, n, VG_(clo_alignment),
                                            /*is_zeroed*/False );
 }
 
-static void* an_replace_memalign ( ThreadId tid, SizeT align, SizeT n )
+static void* pc_replace_memalign ( ThreadId tid, SizeT align, SizeT n )
 {
    return alloc_and_new_mem_heap ( tid, n, align,
                                         /*is_zeroed*/False );
 }
 
-static void* an_replace_calloc ( ThreadId tid, SizeT nmemb, SizeT size1 )
+static void* pc_replace_calloc ( ThreadId tid, SizeT nmemb, SizeT size1 )
 {
    return alloc_and_new_mem_heap ( tid, nmemb*size1, VG_(clo_alignment),
                                         /*is_zeroed*/True );
 }
 
-static void an_replace_free ( ThreadId tid, void* p )
+static void pc_replace_free ( ThreadId tid, void* p )
 {
    // Should arguably check here if p.vseg matches the segID of the
    // pointed-to block... unfortunately, by this stage, we don't know what
@@ -1031,17 +1031,17 @@ static void an_replace_free ( ThreadId tid, void* p )
    handle_free_heap(tid, p);
 }
 
-static void an_replace___builtin_delete ( ThreadId tid, void* p )
+static void pc_replace___builtin_delete ( ThreadId tid, void* p )
 {
    handle_free_heap(tid, p);
 }
 
-static void an_replace___builtin_vec_delete ( ThreadId tid, void* p )
+static void pc_replace___builtin_vec_delete ( ThreadId tid, void* p )
 {
    handle_free_heap(tid, p);
 }
 
-static void* an_replace_realloc ( ThreadId tid, void* p_old, SizeT new_size )
+static void* pc_replace_realloc ( ThreadId tid, void* p_old, SizeT new_size )
 {
    Seg seg;
 
@@ -1292,7 +1292,7 @@ static void die_mem_munmap( Addr a, SizeT len )
 //zz    // Don't bother about eflags
 //zz }
 
-// BEGIN move this uglyness to an_machine.c
+// BEGIN move this uglyness to pc_machine.c
 
 static inline Bool host_is_big_endian ( void ) {
    UInt x = 0x11223344;
@@ -1460,7 +1460,7 @@ static void get_IntRegInfo ( /*OUT*/IntRegInfo* iii, Int offset, Int szB )
    return;
 }
 
-// END move this uglyness to an_machine.c
+// END move this uglyness to pc_machine.c
 
 /* returns True iff given slice exactly matches an int reg.  Merely
    a convenience wrapper around get_IntRegInfo. */
@@ -1583,12 +1583,12 @@ void post_reg_write_clientcall(ThreadId tid, OffT guest_state_offset,
    UWord p;
 
    // Having to do this is a bit nasty...
-   if (f == (Addr)an_replace_malloc
-       || f == (Addr)an_replace___builtin_new
-       || f == (Addr)an_replace___builtin_vec_new
-       || f == (Addr)an_replace_calloc
-       || f == (Addr)an_replace_memalign
-       || f == (Addr)an_replace_realloc)
+   if (f == (Addr)pc_replace_malloc
+       || f == (Addr)pc_replace___builtin_new
+       || f == (Addr)pc_replace___builtin_vec_new
+       || f == (Addr)pc_replace_calloc
+       || f == (Addr)pc_replace_memalign
+       || f == (Addr)pc_replace_realloc)
    {
       // We remembered the last added segment;  make sure it's the right one.
       /* What's going on: at this point, the scheduler has just called
@@ -1617,9 +1617,9 @@ void post_reg_write_clientcall(ThreadId tid, OffT guest_state_offset,
                           guest_state_offset, size, (UWord)last_seg_added );
       }
    } 
-   else if (f == (Addr)an_replace_free
-            || f == (Addr)an_replace___builtin_delete
-            || f == (Addr)an_replace___builtin_vec_delete
+   else if (f == (Addr)pc_replace_free
+            || f == (Addr)pc_replace___builtin_delete
+            || f == (Addr)pc_replace___builtin_vec_delete
    //            || f == (Addr)VG_(cli_block_size)
             || f == (Addr)VG_(message))
    {
@@ -1651,7 +1651,7 @@ void post_reg_write_clientcall(ThreadId tid, OffT guest_state_offset,
 //zz    the following do not per se indicate an internal consistency
 //zz    problem, but they are so likely to that we really want to know
 //zz    about it if so. */
-//zz Bool an_replace_cheap_sanity_check) ( void )
+//zz Bool pc_replace_cheap_sanity_check) ( void )
 //zz {
 //zz    if (IS_DISTINGUISHED_SM(primary_map[0])
 //zz        /* kludge: kernel drops a page up at top of address range for
@@ -2591,7 +2591,7 @@ typedef
          offsets correctly. */
       Int guest_state_sizeB;
    }
-   ANEnv;
+   PCEnv;
 
 /* SHADOW TMP MANAGEMENT.  Shadow tmps are allocated lazily (on
    demand), as they are encountered.  This is for two reasons.
@@ -2619,16 +2619,16 @@ typedef
 
 /* Find the tmp currently shadowing the given original tmp.  If none
    so far exists, allocate one.  */
-static IRTemp findShadowTmp ( ANEnv* ane, IRTemp orig )
+static IRTemp findShadowTmp ( PCEnv* pce, IRTemp orig )
 {
-   tl_assert(orig < ane->n_originalTmps);
-   tl_assert(ane->bb->tyenv->types[orig] == ane->gWordTy);
-   if (ane->tmpMap[orig] == IRTemp_INVALID) {
+   tl_assert(orig < pce->n_originalTmps);
+   tl_assert(pce->bb->tyenv->types[orig] == pce->gWordTy);
+   if (pce->tmpMap[orig] == IRTemp_INVALID) {
       tl_assert(0);
-      ane->tmpMap[orig]
-         = newIRTemp(ane->bb->tyenv, ane->gWordTy);
+      pce->tmpMap[orig]
+         = newIRTemp(pce->bb->tyenv, pce->gWordTy);
    }
-   return ane->tmpMap[orig];
+   return pce->tmpMap[orig];
 }
 
 /* Allocate a new shadow for the given original tmp.  This means any
@@ -2638,13 +2638,13 @@ static IRTemp findShadowTmp ( ANEnv* ane, IRTemp orig )
    this.  Instead we must abandon the old shadow, allocate a new one
    and use that instead. */
 __attribute__((noinline))
-static IRTemp newShadowTmp ( ANEnv* ane, IRTemp orig )
+static IRTemp newShadowTmp ( PCEnv* pce, IRTemp orig )
 {
-   tl_assert(orig < ane->n_originalTmps);
-   tl_assert(ane->bb->tyenv->types[orig] == ane->gWordTy);
-   ane->tmpMap[orig]
-      = newIRTemp(ane->bb->tyenv, ane->gWordTy);
-   return ane->tmpMap[orig];
+   tl_assert(orig < pce->n_originalTmps);
+   tl_assert(pce->bb->tyenv->types[orig] == pce->gWordTy);
+   pce->tmpMap[orig]
+      = newIRTemp(pce->bb->tyenv, pce->gWordTy);
+   return pce->tmpMap[orig];
 }
 
 
@@ -2663,22 +2663,22 @@ typedef  IRExpr  IRAtom;
 
 /* (used for sanity checks only): is this an atom which looks
    like it's from original code? */
-static Bool isOriginalAtom ( ANEnv* ane, IRAtom* a1 )
+static Bool isOriginalAtom ( PCEnv* pce, IRAtom* a1 )
 {
    if (a1->tag == Iex_Const)
       return True;
-   if (a1->tag == Iex_RdTmp && a1->Iex.RdTmp.tmp < ane->n_originalTmps)
+   if (a1->tag == Iex_RdTmp && a1->Iex.RdTmp.tmp < pce->n_originalTmps)
       return True;
    return False;
 }
 
 /* (used for sanity checks only): is this an atom which looks
    like it's from shadow code? */
-static Bool isShadowAtom ( ANEnv* ane, IRAtom* a1 )
+static Bool isShadowAtom ( PCEnv* pce, IRAtom* a1 )
 {
    if (a1->tag == Iex_Const)
       return True;
-   if (a1->tag == Iex_RdTmp && a1->Iex.RdTmp.tmp >= ane->n_originalTmps)
+   if (a1->tag == Iex_RdTmp && a1->Iex.RdTmp.tmp >= pce->n_originalTmps)
       return True;
    return False;
 }
@@ -2700,19 +2700,19 @@ static Bool sameKindedAtoms ( IRAtom* a1, IRAtom* a2 )
 /*------------------------------------------------------------*/
 
 /* add stmt to a bb */
-static inline void stmt ( HChar cat, ANEnv* ane, IRStmt* st ) {
-   if (ane->trace) {
+static inline void stmt ( HChar cat, PCEnv* pce, IRStmt* st ) {
+   if (pce->trace) {
       VG_(printf)("  %c: ", cat);
       ppIRStmt(st);
       VG_(printf)("\n");
    }
-   addStmtToIRSB(ane->bb, st);
+   addStmtToIRSB(pce->bb, st);
 }
 
 /* assign value to tmp */
 static inline
-void assign ( HChar cat, ANEnv* ane, IRTemp tmp, IRExpr* expr ) {
-   stmt(cat, ane, IRStmt_WrTmp(tmp,expr));
+void assign ( HChar cat, PCEnv* pce, IRTemp tmp, IRExpr* expr ) {
+   stmt(cat, pce, IRStmt_WrTmp(tmp,expr));
 }
 
 /* build various kinds of expressions */
@@ -2733,12 +2733,12 @@ void assign ( HChar cat, ANEnv* ane, IRTemp tmp, IRExpr* expr ) {
    needs to be.  But passing it is redundant, since we can deduce the
    type merely by inspecting 'e'.  So at least that fact to assert
    that the two types agree. */
-static IRAtom* assignNew ( HChar cat, ANEnv* ane, IRType ty, IRExpr* e ) {
+static IRAtom* assignNew ( HChar cat, PCEnv* pce, IRType ty, IRExpr* e ) {
    IRTemp t;
-   IRType tyE = typeOfIRExpr(ane->bb->tyenv, e);
+   IRType tyE = typeOfIRExpr(pce->bb->tyenv, e);
    tl_assert(tyE == ty); /* so 'ty' is redundant (!) */
-   t = newIRTemp(ane->bb->tyenv, ty);
-   assign(cat, ane, t, e);
+   t = newIRTemp(pce->bb->tyenv, ty);
+   assign(cat, pce, t, e);
    return mkexpr(t);
 }
 
@@ -2811,43 +2811,43 @@ static IRAtom* assignNew ( HChar cat, ANEnv* ane, IRType ty, IRExpr* e ) {
    holding the result.  The arg must be a word-typed atom.  Callee
    must be a VG_REGPARM(1) function. */
 __attribute__((noinline))
-static IRTemp gen_dirty_W_W ( ANEnv* ane, void* h_fn, HChar* h_nm, 
+static IRTemp gen_dirty_W_W ( PCEnv* pce, void* h_fn, HChar* h_nm, 
                               IRExpr* a1 )
 {
    IRTemp   res;
    IRDirty* di;
    tl_assert(isIRAtom(a1));
-   tl_assert(typeOfIRExpr(ane->bb->tyenv, a1) == ane->gWordTy);
-   res = newIRTemp(ane->bb->tyenv, ane->gWordTy);
+   tl_assert(typeOfIRExpr(pce->bb->tyenv, a1) == pce->gWordTy);
+   res = newIRTemp(pce->bb->tyenv, pce->gWordTy);
    di = unsafeIRDirty_1_N( res, 1/*regparms*/,
                            h_nm, VG_(fnptr_to_fnentry)( h_fn ),
                            mkIRExprVec_1( a1 ) );
-   stmt( 'I', ane, IRStmt_Dirty(di) );
+   stmt( 'I', pce, IRStmt_Dirty(di) );
    return res;
 }
 
 /* Two-arg version of gen_dirty_W_W.  Callee must be a VG_REGPARM(2)
    function.*/
-static IRTemp gen_dirty_W_WW ( ANEnv* ane, void* h_fn, HChar* h_nm, 
+static IRTemp gen_dirty_W_WW ( PCEnv* pce, void* h_fn, HChar* h_nm, 
                                IRExpr* a1, IRExpr* a2 )
 {
    IRTemp   res;
    IRDirty* di;
    tl_assert(isIRAtom(a1));
    tl_assert(isIRAtom(a2));
-   tl_assert(typeOfIRExpr(ane->bb->tyenv, a1) == ane->gWordTy);
-   tl_assert(typeOfIRExpr(ane->bb->tyenv, a2) == ane->gWordTy);
-   res = newIRTemp(ane->bb->tyenv, ane->gWordTy);
+   tl_assert(typeOfIRExpr(pce->bb->tyenv, a1) == pce->gWordTy);
+   tl_assert(typeOfIRExpr(pce->bb->tyenv, a2) == pce->gWordTy);
+   res = newIRTemp(pce->bb->tyenv, pce->gWordTy);
    di = unsafeIRDirty_1_N( res, 2/*regparms*/,
                            h_nm, VG_(fnptr_to_fnentry)( h_fn ),
                            mkIRExprVec_2( a1, a2 ) );
-   stmt( 'I', ane, IRStmt_Dirty(di) );
+   stmt( 'I', pce, IRStmt_Dirty(di) );
    return res;
 }
 
 /* Three-arg version of gen_dirty_W_W.  Callee must be a VG_REGPARM(3)
    function.*/
-static IRTemp gen_dirty_W_WWW ( ANEnv* ane, void* h_fn, HChar* h_nm, 
+static IRTemp gen_dirty_W_WWW ( PCEnv* pce, void* h_fn, HChar* h_nm, 
                                 IRExpr* a1, IRExpr* a2, IRExpr* a3 )
 {
    IRTemp   res;
@@ -2855,20 +2855,20 @@ static IRTemp gen_dirty_W_WWW ( ANEnv* ane, void* h_fn, HChar* h_nm,
    tl_assert(isIRAtom(a1));
    tl_assert(isIRAtom(a2));
    tl_assert(isIRAtom(a3));
-   tl_assert(typeOfIRExpr(ane->bb->tyenv, a1) == ane->gWordTy);
-   tl_assert(typeOfIRExpr(ane->bb->tyenv, a2) == ane->gWordTy);
-   tl_assert(typeOfIRExpr(ane->bb->tyenv, a3) == ane->gWordTy);
-   res = newIRTemp(ane->bb->tyenv, ane->gWordTy);
+   tl_assert(typeOfIRExpr(pce->bb->tyenv, a1) == pce->gWordTy);
+   tl_assert(typeOfIRExpr(pce->bb->tyenv, a2) == pce->gWordTy);
+   tl_assert(typeOfIRExpr(pce->bb->tyenv, a3) == pce->gWordTy);
+   res = newIRTemp(pce->bb->tyenv, pce->gWordTy);
    di = unsafeIRDirty_1_N( res, 3/*regparms*/,
                            h_nm, VG_(fnptr_to_fnentry)( h_fn ),
                            mkIRExprVec_3( a1, a2, a3 ) );
-   stmt( 'I', ane, IRStmt_Dirty(di) );
+   stmt( 'I', pce, IRStmt_Dirty(di) );
    return res;
 }
 
 /* Four-arg version of gen_dirty_W_W.  Callee must be a VG_REGPARM(3)
    function.*/
-static IRTemp gen_dirty_W_WWWW ( ANEnv* ane, void* h_fn, HChar* h_nm, 
+static IRTemp gen_dirty_W_WWWW ( PCEnv* pce, void* h_fn, HChar* h_nm, 
                                  IRExpr* a1, IRExpr* a2,
                                  IRExpr* a3, IRExpr* a4 )
 {
@@ -2878,55 +2878,55 @@ static IRTemp gen_dirty_W_WWWW ( ANEnv* ane, void* h_fn, HChar* h_nm,
    tl_assert(isIRAtom(a2));
    tl_assert(isIRAtom(a3));
    tl_assert(isIRAtom(a4));
-   tl_assert(typeOfIRExpr(ane->bb->tyenv, a1) == ane->gWordTy);
-   tl_assert(typeOfIRExpr(ane->bb->tyenv, a2) == ane->gWordTy);
-   tl_assert(typeOfIRExpr(ane->bb->tyenv, a3) == ane->gWordTy);
-   tl_assert(typeOfIRExpr(ane->bb->tyenv, a4) == ane->gWordTy);
-   res = newIRTemp(ane->bb->tyenv, ane->gWordTy);
+   tl_assert(typeOfIRExpr(pce->bb->tyenv, a1) == pce->gWordTy);
+   tl_assert(typeOfIRExpr(pce->bb->tyenv, a2) == pce->gWordTy);
+   tl_assert(typeOfIRExpr(pce->bb->tyenv, a3) == pce->gWordTy);
+   tl_assert(typeOfIRExpr(pce->bb->tyenv, a4) == pce->gWordTy);
+   res = newIRTemp(pce->bb->tyenv, pce->gWordTy);
    di = unsafeIRDirty_1_N( res, 3/*regparms*/,
                            h_nm, VG_(fnptr_to_fnentry)( h_fn ),
                            mkIRExprVec_4( a1, a2, a3, a4 ) );
-   stmt( 'I', ane, IRStmt_Dirty(di) );
+   stmt( 'I', pce, IRStmt_Dirty(di) );
    return res;
 }
 
 /* Version of gen_dirty_W_WW with no return value.  Callee must be a
    VG_REGPARM(2) function.*/
-static void gen_dirty_v_WW ( ANEnv* ane, void* h_fn, HChar* h_nm, 
+static void gen_dirty_v_WW ( PCEnv* pce, void* h_fn, HChar* h_nm, 
                              IRExpr* a1, IRExpr* a2 )
 {
    IRDirty* di;
    tl_assert(isIRAtom(a1));
    tl_assert(isIRAtom(a2));
-   tl_assert(typeOfIRExpr(ane->bb->tyenv, a1) == ane->gWordTy);
-   tl_assert(typeOfIRExpr(ane->bb->tyenv, a2) == ane->gWordTy);
+   tl_assert(typeOfIRExpr(pce->bb->tyenv, a1) == pce->gWordTy);
+   tl_assert(typeOfIRExpr(pce->bb->tyenv, a2) == pce->gWordTy);
    di = unsafeIRDirty_0_N( 2/*regparms*/,
                            h_nm, VG_(fnptr_to_fnentry)( h_fn ),
                            mkIRExprVec_2( a1, a2 ) );
-   stmt( 'I', ane, IRStmt_Dirty(di) );
+   stmt( 'I', pce, IRStmt_Dirty(di) );
 }
 
 /* Version of gen_dirty_W_WWW with no return value.  Callee must be a
    VG_REGPARM(3) function.*/
-static void gen_dirty_v_WWW ( ANEnv* ane, void* h_fn, HChar* h_nm, 
+static void gen_dirty_v_WWW ( PCEnv* pce, void* h_fn, HChar* h_nm, 
                               IRExpr* a1, IRExpr* a2, IRExpr* a3 )
 {
    IRDirty* di;
    tl_assert(isIRAtom(a1));
    tl_assert(isIRAtom(a2));
    tl_assert(isIRAtom(a3));
-   tl_assert(typeOfIRExpr(ane->bb->tyenv, a1) == ane->gWordTy);
-   tl_assert(typeOfIRExpr(ane->bb->tyenv, a2) == ane->gWordTy);
-   tl_assert(typeOfIRExpr(ane->bb->tyenv, a3) == ane->gWordTy);
+   tl_assert(typeOfIRExpr(pce->bb->tyenv, a1) == pce->gWordTy);
+   tl_assert(typeOfIRExpr(pce->bb->tyenv, a2) == pce->gWordTy);
+   tl_assert(typeOfIRExpr(pce->bb->tyenv, a3) == pce->gWordTy);
    di = unsafeIRDirty_0_N( 3/*regparms*/,
                            h_nm, VG_(fnptr_to_fnentry)( h_fn ),
                            mkIRExprVec_3( a1, a2, a3 ) );
-   stmt( 'I', ane, IRStmt_Dirty(di) );
+   stmt( 'I', pce, IRStmt_Dirty(di) );
 }
 
 /* Version of gen_dirty_v_WWW for 4 arguments.  Callee must be a
    VG_REGPARM(3) function.*/
-static void gen_dirty_v_WWWW ( ANEnv* ane, void* h_fn, HChar* h_nm, 
+static void gen_dirty_v_WWWW ( PCEnv* pce, void* h_fn, HChar* h_nm, 
                                IRExpr* a1, IRExpr* a2,
                                IRExpr* a3, IRExpr* a4 )
 {
@@ -2935,39 +2935,39 @@ static void gen_dirty_v_WWWW ( ANEnv* ane, void* h_fn, HChar* h_nm,
    tl_assert(isIRAtom(a2));
    tl_assert(isIRAtom(a3));
    tl_assert(isIRAtom(a4));
-   tl_assert(typeOfIRExpr(ane->bb->tyenv, a1) == ane->gWordTy);
-   tl_assert(typeOfIRExpr(ane->bb->tyenv, a2) == ane->gWordTy);
-   tl_assert(typeOfIRExpr(ane->bb->tyenv, a3) == ane->gWordTy);
-   tl_assert(typeOfIRExpr(ane->bb->tyenv, a4) == ane->gWordTy);
+   tl_assert(typeOfIRExpr(pce->bb->tyenv, a1) == pce->gWordTy);
+   tl_assert(typeOfIRExpr(pce->bb->tyenv, a2) == pce->gWordTy);
+   tl_assert(typeOfIRExpr(pce->bb->tyenv, a3) == pce->gWordTy);
+   tl_assert(typeOfIRExpr(pce->bb->tyenv, a4) == pce->gWordTy);
    di = unsafeIRDirty_0_N( 3/*regparms*/,
                            h_nm, VG_(fnptr_to_fnentry)( h_fn ),
                            mkIRExprVec_4( a1, a2, a3, a4 ) );
-   stmt( 'I', ane, IRStmt_Dirty(di) );
+   stmt( 'I', pce, IRStmt_Dirty(di) );
 }
 
-static IRAtom* uwiden_to_host_word ( ANEnv* ane, IRAtom* a )
+static IRAtom* uwiden_to_host_word ( PCEnv* pce, IRAtom* a )
 {
-   IRType a_ty = typeOfIRExpr(ane->bb->tyenv, a);
+   IRType a_ty = typeOfIRExpr(pce->bb->tyenv, a);
    tl_assert(isIRAtom(a));
-   if (ane->hWordTy == Ity_I32) {
+   if (pce->hWordTy == Ity_I32) {
       switch (a_ty) {
          case Ity_I8:
-            return assignNew( 'I', ane, Ity_I32, unop(Iop_8Uto32, a) );
+            return assignNew( 'I', pce, Ity_I32, unop(Iop_8Uto32, a) );
          case Ity_I16:
-            return assignNew( 'I', ane, Ity_I32, unop(Iop_16Uto32, a) );
+            return assignNew( 'I', pce, Ity_I32, unop(Iop_16Uto32, a) );
          default:
             ppIRType(a_ty);
             tl_assert(0);
       }
    } else {
-      tl_assert(ane->hWordTy == Ity_I64);
+      tl_assert(pce->hWordTy == Ity_I64);
       switch (a_ty) {
          case Ity_I8:
-            return assignNew( 'I', ane, Ity_I64, unop(Iop_8Uto64, a) );
+            return assignNew( 'I', pce, Ity_I64, unop(Iop_8Uto64, a) );
          case Ity_I16:
-            return assignNew( 'I', ane, Ity_I64, unop(Iop_16Uto64, a) );
+            return assignNew( 'I', pce, Ity_I64, unop(Iop_16Uto64, a) );
          case Ity_I32:
-            return assignNew( 'I', ane, Ity_I64, unop(Iop_32Uto64, a) );
+            return assignNew( 'I', pce, Ity_I64, unop(Iop_32Uto64, a) );
          default:
             ppIRType(a_ty);
             tl_assert(0);
@@ -2978,39 +2978,39 @@ static IRAtom* uwiden_to_host_word ( ANEnv* ane, IRAtom* a )
 /* 'e' is a word-sized atom.  Call nonptr_or_unknown with it, bind the
    results to a new temporary, and return the temporary.  Note this
    takes an original expression but returns a shadow value. */
-static IRTemp gen_call_nonptr_or_unknown_w ( ANEnv* ane, IRExpr* e )
+static IRTemp gen_call_nonptr_or_unknown_w ( PCEnv* pce, IRExpr* e )
 {
-   return gen_dirty_W_W( ane, &nonptr_or_unknown, 
+   return gen_dirty_W_W( pce, &nonptr_or_unknown, 
                               "nonptr_or_unknown", e );
 }
 
 
 /* Generate the shadow value for an IRExpr which is an atom and
    guaranteed to be word-sized. */
-static IRAtom* schemeEw_Atom ( ANEnv* ane, IRExpr* e )
+static IRAtom* schemeEw_Atom ( PCEnv* pce, IRExpr* e )
 {
-   if (ane->gWordTy == Ity_I32) {
+   if (pce->gWordTy == Ity_I32) {
       if (e->tag == Iex_Const && e->Iex.Const.con->tag == Ico_U32) {
          IRTemp t;
          tl_assert(sizeof(UWord) == 4);
-         t = gen_call_nonptr_or_unknown_w(ane, e);
+         t = gen_call_nonptr_or_unknown_w(pce, e);
          return mkexpr(t);
       }
       if (e->tag == Iex_RdTmp
-          && typeOfIRExpr(ane->bb->tyenv, e) == Ity_I32) {
-         return mkexpr( findShadowTmp(ane, e->Iex.RdTmp.tmp) );
+          && typeOfIRExpr(pce->bb->tyenv, e) == Ity_I32) {
+         return mkexpr( findShadowTmp(pce, e->Iex.RdTmp.tmp) );
       }
       /* there are no other word-sized atom cases */
    } else {
       if (e->tag == Iex_Const && e->Iex.Const.con->tag == Ico_U64) {
          IRTemp t;
          tl_assert(sizeof(UWord) == 8);
-         t = gen_call_nonptr_or_unknown_w(ane, e);
+         t = gen_call_nonptr_or_unknown_w(pce, e);
          return mkexpr(t);
       }
       if (e->tag == Iex_RdTmp
-          && typeOfIRExpr(ane->bb->tyenv, e) == Ity_I64) {
-         return mkexpr( findShadowTmp(ane, e->Iex.RdTmp.tmp) );
+          && typeOfIRExpr(pce->bb->tyenv, e) == Ity_I64) {
+         return mkexpr( findShadowTmp(pce, e->Iex.RdTmp.tmp) );
       }
       /* there are no other word-sized atom cases */
    }
@@ -3020,7 +3020,7 @@ static IRAtom* schemeEw_Atom ( ANEnv* ane, IRExpr* e )
 
 
 static
-void instrument_arithop ( ANEnv* ane,
+void instrument_arithop ( PCEnv* pce,
                           IRTemp dst, /* already holds result */
                           IRTemp dstv, /* generate an assignment to this */
                           IROp op,
@@ -3035,9 +3035,9 @@ void instrument_arithop ( ANEnv* ane,
    IRExpr* a4v = NULL;
    IRTemp  res = IRTemp_INVALID;
 
-   if (ane->gWordTy == Ity_I32) {
+   if (pce->gWordTy == Ity_I32) {
 
-      tl_assert(ane->hWordTy == Ity_I32);
+      tl_assert(pce->hWordTy == Ity_I32);
       switch (op) {
 
          /* For these cases, pass Segs for both arguments, and the
@@ -3046,10 +3046,10 @@ void instrument_arithop ( ANEnv* ane,
          case Iop_Sub32: nm = "do_subW"; fn = &do_subW; goto ssr32;
          case Iop_Or32:  nm = "do_orW";  fn = &do_orW;  goto ssr32;
          ssr32:
-            a1v = schemeEw_Atom( ane, a1 );
-            a2v = schemeEw_Atom( ane, a2 );
-            res = gen_dirty_W_WWW( ane, fn, nm, a1v, a2v, mkexpr(dst) );
-            assign( 'I', ane, dstv, mkexpr(res) );
+            a1v = schemeEw_Atom( pce, a1 );
+            a2v = schemeEw_Atom( pce, a2 );
+            res = gen_dirty_W_WWW( pce, fn, nm, a1v, a2v, mkexpr(dst) );
+            assign( 'I', pce, dstv, mkexpr(res) );
             break;
 
          /* In this case, pass Segs for both arguments, the result
@@ -3057,30 +3057,30 @@ void instrument_arithop ( ANEnv* ane,
             the arguments. */
          case Iop_And32:
             nm = "do_andW"; fn = &do_andW;
-            a1v = schemeEw_Atom( ane, a1 );
-            a2v = schemeEw_Atom( ane, a2 );
+            a1v = schemeEw_Atom( pce, a1 );
+            a2v = schemeEw_Atom( pce, a2 );
             res = gen_dirty_W_WWWW( 
-                     ane, fn, nm, a1v, a2v, mkexpr(dst),
-                     assignNew( 'I', ane, Ity_I32,
+                     pce, fn, nm, a1v, a2v, mkexpr(dst),
+                     assignNew( 'I', pce, Ity_I32,
                                 binop(Iop_Sub32,a1,a2) ) );
-            assign( 'I', ane, dstv, mkexpr(res) );
+            assign( 'I', pce, dstv, mkexpr(res) );
             break;
 
          /* Pass one shadow arg and the result to the helper. */
          case Iop_Not32: nm = "do_notW"; fn = &do_notW; goto vr32;
          vr32:
-            a1v = schemeEw_Atom( ane, a1 );
-            res = gen_dirty_W_WW( ane, fn, nm, a1v, mkexpr(dst) );
-            assign( 'I', ane, dstv, mkexpr(res) );
+            a1v = schemeEw_Atom( pce, a1 );
+            res = gen_dirty_W_WW( pce, fn, nm, a1v, mkexpr(dst) );
+            assign( 'I', pce, dstv, mkexpr(res) );
             break;
 
          /* Pass two shadow args only to the helper. */
          case Iop_Mul32: nm = "do_mulW"; fn = &do_mulW; goto vv32;
          vv32:
-            a1v = schemeEw_Atom( ane, a1 );
-            a2v = schemeEw_Atom( ane, a2 );
-            res = gen_dirty_W_WW( ane, fn, nm, a1v, a2v );
-            assign( 'I', ane, dstv, mkexpr(res) );
+            a1v = schemeEw_Atom( pce, a1 );
+            a2v = schemeEw_Atom( pce, a2 );
+            res = gen_dirty_W_WW( pce, fn, nm, a1v, a2v );
+            assign( 'I', pce, dstv, mkexpr(res) );
             break;
 
          /* We don't really know what the result could be; test at run
@@ -3094,9 +3094,9 @@ void instrument_arithop ( ANEnv* ane,
          case Iop_16Uto32:  goto n_or_u_32;
          case Iop_16Sto32:  goto n_or_u_32;
          n_or_u_32:
-            assign( 'I', ane, dstv,
+            assign( 'I', pce, dstv,
                     mkexpr(
-                       gen_call_nonptr_or_unknown_w( ane, 
+                       gen_call_nonptr_or_unknown_w( pce, 
                                                      mkexpr(dst) ) ) );
             break;
 
@@ -3107,7 +3107,7 @@ void instrument_arithop ( ANEnv* ane,
          case Iop_8Uto32: goto n32;
          case Iop_8Sto32: goto n32;
          n32:
-            assign( 'I', ane, dstv, mkU32( (UInt)NONPTR ));
+            assign( 'I', pce, dstv, mkU32( (UInt)NONPTR ));
             break;
 
          default:
@@ -3118,7 +3118,7 @@ void instrument_arithop ( ANEnv* ane,
 
    } else {
 
-      tl_assert(ane->gWordTy == Ity_I64);
+      tl_assert(pce->gWordTy == Ity_I64);
       switch (op) {
 
          /* For these cases, pass Segs for both arguments, and the
@@ -3127,10 +3127,10 @@ void instrument_arithop ( ANEnv* ane,
          case Iop_Sub64: nm = "do_subW"; fn = &do_subW; goto ssr64;
          case Iop_Or64:  nm = "do_orW";  fn = &do_orW;  goto ssr64;
          ssr64:
-            a1v = schemeEw_Atom( ane, a1 );
-            a2v = schemeEw_Atom( ane, a2 );
-            res = gen_dirty_W_WWW( ane, fn, nm, a1v, a2v, mkexpr(dst) );
-            assign( 'I', ane, dstv, mkexpr(res) );
+            a1v = schemeEw_Atom( pce, a1 );
+            a2v = schemeEw_Atom( pce, a2 );
+            res = gen_dirty_W_WWW( pce, fn, nm, a1v, a2v, mkexpr(dst) );
+            assign( 'I', pce, dstv, mkexpr(res) );
             break;
 
          /* In this case, pass Segs for both arguments, the result
@@ -3138,30 +3138,30 @@ void instrument_arithop ( ANEnv* ane,
             the arguments. */
          case Iop_And64:
             nm = "do_andW"; fn = &do_andW;
-            a1v = schemeEw_Atom( ane, a1 );
-            a2v = schemeEw_Atom( ane, a2 );
+            a1v = schemeEw_Atom( pce, a1 );
+            a2v = schemeEw_Atom( pce, a2 );
             res = gen_dirty_W_WWWW( 
-                     ane, fn, nm, a1v, a2v, mkexpr(dst),
-                     assignNew( 'I', ane, Ity_I64,
+                     pce, fn, nm, a1v, a2v, mkexpr(dst),
+                     assignNew( 'I', pce, Ity_I64,
                                 binop(Iop_Sub64,a1,a2) ) );
-            assign( 'I', ane, dstv, mkexpr(res) );
+            assign( 'I', pce, dstv, mkexpr(res) );
             break;
 
          /* Pass one shadow arg and the result to the helper. */
          case Iop_Not64: nm = "do_notW"; fn = &do_notW; goto vr64;
          vr64:
-            a1v = schemeEw_Atom( ane, a1 );
-            res = gen_dirty_W_WW( ane, fn, nm, a1v, mkexpr(dst) );
-            assign( 'I', ane, dstv, mkexpr(res) );
+            a1v = schemeEw_Atom( pce, a1 );
+            res = gen_dirty_W_WW( pce, fn, nm, a1v, mkexpr(dst) );
+            assign( 'I', pce, dstv, mkexpr(res) );
             break;
 
          /* Pass two shadow args only to the helper. */
          case Iop_Mul64: nm = "do_mulW"; fn = &do_mulW; goto vv64;
          vv64:
-            a1v = schemeEw_Atom( ane, a1 );
-            a2v = schemeEw_Atom( ane, a2 );
-            res = gen_dirty_W_WW( ane, fn, nm, a1v, a2v );
-            assign( 'I', ane, dstv, mkexpr(res) );
+            a1v = schemeEw_Atom( pce, a1 );
+            a2v = schemeEw_Atom( pce, a2 );
+            res = gen_dirty_W_WW( pce, fn, nm, a1v, a2v );
+            assign( 'I', pce, dstv, mkexpr(res) );
             break;
 
          /* We don't really know what the result could be; test at run
@@ -3179,9 +3179,9 @@ void instrument_arithop ( ANEnv* ane,
          case Iop_MullS32:   goto n_or_u_64;
          case Iop_MullU32:   goto n_or_u_64;
          n_or_u_64:
-            assign( 'I', ane, dstv,
+            assign( 'I', pce, dstv,
                     mkexpr(
-                       gen_call_nonptr_or_unknown_w( ane, 
+                       gen_call_nonptr_or_unknown_w( pce, 
                                                      mkexpr(dst) ) ) );
             break;
 
@@ -3194,7 +3194,7 @@ void instrument_arithop ( ANEnv* ane,
          case Iop_DivModU64to32: goto n64;
          case Iop_DivModS64to32: goto n64;
          n64:
-            assign( 'I', ane, dstv, mkU64( (UInt)NONPTR ));
+            assign( 'I', pce, dstv, mkU64( (UInt)NONPTR ));
             break;
 
          default:
@@ -3209,16 +3209,16 @@ void instrument_arithop ( ANEnv* ane,
 /* iii describes zero or more non-exact integer register updates.  For
    each one, generate IR to get the containing register, apply
    nonptr_or_unknown to it, and write it back again. */
-static void do_nonptr_or_unknown_for_III( ANEnv* ane, IntRegInfo* iii )
+static void do_nonptr_or_unknown_for_III( PCEnv* pce, IntRegInfo* iii )
 {
    Int i;
    tl_assert(iii && iii->n_offsets >= 0);
    for (i = 0; i < iii->n_offsets; i++) {
-      IRAtom* a1 = assignNew( 'I', ane, ane->gWordTy, 
-                              IRExpr_Get( iii->offsets[i], ane->gWordTy ));
-      IRTemp a2 = gen_call_nonptr_or_unknown_w( ane, a1 );
-      stmt( 'I', ane, IRStmt_Put( iii->offsets[i] 
-                                     + ane->guest_state_sizeB,
+      IRAtom* a1 = assignNew( 'I', pce, pce->gWordTy, 
+                              IRExpr_Get( iii->offsets[i], pce->gWordTy ));
+      IRTemp a2 = gen_call_nonptr_or_unknown_w( pce, a1 );
+      stmt( 'I', pce, IRStmt_Put( iii->offsets[i] 
+                                     + pce->guest_state_sizeB,
                                   mkexpr(a2) ));
    }
 }
@@ -3234,7 +3234,7 @@ static void do_nonptr_or_unknown_for_III( ANEnv* ane, IntRegInfo* iii )
    references, since we need the instrumentation (hence bounds check
    and potential error message) to happen before the reference itself,
    as the latter could cause a fault. */
-static void schemeS ( ANEnv* ane, IRStmt* st )
+static void schemeS ( PCEnv* pce, IRStmt* st )
 {
    tl_assert(st);
    tl_assert(isFlatIRStmt(st));
@@ -3244,19 +3244,19 @@ static void schemeS ( ANEnv* ane, IRStmt* st )
       case Ist_Dirty: {
          Int i;
          IRDirty* di;
-         stmt( 'C', ane, st );
+         stmt( 'C', pce, st );
          /* nasty.  assumes that (1) all helpers are unconditional,
             and (2) all outputs are non-ptr */
          di = st->Ist.Dirty.details;
          /* deal with the return tmp, if any */
          if (di->tmp != IRTemp_INVALID
-             && typeOfIRTemp(ane->bb->tyenv, di->tmp) == ane->gWordTy) {
+             && typeOfIRTemp(pce->bb->tyenv, di->tmp) == pce->gWordTy) {
             /* di->tmp is shadowed.  Set it to NONPTR. */
-            IRTemp dstv = newShadowTmp( ane, di->tmp );
-            if (ane->gWordTy == Ity_I32) {
-               assign( 'I', ane, dstv, mkU32( (UInt)NONPTR ));
+            IRTemp dstv = newShadowTmp( pce, di->tmp );
+            if (pce->gWordTy == Ity_I32) {
+               assign( 'I', pce, dstv, mkU32( (UInt)NONPTR ));
             } else {
-               assign( 'I', ane, dstv, mkU64( (ULong)NONPTR ));
+               assign( 'I', pce, dstv, mkU64( (ULong)NONPTR ));
             }
          }
          /* apply the nonptr_or_unknown technique to any parts of
@@ -3275,11 +3275,11 @@ static void schemeS ( ANEnv* ane, IRStmt* st )
             if (iii.n_offsets == -1) {
                /* case (1): exact write of an integer register. */
                IRAtom* a1
-                  = assignNew( 'I', ane, ane->gWordTy, 
-                               IRExpr_Get( iii.offsets[i], ane->gWordTy ));
-               IRTemp a2 = gen_call_nonptr_or_unknown_w( ane, a1 );
-               stmt( 'I', ane, IRStmt_Put( iii.offsets[i] 
-                                              + ane->guest_state_sizeB,
+                  = assignNew( 'I', pce, pce->gWordTy, 
+                               IRExpr_Get( iii.offsets[i], pce->gWordTy ));
+               IRTemp a2 = gen_call_nonptr_or_unknown_w( pce, a1 );
+               stmt( 'I', pce, IRStmt_Put( iii.offsets[i] 
+                                              + pce->guest_state_sizeB,
                                            mkexpr(a2) ));
             } else {
                tl_assert(0); /* awaiting test case */
@@ -3290,7 +3290,7 @@ static void schemeS ( ANEnv* ane, IRStmt* st )
                   shadow value. */
                tl_assert(iii.n_offsets >= 0 
                          && iii.n_offsets <= N_INTREGINFO_OFFSETS);
-               do_nonptr_or_unknown_for_III( ane, &iii );
+               do_nonptr_or_unknown_for_III( pce, &iii );
             }
          } /* for (i = 0; i < di->nFxState; i++) */
          /* punt on memory outputs */
@@ -3307,7 +3307,7 @@ static void schemeS ( ANEnv* ane, IRStmt* st )
       case Ist_MBE:
       case Ist_Exit:
       case Ist_IMark:
-         stmt( 'C', ane, st );
+         stmt( 'C', pce, st );
          break;
 
       case Ist_Put: {
@@ -3322,17 +3322,17 @@ static void schemeS ( ANEnv* ane, IRStmt* st )
             3. It is none of the above.  Generate no instrumentation. */
          IntRegInfo iii;
          IRType     ty;
-         stmt( 'C', ane, st );
-         ty = typeOfIRExpr(ane->bb->tyenv, st->Ist.Put.data);
+         stmt( 'C', pce, st );
+         ty = typeOfIRExpr(pce->bb->tyenv, st->Ist.Put.data);
          get_IntRegInfo( &iii, st->Ist.Put.offset,
                          sizeofIRType(ty) );
          if (iii.n_offsets == -1) {
             /* case (1): exact write of an integer register. */
-            tl_assert(ty == ane->gWordTy);
-            stmt( 'I', ane,
+            tl_assert(ty == pce->gWordTy);
+            stmt( 'I', pce,
                        IRStmt_Put( st->Ist.Put.offset
-                                      + ane->guest_state_sizeB,
-                                   schemeEw_Atom( ane, st->Ist.Put.data)) );
+                                      + pce->guest_state_sizeB,
+                                   schemeEw_Atom( pce, st->Ist.Put.data)) );
          } else {
             /* when == 0: case (3): no instrumentation needed */
             /* when > 0: case (2) .. complex case.  Fish out the
@@ -3341,7 +3341,7 @@ static void schemeS ( ANEnv* ane, IRStmt* st )
                value. */
             tl_assert(iii.n_offsets >= 0 
                       && iii.n_offsets <= N_INTREGINFO_OFFSETS);
-            do_nonptr_or_unknown_for_III( ane, &iii );
+            do_nonptr_or_unknown_for_III( pce, &iii );
          }
          break;
       } /* case Ist_Put */
@@ -3360,11 +3360,11 @@ static void schemeS ( ANEnv* ane, IRStmt* st )
          */
          IRExpr* data  = st->Ist.Store.data;
          IRExpr* addr  = st->Ist.Store.addr;
-         IRType  d_ty  = typeOfIRExpr(ane->bb->tyenv, data);
+         IRType  d_ty  = typeOfIRExpr(pce->bb->tyenv, data);
          HChar*  h_nm  = NULL;
          void*   h_fn  = NULL;
          IRExpr* addrv = NULL;
-         if (ane->gWordTy == Ity_I32) {
+         if (pce->gWordTy == Ity_I32) {
             /* 32 bit host/guest (cough, cough) */
             switch (d_ty) {
                case Ity_I32: h_fn = &check_store4W; 
@@ -3375,14 +3375,14 @@ static void schemeS ( ANEnv* ane, IRStmt* st )
                              h_nm = "check_store1"; break;
                default: tl_assert(0);
             }
-            addrv = schemeEw_Atom( ane, addr );
+            addrv = schemeEw_Atom( pce, addr );
             if (d_ty == Ity_I32) {
-               IRExpr* datav = schemeEw_Atom( ane, data );
-               gen_dirty_v_WWWW( ane, h_fn, h_nm, addr, addrv,
+               IRExpr* datav = schemeEw_Atom( pce, data );
+               gen_dirty_v_WWWW( pce, h_fn, h_nm, addr, addrv,
                                                   data, datav );
             } else {
-               gen_dirty_v_WWW( ane, h_fn, h_nm, addr, addrv,
-                                     uwiden_to_host_word( ane, data ));
+               gen_dirty_v_WWW( pce, h_fn, h_nm, addr, addrv,
+                                     uwiden_to_host_word( pce, data ));
             }
          } else {
             /* 64 bit host/guest (cough, cough) */
@@ -3397,14 +3397,14 @@ static void schemeS ( ANEnv* ane, IRStmt* st )
                              h_nm = "check_store1"; break;
                default: ppIRType(d_ty); tl_assert(0);
             }
-            addrv = schemeEw_Atom( ane, addr );
+            addrv = schemeEw_Atom( pce, addr );
             if (d_ty == Ity_I64) {
-               IRExpr* datav = schemeEw_Atom( ane, data );
-               gen_dirty_v_WWWW( ane, h_fn, h_nm, addr, addrv,
+               IRExpr* datav = schemeEw_Atom( pce, data );
+               gen_dirty_v_WWWW( pce, h_fn, h_nm, addr, addrv,
                                                   data, datav );
             } else {
-               gen_dirty_v_WWW( ane, h_fn, h_nm, addr, addrv,
-                                     uwiden_to_host_word( ane, data ));
+               gen_dirty_v_WWW( pce, h_fn, h_nm, addr, addrv,
+                                     uwiden_to_host_word( pce, data ));
             }
          }
          /* And don't copy the original, since the helper does the
@@ -3418,47 +3418,47 @@ static void schemeS ( ANEnv* ane, IRStmt* st )
             appear, we in fact only get an atom (Iex_RdTmp or
             Iex_Const). */
          IRExpr* e      = st->Ist.WrTmp.data;
-         IRType  e_ty   = typeOfIRExpr( ane->bb->tyenv, e );
-         Bool    isWord = e_ty == ane->gWordTy;
+         IRType  e_ty   = typeOfIRExpr( pce->bb->tyenv, e );
+         Bool    isWord = e_ty == pce->gWordTy;
          IRTemp  dst    = st->Ist.WrTmp.tmp;
-         IRTemp  dstv   = isWord ? newShadowTmp( ane, dst )
+         IRTemp  dstv   = isWord ? newShadowTmp( pce, dst )
                                  : IRTemp_INVALID;
 
          switch (e->tag) {
 
             case Iex_Const: {
-               stmt( 'C', ane, st );
+               stmt( 'C', pce, st );
                if (isWord)
-                  assign( 'I', ane, dstv, schemeEw_Atom( ane, e ) );
+                  assign( 'I', pce, dstv, schemeEw_Atom( pce, e ) );
                break;
             }
 
             case Iex_CCall: {
-               stmt( 'C', ane, st );
+               stmt( 'C', pce, st );
                if (isWord)
-                  assign( 'I', ane, dstv,
+                  assign( 'I', pce, dstv,
                           mkexpr( gen_call_nonptr_or_unknown_w( 
-                                     ane, mkexpr(dst)))); 
+                                     pce, mkexpr(dst)))); 
                break;
             }
 
             case Iex_Mux0X: {
                /* Just steer the shadow values in the same way as the
                   originals. */
-               stmt( 'C', ane, st );
+               stmt( 'C', pce, st );
                if (isWord)
-                  assign( 'I', ane, dstv, 
+                  assign( 'I', pce, dstv, 
                           IRExpr_Mux0X(
                              e->Iex.Mux0X.cond,
-                             schemeEw_Atom( ane, e->Iex.Mux0X.expr0 ),
-                             schemeEw_Atom( ane, e->Iex.Mux0X.exprX ) ));
+                             schemeEw_Atom( pce, e->Iex.Mux0X.expr0 ),
+                             schemeEw_Atom( pce, e->Iex.Mux0X.exprX ) ));
                break;
             }
 
             case Iex_RdTmp: {
-               stmt( 'C', ane, st );
+               stmt( 'C', pce, st );
                if (isWord)
-                  assign( 'I', ane, dstv, schemeEw_Atom( ane, e ));
+                  assign( 'I', pce, dstv, schemeEw_Atom( pce, e ));
                break;
             }
 
@@ -3467,7 +3467,7 @@ static void schemeS ( ANEnv* ane, IRStmt* st )
                HChar*  h_nm  = NULL;
                void*   h_fn  = NULL;
                IRExpr* addrv = NULL;
-               if (ane->gWordTy == Ity_I32) {
+               if (pce->gWordTy == Ity_I32) {
                   /* 32 bit host/guest (cough, cough) */
                   switch (e_ty) {
                      case Ity_I32: h_fn = &check_load4W;
@@ -3478,13 +3478,13 @@ static void schemeS ( ANEnv* ane, IRStmt* st )
                                    h_nm = "check_load1"; break;
                      default: tl_assert(0);
                   }
-                  addrv = schemeEw_Atom( ane, addr );
+                  addrv = schemeEw_Atom( pce, addr );
                   if (e_ty == Ity_I32) {
-                     assign( 'I', ane, dstv, 
-                              mkexpr( gen_dirty_W_WW( ane, h_fn, h_nm,
+                     assign( 'I', pce, dstv, 
+                              mkexpr( gen_dirty_W_WW( pce, h_fn, h_nm,
                                                            addr, addrv )) );
                   } else {
-                     gen_dirty_v_WW( ane, h_fn, h_nm, addr, addrv );
+                     gen_dirty_v_WW( pce, h_fn, h_nm, addr, addrv );
                   }
                } else {
                   /* 64 bit host/guest (cough, cough) */
@@ -3499,37 +3499,37 @@ static void schemeS ( ANEnv* ane, IRStmt* st )
                                    h_nm = "check_load1"; break;
                      default: ppIRType(e_ty); tl_assert(0);
                   }
-                  addrv = schemeEw_Atom( ane, addr );
+                  addrv = schemeEw_Atom( pce, addr );
                   if (e_ty == Ity_I64) {
-                     assign( 'I', ane, dstv, 
-                              mkexpr( gen_dirty_W_WW( ane, h_fn, h_nm,
+                     assign( 'I', pce, dstv, 
+                              mkexpr( gen_dirty_W_WW( pce, h_fn, h_nm,
                                                            addr, addrv )) );
                   } else {
-                     gen_dirty_v_WW( ane, h_fn, h_nm, addr, addrv );
+                     gen_dirty_v_WW( pce, h_fn, h_nm, addr, addrv );
                   }
                }
                /* copy the original -- must happen after the helper call */
-               stmt( 'C', ane, st );
+               stmt( 'C', pce, st );
                break;
             }
 
             case Iex_Get: {
-               stmt( 'C', ane, st );
+               stmt( 'C', pce, st );
                if (isWord) {
                   /* guest-word-typed tmp assignment, so it will have a
                      shadow tmp, and we must make an assignment to
                      that */
                   if (is_integer_guest_reg(e->Iex.Get.offset,
                                            sizeofIRType(e->Iex.Get.ty))) {
-                     assign( 'I', ane, dstv,
+                     assign( 'I', pce, dstv,
                              IRExpr_Get( e->Iex.Get.offset 
-                                            + ane->guest_state_sizeB,
+                                            + pce->guest_state_sizeB,
                                          e->Iex.Get.ty) );
                   } else {
-                     if (ane->hWordTy == Ity_I32) {
-                        assign( 'I', ane, dstv, mkU32( (UInt)NONPTR ));
+                     if (pce->hWordTy == Ity_I32) {
+                        assign( 'I', pce, dstv, mkU32( (UInt)NONPTR ));
                      } else {
-                        assign( 'I', ane, dstv, mkU64( (ULong)NONPTR ));
+                        assign( 'I', pce, dstv, mkU64( (ULong)NONPTR ));
                      }
                   }
                } else {
@@ -3540,21 +3540,21 @@ static void schemeS ( ANEnv* ane, IRStmt* st )
             }
 
             case Iex_Unop: {
-               stmt( 'C', ane, st );
+               stmt( 'C', pce, st );
                tl_assert(isIRAtom(e->Iex.Unop.arg));
                if (isWord)
-                  instrument_arithop( ane, dst, dstv, e->Iex.Unop.op,
+                  instrument_arithop( pce, dst, dstv, e->Iex.Unop.op,
                                       e->Iex.Unop.arg,
                                       NULL, NULL, NULL );
                break;
             }
 
             case Iex_Binop: {
-               stmt( 'C', ane, st );
+               stmt( 'C', pce, st );
                tl_assert(isIRAtom(e->Iex.Binop.arg1));
                tl_assert(isIRAtom(e->Iex.Binop.arg2));
                if (isWord)
-                  instrument_arithop( ane, dst, dstv, e->Iex.Binop.op,
+                  instrument_arithop( pce, dst, dstv, e->Iex.Binop.op,
                                       e->Iex.Binop.arg1, e->Iex.Binop.arg2,
                                       NULL, NULL );
                break;
@@ -4146,7 +4146,7 @@ static void schemeS ( ANEnv* ane, IRStmt* st )
 
 
 static
-IRSB* an_instrument ( VgCallbackClosure* closure,
+IRSB* pc_instrument ( VgCallbackClosure* closure,
                       IRSB* sbIn,
                       VexGuestLayout* layout,
                       VexGuestExtents* vge,
@@ -4154,7 +4154,7 @@ IRSB* an_instrument ( VgCallbackClosure* closure,
 {
    Bool  verboze = 0||False;
    Int   i /*, j*/;
-   ANEnv ane;
+   PCEnv pce;
 
    if (0) { /* See comment-ref below KLUDGE01. */
      /* FIXME: race! */
@@ -4182,15 +4182,15 @@ IRSB* an_instrument ( VgCallbackClosure* closure,
 
    /* Set up the running environment.  Only .bb is modified as we go
       along. */
-   ane.bb                = deepCopyIRSBExceptStmts(sbIn);
-   ane.trace             = verboze;
-   ane.n_originalTmps    = sbIn->tyenv->types_used;
-   ane.hWordTy           = hWordTy;
-   ane.gWordTy           = gWordTy;
-   ane.guest_state_sizeB = layout->total_sizeB;
-   ane.tmpMap            = LibVEX_Alloc(ane.n_originalTmps * sizeof(IRTemp));
-   for (i = 0; i < ane.n_originalTmps; i++)
-      ane.tmpMap[i] = IRTemp_INVALID;
+   pce.bb                = deepCopyIRSBExceptStmts(sbIn);
+   pce.trace             = verboze;
+   pce.n_originalTmps    = sbIn->tyenv->types_used;
+   pce.hWordTy           = hWordTy;
+   pce.gWordTy           = gWordTy;
+   pce.guest_state_sizeB = layout->total_sizeB;
+   pce.tmpMap            = LibVEX_Alloc(pce.n_originalTmps * sizeof(IRTemp));
+   for (i = 0; i < pce.n_originalTmps; i++)
+      pce.tmpMap[i] = IRTemp_INVALID;
 
    /* Stay sane.  These two should agree! */
    tl_assert(layout->total_sizeB == MC_SIZEOF_GUEST_STATE);
@@ -4202,7 +4202,7 @@ IRSB* an_instrument ( VgCallbackClosure* closure,
       IRStmt* st = sbIn->stmts[i];
       tl_assert(st);
       tl_assert(isFlatIRStmt(st));
-      stmt( 'C', &ane, sbIn->stmts[i] );
+      stmt( 'C', &pce, sbIn->stmts[i] );
       i++;
    }
 
@@ -4232,9 +4232,9 @@ IRSB* an_instrument ( VgCallbackClosure* closure,
          /* findShadowTmpV checks its arg is an original tmp;
             no need to assert that here. */
          IRTemp tmp_o = sbIn->stmts[j]->Ist.WrTmp.tmp;
-         IRTemp tmp_s = findShadowTmp(&ane, tmp_o);
+         IRTemp tmp_s = findShadowTmp(&pce, tmp_o);
          IRType ty_s  = typeOfIRTemp(sbIn->tyenv, tmp_s);
-         assign( 'V', &ane, tmp_s, definedOfType( ty_s ) );
+         assign( 'V', &pce, tmp_s, definedOfType( ty_s ) );
          if (0) {
             VG_(printf)("create shadow tmp for preamble tmp [%d] ty ", j);
             ppIRType( ty_s );
@@ -4252,9 +4252,9 @@ IRSB* an_instrument ( VgCallbackClosure* closure,
    tl_assert(sbIn->stmts[i]->tag == Ist_IMark);
 
    for (/*use current i*/; i < sbIn->stmts_used; i++)
-      schemeS( &ane, sbIn->stmts[i] );
+      schemeS( &pce, sbIn->stmts[i] );
 
-   return ane.bb;
+   return pce.bb;
 }
 
 
@@ -4262,10 +4262,10 @@ IRSB* an_instrument ( VgCallbackClosure* closure,
 /*--- Initialisation                                               ---*/
 /*--------------------------------------------------------------------*/
 
-static void an_post_clo_init ( void ); /* just below */
-static void an_fini ( Int exitcode );  /* just below */
+static void pc_post_clo_init ( void ); /* just below */
+static void pc_fini ( Int exitcode );  /* just below */
 
-static void an_pre_clo_init ( void )
+static void pc_pre_clo_init ( void )
 {
 //zz    Int i;
 //zz    // 0-terminated arrays
@@ -4302,20 +4302,20 @@ static void an_pre_clo_init ( void )
       "Copyright (C) 2003, and GNU GPL'd, by Nicholas Nethercote.");
    VG_(details_bug_reports_to)  ("njn25@cam.ac.uk");
 
-   VG_(basic_tool_funcs)( an_post_clo_init,
-                          an_instrument,
-                          an_fini );
+   VG_(basic_tool_funcs)( pc_post_clo_init,
+                          pc_instrument,
+                          pc_fini );
 
-   VG_(needs_malloc_replacement)( an_replace_malloc,
-                                  an_replace___builtin_new,
-                                  an_replace___builtin_vec_new,
-                                  an_replace_memalign,
-                                  an_replace_calloc,
-                                  an_replace_free,
-                                  an_replace___builtin_delete,
-                                  an_replace___builtin_vec_delete,
-                                  an_replace_realloc,
-                                  AN_MALLOC_REDZONE_SZB );
+   VG_(needs_malloc_replacement)( pc_replace_malloc,
+                                  pc_replace___builtin_new,
+                                  pc_replace___builtin_vec_new,
+                                  pc_replace_memalign,
+                                  pc_replace_calloc,
+                                  pc_replace_free,
+                                  pc_replace___builtin_delete,
+                                  pc_replace___builtin_vec_delete,
+                                  pc_replace_realloc,
+                                  PC_MALLOC_REDZONE_SZB );
 
    VG_(needs_core_errors)         ();
    VG_(needs_tool_errors)         (eq_Error,
@@ -4404,7 +4404,7 @@ static void an_pre_clo_init ( void )
    // above.
 }
 
-static void an_post_clo_init ( void )
+static void pc_post_clo_init ( void )
 {
 }
 
@@ -4412,14 +4412,14 @@ static void an_post_clo_init ( void )
 /*--- Finalisation                                                 ---*/
 /*--------------------------------------------------------------------*/
 
-static void an_fini ( Int exitcode )
+static void pc_fini ( Int exitcode )
 {
 //   if (0)
 //      count_segs();
 }
 
-VG_DETERMINE_INTERFACE_VERSION(an_pre_clo_init)
+VG_DETERMINE_INTERFACE_VERSION(pc_pre_clo_init)
 
 /*--------------------------------------------------------------------*/
-/*--- end                                                an_main.c ---*/
+/*--- end                                                pc_main.c ---*/
 /*--------------------------------------------------------------------*/
