@@ -12,7 +12,8 @@ TOOLS =		memcheck \
 		helgrind
 
 EXP_TOOLS = 	exp-omega \
-		exp-drd
+		exp-drd \
+		exp-ptrcheck
 
 # Put docs last because building the HTML is slow and we want to get
 # everything else working before we try it.

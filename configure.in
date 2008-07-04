@@ -1435,6 +1435,9 @@ AC_OUTPUT(
    exp-drd/docs/Makefile
    exp-drd/scripts/download-and-build-splash2
    exp-drd/tests/Makefile
+   exp-ptrcheck/Makefile
+   exp-ptrcheck/tests/Makefile
+   exp-ptrcheck/docs/Makefile
 )
 
 cat<<EOF
