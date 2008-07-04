@@ -143,7 +143,7 @@
 //
 // What I am not checking, and would be difficult:
 // - mmap(...MAP_FIXED...) is not handled specially.  It might be used in
-//   ways that fool Annelid into giving false positives.
+//   ways that fool Ptrcheck into giving false positives.
 //
 // - syscalls: for those accessing memory, not checking that the asegs of the
 //   accessed words match the vseg of the accessing pointer, because the
@@ -154,7 +154,7 @@
 // What I am not checking, and would be difficult, but doesn't matter:
 // - free(p): similar to syscalls, not checking that the p.vseg matches the
 //   aseg of the first byte in the block.  However, Memcheck does an
-//   equivalent "bad free" check using shadow_chunks;  indeed, Annelid could
+//   equivalent "bad free" check using shadow_chunks;  indeed, Ptrcheck could
 //   do the same check, but there's no point duplicating functionality.  So
 //   no loss, really.
 //
@@ -642,7 +642,7 @@ typedef
       ArithSupp,
       SysParamSupp,
    }
-   AnnelidSuppKind;
+   PtrcheckSuppKind;
 
 /* What kind of error it is. */
 typedef
@@ -651,7 +651,7 @@ typedef
       ArithErr,         // bad arithmetic between two segment pointers
       SysParamErr,      // block straddling >1 segment passed to syscall
    }
-   AnnelidErrorKind;
+   PtrcheckErrorKind;
 
 
 // These ones called from generated code.
@@ -724,15 +724,17 @@ static Bool eq_Error ( VgRes res, Error* e1, Error* e2 )
 
    switch (VG_(get_error_kind)(e1)) {
 
-   case LoadStoreErr:
-   case SysParamErr:
-      return VG_STREQ(VG_(get_error_string)(e1), VG_(get_error_string)(e2));
+      case LoadStoreErr:
+      case SysParamErr:
+         tl_assert( VG_(get_error_string)(e1) == NULL );
+         tl_assert( VG_(get_error_string)(e2) == NULL );
+         return True;
 
-   case ArithErr:
-      return True;
+      case ArithErr:
+         return True;
 
-   default:
-      VG_(tool_panic)("eq_Error: unrecognised error kind");
+      default:
+         VG_(tool_panic)("eq_Error: unrecognised error kind");
    }
 }
 
@@ -1115,7 +1117,9 @@ static void set_mem_unknown( Addr a, SizeT len )
 
 static void new_mem_startup( Addr a, SizeT len, Bool rr, Bool ww, Bool xx )
 {
+   if (0) VG_(printf)("new_mem_startup(%p,%lu)\n", a, len);
    set_mem_unknown( a, len );
+   add_new_segment( VG_(get_running_tid)(), a, len, SegMmap );
 }
 
 //zz // XXX: Currently not doing anything with brk() -- new segments, or not?
@@ -1144,6 +1148,7 @@ static void new_mem_startup( Addr a, SizeT len, Bool rr, Bool ww, Bool xx )
 // otherwise.  Hopefully this is rare, though.
 static void new_mem_mmap( Addr a, SizeT len, Bool rr, Bool ww, Bool xx )
 {
+   if (0) VG_(printf)("new_mem_mmap(%p,%lu)\n", a, len);
 //zz #if 0
 //zz    Seg seg = NULL;
 //zz 
@@ -1395,8 +1400,9 @@ static void get_IntRegInfo ( /*OUT*/IntRegInfo* iii, Int offset, Int szB )
 #  define GOF(_fieldname) \
       (offsetof(VexGuestAMD64State,guest_##_fieldname))
 
-   Bool is8   = sz == 8;
-   Bool is421 = sz == 4 || sz == 2 || sz == 1;
+   Bool isXmmF = sz == 16 || sz == 8 || sz == 4;
+   Bool is421  = sz == 4 || sz == 2 || sz == 1;
+   Bool is8    = sz == 8;
    tl_assert(sz > 0);
    tl_assert(host_is_little_endian());
 
@@ -1427,16 +1433,23 @@ static void get_IntRegInfo ( /*OUT*/IntRegInfo* iii, Int offset, Int szB )
    if (o == GOF(RAX)+1   && is421) { o -= 1; o -= 0; goto contains_o; }
    if (o == GOF(RCX)     && is421) {         o -= 0; goto contains_o; }
    if (o == GOF(RDX)     && is421) {         o -= 0; goto contains_o; }
+   if (o == GOF(RDX)+1   && is421) { o -= 1; o -= 0; goto contains_o; }
    if (o == GOF(RBX)     && is421) {         o -= 0; goto contains_o; }
    if (o == GOF(RBP)     && is421) {         o -= 0; goto contains_o; }
    if (o == GOF(RSI)     && is421) {         o -= 0; goto contains_o; }
+   if (o == GOF(RDI)     && is421) {         o -= 0; goto contains_o; }
+   if (o == GOF(R8)      && is421) {         o -= 0; goto contains_o; }
    if (o == GOF(R9)      && is421) {         o -= 0; goto contains_o; }
+   if (o == GOF(R11)     && is421) {         o -= 0; goto contains_o; }
    if (o == GOF(R12)     && is421) {         o -= 0; goto contains_o; }
    if (o == GOF(R13)     && is421) {         o -= 0; goto contains_o; }
    if (o == GOF(R14)     && is421) {         o -= 0; goto contains_o; }
    if (o == GOF(R15)     && is421) {         o -= 0; goto contains_o; }
 
    if (o == GOF(FS_ZERO) && is8) goto none;
+
+   if (o == GOF(XMM0) && isXmmF) goto none;
+   if (o == GOF(XMM1) && isXmmF) goto none;
 
    VG_(printf)("get_IntRegInfo(amd64):failing on (%d,%d)\n", o, sz);
    tl_assert(0);
@@ -1718,15 +1731,25 @@ static void post_syscall ( ThreadId tid, UInt syscallno, SysRes res )
 #     if defined(__NR_arch_prctl)
       case __NR_arch_prctl:
 #     endif
+      case __NR_clock_gettime:
       case __NR_close:
+#     if defined(__NR_connect)
+      case __NR_connect:
+#     endif
       case __NR_exit_group:
       case __NR_getcwd:
       case __NR_getrlimit:
       case __NR_fadvise64:
+      case __NR_fcntl:
       case __NR_fstat:
+      case __NR_futex:
 #     if defined(__NR_fstat64)
       case __NR_fstat64:
 #     endif
+      case __NR_getdents64: // something to do with teeth?
+      case __NR_getxattr:
+      case __NR_ioctl: // ioctl -- assuming no pointers returned
+      case __NR_lstat:
       case __NR_mprotect:
       case __NR_munmap: // die_mem_munmap already called, segment removed
       case __NR_open:
@@ -1734,6 +1757,9 @@ static void post_syscall ( ThreadId tid, UInt syscallno, SysRes res )
       case __NR_set_robust_list:
       case __NR_set_thread_area:
       case __NR_set_tid_address:
+#     if defined(__NR_socket)
+      case __NR_socket:
+#     endif
       case __NR_rt_sigaction:
       case __NR_rt_sigprocmask:
       case __NR_stat:
@@ -1746,6 +1772,15 @@ static void post_syscall ( ThreadId tid, UInt syscallno, SysRes res )
       case __NR_uname:
       case __NR_write:
          VG_(set_syscall_return_shadows)( tid, (UWord)UNKNOWN, 0 );
+         break;
+
+      case __NR_lseek:
+      case __NR_readlink:
+      case __NR_poll:
+      case __NR_pwrite64:
+      case __NR_readv:
+      case __NR_writev:
+         VG_(set_syscall_return_shadows)( tid, (UWord)NONPTR, 0 );
          break;
 
 //zz    // These ones don't return a pointer, so don't do anything -- already set
@@ -1925,14 +1960,18 @@ static __inline__ Bool looks_like_a_pointer(Addr a)
    if (sizeof(UWord) == 4) {
       return (a > 0x01000000UL && a < 0xFF000000UL);
    } else {
-      return (a > 0x01000000UL && a < 0xFF00000000000000UL);
+     //return (a > 0x01000000UL && a < 0xFF00000000000000UL);
+            return (a > 0x100000UL && a < 0xFF00000000000000UL);
    }
 }
 
 static __inline__ VG_REGPARM(1)
 Seg nonptr_or_unknown(UWord x)
 {
-   return ( looks_like_a_pointer(x) ? UNKNOWN : NONPTR );
+   Seg res = looks_like_a_pointer(x) ? UNKNOWN : NONPTR;
+   if (0) VG_(printf)("nonptr_or_unknown %s %p\n", 
+                      res==UNKNOWN ? "UUU" : "nnn", x);
+   return res;
 }
 
 //zz static __attribute__((regparm(1)))
@@ -1945,6 +1984,7 @@ Seg nonptr_or_unknown(UWord x)
 static __inline__
 void check_load_or_store(Bool is_write, Addr m, UInt sz, Seg mptr_vseg)
 {
+checkSeg(mptr_vseg);
    if (UNKNOWN == mptr_vseg) {
       // do nothing
 
@@ -2560,7 +2600,7 @@ checkSeg(seg2);
 
 
 
-/* Carries around state during Annelid instrumentation. */
+/* Carries around state during Ptrcheck instrumentation. */
 typedef
    struct {
       /* MODIFIED: the superblock being constructed.  IRStmts are
@@ -3175,6 +3215,7 @@ void instrument_arithop ( PCEnv* pce,
          case Iop_128HIto64: goto n_or_u_64;
          case Iop_128to64:   goto n_or_u_64;
          case Iop_16Uto64:   goto n_or_u_64;
+         case Iop_16Sto64:   goto n_or_u_64;
          case Iop_32HLto64:  goto n_or_u_64;
          case Iop_MullS32:   goto n_or_u_64;
          case Iop_MullU32:   goto n_or_u_64;
@@ -4295,12 +4336,12 @@ static void pc_pre_clo_init ( void )
 //zz       0
 //zz    };
 
-   VG_(details_name)            ("Annelid");
+   VG_(details_name)            ("Ptrcheck");
    VG_(details_version)         ("0.0.2");
    VG_(details_description)     ("a pointer-use checker");
    VG_(details_copyright_author)(
-      "Copyright (C) 2003, and GNU GPL'd, by Nicholas Nethercote.");
-   VG_(details_bug_reports_to)  ("njn25@cam.ac.uk");
+      "Copyright (C) 2003-2008, and GNU GPL'd, by Nicholas Nethercote.");
+   VG_(details_bug_reports_to)  ("njn@valgrind.org");
 
    VG_(basic_tool_funcs)( pc_post_clo_init,
                           pc_instrument,

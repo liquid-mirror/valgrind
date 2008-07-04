@@ -140,7 +140,7 @@ static
 Interval* Interval__construct(Addr left, Addr right, Bool is_zero,
                               ExeContext* where, SegStatus status)
 {
-   if (1) VG_(printf)("Interval__construct(%p,%p,%d)\n",
+   if (0) VG_(printf)("Interval__construct(%p,%p,%d)\n",
                       left, right, (Int)is_zero);
    Interval* o = my_malloc( sizeof(Interval) );
    o->left     = left;

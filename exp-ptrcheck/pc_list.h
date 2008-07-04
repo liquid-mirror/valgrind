@@ -50,7 +50,7 @@ typedef
 
 //-------------------------------------------------------------------
 // Seg is equivalent to Interval, but is an extra abstraction layer that
-// makes things a bit easier for use by Annelid.  They're both abstract,
+// makes things a bit easier for use by Ptrcheck.  They're both abstract,
 // primarily because it's easy to screw up the handling of the is_zero case.
 typedef struct _Interval  Interval;
 typedef struct _Interval* Seg;
