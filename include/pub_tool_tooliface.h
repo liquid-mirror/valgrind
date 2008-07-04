@@ -453,7 +453,7 @@ extern void VG_(needs_final_IR_tidy_pass) ( IRSB*(*final_tidy)(IRSB*) );
 /* Part of the core from which this call was made.  Useful for determining
    what kind of error message should be emitted. */
 typedef
-   enum { Vg_CoreStartup, Vg_CoreSignal, Vg_CoreSysCall,
+   enum { Vg_CoreStartup=1, Vg_CoreSignal, Vg_CoreSysCall,
           Vg_CoreTranslate, Vg_CoreClientReq }
    CorePart;
 
