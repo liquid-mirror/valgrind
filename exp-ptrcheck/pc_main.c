@@ -448,7 +448,7 @@ typedef
 #define PRIMAP_L1_INSERT_IX 12
 
 static struct {
-          Addr       base;
+          Addr       base; // must be 64k aligned
           PriMapEnt* ent; // pointer to the matching primap_L2 node
        }
        primap_L1[N_PRIMAP_L1];
@@ -473,7 +473,8 @@ static void init_shadow_memory ( void )
       distinguished_secondary_map.vseg[i] = UNKNOWN;
 
    for (i = 0; i < N_PRIMAP_L1; i++) {
-      primap_L1[i].base = 0;
+      primap_L1[i].base = 1; /* not 64k aligned, so doesn't match any
+                                request ==> slot is empty */
       primap_L1[i].ent  = NULL;
    }
 
@@ -570,7 +571,7 @@ static SecMap* alloc_secondary_map ( void )
 
    for (i = 0; i < SEC_MAP_WORDS; i++)
       map->vseg[i] = UNKNOWN;
-
+   if (0) VG_(printf)("XXX new secmap %p\n", map);
    return map;
 }
 
@@ -662,6 +663,10 @@ typedef
       UInt size;
       Seg  vseg;
       Bool is_write;
+      Char descr1[96];
+      Char descr2[96];
+      Char datasym[96];
+      OffT datasymoff;
    }
    LoadStoreExtra;
 
@@ -691,6 +696,8 @@ void record_loadstore_error( Addr a, UInt size, Seg vseg, Bool is_write )
    LoadStoreExtra extra = {
       .a = a, .size = size, .vseg = vseg, .is_write = is_write
    };
+   extra.descr1[0] = extra.descr2[0] = extra.datasym[0] = 0;
+   extra.datasymoff = 0;
    VG_(maybe_record_error)( VG_(get_running_tid)(), LoadStoreErr,
                             /*a*/0, /*str*/NULL, /*extra*/(void*)&extra);
 }
@@ -805,6 +812,15 @@ static void pp_Error ( Error* err )
                       legit, Seg__size(vseg), Seg__status_str(vseg) );
          VG_(pp_ExeContext)(Seg__where(vseg));
       }
+      if (extra->descr1[0] != 0)
+         VG_(message)(Vg_UserMsg, " %s", extra->descr1);
+      if (extra->descr2[0] != 0)
+         VG_(message)(Vg_UserMsg, " %s", extra->descr2);
+      if (extra->datasym[0] != 0)
+         VG_(message)(Vg_UserMsg, " Address 0x%llx is %llu bytes "
+                      "inside data symbol \"%t\"",
+                      (ULong)extra->a, (ULong)extra->datasymoff,
+                      extra->datasym);
       break;
    }
 
@@ -913,10 +929,35 @@ static void pp_Error ( Error* err )
 static UInt update_Error_extra ( Error* err )
 {
    switch (VG_(get_error_kind)(err)) {
-   case LoadStoreErr: return sizeof(LoadStoreExtra);
-   case ArithErr:     return 0;
-   case SysParamErr:  return sizeof(SysParamExtra);
-   default:           VG_(tool_panic)("update_extra");
+      case LoadStoreErr: {
+         LoadStoreExtra* ex = (LoadStoreExtra*)VG_(get_error_extra)(err);
+         tl_assert(ex);
+         tl_assert(sizeof(ex->descr1) == sizeof(ex->descr2));
+         tl_assert(sizeof(ex->descr1) > 0);
+         tl_assert(sizeof(ex->datasym) > 0);
+         VG_(memset)(&ex->descr1, 0, sizeof(ex->descr1));
+         VG_(memset)(&ex->descr2, 0, sizeof(ex->descr2));
+         VG_(memset)(&ex->datasym, 0, sizeof(ex->datasym));
+         ex->datasymoff = 0;
+         if (VG_(get_data_description)( &ex->descr1[0], &ex->descr2[0],
+                                        sizeof(ex->descr1)-1, ex->a )) {
+            tl_assert(ex->descr1[sizeof(ex->descr1)-1] == 0);
+            tl_assert(ex->descr1[sizeof(ex->descr2)-1] == 0);
+         }
+         else
+         if (VG_(get_datasym_and_offset)( ex->a, &ex->datasym[0],
+                                          sizeof(ex->datasym)-1,
+                                          &ex->datasymoff )) {
+            tl_assert(ex->datasym[sizeof(ex->datasym)-1] == 0);
+         }
+         return sizeof(LoadStoreExtra);
+      }
+      case ArithErr:
+         return 0;
+      case SysParamErr:
+         return sizeof(SysParamExtra);
+      default:
+         VG_(tool_panic)("update_extra");
    }
 }
 
@@ -1432,14 +1473,17 @@ static void get_IntRegInfo ( /*OUT*/IntRegInfo* iii, Int offset, Int szB )
    if (o == GOF(RAX)     && is421) {         o -= 0; goto contains_o; }
    if (o == GOF(RAX)+1   && is421) { o -= 1; o -= 0; goto contains_o; }
    if (o == GOF(RCX)     && is421) {         o -= 0; goto contains_o; }
+   if (o == GOF(RCX)+1   && is421) { o -= 1; o -= 0; goto contains_o; }
    if (o == GOF(RDX)     && is421) {         o -= 0; goto contains_o; }
    if (o == GOF(RDX)+1   && is421) { o -= 1; o -= 0; goto contains_o; }
    if (o == GOF(RBX)     && is421) {         o -= 0; goto contains_o; }
+   if (o == GOF(RBX)+1   && is421) { o -= 1; o -= 0; goto contains_o; }
    if (o == GOF(RBP)     && is421) {         o -= 0; goto contains_o; }
    if (o == GOF(RSI)     && is421) {         o -= 0; goto contains_o; }
    if (o == GOF(RDI)     && is421) {         o -= 0; goto contains_o; }
    if (o == GOF(R8)      && is421) {         o -= 0; goto contains_o; }
    if (o == GOF(R9)      && is421) {         o -= 0; goto contains_o; }
+   if (o == GOF(R10)     && is421) {         o -= 0; goto contains_o; }
    if (o == GOF(R11)     && is421) {         o -= 0; goto contains_o; }
    if (o == GOF(R12)     && is421) {         o -= 0; goto contains_o; }
    if (o == GOF(R13)     && is421) {         o -= 0; goto contains_o; }
@@ -1448,8 +1492,18 @@ static void get_IntRegInfo ( /*OUT*/IntRegInfo* iii, Int offset, Int szB )
 
    if (o == GOF(FS_ZERO) && is8) goto none;
 
-   if (o == GOF(XMM0) && isXmmF) goto none;
-   if (o == GOF(XMM1) && isXmmF) goto none;
+   if (o == GOF(SSEROUND) && is8) goto none;
+   if (o == GOF(XMM0)  && isXmmF) goto none;
+   if (o == GOF(XMM1)  && isXmmF) goto none;
+   if (o == GOF(XMM2)  && isXmmF) goto none;
+   if (o == GOF(XMM3)  && isXmmF) goto none;
+   if (o == GOF(XMM4)  && isXmmF) goto none;
+   if (o == GOF(XMM5)  && isXmmF) goto none;
+   if (o == GOF(XMM7)  && isXmmF) goto none;
+   if (o == GOF(XMM8)  && isXmmF) goto none;
+   if (o == GOF(XMM9)  && isXmmF) goto none;
+   if (o == GOF(XMM10) && isXmmF) goto none;
+   if (o == GOF(XMM11) && isXmmF) goto none;
 
    VG_(printf)("get_IntRegInfo(amd64):failing on (%d,%d)\n", o, sz);
    tl_assert(0);
@@ -1774,11 +1828,32 @@ static void post_syscall ( ThreadId tid, UInt syscallno, SysRes res )
          VG_(set_syscall_return_shadows)( tid, (UWord)UNKNOWN, 0 );
          break;
 
+      /* These ones definitely don't return pointers. */
+      case __NR_fchmod:
+      case __NR_fchown:
+      case __NR_fdatasync:
+      case __NR_getegid:
+      case __NR_geteuid:
+      case __NR_getgid:
+#     if defined(__NR_getsockopt)
+      case __NR_getsockopt:
+#     endif
+      case __NR_gettimeofday:
+      case __NR_getuid:
+      case __NR_kill:
+      case __NR_link:
       case __NR_lseek:
-      case __NR_readlink:
+      case __NR_madvise:
+      case __NR_pipe:
       case __NR_poll:
       case __NR_pwrite64:
+      case __NR_readlink:
       case __NR_readv:
+      case __NR_rename:
+      case __NR_select:
+      case __NR_time:
+      case __NR_umask:
+      case __NR_unlink:
       case __NR_writev:
          VG_(set_syscall_return_shadows)( tid, (UWord)NONPTR, 0 );
          break;
@@ -3234,6 +3309,7 @@ void instrument_arithop ( PCEnv* pce,
          case Iop_8Sto64:        goto n64;
          case Iop_DivModU64to32: goto n64;
          case Iop_DivModS64to32: goto n64;
+         case Iop_F64toI64:      goto n64;
          n64:
             assign( 'I', pce, dstv, mkU64( (UInt)NONPTR ));
             break;
@@ -3530,8 +3606,10 @@ static void schemeS ( PCEnv* pce, IRStmt* st )
                } else {
                   /* 64 bit host/guest (cough, cough) */
                   switch (e_ty) {
+                     case Ity_F64: /* a hack: check_load8W's result ignored */
                      case Ity_I64: h_fn = &check_load8W;
                                    h_nm = "check_load8W"; break;
+                     case Ity_F32:
                      case Ity_I32: h_fn = &check_load4;
                                    h_nm = "check_load4"; break;
                      case Ity_I16: h_fn = &check_load2;
@@ -4371,6 +4449,8 @@ static void pc_pre_clo_init ( void )
 
    VG_(needs_syscall_wrapper)( pre_syscall,
                                post_syscall );
+
+   VG_(needs_var_info)();
 
 //zz    // No needs
 //zz    VG_(needs_core_errors)         ();
