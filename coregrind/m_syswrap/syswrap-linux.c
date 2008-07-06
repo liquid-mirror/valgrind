@@ -347,7 +347,7 @@ SysRes ML_(do_fork_clone) ( ThreadId tid, UInt flags,
    if (!res.isError && res.res > 0) {
       /* parent */
       if (VG_(clo_trace_syscalls))
-	  VG_(printf)("   clone(fork): process %d created child %ld\n", 
+	  VG_(printf)("   clone(fork): process %d created child %ld\n",
                       VG_(getpid)(), res.res);
 
       /* restore signal mask */
@@ -1048,7 +1048,7 @@ PRE(sys_epoll_ctl)
       "EPOLL_CTL_DEL",
       "EPOLL_CTL_MOD"
    };
-   PRINT("sys_epoll_ctl ( %ld, %s, %ld, %#lx )", 
+   PRINT("sys_epoll_ctl ( %ld, %s, %ld, %#lx )",
          ARG1, ( ARG2<3 ? epoll_ctl_s[ARG2] : "?" ), ARG3, ARG4);
    PRE_REG_READ4(long, "epoll_ctl",
                  int, epfd, int, op, int, fd, struct vki_epoll_event *, event);

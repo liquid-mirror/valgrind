@@ -374,7 +374,7 @@ static void print_details ( void )
                 "   -------------------------------------------");
    for (typeIx = 0; typeIx < N_TYPES; typeIx++) {
       VG_(message)(Vg_UserMsg,
-                   "   %4s %'12llu %'12llu %'12llu", 
+                   "   %4s %'12llu %'12llu %'12llu",
                    nameOfTypeIndex( typeIx ),
                    detailCounts[OpLoad ][typeIx],
                    detailCounts[OpStore][typeIx],
@@ -873,7 +873,7 @@ static void lk_fini(Int exitcode)
       VG_(message)(Vg_UserMsg, "  total:         %'llu", total_Jccs);
       VG_(percentify)(taken_Jccs, (total_Jccs ? total_Jccs : 1),
          percentify_decs, percentify_size, percentify_buf);
-      VG_(message)(Vg_UserMsg, "  taken:         %'llu (%s)", 
+      VG_(message)(Vg_UserMsg, "  taken:         %'llu (%s)",
          taken_Jccs, percentify_buf);
       
       VG_(message)(Vg_UserMsg, "");

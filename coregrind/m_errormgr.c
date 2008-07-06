@@ -709,11 +709,11 @@ static Bool show_used_suppressions ( void )
          continue;
       any_supp = True;
       if (VG_(clo_xml)) {
-         VG_(message_no_f_c)(Vg_DebugMsg, 
+         VG_(message_no_f_c)(Vg_DebugMsg,
                              "  <pair>\n"
                              "    <count>%d</count>\n"
                              "    <name>%t</name>\n"
-                             "  </pair>", 
+                             "  </pair>",
                              su->count, su->sname);
       } else {
          VG_(message)(Vg_DebugMsg, "supp: %6d %s", su->count, su->sname);

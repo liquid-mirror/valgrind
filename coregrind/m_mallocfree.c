@@ -982,7 +982,7 @@ static void sanity_check_malloc_arena ( ArenaId aid )
    if (VG_(clo_verbosity) > 2) 
       VG_(message)(Vg_DebugMsg,
                    "%8s: %2d sbs, %5d bs, %2d/%-2d free bs, "
-                   "%7ld mmap, %7ld loan", 
+                   "%7ld mmap, %7ld loan",
                    a->name,
                    superblockctr,
                    blockctr_sb, blockctr_sb_free, blockctr_li, 

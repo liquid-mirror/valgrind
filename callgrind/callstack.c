@@ -365,7 +365,7 @@ void CLG_(pop_call_stack)()
 	if (CLG_(clo).verbose<4) {
 	    if (jcc) {
 		/* popped JCC target first */
-		VG_(printf)("- %2d %#lx => ", 
+		VG_(printf)("- %2d %#lx => ",
 			    CLG_(current_call_stack).sp,
 			    bb_addr(jcc->to->bb));
 		CLG_(print_addr)(bb_jmpaddr(jcc->from->bb));

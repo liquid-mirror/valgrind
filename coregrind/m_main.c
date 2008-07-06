@@ -869,25 +869,25 @@ static void print_preamble(Bool logging_to_fd, const char* toolname)
 
       VG_(message)(Vg_UserMsg, "  <vargv>");
       if (VG_(name_of_launcher))
-         VG_(message_no_f_c)(Vg_UserMsg, "    <exe>%t</exe>", 
+         VG_(message_no_f_c)(Vg_UserMsg, "    <exe>%t</exe>",
                              VG_(name_of_launcher));
       else
          VG_(message_no_f_c)(Vg_UserMsg, "    <exe>%t</exe>",
                              "(launcher name unknown)");
       for (i = 0; i < VG_(sizeXA)( VG_(args_for_valgrind) ); i++) {
-         VG_(message_no_f_c)(Vg_UserMsg, 
-                             "    <arg>%t</arg>", 
+         VG_(message_no_f_c)(Vg_UserMsg,
+                             "    <arg>%t</arg>",
                              * (HChar**) VG_(indexXA)( VG_(args_for_valgrind), i ));
       }
       VG_(message)(Vg_UserMsg, "  </vargv>");
 
       VG_(message)(Vg_UserMsg, "  <argv>");
       if (VG_(args_the_exename))
-         VG_(message_no_f_c)(Vg_UserMsg, "    <exe>%t</exe>", 
+         VG_(message_no_f_c)(Vg_UserMsg, "    <exe>%t</exe>",
                              VG_(args_the_exename));
       for (i = 0; i < VG_(sizeXA)( VG_(args_for_client) ); i++) {
          VG_(message_no_f_c)(Vg_UserMsg,
-                             "    <arg>%t</arg>", 
+                             "    <arg>%t</arg>",
                              * (HChar**) VG_(indexXA)( VG_(args_for_client), i ));
       }
       VG_(message)(Vg_UserMsg, "  </argv>");
@@ -1939,7 +1939,7 @@ Int valgrind_main ( Int argc, HChar **argv, HChar **envp )
                           "<status>\n"
                           "  <state>RUNNING</state>\n"
                           "  <time>%t</time>\n"
-                          "</status>", 
+                          "</status>",
                           buf);
       VG_(message)(Vg_UserMsg, "");
    }
@@ -2051,7 +2051,7 @@ void shutdown_actions_NORETURN( ThreadId tid,
                           "<status>\n"
                           "  <state>FINISHED</state>\n"
                           "  <time>%t</time>\n"
-                          "</status>", 
+                          "</status>",
                           buf);
       VG_(message)(Vg_UserMsg, "");
    }

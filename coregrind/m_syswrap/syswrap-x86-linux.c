@@ -402,7 +402,7 @@ void translate_to_hw_format ( /* IN  */ vki_modify_ldt_t* inn,
    vg_assert(8 == sizeof(VexGuestX86SegDescr));
 
    if (0)
-      VG_(printf)("translate_to_hw_format: base %#lx, limit %d\n", 
+      VG_(printf)("translate_to_hw_format: base %#lx, limit %d\n",
                   inn->base_addr, inn->limit );
 
    /* Allow LDTs to be cleared by the user. */
@@ -490,7 +490,7 @@ static void deallocate_LGDTs_for_thread ( VexGuestX86State* vex )
 
    if (0)
       VG_(printf)("deallocate_LGDTs_for_thread: "
-                  "ldt = 0x%lx, gdt = 0x%lx\n", 
+                  "ldt = 0x%lx, gdt = 0x%lx\n",
                   vex->guest_LDT, vex->guest_GDT );
 
    if (vex->guest_LDT != (HWord)NULL) {

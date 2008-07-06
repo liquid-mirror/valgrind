@@ -308,7 +308,7 @@ void VG_(sigframe_create)( ThreadId tid,
 
    if (0)
       VG_(printf)("pushed signal frame; %%R1 now = %#lx, "
-                  "next %%CIA = %#llx, status=%d\n", 
+                  "next %%CIA = %#llx, status=%d\n",
 		  sp, tst->arch.vex.guest_CIA, tst->status);
 }
 

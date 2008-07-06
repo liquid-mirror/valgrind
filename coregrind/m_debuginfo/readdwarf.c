@@ -360,7 +360,7 @@ Word process_extended_line_op( struct _DebugInfo* di,
 
    switch (op_code) {
       case DW_LNE_end_sequence:
-         if (0) VG_(printf)("1001: si->o %#lx, smr.a %#lx\n", 
+         if (0) VG_(printf)("1001: si->o %#lx, smr.a %#lx\n",
                             di->text_bias, state_machine_regs.address );
          /* JRS: added for compliance with spec; is pointless due to
             reset_state_machine below */
@@ -722,7 +722,7 @@ void read_dwarf2_lineblock ( struct _DebugInfo* di,
 
          if (0) VG_(printf)("smr.a += %#x\n", adv );
          adv = (op_code % info.li_line_range) + info.li_line_base;
-         if (0) VG_(printf)("1002: di->o %#lx, smr.a %#lx\n", 
+         if (0) VG_(printf)("1002: di->o %#lx, smr.a %#lx\n",
                             di->text_bias, state_machine_regs.address );
          state_machine_regs.line += adv;
 
@@ -769,7 +769,7 @@ void read_dwarf2_lineblock ( struct _DebugInfo* di,
             break;
 
          case DW_LNS_copy:
-            if (0) VG_(printf)("1002: di->o %#lx, smr.a %#lx\n", 
+            if (0) VG_(printf)("1002: di->o %#lx, smr.a %#lx\n",
                                di->text_bias, state_machine_regs.address );
             if (state_machine_regs.is_stmt) {
                /* only add a statement if there was a previous boundary */
@@ -1173,7 +1173,7 @@ void ML_(read_debuginfo_dwarf3)
       
       /* Fill ui with offset in .debug_line and compdir */
       if (0)
-         VG_(printf)( "Reading UnitInfo at 0x%lx.....\n", 
+         VG_(printf)( "Reading UnitInfo at 0x%lx.....\n",
                       block_img - debug_info_img + 0UL );
       read_unitinfo_dwarf2( &ui, block_img, 
                                  debug_abbv_img, debug_str_img, di );
@@ -1186,7 +1186,7 @@ void ML_(read_debuginfo_dwarf3)
          continue;
       
       if (0) 
-         VG_(printf)("debug_line_sz %ld, ui.stmt_list %lld  %s\n", 
+         VG_(printf)("debug_line_sz %ld, ui.stmt_list %lld  %s\n",
                      debug_line_sz, ui.stmt_list, ui.name );
       /* Read the .debug_line block for this compile unit */
       read_dwarf2_lineblock( 
@@ -3056,7 +3056,7 @@ static Int show_CF_instruction ( UChar* instr,
             (now known to be incorrect -- the address is encoded) */
          loc = read_encoded_Addr(&len, adi, &instr[i]);
          i += len;
-         VG_(printf)("  sci:DW_CFA_set_loc(%#lx)\n", loc); 
+         VG_(printf)("  sci:DW_CFA_set_loc(%#lx)\n", loc);
          break;
 
       case DW_CFA_advance_loc1:
@@ -3351,7 +3351,7 @@ void ML_(read_callframe_info_dwarf3)
    if (di->trace_cfi) {
       VG_(printf)("\n-----------------------------------------------\n");
       VG_(printf)("CFI info: szB %ld, _avma %#lx, _image %p\n",
-                  di->ehframe_size, di->ehframe_avma, 
+                  di->ehframe_size, di->ehframe_avma,
                   ehframe_image );
       VG_(printf)("CFI info: name %s\n",
                   di->filename );

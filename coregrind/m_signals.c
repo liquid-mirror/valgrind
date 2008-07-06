@@ -1029,7 +1029,7 @@ void push_signal_frame ( ThreadId tid, const vki_siginfo_t *siginfo, const struc
          = (Addr)(tst->altstack.ss_sp) + tst->altstack.ss_size;
       if (VG_(clo_trace_signals))
          VG_(message)(Vg_DebugMsg,
-		      "delivering signal %d (%s) to thread %d: on ALT STACK (%p-%p; %ld bytes)", 
+		      "delivering signal %d (%s) to thread %d: on ALT STACK (%p-%p; %ld bytes)",
 		      sigNo, signame(sigNo), tid, 
 		      tst->altstack.ss_sp,
 		      (UChar *)tst->altstack.ss_sp + tst->altstack.ss_size,
@@ -1873,13 +1873,13 @@ void sync_signalhandler ( Int sigNo, vki_siginfo_t *info, struct vki_ucontext *u
 	 if (VG_(extend_stack)(base, VG_(threads)[tid].client_stack_szB)) {
 	    if (VG_(clo_trace_signals))
 	       VG_(message)(Vg_DebugMsg, 
-			    "       -> extended stack base to %#lx", 
+			    "       -> extended stack base to %#lx",
                             VG_PGROUNDDN(fault));
             return; // extension succeeded, restart host (hence guest)
                     // instruction
 	 } else
 	    VG_(message)(Vg_UserMsg, 
-                         "Stack overflow in thread %d: can't grow stack to %#lx", 
+                         "Stack overflow in thread %d: can't grow stack to %#lx",
 			 tid, fault);
       }
       /* Fall into normal signal handling for all other cases */

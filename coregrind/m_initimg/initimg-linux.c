@@ -568,7 +568,7 @@ Addr setup_client_stack( void*  init_sp,
 #    endif
 
      if (0)
-        VG_(printf)("%#lx 0x%lx  %#lx 0x%lx\n", 
+        VG_(printf)("%#lx 0x%lx  %#lx 0x%lx\n",
                     resvn_start, resvn_size, anon_start, anon_size);
 
      /* Create a shrinkable reservation followed by an anonymous

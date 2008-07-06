@@ -279,7 +279,7 @@ static void discard_DebugInfo ( DebugInfo* di )
          if (curr->have_dinfo
              && (VG_(clo_verbosity) > 1 || VG_(clo_trace_redir)))
             VG_(message)(Vg_DebugMsg, 
-                         "Discarding syms at %#lx-%#lx in %s due to %s()", 
+                         "Discarding syms at %#lx-%#lx in %s due to %s()",
                          di->text_avma, 
                          di->text_avma + di->text_size,
                          curr->filename ? curr->filename : (UChar*)"???",
@@ -1947,7 +1947,7 @@ Bool consider_vars_in_frame ( /*OUT*/Char* dname1,
          DiVariable* var = (DiVariable*)VG_(indexXA)( vars, j );
          SizeT       offset;
          if (debug)
-            VG_(printf)("QQQQ:    var:name=%s %#lx-%#lx %#lx\n", 
+            VG_(printf)("QQQQ:    var:name=%s %#lx-%#lx %#lx\n",
                         var->name,arange->aMin,arange->aMax,ip);
          if (data_address_is_in_var( &offset, var, &regs, data_addr,
                                      di->data_bias )) {

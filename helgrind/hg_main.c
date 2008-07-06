@@ -1237,7 +1237,7 @@ void show_shadow_w32_for_user ( /*OUT*/Char* buf, Int nBuf, SVal w32 )
    if (is_SHVAL_ShM(w32)) {
       WordSetID tset = un_SHVAL_ShM_tset(w32);
       WordSetID lset = del_BHL( un_SHVAL_ShM_lset(w32) );
-      VG_(sprintf)(buf, "ShMod(#Tset=%ld,#Lset=%ld)", 
+      VG_(sprintf)(buf, "ShMod(#Tset=%ld,#Lset=%ld)",
                    HG_(cardinalityWS)(univ_tsets, tset),
                    HG_(cardinalityWS)(univ_lsets, lset));
    }
@@ -1245,7 +1245,7 @@ void show_shadow_w32_for_user ( /*OUT*/Char* buf, Int nBuf, SVal w32 )
    if (is_SHVAL_ShR(w32)) {
       WordSetID tset = un_SHVAL_ShR_tset(w32);
       WordSetID lset = del_BHL( un_SHVAL_ShR_lset(w32) );
-      VG_(sprintf)(buf, "ShRO(#Tset=%ld,#Lset=%ld)", 
+      VG_(sprintf)(buf, "ShRO(#Tset=%ld,#Lset=%ld)",
                    HG_(cardinalityWS)(univ_tsets, tset),
                    HG_(cardinalityWS)(univ_lsets, lset));
    }
@@ -2881,7 +2881,7 @@ void record_last_lock_lossage ( Addr ga_of_access,
 
    tl_assert(lset_old != lset_new);
 
-   if (0) VG_(printf)("XX1: %d (card %ld) -> %d (card %ld) %#lx\n", 
+   if (0) VG_(printf)("XX1: %d (card %ld) -> %d (card %ld) %#lx\n",
                       (Int)lset_old, 
                       HG_(cardinalityWS)(univ_lsets,lset_old),
                       (Int)lset_new, 
@@ -2925,7 +2925,7 @@ void record_last_lock_lossage ( Addr ga_of_access,
       it's simple. */
 
    lk = (Lock*)HG_(anyElementOfWS)( univ_lsets, lset_old );
-   if (0) VG_(printf)("lossage %ld %p\n", 
+   if (0) VG_(printf)("lossage %ld %p\n",
                       HG_(cardinalityWS)( univ_lsets, lset_old), lk );
    if (lk->appeared_at) {
       if (ga_to_lastlock == NULL)
@@ -3446,7 +3446,7 @@ void alloc_F_for_writing ( /*MOD*/SecMap* sm, /*OUT*/Word* fixp ) {
                                   * sizeof(CacheLineF);
 
    if (0)
-   VG_(printf)("SM %p: expand F array from %d to %ld\n", 
+   VG_(printf)("SM %p: expand F array from %d to %ld\n",
                sm, (Int)sm->linesF_size, new_size);
 
    for (i = 0; i < new_size; i++)
@@ -6720,7 +6720,7 @@ static void laog__add_edge ( Lock* src, Lock* dst ) {
          points.  Hence, if there is later a violation of this
          ordering, we can show the user the two places in which the
          required src-dst ordering was previously established. */
-      if (0) VG_(printf)("acquire edge %#lx %#lx\n", 
+      if (0) VG_(printf)("acquire edge %#lx %#lx\n",
                          src->guestaddr, dst->guestaddr);
       expo.src_ga = src->guestaddr;
       expo.dst_ga = dst->guestaddr;
@@ -8682,7 +8682,7 @@ static void hg_fini ( Int exitcode )
       VG_(printf)(" hbefore: %'10lu probes\n",         stats__hbefore_probes);
 
       VG_(printf)("\n");
-      VG_(printf)("        segments: %'8lu Segment objects allocated\n", 
+      VG_(printf)("        segments: %'8lu Segment objects allocated\n",
                   stats__mk_Segment);
       VG_(printf)("        locksets: %'8d unique lock sets\n",
                   (Int)HG_(cardinalityWSU)( univ_lsets ));
@@ -8691,20 +8691,20 @@ static void hg_fini ( Int exitcode )
       VG_(printf)("       univ_laog: %'8d unique lock sets\n",
                   (Int)HG_(cardinalityWSU)( univ_laog ));
 
-      VG_(printf)("L(ast)L(ock) map: %'8lu inserts (%d map size)\n", 
+      VG_(printf)("L(ast)L(ock) map: %'8lu inserts (%d map size)\n",
                   stats__ga_LL_adds,
                   (Int)(ga_to_lastlock ? HG_(sizeFM)( ga_to_lastlock ) : 0) );
 
-      VG_(printf)("  LockN-to-P map: %'8lu queries (%d map size)\n", 
+      VG_(printf)("  LockN-to-P map: %'8lu queries (%d map size)\n",
                   stats__ga_LockN_to_P_queries,
                   (Int)(yaWFM ? HG_(sizeFM)( yaWFM ) : 0) );
 
-      VG_(printf)("string table map: %'8lu queries (%d map size)\n", 
+      VG_(printf)("string table map: %'8lu queries (%d map size)\n",
                   stats__string_table_queries,
                   (Int)(string_table ? HG_(sizeFM)( string_table ) : 0) );
-      VG_(printf)("            LAOG: %'8d map size\n", 
+      VG_(printf)("            LAOG: %'8d map size\n",
                   (Int)(laog ? HG_(sizeFM)( laog ) : 0));
-      VG_(printf)(" LAOG exposition: %'8d map size\n", 
+      VG_(printf)(" LAOG exposition: %'8d map size\n",
                   (Int)(laog_exposition ? HG_(sizeFM)( laog_exposition ) : 0));
       VG_(printf)("           locks: %'8lu acquires, "
                   "%'lu releases\n",

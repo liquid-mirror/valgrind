@@ -338,7 +338,7 @@ static void mc_pp_AddrInfo ( Addr a, AddrInfo* ai, Bool maybe_gcc )
          VG_(message_no_f_c)(Vg_UserMsg,
                              "%sAddress 0x%llx is in the %t segment of %t%s",
                              xpre,
-                             (ULong)a, 
+                             (ULong)a,
                              VG_(pp_SectKind)(ai->Addr.SectKind.kind),
                              ai->Addr.SectKind.objname,
                              xpost);

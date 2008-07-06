@@ -1091,19 +1091,19 @@ static void qsort(BBCC **a, int n, int (*cmp)(BBCC**,BBCC**))
                         a+s-1-qsort_start + 0L);
 	    for (r=0;r<s;r++) {
 		pm = a+r;
-		VG_(printf)("     %3ld BB %#lx, ", 
+		VG_(printf)("     %3ld BB %#lx, ",
 			    pm-qsort_start + 0L,
                             bb_addr((*pm)->bb));
 		CLG_(print_cxt)(9, (*pm)->cxt, (*pm)->rec_index);
 	    }
 
 	    s = pd-pc+1;
-	    VG_(printf)("    Upper %ld - %ld:\n", 
+	    VG_(printf)("    Upper %ld - %ld:\n",
 			a+n-s-qsort_start + 0L,
                         a+n-1-qsort_start + 0L);
 	    for (r=0;r<s;r++) {
 		pm = a+n-s+r;
-		VG_(printf)("     %3ld BB %#lx, ", 
+		VG_(printf)("     %3ld BB %#lx, ",
 			    pm-qsort_start + 0L,
                             bb_addr((*pm)->bb));
 		CLG_(print_cxt)(9, (*pm)->cxt, (*pm)->rec_index);

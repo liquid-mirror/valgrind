@@ -122,7 +122,7 @@ void ML_(ppDiCfSI) ( XArray* /* of CfiExpr */ exprs, DiCfSI* si )
          }                                       \
       } while (0)
 
-   VG_(printf)("[%#lx .. %#lx]: ", si->base, 
+   VG_(printf)("[%#lx .. %#lx]: ", si->base,
                                si->base + (UWord)si->len - 1);
    switch (si->cfa_how) {
       case CFIC_SPREL: 
@@ -680,7 +680,7 @@ static void add_var_to_arange (
       if (!range) break;
       if (range->aMin > aMax) break;
       xxIters++;
-      if (0) VG_(printf)("have range %#lx %#lx\n", 
+      if (0) VG_(printf)("have range %#lx %#lx\n",
                          range->aMin, range->aMax);
 
       /* Sanity checks */
@@ -1273,7 +1273,7 @@ static void canonicaliseCFI ( struct _DebugInfo* di )
    }
 
    if (di->trace_cfi)
-      VG_(printf)("canonicaliseCfiSI: %d entries, %#lx .. %#lx\n", 
+      VG_(printf)("canonicaliseCfiSI: %d entries, %#lx .. %#lx\n",
                   di->cfsi_used,
 	          di->cfsi_minavma, di->cfsi_maxavma);
 

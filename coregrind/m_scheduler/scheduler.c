@@ -127,7 +127,7 @@ void VG_(print_scheduler_stats)(void)
    VG_(message)(Vg_DebugMsg,
       "scheduler: %'llu jumps (bb entries).", bbs_done );
    VG_(message)(Vg_DebugMsg,
-      "scheduler: %'llu/%'llu major/minor sched events.", 
+      "scheduler: %'llu/%'llu major/minor sched events.",
       n_scheduling_events_MAJOR, n_scheduling_events_MINOR);
    VG_(message)(Vg_DebugMsg, 
                 "   sanity: %d cheap, %d expensive checks.",
@@ -1424,7 +1424,7 @@ void do_client_request ( ThreadId tid )
                if (c1 == 0) c1 = '_';
                if (c2 == 0) c2 = '_';
 	       VG_(message)(Vg_UserMsg, "Warning:\n"
-                   "  unhandled client request: 0x%lx (%c%c+0x%lx).  Perhaps\n" 
+                   "  unhandled client request: 0x%lx (%c%c+0x%lx).  Perhaps\n"
 		   "  VG_(needs).client_requests should be set?",
 			    arg[0], c1, c2, arg[0] & 0xffff);
 	       whined = True;

@@ -567,7 +567,7 @@ void read_elf_symtab__normal(
                         is_text ? 't' : 'd',
                         i,
                         risym.addr,
-                        (Int)risym.size, 
+                        (Int)risym.size,
                         (HChar*)risym.name
             );
          }
@@ -706,7 +706,7 @@ void read_elf_symtab__ppc64_linux(
                VG_(printf)("    modify (old sz %4d)    "
                            " val %#010lx, toc %#010lx, sz %4d  %s\n",
                            old_size,
-                           prev->key.addr, 
+                           prev->key.addr,
                            prev->tocptr,
                            (Int)   prev->size, 
                            (HChar*)prev->key.name
@@ -715,9 +715,9 @@ void read_elf_symtab__ppc64_linux(
             if (modify_tocptr && di->trace_symtab) {
                VG_(printf)("    modify (upd tocptr)     "
                            " val %#010lx, toc %#010lx, sz %4d  %s\n",
-                           prev->key.addr, 
-                           prev->tocptr, 
-                           (Int)   prev->size, 
+                           prev->key.addr,
+                           prev->tocptr,
+                           (Int)   prev->size,
                            (HChar*)prev->key.name
                );
             }
@@ -739,7 +739,7 @@ void read_elf_symtab__ppc64_linux(
                            i,
                            elem->key.addr,
                            elem->tocptr,
-                           (Int)   elem->size, 
+                           (Int)   elem->size,
                            (HChar*)elem->key.name
                );
             }
@@ -770,7 +770,7 @@ void read_elf_symtab__ppc64_linux(
                      i,
                      risym.addr,
                      risym.tocptr,
-                     (Int)   risym.size, 
+                     (Int)   risym.size,
                      (HChar*)risym.name
                );
       }
@@ -1070,7 +1070,7 @@ Bool ML_(read_elf_debug_info) ( struct _DebugInfo* di )
 
    oimage = (Addr)NULL;
    if (VG_(clo_verbosity) > 1 || VG_(clo_trace_redir))
-      VG_(message)(Vg_DebugMsg, "Reading syms from %s (%#lx)", 
+      VG_(message)(Vg_DebugMsg, "Reading syms from %s (%#lx)",
                                 di->filename, di->rx_map_avma );
 
    /* mmap the object image aboard, so that we can read symbols and
@@ -1342,10 +1342,10 @@ Bool ML_(read_elf_debug_info) ( struct _DebugInfo* di )
             di->data_avma = di->rw_map_avma + foff - di->rw_map_foff;
             di->data_size = size;
             di->data_bias = di->data_avma - svma;
-            TRACE_SYMTAB("acquiring .data svma = %#lx .. %#lx\n", 
+            TRACE_SYMTAB("acquiring .data svma = %#lx .. %#lx\n",
                          di->data_svma,
                          di->data_svma + di->data_size - 1);
-            TRACE_SYMTAB("acquiring .data avma = %#lx .. %#lx\n", 
+            TRACE_SYMTAB("acquiring .data avma = %#lx .. %#lx\n",
                          di->data_avma,
                          di->data_avma + di->data_size - 1);
             TRACE_SYMTAB("acquiring .data bias = %#lx\n", di->data_bias);
@@ -1364,10 +1364,10 @@ Bool ML_(read_elf_debug_info) ( struct _DebugInfo* di )
             di->sdata_avma = di->rw_map_avma + foff - di->rw_map_foff;
             di->sdata_size = size;
             di->sdata_bias = di->sdata_avma - svma;
-            TRACE_SYMTAB("acquiring .sdata svma = %#lx .. %#lx\n", 
+            TRACE_SYMTAB("acquiring .sdata svma = %#lx .. %#lx\n",
                          di->sdata_svma,
                          di->sdata_svma + di->sdata_size - 1);
-            TRACE_SYMTAB("acquiring .sdata avma = %#lx .. %#lx\n", 
+            TRACE_SYMTAB("acquiring .sdata avma = %#lx .. %#lx\n",
                          di->sdata_avma,
                          di->sdata_avma + di->sdata_size - 1);
             TRACE_SYMTAB("acquiring .sdata bias = %#lx\n", di->sdata_bias);
@@ -1390,10 +1390,10 @@ Bool ML_(read_elf_debug_info) ( struct _DebugInfo* di )
             di->bss_size = size;
             di->bss_bias = di->bss_avma - svma;
             bss_align = alyn;
-            TRACE_SYMTAB("acquiring .bss svma = %#lx .. %#lx\n", 
+            TRACE_SYMTAB("acquiring .bss svma = %#lx .. %#lx\n",
                          di->bss_svma,
                          di->bss_svma + di->bss_size - 1);
-            TRACE_SYMTAB("acquiring .bss avma = %#lx .. %#lx\n", 
+            TRACE_SYMTAB("acquiring .bss avma = %#lx .. %#lx\n",
                          di->bss_avma,
                          di->bss_avma + di->bss_size - 1);
             TRACE_SYMTAB("acquiring .bss bias = %#lx\n", di->bss_bias);
@@ -1581,18 +1581,18 @@ Bool ML_(read_elf_debug_info) ( struct _DebugInfo* di )
       di->bss_size = bss_totsize;
       di->bss_avma = di->data_avma + (di->bss_svma - di->data_svma);
       di->bss_bias = di->data_bias;
-      TRACE_SYMTAB("kludged .bss svma = %#lx .. %#lx\n", 
+      TRACE_SYMTAB("kludged .bss svma = %#lx .. %#lx\n",
                    di->bss_svma, di->bss_svma + di->bss_size - 1);
       TRACE_SYMTAB("kludged .bss avma = %#lx .. %#lx\n",
                    di->bss_avma, di->bss_avma + di->bss_size - 1);
       TRACE_SYMTAB("kludged .bss bias = %#lx\n", di->bss_bias);
    }
 
-   if (0) VG_(printf)("YYYY text_: avma %#lx  size %ld  bias %#lx\n", 
+   if (0) VG_(printf)("YYYY text_: avma %#lx  size %ld  bias %#lx\n",
                       di->text_avma, di->text_size, di->text_bias);
 
    if (VG_(clo_verbosity) > 2 || VG_(clo_trace_redir))
-      VG_(message)(Vg_DebugMsg, "   svma %#010lx, avma %#010lx", 
+      VG_(message)(Vg_DebugMsg, "   svma %#010lx, avma %#010lx",
                                 di->text_avma - di->text_bias,
                                 di->text_avma );
 

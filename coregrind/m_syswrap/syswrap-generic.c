@@ -2193,14 +2193,14 @@ PRE(sys_mremap)
    // Nb: this is different to the glibc version described in the man pages,
    // which lacks the fifth 'new_address' argument.
    if (ARG4 & VKI_MREMAP_FIXED) {
-      PRINT("sys_mremap ( %#lx, %llu, %ld, 0x%lx, %#lx )", 
+      PRINT("sys_mremap ( %#lx, %llu, %ld, 0x%lx, %#lx )",
             ARG1, (ULong)ARG2, ARG3, ARG4, ARG5);
       PRE_REG_READ5(unsigned long, "mremap",
                     unsigned long, old_addr, unsigned long, old_size,
                     unsigned long, new_size, unsigned long, flags,
                     unsigned long, new_addr);
    } else {
-      PRINT("sys_mremap ( %#lx, %llu, %ld, 0x%lx )", 
+      PRINT("sys_mremap ( %#lx, %llu, %ld, 0x%lx )",
             ARG1, (ULong)ARG2, ARG3, ARG4);
       PRE_REG_READ4(unsigned long, "mremap",
                     unsigned long, old_addr, unsigned long, old_size,

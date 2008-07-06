@@ -608,7 +608,7 @@ void VG_(sigframe_create)( ThreadId tid,
 
    if (0)
       VG_(printf)("pushed signal frame; %%ESP now = %#lx, "
-                  "next %%EIP = %#x, status=%d\n", 
+                  "next %%EIP = %#x, status=%d\n",
 		  esp, tst->arch.vex.guest_EIP, tst->status);
 }
 
@@ -715,7 +715,7 @@ void VG_(sigframe_destroy)( ThreadId tid, Bool isRT )
    if (VG_(clo_trace_signals))
       VG_(message)(
          Vg_DebugMsg, 
-         "VG_(signal_return) (thread %d): isRT=%d valid magic; EIP=%#x", 
+         "VG_(signal_return) (thread %d): isRT=%d valid magic; EIP=%#x",
          tid, isRT, tst->arch.vex.guest_EIP);
 
    /* tell the tools */

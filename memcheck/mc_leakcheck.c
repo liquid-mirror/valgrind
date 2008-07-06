@@ -247,7 +247,7 @@ static void lc_markstack_push_WRK(Addr ptr, Int clique)
 
    if (lc_markstack[sh_no].state == Unreached) {
       if (0)
-	 VG_(printf)("pushing %#lx-%#lx\n", lc_shadows[sh_no]->data, 
+	 VG_(printf)("pushing %#lx-%#lx\n", lc_shadows[sh_no]->data,
 		     lc_shadows[sh_no]->data + lc_shadows[sh_no]->szB);
 
       tl_assert(lc_markstack[sh_no].next == -1);
@@ -259,7 +259,7 @@ static void lc_markstack_push_WRK(Addr ptr, Int clique)
 
    if (clique != -1) {
       if (0)
-	 VG_(printf)("mopup: %d: %#lx is %d\n", 
+	 VG_(printf)("mopup: %d: %#lx is %d\n",
 		     sh_no, lc_shadows[sh_no]->data, lc_markstack[sh_no].state);
 
       /* An unmarked block - add it to the clique.  Add its size to
@@ -725,7 +725,7 @@ void MC_(do_detect_memory_leaks) (
 
    if (VG_(clo_verbosity) > 0 && !VG_(clo_xml))
       VG_(message)(Vg_UserMsg, 
-                   "searching for pointers to %'d not-freed blocks.", 
+                   "searching for pointers to %'d not-freed blocks.",
                    lc_n_shadows );
 
    lc_min_mallocd_addr = lc_shadows[0]->data;

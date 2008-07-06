@@ -496,10 +496,10 @@ void HG_(ppWSUstats) ( WordSetU* wsu, HChar* name )
    VG_(printf)("   WordSet \"%s\":\n", name);
    VG_(printf)("      addTo        %10lu (%lu uncached)\n",
                wsu->n_add, wsu->n_add_uncached);
-   VG_(printf)("      delFrom      %10lu (%lu uncached)\n", 
+   VG_(printf)("      delFrom      %10lu (%lu uncached)\n",
                wsu->n_del, wsu->n_del_uncached);
    VG_(printf)("      union        %10lu\n", wsu->n_union);
-   VG_(printf)("      intersect    %10lu (%lu uncached) [nb. incl isSubsetOf]\n", 
+   VG_(printf)("      intersect    %10lu (%lu uncached) [nb. incl isSubsetOf]\n",
                wsu->n_intersect, wsu->n_intersect_uncached);
    VG_(printf)("      minus        %10lu (%lu uncached)\n",
                wsu->n_minus, wsu->n_minus_uncached);

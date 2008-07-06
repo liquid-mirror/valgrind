@@ -1532,10 +1532,10 @@ UInt VG_(get_bbs_translated) ( void )
 void VG_(print_tt_tc_stats) ( void )
 {
    VG_(message)(Vg_DebugMsg,
-      "    tt/tc: %'llu tt lookups requiring %'llu probes", 
+      "    tt/tc: %'llu tt lookups requiring %'llu probes",
       n_full_lookups, n_lookup_probes );
    VG_(message)(Vg_DebugMsg,
-      "    tt/tc: %'llu fast-cache updates, %'llu flushes", 
+      "    tt/tc: %'llu fast-cache updates, %'llu flushes",
       n_fast_updates, n_fast_flushes );
 
    VG_(message)(Vg_DebugMsg,

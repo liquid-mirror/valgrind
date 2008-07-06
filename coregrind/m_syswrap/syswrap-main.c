@@ -1301,7 +1301,7 @@ VG_(fixup_guest_state_after_syscall_interrupted)( ThreadId tid,
       (real) IP at the time of the signal, and act accordingly. */
 
    if (ip < ML_(blksys_setup) || ip >= ML_(blksys_finished)) {
-      VG_(printf)("  not in syscall (%#lx - %#lx)\n", 
+      VG_(printf)("  not in syscall (%#lx - %#lx)\n",
                   ML_(blksys_setup), ML_(blksys_finished));
       /* Looks like we weren't in a syscall at all.  Hmm. */
       vg_assert(sci->status.what != SsIdle);

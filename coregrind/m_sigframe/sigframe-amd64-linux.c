@@ -523,7 +523,7 @@ void VG_(sigframe_create)( ThreadId tid,
 
    if (0)
       VG_(printf)("pushed signal frame; %%RSP now = %#lx, "
-                  "next %%RIP = %#llx, status=%d\n", 
+                  "next %%RIP = %#llx, status=%d\n",
 		  rsp, tst->arch.vex.guest_RIP, tst->status);
 }
 
@@ -624,7 +624,7 @@ void VG_(sigframe_destroy)( ThreadId tid, Bool isRT )
    if (VG_(clo_trace_signals))
       VG_(message)(
          Vg_DebugMsg, 
-         "VG_(signal_return) (thread %d): isRT=%d valid magic; RIP=%#llx", 
+         "VG_(signal_return) (thread %d): isRT=%d valid magic; RIP=%#llx",
          tid, isRT, tst->arch.vex.guest_RIP);
 
    /* tell the tools */

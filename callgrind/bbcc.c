@@ -294,7 +294,7 @@ BBCC* new_bbcc(BB* bb)
    
    CLG_(stat).distinct_bbccs++;
 
-   CLG_DEBUG(3, "  new_bbcc(BB %#lx): %p (now %d)\n", 
+   CLG_DEBUG(3, "  new_bbcc(BB %#lx): %p (now %d)\n",
 	    bb_addr(bb), new, CLG_(stat).distinct_bbccs);
 
    return new;
