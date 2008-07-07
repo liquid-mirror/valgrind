@@ -355,7 +355,15 @@ static Int load_ELF(Int fd, const HChar* name, /*MOD*/ExeInfo* info)
    /* The kernel maps position-independent executables at TASK_SIZE*2/3;
       duplicate this behavior as close as we can. */
    if (e->e.e_type == ET_DYN && ebase == 0) {
-      ebase = VG_PGROUNDDN(info->exe_base + (info->exe_end - info->exe_base) * 2 / 3);
+      ebase = VG_PGROUNDDN(info->exe_base 
+                           + (info->exe_end - info->exe_base) * 2 / 3);
+      /* We really don't want to load PIEs at zero or too close.  It
+         works, but it's unrobust (NULL pointer reads and writes
+         become legit, which is really bad) and causes problems for
+         exp-ptrcheck, which assumes all numbers below 64k are
+         nonpointers.  So, hackily, move it above 64k. */
+      if (ebase < 0x10000)
+         ebase = 0x10000;
    }
 
    info->phnum = e->e.e_phnum;

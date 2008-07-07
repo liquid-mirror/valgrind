@@ -178,9 +178,6 @@ static void load_client ( /*OUT*/ExeInfo* info,
    }
 
    VG_(memset)(info, 0, sizeof(*info));
-   info->exe_base = VG_(client_base);
-   info->exe_end  = VG_(client_end);
-
    ret = VG_(do_exec)(exe_name, info);
 
    // The client was successfully loaded!  Continue.
