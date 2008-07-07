@@ -1386,6 +1386,8 @@ typedef
 #if defined(VGA_amd64)
 # include "libvex_guest_amd64.h"
 # define MC_SIZEOF_GUEST_STATE sizeof(VexGuestAMD64State)
+# define PC_OFF_FS_ZERO offsetof(VexGuestAMD64State,guest_FS_ZERO)
+# define PC_SZB_FS_ZERO sizeof( ((VexGuestAMD64State*)0)->guest_FS_ZERO)
 #endif
 
 /* See description on definition of type IntRegInfo. */
@@ -1505,7 +1507,7 @@ static void get_IntRegInfo ( /*OUT*/IntRegInfo* iii, Int offset, Int szB )
    if (o == GOF(R14)     && is421) {         o -= 0; goto contains_o; }
    if (o == GOF(R15)     && is421) {         o -= 0; goto contains_o; }
 
-   if (o == GOF(FS_ZERO) && is8) goto none;
+   if (o == GOF(FS_ZERO) && is8) goto exactly1;
 
    if (o == GOF(SSEROUND) && is8) goto none;
    if (o == GOF(XMM0)  && isXmmF) goto none;
@@ -1764,6 +1766,8 @@ void post_reg_write_clientcall(ThreadId tid, OffT guest_state_offset,
 /*--- System calls                                                 ---*/
 /*--------------------------------------------------------------------*/
 
+static __inline__ VG_REGPARM(1) Seg nonptr_or_unknown(UWord x); /*fwds*/
+
 static void pre_syscall ( ThreadId tid, UInt syscallno )
 {
 //zz #if 0
@@ -1799,9 +1803,6 @@ static void post_syscall ( ThreadId tid, UInt syscallno, SysRes res )
       /* For the most part, syscalls don't return pointers.  So set
          the return shadow to unknown. */
       case __NR_access:
-#     if defined(__NR_arch_prctl)
-      case __NR_arch_prctl:
-#     endif
       case __NR_clock_gettime:
       case __NR_close:
 #     if defined(__NR_connect)
@@ -1897,6 +1898,18 @@ static void post_syscall ( ThreadId tid, UInt syscallno, SysRes res )
       case __NR_writev:
          VG_(set_syscall_return_shadows)( tid, (UWord)NONPTR, 0 );
          break;
+
+#     if defined(__NR_arch_prctl)
+      case __NR_arch_prctl: {
+         put_guest_intreg(
+            tid, 1/*shadowno*/, PC_OFF_FS_ZERO, PC_SZB_FS_ZERO,
+            (UWord)
+            nonptr_or_unknown( 
+               get_guest_intreg( tid, 0/*shadowno*/,
+                                 PC_OFF_FS_ZERO, PC_SZB_FS_ZERO )));
+         VG_(set_syscall_return_shadows)( tid, (UWord)NONPTR, 0 );
+      }
+#     endif
 
 //zz    // These ones don't return a pointer, so don't do anything -- already set
 //zz    // the segment to UNKNOWN in post_reg_write_default().
@@ -2234,15 +2247,29 @@ checkSeg(mptr_vseg);
 // ------------------ Store handlers ------------------ //
 
 /* On 32 bit targets, we will use:
-      check_store1 check_store2 check_store4W
+      check_store1 check_store2 check_store4_P
    On 64 bit targets, we will use:
-      check_store1 check_store2 check_store4 check_store8W
+      check_store1 check_store2 check_store4 check_store8_P
 */
+
+/* Apply nonptr_or_unknown to all the words intersecting
+   [a, a+len). */
+static void pessimise_words_intersecting ( Addr a, SizeT len )
+{
+   const SizeT wszB = sizeof(UWord);
+   Addr wfirst = VG_ROUNDDN(a,       wszB);
+   Addr wlast  = VG_ROUNDDN(a+len-1, wszB);
+   Addr a2;
+   tl_assert(wfirst <= wlast);
+   for (a2 = wfirst ; a2 <= wlast; a2 += wszB) {
+      set_mem_vseg( a2, nonptr_or_unknown( *(UWord*)a2 ));
+   }
+}
 
 // This handles 64 bit stores on 64 bit targets.  It must
 // not be called on 32 bit targets.
 static VG_REGPARM(3)
-void check_store8W(Addr m, Seg mptr_vseg, UWord t, Seg t_vseg)
+void check_store8_P(Addr m, Seg mptr_vseg, UWord t, Seg t_vseg)
 {
    tl_assert(sizeof(UWord) == 8); /* DO NOT REMOVE */
 checkSeg(t_vseg);
@@ -2254,17 +2281,14 @@ checkSeg(mptr_vseg);
       set_mem_vseg( m, t_vseg );
    } else {
       // straddling two words
-      m = VG_ROUNDDN(m,8);
-      set_mem_vseg( m, nonptr_or_unknown( *(ULong*)m ) );
-      m += 8;
-      set_mem_vseg( m, nonptr_or_unknown( *(ULong*)m ) );
+      pessimise_words_intersecting(m, 8);
    }
 }
 
 // This handles 32 bit stores on 32 bit targets.  It must
 // not be called on 64 bit targets.
 static VG_REGPARM(3)
-void check_store4W(Addr m, Seg mptr_vseg, UWord t, Seg t_vseg)
+void check_store4_P(Addr m, Seg mptr_vseg, UWord t, Seg t_vseg)
 {
    tl_assert(sizeof(UWord) == 4); /* DO NOT REMOVE */
 checkSeg(t_vseg);
@@ -2276,10 +2300,7 @@ checkSeg(mptr_vseg);
       set_mem_vseg( m, t_vseg );
    } else {
       // straddling two words
-      m = VG_ROUNDDN(m,4);
-      set_mem_vseg( m, nonptr_or_unknown( *(UInt*)m ) );
-      m += 4;
-      set_mem_vseg( m, nonptr_or_unknown( *(UInt*)m ) );
+      pessimise_words_intersecting(m, 4);
    }
 }
 
@@ -2293,19 +2314,7 @@ checkSeg(mptr_vseg);
    check_load_or_store(/*is_write*/True, m, 4, mptr_vseg);
    // Actually *do* the STORE here  (Nb: cast must be to 4-byte type!)
    *(UInt*)m = t;
-   if (0 == (m & 4)) {
-      // within one word.  This happens if the address ends in 
-      // 000, 001, 010, 011.  If it ends in 100, 101, 110, 111
-      // then it overlaps two adjacent 64 bit words.
-      m = VG_ROUNDDN(m,8);
-      set_mem_vseg( m, nonptr_or_unknown( *(ULong*)m ) );
-   } else {
-      // straddling two words
-      m = VG_ROUNDDN(m,8);
-      set_mem_vseg( m, nonptr_or_unknown( *(ULong*)m ) );
-      m += 8;
-      set_mem_vseg( m, nonptr_or_unknown( *(ULong*)m ) );
-   }
+   pessimise_words_intersecting(m, 4);
 }
 
 // Used for both 32 bit and 64 bit targets.
@@ -2316,33 +2325,7 @@ checkSeg(mptr_vseg);
    check_load_or_store(/*is_write*/True, m, 2, mptr_vseg);
    // Actually *do* the STORE here  (Nb: cast must be to 2-byte type!)
    *(UShort*)m = t;
-   if (sizeof(UWord) == 4) {
-      /* 32-bit host */
-     if (3 != (m & 3)) {
-         // within one word
-         m = VG_ROUNDDN(m,4);
-         set_mem_vseg( m, nonptr_or_unknown( *(UInt*)m ) );
-      } else {
-         // straddling two words
-         m = VG_ROUNDDN(m,4);
-         set_mem_vseg( m, nonptr_or_unknown( *(UInt*)m ) );
-         m += 4;
-         set_mem_vseg( m, nonptr_or_unknown( *(UInt*)m ) );
-      }
-   } else {
-      /* 64-bit host */
-      if (7 != (m & 7)) {
-         // within one word
-         m = VG_ROUNDDN(m,8);
-         set_mem_vseg( m, nonptr_or_unknown( *(ULong*)m ) );
-      } else {
-         // straddling two words
-         m = VG_ROUNDDN(m,8);
-         set_mem_vseg( m, nonptr_or_unknown( *(ULong*)m ) );
-         m += 8;
-         set_mem_vseg( m, nonptr_or_unknown( *(ULong*)m ) );
-      }
-   }
+   pessimise_words_intersecting(m, 2);
 }
 
 // Used for both 32 bit and 64 bit targets.
@@ -2353,15 +2336,7 @@ checkSeg(mptr_vseg);
    check_load_or_store(/*is_write*/True, m, 1, mptr_vseg);
    // Actually *do* the STORE here  (Nb: cast must be to 1-byte type!)
    *(UChar*)m = t;
-   if (sizeof(UWord) == 4) {
-      /* 32-bit host */
-      m = VG_ROUNDDN(m,4);
-      set_mem_vseg( m, nonptr_or_unknown( *(UInt*)m ) );
-   } else {
-      /* 64-bit host */
-      m = VG_ROUNDDN(m,8);
-      set_mem_vseg( m, nonptr_or_unknown( *(ULong*)m ) );
-   }
+   pessimise_words_intersecting(m, 1);
 }
 
 //zz 
@@ -3540,8 +3515,8 @@ static void schemeS ( PCEnv* pce, IRStmt* st )
          if (pce->gWordTy == Ity_I32) {
             /* 32 bit host/guest (cough, cough) */
             switch (d_ty) {
-               case Ity_I32: h_fn = &check_store4W; 
-                             h_nm = "check_store4W"; break;
+               case Ity_I32: h_fn = &check_store4_P; 
+                             h_nm = "check_store4_P"; break;
                case Ity_I16: h_fn = &check_store2;
                              h_nm = "check_store2"; break;
                case Ity_I8:  h_fn = &check_store1;
@@ -3560,8 +3535,8 @@ static void schemeS ( PCEnv* pce, IRStmt* st )
          } else {
             /* 64 bit host/guest (cough, cough) */
             switch (d_ty) {
-               case Ity_I64: h_fn = &check_store8W; 
-                             h_nm = "check_store8W"; break;
+               case Ity_I64: h_fn = &check_store8_P; 
+                             h_nm = "check_store8_P"; break;
                case Ity_I32: h_fn = &check_store4; 
                              h_nm = "check_store4"; break;
                case Ity_I16: h_fn = &check_store2; 
