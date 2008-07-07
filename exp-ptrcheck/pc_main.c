@@ -44,6 +44,12 @@
 
 // FIXME: looks_like_a_pointer
 
+// FIXME: post_reg_write_demux(Vg_CoreSysCall) is redundant w.r.t.
+// the default 'NONPTR' behaviour of post_syscall.  post_reg_write_demux
+// is called first, then post_syscall.
+
+// FIXME: deal with Ist_PutI, Iex_GetI kludges
+
 // XXX: recycle freed segments
 
 //--------------------------------------------------------------
@@ -1397,8 +1403,9 @@ static void get_IntRegInfo ( /*OUT*/IntRegInfo* iii, Int offset, Int szB )
 #  define GOF(_fieldname) \
       (offsetof(VexGuestX86State,guest_##_fieldname))
 
-   Bool is4  = sz == 4;
-   Bool is21 = sz == 2 || sz == 1;
+   Bool isXmmF = sz == 16 || sz == 8 || sz == 4;
+   Bool is4    = sz == 4;
+   Bool is21   = sz == 2 || sz == 1;
    tl_assert(sz > 0);
    tl_assert(host_is_little_endian());
    if (o == GOF(EAX)     && is4) goto exactly1;
@@ -1429,6 +1436,14 @@ static void get_IntRegInfo ( /*OUT*/IntRegInfo* iii, Int offset, Int szB )
    if (o == GOF(GS) && sz == 2) goto none;
    if (o == GOF(LDT) && is4) goto none;
    if (o == GOF(GDT) && is4) goto none;
+
+   if (o == GOF(IDFLAG)  && is4) goto none;
+   if (o == GOF(ACFLAG)  && is4) goto none;
+   if (o == GOF(EMWARN)  && is4) goto none;
+
+   if (o == GOF(XMM0) && isXmmF) goto none;
+
+   if (o == GOF(FTOP) && is4) goto none;
 
    VG_(printf)("get_IntRegInfo(x86):failing on (%d,%d)\n", o, sz);
    tl_assert(0);
@@ -1499,6 +1514,7 @@ static void get_IntRegInfo ( /*OUT*/IntRegInfo* iii, Int offset, Int szB )
    if (o == GOF(XMM3)  && isXmmF) goto none;
    if (o == GOF(XMM4)  && isXmmF) goto none;
    if (o == GOF(XMM5)  && isXmmF) goto none;
+   if (o == GOF(XMM6)  && isXmmF) goto none;
    if (o == GOF(XMM7)  && isXmmF) goto none;
    if (o == GOF(XMM8)  && isXmmF) goto none;
    if (o == GOF(XMM9)  && isXmmF) goto none;
@@ -1633,6 +1649,7 @@ void post_reg_write_demux ( CorePart part, ThreadId tid,
          init_shadow_registers(tid);
          break;
       case Vg_CoreSysCall:
+         if (0) VG_(printf)("ZZZZZZZ p_r_w    -> NONPTR\n");
          post_reg_write_nonptr( tid, guest_state_offset, size );
          break;
       case Vg_CoreClientReq:
@@ -1814,6 +1831,9 @@ static void post_syscall ( ThreadId tid, UInt syscallno, SysRes res )
 #     if defined(__NR_socket)
       case __NR_socket:
 #     endif
+#     if defined(__NR_socketcall)
+      case __NR_socketcall: /* the nasty x86-linux socket multiplexor */
+#     endif
       case __NR_rt_sigaction:
       case __NR_rt_sigprocmask:
       case __NR_stat:
@@ -1828,13 +1848,24 @@ static void post_syscall ( ThreadId tid, UInt syscallno, SysRes res )
          VG_(set_syscall_return_shadows)( tid, (UWord)UNKNOWN, 0 );
          break;
 
-      /* These ones definitely don't return pointers. */
+      /* These ones definitely don't return pointers.  They're not
+         particularly grammatical, either. */
+#     if defined(__NR__llseek)
+      case __NR__llseek:
+#     endif
+      case __NR_chdir:
+      case __NR_clock_getres:
       case __NR_fchmod:
       case __NR_fchown:
       case __NR_fdatasync:
+#     if defined(__NR_fcntl64)
+      case __NR_fcntl64:
+#     endif
+      case __NR_fstatfs:
       case __NR_getegid:
       case __NR_geteuid:
       case __NR_getgid:
+      case __NR_getppid:
 #     if defined(__NR_getsockopt)
       case __NR_getsockopt:
 #     endif
@@ -1843,6 +1874,9 @@ static void post_syscall ( ThreadId tid, UInt syscallno, SysRes res )
       case __NR_kill:
       case __NR_link:
       case __NR_lseek:
+#     if defined(__NR_lstat64)
+      case __NR_lstat64:
+#     endif
       case __NR_madvise:
       case __NR_pipe:
       case __NR_poll:
@@ -1850,7 +1884,13 @@ static void post_syscall ( ThreadId tid, UInt syscallno, SysRes res )
       case __NR_readlink:
       case __NR_readv:
       case __NR_rename:
+      case __NR_sched_get_priority_max:
+      case __NR_sched_get_priority_min:
+      case __NR_sched_getparam:
+      case __NR_sched_getscheduler:
       case __NR_select:
+      case __NR_setrlimit:
+      case __NR_statfs:
       case __NR_time:
       case __NR_umask:
       case __NR_unlink:
@@ -1997,6 +2037,7 @@ static void post_syscall ( ThreadId tid, UInt syscallno, SysRes res )
       if (res.isError) {
          // mmap() had an error, return value is a small negative integer
          VG_(set_syscall_return_shadows)( tid, (UWord)NONPTR, 0 );
+         if (0) VG_(printf)("ZZZZZZZ mmap res -> NONPTR\n");
       } else {
          // We remembered the last added segment; make sure it's the
          // right one.
@@ -2005,6 +2046,7 @@ static void post_syscall ( ThreadId tid, UInt syscallno, SysRes res )
          VG_(set_return_from_syscall_shadow)( tid, (UInt)last_seg_added );
          #endif
          VG_(set_syscall_return_shadows)( tid, (UWord)UNKNOWN, 0 );
+         if (0) VG_(printf)("ZZZZZZZ mmap res -> UNKNOWN\n");
       }
       break;
 //zz    case 163:
@@ -2036,7 +2078,7 @@ static __inline__ Bool looks_like_a_pointer(Addr a)
       return (a > 0x01000000UL && a < 0xFF000000UL);
    } else {
      //return (a > 0x01000000UL && a < 0xFF00000000000000UL);
-            return (a > 0x100000UL && a < 0xFF00000000000000UL);
+            return (a >= 0x10000UL && a < 0xFF00000000000000UL);
    }
 }
 
@@ -2116,7 +2158,16 @@ checkSeg(mptr_vseg);
       check_load1 check_load2 check_load4W
    On 64 bit targets, we will use:
       check_load1 check_load2 check_load4 check_load8W
+      check_load16 (for xmm reads)
 */
+
+// This handles 128 bit loads on both 32 bit and 64 bit targets.
+static VG_REGPARM(2)
+void check_load16(Addr m, Seg mptr_vseg)
+{
+checkSeg(mptr_vseg);
+   check_load_or_store(/*is_write*/False, m, 16, mptr_vseg);
+}
 
 // This handles 64 bit loads on 64 bit targets.  It must
 // not be called on 32 bit targets.
@@ -3221,6 +3272,7 @@ void instrument_arithop ( PCEnv* pce,
          case Iop_1Uto32: goto n32;
          case Iop_8Uto32: goto n32;
          case Iop_8Sto32: goto n32;
+         case Iop_Clz32:  goto n32;
          n32:
             assign( 'I', pce, dstv, mkU32( (UInt)NONPTR ));
             break;
@@ -3427,6 +3479,10 @@ static void schemeS ( PCEnv* pce, IRStmt* st )
          stmt( 'C', pce, st );
          break;
 
+      case Ist_PutI:
+         stmt( 'C', pce, st );
+         break;
+
       case Ist_Put: {
          /* PUT(offset) = atom */
          /* 3 cases:
@@ -3593,7 +3649,7 @@ static void schemeS ( PCEnv* pce, IRStmt* st )
                                    h_nm = "check_load2"; break;
                      case Ity_I8:  h_fn = &check_load1;
                                    h_nm = "check_load1"; break;
-                     default: tl_assert(0);
+                     default: ppIRType(e_ty); tl_assert(0);
                   }
                   addrv = schemeEw_Atom( pce, addr );
                   if (e_ty == Ity_I32) {
@@ -3606,7 +3662,10 @@ static void schemeS ( PCEnv* pce, IRStmt* st )
                } else {
                   /* 64 bit host/guest (cough, cough) */
                   switch (e_ty) {
-                     case Ity_F64: /* a hack: check_load8W's result ignored */
+                     case Ity_V128: h_fn = &check_load16;
+                                    h_nm = "check_load16"; break;
+                     case Ity_F64: /* a hack: check_load8W's
+                                      result is ignored */
                      case Ity_I64: h_fn = &check_load8W;
                                    h_nm = "check_load8W"; break;
                      case Ity_F32:
@@ -3629,6 +3688,12 @@ static void schemeS ( PCEnv* pce, IRStmt* st )
                }
                /* copy the original -- must happen after the helper call */
                stmt( 'C', pce, st );
+               break;
+            }
+
+            case Iex_GetI: {
+               stmt( 'C', pce, st );
+               if (isWord) goto unhandled;
                break;
             }
 
