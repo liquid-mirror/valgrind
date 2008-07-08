@@ -119,7 +119,7 @@ struct _ISList {
 // Miscellaneous
 //-------------------------------------------------------------------
 
-#define MAX_FORWARD  32         // Maximum number of forward pointers
+#define MAX_FORWARD  (8*sizeof(Addr)) // Maximum number of forward pointers
 
 static void print_Addr(Addr a)
 {
@@ -366,7 +366,7 @@ static INode* INode__construct(Interval* I)
    return o;
 }
 
-// Nb: Intervals must be freeed elsewhære, because there are possibly
+// Nb: Intervals must be freed elsewhere, because there are possibly
 // multiple pointers to each Interval in the ISList;  freeing them here
 // could cause double-freeing.
 static void INode__destruct(INode* o)
@@ -729,7 +729,6 @@ static void ISList__adjustMarkersOnInsert(ISList* o, ISNode* x,
    // the top edge coming into x, but never higher.
 
    IList__empty(&promoted);
-   //tl_assert(x); tl_assert(update); VG_(printf)("PREL %d %p\n",i, update[i]);
    for (i = 0; i < x->topLevel && !ISNode__isHeader(update[i+1]); i++)
    {
       IList__copy(&tempMarkList, update[i]->markers[i]);
@@ -772,7 +771,6 @@ static void ISList__adjustMarkersOnInsert(ISList* o, ISNode* x,
       // add newPromoted to promoted and make newPromoted empty
       IList__copy(&promoted, &newPromoted);
       IList__empty(&newPromoted);     
-      //tl_assert(x); tl_assert(update); VG_(printf)("IN-L %d %p\n",i, update[i]);
    }
 
    /* Assertion:  i=x->level()-1 OR update[i+1] is the header.
