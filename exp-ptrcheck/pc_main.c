@@ -49,6 +49,10 @@
 // is called first, then post_syscall.
 
 // FIXME: deal with Ist_PutI, Iex_GetI kludges
+// PutI kludge: it is assumed that PutIs are to unshadowed areas, so
+// no instrumentation is generated -- can silently generate wrong
+// instrumentation
+// GetI kludge: is at least safe; will abort in unhandled cases
 
 // XXX: recycle freed segments
 
@@ -962,7 +966,7 @@ static UInt update_Error_extra ( Error* err )
          return sizeof(LoadStoreExtra);
       }
       case ArithErr:
-         return 0;
+         return sizeof(ArithExtra);
       case SysParamErr:
          return sizeof(SysParamExtra);
       default:
@@ -1525,6 +1529,16 @@ static void get_IntRegInfo ( /*OUT*/IntRegInfo* iii, Int offset, Int szB )
    if (o == GOF(XMM9)  && isXmmF) goto none;
    if (o == GOF(XMM10) && isXmmF) goto none;
    if (o == GOF(XMM11) && isXmmF) goto none;
+   if (o == GOF(XMM12) && isXmmF) goto none;
+   if (o == GOF(XMM13) && isXmmF) goto none;
+   if (o == GOF(XMM14) && isXmmF) goto none;
+   if (o == GOF(XMM15) && isXmmF) goto none;
+
+   if (o == GOF(FPROUND) && is8) goto none;
+   if (o == GOF(EMWARN) && sz == 4) goto none;
+   if (o == GOF(FTOP) && sz == 4) goto none;
+   if (o == GOF(FPTAG) && sz == 8) goto none;
+   if (o == GOF(FC3210) && sz == 8) goto none;
 
    VG_(printf)("get_IntRegInfo(amd64):failing on (%d,%d)\n", o, sz);
    tl_assert(0);
@@ -1891,8 +1905,12 @@ static void post_syscall ( ThreadId tid, UInt syscallno, SysRes res )
       case __NR_sched_getscheduler:
       case __NR_select:
       case __NR_setrlimit:
+#     if defined(__NR_shutdown)
+      case __NR_shutdown:
+#     endif
       case __NR_statfs:
       case __NR_time:
+      case __NR_truncate:
       case __NR_umask:
       case __NR_unlink:
       case __NR_writev:
@@ -2168,10 +2186,18 @@ checkSeg(mptr_vseg);
 // ------------------ Load handlers ------------------ //
 
 /* On 32 bit targets, we will use:
-      check_load1 check_load2 check_load4W
+      check_load1 check_load2 check_load4_P
    On 64 bit targets, we will use:
-      check_load1 check_load2 check_load4 check_load8W
+      check_load1 check_load2 check_load4 check_load8_P
+      check_load8 (64-bit FP reads)
       check_load16 (for xmm reads)
+
+   A "_P" handler reads a pointer from memory, and so returns a value
+   to the generated code -- the pointer's shadow value.  That implies
+   that check_load4_P is only to be called on a 32 bit host and
+   check_load8_P is only to be called on a 64 bit host.  For all other
+   cases no shadow value is returned; we merely check that the pointer
+   (m) matches the block described by its shadow value (mptr_vseg).
 */
 
 // This handles 128 bit loads on both 32 bit and 64 bit targets.
@@ -2182,11 +2208,20 @@ checkSeg(mptr_vseg);
    check_load_or_store(/*is_write*/False, m, 16, mptr_vseg);
 }
 
+// This handles 64 bit FP-or-otherwise-nonpointer loads on both
+// 32 bit and 64 bit targets.
+static VG_REGPARM(2)
+void check_load8(Addr m, Seg mptr_vseg)
+{
+checkSeg(mptr_vseg);
+   check_load_or_store(/*is_write*/False, m, 8, mptr_vseg);
+}
+
 // This handles 64 bit loads on 64 bit targets.  It must
 // not be called on 32 bit targets.
 // return m.vseg
 static VG_REGPARM(2)
-Seg check_load8W(Addr m, Seg mptr_vseg)
+Seg check_load8_P(Addr m, Seg mptr_vseg)
 {
    Seg vseg;
    tl_assert(sizeof(UWord) == 8); /* DO NOT REMOVE */
@@ -2204,7 +2239,7 @@ checkSeg(mptr_vseg);
 // not be called on 64 bit targets.
 // return m.vseg
 static VG_REGPARM(2)
-Seg check_load4W(Addr m, Seg mptr_vseg)
+Seg check_load4_P(Addr m, Seg mptr_vseg)
 {
    Seg vseg;
    tl_assert(sizeof(UWord) == 4); /* DO NOT REMOVE */
@@ -2250,11 +2285,20 @@ checkSeg(mptr_vseg);
       check_store1 check_store2 check_store4_P
    On 64 bit targets, we will use:
       check_store1 check_store2 check_store4 check_store8_P
-*/
+
+   A "_P" handler writes a pointer to memory, and so has an extra
+   argument -- the pointer's shadow value.  That implies that
+   check_store4_P is only to be called on a 32 bit host and
+   check_store8_P is only to be called on a 64 bit host.  For all
+   other cases, and for the misaligned _P cases, the strategy is to
+   let the store go through, and then snoop around with
+   nonptr_or_unknown to fix up the shadow values of any affected
+   words. */
 
 /* Apply nonptr_or_unknown to all the words intersecting
    [a, a+len). */
-static void pessimise_words_intersecting ( Addr a, SizeT len )
+static VG_REGPARM(2)
+void nonptr_or_unknown_range ( Addr a, SizeT len )
 {
    const SizeT wszB = sizeof(UWord);
    Addr wfirst = VG_ROUNDDN(a,       wszB);
@@ -2264,6 +2308,37 @@ static void pessimise_words_intersecting ( Addr a, SizeT len )
    for (a2 = wfirst ; a2 <= wlast; a2 += wszB) {
       set_mem_vseg( a2, nonptr_or_unknown( *(UWord*)a2 ));
    }
+}
+
+// This handles 128 bit stores on 64 bit targets.  The
+// store data is passed in 2 pieces, the most significant
+// bits first.
+static VG_REGPARM(3)
+void check_store16_msb8B_lsb8B(Addr m, Seg mptr_vseg,
+                               UWord msb8B, UWord lsb8B)
+{
+   tl_assert(sizeof(UWord) == 8); /* DO NOT REMOVE */
+   // Actually *do* the STORE here
+   if (host_is_little_endian()) {
+      // FIXME: aren't we really concerned whether the guest
+      // is little endian, not whether the host is?
+      *(UWord*)(m + 0) = lsb8B;
+      *(UWord*)(m + 8) = msb8B;
+   } else {
+      tl_assert(0);
+   }
+   nonptr_or_unknown_range(m, 16);
+}
+
+// This handles 64 bit non pointer stores on 64 bit targets.
+// It must not be called on 32 bit targets.
+static VG_REGPARM(3)
+void check_store8_all8B(Addr m, Seg mptr_vseg, UWord all8B)
+{
+   tl_assert(sizeof(UWord) == 8); /* DO NOT REMOVE */
+   // Actually *do* the STORE here
+   *(UWord*)m = all8B;
+   nonptr_or_unknown_range(m, 8);
 }
 
 // This handles 64 bit stores on 64 bit targets.  It must
@@ -2281,7 +2356,7 @@ checkSeg(mptr_vseg);
       set_mem_vseg( m, t_vseg );
    } else {
       // straddling two words
-      pessimise_words_intersecting(m, 8);
+      nonptr_or_unknown_range(m, 8);
    }
 }
 
@@ -2300,7 +2375,7 @@ checkSeg(mptr_vseg);
       set_mem_vseg( m, t_vseg );
    } else {
       // straddling two words
-      pessimise_words_intersecting(m, 4);
+      nonptr_or_unknown_range(m, 4);
    }
 }
 
@@ -2314,7 +2389,7 @@ checkSeg(mptr_vseg);
    check_load_or_store(/*is_write*/True, m, 4, mptr_vseg);
    // Actually *do* the STORE here  (Nb: cast must be to 4-byte type!)
    *(UInt*)m = t;
-   pessimise_words_intersecting(m, 4);
+   nonptr_or_unknown_range(m, 4);
 }
 
 // Used for both 32 bit and 64 bit targets.
@@ -2325,7 +2400,7 @@ checkSeg(mptr_vseg);
    check_load_or_store(/*is_write*/True, m, 2, mptr_vseg);
    // Actually *do* the STORE here  (Nb: cast must be to 2-byte type!)
    *(UShort*)m = t;
-   pessimise_words_intersecting(m, 2);
+   nonptr_or_unknown_range(m, 2);
 }
 
 // Used for both 32 bit and 64 bit targets.
@@ -2336,7 +2411,7 @@ checkSeg(mptr_vseg);
    check_load_or_store(/*is_write*/True, m, 1, mptr_vseg);
    // Actually *do* the STORE here  (Nb: cast must be to 1-byte type!)
    *(UChar*)m = t;
-   pessimise_words_intersecting(m, 1);
+   nonptr_or_unknown_range(m, 1);
 }
 
 //zz 
@@ -3349,11 +3424,20 @@ void instrument_arithop ( PCEnv* pce,
    }
 }
 
+static 
+void gen_call_nonptr_or_unknown_range ( PCEnv* pce,
+                                        IRAtom* addr, IRAtom* len )
+{
+   gen_dirty_v_WW( pce, 
+                   &nonptr_or_unknown_range,
+                   "nonptr_or_unknown_range",
+                   addr, len );
+}
 
 /* iii describes zero or more non-exact integer register updates.  For
    each one, generate IR to get the containing register, apply
    nonptr_or_unknown to it, and write it back again. */
-static void do_nonptr_or_unknown_for_III( PCEnv* pce, IntRegInfo* iii )
+static void gen_nonptr_or_unknown_for_III( PCEnv* pce, IntRegInfo* iii )
 {
    Int i;
    tl_assert(iii && iii->n_offsets >= 0);
@@ -3426,7 +3510,6 @@ static void schemeS ( PCEnv* pce, IRStmt* st )
                                               + pce->guest_state_sizeB,
                                            mkexpr(a2) ));
             } else {
-               tl_assert(0); /* awaiting test case */
                /* when == 0: case (3): no instrumentation needed */
                /* when > 0: case (2) .. complex case.  Fish out the
                   stored value for the whole register, heave it
@@ -3434,12 +3517,16 @@ static void schemeS ( PCEnv* pce, IRStmt* st )
                   shadow value. */
                tl_assert(iii.n_offsets >= 0 
                          && iii.n_offsets <= N_INTREGINFO_OFFSETS);
-               do_nonptr_or_unknown_for_III( pce, &iii );
+               gen_nonptr_or_unknown_for_III( pce, &iii );
             }
          } /* for (i = 0; i < di->nFxState; i++) */
-         /* punt on memory outputs */
-         if (di->mFx != Ifx_None)
-            goto unhandled;
+         /* finally, deal with memory outputs */
+         if (di->mFx != Ifx_None) {
+            tl_assert(di->mAddr && isIRAtom(di->mAddr));
+            tl_assert(di->mSize > 0);
+            gen_call_nonptr_or_unknown_range( pce, di->mAddr,
+                                              mkIRExpr_HWord(di->mSize));
+         }
          break;
       }
 
@@ -3456,6 +3543,10 @@ static void schemeS ( PCEnv* pce, IRStmt* st )
 
       case Ist_PutI:
          stmt( 'C', pce, st );
+         if (st->Ist.PutI.descr->elemTy == pce->gWordTy)
+            goto unhandled;
+         /* If the element type isn't pointer-capable, we assume
+            there's nothing to be done. */
          break;
 
       case Ist_Put: {
@@ -3489,7 +3580,7 @@ static void schemeS ( PCEnv* pce, IRStmt* st )
                value. */
             tl_assert(iii.n_offsets >= 0 
                       && iii.n_offsets <= N_INTREGINFO_OFFSETS);
-            do_nonptr_or_unknown_for_III( pce, &iii );
+            gen_nonptr_or_unknown_for_III( pce, &iii );
          }
          break;
       } /* case Ist_Put */
@@ -3511,9 +3602,9 @@ static void schemeS ( PCEnv* pce, IRStmt* st )
          IRType  d_ty  = typeOfIRExpr(pce->bb->tyenv, data);
          HChar*  h_nm  = NULL;
          void*   h_fn  = NULL;
-         IRExpr* addrv = NULL;
+         IRExpr* addrv = schemeEw_Atom( pce, addr );
          if (pce->gWordTy == Ity_I32) {
-            /* 32 bit host/guest (cough, cough) */
+            /* ------ 32 bit host/guest (cough, cough) ------ */
             switch (d_ty) {
                case Ity_I32: h_fn = &check_store4_P; 
                              h_nm = "check_store4_P"; break;
@@ -3523,7 +3614,6 @@ static void schemeS ( PCEnv* pce, IRStmt* st )
                              h_nm = "check_store1"; break;
                default: tl_assert(0);
             }
-            addrv = schemeEw_Atom( pce, addr );
             if (d_ty == Ity_I32) {
                IRExpr* datav = schemeEw_Atom( pce, data );
                gen_dirty_v_WWWW( pce, h_fn, h_nm, addr, addrv,
@@ -3533,26 +3623,60 @@ static void schemeS ( PCEnv* pce, IRStmt* st )
                                      uwiden_to_host_word( pce, data ));
             }
          } else {
-            /* 64 bit host/guest (cough, cough) */
+            /* ------ 64 bit host/guest (cough, cough) ------ */
             switch (d_ty) {
-               case Ity_I64: h_fn = &check_store8_P; 
-                             h_nm = "check_store8_P"; break;
-               case Ity_I32: h_fn = &check_store4; 
-                             h_nm = "check_store4"; break;
-               case Ity_I16: h_fn = &check_store2; 
-                             h_nm = "check_store2"; break;
-               case Ity_I8:  h_fn = &check_store1;
-                             h_nm = "check_store1"; break;
-               default: ppIRType(d_ty); tl_assert(0);
-            }
-            addrv = schemeEw_Atom( pce, addr );
-            if (d_ty == Ity_I64) {
-               IRExpr* datav = schemeEw_Atom( pce, data );
-               gen_dirty_v_WWWW( pce, h_fn, h_nm, addr, addrv,
-                                                  data, datav );
-            } else {
-               gen_dirty_v_WWW( pce, h_fn, h_nm, addr, addrv,
-                                     uwiden_to_host_word( pce, data ));
+               /* Integer word case */
+               case Ity_I64: {
+                  IRExpr* datav = schemeEw_Atom( pce, data );
+                  gen_dirty_v_WWWW( pce,
+                                    &check_store8_P, "check_store8_P",
+                                    addr, addrv, data, datav );
+                  break;
+               }
+               /* Integer subword cases */
+               case Ity_I32:
+                  gen_dirty_v_WWW( pce,
+                                   &check_store4, "check_store4",
+                                   addr, addrv,
+                                   uwiden_to_host_word( pce, data ));
+                  break;
+               case Ity_I16:
+                  gen_dirty_v_WWW( pce,
+                                   &check_store2, "check_store2",
+                                   addr, addrv,
+                                   uwiden_to_host_word( pce, data ));
+                  break;
+               case Ity_I8:
+                  gen_dirty_v_WWW( pce,
+                                   &check_store1, "check_store1",
+                                   addr, addrv,
+                                   uwiden_to_host_word( pce, data ));
+                  break;
+               /* 128-bit vector.  Pass store data in 2 64-bit pieces. */
+               case Ity_V128: {
+                  IRAtom* dHi64 = assignNew( 'I', pce, Ity_I64,
+                                             unop(Iop_V128HIto64, data) );
+                  IRAtom* dLo64 = assignNew( 'I', pce, Ity_I64,
+                                             unop(Iop_V128to64, data) );
+                  gen_dirty_v_WWWW( pce,
+                                    &check_store16_msb8B_lsb8B, 
+                                    "check_store16_msb8B_lsb8B",
+                                    addr, addrv, dHi64, dLo64 );
+                  break;
+               }
+               /* 64-bit float. */
+               case Ity_F64: {
+                  IRAtom* dI = assignNew( 'I', pce, Ity_I64, 
+                                           unop(Iop_ReinterpF64asI64,
+                                                data ) );
+                  gen_dirty_v_WWW( pce,
+                                   &check_store8_all8B,
+                                   "check_store8_all8B",
+                                   addr, addrv, dI );
+                  break;
+               }
+               default:
+                  ppIRType(d_ty); tl_assert(0);
             }
          }
          /* And don't copy the original, since the helper does the
@@ -3618,8 +3742,8 @@ static void schemeS ( PCEnv* pce, IRStmt* st )
                if (pce->gWordTy == Ity_I32) {
                   /* 32 bit host/guest (cough, cough) */
                   switch (e_ty) {
-                     case Ity_I32: h_fn = &check_load4W;
-                                   h_nm = "check_load4W"; break;
+                     case Ity_I32: h_fn = &check_load4_P;
+                                   h_nm = "check_load4_P"; break;
                      case Ity_I16: h_fn = &check_load2;
                                    h_nm = "check_load2"; break;
                      case Ity_I8:  h_fn = &check_load1;
@@ -3637,19 +3761,22 @@ static void schemeS ( PCEnv* pce, IRStmt* st )
                } else {
                   /* 64 bit host/guest (cough, cough) */
                   switch (e_ty) {
+                     /* Ity_I64: helper returns shadow value. */
+                     case Ity_I64:  h_fn = &check_load8_P;
+                                    h_nm = "check_load8_P"; break;
+                     /* all others: helper does not return a shadow
+                        value. */
                      case Ity_V128: h_fn = &check_load16;
                                     h_nm = "check_load16"; break;
-                     case Ity_F64: /* a hack: check_load8W's
-                                      result is ignored */
-                     case Ity_I64: h_fn = &check_load8W;
-                                   h_nm = "check_load8W"; break;
+                     case Ity_F64:  h_fn = &check_load8;
+                                    h_nm = "check_load8"; break;
                      case Ity_F32:
-                     case Ity_I32: h_fn = &check_load4;
-                                   h_nm = "check_load4"; break;
-                     case Ity_I16: h_fn = &check_load2;
-                                   h_nm = "check_load2"; break;
-                     case Ity_I8:  h_fn = &check_load1;
-                                   h_nm = "check_load1"; break;
+                     case Ity_I32:  h_fn = &check_load4;
+                                    h_nm = "check_load4"; break;
+                     case Ity_I16:  h_fn = &check_load2;
+                                    h_nm = "check_load2"; break;
+                     case Ity_I8:   h_fn = &check_load1;
+                                    h_nm = "check_load1"; break;
                      default: ppIRType(e_ty); tl_assert(0);
                   }
                   addrv = schemeEw_Atom( pce, addr );
@@ -3668,6 +3795,7 @@ static void schemeS ( PCEnv* pce, IRStmt* st )
 
             case Iex_GetI: {
                stmt( 'C', pce, st );
+               tl_assert(e_ty == e->Iex.GetI.descr->elemTy);
                if (isWord) goto unhandled;
                break;
             }
