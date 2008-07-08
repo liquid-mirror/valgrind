@@ -136,7 +136,7 @@
    struct with uninitialized paddings - libxcb
    Memcheck:Param
    writev(vector[...])
-   obj:/lib*/libc-2.6*.so
+   obj:/lib*/*.so
    obj:/usr/lib*/libxcb.so.1.0.0
    obj:/usr/lib*/libxcb.so.1.0.0
    fun:xcb_send_request
@@ -147,7 +147,7 @@
    struct with uninitialized paddings - libxcb
    Memcheck:Param
    writev(vector[...])
-   obj:/lib*/libc-2.6*.so
+   obj:/lib*/*.so
    obj:/usr/lib*/libxcb.so.1.0.0
    obj:/usr/lib*/libxcb.so.1.0.0
    obj:/usr/lib*/libxcb.so.1.0.0
@@ -214,7 +214,39 @@
    fun:_XSend
 }
 
-
+{
+   X on SUSE11 writev uninit padding
+   Memcheck:Param
+   writev(vector[...])
+   fun:writev
+   obj:/usr/lib*/libxcb.so*
+   obj:/usr/lib*/libxcb.so*
+}
+{
+   X on SUSE11 writev uninit padding 2
+   Memcheck:Param
+   writev(vector[...])
+   obj:/lib*/ld-2.*.so*
+   obj:/usr/lib*/libxcb.so*
+   obj:/usr/lib*/libxcb.so*
+}
+{
+   X on SUSE11 writev uninit padding 3
+   Memcheck:Param
+   writev(vector[...])
+   obj:/lib*/ld-2.*.so*
+   obj:/usr/lib*/libORBit*.so*
+   obj:/usr/lib*/libORBit*.so*
+}
+{
+   X on SUSE11 writev uninit padding 4
+   Memcheck:Param
+   writev(vector[...])
+   obj:/lib*/libc-2.*.so*
+   obj:/usr/lib*/libORBit*.so*
+   obj:/usr/lib*/libORBit*.so*
+}
+ 
 
 # There's something strange about a % 127 in XftFontOpenInfo
 # (hashing) which gcc turns into a multiply by 33818641 and
@@ -270,5 +302,41 @@
    fun:for__add_to_lf_table
 }
 
+# zlib-1.2.x uses uninitialised memory in some tricky way which
+# apparently is harmless (it must amount to a vectorised while-loop,
+# nothing else makes sense).  Fools Memcheck though.  See the mentioned
+# URL for details.
+{
+   zlib-1.2.x trickyness: See http://www.zlib.net/zlib_faq.html#faq36
+   Memcheck:Cond
+   obj:/lib64/libz.so.1.2.*
+   obj:/lib64/libz.so.1.2.*
+   fun:deflate
+}
+
+
 ##----------------------------------------------------------------------##
 
+## More general versions of some of the old X suppressions above
+{
+   Ubuntu804 libXaw.so.7.0/libXaw.so.7.0/libXaw.so.7.0(Cond)
+   Memcheck:Cond
+   obj:/usr/*lib*/libXaw*so*
+   obj:/usr/*lib*/libXaw*so*
+   obj:/usr/*lib*/libXaw*so*
+}
+{
+   Ubuntu804 libXaw.so.7.0/libXaw.so.7.0/libXt(Cond)
+   Memcheck:Cond
+   obj:/usr/*lib*/libXaw*so*
+   obj:/usr/*lib*/libXaw*so*
+   obj:/usr/*lib*/libXt*so*
+}
+
+{
+   Ubuntu804-hack-1
+   Memcheck:Overlap
+   fun:mempcpy
+   fun:_IO_default_xsputn
+   obj:/lib*/libc-2.*so*
+}

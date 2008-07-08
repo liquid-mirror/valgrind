@@ -442,7 +442,8 @@ static void gen_suppression(Error* err)
    }
 
    // Print stack trace elements
-   VG_(apply_StackTrace)(printSuppForIp, VG_(extract_StackTrace)(ec), stop_at);
+   VG_(apply_StackTrace)(printSuppForIp,
+                         VG_(get_ExeContext_StackTrace)(ec), stop_at);
 
    VG_(printf)("}\n");
 }
@@ -708,12 +709,12 @@ static Bool show_used_suppressions ( void )
          continue;
       any_supp = True;
       if (VG_(clo_xml)) {
-         VG_(message)(Vg_DebugMsg, 
-                      "  <pair>\n"
-                      "    <count>%d</count>\n"
-                      "    <name>%t</name>\n"
-                      "  </pair>", 
-                      su->count, su->sname);
+         VG_(message_no_f_c)(Vg_DebugMsg,
+                             "  <pair>\n"
+                             "    <count>%d</count>\n"
+                             "    <name>%t</name>\n"
+                             "  </pair>",
+                             su->count, su->sname);
       } else {
          VG_(message)(Vg_DebugMsg, "supp: %6d %s", su->count, su->sname);
       }
@@ -788,7 +789,7 @@ void VG_(show_all_errors) ( void )
       pp_Error( p_min );
 
       if ((i+1 == VG_(clo_dump_error))) {
-         StackTrace ips = VG_(extract_StackTrace)(p_min->where);
+         StackTrace ips = VG_(get_ExeContext_StackTrace)(p_min->where);
          VG_(translate) ( 0 /* dummy ThreadId; irrelevant due to debugging*/,
                           ips[0], /*debugging*/True, 0xFE/*verbosity*/,
                           /*bbs_done*/0,
@@ -1148,7 +1149,7 @@ Bool supp_matches_callers(Error* err, Supp* su)
 {
    Int i;
    Char caller_name[ERRTXT_LEN];
-   StackTrace ips = VG_(extract_StackTrace)(err->where);
+   StackTrace ips = VG_(get_ExeContext_StackTrace)(err->where);
 
    for (i = 0; i < su->n_callers; i++) {
       Addr a = ips[i];
@@ -1220,11 +1221,11 @@ static Supp* is_suppressible_error ( Error* err )
 void VG_(print_errormgr_stats) ( void )
 {
    VG_(message)(Vg_DebugMsg, 
-      " errormgr: %,lu supplist searches, %,lu comparisons during search",
+      " errormgr: %'lu supplist searches, %'lu comparisons during search",
       em_supplist_searches, em_supplist_cmps
    );
    VG_(message)(Vg_DebugMsg, 
-      " errormgr: %,lu errlist searches, %,lu comparisons during search",
+      " errormgr: %'lu errlist searches, %'lu comparisons during search",
       em_errlist_searches, em_errlist_cmps
    );
 }

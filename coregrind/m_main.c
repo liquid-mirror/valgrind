@@ -719,6 +719,48 @@ static Bool main_process_cmd_line_options( UInt* client_auxv,
    return (log_to == VgLogTo_Fd);
 }
 
+// Write the name and value of log file qualifiers to the xml file.
+static void print_file_vars(Char* format)
+{
+   Int i = 0;
+   
+   while (format[i]) {
+      if (format[i] == '%') {
+         // We saw a '%'.  What's next...
+         i++;
+	 if ('q' == format[i]) {
+            i++;
+            if ('{' == format[i]) {
+	       // Get the env var name, print its contents.
+	       Char* qualname;
+               Char* qual;
+               i++;
+               qualname = &format[i];
+               while (True) {
+		  if ('}' == format[i]) {
+                     // Temporarily replace the '}' with NUL to extract var
+                     // name.
+		     format[i] = 0;
+                     qual = VG_(getenv)(qualname);
+		     break;
+                  }
+                  i++;
+               }
+
+	       VG_(message_no_f_c)(Vg_UserMsg,
+                                   "<logfilequalifier> <var>%t</var> "
+                                   "<value>%t</value> </logfilequalifier>",
+                                   qualname,qual);
+	       format[i] = '}';
+	       i++;
+	    }
+         }
+      } else {
+	 i++;
+      }
+   }
+}
+
 
 /*====================================================================*/
 /*=== Printing the preamble                                        ===*/
@@ -743,7 +785,7 @@ static void print_preamble(Bool logging_to_fd, const char* toolname)
       VG_(message)(Vg_UserMsg, "");
       VG_(message)(Vg_UserMsg, "<valgrindoutput>");
       VG_(message)(Vg_UserMsg, "");
-      VG_(message)(Vg_UserMsg, "<protocolversion>2</protocolversion>");
+      VG_(message)(Vg_UserMsg, "<protocolversion>3</protocolversion>");
       VG_(message)(Vg_UserMsg, "");
    }
 
@@ -812,17 +854,9 @@ static void print_preamble(Bool logging_to_fd, const char* toolname)
       VG_(message)(Vg_UserMsg, "");
       VG_(message)(Vg_UserMsg, "<pid>%d</pid>", VG_(getpid)());
       VG_(message)(Vg_UserMsg, "<ppid>%d</ppid>", VG_(getppid)());
-      VG_(message)(Vg_UserMsg, "<tool>%t</tool>", toolname);
-// [This was made obsolete by the --log-file change in 3.3.0.  But
-// I'm leaving it here (commented out) in case it needs to be reinstated in
-// some way --njn]
-//      if (VG_(clo_log_file_qualifier)) {
-//         HChar* val = VG_(getenv)(VG_(clo_log_file_qualifier));
-//         VG_(message)(Vg_UserMsg, "<logfilequalifier> <var>%t</var> "
-//                                  "<value>%t</value> </logfilequalifier>",
-//                                  VG_(clo_log_file_qualifier),
-//                                  val ? val : "");
-//      }
+      VG_(message_no_f_c)(Vg_UserMsg, "<tool>%t</tool>", toolname);
+      if (VG_(clo_log_name))
+         print_file_vars(VG_(clo_log_name));
       if (VG_(clo_xml_user_comment)) {
          /* Note: the user comment itself is XML and is therefore to
             be passed through verbatim (%s) rather than escaped
@@ -835,26 +869,26 @@ static void print_preamble(Bool logging_to_fd, const char* toolname)
 
       VG_(message)(Vg_UserMsg, "  <vargv>");
       if (VG_(name_of_launcher))
-         VG_(message)(Vg_UserMsg, "    <exe>%t</exe>", 
-                                  VG_(name_of_launcher));
+         VG_(message_no_f_c)(Vg_UserMsg, "    <exe>%t</exe>",
+                             VG_(name_of_launcher));
       else
-         VG_(message)(Vg_UserMsg, "    <exe>%t</exe>",
-                                  "(launcher name unknown)");
+         VG_(message_no_f_c)(Vg_UserMsg, "    <exe>%t</exe>",
+                             "(launcher name unknown)");
       for (i = 0; i < VG_(sizeXA)( VG_(args_for_valgrind) ); i++) {
-         VG_(message)(Vg_UserMsg, 
-                      "    <arg>%t</arg>", 
-                      * (HChar**) VG_(indexXA)( VG_(args_for_valgrind), i ));
+         VG_(message_no_f_c)(Vg_UserMsg,
+                             "    <arg>%t</arg>",
+                             * (HChar**) VG_(indexXA)( VG_(args_for_valgrind), i ));
       }
       VG_(message)(Vg_UserMsg, "  </vargv>");
 
       VG_(message)(Vg_UserMsg, "  <argv>");
       if (VG_(args_the_exename))
-         VG_(message)(Vg_UserMsg, "    <exe>%t</exe>", 
-                                  VG_(args_the_exename));
+         VG_(message_no_f_c)(Vg_UserMsg, "    <exe>%t</exe>",
+                             VG_(args_the_exename));
       for (i = 0; i < VG_(sizeXA)( VG_(args_for_client) ); i++) {
-         VG_(message)(Vg_UserMsg,
-                      "    <arg>%t</arg>", 
-                      * (HChar**) VG_(indexXA)( VG_(args_for_client), i ));
+         VG_(message_no_f_c)(Vg_UserMsg,
+                             "    <arg>%t</arg>",
+                             * (HChar**) VG_(indexXA)( VG_(args_for_client), i ));
       }
       VG_(message)(Vg_UserMsg, "  </argv>");
 
@@ -1556,16 +1590,8 @@ Int valgrind_main ( Int argc, HChar **argv, HChar **envp )
    //   p: setup_client_stack()      [for 'VG_(client_arg[cv]']
    //   p: setup_file_descriptors()  [for 'VG_(fd_xxx_limit)']
    //--------------------------------------------------------------
-   {
-      Char* s;
-      Bool  ok;
-      VG_(debugLog)(1, "main", "Initialise the tool part 1 (pre_clo_init)\n");
-      (VG_(tool_info).tl_pre_clo_init)();
-      ok = VG_(sanity_check_needs)( &s );
-      if (!ok) {
-         VG_(tool_panic)(s);
-      }
-   }
+   VG_(debugLog)(1, "main", "Initialise the tool part 1 (pre_clo_init)\n");
+   (VG_(tool_info).tl_pre_clo_init)();
 
    //--------------------------------------------------------------
    // If --tool and --help/--help-debug was given, now give the core+tool
@@ -1614,6 +1640,17 @@ Int valgrind_main ( Int argc, HChar **argv, HChar **envp )
    //--------------------------------------------------------------
    VG_(debugLog)(1, "main", "Initialise the tool part 2 (post_clo_init)\n");
    VG_TDICT_CALL(tool_post_clo_init);
+   {
+      /* The tool's "needs" will by now be finalised, since it has no
+         further opportunity to specify them.  So now sanity check
+         them. */
+      Char* s;
+      Bool  ok;
+      ok = VG_(sanity_check_needs)( &s );
+      if (!ok) {
+         VG_(tool_panic)(s);
+      }
+   }
 
    //--------------------------------------------------------------
    // Initialise translation table and translation cache
@@ -1898,11 +1935,12 @@ Int valgrind_main ( Int argc, HChar **argv, HChar **envp )
    if (VG_(clo_xml)) {
       HChar buf[50];
       VG_(elapsed_wallclock_time)(buf);
-      VG_(message)(Vg_UserMsg, "<status>\n"
-                               "  <state>RUNNING</state>\n"
-                               "  <time>%t</time>\n"
-                               "</status>", 
-                               buf);
+      VG_(message_no_f_c)(Vg_UserMsg,
+                          "<status>\n"
+                          "  <state>RUNNING</state>\n"
+                          "  <time>%t</time>\n"
+                          "</status>",
+                          buf);
       VG_(message)(Vg_UserMsg, "");
    }
 
@@ -2009,11 +2047,12 @@ void shutdown_actions_NORETURN( ThreadId tid,
          VG_(message)(Vg_UserMsg, "");
       }
       VG_(elapsed_wallclock_time)(buf);
-      VG_(message)(Vg_UserMsg, "<status>\n"
-                               "  <state>FINISHED</state>\n"
-                               "  <time>%t</time>\n"
-                               "</status>", 
-                               buf);
+      VG_(message_no_f_c)(Vg_UserMsg,
+                          "<status>\n"
+                          "  <state>FINISHED</state>\n"
+                          "  <time>%t</time>\n"
+                          "</status>",
+                          buf);
       VG_(message)(Vg_UserMsg, "");
    }
 

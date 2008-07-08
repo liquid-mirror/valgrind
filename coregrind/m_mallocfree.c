@@ -47,6 +47,10 @@
 // #define DEBUG_MALLOC      // turn on heavyweight debugging machinery
 // #define VERBOSE_MALLOC    // make verbose, esp. in debugging machinery
 
+/* Number and total size of blocks in free queue. Used by mallinfo(). */
+Long VG_(free_queue_volume) = 0;
+Long VG_(free_queue_length) = 0;
+
 /*------------------------------------------------------------*/
 /*--- Main types                                           ---*/
 /*------------------------------------------------------------*/
@@ -438,7 +442,7 @@ void VG_(print_all_arena_stats) ( void )
    for (i = 0; i < VG_N_ARENAS; i++) {
       Arena* a = arenaId_to_ArenaP(i);
       VG_(message)(Vg_DebugMsg,
-         "%8s: %8d mmap'd, %8d/%8d max/curr",
+         "%8s: %8ld mmap'd, %8ld/%8ld max/curr",
          a->name, a->bytes_mmaped, a->bytes_on_loan_max, a->bytes_on_loan 
       );
    }
@@ -596,7 +600,7 @@ Superblock* newSuperblock ( Arena* a, SizeT cszB )
    cszB += sizeof(Superblock);
 
    if (cszB < a->min_sblock_szB) cszB = a->min_sblock_szB;
-   while ((cszB % VKI_PAGE_SIZE) > 0) cszB++;
+   cszB = VG_PGROUNDUP(cszB);
 
    if (a->clientmem) {
       // client allocation -- return 0 to client if it fails
@@ -978,7 +982,7 @@ static void sanity_check_malloc_arena ( ArenaId aid )
    if (VG_(clo_verbosity) > 2) 
       VG_(message)(Vg_DebugMsg,
                    "%8s: %2d sbs, %5d bs, %2d/%-2d free bs, "
-                   "%7d mmap, %7d loan", 
+                   "%7ld mmap, %7ld loan",
                    a->name,
                    superblockctr,
                    blockctr_sb, blockctr_sb_free, blockctr_li, 
@@ -1468,13 +1472,65 @@ SizeT VG_(arena_payload_szB) ( ThreadId tid, ArenaId aid, void* ptr )
    return get_pszB(a, b);
 }
 
-// We cannot return the whole struct as the library function does,
-// because this is called by a client request.  So instead we use
-// a pointer to do call by reference.
+
+// Implementation of mallinfo(). There is no recent standard that defines
+// the behavior of mallinfo(). The meaning of the fields in struct mallinfo
+// is as follows:
+//
+//     struct mallinfo  {
+//                int arena;     /* total space in arena            */
+//                int ordblks;   /* number of ordinary blocks       */
+//                int smblks;    /* number of small blocks          */
+//                int hblks;     /* number of holding blocks        */
+//                int hblkhd;    /* space in holding block headers  */
+//                int usmblks;   /* space in small blocks in use    */
+//                int fsmblks;   /* space in free small blocks      */
+//                int uordblks;  /* space in ordinary blocks in use */
+//                int fordblks;  /* space in free ordinary blocks   */
+//                int keepcost;  /* space penalty if keep option    */
+//                               /* is used                         */
+//        };
+//
+// The glibc documentation about mallinfo (which is somewhat outdated) can
+// be found here:
+// http://www.gnu.org/software/libtool/manual/libc/Statistics-of-Malloc.html
+//
+// See also http://bugs.kde.org/show_bug.cgi?id=160956.
+//
+// Regarding the implementation of VG_(mallinfo)(): we cannot return the
+// whole struct as the library function does, because this is called by a
+// client request.  So instead we use a pointer to do call by reference.
 void VG_(mallinfo) ( ThreadId tid, struct vg_mallinfo* mi )
 {
-   // Should do better than this...
-   VG_(memset)(mi, 0x0, sizeof(struct vg_mallinfo));
+   UWord  i, free_blocks, free_blocks_size;
+   Arena* a = arenaId_to_ArenaP(VG_AR_CLIENT);
+
+   // Traverse free list and calculate free blocks statistics.
+   // This may seem slow but glibc works the same way.
+   free_blocks_size = free_blocks = 0;
+   for (i = 0; i < N_MALLOC_LISTS; i++) {
+      Block* b = a->freelist[i];
+      if (b == NULL) continue;
+      for (;;) {
+         free_blocks++;
+         free_blocks_size += (UWord)get_pszB(a, b);
+         b = get_next_b(b);
+         if (b == a->freelist[i]) break;
+      }
+   }
+
+   // We don't have fastbins so smblks & fsmblks are always 0. Also we don't
+   // have a separate mmap allocator so set hblks & hblkhd to 0.
+   mi->arena    = a->bytes_mmaped;
+   mi->ordblks  = free_blocks + VG_(free_queue_length);
+   mi->smblks   = 0;
+   mi->hblks    = 0;
+   mi->hblkhd   = 0;
+   mi->usmblks  = 0;
+   mi->fsmblks  = 0;
+   mi->uordblks = a->bytes_on_loan - VG_(free_queue_volume);
+   mi->fordblks = free_blocks_size + VG_(free_queue_volume);
+   mi->keepcost = 0; // may want some value in here
 }
 
 

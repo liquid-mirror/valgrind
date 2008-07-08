@@ -95,9 +95,11 @@
 /* Structure containing bits of information that we want to save
    on signal delivery. */
 struct vg_sig_private {
-   UInt magicPI;
-   UInt sigNo_private;
-   VexGuestPPC64State shadow;
+   UInt  magicPI;
+   UInt  sigNo_private;
+   ULong _unused; /* makes the struct size be zero % 16 */
+   VexGuestPPC64State vex_shadow1;
+   VexGuestPPC64State vex_shadow2;
 };
 
 /* Structure put on stack for all signal handlers. */
@@ -133,20 +135,20 @@ struct rt_sigframe {
 */
 static Bool extend ( ThreadState *tst, Addr addr, SizeT size )
 {
-   ThreadId tid = tst->tid;
-   NSegment const *stackseg = NULL;
+   ThreadId        tid = tst->tid;
+   NSegment const* stackseg = NULL;
 
    if (VG_(extend_stack)(addr, tst->client_stack_szB)) {
       stackseg = VG_(am_find_nsegment)(addr);
       if (0 && stackseg)
-	 VG_(printf)("frame=%p seg=%p-%p\n",
+	 VG_(printf)("frame=%#lx seg=%#lx-%#lx\n",
 		     addr, stackseg->start, stackseg->end);
    }
 
    if (stackseg == NULL || !stackseg->hasR || !stackseg->hasW) {
       VG_(message)(
          Vg_UserMsg,
-         "Can't extend stack to %p during signal delivery for thread %d:",
+         "Can't extend stack to %#lx during signal delivery for thread %d:",
          addr, tid);
       if (stackseg == NULL)
          VG_(message)(Vg_UserMsg, "  no stack segment");
@@ -165,7 +167,7 @@ static Bool extend ( ThreadState *tst, Addr addr, SizeT size )
    /* For tracking memory events, indicate the entire frame has been
       allocated. */
    VG_TRACK( new_mem_stack_signal, addr - VG_STACK_REDZONE_SZB,
-             size + VG_STACK_REDZONE_SZB );
+             size + VG_STACK_REDZONE_SZB, tid );
 
    return True;
 }
@@ -189,6 +191,7 @@ void VG_(sigframe_create)( ThreadId tid,
    struct rt_sigframe* frame;
 
    /* Stack must be 16-byte aligned */
+   vg_assert(VG_IS_16_ALIGNED(sizeof(struct vg_sig_private)));
    vg_assert(VG_IS_16_ALIGNED(sizeof(struct rt_sigframe)));
 
    sp_top_of_frame &= ~0xf;
@@ -300,11 +303,12 @@ void VG_(sigframe_create)( ThreadId tid,
    priv = &frame->priv;
    priv->magicPI       = 0x31415927;
    priv->sigNo_private = sigNo;
-   priv->shadow        = tst->arch.vex_shadow;
+   priv->vex_shadow1   = tst->arch.vex_shadow1;
+   priv->vex_shadow2   = tst->arch.vex_shadow2;
 
    if (0)
-      VG_(printf)("pushed signal frame; %R1 now = %p, "
-                  "next %%CIA = %p, status=%d\n", 
+      VG_(printf)("pushed signal frame; %%R1 now = %#lx, "
+                  "next %%CIA = %#llx, status=%d\n",
 		  sp, tst->arch.vex.guest_CIA, tst->status);
 }
 
@@ -364,13 +368,14 @@ void VG_(sigframe_destroy)( ThreadId tid, Bool isRT )
    LibVEX_GuestPPC64_put_XER( frame->uc.uc_mcontext.gp_regs[VKI_PT_XER], 
                               &tst->arch.vex );
 
-   tst->arch.vex_shadow = priv->shadow;
+   tst->arch.vex_shadow1 = priv->vex_shadow1;
+   tst->arch.vex_shadow2 = priv->vex_shadow2;
 
    VG_TRACK(die_mem_stack_signal, sp, frame_size);
 
    if (VG_(clo_trace_signals))
       VG_(message)(Vg_DebugMsg,
-                   "vg_pop_signal_frame (thread %d): isRT=%d valid magic; EIP=%p",
+                   "vg_pop_signal_frame (thread %d): isRT=%d valid magic; EIP=%#llx",
                    tid, has_siginfo, tst->arch.vex.guest_CIA);
 
    /* tell the tools */

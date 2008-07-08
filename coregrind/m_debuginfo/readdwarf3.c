@@ -467,7 +467,7 @@ void ML_(pp_GX) ( GExpr* gx ) {
       aMin   = * (Addr*)p;  p += sizeof(Addr);
       aMax   = * (Addr*)p;  p += sizeof(Addr);
       nbytes = * (UShort*)p; p += sizeof(UShort);
-      VG_(printf)("[%p,%p]=", aMin, aMax);
+      VG_(printf)("[%#lx,%#lx]=", aMin, aMax);
       while (nbytes > 0) {
          VG_(printf)("%02x", (UInt)*p++);
          nbytes--;
@@ -1119,7 +1119,7 @@ void get_Form_contents ( /*OUT*/ULong* cts,
          break;
       }
       default:
-         VG_(printf)("get_Form_contents: unhandled %lld (%s)\n",
+         VG_(printf)("get_Form_contents: unhandled %d (%s)\n",
                      form, ML_(pp_DW_FORM)(form));
          c->barf("get_Form_contents: unhandled DW_FORM");
    }
@@ -1164,7 +1164,7 @@ typedef
    }
    TempVar;
 
-#define N_D3_VAR_STACK 24
+#define N_D3_VAR_STACK 48
 
 typedef
    struct {
@@ -1215,7 +1215,7 @@ static void varstack_show ( D3VarParser* parser, HChar* str ) {
          for (j = 0; j < VG_(sizeXA)( xa ); j++) {
             AddrRange* range = (AddrRange*) VG_(indexXA)( xa, j );
             vg_assert(range);
-            VG_(printf)("[%p,%p] ", range->aMin, range->aMax);
+            VG_(printf)("[%#lx,%#lx] ", range->aMin, range->aMax);
          }
       }
       VG_(printf)("\n");
@@ -1496,7 +1496,20 @@ static void parse_var_DIE ( /*OUT*/TempVar** tempvars,
                         level,
                         False/*isFunc*/, NULL/*fbGX*/ );
       } else
+      if (have_lo && (!have_hi1) && have_range && ip_lo == 0) {
+         /* broken DIE created by gcc-4.3.X ?  Ignore the
+            apparently-redundant DW_AT_low_pc and use the DW_AT_ranges
+            instead. */
+         varstack_push( cc, parser, td3, 
+                        get_range_list( cc, td3,
+                                        rangeoff, cc->cu_svma ),
+                        level,
+                        False/*isFunc*/, NULL/*fbGX*/ );
+      } else {
+         if (0) VG_(printf)("I got hlo %d hhi1 %d hrange %d\n",
+                            (Int)have_lo, (Int)have_hi1, (Int)have_range);
          goto bad_DIE;
+      }
    }
 
    if (dtag == DW_TAG_lexical_block || dtag == DW_TAG_subprogram) {
@@ -3392,7 +3405,7 @@ void new_dwarf3_reader_wrk (
 
            if (i > 0 && (i%2) == 0) 
               TRACE_D3("\n                       ");
-           TRACE_D3("[%p,%p] ", pcMin, pcMax );
+           TRACE_D3("[%#lx,%#lx] ", pcMin, pcMax );
 
            ML_(addVar)(
               di, varp->level, 

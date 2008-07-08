@@ -1732,7 +1732,7 @@ static void die_mem_stack(Addr a, SizeT len)
    die_mem_stack_2(a, len, "stk-die");
 }
 
-static void new_mem_stack_signal(Addr a, SizeT len)
+static void new_mem_stack_signal(Addr a, SizeT len, ThreadId tid)
 {
    new_mem_stack_2(a, len, "sig-new");
 }
@@ -1866,9 +1866,6 @@ IRSB* ms_instrument ( VgCallbackClosure* closure,
 //--- Writing snapshots                                    ---//
 //------------------------------------------------------------//
 
-// The output file name.  Controlled by --massif-out-file.
-static Char* massif_out_file = NULL;
-
 Char FP_buf[BUF_LEN];
 
 // XXX: implement f{,n}printf in m_libcprint.c eventually, and use it here.
@@ -1912,10 +1909,14 @@ static void pp_snapshot_SXPt(Int fd, SXPt* sxpt, Int depth, Char* depth_str,
 {
    Int   i, n_insig_children_sxpts;
    Char* perc;
-   Char  ip_desc_array[BUF_LEN];
-   Char* ip_desc = ip_desc_array;
    SXPt* pred  = NULL;
    SXPt* child = NULL;
+
+   // Used for printing function names.  Is made static to keep it out
+   // of the stack frame -- this function is recursive.  Obviously this
+   // now means its contents are trashed across the recursive call.
+   static Char ip_desc_array[BUF_LEN];
+   Char* ip_desc = ip_desc_array;
 
    switch (sxpt->tag) {
     case SigSXPt:
@@ -1971,7 +1972,9 @@ static void pp_snapshot_SXPt(Int fd, SXPt* sxpt, Int depth, Char* depth_str,
          if (InsigSXPt == child->tag)
             n_insig_children_sxpts++;
 
-         // Ok, print the child.
+         // Ok, print the child.  NB: contents of ip_desc_array will be
+         // trashed by this recursive call.  Doesn't matter currently,
+         // but worth noting.
          pp_snapshot_SXPt(fd, child, depth+1, depth_str, depth_str_len,
             snapshot_heap_szB, snapshot_total_szB);
       }
@@ -2035,6 +2038,14 @@ static void write_snapshots_to_file(void)
    Int i, fd;
    SysRes sres;
 
+   // Setup output filename.  Nb: it's important to do this now, ie. as late
+   // as possible.  If we do it at start-up and the program forks and the
+   // output file format string contains a %p (pid) specifier, both the
+   // parent and child will incorrectly write to the same file;  this
+   // happened in 3.3.0.
+   Char* massif_out_file =
+      VG_(expand_file_name)("--massif-out-file", clo_massif_out_file);
+
    sres = VG_(open)(massif_out_file, VKI_O_CREAT|VKI_O_TRUNC|VKI_O_WRONLY,
                                      VKI_S_IRUSR|VKI_S_IWUSR);
    if (sres.isError) {
@@ -2044,9 +2055,11 @@ static void write_snapshots_to_file(void)
          "error: can't open output file '%s'", massif_out_file );
       VG_(message)(Vg_UserMsg,
          "       ... so profiling results will be missing.");
+      VG_(free)(massif_out_file);
       return;
    } else {
       fd = sres.res;
+      VG_(free)(massif_out_file);
    }
 
    // Print massif-specific options that were used.
@@ -2178,10 +2191,6 @@ static void ms_post_clo_init(void)
       clear_snapshot( & snapshots[i], /*do_sanity_check*/False );
    }
    sanity_check_snapshots_array();
-
-   // Setup output filename.
-   massif_out_file =
-      VG_(expand_file_name)("--massif-out-file", clo_massif_out_file);
 }
 
 static void ms_pre_clo_init(void)

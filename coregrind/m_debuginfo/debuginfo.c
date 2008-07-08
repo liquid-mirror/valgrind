@@ -279,7 +279,7 @@ static void discard_DebugInfo ( DebugInfo* di )
          if (curr->have_dinfo
              && (VG_(clo_verbosity) > 1 || VG_(clo_trace_redir)))
             VG_(message)(Vg_DebugMsg, 
-                         "Discarding syms at %p-%p in %s due to %s()", 
+                         "Discarding syms at %#lx-%#lx in %s due to %s()",
                          di->text_avma, 
                          di->text_avma + di->text_size,
                          curr->filename ? curr->filename : (UChar*)"???",
@@ -491,6 +491,8 @@ void VG_(di_notify_mmap)( Addr a, Bool allow_SkFileV )
    Int        nread;
    HChar      buf1k[1024];
    Bool       debug = False;
+   SysRes          statres;
+   struct vki_stat statbuf;
 
    /* In short, figure out if this mapping is of interest to us, and
       if so, try to guess what ld.so is doing and when/if we should
@@ -499,7 +501,7 @@ void VG_(di_notify_mmap)( Addr a, Bool allow_SkFileV )
    vg_assert(seg);
 
    if (debug)
-      VG_(printf)("di_notify_mmap-1: %p-%p %c%c%c\n",
+      VG_(printf)("di_notify_mmap-1: %#lx-%#lx %c%c%c\n",
                   seg->start, seg->end, 
                   seg->hasR ? 'r' : '-',
                   seg->hasW ? 'w' : '-',seg->hasX ? 'x' : '-' );
@@ -520,51 +522,41 @@ void VG_(di_notify_mmap)( Addr a, Bool allow_SkFileV )
    if (debug)
       VG_(printf)("di_notify_mmap-2: %s\n", filename);
 
-   /* XXXX begin KLUDGE */
-   /* Skip filenames in /dev/.  Don't even bother to try opening them.
-      Why?
-
-      Suppose the client opens and then mmaps the file specified by
-      'filename' and puts some kind of lock on it, so nobody else can
-      open it.  If we now try to open it to peer at the ELF header,
-      the system can hang, because the VG_(open) call blocks.
-      Precisely this happed when running Amarok, which opened and then
-      mmap'd /dev/snd/pcmC0D0c.
-
-      A clean(er) solution is to open the file with VKI_O_NONBLOCK, so
-      that if it is locked, we simply fail immediately and don't hang
-      the whole system.  But "man 2 open" gives only a sketchy
-      description of the resulting file semantics.  So for the
-      meantime, just skip files in /dev/ as (1) they are likely to be
-      subject to wierd-ass locking stuff, and (2) they won't contain
-      useful debug info anyway.
-
-      But that's a kludge; in principle the same problem could occur
-      with *any* file.
-   */
-   if (0 == VG_(strncmp)(filename, "/dev/", 5)) {
-      if (debug)
-         VG_(printf)("di_notify_mmap-2: skipping %s\n", filename);
+   /* Only try to read debug information from regular files. */
+   statres = VG_(stat)(filename, &statbuf);
+   /* If the assert below ever fails, replace the VG_(stat)() call above */
+   /* by a VG_(lstat)() call.                                            */
+   vg_assert(statres.isError || ! VKI_S_ISLNK(statbuf.st_mode));
+   if (statres.isError || ! VKI_S_ISREG(statbuf.st_mode))
+   {
       return;
    }
-   /* XXXX end KLUDGE */
 
-   /* Peer at the first few bytes of the file, to see if it is an ELF
-      object file. */
+
+   /* Peer at the first few bytes of the file, to see if it is an ELF */
+   /* object file. Ignore the file if we do not have read permission. */
    VG_(memset)(buf1k, 0, sizeof(buf1k));
    fd = VG_(open)( filename, VKI_O_RDONLY, 0 );
    if (fd.isError) {
-      DebugInfo fake_di;
-      VG_(memset)(&fake_di, 0, sizeof(fake_di));
-      fake_di.filename = filename;
-      ML_(symerr)(&fake_di, True, "can't open file to inspect ELF header");
+      if (fd.err != VKI_EACCES)
+      {
+         DebugInfo fake_di;
+         VG_(memset)(&fake_di, 0, sizeof(fake_di));
+         fake_di.filename = filename;
+         ML_(symerr)(&fake_di, True, "can't open file to inspect ELF header");
+      }
       return;
    }
    nread = VG_(read)( fd.res, buf1k, sizeof(buf1k) );
    VG_(close)( fd.res );
 
-   if (nread <= 0) {
-      ML_(symerr)(NULL, True, "can't read file to inspect ELF header");
+   if (nread == 0)
+      return;
+   if (nread < 0) {
+      DebugInfo fake_di;
+      VG_(memset)(&fake_di, 0, sizeof(fake_di));
+      fake_di.filename = filename;
+      ML_(symerr)(&fake_di, True, "can't read file to inspect ELF header");
       return;
    }
    vg_assert(nread > 0 && nread <= sizeof(buf1k) );
@@ -706,7 +698,7 @@ void VG_(di_notify_mmap)( Addr a, Bool allow_SkFileV )
    [a, a+len).  */
 void VG_(di_notify_munmap)( Addr a, SizeT len )
 {
-   if (0) VG_(printf)("DISCARD %p %p\n", a, a+len);
+   if (0) VG_(printf)("DISCARD %#lx %#lx\n", a, a+len);
    discard_syms_in_range(a, len);
 }
 
@@ -1069,6 +1061,8 @@ Bool VG_(get_objname) ( Addr a, Char* buf, Int nbuf )
    const NSegment *seg;
    HChar* filename;
    vg_assert(nbuf > 0);
+   /* Look in the debugInfo_list to find the name.  In most cases we
+      expect this to produce a result. */
    for (di = debugInfo_list; di != NULL; di = di->next) {
       if (di->text_present
           && di->text_avma <= a 
@@ -1089,9 +1083,13 @@ Bool VG_(get_objname) ( Addr a, Char* buf, Int nbuf )
          return True;
       }
    }
-   if ((seg = VG_(am_find_nsegment(a))) != NULL &&
-       (filename = VG_(am_get_filename)(seg)) != NULL)
-   {
+   /* Last-ditch fallback position: if we don't find the address in
+      the debugInfo_list, ask the address space manager whether it
+      knows the name of the file associated with this mapping.  This
+      allows us to print the names of exe/dll files in the stack trace
+      when running programs under wine. */
+   if ( (seg = VG_(am_find_nsegment(a))) != NULL 
+        && (filename = VG_(am_get_filename)(seg)) != NULL ) {
       VG_(strncpy_safely)(buf, filename, nbuf);
       return True;
    }
@@ -1496,7 +1494,7 @@ Bool VG_(use_CF_info) ( /*MOD*/Addr* ipP,
    static UInt n_steps = 0;
    n_search++;
 
-   if (0) VG_(printf)("search for %p\n", *ipP);
+   if (0) VG_(printf)("search for %#lx\n", *ipP);
 
    for (si = debugInfo_list; si != NULL; si = si->next) {
       n_steps++;
@@ -1661,7 +1659,7 @@ static Bool data_address_is_in_var ( /*OUT*/UWord* offset,
    var_szB = muw.w;
 
    if (show) {
-      VG_(printf)("VVVV: data_address_%p_is_in_var: %s :: ",
+      VG_(printf)("VVVV: data_address_%#lx_is_in_var: %s :: ",
                   data_addr, var->name );
       ML_(pp_Type_C_ishly)( var->type );
       VG_(printf)("\n");
@@ -1762,7 +1760,7 @@ static void format_message ( /*OUT*/Char* dname1,
          dname1, n_dname,
          "Location 0x%lx is %lu byte%s inside %s%s",
          data_addr, residual_offset, ro_plural, var->name,
-         VG_(indexXA)(described,0) );
+         (char*)(VG_(indexXA)(described,0)) );
       VG_(snprintf)(
          dname2, n_dname,
          "in frame #%d of thread %d", frameNo, (Int)tid);
@@ -1775,7 +1773,7 @@ static void format_message ( /*OUT*/Char* dname1,
          dname1, n_dname,
          "Location 0x%lx is %lu byte%s inside %s%s,",
          data_addr, residual_offset, ro_plural, var->name,
-         VG_(indexXA)(described,0) );
+         (char*)(VG_(indexXA)(described,0)) );
       VG_(snprintf)(
          dname2, n_dname,
          "declared at %s:%d, in frame #%d of thread %d",
@@ -1817,7 +1815,7 @@ static void format_message ( /*OUT*/Char* dname1,
          dname1, n_dname,
          "Location 0x%lx is %lu byte%s inside %s%s,",
          data_addr, residual_offset, ro_plural, var->name,
-         VG_(indexXA)(described,0) );
+         (char*)(VG_(indexXA)(described,0)) );
       VG_(snprintf)(
          dname2, n_dname,
          "a global variable");
@@ -1830,7 +1828,7 @@ static void format_message ( /*OUT*/Char* dname1,
          dname1, n_dname,
          "Location 0x%lx is %lu byte%s inside %s%s,",
          data_addr, residual_offset, ro_plural, var->name,
-         VG_(indexXA)(described,0) );
+         (char*)(VG_(indexXA)(described,0)) );
       VG_(snprintf)(
          dname2, n_dname,
          "a global variable declared at %s:%d",
@@ -1865,7 +1863,7 @@ Bool consider_vars_in_frame ( /*OUT*/Char* dname1,
    static UInt n_steps = 0;
    n_search++;
    if (debug)
-      VG_(printf)("QQQQ: cvif: ip,sp,fp %p,%p,%p\n", ip,sp,fp);
+      VG_(printf)("QQQQ: cvif: ip,sp,fp %#lx,%#lx,%#lx\n", ip,sp,fp);
    /* first, find the DebugInfo that pertains to 'ip'. */
    for (di = debugInfo_list; di; di = di->next) {
       n_steps++;
@@ -1949,7 +1947,7 @@ Bool consider_vars_in_frame ( /*OUT*/Char* dname1,
          DiVariable* var = (DiVariable*)VG_(indexXA)( vars, j );
          SizeT       offset;
          if (debug)
-            VG_(printf)("QQQQ:    var:name=%s %p-%p %p\n", 
+            VG_(printf)("QQQQ:    var:name=%s %#lx-%#lx %#lx\n",
                         var->name,arange->aMin,arange->aMax,ip);
          if (data_address_is_in_var( &offset, var, &regs, data_addr,
                                      di->data_bias )) {
@@ -1991,7 +1989,7 @@ Bool VG_(get_data_description)( /*OUT*/Char* dname1,
    vg_assert(n_dname > 1);
    dname1[n_dname-1] = dname2[n_dname-1] = 0;
 
-   if (0) VG_(printf)("get_data_description: dataaddr %p\n", data_addr);
+   if (0) VG_(printf)("get_data_description: dataaddr %#lx\n", data_addr);
    /* First, see if data_addr is (or is part of) a global variable.
       Loop over the DebugInfos we have.  Check data_addr against the
       outermost scope of all of them, as that should be a global
@@ -2193,6 +2191,26 @@ SizeT VG_(seginfo_get_text_size)(const DebugInfo* di)
    return di->text_present ? di->text_size : 0; 
 }
 
+Addr VG_(seginfo_get_plt_avma)(const DebugInfo* di)
+{
+   return di->plt_present ? di->plt_avma : 0; 
+}
+
+SizeT VG_(seginfo_get_plt_size)(const DebugInfo* di)
+{
+   return di->plt_present ? di->plt_size : 0; 
+}
+
+Addr VG_(seginfo_get_gotplt_avma)(const DebugInfo* di)
+{
+   return di->gotplt_present ? di->gotplt_avma : 0; 
+}
+
+SizeT VG_(seginfo_get_gotplt_size)(const DebugInfo* di)
+{
+   return di->gotplt_present ? di->gotplt_size : 0; 
+}
+
 const UChar* VG_(seginfo_soname)(const DebugInfo* di)
 {
    return di->soname;
@@ -2265,7 +2283,7 @@ VgSectKind VG_(seginfo_sect_kind)( /*OUT*/UChar* name, SizeT n_name,
 
       if (0)
          VG_(printf)(
-            "addr=%p di=%p %s got=%p,%ld plt=%p,%ld data=%p,%ld bss=%p,%ld\n",
+            "addr=%#lx di=%p %s got=%#lx,%ld plt=%#lx,%ld data=%#lx,%ld bss=%#lx,%ld\n",
             a, di, di->filename,
             di->got_avma,  di->got_size,
             di->plt_avma,  di->plt_size,
@@ -2308,6 +2326,12 @@ VgSectKind VG_(seginfo_sect_kind)( /*OUT*/UChar* name, SizeT n_name,
          res = Vg_SectGOT;
          break;
       }
+      if (di->gotplt_present
+          && di->gotplt_size > 0
+          && a >= di->gotplt_avma && a < di->gotplt_avma + di->gotplt_size) {
+         res = Vg_SectGOTPLT;
+         break;
+      }
       if (di->opd_present
           && di->opd_size > 0
           && a >= di->opd_avma && a < di->opd_avma + di->opd_size) {
@@ -2332,13 +2356,13 @@ VgSectKind VG_(seginfo_sect_kind)( /*OUT*/UChar* name, SizeT n_name,
          vg_assert(start_at < fnlen);
          i = start_at; j = 0;
          while (True) {
-            vg_assert(j >= 0 && j+1 < n_name);
+            vg_assert(j >= 0 && j < n_name);
             vg_assert(i >= 0 && i <= fnlen);
             name[j] = di->filename[i];
-            name[j+1] = 0;
             if (di->filename[i] == 0) break;
             i++; j++;
          }
+         vg_assert(i == fnlen);
       } else {
          VG_(snprintf)(name, n_name, "%s", "???");
       }

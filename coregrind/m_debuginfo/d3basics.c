@@ -384,12 +384,10 @@ static Bool get_Dwarf_Reg( /*OUT*/Addr* a, Word regno, RegSummary* regs )
    if (regno == 4/*ESP*/) { *a = regs->sp; return True; }
 #  elif defined(VGP_ppc32_linux)
    if (regno == 1/*SP*/) { *a = regs->sp; return True; }
-   VG_(printf)("get_Dwarf_Reg(ppc32-linux)(%ld)\n", regno);
    if (regno == 31) return False;
    vg_assert(0);
 #  elif defined(VGP_ppc64_linux)
    if (regno == 1/*SP*/) { *a = regs->sp; return True; }
-   VG_(printf)("get_Dwarf_Reg(ppc64-linux)(%ld)\n", regno);
    if (regno == 31) return False;
    vg_assert(0);
 #  elif defined(VGP_ppc32_aix5) || defined(VGP_ppc64_aix5)
@@ -648,7 +646,7 @@ GXResult ML_(evaluate_GX)( GExpr* gx, GExpr* fbGX,
       aMax   = * (Addr*)p;   p += sizeof(Addr);
       nbytes = * (UShort*)p; p += sizeof(UShort);
       nGuards++;
-      if (0) VG_(printf)("           guard %d: %p %p\n", 
+      if (0) VG_(printf)("           guard %d: %#lx %#lx\n",
                          (Int)nGuards, aMin,aMax);
       if (regs == NULL) {
          vg_assert(aMin == (Addr)0);

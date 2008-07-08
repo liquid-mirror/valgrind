@@ -9,10 +9,10 @@ TOOLS =		memcheck \
 		massif \
 		lackey \
 		none \
-		helgrind
+		helgrind \
+		drd
 
-EXP_TOOLS = 	exp-omega \
-		exp-drd
+EXP_TOOLS = 	exp-omega
 
 # Put docs last because building the HTML is slow and we want to get
 # everything else working before we try it.
@@ -21,7 +21,8 @@ DIST_SUBDIRS  = $(SUBDIRS)
 
 SUPP_FILES = \
 	glibc-2.2.supp glibc-2.3.supp glibc-2.4.supp glibc-2.5.supp \
-	glibc-2.6.supp glibc-2.7.supp aix5libc.supp xfree-3.supp xfree-4.supp \
+	glibc-2.6.supp glibc-2.7.supp glibc-2.X.supp.in \
+	aix5libc.supp xfree-3.supp xfree-4.supp \
 	glibc-2.34567-NPTL-helgrind.supp \
 	glibc-2.2-LinuxThreads-helgrind.supp \
 	glibc-2.X-drd.supp

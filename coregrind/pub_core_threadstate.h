@@ -93,14 +93,21 @@ typedef
    struct {
       /* --- BEGIN vex-mandated guest state --- */
 
-      /* Saved machine context. */
-      VexGuestArchState vex;
+      /* Note that for code generation reasons, we require that the
+         guest state area, its two shadows, and the spill area, are
+         16-aligned and have 16-aligned sizes, and there are no holes
+         in between.  This is checked by do_pre_run_checks() in
+         scheduler.c. */
 
-      /* Saved shadow context. */
-      VexGuestArchState vex_shadow;
+      /* Saved machine context. */
+      VexGuestArchState vex __attribute__((aligned(16)));
+
+      /* Saved shadow context (2 copies). */
+      VexGuestArchState vex_shadow1 __attribute__((aligned(16)));
+      VexGuestArchState vex_shadow2 __attribute__((aligned(16)));
 
       /* Spill area. */
-      UChar vex_spill[LibVEX_N_SPILL_BYTES];
+      UChar vex_spill[LibVEX_N_SPILL_BYTES] __attribute__((aligned(16)));
 
       /* --- END vex-mandated guest state --- */
    } 
@@ -194,8 +201,7 @@ typedef struct {
       apply.  We don't know the size of the stack since we didn't
       allocate it, and furthermore we never reallocate it. */
 
-   /* The allocated size of this thread's stack (permanently zero
-      if this is ThreadId == 1, since we didn't allocate its stack) */
+   /* The allocated size of this thread's stack */
    SizeT client_stack_szB;
 
    /* Address of the highest legitimate word in this stack.  This is

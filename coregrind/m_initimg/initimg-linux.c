@@ -568,7 +568,7 @@ Addr setup_client_stack( void*  init_sp,
 #    endif
 
      if (0)
-        VG_(printf)("%p 0x%x  %p 0x%x\n", 
+        VG_(printf)("%#lx 0x%lx  %#lx 0x%lx\n",
                     resvn_start, resvn_size, anon_start, anon_size);
 
      /* Create a shrinkable reservation followed by an anonymous
@@ -762,7 +762,7 @@ Addr setup_client_stack( void*  init_sp,
 
    /* client_SP is pointing at client's argc/argv */
 
-   if (0) VG_(printf)("startup SP = %p\n", client_SP);
+   if (0) VG_(printf)("startup SP = %#lx\n", client_SP);
    return client_SP;
 }
 
@@ -962,8 +962,9 @@ void VG_(ii_finalise_image)( IIFinaliseImageInfo iifii )
       sane way. */
    LibVEX_GuestX86_initialise(&arch->vex);
 
-   /* Zero out the shadow area. */
-   VG_(memset)(&arch->vex_shadow, 0, sizeof(VexGuestX86State));
+   /* Zero out the shadow areas. */
+   VG_(memset)(&arch->vex_shadow1, 0, sizeof(VexGuestX86State));
+   VG_(memset)(&arch->vex_shadow2, 0, sizeof(VexGuestX86State));
 
    /* Put essential stuff into the new state. */
    arch->vex.guest_ESP = iifii.initial_client_SP;
@@ -982,8 +983,9 @@ void VG_(ii_finalise_image)( IIFinaliseImageInfo iifii )
       sane way. */
    LibVEX_GuestAMD64_initialise(&arch->vex);
 
-   /* Zero out the shadow area. */
-   VG_(memset)(&arch->vex_shadow, 0, sizeof(VexGuestAMD64State));
+   /* Zero out the shadow areas. */
+   VG_(memset)(&arch->vex_shadow1, 0, sizeof(VexGuestAMD64State));
+   VG_(memset)(&arch->vex_shadow2, 0, sizeof(VexGuestAMD64State));
 
    /* Put essential stuff into the new state. */
    arch->vex.guest_RSP = iifii.initial_client_SP;
@@ -996,8 +998,9 @@ void VG_(ii_finalise_image)( IIFinaliseImageInfo iifii )
       sane way. */
    LibVEX_GuestPPC32_initialise(&arch->vex);
 
-   /* Zero out the shadow area. */
-   VG_(memset)(&arch->vex_shadow, 0, sizeof(VexGuestPPC32State));
+   /* Zero out the shadow areas. */
+   VG_(memset)(&arch->vex_shadow1, 0, sizeof(VexGuestPPC32State));
+   VG_(memset)(&arch->vex_shadow2, 0, sizeof(VexGuestPPC32State));
 
    /* Put essential stuff into the new state. */
    arch->vex.guest_GPR1 = iifii.initial_client_SP;
@@ -1010,8 +1013,9 @@ void VG_(ii_finalise_image)( IIFinaliseImageInfo iifii )
       sane way. */
    LibVEX_GuestPPC64_initialise(&arch->vex);
 
-   /* Zero out the shadow area. */
-   VG_(memset)(&arch->vex_shadow, 0, sizeof(VexGuestPPC64State));
+   /* Zero out the shadow areas. */
+   VG_(memset)(&arch->vex_shadow1, 0, sizeof(VexGuestPPC64State));
+   VG_(memset)(&arch->vex_shadow2, 0, sizeof(VexGuestPPC64State));
 
    /* Put essential stuff into the new state. */
    arch->vex.guest_GPR1 = iifii.initial_client_SP;

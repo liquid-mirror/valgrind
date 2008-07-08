@@ -94,8 +94,8 @@ UInt VG_(get_StackTrace_wrk) ( ThreadId tid_if_known,
       fp_max -= sizeof(Addr);
 
    if (debug)
-      VG_(printf)("n_ips=%d fp_min=%p fp_max_orig=%p, "
-                  "fp_max=%p ip=%p fp=%p\n",
+      VG_(printf)("n_ips=%d fp_min=0x%lx fp_max_orig=0x%lx, "
+                  "fp_max=0x%lx ip=0x%lx fp=0x%lx\n",
 		  n_ips, fp_min, fp_max_orig, fp_max, ip, fp);
 
    /* Assertion broken before main() is reached in pthreaded programs;  the
@@ -104,6 +104,8 @@ UInt VG_(get_StackTrace_wrk) ( ThreadId tid_if_known,
    if (fp_min + 512 >= fp_max) {
       /* If the stack limits look bogus, don't poke around ... but
          don't bomb out either. */
+      if (sps) sps[0] = sp;
+      if (fps) fps[0] = fp;
       ips[0] = ip;
       return 1;
    } 
@@ -236,7 +238,7 @@ UInt VG_(get_StackTrace_wrk) ( ThreadId tid_if_known,
          if (fps) fps[i] = fp;
          ips[i++] = ip;
          if (debug)
-            VG_(printf)("     ipsC[%d]=%08p\n", i-1, ips[i-1]);
+            VG_(printf)("     ipsC[%d]=%#08lx\n", i-1, ips[i-1]);
          ip = ip - 1;
          continue;
       }
@@ -259,7 +261,7 @@ UInt VG_(get_StackTrace_wrk) ( ThreadId tid_if_known,
          if (fps) fps[i] = fp;
          ips[i++] = ip;
          if (debug)
-            VG_(printf)("     ipsF[%d]=%08p\n", i-1, ips[i-1]);
+            VG_(printf)("     ipsF[%d]=%#08lx\n", i-1, ips[i-1]);
          ip = ip - 1;
          continue;
       }
@@ -282,7 +284,7 @@ UInt VG_(get_StackTrace_wrk) ( ThreadId tid_if_known,
          if (fps) fps[i] = fp;
          ips[i++] = ip;
          if (debug)
-            VG_(printf)("     ipsH[%d]=%08p\n", i-1, ips[i-1]);
+            VG_(printf)("     ipsH[%d]=%#08lx\n", i-1, ips[i-1]);
          ip = ip - 1;
          sp += 8;
          continue;
@@ -405,7 +407,7 @@ UInt VG_(get_StackTrace_wrk) ( ThreadId tid_if_known,
             if (fps) fps[i] = fp;
             ips[i++] = ip;
             if (debug)
-               VG_(printf)("     ipsF[%d]=%08p\n", i-1, ips[i-1]);
+               VG_(printf)("     ipsF[%d]=%#08lx\n", i-1, ips[i-1]);
             continue;
          }
 

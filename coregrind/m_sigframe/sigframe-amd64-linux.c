@@ -93,7 +93,8 @@ struct vg_sigframe
 
    /* XXX This is wrong.  Surely we should store the shadow values
       into the shadow memory behind the actual values? */
-   VexGuestAMD64State vex_shadow;
+   VexGuestAMD64State vex_shadow1;
+   VexGuestAMD64State vex_shadow2;
 
    /* HACK ALERT */
    VexGuestAMD64State vex;
@@ -320,8 +321,8 @@ struct rt_sigframe
    bits of sigcontext at the moment.
 */
 static 
-void synth_ucontext(ThreadId tid, const vki_siginfo_t *si, Int trapno,
-                    const vki_sigset_t *set, 
+void synth_ucontext(ThreadId tid, const vki_siginfo_t *si,
+                    UWord trapno, UWord err, const vki_sigset_t *set, 
                     struct vki_ucontext *uc, struct _vki_fpstate *fpstate)
 {
    ThreadState *tst = VG_(get_ThreadState)(tid);
@@ -360,8 +361,8 @@ void synth_ucontext(ThreadId tid, const vki_siginfo_t *si, Int trapno,
    // FIXME: SC2(cs,CS);
    // FIXME: SC2(gs,GS);
    // FIXME: SC2(fs,FS);
-   /* XXX err */
    sc->trapno = trapno;
+   sc->err = err;
 #  undef SC2
 
    sc->cr2 = (UWord)si->_sifields._sigfault._addr;
@@ -374,20 +375,20 @@ void synth_ucontext(ThreadId tid, const vki_siginfo_t *si, Int trapno,
 */
 static Bool extend ( ThreadState *tst, Addr addr, SizeT size )
 {
-   ThreadId tid = tst->tid;
+   ThreadId        tid = tst->tid;
    NSegment const* stackseg = NULL;
 
    if (VG_(extend_stack)(addr, tst->client_stack_szB)) {
       stackseg = VG_(am_find_nsegment)(addr);
       if (0 && stackseg)
-	 VG_(printf)("frame=%p seg=%p-%p\n",
+	 VG_(printf)("frame=%#lx seg=%#lx-%#lx\n",
 		     addr, stackseg->start, stackseg->end);
    }
 
    if (stackseg == NULL || !stackseg->hasR || !stackseg->hasW) {
       VG_(message)(
          Vg_UserMsg,
-         "Can't extend stack to %p during signal delivery for thread %d:",
+         "Can't extend stack to %#lx during signal delivery for thread %d:",
          addr, tid);
       if (stackseg == NULL)
          VG_(message)(Vg_UserMsg, "  no stack segment");
@@ -406,7 +407,7 @@ static Bool extend ( ThreadState *tst, Addr addr, SizeT size )
    /* For tracking memory events, indicate the entire frame has been
       allocated. */
    VG_TRACK( new_mem_stack_signal, addr - VG_STACK_REDZONE_SZB,
-             size + VG_STACK_REDZONE_SZB );
+             size + VG_STACK_REDZONE_SZB, tid );
 
    return True;
 }
@@ -422,7 +423,8 @@ static void build_vg_sigframe(struct vg_sigframe *frame,
 {
    frame->sigNo_private = sigNo;
    frame->magicPI       = 0x31415927;
-   frame->vex_shadow    = tst->arch.vex_shadow;
+   frame->vex_shadow1   = tst->arch.vex_shadow1;
+   frame->vex_shadow2   = tst->arch.vex_shadow2;
    /* HACK ALERT */
    frame->vex           = tst->arch.vex;
    /* end HACK ALERT */
@@ -443,7 +445,8 @@ static Addr build_rt_sigframe(ThreadState *tst,
    struct rt_sigframe *frame;
    Addr rsp = rsp_top_of_frame;
    Int	sigNo = siginfo->si_signo;
-   Int trapno;
+   UWord trapno;
+   UWord err;
 
    rsp -= sizeof(*frame);
    rsp = VG_ROUNDDN(rsp, 16);
@@ -461,10 +464,13 @@ static Addr build_rt_sigframe(ThreadState *tst,
    else
       frame->retaddr = (Addr)&VG_(amd64_linux_SUBST_FOR_rt_sigreturn);
 
-   if (siguc)
+   if (siguc) {
       trapno = siguc->uc_mcontext.trapno;
-   else
+      err = siguc->uc_mcontext.err;
+   } else {
       trapno = 0;
+      err = 0;
+   }
 
    VG_(memcpy)(&frame->sigInfo, siginfo, sizeof(vki_siginfo_t));
 
@@ -473,7 +479,8 @@ static Addr build_rt_sigframe(ThreadState *tst,
       frame->sigInfo._sifields._sigfault._addr 
          = (void*)tst->arch.vex.guest_RIP;
 
-   synth_ucontext(tst->tid, siginfo, trapno, mask, &frame->uContext, &frame->fpstate);
+   synth_ucontext(tst->tid, siginfo, trapno, err, mask,
+                  &frame->uContext, &frame->fpstate);
 
    VG_TRACK( post_mem_write,  Vg_CoreSignal, tst->tid, 
              rsp, offsetof(struct rt_sigframe, vg) );
@@ -515,8 +522,8 @@ void VG_(sigframe_create)( ThreadId tid,
       caller to do. */
 
    if (0)
-      VG_(printf)("pushed signal frame; %%RSP now = %p, "
-                  "next %%RIP = %p, status=%d\n", 
+      VG_(printf)("pushed signal frame; %%RSP now = %#lx, "
+                  "next %%RIP = %#llx, status=%d\n",
 		  rsp, tst->arch.vex.guest_RIP, tst->status);
 }
 
@@ -541,13 +548,14 @@ Bool restore_vg_sigframe ( ThreadState *tst,
       *sigNo = VKI_SIGSEGV;
       return False;
    }
-   tst->sig_mask        = frame->mask;
-   tst->tmp_sig_mask    = frame->mask;
-   tst->arch.vex_shadow = frame->vex_shadow;
+   tst->sig_mask         = frame->mask;
+   tst->tmp_sig_mask     = frame->mask;
+   tst->arch.vex_shadow1 = frame->vex_shadow1;
+   tst->arch.vex_shadow2 = frame->vex_shadow2;
    /* HACK ALERT */
-   tst->arch.vex        = frame->vex;
+   tst->arch.vex         = frame->vex;
    /* end HACK ALERT */
-   *sigNo               = frame->sigNo_private;
+   *sigNo                = frame->sigNo_private;
    return True;
 }
 
@@ -616,7 +624,7 @@ void VG_(sigframe_destroy)( ThreadId tid, Bool isRT )
    if (VG_(clo_trace_signals))
       VG_(message)(
          Vg_DebugMsg, 
-         "VG_(signal_return) (thread %d): isRT=%d valid magic; RIP=%p", 
+         "VG_(signal_return) (thread %d): isRT=%d valid magic; RIP=%#llx",
          tid, isRT, tst->arch.vex.guest_RIP);
 
    /* tell the tools */

@@ -83,10 +83,14 @@ extern void VG_(set_IP) ( ThreadId tid, Addr ip );
 
 // For get/set, 'area' is where the asked-for shadow state will be copied
 // into/from.
-extern void VG_(get_shadow_regs_area) ( ThreadId tid, OffT guest_state_offset,
-                                        SizeT size, UChar* area );
-extern void VG_(set_shadow_regs_area) ( ThreadId tid, OffT guest_state_offset,
-                                        SizeT size, const UChar* area );
+void
+VG_(get_shadow_regs_area) ( ThreadId tid, 
+                            /*DST*/UChar* dst,
+                            /*SRC*/Int shadowNo, OffT offset, SizeT size );
+void
+VG_(set_shadow_regs_area) ( ThreadId tid, 
+                            /*DST*/Int shadowNo, OffT offset, SizeT size,
+                            /*SRC*/const UChar* src );
 
 // Apply a function 'f' to all the general purpose registers in all the
 // current threads.
@@ -104,6 +108,9 @@ extern Bool VG_(thread_stack_next)       ( /*MOD*/ThreadId* tid,
 
 // Returns .client_stack_highest_word for the given thread
 extern Addr VG_(thread_get_stack_max) ( ThreadId tid );
+
+// Returns how many bytes have been allocated for the stack of the given thread
+extern Addr VG_(thread_get_stack_size) ( ThreadId tid );
 
 // Given a pointer to a function as obtained by "& functionname" in C,
 // produce a pointer to the actual entry point for the function.  For
