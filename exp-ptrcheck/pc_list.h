@@ -64,7 +64,7 @@ extern SizeT Seg__size(Seg seg);
 extern Bool  Seg__is_freed(Seg seg);
 extern Bool  Seg__containsI(Seg seg, Addr l, Addr r);
 extern Bool  Seg__contains(Seg seg, Addr a);
-extern void  Seg__cmp(Seg seg, Addr a, Int* cmp, Word* n);
+extern void  Seg__cmp(Seg seg, Addr a, Int* cmp, UWord* n);
 extern void  Seg__resize(Seg seg, SizeT new_size, ExeContext* where) ;
 extern Char* Seg__status_str(Seg seg);
 

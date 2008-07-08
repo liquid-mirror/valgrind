@@ -218,6 +218,9 @@
 #define PC_MALLOC_REDZONE_SZB 0  /* no need for client heap redzones */
 
 
+static __inline__ VG_REGPARM(1) Seg nonptr_or_unknown(UWord x); /*fwds*/
+
+
 //zz /*------------------------------------------------------------*/
 //zz /*--- Profiling events                                     ---*/
 //zz /*------------------------------------------------------------*/
@@ -797,7 +800,7 @@ static void pp_Error ( Error* err )
       } else {
          // Access via a pointer, but outside its range.
          Int cmp;
-         Word miss_size;
+         UWord miss_size;
          Seg__cmp(vseg, a, &cmp, &miss_size);
          if      (cmp  < 0) place = "before";
          else if (cmp == 0) place = "inside";
@@ -811,10 +814,10 @@ static void pp_Error ( Error* err )
          VG_(pp_ExeContext)( VG_(get_error_where)(err) );
 
          VG_(message)(Vg_UserMsg,
-                      " Address %p is %ld bytes %s the accessing pointer's",
+                      " Address %p is %lu bytes %s the accessing pointer's",
                       a, miss_size, place);
          VG_(message)(Vg_UserMsg,
-                    " %slegitimate range, a block of size %ld %s",
+                    " %slegitimate range, a block of size %lu %s",
                       legit, Seg__size(vseg), Seg__status_str(vseg) );
          VG_(pp_ExeContext)(Seg__where(vseg));
       }
@@ -1612,26 +1615,22 @@ static void post_reg_write_nonptr ( ThreadId tid, OffT offset, SizeT size )
    //   VG_(set_thread_shadow_archreg)( tid, reg, (UInt)NONPTR );
 }
 
-//zz static void post_reg_write_nonptr_or_unknown(ThreadId tid, UInt reg)
-//zz {
-//zz    // deliver_signal: called from two places; one sets the reg to zero, the
-//zz    // other sets the stack pointer.
-//zz    //
-//zz    // pthread_return: All the pthread_* functions return non-pointers,
-//zz    // except pthread_getspecific(), but it's ok: even though the
-//zz    // allocation/getting of the specifics pointer happens on the real CPU,
-//zz    // the set/get of the specific value is done in vg_libpthread.c on the
-//zz    // simd CPU, using the specifics pointer.
-//zz    //
-//zz    // The MALLOC request is also (unfortunately) lumped in with the pthread
-//zz    // ops... it does most certainly return a pointer, and one to a heap
-//zz    // block, which is marked as UNKNOWN.  Inaccurately marking it is not
-//zz    // really a problem, as the heap-blocks are entirely local to
-//zz    // vg_libpthread.c.
-//zz    //
-//zz    Seg seg = ( VG_(get_thread_archreg)(tid, reg) ? UNKNOWN : NONPTR );
-//zz    VG_(set_thread_shadow_archreg)( tid, reg, (UInt)seg );
-//zz }
+static void post_reg_write_nonptr_or_unknown ( ThreadId tid,
+                                               OffT offset, SizeT size )
+{
+   // deliver_signal: called from two places; one sets the reg to zero, the
+   // other sets the stack pointer.
+   //
+   if (is_integer_guest_reg( (Int)offset, (Int)size )) {
+      put_guest_intreg(
+         tid, 1/*shadowno*/, offset, size,
+         (UWord)nonptr_or_unknown( 
+                   get_guest_intreg( tid, 0/*shadowno*/,
+                                     offset, size )));
+   } else {
+      tl_assert(0);
+   }
+}
 
 static
 void post_reg_write_demux ( CorePart part, ThreadId tid,
@@ -1656,6 +1655,9 @@ void post_reg_write_demux ( CorePart part, ThreadId tid,
          break;
       case Vg_CoreClientReq:
          post_reg_write_nonptr( tid, guest_state_offset, size );
+         break;
+      case Vg_CoreSignal:
+         post_reg_write_nonptr_or_unknown( tid, guest_state_offset, size );
          break;
       default:
          tl_assert(0);
@@ -1765,8 +1767,6 @@ void post_reg_write_clientcall(ThreadId tid, OffT guest_state_offset,
 /*--------------------------------------------------------------------*/
 /*--- System calls                                                 ---*/
 /*--------------------------------------------------------------------*/
-
-static __inline__ VG_REGPARM(1) Seg nonptr_or_unknown(UWord x); /*fwds*/
 
 static void pre_syscall ( ThreadId tid, UInt syscallno )
 {
@@ -1901,12 +1901,12 @@ static void post_syscall ( ThreadId tid, UInt syscallno, SysRes res )
 
 #     if defined(__NR_arch_prctl)
       case __NR_arch_prctl: {
-         put_guest_intreg(
-            tid, 1/*shadowno*/, PC_OFF_FS_ZERO, PC_SZB_FS_ZERO,
-            (UWord)
-            nonptr_or_unknown( 
-               get_guest_intreg( tid, 0/*shadowno*/,
-                                 PC_OFF_FS_ZERO, PC_SZB_FS_ZERO )));
+         /* This is nasty.  On amd64-linux, arch_prctl may write a
+            value to guest_FS_ZERO, and we need to shadow that value.
+            Hence apply nonptr_or_unknown to it here, after the
+            syscall completes. */
+         post_reg_write_nonptr_or_unknown( tid, PC_OFF_FS_ZERO, 
+                                                PC_SZB_FS_ZERO );
          VG_(set_syscall_return_shadows)( tid, (UWord)NONPTR, 0 );
       }
 #     endif
@@ -4454,8 +4454,8 @@ static void pc_pre_clo_init ( void )
 //zz       0
 //zz    };
 
-   VG_(details_name)            ("Ptrcheck");
-   VG_(details_version)         ("0.0.2");
+   VG_(details_name)            ("exp-ptrcheck");
+   VG_(details_version)         (NULL);
    VG_(details_description)     ("a pointer-use checker");
    VG_(details_copyright_author)(
       "Copyright (C) 2003-2008, and GNU GPL'd, by Nicholas Nethercote.");

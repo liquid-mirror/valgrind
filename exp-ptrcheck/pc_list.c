@@ -272,7 +272,6 @@ Bool Seg__containsI(Seg seg, Addr l, Addr r)
 {
    my_assert(Interval__hasValidMagic(seg));
    if (seg->is_zero) {
-      Interval__print(seg);
       my_assert(seg->left == seg->right);
       return False;
    } else {
@@ -287,7 +286,7 @@ Bool Seg__contains(Seg seg, Addr a)
 
 // Determines if 'a' is before, within, or after seg's range.  Sets 'cmp' to
 // -1/0/1 accordingly.  Sets 'n' to the number of bytes before/within/after.
-void Seg__cmp(Seg seg, Addr a, Int* cmp, Word* n)
+void Seg__cmp(Seg seg, Addr a, Int* cmp, UWord* n)
 {
    if (a < seg->left) {
       *cmp = -1;
@@ -730,7 +729,7 @@ static void ISList__adjustMarkersOnInsert(ISList* o, ISNode* x,
    // the top edge coming into x, but never higher.
 
    IList__empty(&promoted);
-
+   //tl_assert(x); tl_assert(update); VG_(printf)("PREL %d %p\n",i, update[i]);
    for (i = 0; i < x->topLevel && !ISNode__isHeader(update[i+1]); i++)
    {
       IList__copy(&tempMarkList, update[i]->markers[i]);
@@ -773,6 +772,7 @@ static void ISList__adjustMarkersOnInsert(ISList* o, ISNode* x,
       // add newPromoted to promoted and make newPromoted empty
       IList__copy(&promoted, &newPromoted);
       IList__empty(&newPromoted);     
+      //tl_assert(x); tl_assert(update); VG_(printf)("IN-L %d %p\n",i, update[i]);
    }
 
    /* Assertion:  i=x->level()-1 OR update[i+1] is the header.
