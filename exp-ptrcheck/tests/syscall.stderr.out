@@ -1,0 +1,2 @@
+valgrind: Bad option '--sloppy-malloc=no'; aborting.
+valgrind: Use --help for more information.

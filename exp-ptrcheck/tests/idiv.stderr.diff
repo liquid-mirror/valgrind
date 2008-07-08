@@ -1,0 +1,245 @@
+5,7c5
+<    by 0x........: __libc_start_main (...libc...)
+<    by 0x........: ...
+< Address 0x........ is not derived from any known block
+---
+>  Address 0x........ is not derived from any known block
+12,25c10
+<    by 0x........: __libc_start_main (...libc...)
+<    by 0x........: ...
+< Address 0x........ is not derived from any known block
+< 
+< Invalid IDIV
+<    at 0x........: main (idiv.c:16)
+<    by 0x........: __libc_start_main (...libc...)
+<    by 0x........: ...
+< First arg not a pointer
+< Second arg derived from address 0x........ of 40-byte block alloc'd
+<    at 0x........: malloc (vg_replace_malloc.c:...)
+<    by 0x........: main (arith_include2.c:22)
+<    by 0x........: __libc_start_main (...libc...)
+<    by 0x........: ...
+---
+>  Address 0x........ is not derived from any known block
+30,32c15
+<    by 0x........: __libc_start_main (...libc...)
+<    by 0x........: ...
+< Address 0x........ is not derived from any known block
+---
+>  Address 0x........ is not derived from any known block
+37,39c20
+<    by 0x........: __libc_start_main (...libc...)
+<    by 0x........: ...
+< Address 0x........ is not derived from any known block
+---
+>  Address 0x........ is not derived from any known block
+41,46d21
+< 
+< Invalid read of size 4
+<    at 0x........: main (idiv.c:18)
+<    by 0x........: __libc_start_main (...libc...)
+<    by 0x........: ...
+< Address 0x........ is not derived from any known block
+48,63d22
+< 
+< Invalid read of size 4
+<    at 0x........: main (idiv.c:18)
+<    by 0x........: __libc_start_main (...libc...)
+<    by 0x........: ...
+< Address 0x........ is not derived from any known block
+< 
+< Invalid IDIV
+<    at 0x........: main (idiv.c:20)
+<    by 0x........: __libc_start_main (...libc...)
+<    by 0x........: ...
+< Both args derived from address 0x........ of 40-byte block alloc'd
+<    at 0x........: malloc (vg_replace_malloc.c:...)
+<    by 0x........: main (arith_include2.c:22)
+<    by 0x........: __libc_start_main (...libc...)
+<    by 0x........: ...
+68,70c27
+<    by 0x........: __libc_start_main (...libc...)
+<    by 0x........: ...
+< Address 0x........ is not derived from any known block
+---
+>  Address 0x........ is not derived from any known block
+75,77c32
+<    by 0x........: __libc_start_main (...libc...)
+<    by 0x........: ...
+< Address 0x........ is not derived from any known block
+---
+>  Address 0x........ is not derived from any known block
+82,84c37
+<    by 0x........: __libc_start_main (...libc...)
+<    by 0x........: ...
+< Address 0x........ is not derived from any known block
+---
+>  Address 0x........ is not derived from any known block
+89,91c42
+<    by 0x........: __libc_start_main (...libc...)
+<    by 0x........: ...
+< Address 0x........ is not derived from any known block
+---
+>  Address 0x........ is not derived from any known block
+96,98c47
+<    by 0x........: __libc_start_main (...libc...)
+<    by 0x........: ...
+< Address 0x........ is not derived from any known block
+---
+>  Address 0x........ is not derived from any known block
+103,105c52
+<    by 0x........: __libc_start_main (...libc...)
+<    by 0x........: ...
+< Address 0x........ is not derived from any known block
+---
+>  Address 0x........ is not derived from any known block
+107,112d53
+< 
+< Invalid read of size 4
+<    at 0x........: main (idiv.c:25)
+<    by 0x........: __libc_start_main (...libc...)
+<    by 0x........: ...
+< Address 0x........ is not derived from any known block
+114,119d54
+< 
+< Invalid read of size 4
+<    at 0x........: main (idiv.c:25)
+<    by 0x........: __libc_start_main (...libc...)
+<    by 0x........: ...
+< Address 0x........ is not derived from any known block
+121,126d55
+< 
+< Invalid read of size 4
+<    at 0x........: main (idiv.c:26)
+<    by 0x........: __libc_start_main (...libc...)
+<    by 0x........: ...
+< Address 0x........ is not derived from any known block
+128,133d56
+< 
+< Invalid read of size 4
+<    at 0x........: main (idiv.c:26)
+<    by 0x........: __libc_start_main (...libc...)
+<    by 0x........: ...
+< Address 0x........ is not derived from any known block
+138,140c61
+<    by 0x........: __libc_start_main (...libc...)
+<    by 0x........: ...
+< Address 0x........ is not derived from any known block
+---
+>  Address 0x........ is not derived from any known block
+145,147c66
+<    by 0x........: __libc_start_main (...libc...)
+<    by 0x........: ...
+< Address 0x........ is not derived from any known block
+---
+>  Address 0x........ is not derived from any known block
+152,154c71
+<    by 0x........: __libc_start_main (...libc...)
+<    by 0x........: ...
+< Address 0x........ is not derived from any known block
+---
+>  Address 0x........ is not derived from any known block
+159,161c76
+<    by 0x........: __libc_start_main (...libc...)
+<    by 0x........: ...
+< Address 0x........ is not derived from any known block
+---
+>  Address 0x........ is not derived from any known block
+166,168c81
+<    by 0x........: __libc_start_main (...libc...)
+<    by 0x........: ...
+< Address 0x........ is not derived from any known block
+---
+>  Address 0x........ is not derived from any known block
+173,175c86
+<    by 0x........: __libc_start_main (...libc...)
+<    by 0x........: ...
+< Address 0x........ is not derived from any known block
+---
+>  Address 0x........ is not derived from any known block
+180,182c91
+<    by 0x........: __libc_start_main (...libc...)
+<    by 0x........: ...
+< Address 0x........ is not derived from any known block
+---
+>  Address 0x........ is not derived from any known block
+187,200c96
+<    by 0x........: __libc_start_main (...libc...)
+<    by 0x........: ...
+< Address 0x........ is not derived from any known block
+< 
+< Invalid IDIV
+<    at 0x........: main (idiv.c:33)
+<    by 0x........: __libc_start_main (...libc...)
+<    by 0x........: ...
+< First arg may be a pointer
+< Second arg derived from address 0x........ of 40-byte block alloc'd
+<    at 0x........: malloc (vg_replace_malloc.c:...)
+<    by 0x........: main (arith_include2.c:22)
+<    by 0x........: __libc_start_main (...libc...)
+<    by 0x........: ...
+---
+>  Address 0x........ is not derived from any known block
+205,207c101
+<    by 0x........: __libc_start_main (...libc...)
+<    by 0x........: ...
+< Address 0x........ is not derived from any known block
+---
+>  Address 0x........ is not derived from any known block
+212,225c106
+<    by 0x........: __libc_start_main (...libc...)
+<    by 0x........: ...
+< Address 0x........ is not derived from any known block
+< 
+< Invalid IDIV
+<    at 0x........: main (idiv.c:34)
+<    by 0x........: __libc_start_main (...libc...)
+<    by 0x........: ...
+< First arg may be a pointer
+< Second arg derived from address 0x........ of 40-byte block alloc'd
+<    at 0x........: malloc (vg_replace_malloc.c:...)
+<    by 0x........: main (arith_include2.c:22)
+<    by 0x........: __libc_start_main (...libc...)
+<    by 0x........: ...
+---
+>  Address 0x........ is not derived from any known block
+230,232c111
+<    by 0x........: __libc_start_main (...libc...)
+<    by 0x........: ...
+< Address 0x........ is not derived from any known block
+---
+>  Address 0x........ is not derived from any known block
+237,239c116
+<    by 0x........: __libc_start_main (...libc...)
+<    by 0x........: ...
+< Address 0x........ is not derived from any known block
+---
+>  Address 0x........ is not derived from any known block
+244,246c121
+<    by 0x........: __libc_start_main (...libc...)
+<    by 0x........: ...
+< Address 0x........ is not derived from any known block
+---
+>  Address 0x........ is not derived from any known block
+251,253c126
+<    by 0x........: __libc_start_main (...libc...)
+<    by 0x........: ...
+< Address 0x........ is not derived from any known block
+---
+>  Address 0x........ is not derived from any known block
+258,260c131
+<    by 0x........: __libc_start_main (...libc...)
+<    by 0x........: ...
+< Address 0x........ is not derived from any known block
+---
+>  Address 0x........ is not derived from any known block
+265,267c136
+<    by 0x........: __libc_start_main (...libc...)
+<    by 0x........: ...
+< Address 0x........ is not derived from any known block
+---
+>  Address 0x........ is not derived from any known block
+269c138
+< ERROR SUMMARY: 36 errors from 36 contexts (suppressed: 0 from 0)
+---
+> ERROR SUMMARY: 26 errors from 26 contexts (suppressed: 0 from 0)

@@ -1,0 +1,49 @@
+
+pthread_key_create: key is non-contiguous
+   at 0x........: __pthread_key_create (vg_libpthread.c:...)
+   by 0x........: main (pth_create.c:17)
+   by 0x........: __libc_start_main (...libc...)
+   by 0x........: ...
+First byte (0x........) is 1 bytes within a 4-byte block alloc'd
+   at 0x........: malloc (vg_replace_malloc.c:...)
+   by 0x........: main (pth_create.c:14)
+   by 0x........: __libc_start_main (...libc...)
+   by 0x........: ...
+Last byte is not within a known block
+
+Invalid read of size 4
+   at 0x........: __pthread_key_create (vg_libpthread.c:...)
+   by 0x........: main (pth_create.c:17)
+   by 0x........: __libc_start_main (...libc...)
+   by 0x........: ...
+Address 0x........ is 1 bytes inside the accessing pointer's
+ legitimate range, the 4-byte block alloc'd
+   at 0x........: malloc (vg_replace_malloc.c:...)
+   by 0x........: main (pth_create.c:14)
+   by 0x........: __libc_start_main (...libc...)
+   by 0x........: ...
+
+pthread_key_create: key contains unaddressable byte(s)
+   at 0x........: __pthread_key_create (vg_libpthread.c:...)
+   by 0x........: main (pth_create.c:19)
+   by 0x........: __libc_start_main (...libc...)
+   by 0x........: ...
+Address 0x........ is 0 bytes within a 4-byte block free'd
+   at 0x........: free (vg_replace_malloc.c:...)
+   by 0x........: main (pth_create.c:18)
+   by 0x........: __libc_start_main (...libc...)
+   by 0x........: ...
+
+Invalid read of size 4
+   at 0x........: __pthread_key_create (vg_libpthread.c:...)
+   by 0x........: main (pth_create.c:19)
+   by 0x........: __libc_start_main (...libc...)
+   by 0x........: ...
+Address 0x........ is 0 bytes inside the accessing pointer's
+ once-legitimate range, the 4-byte block free'd
+   at 0x........: free (vg_replace_malloc.c:...)
+   by 0x........: main (pth_create.c:18)
+   by 0x........: __libc_start_main (...libc...)
+   by 0x........: ...
+
+ERROR SUMMARY: 202 errors from 4 contexts (suppressed: 0 from 0)

@@ -1,0 +1,24 @@
+
+Invalid read of size 4
+   at 0x........: main (hp_dangle.c:17)
+   by 0x........: __libc_start_main (...libc...)
+   by 0x........: ...
+Address 0x........ is 20 bytes inside the accessing pointer's
+ once-legitimate range, the 400-byte block free'd
+   at 0x........: free (vg_replace_malloc.c:...)
+   by 0x........: mk_dangle (hp_dangle.c:7)
+   by 0x........: main (hp_dangle.c:15)
+   by 0x........: __libc_start_main (...libc...)
+
+Doubly-invalid read of size 4
+   at 0x........: main (hp_dangle.c:18)
+   by 0x........: __libc_start_main (...libc...)
+   by 0x........: ...
+Address 0x........ is 4 bytes before the accessing pointer's
+ once-legitimate range, the 400-byte block free'd
+   at 0x........: free (vg_replace_malloc.c:...)
+   by 0x........: mk_dangle (hp_dangle.c:7)
+   by 0x........: main (hp_dangle.c:15)
+   by 0x........: __libc_start_main (...libc...)
+
+ERROR SUMMARY: 2 errors from 2 contexts (suppressed: 0 from 0)

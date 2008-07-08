@@ -1,0 +1,20 @@
+4,7c4,5
+<    by 0x........: __libc_start_main (...libc...)
+<    by 0x........: ...
+< Address 0x........ is 20 bytes inside the accessing pointer's
+<  once-legitimate range, the 400-byte block free'd
+---
+>  Address 0x........ is 20 bytes inside the accessing pointer's
+>  once-legitimate range, a block of size 400 free'd
+11d8
+<    by 0x........: __libc_start_main (...libc...)
+15,18c12,13
+<    by 0x........: __libc_start_main (...libc...)
+<    by 0x........: ...
+< Address 0x........ is 4 bytes before the accessing pointer's
+<  once-legitimate range, the 400-byte block free'd
+---
+>  Address 0x........ is 4 bytes before the accessing pointer's
+>  once-legitimate range, a block of size 400 free'd
+22d16
+<    by 0x........: __libc_start_main (...libc...)

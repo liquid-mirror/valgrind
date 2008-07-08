@@ -1,0 +1,23 @@
+29,34d28
+< 
+< Invalid OR
+<    at 0x........: main (or.c:20)
+< Both args derived from address 0x........ of 40-byte block alloc'd
+<    at 0x........: malloc (vg_replace_malloc.c:...)
+<    by 0x........: main (arith_include2.c:22)
+36,39d29
+< 
+< Invalid read of size 4
+<    at 0x........: main (or.c:20)
+<  Address 0x........ is not derived from any known block
+44c34,37
+<  Address 0x........ is not derived from any known block
+---
+>  Address 0x........ is 4 bytes before the accessing pointer's
+>  legitimate range, a block of size 40 alloc'd
+>    at 0x........: malloc (vg_replace_malloc.c:...)
+>    by 0x........: main (arith_include2.c:22)
+91c84
+< ERROR SUMMARY: 10 errors from 10 contexts (suppressed: 0 from 0)
+---
+> ERROR SUMMARY: 8 errors from 8 contexts (suppressed: 0 from 0)

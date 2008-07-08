@@ -1,0 +1,13 @@
+
+Invalid read of size 1
+   at 0x........: main (justify.c:20)
+   by 0x........: __libc_start_main (...libc...)
+   by 0x........: ...
+Address 0x........ is 5000 bytes after the accessing pointer's
+ legitimate range, the 10000-byte block alloc'd
+   at 0x........: malloc (vg_replace_malloc.c:...)
+   by 0x........: main (justify.c:16)
+   by 0x........: __libc_start_main (...libc...)
+   by 0x........: ...
+
+ERROR SUMMARY: 1 errors from 1 contexts (suppressed: 0 from 0)

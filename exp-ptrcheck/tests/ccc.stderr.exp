@@ -1,0 +1,68 @@
+
+Invalid read of size 4
+   at 0x........: main (ccc.cpp:20)
+   by 0x........: __libc_start_main (...libc...)
+   by 0x........: ...
+Address 0x........ is 4 bytes before the accessing pointer's
+ legitimate range, the 4-byte block alloc'd
+   at 0x........: malloc (vg_replace_malloc.c:...)
+   by 0x........: main (ccc.cpp:8)
+   by 0x........: __libc_start_main (...libc...)
+   by 0x........: ...
+
+Invalid read of size 4
+   at 0x........: main (ccc.cpp:21)
+   by 0x........: __libc_start_main (...libc...)
+   by 0x........: ...
+Address 0x........ is 4 bytes before the accessing pointer's
+ legitimate range, the 4-byte block alloc'd
+   at 0x........: __builtin_new (vg_replace_malloc.c:...)
+   by 0x........: operator new(unsigned) (vg_replace_malloc.c:...)
+   by 0x........: main (ccc.cpp:9)
+   by 0x........: __libc_start_main (...libc...)
+
+Invalid read of size 4
+   at 0x........: main (ccc.cpp:22)
+   by 0x........: __libc_start_main (...libc...)
+   by 0x........: ...
+Address 0x........ is 4 bytes before the accessing pointer's
+ legitimate range, the 40-byte block alloc'd
+   at 0x........: __builtin_vec_new (vg_replace_malloc.c:...)
+   by 0x........: operator new[](unsigned) (vg_replace_malloc.c:...)
+   by 0x........: main (ccc.cpp:10)
+   by 0x........: __libc_start_main (...libc...)
+
+Invalid read of size 4
+   at 0x........: main (ccc.cpp:23)
+   by 0x........: __libc_start_main (...libc...)
+   by 0x........: ...
+Address 0x........ is 4 bytes before the accessing pointer's
+ legitimate range, the 4-byte block alloc'd
+   at 0x........: calloc (vg_replace_malloc.c:...)
+   by 0x........: main (ccc.cpp:11)
+   by 0x........: __libc_start_main (...libc...)
+   by 0x........: ...
+
+Invalid read of size 4
+   at 0x........: main (ccc.cpp:24)
+   by 0x........: __libc_start_main (...libc...)
+   by 0x........: ...
+Address 0x........ is 4 bytes before the accessing pointer's
+ legitimate range, the 4-byte block alloc'd
+   at 0x........: memalign (vg_replace_malloc.c:...)
+   by 0x........: main (ccc.cpp:12)
+   by 0x........: __libc_start_main (...libc...)
+   by 0x........: ...
+
+Invalid read of size 4
+   at 0x........: main (ccc.cpp:25)
+   by 0x........: __libc_start_main (...libc...)
+   by 0x........: ...
+Address 0x........ is 4 bytes before the accessing pointer's
+ legitimate range, the 4-byte block alloc'd
+   at 0x........: memalign (vg_replace_malloc.c:...)
+   by 0x........: __posix_memalign (vg_replace_malloc.c:...)
+   by 0x........: main (ccc.cpp:14)
+   by 0x........: __libc_start_main (...libc...)
+
+ERROR SUMMARY: 6 errors from 6 contexts (suppressed: 0 from 0)

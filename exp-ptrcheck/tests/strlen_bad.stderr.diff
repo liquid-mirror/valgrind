@@ -1,0 +1,50 @@
+1,46c1,2
+< 
+< Invalid read of size 4
+<    at 0x........: strlen (in /...libc...)
+<    by 0x........: __libc_start_main (...libc...)
+<    by 0x........: ...
+< Address 0x........ is 12 bytes inside the accessing pointer's
+<  legitimate range, the 13-byte block alloc'd
+<    at 0x........: malloc (vg_replace_malloc.c:...)
+<    by 0x........: __strdup (in /...libc...)
+<    by 0x........: main (strlen.c:14)
+<    by 0x........: __libc_start_main (...libc...)
+< 
+< Invalid read of size 4
+<    at 0x........: strchr (in /...libc...)
+<    by 0x........: __libc_start_main (...libc...)
+<    by 0x........: ...
+< Address 0x........ is 12 bytes inside the accessing pointer's
+<  legitimate range, the 13-byte block alloc'd
+<    at 0x........: malloc (vg_replace_malloc.c:...)
+<    by 0x........: __strdup (in /...libc...)
+<    by 0x........: main (strlen.c:14)
+<    by 0x........: __libc_start_main (...libc...)
+< 
+< Invalid read of size 4
+<    at 0x........: strrchr (in /...libc...)
+<    by 0x........: __libc_start_main (...libc...)
+<    by 0x........: ...
+< Address 0x........ is 12 bytes inside the accessing pointer's
+<  legitimate range, the 13-byte block alloc'd
+<    at 0x........: malloc (vg_replace_malloc.c:...)
+<    by 0x........: __strdup (in /...libc...)
+<    by 0x........: main (strlen.c:14)
+<    by 0x........: __libc_start_main (...libc...)
+< 
+< Invalid read of size 4
+<    at 0x........: strrchr (in /...libc...)
+<    by 0x........: __libc_start_main (...libc...)
+<    by 0x........: ...
+< Address 0x........ is 12 bytes inside the accessing pointer's
+<  legitimate range, the 13-byte block alloc'd
+<    at 0x........: malloc (vg_replace_malloc.c:...)
+<    by 0x........: __strdup (in /...libc...)
+<    by 0x........: main (strlen.c:14)
+<    by 0x........: __libc_start_main (...libc...)
+< 
+< ERROR SUMMARY: 4 errors from 4 contexts (suppressed: 0 from 0)
+---
+> valgrind: Bad option '--partial-loads-ok=no'; aborting.
+> valgrind: Use --help for more information.

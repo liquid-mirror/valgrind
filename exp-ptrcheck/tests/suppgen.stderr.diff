@@ -1,0 +1,62 @@
+4,7c4,5
+<    by 0x........: __libc_start_main (...libc...)
+<    by 0x........: ...
+< Address 0x........ is 1 bytes before the accessing pointer's
+<  legitimate range, the 6-byte block alloc'd
+---
+>  Address 0x........ is 1 bytes before the accessing pointer's
+>  legitimate range, a block of size 6 alloc'd
+10,11d7
+<    by 0x........: __libc_start_main (...libc...)
+<    by 0x........: ...
+15c11
+<    Annelid:LoadStore
+---
+>    exp-ptrcheck:LoadStore
+17,18d12
+<    fun:__libc_start_main
+<    obj:*/annelid/tests/supp
+21c15
+< Invalid ADD
+---
+> Invalid arguments to Add32/Add64
+23,25c17
+<    by 0x........: __libc_start_main (...libc...)
+<    by 0x........: ...
+< Both args derived from address 0x........ of 6-byte block alloc'd
+---
+>  Both args derived from address 0x........ of 6-byte block alloc'd
+28,29d19
+<    by 0x........: __libc_start_main (...libc...)
+<    by 0x........: ...
+33c23
+<    Annelid:Arith
+---
+>    exp-ptrcheck:Arith
+35,36d24
+<    fun:__libc_start_main
+<    obj:*/annelid/tests/supp
+40,60c28
+< Syscall param write(buf) is non-contiguous
+<    at 0x........: __libc_write (...libc...)
+<    by 0x........: __libc_start_main (...libc...)
+<    by 0x........: ...
+< First byte (0x........) is 3 bytes within a 6-byte block alloc'd
+<    at 0x........: malloc (vg_replace_malloc.c:...)
+<    by 0x........: main (supp.c:12)
+<    by 0x........: __libc_start_main (...libc...)
+<    by 0x........: ...
+< Last byte is not within a known block
+< 
+< ---- Print suppression ? --- [Return/N/n/Y/y/C/c] ---- {
+<    <insert a suppression name here>
+<    Annelid:SysParam
+<    write(buf)
+<    fun:__GI___libc_write
+<    fun:__libc_start_main
+<    obj:*/annelid/tests/supp
+< }
+< 
+< ERROR SUMMARY: 3 errors from 3 contexts (suppressed: 0 from 0)
+---
+> ERROR SUMMARY: 2 errors from 2 contexts (suppressed: 0 from 0)

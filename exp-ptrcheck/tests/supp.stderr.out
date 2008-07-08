@@ -1,0 +1,16 @@
+
+Invalid read of size 1
+   at 0x........: main (supp.c:13)
+ Address 0x........ is 1 bytes before the accessing pointer's
+ legitimate range, a block of size 6 alloc'd
+   at 0x........: malloc (vg_replace_malloc.c:...)
+   by 0x........: main (supp.c:12)
+
+Invalid arguments to Add32/Add64
+   at 0x........: main (supp.c:14)
+ Both args derived from address 0x........ of 6-byte block alloc'd
+   at 0x........: malloc (vg_replace_malloc.c:...)
+   by 0x........: main (supp.c:12)
+Warning: invalid file descriptor -1 in syscall write()
+
+ERROR SUMMARY: 2 errors from 2 contexts (suppressed: 0 from 0)

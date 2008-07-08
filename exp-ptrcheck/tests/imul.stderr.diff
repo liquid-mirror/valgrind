@@ -1,0 +1,211 @@
+5,7c5
+<    by 0x........: __libc_start_main (...libc...)
+<    by 0x........: ...
+< Address 0x........ is not derived from any known block
+---
+>  Address 0x........ is not derived from any known block
+12,14c10
+<    by 0x........: __libc_start_main (...libc...)
+<    by 0x........: ...
+< Address 0x........ is not derived from any known block
+---
+>  Address 0x........ is not derived from any known block
+19,21c15
+<    by 0x........: __libc_start_main (...libc...)
+<    by 0x........: ...
+< Address 0x........ is not derived from any known block
+---
+>  Address 0x........ is not derived from any known block
+26,28c20
+<    by 0x........: __libc_start_main (...libc...)
+<    by 0x........: ...
+< Address 0x........ is not derived from any known block
+---
+>  Address 0x........ is not derived from any known block
+33,35c25
+<    by 0x........: __libc_start_main (...libc...)
+<    by 0x........: ...
+< Address 0x........ is not derived from any known block
+---
+>  Address 0x........ is not derived from any known block
+40,42c30
+<    by 0x........: __libc_start_main (...libc...)
+<    by 0x........: ...
+< Address 0x........ is not derived from any known block
+---
+>  Address 0x........ is not derived from any known block
+44c32
+< Invalid IMUL
+---
+> Invalid arguments to Mul32/Mul64
+46,48c34
+<    by 0x........: __libc_start_main (...libc...)
+<    by 0x........: ...
+< Both args derived from address 0x........ of 40-byte block alloc'd
+---
+>  Both args derived from address 0x........ of 40-byte block alloc'd
+51,52d36
+<    by 0x........: __libc_start_main (...libc...)
+<    by 0x........: ...
+57,59c41
+<    by 0x........: __libc_start_main (...libc...)
+<    by 0x........: ...
+< Address 0x........ is not derived from any known block
+---
+>  Address 0x........ is not derived from any known block
+64,66c46
+<    by 0x........: __libc_start_main (...libc...)
+<    by 0x........: ...
+< Address 0x........ is not derived from any known block
+---
+>  Address 0x........ is not derived from any known block
+71,73c51
+<    by 0x........: __libc_start_main (...libc...)
+<    by 0x........: ...
+< Address 0x........ is not derived from any known block
+---
+>  Address 0x........ is not derived from any known block
+78,80c56
+<    by 0x........: __libc_start_main (...libc...)
+<    by 0x........: ...
+< Address 0x........ is not derived from any known block
+---
+>  Address 0x........ is not derived from any known block
+85,87c61
+<    by 0x........: __libc_start_main (...libc...)
+<    by 0x........: ...
+< Address 0x........ is not derived from any known block
+---
+>  Address 0x........ is not derived from any known block
+92,94c66
+<    by 0x........: __libc_start_main (...libc...)
+<    by 0x........: ...
+< Address 0x........ is not derived from any known block
+---
+>  Address 0x........ is not derived from any known block
+99,101c71
+<    by 0x........: __libc_start_main (...libc...)
+<    by 0x........: ...
+< Address 0x........ is not derived from any known block
+---
+>  Address 0x........ is not derived from any known block
+106,108c76
+<    by 0x........: __libc_start_main (...libc...)
+<    by 0x........: ...
+< Address 0x........ is not derived from any known block
+---
+>  Address 0x........ is not derived from any known block
+113,115c81
+<    by 0x........: __libc_start_main (...libc...)
+<    by 0x........: ...
+< Address 0x........ is not derived from any known block
+---
+>  Address 0x........ is not derived from any known block
+120,122c86
+<    by 0x........: __libc_start_main (...libc...)
+<    by 0x........: ...
+< Address 0x........ is not derived from any known block
+---
+>  Address 0x........ is not derived from any known block
+127,129c91
+<    by 0x........: __libc_start_main (...libc...)
+<    by 0x........: ...
+< Address 0x........ is not derived from any known block
+---
+>  Address 0x........ is not derived from any known block
+134,136c96
+<    by 0x........: __libc_start_main (...libc...)
+<    by 0x........: ...
+< Address 0x........ is not derived from any known block
+---
+>  Address 0x........ is not derived from any known block
+141,143c101
+<    by 0x........: __libc_start_main (...libc...)
+<    by 0x........: ...
+< Address 0x........ is not derived from any known block
+---
+>  Address 0x........ is not derived from any known block
+148,150c106
+<    by 0x........: __libc_start_main (...libc...)
+<    by 0x........: ...
+< Address 0x........ is not derived from any known block
+---
+>  Address 0x........ is not derived from any known block
+155,157c111
+<    by 0x........: __libc_start_main (...libc...)
+<    by 0x........: ...
+< Address 0x........ is not derived from any known block
+---
+>  Address 0x........ is not derived from any known block
+162,164c116
+<    by 0x........: __libc_start_main (...libc...)
+<    by 0x........: ...
+< Address 0x........ is not derived from any known block
+---
+>  Address 0x........ is not derived from any known block
+166,171d117
+< 
+< Invalid read of size 4
+<    at 0x........: main (imul.c:31)
+<    by 0x........: __libc_start_main (...libc...)
+<    by 0x........: ...
+< Address 0x........ is not derived from any known block
+173,178d118
+< 
+< Invalid read of size 4
+<    at 0x........: main (imul.c:31)
+<    by 0x........: __libc_start_main (...libc...)
+<    by 0x........: ...
+< Address 0x........ is not derived from any known block
+183,185c123
+<    by 0x........: __libc_start_main (...libc...)
+<    by 0x........: ...
+< Address 0x........ is not derived from any known block
+---
+>  Address 0x........ is not derived from any known block
+190,192c128
+<    by 0x........: __libc_start_main (...libc...)
+<    by 0x........: ...
+< Address 0x........ is not derived from any known block
+---
+>  Address 0x........ is not derived from any known block
+197,199c133
+<    by 0x........: __libc_start_main (...libc...)
+<    by 0x........: ...
+< Address 0x........ is not derived from any known block
+---
+>  Address 0x........ is not derived from any known block
+204,206c138
+<    by 0x........: __libc_start_main (...libc...)
+<    by 0x........: ...
+< Address 0x........ is not derived from any known block
+---
+>  Address 0x........ is not derived from any known block
+211,213c143
+<    by 0x........: __libc_start_main (...libc...)
+<    by 0x........: ...
+< Address 0x........ is not derived from any known block
+---
+>  Address 0x........ is not derived from any known block
+218,220c148
+<    by 0x........: __libc_start_main (...libc...)
+<    by 0x........: ...
+< Address 0x........ is not derived from any known block
+---
+>  Address 0x........ is not derived from any known block
+225,227c153
+<    by 0x........: __libc_start_main (...libc...)
+<    by 0x........: ...
+< Address 0x........ is not derived from any known block
+---
+>  Address 0x........ is not derived from any known block
+232,234c158
+<    by 0x........: __libc_start_main (...libc...)
+<    by 0x........: ...
+< Address 0x........ is not derived from any known block
+---
+>  Address 0x........ is not derived from any known block
+236c160
+< ERROR SUMMARY: 33 errors from 33 contexts (suppressed: 0 from 0)
+---
+> ERROR SUMMARY: 31 errors from 31 contexts (suppressed: 0 from 0)

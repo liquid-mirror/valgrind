@@ -1,0 +1,21 @@
+#! /bin/sh
+
+dir=`dirname $0`
+
+$dir/../../tests/filter_stderr_basic                    |
+
+# Anonymise addresses
+$dir/../../tests/filter_addresses                       |
+
+$dir/../../tests/filter_test_paths                      |
+
+# Anonymise paths like "(in /foo/bar/libc-baz.so)"
+sed "s/(in \/.*libc.*)$/(in \/...libc...)/"             |
+
+# Anonymise paths like "__libc_start_main (../foo/bar/libc-quux.c:129)"
+sed "s/__libc_\(.*\) (.*)$/__libc_\1 (...libc...)/" |
+
+sed \
+-e "/^exp-ptrcheck, a pointer-use checker\.$/d" \
+-e "/^NOTE: This is an Experimental-Class Valgrind Tool.$/d"  \
+-e "/^Copyright (C) 2003-200., and GNU GPL'd, by Nicholas Nethercote.$/d" \
