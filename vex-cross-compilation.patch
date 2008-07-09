@@ -1,6 +1,6 @@
 Index: VEX/auxprogs/genoffsets.c
 ===================================================================
---- VEX/auxprogs/genoffsets.c	(revision 1849)
+--- VEX/auxprogs/genoffsets.c	(revision 1857)
 +++ VEX/auxprogs/genoffsets.c	(working copy)
 @@ -46,7 +46,9 @@
  
@@ -13,7 +13,7 @@ Index: VEX/auxprogs/genoffsets.c
  
  #include "../pub/libvex_basictypes.h"
  #include "../pub/libvex_guest_x86.h"
-@@ -54,184 +56,187 @@
+@@ -54,184 +56,193 @@
  #include "../pub/libvex_guest_ppc32.h"
  #include "../pub/libvex_guest_ppc64.h"
  
@@ -162,6 +162,9 @@ Index: VEX/auxprogs/genoffsets.c
           offsetof(VexGuestPPC32State,guest_GPR0));
  
 -  printf("#define OFFSET_ppc32_GPR2      %3d\n",
++  DEFINE(OFFSET_ppc32_GPR1,
++         offsetof(VexGuestPPC32State,guest_GPR1));
++
 +  DEFINE(OFFSET_ppc32_GPR2,
           offsetof(VexGuestPPC32State,guest_GPR2));
  
@@ -213,6 +216,9 @@ Index: VEX/auxprogs/genoffsets.c
           offsetof(VexGuestPPC64State,guest_GPR0));
  
 -  printf("#define OFFSET_ppc64_GPR2     %4d\n",
++  DEFINE(OFFSET_ppc64_GPR1,
++         offsetof(VexGuestPPC64State,guest_GPR1));
++
 +  DEFINE(OFFSET_ppc64_GPR2,
           offsetof(VexGuestPPC64State,guest_GPR2));
  
@@ -259,7 +265,7 @@ Index: VEX/auxprogs/genoffsets.c
    printf("\n");
 Index: VEX/Makefile
 ===================================================================
---- VEX/Makefile	(revision 1849)
+--- VEX/Makefile	(revision 1857)
 +++ VEX/Makefile	(working copy)
 @@ -178,9 +178,10 @@
  	@cat priv/main/vex_svnversion.h
