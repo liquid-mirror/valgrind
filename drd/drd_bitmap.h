@@ -41,21 +41,40 @@
 
 /* Macro definitions. */
 
+
+/* Number of bits assigned to the least significant component of an address. */
 #define ADDR0_BITS 14
 
+/* Number of addresses that can be described when only the least significant */
+/* part of an address varies. This is an unsigned integer.                   */
 #define ADDR0_COUNT ((UWord)1 << ADDR0_BITS)
 
+/* Mask that has to be applied to an address of type Addr in order to */
+/* compute the least significant part of an address split.            */
 #define ADDR0_MASK (ADDR0_COUNT - 1)
 
-#define SPLIT_ADDRESS(a)            \
-  UWord a##0 = ((a) & ADDR0_MASK);  \
-  UWord a##1 = ((a) >> ADDR0_BITS);
+/* Split an address of type Addr into least and most significant bits. */
+static __inline__
+UWord address_lsb(const Addr a) { return a & ADDR0_MASK; }
+static __inline__
+UWord address_msb(const Addr a) { return a >> ADDR0_BITS; }
 
-// Assumption: sizeof(Addr) == sizeof(UWord).
-#define MAKE_ADDRESS(a1, a0)  \
-  (Addr)(((UWord)(a1) << (ADDR0_BITS)) | ((UWord)(a0)))
+static __inline__
+UWord first_address_with_higher_lsb(const Addr a)
+{ return (a | ADDR0_MASK) + 1; }
 
+/** Convert LSB and MSB back into an address
+ *
+ *  @note It is assumed that sizeof(Addr) == sizeof(UWord).
+ */
+static __inline__
+Addr make_address(const UWord a1, const UWord a0)
+{ return (a1 << ADDR0_BITS | a0); }
+
+/* Number of bits that fit in a variable of type UWord. */
 #define BITS_PER_UWORD (8UL*sizeof(UWord))
+
+/* Log2 of BITS_PER_UWORD. */
 #if defined(VGA_x86) || defined(VGA_ppc32)
 #define BITS_PER_BITS_PER_UWORD 5
 #elif defined(VGA_amd64) || defined(VGA_ppc64)
@@ -64,16 +83,27 @@
 #error Unknown platform.
 #endif
 
+/* Number of UWord's needed to represent ADDR0_COUNT addresses. */
 #define BITMAP1_UWORD_COUNT (ADDR0_COUNT >> BITS_PER_BITS_PER_UWORD)
 
 /* Highest bits of an address that fit into the same UWord of bm0[]. */
-#define UWORD_MSB(a) ((a) & ~(BITS_PER_UWORD - 1))
+static __inline__
+Addr uword_msb(const Addr a)
+{ return a & ~(BITS_PER_UWORD - 1); }
+
+static __inline__
+UWord uword_index(const Addr a)
+{ return a >> BITS_PER_BITS_PER_UWORD; }
 
 /* Lowest bits of an address that fit into the same UWord of bm0[]. */
-#define UWORD_LSB(a) ((a) & (BITS_PER_UWORD - 1))
+static __inline__
+UWord uword_lsb(const Addr a)
+{ return ((a) & (BITS_PER_UWORD - 1)); }
 
 /* Highest address that fits in the same UWord as a. */
-#define UWORD_HIGHEST_ADDRESS(a) ((a) | (BITS_PER_UWORD - 1))
+static __inline__
+UWord UWORD_HIGHEST_ADDRESS(const Addr a)
+{ return ((a) | (BITS_PER_UWORD - 1)); }
 
 
 /* Local variables. */
@@ -97,7 +127,7 @@ struct bitmap1
 
 static __inline__ UWord bm0_mask(const Addr a)
 {
-  return ((UWord)1 << UWORD_LSB(a));
+  return ((UWord)1 << uword_lsb(a));
 }
 
 static __inline__ void bm0_set(UWord* bm0, const Addr a)
@@ -105,7 +135,7 @@ static __inline__ void bm0_set(UWord* bm0, const Addr a)
 #ifdef ENABLE_DRD_CONSISTENCY_CHECKS
   tl_assert(a < ADDR0_COUNT);
 #endif
-  bm0[a >> BITS_PER_BITS_PER_UWORD] |= (UWord)1 << UWORD_LSB(a);
+  bm0[a >> BITS_PER_BITS_PER_UWORD] |= (UWord)1 << uword_lsb(a);
 }
 
 /** Set all of the addresses in range [ a1 .. a1 + size [ in bitmap bm0. */
@@ -116,10 +146,10 @@ static __inline__ void bm0_set_range(UWord* bm0,
   tl_assert(a1 < ADDR0_COUNT);
   tl_assert(size > 0);
   tl_assert(a1 + size <= ADDR0_COUNT);
-  tl_assert(UWORD_MSB(a1) == UWORD_MSB(a1 + size - 1));
+  tl_assert(uword_msb(a1) == uword_msb(a1 + size - 1));
 #endif
   bm0[a1 >> BITS_PER_BITS_PER_UWORD]
-    |= (((UWord)1 << size) - 1) << UWORD_LSB(a1);
+    |= (((UWord)1 << size) - 1) << uword_lsb(a1);
 }
 
 static __inline__ void bm0_clear(UWord* bm0, const Addr a)
@@ -127,7 +157,7 @@ static __inline__ void bm0_clear(UWord* bm0, const Addr a)
 #ifdef ENABLE_DRD_CONSISTENCY_CHECKS
   tl_assert(a < ADDR0_COUNT);
 #endif
-  bm0[a >> BITS_PER_BITS_PER_UWORD] &= ~((UWord)1 << UWORD_LSB(a));
+  bm0[a >> BITS_PER_BITS_PER_UWORD] &= ~((UWord)1 << uword_lsb(a));
 }
 
 /** Clear all of the addresses in range [ a1 .. a1 + size [ in bitmap bm0. */
@@ -138,10 +168,10 @@ static __inline__ void bm0_clear_range(UWord* bm0,
   tl_assert(a1 < ADDR0_COUNT);
   tl_assert(size > 0);
   tl_assert(a1 + size <= ADDR0_COUNT);
-  tl_assert(UWORD_MSB(a1) == UWORD_MSB(a1 + size - 1));
+  tl_assert(uword_msb(a1) == uword_msb(a1 + size - 1));
 #endif
   bm0[a1 >> BITS_PER_BITS_PER_UWORD]
-    &= ~(((UWord)1 << size) - 1) << UWORD_LSB(a1);
+    &= ~(((UWord)1 << size) - 1) << uword_lsb(a1);
 }
 
 static __inline__ UWord bm0_is_set(const UWord* bm0, const Addr a)
@@ -149,7 +179,7 @@ static __inline__ UWord bm0_is_set(const UWord* bm0, const Addr a)
 #ifdef ENABLE_DRD_CONSISTENCY_CHECKS
   tl_assert(a < ADDR0_COUNT);
 #endif
-  return (bm0[a >> BITS_PER_BITS_PER_UWORD] & ((UWord)1 << UWORD_LSB(a)));
+  return (bm0[a >> BITS_PER_BITS_PER_UWORD] & ((UWord)1 << uword_lsb(a)));
 }
 
 /** Return true if any of the bits [ a1 .. a1+size [ are set in bm0. */
@@ -160,10 +190,10 @@ static __inline__ UWord bm0_is_any_set(const UWord* bm0,
   tl_assert(a1 < ADDR0_COUNT);
   tl_assert(size > 0);
   tl_assert(a1 + size <= ADDR0_COUNT);
-  tl_assert(UWORD_MSB(a1) == UWORD_MSB(a1 + size - 1));
+  tl_assert(uword_msb(a1) == uword_msb(a1 + size - 1));
 #endif
   return (bm0[a1 >> BITS_PER_BITS_PER_UWORD]
-          & ((((UWord)1 << size) - 1) << UWORD_LSB(a1)));
+          & ((((UWord)1 << size) - 1) << uword_lsb(a1)));
 }
 
 
