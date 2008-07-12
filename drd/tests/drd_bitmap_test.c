@@ -57,12 +57,15 @@ struct { Addr address; SizeT size; BmAccessTypeT access_type; }
     {                   0xffffULL, 1, eStore },
     {               0x0001ffffULL, 1, eLoad  },
     {               0x00ffffffULL, 1, eLoad  },
-    { 0xfffffffeULL - ADDR0_COUNT, 1, eStore },
+    { 0xffffffffULL - (((1 << ADDR_LSB_BITS) + 1) << ADDR_IGNORED_BITS),
+                                   1, eStore },
 #if defined(VGP_amd64_linux) || defined(VGP_ppc64_linux) || defined(VGP_ppc64_aix5)
-    { 0xffffffffULL - ADDR0_COUNT, 1, eStore },
+    { 0xffffffffULL - (1 << ADDR_LSB_BITS << ADDR_IGNORED_BITS),
+                                   1, eStore },
     {               0xffffffffULL, 1, eStore },
     {              0x100000000ULL, 1, eStore },
-    {         -2ULL - ADDR0_COUNT, 1, eStore },
+    { -2ULL - (1 << ADDR_LSB_BITS << ADDR_IGNORED_BITS),
+                                   1, eStore },
 #endif
   };
 
@@ -125,13 +128,13 @@ void bm_test2()
   bm1 = bm_new();
   bm2 = bm_new();
   bm_access_load_1(bm1, 7);
-  bm_access_load_1(bm2, ADDR0_COUNT + 7);
+  bm_access_load_1(bm2, make_address(1, address_lsb(7)));
   assert(! bm_equal(bm1, bm2));
   assert(! bm_equal(bm2, bm1));
   bm_access_load_1(bm2, 7);
   assert(! bm_equal(bm1, bm2));
   assert(! bm_equal(bm2, bm1));
-  bm_access_store_1(bm1, ADDR0_COUNT + 7);
+  bm_access_store_1(bm1, make_address(1, address_lsb(7)));
   assert(! bm_equal(bm1, bm2));
   assert(! bm_equal(bm2, bm1));
   bm_delete(bm2);
@@ -145,16 +148,17 @@ void bm_test3(const int outer_loop_step, const int inner_loop_step)
   struct bitmap* bm1;
   struct bitmap* bm2;
 
+  const Addr lb = make_address(2, 0) - 2 * BITS_PER_UWORD;
+  const Addr ub = make_address(2, 0) + 2 * BITS_PER_UWORD;
+
   assert(outer_loop_step >= 1);
   assert(inner_loop_step >= 1);
 
   bm1 = bm_new();
   bm2 = bm_new();
-  for (i = ADDR0_COUNT - 2 * BITS_PER_UWORD;
-       i < ADDR0_COUNT + 2 * BITS_PER_UWORD;
-       i += outer_loop_step)
+  for (i = lb; i < ub; i += outer_loop_step)
   {
-    for (j = i + 1; j < ADDR0_COUNT + 2 * BITS_PER_UWORD; j += inner_loop_step)
+    for (j = i + 1; j < ub; j += inner_loop_step)
     {
       bm_access_range_load(bm1, i, j);
       bm_clear_load(bm1, i, j);
@@ -188,15 +192,13 @@ void bm_test3(const int outer_loop_step, const int inner_loop_step)
       assert(bm_equal(bm1, bm2));
     }
   }
-  bm_access_range_load(bm1, 0, 2 * ADDR0_COUNT + 2 * BITS_PER_UWORD);
-  bm_access_range_store(bm1, 0, 2 * ADDR0_COUNT + 2 * BITS_PER_UWORD);
-  bm_access_range_load(bm2, 0, 2 * ADDR0_COUNT + 2 * BITS_PER_UWORD);
-  bm_access_range_store(bm2, 0, 2 * ADDR0_COUNT + 2 * BITS_PER_UWORD);
-  for (i = ADDR0_COUNT - 2 * BITS_PER_UWORD;
-       i < ADDR0_COUNT + 2 * BITS_PER_UWORD;
-       i += outer_loop_step)
+  bm_access_range_load (bm1, 0, ub);
+  bm_access_range_store(bm1, 0, ub);
+  bm_access_range_load (bm2, 0, ub);
+  bm_access_range_store(bm2, 0, ub);
+  for (i = lb; i < ub; i += outer_loop_step)
   {
-    for (j = i + 1; j < ADDR0_COUNT + 2 * BITS_PER_UWORD; j += inner_loop_step)
+    for (j = i + 1; j < ub; j += inner_loop_step)
     {
       bm_clear_load(bm1, i, j);
       bm_access_range_load(bm1, i, j);
