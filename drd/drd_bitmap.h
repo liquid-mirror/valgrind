@@ -309,7 +309,6 @@ struct bitmap
 };
 
 
-static struct bitmap2* bm2_new(const UWord a1);
 static struct bitmap2* bm2_make_exclusive(struct bitmap* const bm,
                                           struct bitmap2ref* const bm2ref);
 static __inline__
@@ -495,6 +494,8 @@ const struct bitmap2* bm2_lookup(struct bitmap* const bm, const UWord a1)
       bm2 = (*bm->compute_bitmap2)(a1);
       if (bm2)
       {
+        tl_assert(bm2->refcnt == 1);
+        bm2->refcnt--;
         return bm2_insert_addref(bm, bm2);
       }
       else
@@ -579,8 +580,8 @@ struct bitmap2* bm2_insert(struct bitmap* const bm, const UWord a1)
   bm2ref       = VG_(OSetGen_AllocNode)(bm->oset, sizeof(*bm2ref));
   bm2ref->addr = a1;
   bm2          = bm2_new(a1);
+  bm2_clear(bm2);
   bm2ref->bm2  = bm2;
-  VG_(memset)(&bm2->bm1, 0, sizeof(bm2->bm1));
   VG_(OSetGen_Insert)(bm->oset, bm2ref);
   
   bm_update_cache(bm, a1, bm2);

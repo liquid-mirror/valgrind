@@ -55,6 +55,8 @@ typedef enum { eLoad, eStore, eStart, eEnd } BmAccessTypeT;
 
 
 // Function declarations.
+
+/* First level bitmaps. */
 struct bitmap* bm_new(void);
 struct bitmap* bm_new_cb(struct bitmap2* (*compute_bitmap2)(UWord));
 void bm_delete(struct bitmap* const bm);
@@ -118,10 +120,14 @@ void bm_report_races(ThreadId const tid1, ThreadId const tid2,
                      struct bitmap* const bm2);
 void bm_print(struct bitmap* bm);
 ULong bm_get_bitmap_creation_count(void);
+
+/* Second-level bitmaps. */
+struct bitmap2* bm2_new(const UWord a1);
+void bm2_clear(struct bitmap2* const bm2);
+void bm2_merge(struct bitmap2* const bm2l, const struct bitmap2* const bm2r);
+void bm2_print(const struct bitmap2* const bm2);
 ULong bm_get_bitmap2_node_creation_count(void);
 ULong bm_get_bitmap2_creation_count(void);
-
-void bm_test(void);
 
 
 #endif /* __PUB_DRD_BITMAP_H */

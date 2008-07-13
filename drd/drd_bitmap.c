@@ -41,12 +41,6 @@
 struct bitmap2;
 
 
-/* Local function declarations. */
-
-static void bm2_merge(struct bitmap2* const bm2l,
-                      const struct bitmap2* const bm2r);
-
-
 /* Local constants. */
 
 static ULong s_bitmap_creation_count;
@@ -76,9 +70,10 @@ struct bitmap* bm_new_cb(struct bitmap2* (*compute_bitmap2)(UWord))
 
   bm = VG_(malloc)(sizeof(*bm));
   tl_assert(bm);
-  /* Cache initialization. a1 is initialized with a value that never can */
-  /* match any valid address: the upper ADDR0_BITS bits of a1 are always */
-  /* zero for a valid cache entry.                                       */
+  /* Cache initialization. a1 is initialized with a value that never can
+   * match any valid address: the upper (ADDR_LSB_BITS + ADDR_IGNORED_BITS)
+   * bits of a1 are always zero for a valid cache entry.
+   */
   for (i = 0; i < N_CACHE_ELEM; i++)
   {
     bm->cache[i].a1  = ~(UWord)1;
@@ -120,6 +115,11 @@ void bm_delete(struct bitmap* const bm)
 /**
  * Record an access of type access_type at addresses a .. a + size - 1 in
  * bitmap bm.
+ *
+ * @note The current implementation of bm_access_range does not work for the
+ * highest addresses in the address range. At least on Linux this is
+ * not a problem since the upper part of the address space is reserved
+ * for the kernel.
  */
 void bm_access_range(struct bitmap* const bm,
                      const Addr a1, const Addr a2,
@@ -129,10 +129,6 @@ void bm_access_range(struct bitmap* const bm,
 
   tl_assert(bm);
   tl_assert(a1 < a2);
-  /* The current implementation of bm_access_range does not work for the   */
-  /* ADDR0_COUNT highest addresses in the address range. At least on Linux */
-  /* this is not a problem since the upper part of the address space is    */
-  /* reserved for the kernel.                                              */
   tl_assert(a2 < first_address_with_higher_msb(a2));
 
   for (b = a1; b < a2; b = b_next)
@@ -891,31 +887,36 @@ int bm_has_races(struct bitmap* const lhs,
 
 void bm_print(struct bitmap* const bm)
 {
-  struct bitmap2* bm2;
   struct bitmap2ref* bm2ref;
 
-  VG_(OSetGen_ResetIter)(bm->oset);
-
-  for ( ; (bm2ref = VG_(OSetGen_Next)(bm->oset)) != 0; )
+  for (VG_(OSetGen_ResetIter)(bm->oset);
+       (bm2ref = VG_(OSetGen_Next)(bm->oset)) != 0;
+       )
   {
-    const struct bitmap1* bm1;
-    Addr a;
+    bm2_print(bm2ref->bm2);
+  }
+}
 
-    bm2 = bm2ref->bm2;
-    bm1 = &bm2->bm1;
-    for (a = make_address(bm2->addr, 0);
-         a <= first_address_with_higher_msb(make_address(bm2->addr, 0)) - 1;
-         a++)
+void bm2_print(const struct bitmap2* const bm2)
+{
+  const struct bitmap1* bm1;
+  Addr a;
+
+  tl_assert(bm2);
+
+  bm1 = &bm2->bm1;
+  for (a = make_address(bm2->addr, 0);
+       a <= first_address_with_higher_msb(make_address(bm2->addr, 0)) - 1;
+       a++)
+  {
+    const Bool r = bm0_is_set(bm1->bm0_r, address_lsb(a)) != 0;
+    const Bool w = bm0_is_set(bm1->bm0_w, address_lsb(a)) != 0;
+    if (r || w)
     {
-      const Bool r = bm0_is_set(bm1->bm0_r, address_lsb(a)) != 0;
-      const Bool w = bm0_is_set(bm1->bm0_w, address_lsb(a)) != 0;
-      if (r || w)
-      {
-        VG_(printf)("0x%08lx %c %c\n",
-                    a,
-                    w ? 'W' : ' ',
-                    r ? 'R' : ' ');
-      }
+      VG_(printf)("0x%08lx %c %c\n",
+                  a,
+                  w ? 'W' : ' ',
+                  r ? 'R' : ' ');
     }
   }
 }
@@ -935,8 +936,13 @@ ULong bm_get_bitmap2_creation_count(void)
   return s_bitmap2_creation_count;
 }
 
-/** Allocate and initialize a second level bitmap. */
-static struct bitmap2* bm2_new(const UWord a1)
+/** Allocate a second level bitmap.
+ *
+ *  @param a1 address_msb(client address).
+ *
+ *  @note This function does not initialize the bitmap itself !!
+ */
+struct bitmap2* bm2_new(const UWord a1)
 {
   struct bitmap2* bm2;
 
@@ -949,11 +955,18 @@ static struct bitmap2* bm2_new(const UWord a1)
   return bm2;
 }
 
+/** Clear the bitmap contents. */
+void bm2_clear(struct bitmap2* const bm2)
+{
+  tl_assert(bm2);
+  VG_(memset)(&bm2->bm1, 0, sizeof(bm2->bm1));
+}
+
 /** Make a copy of a shared second level bitmap such that the copy can be
  *  modified.
  *
- *  @param a1 client address shifted right by ADDR0_BITS.
- *  @param bm bitmap pointer.
+ *  @param bm     bitmap pointer.
+ *  @param bm2ref pointer to pointer to the second level bitmap.
  */
 static
 struct bitmap2* bm2_make_exclusive(struct bitmap* const bm,
@@ -983,8 +996,8 @@ struct bitmap2* bm2_make_exclusive(struct bitmap* const bm,
   return bm2_copy;
 }
 
-static void bm2_merge(struct bitmap2* const bm2l,
-                      const struct bitmap2* const bm2r)
+/** Compute *bm2l |= *bm2r. */
+void bm2_merge(struct bitmap2* const bm2l, const struct bitmap2* const bm2r)
 {
   unsigned k;
 

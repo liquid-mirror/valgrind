@@ -62,6 +62,7 @@ static ThreadId    s_vg_running_tid  = VG_INVALID_THREADID;
 DrdThreadId s_drd_running_tid = DRD_INVALID_THREADID;
 ThreadInfo s_threadinfo[DRD_N_THREADS];
 struct bitmap* s_conflict_set;
+static DrdThreadId s_conflict_set_tid = DRD_INVALID_THREADID;
 static Bool s_trace_context_switches = False;
 static Bool s_trace_conflict_set = False;
 static Bool s_segment_merging = True;
@@ -895,15 +896,104 @@ void thread_report_conflicting_segments(const DrdThreadId tid,
   }
 }
 
+#define LAZY_CONFLICT_SET_EVALUATION 1
+
 static struct bitmap2* thread_compute_conflict_set_bitmap2(const UWord a1)
 {
+  const DrdThreadId tid = s_conflict_set_tid;
+  struct bitmap2* result = 0;
+
   if (s_trace_conflict_set)
   {
     VG_(message)(Vg_UserMsg,
-                 "thread_compute_conflict_set_bitmap2(a1 = %#lx)",
-                 a1);
+                 "thread_compute_conflict_set_bitmap2("
+                 "running tid %d, conflict set tid = %d, a1 = %#lx)",
+                 thread_get_running_tid(), tid, a1);
   }
-  return 0;
+
+#if LAZY_CONFLICT_SET_EVALUATION == 1
+  s_conflict_set_bitmap2_creation_count -= bm_get_bitmap2_creation_count();
+
+  {
+  Segment* p;
+  p = s_threadinfo[tid].last;
+  {
+    unsigned j;
+
+    if (s_trace_conflict_set)
+    {
+      char msg[256];
+
+      VG_(snprintf)(msg, sizeof(msg),
+                    "conflict set: thread [%d] at vc ",
+                    tid);
+      vc_snprint(msg + VG_(strlen)(msg),
+                 sizeof(msg) - VG_(strlen)(msg),
+                 &p->vc);
+      VG_(message)(Vg_UserMsg, "%s", msg);
+    }
+
+    for (j = 0; j < sizeof(s_threadinfo) / sizeof(s_threadinfo[0]); j++)
+    {
+      if (j != tid && IsValidDrdThreadId(j))
+      {
+        const Segment* q;
+        for (q = s_threadinfo[j].last; q; q = q->prev)
+        {
+          const struct bitmap2* const q_bm2 = bm2_lookup(q->bm, a1);
+          if (q_bm2 && ! vc_lte(&q->vc, &p->vc) && ! vc_lte(&p->vc, &q->vc))
+          {
+            if (s_trace_conflict_set)
+            {
+              char msg[256];
+              VG_(snprintf)(msg, sizeof(msg),
+                            "conflict set: [%d] merging segment ", j);
+              vc_snprint(msg + VG_(strlen)(msg),
+                         sizeof(msg) - VG_(strlen)(msg),
+                         &q->vc);
+              VG_(message)(Vg_UserMsg, "%s", msg);
+            }
+            if (result == 0)
+            {
+              result = bm2_new(q_bm2->addr);
+              bm2_clear(result);
+            }
+            bm2_merge(result, q_bm2);
+          }
+          else
+          {
+            if (s_trace_conflict_set)
+            {
+              char msg[256];
+              VG_(snprintf)(msg, sizeof(msg),
+                            "conflict set: [%d] ignoring segment ", j);
+              vc_snprint(msg + VG_(strlen)(msg),
+                         sizeof(msg) - VG_(strlen)(msg),
+                         &q->vc);
+              VG_(message)(Vg_UserMsg, "%s", msg);
+            }
+          }
+        }
+      }
+    }
+  }
+  }
+
+  s_conflict_set_bitmap2_creation_count += bm_get_bitmap2_creation_count();
+#endif
+
+  if (result)
+  {
+    if (s_trace_conflict_set)
+    {
+      VG_(message)(Vg_UserMsg,
+                   "thread_compute_conflict_set_bitmap2(tid = %d, a1 = %#lx):",
+                   tid, a1);
+      bm2_print(result);
+    }
+  }
+
+  return result;
 }
 
 /** Compute a bitmap that represents the union of all memory accesses of all
@@ -912,22 +1002,21 @@ static struct bitmap2* thread_compute_conflict_set_bitmap2(const UWord a1)
 static void thread_compute_conflict_set(struct bitmap** conflict_set,
                                         const DrdThreadId tid)
 {
-  Segment* p;
-
   tl_assert(0 <= (int)tid && tid < DRD_N_THREADS
             && tid != DRD_INVALID_THREADID);
   tl_assert(tid == s_drd_running_tid);
 
   s_update_conflict_set_count++;
   s_conflict_set_bitmap_creation_count  -= bm_get_bitmap_creation_count();
-  s_conflict_set_bitmap2_creation_count -= bm_get_bitmap2_creation_count();
 
   if (*conflict_set)
   {
     bm_delete(*conflict_set);
   }
   *conflict_set = bm_new_cb(thread_compute_conflict_set_bitmap2);
+  s_conflict_set_tid = tid;
 
+#if LAZY_CONFLICT_SET_EVALUATION == 0
   if (s_trace_conflict_set)
   {
     char msg[256];
@@ -940,6 +1029,9 @@ static void thread_compute_conflict_set(struct bitmap** conflict_set,
                &s_threadinfo[tid].last->vc);
     VG_(message)(Vg_UserMsg, "%s", msg);
   }
+
+  {
+  Segment* p;
 
   p = s_threadinfo[tid].last;
   {
@@ -996,9 +1088,10 @@ static void thread_compute_conflict_set(struct bitmap** conflict_set,
       }
     }
   }
+  }
+#endif
 
   s_conflict_set_bitmap_creation_count  += bm_get_bitmap_creation_count();
-  s_conflict_set_bitmap2_creation_count += bm_get_bitmap2_creation_count();
 
   if (0 && s_trace_conflict_set)
   {
