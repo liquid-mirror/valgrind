@@ -54,7 +54,18 @@ static ULong s_bitmap_creation_count;
 
 /* Function definitions. */
 
-struct bitmap* bm_new()
+/** Allocate and initialize a new bitmap structure. */
+struct bitmap* bm_new(void)
+{
+  return bm_new_cb(0);
+}
+
+/** Allocate and initialize a new bitmap structure.
+ *
+ *  @param compute_bitmap2 Callback function for computing the actual bitmap
+ *                         data.
+ */
+struct bitmap* bm_new_cb(struct bitmap2* (*compute_bitmap2)(UWord))
 {
   unsigned i;
   struct bitmap* bm;
@@ -74,6 +85,7 @@ struct bitmap* bm_new()
     bm->cache[i].bm2 = 0;
   }
   bm->oset = VG_(OSetGen_Create)(0, 0, VG_(malloc), VG_(free));
+  bm->compute_bitmap2 = compute_bitmap2;
 
   s_bitmap_creation_count++;
 
@@ -91,10 +103,13 @@ void bm_delete(struct bitmap* const bm)
   for ( ; (bm2ref = VG_(OSetGen_Next)(bm->oset)) != 0; )
   {
     bm2 = bm2ref->bm2;
-    tl_assert(bm2->refcnt >= 1);
-    if (--bm2->refcnt == 0)
+    if (bm2)
     {
-      VG_(free)(bm2);
+      tl_assert(bm2->refcnt >= 1);
+      if (--bm2->refcnt == 0)
+      {
+        VG_(free)(bm2);
+      }
     }
   }
 

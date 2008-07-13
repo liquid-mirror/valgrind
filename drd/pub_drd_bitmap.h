@@ -47,6 +47,7 @@
 
 // Forward declarations.
 struct bitmap;
+struct bitmap2;
 
 
 // Datatype definitions.
@@ -55,6 +56,7 @@ typedef enum { eLoad, eStore, eStart, eEnd } BmAccessTypeT;
 
 // Function declarations.
 struct bitmap* bm_new(void);
+struct bitmap* bm_new_cb(struct bitmap2* (*compute_bitmap2)(UWord));
 void bm_delete(struct bitmap* const bm);
 void bm_access_range(struct bitmap* const bm,
                      const Addr a1, const Addr a2,

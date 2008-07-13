@@ -895,6 +895,17 @@ void thread_report_conflicting_segments(const DrdThreadId tid,
   }
 }
 
+static struct bitmap2* thread_compute_conflict_set_bitmap2(const UWord a1)
+{
+  if (s_trace_conflict_set)
+  {
+    VG_(message)(Vg_UserMsg,
+                 "thread_compute_conflict_set_bitmap2(a1 = %#lx)",
+                 a1);
+  }
+  return 0;
+}
+
 /** Compute a bitmap that represents the union of all memory accesses of all
  *  segments that are unordered to the current segment of the thread tid.
  */
@@ -915,7 +926,7 @@ static void thread_compute_conflict_set(struct bitmap** conflict_set,
   {
     bm_delete(*conflict_set);
   }
-  *conflict_set = bm_new();
+  *conflict_set = bm_new_cb(thread_compute_conflict_set_bitmap2);
 
   if (s_trace_conflict_set)
   {
