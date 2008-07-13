@@ -126,7 +126,7 @@ fi
 # - Not yet clear to me: whether or not Helgrind detects races on stack
 #   variables.
 # - The ITC tests have been run on a 4-way 2.5 GHz Pentium 4 workstation.
-#   (OS: probably 32-bit Windows ?)
+#   Not yet clear to me: 32-bit or 64-bit OS ? Which OS ? ITC granularity ?
 #
 ####################################################################################################################################
 # Results:                native       native       native       none     none       DRD       DRD      HG         HG-hb     ITC ITC
