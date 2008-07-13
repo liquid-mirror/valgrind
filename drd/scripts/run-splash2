@@ -121,6 +121,10 @@ fi
 #   detection.
 # - Helgrind with --pure-happens-before=yes does not handle atomic variables
 #   correctly. This causes real data races to be suppressed.
+# - Not yet clear to me: whether or not Helgrind detects races on stack
+#   variables.
+# - The ITC tests have been run on a 4-way 2.5 GHz Pentium 4 workstation.
+#   (OS: probably 32-bit Windows ?)
 #
 ####################################################################################################################################
 # Results:                native       native       native       none     none       DRD       DRD      HG         HG-hb     ITC ITC
@@ -134,6 +138,7 @@ fi
 # Raytrace                0.49 352832  0.38 361024  0.39 399253  9.1 1.16 11.6 1.09  205 1.33  91 1.33  104  1.94   89  3.98 172  53
 # Water-n2                0.12  17104  0.07  33480  0.08  66240 11.3 4.38 18.0 1.88 1563 2.46 292 2.44  108  3.42  106  4.15 189  39
 # Water-sp                0.12  10784  0.06  62560  0.06 122645 11.1 6.28 23.0 0.75  212 0.83  80 0.83  129  1.39  139  1.62 183  34
+# ..................................................................................................................................
 # geometric mean          0.12  24965  0.07  49937  0.09  81274  9.6 3.72 14.1 1.53  108 1.72  72 1.76  111  2.81   79  3.58 180  51
 # ..................................................................................................................................
 # Hardware: dual-core Intel Core2 Duo E6750, 2.66 GHz, 4 MB L2 cache, 2 GB RAM.                                             
