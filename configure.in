@@ -1472,7 +1472,7 @@ AC_OUTPUT(
    exp-omega/docs/Makefile
    drd/Makefile
    drd/docs/Makefile
-   drd/scripts/download-and-build-splash2
+   drd/scripts/splash2.patch
    drd/tests/Makefile
 )
 
