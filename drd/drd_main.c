@@ -75,6 +75,7 @@ static Bool s_drd_check_stack_accesses = False;
 static Bool s_drd_print_stats          = False;
 static Bool s_drd_trace_fork_join      = False;
 static Bool s_drd_var_info             = False;
+static Bool s_drd_first_race_only      = False;
 static Bool s_show_stack_usage         = False;
 
 
@@ -102,6 +103,7 @@ static Bool drd_process_cmd_line_option(Char* arg)
 
   VG_BOOL_CLO     (arg, "--check-stack-var",     s_drd_check_stack_accesses)
   else VG_BOOL_CLO(arg, "--drd-stats",           s_drd_print_stats)
+  else VG_BOOL_CLO(arg, "--first-race-only",     s_drd_first_race_only)
   else VG_BOOL_CLO(arg,"--report-signal-unlocked",s_drd_report_signal_unlocked)
   else VG_BOOL_CLO(arg, "--segment-merging",     segment_merging)
   else VG_BOOL_CLO(arg, "--show-confl-seg",      show_confl_seg)
@@ -173,6 +175,9 @@ static void drd_print_usage(void)
 "                              stack variables [no].\n"
 "    --exclusive-threshold=<n> Print an error message if any mutex or\n"
 "        writer lock is held longer than the specified time (in milliseconds).\n"
+"    --first-race-only=yes|no  Only report the first data race that occurs on\n"
+"                              a memory location instead of all races [no].\n"
+
 "    --report-signal-unlocked=yes|no Whether to report calls to\n"
 "                              pthread_cond_signal() where the mutex associated\n"
 "                              with the signal via pthread_cond_wait() is not\n"
@@ -277,6 +282,11 @@ static void drd_report_race(const Addr addr, const SizeT size,
                           VG_(get_IP)(VG_(get_running_tid)()),
                           "Conflicting accesses",
                           &drei);
+
+  if (s_drd_first_race_only)
+  {
+    drd_start_suppression(addr, addr + size, "no repetitive race reports");
+  }
 }
 
 static VG_REGPARM(2) void drd_trace_load(Addr addr, SizeT size)
