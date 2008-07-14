@@ -601,73 +601,6 @@ static void thread_merge_segments(void)
   }
 }
 
-/** Every change in the vector clock of a thread may cause segments that
- *  were previously ordered to this thread to become unordered. Hence,
- *  it may be necessary to recalculate the conflict set if the vector clock 
- *  of the current thread is updated. This function check whether such a
- *  recalculation is necessary.
- *
- *  @param tid    Thread ID of the thread to which a new segment has been
- *                appended.
- *  @param new_sg Pointer to the most recent segment of thread tid.
- */
-static Bool conflict_set_update_needed(const DrdThreadId tid,
-                                     const Segment* const new_sg)
-{
-#if 0
-  unsigned i;
-  const Segment* old_sg;
-
-  tl_assert(new_sg);
-
-  /* If a new segment was added to another thread than the running thread, */
-  /* just tell the caller to update the conflict set.                        */
-  if (tid != s_drd_running_tid)
-    return True;
-
-  /* Always let the caller update the conflict set after creation of the */
-  /* first segment.                                                    */
-  old_sg = new_sg->prev;
-  if (old_sg == 0)
-    return True;
-
-  for (i = 0; i < sizeof(s_threadinfo) / sizeof(s_threadinfo[0]); i++)
-  {
-    Segment* q;
-
-    if (i == s_drd_running_tid)
-      continue;
-
-    for (q = s_threadinfo[i].last; q; q = q->prev)
-    {
-      /* If the expression below evaluates to false, this expression will */
-      /* also evaluate to false for all subsequent iterations. So stop    */
-      /* iterating.                                                       */
-      if (vc_lte(&q->vc, &old_sg->vc))
-        break;
-      /* If the vector clock of the 2nd the last segment is not ordered   */
-      /* to the vector clock of segment q, and the last segment is, ask   */
-      /* the caller to update the conflict set.                             */
-      if (! vc_lte(&old_sg->vc, &q->vc))
-      {
-        return True;
-      }
-      /* If the vector clock of the last segment is not ordered to the    */
-      /* vector clock of segment q, ask the caller to update the conflict   */
-      /* set.                                                             */
-      if (! vc_lte(&q->vc, &new_sg->vc) && ! vc_lte(&new_sg->vc, &q->vc))
-      {
-        return True;
-      }
-    }
-  }
-
-  return False;
-#else
-  return True;
-#endif
-}
-
 /** Create a new segment for the specified thread, and discard any segments
  *  that cannot cause races anymore.
  */
@@ -681,11 +614,8 @@ void thread_new_segment(const DrdThreadId tid)
   new_sg = sg_new(tid, tid);
   thread_append_segment(tid, new_sg);
 
-  if (conflict_set_update_needed(tid, new_sg))
-  {
-    thread_compute_conflict_set(&s_conflict_set, s_drd_running_tid);
-    s_conflict_set_new_segment_count++;
-  }
+  thread_compute_conflict_set(&s_conflict_set, s_drd_running_tid);
+  s_conflict_set_new_segment_count++;
 
   thread_discard_ordered_segments();
 
@@ -898,10 +828,11 @@ void thread_report_conflicting_segments(const DrdThreadId tid,
 
 #define LAZY_CONFLICT_SET_EVALUATION 1
 
-static struct bitmap2* thread_compute_conflict_set_bitmap2(const UWord a1)
+static void
+thread_compute_conflict_set_bitmap2(const UWord a1,
+                                    struct bitmap2* const result)
 {
   const DrdThreadId tid = s_conflict_set_tid;
-  struct bitmap2* result = 0;
 
   if (s_trace_conflict_set)
   {
@@ -953,11 +884,6 @@ static struct bitmap2* thread_compute_conflict_set_bitmap2(const UWord a1)
                          &q->vc);
               VG_(message)(Vg_UserMsg, "%s", msg);
             }
-            if (result == 0)
-            {
-              result = bm2_new(q_bm2->addr);
-              bm2_clear(result);
-            }
             bm2_merge(result, q_bm2);
           }
           else
@@ -992,8 +918,6 @@ static struct bitmap2* thread_compute_conflict_set_bitmap2(const UWord a1)
       bm2_print(result);
     }
   }
-
-  return result;
 }
 
 /** Compute a bitmap that represents the union of all memory accesses of all

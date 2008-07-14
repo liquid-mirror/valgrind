@@ -59,7 +59,7 @@ struct bitmap* bm_new(void)
  *  @param compute_bitmap2 Callback function for computing the actual bitmap
  *                         data.
  */
-struct bitmap* bm_new_cb(struct bitmap2* (*compute_bitmap2)(UWord))
+struct bitmap* bm_new_cb(void (*compute_bitmap2)(UWord, struct bitmap2*))
 {
   unsigned i;
   struct bitmap* bm;
@@ -89,24 +89,7 @@ struct bitmap* bm_new_cb(struct bitmap2* (*compute_bitmap2)(UWord))
 
 void bm_delete(struct bitmap* const bm)
 {
-  struct bitmap2*    bm2;
-  struct bitmap2ref* bm2ref;
-
   tl_assert(bm);
-
-  VG_(OSetGen_ResetIter)(bm->oset);
-  for ( ; (bm2ref = VG_(OSetGen_Next)(bm->oset)) != 0; )
-  {
-    bm2 = bm2ref->bm2;
-    if (bm2)
-    {
-      tl_assert(bm2->refcnt >= 1);
-      if (--bm2->refcnt == 0)
-      {
-        VG_(free)(bm2);
-      }
-    }
-  }
 
   VG_(OSetGen_Destroy)(bm->oset);
   VG_(free)(bm);
@@ -715,9 +698,7 @@ Bool bm_store_has_conflict_with(struct bitmap* const bm,
 Bool bm_equal(struct bitmap* const lhs, struct bitmap* const rhs)
 {
   struct bitmap2* bm2l;
-  struct bitmap2ref* bm2l_ref;
   struct bitmap2* bm2r;
-  const struct bitmap2ref* bm2r_ref;
 
   /* It's not possible to have two independent iterators over the same OSet, */
   /* so complain if lhs == rhs.                                              */
@@ -726,18 +707,16 @@ Bool bm_equal(struct bitmap* const lhs, struct bitmap* const rhs)
   VG_(OSetGen_ResetIter)(lhs->oset);
   VG_(OSetGen_ResetIter)(rhs->oset);
 
-  for ( ; (bm2l_ref = VG_(OSetGen_Next)(lhs->oset)) != 0; )
+  for ( ; (bm2l = VG_(OSetGen_Next)(lhs->oset)) != 0; )
   {
-    while (bm2l_ref
-           && (bm2l = bm2l_ref->bm2)
-           && bm2l
+    while (bm2l
            && ! bm_has_any_access(lhs,
                                   make_address(bm2l->addr, 0),
                                   make_address(bm2l->addr + 1, 0)))
     {
-      bm2l_ref = VG_(OSetGen_Next)(lhs->oset);
+      bm2l = VG_(OSetGen_Next)(lhs->oset);
     }
-    if (bm2l_ref == 0)
+    if (bm2l == 0)
       break;
     tl_assert(bm2l);
 #if 0
@@ -745,15 +724,14 @@ Bool bm_equal(struct bitmap* const lhs, struct bitmap* const rhs)
                  make_address(bm2l->addr, 0));
 #endif
 
-    bm2r_ref = VG_(OSetGen_Next)(rhs->oset);
-    if (bm2r_ref == 0)
+    bm2r = VG_(OSetGen_Next)(rhs->oset);
+    if (bm2r == 0)
     {
 #if 0
       VG_(message)(Vg_DebugMsg, "bm_equal: no match found");
 #endif
       return False;
     }
-    bm2r = bm2r_ref->bm2;
     tl_assert(bm2r);
     tl_assert(bm_has_any_access(rhs,
                                 make_address(bm2r->addr, 0),
@@ -794,33 +772,55 @@ void bm_swap(struct bitmap* const bm1, struct bitmap* const bm2)
 }
 
 /** Merge bitmaps *lhs and *rhs into *lhs. */
-void bm_merge2(struct bitmap* const lhs,
-               struct bitmap* const rhs)
+void bm_merge(struct bitmap* const lhs, struct bitmap* const rhs)
 {
   struct bitmap2* bm2l;
-  struct bitmap2ref* bm2l_ref;
   struct bitmap2* bm2r;
-  const struct bitmap2ref* bm2r_ref;
+
+  /* It's not possible to have two independent iterators over the same OSet, */
+  /* so complain if lhs == rhs.                                              */
+  tl_assert(lhs != rhs);
 
   VG_(OSetGen_ResetIter)(rhs->oset);
 
-  for ( ; (bm2r_ref = VG_(OSetGen_Next)(rhs->oset)) != 0; )
+  for ( ; (bm2r = VG_(OSetGen_Next)(rhs->oset)) != 0; )
   {
-    bm2r = bm2r_ref->bm2;
-    bm2l_ref = VG_(OSetGen_Lookup)(lhs->oset, &bm2r->addr);
-    if (bm2l_ref)
+    bm2l = VG_(OSetGen_Lookup)(lhs->oset, &bm2r->addr);
+    if (bm2l)
     {
-      bm2l = bm2l_ref->bm2;
-      if (bm2l != bm2r)
-      {
-        if (bm2l->refcnt > 1)
-          bm2l = bm2_make_exclusive(lhs, bm2l_ref);
-        bm2_merge(bm2l, bm2r);
-      }
+      tl_assert(bm2l != bm2r);
+      bm2_merge(bm2l, bm2r);
     }
     else
     {
-      bm2_insert_addref(lhs, bm2r);
+      bm2_insert_copy(lhs, bm2r);
+    }
+  }
+}
+
+/** Compute *lhs ^= *rhs. */
+void bm_xor(struct bitmap* const lhs, struct bitmap* const rhs)
+{
+  struct bitmap2* bm2l;
+  struct bitmap2* bm2r;
+
+  /* It's not possible to have two independent iterators over the same OSet, */
+  /* so complain if lhs == rhs.                                              */
+  tl_assert(lhs != rhs);
+
+  VG_(OSetGen_ResetIter)(rhs->oset);
+
+  for ( ; (bm2r = VG_(OSetGen_Next)(rhs->oset)) != 0; )
+  {
+    bm2l = VG_(OSetGen_Lookup)(lhs->oset, &bm2r->addr);
+    if (bm2l)
+    {
+      tl_assert(bm2l != bm2r);
+      bm2_xor(bm2l, bm2r);
+    }
+    else
+    {
+      bm2_insert_copy(lhs, bm2r);
     }
   }
 }
@@ -839,24 +839,20 @@ int bm_has_races(struct bitmap* const lhs,
 
   for (;;)
   {
-    const struct bitmap2ref* bm2l_ref;
-    const struct bitmap2ref* bm2r_ref;
     const struct bitmap2* bm2l;
     const struct bitmap2* bm2r;
     const struct bitmap1* bm1l;
     const struct bitmap1* bm1r;
     unsigned k;
 
-    bm2l_ref = VG_(OSetGen_Next)(lhs->oset);
-    bm2l = bm2l_ref->bm2;
-    bm2r_ref = VG_(OSetGen_Next)(rhs->oset);
-    bm2r = bm2r_ref->bm2;
+    bm2l = VG_(OSetGen_Next)(lhs->oset);
+    bm2r = VG_(OSetGen_Next)(rhs->oset);
     while (bm2l && bm2r && bm2l->addr != bm2r->addr)
     {
       if (bm2l->addr < bm2r->addr)
-        bm2l = (bm2l_ref = VG_(OSetGen_Next)(lhs->oset))->bm2;
+        bm2l = VG_(OSetGen_Next)(lhs->oset);
       else
-        bm2r = (bm2r_ref = VG_(OSetGen_Next)(rhs->oset))->bm2;
+        bm2r = VG_(OSetGen_Next)(rhs->oset);
     }
     if (bm2l == 0 || bm2r == 0)
       break;
@@ -887,13 +883,13 @@ int bm_has_races(struct bitmap* const lhs,
 
 void bm_print(struct bitmap* const bm)
 {
-  struct bitmap2ref* bm2ref;
+  struct bitmap2* bm2;
 
   for (VG_(OSetGen_ResetIter)(bm->oset);
-       (bm2ref = VG_(OSetGen_Next)(bm->oset)) != 0;
+       (bm2 = VG_(OSetGen_Next)(bm->oset)) != 0;
        )
   {
-    bm2_print(bm2ref->bm2);
+    bm2_print(bm2);
   }
 }
 
@@ -926,33 +922,9 @@ ULong bm_get_bitmap_creation_count(void)
   return s_bitmap_creation_count;
 }
 
-ULong bm_get_bitmap2_node_creation_count(void)
-{
-  return s_bitmap2_node_creation_count;
-}
-
 ULong bm_get_bitmap2_creation_count(void)
 {
   return s_bitmap2_creation_count;
-}
-
-/** Allocate a second level bitmap.
- *
- *  @param a1 address_msb(client address).
- *
- *  @note This function does not initialize the bitmap itself !!
- */
-struct bitmap2* bm2_new(const UWord a1)
-{
-  struct bitmap2* bm2;
-
-  bm2 = VG_(malloc)(sizeof(*bm2));
-  bm2->addr   = a1;
-  bm2->refcnt = 1;
-
-  s_bitmap2_creation_count++;
-
-  return bm2;
 }
 
 /** Clear the bitmap contents. */
@@ -960,40 +932,6 @@ void bm2_clear(struct bitmap2* const bm2)
 {
   tl_assert(bm2);
   VG_(memset)(&bm2->bm1, 0, sizeof(bm2->bm1));
-}
-
-/** Make a copy of a shared second level bitmap such that the copy can be
- *  modified.
- *
- *  @param bm     bitmap pointer.
- *  @param bm2ref pointer to pointer to the second level bitmap.
- */
-static
-struct bitmap2* bm2_make_exclusive(struct bitmap* const bm,
-                                   struct bitmap2ref* const bm2ref)
-{
-  UWord a1;
-  struct bitmap2* bm2;
-  struct bitmap2* bm2_copy;
-
-  tl_assert(bm);
-  tl_assert(bm2ref);
-  bm2 = bm2ref->bm2;
-  tl_assert(bm2);
-  tl_assert(bm2->refcnt > 1);
-  bm2->refcnt--;
-  tl_assert(bm2->refcnt >= 1);
-  a1 = bm2->addr;
-  bm2_copy = bm2_new(a1);
-  tl_assert(bm2_copy);
-  tl_assert(bm2_copy->addr   == a1);
-  tl_assert(bm2_copy->refcnt == 1);
-  VG_(memcpy)(&bm2_copy->bm1, &bm2->bm1, sizeof(bm2->bm1));
-  bm2ref->bm2 = bm2_copy;
-
-  bm_update_cache(bm, a1, bm2_copy);
-
-  return bm2_copy;
 }
 
 /** Compute *bm2l |= *bm2r. */
@@ -1004,7 +942,6 @@ void bm2_merge(struct bitmap2* const bm2l, const struct bitmap2* const bm2r)
   tl_assert(bm2l);
   tl_assert(bm2r);
   tl_assert(bm2l->addr == bm2r->addr);
-  tl_assert(bm2l->refcnt == 1);
 
   for (k = 0; k < BITMAP1_UWORD_COUNT; k++)
   {
@@ -1013,5 +950,24 @@ void bm2_merge(struct bitmap2* const bm2l, const struct bitmap2* const bm2r)
   for (k = 0; k < BITMAP1_UWORD_COUNT; k++)
   {
     bm2l->bm1.bm0_w[k] |= bm2r->bm1.bm0_w[k];
+  }
+}
+
+/** Compute *bm2l ^= *bm2r. */
+void bm2_xor(struct bitmap2* const bm2l, const struct bitmap2* const bm2r)
+{
+  unsigned k;
+
+  tl_assert(bm2l);
+  tl_assert(bm2r);
+  tl_assert(bm2l->addr == bm2r->addr);
+
+  for (k = 0; k < BITMAP1_UWORD_COUNT; k++)
+  {
+    bm2l->bm1.bm0_r[k] ^= bm2r->bm1.bm0_r[k];
+  }
+  for (k = 0; k < BITMAP1_UWORD_COUNT; k++)
+  {
+    bm2l->bm1.bm0_w[k] ^= bm2r->bm1.bm0_w[k];
   }
 }

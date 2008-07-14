@@ -1208,9 +1208,8 @@ void drd_fini(Int exitcode)
                  get_semaphore_segment_creation_count(),
                  get_barrier_segment_creation_count());
     VG_(message)(Vg_UserMsg,
-                 "  bitmaps: %lld level 1 / %lld level 2 bitmap refs",
-                 bm_get_bitmap_creation_count(),
-                 bm_get_bitmap2_node_creation_count());
+                 "  bitmaps: %lld level 1",
+                 bm_get_bitmap_creation_count());
     VG_(message)(Vg_UserMsg,
                  "           and %lld level 2 bitmaps were allocated.",
                  bm_get_bitmap2_creation_count());

@@ -177,7 +177,6 @@ Addr first_address_with_higher_uword_msb(const Addr a)
 /* Local variables. */
 
 static ULong s_bitmap2_creation_count;
-static ULong s_bitmap2_node_creation_count;
 
 
 
@@ -219,7 +218,7 @@ static __inline__ void bm0_set_range(UWord* bm0,
 #ifdef ENABLE_DRD_CONSISTENCY_CHECKS
   tl_assert(size > 0);
   tl_assert(address_msb(make_address(0, a)) == 0);
-  tl_assert(address_msb(make_address(0, a + size)) == 0);
+  tl_assert(address_msb(make_address(0, a + size - 1)) == 0);
   tl_assert(uword_msb(a) == uword_msb(a + size - 1));
 #endif
   bm0[uword_msb(a)]
@@ -242,7 +241,7 @@ static __inline__ void bm0_clear_range(UWord* bm0,
 #ifdef ENABLE_DRD_CONSISTENCY_CHECKS
   tl_assert(size > 0);
   tl_assert(address_msb(make_address(0, a)) == 0);
-  tl_assert(address_msb(make_address(0, a + size)) == 0);
+  tl_assert(address_msb(make_address(0, a + size - 1)) == 0);
   tl_assert(uword_msb(a) == uword_msb(a + size - 1));
 #endif
   bm0[uword_msb(a)] &= ~(((UWord)1 << size) - 1) << uword_lsb(a);
@@ -264,7 +263,7 @@ static __inline__ UWord bm0_is_any_set(const UWord* bm0,
 #ifdef ENABLE_DRD_CONSISTENCY_CHECKS
   tl_assert(size > 0);
   tl_assert(address_msb(make_address(0, a)) == 0);
-  tl_assert(address_msb(make_address(0, a + size)) == 0);
+  tl_assert(address_msb(make_address(0, a + size - 1)) == 0);
   tl_assert(uword_msb(a) == uword_msb(a + size - 1));
 #endif
   return (bm0[uword_msb(a)] & ((((UWord)1 << size) - 1) << uword_lsb(a)));
@@ -281,15 +280,7 @@ static __inline__ UWord bm0_is_any_set(const UWord* bm0,
 struct bitmap2
 {
   Addr           addr;   ///< address_msb(...)
-  int            refcnt;
   struct bitmap1 bm1;
-};
-
-/* One node of bitmap::oset. */
-struct bitmap2ref
-{
-  Addr            addr; ///< address_msb(...)
-  struct bitmap2* bm2;
 };
 
 struct bm_cache_elem
@@ -305,17 +296,13 @@ struct bitmap
 {
   struct bm_cache_elem cache[N_CACHE_ELEM];
   OSet*                oset;
-  struct bitmap2*      (*compute_bitmap2)(const UWord a1);
+  void                 (*compute_bitmap2)(const UWord a1, struct bitmap2* bm2);
 };
 
 
-static struct bitmap2* bm2_make_exclusive(struct bitmap* const bm,
-                                          struct bitmap2ref* const bm2ref);
 static __inline__
-void bm2_insert_empty(struct bitmap* const bm, const UWord a1);
-static __inline__
-struct bitmap2* bm2_insert_addref(struct bitmap* const bm,
-                                  struct bitmap2* const bm2);
+struct bitmap2* bm2_insert(struct bitmap* const bm, const UWord a1);
+
 
 
 /** Rotate elements cache[0..n-1] such that the element at position n-1 is
@@ -473,8 +460,7 @@ void bm_update_cache(struct bitmap* const bm,
 static __inline__
 const struct bitmap2* bm2_lookup(struct bitmap* const bm, const UWord a1)
 {
-  struct bitmap2*    bm2;
-  struct bitmap2ref* bm2ref;
+  struct bitmap2* bm2;
 
 #ifdef ENABLE_DRD_CONSISTENCY_CHECKS
   tl_assert(bm);
@@ -482,29 +468,19 @@ const struct bitmap2* bm2_lookup(struct bitmap* const bm, const UWord a1)
 
   if (! bm_cache_lookup(bm, a1, &bm2))
   {
-    bm2ref = VG_(OSetGen_Lookup)(bm->oset, &a1);
-    if (bm2ref)
+    bm2 = VG_(OSetGen_Lookup)(bm->oset, &a1);
+    if (bm2 == 0 && bm->compute_bitmap2)
     {
-      bm2 = bm2ref->bm2;
-    }
-    else if (bm->compute_bitmap2)
-    {
+      bm2 = bm2_insert(bm, a1);
+      bm2_clear(bm2);
       /* Compute the second-level bitmap, and insert the pointer to the
        * computed bitmap. Note: this pointer may be NULL. */
-      bm2 = (*bm->compute_bitmap2)(a1);
-      if (bm2)
-      {
-        tl_assert(bm2->refcnt == 1);
-        bm2->refcnt--;
-        return bm2_insert_addref(bm, bm2);
-      }
-      else
-      {
-        bm2_insert_empty(bm, a1);
-        return NULL;
-      }
+      (*bm->compute_bitmap2)(a1, bm2);
     }
-    bm_update_cache(bm, a1, bm2);
+    else
+    {
+      bm_update_cache(bm, a1, bm2);
+    }
   }
   return bm2;
 }
@@ -519,7 +495,6 @@ static __inline__
 struct bitmap2*
 bm2_lookup_exclusive(struct bitmap* const bm, const UWord a1)
 {
-  struct bitmap2ref* bm2ref;
   struct bitmap2* bm2;
 
 #ifdef ENABLE_DRD_CONSISTENCY_CHECKS
@@ -527,41 +502,15 @@ bm2_lookup_exclusive(struct bitmap* const bm, const UWord a1)
   tl_assert(bm->compute_bitmap2 == 0);
 #endif
 
-  bm2ref = 0;
-  if (bm_cache_lookup(bm, a1, &bm2))
+  if (! bm_cache_lookup(bm, a1, &bm2))
   {
-    if (bm2 == 0)
-      return 0;
-    if (bm2->refcnt > 1)
-    {
-      bm2ref = VG_(OSetGen_Lookup)(bm->oset, &a1);
-    }
-  }
-  else
-  {
-    bm2ref = VG_(OSetGen_Lookup)(bm->oset, &a1);
-    if (bm2ref == 0)
-      return 0;
-    bm2 = bm2ref->bm2;
-  }
-
-#ifdef ENABLE_DRD_CONSISTENCY_CHECKS
-  tl_assert(bm2);
-#endif
-
-  if (bm2->refcnt > 1)
-  {
-#ifdef ENABLE_DRD_CONSISTENCY_CHECKS
-    tl_assert(bm2ref);
-#endif
-    bm2 = bm2_make_exclusive(bm, bm2ref);
+    bm2 = VG_(OSetGen_Lookup)(bm->oset, &a1);
   }
 
   return bm2;
 }
 
-/** Insert a new node in bitmap bm for the address a1. The returned second
- *  level bitmap has reference count one and hence may be modified.
+/** Insert an uninitialized second level bitmap for the address a1.
  *
  *  @param bm bitmap pointer.
  *  @param a1 client address shifted right by ADDR_LSB_BITS.
@@ -569,78 +518,32 @@ bm2_lookup_exclusive(struct bitmap* const bm, const UWord a1)
 static __inline__
 struct bitmap2* bm2_insert(struct bitmap* const bm, const UWord a1)
 {
-  struct bitmap2ref* bm2ref;
   struct bitmap2* bm2;
 
 #ifdef ENABLE_DRD_CONSISTENCY_CHECKS
   tl_assert(bm);
 #endif
 
-  s_bitmap2_node_creation_count++;
-  bm2ref       = VG_(OSetGen_AllocNode)(bm->oset, sizeof(*bm2ref));
-  bm2ref->addr = a1;
-  bm2          = bm2_new(a1);
-  bm2_clear(bm2);
-  bm2ref->bm2  = bm2;
-  VG_(OSetGen_Insert)(bm->oset, bm2ref);
-  
+  s_bitmap2_creation_count++;
+
+  bm2 = VG_(OSetGen_AllocNode)(bm->oset, sizeof(*bm2));
+  bm2->addr = a1;
+  VG_(OSetGen_Insert)(bm->oset, bm2);
+
   bm_update_cache(bm, a1, bm2);
 
   return bm2;
 }
 
-/** Insert a new node in bitmap bm that points to the second level bitmap
- *  *bm2. This means that *bm2 becomes shared over two or more bitmaps.
- *
- *  @param bm  bitmap pointer.
- *  @param bm2 Second-level bitmap pointer. May be NULL.
- */
 static __inline__
-struct bitmap2* bm2_insert_addref(struct bitmap* const bm,
-                                  struct bitmap2* const bm2)
+struct bitmap2* bm2_insert_copy(struct bitmap* const bm,
+                                struct bitmap2* const bm2)
 {
-  struct bitmap2ref* bm2ref;
+  struct bitmap2* bm2_copy;
 
-#ifdef ENABLE_DRD_CONSISTENCY_CHECKS
-  tl_assert(bm);
-  tl_assert(bm2);
-  tl_assert(VG_(OSetGen_Lookup)(bm->oset, &bm2->addr) == 0);
-#endif
-
-  s_bitmap2_node_creation_count++;
-  bm2ref       = VG_(OSetGen_AllocNode)(bm->oset, sizeof(*bm2ref));
-  bm2ref->addr = bm2->addr;
-  bm2ref->bm2  = bm2;
-  bm2->refcnt++;
-  VG_(OSetGen_Insert)(bm->oset, bm2ref);
-  
-  bm_update_cache(bm, bm2->addr, bm2);
-
-  return bm2;
-}
-
-/** Insert an empty node in bitmap bm.
- *
- *  @param bm  bitmap pointer.
- *  @param a1 client address shifted right by ADDR_LSB_BITS.
- */
-static __inline__
-void bm2_insert_empty(struct bitmap* const bm, const UWord a1)
-{
-  struct bitmap2ref* bm2ref;
-
-#ifdef ENABLE_DRD_CONSISTENCY_CHECKS
-  tl_assert(bm);
-  tl_assert(VG_(OSetGen_Lookup)(bm->oset, &a1) == 0);
-#endif
-
-  s_bitmap2_node_creation_count++;
-  bm2ref       = VG_(OSetGen_AllocNode)(bm->oset, sizeof(*bm2ref));
-  bm2ref->addr = a1;
-  bm2ref->bm2  = NULL;
-  VG_(OSetGen_Insert)(bm->oset, bm2ref);
-  
-  bm_update_cache(bm, a1, NULL);
+  bm2_copy = bm2_insert(bm, bm2->addr);
+  VG_(memcpy)(&bm2_copy->bm1, &bm2->bm1, sizeof(bm2->bm1));
+  return bm2_copy;
 }
 
 /** Look up the address a1 in bitmap bm, and insert it if not found.
@@ -652,7 +555,6 @@ void bm2_insert_empty(struct bitmap* const bm, const UWord a1)
 static __inline__
 struct bitmap2* bm2_lookup_or_insert(struct bitmap* const bm, const UWord a1)
 {
-  struct bitmap2ref* bm2ref;
   struct bitmap2* bm2;
 
 #ifdef ENABLE_DRD_CONSISTENCY_CHECKS
@@ -665,18 +567,16 @@ struct bitmap2* bm2_lookup_or_insert(struct bitmap* const bm, const UWord a1)
     if (bm2 == 0)
     {
       bm2 = bm2_insert(bm, a1);
+      bm2_clear(bm2);
     }
   }
   else
   {
-    bm2ref = VG_(OSetGen_Lookup)(bm->oset, &a1);
-    if (bm2ref)
-    {
-      bm2 = bm2ref->bm2;
-    }
-    else
+    bm2 = VG_(OSetGen_Lookup)(bm->oset, &a1);
+    if (! bm2)
     {
       bm2 = bm2_insert(bm, a1);
+      bm2_clear(bm2);
     }
     bm_update_cache(bm, a1, bm2);
   }
@@ -693,24 +593,7 @@ static __inline__
 struct bitmap2* bm2_lookup_or_insert_exclusive(struct bitmap* const bm,
                                                const UWord a1)
 {
-  struct bitmap2* bm2;
-
-#ifdef ENABLE_DRD_CONSISTENCY_CHECKS
-  tl_assert(bm);
-  tl_assert(bm->compute_bitmap2 == 0);
-#endif
-
-  bm2 = (struct bitmap2*)bm2_lookup_or_insert(bm, a1);
-#ifdef ENABLE_DRD_CONSISTENCY_CHECKS
-  tl_assert(bm2);
-#endif
-  if (bm2->refcnt > 1)
-  {
-    struct bitmap2ref* bm2ref;
-    bm2ref = VG_(OSetGen_Lookup)(bm->oset, &a1);
-    bm2 = bm2_make_exclusive(bm, bm2ref);
-  }
-  return bm2;
+  return bm2_lookup_or_insert(bm, a1);
 }
 
 static __inline__

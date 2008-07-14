@@ -104,8 +104,8 @@ void bm_test1(void)
   if (s_verbose)
     VG_(printf)("Merge result:\n");
   bm2 = bm_new();
-  bm_merge2(bm2, bm);
-  bm_merge2(bm2, bm);
+  bm_merge(bm2, bm);
+  bm_merge(bm2, bm);
   if (s_verbose)
     bm_print(bm2);
   //assert(bm_equal(bm, bm2));
@@ -192,10 +192,10 @@ void bm_test3(const int outer_loop_step, const int inner_loop_step)
       assert(bm_equal(bm1, bm2));
     }
   }
-  bm_access_range_load (bm1, 0, ub);
-  bm_access_range_store(bm1, 0, ub);
-  bm_access_range_load (bm2, 0, ub);
-  bm_access_range_store(bm2, 0, ub);
+  bm_access_range_load (bm1, 0, ub + 8);
+  bm_access_range_store(bm1, 0, ub + 8);
+  bm_access_range_load (bm2, 0, ub + 8);
+  bm_access_range_store(bm2, 0, ub + 8);
   for (i = lb; i < ub; i += outer_loop_step)
   {
     for (j = i + 1; j < ub; j += inner_loop_step)

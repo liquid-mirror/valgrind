@@ -58,7 +58,7 @@ typedef enum { eLoad, eStore, eStart, eEnd } BmAccessTypeT;
 
 /* First level bitmaps. */
 struct bitmap* bm_new(void);
-struct bitmap* bm_new_cb(struct bitmap2* (*compute_bitmap2)(UWord));
+struct bitmap* bm_new_cb(void (*compute_bitmap2)(UWord, struct bitmap2*));
 void bm_delete(struct bitmap* const bm);
 void bm_access_range(struct bitmap* const bm,
                      const Addr a1, const Addr a2,
@@ -111,8 +111,8 @@ Bool bm_store_has_conflict_with(struct bitmap* const bm,
                                 const Addr a1, const Addr a2);
 Bool bm_equal(struct bitmap* const lhs, struct bitmap* const rhs);
 void bm_swap(struct bitmap* const bm1, struct bitmap* const bm2);
-void bm_merge2(struct bitmap* const lhs,
-               struct bitmap* const rhs);
+void bm_merge(struct bitmap* const lhs, struct bitmap* const rhs);
+void bm_xor(struct bitmap* const lhs, struct bitmap* const rhs);
 int bm_has_races(struct bitmap* const bm1,
                  struct bitmap* const bm2);
 void bm_report_races(ThreadId const tid1, ThreadId const tid2,
@@ -122,11 +122,10 @@ void bm_print(struct bitmap* bm);
 ULong bm_get_bitmap_creation_count(void);
 
 /* Second-level bitmaps. */
-struct bitmap2* bm2_new(const UWord a1);
 void bm2_clear(struct bitmap2* const bm2);
 void bm2_merge(struct bitmap2* const bm2l, const struct bitmap2* const bm2r);
+void bm2_xor(struct bitmap2* const bm2l, const struct bitmap2* const bm2r);
 void bm2_print(const struct bitmap2* const bm2);
-ULong bm_get_bitmap2_node_creation_count(void);
 ULong bm_get_bitmap2_creation_count(void);
 
 

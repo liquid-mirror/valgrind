@@ -213,7 +213,7 @@ void sg_merge(const Segment* const sg1, Segment* const sg2)
   // Keep sg1->stacktrace.
   // Keep sg1->vc.
   // Merge sg2->bm into sg1->bm.
-  bm_merge2(sg1->bm, sg2->bm);
+  bm_merge(sg1->bm, sg2->bm);
 }
 
 void sg_print(const Segment* const sg)
