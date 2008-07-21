@@ -2379,6 +2379,10 @@ static Bool mu_is_cv(Word mu)
    ExeContext *context;
    Word       w;
    Bool res = False;
+   if (mu == (Word)&__bus_lock) {
+      // HB arcs should never be created for the bus lock.
+      return False;
+   }
    if (clo_pure_happens_before) return True;
    
    res = mu_is_cv_map != NULL
