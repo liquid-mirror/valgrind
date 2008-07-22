@@ -567,6 +567,10 @@ if test "${no_x}" != 'yes' ; then
 fi
 
 
+# Add glibc and X11 suppressions for exp-ptrcheck
+DEFAULT_SUPP="exp-ptrcheck.supp ${DEFAULT_SUPP}"
+
+
 # Check for CLOCK_MONOTONIC
 
 AC_MSG_CHECKING([for CLOCK_MONOTONIC])
