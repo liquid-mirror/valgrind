@@ -33,6 +33,84 @@
    that).
 */
 
+#include "pub_tool_basics.h"
+#include "pub_tool_hashtable.h"
+#include "pub_tool_redir.h"
+#include "pub_tool_tooliface.h"
+#include "valgrind.h"
+
+
+/* The following intercepts are copied verbatim from
+   memcheck/mc_replace_strmem.c. */
+
+/* --------- Some handy Z-encoded names. --------- */
+
+/* --- Soname of the standard C library. --- */
+
+#if defined(VGO_linux)
+#  define  m_libc_soname     libcZdsoZa              // libc.so*
+#elif defined(VGP_ppc32_aix5)
+   /* AIX has both /usr/lib/libc.a and /usr/lib/libc_r.a. */
+#  define  m_libc_soname     libcZaZdaZLshrZdoZR     // libc*.a(shr.o)
+#elif defined(VGP_ppc64_aix5)
+#  define  m_libc_soname     libcZaZdaZLshrZu64ZdoZR // libc*.a(shr_64.o)
+#else
+#  error "Unknown platform"
+#endif
+
+/* --- Sonames for Linux ELF linkers. --- */
+
+#define  m_ld_linux_so_2         ldZhlinuxZdsoZd2           // ld-linux.so.2
+#define  m_ld_linux_x86_64_so_2  ldZhlinuxZhx86Zh64ZdsoZd2  // ld-linux-x86-64.so.2
+#define  m_ld64_so_1             ld64ZdsoZd1                // ld64.so.1
+#define  m_ld_so_1               ldZdsoZd1                  // ld.so.1
+
+
+
+
+#define STRCMP(soname, fnname) \
+   int VG_REPLACE_FUNCTION_ZU(soname,fnname) \
+          ( const char* s1, const char* s2 ); \
+   int VG_REPLACE_FUNCTION_ZU(soname,fnname) \
+          ( const char* s1, const char* s2 ) \
+   { \
+      register unsigned char c1; \
+      register unsigned char c2; \
+      while (True) { \
+         c1 = *(unsigned char *)s1; \
+         c2 = *(unsigned char *)s2; \
+         if (c1 != c2) break; \
+         if (c1 == 0) break; \
+         s1++; s2++; \
+      } \
+      if ((unsigned char)c1 < (unsigned char)c2) return -1; \
+      if ((unsigned char)c1 > (unsigned char)c2) return 1; \
+      return 0; \
+   }
+
+STRCMP(m_libc_soname,          strcmp)
+STRCMP(m_ld_linux_x86_64_so_2, strcmp)
+STRCMP(m_ld64_so_1,            strcmp)
+
+
+// Note that this replacement often doesn't get used because gcc inlines
+// calls to strlen() with its own built-in version.  This can be very
+// confusing if you aren't expecting it.  Other small functions in this file
+// may also be inline by gcc.
+#define STRLEN(soname, fnname) \
+   SizeT VG_REPLACE_FUNCTION_ZU(soname,fnname)( const char* str ); \
+   SizeT VG_REPLACE_FUNCTION_ZU(soname,fnname)( const char* str ) \
+   { \
+      SizeT i = 0; \
+      while (str[i] != 0) i++; \
+      return i; \
+   }
+
+STRLEN(m_libc_soname,          strlen)
+STRLEN(m_ld_linux_so_2,        strlen)
+STRLEN(m_ld_linux_x86_64_so_2, strlen)
+
+
 /*--------------------------------------------------------------------*/
 /*--- end                                          pc_intercepts.c ---*/
 /*--------------------------------------------------------------------*/

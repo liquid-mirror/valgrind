@@ -1108,14 +1108,22 @@ static void* pc_replace_realloc ( ThreadId tid, void* p_old, SizeT new_size )
    tl_assert(Seg__a(seg) == (Addr)p_old);
 
    if (new_size <= Seg__size(seg)) {
-      /* new size is smaller */
-      tl_assert(new_size > 0);
-      set_mem_unknown( Seg__a(seg)+new_size, Seg__size(seg)-new_size );
-      Seg__resize(seg, new_size, 
-                  VG_(record_ExeContext)( tid, 0/*first_ip_delta*/ ) );
-      last_seg_added = seg;      // necessary for post_reg_write_clientcall
-      return p_old;
+      /* new size is smaller: allocate, copy from old to new */
+      Addr p_new = (Addr)VG_(cli_malloc)(VG_(clo_alignment), new_size);
+      VG_(memcpy)((void*)p_new, p_old, new_size);
 
+      /* Notification: copy retained part */
+      copy_mem       ( (Addr)p_old, p_new, new_size );
+
+      /* Free old memory */
+      die_and_free_mem_heap( tid, seg );
+
+      /* This has to be after die_and_free_mem_heap, otherwise the
+         former succeeds in shorting out the new block, not the
+         old, in the case when both are on the same list.  */
+      add_new_segment ( tid, p_new, new_size, SegHeap );
+
+      return (void*)p_new;
    } else {
       /* new size is bigger: allocate, copy from old to new */
       Addr p_new = (Addr)VG_(cli_malloc)(VG_(clo_alignment), new_size);
@@ -1468,6 +1476,7 @@ static void get_IntRegInfo ( /*OUT*/IntRegInfo* iii, Int offset, Int szB )
    Bool isXmmF = sz == 16 || sz == 8 || sz == 4;
    Bool is421  = sz == 4 || sz == 2 || sz == 1;
    Bool is8    = sz == 8;
+   Bool is84   = sz == 8 || sz == 4;
    tl_assert(sz > 0);
    tl_assert(host_is_little_endian());
 
@@ -1493,6 +1502,7 @@ static void get_IntRegInfo ( /*OUT*/IntRegInfo* iii, Int offset, Int szB )
    if (o == GOF(CC_DEP2) && is8) goto none;
    if (o == GOF(CC_NDEP) && is8) goto none;
    if (o == GOF(DFLAG)   && is8) goto none;
+   if (o == GOF(IDFLAG)  && is8) goto none;
 
    if (o == GOF(RAX)     && is421) {         o -= 0; goto contains_o; }
    if (o == GOF(RAX)+1   && is421) { o -= 1; o -= 0; goto contains_o; }
@@ -1539,6 +1549,12 @@ static void get_IntRegInfo ( /*OUT*/IntRegInfo* iii, Int offset, Int szB )
    if (o == GOF(FTOP) && sz == 4) goto none;
    if (o == GOF(FPTAG) && sz == 8) goto none;
    if (o == GOF(FC3210) && sz == 8) goto none;
+
+   if (o >= GOF(XMM11) && o+sz <= GOF(XMM11)+16) goto none;
+   if (o >= GOF(XMM12) && o+sz <= GOF(XMM12)+16) goto none;
+   if (o >= GOF(XMM13) && o+sz <= GOF(XMM13)+16) goto none;
+
+   if (o >= GOF(FPREG[0]) && o < GOF(FPREG[7])+8 && sz == 8) goto none;
 
    VG_(printf)("get_IntRegInfo(amd64):failing on (%d,%d)\n", o, sz);
    tl_assert(0);
@@ -1868,19 +1884,38 @@ static void post_syscall ( ThreadId tid, UInt syscallno, SysRes res )
 #     if defined(__NR__llseek)
       case __NR__llseek:
 #     endif
+
+#     if defined(__NR_accept)
+      case __NR_accept:
+#     endif
+#     if defined(__NR_bind)
+      case __NR_bind:
+#     endif
       case __NR_chdir:
+      case __NR_chmod:
       case __NR_clock_getres:
+      case __NR_clone:
+      case __NR_dup:
+      case __NR_dup2:
+      case __NR_exit: /* hmm, why are we still alive? */
       case __NR_fchmod:
       case __NR_fchown:
-      case __NR_fdatasync:
 #     if defined(__NR_fcntl64)
       case __NR_fcntl64:
 #     endif
+      case __NR_fdatasync:
       case __NR_fstatfs:
+      case __NR_fsync:
+      case __NR_ftruncate:
       case __NR_getegid:
       case __NR_geteuid:
       case __NR_getgid:
       case __NR_getppid:
+      case __NR_getresgid:
+      case __NR_getresuid:
+#     if defined(__NR_getsockname)
+      case __NR_getsockname:
+#     endif
 #     if defined(__NR_getsockopt)
       case __NR_getsockopt:
 #     endif
@@ -1888,31 +1923,58 @@ static void post_syscall ( ThreadId tid, UInt syscallno, SysRes res )
       case __NR_getuid:
       case __NR_kill:
       case __NR_link:
+#     if defined(__NR_listen)
+      case __NR_listen:
+#     endif
       case __NR_lseek:
 #     if defined(__NR_lstat64)
       case __NR_lstat64:
 #     endif
       case __NR_madvise:
+      case __NR_mkdir:
       case __NR_pipe:
       case __NR_poll:
       case __NR_pwrite64:
       case __NR_readlink:
       case __NR_readv:
+#     if defined(__NR_recvfrom)
+      case __NR_recvfrom:
+#     endif
+#     if defined(__NR_recvmsg)
+      case __NR_recvmsg:
+#     endif
       case __NR_rename:
+      case __NR_rmdir:
       case __NR_sched_get_priority_max:
       case __NR_sched_get_priority_min:
       case __NR_sched_getparam:
       case __NR_sched_getscheduler:
+      case __NR_sched_setscheduler:
+      case __NR_sched_yield:
       case __NR_select:
+#     if defined(__NR_sendto)
+      case __NR_sendto:
+#     endif
       case __NR_setrlimit:
+#     if defined(__NR_setsockopt)
+      case __NR_setsockopt:
+#     endif
+#     if defined(__NR_shmctl)
+      case __NR_shmctl:
+#     endif
 #     if defined(__NR_shutdown)
       case __NR_shutdown:
 #     endif
       case __NR_statfs:
+      case __NR_symlink:
+      case __NR_sysinfo:
+      case __NR_tgkill:
       case __NR_time:
       case __NR_truncate:
       case __NR_umask:
       case __NR_unlink:
+      case __NR_utime:
+      case __NR_wait4:
       case __NR_writev:
          VG_(set_syscall_return_shadows)( tid, (UWord)NONPTR, 0 );
          break;
@@ -1929,128 +1991,6 @@ static void post_syscall ( ThreadId tid, UInt syscallno, SysRes res )
       }
 #     endif
 
-//zz    // These ones don't return a pointer, so don't do anything -- already set
-//zz    // the segment to UNKNOWN in post_reg_write_default().
-//zz    //   1:           // exit              (never seen by skin)
-//      case 2 ... 16:    // read ... lchown
-//zz    //   17:          // break             (unimplemented)
-//zz    //   18:          // oldstat           (obsolete)
-//zz    case 19:          // lseek
-//zz    case 20 ... 25:   // getpid ... stime
-//zz    case 26:          // ptrace -- might return pointers, but not ones that
-//zz                      // deserve their own segment.
-//zz    case 27:          // alarm
-//zz   //   28:          // oldfstat          (obsolete)
-//zz    case 29 ... 30:   // pause ... utime
-//zz    //   31:          // stty              (unimplemented)
-//zz    //   32:          // gtty              (unimplemented)
-//      case 33 ... 34:   // access ... nice
-//zz    //   35:          // ftime             (obsolete and/or unimplemented)
-//zz    case 36 ... 43:   // sync ... times
-//zz    //   44:          // prof              (unimplemented)
-//zz    //   45:          // brk               (below)
-//zz    case 46 ... 47:   // setgid ... getgid
-//zz    //   48:          // signal            (never seen by skin)
-//zz    case 49 ... 50:   // geteuid ... getegid
-//zz    //   51:          // acct              (never seen by skin?  not handled by core)
-//zz    case 52:          // umount2
-//zz    //   53:          // lock              (unimplemented)
-//zz    case 54:          // ioctl -- assuming no pointers returned
-//zz    case 55:          // fcntl
-//zz    //   56:          // mpx               (unimplemented)
-//zz    case 57:          // setpgid
-//zz    //   58:          // ulimit            (unimplemented?  not handled by core)
-//zz    //   59:          // oldolduname       (obsolete)
-//zz    case 60 ... 67:   // sigaction
-//zz    //   68:          // sgetmask          (?? not handled by core)
-//zz    //   69:          // ssetmask          (?? not handled by core)
-//zz    case 70 ... 71:   // setreuid ... setguid
-//zz    //   72:          // sigsuspend        (handled by core? never seen by skins)
-//      case 73 ... 83:   // sigpending ... symlink
-//zz    //   84:          // oldlstat          (obsolete)
-//zz    case 85:          // readlink
-//zz    //   86:          // uselib            (not in core)
-//zz    //   87:          // swapon            (not in core)
-//zz    //   88:          // reboot            (not in core)
-//zz    //   89:          // readdir           (not in core)
-//zz    //   90:          // mmap              (below)
-//      case 91:          // munmap;  die_mem_munmap already called, segment removed
-//zz    case 92 ... 97:   // truncate ... setpriority
-//zz    //   98:          // profil            (not in core)
-//zz    case 99 ... 101:  // statfs ... ioperm
-//zz    case 102:         // socketcall -- assuming no pointers returned
-//zz    case 103 ... 108: // syslog ... fstat
-//zz    //   109:         // olduname          (obsolete)
-//zz    case 110 ... 111: // iopl ... vhangup
-//zz    //   112:         // idle              (not in core, only used by process 0)
-//zz    //   113:         // vm86old           (not in core)
-//zz    case 114:         // wait4
-//zz    //   115:         // swapoff           (not in core)
-//zz    case 116:         // sysinfo
-//zz    case 117:         // ipc -- assuming no pointers returned
-//zz    case 118:         // fsync
-//zz    //   119:         // sigreturn         (not in core, & shouldn't be called)
-//      case 120:         // clone             (not handled by core)
-//zz    //   121:         // setdomainname     (not in core)
-//      case 122 ... 126: // uname ... sigprocmask
-//zz    //   127:         // create_module     (not in core)
-//zz    case 128:         // init_module
-//zz    //   129:         // delete_module     (not in core)
-//zz    //   130:         // get_kernel_syms   (not in core)
-//zz    case 131 ... 133: // quotactl ... fchdir
-//zz    //   134:         // bdflush           (not in core)
-//zz    //   135:         // sysfs             (not in core)
-//zz    case 136:         // personality 
-//zz    //   137:         // afs_syscall       (not in core)
-//zz    case 138 ... 160: // setfsuid ... sched_get_priority_min
-//zz    //   161:         // rr_get_interval
-//zz    case 162:         // nanosleep
-//zz    //   163:         // mremap            (below)
-//zz    case 164 ... 165: // setresuid ... getresuid
-//zz    //   166:         // vm86              (not in core)
-//zz    //   167:         // query_module      (not in core) 
-//zz    case 168:         // poll
-//zz    //   169:         // nfsservctl        (not in core)
-//zz    case 170 ... 172: // setresgid ... prctl
-//zz    //   173:         // rt_sigreturn      (not in core)
-//      case 174 ... 177: // rt_sigaction ... rt_sigtimedwait
-//zz    //   178:         // rt_sigqueueinfo   (not in core)
-//      case 179 ... 191: // rt_sigsuspend ... ugetrlimit
-//zz    //   192:         // mmap              (below)
-//      case 193 ... 216: // truncate64 ... setfsgid32
-//zz    //   217:         // pivot_root        (not in core)
-//zz    //   218:         // mincore           (not in core)
-//zz    case 219 ... 221: // madvise ... fcntl64
-//zz    //   222:         // ???               (no such syscall?)
-//zz    //   223:         // security          (not in core)
-//zz    //   224:         // gettid            (not in core)
-//zz    //   225:         // readahead         (not in core)
-//zz    case 226 ... 237: // setxattr ... fremovexattr
-//zz    //   238:         // tkill             (not in core)
-//zz    case 239:         // sendfile64
-//zz    //   240:         // futex             (not in core)
-//zz    //   241:         // sched_setaffinity (not in core)
-//zz    //   242:         // sched_getaffinity (not in core)
-//      case 243:         // set_thread_area   (not in core)
-//zz    //   244:         // get_thread_area   (not in core)
-//zz    //   245:         // io_setup          (not in core)
-//zz    //   246:         // io_destroy        (not in core)
-//zz    //   247:         // io_getevents      (not in core)
-//zz    //   248:         // io_submit         (not in core)
-//zz    //   249:         // io_cancel         (not in core)
-//      case 250:         // fadvise64
-//zz    //   251:         // free_hugepages    (not in core)
-//      case 252:         // exit_group
-//zz    case 253:         // lookup_dcookie
-//zz    //   254:         // sys_epoll_create  (?)
-//zz    //   255:         // sys_epoll_ctl     (?)
-//zz    //   256:         // sys_epoll_wait    (?)
-//zz    //   257:         // remap_file_pages  (?)
-//      case 258:         // set_tid_address   (?)
-
-//   case 311: // set_robust_list
-//        break;
-
    // With brk(), result (of kernel syscall, not glibc wrapper) is a heap
    // pointer.  Make the shadow UNKNOWN.
    case __NR_brk:
@@ -2060,7 +2000,6 @@ static void post_syscall ( ThreadId tid, UInt syscallno, SysRes res )
    // With mmap, new_mem_mmap() has already been called and added the
    // segment (we did it there because we had the result address and size
    // handy).  So just set the return value shadow.
-//zz    case 90:    // mmap
    case __NR_mmap:
 #  if defined(__NR_mmap2)
    case __NR_mmap2:
@@ -2070,19 +2009,31 @@ static void post_syscall ( ThreadId tid, UInt syscallno, SysRes res )
          VG_(set_syscall_return_shadows)( tid, (UWord)NONPTR, 0 );
          if (0) VG_(printf)("ZZZZZZZ mmap res -> NONPTR\n");
       } else {
-         // We remembered the last added segment; make sure it's the
-         // right one.
-         #if 0
-         sk_assert(res == last_seg_added->left);
-         VG_(set_return_from_syscall_shadow)( tid, (UInt)last_seg_added );
-         #endif
          VG_(set_syscall_return_shadows)( tid, (UWord)UNKNOWN, 0 );
          if (0) VG_(printf)("ZZZZZZZ mmap res -> UNKNOWN\n");
       }
       break;
-//zz    case 163:
-//zz       VG_(skin_panic)("can't handle mremap, sorry");
-//zz       break;
+
+   // shmat uses the same scheme.  We will just have had a
+   // notification via new_mem_mmap.  Just set the return value shadow.
+#  if defined(__NR_shmat)
+   case __NR_shmat:
+      if (res.isError) {
+         VG_(set_syscall_return_shadows)( tid, (UWord)NONPTR, 0 );
+         if (0) VG_(printf)("ZZZZZZZ shmat res -> NONPTR\n");
+      } else {
+         VG_(set_syscall_return_shadows)( tid, (UWord)UNKNOWN, 0 );
+         if (0) VG_(printf)("ZZZZZZZ shmat res -> UNKNOWN\n");
+      }
+      break;
+#  endif
+
+#  if defined(__NR_shmget)
+   case __NR_shmget:
+      // FIXME: is this correct?
+      VG_(set_syscall_return_shadows)( tid, (UWord)UNKNOWN, 0 );
+      break;
+#  endif
 
    default:
       VG_(printf)("syscallno == %d\n", syscallno);
@@ -2575,9 +2526,15 @@ checkSeg(seg2);
 // -------------
 //  n | n  ?  p
 //  ? | ?  ?  ?
-//  p | p  ?  *  (*) if p1==p2 then p else e
+//  p | p  ?  *  (*) if p1==p2 then p else e (see comment)
 // -------------
-
+/* Seems to be OK to And two pointers:
+     testq %ptr1,%ptr2
+     jnz ..
+   which possibly derives from
+     if (ptr1 & ptr2) { A } else { B }
+   not sure what that means
+*/
 static VG_REGPARM(3) Seg do_andW(Seg seg1, Seg seg2, 
                                  UWord result, UWord args_diff)
 {
@@ -2590,7 +2547,8 @@ static VG_REGPARM(3) Seg do_andW(Seg seg1, Seg seg2,
          return BOTTOM,
          out = NONPTR,  out = UNKNOWN, out = seg2,
          out = UNKNOWN, out = UNKNOWN, out = UNKNOWN,
-         out = seg1,    out = UNKNOWN,       BINERROR("And32/And64")
+         out = seg1,    out = UNKNOWN, out = NONPTR
+                                       /*BINERROR("And32/And64")*/
       );
    }
    out = ( looks_like_a_pointer(result) ? out : NONPTR );
@@ -2602,8 +2560,18 @@ static VG_REGPARM(3) Seg do_andW(Seg seg1, Seg seg2,
 // -------------
 //  n | n  ?  p
 //  ? | ?  ?  ?
-//  p | p  ?  e
+//  p | p  ?  n
 // -------------
+/* It's OK to Or two pointers together, but the result definitely
+   isn't a pointer.  Why would you want to do that?  Because of this:
+     char* p1 = malloc(..);
+     char* p2 = malloc(..);
+     ...
+     if (p1 || p2) { .. }
+   In this case gcc on x86/amd64 quite literally or-s the two pointers
+   together and throws away the result, the purpose of which is merely
+   to sets %eflags.Z/%rflags.Z.  So we have to allow it.
+*/
 static VG_REGPARM(3) Seg do_orW(Seg seg1, Seg seg2, UWord result)
 {
    Seg out;
@@ -2611,7 +2579,7 @@ static VG_REGPARM(3) Seg do_orW(Seg seg1, Seg seg2, UWord result)
       return BOTTOM,
       out = NONPTR,  out = UNKNOWN, out = seg2,
       out = UNKNOWN, out = UNKNOWN, out = UNKNOWN,
-      out = seg1,    out = UNKNOWN,       BINERROR("Or32/Or64")
+      out = seg1,    out = UNKNOWN, out = NONPTR
    );
    out = ( looks_like_a_pointer(result) ? out : NONPTR );
    return out;
@@ -2877,38 +2845,38 @@ static IRTemp newShadowTmp ( PCEnv* pce, IRTemp orig )
 
 typedef  IRExpr  IRAtom;
 
-/* (used for sanity checks only): is this an atom which looks
-   like it's from original code? */
-static Bool isOriginalAtom ( PCEnv* pce, IRAtom* a1 )
-{
-   if (a1->tag == Iex_Const)
-      return True;
-   if (a1->tag == Iex_RdTmp && a1->Iex.RdTmp.tmp < pce->n_originalTmps)
-      return True;
-   return False;
-}
-
-/* (used for sanity checks only): is this an atom which looks
-   like it's from shadow code? */
-static Bool isShadowAtom ( PCEnv* pce, IRAtom* a1 )
-{
-   if (a1->tag == Iex_Const)
-      return True;
-   if (a1->tag == Iex_RdTmp && a1->Iex.RdTmp.tmp >= pce->n_originalTmps)
-      return True;
-   return False;
-}
-
-/* (used for sanity checks only): check that both args are atoms and
-   are identically-kinded. */
-static Bool sameKindedAtoms ( IRAtom* a1, IRAtom* a2 )
-{
-   if (a1->tag == Iex_RdTmp && a2->tag == Iex_RdTmp)
-      return True;
-   if (a1->tag == Iex_Const && a2->tag == Iex_Const)
-      return True;
-   return False;
-}
+//zz /* (used for sanity checks only): is this an atom which looks
+//zz    like it's from original code? */
+//zz static Bool isOriginalAtom ( PCEnv* pce, IRAtom* a1 )
+//zz {
+//zz    if (a1->tag == Iex_Const)
+//zz       return True;
+//zz    if (a1->tag == Iex_RdTmp && a1->Iex.RdTmp.tmp < pce->n_originalTmps)
+//zz       return True;
+//zz    return False;
+//zz }
+//zz 
+//zz /* (used for sanity checks only): is this an atom which looks
+//zz    like it's from shadow code? */
+//zz static Bool isShadowAtom ( PCEnv* pce, IRAtom* a1 )
+//zz {
+//zz    if (a1->tag == Iex_Const)
+//zz       return True;
+//zz    if (a1->tag == Iex_RdTmp && a1->Iex.RdTmp.tmp >= pce->n_originalTmps)
+//zz       return True;
+//zz    return False;
+//zz }
+//zz 
+//zz /* (used for sanity checks only): check that both args are atoms and
+//zz    are identically-kinded. */
+//zz static Bool sameKindedAtoms ( IRAtom* a1, IRAtom* a2 )
+//zz {
+//zz    if (a1->tag == Iex_RdTmp && a2->tag == Iex_RdTmp)
+//zz       return True;
+//zz    if (a1->tag == Iex_Const && a2->tag == Iex_Const)
+//zz       return True;
+//zz    return False;
+//zz }
 
 
 /*------------------------------------------------------------*/
@@ -3383,19 +3351,21 @@ void instrument_arithop ( PCEnv* pce,
 
          /* We don't really know what the result could be; test at run
             time. */
-         case Iop_32Uto64:   goto n_or_u_64;
-         case Iop_32Sto64:   goto n_or_u_64;
-         case Iop_Shl64:     goto n_or_u_64;
-         case Iop_Sar64:     goto n_or_u_64;
-         case Iop_Shr64:     goto n_or_u_64;
-         case Iop_Xor64:     goto n_or_u_64;
-         case Iop_128HIto64: goto n_or_u_64;
-         case Iop_128to64:   goto n_or_u_64;
-         case Iop_16Uto64:   goto n_or_u_64;
-         case Iop_16Sto64:   goto n_or_u_64;
-         case Iop_32HLto64:  goto n_or_u_64;
-         case Iop_MullS32:   goto n_or_u_64;
-         case Iop_MullU32:   goto n_or_u_64;
+         case Iop_32Uto64:    goto n_or_u_64;
+         case Iop_32Sto64:    goto n_or_u_64;
+         case Iop_Shl64:      goto n_or_u_64;
+         case Iop_Sar64:      goto n_or_u_64;
+         case Iop_Shr64:      goto n_or_u_64;
+         case Iop_Xor64:      goto n_or_u_64;
+         case Iop_128HIto64:  goto n_or_u_64;
+         case Iop_128to64:    goto n_or_u_64;
+         case Iop_V128HIto64: goto n_or_u_64;
+         case Iop_V128to64:   goto n_or_u_64;
+         case Iop_16Uto64:    goto n_or_u_64;
+         case Iop_16Sto64:    goto n_or_u_64;
+         case Iop_32HLto64:   goto n_or_u_64;
+         case Iop_MullS32:    goto n_or_u_64;
+         case Iop_MullU32:    goto n_or_u_64;
          n_or_u_64:
             assign( 'I', pce, dstv,
                     mkexpr(
@@ -3412,6 +3382,27 @@ void instrument_arithop ( PCEnv* pce,
          case Iop_DivModU64to32: goto n64;
          case Iop_DivModS64to32: goto n64;
          case Iop_F64toI64:      goto n64;
+         case Iop_Ctz64:         goto n64;
+         case Iop_Clz64:         goto n64;
+      case Iop_Avg8Ux8: case Iop_Avg16Ux4:
+      case Iop_Max16Sx4: case Iop_Max8Ux8: case Iop_Min16Sx4:
+      case Iop_Min8Ux8: case Iop_MulHi16Ux4:
+      case Iop_QNarrow32Sx2: case Iop_QNarrow16Sx4:
+      case Iop_QNarrow16Ux4: case Iop_Add8x8: case Iop_Add32x2:
+      case Iop_QAdd8Sx8: case Iop_QAdd16Sx4: case Iop_QAdd8Ux8:
+      case Iop_QAdd16Ux4: case Iop_Add16x4: case Iop_CmpEQ8x8:
+      case Iop_CmpEQ32x2: case Iop_CmpEQ16x4: case Iop_CmpGT8Sx8:
+      case Iop_CmpGT32Sx2: case Iop_CmpGT16Sx4: case Iop_MulHi16Sx4:
+      case Iop_Mul16x4: case Iop_ShlN32x2: case Iop_ShlN16x4:
+      case Iop_SarN32x2: case Iop_SarN16x4: case Iop_ShrN32x2:
+      case Iop_ShrN16x4: case Iop_Sub8x8: case Iop_Sub32x2:
+      case Iop_QSub8Sx8: case Iop_QSub16Sx4: case Iop_QSub8Ux8:
+      case Iop_QSub16Ux4: case Iop_Sub16x4: case Iop_InterleaveHI8x8:
+      case Iop_InterleaveHI32x2: case Iop_InterleaveHI16x4:
+      case Iop_InterleaveLO8x8: case Iop_InterleaveLO32x2:
+      case Iop_InterleaveLO16x4: case Iop_SarN8x8:
+      case Iop_Perm8x8: case Iop_ShlN8x8: case Iop_Mul32x2:
+      case Iop_CatEvenLanes16x4: case Iop_CatOddLanes16x4:
          n64:
             assign( 'I', pce, dstv, mkU64( (UInt)NONPTR ));
             break;
@@ -3675,6 +3666,21 @@ static void schemeS ( PCEnv* pce, IRStmt* st )
                                    addr, addrv, dI );
                   break;
                }
+               /* 32-bit float.  We can just use _store4, but need
+                  to futz with the argument type. */
+               case Ity_F32: {
+                  IRAtom* i32 = assignNew( 'I', pce, Ity_I32, 
+                                           unop(Iop_ReinterpF32asI32,
+                                                data ) );
+                  IRAtom* i64 = assignNew( 'I', pce, Ity_I64, 
+                                           unop(Iop_32Uto64,
+                                                i32 ) );
+                  gen_dirty_v_WWW( pce,
+                                   &check_store4,
+                                   "check_store4",
+                                   addr, addrv, i64 );
+                  break;
+               }
                default:
                   ppIRType(d_ty); tl_assert(0);
             }
@@ -3844,6 +3850,18 @@ static void schemeS ( PCEnv* pce, IRStmt* st )
                   instrument_arithop( pce, dst, dstv, e->Iex.Binop.op,
                                       e->Iex.Binop.arg1, e->Iex.Binop.arg2,
                                       NULL, NULL );
+               break;
+            }
+
+            case Iex_Triop: {
+               stmt( 'C', pce, st );
+               tl_assert(isIRAtom(e->Iex.Triop.arg1));
+               tl_assert(isIRAtom(e->Iex.Triop.arg2));
+               tl_assert(isIRAtom(e->Iex.Triop.arg3));
+               if (isWord)
+                  instrument_arithop( pce, dst, dstv, e->Iex.Triop.op,
+                                      e->Iex.Triop.arg1, e->Iex.Triop.arg2,
+                                      e->Iex.Triop.arg3, NULL );
                break;
             }
 
