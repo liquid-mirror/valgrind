@@ -203,6 +203,10 @@ static Interval* Interval__choose(Interval* o, Interval* I)
    else if (SegMmapFree == I->status && SegMmapFree == o->status) 
       return ( o->left < I->left ? o : I);
 #endif
+
+   else if (SegMmap == I->status && SegMmap == o->status) 
+      return ( o->left < I->left ? o : I);
+
    else {
       my_printf("o->status = %d, I->status = %d\n", o->status, I->status);
       my_printf("o->left   = %p, I->left   = %p\n", o->left,   I->left);
@@ -316,6 +320,11 @@ Char* Seg__status_str(Seg seg)
    case SegMmapFree: return "munmap'd";
    default:          VG_(tool_panic)("Seg__status_str");
    }
+}
+
+Bool Seg__status_is_SegHeap ( Seg seg )
+{
+   return seg->status == SegHeap;
 }
 
 __attribute__((unused))

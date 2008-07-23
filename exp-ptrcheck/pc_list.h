@@ -69,6 +69,7 @@ extern void  Seg__resize(Seg seg, SizeT new_size, ExeContext* where) ;
 extern Char* Seg__status_str(Seg seg);
 
 extern Bool Seg__plausible ( Seg seg );
+extern Bool Seg__status_is_SegHeap ( Seg seg );
 
 
 //-------------------------------------------------------------------

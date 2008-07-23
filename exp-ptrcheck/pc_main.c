@@ -1545,14 +1545,27 @@ static void get_IntRegInfo ( /*OUT*/IntRegInfo* iii, Int offset, Int szB )
    if (o == GOF(XMM15) && isXmmF) goto none;
 
    if (o == GOF(FPROUND) && is8) goto none;
-   if (o == GOF(EMWARN) && sz == 4) goto none;
-   if (o == GOF(FTOP) && sz == 4) goto none;
-   if (o == GOF(FPTAG) && sz == 8) goto none;
-   if (o == GOF(FC3210) && sz == 8) goto none;
+   if (o == GOF(EMWARN)  && sz == 4) goto none;
+   if (o == GOF(FTOP)    && sz == 4) goto none;
+   if (o == GOF(FPTAG)   && sz == 8) goto none;
+   if (o == GOF(FC3210)  && sz == 8) goto none;
 
+   if (o >= GOF(XMM0)  && o+sz <= GOF(XMM0)+16)  goto none;
+   if (o >= GOF(XMM1)  && o+sz <= GOF(XMM1)+16)  goto none;
+   if (o >= GOF(XMM2)  && o+sz <= GOF(XMM2)+16)  goto none;
+   if (o >= GOF(XMM3)  && o+sz <= GOF(XMM3)+16)  goto none;
+   if (o >= GOF(XMM4)  && o+sz <= GOF(XMM4)+16)  goto none;
+   if (o >= GOF(XMM5)  && o+sz <= GOF(XMM5)+16)  goto none;
+   if (o >= GOF(XMM6)  && o+sz <= GOF(XMM6)+16)  goto none;
+   if (o >= GOF(XMM7)  && o+sz <= GOF(XMM7)+16)  goto none;
+   if (o >= GOF(XMM8)  && o+sz <= GOF(XMM8)+16)  goto none;
+   if (o >= GOF(XMM9)  && o+sz <= GOF(XMM9)+16)  goto none;
+   if (o >= GOF(XMM10) && o+sz <= GOF(XMM10)+16) goto none;
    if (o >= GOF(XMM11) && o+sz <= GOF(XMM11)+16) goto none;
    if (o >= GOF(XMM12) && o+sz <= GOF(XMM12)+16) goto none;
    if (o >= GOF(XMM13) && o+sz <= GOF(XMM13)+16) goto none;
+   if (o >= GOF(XMM14) && o+sz <= GOF(XMM14)+16) goto none;
+   if (o >= GOF(XMM15) && o+sz <= GOF(XMM15)+16) goto none;
 
    if (o >= GOF(FPREG[0]) && o < GOF(FPREG[7])+8 && sz == 8) goto none;
 
@@ -2079,10 +2092,89 @@ Seg nonptr_or_unknown(UWord x)
 //zz    VG_(printf)("%u =\n", bb);
 //zz }
 
+static ULong stats__tot_mem_refs  = 0;
+static ULong stats__refs_in_a_seg = 0;
+static ULong stats__refs_lost_seg = 0;
+
+typedef
+   struct { Addr ip; UWord count; }
+   Lossage;
+
+static OSet* lossage = NULL;
+
+static void inc_lossage ( Addr ip ) 
+{
+   Lossage key, *res, *nyu;
+   key.ip = ip;
+   key.count = 0; /* frivolous */
+   res = VG_(OSetGen_Lookup)(lossage, &key);
+   if (res) {
+      tl_assert(res->ip == ip);
+      res->count++;
+   } else {
+      nyu = (Lossage*)VG_(OSetGen_AllocNode)(lossage, sizeof(Lossage));
+      tl_assert(nyu);
+      nyu->ip = ip;
+      nyu->count = 1;
+      VG_(OSetGen_Insert)( lossage, nyu );
+   }
+}
+
+static void init_lossage ( void )
+{
+   lossage = VG_(OSetGen_Create)( /*keyOff*/ offsetof(Lossage,ip),
+                                  /*fastCmp*/NULL,
+                                  VG_(malloc), VG_(free) );
+   tl_assert(lossage);
+}
+
+static void show_lossage ( void )
+{
+   Lossage* elem;
+   VG_(OSetGen_ResetIter)( lossage );
+   while ( (elem = VG_(OSetGen_Next)(lossage)) ) {
+      Char buf[100];
+      (void)VG_(describe_IP)(elem->ip, buf, sizeof(buf)-1);
+      buf[sizeof(buf)-1] = 0;
+      VG_(printf)("  %,8lu  %s\n", elem->count, buf);
+   }
+}
+
 // This function is called *a lot*; inlining it sped up Konqueror by 20%.
 static __inline__
 void check_load_or_store(Bool is_write, Addr m, UInt sz, Seg mptr_vseg)
 {
+
+  { Seg seg;
+    stats__tot_mem_refs++;
+  if (ISList__findI0( seglist, (Addr)m, &seg )) {
+     /* m falls inside 'seg' (that is, we are making a memory
+        reference inside 'seg').  Now, really mptr_vseg should be a
+        tracked segment of some description.  Badness is when
+        mptr_vsrg is UNKNOWN, BOTTOM or NONPTR at this point, since
+        that means we've lost the type of it somehow: it shoud say
+        that m points into a real segment (preferable 'seg'), but it
+        doesn't. */
+    if (Seg__status_is_SegHeap(seg)) {
+       stats__refs_in_a_seg++;
+       if (UNKNOWN == mptr_vseg
+           || BOTTOM == mptr_vseg || NONPTR == mptr_vseg) {
+          Addr ip;
+          Char buf[100];
+          static UWord xx = 0;
+          stats__refs_lost_seg++;
+          ip = VG_(get_IP)( VG_(get_running_tid)() );
+          inc_lossage(ip);
+          if (xx++ < 0) {
+          (void)VG_(describe_IP)(ip, buf, sizeof(buf)-1);
+          buf[sizeof(buf)-1] = 0;
+          VG_(printf)("lossage at %p %s\n", ip, buf );
+          }
+       }
+    }
+  }
+  }
+
 checkSeg(mptr_vseg);
    if (UNKNOWN == mptr_vseg) {
       // do nothing
@@ -3189,6 +3281,7 @@ static IRAtom* schemeEw_Atom ( PCEnv* pce, IRExpr* e )
       if (e->tag == Iex_Const && e->Iex.Const.con->tag == Ico_U64) {
          IRTemp t;
          tl_assert(sizeof(UWord) == 8);
+         //return mkU64( (ULong)(UWord)NONPTR );
          t = gen_call_nonptr_or_unknown_w(pce, e);
          return mkexpr(t);
       }
@@ -3351,19 +3444,11 @@ void instrument_arithop ( PCEnv* pce,
 
          /* We don't really know what the result could be; test at run
             time. */
-         case Iop_32Uto64:    goto n_or_u_64;
-         case Iop_32Sto64:    goto n_or_u_64;
-         case Iop_Shl64:      goto n_or_u_64;
-         case Iop_Sar64:      goto n_or_u_64;
-         case Iop_Shr64:      goto n_or_u_64;
          case Iop_Xor64:      goto n_or_u_64;
          case Iop_128HIto64:  goto n_or_u_64;
          case Iop_128to64:    goto n_or_u_64;
          case Iop_V128HIto64: goto n_or_u_64;
          case Iop_V128to64:   goto n_or_u_64;
-         case Iop_16Uto64:    goto n_or_u_64;
-         case Iop_16Sto64:    goto n_or_u_64;
-         case Iop_32HLto64:   goto n_or_u_64;
          case Iop_MullS32:    goto n_or_u_64;
          case Iop_MullU32:    goto n_or_u_64;
          n_or_u_64:
@@ -3376,6 +3461,23 @@ void instrument_arithop ( PCEnv* pce,
          /* Cases where it's very obvious that the result cannot be a
             pointer.  Hence declare directly that it's NONPTR; don't
             bother with the overhead of calling nonptr_or_unknown. */
+
+         /* cases where it makes no sense for the result to be a ptr */
+         /* FIXME: fix for 32-bit platforms.  For Shl/Shr/Sar, really
+            should do a test on the 2nd arg, so that shift by zero
+            preserves the original value. */
+         case Iop_Shl64:      goto n64;
+         case Iop_Sar64:      goto n64;
+         case Iop_Shr64:      goto n64;
+
+         case Iop_32Uto64:    goto n64;
+         case Iop_32Sto64:    goto n64;
+         case Iop_16Uto64:    goto n64;
+         case Iop_16Sto64:    goto n64;
+         case Iop_32HLto64:   goto n64;
+
+         /* cases where result range is very limited and clearly cannot
+            be a pointer */
          case Iop_1Uto64:        goto n64;
          case Iop_8Uto64:        goto n64;
          case Iop_8Sto64:        goto n64;
@@ -3384,25 +3486,26 @@ void instrument_arithop ( PCEnv* pce,
          case Iop_F64toI64:      goto n64;
          case Iop_Ctz64:         goto n64;
          case Iop_Clz64:         goto n64;
-      case Iop_Avg8Ux8: case Iop_Avg16Ux4:
-      case Iop_Max16Sx4: case Iop_Max8Ux8: case Iop_Min16Sx4:
-      case Iop_Min8Ux8: case Iop_MulHi16Ux4:
-      case Iop_QNarrow32Sx2: case Iop_QNarrow16Sx4:
-      case Iop_QNarrow16Ux4: case Iop_Add8x8: case Iop_Add32x2:
-      case Iop_QAdd8Sx8: case Iop_QAdd16Sx4: case Iop_QAdd8Ux8:
-      case Iop_QAdd16Ux4: case Iop_Add16x4: case Iop_CmpEQ8x8:
-      case Iop_CmpEQ32x2: case Iop_CmpEQ16x4: case Iop_CmpGT8Sx8:
-      case Iop_CmpGT32Sx2: case Iop_CmpGT16Sx4: case Iop_MulHi16Sx4:
-      case Iop_Mul16x4: case Iop_ShlN32x2: case Iop_ShlN16x4:
-      case Iop_SarN32x2: case Iop_SarN16x4: case Iop_ShrN32x2:
-      case Iop_ShrN16x4: case Iop_Sub8x8: case Iop_Sub32x2:
-      case Iop_QSub8Sx8: case Iop_QSub16Sx4: case Iop_QSub8Ux8:
-      case Iop_QSub16Ux4: case Iop_Sub16x4: case Iop_InterleaveHI8x8:
-      case Iop_InterleaveHI32x2: case Iop_InterleaveHI16x4:
-      case Iop_InterleaveLO8x8: case Iop_InterleaveLO32x2:
-      case Iop_InterleaveLO16x4: case Iop_SarN8x8:
-      case Iop_Perm8x8: case Iop_ShlN8x8: case Iop_Mul32x2:
-      case Iop_CatEvenLanes16x4: case Iop_CatOddLanes16x4:
+         /* 64-bit simd */
+         case Iop_Avg8Ux8: case Iop_Avg16Ux4:
+         case Iop_Max16Sx4: case Iop_Max8Ux8: case Iop_Min16Sx4:
+         case Iop_Min8Ux8: case Iop_MulHi16Ux4:
+         case Iop_QNarrow32Sx2: case Iop_QNarrow16Sx4:
+         case Iop_QNarrow16Ux4: case Iop_Add8x8: case Iop_Add32x2:
+         case Iop_QAdd8Sx8: case Iop_QAdd16Sx4: case Iop_QAdd8Ux8:
+         case Iop_QAdd16Ux4: case Iop_Add16x4: case Iop_CmpEQ8x8:
+         case Iop_CmpEQ32x2: case Iop_CmpEQ16x4: case Iop_CmpGT8Sx8:
+         case Iop_CmpGT32Sx2: case Iop_CmpGT16Sx4: case Iop_MulHi16Sx4:
+         case Iop_Mul16x4: case Iop_ShlN32x2: case Iop_ShlN16x4:
+         case Iop_SarN32x2: case Iop_SarN16x4: case Iop_ShrN32x2:
+         case Iop_ShrN16x4: case Iop_Sub8x8: case Iop_Sub32x2:
+         case Iop_QSub8Sx8: case Iop_QSub16Sx4: case Iop_QSub8Ux8:
+         case Iop_QSub16Ux4: case Iop_Sub16x4: case Iop_InterleaveHI8x8:
+         case Iop_InterleaveHI32x2: case Iop_InterleaveHI16x4:
+         case Iop_InterleaveLO8x8: case Iop_InterleaveLO32x2:
+         case Iop_InterleaveLO16x4: case Iop_SarN8x8:
+         case Iop_Perm8x8: case Iop_ShlN8x8: case Iop_Mul32x2:
+         case Iop_CatEvenLanes16x4: case Iop_CatOddLanes16x4:
          n64:
             assign( 'I', pce, dstv, mkU64( (UInt)NONPTR ));
             break;
@@ -4704,6 +4807,8 @@ static void pc_pre_clo_init ( void )
    init_shadow_memory();
    seglist  = ISList__construct();
 
+   init_lossage();
+
    // init_shadow_registers();
    // This is deferred until we are asked to instrument the
    // first SB.  Very ugly, but necessary since right now we can't
@@ -4723,6 +4828,16 @@ static void pc_fini ( Int exitcode )
 {
 //   if (0)
 //      count_segs();
+   VG_(message)(Vg_UserMsg, "");
+   VG_(message)(Vg_UserMsg, "%12lld total memory references",
+                            stats__tot_mem_refs);
+   VG_(message)(Vg_UserMsg, "%12lld   of which are in a known segment",
+                            stats__refs_in_a_seg);
+   VG_(message)(Vg_UserMsg, "%12lld   of which are 'lost' w.r.t the seg",
+                            stats__refs_lost_seg);
+   VG_(message)(Vg_UserMsg, "");
+   show_lossage();
+   VG_(message)(Vg_UserMsg, "");
 }
 
 VG_DETERMINE_INTERFACE_VERSION(pc_pre_clo_init)
