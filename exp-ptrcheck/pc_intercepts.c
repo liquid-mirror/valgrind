@@ -111,6 +111,53 @@ STRLEN(m_ld_linux_so_2,        strlen)
 STRLEN(m_ld_linux_x86_64_so_2, strlen)
 
 
+#define MEMCPY(soname, fnname) \
+   void* VG_REPLACE_FUNCTION_ZU(soname,fnname) \
+            ( void *dst, const void *src, SizeT sz ); \
+   void* VG_REPLACE_FUNCTION_ZU(soname,fnname) \
+            ( void *dest, const void *src, SizeT sz ) \
+   { \
+   const UChar*  s  = (const UChar*)src; \
+         UChar*  d  =       (UChar*)dest; \
+   const UWord*  sW = (const UWord*)src; \
+         UWord*  dW =       (UWord*)dest; \
+   const UWord   al = sizeof(UWord)-1; \
+   \
+   if (0 == (((UWord)dW) & al) && 0 == (((UWord)sW) & al)) { \
+      while (sz >= 4 * sizeof(UWord)) { \
+         dW[0] = sW[0]; \
+         dW[1] = sW[1]; \
+         dW[2] = sW[2]; \
+         dW[3] = sW[3]; \
+         sz -= 4 * sizeof(UWord); \
+         dW += 4; \
+         sW += 4; \
+      } \
+      if (sz == 0) \
+         return dest; \
+      while (sz >= 1 * sizeof(UWord)) { \
+         dW[0] = sW[0]; \
+         sz -= 1 * sizeof(UWord); \
+         dW += 1; \
+         sW += 1; \
+      } \
+      if (sz == 0) \
+         return dest; \
+      s = (const UChar*)sW; \
+      d = (UChar*)dW; \
+   } \
+   \
+   while (sz--) \
+      *d++ = *s++; \
+   \
+   return dest; \
+   }
+
+MEMCPY(m_libc_soname, memcpy)
+MEMCPY(m_ld_so_1,     memcpy) /* ld.so.1 */
+MEMCPY(m_ld64_so_1,   memcpy) /* ld64.so.1 */
+
+
 /*--------------------------------------------------------------------*/
 /*--- end                                          pc_intercepts.c ---*/
 /*--------------------------------------------------------------------*/
