@@ -54,6 +54,10 @@
 // instrumentation
 // GetI kludge: is at least safe; will abort in unhandled cases
 
+// FIXME: check nothing is mapped in the lowest 1M of memory at
+// startup, or quit (to do with nonptr_or_unknown, also sync 1M
+// magic value with PIE default load address in m_ume.c.
+
 // XXX: recycle freed segments
 
 //--------------------------------------------------------------
@@ -483,7 +487,7 @@ static void init_shadow_memory ( void )
    Int i;
 
    for (i = 0; i < SEC_MAP_WORDS; i++)
-      distinguished_secondary_map.vseg[i] = UNKNOWN;
+      distinguished_secondary_map.vseg[i] = NONPTR;
 
    for (i = 0; i < N_PRIMAP_L1; i++) {
       primap_L1[i].base = 1; /* not 64k aligned, so doesn't match any
@@ -583,7 +587,7 @@ static SecMap* alloc_secondary_map ( void )
                                    sizeof(SecMap) );
 
    for (i = 0; i < SEC_MAP_WORDS; i++)
-      map->vseg[i] = UNKNOWN;
+      map->vseg[i] = NONPTR;
    if (0) VG_(printf)("XXX new secmap %p\n", map);
    return map;
 }
@@ -1721,6 +1725,7 @@ void post_reg_write_clientcall(ThreadId tid, OffT guest_state_offset,
        || f == (Addr)pc_replace_memalign
        || f == (Addr)pc_replace_realloc)
    {
+     //     if (f == (Addr)pc_replace_realloc)return;
       // We remembered the last added segment;  make sure it's the right one.
       /* What's going on: at this point, the scheduler has just called
          'f' -- one of our malloc replacement functions -- and it has
@@ -1740,7 +1745,7 @@ void post_reg_write_clientcall(ThreadId tid, OffT guest_state_offset,
       if ((UInt)NULL == p) {
          // if alloc failed, eg. realloc on bogus pointer
          put_guest_intreg(tid, 1/*first-shadow*/,
-                          guest_state_offset, size, (UWord)UNKNOWN );
+                          guest_state_offset, size, (UWord)NONPTR );
       } else {
          // alloc didn't fail.  Check we have the correct segment.
          tl_assert(p == Seg__a(last_seg_added));
@@ -1758,7 +1763,7 @@ void post_reg_write_clientcall(ThreadId tid, OffT guest_state_offset,
       // non-pointer.
       tl_assert(is_integer_guest_reg(guest_state_offset, size));
       put_guest_intreg(tid, 1/*first-shadow*/,
-                       guest_state_offset, size, (UWord)UNKNOWN );
+                       guest_state_offset, size, (UWord)NONPTR );
    }
    else {
       // Anything else, probably best to set return value to non-pointer.
@@ -1889,7 +1894,8 @@ static void post_syscall ( ThreadId tid, UInt syscallno, SysRes res )
 #     endif
       case __NR_uname:
       case __NR_write:
-         VG_(set_syscall_return_shadows)( tid, (UWord)UNKNOWN, 0 );
+        //VG_(set_syscall_return_shadows)( tid, (UWord)UNKNOWN, 0 );
+         VG_(set_syscall_return_shadows)( tid, (UWord)NONPTR, 0 );
          break;
 
       /* These ones definitely don't return pointers.  They're not
@@ -1934,6 +1940,7 @@ static void post_syscall ( ThreadId tid, UInt syscallno, SysRes res )
 #     endif
       case __NR_gettimeofday:
       case __NR_getuid:
+      case __NR_inotify_init:
       case __NR_kill:
       case __NR_link:
 #     if defined(__NR_listen)
@@ -2073,7 +2080,7 @@ static __inline__ Bool looks_like_a_pointer(Addr a)
       return (a > 0x01000000UL && a < 0xFF000000UL);
    } else {
      //return (a > 0x01000000UL && a < 0xFF00000000000000UL);
-            return (a >= 0x10000UL && a < 0xFF00000000000000UL);
+     return (a >= 16 * 0x10000UL && a < 0xFF00000000000000UL);
    }
 }
 
@@ -2097,24 +2104,24 @@ static ULong stats__refs_in_a_seg = 0;
 static ULong stats__refs_lost_seg = 0;
 
 typedef
-   struct { Addr ip; UWord count; }
+   struct { ExeContext* ec; UWord count; }
    Lossage;
 
 static OSet* lossage = NULL;
 
-static void inc_lossage ( Addr ip ) 
+static void inc_lossage ( ExeContext* ec ) 
 {
    Lossage key, *res, *nyu;
-   key.ip = ip;
+   key.ec = ec;
    key.count = 0; /* frivolous */
    res = VG_(OSetGen_Lookup)(lossage, &key);
    if (res) {
-      tl_assert(res->ip == ip);
+      tl_assert(res->ec == ec);
       res->count++;
    } else {
       nyu = (Lossage*)VG_(OSetGen_AllocNode)(lossage, sizeof(Lossage));
       tl_assert(nyu);
-      nyu->ip = ip;
+      nyu->ec = ec;
       nyu->count = 1;
       VG_(OSetGen_Insert)( lossage, nyu );
    }
@@ -2122,7 +2129,7 @@ static void inc_lossage ( Addr ip )
 
 static void init_lossage ( void )
 {
-   lossage = VG_(OSetGen_Create)( /*keyOff*/ offsetof(Lossage,ip),
+   lossage = VG_(OSetGen_Create)( /*keyOff*/ offsetof(Lossage,ec),
                                   /*fastCmp*/NULL,
                                   VG_(malloc), VG_(free) );
    tl_assert(lossage);
@@ -2131,12 +2138,17 @@ static void init_lossage ( void )
 static void show_lossage ( void )
 {
    Lossage* elem;
+return;
    VG_(OSetGen_ResetIter)( lossage );
    while ( (elem = VG_(OSetGen_Next)(lossage)) ) {
-      Char buf[100];
-      (void)VG_(describe_IP)(elem->ip, buf, sizeof(buf)-1);
-      buf[sizeof(buf)-1] = 0;
-      VG_(printf)("  %,8lu  %s\n", elem->count, buf);
+
+     if (elem->count < 10) continue;
+     //Char buf[100];
+      //(void)VG_(describe_IP)(elem->ec, buf, sizeof(buf)-1);
+      //buf[sizeof(buf)-1] = 0;
+      //VG_(printf)("  %,8lu  %s\n", elem->count, buf);
+     VG_(message)(Vg_UserMsg, "Lossage count %,lu at", elem->count);
+     VG_(pp_ExeContext)(elem->ec);
    }
 }
 
@@ -2159,16 +2171,24 @@ void check_load_or_store(Bool is_write, Addr m, UInt sz, Seg mptr_vseg)
        stats__refs_in_a_seg++;
        if (UNKNOWN == mptr_vseg
            || BOTTOM == mptr_vseg || NONPTR == mptr_vseg) {
-          Addr ip;
+          ExeContext* ec;
           Char buf[100];
           static UWord xx = 0;
           stats__refs_lost_seg++;
-          ip = VG_(get_IP)( VG_(get_running_tid)() );
-          inc_lossage(ip);
+          //ip = VG_(get_IP)( VG_(get_running_tid)() );
+          ec = VG_(record_ExeContext)( VG_(get_running_tid)(), 0 );
+          inc_lossage(ec);
+          if (0) {
+          VG_(message)(Vg_DebugMsg, "");
+          VG_(message)(Vg_DebugMsg,
+                       "Lossage %s %p sz %lu inside block alloc'd",
+                       is_write ? "wr" : "rd", m, (UWord)sz);
+          VG_(pp_ExeContext)(Seg__where(seg));
+          }
           if (xx++ < 0) {
-          (void)VG_(describe_IP)(ip, buf, sizeof(buf)-1);
+          (void)VG_(describe_IP)(ec, buf, sizeof(buf)-1);
           buf[sizeof(buf)-1] = 0;
-          VG_(printf)("lossage at %p %s\n", ip, buf );
+          VG_(printf)("lossage at %p %s\n", ec, buf );
           }
        }
     }
@@ -3397,6 +3417,19 @@ void instrument_arithop ( PCEnv* pce,
    } else {
 
       tl_assert(pce->gWordTy == Ity_I64);
+
+#if 0
+      /* special handling of t +/- const: return the shadow for t
+         regardless of how big the const is.  Otherwise the result may
+         degrade to Unknown if the const is declared unknown by
+         nonptr_or_unknown(). */
+      if (1 && op == Iop_Add64 
+          && a1->tag == Iex_RdTmp && a2->tag == Iex_Const) {
+         a1v = schemeEw_Atom( pce, a1 );
+         assign( 'I', pce, dstv, a1v );
+         return;
+      }
+#endif
       switch (op) {
 
          /* For these cases, pass Segs for both arguments, and the
