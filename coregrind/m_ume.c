@@ -360,10 +360,10 @@ static Int load_ELF(Int fd, const HChar* name, /*MOD*/ExeInfo* info)
       /* We really don't want to load PIEs at zero or too close.  It
          works, but it's unrobust (NULL pointer reads and writes
          become legit, which is really bad) and causes problems for
-         exp-ptrcheck, which assumes all numbers below 64k are
-         nonpointers.  So, hackily, move it above 64k. */
-      if (ebase < 0x10000)
-         ebase = 0x10000;
+         exp-ptrcheck, which assumes all numbers below 1MB are
+         nonpointers.  So, hackily, move it above 1MB. */
+      if (ebase < 0x100000)
+         ebase = 0x100000;
    }
 
    info->phnum = e->e.e_phnum;
