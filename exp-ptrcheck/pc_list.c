@@ -57,11 +57,13 @@
  #define my_assert      assert
  #define my_printf      printf
  #define my_random(_x)  random()
+ #define MY_RAND_MAX    RAND_MAX
 #else
  #define my_malloc      VG_(malloc)
  #define my_free        VG_(free)
  #define my_assert      tl_assert
  #define my_printf      VG_(printf)
+ #define MY_RAND_MAX    VG_RAND_MAX
  #define my_random(_x)  VG_(random)(_x)
 #endif
 
@@ -829,10 +831,15 @@ static ISNode* ISList__search(ISList* o, Addr a, ISNode** update)
    return x->forward[0];
 }
 
+/* Return a "random" float in the range [0.0 .. 1.0) */
 static float normalizedRandom(void)
 {
-   // Nb: 2147483647 == (2**31 - 1)
-   float f = ((float)my_random(NULL))/ 2147483647.0;
+   //static Int uh = 0, lh = 0;
+   float f = ((float)my_random(NULL))/ (MY_RAND_MAX + 1.0);
+   tl_assert(f >= 0.0);
+   tl_assert(f <= 1.0); /* in fact < and not <=, but we'll overlook that. */
+   //if (f >= 0.5) uh++; else lh++;
+   //VG_(printf)("(%d,%d) %d\n", lh, uh, (Int)(1000.0 * f));
    return f;
 }
 
@@ -840,7 +847,7 @@ static float normalizedRandom(void)
 static Int ISList__randomLevel(ISList* o)
 {
    Int levels = 0;
-   while ( P < normalizedRandom() ) levels++;   
+   while ( P <= normalizedRandom() ) levels++;   
    return ( levels <= o->maxLevel ? levels : o->maxLevel+1 );
 }
 
