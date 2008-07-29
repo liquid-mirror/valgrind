@@ -784,10 +784,11 @@ thread_report_conflicting_segments_segment(const DrdThreadId tid,
       Segment* q;
       for (q = s_threadinfo[i].last; q; q = q->prev)
       {
-        // Since q iterates over the segments of thread i in order of 
-        // decreasing vector clocks, if q->vc <= p->vc, then 
-        // q->next->vc <= p->vc will also hold. Hence, break out of the
-        // loop once this condition is met.
+        /* Since q iterates over the segments of thread i in order of 
+         * decreasing vector clocks, if q->vc <= p->vc, then 
+         * q->next->vc <= p->vc will also hold. Hence, break out of the
+         * loop once this condition is met.
+         */
         if (vc_lte(&q->vc, &p->vc))
           break;
         if (! vc_lte(&p->vc, &q->vc))
@@ -871,10 +872,19 @@ thread_compute_conflict_set_bitmap2(const UWord a1,
         const Segment* q;
         for (q = s_threadinfo[j].last; q; q = q->prev)
         {
-          const struct bitmap2* const q_bm2 = bm2_lookup(q->bm, a1);
-          if (q_bm2 && ! vc_lte(&q->vc, &p->vc) && ! vc_lte(&p->vc, &q->vc))
+          const struct bitmap2* q_bm2;
+
+          /* Since q iterates over the segments of thread i in order of 
+           * decreasing vector clocks, if q->vc <= p->vc, then 
+           * q->next->vc <= p->vc will also hold. Hence, break out of the
+           * loop once this condition is met.
+           */
+          if (vc_lte(&q->vc, &p->vc))
+            break;
+
+          if ((q_bm2 = bm2_lookup(q->bm, a1)) && ! vc_lte(&p->vc, &q->vc))
           {
-            if (s_trace_conflict_set)
+            if (UNLIKELY(s_trace_conflict_set))
             {
               char msg[256];
               VG_(snprintf)(msg, sizeof(msg),
@@ -888,7 +898,7 @@ thread_compute_conflict_set_bitmap2(const UWord a1,
           }
           else
           {
-            if (s_trace_conflict_set)
+            if (UNLIKELY(s_trace_conflict_set))
             {
               char msg[256];
               VG_(snprintf)(msg, sizeof(msg),
