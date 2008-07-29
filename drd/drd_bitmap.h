@@ -63,7 +63,7 @@
 
 /** Number of bits assigned to the least significant component of an address.
  */
-#define ADDR_LSB_BITS 14
+#define ADDR_LSB_BITS 12
 
 /** Mask that has to be applied to an address of type Addr in order to
  *  compute the least significant part of an address split, after having
