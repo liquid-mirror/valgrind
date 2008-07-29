@@ -42,8 +42,6 @@
 
 // FIXME: tidy up findShadowTmp
 
-// FIXME: looks_like_a_pointer
-
 // FIXME: post_reg_write_demux(Vg_CoreSysCall) is redundant w.r.t.
 // the default 'NONPTR' behaviour of post_syscall.  post_reg_write_demux
 // is called first, then post_syscall.
@@ -210,6 +208,7 @@
 #include "pub_tool_hashtable.h"
 #include "pub_tool_tooliface.h"
 #include "pub_tool_replacemalloc.h"
+#include "pub_tool_options.h"
 #include "pub_tool_execontext.h"
 #include "pub_tool_aspacemgr.h"    // VG_(am_shadow_malloc)
 #include "pub_tool_vki.h"          // VKI_MAX_PAGE_SIZE
@@ -221,70 +220,50 @@
 
 #include "pc_list.h"
 
-//#include "vg_profile.c"
 
-#define PC_MALLOC_REDZONE_SZB 0  /* no need for client heap redzones */
+/*------------------------------------------------------------*/
+/*--- Debug/trace options                                  ---*/
+/*------------------------------------------------------------*/
 
+/* Set to 1 to do sanity checks on Seg values in many places, which
+   checks if bogus Segs are in circulation.  Quite expensive from a
+   performance point of view. */
+#define SC_SEGS 0
 
-static __inline__ VG_REGPARM(1) Seg nonptr_or_unknown(UWord x); /*fwds*/
-
-
-//zz /*------------------------------------------------------------*/
-//zz /*--- Profiling events                                     ---*/
-//zz /*------------------------------------------------------------*/
-//zz 
-//zz typedef
-//zz    enum {
-//zz       VgpGetMemAseg = VgpFini+1,
-//zz       VgpCheckLoadStore,
-//zz       VgpCheckLoad4,
-//zz       VgpCheckLoad21,
-//zz       VgpCheckStore4,
-//zz       VgpCheckStore21,
-//zz       VgpCheckFpuR,
-//zz       VgpCheckFpuW,
-//zz       VgpDoAdd,
-//zz       VgpDoSub,
-//zz       VgpDoAdcSbb,
-//zz       VgpDoXor,
-//zz       VgpDoAnd,
-//zz       VgpDoOr,
-//zz       VgpDoLea1,
-//zz       VgpDoLea2,
-//zz    }
-//zz    VgpSkinCC;
 
 /*------------------------------------------------------------*/
 /*--- Command line options                                 ---*/
 /*------------------------------------------------------------*/
 
-Bool clo_partial_loads_ok = True;
+static Bool clo_partial_loads_ok = True;   /* user visible */
+static Bool clo_lossage_check    = False;  /* dev flag only */
 
-//zz Bool SK_(process_cmd_line_option)(Char* arg)
-//zz {
-//zz    if      (VG_CLO_STREQ(arg, "--partial-loads-ok=yes"))
-//zz       clo_partial_loads_ok = True;
-//zz    else if (VG_CLO_STREQ(arg, "--partial-loads-ok=no"))
-//zz       clo_partial_loads_ok = False;
-//zz 
-//zz    else
-//zz       return VG_(replacement_malloc_process_cmd_line_option)(arg);
-//zz 
-//zz    return True;
-//zz }
-//zz 
-//zz void SK_(print_usage)(void)
-//zz {
-//zz    VG_(printf)(
-//zz "    --partial-loads-ok=no|yes same as for Memcheck [yes]\n"
-//zz    );
-//zz    VG_(replacement_malloc_print_usage)();
-//zz }
-//zz 
-//zz void SK_(print_debug_usage)(void)
-//zz {
-//zz    VG_(replacement_malloc_print_debug_usage)();
-//zz }
+static Bool pc_process_cmd_line_options(Char* arg)
+{
+        VG_BOOL_CLO(arg, "--partial-loads-ok", clo_partial_loads_ok)
+   else VG_BOOL_CLO(arg, "--lossage-check",    clo_lossage_check)
+   else
+      return VG_(replacement_malloc_process_cmd_line_option)(arg);
+
+   return True;
+}
+
+static void pc_print_usage(void)
+{
+   VG_(printf)(
+   "    --partial-loads-ok=no|yes same as for Memcheck [yes]\n"
+   );
+   VG_(replacement_malloc_print_usage)();
+}
+
+static void pc_print_debug_usage(void)
+{
+   VG_(printf)(
+   "    --lossage-check=no|yes gather stats for quality control [no]\n"
+   );
+   VG_(replacement_malloc_print_debug_usage)();
+}
+
 
 /*------------------------------------------------------------*/
 /*--- Segments                                             ---*/
@@ -317,6 +296,8 @@ static Seg add_new_segment ( ThreadId tid,
 // Forward declarations
 static void copy_mem( Addr from, Addr to, SizeT len );
 static void set_mem_unknown ( Addr a, SizeT len );
+
+static __inline__ VG_REGPARM(1) Seg nonptr_or_unknown(UWord x); /*fwds*/
 
 static __inline__
 void* alloc_and_new_mem_heap ( ThreadId tid,
@@ -729,15 +710,15 @@ record_arith_error( Seg seg1, Seg seg2, HChar* opname )
                             /*a*/0, /*str*/NULL, /*extra*/(void*)&extra);
 }
 
-static void record_sysparam_error( ThreadId tid, CorePart part, Char* s,
-                                   Addr lo, Addr hi, Seg seglo, Seg seghi )
-{
-   SysParamExtra extra = {
-      .part = part, .lo = lo, .hi = hi, .seglo = seglo, .seghi = seghi
-   };
-   VG_(maybe_record_error)( tid, SysParamErr, /*a*/(Addr)0, /*str*/s,
-                            /*extra*/(void*)&extra);
-}
+//zz static void record_sysparam_error( ThreadId tid, CorePart part, Char* s,
+//zz                                    Addr lo, Addr hi, Seg seglo, Seg seghi )
+//zz {
+//zz    SysParamExtra extra = {
+//zz       .part = part, .lo = lo, .hi = hi, .seglo = seglo, .seghi = seghi
+//zz    };
+//zz    VG_(maybe_record_error)( tid, SysParamErr, /*a*/(Addr)0, /*str*/s,
+//zz                             /*extra*/(void*)&extra);
+//zz }
 
 static Bool eq_Error ( VgRes res, Error* e1, Error* e2 )
 {
@@ -1412,11 +1393,6 @@ typedef
 /* See description on definition of type IntRegInfo. */
 static void get_IntRegInfo ( /*OUT*/IntRegInfo* iii, Int offset, Int szB )
 {
-   Int o  = offset;
-   Int sz = szB;
-   /* Set default state 'does not intersect any int register. */
-   VG_(memset)( iii, 0, sizeof(*iii) );
-
    /* --------------------- x86 --------------------- */
 
 #  if defined(VGA_x86)
@@ -1424,11 +1400,18 @@ static void get_IntRegInfo ( /*OUT*/IntRegInfo* iii, Int offset, Int szB )
 #  define GOF(_fieldname) \
       (offsetof(VexGuestX86State,guest_##_fieldname))
 
-   Bool isXmmF = sz == 16 || sz == 8 || sz == 4;
-   Bool is4    = sz == 4;
-   Bool is21   = sz == 2 || sz == 1;
+   Int  o    = offset;
+   Int  sz   = szB;
+   Bool is4  = sz == 4;
+   Bool is21 = sz == 2 || sz == 1;
+
    tl_assert(sz > 0);
    tl_assert(host_is_little_endian());
+
+   /* Set default state to "does not intersect any int register". */
+   VG_(memset)( iii, 0, sizeof(*iii) );
+
+   /* Exact accesses to integer registers */
    if (o == GOF(EAX)     && is4) goto exactly1;
    if (o == GOF(ECX)     && is4) goto exactly1;
    if (o == GOF(EDX)     && is4) goto exactly1;
@@ -1443,28 +1426,50 @@ static void get_IntRegInfo ( /*OUT*/IntRegInfo* iii, Int offset, Int szB )
    if (o == GOF(CC_DEP2) && is4) goto none;
    if (o == GOF(CC_NDEP) && is4) goto none;
    if (o == GOF(DFLAG)   && is4) goto none;
+   if (o == GOF(IDFLAG)  && is4) goto none;
+   if (o == GOF(ACFLAG)  && is4) goto none;
 
+   /* Partial accesses to integer registers */
    if (o == GOF(EAX)     && is21) {         o -= 0; goto contains_o; }
    if (o == GOF(EAX)+1   && is21) { o -= 1; o -= 0; goto contains_o; }
    if (o == GOF(ECX)     && is21) {         o -= 0; goto contains_o; }
    if (o == GOF(ECX)+1   && is21) { o -= 1; o -= 0; goto contains_o; }
    if (o == GOF(EBX)     && is21) {         o -= 0; goto contains_o; }
+   // bl case
    if (o == GOF(EDX)     && is21) {         o -= 0; goto contains_o; }
    if (o == GOF(EDX)+1   && is21) { o -= 1; o -= 0; goto contains_o; }
    if (o == GOF(ESI)     && is21) {         o -= 0; goto contains_o; }
    if (o == GOF(EDI)     && is21) {         o -= 0; goto contains_o; }
 
-   if (o == GOF(GS) && sz == 2) goto none;
+   /* Segment related guff */
+   if (o == GOF(GS)  && sz == 2) goto none;
    if (o == GOF(LDT) && is4) goto none;
    if (o == GOF(GDT) && is4) goto none;
 
-   if (o == GOF(IDFLAG)  && is4) goto none;
-   if (o == GOF(ACFLAG)  && is4) goto none;
-   if (o == GOF(EMWARN)  && is4) goto none;
+   /* FP admin related */
+   if (o == GOF(SSEROUND) && is4) goto none;
+   if (o == GOF(FPROUND)  && is4) goto none;
+   if (o == GOF(EMWARN)   && is4) goto none;
+   if (o == GOF(FTOP)     && is4) goto none;
+   if (o == GOF(FPTAG)    && sz == 8) goto none;
+   if (o == GOF(FC3210)   && is4) goto none;
 
-   if (o == GOF(XMM0) && isXmmF) goto none;
+   /* xmm registers, including arbitrary sub-parts */
+   if (o >= GOF(XMM0) && o+sz <= GOF(XMM0)+16) goto none;
+   if (o >= GOF(XMM1) && o+sz <= GOF(XMM1)+16) goto none;
+   if (o >= GOF(XMM2) && o+sz <= GOF(XMM2)+16) goto none;
+   if (o >= GOF(XMM3) && o+sz <= GOF(XMM3)+16) goto none;
+   if (o >= GOF(XMM4) && o+sz <= GOF(XMM4)+16) goto none;
+   if (o >= GOF(XMM5) && o+sz <= GOF(XMM5)+16) goto none;
+   if (o >= GOF(XMM6) && o+sz <= GOF(XMM6)+16) goto none;
+   if (o >= GOF(XMM7) && o+sz <= GOF(XMM7)+16) goto none;
 
-   if (o == GOF(FTOP) && is4) goto none;
+   /* mmx/x87 registers (a bit of a kludge, since 'o' is not checked
+      to be exactly equal to one of FPREG[0] .. FPREG[7]) */
+   if (o >= GOF(FPREG[0]) && o < GOF(FPREG[7])+8 && sz == 8) goto none;
+
+   /* the entire mmx/x87 register bank in one big piece */
+   if (o == GOF(FPREG) && sz == 64) goto none;
 
    VG_(printf)("get_IntRegInfo(x86):failing on (%d,%d)\n", o, sz);
    tl_assert(0);
@@ -1477,13 +1482,18 @@ static void get_IntRegInfo ( /*OUT*/IntRegInfo* iii, Int offset, Int szB )
 #  define GOF(_fieldname) \
       (offsetof(VexGuestAMD64State,guest_##_fieldname))
 
-   Bool isXmmF = sz == 16 || sz == 8 || sz == 4;
-   Bool is421  = sz == 4 || sz == 2 || sz == 1;
-   Bool is8    = sz == 8;
-   Bool is84   = sz == 8 || sz == 4;
+   Int  o     = offset;
+   Int  sz    = szB;
+   Bool is421 = sz == 4 || sz == 2 || sz == 1;
+   Bool is8   = sz == 8;
+
    tl_assert(sz > 0);
    tl_assert(host_is_little_endian());
 
+   /* Set default state to "does not intersect any int register". */
+   VG_(memset)( iii, 0, sizeof(*iii) );
+
+   /* Exact accesses to integer registers */
    if (o == GOF(RAX)     && is8) goto exactly1;
    if (o == GOF(RCX)     && is8) goto exactly1;
    if (o == GOF(RDX)     && is8) goto exactly1;
@@ -1508,6 +1518,7 @@ static void get_IntRegInfo ( /*OUT*/IntRegInfo* iii, Int offset, Int szB )
    if (o == GOF(DFLAG)   && is8) goto none;
    if (o == GOF(IDFLAG)  && is8) goto none;
 
+   /* Partial accesses to integer registers */
    if (o == GOF(RAX)     && is421) {         o -= 0; goto contains_o; }
    if (o == GOF(RAX)+1   && is421) { o -= 1; o -= 0; goto contains_o; }
    if (o == GOF(RCX)     && is421) {         o -= 0; goto contains_o; }
@@ -1528,32 +1539,18 @@ static void get_IntRegInfo ( /*OUT*/IntRegInfo* iii, Int offset, Int szB )
    if (o == GOF(R14)     && is421) {         o -= 0; goto contains_o; }
    if (o == GOF(R15)     && is421) {         o -= 0; goto contains_o; }
 
+   /* Segment related guff */
    if (o == GOF(FS_ZERO) && is8) goto exactly1;
 
+   /* FP admin related */
    if (o == GOF(SSEROUND) && is8) goto none;
-   if (o == GOF(XMM0)  && isXmmF) goto none;
-   if (o == GOF(XMM1)  && isXmmF) goto none;
-   if (o == GOF(XMM2)  && isXmmF) goto none;
-   if (o == GOF(XMM3)  && isXmmF) goto none;
-   if (o == GOF(XMM4)  && isXmmF) goto none;
-   if (o == GOF(XMM5)  && isXmmF) goto none;
-   if (o == GOF(XMM6)  && isXmmF) goto none;
-   if (o == GOF(XMM7)  && isXmmF) goto none;
-   if (o == GOF(XMM8)  && isXmmF) goto none;
-   if (o == GOF(XMM9)  && isXmmF) goto none;
-   if (o == GOF(XMM10) && isXmmF) goto none;
-   if (o == GOF(XMM11) && isXmmF) goto none;
-   if (o == GOF(XMM12) && isXmmF) goto none;
-   if (o == GOF(XMM13) && isXmmF) goto none;
-   if (o == GOF(XMM14) && isXmmF) goto none;
-   if (o == GOF(XMM15) && isXmmF) goto none;
+   if (o == GOF(FPROUND)  && is8) goto none;
+   if (o == GOF(EMWARN)   && sz == 4) goto none;
+   if (o == GOF(FTOP)     && sz == 4) goto none;
+   if (o == GOF(FPTAG)    && is8) goto none;
+   if (o == GOF(FC3210)   && is8) goto none;
 
-   if (o == GOF(FPROUND) && is8) goto none;
-   if (o == GOF(EMWARN)  && sz == 4) goto none;
-   if (o == GOF(FTOP)    && sz == 4) goto none;
-   if (o == GOF(FPTAG)   && sz == 8) goto none;
-   if (o == GOF(FC3210)  && sz == 8) goto none;
-
+   /* xmm registers, including arbitrary sub-parts */
    if (o >= GOF(XMM0)  && o+sz <= GOF(XMM0)+16)  goto none;
    if (o >= GOF(XMM1)  && o+sz <= GOF(XMM1)+16)  goto none;
    if (o >= GOF(XMM2)  && o+sz <= GOF(XMM2)+16)  goto none;
@@ -1571,6 +1568,8 @@ static void get_IntRegInfo ( /*OUT*/IntRegInfo* iii, Int offset, Int szB )
    if (o >= GOF(XMM14) && o+sz <= GOF(XMM14)+16) goto none;
    if (o >= GOF(XMM15) && o+sz <= GOF(XMM15)+16) goto none;
 
+   /* mmx/x87 registers (a bit of a kludge, since 'o' is not checked
+      to be exactly equal to one of FPREG[0] .. FPREG[7]) */
    if (o >= GOF(FPREG[0]) && o < GOF(FPREG[7])+8 && sz == 8) goto none;
 
    VG_(printf)("get_IntRegInfo(amd64):failing on (%d,%d)\n", o, sz);
@@ -1903,7 +1902,9 @@ static void post_syscall ( ThreadId tid, UInt syscallno, SysRes res )
 #     if defined(__NR__llseek)
       case __NR__llseek:
 #     endif
-
+#     if defined(__NR__newselect)
+      case __NR__newselect:
+#     endif
 #     if defined(__NR_accept)
       case __NR_accept:
 #     endif
@@ -1919,6 +1920,9 @@ static void post_syscall ( ThreadId tid, UInt syscallno, SysRes res )
       case __NR_exit: /* hmm, why are we still alive? */
       case __NR_fchmod:
       case __NR_fchown:
+#     if defined(__NR_fchown32)
+      case __NR_fchown32:
+#     endif
 #     if defined(__NR_fcntl64)
       case __NR_fcntl64:
 #     endif
@@ -1926,9 +1930,21 @@ static void post_syscall ( ThreadId tid, UInt syscallno, SysRes res )
       case __NR_fstatfs:
       case __NR_fsync:
       case __NR_ftruncate:
+#     if defined(__NR_ftruncate64)
+      case __NR_ftruncate64:
+#     endif
       case __NR_getegid:
+#     if defined(__NR_getegid32)
+      case __NR_getegid32:
+#     endif
       case __NR_geteuid:
+#     if defined(__NR_geteuid32)
+      case __NR_geteuid32:
+#     endif
       case __NR_getgid:
+#     if defined(__NR_getgid32)
+      case __NR_getgid32:
+#     endif
       case __NR_getppid:
       case __NR_getresgid:
       case __NR_getresuid:
@@ -1940,6 +1956,9 @@ static void post_syscall ( ThreadId tid, UInt syscallno, SysRes res )
 #     endif
       case __NR_gettimeofday:
       case __NR_getuid:
+#     if defined(__NR_getuid32)
+      case __NR_getuid32:
+#     endif
       case __NR_inotify_init:
       case __NR_kill:
       case __NR_link:
@@ -1975,6 +1994,7 @@ static void post_syscall ( ThreadId tid, UInt syscallno, SysRes res )
 #     if defined(__NR_sendto)
       case __NR_sendto:
 #     endif
+      case __NR_setitimer:
       case __NR_setrlimit:
 #     if defined(__NR_setsockopt)
       case __NR_setsockopt:
@@ -1991,6 +2011,9 @@ static void post_syscall ( ThreadId tid, UInt syscallno, SysRes res )
       case __NR_tgkill:
       case __NR_time:
       case __NR_truncate:
+#     if defined(__NR_truncate64)
+      case __NR_truncate64:
+#     endif
       case __NR_umask:
       case __NR_unlink:
       case __NR_utime:
@@ -2065,10 +2088,12 @@ static void post_syscall ( ThreadId tid, UInt syscallno, SysRes res )
 /*--- Functions called from generated code                         ---*/
 /*--------------------------------------------------------------------*/
 
+#if SC_SEGS
 static void checkSeg ( Seg vseg ) {
    tl_assert(vseg == UNKNOWN || vseg == NONPTR || vseg == BOTTOM
              || Seg__plausible(vseg) );
 }
+#endif
 
 // XXX: could be more sophisticated -- actually track the lowest/highest
 // valid address used by the program, and then return False for anything
@@ -2076,12 +2101,15 @@ static void checkSeg ( Seg vseg ) {
 // 0xc0000000 is valid [unless you've changed that in your kernel]
 static __inline__ Bool looks_like_a_pointer(Addr a)
 {
-   if (sizeof(UWord) == 4) {
-      return (a > 0x01000000UL && a < 0xFF000000UL);
-   } else {
-     //return (a > 0x01000000UL && a < 0xFF00000000000000UL);
-     return (a >= 16 * 0x10000UL && a < 0xFF00000000000000UL);
-   }
+#  if defined(VGA_x86) || defined(VGA_ppc32)
+   tl_assert(sizeof(UWord) == 4);
+   return (a > 0x01000000UL && a < 0xFF000000UL);
+#  elif defined(VGA_amd64) || defined(VGA_ppc64)
+   tl_assert(sizeof(UWord) == 8);
+   return (a >= 16 * 0x10000UL && a < 0xFF00000000000000UL);
+#  else
+#    error "Unsupported architecture"
+#  endif
 }
 
 static __inline__ VG_REGPARM(1)
@@ -2138,17 +2166,15 @@ static void init_lossage ( void )
 static void show_lossage ( void )
 {
    Lossage* elem;
-return;
    VG_(OSetGen_ResetIter)( lossage );
    while ( (elem = VG_(OSetGen_Next)(lossage)) ) {
-
-     if (elem->count < 10) continue;
-     //Char buf[100];
+      if (elem->count < 10) continue;
+      //Char buf[100];
       //(void)VG_(describe_IP)(elem->ec, buf, sizeof(buf)-1);
       //buf[sizeof(buf)-1] = 0;
       //VG_(printf)("  %,8lu  %s\n", elem->count, buf);
-     VG_(message)(Vg_UserMsg, "Lossage count %,lu at", elem->count);
-     VG_(pp_ExeContext)(elem->ec);
+      VG_(message)(Vg_UserMsg, "Lossage count %,lu at", elem->count);
+      VG_(pp_ExeContext)(elem->ec);
    }
 }
 
@@ -2156,46 +2182,50 @@ return;
 static __inline__
 void check_load_or_store(Bool is_write, Addr m, UInt sz, Seg mptr_vseg)
 {
+   if (clo_lossage_check) {
+      Seg seg;
+      stats__tot_mem_refs++;
+      if (ISList__findI0( seglist, (Addr)m, &seg )) {
+         /* m falls inside 'seg' (that is, we are making a memory
+            reference inside 'seg').  Now, really mptr_vseg should be
+            a tracked segment of some description.  Badness is when
+            mptr_vsrg is UNKNOWN, BOTTOM or NONPTR at this point,
+            since that means we've lost the type of it somehow: it
+            shoud say that m points into a real segment (preferable
+            'seg'), but it doesn't. */
+         if (Seg__status_is_SegHeap(seg)) {
+            stats__refs_in_a_seg++;
+            if (UNKNOWN == mptr_vseg
+                || BOTTOM == mptr_vseg || NONPTR == mptr_vseg) {
+               ExeContext* ec;
+                Char buf[100];
+               static UWord xx = 0;
+               stats__refs_lost_seg++;
+               ec = VG_(record_ExeContext)( VG_(get_running_tid)(), 0 );
+               inc_lossage(ec);
+               if (0) {
+                  VG_(message)(Vg_DebugMsg, "");
+                  VG_(message)(Vg_DebugMsg,
+                               "Lossage %s %p sz %lu inside block alloc'd",
+                               is_write ? "wr" : "rd", m, (UWord)sz);
+                  VG_(pp_ExeContext)(Seg__where(seg));
+               }
+               if (xx++ < 0) {
+                  Addr ip = VG_(get_IP)( VG_(get_running_tid)() );
+                  (void)VG_(describe_IP)( ip, buf, sizeof(buf)-1);
+                  buf[sizeof(buf)-1] = 0;
+                  VG_(printf)("lossage at %p %s\n", ec, buf );
+               }
+            }
+         }
+      }
 
-  { Seg seg;
-    stats__tot_mem_refs++;
-  if (ISList__findI0( seglist, (Addr)m, &seg )) {
-     /* m falls inside 'seg' (that is, we are making a memory
-        reference inside 'seg').  Now, really mptr_vseg should be a
-        tracked segment of some description.  Badness is when
-        mptr_vsrg is UNKNOWN, BOTTOM or NONPTR at this point, since
-        that means we've lost the type of it somehow: it shoud say
-        that m points into a real segment (preferable 'seg'), but it
-        doesn't. */
-    if (Seg__status_is_SegHeap(seg)) {
-       stats__refs_in_a_seg++;
-       if (UNKNOWN == mptr_vseg
-           || BOTTOM == mptr_vseg || NONPTR == mptr_vseg) {
-          ExeContext* ec;
-          Char buf[100];
-          static UWord xx = 0;
-          stats__refs_lost_seg++;
-          //ip = VG_(get_IP)( VG_(get_running_tid)() );
-          ec = VG_(record_ExeContext)( VG_(get_running_tid)(), 0 );
-          inc_lossage(ec);
-          if (0) {
-          VG_(message)(Vg_DebugMsg, "");
-          VG_(message)(Vg_DebugMsg,
-                       "Lossage %s %p sz %lu inside block alloc'd",
-                       is_write ? "wr" : "rd", m, (UWord)sz);
-          VG_(pp_ExeContext)(Seg__where(seg));
-          }
-          if (xx++ < 0) {
-          (void)VG_(describe_IP)(ec, buf, sizeof(buf)-1);
-          buf[sizeof(buf)-1] = 0;
-          VG_(printf)("lossage at %p %s\n", ec, buf );
-          }
-       }
-    }
-  }
-  }
+   } /* clo_lossage_check */
 
-checkSeg(mptr_vseg);
+#  if SC_SEGS
+   checkSeg(mptr_vseg);
+#  endif
+
    if (UNKNOWN == mptr_vseg) {
       // do nothing
 
@@ -2250,10 +2280,13 @@ checkSeg(mptr_vseg);
 
 /* On 32 bit targets, we will use:
       check_load1 check_load2 check_load4_P
+      check_load4  (for 32-bit FP reads)
+      check_load8  (for 64-bit FP reads)
+      check_load16 (for xmm/altivec reads)
    On 64 bit targets, we will use:
       check_load1 check_load2 check_load4 check_load8_P
-      check_load8 (64-bit FP reads)
-      check_load16 (for xmm reads)
+      check_load8  (for 64-bit FP reads)
+      check_load16 (for xmm/altivec reads)
 
    A "_P" handler reads a pointer from memory, and so returns a value
    to the generated code -- the pointer's shadow value.  That implies
@@ -2267,7 +2300,9 @@ checkSeg(mptr_vseg);
 static VG_REGPARM(2)
 void check_load16(Addr m, Seg mptr_vseg)
 {
-checkSeg(mptr_vseg);
+#  if SC_SEGS
+   checkSeg(mptr_vseg);
+#  endif
    check_load_or_store(/*is_write*/False, m, 16, mptr_vseg);
 }
 
@@ -2276,7 +2311,9 @@ checkSeg(mptr_vseg);
 static VG_REGPARM(2)
 void check_load8(Addr m, Seg mptr_vseg)
 {
-checkSeg(mptr_vseg);
+#  if SC_SEGS
+   checkSeg(mptr_vseg);
+#  endif
    check_load_or_store(/*is_write*/False, m, 8, mptr_vseg);
 }
 
@@ -2288,7 +2325,9 @@ Seg check_load8_P(Addr m, Seg mptr_vseg)
 {
    Seg vseg;
    tl_assert(sizeof(UWord) == 8); /* DO NOT REMOVE */
-checkSeg(mptr_vseg);
+#  if SC_SEGS
+   checkSeg(mptr_vseg);
+#  endif
    check_load_or_store(/*is_write*/False, m, 8, mptr_vseg);
    if (VG_IS_8_ALIGNED(m)) {
       vseg = get_mem_vseg(m);
@@ -2306,7 +2345,9 @@ Seg check_load4_P(Addr m, Seg mptr_vseg)
 {
    Seg vseg;
    tl_assert(sizeof(UWord) == 4); /* DO NOT REMOVE */
-checkSeg(mptr_vseg);
+#  if SC_SEGS
+   checkSeg(mptr_vseg);
+#  endif
    check_load_or_store(/*is_write*/False, m, 4, mptr_vseg);
    if (VG_IS_4_ALIGNED(m)) {
       vseg = get_mem_vseg(m);
@@ -2316,13 +2357,13 @@ checkSeg(mptr_vseg);
    return vseg;
 }
 
-// This handles 32 bit loads on 64 bit targets.  It must not
-// be called on 32 bit targets.
+// Used for both 32 bit and 64 bit targets.
 static VG_REGPARM(2)
 void check_load4(Addr m, Seg mptr_vseg)
 {
-   tl_assert(sizeof(UWord) == 8); /* DO NOT REMOVE */
-checkSeg(mptr_vseg);
+#  if SC_SEGS
+   checkSeg(mptr_vseg);
+#  endif
    check_load_or_store(/*is_write*/False, m, 4, mptr_vseg);
 }
 
@@ -2330,7 +2371,9 @@ checkSeg(mptr_vseg);
 static VG_REGPARM(2)
 void check_load2(Addr m, Seg mptr_vseg)
 {
-checkSeg(mptr_vseg);
+#  if SC_SEGS
+   checkSeg(mptr_vseg);
+#  endif
    check_load_or_store(/*is_write*/False, m, 2, mptr_vseg);
 }
 
@@ -2338,7 +2381,9 @@ checkSeg(mptr_vseg);
 static VG_REGPARM(2)
 void check_load1(Addr m, Seg mptr_vseg)
 {
-checkSeg(mptr_vseg);
+#  if SC_SEGS
+   checkSeg(mptr_vseg);
+#  endif
    check_load_or_store(/*is_write*/False, m, 1, mptr_vseg);
 }
 
@@ -2377,20 +2422,63 @@ void nonptr_or_unknown_range ( Addr a, SizeT len )
 // store data is passed in 2 pieces, the most significant
 // bits first.
 static VG_REGPARM(3)
-void check_store16_msb8B_lsb8B(Addr m, Seg mptr_vseg,
-                               UWord msb8B, UWord lsb8B)
+void check_store16_ms8B_ls8B(Addr m, Seg mptr_vseg,
+                             UWord ms8B, UWord ls8B)
 {
    tl_assert(sizeof(UWord) == 8); /* DO NOT REMOVE */
    // Actually *do* the STORE here
    if (host_is_little_endian()) {
       // FIXME: aren't we really concerned whether the guest
       // is little endian, not whether the host is?
-      *(UWord*)(m + 0) = lsb8B;
-      *(UWord*)(m + 8) = msb8B;
+      *(ULong*)(m + 0) = ls8B;
+      *(ULong*)(m + 8) = ms8B;
    } else {
       tl_assert(0);
    }
    nonptr_or_unknown_range(m, 16);
+}
+
+// This handles 128 bit stores on 64 bit targets.  The
+// store data is passed in 2 pieces, the most significant
+// bits first.
+static VG_REGPARM(3)
+void check_store16_ms4B_4B_4B_ls4B(Addr m, Seg mptr_vseg,
+                                   UWord ms4B, UWord w2,
+                                   UWord w1,   UWord ls4B)
+{
+   tl_assert(sizeof(UWord) == 4); /* DO NOT REMOVE */
+   // Actually *do* the STORE here
+   if (host_is_little_endian()) {
+      // FIXME: aren't we really concerned whether the guest
+      // is little endian, not whether the host is?
+      *(UInt*)(m +  0) = ls4B;
+      *(UInt*)(m +  4) = w1;
+      *(UInt*)(m +  8) = w2;
+      *(UInt*)(m + 12) = ms4B;
+   } else {
+      tl_assert(0);
+   }
+   nonptr_or_unknown_range(m, 16);
+}
+
+// This handles 64 bit stores on 32 bit targets.  The
+// store data is passed in 2 pieces, the most significant
+// bits first.
+static VG_REGPARM(3)
+void check_store8_ms4B_ls4B(Addr m, Seg mptr_vseg,
+                            UWord ms4B, UWord ls4B)
+{
+   tl_assert(sizeof(UWord) == 4); /* DO NOT REMOVE */
+   // Actually *do* the STORE here
+   if (host_is_little_endian()) {
+      // FIXME: aren't we really concerned whether the guest
+      // is little endian, not whether the host is?
+      *(UInt*)(m + 0) = ls4B;
+      *(UInt*)(m + 4) = ms4B;
+   } else {
+      tl_assert(0);
+   }
+   nonptr_or_unknown_range(m, 8);
 }
 
 // This handles 64 bit non pointer stores on 64 bit targets.
@@ -2400,7 +2488,7 @@ void check_store8_all8B(Addr m, Seg mptr_vseg, UWord all8B)
 {
    tl_assert(sizeof(UWord) == 8); /* DO NOT REMOVE */
    // Actually *do* the STORE here
-   *(UWord*)m = all8B;
+   *(ULong*)m = all8B;
    nonptr_or_unknown_range(m, 8);
 }
 
@@ -2410,8 +2498,10 @@ static VG_REGPARM(3)
 void check_store8_P(Addr m, Seg mptr_vseg, UWord t, Seg t_vseg)
 {
    tl_assert(sizeof(UWord) == 8); /* DO NOT REMOVE */
-checkSeg(t_vseg);
-checkSeg(mptr_vseg);
+#  if SC_SEGS
+   checkSeg(t_vseg);
+   checkSeg(mptr_vseg);
+#  endif
    check_load_or_store(/*is_write*/True, m, 8, mptr_vseg);
    // Actually *do* the STORE here
    *(ULong*)m = t;
@@ -2429,8 +2519,10 @@ static VG_REGPARM(3)
 void check_store4_P(Addr m, Seg mptr_vseg, UWord t, Seg t_vseg)
 {
    tl_assert(sizeof(UWord) == 4); /* DO NOT REMOVE */
-checkSeg(t_vseg);
-checkSeg(mptr_vseg);
+#  if SC_SEGS
+   checkSeg(t_vseg);
+   checkSeg(mptr_vseg);
+#  endif
    check_load_or_store(/*is_write*/True, m, 4, mptr_vseg);
    // Actually *do* the STORE here
    *(UInt*)m = t;
@@ -2442,13 +2534,13 @@ checkSeg(mptr_vseg);
    }
 }
 
-// This handles 32 bit stores on 64 bit targets.  It must not
-// be called on 32 bit targets.
+// Used for both 32 bit and 64 bit targets.
 static VG_REGPARM(3)
 void check_store4(Addr m, Seg mptr_vseg, UWord t)
 {
-   tl_assert(sizeof(UWord) == 8); /* DO NOT REMOVE */
-checkSeg(mptr_vseg);
+#  if SC_SEGS
+   checkSeg(mptr_vseg);
+#  endif
    check_load_or_store(/*is_write*/True, m, 4, mptr_vseg);
    // Actually *do* the STORE here  (Nb: cast must be to 4-byte type!)
    *(UInt*)m = t;
@@ -2459,7 +2551,9 @@ checkSeg(mptr_vseg);
 static VG_REGPARM(3)
 void check_store2(Addr m, Seg mptr_vseg, UWord t)
 {
-checkSeg(mptr_vseg);
+#  if SC_SEGS
+   checkSeg(mptr_vseg);
+#  endif
    check_load_or_store(/*is_write*/True, m, 2, mptr_vseg);
    // Actually *do* the STORE here  (Nb: cast must be to 2-byte type!)
    *(UShort*)m = t;
@@ -2470,47 +2564,14 @@ checkSeg(mptr_vseg);
 static VG_REGPARM(3)
 void check_store1(Addr m, Seg mptr_vseg, UWord t)
 {
-checkSeg(mptr_vseg);
+#  if SC_SEGS
+   checkSeg(mptr_vseg);
+#  endif
    check_load_or_store(/*is_write*/True, m, 1, mptr_vseg);
    // Actually *do* the STORE here  (Nb: cast must be to 1-byte type!)
    *(UChar*)m = t;
    nonptr_or_unknown_range(m, 1);
 }
-
-//zz 
-//zz #define CHECK_FPU_R(N)           \
-//zz static __attribute__((regparm(2)))       \
-//zz void check_fpu_r##N(Addr m, Seg mptr_vseg)  \
-//zz {                                              \
-//zz    VGP_PUSHCC(VgpCheckFpuR);                              \
-//zz    check_load_or_store(/*is_write*/False, m, N, mptr_vseg);  \
-//zz    VGP_POPCC(VgpCheckFpuR);                                     \
-//zz }
-//zz CHECK_FPU_R(2);
-//zz CHECK_FPU_R(4);
-//zz CHECK_FPU_R(8);
-//zz CHECK_FPU_R(10);
-//zz CHECK_FPU_R(16);
-//zz CHECK_FPU_R(28);
-//zz CHECK_FPU_R(108);
-//zz 
-//zz 
-//zz #define CHECK_FPU_W(N)           \
-//zz static __attribute__((regparm(2)))       \
-//zz void check_fpu_w##N(Addr m, Seg mptr_vseg)  \
-//zz {                                              \
-//zz    VGP_PUSHCC(VgpCheckFpuW);                             \
-//zz    check_load_or_store(/*is_write*/True, m, N, mptr_vseg);  \
-//zz    set_mem_nonptr( m, N );                                     \
-//zz    VGP_POPCC(VgpCheckFpuW);                                       \
-//zz }
-//zz CHECK_FPU_W(2);
-//zz CHECK_FPU_W(4);
-//zz CHECK_FPU_W(8);
-//zz CHECK_FPU_W(10);
-//zz CHECK_FPU_W(16);
-//zz CHECK_FPU_W(28);
-//zz CHECK_FPU_W(108);
 
 
 // Nb: if the result is BOTTOM, return immedately -- don't let BOTTOM
@@ -2532,8 +2593,6 @@ checkSeg(mptr_vseg);
    record_arith_error(seg1, seg2, opname);  \
    out = NONPTR
 
-//zz // Extra arg for result of various ops
-//zz static UInt do_op___result;
 
 // -------------
 //  + | n  ?  p
@@ -2544,8 +2603,10 @@ checkSeg(mptr_vseg);
 // -------------
 static Seg do_addW_result(Seg seg1, Seg seg2, UWord result, HChar* opname)
 {
-checkSeg(seg1);
-checkSeg(seg2);
+#  if SC_SEGS
+   checkSeg(seg1);
+   checkSeg(seg2);
+#  endif
    Seg out;
    BINOP(
       return BOTTOM,
@@ -2559,11 +2620,14 @@ checkSeg(seg2);
 static VG_REGPARM(3) Seg do_addW(Seg seg1, Seg seg2, UWord result)
 {
    Seg out;
-checkSeg(seg1);
-checkSeg(seg2);
+#  if SC_SEGS
+   checkSeg(seg1);
+   checkSeg(seg2);
+#  endif
    out = do_addW_result(seg1, seg2, result, "Add32/Add64");
-checkSeg(out);
-// VG_(printf)("do_add4: returning %p\n", out);
+#  if SC_SEGS
+   checkSeg(out);
+#  endif
    return out;
 }
 
@@ -2576,8 +2640,10 @@ checkSeg(out);
 // -------------
 static VG_REGPARM(3) Seg do_subW(Seg seg1, Seg seg2, UWord result)
 {
-checkSeg(seg1);
-checkSeg(seg2);
+#  if SC_SEGS
+   checkSeg(seg1);
+   checkSeg(seg2);
+#  endif
    Seg out;
    // Nb: when returning BOTTOM, don't let it go through the range-check;
    //     a segment linking offset can easily look like a nonptr.
@@ -2778,7 +2844,9 @@ static VG_REGPARM(3) Seg do_orW(Seg seg1, Seg seg2, UWord result)
 // -------------
 static VG_REGPARM(2) Seg do_notW(Seg seg1, UWord result)
 {
-checkSeg(seg1);
+#  if SC_SEGS
+   checkSeg(seg1);
+#  endif
    if (BOTTOM == seg1) return BOTTOM;
    return NONPTR;
 }
@@ -2788,8 +2856,10 @@ checkSeg(seg1);
 // Pretend it always returns a nonptr.  Maybe improve later.
 static VG_REGPARM(2) Seg do_mulW(Seg seg1, Seg seg2)
 {
-checkSeg(seg1);
-checkSeg(seg2);
+#  if SC_SEGS
+   checkSeg(seg1);
+   checkSeg(seg2);
+#  endif
    if (is_known_segment(seg1) && is_known_segment(seg2))
       record_arith_error(seg1, seg2, "Mul32/Mul64");
    return NONPTR;
@@ -2896,7 +2966,7 @@ typedef
    initial IR optimisation, and we do not want to spaces in tables
    tracking them.
 
-   Shadow IRTemps are therefore allocated on demand.  mce.tmpMap is a
+   Shadow IRTemps are therefore allocated on demand.  pce.tmpMap is a
    table indexed [0 .. n_types-1], which gives the current shadow for
    each original tmp, or INVALID_IRTEMP if none is so far assigned.
    It is necessary to support making multiple assignments to a shadow
@@ -3241,6 +3311,31 @@ static void gen_dirty_v_WWWW ( PCEnv* pce, void* h_fn, HChar* h_nm,
    stmt( 'I', pce, IRStmt_Dirty(di) );
 }
 
+/* Version of gen_dirty_v_WWW for 6 arguments.  Callee must be a
+   VG_REGPARM(3) function.*/
+static void gen_dirty_v_6W ( PCEnv* pce, void* h_fn, HChar* h_nm, 
+                             IRExpr* a1, IRExpr* a2, IRExpr* a3,
+                             IRExpr* a4, IRExpr* a5, IRExpr* a6 )
+{
+   IRDirty* di;
+   tl_assert(isIRAtom(a1));
+   tl_assert(isIRAtom(a2));
+   tl_assert(isIRAtom(a3));
+   tl_assert(isIRAtom(a4));
+   tl_assert(isIRAtom(a5));
+   tl_assert(isIRAtom(a6));
+   tl_assert(typeOfIRExpr(pce->bb->tyenv, a1) == pce->gWordTy);
+   tl_assert(typeOfIRExpr(pce->bb->tyenv, a2) == pce->gWordTy);
+   tl_assert(typeOfIRExpr(pce->bb->tyenv, a3) == pce->gWordTy);
+   tl_assert(typeOfIRExpr(pce->bb->tyenv, a4) == pce->gWordTy);
+   tl_assert(typeOfIRExpr(pce->bb->tyenv, a5) == pce->gWordTy);
+   tl_assert(typeOfIRExpr(pce->bb->tyenv, a6) == pce->gWordTy);
+   di = unsafeIRDirty_0_N( 3/*regparms*/,
+                           h_nm, VG_(fnptr_to_fnentry)( h_fn ),
+                           mkIRExprVec_6( a1, a2, a3, a4, a5, a6 ) );
+   stmt( 'I', pce, IRStmt_Dirty(di) );
+}
+
 static IRAtom* uwiden_to_host_word ( PCEnv* pce, IRAtom* a )
 {
    IRType a_ty = typeOfIRExpr(pce->bb->tyenv, a);
@@ -3328,8 +3423,8 @@ void instrument_arithop ( PCEnv* pce,
    void*   fn  = NULL;
    IRExpr* a1v = NULL;
    IRExpr* a2v = NULL;
-   IRExpr* a3v = NULL;
-   IRExpr* a4v = NULL;
+   //IRExpr* a3v = NULL;
+   //IRExpr* a4v = NULL;
    IRTemp  res = IRTemp_INVALID;
 
    if (pce->gWordTy == Ity_I32) {
@@ -3384,12 +3479,7 @@ void instrument_arithop ( PCEnv* pce,
             time. */
          case Iop_64HIto32: goto n_or_u_32;
          case Iop_64to32:   goto n_or_u_32;
-         case Iop_Shl32:    goto n_or_u_32;
-         case Iop_Sar32:    goto n_or_u_32;
-         case Iop_Shr32:    goto n_or_u_32;
          case Iop_Xor32:    goto n_or_u_32;
-         case Iop_16Uto32:  goto n_or_u_32;
-         case Iop_16Sto32:  goto n_or_u_32;
          n_or_u_32:
             assign( 'I', pce, dstv,
                     mkexpr(
@@ -3400,10 +3490,30 @@ void instrument_arithop ( PCEnv* pce,
          /* Cases where it's very obvious that the result cannot be a
             pointer.  Hence declare directly that it's NONPTR; don't
             bother with the overhead of calling nonptr_or_unknown. */
+
+         /* cases where it makes no sense for the result to be a ptr */
+         /* FIXME: for Shl/Shr/Sar, really should do a test on the 2nd
+            arg, so that shift by zero preserves the original
+            value. */
+         case Iop_Shl32:    goto n32;
+         case Iop_Sar32:    goto n32;
+         case Iop_Shr32:    goto n32;
+         case Iop_16Uto32:  goto n32;
+         case Iop_16Sto32:  goto n32;
+         case Iop_F64toI32: goto n32;
+         case Iop_16HLto32: goto n32;
+         case Iop_MullS16:  goto n32;
+         case Iop_MullU16:  goto n32;
+         case Iop_PRemC3210F64: goto n32;
+
+         /* cases where result range is very limited and clearly cannot
+            be a pointer */
          case Iop_1Uto32: goto n32;
          case Iop_8Uto32: goto n32;
          case Iop_8Sto32: goto n32;
          case Iop_Clz32:  goto n32;
+         case Iop_Ctz32:  goto n32;
+         case Iop_CmpF64: goto n32;
          n32:
             assign( 'I', pce, dstv, mkU32( (UInt)NONPTR ));
             break;
@@ -3417,19 +3527,6 @@ void instrument_arithop ( PCEnv* pce,
    } else {
 
       tl_assert(pce->gWordTy == Ity_I64);
-
-#if 0
-      /* special handling of t +/- const: return the shadow for t
-         regardless of how big the const is.  Otherwise the result may
-         degrade to Unknown if the const is declared unknown by
-         nonptr_or_unknown(). */
-      if (1 && op == Iop_Add64 
-          && a1->tag == Iex_RdTmp && a2->tag == Iex_Const) {
-         a1v = schemeEw_Atom( pce, a1 );
-         assign( 'I', pce, dstv, a1v );
-         return;
-      }
-#endif
       switch (op) {
 
          /* For these cases, pass Segs for both arguments, and the
@@ -3496,27 +3593,26 @@ void instrument_arithop ( PCEnv* pce,
             bother with the overhead of calling nonptr_or_unknown. */
 
          /* cases where it makes no sense for the result to be a ptr */
-         /* FIXME: fix for 32-bit platforms.  For Shl/Shr/Sar, really
-            should do a test on the 2nd arg, so that shift by zero
-            preserves the original value. */
+         /* FIXME: for Shl/Shr/Sar, really should do a test on the 2nd
+            arg, so that shift by zero preserves the original
+            value. */
          case Iop_Shl64:      goto n64;
          case Iop_Sar64:      goto n64;
          case Iop_Shr64:      goto n64;
-
          case Iop_32Uto64:    goto n64;
          case Iop_32Sto64:    goto n64;
          case Iop_16Uto64:    goto n64;
          case Iop_16Sto64:    goto n64;
          case Iop_32HLto64:   goto n64;
+         case Iop_DivModU64to32: goto n64;
+         case Iop_DivModS64to32: goto n64;
+         case Iop_F64toI64:      goto n64;
 
          /* cases where result range is very limited and clearly cannot
             be a pointer */
          case Iop_1Uto64:        goto n64;
          case Iop_8Uto64:        goto n64;
          case Iop_8Sto64:        goto n64;
-         case Iop_DivModU64to32: goto n64;
-         case Iop_DivModS64to32: goto n64;
-         case Iop_F64toI64:      goto n64;
          case Iop_Ctz64:         goto n64;
          case Iop_Clz64:         goto n64;
          /* 64-bit simd */
@@ -3727,27 +3823,97 @@ static void schemeS ( PCEnv* pce, IRStmt* st )
          IRExpr* data  = st->Ist.Store.data;
          IRExpr* addr  = st->Ist.Store.addr;
          IRType  d_ty  = typeOfIRExpr(pce->bb->tyenv, data);
-         HChar*  h_nm  = NULL;
-         void*   h_fn  = NULL;
          IRExpr* addrv = schemeEw_Atom( pce, addr );
          if (pce->gWordTy == Ity_I32) {
             /* ------ 32 bit host/guest (cough, cough) ------ */
             switch (d_ty) {
-               case Ity_I32: h_fn = &check_store4_P; 
-                             h_nm = "check_store4_P"; break;
-               case Ity_I16: h_fn = &check_store2;
-                             h_nm = "check_store2"; break;
-               case Ity_I8:  h_fn = &check_store1;
-                             h_nm = "check_store1"; break;
-               default: tl_assert(0);
-            }
-            if (d_ty == Ity_I32) {
-               IRExpr* datav = schemeEw_Atom( pce, data );
-               gen_dirty_v_WWWW( pce, h_fn, h_nm, addr, addrv,
-                                                  data, datav );
-            } else {
-               gen_dirty_v_WWW( pce, h_fn, h_nm, addr, addrv,
-                                     uwiden_to_host_word( pce, data ));
+               /* Integer word case */
+               case Ity_I32: {
+                  IRExpr* datav = schemeEw_Atom( pce, data );
+                  gen_dirty_v_WWWW( pce,
+                                    &check_store4_P, "check_store4_P",
+                                    addr, addrv, data, datav );
+                  break;
+               }
+               /* Integer subword cases */
+               case Ity_I16:
+                  gen_dirty_v_WWW( pce,
+                                   &check_store2, "check_store2",
+                                   addr, addrv,
+                                   uwiden_to_host_word( pce, data ));
+                  break;
+               case Ity_I8:
+                  gen_dirty_v_WWW( pce,
+                                   &check_store1, "check_store1",
+                                   addr, addrv,
+                                   uwiden_to_host_word( pce, data ));
+                  break;
+               /* 64-bit float.  Pass store data in 2 32-bit pieces. */
+               case Ity_F64: {
+                  IRAtom* d64 = assignNew( 'I', pce, Ity_I64,
+                                           unop(Iop_ReinterpF64asI64, data) );
+                  IRAtom* dLo32 = assignNew( 'I', pce, Ity_I32,
+                                             unop(Iop_64to32, d64) );
+                  IRAtom* dHi32 = assignNew( 'I', pce, Ity_I32,
+                                             unop(Iop_64HIto32, d64) );
+                  gen_dirty_v_WWWW( pce,
+                                    &check_store8_ms4B_ls4B, 
+                                    "check_store8_ms4B_ls4B",
+                                    addr, addrv, dHi32, dLo32 );
+                  break;
+               }
+               /* 32-bit float.  We can just use _store4, but need
+                  to futz with the argument type. */
+               case Ity_F32: {
+                  IRAtom* i32 = assignNew( 'I', pce, Ity_I32, 
+                                           unop(Iop_ReinterpF32asI32,
+                                                data ) );
+                  gen_dirty_v_WWW( pce,
+                                   &check_store4,
+                                   "check_store4",
+                                   addr, addrv, i32 );
+                  break;
+               }
+               /* 64-bit int.  Pass store data in 2 32-bit pieces. */
+               case Ity_I64: {
+                  IRAtom* dLo32 = assignNew( 'I', pce, Ity_I32,
+                                             unop(Iop_64to32, data) );
+                  IRAtom* dHi32 = assignNew( 'I', pce, Ity_I32,
+                                             unop(Iop_64HIto32, data) );
+                  gen_dirty_v_WWWW( pce,
+                                    &check_store8_ms4B_ls4B, 
+                                    "check_store8_ms4B_ls4B",
+                                    addr, addrv, dHi32, dLo32 );
+                  break;
+               }
+
+               /* 128-bit vector.  Pass store data in 4 32-bit pieces.
+                  This is all very ugly and inefficient, but it is
+                  hard to better without considerably complicating the
+                  store-handling schemes. */
+               case Ity_V128: {
+                  IRAtom* dHi64 = assignNew( 'I', pce, Ity_I64,
+                                             unop(Iop_V128HIto64, data) );
+                  IRAtom* dLo64 = assignNew( 'I', pce, Ity_I64,
+                                             unop(Iop_V128to64, data) );
+                  IRAtom* w3    = assignNew( 'I', pce, Ity_I32,
+                                             unop(Iop_64HIto32, dHi64) );
+                  IRAtom* w2    = assignNew( 'I', pce, Ity_I32,
+                                             unop(Iop_64to32, dHi64) );
+                  IRAtom* w1    = assignNew( 'I', pce, Ity_I32,
+                                             unop(Iop_64HIto32, dLo64) );
+                  IRAtom* w0    = assignNew( 'I', pce, Ity_I32,
+                                             unop(Iop_64to32, dLo64) );
+                  gen_dirty_v_6W( pce,
+                                  &check_store16_ms4B_4B_4B_ls4B, 
+                                  "check_store16_ms4B_4B_4B_ls4B",
+                                  addr, addrv, w3, w2, w1, w0 );
+                  break;
+               }
+
+
+               default:
+                  ppIRType(d_ty); tl_assert(0);
             }
          } else {
             /* ------ 64 bit host/guest (cough, cough) ------ */
@@ -3786,8 +3952,8 @@ static void schemeS ( PCEnv* pce, IRStmt* st )
                   IRAtom* dLo64 = assignNew( 'I', pce, Ity_I64,
                                              unop(Iop_V128to64, data) );
                   gen_dirty_v_WWWW( pce,
-                                    &check_store16_msb8B_lsb8B, 
-                                    "check_store16_msb8B_lsb8B",
+                                    &check_store16_ms8B_ls8B, 
+                                    "check_store16_ms8B_ls8B",
                                     addr, addrv, dHi64, dLo64 );
                   break;
                }
@@ -3884,12 +4050,22 @@ static void schemeS ( PCEnv* pce, IRStmt* st )
                if (pce->gWordTy == Ity_I32) {
                   /* 32 bit host/guest (cough, cough) */
                   switch (e_ty) {
-                     case Ity_I32: h_fn = &check_load4_P;
-                                   h_nm = "check_load4_P"; break;
-                     case Ity_I16: h_fn = &check_load2;
-                                   h_nm = "check_load2"; break;
-                     case Ity_I8:  h_fn = &check_load1;
-                                   h_nm = "check_load1"; break;
+                     /* Ity_I32: helper returns shadow value. */
+                     case Ity_I32:  h_fn = &check_load4_P;
+                                    h_nm = "check_load4_P"; break;
+                     /* all others: helper does not return a shadow
+                        value. */
+                     case Ity_V128: h_fn = &check_load16;
+                                    h_nm = "check_load16"; break;
+                     case Ity_I64:
+                     case Ity_F64:  h_fn = &check_load8;
+                                    h_nm = "check_load8"; break;
+                     case Ity_F32:  h_fn = &check_load4;
+                                    h_nm = "check_load4"; break;
+                     case Ity_I16:  h_fn = &check_load2;
+                                    h_nm = "check_load2"; break;
+                     case Ity_I8:   h_fn = &check_load1;
+                                    h_nm = "check_load1"; break;
                      default: ppIRType(e_ty); tl_assert(0);
                   }
                   addrv = schemeEw_Atom( pce, addr );
@@ -4756,7 +4932,7 @@ static void pc_pre_clo_init ( void )
                                   pc_replace___builtin_delete,
                                   pc_replace___builtin_vec_delete,
                                   pc_replace_realloc,
-                                  PC_MALLOC_REDZONE_SZB );
+                                  0 /* no need for client heap redzones */ );
 
    VG_(needs_core_errors)         ();
    VG_(needs_tool_errors)         (eq_Error,
@@ -4771,6 +4947,10 @@ static void pc_pre_clo_init ( void )
 
    VG_(needs_syscall_wrapper)( pre_syscall,
                                post_syscall );
+
+   VG_(needs_command_line_options)(pc_process_cmd_line_options,
+                                   pc_print_usage,
+                                   pc_print_debug_usage);
 
    VG_(needs_var_info)();
 
@@ -4859,18 +5039,20 @@ static void pc_post_clo_init ( void )
 
 static void pc_fini ( Int exitcode )
 {
-//   if (0)
-//      count_segs();
-   VG_(message)(Vg_UserMsg, "");
-   VG_(message)(Vg_UserMsg, "%12lld total memory references",
-                            stats__tot_mem_refs);
-   VG_(message)(Vg_UserMsg, "%12lld   of which are in a known segment",
-                            stats__refs_in_a_seg);
-   VG_(message)(Vg_UserMsg, "%12lld   of which are 'lost' w.r.t the seg",
-                            stats__refs_lost_seg);
-   VG_(message)(Vg_UserMsg, "");
-   show_lossage();
-   VG_(message)(Vg_UserMsg, "");
+   if (clo_lossage_check) {
+      VG_(message)(Vg_UserMsg, "");
+      VG_(message)(Vg_UserMsg, "%12lld total memory references",
+                               stats__tot_mem_refs);
+      VG_(message)(Vg_UserMsg, "%12lld   of which are in a known segment",
+                               stats__refs_in_a_seg);
+      VG_(message)(Vg_UserMsg, "%12lld   of which are 'lost' w.r.t the seg",
+                               stats__refs_lost_seg);
+      VG_(message)(Vg_UserMsg, "");
+      show_lossage();
+      VG_(message)(Vg_UserMsg, "");
+   } else {
+      tl_assert( 0 == VG_(OSetGen_Size)(lossage) );
+   }
 }
 
 VG_DETERMINE_INTERFACE_VERSION(pc_pre_clo_init)
