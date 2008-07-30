@@ -142,9 +142,9 @@ static
 Interval* Interval__construct(Addr left, Addr right, Bool is_zero,
                               ExeContext* where, SegStatus status)
 {
+   Interval* o = my_malloc( sizeof(Interval) );
    if (0) VG_(printf)("Interval__construct(%p,%p,%d)\n",
                       left, right, (Int)is_zero);
-   Interval* o = my_malloc( sizeof(Interval) );
    o->left     = left;
    o->right    = right;
    o->is_zero  = is_zero;
@@ -154,6 +154,7 @@ Interval* Interval__construct(Addr left, Addr right, Bool is_zero,
    return o;
 }
 
+__attribute__((unused))
 static
 void Interval__destruct(Interval* o)
 {

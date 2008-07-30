@@ -86,6 +86,9 @@ void VG_(set_syscall_return_shadows) ( ThreadId tid, UWord s1, UWord s2 )
 #  elif defined(VGP_amd64_linux)
    VG_(threads)[tid].arch.vex_shadow1.guest_RAX = s1;
    VG_(threads)[tid].arch.vex_shadow2.guest_RAX = s2;
+#  elif defined(VGP_ppc32_linux) || defined(VGP_ppc64_linux)
+   VG_(threads)[tid].arch.vex_shadow1.guest_GPR3 = s1;
+   VG_(threads)[tid].arch.vex_shadow2.guest_GPR3 = s2;
 #  else
 #    error "Unknown plat"
 #  endif

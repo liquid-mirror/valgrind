@@ -461,7 +461,6 @@ GXResult ML_(evaluate_Dwarf3_Expr) ( UChar* expr, UWord exprszB,
        && expr[0] == DW_OP_regx) {
       /* JRS: 2008Feb20: I believe the following is correct, but would
          like to see a test case show up before enabling it. */
-      vg_assert(0);
       expr++;
       res.kind = GXR_RegNo;
       res.word = (UWord)read_leb128U( &expr );
@@ -472,7 +471,7 @@ GXResult ML_(evaluate_Dwarf3_Expr) ( UChar* expr, UWord exprszB,
       /*NOTREACHED*/
    }
 
-   /* Evidently this expresion denotes a value, not a register name.
+   /* Evidently this expression denotes a value, not a register name.
       So evaluate it accordingly. */
 
    if (push_initial_zero)

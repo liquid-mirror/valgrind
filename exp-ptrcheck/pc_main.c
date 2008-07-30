@@ -31,6 +31,10 @@
 // FIXME: 64-bit cleanness, check the following
 // struct _ISNode.ownerCount is 32-bit
 // struct _ISNode.topLevel is 32-bit
+// or is that not really right now?  add assertion checks about
+// the max size of a node
+
+// FIXME: should we shadow %RIP?  Maybe not.
 
 // FIXME: result of add_new_segment is always ignored
 
@@ -45,12 +49,6 @@
 // FIXME: post_reg_write_demux(Vg_CoreSysCall) is redundant w.r.t.
 // the default 'NONPTR' behaviour of post_syscall.  post_reg_write_demux
 // is called first, then post_syscall.
-
-// FIXME: deal with Ist_PutI, Iex_GetI kludges
-// PutI kludge: it is assumed that PutIs are to unshadowed areas, so
-// no instrumentation is generated -- can silently generate wrong
-// instrumentation
-// GetI kludge: is at least safe; will abort in unhandled cases
 
 // FIXME: check nothing is mapped in the lowest 1M of memory at
 // startup, or quit (to do with nonptr_or_unknown, also sync 1M
@@ -1390,6 +1388,17 @@ typedef
 # define PC_SZB_FS_ZERO sizeof( ((VexGuestAMD64State*)0)->guest_FS_ZERO)
 #endif
 
+#if defined(VGA_ppc32)
+# include "libvex_guest_ppc32.h"
+# define MC_SIZEOF_GUEST_STATE sizeof(VexGuestPPC32State)
+#endif
+
+#if defined(VGA_ppc64)
+# include "libvex_guest_ppc64.h"
+# define MC_SIZEOF_GUEST_STATE sizeof(VexGuestPPC64State)
+#endif
+
+
 /* See description on definition of type IntRegInfo. */
 static void get_IntRegInfo ( /*OUT*/IntRegInfo* iii, Int offset, Int szB )
 {
@@ -1576,6 +1585,327 @@ static void get_IntRegInfo ( /*OUT*/IntRegInfo* iii, Int offset, Int szB )
    tl_assert(0);
 #  undef GOF
 
+   /* -------------------- ppc32 -------------------- */
+
+#  elif defined(VGA_ppc32)
+
+#  define GOF(_fieldname) \
+      (offsetof(VexGuestPPC32State,guest_##_fieldname))
+
+   Int  o    = offset;
+   Int  sz   = szB;
+   Bool is4  = sz == 4;
+   Bool is8  = sz == 8;
+
+   tl_assert(sz > 0);
+   tl_assert(host_is_big_endian());
+
+   /* Set default state to "does not intersect any int register". */
+   VG_(memset)( iii, 0, sizeof(*iii) );
+
+   /* Exact accesses to integer registers */
+   if (o == GOF(GPR0)  && is4) goto exactly1;
+   if (o == GOF(GPR1)  && is4) goto exactly1;
+   if (o == GOF(GPR2)  && is4) goto exactly1;
+   if (o == GOF(GPR3)  && is4) goto exactly1;
+   if (o == GOF(GPR4)  && is4) goto exactly1;
+   if (o == GOF(GPR5)  && is4) goto exactly1;
+   if (o == GOF(GPR6)  && is4) goto exactly1;
+   if (o == GOF(GPR7)  && is4) goto exactly1;
+   if (o == GOF(GPR8)  && is4) goto exactly1;
+   if (o == GOF(GPR9)  && is4) goto exactly1;
+   if (o == GOF(GPR10) && is4) goto exactly1;
+   if (o == GOF(GPR11) && is4) goto exactly1;
+   if (o == GOF(GPR12) && is4) goto exactly1;
+   if (o == GOF(GPR13) && is4) goto exactly1;
+   if (o == GOF(GPR14) && is4) goto exactly1;
+   if (o == GOF(GPR15) && is4) goto exactly1;
+   if (o == GOF(GPR16) && is4) goto exactly1;
+   if (o == GOF(GPR17) && is4) goto exactly1;
+   if (o == GOF(GPR18) && is4) goto exactly1;
+   if (o == GOF(GPR19) && is4) goto exactly1;
+   if (o == GOF(GPR20) && is4) goto exactly1;
+   if (o == GOF(GPR21) && is4) goto exactly1;
+   if (o == GOF(GPR22) && is4) goto exactly1;
+   if (o == GOF(GPR23) && is4) goto exactly1;
+   if (o == GOF(GPR24) && is4) goto exactly1;
+   if (o == GOF(GPR25) && is4) goto exactly1;
+   if (o == GOF(GPR26) && is4) goto exactly1;
+   if (o == GOF(GPR27) && is4) goto exactly1;
+   if (o == GOF(GPR28) && is4) goto exactly1;
+   if (o == GOF(GPR29) && is4) goto exactly1;
+   if (o == GOF(GPR30) && is4) goto exactly1;
+   if (o == GOF(GPR31) && is4) goto exactly1;
+
+   /* Misc integer reg and condition code accesses */
+   if (o == GOF(LR)        && is4) goto exactly1;
+   if (o == GOF(CTR)       && is4) goto exactly1;
+   if (o == GOF(CIA)       && is4) goto none;
+   if (o == GOF(CIA_AT_SC) && is4) goto none;
+   if (o == GOF(RESVN)     && is4) goto none;
+   if (o == GOF(TISTART)   && is4) goto none;
+   if (o == GOF(TILEN)     && is4) goto none;
+
+   if (sz == 1) {
+      if (o == GOF(XER_SO))  goto none;
+      if (o == GOF(XER_OV))  goto none;
+      if (o == GOF(XER_CA))  goto none;
+      if (o == GOF(XER_BC))  goto none;
+      if (o == GOF(CR0_321)) goto none;
+      if (o == GOF(CR0_0))   goto none;
+      if (o == GOF(CR1_321)) goto none;
+      if (o == GOF(CR1_0))   goto none;
+      if (o == GOF(CR2_321)) goto none;
+      if (o == GOF(CR2_0))   goto none;
+      if (o == GOF(CR3_321)) goto none;
+      if (o == GOF(CR3_0))   goto none;
+      if (o == GOF(CR4_321)) goto none;
+      if (o == GOF(CR4_0))   goto none;
+      if (o == GOF(CR5_321)) goto none;
+      if (o == GOF(CR5_0))   goto none;
+      if (o == GOF(CR6_321)) goto none;
+      if (o == GOF(CR6_0))   goto none;
+      if (o == GOF(CR7_321)) goto none;
+      if (o == GOF(CR7_0))   goto none;
+   }
+
+   /* Exact accesses to FP registers */
+   if (o == GOF(FPR0)  && is8) goto none;
+   if (o == GOF(FPR1)  && is8) goto none;
+   if (o == GOF(FPR2)  && is8) goto none;
+   if (o == GOF(FPR3)  && is8) goto none;
+   if (o == GOF(FPR4)  && is8) goto none;
+   if (o == GOF(FPR5)  && is8) goto none;
+   if (o == GOF(FPR6)  && is8) goto none;
+   if (o == GOF(FPR7)  && is8) goto none;
+   if (o == GOF(FPR8)  && is8) goto none;
+   if (o == GOF(FPR9)  && is8) goto none;
+   if (o == GOF(FPR10) && is8) goto none;
+   if (o == GOF(FPR11) && is8) goto none;
+   if (o == GOF(FPR12) && is8) goto none;
+   if (o == GOF(FPR13) && is8) goto none;
+   if (o == GOF(FPR14) && is8) goto none;
+   if (o == GOF(FPR15) && is8) goto none;
+   if (o == GOF(FPR16) && is8) goto none;
+   if (o == GOF(FPR17) && is8) goto none;
+   if (o == GOF(FPR18) && is8) goto none;
+   if (o == GOF(FPR19) && is8) goto none;
+   if (o == GOF(FPR20) && is8) goto none;
+   if (o == GOF(FPR21) && is8) goto none;
+   if (o == GOF(FPR22) && is8) goto none;
+   if (o == GOF(FPR23) && is8) goto none;
+   if (o == GOF(FPR24) && is8) goto none;
+   if (o == GOF(FPR25) && is8) goto none;
+   if (o == GOF(FPR26) && is8) goto none;
+   if (o == GOF(FPR27) && is8) goto none;
+   if (o == GOF(FPR28) && is8) goto none;
+   if (o == GOF(FPR29) && is8) goto none;
+   if (o == GOF(FPR30) && is8) goto none;
+   if (o == GOF(FPR31) && is8) goto none;
+
+   /* FP admin related */
+   if (o == GOF(FPROUND) && is4) goto none;
+   if (o == GOF(EMWARN)  && is4) goto none;
+
+   /* Altivec registers */
+   if (o == GOF(VR0)  && sz == 16) goto none;
+   if (o == GOF(VR1)  && sz == 16) goto none;
+   if (o == GOF(VR2)  && sz == 16) goto none;
+   if (o == GOF(VR3)  && sz == 16) goto none;
+   if (o == GOF(VR4)  && sz == 16) goto none;
+   if (o == GOF(VR5)  && sz == 16) goto none;
+   if (o == GOF(VR6)  && sz == 16) goto none;
+   if (o == GOF(VR7)  && sz == 16) goto none;
+   if (o == GOF(VR8)  && sz == 16) goto none;
+   if (o == GOF(VR9)  && sz == 16) goto none;
+   if (o == GOF(VR10) && sz == 16) goto none;
+   if (o == GOF(VR11) && sz == 16) goto none;
+   if (o == GOF(VR12) && sz == 16) goto none;
+   if (o == GOF(VR13) && sz == 16) goto none;
+   if (o == GOF(VR14) && sz == 16) goto none;
+   if (o == GOF(VR15) && sz == 16) goto none;
+   if (o == GOF(VR16) && sz == 16) goto none;
+   if (o == GOF(VR17) && sz == 16) goto none;
+   if (o == GOF(VR18) && sz == 16) goto none;
+   if (o == GOF(VR19) && sz == 16) goto none;
+   if (o == GOF(VR20) && sz == 16) goto none;
+   if (o == GOF(VR21) && sz == 16) goto none;
+   if (o == GOF(VR22) && sz == 16) goto none;
+   if (o == GOF(VR23) && sz == 16) goto none;
+   if (o == GOF(VR24) && sz == 16) goto none;
+   if (o == GOF(VR25) && sz == 16) goto none;
+   if (o == GOF(VR26) && sz == 16) goto none;
+   if (o == GOF(VR27) && sz == 16) goto none;
+   if (o == GOF(VR28) && sz == 16) goto none;
+   if (o == GOF(VR29) && sz == 16) goto none;
+   if (o == GOF(VR30) && sz == 16) goto none;
+   if (o == GOF(VR31) && sz == 16) goto none;
+
+   VG_(printf)("get_IntRegInfo(ppc32):failing on (%d,%d)\n", o, sz);
+   tl_assert(0);
+#  undef GOF
+
+   /* -------------------- ppc64 -------------------- */
+
+#  elif defined(VGA_ppc64)
+
+#  define GOF(_fieldname) \
+      (offsetof(VexGuestPPC64State,guest_##_fieldname))
+
+   Int  o    = offset;
+   Int  sz   = szB;
+   Bool is4  = sz == 4;
+   Bool is8  = sz == 8;
+
+   tl_assert(sz > 0);
+   tl_assert(host_is_big_endian());
+
+   /* Set default state to "does not intersect any int register". */
+   VG_(memset)( iii, 0, sizeof(*iii) );
+
+   /* Exact accesses to integer registers */
+   if (o == GOF(GPR0)  && is8) goto exactly1;
+   if (o == GOF(GPR1)  && is8) goto exactly1;
+   if (o == GOF(GPR2)  && is8) goto exactly1;
+   if (o == GOF(GPR3)  && is8) goto exactly1;
+   if (o == GOF(GPR4)  && is8) goto exactly1;
+   if (o == GOF(GPR5)  && is8) goto exactly1;
+   if (o == GOF(GPR6)  && is8) goto exactly1;
+   if (o == GOF(GPR7)  && is8) goto exactly1;
+   if (o == GOF(GPR8)  && is8) goto exactly1;
+   if (o == GOF(GPR9)  && is8) goto exactly1;
+   if (o == GOF(GPR10) && is8) goto exactly1;
+   if (o == GOF(GPR11) && is8) goto exactly1;
+   if (o == GOF(GPR12) && is8) goto exactly1;
+   if (o == GOF(GPR13) && is8) goto exactly1;
+   if (o == GOF(GPR14) && is8) goto exactly1;
+   if (o == GOF(GPR15) && is8) goto exactly1;
+   if (o == GOF(GPR16) && is8) goto exactly1;
+   if (o == GOF(GPR17) && is8) goto exactly1;
+   if (o == GOF(GPR18) && is8) goto exactly1;
+   if (o == GOF(GPR19) && is8) goto exactly1;
+   if (o == GOF(GPR20) && is8) goto exactly1;
+   if (o == GOF(GPR21) && is8) goto exactly1;
+   if (o == GOF(GPR22) && is8) goto exactly1;
+   if (o == GOF(GPR23) && is8) goto exactly1;
+   if (o == GOF(GPR24) && is8) goto exactly1;
+   if (o == GOF(GPR25) && is8) goto exactly1;
+   if (o == GOF(GPR26) && is8) goto exactly1;
+   if (o == GOF(GPR27) && is8) goto exactly1;
+   if (o == GOF(GPR28) && is8) goto exactly1;
+   if (o == GOF(GPR29) && is8) goto exactly1;
+   if (o == GOF(GPR30) && is8) goto exactly1;
+   if (o == GOF(GPR31) && is8) goto exactly1;
+
+   /* Misc integer reg and condition code accesses */
+   if (o == GOF(LR)        && is8) goto exactly1;
+   if (o == GOF(CTR)       && is8) goto exactly1;
+   if (o == GOF(CIA)       && is8) goto none;
+   if (o == GOF(CIA_AT_SC) && is8) goto none;
+   if (o == GOF(RESVN)     && is8) goto none;
+   if (o == GOF(TISTART)   && is8) goto none;
+   if (o == GOF(TILEN)     && is8) goto none;
+   if (o == GOF(REDIR_SP)  && is8) goto none;
+
+   if (sz == 1) {
+      if (o == GOF(XER_SO))  goto none;
+      if (o == GOF(XER_OV))  goto none;
+      if (o == GOF(XER_CA))  goto none;
+      if (o == GOF(XER_BC))  goto none;
+      if (o == GOF(CR0_321)) goto none;
+      if (o == GOF(CR0_0))   goto none;
+      if (o == GOF(CR1_321)) goto none;
+      if (o == GOF(CR1_0))   goto none;
+      if (o == GOF(CR2_321)) goto none;
+      if (o == GOF(CR2_0))   goto none;
+      if (o == GOF(CR3_321)) goto none;
+      if (o == GOF(CR3_0))   goto none;
+      if (o == GOF(CR4_321)) goto none;
+      if (o == GOF(CR4_0))   goto none;
+      if (o == GOF(CR5_321)) goto none;
+      if (o == GOF(CR5_0))   goto none;
+      if (o == GOF(CR6_321)) goto none;
+      if (o == GOF(CR6_0))   goto none;
+      if (o == GOF(CR7_321)) goto none;
+      if (o == GOF(CR7_0))   goto none;
+   }
+
+   /* Exact accesses to FP registers */
+   if (o == GOF(FPR0)  && is8) goto none;
+   if (o == GOF(FPR1)  && is8) goto none;
+   if (o == GOF(FPR2)  && is8) goto none;
+   if (o == GOF(FPR3)  && is8) goto none;
+   if (o == GOF(FPR4)  && is8) goto none;
+   if (o == GOF(FPR5)  && is8) goto none;
+   if (o == GOF(FPR6)  && is8) goto none;
+   if (o == GOF(FPR7)  && is8) goto none;
+   if (o == GOF(FPR8)  && is8) goto none;
+   if (o == GOF(FPR9)  && is8) goto none;
+   if (o == GOF(FPR10) && is8) goto none;
+   if (o == GOF(FPR11) && is8) goto none;
+   if (o == GOF(FPR12) && is8) goto none;
+   if (o == GOF(FPR13) && is8) goto none;
+   if (o == GOF(FPR14) && is8) goto none;
+   if (o == GOF(FPR15) && is8) goto none;
+   if (o == GOF(FPR16) && is8) goto none;
+   if (o == GOF(FPR17) && is8) goto none;
+   if (o == GOF(FPR18) && is8) goto none;
+   if (o == GOF(FPR19) && is8) goto none;
+   if (o == GOF(FPR20) && is8) goto none;
+   if (o == GOF(FPR21) && is8) goto none;
+   if (o == GOF(FPR22) && is8) goto none;
+   if (o == GOF(FPR23) && is8) goto none;
+   if (o == GOF(FPR24) && is8) goto none;
+   if (o == GOF(FPR25) && is8) goto none;
+   if (o == GOF(FPR26) && is8) goto none;
+   if (o == GOF(FPR27) && is8) goto none;
+   if (o == GOF(FPR28) && is8) goto none;
+   if (o == GOF(FPR29) && is8) goto none;
+   if (o == GOF(FPR30) && is8) goto none;
+   if (o == GOF(FPR31) && is8) goto none;
+
+   /* FP admin related */
+   if (o == GOF(FPROUND) && is4) goto none;
+   if (o == GOF(EMWARN)  && is4) goto none;
+
+   /* Altivec registers */
+   if (o == GOF(VR0)  && sz == 16) goto none;
+   if (o == GOF(VR1)  && sz == 16) goto none;
+   if (o == GOF(VR2)  && sz == 16) goto none;
+   if (o == GOF(VR3)  && sz == 16) goto none;
+   if (o == GOF(VR4)  && sz == 16) goto none;
+   if (o == GOF(VR5)  && sz == 16) goto none;
+   if (o == GOF(VR6)  && sz == 16) goto none;
+   if (o == GOF(VR7)  && sz == 16) goto none;
+   if (o == GOF(VR8)  && sz == 16) goto none;
+   if (o == GOF(VR9)  && sz == 16) goto none;
+   if (o == GOF(VR10) && sz == 16) goto none;
+   if (o == GOF(VR11) && sz == 16) goto none;
+   if (o == GOF(VR12) && sz == 16) goto none;
+   if (o == GOF(VR13) && sz == 16) goto none;
+   if (o == GOF(VR14) && sz == 16) goto none;
+   if (o == GOF(VR15) && sz == 16) goto none;
+   if (o == GOF(VR16) && sz == 16) goto none;
+   if (o == GOF(VR17) && sz == 16) goto none;
+   if (o == GOF(VR18) && sz == 16) goto none;
+   if (o == GOF(VR19) && sz == 16) goto none;
+   if (o == GOF(VR20) && sz == 16) goto none;
+   if (o == GOF(VR21) && sz == 16) goto none;
+   if (o == GOF(VR22) && sz == 16) goto none;
+   if (o == GOF(VR23) && sz == 16) goto none;
+   if (o == GOF(VR24) && sz == 16) goto none;
+   if (o == GOF(VR25) && sz == 16) goto none;
+   if (o == GOF(VR26) && sz == 16) goto none;
+   if (o == GOF(VR27) && sz == 16) goto none;
+   if (o == GOF(VR28) && sz == 16) goto none;
+   if (o == GOF(VR29) && sz == 16) goto none;
+   if (o == GOF(VR30) && sz == 16) goto none;
+   if (o == GOF(VR31) && sz == 16) goto none;
+
+   VG_(printf)("get_IntRegInfo(ppc64):failing on (%d,%d)\n", o, sz);
+   tl_assert(0);
+#  undef GOF
+
 
 #  else
 #    error "FIXME: not implemented for this architecture"
@@ -1593,6 +1923,44 @@ static void get_IntRegInfo ( /*OUT*/IntRegInfo* iii, Int offset, Int szB )
    iii->offsets[0] = o;
    return;
 }
+
+
+/* Does 'arr' describe an indexed guest state section containing host
+   words, that we want to shadow? */
+
+static Bool is_integer_guest_reg_array ( IRRegArray* arr )
+{
+   /* -------------------- ppc32 -------------------- */
+#  if defined(VGA_ppc32)
+   /* The redir stack. */
+   //if (arr->base == offsetof(VexGuestPPC64State,guest_REDIR_STACK[0])
+   //    && arr->elemTy == Ity_I64
+   //    && arr->nElems == VEX_GUEST_PPC64_REDIR_STACK_SIZE)
+   //   return True;
+
+   VG_(printf)("is_integer_guest_reg_array(ppc32): unhandled: ");
+   ppIRRegArray(arr);
+   VG_(printf)("\n");
+   tl_assert(0);
+
+   /* -------------------- ppc64 -------------------- */
+#  elif defined(VGA_ppc64)
+   /* The redir stack. */
+   if (arr->base == offsetof(VexGuestPPC64State,guest_REDIR_STACK[0])
+       && arr->elemTy == Ity_I64
+       && arr->nElems == VEX_GUEST_PPC64_REDIR_STACK_SIZE)
+      return True;
+
+   VG_(printf)("is_integer_guest_reg_array(ppc64): unhandled: ");
+   ppIRRegArray(arr);
+   VG_(printf)("\n");
+   tl_assert(0);
+
+#  else
+#    error "FIXME: not implemented for this architecture"
+#  endif
+}
+
 
 // END move this uglyness to pc_machine.c
 
@@ -1874,7 +2242,9 @@ static void post_syscall ( ThreadId tid, UInt syscallno, SysRes res )
       case __NR_open:
       case __NR_read:
       case __NR_set_robust_list:
+#     if defined(__NR_set_thread_area)
       case __NR_set_thread_area:
+#     endif
       case __NR_set_tid_address:
 #     if defined(__NR_socket)
       case __NR_socket:
@@ -1928,11 +2298,13 @@ static void post_syscall ( ThreadId tid, UInt syscallno, SysRes res )
 #     endif
       case __NR_fdatasync:
       case __NR_fstatfs:
+      case __NR_statfs64:
       case __NR_fsync:
       case __NR_ftruncate:
 #     if defined(__NR_ftruncate64)
       case __NR_ftruncate64:
 #     endif
+      case __NR_getdents:
       case __NR_getegid:
 #     if defined(__NR_getegid32)
       case __NR_getegid32:
@@ -2005,6 +2377,7 @@ static void post_syscall ( ThreadId tid, UInt syscallno, SysRes res )
 #     if defined(__NR_shutdown)
       case __NR_shutdown:
 #     endif
+      case __NR_sigreturn: /* not sure if we should see this or not */
       case __NR_statfs:
       case __NR_symlink:
       case __NR_sysinfo:
@@ -2017,6 +2390,7 @@ static void post_syscall ( ThreadId tid, UInt syscallno, SysRes res )
       case __NR_umask:
       case __NR_unlink:
       case __NR_utime:
+      case __NR_waitpid:
       case __NR_wait4:
       case __NR_writev:
          VG_(set_syscall_return_shadows)( tid, (UWord)NONPTR, 0 );
@@ -2433,7 +2807,8 @@ void check_store16_ms8B_ls8B(Addr m, Seg mptr_vseg,
       *(ULong*)(m + 0) = ls8B;
       *(ULong*)(m + 8) = ms8B;
    } else {
-      tl_assert(0);
+      *(ULong*)(m + 0) = ms8B;
+      *(ULong*)(m + 8) = ls8B;
    }
    nonptr_or_unknown_range(m, 16);
 }
@@ -2456,7 +2831,10 @@ void check_store16_ms4B_4B_4B_ls4B(Addr m, Seg mptr_vseg,
       *(UInt*)(m +  8) = w2;
       *(UInt*)(m + 12) = ms4B;
    } else {
-      tl_assert(0);
+      *(UInt*)(m +  0) = ms4B;
+      *(UInt*)(m +  4) = w2;
+      *(UInt*)(m +  8) = w1;
+      *(UInt*)(m + 12) = ls4B;
    }
    nonptr_or_unknown_range(m, 16);
 }
@@ -2476,7 +2854,8 @@ void check_store8_ms4B_ls4B(Addr m, Seg mptr_vseg,
       *(UInt*)(m + 0) = ls4B;
       *(UInt*)(m + 4) = ms4B;
    } else {
-      tl_assert(0);
+      *(UInt*)(m + 0) = ms4B;
+      *(UInt*)(m + 4) = ls4B;
    }
    nonptr_or_unknown_range(m, 8);
 }
@@ -3505,15 +3884,21 @@ void instrument_arithop ( PCEnv* pce,
          case Iop_MullS16:  goto n32;
          case Iop_MullU16:  goto n32;
          case Iop_PRemC3210F64: goto n32;
+         case Iop_DivU32:   goto n32;
+         case Iop_DivS32:   goto n32;
+         case Iop_V128to32: goto n32;
 
          /* cases where result range is very limited and clearly cannot
             be a pointer */
          case Iop_1Uto32: goto n32;
+         case Iop_1Sto32: goto n32;
          case Iop_8Uto32: goto n32;
          case Iop_8Sto32: goto n32;
          case Iop_Clz32:  goto n32;
          case Iop_Ctz32:  goto n32;
          case Iop_CmpF64: goto n32;
+         case Iop_CmpORD32S: goto n32;
+         case Iop_CmpORD32U: goto n32;
          n32:
             assign( 'I', pce, dstv, mkU32( (UInt)NONPTR ));
             break;
@@ -3579,8 +3964,6 @@ void instrument_arithop ( PCEnv* pce,
          case Iop_128to64:    goto n_or_u_64;
          case Iop_V128HIto64: goto n_or_u_64;
          case Iop_V128to64:   goto n_or_u_64;
-         case Iop_MullS32:    goto n_or_u_64;
-         case Iop_MullU32:    goto n_or_u_64;
          n_or_u_64:
             assign( 'I', pce, dstv,
                     mkexpr(
@@ -3607,6 +3990,11 @@ void instrument_arithop ( PCEnv* pce,
          case Iop_DivModU64to32: goto n64;
          case Iop_DivModS64to32: goto n64;
          case Iop_F64toI64:      goto n64;
+         case Iop_MullS32:    goto n64;
+         case Iop_MullU32:    goto n64;
+         case Iop_DivU64:     goto n64;
+         case Iop_DivS64:     goto n64;
+         case Iop_ReinterpF64asI64: goto n64;
 
          /* cases where result range is very limited and clearly cannot
             be a pointer */
@@ -3615,6 +4003,8 @@ void instrument_arithop ( PCEnv* pce,
          case Iop_8Sto64:        goto n64;
          case Iop_Ctz64:         goto n64;
          case Iop_Clz64:         goto n64;
+         case Iop_CmpORD64S:     goto n64;
+         case Iop_CmpORD64U:     goto n64;
          /* 64-bit simd */
          case Iop_Avg8Ux8: case Iop_Avg16Ux4:
          case Iop_Max16Sx4: case Iop_Max8Ux8: case Iop_Min16Sx4:
@@ -3764,13 +4154,29 @@ static void schemeS ( PCEnv* pce, IRStmt* st )
          stmt( 'C', pce, st );
          break;
 
-      case Ist_PutI:
+      case Ist_PutI: {
+         IRRegArray* descr = st->Ist.PutI.descr;
+pce->trace=True;
          stmt( 'C', pce, st );
-         if (st->Ist.PutI.descr->elemTy == pce->gWordTy)
-            goto unhandled;
-         /* If the element type isn't pointer-capable, we assume
-            there's nothing to be done. */
+         tl_assert(descr && descr->elemTy);
+         if (is_integer_guest_reg_array(descr)) {
+            /* if this fails, is_integer_guest_reg_array is returning
+               bogus results */
+            tl_assert(descr->elemTy == pce->gWordTy);
+            stmt(
+               'I', pce,
+               IRStmt_PutI(
+                  mkIRRegArray(descr->base + pce->guest_state_sizeB,
+                               descr->elemTy, descr->nElems),
+                  st->Ist.PutI.ix,
+                  st->Ist.PutI.bias,
+                  schemeEw_Atom( pce, st->Ist.PutI.data)
+               )
+            );
+         }
+tl_assert(0);
          break;
+      }
 
       case Ist_Put: {
          /* PUT(offset) = atom */
@@ -4112,9 +4518,23 @@ static void schemeS ( PCEnv* pce, IRStmt* st )
             }
 
             case Iex_GetI: {
+               IRRegArray* descr = e->Iex.GetI.descr;
                stmt( 'C', pce, st );
-               tl_assert(e_ty == e->Iex.GetI.descr->elemTy);
-               if (isWord) goto unhandled;
+               tl_assert(descr && descr->elemTy);
+               if (is_integer_guest_reg_array(descr)) {
+                  /* if this fails, is_integer_guest_reg_array is
+                     returning bogus results */
+                  tl_assert(isWord);
+                  assign(
+                     'I', pce, dstv,
+                     IRExpr_GetI(
+                        mkIRRegArray(descr->base + pce->guest_state_sizeB,
+                                     descr->elemTy, descr->nElems),
+                        e->Iex.GetI.ix,
+                        e->Iex.GetI.bias
+                     )
+                  );
+               }
                break;
             }
 
@@ -4174,6 +4594,19 @@ static void schemeS ( PCEnv* pce, IRStmt* st )
                   instrument_arithop( pce, dst, dstv, e->Iex.Triop.op,
                                       e->Iex.Triop.arg1, e->Iex.Triop.arg2,
                                       e->Iex.Triop.arg3, NULL );
+               break;
+            }
+
+            case Iex_Qop: {
+               stmt( 'C', pce, st );
+               tl_assert(isIRAtom(e->Iex.Qop.arg1));
+               tl_assert(isIRAtom(e->Iex.Qop.arg2));
+               tl_assert(isIRAtom(e->Iex.Qop.arg3));
+               tl_assert(isIRAtom(e->Iex.Qop.arg4));
+               if (isWord)
+                  instrument_arithop( pce, dst, dstv, e->Iex.Qop.op,
+                                      e->Iex.Qop.arg1, e->Iex.Qop.arg2,
+                                      e->Iex.Qop.arg3, e->Iex.Qop.arg4 );
                break;
             }
 
