@@ -51,7 +51,11 @@ AC_SUBST(VEX_DIR)
 AC_SUBST([DISTCHECK_CONFIGURE_FLAGS], [--with-vex=$VEX_DIR])
 
 # pkg-config initialization.
-PKG_PROG_PKG_CONFIG()
+ifdef(
+[PKG_PROG_PKG_CONFIG],
+[PKG_PROG_PKG_CONFIG()],
+[echo "Error: pkg-config must be installed before autogen.sh is run."; exit 1]
+)
 
 # Checks for programs.
 CFLAGS="-Wno-long-long"
