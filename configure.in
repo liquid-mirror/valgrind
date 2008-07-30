@@ -1394,17 +1394,19 @@ CFLAGS=$saved_CFLAGS
 AM_CONDITIONAL(BUILD_MPIWRAP_SEC, test x$ac_have_mpi2_sec = xyes)
 
 
-# Has the QtCore package been installed ?
+# Have the glib-2.0, gthread-2.0 and QtCore packages been installed ?
 
-PKG_CHECK_MODULES(
-[QTCORE],
-[QtCore],
+PKG_CHECK_EXISTS([glib-2.0 gthread-2.0 QtCore],
 [
+  PKG_CHECK_MODULES([GLIB2],    [glib-2.0])
+  PKG_CHECK_MODULES([GTHREAD2], [gthread-2.0])
+  PKG_CHECK_MODULES([QTCORE],   [QtCore])
   ac_have_qtcore=yes
 ],
 [
   ac_have_qtcore=no
-])
+]
+)
 
 AM_CONDITIONAL([HAVE_QTCORE], [test x$ac_have_qtcore = xyes])
 
@@ -1414,6 +1416,8 @@ AM_CONDITIONAL([HAVE_QTCORE], [test x$ac_have_qtcore = xyes])
 if test x$ac_have_qtcore = xyes; then
   AC_MSG_CHECKING([for Qt4 QMutex::tryLock(int)])
   AC_LANG(C++)
+  safe_CXXFLAGS="${CXXFLAGS}"
+  CXXFLAGS="${pkg_cv_QTCORE_CFLAGS}"
   AC_TRY_COMPILE([
     #include <QtCore/QMutex>
   ],
@@ -1430,6 +1434,7 @@ if test x$ac_have_qtcore = xyes; then
   [
     AC_MSG_RESULT([no])
   ])
+  CXXFLAGS="${safe_CXXFLAGS}"
   AC_LANG(C)
 fi
 
