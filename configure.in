@@ -50,6 +50,9 @@ AC_SUBST(VEX_DIR)
 # place.
 AC_SUBST([DISTCHECK_CONFIGURE_FLAGS], [--with-vex=$VEX_DIR])
 
+# pkg-config initialization.
+PKG_PROG_PKG_CONFIG()
+
 # Checks for programs.
 CFLAGS="-Wno-long-long"
 
@@ -1251,15 +1254,6 @@ AC_CHECK_HEADERS([       \
         sys/types.h      \
         ])
 
-# Checks for C++ header files.
-AC_LANG(C++)
-AC_CHECK_HEADERS([         \
-        QtCore/QMutex      \
-        QtCore/QSemaphore  \
-        QtCore/QThread     \
-        ])
-AC_LANG(C)
-
 # Checks for typedefs, structures, and compiler characteristics.
 AC_TYPE_UID_T
 AC_TYPE_OFF_T
@@ -1273,7 +1267,6 @@ AC_FUNC_MMAP
 AC_TYPE_SIGNAL
 
 AC_CHECK_LIB([rt], [clock_gettime])
-AC_CHECK_LIB([QtCore], [_ZN6QMutex4lockEv]) # QMutex::lock()
 
 AC_CHECK_FUNCS([     \
         clock_gettime\
@@ -1401,25 +1394,16 @@ CFLAGS=$saved_CFLAGS
 AM_CONDITIONAL(BUILD_MPIWRAP_SEC, test x$ac_have_mpi2_sec = xyes)
 
 
-# does this compiler have the include file <Qt/qmutex.h> and does it have
-# libQtCore.so ?
+# Has the QtCore package been installed ?
 
-AC_MSG_CHECKING([for Qt4 core library])
-
-AC_TRY_COMPILE([ ],
-[
-#if ! defined(HAVE_LIBQTCORE) || ! defined(HAVE_QTCORE_QMUTEX)
-#error Qt4 not supported.
-#endif
-  return 0;
-],
+PKG_CHECK_MODULES(
+[QTCORE],
+[QtCore],
 [
   ac_have_qtcore=yes
-  AC_MSG_RESULT([yes])
 ],
 [
   ac_have_qtcore=no
-  AC_MSG_RESULT([no])
 ])
 
 AM_CONDITIONAL([HAVE_QTCORE], [test x$ac_have_qtcore = xyes])
