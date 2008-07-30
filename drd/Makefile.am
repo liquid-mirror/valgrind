@@ -111,6 +111,7 @@ drdinclude_HEADERS = drd.h
 
 noinst_HEADERS =        \
   drd_barrier.h         \
+  drd_bitmap.c          \
   drd_bitmap.h          \
   drd_clientobj.h       \
   drd_clientreq.h       \
@@ -119,11 +120,15 @@ noinst_HEADERS =        \
   drd_malloc_wrappers.h \
   drd_mutex.h           \
   drd_rwlock.h          \
+  drd_segment.c         \
   drd_segment.h         \
   drd_semaphore.h       \
   drd_suppression.h     \
+  drd_thread.c          \
   drd_thread.h          \
+  drd_thread_bitmap.h   \
   drd_track.h           \
+  drd_vc.c              \
   drd_vc.h              \
   pub_drd_bitmap.h
 

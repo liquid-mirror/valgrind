@@ -52,8 +52,6 @@ AC_SUBST([DISTCHECK_CONFIGURE_FLAGS], [--with-vex=$VEX_DIR])
 
 # Checks for programs.
 CFLAGS="-Wno-long-long"
-CXXFLAGS="-I/usr/include/qt4"
-CPPFLAGS="-I/usr/include/qt4"
 
 AC_PROG_LN_S
 AC_PROG_CC
@@ -92,10 +90,30 @@ AC_SUBST(ASFLAGS)
 ])
 
 
+# Check we have GNU sed: some of the stuff done by "make install" relies
+# on some pretty fancy sed expressions, and AIX sed doesn't produce the
+# same results, causing install to fail
+
+AC_MSG_CHECKING([for GNU sed])
+
+[sed_firstline=`sed --version | head -n 1`]
+
+case "${sed_firstline}" in
+    GNU*)
+	AC_MSG_RESULT([ok, looks like GNU sed])
+	;;
+    *)
+	AC_MSG_RESULT([please ensure first 'sed' in your path is GNU sed])
+	AC_MSG_RESULT([note: GNU sed is only required at build/install time])
+	AC_MSG_ERROR([build/install requires that 'sed' is GNU sed])
+	;;
+esac
+
+
 # We don't want gcc < 3.0
 AC_MSG_CHECKING([for a supported version of gcc])
 
-[gcc_version=`${CC} --version | head -n 1 | sed 's/^[^0-9.]*\([0-9.]*\).*$/\1/'`]
+[gcc_version=`${CC} --version | head -n 1 | sed 's/^[^0-9]*\([0-9.]*\).*$/\1/'`]
 
 case "${gcc_version}" in
      2.*)
@@ -558,15 +576,13 @@ esac
 
 AC_SUBST(GLIBC_VERSION)
 
-# We don't know how to detect the X client library version
-# (detecting the server version is easy, but no help).  So we
-# just use a hack: always include the suppressions for both
-# versions 3 and 4.
-AC_PATH_X
-if test "${no_x}" != 'yes' ; then
-   DEFAULT_SUPP="xfree-4.supp ${DEFAULT_SUPP}"
-   DEFAULT_SUPP="xfree-3.supp ${DEFAULT_SUPP}"
-fi
+
+# Add default suppressions for the X client libraries.  Make no
+# attempt to detect whether such libraries are installed on the
+# build machine (or even if any X facilities are present); just
+# add the suppressions antidisirregardless.
+DEFAULT_SUPP="xfree-4.supp ${DEFAULT_SUPP}"
+DEFAULT_SUPP="xfree-3.supp ${DEFAULT_SUPP}"
 
 
 # Check for CLOCK_MONOTONIC
@@ -1218,7 +1234,7 @@ AC_DEFINE([HAVE_TLS], 1, [can use __thread to define thread-local variables])
 fi
 
 
-# Checks for header files.
+# Checks for C header files.
 AC_HEADER_STDC
 AC_CHECK_HEADERS([       \
         endian.h         \
@@ -1235,6 +1251,7 @@ AC_CHECK_HEADERS([       \
         sys/types.h      \
         ])
 
+# Checks for C++ header files.
 AC_LANG(C++)
 AC_CHECK_HEADERS([         \
         QtCore/QMutex      \
@@ -1257,11 +1274,6 @@ AC_TYPE_SIGNAL
 
 AC_CHECK_LIB([rt], [clock_gettime])
 AC_CHECK_LIB([QtCore], [_ZN6QMutex4lockEv]) # QMutex::lock()
-
-# AC_CHECK_LIB adds any library found to the variable LIBS, and links these
-# libraries with any shared object and/or executable. This is NOT what we
-# want for e.g. vgpreload_core-x86-linux.so
-LIBS=""
 
 AC_CHECK_FUNCS([     \
         clock_gettime\
@@ -1286,6 +1298,10 @@ AC_CHECK_FUNCS([     \
         utimensat    \
         ])
 
+# AC_CHECK_LIB adds any library found to the variable LIBS, and links these
+# libraries with any shared object and/or executable. This is NOT what we
+# want for e.g. vgpreload_core-x86-linux.so
+LIBS=""
 
 # Do we have a useable MPI setup on the primary and/or secondary targets?
 # On Linux, by default, assumes mpicc and -m32/-m64
@@ -1407,6 +1423,31 @@ AC_TRY_COMPILE([ ],
 ])
 
 AM_CONDITIONAL([HAVE_QTCORE], [test x$ac_have_qtcore = xyes])
+
+
+# Test for QMutex::tryLock(int), which has been introduced in Qt 4.3.
+# See also http://doc.trolltech.com/4.3/qmutex.html.
+if test x$ac_have_qtcore = xyes; then
+  AC_MSG_CHECKING([for Qt4 QMutex::tryLock(int)])
+  AC_LANG(C++)
+  AC_TRY_COMPILE([
+    #include <QtCore/QMutex>
+  ],
+  [
+    QMutex M;
+    M.tryLock(1);
+    M.unlock();
+    return 0;
+  ],
+  [
+    AC_MSG_RESULT([yes])
+    AC_DEFINE([HAVE_QTCORE_QMUTEX_TRYLOCK_INT], [1], [Define to 1 if the installed version of Qt4 provides QMutex::tryLock(int).])
+  ],
+  [
+    AC_MSG_RESULT([no])
+  ])
+  AC_LANG(C)
+fi
 
 
 # -------------------- ok.  We're done. --------------------
