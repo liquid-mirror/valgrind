@@ -1930,8 +1930,40 @@ static void get_IntRegInfo ( /*OUT*/IntRegInfo* iii, Int offset, Int szB )
 
 static Bool is_integer_guest_reg_array ( IRRegArray* arr )
 {
+   /* --------------------- x86 --------------------- */
+#  if defined(VGA_x86)
+   /* The x87 tag array. */
+   if (arr->base == offsetof(VexGuestX86State,guest_FPTAG[0])
+       && arr->elemTy == Ity_I8 && arr->nElems == 8)
+      return False;
+   /* The x87 register array. */
+   if (arr->base == offsetof(VexGuestX86State,guest_FPREG[0])
+       && arr->elemTy == Ity_F64 && arr->nElems == 8)
+      return False;
+
+   VG_(printf)("is_integer_guest_reg_array(x86): unhandled: ");
+   ppIRRegArray(arr);
+   VG_(printf)("\n");
+   tl_assert(0);
+
+   /* -------------------- amd64 -------------------- */
+#  elif defined(VGA_amd64)
+   /* The x87 tag array. */
+   if (arr->base == offsetof(VexGuestAMD64State,guest_FPTAG[0])
+       && arr->elemTy == Ity_I8 && arr->nElems == 8)
+      return False;
+   /* The x87 register array. */
+   if (arr->base == offsetof(VexGuestAMD64State,guest_FPREG[0])
+       && arr->elemTy == Ity_F64 && arr->nElems == 8)
+      return False;
+
+   VG_(printf)("is_integer_guest_reg_array(amd64): unhandled: ");
+   ppIRRegArray(arr);
+   VG_(printf)("\n");
+   tl_assert(0);
+
    /* -------------------- ppc32 -------------------- */
-#  if defined(VGA_ppc32)
+#  elif defined(VGA_ppc32)
    /* The redir stack. */
    //if (arr->base == offsetof(VexGuestPPC64State,guest_REDIR_STACK[0])
    //    && arr->elemTy == Ity_I64
@@ -2298,7 +2330,9 @@ static void post_syscall ( ThreadId tid, UInt syscallno, SysRes res )
 #     endif
       case __NR_fdatasync:
       case __NR_fstatfs:
+#     if defined(__NR_statfs64)
       case __NR_statfs64:
+#     endif
       case __NR_fsync:
       case __NR_ftruncate:
 #     if defined(__NR_ftruncate64)
@@ -2377,7 +2411,9 @@ static void post_syscall ( ThreadId tid, UInt syscallno, SysRes res )
 #     if defined(__NR_shutdown)
       case __NR_shutdown:
 #     endif
+#     if defined(__NR_sigreturn)
       case __NR_sigreturn: /* not sure if we should see this or not */
+#     endif
       case __NR_statfs:
       case __NR_symlink:
       case __NR_sysinfo:
@@ -2390,7 +2426,9 @@ static void post_syscall ( ThreadId tid, UInt syscallno, SysRes res )
       case __NR_umask:
       case __NR_unlink:
       case __NR_utime:
+#     if defined(__NR_waitpid)
       case __NR_waitpid:
+#     endif
       case __NR_wait4:
       case __NR_writev:
          VG_(set_syscall_return_shadows)( tid, (UWord)NONPTR, 0 );
@@ -4156,7 +4194,6 @@ static void schemeS ( PCEnv* pce, IRStmt* st )
 
       case Ist_PutI: {
          IRRegArray* descr = st->Ist.PutI.descr;
-pce->trace=True;
          stmt( 'C', pce, st );
          tl_assert(descr && descr->elemTy);
          if (is_integer_guest_reg_array(descr)) {
@@ -4174,7 +4211,6 @@ pce->trace=True;
                )
             );
          }
-tl_assert(0);
          break;
       }
 
