@@ -485,7 +485,8 @@ void bm_clear(struct bitmap* const bm,
         tl_assert(uword_lsb(address_lsb(c)) == 0);
         tl_assert(uword_lsb(address_lsb(c_next)) == 0);
         tl_assert(c_next <= b_next);
-        tl_assert(c <= c_next);
+        if (b_next < a2)
+          tl_assert(c <= c_next);
         if (c_next > c)
         {
           const UWord idx = uword_msb(address_lsb(c));
