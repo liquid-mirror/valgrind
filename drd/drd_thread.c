@@ -58,6 +58,7 @@ static ULong s_conflict_set_new_segment_count;
 static ULong s_conflict_set_combine_vc_count;
 static ULong s_conflict_set_bitmap_creation_count;
 static ULong s_conflict_set_bitmap2_creation_count;
+static ULong s_compute_conflict_set_bitmap2_count;
 static ThreadId    s_vg_running_tid  = VG_INVALID_THREADID;
 DrdThreadId s_drd_running_tid = DRD_INVALID_THREADID;
 ThreadInfo s_threadinfo[DRD_N_THREADS];
@@ -843,6 +844,8 @@ thread_compute_conflict_set_bitmap2(const UWord a1,
                  thread_get_running_tid(), tid, a1);
   }
 
+  s_compute_conflict_set_bitmap2_count++;
+
 #if LAZY_CONFLICT_SET_EVALUATION == 1
   s_conflict_set_bitmap2_creation_count -= bm_get_bitmap2_creation_count();
 
@@ -1062,4 +1065,9 @@ ULong thread_get_conflict_set_bitmap_creation_count(void)
 ULong thread_get_conflict_set_bitmap2_creation_count(void)
 {
   return s_conflict_set_bitmap2_creation_count;
+}
+
+ULong thread_get_compute_conflict_set_bitmap2_count(void)
+{
+  return s_compute_conflict_set_bitmap2_count;
 }

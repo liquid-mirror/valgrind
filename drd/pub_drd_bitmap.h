@@ -120,6 +120,7 @@ void bm_report_races(ThreadId const tid1, ThreadId const tid2,
                      struct bitmap* const bm2);
 void bm_print(struct bitmap* bm);
 ULong bm_get_bitmap_creation_count(void);
+ULong bm_get_bitmap_merge_count(void);
 
 /* Second-level bitmaps. */
 void bm2_clear(struct bitmap2* const bm2);
@@ -127,6 +128,7 @@ void bm2_merge(struct bitmap2* const bm2l, const struct bitmap2* const bm2r);
 void bm2_xor(struct bitmap2* const bm2l, const struct bitmap2* const bm2r);
 void bm2_print(const struct bitmap2* const bm2);
 ULong bm_get_bitmap2_creation_count(void);
+ULong bm_get_bitmap2_merge_count(void);
 
 
 #endif /* __PUB_DRD_BITMAP_H */

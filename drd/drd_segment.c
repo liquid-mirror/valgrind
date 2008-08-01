@@ -41,6 +41,7 @@
 static ULong s_created_segments_count;
 static ULong s_alive_segments_count;
 static ULong s_max_alive_segments_count;
+static ULong s_segment_merge_count;
 static Bool drd_trace_segment = False;
 
 
@@ -210,6 +211,8 @@ void sg_merge(const Segment* const sg1, Segment* const sg2)
       VG_(message)(Vg_UserMsg, "%s", msg);
   }
 
+  s_segment_merge_count++;
+
   // Keep sg1->stacktrace.
   // Keep sg1->vc.
   // Merge sg2->bm into sg1->bm.
@@ -249,4 +252,9 @@ ULong sg_get_alive_segments_count(void)
 ULong sg_get_max_alive_segments_count(void)
 {
   return s_max_alive_segments_count;
+}
+
+ULong sg_get_segment_merge_count(void)
+{
+  return s_segment_merge_count;
 }

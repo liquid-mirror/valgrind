@@ -60,6 +60,7 @@ void sg_set_trace(const Bool trace_segment);
 ULong sg_get_created_segments_count(void);
 ULong sg_get_alive_segments_count(void);
 ULong sg_get_max_alive_segments_count(void);
+ULong sg_get_segment_merge_count(void);
 
 
 #endif // __SEGMENT_H

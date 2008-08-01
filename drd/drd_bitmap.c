@@ -44,6 +44,8 @@ struct bitmap2;
 /* Local constants. */
 
 static ULong s_bitmap_creation_count;
+static ULong s_bitmap_merge_count;
+static ULong s_bitmap2_merge_count;
 
 
 /* Function definitions. */
@@ -782,6 +784,8 @@ void bm_merge(struct bitmap* const lhs, struct bitmap* const rhs)
   /* so complain if lhs == rhs.                                              */
   tl_assert(lhs != rhs);
 
+  s_bitmap_merge_count++;
+
   VG_(OSetGen_ResetIter)(rhs->oset);
 
   for ( ; (bm2r = VG_(OSetGen_Next)(rhs->oset)) != 0; )
@@ -923,10 +927,12 @@ ULong bm_get_bitmap_creation_count(void)
   return s_bitmap_creation_count;
 }
 
-ULong bm_get_bitmap2_creation_count(void)
+ULong bm_get_bitmap_merge_count(void)
 {
-  return s_bitmap2_creation_count;
+  return s_bitmap_merge_count;
 }
+
+
 
 /** Clear the bitmap contents. */
 void bm2_clear(struct bitmap2* const bm2)
@@ -943,6 +949,8 @@ void bm2_merge(struct bitmap2* const bm2l, const struct bitmap2* const bm2r)
   tl_assert(bm2l);
   tl_assert(bm2r);
   tl_assert(bm2l->addr == bm2r->addr);
+
+  s_bitmap2_merge_count++;
 
   for (k = 0; k < BITMAP1_UWORD_COUNT; k++)
   {
@@ -971,4 +979,14 @@ void bm2_xor(struct bitmap2* const bm2l, const struct bitmap2* const bm2r)
   {
     bm2l->bm1.bm0_w[k] ^= bm2r->bm1.bm0_w[k];
   }
+}
+
+ULong bm_get_bitmap2_creation_count(void)
+{
+  return s_bitmap2_creation_count;
+}
+
+ULong bm_get_bitmap2_merge_count(void)
+{
+  return s_bitmap2_merge_count;
 }

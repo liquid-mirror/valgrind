@@ -1191,16 +1191,22 @@ void drd_fini(Int exitcode)
                  thread_get_context_switch_count(),
                  update_conflict_set_count);
     VG_(message)(Vg_UserMsg,
-                 "           (%lld new sg + %lld combine vc + %lld csw).",
+                 "           (%lld new sg + %lld combine vc + %lld csw);",
                  dsnsc,
                  dscvc,
                  update_conflict_set_count - dsnsc - dscvc);
     VG_(message)(Vg_UserMsg,
+                 "           %lld level 2 conflict sets have been computed.",
+                 thread_get_compute_conflict_set_bitmap2_count());
+    VG_(message)(Vg_UserMsg,
                  " segments: created %lld segments, max %lld alive,"
-                 " %lld discard points.",
+                 " %lld discard points,",
                  sg_get_created_segments_count(),
                  sg_get_max_alive_segments_count(),
                  thread_get_discard_ordered_segments_count());
+    VG_(message)(Vg_UserMsg,
+                 "           %lld merges.",
+                 sg_get_segment_merge_count());
     VG_(message)(Vg_UserMsg,
                  "           (%lld m, %lld rw, %lld s, %lld b)",
                  get_mutex_segment_creation_count(),
@@ -1208,11 +1214,17 @@ void drd_fini(Int exitcode)
                  get_semaphore_segment_creation_count(),
                  get_barrier_segment_creation_count());
     VG_(message)(Vg_UserMsg,
-                 "  bitmaps: %lld level 1",
+                 "  bitmaps: %lld level 1 bitmaps were allocated;",
                  bm_get_bitmap_creation_count());
     VG_(message)(Vg_UserMsg,
-                 "           and %lld level 2 bitmaps were allocated.",
+                 "           %lld level 1 bitmap merges were carried out.",
+                 bm_get_bitmap_merge_count());
+    VG_(message)(Vg_UserMsg,
+                 "           %lld level 2 bitmaps were allocated;",
                  bm_get_bitmap2_creation_count());
+    VG_(message)(Vg_UserMsg,
+                 "           %lld level 2 bitmap merges were carried out.",
+                 bm_get_bitmap2_merge_count());
     VG_(message)(Vg_UserMsg,
                  "    mutex: %lld non-recursive lock/unlock events.",
                  get_mutex_lock_count());
