@@ -50,13 +50,6 @@ AC_SUBST(VEX_DIR)
 # place.
 AC_SUBST([DISTCHECK_CONFIGURE_FLAGS], [--with-vex=$VEX_DIR])
 
-# pkg-config initialization.
-ifdef(
-[PKG_PROG_PKG_CONFIG],
-[PKG_PROG_PKG_CONFIG()],
-[echo "Error: pkg-config must be installed before autogen.sh is run."; exit 1]
-)
-
 # Checks for programs.
 CFLAGS="-Wno-long-long"
 
@@ -1400,14 +1393,22 @@ AM_CONDITIONAL(BUILD_MPIWRAP_SEC, test x$ac_have_mpi2_sec = xyes)
 
 # Has the QtCore package been installed ?
 
-PKG_CHECK_EXISTS([QtCore],
-[
-  PKG_CHECK_MODULES([QTCORE], [QtCore])
-  ac_have_qtcore=yes
-],
-[
-  ac_have_qtcore=no
-]
+ifdef(
+  [PKG_CHECK_EXISTS],
+  [PKG_CHECK_EXISTS(
+    [QtCore],
+    [
+      PKG_CHECK_MODULES([QTCORE], [QtCore])
+      ac_have_qtcore=yes
+    ],
+    [
+      ac_have_qtcore=no
+    ]
+    )
+  ],
+  AC_MSG_WARN([pkg-config has not been installed or is too old.])
+  AC_MSG_WARN([Detection of Qt4 will be skipped.])
+  [ac_have_qtcore=no]
 )
 
 AM_CONDITIONAL([HAVE_QTCORE], [test x$ac_have_qtcore = xyes])
