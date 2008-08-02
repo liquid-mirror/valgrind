@@ -121,7 +121,7 @@ struct _ISList {
 // Miscellaneous
 //-------------------------------------------------------------------
 
-#define MAX_FORWARD  (8*sizeof(Addr)) // Maximum number of forward pointers
+#define MAX_FORWARD 32
 
 static void print_Addr(Addr a)
 {
@@ -865,6 +865,11 @@ static ISNode* ISList__insert(ISList* o, Addr a)
    if (NULL == x || x->key != a) {
       // put a new node in the list for this 'a'
       Int newLevel = ISList__randomLevel(o);
+
+      // most likely reason for this to fail is that normalizedRandom isn't
+      // working properly.  It is supposed to generate numbers uniformly
+      // in the range [0.0 .. 1.0), hence with a mean of 0.5.
+      tl_assert(newLevel < MAX_FORWARD-1);
 
       if (newLevel > o->maxLevel){
          // New node is bigger than any previous, add the header node to the
