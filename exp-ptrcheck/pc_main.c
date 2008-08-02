@@ -377,6 +377,7 @@ static __inline__ void handle_free_heap( ThreadId tid, void* p )
 //zz }
 //zz #endif
 
+
 /*------------------------------------------------------------*/
 /*--- Shadow memory                                        ---*/
 /*------------------------------------------------------------*/
@@ -621,17 +622,14 @@ static __inline__ void set_mem_vseg ( Addr a, Seg vseg )
    sm->vseg[sm_off] = vseg;
 }
 
-//zz // Returns UNKNOWN if no matches.  Never returns BOTTOM or NONPTR.
-//zz static Seg get_mem_aseg( Addr a )
-//zz {
-//zz    Seg aseg;
-//zz    Bool is_found;
-//zz 
-//zz    VGP_PUSHCC(VgpGetMemAseg);
-//zz    is_found = ISList__findI( seglist, a, &aseg );
-//zz    VGP_POPCC(VgpGetMemAseg);
-//zz    return ( is_found ? aseg : UNKNOWN );
-//zz }
+// Returns UNKNOWN if no matches.  Never returns BOTTOM or NONPTR.
+static Seg get_mem_aseg( Addr a )
+{
+   Seg aseg;
+   Bool is_found = ISList__findI( seglist, a, &aseg );
+   return ( is_found ? aseg : UNKNOWN );
+}
+
 
 /*--------------------------------------------------------------------*/
 /*--- Error handling                                               ---*/
@@ -689,7 +687,6 @@ typedef
    }
    SysParamExtra;
 
-//zz static UInt actual_arg1, actual_arg2/*, actual_res*/;
 
 static
 void record_loadstore_error( Addr a, UInt size, Seg vseg, Bool is_write )
@@ -713,15 +710,15 @@ record_arith_error( Seg seg1, Seg seg2, HChar* opname )
                             /*a*/0, /*str*/NULL, /*extra*/(void*)&extra);
 }
 
-//zz static void record_sysparam_error( ThreadId tid, CorePart part, Char* s,
-//zz                                    Addr lo, Addr hi, Seg seglo, Seg seghi )
-//zz {
-//zz    SysParamExtra extra = {
-//zz       .part = part, .lo = lo, .hi = hi, .seglo = seglo, .seghi = seghi
-//zz    };
-//zz    VG_(maybe_record_error)( tid, SysParamErr, /*a*/(Addr)0, /*str*/s,
-//zz                             /*extra*/(void*)&extra);
-//zz }
+static void record_sysparam_error( ThreadId tid, CorePart part, Char* s,
+                                   Addr lo, Addr hi, Seg seglo, Seg seghi )
+{
+   SysParamExtra extra = {
+      .part = part, .lo = lo, .hi = hi, .seglo = seglo, .seghi = seghi
+   };
+   VG_(maybe_record_error)( tid, SysParamErr, /*a*/(Addr)0, /*str*/s,
+                            /*extra*/(void*)&extra);
+}
 
 static Bool eq_Error ( VgRes res, Error* e1, Error* e2 )
 {
@@ -854,61 +851,61 @@ static void pp_Error ( Error* err )
       break;
    }
 
-//zz    //----------------------------------------------------------
-//zz    case SysParamErr: {
-//zz       SysParamExtra* extra = (SysParamExtra*)VG_(get_error_extra)(err);
-//zz       Addr           lo    = extra->lo;
-//zz       Addr           hi    = extra->hi;
-//zz       Seg            seglo = extra->seglo;
-//zz       Seg            seghi = extra->seghi;
-//zz       Char*          s     = VG_(get_error_string) (err);
-//zz       Char*          what;
-//zz 
-//zz       sk_assert(BOTTOM != seglo && BOTTOM != seghi);
-//zz 
-//zz       if      (Vg_CoreSysCall == extra->part) what = "Syscall param ";
-//zz       else if (Vg_CorePThread == extra->part) what = "";
-//zz       else    VG_(skin_panic)("bad CorePart");
-//zz 
-//zz       if (seglo == seghi) {
-//zz          // freed block
-//zz          sk_assert(is_known_segment(seglo) && Seg__is_freed(seglo));
-//zz          VG_(message)(Vg_UserMsg, "%s%s contains unaddressable byte(s)", what, s);
-//zz          VG_(pp_ExeContext)( VG_(get_error_where)(err) );
-//zz 
-//zz          VG_(message)(Vg_UserMsg, "Address %p is %d bytes within a "
-//zz                                   "%d-byte block %s",
-//zz                                   lo, lo-Seg__a(seglo), Seg__size(seglo),
-//zz                                   Seg__status_str(seglo) );
-//zz          VG_(pp_ExeContext)(Seg__where(seglo));
-//zz 
-//zz       } else {
-//zz          // mismatch
-//zz          VG_(message)(Vg_UserMsg, "%s%s is non-contiguous", what, s);
-//zz          VG_(pp_ExeContext)( VG_(get_error_where)(err) );
-//zz 
-//zz          if (UNKNOWN == seglo) {
-//zz             VG_(message)(Vg_UserMsg, "First byte is not within a known block");
-//zz          } else {
-//zz             VG_(message)(Vg_UserMsg, "First byte (%p) is %d bytes within a "
-//zz                                      "%d-byte block %s",
-//zz                                      lo, lo-Seg__a(seglo), Seg__size(seglo),
-//zz                                      Seg__status_str(seglo) );
-//zz             VG_(pp_ExeContext)(Seg__where(seglo));
-//zz          }
-//zz 
-//zz          if (UNKNOWN == seghi) {
-//zz             VG_(message)(Vg_UserMsg, "Last byte is not within a known block");
-//zz          } else {
-//zz             VG_(message)(Vg_UserMsg, "Last byte (%p) is %d bytes within a "
-//zz                                      "%d-byte block %s",
-//zz                                      hi, hi-Seg__a(seghi), Seg__size(seghi),
-//zz                                      Seg__status_str(seghi));
-//zz             VG_(pp_ExeContext)(Seg__where(seghi));
-//zz          }
-//zz       }
-//zz       break;
-//zz    }
+   //----------------------------------------------------------
+   case SysParamErr: {
+      SysParamExtra* extra = (SysParamExtra*)VG_(get_error_extra)(err);
+      Addr           lo    = extra->lo;
+      Addr           hi    = extra->hi;
+      Seg            seglo = extra->seglo;
+      Seg            seghi = extra->seghi;
+      Char*          s     = VG_(get_error_string) (err);
+      Char*          what;
+
+      tl_assert(BOTTOM != seglo && BOTTOM != seghi);
+
+      if      (Vg_CoreSysCall == extra->part) what = "Syscall param ";
+      else    VG_(tool_panic)("bad CorePart");
+
+      if (seglo == seghi) {
+         // freed block
+         tl_assert(is_known_segment(seglo) && Seg__is_freed(seglo));
+         VG_(message)(Vg_UserMsg, "%s%s contains unaddressable byte(s)",
+                                  what, s);
+         VG_(pp_ExeContext)( VG_(get_error_where)(err) );
+
+         VG_(message)(Vg_UserMsg, " Address %p is %ld bytes inside a "
+                                  "%ld-byte block %s",
+                                  lo, lo-Seg__a(seglo), Seg__size(seglo),
+                                  Seg__status_str(seglo) );
+         VG_(pp_ExeContext)(Seg__where(seglo));
+
+      } else {
+         // mismatch
+         VG_(message)(Vg_UserMsg, "%s%s is non-contiguous", what, s);
+         VG_(pp_ExeContext)( VG_(get_error_where)(err) );
+
+         if (UNKNOWN == seglo) {
+            VG_(message)(Vg_UserMsg, " First byte is not inside a known block");
+         } else {
+            VG_(message)(Vg_UserMsg, " First byte (%p) is %ld bytes inside a "
+                                     "%ld-byte block %s",
+                                     lo, lo-Seg__a(seglo), Seg__size(seglo),
+                                     Seg__status_str(seglo) );
+            VG_(pp_ExeContext)(Seg__where(seglo));
+         }
+
+         if (UNKNOWN == seghi) {
+            VG_(message)(Vg_UserMsg, " Last byte is not inside a known block");
+         } else {
+            VG_(message)(Vg_UserMsg, " Last byte (%p) is %ld bytes inside a "
+                                     "%ld-byte block %s",
+                                     hi, hi-Seg__a(seghi), Seg__size(seghi),
+                                     Seg__status_str(seghi));
+            VG_(pp_ExeContext)(Seg__where(seghi));
+         }
+      }
+      break;
+   }
 
    default:
       VG_(tool_panic)("pp_Error: unrecognised error kind");
@@ -1010,6 +1007,7 @@ static void print_extra_suppression_info ( Error* err )
       VG_(printf)("   %s\n", VG_(get_error_string)(err));
    }
 }
+
 
 /*------------------------------------------------------------*/
 /*--- malloc() et al replacements                          ---*/
@@ -1120,6 +1118,7 @@ static void* pc_replace_realloc ( ThreadId tid, void* p_old, SizeT new_size )
       return (void*)p_new;
    }
 }
+
 
 /*------------------------------------------------------------*/
 /*--- Memory events                                        ---*/
@@ -1264,68 +1263,68 @@ static void die_mem_munmap( Addr a, SizeT len )
 //   handle_free_munmap( (void*)a, len );
 }
 
-//zz // Don't need to check all addresses within the block; in the absence of
-//zz // discontiguous segments, the segments for the first and last bytes should
-//zz // be the same.  Can't easily check the pointer segment matches the block
-//zz // segment, unfortunately, but the first/last check should catch most
-//zz // errors.
-//zz static void pre_mem_access2 ( CorePart part, ThreadId tid, Char* s,
-//zz                               Addr lo, Addr hi )
-//zz {
-//zz    Seg seglo, seghi;
-//zz 
-//zz    // Don't check code being translated -- very slow, and not much point
-//zz    if (Vg_CoreTranslate == part) return;
-//zz 
-//zz    // Don't check the signal case -- only happens in core, no need to check
-//zz    if (Vg_CoreSignal == part) return;
-//zz 
-//zz    // Check first and last bytes match
-//zz    seglo = get_mem_aseg( lo );
-//zz    seghi = get_mem_aseg( hi );
-//zz    sk_assert( BOTTOM != seglo && NONPTR != seglo );
-//zz    sk_assert( BOTTOM != seghi && NONPTR != seghi );
-//zz 
-//zz    if ( seglo != seghi || (UNKNOWN != seglo && Seg__is_freed(seglo)) ) {
-//zz       // First/last bytes don't match, or seg has been freed.
-//zz       switch (part) {
-//zz       case Vg_CoreSysCall:
-//zz       case Vg_CorePThread:
-//zz          record_sysparam_error(tid, part, s, lo, hi, seglo, seghi);
-//zz          break;
-//zz 
-//zz       default:
-//zz          VG_(printf)("part = %d\n", part);
-//zz          VG_(skin_panic)("unknown corepart in pre_mem_access2");
-//zz       }
-//zz    }
-//zz }
-//zz 
-//zz static void pre_mem_access ( CorePart part, ThreadId tid, Char* s,
-//zz                              Addr base, UInt size )
-//zz {
-//zz    pre_mem_access2( part, tid, s, base, base + size - 1 );
-//zz }
-//zz 
-//zz static
-//zz void pre_mem_read_asciiz ( CorePart part, ThreadId tid, Char* s, Addr lo )
-//zz {
-//zz    Addr hi = lo;
-//zz 
-//zz    // Nb: the '\0' must be included in the lo...hi range
-//zz    while ('\0' != *(Char*)hi) hi++;
-//zz    pre_mem_access2( part, tid, s, lo, hi );
-//zz }
-//zz 
+// Don't need to check all addresses within the block; in the absence of
+// discontiguous segments, the segments for the first and last bytes should
+// be the same.  Can't easily check the pointer segment matches the block
+// segment, unfortunately, but the first/last check should catch most
+// errors.
+static void pre_mem_access2 ( CorePart part, ThreadId tid, Char* s,
+                              Addr lo, Addr hi )
+{
+   Seg seglo, seghi;
+
+   // Don't check code being translated -- very slow, and not much point
+   if (Vg_CoreTranslate == part) return;
+
+   // Don't check the signal case -- only happens in core, no need to check
+   if (Vg_CoreSignal == part) return;
+
+   // Check first and last bytes match
+   seglo = get_mem_aseg( lo );
+   seghi = get_mem_aseg( hi );
+   tl_assert( BOTTOM != seglo && NONPTR != seglo );
+   tl_assert( BOTTOM != seghi && NONPTR != seghi );
+
+   if ( seglo != seghi || (UNKNOWN != seglo && Seg__is_freed(seglo)) ) {
+      // First/last bytes don't match, or seg has been freed.
+      switch (part) {
+      case Vg_CoreSysCall:
+         record_sysparam_error(tid, part, s, lo, hi, seglo, seghi);
+         break;
+
+      default:
+         VG_(printf)("part = %d\n", part);
+         VG_(tool_panic)("unknown corepart in pre_mem_access2");
+      }
+   }
+}
+
+static void pre_mem_access ( CorePart part, ThreadId tid, Char* s,
+                             Addr base, SizeT size )
+{
+   pre_mem_access2( part, tid, s, base, base + size - 1 );
+}
+
+static
+void pre_mem_read_asciiz ( CorePart part, ThreadId tid, Char* s, Addr lo )
+{
+   Addr hi = lo;
+
+   // Nb: the '\0' must be included in the lo...hi range
+   while ('\0' != *(Char*)hi) hi++;
+   pre_mem_access2( part, tid, s, lo, hi );
+}
+
 //zz static void post_mem_write(Addr a, UInt len)
 //zz {
 //zz    set_mem_unknown(a, len);
 //zz }
-//zz 
-//zz /*------------------------------------------------------------*/
-//zz /*--- Register event handlers                              ---*/
-//zz /*------------------------------------------------------------*/
-//zz 
+
+
+/*------------------------------------------------------------*/
+/*--- Register event handlers                              ---*/
+/*------------------------------------------------------------*/
+
 //zz static void post_regs_write_init ( void )
 //zz {
 //zz    UInt i;
@@ -2168,7 +2167,6 @@ void post_reg_write_clientcall(ThreadId tid, OffT guest_state_offset,
 }
 
 
-
 //zz /*--------------------------------------------------------------------*/
 //zz /*--- Sanity checking                                              ---*/
 //zz /*--------------------------------------------------------------------*/
@@ -2202,6 +2200,7 @@ void post_reg_write_clientcall(ThreadId tid, OffT guest_state_offset,
 //zz 
 //zz    return True;
 //zz }
+
 
 /*--------------------------------------------------------------------*/
 /*--- System calls                                                 ---*/
@@ -2483,6 +2482,7 @@ static void post_syscall ( ThreadId tid, UInt syscallno, SysRes res )
    }
 }
 
+
 /*--------------------------------------------------------------------*/
 /*--- Functions called from generated code                         ---*/
 /*--------------------------------------------------------------------*/
@@ -2588,7 +2588,7 @@ void check_load_or_store(Bool is_write, Addr m, UInt sz, Seg mptr_vseg)
          /* m falls inside 'seg' (that is, we are making a memory
             reference inside 'seg').  Now, really mptr_vseg should be
             a tracked segment of some description.  Badness is when
-            mptr_vsrg is UNKNOWN, BOTTOM or NONPTR at this point,
+            mptr_vseg is UNKNOWN, BOTTOM or NONPTR at this point,
             since that means we've lost the type of it somehow: it
             shoud say that m points into a real segment (preferable
             'seg'), but it doesn't. */
@@ -2790,8 +2790,14 @@ void check_load1(Addr m, Seg mptr_vseg)
 
 /* On 32 bit targets, we will use:
       check_store1 check_store2 check_store4_P
+      check_store4 (for 32-bit nonpointer stores)
+      check_store8_ms4B_ls4B (for 64-bit stores)
+      check_store16_ms4B_4B_4B_ls4B (for xmm/altivec stores)
+
    On 64 bit targets, we will use:
       check_store1 check_store2 check_store4 check_store8_P
+      check_store8_all8B (for 64-bit nonpointer stores)
+      check_store16_ms8B_ls8B (for xmm/altivec stores)
 
    A "_P" handler writes a pointer to memory, and so has an extra
    argument -- the pointer's shadow value.  That implies that
@@ -4684,10 +4690,10 @@ static void pc_pre_clo_init ( void )
 //zz    VG_(track_die_mem_stack_signal) ( NULL );
 //zz    VG_(track_die_mem_brk)          ( die_mem_brk );
    VG_(track_die_mem_munmap)       ( die_mem_munmap );
-//zz 
-//zz    VG_(track_pre_mem_read)         ( pre_mem_access );
-//zz    VG_(track_pre_mem_read_asciiz)  ( pre_mem_read_asciiz );
-//zz    VG_(track_pre_mem_write)        ( pre_mem_access );
+
+   VG_(track_pre_mem_read)         ( pre_mem_access );
+   VG_(track_pre_mem_read_asciiz)  ( pre_mem_read_asciiz );
+   VG_(track_pre_mem_write)        ( pre_mem_access );
 //zz    VG_(track_post_mem_write)       ( post_mem_write );
 
    // Register events to track

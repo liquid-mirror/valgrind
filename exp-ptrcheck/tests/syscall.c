@@ -10,9 +10,22 @@
 // Therefore, if I don't want the write errors to be merged, I have to
 // ensure they have a different stack trace.  I do this by using this
 // function.  Weird.
+__attribute__((noinline))
 void mywrite(char* buf, int len)
 {
    write(-1, buf, len);
+}
+
+__attribute__((noinline))
+void mygetitimer(long arg1, struct itimerval* itval)
+{
+   getitimer(arg1, itval);
+}
+
+__attribute__((noinline))
+void myopen(char* name, long flags)
+{
+   open(name, flags);
 }
 
 int main(void)
@@ -32,9 +45,9 @@ int main(void)
    mywrite(buf+3, 5);      // error (read)
    mywrite(buf-1, 5);      // error (read)
    mywrite(buf+1, diff);   // error (read)
-   open(buf+3, 0x0);       // error (read_asciiz)
+   myopen(buf+3, 0x0);     // error (read_asciiz)
 
-   getitimer(0, itval);    // error (write)
+   mygetitimer(0, itval);    // error (write)
 
    //----
    free(buf);
