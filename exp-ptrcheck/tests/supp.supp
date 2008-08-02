@@ -1,20 +1,16 @@
 {
-   <insert a suppression name here>
-   Annelid:LoadStore
+   first-in-supp.supp
+   exp-ptrcheck:LoadStore
    fun:main
-   fun:__libc_start_main
-   obj:*/annelid/tests/supp
 }
 {
-   <insert a suppression name here>
-   Annelid:Arith
+   second-in-supp.supp
+   exp-ptrcheck:Arith
    fun:main
-   fun:__libc_start_main
-   obj:*/annelid/tests/supp
 }
 {
-   <insert a suppression name here>
-   Annelid:SysParam
+   third-in-supp.supp
+   exp-ptrcheck:SysParam
    write(buf)
    fun:__GI___libc_write
    fun:__libc_start_main

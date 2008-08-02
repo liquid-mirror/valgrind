@@ -1,101 +1,72 @@
 
 Invalid read of size 4
    at 0x........: main (partial.c:22)
-   by 0x........: __libc_start_main (...libc...)
-   by 0x........: ...
-Address 0x........ is 1 bytes inside the accessing pointer's
- legitimate range, the 4-byte block alloc'd
+ Address 0x........ is 1 bytes inside the accessing pointer's
+ legitimate range, a block of size 4 alloc'd
    at 0x........: malloc (vg_replace_malloc.c:...)
    by 0x........: main (partial.c:7)
-   by 0x........: __libc_start_main (...libc...)
-   by 0x........: ...
 
 Invalid read of size 4
    at 0x........: main (partial.c:23)
-   by 0x........: __libc_start_main (...libc...)
-   by 0x........: ...
-Address 0x........ is 2 bytes inside the accessing pointer's
- legitimate range, the 5-byte block alloc'd
+ Address 0x........ is 2 bytes inside the accessing pointer's
+ legitimate range, a block of size 5 alloc'd
    at 0x........: malloc (vg_replace_malloc.c:...)
    by 0x........: main (partial.c:8)
-   by 0x........: __libc_start_main (...libc...)
-   by 0x........: ...
 
 Invalid read of size 4
    at 0x........: main (partial.c:24)
-   by 0x........: __libc_start_main (...libc...)
-   by 0x........: ...
-Address 0x........ is 3 bytes inside the accessing pointer's
- legitimate range, the 6-byte block alloc'd
+ Address 0x........ is 3 bytes inside the accessing pointer's
+ legitimate range, a block of size 6 alloc'd
    at 0x........: malloc (vg_replace_malloc.c:...)
    by 0x........: main (partial.c:9)
-   by 0x........: __libc_start_main (...libc...)
-   by 0x........: ...
 
 Invalid read of size 4
    at 0x........: main (partial.c:34)
-   by 0x........: __libc_start_main (...libc...)
-   by 0x........: ...
-Address 0x........ is 1 bytes before the accessing pointer's
- legitimate range, the 3-byte block alloc'd
+ Address 0x........ is 1 bytes before the accessing pointer's
+ legitimate range, a block of size 3 alloc'd
    at 0x........: malloc (vg_replace_malloc.c:...)
    by 0x........: main (partial.c:6)
-   by 0x........: __libc_start_main (...libc...)
-   by 0x........: ...
 
 Invalid read of size 4
    at 0x........: main (partial.c:36)
-   by 0x........: __libc_start_main (...libc...)
-   by 0x........: ...
-Address 0x........ is 1 bytes inside the accessing pointer's
- legitimate range, the 3-byte block alloc'd
+ Address 0x........ is 1 bytes inside the accessing pointer's
+ legitimate range, a block of size 3 alloc'd
    at 0x........: malloc (vg_replace_malloc.c:...)
    by 0x........: main (partial.c:6)
-   by 0x........: __libc_start_main (...libc...)
-   by 0x........: ...
 
 Invalid read of size 4
    at 0x........: main (partial.c:37)
-   by 0x........: __libc_start_main (...libc...)
-   by 0x........: ...
-Address 0x........ is 2 bytes inside the accessing pointer's
- legitimate range, the 3-byte block alloc'd
+ Address 0x........ is 2 bytes inside the accessing pointer's
+ legitimate range, a block of size 3 alloc'd
    at 0x........: malloc (vg_replace_malloc.c:...)
    by 0x........: main (partial.c:6)
-   by 0x........: __libc_start_main (...libc...)
-   by 0x........: ...
 
 Invalid read of size 4
    at 0x........: main (partial.c:38)
-   by 0x........: __libc_start_main (...libc...)
-   by 0x........: ...
-Address 0x........ is 0 bytes after the accessing pointer's
- legitimate range, the 3-byte block alloc'd
+ Address 0x........ is 0 bytes after the accessing pointer's
+ legitimate range, a block of size 3 alloc'd
    at 0x........: malloc (vg_replace_malloc.c:...)
    by 0x........: main (partial.c:6)
-   by 0x........: __libc_start_main (...libc...)
-   by 0x........: ...
+
+Invalid read of size 8
+   at 0x........: main (partial.c:42)
+ Address 0x........ is 0 bytes inside the accessing pointer's
+ legitimate range, a block of size 7 alloc'd
+   at 0x........: malloc (vg_replace_malloc.c:...)
+   by 0x........: main (partial.c:7)
 
 Invalid read of size 1
    at 0x........: main (partial.c:44)
-   by 0x........: __libc_start_main (...libc...)
-   by 0x........: ...
-Address 0x........ is 0 bytes after the accessing pointer's
- legitimate range, the 0-byte block alloc'd
+ Address 0x........ is 0 bytes after the accessing pointer's
+ legitimate range, a block of size 0 alloc'd
    at 0x........: malloc (vg_replace_malloc.c:...)
    by 0x........: main (partial.c:9)
-   by 0x........: __libc_start_main (...libc...)
-   by 0x........: ...
 
 Invalid read of size 2
    at 0x........: main (partial.c:45)
-   by 0x........: __libc_start_main (...libc...)
-   by 0x........: ...
-Address 0x........ is 0 bytes inside the accessing pointer's
- legitimate range, the 1-byte block alloc'd
+ Address 0x........ is 0 bytes inside the accessing pointer's
+ legitimate range, a block of size 1 alloc'd
    at 0x........: malloc (vg_replace_malloc.c:...)
    by 0x........: main (partial.c:10)
-   by 0x........: __libc_start_main (...libc...)
-   by 0x........: ...
 
-ERROR SUMMARY: 9 errors from 9 contexts (suppressed: 0 from 0)
+ERROR SUMMARY: 10 errors from 10 contexts (suppressed: 0 from 0)

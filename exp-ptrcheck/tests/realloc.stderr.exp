@@ -1,68 +1,44 @@
 
 Invalid read of size 4
    at 0x........: main (realloc.c:20)
-   by 0x........: __libc_start_main (...libc...)
-   by 0x........: ...
-Address 0x........ is 4 bytes before the accessing pointer's
- legitimate range, the 200-byte block alloc'd
+ Address 0x........ is 4 bytes before the accessing pointer's
+ legitimate range, a block of size 200 alloc'd
    at 0x........: realloc (vg_replace_malloc.c:...)
    by 0x........: main (realloc.c:17)
-   by 0x........: __libc_start_main (...libc...)
-   by 0x........: ...
 
 Invalid read of size 4
    at 0x........: main (realloc.c:21)
-   by 0x........: __libc_start_main (...libc...)
-   by 0x........: ...
-Address 0x........ is 0 bytes after the accessing pointer's
- legitimate range, the 200-byte block alloc'd
+ Address 0x........ is 0 bytes after the accessing pointer's
+ legitimate range, a block of size 200 alloc'd
    at 0x........: realloc (vg_replace_malloc.c:...)
    by 0x........: main (realloc.c:17)
-   by 0x........: __libc_start_main (...libc...)
-   by 0x........: ...
 
 Invalid read of size 4
    at 0x........: main (realloc.c:28)
-   by 0x........: __libc_start_main (...libc...)
-   by 0x........: ...
-Address 0x........ is 4 bytes before the accessing pointer's
- legitimate range, the 200-byte block alloc'd
+ Address 0x........ is 4 bytes before the accessing pointer's
+ legitimate range, a block of size 200 alloc'd
    at 0x........: realloc (vg_replace_malloc.c:...)
    by 0x........: main (realloc.c:25)
-   by 0x........: __libc_start_main (...libc...)
-   by 0x........: ...
 
 Invalid read of size 4
    at 0x........: main (realloc.c:29)
-   by 0x........: __libc_start_main (...libc...)
-   by 0x........: ...
-Address 0x........ is 0 bytes after the accessing pointer's
- legitimate range, the 200-byte block alloc'd
+ Address 0x........ is 0 bytes after the accessing pointer's
+ legitimate range, a block of size 200 alloc'd
    at 0x........: realloc (vg_replace_malloc.c:...)
    by 0x........: main (realloc.c:25)
-   by 0x........: __libc_start_main (...libc...)
-   by 0x........: ...
 
 Invalid read of size 4
    at 0x........: main (realloc.c:38)
-   by 0x........: __libc_start_main (...libc...)
-   by 0x........: ...
-Address 0x........ is 4 bytes before the accessing pointer's
- legitimate range, the 400-byte block alloc'd
+ Address 0x........ is 4 bytes before the accessing pointer's
+ legitimate range, a block of size 400 alloc'd
    at 0x........: realloc (vg_replace_malloc.c:...)
    by 0x........: main (realloc.c:33)
-   by 0x........: __libc_start_main (...libc...)
-   by 0x........: ...
 
 Invalid read of size 4
    at 0x........: main (realloc.c:39)
-   by 0x........: __libc_start_main (...libc...)
-   by 0x........: ...
-Address 0x........ is 0 bytes after the accessing pointer's
- legitimate range, the 400-byte block alloc'd
+ Address 0x........ is 0 bytes after the accessing pointer's
+ legitimate range, a block of size 400 alloc'd
    at 0x........: realloc (vg_replace_malloc.c:...)
    by 0x........: main (realloc.c:33)
-   by 0x........: __libc_start_main (...libc...)
-   by 0x........: ...
 
 ERROR SUMMARY: 6 errors from 6 contexts (suppressed: 0 from 0)
