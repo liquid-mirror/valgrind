@@ -1391,7 +1391,22 @@ CFLAGS=$saved_CFLAGS
 AM_CONDITIONAL(BUILD_MPIWRAP_SEC, test x$ac_have_mpi2_sec = xyes)
 
 
-# Has the QtCore package been installed ?
+# The test below verifies whether the QtCore package been installed.
+# This test works as follows:
+# - If pkg-config was not installed at the time autogen.sh was run,
+#   the definition of the PKG_CHECK_EXISTS() macro will not be found by
+#   autogen.sh. Augogen.sh will generate a configure script that prints
+#   a warning about pkg-config and proceeds as if Qt4 has not been installed.
+# - If pkg-config was installed at the time autogen.sh was run,
+#   the generated configure script will try to detect the presence of the
+#   Qt4 QtCore library by looking up compile and linker flags in the file
+#   called QtCore.pc.
+# - pkg-config settings can be overridden via the configure variables
+#   QTCORE_CFLAGS and QTCORE_LIBS (added by the pkg-config m4 macro's to the
+#   configure script -- see also ./configure --help).
+# - The QTCORE_CFLAGS and QTCORE_LIBS configure variables can be used even if
+#   the pkg-config executable is not present on the system on which the
+#   configure script is run.
 
 ifdef(
   [PKG_CHECK_EXISTS],
