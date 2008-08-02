@@ -36,6 +36,8 @@
 
 // FIXME: should we shadow %RIP?  Maybe not.
 
+// FIXME: shadows of temporaries created in preamble, a la memcheck?
+
 // FIXME: result of add_new_segment is always ignored
 
 // FIXME: the mechanism involving last_seg_added is really ugly.
@@ -53,6 +55,9 @@
 // FIXME: check nothing is mapped in the lowest 1M of memory at
 // startup, or quit (to do with nonptr_or_unknown, also sync 1M
 // magic value with PIE default load address in m_ume.c.
+
+// FIXME: consider whether we could paint memory acquired from
+// sys_read etc as NONPTR rather than UNKNOWN.
 
 // XXX: recycle freed segments
 
@@ -752,18 +757,6 @@ Bool is_known_segment(Seg seg)
    return (UNKNOWN != seg && BOTTOM != seg && NONPTR != seg);
 }
 
-//zz static Char* pc_name_UOpcode(Int opc)
-//zz {
-//zz    if (opc >= 0) return VG_(name_UOpcode)(True, opc);
-//zz 
-//zz    else if (-opc == VGOFF_(helper_mul_32_64))    return  "MUL";
-//zz    else if (-opc == VGOFF_(helper_imul_32_64))   return "IMUL";
-//zz    else if (-opc == VGOFF_(helper_div_64_32))    return  "DIV";
-//zz    else if (-opc == VGOFF_(helper_idiv_64_32))   return "IDIV";
-//zz 
-//zz    else VG_(skin_panic)("pc_name_UOpcode");
-//zz }
-      
 static void pp_Error ( Error* err )
 {
    switch (VG_(get_error_kind)(err)) {
@@ -2124,7 +2117,6 @@ void post_reg_write_clientcall(ThreadId tid, OffT guest_state_offset,
        || f == (Addr)pc_replace_memalign
        || f == (Addr)pc_replace_realloc)
    {
-     //     if (f == (Addr)pc_replace_realloc)return;
       // We remembered the last added segment;  make sure it's the right one.
       /* What's going on: at this point, the scheduler has just called
          'f' -- one of our malloc replacement functions -- and it has
@@ -2247,58 +2239,6 @@ static void post_syscall ( ThreadId tid, UInt syscallno, SysRes res )
 {
    switch (syscallno) {
 
-      /* For the most part, syscalls don't return pointers.  So set
-         the return shadow to unknown. */
-      case __NR_access:
-      case __NR_clock_gettime:
-      case __NR_close:
-#     if defined(__NR_connect)
-      case __NR_connect:
-#     endif
-      case __NR_exit_group:
-      case __NR_getcwd:
-      case __NR_getrlimit:
-      case __NR_fadvise64:
-      case __NR_fcntl:
-      case __NR_fstat:
-      case __NR_futex:
-#     if defined(__NR_fstat64)
-      case __NR_fstat64:
-#     endif
-      case __NR_getdents64: // something to do with teeth?
-      case __NR_getxattr:
-      case __NR_ioctl: // ioctl -- assuming no pointers returned
-      case __NR_lstat:
-      case __NR_mprotect:
-      case __NR_munmap: // die_mem_munmap already called, segment removed
-      case __NR_open:
-      case __NR_read:
-      case __NR_set_robust_list:
-#     if defined(__NR_set_thread_area)
-      case __NR_set_thread_area:
-#     endif
-      case __NR_set_tid_address:
-#     if defined(__NR_socket)
-      case __NR_socket:
-#     endif
-#     if defined(__NR_socketcall)
-      case __NR_socketcall: /* the nasty x86-linux socket multiplexor */
-#     endif
-      case __NR_rt_sigaction:
-      case __NR_rt_sigprocmask:
-      case __NR_stat:
-#     if defined(__NR_stat64)
-      case __NR_stat64:
-#     endif
-#     if defined(__NR_ugetrlimit)
-      case __NR_ugetrlimit:
-#     endif
-      case __NR_uname:
-      case __NR_write:
-        //VG_(set_syscall_return_shadows)( tid, (UWord)UNKNOWN, 0 );
-         VG_(set_syscall_return_shadows)( tid, (UWord)NONPTR, 0 );
-         break;
-
       /* These ones definitely don't return pointers.  They're not
          particularly grammatical, either. */
 #     if defined(__NR__llseek)
@@ -2310,35 +2250,48 @@ static void post_syscall ( ThreadId tid, UInt syscallno, SysRes res )
 #     if defined(__NR_accept)
       case __NR_accept:
 #     endif
+      case __NR_access:
 #     if defined(__NR_bind)
       case __NR_bind:
 #     endif
       case __NR_chdir:
       case __NR_chmod:
       case __NR_clock_getres:
+      case __NR_clock_gettime:
       case __NR_clone:
+      case __NR_close:
+#     if defined(__NR_connect)
+      case __NR_connect:
+#     endif
       case __NR_dup:
       case __NR_dup2:
       case __NR_exit: /* hmm, why are we still alive? */
+      case __NR_exit_group:
+      case __NR_fadvise64:
       case __NR_fchmod:
       case __NR_fchown:
 #     if defined(__NR_fchown32)
       case __NR_fchown32:
 #     endif
+      case __NR_fcntl:
 #     if defined(__NR_fcntl64)
       case __NR_fcntl64:
 #     endif
       case __NR_fdatasync:
-      case __NR_fstatfs:
-#     if defined(__NR_statfs64)
-      case __NR_statfs64:
+      case __NR_fstat:
+#     if defined(__NR_fstat64)
+      case __NR_fstat64:
 #     endif
+      case __NR_fstatfs:
       case __NR_fsync:
       case __NR_ftruncate:
 #     if defined(__NR_ftruncate64)
       case __NR_ftruncate64:
 #     endif
-      case __NR_getdents:
+      case __NR_futex:
+      case __NR_getcwd:
+      case __NR_getdents: // something to do with teeth?
+      case __NR_getdents64:
       case __NR_getegid:
 #     if defined(__NR_getegid32)
       case __NR_getegid32:
@@ -2351,9 +2304,11 @@ static void post_syscall ( ThreadId tid, UInt syscallno, SysRes res )
 #     if defined(__NR_getgid32)
       case __NR_getgid32:
 #     endif
+      case __NR_getitimer:
       case __NR_getppid:
       case __NR_getresgid:
       case __NR_getresuid:
+      case __NR_getrlimit:
 #     if defined(__NR_getsockname)
       case __NR_getsockname:
 #     endif
@@ -2365,21 +2320,28 @@ static void post_syscall ( ThreadId tid, UInt syscallno, SysRes res )
 #     if defined(__NR_getuid32)
       case __NR_getuid32:
 #     endif
+      case __NR_getxattr:
       case __NR_inotify_init:
+      case __NR_ioctl: // ioctl -- assuming no pointers returned
       case __NR_kill:
       case __NR_link:
 #     if defined(__NR_listen)
       case __NR_listen:
 #     endif
       case __NR_lseek:
+      case __NR_lstat:
 #     if defined(__NR_lstat64)
       case __NR_lstat64:
 #     endif
       case __NR_madvise:
       case __NR_mkdir:
+      case __NR_mprotect:
+      case __NR_munmap: // die_mem_munmap already called, segment removed
+      case __NR_open:
       case __NR_pipe:
       case __NR_poll:
       case __NR_pwrite64:
+      case __NR_read:
       case __NR_readlink:
       case __NR_readv:
 #     if defined(__NR_recvfrom)
@@ -2400,6 +2362,11 @@ static void post_syscall ( ThreadId tid, UInt syscallno, SysRes res )
 #     if defined(__NR_sendto)
       case __NR_sendto:
 #     endif
+      case __NR_set_robust_list:
+#     if defined(__NR_set_thread_area)
+      case __NR_set_thread_area:
+#     endif
+      case __NR_set_tid_address:
       case __NR_setitimer:
       case __NR_setrlimit:
 #     if defined(__NR_setsockopt)
@@ -2411,9 +2378,24 @@ static void post_syscall ( ThreadId tid, UInt syscallno, SysRes res )
 #     if defined(__NR_shutdown)
       case __NR_shutdown:
 #     endif
+#     if defined(__NR_socket)
+      case __NR_socket:
+#     endif
+#     if defined(__NR_socketcall)
+      case __NR_socketcall: /* the nasty x86-linux socket multiplexor */
+#     endif
+#     if defined(__NR_statfs64)
+      case __NR_statfs64:
+#     endif
+      case __NR_rt_sigaction:
+      case __NR_rt_sigprocmask:
 #     if defined(__NR_sigreturn)
       case __NR_sigreturn: /* not sure if we should see this or not */
 #     endif
+#     if defined(__NR_stat64)
+      case __NR_stat64:
+#     endif
+      case __NR_stat:
       case __NR_statfs:
       case __NR_symlink:
       case __NR_sysinfo:
@@ -2423,13 +2405,18 @@ static void post_syscall ( ThreadId tid, UInt syscallno, SysRes res )
 #     if defined(__NR_truncate64)
       case __NR_truncate64:
 #     endif
+#     if defined(__NR_ugetrlimit)
+      case __NR_ugetrlimit:
+#     endif
       case __NR_umask:
+      case __NR_uname:
       case __NR_unlink:
       case __NR_utime:
 #     if defined(__NR_waitpid)
       case __NR_waitpid:
 #     endif
       case __NR_wait4:
+      case __NR_write:
       case __NR_writev:
          VG_(set_syscall_return_shadows)( tid, (UWord)NONPTR, 0 );
          break;
@@ -2838,6 +2825,10 @@ void check_store16_ms8B_ls8B(Addr m, Seg mptr_vseg,
                              UWord ms8B, UWord ls8B)
 {
    tl_assert(sizeof(UWord) == 8); /* DO NOT REMOVE */
+#  if SC_SEGS
+   checkSeg(mptr_vseg);
+#  endif
+   check_load_or_store(/*is_write*/True, m, 16, mptr_vseg);
    // Actually *do* the STORE here
    if (host_is_little_endian()) {
       // FIXME: aren't we really concerned whether the guest
@@ -2860,6 +2851,10 @@ void check_store16_ms4B_4B_4B_ls4B(Addr m, Seg mptr_vseg,
                                    UWord w1,   UWord ls4B)
 {
    tl_assert(sizeof(UWord) == 4); /* DO NOT REMOVE */
+#  if SC_SEGS
+   checkSeg(mptr_vseg);
+#  endif
+   check_load_or_store(/*is_write*/True, m, 16, mptr_vseg);
    // Actually *do* the STORE here
    if (host_is_little_endian()) {
       // FIXME: aren't we really concerned whether the guest
@@ -2885,6 +2880,10 @@ void check_store8_ms4B_ls4B(Addr m, Seg mptr_vseg,
                             UWord ms4B, UWord ls4B)
 {
    tl_assert(sizeof(UWord) == 4); /* DO NOT REMOVE */
+#  if SC_SEGS
+   checkSeg(mptr_vseg);
+#  endif
+   check_load_or_store(/*is_write*/True, m, 8, mptr_vseg);
    // Actually *do* the STORE here
    if (host_is_little_endian()) {
       // FIXME: aren't we really concerned whether the guest
@@ -2904,6 +2903,10 @@ static VG_REGPARM(3)
 void check_store8_all8B(Addr m, Seg mptr_vseg, UWord all8B)
 {
    tl_assert(sizeof(UWord) == 8); /* DO NOT REMOVE */
+#  if SC_SEGS
+   checkSeg(mptr_vseg);
+#  endif
+   check_load_or_store(/*is_write*/True, m, 8, mptr_vseg);
    // Actually *do* the STORE here
    *(ULong*)m = all8B;
    nonptr_or_unknown_range(m, 8);
@@ -3020,11 +3023,11 @@ void check_store1(Addr m, Seg mptr_vseg, UWord t)
 // -------------
 static Seg do_addW_result(Seg seg1, Seg seg2, UWord result, HChar* opname)
 {
+   Seg out;
 #  if SC_SEGS
    checkSeg(seg1);
    checkSeg(seg2);
 #  endif
-   Seg out;
    BINOP(
       return BOTTOM,
       out = NONPTR,  out = UNKNOWN, out = seg2,
@@ -3057,11 +3060,11 @@ static VG_REGPARM(3) Seg do_addW(Seg seg1, Seg seg2, UWord result)
 // -------------
 static VG_REGPARM(3) Seg do_subW(Seg seg1, Seg seg2, UWord result)
 {
+   Seg out;
 #  if SC_SEGS
    checkSeg(seg1);
    checkSeg(seg2);
 #  endif
-   Seg out;
    // Nb: when returning BOTTOM, don't let it go through the range-check;
    //     a segment linking offset can easily look like a nonptr.
    BINOP(
@@ -3080,41 +3083,6 @@ static VG_REGPARM(3) Seg do_subW(Seg seg1, Seg seg2, UWord result)
    #endif
    return ( looks_like_a_pointer(result) ? out : NONPTR );
 }
-
-//zz // -------------
-//zz // +-.| n  ?  p   (Nb: not very certain about these ones)
-//zz // -------------
-//zz //  n | n  ?  e
-//zz //  ? | ?  ?  e
-//zz //  p | p  e  e
-//zz // -------------
-//zz static __inline__
-//zz Seg do_adcsbb4(Seg seg1, Seg seg2, Opcode opc)
-//zz {
-//zz    Seg out;
-//zz 
-//zz    VGP_PUSHCC(VgpDoAdcSbb);
-//zz    BINOP(
-//zz       VGP_POPCC(VgpDoAdcSbb); return BOTTOM,
-//zz       out = NONPTR,  out = UNKNOWN, BINERROR(opc),
-//zz       out = UNKNOWN, out = UNKNOWN, BINERROR(opc),
-//zz       out = seg1,    BINERROR(opc), BINERROR(opc)
-//zz    );
-//zz    VGP_POPCC(VgpDoAdcSbb);
-//zz    return ( looks_like_a_pointer(do_op___result) ? out : NONPTR );
-//zz }
-//zz 
-//zz static __attribute__((regparm(2)))
-//zz Seg do_adc4(Seg seg1, Seg seg2)
-//zz {
-//zz    return do_adcsbb4(seg1, seg2, ADC);
-//zz }
-//zz 
-//zz static __attribute__((regparm(2)))
-//zz Seg do_sbb4(Seg seg1, Seg seg2)
-//zz {
-//zz    return do_adcsbb4(seg1, seg2, SBB);
-//zz }
 
 // -------------
 //  & | n  ?  p
@@ -3180,80 +3148,6 @@ static VG_REGPARM(3) Seg do_orW(Seg seg1, Seg seg2, UWord result)
    return out;
 }
 
-//zz // -------------
-//zz // L1 | n  ?  p
-//zz // -------------
-//zz //  n | n  ?  p
-//zz //  ? | ?  ?  p
-//zz // -------------
-//zz static Seg do_lea(Bool k_looks_like_a_ptr, Seg seg1)
-//zz {
-//zz    Seg out;
-//zz 
-//zz    if (BOTTOM == seg1) return BOTTOM;
-//zz 
-//zz    if (k_looks_like_a_ptr && NONPTR == seg1)
-//zz       out = UNKNOWN;      // ?(n)
-//zz    else
-//zz       out = seg1;         // n(n), n(?), n(p), ?(?), ?(p)
-//zz 
-//zz    return ( looks_like_a_pointer(do_op___result) ? out : NONPTR );
-//zz }
-//zz 
-//zz static __attribute__((regparm(1)))
-//zz Seg do_lea1_unknown(Seg seg1)
-//zz {
-//zz    Seg out;
-//zz 
-//zz    VGP_PUSHCC(VgpDoLea1);
-//zz    out = do_lea( /*k_looks_like_a_ptr*/True, seg1 );
-//zz    VGP_POPCC (VgpDoLea1);
-//zz    return out;
-//zz }
-//zz 
-//zz static UInt do_lea2___k;
-//zz 
-//zz static __attribute__((regparm(2)))
-//zz Seg do_lea2_1(Seg seg1, Seg seg2)
-//zz {
-//zz    Seg out;
-//zz 
-//zz    // a) Combine seg1 and seg2 as for ADD, giving a result.
-//zz    // b) Combine that result with k as for LEA1.
-//zz    VGP_PUSHCC(VgpDoLea2);
-//zz    out = do_lea( looks_like_a_pointer(do_lea2___k),
-//zz                  do_add4_result(seg1, seg2, LEA2) );
-//zz    VGP_POPCC (VgpDoLea2);
-//zz    return out;
-//zz }
-//zz 
-//zz static __attribute__((regparm(2)))
-//zz Seg do_lea2_n(Seg seg1, Seg seg2)
-//zz {
-//zz    VGP_PUSHCC(VgpDoLea2);
-//zz    VGP_POPCC (VgpDoLea2);
-//zz 
-//zz    if (is_known_segment(seg2)) {
-//zz       // Could do with AsmError
-//zz       VG_(message)(Vg_UserMsg,
-//zz                    "\nScaling known pointer by value > 1 in lea instruction");
-//zz    }
-//zz    return do_lea(looks_like_a_pointer(do_lea2___k), seg1);
-//zz }
-//zz 
-//zz // -------------
-//zz //  - | n  ?  p
-//zz // -------------
-//zz //    | n  n  n
-//zz // -------------
-//zz static __attribute__((regparm(2)))
-//zz Seg do_neg4(Seg seg1, UInt result)
-//zz {
-//zz    if (BOTTOM == seg1) return BOTTOM;
-//zz 
-//zz    return NONPTR;
-//zz }
-
 // -------------
 //  ~ | n  ?  p
 // -------------
@@ -3283,65 +3177,9 @@ static VG_REGPARM(2) Seg do_mulW(Seg seg1, Seg seg2)
 }
 
  
-//zz static __attribute__((regparm(2)))
-//zz void check_imul4(Seg seg1, Seg seg2)
-//zz {
-//zz    if (is_known_segment(seg1) && is_known_segment(seg2))
-//zz       record_arith_error(0xA5, 0xA5, seg1, seg2, -VGOFF_(helper_imul_32_64));
-//zz }
-//zz 
-//zz // seg1 / seg2: div_64_32 can take a pointer for its 2nd arg (seg1).
-//zz static __attribute__((regparm(2)))
-//zz void check_div4(Seg seg1, Seg seg2)
-//zz {
-//zz    if (is_known_segment(seg2))
-//zz       record_arith_error(0xA5, 0xA5, seg1, seg2, -VGOFF_(helper_div_64_32));
-//zz }
-//zz 
-//zz // seg1 / seg2: idiv_64_32 can take a pointer for its 2nd or 3rd arg
-//zz // (because the 3rd arg, ie. the high-word, will be derived from the
-//zz // low-word with a 'sar' in order to get the sign-bit correct).  But we only
-//zz // check the lo-word.
-//zz static __attribute__((regparm(2)))
-//zz void check_idiv4(Seg seg1, Seg seg2)
-//zz {
-//zz    if (is_known_segment(seg2))
-//zz       record_arith_error(0xA5, 0xA5, seg1, seg2, -VGOFF_(helper_idiv_64_32));
-//zz }
-//zz 
-//zz 
-//zz /*--------------------------------------------------------------------*/
-//zz /*--- Instrumentation                                              ---*/
-//zz /*--------------------------------------------------------------------*/
-//zz 
-//zz static void set_nonptr_or_unknown(UCodeBlock* cb, UInt t)
-//zz {
-//zz    sk_assert(0 == t % 2);     // check number is even, ie. a normal tempreg
-//zz    VG_(ccall_R_R)(cb, (Addr)nonptr_or_unknown,
-//zz                   t,            // t      (reg)
-//zz                   SHADOW(t),    // t.vseg (reg)(retval)
-//zz                   1);
-//zz }
-//zz 
-//zz static void set_shadowreg(UCodeBlock* cb, UInt q, Seg seg)
-//zz {
-//zz    sk_assert(1 == q % 2);     // check number is odd, ie. a shadow tempreg
-//zz    VG_(lit_to_reg)(cb, (UInt)seg, q);
-//zz }
-//zz 
-//zz static void set_nonptr(UCodeBlock* cb, UInt q)
-//zz {
-//zz    set_shadowreg(cb, q, NONPTR);
-//zz }
-//zz 
-//zz __attribute__((unused))
-//zz static void record_binary_arith_args(UCodeBlock* cb, UInt arg1, UInt arg2)
-//zz {
-//zz    VG_(reg_to_globvar)(cb, arg1, &actual_arg1);
-//zz    VG_(reg_to_globvar)(cb, arg2, &actual_arg2);
-//zz }
-
-
+/*--------------------------------------------------------------------*/
+/*--- Instrumentation                                              ---*/
+/*--------------------------------------------------------------------*/
 
 /* Carries around state during Ptrcheck instrumentation. */
 typedef
@@ -4659,575 +4497,6 @@ static void schemeS ( PCEnv* pce, IRStmt* st )
          ppIRStmt(st);
          tl_assert(0);
    }
-//zz    static UInt bb = 0;
-//zz 
-//zz    UCodeBlock* cb;
-//zz    Int         i;
-//zz    UInstr*     u;
-//zz    Addr        helper;
-//zz    UInt        callm_shadow_arg4v[3];
-//zz    UInt        callm_arg4c = -1;
-//zz 
-//zz    cb = VG_(setup_UCodeBlock)(cb_in);
-//zz 
-//zz    // Print BB number upon execution
-//zz    if (0)
-//zz       VG_(ccall_L_0)(cb, (Addr)print_BB_entry, bb++, 1);
-//zz 
-//zz 
-//zz    for (i = 0; i < VG_(get_num_instrs)(cb_in); i++) {
-//zz       u = VG_(get_instr)(cb_in, i);
-//zz 
-//zz       //-- Start main switch -------------------------------------------
-//zz       switch (u->opcode) {
-//zz 
-//zz       case NOP:
-//zz          break;
-//zz 
-//zz       case LOCK:
-//zz       case INCEIP:
-//zz          VG_(copy_UInstr)(cb, u);
-//zz          break;
-//zz 
-//zz       //--- Value movers -----------------------------------------------
-//zz       case MOV:
-//zz          // a) Do MOV
-//zz          VG_(copy_UInstr)(cb, u);
-//zz          if (4 == u->size) {
-//zz             if (Literal == u->tag1) {
-//zz                // MOVL l, t2
-//zz                // b) t2.vseg = NONPTR/UNKNOWN
-//zz                set_shadowreg(cb, SHADOW(u->val2), nonptr_or_unknown(u->lit32));
-//zz             } else {
-//zz                // MOVL t1, t2 (only occurs if --optimise=no)
-//zz                // b) t2.vseg = t1.vseg
-//zz                uInstr2(cb, MOV, 4, TempReg, SHADOW(u->val1),
-//zz                                    TempReg, SHADOW(u->val2));
-//zz             }
-//zz          } else {
-//zz             // MOV[WB] l, t2
-//zz             // b) t2.vseg = NONPTR
-//zz             sk_assert(Literal == u->tag1);
-//zz             set_nonptr(cb, SHADOW(u->val2));
-//zz          }
-//zz          break;
-//zz 
-//zz       case CMOV:
-//zz          // CMOV t1, t2
-//zz          // a) t2.vseg = t1.vseg, if condition holds
-//zz          // b) Do CMOV
-//zz          sk_assert(4 == u->size);
-//zz          uInstr2(cb, CMOV, 4, TempReg, SHADOW(u->val1),
-//zz                               TempReg, SHADOW(u->val2));
-//zz          uCond(cb, u->cond);
-//zz          uFlagsRWU(cb, u->flags_r, u->flags_w, FlagsEmpty);
-//zz          VG_(copy_UInstr)(cb, u);
-//zz          break;
-//zz 
-//zz       case GET:
-//zz          // a) Do GET
-//zz          VG_(copy_UInstr)(cb, u);
-//zz          if (4 == u->size) {
-//zz             // GETL r, t2
-//zz             // b) t2.vseg = r.vseg
-//zz             uInstr2(cb, GETV, 4, ArchReg, u->val1, TempReg, SHADOW(u->val2));
-//zz          } else {
-//zz             // GET[WB] r, t2
-//zz             // b) t2.vseg = NONPTR
-//zz             set_nonptr(cb, SHADOW(u->val2));
-//zz          }
-//zz          break;
-//zz 
-//zz       case PUT: {
-//zz          // a) Do PUT
-//zz          VG_(copy_UInstr)(cb, u);
-//zz          if (4 == u->size) {
-//zz             // PUTL t1, r
-//zz             // b) r.vseg = t1.vseg
-//zz             uInstr2(cb, PUTV, 4, TempReg, SHADOW(u->val1), ArchReg, u->val2);
-//zz          } else {
-//zz             // PUT[WB] t1, r
-//zz             // b) r.vseg = NONPTR/UNKNOWN
-//zz             //    (GET the result of the PUT[WB], look at the resulting
-//zz             //     word, PUTV the shadow result.  Ugh.)
-//zz             UInt t_res = newTemp(cb);
-//zz             uInstr2(cb, GET,  4, ArchReg, u->val2, TempReg, t_res);
-//zz             set_nonptr_or_unknown(cb, t_res);
-//zz             uInstr2(cb, PUTV, 4, TempReg, SHADOW(t_res), ArchReg, u->val2);
-//zz          }
-//zz          break;
-//zz       }
-//zz 
-//zz       case GETF:
-//zz          // GETF t1
-//zz          // a) t1.vseg = NONPTR
-//zz          // b) Do GETF
-//zz          set_nonptr(cb, SHADOW(u->val1));
-//zz          VG_(copy_UInstr)(cb, u);
-//zz          break;
-//zz 
-//zz       case PUTF:
-//zz          // PUTF t1
-//zz          // a) Do PUTF
-//zz          VG_(copy_UInstr)(cb, u);
-//zz          break;
-//zz 
-//zz       case LOAD:
-//zz          // LD[LWB] m, t
-//zz          if      (4 == u->size) helper = (Addr)check_load4;
-//zz          else if (2 == u->size) helper = (Addr)check_load2;
-//zz          else if (1 == u->size) helper = (Addr)check_load1;
-//zz          else    VG_(skin_panic)("bad LOAD size");
-//zz 
-//zz          // a) Check segments match (in helper)
-//zz          // b) t.vseg = m.vseg (helper returns m.vseg)
-//zz          // c) Do LOAD (must come after segment check!)
-//zz          VG_(ccall_RR_R)(cb, helper,
-//zz                          u->val1,            // m              (reg)
-//zz                          SHADOW(u->val1),    // m_ptr.vseg     (reg)
-//zz                          SHADOW(u->val2),    // t.vseg (retval)(reg)
-//zz                          2);
-//zz          VG_(copy_UInstr)(cb, u);
-//zz          break;
-//zz 
-//zz       case STORE:
-//zz          if (4 == u->size) {
-//zz             // Put t.vseg in globvar-arg
-//zz             VG_(reg_to_globvar)(cb, SHADOW(u->val1),
-//zz                                 (UInt*) & check_store4___t_vseg);
-//zz             helper = (Addr)check_store4;
-//zz          } 
-//zz          else if (1 == u->size) helper = (Addr)check_store1;
-//zz          else if (2 == u->size) helper = (Addr)check_store2;
-//zz          else                   VG_(skin_panic)("bad size for STORE");
-//zz             
-//zz          // a) Check segments match
-//zz          // b) Do STORE (after segment check; done by helper)
-//zz          //
-//zz          // STL t, m
-//zz          // c) if aligned(m), m.vseg = t.vseg
-//zz          //    else vseg of both words touched set to UNKNOWN
-//zz          //
-//zz          // ST[WB] t, m
-//zz          // c) if non-straddling(m), m.vseg = NONPTR/UNKNOWN
-//zz          //    else vseg of both words touched set to UNKNOWN
-//zz          VG_(ccall_RRR_0)(cb, helper,
-//zz                               u->val2,          // m          (reg)
-//zz                               SHADOW(u->val2),  // m_ptr.vseg (reg)
-//zz                               u->val1,          // t          (reg)
-//zz                               3);
-//zz          break;
-//zz 
-//zz       //--- Binary arithmetic ------------------------------------------
-//zz       case ADD: helper = (Addr)do_add4;  goto do_add_sub;
-//zz       case ADC: helper = (Addr)do_adc4;  goto do_add_sub;
-//zz       case SUB: helper = (Addr)do_sub4;  goto do_add_sub;
-//zz       case SBB: helper = (Addr)do_sbb4;  goto do_add_sub;
-//zz        do_add_sub:
-//zz          // a) Do OP (and record result in globvar)
-//zz //record_binary_arith_args(cb, u->val2, t1);
-//zz 
-//zz          VG_(copy_UInstr)(cb, u);
-//zz          if (4 == u->size) {
-//zz             UInt t1;
-//zz             if (Literal == u->tag1) {
-//zz                // OPL l, t2
-//zz                Seg segL = nonptr_or_unknown(u->lit32);
-//zz                t1 = newTemp(cb);
-//zz                VG_(lit_to_reg)(cb, u->lit32,   t1);
-//zz                VG_(lit_to_reg)(cb, (UInt)segL, SHADOW(t1));
-//zz             } else if (ArchReg == u->tag1) {
-//zz                // OPL r, t2
-//zz                t1 = newTemp(cb);
-//zz                uInstr2(cb, GET,  4, ArchReg, u->val1, TempReg, t1);
-//zz                uInstr2(cb, GETV, 4, ArchReg, u->val1, TempReg, SHADOW(t1));
-//zz             } else {
-//zz                // OPL t1, t2
-//zz                sk_assert(TempReg == u->tag1);
-//zz                t1 = u->val1;
-//zz             }
-//zz 
-//zz             // Put result in globvar-arg
-//zz             VG_(reg_to_globvar)(cb, u->val2, &do_op___result);
-//zz             // b) Check args (if necessary;  ok to do after the OP itself)
-//zz             // c) Update t.vseg
-//zz             VG_(ccall_RR_R)(cb, helper,
-//zz                             SHADOW(u->val2),    // t2.vseg (reg)
-//zz                             SHADOW(t1),         // t1.vseg (reg)
-//zz                             SHADOW(u->val2),    // t2.vseg (reg)(retval)
-//zz                             2);
-//zz          } else {
-//zz             // OP[WB] x, t2
-//zz             // b) t2.vseg = UKNOWN
-//zz             set_nonptr_or_unknown(cb, u->val2);
-//zz          }
-//zz          break;
-//zz 
-//zz       case AND:
-//zz          // a) Do AND
-//zz          VG_(copy_UInstr)(cb, u);
-//zz          if (4 == u->size) {
-//zz             // ANDL t1, t2
-//zz             // Find difference between t1 and t2 (to determine if they're equal)
-//zz             // put in globvar-arg
-//zz             UInt t_equal = newTemp(cb);
-//zz             uInstr2(cb, MOV, 4, TempReg, u->val2, TempReg, t_equal);
-//zz             uInstr2(cb, SUB, 4, TempReg, u->val1, TempReg, t_equal);
-//zz             VG_(reg_to_globvar)(cb, t_equal, &do_and4___args_diff);
-//zz             // Put result in globvar-arg
-//zz             VG_(reg_to_globvar)(cb, u->val2, &do_op___result);
-//zz             // b) Update t2.vseg
-//zz             VG_(ccall_RR_R)(cb, (Addr)do_and4,
-//zz                            SHADOW(u->val1),    // t1.vseg (reg)
-//zz                            SHADOW(u->val2),    // t2.vseg (reg)
-//zz                            SHADOW(u->val2),    // t2.vseg (reg)(retval)
-//zz                            2);
-//zz          } else {
-//zz             // AND[WB] t1, t2
-//zz             // b) t2.vseg = NONPTR/UNKNOWN
-//zz             set_nonptr_or_unknown(cb, u->val2);
-//zz          }
-//zz          break;
-//zz 
-//zz       case OR:
-//zz          // a) Do OR
-//zz          VG_(copy_UInstr)(cb, u);
-//zz          if (4 == u->size) {
-//zz             // ORL t1, t2
-//zz             // Put result in globvar-arg
-//zz             VG_(reg_to_globvar)(cb, u->val2, &do_op___result);
-//zz             // b) Update t2.vseg
-//zz             VG_(ccall_RR_R)(cb, (Addr)do_or4,
-//zz                            SHADOW(u->val1),    // t1.vseg (reg)
-//zz                            SHADOW(u->val2),    // t2.vseg (reg)
-//zz                            SHADOW(u->val2),    // t2.vseg (reg)(retval)
-//zz                            2);
-//zz          } else {
-//zz             // OR[WB] t1, t2
-//zz             // b) t2.vseg = NONPTR/UNKNOWN
-//zz             set_nonptr_or_unknown(cb, u->val2);
-//zz          }
-//zz          break;
-//zz 
-//zz       // With XOR, the result is likely to be a nonptr, but could
-//zz       // occasionally not be due to weird things like xor'ing a pointer with
-//zz       // zero, or using the xor trick for swapping two variables.  So,
-//zz       // simplest thing is to just look at the range.
-//zz       case XOR:
-//zz          // XOR[LWB] x, t2
-//zz          // a) Do XOR
-//zz          // b) t2.vseg = NONPTR/UNKNOWN
-//zz          VG_(copy_UInstr)(cb, u);
-//zz          set_nonptr_or_unknown(cb, u->val2);
-//zz          break;
-//zz 
-//zz       // Nb: t1 is always 1-byte, and thus never a pointer.
-//zz       case SHL: case SHR: case SAR:
-//zz       case ROL: case ROR:
-//zz          // SHROT x, t2
-//zz          // a) Do SHROT
-//zz          // b) t2.vseg = NONPTR/UNKNOWN
-//zz          VG_(copy_UInstr)(cb, u);
-//zz          set_nonptr_or_unknown(cb, u->val2);
-//zz          break;
-//zz 
-//zz       // LEA2 t1,t2,t3:  t3 = lit32 + t1 + (t2 * extra4b)
-//zz       // Used for pointer computations, and for normal arithmetic (eg.
-//zz       // "lea (%r1,%r1,4),%r2" multiplies by 5).
-//zz       case LEA2:
-//zz          sk_assert(4 == u->size);
-//zz          // a) Do LEA2
-//zz          VG_(copy_UInstr)(cb, u);
-//zz          if (1 == u->extra4b) {
-//zz             // t3 = lit32 + t1 + (t2*1)  (t2 can be pointer)
-//zz             helper = (Addr)do_lea2_1;
-//zz          } else {
-//zz             // t3 = lit32 + t1 + (t2*n)  (t2 cannot be pointer)
-//zz             helper = (Addr)do_lea2_n;
-//zz          }
-//zz          // Put k in globvar-arg
-//zz          VG_(lit_to_globvar)(cb, u->lit32, &do_lea2___k);
-//zz          // Put result in globvar-arg
-//zz          VG_(reg_to_globvar)(cb, u->val3,  &do_op___result);
-//zz          // b) Check args
-//zz          // c) Update t3.vseg
-//zz          VG_(ccall_RR_R)(cb, helper,
-//zz                          SHADOW(u->val1),    // t1.vseg (reg)
-//zz                          SHADOW(u->val2),    // t2.vseg (reg)
-//zz                          SHADOW(u->val3),    // t3.vseg (reg)(retval)
-//zz                          2);
-//zz          break;
-//zz 
-//zz       //--- Unary arithmetic -------------------------------------------
-//zz       case NEG: helper = (Addr)do_neg4;  goto do_neg_not;
-//zz       case NOT: helper = (Addr)do_not4;  goto do_neg_not;
-//zz        do_neg_not:
-//zz          // a) Do NEG/NOT
-//zz          VG_(copy_UInstr)(cb, u);
-//zz          if (4 == u->size) {
-//zz             // NEGL/NOTL t1
-//zz             // b) Check args (NEG only)
-//zz             // c) Update t1.vseg
-//zz             VG_(ccall_RR_R)(cb, helper,
-//zz                             SHADOW(u->val1),    // t1.vseg (reg)
-//zz                             u->val2,            // t2      (reg)
-//zz                             SHADOW(u->val1),    // t1.vseg (reg)(retval)
-//zz                             2);
-//zz          } else {
-//zz             // NEG[WB]/NOT[WB] t1
-//zz             // b) Update t1.vseg
-//zz             set_nonptr_or_unknown(cb, u->val2);
-//zz          }
-//zz          break;
-//zz 
-//zz       case INC:
-//zz       case DEC:
-//zz          // INC[LWB]/DEC[LWB] t1
-//zz          // a) Do INC/DEC
-//zz          // b) t1.vseg unchanged (do nothing)
-//zz          VG_(copy_UInstr)(cb, u);
-//zz          break;
-//zz 
-//zz       case LEA1:
-//zz          sk_assert(4 == u->size);
-//zz          // LEA1 k(t1), t2
-//zz          // b) Do LEA1
-//zz          VG_(copy_UInstr)(cb, u);
-//zz          if ( ! looks_like_a_pointer(u->lit32) ) {
-//zz             // a) simple, 99.9% case: k is a known nonptr, t2.vseg = t1.vseg
-//zz             uInstr2(cb, MOV, 4, TempReg, SHADOW(u->val1),
-//zz                                 TempReg, SHADOW(u->val2));
-//zz          } else {
-//zz             // Put result in globvar-arg (not strictly necessary, because we
-//zz             // have a spare CCALL slot, but do it for consistency)
-//zz             VG_(reg_to_globvar)(cb, u->val2,  &do_op___result);
-//zz             // a) complicated, 0.1% case: k could be a pointer
-//zz             VG_(ccall_R_R)(cb, (Addr)do_lea1_unknown,
-//zz                            SHADOW(u->val1),    // t1.vseg (reg)
-//zz                            SHADOW(u->val2),    // t2.vseg (reg)(retval)
-//zz                            1);
-//zz          }
-//zz          break;
-//zz 
-//zz       //--- End of arithmetic ------------------------------------------
-//zz 
-//zz       case WIDEN:
-//zz          // WIDEN t1
-//zz          // a) Do WIDEN
-//zz          VG_(copy_UInstr)(cb, u);
-//zz          break;
-//zz 
-//zz       case CC2VAL:
-//zz          // CC2VAL t1
-//zz          // a) t1.vseg = NONPTR
-//zz          // b) Do CC2VAL
-//zz          set_nonptr(cb, SHADOW(u->val1));
-//zz          VG_(copy_UInstr)(cb, u);
-//zz          break;
-//zz 
-//zz       case BSWAP:
-//zz          // BSWAP t1
-//zz          // a) t1.vseg = UNKNOWN
-//zz          // b) Do BSWAP
-//zz          set_nonptr_or_unknown(cb, u->val1);
-//zz          VG_(copy_UInstr)(cb, u);
-//zz          break;
-//zz 
-//zz       case JIFZ:
-//zz       case JMP:
-//zz          VG_(copy_UInstr)(cb, u);
-//zz          break;
-//zz 
-//zz       //--- CALLM and related ------------------------------------------
-//zz       // Basic form of CALLMs, as regexp:
-//zz       //   CALLM_S (GET? PUSH)* CALLM (POP PUT? | CLEAR)* CALLM_E
-//zz       //
-//zz       // How we're doing things:
-//zz       // - PUSH:  Args will be popped/cleared, so no need to set the shadows.
-//zz       //          Check input depending on the callee.
-//zz       // - CALLM: Do nothing, already checked inputs on PUSH.
-//zz       // - POP:   Depending on the callee, set popped outputs as
-//zz       //          pointer/non-pointer.  But all callees seem to produce
-//zz       //          NONPTR outputs, so just set output arg so straight off.
-//zz       case CALLM_S:
-//zz          sk_assert(-1 == callm_arg4c);
-//zz          callm_arg4c = 0;
-//zz          break;
-//zz 
-//zz       case CALLM_E:
-//zz          sk_assert(-1 != callm_arg4c);
-//zz          callm_arg4c = -1;
-//zz          break;
-//zz 
-//zz       case PUSH:
-//zz          sk_assert(-1 != callm_arg4c);
-//zz          if (4 == u->size) {
-//zz             // PUSHL t1
-//zz             callm_shadow_arg4v[ callm_arg4c++ ] = SHADOW(u->val1); 
-//zz          }
-//zz          // a) Do PUSH
-//zz          VG_(copy_UInstr)(cb, u);
-//zz          break;
-//zz 
-//zz       // All the ops using helpers certainly don't return pointers, except
-//zz       // possibly, sh[rl]dl.  I'm not sure about them, but make the result
-//zz       // NONPTR anyway.
-//zz       case POP:
-//zz          // POP t1
-//zz          // a) set t1.vseg == NONPTR
-//zz          // b) Do POP
-//zz          sk_assert(-1 != callm_arg4c);
-//zz          set_nonptr(cb, SHADOW(u->val1));
-//zz          VG_(copy_UInstr)(cb, u);
-//zz          break;
-//zz 
-//zz       case CLEAR:
-//zz          sk_assert(-1 != callm_arg4c);
-//zz          VG_(copy_UInstr)(cb, u);
-//zz          break;
-//zz 
-//zz       case CALLM:
-//zz          if (!(0 <= callm_arg4c && callm_arg4c <= 4)) {
-//zz             VG_(printf)("callm_arg4c = %d\n", callm_arg4c);
-//zz             VG_(skin_panic)("bleh");
-//zz          }
-//zz 
-//zz          #define V(name)   (VGOFF_(helper_##name) == u->val1)
-//zz 
-//zz          if (V(mul_32_64)) {
-//zz             sk_assert(2 == callm_arg4c);
-//zz             VG_(ccall_RR_0)(cb, (Addr)check_mul4,
-//zz                             callm_shadow_arg4v[1], // arg2.vseg (reg)
-//zz                             callm_shadow_arg4v[0], // arg1.vseg (reg)
-//zz                             2);
-//zz 
-//zz          } else if (V(imul_32_64)) {
-//zz             sk_assert(2 == callm_arg4c);
-//zz             VG_(ccall_RR_0)(cb, (Addr)check_imul4,
-//zz                             callm_shadow_arg4v[1], // arg2.vseg (reg)
-//zz                             callm_shadow_arg4v[0], // arg1.vseg (reg)
-//zz                             2);
-//zz 
-//zz          } else if (V(div_64_32)) {
-//zz             sk_assert(3 == callm_arg4c);
-//zz             VG_(ccall_RR_0)(cb, (Addr)check_div4,
-//zz                             callm_shadow_arg4v[1], // arg2.vseg (reg)
-//zz                             callm_shadow_arg4v[0], // arg1.vseg (reg)
-//zz                             2);
-//zz 
-//zz          } else if (V(idiv_64_32)) {
-//zz             sk_assert(3 == callm_arg4c);
-//zz             VG_(ccall_RR_0)(cb, (Addr)check_idiv4,
-//zz                             callm_shadow_arg4v[1], // arg2.vseg (reg)
-//zz                             callm_shadow_arg4v[0], // arg1.vseg (reg)
-//zz                             2);
-//zz 
-//zz          } else if (V(shldl) || V(shrdl)) {
-//zz             sk_assert(2 == callm_arg4c);
-//zz             // a) Do shrdl/shldl
-//zz 
-//zz          } else if (V(bsf) || V(bsr)) {
-//zz             // Shouldn't take a pointer?  Don't bother checking.
-//zz             sk_assert(2 == callm_arg4c);
-//zz 
-//zz          } else if (V(get_dirflag)) {
-//zz             // This always has zero pushed as the arg.
-//zz             sk_assert(1 == callm_arg4c);
-//zz 
-//zz          } else if (V(RDTSC))    { sk_assert(2 == callm_arg4c);
-//zz          } else if (V(CPUID))    { sk_assert(4 == callm_arg4c);
-//zz          } else if (V(SAHF))     { sk_assert(1 == callm_arg4c);
-//zz          } else if (V(LAHF))     { sk_assert(1 == callm_arg4c);
-//zz          } else if (V(fstsw_AX)) { sk_assert(1 == callm_arg4c);
-//zz 
-//zz          } else {
-//zz             // Others don't take any word-sized args
-//zz             //sk_assert(0 == callm_arg4c);
-//zz             if (0 != callm_arg4c) {
-//zz                VG_(printf)("callm_arg4c = %d, %d, %d\n", 
-//zz                            callm_arg4c, VGOFF_(helper_RDTSC), u->val1);
-//zz                sk_assert(1 == 0);
-//zz             }
-//zz          }
-//zz 
-//zz          #undef V
-//zz 
-//zz          VG_(copy_UInstr)(cb, u);
-//zz          break;
-//zz       //--- End of CALLM and related -----------------------------------
-//zz 
-//zz       case FPU:
-//zz       case MMX1: case MMX2: case MMX3:
-//zz       case SSE3: case SSE4: case SSE5:
-//zz          // a) Do FPU/MMX[123]/SSE[345]
-//zz          VG_(copy_UInstr)(cb, u);
-//zz          break;
-//zz 
-//zz       // We check the load, but don't do any updating, because the read is
-//zz       // into FPU/MMX/SSE regs which we don't shadow.
-//zz       case FPU_R:
-//zz       case MMX2_MemRd:
-//zz          switch (u->size) {
-//zz          case 2:   helper = (Addr)check_fpu_r2;   break;
-//zz          case 4:   helper = (Addr)check_fpu_r4;   break;
-//zz          case 8:   helper = (Addr)check_fpu_r8;   break;
-//zz          case 10:  helper = (Addr)check_fpu_r10;  break;
-//zz          case 16:  helper = (Addr)check_fpu_r16;  break;
-//zz          case 28:  helper = (Addr)check_fpu_r28;  break;
-//zz          case 108: helper = (Addr)check_fpu_r108; break;
-//zz          default:  VG_(skin_panic)("bad FPU_R/MMX/whatever size");
-//zz          }
-//zz          // FPU_R, MMX2_MemRd
-//zz          // a) Check segments match (in helper)
-//zz          // b) Do FPU_R/MMX2_MemRd
-//zz          VG_(ccall_RR_0)(cb, helper,
-//zz                          u->val2,            // m              (reg)
-//zz                          SHADOW(u->val2),    // m_ptr.vseg     (reg)
-//zz                          2);
-//zz          VG_(copy_UInstr)(cb, u);
-//zz          break;
-//zz 
-//zz       case FPU_W: {
-//zz       case MMX2_MemWr:
-//zz          switch (u->size) {
-//zz          case 2:   helper = (Addr)check_fpu_w2;   break;
-//zz          case 4:   helper = (Addr)check_fpu_w4;   break;
-//zz          case 8:   helper = (Addr)check_fpu_w8;   break;
-//zz          case 10:  helper = (Addr)check_fpu_w10;  break;
-//zz          case 16:  helper = (Addr)check_fpu_w16;  break;
-//zz          case 28:  helper = (Addr)check_fpu_w28;  break;
-//zz          case 108: helper = (Addr)check_fpu_w108; break;
-//zz          default:  VG_(skin_panic)("bad FPU_W/MMX/whatever size");
-//zz          }
-//zz          // FPU_W, MMX2_MemWr
-//zz          // a) Check segments match (in helper)
-//zz          // b) m.vseg = NONPTR, for each touched memory word
-//zz          // c) Do FPU_W/MMX2_MemWr
-//zz          VG_(ccall_RR_0)(cb, helper,
-//zz                          u->val2,            // m              (reg)
-//zz                          SHADOW(u->val2),    // m_ptr.vseg     (reg)
-//zz                          2);
-//zz          VG_(copy_UInstr)(cb, u);
-//zz          break;
-//zz       }
-//zz 
-//zz       default:
-//zz          VG_(pp_UInstr)(0, u);
-//zz          VG_(skin_panic)("Redux: unhandled instruction");
-//zz       }
-//zz       //-- End main switch ---------------------------------------------
-//zz    }
-//zz 
-//zz    VG_(free_UCodeBlock)(cb_in);
-//zz 
-//zz    // Optimisations
-//zz //   {
-//zz //      Int* live_range_ends = VG_(find_live_range_ends)(cb);
-//zz //      VG_(redundant_move_elimination)(cb, live_range_ends);
-//zz //      VG_(free_live_range_ends)(live_range_ends);
-//zz //   }
-//zz 
-//zz    return cb;
 }
 
 
@@ -5353,34 +4622,6 @@ static void pc_fini ( Int exitcode );  /* just below */
 
 static void pc_pre_clo_init ( void )
 {
-//zz    Int i;
-//zz    // 0-terminated arrays
-//zz    Addr compact_helpers[] = {
-//zz       (Addr) do_lea1_unknown, (Addr) do_sub4,
-//zz       (Addr) check_load4,     (Addr) check_store4,
-//zz       (Addr) do_add4,         (Addr) do_and4,
-//zz       (Addr) do_or4,          (Addr) nonptr_or_unknown,
-//zz       0
-//zz    };
-//zz    Addr noncompact_helpers[] = {
-//zz       (Addr) do_lea2_1,       (Addr) do_lea2_n,
-//zz       (Addr) do_adc4,         (Addr) do_sbb4,
-//zz       (Addr) do_neg4,         (Addr) do_not4,
-//zz       (Addr) print_BB_entry,
-//zz       (Addr) check_load1,     (Addr) check_store1,
-//zz       (Addr) check_load2,     (Addr) check_store2,
-//zz       (Addr) check_imul4,     (Addr) check_mul4,
-//zz       (Addr) check_idiv4,     (Addr) check_div4,
-//zz       (Addr) check_fpu_r2,    (Addr) check_fpu_w2,
-//zz       (Addr) check_fpu_r4,    (Addr) check_fpu_w4,
-//zz       (Addr) check_fpu_r8,    (Addr) check_fpu_w8,
-//zz       (Addr) check_fpu_r10,   (Addr) check_fpu_w10,
-//zz       (Addr) check_fpu_r16,   (Addr) check_fpu_w16,
-//zz       (Addr) check_fpu_r28,   (Addr) check_fpu_w28,
-//zz       (Addr) check_fpu_r108,  (Addr) check_fpu_w108,
-//zz       0
-//zz    };
-
    VG_(details_name)            ("exp-ptrcheck");
    VG_(details_version)         (NULL);
    VG_(details_description)     ("a pointer-use checker");
@@ -5457,33 +4698,6 @@ static void pc_pre_clo_init ( void )
 //zz    VG_(track_post_reg_write_clientreq_return)  ( post_reg_write_nonptr     );
    VG_(track_post_reg_write_clientcall_return) ( post_reg_write_clientcall );
    VG_(track_post_reg_write)( post_reg_write_demux );
-//zz 
-//zz    // Helpers
-//zz    for (i = 0; compact_helpers[i] != 0; i++)
-//zz       VG_(register_compact_helper)( compact_helpers[i] );
-//zz 
-//zz    for (i = 0; noncompact_helpers[i] != 0; i++)
-//zz       VG_(register_noncompact_helper)( noncompact_helpers[i] );
-//zz 
-//zz    // Profiling events
-//zz    #define P(a,b) VGP_(register_profile_event)(a,b);
-//zz    P(VgpGetMemAseg,     "get-mem-aseg");
-//zz    P(VgpCheckLoadStore, "check-load-store");
-//zz    P(VgpCheckLoad4,     "check-load4");
-//zz    P(VgpCheckLoad21,    "check-load21");
-//zz    P(VgpCheckStore4,    "check-store4");
-//zz    P(VgpCheckStore21,   "check-store21");
-//zz    P(VgpCheckFpuR,      "check-fpu-r");
-//zz    P(VgpCheckFpuW,      "check-fpu-w");
-//zz    P(VgpDoAdd,          "do-add");
-//zz    P(VgpDoSub,          "do-sub");
-//zz    P(VgpDoAdcSbb,       "do-adc-sbb");
-//zz    P(VgpDoXor,          "do-xor");
-//zz    P(VgpDoAnd,          "do-and");
-//zz    P(VgpDoOr,           "do-or");
-//zz    P(VgpDoLea1,         "do-lea1");
-//zz    P(VgpDoLea2,         "do-lea2");
-//zz    #undef P
 
    // Other initialisation
    init_shadow_memory();
