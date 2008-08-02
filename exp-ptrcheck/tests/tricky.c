@@ -10,8 +10,8 @@ int main(void)
    int* p = malloc(sizeof(int) * 100);
 
    p[0] = 0;                           // ok
-   int* n = (int*)((int)p+(int)u);     // result is n, because near zero!
-   int* x = (int*)((int)n - (int)u);   // x == p
+   int* n = (int*)((long)p + (long)u); // result is n, because near zero!
+   int* x = (int*)((long)n - (long)u); // x == p
    x[0] = 0;                           // ok, originally caused false pos.
 
    return 0;

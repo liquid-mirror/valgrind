@@ -14,7 +14,7 @@ int main ( void )
    int* y6 = malloc(6);
    int* y7 = malloc(7);
 
-   #define ADDB(ptr, n)  ((int*)(((unsigned int)(ptr)) + (n)))
+   #define ADDB(ptr, n)  ((long*)(((unsigned long)(ptr)) + (n)))
 
    // All these overrun by a single byte;  the reads are happening at
    // different alignments.
@@ -39,7 +39,7 @@ int main ( void )
 
    // These are all bad
    f   = * f3;    // ok if --partial-loads-ok=yes
-   d   = * d7;    // ok if --partial-loads-ok=yes
+   d   = * d7;
    lli = * lli7;  // ok if --partial-loads-ok=yes
    c   = * c0;
    s   = * s1;

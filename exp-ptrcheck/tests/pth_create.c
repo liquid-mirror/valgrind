@@ -14,9 +14,9 @@ int main(void)
    pthread_key_t* key  = malloc(sizeof(pthread_key_t));
    pthread_key_t* key2 = malloc(sizeof(pthread_key_t));
 
-   pthread_key_create ( (pthread_key_t*)((int)key + 1), NULL );
+   pthread_key_create ( (pthread_key_t*)((long)key + 1), NULL );
    free(key2);
-   pthread_key_create (                       key2    , NULL );
+   pthread_key_create (                        key2    , NULL );
 
    return 0;
 }

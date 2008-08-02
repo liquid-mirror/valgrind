@@ -1,57 +1,57 @@
 
 #include <stdlib.h>
 
-typedef unsigned int Uint;
+typedef unsigned long Ulong;
 
 int main(void)
 {
-   int* x = malloc(sizeof(int) * 10);
-   int* y = malloc(sizeof(int) * 10);
-   int* y2 = y + 3;
+   long* x = malloc(sizeof(long) * 10);
+   long* y = malloc(sizeof(long) * 10);
+   long* y2 = y + 3;
 
    // ok -- same segment
-   int  w = y2 - y;
+   long  w = y2 - y;
 
    // ok -- different heap segments (result can only be used to index off
    // 'x', but glibc's strcpy() does this...)
-   int* z = (int*)((int)x - (int)y);
+   long* z = (long*)((long)x - (long)y);
 
-   w = (int)y2 + (int)y;            // bad (same segment)
+   w = (long)y2 + (long)y;           // bad (same segment)
 
-   w = (int)x  & (int)y;            // bad (different segments)
+   w = (long)x  & (long)y;           // bad (different segments)
 
-   w = (int)y2 / (int)4;            // bad, but indistinguishable from
-                                    // acceptable '%' cases...
+   w = (long)y2 / (long)4;           // bad, but indistinguishable from
+                                     // acceptable '%' cases...
 
-   w = (int)y2 % (int)4;            // ok
-   w = (int)y2 % (int)y;            // bad -- modulor(?) is a pointer
-   w = (int)0xffffffff % (int)y;    // bad -- modulend(?) is a non-pointer
+   w = (long)y2 % (long)4;           // ok
+   w = (long)y2 % (long)y;           // bad -- modulor(?) is a pointer
+   w = (long)0xffffffff % (long)y;   // bad -- modulend(?) is a non-pointer
 
-   w = (Uint)y2 % (Uint)4;          // ok
-   w = (Uint)y2 % (Uint)y;          // bad -- modulor(?) is a pointer
-   w = (Uint)0xffffffff % (Uint)y;  // bad -- modulend(?) is a non-pointer
+   w = (Ulong)y2 % (Ulong)4;         // ok
+   w = (Ulong)y2 % (Ulong)y;         // bad -- modulor(?) is a pointer
+   w = (Ulong)0xffffffff % (Ulong)y; // bad -- modulend(?) is a non-pointer
 
-   w = (int)y * (int)y2;            // bad
+   w = (long)y * (long)y2;           // bad
 
-   w = (int)y >> (int)2;            // ok
-   w = (int)y << (int)2;            // ok
+   w = (long)y >> (long)2;           // ok
+   w = (long)y << (long)2;           // ok
 
-   w = (int)y &  0xffff;            // ok
-   w = (int)y |  0xffff;            // ok
-   w = (int)y ^  (int)y2;           // ok
+   w = (long)y &  0xffff;            // ok
+   w = (long)y |  0xffff;            // ok
+   w = (long)y ^  (long)y2;          // ok
 
-   w = ~((int)y);                   // ok
+   w = ~((long)y);                   // ok
 
-   w = -((int)y);                   // bad -- operand is a non-pointer
+   w = -((long)y);                   // bad -- operand is a non-polonger
 
-   w = (int)x ^ (int)x;             // xor(ptr,ptr) --> constant (0)
-   z = x + w;                       // ok, because xor result was zero
+   w = (long)x ^ (long)x;            // xor(ptr,ptr) --> constant (0)
+   z = x + w;                        // ok, because xor result was zero
 
-   w = (int)x ^ ((int)x+1);         // xor(ptr,ptr') --> constant (small)
-   z = x + w;                       // ok, because xor result was constant
+   w = (long)x ^ ((long)x+1);        // xor(ptr,ptr') --> constant (small)
+   z = x + w;                        // ok, because xor result was constant
 
-   w = (int)x ^ (int)y;             // xor(ptr,ptr') --> constant (small)
-   z = x + w;                       // ok, because xor result was constant
+   w = (long)x ^ (long)y;            // xor(ptr,ptr') --> constant (small)
+   z = x + w;                        // ok, because xor result was constant
 
-   return (int)z;
+   return (long)z;
 }

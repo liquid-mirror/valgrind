@@ -9,7 +9,7 @@ int main(void)
    char* buf = malloc(sizeof(char) * 6);
 
    // Known zero non-pointer
-   char* nz = (char*)((int)buf^(int)buf);  // known non-pointer
+   char* nz = (char*)((long)buf^(long)buf);  // known non-pointer
 
    // Unknown zero nonptr;  make them zero but unknown
    char* unz;

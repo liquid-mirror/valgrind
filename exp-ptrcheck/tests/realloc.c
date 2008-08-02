@@ -7,7 +7,7 @@ int main(void)
    int* y;
    int** x  = malloc(sizeof(int) * 100);
    int* x2 = malloc(sizeof(int) * 100);
-
+   void* sink;
    x[0]  = x2;  // this is to check the pointerness is copied across ok
    x[49] = x2;  // this is to check the pointerness is copied across ok
    
@@ -40,7 +40,7 @@ int main(void)
    i = *x[0];  // ok
    i = *x[49]; // ok
 
-   realloc((void*)0x99, 10);    // fails
+   sink = realloc((void*)0x99, 10);    // fails
 
    return 0;
 }

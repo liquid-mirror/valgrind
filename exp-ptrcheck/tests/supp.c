@@ -11,8 +11,8 @@ int main(void)
    int   i = 11;
    char* buf = malloc(sizeof(char) * 6);
    char  c = buf[-1];                  // LoadStoreErr
-   char* x = buf + (int)buf;           // ArithErr
-   char* y = (char*)((int)buf * i);    // AsmErr
+   char* x = buf + (long)buf;          // ArithErr
+   char* y = (char*)((long)buf * i);   // AsmErr
    write(-1, buf+3, 5);                // SysParamErr
 
    return x-y+c;
