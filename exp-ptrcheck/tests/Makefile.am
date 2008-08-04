@@ -2,43 +2,59 @@
 # For AM_FLAG_M3264_PRI
 include $(top_srcdir)/Makefile.flags.am
 
+SUBDIRS = .
+if VGP_X86_LINUX
+SUBDIRS += x86
+endif
+if VGP_AMD64_LINUX
+SUBDIRS += amd64
+endif
+if VGP_PPC32_LINUX
+SUBDIRS += ppc32
+endif
+if VGP_PPC64_LINUX
+SUBDIRS += ppc64
+endif
+
+DIST_SUBDIRS = ${VG_ARCH_ALL} .
+
 noinst_SCRIPTS = filter_stderr filter_add filter_suppgen \
 	sh_script
 
 EXTRA_DIST = $(noinst_SCRIPTS) \
-	add.vgtest add.stderr.exp \
-	and.vgtest and.stderr.exp \
-	arith.vgtest arith.stderr.exp \
+	add.vgtest-disabled add.stderr.exp \
+	and.vgtest-disabled and.stderr.exp \
+	arith.vgtest-disabled arith.stderr.exp \
 	arith_include1.c arith_include2.c \
 	base.vgtest base.stderr.exp \
 	ccc.vgtest ccc.stderr.exp \
-	cmp.vgtest cmp.stderr.exp \
+	cmp.vgtest-disabled cmp.stderr.exp \
 	fp.vgtest fp.stderr.exp \
 	hp_bounds.vgtest hp_bounds.stderr.exp \
 	hp_dangle.vgtest hp_dangle.stderr.exp \
-	idiv.vgtest idiv.stderr.exp \
-	imul.vgtest imul.stderr.exp \
+	idiv.vgtest-disabled idiv.stderr.exp \
+	imul.vgtest-disabled imul.stderr.exp \
 	justify.vgtest justify.stderr.exp \
-	mm.vgtest mm.stderr.exp \
-	neg.vgtest neg.stderr.exp \
-	not.vgtest not.stderr.exp \
-	or.vgtest or.stderr.exp \
+	mm.vgtest-disabled mm.stderr.exp \
+	neg.vgtest-disabled neg.stderr.exp \
+	not.vgtest-disabled not.stderr.exp \
+	or.vgtest-disabled or.stderr.exp \
 	partial_bad.vgtest partial_bad.stderr.exp \
 	partial_good.vgtest partial_good.stderr.exp \
 	pth_create.vgtest pth_create.stderr.exp \
 	pth_specific.vgtest pth_specific.stderr.exp \
 	realloc.vgtest realloc.stderr.exp \
-	sh_script.vgtest sh_script.stderr.exp \
+	sh_script.vgtest-disabled sh_script.stderr.exp \
 	strcpy.vgtest strcpy.stderr.exp \
-	strlen_bad.vgtest strlen_bad.stderr.exp \
-	strlen_good.vgtest strlen_good.stderr.exp \
-	sub.vgtest sub.stderr.exp \
+	strlen_bad.vgtest-disabled strlen_bad.stderr.exp \
+	strlen_good.vgtest-disabled strlen_good.stderr.exp \
+	sub.vgtest-disabled sub.stderr.exp \
 	supp.vgtest supp.stderr.exp supp.supp \
-	suppgen.vgtest suppgen.stderr.exp suppgen.stdin \
+	suppgen.vgtest-disabled suppgen.stderr.exp suppgen.stdin \
 	syscall.vgtest syscall.stderr.exp \
 	tricky.vgtest tricky.stderr.exp \
 	unaligned.vgtest unaligned.stderr.exp \
-	xor.vgtest xor.stderr.exp \
+	xor.vgtest-disabled xor.stderr.exp \
 	zero.vgtest zero.stderr.exp
 
 check_PROGRAMS = \
