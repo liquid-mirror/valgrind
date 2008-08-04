@@ -2270,6 +2270,7 @@ static void post_syscall ( ThreadId tid, UInt syscallno, SysRes res )
 #     if defined(__NR__llseek)
       case __NR__llseek:
 #     endif
+      case __NR__sysctl:
 #     if defined(__NR__newselect)
       case __NR__newselect:
 #     endif
@@ -2369,6 +2370,7 @@ static void post_syscall ( ThreadId tid, UInt syscallno, SysRes res )
       case __NR_open:
       case __NR_pipe:
       case __NR_poll:
+      case __NR_pread64:
       case __NR_pwrite64:
       case __NR_read:
       case __NR_readlink:
