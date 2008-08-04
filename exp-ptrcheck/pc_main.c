@@ -2331,7 +2331,9 @@ static void post_syscall ( ThreadId tid, UInt syscallno, SysRes res )
       case __NR_getgid32:
 #     endif
       case __NR_getitimer:
+#     if defined(__NR_getpeername)
       case __NR_getpeername:
+#     endif
       case __NR_getppid:
       case __NR_getresgid:
       case __NR_getresuid:
