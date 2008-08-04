@@ -1,4 +1,3 @@
-
 	.file	"asm.S"
 	.text
 .globl main
