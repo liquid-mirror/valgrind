@@ -16,7 +16,7 @@ include $(top_srcdir)/Makefile.flags.am
 #SUBDIRS += ppc64
 #endif
 
-DIST_SUBDIRS = ${VG_ARCH_ALL} .
+#DIST_SUBDIRS = ${VG_ARCH_ALL} .
 
 noinst_SCRIPTS = filter_stderr filter_add filter_suppgen \
 	sh_script
