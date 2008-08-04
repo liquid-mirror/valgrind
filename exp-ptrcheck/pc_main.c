@@ -2331,6 +2331,7 @@ static void post_syscall ( ThreadId tid, UInt syscallno, SysRes res )
       case __NR_getgid32:
 #     endif
       case __NR_getitimer:
+      case __NR_getpeername:
       case __NR_getppid:
       case __NR_getresgid:
       case __NR_getresuid:
@@ -2378,6 +2379,8 @@ static void post_syscall ( ThreadId tid, UInt syscallno, SysRes res )
 #     endif
       case __NR_rename:
       case __NR_rmdir:
+      case __NR_rt_sigaction:
+      case __NR_rt_sigprocmask:
       case __NR_sched_get_priority_max:
       case __NR_sched_get_priority_min:
       case __NR_sched_getparam:
@@ -2400,6 +2403,7 @@ static void post_syscall ( ThreadId tid, UInt syscallno, SysRes res )
 #     endif
 #     if defined(__NR_shmctl)
       case __NR_shmctl:
+      case __NR_shmdt:
 #     endif
 #     if defined(__NR_shutdown)
       case __NR_shutdown:
@@ -2413,8 +2417,6 @@ static void post_syscall ( ThreadId tid, UInt syscallno, SysRes res )
 #     if defined(__NR_statfs64)
       case __NR_statfs64:
 #     endif
-      case __NR_rt_sigaction:
-      case __NR_rt_sigprocmask:
 #     if defined(__NR_sigreturn)
       case __NR_sigreturn: /* not sure if we should see this or not */
 #     endif
