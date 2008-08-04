@@ -26,8 +26,10 @@ EXTRA_DIST = $(noinst_SCRIPTS) \
 	and.vgtest-disabled and.stderr.exp \
 	arith.vgtest-disabled arith.stderr.exp \
 	arith_include1.c arith_include2.c \
-	base.vgtest base.stderr.exp \
-	ccc.vgtest ccc.stderr.exp \
+	base.vgtest \
+	base.stderr.exp-glibc25-amd64 base.stderr.exp-glibc25-x86 \
+	ccc.vgtest \
+	ccc.stderr.exp-glibc25-x86 ccc.stderr.exp-glibc25-amd64 \
 	cmp.vgtest-disabled cmp.stderr.exp \
 	fp.vgtest fp.stderr.exp \
 	hp_bounds.vgtest hp_bounds.stderr.exp \
@@ -39,11 +41,16 @@ EXTRA_DIST = $(noinst_SCRIPTS) \
 	neg.vgtest-disabled neg.stderr.exp \
 	not.vgtest-disabled not.stderr.exp \
 	or.vgtest-disabled or.stderr.exp \
-	partial_bad.vgtest partial_bad.stderr.exp \
-	partial_good.vgtest partial_good.stderr.exp \
+	partial_bad.vgtest \
+	partial_bad.stderr.exp-glibc25-x86 \
+	partial_bad.stderr.exp-glibc25-amd64 \
+	partial_good.vgtest \
+	partial_good.stderr.exp-glibc25-x86 \
+	partial_good.stderr.exp-glibc25-amd64 \
 	pth_create.vgtest pth_create.stderr.exp \
 	pth_specific.vgtest pth_specific.stderr.exp \
-	realloc.vgtest realloc.stderr.exp \
+	realloc.vgtest \
+	realloc.stderr.exp-glibc25-x86 realloc.stderr.exp-glibc25-amd64 \
 	sh_script.vgtest-disabled sh_script.stderr.exp \
 	strcpy.vgtest strcpy.stderr.exp \
 	strlen_bad.vgtest-disabled strlen_bad.stderr.exp \
@@ -53,7 +60,8 @@ EXTRA_DIST = $(noinst_SCRIPTS) \
 	suppgen.vgtest-disabled suppgen.stderr.exp suppgen.stdin \
 	syscall.vgtest-disabled syscall.stderr.exp \
 	tricky.vgtest tricky.stderr.exp \
-	unaligned.vgtest unaligned.stderr.exp \
+	unaligned.vgtest \
+	unaligned.stderr.exp-glibc25-x86 unaligned.stderr.exp-glibc25-amd64 \
 	xor.vgtest-disabled xor.stderr.exp \
 	zero.vgtest zero.stderr.exp
 

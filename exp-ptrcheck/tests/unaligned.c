@@ -30,17 +30,22 @@ int main ( void )
    c = (*p4)[5];
 
    // These 10 are bad
-   c = (*p0)[-1];
+   c = (*p0)[-1];    // always word aligned, so det
    c = (*p1)[-1];    // undet
    c = (*p2)[-1];    // undet
    c = (*p3)[-1];    // undet
-   c = (*p4)[-1];
+   c = (*p4)[-1];    // undet on 64-bit since not 64-bit aligned
 
-   c = (*p0)[6];
+   c = (*p0)[6];     // always word aligned, so det
    c = (*p1)[6];     // undet
    c = (*p2)[6];     // undet
    c = (*p3)[6];     // undet
-   c = (*p4)[6];
+   c = (*p4)[6];     // undet on 64-bit since not 64-bit aligned
 
    return 0;
 }
+
+/* What this program does: verifies that (unfortunately) if you store a
+   pointer misaligned, then the associated shadow value decays to Unknown,
+   and so when you retrieve the pointer later and dereference it, you
+   get no check :-( */

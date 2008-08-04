@@ -8,7 +8,7 @@
 char* my_strcpy (char* dest, const char* src)
 {
    char c, *s = (char *) src;
-   int off = dest - s;
+   long off = dest - s;
    off = off - 1;
    do {
       c = *s++;
@@ -26,13 +26,13 @@ int main(void)
    char  u2[13];
 
    // All these are legit
-   p1[p2-p1] = 0;    // p-p   (must be BADSEG'd)
+   p1[p2-p1] = 0;    // p-p   (must be BADSEG'd) // ea is p2[0]
    u1[p2-u1] = 0;    // p-?
    p1[u2-p1] = 0;    // ?-p   (must be BADSEG'd)
    u1[u2-u1] = 0;    // ?-?
 
    // All these are a 1-byte underrun
-   p1[p2-p1-1] = 0;  // p-p   (must be BADSEG'd)
+   p1[p2-p1-1] = 0;  // p-p   (must be BADSEG'd) // ea is p2[-1]
    u1[p2-u1-1] = 0;  // p-?   (undet) 
    p1[u2-p1-1] = 0;  // ?-p   (must be BADSEG'd)
    u1[u2-u1-1] = 0;  // ?-?   (undet)
