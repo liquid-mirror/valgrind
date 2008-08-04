@@ -730,11 +730,11 @@ static Bool eq_Error ( VgRes res, Error* e1, Error* e2 )
    switch (VG_(get_error_kind)(e1)) {
 
       case LoadStoreErr:
-      case SysParamErr:
          tl_assert( VG_(get_error_string)(e1) == NULL );
          tl_assert( VG_(get_error_string)(e2) == NULL );
          return True;
 
+      case SysParamErr:
       case ArithErr:
          return True;
 
@@ -868,7 +868,8 @@ static void pp_Error ( Error* err )
 
       if (seglo == seghi) {
          // freed block
-         tl_assert(is_known_segment(seglo) && Seg__is_freed(seglo));
+         tl_assert(is_known_segment(seglo));
+         tl_assert(Seg__is_freed(seglo));
          VG_(message)(Vg_UserMsg, "%s%s contains unaddressable byte(s)",
                                   what, s);
          VG_(pp_ExeContext)( VG_(get_error_where)(err) );
@@ -1268,10 +1269,11 @@ static void die_mem_munmap( Addr a, SizeT len )
 // be the same.  Can't easily check the pointer segment matches the block
 // segment, unfortunately, but the first/last check should catch most
 // errors.
-static void pre_mem_access2 ( CorePart part, ThreadId tid, Char* s,
-                              Addr lo, Addr hi )
+static void pre_mem_access2 ( CorePart part, ThreadId tid, Char* str,
+                              Addr s/*tart*/, Addr e/*nd*/ )
 {
-   Seg seglo, seghi;
+   Seg  seglo, seghi;
+   Bool s_in_seglo, s_in_seghi, e_in_seglo, e_in_seghi;
 
    // Don't check code being translated -- very slow, and not much point
    if (Vg_CoreTranslate == part) return;
@@ -1279,22 +1281,47 @@ static void pre_mem_access2 ( CorePart part, ThreadId tid, Char* s,
    // Don't check the signal case -- only happens in core, no need to check
    if (Vg_CoreSignal == part) return;
 
+   // Only expect syscalls after this point
+   if (part != Vg_CoreSysCall) {
+      VG_(printf)("part = %d\n", part);
+      VG_(tool_panic)("unknown corepart in pre_mem_access2");
+   }
+
    // Check first and last bytes match
-   seglo = get_mem_aseg( lo );
-   seghi = get_mem_aseg( hi );
+   seglo = get_mem_aseg( s );
+   seghi = get_mem_aseg( e );
    tl_assert( BOTTOM != seglo && NONPTR != seglo );
    tl_assert( BOTTOM != seghi && NONPTR != seghi );
 
-   if ( seglo != seghi || (UNKNOWN != seglo && Seg__is_freed(seglo)) ) {
-      // First/last bytes don't match, or seg has been freed.
-      switch (part) {
-      case Vg_CoreSysCall:
-         record_sysparam_error(tid, part, s, lo, hi, seglo, seghi);
-         break;
+   /* so seglo and seghi are either UNKNOWN or P(..) */
+   s_in_seglo
+      = is_known_segment(seglo)
+        && Seg__a(seglo) <= s && s < Seg__a(seglo)+Seg__size(seglo);
+   s_in_seghi
+      = is_known_segment(seghi)
+        && Seg__a(seghi) <= s && s < Seg__a(seghi)+Seg__size(seghi);
+   e_in_seglo
+      = is_known_segment(seglo)
+        && Seg__a(seglo) <= e && e < Seg__a(seglo)+Seg__size(seglo);
+   e_in_seghi
+      = is_known_segment(seghi)
+        && Seg__a(seghi) <= e && e < Seg__a(seghi)+Seg__size(seghi);
 
-      default:
-         VG_(printf)("part = %d\n", part);
-         VG_(tool_panic)("unknown corepart in pre_mem_access2");
+   if (is_known_segment(seglo) && is_known_segment(seghi)) {
+      /* First identify the case where start and end are in different
+         segments but s and e don't both fall in either. */
+      if ( ! ((s_in_seglo && e_in_seglo) || (s_in_seghi && e_in_seghi)) ) {
+         record_sysparam_error(tid, part, str, s, e, seglo, seghi);
+      }
+      /* Now we know that s and e are both in the same known segment.
+         Identify the case where that segment is freed. */
+      else if (s_in_seglo && Seg__is_freed(seglo)) {
+         tl_assert(e_in_seglo);
+         record_sysparam_error(tid, part, str, s, e, seglo, UNKNOWN);
+      }
+      else if (s_in_seghi && Seg__is_freed(seghi)) {
+         tl_assert(e_in_seghi);
+         record_sysparam_error(tid, part, str, s, e, seghi, UNKNOWN);
       }
    }
 }
