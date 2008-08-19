@@ -12,7 +12,7 @@ TOOLS =		memcheck \
 		helgrind \
 		drd
 
-EXP_TOOLS = 	exp-omega
+EXP_TOOLS = 	exp-omega exp-sgcheck
 
 # Put docs last because building the HTML is slow and we want to get
 # everything else working before we try it.
