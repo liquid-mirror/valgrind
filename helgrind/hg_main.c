@@ -56,6 +56,13 @@
 #define HG_(str) VGAPPEND(vgHelgrind_,str)
 #include "hg_wordset.h"
 
+#include "libhb.h"
+
+// FIXME: new_mem_w_tid ignores the supplied tid. (wtf?!)
+
+// FIXME: when client destroys a lock or a CV, remove these
+// from our mappings, so that the associated SO can be freed up
+
 /*----------------------------------------------------------------*/
 /*---                                                          ---*/
 /*----------------------------------------------------------------*/
@@ -107,18 +114,6 @@
 #define SCE_BIGRANGE_T 256  // big mem range minimum size
 
 
-/* For the shadow mem cache stuff we may want more intrusive
-   checks.  Unfortunately there's no almost-zero-cost way to make them
-   selectable at run time.  Hence set the #if 0 to #if 1 and
-   rebuild if you want them. */
-#if 0
-#  define SCE_CACHELINE 1  /* do sanity-check CacheLine stuff */
-#  define inline __attribute__((noinline))
-   /* probably want to ditch -fomit-frame-pointer too */
-#else
-#  define SCE_CACHELINE 0   /* don't sanity-check CacheLine stuff */
-#endif
-
 static void all__sanity_check ( Char* who ); /* fwds */
 
 #define HG_CLI__MALLOC_REDZONE_SZB 16 /* let's say */
@@ -129,15 +124,10 @@ static void all__sanity_check ( Char* who ); /* fwds */
 
 /* ------------ Command line options ------------ */
 
-// 0 = no segments at all
-// 1 = segments at thread create/join
-// 2 = as 1 + segments at condition variable signal/broadcast/wait
-//          + segments at sem_wait/sem_post
-static Int clo_happens_before = 2;  /* default setting */
-
-/* Generate .vcg output of the happens-before graph?
-   0: no  1: yes, without VTSs  2: yes, with VTSs */
-static Int clo_gen_vcg = 0;
+/* Enable/disable lock order checking.  Sometimes it produces a lot of
+   errors, possibly genuine, which nevertheless can be very
+   annoying. */
+static Bool clo_track_lockorders = True;
 
 /* When comparing race errors for equality, should the race address be
    taken into account?  For users, no, but for verification purposes
@@ -235,13 +225,6 @@ static void hg_free ( void* p ) {
 typedef  UInt  SVal;
 
 
-/* These are handles for thread segments.  CONSTRAINTS: Must be small
-   ints numbered from zero, since 30-bit versions of them must are
-   used to represent Exclusive shadow states.  Are used as keys in
-   WordFMs so must be castable to Words at the appropriate points. */
-typedef  UInt  SegmentID;
-
-
 /* These are handles for Word sets.  CONSTRAINTS: must be (very) small
    ints numbered from zero, since < 30-bit versions of them are used to
    encode thread-sets and lock-sets in 32-bit shadow words. */
@@ -256,10 +239,10 @@ typedef
       /* ADMIN */
       struct _Thread* admin;
       UInt            magic;
+      Thr*            hbthr; /* in libhb; its .opaque points back here */
       /* USEFUL */
       WordSetID locksetA; /* WordSet of Lock* currently held by thread */
       WordSetID locksetW; /* subset of locksetA held in w-mode */
-      SegmentID csegid;  /* current thread segment for thread */
       /* EXPOSITION */
       /* Place where parent was when this thread was created. */
       ExeContext* created_at;
@@ -302,6 +285,7 @@ typedef
          either both NULL or both non-NULL. */
       ExeContext*   acquired_at;
       /* USEFUL-STATIC */
+      SO*           hbso;      /* associated SO */
       Addr          guestaddr; /* Guest address of lock */
       LockKind      kind;      /* what kind of lock this is */
       /* USEFUL-DYNAMIC */
@@ -325,197 +309,6 @@ typedef
    Lock;
 
 
-/* Stores information about thread segments.  .prev can be NULL only
-   when this is the first segment for the thread.  .other is NULL
-   unless this segment depends on a message (create, join, signal)
-   from some other thread.  Segments are never freed (!) */
-typedef
-   struct _Segment {
-      /* ADMIN */
-      struct _Segment* admin;
-      UInt             magic;
-      /* USEFUL */
-      UInt             dfsver; /* Version # for depth-first searches */
-      Thread*          thr;    /* The thread that I am part of */
-      struct _Segment* prev;   /* The previous segment in this thread */
-      struct _Segment* other;  /* Possibly a segment from some other 
-                                  thread, which happened-before me */
-      XArray*          vts;    /* XArray of ScalarTS */
-      /* DEBUGGING ONLY: what does 'other' arise from?  
-         c=thread creation, j=join, s=cvsignal, S=semaphore */
-      Char other_hint;
-   }
-   Segment;
-
-
-/* ------ CacheLine ------ */
-
-#define N_LINE_BITS      5 /* must be >= 3 */
-#define N_LINE_ARANGE    (1 << N_LINE_BITS)
-#define N_LINE_TREES     (N_LINE_ARANGE >> 3)
-
-typedef
-   struct {
-      UShort descrs[N_LINE_TREES];
-      SVal   svals[N_LINE_ARANGE]; // == N_LINE_TREES * 8
-   }
-   CacheLine;
-
-#define TREE_DESCR_16_0 (1<<0)
-#define TREE_DESCR_32_0 (1<<1)
-#define TREE_DESCR_16_1 (1<<2)
-#define TREE_DESCR_64   (1<<3)
-#define TREE_DESCR_16_2 (1<<4)
-#define TREE_DESCR_32_1 (1<<5)
-#define TREE_DESCR_16_3 (1<<6)
-#define TREE_DESCR_8_0  (1<<7)
-#define TREE_DESCR_8_1  (1<<8)
-#define TREE_DESCR_8_2  (1<<9)
-#define TREE_DESCR_8_3  (1<<10)
-#define TREE_DESCR_8_4  (1<<11)
-#define TREE_DESCR_8_5  (1<<12)
-#define TREE_DESCR_8_6  (1<<13)
-#define TREE_DESCR_8_7  (1<<14)
-#define TREE_DESCR_DTY  (1<<15)
-
-typedef
-   struct {
-      SVal  dict[4]; /* can represent up to 4 diff values in the line */
-      UChar ix2s[N_LINE_ARANGE/4]; /* array of N_LINE_ARANGE 2-bit
-                                      dict indexes */
-      /* if dict[0] == 0 then dict[1] is the index of the CacheLineF
-         to use */
-   }
-   CacheLineZ; /* compressed rep for a cache line */
-
-typedef
-   struct {
-      Bool inUse;
-      SVal w32s[N_LINE_ARANGE];
-   }
-   CacheLineF; /* full rep for a cache line */
-
-
-/* Shadow memory.
-   Primary map is a WordFM Addr SecMap*.  
-   SecMaps cover some page-size-ish section of address space and hold
-     a compressed representation.
-   CacheLine-sized chunks of SecMaps are copied into a Cache, being
-   decompressed when moved into the cache and recompressed on the
-   way out.  Because of this, the cache must operate as a writeback
-   cache, not a writethrough one.
-*/
-/* See comments below on shadow_mem_make_NoAccess re performance
-   effects of N_SECMAP_BITS settings.  On a 2.4GHz Core2,
-   starting/quitting OOo (32-bit), I have these rough numbers:
-      N_SECMAP_BITS = 11    2m23
-      N_SECMAP_BITS = 12    1m58
-      N_SECMAP_BITS = 13    1m53
-
-   Each SecMap must hold a power-of-2 number of CacheLines.  Hence
-   N_SECMAP_BITS must >= N_LINE_BITS.
-*/
-#define N_SECMAP_BITS   13
-#define N_SECMAP_ARANGE (1 << N_SECMAP_BITS)
-
-// # CacheLines held by a SecMap
-#define N_SECMAP_ZLINES (N_SECMAP_ARANGE / N_LINE_ARANGE)
-typedef
-   struct {
-      UInt magic;
-      Bool mbHasLocks;  /* hint: any locks in range?  safe: True */
-      Bool mbHasShared; /* hint: any ShM/ShR states in range?  safe: True */
-      CacheLineZ  linesZ[N_SECMAP_ZLINES];
-      CacheLineF* linesF;
-      Int         linesF_size;
-   }
-   SecMap;
-
-typedef
-   struct {
-      Int line_no; /* which Z-line are we in? */
-      Int word_no; /* inside the line, which word is current? */
-   }
-   SecMapIter;
-
-static void initSecMapIter ( SecMapIter* itr ) {
-   itr->line_no = 0;
-   itr->word_no = 0;
-}
-
-/* Get the current val, and move to the next position.  This is called
-   a huge amount in some programs (eg OpenOffice).  Hence the
-   'inline'. */
-static UWord stats__secmap_iterator_steppings; /* fwds */
-
-inline
-static Bool stepSecMapIter ( /*OUT*/SVal** pVal, 
-                             /*MOD*/SecMapIter* itr, SecMap* sm )
-{
-   CacheLineZ* lineZ = NULL;
-   CacheLineF* lineF = NULL;
-   /* Either it points to a valid place, or to (-1,-1) */
-   stats__secmap_iterator_steppings++;
-   if (UNLIKELY(itr->line_no == -1)) {
-      tl_assert(itr->word_no == -1);
-      return False;
-   }
-   /* so now it must be a valid place in the SecMap. */
-   if (0) VG_(printf)("%p %d %d\n", sm, (Int)itr->line_no, (Int)itr->word_no);
-   tl_assert(itr->line_no >= 0 && itr->line_no < N_SECMAP_ZLINES);
-   lineZ = &sm->linesZ[itr->line_no];
-   if (UNLIKELY(lineZ->dict[0] == 0)) {
-      tl_assert(sm->linesF);
-      tl_assert(sm->linesF_size > 0);
-      tl_assert(lineZ->dict[1] >= 0);
-      tl_assert(lineZ->dict[1] < sm->linesF_size);
-      lineF = &sm->linesF[ lineZ->dict[1] ];
-      tl_assert(lineF->inUse);
-      tl_assert(itr->word_no >= 0 && itr->word_no < N_LINE_ARANGE);
-      *pVal = &lineF->w32s[itr->word_no];
-      itr->word_no++;
-      if (itr->word_no == N_LINE_ARANGE)
-         itr->word_no = 0;
-   } else {
-      tl_assert(itr->word_no >= 0 && itr->word_no <= 3);
-      tl_assert(lineZ->dict[itr->word_no] != 0);
-      *pVal = &lineZ->dict[itr->word_no];
-      itr->word_no++;
-      if (itr->word_no == 4 || lineZ->dict[itr->word_no] == 0)
-         itr->word_no = 0;
-   }
-
-   if (itr->word_no == 0) {
-      itr->line_no++;
-      if (itr->line_no == N_SECMAP_ZLINES) {
-         itr->line_no = -1;
-         itr->word_no = -1;
-      }
-   }
-
-   return True;
-}
-
-/* ------ Cache ------ */
-
-#define N_WAY_BITS 16
-#define N_WAY_NENT (1 << N_WAY_BITS)
-
-/* Each tag is the address of the associated CacheLine, rounded down
-   to a CacheLine address boundary.  A CacheLine size must be a power
-   of 2 and must be 8 or more.  Hence an easy way to initialise the
-   cache so it is empty is to set all the tag values to any value % 8
-   != 0, eg 1.  This means all queries in the cache initially miss.
-   It does however require us to detect and not writeback, any line
-   with a bogus tag. */
-typedef
-   struct {
-      CacheLine lyns0[N_WAY_NENT];
-      Addr      tags0[N_WAY_NENT];
-   }
-   Cache;
-
-
 /* --------- Primary data structures --------- */
 
 /* Admin linked list of Threads */
@@ -524,18 +317,8 @@ static Thread* admin_threads = NULL;
 /* Admin linked list of Locks */
 static Lock* admin_locks = NULL;
 
-/* Admin linked list of Segments */
-static Segment* admin_segments = NULL;
-
-/* Shadow memory primary map */
-static WordFM* map_shmem = NULL; /* WordFM Addr SecMap* */
-static Cache   cache_shmem;
-
 /* Mapping table for core ThreadIds to Thread* */
 static Thread** map_threads = NULL; /* Array[VG_N_THREADS] of Thread* */
-
-/* Mapping table for thread segments IDs to Segment* */
-static WordFM* map_segments = NULL; /* WordFM SegmentID Segment* */
 
 /* Mapping table for lock guest addresses to Lock* */
 static WordFM* map_locks = NULL; /* WordFM LockAddr Lock* */
@@ -564,7 +347,6 @@ static ThreadId map_threads_maybe_reverse_lookup_SLOW ( Thread* ); /*fwds*/
 #define Thread_MAGIC   0x504fc5e5
 #define LockN_MAGIC    0x6545b557 /* normal nonpersistent locks */
 #define LockP_MAGIC    0x755b5456 /* persistent (copied) locks */
-#define Segment_MAGIC  0x49e94d81
 #define SecMap_MAGIC   0x571e58cb
 
 static UWord stats__mk_Segment = 0;
@@ -573,13 +355,13 @@ static UWord stats__mk_Segment = 0;
 
 static inline Bool is_sane_LockN ( Lock* lock ); /* fwds */
 
-static Thread* mk_Thread ( SegmentID csegid ) {
+static Thread* mk_Thread ( Thr* hbthr ) {
    static Int indx      = 1;
    Thread* thread       = hg_zalloc( sizeof(Thread) );
    thread->locksetA     = HG_(emptyWS)( univ_lsets );
    thread->locksetW     = HG_(emptyWS)( univ_lsets );
-   thread->csegid       = csegid;
    thread->magic        = Thread_MAGIC;
+   thread->hbthr        = hbthr;
    thread->created_at   = NULL;
    thread->announced    = False;
    thread->errmsg_index = indx++;
@@ -587,6 +369,7 @@ static Thread* mk_Thread ( SegmentID csegid ) {
    admin_threads        = thread;
    return thread;
 }
+
 // Make a new lock which is unlocked (hence ownerless)
 static Lock* mk_LockN ( LockKind kind, Addr guestaddr ) {
    static ULong unique = 0;
@@ -596,6 +379,7 @@ static Lock* mk_LockN ( LockKind kind, Addr guestaddr ) {
    lock->magic            = LockN_MAGIC;
    lock->appeared_at      = NULL;
    lock->acquired_at      = NULL;
+   lock->hbso             = libhb_so_alloc();
    lock->guestaddr        = guestaddr;
    lock->kind             = kind;
    lock->heldW            = False;
@@ -604,24 +388,7 @@ static Lock* mk_LockN ( LockKind kind, Addr guestaddr ) {
    admin_locks            = lock;
    return lock;
 }
-static Segment* mk_Segment ( Thread* thr, Segment* prev, Segment* other ) {
-   Segment* seg    = hg_zalloc( sizeof(Segment) );
-   seg->dfsver     = 0;
-   seg->thr        = thr;
-   seg->prev       = prev;
-   seg->other      = other;
-   seg->vts        = NULL;
-   seg->other_hint = ' ';
-   seg->magic      = Segment_MAGIC;
-   seg->admin      = admin_segments;
-   admin_segments = seg;
-   stats__mk_Segment++;
-   return seg;
-}
 
-static inline Bool is_sane_Segment ( Segment* seg ) {
-   return seg != NULL && seg->magic == Segment_MAGIC;
-}
 static inline Bool is_sane_Thread ( Thread* thr ) {
    return thr != NULL && thr->magic == Thread_MAGIC;
 }
@@ -677,11 +444,13 @@ static Bool is_sane_Lock_BASE ( Lock* lock )
 static inline Bool is_sane_LockP ( Lock* lock ) {
    return lock != NULL 
           && lock->magic == LockP_MAGIC
+          && lock->hbso  == NULL
           && is_sane_Lock_BASE(lock);
 }
 static inline Bool is_sane_LockN ( Lock* lock ) {
    return lock != NULL 
           && lock->magic == LockN_MAGIC
+          && lock->hbso  != NULL
           && is_sane_Lock_BASE(lock);
 }
 static inline Bool is_sane_LockNorP ( Lock* lock ) {
@@ -693,6 +462,7 @@ static inline Bool is_sane_LockNorP ( Lock* lock ) {
 static void del_LockN ( Lock* lk ) 
 {
    tl_assert(is_sane_LockN(lk));
+   libhb_so_dealloc(lk->hbso);
    if (lk->heldBy)
       VG_(deleteBag)( lk->heldBy );
    VG_(memset)(lk, 0xAA, sizeof(*lk));
@@ -717,7 +487,7 @@ static void lockN_acquire_writer ( Lock* lk, Thread* thr )
       tl_assert(lk->heldBy == NULL);
       tid = map_threads_maybe_reverse_lookup_SLOW(thr);
       lk->acquired_at
-         = VG_(record_ExeContext(tid, 0/*first_ip_delta*/));
+         = VG_(record_ExeContext)(tid, 0/*first_ip_delta*/);
    } else {
       tl_assert(lk->heldBy != NULL);
    }
@@ -773,7 +543,7 @@ static void lockN_acquire_reader ( Lock* lk, Thread* thr )
       tl_assert(lk->heldBy == NULL);
       tid = map_threads_maybe_reverse_lookup_SLOW(thr);
       lk->acquired_at
-         = VG_(record_ExeContext(tid, 0/*first_ip_delta*/));
+         = VG_(record_ExeContext)(tid, 0/*first_ip_delta*/);
    } else {
       tl_assert(lk->heldBy != NULL);
    }
@@ -843,177 +613,16 @@ static void remove_Lock_from_locksets_of_all_owning_Threads( Lock* lk )
    VG_(doneIterBag)( lk->heldBy );
 }
 
-/* --------- xxxID functions --------- */
-
-/* Proposal (for debugging sanity):
-
-   SegmentIDs from 0x1000000 .. 0x1FFFFFF (16777216)
-
-   All other xxxID handles are invalid.
-*/
-static inline Bool is_sane_SegmentID ( SegmentID tseg ) {
-   return tseg >= 0x1000000 && tseg <= 0x1FFFFFF;
-}
-static inline Bool is_sane_ThreadId ( ThreadId coretid ) {
-   return coretid >= 0 && coretid < VG_N_THREADS;
-}
-static SegmentID alloc_SegmentID ( void ) {
-   static SegmentID next = 0x1000000;
-   tl_assert(is_sane_SegmentID(next));
-   return next++;
-}
-
-/* --------- Shadow memory --------- */
-
-static inline Bool is_valid_scache_tag ( Addr tag ) {
-   /* a valid tag should be naturally aligned to the start of
-      a CacheLine. */
-   return 0 == (tag & (N_LINE_ARANGE - 1));
-}
-
-static inline Bool is_sane_SecMap ( SecMap* sm ) {
-   return sm != NULL && sm->magic == SecMap_MAGIC;
-}
-
-/* Shadow value encodings:
-
-   11 WordSetID:TSID_BITS WordSetID:LSID_BITS  ShM  thread-set lock-set
-   10 WordSetID:TSID_BITS WordSetID:LSID_BITS  ShR  thread-set lock-set
-   01 TSegmentID:30                            Excl thread-segment
-   00 0--(20)--0 10 0000 0000                  New
-   00 0--(20)--0 01 0000 0000                  NoAccess
-   00 0--(20)--0 00 0000 0000                  Invalid
-
-   TSID_BITS + LSID_BITS must equal 30.
-   The elements in thread sets are Thread*, casted to Word.
-   The elements in lock sets are Lock*, casted to Word.
-*/
-
-#define N_LSID_BITS  17
-#define N_LSID_MASK  ((1 << (N_LSID_BITS)) - 1)
-#define N_LSID_SHIFT 0
-
-#define N_TSID_BITS  (30 - (N_LSID_BITS))
-#define N_TSID_MASK  ((1 << (N_TSID_BITS)) - 1)
-#define N_TSID_SHIFT (N_LSID_BITS)
-
-static inline Bool is_sane_WordSetID_LSet ( WordSetID wset ) {
-   return wset >= 0 && wset <= N_LSID_MASK;
-}
-static inline Bool is_sane_WordSetID_TSet ( WordSetID wset ) {
-   return wset >= 0 && wset <= N_TSID_MASK;
-}
-
-
-__attribute__((noinline))
-__attribute__((noreturn))
-static void mk_SHVAL_fail ( WordSetID tset, WordSetID lset, HChar* who ) {
-   VG_(printf)("\n");
-   VG_(printf)("Helgrind: Fatal internal error -- cannot continue.\n");
-   VG_(printf)("Helgrind: mk_SHVAL_ShR(tset=%d,lset=%d): FAILED\n",
-               (Int)tset, (Int)lset);
-   VG_(printf)("Helgrind: max allowed tset=%d, lset=%d\n",
-               (Int)N_TSID_MASK, (Int)N_LSID_MASK);
-   VG_(printf)("Helgrind: program has too many thread "
-              "sets or lock sets to track.\n");
-   tl_assert(0);
-}
-
-static inline SVal mk_SHVAL_ShM ( WordSetID tset, WordSetID lset ) {
-   if (LIKELY(is_sane_WordSetID_TSet(tset) 
-              && is_sane_WordSetID_LSet(lset))) {
-      return (SVal)( (3<<30) | (tset << N_TSID_SHIFT) 
-                             | (lset << N_LSID_SHIFT));
-   } else {
-      mk_SHVAL_fail(tset, lset, "mk_SHVAL_ShM");
-   }
-}
-static inline SVal mk_SHVAL_ShR ( WordSetID tset, WordSetID lset ) {
-   if (LIKELY(is_sane_WordSetID_TSet(tset) 
-              && is_sane_WordSetID_LSet(lset))) {
-      return (SVal)( (2<<30) | (tset << N_TSID_SHIFT) 
-                             | (lset << N_LSID_SHIFT) );
-   } else {
-      mk_SHVAL_fail(tset, lset, "mk_SHVAL_ShR");
-   }
-}
-static inline SVal mk_SHVAL_Excl ( SegmentID tseg ) {
-   tl_assert(is_sane_SegmentID(tseg));
-   return (SVal)( (1<<30) | tseg );
-}
-#define SHVAL_New      ((SVal)(2<<8))
-#define SHVAL_NoAccess ((SVal)(1<<8))
-#define SHVAL_Invalid  ((SVal)(0<<8))
-
-static inline Bool is_SHVAL_ShM ( SVal w32 ) { 
-   return (w32 >> 30) == 3;
-}
-static inline Bool is_SHVAL_ShR ( SVal w32 ) {
-   return (w32 >> 30) == 2;
-}
-static inline Bool is_SHVAL_Sh ( SVal w32 ) {
-   return (w32 >> 31) == 1;
-}
-static inline Bool is_SHVAL_Excl ( SVal w32 ) {
-   return (w32 >> 30) == 1; 
-}
-static inline Bool is_SHVAL_New ( SVal w32 ) {
-   return w32 == SHVAL_New;
-}
-static inline Bool is_SHVAL_NoAccess ( SVal w32 ) { 
-   return w32 == SHVAL_NoAccess;
-}
-static inline Bool is_SHVAL_valid ( SVal w32 ) {
-   return is_SHVAL_Excl(w32) || is_SHVAL_NoAccess(w32)
-          || is_SHVAL_Sh(w32) || is_SHVAL_New(w32);
-}
-
-static inline SegmentID un_SHVAL_Excl ( SVal w32 ) {
-   tl_assert(is_SHVAL_Excl(w32));
-   return w32 & ~(3<<30);
-}
-static inline WordSetID un_SHVAL_ShR_tset ( SVal w32 ) {
-   tl_assert(is_SHVAL_ShR(w32));
-   return (w32 >> N_TSID_SHIFT) & N_TSID_MASK;
-}
-static inline WordSetID un_SHVAL_ShR_lset ( SVal w32 ) {
-   tl_assert(is_SHVAL_ShR(w32));
-   return (w32 >> N_LSID_SHIFT) & N_LSID_MASK;
-}
-static inline WordSetID un_SHVAL_ShM_tset ( SVal w32 ) {
-   tl_assert(is_SHVAL_ShM(w32));
-   return (w32 >> N_TSID_SHIFT) & N_TSID_MASK;
-}
-static inline WordSetID un_SHVAL_ShM_lset ( SVal w32 ) {
-   tl_assert(is_SHVAL_ShM(w32));
-   return (w32 >> N_LSID_SHIFT) & N_LSID_MASK;
-}
-static inline WordSetID un_SHVAL_Sh_tset ( SVal w32 ) {
-   tl_assert(is_SHVAL_Sh(w32));
-   return (w32 >> N_TSID_SHIFT) & N_TSID_MASK;
-}
-static inline WordSetID un_SHVAL_Sh_lset ( SVal w32 ) {
-   tl_assert(is_SHVAL_Sh(w32));
-   return (w32 >> N_LSID_SHIFT) & N_LSID_MASK;
-}
-
 
 /*----------------------------------------------------------------*/
 /*--- Print out the primary data structures                    ---*/
 /*----------------------------------------------------------------*/
 
 static WordSetID del_BHL ( WordSetID lockset ); /* fwds */
-static 
-void get_ZF_by_index ( /*OUT*/CacheLineZ** zp, /*OUT*/CacheLineF** fp,
-                       SecMap* sm, Int zix ); /* fwds */
-static 
-Segment* map_segments_maybe_lookup ( SegmentID segid ); /* fwds */
 
 #define PP_THREADS      (1<<1)
 #define PP_LOCKS        (1<<2)
-#define PP_SEGMENTS     (1<<3)
-#define PP_SHMEM_SHARED (1<<4)
-#define PP_ALL (PP_THREADS | PP_LOCKS | PP_SEGMENTS | PP_SHMEM_SHARED)
+#define PP_ALL (PP_THREADS | PP_LOCKS)
 
 
 static const Int sHOW_ADMIN = 0;
@@ -1041,7 +650,6 @@ static void pp_Thread ( Int d, Thread* t )
    }
    space(d+3); VG_(printf)("locksetA %d\n",   (Int)t->locksetA);
    space(d+3); VG_(printf)("locksetW %d\n",   (Int)t->locksetW);
-   space(d+3); VG_(printf)("csegid   0x%x\n", (UInt)t->csegid);
    space(d+0); VG_(printf)("}\n");
 }
 
@@ -1151,173 +759,6 @@ static void pp_map_locks ( Int d )
    space(d); VG_(printf)("}\n");
 }
 
-static void pp_Segment ( Int d, Segment* s )
-{
-   space(d+0); VG_(printf)("Segment %p {\n", s);
-   if (sHOW_ADMIN) {
-   space(d+3); VG_(printf)("admin  %p\n",   s->admin);
-   space(d+3); VG_(printf)("magic  0x%x\n", (UInt)s->magic);
-   }
-   space(d+3); VG_(printf)("dfsver    %u\n", s->dfsver);
-   space(d+3); VG_(printf)("thr       %p\n", s->thr);
-   space(d+3); VG_(printf)("prev      %p\n", s->prev);
-   space(d+3); VG_(printf)("other[%c] %p\n", s->other_hint, s->other);
-   space(d+0); VG_(printf)("}\n");
-}
-
-static void pp_admin_segments ( Int d )
-{
-   Int      i, n;
-   Segment* s;
-   for (n = 0, s = admin_segments;  s;  n++, s = s->admin) {
-      /* nothing */
-   }
-   space(d); VG_(printf)("admin_segments (%d records) {\n", n);
-   for (i = 0, s = admin_segments;  s;  i++, s = s->admin) {
-      if (0) {
-         space(n); 
-         VG_(printf)("admin_segments record %d of %d:\n", i, n);
-      }
-      pp_Segment(d+3, s);
-   }
-   space(d); VG_(printf)("}\n");
-}
-
-static void pp_map_segments ( Int d )
-{
-   SegmentID segid;
-   Segment*  seg;
-   space(d); VG_(printf)("map_segments (%d entries) {\n", 
-                         (Int)VG_(sizeFM)( map_segments ));
-   VG_(initIterFM)( map_segments );
-   while (VG_(nextIterFM)( map_segments, (Word*)&segid,
-                                         (Word*)&seg )) {
-      space(d+3);
-      VG_(printf)("segid 0x%x -> Segment %p\n", (UInt)segid, seg);
-   }
-   VG_(doneIterFM)( map_segments );
-   space(d); VG_(printf)("}\n");
-}
-
-static void show_shadow_w32 ( /*OUT*/Char* buf, Int nBuf, SVal w32 )
-{
-   tl_assert(nBuf-1 >= 99);
-   VG_(memset)(buf, 0, nBuf);
-   if (is_SHVAL_ShM(w32)) {
-      VG_(sprintf)(buf, "ShM(%u,%u)", 
-                   un_SHVAL_ShM_tset(w32), un_SHVAL_ShM_lset(w32));
-   }
-   else
-   if (is_SHVAL_ShR(w32)) {
-      VG_(sprintf)(buf, "ShR(%u,%u)", 
-                   un_SHVAL_ShR_tset(w32), un_SHVAL_ShR_lset(w32));
-   }
-   else
-   if (is_SHVAL_Excl(w32)) {
-      VG_(sprintf)(buf, "Excl(%u)", un_SHVAL_Excl(w32));
-   }
-   else
-   if (is_SHVAL_New(w32)) {
-      VG_(sprintf)(buf, "%s", "New");
-   }
-   else
-   if (is_SHVAL_NoAccess(w32)) {
-      VG_(sprintf)(buf, "%s", "NoAccess");
-   }
-   else {
-      VG_(sprintf)(buf, "Invalid-shadow-word(%u)", w32);
-   }
-}
-
-static
-void show_shadow_w32_for_user ( /*OUT*/Char* buf, Int nBuf, SVal w32 )
-{
-   tl_assert(nBuf-1 >= 99);
-   VG_(memset)(buf, 0, nBuf);
-   if (is_SHVAL_ShM(w32)) {
-      WordSetID tset = un_SHVAL_ShM_tset(w32);
-      WordSetID lset = del_BHL( un_SHVAL_ShM_lset(w32) );
-      VG_(sprintf)(buf, "ShMod(#Tset=%ld,#Lset=%ld)",
-                   HG_(cardinalityWS)(univ_tsets, tset),
-                   HG_(cardinalityWS)(univ_lsets, lset));
-   }
-   else
-   if (is_SHVAL_ShR(w32)) {
-      WordSetID tset = un_SHVAL_ShR_tset(w32);
-      WordSetID lset = del_BHL( un_SHVAL_ShR_lset(w32) );
-      VG_(sprintf)(buf, "ShRO(#Tset=%ld,#Lset=%ld)",
-                   HG_(cardinalityWS)(univ_tsets, tset),
-                   HG_(cardinalityWS)(univ_lsets, lset));
-   }
-   else
-   if (is_SHVAL_Excl(w32)) {
-      SegmentID segid  = un_SHVAL_Excl(w32);
-      Segment*  mb_seg = map_segments_maybe_lookup(segid);
-      if (mb_seg && mb_seg->thr && is_sane_Thread(mb_seg->thr)) {
-         VG_(sprintf)(buf, "Exclusive(thr#%d)", mb_seg->thr->errmsg_index);
-      } else {
-         VG_(sprintf)(buf, "Exclusive(segid=%u)", un_SHVAL_Excl(w32));
-      }
-   }
-   else
-   if (is_SHVAL_New(w32)) {
-      VG_(sprintf)(buf, "%s", "New");
-   }
-   else
-   if (is_SHVAL_NoAccess(w32)) {
-      VG_(sprintf)(buf, "%s", "NoAccess");
-   }
-   else {
-      VG_(sprintf)(buf, "Invalid-shadow-word(%u)", w32);
-   }
-}
-
-static void pp_SecMap_shared ( Int d, SecMap* sm, Addr ga )
-{
-   Int  i;
-#if 0
-   Addr a;
-   SVal w32;
-   Char buf[100];
-#endif
-   CacheLineZ* lineZ;
-   CacheLineF* lineF;
-   space(d+0); VG_(printf)("SecMap %p (ga %#lx) {\n", sm, ga);
-
-   for (i = 0; i < N_SECMAP_ZLINES; i++) {
-      get_ZF_by_index( &lineZ, &lineF, sm, i );
-      space(d+3); VG_(printf)("// pp_SecMap_shared: not implemented\n");
-   }
-
-#if 0
-   for (i = 0; i < N_SECMAP_ARANGE; i++) {
-      w32 = sm->w32s[i];
-      a   = ga + 1 * i;
-      if (! (is_SHVAL_ShM(w32) || is_SHVAL_ShR(w32)))
-         continue;
-      space(d+3); VG_(printf)("%#lx -> 0x%08x ", (void*)a, w32);
-      show_shadow_w32(buf, sizeof(buf), w32);
-      VG_(printf)("%s\n", buf);
-   }
-#endif
-
-   space(d+0); VG_(printf)("}\n");
-}
-
-static void pp_map_shmem_shared ( Int d )
-{
-   Addr    ga;
-   SecMap* sm;
-   space(d); VG_(printf)("map_shmem_ShR_and_ShM_only {\n");
-   VG_(initIterFM)( map_shmem );
-   while (VG_(nextIterFM)( map_shmem, (Word*)&ga,
-                                      (Word*)&sm )) {
-      pp_SecMap_shared( d+3, sm, ga );
-   }
-   VG_(doneIterFM) ( map_shmem );
-   space(d); VG_(printf)("}\n");
-}
-
 static void pp_everything ( Int flags, Char* caller )
 {
    Int d = 0;
@@ -1335,16 +776,6 @@ static void pp_everything ( Int flags, Char* caller )
       VG_(printf)("\n");
       pp_map_locks(d+3);
    }
-   if (flags & PP_SEGMENTS) {
-      VG_(printf)("\n");
-      pp_admin_segments(d+3);
-      VG_(printf)("\n");
-      pp_map_segments(d+3);
-   }
-   if (flags & PP_SHMEM_SHARED) {
-      VG_(printf)("\n");
-      pp_map_shmem_shared( d+3 );
-   }
 
    VG_(printf)("\n");
    VG_(printf)("}\n");
@@ -1358,43 +789,19 @@ static void pp_everything ( Int flags, Char* caller )
 /*--- Initialise the primary data structures                   ---*/
 /*----------------------------------------------------------------*/
 
-/* fwds */
-static void map_segments_add ( SegmentID segid, Segment* seg );
-static void shmem__invalidate_scache ( void );
-static void hbefore__invalidate_cache ( void );
-static void shmem__set_mbHasLocks ( Addr a, Bool b );
-static Bool shmem__get_mbHasLocks ( Addr a );
-static void shadow_mem_set8 ( Thread* uu_thr_acc, Addr a, SVal svNew );
-static XArray* singleton_VTS ( Thread* thr, UWord tym );
-
-static void initialise_data_structures ( void )
+static void initialise_data_structures ( Thr* hbthr_root )
 {
-   SegmentID segid;
-   Segment*  seg;
    Thread*   thr;
 
    /* Get everything initialised and zeroed. */
    tl_assert(admin_threads == NULL);
    tl_assert(admin_locks == NULL);
-   tl_assert(admin_segments == NULL);
 
    tl_assert(sizeof(Addr) == sizeof(Word));
-   tl_assert(map_shmem == NULL);
-   map_shmem = VG_(newFM)( hg_zalloc, hg_free, NULL/*unboxed Word cmp*/);
-   tl_assert(map_shmem != NULL);
-   shmem__invalidate_scache();
 
    tl_assert(map_threads == NULL);
    map_threads = hg_zalloc( VG_N_THREADS * sizeof(Thread*) );
    tl_assert(map_threads != NULL);
-
-   /* re <=: < on 64-bit platforms, == on 32-bit ones */
-   tl_assert(sizeof(SegmentID) <= sizeof(Word));
-   tl_assert(sizeof(Segment*) == sizeof(Word));
-   tl_assert(map_segments == NULL);
-   map_segments = VG_(newFM)( hg_zalloc, hg_free, NULL/*unboxed Word cmp*/);
-   tl_assert(map_segments != NULL);
-   hbefore__invalidate_cache();
 
    tl_assert(sizeof(Addr) == sizeof(Word));
    tl_assert(map_locks == NULL);
@@ -1420,18 +827,10 @@ static void initialise_data_structures ( void )
    /* Set up entries for the root thread */
    // FIXME: this assumes that the first real ThreadId is 1
 
-   /* a segment for the new thread ... */
-   // FIXME: code duplication in ev__post_thread_create
-   segid = alloc_SegmentID();
-   seg   = mk_Segment( NULL, NULL, NULL );
-   map_segments_add( segid, seg );
-
    /* a Thread for the new thread ... */
-   thr = mk_Thread( segid );
-   seg->thr = thr;
-
-   /* Give the thread a starting-off vector timestamp. */
-   seg->vts = singleton_VTS( seg->thr, 1 );
+   thr = mk_Thread(hbthr_root);
+   tl_assert( libhb_get_Thr_opaque(hbthr_root) == NULL );
+   libhb_set_Thr_opaque(hbthr_root, thr);
 
    /* and bind it in the thread-map table.
       FIXME: assumes root ThreadId == 1. */
@@ -1442,9 +841,6 @@ static void initialise_data_structures ( void )
    /* Mark the new bus lock correctly (to stop the sanity checks
       complaining) */
    tl_assert( sizeof(__bus_lock) == 4 );
-   shadow_mem_set8( NULL/*unused*/, __bus_lock_Lock->guestaddr, 
-                                    mk_SHVAL_Excl(segid) );
-   shmem__set_mbHasLocks( __bus_lock_Lock->guestaddr, True );
 
    all__sanity_check("initialise_data_structures");
 }
@@ -1453,6 +849,10 @@ static void initialise_data_structures ( void )
 /*----------------------------------------------------------------*/
 /*--- map_threads :: WordFM core-ThreadId Thread*              ---*/
 /*----------------------------------------------------------------*/
+
+static inline Bool is_sane_ThreadId ( ThreadId coretid ) {
+   return coretid >= 0 && coretid < VG_N_THREADS;
+}
 
 /* Doesn't assert if the relevant map_threads entry is NULL. */
 static Thread* map_threads_maybe_lookup ( ThreadId coretid )
@@ -1530,15 +930,11 @@ Lock* map_locks_lookup_or_create ( LockKind lkk, Addr ga, ThreadId tid )
       tl_assert(is_sane_LockN(lock));
       VG_(addToFM)( map_locks, (Word)ga, (Word)lock );
       tl_assert(oldlock == NULL);
-      // mark the relevant secondary map has .mbHasLocks
-      shmem__set_mbHasLocks( ga, True );
       return lock;
    } else {
       tl_assert(oldlock != NULL);
       tl_assert(is_sane_LockN(oldlock));
       tl_assert(oldlock->guestaddr == ga);
-      // check the relevant secondary map has .mbHasLocks?
-      tl_assert(shmem__get_mbHasLocks(ga) == True);
       return oldlock;
    }
 }
@@ -1549,10 +945,6 @@ static Lock* map_locks_maybe_lookup ( Addr ga )
    Lock* lk = NULL;
    found = VG_(lookupFM)( map_locks, NULL, (Word*)&lk, (Word)ga );
    tl_assert(found  ?  lk != NULL  :  lk == NULL);
-   if (found) {
-      // check the relevant secondary map has .mbHasLocks?
-      tl_assert(shmem__get_mbHasLocks(ga) == True);
-   }
    return lk;
 }
 
@@ -1570,724 +962,11 @@ static void map_locks_delete ( Addr ga )
 }
 
 
-/*----------------------------------------------------------------*/
-/*--- map_segments :: WordFM SegmentID Segment*                ---*/
-/*--- the DAG of thread segments                               ---*/
-/*----------------------------------------------------------------*/
-
-static void segments__generate_vcg ( void ); /* fwds */
-
-/*--------------- SegmentID to Segment* maps ---------------*/
-
-static Segment* map_segments_lookup ( SegmentID segid )
-{
-   Bool     found;
-   Segment* seg = NULL;
-   tl_assert( is_sane_SegmentID(segid) );
-   found = VG_(lookupFM)( map_segments,
-                          NULL, (Word*)&seg, (Word)segid );
-   tl_assert(found);
-   tl_assert(seg != NULL);
-   return seg;
-}
-
-static Segment* map_segments_maybe_lookup ( SegmentID segid )
-{
-   Bool     found;
-   Segment* seg = NULL;
-   tl_assert( is_sane_SegmentID(segid) );
-   found = VG_(lookupFM)( map_segments,
-                          NULL, (Word*)&seg, (Word)segid );
-   if (!found) tl_assert(seg == NULL);
-   return seg;
-}
-
-static void map_segments_add ( SegmentID segid, Segment* seg )
-{
-   /* This is a bit inefficient.  Oh well. */
-   tl_assert( !VG_(lookupFM)( map_segments, NULL, NULL, segid ));
-   VG_(addToFM)( map_segments, (Word)segid, (Word)seg );
-}
-
-/*--------------- to do with Vector Timestamps ---------------*/
-
-/* Scalar Timestamp */
-typedef
-   struct {
-      Thread* thr;
-      UWord   tym;
-   }
-   ScalarTS;
-
-/* Vector Timestamp = XArray* ScalarTS */
-
-static Bool is_sane_VTS ( XArray* vts )
-{
-   UWord     i, n;
-   ScalarTS  *st1, *st2;
-   n = VG_(sizeXA)( vts );
-   if (n >= 2) {
-      for (i = 0; i < n-1; i++) {
-         st1 = VG_(indexXA)( vts, i );
-         st2 = VG_(indexXA)( vts, i+1 );
-         if (st1->thr >= st2->thr)
-            return False;
-         if (st1->tym == 0 || st2->tym == 0)
-            return False;
-      }
-   }
-   return True;
-}
-
-static XArray* new_VTS ( void ) {
-   return VG_(newXA)( hg_zalloc, hg_free, sizeof(ScalarTS) );
-}
-static XArray* singleton_VTS ( Thread* thr, UWord tym ) {
-   ScalarTS st;
-   XArray*  vts;
-   tl_assert(thr);
-   tl_assert(tym >= 1);
-   vts = new_VTS();
-   tl_assert(vts);
-   st.thr = thr;
-   st.tym = tym;
-   VG_(addToXA)( vts, &st );
-   return vts;
-}
-
-
-static Bool cmpGEQ_VTS ( XArray* a, XArray* b )
-{
-   Word     ia, ib, useda, usedb;
-   UWord    tyma, tymb;
-   Thread*  thr;
-   ScalarTS *tmpa, *tmpb;
-
-   Bool all_leq = True;
-   Bool all_geq = True;
-
-   tl_assert(a);
-   tl_assert(b);
-   useda = VG_(sizeXA)( a );
-   usedb = VG_(sizeXA)( b );
-
-   ia = ib = 0;
-
-   while (1) {
-
-      /* This logic is to enumerate triples (thr, tyma, tymb) drawn
-         from a and b in order, where thr is the next Thread*
-         occurring in either a or b, and tyma/b are the relevant
-         scalar timestamps, taking into account implicit zeroes. */
-      tl_assert(ia >= 0 && ia <= useda);
-      tl_assert(ib >= 0 && ib <= usedb);
-      tmpa = tmpb = NULL;
-
-      if (ia == useda && ib == usedb) {
-         /* both empty - done */
-         break;
-      }
-      else
-      if (ia == useda && ib != usedb) {
-         /* a empty, use up b */
-         tmpb = VG_(indexXA)( b, ib );
-         thr  = tmpb->thr;
-         tyma = 0;
-         tymb = tmpb->tym;
-         ib++;
-      }
-      else
-      if (ia != useda && ib == usedb) {
-         /* b empty, use up a */
-         tmpa = VG_(indexXA)( a, ia );
-         thr  = tmpa->thr;
-         tyma = tmpa->tym;
-         tymb = 0;
-         ia++;
-      }
-      else {
-         /* both not empty; extract lowest-Thread*'d triple */
-         tmpa = VG_(indexXA)( a, ia );
-         tmpb = VG_(indexXA)( b, ib );
-         if (tmpa->thr < tmpb->thr) {
-            /* a has the lowest unconsidered Thread* */
-            thr  = tmpa->thr;
-            tyma = tmpa->tym;
-            tymb = 0;
-            ia++;
-         }
-         else
-         if (tmpa->thr > tmpb->thr) {
-            /* b has the lowest unconsidered Thread* */
-            thr  = tmpb->thr;
-            tyma = 0;
-            tymb = tmpb->tym;
-            ib++;
-         } else {
-            /* they both next mention the same Thread* */
-            tl_assert(tmpa->thr == tmpb->thr);
-            thr  = tmpa->thr; /* == tmpb->thr */
-            tyma = tmpa->tym;
-            tymb = tmpb->tym;
-            ia++;
-            ib++;
-         }
-      }
-
-      /* having laboriously determined (thr, tyma, tymb), do something
-         useful with it. */
-      if (tyma < tymb)
-         all_geq = False;
-      if (tyma > tymb)
-         all_leq = False;
-   }
-
-   if (all_leq && all_geq)
-      return True; /* PordEQ */
-   /* now we know they aren't equal, so either all_leq or all_geq or
-      both are false. */
-   if (all_leq)
-      return False; /* PordLT */
-   if (all_geq)
-      return True; /* PordGT */
-   /* hmm, neither all_geq or all_leq.  This means unordered. */
-   return False; /* PordUN */
-}
-
-
-/* Compute max((tick(thra,a),b) into a new XArray.  a and b are
-   unchanged.  If neither a nor b supply a value for 'thra',
-   assert. */
-static
-XArray* tickL_and_joinR_VTS ( Thread* thra, XArray* a, XArray* b )
-{
-   Word     ia, ib, useda, usedb, ticks_found;
-   UWord    tyma, tymb, tymMax;
-   Thread*  thr;
-   XArray*  res;
-   ScalarTS *tmpa, *tmpb;
-
-   tl_assert(a);
-   tl_assert(b);
-   tl_assert(thra);
-   useda = VG_(sizeXA)( a );
-   usedb = VG_(sizeXA)( b );
-
-   res = new_VTS();
-   ia = ib = ticks_found = 0;
-
-   while (1) {
-
-      /* This logic is to enumerate triples (thr, tyma, tymb) drawn
-         from a and b in order, where thr is the next Thread*
-         occurring in either a or b, and tyma/b are the relevant
-         scalar timestamps, taking into account implicit zeroes. */
-      tl_assert(ia >= 0 && ia <= useda);
-      tl_assert(ib >= 0 && ib <= usedb);
-      tmpa = tmpb = NULL;
-
-      if (ia == useda && ib == usedb) {
-         /* both empty - done */
-         break;
-      }
-      else
-      if (ia == useda && ib != usedb) {
-         /* a empty, use up b */
-         tmpb = VG_(indexXA)( b, ib );
-         thr  = tmpb->thr;
-         tyma = 0;
-         tymb = tmpb->tym;
-         ib++;
-      }
-      else
-      if (ia != useda && ib == usedb) {
-         /* b empty, use up a */
-         tmpa = VG_(indexXA)( a, ia );
-         thr  = tmpa->thr;
-         tyma = tmpa->tym;
-         tymb = 0;
-         ia++;
-      }
-      else {
-         /* both not empty; extract lowest-Thread*'d triple */
-         tmpa = VG_(indexXA)( a, ia );
-         tmpb = VG_(indexXA)( b, ib );
-         if (tmpa->thr < tmpb->thr) {
-            /* a has the lowest unconsidered Thread* */
-            thr  = tmpa->thr;
-            tyma = tmpa->tym;
-            tymb = 0;
-            ia++;
-         }
-         else
-         if (tmpa->thr > tmpb->thr) {
-            /* b has the lowest unconsidered Thread* */
-            thr  = tmpb->thr;
-            tyma = 0;
-            tymb = tmpb->tym;
-            ib++;
-         } else {
-            /* they both next mention the same Thread* */
-            tl_assert(tmpa->thr == tmpb->thr);
-            thr  = tmpa->thr; /* == tmpb->thr */
-            tyma = tmpa->tym;
-            tymb = tmpb->tym;
-            ia++;
-            ib++;
-         }
-      }
-
-      /* having laboriously determined (thr, tyma, tymb), do something
-         useful with it. */
-      if (thr == thra) {
-         if (tyma > 0) {
-            /* VTS 'a' actually supplied this value; it is not a
-               default zero.  Do the required 'tick' action. */
-            tyma++;
-            ticks_found++;
-         } else {
-            /* 'a' didn't supply this value, so 'b' must have. */
-            tl_assert(tymb > 0);
-         }
-      }
-      tymMax = tyma > tymb ? tyma : tymb;
-      if (tymMax > 0) {
-         ScalarTS st;
-         st.thr = thr;
-         st.tym = tymMax;
-         VG_(addToXA)( res, &st );
-      }
-
-   }
-
-   tl_assert(is_sane_VTS( res ));
-
-   if (thra != NULL) {
-      tl_assert(ticks_found == 1);
-   } else {
-      tl_assert(ticks_found == 0);
-   }
-
-   return res;
-}
-
-
-/* Do 'vts[me]++', so to speak.  If 'me' does not have an entry in
-   'vts', set it to 1 in the returned VTS. */
-
-static XArray* tick_VTS ( Thread* me, XArray* vts ) {
-   ScalarTS* here = NULL;
-   ScalarTS  tmp;
-   XArray*   res;
-   Word      i, n; 
-   tl_assert(me);
-   tl_assert(is_sane_VTS(vts));
-   if (0) VG_(printf)("tick vts thrno %ld szin %d\n",
-                      (Word)me->errmsg_index, (Int)VG_(sizeXA)(vts) );
-   res = new_VTS();
-   n = VG_(sizeXA)( vts );
-   for (i = 0; i < n; i++) {
-      here = VG_(indexXA)( vts, i );
-      if (me < here->thr) {
-         /* We just went past 'me', without seeing it. */
-         tmp.thr = me;
-         tmp.tym = 1;
-         VG_(addToXA)( res, &tmp );
-         tmp = *here;
-         VG_(addToXA)( res, &tmp );
-         i++;
-         break;
-      } 
-      else if (me == here->thr) {
-         tmp = *here;
-         tmp.tym++;
-         VG_(addToXA)( res, &tmp );
-         i++;
-         break;
-      }
-      else /* me > here->thr */ {
-         tmp = *here;
-         VG_(addToXA)( res, &tmp );
-      }
-   }
-   tl_assert(i >= 0 && i <= n);
-   if (i == n && here && here->thr < me) {
-      tmp.thr = me;
-      tmp.tym = 1;
-      VG_(addToXA)( res, &tmp );
-   } else {
-      for (/*keepgoing*/; i < n; i++) {
-         here = VG_(indexXA)( vts, i );
-         tmp = *here;
-         VG_(addToXA)( res, &tmp );
-      }
-   }
-   tl_assert(is_sane_VTS(res));
-   if (0) VG_(printf)("tick vts thrno %ld szou %d\n",
-                      (Word)me->errmsg_index, (Int)VG_(sizeXA)(res) );
-   return res;
-}
-
-static void show_VTS ( HChar* buf, Int nBuf, XArray* vts ) {
-   ScalarTS* st;
-   HChar     unit[64];
-   Word      i, n;
-   Int       avail = nBuf;
-   tl_assert(avail > 16);
-   buf[0] = '[';
-   buf[1] = 0;
-   n = VG_(sizeXA)( vts );
-   for (i = 0; i < n; i++) {
-      tl_assert(avail >= 10);
-      st = VG_(indexXA)( vts, i );
-      VG_(memset)(unit, 0, sizeof(unit));
-      VG_(sprintf)(unit, i < n-1 ? "%ld:%ld " : "%ld:%ld",
-                         (Word)st->thr->errmsg_index, st->tym);
-      if (avail < VG_(strlen)(unit) + 10/*let's say*/) {
-         VG_(strcat)(buf, " ...]");
-         return;
-      }
-      VG_(strcat)(buf, unit);
-      avail -= VG_(strlen)(unit);
-   }
-   VG_(strcat)(buf, "]");
-}
-
-
-/*------------ searching the happens-before graph ------------*/
-
-static UWord stats__hbefore_queries   = 0; // total # queries
-static UWord stats__hbefore_cache0s   = 0; // hits at cache[0]
-static UWord stats__hbefore_cacheNs   = 0; // hits at cache[> 0]
-static UWord stats__hbefore_probes    = 0; // # checks in cache
-static UWord stats__hbefore_gsearches = 0; // # searches in graph
-static UWord stats__hbefore_gsearchFs = 0; // # fast searches in graph
-static UWord stats__hbefore_invals    = 0; // # cache invals
-static UWord stats__hbefore_stk_hwm   = 0; // stack high water mark
-
-/* Running marker for depth-first searches */
-/* NOTE: global variable */
-static UInt dfsver_current = 0;
-
-/* A stack of possibly-unexplored nodes used in the depth first search */
-/* NOTE: global variable */
-static XArray* dfsver_stack = NULL;
-
-// FIXME: check this - is it really correct?
-__attribute__((noinline))
-static Bool happens_before_do_dfs_from_to ( Segment* src, Segment* dst )
-{
-   Segment* here;
-   Word     ssz;
-
-   /* begin SPEEDUP HACK -- the following can safely be omitted */
-   /* fast track common case, without favouring either the
-      ->prev or ->other links */
-   tl_assert(src);
-   tl_assert(dst);
-   if ((src->prev && src->prev == dst)
-       || (src->other && src->other == dst)) {
-      stats__hbefore_gsearchFs++;
-      return True;
-   }
-   /* end SPEEDUP HACK */
-
-   /* empty out the stack */
-   tl_assert(dfsver_stack);
-   VG_(dropTailXA)( dfsver_stack, VG_(sizeXA)( dfsver_stack ));
-   tl_assert(VG_(sizeXA)( dfsver_stack ) == 0);
-
-   /* push starting point */
-   (void) VG_(addToXA)( dfsver_stack, &src );
-
-   while (True) {
-      /* While the stack is not empty, pop the next node off it and
-         consider. */
-      ssz = VG_(sizeXA)( dfsver_stack );
-      tl_assert(ssz >= 0);
-      if (ssz == 0)
-         return False; /* stack empty ==> no path from src to dst */
-
-      if (UNLIKELY( ((UWord)ssz) > stats__hbefore_stk_hwm ))
-         stats__hbefore_stk_hwm = (UWord)ssz;
-
-      /* here = pop(stack) */
-      here = *(Segment**) VG_(indexXA)( dfsver_stack, ssz-1 );
-      VG_(dropTailXA)( dfsver_stack, 1 );
-
-     again:
-      /* consider the node 'here' */
-      if (here == dst)
-         return True; /* found a path from src and dst */
-
-      /* have we been to 'here' before? */
-      tl_assert(here->dfsver <= dfsver_current);
-      if (here->dfsver == dfsver_current)
-         continue; /* We've been 'here' before - node is not interesting*/
-
-      /* Mark that we've been here */
-      here->dfsver = dfsver_current;
-
-      /* Now push both children on the stack */
-
-      /* begin SPEEDUP hack -- the following can safely be omitted */
-      /* idea is, if there is exactly one child, avoid the overhead of
-         pushing it on the stack and immediately popping it off again.
-         Kinda like doing a tail-call. */
-      if (here->prev && !here->other) {
-         here = here->prev;
-         goto again;
-      }
-      if (here->other && !here->prev) {
-         here = here->other;
-         goto again;
-      }
-      /* end of SPEEDUP HACK */
-
-      /* Push all available children on stack.  From some quick
-         experimentation it seems like exploring ->other first leads
-         to lower maximum stack use, although getting repeatable
-         results is difficult. */
-      if (here->prev)
-         (void) VG_(addToXA)( dfsver_stack, &(here->prev) );
-      if (here->other)
-         (void) VG_(addToXA)( dfsver_stack, &(here->other) );
-   }
-}
-
-__attribute__((noinline))
-static Bool happens_before_wrk ( Segment* seg1, Segment* seg2 )
-{
-   Bool reachable;
-
-   { static Int nnn = 0;
-     if (SHOW_EXPENSIVE_STUFF && (nnn++ % 1000) == 0)
-        VG_(printf)("happens_before_wrk: %d\n", nnn);
-   }
-
-   /* Now the question is, is there a chain of pointers through the
-      .prev and .other fields, that leads from seg2 back to seg1 ? */
-   tl_assert(dfsver_current < 0xFFFFFFFF);
-   dfsver_current++;
-   
-   if (dfsver_stack == NULL) {
-     dfsver_stack = VG_(newXA)( hg_zalloc, hg_free, sizeof(Segment*) );
-     tl_assert(dfsver_stack);
-   }
-
-   reachable = happens_before_do_dfs_from_to( seg2, seg1 );
-
-   return reachable;
-}
-
-/*--------------- the happens_before cache ---------------*/
-
-#define HBEFORE__N_CACHE 64
-typedef 
-   struct { SegmentID segid1; SegmentID segid2; Bool result; } 
-   HBeforeCacheEnt;
-
-static HBeforeCacheEnt hbefore__cache[HBEFORE__N_CACHE];
-
-static void hbefore__invalidate_cache ( void ) 
-{
-   Int i;
-   SegmentID bogus = 0;
-   tl_assert(!is_sane_SegmentID(bogus));
-   stats__hbefore_invals++;
-   for (i = 0; i < HBEFORE__N_CACHE; i++) {
-      hbefore__cache[i].segid1 = bogus;
-      hbefore__cache[i].segid2 = bogus;
-      hbefore__cache[i].result = False;
-   }
-}
-
-static Bool happens_before ( SegmentID segid1, SegmentID segid2 )
-{
-   Bool    hbG, hbV;
-   Int     i, j, iNSERT_POINT;
-   Segment *seg1, *seg2;
-   tl_assert(is_sane_SegmentID(segid1));
-   tl_assert(is_sane_SegmentID(segid2));
-   tl_assert(segid1 != segid2);
-   stats__hbefore_queries++;
-   stats__hbefore_probes++;
-   if (segid1 == hbefore__cache[0].segid1 
-       && segid2 == hbefore__cache[0].segid2) {
-      stats__hbefore_cache0s++;
-      return hbefore__cache[0].result;
-   }
-   for (i = 1; i < HBEFORE__N_CACHE; i++) {
-      stats__hbefore_probes++;
-      if (segid1 == hbefore__cache[i].segid1 
-          && segid2 == hbefore__cache[i].segid2) {
-         /* Found it.  Move it 1 step closer to the front. */
-         HBeforeCacheEnt tmp = hbefore__cache[i];
-         hbefore__cache[i]   = hbefore__cache[i-1];
-         hbefore__cache[i-1] = tmp;
-         stats__hbefore_cacheNs++;
-         return tmp.result;
-      }
-   }
-   /* Not found.  Search the graph and add an entry to the cache. */
-   stats__hbefore_gsearches++;
-
-   seg1 = map_segments_lookup(segid1);
-   seg2 = map_segments_lookup(segid2);
-   tl_assert(is_sane_Segment(seg1));
-   tl_assert(is_sane_Segment(seg2));
-   tl_assert(seg1 != seg2);
-   tl_assert(seg1->vts);
-   tl_assert(seg2->vts);
-
-   hbV = cmpGEQ_VTS( seg2->vts, seg1->vts );
-   if (clo_sanity_flags & SCE_HBEFORE) {
-      /* Crosscheck the vector-timestamp comparison result against that
-         obtained from the explicit graph approach.  Can be very
-         slow. */
-      hbG = happens_before_wrk( seg1, seg2 );
-   } else {
-      /* Assume the vector-timestamp comparison result is correct, and
-         use it as-is. */
-      hbG = hbV;
-   }
-
-   if (hbV != hbG) {
-      VG_(printf)("seg1 %p  seg2 %p  hbV %d  hbG %d\n", 
-                  seg1,seg2,(Int)hbV,(Int)hbG);
-      segments__generate_vcg();
-   }
-   tl_assert(hbV == hbG);
-
-   iNSERT_POINT = (1*HBEFORE__N_CACHE)/4 - 1;
-   /* if (iNSERT_POINT > 4) iNSERT_POINT = 4; */
-
-   for (j = HBEFORE__N_CACHE-1; j > iNSERT_POINT; j--) {
-      hbefore__cache[j] = hbefore__cache[j-1];
-   }
-   hbefore__cache[iNSERT_POINT].segid1 = segid1;
-   hbefore__cache[iNSERT_POINT].segid2 = segid2;
-   hbefore__cache[iNSERT_POINT].result = hbG;
-
-   if (0)
-   VG_(printf)("hb %d %d\n", (Int)segid1-(1<<24), (Int)segid2-(1<<24));
-   return hbG;
-}
-
-/*--------------- generating .vcg output ---------------*/
-
-static void segments__generate_vcg ( void )
-{
-#define PFX "xxxxxx"
-   /* Edge colours:
-         Black  -- the chain of .prev links
-         Green  -- thread creation, link to parent
-         Red    -- thread exit, link to exiting thread
-         Yellow -- signal edge
-         Pink   -- semaphore-up edge
-   */
-   Segment* seg;
-   HChar vtsstr[128];
-   VG_(printf)(PFX "graph: { title: \"Segments\"\n");
-   VG_(printf)(PFX "orientation: top_to_bottom\n");
-   VG_(printf)(PFX "height: 900\n");
-   VG_(printf)(PFX "width: 500\n");
-   VG_(printf)(PFX "x: 20\n");
-   VG_(printf)(PFX "y: 20\n");
-   VG_(printf)(PFX "color: lightgrey\n");
-   for (seg = admin_segments; seg; seg=seg->admin) {
-
-      VG_(printf)(PFX "node: { title: \"%p\" color: lightcyan "
-                  "textcolor: darkgreen label: \"Seg %p\\n", 
-                  seg, seg);
-      if (seg->thr->errmsg_index == 1) {
-         VG_(printf)("ROOT_THREAD");
-      } else {
-         VG_(printf)("Thr# %d", seg->thr->errmsg_index);
-      }
-
-      if (clo_gen_vcg >= 2) {
-         show_VTS( vtsstr, sizeof(vtsstr)-1, seg->vts );
-         vtsstr[sizeof(vtsstr)-1] = 0;
-         VG_(printf)("\\n%s", vtsstr);
-      }
-
-      VG_(printf)("\" }\n");
-
-      if (seg->prev)
-         VG_(printf)(PFX "edge: { sourcename: \"%p\" targetname: \"%p\""
-                     "color: black }\n", seg->prev, seg );
-      if (seg->other) {
-         HChar* colour = "orange";
-         switch (seg->other_hint) {
-            case 'c': colour = "darkgreen";  break; /* creation */
-            case 'j': colour = "red";        break; /* join (exit) */
-            case 's': colour = "orange";     break; /* signal */
-            case 'S': colour = "pink";       break; /* sem_post->wait */
-            case 'u': colour = "cyan";       break; /* unlock */
-            default: tl_assert(0);
-         }
-         VG_(printf)(PFX "edge: { sourcename: \"%p\" targetname: \"%p\""
-                     " color: %s }\n", seg->other, seg, colour );
-      }
-   }
-   VG_(printf)(PFX "}\n");
-#undef PFX
-}
-
 
 /*----------------------------------------------------------------*/
 /*--- map_shmem :: WordFM Addr SecMap                          ---*/
 /*--- shadow memory (low level handlers) (shmem__* fns)        ---*/
 /*----------------------------------------------------------------*/
-
-
-static UWord stats__secmaps_allocd       = 0; // # SecMaps issued
-static UWord stats__secmap_ga_space_covered = 0; // # ga bytes covered
-static UWord stats__secmap_linesZ_allocd = 0; // # CacheLineZ's issued
-static UWord stats__secmap_linesZ_bytes  = 0; // .. using this much storage
-static UWord stats__secmap_linesF_allocd = 0; // # CacheLineF's issued
-static UWord stats__secmap_linesF_bytes  = 0; //  .. using this much storage
-static UWord stats__secmap_iterator_steppings = 0; // # calls to stepSMIter
-static UWord stats__cache_Z_fetches      = 0; // # Z lines fetched
-static UWord stats__cache_Z_wbacks       = 0; // # Z lines written back
-static UWord stats__cache_F_fetches      = 0; // # F lines fetched
-static UWord stats__cache_F_wbacks       = 0; // # F lines written back
-static UWord stats__cache_invals         = 0; // # cache invals
-static UWord stats__cache_flushes        = 0; // # cache flushes
-static UWord stats__cache_totrefs        = 0; // # total accesses
-static UWord stats__cache_totmisses      = 0; // # misses
-static UWord stats__cline_normalises     = 0; // # calls to cacheline_normalise
-static UWord stats__cline_read64s        = 0; // # calls to s_m_read64
-static UWord stats__cline_read32s        = 0; // # calls to s_m_read32
-static UWord stats__cline_read16s        = 0; // # calls to s_m_read16
-static UWord stats__cline_read8s         = 0; // # calls to s_m_read8
-static UWord stats__cline_write64s       = 0; // # calls to s_m_write64
-static UWord stats__cline_write32s       = 0; // # calls to s_m_write32
-static UWord stats__cline_write16s       = 0; // # calls to s_m_write16
-static UWord stats__cline_write8s        = 0; // # calls to s_m_write8
-static UWord stats__cline_set64s         = 0; // # calls to s_m_set64
-static UWord stats__cline_set32s         = 0; // # calls to s_m_set32
-static UWord stats__cline_set16s         = 0; // # calls to s_m_set16
-static UWord stats__cline_set8s          = 0; // # calls to s_m_set8
-static UWord stats__cline_get8s          = 0; // # calls to s_m_get8
-static UWord stats__cline_copy8s         = 0; // # calls to s_m_copy8
-static UWord stats__cline_64to32splits   = 0; // # 64-bit accesses split
-static UWord stats__cline_32to16splits   = 0; // # 32-bit accesses split
-static UWord stats__cline_16to8splits    = 0; // # 16-bit accesses split
-static UWord stats__cline_64to32pulldown = 0; // # calls to pulldown_to_32
-static UWord stats__cline_32to16pulldown = 0; // # calls to pulldown_to_16
-static UWord stats__cline_16to8pulldown  = 0; // # calls to pulldown_to_8
-
-
-static SVal shadow_mem_get8 ( Addr a ); /* fwds */
-
-static inline Addr shmem__round_to_SecMap_base ( Addr a ) {
-   return a & ~(N_SECMAP_ARANGE - 1);
-}
-static inline UWord shmem__get_SecMap_offset ( Addr a ) {
-   return a & (N_SECMAP_ARANGE - 1);
-}
 
 /*--------------- SecMap allocation --------------- */
 
@@ -2296,7 +975,7 @@ static HChar* shmem__bigchunk_end1 = NULL;
 
 static void* shmem__bigchunk_alloc ( SizeT n )
 {
-   const SizeT sHMEM__BIGCHUNK_SIZE = 4096 * 256;
+   const SizeT sHMEM__BIGCHUNK_SIZE = 4096 * 256 * 4;
    tl_assert(n > 0);
    n = ROUNDUP(n, 16);
    tl_assert(shmem__bigchunk_next <= shmem__bigchunk_end1);
@@ -2304,7 +983,7 @@ static void* shmem__bigchunk_alloc ( SizeT n )
              <= (SSizeT)sHMEM__BIGCHUNK_SIZE);
    if (shmem__bigchunk_next + n > shmem__bigchunk_end1) {
       if (0)
-      VG_(printf)("XXXXX bigchunk: abandoning %d bytes\n", 
+      VG_(printf)("XXXXX bigchunk: abandoning %d bytes\n",
                   (Int)(shmem__bigchunk_end1 - shmem__bigchunk_next));
       shmem__bigchunk_next = VG_(am_shadow_alloc)( sHMEM__BIGCHUNK_SIZE );
       shmem__bigchunk_end1 = shmem__bigchunk_next + sHMEM__BIGCHUNK_SIZE;
@@ -2316,101 +995,6 @@ static void* shmem__bigchunk_alloc ( SizeT n )
    return shmem__bigchunk_next - n;
 }
 
-static SecMap* shmem__alloc_SecMap ( void )
-{
-   Word    i, j;
-   SecMap* sm = shmem__bigchunk_alloc( sizeof(SecMap) );
-   if (0) VG_(printf)("alloc_SecMap %p\n",sm);
-   tl_assert(sm);
-   sm->magic       = SecMap_MAGIC;
-   sm->mbHasLocks  = False; /* dangerous */
-   sm->mbHasShared = False; /* dangerous */
-   for (i = 0; i < N_SECMAP_ZLINES; i++) {
-      sm->linesZ[i].dict[0] = SHVAL_NoAccess;
-      sm->linesZ[i].dict[1] = 0; /* completely invalid SHVAL */
-      sm->linesZ[i].dict[2] = 0;
-      sm->linesZ[i].dict[3] = 0;
-      for (j = 0; j < N_LINE_ARANGE/4; j++)
-         sm->linesZ[i].ix2s[j] = 0; /* all reference dict[0] */
-   }
-   sm->linesF      = NULL;
-   sm->linesF_size = 0;
-   stats__secmaps_allocd++;
-   stats__secmap_ga_space_covered += N_SECMAP_ARANGE;
-   stats__secmap_linesZ_allocd += N_SECMAP_ZLINES;
-   stats__secmap_linesZ_bytes += N_SECMAP_ZLINES * sizeof(CacheLineZ);
-   return sm;
-}
-
-static SecMap* shmem__find_or_alloc_SecMap ( Addr ga )
-{
-   SecMap* sm    = NULL;
-   Addr    gaKey = shmem__round_to_SecMap_base(ga);
-   if (VG_(lookupFM)( map_shmem,
-                      NULL/*keyP*/, (Word*)&sm, (Word)gaKey )) {
-      /* Found; address of SecMap is in sm */
-      tl_assert(sm);
-   } else {
-      /* create a new one */
-      sm = shmem__alloc_SecMap();
-      tl_assert(sm);
-      VG_(addToFM)( map_shmem, (Word)gaKey, (Word)sm );
-   }
-   return sm;
-}
-
-
-/*--------------- cache management/lookup --------------- */
-
-/*--------------- misc --------------- */
-
-static Bool shmem__get_mbHasLocks ( Addr a )
-{
-   SecMap* sm;
-   Addr aKey = shmem__round_to_SecMap_base(a);
-   if (VG_(lookupFM)( map_shmem,
-                      NULL/*keyP*/, (Word*)&sm, (Word)aKey )) {
-      /* Found */
-      return sm->mbHasLocks;
-   } else {
-      return False;
-   }
-}
-
-static void shmem__set_mbHasLocks ( Addr a, Bool b )
-{
-   SecMap* sm;
-   Addr aKey = shmem__round_to_SecMap_base(a);
-   tl_assert(b == False || b == True);
-   if (VG_(lookupFM)( map_shmem,
-                      NULL/*keyP*/, (Word*)&sm, (Word)aKey )) {
-      /* Found; address of SecMap is in sm */
-   } else {
-      /* create a new one */
-      sm = shmem__alloc_SecMap();
-      tl_assert(sm);
-      VG_(addToFM)( map_shmem, (Word)aKey, (Word)sm );
-   }
-   sm->mbHasLocks = b;
-}
-
-static void shmem__set_mbHasShared ( Addr a, Bool b )
-{
-   SecMap* sm;
-   Addr aKey = shmem__round_to_SecMap_base(a);
-   tl_assert(b == False || b == True);
-   if (VG_(lookupFM)( map_shmem,
-                      NULL/*keyP*/, (Word*)&sm, (Word)aKey )) {
-      /* Found; address of SecMap is in sm */
-   } else {
-      /* create a new one */
-      sm = shmem__alloc_SecMap();
-      tl_assert(sm);
-      VG_(addToFM)( map_shmem, (Word)aKey, (Word)sm );
-   }
-   sm->mbHasShared = b;
-}
-
 
 /*----------------------------------------------------------------*/
 /*--- Sanity checking the data structures                      ---*/
@@ -2418,8 +1002,6 @@ static void shmem__set_mbHasShared ( Addr a, Bool b )
 
 static UWord stats__sanity_checks = 0;
 
-static Bool is_sane_CacheLine ( CacheLine* cl ); /* fwds */
-static Bool cmpGEQ_VTS ( XArray* a, XArray* b ); /* fwds */
 static void laog__sanity_check ( Char* who ); /* fwds */
 
 /* REQUIRED INVARIANTS:
@@ -2512,7 +1094,6 @@ static void threads__sanity_check ( Char* who )
    UWord*    ls_words;
    Word      ls_size, i;
    Lock*     lk;
-   Segment*  seg;
    for (thr = admin_threads; thr; thr = thr->admin) {
       if (!is_sane_Thread(thr)) BAD("1");
       wsA = thr->locksetA;
@@ -2527,12 +1108,6 @@ static void threads__sanity_check ( Char* who )
          // Thread.lockset: each Lock in set is actually held by that
          // thread
          if (!thread_is_a_holder_of_Lock(thr,lk)) BAD("3");
-         // Thread.csegid is a valid SegmentID
-         if (!is_sane_SegmentID(thr->csegid)) BAD("4");
-         // and the associated Segment has .thr == t
-         seg = map_segments_maybe_lookup(thr->csegid);
-         if (!is_sane_Segment(seg)) BAD("5");
-         if (seg->thr != thr) BAD("6");
       }
    }
    return;
@@ -2571,11 +1146,6 @@ static void locks__sanity_check ( Char* who )
       if (!is_sane_LockN(lk)) BAD("3");
       // map_locks binds guest address back to this lock
       if (lk != map_locks_maybe_lookup(lk->guestaddr)) BAD("4");
-      // lk->guest_addr does not have shadow state NoAccess
-      // FIXME: this could legitimately arise from a buggy guest
-      // that attempts to lock in (eg) freed memory.  Detect this
-      // and warn about it in the pre/post-mutex-lock event handler.
-      if (is_SHVAL_NoAccess(shadow_mem_get8(lk->guestaddr))) BAD("5");
       // look at all threads mentioned as holders of this lock.  Ensure
       // this lock is mentioned in their locksets.
       if (lk->heldBy) {
@@ -2604,8 +1174,6 @@ static void locks__sanity_check ( Char* who )
          // since lk is unheld, then (no lockset contains lk)
          // hmm, this is really too expensive to check.  Hmm.
       }
-      // secmaps for lk has .mbHasLocks == True
-      if (!shmem__get_mbHasLocks(lk->guestaddr)) BAD("10");
    }
 
    return;
@@ -2616,172 +1184,10 @@ static void locks__sanity_check ( Char* who )
 }
 
 
-/* Sanity check Segments, as far as possible */
-__attribute__((noinline))
-static void segments__sanity_check ( Char* who )
-{
-#define BAD(_str) do { how = (_str); goto bad; } while (0)
-   Char*    how = "no error";
-   Int      i;
-   Segment* seg;
-   // FIXME
-   //   the Segment graph is a dag (no cycles)
-   //   all of the Segment graph must be reachable from the segids
-   //      mentioned in the Threads
-   // # entries in admin_segments == # entries in map_segments
-   for (i = 0, seg = admin_segments;  seg;  i++, seg = seg->admin)
-      ;
-   if (i != VG_(sizeFM)(map_segments)) BAD("1");
-   // for seg in Segments {
-   for (seg = admin_segments; seg; seg = seg->admin) {
-      if (!is_sane_Segment(seg)) BAD("2");
-      if (!is_sane_Thread(seg->thr)) BAD("3");
-      if (!seg->vts) BAD("4");
-      if (seg->prev && seg->prev->vts
-          && !cmpGEQ_VTS(seg->vts, seg->prev->vts))
-         BAD("5");
-      if (seg->other && seg->other->vts
-          && !cmpGEQ_VTS(seg->vts, seg->other->vts))
-         BAD("6");
-   }
-   return;
-  bad:
-   VG_(printf)("segments__sanity_check: who=\"%s\", bad=\"%s\"\n", 
-               who, how);
-   tl_assert(0);
-#undef BAD
-}
-
-
-/* Sanity check shadow memory, as far as possible */
-static Int cmp_Addr_for_ssort ( void* p1, void* p2 ) {
-   Addr a1 = *(Addr*)p1;
-   Addr a2 = *(Addr*)p2;
-   if (a1 < a2) return -1;
-   if (a1 > a2) return 1;
-   return 0;
-}
-__attribute__((noinline))
-static void shmem__sanity_check ( Char* who )
-{
-#define BAD(_str) do { how = (_str); goto bad; } while (0)
-   Char*   how = "no error";
-   Word    smga;
-   SecMap* sm;
-   Word    i, j, ws_size, n_valid_tags;
-   UWord*  ws_words;
-   Addr*   valid_tags;
-   VG_(initIterFM)( map_shmem );
-   // for sm in SecMaps {
-   while (VG_(nextIterFM)( map_shmem,
-                           (Word*)&smga, (Word*)&sm )) {
-      SecMapIter itr;
-      SVal*      w32p = NULL;
-      Bool       mbHasShared = False;
-      Bool       allNoAccess = True;
-      if (!is_sane_SecMap(sm)) BAD("1");
-      // sm properly aligned
-      if (smga != shmem__round_to_SecMap_base(smga)) BAD("2");
-      // if any shadow word is ShR or ShM then .mbHasShared == True
-      initSecMapIter( &itr );
-      while (stepSecMapIter( &w32p, &itr, sm )) {
-         SVal w32 = *w32p;
-         if (is_SHVAL_Sh(w32)) 
-            mbHasShared = True;
-         if (!is_SHVAL_NoAccess(w32))
-            allNoAccess = False;
-         if (is_SHVAL_Excl(w32)) {
-            // for each Excl(segid) state
-            // map_segments_lookup maps to a sane Segment(seg)
-            Segment*  seg;
-            SegmentID segid = un_SHVAL_Excl(w32);
-            if (!is_sane_SegmentID(segid)) BAD("3");
-            seg = map_segments_maybe_lookup(segid);
-            if (!is_sane_Segment(seg)) BAD("4");
-         } 
-         else if (is_SHVAL_Sh(w32)) {
-            WordSetID tset = un_SHVAL_Sh_tset(w32);
-            WordSetID lset = un_SHVAL_Sh_lset(w32);
-            if (!HG_(plausibleWS)( univ_tsets, tset )) BAD("5");
-            if (!HG_(saneWS_SLOW)( univ_tsets, tset )) BAD("6");
-            if (HG_(cardinalityWS)( univ_tsets, tset ) < 2) BAD("7");
-            if (!HG_(plausibleWS)( univ_lsets, lset )) BAD("8");
-            if (!HG_(saneWS_SLOW)( univ_lsets, lset )) BAD("9");
-            HG_(getPayloadWS)( &ws_words, &ws_size, univ_lsets, lset );
-            for (j = 0; j < ws_size; j++) {
-               Lock* lk = (Lock*)ws_words[j];
-               // for each ShM/ShR(tsetid,lsetid) state
-               // each lk in lset is a valid Lock
-               if (!is_sane_LockN(lk)) BAD("10");
-            }
-            HG_(getPayloadWS)( &ws_words, &ws_size, univ_tsets, tset );
-            for (j = 0; j < ws_size; j++) {
-               Thread* thr = (Thread*)ws_words[j];
-               //for each ShM/ShR(tsetid,lsetid) state
-               // each thr in tset is a valid thread, which is non-dead
-               if (!is_sane_Thread(thr)) BAD("11");
-            }
-         }
-         else if (is_SHVAL_NoAccess(w32) || is_SHVAL_New(w32)) {
-            /* nothing to check */
-         }
-         else {
-            /* bogus shadow mem value */
-            BAD("12");
-         }
-      } /* iterating over a SecMap */
-      // Check essential safety property
-      if (mbHasShared && !sm->mbHasShared) BAD("13");
-      // This is optional - check that destroyed memory has its hint
-      // bits cleared.  NB won't work properly unless full, eager
-      // GCing of SecMaps is implemented
-      //if (allNoAccess && sm->mbHasLocks) BAD("13a");
-   }
-   VG_(doneIterFM)( map_shmem );
-
-   // check the cache
-   valid_tags   = hg_zalloc(N_WAY_NENT * sizeof(Addr));
-   n_valid_tags = 0;
-   tl_assert(valid_tags);
-   for (i = 0; i < N_WAY_NENT; i++) {
-      CacheLine* cl;
-      Addr       tag; 
-      /* way0, dude */
-      cl  = &cache_shmem.lyns0[i];
-      tag =  cache_shmem.tags0[i];
-      if (tag != 1) {
-         if (!is_valid_scache_tag(tag)) BAD("14-0");
-         if (!is_sane_CacheLine(cl)) BAD("15-0");
-         /* A valid tag should be of the form 
-            X---X line_number:N_WAY_BITS 0:N_LINE_BITS */
-         if (tag & (N_LINE_ARANGE-1)) BAD("16-0");
-         if ( i != ((tag >> N_LINE_BITS) & (N_WAY_NENT-1)) ) BAD("16-1");
-         valid_tags[n_valid_tags++] = tag;
-      }
-   }
-   tl_assert(n_valid_tags <= N_WAY_NENT);
-   if (n_valid_tags > 1) {
-      /* Check that the valid tags are unique */
-      VG_(ssort)( valid_tags, n_valid_tags, sizeof(Addr), cmp_Addr_for_ssort );
-      for (i = 0; i < n_valid_tags-1; i++) {
-         if (valid_tags[i] >= valid_tags[i+1])
-            BAD("16-2");
-      }
-   }
-   hg_free(valid_tags);
-   return;
-  bad:
-   VG_(printf)("shmem__sanity_check: who=\"%s\", bad=\"%s\"\n", who, how);
-   tl_assert(0);
-#undef BAD
-}
-
 static void all_except_Locks__sanity_check ( Char* who ) {
    stats__sanity_checks++;
    if (0) VG_(printf)("all_except_Locks__sanity_check(%s)\n", who);
    threads__sanity_check(who);
-   segments__sanity_check(who);
-   shmem__sanity_check(who);
    laog__sanity_check(who);
 }
 static void all__sanity_check ( Char* who ) {
@@ -2794,27 +1200,13 @@ static void all__sanity_check ( Char* who ) {
 /*--- the core memory state machine (msm__* functions)         ---*/
 /*----------------------------------------------------------------*/
 
-static UWord stats__msm_read_Excl_nochange = 0;
-static UWord stats__msm_read_Excl_transfer = 0;
-static UWord stats__msm_read_Excl_to_ShR   = 0;
-static UWord stats__msm_read_ShR_to_ShR    = 0;
-static UWord stats__msm_read_ShM_to_ShM    = 0;
-static UWord stats__msm_read_New_to_Excl   = 0;
-static UWord stats__msm_read_NoAccess      = 0;
-
-static UWord stats__msm_write_Excl_nochange = 0;
-static UWord stats__msm_write_Excl_transfer = 0;
-static UWord stats__msm_write_Excl_to_ShM   = 0;
-static UWord stats__msm_write_ShR_to_ShM    = 0;
-static UWord stats__msm_write_ShM_to_ShM    = 0;
-static UWord stats__msm_write_New_to_Excl   = 0;
-static UWord stats__msm_write_NoAccess      = 0;
-
 /* fwds */
 static void record_error_Race ( Thread* thr, 
                                 Addr data_addr, Bool isWrite, Int szB,
                                 SVal old_sv, SVal new_sv,
-                                ExeContext* mb_lastlock );
+                                ExeContext* mb_lastlock,
+                                ExeContext* mb_confacc,
+                                Thread* mb_confaccthr );
 
 static void record_error_FreeMemLock ( Thread* thr, Lock* lk );
 
@@ -2954,358 +1346,6 @@ static ExeContext* maybe_get_lastlock_initpoint ( Addr ga )
 }
 
 
-static void msm__show_state_change ( Thread* thr_acc, Addr a, Int szB,
-                                     Char howC,
-                                     SVal sv_old, SVal sv_new )
-{
-   ThreadId tid;
-   UChar txt_old[100], txt_new[100];
-   Char* how = "";
-   tl_assert(is_sane_Thread(thr_acc));
-   tl_assert(clo_trace_level == 1 || clo_trace_level == 2);
-   switch (howC) {
-      case 'r': how = "rd"; break;
-      case 'w': how = "wr"; break;
-      case 'p': how = "pa"; break;
-      default: tl_assert(0);
-   }
-   show_shadow_w32_for_user(txt_old, sizeof(txt_old), sv_old);
-   show_shadow_w32_for_user(txt_new, sizeof(txt_new), sv_new);
-   txt_old[sizeof(txt_old)-1] = 0;
-   txt_new[sizeof(txt_new)-1] = 0;
-   if (clo_trace_level == 2) {
-      /* show everything */
-      VG_(message)(Vg_UserMsg, "");
-      announce_one_thread( thr_acc );
-      VG_(message)(Vg_UserMsg, 
-                   "TRACE: %#lx %s %d thr#%d :: %s --> %s",
-                   a, how, szB, thr_acc->errmsg_index, txt_old, txt_new );
-      tid = map_threads_maybe_reverse_lookup_SLOW(thr_acc);
-      if (tid != VG_INVALID_THREADID) {
-         VG_(get_and_pp_StackTrace)( tid, 8 );
-      }
-   } else {
-      /* Just print one line */
-      VG_(message)(Vg_UserMsg, 
-                   "TRACE: %#lx %s %d thr#%d :: %22s --> %22s",
-                   a, how, szB, thr_acc->errmsg_index, txt_old, txt_new );
-   }
-}
-
-
-/* Here are some MSM stats from startup/shutdown of OpenOffice.
-
-     msm:  489,734,723   80,278,862 rd/wr_Excl_nochange
-     msm:    3,171,542       93,738 rd/wr_Excl_transfer
-     msm:       45,036          167 rd/wr_Excl_to_ShR/ShM
-     msm:   13,352,594          285 rd/wr_ShR_to_ShR/ShM
-     msm:    1,125,879      815,779 rd/wr_ShM_to_ShM
-     msm:    7,561,842  250,629,935 rd/wr_New_to_Excl
-     msm:       17,778            0 rd/wr_NoAccess
-
-   This says how the clauses should be ordered for greatest speed:
-
-   * the vast majority of memory reads (490 million out of a total of
-     515 million) are of memory in an exclusive state, and the state
-     is unchanged.  All other read accesses are insignificant by
-     comparison.
-
-   * 75% (251 million out of a total of 332 million) writes are 'first
-     time' writes, which take New memory into exclusive ownership.
-     Almost all the rest (80 million) are accesses to exclusive state,
-     which remains unchanged.  All other write accesses are
-     insignificant. */
-
-/* The core MSM.  If 'wold' is the old 32-bit shadow word for a
-   location, return the new shadow word that would result for a read
-   of the location, and report any errors necessary on the way.  This
-   does not update shadow memory - it merely produces new shadow words
-   from old.  'thr_acc' and 'a' are supplied only so it can produce
-   coherent error messages if necessary. */
-static
-SVal msm__handle_read ( Thread* thr_acc, Addr a, SVal wold, Int szB )
-{
-   SVal wnew = SHVAL_Invalid;
-
-   tl_assert(is_sane_Thread(thr_acc));
-
-   if (0) VG_(printf)("read thr=%p %#lx\n", thr_acc, a);
-
-   /* Exclusive */
-   if (LIKELY(is_SHVAL_Excl(wold))) {
-      /* read Excl(segid) 
-           |  segid_old == segid-of-thread
-           -> no change
-           |  segid_old `happens_before` segid-of-this-thread
-           -> Excl(segid-of-this-thread)
-           |  otherwise
-           -> ShR
-      */
-      SegmentID segid_old = un_SHVAL_Excl(wold);
-      tl_assert(is_sane_SegmentID(segid_old));
-      if (LIKELY(segid_old == thr_acc->csegid)) {
-         /* no change */
-         stats__msm_read_Excl_nochange++;
-         /*NOCHANGE*/return wold;
-      }
-      if (happens_before(segid_old, thr_acc->csegid)) {
-         /* -> Excl(segid-of-this-thread) */
-         wnew = mk_SHVAL_Excl(thr_acc->csegid);
-         stats__msm_read_Excl_transfer++;
-         goto changed;
-      }
-      /* else */ {
-         /* Enter the shared-readonly (ShR) state. */
-         WordSetID tset, lset;
-         /* This location has been accessed by precisely two threads.
-            Make an appropriate tset. */
-         // FIXME: performance: duplicate map_segments_lookup(segid_old)
-         // since must also be done in happens_before()
-         Segment* seg_old = map_segments_lookup( segid_old );
-         Thread*  thr_old = seg_old->thr;
-         tset = HG_(doubletonWS)( univ_tsets, (Word)thr_old, (Word)thr_acc );
-         lset = add_BHL( thr_acc->locksetA ); /* read ==> use all locks */
-         wnew = mk_SHVAL_ShR( tset, lset );
-         stats__msm_read_Excl_to_ShR++;
-         goto changed;
-      }
-      /*NOTREACHED*/
-   } 
-
-   /* Shared-Readonly */
-   if (is_SHVAL_ShR(wold)) {
-     /* read Shared-Readonly(threadset, lockset)
-        We remain in ShR state, but add this thread to the 
-        threadset and refine the lockset accordingly.  Do not
-        complain if the lockset becomes empty -- that's ok. */
-      WordSetID tset_old = un_SHVAL_ShR_tset(wold);
-      WordSetID lset_old = un_SHVAL_ShR_lset(wold);
-      WordSetID tset_new = HG_(addToWS)( univ_tsets, 
-                                         tset_old, (Word)thr_acc );
-      WordSetID lset_new = HG_(intersectWS)( univ_lsets,
-                                             lset_old, 
-                                             add_BHL(thr_acc->locksetA)
-                                             /* read ==> use all locks */ );
-      /*SVal*/  wnew     = mk_SHVAL_ShR( tset_new, lset_new );
-      if (lset_old != lset_new)
-         record_last_lock_lossage(a,lset_old,lset_new);
-      stats__msm_read_ShR_to_ShR++;
-      goto changed;
-   }
-
-   /* Shared-Modified */
-   if (is_SHVAL_ShM(wold)) {
-      /* read Shared-Modified(threadset, lockset)
-         We remain in ShM state, but add this thread to the 
-         threadset and refine the lockset accordingly.
-         If the lockset becomes empty, complain. */
-      WordSetID tset_old = un_SHVAL_ShM_tset(wold);
-      WordSetID lset_old = un_SHVAL_ShM_lset(wold);
-      WordSetID tset_new = HG_(addToWS)( univ_tsets,
-                                         tset_old, (Word)thr_acc );
-      WordSetID lset_new = HG_(intersectWS)( univ_lsets,
-                                             lset_old,
-                                             add_BHL(thr_acc->locksetA)
-                                             /* read ==> use all locks */ ); 
-      /*SVal*/  wnew     = mk_SHVAL_ShM( tset_new, lset_new );
-      if (lset_old != lset_new)
-         record_last_lock_lossage(a,lset_old,lset_new);
-      if (HG_(isEmptyWS)(univ_lsets, lset_new)
-          && !HG_(isEmptyWS)(univ_lsets, lset_old)) {
-         record_error_Race( thr_acc, a, 
-                            False/*isWrite*/, szB, wold, wnew,
-                            maybe_get_lastlock_initpoint(a) );
-      }
-      stats__msm_read_ShM_to_ShM++;
-      goto changed;
-   }
- 
-   /* New */
-   if (is_SHVAL_New(wold)) {
-      /* read New -> Excl(segid) */
-      wnew = mk_SHVAL_Excl( thr_acc->csegid );
-      stats__msm_read_New_to_Excl++;
-      goto changed;
-   } 
-
-   /* NoAccess */
-   if (is_SHVAL_NoAccess(wold)) {
-      // FIXME: complain if accessing here
-      // FIXME: transition to Excl?
-      if (0)
-      VG_(printf)(
-         "msm__handle_read_aligned_32(thr=%p, addr=%p): NoAccess\n",
-         thr_acc, (void*)a );
-      stats__msm_read_NoAccess++;
-      /*NOCHANGE*/return wold; /* no change */
-   }
-
-   /* hmm, bogus state */
-   tl_assert(0);
-
-  changed:
-   if (UNLIKELY(clo_trace_level > 0)) {
-      if (a <= clo_trace_addr && clo_trace_addr < a+szB
-          && wold != wnew) {
-         msm__show_state_change( thr_acc, a, szB, 'r', wold, wnew );
-      }
-   }
-   return wnew;
-}
-
-/* Similar to msm__handle_read, compute a new 32-bit shadow word
-   resulting from a write to a location, and report any errors
-   necessary on the way. */
-static
-SVal msm__handle_write ( Thread* thr_acc, Addr a, SVal wold, Int szB )
-{
-   SVal wnew = SHVAL_Invalid;
-
-   tl_assert(is_sane_Thread(thr_acc));
-
-   if (0) VG_(printf)("write32 thr=%p %#lx\n", thr_acc, a);
-
-   /* New */
-   if (LIKELY(is_SHVAL_New(wold))) {
-      /* write New -> Excl(segid) */
-      wnew = mk_SHVAL_Excl( thr_acc->csegid );
-      stats__msm_write_New_to_Excl++;
-      goto changed;
-   }
-
-   /* Exclusive */
-   if (is_SHVAL_Excl(wold)) {
-      // I believe is identical to case for read Excl
-      // apart from enters ShM rather than ShR 
-      /* read Excl(segid) 
-           |  segid_old == segid-of-thread
-           -> no change
-           |  segid_old `happens_before` segid-of-this-thread
-           -> Excl(segid-of-this-thread)
-           |  otherwise
-           -> ShM
-      */
-      SegmentID segid_old = un_SHVAL_Excl(wold);
-      tl_assert(is_sane_SegmentID(segid_old));
-      if (segid_old == thr_acc->csegid) {
-         /* no change */
-         stats__msm_write_Excl_nochange++;
-         /*NOCHANGE*/return wold;
-      }
-      if (happens_before(segid_old, thr_acc->csegid)) {
-         /* -> Excl(segid-of-this-thread) */
-         wnew = mk_SHVAL_Excl(thr_acc->csegid);
-         stats__msm_write_Excl_transfer++;
-         goto changed;
-      }
-      /* else */ {
-         /* Enter the shared-modified (ShM) state. */
-         WordSetID tset, lset;
-         /* This location has been accessed by precisely two threads.
-            Make an appropriate tset. */
-         // FIXME: performance: duplicate map_segments_lookup(segid_old)
-         // since must also be done in happens_before()
-         Segment* seg_old = map_segments_lookup( segid_old );
-         Thread*  thr_old = seg_old->thr;
-         tset = HG_(doubletonWS)( univ_tsets, (Word)thr_old, (Word)thr_acc );
-         lset = thr_acc->locksetW; /* write ==> use only w-held locks */
-         wnew = mk_SHVAL_ShM( tset, lset );
-         if (HG_(isEmptyWS)(univ_lsets, lset)) {
-            record_error_Race( thr_acc, 
-                               a, True/*isWrite*/, szB, wold, wnew,
-                               maybe_get_lastlock_initpoint(a) );
-         }
-         stats__msm_write_Excl_to_ShM++;
-         goto changed;
-      }
-      /*NOTREACHED*/
-   } 
-
-   /* Shared-Readonly */
-   if (is_SHVAL_ShR(wold)) {
-      /* write Shared-Readonly(threadset, lockset)
-         We move to ShM state, add this thread to the 
-         threadset and refine the lockset accordingly.
-         If the lockset becomes empty, complain. */
-      WordSetID tset_old = un_SHVAL_ShR_tset(wold);
-      WordSetID lset_old = un_SHVAL_ShR_lset(wold);
-      WordSetID tset_new = HG_(addToWS)( univ_tsets, 
-                                         tset_old, (Word)thr_acc );
-      WordSetID lset_new = HG_(intersectWS)(
-                              univ_lsets, 
-                              lset_old, 
-                              thr_acc->locksetW
-                              /* write ==> use only w-held locks */
-                           );
-      /*SVal*/  wnew     = mk_SHVAL_ShM( tset_new, lset_new );
-      if (lset_old != lset_new)
-         record_last_lock_lossage(a,lset_old,lset_new);
-      if (HG_(isEmptyWS)(univ_lsets, lset_new)) {
-         record_error_Race( thr_acc, a, 
-                            True/*isWrite*/, szB, wold, wnew,
-                            maybe_get_lastlock_initpoint(a) );
-      }
-      stats__msm_write_ShR_to_ShM++;
-      goto changed;
-   }
-
-   /* Shared-Modified */
-   else if (is_SHVAL_ShM(wold)) {
-      /* write Shared-Modified(threadset, lockset)
-         We remain in ShM state, but add this thread to the 
-         threadset and refine the lockset accordingly.
-         If the lockset becomes empty, complain. */
-      WordSetID tset_old = un_SHVAL_ShM_tset(wold);
-      WordSetID lset_old = un_SHVAL_ShM_lset(wold);
-      WordSetID tset_new = HG_(addToWS)( univ_tsets,
-                                         tset_old, (Word)thr_acc );
-      WordSetID lset_new = HG_(intersectWS)( 
-                              univ_lsets,
-                              lset_old, 
-                              thr_acc->locksetW 
-                              /* write ==> use only w-held locks */
-                           ); 
-      /*SVal*/  wnew     = mk_SHVAL_ShM( tset_new, lset_new );
-      if (lset_old != lset_new)
-         record_last_lock_lossage(a,lset_old,lset_new);
-      if (HG_(isEmptyWS)(univ_lsets, lset_new)
-          && !HG_(isEmptyWS)(univ_lsets, lset_old)) {
-         record_error_Race( thr_acc, a, 
-                            True/*isWrite*/, szB, wold, wnew,
-                            maybe_get_lastlock_initpoint(a) );
-      }
-      stats__msm_write_ShM_to_ShM++;
-      goto changed;
-   }
-
-   /* NoAccess */
-   if (is_SHVAL_NoAccess(wold)) {
-      // FIXME: complain if accessing here
-      // FIXME: transition to Excl?
-      if (0)
-      VG_(printf)(
-         "msm__handle_write_aligned_32(thr=%p, addr=%p): NoAccess\n",
-         thr_acc, (void*)a );
-      stats__msm_write_NoAccess++;
-      /*NOCHANGE*/return wold;
-   } 
-
-   /* hmm, bogus state */
-   VG_(printf)("msm__handle_write_aligned_32: bogus old state 0x%x\n", 
-               wold);
-   tl_assert(0);
-
-  changed:
-   if (UNLIKELY(clo_trace_level > 0)) {
-      if (a <= clo_trace_addr && clo_trace_addr < a+szB
-          && wold != wnew) {
-         msm__show_state_change( thr_acc, a, szB, 'w', wold, wnew );
-      }
-   }
-   return wnew;
-}
-
-
 /*----------------------------------------------------------------*/
 /*--- Shadow value and address range handlers                  ---*/
 /*----------------------------------------------------------------*/
@@ -3314,1753 +1354,46 @@ static void laog__pre_thread_acquires_lock ( Thread*, Lock* ); /* fwds */
 static void laog__handle_lock_deletions    ( WordSetID ); /* fwds */
 static inline Thread* get_current_Thread ( void ); /* fwds */
 
-/* ------------ CacheLineF and CacheLineZ related ------------ */
-
-static void write_twobit_array ( UChar* arr, UWord ix, UWord b2 ) {
-   Word bix, shft, mask, prep;
-   tl_assert((b2 & ~3) == 0);
-   tl_assert(ix >= 0);
-   bix  = ix >> 2;
-   shft = 2 * (ix & 3); /* 0, 2, 4 or 6 */
-   mask = 3 << shft;
-   prep = b2 << shft;
-   arr[bix] = (arr[bix] & ~mask) | prep;
-}
-
-static UWord read_twobit_array ( UChar* arr, UWord ix ) {
-   Word bix, shft;
-   tl_assert(ix >= 0);
-   bix  = ix >> 2;
-   shft = 2 * (ix & 3); /* 0, 2, 4 or 6 */
-   return (arr[bix] >> shft) & 3;
-}
-
-/* Given a lineZ index and a SecMap, return the CacheLineZ* and CacheLineF*
-   for that index. */
-static void get_ZF_by_index ( /*OUT*/CacheLineZ** zp,
-                              /*OUT*/CacheLineF** fp,
-                              SecMap* sm, Int zix ) {
-   CacheLineZ* lineZ;
-   tl_assert(zp);
-   tl_assert(fp);
-   tl_assert(zix >= 0 && zix < N_SECMAP_ZLINES);
-   tl_assert(is_sane_SecMap(sm));
-   lineZ = &sm->linesZ[zix];
-   if (lineZ->dict[0] == 0) {
-      Int fix = lineZ->dict[1];
-      tl_assert(sm->linesF);
-      tl_assert(sm->linesF_size > 0);
-      tl_assert(fix >= 0 && fix < sm->linesF_size);
-      *zp = NULL;
-      *fp = &sm->linesF[fix];
-      tl_assert(sm->linesF[fix].inUse);
-   } else {
-      *zp = lineZ;
-      *fp = NULL;
-   }
-}
-
-static void find_ZF_for_reading ( /*OUT*/CacheLineZ** zp,
-                                  /*OUT*/CacheLineF** fp, Addr tag ) {
-   CacheLineZ* lineZ;
-   CacheLineF* lineF;
-   UWord   zix;
-   SecMap* sm    = shmem__find_or_alloc_SecMap(tag);
-   UWord   smoff = shmem__get_SecMap_offset(tag);
-   /* since smoff is derived from a valid tag, it should be
-      cacheline-aligned. */
-   tl_assert(0 == (smoff & (N_LINE_ARANGE - 1)));
-   zix = smoff >> N_LINE_BITS;
-   tl_assert(zix < N_SECMAP_ZLINES);
-   lineZ = &sm->linesZ[zix];
-   lineF = NULL;
-   if (lineZ->dict[0] == 0) {
-      Word fix = lineZ->dict[1];
-      tl_assert(sm->linesF);
-      tl_assert(sm->linesF_size > 0);
-      tl_assert(fix >= 0 && fix < sm->linesF_size);
-      lineF = &sm->linesF[fix];
-      tl_assert(lineF->inUse);
-      lineZ = NULL;
-   }
-   *zp = lineZ;
-   *fp = lineF;
-}
-
-static void find_Z_for_writing ( /*OUT*/SecMap** smp,
-                                 /*OUT*/Word* zixp,
-                                 Addr tag ) {
-   CacheLineZ* lineZ;
-   CacheLineF* lineF;
-   UWord   zix;
-   SecMap* sm    = shmem__find_or_alloc_SecMap(tag);
-   UWord   smoff = shmem__get_SecMap_offset(tag);
-   /* since smoff is derived from a valid tag, it should be
-      cacheline-aligned. */
-   tl_assert(0 == (smoff & (N_LINE_ARANGE - 1)));
-   zix = smoff >> N_LINE_BITS;
-   tl_assert(zix < N_SECMAP_ZLINES);
-   lineZ = &sm->linesZ[zix];
-   lineF = NULL;
-   /* If lineZ has an associated lineF, free it up. */
-   if (lineZ->dict[0] == 0) {
-      Word fix = lineZ->dict[1];
-      tl_assert(sm->linesF);
-      tl_assert(sm->linesF_size > 0);
-      tl_assert(fix >= 0 && fix < sm->linesF_size);
-      lineF = &sm->linesF[fix];
-      tl_assert(lineF->inUse);
-      lineF->inUse = False;
-   }
-   *smp  = sm;
-   *zixp = zix;
-}
-
-static 
-void alloc_F_for_writing ( /*MOD*/SecMap* sm, /*OUT*/Word* fixp ) {
-   Word        i, new_size;
-   CacheLineF* nyu;
-
-   if (sm->linesF) {
-      tl_assert(sm->linesF_size > 0);
-   } else {
-      tl_assert(sm->linesF_size == 0);
-   }
-
-   if (sm->linesF) {
-      for (i = 0; i < sm->linesF_size; i++) {
-         if (!sm->linesF[i].inUse) {
-            *fixp = (Word)i;
-            return;
-         }
-      }
-   }
-
-   /* No free F line found.  Expand existing array and try again. */
-   new_size = sm->linesF_size==0 ? 1 : 2 * sm->linesF_size;
-   nyu      = hg_zalloc( new_size * sizeof(CacheLineF) );
-   tl_assert(nyu);
-
-   stats__secmap_linesF_allocd += (new_size - sm->linesF_size);
-   stats__secmap_linesF_bytes  += (new_size - sm->linesF_size)
-                                  * sizeof(CacheLineF);
-
-   if (0)
-   VG_(printf)("SM %p: expand F array from %d to %ld\n",
-               sm, (Int)sm->linesF_size, new_size);
-
-   for (i = 0; i < new_size; i++)
-      nyu[i].inUse = False;
-
-   if (sm->linesF) {
-      for (i = 0; i < sm->linesF_size; i++) {
-         tl_assert(sm->linesF[i].inUse);
-         nyu[i] = sm->linesF[i];
-      }
-      VG_(memset)(sm->linesF, 0, sm->linesF_size * sizeof(CacheLineF) );
-      hg_free(sm->linesF);
-   }
-
-   sm->linesF      = nyu;
-   sm->linesF_size = new_size;
-
-   for (i = 0; i < sm->linesF_size; i++) {
-      if (!sm->linesF[i].inUse) {
-         *fixp = (Word)i;
-         return;
-      }
-    }
-
-    /*NOTREACHED*/
-    tl_assert(0);
-}
-
-
-/* ------------ CacheLine and implicit-tree related ------------ */
-
-__attribute__((unused))
-static void pp_CacheLine ( CacheLine* cl ) {
-   Word i;
-   if (!cl) {
-      VG_(printf)("pp_CacheLine(NULL)\n");
-      return;
-   }
-   for (i = 0; i < N_LINE_TREES; i++) 
-      VG_(printf)("   descr: %04lx\n", (UWord)cl->descrs[i]);
-   for (i = 0; i < N_LINE_ARANGE; i++) 
-      VG_(printf)("    sval: %08lx\n", (UWord)cl->svals[i]);
-}
-
-static UChar descr_to_validbits ( UShort descr )
-{
-   /* a.k.a Party Time for gcc's constant folder */
-#  define DESCR(b8_7, b8_6, b8_5, b8_4, b8_3, b8_2, b8_1, b8_0, \
-                b16_3, b32_1, b16_2, b64, b16_1, b32_0, b16_0)  \
-             ( (UShort) ( ( (b8_7)  << 14) | ( (b8_6)  << 13) | \
-                          ( (b8_5)  << 12) | ( (b8_4)  << 11) | \
-                          ( (b8_3)  << 10) | ( (b8_2)  << 9)  | \
-                          ( (b8_1)  << 8)  | ( (b8_0)  << 7)  | \
-                          ( (b16_3) << 6)  | ( (b32_1) << 5)  | \
-                          ( (b16_2) << 4)  | ( (b64)   << 3)  | \
-                          ( (b16_1) << 2)  | ( (b32_0) << 1)  | \
-                          ( (b16_0) << 0) ) )
-
-#  define BYTE(bit7, bit6, bit5, bit4, bit3, bit2, bit1, bit0) \
-             ( (UChar) ( ( (bit7) << 7) | ( (bit6) << 6) | \
-                         ( (bit5) << 5) | ( (bit4) << 4) | \
-                         ( (bit3) << 3) | ( (bit2) << 2) | \
-                         ( (bit1) << 1) | ( (bit0) << 0) ) )
-
-   /* these should all get folded out at compile time */
-   tl_assert(DESCR(1,0,0,0,0,0,0,0, 0,0,0, 0, 0,0,0) == TREE_DESCR_8_7);
-   tl_assert(DESCR(0,0,0,0,0,0,0,1, 0,0,0, 0, 0,0,0) == TREE_DESCR_8_0);
-   tl_assert(DESCR(0,0,0,0,0,0,0,0, 1,0,0, 0, 0,0,0) == TREE_DESCR_16_3);
-   tl_assert(DESCR(0,0,0,0,0,0,0,0, 0,1,0, 0, 0,0,0) == TREE_DESCR_32_1);
-   tl_assert(DESCR(0,0,0,0,0,0,0,0, 0,0,1, 0, 0,0,0) == TREE_DESCR_16_2);
-   tl_assert(DESCR(0,0,0,0,0,0,0,0, 0,0,0, 1, 0,0,0) == TREE_DESCR_64);
-   tl_assert(DESCR(0,0,0,0,0,0,0,0, 0,0,0, 0, 1,0,0) == TREE_DESCR_16_1);
-   tl_assert(DESCR(0,0,0,0,0,0,0,0, 0,0,0, 0, 0,1,0) == TREE_DESCR_32_0);
-   tl_assert(DESCR(0,0,0,0,0,0,0,0, 0,0,0, 0, 0,0,1) == TREE_DESCR_16_0);
-
-   switch (descr) {
-   /*
-              +--------------------------------- TREE_DESCR_8_7
-              |             +------------------- TREE_DESCR_8_0
-              |             |  +---------------- TREE_DESCR_16_3
-              |             |  | +-------------- TREE_DESCR_32_1
-              |             |  | | +------------ TREE_DESCR_16_2
-              |             |  | | |  +--------- TREE_DESCR_64
-              |             |  | | |  |  +------ TREE_DESCR_16_1
-              |             |  | | |  |  | +---- TREE_DESCR_32_0
-              |             |  | | |  |  | | +-- TREE_DESCR_16_0
-              |             |  | | |  |  | | |
-              |             |  | | |  |  | | |   GRANULARITY, 7 -> 0 */
-   case DESCR(1,1,1,1,1,1,1,1, 0,0,0, 0, 0,0,0): /* 8 8 8 8  8 8 8 8 */
-                                                 return BYTE(1,1,1,1,1,1,1,1);
-   case DESCR(1,1,0,0,1,1,1,1, 0,0,1, 0, 0,0,0): /* 8 8 16   8 8 8 8 */
-                                                 return BYTE(1,1,0,1,1,1,1,1);
-   case DESCR(0,0,1,1,1,1,1,1, 1,0,0, 0, 0,0,0): /* 16  8 8  8 8 8 8 */ 
-                                                 return BYTE(0,1,1,1,1,1,1,1);
-   case DESCR(0,0,0,0,1,1,1,1, 1,0,1, 0, 0,0,0): /* 16  16   8 8 8 8 */
-                                                 return BYTE(0,1,0,1,1,1,1,1);
-
-   case DESCR(1,1,1,1,1,1,0,0, 0,0,0, 0, 0,0,1): /* 8 8 8 8  8 8 16 */ 
-                                                 return BYTE(1,1,1,1,1,1,0,1);
-   case DESCR(1,1,0,0,1,1,0,0, 0,0,1, 0, 0,0,1): /* 8 8 16   8 8 16 */
-                                                 return BYTE(1,1,0,1,1,1,0,1);
-   case DESCR(0,0,1,1,1,1,0,0, 1,0,0, 0, 0,0,1): /* 16  8 8  8 8 16 */
-                                                 return BYTE(0,1,1,1,1,1,0,1);
-   case DESCR(0,0,0,0,1,1,0,0, 1,0,1, 0, 0,0,1): /* 16  16   8 8 16 */
-                                                 return BYTE(0,1,0,1,1,1,0,1);
-
-   case DESCR(1,1,1,1,0,0,1,1, 0,0,0, 0, 1,0,0): /* 8 8 8 8  16 8 8 */
-                                                 return BYTE(1,1,1,1,0,1,1,1);
-   case DESCR(1,1,0,0,0,0,1,1, 0,0,1, 0, 1,0,0): /* 8 8 16   16 8 8 */
-                                                 return BYTE(1,1,0,1,0,1,1,1);
-   case DESCR(0,0,1,1,0,0,1,1, 1,0,0, 0, 1,0,0): /* 16  8 8  16 8 8 */
-                                                 return BYTE(0,1,1,1,0,1,1,1);
-   case DESCR(0,0,0,0,0,0,1,1, 1,0,1, 0, 1,0,0): /* 16  16   16 8 8 */
-                                                 return BYTE(0,1,0,1,0,1,1,1);
-
-   case DESCR(1,1,1,1,0,0,0,0, 0,0,0, 0, 1,0,1): /* 8 8 8 8  16 16 */
-                                                 return BYTE(1,1,1,1,0,1,0,1);
-   case DESCR(1,1,0,0,0,0,0,0, 0,0,1, 0, 1,0,1): /* 8 8 16   16 16 */
-                                                 return BYTE(1,1,0,1,0,1,0,1);
-   case DESCR(0,0,1,1,0,0,0,0, 1,0,0, 0, 1,0,1): /* 16  8 8  16 16 */
-                                                 return BYTE(0,1,1,1,0,1,0,1);
-   case DESCR(0,0,0,0,0,0,0,0, 1,0,1, 0, 1,0,1): /* 16  16   16 16 */
-                                                 return BYTE(0,1,0,1,0,1,0,1);
-
-   case DESCR(0,0,0,0,1,1,1,1, 0,1,0, 0, 0,0,0): /* 32  8 8 8 8 */
-                                                 return BYTE(0,0,0,1,1,1,1,1);
-   case DESCR(0,0,0,0,1,1,0,0, 0,1,0, 0, 0,0,1): /* 32  8 8 16  */
-                                                 return BYTE(0,0,0,1,1,1,0,1);
-   case DESCR(0,0,0,0,0,0,1,1, 0,1,0, 0, 1,0,0): /* 32  16  8 8 */
-                                                 return BYTE(0,0,0,1,0,1,1,1);
-   case DESCR(0,0,0,0,0,0,0,0, 0,1,0, 0, 1,0,1): /* 32  16  16  */
-                                                 return BYTE(0,0,0,1,0,1,0,1);
-
-   case DESCR(1,1,1,1,0,0,0,0, 0,0,0, 0, 0,1,0): /* 8 8 8 8  32 */
-                                                 return BYTE(1,1,1,1,0,0,0,1);
-   case DESCR(1,1,0,0,0,0,0,0, 0,0,1, 0, 0,1,0): /* 8 8 16   32 */
-                                                 return BYTE(1,1,0,1,0,0,0,1);
-   case DESCR(0,0,1,1,0,0,0,0, 1,0,0, 0, 0,1,0): /* 16  8 8  32 */
-                                                 return BYTE(0,1,1,1,0,0,0,1);
-   case DESCR(0,0,0,0,0,0,0,0, 1,0,1, 0, 0,1,0): /* 16  16   32 */
-                                                 return BYTE(0,1,0,1,0,0,0,1);
-
-   case DESCR(0,0,0,0,0,0,0,0, 0,1,0, 0, 0,1,0): /* 32 32 */
-                                                 return BYTE(0,0,0,1,0,0,0,1);
-
-   case DESCR(0,0,0,0,0,0,0,0, 0,0,0, 1, 0,0,0): /* 64 */
-                                                 return BYTE(0,0,0,0,0,0,0,1);
-
-   default: return BYTE(0,0,0,0,0,0,0,0); 
-                   /* INVALID - any valid descr produces at least one
-                      valid bit in tree[0..7]*/
-   }
-   /* NOTREACHED*/
-   tl_assert(0);
-
-#  undef DESCR
-#  undef BYTE
-}
-
-__attribute__((unused))
-static Bool is_sane_Descr ( UShort descr ) {
-   return descr_to_validbits(descr) != 0;
-}
-
-static void sprintf_Descr ( /*OUT*/UChar* dst, UShort descr ) {
-   VG_(sprintf)(dst, 
-                "%d%d%d%d%d%d%d%d %d%d%d %d %d%d%d",
-                (Int)((descr & TREE_DESCR_8_7) ? 1 : 0),
-                (Int)((descr & TREE_DESCR_8_6) ? 1 : 0),
-                (Int)((descr & TREE_DESCR_8_5) ? 1 : 0),
-                (Int)((descr & TREE_DESCR_8_4) ? 1 : 0),
-                (Int)((descr & TREE_DESCR_8_3) ? 1 : 0),
-                (Int)((descr & TREE_DESCR_8_2) ? 1 : 0),
-                (Int)((descr & TREE_DESCR_8_1) ? 1 : 0),
-                (Int)((descr & TREE_DESCR_8_0) ? 1 : 0),
-                (Int)((descr & TREE_DESCR_16_3) ? 1 : 0),
-                (Int)((descr & TREE_DESCR_32_1) ? 1 : 0),
-                (Int)((descr & TREE_DESCR_16_2) ? 1 : 0),
-                (Int)((descr & TREE_DESCR_64)   ? 1 : 0),
-                (Int)((descr & TREE_DESCR_16_1) ? 1 : 0),
-                (Int)((descr & TREE_DESCR_32_0) ? 1 : 0),
-                (Int)((descr & TREE_DESCR_16_0) ? 1 : 0)
-   );
-}
-static void sprintf_Byte ( /*OUT*/UChar* dst, UChar byte ) {
-   VG_(sprintf)(dst, "%d%d%d%d%d%d%d%d",
-                     (Int)((byte & 128) ? 1 : 0),
-                     (Int)((byte &  64) ? 1 : 0),
-                     (Int)((byte &  32) ? 1 : 0),
-                     (Int)((byte &  16) ? 1 : 0),
-                     (Int)((byte &   8) ? 1 : 0),
-                     (Int)((byte &   4) ? 1 : 0),
-                     (Int)((byte &   2) ? 1 : 0),
-                     (Int)((byte &   1) ? 1 : 0)
-   );
-}
-
-static Bool is_sane_Descr_and_Tree ( UShort descr, SVal* tree ) {
-   Word  i;
-   UChar validbits = descr_to_validbits(descr);
-   UChar buf[128], buf2[128];
-   if (validbits == 0)
-      goto bad;
-   for (i = 0; i < 8; i++) {
-      if (validbits & (1<<i)) {
-         if (!is_SHVAL_valid(tree[i]))
-            goto bad;
-      } else {
-         if (tree[i] != 0)
-            goto bad;
-      }
-   }
-   return True;
-  bad:
-   sprintf_Descr( buf, descr );
-   sprintf_Byte( buf2, validbits );
-   VG_(printf)("is_sane_Descr_and_Tree: bad tree {\n");
-   VG_(printf)("   validbits 0x%02lx    %s\n", (UWord)validbits, buf2);
-   VG_(printf)("       descr 0x%04lx  %s\n", (UWord)descr, buf);
-   for (i = 0; i < 8; i++)
-      VG_(printf)("   [%ld] 0x%08x\n", i, tree[i]);
-   VG_(printf)("}\n");
-   return 0;
-}
-
-
-static Bool is_sane_CacheLine ( CacheLine* cl )
-{
-   Word tno, cloff;
-
-   if (!cl) goto bad;
-
-   for (tno = 0, cloff = 0;  tno < N_LINE_TREES;  tno++, cloff += 8) {
-      UShort descr = cl->descrs[tno];
-      SVal*  tree  = &cl->svals[cloff];
-      if (!is_sane_Descr_and_Tree(descr, tree))
-         goto bad;
-   }
-   tl_assert(cloff == N_LINE_ARANGE);
-   return True;
-  bad:
-   pp_CacheLine(cl);
-   return False;
-}
-
-
-static UShort normalise_tree ( /*MOD*/SVal* tree ) {
-   Word   i;
-   UShort descr;
-   /* pre: incoming tree[0..7] does not have any invalid shvals, in
-      particular no zeroes. */
-   for (i = 0; i < 8; i++)
-      tl_assert(tree[i] != 0);
-   
-   descr = TREE_DESCR_8_7 | TREE_DESCR_8_6 | TREE_DESCR_8_5
-           | TREE_DESCR_8_4 | TREE_DESCR_8_3 | TREE_DESCR_8_2
-           | TREE_DESCR_8_1 | TREE_DESCR_8_0;
-   /* build 16-bit layer */
-   if (tree[1] == tree[0]) {
-      tree[1] = 0/*INVALID*/;
-      descr &= ~(TREE_DESCR_8_1 | TREE_DESCR_8_0);
-      descr |= TREE_DESCR_16_0;
-   }
-   if (tree[3] == tree[2]) {
-      tree[3] = 0/*INVALID*/;
-      descr &= ~(TREE_DESCR_8_3 | TREE_DESCR_8_2);
-      descr |= TREE_DESCR_16_1;
-   }
-   if (tree[5] == tree[4]) {
-      tree[5] = 0/*INVALID*/;
-      descr &= ~(TREE_DESCR_8_5 | TREE_DESCR_8_4);
-      descr |= TREE_DESCR_16_2;
-   }
-   if (tree[7] == tree[6]) {
-      tree[7] = 0/*INVALID*/;
-      descr &= ~(TREE_DESCR_8_7 | TREE_DESCR_8_6);
-      descr |= TREE_DESCR_16_3;
-   }
-   /* build 32-bit layer */
-   if (tree[2] == tree[0]
-       && (descr & TREE_DESCR_16_1) && (descr & TREE_DESCR_16_0)) {
-      tree[2] = 0; /* [3,1] must already be 0 */
-      descr &= ~(TREE_DESCR_16_1 | TREE_DESCR_16_0);
-      descr |= TREE_DESCR_32_0;
-   }
-   if (tree[6] == tree[4]
-       && (descr & TREE_DESCR_16_3) && (descr & TREE_DESCR_16_2)) {
-      tree[6] = 0; /* [7,5] must already be 0 */
-      descr &= ~(TREE_DESCR_16_3 | TREE_DESCR_16_2);
-      descr |= TREE_DESCR_32_1;
-   }
-   /* build 64-bit layer */
-   if (tree[4] == tree[0]
-       && (descr & TREE_DESCR_32_1) && (descr & TREE_DESCR_32_0)) {
-      tree[4] = 0; /* [7,6,5,3,2,1] must already be 0 */
-      descr &= ~(TREE_DESCR_32_1 | TREE_DESCR_32_0);
-      descr |= TREE_DESCR_64;
-   }
-   return descr;
-}
-
-/* This takes a cacheline where all the data is at the leaves
-   (w8[..]) and builds a correctly normalised tree. */
-static void normalise_CacheLine ( /*MOD*/CacheLine* cl )
-{
-   Word tno, cloff;
-   for (tno = 0, cloff = 0;  tno < N_LINE_TREES;  tno++, cloff += 8) {
-      SVal* tree = &cl->svals[cloff];
-      cl->descrs[tno] = normalise_tree( tree );
-   }
-   tl_assert(cloff == N_LINE_ARANGE);
-   if (SCE_CACHELINE)
-      tl_assert(is_sane_CacheLine(cl)); /* EXPENSIVE */
-   stats__cline_normalises++;
-}
-
-
-static 
-SVal* sequentialise_tree ( /*MOD*/SVal* dst, /*OUT*/Bool* anyShared,
-                           UShort descr, SVal* tree ) {
-   SVal* dst0 = dst;
-   *anyShared = False;
-
-#  define PUT(_n,_v)                                \
-      do { Word i;                                  \
-           if (is_SHVAL_Sh(_v))                     \
-              *anyShared = True;                    \
-           for (i = 0; i < (_n); i++)               \
-                  *dst++ = (_v);                    \
-      } while (0)
-
-   /* byte 0 */
-   if (descr & TREE_DESCR_64)   PUT(8, tree[0]); else
-   if (descr & TREE_DESCR_32_0) PUT(4, tree[0]); else
-   if (descr & TREE_DESCR_16_0) PUT(2, tree[0]); else
-   if (descr & TREE_DESCR_8_0)  PUT(1, tree[0]);
-   /* byte 1 */
-   if (descr & TREE_DESCR_8_1)  PUT(1, tree[1]);
-   /* byte 2 */
-   if (descr & TREE_DESCR_16_1) PUT(2, tree[2]); else
-   if (descr & TREE_DESCR_8_2)  PUT(1, tree[2]);
-   /* byte 3 */
-   if (descr & TREE_DESCR_8_3)  PUT(1, tree[3]);
-   /* byte 4 */
-   if (descr & TREE_DESCR_32_1) PUT(4, tree[4]); else
-   if (descr & TREE_DESCR_16_2) PUT(2, tree[4]); else
-   if (descr & TREE_DESCR_8_4)  PUT(1, tree[4]);
-   /* byte 5 */
-   if (descr & TREE_DESCR_8_5)  PUT(1, tree[5]);
-   /* byte 6 */
-   if (descr & TREE_DESCR_16_3) PUT(2, tree[6]); else
-   if (descr & TREE_DESCR_8_6)  PUT(1, tree[6]);
-   /* byte 7 */
-   if (descr & TREE_DESCR_8_7)  PUT(1, tree[7]);
-
-#  undef PUT
-
-   tl_assert( (((Char*)dst) - ((Char*)dst0)) == 8 * sizeof(SVal) );
-   return dst;
-}
-
-/* Write the cacheline 'wix' to backing store.  Where it ends up
-   is determined by its tag field. */
-static
-Bool sequentialise_CacheLine ( /*OUT*/SVal* dst, Word nDst, CacheLine* src )
-{
-   Word  tno, cloff;
-   Bool  anyShared = False;
-   SVal* dst0      = dst;
-
-   for (tno = 0, cloff = 0;  tno < N_LINE_TREES;  tno++, cloff += 8) {
-      UShort descr = src->descrs[tno];
-      SVal*  tree  = &src->svals[cloff];
-      Bool   bTmp  = False;
-      dst = sequentialise_tree ( dst, &bTmp, descr, tree );
-      anyShared |= bTmp;
-   }
-   tl_assert(cloff == N_LINE_ARANGE);
-
-   /* Assert we wrote N_LINE_ARANGE shadow values. */
-   tl_assert( ((HChar*)dst) - ((HChar*)dst0) 
-              == nDst * sizeof(SVal) );
-
-   return anyShared;
-}
-
-
-static __attribute__((noinline)) void cacheline_wback ( UWord wix )
-{
-   Word        i, j;
-   Bool        anyShared = False;
-   Addr        tag;
-   SecMap*     sm;
-   CacheLine*  cl;
-   CacheLineZ* lineZ;
-   CacheLineF* lineF;
-   Word        zix, fix;
-   SVal        shvals[N_LINE_ARANGE];
-   SVal        sv;
-
-   if (0)
-   VG_(printf)("scache wback line %d\n", (Int)wix);
-
-   tl_assert(wix >= 0 && wix < N_WAY_NENT);
-
-   tag =  cache_shmem.tags0[wix];
-   cl  = &cache_shmem.lyns0[wix];
-
-   /* The cache line may have been invalidated; if so, ignore it. */
-   if (!is_valid_scache_tag(tag))
-      return;
-
-   /* Where are we going to put it? */
-   sm         = NULL;
-   lineZ      = NULL;
-   lineF      = NULL;
-   zix = fix = -1;
-
-   find_Z_for_writing( &sm, &zix, tag );
-   tl_assert(sm);
-   tl_assert(zix >= 0 && zix < N_SECMAP_ZLINES);
-   lineZ = &sm->linesZ[zix];
-
-   /* Generate the data to be stored */
-   if (SCE_CACHELINE)
-      tl_assert(is_sane_CacheLine(cl)); /* EXPENSIVE */
-   anyShared = sequentialise_CacheLine( shvals, N_LINE_ARANGE, cl );
-
-   lineZ->dict[0] = lineZ->dict[1] 
-                  = lineZ->dict[2] = lineZ->dict[3] = 0;
-
-   for (i = 0; i < N_LINE_ARANGE; i++) {
-
-      sv = shvals[i];
-      for (j = 0; j < 4; j++) {
-         if (sv == lineZ->dict[j])
-            goto dict_ok;
-      }
-      for (j = 0; j < 4; j++) {
-         if (lineZ->dict[j] == 0)
-            break;
-      }
-      tl_assert(j >= 0 && j <= 4);
-      if (j == 4) break; /* we'll have to use the f rep */
-      tl_assert(is_SHVAL_valid(sv));
-      lineZ->dict[j] = sv;
-     dict_ok:
-      write_twobit_array( lineZ->ix2s, i, j );
-
-   }
-
-   tl_assert(i >= 0 && i <= N_LINE_ARANGE);
-
-   if (i < N_LINE_ARANGE) {
-      /* cannot use the compressed rep.  Use f rep instead. */
-      alloc_F_for_writing( sm, &fix );
-      tl_assert(sm->linesF);
-      tl_assert(sm->linesF_size > 0);
-      tl_assert(fix >= 0 && fix < sm->linesF_size);
-      lineF = &sm->linesF[fix];
-      tl_assert(!lineF->inUse);
-      lineZ->dict[0] = lineZ->dict[2] = lineZ->dict[3] = 0;
-      lineZ->dict[1] = (SVal)fix;
-      lineF->inUse = True;
-      for (i = 0; i < N_LINE_ARANGE; i++) {
-         sv = shvals[i];
-         tl_assert(is_SHVAL_valid(sv));
-         lineF->w32s[i] = sv;
-      }
-      stats__cache_F_wbacks++;
-   } else {
-      stats__cache_Z_wbacks++;
-   }
-
-   if (anyShared)
-      sm->mbHasShared = True;
-
-   /* mb_tidy_one_cacheline(); */
-}
-
-/* Fetch the cacheline 'wix' from the backing store.  The tag
-   associated with 'wix' is assumed to have already been filled in;
-   hence that is used to determine where in the backing store to read
-   from. */
-static __attribute__((noinline)) void cacheline_fetch ( UWord wix )
-{
-   Word        i;
-   Addr        tag;
-   CacheLine*  cl;
-   CacheLineZ* lineZ;
-   CacheLineF* lineF;
-
-   if (0)
-   VG_(printf)("scache fetch line %d\n", (Int)wix);
-
-   tl_assert(wix >= 0 && wix < N_WAY_NENT);
-
-   tag =  cache_shmem.tags0[wix];
-   cl  = &cache_shmem.lyns0[wix];
-
-   /* reject nonsense requests */
-   tl_assert(is_valid_scache_tag(tag));
-
-   lineZ = NULL;
-   lineF = NULL;
-   find_ZF_for_reading( &lineZ, &lineF, tag );
-   tl_assert( (lineZ && !lineF) || (!lineZ && lineF) );
-
-   /* expand the data into the bottom layer of the tree, then get
-      cacheline_normalise to build the descriptor array. */
-   if (lineF) {
-      tl_assert(lineF->inUse);
-      for (i = 0; i < N_LINE_ARANGE; i++) {
-         cl->svals[i] = lineF->w32s[i];
-      }
-      stats__cache_F_fetches++;
-   } else {
-      for (i = 0; i < N_LINE_ARANGE; i++) {
-         SVal sv;
-         UWord ix = read_twobit_array( lineZ->ix2s, i );
-         tl_assert(ix >= 0 && ix <= 3);
-         sv = lineZ->dict[ix];
-         tl_assert(sv != 0);
-         cl->svals[i] = sv;
-      }
-      stats__cache_Z_fetches++;
-   }
-   normalise_CacheLine( cl );
-}
-
-static void shmem__invalidate_scache ( void ) {
-   Word wix;
-   if (0) VG_(printf)("scache inval\n");
-   tl_assert(!is_valid_scache_tag(1));
-   for (wix = 0; wix < N_WAY_NENT; wix++) {
-      cache_shmem.tags0[wix] = 1/*INVALID*/;
-   }
-   stats__cache_invals++;
-}
-
-static void shmem__flush_and_invalidate_scache ( void ) {
-   Word wix;
-   Addr tag;
-   if (0) VG_(printf)("scache flush and invalidate\n");
-   tl_assert(!is_valid_scache_tag(1));
-   for (wix = 0; wix < N_WAY_NENT; wix++) {
-      tag = cache_shmem.tags0[wix];
-      if (tag == 1/*INVALID*/) {
-         /* already invalid; nothing to do */
-      } else {
-         tl_assert(is_valid_scache_tag(tag));
-         cacheline_wback( wix );
-      }
-      cache_shmem.tags0[wix] = 1/*INVALID*/;
-   }
-   stats__cache_flushes++;
-   stats__cache_invals++;
-}
-
-
-/* ------------ Basic shadow memory read/write ops ------------ */
-
-static inline Bool aligned16 ( Addr a ) {
-   return 0 == (a & 1);
-}
-static inline Bool aligned32 ( Addr a ) {
-   return 0 == (a & 3);
-}
-static inline Bool aligned64 ( Addr a ) {
-   return 0 == (a & 7);
-}
-static inline UWord get_cacheline_offset ( Addr a ) {
-   return (UWord)(a & (N_LINE_ARANGE - 1));
-}
-static inline UWord get_treeno ( Addr a ) {
-   return get_cacheline_offset(a) >> 3;
-}
-static inline UWord get_tree_offset ( Addr a ) {
-   return a & 7;
-}
-
-static __attribute__((noinline))
-       CacheLine* get_cacheline_MISS ( Addr a ); /* fwds */
-static inline CacheLine* get_cacheline ( Addr a )
-{
-   /* tag is 'a' with the in-line offset masked out, 
-      eg a[31]..a[4] 0000 */
-   Addr       tag = a & ~(N_LINE_ARANGE - 1);
-   UWord      wix = (a >> N_LINE_BITS) & (N_WAY_NENT - 1);
-   stats__cache_totrefs++;
-   if (LIKELY(tag == cache_shmem.tags0[wix])) {
-      return &cache_shmem.lyns0[wix];
-   } else {
-      return get_cacheline_MISS( a );
-   }
-}
-
-static __attribute__((noinline))
-       CacheLine* get_cacheline_MISS ( Addr a )
-{
-   /* tag is 'a' with the in-line offset masked out, 
-      eg a[31]..a[4] 0000 */
-
-   CacheLine* cl;
-   Addr*      tag_old_p;
-   Addr       tag = a & ~(N_LINE_ARANGE - 1);
-   UWord      wix = (a >> N_LINE_BITS) & (N_WAY_NENT - 1);
-
-   tl_assert(tag != cache_shmem.tags0[wix]);
-
-   /* Dump the old line into the backing store. */
-   stats__cache_totmisses++;
-
-   cl        = &cache_shmem.lyns0[wix];
-   tag_old_p = &cache_shmem.tags0[wix];
-
-   if (is_valid_scache_tag( *tag_old_p )) {
-      /* EXPENSIVE and REDUNDANT: callee does it */
-      if (SCE_CACHELINE)
-         tl_assert(is_sane_CacheLine(cl)); /* EXPENSIVE */
-      cacheline_wback( wix );
-   }
-   /* and reload the new one */
-   *tag_old_p = tag;
-   cacheline_fetch( wix );
-   if (SCE_CACHELINE)
-      tl_assert(is_sane_CacheLine(cl)); /* EXPENSIVE */
-   return cl;
-}
-
-static UShort pulldown_to_32 ( /*MOD*/SVal* tree, UWord toff, UShort descr ) {
-   stats__cline_64to32pulldown++;
-   switch (toff) {
-      case 0: case 4:
-         tl_assert(descr & TREE_DESCR_64);
-         tree[4] = tree[0];
-         descr &= ~TREE_DESCR_64;
-         descr |= (TREE_DESCR_32_1 | TREE_DESCR_32_0);
-         break;
-      default:
-         tl_assert(0);
-   }
-   return descr;
-}
-
-static UShort pulldown_to_16 ( /*MOD*/SVal* tree, UWord toff, UShort descr ) {
-   stats__cline_32to16pulldown++;
-   switch (toff) {
-      case 0: case 2:
-         if (!(descr & TREE_DESCR_32_0)) {
-            descr = pulldown_to_32(tree, 0, descr);
-         }
-         tl_assert(descr & TREE_DESCR_32_0);
-         tree[2] = tree[0];
-         descr &= ~TREE_DESCR_32_0;
-         descr |= (TREE_DESCR_16_1 | TREE_DESCR_16_0);
-         break;
-      case 4: case 6:
-         if (!(descr & TREE_DESCR_32_1)) {
-            descr = pulldown_to_32(tree, 4, descr);
-         }
-         tl_assert(descr & TREE_DESCR_32_1);
-         tree[6] = tree[4];
-         descr &= ~TREE_DESCR_32_1;
-         descr |= (TREE_DESCR_16_3 | TREE_DESCR_16_2);
-         break;
-      default:
-         tl_assert(0);
-   }
-   return descr;
-}
-
-static UShort pulldown_to_8 ( /*MOD*/SVal* tree, UWord toff, UShort descr ) {
-   stats__cline_16to8pulldown++;
-   switch (toff) {
-      case 0: case 1:
-         if (!(descr & TREE_DESCR_16_0)) {
-            descr = pulldown_to_16(tree, 0, descr);
-         }
-         tl_assert(descr & TREE_DESCR_16_0);
-         tree[1] = tree[0];
-         descr &= ~TREE_DESCR_16_0;
-         descr |= (TREE_DESCR_8_1 | TREE_DESCR_8_0);
-         break;
-      case 2: case 3:
-         if (!(descr & TREE_DESCR_16_1)) {
-            descr = pulldown_to_16(tree, 2, descr);
-         }
-         tl_assert(descr & TREE_DESCR_16_1);
-         tree[3] = tree[2];
-         descr &= ~TREE_DESCR_16_1;
-         descr |= (TREE_DESCR_8_3 | TREE_DESCR_8_2);
-         break;
-      case 4: case 5:
-         if (!(descr & TREE_DESCR_16_2)) {
-            descr = pulldown_to_16(tree, 4, descr);
-         }
-         tl_assert(descr & TREE_DESCR_16_2);
-         tree[5] = tree[4];
-         descr &= ~TREE_DESCR_16_2;
-         descr |= (TREE_DESCR_8_5 | TREE_DESCR_8_4);
-         break;
-      case 6: case 7:
-         if (!(descr & TREE_DESCR_16_3)) {
-            descr = pulldown_to_16(tree, 6, descr);
-         }
-         tl_assert(descr & TREE_DESCR_16_3);
-         tree[7] = tree[6];
-         descr &= ~TREE_DESCR_16_3;
-         descr |= (TREE_DESCR_8_7 | TREE_DESCR_8_6);
-         break;
-      default:
-         tl_assert(0);
-   }
-   return descr;
-}
-
-
-static UShort pullup_descr_to_16 ( UShort descr, UWord toff ) {
-   UShort mask;
-   switch (toff) {
-      case 0:
-         mask = TREE_DESCR_8_1 | TREE_DESCR_8_0;
-         tl_assert( (descr & mask) == mask );
-         descr &= ~mask;
-         descr |= TREE_DESCR_16_0;
-         break;
-      case 2:
-         mask = TREE_DESCR_8_3 | TREE_DESCR_8_2;
-         tl_assert( (descr & mask) == mask );
-         descr &= ~mask;
-         descr |= TREE_DESCR_16_1;
-         break;
-      case 4:
-         mask = TREE_DESCR_8_5 | TREE_DESCR_8_4;
-         tl_assert( (descr & mask) == mask );
-         descr &= ~mask;
-         descr |= TREE_DESCR_16_2;
-         break;
-      case 6:
-         mask = TREE_DESCR_8_7 | TREE_DESCR_8_6;
-         tl_assert( (descr & mask) == mask );
-         descr &= ~mask;
-         descr |= TREE_DESCR_16_3;
-         break;
-      default:
-         tl_assert(0);
-   }
-   return descr;
-}
-
-static UShort pullup_descr_to_32 ( UShort descr, UWord toff ) {
-   UShort mask;
-   switch (toff) {
-      case 0:
-         if (!(descr & TREE_DESCR_16_0))
-            descr = pullup_descr_to_16(descr, 0);
-         if (!(descr & TREE_DESCR_16_1))
-            descr = pullup_descr_to_16(descr, 2);
-         mask = TREE_DESCR_16_1 | TREE_DESCR_16_0;
-         tl_assert( (descr & mask) == mask );
-         descr &= ~mask;
-         descr |= TREE_DESCR_32_0;
-         break;
-      case 4:
-         if (!(descr & TREE_DESCR_16_2))
-            descr = pullup_descr_to_16(descr, 4);
-         if (!(descr & TREE_DESCR_16_3))
-            descr = pullup_descr_to_16(descr, 6);
-         mask = TREE_DESCR_16_3 | TREE_DESCR_16_2;
-         tl_assert( (descr & mask) == mask );
-         descr &= ~mask;
-         descr |= TREE_DESCR_32_1;
-         break;
-      default:
-         tl_assert(0);
-   }
-   return descr;
-}
-
-static Bool valid_value_is_above_me_32 ( UShort descr, UWord toff ) {
-   switch (toff) {
-      case 0: case 4:
-         return 0 != (descr & TREE_DESCR_64);
-      default:
-         tl_assert(0);
-   }
-}
-
-static Bool valid_value_is_below_me_16 ( UShort descr, UWord toff ) {
-   switch (toff) {
-      case 0:
-         return 0 != (descr & (TREE_DESCR_8_1 | TREE_DESCR_8_0));
-      case 2:
-         return 0 != (descr & (TREE_DESCR_8_3 | TREE_DESCR_8_2));
-      case 4:
-         return 0 != (descr & (TREE_DESCR_8_5 | TREE_DESCR_8_4));
-      case 6:
-         return 0 != (descr & (TREE_DESCR_8_7 | TREE_DESCR_8_6));
-      default:
-         tl_assert(0);
-   }
-}
-
-static void shadow_mem_read8 ( Thread* thr_acc, Addr a, SVal uuOpaque ) {
-   CacheLine* cl; 
-   UWord      cloff, tno, toff;
-   SVal       svOld, svNew;
-   UShort     descr;
-   stats__cline_read8s++;
-   cl    = get_cacheline(a);
-   cloff = get_cacheline_offset(a);
-   tno   = get_treeno(a);
-   toff  = get_tree_offset(a); /* == 0 .. 7 */
-   descr = cl->descrs[tno];
-   if (UNLIKELY( !(descr & (TREE_DESCR_8_0 << toff)) )) {
-      SVal* tree = &cl->svals[tno << 3];
-      cl->descrs[tno] = pulldown_to_8(tree, toff, descr);
-      if (SCE_CACHELINE)
-         tl_assert(is_sane_CacheLine(cl)); /* EXPENSIVE */
-   }
-   svOld = cl->svals[cloff];
-   svNew = msm__handle_read( thr_acc, a, svOld, 1 );
-   cl->svals[cloff] = svNew;
-}
-static void shadow_mem_read16 ( Thread* thr_acc, Addr a, SVal uuOpaque ) {
-   CacheLine* cl; 
-   UWord      cloff, tno, toff;
-   SVal       svOld, svNew;
-   UShort     descr;
-   stats__cline_read16s++;
-   if (UNLIKELY(!aligned16(a))) goto slowcase;
-   cl    = get_cacheline(a);
-   cloff = get_cacheline_offset(a);
-   tno   = get_treeno(a);
-   toff  = get_tree_offset(a); /* == 0, 2, 4 or 6 */
-   descr = cl->descrs[tno];
-   if (UNLIKELY( !(descr & (TREE_DESCR_16_0 << toff)) )) {
-      if (valid_value_is_below_me_16(descr, toff)) {
-         goto slowcase;
-      } else {
-         SVal* tree = &cl->svals[tno << 3];
-         cl->descrs[tno] = pulldown_to_16(tree, toff, descr);
-      }
-      if (SCE_CACHELINE)
-         tl_assert(is_sane_CacheLine(cl)); /* EXPENSIVE */
-   }
-   svOld = cl->svals[cloff];
-   svNew = msm__handle_read( thr_acc, a, svOld, 2 );
-   cl->svals[cloff] = svNew;
-   return;
-  slowcase: /* misaligned, or must go further down the tree */
-   stats__cline_16to8splits++;
-   shadow_mem_read8( thr_acc, a + 0, 0/*unused*/ );
-   shadow_mem_read8( thr_acc, a + 1, 0/*unused*/ );
-}
-
-__attribute__((noinline))
-static void shadow_mem_read32_SLOW ( Thread* thr_acc, Addr a, SVal uuOpaque ) {
-   CacheLine* cl; 
-   UWord      cloff, tno, toff;
-   SVal       svOld, svNew;
-   UShort     descr;
-   if (UNLIKELY(!aligned32(a))) goto slowcase;
-   cl    = get_cacheline(a);
-   cloff = get_cacheline_offset(a);
-   tno   = get_treeno(a);
-   toff  = get_tree_offset(a); /* == 0 or 4 */
-   descr = cl->descrs[tno];
-   if (UNLIKELY( !(descr & (TREE_DESCR_32_0 << toff)) )) {
-      if (valid_value_is_above_me_32(descr, toff)) {
-         SVal* tree = &cl->svals[tno << 3];
-         cl->descrs[tno] = pulldown_to_32(tree, toff, descr);
-      } else {
-         goto slowcase;
-      }
-      if (SCE_CACHELINE)
-         tl_assert(is_sane_CacheLine(cl)); /* EXPENSIVE */
-   }
-   svOld = cl->svals[cloff];
-   svNew = msm__handle_read( thr_acc, a, svOld, 4 );
-   cl->svals[cloff] = svNew;
-   return;
-  slowcase: /* misaligned, or must go further down the tree */
-   stats__cline_32to16splits++;
-   shadow_mem_read16( thr_acc, a + 0, 0/*unused*/ );
-   shadow_mem_read16( thr_acc, a + 2, 0/*unused*/ );
-}
-inline
-static void shadow_mem_read32 ( Thread* thr_acc, Addr a, SVal uuOpaque ) {
-   CacheLine* cl; 
-   UWord      cloff, tno, toff;
-   UShort     descr;
-   stats__cline_read32s++;
-   if (UNLIKELY(!aligned32(a))) goto slowcase;
-   cl    = get_cacheline(a);
-   cloff = get_cacheline_offset(a);
-   tno   = get_treeno(a);
-   toff  = get_tree_offset(a); /* == 0 or 4 */
-   descr = cl->descrs[tno];
-   if (UNLIKELY( !(descr & (TREE_DESCR_32_0 << toff)) )) goto slowcase;
-   { SVal* p = &cl->svals[cloff];
-     *p = msm__handle_read( thr_acc, a, *p, 4 );
-   }
-   return;
-  slowcase: /* misaligned, or not at this level in the tree */
-   shadow_mem_read32_SLOW( thr_acc, a, uuOpaque );
-}
-
-inline
-static void shadow_mem_read64 ( Thread* thr_acc, Addr a, SVal uuOpaque ) {
-   CacheLine* cl; 
-   UWord      cloff, tno, toff;
-   SVal       svOld, svNew;
-   UShort     descr;
-   stats__cline_read64s++;
-   if (UNLIKELY(!aligned64(a))) goto slowcase;
-   cl    = get_cacheline(a);
-   cloff = get_cacheline_offset(a);
-   tno   = get_treeno(a);
-   toff  = get_tree_offset(a); /* == 0, unused */
-   descr = cl->descrs[tno];
-   if (UNLIKELY( !(descr & TREE_DESCR_64) )) {
-      goto slowcase;
-   }
-   svOld = cl->svals[cloff];
-   svNew = msm__handle_read( thr_acc, a, svOld, 8 );
-   cl->svals[cloff] = svNew;
-   return;
-  slowcase: /* misaligned, or must go further down the tree */
-   stats__cline_64to32splits++;
-   shadow_mem_read32( thr_acc, a + 0, 0/*unused*/ );
-   shadow_mem_read32( thr_acc, a + 4, 0/*unused*/ );
-}
-
-static void shadow_mem_write8 ( Thread* thr_acc, Addr a, SVal uuOpaque ) {
-   CacheLine* cl; 
-   UWord      cloff, tno, toff;
-   SVal       svOld, svNew;
-   UShort     descr;
-   stats__cline_write8s++;
-   cl    = get_cacheline(a);
-   cloff = get_cacheline_offset(a);
-   tno   = get_treeno(a);
-   toff  = get_tree_offset(a); /* == 0 .. 7 */
-   descr = cl->descrs[tno];
-   if (UNLIKELY( !(descr & (TREE_DESCR_8_0 << toff)) )) {
-      SVal* tree = &cl->svals[tno << 3];
-      cl->descrs[tno] = pulldown_to_8(tree, toff, descr);
-      if (SCE_CACHELINE)
-         tl_assert(is_sane_CacheLine(cl)); /* EXPENSIVE */
-   }
-   svOld = cl->svals[cloff];
-   svNew = msm__handle_write( thr_acc, a, svOld, 1 );
-   cl->svals[cloff] = svNew;
-}
-static void shadow_mem_write16 ( Thread* thr_acc, Addr a, SVal uuOpaque ) {
-   CacheLine* cl; 
-   UWord      cloff, tno, toff;
-   SVal       svOld, svNew;
-   UShort     descr;
-   stats__cline_write16s++;
-   if (UNLIKELY(!aligned16(a))) goto slowcase;
-   cl    = get_cacheline(a);
-   cloff = get_cacheline_offset(a);
-   tno   = get_treeno(a);
-   toff  = get_tree_offset(a); /* == 0, 2, 4 or 6 */
-   descr = cl->descrs[tno];
-   if (UNLIKELY( !(descr & (TREE_DESCR_16_0 << toff)) )) {
-      if (valid_value_is_below_me_16(descr, toff)) {
-         goto slowcase;
-      } else {
-         SVal* tree = &cl->svals[tno << 3];
-         cl->descrs[tno] = pulldown_to_16(tree, toff, descr);
-      }
-      if (SCE_CACHELINE)
-         tl_assert(is_sane_CacheLine(cl)); /* EXPENSIVE */
-   }
-   svOld = cl->svals[cloff];
-   svNew = msm__handle_write( thr_acc, a, svOld, 2 );
-   cl->svals[cloff] = svNew;
-   return;
-  slowcase: /* misaligned, or must go further down the tree */
-   stats__cline_16to8splits++;
-   shadow_mem_write8( thr_acc, a + 0, 0/*unused*/ );
-   shadow_mem_write8( thr_acc, a + 1, 0/*unused*/ );
-}
-
-__attribute__((noinline))
-static void shadow_mem_write32_SLOW ( Thread* thr_acc, Addr a, SVal uuOpaque ) {
-   CacheLine* cl; 
-   UWord      cloff, tno, toff;
-   SVal       svOld, svNew;
-   UShort     descr;
-   if (UNLIKELY(!aligned32(a))) goto slowcase;
-   cl    = get_cacheline(a);
-   cloff = get_cacheline_offset(a);
-   tno   = get_treeno(a);
-   toff  = get_tree_offset(a); /* == 0 or 4 */
-   descr = cl->descrs[tno];
-   if (UNLIKELY( !(descr & (TREE_DESCR_32_0 << toff)) )) {
-      if (valid_value_is_above_me_32(descr, toff)) {
-         SVal* tree = &cl->svals[tno << 3];
-         cl->descrs[tno] = pulldown_to_32(tree, toff, descr);
-      } else {
-         goto slowcase;
-      }
-      if (SCE_CACHELINE)
-         tl_assert(is_sane_CacheLine(cl)); /* EXPENSIVE */
-   }
-   svOld = cl->svals[cloff];
-   svNew = msm__handle_write( thr_acc, a, svOld, 4 );
-   cl->svals[cloff] = svNew;
-   return;
-  slowcase: /* misaligned, or must go further down the tree */
-   stats__cline_32to16splits++;
-   shadow_mem_write16( thr_acc, a + 0, 0/*unused*/ );
-   shadow_mem_write16( thr_acc, a + 2, 0/*unused*/ );
-}
-inline
-static void shadow_mem_write32 ( Thread* thr_acc, Addr a, SVal uuOpaque ) {
-   CacheLine* cl; 
-   UWord      cloff, tno, toff;
-   UShort     descr;
-   stats__cline_write32s++;
-   if (UNLIKELY(!aligned32(a))) goto slowcase;
-   cl    = get_cacheline(a);
-   cloff = get_cacheline_offset(a);
-   tno   = get_treeno(a);
-   toff  = get_tree_offset(a); /* == 0 or 4 */
-   descr = cl->descrs[tno];
-   if (UNLIKELY( !(descr & (TREE_DESCR_32_0 << toff)) )) goto slowcase;
-   { SVal* p = &cl->svals[cloff];
-     *p = msm__handle_write( thr_acc, a, *p, 4 );
-   }
-   return;
-  slowcase: /* misaligned, or must go further down the tree */
-   shadow_mem_write32_SLOW( thr_acc, a, uuOpaque );
-}
-
-inline
-static void shadow_mem_write64 ( Thread* thr_acc, Addr a, SVal uuOpaque ) {
-   CacheLine* cl; 
-   UWord      cloff, tno, toff;
-   SVal       svOld, svNew;
-   UShort     descr;
-   stats__cline_write64s++;
-   if (UNLIKELY(!aligned64(a))) goto slowcase;
-   cl    = get_cacheline(a);
-   cloff = get_cacheline_offset(a);
-   tno   = get_treeno(a);
-   toff  = get_tree_offset(a); /* == 0, unused */
-   descr = cl->descrs[tno];
-   if (UNLIKELY( !(descr & TREE_DESCR_64) )) {
-      goto slowcase;
-   }
-   svOld = cl->svals[cloff];
-   svNew = msm__handle_write( thr_acc, a, svOld, 8 );
-   cl->svals[cloff] = svNew;
-   return;
-  slowcase: /* misaligned, or must go further down the tree */
-   stats__cline_64to32splits++;
-   shadow_mem_write32( thr_acc, a + 0, 0/*unused*/ );
-   shadow_mem_write32( thr_acc, a + 4, 0/*unused*/ );
-}
-
-static void shadow_mem_set8 ( Thread* uu_thr_acc, Addr a, SVal svNew ) {
-   CacheLine* cl; 
-   UWord      cloff, tno, toff;
-   UShort     descr;
-   stats__cline_set8s++;
-   cl    = get_cacheline(a);
-   cloff = get_cacheline_offset(a);
-   tno   = get_treeno(a);
-   toff  = get_tree_offset(a); /* == 0 .. 7 */
-   descr = cl->descrs[tno];
-   if (UNLIKELY( !(descr & (TREE_DESCR_8_0 << toff)) )) {
-      SVal* tree = &cl->svals[tno << 3];
-      cl->descrs[tno] = pulldown_to_8(tree, toff, descr);
-      if (SCE_CACHELINE)
-         tl_assert(is_sane_CacheLine(cl)); /* EXPENSIVE */
-   }
-   cl->svals[cloff] = svNew;
-}
-static void shadow_mem_set16 ( Thread* uu_thr_acc, Addr a, SVal svNew ) {
-   CacheLine* cl; 
-   UWord      cloff, tno, toff;
-   UShort     descr;
-   stats__cline_set16s++;
-   if (UNLIKELY(!aligned16(a))) goto slowcase;
-   cl    = get_cacheline(a);
-   cloff = get_cacheline_offset(a);
-   tno   = get_treeno(a);
-   toff  = get_tree_offset(a); /* == 0, 2, 4 or 6 */
-   descr = cl->descrs[tno];
-   if (UNLIKELY( !(descr & (TREE_DESCR_16_0 << toff)) )) {
-      if (valid_value_is_below_me_16(descr, toff)) {
-         /* Writing at this level.  Need to fix up 'descr'. */
-         cl->descrs[tno] = pullup_descr_to_16(descr, toff);
-         /* At this point, the tree does not match cl->descr[tno] any
-            more.  The assignments below will fix it up. */
-      } else {
-         /* We can't indiscriminately write on the w16 node as in the
-            w64 case, as that might make the node inconsistent with
-            its parent.  So first, pull down to this level. */
-         SVal* tree = &cl->svals[tno << 3];
-         cl->descrs[tno] = pulldown_to_16(tree, toff, descr);
-      if (SCE_CACHELINE)
-         tl_assert(is_sane_CacheLine(cl)); /* EXPENSIVE */
-      }
-   }
-   cl->svals[cloff + 0] = svNew;
-   cl->svals[cloff + 1] = 0;
-   return;
-  slowcase: /* misaligned */
-   stats__cline_16to8splits++;
-   shadow_mem_set8( uu_thr_acc, a + 0, svNew );
-   shadow_mem_set8( uu_thr_acc, a + 1, svNew );
-}
-static void shadow_mem_set32 ( Thread* uu_thr_acc, Addr a, SVal svNew ) {
-   CacheLine* cl; 
-   UWord      cloff, tno, toff;
-   UShort     descr;
-   stats__cline_set32s++;
-   if (UNLIKELY(!aligned32(a))) goto slowcase;
-   cl    = get_cacheline(a);
-   cloff = get_cacheline_offset(a);
-   tno   = get_treeno(a);
-   toff  = get_tree_offset(a); /* == 0 or 4 */
-   descr = cl->descrs[tno];
-   if (UNLIKELY( !(descr & (TREE_DESCR_32_0 << toff)) )) {
-      if (valid_value_is_above_me_32(descr, toff)) {
-         /* We can't indiscriminately write on the w32 node as in the
-            w64 case, as that might make the node inconsistent with
-            its parent.  So first, pull down to this level. */
-         SVal* tree = &cl->svals[tno << 3];
-         cl->descrs[tno] = pulldown_to_32(tree, toff, descr);
-         if (SCE_CACHELINE)
-            tl_assert(is_sane_CacheLine(cl)); /* EXPENSIVE */
-      } else {
-         /* Writing at this level.  Need to fix up 'descr'. */
-         cl->descrs[tno] = pullup_descr_to_32(descr, toff);
-         /* At this point, the tree does not match cl->descr[tno] any
-            more.  The assignments below will fix it up. */
-      }
-   }
-   cl->svals[cloff + 0] = svNew;
-   cl->svals[cloff + 1] = 0;
-   cl->svals[cloff + 2] = 0;
-   cl->svals[cloff + 3] = 0;
-   return;
-  slowcase: /* misaligned */
-   stats__cline_32to16splits++;
-   shadow_mem_set16( uu_thr_acc, a + 0, svNew );
-   shadow_mem_set16( uu_thr_acc, a + 2, svNew );
-}
-inline
-static void shadow_mem_set64 ( Thread* uu_thr_acc, Addr a, SVal svNew ) {
-   CacheLine* cl; 
-   UWord      cloff, tno, toff;
-   stats__cline_set64s++;
-   if (UNLIKELY(!aligned64(a))) goto slowcase;
-   cl    = get_cacheline(a);
-   cloff = get_cacheline_offset(a);
-   tno   = get_treeno(a);
-   toff  = get_tree_offset(a); /* == 0 */
-   cl->descrs[tno] = TREE_DESCR_64;
-   cl->svals[cloff + 0] = svNew;
-   cl->svals[cloff + 1] = 0;
-   cl->svals[cloff + 2] = 0;
-   cl->svals[cloff + 3] = 0;
-   cl->svals[cloff + 4] = 0;
-   cl->svals[cloff + 5] = 0;
-   cl->svals[cloff + 6] = 0;
-   cl->svals[cloff + 7] = 0;
-   return;
-  slowcase: /* misaligned */
-   stats__cline_64to32splits++;
-   shadow_mem_set32( uu_thr_acc, a + 0, svNew );
-   shadow_mem_set32( uu_thr_acc, a + 4, svNew );
-}
-
-static SVal shadow_mem_get8 ( Addr a ) {
-   CacheLine* cl; 
-   UWord      cloff, tno, toff;
-   UShort     descr;
-   stats__cline_get8s++;
-   cl    = get_cacheline(a);
-   cloff = get_cacheline_offset(a);
-   tno   = get_treeno(a);
-   toff  = get_tree_offset(a); /* == 0 .. 7 */
-   descr = cl->descrs[tno];
-   if (UNLIKELY( !(descr & (TREE_DESCR_8_0 << toff)) )) {
-      SVal* tree = &cl->svals[tno << 3];
-      cl->descrs[tno] = pulldown_to_8(tree, toff, descr);
-   }
-   return cl->svals[cloff];
-}
-
-static void shadow_mem_copy8 ( Addr src, Addr dst, Bool normalise ) {
-   SVal       sv;
-   stats__cline_copy8s++;
-   sv = shadow_mem_get8( src );
-
-   if (UNLIKELY(clo_trace_level > 0)) {
-      if (dst == clo_trace_addr) {
-         Thread* thr    = get_current_Thread();
-         SVal    sv_old = shadow_mem_get8( dst );
-         msm__show_state_change( thr, dst, 1, 'w', sv_old, sv );
-      }
-   }
-
-   shadow_mem_set8( NULL/*unused*/, dst, sv );
-}
-
-
-/* ------------ Shadow memory range setting ops ------------ */
-
-static void shadow_mem_modify_range(
-               Thread* thr, 
-               Addr    a, 
-               SizeT   len,
-               void    (*fn8) (Thread*,Addr,SVal),
-               void    (*fn16)(Thread*,Addr,SVal),
-               void    (*fn32)(Thread*,Addr,SVal),
-               void    (*fn64)(Thread*,Addr,SVal),
-               SVal    opaque
-            )
-{
-   /* fast track a couple of common cases */
-   if (len == 4 && aligned32(a)) {
-      fn32( thr, a, opaque );
-      return;
-   }
-   if (len == 8 && aligned64(a)) {
-      fn64( thr, a, opaque );
-      return;
-   }
-
-   /* be completely general (but as efficient as possible) */
-   if (len == 0) return;
-
-   if (!aligned16(a) && len >= 1) {
-      fn8( thr, a, opaque );
-      a += 1;
-      len -= 1;
-      tl_assert(aligned16(a));
-   }
-   if (len == 0) return;
-
-   if (!aligned32(a) && len >= 2) {
-      fn16( thr, a, opaque );
-      a += 2;
-      len -= 2;
-      tl_assert(aligned32(a));
-   }
-   if (len == 0) return;
-
-   if (!aligned64(a) && len >= 4) {
-      fn32( thr, a, opaque );
-      a += 4;
-      len -= 4;
-      tl_assert(aligned64(a));
-   }
-   if (len == 0) return;
-
-   if (len >= 8) {
-      tl_assert(aligned64(a));
-      while (len >= 8) {
-         fn64( thr, a, opaque );
-         a += 8;
-         len -= 8;
-      }
-      tl_assert(aligned64(a));
-   }
-   if (len == 0) return;
-
-   if (len >= 4)
-      tl_assert(aligned32(a));
-   if (len >= 4) {
-      fn32( thr, a, opaque );
-      a += 4;
-      len -= 4;
-   }
-   if (len == 0) return;
-
-   if (len >= 2)
-      tl_assert(aligned16(a));
-   if (len >= 2) {
-      fn16( thr, a, opaque );
-      a += 2;
-      len -= 2;
-   }
-   if (len == 0) return;
-
-   if (len >= 1) {
-      fn8( thr, a, opaque );
-      a += 1;
-      len -= 1;
-   }
-   tl_assert(len == 0);
-}
 
 /* Block-copy states (needed for implementing realloc()). */
 static void shadow_mem_copy_range ( Addr src, Addr dst, SizeT len )
 {
-   SizeT i;
-   if (len == 0)
-      return;
-   /* To be simple, just copy byte by byte.  But so as not to wreck
-      performance for later accesses to dst[0 .. len-1], normalise
-      destination lines as we finish with them, and also normalise the
-      line containing the first and last address. */
-   for (i = 0; i < len; i++) {
-      Bool normalise
-         = get_cacheline_offset( dst+i+1 ) == 0 /* last in line */
-           || i == 0       /* first in range */
-           || i == len-1;  /* last in range */
-      shadow_mem_copy8( src+i, dst+i, normalise );
+   libhb_copy_shadow_state( src, dst, len );
+}
+
+static void shadow_mem_read_range ( Thread* thr, Addr a, SizeT len )
+{
+   RaceInfo ri;
+   Thr*     hbthr = thr->hbthr;
+   tl_assert(hbthr);
+   if (libhb_read(&ri, hbthr, a, len)) {
+      Thread* confthr = ri.thrp ? libhb_get_Thr_opaque( ri.thrp ) : NULL;
+      record_error_Race( thr, ri.a, ri.isW, ri.szB,  0,0,NULL,
+                         (ExeContext*)ri.wherep, confthr );
    }
 }
 
-static void shadow_mem_read_range ( Thread* thr, Addr a, SizeT len ) {
-   shadow_mem_modify_range( thr, a, len, 
-                            shadow_mem_read8,
-                            shadow_mem_read16,
-                            shadow_mem_read32,
-                            shadow_mem_read64,
-                            0/*opaque,ignored*/ );
-}
-
 static void shadow_mem_write_range ( Thread* thr, Addr a, SizeT len ) {
-   shadow_mem_modify_range( thr, a, len, 
-                            shadow_mem_write8,
-                            shadow_mem_write16,
-                            shadow_mem_write32,
-                            shadow_mem_write64,
-                            0/*opaque,ignored*/ );
+   RaceInfo ri;
+   Thr*     hbthr = thr->hbthr;
+   tl_assert(hbthr);
+   if (libhb_write(&ri, hbthr, a, len)) {
+      Thread* confthr = ri.thrp ? libhb_get_Thr_opaque( ri.thrp ) : NULL;
+      record_error_Race( thr, ri.a, ri.isW, ri.szB,  0,0,NULL,
+                         (ExeContext*)ri.wherep, confthr );
+   }
 }
 
 static void shadow_mem_make_New ( Thread* thr, Addr a, SizeT len )
 {
-   if (UNLIKELY(clo_trace_level > 0)) {
-      if (len > 0 && a <= clo_trace_addr && clo_trace_addr < a+len) {
-         SVal sv_old = shadow_mem_get8( clo_trace_addr );
-         msm__show_state_change( thr, a, (Int)len, 'p', sv_old, SHVAL_New );
-      }
-   }
-   shadow_mem_modify_range( thr, a, len, 
-                            shadow_mem_set8,
-                            shadow_mem_set16,
-                            shadow_mem_set32,
-                            shadow_mem_set64,
-                            SHVAL_New/*opaque*/ );
+   libhb_range_new( thr->hbthr, a, len );
 }
 
-
-/* Putting memory into the NoAccess state.  This is hugely complicated
-   by the problem of memory that contains locks.
-
-   1. Examine the .mbHasLocks fields in all SecMaps in the range to be
-      deleted.  This quickly indicates if there are or might be any
-      locks in the range to be deleted.  Note that .mbHasLocks fields on
-      SecMaps are not subject to scaching, so it safe to look at them
-      without flushing the scache.
-
-   2. Set the range to NoAccess.  Clear the .mbHasShared and
-      .mbHasLocks hint bits for any completely vacated SecMaps.
-      Clearing the hint bits isn't necessary for correctness, but it
-      is important to avoid ending up with hint bits being permanently
-      set, which would render them pointless.
-
-   3. If (1) indicated "definitely no locks", we're done.  This is
-      the fast and hopefully common case.
-
-   Otherwise, the range contains some locks (or may do), so we have to
-   go to considerable effort to tidy up.
-
-   4. Make up a set containing the locks which are deleted:
-
-      ToDelete = NULL
-
-      for each lk in map_locks {
-         if lk's guest addr falls in the range to memory be deleted
-            add lk to ToDelete
-
-         if lk is held, issue an error message - freeing memory
-            containing a held lock
-      }
-
-   5. If ToDelete is empty, there were in fact no locks in the range,
-      despite what the .mbHasLocks hint bits indicated.  We're done.
-
-   6. Flush the scache.  This is necessary both to bring the SecMap
-      .mbHasShared fields up to date, and to bring the actual shadow
-      values up to date.  We will need to examine both of these.
-
-      Invalidate the scache.  This is necessary because we will be
-      modifying values in the backing store (SecMaps) and need
-      subsequent shmem accesses to get the new values.
-
-   7. Modify all shadow words, by removing ToDelete from the lockset
-      of all ShM and ShR states.  Note this involves a complete scan
-      over map_shmem, which is very expensive according to OProfile.
-      Hence it depends critically on the size of each entry in
-      map_shmem.  See comments on definition of N_SECMAP_BITS above.
-
-      Why is it safe to do (7) after (2) ?  Because we're not
-      interested in messing with ShR/M states which are going to be
-      set to NoAccess anyway.
-
-      Optimisation 1 (implemented): skip this step for SecMaps which
-      do not have .mbHasShared set
-
-      Optimisation 2 (not implemented): for each SecMap, have a
-      summary lock set which is the union of all locks mentioned in
-      locksets on this page (or any superset of it).  Then skip step
-      (2) if the summary lockset does not intersect with ToDelete.
-
-      That's potentially cheap, since the usual lockset refinement
-      only shrinks locksets; hence there is no point in updating the
-      summary lockset for ShM/R -> ShM/R transitions.  Therefore only
-      need to do this for Excl->ShM/R transitions.
-
-   8. Tell laog that these locks have disappeared.
-*/
 static void shadow_mem_make_NoAccess ( Thread* thr, Addr aIN, SizeT len )
 {
-   Lock*     lk;
-   Addr      gla, sma, firstSM, lastSM, firstA, lastA;
-   WordSetID locksToDelete;
-   Bool      mbHasLocks;
-
    if (0 && len > 500)
       VG_(printf)("make NoAccess ( %#lx, %ld )\n", aIN, len );
-
-   if (len == 0) 
-      return;
-
-   /* --- Step 1 --- */
-
-   firstA  = aIN;
-   lastA   = aIN + len - 1;
-
-   firstSM = shmem__round_to_SecMap_base( firstA );
-   lastSM  = shmem__round_to_SecMap_base( lastA );
-   tl_assert(firstSM <= lastSM);
-
-   mbHasLocks = False;
-   for (sma = firstSM; sma <= lastSM; sma += N_SECMAP_ARANGE) {
-      if (shmem__get_mbHasLocks(sma)) {
-         mbHasLocks = True;
-         break;
-      }
-   }
-
-   /* --- Step 2 --- */
-
-   if (UNLIKELY(clo_trace_level > 0)) {
-      if (len > 0 && firstA <= clo_trace_addr && clo_trace_addr <= lastA) {
-         SVal sv_old = shadow_mem_get8( clo_trace_addr );
-         msm__show_state_change( thr, firstA, (Int)len, 'p',
-                                      sv_old, SHVAL_NoAccess );
-      }
-   }
-   shadow_mem_modify_range( thr, firstA, len, 
-                            shadow_mem_set8,
-                            shadow_mem_set16,
-                            shadow_mem_set32,
-                            shadow_mem_set64,
-                            SHVAL_NoAccess/*opaque*/ );
-
-   for (sma = firstSM; sma <= lastSM; sma += N_SECMAP_ARANGE) {
-      /* Is this sm entirely within the deleted range? */
-      if (firstA <= sma && sma + N_SECMAP_ARANGE - 1 <= lastA) {
-         /* Yes.  Clear the hint bits. */
-         shmem__set_mbHasLocks( sma, False );
-         shmem__set_mbHasShared( sma, False );
-      }
-   }
-
-   /* --- Step 3 --- */
-
-   if (!mbHasLocks)
-      return;
-
-   /* --- Step 4 --- */
-
-   if (0) 
-   VG_(printf)("shadow_mem_make_NoAccess(%p, %lu, %p): maybe slow case\n",
-               (void*)firstA, (UWord)len, (void*)lastA);
-   locksToDelete = HG_(emptyWS)( univ_lsets );
-   
-   /* Iterate over all locks in the range firstA .. lastA inclusive. */
-   VG_(initIterAtFM)( map_locks, firstA );
-   while (VG_(nextIterFM)( map_locks, (Word*)&gla, (Word*)&lk )
-          && gla <= lastA) {
-      tl_assert(is_sane_LockN(lk));
-      tl_assert(gla >= firstA);
-      tl_assert(gla <= lastA);
-
-      locksToDelete = HG_(addToWS)( univ_lsets, locksToDelete, (Word)lk );
-      /* If the lock is held, we must remove it from the currlock sets
-         of all threads that hold it.  Also take the opportunity to
-         report an error.  To report an error we need to know at least
-         one of the threads that holds it; really we should mention
-         them all, but that's too much hassle.  So choose one
-         arbitrarily. */
-      if (lk->heldBy) {
-         tl_assert(!VG_(isEmptyBag)(lk->heldBy));
-         record_error_FreeMemLock( (Thread*)VG_(anyElementOfBag)(lk->heldBy),
-                                   lk );
-         /* remove lock from locksets of all owning threads */
-         remove_Lock_from_locksets_of_all_owning_Threads( lk );
-         /* Leave lk->heldBy in place; del_Lock below will free it up. */
-      }
-   }
-   VG_(doneIterFM)( map_locks );
-
-   /* --- Step 5 --- */
-
-   if (HG_(isEmptyWS)( univ_lsets, locksToDelete ))
-      return;
-
-   /* --- Step 6 --- */
-
-   shmem__flush_and_invalidate_scache();
-
-   /* --- Step 7 --- */
-
-   if (0) 
-   VG_(printf)("shadow_mem_make_NoAccess(%p, %lu, %p): definitely slow case\n",
-               (void*)firstA, (UWord)len, (void*)lastA);
-
-   /* Modify all shadow words, by removing locksToDelete from the lockset
-      of all ShM and ShR states.
-      Optimisation 1: skip SecMaps which do not have .mbHasShared set
-   */
-   { Int        stats_SMs = 0, stats_SMs_scanned = 0;
-     Addr       ga;
-     SecMap*    sm;
-     SecMapIter itr;
-     SVal*      w32p = NULL;
-
-     VG_(initIterFM)( map_shmem );
-     while (VG_(nextIterFM)( map_shmem,
-                             (Word*)&ga, (Word*)&sm )) {
-        tl_assert(sm);
-        stats_SMs++;
-        /* Skip this SecMap if the summary bit indicates it is safe to
-           do so. */
-        if (!sm->mbHasShared)
-           continue;
-        stats_SMs_scanned++;
-        initSecMapIter( &itr );
-        while (stepSecMapIter( &w32p, &itr, sm )) {
-           Bool isM;
-           SVal wold, wnew; 
-           UInt lset_old, tset_old, lset_new;
-           wold = *w32p;
-           if (LIKELY( !is_SHVAL_Sh(wold) ))
-              continue;
-           isM      = is_SHVAL_ShM(wold);
-           lset_old = un_SHVAL_Sh_lset(wold);
-           tset_old = un_SHVAL_Sh_tset(wold);
-           lset_new = HG_(minusWS)( univ_lsets, lset_old, locksToDelete );
-           wnew     = isM ? mk_SHVAL_ShM(tset_old, lset_new)
-                          : mk_SHVAL_ShR(tset_old, lset_new);
-           if (wnew != wold)
-              *w32p = wnew;
-        }
-     }
-     VG_(doneIterFM)( map_shmem );
-     if (SHOW_EXPENSIVE_STUFF)
-        VG_(printf)("shadow_mem_make_NoAccess: %d SMs, %d scanned\n", 
-                    stats_SMs, stats_SMs_scanned);
-   }
-
-   /* Now we have to free up the Locks in locksToDelete and remove
-      any mention of them from admin_locks and map_locks.  This is
-      inefficient. */
-   { Lock* lkprev = NULL;
-     lk = admin_locks;
-     while (True) {
-        if (lk == NULL) break;
-        if (lkprev) tl_assert(lkprev->admin == lk);
-
-        if (!HG_(elemWS)(univ_lsets, locksToDelete, (Word)lk)) {
-           lkprev = lk;
-           lk = lk->admin;
-           continue;
-        }
-        /* Need to delete 'lk' */
-        if (lkprev == NULL) {
-           admin_locks = lk->admin;
-        } else {
-           lkprev->admin = lk->admin;
-        }
-        /* and get it out of map_locks */
-        map_locks_delete(lk->guestaddr);
-        /* release storage (incl. associated .heldBy Bag) */
-        { Lock* tmp = lk->admin;
-          del_LockN(lk);
-          lk = tmp;
-        }
-     }
-   }
-
-   /* --- Step 8 --- */
-
-   /* update lock order acquisition graph */
-   laog__handle_lock_deletions( locksToDelete );
-
-   if (0) all__sanity_check("Make NoAccess");
+   libhb_range_noaccess( thr->hbthr, aIN, len );
 }
 
 
@@ -5075,24 +1408,24 @@ static void shadow_mem_make_NoAccess ( Thread* thr, Addr aIN, SizeT len )
    existing segment, bind together the SegmentID and Segment, and
    return both of them.  Also update 'thr' so it references the new
    Segment. */
-static 
-void evhH__start_new_segment_for_thread ( /*OUT*/SegmentID* new_segidP,
-                                          /*OUT*/Segment** new_segP,
-                                          Thread* thr )
-{
-   Segment* cur_seg;
-   tl_assert(new_segP);
-   tl_assert(new_segidP);
-   tl_assert(is_sane_Thread(thr));
-   cur_seg = map_segments_lookup( thr->csegid );
-   tl_assert(cur_seg);
-   tl_assert(cur_seg->thr == thr); /* all sane segs should point back
-                                      at their owner thread. */
-   *new_segP = mk_Segment( thr, cur_seg, NULL/*other*/ );
-   *new_segidP = alloc_SegmentID();
-   map_segments_add( *new_segidP, *new_segP );
-   thr->csegid = *new_segidP;
-}
+//zz static 
+//zz void evhH__start_new_segment_for_thread ( /*OUT*/SegmentID* new_segidP,
+//zz                                           /*OUT*/Segment** new_segP,
+//zz                                           Thread* thr )
+//zz {
+//zz    Segment* cur_seg;
+//zz    tl_assert(new_segP);
+//zz    tl_assert(new_segidP);
+//zz    tl_assert(is_sane_Thread(thr));
+//zz    cur_seg = map_segments_lookup( thr->csegid );
+//zz    tl_assert(cur_seg);
+//zz    tl_assert(cur_seg->thr == thr); /* all sane segs should point back
+//zz                                       at their owner thread. */
+//zz    *new_segP = mk_Segment( thr, cur_seg, NULL/*other*/ );
+//zz    *new_segidP = alloc_SegmentID();
+//zz    map_segments_add( *new_segidP, *new_segP );
+//zz    thr->csegid = *new_segidP;
+//zz }
 
 
 /* The lock at 'lock_ga' has acquired a writer.  Make all necessary
@@ -5114,22 +1447,23 @@ void evhH__post_thread_w_acquires_lock ( Thread* thr,
       invalid states.  Requests to do so are bugs in libpthread, since
       that should have rejected any such requests. */
 
-   /* be paranoid w.r.t hint bits, even if lock_ga is complete
-      nonsense */
-   shmem__set_mbHasLocks( lock_ga, True );
-
    tl_assert(is_sane_Thread(thr));
    /* Try to find the lock.  If we can't, then create a new one with
       kind 'lkk'. */
    lk = map_locks_lookup_or_create( 
            lkk, lock_ga, map_threads_reverse_lookup_SLOW(thr) );
    tl_assert( is_sane_LockN(lk) );
-   shmem__set_mbHasLocks( lock_ga, True );
+
+   /* check libhb level entities exist */
+   tl_assert(thr->hbthr);
+   tl_assert(lk->hbso);
 
    if (lk->heldBy == NULL) {
       /* the lock isn't held.  Simple. */
       tl_assert(!lk->heldW);
       lockN_acquire_writer( lk, thr );
+      /* acquire a dependency from the lock's VCs */
+      libhb_so_recv( thr->hbthr, lk->hbso, True/*strong_recv*/ );
       goto noerror;
    }
 
@@ -5167,6 +1501,9 @@ void evhH__post_thread_w_acquires_lock ( Thread* thr,
 
    /* So we are recursively re-locking a lock we already w-hold. */
    lockN_acquire_writer( lk, thr );
+   /* acquire a dependency from the lock's VC.  Probably pointless,
+      but also harmless. */
+   libhb_so_recv( thr->hbthr, lk->hbso, True/*strong_recv*/ );
    goto noerror;
 
   noerror:
@@ -5202,10 +1539,6 @@ void evhH__post_thread_r_acquires_lock ( Thread* thr,
       invalid states.  Requests to do so are bugs in libpthread, since
       that should have rejected any such requests. */
 
-   /* be paranoid w.r.t hint bits, even if lock_ga is complete
-      nonsense */
-   shmem__set_mbHasLocks( lock_ga, True );
-
    tl_assert(is_sane_Thread(thr));
    /* Try to find the lock.  If we can't, then create a new one with
       kind 'lkk'.  Only a reader-writer lock can be read-locked,
@@ -5214,12 +1547,17 @@ void evhH__post_thread_r_acquires_lock ( Thread* thr,
    lk = map_locks_lookup_or_create( 
            lkk, lock_ga, map_threads_reverse_lookup_SLOW(thr) );
    tl_assert( is_sane_LockN(lk) );
-   shmem__set_mbHasLocks( lock_ga, True );
+
+   /* check libhb level entities exist */
+   tl_assert(thr->hbthr);
+   tl_assert(lk->hbso);
 
    if (lk->heldBy == NULL) {
       /* the lock isn't held.  Simple. */
       tl_assert(!lk->heldW);
       lockN_acquire_reader( lk, thr );
+      /* acquire a dependency from the lock's VC */
+      libhb_so_recv( thr->hbthr, lk->hbso, False/*!strong_recv*/ );
       goto noerror;
    }
 
@@ -5236,6 +1574,9 @@ void evhH__post_thread_r_acquires_lock ( Thread* thr,
    /* Easy enough.  In short anybody can get a read-lock on a rwlock
       provided it is either unlocked or already in rd-held. */
    lockN_acquire_reader( lk, thr );
+   /* acquire a dependency from the lock's VC.  Probably pointless,
+      but also harmless. */
+   libhb_so_recv( thr->hbthr, lk->hbso, False/*!strong_recv*/ );
    goto noerror;
 
   noerror:
@@ -5269,10 +1610,6 @@ void evhH__pre_thread_releases_lock ( Thread* thr,
       isRDWR is True if we know from the wrapper context that lock_ga
       should refer to a reader-writer lock, and is False if [ditto]
       lock_ga should refer to a standard mutex. */
-
-   /* be paranoid w.r.t hint bits, even if lock_ga is complete
-      nonsense */
-   shmem__set_mbHasLocks( lock_ga, True );
 
    tl_assert(is_sane_Thread(thr));
    lock = map_locks_maybe_lookup( lock_ga );
@@ -5355,6 +1692,10 @@ void evhH__pre_thread_releases_lock ( Thread* thr,
          = HG_(delFromWS)( univ_lsets, thr->locksetA, (Word)lock );
       thr->locksetW
          = HG_(delFromWS)( univ_lsets, thr->locksetW, (Word)lock );
+      /* push our VC into the lock */
+      tl_assert(thr->hbthr);
+      tl_assert(lock->hbso);
+      libhb_so_send( thr->hbthr, lock->hbso );
    }
    /* fall through */
 
@@ -5393,6 +1734,7 @@ static void evh__stop_client_code ( ThreadId tid, ULong nDisp ) {
    if (0) VG_(printf)(" stop %d %llu\n", (Int)tid, nDisp);
    tl_assert(current_Thread != NULL);
    current_Thread = NULL;
+   libhb_maybe_GC();
 }
 static inline Thread* get_current_Thread_in_C_C ( void ) {
    return current_Thread;
@@ -5477,10 +1819,10 @@ void evh__pre_thread_ll_create ( ThreadId parent, ThreadId child )
                   (Int)parent, (Int)child );
 
    if (parent != VG_INVALID_THREADID) {
-      Thread*   thr_p;
-      Thread*   thr_c;
-      SegmentID segid_c;
-      Segment*  seg_c;
+      Thread* thr_p;
+      Thread* thr_c;
+      Thr*    hbthr_p;
+      Thr*    hbthr_c;
 
       tl_assert(is_sane_ThreadId(parent));
       tl_assert(is_sane_ThreadId(child));
@@ -5492,15 +1834,17 @@ void evh__pre_thread_ll_create ( ThreadId parent, ThreadId child )
       tl_assert(thr_p != NULL);
       tl_assert(thr_c == NULL);
 
-      /* Create a new thread record for the child. */
-      // FIXME: code duplication from init_data_structures
-      segid_c = alloc_SegmentID();
-      seg_c   = mk_Segment( NULL/*thr*/, NULL/*prev*/, NULL/*other*/ );
-      map_segments_add( segid_c, seg_c );
+      hbthr_p = thr_p->hbthr;
+      tl_assert(hbthr_p != NULL);
+      tl_assert( libhb_get_Thr_opaque(hbthr_p) == thr_p );
 
+      hbthr_c = libhb_create ( hbthr_p );
+
+      /* Create a new thread record for the child. */
       /* a Thread for the new thread ... */
-      thr_c = mk_Thread( segid_c );
-      seg_c->thr = thr_c;
+      thr_c = mk_Thread( hbthr_c );
+      tl_assert( libhb_get_Thr_opaque(hbthr_c) == NULL );
+      libhb_set_Thr_opaque(hbthr_c, thr_c);
 
       /* and bind it in the thread-map table */
       map_threads[child] = thr_c;
@@ -5521,25 +1865,6 @@ void evh__pre_thread_ll_create ( ThreadId parent, ThreadId child )
         first_ip_delta = -3;
 #       endif
         thr_c->created_at = VG_(record_ExeContext)(parent, first_ip_delta);
-      }
-
-      /* Now, mess with segments. */ 
-      if (clo_happens_before >= 1) {
-         /* Make the child's new segment depend on the parent */
-         seg_c->other = map_segments_lookup( thr_p->csegid );
-         seg_c->other_hint = 'c';
-         seg_c->vts = tick_VTS( thr_c, seg_c->other->vts );
-         tl_assert(seg_c->prev == NULL);
-         /* and start a new segment for the parent. */
-         { SegmentID new_segid = 0; /* bogus */
-           Segment*  new_seg   = NULL;
-           evhH__start_new_segment_for_thread( &new_segid, &new_seg, 
-                                               thr_p );
-           tl_assert(is_sane_SegmentID(new_segid));
-           tl_assert(is_sane_Segment(new_seg));
-           new_seg->vts = tick_VTS( thr_p, new_seg->prev->vts );
-           tl_assert(new_seg->other == NULL);
-         }
       }
    }
 
@@ -5592,14 +1917,15 @@ void evh__pre_thread_ll_exit ( ThreadId quit_tid )
       all__sanity_check("evh__pre_thread_ll_exit-post");
 }
 
+
 static
 void evh__HG_PTHREAD_JOIN_POST ( ThreadId stay_tid, Thread* quit_thr )
 {
-   Int      stats_SMs, stats_SMs_scanned, stats_reExcls;
-   Addr     ga;
-   SecMap*  sm;
    Thread*  thr_s;
    Thread*  thr_q;
+   Thr*     hbthr_s;
+   Thr*     hbthr_q;
+   SO*      so;
 
    if (SHOW_EVENTS >= 1)
       VG_(printf)("evh__post_thread_join(stayer=%d, quitter=%p)\n",
@@ -5613,122 +1939,24 @@ void evh__HG_PTHREAD_JOIN_POST ( ThreadId stay_tid, Thread* quit_thr )
    tl_assert(thr_q != NULL);
    tl_assert(thr_s != thr_q);
 
-   if (clo_happens_before >= 1) {
-      /* Start a new segment for the stayer */
-      SegmentID new_segid = 0; /* bogus */
-      Segment*  new_seg   = NULL;
-      evhH__start_new_segment_for_thread( &new_segid, &new_seg, thr_s );
-      tl_assert(is_sane_SegmentID(new_segid));
-      tl_assert(is_sane_Segment(new_seg));
-      /* and make it depend on the quitter's last segment */
-      tl_assert(new_seg->other == NULL);
-      new_seg->other = map_segments_lookup( thr_q->csegid );
-      new_seg->other_hint = 'j';
-      tl_assert(new_seg->thr == thr_s);
-      new_seg->vts = tickL_and_joinR_VTS( thr_s, new_seg->prev->vts,
-                                                 new_seg->other->vts );
-   }
+   hbthr_s = thr_s->hbthr;
+   hbthr_q = thr_q->hbthr;
+   tl_assert(hbthr_s != hbthr_q);
+   tl_assert( libhb_get_Thr_opaque(hbthr_s) == thr_s );
+   tl_assert( libhb_get_Thr_opaque(hbthr_q) == thr_q );
+
+   /* Allocate a temporary synchronisation object and use it to send
+      an imaginary message from the quitter to the stayer, the purpose
+      being to generate a dependence from the quitter to the
+      stayer. */
+   so = libhb_so_alloc();
+   tl_assert(so);
+   libhb_so_send(hbthr_q, so);
+   libhb_so_recv(hbthr_s, so, True/*strong_recv*/);
+   libhb_so_dealloc(so);
 
    // FIXME: error-if: exiting thread holds any locks
    //        or should evh__pre_thread_ll_exit do that?
-
-   /* Delete thread from ShM/ShR thread sets and restore Excl states
-      where appropriate */
-
-   /* When Thread(t) joins to Thread(u):
-
-      scan all shadow memory.  For each ShM/ShR thread set, replace
-      't' in each set with 'u'.  If this results in a singleton 'u',
-      change the state to Excl(u->csegid).
-
-      Optimisation: tag each SecMap with a superset of the union of
-      the thread sets in the SecMap.  Then if the tag set does not
-      include 't' then the SecMap can be skipped, because there is no
-      't' to change to anything else.
-
-      Problem is that the tag set needs to be updated often, after
-      every ShR/ShM store.  (that increases the thread set of the
-      shadow value.)
-
-      --> Compromise.  Tag each SecMap with a .mbHasShared bit which
-          must be set true if any ShR/ShM on the page.  Set this for
-          any transitions into ShR/ShM on the page.  Then skip page if
-          not set.
-
-      .mbHasShared bits are (effectively) cached in cache_shmem.
-      Hence that must be flushed before we can safely consult them.
-
-      Since we're modifying the backing store, we also need to
-      invalidate cache_shmem, so that subsequent memory references get
-      up to date shadow values.
-   */
-   shmem__flush_and_invalidate_scache();
-
-   stats_SMs = stats_SMs_scanned = stats_reExcls = 0;
-   VG_(initIterFM)( map_shmem );
-   while (VG_(nextIterFM)( map_shmem,
-                           (Word*)&ga, (Word*)&sm )) {
-      SecMapIter itr;
-      SVal*      w32p = NULL;
-      tl_assert(sm);
-      stats_SMs++;
-      /* Skip this SecMap if the summary bit indicates it is safe to
-         do so. */
-      if (!sm->mbHasShared)
-         continue;
-      stats_SMs_scanned++;
-      initSecMapIter( &itr );
-      while (stepSecMapIter( &w32p, &itr, sm )) {
-         Bool isM;
-         SVal wnew, wold;
-         UInt lset_old, tset_old, tset_new;
-         wold = *w32p;
-         if (!is_SHVAL_Sh(wold))
-            continue;
-         isM = is_SHVAL_ShM(wold);
-         lset_old = un_SHVAL_Sh_lset(wold);
-         tset_old = un_SHVAL_Sh_tset(wold);
-         /* Subst thr_q -> thr_s in the thread set.  Longwindedly, if
-            thr_q is in the set, delete it and add thr_s; else leave
-            it alone.  FIXME: is inefficient - make a special
-            substInWS method for this. */
-         tset_new 
-            = HG_(elemWS)( univ_tsets, tset_old, (Word)thr_q )
-              ? HG_(addToWS)(
-                   univ_tsets, 
-                   HG_(delFromWS)( univ_tsets, tset_old, (Word)thr_q ),
-                   (Word)thr_s 
-                )
-              : tset_old;
-
-         tl_assert(HG_(cardinalityWS)(univ_tsets, tset_new) 
-                   <= HG_(cardinalityWS)(univ_tsets, tset_old));
-
-         if (0) {
-            VG_(printf)("smga %#lx: old 0x%x new 0x%x   ",
-                        ga, tset_old, tset_new);
-            HG_(ppWS)( univ_tsets, tset_old );
-            VG_(printf)("  -->  ");
-            HG_(ppWS)( univ_tsets, tset_new );
-            VG_(printf)("\n");
-         }
-         if (HG_(isSingletonWS)( univ_tsets, tset_new, (Word)thr_s )) {
-            /* This word returns to Excl state */
-            wnew = mk_SHVAL_Excl(thr_s->csegid);
-            stats_reExcls++;
-         } else {
-            wnew = isM ? mk_SHVAL_ShM(tset_new, lset_old)
-                       : mk_SHVAL_ShR(tset_new, lset_old);
-         }
-         *w32p = wnew;
-      }
-   }
-   VG_(doneIterFM)( map_shmem );
-
-   if (SHOW_EXPENSIVE_STUFF)
-      VG_(printf)("evh__post_thread_join: %d SMs, "
-                  "%d scanned, %d re-Excls\n", 
-                  stats_SMs, stats_SMs_scanned, stats_reExcls);
 
    /* This holds because, at least when using NPTL as the thread
       library, we should be notified the low level thread exit before
@@ -5804,48 +2032,124 @@ void evh__die_mem_heap ( Addr a, SizeT len ) {
       all__sanity_check("evh__pre_mem_read-post");
 }
 
-// thread async exit?
-
 static VG_REGPARM(1)
 void evh__mem_help_read_1(Addr a) {
-   shadow_mem_read8( get_current_Thread_in_C_C(), a, 0/*unused*/ );
+   RaceInfo ri;
+   Thread*  thr = get_current_Thread_in_C_C();
+   Thr*     hbthr = thr->hbthr;
+   if (libhb_read(&ri, hbthr, a, 1)) {
+      Thread* confthr = ri.thrp ? libhb_get_Thr_opaque( ri.thrp ) : NULL;
+      record_error_Race( thr, ri.a, ri.isW, ri.szB,  0,0,NULL,
+                         (ExeContext*)ri.wherep, confthr );
+   }
 }
+
 static VG_REGPARM(1)
 void evh__mem_help_read_2(Addr a) {
-   shadow_mem_read16( get_current_Thread_in_C_C(), a, 0/*unused*/ );
+   RaceInfo ri;
+   Thread*  thr = get_current_Thread_in_C_C();
+   Thr*     hbthr = thr->hbthr;
+   if (libhb_read(&ri, hbthr, a, 2)) {
+      Thread* confthr = ri.thrp ? libhb_get_Thr_opaque( ri.thrp ) : NULL;
+      record_error_Race( thr, ri.a, ri.isW, ri.szB,  0,0,NULL,
+                         (ExeContext*)ri.wherep, confthr );
+   }
 }
+
 static VG_REGPARM(1)
 void evh__mem_help_read_4(Addr a) {
-   shadow_mem_read32( get_current_Thread_in_C_C(), a, 0/*unused*/ );
+   RaceInfo ri;
+   Thread*  thr = get_current_Thread_in_C_C();
+   Thr*     hbthr = thr->hbthr;
+   if (libhb_read(&ri, hbthr, a, 4)) {
+      Thread* confthr = ri.thrp ? libhb_get_Thr_opaque( ri.thrp ) : NULL;
+      record_error_Race( thr, ri.a, ri.isW, ri.szB,  0,0,NULL,
+                         (ExeContext*)ri.wherep, confthr );
+   }
 }
+
 static VG_REGPARM(1)
 void evh__mem_help_read_8(Addr a) {
-   shadow_mem_read64( get_current_Thread_in_C_C(), a, 0/*unused*/ );
+   RaceInfo ri;
+   Thread*  thr = get_current_Thread_in_C_C();
+   Thr*     hbthr = thr->hbthr;
+   if (libhb_read(&ri, hbthr, a, 8)) {
+      Thread* confthr = ri.thrp ? libhb_get_Thr_opaque( ri.thrp ) : NULL;
+      record_error_Race( thr, ri.a, ri.isW, ri.szB,  0,0,NULL,
+                         (ExeContext*)ri.wherep, confthr );
+   }
 }
+
 static VG_REGPARM(2)
 void evh__mem_help_read_N(Addr a, SizeT size) {
-   shadow_mem_read_range( get_current_Thread_in_C_C(), a, size );
+   RaceInfo ri;
+   Thread*  thr = get_current_Thread_in_C_C();
+   Thr*     hbthr = thr->hbthr;
+   if (libhb_read(&ri, hbthr, a, size)) {
+      Thread* confthr = ri.thrp ? libhb_get_Thr_opaque( ri.thrp ) : NULL;
+      record_error_Race( thr, ri.a, ri.isW, ri.szB,  0,0,NULL,
+                         (ExeContext*)ri.wherep, confthr );
+   }
 }
 
 static VG_REGPARM(1)
 void evh__mem_help_write_1(Addr a) {
-   shadow_mem_write8( get_current_Thread_in_C_C(), a, 0/*unused*/ );
+   RaceInfo ri;
+   Thread*  thr = get_current_Thread_in_C_C();
+   Thr*     hbthr = thr->hbthr;
+   if (libhb_write(&ri, hbthr, a, 1)) {
+      Thread* confthr = ri.thrp ? libhb_get_Thr_opaque( ri.thrp ) : NULL;
+      record_error_Race( thr, ri.a, ri.isW, ri.szB,  0,0,NULL,
+                         (ExeContext*)ri.wherep, confthr );
+   }
 }
+
 static VG_REGPARM(1)
 void evh__mem_help_write_2(Addr a) {
-   shadow_mem_write16( get_current_Thread_in_C_C(), a, 0/*unused*/ );
+   RaceInfo ri;
+   Thread*  thr = get_current_Thread_in_C_C();
+   Thr*     hbthr = thr->hbthr;
+   if (libhb_write(&ri, hbthr, a, 2)) {
+      Thread* confthr = ri.thrp ? libhb_get_Thr_opaque( ri.thrp ) : NULL;
+      record_error_Race( thr, ri.a, ri.isW, ri.szB,  0,0,NULL,
+                         (ExeContext*)ri.wherep, confthr );
+   }
 }
+
 static VG_REGPARM(1)
 void evh__mem_help_write_4(Addr a) {
-   shadow_mem_write32( get_current_Thread_in_C_C(), a, 0/*unused*/ );
+   RaceInfo ri;
+   Thread*  thr = get_current_Thread_in_C_C();
+   Thr*     hbthr = thr->hbthr;
+   if (libhb_write(&ri, hbthr, a, 4)) {
+      Thread* confthr = ri.thrp ? libhb_get_Thr_opaque( ri.thrp ) : NULL;
+      record_error_Race( thr, ri.a, ri.isW, ri.szB,  0,0,NULL,
+                         (ExeContext*)ri.wherep, confthr );
+   }
 }
+
 static VG_REGPARM(1)
 void evh__mem_help_write_8(Addr a) {
-   shadow_mem_write64( get_current_Thread_in_C_C(), a, 0/*unused*/ );
+   RaceInfo ri;
+   Thread*  thr = get_current_Thread_in_C_C();
+   Thr*     hbthr = thr->hbthr;
+   if (libhb_write(&ri, hbthr, a, 8)) {
+      Thread* confthr = ri.thrp ? libhb_get_Thr_opaque( ri.thrp ) : NULL;
+      record_error_Race( thr, ri.a, ri.isW, ri.szB,  0,0,NULL,
+                         (ExeContext*)ri.wherep, confthr );
+   }
 }
+
 static VG_REGPARM(2)
 void evh__mem_help_write_N(Addr a, SizeT size) {
-   shadow_mem_write_range( get_current_Thread_in_C_C(), a, size );
+   RaceInfo ri;
+   Thread*  thr = get_current_Thread_in_C_C();
+   Thr*     hbthr = thr->hbthr;
+   if (libhb_write(&ri, hbthr, a, size)) {
+      Thread* confthr = ri.thrp ? libhb_get_Thr_opaque( ri.thrp ) : NULL;
+      record_error_Race( thr, ri.a, ri.isW, ri.szB,  0,0,NULL,
+                         (ExeContext*)ri.wherep, confthr );
+   }
 }
 
 static void evh__bus_lock(void) {
@@ -6010,62 +2314,61 @@ static void evh__HG_PTHREAD_MUTEX_UNLOCK_POST ( ThreadId tid, void* mutex )
 
 /* --------------- events to do with CVs --------------- */
 
-/* A mapping from CV to the thread segment which has most recently
-   signalled/broadcasted on it.  This makes it possible to create
-   thread segments to model happens-before events arising from CV
+/* A mapping from CV to the SO associated with it.  When the CV is
+   signalled/broadcasted upon, we do a 'send' into the SO, and when a
+   wait on it completes, we do a 'recv' from the SO.  This is believed
+   to give the correct happens-before events arising from CV
    signallings/broadcasts.
 */
 
-/* pthread_mutex_cond* -> Segment* */
-static WordFM* map_cond_to_Segment = NULL;
+/* pthread_mutex_cond* -> SO* */
+static WordFM* map_cond_to_SO = NULL;
 
-static void map_cond_to_Segment_INIT ( void ) {
-   if (UNLIKELY(map_cond_to_Segment == NULL)) {
-      map_cond_to_Segment = VG_(newFM)( hg_zalloc, hg_free, NULL );
-      tl_assert(map_cond_to_Segment != NULL);
+static void map_cond_to_SO_INIT ( void ) {
+   if (UNLIKELY(map_cond_to_SO == NULL)) {
+      map_cond_to_SO = VG_(newFM)( hg_zalloc, hg_free, NULL );
+      tl_assert(map_cond_to_SO != NULL);
+   }
+}
+
+static SO* map_cond_to_SO_lookup_or_alloc ( void* cond ) {
+   UWord key, val;
+   map_cond_to_SO_INIT();
+   if (VG_(lookupFM)( map_cond_to_SO, &key, &val, (UWord)cond )) {
+      tl_assert(key == (UWord)cond);
+      return (SO*)val;
+   } else {
+      SO* so = libhb_so_alloc();
+      VG_(addToFM)( map_cond_to_SO, (UWord)cond, (UWord)so );
+      return so;
    }
 }
 
 static void evh__HG_PTHREAD_COND_SIGNAL_PRE ( ThreadId tid, void* cond )
 {
-   /* 'tid' has signalled on 'cond'.  Start a new segment for this
-      thread, and make a binding from 'cond' to our old segment in the
-      mapping.  This is later used by other thread(s) which
-      successfully exit from a pthread_cond_wait on the same cv; then
-      they know what the signalling segment was, so a dependency edge
-      back to it can be constructed. */
-
+   /* 'tid' has signalled on 'cond'.  As per the comment above, bind
+      cond to a SO if it is not already so bound, and 'send' on the
+      SO.  This is later used by other thread(s) which successfully
+      exit from a pthread_cond_wait on the same cv; then they 'recv'
+      from the SO, thereby acquiring a dependency on this signalling
+      event. */
    Thread*   thr;
-   SegmentID new_segid;
-   Segment*  new_seg;
+   SO*       so;
 
    if (SHOW_EVENTS >= 1)
       VG_(printf)("evh__HG_PTHREAD_COND_SIGNAL_PRE(ctid=%d, cond=%p)\n", 
                   (Int)tid, (void*)cond );
 
-   map_cond_to_Segment_INIT();
    thr = map_threads_maybe_lookup( tid );
    tl_assert(thr); /* cannot fail - Thread* must already exist */
 
    // error-if: mutex is bogus
    // error-if: mutex is not locked
 
-   if (clo_happens_before >= 2) {
-      /* create a new segment ... */
-      new_segid = 0; /* bogus */
-      new_seg   = NULL;
-      evhH__start_new_segment_for_thread( &new_segid, &new_seg, thr );
-      tl_assert( is_sane_SegmentID(new_segid) );
-      tl_assert( is_sane_Segment(new_seg) );
-      tl_assert( new_seg->thr == thr );
-      tl_assert( is_sane_Segment(new_seg->prev) );
-      tl_assert( new_seg->prev->vts );
-      new_seg->vts = tick_VTS( new_seg->thr, new_seg->prev->vts );
+   so = map_cond_to_SO_lookup_or_alloc( cond );
+   tl_assert(so);
 
-      /* ... and add the binding. */
-      VG_(addToFM)( map_cond_to_Segment, (Word)cond,
-                                         (Word)(new_seg->prev) );
-   }
+   libhb_so_send( thr->hbthr, so );
 }
 
 /* returns True if it reckons 'mutex' is valid and held by this
@@ -6082,7 +2385,6 @@ static Bool evh__HG_PTHREAD_COND_WAIT_PRE ( ThreadId tid,
                   "(ctid=%d, cond=%p, mutex=%p)\n", 
                   (Int)tid, (void*)cond, (void*)mutex );
 
-   map_cond_to_Segment_INIT();
    thr = map_threads_maybe_lookup( tid );
    tl_assert(thr); /* cannot fail - Thread* must already exist */
 
@@ -6126,68 +2428,36 @@ static Bool evh__HG_PTHREAD_COND_WAIT_PRE ( ThreadId tid,
 static void evh__HG_PTHREAD_COND_WAIT_POST ( ThreadId tid,
                                              void* cond, void* mutex )
 {
-   /* A pthread_cond_wait(cond, mutex) completed successfully.  Start
-      a new segment for this thread.  Look up the signalling-segment
-      for the 'cond' in the mapping, and add a dependency edge from
-      the new segment back to it. */
-
-   Thread*   thr;
-   SegmentID new_segid;
-   Segment*  new_seg;
-   Segment*  signalling_seg;
-   Bool      found;
+   /* A pthread_cond_wait(cond, mutex) completed successfully.  Find
+      the SO for this cond, and 'recv' from it so as to acquire a
+      dependency edge back to the signaller/broadcaster. */
+   Thread* thr;
+   SO*     so;
 
    if (SHOW_EVENTS >= 1)
       VG_(printf)("evh__HG_PTHREAD_COND_WAIT_POST"
                   "(ctid=%d, cond=%p, mutex=%p)\n", 
                   (Int)tid, (void*)cond, (void*)mutex );
 
-   map_cond_to_Segment_INIT();
    thr = map_threads_maybe_lookup( tid );
    tl_assert(thr); /* cannot fail - Thread* must already exist */
 
    // error-if: cond is also associated with a different mutex
 
-   if (clo_happens_before >= 2) {
-      /* create a new segment ... */
-      new_segid = 0; /* bogus */
-      new_seg   = NULL;
-      evhH__start_new_segment_for_thread( &new_segid, &new_seg, thr );
-      tl_assert( is_sane_SegmentID(new_segid) );
-      tl_assert( is_sane_Segment(new_seg) );
-      tl_assert( new_seg->thr == thr );
-      tl_assert( is_sane_Segment(new_seg->prev) );
-      tl_assert( new_seg->other == NULL);
+   so = map_cond_to_SO_lookup_or_alloc( cond );
+   tl_assert(so);
 
-      /* and find out which thread signalled us; then add a dependency
-         edge back to it. */
-      signalling_seg = NULL;
-      found = VG_(lookupFM)( map_cond_to_Segment, 
-                             NULL, (Word*)&signalling_seg,
-                                   (Word)cond );
-      if (found) {
-         tl_assert(is_sane_Segment(signalling_seg));
-         tl_assert(new_seg->prev);
-         tl_assert(new_seg->prev->vts);
-         new_seg->other      = signalling_seg;
-         new_seg->other_hint = 's';
-         tl_assert(new_seg->other->vts);
-         new_seg->vts = tickL_and_joinR_VTS( 
-                           new_seg->thr, 
-                           new_seg->prev->vts,
-                           new_seg->other->vts );
-      } else {
-         /* Hmm.  How can a wait on 'cond' succeed if nobody signalled
-            it?  If this happened it would surely be a bug in the
-            threads library.  Or one of those fabled "spurious
-            wakeups". */
-         record_error_Misc( thr, "Bug in libpthread: pthread_cond_wait "
-                                 "succeeded on"
-                                 " without prior pthread_cond_post");
-         tl_assert(new_seg->prev->vts);
-         new_seg->vts = tick_VTS( new_seg->thr, new_seg->prev->vts );
-      }
+   if (!libhb_so_everSent(so)) {
+      /* Hmm.  How can a wait on 'cond' succeed if nobody signalled
+         it?  If this happened it would surely be a bug in the threads
+         library.  Or one of those fabled "spurious wakeups". */
+      record_error_Misc( thr, "Bug in libpthread: pthread_cond_wait "
+                              "succeeded on"
+                              " without prior pthread_cond_post");
    }
+
+   /* anyway, acquire a dependency on it. */
+   libhb_so_recv( thr->hbthr, so, True/*strong_recv*/ );
 }
 
 
@@ -6322,249 +2592,249 @@ static void evh__HG_PTHREAD_RWLOCK_UNLOCK_POST ( ThreadId tid, void* rwl )
 }
 
 
-/* --------------- events to do with semaphores --------------- */
-
-/* This is similar to but not identical to the handling for condition
-   variables. */
-
-/* For each semaphore, we maintain a stack of Segments.  When a 'post'
-   operation is done on a semaphore (unlocking, essentially), a new
-   segment is created for the posting thread, and the old segment is
-   pushed on the semaphore's stack.
-
-   Later, when a (probably different) thread completes 'wait' on the
-   semaphore, we pop a Segment off the semaphore's stack (which should
-   be nonempty).  We start a new segment for the thread and make it
-   also depend on the just-popped segment.  This mechanism creates
-   dependencies between posters and waiters of the semaphore.
-
-   It may not be necessary to use a stack - perhaps a bag of Segments
-   would do.  But we do need to keep track of how many unused-up posts
-   have happened for the semaphore.
-
-   Imagine T1 and T2 both post once on a semphore S, and T3 waits
-   twice on S.  T3 cannot complete its waits without both T1 and T2
-   posting.  The above mechanism will ensure that T3 acquires
-   dependencies on both T1 and T2.
-
-   When a semaphore is initialised with value N, the initialising
-   thread starts a new segment, the semaphore's stack is emptied out,
-   and the old segment is pushed on the stack N times.  This allows up
-   to N waits on the semaphore to acquire a dependency on the
-   initialisation point, which AFAICS is the correct behaviour.
-
-   We don't emit an error for DESTROY_PRE on a semaphore we don't know
-   about.  We should.
-*/
-
-/* sem_t* -> XArray* Segment* */
-static WordFM* map_sem_to_Segment_stack = NULL;
-
-static void map_sem_to_Segment_stack_INIT ( void ) {
-   if (map_sem_to_Segment_stack == NULL) {
-      map_sem_to_Segment_stack = VG_(newFM)( hg_zalloc, hg_free, NULL );
-      tl_assert(map_sem_to_Segment_stack != NULL);
-   }
-}
-
-static void push_Segment_for_sem ( void* sem, Segment* seg ) {
-   XArray* xa;
-   tl_assert(seg);
-   map_sem_to_Segment_stack_INIT();
-   if (VG_(lookupFM)( map_sem_to_Segment_stack, 
-                      NULL, (Word*)&xa, (Word)sem )) {
-      tl_assert(xa);
-      VG_(addToXA)( xa, &seg );
-   } else {
-      xa = VG_(newXA)( hg_zalloc, hg_free, sizeof(Segment*) );
-      VG_(addToXA)( xa, &seg );
-      VG_(addToFM)( map_sem_to_Segment_stack, (Word)sem, (Word)xa );
-   }
-}
-
-static Segment* mb_pop_Segment_for_sem ( void* sem ) {
-   XArray*  xa;
-   Segment* seg;
-   map_sem_to_Segment_stack_INIT();
-   if (VG_(lookupFM)( map_sem_to_Segment_stack, 
-                      NULL, (Word*)&xa, (Word)sem )) {
-      /* xa is the stack for this semaphore. */
-      Word sz = VG_(sizeXA)( xa );
-      tl_assert(sz >= 0);
-      if (sz == 0)
-         return NULL; /* odd, the stack is empty */
-      seg = *(Segment**)VG_(indexXA)( xa, sz-1 );
-      tl_assert(seg);
-      VG_(dropTailXA)( xa, 1 );
-      return seg;
-   } else {
-      /* hmm, that's odd.  No stack for this semaphore. */
-      return NULL;
-   }
-}
-
-static void evh__HG_POSIX_SEM_DESTROY_PRE ( ThreadId tid, void* sem )
-{
-   Segment* seg;
-
-   if (SHOW_EVENTS >= 1)
-      VG_(printf)("evh__HG_POSIX_SEM_DESTROY_PRE(ctid=%d, sem=%p)\n", 
-                  (Int)tid, (void*)sem );
-
-   /* Empty out the semaphore's segment stack.  This way of doing it
-      is stupid, but at least it's easy. */
-   do {
-     seg = mb_pop_Segment_for_sem( sem );
-   } while (seg);
-
-   tl_assert(!seg);
-}
-
-static 
-void evh__HG_POSIX_SEM_INIT_POST ( ThreadId tid, void* sem, UWord value )
-{
-   Segment* seg;
-
-   if (SHOW_EVENTS >= 1)
-      VG_(printf)("evh__HG_POSIX_SEM_INIT_POST(ctid=%d, sem=%p, value=%lu)\n", 
-                  (Int)tid, (void*)sem, value );
-
-   /* Empty out the semaphore's segment stack.  This way of doing it
-      is stupid, but at least it's easy. */
-   do {
-     seg = mb_pop_Segment_for_sem( sem );
-   } while (seg);
-   tl_assert(!seg);
-
-   /* Now create a new segment for the thread, and push the old
-      segment on the stack 'value' times.  Skip this if the initial
-      value is zero -- no point in creating unnecessary segments. */
-   if (value > 0) {
-      /* create a new segment ... */
-      SegmentID new_segid = 0; /* bogus */
-      Segment*  new_seg   = NULL;
-      Thread*   thr       = map_threads_maybe_lookup( tid );
-      tl_assert(thr); /* cannot fail - Thread* must already exist */
-
-      evhH__start_new_segment_for_thread( &new_segid, &new_seg, thr );
-      tl_assert( is_sane_SegmentID(new_segid) );
-      tl_assert( is_sane_Segment(new_seg) );
-      tl_assert( new_seg->thr == thr );
-      tl_assert( is_sane_Segment(new_seg->prev) );
-      tl_assert( new_seg->prev->vts );
-      new_seg->vts = tick_VTS( new_seg->thr, new_seg->prev->vts );
-
-      if (value > 10000) {
-         /* If we don't do this, the following while loop runs us out
-            of memory for stupid initial values of 'sem'. */
-         record_error_Misc(
-            thr, "sem_init: initial value exceeds 10000; using 10000" );
-         value = 10000;
-      }
-
-      while (value > 0) {
-         push_Segment_for_sem( sem, new_seg->prev );
-         value--;
-      }
-   }
-}
-
-static void evh__HG_POSIX_SEM_POST_PRE ( ThreadId tid, void* sem )
-{
-   /* 'tid' has posted on 'sem'.  Start a new segment for this thread,
-      and push the old segment on a stack of segments associated with
-      'sem'.  This is later used by other thread(s) which successfully
-      exit from a sem_wait on the same sem; then they know what the
-      posting segment was, so a dependency edge back to it can be
-      constructed. */
-
-   Thread*   thr;
-   SegmentID new_segid;
-   Segment*  new_seg;
-
-   if (SHOW_EVENTS >= 1)
-      VG_(printf)("evh__HG_POSIX_SEM_POST_PRE(ctid=%d, sem=%p)\n", 
-                  (Int)tid, (void*)sem );
-
-   thr = map_threads_maybe_lookup( tid );
-   tl_assert(thr); /* cannot fail - Thread* must already exist */
-
-   // error-if: sem is bogus
-
-   if (clo_happens_before >= 2) {
-      /* create a new segment ... */
-      new_segid = 0; /* bogus */
-      new_seg   = NULL;
-      evhH__start_new_segment_for_thread( &new_segid, &new_seg, thr );
-      tl_assert( is_sane_SegmentID(new_segid) );
-      tl_assert( is_sane_Segment(new_seg) );
-      tl_assert( new_seg->thr == thr );
-      tl_assert( is_sane_Segment(new_seg->prev) );
-      tl_assert( new_seg->prev->vts );
-      new_seg->vts = tick_VTS( new_seg->thr, new_seg->prev->vts );
-
-      /* ... and add the binding. */
-      push_Segment_for_sem( sem, new_seg->prev );
-   }
-}
-
-static void evh__HG_POSIX_SEM_WAIT_POST ( ThreadId tid, void* sem )
-{
-   /* A sem_wait(sem) completed successfully.  Start a new segment for
-      this thread.  Pop the posting-segment for the 'sem' in the
-      mapping, and add a dependency edge from the new segment back to
-      it. */
-
-   Thread*   thr;
-   SegmentID new_segid;
-   Segment*  new_seg;
-   Segment*  posting_seg;
-
-   if (SHOW_EVENTS >= 1)
-      VG_(printf)("evh__HG_POSIX_SEM_WAIT_POST(ctid=%d, sem=%p)\n", 
-                  (Int)tid, (void*)sem );
-
-   thr = map_threads_maybe_lookup( tid );
-   tl_assert(thr); /* cannot fail - Thread* must already exist */
-
-   // error-if: sem is bogus
-
-   if (clo_happens_before >= 2) {
-      /* create a new segment ... */
-      new_segid = 0; /* bogus */
-      new_seg   = NULL;
-      evhH__start_new_segment_for_thread( &new_segid, &new_seg, thr );
-      tl_assert( is_sane_SegmentID(new_segid) );
-      tl_assert( is_sane_Segment(new_seg) );
-      tl_assert( new_seg->thr == thr );
-      tl_assert( is_sane_Segment(new_seg->prev) );
-      tl_assert( new_seg->other == NULL);
-
-      /* and find out which thread posted last on sem; then add a
-         dependency edge back to it. */
-      posting_seg = mb_pop_Segment_for_sem( sem );
-      if (posting_seg) {
-         tl_assert(is_sane_Segment(posting_seg));
-         tl_assert(new_seg->prev);
-         tl_assert(new_seg->prev->vts);
-         new_seg->other      = posting_seg;
-         new_seg->other_hint = 'S';
-         tl_assert(new_seg->other->vts);
-         new_seg->vts = tickL_and_joinR_VTS( 
-                           new_seg->thr, 
-                           new_seg->prev->vts,
-                           new_seg->other->vts );
-      } else {
-         /* Hmm.  How can a wait on 'sem' succeed if nobody posted to
-            it?  If this happened it would surely be a bug in the
-            threads library. */
-         record_error_Misc( thr, "Bug in libpthread: sem_wait succeeded on"
-                                 " semaphore without prior sem_post");
-         tl_assert(new_seg->prev->vts);
-         new_seg->vts = tick_VTS( new_seg->thr, new_seg->prev->vts );
-      }
-   }
-}
+//zz /* --------------- events to do with semaphores --------------- */
+//zz 
+//zz /* This is similar to but not identical to the handling for condition
+//zz    variables. */
+//zz 
+//zz /* For each semaphore, we maintain a stack of Segments.  When a 'post'
+//zz    operation is done on a semaphore (unlocking, essentially), a new
+//zz    segment is created for the posting thread, and the old segment is
+//zz    pushed on the semaphore's stack.
+//zz 
+//zz    Later, when a (probably different) thread completes 'wait' on the
+//zz    semaphore, we pop a Segment off the semaphore's stack (which should
+//zz    be nonempty).  We start a new segment for the thread and make it
+//zz    also depend on the just-popped segment.  This mechanism creates
+//zz    dependencies between posters and waiters of the semaphore.
+//zz 
+//zz    It may not be necessary to use a stack - perhaps a bag of Segments
+//zz    would do.  But we do need to keep track of how many unused-up posts
+//zz    have happened for the semaphore.
+//zz 
+//zz    Imagine T1 and T2 both post once on a semphore S, and T3 waits
+//zz    twice on S.  T3 cannot complete its waits without both T1 and T2
+//zz    posting.  The above mechanism will ensure that T3 acquires
+//zz    dependencies on both T1 and T2.
+//zz 
+//zz    When a semaphore is initialised with value N, the initialising
+//zz    thread starts a new segment, the semaphore's stack is emptied out,
+//zz    and the old segment is pushed on the stack N times.  This allows up
+//zz    to N waits on the semaphore to acquire a dependency on the
+//zz    initialisation point, which AFAICS is the correct behaviour.
+//zz 
+//zz    We don't emit an error for DESTROY_PRE on a semaphore we don't know
+//zz    about.  We should.
+//zz */
+//zz 
+//zz /* sem_t* -> XArray* Segment* */
+//zz static WordFM* map_sem_to_Segment_stack = NULL;
+//zz 
+//zz static void map_sem_to_Segment_stack_INIT ( void ) {
+//zz    if (map_sem_to_Segment_stack == NULL) {
+//zz       map_sem_to_Segment_stack = VG_(newFM)( hg_zalloc, hg_free, NULL );
+//zz       tl_assert(map_sem_to_Segment_stack != NULL);
+//zz    }
+//zz }
+//zz 
+//zz static void push_Segment_for_sem ( void* sem, Segment* seg ) {
+//zz    XArray* xa;
+//zz    tl_assert(seg);
+//zz    map_sem_to_Segment_stack_INIT();
+//zz    if (VG_(lookupFM)( map_sem_to_Segment_stack, 
+//zz                       NULL, (Word*)&xa, (Word)sem )) {
+//zz       tl_assert(xa);
+//zz       VG_(addToXA)( xa, &seg );
+//zz    } else {
+//zz       xa = VG_(newXA)( hg_zalloc, hg_free, sizeof(Segment*) );
+//zz       VG_(addToXA)( xa, &seg );
+//zz       VG_(addToFM)( map_sem_to_Segment_stack, (Word)sem, (Word)xa );
+//zz    }
+//zz }
+//zz 
+//zz static Segment* mb_pop_Segment_for_sem ( void* sem ) {
+//zz    XArray*  xa;
+//zz    Segment* seg;
+//zz    map_sem_to_Segment_stack_INIT();
+//zz    if (VG_(lookupFM)( map_sem_to_Segment_stack, 
+//zz                       NULL, (Word*)&xa, (Word)sem )) {
+//zz       /* xa is the stack for this semaphore. */
+//zz       Word sz = VG_(sizeXA)( xa );
+//zz       tl_assert(sz >= 0);
+//zz       if (sz == 0)
+//zz          return NULL; /* odd, the stack is empty */
+//zz       seg = *(Segment**)VG_(indexXA)( xa, sz-1 );
+//zz       tl_assert(seg);
+//zz       VG_(dropTailXA)( xa, 1 );
+//zz       return seg;
+//zz    } else {
+//zz       /* hmm, that's odd.  No stack for this semaphore. */
+//zz       return NULL;
+//zz    }
+//zz }
+//zz 
+//zz static void evh__HG_POSIX_SEM_DESTROY_PRE ( ThreadId tid, void* sem )
+//zz {
+//zz    Segment* seg;
+//zz 
+//zz    if (SHOW_EVENTS >= 1)
+//zz       VG_(printf)("evh__HG_POSIX_SEM_DESTROY_PRE(ctid=%d, sem=%p)\n", 
+//zz                   (Int)tid, (void*)sem );
+//zz 
+//zz    /* Empty out the semaphore's segment stack.  This way of doing it
+//zz       is stupid, but at least it's easy. */
+//zz    do {
+//zz      seg = mb_pop_Segment_for_sem( sem );
+//zz    } while (seg);
+//zz 
+//zz    tl_assert(!seg);
+//zz }
+//zz 
+//zz static 
+//zz void evh__HG_POSIX_SEM_INIT_POST ( ThreadId tid, void* sem, UWord value )
+//zz {
+//zz    Segment* seg;
+//zz 
+//zz    if (SHOW_EVENTS >= 1)
+//zz       VG_(printf)("evh__HG_POSIX_SEM_INIT_POST(ctid=%d, sem=%p, value=%lu)\n", 
+//zz                   (Int)tid, (void*)sem, value );
+//zz 
+//zz    /* Empty out the semaphore's segment stack.  This way of doing it
+//zz       is stupid, but at least it's easy. */
+//zz    do {
+//zz      seg = mb_pop_Segment_for_sem( sem );
+//zz    } while (seg);
+//zz    tl_assert(!seg);
+//zz 
+//zz    /* Now create a new segment for the thread, and push the old
+//zz       segment on the stack 'value' times.  Skip this if the initial
+//zz       value is zero -- no point in creating unnecessary segments. */
+//zz    if (value > 0) {
+//zz       /* create a new segment ... */
+//zz       SegmentID new_segid = 0; /* bogus */
+//zz       Segment*  new_seg   = NULL;
+//zz       Thread*   thr       = map_threads_maybe_lookup( tid );
+//zz       tl_assert(thr); /* cannot fail - Thread* must already exist */
+//zz 
+//zz       evhH__start_new_segment_for_thread( &new_segid, &new_seg, thr );
+//zz       tl_assert( is_sane_SegmentID(new_segid) );
+//zz       tl_assert( is_sane_Segment(new_seg) );
+//zz       tl_assert( new_seg->thr == thr );
+//zz       tl_assert( is_sane_Segment(new_seg->prev) );
+//zz       tl_assert( new_seg->prev->vts );
+//zz       new_seg->vts = tick_VTS( new_seg->thr, new_seg->prev->vts );
+//zz 
+//zz       if (value > 10000) {
+//zz          /* If we don't do this, the following while loop runs us out
+//zz             of memory for stupid initial values of 'sem'. */
+//zz          record_error_Misc(
+//zz             thr, "sem_init: initial value exceeds 10000; using 10000" );
+//zz          value = 10000;
+//zz       }
+//zz 
+//zz       while (value > 0) {
+//zz          push_Segment_for_sem( sem, new_seg->prev );
+//zz          value--;
+//zz       }
+//zz    }
+//zz }
+//zz 
+//zz static void evh__HG_POSIX_SEM_POST_PRE ( ThreadId tid, void* sem )
+//zz {
+//zz    /* 'tid' has posted on 'sem'.  Start a new segment for this thread,
+//zz       and push the old segment on a stack of segments associated with
+//zz       'sem'.  This is later used by other thread(s) which successfully
+//zz       exit from a sem_wait on the same sem; then they know what the
+//zz       posting segment was, so a dependency edge back to it can be
+//zz       constructed. */
+//zz 
+//zz    Thread*   thr;
+//zz    SegmentID new_segid;
+//zz    Segment*  new_seg;
+//zz 
+//zz    if (SHOW_EVENTS >= 1)
+//zz       VG_(printf)("evh__HG_POSIX_SEM_POST_PRE(ctid=%d, sem=%p)\n", 
+//zz                   (Int)tid, (void*)sem );
+//zz 
+//zz    thr = map_threads_maybe_lookup( tid );
+//zz    tl_assert(thr); /* cannot fail - Thread* must already exist */
+//zz 
+//zz    // error-if: sem is bogus
+//zz 
+//zz    if (clo_happens_before >= 2) {
+//zz       /* create a new segment ... */
+//zz       new_segid = 0; /* bogus */
+//zz       new_seg   = NULL;
+//zz       evhH__start_new_segment_for_thread( &new_segid, &new_seg, thr );
+//zz       tl_assert( is_sane_SegmentID(new_segid) );
+//zz       tl_assert( is_sane_Segment(new_seg) );
+//zz       tl_assert( new_seg->thr == thr );
+//zz       tl_assert( is_sane_Segment(new_seg->prev) );
+//zz       tl_assert( new_seg->prev->vts );
+//zz       new_seg->vts = tick_VTS( new_seg->thr, new_seg->prev->vts );
+//zz 
+//zz       /* ... and add the binding. */
+//zz       push_Segment_for_sem( sem, new_seg->prev );
+//zz    }
+//zz }
+//zz 
+//zz static void evh__HG_POSIX_SEM_WAIT_POST ( ThreadId tid, void* sem )
+//zz {
+//zz    /* A sem_wait(sem) completed successfully.  Start a new segment for
+//zz       this thread.  Pop the posting-segment for the 'sem' in the
+//zz       mapping, and add a dependency edge from the new segment back to
+//zz       it. */
+//zz 
+//zz    Thread*   thr;
+//zz    SegmentID new_segid;
+//zz    Segment*  new_seg;
+//zz    Segment*  posting_seg;
+//zz 
+//zz    if (SHOW_EVENTS >= 1)
+//zz       VG_(printf)("evh__HG_POSIX_SEM_WAIT_POST(ctid=%d, sem=%p)\n", 
+//zz                   (Int)tid, (void*)sem );
+//zz 
+//zz    thr = map_threads_maybe_lookup( tid );
+//zz    tl_assert(thr); /* cannot fail - Thread* must already exist */
+//zz 
+//zz    // error-if: sem is bogus
+//zz 
+//zz    if (clo_happens_before >= 2) {
+//zz       /* create a new segment ... */
+//zz       new_segid = 0; /* bogus */
+//zz       new_seg   = NULL;
+//zz       evhH__start_new_segment_for_thread( &new_segid, &new_seg, thr );
+//zz       tl_assert( is_sane_SegmentID(new_segid) );
+//zz       tl_assert( is_sane_Segment(new_seg) );
+//zz       tl_assert( new_seg->thr == thr );
+//zz       tl_assert( is_sane_Segment(new_seg->prev) );
+//zz       tl_assert( new_seg->other == NULL);
+//zz 
+//zz       /* and find out which thread posted last on sem; then add a
+//zz          dependency edge back to it. */
+//zz       posting_seg = mb_pop_Segment_for_sem( sem );
+//zz       if (posting_seg) {
+//zz          tl_assert(is_sane_Segment(posting_seg));
+//zz          tl_assert(new_seg->prev);
+//zz          tl_assert(new_seg->prev->vts);
+//zz          new_seg->other      = posting_seg;
+//zz          new_seg->other_hint = 'S';
+//zz          tl_assert(new_seg->other->vts);
+//zz          new_seg->vts = tickL_and_joinR_VTS( 
+//zz                            new_seg->thr, 
+//zz                            new_seg->prev->vts,
+//zz                            new_seg->other->vts );
+//zz       } else {
+//zz          /* Hmm.  How can a wait on 'sem' succeed if nobody posted to
+//zz             it?  If this happened it would surely be a bug in the
+//zz             threads library. */
+//zz          record_error_Misc( thr, "Bug in libpthread: sem_wait succeeded on"
+//zz                                  " semaphore without prior sem_post");
+//zz          tl_assert(new_seg->prev->vts);
+//zz          new_seg->vts = tick_VTS( new_seg->thr, new_seg->prev->vts );
+//zz       }
+//zz    }
+//zz }
 
 
 /*--------------------------------------------------------------*/
@@ -7209,7 +3479,7 @@ static void* hg_cli__realloc ( ThreadId tid, void* payloadV, SizeT new_size )
       // memory state machine?
       shadow_mem_copy_range( payload, p_new, md->szB );
       evh__new_mem_heap ( p_new + md->szB, new_size - md->szB,
-                           /*inited*/False );
+                          /*inited*/False );
       /* FIXME: can anything funny happen here?  specifically, if the
          old range contained a lock, then die_mem_heap will complain.
          Is that the correct behaviour?  Not sure. */
@@ -7389,6 +3659,7 @@ IRSB* hg_instrument ( VgCallbackClosure* closure,
 {
    Int   i;
    IRSB* bbOut;
+   Bool x86busLocked = False;
 
    if (gWordTy != hWordTy) {
       /* We don't currently support this case. */
@@ -7423,18 +3694,33 @@ IRSB* hg_instrument ( VgCallbackClosure* closure,
             break;
 
          case Ist_MBE:
-            instrument_memory_bus_event( bbOut, st->Ist.MBE.event );
+            //instrument_memory_bus_event( bbOut, st->Ist.MBE.event );
+            switch (st->Ist.MBE.event) {
+               case Imbe_Fence:
+                  break; /* not interesting */
+               case Imbe_BusLock:
+                  tl_assert(x86busLocked == False);
+                  x86busLocked = True;
+                  break;
+               case Imbe_BusUnlock:
+                  tl_assert(x86busLocked == True);
+                  x86busLocked = False;
+                  break;
+               default:
+                  goto unhandled;
+            }
             break;
 
          case Ist_Store:
-            instrument_mem_access( 
-               bbOut, 
-               st->Ist.Store.addr, 
-               sizeofIRType(typeOfIRExpr(bbIn->tyenv, st->Ist.Store.data)),
-               True/*isStore*/,
-               sizeofIRType(hWordTy)
-            );
-            break;
+            if (!x86busLocked)
+               instrument_mem_access( 
+                  bbOut, 
+                  st->Ist.Store.addr, 
+                  sizeofIRType(typeOfIRExpr(bbIn->tyenv, st->Ist.Store.data)),
+                  True/*isStore*/,
+                  sizeofIRType(hWordTy)
+               );
+               break;
 
          case Ist_WrTmp: {
             IRExpr* data = st->Ist.WrTmp.data;
@@ -7479,6 +3765,8 @@ IRSB* hg_instrument ( VgCallbackClosure* closure,
          }
 
          default:
+         unhandled:
+            ppIRStmt(st);
             tl_assert(0);
 
       } /* switch (st->tag) */
@@ -7519,19 +3807,19 @@ Bool hg_handle_client_request ( ThreadId tid, UWord* args, UWord* ret)
 
    switch (args[0]) {
 
-      /* --- --- User-visible client requests --- --- */
-
-      case VG_USERREQ__HG_CLEAN_MEMORY:
-         if (0) VG_(printf)("VG_USERREQ__HG_CLEAN_MEMORY(%#lx,%ld)\n",
-                            args[1], args[2]);
-         /* Call die_mem to (expensively) tidy up properly, if there
-            are any held locks etc in the area */
-         if (args[2] > 0) { /* length */
-            evh__die_mem(args[1], args[2]);
-            /* and then set it to New */
-            evh__new_mem(args[1], args[2]);
-         }
-         break;
+//zz       /* --- --- User-visible client requests --- --- */
+//zz 
+//zz       case VG_USERREQ__HG_CLEAN_MEMORY:
+//zz          if (0) VG_(printf)("VG_USERREQ__HG_CLEAN_MEMORY(%#lx,%ld)\n",
+//zz                             args[1], args[2]);
+//zz          /* Call die_mem to (expensively) tidy up properly, if there
+//zz             are any held locks etc in the area */
+//zz          if (args[2] > 0) { /* length */
+//zz             evh__die_mem(args[1], args[2]);
+//zz             /* and then set it to New */
+//zz             evh__new_mem(args[1], args[2]);
+//zz          }
+//zz          break;
 
       /* --- --- Client requests for Helgrind's use only --- --- */
 
@@ -7681,39 +3969,40 @@ Bool hg_handle_client_request ( ThreadId tid, UWord* args, UWord* ret)
          evh__HG_PTHREAD_RWLOCK_UNLOCK_POST( tid, (void*)args[1] );
          break;
 
-      case _VG_USERREQ__HG_POSIX_SEM_INIT_POST: /* sem_t*, unsigned long */
-         evh__HG_POSIX_SEM_INIT_POST( tid, (void*)args[1], args[2] );
-         break;
-
-      case _VG_USERREQ__HG_POSIX_SEM_DESTROY_PRE: /* sem_t* */
-         evh__HG_POSIX_SEM_DESTROY_PRE( tid, (void*)args[1] );
-         break;
-
-      case _VG_USERREQ__HG_POSIX_SEM_POST_PRE: /* sem_t* */
-         evh__HG_POSIX_SEM_POST_PRE( tid, (void*)args[1] );
-         break;
-
-      case _VG_USERREQ__HG_POSIX_SEM_WAIT_POST: /* sem_t* */
-         evh__HG_POSIX_SEM_WAIT_POST( tid, (void*)args[1] );
-         break;
-
-      case _VG_USERREQ__HG_GET_MY_SEGMENT: { // -> Segment*
-         Thread*   thr;
-         SegmentID segid;
-         Segment*  seg;
-         thr = map_threads_maybe_lookup( tid );
-         tl_assert(thr); /* cannot fail */
-         segid = thr->csegid;
-         tl_assert(is_sane_SegmentID(segid));
-         seg = map_segments_lookup( segid );
-         tl_assert(seg);
-         *ret = (UWord)seg;
-         break;
-      }
+//zz       case _VG_USERREQ__HG_POSIX_SEM_INIT_POST: /* sem_t*, unsigned long */
+//zz          evh__HG_POSIX_SEM_INIT_POST( tid, (void*)args[1], args[2] );
+//zz          break;
+//zz 
+//zz       case _VG_USERREQ__HG_POSIX_SEM_DESTROY_PRE: /* sem_t* */
+//zz          evh__HG_POSIX_SEM_DESTROY_PRE( tid, (void*)args[1] );
+//zz          break;
+//zz 
+//zz       case _VG_USERREQ__HG_POSIX_SEM_POST_PRE: /* sem_t* */
+//zz          evh__HG_POSIX_SEM_POST_PRE( tid, (void*)args[1] );
+//zz          break;
+//zz 
+//zz       case _VG_USERREQ__HG_POSIX_SEM_WAIT_POST: /* sem_t* */
+//zz          evh__HG_POSIX_SEM_WAIT_POST( tid, (void*)args[1] );
+//zz          break;
+//zz 
+//zz       case _VG_USERREQ__HG_GET_MY_SEGMENT: { // -> Segment*
+//zz          Thread*   thr;
+//zz          SegmentID segid;
+//zz          Segment*  seg;
+//zz          thr = map_threads_maybe_lookup( tid );
+//zz          tl_assert(thr); /* cannot fail */
+//zz          segid = thr->csegid;
+//zz          tl_assert(is_sane_SegmentID(segid));
+//zz          seg = map_segments_lookup( segid );
+//zz          tl_assert(seg);
+//zz          *ret = (UWord)seg;
+//zz          break;
+//zz       }
 
       default:
          /* Unhandled Helgrind client request! */
-        tl_assert2(0, "unhandled Helgrind client request!");
+         tl_assert2(0, "unhandled Helgrind client request 0x%lx",
+                       args[0]);
    }
 
    return True;
@@ -7781,10 +4070,11 @@ static Lock* mk_LockP_from_LockN ( Lock* lkn )
       lkp->magic = LockP_MAGIC;
       /* Forget about the bag of lock holders - don't copy that.
          Also, acquired_at should be NULL whenever heldBy is, and vice
-         versa. */
+         versa.  Also forget about the associated libhb synch object. */
       lkp->heldW  = False;
       lkp->heldBy = NULL;
       lkp->acquired_at = NULL;
+      lkp->hbso = NULL;
       VG_(addToFM)( yaWFM, (Word)lkp, (Word)lkp );
    }
    tl_assert( is_sane_LockP(lkp) );
@@ -7834,7 +4124,9 @@ typedef
             SVal  new_state;
             SVal  old_state;
             ExeContext* mb_lastlock;
+            ExeContext* mb_confacc;
             Thread* thr;
+            Thread* mb_confaccthr;
             Char  descr1[96];
             Char  descr2[96];
          } Race;
@@ -7911,9 +4203,26 @@ static UInt hg_update_extra ( Error* err )
 static void record_error_Race ( Thread* thr, 
                                 Addr data_addr, Bool isWrite, Int szB,
                                 SVal old_sv, SVal new_sv,
-                                ExeContext* mb_lastlock ) {
+                                ExeContext* mb_lastlock,
+                                ExeContext* mb_confacc,
+                                Thread* mb_confaccthr ) {
    XError xe;
    tl_assert( is_sane_Thread(thr) );
+
+#if defined(VGO_linux)
+   /* Skip any races on locations apparently in GOTPLT sections.  This
+      is said to be caused by ld.so poking PLT table entries (or
+      whatever) when it writes the resolved address of a dynamically
+      linked routine, into the table (or whatever) when it is called
+      for the first time. */
+   {
+     VgSectKind sect = VG_(seginfo_sect_kind)( NULL, 0, data_addr );
+     if (0) VG_(printf)("XXXXXXXXX RACE on %#lx %s\n",
+                        data_addr, VG_(pp_SectKind)(sect));
+     if (sect == Vg_SectGOTPLT) return;
+   }
+#endif
+
    init_XError(&xe);
    xe.tag = XE_Race;
    xe.XE.Race.data_addr   = data_addr;
@@ -7922,10 +4231,12 @@ static void record_error_Race ( Thread* thr,
    xe.XE.Race.new_state   = new_sv;
    xe.XE.Race.old_state   = old_sv;
    xe.XE.Race.mb_lastlock = mb_lastlock;
+   xe.XE.Race.mb_confacc  = mb_confacc;
    xe.XE.Race.thr         = thr;
+   xe.XE.Race.mb_confaccthr = mb_confaccthr;
    // FIXME: tid vs thr
    tl_assert(isWrite == False || isWrite == True);
-   tl_assert(szB == 8 || szB == 4 || szB == 2 || szB == 1);
+   //   tl_assert(szB == 8 || szB == 4 || szB == 2 || szB == 1);
 
    tl_assert(sizeof(xe.XE.Race.descr1) == sizeof(xe.XE.Race.descr2));
    xe.XE.Race.descr1[0] = xe.XE.Race.descr2[0] = 0;
@@ -8003,6 +4314,8 @@ void record_error_LockOrder ( Thread* thr, Addr before_ga, Addr after_ga,
                               ExeContext* before_ec, ExeContext* after_ec ) {
    XError xe;
    tl_assert( is_sane_Thread(thr) );
+   if (!clo_track_lockorders)
+      return;
    init_XError(&xe);
    xe.tag = XE_LockOrder;
    xe.XE.LockOrder.thr       = thr;
@@ -8220,7 +4533,6 @@ static void summarise_threadset ( WordSetID tset, Char* buf, UInt nBuf )
 
 static void hg_pp_Error ( Error* err )
 {
-   const Bool show_raw_states = False;
    XError *xe = (XError*)VG_(get_error_extra)(err);
 
    switch (VG_(get_error_kind)(err)) {
@@ -8352,134 +4664,40 @@ static void hg_pp_Error ( Error* err )
 
    case XE_Race: {
       Addr      err_ga;
-      Char      old_buf[100], new_buf[100];
-      Char      old_tset_buf[140], new_tset_buf[140];
-      SVal      old_state, new_state;
-      Thread*   thr_acc;
       HChar*    what;
       Int       szB;
-      WordSetID tset_to_announce = HG_(emptyWS)( univ_tsets );
-
-      /* First extract some essential info */
-      tl_assert(xe);
-      old_state = xe->XE.Race.old_state;
-      new_state = xe->XE.Race.new_state;
-      thr_acc   = xe->XE.Race.thr;
       what      = xe->XE.Race.isWrite ? "write" : "read";
       szB       = xe->XE.Race.szB;
-      tl_assert(is_sane_Thread(thr_acc));
       err_ga = VG_(get_error_address)(err);
 
-      /* Format the low level state print descriptions */
-      show_shadow_w32(old_buf, sizeof(old_buf), old_state);
-      show_shadow_w32(new_buf, sizeof(new_buf), new_state);
-
-      /* Now we have to 'announce' the threadset mentioned in the
-         error message, if it hasn't already been announced.
-         Unfortunately the precise threadset and error message text
-         depends on the nature of the transition involved.  So now
-         fall into a case analysis of the error state transitions. */
-
-      /* CASE of Excl -> ShM */
-      if (is_SHVAL_Excl(old_state) && is_SHVAL_ShM(new_state)) {
-         SegmentID old_segid;
-         Segment*  old_seg;
-         Thread*   old_thr; 
-         WordSetID new_tset;
-         old_segid = un_SHVAL_Excl( old_state );
-         tl_assert(is_sane_SegmentID(old_segid));
-         old_seg = map_segments_lookup( old_segid );
-         tl_assert(is_sane_Segment(old_seg));
-         tl_assert(old_seg->thr);
-         old_thr = old_seg->thr;
-         tl_assert(is_sane_Thread(old_thr));
-
-         new_tset = un_SHVAL_ShM_tset(new_state);
-         tset_to_announce = HG_(addToWS)( univ_tsets,
-                                          new_tset, (Word)old_thr );
-         announce_threadset( tset_to_announce );
-
-         VG_(message)(Vg_UserMsg,
-                      "Possible data race during %s of size %d at %#lx",
-                      what, szB, err_ga);
-         VG_(pp_ExeContext)( VG_(get_error_where)(err) );
-         /* pp_AddrInfo(err_addr, &extra->addrinfo); */
-         if (show_raw_states)
-         VG_(message)(Vg_UserMsg,
-                      "  Old state 0x%08x=%s, new state 0x%08x=%s",
-                      old_state, old_buf, new_state, new_buf);
-         VG_(message)(Vg_UserMsg,
-                      "  Old state: owned exclusively by thread #%d",
-                      old_thr->errmsg_index);
-         // This should always show exactly 2 threads
-         summarise_threadset( new_tset, new_tset_buf, sizeof(new_tset_buf) );
-         VG_(message)(Vg_UserMsg,
-                      "  New state: shared-modified by threads %s",
-                      new_tset_buf );
-         VG_(message)(Vg_UserMsg,
-                      "  Reason:    this thread, #%d, holds no locks at all",
-                      thr_acc->errmsg_index);
-      }
-      else 
-      /* Case of ShR/M -> ShM */
-      if (is_SHVAL_Sh(old_state) && is_SHVAL_ShM(new_state)) {
-         WordSetID old_tset = un_SHVAL_Sh_tset(old_state);
-         WordSetID new_tset = un_SHVAL_Sh_tset(new_state);
-
-         tset_to_announce = HG_(unionWS)( univ_tsets, old_tset, new_tset );
-         announce_threadset( tset_to_announce );
-
-         VG_(message)(Vg_UserMsg,
-                      "Possible data race during %s of size %d at %#lx",
-                      what, szB, err_ga);
-         VG_(pp_ExeContext)( VG_(get_error_where)(err) );
-         /* pp_AddrInfo(err_addr, &extra->addrinfo); */
-         if (show_raw_states)
-         VG_(message)(Vg_UserMsg,
-                      "  Old state 0x%08x=%s, new state 0x%08x=%s",
-                      old_state, old_buf, new_state, new_buf);
-
-         summarise_threadset( old_tset, old_tset_buf, sizeof(old_tset_buf) );
-         summarise_threadset( new_tset, new_tset_buf, sizeof(new_tset_buf) );
-
-         VG_(message)(Vg_UserMsg,
-                      "  Old state: shared-%s by threads %s", 
-                      is_SHVAL_ShM(old_state) ? "modified" : "readonly", 
-                      old_tset_buf);
-         VG_(message)(Vg_UserMsg,
-                      "  New state: shared-modified by threads %s", 
-                      new_tset_buf);
-         VG_(message)(Vg_UserMsg,
-                      "  Reason:    this thread, #%d, holds no "
-                      "consistent locks",
-                      thr_acc->errmsg_index);
-         if (xe->XE.Race.mb_lastlock) {
-            VG_(message)(Vg_UserMsg, "  Last consistently used lock for %#lx was "
-                                     "first observed", err_ga);
-            VG_(pp_ExeContext)(xe->XE.Race.mb_lastlock);
+      announce_one_thread( xe->XE.Race.thr );
+      if (xe->XE.Race.mb_confaccthr)
+         announce_one_thread( xe->XE.Race.mb_confaccthr );
+      VG_(message)(Vg_UserMsg,
+         "Possible data race during %s of size %d at %#lx by thread #%d",
+         what, szB, err_ga, (Int)xe->XE.Race.thr->errmsg_index
+      );
+      VG_(pp_ExeContext)( VG_(get_error_where)(err) );
+      if (xe->XE.Race.mb_confacc) {
+         if (xe->XE.Race.mb_confaccthr) {
+            VG_(message)(Vg_UserMsg,
+               " This conflicts with a previous access by thread #%d",
+               xe->XE.Race.mb_confaccthr->errmsg_index
+            );
          } else {
-            VG_(message)(Vg_UserMsg, "  Location %#lx has never been protected "
-                                     "by any lock", err_ga);
+            VG_(message)(Vg_UserMsg,
+               " This conflicts with a previous access"
+            );
          }
+         VG_(pp_ExeContext)( xe->XE.Race.mb_confacc );
       }
-      /* Hmm, unknown transition.  Just print what we do know. */
-      else {
-         VG_(message)(Vg_UserMsg,
-                      "Possible data race during %s of size %d at %#lx",
-                      what, szB, err_ga);
-         VG_(pp_ExeContext)( VG_(get_error_where)(err) );
 
-         //pp_AddrInfo(err_addr, &extra->addrinfo);
-         VG_(message)(Vg_UserMsg,
-                      "  Old state 0x%08x=%s, new state 0x%08x=%s",
-                      old_state, old_buf, new_state, new_buf);
-      }
 
       /* If we have a better description of the address, show it. */
       if (xe->XE.Race.descr1[0] != 0)
-         VG_(message)(Vg_UserMsg, "  %s", &xe->XE.Race.descr1[0]);
+         VG_(message)(Vg_UserMsg, " %s", &xe->XE.Race.descr1[0]);
       if (xe->XE.Race.descr2[0] != 0)
-         VG_(message)(Vg_UserMsg, "  %s", &xe->XE.Race.descr2[0]);
+         VG_(message)(Vg_UserMsg, " %s", &xe->XE.Race.descr2[0]);
 
       break; /* case XE_Race */
    } /* case XE_Race */
@@ -8559,19 +4777,10 @@ static void hg_print_extra_suppression_info ( Error* err )
 
 static Bool hg_process_cmd_line_option ( Char* arg )
 {
-   if      (VG_CLO_STREQ(arg, "--happens-before=none"))
-      clo_happens_before = 0;
-   else if (VG_CLO_STREQ(arg, "--happens-before=threads"))
-      clo_happens_before = 1;
-   else if (VG_CLO_STREQ(arg, "--happens-before=all"))
-      clo_happens_before = 2;
-
-   else if (VG_CLO_STREQ(arg, "--gen-vcg=no"))
-      clo_gen_vcg = 0;
-   else if (VG_CLO_STREQ(arg, "--gen-vcg=yes"))
-      clo_gen_vcg = 1;
-   else if (VG_CLO_STREQ(arg, "--gen-vcg=yes-w-vts"))
-      clo_gen_vcg = 2;
+   if      (VG_CLO_STREQ(arg, "--track-lockorders=no"))
+      clo_track_lockorders = False;
+   else if (VG_CLO_STREQ(arg, "--track-lockorders=yes"))
+      clo_track_lockorders = True;
 
    else if (VG_CLO_STREQ(arg, "--cmp-race-err-addrs=no"))
       clo_cmp_race_err_addrs = False;
@@ -8616,8 +4825,7 @@ static Bool hg_process_cmd_line_option ( Char* arg )
 static void hg_print_usage ( void )
 {
    VG_(printf)(
-"    --happens-before=none|threads|all   [all] consider no events, thread\n"
-"      create/join, create/join/cvsignal/cvwait/semwait/post as sync points\n"
+"    --track-lockorders=no|yes  show lock ordering errors? [yes]\n"
 "    --trace-addr=0xXXYYZZ     show all state changes for address 0xXXYYZZ\n"
 "    --trace-level=0|1|2       verbosity level of --trace-addr [1]\n"
    );
@@ -8627,8 +4835,6 @@ static void hg_print_usage ( void )
 static void hg_print_debug_usage ( void )
 {
    VG_(replacement_malloc_print_debug_usage)();
-   VG_(printf)("    --gen-vcg=no|yes|yes-w-vts   show happens-before graph "
-               "in .vcg format [no]\n");
    VG_(printf)("    --cmp-race-err-addrs=no|yes  are data addresses in "
                "race errors significant? [no]\n");
    VG_(printf)("    --hg-sanity-flags=<XXXXXX> sanity check "
@@ -8655,9 +4861,6 @@ static void hg_fini ( Int exitcode )
    if (clo_sanity_flags)
       all__sanity_check("SK_(fini)");
 
-   if (clo_gen_vcg > 0)
-      segments__generate_vcg();
-
    if (VG_(clo_verbosity) >= 2) {
 
       if (1) {
@@ -8669,17 +4872,17 @@ static void hg_fini ( Int exitcode )
          HG_(ppWSUstats)( univ_laog,  "univ_laog" );
       }
 
-      VG_(printf)("\n");
-      VG_(printf)(" hbefore: %'10lu queries\n",        stats__hbefore_queries);
-      VG_(printf)(" hbefore: %'10lu cache 0 hits\n",   stats__hbefore_cache0s);
-      VG_(printf)(" hbefore: %'10lu cache > 0 hits\n", stats__hbefore_cacheNs);
-      VG_(printf)(" hbefore: %'10lu graph searches\n", stats__hbefore_gsearches);
-      VG_(printf)(" hbefore: %'10lu   of which slow\n",
-                  stats__hbefore_gsearches - stats__hbefore_gsearchFs);
-      VG_(printf)(" hbefore: %'10lu stack high water mark\n",
-                  stats__hbefore_stk_hwm);
-      VG_(printf)(" hbefore: %'10lu cache invals\n",   stats__hbefore_invals);
-      VG_(printf)(" hbefore: %'10lu probes\n",         stats__hbefore_probes);
+      //zz       VG_(printf)("\n");
+      //zz       VG_(printf)(" hbefore: %'10lu queries\n",        stats__hbefore_queries);
+      //zz       VG_(printf)(" hbefore: %'10lu cache 0 hits\n",   stats__hbefore_cache0s);
+      //zz       VG_(printf)(" hbefore: %'10lu cache > 0 hits\n", stats__hbefore_cacheNs);
+      //zz       VG_(printf)(" hbefore: %'10lu graph searches\n", stats__hbefore_gsearches);
+      //zz       VG_(printf)(" hbefore: %'10lu   of which slow\n",
+      //zz                   stats__hbefore_gsearches - stats__hbefore_gsearchFs);
+      //zz       VG_(printf)(" hbefore: %'10lu stack high water mark\n",
+      //zz                   stats__hbefore_stk_hwm);
+      //zz       VG_(printf)(" hbefore: %'10lu cache invals\n",   stats__hbefore_invals);
+      //zz       VG_(printf)(" hbefore: %'10lu probes\n",         stats__hbefore_probes);
 
       VG_(printf)("\n");
       VG_(printf)("        segments: %'8lu Segment objects allocated\n",
@@ -8714,79 +4917,28 @@ static void hg_fini ( Int exitcode )
       VG_(printf)("   sanity checks: %'8lu\n", stats__sanity_checks);
 
       VG_(printf)("\n");
-      VG_(printf)("     msm: %'12lu %'12lu rd/wr_Excl_nochange\n",
-                  stats__msm_read_Excl_nochange, stats__msm_write_Excl_nochange);
-      VG_(printf)("     msm: %'12lu %'12lu rd/wr_Excl_transfer\n",
-                  stats__msm_read_Excl_transfer, stats__msm_write_Excl_transfer);
-      VG_(printf)("     msm: %'12lu %'12lu rd/wr_Excl_to_ShR/ShM\n",
-                  stats__msm_read_Excl_to_ShR,   stats__msm_write_Excl_to_ShM);
-      VG_(printf)("     msm: %'12lu %'12lu rd/wr_ShR_to_ShR/ShM\n",
-                  stats__msm_read_ShR_to_ShR,    stats__msm_write_ShR_to_ShM);
-      VG_(printf)("     msm: %'12lu %'12lu rd/wr_ShM_to_ShM\n",
-                  stats__msm_read_ShM_to_ShM,    stats__msm_write_ShM_to_ShM);
-      VG_(printf)("     msm: %'12lu %'12lu rd/wr_New_to_Excl\n",
-                  stats__msm_read_New_to_Excl,   stats__msm_write_New_to_Excl);
-      VG_(printf)("     msm: %'12lu %'12lu rd/wr_NoAccess\n",
-                  stats__msm_read_NoAccess,      stats__msm_write_NoAccess);
-
-      VG_(printf)("\n");
-      VG_(printf)(" secmaps: %'10lu allocd (%'12lu g-a-range)\n",
-                  stats__secmaps_allocd,
-                  stats__secmap_ga_space_covered);
-      VG_(printf)("  linesZ: %'10lu allocd (%'12lu bytes occupied)\n",
-                  stats__secmap_linesZ_allocd,
-                  stats__secmap_linesZ_bytes);
-      VG_(printf)("  linesF: %'10lu allocd (%'12lu bytes occupied)\n",
-                  stats__secmap_linesF_allocd,
-                  stats__secmap_linesF_bytes);
-      VG_(printf)(" secmaps: %'10lu iterator steppings\n",
-                  stats__secmap_iterator_steppings);
-
-      VG_(printf)("\n");
-      VG_(printf)("   cache: %'lu totrefs (%'lu misses)\n",
-                  stats__cache_totrefs, stats__cache_totmisses );
-      VG_(printf)("   cache: %'12lu Z-fetch, %'12lu F-fetch\n",
-                  stats__cache_Z_fetches, stats__cache_F_fetches );
-      VG_(printf)("   cache: %'12lu Z-wback, %'12lu F-wback\n",
-                  stats__cache_Z_wbacks, stats__cache_F_wbacks );
-      VG_(printf)("   cache: %'12lu invals,  %'12lu flushes\n",
-                  stats__cache_invals, stats__cache_flushes );
-
-      VG_(printf)("\n");
-      VG_(printf)("   cline: %'10lu normalises\n",
-                  stats__cline_normalises );
-      VG_(printf)("   cline:  reads 8/4/2/1: %'12lu %'12lu %'12lu %'12lu\n",
-                  stats__cline_read64s,
-                  stats__cline_read32s,
-                  stats__cline_read16s,
-                  stats__cline_read8s );
-      VG_(printf)("   cline: writes 8/4/2/1: %'12lu %'12lu %'12lu %'12lu\n",
-                  stats__cline_write64s,
-                  stats__cline_write32s,
-                  stats__cline_write16s,
-                  stats__cline_write8s );
-      VG_(printf)("   cline:   sets 8/4/2/1: %'12lu %'12lu %'12lu %'12lu\n",
-                  stats__cline_set64s,
-                  stats__cline_set32s,
-                  stats__cline_set16s,
-                  stats__cline_set8s );
-      VG_(printf)("   cline: get1s %'lu, copy1s %'lu\n",
-                  stats__cline_get8s, stats__cline_copy8s );
-      VG_(printf)("   cline:    splits: 8to4 %'12lu    4to2 %'12lu    2to1 %'12lu\n",
-                 stats__cline_64to32splits,
-                 stats__cline_32to16splits,
-                 stats__cline_16to8splits );
-      VG_(printf)("   cline: pulldowns: 8to4 %'12lu    4to2 %'12lu    2to1 %'12lu\n",
-                 stats__cline_64to32pulldown,
-                 stats__cline_32to16pulldown,
-                 stats__cline_16to8pulldown );
-
-      VG_(printf)("\n");
+      libhb_shutdown(True);
    }
 }
 
+/* FIXME: move this somewhere sane */
+static  struct EC_*  get_EC_for_libhb ( Thr* hbt )
+{
+   Thread*     thr;
+   ThreadId    tid;
+   ExeContext* ec;
+   tl_assert(hbt);
+   thr = libhb_get_Thr_opaque( hbt );
+   tl_assert(thr);
+   tid = map_threads_maybe_reverse_lookup_SLOW(thr);
+   ec = VG_(record_ExeContext)( tid, 0 );
+   return (struct EC_*) ec;
+}
+
+
 static void hg_pre_clo_init ( void )
 {
+   Thr* hbthr_root;
    VG_(details_name)            ("Helgrind");
    VG_(details_version)         (NULL);
    VG_(details_description)     ("a thread error detector");
@@ -8830,7 +4982,7 @@ static void hg_pre_clo_init ( void )
                                    hg_cli__realloc,
                                    HG_CLI__MALLOC_REDZONE_SZB );
 
-   VG_(needs_var_info)();
+   //   VG_(needs_var_info)();
 
    //VG_(needs_xml_output)          ();
 
@@ -8866,7 +5018,12 @@ static void hg_pre_clo_init ( void )
    VG_(track_start_client_code)( evh__start_client_code );
    VG_(track_stop_client_code)( evh__stop_client_code );
 
-   initialise_data_structures();
+   /////////////////////////////////////////////
+   hbthr_root = libhb_init( hg_zalloc, hg_free, shmem__bigchunk_alloc,
+                            get_EC_for_libhb );
+   /////////////////////////////////////////////
+
+   initialise_data_structures(hbthr_root);
 
    /* Ensure that requirements for "dodgy C-as-C++ style inheritance"
       as described in comments at the top of pub_tool_hashtable.h, are
@@ -8876,10 +5033,6 @@ static void hg_pre_clo_init ( void )
    hg_mallocmeta_table
       = VG_(HT_construct)( "hg_malloc_metadata_table" );
 
-   /* a SecMap must contain an integral number of CacheLines */
-   tl_assert(0 == (N_SECMAP_ARANGE % N_LINE_ARANGE));
-   /* also ... a CacheLine holds an integral number of trees */
-   tl_assert(0 == (N_LINE_ARANGE % 8));
 }
 
 VG_DETERMINE_INTERFACE_VERSION(hg_pre_clo_init)

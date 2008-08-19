@@ -1,0 +1,18 @@
+
+CC = gcc
+CFLAGS = -g -O  -Wall -Wmissing-prototypes -Wshadow \
+	-Wpointer-arith -Wbad-function-cast -Wcast-qual \
+	-Wcast-align -Wmissing-declarations \
+	$(EXTRA_CFLAGS) -g -O -fno-strict-aliasing
+
+all: libhb.h libhb_core.c libhb_sa.c
+	$(CC) $(CFLAGS) -o libhb_sa libhb_sa.c
+
+clean:
+	rm -f libhb_sa
+
+tarfile:
+	XYZZY=`date +\%F-\%T` ; \
+	FOOBAR=`echo $$XYZZY | sed s/:/-/g` ; \
+	tar cvf libhb3-$$FOOBAR.tar libhb_sa.c libhb_vg.c \
+		libhb_core.c libhb.h Makefile_sa
