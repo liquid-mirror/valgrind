@@ -65,7 +65,8 @@ static
 void notify_aspacem_of_mmap(Addr a, SizeT len, UInt prot,
                             UInt flags, Int fd, Off64T offset);
 static
-void notify_tool_of_mmap(Addr a, SizeT len, UInt prot, Off64T offset);
+void notify_tool_of_mmap(Addr a, SizeT len, UInt prot, Off64T offset,
+                         ULong di_handle);
 
 
 /* Returns True iff address range is something the client can
@@ -151,13 +152,22 @@ void page_align_addr_and_len( Addr* a, SizeT* len)
 /* When a client mmap has been successfully done, this function must
    be called.  It notifies both aspacem and the tool of the new
    mapping.
-*/
+
+   JRS 2008-Aug-14: But notice this is *very* obscure.  The only place
+   it is called from is POST(sys_io_setup).  In particular,
+   ML_(generic_PRE_sys_mmap), further down in this file, is the
+   "normal case" handler for client mmap.  But it doesn't call this
+   function; instead it does the relevant notifications itself.  Here,
+   we just pass di_handle=0 to notify_tool_of_mmap as we have no
+   better information.  But really this function should be done away
+   with; problem is I don't understand what POST(sys_io_setup) does or
+   how it works. */
 void 
 ML_(notify_aspacem_and_tool_of_mmap) ( Addr a, SizeT len, UInt prot, 
                                        UInt flags, Int fd, Off64T offset )
 {
    notify_aspacem_of_mmap(a, len, prot, flags, fd, offset);
-   notify_tool_of_mmap(a, len, prot, offset);
+   notify_tool_of_mmap(a, len, prot, offset, 0/*di_handle*/);
 }
 
 static
@@ -179,7 +189,8 @@ void notify_aspacem_of_mmap(Addr a, SizeT len, UInt prot,
 }
 
 static
-void notify_tool_of_mmap(Addr a, SizeT len, UInt prot, Off64T offset)
+void notify_tool_of_mmap(Addr a, SizeT len, UInt prot, Off64T offset,
+                         ULong di_handle)
 {
    Bool rr, ww, xx;
 
@@ -192,7 +203,7 @@ void notify_tool_of_mmap(Addr a, SizeT len, UInt prot, Off64T offset)
    ww = toBool(prot & VKI_PROT_WRITE);
    xx = toBool(prot & VKI_PROT_EXEC);
 
-   VG_TRACK( new_mem_mmap, a, len, rr, ww, xx );
+   VG_TRACK( new_mem_mmap, a, len, rr, ww, xx, di_handle );
 }
 
 /* Expand (or shrink) an existing mapping, potentially moving it at
@@ -332,7 +343,8 @@ SysRes do_mremap( Addr old_addr, SizeT old_len,
                                    MIN_SIZET(old_len,new_len) );
          if (new_len > old_len)
             VG_TRACK( new_mem_mmap, new_addr+old_len, new_len-old_len,
-                      old_seg->hasR, old_seg->hasW, old_seg->hasX );
+                      old_seg->hasR, old_seg->hasW, old_seg->hasX,
+                      0/*di_handle*/ );
          VG_TRACK(die_mem_munmap, old_addr, old_len);
          if (d) {
             VG_(discard_translations)( old_addr, old_len, "do_remap(1)" );
@@ -375,7 +387,8 @@ SysRes do_mremap( Addr old_addr, SizeT old_len,
       if (ok) {
          VG_TRACK( new_mem_mmap, needA, needL, 
                                  old_seg->hasR, 
-                                 old_seg->hasW, old_seg->hasX );
+                                 old_seg->hasW, old_seg->hasX,
+                                 0/*di_handle*/ );
          if (d) 
             VG_(discard_translations)( needA, needL, "do_remap(3)" );
          return VG_(mk_SysRes_Success)( old_addr );
@@ -395,7 +408,8 @@ SysRes do_mremap( Addr old_addr, SizeT old_len,
                                    MIN_SIZET(old_len,new_len) );
          if (new_len > old_len)
             VG_TRACK( new_mem_mmap, advised+old_len, new_len-old_len,
-                      old_seg->hasR, old_seg->hasW, old_seg->hasX );
+                      old_seg->hasR, old_seg->hasW, old_seg->hasX,
+                      0/*di_handle*/ );
          VG_TRACK(die_mem_munmap, old_addr, old_len);
          if (d) {
             VG_(discard_translations)( old_addr, old_len, "do_remap(4)" );
@@ -434,7 +448,8 @@ SysRes do_mremap( Addr old_addr, SizeT old_len,
    if (!ok)
       goto eNOMEM;
    VG_TRACK( new_mem_mmap, needA, needL, 
-                           old_seg->hasR, old_seg->hasW, old_seg->hasX );
+                           old_seg->hasR, old_seg->hasW, old_seg->hasX,
+                           0/*di_handle*/ );
    if (d)
       VG_(discard_translations)( needA, needL, "do_remap(6)" );
    return VG_(mk_SysRes_Success)( old_addr );
@@ -1722,7 +1737,8 @@ ML_(generic_POST_sys_shmat) ( ThreadId tid,
 
       /* we don't distinguish whether it's read-only or
        * read-write -- it doesn't matter really. */
-      VG_TRACK( new_mem_mmap, res, segmentSize, True, True, False );
+      VG_TRACK( new_mem_mmap, res, segmentSize, True, True, False,
+                              0/*di_handle*/ );
       if (d)
          VG_(discard_translations)( (Addr64)res, 
                                     (ULong)VG_PGROUNDUP(segmentSize),
@@ -1937,6 +1953,7 @@ ML_(generic_PRE_sys_mmap) ( ThreadId tid,
    }
 
    if (!sres.isError) {
+      ULong di_handle;
       /* Notify aspacem. */
       notify_aspacem_of_mmap(
          (Addr)sres.res, /* addr kernel actually assigned */
@@ -1947,13 +1964,15 @@ ML_(generic_PRE_sys_mmap) ( ThreadId tid,
          arg6  /* offset */
       );
       /* Load symbols? */
-      VG_(di_notify_mmap)( (Addr)sres.res, False/*allow_SkFileV*/ );
+      di_handle = VG_(di_notify_mmap)( (Addr)sres.res, False/*allow_SkFileV*/ );
       /* Notify the tool. */
       notify_tool_of_mmap(
          (Addr)sres.res, /* addr kernel actually assigned */
          arg2, /* length */
          arg3, /* prot */
-         arg6  /* offset */
+         arg6, /* offset */
+         di_handle /* so the tool can refer to the read debuginfo later,
+                      if it wants. */
       );
    }
 
