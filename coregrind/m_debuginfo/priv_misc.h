@@ -42,6 +42,10 @@ void*  ML_(dinfo_zalloc)( SizeT szB );
 void   ML_(dinfo_free)( void* v );
 UChar* ML_(dinfo_strdup)( const UChar* str );
 
+/* A handy type, a la Haskell's Maybe type.  Yes, I know, C sucks.
+   Been there.  Done that.  Seen the movie.  Got the T-shirt.  Etc. */
+typedef struct { UWord w; Bool b; } MaybeUWord;
+
 
 #endif /* ndef __PRIV_MISC_H */
 
