@@ -29,8 +29,7 @@ vgpreload_exp_sgcheck_x86_linux_so_CFLAGS       = $(AM_CFLAGS_X86_LINUX) $(AM_CF
 vgpreload_exp_sgcheck_x86_linux_so_CCASFLAGS    = $(AM_CCASFLAGS_X86_LINUX)
 vgpreload_exp_sgcheck_x86_linux_so_DEPENDENCIES = $(LIBREPLACEMALLOC_X86_LINUX)
 vgpreload_exp_sgcheck_x86_linux_so_LDFLAGS      = \
-	$(PRELOAD_LDFLAGS_X86_LINUX) \
-	$(LIBREPLACEMALLOC_LDFLAGS_X86_LINUX)
+	$(PRELOAD_LDFLAGS_X86_LINUX)
 
 vgpreload_exp_sgcheck_amd64_linux_so_SOURCES      = $(VGPRELOAD_EXP_SGCHECK_SOURCES_COMMON)
 vgpreload_exp_sgcheck_amd64_linux_so_CPPFLAGS     = $(AM_CPPFLAGS_AMD64_LINUX)
@@ -38,8 +37,7 @@ vgpreload_exp_sgcheck_amd64_linux_so_CFLAGS       = $(AM_CFLAGS_AMD64_LINUX) $(A
 vgpreload_exp_sgcheck_amd64_linux_so_CCASFLAGS    = $(AM_CCASFLAGS_AMD64_LINUX)
 vgpreload_exp_sgcheck_amd64_linux_so_DEPENDENCIES = $(LIBREPLACEMALLOC_AMD64_LINUX)
 vgpreload_exp_sgcheck_amd64_linux_so_LDFLAGS      = \
-	$(PRELOAD_LDFLAGS_AMD64_LINUX) \
-	$(LIBREPLACEMALLOC_LDFLAGS_AMD64_LINUX)
+	$(PRELOAD_LDFLAGS_AMD64_LINUX)
 
 vgpreload_exp_sgcheck_ppc32_linux_so_SOURCES      = $(VGPRELOAD_EXP_SGCHECK_SOURCES_COMMON)
 vgpreload_exp_sgcheck_ppc32_linux_so_CPPFLAGS     = $(AM_CPPFLAGS_PPC32_LINUX)
@@ -47,8 +45,7 @@ vgpreload_exp_sgcheck_ppc32_linux_so_CFLAGS       = $(AM_CFLAGS_PPC32_LINUX) $(A
 vgpreload_exp_sgcheck_ppc32_linux_so_CCASFLAGS    = $(AM_CCASFLAGS_PPC32_LINUX)
 vgpreload_exp_sgcheck_ppc32_linux_so_DEPENDENCIES = $(LIBREPLACEMALLOC_PPC32_LINUX)
 vgpreload_exp_sgcheck_ppc32_linux_so_LDFLAGS      = \
-	$(PRELOAD_LDFLAGS_PPC32_LINUX) \
-	$(LIBREPLACEMALLOC_LDFLAGS_PPC32_LINUX)
+	$(PRELOAD_LDFLAGS_PPC32_LINUX)
 
 vgpreload_exp_sgcheck_ppc64_linux_so_SOURCES      = $(VGPRELOAD_EXP_SGCHECK_SOURCES_COMMON)
 vgpreload_exp_sgcheck_ppc64_linux_so_CPPFLAGS     = $(AM_CPPFLAGS_PPC64_LINUX)
@@ -56,8 +53,7 @@ vgpreload_exp_sgcheck_ppc64_linux_so_CFLAGS       = $(AM_CFLAGS_PPC64_LINUX) $(A
 vgpreload_exp_sgcheck_ppc64_linux_so_CCASFLAGS    = $(AM_CCASFLAGS_PPC64_LINUX)
 vgpreload_exp_sgcheck_ppc64_linux_so_DEPENDENCIES = $(LIBREPLACEMALLOC_PPC64_LINUX)
 vgpreload_exp_sgcheck_ppc64_linux_so_LDFLAGS      = \
-	$(PRELOAD_LDFLAGS_PPC64_LINUX) \
-	$(LIBREPLACEMALLOC_LDFLAGS_PPC64_LINUX)
+	$(PRELOAD_LDFLAGS_PPC64_LINUX)
 
 vgpreload_exp_sgcheck_ppc32_aix5_so_SOURCES      = $(VGPRELOAD_EXP_SGCHECK_SOURCES_COMMON)
 vgpreload_exp_sgcheck_ppc32_aix5_so_CPPFLAGS     = $(AM_CPPFLAGS_PPC32_AIX5)
@@ -65,8 +61,7 @@ vgpreload_exp_sgcheck_ppc32_aix5_so_CFLAGS       = $(AM_CFLAGS_PPC32_AIX5) $(AM_
 vgpreload_exp_sgcheck_ppc32_aix5_so_CCASFLAGS    = $(AM_CCASFLAGS_PPC32_AIX5)
 vgpreload_exp_sgcheck_ppc32_aix5_so_DEPENDENCIES = $(LIBREPLACEMALLOC_PPC32_AIX5)
 vgpreload_exp_sgcheck_ppc32_aix5_so_LDFLAGS      = \
-	$(PRELOAD_LDFLAGS_PPC32_AIX5) \
-	$(LIBREPLACEMALLOC_LDFLAGS_PPC32_AIX5)
+	$(PRELOAD_LDFLAGS_PPC32_AIX5)
 
 vgpreload_exp_sgcheck_ppc64_aix5_so_SOURCES      = $(VGPRELOAD_EXP_SGCHECK_SOURCES_COMMON)
 vgpreload_exp_sgcheck_ppc64_aix5_so_CPPFLAGS     = $(AM_CPPFLAGS_PPC64_AIX5)
@@ -74,8 +69,7 @@ vgpreload_exp_sgcheck_ppc64_aix5_so_CFLAGS       = $(AM_CFLAGS_PPC64_AIX5) $(AM_
 vgpreload_exp_sgcheck_ppc64_aix5_so_CCASFLAGS    = $(AM_CCASFLAGS_PPC64_AIX5)
 vgpreload_exp_sgcheck_ppc64_aix5_so_DEPENDENCIES = $(LIBREPLACEMALLOC_PPC64_AIX5)
 vgpreload_exp_sgcheck_ppc64_aix5_so_LDFLAGS      = \
-	$(PRELOAD_LDFLAGS_PPC64_AIX5) \
-	$(LIBREPLACEMALLOC_LDFLAGS_PPC64_AIX5)
+	$(PRELOAD_LDFLAGS_PPC64_AIX5)
 
 
 

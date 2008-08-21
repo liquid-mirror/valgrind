@@ -45,6 +45,7 @@ struct _XArray {
    void* arr;       /* pointer to elements */
    Word  usedsizeE; /* # used elements in arr */
    Word  totsizeE;  /* max size of arr, in elements */
+   UInt  magic; /* 32-bit user supplied magic number */
    Bool  sorted;    /* is it sorted? */
 };
 
@@ -71,6 +72,7 @@ XArray* VG_(newXA) ( void*(*alloc_fn)(SizeT),
    xa->elemSzB   = elemSzB;
    xa->usedsizeE = 0;
    xa->totsizeE  = 0;
+   xa->magic     = 0;
    xa->sorted    = False;
    xa->arr       = NULL;
    return xa;
@@ -260,6 +262,20 @@ void VG_(dropTailXA) ( XArray* xao, Word n )
    vg_assert(n >= 0);
    vg_assert(n <= xa->usedsizeE);
    xa->usedsizeE -= n;
+}
+
+void VG_(setMagicXA) ( XArray* xao, UInt magic )
+{
+   struct _XArray* xa = (struct _XArray*)xao;
+   vg_assert(xa);
+   xa->magic = magic;
+}
+
+UInt VG_(getMagicXA) ( XArray* xao )
+{
+   struct _XArray* xa = (struct _XArray*)xao;
+   vg_assert(xa);
+   return xa->magic;
 }
 
 

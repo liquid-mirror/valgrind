@@ -76,9 +76,45 @@ static void pc_free ( void* p ) {
 }
 
 
+#define MK_XAMAGIC(_c3,_c2,_c1,_c0) \
+   ( ( ((UInt)(_c3)) << 24 ) | ( ((UInt)(_c2)) << 16 ) |  \
+     ( ((UInt)(_c1)) << 8 )  | ( ((UInt)(_c0)) <<  0 ) )
+
+#define StackBlock_XAMAGIC  MK_XAMAGIC('S','B','l','k')
+
+
+/* Compare the intervals [a1,a1+n1) and [a2,a2+n2).  Return -1 if the
+   first interval is lower, 1 if the first interval is higher, and 0
+   if there is any overlap.  Redundant paranoia with casting is there
+   following what looked distinctly like a bug in gcc-4.1.2, in which
+   some of the comparisons were done signedly instead of
+   unsignedly. */
+inline
+static Word cmp_nonempty_intervals ( Addr a1, SizeT n1, 
+                                     Addr a2, SizeT n2 ) {
+   UWord a1w = (UWord)a1;
+   UWord n1w = (UWord)n1;
+   UWord a2w = (UWord)a2;
+   UWord n2w = (UWord)n2;
+   tl_assert(n1w > 0 && n2w > 0);
+   if (a1w + n1w <= a2w) return -1L;
+   if (a2w + n2w <= a1w) return 1L;
+   return 0;
+}
+
+/* Return true iff [aSmall,aSmall+nSmall) is entirely contained
+   within [aBig,aBig+nBig). */
+inline
+static Bool is_subinterval_of ( Addr aBig, SizeT nBig,
+                                Addr aSmall, SizeT nSmall ) {
+   tl_assert(nBig > 0 && nSmall > 0);
+   return aBig <= aSmall && aSmall + nSmall <= aBig + nBig;
+}
+
+
 //////////////////////////////////////////////////////////////
 //                                                          //
-// Management of StackBlocks                                //
+// StackBlocks Persistent Cache                             //
 //                                                          //
 //////////////////////////////////////////////////////////////
 
@@ -100,7 +136,8 @@ static void pc_free ( void* p ) {
    vectors describe the same set of variables but are not structurally
    identical. */
 
-static inline Bool StackBlock__sane ( StackBlock* fb ) {
+static inline Bool StackBlock__sane ( StackBlock* fb )
+{
    if (fb->name[ sizeof(fb->name)-1 ] != 0)
       return False;
    if (fb->spRel != False && fb->spRel != True)
@@ -110,8 +147,10 @@ static inline Bool StackBlock__sane ( StackBlock* fb ) {
    return True;
 }
 
-static Int StackBlock__cmp ( StackBlock* fb1, StackBlock* fb2 ) {
-   Int r;
+/* Generate an arbitrary total ordering on StackBlocks. */
+static Word StackBlock__cmp ( StackBlock* fb1, StackBlock* fb2 )
+{
+   Word r;
    tl_assert(StackBlock__sane(fb1));
    tl_assert(StackBlock__sane(fb2));
    /* Hopefully the .base test hits most of the time.  For the blocks
@@ -132,37 +171,46 @@ static Int StackBlock__cmp ( StackBlock* fb1, StackBlock* fb2 ) {
    if (fb1->isVec < fb2->isVec) return -1;
    if (fb1->isVec > fb2->isVec) return 1;
    /* compare the name */
-   r = VG_(strcmp)(fb1->name, fb2->name);
+   r = (Word)VG_(strcmp)(fb1->name, fb2->name);
    return r;
 }
 
 /* Generate an arbitrary total ordering on vectors of StackBlocks. */
-static Word StackBlocks__cmp ( XArray* fb1s, XArray* fb2s ) {
-   Int  r;
-   Word i;
-   Word n1 = VG_(sizeXA)( fb1s );
-   Word n2 = VG_(sizeXA)( fb2s );
-   Word n  = n1 > n2 ? n1 : n2;  /* max(n1,n2) */
-   for (i = 0; i < n; i++) {
+static Word StackBlocks__cmp ( XArray* fb1s, XArray* fb2s )
+{
+   Word i, r, n1, n2;
+   n1 = VG_(sizeXA)( fb1s );
+   n2 = VG_(sizeXA)( fb2s );
+   if (n1 < n2) return -1;
+   if (n1 > n2) return 1;
+   for (i = 0; i < n1; i++) {
       StackBlock *fb1, *fb2;
-      if (i >= n1) {
-         /* fb1s ends first, and all previous entries identical. */
-         tl_assert(i < n2);
-         return -1;
-      }
-      if (i >= n2) {
-         /* fb2s ends first, and all previous entries identical. */
-         tl_assert(i < n1);
-         return 1;
-      }
-      tl_assert(i < n1 && i < n2);
       fb1 = VG_(indexXA)( fb1s, i );
       fb2 = VG_(indexXA)( fb2s, i );
       r = StackBlock__cmp( fb1, fb2 );
       if (r != 0) return r;
    }
-   tl_assert(n1 == n2);
+   tl_assert(i == n1 && i == n2);
    return 0;
+}
+
+static void pp_StackBlock ( StackBlock* sb )
+{
+   VG_(printf)("StackBlock{ off %ld szB %lu spRel:%c isVec:%c \"%s\" }",
+               sb->base, sb->szB, sb->spRel ? 'Y' : 'N',
+               sb->isVec ? 'Y' : 'N', &sb->name[0] );
+}
+
+static void pp_StackBlocks ( XArray* sbs )
+{
+   Word i, n = VG_(sizeXA)( sbs );
+   VG_(printf)("<<< STACKBLOCKS\n" );
+   for (i = 0; i < n; i++) {
+      VG_(printf)("   ");
+      pp_StackBlock( (StackBlock*)VG_(indexXA)( sbs, i ) );
+      VG_(printf)("\n");
+   }
+   VG_(printf)(">>> STACKBLOCKS\n" );
 }
 
 
@@ -189,30 +237,76 @@ static XArray* /* of StackBlock */
 {
    UWord key, val;
 
+   tl_assert( VG_(getMagicXA)(orig) == 0 ); /* as yet unset */
+
    /* First, normalise, as per comments above. */
    VG_(setCmpFnXA)( orig, (Int(*)(void*,void*))StackBlock__cmp );
    VG_(sortXA)( orig );
 
+   /* Now get rid of any duplicates. */
+   { Word r, w, n = VG_(sizeXA)( orig );
+     if (n >= 2) {
+        w = 0;
+        for (r = 0; r < n; r++) {
+           if (r+1 < n) {
+              StackBlock* pR0 = VG_(indexXA)( orig, r+0 );
+              StackBlock* pR1 = VG_(indexXA)( orig, r+1 );
+              Word c = StackBlock__cmp(pR0,pR1);
+              tl_assert(c == -1 || c == 0);
+              if (c == 0) continue;
+           }
+           if (w != r) {
+              StackBlock* pW = VG_(indexXA)( orig, w );
+              StackBlock* pR = VG_(indexXA)( orig, r );
+              *pW = *pR;
+           }
+           w++;
+        }
+        tl_assert(r == n);
+        tl_assert(w <= n);
+        if (w < n) {
+           VG_(dropTailXA)( orig, n-w );
+        }
+        if (0) VG_(printf)("delta %ld\n", n-w);
+     }
+   }
+
+   { Word i, n = VG_(sizeXA)( orig );
+   for (i = 0; i < n-1; i++) {
+     StackBlock* sb1 = (StackBlock*)VG_(indexXA)( orig, i );
+     StackBlock* sb2 = (StackBlock*)VG_(indexXA)( orig, i+1 );
+     if (sb1->base == sb2->base)
+       pp_StackBlocks(orig);
+     tl_assert(sb1->base != sb2->base);
+   }
+   }
+
    /* Now, do we have it already? */
    if (VG_(lookupFM)( frameBlocks_set, &key, &val, (UWord)orig )) {
       /* yes */
+      XArray* res;
       tl_assert(val == 0);
       tl_assert(key != (UWord)orig);
       VG_(deleteXA)(orig);
-      return (XArray*)key;
+      res = (XArray*)key;
+      tl_assert( VG_(getMagicXA)(res) == StackBlock_XAMAGIC );
+      return res;
    } else {
       /* no */
+      VG_(setMagicXA)( orig, StackBlock_XAMAGIC );
       VG_(addToFM)( frameBlocks_set, (UWord)orig, 0 );
       return orig;
    }
 }
 
 /* Top level function for getting the StackBlock vector for a given
-   instruction. */
+   instruction.  It is guaranteed that the returned pointer will be
+   valid for the entire rest of the run, and also that the addresses
+   of the individual elements of the array will not change. */
 
 static XArray* /* of StackBlock */ get_StackBlocks_for_IP ( Addr ip )
 {
-   XArray* blocks = VG_(di_get_stack_blocks_at_ip)( ip, False/*!arrays only*/ );
+   XArray* blocks = VG_(di_get_stack_blocks_at_ip)( ip, True/*arrays only*/ );
    tl_assert(blocks);
    return StackBlocks__find_and_dealloc__or_add( blocks );
 }
@@ -220,149 +314,383 @@ static XArray* /* of StackBlock */ get_StackBlocks_for_IP ( Addr ip )
 
 //////////////////////////////////////////////////////////////
 //                                                          //
-// The Global Block Interval Tree                           //
+// GlobalBlocks Persistent Cache                            //
 //                                                          //
 //////////////////////////////////////////////////////////////
 
-/* This tree holds all the currently known-about globals.  We must
-   modify it at each mmap that results in debuginfo being read, and at
-   each munmap, as the latter will cause globals to disappear.  At
-   each munmap, we must also prune the Invars, since munmaps may cause
-   GlobalBlocks to disappear, and so the Invars may no longer mention
-   them. */
-
-/* Implement an interval tree, containing GlobalBlocks.  The blocks
-   must all be non-zero sized and may not overlap.  The access
-   functions maintain that invariant.
-
-   Storage management: GlobalBlocks in the tree are copies of ones
-   presented as args to add_GlobalBlock.  The originals are never
-   added to the tree.  del_GlobalBlocks_in_range frees up the storage
-   allocated by add_GlobalBlock. */
-
-/* The tree */
-static WordFM* globals = NULL; /* WordFM GlobalBlock* void */
-
-static Word cmp_intervals_GlobalBlock ( GlobalBlock* gb1, GlobalBlock* gb2 )
+/* Generate an arbitrary total ordering on GlobalBlocks. */
+static Word GlobalBlock__cmp ( GlobalBlock* gb1, GlobalBlock* gb2 )
 {
-   tl_assert(gb1 && gb1->szB > 0);
-   tl_assert(gb2 && gb2->szB > 0);
-   if (gb1->addr + gb1->szB <= gb2->addr) return -1;
-   if (gb2->addr + gb2->szB <= gb1->addr) return 1;
-   return 0;
+   Word r;
+   /* compare addrs */
+   if (gb1->addr < gb2->addr) return -1;
+   if (gb1->addr > gb2->addr) return 1;
+   /* compare sizes */
+   if (gb1->szB < gb2->szB) return -1;
+   if (gb1->szB > gb2->szB) return 1;
+   /* compare is/is-not array-typed flag */
+   if (gb1->isVec < gb2->isVec) return -1;
+   if (gb1->isVec > gb2->isVec) return 1;
+   /* compare the name */
+   r = (Word)VG_(strcmp)(gb1->name, gb2->name);
+   if (r != 0) return r;
+   /* compare the soname */
+   r = (Word)VG_(strcmp)(gb1->soname, gb2->soname);
+   return r;
 }
 
-static void init_globals ( void )
+static WordFM* /* GlobalBlock* -> nothing */
+       globalBlock_set = NULL;
+
+static void init_GlobalBlock_set ( void )
 {
-   tl_assert(!globals);
-   globals = VG_(newFM)( pc_malloc, pc_free,
-                         (Word(*)(UWord,UWord))cmp_intervals_GlobalBlock );
-   tl_assert(globals);
+   tl_assert(!globalBlock_set);
+   globalBlock_set = VG_(newFM)( pc_malloc, pc_free, 
+                                 (Word(*)(UWord,UWord))GlobalBlock__cmp );
+   tl_assert(globalBlock_set);
 }
 
 
-/* Find the block containing 'a', if possible.  Returned pointer is
-   only transiently valid; it will become invalid at the next global
-   mapping or unmapping operation. */
-static GlobalBlock* find_GlobalBlock_containing ( Addr a )
+/* Top level function for making GlobalBlocks persistent.  Call here
+   with a non-persistent version, and the returned one is guaranteed
+   to be valid for the entire rest of the run.  The supplied one is
+   copied, not stored, so can be freed after the call. */
+
+static GlobalBlock* get_persistent_GlobalBlock ( GlobalBlock* orig )
 {
-   UWord oldK, oldV;
-   GlobalBlock key;
+   UWord key, val;
+   /* Now, do we have it already? */
+   if (VG_(lookupFM)( globalBlock_set, &key, &val, (UWord)orig )) {
+      /* yes, return the copy */
+      GlobalBlock* res;
+      tl_assert(val == 0);
+      res = (GlobalBlock*)key;
+      tl_assert(res != orig);
+      return res;
+   } else {
+      /* no.  clone it, store the clone and return the clone's
+         address. */
+      GlobalBlock* clone = pc_malloc( sizeof(GlobalBlock) );
+      tl_assert(clone);
+      *clone = *orig;
+      VG_(addToFM)( globalBlock_set, (UWord)clone, 0 );
+      return clone;
+   }
+}
+
+
+//////////////////////////////////////////////////////////////
+//                                                          //
+// Interval tree of StackTreeBlock                          //
+//                                                          //
+//////////////////////////////////////////////////////////////
+
+/* A node in a stack interval tree.  Zero length intervals (.szB == 0)
+   are not allowed.
+
+   A stack interval tree is a (WordFM StackTreeNode* void).  There is
+   one stack interval tree for each thread.
+*/
+typedef
+   struct {
+      Addr        addr;
+      SizeT       szB;   /* copied from .descr->szB */
+      StackBlock* descr; /* it's an instance of this block */
+      UWord       depth; /* depth of stack at time block was pushed */
+   }
+   StackTreeNode;
+
+static void pp_StackTree ( WordFM* sitree, HChar* who )
+{
+   UWord keyW, valW;
+   VG_(printf)("<<< BEGIN pp_StackTree %s\n", who );
+   VG_(initIterFM)( sitree );
+   while (VG_(nextIterFM)( sitree, &keyW, &valW )) {
+      StackTreeNode* nd = (StackTreeNode*)keyW;
+      VG_(printf)("  [%#lx,+%lu) descr=%p %s %lu\n", nd->addr, nd->szB,
+                  nd->descr, nd->descr->name, nd->descr->szB);
+   }
+   VG_(printf)(">>> END   pp_StackTree %s\n", who );
+}
+
+/* Interval comparison function for StackTreeNode */
+static Word cmp_intervals_StackTreeNode ( StackTreeNode* sn1,
+                                          StackTreeNode* sn2 )
+{
+   return cmp_nonempty_intervals(sn1->addr, sn1->szB,
+                                 sn2->addr, sn2->szB);
+}
+
+/* Find the node holding 'a', if any. */
+static StackTreeNode* find_StackTreeNode ( WordFM* sitree, Addr a )
+{
+   UWord keyW, valW;
+   StackTreeNode key;
+   tl_assert(sitree);
    key.addr = a;
    key.szB  = 1;
-   if (VG_(lookupFM)( globals, &oldK, &oldV, (UWord)&key )) {
-      GlobalBlock* res = (GlobalBlock*)oldK;
-      tl_assert(oldV == 0);
-      tl_assert(res->szB > 0);
-      tl_assert(res->addr <= a && a < res->addr + res->szB);
+   if (VG_(lookupFM)( sitree, &keyW, &valW, (UWord)&key )) {
+      StackTreeNode* res = (StackTreeNode*)keyW;
+      tl_assert(valW == 0);
+      tl_assert(res != &key);
       return res;
    } else {
       return NULL;
    }
 }
 
-
-/* Add a block to the collection.  Presented block is not stored
-   directly; instead a copy is made and stored.  If the block overlaps
-   an existing block (it should not, but we need to be robust to such
-   eventualities) it is merged with existing block(s), so as to
-   preserve the no-overlap property of the tree as a whole. */
-static void add_GlobalBlock ( GlobalBlock* gbOrig )
+/* Note that the supplied XArray of FrameBlock must have been
+   made persistent already. */
+__attribute__((noinline))
+static void add_blocks_to_StackTree (
+               /*MOD*/WordFM* sitree,
+               XArray* /* FrameBlock */ descrs,
+               XArray* /* Addr */ bases,
+               UWord depth
+            )
 {
-   UWord keyW, valW;
-   GlobalBlock* gb;
-   tl_assert(gbOrig && gbOrig->szB > 0);
-   gb = pc_malloc( sizeof(GlobalBlock) );
-   *gb = *gbOrig;
+   Bool debug = (Bool)0;
+   Word i, nDescrs, nBases;
 
-   /* Dealing with overlaps.  One possibility is to look up the entire
-      interval to be added.  If we get something back, it overlaps an
-      existing interval; then delete the existing interval, merge it
-      into the one to be added, and repeat, until the to-be added
-      interval really doesn't intersect any existing interval. */
+   nDescrs = VG_(sizeXA)( descrs ),
+   nBases = VG_(sizeXA)( bases );
+   tl_assert(nDescrs == nBases);
 
-   while (VG_(lookupFM)( globals, &keyW, &valW, (UWord)gb )) {
-      tl_assert(valW == 0);
-      /* keyW is the overlapping key.  Pull it out of the tree, merge
-         into 'gb', free keyW, complain to the user, repeat. */
-      tl_assert(0);
+   if (nDescrs == 0) return;
+
+   tl_assert(sitree);
+   if (debug) {
+      VG_(printf)("\n");
+      pp_StackTree( sitree, "add_blocks_to_StackTree-pre" );
    }
 
-   VG_(addToFM)(globals, (UWord)gb, (UWord)0);
+   for (i = 0; i < nDescrs; i++) {
+      Bool already_present;
+      StackTreeNode* nyu;
+      Addr        addr  = *(Addr*)VG_(indexXA)( bases, i );
+      StackBlock* descr = (StackBlock*)VG_(indexXA)( descrs, i );
+      tl_assert(descr->szB > 0);
+      nyu = pc_malloc( sizeof(StackTreeNode) );
+      nyu->addr  = addr;
+      nyu->szB   = descr->szB;
+      nyu->descr = descr;
+      nyu->depth = depth;
+      if (debug) VG_(printf)("ADD %#lx %lu\n", addr, descr->szB);
+      already_present = VG_(addToFM)( sitree, (UWord)nyu, 0 );
+      /* The interval can't already be there; else we have
+         overlapping stack blocks. */
+      tl_assert(!already_present);
+      if (debug) {
+         pp_StackTree( sitree, "add_blocks_to_StackTree-step" );
+      }
+   }
+   if (debug) {
+      pp_StackTree( sitree, "add_blocks_to_StackTree-post" );
+      VG_(printf)("\n");
+   }
 }
 
-
-/* Remove all blocks from the tree intersecting [a,a+len), and release
-   associated storage.  One way to do it is to simply look up the
-   interval, and if something comes back, delete it on the basis that
-   it must intersect the interval.  Keep doing this until the lookup
-   finds nothing.  Returns a Bool indicating whether any blocks
-   did actually intersect the range. */
-static Bool del_GlobalBlocks_in_range ( Addr a, SizeT len )
+static void del_blocks_from_StackTree ( /*MOD*/WordFM* sitree,
+                                        XArray* /* Addr */ bases ) 
 {
    UWord oldK, oldV;
-   GlobalBlock key;
-   Bool foundAny = False;
-
-   tl_assert(len > 0);
-   key.addr = a;
-   key.szB  = len;
-   while (VG_(delFromFM)( globals, &oldK, &oldV, (UWord)&key )) {
-      GlobalBlock* old;
+   Word i, nBases = VG_(sizeXA)( bases );
+   for (i = 0; i < nBases; i++) {
+      Bool b;
+      Addr addr = *(Addr*)VG_(indexXA)( bases, i );
+      StackTreeNode* nd = find_StackTreeNode(sitree, addr);
+      /* The interval must be there; we added it earlier when
+         the associated frame was created. */
+      tl_assert(nd);
+      b = VG_(delFromFM)( sitree, &oldK, &oldV, (UWord)nd );
+      /* we just found the block! */
+      tl_assert(b);
       tl_assert(oldV == 0);
-      old = (GlobalBlock*)oldK;
-      /* 'old' will be removed.  Preen the Invars now? */
-      pc_free(old);
-      foundAny = True;
+      tl_assert(nd == (StackTreeNode*)oldK);
+      pc_free(nd);
    }
-   return foundAny;
 }
 
 
+static void delete_StackTree__kFin ( UWord keyW ) {
+   StackTreeNode* nd = (StackTreeNode*)keyW;
+   tl_assert(nd);
+   pc_free(nd);
+}
+static void delete_StackTree__vFin ( UWord valW ) {
+   tl_assert(valW == 0);
+}
+static void delete_StackTree ( WordFM* sitree )
+{
+   VG_(deleteFM)( sitree,
+                 delete_StackTree__kFin, delete_StackTree__vFin );
+}
+
+static WordFM* new_StackTree ( void ) {
+   return VG_(newFM)( pc_malloc, pc_free,
+                      (Word(*)(UWord,UWord))cmp_intervals_StackTreeNode );
+}
+
+
+//////////////////////////////////////////////////////////////
+//                                                          //
+// Interval tree of GlobalTreeBlock                         //
+//                                                          //
+//////////////////////////////////////////////////////////////
+
+/* A node in a global interval tree.  Zero length intervals 
+   (.szB == 0) are not allowed.
+
+   A global interval tree is a (WordFM GlobalTreeNode* void).  There
+   is one global interval tree for the entire process.
+*/
+typedef
+   struct {
+      Addr         addr; /* copied from .descr->addr */
+      SizeT        szB; /* copied from .descr->szB */
+      GlobalBlock* descr; /* it's this block */
+   }
+   GlobalTreeNode;
+
+/* Interval comparison function for GlobalTreeNode */
+static Word cmp_intervals_GlobalTreeNode ( GlobalTreeNode* gn1,
+                                           GlobalTreeNode* gn2 )
+{
+   return cmp_nonempty_intervals( gn1->addr, gn1->szB,
+                                  gn2->addr, gn2->szB );
+}
+
+/* Find the node holding 'a', if any. */
+static GlobalTreeNode* find_GlobalTreeNode ( WordFM* gitree, Addr a )
+{
+   UWord keyW, valW;
+   GlobalTreeNode key;
+   key.addr = a;
+   key.szB  = 1;
+   if (VG_(lookupFM)( gitree, &keyW, &valW, (UWord)&key )) {
+      GlobalTreeNode* res = (GlobalTreeNode*)keyW;
+      tl_assert(valW == 0);
+      tl_assert(res != &key);
+      return res;
+   } else {
+      return NULL;
+   }
+}
+
+/* Note that the supplied GlobalBlock must have been made persistent
+   already. */
+static void add_block_to_GlobalTree (
+               /*MOD*/WordFM* gitree,
+               GlobalBlock* descr
+            )
+{
+   Bool already_present;
+   GlobalTreeNode* nyu;
+   tl_assert(descr->szB > 0);
+   nyu = pc_malloc( sizeof(GlobalTreeNode) );
+   nyu->addr  = descr->addr;
+   nyu->szB   = descr->szB;
+   nyu->descr = descr;
+   already_present = VG_(addToFM)( gitree, (UWord)nyu, 0 );
+   /* The interval can't already be there; else we have
+      overlapping global blocks. */
+   tl_assert(!already_present);
+}
+
+static Bool del_GlobalTree_range ( /*MOD*/WordFM* gitree,
+                                   Addr a, SizeT szB )
+{
+   /* One easy way to do this: look up [a,a+szB) in the tree.  That
+      will either succeed, producing a block which intersects that
+      range, in which case we delete it and repeat; or it will fail,
+      in which case there are no blocks intersecting the range, and we
+      can bring the process to a halt. */
+   UWord keyW, valW, oldK, oldV;
+   GlobalTreeNode key, *nd;
+   Bool b, anyFound;
+
+   tl_assert(szB > 0);
+
+   anyFound = False;
+
+   key.addr = a;
+   key.szB  = szB;
+
+   while (VG_(lookupFM)( gitree, &keyW, &valW, (UWord)&key )) {
+      anyFound = True;
+      nd = (GlobalTreeNode*)keyW;
+      tl_assert(valW == 0);
+      tl_assert(nd != &key);
+      tl_assert(cmp_nonempty_intervals(a, szB, nd->addr, nd->szB) == 0);
+
+      b = VG_(delFromFM)( gitree, &oldK, &oldV, (UWord)&key );
+      tl_assert(b);
+      tl_assert(oldV == 0);
+      tl_assert(oldK == keyW); /* check we deleted the node we just found */
+   }
+
+   return anyFound;
+}
+
+
+//////////////////////////////////////////////////////////////
+//                                                          //
+// our globals                                              //
+//                                                          //
+//////////////////////////////////////////////////////////////
+
+/* Each thread has:
+   * a shadow stack of StackFrames
+   * an stack block interval tree
+*/
+static XArray* /* StackFrame */    shadowStacks[VG_N_THREADS];
+
+static WordFM* /* StackTreeNode */ siTrees[VG_N_THREADS];
+
+/* Additionally, there is one global variable interval tree
+   for the entire process.
+*/
+static WordFM* /* GlobalTreeNode */ giTree;
+
+
+static void ourGlobals_init ( void )
+{
+   Word i;
+   for (i = 0; i < VG_N_THREADS; i++) {
+      shadowStacks[i] = NULL;
+      siTrees[i] = NULL;
+   }
+   giTree = VG_(newFM)( pc_malloc, pc_free, 
+                        (Word(*)(UWord,UWord))cmp_intervals_GlobalTreeNode );
+}
+
+
+//////////////////////////////////////////////////////////////
+//                                                          //
+// Handle global variable load/unload events                //
+//                                                          //
 //////////////////////////////////////////////////////////////
 
 static void acquire_globals ( ULong di_handle )
 {
    Word n, i;
    XArray* /* of GlobalBlock */ gbs;
-
    if (0) VG_(printf)("ACQUIRE GLOBALS %llu\n", di_handle );
    gbs = VG_(di_get_global_blocks_from_dihandle)
-            (di_handle, False/*!arrays only*/);
+            (di_handle, True/*arrays only*/);
    if (0) VG_(printf)("   GOT %ld globals\n", VG_(sizeXA)( gbs ));
 
    n = VG_(sizeXA)( gbs );
    for (i = 0; i < n; i++) {
+      GlobalBlock* gbp;
       GlobalBlock* gb = VG_(indexXA)( gbs, i );
       VG_(printf)("   new Global size %2lu at %#lx:  %s %s\n", 
                   gb->szB, gb->addr, gb->soname, gb->name );
       tl_assert(gb->szB > 0);
-      /* Add each global to the map.  We can present them
-         indiscriminately to add_GlobalBlock, since that adds copies
-         of presented blocks, not the original.  This is important
-         because we are just about to delete the XArray in which we
-         received these GlobalBlocks. */
-      add_GlobalBlock( gb );
+      /* Make a persistent copy of each GlobalBlock, and add it
+         to the tree. */
+      gbp = get_persistent_GlobalBlock( gb );
+      add_block_to_GlobalTree( giTree, gbp );
    }
 
    VG_(deleteXA)( gbs );
@@ -385,13 +713,29 @@ static void sg_new_mem_startup( Addr a, SizeT len,
 }
 static void sg_die_mem_munmap ( Addr a, SizeT len )
 {
-   Bool debug = 0||False;
+   Bool debug = (Bool)0;
    Bool overlap = False;
+
    if (debug) VG_(printf)("MUNMAP %#lx %lu\n", a, len );
+
    if (len == 0)
       return;
 
-   overlap = del_GlobalBlocks_in_range(a, len);
+   overlap = del_GlobalTree_range(giTree, a, len);
+
+   { /* redundant sanity check */
+     UWord keyW, valW;
+     VG_(initIterFM)( giTree );
+     while (VG_(nextIterFM)( giTree, &keyW, &valW )) {
+       GlobalTreeNode* nd = (GlobalTreeNode*)keyW;
+        tl_assert(valW == 0);
+        tl_assert(nd->szB > 0);
+        tl_assert(nd->addr + nd->szB <= a
+                  || a + len <= nd->addr);
+     }
+     VG_(doneIterFM)( giTree );
+   }
+
    if (!overlap)
       return;
 
@@ -401,268 +745,6 @@ static void sg_die_mem_munmap ( Addr a, SizeT len )
       Inv_Unknown. */
    tl_assert(len > 0);
    preen_Invars( a, len, False/*!isHeap*/ );
-}
-
-
-//////////////////////////////////////////////////////////////
-//                                                          //
-// The Heap Block Interval Tree                             //
-//                                                          //
-//////////////////////////////////////////////////////////////
-
-/* This tree holds all the currently known-about heap blocks.  We must
-   modify it at each malloc/free, and prune the Invars when freeing
-   blocks (since they disappear, the Invars may no longer mention
-   them). */
-
-/* Implement an interval tree, containing HeapBlocks.  The blocks must
-   all be non-zero sized and may not overlap, although if they do
-   overlap that must constitute a bug in our malloc/free
-   implementation, and so we might as well just assert.
-
-   There's a nasty kludge.  In fact we must be able to deal with zero
-   sized blocks, since alloc_mem_heap/free_mem_heap/pc_replace_malloc
-   use the blocks stored to keep track of what blocks the client has
-   allocated, so there's no avoiding the requirement of having one
-   block in the tree for each client allocated block, even for
-   zero-sized client blocks.
-
-   The kludge is: have two size fields.  One is the real size
-   (.realSzB) and can be zero.  The other (.fakeSzB) is used, along
-   with .addr to provide the ordering induced by
-   cmp_intervals_HeapBlock.  .fakeSzB is the same as .realSzB except
-   in the single case where .realSzB is zero, in which case .fakeSzB
-   is 1.  This works because the allocator won't allocate two zero
-   sized blocks at the same location (ANSI C disallows this) and so,
-   from an ordering point of view, it's safe treat zero sized blocks
-   as blocks of size 1.  However, we need to keep the real un-kludged
-   size around too (as .realSzB), so that
-   alloc_mem_heap/free_mem_heap/pc_replace_malloc and also
-   classify_block have correct information.
-
-   Storage management: HeapBlocks in the tree are copies of ones
-   presented as args to add_HeapBlock.  The originals are never
-   added to the tree.  del_HeapBlocks_in_range frees up the storage
-   allocated by add_GlobalBlock. */
-
-typedef
-   struct {
-      Addr  addr;
-      SizeT fakeSzB;
-      SizeT realSzB;
-   }
-   HeapBlock;
-
-/* the tree */
-static WordFM* heap = NULL; /* WordFM HeapBlock* void */
-
-static Word cmp_intervals_HeapBlock ( HeapBlock* hb1, HeapBlock* hb2 )
-{
-   tl_assert(hb1);
-   tl_assert(hb2);
-   tl_assert(hb1->fakeSzB > 0);
-   tl_assert(hb2->fakeSzB > 0);
-   if (hb1->addr + hb1->fakeSzB <= hb2->addr) return -1;
-   if (hb2->addr + hb2->fakeSzB <= hb1->addr) return 1;
-   return 0;
-}
-
-
-static void init_heap ( void )
-{
-   tl_assert(!heap);
-   heap = VG_(newFM)( pc_malloc, pc_free,
-                      (Word(*)(UWord,UWord))cmp_intervals_HeapBlock );
-   tl_assert(heap);
-}
-
-
-/* Find the heap block containing 'a', if possible.  Returned pointer
-   is only transiently valid; it will become invalid at the next
-   client malloc or free operation. */
-static HeapBlock* find_HeapBlock_containing ( Addr a )
-{
-   UWord oldK, oldV;
-   HeapBlock key;
-   key.addr    = a;
-   key.fakeSzB = 1;
-   key.realSzB = 0; /* unused, but initialise it anyway */
-   if (VG_(lookupFM)( heap, &oldK, &oldV, (UWord)&key )) {
-      HeapBlock* res = (HeapBlock*)oldK;
-      tl_assert(oldV == 0);
-      tl_assert(res->fakeSzB > 0);
-      tl_assert(res->addr <= a && a < res->addr + res->fakeSzB);
-      /* Now, just one more thing.  If the real size is in fact zero
-         then 'a' can't fall within it.  No matter what 'a' is.  Hence: */
-      if (res->realSzB == 0) {
-         tl_assert(res->fakeSzB == 1);
-         return NULL;
-      }
-      /* Normal case. */
-      return res;
-   } else {
-      return NULL;
-   }
-}
-
-
-/* Add a block to the collection.  If the block overlaps an existing
-   block (it should not, but we need to be robust to such
-   eventualities) we simply assert, as that is probably a result of a
-   bug in our malloc implementation.  (although could be due to buggy
-   custom allocators?)  In any case we must either assert or somehow
-   (as per GlobalBlocks) avoid overlap, so as to preserve the
-   no-overlap property of the tree as a whole. */
-static void add_HeapBlock ( Addr addr, SizeT realSzB )
-{
-   UWord      keyW, valW;
-   HeapBlock* hb;
-
-   SizeT fakeSzB = realSzB == 0  ? 1  : realSzB;
-   tl_assert(fakeSzB > 0);
-
-   tl_assert(addr);
-   hb = pc_malloc( sizeof(HeapBlock) );
-   hb->addr    = addr;
-   hb->fakeSzB = fakeSzB;
-   hb->realSzB = realSzB;
-   /* Check there's no overlap happening. */
-   while (VG_(lookupFM)( heap, &keyW, &valW, (UWord)hb )) {
-      tl_assert(valW == 0);
-      /* keyW is the overlapping HeapBlock*.  Need to handle this
-         case, as per comment above. */
-      tl_assert(0);
-   }
-
-   VG_(addToFM)(heap, (UWord)hb, (UWord)0);
-}
-
-
-/* Delete a heap block at guest address 'addr' from the tree.  Ignore
-   if there is no block beginning exactly at 'addr' (means the guest
-   is handing invalid pointers to free() et al).  Returns the True if
-   found, in which case the block's size is written to *szB.  The
-   shadow block (HeapBlock) is freed, but the payload (what .addr
-   points at) are not. */
-static Bool del_HeapBlock_at ( SizeT* szB, Addr addr )
-{
-   Bool      b;
-   UWord     oldK, oldV;
-   HeapBlock key, *hb;
-   
-   hb = find_HeapBlock_containing(addr);
-   if (!hb) return False;
-   if (hb->addr != addr) return False;
-
-   key.addr    = addr;
-   key.fakeSzB = 1;
-   key.realSzB = 0; /* unused, but initialise it anyway */
-   b = VG_(delFromFM)( heap, &oldK, &oldV, (UWord)&key );
-   tl_assert(b); /* we just looked it up, so deletion must succeed */
-   tl_assert(oldV == 0);
-
-   hb = (HeapBlock*)oldK;
-   tl_assert(hb);
-   tl_assert(hb->addr == addr);
-
-   *szB = hb->realSzB;
-   pc_free(hb);
-   return True;
-}
-
-
-//////////////////////////////////////////////////////////////
-static
-void* alloc_mem_heap ( ThreadId tid,
-                       SizeT size, SizeT alignment, Bool is_zeroed )
-{
-   Addr p;
-   if ( ((SSizeT)size) < 0)
-      return NULL;
-   p = (Addr)VG_(cli_malloc)(alignment, size);
-   if (p == 0)
-      return NULL;
-   if (is_zeroed)
-      VG_(memset)((void*)p, 0, size);
-   add_HeapBlock( p, size );
-   return (void*)p;
-}
-
-static void free_mem_heap ( ThreadId tid, Addr p )
-{
-   SizeT old_size = 0;
-   Bool  found = del_HeapBlock_at( &old_size, p );
-   if (found) {
-      VG_(cli_free)( (void*)p );
-      if (old_size > 0)
-         preen_Invars( p, old_size, True/*isHeap*/ );
-   }
-}
-
-static void* pc_replace_malloc ( ThreadId tid, SizeT n ) {
-   return alloc_mem_heap ( tid, n, VG_(clo_alignment),
-                                   /*is_zeroed*/False );
-}
-
-static void* pc_replace___builtin_new ( ThreadId tid, SizeT n ) {
-   return alloc_mem_heap ( tid, n, VG_(clo_alignment),
-                                   /*is_zeroed*/False );
-}
-
-static void* pc_replace___builtin_vec_new ( ThreadId tid, SizeT n ) {
-   return alloc_mem_heap ( tid, n, VG_(clo_alignment),
-                                   /*is_zeroed*/False );
-}
-
-static void* pc_replace_memalign ( ThreadId tid, SizeT align, SizeT n ) {
-   return alloc_mem_heap ( tid, n, align,
-                                   /*is_zeroed*/False );
-}
-
-static void* pc_replace_calloc ( ThreadId tid, SizeT nmemb, SizeT size1 ) {
-   return alloc_mem_heap ( tid, nmemb*size1, VG_(clo_alignment),
-                                /*is_zeroed*/True );
-}
-
-static void pc_replace_free ( ThreadId tid, void* p ) {
-   free_mem_heap(tid, (Addr)p);
-}
-
-static void pc_replace___builtin_delete ( ThreadId tid, void* p ) {
-   free_mem_heap(tid, (Addr)p);
-}
-
-static void pc_replace___builtin_vec_delete ( ThreadId tid, void* p ) {
-   free_mem_heap(tid, (Addr)p);
-}
-
-static void* pc_replace_realloc ( ThreadId tid, void* p_old, SizeT new_size )
-{
-   Addr p_new;
-
-   /* First try and find the block. */
-   SizeT old_size = 0;
-   Bool  found    = del_HeapBlock_at( &old_size, (Addr)p_old );
-
-   if (!found)
-      return NULL;
-
-   if (old_size > 0)
-      preen_Invars( (Addr)p_old, old_size, True/*isHeap*/ );
-
-   if (new_size <= old_size) {
-      /* new size is smaller: allocate, copy from old to new */
-      p_new = (Addr)VG_(cli_malloc)(VG_(clo_alignment), new_size);
-      VG_(memcpy)((void*)p_new, p_old, new_size);
-   } else {
-      /* new size is bigger: allocate, copy from old to new */
-      p_new = (Addr)VG_(cli_malloc)(VG_(clo_alignment), new_size);
-      VG_(memcpy)((void*)p_new, p_old, old_size);
-   }
-
-   VG_(cli_free)( (void*)p_old );
-   add_HeapBlock( p_new, new_size );
-   return (void*)p_new;
 }
 
 
@@ -678,11 +760,11 @@ static void* pc_replace_realloc ( ThreadId tid, void* p_old, SizeT new_size )
 
 typedef
    enum {
-      Inv_Unset=1,              /* not established yet */
-      Inv_Unknown,              /* unknown location */
-      Inv_StackS,  Inv_StackV,  /* scalar/vector stack block */ 
-      Inv_GlobalS, Inv_GlobalV, /* scalar/vector global block */
-      Inv_Heap                  /* a block in the heap */
+      Inv_Unset=1,  /* not established yet */
+      Inv_Unknown,  /* unknown location */
+      Inv_Stack0,   /* array-typed stack block in innermost frame */
+      Inv_StackN,   /* array-typed stack block in non-innermost frame */
+      Inv_Global,   /* array-typed global block */
    }
    InvarTag;
 
@@ -695,29 +777,26 @@ typedef
          struct {
          } Unknown;
          struct {
-            /* EQ    */ UWord framesBack;
-            /* EQ    */ UWord fbIndex;
-            /* EXPO  */ HChar name[16]; /* asciiz */
-            /* ReVal */ Addr  start;
-            /* ReVal */ SizeT len;
-         } Stack;
+            Addr  addr;
+            SizeT szB;
+            StackBlock* descr;
+         } Stack0; /* innermost stack frame */
          struct {
-            /* EQ */    HChar name[16]; /* asciiz */
-            /* EQ */    HChar soname[16]; /* asciiz */
-            /* ReVal */ Addr  start;
-            /* ReVal */ SizeT len;
+            /* Pointer to a node in the interval tree for
+              this thread. */
+            StackTreeNode* nd;
+         } StackN; /* non-innermost stack frame */
+         struct {
+           /* Pointer to a GlobalBlock in the interval tree of
+              global blocks. */
+           GlobalTreeNode* nd;
          } Global;
-         struct {
-            /* EQ, ReVal */ Addr  start;
-            /* ReVal */     SizeT len;
-         } Heap;
       }
       Inv;
    }
    Invar;
 
-/* Compare two Invars for equality, based on the EQ fields in the
-   declaration above. */
+/* Compare two Invars for equality. */
 static Bool eq_Invar ( Invar* i1, Invar* i2 )
 {
    tl_assert(i1->tag != Inv_Unset);
@@ -727,26 +806,13 @@ static Bool eq_Invar ( Invar* i1, Invar* i2 )
    switch (i1->tag) {
       case Inv_Unknown:
          return True;
-      case Inv_StackS:
-      case Inv_StackV:
-         return i1->Inv.Stack.framesBack == i2->Inv.Stack.framesBack
-                && i1->Inv.Stack.fbIndex == i2->Inv.Stack.fbIndex;
-      case Inv_GlobalS:
-      case Inv_GlobalV:
-         tl_assert(i1->Inv.Global.name[
-                      sizeof(i1->Inv.Global.name)-1 ] == 0);
-         tl_assert(i2->Inv.Global.name[
-                      sizeof(i2->Inv.Global.name)-1 ] == 0);
-         tl_assert(i1->Inv.Global.soname[
-                      sizeof(i1->Inv.Global.soname)-1 ] == 0);
-         tl_assert(i2->Inv.Global.soname[
-                      sizeof(i2->Inv.Global.soname)-1 ] == 0);
-         return
-            0==VG_(strcmp)(i1->Inv.Global.name, i2->Inv.Global.name)
-            && 0==VG_(strcmp)(i1->Inv.Global.soname, i2->Inv.Global.soname);
-      case Inv_Heap:
-         return i1->Inv.Heap.start == i2->Inv.Heap.start
-                && i1->Inv.Heap.len == i2->Inv.Heap.len;
+      case Inv_Stack0:
+         return i1->Inv.Stack0.addr == i2->Inv.Stack0.addr
+                && i1->Inv.Stack0.szB == i2->Inv.Stack0.szB;
+      case Inv_StackN:
+         return i1->Inv.StackN.nd == i2->Inv.StackN.nd;
+      case Inv_Global:
+         return i1->Inv.Global.nd == i2->Inv.Global.nd;
       default:
          tl_assert(0);
    }
@@ -756,7 +822,7 @@ static Bool eq_Invar ( Invar* i1, Invar* i2 )
 
 /* Print selected parts of an Invar, suitable for use in error
    messages. */
-static void show_Invar( HChar* buf, Word nBuf, Invar* inv )
+static void show_Invar( HChar* buf, Word nBuf, Invar* inv, Word depth )
 {
    HChar* str;
    tl_assert(nBuf >= 128);
@@ -765,27 +831,22 @@ static void show_Invar( HChar* buf, Word nBuf, Invar* inv )
       case Inv_Unknown:
          VG_(sprintf)(buf, "%s", "unknown");
          break;
-      case Inv_StackS:
-      case Inv_StackV:
-         tl_assert(inv->Inv.Stack.name[sizeof(inv->Inv.Stack.name)-1] == 0);
-         str = inv->tag == Inv_StackS ? "non-array" : "array";
-         if (inv->Inv.Stack.framesBack == 0) {
-            VG_(sprintf)(buf, "stack %s \"%s\" in this frame",
-                         str, inv->Inv.Stack.name );
-         } else {
-            VG_(sprintf)(buf, "stack %s \"%s\" in frame %lu back from here",
-                         str, inv->Inv.Stack.name,
-                              inv->Inv.Stack.framesBack );
-         }
+      case Inv_Stack0:
+         str = "array";
+         VG_(sprintf)(buf, "stack %s \"%s\" in this frame",
+                      str, inv->Inv.Stack0.descr->name );
          break;
-      case Inv_GlobalS:
-      case Inv_GlobalV:
-         str = inv->tag == Inv_GlobalS ? "non-array" : "array";
+      case Inv_StackN:
+         str = "array";
+         VG_(sprintf)(buf, "stack %s \"%s\" in frame %lu back from here",
+                      str, inv->Inv.StackN.nd->descr->name,
+                           depth - inv->Inv.StackN.nd->depth );
+         break;
+      case Inv_Global:
+         str = "array";
          VG_(sprintf)(buf, "global %s \"%s\" in object with soname \"%s\"",
-                      str, inv->Inv.Global.name, inv->Inv.Global.soname );
-         break;
-      case Inv_Heap:
-         VG_(sprintf)(buf, "%s", "heap block");
+                      str, inv->Inv.Global.nd->descr->name,
+                           inv->Inv.Global.nd->descr->soname );
          break;
       case Inv_Unset:
          VG_(sprintf)(buf, "%s", "Unset!");
@@ -803,12 +864,9 @@ static void show_Invar( HChar* buf, Word nBuf, Invar* inv )
 //////////////////////////////////////////////////////////////
 
 static ULong stats__total_accesses   = 0;
-static ULong stats__reval_Stack      = 0;
-static ULong stats__reval_Global     = 0;
-static ULong stats__reval_Heap       = 0;
-static ULong stats__classify_Stack   = 0;
+static ULong stats__classify_Stack0  = 0;
+static ULong stats__classify_StackN  = 0;
 static ULong stats__classify_Global  = 0;
-static ULong stats__classify_Heap    = 0;
 static ULong stats__classify_Unknown = 0;
 static ULong stats__Invars_preened   = 0;
 static ULong stats__Invars_changed   = 0;
@@ -844,23 +902,12 @@ typedef
          are relevant. */
       Addr sp_at_call;
       Addr fp_at_call;
-      XArray* /* of StackBlock */ blocks_at_call;
+      XArray* /* of Addr */ blocks_added_by_call;
    }
    StackFrame;
 
 
-/* ShadowStack == XArray of StackFrame */
 
-
-static XArray* shadowStacks[VG_N_THREADS];
-
-static void shadowStacks_init ( void )
-{
-   Int i;
-   for (i = 0; i < VG_N_THREADS; i++) {
-      shadowStacks[i] = NULL;
-   }
-}
 
 
 /* Move this somewhere else? */
@@ -868,13 +915,6 @@ static void shadowStacks_init ( void )
    all Inv_Heap Invars that intersect [a,a+len) to Inv_Unknown.  If
    'isHeap' is False, do the same but to the Inv_Global{S,V} Invars
    instead. */
-inline
-static Bool rangesOverlap ( Addr a1, SizeT n1, Addr a2, SizeT n2 ) {
-   tl_assert(n1 > 0 && n2 > 0);
-   if (a1 + n1 < a2) return False;
-   if (a2 + n2 < a1) return False;
-   return True;
-}
 
 __attribute__((noinline))
 static void preen_Invar ( Invar* inv, Addr a, SizeT len, Bool isHeap )
@@ -883,6 +923,7 @@ static void preen_Invar ( Invar* inv, Addr a, SizeT len, Bool isHeap )
    tl_assert(len > 0);
    tl_assert(inv);
    switch (inv->tag) {
+#if 0
       case Inv_Heap:
          tl_assert(inv->Inv.Heap.len > 0);
          if (isHeap && rangesOverlap(a, len, inv->Inv.Heap.start,
@@ -905,6 +946,7 @@ static void preen_Invar ( Invar* inv, Addr a, SizeT len, Bool isHeap )
       case Inv_StackV:
       case Inv_Unknown:
          break;
+#endif
       default: tl_assert(0);
    }
 }
@@ -1061,38 +1103,30 @@ static IInstance* find_or_create_IInstance (
 
 
 __attribute__((noinline))
-static Bool find_in_StackBlocks ( /*OUT*/UWord*  ix,
-                                  /*OUT*/Bool*   isVec,
-                                  /*OUT*/Addr*   blockEA,
-                                  /*OUT*/SizeT*  blockSzB,
-                                  /*OUT*/HChar** name,
-                                  Addr ea, Addr sp, Addr fp,
-                                  UWord szB, XArray* blocks )
+static Addr calculate_StackBlock_EA ( StackBlock* descr,
+                                      Addr sp, Addr fp ) {
+   UWord w1 = (UWord)descr->base;
+   UWord w2 = (UWord)(descr->spRel ? sp : fp);
+   UWord ea = w1 + w2;
+   return ea;
+}
+
+/* Given an array of StackBlocks, return an array of Addrs, holding
+   their effective addresses.  Caller deallocates result array. */
+__attribute__((noinline))
+static XArray* /* Addr */ calculate_StackBlock_EAs (
+                             XArray* /* StackBlock */ blocks,
+                             Addr sp, Addr fp
+                          )
 {
-   Word i, n;
-   OffT delta_FP = ea - fp;
-   OffT delta_SP = ea - sp;
-   tl_assert(szB > 0 && szB <= 512);
-   n = VG_(sizeXA)( blocks );
+   XArray* res = VG_(newXA)( pc_malloc, pc_free, sizeof(Addr) );
+   Word i, n = VG_(sizeXA)( blocks );
    for (i = 0; i < n; i++) {
-      OffT delta;
-      StackBlock* block = VG_(indexXA)( blocks, i );
-      delta = block->spRel ? delta_SP : delta_FP;
-      { Word w1 = block->base;
-        Word w2 = delta;
-        Word w3 = (Word)( ((UWord)delta) + ((UWord)szB) );
-        Word w4 = (Word)( ((UWord)block->base) + ((UWord)block->szB) );
-        if (w1 <= w2 && w3 <= w4) {
-           *ix       = i;
-           *isVec    = block->isVec;
-           *blockEA  = block->base + (block->spRel ? sp : fp);
-           *blockSzB = block->szB;
-           *name     = &block->name[0];
-           return True;
-        }
-      }
+      StackBlock* blk = VG_(indexXA)( blocks, i );
+      Addr ea = calculate_StackBlock_EA( blk, sp, fp );
+      VG_(addToXA)( res, &ea );
    }
-   return False;
+   return res;
 }
 
 
@@ -1111,115 +1145,56 @@ static void classify_address ( /*OUT*/Invar* inv,
    /* First, look in the stack blocks accessible in this instruction's
       frame. */
    { 
-     UWord  ix;
-     Bool   isVec;
-     Addr   blockEA;
-     SizeT  blockSzB;
-     HChar* name;
-     Bool   b = find_in_StackBlocks(
-                   &ix, &isVec, &blockEA, &blockSzB, &name,
-                   ea, sp, fp, szB, thisInstrBlocks
-                );
-     if (b) {
-        SizeT nameSzB = sizeof(inv->Inv.Stack.name);
-        inv->tag = isVec ? Inv_StackV : Inv_StackS;
-        inv->Inv.Stack.framesBack = 0;
-        inv->Inv.Stack.fbIndex    = ix;
-        inv->Inv.Stack.start = blockEA;
-        inv->Inv.Stack.len   = blockSzB;
-        VG_(memcpy)( &inv->Inv.Stack.name[0], name, nameSzB );
-        inv->Inv.Stack.name[ nameSzB-1 ] = 0;
-        stats__classify_Stack++;
-        return;
+     Word i, nBlocks = VG_(sizeXA)( thisInstrBlocks );
+     for (i = 0; i < nBlocks; i++) {
+        StackBlock* descr = VG_(indexXA)( thisInstrBlocks, i );
+        Addr bea = calculate_StackBlock_EA( descr, sp, fp );
+        if (bea <= ea && ea + szB <= bea + descr->szB) {
+           /* found it */
+           inv->tag = Inv_Stack0;
+           inv->Inv.Stack0.addr  = bea;
+           inv->Inv.Stack0.szB   = descr->szB;
+           inv->Inv.Stack0.descr = descr;
+           stats__classify_Stack0++;
+           return;
+        }
      }
    }
-   /* Perhaps it's a heap block? */
-   { HeapBlock* hb = find_HeapBlock_containing(ea);
-     if (hb) {
-        /* it's not possible for find_HeapBlock_containing to
-           return a block of zero size.  Hence: */
-        tl_assert(hb->realSzB > 0);
-        tl_assert(hb->fakeSzB == hb->realSzB);
+   /* Ok, so it's not a block in the top frame.  Perhaps it's a block
+      in some calling frame?  Consult this thread's stack-block
+      interval tree to find out. */
+   { StackTreeNode* nd = find_StackTreeNode( siTrees[tid], ea );
+     /* We know that [ea,ea+1) is in the block, but we need to
+        restrict to the case where the whole access falls within
+        it. */
+     if (nd && !is_subinterval_of(nd->addr, nd->szB, ea, szB)) {
+        nd = NULL;
      }
-     if (hb && !rangesOverlap(ea, szB, hb->addr, hb->realSzB))
-        hb = NULL;
-     if (hb) {
-        inv->tag            = Inv_Heap;
-        inv->Inv.Heap.start = hb->addr;
-        inv->Inv.Heap.len   = hb->realSzB;
-        stats__classify_Heap++;
+     if (nd) {
+        /* found it */
+        inv->tag = Inv_StackN;
+        inv->Inv.StackN.nd = nd;
+           stats__classify_StackN++;
         return;
      }
    }
    /* Not in a stack block.  Try the global pool. */
-   { GlobalBlock* gb2 = find_GlobalBlock_containing(ea);
+   { GlobalTreeNode* nd = find_GlobalTreeNode(giTree, ea);
      /* We know that [ea,ea+1) is in the block, but we need to
         restrict to the case where the whole access falls within
         it. */
-     if (gb2 && !rangesOverlap(ea, szB, gb2->addr, gb2->szB)) {
-        gb2 = NULL;
+     if (nd && !is_subinterval_of(nd->addr, nd->szB, ea, szB)) {
+        nd = NULL;
      }
-     if (gb2) {
-        inv->tag = gb2->isVec ? Inv_GlobalV : Inv_GlobalS;
-        tl_assert(sizeof(gb2->name) == sizeof(inv->Inv.Global.name));
-        tl_assert(sizeof(gb2->soname) == sizeof(inv->Inv.Global.soname));
-        VG_(memcpy)( &inv->Inv.Global.name[0],
-                     gb2->name, sizeof(gb2->name) );
-        VG_(memcpy)( &inv->Inv.Global.soname[0],
-                     gb2->soname, sizeof(gb2->soname) );
-        inv->Inv.Global.start = gb2->addr;
-        inv->Inv.Global.len   = gb2->szB;
+     if (nd) {
+       /* found it */
+        inv->tag = Inv_Global;
+        inv->Inv.Global.nd = nd;
         stats__classify_Global++;
         return;
      }
    }
-   /* Ok, so it's not a block in the top frame.  Perhaps it's a block
-      in some calling frame?  Work back down the stack to see if it's
-      an access to an array in any calling frame. */
-   {
-     UWord  ix;
-     Bool   isVec, b;
-     Addr   blockEA;
-     SizeT  blockSzB;
-     HChar* name;
-     Word   n, i; /* i must remain signed */
-     StackFrame* frame;
-     n = VG_(sizeXA)( thisThreadFrames );
-     tl_assert(n > 0);
-     if (0) VG_(printf)("n = %ld\n", n);
-     i = n - 2;
-     while (1) {
-        if (i < 0) break;
-        frame = VG_(indexXA)( thisThreadFrames, i );
-        if (frame->blocks_at_call == NULL) { i--; continue; }
-        if (0) VG_(printf)("considering %ld\n", i);
-        b = find_in_StackBlocks( 
-                   &ix, &isVec, &blockEA, &blockSzB, &name,
-                   ea, frame->sp_at_call, frame->fp_at_call, szB,
-                   frame->blocks_at_call
-            );
-        if (b) {
-           SizeT nameSzB = sizeof(inv->Inv.Stack.name);
-           inv->tag = isVec ? Inv_StackV : Inv_StackS;
-           inv->Inv.Stack.framesBack = n - i - 1;;
-           inv->Inv.Stack.fbIndex    = ix;
-           inv->Inv.Stack.start = blockEA;
-           inv->Inv.Stack.len   = blockSzB;
-           VG_(memcpy)( &inv->Inv.Stack.name[0], name, nameSzB );
-           inv->Inv.Stack.name[ nameSzB-1 ] = 0;
-           stats__classify_Stack++;
-           return;
-        }
-        if (i == 0) break;
-        i--;
-     }
-   }
-   /* No idea - give up.  We have to say it's Unknown.  Note that this
-      is highly undesirable because it means we can't cache any ReVal
-      info, and so we have to do this very slow path for every access
-      made by this instruction-instance.  That's why we make big
-      efforts to classify all instructions -- once classified, we can
-      do cheap ReVal checks for second and subsequent accesses. */
+   /* No idea - give up. */
    inv->tag = Inv_Unknown;
    stats__classify_Unknown++;
 }
@@ -1233,7 +1208,7 @@ void helperc__mem_access ( /* Known only at run time: */
                            /* Known at translation time: */
                            Word sszB, Addr ip, XArray* ip_frameBlocks )
 {
-   Word n;
+   Word nFrames;
    UWord szB;
    XArray* /* of StackFrame */ frames;
    IInstance* iinstance;
@@ -1248,10 +1223,10 @@ void helperc__mem_access ( /* Known only at run time: */
    tl_assert(is_sane_TId(tid));
    frames = shadowStacks[tid];
    tl_assert(frames != NULL);
-   n = VG_(sizeXA)( frames );
-   tl_assert(n > 0);
+   nFrames = VG_(sizeXA)( frames );
+   tl_assert(nFrames > 0);
 
-   frame = VG_(indexXA)( frames, n-1 );
+   frame = VG_(indexXA)( frames, nFrames-1 );
 
    /* Find the instance info for this instruction. */
    tl_assert(ip_frameBlocks);
@@ -1278,52 +1253,8 @@ void helperc__mem_access ( /* Known only at run time: */
       return;
    }
 
-   /* Now, try to re-validate (ReVal).  What that means is, quickly
-      establish whether or not this instruction is accessing the same
-      block as it was last time.  We hope this is the common, fast
-      case. */
-   switch (inv->tag) {
-      case Inv_StackS:
-      case Inv_StackV:
-         if (inv->Inv.Stack.start <= ea 
-             && ea + szB <= inv->Inv.Stack.start + inv->Inv.Stack.len) {
-            stats__reval_Stack++;
-            return; /* yay! */
-         }
-         break; /* boo! */
-      case Inv_GlobalS:
-      case Inv_GlobalV:
-         if (inv->Inv.Global.start <= ea
-             && ea + szB <= inv->Inv.Global.start + inv->Inv.Global.len) {
-            stats__reval_Global++;
-            return; /* yay! */
-         }
-         break; /* boo! */
-      case Inv_Heap:
-         if (inv->Inv.Heap.start <= ea
-             && ea + szB <= inv->Inv.Heap.start + inv->Inv.Heap.len) {
-            stats__reval_Heap++;
-            return; /* yay! */
-         }
-         break; /* boo! */
-      case Inv_Unknown:
-         break; /* boo! */
-         /* this is the undesirable case.  If the instruction has
-            previously been poking around some place we can't account
-            for, we have to laboriously check all the many places
-            (blocks) we do know about, to check it hasn't transitioned
-            into any of them. */
-      default:
-         tl_assert(0);
-   }
-
-   /* We failed to quickly establish that the instruction is poking
-      around in the same block it was before.  So we have to do it the
-      hard way: generate a full description (Invar) of this access,
-      and compare it to the previous Invar, to see if there are really
-      any differences.  Note that we will be on this code path if the
-      program has made any invalid transitions, and so we may emit
-      error messages in the code below. */
+   /* So generate an Invar and see if it's different from what
+      we had before. */
    classify_address( &new_inv,
                      tid, ea, sp, fp, szB,
                      iinstance->blocks, frames );
@@ -1333,16 +1264,6 @@ void helperc__mem_access ( /* Known only at run time: */
       no error. */
    if (eq_Invar(&new_inv, inv))
       return;
-
-   /* The new and old Invars really are different.  So report an
-      error. */
-   { Bool v_old = inv->tag == Inv_StackV || inv->tag == Inv_GlobalV;
-     Bool v_new = new_inv.tag == Inv_StackV || new_inv.tag == Inv_GlobalV;
-     if ( (v_old || v_new) && new_inv.tag != inv->tag)  {
-     } else {
-        goto noerror;
-     }
-   }
 
    VG_(message)(Vg_UserMsg, "");
    VG_(message)(Vg_UserMsg, "Invalid %s of size %lu", 
@@ -1354,14 +1275,13 @@ void helperc__mem_access ( /* Known only at run time: */
    VG_(message)(Vg_UserMsg, " Address %#lx expected vs actual:", ea);
 
    VG_(memset)(buf, 0, sizeof(buf));
-   show_Invar( buf, sizeof(buf)-1, inv );
+   show_Invar( buf, sizeof(buf)-1, inv, nFrames );
    VG_(message)(Vg_UserMsg, " Expected: %s", buf );
 
    VG_(memset)(buf, 0, sizeof(buf));
-   show_Invar( buf, sizeof(buf)-1, &new_inv );
+   show_Invar( buf, sizeof(buf)-1, &new_inv, nFrames );
    VG_(message)(Vg_UserMsg, " Actual:   %s", buf );
 
-  noerror:
    /* And now install the new observation as "standard", so as to
       make future error messages make more sense. */
    *inv = new_inv;
@@ -1372,17 +1292,13 @@ void helperc__mem_access ( /* Known only at run time: */
 /* Primary push-a-new-frame routine.  Called indirectly from
    generated code. */
 
-#define N_SPACES 40
-static HChar* spaces
-   = "                                        ";
-
 static
 void shadowStack_new_frame ( ThreadId tid,
                              Addr     sp_at_call_insn,
                              Addr     sp_post_call_insn,
                              Addr     fp_at_call_insn,
                              Addr     ip_post_call_insn,
-                             XArray*  blocks_at_call_insn )
+                             XArray*  descrs_at_call_insn )
 {
    Word n;
    StackFrame callee, *caller;
@@ -1393,13 +1309,28 @@ void shadowStack_new_frame ( ThreadId tid,
    tl_assert(n > 0);
 
    if (n > 1)
-      tl_assert(blocks_at_call_insn);
+      tl_assert(descrs_at_call_insn);
 
    caller = VG_(indexXA)( shadowStacks[tid], n-1 );
 
-   caller->sp_at_call     = sp_at_call_insn;
-   caller->fp_at_call     = fp_at_call_insn;
-   caller->blocks_at_call = blocks_at_call_insn;
+   caller->sp_at_call = sp_at_call_insn;
+   caller->fp_at_call = fp_at_call_insn;
+
+   if (descrs_at_call_insn) {
+      caller->blocks_added_by_call
+         = calculate_StackBlock_EAs( descrs_at_call_insn,
+                                     sp_at_call_insn, fp_at_call_insn );
+      add_blocks_to_StackTree( siTrees[tid], 
+                               descrs_at_call_insn,
+                               caller->blocks_added_by_call,
+                               n-1 /* stack depth at which these
+                                      blocks are considered to exist*/ );
+   } else {
+      caller->blocks_added_by_call = NULL;
+   }
+
+   /* caller->blocks_added_by_call is used again (and then freed) when
+      this frame is removed from the stack. */
 
    /* This sets up .htab, .htab_size and .htab_used */
    initialise_hash_table( &callee );
@@ -1407,7 +1338,7 @@ void shadowStack_new_frame ( ThreadId tid,
    callee.creation_sp    = sp_post_call_insn;
    callee.sp_at_call     = 0; // not actually required ..
    callee.fp_at_call     = 0; // .. these 3 initialisations are ..
-   callee.blocks_at_call = NULL; // .. just for cleanness
+   callee.blocks_added_by_call = NULL; // .. just for cleanness
 
    VG_(addToXA)( shadowStacks[tid], &callee );
 
@@ -1460,6 +1391,7 @@ static void shadowStack_unwind ( ThreadId tid, Addr sp_now )
       tl_assert(nFrames >= 0);
       if (nFrames == 0) break;
       innermost = VG_(indexXA)( shadowStacks[tid], nFrames-1 );
+      tl_assert(innermost->blocks_added_by_call == NULL);
       if (sp_now <= innermost->creation_sp) break;
       //VG_(printf)("UNWIND     dump %p\n", innermost->creation_sp);
       tl_assert(innermost->htab);
@@ -1471,8 +1403,22 @@ static void shadowStack_unwind ( ThreadId tid, Addr sp_now )
       innermost->htab_used = 0;
       innermost->sp_at_call = 0;
       innermost->fp_at_call = 0;
-      innermost->blocks_at_call = NULL;
+      innermost->blocks_added_by_call = NULL;
       VG_(dropTailXA)( shadowStacks[tid], 1 );
+
+      /* So now we're "back" in the calling frame.  Remove from this
+         thread's stack-interval-tree, the blocks added at the time of
+         the call. */
+      nFrames = VG_(sizeXA)( shadowStacks[tid] );
+      if (nFrames > 0) {
+         innermost = VG_(indexXA)( shadowStacks[tid], nFrames-1 );
+         tl_assert(innermost->blocks_added_by_call != NULL);
+         del_blocks_from_StackTree( siTrees[tid],
+                                    innermost->blocks_added_by_call );
+         innermost->blocks_added_by_call = NULL;
+      }
+      /* That completes the required tidying of the interval tree
+         associated with the frame we just removed. */
 
       if (0) {
          Word d = nFrames;
@@ -1803,12 +1749,18 @@ static void shadowStack_thread_create ( ThreadId parent, ThreadId child )
    if (parent == VG_INVALID_THREADID) {
       /* creating the main thread's stack */
    } else {
+      tl_assert(0);
       tl_assert(shadowStacks[parent] != NULL);
    }
    if (shadowStacks[child] != NULL) {
+      tl_assert(siTrees[child] != NULL);
       VG_(deleteXA)( shadowStacks[child] );
+      delete_StackTree( siTrees[child] );
+   } else {
+      tl_assert(siTrees[child] == NULL);
    }
    shadowStacks[child] = new_empty_Stack();
+   siTrees[child] = new_StackTree();
 }
 
 /* Once a thread is ready to go, the core calls here.  We take the
@@ -1844,14 +1796,14 @@ static void sg_fini(Int exitcode)
   VG_(message)(Vg_DebugMsg,
      "%'llu total accesses, of which:", stats__total_accesses);
   VG_(message)(Vg_DebugMsg,
-     "    stack: %'12llu classify, %'12llu reval",
-     stats__classify_Stack, stats__reval_Stack);
+     "   stack0: %'12llu classify",
+     stats__classify_Stack0);
   VG_(message)(Vg_DebugMsg,
-     "     heap: %'12llu classify, %'12llu reval",
-     stats__classify_Heap, stats__reval_Heap);
+     "   stackN: %'12llu classify",
+     stats__classify_StackN);
   VG_(message)(Vg_DebugMsg,
-     "   global: %'12llu classify, %'12llu reval",
-     stats__classify_Global, stats__reval_Global);
+     "   global: %'12llu classify",
+     stats__classify_Global);
   VG_(message)(Vg_DebugMsg,
      "  unknown: %'12llu classify",
      stats__classify_Unknown);
@@ -1876,20 +1828,10 @@ static void sg_pre_clo_init(void)
 
    VG_(needs_var_info)            ();
 
-   VG_(needs_malloc_replacement)( pc_replace_malloc,
-                                  pc_replace___builtin_new,
-                                  pc_replace___builtin_vec_new,
-                                  pc_replace_memalign,
-                                  pc_replace_calloc,
-                                  pc_replace_free,
-                                  pc_replace___builtin_delete,
-                                  pc_replace___builtin_vec_delete,
-                                  pc_replace_realloc,
-                                  0 /* no need for client heap redzones */ );
-   shadowStacks_init();
+   ourGlobals_init();
    init_StackBlocks_set();
-   init_globals();
-   init_heap();
+   init_GlobalBlock_set();
+
    VG_(clo_vex_control).iropt_unroll_thresh = 0;
    VG_(clo_vex_control).guest_chase_thresh = 0;
    VG_(track_die_mem_stack) ( sg_die_mem_stack );

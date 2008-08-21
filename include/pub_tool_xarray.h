@@ -103,7 +103,15 @@ extern void VG_(dropTailXA) ( XArray*, Word );
    the existing allocation function to allocate the new space.
    Returns NULL if the allocation function didn't manage to allocate
    space (but did return NULL rather than merely abort.) */
-extern XArray* VG_(cloneXA)( XArray* xa );
+extern XArray* VG_(cloneXA) ( XArray* xa );
+
+/* Allow user to store an arbitrary 32 bit number in the XArray.
+   Intended to be used for run time type checks, since it can get
+   confusing what this is an XArray of, for code with a large number
+   of differently typed XArrays. */
+extern void VG_(setMagicXA) ( XArray* xa, UInt magic );
+extern UInt VG_(getMagicXA) ( XArray* xa );
+
 
 #endif   // __PUB_TOOL_XARRAY_H
 

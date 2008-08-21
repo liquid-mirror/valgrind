@@ -568,7 +568,7 @@ void VG_(deleteFM) ( WordFM* fm, void(*kFin)(UWord), void(*vFin)(UWord) )
 }
 
 /* Add (k,v) to fm. */
-void VG_(addToFM) ( WordFM* fm, UWord k, UWord v )
+Bool VG_(addToFM) ( WordFM* fm, UWord k, UWord v )
 {
    MaybeWord oldV;
    AvlNode* node;
@@ -582,6 +582,7 @@ void VG_(addToFM) ( WordFM* fm, UWord k, UWord v )
    //   fm->vFin( oldV.w );
    if (oldV.b)
       fm->dealloc(node);
+   return oldV.b;
 }
 
 // Delete key from fm, returning associated key and val if found

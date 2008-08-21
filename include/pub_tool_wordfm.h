@@ -86,8 +86,9 @@ void VG_(deleteFM) ( WordFM*, void(*kFin)(UWord), void(*vFin)(UWord) );
 
 /* Add (k,v) to fm.  If a binding for k already exists, it is updated
    to map to this new v.  In that case we should really return the
-   previous v so that caller can finalise it.  Oh well. */
-void VG_(addToFM) ( WordFM* fm, UWord k, UWord v );
+   previous v so that caller can finalise it.  Oh well.  Returns
+   True if a binding for k already exists. */
+Bool VG_(addToFM) ( WordFM* fm, UWord k, UWord v );
 
 // Delete key from fm, returning associated key and val if found
 Bool VG_(delFromFM) ( WordFM* fm,
