@@ -47,7 +47,13 @@
 #include "pub_tool_replacemalloc.h"
 
 
-static void preen_Invars ( Addr a, SizeT len, Bool isHeap ); /*fwds*/
+static
+void preen_Invars ( Addr a, SizeT len, Bool isHeap ); /*fwds*/
+
+static
+void record_error_SorG ( ThreadId tid,
+                         Addr addr, SSizeT sszB,
+                         HChar* expect, HChar* actual );
 
 
 //////////////////////////////////////////////////////////////
@@ -109,6 +115,10 @@ static Bool is_subinterval_of ( Addr aBig, SizeT nBig,
                                 Addr aSmall, SizeT nSmall ) {
    tl_assert(nBig > 0 && nSmall > 0);
    return aBig <= aSmall && aSmall + nSmall <= aBig + nBig;
+}
+
+static Word Word__abs ( Word w ) {
+   return w < 0 ? -w : w;
 }
 
 
@@ -244,16 +254,17 @@ static XArray* /* of StackBlock */
    VG_(sortXA)( orig );
 
    /* Now get rid of any duplicates. */
-   { Word r, w, n = VG_(sizeXA)( orig );
+   { Word r, w, n = VG_(sizeXA)( orig ), nEQ;
      if (n >= 2) {
         w = 0;
+        nEQ = 0;
         for (r = 0; r < n; r++) {
            if (r+1 < n) {
               StackBlock* pR0 = VG_(indexXA)( orig, r+0 );
               StackBlock* pR1 = VG_(indexXA)( orig, r+1 );
               Word c = StackBlock__cmp(pR0,pR1);
               tl_assert(c == -1 || c == 0);
-              if (c == 0) continue;
+              if (c == 0) { nEQ++; continue; }
            }
            if (w != r) {
               StackBlock* pW = VG_(indexXA)( orig, w );
@@ -263,7 +274,7 @@ static XArray* /* of StackBlock */
            w++;
         }
         tl_assert(r == n);
-        tl_assert(w <= n);
+        tl_assert(w + nEQ == n);
         if (w < n) {
            VG_(dropTailXA)( orig, n-w );
         }
@@ -271,14 +282,15 @@ static XArray* /* of StackBlock */
      }
    }
 
+   /* A rather poor sanity check on the results. */
    { Word i, n = VG_(sizeXA)( orig );
-   for (i = 0; i < n-1; i++) {
-     StackBlock* sb1 = (StackBlock*)VG_(indexXA)( orig, i );
-     StackBlock* sb2 = (StackBlock*)VG_(indexXA)( orig, i+1 );
-     if (sb1->base == sb2->base)
-       pp_StackBlocks(orig);
-     tl_assert(sb1->base != sb2->base);
-   }
+     for (i = 0; i < n-1; i++) {
+       StackBlock* sb1 = (StackBlock*)VG_(indexXA)( orig, i );
+       StackBlock* sb2 = (StackBlock*)VG_(indexXA)( orig, i+1 );
+       if (sb1->base == sb2->base)
+          pp_StackBlocks(orig);
+       tl_assert(sb1->base != sb2->base);
+     }
    }
 
    /* Now, do we have it already? */
@@ -825,7 +837,7 @@ static Bool eq_Invar ( Invar* i1, Invar* i2 )
 static void show_Invar( HChar* buf, Word nBuf, Invar* inv, Word depth )
 {
    HChar* str;
-   tl_assert(nBuf >= 128);
+   tl_assert(nBuf >= 96);
    buf[0] = 0;
    switch (inv->tag) {
       case Inv_Unknown:
@@ -870,13 +882,14 @@ static ULong stats__classify_Global  = 0;
 static ULong stats__classify_Unknown = 0;
 static ULong stats__Invars_preened   = 0;
 static ULong stats__Invars_changed   = 0;
+static ULong stats__t_i_b_empty      = 0;
 
 /* A dynamic instance of an instruction */
 typedef
    struct {
       /* IMMUTABLE */
       Addr    insn_addr; /* NB! zero means 'not in use' */
-      XArray* blocks; /* XArray* of StackBlock */
+      XArray* blocks; /* XArray* of StackBlock, or NULL if none */
       /* MUTABLE */
       Invar invar;
    }
@@ -1146,6 +1159,7 @@ static void classify_address ( /*OUT*/Invar* inv,
       frame. */
    { 
      Word i, nBlocks = VG_(sizeXA)( thisInstrBlocks );
+     if (nBlocks == 0) stats__t_i_b_empty++;
      for (i = 0; i < nBlocks; i++) {
         StackBlock* descr = VG_(indexXA)( thisInstrBlocks, i );
         Addr bea = calculate_StackBlock_EA( descr, sp, fp );
@@ -1216,7 +1230,7 @@ void helperc__mem_access ( /* Known only at run time: */
    Invar new_inv;
    ThreadId tid = VG_(get_running_tid)();
    StackFrame* frame;
-   HChar buf[160];
+   HChar bufE[128], bufA[128];
 
    stats__total_accesses++;
 
@@ -1239,8 +1253,7 @@ void helperc__mem_access ( /* Known only at run time: */
 
    inv = &iinstance->invar;
 
-   /* Deal with first uses of instruction instances.  We hope this is
-      rare, because it's expensive. */
+   /* Deal with first uses of instruction instances. */
    if (inv->tag == Inv_Unset) {
       /* This is the first use of this instance of the instruction, so
          we can't make any check; we merely record what we saw, so we
@@ -1265,22 +1278,15 @@ void helperc__mem_access ( /* Known only at run time: */
    if (eq_Invar(&new_inv, inv))
       return;
 
-   VG_(message)(Vg_UserMsg, "");
-   VG_(message)(Vg_UserMsg, "Invalid %s of size %lu", 
-                            sszB < 0 ? "write" : "read", szB );
-   VG_(pp_ExeContext)(
-      VG_(record_ExeContext)( tid, 0/*first_ip_delta*/ ) );
-      // VG_(record_depth_1_ExeContext)( tid ) );
+   tl_assert(inv->tag != Inv_Unset);
 
-   VG_(message)(Vg_UserMsg, " Address %#lx expected vs actual:", ea);
+   VG_(memset)(bufE, 0, sizeof(bufE));
+   show_Invar( bufE, sizeof(bufE)-1, inv, nFrames );
 
-   VG_(memset)(buf, 0, sizeof(buf));
-   show_Invar( buf, sizeof(buf)-1, inv, nFrames );
-   VG_(message)(Vg_UserMsg, " Expected: %s", buf );
+   VG_(memset)(bufA, 0, sizeof(bufA));
+   show_Invar( bufA, sizeof(bufA)-1, &new_inv, nFrames );
 
-   VG_(memset)(buf, 0, sizeof(buf));
-   show_Invar( buf, sizeof(buf)-1, &new_inv, nFrames );
-   VG_(message)(Vg_UserMsg, " Actual:   %s", buf );
+   record_error_SorG( tid, ea, sszB, bufE, bufA );
 
    /* And now install the new observation as "standard", so as to
       make future error messages make more sense. */
@@ -1291,6 +1297,9 @@ void helperc__mem_access ( /* Known only at run time: */
 ////////////////////////////////////////
 /* Primary push-a-new-frame routine.  Called indirectly from
    generated code. */
+
+static UWord stats__max_sitree_size = 0;
+static UWord stats__max_gitree_size = 0;
 
 static
 void shadowStack_new_frame ( ThreadId tid,
@@ -1325,6 +1334,16 @@ void shadowStack_new_frame ( ThreadId tid,
                                caller->blocks_added_by_call,
                                n-1 /* stack depth at which these
                                       blocks are considered to exist*/ );
+      if (0) { UWord s  = VG_(sizeFM)( siTrees[tid] );
+        UWord g  = VG_(sizeFM)( giTree );
+        Bool  sb = s > stats__max_sitree_size;
+        Bool  gb = g > stats__max_gitree_size;
+        if (sb) stats__max_sitree_size = s;
+        if (gb) stats__max_gitree_size = g;
+        if (sb || gb)
+           VG_(printf)("new max tree sizes: S size %ld, G size %ld\n",
+                       stats__max_sitree_size, stats__max_gitree_size );
+      }
    } else {
       caller->blocks_added_by_call = NULL;
    }
@@ -1415,6 +1434,7 @@ static void shadowStack_unwind ( ThreadId tid, Addr sp_now )
          tl_assert(innermost->blocks_added_by_call != NULL);
          del_blocks_from_StackTree( siTrees[tid],
                                     innermost->blocks_added_by_call );
+         VG_(deleteXA)( innermost->blocks_added_by_call );
          innermost->blocks_added_by_call = NULL;
       }
       /* That completes the required tidying of the interval tree
@@ -1518,6 +1538,8 @@ static void instrument_mem_access ( IRSB*   bbOut,
    /* First off, find or create the StackBlocks for this instruction. */
    frameBlocks = get_StackBlocks_for_IP( curr_IP );
    tl_assert(frameBlocks);
+   //if (VG_(sizeXA)( frameBlocks ) == 0)
+   //   frameBlocks = NULL;
 
    /* Generate a call to "helperc__mem_access", passing:
          addr current_SP current_FP szB curr_IP frameBlocks
@@ -1780,6 +1802,172 @@ static void shadowStack_set_initial_SP ( ThreadId tid )
                                0, VG_(get_IP)(tid), NULL );
 }
 
+
+//////////////////////////////////////////////////////////////
+//                                                          //
+// Error management                                         //
+//                                                          //
+//////////////////////////////////////////////////////////////
+
+typedef
+   enum { 
+      XE_SorG=1202 /* stack or global array inconsistency */
+   }
+   XErrorTag;
+
+typedef
+   enum {
+      XS_SorG=2021
+   }
+   XSuppTag;
+
+typedef
+   struct {
+      XErrorTag tag;
+      union {
+         struct {
+            Addr   addr;
+            SSizeT sszB;
+            HChar  expect[128];
+            HChar  actual[128];
+         } SorG;
+      } XE;
+   }
+   XError;
+
+static void init_XError ( XError* xe ) {
+   VG_(memset)(xe, 0, sizeof(*xe) );
+   xe->tag = XE_SorG-1; /* bogus */
+}
+
+
+/* Updates the copy with extra info if necessary.  Nothing to do here;
+   we do all the work up front in the record_error_* functions. */
+static UInt sg_update_extra ( Error* err )
+{
+   XError* extra = (XError*)VG_(get_error_extra)(err);
+   tl_assert(extra);
+   return sizeof(XError);
+}
+
+static void record_error_SorG ( ThreadId tid,
+                                Addr addr, SSizeT sszB,
+                                HChar* expect, HChar* actual )
+{
+   XError xe;
+   init_XError(&xe);
+   xe.XE.SorG.addr = addr;
+   xe.XE.SorG.sszB = sszB;
+   VG_(strncpy)( &xe.XE.SorG.expect[0], expect, sizeof(xe.XE.SorG.expect) );
+   VG_(strncpy)( &xe.XE.SorG.actual[0], actual, sizeof(xe.XE.SorG.actual) );
+   xe.XE.SorG.expect[ sizeof(xe.XE.SorG.expect)-1 ] = 0;
+   xe.XE.SorG.actual[ sizeof(xe.XE.SorG.actual)-1 ] = 0;
+   VG_(maybe_record_error)( tid, XE_SorG, 0, NULL, &xe );
+}
+
+static Bool eq_Error ( VgRes not_used, Error* e1, Error* e2 )
+{
+   XError *xe1, *xe2;
+
+   tl_assert(VG_(get_error_kind)(e1) == VG_(get_error_kind)(e2));
+
+   xe1 = (XError*)VG_(get_error_extra)(e1);
+   xe2 = (XError*)VG_(get_error_extra)(e2);
+   tl_assert(xe1);
+   tl_assert(xe2);
+
+   switch (VG_(get_error_kind)(e1)) {
+      case XE_SorG:
+         return //xe1->XE.SorG.addr == xe2->XE.SorG.addr
+                //&& 
+                xe1->XE.SorG.sszB == xe2->XE.SorG.sszB
+                && 0 == VG_(strncmp)( &xe1->XE.SorG.expect[0],
+                                      &xe2->XE.SorG.expect[0],
+                                      sizeof(xe1->XE.SorG.expect) ) 
+                && 0 == VG_(strncmp)( &xe1->XE.SorG.actual[0],
+                                      &xe2->XE.SorG.actual[0],
+                                      sizeof(xe1->XE.SorG.actual) );
+      default:
+         tl_assert(0);
+   }
+
+   /*NOTREACHED*/
+   tl_assert(0);
+}
+
+static void pp_Error ( Error* err )
+{
+   const Bool show_raw_states = False;
+   XError *xe = (XError*)VG_(get_error_extra)(err);
+
+   switch (VG_(get_error_kind)(err)) {
+
+   case XE_SorG:
+      tl_assert(xe);
+      VG_(message)(Vg_UserMsg, "Invalid %s of size %ld", 
+                               xe->XE.SorG.sszB < 0 ? "write" : "read",
+                               Word__abs(xe->XE.SorG.sszB) );
+      VG_(pp_ExeContext)( VG_(get_error_where)(err) );
+      VG_(message)(Vg_UserMsg, " Address %#lx expected vs actual:",
+                               xe->XE.SorG.addr);
+      VG_(message)(Vg_UserMsg, " Expected: %s", &xe->XE.SorG.expect[0] );
+      VG_(message)(Vg_UserMsg, " Actual:   %s", &xe->XE.SorG.actual[0] );
+      break;
+
+   default:
+      tl_assert(0);
+   } /* switch (VG_(get_error_kind)(err)) */
+}
+
+static Char* sg_get_error_name ( Error* err )
+{
+   switch (VG_(get_error_kind)(err)) {
+      case XE_SorG: return "SorG";
+      default: tl_assert(0); /* fill in missing case */
+   }
+}
+
+static Bool sg_recognised_suppression ( Char* name, Supp *su )
+{
+#  define TRY(_name,_xskind)                   \
+      if (0 == VG_(strcmp)(name, (_name))) {   \
+         VG_(set_supp_kind)(su, (_xskind));    \
+         return True;                          \
+      }
+   TRY("SorG",  XS_SorG);
+   return False;
+#  undef TRY
+}
+
+static Bool sg_read_extra_suppression_info ( Int fd, Char* buf, Int nBuf,
+                                             Supp* su )
+{
+   /* do nothing -- no extra suppression info present.  Return True to
+      indicate nothing bad happened. */
+   return True;
+}
+
+static Bool sg_error_matches_suppression ( Error* err, Supp* su )
+{
+   switch (VG_(get_supp_kind)(su)) {
+   case XS_SorG:   return VG_(get_error_kind)(err) == XE_SorG;
+   //case XS_: return VG_(get_error_kind)(err) == XE_;
+   default: tl_assert(0); /* fill in missing cases */
+   }
+}
+
+static void sg_print_extra_suppression_info ( Error* err )
+{
+   /* Do nothing */
+}
+
+
+//////////////////////////////////////////////////////////////
+//                                                          //
+// main                                                     //
+//                                                          //
+//////////////////////////////////////////////////////////////
+
 /* CALLED indirectly FROM GENERATED CODE */
 static void sg_die_mem_stack ( Addr old_SP, SizeT len ) {
    ThreadId  tid = VG_(get_running_tid)();
@@ -1810,6 +1998,8 @@ static void sg_fini(Int exitcode)
   VG_(message)(Vg_DebugMsg,
      "%'llu Invars preened, of which %'llu changed",
      stats__Invars_preened, stats__Invars_changed);
+  VG_(message)(Vg_DebugMsg,
+               " t_i_b_MT: %'12llu", stats__t_i_b_empty);
   VG_(message)(Vg_DebugMsg, "");
 }
 
@@ -1827,6 +2017,17 @@ static void sg_pre_clo_init(void)
                                  sg_fini);
 
    VG_(needs_var_info)            ();
+
+   VG_(needs_core_errors)         ();
+   VG_(needs_tool_errors)         (eq_Error,
+                                   pp_Error,
+                                   True,/*show TIDs for errors*/
+                                   sg_update_extra,
+                                   sg_recognised_suppression,
+                                   sg_read_extra_suppression_info,
+                                   sg_error_matches_suppression,
+                                   sg_get_error_name,
+                                   sg_print_extra_suppression_info);
 
    ourGlobals_init();
    init_StackBlocks_set();
