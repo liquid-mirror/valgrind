@@ -1601,6 +1601,7 @@ void evhH__pre_thread_releases_lock ( Thread* thr,
 {
    Lock* lock;
    Word  n;
+   Bool  was_heldW;
 
    /* This routine is called prior to a lock release, before
       libpthread has had a chance to validate the call.  Hence we need
@@ -1644,6 +1645,10 @@ void evhH__pre_thread_releases_lock ( Thread* thr,
       goto error;
    }
 
+   /* test just above dominates */
+   tl_assert(lock->heldBy);
+   was_heldW = lock->heldW;
+
    /* The lock is held.  Is this thread one of the holders?  If not,
       report a bug in the client. */
    n = VG_(elemBag)( lock->heldBy, (Word)thr );
@@ -1684,9 +1689,11 @@ void evhH__pre_thread_releases_lock ( Thread* thr,
          tl_assert(!HG_(elemWS)( univ_lsets, thr->locksetW, (Word)lock ));
    } else {
       /* We no longer hold the lock. */
-      if (lock->heldBy) {
-         tl_assert(0 == VG_(elemBag)( lock->heldBy, (Word)thr ));
-      }
+      tl_assert(!lock->heldBy);
+      tl_assert(lock->heldW == False);
+      //if (lock->heldBy) {
+      //   tl_assert(0 == VG_(elemBag)( lock->heldBy, (Word)thr ));
+      //}
       /* update this thread's lockset accordingly. */
       thr->locksetA
          = HG_(delFromWS)( univ_lsets, thr->locksetA, (Word)lock );
@@ -1695,7 +1702,9 @@ void evhH__pre_thread_releases_lock ( Thread* thr,
       /* push our VC into the lock */
       tl_assert(thr->hbthr);
       tl_assert(lock->hbso);
-      libhb_so_send( thr->hbthr, lock->hbso );
+      /* If the lock was previously W-held, then we want to do a
+         strong send, and if previously R-held, then a weak send. */
+      libhb_so_send( thr->hbthr, lock->hbso, was_heldW );
    }
    /* fall through */
 
@@ -1748,7 +1757,7 @@ static inline Thread* get_current_Thread ( void ) {
    /* evidently not in client code.  Do it the slow way. */
    coretid = VG_(get_running_tid)();
    /* FIXME: get rid of the following kludge.  It exists because
-      evim__new_mem is called during initialisation (as notification
+      evh__new_mem is called during initialisation (as notification
       of initial memory layout) and VG_(get_running_tid)() returns
       VG_INVALID_THREADID at that point. */
    if (coretid == VG_INVALID_THREADID)
@@ -1951,7 +1960,7 @@ void evh__HG_PTHREAD_JOIN_POST ( ThreadId stay_tid, Thread* quit_thr )
       stayer. */
    so = libhb_so_alloc();
    tl_assert(so);
-   libhb_so_send(hbthr_q, so);
+   libhb_so_send(hbthr_q, so, True/*strong_send*/);
    libhb_so_recv(hbthr_s, so, True/*strong_recv*/);
    libhb_so_dealloc(so);
 
@@ -2368,7 +2377,7 @@ static void evh__HG_PTHREAD_COND_SIGNAL_PRE ( ThreadId tid, void* cond )
    so = map_cond_to_SO_lookup_or_alloc( cond );
    tl_assert(so);
 
-   libhb_so_send( thr->hbthr, so );
+   libhb_so_send( thr->hbthr, so, True/*strong_send*/ );
 }
 
 /* returns True if it reckons 'mutex' is valid and held by this
@@ -2592,249 +2601,212 @@ static void evh__HG_PTHREAD_RWLOCK_UNLOCK_POST ( ThreadId tid, void* rwl )
 }
 
 
-//zz /* --------------- events to do with semaphores --------------- */
-//zz 
-//zz /* This is similar to but not identical to the handling for condition
-//zz    variables. */
-//zz 
-//zz /* For each semaphore, we maintain a stack of Segments.  When a 'post'
-//zz    operation is done on a semaphore (unlocking, essentially), a new
-//zz    segment is created for the posting thread, and the old segment is
-//zz    pushed on the semaphore's stack.
-//zz 
-//zz    Later, when a (probably different) thread completes 'wait' on the
-//zz    semaphore, we pop a Segment off the semaphore's stack (which should
-//zz    be nonempty).  We start a new segment for the thread and make it
-//zz    also depend on the just-popped segment.  This mechanism creates
-//zz    dependencies between posters and waiters of the semaphore.
-//zz 
-//zz    It may not be necessary to use a stack - perhaps a bag of Segments
-//zz    would do.  But we do need to keep track of how many unused-up posts
-//zz    have happened for the semaphore.
-//zz 
-//zz    Imagine T1 and T2 both post once on a semphore S, and T3 waits
-//zz    twice on S.  T3 cannot complete its waits without both T1 and T2
-//zz    posting.  The above mechanism will ensure that T3 acquires
-//zz    dependencies on both T1 and T2.
-//zz 
-//zz    When a semaphore is initialised with value N, the initialising
-//zz    thread starts a new segment, the semaphore's stack is emptied out,
-//zz    and the old segment is pushed on the stack N times.  This allows up
-//zz    to N waits on the semaphore to acquire a dependency on the
-//zz    initialisation point, which AFAICS is the correct behaviour.
-//zz 
-//zz    We don't emit an error for DESTROY_PRE on a semaphore we don't know
-//zz    about.  We should.
-//zz */
-//zz 
-//zz /* sem_t* -> XArray* Segment* */
-//zz static WordFM* map_sem_to_Segment_stack = NULL;
-//zz 
-//zz static void map_sem_to_Segment_stack_INIT ( void ) {
-//zz    if (map_sem_to_Segment_stack == NULL) {
-//zz       map_sem_to_Segment_stack = VG_(newFM)( hg_zalloc, hg_free, NULL );
-//zz       tl_assert(map_sem_to_Segment_stack != NULL);
-//zz    }
-//zz }
-//zz 
-//zz static void push_Segment_for_sem ( void* sem, Segment* seg ) {
-//zz    XArray* xa;
-//zz    tl_assert(seg);
-//zz    map_sem_to_Segment_stack_INIT();
-//zz    if (VG_(lookupFM)( map_sem_to_Segment_stack, 
-//zz                       NULL, (Word*)&xa, (Word)sem )) {
-//zz       tl_assert(xa);
-//zz       VG_(addToXA)( xa, &seg );
-//zz    } else {
-//zz       xa = VG_(newXA)( hg_zalloc, hg_free, sizeof(Segment*) );
-//zz       VG_(addToXA)( xa, &seg );
-//zz       VG_(addToFM)( map_sem_to_Segment_stack, (Word)sem, (Word)xa );
-//zz    }
-//zz }
-//zz 
-//zz static Segment* mb_pop_Segment_for_sem ( void* sem ) {
-//zz    XArray*  xa;
-//zz    Segment* seg;
-//zz    map_sem_to_Segment_stack_INIT();
-//zz    if (VG_(lookupFM)( map_sem_to_Segment_stack, 
-//zz                       NULL, (Word*)&xa, (Word)sem )) {
-//zz       /* xa is the stack for this semaphore. */
-//zz       Word sz = VG_(sizeXA)( xa );
-//zz       tl_assert(sz >= 0);
-//zz       if (sz == 0)
-//zz          return NULL; /* odd, the stack is empty */
-//zz       seg = *(Segment**)VG_(indexXA)( xa, sz-1 );
-//zz       tl_assert(seg);
-//zz       VG_(dropTailXA)( xa, 1 );
-//zz       return seg;
-//zz    } else {
-//zz       /* hmm, that's odd.  No stack for this semaphore. */
-//zz       return NULL;
-//zz    }
-//zz }
-//zz 
-//zz static void evh__HG_POSIX_SEM_DESTROY_PRE ( ThreadId tid, void* sem )
-//zz {
-//zz    Segment* seg;
-//zz 
-//zz    if (SHOW_EVENTS >= 1)
-//zz       VG_(printf)("evh__HG_POSIX_SEM_DESTROY_PRE(ctid=%d, sem=%p)\n", 
-//zz                   (Int)tid, (void*)sem );
-//zz 
-//zz    /* Empty out the semaphore's segment stack.  This way of doing it
-//zz       is stupid, but at least it's easy. */
-//zz    do {
-//zz      seg = mb_pop_Segment_for_sem( sem );
-//zz    } while (seg);
-//zz 
-//zz    tl_assert(!seg);
-//zz }
-//zz 
-//zz static 
-//zz void evh__HG_POSIX_SEM_INIT_POST ( ThreadId tid, void* sem, UWord value )
-//zz {
-//zz    Segment* seg;
-//zz 
-//zz    if (SHOW_EVENTS >= 1)
-//zz       VG_(printf)("evh__HG_POSIX_SEM_INIT_POST(ctid=%d, sem=%p, value=%lu)\n", 
-//zz                   (Int)tid, (void*)sem, value );
-//zz 
-//zz    /* Empty out the semaphore's segment stack.  This way of doing it
-//zz       is stupid, but at least it's easy. */
-//zz    do {
-//zz      seg = mb_pop_Segment_for_sem( sem );
-//zz    } while (seg);
-//zz    tl_assert(!seg);
-//zz 
-//zz    /* Now create a new segment for the thread, and push the old
-//zz       segment on the stack 'value' times.  Skip this if the initial
-//zz       value is zero -- no point in creating unnecessary segments. */
-//zz    if (value > 0) {
-//zz       /* create a new segment ... */
-//zz       SegmentID new_segid = 0; /* bogus */
-//zz       Segment*  new_seg   = NULL;
-//zz       Thread*   thr       = map_threads_maybe_lookup( tid );
-//zz       tl_assert(thr); /* cannot fail - Thread* must already exist */
-//zz 
-//zz       evhH__start_new_segment_for_thread( &new_segid, &new_seg, thr );
-//zz       tl_assert( is_sane_SegmentID(new_segid) );
-//zz       tl_assert( is_sane_Segment(new_seg) );
-//zz       tl_assert( new_seg->thr == thr );
-//zz       tl_assert( is_sane_Segment(new_seg->prev) );
-//zz       tl_assert( new_seg->prev->vts );
-//zz       new_seg->vts = tick_VTS( new_seg->thr, new_seg->prev->vts );
-//zz 
-//zz       if (value > 10000) {
-//zz          /* If we don't do this, the following while loop runs us out
-//zz             of memory for stupid initial values of 'sem'. */
-//zz          record_error_Misc(
-//zz             thr, "sem_init: initial value exceeds 10000; using 10000" );
-//zz          value = 10000;
-//zz       }
-//zz 
-//zz       while (value > 0) {
-//zz          push_Segment_for_sem( sem, new_seg->prev );
-//zz          value--;
-//zz       }
-//zz    }
-//zz }
-//zz 
-//zz static void evh__HG_POSIX_SEM_POST_PRE ( ThreadId tid, void* sem )
-//zz {
-//zz    /* 'tid' has posted on 'sem'.  Start a new segment for this thread,
-//zz       and push the old segment on a stack of segments associated with
-//zz       'sem'.  This is later used by other thread(s) which successfully
-//zz       exit from a sem_wait on the same sem; then they know what the
-//zz       posting segment was, so a dependency edge back to it can be
-//zz       constructed. */
-//zz 
-//zz    Thread*   thr;
-//zz    SegmentID new_segid;
-//zz    Segment*  new_seg;
-//zz 
-//zz    if (SHOW_EVENTS >= 1)
-//zz       VG_(printf)("evh__HG_POSIX_SEM_POST_PRE(ctid=%d, sem=%p)\n", 
-//zz                   (Int)tid, (void*)sem );
-//zz 
-//zz    thr = map_threads_maybe_lookup( tid );
-//zz    tl_assert(thr); /* cannot fail - Thread* must already exist */
-//zz 
-//zz    // error-if: sem is bogus
-//zz 
-//zz    if (clo_happens_before >= 2) {
-//zz       /* create a new segment ... */
-//zz       new_segid = 0; /* bogus */
-//zz       new_seg   = NULL;
-//zz       evhH__start_new_segment_for_thread( &new_segid, &new_seg, thr );
-//zz       tl_assert( is_sane_SegmentID(new_segid) );
-//zz       tl_assert( is_sane_Segment(new_seg) );
-//zz       tl_assert( new_seg->thr == thr );
-//zz       tl_assert( is_sane_Segment(new_seg->prev) );
-//zz       tl_assert( new_seg->prev->vts );
-//zz       new_seg->vts = tick_VTS( new_seg->thr, new_seg->prev->vts );
-//zz 
-//zz       /* ... and add the binding. */
-//zz       push_Segment_for_sem( sem, new_seg->prev );
-//zz    }
-//zz }
-//zz 
-//zz static void evh__HG_POSIX_SEM_WAIT_POST ( ThreadId tid, void* sem )
-//zz {
-//zz    /* A sem_wait(sem) completed successfully.  Start a new segment for
-//zz       this thread.  Pop the posting-segment for the 'sem' in the
-//zz       mapping, and add a dependency edge from the new segment back to
-//zz       it. */
-//zz 
-//zz    Thread*   thr;
-//zz    SegmentID new_segid;
-//zz    Segment*  new_seg;
-//zz    Segment*  posting_seg;
-//zz 
-//zz    if (SHOW_EVENTS >= 1)
-//zz       VG_(printf)("evh__HG_POSIX_SEM_WAIT_POST(ctid=%d, sem=%p)\n", 
-//zz                   (Int)tid, (void*)sem );
-//zz 
-//zz    thr = map_threads_maybe_lookup( tid );
-//zz    tl_assert(thr); /* cannot fail - Thread* must already exist */
-//zz 
-//zz    // error-if: sem is bogus
-//zz 
-//zz    if (clo_happens_before >= 2) {
-//zz       /* create a new segment ... */
-//zz       new_segid = 0; /* bogus */
-//zz       new_seg   = NULL;
-//zz       evhH__start_new_segment_for_thread( &new_segid, &new_seg, thr );
-//zz       tl_assert( is_sane_SegmentID(new_segid) );
-//zz       tl_assert( is_sane_Segment(new_seg) );
-//zz       tl_assert( new_seg->thr == thr );
-//zz       tl_assert( is_sane_Segment(new_seg->prev) );
-//zz       tl_assert( new_seg->other == NULL);
-//zz 
-//zz       /* and find out which thread posted last on sem; then add a
-//zz          dependency edge back to it. */
-//zz       posting_seg = mb_pop_Segment_for_sem( sem );
-//zz       if (posting_seg) {
-//zz          tl_assert(is_sane_Segment(posting_seg));
-//zz          tl_assert(new_seg->prev);
-//zz          tl_assert(new_seg->prev->vts);
-//zz          new_seg->other      = posting_seg;
-//zz          new_seg->other_hint = 'S';
-//zz          tl_assert(new_seg->other->vts);
-//zz          new_seg->vts = tickL_and_joinR_VTS( 
-//zz                            new_seg->thr, 
-//zz                            new_seg->prev->vts,
-//zz                            new_seg->other->vts );
-//zz       } else {
-//zz          /* Hmm.  How can a wait on 'sem' succeed if nobody posted to
-//zz             it?  If this happened it would surely be a bug in the
-//zz             threads library. */
-//zz          record_error_Misc( thr, "Bug in libpthread: sem_wait succeeded on"
-//zz                                  " semaphore without prior sem_post");
-//zz          tl_assert(new_seg->prev->vts);
-//zz          new_seg->vts = tick_VTS( new_seg->thr, new_seg->prev->vts );
-//zz       }
-//zz    }
-//zz }
+/* --------------- events to do with semaphores --------------- */
+
+/* This is similar to but not identical to the handling for condition
+   variables. */
+
+/* For each semaphore, we maintain a stack of SOs.  When a 'post'
+   operation is done on a semaphore (unlocking, essentially), a new SO
+   is created for the posting thread, the posting thread does a strong
+   send to it (which merely installs the posting thread's VC in the
+   SO), and the SO is pushed on the semaphore's stack.
+
+   Later, when a (probably different) thread completes 'wait' on the
+   semaphore, we pop a SO off the semaphore's stack (which should be
+   nonempty), and do a strong recv from it.  This mechanism creates
+   dependencies between posters and waiters of the semaphore.
+
+   It may not be necessary to use a stack - perhaps a bag of SOs would
+   do.  But we do need to keep track of how many unused-up posts have
+   happened for the semaphore.
+
+   Imagine T1 and T2 both post once on a semaphore S, and T3 waits
+   twice on S.  T3 cannot complete its waits without both T1 and T2
+   posting.  The above mechanism will ensure that T3 acquires
+   dependencies on both T1 and T2.
+
+   When a semaphore is initialised with value N, we do as if we'd
+   posted N times on the semaphore: basically create N SOs and do a
+   strong send to all of then.  This allows up to N waits on the
+   semaphore to acquire a dependency on the initialisation point,
+   which AFAICS is the correct behaviour.
+
+   We don't emit an error for DESTROY_PRE on a semaphore we don't know
+   about.  We should.
+*/
+
+/* sem_t* -> XArray* SO* */
+static WordFM* map_sem_to_SO_stack = NULL;
+
+static void map_sem_to_SO_stack_INIT ( void ) {
+   if (map_sem_to_SO_stack == NULL) {
+      map_sem_to_SO_stack = VG_(newFM)( hg_zalloc, hg_free, NULL );
+      tl_assert(map_sem_to_SO_stack != NULL);
+   }
+}
+
+static void push_SO_for_sem ( void* sem, SO* so ) {
+   XArray* xa;
+   tl_assert(so);
+   map_sem_to_SO_stack_INIT();
+   if (VG_(lookupFM)( map_sem_to_SO_stack, 
+                      NULL, (UWord*)&xa, (UWord)sem )) {
+      tl_assert(xa);
+      VG_(addToXA)( xa, &so );
+   } else {
+      xa = VG_(newXA)( hg_zalloc, hg_free, sizeof(SO*) );
+      VG_(addToXA)( xa, &so );
+      VG_(addToFM)( map_sem_to_SO_stack, (Word)sem, (Word)xa );
+   }
+}
+
+static SO* mb_pop_SO_for_sem ( void* sem ) {
+   XArray*  xa;
+   SO* so;
+   map_sem_to_SO_stack_INIT();
+   if (VG_(lookupFM)( map_sem_to_SO_stack, 
+                      NULL, (UWord*)&xa, (UWord)sem )) {
+      /* xa is the stack for this semaphore. */
+      Word sz = VG_(sizeXA)( xa );
+      tl_assert(sz >= 0);
+      if (sz == 0)
+         return NULL; /* odd, the stack is empty */
+      so = *(SO**)VG_(indexXA)( xa, sz-1 );
+      tl_assert(so);
+      VG_(dropTailXA)( xa, 1 );
+      return so;
+   } else {
+      /* hmm, that's odd.  No stack for this semaphore. */
+      return NULL;
+   }
+}
+
+static void evh__HG_POSIX_SEM_DESTROY_PRE ( ThreadId tid, void* sem )
+{
+   SO* so;
+
+   if (SHOW_EVENTS >= 1)
+      VG_(printf)("evh__HG_POSIX_SEM_DESTROY_PRE(ctid=%d, sem=%p)\n", 
+                  (Int)tid, (void*)sem );
+
+   /* Empty out the semaphore's SO stack.  This way of doing it is
+      stupid, but at least it's easy. */
+   while (1) {
+      so = mb_pop_SO_for_sem( sem );
+      if (!so) break;
+      libhb_so_dealloc(so);
+   }
+}
+
+static 
+void evh__HG_POSIX_SEM_INIT_POST ( ThreadId tid, void* sem, UWord value )
+{
+   SO*     so;
+   Thread* thr;
+
+   if (SHOW_EVENTS >= 1)
+      VG_(printf)("evh__HG_POSIX_SEM_INIT_POST(ctid=%d, sem=%p, value=%lu)\n", 
+                  (Int)tid, (void*)sem, value );
+
+   thr = map_threads_maybe_lookup( tid );
+   tl_assert(thr); /* cannot fail - Thread* must already exist */
+
+   /* Empty out the semaphore's SO stack.  This way of doing it is
+      stupid, but at least it's easy. */
+   while (1) {
+      so = mb_pop_SO_for_sem( sem );
+      if (!so) break;
+      libhb_so_dealloc(so);
+   }
+
+   /* If we don't do this check, the following while loop runs us out
+      of memory for stupid initial values of 'value'. */
+   if (value > 10000) {
+      record_error_Misc(
+         thr, "sem_init: initial value exceeds 10000; using 10000" );
+      value = 10000;
+   }
+
+   /* Now create 'valid' new SOs for the thread, do a strong send to
+      each of them, and push them all on the stack. */
+   for (; value > 0; value--) {
+      Thr* hbthr = thr->hbthr;
+      tl_assert(hbthr);
+
+      so = libhb_so_alloc();
+      libhb_so_send( hbthr, so, True/*strong send*/ );
+      push_SO_for_sem( sem, so );
+   }
+}
+
+static void evh__HG_POSIX_SEM_POST_PRE ( ThreadId tid, void* sem )
+{
+   /* 'tid' has posted on 'sem'.  Create a new SO, do a strong send to
+      it (iow, write our VC into it, then tick ours), and push the SO
+      on on a stack of SOs associated with 'sem'.  This is later used
+      by other thread(s) which successfully exit from a sem_wait on
+      the same sem; by doing a strong recv from SOs popped of the
+      stack, they acquire dependencies on the posting thread
+      segment(s). */
+
+   Thread* thr;
+   SO*     so;
+   Thr*    hbthr;
+
+   if (SHOW_EVENTS >= 1)
+      VG_(printf)("evh__HG_POSIX_SEM_POST_PRE(ctid=%d, sem=%p)\n", 
+                  (Int)tid, (void*)sem );
+
+   thr = map_threads_maybe_lookup( tid );
+   tl_assert(thr); /* cannot fail - Thread* must already exist */
+
+   // error-if: sem is bogus
+
+   hbthr = thr->hbthr;
+   tl_assert(hbthr);
+
+   so = libhb_so_alloc();
+   libhb_so_send( hbthr, so, True/*strong send*/ );
+   push_SO_for_sem( sem, so );
+}
+
+static void evh__HG_POSIX_SEM_WAIT_POST ( ThreadId tid, void* sem )
+{
+   /* A sem_wait(sem) completed successfully.  Pop the posting-SO for
+      the 'sem' from this semaphore's SO-stack, and do a strong recv
+      from it.  This creates a dependency back to one of the post-ers
+      for the semaphore. */
+
+   Thread* thr;
+   SO*     so;
+   Thr*    hbthr;
+
+   if (SHOW_EVENTS >= 1)
+      VG_(printf)("evh__HG_POSIX_SEM_WAIT_POST(ctid=%d, sem=%p)\n", 
+                  (Int)tid, (void*)sem );
+
+   thr = map_threads_maybe_lookup( tid );
+   tl_assert(thr); /* cannot fail - Thread* must already exist */
+
+   // error-if: sem is bogus
+
+   so = mb_pop_SO_for_sem( sem );
+
+   if (so) {
+      hbthr = thr->hbthr;
+      tl_assert(hbthr);
+
+      libhb_so_recv( hbthr, so, True/*strong recv*/ );
+      libhb_so_dealloc(so);
+   } else {
+      /* Hmm.  How can a wait on 'sem' succeed if nobody posted to it?
+         If this happened it would surely be a bug in the threads
+         library. */
+      record_error_Misc( thr, "Bug in libpthread: sem_wait succeeded on"
+                              " semaphore without prior sem_post");
+   }
+}
 
 
 /*--------------------------------------------------------------*/
@@ -3807,19 +3779,21 @@ Bool hg_handle_client_request ( ThreadId tid, UWord* args, UWord* ret)
 
    switch (args[0]) {
 
-//zz       /* --- --- User-visible client requests --- --- */
-//zz 
-//zz       case VG_USERREQ__HG_CLEAN_MEMORY:
-//zz          if (0) VG_(printf)("VG_USERREQ__HG_CLEAN_MEMORY(%#lx,%ld)\n",
-//zz                             args[1], args[2]);
-//zz          /* Call die_mem to (expensively) tidy up properly, if there
-//zz             are any held locks etc in the area */
-//zz          if (args[2] > 0) { /* length */
-//zz             evh__die_mem(args[1], args[2]);
-//zz             /* and then set it to New */
-//zz             evh__new_mem(args[1], args[2]);
-//zz          }
-//zz          break;
+      /* --- --- User-visible client requests --- --- */
+
+      case VG_USERREQ__HG_CLEAN_MEMORY:
+         if (0) VG_(printf)("VG_USERREQ__HG_CLEAN_MEMORY(%#lx,%ld)\n",
+                            args[1], args[2]);
+         /* Call die_mem to (expensively) tidy up properly, if there
+            are any held locks etc in the area.  Calling evh__die_mem
+            and then evh__new_mem is a bit inefficient; probably just
+            the latter would do. */
+         if (args[2] > 0) { /* length */
+            evh__die_mem(args[1], args[2]);
+            /* and then set it to New */
+            evh__new_mem(args[1], args[2]);
+         }
+         break;
 
       /* --- --- Client requests for Helgrind's use only --- --- */
 
@@ -3969,22 +3943,22 @@ Bool hg_handle_client_request ( ThreadId tid, UWord* args, UWord* ret)
          evh__HG_PTHREAD_RWLOCK_UNLOCK_POST( tid, (void*)args[1] );
          break;
 
-//zz       case _VG_USERREQ__HG_POSIX_SEM_INIT_POST: /* sem_t*, unsigned long */
-//zz          evh__HG_POSIX_SEM_INIT_POST( tid, (void*)args[1], args[2] );
-//zz          break;
-//zz 
-//zz       case _VG_USERREQ__HG_POSIX_SEM_DESTROY_PRE: /* sem_t* */
-//zz          evh__HG_POSIX_SEM_DESTROY_PRE( tid, (void*)args[1] );
-//zz          break;
-//zz 
-//zz       case _VG_USERREQ__HG_POSIX_SEM_POST_PRE: /* sem_t* */
-//zz          evh__HG_POSIX_SEM_POST_PRE( tid, (void*)args[1] );
-//zz          break;
-//zz 
-//zz       case _VG_USERREQ__HG_POSIX_SEM_WAIT_POST: /* sem_t* */
-//zz          evh__HG_POSIX_SEM_WAIT_POST( tid, (void*)args[1] );
-//zz          break;
-//zz 
+      case _VG_USERREQ__HG_POSIX_SEM_INIT_POST: /* sem_t*, unsigned long */
+         evh__HG_POSIX_SEM_INIT_POST( tid, (void*)args[1], args[2] );
+         break;
+
+      case _VG_USERREQ__HG_POSIX_SEM_DESTROY_PRE: /* sem_t* */
+         evh__HG_POSIX_SEM_DESTROY_PRE( tid, (void*)args[1] );
+         break;
+
+      case _VG_USERREQ__HG_POSIX_SEM_POST_PRE: /* sem_t* */
+         evh__HG_POSIX_SEM_POST_PRE( tid, (void*)args[1] );
+         break;
+
+      case _VG_USERREQ__HG_POSIX_SEM_WAIT_POST: /* sem_t* */
+         evh__HG_POSIX_SEM_WAIT_POST( tid, (void*)args[1] );
+         break;
+
 //zz       case _VG_USERREQ__HG_GET_MY_SEGMENT: { // -> Segment*
 //zz          Thread*   thr;
 //zz          SegmentID segid;

@@ -74,10 +74,31 @@ SO* libhb_so_alloc ( void );
 /* Dealloc one */
 void libhb_so_dealloc ( SO* so );
 
-/* Send a message via a sync object */
-void libhb_so_send ( Thr* thr, SO* so );
+/* Send a message via a sync object.  If strong_send is true, the
+   resulting inter-thread dependency seen by a future receiver of this
+   message will be a dependency on this thread only.  That is, in a
+   strong send, the VC inside the SO is replaced by the clock of the
+   sending thread.  For a weak send, the sender's VC is joined into
+   that already in the SO, if any.  This subtlety is needed to model
+   rwlocks: a strong send corresponds to releasing a rwlock that had
+   been w-held (or releasing a standard mutex).  A weak send
+   corresponds to releasing a rwlock that has been r-held.
 
-/* Recv a message from a sync object */
+   (rationale): Since in general many threads may hold a rwlock in
+   r-mode, a weak send facility is necessary in order that the final
+   SO reflects the join of the VCs of all the threads releasing the
+   rwlock, rather than merely holding the VC of the most recent thread
+   to release it. */
+void libhb_so_send ( Thr* thr, SO* so, Bool strong_send );
+
+/* Recv a message from a sync object.  If strong_recv is True, the
+   resulting inter-thread dependency is considered adequate to induce
+   a h-b ordering on both reads and writes.  If it is False, the
+   implied h-b ordering exists only for reads, not writes.  This is
+   subtlety is required in order to support reader-writer locks: a
+   thread doing a write-acquire of a rwlock (or acquiring a normal
+   mutex) models this by doing a strong receive.  A thread doing a
+   read-acquire of a rwlock models this by doing a !strong_recv. */
 void libhb_so_recv ( Thr* thr, SO* so, Bool strong_recv );
 
 /* Has this SO ever been sent on? */

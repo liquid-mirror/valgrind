@@ -94,9 +94,10 @@ static void notify_free ( Addr a ) {
 
 
 static void* main_zalloc ( SizeT n ) {
+   void* v;
    tl_assert(n >= 0);
    stats__zallocd += (ULong)n;
-   void* v = main_zalloc_P(n);
+   v = main_zalloc_P(n);
    //   notify_malloc( (Addr)v, n );
    return v;
 }
@@ -5645,7 +5646,9 @@ void libhb_so_dealloc ( SO* so )
    SO__Dealloc(so);
 }
 
-void libhb_so_send ( Thr* thr, SO* so )
+/* See comments in libhb.h for details on the meaning of 
+   strong vs weak sends and strong vs weak receives. */
+void libhb_so_send ( Thr* thr, SO* so, Bool strong_send )
 {
    /* Copy the VTSs from 'thr' into the sync object, and then move
       the thread along one step. */
@@ -5656,23 +5659,6 @@ void libhb_so_send ( Thr* thr, SO* so )
      tl_assert(ord == POrd_EQ || ord == POrd_LT);
    }
 
-#if 0
-   /* since we're overwriting the VtsIDs in the SO, we need to drop
-      any references made by the previous contents thereof */
-   if (so->viR == VtsID_INVALID) {
-      tl_assert(so->viW == VtsID_INVALID);
-   } else {
-      tl_assert(so->viW != VtsID_INVALID);
-      VtsID__rcdec(so->viR);
-      VtsID__rcdec(so->viW);
-   }
-
-   /* copy sender's clocks into the message */
-   so->viR = thr->viR;
-   so->viW = thr->viW;
-   VtsID__rcinc(so->viR);
-   VtsID__rcinc(so->viW);
-#else
    /* since we're overwriting the VtsIDs in the SO, we need to drop
       any references made by the previous contents thereof */
    if (so->viR == VtsID_INVALID) {
@@ -5682,16 +5668,18 @@ void libhb_so_send ( Thr* thr, SO* so )
       VtsID__rcinc(so->viR);
       VtsID__rcinc(so->viW);
    } else {
+      /* In a strong send, we dump any previous VC in the SO and
+         install the sending thread's VC instead.  For a weak send we
+         must join2 with what's already there. */
       tl_assert(so->viW != VtsID_INVALID);
       VtsID__rcdec(so->viR);
       VtsID__rcdec(so->viW);
-      so->viR = VtsID__join2( so->viR, thr->viR );
-      so->viW = VtsID__join2( so->viW, thr->viW );
+      so->viR = strong_send ? thr->viR : VtsID__join2( so->viR, thr->viR );
+      so->viW = strong_send ? thr->viW : VtsID__join2( so->viW, thr->viW );
       VtsID__rcinc(so->viR);
       VtsID__rcinc(so->viW);
    }
 
-#endif
    /* move both parent clocks along */
    VtsID__rcdec(thr->viR);
    VtsID__rcdec(thr->viW);
@@ -5699,7 +5687,10 @@ void libhb_so_send ( Thr* thr, SO* so )
    thr->viW = VtsID__tick( thr->viW, thr );
    VtsID__rcinc(thr->viR);
    VtsID__rcinc(thr->viW);
-   show_thread_state("  send", thr);
+   if (strong_send)
+      show_thread_state("s-send", thr);
+   else
+      show_thread_state("w-send", thr);
 }
 
 void libhb_so_recv ( Thr* thr, SO* so, Bool strong_recv )
@@ -5707,7 +5698,6 @@ void libhb_so_recv ( Thr* thr, SO* so, Bool strong_recv )
    if (so->viR != VtsID_INVALID) {
       tl_assert(so->viW != VtsID_INVALID);
 
-#if 1
       /* Weak receive (basically, an R-acquisition of a R-W lock).
          This advances the read-clock of the receiver, but not the
          write-clock. */
@@ -5723,20 +5713,6 @@ void libhb_so_recv ( Thr* thr, SO* so, Bool strong_recv )
          thr->viW = VtsID__join2( thr->viW, so->viW );
          VtsID__rcinc(thr->viW);
       }
-#else
-      VtsID__rcdec(thr->viR);
-      VtsID__rcdec(thr->viW);
-
-      if (strong_recv) {
-         thr->viR = VtsID__join2( thr->viR, so->viR );
-         thr->viW = VtsID__join2( thr->viW, so->viW );
-      } else {
-         thr->viR = VtsID__join2( thr->viR, so->viR );
-      }
-
-      VtsID__rcinc(thr->viR);
-      VtsID__rcinc(thr->viW);
-#endif
 
       if (strong_recv) 
          show_thread_state("s-recv", thr);
