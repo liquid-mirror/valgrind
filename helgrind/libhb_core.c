@@ -5391,18 +5391,25 @@ static SVal msm_write ( SVal svOld, /*MOD*/MSMInfo* info )
 //                                                     //
 /////////////////////////////////////////////////////////
 
+// (UInt) `echo "Synchronisation object" | md5sum`
+#define SO_MAGIC 0x56b3c5b0
+
 struct _SO {
    VtsID viR; /* r-clock of sender */
    VtsID viW; /* w-clock of sender */
+   UInt  magic;
 };
 
 static SO* SO__Alloc ( void ) {
    SO* so = main_zalloc( sizeof(SO) );
-   so->viR = VtsID_INVALID;
-   so->viW = VtsID_INVALID;
+   so->viR   = VtsID_INVALID;
+   so->viW   = VtsID_INVALID;
+   so->magic = SO_MAGIC;
    return so;
 }
 static void SO__Dealloc ( SO* so ) {
+   tl_assert(so);
+   tl_assert(so->magic == SO_MAGIC);
    if (so->viR == VtsID_INVALID) {
       tl_assert(so->viW == VtsID_INVALID);
    } else {
@@ -5410,6 +5417,7 @@ static void SO__Dealloc ( SO* so ) {
       VtsID__rcdec(so->viR);
       VtsID__rcdec(so->viW);
    }
+   so->magic = 0;
    main_dealloc( so );
 }
 
@@ -5643,6 +5651,8 @@ SO* libhb_so_alloc ( void )
 
 void libhb_so_dealloc ( SO* so )
 {
+   tl_assert(so);
+   tl_assert(so->magic == SO_MAGIC);
    SO__Dealloc(so);
 }
 
@@ -5652,6 +5662,9 @@ void libhb_so_send ( Thr* thr, SO* so, Bool strong_send )
 {
    /* Copy the VTSs from 'thr' into the sync object, and then move
       the thread along one step. */
+
+   tl_assert(so);
+   tl_assert(so->magic == SO_MAGIC);
 
    /* stay sane .. a thread's read-clock must always lead or be the
       same as its write-clock */
@@ -5695,6 +5708,9 @@ void libhb_so_send ( Thr* thr, SO* so, Bool strong_send )
 
 void libhb_so_recv ( Thr* thr, SO* so, Bool strong_recv )
 {
+   tl_assert(so);
+   tl_assert(so->magic == SO_MAGIC);
+
    if (so->viR != VtsID_INVALID) {
       tl_assert(so->viW != VtsID_INVALID);
 
