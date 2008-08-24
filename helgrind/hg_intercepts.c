@@ -534,9 +534,10 @@ PTH_FUNC(int, pthreadZumutexZuunlock, // pthread_mutex_unlock
 
 /* Handled:   pthread_cond_wait pthread_cond_timedwait
               pthread_cond_signal pthread_cond_broadcast
+              pthread_cond_destroy
 
-   Unhandled: pthread_cond_init pthread_cond_destroy
-              -- are these important?
+   Unhandled: pthread_cond_init
+              -- is this important?
 */
 
 // pthread_cond_wait
@@ -713,6 +714,37 @@ PTH_FUNC(int, pthreadZucondZubroadcastZAZa, // pthread_cond_broadcast@*
 
    if (TRACE_PTH_FNS) {
       fprintf(stderr, " cobro -> %d >>\n", ret);
+   }
+
+   return ret;
+}
+
+
+// pthread_cond_destroy
+PTH_FUNC(int, pthreadZucondZudestroyZAZa, // pthread_cond_destroy@*
+              pthread_cond_t* cond)
+{
+   int ret;
+   OrigFn fn;
+
+   VALGRIND_GET_ORIG_FN(fn);
+
+   if (TRACE_PTH_FNS) {
+      fprintf(stderr, "<< pthread_cond_destroy %p", cond);
+      fflush(stderr);
+   }
+
+   DO_CREQ_v_W(_VG_USERREQ__HG_PTHREAD_COND_DESTROY_PRE,
+               pthread_cond_t*,cond);
+
+   CALL_FN_W_W(ret, fn, cond);
+
+   if (ret != 0) {
+      DO_PthAPIerror( "pthread_cond_destroy", ret );
+   }
+
+   if (TRACE_PTH_FNS) {
+      fprintf(stderr, " codestr -> %d >>\n", ret);
    }
 
    return ret;

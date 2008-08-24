@@ -462,6 +462,7 @@ static inline Bool is_sane_LockNorP ( Lock* lock ) {
 static void del_LockN ( Lock* lk ) 
 {
    tl_assert(is_sane_LockN(lk));
+   tl_assert(lk->hbso);
    libhb_so_dealloc(lk->hbso);
    if (lk->heldBy)
       VG_(deleteBag)( lk->heldBy );
@@ -2232,6 +2233,9 @@ void evh__HG_PTHREAD_MUTEX_DESTROY_PRE( ThreadId tid, void* mutex )
       }
       tl_assert( !lk->heldBy );
       tl_assert( is_sane_LockN(lk) );
+
+      map_locks_delete( lk->guestaddr );
+      del_LockN( lk );
    }
 
    if (clo_sanity_flags & SCE_LOCKS)
@@ -2353,6 +2357,16 @@ static SO* map_cond_to_SO_lookup_or_alloc ( void* cond ) {
    }
 }
 
+static void map_cond_to_SO_delete ( void* cond ) {
+   UWord keyW, valW;
+   map_cond_to_SO_INIT();
+   if (VG_(delFromFM)( map_cond_to_SO, &keyW, &valW, (UWord)cond )) {
+      SO* so = (SO*)valW;
+      tl_assert(keyW == (UWord)cond);
+      libhb_so_dealloc(so);
+   }
+}
+
 static void evh__HG_PTHREAD_COND_SIGNAL_PRE ( ThreadId tid, void* cond )
 {
    /* 'tid' has signalled on 'cond'.  As per the comment above, bind
@@ -2469,6 +2483,20 @@ static void evh__HG_PTHREAD_COND_WAIT_POST ( ThreadId tid,
    libhb_so_recv( thr->hbthr, so, True/*strong_recv*/ );
 }
 
+static void evh__HG_PTHREAD_COND_DESTROY_PRE ( ThreadId tid,
+                                               void* cond )
+{
+   /* Deal with destroy events.  The only purpose is to free storage
+      associated with the CV, so as to avoid any possible resource
+      leaks. */
+   if (SHOW_EVENTS >= 1)
+      VG_(printf)("evh__HG_PTHREAD_COND_DESTROY_PRE"
+                  "(ctid=%d, cond=%p)\n", 
+                  (Int)tid, (void*)cond );
+
+   map_cond_to_SO_delete( cond );
+}
+
 
 /* -------------- events to do with rwlocks -------------- */
 
@@ -2519,6 +2547,9 @@ void evh__HG_PTHREAD_RWLOCK_DESTROY_PRE( ThreadId tid, void* rwl )
       }
       tl_assert( !lk->heldBy );
       tl_assert( is_sane_LockN(lk) );
+
+      map_locks_delete( lk->guestaddr );
+      del_LockN( lk );
    }
 
    if (clo_sanity_flags & SCE_LOCKS)
@@ -2647,11 +2678,13 @@ static void map_sem_to_SO_stack_INIT ( void ) {
 }
 
 static void push_SO_for_sem ( void* sem, SO* so ) {
+   UWord   keyW;
    XArray* xa;
    tl_assert(so);
    map_sem_to_SO_stack_INIT();
    if (VG_(lookupFM)( map_sem_to_SO_stack, 
-                      NULL, (UWord*)&xa, (UWord)sem )) {
+                      &keyW, (UWord*)&xa, (UWord)sem )) {
+      tl_assert(keyW == (UWord)sem);
       tl_assert(xa);
       VG_(addToXA)( xa, &so );
    } else {
@@ -2662,13 +2695,16 @@ static void push_SO_for_sem ( void* sem, SO* so ) {
 }
 
 static SO* mb_pop_SO_for_sem ( void* sem ) {
+   UWord    keyW;
    XArray*  xa;
    SO* so;
    map_sem_to_SO_stack_INIT();
    if (VG_(lookupFM)( map_sem_to_SO_stack, 
-                      NULL, (UWord*)&xa, (UWord)sem )) {
+                      &keyW, (UWord*)&xa, (UWord)sem )) {
       /* xa is the stack for this semaphore. */
-      Word sz = VG_(sizeXA)( xa );
+      Word sz; 
+      tl_assert(keyW == (UWord)sem);
+      sz = VG_(sizeXA)( xa );
       tl_assert(sz >= 0);
       if (sz == 0)
          return NULL; /* odd, the stack is empty */
@@ -2684,11 +2720,14 @@ static SO* mb_pop_SO_for_sem ( void* sem ) {
 
 static void evh__HG_POSIX_SEM_DESTROY_PRE ( ThreadId tid, void* sem )
 {
-   SO* so;
+   UWord keyW, valW;
+   SO*   so;
 
    if (SHOW_EVENTS >= 1)
       VG_(printf)("evh__HG_POSIX_SEM_DESTROY_PRE(ctid=%d, sem=%p)\n", 
                   (Int)tid, (void*)sem );
+
+   map_sem_to_SO_stack_INIT();
 
    /* Empty out the semaphore's SO stack.  This way of doing it is
       stupid, but at least it's easy. */
@@ -2696,6 +2735,14 @@ static void evh__HG_POSIX_SEM_DESTROY_PRE ( ThreadId tid, void* sem )
       so = mb_pop_SO_for_sem( sem );
       if (!so) break;
       libhb_so_dealloc(so);
+   }
+
+   if (VG_(delFromFM)( map_sem_to_SO_stack, &keyW, &valW, (UWord)sem )) {
+      XArray* xa = (XArray*)valW;
+      tl_assert(keyW == (UWord)sem);
+      tl_assert(xa);
+      tl_assert(VG_(sizeXA)(xa) == 0); /* preceding loop just emptied it */
+      VG_(deleteXA)(xa);
    }
 }
 
@@ -3908,6 +3955,11 @@ Bool hg_handle_client_request ( ThreadId tid, UWord* args, UWord* ret)
          *ret = mutex_is_valid ? 1 : 0;
          break;
       }
+
+      /* cond=arg[1] */
+      case _VG_USERREQ__HG_PTHREAD_COND_DESTROY_PRE:
+         evh__HG_PTHREAD_COND_DESTROY_PRE( tid, (void*)args[1] );
+         break;
 
       /* Thread successfully completed pthread_cond_wait, cond=arg[1],
          mutex=arg[2] */
