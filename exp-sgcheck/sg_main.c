@@ -652,12 +652,12 @@ static Bool del_GlobalTree_range ( /*MOD*/WordFM* gitree,
 //////////////////////////////////////////////////////////////
 
 /* Each thread has:
-   * a shadow stack of StackFrames
+   * a shadow stack of StackFrames, which is a double-linked list
    * an stack block interval tree
 */
-static XArray* /* StackFrame */    shadowStacks[VG_N_THREADS];
+static  struct _StackFrame*          shadowStacks[VG_N_THREADS];
 
-static WordFM* /* StackTreeNode */ siTrees[VG_N_THREADS];
+static  WordFM* /* StackTreeNode */  siTrees[VG_N_THREADS];
 
 /* Additionally, there is one global variable interval tree
    for the entire process.
@@ -897,10 +897,21 @@ typedef
 
 
 typedef
-   struct {
+   struct _StackFrame {
       /* The sp when the frame was created, so we know when to get rid
          of it. */
       Addr creation_sp;
+      /* The stack frames for a thread are arranged as a doubly linked
+         list.  Obviously the outermost frame in the stack has .outer
+         as NULL and the innermost in theory has .inner as NULL.
+         However, when a function returns, we don't delete the
+         just-vacated StackFrame.  Instead, it is retained in the list
+         and will be re-used when the next call happens.  This is so
+         as to avoid constantly having to dynamically allocate and
+         deallocate frames. */
+      struct _StackFrame* inner;
+      struct _StackFrame* outer;
+      Word depth; /* 0 for outermost; increases inwards */
       /* Information for each memory referencing instruction, for this
          instantiation of the function.  The iinstances array is
          operated as a simple linear-probe hash table, which is
@@ -974,6 +985,7 @@ static void preen_Invars ( Addr a, SizeT len, Bool isHeap )
    StackFrame* frame;
    tl_assert(len > 0);
    for (i = 0; i < VG_N_THREADS; i++) {
+tl_assert(0);
       stack = shadowStacks[i];
       if (!stack)
          continue;
@@ -1151,8 +1163,7 @@ static void classify_address ( /*OUT*/Invar* inv,
                                ThreadId tid,
                                Addr ea, Addr sp, Addr fp,
                                UWord szB,
-                               XArray* /* of StackBlock */ thisInstrBlocks,
-                               XArray* /* of StackFrame */ thisThreadFrames )
+                               XArray* /* of StackBlock */ thisInstrBlocks )
 {
    tl_assert(szB > 0);
    /* First, look in the stack blocks accessible in this instruction's
@@ -1222,9 +1233,7 @@ void helperc__mem_access ( /* Known only at run time: */
                            /* Known at translation time: */
                            Word sszB, Addr ip, XArray* ip_frameBlocks )
 {
-   Word nFrames;
    UWord szB;
-   XArray* /* of StackFrame */ frames;
    IInstance* iinstance;
    Invar* inv;
    Invar new_inv;
@@ -1235,12 +1244,8 @@ void helperc__mem_access ( /* Known only at run time: */
    stats__total_accesses++;
 
    tl_assert(is_sane_TId(tid));
-   frames = shadowStacks[tid];
-   tl_assert(frames != NULL);
-   nFrames = VG_(sizeXA)( frames );
-   tl_assert(nFrames > 0);
-
-   frame = VG_(indexXA)( frames, nFrames-1 );
+   frame = shadowStacks[tid];
+   tl_assert(frame);
 
    /* Find the instance info for this instruction. */
    tl_assert(ip_frameBlocks);
@@ -1260,8 +1265,7 @@ void helperc__mem_access ( /* Known only at run time: */
          can compare it against what happens for 2nd and subsequent
          accesses. */
       classify_address( inv,
-                        tid, ea, sp, fp, szB,
-                        iinstance->blocks, frames );
+                        tid, ea, sp, fp, szB, iinstance->blocks );
       tl_assert(inv->tag != Inv_Unset);
       return;
    }
@@ -1269,8 +1273,7 @@ void helperc__mem_access ( /* Known only at run time: */
    /* So generate an Invar and see if it's different from what
       we had before. */
    classify_address( &new_inv,
-                     tid, ea, sp, fp, szB,
-                     iinstance->blocks, frames );
+                     tid, ea, sp, fp, szB, iinstance->blocks );
    tl_assert(new_inv.tag != Inv_Unset);
 
    /* Did we see something different from before?  If no, then there's
@@ -1281,10 +1284,10 @@ void helperc__mem_access ( /* Known only at run time: */
    tl_assert(inv->tag != Inv_Unset);
 
    VG_(memset)(bufE, 0, sizeof(bufE));
-   show_Invar( bufE, sizeof(bufE)-1, inv, nFrames );
+   show_Invar( bufE, sizeof(bufE)-1, inv, frame->depth );
 
    VG_(memset)(bufA, 0, sizeof(bufA));
-   show_Invar( bufA, sizeof(bufA)-1, &new_inv, nFrames );
+   show_Invar( bufA, sizeof(bufA)-1, &new_inv, frame->depth );
 
    record_error_SorG( tid, ea, sszB, bufE, bufA );
 
@@ -1309,18 +1312,20 @@ void shadowStack_new_frame ( ThreadId tid,
                              Addr     ip_post_call_insn,
                              XArray*  descrs_at_call_insn )
 {
-   Word n;
-   StackFrame callee, *caller;
+   StackFrame *callee, *caller;
    tl_assert(is_sane_TId(tid));
-   tl_assert(shadowStacks[tid] != NULL);
 
-   n = VG_(sizeXA)( shadowStacks[tid] );
-   tl_assert(n > 0);
+   caller = shadowStacks[tid];
+   tl_assert(caller);
 
-   if (n > 1)
+   if (caller->outer) { /* "this is not the outermost frame" */
       tl_assert(descrs_at_call_insn);
-
-   caller = VG_(indexXA)( shadowStacks[tid], n-1 );
+      tl_assert(caller->outer->inner == caller);
+      tl_assert(caller->outer->depth >= 0);
+      tl_assert(1 + caller->outer->depth == caller->depth);
+   } else {
+      tl_assert(caller->depth == 0);
+   }
 
    caller->sp_at_call = sp_at_call_insn;
    caller->fp_at_call = fp_at_call_insn;
@@ -1332,17 +1337,19 @@ void shadowStack_new_frame ( ThreadId tid,
       add_blocks_to_StackTree( siTrees[tid], 
                                descrs_at_call_insn,
                                caller->blocks_added_by_call,
-                               n-1 /* stack depth at which these
-                                      blocks are considered to exist*/ );
-      if (0) { UWord s  = VG_(sizeFM)( siTrees[tid] );
-        UWord g  = VG_(sizeFM)( giTree );
-        Bool  sb = s > stats__max_sitree_size;
-        Bool  gb = g > stats__max_gitree_size;
-        if (sb) stats__max_sitree_size = s;
-        if (gb) stats__max_gitree_size = g;
-        if (sb || gb)
-           VG_(printf)("new max tree sizes: S size %ld, G size %ld\n",
-                       stats__max_sitree_size, stats__max_gitree_size );
+                               caller->depth /* stack depth at which
+                                                these blocks are
+                                                considered to exist*/ );
+      if (0) {
+         UWord s  = VG_(sizeFM)( siTrees[tid] );
+         UWord g  = VG_(sizeFM)( giTree );
+         Bool  sb = s > stats__max_sitree_size;
+         Bool  gb = g > stats__max_gitree_size;
+         if (sb) stats__max_sitree_size = s;
+         if (gb) stats__max_gitree_size = g;
+         if (sb || gb)
+            VG_(printf)("new max tree sizes: S size %ld, G size %ld\n",
+                        stats__max_sitree_size, stats__max_gitree_size );
       }
    } else {
       caller->blocks_added_by_call = NULL;
@@ -1351,18 +1358,29 @@ void shadowStack_new_frame ( ThreadId tid,
    /* caller->blocks_added_by_call is used again (and then freed) when
       this frame is removed from the stack. */
 
+   if (caller->inner) {
+      callee = caller->inner;
+   } else {
+      callee = pc_malloc(sizeof(StackFrame));
+      VG_(memset)(callee, 0, sizeof(StackFrame));
+      callee->outer = caller;
+      caller->inner = callee;
+      callee->depth = 1 + caller->depth;
+      tl_assert(callee->inner == NULL);
+   }
+
    /* This sets up .htab, .htab_size and .htab_used */
-   initialise_hash_table( &callee );
+   initialise_hash_table( callee );
 
-   callee.creation_sp    = sp_post_call_insn;
-   callee.sp_at_call     = 0; // not actually required ..
-   callee.fp_at_call     = 0; // .. these 3 initialisations are ..
-   callee.blocks_added_by_call = NULL; // .. just for cleanness
+   callee->creation_sp    = sp_post_call_insn;
+   callee->sp_at_call     = 0; // not actually required ..
+   callee->fp_at_call     = 0; // .. these 3 initialisations are ..
+   callee->blocks_added_by_call = NULL; // .. just for cleanness
 
-   VG_(addToXA)( shadowStacks[tid], &callee );
+   shadowStacks[tid] = callee;
 
    if (0)
-   { Word d = VG_(sizeXA)( shadowStacks[tid] );
+   { Word d = callee->depth;
      HChar fnname[80];
      Bool ok;
      Addr ip = ip_post_call_insn;
@@ -1399,17 +1417,20 @@ void helperc__new_frame ( Addr sp_post_call_insn,
 /* Primary remove-frame(s) routine.  Called indirectly from
    generated code. */
 
+__attribute__((noinline))
 static void shadowStack_unwind ( ThreadId tid, Addr sp_now )
 {
    StackFrame* innermost;
    tl_assert(is_sane_TId(tid));
-   tl_assert(shadowStacks[tid] != NULL);
+   innermost = shadowStacks[tid];
+   tl_assert(innermost);
    //VG_(printf)("UNWIND sp_new = %p\n", sp_now);
    while (1) {
-      Word nFrames = VG_(sizeXA)( shadowStacks[tid] );
-      tl_assert(nFrames >= 0);
-      if (nFrames == 0) break;
-      innermost = VG_(indexXA)( shadowStacks[tid], nFrames-1 );
+      if (!innermost->outer)
+         break;
+      if (innermost->inner)
+         tl_assert(innermost->inner->outer == innermost);
+      tl_assert(innermost->outer->inner == innermost);
       tl_assert(innermost->blocks_added_by_call == NULL);
       if (sp_now <= innermost->creation_sp) break;
       //VG_(printf)("UNWIND     dump %p\n", innermost->creation_sp);
@@ -1423,14 +1444,13 @@ static void shadowStack_unwind ( ThreadId tid, Addr sp_now )
       innermost->sp_at_call = 0;
       innermost->fp_at_call = 0;
       innermost->blocks_added_by_call = NULL;
-      VG_(dropTailXA)( shadowStacks[tid], 1 );
+      innermost = innermost->outer;
 
       /* So now we're "back" in the calling frame.  Remove from this
          thread's stack-interval-tree, the blocks added at the time of
          the call. */
-      nFrames = VG_(sizeXA)( shadowStacks[tid] );
-      if (nFrames > 0) {
-         innermost = VG_(indexXA)( shadowStacks[tid], nFrames-1 );
+
+      if (innermost->outer) { /* not at the outermost frame */
          tl_assert(innermost->blocks_added_by_call != NULL);
          del_blocks_from_StackTree( siTrees[tid],
                                     innermost->blocks_added_by_call );
@@ -1441,7 +1461,7 @@ static void shadowStack_unwind ( ThreadId tid, Addr sp_now )
          associated with the frame we just removed. */
 
       if (0) {
-         Word d = nFrames;
+         Word d = innermost->depth;
          while (d > 0) {
             VG_(printf)(" ");
             d--;
@@ -1450,6 +1470,9 @@ static void shadowStack_unwind ( ThreadId tid, Addr sp_now )
       }
 
    }
+
+   tl_assert(innermost);
+   shadowStacks[tid] = innermost;
 }
 
 
@@ -1742,20 +1765,21 @@ IRSB* di_instrument ( VgCallbackClosure* closure,
 //                                                          //
 //////////////////////////////////////////////////////////////
 
-/* Make a new shadow stack, with a creation_sp of effectively infinity,
-   so that the top frame can never be removed. */
-static XArray* /* of StackFrame */ new_empty_Stack ( void )
+/* Make a new empty stack frame that is suitable for being the
+   outermost frame in a stack.  It has a creation_sp of effectively
+   infinity, so it can never be removed. */
+static StackFrame* new_root_StackFrame ( void )
 {
-   StackFrame sframe;
-   XArray* st = VG_(newXA)( pc_malloc, pc_free, sizeof(StackFrame) );
-   VG_(memset)( &sframe, 0, sizeof(sframe) );
-   sframe.creation_sp = ~0UL;
+   StackFrame* sframe = pc_malloc(sizeof(StackFrame));
+   VG_(memset)( sframe, 0, sizeof(*sframe) );
+   sframe->creation_sp = ~0UL;
 
    /* This sets up .htab, .htab_size and .htab_used */
-   initialise_hash_table( &sframe );
+   initialise_hash_table( sframe );
 
-   VG_(addToXA)( st, &sframe );
-   return st;
+   /* ->depth, ->outer, ->inner are 0, NULL, NULL */
+
+   return sframe;
 }
 
 /* Primary routine for setting up the shadow stack for a new thread.
@@ -1771,17 +1795,45 @@ static void shadowStack_thread_create ( ThreadId parent, ThreadId child )
    if (parent == VG_INVALID_THREADID) {
       /* creating the main thread's stack */
    } else {
-      tl_assert(0);
+      tl_assert(is_sane_TId(parent));
+      tl_assert(parent != child);
       tl_assert(shadowStacks[parent] != NULL);
+      tl_assert(siTrees[parent] != NULL);
    }
-   if (shadowStacks[child] != NULL) {
-      tl_assert(siTrees[child] != NULL);
-      VG_(deleteXA)( shadowStacks[child] );
-      delete_StackTree( siTrees[child] );
-   } else {
+
+   /* Create the child's stack.  Bear in mind we may be re-using
+      it. */
+   if (shadowStacks[child] == NULL) {
+      /* First use of this stack.  Just allocate an initial frame. */
       tl_assert(siTrees[child] == NULL);
+   } else {
+      StackFrame *frame, *frame2;
+      /* re-using a stack. */
+      /* get rid of the interval tree */
+      tl_assert(siTrees[child] != NULL);
+      delete_StackTree( siTrees[child] );
+      siTrees[child] = NULL;
+      /* Throw away all existing frames. */
+      frame = shadowStacks[child];
+      while (frame->outer)
+         frame = frame->outer;
+      tl_assert(frame->depth == 0);
+      while (frame) {
+         frame2 = frame->inner;
+         if (frame2) tl_assert(1 + frame->depth == frame2->depth);
+         pc_free(frame);
+         frame = frame2;
+      }
+      shadowStacks[child] = NULL;
    }
-   shadowStacks[child] = new_empty_Stack();
+
+   tl_assert(shadowStacks[child] == NULL);
+   tl_assert(siTrees[child] == NULL);
+
+   /* Set up the initial stack frame. */
+   shadowStacks[child] = new_root_StackFrame();
+
+   /* and set up the child's stack block interval tree. */
    siTrees[child] = new_StackTree();
 }
 
@@ -1792,12 +1844,13 @@ static void shadowStack_thread_create ( ThreadId parent, ThreadId child )
    frame for the thread. */
 static void shadowStack_set_initial_SP ( ThreadId tid )
 {
-   StackFrame* sfp;
+   StackFrame* sf;
    tl_assert(is_sane_TId(tid));
-   tl_assert(shadowStacks[tid] != NULL);
-   tl_assert( VG_(sizeXA)(shadowStacks[tid]) == 1 );
-   sfp = VG_(indexXA)( shadowStacks[tid], 0 );
-   tl_assert(sfp->creation_sp == ~0UL);
+   sf = shadowStacks[tid];
+   tl_assert(sf != NULL);
+   tl_assert(sf->outer == NULL);
+   tl_assert(sf->inner == NULL);
+   tl_assert(sf->creation_sp == ~0UL);
    shadowStack_new_frame( tid, 0, VG_(get_SP)(tid),
                                0, VG_(get_IP)(tid), NULL );
 }
