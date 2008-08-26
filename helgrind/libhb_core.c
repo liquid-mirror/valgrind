@@ -627,8 +627,8 @@ void HG_(deleteFM) ( WordFM* fm, void(*kFin)(UWord),
 /* Add (k,v,w) to fm.  If a binding for k already exists, it is
    updated to map to this new (v,w).  In that case we should really
    return the previous (v,w) so that caller can finalise them.  Oh
-   well. */
-void HG_(addToFM) ( WordFM* fm, UWord k, UWord v, UWord w );
+   well.  Returns True if a binding for k already exists.*/
+Bool HG_(addToFM) ( WordFM* fm, UWord k, UWord v, UWord w );
 
 // Delete key from fm, returning associated key and vals if found
 Bool HG_(delFromFM) ( WordFM* fm,
@@ -1371,7 +1371,7 @@ void HG_(deleteFM) ( WordFM* fm, void(*kFin)(UWord),
 }
 
 /* Add (k,v,w) to fm. */
-void HG_(addToFM) ( WordFM* fm, UWord k, UWord v, UWord w )
+Bool HG_(addToFM) ( WordFM* fm, UWord k, UWord v, UWord w )
 {
    MaybeWord oldV;
    AvlNode* node;
@@ -1386,6 +1386,7 @@ void HG_(addToFM) ( WordFM* fm, UWord k, UWord v, UWord w )
    //   fm->vFin( oldV.w );
    if (oldV.b)
       fm->dealloc(node);
+   return oldV.b;
 }
 
 // Delete key from fm, returning associated key and vals if found
@@ -5165,32 +5166,214 @@ static void SVal__rcdec ( SVal s ) {
 //                                                     //
 /////////////////////////////////////////////////////////
 
-static WordFM* /* Addr -> struct EC_* */ event_map = NULL;
+#define N_EVENT_MAPS     4
+#define N_EVENTS_PER_MAP (1*1000*1000)
 
-static void event_map_init ( void ) {
-   tl_assert(event_map == NULL);
-   event_map = HG_(newFM)( main_zalloc, main_dealloc,
-                           NULL/*unboxed word cmp*/ );
-   tl_assert(event_map != NULL);
+static WordFM* /* Addr -> (struct EC_*, Thr*) */
+               event_map[N_EVENT_MAPS];
+
+static Word    event_map_n[N_EVENT_MAPS];
+
+static Word    event_map_curr;
+
+
+
+static void event_map_init ( void )
+{
+   Word i;
+   for (i = 0; i < N_EVENT_MAPS; i++) {
+      event_map[i] = NULL;
+      event_map_n[i] = 0;
+   }
+
+   event_map_curr = 0;
+   event_map[event_map_curr]
+      = HG_(newFM)( main_zalloc, main_dealloc,
+                    NULL/*unboxed word cmp*/ );
+   VG_(printf)("libhb: event map %ld in use\n", event_map_curr);
 }
 
-static void event_map_bind ( Addr a, struct EC_* ec, Thr* thr ) {
-  if (0) return;
-  HG_(addToFM)( event_map, (UWord)a, (UWord)ec, (UWord)thr );
+static void event_map_bind ( Addr a, struct EC_* ec, Thr* thr )
+{
+   Bool b;
+   if (0) return;
+   b = HG_(addToFM)( event_map[event_map_curr],
+                     (UWord)a, (UWord)ec, (UWord)thr );
+   if (!b) {
+      /* not already present */
+      event_map_n[event_map_curr]++;
+
+      if (event_map_n[event_map_curr] >= N_EVENTS_PER_MAP) {
+         /* this tree is full.  move on to the next one. */
+         event_map_curr++;
+         if (event_map_curr == N_EVENT_MAPS) event_map_curr = 0;
+         tl_assert(event_map_curr >= 0 && event_map_curr < N_EVENT_MAPS);
+         /* Throw away the contents of the oldest tree we have, if any. */
+         if (event_map[event_map_curr]) {
+            VG_(printf)("libhb: event map %ld dumped\n", event_map_curr);
+            /* check the counting mechanism is working correctly */
+            tl_assert(HG_(sizeFM)(event_map[event_map_curr]) 
+                      == event_map_n[event_map_curr]);
+            HG_(deleteFM)(event_map[event_map_curr], NULL, NULL, NULL);
+            event_map[event_map_curr] = NULL;
+            event_map_n[event_map_curr] = 0;
+         } else {
+            tl_assert(event_map_n[event_map_curr] == 0);
+         }
+
+         VG_(printf)("libhb: event map %ld in use\n", event_map_curr);
+         event_map[event_map_curr]
+            = HG_(newFM)( main_zalloc, main_dealloc,
+                          NULL/*unboxed word cmp*/ );
+      }
+
+   }
 }
 
 static
-Bool event_map_lookup ( struct EC_** resEC, Thr** resThr, Addr a ) {
+Bool event_map_lookup ( struct EC_** resEC, Thr** resThr, Addr a )
+{
+   /* Look through all the event maps, from youngest to oldest. */
    UWord key, val, wal;
-   if (HG_(lookupFM)( event_map, &key, &val, &wal, (UWord)a )) {
-      tl_assert(key == a);
-      *resEC  = (struct EC_*)val;
-      *resThr = (Thr*)wal;
-      return True;
-   } else {
-      return False;
+   Word i, n;
+   n = event_map_curr;
+   for (i = 0; i < N_EVENT_MAPS; i++) {
+      WordFM* map = event_map[n];
+      if (map && HG_(lookupFM)( map, &key, &val, &wal, (UWord)a )) {
+         tl_assert(key == a);
+         *resEC  = (struct EC_*)val;
+         *resThr = (Thr*)wal;
+         return True;
+      }
+      n++;
+      if (n == N_EVENT_MAPS) n = 0;
+      tl_assert(n >= 0 && n < N_EVENT_MAPS);
+   }
+   return False;
+}
+
+
+#if 0
+/////////////////////////////////////////////////////////
+//                                                     //
+// Change-event map2                                   //
+//                                                     //
+/////////////////////////////////////////////////////////
+
+#define N_FRAMES 8
+#define N_TREES 4
+
+typedef
+   struct {
+      /* Put .frames first so that it has offset zero within the
+         element.  This allows us to use RCEC__cmp as the comparison
+         fn in the oset. */
+      UWord frames[N_FRAMES];
+      UWord rc;
+   }
+   RCEC;
+
+static OSet* contextTree = NULL; /* OSet* of RC_EC */
+
+
+/* Gives an arbitrary total order on RCEC .frames fields */
+static Word RCEC__cmp ( RCEC* ec1, RCEC* ec2 ) {
+   Word i;
+   for (i = 0; i < N_FRAMES; i++) {
+      if (ec1->frames[i] < ec2->frames[i]) return -1;
+      if (ec1->frames[i] > ec2->frames[i]) return 1;
+   }
+   return 0;
+}
+
+
+/* Dec the ref of this EC_RC, and if it becomes zero,
+   delete it from the contextTree. */
+static void ctxt__rcdec ( RC_EC* ec )
+{
+   tl_assert(ec->rc > 0);
+   ec->rc--;
+   if (ec->rc == 0) {
+      void* nd = OSetGen_Remove( contextTree, ec );
+      tl_assert(nd); /* must be in the tree */
+      VG_(OSetGen_FreeNode)( contextTree, nd );
    }
 }
+
+static void ctxt__rcinc ( RC_EC* ec )
+{
+   ec->rc++;
+}
+
+/* Find the given RCEC in the tree, and return a pointer to it.  Or,
+   if not present, add the given one to the tree (by making a copy of
+   it, so the caller can immediately deallocate the original) and
+   return a pointer to the copy.  Note that the inserted node will
+   have .rc of zero and so the caller must immediatly increment it. */
+static RCEC* ctxt__find_or_add ( RCEC* example )
+{
+   tl_assert(example->rc == 0);
+   RCEC* copy = VG_(OSetGen_Lookup)( contextTree, example );
+   if (!copy) {
+      copy = VG_(OSetGen_AllocNode)( contextTree, sizeof(RCEC) );
+      VG_(memcpy)(copy, example, sizeof(RCEC));
+      VG_(OSetGen_Insert)( contextTree, copy );
+   }
+   return copy;
+}
+
+/////////////////////////////////////////////////////////
+
+typedef
+   struct {
+      Addr  ea;
+      RCEC* rcec;
+      Thr*  thr;
+   }
+   OldRef;
+
+static Word OldRef__cmp ( OldRef* r1, OldRef* r2 ) {
+   if (r1->ea < r2->ea) return -1;
+   if (r1->ea > r2->ea) return 1;
+   return 0;
+}
+
+static OSet* oldrefTrees[N_TREES]; /* OSet* of OldRef */
+static Word  oldrefTSizes[N_TREES]; /* # elements in corresponding OSet */
+static Word  oldrefCurr;
+
+static void event_map_bind ( Addr a, struct EC_* ec, Thr* thr ) {
+  OldRef* prev = VG_(OSetGen_Lookup)( oldrefTrees[oldrefCurr],
+                                      &a );
+  if (prev) {
+
+  }
+}
+
+/////////////////////////////////////////////////////////
+
+static void event_map2_init ( void )
+{
+   Word i;
+   tl_assert(offsetof(RCEC,frames) == 0);
+   tl_assert(!contextTree);
+   contextTree = OSetGen_Create( offsetof(RCEC,frames), RCEC__cmp, 
+                                 main_zalloc, main_free );
+   tl_assert(contextTree);
+
+   for (i = 0; i < N_TREES; i++) {
+      oldrefTrees[i] = NULL;
+      oldrefTSizes[i] = 0;
+   }
+
+   tl_assert(offsetof(OldRef,ea) == 0);
+   oldrefCurr = 0;
+   oldrefTrees[oldrefCurr] = VG_(OSetGen_Create)( offsetof(OldRef,ea),
+                                                  OldRef__cmp, 
+                                                  main_zalloc, main_free );
+   tl_assert(oldrefTrees[oldrefCurr]);
+}
+#endif
 
 
 /////////////////////////////////////////////////////////
@@ -5203,7 +5386,7 @@ Bool event_map_lookup ( struct EC_** resEC, Thr** resThr, Addr a ) {
 
 #define MSM_RACE2ERR 1
 
-#define MSM_CHECK 1
+#define MSM_CHECK 0
 
 static ULong stats__msm_read         = 0;
 static ULong stats__msm_read_change  = 0;
@@ -5603,8 +5786,8 @@ void libhb_shutdown ( Bool show_stats )
       );
       VG_(printf)( "   libhb: %lu entries in vts_set\n",
                    HG_(sizeFM)( vts_set ) );
-      VG_(printf)( "   libhb: %lu entries in event_map\n", 
-                   HG_(sizeFM)( event_map ) );
+      //VG_(printf)( "   libhb: %lu entries in event_map\n", 
+      //             HG_(sizeFM)( event_map ) );
       mem_report();
 
 #if 0
