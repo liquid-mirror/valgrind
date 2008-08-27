@@ -415,6 +415,36 @@ AvlNode* avl_find_node ( AvlNode* t, Word k, Word(*kCmp)(UWord,UWord) )
    }
 }
 
+static
+void avl_find_bounds ( AvlNode* t, 
+                       /*OUT*/UWord* kMinP, /*OUT*/UWord* kMaxP,
+                       UWord minKey, UWord maxKey, UWord key,
+                       Word(*kCmp)(UWord,UWord) )
+{
+   UWord lowerBound = minKey;
+   UWord upperBound = maxKey;
+   while (t) {
+      Word cmpresS = kCmp ? kCmp(t->key, key)
+                          : cmp_unsigned_Words(t->key, key);
+      if (cmpresS < 0) {
+         lowerBound = t->key;
+         t = t->child[1];
+         continue;
+      }
+      if (cmpresS > 0) {
+         upperBound = t->key;
+         t = t->child[0];
+         continue;
+      }
+      /* We should never get here.  If we do, it means the given key
+         is actually present in the tree, which means the original
+         call was invalid -- an error on the caller's part. */
+      tl_assert(0);
+   }
+   *kMinP = lowerBound;
+   *kMaxP = upperBound;
+}
+
 // Clear the iterator stack.
 static void stackClear(WordFM* fm)
 {
@@ -617,6 +647,14 @@ Bool VG_(lookupFM) ( WordFM* fm,
    } else {
       return False;
    }
+}
+
+// See comment in pub_tool_wordfm.h for explanation
+void VG_(findBoundsFM)( WordFM* fm,
+                        /*OUT*/UWord* kMinP, /*OUT*/UWord* kMaxP,
+                        UWord minKey, UWord maxKey, UWord key )
+{
+  avl_find_bounds( fm->root, kMinP, kMaxP, minKey, maxKey, key, fm->kCmp );
 }
 
 UWord VG_(sizeFM) ( WordFM* fm )

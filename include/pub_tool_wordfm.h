@@ -98,6 +98,16 @@ Bool VG_(delFromFM) ( WordFM* fm,
 Bool VG_(lookupFM) ( WordFM* fm, 
                      /*OUT*/UWord* keyP, /*OUT*/UWord* valP, UWord key );
 
+// Find the closest key values bracketing the given key, assuming the 
+// given key is not present in the map (this is asserted for).  minKey
+// and maxKey are the minimum and maximum possible key values.  The
+// resulting bracket values are returned in *kMinP and *kMaxP.  It 
+// follows that if fm is empty then the returned values are simply 
+// minKey and maxKey.
+void VG_(findBoundsFM)( WordFM* fm,
+                        /*OUT*/UWord* kMinP, /*OUT*/UWord* kMaxP,
+                        UWord minKey, UWord maxKey, UWord key );
+
 // How many elements are there in fm?
 UWord VG_(sizeFM) ( WordFM* fm );
 

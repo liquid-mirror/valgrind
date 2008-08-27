@@ -117,8 +117,19 @@ static Bool is_subinterval_of ( Addr aBig, SizeT nBig,
    return aBig <= aSmall && aSmall + nSmall <= aBig + nBig;
 }
 
+inline
 static Word Word__abs ( Word w ) {
    return w < 0 ? -w : w;
+}
+
+inline
+static Addr Addr__min ( Addr a1, Addr a2 ) {
+   return a1 < a2 ? a1 : a2;
+}
+
+inline
+static Addr Addr__max ( Addr a1, Addr a2 ) {
+   return a1 < a2 ? a2 : a1;
 }
 
 
@@ -647,8 +658,192 @@ static Bool del_GlobalTree_range ( /*MOD*/WordFM* gitree,
 
 //////////////////////////////////////////////////////////////
 //                                                          //
+// Invar                                                    //
+//                                                          //
+//////////////////////////////////////////////////////////////
+
+/* An invariant, as resulting from watching the destination of a
+   memory referencing instruction.  Initially is Inv_Unset until the
+   instruction makes a first access. */
+
+typedef
+   enum {
+      Inv_Unset=1,  /* not established yet */
+      Inv_Unknown,  /* unknown location */
+      Inv_Stack0,   /* array-typed stack block in innermost frame */
+      Inv_StackN,   /* array-typed stack block in non-innermost frame */
+      Inv_Global,   /* array-typed global block */
+   }
+   InvarTag;
+
+typedef
+   struct {
+      InvarTag tag;
+      union {
+         struct {
+         } Unset;
+         struct {
+         } Unknown;
+         struct {
+            Addr  addr;
+            SizeT szB;
+            StackBlock* descr;
+         } Stack0; /* innermost stack frame */
+         struct {
+            /* Pointer to a node in the interval tree for
+              this thread. */
+            StackTreeNode* nd;
+         } StackN; /* non-innermost stack frame */
+         struct {
+           /* Pointer to a GlobalBlock in the interval tree of
+              global blocks. */
+           GlobalTreeNode* nd;
+         } Global;
+      }
+      Inv;
+   }
+   Invar;
+
+/* Partial debugging printing for an Invar. */
+static void pp_Invar ( Invar* i )
+{
+   switch (i->tag) {
+      case Inv_Unset: 
+         VG_(printf)("Unset");
+         break;
+      case Inv_Unknown:
+         VG_(printf)("Unknown");
+         break;
+      case Inv_Stack0:
+         VG_(printf)("Stack0 [%#lx,+%lu)",
+                     i->Inv.Stack0.addr, i->Inv.Stack0.szB);
+         break;
+      case Inv_StackN:
+         VG_(printf)("StackN [%#lx,+%lu)",
+                     i->Inv.StackN.nd->addr, i->Inv.StackN.nd->szB);
+         break;
+      case Inv_Global:
+         VG_(printf)("Global [%#lx,+%lu)",
+                     i->Inv.Global.nd->addr, i->Inv.Global.nd->szB);
+         break;
+      default:
+         tl_assert(0);
+   }
+}
+
+/* Compare two Invars for equality. */
+static Bool eq_Invar ( Invar* i1, Invar* i2 )
+{
+   tl_assert(i1->tag != Inv_Unset);
+   tl_assert(i2->tag != Inv_Unset);
+   if (i1->tag != i2->tag)
+      return False;
+   switch (i1->tag) {
+      case Inv_Unknown:
+         return True;
+      case Inv_Stack0:
+         return i1->Inv.Stack0.addr == i2->Inv.Stack0.addr
+                && i1->Inv.Stack0.szB == i2->Inv.Stack0.szB;
+      case Inv_StackN:
+         return i1->Inv.StackN.nd == i2->Inv.StackN.nd;
+      case Inv_Global:
+         return i1->Inv.Global.nd == i2->Inv.Global.nd;
+      default:
+         tl_assert(0);
+   }
+   /*NOTREACHED*/
+   tl_assert(0);
+}
+
+/* Print selected parts of an Invar, suitable for use in error
+   messages. */
+static void show_Invar( HChar* buf, Word nBuf, Invar* inv, Word depth )
+{
+   HChar* str;
+   tl_assert(nBuf >= 96);
+   buf[0] = 0;
+   switch (inv->tag) {
+      case Inv_Unknown:
+         VG_(sprintf)(buf, "%s", "unknown");
+         break;
+      case Inv_Stack0:
+         str = "array";
+         VG_(sprintf)(buf, "stack %s \"%s\" in this frame",
+                      str, inv->Inv.Stack0.descr->name );
+         break;
+      case Inv_StackN:
+         str = "array";
+         VG_(sprintf)(buf, "stack %s \"%s\" in frame %lu back from here",
+                      str, inv->Inv.StackN.nd->descr->name,
+                           depth - inv->Inv.StackN.nd->depth );
+         break;
+      case Inv_Global:
+         str = "array";
+         VG_(sprintf)(buf, "global %s \"%s\" in object with soname \"%s\"",
+                      str, inv->Inv.Global.nd->descr->name,
+                           inv->Inv.Global.nd->descr->soname );
+         break;
+      case Inv_Unset:
+         VG_(sprintf)(buf, "%s", "Unset!");
+         break;
+      default:
+         tl_assert(0);
+   }
+}
+
+
+//////////////////////////////////////////////////////////////
+//                                                          //
 // our globals                                              //
 //                                                          //
+//////////////////////////////////////////////////////////////
+
+//////////////////////////////////////////////////////////////
+///
+
+#define N_QCACHE 16
+
+/* Powers of two only, else the result will be chaos */
+#define QCACHE_ADVANCE_EVERY 16
+
+/* Per-thread query cache.  Note that the invar can only be Inv_StackN
+   (but not Inv_Stack0), Inv_Global or Inv_Unknown. */
+typedef
+   struct {
+      Addr  addr;
+      SizeT szB;
+      Invar inv;
+   }
+   QCElem;
+
+typedef
+   struct {
+      Word   nInUse;
+      QCElem elems[N_QCACHE];
+   }
+   QCache;
+
+static void QCache__invalidate ( QCache* qc ) {
+   qc->nInUse = 0;
+}
+
+static void QCache__pp ( QCache* qc, HChar* who )
+{
+   Word i;
+   VG_(printf)("<<< QCache with %ld elements (%s)\n", qc->nInUse, who);
+   for (i = 0; i < qc->nInUse; i++) {
+      VG_(printf)("  [%#lx,+%#lx) ", qc->elems[i].addr, qc->elems[i].szB);
+      pp_Invar(&qc->elems[i].inv);
+      VG_(printf)("\n");
+   }
+   VG_(printf)(">>>\n");
+}
+
+static ULong stats__qcache_queries = 0;
+static ULong stats__qcache_misses  = 0;
+static ULong stats__qcache_probes  = 0;
+
+///
 //////////////////////////////////////////////////////////////
 
 /* Each thread has:
@@ -659,11 +854,22 @@ static  struct _StackFrame*          shadowStacks[VG_N_THREADS];
 
 static  WordFM* /* StackTreeNode */  siTrees[VG_N_THREADS];
 
+static  QCache                       qcaches[VG_N_THREADS];
+
+
 /* Additionally, there is one global variable interval tree
    for the entire process.
 */
 static WordFM* /* GlobalTreeNode */ giTree;
 
+
+static void invalidate_all_QCaches ( void )
+{
+   Word i;
+   for (i = 0; i < VG_N_THREADS; i++) {
+      QCache__invalidate( &qcaches[i] );
+   }
+}
 
 static void ourGlobals_init ( void )
 {
@@ -672,6 +878,7 @@ static void ourGlobals_init ( void )
       shadowStacks[i] = NULL;
       siTrees[i] = NULL;
    }
+   invalidate_all_QCaches();
    giTree = VG_(newFM)( pc_malloc, pc_free, 
                         (Word(*)(UWord,UWord))cmp_intervals_GlobalTreeNode );
 }
@@ -757,115 +964,7 @@ static void sg_die_mem_munmap ( Addr a, SizeT len )
       Inv_Unknown. */
    tl_assert(len > 0);
    preen_Invars( a, len, False/*!isHeap*/ );
-}
-
-
-//////////////////////////////////////////////////////////////
-//                                                          //
-// Invar                                                    //
-//                                                          //
-//////////////////////////////////////////////////////////////
-
-/* An invariant, as resulting from watching the destination of a
-   memory referencing instruction.  Initially is Inv_Unset until the
-   instruction makes a first access. */
-
-typedef
-   enum {
-      Inv_Unset=1,  /* not established yet */
-      Inv_Unknown,  /* unknown location */
-      Inv_Stack0,   /* array-typed stack block in innermost frame */
-      Inv_StackN,   /* array-typed stack block in non-innermost frame */
-      Inv_Global,   /* array-typed global block */
-   }
-   InvarTag;
-
-typedef
-   struct {
-      InvarTag tag;
-      union {
-         struct {
-         } Unset;
-         struct {
-         } Unknown;
-         struct {
-            Addr  addr;
-            SizeT szB;
-            StackBlock* descr;
-         } Stack0; /* innermost stack frame */
-         struct {
-            /* Pointer to a node in the interval tree for
-              this thread. */
-            StackTreeNode* nd;
-         } StackN; /* non-innermost stack frame */
-         struct {
-           /* Pointer to a GlobalBlock in the interval tree of
-              global blocks. */
-           GlobalTreeNode* nd;
-         } Global;
-      }
-      Inv;
-   }
-   Invar;
-
-/* Compare two Invars for equality. */
-static Bool eq_Invar ( Invar* i1, Invar* i2 )
-{
-   tl_assert(i1->tag != Inv_Unset);
-   tl_assert(i2->tag != Inv_Unset);
-   if (i1->tag != i2->tag)
-      return False;
-   switch (i1->tag) {
-      case Inv_Unknown:
-         return True;
-      case Inv_Stack0:
-         return i1->Inv.Stack0.addr == i2->Inv.Stack0.addr
-                && i1->Inv.Stack0.szB == i2->Inv.Stack0.szB;
-      case Inv_StackN:
-         return i1->Inv.StackN.nd == i2->Inv.StackN.nd;
-      case Inv_Global:
-         return i1->Inv.Global.nd == i2->Inv.Global.nd;
-      default:
-         tl_assert(0);
-   }
-   /*NOTREACHED*/
-   tl_assert(0);
-}
-
-/* Print selected parts of an Invar, suitable for use in error
-   messages. */
-static void show_Invar( HChar* buf, Word nBuf, Invar* inv, Word depth )
-{
-   HChar* str;
-   tl_assert(nBuf >= 96);
-   buf[0] = 0;
-   switch (inv->tag) {
-      case Inv_Unknown:
-         VG_(sprintf)(buf, "%s", "unknown");
-         break;
-      case Inv_Stack0:
-         str = "array";
-         VG_(sprintf)(buf, "stack %s \"%s\" in this frame",
-                      str, inv->Inv.Stack0.descr->name );
-         break;
-      case Inv_StackN:
-         str = "array";
-         VG_(sprintf)(buf, "stack %s \"%s\" in frame %lu back from here",
-                      str, inv->Inv.StackN.nd->descr->name,
-                           depth - inv->Inv.StackN.nd->depth );
-         break;
-      case Inv_Global:
-         str = "array";
-         VG_(sprintf)(buf, "global %s \"%s\" in object with soname \"%s\"",
-                      str, inv->Inv.Global.nd->descr->name,
-                           inv->Inv.Global.nd->descr->soname );
-         break;
-      case Inv_Unset:
-         VG_(sprintf)(buf, "%s", "Unset!");
-         break;
-      default:
-         tl_assert(0);
-   }
+   invalidate_all_QCaches();
 }
 
 
@@ -1185,6 +1284,32 @@ static void classify_address ( /*OUT*/Invar* inv,
         }
      }
    }
+
+   /* Look in this thread's query cache */
+   { Word i;
+     QCache* cache = &qcaches[tid];
+     static UWord ctr = 0;
+     stats__qcache_queries++;
+     for (i = 0; i < cache->nInUse; i++) {
+tl_assert(cache->elems[i].addr + cache->elems[i].szB != 0);
+        stats__qcache_probes++;
+        if (is_subinterval_of(cache->elems[i].addr,
+                              cache->elems[i].szB, ea, szB)) {
+           if (i > 0
+               && (ctr++ & (QCACHE_ADVANCE_EVERY-1)) == 0) {
+              QCElem tmp;
+              tmp = cache->elems[i-1];
+              cache->elems[i-1] = cache->elems[i];
+              cache->elems[i] = tmp;
+              i--;
+           }
+           *inv = cache->elems[i].inv;
+           return;
+        }
+     }
+     stats__qcache_misses++;
+   }
+
    /* Ok, so it's not a block in the top frame.  Perhaps it's a block
       in some calling frame?  Consult this thread's stack-block
       interval tree to find out. */
@@ -1199,8 +1324,8 @@ static void classify_address ( /*OUT*/Invar* inv,
         /* found it */
         inv->tag = Inv_StackN;
         inv->Inv.StackN.nd = nd;
-           stats__classify_StackN++;
-        return;
+        stats__classify_StackN++;
+        goto out;
      }
    }
    /* Not in a stack block.  Try the global pool. */
@@ -1212,16 +1337,106 @@ static void classify_address ( /*OUT*/Invar* inv,
         nd = NULL;
      }
      if (nd) {
-       /* found it */
+        /* found it */
         inv->tag = Inv_Global;
         inv->Inv.Global.nd = nd;
         stats__classify_Global++;
-        return;
+        goto out;
      }
    }
    /* No idea - give up. */
    inv->tag = Inv_Unknown;
    stats__classify_Unknown++;
+
+   /* Update the cache */
+  out:
+   { Word i;
+     QCache* cache = &qcaches[tid];
+     Word    ip    = cache->nInUse/2;
+
+     if (0) QCache__pp(cache, "before upd");
+
+     if (cache->nInUse < N_QCACHE)
+        cache->nInUse++;
+     for (i = cache->nInUse-1; i > ip; i--) {
+        cache->elems[i] = cache->elems[i-1];
+     }
+
+     switch (inv->tag) {
+        case Inv_Global:
+           cache->elems[ip].addr = inv->Inv.Global.nd->addr;
+           cache->elems[ip].szB  = inv->Inv.Global.nd->szB;
+           cache->elems[ip].inv  = *inv;
+           break;
+        case Inv_StackN:
+           cache->elems[ip].addr = inv->Inv.StackN.nd->addr;
+           cache->elems[ip].szB  = inv->Inv.StackN.nd->szB;
+           cache->elems[ip].inv  = *inv;
+           break;
+        case Inv_Unknown: {
+           /* This is more complex.  We need to figure out the
+              intersection of the "holes" in the global and stack
+              interval trees into which [ea,ea+szB) falls. */
+           StackTreeNode  sNegInf, sPosInf, sKey, *sLB, *sUB;
+           GlobalTreeNode gNegInf, gPosInf, gKey, *gLB, *gUB;
+           Addr gMin, gMax, sMin, sMax, uMin, uMax;
+           sNegInf.addr = 0;
+           sNegInf.szB  = 1;
+           sPosInf.addr = ~(UWord)0;
+           sPosInf.szB  = 1;
+           gNegInf.addr = 0;
+           gNegInf.szB  = 1;
+           gPosInf.addr = ~(UWord)0;
+           gPosInf.szB  = 1;
+           sKey.addr = ea;
+           sKey.szB  = szB;
+           gKey.addr = ea;
+           gKey.szB  = szB;
+           if (0) VG_(printf)("Tree sizes %ld %ld\n",
+                              VG_(sizeFM)(siTrees[tid]), VG_(sizeFM)(giTree));
+           VG_(findBoundsFM)( siTrees[tid], 
+                              (UWord*)&sLB, (UWord*)&sUB,
+                              (UWord)&sNegInf, (UWord)&sPosInf,
+                              (UWord)&sKey );
+           VG_(findBoundsFM)( giTree,
+                              (UWord*)&gLB, (UWord*)&gUB,
+                              (UWord)&gNegInf, (UWord)&gPosInf,
+                              (UWord)&gKey );
+           sMin = sLB == &sNegInf  ? 0         : (sLB->addr + sLB->szB);
+           sMax = sUB == &sPosInf  ? ~(UWord)0 : (sUB->addr - 1);
+           gMin = gLB == &gNegInf  ? 0         : (gLB->addr + gLB->szB);
+           gMax = gUB == &gPosInf  ? ~(UWord)0 : (gUB->addr - 1);
+           if (0) VG_(printf)("sMin %lx sMax %lx gMin %lx gMax %lx\n",
+                              sMin, sMax, gMin, gMax);
+           /* [sMin,sMax] and [gMin,gMax] must both contain
+              [ea,ea+szB) (right?)  That implies they must overlap at
+              at least over [ea,ea+szB). */
+           tl_assert(sMin <= ea && ea+szB-1 <= sMax);
+           tl_assert(gMin <= ea && ea+szB-1 <= gMax);
+           /* So now compute their intersection. */
+           uMin = Addr__max( sMin, gMin );
+           uMax = Addr__min( sMax, gMax );
+           if (0) VG_(printf)("uMin %lx uMax %lx\n", uMin, uMax);
+           tl_assert(uMin <= uMax);
+           tl_assert(uMin <= ea && ea+szB-1 <= uMax);
+           /* Finally, we can park [uMin,uMax] in the cache.  However,
+              if uMin is 0 and uMax is ~0, we can't represent the
+              difference; hence fudge uMax. */
+           if (uMin < uMax && uMax == ~(UWord)0)
+              uMax--;
+           cache->elems[ip].addr = uMin;
+           cache->elems[ip].szB = uMax - uMin + 1;
+           cache->elems[ip].inv = *inv;
+           break;
+        }
+        default:
+           /* We should only be caching info for the above 3 cases */
+          tl_assert(0);
+     }
+
+     if (0) QCache__pp(cache, "after upd");
+
+   }
 }
 
 
@@ -1340,7 +1555,7 @@ void shadowStack_new_frame ( ThreadId tid,
                                caller->depth /* stack depth at which
                                                 these blocks are
                                                 considered to exist*/ );
-      if (0) {
+      if (1) {
          UWord s  = VG_(sizeFM)( siTrees[tid] );
          UWord g  = VG_(sizeFM)( giTree );
          Bool  sb = s > stats__max_sitree_size;
@@ -1377,7 +1592,11 @@ void shadowStack_new_frame ( ThreadId tid,
    callee->fp_at_call     = 0; // .. these 3 initialisations are ..
    callee->blocks_added_by_call = NULL; // .. just for cleanness
 
+   /* record the new running stack frame */
    shadowStacks[tid] = callee;
+
+   /* and this thread's query cache is now invalid */
+   QCache__invalidate( &qcaches[tid] );
 
    if (0)
    { Word d = callee->depth;
@@ -1420,10 +1639,11 @@ void helperc__new_frame ( Addr sp_post_call_insn,
 __attribute__((noinline))
 static void shadowStack_unwind ( ThreadId tid, Addr sp_now )
 {
-   StackFrame* innermost;
+   StackFrame *innermost, *innermostOrig;
    tl_assert(is_sane_TId(tid));
    innermost = shadowStacks[tid];
    tl_assert(innermost);
+   innermostOrig = innermost;
    //VG_(printf)("UNWIND sp_new = %p\n", sp_now);
    while (1) {
       if (!innermost->outer)
@@ -1472,7 +1692,12 @@ static void shadowStack_unwind ( ThreadId tid, Addr sp_now )
    }
 
    tl_assert(innermost);
-   shadowStacks[tid] = innermost;
+
+   if (innermost != innermostOrig) {
+      shadowStacks[tid] = innermost;
+      /* this thread's query cache is now invalid */
+      QCache__invalidate( &qcaches[tid] );
+   }
 }
 
 
@@ -2052,7 +2277,13 @@ static void sg_fini(Int exitcode)
      "%'llu Invars preened, of which %'llu changed",
      stats__Invars_preened, stats__Invars_changed);
   VG_(message)(Vg_DebugMsg,
-               " t_i_b_MT: %'12llu", stats__t_i_b_empty);
+     " t_i_b_MT: %'12llu", stats__t_i_b_empty);
+  VG_(message)(Vg_DebugMsg,
+     "   qcache: %'12llu queries", stats__qcache_queries );
+  VG_(message)(Vg_DebugMsg,
+     "   qcache: %'12llu probes",  stats__qcache_probes );
+  VG_(message)(Vg_DebugMsg,
+     "   qcache: %'12llu misses",  stats__qcache_misses );
   VG_(message)(Vg_DebugMsg, "");
 }
 
