@@ -824,6 +824,7 @@ typedef
    QCache;
 
 static void QCache__invalidate ( QCache* qc ) {
+   tl_assert(qc->nInUse >= 0);
    qc->nInUse = 0;
 }
 
@@ -1110,7 +1111,7 @@ __attribute__((noinline))
 static void initialise_hash_table ( StackFrame* sf )
 {
    UWord i;
-   sf->htab_size = 4; /* initial hash table size */
+   sf->htab_size = 16; /* initial hash table size */
    sf->htab = pc_malloc(sf->htab_size * sizeof(IInstance));
    tl_assert(sf->htab);
    sf->htab_used = 0;
@@ -1243,8 +1244,10 @@ static XArray* /* Addr */ calculate_StackBlock_EAs (
                              Addr sp, Addr fp
                           )
 {
-   XArray* res = VG_(newXA)( pc_malloc, pc_free, sizeof(Addr) );
+   XArray* res;
    Word i, n = VG_(sizeXA)( blocks );
+   tl_assert(n > 0);
+   res = VG_(newXA)( pc_malloc, pc_free, sizeof(Addr) );
    for (i = 0; i < n; i++) {
       StackBlock* blk = VG_(indexXA)( blocks, i );
       Addr ea = calculate_StackBlock_EA( blk, sp, fp );
@@ -1352,9 +1355,13 @@ tl_assert(cache->elems[i].addr + cache->elems[i].szB != 0);
   out:
    { Word i;
      QCache* cache = &qcaches[tid];
-     Word    ip    = cache->nInUse/2;
+     Word    ip    = cache->nInUse / 2; /* doesn't seem critical */
 
-     if (0) QCache__pp(cache, "before upd");
+     static UWord ctr = 0;
+     Bool show = False;
+     if (0 == (ctr++ & 0x1FFFFF)) show = True;
+
+     if (show) QCache__pp(cache, "before upd");
 
      if (cache->nInUse < N_QCACHE)
         cache->nInUse++;
@@ -1434,7 +1441,7 @@ tl_assert(cache->elems[i].addr + cache->elems[i].szB != 0);
           tl_assert(0);
      }
 
-     if (0) QCache__pp(cache, "after upd");
+     if (show) QCache__pp(cache, "after upd");
 
    }
 }
@@ -1534,7 +1541,6 @@ void shadowStack_new_frame ( ThreadId tid,
    tl_assert(caller);
 
    if (caller->outer) { /* "this is not the outermost frame" */
-      tl_assert(descrs_at_call_insn);
       tl_assert(caller->outer->inner == caller);
       tl_assert(caller->outer->depth >= 0);
       tl_assert(1 + caller->outer->depth == caller->depth);
@@ -1546,15 +1552,17 @@ void shadowStack_new_frame ( ThreadId tid,
    caller->fp_at_call = fp_at_call_insn;
 
    if (descrs_at_call_insn) {
+      tl_assert( VG_(sizeXA)(descrs_at_call_insn) > 0 );
       caller->blocks_added_by_call
          = calculate_StackBlock_EAs( descrs_at_call_insn,
                                      sp_at_call_insn, fp_at_call_insn );
-      add_blocks_to_StackTree( siTrees[tid], 
-                               descrs_at_call_insn,
-                               caller->blocks_added_by_call,
-                               caller->depth /* stack depth at which
-                                                these blocks are
-                                                considered to exist*/ );
+      if (caller->blocks_added_by_call)
+         add_blocks_to_StackTree( siTrees[tid], 
+                                  descrs_at_call_insn,
+                                  caller->blocks_added_by_call,
+                                  caller->depth /* stack depth at which
+                                                   these blocks are
+                                                   considered to exist*/ );
       if (1) {
          UWord s  = VG_(sizeFM)( siTrees[tid] );
          UWord g  = VG_(sizeFM)( giTree );
@@ -1671,11 +1679,13 @@ static void shadowStack_unwind ( ThreadId tid, Addr sp_now )
          the call. */
 
       if (innermost->outer) { /* not at the outermost frame */
-         tl_assert(innermost->blocks_added_by_call != NULL);
-         del_blocks_from_StackTree( siTrees[tid],
-                                    innermost->blocks_added_by_call );
-         VG_(deleteXA)( innermost->blocks_added_by_call );
-         innermost->blocks_added_by_call = NULL;
+         if (innermost->blocks_added_by_call == NULL) {
+         } else {
+            del_blocks_from_StackTree( siTrees[tid],
+                                       innermost->blocks_added_by_call );
+            VG_(deleteXA)( innermost->blocks_added_by_call );
+            innermost->blocks_added_by_call = NULL;
+         }
       }
       /* That completes the required tidying of the interval tree
          associated with the frame we just removed. */
@@ -1956,6 +1966,8 @@ IRSB* di_instrument ( VgCallbackClosure* closure,
       tl_assert(curr_IP_known);
       frameBlocks = get_StackBlocks_for_IP( curr_IP );
       tl_assert(frameBlocks);
+      if (VG_(sizeXA)(frameBlocks) == 0)
+         frameBlocks = NULL;
       args
          = mkIRExprVec_5(
               IRExpr_RdTmp(sp_post_call_insn),
