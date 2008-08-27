@@ -996,6 +996,8 @@ typedef
    IInstance;
 
 
+#define N_HTAB_FIXED 16
+
 typedef
    struct _StackFrame {
       /* The sp when the frame was created, so we know when to get rid
@@ -1019,6 +1021,11 @@ typedef
          that an IInstance with a .insn_addr of zero is interpreted to
          mean that hash table slot is unused.  This means we can't
          store an IInstance for address zero. */
+      /* Note that htab initially points to htab_fixed.  If htab_fixed
+         turns out not to be big enough then htab is made to point to
+         dynamically allocated memory.  But it's often the case that
+         htab_fixed is big enough, so this optimisation saves a huge
+         number of pc_malloc/pc_free call pairs. */
       IInstance* htab;
       UWord      htab_size; /* size of hash table, MAY ONLY BE A POWER OF 2 */
       UWord      htab_used; /* number of hash table slots currently in use */
@@ -1027,6 +1034,8 @@ typedef
       Addr sp_at_call;
       Addr fp_at_call;
       XArray* /* of Addr */ blocks_added_by_call;
+      /* See comment just above */
+      IInstance htab_fixed[N_HTAB_FIXED];
    }
    StackFrame;
 
@@ -1111,8 +1120,8 @@ __attribute__((noinline))
 static void initialise_hash_table ( StackFrame* sf )
 {
    UWord i;
-   sf->htab_size = 16; /* initial hash table size */
-   sf->htab = pc_malloc(sf->htab_size * sizeof(IInstance));
+   sf->htab_size = N_HTAB_FIXED; /* initial hash table size */
+   sf->htab = &sf->htab_fixed[0];
    tl_assert(sf->htab);
    sf->htab_used = 0;
    for (i = 0; i < sf->htab_size; i++)
@@ -1158,7 +1167,8 @@ static void resize_hash_table ( StackFrame* sf )
       tl_assert(new_htab[ix].insn_addr != 0);
    }
    /* all entries copied; free old table. */
-   pc_free(old_htab);
+   if (old_htab != &sf->htab_fixed[0])
+      pc_free(old_htab);
    sf->htab = new_htab;
    sf->htab_size = new_size;
    /* check sf->htab_used is correct.  Optional and a bit expensive
@@ -1663,7 +1673,8 @@ static void shadowStack_unwind ( ThreadId tid, Addr sp_now )
       if (sp_now <= innermost->creation_sp) break;
       //VG_(printf)("UNWIND     dump %p\n", innermost->creation_sp);
       tl_assert(innermost->htab);
-      pc_free(innermost->htab);
+      if (innermost->htab != &innermost->htab_fixed[0])
+         pc_free(innermost->htab);
       /* be on the safe side */
       innermost->creation_sp = 0;
       innermost->htab = NULL;
