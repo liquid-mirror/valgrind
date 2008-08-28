@@ -983,6 +983,11 @@ static ULong stats__classify_Unknown = 0;
 static ULong stats__Invars_preened   = 0;
 static ULong stats__Invars_changed   = 0;
 static ULong stats__t_i_b_empty      = 0;
+static ULong stats__htab_fast        = 0;
+static ULong stats__htab_searches    = 0;
+static ULong stats__htab_probes      = 0;
+static ULong stats__htab_resizes     = 0;
+
 
 /* A dynamic instance of an instruction */
 typedef
@@ -996,7 +1001,7 @@ typedef
    IInstance;
 
 
-#define N_HTAB_FIXED 16
+#define N_HTAB_FIXED 64
 
 typedef
    struct _StackFrame {
@@ -1116,8 +1121,14 @@ tl_assert(0);
 }
 
 
+/* XXX this should be >> 2 on ppc32/64 since the bottom two bits
+   of the ip are guaranteed to be zero */
+inline static UWord compute_II_hash ( Addr ip, UWord htab_size ) {
+   return (ip >> 0) & (htab_size - 1);
+}
+
 __attribute__((noinline))
-static void initialise_hash_table ( StackFrame* sf )
+static void initialise_II_hash_table ( StackFrame* sf )
 {
    UWord i;
    sf->htab_size = N_HTAB_FIXED; /* initial hash table size */
@@ -1130,7 +1141,7 @@ static void initialise_hash_table ( StackFrame* sf )
 
 
 __attribute__((noinline))
-static void resize_hash_table ( StackFrame* sf )
+static void resize_II_hash_table ( StackFrame* sf )
 {
    UWord     i, j, ix, old_size, new_size;
    IInstance *old_htab, *new_htab, *old;
@@ -1147,7 +1158,7 @@ static void resize_hash_table ( StackFrame* sf )
       old = &old_htab[i];
       if (old->insn_addr == 0 /* NOT IN USE */)
          continue;
-      ix = (old->insn_addr >> 0) & (new_size - 1);
+      ix = compute_II_hash(old->insn_addr, new_size);
       /* find out where to put this, in the new table */
       j = new_size;
       while (1) {
@@ -1175,9 +1186,9 @@ static void resize_hash_table ( StackFrame* sf )
       but anyway: */
    j = 0;
    for (i = 0; i < new_size; i++) {
-     if (new_htab[i].insn_addr != 0) {
-       j++;
-     }
+      if (new_htab[i].insn_addr != 0) {
+         j++;
+      }
    }
    tl_assert(j == sf->htab_used);
    if (0) VG_(printf)("resized tab for SF %p to %lu\n", sf, new_size);
@@ -1185,24 +1196,34 @@ static void resize_hash_table ( StackFrame* sf )
 
 
 __attribute__((noinline))
-static IInstance* find_or_create_IInstance (
+static IInstance* find_or_create_IInstance_SLOW (
                      StackFrame* sf, 
                      Addr ip,
                      XArray* /* StackBlock */ ip_frameblocks
                   )
 {
    UWord i, ix;
-  start_over:
+
+   stats__htab_searches++;
+
    tl_assert(sf);
    tl_assert(sf->htab);
 
-   if (0) VG_(printf)("XXX ip %#lx size %lu used %lu\n",
-                      ip, sf->htab_size, sf->htab_used);
+   /* Make sure the table loading doesn't get too high. */
+   if (UNLIKELY(2 * sf->htab_used >= 1 * sf->htab_size)) {
+      stats__htab_resizes++;
+      resize_II_hash_table(sf);
+   }
    tl_assert(2 * sf->htab_used <= sf->htab_size);
   
-   ix = (ip >> 0) & (sf->htab_size - 1);
+   ix = compute_II_hash(ip, sf->htab_size);
    i = sf->htab_size;
    while (1) {
+      stats__htab_probes++;
+      /* Note that because of the way the fast-case handler works,
+         these two tests are actually redundant in the first iteration
+         of this loop.  (Except they aren't redundant if the code just
+         above resized the table first. :-) */
       if (sf->htab[ix].insn_addr == ip)
          return &sf->htab[ix];
       if (sf->htab[ix].insn_addr == 0)
@@ -1218,14 +1239,8 @@ static IInstance* find_or_create_IInstance (
       if (ix == sf->htab_size) ix = 0;
    }
 
-   /* So now we've found a free slot at ix, and we can use that.
-      Except, first check if we need to resize the table.  If so,
-      resize it, and start all over again. */
+   /* So now we've found a free slot at ix, and we can use that. */
    tl_assert(sf->htab[ix].insn_addr == 0);
-   if (2 * sf->htab_used >= 1 * sf->htab_size) {
-      resize_hash_table(sf);
-      goto start_over;
-   }
 
    /* Add a new record in this slot. */
    tl_assert(ip != 0); /* CAN'T REPRESENT THIS */
@@ -1234,6 +1249,35 @@ static IInstance* find_or_create_IInstance (
    sf->htab[ix].invar.tag = Inv_Unset;
    sf->htab_used++;
    return &sf->htab[ix];
+}
+
+
+inline
+static IInstance* find_or_create_IInstance (
+                     StackFrame* sf, 
+                     Addr ip,
+                     XArray* /* StackBlock */ ip_frameblocks
+                  )
+{
+   UWord ix = compute_II_hash(ip, sf->htab_size);
+   /* Is it in the first slot we come to? */
+   if (LIKELY(sf->htab[ix].insn_addr == ip)) {
+      stats__htab_fast++;
+      return &sf->htab[ix];
+   }
+   /* If the first slot we come to is empty, bag it. */
+   if (LIKELY(sf->htab[ix].insn_addr == 0)) {
+      stats__htab_fast++;
+      tl_assert(ip != 0);
+      sf->htab[ix].insn_addr = ip;
+      sf->htab[ix].blocks    = ip_frameblocks;
+      sf->htab[ix].invar.tag = Inv_Unset;
+      sf->htab_used++;
+      return &sf->htab[ix];
+   }
+   /* Otherwise we hand off to the slow case, which searches other
+      slots, and optionally resizes the table if necessary. */
+   return find_or_create_IInstance_SLOW( sf, ip, ip_frameblocks );
 }
 
 
@@ -1304,7 +1348,8 @@ static void classify_address ( /*OUT*/Invar* inv,
      static UWord ctr = 0;
      stats__qcache_queries++;
      for (i = 0; i < cache->nInUse; i++) {
-tl_assert(cache->elems[i].addr + cache->elems[i].szB != 0);
+        if (0) /* expensive in a loop like this */
+               tl_assert(cache->elems[i].addr + cache->elems[i].szB != 0);
         stats__qcache_probes++;
         if (is_subinterval_of(cache->elems[i].addr,
                               cache->elems[i].szB, ea, szB)) {
@@ -1437,8 +1482,8 @@ tl_assert(cache->elems[i].addr + cache->elems[i].szB != 0);
            tl_assert(uMin <= uMax);
            tl_assert(uMin <= ea && ea+szB-1 <= uMax);
            /* Finally, we can park [uMin,uMax] in the cache.  However,
-              if uMin is 0 and uMax is ~0, we can't represent the
-              difference; hence fudge uMax. */
+              if uMax is ~0, we can't represent the difference; hence
+              fudge uMax. */
            if (uMin < uMax && uMax == ~(UWord)0)
               uMax--;
            cache->elems[ip].addr = uMin;
@@ -1603,7 +1648,7 @@ void shadowStack_new_frame ( ThreadId tid,
    }
 
    /* This sets up .htab, .htab_size and .htab_used */
-   initialise_hash_table( callee );
+   initialise_II_hash_table( callee );
 
    callee->creation_sp    = sp_post_call_insn;
    callee->sp_at_call     = 0; // not actually required ..
@@ -2023,7 +2068,7 @@ static StackFrame* new_root_StackFrame ( void )
    sframe->creation_sp = ~0UL;
 
    /* This sets up .htab, .htab_size and .htab_used */
-   initialise_hash_table( sframe );
+   initialise_II_hash_table( sframe );
 
    /* ->depth, ->outer, ->inner are 0, NULL, NULL */
 
@@ -2301,13 +2346,15 @@ static void sg_fini(Int exitcode)
      stats__Invars_preened, stats__Invars_changed);
   VG_(message)(Vg_DebugMsg,
      " t_i_b_MT: %'12llu", stats__t_i_b_empty);
-  VG_(message)(Vg_DebugMsg,
-     "   qcache: %'12llu queries", stats__qcache_queries );
-  VG_(message)(Vg_DebugMsg,
-     "   qcache: %'12llu probes",  stats__qcache_probes );
-  VG_(message)(Vg_DebugMsg,
-     "   qcache: %'12llu misses",  stats__qcache_misses );
-  VG_(message)(Vg_DebugMsg, "");
+  VG_(message)(Vg_DebugMsg, 
+     "   qcache: %'llu searches, %'llu probes, %'llu misses",
+     stats__qcache_queries, stats__qcache_probes, stats__qcache_misses);
+  VG_(message)(Vg_DebugMsg, 
+     "htab-fast: %'llu hits",
+     stats__htab_fast);
+  VG_(message)(Vg_DebugMsg, 
+     "htab-slow: %'llu searches, %'llu probes, %'llu resizes",
+     stats__htab_searches, stats__htab_probes, stats__htab_resizes);
 }
 
 static void sg_pre_clo_init(void)
