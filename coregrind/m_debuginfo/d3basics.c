@@ -733,6 +733,12 @@ GXResult ML_(evaluate_trivial_GX)( GExpr* gx, Addr data_bias )
          thisResult.b = True;
          thisResult.w = *(Addr*)(p+1) + data_bias;
       }
+      else if (nbytes == 2 + sizeof(Addr) 
+               && *p == DW_OP_addr
+               && *(p + 1 + sizeof(Addr)) == DW_OP_GNU_push_tls_address) {
+         if (!badness)
+            badness = "trivial GExpr is DW_OP_addr plus trailing junk";
+      }
       else if (nbytes >= 1 && *p >= DW_OP_reg0 && *p <= DW_OP_reg31) {
          if (!badness)
             badness = "trivial GExpr denotes register (1)";
