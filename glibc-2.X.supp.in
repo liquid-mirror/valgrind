@@ -222,3 +222,16 @@
    obj:/lib/libpthread-0.10.so
    fun:pthread_create
 }
+
+##----------------------------------------------------------------------##
+##--- exp-sgcheck suppressions                                       ---##
+##----------------------------------------------------------------------##
+
+{
+   ld-2.X poking around in god knows where
+   SGcheck:SorG
+   obj:/lib*/ld-@GLIBC_VERSION@*.so*
+   obj:/lib*/ld-@GLIBC_VERSION@*.so*
+   obj:/lib*/ld-@GLIBC_VERSION@*.so*
+   obj:/lib*/ld-@GLIBC_VERSION@*.so*
+}

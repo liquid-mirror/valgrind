@@ -1009,8 +1009,8 @@ static void acquire_globals ( ULong di_handle )
    for (i = 0; i < n; i++) {
       GlobalBlock* gbp;
       GlobalBlock* gb = VG_(indexXA)( gbs, i );
-      VG_(printf)("   new Global size %2lu at %#lx:  %s %s\n", 
-                  gb->szB, gb->addr, gb->soname, gb->name );
+      if (0) VG_(printf)("   new Global size %2lu at %#lx:  %s %s\n", 
+                         gb->szB, gb->addr, gb->soname, gb->name );
       tl_assert(gb->szB > 0);
       /* Make a persistent copy of each GlobalBlock, and add it
          to the tree. */
@@ -1519,7 +1519,7 @@ static void classify_address ( /*OUT*/Invar* inv,
 
      static UWord ctr = 0;
      Bool show = False;
-     if (0 == (ctr++ & 0x1FFFFF)) show = True;
+     if (0 && 0 == (ctr++ & 0x1FFFFF)) show = True;
 
      if (show) QCache__pp(cache, "before upd");
 
@@ -1766,8 +1766,10 @@ void shadowStack_new_frame ( ThreadId tid,
          if (sb) stats__max_sitree_size = s;
          if (gb) stats__max_gitree_size = g;
          if (sb || gb)
-            VG_(printf)("new max tree sizes: S size %ld, G size %ld\n",
-                        stats__max_sitree_size, stats__max_gitree_size );
+            VG_(message)(Vg_DebugMsg, 
+                         "exp-sgcheck: new max tree sizes: "
+                         "StackTree %ld, GlobalTree %ld",
+                         stats__max_sitree_size, stats__max_gitree_size );
       }
    } else {
       caller->blocks_added_by_call = NULL;
@@ -2383,7 +2385,6 @@ static Bool eq_Error ( VgRes not_used, Error* e1, Error* e2 )
 
 static void pp_Error ( Error* err )
 {
-   const Bool show_raw_states = False;
    XError *xe = (XError*)VG_(get_error_extra)(err);
 
    switch (VG_(get_error_kind)(err)) {

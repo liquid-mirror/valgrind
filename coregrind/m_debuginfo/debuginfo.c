@@ -2551,8 +2551,9 @@ void* /* really, XArray* of GlobalBlock */
             /* Ok, so collect it! */
             tl_assert(var->name);
             tl_assert(di->soname);
-            VG_(printf)("XXXX %s %s %d\n", var->name,
-                        var->fileName?(HChar*)var->fileName:"??",var->lineNo);
+            if (0) VG_(printf)("XXXX %s %s %d\n", var->name,
+                                var->fileName?(HChar*)var->fileName
+                                             :"??",var->lineNo);
             VG_(memset)(&gb, 0, sizeof(gb));
             gb.addr  = res.word;
             gb.szB   = muw.w;
