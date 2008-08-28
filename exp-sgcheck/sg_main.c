@@ -196,6 +196,22 @@ static Word StackBlock__cmp ( StackBlock* fb1, StackBlock* fb2 )
    return r;
 }
 
+/* Returns True if all fields except .szB are the same.  szBs may or
+   may not be the same; they are simply not consulted. */
+static Bool StackBlock__all_fields_except_szB_are_equal ( 
+               StackBlock* fb1,
+               StackBlock* fb2 
+            )
+{
+   tl_assert(StackBlock__sane(fb1));
+   tl_assert(StackBlock__sane(fb2));
+   return fb1->base == fb2->base
+          && fb1->spRel == fb2->spRel
+          && fb1->isVec == fb2->isVec
+          && 0 == VG_(strcmp)(fb1->name, fb2->name);
+}
+
+
 /* Generate an arbitrary total ordering on vectors of StackBlocks. */
 static Word StackBlocks__cmp ( XArray* fb1s, XArray* fb2s )
 {
@@ -264,8 +280,9 @@ static XArray* /* of StackBlock */
    VG_(setCmpFnXA)( orig, (Int(*)(void*,void*))StackBlock__cmp );
    VG_(sortXA)( orig );
 
-   /* Now get rid of any duplicates. */
-   { Word r, w, n = VG_(sizeXA)( orig ), nEQ;
+   /* Now get rid of any exact duplicates. */
+  nuke_dups:
+   { Word r, w, nEQ, n = VG_(sizeXA)( orig );
      if (n >= 2) {
         w = 0;
         nEQ = 0;
@@ -290,6 +307,40 @@ static XArray* /* of StackBlock */
            VG_(dropTailXA)( orig, n-w );
         }
         if (0) VG_(printf)("delta %ld\n", n-w);
+     }
+   }
+
+   /* Deal with the following strangeness, where two otherwise
+      identical blocks are claimed to have different sizes.  In which
+      case we use the larger size. */
+   /* StackBlock{ off 16 szB 66 spRel:Y isVec:Y "sz" }
+      StackBlock{ off 16 szB 130 spRel:Y isVec:Y "sz" }
+      StackBlock{ off 208 szB 16 spRel:Y isVec:Y "ar" }
+   */
+   { Word i, n = VG_(sizeXA)( orig );
+     if (n >= 2) {
+        for (i = 0; i < n-1; i++) {
+           StackBlock* sb0 = VG_(indexXA)( orig, i+0 );
+           StackBlock* sb1 = VG_(indexXA)( orig, i+1 );
+           if (StackBlock__all_fields_except_szB_are_equal(sb0, sb1)) {
+              /* They can't be identical because the previous tidying
+                 pass would have removed the duplicates.  And they
+                 can't be > because the earlier sorting pass would
+                 have ordered otherwise-identical descriptors
+                 according to < on .szB fields.  Hence: */
+              tl_assert(sb0->szB < sb1->szB);
+              sb0->szB = sb1->szB;
+              /* This makes the blocks identical, at the size of the
+                 larger one.  Rather than go to all the hassle of
+                 sliding the rest down, simply go back to the
+                 remove-duplicates stage.  The assertion guarantees
+                 that we eventually make progress, since the rm-dups
+                 stage will get rid of one of the blocks.  This is
+                 expected to happen only exceedingly rarely. */
+              tl_assert(StackBlock__cmp(sb0,sb1) == 0);
+              goto nuke_dups;
+           }
+        }
      }
    }
 
