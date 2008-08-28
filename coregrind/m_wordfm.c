@@ -416,7 +416,7 @@ AvlNode* avl_find_node ( AvlNode* t, Word k, Word(*kCmp)(UWord,UWord) )
 }
 
 static
-void avl_find_bounds ( AvlNode* t, 
+Bool avl_find_bounds ( AvlNode* t, 
                        /*OUT*/UWord* kMinP, /*OUT*/UWord* kMaxP,
                        UWord minKey, UWord maxKey, UWord key,
                        Word(*kCmp)(UWord,UWord) )
@@ -438,11 +438,14 @@ void avl_find_bounds ( AvlNode* t,
       }
       /* We should never get here.  If we do, it means the given key
          is actually present in the tree, which means the original
-         call was invalid -- an error on the caller's part. */
-      tl_assert(0);
+         call was invalid -- an error on the caller's part, and we
+         cannot give any meaningful values for the bounds.  (Well,
+         maybe we could, but we're not gonna.  Ner!) */
+      return False;
    }
    *kMinP = lowerBound;
    *kMaxP = upperBound;
+   return True;
 }
 
 // Clear the iterator stack.
@@ -650,11 +653,12 @@ Bool VG_(lookupFM) ( WordFM* fm,
 }
 
 // See comment in pub_tool_wordfm.h for explanation
-void VG_(findBoundsFM)( WordFM* fm,
+Bool VG_(findBoundsFM)( WordFM* fm,
                         /*OUT*/UWord* kMinP, /*OUT*/UWord* kMaxP,
                         UWord minKey, UWord maxKey, UWord key )
 {
-  avl_find_bounds( fm->root, kMinP, kMaxP, minKey, maxKey, key, fm->kCmp );
+   return avl_find_bounds( fm->root, kMinP, kMaxP, minKey, maxKey,
+                                     key, fm->kCmp );
 }
 
 UWord VG_(sizeFM) ( WordFM* fm )

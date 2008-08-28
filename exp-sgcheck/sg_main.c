@@ -575,6 +575,30 @@ typedef
    }
    GlobalTreeNode;
 
+static void GlobalTreeNode__pp ( GlobalTreeNode* nd ) {
+   tl_assert(nd->descr);
+   VG_(printf)("GTNode [%#lx,+%ld) %s", 
+               nd->addr, nd->szB, nd->descr->name);
+}
+
+static void GlobalTree__pp ( WordFM* /* of (GlobalTreeNode,void) */ gitree,
+                             HChar* who )
+{
+   UWord keyW, valW;
+   GlobalTreeNode* nd;
+   VG_(printf)("<<< GlobalBlockTree (%s)\n", who);
+   VG_(initIterFM)( gitree );
+   while (VG_(nextIterFM)( gitree, &keyW, &valW )) {
+      tl_assert(valW == 0);
+      nd = (GlobalTreeNode*)keyW;
+      VG_(printf)("  ");
+      GlobalTreeNode__pp(nd);
+      VG_(printf)("\n");
+   }
+   VG_(doneIterFM)( gitree );
+   VG_(printf)(">>>\n");
+}
+
 /* Interval comparison function for GlobalTreeNode */
 static Word cmp_intervals_GlobalTreeNode ( GlobalTreeNode* gn1,
                                            GlobalTreeNode* gn2 )
@@ -608,15 +632,45 @@ static void add_block_to_GlobalTree (
             )
 {
    Bool already_present;
-   GlobalTreeNode* nyu;
+   GlobalTreeNode *nyu, *nd;
+     UWord keyW, valW;
    tl_assert(descr->szB > 0);
    nyu = pc_malloc( sizeof(GlobalTreeNode) );
    nyu->addr  = descr->addr;
    nyu->szB   = descr->szB;
    nyu->descr = descr;
+
+   /* Basically it's an error to add a global block to the tree that
+      is already in the tree.  However, detect and ignore attempts to
+      insert exact duplicates; they do appear for some reason
+      (possible a bug in m_debuginfo?) */
+   already_present = VG_(lookupFM)( gitree, &keyW, &valW, (UWord)nyu );
+   if (already_present) {
+      tl_assert(valW == 0);
+      nd = (GlobalTreeNode*)keyW;
+      tl_assert(nd);
+      tl_assert(nd != nyu);
+      tl_assert(nd->descr);
+      tl_assert(nyu->descr);
+      if (nd->addr == nyu->addr && nd->szB == nyu->szB
+          && 0 == VG_(strcmp)(nd->descr->name, nyu->descr->name)
+          && 0 == VG_(strcmp)(nd->descr->soname, nyu->descr->soname)) {
+         /* exact duplicate; ignore it */
+         pc_free(nyu);
+         return;
+      }
+      /* else fall through; the assertion below will catch it */
+   }
+
    already_present = VG_(addToFM)( gitree, (UWord)nyu, 0 );
    /* The interval can't already be there; else we have
       overlapping global blocks. */
+   if (already_present) {
+      GlobalTree__pp( gitree, "add_block_to_GlobalTree: non-exact duplicate" );
+      VG_(printf)("Overlapping block: ");
+      GlobalTreeNode__pp(nyu);
+      VG_(printf)("\n");
+   }
    tl_assert(!already_present);
 }
 
@@ -1408,9 +1462,9 @@ static void classify_address ( /*OUT*/Invar* inv,
 
    /* Update the cache */
   out:
-   { Word i;
-     QCache* cache = &qcaches[tid];
-     Word    ip    = cache->nInUse / 2; /* doesn't seem critical */
+   { Addr    toadd_addr = 0;
+     SizeT   toadd_szB  = 0;
+     QCache* cache      = &qcaches[tid];
 
      static UWord ctr = 0;
      Bool show = False;
@@ -1418,30 +1472,28 @@ static void classify_address ( /*OUT*/Invar* inv,
 
      if (show) QCache__pp(cache, "before upd");
 
-     if (cache->nInUse < N_QCACHE)
-        cache->nInUse++;
-     for (i = cache->nInUse-1; i > ip; i--) {
-        cache->elems[i] = cache->elems[i-1];
-     }
-
      switch (inv->tag) {
         case Inv_Global:
-           cache->elems[ip].addr = inv->Inv.Global.nd->addr;
-           cache->elems[ip].szB  = inv->Inv.Global.nd->szB;
-           cache->elems[ip].inv  = *inv;
+           toadd_addr = inv->Inv.Global.nd->addr;
+           toadd_szB  = inv->Inv.Global.nd->szB;
            break;
         case Inv_StackN:
-           cache->elems[ip].addr = inv->Inv.StackN.nd->addr;
-           cache->elems[ip].szB  = inv->Inv.StackN.nd->szB;
-           cache->elems[ip].inv  = *inv;
+           toadd_addr = inv->Inv.StackN.nd->addr;
+           toadd_szB  = inv->Inv.StackN.nd->szB;
            break;
         case Inv_Unknown: {
            /* This is more complex.  We need to figure out the
               intersection of the "holes" in the global and stack
-              interval trees into which [ea,ea+szB) falls. */
+              interval trees into which [ea,ea+szB) falls.  This is
+              further complicated by the fact that [ea,ea+szB) might
+              not fall cleanly into a hole; it may instead fall across
+              the boundary of a stack or global block.  In that case
+              we just ignore it and don't update the cache, since we
+              have no way to represent this situation precisely. */
            StackTreeNode  sNegInf, sPosInf, sKey, *sLB, *sUB;
            GlobalTreeNode gNegInf, gPosInf, gKey, *gLB, *gUB;
            Addr gMin, gMax, sMin, sMax, uMin, uMax;
+           Bool sOK, gOK;
            sNegInf.addr = 0;
            sNegInf.szB  = 1;
            sPosInf.addr = ~(UWord)0;
@@ -1456,14 +1508,36 @@ static void classify_address ( /*OUT*/Invar* inv,
            gKey.szB  = szB;
            if (0) VG_(printf)("Tree sizes %ld %ld\n",
                               VG_(sizeFM)(siTrees[tid]), VG_(sizeFM)(giTree));
-           VG_(findBoundsFM)( siTrees[tid], 
-                              (UWord*)&sLB, (UWord*)&sUB,
-                              (UWord)&sNegInf, (UWord)&sPosInf,
-                              (UWord)&sKey );
-           VG_(findBoundsFM)( giTree,
-                              (UWord*)&gLB, (UWord*)&gUB,
-                              (UWord)&gNegInf, (UWord)&gPosInf,
-                              (UWord)&gKey );
+           sOK = VG_(findBoundsFM)( siTrees[tid], 
+                                    (UWord*)&sLB, (UWord*)&sUB,
+                                    (UWord)&sNegInf, (UWord)&sPosInf,
+                                    (UWord)&sKey );
+           gOK = VG_(findBoundsFM)( giTree,
+                                    (UWord*)&gLB, (UWord*)&gUB,
+                                    (UWord)&gNegInf, (UWord)&gPosInf,
+                                    (UWord)&gKey );
+           if (!(sOK && gOK)) {
+              /* If this happens, then [ea,ea+szB) partially overlaps
+                 a heap or stack block.  We can't represent that, so
+                 just forget it (should be very rare).  However, do
+                 maximum sanity checks first. */
+              if (!sOK) {
+                 StackTreeNode* nd = find_StackTreeNode( siTrees[tid], ea );
+                 /* "it does overlap a stack block */
+                 tl_assert(nd);
+                 /* "but does not completely fall with the block" */
+                 tl_assert(!is_subinterval_of(nd->addr, nd->szB, ea, szB));
+              }
+              if (!gOK) {
+                 GlobalTreeNode* nd = find_GlobalTreeNode( giTree, ea );
+                 /* "it does overlap a global block */
+                 tl_assert(nd);
+                 /* "but does not completely fall with the block" */
+                 tl_assert(!is_subinterval_of(nd->addr, nd->szB, ea, szB));
+              }
+              if (0) VG_(printf)("overlapping blocks in cache\n");
+              return;
+           }
            sMin = sLB == &sNegInf  ? 0         : (sLB->addr + sLB->szB);
            sMax = sUB == &sPosInf  ? ~(UWord)0 : (sUB->addr - 1);
            gMin = gLB == &gNegInf  ? 0         : (gLB->addr + gLB->szB);
@@ -1486,14 +1560,29 @@ static void classify_address ( /*OUT*/Invar* inv,
               fudge uMax. */
            if (uMin < uMax && uMax == ~(UWord)0)
               uMax--;
-           cache->elems[ip].addr = uMin;
-           cache->elems[ip].szB = uMax - uMin + 1;
-           cache->elems[ip].inv = *inv;
+           toadd_addr = uMin;
+           toadd_szB  = uMax - uMin + 1;
            break;
         }
         default:
            /* We should only be caching info for the above 3 cases */
           tl_assert(0);
+     } /* switch (inv->tag) */
+
+     { /* and actually add this to the cache, finally */
+       Word i;
+       Word ip = cache->nInUse / 2; /* doesn't seem critical */
+
+       if (cache->nInUse < N_QCACHE)
+          cache->nInUse++;
+       for (i = cache->nInUse-1; i > ip; i--) {
+          cache->elems[i] = cache->elems[i-1];
+       }
+
+       tl_assert(toadd_szB > 0);
+       cache->elems[ip].addr = toadd_addr;
+       cache->elems[ip].szB  = toadd_szB;
+       cache->elems[ip].inv  = *inv;
      }
 
      if (show) QCache__pp(cache, "after upd");
