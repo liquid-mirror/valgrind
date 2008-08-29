@@ -51,13 +51,17 @@ typedef
 /* Initialise library; returns Thr* for root thread.  'alloc' and
    'shadow_alloc' should never return NULL, instead they should simply
    not return if they encounter an out-of-memory condition. */
-Thr* libhb_init ( void* (*zalloc)( SizeT ),
-                  void  (*dealloc)( void* ),
-                  void* (*shadow_alloc)( SizeT ),
-                  struct EC_* (*get_EC)( Thr* ) );
+Thr* libhb_init (
+        void*       (*zalloc)( SizeT ),
+        void        (*dealloc)( void* ),
+        void*       (*shadow_alloc)( SizeT ),
+        void        (*get_stacktrace)( Thr*, Addr*, UWord ),
+        struct EC_* (*stacktrace_to_EC)( Addr*, UWord ),
+        struct EC_* (*get_EC)( Thr* )
+     );
 
 /* Shut down the library, and print stats (in fact that's _all_
-   this is for. */
+   this is for.) */
 void libhb_shutdown ( Bool show_stats );
 
 /* Thread creation: returns Thr* for new thread */

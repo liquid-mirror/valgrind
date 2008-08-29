@@ -9,6 +9,7 @@
 #include "pub_tool_libcbase.h"
 #include "pub_tool_libcassert.h"
 #include "pub_tool_libcprint.h"
+#include "pub_tool_oset.h"
 
 static void* libhbPlainVG_memset ( void *s, Int c, SizeT sz ) {
    return VG_(memset)(s,c,sz);
@@ -42,6 +43,35 @@ static char* libhbPlainVG_strcat (char *dest, const char *src) {
 
 #define libhbPlainVG_sprintf(_str, _format, _args...) \
    vgPlain_sprintf(_str, _format, _args)
+
+
+#define libhbPlainVG_OSetGen_Remove(_arg1, _arg2) \
+   vgPlain_OSetGen_Remove((_arg1),(_arg2))
+
+#define libhbPlainVG_OSetGen_FreeNode(_arg1, _arg2) \
+   vgPlain_OSetGen_FreeNode((_arg1),(_arg2))
+
+#define libhbPlainVG_OSetGen_Lookup(_arg1, _arg2) \
+   vgPlain_OSetGen_Lookup((_arg1),(_arg2))
+
+#define libhbPlainVG_OSetGen_AllocNode(_arg1, _arg2) \
+   vgPlain_OSetGen_AllocNode((_arg1),(_arg2))
+
+#define libhbPlainVG_OSetGen_Insert(_arg1, _arg2) \
+   vgPlain_OSetGen_Insert((_arg1),(_arg2))
+
+#define libhbPlainVG_OSetGen_Create(_arg1, _arg2, _arg3, _arg4)       \
+   vgPlain_OSetGen_Create((_arg1),(_arg2),(_arg3),(_arg4))
+
+#define libhbPlainVG_OSetGen_Size(_arg1) \
+   vgPlain_OSetGen_Size((_arg1))
+
+#define libhbPlainVG_OSetGen_ResetIter(_arg1) \
+   vgPlain_OSetGen_ResetIter((_arg1))
+
+#define libhbPlainVG_OSetGen_Next(_arg1) \
+   vgPlain_OSetGen_Next((_arg1))
+
 
 
 //////////////////////////////////////

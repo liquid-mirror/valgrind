@@ -4947,8 +4947,33 @@ static void hg_fini ( Int exitcode )
    }
 }
 
-/* FIXME: move this somewhere sane */
-static  struct EC_*  get_EC_for_libhb ( Thr* hbt )
+/* FIXME: move these somewhere sane */
+
+static
+void for_libhb__get_stacktrace ( Thr* hbt, Addr* frames, UWord nRequest )
+{
+   Thread*     thr;
+   ThreadId    tid;
+   UWord       nActual;
+   tl_assert(hbt);
+   thr = libhb_get_Thr_opaque( hbt );
+   tl_assert(thr);
+   tid = map_threads_maybe_reverse_lookup_SLOW(thr);
+   nActual = (UWord)VG_(get_StackTrace)( tid, frames, (UInt)nRequest,
+                                         NULL, NULL, 0 );
+   tl_assert(nActual <= nRequest);
+   for (; nActual < nRequest; nActual++)
+      frames[nActual] = 0;
+}
+
+static
+struct EC_*  for_libhb__stacktrace_to_EC ( Addr* frames, UWord nFrames )
+{
+   return VG_(make_ExeContext_from_StackTrace)( frames, (UInt)nFrames );
+}
+
+static
+struct EC_*  for_libhb__get_EC ( Thr* hbt )
 {
    Thread*     thr;
    ThreadId    tid;
@@ -5046,7 +5071,9 @@ static void hg_pre_clo_init ( void )
 
    /////////////////////////////////////////////
    hbthr_root = libhb_init( hg_zalloc, hg_free, shmem__bigchunk_alloc,
-                            get_EC_for_libhb );
+                            for_libhb__get_stacktrace, 
+                            for_libhb__stacktrace_to_EC,
+                            for_libhb__get_EC );
    /////////////////////////////////////////////
 
    initialise_data_structures(hbthr_root);

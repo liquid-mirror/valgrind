@@ -88,6 +88,14 @@ static void* shadow_alloc_nofail ( SizeT n ) {
    return memalign(16,n);
 }
 
+static void get_stacktrace ( Thr* thr, Addr* frames, UWord nFrames ) {
+   memset(frames, 0, nFrames * sizeof(frames[0]));
+}
+
+static struct EC_* stacktrace_to_EC ( Addr* frames, UWord nFrames ) {
+   return NULL;
+}
+
 static struct EC_* get_EC ( Thr* thr ) {
    return NULL;
 }
@@ -121,8 +129,12 @@ static void rdlock ( Thr* t, SO* so ) {
    libhb_so_recv(t, so, False/*weak*/);
 }
 
-static void unlock ( Thr* t, SO* so ) {
-   libhb_so_send(t, so);
+static void wrunlk ( Thr* t, SO* so ) {
+   libhb_so_send(t, so, True/*strong*/);
+}
+
+static void rdunlk ( Thr* t, SO* so ) {
+   libhb_so_send(t, so, False/*weak*/);
 }
 
 int main ( void )
@@ -131,7 +143,8 @@ int main ( void )
   printf("\ndriver, blah\n");
 
   Thr* t1
-     = libhb_init( zalloc_nofail, dealloc, shadow_alloc_nofail, get_EC );
+     = libhb_init( zalloc_nofail, dealloc, shadow_alloc_nofail, 
+                   get_stacktrace, stacktrace_to_EC, get_EC );
   SO* lk = libhb_so_alloc();
 
   libhb_range_new( t1, 100, 8 );
@@ -140,7 +153,7 @@ int main ( void )
 
   Int do_test_RW1 = 1;
   Int do_test_RW2 = 1;
-  Int do_test_RW3 = 0;
+  Int do_test_RW3 = 1;
   Int do_test0 = 1;
   Int do_test1 = 1;
   Int do_test2 = 1;
@@ -155,12 +168,12 @@ int main ( void )
                        rdlock(t2, lk);
      rd(t1, 100, 4);
                        rd(t2, 100, 4);
-     unlock(t1, lk);
-                       unlock(t2, lk);
+     rdunlk(t1, lk);
+                       rdunlk(t2, lk);
 
                        wrlock(t2, lk);
                        wr(t2, 100, 4);
-                       unlock(t2, lk);
+                       wrunlk(t2, lk);
   }
 
   if (do_test_RW2) {
@@ -170,12 +183,12 @@ int main ( void )
                        rdlock(t2, lk);
      rd(t1, 100, 4);
                        rd(t2, 100, 4);
-     unlock(t1, lk);
-                       unlock(t2, lk);
+     rdunlk(t1, lk);
+                       rdunlk(t2, lk);
 
      wrlock(t1, lk);
      wr(t1, 100, 4);
-     unlock(t1, lk);
+     wrunlk(t1, lk);
   }
 
   if (do_test0) {
@@ -196,10 +209,10 @@ int main ( void )
 
      wrlock(t1, lk);
      wr(t1, 100, 4);
-     unlock(t1, lk);
+     wrunlk(t1, lk);
                       wrlock(t2, lk);
                       wr(t2, 100, 4);
-                      unlock(t2, lk);
+                      wrunlk(t2, lk);
   }
 
   if (do_test2)
@@ -208,10 +221,10 @@ int main ( void )
 
      wrlock(t1, lk);
      wr(t1, 100, 4);
-     unlock(t1, lk);
+     wrunlk(t1, lk);
                    // wrlock(t2, lk);
                       wr(t2, 100, 4); // race
-                   // unlock(t2, lk);
+                   // wrunlk(t2, lk);
   }
 
   if (do_test3)
@@ -220,10 +233,10 @@ int main ( void )
 
      wrlock(t1, lk);
      wr(t1, 100, 4);
-     unlock(t1, lk);
+     wrunlk(t1, lk);
                    // wrlock(t2, lk);
                    rd(t2, 100, 4); // race
-                   // unlock(t2, lk);
+                   // wrunlk(t2, lk);
   }
 
   // no race
@@ -244,10 +257,10 @@ int main ( void )
      for (i = 0; i < 1000; i++) {
      wrlock(t1, lk);
      wr(t1, 100, 4);
-     unlock(t1, lk);
+     wrunlk(t1, lk);
                       wrlock(t2, lk);
                       wr(t2, 100, 4);
-                      unlock(t2, lk);
+                      wrunlk(t2, lk);
      }
   }
 
