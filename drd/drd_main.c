@@ -654,7 +654,7 @@ void drd_post_thread_join(DrdThreadId drd_joiner, DrdThreadId drd_joinee)
     const unsigned msg_size = 256;
     char* msg;
 
-    msg = VG_(malloc)(msg_size);
+    msg = VG_(malloc)("drd.main.dptj.1", msg_size);
     tl_assert(msg);
     VG_(snprintf)(msg, msg_size,
                   "drd_post_thread_join joiner = %d/%d, joinee = %d/%d",
