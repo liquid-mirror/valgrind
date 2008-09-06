@@ -50,7 +50,7 @@
 /* fwds for
    Globals needed by other parts of the library.  These are set
    once at startup and then never changed. */
-static void*       (*main_zalloc_P)( SizeT ) = NULL;
+static void*       (*main_zalloc_P)( HChar*, SizeT ) = NULL;
 static void        (*main_dealloc_P)( void* ) = NULL;
 static void*       (*main_shadow_alloc_P)( SizeT ) = NULL;
 static void        (*main_get_stacktrace)( Thr*, Addr*, UWord ) = NULL;
@@ -95,11 +95,11 @@ static void notify_free ( Addr a ) {
 }
 
 
-static void* main_zalloc ( SizeT n ) {
+static void* main_zalloc ( HChar* cc, SizeT n ) {
    void* v;
    tl_assert(n >= 0);
    stats__zallocd += (ULong)n;
-   v = main_zalloc_P(n);
+   v = main_zalloc_P(cc,n);
    //   notify_malloc( (Addr)v, n );
    return v;
 }
@@ -199,7 +199,8 @@ typedef  void  XArray;
 /* Create new XArray, using given allocation and free function, and
    for elements of the specified size.  Alloc fn must not fail (that
    is, if it returns it must have succeeded.) */
-extern XArray* VG_(newXA) ( void*(*alloc_fn)(SizeT), 
+extern XArray* VG_(newXA) ( void*(*alloc_fn)(HChar*,SizeT), 
+                            HChar* cc,
                             void(*free_fn)(void*),
                             Word elemSzB );
 
@@ -293,7 +294,8 @@ extern XArray* VG_(cloneXA)( XArray* xa );
 /* See pub_tool_xarray.h for details of what this is all about. */
 
 struct _XArray {
-   void* (*alloc) ( SizeT );        /* alloc fn (nofail) */
+   void* (*alloc) ( HChar*, SizeT );        /* alloc fn (nofail) */
+   HChar* cc;
    void  (*free) ( void* );         /* free fn */
    Int   (*cmpFn) ( void*, void* ); /* cmp fn (may be NULL) */
    Word  elemSzB;   /* element size in bytes */
@@ -304,7 +306,8 @@ struct _XArray {
 };
 
 
-XArray* VG_(newXA) ( void*(*alloc_fn)(SizeT), 
+XArray* VG_(newXA) ( void*(*alloc_fn)(HChar*,SizeT), 
+                     HChar* cc,
                      void(*free_fn)(void*),
                      Word elemSzB )
 {
@@ -318,9 +321,10 @@ XArray* VG_(newXA) ( void*(*alloc_fn)(SizeT),
    vg_assert(alloc_fn);
    vg_assert(free_fn);
    vg_assert(elemSzB > 0);
-   xa = alloc_fn( sizeof(struct _XArray) );
+   xa = alloc_fn( cc, sizeof(struct _XArray) );
    vg_assert(xa);
    xa->alloc     = alloc_fn;
+   xa->cc        = cc;
    xa->free      = free_fn;
    xa->cmpFn     = NULL;
    xa->elemSzB   = elemSzB;
@@ -339,14 +343,14 @@ XArray* VG_(cloneXA)( XArray* xao )
    vg_assert(xa->alloc);
    vg_assert(xa->free);
    vg_assert(xa->elemSzB >= 1);
-   nyu = xa->alloc( sizeof(struct _XArray) );
+   nyu = xa->alloc( xa->cc, sizeof(struct _XArray) );
    if (!nyu)
       return NULL;
    /* Copy everything verbatim ... */
    *nyu = *xa;
    /* ... except we have to clone the contents-array */
    if (nyu->arr) {
-      nyu->arr = nyu->alloc( nyu->totsizeE * nyu->elemSzB );
+      nyu->arr = nyu->alloc( nyu->cc, nyu->totsizeE * nyu->elemSzB );
       if (!nyu->arr) {
          nyu->free(nyu);
          return NULL;
@@ -409,7 +413,7 @@ static inline void ensureSpaceXA ( struct _XArray* xa )
       if (0) 
          VG_(printf)("addToXA: increasing from %ld to %ld\n", 
                      xa->totsizeE, newsz);
-      tmp = xa->alloc(newsz * xa->elemSzB);
+      tmp = xa->alloc(xa->cc, newsz * xa->elemSzB);
       vg_assert(tmp);
       if (xa->usedsizeE > 0) 
          VG_(memcpy)(tmp, xa->arr, xa->usedsizeE * xa->elemSzB);
@@ -616,7 +620,8 @@ typedef  struct _WordFM  WordFM; /* opaque */
    sections of the map, or the whole thing.  If kCmp is NULL then the
    ordering used is unsigned word ordering (UWord) on the key
    values. */
-WordFM* HG_(newFM) ( void* (*alloc_nofail)( SizeT ),
+WordFM* HG_(newFM) ( void* (*alloc_nofail)( HChar*, SizeT ),
+                     HChar* cc,
                      void  (*dealloc)(void*),
                      Word  (*kCmp)(UWord,UWord) );
 
@@ -699,7 +704,8 @@ WordFM* HG_(dopyFM) ( WordFM* fm,
 // FIXME! find some way to turn this back into an abstract type.
 typedef
    struct {
-      void*   (*alloc_nofail)( SizeT );
+      void*   (*alloc_nofail)( HChar*, SizeT );
+      HChar*  cc;
       void    (*dealloc)(void*);
       UWord   firstWord;
       UWord   firstCount;
@@ -715,7 +721,8 @@ typedef
 /* Initialise a WordBag and make it empty.  Only do this once for each
    bag, at the start of its lifetime. */
 void HG_(initBag) ( WordBag* bag,
-                    void* (*alloc_nofail)( SizeT ),
+                    void* (*alloc_nofail)( HChar*, SizeT ),
+                    HChar* cc,
                     void  (*dealloc)(void*) );
 
 /* Remove all elements from a bag, thereby making it empty, and free
@@ -867,7 +874,8 @@ typedef
 
 struct _WordFM {
    AvlNode* root;
-   void*    (*alloc_nofail)( SizeT );
+   void*    (*alloc_nofail)( HChar*, SizeT );
+   HChar*   cc;
    void     (*dealloc)(void*);
    Word     (*kCmp)(UWord,UWord);
    AvlNode* nodeStack[WFM_STKMAX]; // Iterator node stack
@@ -1246,12 +1254,13 @@ AvlNode* avl_dopy ( AvlNode* nd,
                     UWord(*dopyK)(UWord), 
                     UWord(*dopyV)(UWord),
                     UWord(*dopyW)(UWord),
-                    void*(alloc_nofail)(SizeT) )
+                    void*(alloc_nofail)(HChar*,SizeT),
+                    HChar* cc )
 {
    AvlNode* nyu;
    if (! nd)
       return NULL;
-   nyu = alloc_nofail(sizeof(AvlNode));
+   nyu = alloc_nofail(cc, sizeof(AvlNode));
    tl_assert(nyu);
    
    nyu->child[0] = nd->child[0];
@@ -1291,13 +1300,13 @@ AvlNode* avl_dopy ( AvlNode* nd,
    /* Copy subtrees */
    if (nyu->child[0]) {
       nyu->child[0] = avl_dopy( nyu->child[0],
-                                dopyK, dopyV, dopyW, alloc_nofail );
+                                dopyK, dopyV, dopyW, alloc_nofail, cc );
       if (! nyu->child[0])
          return NULL;
    }
    if (nyu->child[1]) {
       nyu->child[1] = avl_dopy( nyu->child[1],
-                                dopyK, dopyV, dopyW, alloc_nofail );
+                                dopyK, dopyV, dopyW, alloc_nofail, cc );
       if (! nyu->child[1])
          return NULL;
    }
@@ -1307,13 +1316,15 @@ AvlNode* avl_dopy ( AvlNode* nd,
 
 /* Initialise a WordFM. */
 static void initFM ( WordFM* fm,
-                     void*   (*alloc_nofail)( SizeT ),
+                     void*   (*alloc_nofail)( HChar*, SizeT ),
+                     HChar*  cc,
                      void    (*dealloc)(void*),
                      Word    (*kCmp)(UWord,UWord) )
 {
    fm->root         = NULL;
    fm->kCmp         = kCmp;
    fm->alloc_nofail = alloc_nofail;
+   fm->cc           = cc;
    fm->dealloc      = dealloc;
    fm->stackTop     = 0;
 }
@@ -1327,13 +1338,14 @@ static void initFM ( WordFM* fm,
    sections of the map, or the whole thing.  If kCmp is NULL then the
    ordering used is unsigned word ordering (UWord) on the key
    values. */
-WordFM* HG_(newFM) ( void* (*alloc_nofail)( SizeT ),
+WordFM* HG_(newFM) ( void* (*alloc_nofail)( HChar*, SizeT ),
+                     HChar* cc,
                      void  (*dealloc)(void*),
                      Word  (*kCmp)(UWord,UWord) )
 {
-   WordFM* fm = alloc_nofail(sizeof(WordFM));
+   WordFM* fm = alloc_nofail(cc, sizeof(WordFM));
    tl_assert(fm);
-   initFM(fm, alloc_nofail, dealloc, kCmp);
+   initFM(fm, alloc_nofail, cc, dealloc, kCmp);
    return fm;
 }
 
@@ -1377,7 +1389,7 @@ Bool HG_(addToFM) ( WordFM* fm, UWord k, UWord v, UWord w )
 {
    MaybeWord oldV;
    AvlNode* node;
-   node = fm->alloc_nofail( sizeof(struct _AvlNode) );
+   node = fm->alloc_nofail( fm->cc, sizeof(struct _AvlNode) );
    node->key = k;
    node->val = v;
    node->wal = w;
@@ -1575,7 +1587,7 @@ WordFM* HG_(dopyFM) ( WordFM* fm,
    /* can't clone the fm whilst iterating on it */
    tl_assert(fm->stackTop == 0);
 
-   nyu = fm->alloc_nofail( sizeof(WordFM) );
+   nyu = fm->alloc_nofail( fm->cc, sizeof(WordFM) );
    tl_assert(nyu);
 
    *nyu = *fm;
@@ -1586,7 +1598,8 @@ WordFM* HG_(dopyFM) ( WordFM* fm,
 
    if (nyu->root) {
       nyu->root = avl_dopy( nyu->root,
-                            dopyK, dopyV, dopyW, fm->alloc_nofail );
+                            dopyK, dopyV, dopyW,
+                            fm->alloc_nofail, fm->cc );
       if (! nyu->root)
          return NULL;
    }
@@ -1648,10 +1661,12 @@ static inline Bool is_plausible_WordBag ( WordBag* bag ) {
 }
 
 void HG_(initBag) ( WordBag* bag,
-                    void* (*alloc_nofail)( SizeT ),
+                    void* (*alloc_nofail)( HChar*, SizeT ),
+                    HChar* cc,
                     void  (*dealloc)(void*) )
 {
    bag->alloc_nofail = alloc_nofail;
+   bag->cc           = cc;
    bag->dealloc      = dealloc;
    bag->firstWord    = 0;
    bag->firstCount   = 0;
@@ -1691,7 +1706,7 @@ void HG_(addToBag)( WordBag* bag, UWord w )
    /* it's not the Distinguished Element.  Try the rest */
    { UWord key, count;
      if (bag->rest == NULL) {
-        bag->rest = HG_(newFM)( bag->alloc_nofail, bag->dealloc,
+       bag->rest = HG_(newFM)( bag->alloc_nofail, bag->cc, bag->dealloc,
                                 NULL/*unboxed uword cmp*/ );
      }
      tl_assert(bag->rest);
@@ -2630,7 +2645,8 @@ void alloc_F_for_writing ( /*MOD*/SecMap* sm, /*OUT*/Word* fixp ) {
 
    /* No free F line found.  Expand existing array and try again. */
    new_size = sm->linesF_size==0 ? 1 : 2 * sm->linesF_size;
-   nyu      = main_zalloc( new_size * sizeof(LineF) );
+   nyu      = main_zalloc( "libhb.aFfw.1 (LineF storage)",
+                           new_size * sizeof(LineF) );
    tl_assert(nyu);
 
    stats__secmap_linesF_allocd += (new_size - sm->linesF_size);
@@ -4092,7 +4108,8 @@ static void zsm_init ( void(*p_rcinc)(SVal), void(*p_rcdec)(SVal) )
    rcdec = p_rcdec;
 
    tl_assert(map_shmem == NULL);
-   map_shmem = HG_(newFM)( main_zalloc, main_dealloc, 
+   map_shmem = HG_(newFM)( main_zalloc, "libhb.zsm_init.1 (map_shmem)",
+                           main_dealloc, 
                            NULL/*unboxed UWord cmp*/);
    tl_assert(map_shmem != NULL);
    shmem__invalidate_scache();
@@ -4216,10 +4233,11 @@ static Bool is_sane_VTS ( VTS* vts )
 VTS* VTS__new ( void )
 {
    VTS* vts;
-   vts = main_zalloc( sizeof(VTS) );
+   vts = main_zalloc( "libhb.VTS__new.1", sizeof(VTS) );
    tl_assert(vts);
    vts->id = VtsID_INVALID;
-   vts->ts = VG_(newXA)( main_zalloc, main_dealloc, sizeof(ScalarTS) );
+   vts->ts = VG_(newXA)( main_zalloc, "libhb.VTS__new.2",
+                         main_dealloc, sizeof(ScalarTS) );
    tl_assert(vts->ts);
    return vts;
 }
@@ -4631,7 +4649,8 @@ static WordFM* /* VTS* void void */ vts_set = NULL;
 static void vts_set_init ( void )
 {
    tl_assert(!vts_set);
-   vts_set = HG_(newFM)( main_zalloc, main_dealloc,
+   vts_set = HG_(newFM)( main_zalloc, "libhb.vts_set_init.1",
+                         main_dealloc,
                          (Word(*)(UWord,UWord))VTS__cmp_structural );
    tl_assert(vts_set);
 }
@@ -4707,7 +4726,8 @@ static Word vts_next_GC_at = 1000;
 static void vts_tab_init ( void )
 {
    vts_tab
-      = VG_(newXA)( main_zalloc, main_dealloc, sizeof(VtsTE) );
+      = VG_(newXA)( main_zalloc, "libhb.vts_tab_init.1",
+                    main_dealloc, sizeof(VtsTE) );
    vts_tab_freelist
       = VtsID_INVALID;
    tl_assert(vts_tab);
@@ -5088,7 +5108,7 @@ struct _Thr {
 };
 
 static Thr* Thr__new ( void ) {
-   Thr* thr = main_zalloc( sizeof(Thr) );
+   Thr* thr = main_zalloc( "libhb.Thr__new.1", sizeof(Thr) );
    thr->viR = VtsID_INVALID;
    thr->viW = VtsID_INVALID;
    return thr;
@@ -5263,7 +5283,7 @@ Bool event_map_lookup ( struct EC_** resEC, Thr** resThr, Addr a )
 //                                                     //
 /////////////////////////////////////////////////////////
 
-#define EVENT_MAP_GC_AT 500000
+#define EVENT_MAP_GC_AT 1000000
 #define EVENT_MAP_GC_DISCARD_FRACTION 0.5
 
 /* This is in two parts:
@@ -5304,7 +5324,7 @@ typedef
       UWord magic;
       UWord rc;
       UWord rcX; /* used for crosschecking */
-      UWord frames[N_FRAMES];
+      UWord frames[1 + N_FRAMES]; /* first word is hash of all the rest */
    }
    RCEC;
 
@@ -5316,7 +5336,9 @@ static Word RCEC__cmp_by_frames ( RCEC* ec1, RCEC* ec2 ) {
    Word i;
    tl_assert(ec1 && ec1->magic == RCEC_MAGIC);
    tl_assert(ec2 && ec2->magic == RCEC_MAGIC);
-   for (i = 0; i < N_FRAMES; i++) {
+   if (ec1->frames[0] < ec2->frames[0]) return -1;
+   if (ec1->frames[0] > ec2->frames[0]) return 1;
+   for (i = 1; i < 1 + N_FRAMES; i++) {
       if (ec1->frames[i] < ec2->frames[i]) return -1;
       if (ec1->frames[i] > ec2->frames[i]) return 1;
    }
@@ -5370,13 +5392,27 @@ static RCEC* ctxt__find_or_add ( RCEC* example )
    return copy;
 }
 
+static inline UWord ROLW ( UWord w, Int n )
+{
+   Int bpw = 8 * sizeof(UWord);
+   w = (w << n) | (w >> (bpw-n));
+   return w;
+}
+
 static RCEC* get_RCEC ( Thr* thr )
 {
-   RCEC example;
+   UWord hash, i;
+   RCEC  example;
    example.magic = RCEC_MAGIC;
    example.rc = 0;
    example.rcX = 0;
-   main_get_stacktrace( thr, &example.frames[0], N_FRAMES );
+   main_get_stacktrace( thr, &example.frames[1], N_FRAMES );
+   hash = 0;
+   for (i = 1; i < 1 + N_FRAMES; i++) {
+      hash ^= example.frames[i];
+      hash = ROLW(hash, 19);
+   }
+   example.frames[0] = hash;
    return ctxt__find_or_add( &example );
 }
 
@@ -5410,7 +5446,7 @@ static UWord oldrefGen      = 0;    /* current LRU generation # */
 static UWord oldrefTreeN    = 0;    /* # elems in oldrefTree */
 static UWord oldrefGenIncAt = 0;    /* inc gen # when size hits this */
 
-static void event_map_bind ( Addr a, struct EC_* ec, Thr* thr )
+static void event_map_bind ( Addr a, struct EC_* ecxx, Thr* thr )
 {
    OldRef key, *ref;
    RCEC*  here;
@@ -5463,7 +5499,7 @@ Bool event_map_lookup ( /*OUT*/struct EC_** resEC,
       tl_assert(ref->magic == OldRef_MAGIC);
       tl_assert(ref->rcec);
       tl_assert(ref->rcec->magic == RCEC_MAGIC);
-      *resEC  = main_stacktrace_to_EC(&ref->rcec->frames[0], N_FRAMES);
+      *resEC  = main_stacktrace_to_EC(&ref->rcec->frames[1], N_FRAMES);
       *resThr = ref->thr;
       return True;
    } else {
@@ -5477,7 +5513,8 @@ static void event_map_init ( void )
    contextTree = VG_(OSetGen_Create)(
                     0, 
                     (Word(*)(const void *, const void*))RCEC__cmp_by_frames, 
-                    main_zalloc, main_dealloc
+                    main_zalloc, "libhb.event_map_init.1 (context tree)",
+                    main_dealloc
                  );
    tl_assert(contextTree);
 
@@ -5485,7 +5522,8 @@ static void event_map_init ( void )
    oldrefTree = VG_(OSetGen_Create)(
                    0, 
                    (Word(*)(const void *, const void*))OldRef__cmp_by_EA,
-                   main_zalloc, main_dealloc
+                   main_zalloc, "libhb.event_map_init.2 (oldref tree)", 
+                   main_dealloc
                 );
    tl_assert(oldrefTree);
 
@@ -5542,7 +5580,8 @@ static void event_map_maybe_GC ( void )
 
    /* Compute the distribution of generation values in the ref tree */
    /* genMap :: generation-number -> count-of-nodes-with-that-number */
-   genMap = HG_(newFM)( main_zalloc, main_dealloc, NULL );
+   genMap = HG_(newFM)( main_zalloc, "libhb.emmG.1",
+                                      main_dealloc, NULL );
 
    VG_(OSetGen_ResetIter)( oldrefTree );
    while ( (oldref = VG_(OSetGen_Next)( oldrefTree )) ) {
@@ -5592,7 +5631,8 @@ static void event_map_maybe_GC ( void )
       stuff from it, so first we need to copy them off somewhere
       else. (sigh) */
    XArray* refs2del;
-   refs2del = VG_(newXA)( main_zalloc, main_dealloc, sizeof(OldRef*) );
+   refs2del = VG_(newXA)( main_zalloc, "libhb.emmG.1",
+                          main_dealloc, sizeof(OldRef*) );
 
    VG_(OSetGen_ResetIter)( oldrefTree );
    while ( (oldref = VG_(OSetGen_Next)( oldrefTree )) ) {
@@ -5748,7 +5788,7 @@ static SVal msm_read ( SVal svOld, /*MOD*/MSMInfo* info )
    tl_assert(svNew != SVal_INVALID);
    if (svNew != svOld) {
       if (MSM_CONFACC && SVal__isC(svOld) && SVal__isC(svNew)) {
-         struct EC_* ec = main_get_EC( info->acc_thr );
+         struct EC_* ec = NULL; //main_get_EC( info->acc_thr );
          event_map_bind( info->ea, ec, info->acc_thr );
          stats__msm_read_change++;
       }
@@ -5813,7 +5853,7 @@ static SVal msm_write ( SVal svOld, /*MOD*/MSMInfo* info )
    tl_assert(svNew != SVal_INVALID);
    if (svNew != svOld) {
       if (MSM_CONFACC && SVal__isC(svOld) && SVal__isC(svNew)) {
-         struct EC_* ec = main_get_EC( info->acc_thr );
+         struct EC_* ec = NULL; //main_get_EC( info->acc_thr );
          event_map_bind( info->ea, ec, info->acc_thr );
          stats__msm_write_change++;
       }
@@ -5838,7 +5878,7 @@ struct _SO {
 };
 
 static SO* SO__Alloc ( void ) {
-   SO* so = main_zalloc( sizeof(SO) );
+   SO* so = main_zalloc( "libhb.SO__Alloc.1", sizeof(SO) );
    so->viR   = VtsID_INVALID;
    so->viW   = VtsID_INVALID;
    so->magic = SO_MAGIC;
@@ -5883,7 +5923,7 @@ static void show_thread_state ( HChar* str, Thr* t )
 
 
 Thr* libhb_init (
-        void*       (*zalloc)( SizeT ),
+        void*       (*zalloc)( HChar*, SizeT ),
         void        (*dealloc)( void* ),
         void*       (*shadow_alloc)( SizeT ),
         void        (*get_stacktrace)( Thr*, Addr*, UWord ),
