@@ -170,6 +170,7 @@ static void usage_NORETURN ( Bool debug_help )
 "    --debug-dump=frames       mimic /usr/bin/readelf --debug-dump=frames\n"
 "    --trace-redir=no|yes      show redirection details? [no]\n"
 "    --trace-sched=no|yes      show thread scheduler details? [no]\n"
+"    --profile-heap=no|yes     profile Valgrind's own space use\n"
 "    --wait-for-gdb=yes|no     pause on startup to wait for gdb attach\n"
 "    --sym-offsets=yes|no      show syms in form 'name+offset' ? [no]\n"
 "    --read-var-info=yes|no    read variable type & location info? [no]\n"
@@ -364,7 +365,7 @@ static Bool main_process_cmd_line_options( UInt* client_auxv,
             //   wouldn't disappear on them.)
             if (0)
                VG_(printf)("tool-specific arg: %s\n", arg);
-            arg = VG_(strdup)(arg + toolname_len + 1);
+            arg = VG_(strdup)("main.mpclo.1", arg + toolname_len + 1);
             arg[0] = '-';
             arg[1] = '-';
 
@@ -419,7 +420,7 @@ static Bool main_process_cmd_line_options( UInt* client_auxv,
       else VG_BOOL_CLO(arg, "--trace-redir",      VG_(clo_trace_redir))
 
       else VG_BOOL_CLO(arg, "--trace-syscalls",   VG_(clo_trace_syscalls))
-      else VG_BOOL_CLO(arg, "--trace-pthreads",   VG_(clo_trace_pthreads))
+      else VG_BOOL_CLO(arg, "--profile-heap",     VG_(clo_profile_heap))
       else VG_BOOL_CLO(arg, "--wait-for-gdb",     VG_(clo_wait_for_gdb))
       else VG_STR_CLO (arg, "--db-command",       VG_(clo_db_command))
       else VG_STR_CLO (arg, "--sim-hints",        VG_(clo_sim_hints))
@@ -595,6 +596,8 @@ static Bool main_process_cmd_line_options( UInt* client_auxv,
       VG_(clo_track_fds) = False;
       /* Disable timestamped output */
       VG_(clo_time_stamp) = False;
+      /* Disable heap profiling, since that prints lots of stuff. */
+      VG_(clo_profile_heap) = False;
       /* Also, we want to set options for the leak checker, but that
          will have to be done in Memcheck's flag-handling code, not
          here. */
@@ -710,7 +713,7 @@ static Bool main_process_cmd_line_options( UInt* client_auxv,
          the default one. */
       static const Char default_supp[] = "default.supp";
       Int len = VG_(strlen)(VG_(libdir)) + 1 + sizeof(default_supp);
-      Char *buf = VG_(arena_malloc)(VG_AR_CORE, len);
+      Char *buf = VG_(arena_malloc)(VG_AR_CORE, "main.mpclo.2", len);
       VG_(sprintf)(buf, "%s/%s", VG_(libdir), default_supp);
       VG_(clo_suppressions)[VG_(clo_n_suppressions)] = buf;
       VG_(clo_n_suppressions)++;
@@ -1151,7 +1154,7 @@ static Addr* get_seg_starts ( /*OUT*/Int* n_acquired )
 
    n_starts = 1;
    while (True) {
-      starts = VG_(malloc)( n_starts * sizeof(Addr) );
+      starts = VG_(malloc)( "main.gss.1", n_starts * sizeof(Addr) );
       if (starts == NULL)
          break;
       r = VG_(am_get_segment_starts)( starts, n_starts );
@@ -1330,7 +1333,7 @@ Int valgrind_main ( Int argc, HChar **argv, HChar **envp )
    //   free pair right now to check that nothing is broken.
    //--------------------------------------------------------------
    VG_(debugLog)(1, "main", "Starting the dynamic memory manager\n");
-   { void* p = VG_(malloc)( 12345 );
+   { void* p = VG_(malloc)( "main.vm.1", 12345 );
      if (p) VG_(free)( p );
    }
    VG_(debugLog)(1, "main", "Dynamic memory manager is running\n");
@@ -2075,6 +2078,14 @@ void shutdown_actions_NORETURN( ThreadId tid,
 
    if (VG_(clo_verbosity) > 1)
       print_all_stats();
+
+   /* Show a profile of the heap(s) at shutdown.  Optionally, first
+      throw away all the debug info, as that makes it easy to spot
+      leaks in the debuginfo reader. */
+   if (VG_(clo_profile_heap)) {
+      if (0) VG_(di_discard_ALL_debuginfo)();
+      VG_(print_arena_cc_analysis)();
+   }
 
    if (VG_(clo_profile_flags) > 0) {
       #define N_MAX 200

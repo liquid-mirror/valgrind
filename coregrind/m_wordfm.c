@@ -81,7 +81,8 @@ typedef
 
 struct _WordFM {
    AvlNode* root;
-   void*    (*alloc_nofail)( SizeT );
+   void*    (*alloc_nofail)( HChar*, SizeT );
+   HChar*   cc;
    void     (*dealloc)(void*);
    Word     (*kCmp)(UWord,UWord);
    AvlNode* nodeStack[WFM_STKMAX]; // Iterator node stack
@@ -459,12 +460,13 @@ static
 AvlNode* avl_dopy ( AvlNode* nd, 
                     UWord(*dopyK)(UWord), 
                     UWord(*dopyV)(UWord),
-                    void*(alloc_nofail)(SizeT) )
+                    void*(alloc_nofail)(HChar*,SizeT),
+                    HChar* cc )
 {
    AvlNode* nyu;
    if (! nd)
       return NULL;
-   nyu = alloc_nofail(sizeof(AvlNode));
+   nyu = alloc_nofail(cc, sizeof(AvlNode));
    tl_assert(nyu);
    
    nyu->child[0] = nd->child[0];
@@ -493,12 +495,14 @@ AvlNode* avl_dopy ( AvlNode* nd,
 
    /* Copy subtrees */
    if (nyu->child[0]) {
-      nyu->child[0] = avl_dopy( nyu->child[0], dopyK, dopyV, alloc_nofail );
+      nyu->child[0] = avl_dopy( nyu->child[0], dopyK, dopyV, 
+                                alloc_nofail, cc );
       if (! nyu->child[0])
          return NULL;
    }
    if (nyu->child[1]) {
-      nyu->child[1] = avl_dopy( nyu->child[1], dopyK, dopyV, alloc_nofail );
+      nyu->child[1] = avl_dopy( nyu->child[1], dopyK, dopyV,
+                                alloc_nofail, cc );
       if (! nyu->child[1])
          return NULL;
    }
@@ -508,13 +512,15 @@ AvlNode* avl_dopy ( AvlNode* nd,
 
 /* Initialise a WordFM. */
 static void initFM ( WordFM* fm,
-                     void*   (*alloc_nofail)( SizeT ),
+                     void*   (*alloc_nofail)( HChar*, SizeT ),
+                     HChar*  cc,
                      void    (*dealloc)(void*),
                      Word    (*kCmp)(UWord,UWord) )
 {
    fm->root         = 0;
    fm->kCmp         = kCmp;
    fm->alloc_nofail = alloc_nofail;
+   fm->cc           = cc;
    fm->dealloc      = dealloc;
    fm->stackTop     = 0;
 }
@@ -528,13 +534,14 @@ static void initFM ( WordFM* fm,
    sections of the map, or the whole thing.  If kCmp is NULL then the
    ordering used is unsigned word ordering (UWord) on the key
    values. */
-WordFM* VG_(newFM) ( void* (*alloc_nofail)( SizeT ),
+WordFM* VG_(newFM) ( void* (*alloc_nofail)( HChar*, SizeT ),
+                     HChar* cc,
                      void  (*dealloc)(void*),
                      Word  (*kCmp)(UWord,UWord) )
 {
-   WordFM* fm = alloc_nofail(sizeof(WordFM));
+   WordFM* fm = alloc_nofail(cc, sizeof(WordFM));
    tl_assert(fm);
-   initFM(fm, alloc_nofail, dealloc, kCmp);
+   initFM(fm, alloc_nofail, cc, dealloc, kCmp);
    return fm;
 }
 
@@ -572,7 +579,7 @@ void VG_(addToFM) ( WordFM* fm, UWord k, UWord v )
 {
    MaybeWord oldV;
    AvlNode* node;
-   node = fm->alloc_nofail( sizeof(struct _AvlNode) );
+   node = fm->alloc_nofail( fm->cc, sizeof(struct _AvlNode) );
    node->key = k;
    node->val = v;
    oldV.b = False;
@@ -735,7 +742,7 @@ WordFM* VG_(dopyFM) ( WordFM* fm, UWord(*dopyK)(UWord), UWord(*dopyV)(UWord) )
    /* can't clone the fm whilst iterating on it */
    tl_assert(fm->stackTop == 0);
 
-   nyu = fm->alloc_nofail( sizeof(WordFM) );
+   nyu = fm->alloc_nofail( fm->cc, sizeof(WordFM) );
    tl_assert(nyu);
 
    *nyu = *fm;
@@ -745,7 +752,8 @@ WordFM* VG_(dopyFM) ( WordFM* fm, UWord(*dopyK)(UWord), UWord(*dopyV)(UWord) )
    VG_(memset)(fm->numStack, 0,  sizeof(fm->numStack));
 
    if (nyu->root) {
-      nyu->root = avl_dopy( nyu->root, dopyK, dopyV, fm->alloc_nofail );
+      nyu->root = avl_dopy( nyu->root, dopyK, dopyV,
+                            fm->alloc_nofail, fm->cc );
       if (! nyu->root)
          return NULL;
    }
@@ -768,11 +776,12 @@ struct _WordBag {
    WordFM* fm; 
 };
 
-WordBag* VG_(newBag) ( void* (*alloc_nofail)( SizeT ),
+WordBag* VG_(newBag) ( void* (*alloc_nofail)( HChar*, SizeT ),
+                       HChar* cc,
                        void  (*dealloc)(void*) )
 {
-   WordBag* bag = alloc_nofail(sizeof(WordBag));
-   bag->fm = VG_(newFM)( alloc_nofail, dealloc, NULL );
+   WordBag* bag = alloc_nofail(cc, sizeof(WordBag));
+   bag->fm = VG_(newFM)( alloc_nofail, cc, dealloc, NULL );
    return bag;
 }
 
