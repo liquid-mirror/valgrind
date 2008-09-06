@@ -221,7 +221,7 @@ typedef
 typedef
    struct {
       UChar* name;  /* in DebugInfo.strchunks */
-      Type*  type;  /* on DebugInfo.admin list */
+      UWord  typeR; /* a cuOff */
       GExpr* gexpr; /* on DebugInfo.gexprs list */
       GExpr* fbGX;  /* SHARED. */
       UChar* fileName; /* where declared; may be NULL. in
@@ -403,12 +403,14 @@ struct _DebugInfo {
       expressly for the purposes of visiting each object exactly once
       when we need to delete them. */
 
-   /* A list of TyAdmin structs, and the payloads that they refer
-      to. */
-   TyAdmin* admin_tyadmins;
+   /* An array of TyEnts.  These are needed to make sense of any types
+      in the .varinfo.  Also, when deleting this DebugInfo, we must
+      first traverse this array and throw away malloc'd stuff hanging
+      off it -- by calling ML_(TyEnt__make_EMPTY) on each entry. */
+   XArray* /* of TyEnt */ admin_tyents;
 
    /* A list of guarded DWARF3 expressions. */
-   GExpr*   admin_gexprs;
+   XArray* admin_gexprs;
 };
 
 /* --------------------- functions --------------------- */
@@ -437,7 +439,7 @@ extern void ML_(addVar)( struct _DebugInfo* di,
                          Addr   aMin,
                          Addr   aMax,
                          UChar* name,
-                         Type*  type,
+                         UWord  typeR, /* a cuOff */
                          GExpr* gexpr,
                          GExpr* fbGX, /* SHARED. */
                          UChar* fileName, /* where decl'd - may be NULL */

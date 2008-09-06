@@ -166,9 +166,9 @@ DebugInfo* alloc_DebugInfo( const UChar* filename,
 
    vg_assert(filename);
 
-   di = ML_(dinfo_zalloc)(sizeof(DebugInfo));
-   di->filename  = ML_(dinfo_strdup)(filename);
-   di->memname   = memname ? ML_(dinfo_strdup)(memname)
+   di = ML_(dinfo_zalloc)("di.debuginfo.aDI.1", sizeof(DebugInfo));
+   di->filename  = ML_(dinfo_strdup)("di.debuginfo.aDI.2", filename);
+   di->memname   = memname ? ML_(dinfo_strdup)("di.debuginfo.aDI.3", memname)
                            : NULL;
 
    /* Everything else -- pointers, sizes, arrays -- is zeroed by calloc.
@@ -192,10 +192,10 @@ DebugInfo* alloc_DebugInfo( const UChar* filename,
 /* Free a DebugInfo, and also all the stuff hanging off it. */
 static void free_DebugInfo ( DebugInfo* di )
 {
-   Word i, j;
+   Word i, j, n;
    struct strchunk *chunk, *next;
-   TyAdmin *admin1, *admin2;
-   GExpr *gexpr1, *gexpr2;
+   TyEnt* ent;
+   GExpr* gexpr;
 
    vg_assert(di != NULL);
    if (di->filename)   ML_(dinfo_free)(di->filename);
@@ -212,13 +212,25 @@ static void free_DebugInfo ( DebugInfo* di )
    /* Delete the two admin lists.  These lists exist purely so that we
       can visit each object exactly once when we need to delete
       them. */
-   for (admin1 = di->admin_tyadmins; admin1; admin1 = admin2) {
-      admin2 = admin1->next;
-      ML_(delete_TyAdmin_and_payload)(admin1);
+   if (di->admin_tyents) {
+      n = VG_(sizeXA)(di->admin_tyents);
+      for (i = 0; i < n; i++) {
+         ent = (TyEnt*)VG_(indexXA)(di->admin_tyents, i);
+         /* Dump anything hanging off this ent */
+         ML_(TyEnt__make_EMPTY)(ent);
+      }
+      VG_(deleteXA)(di->admin_tyents);
+      di->admin_tyents = NULL;
    }
-   for (gexpr1 = di->admin_gexprs; gexpr1; gexpr1 = gexpr2) {
-      gexpr2 = gexpr1->next;
-      ML_(dinfo_free)(gexpr1);
+
+   if (di->admin_gexprs) {
+      n = VG_(sizeXA)(di->admin_gexprs);
+      for (i = 0; i < n; i++) {
+         gexpr = *(GExpr**)VG_(indexXA)(di->admin_gexprs, i);
+         ML_(dinfo_free)(gexpr);
+      }
+      VG_(deleteXA)(di->admin_gexprs);
+      di->admin_gexprs = NULL;
    }
 
    /* Dump the variable info.  This is kinda complex: we must take
@@ -825,6 +837,19 @@ void VG_(di_aix5_notify_segchange)(
 /*--- TOP LEVEL: QUERYING EXISTING DEBUG INFO              ---*/
 /*---                                                      ---*/
 /*------------------------------------------------------------*/
+
+void VG_(di_discard_ALL_debuginfo)( void )
+{
+   DebugInfo *di, *di2;
+   di = debugInfo_list;
+   while (di) {
+      di2 = di->next;
+      VG_(printf)("XXX rm %p\n", di);
+      free_DebugInfo( di );
+      di = di2;
+   }
+}
+
 
 /*------------------------------------------------------------*/
 /*--- Use of symbol table & location info to create        ---*/
@@ -1602,7 +1627,7 @@ Bool VG_(use_CF_info) ( /*MOD*/Addr* ipP,
             case CFIR_MEMCFAREL: {                      \
                Addr a = cfa + (Word)_off;               \
                if (a < min_accessible                   \
-                   || a+sizeof(Addr) > max_accessible)  \
+                   || a > max_accessible-sizeof(Addr))  \
                   return False;                         \
                _prev = *(Addr*)a;                       \
                break;                                   \
@@ -1653,6 +1678,7 @@ Bool VG_(use_CF_info) ( /*MOD*/Addr* ipP,
    regs, which supplies ip,sp,fp values, will be NULL for global
    variables, and non-NULL for local variables. */
 static Bool data_address_is_in_var ( /*OUT*/UWord* offset,
+                                     XArray* /* TyEnt */ tyents,
                                      DiVariable*   var,
                                      RegSummary*   regs,
                                      Addr          data_addr,
@@ -1662,12 +1688,12 @@ static Bool data_address_is_in_var ( /*OUT*/UWord* offset,
    SizeT      var_szB;
    GXResult   res;
    Bool       show = False;
+
    vg_assert(var->name);
-   vg_assert(var->type);
    vg_assert(var->gexpr);
 
    /* Figure out how big the variable is. */
-   muw = ML_(sizeOfType)(var->type);
+   muw = ML_(sizeOfType)(tyents, var->typeR);
    /* if this var has a type whose size is unknown, it should never
       have been added.  ML_(addVar) should have rejected it. */
    vg_assert(muw.b == True);
@@ -1677,7 +1703,7 @@ static Bool data_address_is_in_var ( /*OUT*/UWord* offset,
    if (show) {
       VG_(printf)("VVVV: data_address_%#lx_is_in_var: %s :: ",
                   data_addr, var->name );
-      ML_(pp_Type_C_ishly)( var->type );
+      ML_(pp_TyEnt_C_ishly)( tyents, var->typeR );
       VG_(printf)("\n");
    }
 
@@ -1965,11 +1991,13 @@ Bool consider_vars_in_frame ( /*OUT*/Char* dname1,
          if (debug)
             VG_(printf)("QQQQ:    var:name=%s %#lx-%#lx %#lx\n",
                         var->name,arange->aMin,arange->aMax,ip);
-         if (data_address_is_in_var( &offset, var, &regs, data_addr,
-                                     di->data_bias )) {
+         if (data_address_is_in_var( &offset, di->admin_tyents,
+                                     var, &regs,
+                                     data_addr, di->data_bias )) {
             OffT residual_offset = 0;
             XArray* described = ML_(describe_type)( &residual_offset,
-                                                    var->type, offset );
+                                                    di->admin_tyents, 
+                                                    var->typeR, offset );
             format_message( dname1, dname2, n_dname, 
                             data_addr, var, offset, residual_offset,
                             described, frameNo, tid );
@@ -2062,12 +2090,13 @@ Bool VG_(get_data_description)( /*OUT*/Char* dname1,
             This means, if the evaluation of the location
             expression/list requires a register, we have to let it
             fail. */
-         if (data_address_is_in_var( &offset, var, 
+         if (data_address_is_in_var( &offset, di->admin_tyents, var, 
                                      NULL/* RegSummary* */, 
                                      data_addr, di->data_bias )) {
             OffT residual_offset = 0;
             XArray* described = ML_(describe_type)( &residual_offset,
-                                                    var->type, offset );
+                                                    di->admin_tyents,
+                                                    var->typeR, offset );
             format_message( dname1, dname2, n_dname, 
                             data_addr, var, offset, residual_offset,
                             described, -1/*frameNo*/, tid );
