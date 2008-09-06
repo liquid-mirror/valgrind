@@ -85,7 +85,7 @@ static Addr* get_seg_starts ( /*OUT*/Int* n_acquired )
 
    n_starts = 1;
    while (True) {
-      starts = VG_(malloc)( n_starts * sizeof(Addr) );
+      starts = VG_(malloc)( "mc.gss.1", n_starts * sizeof(Addr) );
       if (starts == NULL)
          break;
       r = VG_(am_get_segment_starts)( starts, n_starts );
@@ -469,7 +469,7 @@ static void full_report(ThreadId tid)
 	 p->indirect_bytes += lc_markstack[i].indirect;
       } else {
          n_lossrecords ++;
-         p = VG_(malloc)(sizeof(LossRecord));
+         p = VG_(malloc)( "mc.fr.1", sizeof(LossRecord));
          p->loss_mode    = lc_markstack[i].state;
          p->allocated_at = where;
          p->total_bytes  = lc_shadows[i]->szB;
@@ -608,7 +608,8 @@ find_active_shadows(UInt* n_shadows)
    VG_(ssort)((void*)mallocs, n_mallocs, 
               sizeof(VgHashNode*), lc_compar);
 
-   malloc_chunk_holds_a_pool_chunk = VG_(calloc)( n_mallocs, sizeof(Bool) );
+   malloc_chunk_holds_a_pool_chunk = VG_(calloc)( "mc.fas.1",
+                                                  n_mallocs, sizeof(Bool) );
 
    *n_shadows = n_mallocs;
 
@@ -641,7 +642,7 @@ find_active_shadows(UInt* n_shadows)
    }
 
    tl_assert(*n_shadows > 0);
-   shadows = VG_(malloc)(sizeof(VgHashNode*) * (*n_shadows));
+   shadows = VG_(malloc)("mc.fas.2", sizeof(VgHashNode*) * (*n_shadows));
    s = 0;
 
    /* Copy the mempool chunks into the final array. */
@@ -738,7 +739,8 @@ void MC_(do_detect_memory_leaks) (
    lc_max_mallocd_addr = lc_shadows[lc_n_shadows-1]->data
                          + lc_shadows[lc_n_shadows-1]->szB;
 
-   lc_markstack = VG_(malloc)( lc_n_shadows * sizeof(*lc_markstack) );
+   lc_markstack = VG_(malloc)( "mc.ddml.1",
+                               lc_n_shadows * sizeof(*lc_markstack) );
    for (i = 0; i < lc_n_shadows; i++) {
       lc_markstack[i].next = -1;
       lc_markstack[i].state = Unreached;
