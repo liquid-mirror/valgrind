@@ -60,8 +60,8 @@ static char* libhbPlainVG_strcat (char *dest, const char *src) {
 #define libhbPlainVG_OSetGen_Insert(_arg1, _arg2) \
    vgPlain_OSetGen_Insert((_arg1),(_arg2))
 
-#define libhbPlainVG_OSetGen_Create(_arg1, _arg2, _arg3, _arg4)       \
-   vgPlain_OSetGen_Create((_arg1),(_arg2),(_arg3),(_arg4))
+#define libhbPlainVG_OSetGen_Create(_arg1, _arg2, _arg3, _arg4, _arg5) \
+   vgPlain_OSetGen_Create((_arg1),(_arg2),(_arg3),(_arg4),(_arg5))
 
 #define libhbPlainVG_OSetGen_Size(_arg1) \
    vgPlain_OSetGen_Size((_arg1))

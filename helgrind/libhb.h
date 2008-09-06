@@ -52,7 +52,7 @@ typedef
    'shadow_alloc' should never return NULL, instead they should simply
    not return if they encounter an out-of-memory condition. */
 Thr* libhb_init (
-        void*       (*zalloc)( SizeT ),
+        void*       (*zalloc)( HChar*, SizeT ),
         void        (*dealloc)( void* ),
         void*       (*shadow_alloc)( SizeT ),
         void        (*get_stacktrace)( Thr*, Addr*, UWord ),

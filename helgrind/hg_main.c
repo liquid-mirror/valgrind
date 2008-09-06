@@ -198,10 +198,10 @@ static Int clo_sanity_flags = 0;
 /*--- Some very basic stuff                                    ---*/
 /*----------------------------------------------------------------*/
 
-static void* hg_zalloc ( SizeT n ) {
+static void* hg_zalloc ( HChar* cc, SizeT n ) {
    void* p;
    tl_assert(n > 0);
-   p = VG_(malloc)( n );
+   p = VG_(malloc)( cc, n );
    tl_assert(p);
    VG_(memset)(p, 0, n);
    return p;
@@ -357,7 +357,7 @@ static inline Bool is_sane_LockN ( Lock* lock ); /* fwds */
 
 static Thread* mk_Thread ( Thr* hbthr ) {
    static Int indx      = 1;
-   Thread* thread       = hg_zalloc( sizeof(Thread) );
+   Thread* thread       = hg_zalloc( "hg.mk_Thread.1", sizeof(Thread) );
    thread->locksetA     = HG_(emptyWS)( univ_lsets );
    thread->locksetW     = HG_(emptyWS)( univ_lsets );
    thread->magic        = Thread_MAGIC;
@@ -373,7 +373,7 @@ static Thread* mk_Thread ( Thr* hbthr ) {
 // Make a new lock which is unlocked (hence ownerless)
 static Lock* mk_LockN ( LockKind kind, Addr guestaddr ) {
    static ULong unique = 0;
-   Lock* lock             = hg_zalloc( sizeof(Lock) );
+   Lock* lock             = hg_zalloc( "hg.mk_Lock.1", sizeof(Lock) );
    lock->admin            = admin_locks;
    lock->unique           = unique++;
    lock->magic            = LockN_MAGIC;
@@ -500,7 +500,7 @@ static void lockN_acquire_writer ( Lock* lk, Thread* thr )
          tl_assert(lk->heldBy == NULL); /* can't w-lock recursively */
          tl_assert(!lk->heldW);
          lk->heldW  = True;
-         lk->heldBy = VG_(newBag)( hg_zalloc, hg_free );
+         lk->heldBy = VG_(newBag)( hg_zalloc, "hg.lNaw.1", hg_free );
          VG_(addToBag)( lk->heldBy, (Word)thr );
          break;
       case LK_mbRec:
@@ -554,7 +554,7 @@ static void lockN_acquire_reader ( Lock* lk, Thread* thr )
       VG_(addToBag)(lk->heldBy, (Word)thr);
    } else {
       lk->heldW  = False;
-      lk->heldBy = VG_(newBag)( hg_zalloc, hg_free );
+      lk->heldBy = VG_(newBag)( hg_zalloc, "hg.lNar.1", hg_free );
       VG_(addToBag)( lk->heldBy, (Word)thr );
    }
    tl_assert(!lk->heldW);
@@ -801,12 +801,13 @@ static void initialise_data_structures ( Thr* hbthr_root )
    tl_assert(sizeof(Addr) == sizeof(Word));
 
    tl_assert(map_threads == NULL);
-   map_threads = hg_zalloc( VG_N_THREADS * sizeof(Thread*) );
+   map_threads = hg_zalloc( "hg.ids.1", VG_N_THREADS * sizeof(Thread*) );
    tl_assert(map_threads != NULL);
 
    tl_assert(sizeof(Addr) == sizeof(Word));
    tl_assert(map_locks == NULL);
-   map_locks = VG_(newFM)( hg_zalloc, hg_free, NULL/*unboxed Word cmp*/);
+   map_locks = VG_(newFM)( hg_zalloc, "hg.ids.2", hg_free, 
+                           NULL/*unboxed Word cmp*/);
    tl_assert(map_locks != NULL);
 
    __bus_lock_Lock = mk_LockN( LK_nonRec, (Addr)&__bus_lock );
@@ -814,15 +815,18 @@ static void initialise_data_structures ( Thr* hbthr_root )
    VG_(addToFM)( map_locks, (Word)&__bus_lock, (Word)__bus_lock_Lock );
 
    tl_assert(univ_tsets == NULL);
-   univ_tsets = HG_(newWordSetU)( hg_zalloc, hg_free, 8/*cacheSize*/ );
+   univ_tsets = HG_(newWordSetU)( hg_zalloc, "hg.ids.3", hg_free,
+                                  8/*cacheSize*/ );
    tl_assert(univ_tsets != NULL);
 
    tl_assert(univ_lsets == NULL);
-   univ_lsets = HG_(newWordSetU)( hg_zalloc, hg_free, 8/*cacheSize*/ );
+   univ_lsets = HG_(newWordSetU)( hg_zalloc, "hg.ids.4", hg_free,
+                                  8/*cacheSize*/ );
    tl_assert(univ_lsets != NULL);
 
    tl_assert(univ_laog == NULL);
-   univ_laog = HG_(newWordSetU)( hg_zalloc, hg_free, 24/*cacheSize*/ );
+   univ_laog = HG_(newWordSetU)( hg_zalloc, "hg.ids.5 (univ_laog)",
+                                 hg_free, 24/*cacheSize*/ );
    tl_assert(univ_laog != NULL);
 
    /* Set up entries for the root thread */
@@ -1322,7 +1326,7 @@ void record_last_lock_lossage ( Addr ga_of_access,
                       HG_(cardinalityWS)( univ_lsets, lset_old), lk );
    if (lk->appeared_at) {
       if (ga_to_lastlock == NULL)
-         ga_to_lastlock = VG_(newFM)( hg_zalloc, hg_free, NULL );
+         ga_to_lastlock = VG_(newFM)( hg_zalloc, "hg.rlll.1", hg_free, NULL );
       VG_(addToFM)( ga_to_lastlock, ga_of_access, (Word)lk->appeared_at );
       stats__ga_LL_adds++;
    }
@@ -2339,7 +2343,7 @@ static WordFM* map_cond_to_SO = NULL;
 
 static void map_cond_to_SO_INIT ( void ) {
    if (UNLIKELY(map_cond_to_SO == NULL)) {
-      map_cond_to_SO = VG_(newFM)( hg_zalloc, hg_free, NULL );
+      map_cond_to_SO = VG_(newFM)( hg_zalloc, "hg.mctSI.1", hg_free, NULL );
       tl_assert(map_cond_to_SO != NULL);
    }
 }
@@ -2672,7 +2676,8 @@ static WordFM* map_sem_to_SO_stack = NULL;
 
 static void map_sem_to_SO_stack_INIT ( void ) {
    if (map_sem_to_SO_stack == NULL) {
-      map_sem_to_SO_stack = VG_(newFM)( hg_zalloc, hg_free, NULL );
+      map_sem_to_SO_stack = VG_(newFM)( hg_zalloc, "hg.mstSs.1",
+                                        hg_free, NULL );
       tl_assert(map_sem_to_SO_stack != NULL);
    }
 }
@@ -2688,7 +2693,7 @@ static void push_SO_for_sem ( void* sem, SO* so ) {
       tl_assert(xa);
       VG_(addToXA)( xa, &so );
    } else {
-      xa = VG_(newXA)( hg_zalloc, hg_free, sizeof(SO*) );
+     xa = VG_(newXA)( hg_zalloc, "hg.pSfs.1", hg_free, sizeof(SO*) );
       VG_(addToXA)( xa, &so );
       VG_(addToFM)( map_sem_to_SO_stack, (Word)sem, (Word)xa );
    }
@@ -2978,7 +2983,7 @@ static void laog__add_edge ( Lock* src, Lock* dst ) {
       presentF = outs_new == links->outs;
       links->outs = outs_new;
    } else {
-      links = hg_zalloc(sizeof(LAOGLinks));
+      links = hg_zalloc("hg.lae.1", sizeof(LAOGLinks));
       links->inns = HG_(emptyWS)( univ_laog );
       links->outs = HG_(singletonWS)( univ_laog, (Word)dst );
       VG_(addToFM)( laog, (Word)src, (Word)links );
@@ -2994,7 +2999,7 @@ static void laog__add_edge ( Lock* src, Lock* dst ) {
       presentR = inns_new == links->inns;
       links->inns = inns_new;
    } else {
-      links = hg_zalloc(sizeof(LAOGLinks));
+      links = hg_zalloc("hg.lae.2", sizeof(LAOGLinks));
       links->inns = HG_(singletonWS)( univ_laog, (Word)src );
       links->outs = HG_(emptyWS)( univ_laog );
       VG_(addToFM)( laog, (Word)dst, (Word)links );
@@ -3019,7 +3024,8 @@ static void laog__add_edge ( Lock* src, Lock* dst ) {
       if (VG_(lookupFM)( laog_exposition, NULL, NULL, (Word)&expo )) {
          /* we already have it; do nothing */
       } else {
-         LAOGLinkExposition* expo2 = hg_zalloc(sizeof(LAOGLinkExposition));
+         LAOGLinkExposition* expo2 = hg_zalloc("hg.lae.3", 
+                                               sizeof(LAOGLinkExposition));
          expo2->src_ga = src->guestaddr;
          expo2->dst_ga = dst->guestaddr;
          expo2->src_ec = src->acquired_at;
@@ -3148,8 +3154,8 @@ Lock* laog__do_dfs_from_to ( Lock* src, WordSetID dsts /* univ_lsets */ )
       return NULL;
 
    ret     = NULL;
-   stack   = VG_(newXA)( hg_zalloc, hg_free, sizeof(Lock*) );
-   visited = VG_(newFM)( hg_zalloc, hg_free, NULL/*unboxedcmp*/ );
+   stack   = VG_(newXA)( hg_zalloc, "hg.lddft.1", hg_free, sizeof(Lock*) );
+   visited = VG_(newFM)( hg_zalloc, "hg.lddft.2", hg_free, NULL/*unboxedcmp*/ );
 
    (void) VG_(addToXA)( stack, &src );
 
@@ -3202,9 +3208,10 @@ static void laog__pre_thread_acquires_lock (
       return;
 
    if (!laog)
-      laog = VG_(newFM)( hg_zalloc, hg_free, NULL/*unboxedcmp*/ );
+      laog = VG_(newFM)( hg_zalloc, "hg.lptal.1", 
+                         hg_free, NULL/*unboxedcmp*/ );
    if (!laog_exposition)
-      laog_exposition = VG_(newFM)( hg_zalloc, hg_free, 
+      laog_exposition = VG_(newFM)( hg_zalloc, "hg.lptal.2", hg_free, 
                                     cmp_LAOGLinkExposition );
 
    /* First, the check.  Complain if there is any path in laog from lk
@@ -3310,9 +3317,9 @@ static void laog__handle_lock_deletions (
    UWord* ws_words;
 
    if (!laog)
-      laog = VG_(newFM)( hg_zalloc, hg_free, NULL/*unboxedcmp*/ );
+      laog = VG_(newFM)( hg_zalloc, "hg.lhld.1", hg_free, NULL/*unboxedcmp*/ );
    if (!laog_exposition)
-      laog_exposition = VG_(newFM)( hg_zalloc, hg_free, 
+      laog_exposition = VG_(newFM)( hg_zalloc, "hg.lhld.2", hg_free, 
                                     cmp_LAOGLinkExposition );
 
    HG_(getPayloadWS)( &ws_words, &ws_size, univ_lsets, locksToDelete );
@@ -3344,7 +3351,7 @@ static VgHashTable hg_mallocmeta_table = NULL;
 
 
 static MallocMeta* new_MallocMeta ( void ) {
-   MallocMeta* md = hg_zalloc( sizeof(MallocMeta) );
+   MallocMeta* md = hg_zalloc( "hg.new_MallocMeta.1", sizeof(MallocMeta) );
    tl_assert(md);
    return md;
 }
@@ -3806,7 +3813,8 @@ static WordFM* map_pthread_t_to_Thread = NULL; /* pthread_t -> Thread* */
 
 static void map_pthread_t_to_Thread_INIT ( void ) {
    if (UNLIKELY(map_pthread_t_to_Thread == NULL)) {
-      map_pthread_t_to_Thread = VG_(newFM)( hg_zalloc, hg_free, NULL );
+      map_pthread_t_to_Thread = VG_(newFM)( hg_zalloc, "hg.mpttT.1", 
+                                            hg_free, NULL );
       tl_assert(map_pthread_t_to_Thread != NULL);
    }
 }
@@ -4051,7 +4059,8 @@ static HChar* string_table_strdup ( HChar* str ) {
    if (!str)
       str = "(null)";
    if (!string_table) {
-      string_table = VG_(newFM)( hg_zalloc, hg_free, string_table_cmp );
+      string_table = VG_(newFM)( hg_zalloc, "hg.sts.1",
+                                 hg_free, string_table_cmp );
       tl_assert(string_table);
    }
    if (VG_(lookupFM)( string_table,
@@ -4060,7 +4069,7 @@ static HChar* string_table_strdup ( HChar* str ) {
       if (0) VG_(printf)("string_table_strdup: %p -> %p\n", str, copy );
       return copy;
    } else {
-      copy = VG_(strdup)(str);
+      copy = VG_(strdup)("hg.sts.2", str);
       tl_assert(copy);
       VG_(addToFM)( string_table, (Word)copy, (Word)copy );
       return copy;
@@ -4086,11 +4095,11 @@ static Lock* mk_LockP_from_LockN ( Lock* lkn )
    stats__ga_LockN_to_P_queries++;
    tl_assert( is_sane_LockN(lkn) );
    if (!yaWFM) {
-      yaWFM = VG_(newFM)( hg_zalloc, hg_free, lock_unique_cmp );
+      yaWFM = VG_(newFM)( hg_zalloc, "hg.mLPfLN.1", hg_free, lock_unique_cmp );
       tl_assert(yaWFM);
    }
    if (!VG_(lookupFM)( yaWFM, NULL, (Word*)&lkp, (Word)lkn)) {
-      lkp = hg_zalloc( sizeof(Lock) );
+      lkp = hg_zalloc( "hg.mLPfLN.2", sizeof(Lock) );
       *lkp = *lkn;
       lkp->admin = NULL;
       lkp->magic = LockP_MAGIC;
@@ -4452,7 +4461,7 @@ static XArray* /* of Thread* */ get_sorted_thread_set ( WordSetID tset )
    XArray* xa;
    UWord*  ts_words;
    UWord   ts_size, i;
-   xa = VG_(newXA)( hg_zalloc, hg_free, sizeof(Thread*) );
+   xa = VG_(newXA)( hg_zalloc, "hg.cTbei.1", hg_free, sizeof(Thread*) );
    tl_assert(xa);
    HG_(getPayloadWS)( &ts_words, &ts_size, univ_tsets, tset );
    tl_assert(ts_words);

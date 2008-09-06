@@ -140,7 +140,8 @@ typedef
    corresponding ix2vec entry number.  The two mappings are mutually
    redundant. */
 struct _WordSetU {
-      void*     (*alloc)(SizeT);
+      void*     (*alloc)(HChar*,SizeT);
+      HChar*    cc;
       void      (*dealloc)(void*);
       WordFM*   vec2ix; /* WordVec-to-WordSet mapping tree */
       WordVec** ix2vec; /* WordSet-to-WordVec mapping array */
@@ -176,12 +177,12 @@ static WordVec* new_WV_of_size ( WordSetU* wsu, UWord sz )
 {
    WordVec* wv;
    tl_assert(sz >= 0);
-   wv = wsu->alloc( sizeof(WordVec) );
+   wv = wsu->alloc( wsu->cc, sizeof(WordVec) );
    wv->owner = wsu;
    wv->words = NULL;
    wv->size = sz;
    if (sz > 0) {
-     wv->words = wsu->alloc( (SizeT)sz * sizeof(UWord) );
+     wv->words = wsu->alloc( wsu->cc, (SizeT)sz * sizeof(UWord) );
    }
    return wv;
 }
@@ -238,7 +239,7 @@ static void ensure_ix2vec_space ( WordSetU* wsu )
       return;
    new_sz = 2 * wsu->ix2vec_size;
    if (new_sz == 0) new_sz = 2;
-   new_vec = wsu->alloc( new_sz * sizeof(WordVec*) );
+   new_vec = wsu->alloc( wsu->cc, new_sz * sizeof(WordVec*) );
    tl_assert(new_vec);
    for (i = 0; i < wsu->ix2vec_size; i++)
       new_vec[i] = wsu->ix2vec[i];
@@ -305,18 +306,21 @@ static WordSet add_or_dealloc_WordVec( WordSetU* wsu, WordVec* wv_new )
 }
 
 
-WordSetU* HG_(newWordSetU) ( void* (*alloc_nofail)( SizeT ),
+WordSetU* HG_(newWordSetU) ( void* (*alloc_nofail)( HChar*, SizeT ),
+                             HChar* cc,
                              void  (*dealloc)(void*),
                              Word  cacheSize )
 {
    WordSetU* wsu;
    WordVec*  empty;
 
-   wsu          = alloc_nofail( sizeof(WordSetU) );
+   wsu          = alloc_nofail( cc, sizeof(WordSetU) );
    VG_(memset)( wsu, 0, sizeof(WordSetU) );
    wsu->alloc   = alloc_nofail;
+   wsu->cc      = cc;
    wsu->dealloc = dealloc;
-   wsu->vec2ix  = VG_(newFM)( alloc_nofail, dealloc, cmp_WordVecs_for_FM );
+   wsu->vec2ix  = VG_(newFM)( alloc_nofail, cc,
+                              dealloc, cmp_WordVecs_for_FM );
    wsu->ix2vec_used = 0;
    wsu->ix2vec_size = 0;
    wsu->ix2vec      = NULL;
