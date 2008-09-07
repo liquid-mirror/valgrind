@@ -372,23 +372,52 @@ void* MC_(realloc) ( ThreadId tid, void* p_old, SizeT new_szB )
 
    old_szB = mc->szB;
 
-   if (old_szB == new_szB) {
-      /* size unchanged */
-      mc->where = VG_(record_ExeContext)(tid, 0/*first_ip_delta*/);
-      p_new = p_old;
-      
-   } else if (old_szB > new_szB) {
-      /* new size is smaller */
-      MC_(make_mem_noaccess)( mc->data+new_szB, mc->szB-new_szB );
-      mc->szB = new_szB;
-      mc->where = VG_(record_ExeContext)(tid, 0/*first_ip_delta*/);
-      p_new = p_old;
-      /* Possibly fill freed area with specified junk. */
-      if (MC_(clo_free_fill) != -1) {
-         tl_assert(MC_(clo_free_fill) >= 0x00 && MC_(clo_free_fill) <= 0xFF);
-         VG_(memset)((void*)(mc->data+new_szB), MC_(clo_free_fill), 
-                                                old_szB-new_szB);
+   /* In all cases, even when the new size is smaller or unchanged, we
+      reallocate and copy the contents, and make the old block
+      inaccessible.  This is so as to guarantee to catch all cases of
+      accesses via the old address after reallocation, regardless of
+      the change in size.  (Of course the ability to detect accesses
+      to the old block also depends on the size of the freed blocks
+      queue). */
+
+   if (new_szB <= old_szB) {
+      /* new size is smaller or the same */
+      Addr a_new; 
+      /* Get new memory */
+      a_new = (Addr)VG_(cli_malloc)(VG_(clo_alignment), new_szB);
+
+      if (a_new) {
+         ExeContext* ec;
+
+         ec = VG_(record_ExeContext)(tid, 0/*first_ip_delta*/);
+         tl_assert(ec);
+
+         /* Retained part is copied, red zones set as normal */
+         MC_(make_mem_noaccess)( a_new-MC_MALLOC_REDZONE_SZB, 
+                                 MC_MALLOC_REDZONE_SZB );
+         MC_(copy_address_range_state) ( (Addr)p_old, a_new, new_szB );
+         MC_(make_mem_noaccess)        ( a_new+new_szB, MC_MALLOC_REDZONE_SZB );
+
+         /* Copy from old to new */
+         VG_(memcpy)((void*)a_new, p_old, new_szB);
+
+         /* Possibly fill freed area with specified junk. */
+         if (MC_(clo_free_fill) != -1) {
+            tl_assert(MC_(clo_free_fill) >= 0x00 && MC_(clo_free_fill) <= 0xFF);
+            VG_(memset)((void*)p_old, MC_(clo_free_fill), old_szB);
+         }
+
+         /* Free old memory */
+         /* Nb: we have to allocate a new MC_Chunk for the new memory rather
+            than recycling the old one, so that any erroneous accesses to the
+            old memory are reported. */
+         die_and_free_mem ( tid, mc, MC_MALLOC_REDZONE_SZB );
+
+         // Allocate a new chunk.
+         mc = create_MC_Chunk( ec, a_new, new_szB, MC_AllocMalloc );
       }
+
+      p_new = (void*)a_new;
 
    } else {
       /* new size is bigger */
@@ -461,7 +490,7 @@ void MC_(create_mempool)(Addr pool, UInt rzB, Bool is_zeroed)
    MC_Mempool* mp;
 
    if (VG_(clo_verbosity) > 2) {
-      VG_(message)(Vg_UserMsg, "create_mempool(%p, %d, %d)", 
+      VG_(message)(Vg_UserMsg, "create_mempool(0x%lx, %d, %d)",
                                pool, rzB, is_zeroed);
       VG_(get_and_pp_StackTrace)
          (VG_(get_running_tid)(), MEMPOOL_DEBUG_STACKTRACE_DEPTH);
@@ -496,7 +525,7 @@ void MC_(destroy_mempool)(Addr pool)
    MC_Mempool* mp;
 
    if (VG_(clo_verbosity) > 2) {
-      VG_(message)(Vg_UserMsg, "destroy_mempool(%p)", pool);
+      VG_(message)(Vg_UserMsg, "destroy_mempool(0x%lx)", pool);
       VG_(get_and_pp_StackTrace)
          (VG_(get_running_tid)(), MEMPOOL_DEBUG_STACKTRACE_DEPTH);
    }
@@ -594,10 +623,10 @@ check_mempool_sane(MC_Mempool* mp)
                       n_chunks);
          for (i = 0; i < n_chunks; ++i) {
             VG_(message)(Vg_UserMsg, 
-                         "Mempool chunk %d / %d: %d bytes [%x,%x), allocated:",
+                         "Mempool chunk %d / %d: %ld bytes [%lx,%lx), allocated:",
                          i+1, 
                          n_chunks, 
-                         chunks[i]->szB, 
+                         chunks[i]->szB + 0UL,
                          chunks[i]->data, 
                          chunks[i]->data + chunks[i]->szB);
 
@@ -612,7 +641,7 @@ void MC_(mempool_alloc)(ThreadId tid, Addr pool, Addr addr, SizeT szB)
    MC_Mempool* mp;
 
    if (VG_(clo_verbosity) > 2) {     
-      VG_(message)(Vg_UserMsg, "mempool_alloc(%p, %p, %d)", pool, addr, szB);
+      VG_(message)(Vg_UserMsg, "mempool_alloc(0x%lx, 0x%lx, %ld)", pool, addr, szB);
       VG_(get_and_pp_StackTrace) (tid, MEMPOOL_DEBUG_STACKTRACE_DEPTH);
    }
 
@@ -640,7 +669,7 @@ void MC_(mempool_free)(Addr pool, Addr addr)
    }
 
    if (VG_(clo_verbosity) > 2) {
-      VG_(message)(Vg_UserMsg, "mempool_free(%p, %p)", pool, addr);
+      VG_(message)(Vg_UserMsg, "mempool_free(0x%lx, 0x%lx)", pool, addr);
       VG_(get_and_pp_StackTrace) (tid, MEMPOOL_DEBUG_STACKTRACE_DEPTH);
    }
 
@@ -653,8 +682,8 @@ void MC_(mempool_free)(Addr pool, Addr addr)
 
    if (VG_(clo_verbosity) > 2) {
       VG_(message)(Vg_UserMsg, 
-		   "mempool_free(%p, %p) freed chunk of %d bytes", 
-		   pool, addr, mc->szB);
+		   "mempool_free(0x%lx, 0x%lx) freed chunk of %ld bytes",
+		   pool, addr, mc->szB + 0UL);
    }
 
    die_and_free_mem ( tid, mc, mp->rzB );
@@ -671,7 +700,7 @@ void MC_(mempool_trim)(Addr pool, Addr addr, SizeT szB)
    VgHashNode** chunks;
 
    if (VG_(clo_verbosity) > 2) {
-      VG_(message)(Vg_UserMsg, "mempool_trim(%p, %p, %d)", pool, addr, szB);
+      VG_(message)(Vg_UserMsg, "mempool_trim(0x%lx, 0x%lx, %ld)", pool, addr, szB);
       VG_(get_and_pp_StackTrace) (tid, MEMPOOL_DEBUG_STACKTRACE_DEPTH);
    }
 
@@ -780,7 +809,7 @@ void MC_(move_mempool)(Addr poolA, Addr poolB)
    MC_Mempool* mp;
 
    if (VG_(clo_verbosity) > 2) {
-      VG_(message)(Vg_UserMsg, "move_mempool(%p, %p)", poolA, poolB);
+      VG_(message)(Vg_UserMsg, "move_mempool(0x%lx, 0x%lx)", poolA, poolB);
       VG_(get_and_pp_StackTrace)
          (VG_(get_running_tid)(), MEMPOOL_DEBUG_STACKTRACE_DEPTH);
    }
@@ -804,7 +833,7 @@ void MC_(mempool_change)(Addr pool, Addr addrA, Addr addrB, SizeT szB)
    ThreadId     tid = VG_(get_running_tid)();
 
    if (VG_(clo_verbosity) > 2) {
-      VG_(message)(Vg_UserMsg, "mempool_change(%p, %p, %p, %d)", 
+      VG_(message)(Vg_UserMsg, "mempool_change(0x%lx, 0x%lx, 0x%lx, %ld)",
                    pool, addrA, addrB, szB);
       VG_(get_and_pp_StackTrace) (tid, MEMPOOL_DEBUG_STACKTRACE_DEPTH);
    }
@@ -865,10 +894,10 @@ void MC_(print_malloc_stats) ( void )
    }
 
    VG_(message)(Vg_UserMsg, 
-                "malloc/free: in use at exit: %,llu bytes in %,lu blocks.",
+                "malloc/free: in use at exit: %'llu bytes in %'lu blocks.",
                 nbytes, nblocks);
    VG_(message)(Vg_UserMsg, 
-                "malloc/free: %,lu allocs, %,lu frees, %,llu bytes allocated.",
+                "malloc/free: %'lu allocs, %'lu frees, %'llu bytes allocated.",
                 cmalloc_n_mallocs,
                 cmalloc_n_frees, cmalloc_bs_mallocd);
    if (VG_(clo_verbosity) > 1)

@@ -192,10 +192,10 @@ DebugInfo* alloc_DebugInfo( const UChar* filename,
 /* Free a DebugInfo, and also all the stuff hanging off it. */
 static void free_DebugInfo ( DebugInfo* di )
 {
-   Word i, j;
+   Word i, j, n;
    struct strchunk *chunk, *next;
-   TyAdmin *admin1, *admin2;
-   GExpr *gexpr1, *gexpr2;
+   TyAdmin* admin;
+   GExpr* gexpr;
 
    vg_assert(di != NULL);
    if (di->filename)   ML_(dinfo_free)(di->filename);
@@ -212,13 +212,24 @@ static void free_DebugInfo ( DebugInfo* di )
    /* Delete the two admin lists.  These lists exist purely so that we
       can visit each object exactly once when we need to delete
       them. */
-   for (admin1 = di->admin_tyadmins; admin1; admin1 = admin2) {
-      admin2 = admin1->next;
-      ML_(delete_TyAdmin_and_payload)(admin1);
+   if (di->admin_tyadmins) {
+      n = VG_(sizeXA)(di->admin_tyadmins);
+      for (i = 0; i < n; i++) {
+         admin = (TyAdmin*)VG_(indexXA)(di->admin_tyadmins, i);
+         ML_(delete_payload_of_TyAdmin)(admin);
+      }
+      VG_(deleteXA)(di->admin_tyadmins);
+      di->admin_tyadmins = NULL;
    }
-   for (gexpr1 = di->admin_gexprs; gexpr1; gexpr1 = gexpr2) {
-      gexpr2 = gexpr1->next;
-      ML_(dinfo_free)(gexpr1);
+
+   if (di->admin_gexprs) {
+      n = VG_(sizeXA)(di->admin_gexprs);
+      for (i = 0; i < n; i++) {
+         gexpr = *(GExpr**)VG_(indexXA)(di->admin_gexprs, i);
+         ML_(dinfo_free)(gexpr);
+      }
+      VG_(deleteXA)(di->admin_gexprs);
+      di->admin_gexprs = NULL;
    }
 
    /* Dump the variable info.  This is kinda complex: we must take
@@ -279,7 +290,7 @@ static void discard_DebugInfo ( DebugInfo* di )
          if (curr->have_dinfo
              && (VG_(clo_verbosity) > 1 || VG_(clo_trace_redir)))
             VG_(message)(Vg_DebugMsg, 
-                         "Discarding syms at %p-%p in %s due to %s()", 
+                         "Discarding syms at %#lx-%#lx in %s due to %s()",
                          di->text_avma, 
                          di->text_avma + di->text_size,
                          curr->filename ? curr->filename : (UChar*)"???",
@@ -491,8 +502,8 @@ void VG_(di_notify_mmap)( Addr a, Bool allow_SkFileV )
    Int        nread;
    HChar      buf1k[1024];
    Bool       debug = False;
-   SysRes          statres;
-   struct vki_stat statbuf;
+   SysRes     statres;
+   struct vg_stat statbuf;
 
    /* In short, figure out if this mapping is of interest to us, and
       if so, try to guess what ld.so is doing and when/if we should
@@ -501,7 +512,7 @@ void VG_(di_notify_mmap)( Addr a, Bool allow_SkFileV )
    vg_assert(seg);
 
    if (debug)
-      VG_(printf)("di_notify_mmap-1: %p-%p %c%c%c\n",
+      VG_(printf)("di_notify_mmap-1: %#lx-%#lx %c%c%c\n",
                   seg->start, seg->end, 
                   seg->hasR ? 'r' : '-',
                   seg->hasW ? 'w' : '-',seg->hasX ? 'x' : '-' );
@@ -522,16 +533,32 @@ void VG_(di_notify_mmap)( Addr a, Bool allow_SkFileV )
    if (debug)
       VG_(printf)("di_notify_mmap-2: %s\n", filename);
 
-   /* Only try to read debug information from regular files. */
+   /* Only try to read debug information from regular files.  */
    statres = VG_(stat)(filename, &statbuf);
-   /* If the assert below ever fails, replace the VG_(stat)() call above */
-   /* by a VG_(lstat)() call.                                            */
+
+   /* stat dereferences symlinks, so we don't expect it to succeed and
+      yet produce something that is a symlink. */
    vg_assert(statres.isError || ! VKI_S_ISLNK(statbuf.st_mode));
-   if (statres.isError || ! VKI_S_ISREG(statbuf.st_mode))
-   {
+
+   /* Don't let the stat call fail silently.  Filter out some known
+      sources of noise before complaining, though. */
+   if (statres.isError) {
+      DebugInfo fake_di;
+      Bool quiet = VG_(strstr)(filename, "/var/run/nscd/") != NULL;
+      if (!quiet && VG_(clo_verbosity) > 1) {
+         VG_(memset)(&fake_di, 0, sizeof(fake_di));
+         fake_di.filename = filename;
+         ML_(symerr)(&fake_di, True, "failed to stat64/stat this file");
+      }
       return;
    }
 
+   /* Finally, the point of all this stattery: if it's not a regular file,
+      don't try to read debug info from it. */
+   if (! VKI_S_ISREG(statbuf.st_mode))
+      return;
+
+   /* no uses of statbuf below here. */
 
    /* Peer at the first few bytes of the file, to see if it is an ELF */
    /* object file. Ignore the file if we do not have read permission. */
@@ -698,7 +725,7 @@ void VG_(di_notify_mmap)( Addr a, Bool allow_SkFileV )
    [a, a+len).  */
 void VG_(di_notify_munmap)( Addr a, SizeT len )
 {
-   if (0) VG_(printf)("DISCARD %p %p\n", a, a+len);
+   if (0) VG_(printf)("DISCARD %#lx %#lx\n", a, a+len);
    discard_syms_in_range(a, len);
 }
 
@@ -1494,7 +1521,7 @@ Bool VG_(use_CF_info) ( /*MOD*/Addr* ipP,
    static UInt n_steps = 0;
    n_search++;
 
-   if (0) VG_(printf)("search for %p\n", *ipP);
+   if (0) VG_(printf)("search for %#lx\n", *ipP);
 
    for (si = debugInfo_list; si != NULL; si = si->next) {
       n_steps++;
@@ -1659,7 +1686,7 @@ static Bool data_address_is_in_var ( /*OUT*/UWord* offset,
    var_szB = muw.w;
 
    if (show) {
-      VG_(printf)("VVVV: data_address_%p_is_in_var: %s :: ",
+      VG_(printf)("VVVV: data_address_%#lx_is_in_var: %s :: ",
                   data_addr, var->name );
       ML_(pp_Type_C_ishly)( var->type );
       VG_(printf)("\n");
@@ -1760,7 +1787,7 @@ static void format_message ( /*OUT*/Char* dname1,
          dname1, n_dname,
          "Location 0x%lx is %lu byte%s inside %s%s",
          data_addr, residual_offset, ro_plural, var->name,
-         VG_(indexXA)(described,0) );
+         (char*)(VG_(indexXA)(described,0)) );
       VG_(snprintf)(
          dname2, n_dname,
          "in frame #%d of thread %d", frameNo, (Int)tid);
@@ -1773,7 +1800,7 @@ static void format_message ( /*OUT*/Char* dname1,
          dname1, n_dname,
          "Location 0x%lx is %lu byte%s inside %s%s,",
          data_addr, residual_offset, ro_plural, var->name,
-         VG_(indexXA)(described,0) );
+         (char*)(VG_(indexXA)(described,0)) );
       VG_(snprintf)(
          dname2, n_dname,
          "declared at %s:%d, in frame #%d of thread %d",
@@ -1815,7 +1842,7 @@ static void format_message ( /*OUT*/Char* dname1,
          dname1, n_dname,
          "Location 0x%lx is %lu byte%s inside %s%s,",
          data_addr, residual_offset, ro_plural, var->name,
-         VG_(indexXA)(described,0) );
+         (char*)(VG_(indexXA)(described,0)) );
       VG_(snprintf)(
          dname2, n_dname,
          "a global variable");
@@ -1828,7 +1855,7 @@ static void format_message ( /*OUT*/Char* dname1,
          dname1, n_dname,
          "Location 0x%lx is %lu byte%s inside %s%s,",
          data_addr, residual_offset, ro_plural, var->name,
-         VG_(indexXA)(described,0) );
+         (char*)(VG_(indexXA)(described,0)) );
       VG_(snprintf)(
          dname2, n_dname,
          "a global variable declared at %s:%d",
@@ -1863,7 +1890,7 @@ Bool consider_vars_in_frame ( /*OUT*/Char* dname1,
    static UInt n_steps = 0;
    n_search++;
    if (debug)
-      VG_(printf)("QQQQ: cvif: ip,sp,fp %p,%p,%p\n", ip,sp,fp);
+      VG_(printf)("QQQQ: cvif: ip,sp,fp %#lx,%#lx,%#lx\n", ip,sp,fp);
    /* first, find the DebugInfo that pertains to 'ip'. */
    for (di = debugInfo_list; di; di = di->next) {
       n_steps++;
@@ -1947,7 +1974,7 @@ Bool consider_vars_in_frame ( /*OUT*/Char* dname1,
          DiVariable* var = (DiVariable*)VG_(indexXA)( vars, j );
          SizeT       offset;
          if (debug)
-            VG_(printf)("QQQQ:    var:name=%s %p-%p %p\n", 
+            VG_(printf)("QQQQ:    var:name=%s %#lx-%#lx %#lx\n",
                         var->name,arange->aMin,arange->aMax,ip);
          if (data_address_is_in_var( &offset, var, &regs, data_addr,
                                      di->data_bias )) {
@@ -1989,7 +2016,7 @@ Bool VG_(get_data_description)( /*OUT*/Char* dname1,
    vg_assert(n_dname > 1);
    dname1[n_dname-1] = dname2[n_dname-1] = 0;
 
-   if (0) VG_(printf)("get_data_description: dataaddr %p\n", data_addr);
+   if (0) VG_(printf)("get_data_description: dataaddr %#lx\n", data_addr);
    /* First, see if data_addr is (or is part of) a global variable.
       Loop over the DebugInfos we have.  Check data_addr against the
       outermost scope of all of them, as that should be a global
@@ -2283,7 +2310,7 @@ VgSectKind VG_(seginfo_sect_kind)( /*OUT*/UChar* name, SizeT n_name,
 
       if (0)
          VG_(printf)(
-            "addr=%p di=%p %s got=%p,%ld plt=%p,%ld data=%p,%ld bss=%p,%ld\n",
+            "addr=%#lx di=%p %s got=%#lx,%ld plt=%#lx,%ld data=%#lx,%ld bss=%#lx,%ld\n",
             a, di, di->filename,
             di->got_avma,  di->got_size,
             di->plt_avma,  di->plt_size,

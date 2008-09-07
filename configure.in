@@ -90,10 +90,30 @@ AC_SUBST(ASFLAGS)
 ])
 
 
+# Check we have GNU sed: some of the stuff done by "make install" relies
+# on some pretty fancy sed expressions, and AIX sed doesn't produce the
+# same results, causing install to fail
+
+AC_MSG_CHECKING([for GNU sed])
+
+[sed_firstline=`sed --version | head -n 1`]
+
+case "${sed_firstline}" in
+    GNU*)
+	AC_MSG_RESULT([ok, looks like GNU sed])
+	;;
+    *)
+	AC_MSG_RESULT([please ensure first 'sed' in your path is GNU sed])
+	AC_MSG_RESULT([note: GNU sed is only required at build/install time])
+	AC_MSG_ERROR([build/install requires that 'sed' is GNU sed])
+	;;
+esac
+
+
 # We don't want gcc < 3.0
 AC_MSG_CHECKING([for a supported version of gcc])
 
-[gcc_version=`${CC} --version | head -n 1 | sed 's/^[^0-9.]*\([0-9.]*\).*$/\1/'`]
+[gcc_version=`${CC} --version | head -n 1 | sed 's/^[^0-9]*\([0-9.]*\).*$/\1/'`]
 
 case "${gcc_version}" in
      2.*)
@@ -556,16 +576,13 @@ esac
 
 AC_SUBST(GLIBC_VERSION)
 
-# We don't know how to detect the X client library version
-# (detecting the server version is easy, but no help).  So we
-# just use a hack: always include the suppressions for both
-# versions 3 and 4.
-AC_PATH_X
-if test "${no_x}" != 'yes' ; then
-   DEFAULT_SUPP="xfree-4.supp ${DEFAULT_SUPP}"
-   DEFAULT_SUPP="xfree-3.supp ${DEFAULT_SUPP}"
-fi
 
+# Add default suppressions for the X client libraries.  Make no
+# attempt to detect whether such libraries are installed on the
+# build machine (or even if any X facilities are present); just
+# add the suppressions antidisirregardless.
+DEFAULT_SUPP="xfree-4.supp ${DEFAULT_SUPP}"
+DEFAULT_SUPP="xfree-3.supp ${DEFAULT_SUPP}"
 
 # Add glibc and X11 suppressions for exp-ptrcheck
 DEFAULT_SUPP="exp-ptrcheck.supp ${DEFAULT_SUPP}"
@@ -1220,7 +1237,7 @@ AC_DEFINE([HAVE_TLS], 1, [can use __thread to define thread-local variables])
 fi
 
 
-# Checks for header files.
+# Checks for C header files.
 AC_HEADER_STDC
 AC_CHECK_HEADERS([       \
         endian.h         \
@@ -1236,7 +1253,6 @@ AC_CHECK_HEADERS([       \
         sys/time.h       \
         sys/types.h      \
         ])
-
 
 # Checks for typedefs, structures, and compiler characteristics.
 AC_TYPE_UID_T
@@ -1275,6 +1291,10 @@ AC_CHECK_FUNCS([     \
         utimensat    \
         ])
 
+# AC_CHECK_LIB adds any library found to the variable LIBS, and links these
+# libraries with any shared object and/or executable. This is NOT what we
+# want for e.g. vgpreload_core-x86-linux.so
+LIBS=""
 
 # Do we have a useable MPI setup on the primary and/or secondary targets?
 # On Linux, by default, assumes mpicc and -m32/-m64
@@ -1374,6 +1394,72 @@ CFLAGS=$saved_CFLAGS
 AM_CONDITIONAL(BUILD_MPIWRAP_SEC, test x$ac_have_mpi2_sec = xyes)
 
 
+# The test below verifies whether the QtCore package been installed.
+# This test works as follows:
+# - If pkg-config was not installed at the time autogen.sh was run,
+#   the definition of the PKG_CHECK_EXISTS() macro will not be found by
+#   autogen.sh. Augogen.sh will generate a configure script that prints
+#   a warning about pkg-config and proceeds as if Qt4 has not been installed.
+# - If pkg-config was installed at the time autogen.sh was run,
+#   the generated configure script will try to detect the presence of the
+#   Qt4 QtCore library by looking up compile and linker flags in the file
+#   called QtCore.pc.
+# - pkg-config settings can be overridden via the configure variables
+#   QTCORE_CFLAGS and QTCORE_LIBS (added by the pkg-config m4 macro's to the
+#   configure script -- see also ./configure --help).
+# - The QTCORE_CFLAGS and QTCORE_LIBS configure variables can be used even if
+#   the pkg-config executable is not present on the system on which the
+#   configure script is run.
+
+ifdef(
+  [PKG_CHECK_EXISTS],
+  [PKG_CHECK_EXISTS(
+    [QtCore],
+    [
+      PKG_CHECK_MODULES([QTCORE], [QtCore])
+      ac_have_qtcore=yes
+    ],
+    [
+      ac_have_qtcore=no
+    ]
+    )
+  ],
+  AC_MSG_WARN([pkg-config has not been installed or is too old.])
+  AC_MSG_WARN([Detection of Qt4 will be skipped.])
+  [ac_have_qtcore=no]
+)
+
+AM_CONDITIONAL([HAVE_QTCORE], [test x$ac_have_qtcore = xyes])
+
+
+# Test for QMutex::tryLock(int), which has been introduced in Qt 4.3.
+# See also http://doc.trolltech.com/4.3/qmutex.html.
+if test x$ac_have_qtcore = xyes; then
+  AC_MSG_CHECKING([for Qt4 QMutex::tryLock(int)])
+  AC_LANG(C++)
+  safe_CXXFLAGS="${CXXFLAGS}"
+  CXXFLAGS="${pkg_cv_QTCORE_CFLAGS}"
+  AC_TRY_COMPILE([
+    #include <QtCore/QMutex>
+  ],
+  [
+    QMutex M;
+    M.tryLock(1);
+    M.unlock();
+    return 0;
+  ],
+  [
+    AC_MSG_RESULT([yes])
+    AC_DEFINE([HAVE_QTCORE_QMUTEX_TRYLOCK_INT], [1], [Define to 1 if the installed version of Qt4 provides QMutex::tryLock(int).])
+  ],
+  [
+    AC_MSG_RESULT([no])
+  ])
+  CXXFLAGS="${safe_CXXFLAGS}"
+  AC_LANG(C)
+fi
+
+
 # -------------------- ok.  We're done. --------------------
 
 AC_OUTPUT(
@@ -1435,10 +1521,10 @@ AC_OUTPUT(
    exp-omega/Makefile
    exp-omega/tests/Makefile
    exp-omega/docs/Makefile
-   exp-drd/Makefile
-   exp-drd/docs/Makefile
-   exp-drd/scripts/download-and-build-splash2
-   exp-drd/tests/Makefile
+   drd/Makefile
+   drd/docs/Makefile
+   drd/scripts/download-and-build-splash2
+   drd/tests/Makefile
    exp-ptrcheck/Makefile
    exp-ptrcheck/tests/Makefile
    exp-ptrcheck/docs/Makefile

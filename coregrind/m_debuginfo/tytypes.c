@@ -44,10 +44,9 @@
 #include "priv_tytypes.h"      /* self */
 
 
-TyAdmin* ML_(new_TyAdmin) ( UWord cuOff, TyAdmin* next ) {
+TyAdmin* ML_(new_TyAdmin) ( UWord cuOff ) {
    TyAdmin* admin = ML_(dinfo_zalloc)( sizeof(TyAdmin) );
    admin->cuOff = cuOff;
-   admin->next  = next;
    return admin;
 }
 TyAtom* ML_(new_TyAtom) ( UChar* name, Long value ) {
@@ -140,7 +139,8 @@ static void delete_Type ( Type* ty ) {
    }
 }
 
-void ML_(delete_TyAdmin_and_payload) ( TyAdmin* ad ) {
+void ML_(delete_payload_of_TyAdmin) ( TyAdmin* ad ) {
+   vg_assert(ad);
    vg_assert(ad->payload);
    switch (ad->tag) {
       case TyA_Type:   delete_Type(ad->payload);     break;
@@ -150,9 +150,7 @@ void ML_(delete_TyAdmin_and_payload) ( TyAdmin* ad ) {
       case TyA_Bounds: delete_TyBounds(ad->payload); break;
       default:         vg_assert(0);
    }
-   ML_(dinfo_free)(ad);
 }
-
 
 
 static void pp_XArray_of_pointersOrRefs ( XArray* xa ) {
@@ -160,7 +158,7 @@ static void pp_XArray_of_pointersOrRefs ( XArray* xa ) {
    VG_(printf)("{");
    for (i = 0; i < VG_(sizeXA)(xa); i++) {
       void* ptr = *(void**) VG_(indexXA)(xa, i);
-      VG_(printf)("0x%05lx", ptr);
+      VG_(printf)("0x%05lx", (unsigned long)(ptr));
       if (i+1 < VG_(sizeXA)(xa))
          VG_(printf)(",");
    }
@@ -174,7 +172,7 @@ void ML_(pp_D3Expr) ( D3Expr* expr ) {
 }
 void ML_(pp_TyField) ( TyField* field ) {
    VG_(printf)("TyField(0x%05lx,%p,\"%s\")",
-               field->typeR, field->loc,
+               (unsigned long)(field->typeR), field->loc,
                field->name ? field->name : (UChar*)"");
 }
 void ML_(pp_TyBounds) ( TyBounds* bounds ) {
@@ -221,9 +219,9 @@ void ML_(pp_Type) ( Type* ty )
          break;
       case Ty_PorR:
          VG_(printf)("Ty_PorR(%d,%c,0x%05lx)",
-                     ty->Ty.PorR.szB, 
+                     ty->Ty.PorR.szB,
                      ty->Ty.PorR.isPtr ? 'P' : 'R',
-                     ty->Ty.PorR.typeR);
+                     (unsigned long)(ty->Ty.PorR.typeR));
          break;
       case Ty_Enum:
          VG_(printf)("Ty_Enum(%d,%p,\"%s\")",
@@ -235,7 +233,7 @@ void ML_(pp_Type) ( Type* ty )
          break;
       case Ty_StOrUn:
          if (ty->Ty.StOrUn.complete) {
-            VG_(printf)("Ty_StOrUn(%d,%c,%p,\"%s\")",
+            VG_(printf)("Ty_StOrUn(%ld,%c,%p,\"%s\")",
                         ty->Ty.StOrUn.szB, 
                         ty->Ty.StOrUn.isStruct ? 'S' : 'U',
                         ty->Ty.StOrUn.fields,
@@ -250,13 +248,13 @@ void ML_(pp_Type) ( Type* ty )
          break;
       case Ty_Array:
          VG_(printf)("Ty_Array(0x%05lx,%p)",
-                     ty->Ty.Array.typeR, ty->Ty.Array.bounds);
+                     (unsigned long)(ty->Ty.Array.typeR), ty->Ty.Array.bounds);
          if (ty->Ty.Array.bounds)
             pp_XArray_of_pointersOrRefs( ty->Ty.Array.bounds );
          break;
       case Ty_TyDef:
          VG_(printf)("Ty_TyDef(0x%05lx,\"%s\")",
-                     ty->Ty.TyDef.typeR,
+                     (unsigned long)(ty->Ty.TyDef.typeR),
                      ty->Ty.TyDef.name ? ty->Ty.TyDef.name
                                          : (UChar*)"" );
          break;
@@ -265,7 +263,7 @@ void ML_(pp_Type) ( Type* ty )
          break;
       case Ty_Qual:
          VG_(printf)("Ty_Qual(%c,0x%05lx)", ty->Ty.Qual.qual,
-                     ty->Ty.Qual.typeR);
+                     (unsigned long)(ty->Ty.Qual.typeR));
          break;
       case Ty_Void:
          VG_(printf)("Ty_Void%s",
