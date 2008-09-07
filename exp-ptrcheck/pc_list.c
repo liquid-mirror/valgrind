@@ -125,7 +125,7 @@ struct _ISList {
 
 static void print_Addr(Addr a)
 {
-   my_printf("0x%x", a);
+   my_printf("0x%lx", a);
 }
 
 //-------------------------------------------------------------------
@@ -143,7 +143,7 @@ Interval* Interval__construct(Addr left, Addr right, Bool is_zero,
                               ExeContext* where, SegStatus status)
 {
    Interval* o = my_malloc( sizeof(Interval) );
-   if (0) VG_(printf)("Interval__construct(%p,%p,%d)\n",
+   if (0) VG_(printf)("Interval__construct(%#lx,%#lx,%d)\n",
                       left, right, (Int)is_zero);
    o->left     = left;
    o->right    = right;
@@ -212,8 +212,8 @@ static Interval* Interval__choose(Interval* o, Interval* I)
 
    else {
       my_printf("o->status = %d, I->status = %d\n", o->status, I->status);
-      my_printf("o->left   = %p, I->left   = %p\n", o->left,   I->left);
-      my_printf("o->right  = %p, I->right  = %p\n", o->right , I->right );
+      my_printf("o->left   = %#lx, I->left   = %#lx\n", o->left,   I->left);
+      my_printf("o->right  = %#lx, I->right  = %#lx\n", o->right , I->right );
       my_printf("o->is_zero= %d, I->is_zero= %d\n", o->is_zero,I->is_zero);
       my_assert(1 == 2);
 //      return ( o->left < I->left ? o : I);
@@ -232,7 +232,7 @@ Seg Seg__construct(Addr a, SizeT len, ExeContext* where, SegStatus status)
 {
    Bool is_zero;
    Addr right;
-   if (0) VG_(printf)("Seg__construct(addr=%p, len=%lu)\n", a, len);
+   if (0) VG_(printf)("Seg__construct(addr=%#lx, len=%lu)\n", a, len);
    if (0 == len) {
       is_zero = True;
       right   = a;
@@ -334,14 +334,14 @@ __attribute__((unused))
 static void pseg(VgHashNode* n)
 {
    Seg seg = (Seg)n;
-   VG_(printf)("%p--%p (%s)\n", seg->left, seg->right, Seg__status_str(seg));
+   VG_(printf)("%#lx--%#lx (%s)\n", seg->left, seg->right, Seg__status_str(seg));
 }
 
 __attribute__((unused))
 static void print_segs(void)
 {
 #if 0
-   VG_(printf)("heap limits: %p, %p\n", heap_min, heap_max);
+   VG_(printf)("heap limits: %#lx, %#lx\n", heap_min, heap_max);
    VG_(printf)("-- hlist ----\n");
    VG_(HT_apply_to_all_nodes)( (VgHashTable)hlist, pseg );
    VG_(printf)("-- hfreelist ----\n");

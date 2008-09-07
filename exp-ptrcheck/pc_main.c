@@ -772,7 +772,7 @@ static void pp_Error ( Error* err )
                                    readwrite(extra->is_write), extra->size);
          VG_(pp_ExeContext)( VG_(get_error_where)(err) );
          VG_(message)(Vg_UserMsg,
-                      " Address %p is not derived from any known block", a);
+                      " Address %#lx is not derived from any known block", a);
 
       } else {
          // Access via a pointer, but outside its range.
@@ -791,7 +791,7 @@ static void pp_Error ( Error* err )
          VG_(pp_ExeContext)( VG_(get_error_where)(err) );
 
          VG_(message)(Vg_UserMsg,
-                      " Address %p is %lu bytes %s the accessing pointer's",
+                      " Address %#lx is %lu bytes %s the accessing pointer's",
                       a, miss_size, place);
          VG_(message)(Vg_UserMsg,
                     " %slegitimate range, a block of size %lu %s",
@@ -804,7 +804,7 @@ static void pp_Error ( Error* err )
          VG_(message)(Vg_UserMsg, " %s", extra->descr2);
       if (extra->datasym[0] != 0)
          VG_(message)(Vg_UserMsg, " Address 0x%llx is %llu bytes "
-                      "inside data symbol \"%t\"",
+                      "inside data symbol \"%s\"",
                       (ULong)extra->a, (ULong)extra->datasymoff,
                       extra->datasym);
       break;
@@ -829,8 +829,8 @@ static void pp_Error ( Error* err )
          } else if (UNKNOWN == seg1) {
             VG_(message)(Vg_UserMsg, " First arg may be a pointer");
          } else {
-            VG_(message)(Vg_UserMsg, " First arg derived from address %p of "
-                                     "%d-byte block %s",
+            VG_(message)(Vg_UserMsg, " First arg derived from address %#lx of "
+                                     "%lu-byte block %s",
                                      Seg__a(seg1), Seg__size(seg1),
                                      Seg__status_str(seg1) );
             VG_(pp_ExeContext)(Seg__where(seg1));
@@ -842,8 +842,8 @@ static void pp_Error ( Error* err )
       if (NONPTR == seg2) {
          VG_(message)(Vg_UserMsg, " %s not a pointer", which);
       } else {
-         VG_(message)(Vg_UserMsg, " %s derived from address %p of "
-                                  "%d-byte block %s",
+         VG_(message)(Vg_UserMsg, " %s derived from address %#lx of "
+                                  "%lu-byte block %s",
                                   which, Seg__a(seg2), Seg__size(seg2),
                                   Seg__status_str(seg2));
          VG_(pp_ExeContext)(Seg__where(seg2));
@@ -874,7 +874,7 @@ static void pp_Error ( Error* err )
                                   what, s);
          VG_(pp_ExeContext)( VG_(get_error_where)(err) );
 
-         VG_(message)(Vg_UserMsg, " Address %p is %ld bytes inside a "
+         VG_(message)(Vg_UserMsg, " Address %#lx is %ld bytes inside a "
                                   "%ld-byte block %s",
                                   lo, lo-Seg__a(seglo), Seg__size(seglo),
                                   Seg__status_str(seglo) );
@@ -888,7 +888,7 @@ static void pp_Error ( Error* err )
          if (UNKNOWN == seglo) {
             VG_(message)(Vg_UserMsg, " First byte is not inside a known block");
          } else {
-            VG_(message)(Vg_UserMsg, " First byte (%p) is %ld bytes inside a "
+            VG_(message)(Vg_UserMsg, " First byte (%#lx) is %ld bytes inside a "
                                      "%ld-byte block %s",
                                      lo, lo-Seg__a(seglo), Seg__size(seglo),
                                      Seg__status_str(seglo) );
@@ -898,7 +898,7 @@ static void pp_Error ( Error* err )
          if (UNKNOWN == seghi) {
             VG_(message)(Vg_UserMsg, " Last byte is not inside a known block");
          } else {
-            VG_(message)(Vg_UserMsg, " Last byte (%p) is %ld bytes inside a "
+            VG_(message)(Vg_UserMsg, " Last byte (%#lx) is %ld bytes inside a "
                                      "%ld-byte block %s",
                                      hi, hi-Seg__a(seghi), Seg__size(seghi),
                                      Seg__status_str(seghi));
@@ -1135,7 +1135,7 @@ void set_mem( Addr a, SizeT len, Seg seg )
 
    if (len > 100 * 1000 * 1000)
       VG_(message)(Vg_UserMsg,
-                   "Warning: set address range state: large range %d", len);
+                   "Warning: set address range state: large range %lu", len);
 
    a   = VG_ROUNDDN(a,       sizeof(UWord));
    end = VG_ROUNDUP(a + len, sizeof(UWord));
@@ -1155,7 +1155,7 @@ static void set_mem_unknown( Addr a, SizeT len )
 
 static void new_mem_startup( Addr a, SizeT len, Bool rr, Bool ww, Bool xx )
 {
-   if (0) VG_(printf)("new_mem_startup(%p,%lu)\n", a, len);
+   if (0) VG_(printf)("new_mem_startup(%#lx,%lu)\n", a, len);
    set_mem_unknown( a, len );
    add_new_segment( VG_(get_running_tid)(), a, len, SegMmap );
 }
@@ -1186,7 +1186,7 @@ static void new_mem_startup( Addr a, SizeT len, Bool rr, Bool ww, Bool xx )
 // otherwise.  Hopefully this is rare, though.
 static void new_mem_mmap( Addr a, SizeT len, Bool rr, Bool ww, Bool xx )
 {
-   if (0) VG_(printf)("new_mem_mmap(%p,%lu)\n", a, len);
+   if (0) VG_(printf)("new_mem_mmap(%#lx,%lu)\n", a, len);
 //zz #if 0
 //zz    Seg seg = NULL;
 //zz 
@@ -1210,7 +1210,7 @@ static void new_mem_mmap( Addr a, SizeT len, Bool rr, Bool ww, Bool xx )
 //zz    if (NULL != seg) {
 //zz       // Right, we found an overlap
 //zz       if (VG_(clo_verbosity) > 1)
-//zz          VG_(message)(Vg_UserMsg, "mmap overlap:  old: %p, %d;  new: %p, %d",
+//zz          VG_(message)(Vg_UserMsg, "mmap overlap:  old: %#lx, %d;  new: %#lx, %d",
 //zz                                   seg->left, Seg__size(seg), a, len);
 //zz       if (seg->left <= a && a <= seg->right) {
 //zz          // New one truncates end of the old one.  Nb: we don't adjust its
@@ -2159,7 +2159,7 @@ void post_reg_write_clientcall(ThreadId tid, OffT guest_state_offset,
       /* Now we need to look at the returned value, to see whether the
          malloc succeeded or not. */
       p = get_guest_intreg(tid, 0/*non-shadow*/, guest_state_offset, size);
-      if ((UInt)NULL == p) {
+      if ((UWord)NULL == p) {
          // if alloc failed, eg. realloc on bogus pointer
          put_guest_intreg(tid, 1/*first-shadow*/,
                           guest_state_offset, size, (UWord)NONPTR );
@@ -2186,7 +2186,7 @@ void post_reg_write_clientcall(ThreadId tid, OffT guest_state_offset,
       // Anything else, probably best to set return value to non-pointer.
       //VG_(set_thread_shadow_archreg)(tid, reg, (UInt)UNKNOWN);
       Char fbuf[100];
-      VG_(printf)("f = %p\n", f);
+      VG_(printf)("f = %#lx\n", f);
       VG_(get_fnname)(f, fbuf, 100);
       VG_(printf)("name = %s\n", fbuf);
       VG_(tool_panic)("argh: clientcall");
@@ -2240,7 +2240,7 @@ static void pre_syscall ( ThreadId tid, UInt syscallno )
 //zz    if (90 == syscallno) {
 //zz       // mmap: get contents of ebx to find args block, then extract 'flags'
 //zz       UInt* arg_block = (UInt*)VG_(get_thread_archreg)(tid, R_EBX);
-//zz       VG_(printf)("arg_block = %p\n", arg_block);
+//zz       VG_(printf)("arg_block = %#lx\n", arg_block);
 //zz       mmap_flags = arg_block[3];
 //zz       VG_(printf)("flags = %d\n", mmap_flags);
 //zz 
@@ -2551,7 +2551,7 @@ static __inline__ VG_REGPARM(1)
 Seg nonptr_or_unknown(UWord x)
 {
    Seg res = looks_like_a_pointer(x) ? UNKNOWN : NONPTR;
-   if (0) VG_(printf)("nonptr_or_unknown %s %p\n", 
+   if (0) VG_(printf)("nonptr_or_unknown %s %#lx\n", 
                       res==UNKNOWN ? "UUU" : "nnn", x);
    return res;
 }
@@ -2608,7 +2608,7 @@ static void show_lossage ( void )
       //(void)VG_(describe_IP)(elem->ec, buf, sizeof(buf)-1);
       //buf[sizeof(buf)-1] = 0;
       //VG_(printf)("  %,8lu  %s\n", elem->count, buf);
-      VG_(message)(Vg_UserMsg, "Lossage count %,lu at", elem->count);
+      VG_(message)(Vg_UserMsg, "Lossage count %'lu at", elem->count);
       VG_(pp_ExeContext)(elem->ec);
    }
 }
@@ -2641,7 +2641,7 @@ void check_load_or_store(Bool is_write, Addr m, UInt sz, Seg mptr_vseg)
                if (0) {
                   VG_(message)(Vg_DebugMsg, "");
                   VG_(message)(Vg_DebugMsg,
-                               "Lossage %s %p sz %lu inside block alloc'd",
+                               "Lossage %s %#lx sz %lu inside block alloc'd",
                                is_write ? "wr" : "rd", m, (UWord)sz);
                   VG_(pp_ExeContext)(Seg__where(seg));
                }
@@ -2699,7 +2699,7 @@ void check_load_or_store(Bool is_write, Addr m, UInt sz, Seg mptr_vseg)
       }
       #else
       // This version doesn't do the link-segment chasing
-      if (0) VG_(printf)("calling seg_ci %p %p %p\n", curr,m,mhi);
+      if (0) VG_(printf)("calling seg_ci %p %#lx %#lx\n", curr,m,mhi);
       is_ok = Seg__containsI(curr, m, mhi);
       #endif
 
@@ -3818,7 +3818,7 @@ void instrument_arithop ( PCEnv* pce,
          case Iop_CmpORD32S: goto n32;
          case Iop_CmpORD32U: goto n32;
          n32:
-            assign( 'I', pce, dstv, mkU32( (UInt)NONPTR ));
+            assign( 'I', pce, dstv, mkU32( (UWord)NONPTR ));
             break;
 
          default:
@@ -3944,7 +3944,7 @@ void instrument_arithop ( PCEnv* pce,
          case Iop_Perm8x8: case Iop_ShlN8x8: case Iop_Mul32x2:
          case Iop_CatEvenLanes16x4: case Iop_CatOddLanes16x4:
          n64:
-            assign( 'I', pce, dstv, mkU64( (UInt)NONPTR ));
+            assign( 'I', pce, dstv, mkU64( (UWord)NONPTR ));
             break;
 
          default:
@@ -4013,9 +4013,9 @@ static void schemeS ( PCEnv* pce, IRStmt* st )
             /* di->tmp is shadowed.  Set it to NONPTR. */
             IRTemp dstv = newShadowTmp( pce, di->tmp );
             if (pce->gWordTy == Ity_I32) {
-               assign( 'I', pce, dstv, mkU32( (UInt)NONPTR ));
+              assign( 'I', pce, dstv, mkU32( (UWord)NONPTR ));
             } else {
-               assign( 'I', pce, dstv, mkU64( (ULong)NONPTR ));
+              assign( 'I', pce, dstv, mkU64( (UWord)NONPTR ));
             }
          }
          /* apply the nonptr_or_unknown technique to any parts of
@@ -4468,9 +4468,9 @@ static void schemeS ( PCEnv* pce, IRStmt* st )
                                          e->Iex.Get.ty) );
                   } else {
                      if (pce->hWordTy == Ity_I32) {
-                        assign( 'I', pce, dstv, mkU32( (UInt)NONPTR ));
+                        assign( 'I', pce, dstv, mkU32( (UWord)NONPTR ));
                      } else {
-                        assign( 'I', pce, dstv, mkU64( (ULong)NONPTR ));
+                       assign( 'I', pce, dstv, mkU64( (UWord)NONPTR ));
                      }
                   }
                } else {
