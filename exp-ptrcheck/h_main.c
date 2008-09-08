@@ -1,6 +1,8 @@
 
 /*--------------------------------------------------------------------*/
-/*--- Ptrcheck: a pointer-use checker.                   pc_main.c ---*/
+/*--- Ptrcheck: a pointer-use checker.                             ---*/
+/*--- This file checks heap accesses.                              ---*/
+/*---                                                     h_main.c ---*/
 /*--------------------------------------------------------------------*/
 
 /*
@@ -9,6 +11,8 @@
 
    Copyright (C) 2003-2008 Nicholas Nethercote
       njn@valgrind.org
+   Copyright (C) 2008-2008 OpenWorks Ltd
+      info@open-works.co.uk
 
    This program is free software; you can redistribute it and/or
    modify it under the terms of the GNU General Public License as
@@ -4783,5 +4787,5 @@ static void pc_fini ( Int exitcode )
 VG_DETERMINE_INTERFACE_VERSION(pc_pre_clo_init)
 
 /*--------------------------------------------------------------------*/
-/*--- end                                                pc_main.c ---*/
+/*--- end                                                 h_main.c ---*/
 /*--------------------------------------------------------------------*/
