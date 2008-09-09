@@ -36,30 +36,25 @@
 */
 
 #include "pub_tool_basics.h"
-
 #include "pub_tool_libcbase.h"
 #include "pub_tool_libcassert.h"
 #include "pub_tool_libcprint.h"
-
 #include "pub_tool_tooliface.h"
-
 #include "pub_tool_wordfm.h"
 #include "pub_tool_xarray.h"
 #include "pub_tool_threadstate.h"
 #include "pub_tool_mallocfree.h"
 #include "pub_tool_machine.h"
-#include "pub_tool_options.h"
 #include "pub_tool_debuginfo.h"
-#include "pub_tool_replacemalloc.h"
+
+#include "h_list.h"       // Seg
+#include "pc_common.h"
+
+#include "sg_main.h"      // self
 
 
 static
 void preen_Invars ( Addr a, SizeT len, Bool isHeap ); /*fwds*/
-
-static
-void record_error_SorG ( ThreadId tid,
-                         Addr addr, SSizeT sszB,
-                         HChar* expect, HChar* actual );
 
 
 //////////////////////////////////////////////////////////////
@@ -121,11 +116,6 @@ static Bool is_subinterval_of ( Addr aBig, SizeT nBig,
                                 Addr aSmall, SizeT nSmall ) {
    tl_assert(nBig > 0 && nSmall > 0);
    return aBig <= aSmall && aSmall + nSmall <= aBig + nBig;
-}
-
-inline
-static Word Word__abs ( Word w ) {
-   return w < 0 ? -w : w;
 }
 
 inline
@@ -280,8 +270,6 @@ static XArray* /* of StackBlock */
 {
    UWord key, val;
 
-   tl_assert( VG_(getMagicXA)(orig) == 0 ); /* as yet unset */
-
    /* First, normalise, as per comments above. */
    VG_(setCmpFnXA)( orig, (Int(*)(void*,void*))StackBlock__cmp );
    VG_(sortXA)( orig );
@@ -369,11 +357,9 @@ static XArray* /* of StackBlock */
       tl_assert(key != (UWord)orig);
       VG_(deleteXA)(orig);
       res = (XArray*)key;
-      tl_assert( VG_(getMagicXA)(res) == StackBlock_XAMAGIC );
       return res;
    } else {
       /* no */
-      VG_(setMagicXA)( orig, StackBlock_XAMAGIC );
       VG_(addToFM)( frameBlocks_set, (UWord)orig, 0 );
       return orig;
    }
@@ -1030,19 +1016,19 @@ static void acquire_globals ( ULong di_handle )
 
 /* We only intercept these two because we need to see any di_handles
    that might arise from the mappings/allocations. */
-static void sg_new_mem_mmap( Addr a, SizeT len,
-                             Bool rr, Bool ww, Bool xx, ULong di_handle )
+void sg_new_mem_mmap( Addr a, SizeT len,
+                      Bool rr, Bool ww, Bool xx, ULong di_handle )
 {
    if (di_handle > 0)
       acquire_globals(di_handle);
 }
-static void sg_new_mem_startup( Addr a, SizeT len,
-                             Bool rr, Bool ww, Bool xx, ULong di_handle )
+void sg_new_mem_startup( Addr a, SizeT len,
+                         Bool rr, Bool ww, Bool xx, ULong di_handle )
 {
    if (di_handle > 0)
       acquire_globals(di_handle);
 }
-static void sg_die_mem_munmap ( Addr a, SizeT len )
+void sg_die_mem_munmap ( Addr a, SizeT len )
 {
    Bool debug = (Bool)0;
    Bool overlap = False;
@@ -1712,7 +1698,7 @@ void helperc__mem_access ( /* Known only at run time: */
    VG_(memset)(bufA, 0, sizeof(bufA));
    show_Invar( bufA, sizeof(bufA)-1, &new_inv, frame->depth );
 
-   record_error_SorG( tid, ea, sszB, bufE, bufA );
+   sg_record_error_SorG( tid, ea, sszB, bufE, bufA );
 
    /* And now install the new observation as "standard", so as to
       make future error messages make more sense. */
@@ -2027,7 +2013,7 @@ static void instrument_mem_access ( IRSB*   bbOut,
 
 
 static
-IRSB* di_instrument ( VgCallbackClosure* closure,
+IRSB* sg_instrument ( VgCallbackClosure* closure,
                       IRSB* sbIn,
                       VexGuestLayout* layout,
                       VexGuestExtents* vge,
@@ -2299,180 +2285,35 @@ static void shadowStack_set_initial_SP ( ThreadId tid )
 
 //////////////////////////////////////////////////////////////
 //                                                          //
-// Error management                                         //
-//                                                          //
-//////////////////////////////////////////////////////////////
-
-typedef
-   enum { 
-      XE_SorG=1202 /* stack or global array inconsistency */
-   }
-   XErrorTag;
-
-typedef
-   enum {
-      XS_SorG=2021
-   }
-   XSuppTag;
-
-typedef
-   struct {
-      XErrorTag tag;
-      union {
-         struct {
-            Addr   addr;
-            SSizeT sszB;
-            HChar  expect[128];
-            HChar  actual[128];
-         } SorG;
-      } XE;
-   }
-   XError;
-
-static void init_XError ( XError* xe ) {
-   VG_(memset)(xe, 0, sizeof(*xe) );
-   xe->tag = XE_SorG-1; /* bogus */
-}
-
-
-/* Updates the copy with extra info if necessary.  Nothing to do here;
-   we do all the work up front in the record_error_* functions. */
-static UInt sg_update_extra ( Error* err )
-{
-   XError* extra = (XError*)VG_(get_error_extra)(err);
-   tl_assert(extra);
-   return sizeof(XError);
-}
-
-static void record_error_SorG ( ThreadId tid,
-                                Addr addr, SSizeT sszB,
-                                HChar* expect, HChar* actual )
-{
-   XError xe;
-   init_XError(&xe);
-   xe.XE.SorG.addr = addr;
-   xe.XE.SorG.sszB = sszB;
-   VG_(strncpy)( &xe.XE.SorG.expect[0], expect, sizeof(xe.XE.SorG.expect) );
-   VG_(strncpy)( &xe.XE.SorG.actual[0], actual, sizeof(xe.XE.SorG.actual) );
-   xe.XE.SorG.expect[ sizeof(xe.XE.SorG.expect)-1 ] = 0;
-   xe.XE.SorG.actual[ sizeof(xe.XE.SorG.actual)-1 ] = 0;
-   VG_(maybe_record_error)( tid, XE_SorG, 0, NULL, &xe );
-}
-
-static Bool eq_Error ( VgRes not_used, Error* e1, Error* e2 )
-{
-   XError *xe1, *xe2;
-
-   tl_assert(VG_(get_error_kind)(e1) == VG_(get_error_kind)(e2));
-
-   xe1 = (XError*)VG_(get_error_extra)(e1);
-   xe2 = (XError*)VG_(get_error_extra)(e2);
-   tl_assert(xe1);
-   tl_assert(xe2);
-
-   switch (VG_(get_error_kind)(e1)) {
-      case XE_SorG:
-         return //xe1->XE.SorG.addr == xe2->XE.SorG.addr
-                //&& 
-                xe1->XE.SorG.sszB == xe2->XE.SorG.sszB
-                && 0 == VG_(strncmp)( &xe1->XE.SorG.expect[0],
-                                      &xe2->XE.SorG.expect[0],
-                                      sizeof(xe1->XE.SorG.expect) ) 
-                && 0 == VG_(strncmp)( &xe1->XE.SorG.actual[0],
-                                      &xe2->XE.SorG.actual[0],
-                                      sizeof(xe1->XE.SorG.actual) );
-      default:
-         tl_assert(0);
-   }
-
-   /*NOTREACHED*/
-   tl_assert(0);
-}
-
-static void pp_Error ( Error* err )
-{
-   XError *xe = (XError*)VG_(get_error_extra)(err);
-
-   switch (VG_(get_error_kind)(err)) {
-
-   case XE_SorG:
-      tl_assert(xe);
-      VG_(message)(Vg_UserMsg, "Invalid %s of size %ld", 
-                               xe->XE.SorG.sszB < 0 ? "write" : "read",
-                               Word__abs(xe->XE.SorG.sszB) );
-      VG_(pp_ExeContext)( VG_(get_error_where)(err) );
-      VG_(message)(Vg_UserMsg, " Address %#lx expected vs actual:",
-                               xe->XE.SorG.addr);
-      VG_(message)(Vg_UserMsg, " Expected: %s", &xe->XE.SorG.expect[0] );
-      VG_(message)(Vg_UserMsg, " Actual:   %s", &xe->XE.SorG.actual[0] );
-      break;
-
-   default:
-      tl_assert(0);
-   } /* switch (VG_(get_error_kind)(err)) */
-}
-
-static Char* sg_get_error_name ( Error* err )
-{
-   switch (VG_(get_error_kind)(err)) {
-      case XE_SorG: return "SorG";
-      default: tl_assert(0); /* fill in missing case */
-   }
-}
-
-static Bool sg_recognised_suppression ( Char* name, Supp *su )
-{
-#  define TRY(_name,_xskind)                   \
-      if (0 == VG_(strcmp)(name, (_name))) {   \
-         VG_(set_supp_kind)(su, (_xskind));    \
-         return True;                          \
-      }
-   TRY("SorG",  XS_SorG);
-   return False;
-#  undef TRY
-}
-
-static Bool sg_read_extra_suppression_info ( Int fd, Char* buf, Int nBuf,
-                                             Supp* su )
-{
-   /* do nothing -- no extra suppression info present.  Return True to
-      indicate nothing bad happened. */
-   return True;
-}
-
-static Bool sg_error_matches_suppression ( Error* err, Supp* su )
-{
-   switch (VG_(get_supp_kind)(su)) {
-   case XS_SorG:   return VG_(get_error_kind)(err) == XE_SorG;
-   //case XS_: return VG_(get_error_kind)(err) == XE_;
-   default: tl_assert(0); /* fill in missing cases */
-   }
-}
-
-static void sg_print_extra_suppression_info ( Error* err )
-{
-   /* Do nothing */
-}
-
-
-//////////////////////////////////////////////////////////////
-//                                                          //
-// main                                                     //
+// main-ish                                                 //
 //                                                          //
 //////////////////////////////////////////////////////////////
 
 /* CALLED indirectly FROM GENERATED CODE */
-static void sg_die_mem_stack ( Addr old_SP, SizeT len ) {
+void sg_die_mem_stack ( Addr old_SP, SizeT len ) {
    ThreadId  tid = VG_(get_running_tid)();
    shadowStack_unwind( tid, old_SP+len );
 }
 
 
-static void sg_post_clo_init(void)
-{
+void sg_pre_clo_init ( void ) {
+   ourGlobals_init();
+   init_StackBlocks_set();
+   init_GlobalBlock_set();
 }
 
-static void sg_fini(Int exitcode)
+void sg_post_clo_init ( void ) {
+}
+
+void sg_pre_thread_ll_create ( ThreadId parent, ThreadId child ) {
+   shadowStack_thread_create(parent, child);
+}
+
+void sg_pre_thread_first_insn ( ThreadId tid ) {
+   shadowStack_set_initial_SP(tid);
+}
+
+void sg_fini(Int exitcode)
 {
   VG_(message)(Vg_DebugMsg,
      "%'llu total accesses, of which:", stats__total_accesses);
@@ -2504,48 +2345,6 @@ static void sg_fini(Int exitcode)
      stats__htab_searches, stats__htab_probes, stats__htab_resizes);
 }
 
-static void sg_pre_clo_init(void)
-{
-   VG_(details_name)            ("SGcheck");
-   VG_(details_version)         (NULL);
-   VG_(details_description)     ("a stack & global array overrun detector");
-   VG_(details_copyright_author)(
-      "Copyright (C) 2008-2008, and GNU GPL'd, by OpenWorks Ltd.");
-   VG_(details_bug_reports_to)  (VG_BUGS_TO);
-
-   VG_(basic_tool_funcs)        (sg_post_clo_init,
-                                 di_instrument,
-                                 sg_fini);
-
-   VG_(needs_var_info)            ();
-
-   VG_(needs_core_errors)         ();
-   VG_(needs_tool_errors)         (eq_Error,
-                                   pp_Error,
-                                   True,/*show TIDs for errors*/
-                                   sg_update_extra,
-                                   sg_recognised_suppression,
-                                   sg_read_extra_suppression_info,
-                                   sg_error_matches_suppression,
-                                   sg_get_error_name,
-                                   sg_print_extra_suppression_info);
-
-   ourGlobals_init();
-   init_StackBlocks_set();
-   init_GlobalBlock_set();
-
-   VG_(clo_vex_control).iropt_unroll_thresh = 0;
-   VG_(clo_vex_control).guest_chase_thresh = 0;
-   VG_(track_die_mem_stack) ( sg_die_mem_stack );
-   VG_(track_pre_thread_ll_create)( shadowStack_thread_create );
-   VG_(track_pre_thread_first_insn)( shadowStack_set_initial_SP );
-
-   VG_(track_new_mem_mmap)         ( sg_new_mem_mmap );
-   VG_(track_new_mem_startup) (sg_new_mem_startup);
-   VG_(track_die_mem_munmap)( sg_die_mem_munmap );
-}
-
-VG_DETERMINE_INTERFACE_VERSION(sg_pre_clo_init)
 
 /*--------------------------------------------------------------------*/
 /*--- end                                                sg_main.c ---*/

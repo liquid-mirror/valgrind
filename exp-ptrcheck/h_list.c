@@ -46,7 +46,7 @@
 #include "pub_tool_execontext.h"
 #include "pub_tool_hashtable.h"
 
-#include "pc_list.h"
+#include "h_list.h"
 
 #ifdef OUTSIDE_PTRCHECK
  #include <assert.h>

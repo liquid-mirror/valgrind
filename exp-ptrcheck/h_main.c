@@ -9,8 +9,13 @@
    This file is part of Ptrcheck, a Valgrind tool for checking pointer
    use in programs.
 
+   Initial version (Annelid):
+
    Copyright (C) 2003-2008 Nicholas Nethercote
       njn@valgrind.org
+
+   Valgrind-3.X port:
+
    Copyright (C) 2008-2008 OpenWorks Ltd
       info@open-works.co.uk
 
@@ -224,8 +229,12 @@
 #include "pub_tool_threadstate.h"  // VG_(get_running_tid)
 #include "pub_tool_oset.h"
 #include "pub_tool_vkiscnums.h"
+#include "pub_tool_machine.h"
 
-#include "pc_list.h"
+#include "h_list.h"
+#include "h_main.h"
+
+#include "pc_common.h"
 
 
 /*------------------------------------------------------------*/
@@ -239,47 +248,11 @@
 
 
 /*------------------------------------------------------------*/
-/*--- Command line options                                 ---*/
-/*------------------------------------------------------------*/
-
-static Bool clo_partial_loads_ok = True;   /* user visible */
-static Bool clo_lossage_check    = False;  /* dev flag only */
-
-static Bool pc_process_cmd_line_options(Char* arg)
-{
-        VG_BOOL_CLO(arg, "--partial-loads-ok", clo_partial_loads_ok)
-   else VG_BOOL_CLO(arg, "--lossage-check",    clo_lossage_check)
-   else
-      return VG_(replacement_malloc_process_cmd_line_option)(arg);
-
-   return True;
-}
-
-static void pc_print_usage(void)
-{
-   VG_(printf)(
-   "    --partial-loads-ok=no|yes same as for Memcheck [yes]\n"
-   );
-   VG_(replacement_malloc_print_usage)();
-}
-
-static void pc_print_debug_usage(void)
-{
-   VG_(printf)(
-   "    --lossage-check=no|yes gather stats for quality control [no]\n"
-   );
-   VG_(replacement_malloc_print_debug_usage)();
-}
-
-
-/*------------------------------------------------------------*/
 /*--- Segments                                             ---*/
 /*------------------------------------------------------------*/
 
-// Choose values that couldn't possibly be pointers
-#define NONPTR          ((Seg)0xA1)
-#define UNKNOWN         ((Seg)0xB2)
-#define BOTTOM          ((Seg)0xC3)
+// NONPTR, UNKNOWN, BOTTOM defined in h_main.h since 
+// pc_common.c needs to see them, for error processing
 
 static ISList* seglist = NULL;
 
@@ -635,420 +608,41 @@ static Seg get_mem_aseg( Addr a )
 }
 
 
-/*--------------------------------------------------------------------*/
-/*--- Error handling                                               ---*/
-/*--------------------------------------------------------------------*/
-
-typedef
-   enum {
-      /* Possible data race */
-      LoadStoreSupp,
-      ArithSupp,
-      SysParamSupp,
-   }
-   PtrcheckSuppKind;
-
-/* What kind of error it is. */
-typedef
-   enum {
-      LoadStoreErr,     // mismatched ptr/addr segments on load/store
-      ArithErr,         // bad arithmetic between two segment pointers
-      SysParamErr,      // block straddling >1 segment passed to syscall
-   }
-   PtrcheckErrorKind;
-
-
-// These ones called from generated code.
-
-typedef
-   struct {
-      Addr a;
-      UInt size;
-      Seg  vseg;
-      Bool is_write;
-      Char descr1[96];
-      Char descr2[96];
-      Char datasym[96];
-      OffT datasymoff;
-   }
-   LoadStoreExtra;
-
-typedef
-   struct {
-      Seg seg1;
-      Seg seg2;
-      const HChar* opname; // user-understandable text name
-   }
-   ArithExtra;
-
-typedef
-   struct {
-      CorePart part;
-      Addr lo;
-      Addr hi;
-      Seg  seglo;
-      Seg  seghi;
-   }
-   SysParamExtra;
-
-
-static
-void record_loadstore_error( Addr a, UInt size, Seg vseg, Bool is_write )
-{
-   LoadStoreExtra extra = {
-      .a = a, .size = size, .vseg = vseg, .is_write = is_write
-   };
-   extra.descr1[0] = extra.descr2[0] = extra.datasym[0] = 0;
-   extra.datasymoff = 0;
-   VG_(maybe_record_error)( VG_(get_running_tid)(), LoadStoreErr,
-                            /*a*/0, /*str*/NULL, /*extra*/(void*)&extra);
-}
-
-static void
-record_arith_error( Seg seg1, Seg seg2, HChar* opname )
-{
-   ArithExtra extra = {
-      .seg1 = seg1, .seg2 = seg2, .opname = opname
-   };
-   VG_(maybe_record_error)( VG_(get_running_tid)(), ArithErr,
-                            /*a*/0, /*str*/NULL, /*extra*/(void*)&extra);
-}
-
-static void record_sysparam_error( ThreadId tid, CorePart part, Char* s,
-                                   Addr lo, Addr hi, Seg seglo, Seg seghi )
-{
-   SysParamExtra extra = {
-      .part = part, .lo = lo, .hi = hi, .seglo = seglo, .seghi = seghi
-   };
-   VG_(maybe_record_error)( tid, SysParamErr, /*a*/(Addr)0, /*str*/s,
-                            /*extra*/(void*)&extra);
-}
-
-static Bool eq_Error ( VgRes res, Error* e1, Error* e2 )
-{
-   tl_assert(VG_(get_error_kind)(e1) == VG_(get_error_kind)(e2));
-
-   // Nb: ok to compare string pointers, rather than string contents,
-   // because the same static strings are shared.
-
-   switch (VG_(get_error_kind)(e1)) {
-
-      case LoadStoreErr:
-         tl_assert( VG_(get_error_string)(e1) == NULL );
-         tl_assert( VG_(get_error_string)(e2) == NULL );
-         return True;
-
-      case SysParamErr:
-      case ArithErr:
-         return True;
-
-      default:
-         VG_(tool_panic)("eq_Error: unrecognised error kind");
-   }
-}
-
-static Char* readwrite(Bool is_write)
-{
-   return ( is_write ? "write" : "read" );
-}
-
-static inline
-Bool is_known_segment(Seg seg)
-{
-   return (UNKNOWN != seg && BOTTOM != seg && NONPTR != seg);
-}
-
-static void pp_Error ( Error* err )
-{
-   switch (VG_(get_error_kind)(err)) {
-   //----------------------------------------------------------
-   case LoadStoreErr: {
-      LoadStoreExtra* extra = (LoadStoreExtra*)VG_(get_error_extra)(err);
-      Char           *place, *legit, *how_invalid;
-      Addr            a    = extra->a;
-      Seg             vseg = extra->vseg;
-
-      tl_assert(is_known_segment(vseg) || NONPTR == vseg);
-
-      if (NONPTR == vseg) {
-         // Access via a non-pointer
-         VG_(message)(Vg_UserMsg, "Invalid %s of size %u",
-                                   readwrite(extra->is_write), extra->size);
-         VG_(pp_ExeContext)( VG_(get_error_where)(err) );
-         VG_(message)(Vg_UserMsg,
-                      " Address %#lx is not derived from any known block", a);
-
-      } else {
-         // Access via a pointer, but outside its range.
-         Int cmp;
-         UWord miss_size;
-         Seg__cmp(vseg, a, &cmp, &miss_size);
-         if      (cmp  < 0) place = "before";
-         else if (cmp == 0) place = "inside";
-         else               place = "after";
-         how_invalid = ( ( Seg__is_freed(vseg) && 0 != cmp )
-                       ? "Doubly-invalid" : "Invalid" );
-         legit = ( Seg__is_freed(vseg) ? "once-" : "" );
-
-         VG_(message)(Vg_UserMsg, "%s %s of size %u", how_invalid,
-                                  readwrite(extra->is_write), extra->size);
-         VG_(pp_ExeContext)( VG_(get_error_where)(err) );
-
-         VG_(message)(Vg_UserMsg,
-                      " Address %#lx is %lu bytes %s the accessing pointer's",
-                      a, miss_size, place);
-         VG_(message)(Vg_UserMsg,
-                    " %slegitimate range, a block of size %lu %s",
-                      legit, Seg__size(vseg), Seg__status_str(vseg) );
-         VG_(pp_ExeContext)(Seg__where(vseg));
-      }
-      if (extra->descr1[0] != 0)
-         VG_(message)(Vg_UserMsg, " %s", extra->descr1);
-      if (extra->descr2[0] != 0)
-         VG_(message)(Vg_UserMsg, " %s", extra->descr2);
-      if (extra->datasym[0] != 0)
-         VG_(message)(Vg_UserMsg, " Address 0x%llx is %llu bytes "
-                      "inside data symbol \"%s\"",
-                      (ULong)extra->a, (ULong)extra->datasymoff,
-                      extra->datasym);
-      break;
-   }
-
-   //----------------------------------------------------------
-   case ArithErr: {
-      ArithExtra* extra = VG_(get_error_extra)(err);
-      Seg    seg1   = extra->seg1;
-      Seg    seg2   = extra->seg2;
-      Char*  which;
-
-      tl_assert(BOTTOM != seg1);
-      tl_assert(BOTTOM != seg2 && UNKNOWN != seg2);
-
-      VG_(message)(Vg_UserMsg, "Invalid arguments to %s", extra->opname);
-      VG_(pp_ExeContext)( VG_(get_error_where)(err) );
-
-      if (seg1 != seg2) {
-         if (NONPTR == seg1) {
-            VG_(message)(Vg_UserMsg, " First arg not a pointer");
-         } else if (UNKNOWN == seg1) {
-            VG_(message)(Vg_UserMsg, " First arg may be a pointer");
-         } else {
-            VG_(message)(Vg_UserMsg, " First arg derived from address %#lx of "
-                                     "%lu-byte block %s",
-                                     Seg__a(seg1), Seg__size(seg1),
-                                     Seg__status_str(seg1) );
-            VG_(pp_ExeContext)(Seg__where(seg1));
-         }
-         which = "Second arg";
-      } else {
-         which = "Both args";
-      }
-      if (NONPTR == seg2) {
-         VG_(message)(Vg_UserMsg, " %s not a pointer", which);
-      } else {
-         VG_(message)(Vg_UserMsg, " %s derived from address %#lx of "
-                                  "%lu-byte block %s",
-                                  which, Seg__a(seg2), Seg__size(seg2),
-                                  Seg__status_str(seg2));
-         VG_(pp_ExeContext)(Seg__where(seg2));
-      }
-      break;
-   }
-
-   //----------------------------------------------------------
-   case SysParamErr: {
-      SysParamExtra* extra = (SysParamExtra*)VG_(get_error_extra)(err);
-      Addr           lo    = extra->lo;
-      Addr           hi    = extra->hi;
-      Seg            seglo = extra->seglo;
-      Seg            seghi = extra->seghi;
-      Char*          s     = VG_(get_error_string) (err);
-      Char*          what;
-
-      tl_assert(BOTTOM != seglo && BOTTOM != seghi);
-
-      if      (Vg_CoreSysCall == extra->part) what = "Syscall param ";
-      else    VG_(tool_panic)("bad CorePart");
-
-      if (seglo == seghi) {
-         // freed block
-         tl_assert(is_known_segment(seglo));
-         tl_assert(Seg__is_freed(seglo));
-         VG_(message)(Vg_UserMsg, "%s%s contains unaddressable byte(s)",
-                                  what, s);
-         VG_(pp_ExeContext)( VG_(get_error_where)(err) );
-
-         VG_(message)(Vg_UserMsg, " Address %#lx is %ld bytes inside a "
-                                  "%ld-byte block %s",
-                                  lo, lo-Seg__a(seglo), Seg__size(seglo),
-                                  Seg__status_str(seglo) );
-         VG_(pp_ExeContext)(Seg__where(seglo));
-
-      } else {
-         // mismatch
-         VG_(message)(Vg_UserMsg, "%s%s is non-contiguous", what, s);
-         VG_(pp_ExeContext)( VG_(get_error_where)(err) );
-
-         if (UNKNOWN == seglo) {
-            VG_(message)(Vg_UserMsg, " First byte is not inside a known block");
-         } else {
-            VG_(message)(Vg_UserMsg, " First byte (%#lx) is %ld bytes inside a "
-                                     "%ld-byte block %s",
-                                     lo, lo-Seg__a(seglo), Seg__size(seglo),
-                                     Seg__status_str(seglo) );
-            VG_(pp_ExeContext)(Seg__where(seglo));
-         }
-
-         if (UNKNOWN == seghi) {
-            VG_(message)(Vg_UserMsg, " Last byte is not inside a known block");
-         } else {
-            VG_(message)(Vg_UserMsg, " Last byte (%#lx) is %ld bytes inside a "
-                                     "%ld-byte block %s",
-                                     hi, hi-Seg__a(seghi), Seg__size(seghi),
-                                     Seg__status_str(seghi));
-            VG_(pp_ExeContext)(Seg__where(seghi));
-         }
-      }
-      break;
-   }
-
-   default:
-      VG_(tool_panic)("pp_Error: unrecognised error kind");
-   }
-}
-
-static UInt update_Error_extra ( Error* err )
-{
-   switch (VG_(get_error_kind)(err)) {
-      case LoadStoreErr: {
-         LoadStoreExtra* ex = (LoadStoreExtra*)VG_(get_error_extra)(err);
-         tl_assert(ex);
-         tl_assert(sizeof(ex->descr1) == sizeof(ex->descr2));
-         tl_assert(sizeof(ex->descr1) > 0);
-         tl_assert(sizeof(ex->datasym) > 0);
-         VG_(memset)(&ex->descr1, 0, sizeof(ex->descr1));
-         VG_(memset)(&ex->descr2, 0, sizeof(ex->descr2));
-         VG_(memset)(&ex->datasym, 0, sizeof(ex->datasym));
-         ex->datasymoff = 0;
-         if (VG_(get_data_description)( &ex->descr1[0], &ex->descr2[0],
-                                        sizeof(ex->descr1)-1, ex->a )) {
-            tl_assert(ex->descr1[sizeof(ex->descr1)-1] == 0);
-            tl_assert(ex->descr1[sizeof(ex->descr2)-1] == 0);
-         }
-         else
-         if (VG_(get_datasym_and_offset)( ex->a, &ex->datasym[0],
-                                          sizeof(ex->datasym)-1,
-                                          &ex->datasymoff )) {
-            tl_assert(ex->datasym[sizeof(ex->datasym)-1] == 0);
-         }
-         return sizeof(LoadStoreExtra);
-      }
-      case ArithErr:
-         return sizeof(ArithExtra);
-      case SysParamErr:
-         return sizeof(SysParamExtra);
-      default:
-         VG_(tool_panic)("update_extra");
-   }
-}
-
-static Bool is_recognised_suppression ( Char* name, Supp *su )
-{
-   SuppKind skind;
-
-   if      (VG_STREQ(name, "LoadStore"))  skind = LoadStoreSupp;
-   else if (VG_STREQ(name, "Arith"))      skind = ArithSupp;
-   else if (VG_STREQ(name, "SysParam"))   skind = SysParamSupp;
-   else
-      return False;
-
-   VG_(set_supp_kind)(su, skind);
-   return True;
-}
-
-static Bool read_extra_suppression_info ( Int fd, Char* buf, 
-                                          Int nBuf, Supp* su )
-{
-   Bool eof;
-
-   if (VG_(get_supp_kind)(su) == SysParamSupp) {
-      eof = VG_(get_line) ( fd, buf, nBuf );
-      if (eof) return False;
-      VG_(set_supp_string)(su, VG_(strdup)(buf));
-   }
-   return True;
-}
-
-static Bool error_matches_suppression (Error* err, Supp* su)
-{
-   ErrorKind  ekind     = VG_(get_error_kind )(err);
-
-   switch (VG_(get_supp_kind)(su)) {
-   case LoadStoreSupp:  return (ekind == LoadStoreErr);
-   case ArithSupp:      return (ekind == ArithErr);
-   case SysParamSupp:   return (ekind == SysParamErr);
-   default:
-      VG_(printf)("Error:\n"
-                  "  unknown suppression type %d\n",
-                  VG_(get_supp_kind)(su));
-      VG_(tool_panic)("unknown suppression type in "
-                      "SK_(error_matches_suppression)");
-   }
-}
-
-static Char* get_error_name ( Error* err )
-{
-   switch (VG_(get_error_kind)(err)) {
-   case LoadStoreErr:       return "LoadStore";
-   case ArithErr:           return "Arith";
-   case SysParamErr:        return "SysParam";
-   default:                 VG_(tool_panic)("get_error_name: unexpected type");
-   }
-}
-
-static void print_extra_suppression_info ( Error* err )
-{
-   if (SysParamErr == VG_(get_error_kind)(err)) {
-      VG_(printf)("   %s\n", VG_(get_error_string)(err));
-   }
-}
-
-
 /*------------------------------------------------------------*/
 /*--- malloc() et al replacements                          ---*/
 /*------------------------------------------------------------*/
 
-static void* pc_replace_malloc ( ThreadId tid, SizeT n )
+void* h_replace_malloc ( ThreadId tid, SizeT n )
 {
    return alloc_and_new_mem_heap ( tid, n, VG_(clo_alignment),
                                         /*is_zeroed*/False );
 }
 
-static void* pc_replace___builtin_new ( ThreadId tid, SizeT n )
+void* h_replace___builtin_new ( ThreadId tid, SizeT n )
 {
    return alloc_and_new_mem_heap ( tid, n, VG_(clo_alignment),
                                            /*is_zeroed*/False );
 }
 
-static void* pc_replace___builtin_vec_new ( ThreadId tid, SizeT n )
+void* h_replace___builtin_vec_new ( ThreadId tid, SizeT n )
 {
    return alloc_and_new_mem_heap ( tid, n, VG_(clo_alignment),
                                            /*is_zeroed*/False );
 }
 
-static void* pc_replace_memalign ( ThreadId tid, SizeT align, SizeT n )
+void* h_replace_memalign ( ThreadId tid, SizeT align, SizeT n )
 {
    return alloc_and_new_mem_heap ( tid, n, align,
                                         /*is_zeroed*/False );
 }
 
-static void* pc_replace_calloc ( ThreadId tid, SizeT nmemb, SizeT size1 )
+void* h_replace_calloc ( ThreadId tid, SizeT nmemb, SizeT size1 )
 {
    return alloc_and_new_mem_heap ( tid, nmemb*size1, VG_(clo_alignment),
                                         /*is_zeroed*/True );
 }
 
-static void pc_replace_free ( ThreadId tid, void* p )
+void h_replace_free ( ThreadId tid, void* p )
 {
    // Should arguably check here if p.vseg matches the segID of the
    // pointed-to block... unfortunately, by this stage, we don't know what
@@ -1066,17 +660,17 @@ static void pc_replace_free ( ThreadId tid, void* p )
    handle_free_heap(tid, p);
 }
 
-static void pc_replace___builtin_delete ( ThreadId tid, void* p )
+void h_replace___builtin_delete ( ThreadId tid, void* p )
 {
    handle_free_heap(tid, p);
 }
 
-static void pc_replace___builtin_vec_delete ( ThreadId tid, void* p )
+void h_replace___builtin_vec_delete ( ThreadId tid, void* p )
 {
    handle_free_heap(tid, p);
 }
 
-static void* pc_replace_realloc ( ThreadId tid, void* p_old, SizeT new_size )
+void* h_replace_realloc ( ThreadId tid, void* p_old, SizeT new_size )
 {
    Seg seg;
 
@@ -1157,7 +751,8 @@ static void set_mem_unknown( Addr a, SizeT len )
 //zz    set_mem( a, len, NONPTR );
 //zz }
 
-static void new_mem_startup( Addr a, SizeT len, Bool rr, Bool ww, Bool xx )
+void h_new_mem_startup( Addr a, SizeT len,
+                        Bool rr, Bool ww, Bool xx, ULong di_handle )
 {
    if (0) VG_(printf)("new_mem_startup(%#lx,%lu)\n", a, len);
    set_mem_unknown( a, len );
@@ -1188,7 +783,8 @@ static void new_mem_startup( Addr a, SizeT len, Bool rr, Bool ww, Bool xx )
 // Not quite right:  if you mmap a segment into a specified place, it could
 // be legitimate to do certain arithmetic with the pointer that it wouldn't
 // otherwise.  Hopefully this is rare, though.
-static void new_mem_mmap( Addr a, SizeT len, Bool rr, Bool ww, Bool xx )
+void h_new_mem_mmap( Addr a, SizeT len,
+                     Bool rr, Bool ww, Bool xx, ULong di_handle )
 {
    if (0) VG_(printf)("new_mem_mmap(%#lx,%lu)\n", a, len);
 //zz #if 0
@@ -1263,7 +859,7 @@ static void copy_mem( Addr from, Addr to, SizeT len )
 //zz //   VG_(skin_panic)("can't handle die_mem_brk()");
 //zz }
 
-static void die_mem_munmap( Addr a, SizeT len )
+void h_die_mem_munmap( Addr a, SizeT len )
 {
 //   handle_free_munmap( (void*)a, len );
 }
@@ -1315,29 +911,29 @@ static void pre_mem_access2 ( CorePart part, ThreadId tid, Char* str,
       /* First identify the case where start and end are in different
          segments but s and e don't both fall in either. */
       if ( ! ((s_in_seglo && e_in_seglo) || (s_in_seghi && e_in_seghi)) ) {
-         record_sysparam_error(tid, part, str, s, e, seglo, seghi);
+         h_record_sysparam_error(tid, part, str, s, e, seglo, seghi);
       }
       /* Now we know that s and e are both in the same known segment.
          Identify the case where that segment is freed. */
       else if (s_in_seglo && Seg__is_freed(seglo)) {
          tl_assert(e_in_seglo);
-         record_sysparam_error(tid, part, str, s, e, seglo, UNKNOWN);
+         h_record_sysparam_error(tid, part, str, s, e, seglo, UNKNOWN);
       }
       else if (s_in_seghi && Seg__is_freed(seghi)) {
          tl_assert(e_in_seghi);
-         record_sysparam_error(tid, part, str, s, e, seghi, UNKNOWN);
+         h_record_sysparam_error(tid, part, str, s, e, seghi, UNKNOWN);
       }
    }
 }
 
-static void pre_mem_access ( CorePart part, ThreadId tid, Char* s,
-                             Addr base, SizeT size )
+void h_pre_mem_access ( CorePart part, ThreadId tid, Char* s,
+                        Addr base, SizeT size )
 {
    pre_mem_access2( part, tid, s, base, base + size - 1 );
 }
 
-static
-void pre_mem_read_asciiz ( CorePart part, ThreadId tid, Char* s, Addr lo )
+void h_pre_mem_read_asciiz ( CorePart part, ThreadId tid, 
+                             Char* s, Addr lo )
 {
    Addr hi = lo;
 
@@ -2101,9 +1697,8 @@ static void post_reg_write_nonptr_or_unknown ( ThreadId tid,
    }
 }
 
-static
-void post_reg_write_demux ( CorePart part, ThreadId tid,
-                            OffT guest_state_offset, SizeT size)
+void h_post_reg_write_demux ( CorePart part, ThreadId tid,
+                              OffT guest_state_offset, SizeT size)
 {
    if (0)
    VG_(printf)("post_reg_write_demux: tid %d part %d off %ld size %ld\n",
@@ -2133,19 +1728,18 @@ void post_reg_write_demux ( CorePart part, ThreadId tid,
    }
 }
 
-static 
-void post_reg_write_clientcall(ThreadId tid, OffT guest_state_offset,
-                               SizeT size, Addr f )
+void h_post_reg_write_clientcall(ThreadId tid, OffT guest_state_offset,
+                                 SizeT size, Addr f )
 {
    UWord p;
 
    // Having to do this is a bit nasty...
-   if (f == (Addr)pc_replace_malloc
-       || f == (Addr)pc_replace___builtin_new
-       || f == (Addr)pc_replace___builtin_vec_new
-       || f == (Addr)pc_replace_calloc
-       || f == (Addr)pc_replace_memalign
-       || f == (Addr)pc_replace_realloc)
+   if (f == (Addr)h_replace_malloc
+       || f == (Addr)h_replace___builtin_new
+       || f == (Addr)h_replace___builtin_vec_new
+       || f == (Addr)h_replace_calloc
+       || f == (Addr)h_replace_memalign
+       || f == (Addr)h_replace_realloc)
    {
       // We remembered the last added segment;  make sure it's the right one.
       /* What's going on: at this point, the scheduler has just called
@@ -2174,9 +1768,9 @@ void post_reg_write_clientcall(ThreadId tid, OffT guest_state_offset,
                           guest_state_offset, size, (UWord)last_seg_added );
       }
    } 
-   else if (f == (Addr)pc_replace_free
-            || f == (Addr)pc_replace___builtin_delete
-            || f == (Addr)pc_replace___builtin_vec_delete
+   else if (f == (Addr)h_replace_free
+            || f == (Addr)h_replace___builtin_delete
+            || f == (Addr)h_replace___builtin_vec_delete
    //            || f == (Addr)VG_(cli_block_size)
             || f == (Addr)VG_(message))
    {
@@ -2237,7 +1831,7 @@ void post_reg_write_clientcall(ThreadId tid, OffT guest_state_offset,
 /*--- System calls                                                 ---*/
 /*--------------------------------------------------------------------*/
 
-static void pre_syscall ( ThreadId tid, UInt syscallno )
+void h_pre_syscall ( ThreadId tid, UInt syscallno )
 {
 //zz #if 0
 //zz    UInt mmap_flags;
@@ -2265,7 +1859,7 @@ static void pre_syscall ( ThreadId tid, UInt syscallno )
 //zz    return NULL;
 }
 
-static void post_syscall ( ThreadId tid, UInt syscallno, SysRes res )
+void h_post_syscall ( ThreadId tid, UInt syscallno, SysRes res )
 {
    switch (syscallno) {
 
@@ -2621,7 +2215,7 @@ static void show_lossage ( void )
 static __inline__
 void check_load_or_store(Bool is_write, Addr m, UInt sz, Seg mptr_vseg)
 {
-   if (clo_lossage_check) {
+   if (h_clo_lossage_check) {
       Seg seg;
       stats__tot_mem_refs++;
       if (ISList__findI0( seglist, (Addr)m, &seg )) {
@@ -2637,7 +2231,7 @@ void check_load_or_store(Bool is_write, Addr m, UInt sz, Seg mptr_vseg)
             if (UNKNOWN == mptr_vseg
                 || BOTTOM == mptr_vseg || NONPTR == mptr_vseg) {
                ExeContext* ec;
-                Char buf[100];
+               Char buf[100];
                static UWord xx = 0;
                stats__refs_lost_seg++;
                ec = VG_(record_ExeContext)( VG_(get_running_tid)(), 0 );
@@ -2672,7 +2266,7 @@ void check_load_or_store(Bool is_write, Addr m, UInt sz, Seg mptr_vseg)
       // do nothing
 
    } else if (NONPTR == mptr_vseg) {
-      record_loadstore_error( m, sz, mptr_vseg, is_write );
+      h_record_heap_error( m, sz, mptr_vseg, is_write );
 
    } else {
       // check all segment ranges in the circle
@@ -2687,7 +2281,7 @@ void check_load_or_store(Bool is_write, Addr m, UInt sz, Seg mptr_vseg)
       // gcc's/glibc's habits of doing word-sized accesses that read past
       // the ends of arrays/strings.
       if (!is_write && sz == sizeof(UWord)
-          && clo_partial_loads_ok && SHMEM_IS_WORD_ALIGNED(m)) {
+          && h_clo_partial_loads_ok && SHMEM_IS_WORD_ALIGNED(m)) {
          mhi = m;
       } else {
          mhi = m+sz-1;
@@ -2711,7 +2305,7 @@ void check_load_or_store(Bool is_write, Addr m, UInt sz, Seg mptr_vseg)
       // warnings, since the first one mentions that the block has been
       // freed.
       if ( ! is_ok || Seg__is_freed(curr) )
-         record_loadstore_error( m, sz, mptr_vseg, is_write );
+         h_record_heap_error( m, sz, mptr_vseg, is_write );
    }
 }
 
@@ -3056,7 +2650,7 @@ void check_store1(Addr m, Seg mptr_vseg, UWord t)
    }
 
 #define BINERROR(opname)                    \
-   record_arith_error(seg1, seg2, opname);  \
+   h_record_arith_error(seg1, seg2, opname);  \
    out = NONPTR
 
 
@@ -3218,7 +2812,7 @@ static VG_REGPARM(2) Seg do_mulW(Seg seg1, Seg seg2)
    checkSeg(seg2);
 #  endif
    if (is_known_segment(seg1) && is_known_segment(seg2))
-      record_arith_error(seg1, seg2, "Mul32/Mul64");
+      h_record_arith_error(seg1, seg2, "Mul32/Mul64");
    return NONPTR;
 }
 
@@ -4547,11 +4141,11 @@ static void schemeS ( PCEnv* pce, IRStmt* st )
 
 
 static
-IRSB* pc_instrument ( VgCallbackClosure* closure,
-                      IRSB* sbIn,
-                      VexGuestLayout* layout,
-                      VexGuestExtents* vge,
-                      IRType gWordTy, IRType hWordTy )
+IRSB* h_instrument ( VgCallbackClosure* closure,
+                     IRSB* sbIn,
+                     VexGuestLayout* layout,
+                     VexGuestExtents* vge,
+                     IRType gWordTy, IRType hWordTy )
 {
    Bool  verboze = 0||False;
    Int   i /*, j*/;
@@ -4663,88 +4257,8 @@ IRSB* pc_instrument ( VgCallbackClosure* closure,
 /*--- Initialisation                                               ---*/
 /*--------------------------------------------------------------------*/
 
-static void pc_post_clo_init ( void ); /* just below */
-static void pc_fini ( Int exitcode );  /* just below */
-
-static void pc_pre_clo_init ( void )
+void h_pre_clo_init ( void )
 {
-   VG_(details_name)            ("exp-ptrcheck");
-   VG_(details_version)         (NULL);
-   VG_(details_description)     ("a pointer-use checker");
-   VG_(details_copyright_author)(
-      "Copyright (C) 2003-2008, and GNU GPL'd, by Nicholas Nethercote.");
-   VG_(details_bug_reports_to)  ("njn@valgrind.org");
-
-   VG_(basic_tool_funcs)( pc_post_clo_init,
-                          pc_instrument,
-                          pc_fini );
-
-   VG_(needs_malloc_replacement)( pc_replace_malloc,
-                                  pc_replace___builtin_new,
-                                  pc_replace___builtin_vec_new,
-                                  pc_replace_memalign,
-                                  pc_replace_calloc,
-                                  pc_replace_free,
-                                  pc_replace___builtin_delete,
-                                  pc_replace___builtin_vec_delete,
-                                  pc_replace_realloc,
-                                  0 /* no need for client heap redzones */ );
-
-   VG_(needs_core_errors)         ();
-   VG_(needs_tool_errors)         (eq_Error,
-                                   pp_Error,
-                                   True,/*show TIDs for errors*/
-                                   update_Error_extra,
-                                   is_recognised_suppression,
-                                   read_extra_suppression_info,
-                                   error_matches_suppression,
-                                   get_error_name,
-                                   print_extra_suppression_info);
-
-   VG_(needs_syscall_wrapper)( pre_syscall,
-                               post_syscall );
-
-   VG_(needs_command_line_options)(pc_process_cmd_line_options,
-                                   pc_print_usage,
-                                   pc_print_debug_usage);
-
-   VG_(needs_var_info)();
-
-//zz    // No needs
-//zz    VG_(needs_core_errors)         ();
-//zz    VG_(needs_skin_errors)         ();
-//zz    VG_(needs_shadow_regs)         ();
-//zz    VG_(needs_command_line_options)();
-//zz    VG_(needs_syscall_wrapper)     ();
-//zz    VG_(needs_sanity_checks)       ();
-//zz 
-//zz    // Memory events to track
-   VG_(track_new_mem_startup)      ( new_mem_startup );
-//zz    VG_(track_new_mem_stack_signal) ( NULL );
-//zz    VG_(track_new_mem_brk)          ( new_mem_brk  );
-   VG_(track_new_mem_mmap)         ( new_mem_mmap );
-//zz 
-//zz    VG_(track_copy_mem_remap)       ( copy_mem_remap );
-//zz    VG_(track_change_mem_mprotect)  ( NULL );
-//zz 
-//zz    VG_(track_die_mem_stack_signal) ( NULL );
-//zz    VG_(track_die_mem_brk)          ( die_mem_brk );
-   VG_(track_die_mem_munmap)       ( die_mem_munmap );
-
-   VG_(track_pre_mem_read)         ( pre_mem_access );
-   VG_(track_pre_mem_read_asciiz)  ( pre_mem_read_asciiz );
-   VG_(track_pre_mem_write)        ( pre_mem_access );
-//zz    VG_(track_post_mem_write)       ( post_mem_write );
-
-   // Register events to track
-//zz    VG_(track_post_regs_write_init)             ( post_regs_write_init      );
-//zz    VG_(track_post_reg_write_syscall_return)    ( post_reg_write_nonptr     );
-//zz    VG_(track_post_reg_write_deliver_signal)    ( post_reg_write_nonptr_or_unknown );
-//zz    VG_(track_post_reg_write_pthread_return)    ( post_reg_write_nonptr_or_unknown );
-//zz    VG_(track_post_reg_write_clientreq_return)  ( post_reg_write_nonptr     );
-   VG_(track_post_reg_write_clientcall_return) ( post_reg_write_clientcall );
-   VG_(track_post_reg_write)( post_reg_write_demux );
-
    // Other initialisation
    init_shadow_memory();
    seglist  = ISList__construct();
@@ -4758,7 +4272,7 @@ static void pc_pre_clo_init ( void )
    // above.
 }
 
-static void pc_post_clo_init ( void )
+void h_post_clo_init ( void )
 {
 }
 
@@ -4766,9 +4280,9 @@ static void pc_post_clo_init ( void )
 /*--- Finalisation                                                 ---*/
 /*--------------------------------------------------------------------*/
 
-static void pc_fini ( Int exitcode )
+void h_fini ( Int exitcode )
 {
-   if (clo_lossage_check) {
+   if (h_clo_lossage_check) {
       VG_(message)(Vg_UserMsg, "");
       VG_(message)(Vg_UserMsg, "%12lld total memory references",
                                stats__tot_mem_refs);
@@ -4784,7 +4298,6 @@ static void pc_fini ( Int exitcode )
    }
 }
 
-VG_DETERMINE_INTERFACE_VERSION(pc_pre_clo_init)
 
 /*--------------------------------------------------------------------*/
 /*--- end                                                 h_main.c ---*/

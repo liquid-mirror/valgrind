@@ -21,7 +21,7 @@ noinst_PROGRAMS += exp-ptrcheck-ppc64-aix5 vgpreload_exp-ptrcheck-ppc64-aix5.so
 endif
 
 
-VGPRELOAD_EXP_PTRCHECK_SOURCES_COMMON = pc_intercepts.c
+VGPRELOAD_EXP_PTRCHECK_SOURCES_COMMON = h_intercepts.c
 
 vgpreload_exp_ptrcheck_x86_linux_so_SOURCES      = $(VGPRELOAD_EXP_PTRCHECK_SOURCES_COMMON)
 vgpreload_exp_ptrcheck_x86_linux_so_CPPFLAGS     = $(AM_CPPFLAGS_X86_LINUX)
@@ -79,7 +79,8 @@ vgpreload_exp_ptrcheck_ppc64_aix5_so_LDFLAGS      = \
 
 
 
-EXP_PTRCHECK_SOURCES_COMMON = pc_list.c pc_main.c
+EXP_PTRCHECK_SOURCES_COMMON = \
+	pc_common.c h_list.c h_main.c sg_main.c pc_main.c
 
 exp_ptrcheck_x86_linux_SOURCES      = $(EXP_PTRCHECK_SOURCES_COMMON)
 exp_ptrcheck_x86_linux_CPPFLAGS     = $(AM_CPPFLAGS_X86_LINUX)
@@ -123,5 +124,5 @@ exp_ptrcheck_ppc64_aix5_DEPENDENCIES = $(COREGRIND_LIBS_PPC64_AIX5)
 exp_ptrcheck_ppc64_aix5_LDADD        = $(TOOL_LDADD_PPC64_AIX5)
 exp_ptrcheck_ppc64_aix5_LDFLAGS      = $(TOOL_LDFLAGS_PPC64_AIX5)
 
-noinst_HEADERS = pc_list.h
+noinst_HEADERS = h_list.h h_main.h sg_main.h pc_common.h
 
