@@ -248,6 +248,16 @@ struct _DebugInfo {
    struct _DebugInfo* next;   /* list of DebugInfos */
    Bool               mark;   /* marked for deletion? */
 
+   /* An abstract handle, which can be used by entities outside of
+      m_debuginfo to (in an abstract datatype sense) refer to this
+      struct _DebugInfo.  A .handle of zero is invalid; valid handles
+      are 1 and above.  The same handle is never issued twice (in any
+      given run of Valgrind), so a handle becomes invalid when the
+      associated struct _DebugInfo is discarded, and remains invalid
+      forever thereafter.  The .handle field is set as soon as this
+      structure is allocated. */
+   ULong handle;
+
    /* Used for debugging only - indicate what stuff to dump whilst
       reading stuff into the seginfo.  Are computed as early in the
       lifetime of the DebugInfo as possible -- at the point when it is

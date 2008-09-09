@@ -153,9 +153,6 @@ void ML_(pp_Type_C_ishly) ( Type* ty );
 /* How big is this type?  (post-resolved only)  If .b in the
    returned struct is False, the size is unknown. */
 /* FIXME: check all pointers before dereferencing */
-
-typedef struct { UWord w; Bool b; } MaybeUWord;
-
 MaybeUWord ML_(sizeOfType)( Type* ty );
 
 /* Describe where in the type 'offset' falls.  Caller must

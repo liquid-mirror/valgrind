@@ -5435,7 +5435,7 @@ void evh__new_mem_w_tid ( Addr a, SizeT len, ThreadId tid ) {
 
 static
 void evh__new_mem_w_perms ( Addr a, SizeT len, 
-                            Bool rr, Bool ww, Bool xx ) {
+                            Bool rr, Bool ww, Bool xx, ULong di_handle ) {
    if (SHOW_EVENTS >= 1)
       VG_(printf)("evh__new_mem_w_perms(%p, %lu, %d,%d,%d)\n",
                   (void*)a, len, (Int)rr, (Int)ww, (Int)xx );

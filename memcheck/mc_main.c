@@ -3654,7 +3654,8 @@ void check_mem_is_defined_asciiz ( CorePart part, ThreadId tid,
 }
 
 static
-void mc_new_mem_startup( Addr a, SizeT len, Bool rr, Bool ww, Bool xx )
+void mc_new_mem_startup( Addr a, SizeT len,
+                         Bool rr, Bool ww, Bool xx, ULong di_handle )
 {
    /* Ignore the permissions, just make it defined.  Seems to work... */
    // Because code is defined, initialised variables get put in the data
@@ -3673,7 +3674,8 @@ void mc_new_mem_startup( Addr a, SizeT len, Bool rr, Bool ww, Bool xx )
 }
 
 static
-void mc_new_mem_mmap ( Addr a, SizeT len, Bool rr, Bool ww, Bool xx )
+void mc_new_mem_mmap ( Addr a, SizeT len, Bool rr, Bool ww, Bool xx,
+                       ULong di_handle )
 {
    MC_(make_mem_defined)(a, len);
 }

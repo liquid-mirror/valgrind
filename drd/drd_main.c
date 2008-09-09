@@ -548,7 +548,8 @@ static void suppress_relocation_conflicts(const Addr a, const SizeT len)
 
 static
 void drd_start_using_mem_w_perms(const Addr a, const SizeT len,
-                                 const Bool rr, const Bool ww, const Bool xx)
+                                 const Bool rr, const Bool ww, const Bool xx,
+                                 ULong di_handle)
 {
   thread_set_vg_running_tid(VG_(get_running_tid)());
 
