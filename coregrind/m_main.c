@@ -2081,7 +2081,7 @@ void shutdown_actions_NORETURN( ThreadId tid,
 
    /* Show a profile of the heap(s) at shutdown.  Optionally, first
       throw away all the debug info, as that makes it easy to spot
-      leaks in the debuginfo reader. */
+      leaks in the debuginfo reader (for debugging only!) */
    if (VG_(clo_profile_heap)) {
       if (0) VG_(di_discard_ALL_debuginfo)();
       VG_(print_arena_cc_analysis)();

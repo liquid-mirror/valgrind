@@ -844,7 +844,7 @@ void VG_(di_discard_ALL_debuginfo)( void )
    di = debugInfo_list;
    while (di) {
       di2 = di->next;
-      VG_(printf)("XXX rm %p\n", di);
+      VG_(printf)("VG_(di_discard_ALL_debuginfo): deleting di %p\n", di);
       free_DebugInfo( di );
       di = di2;
    }

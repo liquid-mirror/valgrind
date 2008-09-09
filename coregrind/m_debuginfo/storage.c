@@ -751,7 +751,7 @@ void ML_(addVar)( struct _DebugInfo* di,
    vg_assert(name);
    vg_assert(gexpr);
 
-   ent = ML_(TyEnts__index_by_cuOff)( di->admin_tyents, typeR);
+   ent = ML_(TyEnts__index_by_cuOff)( di->admin_tyents, NULL, typeR );
    tl_assert(ent);
    vg_assert(ML_(TyEnt__is_type)(ent));
 

@@ -2222,7 +2222,7 @@ static void parse_type_DIE ( /*MOD*/XArray* /* of TyEnt */ tyents,
       typeE.cuOff = posn;
       typeE.tag   = Te_TyEnum;
       typeE.Te.TyEnum.atomRs
-         = VG_(newXA)( ML_(dinfo_zalloc), "di.readdwarf3.ptD.1", 
+         = VG_(newXA)( ML_(dinfo_zalloc), "di.readdwarf3.ptD.enum_type.1", 
                        ML_(dinfo_free),
                        sizeof(UWord) );
       while (True) {
@@ -2233,7 +2233,7 @@ static void parse_type_DIE ( /*MOD*/XArray* /* of TyEnt */ tyents,
                             cc, c_die, False/*td3*/, form );
          if (attr == DW_AT_name && ctsMemSzB > 0) {
             typeE.Te.TyEnum.name
-              = ML_(dinfo_strdup)( "di.readdwarf3.enum_type.1",
+              = ML_(dinfo_strdup)( "di.readdwarf3.pTD.enum_type.2",
                                    (UChar*)(UWord)cts );
          }
          if (attr == DW_AT_byte_size && ctsSzB > 0) {
@@ -2262,7 +2262,7 @@ static void parse_type_DIE ( /*MOD*/XArray* /* of TyEnt */ tyents,
                             cc, c_die, False/*td3*/, form );
          if (attr == DW_AT_name && ctsMemSzB > 0) {
             atomE.Te.Atom.name 
-              = ML_(dinfo_strdup)( "di.readdwarf3.enumerator.1",
+              = ML_(dinfo_strdup)( "di.readdwarf3.pTD.enumerator.1",
                                    (UChar*)(UWord)cts );
          }
          if (attr == DW_AT_const_value && ctsSzB > 0) {
@@ -2301,12 +2301,12 @@ static void parse_type_DIE ( /*MOD*/XArray* /* of TyEnt */ tyents,
       typeE.tag   = Te_TyStOrUn;
       typeE.Te.TyStOrUn.name = NULL;
       typeE.Te.TyStOrUn.fieldRs
-         = VG_(newXA)( ML_(dinfo_zalloc), "di.readdwarf3.struct_type.1", 
+         = VG_(newXA)( ML_(dinfo_zalloc), "di.readdwarf3.pTD.struct_type.1", 
                        ML_(dinfo_free),
                        sizeof(UWord) );
       typeE.Te.TyStOrUn.complete = True;
       typeE.Te.TyStOrUn.isStruct = dtag == DW_TAG_structure_type 
-                                 || dtag == DW_TAG_class_type;
+                                   || dtag == DW_TAG_class_type;
       while (True) {
          DW_AT   attr = (DW_AT)  get_ULEB128( c_abbv );
          DW_FORM form = (DW_FORM)get_ULEB128( c_abbv );
@@ -2431,7 +2431,7 @@ static void parse_type_DIE ( /*MOD*/XArray* /* of TyEnt */ tyents,
       typeE.tag   = Te_TyArray;
       typeE.Te.TyArray.typeR = D3_INVALID_CUOFF;
       typeE.Te.TyArray.boundRs
-         = VG_(newXA)( ML_(dinfo_zalloc), "di.readdwarf3.ptD.3",
+         = VG_(newXA)( ML_(dinfo_zalloc), "di.readdwarf3.ptD.array_type.1",
                        ML_(dinfo_free),
                        sizeof(UWord) );
       while (True) {
@@ -2672,10 +2672,11 @@ static void parse_type_DIE ( /*MOD*/XArray* /* of TyEnt */ tyents,
 
 static UWord chase_cuOff ( Bool* changed,
                            XArray* /* of TyEnt */ ents,
+                           TyEntIndexCache* ents_cache,
                            UWord cuOff )
 {
    TyEnt* ent;
-   ent = ML_(TyEnts__index_by_cuOff)( ents, cuOff );
+   ent = ML_(TyEnts__index_by_cuOff)( ents, ents_cache, cuOff );
 
    if (!ent) {
       VG_(printf)("chase_cuOff: no entry for 0x%05lx\n", cuOff);
@@ -2697,6 +2698,7 @@ static UWord chase_cuOff ( Bool* changed,
 static
 void chase_cuOffs_in_XArray ( Bool* changed,
                               XArray* /* of TyEnt */ ents,
+                              TyEntIndexCache* ents_cache,
                               /*MOD*/XArray* /* of UWord */ cuOffs )
 {
    Bool b2 = False;
@@ -2704,7 +2706,7 @@ void chase_cuOffs_in_XArray ( Bool* changed,
    for (i = 0; i < n; i++) {
       Bool   b = False;
       UWord* p = VG_(indexXA)( cuOffs, i );
-      *p = chase_cuOff( &b, ents, *p );
+      *p = chase_cuOff( &b, ents, ents_cache, *p );
       if (b)
          b2 = True;
    }
@@ -2712,6 +2714,7 @@ void chase_cuOffs_in_XArray ( Bool* changed,
 }
 
 static Bool TyEnt__subst_R_fields ( XArray* /* of TyEnt */ ents,
+                                    TyEntIndexCache* ents_cache,
                                     /*MOD*/TyEnt* te )
 {
    Bool b, changed = False;
@@ -2719,7 +2722,8 @@ static Bool TyEnt__subst_R_fields ( XArray* /* of TyEnt */ ents,
       case Te_EMPTY:
          break;
       case Te_INDIR:
-         te->Te.INDIR.indR = chase_cuOff( &b, ents, te->Te.INDIR.indR );
+         te->Te.INDIR.indR
+            = chase_cuOff( &b, ents, ents_cache, te->Te.INDIR.indR );
          if (b) changed = True;
          break;
       case Te_UNKNOWN:
@@ -2727,7 +2731,8 @@ static Bool TyEnt__subst_R_fields ( XArray* /* of TyEnt */ ents,
       case Te_Atom:
          break;
       case Te_Field:
-         te->Te.Field.typeR = chase_cuOff( &b, ents, te->Te.Field.typeR );
+         te->Te.Field.typeR
+            = chase_cuOff( &b, ents, ents_cache, te->Te.Field.typeR );
          if (b) changed = True;
          break;
       case Te_Bound:
@@ -2735,31 +2740,35 @@ static Bool TyEnt__subst_R_fields ( XArray* /* of TyEnt */ ents,
       case Te_TyBase:
          break;
       case Te_TyPorR:
-         te->Te.TyPorR.typeR = chase_cuOff( &b, ents, te->Te.TyPorR.typeR );
+         te->Te.TyPorR.typeR
+            = chase_cuOff( &b, ents, ents_cache, te->Te.TyPorR.typeR );
          if (b) changed = True;
          break;
       case Te_TyTyDef:
-         te->Te.TyTyDef.typeR = chase_cuOff( &b, ents, te->Te.TyTyDef.typeR );
+         te->Te.TyTyDef.typeR
+            = chase_cuOff( &b, ents, ents_cache, te->Te.TyTyDef.typeR );
          if (b) changed = True;
          break;
       case Te_TyStOrUn:
-         chase_cuOffs_in_XArray( &b, ents, te->Te.TyStOrUn.fieldRs );
+         chase_cuOffs_in_XArray( &b, ents, ents_cache, te->Te.TyStOrUn.fieldRs );
          if (b) changed = True;
          break;
       case Te_TyEnum:
-         chase_cuOffs_in_XArray( &b, ents, te->Te.TyEnum.atomRs );
+         chase_cuOffs_in_XArray( &b, ents, ents_cache, te->Te.TyEnum.atomRs );
          if (b) changed = True;
          break;
       case Te_TyArray:
-         te->Te.TyArray.typeR = chase_cuOff( &b, ents, te->Te.TyArray.typeR );
+         te->Te.TyArray.typeR
+            = chase_cuOff( &b, ents, ents_cache, te->Te.TyArray.typeR );
          if (b) changed = True;
-         chase_cuOffs_in_XArray( &b, ents, te->Te.TyArray.boundRs );
+         chase_cuOffs_in_XArray( &b, ents, ents_cache, te->Te.TyArray.boundRs );
          if (b) changed = True;
          break;
       case Te_TyFn:
          break;
       case Te_TyQual:
-         te->Te.TyQual.typeR = chase_cuOff( &b, ents, te->Te.TyQual.typeR );
+         te->Te.TyQual.typeR
+            = chase_cuOff( &b, ents, ents_cache, te->Te.TyQual.typeR );
          if (b) changed = True;
          break;
       case Te_TyVoid:
@@ -2777,7 +2786,8 @@ static Bool TyEnt__subst_R_fields ( XArray* /* of TyEnt */ ents,
    (which should not itself be an indirection).  In summary, this
    routine shorts out all references to indirection nodes. */
 static
-Word dedup_types_substitution_pass ( /*MOD*/XArray* /* of TyEnt */ ents )
+Word dedup_types_substitution_pass ( /*MOD*/XArray* /* of TyEnt */ ents,
+                                     TyEntIndexCache* ents_cache )
 {
    Word i, n, nChanged = 0;
    Bool b;
@@ -2787,7 +2797,7 @@ Word dedup_types_substitution_pass ( /*MOD*/XArray* /* of TyEnt */ ents )
       vg_assert(ent->tag != Te_EMPTY);
       /* We have to substitute everything, even indirections, so as to
          ensure that chains of indirections don't build up. */
-      b = TyEnt__subst_R_fields( ents, ent );
+      b = TyEnt__subst_R_fields( ents, ents_cache, ent );
       if (b)
          nChanged++;
    }
@@ -2861,9 +2871,12 @@ Word dedup_types_commoning_pass ( /*MOD*/XArray* /* of TyEnt */ ents )
 
 
 static
-void dedup_types ( Bool td3, /*MOD*/XArray* /* of TyEnt */ ents )
+void dedup_types ( Bool td3, 
+                   /*MOD*/XArray* /* of TyEnt */ ents,
+                   TyEntIndexCache* ents_cache )
 {
    Word m, n, i, nDel, nSubst, nThresh;
+   if (0) td3 = True;
 
    n = VG_(sizeXA)( ents );
 
@@ -2884,7 +2897,7 @@ void dedup_types ( Bool td3, /*MOD*/XArray* /* of TyEnt */ ents )
       the array, until there are no more changes. */
    do {
       nDel   = dedup_types_commoning_pass ( ents );
-      nSubst = dedup_types_substitution_pass ( ents );
+      nSubst = dedup_types_substitution_pass ( ents, ents_cache );
       vg_assert(nDel >= 0 && nSubst >= 0);
       TRACE_D3("   %ld deletions, %ld substitutions\n", nDel, nSubst);
    } while (nDel > nThresh || nSubst > nThresh);
@@ -2900,7 +2913,8 @@ void dedup_types ( Bool td3, /*MOD*/XArray* /* of TyEnt */ ents )
       ent = VG_(indexXA)( ents, i );
       if (ent->tag != Te_INDIR) continue;
       m++;
-      ind = ML_(TyEnts__index_by_cuOff)( ents, ent->Te.INDIR.indR );
+      ind = ML_(TyEnts__index_by_cuOff)( ents, ents_cache,
+                                         ent->Te.INDIR.indR );
       vg_assert(ind);
       vg_assert(ind->tag != Te_INDIR);
    }
@@ -2925,7 +2939,8 @@ void dedup_types ( Bool td3, /*MOD*/XArray* /* of TyEnt */ ents )
 __attribute__((noinline))
 static void resolve_variable_types (
                void (*barf)( HChar* ) __attribute__((noreturn)),
-               /*R-O*/XArray* /* of TyEnt */ tyents,
+               /*R-O*/XArray* /* of TyEnt */ ents,
+               /*MOD*/TyEntIndexCache* ents_cache,
                /*MOD*/XArray* /* of TempVar* */ vars
             )
 {
@@ -2935,9 +2950,11 @@ static void resolve_variable_types (
       TempVar* var = *(TempVar**)VG_(indexXA)( vars, i );
       /* This is the stated type of the variable.  But it might be
          an indirection, so be careful. */
-      TyEnt* ent = ML_(TyEnts__index_by_cuOff)( tyents, var->typeR );
+      TyEnt* ent = ML_(TyEnts__index_by_cuOff)( ents, ents_cache,
+                                                var->typeR );
       if (ent && ent->tag == Te_INDIR) {
-         ent = ML_(TyEnts__index_by_cuOff)( tyents, ent->Te.INDIR.indR );
+         ent = ML_(TyEnts__index_by_cuOff)( ents, ents_cache, 
+                                            ent->Te.INDIR.indR );
          vg_assert(ent);
          vg_assert(ent->tag != Te_INDIR);
       }
@@ -3109,6 +3126,8 @@ void new_dwarf3_reader_wrk (
    XArray* /* of GExpr* */    gexprs;
    XArray* /* of TempVar* */  tempvars;
    WordFM* /* of (XArray* of AddrRange, void) */ rangestree;
+   TyEntIndexCache* tyents_cache = NULL;
+   TyEntIndexCache* tyents_to_keep_cache = NULL;
    TempVar *varp, *varp2;
    GExpr* gexpr;
    Cursor abbv; /* for showing .debug_abbrev */
@@ -3292,7 +3311,7 @@ void new_dwarf3_reader_wrk (
       delete this tree, and the XArrays attached to it, at the end of
       this function. */
    rangestree = VG_(newFM)( ML_(dinfo_zalloc),
-                            "di.readdwarf3.ndrw.1b (rangestree)",
+                            "di.readdwarf3.ndrw.2 (rangestree)",
                             ML_(dinfo_free),
                             (Word(*)(UWord,UWord))cmp__XArrays_of_AddrRange );
 
@@ -3300,13 +3319,13 @@ void new_dwarf3_reader_wrk (
       DebugInfo; instead their contents are handed to ML_(addVar) and
       the list elements are then deleted. */
    tempvars = VG_(newXA)( ML_(dinfo_zalloc),
-                          "di.readdwarf3.ndrw.2 (TempVar*s array)",
+                          "di.readdwarf3.ndrw.3 (TempVar*s array)",
                           ML_(dinfo_free), 
                           sizeof(TempVar*) );
 
    /* List of GExprs we're accumulating.  These wind up in the
       DebugInfo. */
-   gexprs = VG_(newXA)( ML_(dinfo_zalloc), "di.readdwarf3.ndrw.3",
+   gexprs = VG_(newXA)( ML_(dinfo_zalloc), "di.readdwarf3.ndrw.4",
                         ML_(dinfo_free), sizeof(GExpr*) );
 
    /* We need a D3TypeParser to keep track of partially constructed
@@ -3394,7 +3413,7 @@ void new_dwarf3_reader_wrk (
          etc. */
       vg_assert(!varparser.filenameTable );
       varparser.filenameTable 
-         = VG_(newXA)( ML_(dinfo_zalloc), "di.readdwarf3.ndrw.4",
+         = VG_(newXA)( ML_(dinfo_zalloc), "di.readdwarf3.ndrw.5",
                        ML_(dinfo_free),
                        sizeof(UChar*) );
       vg_assert(varparser.filenameTable);
@@ -3441,7 +3460,10 @@ void new_dwarf3_reader_wrk (
       TRACE_D3("------ Compressing type entries ------\n");
    }
 
-   dedup_types( td3, tyents );
+   tyents_cache = ML_(dinfo_zalloc)( "di.readdwarf3.ndrw.6",
+                                     sizeof(TyEntIndexCache) );
+   ML_(TyEntIndexCache__invalidate)( tyents_cache );
+   dedup_types( td3, tyents, tyents_cache );
    if (td3) {
       TRACE_D3("\n");
       ML_(pp_TyEnts)(tyents, "After type entity (TyEnt) compression");
@@ -3449,7 +3471,7 @@ void new_dwarf3_reader_wrk (
 
    TRACE_D3("\n");
    TRACE_D3("------ Resolving the types of variables ------\n" );
-   resolve_variable_types( barf, tyents, tempvars );
+   resolve_variable_types( barf, tyents, tyents_cache, tempvars );
 
    /* Copy all the non-INDIR tyents into a new table.  For large
       .so's, about 90% of the tyents will by now have been resolved to
@@ -3457,7 +3479,7 @@ void new_dwarf3_reader_wrk (
       them. */
    tyents_to_keep
       = VG_(newXA)( ML_(dinfo_zalloc), 
-                    "di.readdwarf3.ndrw.6 (TyEnt to-keep array)",
+                    "di.readdwarf3.ndrw.7 (TyEnt to-keep array)",
                     ML_(dinfo_free), sizeof(TyEnt) );
    n = VG_(sizeXA)( tyents );
    for (i = 0; i < n; i++) {
@@ -3468,6 +3490,8 @@ void new_dwarf3_reader_wrk (
 
    VG_(deleteXA)( tyents );
    tyents = NULL;
+   ML_(dinfo_free)( tyents_cache );
+   tyents_cache = NULL;
 
    /* Sort tyents_to_keep so we can lookup in it.  A complete (if
       minor) waste of time, since tyents itself is sorted, but
@@ -3478,6 +3502,12 @@ void new_dwarf3_reader_wrk (
       (Int(*)(void*,void*)) ML_(TyEnt__cmp_by_cuOff_only)
    );
    VG_(sortXA)( tyents_to_keep );
+
+   /* Enable cacheing on tyents_to_keep */
+   tyents_to_keep_cache
+      = ML_(dinfo_zalloc)( "di.readdwarf3.ndrw.8",
+                           sizeof(TyEntIndexCache) );
+   ML_(TyEntIndexCache__invalidate)( tyents_to_keep_cache );
 
    /* And record the tyents in the DebugInfo.  We do this before
       starting to hand variables to ML_(addVar), since if ML_(addVar)
@@ -3510,7 +3540,7 @@ void new_dwarf3_reader_wrk (
       ascending order, there is no need to sort the array after
       construction.  The ascendingness is however asserted for. */
    dioff_lookup_tab
-      = VG_(newXA)( ML_(dinfo_zalloc), "di.readdwarf3.ndrw.5",
+      = VG_(newXA)( ML_(dinfo_zalloc), "di.readdwarf3.ndrw.9",
                     ML_(dinfo_free), 
                     sizeof(TempVar*) );
    vg_assert(dioff_lookup_tab);
@@ -3623,7 +3653,9 @@ void new_dwarf3_reader_wrk (
          the type didn't get resolved.  Really, in that case
          something's broken earlier on, and should be fixed, rather
          than just skipping the variable. */
-      ent = ML_(TyEnts__index_by_cuOff)( tyents_to_keep, varp->typeR );
+      ent = ML_(TyEnts__index_by_cuOff)( tyents_to_keep,
+                                         tyents_to_keep_cache, 
+                                         varp->typeR );
       /* The next two assertions should be guaranteed by 
          our previous call to resolve_variable_types. */
       vg_assert(ent);
@@ -3745,6 +3777,15 @@ void new_dwarf3_reader_wrk (
       which constitute the keys, hence pass VG_(deleteXA) as a
       key-finalizer. */
    VG_(deleteFM)( rangestree, (void(*)(UWord))VG_(deleteXA), NULL );
+
+   /* and the tyents_to_keep cache */
+   ML_(dinfo_free)( tyents_to_keep_cache );
+   tyents_to_keep_cache = NULL;
+
+   /* and the file name table (just the array, not the entries 
+      themselves). */
+   vg_assert(varparser.filenameTable);
+   VG_(deleteXA)( varparser.filenameTable );
 
    /* record the GExprs in di so they can be freed later */
    vg_assert(!di->admin_gexprs);

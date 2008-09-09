@@ -144,13 +144,6 @@ void ML_(pp_TyEnts)( XArray* tyents, HChar* who );
 void ML_(pp_TyEnt_C_ishly)( XArray* /* of TyEnt */ tyents,
                             UWord cuOff );
 
-/* 'ents' is an XArray of TyEnts, sorted by their .cuOff fields.  Find
-   the entry which has .cuOff field as specified.  Returns NULL if not
-   found.  Asserts if more than one entry has the specified .cuOff
-   value. */
-TyEnt* ML_(TyEnts__index_by_cuOff) ( XArray* /* of TyEnt */ ents,
-                                     UWord cuOff_to_find );
-
 /* Generates a total ordering on TyEnts based only on their .cuOff
    fields. */
 Word ML_(TyEnt__cmp_by_cuOff_only) ( TyEnt* te1, TyEnt* te2 );
@@ -178,6 +171,40 @@ XArray* /*UChar*/ ML_(describe_type)( /*OUT*/OffT* residual_offset,
                                       XArray* /* of TyEnt */ tyents,
                                       UWord ty_cuOff, 
                                       OffT offset );
+
+
+/* A fast-lookup cache for ML_(TyEnts__index_by_cuOff).  Nothing
+   particularly surprising here; it's 2 way set associative, with some
+   number of ways, doesn't particularly have to be a power of 2.  In
+   order to have a way to indicate an invalid entry, we set the second
+   value of the pair to NULL, and keep checking for it, since
+   unfortunately there's no obvious cuOff number that we could put in
+   the first word of the pair that could indicate an invalid entry.
+
+   4096 arrived at as the best value for an E6600 loading Qt-4.4.1
+   Designer and all associated libraries, compiled by gcc-4.3.1, 
+   -g -O, 64-bit, which is at least a moderately good stress test,
+   with the largest library being about 150MB.*/
+
+#define N_TYENT_INDEX_CACHE 4096
+
+typedef
+   struct {
+      struct { UWord cuOff0; TyEnt* ent0; 
+               UWord cuOff1; TyEnt* ent1; }
+         ce[N_TYENT_INDEX_CACHE];
+   }
+   TyEntIndexCache;
+
+void ML_(TyEntIndexCache__invalidate) ( TyEntIndexCache* cache );
+
+/* 'ents' is an XArray of TyEnts, sorted by their .cuOff fields.  Find
+   the entry which has .cuOff field as specified.  Returns NULL if not
+   found.  Asserts if more than one entry has the specified .cuOff
+   value. */
+TyEnt* ML_(TyEnts__index_by_cuOff) ( XArray* /* of TyEnt */ ents,
+                                     TyEntIndexCache* cache,
+                                     UWord cuOff_to_find );
 
 #endif /* ndef __PRIV_TYTYPES_H */
 

@@ -198,7 +198,7 @@ void ML_(pp_TyEnts)( XArray* tyents, HChar* who )
 
 static void pp_TyBound_C_ishly ( XArray* tyents, UWord cuOff )
 {
-   TyEnt* ent = ML_(TyEnts__index_by_cuOff)( tyents, cuOff );
+   TyEnt* ent = ML_(TyEnts__index_by_cuOff)( tyents, NULL, cuOff );
    if (!ent) {
       VG_(printf)("**bounds-have-invalid-cuOff**");
       return;
@@ -220,7 +220,7 @@ static void pp_TyBound_C_ishly ( XArray* tyents, UWord cuOff )
 void ML_(pp_TyEnt_C_ishly)( XArray* /* of TyEnt */ tyents,
                             UWord cuOff )
 {
-   TyEnt* ent = ML_(TyEnts__index_by_cuOff)( tyents, cuOff );
+   TyEnt* ent = ML_(TyEnts__index_by_cuOff)( tyents, NULL, cuOff );
    if (!ent) {
       VG_(printf)("**type-has-invalid-cuOff**");
       return;
@@ -292,12 +292,60 @@ void ML_(pp_TyEnt_C_ishly)( XArray* /* of TyEnt */ tyents,
    found.  Asserts if more than one entry has the specified .cuOff
    value. */
 
+void ML_(TyEntIndexCache__invalidate) ( TyEntIndexCache* cache )
+{
+   Word i;
+   for (i = 0; i < N_TYENT_INDEX_CACHE; i++) {
+      cache->ce[i].cuOff0 = 0;    /* not actually necessary */
+      cache->ce[i].ent0   = NULL; /* "invalid entry" */
+      cache->ce[i].cuOff1 = 0;    /* not actually necessary */
+      cache->ce[i].ent1   = NULL; /* "invalid entry" */
+   }
+}
+
 TyEnt* ML_(TyEnts__index_by_cuOff) ( XArray* /* of TyEnt */ ents,
+                                     TyEntIndexCache* cache,
                                      UWord cuOff_to_find )
 {
    Bool  found;
    Word  first, last;
-   TyEnt key;
+   TyEnt key, *res;
+
+   /* crude stats, aggregated over all caches */
+   static UWord cacheQs = 0 - 1;
+   static UWord cacheHits = 0;
+
+   if (0 && 0 == (cacheQs & 0xFFFF))
+      VG_(printf)("cache: %'lu queries, %'lu misses\n", 
+                  cacheQs, cacheQs - cacheHits);
+
+   if (LIKELY(cache != NULL)) {
+      UWord h = cuOff_to_find % (UWord)N_TYENT_INDEX_CACHE;
+      cacheQs++;
+      // dude, like, way 0, dude.
+      if (cache->ce[h].cuOff0 == cuOff_to_find && cache->ce[h].ent0 != NULL) {
+         // dude, way 0 is a total hit!
+         cacheHits++;
+         return cache->ce[h].ent0;
+      }
+      // dude, check out way 1, dude.
+      if (cache->ce[h].cuOff1 == cuOff_to_find && cache->ce[h].ent1 != NULL) {
+         // way 1 hit
+         UWord  tc;
+         TyEnt* te;
+         cacheHits++;
+         // dude, way 1 is the new way 0.  move with the times, dude.
+         tc = cache->ce[h].cuOff0;
+         te = cache->ce[h].ent0;
+         cache->ce[h].cuOff0 = cache->ce[h].cuOff1;
+         cache->ce[h].ent0   = cache->ce[h].ent1;
+         cache->ce[h].cuOff1 = tc;
+         cache->ce[h].ent1   = te;
+         return cache->ce[h].ent0;
+      }
+   }
+
+   /* We'll have to do it the hard way */
    key.cuOff = cuOff_to_find;
    key.tag   = Te_EMPTY;
    found = VG_(lookupXA)( ents, &key, &first, &last );
@@ -308,7 +356,21 @@ TyEnt* ML_(TyEnts__index_by_cuOff) ( XArray* /* of TyEnt */ ents,
    /* If this fails, the array is invalid in the sense that there is
       more than one entry with .cuOff == cuOff_to_find. */
    vg_assert(first == last);
-   return (TyEnt*)VG_(indexXA)( ents, first );
+   res = (TyEnt*)VG_(indexXA)( ents, first );
+
+   if (LIKELY(cache != NULL) && LIKELY(res != NULL)) {
+      /* this is a bit stupid, computing this twice.  Oh well.
+         Perhaps some magic gcc transformation will common them up.
+         re "res != NULL", since .ent of NULL denotes 'invalid entry',
+         we can't cache the result when res == NULL. */
+      UWord h = cuOff_to_find % (UWord)N_TYENT_INDEX_CACHE;
+      cache->ce[h].cuOff1 = cache->ce[h].cuOff0;
+      cache->ce[h].ent1   = cache->ce[h].ent0;
+      cache->ce[h].cuOff0 = cuOff_to_find;
+      cache->ce[h].ent0   = res;
+   }
+
+   return res;
 }
 
 
@@ -566,7 +628,7 @@ MaybeUWord ML_(sizeOfType)( XArray* /* of TyEnt */ tyents,
 {
    Word       i;
    MaybeUWord eszB;
-   TyEnt*     ent = ML_(TyEnts__index_by_cuOff)(tyents, cuOff);
+   TyEnt*     ent = ML_(TyEnts__index_by_cuOff)(tyents, NULL, cuOff);
    TyEnt*     ent2;
    vg_assert(ent);
    vg_assert(ML_(TyEnt__is_type)(ent));
@@ -577,7 +639,8 @@ MaybeUWord ML_(sizeOfType)( XArray* /* of TyEnt */ tyents,
       case Te_TyQual:
          return ML_(sizeOfType)( tyents, ent->Te.TyQual.typeR );
       case Te_TyTyDef:
-         ent2 = ML_(TyEnts__index_by_cuOff)(tyents, ent->Te.TyTyDef.typeR);
+         ent2 = ML_(TyEnts__index_by_cuOff)(tyents, NULL,
+                                            ent->Te.TyTyDef.typeR);
          vg_assert(ent2);
          if (ent2->tag == Te_UNKNOWN)
             return mk_MaybeUWord_Nothing(); /*UNKNOWN*/
@@ -592,7 +655,8 @@ MaybeUWord ML_(sizeOfType)( XArray* /* of TyEnt */ tyents,
       case Te_TyEnum:
          return mk_MaybeUWord_Just( ent->Te.TyEnum.szB );
       case Te_TyArray:
-         ent2 = ML_(TyEnts__index_by_cuOff)(tyents, ent->Te.TyArray.typeR);
+         ent2 = ML_(TyEnts__index_by_cuOff)(tyents, NULL,
+                                            ent->Te.TyArray.typeR);
          vg_assert(ent2);
          if (ent2->tag == Te_UNKNOWN)
             return mk_MaybeUWord_Nothing(); /*UNKNOWN*/
@@ -601,7 +665,7 @@ MaybeUWord ML_(sizeOfType)( XArray* /* of TyEnt */ tyents,
             UWord bo_cuOff
                = *(UWord*)VG_(indexXA)(ent->Te.TyArray.boundRs, i);
             TyEnt* bo
-              = ML_(TyEnts__index_by_cuOff)( tyents, bo_cuOff );
+              = ML_(TyEnts__index_by_cuOff)( tyents, NULL, bo_cuOff );
             vg_assert(bo);
             vg_assert(bo->tag == Te_Bound);
             if (!(bo->Te.Bound.knownL && bo->Te.Bound.knownU))
@@ -643,7 +707,7 @@ XArray* /*UChar*/ ML_(describe_type)( /*OUT*/OffT* residual_offset,
                             sizeof(UChar) );
    vg_assert(xa);
 
-   ty = ML_(TyEnts__index_by_cuOff)(tyents, ty_cuOff);
+   ty = ML_(TyEnts__index_by_cuOff)(tyents, NULL, ty_cuOff);
 
    while (True) {
       vg_assert(ty);
@@ -673,7 +737,7 @@ XArray* /*UChar*/ ML_(describe_type)( /*OUT*/OffT* residual_offset,
             if ((!fieldRs) || VG_(sizeXA)(fieldRs) == 0) goto done;
             for (i = 0; i < VG_(sizeXA)( fieldRs ); i++ ) {
                fieldR = *(UWord*)VG_(indexXA)( fieldRs, i );
-               field = ML_(TyEnts__index_by_cuOff)(tyents, fieldR);
+               field = ML_(TyEnts__index_by_cuOff)(tyents, NULL, fieldR);
                vg_assert(field);
                vg_assert(field->tag == Te_Field);
                vg_assert(field->Te.Field.loc);
@@ -719,7 +783,8 @@ XArray* /*UChar*/ ML_(describe_type)( /*OUT*/OffT* residual_offset,
             VG_(addBytesToXA)( xa, field->Te.Field.name,
                                VG_(strlen)(field->Te.Field.name) );
             offset -= offMin;
-            ty = ML_(TyEnts__index_by_cuOff)(tyents, field->Te.Field.typeR );
+            ty = ML_(TyEnts__index_by_cuOff)(tyents, NULL,
+                                             field->Te.Field.typeR );
             tl_assert(ty);
             if (ty->tag == Te_UNKNOWN) goto done;
             /* keep going; look inside the field. */
@@ -734,7 +799,8 @@ XArray* /*UChar*/ ML_(describe_type)( /*OUT*/OffT* residual_offset,
             TyEnt*     bound;
             /* Just deal with the simple, common C-case: 1-D array,
                zero based, known size. */
-            elemTy = ML_(TyEnts__index_by_cuOff)(tyents, ty->Te.TyArray.typeR);
+            elemTy = ML_(TyEnts__index_by_cuOff)(tyents, NULL, 
+                                                 ty->Te.TyArray.typeR);
             vg_assert(elemTy);
             if (elemTy->tag == Te_UNKNOWN) goto done;
             vg_assert(ML_(TyEnt__is_type)(elemTy));
@@ -742,7 +808,7 @@ XArray* /*UChar*/ ML_(describe_type)( /*OUT*/OffT* residual_offset,
                goto done;
             if (VG_(sizeXA)( ty->Te.TyArray.boundRs ) != 1) goto done;
             boundR = *(UWord*)VG_(indexXA)( ty->Te.TyArray.boundRs, 0 );
-            bound = ML_(TyEnts__index_by_cuOff)(tyents, boundR);
+            bound = ML_(TyEnts__index_by_cuOff)(tyents, NULL, boundR);
             vg_assert(bound);
             vg_assert(bound->tag == Te_Bound);
             if (!(bound->Te.Bound.knownL && bound->Te.Bound.knownU
@@ -767,14 +833,16 @@ XArray* /*UChar*/ ML_(describe_type)( /*OUT*/OffT* residual_offset,
          }
 
          case Te_TyQual: {
-            ty = ML_(TyEnts__index_by_cuOff)(tyents, ty->Te.TyQual.typeR);
+            ty = ML_(TyEnts__index_by_cuOff)(tyents, NULL,
+                                             ty->Te.TyQual.typeR);
             tl_assert(ty);
             if (ty->tag == Te_UNKNOWN) goto done;
             break;
          }
 
          case Te_TyTyDef: {
-            ty = ML_(TyEnts__index_by_cuOff)(tyents, ty->Te.TyTyDef.typeR);
+            ty = ML_(TyEnts__index_by_cuOff)(tyents, NULL,
+                                             ty->Te.TyTyDef.typeR);
             tl_assert(ty);
             if (ty->tag == Te_UNKNOWN) goto done;
             break;
