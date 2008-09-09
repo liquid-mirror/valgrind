@@ -77,6 +77,13 @@ void h_post_reg_write_clientcall(ThreadId tid, OffT guest_state_offset,
 void h_pre_syscall ( ThreadId tid, UInt syscallno );
 void h_post_syscall ( ThreadId tid, UInt syscallno, SysRes res );
 
+/* Note that this also does the sg_ instrumentation. */
+IRSB* h_instrument ( VgCallbackClosure* closure,
+                     IRSB* sbIn,
+                     VexGuestLayout* layout,
+                     VexGuestExtents* vge,
+                     IRType gWordTy, IRType hWordTy );
+
 #endif
 
 /*--------------------------------------------------------------------*/

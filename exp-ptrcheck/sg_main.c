@@ -69,7 +69,7 @@ static inline Bool is_sane_TId ( ThreadId tid )
           && tid != VG_INVALID_THREADID;
 }
 
-static void* pc_malloc ( SizeT n ) {
+static void* sg_malloc ( SizeT n ) {
    void* p;
    tl_assert(n > 0);
    p = VG_(malloc)( n );
@@ -77,17 +77,10 @@ static void* pc_malloc ( SizeT n ) {
    return p;
 }
 
-static void pc_free ( void* p ) {
+static void sg_free ( void* p ) {
    tl_assert(p);
    VG_(free)(p);
 }
-
-
-#define MK_XAMAGIC(_c3,_c2,_c1,_c0) \
-   ( ( ((UInt)(_c3)) << 24 ) | ( ((UInt)(_c2)) << 16 ) |  \
-     ( ((UInt)(_c1)) << 8 )  | ( ((UInt)(_c0)) <<  0 ) )
-
-#define StackBlock_XAMAGIC  MK_XAMAGIC('S','B','l','k')
 
 
 /* Compare the intervals [a1,a1+n1) and [a2,a2+n2).  Return -1 if the
@@ -255,7 +248,7 @@ static WordFM* /* XArray* of StackBlock -> nothing */
 static void init_StackBlocks_set ( void )
 {
    tl_assert(!frameBlocks_set);
-   frameBlocks_set = VG_(newFM)( pc_malloc, pc_free, 
+   frameBlocks_set = VG_(newFM)( sg_malloc, sg_free, 
                                  (Word(*)(UWord,UWord))StackBlocks__cmp );
    tl_assert(frameBlocks_set);
 }
@@ -411,7 +404,7 @@ static WordFM* /* GlobalBlock* -> nothing */
 static void init_GlobalBlock_set ( void )
 {
    tl_assert(!globalBlock_set);
-   globalBlock_set = VG_(newFM)( pc_malloc, pc_free, 
+   globalBlock_set = VG_(newFM)( sg_malloc, sg_free, 
                                  (Word(*)(UWord,UWord))GlobalBlock__cmp );
    tl_assert(globalBlock_set);
 }
@@ -436,7 +429,7 @@ static GlobalBlock* get_persistent_GlobalBlock ( GlobalBlock* orig )
    } else {
       /* no.  clone it, store the clone and return the clone's
          address. */
-      GlobalBlock* clone = pc_malloc( sizeof(GlobalBlock) );
+      GlobalBlock* clone = sg_malloc( sizeof(GlobalBlock) );
       tl_assert(clone);
       *clone = *orig;
       VG_(addToFM)( globalBlock_set, (UWord)clone, 0 );
@@ -536,7 +529,7 @@ static void add_blocks_to_StackTree (
       Addr        addr  = *(Addr*)VG_(indexXA)( bases, i );
       StackBlock* descr = (StackBlock*)VG_(indexXA)( descrs, i );
       tl_assert(descr->szB > 0);
-      nyu = pc_malloc( sizeof(StackTreeNode) );
+      nyu = sg_malloc( sizeof(StackTreeNode) );
       nyu->addr  = addr;
       nyu->szB   = descr->szB;
       nyu->descr = descr;
@@ -573,7 +566,7 @@ static void del_blocks_from_StackTree ( /*MOD*/WordFM* sitree,
       tl_assert(b);
       tl_assert(oldV == 0);
       tl_assert(nd == (StackTreeNode*)oldK);
-      pc_free(nd);
+      sg_free(nd);
    }
 }
 
@@ -581,7 +574,7 @@ static void del_blocks_from_StackTree ( /*MOD*/WordFM* sitree,
 static void delete_StackTree__kFin ( UWord keyW ) {
    StackTreeNode* nd = (StackTreeNode*)keyW;
    tl_assert(nd);
-   pc_free(nd);
+   sg_free(nd);
 }
 static void delete_StackTree__vFin ( UWord valW ) {
    tl_assert(valW == 0);
@@ -593,7 +586,7 @@ static void delete_StackTree ( WordFM* sitree )
 }
 
 static WordFM* new_StackTree ( void ) {
-   return VG_(newFM)( pc_malloc, pc_free,
+   return VG_(newFM)( sg_malloc, sg_free,
                       (Word(*)(UWord,UWord))cmp_intervals_StackTreeNode );
 }
 
@@ -678,7 +671,7 @@ static void add_block_to_GlobalTree (
    GlobalTreeNode *nyu, *nd;
      UWord keyW, valW;
    tl_assert(descr->szB > 0);
-   nyu = pc_malloc( sizeof(GlobalTreeNode) );
+   nyu = sg_malloc( sizeof(GlobalTreeNode) );
    nyu->addr  = descr->addr;
    nyu->szB   = descr->szB;
    nyu->descr = descr;
@@ -699,7 +692,7 @@ static void add_block_to_GlobalTree (
           && 0 == VG_(strcmp)(nd->descr->name, nyu->descr->name)
           && 0 == VG_(strcmp)(nd->descr->soname, nyu->descr->soname)) {
          /* exact duplicate; ignore it */
-         pc_free(nyu);
+         sg_free(nyu);
          return;
       }
       /* else fall through; the assertion below will catch it */
@@ -977,7 +970,7 @@ static void ourGlobals_init ( void )
       siTrees[i] = NULL;
    }
    invalidate_all_QCaches();
-   giTree = VG_(newFM)( pc_malloc, pc_free, 
+   giTree = VG_(newFM)( sg_malloc, sg_free, 
                         (Word(*)(UWord,UWord))cmp_intervals_GlobalTreeNode );
 }
 
@@ -1127,7 +1120,7 @@ typedef
          turns out not to be big enough then htab is made to point to
          dynamically allocated memory.  But it's often the case that
          htab_fixed is big enough, so this optimisation saves a huge
-         number of pc_malloc/pc_free call pairs. */
+         number of sg_malloc/sg_free call pairs. */
       IInstance* htab;
       UWord      htab_size; /* size of hash table, MAY ONLY BE A POWER OF 2 */
       UWord      htab_used; /* number of hash table slots currently in use */
@@ -1247,7 +1240,7 @@ static void resize_II_hash_table ( StackFrame* sf )
    old_size = sf->htab_size;
    new_size = 2 * old_size;
    old_htab = sf->htab;
-   new_htab = pc_malloc( new_size * sizeof(IInstance) );
+   new_htab = sg_malloc( new_size * sizeof(IInstance) );
    for (i = 0; i < new_size; i++) {
       new_htab[i].insn_addr = 0; /* NOT IN USE */
    }
@@ -1276,7 +1269,7 @@ static void resize_II_hash_table ( StackFrame* sf )
    }
    /* all entries copied; free old table. */
    if (old_htab != &sf->htab_fixed[0])
-      pc_free(old_htab);
+      sg_free(old_htab);
    sf->htab = new_htab;
    sf->htab_size = new_size;
    /* check sf->htab_used is correct.  Optional and a bit expensive
@@ -1398,7 +1391,7 @@ static XArray* /* Addr */ calculate_StackBlock_EAs (
    XArray* res;
    Word i, n = VG_(sizeXA)( blocks );
    tl_assert(n > 0);
-   res = VG_(newXA)( pc_malloc, pc_free, sizeof(Addr) );
+   res = VG_(newXA)( sg_malloc, sg_free, sizeof(Addr) );
    for (i = 0; i < n; i++) {
       StackBlock* blk = VG_(indexXA)( blocks, i );
       Addr ea = calculate_StackBlock_EA( blk, sp, fp );
@@ -1773,7 +1766,7 @@ void shadowStack_new_frame ( ThreadId tid,
    if (caller->inner) {
       callee = caller->inner;
    } else {
-      callee = pc_malloc(sizeof(StackFrame));
+      callee = sg_malloc(sizeof(StackFrame));
       VG_(memset)(callee, 0, sizeof(StackFrame));
       callee->outer = caller;
       caller->inner = callee;
@@ -1853,7 +1846,7 @@ static void shadowStack_unwind ( ThreadId tid, Addr sp_now )
       //VG_(printf)("UNWIND     dump %p\n", innermost->creation_sp);
       tl_assert(innermost->htab);
       if (innermost->htab != &innermost->htab_fixed[0])
-         pc_free(innermost->htab);
+         sg_free(innermost->htab);
       /* be on the safe side */
       innermost->creation_sp = 0;
       innermost->htab = NULL;
@@ -1920,6 +1913,32 @@ static void shadowStack_unwind ( ThreadId tid, Addr sp_now )
    - for each memory referencing instruction,
      call helperc__mem_access
 */
+
+/* A complication: sg_ instrumentation and h_ instrumentation need to
+   be interleaved.  Since the latter is a lot more complex than the
+   former, we split the sg_ instrumentation here into four functions
+   and let the h_ instrumenter call the four functions as it goes.
+   Hence the h_ instrumenter drives the sg_ instrumenter.
+
+   To make this viable, the sg_ instrumenter carries what running
+   state it needs in 'struct _SGEnv'.  This is exported only
+   abstractly from this file.
+*/
+
+struct _SGEnv {
+   /* the current insn's IP */
+   Addr64 curr_IP;
+   /* whether the above is actually known */
+   Bool curr_IP_known;
+   /* if we find a mem ref, is it the first for this insn?  Used for
+      detecting insns which make more than one memory ref, a situation
+      we basically can't really handle properly; and so we ignore all
+      but the first ref. */
+   Bool firstRef;
+};
+
+
+/* --- Helper fns for instrumentation --- */
 
 static IRTemp gen_Get_SP ( IRSB*           bbOut,
                            VexGuestLayout* layout,
@@ -2012,138 +2031,138 @@ static void instrument_mem_access ( IRSB*   bbOut,
 }
 
 
-static
-IRSB* sg_instrument ( VgCallbackClosure* closure,
-                      IRSB* sbIn,
-                      VexGuestLayout* layout,
-                      VexGuestExtents* vge,
-                      IRType gWordTy, IRType hWordTy )
+/* --- Instrumentation main (4 fns) --- */
+
+struct _SGEnv *  sg_instrument_init ( void )
 {
-   Int   i;
-   IRSB* sbOut;
+   struct _SGEnv * env = sg_malloc(sizeof(struct _SGEnv));
+   tl_assert(env);
+   env->curr_IP       = 0;
+   env->curr_IP_known = False;
+   env->firstRef      = True;
+   return env;
+}
 
-   Addr curr_IP       = 0;
-   Bool curr_IP_known = False;
+void sg_instrument_fini ( struct _SGEnv * env )
+{
+   sg_free(env);
+}
 
-   Bool firstRef = True;
+/* Add instrumentation for 'st' to 'sbOut', and possibly modify 'env'
+   as required.  This must be called before 'st' itself is added to
+   'sbOut'. */
+void sg_instrument_IRStmt ( /*MOD*/struct _SGEnv * env, 
+                            /*MOD*/IRSB* sbOut,
+                            IRStmt* st,
+                            VexGuestLayout* layout,
+                            IRType gWordTy, IRType hWordTy )
+{
+   tl_assert(st);
+   tl_assert(isFlatIRStmt(st));
+   switch (st->tag) {
+      case Ist_NoOp:
+      case Ist_AbiHint:
+      case Ist_Put:
+      case Ist_PutI:
+      case Ist_MBE:
+         /* None of these can contain any memory references. */
+         break;
 
-   if (gWordTy != hWordTy) {
-      /* We don't currently support this case. */
-      VG_(tool_panic)("host/guest word size mismatch");
-   }
+      case Ist_Exit:
+         tl_assert(st->Ist.Exit.jk != Ijk_Call);
+         /* else we must deal with a conditional call */
+         break;
 
-   /* Set up BB */
-   sbOut           = emptyIRSB();
-   sbOut->tyenv    = deepCopyIRTypeEnv(sbIn->tyenv);
-   sbOut->next     = deepCopyIRExpr(sbIn->next);
-   sbOut->jumpkind = sbIn->jumpkind;
+      case Ist_IMark:
+         env->curr_IP_known = True;
+         env->curr_IP       = (Addr)st->Ist.IMark.addr;
+         env->firstRef      = True;
+         break;
 
-   // Copy verbatim any IR preamble preceding the first IMark
-   i = 0;
-   while (i < sbIn->stmts_used && sbIn->stmts[i]->tag != Ist_IMark) {
-      addStmtToIRSB( sbOut, sbIn->stmts[i] );
-      i++;
-   }
-
-   for (/*use current i*/; i < sbIn->stmts_used; i++) {
-      IRStmt* st = sbIn->stmts[i];
-      tl_assert(st);
-      tl_assert(isFlatIRStmt(st));
-      switch (st->tag) {
-         case Ist_NoOp:
-         case Ist_AbiHint:
-         case Ist_Put:
-         case Ist_PutI:
-         case Ist_MBE:
-            /* None of these can contain any memory references. */
-            break;
-
-         case Ist_Exit:
-            tl_assert(st->Ist.Exit.jk != Ijk_Call);
-            /* else we must deal with a conditional call */
-            break;
-
-         case Ist_IMark:
-            curr_IP_known = True;
-            curr_IP       = (Addr)st->Ist.IMark.addr;
-            firstRef      = True;
-            break;
-
-         case Ist_Store:
-            tl_assert(curr_IP_known);
-            if (firstRef) {
+      case Ist_Store:
+         tl_assert(env->curr_IP_known);
+         if (env->firstRef) {
             instrument_mem_access( 
                sbOut, 
                st->Ist.Store.addr, 
-               sizeofIRType(typeOfIRExpr(sbIn->tyenv, st->Ist.Store.data)),
+               sizeofIRType(typeOfIRExpr(sbOut->tyenv, st->Ist.Store.data)),
                True/*isStore*/,
                sizeofIRType(hWordTy),
-               curr_IP, layout
+               env->curr_IP, layout
             );
-            firstRef = False;
-            }
-            break;
+            env->firstRef = False;
+         }
+         break;
 
-         case Ist_WrTmp: {
-            IRExpr* data = st->Ist.WrTmp.data;
-            if (data->tag == Iex_Load) {
-               tl_assert(curr_IP_known);
-               if (firstRef) {
+      case Ist_WrTmp: {
+         IRExpr* data = st->Ist.WrTmp.data;
+         if (data->tag == Iex_Load) {
+            tl_assert(env->curr_IP_known);
+            if (env->firstRef) {
                instrument_mem_access(
                   sbOut,
                   data->Iex.Load.addr,
                   sizeofIRType(data->Iex.Load.ty),
                   False/*!isStore*/,
                   sizeofIRType(hWordTy),
-                  curr_IP, layout
+                  env->curr_IP, layout
                );
-               firstRef = False;
-               }
+               env->firstRef = False;
             }
-            break;
          }
+         break;
+      }
 
-         case Ist_Dirty: {
-            Int      dataSize;
-            IRDirty* d = st->Ist.Dirty.details;
-            if (d->mFx != Ifx_None) {
-               /* This dirty helper accesses memory.  Collect the
-                  details. */
-               tl_assert(curr_IP_known);
-               if (firstRef) {
+      case Ist_Dirty: {
+         Int      dataSize;
+         IRDirty* d = st->Ist.Dirty.details;
+         if (d->mFx != Ifx_None) {
+            /* This dirty helper accesses memory.  Collect the
+               details. */
+            tl_assert(env->curr_IP_known);
+            if (env->firstRef) {
                tl_assert(d->mAddr != NULL);
                tl_assert(d->mSize != 0);
                dataSize = d->mSize;
                if (d->mFx == Ifx_Read || d->mFx == Ifx_Modify) {
                   instrument_mem_access( 
                      sbOut, d->mAddr, dataSize, False/*!isStore*/,
-                     sizeofIRType(hWordTy), curr_IP, layout
+                     sizeofIRType(hWordTy), env->curr_IP, layout
                   );
                }
                if (d->mFx == Ifx_Write || d->mFx == Ifx_Modify) {
                   instrument_mem_access( 
                      sbOut, d->mAddr, dataSize, True/*isStore*/,
-                     sizeofIRType(hWordTy), curr_IP, layout
+                     sizeofIRType(hWordTy), env->curr_IP, layout
                   );
                }
-               firstRef = False;
-               }
-            } else {
-               tl_assert(d->mAddr == NULL);
-               tl_assert(d->mSize == 0);
+               env->firstRef = False;
             }
-            break;
+         } else {
+            tl_assert(d->mAddr == NULL);
+            tl_assert(d->mSize == 0);
          }
+         break;
+      }
 
-         default:
-            tl_assert(0);
+      default:
+         tl_assert(0);
 
-      } /* switch (st->tag) */
+   } /* switch (st->tag) */
+}
 
-      addStmtToIRSB( sbOut, st );
-   } /* iterate over sbIn->stmts */
 
-   if (sbIn->jumpkind == Ijk_Call) {
+/* Add instrumentation for the final jump of an IRSB 'sbOut', and
+   possibly modify 'env' as required.  This must be the last
+   instrumentation statement in the block. */
+void sg_instrument_final_jump ( /*MOD*/struct _SGEnv * env, 
+                                /*MOD*/IRSB* sbOut,
+                                IRExpr* next,
+                                IRJumpKind jumpkind,
+                                VexGuestLayout* layout,
+                                IRType gWordTy, IRType hWordTy )
+{
+   if (jumpkind == Ijk_Call) {
       // Assumes x86 or amd64
       IRTemp   sp_post_call_insn, fp_post_call_insn;
       XArray*  frameBlocks;
@@ -2153,8 +2172,8 @@ IRSB* sg_instrument ( VgCallbackClosure* closure,
          = gen_Get_SP( sbOut, layout, sizeofIRType(hWordTy) );
       fp_post_call_insn
          = gen_Get_FP( sbOut, layout, sizeofIRType(hWordTy) );
-      tl_assert(curr_IP_known);
-      frameBlocks = get_StackBlocks_for_IP( curr_IP );
+      tl_assert(env->curr_IP_known);
+      frameBlocks = get_StackBlocks_for_IP( env->curr_IP );
       tl_assert(frameBlocks);
       if (VG_(sizeXA)(frameBlocks) == 0)
          frameBlocks = NULL;
@@ -2163,7 +2182,7 @@ IRSB* sg_instrument ( VgCallbackClosure* closure,
               IRExpr_RdTmp(sp_post_call_insn),
               IRExpr_RdTmp(fp_post_call_insn), 
                          /* assume the call doesn't change FP */
-              sbIn->next,
+              next,
               mkIRExpr_HWord( (HWord)frameBlocks ),
               mkIRExpr_HWord( sizeofIRType(gWordTy) )
            );
@@ -2174,8 +2193,6 @@ IRSB* sg_instrument ( VgCallbackClosure* closure,
               args ); 
       addStmtToIRSB( sbOut, IRStmt_Dirty(di) );
    }
-
-   return sbOut;
 }
 
 
@@ -2197,7 +2214,7 @@ IRSB* sg_instrument ( VgCallbackClosure* closure,
    infinity, so it can never be removed. */
 static StackFrame* new_root_StackFrame ( void )
 {
-   StackFrame* sframe = pc_malloc(sizeof(StackFrame));
+   StackFrame* sframe = sg_malloc(sizeof(StackFrame));
    VG_(memset)( sframe, 0, sizeof(*sframe) );
    sframe->creation_sp = ~0UL;
 
@@ -2248,7 +2265,7 @@ static void shadowStack_thread_create ( ThreadId parent, ThreadId child )
       while (frame) {
          frame2 = frame->inner;
          if (frame2) tl_assert(1 + frame->depth == frame2->depth);
-         pc_free(frame);
+         sg_free(frame);
          frame = frame2;
       }
       shadowStacks[child] = NULL;
@@ -2289,12 +2306,12 @@ static void shadowStack_set_initial_SP ( ThreadId tid )
 //                                                          //
 //////////////////////////////////////////////////////////////
 
-/* CALLED indirectly FROM GENERATED CODE */
+/* CALLED indirectly FROM GENERATED CODE.  Calls here are created by
+   sp-change analysis, as requested in pc_pre_clo_int(). */
 void sg_die_mem_stack ( Addr old_SP, SizeT len ) {
    ThreadId  tid = VG_(get_running_tid)();
    shadowStack_unwind( tid, old_SP+len );
 }
-
 
 void sg_pre_clo_init ( void ) {
    ourGlobals_init();

@@ -1,13 +1,13 @@
 {
    lib-X11-used-old-pointer-after-realloc-1
-   exp-ptrcheck:LoadStore
+   exp-ptrcheck:Heap
    fun:strlen
    obj:/usr/lib*/libX11.so*
    obj:/usr/lib*/libX11.so*
 }
 {
    lib-X11-used-old-pointer-after-realloc-2
-   exp-ptrcheck:LoadStore
+   exp-ptrcheck:Heap
    obj:/usr/lib*/libX11.so*
    obj:/usr/lib*/libX11.so*
 }

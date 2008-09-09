@@ -60,11 +60,6 @@
 //                                                          //
 //////////////////////////////////////////////////////////////
 
-static void pc_instrument ( void )
-{
-   tl_assert(0);
-}
-
 static void pc_fini ( Int exitcode ) {
    h_fini( exitcode );
    sg_fini( exitcode );
@@ -143,7 +138,7 @@ static void pc_pre_clo_init(void)
    VG_(details_bug_reports_to)  (VG_BUGS_TO);
 
    VG_(basic_tool_funcs)        (pc_post_clo_init,
-                                 pc_instrument,
+                                 h_instrument,
                                  pc_fini);
 
    VG_(needs_malloc_replacement)( h_replace_malloc,

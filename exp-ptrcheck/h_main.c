@@ -234,6 +234,8 @@
 #include "h_list.h"
 #include "h_main.h"
 
+#include "sg_main.h"   // sg_instrument_*, and struct _SGEnv
+
 #include "pc_common.h"
 
 
@@ -2821,6 +2823,17 @@ static VG_REGPARM(2) Seg do_mulW(Seg seg1, Seg seg2)
 /*--- Instrumentation                                              ---*/
 /*--------------------------------------------------------------------*/
 
+/* The h_ instrumenter that follows is complex, since it deals with
+   shadow value computation.
+
+   It also needs to generate instrumentation for the sg_ side of
+   things.  That's relatively straightforward.  However, rather than
+   confuse the code herein any further, we simply delegate the problem
+   to sg_main.c, by using the four functions
+   sg_instrument_{init,fini,IRStmt,final_jump}.  These four completely
+   abstractify the sg_ instrumentation.  See comments in sg_main.c's
+   instrumentation section for further details. */
+
 /* Carries around state during Ptrcheck instrumentation. */
 typedef
    struct {
@@ -4140,7 +4153,6 @@ static void schemeS ( PCEnv* pce, IRStmt* st )
 }
 
 
-static
 IRSB* h_instrument ( VgCallbackClosure* closure,
                      IRSB* sbIn,
                      VexGuestLayout* layout,
@@ -4150,15 +4162,7 @@ IRSB* h_instrument ( VgCallbackClosure* closure,
    Bool  verboze = 0||False;
    Int   i /*, j*/;
    PCEnv pce;
-
-   if (0) { /* See comment-ref below KLUDGE01. */
-     /* FIXME: race! */
-     static Bool init_kludge_done = False;
-     if (!init_kludge_done) {
-       init_kludge_done = True;
-       init_shadow_registers(0);
-     }
-   }
+   struct _SGEnv* sgenv;
 
    if (gWordTy != hWordTy) {
       /* We don't currently support this case. */
@@ -4186,6 +4190,10 @@ IRSB* h_instrument ( VgCallbackClosure* closure,
    pce.tmpMap            = LibVEX_Alloc(pce.n_originalTmps * sizeof(IRTemp));
    for (i = 0; i < pce.n_originalTmps; i++)
       pce.tmpMap[i] = IRTemp_INVALID;
+
+   /* Also set up for the sg_ instrumenter.  See comments
+      at the top of this instrumentation section for details. */
+   sgenv = sg_instrument_init();
 
    /* Stay sane.  These two should agree! */
    tl_assert(layout->total_sizeB == MC_SIZEOF_GUEST_STATE);
@@ -4246,8 +4254,20 @@ IRSB* h_instrument ( VgCallbackClosure* closure,
    tl_assert(i < sbIn->stmts_used);
    tl_assert(sbIn->stmts[i]->tag == Ist_IMark);
 
-   for (/*use current i*/; i < sbIn->stmts_used; i++)
+   for (/*use current i*/; i < sbIn->stmts_used; i++) {
+      /* generate sg_ instrumentation for this stmt */
+      sg_instrument_IRStmt( sgenv, pce.bb, sbIn->stmts[i],
+                            layout, gWordTy, hWordTy );
+      /* generate h_ instrumentation for this stmt */
       schemeS( &pce, sbIn->stmts[i] );
+   }
+
+   /* generate sg_ instrumentation for the final jump */
+   sg_instrument_final_jump( sgenv, pce.bb, sbIn->next, sbIn->jumpkind,
+                             layout, gWordTy, hWordTy );
+
+   /* and finalise .. */
+   sg_instrument_fini( sgenv );
 
    return pce.bb;
 }
@@ -4264,12 +4284,6 @@ void h_pre_clo_init ( void )
    seglist  = ISList__construct();
 
    init_lossage();
-
-   // init_shadow_registers();
-   // This is deferred until we are asked to instrument the
-   // first SB.  Very ugly, but necessary since right now we can't
-   // ask what the current ThreadId is.  See comment-ref KLUDGE01
-   // above.
 }
 
 void h_post_clo_init ( void )

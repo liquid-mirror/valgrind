@@ -48,6 +48,28 @@ void sg_new_mem_startup( Addr a, SizeT len,
                          Bool rr, Bool ww, Bool xx, ULong di_handle );
 void sg_die_mem_munmap ( Addr a, SizeT len );
 
+/* These really ought to be moved elsewhere, so that we don't have to
+   include this file in h_main.c.  See comments in sg_main.c and
+   h_main.c for what this is about. */
+
+struct _SGEnv;  /* abstract export */
+
+struct _SGEnv *  sg_instrument_init ( void );
+
+void sg_instrument_fini ( struct _SGEnv * env );
+
+void sg_instrument_IRStmt ( /*MOD*/struct _SGEnv * env, 
+                            /*MOD*/IRSB* sbOut,
+                            IRStmt* st,
+                            VexGuestLayout* layout,
+                            IRType gWordTy, IRType hWordTy );
+
+void sg_instrument_final_jump ( /*MOD*/struct _SGEnv * env, 
+                                /*MOD*/IRSB* sbOut,
+                                IRExpr* next,
+                                IRJumpKind jumpkind,
+                                VexGuestLayout* layout,
+                                IRType gWordTy, IRType hWordTy );
 #endif
 
 /*--------------------------------------------------------------------*/

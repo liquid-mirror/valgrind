@@ -157,6 +157,7 @@ void sg_record_error_SorG ( ThreadId tid,
 {
    XError xe;
    VG_(memset)(&xe, 0, sizeof(xe));
+   xe.tag = XE_SorG;
    xe.XE.SorG.addr = addr;
    xe.XE.SorG.sszB = sszB;
    VG_(strncpy)( &xe.XE.SorG.expect[0],
