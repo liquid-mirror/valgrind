@@ -214,8 +214,8 @@ Bool pc_eq_Error ( VgRes res, Error* e1, Error* e2 )
 {
    XError *xe1, *xe2;
    tl_assert(VG_(get_error_kind)(e1) == VG_(get_error_kind)(e2));
-   tl_assert(VG_(get_error_string)(e1) == NULL);
-   tl_assert(VG_(get_error_string)(e2) == NULL);
+   //tl_assert(VG_(get_error_string)(e1) == NULL);
+   //tl_assert(VG_(get_error_string)(e2) == NULL);
 
    xe1 = (XError*)VG_(get_error_extra)(e1);
    xe2 = (XError*)VG_(get_error_extra)(e2);
@@ -287,7 +287,7 @@ void pc_pp_Error ( Error* err )
          // Access via a non-pointer
          VG_(message)(Vg_UserMsg, "Invalid %s of size %ld",
                                    readwrite(xe->XE.Heap.sszB),
-                                   xe->XE.Heap.sszB);
+                                   Word__abs(xe->XE.Heap.sszB));
          VG_(pp_ExeContext)( VG_(get_error_where)(err) );
          VG_(message)(Vg_UserMsg,
                       " Address %#lx is not derived from any known block", a);
@@ -306,7 +306,7 @@ void pc_pp_Error ( Error* err )
 
          VG_(message)(Vg_UserMsg, "%s %s of size %ld", how_invalid,
                                   readwrite(xe->XE.Heap.sszB),
-                                  xe->XE.Heap.sszB);
+                                  Word__abs(xe->XE.Heap.sszB));
          VG_(pp_ExeContext)( VG_(get_error_where)(err) );
 
          VG_(message)(Vg_UserMsg,

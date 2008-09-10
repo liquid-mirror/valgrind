@@ -1884,6 +1884,7 @@ void h_post_syscall ( ThreadId tid, UInt syscallno, SysRes res )
 #     endif
       case __NR_chdir:
       case __NR_chmod:
+      case __NR_chown:
       case __NR_clock_getres:
       case __NR_clock_gettime:
       case __NR_clone:
@@ -1893,6 +1894,7 @@ void h_post_syscall ( ThreadId tid, UInt syscallno, SysRes res )
 #     endif
       case __NR_dup:
       case __NR_dup2:
+      case __NR_execve: /* presumably we see this because the call failed? */
       case __NR_exit: /* hmm, why are we still alive? */
       case __NR_exit_group:
       case __NR_fadvise64:

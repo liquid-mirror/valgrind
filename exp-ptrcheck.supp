@@ -19,3 +19,20 @@
    obj:/lib*/ld-2.*so*
    obj:/lib*/ld-2.*so*
 }
+
+{
+   ld-2.X poking around in god knows where
+   exp-ptrcheck:SorG
+   obj:/lib*/ld-2.*so*
+   obj:/lib*/ld-2.*so*
+   obj:/lib*/ld-2.*so*
+   obj:/lib*/ld-2.*so*
+}
+
+# I'm pretty sure this is a false positive caused by the sg_ stuff
+{
+   glibc realpath false positive
+   exp-ptrcheck:SorG
+   fun:realpath
+   fun:*
+}

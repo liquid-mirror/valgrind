@@ -1410,8 +1410,8 @@ static XArray* /* Addr */ calculate_StackBlock_EAs (
 
 
 /* Try to classify the block into which a memory access falls, and
-   write the result in 'inv'.  This writes all fields of 'inv',
-   including, importantly the ReVal (revalidation) fields. */
+   write the result in 'inv'.  This writes all relevant fields of
+   'inv'. */
 __attribute__((noinline)) 
 static void classify_address ( /*OUT*/Invar* inv,
                                ThreadId tid,
@@ -1439,7 +1439,6 @@ static void classify_address ( /*OUT*/Invar* inv,
         }
      }
    }
-
    /* Look in this thread's query cache */
    { Word i;
      QCache* cache = &qcaches[tid];
@@ -1465,7 +1464,6 @@ static void classify_address ( /*OUT*/Invar* inv,
      }
      stats__qcache_misses++;
    }
-
    /* Ok, so it's not a block in the top frame.  Perhaps it's a block
       in some calling frame?  Consult this thread's stack-block
       interval tree to find out. */
@@ -1564,20 +1562,48 @@ static void classify_address ( /*OUT*/Invar* inv,
               /* If this happens, then [ea,ea+szB) partially overlaps
                  a heap or stack block.  We can't represent that, so
                  just forget it (should be very rare).  However, do
-                 maximum sanity checks first. */
+                 maximum sanity checks first.  In such a
+                 partial overlap case, it can't be the case that both
+                 [ea] and [ea+szB-1] overlap the same block, since if
+                 that were indeed the case then it wouldn't be a
+                 partial overlap; rather it would simply fall inside
+                 that block entirely and we shouldn't be inside this
+                 conditional at all. */
               if (!sOK) {
-                 StackTreeNode* nd = find_StackTreeNode( siTrees[tid], ea );
-                 /* "it does overlap a stack block */
-                 tl_assert(nd);
-                 /* "but does not completely fall with the block" */
-                 tl_assert(!is_subinterval_of(nd->addr, nd->szB, ea, szB));
+                 StackTreeNode *ndFirst, *ndLast;
+                 ndFirst = find_StackTreeNode( siTrees[tid], ea );
+                 ndLast  = find_StackTreeNode( siTrees[tid], ea+szB-1 );
+                 /* if both ends of the range fall inside a block,
+                    they can't be in the same block. */
+                 if (ndFirst && ndLast)
+                    tl_assert(ndFirst != ndLast);
+                 /* for each end of the range, if it is in a block,
+                    the range as a whole can't be entirely within the
+                    block. */
+                 if (ndFirst)
+                    tl_assert(!is_subinterval_of(ndFirst->addr,
+                                                 ndFirst->szB, ea, szB));
+                 if (ndLast)
+                    tl_assert(!is_subinterval_of(ndLast->addr,
+                                                 ndLast->szB, ea, szB));
               }
               if (!gOK) {
-                 GlobalTreeNode* nd = find_GlobalTreeNode( giTree, ea );
-                 /* "it does overlap a global block */
-                 tl_assert(nd);
-                 /* "but does not completely fall with the block" */
-                 tl_assert(!is_subinterval_of(nd->addr, nd->szB, ea, szB));
+                 GlobalTreeNode *ndFirst, *ndLast;
+                 ndFirst = find_GlobalTreeNode( giTree, ea );
+                 ndLast  = find_GlobalTreeNode( giTree, ea+szB-1 );
+                 /* if both ends of the range fall inside a block,
+                    they can't be in the same block. */
+                 if (ndFirst && ndLast)
+                    tl_assert(ndFirst != ndLast);
+                 /* for each end of the range, if it is in a block,
+                    the range as a whole can't be entirely within the
+                    block. */
+                 if (ndFirst)
+                    tl_assert(!is_subinterval_of(ndFirst->addr,
+                                                 ndFirst->szB, ea, szB));
+                 if (ndLast)
+                    tl_assert(!is_subinterval_of(ndLast->addr,
+                                                 ndLast->szB, ea, szB));
               }
               if (0) VG_(printf)("overlapping blocks in cache\n");
               return;
