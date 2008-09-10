@@ -142,7 +142,8 @@ static
 Interval* Interval__construct(Addr left, Addr right, Bool is_zero,
                               ExeContext* where, SegStatus status)
 {
-   Interval* o = my_malloc( sizeof(Interval) );
+   Interval* o = my_malloc( "pc.h_list.Interval_c.1",
+                            sizeof(Interval) );
    if (0) VG_(printf)("Interval__construct(%#lx,%#lx,%d)\n",
                       left, right, (Int)is_zero);
    o->left     = left;
@@ -372,7 +373,7 @@ static void count_segs(void)
 
 static INode* INode__construct(Interval* I)
 {
-   INode* o = my_malloc( sizeof(INode) );
+   INode* o = my_malloc( "pc.h_list.INode_c.1", sizeof(INode) );
    o->I    = I;
    o->next = NULL;
    return o;
@@ -403,7 +404,7 @@ static __inline__ void IList__static_construct(IList* o)
 
 static IList* IList__construct(void)
 {
-   IList* o = my_malloc( sizeof(IList) );
+   IList* o = my_malloc( "pc.h_list.IList_c.1", sizeof(IList) );
    IList__static_construct(o);
    return o;
 }
@@ -529,13 +530,15 @@ static __inline__ Bool IList__isEmpty(IList* o)
 static ISNode* ISNode__construct(Addr a, Int levels)
 {
    Int     i;
-   ISNode* o = my_malloc( sizeof(ISNode) );
+   ISNode* o = my_malloc( "pc.h_list.ISNode_c.1", sizeof(ISNode) );
    
    // levels is actually one less than the real number of levels
    o->key        = a;
    o->topLevel   = levels;
-   o->forward    = my_malloc( sizeof(ISNode*) * (levels+1) );
-   o->markers    = my_malloc( sizeof(IList*)  * (levels+1) );
+   o->forward    = my_malloc( "pc.h_list.ISNode_c.2",
+                              sizeof(ISNode*) * (levels+1) );
+   o->markers    = my_malloc( "pc.h_list.ISNode_c.3",
+                              sizeof(IList*)  * (levels+1) );
    for (i = 0; i <= levels; i++) {
       o->forward[i] = NULL;
       o->markers[i] = IList__construct(); // initialize an empty interval list
@@ -608,7 +611,7 @@ static void ISNode__print(ISNode* o)
 
 ISList* ISList__construct(void)
 {
-   ISList* o = my_malloc( sizeof(ISList) );
+   ISList* o = my_malloc( "pc.h_list.ISList_c.1", sizeof(ISList) );
    o->maxLevel = 0;
    o->header = ISNode__construct(0, MAX_FORWARD);
    return o;

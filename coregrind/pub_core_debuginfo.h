@@ -82,6 +82,8 @@ extern ULong VG_(di_aix5_notify_segchange)(
              );
 #endif
 
+extern void VG_(di_discard_ALL_debuginfo)( void );
+
 extern Bool VG_(get_fnname_nodemangle)( Addr a, 
                                         Char* fnname, Int n_fnname );
 

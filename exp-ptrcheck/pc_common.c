@@ -495,7 +495,7 @@ Bool pc_read_extra_suppression_info ( Int fd, Char* buf,
    if (VG_(get_supp_kind)(su) == XS_SysParam) {
       eof = VG_(get_line) ( fd, buf, nBuf );
       if (eof) return False;
-      VG_(set_supp_string)(su, VG_(strdup)(buf));
+      VG_(set_supp_string)(su, VG_(strdup)("pc.common.presi.1", buf));
    }
    return True;
 }

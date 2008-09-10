@@ -700,7 +700,8 @@ GXResult ML_(evaluate_trivial_GX)( GExpr* gx, Addr data_bias )
 
    HChar*  badness = NULL;
    UChar*  p       = &gx->payload[0];
-   XArray* results = VG_(newXA)( ML_(dinfo_zalloc), ML_(dinfo_free),
+   XArray* results = VG_(newXA)( ML_(dinfo_zalloc), "di.d3basics.etG.1",
+                                 ML_(dinfo_free),
                                  sizeof(MaybeUWord) );
 
    uc = *p++; /*biasMe*/

@@ -76,7 +76,8 @@ typedef  struct _WordFM  WordFM; /* opaque */
    sections of the map, or the whole thing.  If kCmp is NULL then the
    ordering used is unsigned word ordering (UWord) on the key
    values. */
-WordFM* VG_(newFM) ( void* (*alloc_nofail)( SizeT ),
+WordFM* VG_(newFM) ( void* (*alloc_nofail)( HChar* cc, SizeT ),
+                     HChar* cc,
                      void  (*dealloc)(void*),
                      Word  (*kCmp)(UWord,UWord) );
 
@@ -153,7 +154,8 @@ WordFM* VG_(dopyFM) ( WordFM* fm,
 typedef  struct _WordBag  WordBag; /* opaque */
 
 /* Allocate and initialise a WordBag */
-WordBag* VG_(newBag) ( void* (*alloc_nofail)( SizeT ),
+WordBag* VG_(newBag) ( void* (*alloc_nofail)( HChar* cc, SizeT ),
+                       HChar* cc,
                        void  (*dealloc)(void*) );
 
 /* Free up the Bag. */

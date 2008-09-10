@@ -399,7 +399,7 @@ static void init_auxmap_L1_L2 ( void )
    tl_assert(sizeof(Addr) == sizeof(void*));
    auxmap_L2 = VG_(OSetGen_Create)( /*keyOff*/  offsetof(AuxMapEnt,base),
                                     /*fastCmp*/ NULL,
-                                    VG_(malloc), VG_(free) );
+                                    VG_(malloc), "mc.iaLL.1", VG_(free) );
 }
 
 /* Check representation invariants; if OK return NULL; else a
@@ -891,7 +891,8 @@ static OSet* createSecVBitTable(void)
 {
    return VG_(OSetGen_Create)( offsetof(SecVBitNode, a), 
                                NULL, // use fast comparisons
-                               VG_(malloc), VG_(free) );
+                               VG_(malloc), "mc.cSVT.1 (sec VBit table)", 
+                               VG_(free) );
 }
 
 static void gcSecVBitTable(void)
@@ -2151,8 +2152,8 @@ static void zeroise_OCacheLine ( OCacheLine* line, Addr tag ) {
 
 static OSet* ocacheL2 = NULL;
 
-static void* ocacheL2_malloc ( SizeT szB ) {
-   return VG_(malloc)(szB);
+static void* ocacheL2_malloc ( HChar* cc, SizeT szB ) {
+   return VG_(malloc)(cc, szB);
 }
 static void ocacheL2_free ( void* v ) {
    VG_(free)( v );
@@ -2169,7 +2170,7 @@ static void init_ocacheL2 ( void )
    ocacheL2 
       = VG_(OSetGen_Create)( offsetof(OCacheLine,tag), 
                              NULL, /* fast cmp */
-                             ocacheL2_malloc, ocacheL2_free );
+                             ocacheL2_malloc, "mc.ioL2", ocacheL2_free );
    tl_assert(ocacheL2);
    stats__ocacheL2_n_nodes = 0;
 }
@@ -4803,7 +4804,7 @@ Int alloc_client_block ( void )
    tl_assert(cgb_used == cgb_size);
    sz_new = (cgbs == NULL) ? 10 : (2 * cgb_size);
 
-   cgbs_new = VG_(malloc)( sz_new * sizeof(CGenBlock) );
+   cgbs_new = VG_(malloc)( "mc.acb.1", sz_new * sizeof(CGenBlock) );
    for (i = 0; i < cgb_used; i++) 
       cgbs_new[i] = cgbs[i];
 
@@ -4903,7 +4904,7 @@ static Bool mc_handle_client_request ( ThreadId tid, UWord* arg, UWord* ret )
             /* VG_(printf)("allocated %d %p\n", i, cgbs); */
             cgbs[i].start = arg[1];
             cgbs[i].size  = arg[2];
-            cgbs[i].desc  = VG_(strdup)((Char *)arg[3]);
+            cgbs[i].desc  = VG_(strdup)("mc.mhcr.1", (Char *)arg[3]);
             cgbs[i].where = VG_(record_ExeContext) ( tid, 0/*first_ip_delta*/ );
 
             *ret = i;

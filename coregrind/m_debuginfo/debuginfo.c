@@ -171,10 +171,10 @@ DebugInfo* alloc_DebugInfo( const UChar* filename,
 
    vg_assert(filename);
 
-   di = ML_(dinfo_zalloc)(sizeof(DebugInfo));
+   di = ML_(dinfo_zalloc)("di.debuginfo.aDI.1", sizeof(DebugInfo));
    di->handle    = handle_counter++;
-   di->filename  = ML_(dinfo_strdup)(filename);
-   di->memname   = memname ? ML_(dinfo_strdup)(memname)
+   di->filename  = ML_(dinfo_strdup)("di.debuginfo.aDI.2", filename);
+   di->memname   = memname ? ML_(dinfo_strdup)("di.debuginfo.aDI.3", memname)
                            : NULL;
 
    /* Everything else -- pointers, sizes, arrays -- is zeroed by calloc.
@@ -200,7 +200,7 @@ static void free_DebugInfo ( DebugInfo* di )
 {
    Word i, j, n;
    struct strchunk *chunk, *next;
-   TyAdmin* admin;
+   TyEnt* ent;
    GExpr* gexpr;
 
    vg_assert(di != NULL);
@@ -215,17 +215,18 @@ static void free_DebugInfo ( DebugInfo* di )
       ML_(dinfo_free)(chunk);
    }
 
-   /* Delete the two admin lists.  These lists exist purely so that we
-      can visit each object exactly once when we need to delete
-      them. */
-   if (di->admin_tyadmins) {
-      n = VG_(sizeXA)(di->admin_tyadmins);
+   /* Delete the two admin arrays.  These lists exist primarily so
+      that we can visit each object exactly once when we need to
+      delete them. */
+   if (di->admin_tyents) {
+      n = VG_(sizeXA)(di->admin_tyents);
       for (i = 0; i < n; i++) {
-         admin = (TyAdmin*)VG_(indexXA)(di->admin_tyadmins, i);
-         ML_(delete_payload_of_TyAdmin)(admin);
+         ent = (TyEnt*)VG_(indexXA)(di->admin_tyents, i);
+         /* Dump anything hanging off this ent */
+         ML_(TyEnt__make_EMPTY)(ent);
       }
-      VG_(deleteXA)(di->admin_tyadmins);
-      di->admin_tyadmins = NULL;
+      VG_(deleteXA)(di->admin_tyents);
+      di->admin_tyents = NULL;
    }
 
    if (di->admin_gexprs) {
@@ -860,6 +861,19 @@ void VG_(di_aix5_notify_segchange)(
 /*--- TOP LEVEL: QUERYING EXISTING DEBUG INFO              ---*/
 /*---                                                      ---*/
 /*------------------------------------------------------------*/
+
+void VG_(di_discard_ALL_debuginfo)( void )
+{
+   DebugInfo *di, *di2;
+   di = debugInfo_list;
+   while (di) {
+      di2 = di->next;
+      VG_(printf)("XXX rm %p\n", di);
+      free_DebugInfo( di );
+      di = di2;
+   }
+}
+
 
 /*------------------------------------------------------------*/
 /*--- Use of symbol table & location info to create        ---*/
@@ -1637,7 +1651,7 @@ Bool VG_(use_CF_info) ( /*MOD*/Addr* ipP,
             case CFIR_MEMCFAREL: {                      \
                Addr a = cfa + (Word)_off;               \
                if (a < min_accessible                   \
-                   || a+sizeof(Addr) > max_accessible)  \
+                   || a > max_accessible-sizeof(Addr))  \
                   return False;                         \
                _prev = *(Addr*)a;                       \
                break;                                   \
@@ -1688,6 +1702,7 @@ Bool VG_(use_CF_info) ( /*MOD*/Addr* ipP,
    regs, which supplies ip,sp,fp values, will be NULL for global
    variables, and non-NULL for local variables. */
 static Bool data_address_is_in_var ( /*OUT*/UWord* offset,
+                                     XArray* /* TyEnt */ tyents,
                                      DiVariable*   var,
                                      RegSummary*   regs,
                                      Addr          data_addr,
@@ -1697,12 +1712,12 @@ static Bool data_address_is_in_var ( /*OUT*/UWord* offset,
    SizeT      var_szB;
    GXResult   res;
    Bool       show = False;
+
    vg_assert(var->name);
-   vg_assert(var->type);
    vg_assert(var->gexpr);
 
    /* Figure out how big the variable is. */
-   muw = ML_(sizeOfType)(var->type);
+   muw = ML_(sizeOfType)(tyents, var->typeR);
    /* if this var has a type whose size is unknown, it should never
       have been added.  ML_(addVar) should have rejected it. */
    vg_assert(muw.b == True);
@@ -1712,7 +1727,7 @@ static Bool data_address_is_in_var ( /*OUT*/UWord* offset,
    if (show) {
       VG_(printf)("VVVV: data_address_%#lx_is_in_var: %s :: ",
                   data_addr, var->name );
-      ML_(pp_Type_C_ishly)( var->type );
+      ML_(pp_TyEnt_C_ishly)( tyents, var->typeR );
       VG_(printf)("\n");
    }
 
@@ -1999,11 +2014,13 @@ Bool consider_vars_in_frame ( /*OUT*/Char* dname1,
          if (debug)
             VG_(printf)("QQQQ:    var:name=%s %#lx-%#lx %#lx\n",
                         var->name,arange->aMin,arange->aMax,ip);
-         if (data_address_is_in_var( &offset, var, &regs, data_addr,
-                                     di->data_bias )) {
+         if (data_address_is_in_var( &offset, di->admin_tyents,
+                                     var, &regs,
+                                     data_addr, di->data_bias )) {
             OffT residual_offset = 0;
             XArray* described = ML_(describe_type)( &residual_offset,
-                                                    var->type, offset );
+                                                    di->admin_tyents, 
+                                                    var->typeR, offset );
             format_message( dname1, dname2, n_dname, 
                             data_addr, var, offset, residual_offset,
                             described, frameNo, tid );
@@ -2096,12 +2113,13 @@ Bool VG_(get_data_description)( /*OUT*/Char* dname1,
             This means, if the evaluation of the location
             expression/list requires a register, we have to let it
             fail. */
-         if (data_address_is_in_var( &offset, var, 
+         if (data_address_is_in_var( &offset, di->admin_tyents, var, 
                                      NULL/* RegSummary* */, 
                                      data_addr, di->data_bias )) {
             OffT residual_offset = 0;
             XArray* described = ML_(describe_type)( &residual_offset,
-                                                    var->type, offset );
+                                                    di->admin_tyents,
+                                                    var->typeR, offset );
             format_message( dname1, dname2, n_dname, 
                             data_addr, var, offset, residual_offset,
                             described, -1/*frameNo*/, tid );
@@ -2234,6 +2252,7 @@ Bool VG_(get_data_description)( /*OUT*/Char* dname1,
 
 static 
 void analyse_deps ( /*MOD*/XArray* /* of FrameBlock */ blocks,
+                    XArray* /* TyEnt */ tyents,
                     Addr ip, Addr data_bias, DiVariable* var,
                     Bool arrays_only )
 {
@@ -2241,23 +2260,30 @@ void analyse_deps ( /*MOD*/XArray* /* of FrameBlock */ blocks,
    RegSummary regs;
    MaybeUWord muw;
    Bool       isVec;
+   TyEnt*     ty;
 
    Bool debug = False;
    if (0&&debug)
       VG_(printf)("adeps: var %s\n", var->name );
 
    /* Figure out how big the variable is. */
-   muw = ML_(sizeOfType)(var->type);
+   muw = ML_(sizeOfType)(tyents, var->typeR);
    /* if this var has a type whose size is unknown or zero, it should
       never have been added.  ML_(addVar) should have rejected it. */
    vg_assert(muw.b == True);
    vg_assert(muw.w > 0);
 
    /* skip if non-array and we're only interested in arrays */
-   isVec = var->type->tag == Ty_Array;
-   if (arrays_only && !isVec) return;
+   ty = ML_(TyEnts__index_by_cuOff)( tyents, NULL, var->typeR );
+   vg_assert(ty);
+   vg_assert(ty->tag == Te_UNKNOWN || ML_(TyEnt__is_type)(ty));
+   if (ty->tag == Te_UNKNOWN)
+      return; /* perhaps we should complain in this case? */
+   isVec = ty->tag == Te_TyArray;
+   if (arrays_only && !isVec)
+      return;
 
-   if (0) {ML_(pp_Type_C_ishly)(var->type);
+   if (0) {ML_(pp_TyEnt_C_ishly)(tyents, var->typeR);
            VG_(printf)("  %s\n", var->name);}
 
    /* Do some test evaluations of the variable's location expression,
@@ -2360,7 +2386,8 @@ void* /* really, XArray* of StackBlock */
    RegSummary regs;
    Bool debug = False;
 
-   XArray* res = VG_(newXA)( ML_(dinfo_zalloc), ML_(dinfo_free),
+   XArray* res = VG_(newXA)( ML_(dinfo_zalloc), "di.debuginfo.dgsbai.1",
+                             ML_(dinfo_free),
                              sizeof(StackBlock) );
 
    static UInt n_search = 0;
@@ -2452,7 +2479,8 @@ void* /* really, XArray* of StackBlock */
          if (debug)
             VG_(printf)("QQQQ:    var:name=%s %#lx-%#lx %#lx\n", 
                         var->name,arange->aMin,arange->aMax,ip);
-         analyse_deps( res, ip, di->data_bias, var, arrays_only );
+         analyse_deps( res, di->admin_tyents, ip,
+                       di->data_bias, var, arrays_only );
       }
    }
 
@@ -2491,7 +2519,8 @@ void* /* really, XArray* of GlobalBlock */
    tl_assert(di != NULL);
 
    /* we'll put the collected variables in here. */
-   gvars = VG_(newXA)( ML_(dinfo_zalloc), ML_(dinfo_free), sizeof(GlobalBlock) );
+   gvars = VG_(newXA)( ML_(dinfo_zalloc), "di.debuginfo.dggbfd.1",
+                       ML_(dinfo_free), sizeof(GlobalBlock) );
    tl_assert(gvars);
 
    /* any var info at all? */
@@ -2522,6 +2551,7 @@ void* /* really, XArray* of GlobalBlock */
             GXResult    res;
             MaybeUWord  muw;
             GlobalBlock gb;
+            TyEnt*      ty;
             DiVariable* var = VG_(indexXA)( range->vars, varIx );
             tl_assert(var->name);
             if (0) VG_(printf)("at depth %ld var %s ", scopeIx, var->name );
@@ -2546,7 +2576,7 @@ void* /* really, XArray* of GlobalBlock */
             if (0) VG_(printf)("%#lx\n", res.word);
 
             /* Figure out how big the variable is. */
-            muw = ML_(sizeOfType)(var->type);
+            muw = ML_(sizeOfType)(di->admin_tyents, var->typeR);
 
             /* if this var has a type whose size is unknown or zero,
                it should never have been added.  ML_(addVar) should
@@ -2556,7 +2586,14 @@ void* /* really, XArray* of GlobalBlock */
 
             /* skip if non-array and we're only interested in
                arrays */
-            isVec = var->type->tag == Ty_Array;
+            ty = ML_(TyEnts__index_by_cuOff)( di->admin_tyents, NULL,
+                                              var->typeR );
+            vg_assert(ty);
+            vg_assert(ty->tag == Te_UNKNOWN || ML_(TyEnt__is_type)(ty));
+            if (ty->tag == Te_UNKNOWN)
+               continue; /* perhaps we should complain in this case? */
+
+            isVec = ty->tag == Te_TyArray;
             if (arrays_only && !isVec) continue;
 
             /* Ok, so collect it! */

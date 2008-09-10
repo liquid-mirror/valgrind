@@ -69,10 +69,10 @@ static inline Bool is_sane_TId ( ThreadId tid )
           && tid != VG_INVALID_THREADID;
 }
 
-static void* sg_malloc ( SizeT n ) {
+static void* sg_malloc ( HChar* cc, SizeT n ) {
    void* p;
    tl_assert(n > 0);
-   p = VG_(malloc)( n );
+   p = VG_(malloc)( cc, n );
    tl_assert(p);
    return p;
 }
@@ -248,8 +248,9 @@ static WordFM* /* XArray* of StackBlock -> nothing */
 static void init_StackBlocks_set ( void )
 {
    tl_assert(!frameBlocks_set);
-   frameBlocks_set = VG_(newFM)( sg_malloc, sg_free, 
-                                 (Word(*)(UWord,UWord))StackBlocks__cmp );
+   frameBlocks_set
+      = VG_(newFM)( sg_malloc, "di.sg_main.iSBs.1", sg_free, 
+                    (Word(*)(UWord,UWord))StackBlocks__cmp );
    tl_assert(frameBlocks_set);
 }
 
@@ -404,8 +405,9 @@ static WordFM* /* GlobalBlock* -> nothing */
 static void init_GlobalBlock_set ( void )
 {
    tl_assert(!globalBlock_set);
-   globalBlock_set = VG_(newFM)( sg_malloc, sg_free, 
-                                 (Word(*)(UWord,UWord))GlobalBlock__cmp );
+    globalBlock_set
+       = VG_(newFM)( sg_malloc, "di.sg_main.iGBs.1", sg_free, 
+                     (Word(*)(UWord,UWord))GlobalBlock__cmp );
    tl_assert(globalBlock_set);
 }
 
@@ -429,7 +431,8 @@ static GlobalBlock* get_persistent_GlobalBlock ( GlobalBlock* orig )
    } else {
       /* no.  clone it, store the clone and return the clone's
          address. */
-      GlobalBlock* clone = sg_malloc( sizeof(GlobalBlock) );
+      GlobalBlock* clone = sg_malloc( "di.sg_main.gpGB.1",
+                                      sizeof(GlobalBlock) );
       tl_assert(clone);
       *clone = *orig;
       VG_(addToFM)( globalBlock_set, (UWord)clone, 0 );
@@ -529,7 +532,7 @@ static void add_blocks_to_StackTree (
       Addr        addr  = *(Addr*)VG_(indexXA)( bases, i );
       StackBlock* descr = (StackBlock*)VG_(indexXA)( descrs, i );
       tl_assert(descr->szB > 0);
-      nyu = sg_malloc( sizeof(StackTreeNode) );
+      nyu = sg_malloc( "di.sg_main.abtST.1", sizeof(StackTreeNode) );
       nyu->addr  = addr;
       nyu->szB   = descr->szB;
       nyu->descr = descr;
@@ -586,7 +589,7 @@ static void delete_StackTree ( WordFM* sitree )
 }
 
 static WordFM* new_StackTree ( void ) {
-   return VG_(newFM)( sg_malloc, sg_free,
+   return VG_(newFM)( sg_malloc, "di.sg_main.nST.1", sg_free,
                       (Word(*)(UWord,UWord))cmp_intervals_StackTreeNode );
 }
 
@@ -671,7 +674,7 @@ static void add_block_to_GlobalTree (
    GlobalTreeNode *nyu, *nd;
      UWord keyW, valW;
    tl_assert(descr->szB > 0);
-   nyu = sg_malloc( sizeof(GlobalTreeNode) );
+   nyu = sg_malloc( "di.sg_main.abtG.1", sizeof(GlobalTreeNode) );
    nyu->addr  = descr->addr;
    nyu->szB   = descr->szB;
    nyu->descr = descr;
@@ -970,7 +973,7 @@ static void ourGlobals_init ( void )
       siTrees[i] = NULL;
    }
    invalidate_all_QCaches();
-   giTree = VG_(newFM)( sg_malloc, sg_free, 
+   giTree = VG_(newFM)( sg_malloc, "di.sg_main.oGi.1", sg_free, 
                         (Word(*)(UWord,UWord))cmp_intervals_GlobalTreeNode );
 }
 
@@ -1182,12 +1185,15 @@ static void preen_Invar ( Invar* inv, Addr a, SizeT len, Bool isHeap )
 __attribute__((noinline))
 static void preen_Invars ( Addr a, SizeT len, Bool isHeap )
 {
+  tl_assert(0);
+#if 0
    Int         i;
    Word        ixFrames, nFrames;
    UWord       u;
    XArray*     stack; /* XArray* of StackFrame */
    StackFrame* frame;
    tl_assert(len > 0);
+   tl_assert(0);
    for (i = 0; i < VG_N_THREADS; i++) {
 tl_assert(0);
       stack = shadowStacks[i];
@@ -1208,6 +1214,7 @@ tl_assert(0);
          tl_assert(xx == frame->htab_used);
       }
    }
+#endif
 }
 
 
@@ -1240,7 +1247,8 @@ static void resize_II_hash_table ( StackFrame* sf )
    old_size = sf->htab_size;
    new_size = 2 * old_size;
    old_htab = sf->htab;
-   new_htab = sg_malloc( new_size * sizeof(IInstance) );
+   new_htab = sg_malloc( "di.sg_main.rIht.1",
+                         new_size * sizeof(IInstance) );
    for (i = 0; i < new_size; i++) {
       new_htab[i].insn_addr = 0; /* NOT IN USE */
    }
@@ -1391,7 +1399,7 @@ static XArray* /* Addr */ calculate_StackBlock_EAs (
    XArray* res;
    Word i, n = VG_(sizeXA)( blocks );
    tl_assert(n > 0);
-   res = VG_(newXA)( sg_malloc, sg_free, sizeof(Addr) );
+   res = VG_(newXA)( sg_malloc, "di.sg_main.cSBE.1", sg_free, sizeof(Addr) );
    for (i = 0; i < n; i++) {
       StackBlock* blk = VG_(indexXA)( blocks, i );
       Addr ea = calculate_StackBlock_EA( blk, sp, fp );
@@ -1766,7 +1774,7 @@ void shadowStack_new_frame ( ThreadId tid,
    if (caller->inner) {
       callee = caller->inner;
    } else {
-      callee = sg_malloc(sizeof(StackFrame));
+      callee = sg_malloc("di.sg_main.sSnf.1", sizeof(StackFrame));
       VG_(memset)(callee, 0, sizeof(StackFrame));
       callee->outer = caller;
       caller->inner = callee;
@@ -2035,7 +2043,8 @@ static void instrument_mem_access ( IRSB*   bbOut,
 
 struct _SGEnv *  sg_instrument_init ( void )
 {
-   struct _SGEnv * env = sg_malloc(sizeof(struct _SGEnv));
+   struct _SGEnv * env = sg_malloc("di.sg_main.sii.1",
+                                   sizeof(struct _SGEnv));
    tl_assert(env);
    env->curr_IP       = 0;
    env->curr_IP_known = False;
@@ -2214,7 +2223,7 @@ void sg_instrument_final_jump ( /*MOD*/struct _SGEnv * env,
    infinity, so it can never be removed. */
 static StackFrame* new_root_StackFrame ( void )
 {
-   StackFrame* sframe = sg_malloc(sizeof(StackFrame));
+   StackFrame* sframe = sg_malloc("di.sg_main.nrS.1", sizeof(StackFrame));
    VG_(memset)( sframe, 0, sizeof(*sframe) );
    sframe->creation_sp = ~0UL;
 

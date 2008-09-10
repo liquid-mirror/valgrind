@@ -463,7 +463,8 @@ static void init_shadow_memory ( void )
    tl_assert(sizeof(Addr) == sizeof(void*));
    primap_L2 = VG_(OSetGen_Create)( /*keyOff*/  offsetof(PriMapEnt,base),
                                     /*fastCmp*/ NULL,
-                                    VG_(malloc), VG_(free) );
+                                    VG_(malloc), "pc.h_main.ism.1",
+                                    VG_(free) );
    tl_assert(primap_L2);
 }
 
@@ -2194,7 +2195,8 @@ static void init_lossage ( void )
 {
    lossage = VG_(OSetGen_Create)( /*keyOff*/ offsetof(Lossage,ec),
                                   /*fastCmp*/NULL,
-                                  VG_(malloc), VG_(free) );
+                                  VG_(malloc), "pc.h_main.il.1",
+                                  VG_(free) );
    tl_assert(lossage);
 }
 

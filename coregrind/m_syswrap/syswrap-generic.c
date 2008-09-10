@@ -554,7 +554,7 @@ void ML_(record_fd_open_with_given_name)(ThreadId tid, Int fd, char *pathname)
 
    /* Not already one: allocate an OpenFd */
    if (i == NULL) {
-      i = VG_(arena_malloc)(VG_AR_CORE, sizeof(OpenFd));
+      i = VG_(arena_malloc)(VG_AR_CORE, "syswrap.rfdowgn.1", sizeof(OpenFd));
 
       i->prev = NULL;
       i->next = allocated_fds;
@@ -564,7 +564,7 @@ void ML_(record_fd_open_with_given_name)(ThreadId tid, Int fd, char *pathname)
    }
 
    i->fd = fd;
-   i->pathname = VG_(arena_strdup)(VG_AR_CORE, pathname);
+   i->pathname = VG_(arena_strdup)(VG_AR_CORE, "syswrap.rfdowgn.2", pathname);
    i->where = (tid == -1) ? NULL : VG_(record_ExeContext)(tid, 0/*first_ip_delta*/);
 }
 
@@ -767,10 +767,10 @@ void VG_(init_preopened_fds)(void)
 }
 
 static
-Char *strdupcat ( const Char *s1, const Char *s2, ArenaId aid )
+Char *strdupcat ( HChar* cc, const Char *s1, const Char *s2, ArenaId aid )
 {
    UInt len = VG_(strlen) ( s1 ) + VG_(strlen) ( s2 ) + 1;
-   Char *result = VG_(arena_malloc) ( aid, len );
+   Char *result = VG_(arena_malloc) ( aid, cc, len );
    VG_(strcpy) ( result, s1 );
    VG_(strcat) ( result, s2 );
    return result;
@@ -780,7 +780,8 @@ static
 void pre_mem_read_sendmsg ( ThreadId tid, Bool read,
                             Char *msg, Addr base, SizeT size )
 {
-   Char *outmsg = strdupcat ( "socketcall.sendmsg", msg, VG_AR_CORE );
+   Char *outmsg = strdupcat ( "di.syswrap.pmrs.1",
+                              "socketcall.sendmsg", msg, VG_AR_CORE );
    PRE_MEM_READ( outmsg, base, size );
    VG_(arena_free) ( VG_AR_CORE, outmsg );
 }
@@ -789,7 +790,8 @@ static
 void pre_mem_write_recvmsg ( ThreadId tid, Bool read,
                              Char *msg, Addr base, SizeT size )
 {
-   Char *outmsg = strdupcat ( "socketcall.recvmsg", msg, VG_AR_CORE );
+   Char *outmsg = strdupcat ( "di.syswrap.pmwr.1",
+                              "socketcall.recvmsg", msg, VG_AR_CORE );
    if ( read )
       PRE_MEM_READ( outmsg, base, size );
    else
@@ -881,7 +883,7 @@ void pre_mem_read_sockaddr ( ThreadId tid,
    /* NULL/zero-length sockaddrs are legal */
    if ( sa == NULL || salen == 0 ) return;
 
-   outmsg = VG_(arena_malloc) ( VG_AR_CORE,
+   outmsg = VG_(arena_malloc) ( VG_AR_CORE, "di.syswrap.pmr_sockaddr.1",
                                 VG_(strlen)( description ) + 30 );
 
    VG_(sprintf) ( outmsg, description, ".sa_family" );
@@ -2572,7 +2574,8 @@ PRE(sys_execve)
             tot_args++;
       }
       // allocate
-      argv = VG_(malloc)( (tot_args+1) * sizeof(HChar*) );
+      argv = VG_(malloc)( "di.syswrap.pre_sys_execve.1",
+                          (tot_args+1) * sizeof(HChar*) );
       if (argv == 0) goto hosed;
       // copy
       j = 0;

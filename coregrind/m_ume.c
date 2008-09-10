@@ -120,7 +120,7 @@ static
 struct elfinfo *readelf(Int fd, const char *filename)
 {
    SysRes sres;
-   struct elfinfo *e = VG_(malloc)(sizeof(*e));
+   struct elfinfo *e = VG_(malloc)("ume.re.1", sizeof(*e));
    Int phsz;
 
    vg_assert(e);
@@ -163,7 +163,7 @@ struct elfinfo *readelf(Int fd, const char *filename)
    }
 
    phsz = sizeof(ESZ(Phdr)) * e->e.e_phnum;
-   e->p = VG_(malloc)(phsz);
+   e->p = VG_(malloc)("ume.re.2", phsz);
    vg_assert(e->p);
 
    sres = VG_(pread)(fd, e->p, phsz, e->e.e_phoff);
@@ -386,7 +386,7 @@ static Int load_ELF(Int fd, const HChar* name, /*MOD*/ExeInfo* info)
 	 break;
 			
       case PT_INTERP: {
-	 char *buf = VG_(malloc)(ph->p_filesz+1);
+         HChar *buf = VG_(malloc)("ume.LE.1", ph->p_filesz+1);
 	 Int j;
 	 Int intfd;
 	 Int baseaddr_set;
@@ -621,10 +621,10 @@ static Int load_script(Int fd, const HChar* name, ExeInfo* info)
       *cp = '\0';
    }
    
-   info->interp_name = VG_(strdup)(interp);
+   info->interp_name = VG_(strdup)("ume.ls.1", interp);
    vg_assert(NULL != info->interp_name);
    if (arg != NULL && *arg != '\0') {
-      info->interp_args = VG_(strdup)(arg);
+      info->interp_args = VG_(strdup)("ume.ls.2", arg);
       vg_assert(NULL != info->interp_args);
    }
 
@@ -796,7 +796,7 @@ static Int do_exec_shell_followup(Int ret, HChar* exe_name,
       // Looks like a script.  Run it with /bin/sh.  This includes
       // zero-length files.
 
-      info->interp_name = VG_(strdup)(default_interp_name);
+      info->interp_name = VG_(strdup)("ume.desf.1", default_interp_name);
       info->interp_args = NULL;
       if (info->argv && info->argv[0] != NULL)
          info->argv[0] = (char *)exe_name;
