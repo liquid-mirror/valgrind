@@ -41,10 +41,10 @@
 #include "pub_tool_tooliface.h"
 #include "pub_tool_options.h"
 
-#include "h_list.h"      // Seg
-#include "h_main.h"
+//#include "h_list.h"      // Seg
 #include "sg_main.h"
 #include "pc_common.h"
+#include "h_main.h"
 
 
 //////////////////////////////////////////////////////////////
@@ -134,7 +134,7 @@ static void pc_pre_clo_init(void)
    VG_(details_description)     ("a heap, stack & global array "
                                  "overrun detector");
    VG_(details_copyright_author)(
-      "Copyright (C) 2008-2008, and GNU GPL'd, by OpenWorks Ltd et al.");
+      "Copyright (C) 2003-2008, and GNU GPL'd, by OpenWorks Ltd et al.");
    VG_(details_bug_reports_to)  (VG_BUGS_TO);
 
    VG_(basic_tool_funcs)        (pc_post_clo_init,

@@ -47,10 +47,9 @@
 #include "pub_tool_threadstate.h"  // VG_(get_running_tid)
 #include "pub_tool_debuginfo.h"
 
-#include "h_list.h"      // Seg
-#include "h_main.h"      // NONPTR, BOTTOM, UNKNOWN
+#include "pc_common.h"   // self, & Seg
 
-#include "pc_common.h"   // self
+#include "h_main.h"      // NONPTR, BOTTOM, UNKNOWN
 
 
 //////////////////////////////////////////////////////////////
@@ -128,23 +127,23 @@ typedef
          struct {
             Addr   addr;
             SSizeT sszB;  /* -ve is write, +ve is read */
-            Seg    vseg;
+            Seg*   vseg;
             Char   descr1[96];
             Char   descr2[96];
             Char   datasym[96];
             OffT   datasymoff;
          } Heap;
          struct {
-            Seg seg1;
-            Seg seg2;
+            Seg* seg1;
+            Seg* seg2;
             const HChar* opname; // user-understandable text name
          } Arith;
          struct {
             CorePart part;
             Addr lo;
             Addr hi;
-            Seg  seglo;
-            Seg  seghi;
+            Seg* seglo;
+            Seg* seghi;
          } SysParam;
       } XE;
    }
@@ -169,7 +168,7 @@ void sg_record_error_SorG ( ThreadId tid,
    VG_(maybe_record_error)( tid, XE_SorG, 0, NULL, &xe );
 }
 
-void h_record_heap_error( Addr a, SizeT size, Seg vseg, Bool is_write )
+void h_record_heap_error( Addr a, SizeT size, Seg* vseg, Bool is_write )
 {
    XError xe;
    tl_assert(size > 0);
@@ -182,7 +181,7 @@ void h_record_heap_error( Addr a, SizeT size, Seg vseg, Bool is_write )
                             /*a*/0, /*str*/NULL, /*extra*/(void*)&xe);
 }
 
-void h_record_arith_error( Seg seg1, Seg seg2, HChar* opname )
+void h_record_arith_error( Seg* seg1, Seg* seg2, HChar* opname )
 {
    XError xe;
    VG_(memset)(&xe, 0, sizeof(xe));
@@ -195,7 +194,7 @@ void h_record_arith_error( Seg seg1, Seg seg2, HChar* opname )
 }
 
 void h_record_sysparam_error( ThreadId tid, CorePart part, Char* s,
-                              Addr lo, Addr hi, Seg seglo, Seg seghi )
+                              Addr lo, Addr hi, Seg* seglo, Seg* seghi )
 {
    XError xe;
    VG_(memset)(&xe, 0, sizeof(xe));
@@ -279,7 +278,7 @@ void pc_pp_Error ( Error* err )
    case XE_Heap: {
       Char *place, *legit, *how_invalid;
       Addr a    = xe->XE.Heap.addr;
-      Seg  vseg = xe->XE.Heap.vseg;
+      Seg* vseg = xe->XE.Heap.vseg;
 
       tl_assert(is_known_segment(vseg) || NONPTR == vseg);
 
@@ -313,8 +312,9 @@ void pc_pp_Error ( Error* err )
                       " Address %#lx is %lu bytes %s the accessing pointer's",
                       a, miss_size, place);
          VG_(message)(Vg_UserMsg,
-                    " %slegitimate range, a block of size %lu %s",
-                      legit, Seg__size(vseg), Seg__status_str(vseg) );
+                      " %slegitimate range, a block of size %lu %s",
+                      legit, Seg__size(vseg),
+                      Seg__is_freed(vseg) ? "free'd" : "alloc'd" );
          VG_(pp_ExeContext)(Seg__where(vseg));
       }
       if (xe->XE.Heap.descr1[0] != 0)
@@ -332,8 +332,8 @@ void pc_pp_Error ( Error* err )
 
    //----------------------------------------------------------
    case XE_Arith: {
-      Seg    seg1   = xe->XE.Arith.seg1;
-      Seg    seg2   = xe->XE.Arith.seg2;
+      Seg*   seg1   = xe->XE.Arith.seg1;
+      Seg*   seg2   = xe->XE.Arith.seg2;
       Char*  which;
 
       tl_assert(BOTTOM != seg1);
@@ -349,9 +349,8 @@ void pc_pp_Error ( Error* err )
             VG_(message)(Vg_UserMsg, " First arg may be a pointer");
          } else {
             VG_(message)(Vg_UserMsg, " First arg derived from address %#lx of "
-                                     "%lu-byte block %s",
-                                     Seg__a(seg1), Seg__size(seg1),
-                                     Seg__status_str(seg1) );
+                                     "%lu-byte block alloc'd",
+                                     Seg__addr(seg1), Seg__size(seg1) );
             VG_(pp_ExeContext)(Seg__where(seg1));
          }
          which = "Second arg";
@@ -362,9 +361,8 @@ void pc_pp_Error ( Error* err )
          VG_(message)(Vg_UserMsg, " %s not a pointer", which);
       } else {
          VG_(message)(Vg_UserMsg, " %s derived from address %#lx of "
-                                  "%lu-byte block %s",
-                                  which, Seg__a(seg2), Seg__size(seg2),
-                                  Seg__status_str(seg2));
+                                  "%lu-byte block alloc'd",
+                      which, Seg__addr(seg2), Seg__size(seg2) );
          VG_(pp_ExeContext)(Seg__where(seg2));
       }
       break;
@@ -374,8 +372,8 @@ void pc_pp_Error ( Error* err )
    case XE_SysParam: {
       Addr  lo    = xe->XE.SysParam.lo;
       Addr  hi    = xe->XE.SysParam.hi;
-      Seg   seglo = xe->XE.SysParam.seglo;
-      Seg   seghi = xe->XE.SysParam.seghi;
+      Seg*  seglo = xe->XE.SysParam.seglo;
+      Seg*  seghi = xe->XE.SysParam.seghi;
       Char* s     = VG_(get_error_string) (err);
       Char* what;
 
@@ -388,15 +386,15 @@ void pc_pp_Error ( Error* err )
       if (seglo == seghi) {
          // freed block
          tl_assert(is_known_segment(seglo));
-         tl_assert(Seg__is_freed(seglo));
+         tl_assert(Seg__is_freed(seglo)); // XXX what if it's now recycled?
          VG_(message)(Vg_UserMsg, "%s%s contains unaddressable byte(s)",
                                   what, s);
          VG_(pp_ExeContext)( VG_(get_error_where)(err) );
 
          VG_(message)(Vg_UserMsg, " Address %#lx is %ld bytes inside a "
-                                  "%ld-byte block %s",
-                                  lo, lo-Seg__a(seglo), Seg__size(seglo),
-                                  Seg__status_str(seglo) );
+                                  "%ld-byte block alloc'd",
+                                  lo, lo-Seg__addr(seglo),
+                                  Seg__size(seglo) );
          VG_(pp_ExeContext)(Seg__where(seglo));
 
       } else {
@@ -408,9 +406,9 @@ void pc_pp_Error ( Error* err )
             VG_(message)(Vg_UserMsg, " First byte is not inside a known block");
          } else {
             VG_(message)(Vg_UserMsg, " First byte (%#lx) is %ld bytes inside a "
-                                     "%ld-byte block %s",
-                                     lo, lo-Seg__a(seglo), Seg__size(seglo),
-                                     Seg__status_str(seglo) );
+                                     "%ld-byte block alloc'd",
+                                     lo, lo-Seg__addr(seglo), 
+                                     Seg__size(seglo) );
             VG_(pp_ExeContext)(Seg__where(seglo));
          }
 
@@ -418,9 +416,9 @@ void pc_pp_Error ( Error* err )
             VG_(message)(Vg_UserMsg, " Last byte is not inside a known block");
          } else {
             VG_(message)(Vg_UserMsg, " Last byte (%#lx) is %ld bytes inside a "
-                                     "%ld-byte block %s",
-                                     hi, hi-Seg__a(seghi), Seg__size(seghi),
-                                     Seg__status_str(seghi));
+                                     "%ld-byte block alloc'd",
+                                     hi, hi-Seg__addr(seghi),
+                                     Seg__size(seghi) );
             VG_(pp_ExeContext)(Seg__where(seghi));
          }
       }

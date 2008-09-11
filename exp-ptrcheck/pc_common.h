@@ -34,16 +34,18 @@
 
 #define __PC_COMMON_H
 
+typedef  struct _Seg  Seg;   /* abstract every except in h_main.c */
+
 void sg_record_error_SorG ( ThreadId tid,
                             Addr addr, SSizeT sszB,
                             HChar* expect, HChar* actual );
 
-void h_record_heap_error( Addr a, SizeT size, Seg vseg, Bool is_write );
+void h_record_heap_error( Addr a, SizeT size, Seg* vseg, Bool is_write );
 
-void h_record_arith_error( Seg seg1, Seg seg2, HChar* opname );
+void h_record_arith_error( Seg* seg1, Seg* seg2, HChar* opname );
 
 void h_record_sysparam_error( ThreadId tid, CorePart part, Char* s,
-                              Addr lo, Addr hi, Seg seglo, Seg seghi );
+                              Addr lo, Addr hi, Seg* seglo, Seg* seghi );
 
 Bool pc_eq_Error ( VgRes res, Error* e1, Error* e2 );
 void pc_pp_Error ( Error* err );

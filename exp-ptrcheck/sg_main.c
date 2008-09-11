@@ -46,8 +46,8 @@
 #include "pub_tool_mallocfree.h"
 #include "pub_tool_machine.h"
 #include "pub_tool_debuginfo.h"
+#include "pub_tool_options.h"
 
-#include "h_list.h"       // Seg
 #include "pc_common.h"
 
 #include "sg_main.h"      // self
@@ -1784,7 +1784,7 @@ void shadowStack_new_frame ( ThreadId tid,
          Bool  gb = g > stats__max_gitree_size;
          if (sb) stats__max_sitree_size = s;
          if (gb) stats__max_gitree_size = g;
-         if (sb || gb)
+         if (0 && (sb || gb))
             VG_(message)(Vg_DebugMsg, 
                          "exp-sgcheck: new max tree sizes: "
                          "StackTree %ld, GlobalTree %ld",
@@ -2367,34 +2367,36 @@ void sg_pre_thread_first_insn ( ThreadId tid ) {
 
 void sg_fini(Int exitcode)
 {
-  VG_(message)(Vg_DebugMsg,
-     "%'llu total accesses, of which:", stats__total_accesses);
-  VG_(message)(Vg_DebugMsg,
-     "   stack0: %'12llu classify",
-     stats__classify_Stack0);
-  VG_(message)(Vg_DebugMsg,
-     "   stackN: %'12llu classify",
-     stats__classify_StackN);
-  VG_(message)(Vg_DebugMsg,
-     "   global: %'12llu classify",
-     stats__classify_Global);
-  VG_(message)(Vg_DebugMsg,
-     "  unknown: %'12llu classify",
-     stats__classify_Unknown);
-  VG_(message)(Vg_DebugMsg,
-     "%'llu Invars preened, of which %'llu changed",
-     stats__Invars_preened, stats__Invars_changed);
-  VG_(message)(Vg_DebugMsg,
-     " t_i_b_MT: %'12llu", stats__t_i_b_empty);
-  VG_(message)(Vg_DebugMsg, 
-     "   qcache: %'llu searches, %'llu probes, %'llu misses",
-     stats__qcache_queries, stats__qcache_probes, stats__qcache_misses);
-  VG_(message)(Vg_DebugMsg, 
-     "htab-fast: %'llu hits",
-     stats__htab_fast);
-  VG_(message)(Vg_DebugMsg, 
-     "htab-slow: %'llu searches, %'llu probes, %'llu resizes",
-     stats__htab_searches, stats__htab_probes, stats__htab_resizes);
+   if (VG_(clo_verbosity) >= 2) {
+      VG_(message)(Vg_DebugMsg,
+         " sg_:  %'llu total accesses, of which:", stats__total_accesses);
+      VG_(message)(Vg_DebugMsg,
+         " sg_:     stack0: %'12llu classify",
+         stats__classify_Stack0);
+      VG_(message)(Vg_DebugMsg,
+         " sg_:     stackN: %'12llu classify",
+         stats__classify_StackN);
+      VG_(message)(Vg_DebugMsg,
+         " sg_:     global: %'12llu classify",
+         stats__classify_Global);
+      VG_(message)(Vg_DebugMsg,
+         " sg_:    unknown: %'12llu classify",
+         stats__classify_Unknown);
+      VG_(message)(Vg_DebugMsg,
+         " sg_:  %'llu Invars preened, of which %'llu changed",
+         stats__Invars_preened, stats__Invars_changed);
+      VG_(message)(Vg_DebugMsg,
+         " sg_:   t_i_b_MT: %'12llu", stats__t_i_b_empty);
+      VG_(message)(Vg_DebugMsg, 
+         " sg_:     qcache: %'llu searches, %'llu probes, %'llu misses",
+         stats__qcache_queries, stats__qcache_probes, stats__qcache_misses);
+      VG_(message)(Vg_DebugMsg, 
+         " sg_:  htab-fast: %'llu hits",
+         stats__htab_fast);
+      VG_(message)(Vg_DebugMsg, 
+         " sg_:  htab-slow: %'llu searches, %'llu probes, %'llu resizes",
+         stats__htab_searches, stats__htab_probes, stats__htab_resizes);
+   }
 }
 
 

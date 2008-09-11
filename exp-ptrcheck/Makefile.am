@@ -80,7 +80,7 @@ vgpreload_exp_ptrcheck_ppc64_aix5_so_LDFLAGS      = \
 
 
 EXP_PTRCHECK_SOURCES_COMMON = \
-	pc_common.c h_list.c h_main.c sg_main.c pc_main.c
+	pc_common.c h_main.c sg_main.c pc_main.c
 
 exp_ptrcheck_x86_linux_SOURCES      = $(EXP_PTRCHECK_SOURCES_COMMON)
 exp_ptrcheck_x86_linux_CPPFLAGS     = $(AM_CPPFLAGS_X86_LINUX)
@@ -124,5 +124,5 @@ exp_ptrcheck_ppc64_aix5_DEPENDENCIES = $(COREGRIND_LIBS_PPC64_AIX5)
 exp_ptrcheck_ppc64_aix5_LDADD        = $(TOOL_LDADD_PPC64_AIX5)
 exp_ptrcheck_ppc64_aix5_LDFLAGS      = $(TOOL_LDFLAGS_PPC64_AIX5)
 
-noinst_HEADERS = h_list.h h_main.h sg_main.h pc_common.h
+noinst_HEADERS = h_main.h sg_main.h pc_common.h
 

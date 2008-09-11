@@ -37,13 +37,20 @@
 #define __H_MAIN_H
 
 // Choose values that couldn't possibly be pointers
-#define NONPTR          ((Seg)0xA1)
-#define UNKNOWN         ((Seg)0xB2)
-#define BOTTOM          ((Seg)0xC3)
+#define NONPTR          ((Seg*)0xA1)
+#define UNKNOWN         ((Seg*)0xB2)
+#define BOTTOM          ((Seg*)0xC3)
 
-static inline Bool is_known_segment(Seg seg) {
-   return (UNKNOWN != seg && BOTTOM != seg && NONPTR != seg);
+static inline Bool is_known_segment(Seg* teg) {
+   return (UNKNOWN != teg && BOTTOM != teg && NONPTR != teg);
+   // better?  teg <= BOTTOM
 }
+
+void        Seg__cmp(Seg* seg, Addr a, Int* cmp, UWord* n);
+Bool        Seg__is_freed(Seg* seg);
+ExeContext* Seg__where(Seg* seg);
+SizeT       Seg__size(Seg* seg);
+Addr        Seg__addr(Seg* seg);
 
 void h_pre_clo_init ( void );
 void h_post_clo_init ( void );

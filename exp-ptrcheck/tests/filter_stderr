@@ -17,6 +17,6 @@ sed "s/(in \/.*libpthread.*)$/(in \/...libpthread...)/"             |
 sed "s/__libc_\(.*\) (.*)$/__libc_\1 (...libc...)/" |
 
 sed \
--e "/^exp-ptrcheck, a pointer-use checker\.$/d" \
+-e "/^exp-ptrcheck, a heap, stack & global array overrun detector\.$/d" \
 -e "/^NOTE: This is an Experimental-Class Valgrind Tool.$/d"  \
--e "/^Copyright (C) 2003-200., and GNU GPL'd, by Nicholas Nethercote.$/d" \
+-e "/^Copyright (C) 2003-200., and GNU GPL'd, by OpenWorks Ltd et al.$/d" \

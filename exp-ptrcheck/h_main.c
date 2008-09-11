@@ -230,13 +230,15 @@
 #include "pub_tool_oset.h"
 #include "pub_tool_vkiscnums.h"
 #include "pub_tool_machine.h"
+#include "pub_tool_wordfm.h"
 
-#include "h_list.h"
+#include "pc_common.h"
+
+//#include "h_list.h"
 #include "h_main.h"
 
 #include "sg_main.h"   // sg_instrument_*, and struct _SGEnv
 
-#include "pc_common.h"
 
 
 /*------------------------------------------------------------*/
@@ -248,29 +250,232 @@
    performance point of view. */
 #define SC_SEGS 0
 
+static ULong stats__client_mallocs = 0;
+static ULong stats__client_frees   = 0;
+static ULong stats__segs_allocd    = 0;
+static ULong stats__segs_recycled  = 0;
+static ULong stats__slow_searches  = 0;
+static ULong stats__slow_totcmps   = 0;
 
-/*------------------------------------------------------------*/
-/*--- Segments                                             ---*/
-/*------------------------------------------------------------*/
+
+//////////////////////////////////////////////////////////////
+//                                                          //
+// Segments low level storage                               //
+//                                                          //
+//////////////////////////////////////////////////////////////
 
 // NONPTR, UNKNOWN, BOTTOM defined in h_main.h since 
 // pc_common.c needs to see them, for error processing
 
-static ISList* seglist = NULL;
+
+#define N_FREED_SEGS (1 * 1000 * 1000)
+
+struct _Seg {
+   Addr  addr;
+   SizeT szB; /* may be zero */
+   ExeContext* ec;  /* where malloc'd or freed */
+   /* When 1, indicates block is in use.  Otherwise, used to form a
+      linked list of freed blocks, running from oldest freed block to
+      the most recently freed block. */
+   struct _Seg* nextfree;
+};
+
+#define N_SEGS_PER_GROUP 10000
+
+typedef
+   struct _SegGroup {
+      struct _SegGroup* admin;
+      UWord nextfree; /* 0 .. N_SEGS_PER_GROUP */
+      Seg segs[N_SEGS_PER_GROUP];
+   }
+   SegGroup;
+
+static SegGroup* group_list = NULL;
+static UWord     nFreeSegs = 0;
+static Seg*      freesegs_youngest = NULL;
+static Seg*      freesegs_oldest = NULL;
+
+
+static SegGroup* new_SegGroup ( void ) {
+   SegGroup* g = VG_(malloc)("pc.h_main.nTG.1", sizeof(SegGroup));
+   VG_(memset)(g, 0, sizeof(*g));
+   return g;
+}
+
+/* Get a completely new Seg */
+static Seg* new_Seg ( void )
+{
+   Seg*      teg;
+   SegGroup* g;
+   if (group_list == NULL) {
+      g = new_SegGroup();
+      g->admin = NULL;
+      group_list = g;
+   }
+   tl_assert(group_list->nextfree <= N_SEGS_PER_GROUP);
+   if (group_list->nextfree == N_SEGS_PER_GROUP) {
+      g = new_SegGroup();
+      g->admin = group_list;
+      group_list = g;
+   }
+   tl_assert(group_list->nextfree < N_SEGS_PER_GROUP);
+   teg = &group_list->segs[ group_list->nextfree ];
+   group_list->nextfree++;
+   stats__segs_allocd++;
+   return teg;
+}
+
+static Seg* get_Seg_for_malloc ( void )
+{
+   Seg* seg;
+   if (nFreeSegs < N_FREED_SEGS) {
+      seg = new_Seg();
+      seg->nextfree = (Seg*)1;
+      return seg;
+   }
+   /* else recycle the oldest Seg in the free list */
+   tl_assert(freesegs_youngest);
+   tl_assert(freesegs_oldest);
+   tl_assert(freesegs_youngest != freesegs_oldest);
+   seg = freesegs_oldest;
+   freesegs_oldest = seg->nextfree;
+   nFreeSegs--;
+   seg->nextfree = (Seg*)1;
+   stats__segs_recycled++;
+   return seg;
+}
+
+static void set_Seg_freed ( Seg* seg )
+{
+   tl_assert(seg);
+   tl_assert(seg->nextfree == (Seg*)1);
+   if (nFreeSegs == 0) {
+      tl_assert(freesegs_oldest == NULL);
+      tl_assert(freesegs_youngest == NULL);
+      seg->nextfree = NULL;
+      freesegs_youngest = seg;
+      freesegs_oldest = seg;
+      nFreeSegs++;
+   } else {
+      tl_assert(freesegs_youngest);
+      tl_assert(freesegs_oldest);
+      if (nFreeSegs == 1) {
+         tl_assert(freesegs_youngest == freesegs_oldest);
+      } else {
+         tl_assert(freesegs_youngest != freesegs_oldest);
+      }
+      tl_assert(freesegs_youngest->nextfree == NULL);
+      tl_assert(seg != freesegs_youngest && seg != freesegs_oldest);
+      seg->nextfree = NULL;
+      freesegs_youngest->nextfree = seg;
+      freesegs_youngest = seg;
+      nFreeSegs++;
+   }
+}
+
+static WordFM* addr_to_seg_map = NULL;
+static void addr_to_seg_map_ENSURE_INIT ( void )
+{
+   if (UNLIKELY(addr_to_seg_map == NULL)) {
+      addr_to_seg_map = VG_(newFM)( VG_(malloc), "pc.h_main.attmEI.1",
+                                    VG_(free), NULL );
+   }
+}
+
+static Seg* find_Seg_by_addr ( Addr ga )
+{
+   UWord keyW, valW;
+   addr_to_seg_map_ENSURE_INIT();
+   if (VG_(lookupFM)( addr_to_seg_map, &keyW, &valW, (UWord)ga )) {
+      tl_assert(keyW == ga);
+      return (Seg*)valW;
+   } else {
+      return NULL;
+   }
+}
+
+static void bind_addr_to_Seg ( Addr ga, Seg* seg )
+{
+   Bool b;
+   addr_to_seg_map_ENSURE_INIT();
+   b = VG_(addToFM)( addr_to_seg_map, (UWord)ga, (UWord)seg );
+   tl_assert(!b); /* else ga is already bound */
+}
+
+static void unbind_addr_from_Seg ( Addr ga )
+{
+   Bool b;
+   UWord keyW, valW;
+   addr_to_seg_map_ENSURE_INIT();
+   b = VG_(delFromFM)( addr_to_seg_map, &keyW, &valW, (UWord)ga );
+   tl_assert(b); /* else ga was not already bound */
+   tl_assert(keyW == ga);
+   tl_assert(valW != 0);
+}
+
+// Determines if 'a' is before, within, or after seg's range.  Sets 'cmp' to
+// -1/0/1 accordingly.  Sets 'n' to the number of bytes before/within/after.
+void Seg__cmp(Seg* seg, Addr a, Int* cmp, UWord* n)
+{
+   if (a < seg->addr) {
+      *cmp = -1;
+      *n   = seg->addr - a;
+   } else if (a < seg->addr + seg->szB && seg->szB > 0) {
+      *cmp = 0;
+      *n = a - seg->addr;
+   } else {
+      *cmp = 1;
+      *n = a - (seg->addr + seg->szB);
+   }
+}
+
+Bool Seg__is_freed(Seg* seg)
+{
+   if (!is_known_segment(seg))
+      return False;
+   else
+      return seg->nextfree != (Seg*)1;
+}
+
+ExeContext* Seg__where(Seg* seg)
+{
+   tl_assert(is_known_segment(seg));
+   return seg->ec;
+}
+
+SizeT Seg__size(Seg* seg)
+{
+   tl_assert(is_known_segment(seg));
+   return seg->szB;
+}
+
+Addr Seg__addr(Seg* seg)
+{
+   tl_assert(is_known_segment(seg));
+   return seg->addr;
+}
+
+
+//////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////
 
 // So that post_reg_write_clientcall knows the segment just allocated.
-static Seg last_seg_added = NULL;
+static Seg* last_seg_added = NULL;
 
 // Returns the added heap segment
-static Seg add_new_segment ( ThreadId tid, 
-                             Addr p, SizeT size, SegStatus status )
+static Seg* add_new_segment ( ThreadId tid, Addr p, SizeT size )
 {
-   ExeContext* where = VG_(record_ExeContext)( tid, 0/*first_ip_delta*/ );
-   Seg         seg   = Seg__construct(p, size, where, status);
+   Seg* seg = get_Seg_for_malloc();
+   tl_assert(seg != (Seg*)1); /* since we're using 1 as a special value */
+   seg->addr = p;
+   seg->szB  = size;
+   seg->ec   = VG_(record_ExeContext)( tid, 0/*first_ip_delta*/ );
+   tl_assert(seg->nextfree == (Seg*)1);
+
+   bind_addr_to_Seg(p, seg);
 
    last_seg_added = seg;
-
-   ISList__insertI( seglist, seg );
 
    return seg;
 }
@@ -279,9 +484,9 @@ static Seg add_new_segment ( ThreadId tid,
 static void copy_mem( Addr from, Addr to, SizeT len );
 static void set_mem_unknown ( Addr a, SizeT len );
 
-static __inline__ VG_REGPARM(1) Seg nonptr_or_unknown(UWord x); /*fwds*/
+static inline VG_REGPARM(1) Seg* nonptr_or_unknown(UWord x); /*fwds*/
 
-static __inline__
+static
 void* alloc_and_new_mem_heap ( ThreadId tid,
                                SizeT size, SizeT alignment, Bool is_zeroed )
 {
@@ -293,68 +498,38 @@ void* alloc_and_new_mem_heap ( ThreadId tid,
    if (is_zeroed) VG_(memset)((void*)p, 0, size);
 
    set_mem_unknown( p, size );
-   add_new_segment( tid, p, size, SegHeap );
+   add_new_segment( tid, p, size );
 
+   stats__client_mallocs++;
    return (void*)p;
 }
 
-static void die_and_free_mem_heap ( ThreadId tid, Seg seg )
+static void die_and_free_mem_heap ( ThreadId tid, Seg* seg )
 {
-   // Empty and free the actual block, if on the heap (not necessary for
-   // mmap segments).
-   set_mem_unknown( Seg__a(seg), Seg__size(seg) );
-   VG_(cli_free)( (void*)Seg__a(seg) );
+   // Empty and free the actual block
+   tl_assert(seg->nextfree == (Seg*)1);
+   set_mem_unknown( seg->addr, seg->szB );
 
-   if (0 == Seg__size(seg)) {
-      // XXX: can recycle Seg now
-   }
+   VG_(cli_free)( (void*)seg->addr );
 
    // Remember where freed
-   Seg__heap_free( seg, 
-                   VG_(record_ExeContext)( tid, 0/*first_ip_delta*/ ) );
+   seg->ec = VG_(record_ExeContext)( tid, 0/*first_ip_delta*/ );
+
+   set_Seg_freed(seg);
+   unbind_addr_from_Seg( seg->addr );
+
+   stats__client_frees++;
 }
 
-//zz #if 0
-//zz static void die_and_free_mem_munmap ( Seg seg/*, Seg* prev_chunks_next_ptr*/ )
-//zz {
-//zz    // Remember where freed
-//zz    seg->where = VG_(get_ExeContext)( VG_(get_current_or_recent_tid)() );
-//zz    sk_assert(SegMmap == seg->status);
-//zz    seg->status = SegMmapFree;
-//zz }
-//zz #endif
-
-static __inline__ void handle_free_heap( ThreadId tid, void* p )
+static void handle_free_heap( ThreadId tid, void* p )
 {
-   Seg seg;
-   if ( ! ISList__findI0( seglist, (Addr)p, &seg ) )
+   Seg* seg = find_Seg_by_addr( (Addr)p );
+   if (!seg) {
+      /* freeing a block that wasn't malloc'd.  Ignore. */
       return;
-
+   }
    die_and_free_mem_heap( tid, seg );
 }
-
-//zz #if 0
-//zz static void handle_free_munmap( void* p, UInt len )
-//zz {
-//zz    Seg seg;
-//zz    if ( ! ISList__findI( seglist, (Addr)p, &seg ) ) {
-//zz       VG_(skin_panic)("handle_free_munmap:  didn't find segment;\n"
-//zz                       "should check all the mmap segment ranges, this\n"
-//zz                       "one should be in them.  (Well, it's possible that\n"
-//zz                       "it's not, but I'm not handling that case yet.)\n");
-//zz    }
-//zz    if (len != VG_ROUNDUP(Seg__size(seg), VKI_BYTES_PER_PAGE)) {
-//zz //      if (seg->is_truncated_map && seg->size < len) {
-//zz //         // ok
-//zz //      } else {
-//zz          VG_(printf)("len = %u, seg->size = %u\n", len, Seg__size(seg));
-//zz          VG_(skin_panic)("handle_free_munmap:  length didn't match\n");
-//zz //      }
-//zz    }
-//zz 
-//zz    die_and_free_mem_munmap( seg/*, prev_chunks_next_ptr*/ );
-//zz }
-//zz #endif
 
 
 /*------------------------------------------------------------*/
@@ -399,7 +574,7 @@ static void pp_curr_ExeContext(void)
 
 typedef
    struct {
-      Seg vseg[SEC_MAP_WORDS];
+      Seg* vseg[SEC_MAP_WORDS];
    }
    SecMap;
 
@@ -585,7 +760,7 @@ static PriMapEnt* find_or_alloc_in_primap ( Addr a )
 /////////////////////////////////////////////////
 
 // Nb: 'a' must be naturally word aligned for the host.
-static __inline__ Seg get_mem_vseg ( Addr a )
+static inline Seg* get_mem_vseg ( Addr a )
 {
    SecMap* sm     = find_or_alloc_in_primap(a)->sm;
    UWord   sm_off = (a & SHMEM_SECMAP_MASK) >> SHMEM_SECMAP_SHIFT;
@@ -594,7 +769,7 @@ static __inline__ Seg get_mem_vseg ( Addr a )
 }
 
 // Nb: 'a' must be naturally word aligned for the host.
-static __inline__ void set_mem_vseg ( Addr a, Seg vseg )
+static inline void set_mem_vseg ( Addr a, Seg* vseg )
 {
    SecMap* sm     = find_or_alloc_in_primap(a)->sm;
    UWord   sm_off = (a & SHMEM_SECMAP_MASK) >> SHMEM_SECMAP_SHIFT;
@@ -603,11 +778,23 @@ static __inline__ void set_mem_vseg ( Addr a, Seg vseg )
 }
 
 // Returns UNKNOWN if no matches.  Never returns BOTTOM or NONPTR.
-static Seg get_mem_aseg( Addr a )
+// Also, only returns in-use segments, not freed ones.
+static Seg* get_Seg_containing_addr_SLOW( Addr a )
 {
-   Seg aseg;
-   Bool is_found = ISList__findI( seglist, a, &aseg );
-   return ( is_found ? aseg : UNKNOWN );
+   SegGroup* group;
+   UWord i;
+   stats__slow_searches++;
+   for (group = group_list; group; group = group->admin) {
+      for (i = 0; i < group->nextfree; i++) {
+         stats__slow_totcmps++;
+         if (group->segs[i].nextfree != (Seg*)1)
+            continue;
+         if (group->segs[i].addr <= a
+             && a < group->segs[i].addr + group->segs[i].szB)
+            return &group->segs[i];
+      }
+   }
+   return UNKNOWN;
 }
 
 
@@ -675,15 +862,16 @@ void h_replace___builtin_vec_delete ( ThreadId tid, void* p )
 
 void* h_replace_realloc ( ThreadId tid, void* p_old, SizeT new_size )
 {
-   Seg seg;
+   Seg* seg;
 
    /* First try and find the block. */
-   if ( ! ISList__findI0( seglist, (Addr)p_old, &seg ) )
+   seg = find_Seg_by_addr( (Addr)p_old );
+   if (!seg)
       return NULL;
 
-   tl_assert(Seg__a(seg) == (Addr)p_old);
+   tl_assert(seg->addr == (Addr)p_old);
 
-   if (new_size <= Seg__size(seg)) {
+   if (new_size <= seg->szB) {
       /* new size is smaller: allocate, copy from old to new */
       Addr p_new = (Addr)VG_(cli_malloc)(VG_(clo_alignment), new_size);
       VG_(memcpy)((void*)p_new, p_old, new_size);
@@ -697,25 +885,27 @@ void* h_replace_realloc ( ThreadId tid, void* p_old, SizeT new_size )
       /* This has to be after die_and_free_mem_heap, otherwise the
          former succeeds in shorting out the new block, not the
          old, in the case when both are on the same list.  */
-      add_new_segment ( tid, p_new, new_size, SegHeap );
+      add_new_segment ( tid, p_new, new_size );
 
       return (void*)p_new;
    } else {
       /* new size is bigger: allocate, copy from old to new */
       Addr p_new = (Addr)VG_(cli_malloc)(VG_(clo_alignment), new_size);
-      VG_(memcpy)((void*)p_new, p_old, Seg__size(seg));
+      VG_(memcpy)((void*)p_new, p_old, seg->szB);
 
       /* Notification: first half kept and copied, second half new */
-      copy_mem       ( (Addr)p_old, p_new, Seg__size(seg) );
-      set_mem_unknown( p_new+Seg__size(seg), new_size-Seg__size(seg) );
+      copy_mem       ( (Addr)p_old, p_new, seg->szB );
+      set_mem_unknown( p_new + seg->szB, new_size - seg->szB );
 
       /* Free old memory */
       die_and_free_mem_heap( tid, seg );
 
       /* This has to be after die_and_free_mem_heap, otherwise the
-         former succeeds in shorting out the new block, not the
-         old, in the case when both are on the same list.  */
-      add_new_segment ( tid, p_new, new_size, SegHeap );
+         former succeeds in shorting out the new block, not the old,
+         in the case when both are on the same list.  NB jrs
+         2008-Sept-11: not sure if this comment is valid/correct any
+         more -- I suspect not. */
+      add_new_segment ( tid, p_new, new_size );
 
       return (void*)p_new;
    }
@@ -726,8 +916,8 @@ void* h_replace_realloc ( ThreadId tid, void* p_old, SizeT new_size )
 /*--- Memory events                                        ---*/
 /*------------------------------------------------------------*/
 
-static __inline__
-void set_mem( Addr a, SizeT len, Seg seg )
+static inline
+void set_mem ( Addr a, SizeT len, Seg* seg )
 {
    Addr end;
 
@@ -759,7 +949,7 @@ void h_new_mem_startup( Addr a, SizeT len,
 {
    if (0) VG_(printf)("new_mem_startup(%#lx,%lu)\n", a, len);
    set_mem_unknown( a, len );
-   add_new_segment( VG_(get_running_tid)(), a, len, SegMmap );
+   //add_new_segment( VG_(get_running_tid)(), a, len, SegMmap );
 }
 
 //zz // XXX: Currently not doing anything with brk() -- new segments, or not?
@@ -831,7 +1021,7 @@ void h_new_mem_mmap( Addr a, SizeT len,
 //zz       }
 //zz    }
    set_mem_unknown( a, len );
-   add_new_segment( VG_(get_running_tid)(), a, len, SegMmap );
+   //add_new_segment( VG_(get_running_tid)(), a, len, SegMmap );
 //zz #endif
 }
 
@@ -875,7 +1065,7 @@ void h_die_mem_munmap( Addr a, SizeT len )
 static void pre_mem_access2 ( CorePart part, ThreadId tid, Char* str,
                               Addr s/*tart*/, Addr e/*nd*/ )
 {
-   Seg  seglo, seghi;
+   Seg  *seglo, *seghi;
    Bool s_in_seglo, s_in_seghi, e_in_seglo, e_in_seghi;
 
    // Don't check code being translated -- very slow, and not much point
@@ -891,41 +1081,40 @@ static void pre_mem_access2 ( CorePart part, ThreadId tid, Char* str,
    }
 
    // Check first and last bytes match
-   seglo = get_mem_aseg( s );
-   seghi = get_mem_aseg( e );
+   seglo = get_Seg_containing_addr_SLOW( s );
+   seghi = get_Seg_containing_addr_SLOW( e );
    tl_assert( BOTTOM != seglo && NONPTR != seglo );
    tl_assert( BOTTOM != seghi && NONPTR != seghi );
 
    /* so seglo and seghi are either UNKNOWN or P(..) */
    s_in_seglo
       = is_known_segment(seglo)
-        && Seg__a(seglo) <= s && s < Seg__a(seglo)+Seg__size(seglo);
+        && seglo->addr <= s && s < seglo->addr + seglo->szB;
    s_in_seghi
       = is_known_segment(seghi)
-        && Seg__a(seghi) <= s && s < Seg__a(seghi)+Seg__size(seghi);
+        && seghi->addr <= s && s < seghi->addr + seghi->szB;
    e_in_seglo
       = is_known_segment(seglo)
-        && Seg__a(seglo) <= e && e < Seg__a(seglo)+Seg__size(seglo);
+        && seglo->addr <= e && e < seglo->addr + seglo->szB;
    e_in_seghi
       = is_known_segment(seghi)
-        && Seg__a(seghi) <= e && e < Seg__a(seghi)+Seg__size(seghi);
+        && seghi->addr <= e && e < seghi->addr + seghi->szB;
 
-   if (is_known_segment(seglo) && is_known_segment(seghi)) {
-      /* First identify the case where start and end are in different
-         segments but s and e don't both fall in either. */
-      if ( ! ((s_in_seglo && e_in_seglo) || (s_in_seghi && e_in_seghi)) ) {
-         h_record_sysparam_error(tid, part, str, s, e, seglo, seghi);
-      }
-      /* Now we know that s and e are both in the same known segment.
-         Identify the case where that segment is freed. */
-      else if (s_in_seglo && Seg__is_freed(seglo)) {
-         tl_assert(e_in_seglo);
-         h_record_sysparam_error(tid, part, str, s, e, seglo, UNKNOWN);
-      }
-      else if (s_in_seghi && Seg__is_freed(seghi)) {
-         tl_assert(e_in_seghi);
-         h_record_sysparam_error(tid, part, str, s, e, seghi, UNKNOWN);
-      }
+   /* record an error if start and end are in different, but known
+      segments */
+   if (is_known_segment(seglo) && is_known_segment(seghi)
+       && seglo != seghi) {
+      h_record_sysparam_error(tid, part, str, s, e, seglo, seghi);
+   }
+   else
+   /* record an error if start is in a known segment but end isn't */
+   if (is_known_segment(seglo) && !is_known_segment(seghi)) {
+      h_record_sysparam_error(tid, part, str, s, e, seglo, UNKNOWN);
+   }
+   else
+   /* record an error if end is in a known segment but start isn't */
+   if (!is_known_segment(seglo) && is_known_segment(seghi)) {
+      h_record_sysparam_error(tid, part, str, s, e, UNKNOWN, seghi);
    }
 }
 
@@ -1766,7 +1955,7 @@ void h_post_reg_write_clientcall(ThreadId tid, OffT guest_state_offset,
                           guest_state_offset, size, (UWord)NONPTR );
       } else {
          // alloc didn't fail.  Check we have the correct segment.
-         tl_assert(p == Seg__a(last_seg_added));
+         tl_assert(p == last_seg_added->addr);
          put_guest_intreg(tid, 1/*first-shadow*/,
                           guest_state_offset, size, (UWord)last_seg_added );
       }
@@ -2137,7 +2326,7 @@ static void checkSeg ( Seg vseg ) {
 // valid address used by the program, and then return False for anything
 // below that (using a suitable safety margin).  Also, nothing above
 // 0xc0000000 is valid [unless you've changed that in your kernel]
-static __inline__ Bool looks_like_a_pointer(Addr a)
+static inline Bool looks_like_a_pointer(Addr a)
 {
 #  if defined(VGA_x86) || defined(VGA_ppc32)
    tl_assert(sizeof(UWord) == 4);
@@ -2150,10 +2339,10 @@ static __inline__ Bool looks_like_a_pointer(Addr a)
 #  endif
 }
 
-static __inline__ VG_REGPARM(1)
-Seg nonptr_or_unknown(UWord x)
+static inline VG_REGPARM(1)
+Seg* nonptr_or_unknown(UWord x)
 {
-   Seg res = looks_like_a_pointer(x) ? UNKNOWN : NONPTR;
+   Seg* res = looks_like_a_pointer(x) ? UNKNOWN : NONPTR;
    if (0) VG_(printf)("nonptr_or_unknown %s %#lx\n", 
                       res==UNKNOWN ? "UUU" : "nnn", x);
    return res;
@@ -2218,11 +2407,13 @@ static void show_lossage ( void )
 }
 
 // This function is called *a lot*; inlining it sped up Konqueror by 20%.
-static __inline__
-void check_load_or_store(Bool is_write, Addr m, UInt sz, Seg mptr_vseg)
+static inline
+void check_load_or_store(Bool is_write, Addr m, UWord sz, Seg* mptr_vseg)
 {
    if (h_clo_lossage_check) {
-      Seg seg;
+     tl_assert(0);
+#if 0
+      Seg* seg;
       stats__tot_mem_refs++;
       if (ISList__findI0( seglist, (Addr)m, &seg )) {
          /* m falls inside 'seg' (that is, we are making a memory
@@ -2258,7 +2449,7 @@ void check_load_or_store(Bool is_write, Addr m, UInt sz, Seg mptr_vseg)
             }
          }
       }
-
+#endif
    } /* clo_lossage_check */
 
 #  if SC_SEGS
@@ -2279,13 +2470,14 @@ void check_load_or_store(Bool is_write, Addr m, UInt sz, Seg mptr_vseg)
       // if none match, warn about 1st seg
       // else,          check matching one isn't freed
       Bool is_ok = False;
-      Seg  curr  = mptr_vseg;
+      Seg* curr  = mptr_vseg;
       Addr mhi;
 
       // Accesses partly outside range are an error, unless it's an aligned
       // word-sized read, and --partial-loads-ok=yes.  This is to cope with
       // gcc's/glibc's habits of doing word-sized accesses that read past
       // the ends of arrays/strings.
+      // JRS 2008-sept-11: couldn't this be moved off the critical path?
       if (!is_write && sz == sizeof(UWord)
           && h_clo_partial_loads_ok && SHMEM_IS_WORD_ALIGNED(m)) {
          mhi = m;
@@ -2304,13 +2496,13 @@ void check_load_or_store(Bool is_write, Addr m, UInt sz, Seg mptr_vseg)
       #else
       // This version doesn't do the link-segment chasing
       if (0) VG_(printf)("calling seg_ci %p %#lx %#lx\n", curr,m,mhi);
-      is_ok = Seg__containsI(curr, m, mhi);
+      is_ok = curr->addr <= m && mhi < curr->addr + curr->szB;
       #endif
 
       // If it's an overrun/underrun of a freed block, don't give both
       // warnings, since the first one mentions that the block has been
       // freed.
-      if ( ! is_ok || Seg__is_freed(curr) )
+      if ( ! is_ok || curr->nextfree != (Seg*)1/*curr is freed*/ )
          h_record_heap_error( m, sz, mptr_vseg, is_write );
    }
 }
@@ -2337,7 +2529,7 @@ void check_load_or_store(Bool is_write, Addr m, UInt sz, Seg mptr_vseg)
 
 // This handles 128 bit loads on both 32 bit and 64 bit targets.
 static VG_REGPARM(2)
-void check_load16(Addr m, Seg mptr_vseg)
+void check_load16(Addr m, Seg* mptr_vseg)
 {
 #  if SC_SEGS
    checkSeg(mptr_vseg);
@@ -2348,7 +2540,7 @@ void check_load16(Addr m, Seg mptr_vseg)
 // This handles 64 bit FP-or-otherwise-nonpointer loads on both
 // 32 bit and 64 bit targets.
 static VG_REGPARM(2)
-void check_load8(Addr m, Seg mptr_vseg)
+void check_load8(Addr m, Seg* mptr_vseg)
 {
 #  if SC_SEGS
    checkSeg(mptr_vseg);
@@ -2360,9 +2552,9 @@ void check_load8(Addr m, Seg mptr_vseg)
 // not be called on 32 bit targets.
 // return m.vseg
 static VG_REGPARM(2)
-Seg check_load8_P(Addr m, Seg mptr_vseg)
+Seg* check_load8_P(Addr m, Seg* mptr_vseg)
 {
-   Seg vseg;
+   Seg* vseg;
    tl_assert(sizeof(UWord) == 8); /* DO NOT REMOVE */
 #  if SC_SEGS
    checkSeg(mptr_vseg);
@@ -2380,9 +2572,9 @@ Seg check_load8_P(Addr m, Seg mptr_vseg)
 // not be called on 64 bit targets.
 // return m.vseg
 static VG_REGPARM(2)
-Seg check_load4_P(Addr m, Seg mptr_vseg)
+Seg* check_load4_P(Addr m, Seg* mptr_vseg)
 {
-   Seg vseg;
+   Seg* vseg;
    tl_assert(sizeof(UWord) == 4); /* DO NOT REMOVE */
 #  if SC_SEGS
    checkSeg(mptr_vseg);
@@ -2398,7 +2590,7 @@ Seg check_load4_P(Addr m, Seg mptr_vseg)
 
 // Used for both 32 bit and 64 bit targets.
 static VG_REGPARM(2)
-void check_load4(Addr m, Seg mptr_vseg)
+void check_load4(Addr m, Seg* mptr_vseg)
 {
 #  if SC_SEGS
    checkSeg(mptr_vseg);
@@ -2408,7 +2600,7 @@ void check_load4(Addr m, Seg mptr_vseg)
 
 // Used for both 32 bit and 64 bit targets.
 static VG_REGPARM(2)
-void check_load2(Addr m, Seg mptr_vseg)
+void check_load2(Addr m, Seg* mptr_vseg)
 {
 #  if SC_SEGS
    checkSeg(mptr_vseg);
@@ -2418,7 +2610,7 @@ void check_load2(Addr m, Seg mptr_vseg)
 
 // Used for both 32 bit and 64 bit targets.
 static VG_REGPARM(2)
-void check_load1(Addr m, Seg mptr_vseg)
+void check_load1(Addr m, Seg* mptr_vseg)
 {
 #  if SC_SEGS
    checkSeg(mptr_vseg);
@@ -2467,7 +2659,7 @@ void nonptr_or_unknown_range ( Addr a, SizeT len )
 // store data is passed in 2 pieces, the most significant
 // bits first.
 static VG_REGPARM(3)
-void check_store16_ms8B_ls8B(Addr m, Seg mptr_vseg,
+void check_store16_ms8B_ls8B(Addr m, Seg* mptr_vseg,
                              UWord ms8B, UWord ls8B)
 {
    tl_assert(sizeof(UWord) == 8); /* DO NOT REMOVE */
@@ -2492,7 +2684,7 @@ void check_store16_ms8B_ls8B(Addr m, Seg mptr_vseg,
 // store data is passed in 2 pieces, the most significant
 // bits first.
 static VG_REGPARM(3)
-void check_store16_ms4B_4B_4B_ls4B(Addr m, Seg mptr_vseg,
+void check_store16_ms4B_4B_4B_ls4B(Addr m, Seg* mptr_vseg,
                                    UWord ms4B, UWord w2,
                                    UWord w1,   UWord ls4B)
 {
@@ -2522,7 +2714,7 @@ void check_store16_ms4B_4B_4B_ls4B(Addr m, Seg mptr_vseg,
 // store data is passed in 2 pieces, the most significant
 // bits first.
 static VG_REGPARM(3)
-void check_store8_ms4B_ls4B(Addr m, Seg mptr_vseg,
+void check_store8_ms4B_ls4B(Addr m, Seg* mptr_vseg,
                             UWord ms4B, UWord ls4B)
 {
    tl_assert(sizeof(UWord) == 4); /* DO NOT REMOVE */
@@ -2546,7 +2738,7 @@ void check_store8_ms4B_ls4B(Addr m, Seg mptr_vseg,
 // This handles 64 bit non pointer stores on 64 bit targets.
 // It must not be called on 32 bit targets.
 static VG_REGPARM(3)
-void check_store8_all8B(Addr m, Seg mptr_vseg, UWord all8B)
+void check_store8_all8B(Addr m, Seg* mptr_vseg, UWord all8B)
 {
    tl_assert(sizeof(UWord) == 8); /* DO NOT REMOVE */
 #  if SC_SEGS
@@ -2561,7 +2753,7 @@ void check_store8_all8B(Addr m, Seg mptr_vseg, UWord all8B)
 // This handles 64 bit stores on 64 bit targets.  It must
 // not be called on 32 bit targets.
 static VG_REGPARM(3)
-void check_store8_P(Addr m, Seg mptr_vseg, UWord t, Seg t_vseg)
+void check_store8_P(Addr m, Seg* mptr_vseg, UWord t, Seg* t_vseg)
 {
    tl_assert(sizeof(UWord) == 8); /* DO NOT REMOVE */
 #  if SC_SEGS
@@ -2582,7 +2774,7 @@ void check_store8_P(Addr m, Seg mptr_vseg, UWord t, Seg t_vseg)
 // This handles 32 bit stores on 32 bit targets.  It must
 // not be called on 64 bit targets.
 static VG_REGPARM(3)
-void check_store4_P(Addr m, Seg mptr_vseg, UWord t, Seg t_vseg)
+void check_store4_P(Addr m, Seg* mptr_vseg, UWord t, Seg* t_vseg)
 {
    tl_assert(sizeof(UWord) == 4); /* DO NOT REMOVE */
 #  if SC_SEGS
@@ -2602,7 +2794,7 @@ void check_store4_P(Addr m, Seg mptr_vseg, UWord t, Seg t_vseg)
 
 // Used for both 32 bit and 64 bit targets.
 static VG_REGPARM(3)
-void check_store4(Addr m, Seg mptr_vseg, UWord t)
+void check_store4(Addr m, Seg* mptr_vseg, UWord t)
 {
 #  if SC_SEGS
    checkSeg(mptr_vseg);
@@ -2615,7 +2807,7 @@ void check_store4(Addr m, Seg mptr_vseg, UWord t)
 
 // Used for both 32 bit and 64 bit targets.
 static VG_REGPARM(3)
-void check_store2(Addr m, Seg mptr_vseg, UWord t)
+void check_store2(Addr m, Seg* mptr_vseg, UWord t)
 {
 #  if SC_SEGS
    checkSeg(mptr_vseg);
@@ -2628,7 +2820,7 @@ void check_store2(Addr m, Seg mptr_vseg, UWord t)
 
 // Used for both 32 bit and 64 bit targets.
 static VG_REGPARM(3)
-void check_store1(Addr m, Seg mptr_vseg, UWord t)
+void check_store1(Addr m, Seg* mptr_vseg, UWord t)
 {
 #  if SC_SEGS
    checkSeg(mptr_vseg);
@@ -2667,9 +2859,9 @@ void check_store1(Addr m, Seg mptr_vseg, UWord t)
 //  ? | ?  ?  ?
 //  p | p  ?  e   (all results become n if they look like a non-pointer)
 // -------------
-static Seg do_addW_result(Seg seg1, Seg seg2, UWord result, HChar* opname)
+static Seg* do_addW_result(Seg* seg1, Seg* seg2, UWord result, HChar* opname)
 {
-   Seg out;
+   Seg* out;
 #  if SC_SEGS
    checkSeg(seg1);
    checkSeg(seg2);
@@ -2683,9 +2875,9 @@ static Seg do_addW_result(Seg seg1, Seg seg2, UWord result, HChar* opname)
    return ( looks_like_a_pointer(result) ? out : NONPTR );
 }
 
-static VG_REGPARM(3) Seg do_addW(Seg seg1, Seg seg2, UWord result)
+static VG_REGPARM(3) Seg* do_addW(Seg* seg1, Seg* seg2, UWord result)
 {
-   Seg out;
+   Seg* out;
 #  if SC_SEGS
    checkSeg(seg1);
    checkSeg(seg2);
@@ -2704,9 +2896,9 @@ static VG_REGPARM(3) Seg do_addW(Seg seg1, Seg seg2, UWord result)
 //  ? | ?  ?  n/B        be used, so give 'n'
 //  p | p  p? n*/B   (*) and possibly link the segments
 // -------------
-static VG_REGPARM(3) Seg do_subW(Seg seg1, Seg seg2, UWord result)
+static VG_REGPARM(3) Seg* do_subW(Seg* seg1, Seg* seg2, UWord result)
 {
-   Seg out;
+   Seg* out;
 #  if SC_SEGS
    checkSeg(seg1);
    checkSeg(seg2);
@@ -2744,10 +2936,10 @@ static VG_REGPARM(3) Seg do_subW(Seg seg1, Seg seg2, UWord result)
      if (ptr1 & ptr2) { A } else { B }
    not sure what that means
 */
-static VG_REGPARM(3) Seg do_andW(Seg seg1, Seg seg2, 
-                                 UWord result, UWord args_diff)
+static VG_REGPARM(3) Seg* do_andW(Seg* seg1, Seg* seg2, 
+                                  UWord result, UWord args_diff)
 {
-   Seg out;
+   Seg* out;
    if (0 == args_diff) {
       // p1==p2
       out = seg1;
@@ -2781,9 +2973,9 @@ static VG_REGPARM(3) Seg do_andW(Seg seg1, Seg seg2,
    together and throws away the result, the purpose of which is merely
    to sets %eflags.Z/%rflags.Z.  So we have to allow it.
 */
-static VG_REGPARM(3) Seg do_orW(Seg seg1, Seg seg2, UWord result)
+static VG_REGPARM(3) Seg* do_orW(Seg* seg1, Seg* seg2, UWord result)
 {
-   Seg out;
+   Seg* out;
    BINOP(
       return BOTTOM,
       out = NONPTR,  out = UNKNOWN, out = seg2,
@@ -2799,7 +2991,7 @@ static VG_REGPARM(3) Seg do_orW(Seg seg1, Seg seg2, UWord result)
 // -------------
 //    | n  n  n
 // -------------
-static VG_REGPARM(2) Seg do_notW(Seg seg1, UWord result)
+static VG_REGPARM(2) Seg* do_notW(Seg* seg1, UWord result)
 {
 #  if SC_SEGS
    checkSeg(seg1);
@@ -2811,7 +3003,7 @@ static VG_REGPARM(2) Seg do_notW(Seg seg1, UWord result)
 // Pointers are rarely multiplied, but sometimes legitimately, eg. as hash
 // function inputs.  But two pointers args --> error.
 // Pretend it always returns a nonptr.  Maybe improve later.
-static VG_REGPARM(2) Seg do_mulW(Seg seg1, Seg seg2)
+static VG_REGPARM(2) Seg* do_mulW(Seg* seg1, Seg* seg2)
 {
 #  if SC_SEGS
    checkSeg(seg1);
@@ -4285,8 +4477,6 @@ void h_pre_clo_init ( void )
 {
    // Other initialisation
    init_shadow_memory();
-   seglist  = ISList__construct();
-
    init_lossage();
 }
 
@@ -4300,6 +4490,19 @@ void h_post_clo_init ( void )
 
 void h_fini ( Int exitcode )
 {
+   if (VG_(clo_verbosity) >= 2) {
+      VG_(message)(Vg_DebugMsg,
+                   "  h_:  %'10llu client allocs, %'10llu client frees", 
+                   stats__client_mallocs, stats__client_frees);
+      VG_(message)(Vg_DebugMsg,
+                   "  h_:  %'10llu Segs allocd,   %'10llu Segs recycled", 
+                   stats__segs_allocd, stats__segs_recycled);
+      VG_(message)(Vg_DebugMsg,
+                   "  h_:  %'10llu slow searches, %'10llu total cmps",
+                   stats__slow_searches, stats__slow_totcmps);
+
+   }
+
    if (h_clo_lossage_check) {
       VG_(message)(Vg_UserMsg, "");
       VG_(message)(Vg_UserMsg, "%12lld total memory references",

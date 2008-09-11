@@ -1,6 +1,6 @@
 {
    first-in-supp.supp
-   exp-ptrcheck:LoadStore
+   exp-ptrcheck:Heap
    fun:main
 }
 {
