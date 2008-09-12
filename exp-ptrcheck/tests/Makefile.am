@@ -26,11 +26,13 @@ EXTRA_DIST = $(noinst_SCRIPTS) \
 	and.vgtest-disabled and.stderr.exp \
 	arith.vgtest-disabled arith.stderr.exp \
 	arith_include1.c arith_include2.c \
+	bad_percentify.vgtest bad_percentify.c \
+	bad_percentify.stdout.exp bad_percentify.stderr.exp-glibc28-amd64 \
 	base.vgtest \
 	base.stderr.exp-glibc25-amd64 base.stderr.exp-glibc25-x86 \
 	ccc.vgtest \
 	ccc.stderr.exp-glibc25-x86 ccc.stderr.exp-glibc25-amd64 \
-	ccc.stderr.exp-glibc27-x86 \
+	ccc.stderr.exp-glibc27-x86 ccc.stderr.exp-glibc28-amd64 \
 	cmp.vgtest-disabled cmp.stderr.exp \
 	globalerr.vgtest globalerr.stdout.exp \
 	globalerr.stderr.exp-glibc28-amd64 \
@@ -71,7 +73,7 @@ EXTRA_DIST = $(noinst_SCRIPTS) \
 	zero.vgtest zero.stderr.exp
 
 check_PROGRAMS = \
-	add and arith base ccc cmp fp \
+	add and arith bad_percentify base ccc cmp fp \
 	globalerr \
 	hp_bounds hp_dangle idiv imul \
 	justify mm not neg or partial pth_create pth_specific realloc \
@@ -88,6 +90,7 @@ AM_CXXFLAGS = $(AM_CFLAGS)
 add_SOURCES		= add.c
 and_SOURCES		= and.c
 arith_SOURCES		= arith.c
+bad_percentify_SOURCES	= bad_percentify.c
 base_SOURCES		= base.c
 cmp_SOURCES		= cmp.c
 fp_SOURCES		= fp.c
