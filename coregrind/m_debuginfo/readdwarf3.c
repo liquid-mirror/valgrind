@@ -2907,6 +2907,7 @@ void dedup_types ( Bool td3,
       above (a commoning pass followed by a substitution pass), but
       checking it on every iteration is excessively expensive.  Note,
       this loop also computes 'm' for the stats printing below it. */
+   m = 0;
    n = VG_(sizeXA)( ents );
    for (i = 0; i < n; i++) {
       TyEnt *ent, *ind;
