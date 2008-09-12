@@ -267,7 +267,7 @@ static ULong stats__slow_totcmps   = 0;
 // NONPTR, UNKNOWN, BOTTOM defined in h_main.h since 
 // pc_common.c needs to see them, for error processing
 
-
+// we only start recycling segs when this many exist
 #define N_FREED_SEGS (1 * 1000 * 1000)
 
 struct _Seg {
@@ -279,6 +279,49 @@ struct _Seg {
       the most recently freed block. */
    struct _Seg* nextfree;
 };
+
+// Determines if 'a' is before, within, or after seg's range.  Sets 'cmp' to
+// -1/0/1 accordingly.  Sets 'n' to the number of bytes before/within/after.
+void Seg__cmp(Seg* seg, Addr a, Int* cmp, UWord* n)
+{
+   if (a < seg->addr) {
+      *cmp = -1;
+      *n   = seg->addr - a;
+   } else if (a < seg->addr + seg->szB && seg->szB > 0) {
+      *cmp = 0;
+      *n = a - seg->addr;
+   } else {
+      *cmp = 1;
+      *n = a - (seg->addr + seg->szB);
+   }
+}
+
+inline Bool Seg__is_freed(Seg* seg)
+{
+   if (!is_known_segment(seg))
+      return False;
+   else
+      return seg->nextfree != (Seg*)1;
+}
+
+ExeContext* Seg__where(Seg* seg)
+{
+   tl_assert(is_known_segment(seg));
+   return seg->ec;
+}
+
+SizeT Seg__size(Seg* seg)
+{
+   tl_assert(is_known_segment(seg));
+   return seg->szB;
+}
+
+Addr Seg__addr(Seg* seg)
+{
+   tl_assert(is_known_segment(seg));
+   return seg->addr;
+}
+
 
 #define N_SEGS_PER_GROUP 10000
 
@@ -348,7 +391,7 @@ static Seg* get_Seg_for_malloc ( void )
 static void set_Seg_freed ( Seg* seg )
 {
    tl_assert(seg);
-   tl_assert(seg->nextfree == (Seg*)1);
+   tl_assert(!Seg__is_freed(seg));
    if (nFreeSegs == 0) {
       tl_assert(freesegs_oldest == NULL);
       tl_assert(freesegs_youngest == NULL);
@@ -374,6 +417,7 @@ static void set_Seg_freed ( Seg* seg )
 }
 
 static WordFM* addr_to_seg_map = NULL;
+
 static void addr_to_seg_map_ENSURE_INIT ( void )
 {
    if (UNLIKELY(addr_to_seg_map == NULL)) {
@@ -413,48 +457,6 @@ static void unbind_addr_from_Seg ( Addr ga )
    tl_assert(valW != 0);
 }
 
-// Determines if 'a' is before, within, or after seg's range.  Sets 'cmp' to
-// -1/0/1 accordingly.  Sets 'n' to the number of bytes before/within/after.
-void Seg__cmp(Seg* seg, Addr a, Int* cmp, UWord* n)
-{
-   if (a < seg->addr) {
-      *cmp = -1;
-      *n   = seg->addr - a;
-   } else if (a < seg->addr + seg->szB && seg->szB > 0) {
-      *cmp = 0;
-      *n = a - seg->addr;
-   } else {
-      *cmp = 1;
-      *n = a - (seg->addr + seg->szB);
-   }
-}
-
-Bool Seg__is_freed(Seg* seg)
-{
-   if (!is_known_segment(seg))
-      return False;
-   else
-      return seg->nextfree != (Seg*)1;
-}
-
-ExeContext* Seg__where(Seg* seg)
-{
-   tl_assert(is_known_segment(seg));
-   return seg->ec;
-}
-
-SizeT Seg__size(Seg* seg)
-{
-   tl_assert(is_known_segment(seg));
-   return seg->szB;
-}
-
-Addr Seg__addr(Seg* seg)
-{
-   tl_assert(is_known_segment(seg));
-   return seg->addr;
-}
-
 
 //////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////
@@ -471,7 +473,7 @@ static Seg* add_new_segment ( ThreadId tid, Addr p, SizeT size )
    seg->addr = p;
    seg->szB  = size;
    seg->ec   = VG_(record_ExeContext)( tid, 0/*first_ip_delta*/ );
-   tl_assert(seg->nextfree == (Seg*)1);
+   tl_assert(!Seg__is_freed(seg));
 
    bind_addr_to_Seg(p, seg);
 
@@ -507,7 +509,7 @@ void* alloc_and_new_mem_heap ( ThreadId tid,
 static void die_and_free_mem_heap ( ThreadId tid, Seg* seg )
 {
    // Empty and free the actual block
-   tl_assert(seg->nextfree == (Seg*)1);
+   tl_assert(!Seg__is_freed(seg));
    set_mem_unknown( seg->addr, seg->szB );
 
    VG_(cli_free)( (void*)seg->addr );
@@ -787,7 +789,7 @@ static Seg* get_Seg_containing_addr_SLOW( Addr a )
    for (group = group_list; group; group = group->admin) {
       for (i = 0; i < group->nextfree; i++) {
          stats__slow_totcmps++;
-         if (group->segs[i].nextfree != (Seg*)1)
+         if (Seg__is_freed(&group->segs[i]))
             continue;
          if (group->segs[i].addr <= a
              && a < group->segs[i].addr + group->segs[i].szB)
@@ -2485,24 +2487,13 @@ void check_load_or_store(Bool is_write, Addr m, UWord sz, Seg* mptr_vseg)
          mhi = m+sz-1;
       }
 
-      #if 0
-      while (True) {
-         lo  = curr->data;
-         lim = lo + curr->size;
-         if (m >= lo && mlim <= lim) { is_ok = True; break; }
-         curr = curr->links;
-         if (curr == mptr_vseg)      {               break; }
-      }
-      #else
-      // This version doesn't do the link-segment chasing
       if (0) VG_(printf)("calling seg_ci %p %#lx %#lx\n", curr,m,mhi);
       is_ok = curr->addr <= m && mhi < curr->addr + curr->szB;
-      #endif
 
       // If it's an overrun/underrun of a freed block, don't give both
       // warnings, since the first one mentions that the block has been
       // freed.
-      if ( ! is_ok || curr->nextfree != (Seg*)1/*curr is freed*/ )
+      if ( ! is_ok || Seg__is_freed(curr) )
          h_record_heap_error( m, sz, mptr_vseg, is_write );
    }
 }
