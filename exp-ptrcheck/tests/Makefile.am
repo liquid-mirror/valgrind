@@ -31,6 +31,8 @@ EXTRA_DIST = $(noinst_SCRIPTS) \
 	ccc.vgtest \
 	ccc.stderr.exp-glibc25-x86 ccc.stderr.exp-glibc25-amd64 \
 	cmp.vgtest-disabled cmp.stderr.exp \
+	globalerr.vgtest globalerr.stdout.exp \
+	globalerr.stderr.exp-glibc28-amd64 \
 	fp.vgtest fp.stderr.exp \
 	hp_bounds.vgtest hp_bounds.stderr.exp \
 	hp_dangle.vgtest hp_dangle.stderr.exp \
@@ -52,6 +54,8 @@ EXTRA_DIST = $(noinst_SCRIPTS) \
 	realloc.vgtest \
 	realloc.stderr.exp-glibc25-x86 realloc.stderr.exp-glibc25-amd64 \
 	sh_script.vgtest-disabled sh_script.stderr.exp \
+	stackerr.vgtest stackerr.stdout.exp \
+	stackerr.stderr.exp-glibc28-amd64 \
 	strcpy.vgtest strcpy.stderr.exp \
 	strlen_bad.vgtest-disabled strlen_bad.stderr.exp \
 	strlen_good.vgtest-disabled strlen_good.stderr.exp \
@@ -66,8 +70,11 @@ EXTRA_DIST = $(noinst_SCRIPTS) \
 	zero.vgtest zero.stderr.exp
 
 check_PROGRAMS = \
-	add and arith base ccc cmp fp hp_bounds hp_dangle idiv imul \
+	add and arith base ccc cmp fp \
+	globalerr \
+	hp_bounds hp_dangle idiv imul \
 	justify mm not neg or partial pth_create pth_specific realloc \
+	stackerr \
 	strcpy strlen sub supp syscall tricky unaligned xor zero
 
 AM_CPPFLAGS = -I$(top_srcdir) -I$(top_srcdir)/include \
@@ -83,6 +90,7 @@ arith_SOURCES		= arith.c
 base_SOURCES		= base.c
 cmp_SOURCES		= cmp.c
 fp_SOURCES		= fp.c
+globalerr_SOURCE	= globalerr.c
 hp_bounds_SOURCES	= hp_bounds.c
 hp_dangle_SOURCES	= hp_dangle.c
 idiv_SOURCES		= idiv.c
@@ -98,6 +106,7 @@ pth_create_LDADD	= -lpthread
 pth_specific_SOURCES	= pth_specific.c
 pth_specific_LDADD	= -lpthread
 realloc_SOURCES		= realloc.c
+stackerr_SOURCES	= stackerr.c
 strcpy_SOURCES		= strcpy.c
 strlen_SOURCES		= strlen.c
 sub_SOURCES		= sub.c
