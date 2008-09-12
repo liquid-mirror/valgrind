@@ -20,14 +20,14 @@
 
 #include <stdio.h>
 
-__attribute__((noinline)) foo ( long* sa, int n )
+__attribute__((noinline)) void foo ( long* sa, int n )
 {
   int i;
   for (i = 0; i < n; i++)
     sa[i] = 0;
 }
 
-__attribute__((noinline)) bar ( long* sa, int n )
+__attribute__((noinline)) void bar ( long* sa, int n )
 {
    foo(sa, n);
 }

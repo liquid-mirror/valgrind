@@ -30,6 +30,7 @@ EXTRA_DIST = $(noinst_SCRIPTS) \
 	base.stderr.exp-glibc25-amd64 base.stderr.exp-glibc25-x86 \
 	ccc.vgtest \
 	ccc.stderr.exp-glibc25-x86 ccc.stderr.exp-glibc25-amd64 \
+	ccc.stderr.exp-glibc27-x86 \
 	cmp.vgtest-disabled cmp.stderr.exp \
 	globalerr.vgtest globalerr.stdout.exp \
 	globalerr.stderr.exp-glibc28-amd64 \
@@ -55,7 +56,7 @@ EXTRA_DIST = $(noinst_SCRIPTS) \
 	realloc.stderr.exp-glibc25-x86 realloc.stderr.exp-glibc25-amd64 \
 	sh_script.vgtest-disabled sh_script.stderr.exp \
 	stackerr.vgtest stackerr.stdout.exp \
-	stackerr.stderr.exp-glibc28-amd64 \
+	stackerr.stderr.exp-glibc28-amd64 stackerr.stderr.exp-glibc27-x86 \
 	strcpy.vgtest strcpy.stderr.exp \
 	strlen_bad.vgtest-disabled strlen_bad.stderr.exp \
 	strlen_good.vgtest-disabled strlen_good.stderr.exp \
