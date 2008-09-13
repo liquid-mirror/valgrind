@@ -1770,7 +1770,7 @@ Int valgrind_main ( Int argc, HChar **argv, HChar **envp )
      /* Find out how many AixCodeSegChange records we will need,
 	and acquire them. */
      changes_size = VG_(am_aix5_reread_procmap_howmany_directives)(); 
-     changes = VG_(malloc)(changes_size * sizeof(AixCodeSegChange));
+     changes = VG_(malloc)("main.vm.3", changes_size * sizeof(AixCodeSegChange));
      vg_assert(changes);
 
      /* Now re-read /proc/<pid>/map and acquire a change set */

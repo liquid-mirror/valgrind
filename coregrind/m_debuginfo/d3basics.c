@@ -832,6 +832,34 @@ void ML_(pp_GXResult) ( GXResult res )
 }
 
 
+void ML_(pp_GX) ( GExpr* gx ) {
+   Addr   aMin, aMax;
+   UChar  uc;
+   UShort nbytes;
+   UChar* p = &gx->payload[0];
+   uc = *p++;
+   VG_(printf)("GX(%s){", uc == 0 ? "final" : "Breqd" );
+   vg_assert(uc == 0 || uc == 1);
+   while (True) {
+      uc = *p++;
+      if (uc == 1)
+         break; /*isEnd*/
+      vg_assert(uc == 0);
+      aMin   = * (Addr*)p;  p += sizeof(Addr);
+      aMax   = * (Addr*)p;  p += sizeof(Addr);
+      nbytes = * (UShort*)p; p += sizeof(UShort);
+      VG_(printf)("[%#lx,%#lx]=", aMin, aMax);
+      while (nbytes > 0) {
+         VG_(printf)("%02x", (UInt)*p++);
+         nbytes--;
+      }
+      if (*p == 0)
+         VG_(printf)(",");
+   }
+   VG_(printf)("}");
+}
+
+
 /*--------------------------------------------------------------------*/
 /*--- end                                               d3basics.c ---*/
 /*--------------------------------------------------------------------*/

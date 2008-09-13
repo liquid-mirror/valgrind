@@ -78,17 +78,26 @@ void VG_(set_IP) ( ThreadId tid, Addr ip )
    INSTR_PTR( VG_(threads)[tid].arch ) = ip;
 }
 
-void VG_(set_syscall_return_shadows) ( ThreadId tid, UWord s1, UWord s2 )
+void VG_(set_syscall_return_shadows) ( ThreadId tid,
+                                       /* shadow vals for the result */
+                                       UWord s1res, UWord s2res,
+                                       /* shadow vals for the error val */
+                                       UWord s1err, UWord s2err )
 {
 #  if defined(VGP_x86_linux)
-   VG_(threads)[tid].arch.vex_shadow1.guest_EAX = s1;
-   VG_(threads)[tid].arch.vex_shadow2.guest_EAX = s2;
+   VG_(threads)[tid].arch.vex_shadow1.guest_EAX = s1res;
+   VG_(threads)[tid].arch.vex_shadow2.guest_EAX = s2res;
 #  elif defined(VGP_amd64_linux)
-   VG_(threads)[tid].arch.vex_shadow1.guest_RAX = s1;
-   VG_(threads)[tid].arch.vex_shadow2.guest_RAX = s2;
+   VG_(threads)[tid].arch.vex_shadow1.guest_RAX = s1res;
+   VG_(threads)[tid].arch.vex_shadow2.guest_RAX = s2res;
 #  elif defined(VGP_ppc32_linux) || defined(VGP_ppc64_linux)
-   VG_(threads)[tid].arch.vex_shadow1.guest_GPR3 = s1;
-   VG_(threads)[tid].arch.vex_shadow2.guest_GPR3 = s2;
+   VG_(threads)[tid].arch.vex_shadow1.guest_GPR3 = s1res;
+   VG_(threads)[tid].arch.vex_shadow2.guest_GPR3 = s2res;
+#  elif defined(VGP_ppc32_aix5) || defined(VGP_ppc64_aix5)
+   VG_(threads)[tid].arch.vex_shadow1.guest_GPR3 = s1res;
+   VG_(threads)[tid].arch.vex_shadow2.guest_GPR3 = s2res;
+   VG_(threads)[tid].arch.vex_shadow1.guest_GPR4 = s1err;
+   VG_(threads)[tid].arch.vex_shadow2.guest_GPR4 = s2err;
 #  else
 #    error "Unknown plat"
 #  endif

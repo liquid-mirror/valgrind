@@ -785,7 +785,7 @@ void VG_(di_notify_mprotect)( Addr a, SizeT len, UInt prot )
    read debug info for it -- or conversely, have recently been dumped,
    in which case the relevant debug info has to be unloaded. */
 
-void VG_(di_aix5_notify_segchange)( 
+ULong VG_(di_aix5_notify_segchange)( 
                Addr   code_start,
                Word   code_len,
                Addr   data_start,
@@ -795,6 +795,8 @@ void VG_(di_aix5_notify_segchange)(
                Bool   is_mainexe,
                Bool   acquire )
 {
+   ULong hdl = 0;
+
    if (acquire) {
 
       Bool       ok;
@@ -836,6 +838,8 @@ void VG_(di_aix5_notify_segchange)(
          VG_(redir_notify_new_DebugInfo)( di );
          /* Note that we succeeded */
          di->have_dinfo = True;
+         hdl = di->handle;
+         vg_assert(hdl > 0);
       } else {
          /*  Something went wrong (eg. bad XCOFF file). */
          discard_DebugInfo( di );
@@ -850,6 +854,8 @@ void VG_(di_aix5_notify_segchange)(
          discard_syms_in_range( code_start, code_len );
 
    }
+
+   return hdl;
 }
         
 

@@ -96,9 +96,13 @@ VG_(set_shadow_regs_area) ( ThreadId tid,
                             /*DST*/Int shadowNo, OffT offset, SizeT size,
                             /*SRC*/const UChar* src );
 
-// Sets the shadow values for the syscall return value register.
+// Sets the shadow values for the syscall return value register(s).
 // This is platform specific.
-void VG_(set_syscall_return_shadows) ( ThreadId tid, UWord s1, UWord s2 );
+void VG_(set_syscall_return_shadows) ( ThreadId tid,
+                                       /* shadow vals for the result */
+                                       UWord s1res, UWord s2res,
+                                       /* shadow vals for the error val */
+                                       UWord s1err, UWord s2err );
 
 // Apply a function 'f' to all the general purpose registers in all the
 // current threads.
