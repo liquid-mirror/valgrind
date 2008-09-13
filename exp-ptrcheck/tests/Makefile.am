@@ -38,7 +38,7 @@ EXTRA_DIST = $(noinst_SCRIPTS) \
 	globalerr.stderr.exp-glibc28-amd64 \
 	fp.vgtest fp.stderr.exp \
 	hackedbz2.vgtest hackedbz2.stdout.exp \
-	\
+	hackedbz2.stderr.exp-glibc28-amd64 \
 	hp_bounds.vgtest hp_bounds.stderr.exp \
 	hp_dangle.vgtest hp_dangle.stderr.exp \
 	idiv.vgtest-disabled idiv.stderr.exp \
