@@ -2247,7 +2247,10 @@ void h_post_syscall ( ThreadId tid, UInt syscallno, SysRes res )
       case __NR_wait4:
       case __NR_write:
       case __NR_writev:
-         VG_(set_syscall_return_shadows)( tid, (UWord)NONPTR, 0 );
+         VG_(set_syscall_return_shadows)( 
+            tid, /* retval */ (UWord)NONPTR, 0,
+                 /* error */  (UWord)NONPTR, 0
+         );
          break;
 
 #     if defined(__NR_arch_prctl)
@@ -2258,14 +2261,20 @@ void h_post_syscall ( ThreadId tid, UInt syscallno, SysRes res )
             syscall completes. */
          post_reg_write_nonptr_or_unknown( tid, PC_OFF_FS_ZERO, 
                                                 PC_SZB_FS_ZERO );
-         VG_(set_syscall_return_shadows)( tid, (UWord)NONPTR, 0 );
+         VG_(set_syscall_return_shadows)( 
+            tid, /* retval */ (UWord)NONPTR, 0,
+                 /* error */  (UWord)NONPTR, 0
+         );
       }
 #     endif
 
    // With brk(), result (of kernel syscall, not glibc wrapper) is a heap
    // pointer.  Make the shadow UNKNOWN.
    case __NR_brk:
-      VG_(set_syscall_return_shadows)( tid, (UWord)UNKNOWN, 0 );
+      VG_(set_syscall_return_shadows)( 
+         tid, /* retval */ (UWord)UNKNOWN, 0,
+              /* error */  (UWord)NONPTR,  0
+      );
       break;
 
    // With mmap, new_mem_mmap() has already been called and added the
@@ -2277,10 +2286,12 @@ void h_post_syscall ( ThreadId tid, UInt syscallno, SysRes res )
 #  endif
       if (res.isError) {
          // mmap() had an error, return value is a small negative integer
-         VG_(set_syscall_return_shadows)( tid, (UWord)NONPTR, 0 );
+         VG_(set_syscall_return_shadows)( tid, /*val*/ (UWord)NONPTR, 0,
+                                               /*err*/ (UWord)NONPTR, 0 );
          if (0) VG_(printf)("ZZZZZZZ mmap res -> NONPTR\n");
       } else {
-         VG_(set_syscall_return_shadows)( tid, (UWord)UNKNOWN, 0 );
+         VG_(set_syscall_return_shadows)( tid, /*val*/ (UWord)UNKNOWN, 0,
+                                               /*err*/ (UWord)NONPTR, 0 );
          if (0) VG_(printf)("ZZZZZZZ mmap res -> UNKNOWN\n");
       }
       break;
@@ -2290,10 +2301,12 @@ void h_post_syscall ( ThreadId tid, UInt syscallno, SysRes res )
 #  if defined(__NR_shmat)
    case __NR_shmat:
       if (res.isError) {
-         VG_(set_syscall_return_shadows)( tid, (UWord)NONPTR, 0 );
+         VG_(set_syscall_return_shadows)( tid, /*val*/ (UWord)NONPTR, 0,
+                                               /*err*/ (UWord)NONPTR, 0 );
          if (0) VG_(printf)("ZZZZZZZ shmat res -> NONPTR\n");
       } else {
-         VG_(set_syscall_return_shadows)( tid, (UWord)UNKNOWN, 0 );
+         VG_(set_syscall_return_shadows)( tid, /*val*/ (UWord)UNKNOWN, 0,
+                                               /*err*/ (UWord)NONPTR, 0 );
          if (0) VG_(printf)("ZZZZZZZ shmat res -> UNKNOWN\n");
       }
       break;
@@ -2302,7 +2315,8 @@ void h_post_syscall ( ThreadId tid, UInt syscallno, SysRes res )
 #  if defined(__NR_shmget)
    case __NR_shmget:
       // FIXME: is this correct?
-      VG_(set_syscall_return_shadows)( tid, (UWord)UNKNOWN, 0 );
+      VG_(set_syscall_return_shadows)( tid, /*val*/ (UWord)UNKNOWN, 0,
+                                            /*err*/ (UWord)NONPTR, 0 );
       break;
 #  endif
 
