@@ -37,6 +37,8 @@ EXTRA_DIST = $(noinst_SCRIPTS) \
 	globalerr.vgtest globalerr.stdout.exp \
 	globalerr.stderr.exp-glibc28-amd64 \
 	fp.vgtest fp.stderr.exp \
+	hackedbz2.vgtest hackedbz2.stdout.exp \
+	\
 	hp_bounds.vgtest hp_bounds.stderr.exp \
 	hp_dangle.vgtest hp_dangle.stderr.exp \
 	idiv.vgtest-disabled idiv.stderr.exp \
@@ -74,7 +76,7 @@ EXTRA_DIST = $(noinst_SCRIPTS) \
 
 check_PROGRAMS = \
 	add and arith bad_percentify base ccc cmp fp \
-	globalerr \
+	globalerr hackedbz2 \
 	hp_bounds hp_dangle idiv imul \
 	justify mm not neg or partial pth_create pth_specific realloc \
 	stackerr \
@@ -86,6 +88,10 @@ AM_CPPFLAGS = -I$(top_srcdir) -I$(top_srcdir)/include \
 AM_CFLAGS   = $(WERROR) -Winline -Wall -Wshadow -g $(AM_FLAG_M3264_PRI)
 AM_CXXFLAGS = $(AM_CFLAGS)
 
+# To make it a bit more realistic, build hackedbz2.c with at 
+# least some optimisation.
+hackedbz2_CFLAGS	= $(AM_FLAG_M3264_PRI) $(AM_CFLAGS) -O -g
+
 # C ones
 add_SOURCES		= add.c
 and_SOURCES		= and.c
@@ -95,6 +101,7 @@ base_SOURCES		= base.c
 cmp_SOURCES		= cmp.c
 fp_SOURCES		= fp.c
 globalerr_SOURCE	= globalerr.c
+hackedbz2_SOURCES	= hackedbz2.c
 hp_bounds_SOURCES	= hp_bounds.c
 hp_dangle_SOURCES	= hp_dangle.c
 idiv_SOURCES		= idiv.c
