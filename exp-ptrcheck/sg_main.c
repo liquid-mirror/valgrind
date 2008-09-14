@@ -672,7 +672,8 @@ static void add_block_to_GlobalTree (
 {
    Bool already_present;
    GlobalTreeNode *nyu, *nd;
-     UWord keyW, valW;
+   UWord keyW, valW;
+
    tl_assert(descr->szB > 0);
    nyu = sg_malloc( "di.sg_main.abtG.1", sizeof(GlobalTreeNode) );
    nyu->addr  = descr->addr;
@@ -692,7 +693,18 @@ static void add_block_to_GlobalTree (
       tl_assert(nd->descr);
       tl_assert(nyu->descr);
       if (nd->addr == nyu->addr && nd->szB == nyu->szB
-          && 0 == VG_(strcmp)(nd->descr->name, nyu->descr->name)
+          /* && 0 == VG_(strcmp)(nd->descr->name, nyu->descr->name) */
+          /* Although it seems reasonable to demand that duplicate
+             blocks have identical names, that is too strict.  For
+             example, reading debuginfo from glibc produces two
+             otherwise identical blocks with names "tzname" and
+             "__tzname".  A constraint of the form "must be identical,
+             or one must be a substring of the other" would fix that.
+             However, such trickery is scuppered by the fact that we
+             truncate all variable names to 15 characters to make
+             storage management simpler, hence giving pairs like
+             "__EI___pthread_[TRUCATED]" vs "__pthread_keys".  So it's
+             simplest just to skip the name comparison completely. */
           && 0 == VG_(strcmp)(nd->descr->soname, nyu->descr->soname)) {
          /* exact duplicate; ignore it */
          sg_free(nyu);
