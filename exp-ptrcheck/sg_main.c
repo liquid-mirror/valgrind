@@ -703,8 +703,9 @@ static void add_block_to_GlobalTree (
              However, such trickery is scuppered by the fact that we
              truncate all variable names to 15 characters to make
              storage management simpler, hence giving pairs like
-             "__EI___pthread_[TRUCATED]" vs "__pthread_keys".  So it's
-             simplest just to skip the name comparison completely. */
+             "__EI___pthread_" (truncated) vs "__pthread_keys".  So
+             it's simplest just to skip the name comparison
+             completely. */
           && 0 == VG_(strcmp)(nd->descr->soname, nyu->descr->soname)) {
          /* exact duplicate; ignore it */
          sg_free(nyu);
