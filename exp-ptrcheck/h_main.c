@@ -2149,6 +2149,7 @@ static void setup_post_syscall_table ( void )
 #     if defined(__NR_getpeername)
       ADD(0, __NR_getpeername);
 #     endif
+      ADD(0, __NR_getpid);
       ADD(0, __NR_getppid);
       ADD(0, __NR_getresgid);
       ADD(0, __NR_getresuid);
