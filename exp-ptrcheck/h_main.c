@@ -231,6 +231,7 @@
 #include "pub_tool_vkiscnums.h"
 #include "pub_tool_machine.h"
 #include "pub_tool_wordfm.h"
+#include "pub_tool_xarray.h"
 
 #include "pc_common.h"
 
@@ -1458,6 +1459,7 @@ static void get_IntRegInfo ( /*OUT*/IntRegInfo* iii, Int offset, Int szB )
    if (o == GOF(RESVN)     && is4) goto none;
    if (o == GOF(TISTART)   && is4) goto none;
    if (o == GOF(TILEN)     && is4) goto none;
+   if (o == GOF(REDIR_SP)  && is4) goto none;
 
    if (sz == 1) {
       if (o == GOF(XER_SO))  goto none;
@@ -1778,10 +1780,10 @@ static Bool is_integer_guest_reg_array ( IRRegArray* arr )
    /* -------------------- ppc32 -------------------- */
 #  elif defined(VGA_ppc32)
    /* The redir stack. */
-   //if (arr->base == offsetof(VexGuestPPC64State,guest_REDIR_STACK[0])
-   //    && arr->elemTy == Ity_I64
-   //    && arr->nElems == VEX_GUEST_PPC64_REDIR_STACK_SIZE)
-   //   return True;
+   if (arr->base == offsetof(VexGuestPPC32State,guest_REDIR_STACK[0])
+       && arr->elemTy == Ity_I32
+       && arr->nElems == VEX_GUEST_PPC32_REDIR_STACK_SIZE)
+      return True;
 
    VG_(printf)("is_integer_guest_reg_array(ppc32): unhandled: ");
    ppIRRegArray(arr);
@@ -2025,265 +2027,398 @@ void h_post_reg_write_clientcall(ThreadId tid, OffT guest_state_offset,
 /*--- System calls                                                 ---*/
 /*--------------------------------------------------------------------*/
 
-void h_pre_syscall ( ThreadId tid, UInt syscallno )
+void h_pre_syscall ( ThreadId tid, UInt sysno )
 {
-//zz #if 0
-//zz    UInt mmap_flags;
-//zz    if (90 == syscallno) {
-//zz       // mmap: get contents of ebx to find args block, then extract 'flags'
-//zz       UInt* arg_block = (UInt*)VG_(get_thread_archreg)(tid, R_EBX);
-//zz       VG_(printf)("arg_block = %#lx\n", arg_block);
-//zz       mmap_flags = arg_block[3];
-//zz       VG_(printf)("flags = %d\n", mmap_flags);
-//zz 
-//zz    } else if (192 == syscallno) {
-//zz       // mmap2: get flags from 4th register arg
-//zz       mmap_flags = VG_(get_thread_archreg)(tid, R_ESI);
-//zz 
-//zz    } else {
-//zz       goto out;
-//zz    }
-//zz 
-//zz    if (0 != (mmap_flags & VKI_MAP_FIXED)) {
-//zz       VG_(skin_panic)("can't handle MAP_FIXED flag to mmap()");
-//zz    }
-//zz 
-//zz out:
-//zz #endif
-//zz    return NULL;
+   /* we don't do anything at the pre-syscall point */
 }
 
-void h_post_syscall ( ThreadId tid, UInt syscallno, SysRes res )
+/* The post-syscall table is a table of pairs (number, flag).
+
+   'flag' is only ever zero or one.  If it is zero, it indicates that
+   default handling for that syscall is required -- namely that the
+   syscall is deemed to return NONPTR.  This is the case for the vast
+   majority of syscalls.  If it is one then some special
+   syscall-specific handling is is required.  No further details of it
+   are stored in the table.
+
+   On Linux, 'number' is a __NR_xxx constant.
+
+   On AIX5, 'number' is an Int*, which points to the Int variable
+   holding the currently assigned number for this syscall.
+
+   When querying the table, we compare the supplied syscall number
+   with the 'number' field (directly on Linux, after dereferencing on
+   AIX5), to find the relevant entry.  This requires a linear search
+   of the table.  To stop the costs getting too high, the table is
+   incrementally rearranged after each search, to move commonly
+   requested items a bit closer to the front.
+
+   The table is built once, the first time it is used.  After that we
+   merely query it (and reorder the entries as a result). */
+
+static XArray* /* of UWordPair */ post_syscall_table = NULL;
+
+static void setup_post_syscall_table ( void )
 {
-   switch (syscallno) {
+   tl_assert(!post_syscall_table);
+   post_syscall_table = VG_(newXA)( VG_(malloc), "pc.h_main.spst.1",
+                                    VG_(free), sizeof(UWordPair) );
+   tl_assert(post_syscall_table);
+
+   /* --------------- LINUX --------------- */
+
+#  if defined(VGO_linux)
+
+#     define ADD(_flag, _syscallname) \
+         do { UWordPair p; p.uw1 = (_syscallname); p.uw2 = (_flag); \
+              VG_(addToXA)( post_syscall_table, &p ); \
+         } while (0)
 
       /* These ones definitely don't return pointers.  They're not
          particularly grammatical, either. */
+
 #     if defined(__NR__llseek)
-      case __NR__llseek:
+      ADD(0, __NR__llseek);
 #     endif
-      case __NR__sysctl:
+      ADD(0, __NR__sysctl);
 #     if defined(__NR__newselect)
-      case __NR__newselect:
+      ADD(0, __NR__newselect);
 #     endif
 #     if defined(__NR_accept)
-      case __NR_accept:
+      ADD(0, __NR_accept);
 #     endif
-      case __NR_access:
+      ADD(0, __NR_access);
 #     if defined(__NR_bind)
-      case __NR_bind:
+      ADD(0, __NR_bind);
 #     endif
-      case __NR_chdir:
-      case __NR_chmod:
-      case __NR_chown:
-      case __NR_clock_getres:
-      case __NR_clock_gettime:
-      case __NR_clone:
-      case __NR_close:
+#     if defined(__NR_chdir)
+      ADD(0, __NR_chdir);
+#     endif
+      ADD(0, __NR_chmod);
+      ADD(0, __NR_chown);
+      ADD(0, __NR_clock_getres);
+      ADD(0, __NR_clock_gettime);
+      ADD(0, __NR_clone);
+      ADD(0, __NR_close);
 #     if defined(__NR_connect)
-      case __NR_connect:
+      ADD(0, __NR_connect);
 #     endif
-      case __NR_dup:
-      case __NR_dup2:
-      case __NR_execve: /* presumably we see this because the call failed? */
-      case __NR_exit: /* hmm, why are we still alive? */
-      case __NR_exit_group:
-      case __NR_fadvise64:
-      case __NR_fchmod:
-      case __NR_fchown:
+      ADD(0, __NR_dup);
+      ADD(0, __NR_dup2);
+      ADD(0, __NR_execve); /* presumably we see this because the call failed? */
+      ADD(0, __NR_exit); /* hmm, why are we still alive? */
+      ADD(0, __NR_exit_group);
+      ADD(0, __NR_fadvise64);
+      ADD(0, __NR_fchmod);
+      ADD(0, __NR_fchown);
 #     if defined(__NR_fchown32)
-      case __NR_fchown32:
+      ADD(0, __NR_fchown32);
 #     endif
-      case __NR_fcntl:
+      ADD(0, __NR_fcntl);
 #     if defined(__NR_fcntl64)
-      case __NR_fcntl64:
+      ADD(0, __NR_fcntl64);
 #     endif
-      case __NR_fdatasync:
-      case __NR_fstat:
+      ADD(0, __NR_fdatasync);
+      ADD(0, __NR_fstat);
 #     if defined(__NR_fstat64)
-      case __NR_fstat64:
+      ADD(0, __NR_fstat64);
 #     endif
-      case __NR_fstatfs:
-      case __NR_fsync:
-      case __NR_ftruncate:
+      ADD(0, __NR_fstatfs);
+      ADD(0, __NR_fsync);
+      ADD(0, __NR_ftruncate);
 #     if defined(__NR_ftruncate64)
-      case __NR_ftruncate64:
+      ADD(0, __NR_ftruncate64);
 #     endif
-      case __NR_futex:
-      case __NR_getcwd:
-      case __NR_getdents: // something to do with teeth?
-      case __NR_getdents64:
-      case __NR_getegid:
+      ADD(0, __NR_futex);
+      ADD(0, __NR_getcwd);
+      ADD(0, __NR_getdents); // something to do with teeth
+      ADD(0, __NR_getdents64);
+      ADD(0, __NR_getegid);
 #     if defined(__NR_getegid32)
-      case __NR_getegid32:
+      ADD(0, __NR_getegid32);
 #     endif
-      case __NR_geteuid:
+      ADD(0, __NR_geteuid);
 #     if defined(__NR_geteuid32)
-      case __NR_geteuid32:
+      ADD(0, __NR_geteuid32);
 #     endif
-      case __NR_getgid:
+      ADD(0, __NR_getgid);
 #     if defined(__NR_getgid32)
-      case __NR_getgid32:
+      ADD(0, __NR_getgid32);
 #     endif
-      case __NR_getitimer:
+      ADD(0, __NR_getitimer);
 #     if defined(__NR_getpeername)
-      case __NR_getpeername:
+      ADD(0, __NR_getpeername);
 #     endif
-      case __NR_getppid:
-      case __NR_getresgid:
-      case __NR_getresuid:
-      case __NR_getrlimit:
+      ADD(0, __NR_getppid);
+      ADD(0, __NR_getresgid);
+      ADD(0, __NR_getresuid);
+      ADD(0, __NR_getrlimit);
 #     if defined(__NR_getsockname)
-      case __NR_getsockname:
+      ADD(0, __NR_getsockname);
 #     endif
 #     if defined(__NR_getsockopt)
-      case __NR_getsockopt:
+      ADD(0, __NR_getsockopt);
 #     endif
-      case __NR_gettimeofday:
-      case __NR_getuid:
+      ADD(0, __NR_gettimeofday);
+      ADD(0, __NR_getuid);
 #     if defined(__NR_getuid32)
-      case __NR_getuid32:
+      ADD(0, __NR_getuid32);
 #     endif
-      case __NR_getxattr:
-      case __NR_inotify_init:
-      case __NR_ioctl: // ioctl -- assuming no pointers returned
-      case __NR_kill:
-      case __NR_link:
+      ADD(0, __NR_getxattr);
+      ADD(0, __NR_inotify_init);
+      ADD(0, __NR_ioctl); // ioctl -- assuming no pointers returned
+      ADD(0, __NR_kill);
+      ADD(0, __NR_link);
 #     if defined(__NR_listen)
-      case __NR_listen:
+      ADD(0, __NR_listen);
 #     endif
-      case __NR_lseek:
-      case __NR_lstat:
+      ADD(0, __NR_lseek);
+      ADD(0, __NR_lstat);
 #     if defined(__NR_lstat64)
-      case __NR_lstat64:
+      ADD(0, __NR_lstat64);
 #     endif
-      case __NR_madvise:
-      case __NR_mkdir:
-      case __NR_mprotect:
-      case __NR_munmap: // die_mem_munmap already called, segment removed
-      case __NR_open:
-      case __NR_pipe:
-      case __NR_poll:
-      case __NR_pread64:
-      case __NR_pwrite64:
-      case __NR_read:
-      case __NR_readlink:
-      case __NR_readv:
+      ADD(0, __NR_madvise);
+      ADD(0, __NR_mkdir);
+      ADD(0, __NR_mprotect);
+      ADD(0, __NR_munmap); // die_mem_munmap already called, segment remove);
+      ADD(0, __NR_open);
+      ADD(0, __NR_pipe);
+      ADD(0, __NR_poll);
+      ADD(0, __NR_pread64);
+      ADD(0, __NR_pwrite64);
+      ADD(0, __NR_read);
+      ADD(0, __NR_readlink);
+      ADD(0, __NR_readv);
 #     if defined(__NR_recvfrom)
-      case __NR_recvfrom:
+      ADD(0, __NR_recvfrom);
 #     endif
 #     if defined(__NR_recvmsg)
-      case __NR_recvmsg:
+      ADD(0, __NR_recvmsg);
 #     endif
-      case __NR_rename:
-      case __NR_rmdir:
-      case __NR_rt_sigaction:
-      case __NR_rt_sigprocmask:
-      case __NR_rt_sigreturn: /* not sure if we should see this or not */
-      case __NR_sched_get_priority_max:
-      case __NR_sched_get_priority_min:
-      case __NR_sched_getparam:
-      case __NR_sched_getscheduler:
-      case __NR_sched_setscheduler:
-      case __NR_sched_yield:
-      case __NR_select:
+      ADD(0, __NR_rename);
+      ADD(0, __NR_rmdir);
+      ADD(0, __NR_rt_sigaction);
+      ADD(0, __NR_rt_sigprocmask);
+      ADD(0, __NR_rt_sigreturn); /* not sure if we should see this or not */
+      ADD(0, __NR_sched_get_priority_max);
+      ADD(0, __NR_sched_get_priority_min);
+      ADD(0, __NR_sched_getparam);
+      ADD(0, __NR_sched_getscheduler);
+      ADD(0, __NR_sched_setscheduler);
+      ADD(0, __NR_sched_yield);
+      ADD(0, __NR_select);
 #     if defined(__NR_sendto)
-      case __NR_sendto:
+      ADD(0, __NR_sendto);
 #     endif
-      case __NR_set_robust_list:
+      ADD(0, __NR_set_robust_list);
 #     if defined(__NR_set_thread_area)
-      case __NR_set_thread_area:
+      ADD(0, __NR_set_thread_area);
 #     endif
-      case __NR_set_tid_address:
-      case __NR_setitimer:
-      case __NR_setrlimit:
-      case __NR_setsid:
+      ADD(0, __NR_set_tid_address);
+      ADD(0, __NR_setitimer);
+      ADD(0, __NR_setrlimit);
+      ADD(0, __NR_setsid);
 #     if defined(__NR_setsockopt)
-      case __NR_setsockopt:
+      ADD(0, __NR_setsockopt);
 #     endif
 #     if defined(__NR_shmctl)
-      case __NR_shmctl:
-      case __NR_shmdt:
+      ADD(0, __NR_shmctl);
+      ADD(0, __NR_shmdt);
 #     endif
 #     if defined(__NR_shutdown)
-      case __NR_shutdown:
+      ADD(0, __NR_shutdown);
 #     endif
 #     if defined(__NR_socket)
-      case __NR_socket:
+      ADD(0, __NR_socket);
 #     endif
 #     if defined(__NR_socketcall)
-      case __NR_socketcall: /* the nasty x86-linux socket multiplexor */
+      ADD(0, __NR_socketcall); /* the nasty x86-linux socket multiplexor */
 #     endif
 #     if defined(__NR_statfs64)
-      case __NR_statfs64:
+      ADD(0, __NR_statfs64);
 #     endif
 #     if defined(__NR_sigreturn)
-      case __NR_sigreturn: /* not sure if we should see this or not */
+      ADD(0, __NR_sigreturn); /* not sure if we should see this or not */
 #     endif
 #     if defined(__NR_stat64)
-      case __NR_stat64:
+      ADD(0, __NR_stat64);
 #     endif
-      case __NR_stat:
-      case __NR_statfs:
-      case __NR_symlink:
-      case __NR_sysinfo:
-      case __NR_tgkill:
-      case __NR_time:
-      case __NR_times:
-      case __NR_truncate:
+      ADD(0, __NR_stat);
+      ADD(0, __NR_statfs);
+      ADD(0, __NR_symlink);
+      ADD(0, __NR_sysinfo);
+      ADD(0, __NR_tgkill);
+      ADD(0, __NR_time);
+      ADD(0, __NR_times);
+      ADD(0, __NR_truncate);
 #     if defined(__NR_truncate64)
-      case __NR_truncate64:
+      ADD(0, __NR_truncate64);
 #     endif
 #     if defined(__NR_ugetrlimit)
-      case __NR_ugetrlimit:
+      ADD(0, __NR_ugetrlimit);
 #     endif
-      case __NR_umask:
-      case __NR_uname:
-      case __NR_unlink:
-      case __NR_utime:
+      ADD(0, __NR_umask);
+      ADD(0, __NR_uname);
+      ADD(0, __NR_unlink);
+      ADD(0, __NR_utime);
 #     if defined(__NR_waitpid)
-      case __NR_waitpid:
+      ADD(0, __NR_waitpid);
 #     endif
-      case __NR_wait4:
-      case __NR_write:
-      case __NR_writev:
-         VG_(set_syscall_return_shadows)( 
-            tid, /* retval */ (UWord)NONPTR, 0,
-                 /* error */  (UWord)NONPTR, 0
-         );
-         break;
+      ADD(0, __NR_wait4);
+      ADD(0, __NR_write);
+      ADD(0, __NR_writev);
 
+      /* Whereas the following need special treatment */
 #     if defined(__NR_arch_prctl)
-      case __NR_arch_prctl: {
-         /* This is nasty.  On amd64-linux, arch_prctl may write a
-            value to guest_FS_ZERO, and we need to shadow that value.
-            Hence apply nonptr_or_unknown to it here, after the
-            syscall completes. */
-         post_reg_write_nonptr_or_unknown( tid, PC_OFF_FS_ZERO, 
-                                                PC_SZB_FS_ZERO );
-         VG_(set_syscall_return_shadows)( 
-            tid, /* retval */ (UWord)NONPTR, 0,
-                 /* error */  (UWord)NONPTR, 0
-         );
-      }
+      ADD(1, __NR_arch_prctl);
+#     endif
+      ADD(1, __NR_brk);
+      ADD(1, __NR_mmap);
+#     if defined(__NR_mmap2)
+      ADD(1, __NR_mmap2);
+#     endif
+#     if defined(__NR_shmat)
+      ADD(1, __NR_shmat);
+#     endif
+#     if defined(__NR_shmget)
+      ADD(1, __NR_shmget);
 #     endif
 
+   /* --------------- AIX5 --------------- */
+
+#  elif defined(VGO_aix5)
+
+#     define ADD(_flag, _syscallname) \
+         do { \
+            UWordPair p; \
+            if ((_syscallname) != __NR_AIX5_UNKNOWN) { \
+               p.uw1 = (UWord)&(_syscallname); p.uw2 = (_flag); \
+               VG_(addToXA)( post_syscall_table, &p ); \
+            } \
+         } while (0)
+
+      /* Just a minimal set of handlers, enough to make
+         a 32- and 64-bit hello-world program run. */
+      ADD(1, __NR_AIX5___loadx); /* not sure what to do here */
+      ADD(0, __NR_AIX5__exit);
+      ADD(0, __NR_AIX5_access);
+      ADD(0, __NR_AIX5_getgidx);
+      ADD(0, __NR_AIX5_getuidx);
+      ADD(0, __NR_AIX5_kfcntl);
+      ADD(0, __NR_AIX5_kioctl);
+      ADD(1, __NR_AIX5_kload); /* not sure what to do here */
+      ADD(0, __NR_AIX5_kwrite);
+
+#  else
+#     error "Unsupported OS"
+#  endif
+
+#  undef ADD
+}
+
+
+void h_post_syscall ( ThreadId tid, UInt sysno, SysRes res )
+{
+   Word i, n;
+   UWordPair* pair;
+
+   if (!post_syscall_table)
+      setup_post_syscall_table();
+
+   /* search for 'sysno' in the post_syscall_table */
+   n = VG_(sizeXA)( post_syscall_table );
+   for (i = 0; i < n; i++) {
+      pair = VG_(indexXA)( post_syscall_table, i );
+#     if defined(VGO_linux)
+      if (pair->uw1 == (UWord)sysno)
+         break;
+#     elif defined(VGO_aix5)
+      if (*(Int*)(pair->uw1) == (Int)sysno)
+         break;
+#     else
+#        error "Unsupported OS"
+#     endif
+   }
+
+   tl_assert(i >= 0 && i <= n);
+
+   if (i == n) {
+      VG_(printf)("sysno == %u\n", sysno);
+#     if defined(VGO_aix5)
+      VG_(printf)("syscallnm == %s\n",
+                  VG_(aix5_sysno_to_sysname)(sysno));
+#     endif
+      VG_(tool_panic)("unhandled syscall");
+   }
+
+   /* So we found the relevant entry.  Move it one step
+      forward so as to speed future accesses to it. */
+   if (i > 0) {
+      UWordPair tmp, *p, *q;
+      p = VG_(indexXA)( post_syscall_table, i-1 );
+      q = VG_(indexXA)( post_syscall_table, i-0 );
+      tmp = *p;
+      *p = *q;
+      *q = tmp;
+      i--;
+   }
+
+   /* Deal with the common case */
+   pair = VG_(indexXA)( post_syscall_table, i );
+   if (pair->uw2 == 0) {
+     /* the common case */
+      VG_(set_syscall_return_shadows)( 
+         tid, /* retval */ (UWord)NONPTR, 0,
+              /* error */  (UWord)NONPTR, 0
+      );
+      return;
+   }
+
+   /* Special handling for all remaining cases */
+   tl_assert(pair->uw2 == 1);
+
+#  if defined(__NR_arch_prctl)
+   if (sysno == __NR_arch_prctl) {
+      /* This is nasty.  On amd64-linux, arch_prctl may write a
+         value to guest_FS_ZERO, and we need to shadow that value.
+         Hence apply nonptr_or_unknown to it here, after the
+         syscall completes. */
+      post_reg_write_nonptr_or_unknown( tid, PC_OFF_FS_ZERO, 
+                                             PC_SZB_FS_ZERO );
+      VG_(set_syscall_return_shadows)( 
+         tid, /* retval */ (UWord)NONPTR, 0,
+              /* error */  (UWord)NONPTR, 0
+      );
+      return;
+   }
+#  endif
+
+#  if defined(__NR_brk)
    // With brk(), result (of kernel syscall, not glibc wrapper) is a heap
    // pointer.  Make the shadow UNKNOWN.
-   case __NR_brk:
+   if (sysno ==  __NR_brk) {
       VG_(set_syscall_return_shadows)( 
          tid, /* retval */ (UWord)UNKNOWN, 0,
               /* error */  (UWord)NONPTR,  0
       );
-      break;
+      return;
+   }
+#  endif
 
    // With mmap, new_mem_mmap() has already been called and added the
    // segment (we did it there because we had the result address and size
    // handy).  So just set the return value shadow.
-   case __NR_mmap:
-#  if defined(__NR_mmap2)
-   case __NR_mmap2:
-#  endif
+   if (sysno == __NR_mmap
+#      if defined(__NR_mmap2)
+       || sysno == __NR_mmap2
+#      endif
+#      if defined(__NR_AIX5___loadx)
+       || (sysno == __NR_AIX5___loadx && __NR_AIX5___loadx != __NR_AIX5_UNKNOWN)
+#      endif
+#      if defined(__NR_AIX5_kload)
+       || (sysno == __NR_AIX5_kload && __NR_AIX5_kload != __NR_AIX5_UNKNOWN)
+#      endif
+      ) {
       if (res.isError) {
          // mmap() had an error, return value is a small negative integer
          VG_(set_syscall_return_shadows)( tid, /*val*/ (UWord)NONPTR, 0,
@@ -2294,12 +2429,13 @@ void h_post_syscall ( ThreadId tid, UInt syscallno, SysRes res )
                                                /*err*/ (UWord)NONPTR, 0 );
          if (0) VG_(printf)("ZZZZZZZ mmap res -> UNKNOWN\n");
       }
-      break;
+      return;
+   }
 
    // shmat uses the same scheme.  We will just have had a
    // notification via new_mem_mmap.  Just set the return value shadow.
 #  if defined(__NR_shmat)
-   case __NR_shmat:
+   if (sysno == __NR_shmat) {
       if (res.isError) {
          VG_(set_syscall_return_shadows)( tid, /*val*/ (UWord)NONPTR, 0,
                                                /*err*/ (UWord)NONPTR, 0 );
@@ -2309,21 +2445,23 @@ void h_post_syscall ( ThreadId tid, UInt syscallno, SysRes res )
                                                /*err*/ (UWord)NONPTR, 0 );
          if (0) VG_(printf)("ZZZZZZZ shmat res -> UNKNOWN\n");
       }
-      break;
+      return;
+   }
 #  endif
 
 #  if defined(__NR_shmget)
-   case __NR_shmget:
+   if (sysno == __NR_shmget) {
       // FIXME: is this correct?
       VG_(set_syscall_return_shadows)( tid, /*val*/ (UWord)UNKNOWN, 0,
                                             /*err*/ (UWord)NONPTR, 0 );
-      break;
+      return;
+   }
 #  endif
 
-   default:
-      VG_(printf)("syscallno == %d\n", syscallno);
-      VG_(tool_panic)("unhandled syscall");
-   }
+   /* If we get here, it implies the corresponding entry in
+      post_syscall_table has .w2 == 1, which in turn implies there
+      should be special-case code for it above. */
+   tl_assert(0);
 }
 
 
