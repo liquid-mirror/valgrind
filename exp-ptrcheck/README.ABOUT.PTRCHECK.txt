@@ -342,7 +342,7 @@ in real use.
 
 * sg_main.c: Improve the performance of the stack / global checks by
   doing some up-front filtering to ignore references in areas which
-  can't "obviously" can't be stack or globals.  This will require
+  "obviously" can't be stack or globals.  This will require
   using information that m_aspacemgr knows about the address space
   layout.
 
@@ -366,3 +366,5 @@ in real use.
 * CRITICAL: sg_main.c: make preen_Invar work properly again.  Why
   isn't it being called?
 
+* sg_main.c: fix compute_II_hash to make it a bit more sensible
+  for ppc32/64 targets
