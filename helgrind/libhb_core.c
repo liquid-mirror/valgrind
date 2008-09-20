@@ -50,87 +50,12 @@
 /* fwds for
    Globals needed by other parts of the library.  These are set
    once at startup and then never changed. */
-static void*       (*main_zalloc_P)( HChar*, SizeT ) = NULL;
-static void        (*main_dealloc_P)( void* ) = NULL;
-static void*       (*main_shadow_alloc_P)( SizeT ) = NULL;
+static void*       (*main_zalloc)( HChar*, SizeT ) = NULL;
+static void        (*main_dealloc)( void* ) = NULL;
+static void*       (*main_shadow_alloc)( SizeT ) = NULL;
 static void        (*main_get_stacktrace)( Thr*, Addr*, UWord ) = NULL;
 static struct EC_* (*main_stacktrace_to_EC)( Addr*, UWord ) = NULL;
 static struct EC_* (*main_get_EC)( Thr* ) = NULL;
-
-static ULong stats__zallocd       = 0;
-static ULong stats__freed         = 0;
-static ULong stats__shadow_allocd = 0;
-
-#define XXX 500000
-static Bool xxx_tab_initted = False;
-static 
-   struct { Addr a; SizeT n; }
-   xxx_tab[XXX];
-
-static void notify_malloc ( Addr a, SizeT n ) {
-   Word i;
-   if (!xxx_tab_initted) {
-      VG_(memset)(xxx_tab, 0, sizeof(xxx_tab) );
-      xxx_tab_initted = True;
-   }
-   for (i = 0; i < XXX; i++) {
-     if (xxx_tab[i].a == 0)
-       break;
-   }
-   tl_assert(i >= 0 && i < XXX);
-   xxx_tab[i].a = a;
-   xxx_tab[i].n = n;
-}
-static void notify_free ( Addr a ) {
-   Word i;
-   tl_assert(xxx_tab_initted);
-   tl_assert(a);
-   for (i = 0; i < XXX; i++) {
-      if (xxx_tab[i].a == a)
-         break;
-   }
-   tl_assert(i >= 0 && i < XXX);
-   xxx_tab[i].a = 0;
-   xxx_tab[i].n = 0;
-}
-
-
-static void* main_zalloc ( HChar* cc, SizeT n ) {
-   void* v;
-   tl_assert(n >= 0);
-   stats__zallocd += (ULong)n;
-   v = main_zalloc_P(cc,n);
-   //   notify_malloc( (Addr)v, n );
-   return v;
-}
-static void main_dealloc ( void* p ) {
-  //notify_free( (Addr)p );
-   main_dealloc_P(p);
-}
-static void* main_shadow_alloc ( SizeT n ) {
-   tl_assert(n >= 0);
-   stats__shadow_allocd += (ULong)n;
-   return main_shadow_alloc_P(n);
-}
-
-static void mem_report ( void ) {
-   UWord i;
-   UWord nBlocks = 0, inUse = 0;
-return;
-   VG_(printf)( "   libhb: %llu bytes zalloc'd, %llu bytes shadow_alloc'd\n",
-                stats__zallocd, stats__shadow_allocd);
-   for (i = 0; i < XXX; i++) {
-      if (xxx_tab[i].a != 0) {
-         nBlocks++;
-         inUse += xxx_tab[i].n;
-      } else {
-         tl_assert(xxx_tab[i].n == 0);
-      }
-   }
-   VG_(printf)( "   libhb: zalloc: %lu bytes in use, %lu blocks in use, "
-                "avg szB %lu/100\n",
-                inUse, nBlocks, (100 * inUse) / nBlocks);
-}
 
 /////////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////////
@@ -5184,107 +5109,12 @@ static void SVal__rcdec ( SVal s ) {
 
 /////////////////////////////////////////////////////////
 //                                                     //
-// Change-event map                                    //
-//                                                     //
-/////////////////////////////////////////////////////////
-#if 0
-
-#define N_EVENT_MAPS     4
-#define N_EVENTS_PER_MAP (1*1000*1000)
-
-static WordFM* /* Addr -> (struct EC_*, Thr*) */
-               event_map[N_EVENT_MAPS];
-
-static Word    event_map_n[N_EVENT_MAPS];
-
-static Word    event_map_curr;
-
-
-
-static void event_map_init ( void )
-{
-   Word i;
-   for (i = 0; i < N_EVENT_MAPS; i++) {
-      event_map[i] = NULL;
-      event_map_n[i] = 0;
-   }
-
-   event_map_curr = 0;
-   event_map[event_map_curr]
-      = HG_(newFM)( main_zalloc, main_dealloc,
-                    NULL/*unboxed word cmp*/ );
-   VG_(printf)("libhb: event map %ld in use\n", event_map_curr);
-}
-
-static void event_map_bind ( Addr a, struct EC_* ec, Thr* thr )
-{
-   Bool b;
-   if (0) return;
-   b = HG_(addToFM)( event_map[event_map_curr],
-                     (UWord)a, (UWord)ec, (UWord)thr );
-   if (!b) {
-      /* not already present */
-      event_map_n[event_map_curr]++;
-
-      if (event_map_n[event_map_curr] >= N_EVENTS_PER_MAP) {
-         /* this tree is full.  move on to the next one. */
-         event_map_curr++;
-         if (event_map_curr == N_EVENT_MAPS) event_map_curr = 0;
-         tl_assert(event_map_curr >= 0 && event_map_curr < N_EVENT_MAPS);
-         /* Throw away the contents of the oldest tree we have, if any. */
-         if (event_map[event_map_curr]) {
-            VG_(printf)("libhb: event map %ld dumped\n", event_map_curr);
-            /* check the counting mechanism is working correctly */
-            tl_assert(HG_(sizeFM)(event_map[event_map_curr]) 
-                      == event_map_n[event_map_curr]);
-            HG_(deleteFM)(event_map[event_map_curr], NULL, NULL, NULL);
-            event_map[event_map_curr] = NULL;
-            event_map_n[event_map_curr] = 0;
-         } else {
-            tl_assert(event_map_n[event_map_curr] == 0);
-         }
-
-         VG_(printf)("libhb: event map %ld in use\n", event_map_curr);
-         event_map[event_map_curr]
-            = HG_(newFM)( main_zalloc, main_dealloc,
-                          NULL/*unboxed word cmp*/ );
-      }
-
-   }
-}
-
-static
-Bool event_map_lookup ( struct EC_** resEC, Thr** resThr, Addr a )
-{
-   /* Look through all the event maps, from youngest to oldest. */
-   UWord key, val, wal;
-   Word i, n;
-   n = event_map_curr;
-   for (i = 0; i < N_EVENT_MAPS; i++) {
-      WordFM* map = event_map[n];
-      if (map && HG_(lookupFM)( map, &key, &val, &wal, (UWord)a )) {
-         tl_assert(key == a);
-         *resEC  = (struct EC_*)val;
-         *resThr = (Thr*)wal;
-         return True;
-      }
-      n++;
-      if (n == N_EVENT_MAPS) n = 0;
-      tl_assert(n >= 0 && n < N_EVENT_MAPS);
-   }
-   return False;
-}
-
-#else
-
-/////////////////////////////////////////////////////////
-//                                                     //
 // Change-event map2                                   //
 //                                                     //
 /////////////////////////////////////////////////////////
 
-#define EVENT_MAP_GC_AT 1000000
-#define EVENT_MAP_GC_DISCARD_FRACTION 0.5
+#define EVENT_MAP_GC_AT                (1 * 1000 * 1000)
+#define EVENT_MAP_GC_DISCARD_FRACTION  0.5
 
 /* This is in two parts:
 
@@ -5423,13 +5253,17 @@ static RCEC* get_RCEC ( Thr* thr )
 // (UInt) `echo "Old Reference Information" | md5sum`
 #define OldRef_MAGIC 0x30b1f075UL
 
+typedef  struct { Thr* thr; RCEC* rcec; }  Thr_n_RCEC;
+
+#define N_OLDREF_ACCS 3
+
 typedef
    struct {
       UWord magic;
       UWord gen;    /* when most recently accessed */
       Addr  ea;
-      RCEC* rcec;
-      Thr*  thr;
+      /* unused slots in this array have .thr == NULL */
+      Thr_n_RCEC accs[N_OLDREF_ACCS];
    }
    OldRef;
 
@@ -5450,57 +5284,129 @@ static void event_map_bind ( Addr a, struct EC_* ecxx, Thr* thr )
 {
    OldRef key, *ref;
    RCEC*  here;
+   Word   i, j;
 
    key.ea    = a;
    key.magic = OldRef_MAGIC;
 
    ref = VG_(OSetGen_Lookup)( oldrefTree, &key );
+
    if (ref) {
+
+      /* We already have a record for this address.  We now need to
+         see if we have a stack trace pertaining to this thread's
+         access. */
       tl_assert(ref->magic == OldRef_MAGIC);
-      here = get_RCEC( thr );
-      ctxt__rcinc( here );
-      ctxt__rcdec( ref->rcec );
-      ref->gen  = oldrefGen;
-      ref->ea   = a;
-      ref->rcec = here;
-      ref->thr  = thr;
+
+      tl_assert(thr);
+      for (i = 0; i < N_OLDREF_ACCS; i++) {
+         if (ref->accs[i].thr == thr)
+            break;
+      }
+
+      if (i < N_OLDREF_ACCS) {
+         /* thread 'thr' has an entry at index 'i'.  Update it. */
+         if (i > 0) {
+            Thr_n_RCEC tmp = ref->accs[i-1];
+            ref->accs[i-1] = ref->accs[i];
+            ref->accs[i] = tmp;
+            i--;
+         }
+         here = get_RCEC( thr );
+         ctxt__rcinc( here );
+         ctxt__rcdec( ref->accs[i].rcec );
+         ref->accs[i].rcec = here;
+         tl_assert(ref->accs[i].thr == thr);
+      } else {
+         here = get_RCEC( thr );
+         ctxt__rcinc( here );
+         /* No entry for this thread.  Shuffle all of them down one
+            slot, and put the new entry at the start of the array. */
+         if (ref->accs[N_OLDREF_ACCS-1].thr) {
+            /* the last slot is in use.  We must dec the rc on the
+               associated rcec. */
+            tl_assert(ref->accs[N_OLDREF_ACCS-1].rcec);
+            ctxt__rcdec(ref->accs[N_OLDREF_ACCS-1].rcec);
+         } else {
+            tl_assert(!ref->accs[N_OLDREF_ACCS-1].rcec);
+         }
+         for (j = N_OLDREF_ACCS-1; j >= 1; j--)
+            ref->accs[j] = ref->accs[j-1];
+         ref->accs[0].thr = thr;
+         ref->accs[0].rcec = here;
+         tl_assert(thr); /* thr==NULL is used to signify an empty slot,
+                            so we can't add a NULL thr. */
+      }
+
+      ref->gen = oldrefGen;
+      tl_assert(ref->ea == a);
+
    } else {
+
+      /* We don't have a record for this address.  Create a new one. */
       if (oldrefTreeN >= oldrefGenIncAt) {
          oldrefGen++;
          oldrefGenIncAt = oldrefTreeN + 50000;
          VG_(printf)("oldrefTree: new gen %lu at size %lu\n",
                      oldrefGen, oldrefTreeN );
       }
-
       here = get_RCEC( thr );
       ctxt__rcinc(here);
       ref = VG_(OSetGen_AllocNode)( oldrefTree, sizeof(OldRef) );
       ref->magic = OldRef_MAGIC;
       ref->gen = oldrefGen;
       ref->ea = a;
-      ref->rcec = here;
-      ref->thr = thr;
+      ref->accs[0].rcec = here;
+      ref->accs[0].thr = thr;
+      tl_assert(thr); /* thr==NULL is used to signify an empty slot,
+                         so we can't add a NULL thr. */
+      for (j = 1; j < N_OLDREF_ACCS; j++) {
+         ref->accs[j].thr = NULL;
+         ref->accs[j].rcec = NULL;
+      }
       VG_(OSetGen_Insert)( oldrefTree, ref );
       oldrefTreeN++;
+
    }
 }
 
 
 static
 Bool event_map_lookup ( /*OUT*/struct EC_** resEC,
-                        /*OUT*/Thr** resThr, Addr a )
+                        /*OUT*/Thr** resThr,
+                        Thr* thr_acc, Addr a )
 {
+  Word   i;
   OldRef key, *ref;
+
+  tl_assert(thr_acc);
+
   key.ea = a;
   key.magic = OldRef_MAGIC;
 
    ref = VG_(OSetGen_Lookup)( oldrefTree, &key );
    if (ref) {
       tl_assert(ref->magic == OldRef_MAGIC);
-      tl_assert(ref->rcec);
-      tl_assert(ref->rcec->magic == RCEC_MAGIC);
-      *resEC  = main_stacktrace_to_EC(&ref->rcec->frames[1], N_FRAMES);
-      *resThr = ref->thr;
+      tl_assert(ref->accs[0].thr); /* first slot must always be used */
+
+      for (i = 0; i < N_OLDREF_ACCS; i++) {
+         if (ref->accs[i].thr != NULL
+             && ref->accs[i].thr != thr_acc)
+            break;
+      }
+      /* If we didn't find an entry for some thread other than
+         thr_acc, just return the entry for thread 0.  It'll look
+         pretty stupid to the user though. */
+      if (i == N_OLDREF_ACCS)
+         i = 0;
+
+      tl_assert(i >= 0 && i < N_OLDREF_ACCS);
+      tl_assert(ref->accs[i].thr);
+      tl_assert(ref->accs[i].rcec);
+      tl_assert(ref->accs[i].rcec->magic == RCEC_MAGIC);
+
+      *resEC  = main_stacktrace_to_EC(&ref->accs[i].rcec->frames[1], N_FRAMES);
+      *resThr = ref->accs[i].thr;
       return True;
    } else {
       return False;
@@ -5536,6 +5442,7 @@ static void event_map__check_reference_counts ( void )
 {
    RCEC*   rcec;
    OldRef* oldref;
+   Word    i;
 
    /* Set the 'check' reference counts to zero */
    VG_(OSetGen_ResetIter)( contextTree );
@@ -5549,9 +5456,15 @@ static void event_map__check_reference_counts ( void )
    VG_(OSetGen_ResetIter)( oldrefTree );
    while ( (oldref = VG_(OSetGen_Next)( oldrefTree )) ) {
       tl_assert(oldref->magic == OldRef_MAGIC);
-      tl_assert(oldref->rcec);
-      tl_assert(oldref->rcec->magic == RCEC_MAGIC);
-      oldref->rcec->rcX++;
+      for (i = 0; i < N_OLDREF_ACCS; i++) {
+         if (oldref->accs[i].thr) {
+            tl_assert(oldref->accs[i].rcec);
+            tl_assert(oldref->accs[i].rcec->magic == RCEC_MAGIC);
+            oldref->accs[i].rcec->rcX++;
+         } else {
+            tl_assert(!oldref->accs[i].rcec);
+         }
+      }
    }
 
    /* compare check ref counts with actual */
@@ -5563,10 +5476,11 @@ static void event_map__check_reference_counts ( void )
 
 static void event_map_maybe_GC ( void )
 {
-   RCEC*   rcec;
    OldRef* oldref;
-   UWord   keyW, valW;
+   UWord   keyW, valW, retained, maxGen;
    WordFM* genMap;
+   XArray* refs2del;
+   Word    i, j, n2del;
 
    if (LIKELY(oldrefTreeN < EVENT_MAP_GC_AT))
       return;
@@ -5597,7 +5511,8 @@ static void event_map_maybe_GC ( void )
 
    tl_assert(HG_(sizeFM)(genMap) > 0);
 
-   UWord retained = oldrefTreeN, maxGen = 0;
+   retained = oldrefTreeN;
+   maxGen = 0;
    HG_(initIterFM)( genMap );
    while (HG_(nextIterFM)( genMap, &keyW, &valW, NULL )) {
       tl_assert(keyW > 0); /* can't allow a generation # 0 */
@@ -5623,33 +5538,42 @@ static void event_map_maybe_GC ( void )
    /* If this fails, it means there's only one generation in the
       entire tree.  So we're kind of in a bad situation, and need to
       do some stop-gap measure, such as randomly deleting half the
-      entires. */
+      entries. */
    tl_assert(retained < oldrefTreeN);
 
    /* Now make up a big list of the oldrefTree entries we want to
       delete.  We can't simultaneously traverse the tree and delete
       stuff from it, so first we need to copy them off somewhere
       else. (sigh) */
-   XArray* refs2del;
    refs2del = VG_(newXA)( main_zalloc, "libhb.emmG.1",
                           main_dealloc, sizeof(OldRef*) );
 
    VG_(OSetGen_ResetIter)( oldrefTree );
    while ( (oldref = VG_(OSetGen_Next)( oldrefTree )) ) {
-      if (oldref->gen <= maxGen)
+      tl_assert(oldref->magic == OldRef_MAGIC);
+      if (oldref->gen <= maxGen) {
          VG_(addToXA)( refs2del, &oldref );
+      }
    }
 
-   Word i, n2del = VG_(sizeXA)( refs2del );
+   n2del = VG_(sizeXA)( refs2del );
    tl_assert(n2del == (Word)(oldrefTreeN - retained));
 
    VG_(printf)("%s","deleting entries\n");
    for (i = 0; i < n2del; i++) {
+      void* nd;
       OldRef* ref = *(OldRef**)VG_(indexXA)( refs2del, i );
       tl_assert(ref);
       tl_assert(ref->magic == OldRef_MAGIC);
-      void* nd = VG_(OSetGen_Remove)( oldrefTree, ref );
-      ctxt__rcdec( ref->rcec );
+      for (j = 0; j < N_OLDREF_ACCS; j++) {
+         if (ref->accs[j].rcec) {
+            tl_assert(ref->accs[j].thr);
+            ctxt__rcdec( ref->accs[j].rcec );
+         } else {
+            tl_assert(!ref->accs[j].thr);
+         }
+      }
+      nd = VG_(OSetGen_Remove)( oldrefTree, ref );
       VG_(OSetGen_FreeNode)( oldrefTree, nd );
    }
 
@@ -5668,7 +5592,6 @@ static void event_map_maybe_GC ( void )
 
 }
 
-#endif
 
 /////////////////////////////////////////////////////////
 //                                                     //
@@ -5708,7 +5631,7 @@ static void record_race_info ( /*MOD*/MSMInfo* info, SVal svOld, SVal svNew )
 
    info->where = main_get_EC( info->acc_thr );
 
-   found = event_map_lookup( &wherep, &thrp, info->ea );
+   found = event_map_lookup( &wherep, &thrp, info->acc_thr, info->ea );
    if (found) {
      tl_assert(wherep);
      tl_assert(thrp);
@@ -5939,9 +5862,9 @@ Thr* libhb_init (
    tl_assert(get_stacktrace);
    tl_assert(stacktrace_to_EC);
    tl_assert(get_EC);
-   main_zalloc_P         = zalloc;
-   main_dealloc_P        = dealloc;
-   main_shadow_alloc_P   = shadow_alloc;
+   main_zalloc           = zalloc;
+   main_dealloc          = dealloc;
+   main_shadow_alloc     = shadow_alloc;
    main_get_stacktrace   = get_stacktrace;
    main_stacktrace_to_EC = stacktrace_to_EC;
    main_get_EC           = get_EC;
@@ -6083,7 +6006,6 @@ void libhb_shutdown ( Bool show_stats )
                    HG_(sizeFM)( vts_set ) );
       //VG_(printf)( "   libhb: %lu entries in event_map\n", 
       //             HG_(sizeFM)( event_map ) );
-      mem_report();
 
 #if 0
       VG_(printf)("sizeof(AvlNode)     = %lu\n", sizeof(AvlNode));
