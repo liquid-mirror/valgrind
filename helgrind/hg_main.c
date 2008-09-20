@@ -4227,11 +4227,30 @@ typedef
 /* Updates the copy with address info if necessary. */
 static UInt hg_update_extra ( Error* err )
 {
-   XError* extra = (XError*)VG_(get_error_extra)(err);
-   tl_assert(extra);
+   XError* xe = (XError*)VG_(get_error_extra)(err);
+   tl_assert(xe);
    //if (extra != NULL && Undescribed == extra->addrinfo.akind) {
    //   describe_addr ( VG_(get_error_address)(err), &(extra->addrinfo) );
    //}
+
+   if (xe->tag == XE_Race) {
+      /* See if we can come up with a source level description of the
+         raced-upon address.  This is potentially expensive, which is
+         why it's only done at the update_extra point, not when the
+         error is initially created. */
+      tl_assert(sizeof(xe->XE.Race.descr1) == sizeof(xe->XE.Race.descr2));
+      if (VG_(get_data_description)(
+                &xe->XE.Race.descr1[0],
+                &xe->XE.Race.descr2[0],
+                sizeof(xe->XE.Race.descr1)-1,
+                xe->XE.Race.data_addr )) {
+         tl_assert( xe->XE.Race.descr1
+                       [ sizeof(xe->XE.Race.descr1)-1 ] == 0);
+         tl_assert( xe->XE.Race.descr2
+                       [ sizeof(xe->XE.Race.descr2)-1 ] == 0);
+      }
+   }
+
    return sizeof(XError);
 }
 
@@ -4272,20 +4291,7 @@ static void record_error_Race ( Thread* thr,
    // FIXME: tid vs thr
    tl_assert(isWrite == False || isWrite == True);
    //   tl_assert(szB == 8 || szB == 4 || szB == 2 || szB == 1);
-
-   tl_assert(sizeof(xe.XE.Race.descr1) == sizeof(xe.XE.Race.descr2));
    xe.XE.Race.descr1[0] = xe.XE.Race.descr2[0] = 0;
-   if (VG_(get_data_description)(
-             &xe.XE.Race.descr1[0],
-             &xe.XE.Race.descr2[0],
-             sizeof(xe.XE.Race.descr1)-1,
-             data_addr )) {
-      tl_assert( xe.XE.Race.descr1
-                    [ sizeof(xe.XE.Race.descr1)-1 ] == 0);
-      tl_assert( xe.XE.Race.descr2
-                    [ sizeof(xe.XE.Race.descr2)-1 ] == 0);
-   }
-
    VG_(maybe_record_error)( map_threads_reverse_lookup_SLOW(thr),
                             XE_Race, data_addr, NULL, &xe );
 }
@@ -5042,9 +5048,7 @@ static void hg_pre_clo_init ( void )
                                    hg_cli__realloc,
                                    HG_CLI__MALLOC_REDZONE_SZB );
 
-   //   VG_(needs_var_info)();
-
-   //VG_(needs_xml_output)          ();
+   VG_(needs_var_info)(); /* optional */
 
    VG_(track_new_mem_startup)     ( evh__new_mem_w_perms );
    VG_(track_new_mem_stack_signal)( evh__new_mem_w_tid );
