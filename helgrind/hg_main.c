@@ -51,11 +51,13 @@
 #include "pub_tool_wordfm.h"
 
 #include "hg_basics.h"
-#include "helgrind.h"
-
 #include "hg_wordset.h"
+#include "hg_lock_n_thread.h"
 
 #include "libhb.h"
+
+#include "helgrind.h"
+
 
 // FIXME: new_mem_w_tid ignores the supplied tid. (wtf?!)
 
@@ -194,98 +196,8 @@ static Int clo_sanity_flags = 0;
 */
 
 /*----------------------------------------------------------------*/
-/*--- Primary data definitions                                 ---*/
+/*--- Primary data structures                                  ---*/
 /*----------------------------------------------------------------*/
-
-/* Shadow values. */
-typedef  UInt  SVal;
-
-
-/* These are handles for Word sets.  CONSTRAINTS: must be (very) small
-   ints numbered from zero, since < 30-bit versions of them are used to
-   encode thread-sets and lock-sets in 32-bit shadow words. */
-typedef  WordSet  WordSetID;
-
-
-/* Stores information about a thread.  Addresses of these also serve
-   as unique thread identifiers and so are never freed, so they should
-   be as small as possible. */
-typedef
-   struct _Thread {
-      /* ADMIN */
-      struct _Thread* admin;
-      UInt            magic;
-      Thr*            hbthr; /* in libhb; its .opaque points back here */
-      /* USEFUL */
-      WordSetID locksetA; /* WordSet of Lock* currently held by thread */
-      WordSetID locksetW; /* subset of locksetA held in w-mode */
-      /* EXPOSITION */
-      /* Place where parent was when this thread was created. */
-      ExeContext* created_at;
-      Bool        announced;
-      /* Index for generating references in error messages. */
-      Int         errmsg_index;
-   }
-   Thread;
-
-
-/* Stores information about a lock's current state.  These are
-   allocated and later freed (when the containing memory becomes
-   NoAccess).  This gives a problem for the XError type, which
-   contains Lock*s.  Solution is to copy any Lock which is to be
-   incorporated into an XErrors, so as to make it independent from the
-   'normal' collection of Locks, which can come and go.  When the lock
-   is copied, its .magic is changed from LockN_Magic to
-   LockP_Magic. */
-
-/* Lock kinds. */
-typedef
-   enum {
-      LK_mbRec=1001, /* normal mutex, possibly recursive */
-      LK_nonRec,     /* normal mutex, definitely non recursive */
-      LK_rdwr        /* reader-writer lock */
-   }
-   LockKind;
-
-typedef
-   struct _Lock {
-      /* ADMIN */
-      struct _Lock* admin;
-      ULong         unique; /* used for persistence-hashing */
-      UInt          magic;  /* LockN_MAGIC or LockP_MAGIC */
-      /* EXPOSITION */
-      /* Place where lock first came to the attention of Helgrind. */
-      ExeContext*   appeared_at;
-      /* If the lock is held, place where the lock most recently made
-         an unlocked->locked transition.  Must be sync'd with .heldBy:
-         either both NULL or both non-NULL. */
-      ExeContext*   acquired_at;
-      /* USEFUL-STATIC */
-      SO*           hbso;      /* associated SO */
-      Addr          guestaddr; /* Guest address of lock */
-      LockKind      kind;      /* what kind of lock this is */
-      /* USEFUL-DYNAMIC */
-      Bool          heldW; 
-      WordBag*      heldBy; /* bag of threads that hold this lock */
-      /* .heldBy is NULL: lock is unheld, and .heldW is meaningless
-                          but arbitrarily set to False
-         .heldBy is non-NULL:
-            .heldW is True:  lock is w-held by threads in heldBy
-            .heldW is False: lock is r-held by threads in heldBy
-            Either way, heldBy may not validly be an empty Bag.
-
-         for LK_nonRec, r-holdings are not allowed, and w-holdings may
-         only have sizeTotal(heldBy) == 1
-
-         for LK_mbRec, r-holdings are not allowed, and w-holdings may
-         only have sizeUnique(heldBy) == 1
-
-         for LK_rdwr, w-holdings may only have sizeTotal(heldBy) == 1 */
-   }
-   Lock;
-
-
-/* --------- Primary data structures --------- */
 
 /* Admin linked list of Threads */
 static Thread* admin_threads = NULL;
@@ -319,11 +231,6 @@ static UWord stats__lockN_acquires = 0;
 static UWord stats__lockN_releases = 0;
 
 static ThreadId map_threads_maybe_reverse_lookup_SLOW ( Thread* ); /*fwds*/
-
-#define Thread_MAGIC   0x504fc5e5
-#define LockN_MAGIC    0x6545b557 /* normal nonpersistent locks */
-#define LockP_MAGIC    0x755b5456 /* persistent (copied) locks */
-#define SecMap_MAGIC   0x571e58cb
 
 static UWord stats__mk_Segment = 0;
 
@@ -1151,7 +1058,6 @@ static void all__sanity_check ( Char* who ) {
 /* fwds */
 static void record_error_Race ( Thread* thr, 
                                 Addr data_addr, Bool isWrite, Int szB,
-                                SVal old_sv, SVal new_sv,
                                 ExeContext* mb_lastlock,
                                 ExeContext* mb_confacc,
                                 Thread* mb_confaccthr );
@@ -1316,7 +1222,7 @@ static void shadow_mem_read_range ( Thread* thr, Addr a, SizeT len )
    tl_assert(hbthr);
    if (libhb_read(&ri, hbthr, a, len)) {
       Thread* confthr = ri.thrp ? libhb_get_Thr_opaque( ri.thrp ) : NULL;
-      record_error_Race( thr, ri.a, ri.isW, ri.szB,  0,0,NULL,
+      record_error_Race( thr, ri.a, ri.isW, ri.szB, NULL,
                          (ExeContext*)ri.wherep, confthr );
    }
 }
@@ -1327,7 +1233,7 @@ static void shadow_mem_write_range ( Thread* thr, Addr a, SizeT len ) {
    tl_assert(hbthr);
    if (libhb_write(&ri, hbthr, a, len)) {
       Thread* confthr = ri.thrp ? libhb_get_Thr_opaque( ri.thrp ) : NULL;
-      record_error_Race( thr, ri.a, ri.isW, ri.szB,  0,0,NULL,
+      record_error_Race( thr, ri.a, ri.isW, ri.szB, NULL,
                          (ExeContext*)ri.wherep, confthr );
    }
 }
@@ -1996,7 +1902,7 @@ void evh__mem_help_read_1(Addr a) {
    Thr*     hbthr = thr->hbthr;
    if (libhb_read(&ri, hbthr, a, 1)) {
       Thread* confthr = ri.thrp ? libhb_get_Thr_opaque( ri.thrp ) : NULL;
-      record_error_Race( thr, ri.a, ri.isW, ri.szB,  0,0,NULL,
+      record_error_Race( thr, ri.a, ri.isW, ri.szB, NULL,
                          (ExeContext*)ri.wherep, confthr );
    }
 }
@@ -2008,7 +1914,7 @@ void evh__mem_help_read_2(Addr a) {
    Thr*     hbthr = thr->hbthr;
    if (libhb_read(&ri, hbthr, a, 2)) {
       Thread* confthr = ri.thrp ? libhb_get_Thr_opaque( ri.thrp ) : NULL;
-      record_error_Race( thr, ri.a, ri.isW, ri.szB,  0,0,NULL,
+      record_error_Race( thr, ri.a, ri.isW, ri.szB, NULL,
                          (ExeContext*)ri.wherep, confthr );
    }
 }
@@ -2020,7 +1926,7 @@ void evh__mem_help_read_4(Addr a) {
    Thr*     hbthr = thr->hbthr;
    if (libhb_read(&ri, hbthr, a, 4)) {
       Thread* confthr = ri.thrp ? libhb_get_Thr_opaque( ri.thrp ) : NULL;
-      record_error_Race( thr, ri.a, ri.isW, ri.szB,  0,0,NULL,
+      record_error_Race( thr, ri.a, ri.isW, ri.szB, NULL,
                          (ExeContext*)ri.wherep, confthr );
    }
 }
@@ -2032,7 +1938,7 @@ void evh__mem_help_read_8(Addr a) {
    Thr*     hbthr = thr->hbthr;
    if (libhb_read(&ri, hbthr, a, 8)) {
       Thread* confthr = ri.thrp ? libhb_get_Thr_opaque( ri.thrp ) : NULL;
-      record_error_Race( thr, ri.a, ri.isW, ri.szB,  0,0,NULL,
+      record_error_Race( thr, ri.a, ri.isW, ri.szB, NULL,
                          (ExeContext*)ri.wherep, confthr );
    }
 }
@@ -2044,7 +1950,7 @@ void evh__mem_help_read_N(Addr a, SizeT size) {
    Thr*     hbthr = thr->hbthr;
    if (libhb_read(&ri, hbthr, a, size)) {
       Thread* confthr = ri.thrp ? libhb_get_Thr_opaque( ri.thrp ) : NULL;
-      record_error_Race( thr, ri.a, ri.isW, ri.szB,  0,0,NULL,
+      record_error_Race( thr, ri.a, ri.isW, ri.szB, NULL,
                          (ExeContext*)ri.wherep, confthr );
    }
 }
@@ -2056,7 +1962,7 @@ void evh__mem_help_write_1(Addr a) {
    Thr*     hbthr = thr->hbthr;
    if (libhb_write(&ri, hbthr, a, 1)) {
       Thread* confthr = ri.thrp ? libhb_get_Thr_opaque( ri.thrp ) : NULL;
-      record_error_Race( thr, ri.a, ri.isW, ri.szB,  0,0,NULL,
+      record_error_Race( thr, ri.a, ri.isW, ri.szB, NULL,
                          (ExeContext*)ri.wherep, confthr );
    }
 }
@@ -2068,7 +1974,7 @@ void evh__mem_help_write_2(Addr a) {
    Thr*     hbthr = thr->hbthr;
    if (libhb_write(&ri, hbthr, a, 2)) {
       Thread* confthr = ri.thrp ? libhb_get_Thr_opaque( ri.thrp ) : NULL;
-      record_error_Race( thr, ri.a, ri.isW, ri.szB,  0,0,NULL,
+      record_error_Race( thr, ri.a, ri.isW, ri.szB, NULL,
                          (ExeContext*)ri.wherep, confthr );
    }
 }
@@ -2080,7 +1986,7 @@ void evh__mem_help_write_4(Addr a) {
    Thr*     hbthr = thr->hbthr;
    if (libhb_write(&ri, hbthr, a, 4)) {
       Thread* confthr = ri.thrp ? libhb_get_Thr_opaque( ri.thrp ) : NULL;
-      record_error_Race( thr, ri.a, ri.isW, ri.szB,  0,0,NULL,
+      record_error_Race( thr, ri.a, ri.isW, ri.szB, NULL,
                          (ExeContext*)ri.wherep, confthr );
    }
 }
@@ -2092,7 +1998,7 @@ void evh__mem_help_write_8(Addr a) {
    Thr*     hbthr = thr->hbthr;
    if (libhb_write(&ri, hbthr, a, 8)) {
       Thread* confthr = ri.thrp ? libhb_get_Thr_opaque( ri.thrp ) : NULL;
-      record_error_Race( thr, ri.a, ri.isW, ri.szB,  0,0,NULL,
+      record_error_Race( thr, ri.a, ri.isW, ri.szB, NULL,
                          (ExeContext*)ri.wherep, confthr );
    }
 }
@@ -2104,7 +2010,7 @@ void evh__mem_help_write_N(Addr a, SizeT size) {
    Thr*     hbthr = thr->hbthr;
    if (libhb_write(&ri, hbthr, a, size)) {
       Thread* confthr = ri.thrp ? libhb_get_Thr_opaque( ri.thrp ) : NULL;
-      record_error_Race( thr, ri.a, ri.isW, ri.szB,  0,0,NULL,
+      record_error_Race( thr, ri.a, ri.isW, ri.szB, NULL,
                          (ExeContext*)ri.wherep, confthr );
    }
 }
@@ -4099,8 +4005,6 @@ typedef
             Addr  data_addr;
             Int   szB;
             Bool  isWrite;
-            SVal  new_state;
-            SVal  old_state;
             ExeContext* mb_lastlock;
             ExeContext* mb_confacc;
             Thread* thr;
@@ -4199,7 +4103,6 @@ static UInt hg_update_extra ( Error* err )
 
 static void record_error_Race ( Thread* thr, 
                                 Addr data_addr, Bool isWrite, Int szB,
-                                SVal old_sv, SVal new_sv,
                                 ExeContext* mb_lastlock,
                                 ExeContext* mb_confacc,
                                 Thread* mb_confaccthr ) {
@@ -4225,8 +4128,6 @@ static void record_error_Race ( Thread* thr,
    xe.XE.Race.data_addr   = data_addr;
    xe.XE.Race.szB         = szB;
    xe.XE.Race.isWrite     = isWrite;
-   xe.XE.Race.new_state   = new_sv;
-   xe.XE.Race.old_state   = old_sv;
    xe.XE.Race.mb_lastlock = mb_lastlock;
    xe.XE.Race.mb_confacc  = mb_confacc;
    xe.XE.Race.thr         = thr;

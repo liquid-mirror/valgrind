@@ -32,10 +32,10 @@
 #define __LIBHB_H
 
 /* Abstract to user: thread identifiers */
-typedef  struct _Thr  Thr;
+/* typedef  struct _Thr  Thr; */ /* now in hg_lock_n_thread.h */
 
 /* Abstract to user: synchronisation objects */
-typedef  struct _SO  SO;
+/* typedef  struct _SO  SO; */ /* now in hg_lock_n_thread.h */
 
 /* Abstract to the lib: execution contexts */
 /* struct _EC will be defined by user at some point. */

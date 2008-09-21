@@ -41,8 +41,12 @@
 #include "pub_tool_xarray.h"
 #include "pub_tool_oset.h"
 #include "pub_tool_aspacemgr.h"
+#include "pub_tool_execontext.h"
 
 #include "hg_basics.h"
+#include "hg_wordset.h"
+#include "hg_lock_n_thread.h"
+
 #include "libhb.h"
 
 

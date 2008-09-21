@@ -1,7 +1,7 @@
 
 /*--------------------------------------------------------------------*/
-/*--- Basic definitions for all of Helgrind.                       ---*/
-/*---                                                  hg_basics.h ---*/
+/*--- Error management for Helgrind.                               ---*/
+/*---                                                  hg_errors.c ---*/
 /*--------------------------------------------------------------------*/
 
 /*
@@ -29,23 +29,15 @@
    The GNU General Public License is contained in the file COPYING.
 */
 
-#ifndef __HG_BASICS_H
-#define __HG_BASICS_H
+#include "pub_tool_basics.h"
+#include "pub_tool_libcbase.h"
+#include "pub_tool_libcassert.h"
+#include "pub_tool_mallocfree.h"
+
+#include "hg_errors.h"            /* self */
 
 
-/*----------------------------------------------------------------*/
-/*--- Very basic stuff                                         ---*/
-/*----------------------------------------------------------------*/
-
-#define HG_(str) VGAPPEND(vgHelgrind_,str)
-
-void* HG_(zalloc) ( HChar* cc, SizeT n );
-void  HG_(free) ( void* p );
-
-
-
-#endif /* ! __HG_BASICS_H */
 
 /*--------------------------------------------------------------------*/
-/*--- end                                              hg_basics.h ---*/
+/*--- end                                              hg_errors.c ---*/
 /*--------------------------------------------------------------------*/

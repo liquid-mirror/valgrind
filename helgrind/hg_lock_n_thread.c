@@ -1,7 +1,7 @@
 
 /*--------------------------------------------------------------------*/
-/*--- Basic definitions for all of Helgrind.                       ---*/
-/*---                                                  hg_basics.h ---*/
+/*--- Definitions for Locks and Threads.                           ---*/
+/*---                                           hg_lock_n_thread.c ---*/
 /*--------------------------------------------------------------------*/
 
 /*
@@ -29,23 +29,17 @@
    The GNU General Public License is contained in the file COPYING.
 */
 
-#ifndef __HG_BASICS_H
-#define __HG_BASICS_H
+#include "pub_tool_basics.h"
+#include "pub_tool_libcbase.h"
+#include "pub_tool_libcassert.h"
+#include "pub_tool_execontext.h"
+#include "pub_tool_wordfm.h"
 
+#include "hg_basics.h"
+#include "hg_wordset.h"
+#include "hg_lock_n_thread.h"            /* self */
 
-/*----------------------------------------------------------------*/
-/*--- Very basic stuff                                         ---*/
-/*----------------------------------------------------------------*/
-
-#define HG_(str) VGAPPEND(vgHelgrind_,str)
-
-void* HG_(zalloc) ( HChar* cc, SizeT n );
-void  HG_(free) ( void* p );
-
-
-
-#endif /* ! __HG_BASICS_H */
 
 /*--------------------------------------------------------------------*/
-/*--- end                                              hg_basics.h ---*/
+/*--- end                                       hg_lock_n_thread.c ---*/
 /*--------------------------------------------------------------------*/

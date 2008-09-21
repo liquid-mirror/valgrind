@@ -41,7 +41,7 @@
 #include "pub_tool_wordfm.h"
 
 #include "hg_basics.h"
-#include "hg_wordset.h"
+#include "hg_wordset.h"     /* self */
 
 //------------------------------------------------------------------//
 //--- Word Cache                                                 ---//
