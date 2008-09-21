@@ -70,7 +70,8 @@ vgpreload_helgrind_ppc64_aix5_so_LDFLAGS      = \
 	$(PRELOAD_LDFLAGS_PPC64_AIX5) \
 	$(LIBREPLACEMALLOC_LDFLAGS_PPC64_AIX5)
 
-HELGRIND_SOURCES_COMMON = hg_wordset.c hg_main.c libhb_vg.c
+HELGRIND_SOURCES_COMMON = \
+	hg_basics.c hg_wordset.c libhb_core.c hg_main.c
 
 helgrind_x86_linux_SOURCES      = $(HELGRIND_SOURCES_COMMON)
 helgrind_x86_linux_CPPFLAGS     = $(AM_CPPFLAGS_X86_LINUX)
@@ -118,6 +119,6 @@ hgincludedir = $(includedir)/valgrind
 
 hginclude_HEADERS = helgrind.h
 
-noinst_HEADERS = hg_wordset.h
+noinst_HEADERS = hg_basics.h hg_wordset.h
 
-EXTRA_DIST = Makefile_sa README_MSMProp2.txt README_YARD.txt
+EXTRA_DIST = README_MSMProp2.txt README_YARD.txt

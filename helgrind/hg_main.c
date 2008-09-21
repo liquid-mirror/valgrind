@@ -51,9 +51,9 @@
 #include "pub_tool_debuginfo.h"  /* VG_(get_data_description) */
 #include "pub_tool_wordfm.h"
 
+#include "hg_basics.h"
 #include "helgrind.h"
 
-#define HG_(str) VGAPPEND(vgHelgrind_,str)
 #include "hg_wordset.h"
 
 #include "libhb.h"

@@ -40,7 +40,7 @@
 #include "pub_tool_libcprint.h"
 #include "pub_tool_wordfm.h"
 
-#define HG_(str) VGAPPEND(vgHelgrind_,str)
+#include "hg_basics.h"
 #include "hg_wordset.h"
 
 //------------------------------------------------------------------//
