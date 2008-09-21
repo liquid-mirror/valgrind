@@ -40,6 +40,7 @@
 #include "pub_tool_wordfm.h"
 #include "pub_tool_xarray.h"
 #include "pub_tool_oset.h"
+#include "pub_tool_aspacemgr.h"
 
 #include "hg_basics.h"
 #include "libhb.h"
@@ -48,9 +49,6 @@
 /* fwds for
    Globals needed by other parts of the library.  These are set
    once at startup and then never changed. */
-static void*       (*main_zalloc)( HChar*, SizeT ) = NULL;
-static void        (*main_dealloc)( void* ) = NULL;
-static void*       (*main_shadow_alloc)( SizeT ) = NULL;
 static void        (*main_get_stacktrace)( Thr*, Addr*, UWord ) = NULL;
 static struct EC_* (*main_stacktrace_to_EC)( Addr*, UWord ) = NULL;
 static struct EC_* (*main_get_EC)( Thr* ) = NULL;
@@ -335,12 +333,42 @@ static inline UWord shmem__get_SecMap_offset ( Addr a ) {
 }
 
 
+/*----------------------------------------------------------------*/
+/*--- map_shmem :: WordFM Addr SecMap                          ---*/
+/*--- shadow memory (low level handlers) (shmem__* fns)        ---*/
+/*----------------------------------------------------------------*/
+
 /*--------------- SecMap allocation --------------- */
+
+static HChar* shmem__bigchunk_next = NULL;
+static HChar* shmem__bigchunk_end1 = NULL;
+
+static void* shmem__bigchunk_alloc ( SizeT n )
+{
+   const SizeT sHMEM__BIGCHUNK_SIZE = 4096 * 256 * 4;
+   tl_assert(n > 0);
+   n = VG_ROUNDUP(n, 16);
+   tl_assert(shmem__bigchunk_next <= shmem__bigchunk_end1);
+   tl_assert(shmem__bigchunk_end1 - shmem__bigchunk_next
+             <= (SSizeT)sHMEM__BIGCHUNK_SIZE);
+   if (shmem__bigchunk_next + n > shmem__bigchunk_end1) {
+      if (0)
+      VG_(printf)("XXXXX bigchunk: abandoning %d bytes\n",
+                  (Int)(shmem__bigchunk_end1 - shmem__bigchunk_next));
+      shmem__bigchunk_next = VG_(am_shadow_alloc)( sHMEM__BIGCHUNK_SIZE );
+      shmem__bigchunk_end1 = shmem__bigchunk_next + sHMEM__BIGCHUNK_SIZE;
+   }
+   tl_assert(shmem__bigchunk_next);
+   tl_assert( 0 == (((Addr)shmem__bigchunk_next) & (16-1)) );
+   tl_assert(shmem__bigchunk_next + n <= shmem__bigchunk_end1);
+   shmem__bigchunk_next += n;
+   return shmem__bigchunk_next - n;
+}
 
 static SecMap* shmem__alloc_SecMap ( void )
 {
    Word    i, j;
-   SecMap* sm = main_shadow_alloc( sizeof(SecMap) );
+   SecMap* sm = shmem__bigchunk_alloc( sizeof(SecMap) );
    if (0) VG_(printf)("alloc_SecMap %p\n",sm);
    tl_assert(sm);
    sm->magic = SecMap_MAGIC;
@@ -560,7 +588,7 @@ void alloc_F_for_writing ( /*MOD*/SecMap* sm, /*OUT*/Word* fixp ) {
 
    /* No free F line found.  Expand existing array and try again. */
    new_size = sm->linesF_size==0 ? 1 : 2 * sm->linesF_size;
-   nyu      = main_zalloc( "libhb.aFfw.1 (LineF storage)",
+   nyu      = HG_(zalloc)( "libhb.aFfw.1 (LineF storage)",
                            new_size * sizeof(LineF) );
    tl_assert(nyu);
 
@@ -581,7 +609,7 @@ void alloc_F_for_writing ( /*MOD*/SecMap* sm, /*OUT*/Word* fixp ) {
          nyu[i] = sm->linesF[i];
       }
       VG_(memset)(sm->linesF, 0, sm->linesF_size * sizeof(LineF) );
-      main_dealloc(sm->linesF);
+      HG_(free)(sm->linesF);
    }
 
    sm->linesF      = nyu;
@@ -2023,8 +2051,8 @@ static void zsm_init ( void(*p_rcinc)(SVal), void(*p_rcdec)(SVal) )
    rcdec = p_rcdec;
 
    tl_assert(map_shmem == NULL);
-   map_shmem = VG_(newFM)( main_zalloc, "libhb.zsm_init.1 (map_shmem)",
-                           main_dealloc, 
+   map_shmem = VG_(newFM)( HG_(zalloc), "libhb.zsm_init.1 (map_shmem)",
+                           HG_(free), 
                            NULL/*unboxed UWord cmp*/);
    tl_assert(map_shmem != NULL);
    shmem__invalidate_scache();
@@ -2148,11 +2176,11 @@ static Bool is_sane_VTS ( VTS* vts )
 VTS* VTS__new ( void )
 {
    VTS* vts;
-   vts = main_zalloc( "libhb.VTS__new.1", sizeof(VTS) );
+   vts = HG_(zalloc)( "libhb.VTS__new.1", sizeof(VTS) );
    tl_assert(vts);
    vts->id = VtsID_INVALID;
-   vts->ts = VG_(newXA)( main_zalloc, "libhb.VTS__new.2",
-                         main_dealloc, sizeof(ScalarTS) );
+   vts->ts = VG_(newXA)( HG_(zalloc), "libhb.VTS__new.2",
+                         HG_(free), sizeof(ScalarTS) );
    tl_assert(vts->ts);
    return vts;
 }
@@ -2165,7 +2193,7 @@ void VTS__delete ( VTS* vts )
    tl_assert(vts);
    tl_assert(vts->ts);
    VG_(deleteXA)( vts->ts );
-   main_dealloc(vts);
+   HG_(free)(vts);
 }
 
 
@@ -2564,8 +2592,8 @@ static WordFM* /* VTS* void void */ vts_set = NULL;
 static void vts_set_init ( void )
 {
    tl_assert(!vts_set);
-   vts_set = VG_(newFM)( main_zalloc, "libhb.vts_set_init.1",
-                         main_dealloc,
+   vts_set = VG_(newFM)( HG_(zalloc), "libhb.vts_set_init.1",
+                         HG_(free),
                          (Word(*)(UWord,UWord))VTS__cmp_structural );
    tl_assert(vts_set);
 }
@@ -2639,8 +2667,8 @@ static Word vts_next_GC_at = 1000;
 static void vts_tab_init ( void )
 {
    vts_tab
-      = VG_(newXA)( main_zalloc, "libhb.vts_tab_init.1",
-                    main_dealloc, sizeof(VtsTE) );
+      = VG_(newXA)( HG_(zalloc), "libhb.vts_tab_init.1",
+                    HG_(free), sizeof(VtsTE) );
    vts_tab_freelist
       = VtsID_INVALID;
    tl_assert(vts_tab);
@@ -3020,7 +3048,7 @@ struct _Thr {
 };
 
 static Thr* Thr__new ( void ) {
-   Thr* thr = main_zalloc( "libhb.Thr__new.1", sizeof(Thr) );
+   Thr* thr = HG_(zalloc)( "libhb.Thr__new.1", sizeof(Thr) );
    thr->viR = VtsID_INVALID;
    thr->viW = VtsID_INVALID;
    return thr;
@@ -3406,8 +3434,8 @@ static void event_map_init ( void )
    contextTree = VG_(OSetGen_Create)(
                     0, 
                     (Word(*)(const void *, const void*))RCEC__cmp_by_frames, 
-                    main_zalloc, "libhb.event_map_init.1 (context tree)",
-                    main_dealloc
+                    HG_(zalloc), "libhb.event_map_init.1 (context tree)",
+                    HG_(free)
                  );
    tl_assert(contextTree);
 
@@ -3415,8 +3443,8 @@ static void event_map_init ( void )
    oldrefTree = VG_(OSetGen_Create)(
                    0, 
                    (Word(*)(const void *, const void*))OldRef__cmp_by_EA,
-                   main_zalloc, "libhb.event_map_init.2 (oldref tree)", 
-                   main_dealloc
+                   HG_(zalloc), "libhb.event_map_init.2 (oldref tree)", 
+                   HG_(free)
                 );
    tl_assert(oldrefTree);
 
@@ -3481,8 +3509,8 @@ static void event_map_maybe_GC ( void )
 
    /* Compute the distribution of generation values in the ref tree */
    /* genMap :: generation-number -> count-of-nodes-with-that-number */
-   genMap = VG_(newFM)( main_zalloc, "libhb.emmG.1",
-                                      main_dealloc, NULL );
+   genMap = VG_(newFM)( HG_(zalloc), "libhb.emmG.1",
+                                      HG_(free), NULL );
 
    VG_(OSetGen_ResetIter)( oldrefTree );
    while ( (oldref = VG_(OSetGen_Next)( oldrefTree )) ) {
@@ -3532,8 +3560,8 @@ static void event_map_maybe_GC ( void )
       delete.  We can't simultaneously traverse the tree and delete
       stuff from it, so first we need to copy them off somewhere
       else. (sigh) */
-   refs2del = VG_(newXA)( main_zalloc, "libhb.emmG.1",
-                          main_dealloc, sizeof(OldRef*) );
+   refs2del = VG_(newXA)( HG_(zalloc), "libhb.emmG.1",
+                          HG_(free), sizeof(OldRef*) );
 
    VG_(OSetGen_ResetIter)( oldrefTree );
    while ( (oldref = VG_(OSetGen_Next)( oldrefTree )) ) {
@@ -3788,7 +3816,7 @@ struct _SO {
 };
 
 static SO* SO__Alloc ( void ) {
-   SO* so = main_zalloc( "libhb.SO__Alloc.1", sizeof(SO) );
+   SO* so = HG_(zalloc)( "libhb.SO__Alloc.1", sizeof(SO) );
    so->viR   = VtsID_INVALID;
    so->viW   = VtsID_INVALID;
    so->magic = SO_MAGIC;
@@ -3805,7 +3833,7 @@ static void SO__Dealloc ( SO* so ) {
       VtsID__rcdec(so->viW);
    }
    so->magic = 0;
-   main_dealloc( so );
+   HG_(free)( so );
 }
 
 
@@ -3833,9 +3861,6 @@ static void show_thread_state ( HChar* str, Thr* t )
 
 
 Thr* libhb_init (
-        void*       (*zalloc)( HChar*, SizeT ),
-        void        (*dealloc)( void* ),
-        void*       (*shadow_alloc)( SizeT ),
         void        (*get_stacktrace)( Thr*, Addr*, UWord ),
         struct EC_* (*stacktrace_to_EC)( Addr*, UWord ),
         struct EC_* (*get_EC)( Thr* )
@@ -3843,15 +3868,9 @@ Thr* libhb_init (
 {
    Thr*  thr;
    VtsID vi;
-   tl_assert(zalloc);
-   tl_assert(dealloc);
-   tl_assert(shadow_alloc);
    tl_assert(get_stacktrace);
    tl_assert(stacktrace_to_EC);
    tl_assert(get_EC);
-   main_zalloc           = zalloc;
-   main_dealloc          = dealloc;
-   main_shadow_alloc     = shadow_alloc;
    main_get_stacktrace   = get_stacktrace;
    main_stacktrace_to_EC = stacktrace_to_EC;
    main_get_EC           = get_EC;

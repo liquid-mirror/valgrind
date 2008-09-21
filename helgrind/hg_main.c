@@ -35,7 +35,6 @@
 */
 
 #include "pub_tool_basics.h"
-#include "pub_tool_aspacemgr.h"
 #include "pub_tool_libcassert.h"
 #include "pub_tool_libcbase.h"
 #include "pub_tool_libcprint.h"
@@ -195,29 +194,6 @@ static Int clo_sanity_flags = 0;
 */
 
 /*----------------------------------------------------------------*/
-/*--- Some very basic stuff                                    ---*/
-/*----------------------------------------------------------------*/
-
-static void* hg_zalloc ( HChar* cc, SizeT n ) {
-   void* p;
-   tl_assert(n > 0);
-   p = VG_(malloc)( cc, n );
-   tl_assert(p);
-   VG_(memset)(p, 0, n);
-   return p;
-}
-static void hg_free ( void* p ) {
-   tl_assert(p);
-   VG_(free)(p);
-}
-
-/* Round a up to the next multiple of N.  N must be a power of 2 */
-#define ROUNDUP(a, N)   ((a + N - 1) & ~(N-1))
-/* Round a down to the next multiple of N.  N must be a power of 2 */
-#define ROUNDDN(a, N)   ((a) & ~(N-1))
-
-
-/*----------------------------------------------------------------*/
 /*--- Primary data definitions                                 ---*/
 /*----------------------------------------------------------------*/
 
@@ -357,7 +333,7 @@ static inline Bool is_sane_LockN ( Lock* lock ); /* fwds */
 
 static Thread* mk_Thread ( Thr* hbthr ) {
    static Int indx      = 1;
-   Thread* thread       = hg_zalloc( "hg.mk_Thread.1", sizeof(Thread) );
+   Thread* thread       = HG_(zalloc)( "hg.mk_Thread.1", sizeof(Thread) );
    thread->locksetA     = HG_(emptyWS)( univ_lsets );
    thread->locksetW     = HG_(emptyWS)( univ_lsets );
    thread->magic        = Thread_MAGIC;
@@ -373,7 +349,7 @@ static Thread* mk_Thread ( Thr* hbthr ) {
 // Make a new lock which is unlocked (hence ownerless)
 static Lock* mk_LockN ( LockKind kind, Addr guestaddr ) {
    static ULong unique = 0;
-   Lock* lock             = hg_zalloc( "hg.mk_Lock.1", sizeof(Lock) );
+   Lock* lock             = HG_(zalloc)( "hg.mk_Lock.1", sizeof(Lock) );
    lock->admin            = admin_locks;
    lock->unique           = unique++;
    lock->magic            = LockN_MAGIC;
@@ -467,7 +443,7 @@ static void del_LockN ( Lock* lk )
    if (lk->heldBy)
       VG_(deleteBag)( lk->heldBy );
    VG_(memset)(lk, 0xAA, sizeof(*lk));
-   hg_free(lk);
+   HG_(free)(lk);
 }
 
 /* Update 'lk' to reflect that 'thr' now has a write-acquisition of
@@ -500,7 +476,7 @@ static void lockN_acquire_writer ( Lock* lk, Thread* thr )
          tl_assert(lk->heldBy == NULL); /* can't w-lock recursively */
          tl_assert(!lk->heldW);
          lk->heldW  = True;
-         lk->heldBy = VG_(newBag)( hg_zalloc, "hg.lNaw.1", hg_free );
+         lk->heldBy = VG_(newBag)( HG_(zalloc), "hg.lNaw.1", HG_(free) );
          VG_(addToBag)( lk->heldBy, (Word)thr );
          break;
       case LK_mbRec:
@@ -554,7 +530,7 @@ static void lockN_acquire_reader ( Lock* lk, Thread* thr )
       VG_(addToBag)(lk->heldBy, (Word)thr);
    } else {
       lk->heldW  = False;
-      lk->heldBy = VG_(newBag)( hg_zalloc, "hg.lNar.1", hg_free );
+      lk->heldBy = VG_(newBag)( HG_(zalloc), "hg.lNar.1", HG_(free) );
       VG_(addToBag)( lk->heldBy, (Word)thr );
    }
    tl_assert(!lk->heldW);
@@ -801,12 +777,12 @@ static void initialise_data_structures ( Thr* hbthr_root )
    tl_assert(sizeof(Addr) == sizeof(Word));
 
    tl_assert(map_threads == NULL);
-   map_threads = hg_zalloc( "hg.ids.1", VG_N_THREADS * sizeof(Thread*) );
+   map_threads = HG_(zalloc)( "hg.ids.1", VG_N_THREADS * sizeof(Thread*) );
    tl_assert(map_threads != NULL);
 
    tl_assert(sizeof(Addr) == sizeof(Word));
    tl_assert(map_locks == NULL);
-   map_locks = VG_(newFM)( hg_zalloc, "hg.ids.2", hg_free, 
+   map_locks = VG_(newFM)( HG_(zalloc), "hg.ids.2", HG_(free), 
                            NULL/*unboxed Word cmp*/);
    tl_assert(map_locks != NULL);
 
@@ -815,18 +791,18 @@ static void initialise_data_structures ( Thr* hbthr_root )
    VG_(addToFM)( map_locks, (Word)&__bus_lock, (Word)__bus_lock_Lock );
 
    tl_assert(univ_tsets == NULL);
-   univ_tsets = HG_(newWordSetU)( hg_zalloc, "hg.ids.3", hg_free,
+   univ_tsets = HG_(newWordSetU)( HG_(zalloc), "hg.ids.3", HG_(free),
                                   8/*cacheSize*/ );
    tl_assert(univ_tsets != NULL);
 
    tl_assert(univ_lsets == NULL);
-   univ_lsets = HG_(newWordSetU)( hg_zalloc, "hg.ids.4", hg_free,
+   univ_lsets = HG_(newWordSetU)( HG_(zalloc), "hg.ids.4", HG_(free),
                                   8/*cacheSize*/ );
    tl_assert(univ_lsets != NULL);
 
    tl_assert(univ_laog == NULL);
-   univ_laog = HG_(newWordSetU)( hg_zalloc, "hg.ids.5 (univ_laog)",
-                                 hg_free, 24/*cacheSize*/ );
+   univ_laog = HG_(newWordSetU)( HG_(zalloc), "hg.ids.5 (univ_laog)",
+                                 HG_(free), 24/*cacheSize*/ );
    tl_assert(univ_laog != NULL);
 
    /* Set up entries for the root thread */
@@ -966,39 +942,6 @@ static void map_locks_delete ( Addr ga )
    tl_assert(ga2 == ga);
 }
 
-
-
-/*----------------------------------------------------------------*/
-/*--- map_shmem :: WordFM Addr SecMap                          ---*/
-/*--- shadow memory (low level handlers) (shmem__* fns)        ---*/
-/*----------------------------------------------------------------*/
-
-/*--------------- SecMap allocation --------------- */
-
-static HChar* shmem__bigchunk_next = NULL;
-static HChar* shmem__bigchunk_end1 = NULL;
-
-static void* shmem__bigchunk_alloc ( SizeT n )
-{
-   const SizeT sHMEM__BIGCHUNK_SIZE = 4096 * 256 * 4;
-   tl_assert(n > 0);
-   n = ROUNDUP(n, 16);
-   tl_assert(shmem__bigchunk_next <= shmem__bigchunk_end1);
-   tl_assert(shmem__bigchunk_end1 - shmem__bigchunk_next
-             <= (SSizeT)sHMEM__BIGCHUNK_SIZE);
-   if (shmem__bigchunk_next + n > shmem__bigchunk_end1) {
-      if (0)
-      VG_(printf)("XXXXX bigchunk: abandoning %d bytes\n",
-                  (Int)(shmem__bigchunk_end1 - shmem__bigchunk_next));
-      shmem__bigchunk_next = VG_(am_shadow_alloc)( sHMEM__BIGCHUNK_SIZE );
-      shmem__bigchunk_end1 = shmem__bigchunk_next + sHMEM__BIGCHUNK_SIZE;
-   }
-   tl_assert(shmem__bigchunk_next);
-   tl_assert( 0 == (((Addr)shmem__bigchunk_next) & (16-1)) );
-   tl_assert(shmem__bigchunk_next + n <= shmem__bigchunk_end1);
-   shmem__bigchunk_next += n;
-   return shmem__bigchunk_next - n;
-}
 
 
 /*----------------------------------------------------------------*/
@@ -1326,7 +1269,7 @@ void record_last_lock_lossage ( Addr ga_of_access,
                       HG_(cardinalityWS)( univ_lsets, lset_old), lk );
    if (lk->appeared_at) {
       if (ga_to_lastlock == NULL)
-         ga_to_lastlock = VG_(newFM)( hg_zalloc, "hg.rlll.1", hg_free, NULL );
+         ga_to_lastlock = VG_(newFM)( HG_(zalloc), "hg.rlll.1", HG_(free), NULL );
       VG_(addToFM)( ga_to_lastlock, ga_of_access, (Word)lk->appeared_at );
       stats__ga_LL_adds++;
    }
@@ -2343,7 +2286,7 @@ static WordFM* map_cond_to_SO = NULL;
 
 static void map_cond_to_SO_INIT ( void ) {
    if (UNLIKELY(map_cond_to_SO == NULL)) {
-      map_cond_to_SO = VG_(newFM)( hg_zalloc, "hg.mctSI.1", hg_free, NULL );
+      map_cond_to_SO = VG_(newFM)( HG_(zalloc), "hg.mctSI.1", HG_(free), NULL );
       tl_assert(map_cond_to_SO != NULL);
    }
 }
@@ -2676,8 +2619,8 @@ static WordFM* map_sem_to_SO_stack = NULL;
 
 static void map_sem_to_SO_stack_INIT ( void ) {
    if (map_sem_to_SO_stack == NULL) {
-      map_sem_to_SO_stack = VG_(newFM)( hg_zalloc, "hg.mstSs.1",
-                                        hg_free, NULL );
+      map_sem_to_SO_stack = VG_(newFM)( HG_(zalloc), "hg.mstSs.1",
+                                        HG_(free), NULL );
       tl_assert(map_sem_to_SO_stack != NULL);
    }
 }
@@ -2693,7 +2636,7 @@ static void push_SO_for_sem ( void* sem, SO* so ) {
       tl_assert(xa);
       VG_(addToXA)( xa, &so );
    } else {
-     xa = VG_(newXA)( hg_zalloc, "hg.pSfs.1", hg_free, sizeof(SO*) );
+     xa = VG_(newXA)( HG_(zalloc), "hg.pSfs.1", HG_(free), sizeof(SO*) );
       VG_(addToXA)( xa, &so );
       VG_(addToFM)( map_sem_to_SO_stack, (Word)sem, (Word)xa );
    }
@@ -2983,7 +2926,7 @@ static void laog__add_edge ( Lock* src, Lock* dst ) {
       presentF = outs_new == links->outs;
       links->outs = outs_new;
    } else {
-      links = hg_zalloc("hg.lae.1", sizeof(LAOGLinks));
+      links = HG_(zalloc)("hg.lae.1", sizeof(LAOGLinks));
       links->inns = HG_(emptyWS)( univ_laog );
       links->outs = HG_(singletonWS)( univ_laog, (Word)dst );
       VG_(addToFM)( laog, (Word)src, (Word)links );
@@ -2999,7 +2942,7 @@ static void laog__add_edge ( Lock* src, Lock* dst ) {
       presentR = inns_new == links->inns;
       links->inns = inns_new;
    } else {
-      links = hg_zalloc("hg.lae.2", sizeof(LAOGLinks));
+      links = HG_(zalloc)("hg.lae.2", sizeof(LAOGLinks));
       links->inns = HG_(singletonWS)( univ_laog, (Word)src );
       links->outs = HG_(emptyWS)( univ_laog );
       VG_(addToFM)( laog, (Word)dst, (Word)links );
@@ -3024,7 +2967,7 @@ static void laog__add_edge ( Lock* src, Lock* dst ) {
       if (VG_(lookupFM)( laog_exposition, NULL, NULL, (Word)&expo )) {
          /* we already have it; do nothing */
       } else {
-         LAOGLinkExposition* expo2 = hg_zalloc("hg.lae.3", 
+         LAOGLinkExposition* expo2 = HG_(zalloc)("hg.lae.3", 
                                                sizeof(LAOGLinkExposition));
          expo2->src_ga = src->guestaddr;
          expo2->dst_ga = dst->guestaddr;
@@ -3154,8 +3097,8 @@ Lock* laog__do_dfs_from_to ( Lock* src, WordSetID dsts /* univ_lsets */ )
       return NULL;
 
    ret     = NULL;
-   stack   = VG_(newXA)( hg_zalloc, "hg.lddft.1", hg_free, sizeof(Lock*) );
-   visited = VG_(newFM)( hg_zalloc, "hg.lddft.2", hg_free, NULL/*unboxedcmp*/ );
+   stack   = VG_(newXA)( HG_(zalloc), "hg.lddft.1", HG_(free), sizeof(Lock*) );
+   visited = VG_(newFM)( HG_(zalloc), "hg.lddft.2", HG_(free), NULL/*unboxedcmp*/ );
 
    (void) VG_(addToXA)( stack, &src );
 
@@ -3208,10 +3151,10 @@ static void laog__pre_thread_acquires_lock (
       return;
 
    if (!laog)
-      laog = VG_(newFM)( hg_zalloc, "hg.lptal.1", 
-                         hg_free, NULL/*unboxedcmp*/ );
+      laog = VG_(newFM)( HG_(zalloc), "hg.lptal.1", 
+                         HG_(free), NULL/*unboxedcmp*/ );
    if (!laog_exposition)
-      laog_exposition = VG_(newFM)( hg_zalloc, "hg.lptal.2", hg_free, 
+      laog_exposition = VG_(newFM)( HG_(zalloc), "hg.lptal.2", HG_(free), 
                                     cmp_LAOGLinkExposition );
 
    /* First, the check.  Complain if there is any path in laog from lk
@@ -3317,9 +3260,9 @@ static void laog__handle_lock_deletions (
    UWord* ws_words;
 
    if (!laog)
-      laog = VG_(newFM)( hg_zalloc, "hg.lhld.1", hg_free, NULL/*unboxedcmp*/ );
+      laog = VG_(newFM)( HG_(zalloc), "hg.lhld.1", HG_(free), NULL/*unboxedcmp*/ );
    if (!laog_exposition)
-      laog_exposition = VG_(newFM)( hg_zalloc, "hg.lhld.2", hg_free, 
+      laog_exposition = VG_(newFM)( HG_(zalloc), "hg.lhld.2", HG_(free), 
                                     cmp_LAOGLinkExposition );
 
    HG_(getPayloadWS)( &ws_words, &ws_size, univ_lsets, locksToDelete );
@@ -3351,12 +3294,12 @@ static VgHashTable hg_mallocmeta_table = NULL;
 
 
 static MallocMeta* new_MallocMeta ( void ) {
-   MallocMeta* md = hg_zalloc( "hg.new_MallocMeta.1", sizeof(MallocMeta) );
+   MallocMeta* md = HG_(zalloc)( "hg.new_MallocMeta.1", sizeof(MallocMeta) );
    tl_assert(md);
    return md;
 }
 static void delete_MallocMeta ( MallocMeta* md ) {
-   hg_free(md);
+   HG_(free)(md);
 }
 
 
@@ -3813,8 +3756,8 @@ static WordFM* map_pthread_t_to_Thread = NULL; /* pthread_t -> Thread* */
 
 static void map_pthread_t_to_Thread_INIT ( void ) {
    if (UNLIKELY(map_pthread_t_to_Thread == NULL)) {
-      map_pthread_t_to_Thread = VG_(newFM)( hg_zalloc, "hg.mpttT.1", 
-                                            hg_free, NULL );
+      map_pthread_t_to_Thread = VG_(newFM)( HG_(zalloc), "hg.mpttT.1", 
+                                            HG_(free), NULL );
       tl_assert(map_pthread_t_to_Thread != NULL);
    }
 }
@@ -4059,8 +4002,8 @@ static HChar* string_table_strdup ( HChar* str ) {
    if (!str)
       str = "(null)";
    if (!string_table) {
-      string_table = VG_(newFM)( hg_zalloc, "hg.sts.1",
-                                 hg_free, string_table_cmp );
+      string_table = VG_(newFM)( HG_(zalloc), "hg.sts.1",
+                                 HG_(free), string_table_cmp );
       tl_assert(string_table);
    }
    if (VG_(lookupFM)( string_table,
@@ -4095,11 +4038,11 @@ static Lock* mk_LockP_from_LockN ( Lock* lkn )
    stats__ga_LockN_to_P_queries++;
    tl_assert( is_sane_LockN(lkn) );
    if (!yaWFM) {
-      yaWFM = VG_(newFM)( hg_zalloc, "hg.mLPfLN.1", hg_free, lock_unique_cmp );
+      yaWFM = VG_(newFM)( HG_(zalloc), "hg.mLPfLN.1", HG_(free), lock_unique_cmp );
       tl_assert(yaWFM);
    }
    if (!VG_(lookupFM)( yaWFM, NULL, (Word*)&lkp, (Word)lkn)) {
-      lkp = hg_zalloc( "hg.mLPfLN.2", sizeof(Lock) );
+      lkp = HG_(zalloc)( "hg.mLPfLN.2", sizeof(Lock) );
       *lkp = *lkn;
       lkp->admin = NULL;
       lkp->magic = LockP_MAGIC;
@@ -4454,7 +4397,7 @@ static Bool hg_eq_Error ( VgRes not_used, Error* e1, Error* e2 )
    errmsg_index fields.  This is for printing out thread sets in
    repeatable orders, which is important for for repeatable regression
    testing.  The returned XArray* is dynamically allocated (of course)
-   and so must be hg_freed by the caller. */
+   and so must be HG_(free)d by the caller. */
 static Int cmp_Thread_by_errmsg_index ( void* thr1V, void* thr2V ) {
    Thread* thr1 = *(Thread**)thr1V;
    Thread* thr2 = *(Thread**)thr2V;
@@ -4467,7 +4410,7 @@ static XArray* /* of Thread* */ get_sorted_thread_set ( WordSetID tset )
    XArray* xa;
    UWord*  ts_words;
    UWord   ts_size, i;
-   xa = VG_(newXA)( hg_zalloc, "hg.cTbei.1", hg_free, sizeof(Thread*) );
+   xa = VG_(newXA)( HG_(zalloc), "hg.cTbei.1", HG_(free), sizeof(Thread*) );
    tl_assert(xa);
    HG_(getPayloadWS)( &ts_words, &ts_size, univ_tsets, tset );
    tl_assert(ts_words);
@@ -5083,8 +5026,7 @@ static void hg_pre_clo_init ( void )
    VG_(track_stop_client_code)( evh__stop_client_code );
 
    /////////////////////////////////////////////
-   hbthr_root = libhb_init( hg_zalloc, hg_free, shmem__bigchunk_alloc,
-                            for_libhb__get_stacktrace, 
+   hbthr_root = libhb_init( for_libhb__get_stacktrace, 
                             for_libhb__stacktrace_to_EC,
                             for_libhb__get_EC );
    /////////////////////////////////////////////

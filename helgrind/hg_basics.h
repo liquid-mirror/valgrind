@@ -32,7 +32,12 @@
 #ifndef __HG_BASICS_H
 #define __HG_BASICS_H
 
+
 #define HG_(str) VGAPPEND(vgHelgrind_,str)
+
+void* HG_(zalloc) ( HChar* cc, SizeT n );
+void  HG_(free) ( void* p );
+
 
 #endif /* ! __HG_BASICS_H */
 

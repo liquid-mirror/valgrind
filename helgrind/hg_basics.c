@@ -29,6 +29,30 @@
    The GNU General Public License is contained in the file COPYING.
 */
 
+#include "pub_tool_basics.h"
+#include "pub_tool_libcbase.h"
+#include "pub_tool_libcassert.h"
+#include "pub_tool_mallocfree.h"
+
+#include "hg_basics.h"            /* self */
+
+
+void* HG_(zalloc) ( HChar* cc, SizeT n )
+{
+   void* p;
+   tl_assert(n > 0);
+   p = VG_(malloc)( cc, n );
+   tl_assert(p);
+   VG_(memset)(p, 0, n);
+   return p;
+}
+
+void HG_(free) ( void* p )
+{
+   tl_assert(p);
+   VG_(free)(p);
+}
+
 
 /*--------------------------------------------------------------------*/
 /*--- end                                              hg_basics.c ---*/

@@ -48,13 +48,10 @@ typedef
             Thr* thrp; struct EC_* wherep; }
    RaceInfo;
 
-/* Initialise library; returns Thr* for root thread.  'alloc' and
-   'shadow_alloc' should never return NULL, instead they should simply
-   not return if they encounter an out-of-memory condition. */
+/* Initialise library; returns Thr* for root thread.  'shadow_alloc'
+   should never return NULL, instead it should simply not return if
+   they encounter an out-of-memory condition. */
 Thr* libhb_init (
-        void*       (*zalloc)( HChar*, SizeT ),
-        void        (*dealloc)( void* ),
-        void*       (*shadow_alloc)( SizeT ),
         void        (*get_stacktrace)( Thr*, Addr*, UWord ),
         struct EC_* (*stacktrace_to_EC)( Addr*, UWord ),
         struct EC_* (*get_EC)( Thr* )

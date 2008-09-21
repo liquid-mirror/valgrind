@@ -72,8 +72,9 @@ extern Long  VG_(atoll36) ( Char* str ); // base 36
    ------------------------------------------------------------------ */
 
 /* Use this for normal null-termination-style string comparison */
-#define VG_STREQ(s1,s2) ( (s1 != NULL && s2 != NULL \
-                           && VG_(strcmp)((s1),(s2))==0) ? True : False )
+#define VG_STREQ(_s1,_s2) \
+   ( ((_s1) != NULL && (_s2) != NULL             \
+     && VG_(strcmp)((_s1),(_s2))==0) ? True : False )
 
 extern Int   VG_(strlen)         ( const Char* str );
 extern Char* VG_(strcat)         ( Char* dest, const Char* src );
@@ -122,10 +123,10 @@ extern Int   VG_(memcmp) ( const void* s1, const void* s2, SizeT n );
 
 // 'a' -- the alignment -- must be a power of 2.
 // The latter two require the vki-*.h header to be imported also.
-#define VG_ROUNDDN(p, a)   ((Addr)(p) & ~((Addr)(a)-1))
-#define VG_ROUNDUP(p, a)   VG_ROUNDDN((p)+(a)-1, (a))
-#define VG_PGROUNDDN(p)    VG_ROUNDDN(p, VKI_PAGE_SIZE)
-#define VG_PGROUNDUP(p)    VG_ROUNDUP(p, VKI_PAGE_SIZE)
+#define VG_ROUNDDN(_p, _a)  ((Addr)(_p) & ~((Addr)(_a)-1))
+#define VG_ROUNDUP(_p, _a)  VG_ROUNDDN((_p)+(_a)-1, (_a))
+#define VG_PGROUNDDN(_p)    VG_ROUNDDN((_p), VKI_PAGE_SIZE)
+#define VG_PGROUNDUP(_p)    VG_ROUNDUP((_p), VKI_PAGE_SIZE)
 
 /* ---------------------------------------------------------------------
    Misc useful functions
