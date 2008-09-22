@@ -38,7 +38,6 @@
 #include "pub_tool_libcassert.h"
 #include "pub_tool_libcbase.h"
 #include "pub_tool_libcprint.h"
-#include "pub_tool_mallocfree.h"
 #include "pub_tool_threadstate.h"
 #include "pub_tool_tooliface.h"
 #include "pub_tool_hashtable.h"
@@ -53,6 +52,7 @@
 #include "hg_basics.h"
 #include "hg_wordset.h"
 #include "hg_lock_n_thread.h"
+#include "hg_errors.h"
 
 #include "libhb.h"
 
@@ -104,16 +104,6 @@
 // 0 for silent, 1 for some stuff, 2 for lots of stuff
 #define SHOW_EVENTS 0
 
-// Flags for controlling for which events sanity checking is done
-#define SCE_THREADS  (1<<0)  // Sanity check at thread create/join
-#define SCE_LOCKS    (1<<1)  // Sanity check at lock events
-#define SCE_BIGRANGE (1<<2)  // Sanity check at big mem range events
-#define SCE_ACCESS   (1<<3)  // Sanity check at mem accesses
-#define SCE_LAOG     (1<<4)  // Sanity check at significant LAOG events
-#define SCE_HBEFORE  (1<<5)  // Crosscheck VTS vs Explicit h-before-graph
-
-#define SCE_BIGRANGE_T 256  // big mem range minimum size
-
 
 static void all__sanity_check ( Char* who ); /* fwds */
 
@@ -123,77 +113,11 @@ static void all__sanity_check ( Char* who ); /* fwds */
 #define SHOW_DATA_STRUCTURES 0
 
 
-/* ------------ Command line options ------------ */
-
-/* Enable/disable lock order checking.  Sometimes it produces a lot of
-   errors, possibly genuine, which nevertheless can be very
-   annoying. */
-static Bool clo_track_lockorders = True;
-
-/* When comparing race errors for equality, should the race address be
-   taken into account?  For users, no, but for verification purposes
-   (regtesting) this is sometimes important. */
-static Bool clo_cmp_race_err_addrs = False;
-
-/* Tracing memory accesses, so we can see what's going on.
-   clo_trace_addr is the address to monitor.  clo_trace_level = 0 for
-   no tracing, 1 for summary, 2 for detailed. */
-static Addr clo_trace_addr  = 0;
-static Int  clo_trace_level = 0;
-
-/* Sanity check level.  This is an or-ing of
-   SCE_{THREADS,LOCKS,BIGRANGE,ACCESS,LAOG}. */
-static Int clo_sanity_flags = 0;
-
-/* This has to do with printing error messages.  See comments on
-   announce_threadset() and summarise_threadset().  Perhaps it
-   should be a command line option. */
-#define N_THREADS_TO_ANNOUNCE 5
-
-
 /* ------------ Misc comments ------------ */
 
 // FIXME: don't hardwire initial entries for root thread.
 // Instead, let the pre_thread_ll_create handler do this.
 
-// FIXME: when a SecMap is completely set via and address range
-// setting operation to a non-ShR/M state, clear its .mbHasShared 
-// bit
-
-/* FIXME: figure out what the real rules are for Excl->ShR/M
-   transitions w.r.t locksets.
-
-   Muelenfeld thesis Sec 2.2.1 p 8/9 says that
-
-     When another thread accesses the memory location, the lock-set
-     is initialized with all active locks and the algorithm reports
-     the next access that results in an empty lock-set.
-
-   What does "all active locks" mean?  All locks held by the accessing
-   thread, or all locks held by the system as a whole?
-
-   However: Muelenfeld's enhanced Helgrind (eraser_mem_read_word)
-   seems to use simply the set of locks held by the thread causing the
-   transition into a shared state at the time of the transition:
-
-     *sword = SW(Vge_Shar, packLockSet(thread_locks_rd[tid]));
-
-   Original Eraser paper also says "all active locks".
-*/
-
-// Major stuff to fix:
-// - reader-writer locks
-
-/* Thread async exit:
-   
-   remove the map_threads entry
-   leave the Thread object in place
-   complain if holds any locks
-   
-   unlike with Join, do not change any memory states
-
-   I _think_ this is correctly handled now.
-*/
 
 /*----------------------------------------------------------------*/
 /*--- Primary data structures                                  ---*/
@@ -230,13 +154,10 @@ static Lock* __bus_lock_Lock = NULL;
 static UWord stats__lockN_acquires = 0;
 static UWord stats__lockN_releases = 0;
 
-static ThreadId map_threads_maybe_reverse_lookup_SLOW ( Thread* ); /*fwds*/
-
-static UWord stats__mk_Segment = 0;
+static
+ThreadId map_threads_maybe_reverse_lookup_SLOW ( Thread* thr ); /*fwds*/
 
 /* --------- Constructors --------- */
-
-static inline Bool is_sane_LockN ( Lock* lock ); /* fwds */
 
 static Thread* mk_Thread ( Thr* hbthr ) {
    static Int indx      = 1;
@@ -245,6 +166,7 @@ static Thread* mk_Thread ( Thr* hbthr ) {
    thread->locksetW     = HG_(emptyWS)( univ_lsets );
    thread->magic        = Thread_MAGIC;
    thread->hbthr        = hbthr;
+   thread->coretid      = VG_INVALID_THREADID;
    thread->created_at   = NULL;
    thread->announced    = False;
    thread->errmsg_index = indx++;
@@ -267,84 +189,16 @@ static Lock* mk_LockN ( LockKind kind, Addr guestaddr ) {
    lock->kind             = kind;
    lock->heldW            = False;
    lock->heldBy           = NULL;
-   tl_assert(is_sane_LockN(lock));
+   tl_assert(HG_(is_sane_LockN)(lock));
    admin_locks            = lock;
    return lock;
-}
-
-static inline Bool is_sane_Thread ( Thread* thr ) {
-   return thr != NULL && thr->magic == Thread_MAGIC;
-}
-
-static Bool is_sane_Bag_of_Threads ( WordBag* bag )
-{
-   Thread* thr;
-   Word    count;
-   VG_(initIterBag)( bag );
-   while (VG_(nextIterBag)( bag, (Word*)&thr, &count )) {
-      if (count < 1) return False;
-      if (!is_sane_Thread(thr)) return False;
-   }
-   VG_(doneIterBag)( bag );
-   return True;
-}
-static Bool is_sane_Lock_BASE ( Lock* lock )
-{
-   if (lock == NULL
-       || (lock->magic != LockN_MAGIC && lock->magic != LockP_MAGIC))
-      return False;
-   switch (lock->kind) { 
-      case LK_mbRec: case LK_nonRec: case LK_rdwr: break; 
-      default: return False; 
-   }
-   if (lock->heldBy == NULL) {
-      if (lock->acquired_at != NULL) return False;
-      /* Unheld.  We arbitrarily require heldW to be False. */
-      return !lock->heldW;
-   } else {
-      if (lock->acquired_at == NULL) return False;
-   }
-
-   /* If heldBy is non-NULL, we require it to contain at least one
-      thread. */
-   if (VG_(isEmptyBag)(lock->heldBy))
-      return False;
-
-   /* Lock is either r- or w-held. */
-   if (!is_sane_Bag_of_Threads(lock->heldBy)) 
-      return False;
-   if (lock->heldW) {
-      /* Held in write-mode */
-      if ((lock->kind == LK_nonRec || lock->kind == LK_rdwr)
-          && !VG_(isSingletonTotalBag)(lock->heldBy))
-         return False;
-   } else {
-      /* Held in read-mode */
-      if (lock->kind != LK_rdwr) return False;
-   }
-   return True;
-}
-static inline Bool is_sane_LockP ( Lock* lock ) {
-   return lock != NULL 
-          && lock->magic == LockP_MAGIC
-          && lock->hbso  == NULL
-          && is_sane_Lock_BASE(lock);
-}
-static inline Bool is_sane_LockN ( Lock* lock ) {
-   return lock != NULL 
-          && lock->magic == LockN_MAGIC
-          && lock->hbso  != NULL
-          && is_sane_Lock_BASE(lock);
-}
-static inline Bool is_sane_LockNorP ( Lock* lock ) {
-   return is_sane_Lock_BASE(lock);
 }
 
 /* Release storage for a Lock.  Also release storage in .heldBy, if
    any. */
 static void del_LockN ( Lock* lk ) 
 {
-   tl_assert(is_sane_LockN(lk));
+   tl_assert(HG_(is_sane_LockN)(lk));
    tl_assert(lk->hbso);
    libhb_so_dealloc(lk->hbso);
    if (lk->heldBy)
@@ -358,8 +212,8 @@ static void del_LockN ( Lock* lk )
    correct program and libpthread behaviour are allowed. */
 static void lockN_acquire_writer ( Lock* lk, Thread* thr ) 
 {
-   tl_assert(is_sane_LockN(lk));
-   tl_assert(is_sane_Thread(thr));
+   tl_assert(HG_(is_sane_LockN)(lk));
+   tl_assert(HG_(is_sane_Thread)(thr));
 
    stats__lockN_acquires++;
 
@@ -404,13 +258,13 @@ static void lockN_acquire_writer ( Lock* lk, Thread* thr )
       default: 
          tl_assert(0);
   }
-  tl_assert(is_sane_LockN(lk));
+  tl_assert(HG_(is_sane_LockN)(lk));
 }
 
 static void lockN_acquire_reader ( Lock* lk, Thread* thr )
 {
-   tl_assert(is_sane_LockN(lk));
-   tl_assert(is_sane_Thread(thr));
+   tl_assert(HG_(is_sane_LockN)(lk));
+   tl_assert(HG_(is_sane_Thread)(thr));
    /* can only add reader to a reader-writer lock. */
    tl_assert(lk->kind == LK_rdwr);
    /* lk must be free or already r-held. */
@@ -441,7 +295,7 @@ static void lockN_acquire_reader ( Lock* lk, Thread* thr )
       VG_(addToBag)( lk->heldBy, (Word)thr );
    }
    tl_assert(!lk->heldW);
-   tl_assert(is_sane_LockN(lk));
+   tl_assert(HG_(is_sane_LockN)(lk));
 }
 
 /* Update 'lk' to reflect a release of it by 'thr'.  This is done
@@ -451,8 +305,8 @@ static void lockN_acquire_reader ( Lock* lk, Thread* thr )
 static void lockN_release ( Lock* lk, Thread* thr )
 {
    Bool b;
-   tl_assert(is_sane_LockN(lk));
-   tl_assert(is_sane_Thread(thr));
+   tl_assert(HG_(is_sane_LockN)(lk));
+   tl_assert(HG_(is_sane_Thread)(thr));
    /* lock must be held by someone */
    tl_assert(lk->heldBy);
    stats__lockN_releases++;
@@ -468,7 +322,7 @@ static void lockN_release ( Lock* lk, Thread* thr )
       lk->heldW       = False;
       lk->acquired_at = NULL;
    }
-   tl_assert(is_sane_LockN(lk));
+   tl_assert(HG_(is_sane_LockN)(lk));
 }
 
 static void remove_Lock_from_locksets_of_all_owning_Threads( Lock* lk )
@@ -481,7 +335,7 @@ static void remove_Lock_from_locksets_of_all_owning_Threads( Lock* lk )
    /* for each thread that holds this lock do ... */
    VG_(initIterBag)( lk->heldBy );
    while (VG_(nextIterBag)( lk->heldBy, (Word*)&thr, NULL )) {
-      tl_assert(is_sane_Thread(thr));
+      tl_assert(HG_(is_sane_Thread)(thr));
       tl_assert(HG_(elemWS)( univ_lsets,
                              thr->locksetA, (Word)lk ));
       thr->locksetA
@@ -694,7 +548,7 @@ static void initialise_data_structures ( Thr* hbthr_root )
    tl_assert(map_locks != NULL);
 
    __bus_lock_Lock = mk_LockN( LK_nonRec, (Addr)&__bus_lock );
-   tl_assert(is_sane_LockN(__bus_lock_Lock));
+   tl_assert(HG_(is_sane_LockN)(__bus_lock_Lock));
    VG_(addToFM)( map_locks, (Word)&__bus_lock, (Word)__bus_lock_Lock );
 
    tl_assert(univ_tsets == NULL);
@@ -717,12 +571,16 @@ static void initialise_data_structures ( Thr* hbthr_root )
 
    /* a Thread for the new thread ... */
    thr = mk_Thread(hbthr_root);
+   thr->coretid = 1; /* FIXME: hardwires an assumption about the
+                        identity of the root thread. */
    tl_assert( libhb_get_Thr_opaque(hbthr_root) == NULL );
    libhb_set_Thr_opaque(hbthr_root, thr);
 
-   /* and bind it in the thread-map table.
-      FIXME: assumes root ThreadId == 1. */
-   map_threads[1] = thr;
+   /* and bind it in the thread-map table. */
+   tl_assert(HG_(is_sane_ThreadId)(thr->coretid));
+   tl_assert(thr->coretid != VG_INVALID_THREADID);
+
+   map_threads[thr->coretid] = thr;
 
    tl_assert(VG_INVALID_THREADID == 0);
 
@@ -735,18 +593,14 @@ static void initialise_data_structures ( Thr* hbthr_root )
 
 
 /*----------------------------------------------------------------*/
-/*--- map_threads :: WordFM core-ThreadId Thread*              ---*/
+/*--- map_threads :: array[core-ThreadId] of Thread*           ---*/
 /*----------------------------------------------------------------*/
-
-static inline Bool is_sane_ThreadId ( ThreadId coretid ) {
-   return coretid >= 0 && coretid < VG_N_THREADS;
-}
 
 /* Doesn't assert if the relevant map_threads entry is NULL. */
 static Thread* map_threads_maybe_lookup ( ThreadId coretid )
 {
    Thread* thr;
-   tl_assert( is_sane_ThreadId(coretid) );
+   tl_assert( HG_(is_sane_ThreadId)(coretid) );
    thr = map_threads[coretid];
    return thr;
 }
@@ -755,26 +609,24 @@ static Thread* map_threads_maybe_lookup ( ThreadId coretid )
 static inline Thread* map_threads_lookup ( ThreadId coretid )
 {
    Thread* thr;
-   tl_assert( is_sane_ThreadId(coretid) );
+   tl_assert( HG_(is_sane_ThreadId)(coretid) );
    thr = map_threads[coretid];
    tl_assert(thr);
    return thr;
 }
 
-/* Do a reverse lookup.  Warning: POTENTIALLY SLOW.  Does not assert
-   if 'thr' is not found in map_threads. */
+/* Do a reverse lookup.  Does not assert if 'thr' is not found in
+   map_threads. */
 static ThreadId map_threads_maybe_reverse_lookup_SLOW ( Thread* thr )
 {
-   Int i;
-   tl_assert(is_sane_Thread(thr));
+   ThreadId tid;
+   tl_assert(HG_(is_sane_Thread)(thr));
    /* Check nobody used the invalid-threadid slot */
    tl_assert(VG_INVALID_THREADID >= 0 && VG_INVALID_THREADID < VG_N_THREADS);
    tl_assert(map_threads[VG_INVALID_THREADID] == NULL);
-   for (i = 0; i < VG_N_THREADS; i++) {
-      if (i != VG_INVALID_THREADID && map_threads[i] == thr)
-         return (ThreadId)i;
-   }
-   return VG_INVALID_THREADID;
+   tid = thr->coretid;
+   tl_assert(HG_(is_sane_ThreadId)(tid));
+   return tid;
 }
 
 /* Do a reverse lookup.  Warning: POTENTIALLY SLOW.  Asserts if 'thr'
@@ -783,6 +635,8 @@ static ThreadId map_threads_reverse_lookup_SLOW ( Thread* thr )
 {
    ThreadId tid = map_threads_maybe_reverse_lookup_SLOW( thr );
    tl_assert(tid != VG_INVALID_THREADID);
+   tl_assert(map_threads[tid]);
+   tl_assert(map_threads[tid]->coretid == tid);
    return tid;
 }
 
@@ -790,7 +644,7 @@ static void map_threads_delete ( ThreadId coretid )
 {
    Thread* thr;
    tl_assert(coretid != 0);
-   tl_assert( is_sane_ThreadId(coretid) );
+   tl_assert( HG_(is_sane_ThreadId)(coretid) );
    thr = map_threads[coretid];
    tl_assert(thr);
    map_threads[coretid] = NULL;
@@ -809,19 +663,19 @@ Lock* map_locks_lookup_or_create ( LockKind lkk, Addr ga, ThreadId tid )
 {
    Bool  found;
    Lock* oldlock = NULL;
-   tl_assert(is_sane_ThreadId(tid));
+   tl_assert(HG_(is_sane_ThreadId)(tid));
    found = VG_(lookupFM)( map_locks, 
                           NULL, (Word*)&oldlock, (Word)ga );
    if (!found) {
       Lock* lock = mk_LockN(lkk, ga);
       lock->appeared_at = VG_(record_ExeContext)( tid, 0 );
-      tl_assert(is_sane_LockN(lock));
+      tl_assert(HG_(is_sane_LockN)(lock));
       VG_(addToFM)( map_locks, (Word)ga, (Word)lock );
       tl_assert(oldlock == NULL);
       return lock;
    } else {
       tl_assert(oldlock != NULL);
-      tl_assert(is_sane_LockN(oldlock));
+      tl_assert(HG_(is_sane_LockN)(oldlock));
       tl_assert(oldlock->guestaddr == ga);
       return oldlock;
    }
@@ -950,7 +804,7 @@ static void threads__sanity_check ( Char* who )
    Word      ls_size, i;
    Lock*     lk;
    for (thr = admin_threads; thr; thr = thr->admin) {
-      if (!is_sane_Thread(thr)) BAD("1");
+      if (!HG_(is_sane_Thread)(thr)) BAD("1");
       wsA = thr->locksetA;
       wsW = thr->locksetW;
       // locks held in W mode are a subset of all locks held
@@ -959,7 +813,7 @@ static void threads__sanity_check ( Char* who )
       for (i = 0; i < ls_size; i++) {
          lk = (Lock*)ls_words[i];
          // Thread.lockset: each element is really a valid Lock
-         if (!is_sane_LockN(lk)) BAD("2");
+         if (!HG_(is_sane_LockN)(lk)) BAD("2");
          // Thread.lockset: each Lock in set is actually held by that
          // thread
          if (!thread_is_a_holder_of_Lock(thr,lk)) BAD("3");
@@ -998,7 +852,7 @@ static void locks__sanity_check ( Char* who )
    for (lk = admin_locks; lk; lk = lk->admin) {
       // lock is sane.  Quite comprehensive, also checks that
       // referenced (holder) threads are sane.
-      if (!is_sane_LockN(lk)) BAD("3");
+      if (!HG_(is_sane_LockN)(lk)) BAD("3");
       // map_locks binds guest address back to this lock
       if (lk != map_locks_maybe_lookup(lk->guestaddr)) BAD("4");
       // look at all threads mentioned as holders of this lock.  Ensure
@@ -1009,9 +863,9 @@ static void locks__sanity_check ( Char* who )
          VG_(initIterBag)( lk->heldBy );
          while (VG_(nextIterBag)( lk->heldBy, 
                                   (Word*)&thr, &count )) {
-            // is_sane_LockN above ensures these
+            // HG_(is_sane_LockN) above ensures these
             tl_assert(count >= 1);
-            tl_assert(is_sane_Thread(thr));
+            tl_assert(HG_(is_sane_Thread)(thr));
             if (!HG_(elemWS)(univ_lsets, thr->locksetA, (Word)lk)) 
                BAD("6");
             // also check the w-only lockset
@@ -1054,25 +908,6 @@ static void all__sanity_check ( Char* who ) {
 /*----------------------------------------------------------------*/
 /*--- the core memory state machine (msm__* functions)         ---*/
 /*----------------------------------------------------------------*/
-
-/* fwds */
-static void record_error_Race ( Thread* thr, 
-                                Addr data_addr, Bool isWrite, Int szB,
-                                ExeContext* mb_lastlock,
-                                ExeContext* mb_confacc,
-                                Thread* mb_confaccthr );
-
-static void record_error_FreeMemLock ( Thread* thr, Lock* lk );
-
-static void record_error_UnlockUnlocked ( Thread*, Lock* );
-static void record_error_UnlockForeign  ( Thread*, Thread*, Lock* );
-static void record_error_UnlockBogus    ( Thread*, Addr );
-static void record_error_PthAPIerror    ( Thread*, HChar*, Word, HChar* );
-static void record_error_LockOrder      ( Thread*, Addr, Addr,
-                                                   ExeContext*, ExeContext* );
-
-static void record_error_Misc ( Thread*, HChar* );
-static void announce_one_thread ( Thread* thr ); /* fwds */
 
 static WordSetID add_BHL ( WordSetID lockset ) {
    return HG_(addToWS)( univ_lsets, lockset, (Word)__bus_lock_Lock );
@@ -1222,8 +1057,8 @@ static void shadow_mem_read_range ( Thread* thr, Addr a, SizeT len )
    tl_assert(hbthr);
    if (libhb_read(&ri, hbthr, a, len)) {
       Thread* confthr = ri.thrp ? libhb_get_Thr_opaque( ri.thrp ) : NULL;
-      record_error_Race( thr, ri.a, ri.isW, ri.szB, NULL,
-                         (ExeContext*)ri.wherep, confthr );
+      HG_(record_error_Race)( thr, ri.a, ri.isW, ri.szB, NULL,
+                              (ExeContext*)ri.wherep, confthr );
    }
 }
 
@@ -1233,8 +1068,8 @@ static void shadow_mem_write_range ( Thread* thr, Addr a, SizeT len ) {
    tl_assert(hbthr);
    if (libhb_write(&ri, hbthr, a, len)) {
       Thread* confthr = ri.thrp ? libhb_get_Thr_opaque( ri.thrp ) : NULL;
-      record_error_Race( thr, ri.a, ri.isW, ri.szB, NULL,
-                         (ExeContext*)ri.wherep, confthr );
+      HG_(record_error_Race)( thr, ri.a, ri.isW, ri.szB, NULL,
+                              (ExeContext*)ri.wherep, confthr );
    }
 }
 
@@ -1270,7 +1105,7 @@ static void shadow_mem_make_NoAccess ( Thread* thr, Addr aIN, SizeT len )
 //zz    Segment* cur_seg;
 //zz    tl_assert(new_segP);
 //zz    tl_assert(new_segidP);
-//zz    tl_assert(is_sane_Thread(thr));
+//zz    tl_assert(HG_(is_sane_Thread)(thr));
 //zz    cur_seg = map_segments_lookup( thr->csegid );
 //zz    tl_assert(cur_seg);
 //zz    tl_assert(cur_seg->thr == thr); /* all sane segs should point back
@@ -1293,7 +1128,7 @@ void evhH__post_thread_w_acquires_lock ( Thread* thr,
    /* Basically what we need to do is call lockN_acquire_writer.
       However, that will barf if any 'invalid' lock states would
       result.  Therefore check before calling.  Side effect is that
-      'is_sane_LockN(lk)' is both a pre- and post-condition of this
+      'HG_(is_sane_LockN)(lk)' is both a pre- and post-condition of this
       routine. 
 
       Because this routine is only called after successful lock
@@ -1301,12 +1136,12 @@ void evhH__post_thread_w_acquires_lock ( Thread* thr,
       invalid states.  Requests to do so are bugs in libpthread, since
       that should have rejected any such requests. */
 
-   tl_assert(is_sane_Thread(thr));
+   tl_assert(HG_(is_sane_Thread)(thr));
    /* Try to find the lock.  If we can't, then create a new one with
       kind 'lkk'. */
    lk = map_locks_lookup_or_create( 
            lkk, lock_ga, map_threads_reverse_lookup_SLOW(thr) );
-   tl_assert( is_sane_LockN(lk) );
+   tl_assert( HG_(is_sane_LockN)(lk) );
 
    /* check libhb level entities exist */
    tl_assert(thr->hbthr);
@@ -1325,8 +1160,9 @@ void evhH__post_thread_w_acquires_lock ( Thread* thr,
       libpthread must be buggy. */
    tl_assert(lk->heldBy);
    if (!lk->heldW) {
-      record_error_Misc( thr, "Bug in libpthread: write lock "
-                              "granted on rwlock which is currently rd-held");
+      HG_(record_error_Misc)(
+         thr, "Bug in libpthread: write lock "
+              "granted on rwlock which is currently rd-held");
       goto error;
    }
 
@@ -1335,9 +1171,10 @@ void evhH__post_thread_w_acquires_lock ( Thread* thr,
    tl_assert(VG_(sizeUniqueBag)(lk->heldBy) == 1); /* from precondition */
 
    if (thr != (Thread*)VG_(anyElementOfBag)(lk->heldBy)) {
-      record_error_Misc( thr, "Bug in libpthread: write lock "
-                              "granted on mutex/rwlock which is currently "
-                              "wr-held by a different thread");
+      HG_(record_error_Misc)(
+         thr, "Bug in libpthread: write lock "
+              "granted on mutex/rwlock which is currently "
+              "wr-held by a different thread");
       goto error;
    }
 
@@ -1347,9 +1184,10 @@ void evhH__post_thread_w_acquires_lock ( Thread* thr,
       once the lock has been acquired, this must also be a libpthread
       bug. */
    if (lk->kind != LK_mbRec) {
-      record_error_Misc( thr, "Bug in libpthread: recursive write lock "
-                              "granted on mutex/wrlock which does not "
-                              "support recursion");
+      HG_(record_error_Misc)(
+         thr, "Bug in libpthread: recursive write lock "
+              "granted on mutex/wrlock which does not "
+              "support recursion");
       goto error;
    }
 
@@ -1370,7 +1208,7 @@ void evhH__post_thread_w_acquires_lock ( Thread* thr,
    /* fall through */
 
   error:
-   tl_assert(is_sane_LockN(lk));
+   tl_assert(HG_(is_sane_LockN)(lk));
 }
 
 
@@ -1385,7 +1223,7 @@ void evhH__post_thread_r_acquires_lock ( Thread* thr,
    /* Basically what we need to do is call lockN_acquire_reader.
       However, that will barf if any 'invalid' lock states would
       result.  Therefore check before calling.  Side effect is that
-      'is_sane_LockN(lk)' is both a pre- and post-condition of this
+      'HG_(is_sane_LockN)(lk)' is both a pre- and post-condition of this
       routine. 
 
       Because this routine is only called after successful lock
@@ -1393,14 +1231,14 @@ void evhH__post_thread_r_acquires_lock ( Thread* thr,
       invalid states.  Requests to do so are bugs in libpthread, since
       that should have rejected any such requests. */
 
-   tl_assert(is_sane_Thread(thr));
+   tl_assert(HG_(is_sane_Thread)(thr));
    /* Try to find the lock.  If we can't, then create a new one with
       kind 'lkk'.  Only a reader-writer lock can be read-locked,
       hence the first assertion. */
    tl_assert(lkk == LK_rdwr);
    lk = map_locks_lookup_or_create( 
            lkk, lock_ga, map_threads_reverse_lookup_SLOW(thr) );
-   tl_assert( is_sane_LockN(lk) );
+   tl_assert( HG_(is_sane_LockN)(lk) );
 
    /* check libhb level entities exist */
    tl_assert(thr->hbthr);
@@ -1419,9 +1257,9 @@ void evhH__post_thread_r_acquires_lock ( Thread* thr,
       libpthread must be buggy. */
    tl_assert(lk->heldBy);
    if (lk->heldW) {
-      record_error_Misc( thr, "Bug in libpthread: read lock "
-                              "granted on rwlock which is "
-                              "currently wr-held");
+      HG_(record_error_Misc)( thr, "Bug in libpthread: read lock "
+                                   "granted on rwlock which is "
+                                   "currently wr-held");
       goto error;
    }
 
@@ -1443,7 +1281,7 @@ void evhH__post_thread_r_acquires_lock ( Thread* thr,
    /* fall through */
 
   error:
-   tl_assert(is_sane_LockN(lk));
+   tl_assert(HG_(is_sane_LockN)(lk));
 }
 
 
@@ -1466,34 +1304,34 @@ void evhH__pre_thread_releases_lock ( Thread* thr,
       should refer to a reader-writer lock, and is False if [ditto]
       lock_ga should refer to a standard mutex. */
 
-   tl_assert(is_sane_Thread(thr));
+   tl_assert(HG_(is_sane_Thread)(thr));
    lock = map_locks_maybe_lookup( lock_ga );
 
    if (!lock) {
       /* We know nothing about a lock at 'lock_ga'.  Nevertheless
          the client is trying to unlock it.  So complain, then ignore
          the attempt. */
-      record_error_UnlockBogus( thr, lock_ga );
+      HG_(record_error_UnlockBogus)( thr, lock_ga );
       return;
    }
 
    tl_assert(lock->guestaddr == lock_ga);
-   tl_assert(is_sane_LockN(lock));
+   tl_assert(HG_(is_sane_LockN)(lock));
 
    if (isRDWR && lock->kind != LK_rdwr) {
-      record_error_Misc( thr, "pthread_rwlock_unlock with a "
-                              "pthread_mutex_t* argument " );
+      HG_(record_error_Misc)( thr, "pthread_rwlock_unlock with a "
+                                   "pthread_mutex_t* argument " );
    }
    if ((!isRDWR) && lock->kind == LK_rdwr) {
-      record_error_Misc( thr, "pthread_mutex_unlock with a "
-                              "pthread_rwlock_t* argument " );
+      HG_(record_error_Misc)( thr, "pthread_mutex_unlock with a "
+                                   "pthread_rwlock_t* argument " );
    }
 
    if (!lock->heldBy) {
       /* The lock is not held.  This indicates a serious bug in the
          client. */
       tl_assert(!lock->heldW);
-      record_error_UnlockUnlocked( thr, lock );
+      HG_(record_error_UnlockUnlocked)( thr, lock );
       tl_assert(!HG_(elemWS)( univ_lsets, thr->locksetA, (Word)lock ));
       tl_assert(!HG_(elemWS)( univ_lsets, thr->locksetW, (Word)lock ));
       goto error;
@@ -1513,11 +1351,11 @@ void evhH__pre_thread_releases_lock ( Thread* thr,
          attempt will fail.  So just complain and do nothing
          else. */
       Thread* realOwner = (Thread*)VG_(anyElementOfBag)( lock->heldBy );
-      tl_assert(is_sane_Thread(realOwner));
+      tl_assert(HG_(is_sane_Thread)(realOwner));
       tl_assert(realOwner != thr);
       tl_assert(!HG_(elemWS)( univ_lsets, thr->locksetA, (Word)lock ));
       tl_assert(!HG_(elemWS)( univ_lsets, thr->locksetW, (Word)lock ));
-      record_error_UnlockForeign( thr, realOwner, lock );
+      HG_(record_error_UnlockForeign)( thr, realOwner, lock );
       goto error;
    }
 
@@ -1563,7 +1401,7 @@ void evhH__pre_thread_releases_lock ( Thread* thr,
    /* fall through */
 
   error:
-   tl_assert(is_sane_LockN(lock));
+   tl_assert(HG_(is_sane_LockN)(lock));
 }
 
 
@@ -1625,7 +1463,7 @@ void evh__new_mem ( Addr a, SizeT len ) {
    if (SHOW_EVENTS >= 2)
       VG_(printf)("evh__new_mem(%p, %lu)\n", (void*)a, len );
    shadow_mem_make_New( get_current_Thread(), a, len );
-   if (len >= SCE_BIGRANGE_T && (clo_sanity_flags & SCE_BIGRANGE))
+   if (len >= SCE_BIGRANGE_T && (HG_(clo_sanity_flags) & SCE_BIGRANGE))
       all__sanity_check("evh__new_mem-post");
 }
 
@@ -1634,7 +1472,7 @@ void evh__new_mem_w_tid ( Addr a, SizeT len, ThreadId tid ) {
    if (SHOW_EVENTS >= 2)
       VG_(printf)("evh__new_mem_w_tid(%p, %lu)\n", (void*)a, len );
    shadow_mem_make_New( get_current_Thread(), a, len );
-   if (len >= SCE_BIGRANGE_T && (clo_sanity_flags & SCE_BIGRANGE))
+   if (len >= SCE_BIGRANGE_T && (HG_(clo_sanity_flags) & SCE_BIGRANGE))
       all__sanity_check("evh__new_mem_w_tid-post");
 }
 
@@ -1646,7 +1484,7 @@ void evh__new_mem_w_perms ( Addr a, SizeT len,
                   (void*)a, len, (Int)rr, (Int)ww, (Int)xx );
    if (rr || ww || xx)
       shadow_mem_make_New( get_current_Thread(), a, len );
-   if (len >= SCE_BIGRANGE_T && (clo_sanity_flags & SCE_BIGRANGE))
+   if (len >= SCE_BIGRANGE_T && (HG_(clo_sanity_flags) & SCE_BIGRANGE))
       all__sanity_check("evh__new_mem_w_perms-post");
 }
 
@@ -1661,7 +1499,7 @@ void evh__set_perms ( Addr a, SizeT len,
       NoAccess, else leave it alone. */
    if (!(rr || ww))
       shadow_mem_make_NoAccess( get_current_Thread(), a, len );
-   if (len >= SCE_BIGRANGE_T && (clo_sanity_flags & SCE_BIGRANGE))
+   if (len >= SCE_BIGRANGE_T && (HG_(clo_sanity_flags) & SCE_BIGRANGE))
       all__sanity_check("evh__set_perms-post");
 }
 
@@ -1670,7 +1508,7 @@ void evh__die_mem ( Addr a, SizeT len ) {
    if (SHOW_EVENTS >= 2)
       VG_(printf)("evh__die_mem(%p, %lu)\n", (void*)a, len );
    shadow_mem_make_NoAccess( get_current_Thread(), a, len );
-   if (len >= SCE_BIGRANGE_T && (clo_sanity_flags & SCE_BIGRANGE))
+   if (len >= SCE_BIGRANGE_T && (HG_(clo_sanity_flags) & SCE_BIGRANGE))
       all__sanity_check("evh__die_mem-post");
 }
 
@@ -1687,8 +1525,8 @@ void evh__pre_thread_ll_create ( ThreadId parent, ThreadId child )
       Thr*    hbthr_p;
       Thr*    hbthr_c;
 
-      tl_assert(is_sane_ThreadId(parent));
-      tl_assert(is_sane_ThreadId(child));
+      tl_assert(HG_(is_sane_ThreadId)(parent));
+      tl_assert(HG_(is_sane_ThreadId)(child));
       tl_assert(parent != child);
 
       thr_p = map_threads_maybe_lookup( parent );
@@ -1711,6 +1549,8 @@ void evh__pre_thread_ll_create ( ThreadId parent, ThreadId child )
 
       /* and bind it in the thread-map table */
       map_threads[child] = thr_c;
+      tl_assert(thr_c->coretid == VG_INVALID_THREADID);
+      thr_c->coretid = child;
 
       /* Record where the parent is so we can later refer to this in
          error messages.
@@ -1731,7 +1571,7 @@ void evh__pre_thread_ll_create ( ThreadId parent, ThreadId child )
       }
    }
 
-   if (clo_sanity_flags & SCE_THREADS)
+   if (HG_(clo_sanity_flags) & SCE_THREADS)
       all__sanity_check("evh__pre_thread_create-post");
 }
 
@@ -1758,7 +1598,7 @@ void evh__pre_thread_ll_exit ( ThreadId quit_tid )
       how NPTL works).  In which case there has already been a prior
       sync event.  So in any case, just let the thread exit.  On NPTL,
       all thread exits go through here. */
-   tl_assert(is_sane_ThreadId(quit_tid));
+   tl_assert(HG_(is_sane_ThreadId)(quit_tid));
    thr_q = map_threads_maybe_lookup( quit_tid );
    tl_assert(thr_q != NULL);
 
@@ -1769,14 +1609,16 @@ void evh__pre_thread_ll_exit ( ThreadId quit_tid )
       HChar buf[80];
       VG_(sprintf)(buf, "Exiting thread still holds %d lock%s",
                         nHeld, nHeld > 1 ? "s" : "");
-      record_error_Misc( thr_q, buf );
+      HG_(record_error_Misc)( thr_q, buf );
    }
 
    /* About the only thing we do need to do is clear the map_threads
       entry, in order that the Valgrind core can re-use it. */
+   tl_assert(thr_q->coretid == quit_tid);
+   thr_q->coretid = VG_INVALID_THREADID;
    map_threads_delete( quit_tid );
 
-   if (clo_sanity_flags & SCE_THREADS)
+   if (HG_(clo_sanity_flags) & SCE_THREADS)
       all__sanity_check("evh__pre_thread_ll_exit-post");
 }
 
@@ -1794,7 +1636,7 @@ void evh__HG_PTHREAD_JOIN_POST ( ThreadId stay_tid, Thread* quit_thr )
       VG_(printf)("evh__post_thread_join(stayer=%d, quitter=%p)\n",
                   (Int)stay_tid, quit_thr );
 
-   tl_assert(is_sane_ThreadId(stay_tid));
+   tl_assert(HG_(is_sane_ThreadId)(stay_tid));
 
    thr_s = map_threads_maybe_lookup( stay_tid );
    thr_q = quit_thr;
@@ -1818,8 +1660,8 @@ void evh__HG_PTHREAD_JOIN_POST ( ThreadId stay_tid, Thread* quit_thr )
    libhb_so_recv(hbthr_s, so, True/*strong_recv*/);
    libhb_so_dealloc(so);
 
-   // FIXME: error-if: exiting thread holds any locks
-   //        or should evh__pre_thread_ll_exit do that?
+   /* evh__pre_thread_ll_exit issues an error message if the exiting
+      thread holds any locks.  No need to check here. */
 
    /* This holds because, at least when using NPTL as the thread
       library, we should be notified the low level thread exit before
@@ -1830,7 +1672,7 @@ void evh__HG_PTHREAD_JOIN_POST ( ThreadId stay_tid, Thread* quit_thr )
    tl_assert( map_threads_maybe_reverse_lookup_SLOW(thr_q)
               == VG_INVALID_THREADID);
 
-   if (clo_sanity_flags & SCE_THREADS)
+   if (HG_(clo_sanity_flags) & SCE_THREADS)
       all__sanity_check("evh__post_thread_join-post");
 }
 
@@ -1842,7 +1684,7 @@ void evh__pre_mem_read ( CorePart part, ThreadId tid, Char* s,
       VG_(printf)("evh__pre_mem_read(ctid=%d, \"%s\", %p, %lu)\n", 
                   (Int)tid, s, (void*)a, size );
    shadow_mem_read_range( map_threads_lookup(tid), a, size);
-   if (size >= SCE_BIGRANGE_T && (clo_sanity_flags & SCE_BIGRANGE))
+   if (size >= SCE_BIGRANGE_T && (HG_(clo_sanity_flags) & SCE_BIGRANGE))
       all__sanity_check("evh__pre_mem_read-post");
 }
 
@@ -1856,7 +1698,7 @@ void evh__pre_mem_read_asciiz ( CorePart part, ThreadId tid,
    // FIXME: think of a less ugly hack
    len = VG_(strlen)( (Char*) a );
    shadow_mem_read_range( map_threads_lookup(tid), a, len+1 );
-   if (len >= SCE_BIGRANGE_T && (clo_sanity_flags & SCE_BIGRANGE))
+   if (len >= SCE_BIGRANGE_T && (HG_(clo_sanity_flags) & SCE_BIGRANGE))
       all__sanity_check("evh__pre_mem_read_asciiz-post");
 }
 
@@ -1867,7 +1709,7 @@ void evh__pre_mem_write ( CorePart part, ThreadId tid, Char* s,
       VG_(printf)("evh__pre_mem_write(ctid=%d, \"%s\", %p, %lu)\n", 
                   (Int)tid, s, (void*)a, size );
    shadow_mem_write_range( map_threads_lookup(tid), a, size);
-   if (size >= SCE_BIGRANGE_T && (clo_sanity_flags & SCE_BIGRANGE))
+   if (size >= SCE_BIGRANGE_T && (HG_(clo_sanity_flags) & SCE_BIGRANGE))
       all__sanity_check("evh__pre_mem_write-post");
 }
 
@@ -1882,7 +1724,7 @@ void evh__new_mem_heap ( Addr a, SizeT len, Bool is_inited ) {
    } else {
       shadow_mem_make_New(get_current_Thread(), a, len);
    }
-   if (len >= SCE_BIGRANGE_T && (clo_sanity_flags & SCE_BIGRANGE))
+   if (len >= SCE_BIGRANGE_T && (HG_(clo_sanity_flags) & SCE_BIGRANGE))
       all__sanity_check("evh__pre_mem_read-post");
 }
 
@@ -1891,7 +1733,7 @@ void evh__die_mem_heap ( Addr a, SizeT len ) {
    if (SHOW_EVENTS >= 1)
       VG_(printf)("evh__die_mem_heap(%p, %lu)\n", (void*)a, len );
    shadow_mem_make_NoAccess( get_current_Thread(), a, len );
-   if (len >= SCE_BIGRANGE_T && (clo_sanity_flags & SCE_BIGRANGE))
+   if (len >= SCE_BIGRANGE_T && (HG_(clo_sanity_flags) & SCE_BIGRANGE))
       all__sanity_check("evh__pre_mem_read-post");
 }
 
@@ -1902,8 +1744,8 @@ void evh__mem_help_read_1(Addr a) {
    Thr*     hbthr = thr->hbthr;
    if (libhb_read(&ri, hbthr, a, 1)) {
       Thread* confthr = ri.thrp ? libhb_get_Thr_opaque( ri.thrp ) : NULL;
-      record_error_Race( thr, ri.a, ri.isW, ri.szB, NULL,
-                         (ExeContext*)ri.wherep, confthr );
+      HG_(record_error_Race)( thr, ri.a, ri.isW, ri.szB, NULL,
+                              (ExeContext*)ri.wherep, confthr );
    }
 }
 
@@ -1914,8 +1756,8 @@ void evh__mem_help_read_2(Addr a) {
    Thr*     hbthr = thr->hbthr;
    if (libhb_read(&ri, hbthr, a, 2)) {
       Thread* confthr = ri.thrp ? libhb_get_Thr_opaque( ri.thrp ) : NULL;
-      record_error_Race( thr, ri.a, ri.isW, ri.szB, NULL,
-                         (ExeContext*)ri.wherep, confthr );
+      HG_(record_error_Race)( thr, ri.a, ri.isW, ri.szB, NULL,
+                              (ExeContext*)ri.wherep, confthr );
    }
 }
 
@@ -1926,8 +1768,8 @@ void evh__mem_help_read_4(Addr a) {
    Thr*     hbthr = thr->hbthr;
    if (libhb_read(&ri, hbthr, a, 4)) {
       Thread* confthr = ri.thrp ? libhb_get_Thr_opaque( ri.thrp ) : NULL;
-      record_error_Race( thr, ri.a, ri.isW, ri.szB, NULL,
-                         (ExeContext*)ri.wherep, confthr );
+      HG_(record_error_Race)( thr, ri.a, ri.isW, ri.szB, NULL,
+                              (ExeContext*)ri.wherep, confthr );
    }
 }
 
@@ -1938,8 +1780,8 @@ void evh__mem_help_read_8(Addr a) {
    Thr*     hbthr = thr->hbthr;
    if (libhb_read(&ri, hbthr, a, 8)) {
       Thread* confthr = ri.thrp ? libhb_get_Thr_opaque( ri.thrp ) : NULL;
-      record_error_Race( thr, ri.a, ri.isW, ri.szB, NULL,
-                         (ExeContext*)ri.wherep, confthr );
+      HG_(record_error_Race)( thr, ri.a, ri.isW, ri.szB, NULL,
+                              (ExeContext*)ri.wherep, confthr );
    }
 }
 
@@ -1950,8 +1792,8 @@ void evh__mem_help_read_N(Addr a, SizeT size) {
    Thr*     hbthr = thr->hbthr;
    if (libhb_read(&ri, hbthr, a, size)) {
       Thread* confthr = ri.thrp ? libhb_get_Thr_opaque( ri.thrp ) : NULL;
-      record_error_Race( thr, ri.a, ri.isW, ri.szB, NULL,
-                         (ExeContext*)ri.wherep, confthr );
+      HG_(record_error_Race)( thr, ri.a, ri.isW, ri.szB, NULL,
+                              (ExeContext*)ri.wherep, confthr );
    }
 }
 
@@ -1962,8 +1804,8 @@ void evh__mem_help_write_1(Addr a) {
    Thr*     hbthr = thr->hbthr;
    if (libhb_write(&ri, hbthr, a, 1)) {
       Thread* confthr = ri.thrp ? libhb_get_Thr_opaque( ri.thrp ) : NULL;
-      record_error_Race( thr, ri.a, ri.isW, ri.szB, NULL,
-                         (ExeContext*)ri.wherep, confthr );
+      HG_(record_error_Race)( thr, ri.a, ri.isW, ri.szB, NULL,
+                              (ExeContext*)ri.wherep, confthr );
    }
 }
 
@@ -1974,8 +1816,8 @@ void evh__mem_help_write_2(Addr a) {
    Thr*     hbthr = thr->hbthr;
    if (libhb_write(&ri, hbthr, a, 2)) {
       Thread* confthr = ri.thrp ? libhb_get_Thr_opaque( ri.thrp ) : NULL;
-      record_error_Race( thr, ri.a, ri.isW, ri.szB, NULL,
-                         (ExeContext*)ri.wherep, confthr );
+      HG_(record_error_Race)( thr, ri.a, ri.isW, ri.szB, NULL,
+                              (ExeContext*)ri.wherep, confthr );
    }
 }
 
@@ -1986,8 +1828,8 @@ void evh__mem_help_write_4(Addr a) {
    Thr*     hbthr = thr->hbthr;
    if (libhb_write(&ri, hbthr, a, 4)) {
       Thread* confthr = ri.thrp ? libhb_get_Thr_opaque( ri.thrp ) : NULL;
-      record_error_Race( thr, ri.a, ri.isW, ri.szB, NULL,
-                         (ExeContext*)ri.wherep, confthr );
+      HG_(record_error_Race)( thr, ri.a, ri.isW, ri.szB, NULL,
+                              (ExeContext*)ri.wherep, confthr );
    }
 }
 
@@ -1998,8 +1840,8 @@ void evh__mem_help_write_8(Addr a) {
    Thr*     hbthr = thr->hbthr;
    if (libhb_write(&ri, hbthr, a, 8)) {
       Thread* confthr = ri.thrp ? libhb_get_Thr_opaque( ri.thrp ) : NULL;
-      record_error_Race( thr, ri.a, ri.isW, ri.szB, NULL,
-                         (ExeContext*)ri.wherep, confthr );
+      HG_(record_error_Race)( thr, ri.a, ri.isW, ri.szB, NULL,
+                              (ExeContext*)ri.wherep, confthr );
    }
 }
 
@@ -2010,8 +1852,8 @@ void evh__mem_help_write_N(Addr a, SizeT size) {
    Thr*     hbthr = thr->hbthr;
    if (libhb_write(&ri, hbthr, a, size)) {
       Thread* confthr = ri.thrp ? libhb_get_Thr_opaque( ri.thrp ) : NULL;
-      record_error_Race( thr, ri.a, ri.isW, ri.szB, NULL,
-                         (ExeContext*)ri.wherep, confthr );
+      HG_(record_error_Race)( thr, ri.a, ri.isW, ri.szB, NULL,
+                              (ExeContext*)ri.wherep, confthr );
    }
 }
 
@@ -2047,7 +1889,7 @@ void evh__HG_PTHREAD_MUTEX_INIT_POST( ThreadId tid,
    tl_assert(mbRec == 0 || mbRec == 1);
    map_locks_lookup_or_create( mbRec ? LK_mbRec : LK_nonRec,
                                (Addr)mutex, tid );
-   if (clo_sanity_flags & SCE_LOCKS)
+   if (HG_(clo_sanity_flags) & SCE_LOCKS)
       all__sanity_check("evh__hg_PTHREAD_MUTEX_INIT_POST");
 }
 
@@ -2062,21 +1904,22 @@ void evh__HG_PTHREAD_MUTEX_DESTROY_PRE( ThreadId tid, void* mutex )
 
    thr = map_threads_maybe_lookup( tid );
    /* cannot fail - Thread* must already exist */
-   tl_assert( is_sane_Thread(thr) );
+   tl_assert( HG_(is_sane_Thread)(thr) );
 
    lk = map_locks_maybe_lookup( (Addr)mutex );
 
    if (lk == NULL || (lk->kind != LK_nonRec && lk->kind != LK_mbRec)) {
-      record_error_Misc( thr,
-                         "pthread_mutex_destroy with invalid argument" );
+      HG_(record_error_Misc)(
+         thr, "pthread_mutex_destroy with invalid argument" );
    }
 
    if (lk) {
-      tl_assert( is_sane_LockN(lk) );
+      tl_assert( HG_(is_sane_LockN)(lk) );
       tl_assert( lk->guestaddr == (Addr)mutex );
       if (lk->heldBy) {
          /* Basically act like we unlocked the lock */
-         record_error_Misc( thr, "pthread_mutex_destroy of a locked mutex" );
+         HG_(record_error_Misc)(
+            thr, "pthread_mutex_destroy of a locked mutex" );
          /* remove lock from locksets of all owning threads */
          remove_Lock_from_locksets_of_all_owning_Threads( lk );
          VG_(deleteBag)( lk->heldBy );
@@ -2085,13 +1928,13 @@ void evh__HG_PTHREAD_MUTEX_DESTROY_PRE( ThreadId tid, void* mutex )
          lk->acquired_at = NULL;
       }
       tl_assert( !lk->heldBy );
-      tl_assert( is_sane_LockN(lk) );
+      tl_assert( HG_(is_sane_LockN)(lk) );
 
       map_locks_delete( lk->guestaddr );
       del_LockN( lk );
    }
 
-   if (clo_sanity_flags & SCE_LOCKS)
+   if (HG_(clo_sanity_flags) & SCE_LOCKS)
       all__sanity_check("evh__hg_PTHREAD_MUTEX_DESTROY_PRE");
 }
 
@@ -2113,8 +1956,8 @@ static void evh__HG_PTHREAD_MUTEX_LOCK_PRE ( ThreadId tid,
    lk = map_locks_maybe_lookup( (Addr)mutex );
 
    if (lk && (lk->kind == LK_rdwr)) {
-      record_error_Misc( thr, "pthread_mutex_lock with a "
-                              "pthread_rwlock_t* argument " );
+      HG_(record_error_Misc)( thr, "pthread_mutex_lock with a "
+                                   "pthread_rwlock_t* argument " );
    }
 
    if ( lk 
@@ -2127,8 +1970,8 @@ static void evh__HG_PTHREAD_MUTEX_LOCK_PRE ( ThreadId tid,
          this is a real lock operation (not a speculative "tryLock"
          kind of thing).  Duh.  Deadlock coming up; but at least
          produce an error message. */
-      record_error_Misc( thr, "Attempt to re-lock a "
-                              "non-recursive lock I already hold" );
+      HG_(record_error_Misc)( thr, "Attempt to re-lock a "
+                                   "non-recursive lock I already hold" );
    }
 }
 
@@ -2271,26 +2114,26 @@ static Bool evh__HG_PTHREAD_COND_WAIT_PRE ( ThreadId tid,
       is wrong. */
    if (lk == NULL) {
       lk_valid = False;
-      record_error_Misc( 
+      HG_(record_error_Misc)( 
          thr, 
          "pthread_cond_{timed}wait called with invalid mutex" );
    } else {
-      tl_assert( is_sane_LockN(lk) );
+      tl_assert( HG_(is_sane_LockN)(lk) );
       if (lk->kind == LK_rdwr) {
          lk_valid = False;
-         record_error_Misc( 
+         HG_(record_error_Misc)(
             thr, "pthread_cond_{timed}wait called with mutex "
                  "of type pthread_rwlock_t*" );
       } else
          if (lk->heldBy == NULL) {
          lk_valid = False;
-         record_error_Misc( 
+         HG_(record_error_Misc)( 
             thr, "pthread_cond_{timed}wait called with un-held mutex");
       } else
       if (lk->heldBy != NULL
           && VG_(elemBag)( lk->heldBy, (Word)thr ) == 0) {
          lk_valid = False;
-         record_error_Misc( 
+         HG_(record_error_Misc)(
             thr, "pthread_cond_{timed}wait called with mutex "
                  "held by a different thread" );
       }
@@ -2327,9 +2170,9 @@ static void evh__HG_PTHREAD_COND_WAIT_POST ( ThreadId tid,
       /* Hmm.  How can a wait on 'cond' succeed if nobody signalled
          it?  If this happened it would surely be a bug in the threads
          library.  Or one of those fabled "spurious wakeups". */
-      record_error_Misc( thr, "Bug in libpthread: pthread_cond_wait "
-                              "succeeded on"
-                              " without prior pthread_cond_post");
+      HG_(record_error_Misc)( thr, "Bug in libpthread: pthread_cond_wait "
+                                   "succeeded on"
+                                   " without prior pthread_cond_post");
    }
 
    /* anyway, acquire a dependency on it. */
@@ -2361,7 +2204,7 @@ void evh__HG_PTHREAD_RWLOCK_INIT_POST( ThreadId tid, void* rwl )
       VG_(printf)("evh__hg_PTHREAD_RWLOCK_INIT_POST(ctid=%d, %p)\n", 
                   (Int)tid, (void*)rwl );
    map_locks_lookup_or_create( LK_rdwr, (Addr)rwl, tid );
-   if (clo_sanity_flags & SCE_LOCKS)
+   if (HG_(clo_sanity_flags) & SCE_LOCKS)
       all__sanity_check("evh__hg_PTHREAD_RWLOCK_INIT_POST");
 }
 
@@ -2376,21 +2219,22 @@ void evh__HG_PTHREAD_RWLOCK_DESTROY_PRE( ThreadId tid, void* rwl )
 
    thr = map_threads_maybe_lookup( tid );
    /* cannot fail - Thread* must already exist */
-   tl_assert( is_sane_Thread(thr) );
+   tl_assert( HG_(is_sane_Thread)(thr) );
 
    lk = map_locks_maybe_lookup( (Addr)rwl );
 
    if (lk == NULL || lk->kind != LK_rdwr) {
-      record_error_Misc( thr,
-                         "pthread_rwlock_destroy with invalid argument" );
+      HG_(record_error_Misc)(
+         thr, "pthread_rwlock_destroy with invalid argument" );
    }
 
    if (lk) {
-      tl_assert( is_sane_LockN(lk) );
+      tl_assert( HG_(is_sane_LockN)(lk) );
       tl_assert( lk->guestaddr == (Addr)rwl );
       if (lk->heldBy) {
          /* Basically act like we unlocked the lock */
-         record_error_Misc( thr, "pthread_rwlock_destroy of a locked mutex" );
+         HG_(record_error_Misc)(
+            thr, "pthread_rwlock_destroy of a locked mutex" );
          /* remove lock from locksets of all owning threads */
          remove_Lock_from_locksets_of_all_owning_Threads( lk );
          VG_(deleteBag)( lk->heldBy );
@@ -2399,13 +2243,13 @@ void evh__HG_PTHREAD_RWLOCK_DESTROY_PRE( ThreadId tid, void* rwl )
          lk->acquired_at = NULL;
       }
       tl_assert( !lk->heldBy );
-      tl_assert( is_sane_LockN(lk) );
+      tl_assert( HG_(is_sane_LockN)(lk) );
 
       map_locks_delete( lk->guestaddr );
       del_LockN( lk );
    }
 
-   if (clo_sanity_flags & SCE_LOCKS)
+   if (HG_(clo_sanity_flags) & SCE_LOCKS)
       all__sanity_check("evh__hg_PTHREAD_RWLOCK_DESTROY_PRE");
 }
 
@@ -2431,8 +2275,9 @@ void evh__HG_PTHREAD_RWLOCK_LOCK_PRE ( ThreadId tid,
    if ( lk 
         && (lk->kind == LK_nonRec || lk->kind == LK_mbRec) ) {
       /* Wrong kind of lock.  Duh.  */
-      record_error_Misc( thr, "pthread_rwlock_{rd,rw}lock with a "
-                              "pthread_mutex_t* argument " );
+      HG_(record_error_Misc)( 
+         thr, "pthread_rwlock_{rd,rw}lock with a "
+              "pthread_mutex_t* argument " );
    }
 }
 
@@ -2624,7 +2469,7 @@ void evh__HG_POSIX_SEM_INIT_POST ( ThreadId tid, void* sem, UWord value )
    /* If we don't do this check, the following while loop runs us out
       of memory for stupid initial values of 'value'. */
    if (value > 10000) {
-      record_error_Misc(
+      HG_(record_error_Misc)(
          thr, "sem_init: initial value exceeds 10000; using 10000" );
       value = 10000;
    }
@@ -2704,8 +2549,9 @@ static void evh__HG_POSIX_SEM_WAIT_POST ( ThreadId tid, void* sem )
       /* Hmm.  How can a wait on 'sem' succeed if nobody posted to it?
          If this happened it would surely be a bug in the threads
          library. */
-      record_error_Misc( thr, "Bug in libpthread: sem_wait succeeded on"
-                              " semaphore without prior sem_post");
+      HG_(record_error_Misc)(
+         thr, "Bug in libpthread: sem_wait succeeded on"
+              " semaphore without prior sem_post");
    }
 }
 
@@ -3091,14 +2937,14 @@ static void laog__pre_thread_acquires_lock (
          tl_assert(found->dst_ga == key.dst_ga);
          tl_assert(found->src_ec);
          tl_assert(found->dst_ec);
-         record_error_LockOrder( thr, 
-                                 lk->guestaddr, other->guestaddr,
-                                 found->src_ec, found->dst_ec );
+         HG_(record_error_LockOrder)( 
+            thr, lk->guestaddr, other->guestaddr,
+                 found->src_ec, found->dst_ec );
       } else {
          /* Hmm.  This can't happen (can it?) */
-         record_error_LockOrder( thr, 
-                                 lk->guestaddr,        other->guestaddr,
-                                 NULL, NULL );
+         HG_(record_error_LockOrder)(
+            thr, lk->guestaddr, other->guestaddr,
+                 NULL, NULL );
       }
    }
 
@@ -3120,7 +2966,7 @@ static void laog__pre_thread_acquires_lock (
       See the call points in evhH__post_thread_{r,w}_acquires_lock.
       When called in this inconsistent state, locks__sanity_check duly
       barfs. */
-   if (clo_sanity_flags & SCE_LAOG)
+   if (HG_(clo_sanity_flags) & SCE_LAOG)
       all_except_Locks__sanity_check("laog__pre_thread_acquires_lock-post");
 }
 
@@ -3175,7 +3021,7 @@ static void laog__handle_lock_deletions (
    for (i = 0; i < ws_size; i++)
       laog__handle_one_lock_deletion( (Lock*)ws_words[i] );
 
-   if (clo_sanity_flags & SCE_LAOG)
+   if (HG_(clo_sanity_flags) & SCE_LAOG)
       all__sanity_check("laog__handle_lock_deletions-post");
 }
 
@@ -3734,8 +3580,8 @@ Bool hg_handle_client_request ( ThreadId tid, UWord* args, UWord* ret)
          map_pthread_t_to_Thread_INIT();
          my_thr = map_threads_maybe_lookup( tid );
          tl_assert(my_thr); /* See justification above in SET_MY_PTHREAD_T */
-         record_error_PthAPIerror( my_thr, (HChar*)args[1], 
-                                           (Word)args[2], (HChar*)args[3] );
+         HG_(record_error_PthAPIerror)(
+            my_thr, (HChar*)args[1], (Word)args[2], (HChar*)args[3] );
          break;
       }
 
@@ -3893,791 +3739,27 @@ Bool hg_handle_client_request ( ThreadId tid, UWord* args, UWord* ret)
 
 
 /*----------------------------------------------------------------*/
-/*--- Error management                                         ---*/
-/*----------------------------------------------------------------*/
-
-/* maps (by value) strings to a copy of them in ARENA_TOOL */
-static UWord stats__string_table_queries = 0;
-static WordFM* string_table = NULL;
-static Word string_table_cmp ( UWord s1, UWord s2 ) {
-   return (Word)VG_(strcmp)( (HChar*)s1, (HChar*)s2 );
-}
-static HChar* string_table_strdup ( HChar* str ) {
-   HChar* copy = NULL;
-   stats__string_table_queries++;
-   if (!str)
-      str = "(null)";
-   if (!string_table) {
-      string_table = VG_(newFM)( HG_(zalloc), "hg.sts.1",
-                                 HG_(free), string_table_cmp );
-      tl_assert(string_table);
-   }
-   if (VG_(lookupFM)( string_table,
-                      NULL, (Word*)&copy, (Word)str )) {
-      tl_assert(copy);
-      if (0) VG_(printf)("string_table_strdup: %p -> %p\n", str, copy );
-      return copy;
-   } else {
-      copy = VG_(strdup)("hg.sts.2", str);
-      tl_assert(copy);
-      VG_(addToFM)( string_table, (Word)copy, (Word)copy );
-      return copy;
-   }
-}
-
-/* maps from Lock .unique fields to LockP*s */
-static UWord stats__ga_LockN_to_P_queries = 0;
-static WordFM* yaWFM = NULL;
-static Word lock_unique_cmp ( UWord lk1W, UWord lk2W )
-{
-   Lock* lk1 = (Lock*)lk1W;
-   Lock* lk2 = (Lock*)lk2W;
-   tl_assert( is_sane_LockNorP(lk1) );
-   tl_assert( is_sane_LockNorP(lk2) );
-   if (lk1->unique < lk2->unique) return -1;
-   if (lk1->unique > lk2->unique) return 1;
-   return 0;
-}
-static Lock* mk_LockP_from_LockN ( Lock* lkn )
-{
-   Lock* lkp = NULL;
-   stats__ga_LockN_to_P_queries++;
-   tl_assert( is_sane_LockN(lkn) );
-   if (!yaWFM) {
-      yaWFM = VG_(newFM)( HG_(zalloc), "hg.mLPfLN.1", HG_(free), lock_unique_cmp );
-      tl_assert(yaWFM);
-   }
-   if (!VG_(lookupFM)( yaWFM, NULL, (Word*)&lkp, (Word)lkn)) {
-      lkp = HG_(zalloc)( "hg.mLPfLN.2", sizeof(Lock) );
-      *lkp = *lkn;
-      lkp->admin = NULL;
-      lkp->magic = LockP_MAGIC;
-      /* Forget about the bag of lock holders - don't copy that.
-         Also, acquired_at should be NULL whenever heldBy is, and vice
-         versa.  Also forget about the associated libhb synch object. */
-      lkp->heldW  = False;
-      lkp->heldBy = NULL;
-      lkp->acquired_at = NULL;
-      lkp->hbso = NULL;
-      VG_(addToFM)( yaWFM, (Word)lkp, (Word)lkp );
-   }
-   tl_assert( is_sane_LockP(lkp) );
-   return lkp;
-}
-
-/* Errors:
-
-      race: program counter
-            read or write
-            data size
-            previous state
-            current state
-
-      FIXME: how does state printing interact with lockset gc?
-      Are the locksets in prev/curr state always valid?
-      Ditto question for the threadsets
-          ThreadSets - probably are always valid if Threads
-          are never thrown away.
-          LockSets - could at least print the lockset elements that
-          correspond to actual locks at the time of printing.  Hmm.
-*/
-
-/* Error kinds */
-typedef
-   enum {
-      XE_Race=1101,      // race
-      XE_FreeMemLock,    // freeing memory containing a locked lock
-      XE_UnlockUnlocked, // unlocking a not-locked lock
-      XE_UnlockForeign,  // unlocking a lock held by some other thread
-      XE_UnlockBogus,    // unlocking an address not known to be a lock
-      XE_PthAPIerror,    // error from the POSIX pthreads API
-      XE_LockOrder,      // lock order error
-      XE_Misc            // misc other error (w/ string to describe it)
-   }
-   XErrorTag;
-
-/* Extra contexts for kinds */
-typedef
-   struct  {
-      XErrorTag tag;
-      union {
-         struct {
-            Addr  data_addr;
-            Int   szB;
-            Bool  isWrite;
-            ExeContext* mb_lastlock;
-            ExeContext* mb_confacc;
-            Thread* thr;
-            Thread* mb_confaccthr;
-            Char  descr1[96];
-            Char  descr2[96];
-         } Race;
-         struct {
-            Thread* thr;  /* doing the freeing */
-            Lock*   lock; /* lock which is locked */
-         } FreeMemLock;
-         struct {
-            Thread* thr;  /* doing the unlocking */
-            Lock*   lock; /* lock (that is already unlocked) */
-         } UnlockUnlocked;
-         struct {
-            Thread* thr;    /* doing the unlocking */
-            Thread* owner;  /* thread that actually holds the lock */
-            Lock*   lock;   /* lock (that is held by 'owner') */
-         } UnlockForeign;
-         struct {
-            Thread* thr;     /* doing the unlocking */
-            Addr    lock_ga; /* purported address of the lock */
-         } UnlockBogus;
-         struct {
-            Thread* thr; 
-            HChar*  fnname; /* persistent, in tool-arena */
-            Word    err;    /* pth error code */
-            HChar*  errstr; /* persistent, in tool-arena */
-         } PthAPIerror;
-         struct {
-            Thread*     thr;
-            Addr        before_ga; /* always locked first in prog. history */
-            Addr        after_ga;
-            ExeContext* before_ec;
-            ExeContext* after_ec;
-         } LockOrder;
-         struct {
-            Thread* thr;
-            HChar*  errstr; /* persistent, in tool-arena */
-         } Misc;
-      } XE;
-   }
-   XError;
-
-static void init_XError ( XError* xe ) {
-   VG_(memset)(xe, 0, sizeof(*xe) );
-   xe->tag = XE_Race-1; /* bogus */
-}
-
-
-/* Extensions of suppressions */
-typedef
-   enum {
-      XS_Race=1201, /* race */
-      XS_FreeMemLock,
-      XS_UnlockUnlocked,
-      XS_UnlockForeign,
-      XS_UnlockBogus,
-      XS_PthAPIerror,
-      XS_LockOrder,
-      XS_Misc
-   }
-   XSuppTag;
-
-
-/* Updates the copy with address info if necessary. */
-static UInt hg_update_extra ( Error* err )
-{
-   XError* xe = (XError*)VG_(get_error_extra)(err);
-   tl_assert(xe);
-   //if (extra != NULL && Undescribed == extra->addrinfo.akind) {
-   //   describe_addr ( VG_(get_error_address)(err), &(extra->addrinfo) );
-   //}
-
-   if (xe->tag == XE_Race) {
-      /* See if we can come up with a source level description of the
-         raced-upon address.  This is potentially expensive, which is
-         why it's only done at the update_extra point, not when the
-         error is initially created. */
-      tl_assert(sizeof(xe->XE.Race.descr1) == sizeof(xe->XE.Race.descr2));
-      if (VG_(get_data_description)(
-                &xe->XE.Race.descr1[0],
-                &xe->XE.Race.descr2[0],
-                sizeof(xe->XE.Race.descr1)-1,
-                xe->XE.Race.data_addr )) {
-         tl_assert( xe->XE.Race.descr1
-                       [ sizeof(xe->XE.Race.descr1)-1 ] == 0);
-         tl_assert( xe->XE.Race.descr2
-                       [ sizeof(xe->XE.Race.descr2)-1 ] == 0);
-      }
-   }
-
-   return sizeof(XError);
-}
-
-static void record_error_Race ( Thread* thr, 
-                                Addr data_addr, Bool isWrite, Int szB,
-                                ExeContext* mb_lastlock,
-                                ExeContext* mb_confacc,
-                                Thread* mb_confaccthr ) {
-   XError xe;
-   tl_assert( is_sane_Thread(thr) );
-
-#if defined(VGO_linux)
-   /* Skip any races on locations apparently in GOTPLT sections.  This
-      is said to be caused by ld.so poking PLT table entries (or
-      whatever) when it writes the resolved address of a dynamically
-      linked routine, into the table (or whatever) when it is called
-      for the first time. */
-   {
-     VgSectKind sect = VG_(seginfo_sect_kind)( NULL, 0, data_addr );
-     if (0) VG_(printf)("XXXXXXXXX RACE on %#lx %s\n",
-                        data_addr, VG_(pp_SectKind)(sect));
-     if (sect == Vg_SectGOTPLT) return;
-   }
-#endif
-
-   init_XError(&xe);
-   xe.tag = XE_Race;
-   xe.XE.Race.data_addr   = data_addr;
-   xe.XE.Race.szB         = szB;
-   xe.XE.Race.isWrite     = isWrite;
-   xe.XE.Race.mb_lastlock = mb_lastlock;
-   xe.XE.Race.mb_confacc  = mb_confacc;
-   xe.XE.Race.thr         = thr;
-   xe.XE.Race.mb_confaccthr = mb_confaccthr;
-   // FIXME: tid vs thr
-   tl_assert(isWrite == False || isWrite == True);
-   //   tl_assert(szB == 8 || szB == 4 || szB == 2 || szB == 1);
-   xe.XE.Race.descr1[0] = xe.XE.Race.descr2[0] = 0;
-   VG_(maybe_record_error)( map_threads_reverse_lookup_SLOW(thr),
-                            XE_Race, data_addr, NULL, &xe );
-}
-
-static void record_error_FreeMemLock ( Thread* thr, Lock* lk ) {
-   XError xe;
-   tl_assert( is_sane_Thread(thr) );
-   tl_assert( is_sane_LockN(lk) );
-   init_XError(&xe);
-   xe.tag = XE_FreeMemLock;
-   xe.XE.FreeMemLock.thr  = thr;
-   xe.XE.FreeMemLock.lock = mk_LockP_from_LockN(lk);
-   // FIXME: tid vs thr
-   VG_(maybe_record_error)( map_threads_reverse_lookup_SLOW(thr),
-                            XE_FreeMemLock, 0, NULL, &xe );
-}
-
-static void record_error_UnlockUnlocked ( Thread* thr, Lock* lk ) {
-   XError xe;
-   tl_assert( is_sane_Thread(thr) );
-   tl_assert( is_sane_LockN(lk) );
-   init_XError(&xe);
-   xe.tag = XE_UnlockUnlocked;
-   xe.XE.UnlockUnlocked.thr  = thr;
-   xe.XE.UnlockUnlocked.lock = mk_LockP_from_LockN(lk);
-   // FIXME: tid vs thr
-   VG_(maybe_record_error)( map_threads_reverse_lookup_SLOW(thr),
-                            XE_UnlockUnlocked, 0, NULL, &xe );
-}
-
-static void record_error_UnlockForeign ( Thread* thr,
-                                         Thread* owner, Lock* lk ) {
-   XError xe;
-   tl_assert( is_sane_Thread(thr) );
-   tl_assert( is_sane_Thread(owner) );
-   tl_assert( is_sane_LockN(lk) );
-   init_XError(&xe);
-   xe.tag = XE_UnlockForeign;
-   xe.XE.UnlockForeign.thr   = thr;
-   xe.XE.UnlockForeign.owner = owner;
-   xe.XE.UnlockForeign.lock  = mk_LockP_from_LockN(lk);
-   // FIXME: tid vs thr
-   VG_(maybe_record_error)( map_threads_reverse_lookup_SLOW(thr),
-                            XE_UnlockForeign, 0, NULL, &xe );
-}
-
-static void record_error_UnlockBogus ( Thread* thr, Addr lock_ga ) {
-   XError xe;
-   tl_assert( is_sane_Thread(thr) );
-   init_XError(&xe);
-   xe.tag = XE_UnlockBogus;
-   xe.XE.UnlockBogus.thr     = thr;
-   xe.XE.UnlockBogus.lock_ga = lock_ga;
-   // FIXME: tid vs thr
-   VG_(maybe_record_error)( map_threads_reverse_lookup_SLOW(thr),
-                            XE_UnlockBogus, 0, NULL, &xe );
-}
-
-static 
-void record_error_LockOrder ( Thread* thr, Addr before_ga, Addr after_ga,
-                              ExeContext* before_ec, ExeContext* after_ec ) {
-   XError xe;
-   tl_assert( is_sane_Thread(thr) );
-   if (!clo_track_lockorders)
-      return;
-   init_XError(&xe);
-   xe.tag = XE_LockOrder;
-   xe.XE.LockOrder.thr       = thr;
-   xe.XE.LockOrder.before_ga = before_ga;
-   xe.XE.LockOrder.before_ec = before_ec;
-   xe.XE.LockOrder.after_ga  = after_ga;
-   xe.XE.LockOrder.after_ec  = after_ec;
-   // FIXME: tid vs thr
-   VG_(maybe_record_error)( map_threads_reverse_lookup_SLOW(thr),
-                            XE_LockOrder, 0, NULL, &xe );
-}
-
-static 
-void record_error_PthAPIerror ( Thread* thr, HChar* fnname, 
-                                Word err, HChar* errstr ) {
-   XError xe;
-   tl_assert( is_sane_Thread(thr) );
-   tl_assert(fnname);
-   tl_assert(errstr);
-   init_XError(&xe);
-   xe.tag = XE_PthAPIerror;
-   xe.XE.PthAPIerror.thr    = thr;
-   xe.XE.PthAPIerror.fnname = string_table_strdup(fnname);
-   xe.XE.PthAPIerror.err    = err;
-   xe.XE.PthAPIerror.errstr = string_table_strdup(errstr);
-   // FIXME: tid vs thr
-   VG_(maybe_record_error)( map_threads_reverse_lookup_SLOW(thr),
-                            XE_PthAPIerror, 0, NULL, &xe );
-}
-
-static void record_error_Misc ( Thread* thr, HChar* errstr ) {
-   XError xe;
-   tl_assert( is_sane_Thread(thr) );
-   tl_assert(errstr);
-   init_XError(&xe);
-   xe.tag = XE_Misc;
-   xe.XE.Misc.thr    = thr;
-   xe.XE.Misc.errstr = string_table_strdup(errstr);
-   // FIXME: tid vs thr
-   VG_(maybe_record_error)( map_threads_reverse_lookup_SLOW(thr),
-                            XE_Misc, 0, NULL, &xe );
-}
-
-static Bool hg_eq_Error ( VgRes not_used, Error* e1, Error* e2 )
-{
-   XError *xe1, *xe2;
-
-   tl_assert(VG_(get_error_kind)(e1) == VG_(get_error_kind)(e2));
-
-   xe1 = (XError*)VG_(get_error_extra)(e1);
-   xe2 = (XError*)VG_(get_error_extra)(e2);
-   tl_assert(xe1);
-   tl_assert(xe2);
-
-   switch (VG_(get_error_kind)(e1)) {
-      case XE_Race:
-         return xe1->XE.Race.szB == xe2->XE.Race.szB
-                && xe1->XE.Race.isWrite == xe2->XE.Race.isWrite
-                && (clo_cmp_race_err_addrs 
-                       ? xe1->XE.Race.data_addr == xe2->XE.Race.data_addr
-                       : True);
-      case XE_FreeMemLock:
-         return xe1->XE.FreeMemLock.thr == xe2->XE.FreeMemLock.thr
-                && xe1->XE.FreeMemLock.lock == xe2->XE.FreeMemLock.lock;
-      case XE_UnlockUnlocked:
-         return xe1->XE.UnlockUnlocked.thr == xe2->XE.UnlockUnlocked.thr
-                && xe1->XE.UnlockUnlocked.lock == xe2->XE.UnlockUnlocked.lock;
-      case XE_UnlockForeign:
-         return xe1->XE.UnlockForeign.thr == xe2->XE.UnlockForeign.thr
-                && xe1->XE.UnlockForeign.owner == xe2->XE.UnlockForeign.owner
-                && xe1->XE.UnlockForeign.lock == xe2->XE.UnlockForeign.lock;
-      case XE_UnlockBogus:
-         return xe1->XE.UnlockBogus.thr == xe2->XE.UnlockBogus.thr
-                && xe1->XE.UnlockBogus.lock_ga == xe2->XE.UnlockBogus.lock_ga;
-      case XE_PthAPIerror:
-         return xe1->XE.PthAPIerror.thr == xe2->XE.PthAPIerror.thr
-                && 0==VG_(strcmp)(xe1->XE.PthAPIerror.fnname,
-                                  xe2->XE.PthAPIerror.fnname)
-                && xe1->XE.PthAPIerror.err == xe2->XE.PthAPIerror.err;
-      case XE_LockOrder:
-         return xe1->XE.LockOrder.thr == xe2->XE.LockOrder.thr;
-      case XE_Misc:
-         return xe1->XE.Misc.thr == xe2->XE.Misc.thr
-                && 0==VG_(strcmp)(xe1->XE.Misc.errstr, xe2->XE.Misc.errstr);
-      default:
-         tl_assert(0);
-   }
-
-   /*NOTREACHED*/
-   tl_assert(0);
-}
-
-/* Given a WordSetID in univ_tsets (that is, a Thread set ID), produce
-   an XArray* with the corresponding Thread*'s sorted by their
-   errmsg_index fields.  This is for printing out thread sets in
-   repeatable orders, which is important for for repeatable regression
-   testing.  The returned XArray* is dynamically allocated (of course)
-   and so must be HG_(free)d by the caller. */
-static Int cmp_Thread_by_errmsg_index ( void* thr1V, void* thr2V ) {
-   Thread* thr1 = *(Thread**)thr1V;
-   Thread* thr2 = *(Thread**)thr2V;
-   if (thr1->errmsg_index < thr2->errmsg_index) return -1;
-   if (thr1->errmsg_index > thr2->errmsg_index) return  1;
-   return 0;
-}
-static XArray* /* of Thread* */ get_sorted_thread_set ( WordSetID tset )
-{
-   XArray* xa;
-   UWord*  ts_words;
-   UWord   ts_size, i;
-   xa = VG_(newXA)( HG_(zalloc), "hg.cTbei.1", HG_(free), sizeof(Thread*) );
-   tl_assert(xa);
-   HG_(getPayloadWS)( &ts_words, &ts_size, univ_tsets, tset );
-   tl_assert(ts_words);
-   tl_assert(ts_size >= 0);
-   /* This isn't a very clever scheme, but we don't expect this to be
-      called very often. */
-   for (i = 0; i < ts_size; i++) {
-      Thread* thr = (Thread*)ts_words[i];
-      tl_assert(is_sane_Thread(thr));
-      VG_(addToXA)( xa, (void*)&thr );
-   }
-   tl_assert(ts_size == VG_(sizeXA)( xa ));
-   VG_(setCmpFnXA)( xa, cmp_Thread_by_errmsg_index );
-   VG_(sortXA)( xa );
-   return xa;
-}
-
-
-/* Announce (that is, print the point-of-creation) of the threads in
-   'tset'.  Only do this once, as we only want to see these
-   announcements once each.  Also, first sort the threads by their
-   errmsg_index fields, and show only the first N_THREADS_TO_ANNOUNCE.
-   That's because we only want to bother to announce threads
-   enumerated by summarise_threadset() below, and that in turn does
-   the same: it sorts them and then only shows the first
-   N_THREADS_TO_ANNOUNCE. */
-
-static void announce_threadset ( WordSetID tset )
-{
-   const Word limit = N_THREADS_TO_ANNOUNCE;
-   Thread* thr;
-   XArray* sorted;
-   Word    ts_size, i, loopmax;
-   sorted = get_sorted_thread_set( tset );
-   ts_size = VG_(sizeXA)( sorted );
-   tl_assert(ts_size >= 0);
-   loopmax = limit < ts_size  ? limit  : ts_size; /* min(limit, ts_size) */
-   tl_assert(loopmax >= 0 && loopmax <= limit);
-   for (i = 0; i < loopmax; i++) {
-      thr = *(Thread**)VG_(indexXA)( sorted, i );
-      tl_assert(is_sane_Thread(thr));
-      tl_assert(thr->errmsg_index >= 1);
-      if (thr->announced)
-         continue;
-      if (thr->errmsg_index == 1/*FIXME: this hardwires an assumption
-                                  about the identity of the root
-                                  thread*/) {
-         tl_assert(thr->created_at == NULL);
-         VG_(message)(Vg_UserMsg, "Thread #%d is the program's root thread",
-                                  thr->errmsg_index);
-      } else {
-         tl_assert(thr->created_at != NULL);
-         VG_(message)(Vg_UserMsg, "Thread #%d was created",
-                                  thr->errmsg_index);
-         VG_(pp_ExeContext)( thr->created_at );
-      }
-      VG_(message)(Vg_UserMsg, "");
-      thr->announced = True;
-   }
-   VG_(deleteXA)( sorted );
-}
-static void announce_one_thread ( Thread* thr ) {
-   announce_threadset( HG_(singletonWS)(univ_tsets, (Word)thr ));
-}
-
-/* Generate into buf[0 .. nBuf-1] a 1-line summary of a thread set, of
-   the form "#1, #3, #77, #78, #79 and 42 others".  The first
-   N_THREADS_TO_ANNOUNCE are listed explicitly (as '#n') and the
-   leftovers lumped into the 'and n others' bit. */
-
-static void summarise_threadset ( WordSetID tset, Char* buf, UInt nBuf )
-{
-   const Word limit = N_THREADS_TO_ANNOUNCE;
-   Thread* thr;
-   XArray* sorted;
-   Word    ts_size, i, loopmax;
-   UInt    off = 0;
-   tl_assert(nBuf > 0);
-   tl_assert(nBuf >= 40 + 20*limit);
-   tl_assert(buf);
-   sorted = get_sorted_thread_set( tset );
-   ts_size = VG_(sizeXA)( sorted );
-   tl_assert(ts_size >= 0);
-   loopmax = limit < ts_size  ? limit  : ts_size; /* min(limit, ts_size) */
-   tl_assert(loopmax >= 0 && loopmax <= limit);
-   VG_(memset)(buf, 0, nBuf);
-   for (i = 0; i < loopmax; i++) {
-      thr = *(Thread**)VG_(indexXA)( sorted, i );
-      tl_assert(is_sane_Thread(thr));
-      tl_assert(thr->errmsg_index >= 1);
-      off += VG_(sprintf)(&buf[off], "#%d", (Int)thr->errmsg_index);
-      if (i < loopmax-1)
-         off += VG_(sprintf)(&buf[off], ", ");
-   }
-   if (limit < ts_size) {
-      Word others = ts_size - limit;
-      off += VG_(sprintf)(&buf[off], " and %d other%s", 
-                                     (Int)others, others > 1 ? "s" : "");
-   }
-   tl_assert(off < nBuf);
-   tl_assert(buf[nBuf-1] == 0);
-   VG_(deleteXA)( sorted );
-}
-
-static void hg_pp_Error ( Error* err )
-{
-   XError *xe = (XError*)VG_(get_error_extra)(err);
-
-   switch (VG_(get_error_kind)(err)) {
-
-   case XE_Misc: {
-      tl_assert(xe);
-      tl_assert( is_sane_Thread( xe->XE.Misc.thr ) );
-      announce_one_thread( xe->XE.Misc.thr );
-      VG_(message)(Vg_UserMsg,
-                  "Thread #%d: %s",
-                  (Int)xe->XE.Misc.thr->errmsg_index,
-                  xe->XE.Misc.errstr);
-      VG_(pp_ExeContext)( VG_(get_error_where)(err) );
-      break;
-   }
-
-   case XE_LockOrder: {
-      tl_assert(xe);
-      tl_assert( is_sane_Thread( xe->XE.LockOrder.thr ) );
-      announce_one_thread( xe->XE.LockOrder.thr );
-      VG_(message)(Vg_UserMsg,
-                  "Thread #%d: lock order \"%p before %p\" violated",
-                  (Int)xe->XE.LockOrder.thr->errmsg_index,
-                  (void*)xe->XE.LockOrder.before_ga,
-                  (void*)xe->XE.LockOrder.after_ga);
-      VG_(pp_ExeContext)( VG_(get_error_where)(err) );
-      if (xe->XE.LockOrder.before_ec && xe->XE.LockOrder.after_ec) {
-         VG_(message)(Vg_UserMsg,
-            "  Required order was established by acquisition of lock at %p",
-            (void*)xe->XE.LockOrder.before_ga);
-         VG_(pp_ExeContext)( xe->XE.LockOrder.before_ec );
-         VG_(message)(Vg_UserMsg,
-            "  followed by a later acquisition of lock at %p", 
-            (void*)xe->XE.LockOrder.after_ga);
-         VG_(pp_ExeContext)( xe->XE.LockOrder.after_ec );
-      }
-      break;
-   }
-
-   case XE_PthAPIerror: {
-      tl_assert(xe);
-      tl_assert( is_sane_Thread( xe->XE.PthAPIerror.thr ) );
-      announce_one_thread( xe->XE.PthAPIerror.thr );
-      VG_(message)(Vg_UserMsg,
-                  "Thread #%d's call to %s failed",
-                  (Int)xe->XE.PthAPIerror.thr->errmsg_index,
-                  xe->XE.PthAPIerror.fnname);
-      VG_(message)(Vg_UserMsg,
-                  "   with error code %ld (%s)",
-                  xe->XE.PthAPIerror.err,
-                  xe->XE.PthAPIerror.errstr);
-      VG_(pp_ExeContext)( VG_(get_error_where)(err) );
-      break;
-   }
-
-   case XE_UnlockBogus: {
-      tl_assert(xe);
-      tl_assert( is_sane_Thread( xe->XE.UnlockBogus.thr ) );
-      announce_one_thread( xe->XE.UnlockBogus.thr );
-      VG_(message)(Vg_UserMsg,
-                   "Thread #%d unlocked an invalid lock at %p ",
-                   (Int)xe->XE.UnlockBogus.thr->errmsg_index,
-                   (void*)xe->XE.UnlockBogus.lock_ga);
-      VG_(pp_ExeContext)( VG_(get_error_where)(err) );
-      break;
-   }
-
-   case XE_UnlockForeign: {
-      tl_assert(xe);
-      tl_assert( is_sane_LockP( xe->XE.UnlockForeign.lock ) );
-      tl_assert( is_sane_Thread( xe->XE.UnlockForeign.owner ) );
-      tl_assert( is_sane_Thread( xe->XE.UnlockForeign.thr ) );
-      announce_one_thread( xe->XE.UnlockForeign.thr );
-      announce_one_thread( xe->XE.UnlockForeign.owner );
-      VG_(message)(Vg_UserMsg,
-                   "Thread #%d unlocked lock at %p "
-                   "currently held by thread #%d",
-                   (Int)xe->XE.UnlockForeign.thr->errmsg_index,
-                   (void*)xe->XE.UnlockForeign.lock->guestaddr,
-                   (Int)xe->XE.UnlockForeign.owner->errmsg_index );
-      VG_(pp_ExeContext)( VG_(get_error_where)(err) );
-      if (xe->XE.UnlockForeign.lock->appeared_at) {
-         VG_(message)(Vg_UserMsg,
-                      "  Lock at %p was first observed",
-                      (void*)xe->XE.UnlockForeign.lock->guestaddr);
-         VG_(pp_ExeContext)( xe->XE.UnlockForeign.lock->appeared_at );
-      }
-      break;
-   }
-
-   case XE_UnlockUnlocked: {
-      tl_assert(xe);
-      tl_assert( is_sane_LockP( xe->XE.UnlockUnlocked.lock ) );
-      tl_assert( is_sane_Thread( xe->XE.UnlockUnlocked.thr ) );
-      announce_one_thread( xe->XE.UnlockUnlocked.thr );
-      VG_(message)(Vg_UserMsg,
-                   "Thread #%d unlocked a not-locked lock at %p ",
-                   (Int)xe->XE.UnlockUnlocked.thr->errmsg_index,
-                   (void*)xe->XE.UnlockUnlocked.lock->guestaddr);
-      VG_(pp_ExeContext)( VG_(get_error_where)(err) );
-      if (xe->XE.UnlockUnlocked.lock->appeared_at) {
-         VG_(message)(Vg_UserMsg,
-                      "  Lock at %p was first observed",
-                      (void*)xe->XE.UnlockUnlocked.lock->guestaddr);
-         VG_(pp_ExeContext)( xe->XE.UnlockUnlocked.lock->appeared_at );
-      }
-      break;
-   }
-
-   case XE_FreeMemLock: {
-      tl_assert(xe);
-      tl_assert( is_sane_LockP( xe->XE.FreeMemLock.lock ) );
-      tl_assert( is_sane_Thread( xe->XE.FreeMemLock.thr ) );
-      announce_one_thread( xe->XE.FreeMemLock.thr );
-      VG_(message)(Vg_UserMsg,
-                   "Thread #%d deallocated location %p "
-                   "containing a locked lock",
-                   (Int)xe->XE.FreeMemLock.thr->errmsg_index,
-                   (void*)xe->XE.FreeMemLock.lock->guestaddr);
-      VG_(pp_ExeContext)( VG_(get_error_where)(err) );
-      if (xe->XE.FreeMemLock.lock->appeared_at) {
-         VG_(message)(Vg_UserMsg,
-                      "  Lock at %p was first observed",
-                      (void*)xe->XE.FreeMemLock.lock->guestaddr);
-         VG_(pp_ExeContext)( xe->XE.FreeMemLock.lock->appeared_at );
-      }
-      break;
-   }
-
-   case XE_Race: {
-      Addr      err_ga;
-      HChar*    what;
-      Int       szB;
-      what      = xe->XE.Race.isWrite ? "write" : "read";
-      szB       = xe->XE.Race.szB;
-      err_ga = VG_(get_error_address)(err);
-
-      announce_one_thread( xe->XE.Race.thr );
-      if (xe->XE.Race.mb_confaccthr)
-         announce_one_thread( xe->XE.Race.mb_confaccthr );
-      VG_(message)(Vg_UserMsg,
-         "Possible data race during %s of size %d at %#lx by thread #%d",
-         what, szB, err_ga, (Int)xe->XE.Race.thr->errmsg_index
-      );
-      VG_(pp_ExeContext)( VG_(get_error_where)(err) );
-      if (xe->XE.Race.mb_confacc) {
-         if (xe->XE.Race.mb_confaccthr) {
-            VG_(message)(Vg_UserMsg,
-               " This conflicts with a previous access by thread #%d",
-               xe->XE.Race.mb_confaccthr->errmsg_index
-            );
-         } else {
-            VG_(message)(Vg_UserMsg,
-               " This conflicts with a previous access"
-            );
-         }
-         VG_(pp_ExeContext)( xe->XE.Race.mb_confacc );
-      }
-
-
-      /* If we have a better description of the address, show it. */
-      if (xe->XE.Race.descr1[0] != 0)
-         VG_(message)(Vg_UserMsg, " %s", &xe->XE.Race.descr1[0]);
-      if (xe->XE.Race.descr2[0] != 0)
-         VG_(message)(Vg_UserMsg, " %s", &xe->XE.Race.descr2[0]);
-
-      break; /* case XE_Race */
-   } /* case XE_Race */
-
-   default:
-      tl_assert(0);
-   } /* switch (VG_(get_error_kind)(err)) */
-}
-
-static Char* hg_get_error_name ( Error* err )
-{
-   switch (VG_(get_error_kind)(err)) {
-      case XE_Race:           return "Race";
-      case XE_FreeMemLock:    return "FreeMemLock";
-      case XE_UnlockUnlocked: return "UnlockUnlocked";
-      case XE_UnlockForeign:  return "UnlockForeign";
-      case XE_UnlockBogus:    return "UnlockBogus";
-      case XE_PthAPIerror:    return "PthAPIerror";
-      case XE_LockOrder:      return "LockOrder";
-      case XE_Misc:           return "Misc";
-      default: tl_assert(0); /* fill in missing case */
-   }
-}
-
-static Bool hg_recognised_suppression ( Char* name, Supp *su )
-{
-#  define TRY(_name,_xskind)                   \
-      if (0 == VG_(strcmp)(name, (_name))) {   \
-         VG_(set_supp_kind)(su, (_xskind));    \
-         return True;                          \
-      }
-   TRY("Race",           XS_Race);
-   TRY("FreeMemLock",    XS_FreeMemLock);
-   TRY("UnlockUnlocked", XS_UnlockUnlocked);
-   TRY("UnlockForeign",  XS_UnlockForeign);
-   TRY("UnlockBogus",    XS_UnlockBogus);
-   TRY("PthAPIerror",    XS_PthAPIerror);
-   TRY("LockOrder",      XS_LockOrder);
-   TRY("Misc",           XS_Misc);
-   return False;
-#  undef TRY
-}
-
-static Bool hg_read_extra_suppression_info ( Int fd, Char* buf, Int nBuf,
-                                             Supp* su )
-{
-   /* do nothing -- no extra suppression info present.  Return True to
-      indicate nothing bad happened. */
-   return True;
-}
-
-static Bool hg_error_matches_suppression ( Error* err, Supp* su )
-{
-   switch (VG_(get_supp_kind)(su)) {
-   case XS_Race:           return VG_(get_error_kind)(err) == XE_Race;
-   case XS_FreeMemLock:    return VG_(get_error_kind)(err) == XE_FreeMemLock;
-   case XS_UnlockUnlocked: return VG_(get_error_kind)(err) == XE_UnlockUnlocked;
-   case XS_UnlockForeign:  return VG_(get_error_kind)(err) == XE_UnlockForeign;
-   case XS_UnlockBogus:    return VG_(get_error_kind)(err) == XE_UnlockBogus;
-   case XS_PthAPIerror:    return VG_(get_error_kind)(err) == XE_PthAPIerror;
-   case XS_LockOrder:      return VG_(get_error_kind)(err) == XE_LockOrder;
-   case XS_Misc:           return VG_(get_error_kind)(err) == XE_Misc;
-   //case XS_: return VG_(get_error_kind)(err) == XE_;
-   default: tl_assert(0); /* fill in missing cases */
-   }
-}
-
-static void hg_print_extra_suppression_info ( Error* err )
-{
-   /* Do nothing */
-}
-
-
-/*----------------------------------------------------------------*/
 /*--- Setup                                                    ---*/
 /*----------------------------------------------------------------*/
 
 static Bool hg_process_cmd_line_option ( Char* arg )
 {
    if      (VG_CLO_STREQ(arg, "--track-lockorders=no"))
-      clo_track_lockorders = False;
+      HG_(clo_track_lockorders) = False;
    else if (VG_CLO_STREQ(arg, "--track-lockorders=yes"))
-      clo_track_lockorders = True;
+      HG_(clo_track_lockorders) = True;
 
    else if (VG_CLO_STREQ(arg, "--cmp-race-err-addrs=no"))
-      clo_cmp_race_err_addrs = False;
+      HG_(clo_cmp_race_err_addrs) = False;
    else if (VG_CLO_STREQ(arg, "--cmp-race-err-addrs=yes"))
-      clo_cmp_race_err_addrs = True;
+      HG_(clo_cmp_race_err_addrs) = True;
 
    else if (VG_CLO_STREQN(13, arg, "--trace-addr=")) {
-      clo_trace_addr = VG_(atoll16)(&arg[13]);
-      if (clo_trace_level == 0)
-         clo_trace_level = 1;
+      HG_(clo_trace_addr) = VG_(atoll16)(&arg[13]);
+      if (HG_(clo_trace_level) == 0)
+         HG_(clo_trace_level) = 1;
    }
-   else VG_BNUM_CLO(arg, "--trace-level", clo_trace_level, 0, 2)
+   else VG_BNUM_CLO(arg, "--trace-level", HG_(clo_trace_level), 0, 2)
 
    /* "stuvwx" --> stuvwx (binary) */
    else if (VG_CLO_STREQN(18, arg, "--hg-sanity-flags=")) {
@@ -4691,14 +3773,14 @@ static Bool hg_process_cmd_line_option ( Char* arg )
       }
       for (j = 0; j < 6; j++) {
          if      ('0' == opt[j]) { /* do nothing */ }
-         else if ('1' == opt[j]) clo_sanity_flags |= (1 << (6-1-j));
+         else if ('1' == opt[j]) HG_(clo_sanity_flags) |= (1 << (6-1-j));
          else {
             VG_(message)(Vg_UserMsg, "--hg-sanity-flags argument can "
                                      "only contain 0s and 1s");
             return False;
          }
       }
-      if (0) VG_(printf)("XXX sanity flags: 0x%x\n", clo_sanity_flags);
+      if (0) VG_(printf)("XXX sanity flags: 0x%lx\n", HG_(clo_sanity_flags));
    }
 
    else 
@@ -4743,7 +3825,7 @@ static void hg_fini ( Int exitcode )
 {
    if (SHOW_DATA_STRUCTURES)
       pp_everything( PP_ALL, "SK_(fini)" );
-   if (clo_sanity_flags)
+   if (HG_(clo_sanity_flags))
       all__sanity_check("SK_(fini)");
 
    if (VG_(clo_verbosity) >= 2) {
@@ -4770,8 +3852,6 @@ static void hg_fini ( Int exitcode )
       //zz       VG_(printf)(" hbefore: %'10lu probes\n",         stats__hbefore_probes);
 
       VG_(printf)("\n");
-      VG_(printf)("        segments: %'8lu Segment objects allocated\n",
-                  stats__mk_Segment);
       VG_(printf)("        locksets: %'8d unique lock sets\n",
                   (Int)HG_(cardinalityWSU)( univ_lsets ));
       VG_(printf)("      threadsets: %'8d unique thread sets\n",
@@ -4783,13 +3863,13 @@ static void hg_fini ( Int exitcode )
                   stats__ga_LL_adds,
                   (Int)(ga_to_lastlock ? VG_(sizeFM)( ga_to_lastlock ) : 0) );
 
-      VG_(printf)("  LockN-to-P map: %'8lu queries (%d map size)\n",
-                  stats__ga_LockN_to_P_queries,
-                  (Int)(yaWFM ? VG_(sizeFM)( yaWFM ) : 0) );
+      VG_(printf)("  LockN-to-P map: %'8llu queries (%llu map size)\n",
+                  HG_(stats__LockN_to_P_queries),
+                  HG_(stats__LockN_to_P_get_map_size)() );
 
-      VG_(printf)("string table map: %'8lu queries (%d map size)\n",
-                  stats__string_table_queries,
-                  (Int)(string_table ? VG_(sizeFM)( string_table ) : 0) );
+      VG_(printf)("string table map: %'8llu queries (%llu map size)\n",
+                  HG_(stats__string_table_queries),
+                  HG_(stats__string_table_get_map_size)() );
       VG_(printf)("            LAOG: %'8d map size\n",
                   (Int)(laog ? VG_(sizeFM)( laog ) : 0));
       VG_(printf)(" LAOG exposition: %'8d map size\n",
@@ -4862,15 +3942,15 @@ static void hg_pre_clo_init ( void )
                                    hg_fini);
 
    VG_(needs_core_errors)         ();
-   VG_(needs_tool_errors)         (hg_eq_Error,
-                                   hg_pp_Error,
+   VG_(needs_tool_errors)         (HG_(eq_Error),
+                                   HG_(pp_Error),
                                    False,/*show TIDs for errors*/
-                                   hg_update_extra,
-                                   hg_recognised_suppression,
-                                   hg_read_extra_suppression_info,
-                                   hg_error_matches_suppression,
-                                   hg_get_error_name,
-                                   hg_print_extra_suppression_info);
+                                   HG_(update_extra),
+                                   HG_(recognised_suppression),
+                                   HG_(read_extra_suppression_info),
+                                   HG_(error_matches_suppression),
+                                   HG_(get_error_name),
+                                   HG_(print_extra_suppression_info));
 
    VG_(needs_command_line_options)(hg_process_cmd_line_option,
                                    hg_print_usage,

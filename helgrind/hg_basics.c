@@ -33,6 +33,7 @@
 #include "pub_tool_libcbase.h"
 #include "pub_tool_libcassert.h"
 #include "pub_tool_mallocfree.h"
+#include "pub_tool_threadstate.h"
 
 #include "hg_basics.h"            /* self */
 
@@ -56,6 +57,28 @@ void HG_(free) ( void* p )
    tl_assert(p);
    VG_(free)(p);
 }
+
+Char* HG_(strdup) ( HChar* cc, const Char* s )
+{
+   return VG_(strdup)( cc, s );
+}
+
+
+/*----------------------------------------------------------------*/
+/*--- Command line options                                     ---*/
+/*----------------------------------------------------------------*/
+
+/* Description of these flags is in hg_basics.h. */
+
+Bool HG_(clo_track_lockorders) = True;
+
+Bool HG_(clo_cmp_race_err_addrs) = False;
+
+Addr HG_(clo_trace_addr) = 0;
+
+Word HG_(clo_trace_level) = 0;
+
+Word HG_(clo_sanity_flags) = 0;
 
 
 /*--------------------------------------------------------------------*/

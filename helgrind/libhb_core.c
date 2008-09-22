@@ -40,6 +40,7 @@
 #include "pub_tool_wordfm.h"
 #include "pub_tool_xarray.h"
 #include "pub_tool_oset.h"
+#include "pub_tool_threadstate.h"
 #include "pub_tool_aspacemgr.h"
 #include "pub_tool_execontext.h"
 
@@ -2874,7 +2875,7 @@ static void vts_tab__do_GC ( Bool show_stats )
    if (1) {
       static UInt ctr = 0;
       tl_assert(nTab > 0);
-      VG_(printf)("libhb: GC %u:  size %lu  live %lu  (%2llu%%)\n",
+      VG_(printf)("libhb: VTS GC: #%u  old size %lu  live %lu  (%2llu%%)\n",
                   ctr++, nTab, nLive, (100ULL * nLive) / nTab);
    }
 }
@@ -3366,8 +3367,8 @@ static void event_map_bind ( Addr a, struct EC_* ecxx, Thr* thr )
       if (oldrefTreeN >= oldrefGenIncAt) {
          oldrefGen++;
          oldrefGenIncAt = oldrefTreeN + 50000;
-         VG_(printf)("oldrefTree: new gen %lu at size %lu\n",
-                     oldrefGen, oldrefTreeN );
+         if (0) VG_(printf)("oldrefTree: new gen %lu at size %lu\n",
+                            oldrefGen, oldrefTreeN );
       }
       here = get_RCEC( thr );
       ctxt__rcinc(here);
@@ -3503,7 +3504,9 @@ static void event_map_maybe_GC ( void )
 
    if (LIKELY(oldrefTreeN < EVENT_MAP_GC_AT))
       return;
-   VG_(printf)("libhb: event_map GC at size %lu\n", oldrefTreeN);
+
+   if (0)
+      VG_(printf)("libhb: event_map GC at size %lu\n", oldrefTreeN);
 
    /* Check our counting is sane */
    tl_assert(oldrefTreeN == (UWord) VG_(OSetGen_Size)( oldrefTree ));
@@ -3535,7 +3538,7 @@ static void event_map_maybe_GC ( void )
    VG_(initIterFM)( genMap );
    while (VG_(nextIterFM)( genMap, &keyW, &valW )) {
       tl_assert(keyW > 0); /* can't allow a generation # 0 */
-      VG_(printf)("  XXX: gen %lu has %lu\n", keyW, valW );
+      if (0) VG_(printf)("  XXX: gen %lu has %lu\n", keyW, valW );
       tl_assert(keyW >= maxGen);
       tl_assert(retained >= valW);
       if (retained - valW
@@ -3549,7 +3552,8 @@ static void event_map_maybe_GC ( void )
    VG_(doneIterFM)( genMap );
 
    VG_(printf)(
-      "  XXX: delete generations %lu and below, retaining %lu entries\n",
+      "libhb: EvM GC: delete generations %lu and below, "
+      "retaining %lu entries\n",
       maxGen, retained );
 
    VG_(deleteFM)( genMap, NULL, NULL );
@@ -3578,7 +3582,7 @@ static void event_map_maybe_GC ( void )
    n2del = VG_(sizeXA)( refs2del );
    tl_assert(n2del == (Word)(oldrefTreeN - retained));
 
-   VG_(printf)("%s","deleting entries\n");
+   if (0) VG_(printf)("%s","deleting entries\n");
    for (i = 0; i < n2del; i++) {
       void* nd;
       OldRef* ref = *(OldRef**)VG_(indexXA)( refs2del, i );
@@ -3606,6 +3610,7 @@ static void event_map_maybe_GC ( void )
    /* Check the reference counts */
    event_map__check_reference_counts();
 
+   if (0)
    VG_(printf)("XXXX final sizes: oldrefTree %ld, contextTree %ld\n\n",
                VG_(OSetGen_Size)(oldrefTree), VG_(OSetGen_Size)(contextTree));
 

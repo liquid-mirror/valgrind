@@ -57,15 +57,29 @@ typedef  struct _SO  SO;
 /* Thr, libhb's private thread record, exported abstractly */
 typedef  struct _Thr  Thr;
 
+
 /* Stores information about a thread.  Addresses of these also serve
    as unique thread identifiers and so are never freed, so they should
-   be as small as possible. */
+   be as small as possible.  Freeing Thread structures makes the
+   storage management just too complex, and most programs don't create
+   many threads, so tolerating this leak seems like a not-bad
+   tradeoff.
+
+   Since these are never freed, the .coretid field only indicates the
+   core's ThreadId associated with this Thread whilst it is alive.
+   Once the thread finishes, the ThreadId is set to
+   VG_INVALID_THREADID.
+
+   The core may later re-use the same ThreadId for what is a logically
+   completely different thread, which of course must have a different
+   Thread structure. */
 typedef
    struct _Thread {
       /* ADMIN */
       struct _Thread* admin;
       UInt            magic;
       Thr*            hbthr;
+      ThreadId        coretid;
       /* USEFUL */
       WordSetID locksetA; /* WordSet of Lock* currently held by thread */
       WordSetID locksetW; /* subset of locksetA held in w-mode */
@@ -133,6 +147,15 @@ typedef
          for LK_rdwr, w-holdings may only have sizeTotal(heldBy) == 1 */
    }
    Lock;
+
+/*----------------------------------------------------------------*/
+/*--- Sanity checking                                          ---*/
+/*----------------------------------------------------------------*/
+
+Bool HG_(is_sane_Thread)   ( Thread* thr );
+Bool HG_(is_sane_LockP)    ( Lock* lock );
+Bool HG_(is_sane_LockN)    ( Lock* lock );
+Bool HG_(is_sane_LockNorP) ( Lock* lock );
 
 
 #endif /* ! __HG_LOCK_N_THREAD_H */
