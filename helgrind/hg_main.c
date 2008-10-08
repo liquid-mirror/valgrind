@@ -1052,25 +1052,15 @@ static void shadow_mem_copy_range ( Addr src, Addr dst, SizeT len )
 
 static void shadow_mem_read_range ( Thread* thr, Addr a, SizeT len )
 {
-   RaceInfo ri;
    Thr*     hbthr = thr->hbthr;
    tl_assert(hbthr);
-   if (libhb_read(&ri, hbthr, a, len)) {
-      Thread* confthr = ri.thrp ? libhb_get_Thr_opaque( ri.thrp ) : NULL;
-      HG_(record_error_Race)( thr, ri.a, ri.isW, ri.szB, NULL,
-                              (ExeContext*)ri.wherep, confthr );
-   }
+   libhb_read_N(hbthr, a, len);
 }
 
 static void shadow_mem_write_range ( Thread* thr, Addr a, SizeT len ) {
-   RaceInfo ri;
    Thr*     hbthr = thr->hbthr;
    tl_assert(hbthr);
-   if (libhb_write(&ri, hbthr, a, len)) {
-      Thread* confthr = ri.thrp ? libhb_get_Thr_opaque( ri.thrp ) : NULL;
-      HG_(record_error_Race)( thr, ri.a, ri.isW, ri.szB, NULL,
-                              (ExeContext*)ri.wherep, confthr );
-   }
+   libhb_write_N(hbthr, a, len);
 }
 
 static void shadow_mem_make_New ( Thread* thr, Addr a, SizeT len )
@@ -1739,122 +1729,72 @@ void evh__die_mem_heap ( Addr a, SizeT len ) {
 
 static VG_REGPARM(1)
 void evh__mem_help_read_1(Addr a) {
-   RaceInfo ri;
    Thread*  thr = get_current_Thread_in_C_C();
    Thr*     hbthr = thr->hbthr;
-   if (libhb_read(&ri, hbthr, a, 1)) {
-      Thread* confthr = ri.thrp ? libhb_get_Thr_opaque( ri.thrp ) : NULL;
-      HG_(record_error_Race)( thr, ri.a, ri.isW, ri.szB, NULL,
-                              (ExeContext*)ri.wherep, confthr );
-   }
+   libhb_read_1(hbthr, a);
 }
 
 static VG_REGPARM(1)
 void evh__mem_help_read_2(Addr a) {
-   RaceInfo ri;
    Thread*  thr = get_current_Thread_in_C_C();
    Thr*     hbthr = thr->hbthr;
-   if (libhb_read(&ri, hbthr, a, 2)) {
-      Thread* confthr = ri.thrp ? libhb_get_Thr_opaque( ri.thrp ) : NULL;
-      HG_(record_error_Race)( thr, ri.a, ri.isW, ri.szB, NULL,
-                              (ExeContext*)ri.wherep, confthr );
-   }
+   libhb_read_2(hbthr, a);
 }
 
 static VG_REGPARM(1)
 void evh__mem_help_read_4(Addr a) {
-   RaceInfo ri;
    Thread*  thr = get_current_Thread_in_C_C();
    Thr*     hbthr = thr->hbthr;
-   if (libhb_read(&ri, hbthr, a, 4)) {
-      Thread* confthr = ri.thrp ? libhb_get_Thr_opaque( ri.thrp ) : NULL;
-      HG_(record_error_Race)( thr, ri.a, ri.isW, ri.szB, NULL,
-                              (ExeContext*)ri.wherep, confthr );
-   }
+   libhb_read_4(hbthr, a);
 }
 
 static VG_REGPARM(1)
 void evh__mem_help_read_8(Addr a) {
-   RaceInfo ri;
    Thread*  thr = get_current_Thread_in_C_C();
    Thr*     hbthr = thr->hbthr;
-   if (libhb_read(&ri, hbthr, a, 8)) {
-      Thread* confthr = ri.thrp ? libhb_get_Thr_opaque( ri.thrp ) : NULL;
-      HG_(record_error_Race)( thr, ri.a, ri.isW, ri.szB, NULL,
-                              (ExeContext*)ri.wherep, confthr );
-   }
+   libhb_read_8(hbthr, a);
 }
 
 static VG_REGPARM(2)
 void evh__mem_help_read_N(Addr a, SizeT size) {
-   RaceInfo ri;
    Thread*  thr = get_current_Thread_in_C_C();
    Thr*     hbthr = thr->hbthr;
-   if (libhb_read(&ri, hbthr, a, size)) {
-      Thread* confthr = ri.thrp ? libhb_get_Thr_opaque( ri.thrp ) : NULL;
-      HG_(record_error_Race)( thr, ri.a, ri.isW, ri.szB, NULL,
-                              (ExeContext*)ri.wherep, confthr );
-   }
+   libhb_read_N(hbthr, a, size);
 }
 
 static VG_REGPARM(1)
 void evh__mem_help_write_1(Addr a) {
-   RaceInfo ri;
    Thread*  thr = get_current_Thread_in_C_C();
    Thr*     hbthr = thr->hbthr;
-   if (libhb_write(&ri, hbthr, a, 1)) {
-      Thread* confthr = ri.thrp ? libhb_get_Thr_opaque( ri.thrp ) : NULL;
-      HG_(record_error_Race)( thr, ri.a, ri.isW, ri.szB, NULL,
-                              (ExeContext*)ri.wherep, confthr );
-   }
+   libhb_write_1(hbthr, a);
 }
 
 static VG_REGPARM(1)
 void evh__mem_help_write_2(Addr a) {
-   RaceInfo ri;
    Thread*  thr = get_current_Thread_in_C_C();
    Thr*     hbthr = thr->hbthr;
-   if (libhb_write(&ri, hbthr, a, 2)) {
-      Thread* confthr = ri.thrp ? libhb_get_Thr_opaque( ri.thrp ) : NULL;
-      HG_(record_error_Race)( thr, ri.a, ri.isW, ri.szB, NULL,
-                              (ExeContext*)ri.wherep, confthr );
-   }
+   libhb_write_2(hbthr, a);
 }
 
 static VG_REGPARM(1)
 void evh__mem_help_write_4(Addr a) {
-   RaceInfo ri;
    Thread*  thr = get_current_Thread_in_C_C();
    Thr*     hbthr = thr->hbthr;
-   if (libhb_write(&ri, hbthr, a, 4)) {
-      Thread* confthr = ri.thrp ? libhb_get_Thr_opaque( ri.thrp ) : NULL;
-      HG_(record_error_Race)( thr, ri.a, ri.isW, ri.szB, NULL,
-                              (ExeContext*)ri.wherep, confthr );
-   }
+   libhb_write_4(hbthr, a);
 }
 
 static VG_REGPARM(1)
 void evh__mem_help_write_8(Addr a) {
-   RaceInfo ri;
    Thread*  thr = get_current_Thread_in_C_C();
    Thr*     hbthr = thr->hbthr;
-   if (libhb_write(&ri, hbthr, a, 8)) {
-      Thread* confthr = ri.thrp ? libhb_get_Thr_opaque( ri.thrp ) : NULL;
-      HG_(record_error_Race)( thr, ri.a, ri.isW, ri.szB, NULL,
-                              (ExeContext*)ri.wherep, confthr );
-   }
+   libhb_write_8(hbthr, a);
 }
 
 static VG_REGPARM(2)
 void evh__mem_help_write_N(Addr a, SizeT size) {
-   RaceInfo ri;
    Thread*  thr = get_current_Thread_in_C_C();
    Thr*     hbthr = thr->hbthr;
-   if (libhb_write(&ri, hbthr, a, size)) {
-      Thread* confthr = ri.thrp ? libhb_get_Thr_opaque( ri.thrp ) : NULL;
-      HG_(record_error_Race)( thr, ri.a, ri.isW, ri.szB, NULL,
-                              (ExeContext*)ri.wherep, confthr );
-   }
+   libhb_write_N(hbthr, a, size);
 }
 
 static void evh__bus_lock(void) {

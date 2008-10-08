@@ -109,8 +109,16 @@ Bool libhb_so_everSent ( SO* so );
    resulted in a reportable race, in which case the details are placed
    in *ri.  If False is returned, the contents of *ri are unspecified
    and should not be consulted. */
-Bool libhb_write ( /*OUT*/RaceInfo* ri, Thr* thr, Addr a, SizeT szB );
-Bool libhb_read  ( /*OUT*/RaceInfo* ri, Thr* thr, Addr a, SizeT szB );
+void libhb_write_1 ( Thr* thr, Addr a );
+void libhb_write_2 ( Thr* thr, Addr a );
+void libhb_write_4 ( Thr* thr, Addr a );
+void libhb_write_8 ( Thr* thr, Addr a );
+void libhb_write_N ( Thr* thr, Addr a, SizeT szB );
+void libhb_read_1  ( Thr* thr, Addr a );
+void libhb_read_2  ( Thr* thr, Addr a );
+void libhb_read_4  ( Thr* thr, Addr a );
+void libhb_read_8  ( Thr* thr, Addr a );
+void libhb_read_N  ( Thr* thr, Addr a, SizeT szB );
 
 /* Set memory address ranges to new (freshly allocated), or noaccess
    (no longer accessible). */

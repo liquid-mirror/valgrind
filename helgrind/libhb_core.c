@@ -43,10 +43,12 @@
 #include "pub_tool_threadstate.h"
 #include "pub_tool_aspacemgr.h"
 #include "pub_tool_execontext.h"
+#include "pub_tool_errormgr.h"
 
 #include "hg_basics.h"
 #include "hg_wordset.h"
 #include "hg_lock_n_thread.h"
+#include "hg_errors.h"
 
 #include "libhb.h"
 
@@ -1458,589 +1460,7 @@ static Bool valid_value_is_below_me_16 ( UShort descr, UWord toff ) {
    }
 }
 
-static
-void zsm_apply8 ( Addr a, SVal(*fn)(SVal,void*), void* fn_opaque ) {
-   CacheLine* cl; 
-   UWord      cloff, tno, toff;
-   SVal       svOld, svNew;
-   UShort     descr;
-   stats__cline_read8s++;
-   cl    = get_cacheline(a);
-   cloff = get_cacheline_offset(a);
-   tno   = get_treeno(a);
-   toff  = get_tree_offset(a); /* == 0 .. 7 */
-   descr = cl->descrs[tno];
-   if (UNLIKELY( !(descr & (TREE_DESCR_8_0 << toff)) )) {
-      SVal* tree = &cl->svals[tno << 3];
-      cl->descrs[tno] = pulldown_to_8(tree, toff, descr);
-      if (SCE_CACHELINE)
-         tl_assert(is_sane_CacheLine(cl)); /* EXPENSIVE */
-   }
-   svOld = cl->svals[cloff];
-   svNew = fn( svOld, fn_opaque );
-   tl_assert(svNew != SVal_INVALID);
-   cl->svals[cloff] = svNew;
-}
-
-static
-void zsm_apply16 ( Addr a, SVal(*fn)(SVal,void*), void* fn_opaque ) {
-   CacheLine* cl; 
-   UWord      cloff, tno, toff;
-   SVal       svOld, svNew;
-   UShort     descr;
-   stats__cline_read16s++;
-   if (UNLIKELY(!aligned16(a))) goto slowcase;
-   cl    = get_cacheline(a);
-   cloff = get_cacheline_offset(a);
-   tno   = get_treeno(a);
-   toff  = get_tree_offset(a); /* == 0, 2, 4 or 6 */
-   descr = cl->descrs[tno];
-   if (UNLIKELY( !(descr & (TREE_DESCR_16_0 << toff)) )) {
-      if (valid_value_is_below_me_16(descr, toff)) {
-         goto slowcase;
-      } else {
-         SVal* tree = &cl->svals[tno << 3];
-         cl->descrs[tno] = pulldown_to_16(tree, toff, descr);
-      }
-      if (SCE_CACHELINE)
-         tl_assert(is_sane_CacheLine(cl)); /* EXPENSIVE */
-   }
-   svOld = cl->svals[cloff];
-   svNew = fn( svOld, fn_opaque );
-   tl_assert(svNew != SVal_INVALID);
-   cl->svals[cloff] = svNew;
-   return;
-  slowcase: /* misaligned, or must go further down the tree */
-   stats__cline_16to8splits++;
-   zsm_apply8( a + 0, fn, fn_opaque );
-   zsm_apply8( a + 1, fn, fn_opaque );
-}
-
-__attribute__((noinline))
-static
-void zsm_apply32_SLOW ( Addr a, SVal(*fn)(SVal,void*), void* fn_opaque ) {
-   CacheLine* cl; 
-   UWord      cloff, tno, toff;
-   SVal       svOld, svNew;
-   UShort     descr;
-   if (UNLIKELY(!aligned32(a))) goto slowcase;
-   cl    = get_cacheline(a);
-   cloff = get_cacheline_offset(a);
-   tno   = get_treeno(a);
-   toff  = get_tree_offset(a); /* == 0 or 4 */
-   descr = cl->descrs[tno];
-   if (UNLIKELY( !(descr & (TREE_DESCR_32_0 << toff)) )) {
-      if (valid_value_is_above_me_32(descr, toff)) {
-         SVal* tree = &cl->svals[tno << 3];
-         cl->descrs[tno] = pulldown_to_32(tree, toff, descr);
-      } else {
-         goto slowcase;
-      }
-      if (SCE_CACHELINE)
-         tl_assert(is_sane_CacheLine(cl)); /* EXPENSIVE */
-   }
-   svOld = cl->svals[cloff];
-   svNew = fn( svOld, fn_opaque );
-   tl_assert(svNew != SVal_INVALID);
-   cl->svals[cloff] = svNew;
-   return;
-  slowcase: /* misaligned, or must go further down the tree */
-   stats__cline_32to16splits++;
-   zsm_apply16( a + 0, fn, fn_opaque );
-   zsm_apply16( a + 2, fn, fn_opaque );
-}
-
-static
-void zsm_apply32 ( Addr a, SVal(*fn)(SVal,void*), void* fn_opaque ) {
-   CacheLine* cl; 
-   UWord      cloff, tno, toff;
-   UShort     descr;
-   stats__cline_read32s++;
-   if (UNLIKELY(!aligned32(a))) goto slowcase;
-   cl    = get_cacheline(a);
-   cloff = get_cacheline_offset(a);
-   tno   = get_treeno(a);
-   toff  = get_tree_offset(a); /* == 0 or 4 */
-   descr = cl->descrs[tno];
-   if (UNLIKELY( !(descr & (TREE_DESCR_32_0 << toff)) )) goto slowcase;
-   { SVal* p     = &cl->svals[cloff];
-     SVal  svOld = *p;
-     SVal  svNew = fn( svOld, fn_opaque );
-     tl_assert(svNew != SVal_INVALID);
-     *p = svNew;
-   }
-   return;
-  slowcase: /* misaligned, or not at this level in the tree */
-   zsm_apply32_SLOW( a, fn, fn_opaque );
-}
-
-static
-void zsm_apply64 ( Addr a, SVal(*fn)(SVal,void*), void* fn_opaque ) {
-   CacheLine* cl; 
-   UWord      cloff, tno, toff;
-   SVal       svOld, svNew;
-   UShort     descr;
-   stats__cline_read64s++;
-   if (UNLIKELY(!aligned64(a))) goto slowcase;
-   cl    = get_cacheline(a);
-   cloff = get_cacheline_offset(a);
-   tno   = get_treeno(a);
-   toff  = get_tree_offset(a); /* == 0, unused */
-   descr = cl->descrs[tno];
-   if (UNLIKELY( !(descr & TREE_DESCR_64) )) {
-      goto slowcase;
-   }
-   svOld = cl->svals[cloff];
-   svNew = fn( svOld, fn_opaque );
-   tl_assert(svNew != SVal_INVALID);
-   cl->svals[cloff] = svNew;
-   return;
-  slowcase: /* misaligned, or must go further down the tree */
-   stats__cline_64to32splits++;
-   zsm_apply32( a + 0, fn, fn_opaque );
-   zsm_apply32( a + 4, fn, fn_opaque );
-}
-
-static
-void zsm_write8 ( Addr a, SVal svNew ) {
-   CacheLine* cl; 
-   UWord      cloff, tno, toff;
-   UShort     descr;
-   stats__cline_set8s++;
-   cl    = get_cacheline(a);
-   cloff = get_cacheline_offset(a);
-   tno   = get_treeno(a);
-   toff  = get_tree_offset(a); /* == 0 .. 7 */
-   descr = cl->descrs[tno];
-   if (UNLIKELY( !(descr & (TREE_DESCR_8_0 << toff)) )) {
-      SVal* tree = &cl->svals[tno << 3];
-      cl->descrs[tno] = pulldown_to_8(tree, toff, descr);
-      if (SCE_CACHELINE)
-         tl_assert(is_sane_CacheLine(cl)); /* EXPENSIVE */
-   }
-   tl_assert(svNew != SVal_INVALID);
-   cl->svals[cloff] = svNew;
-}
-
-static
-void zsm_write16 ( Addr a, SVal svNew ) {
-   CacheLine* cl; 
-   UWord      cloff, tno, toff;
-   UShort     descr;
-   stats__cline_set16s++;
-   if (UNLIKELY(!aligned16(a))) goto slowcase;
-   cl    = get_cacheline(a);
-   cloff = get_cacheline_offset(a);
-   tno   = get_treeno(a);
-   toff  = get_tree_offset(a); /* == 0, 2, 4 or 6 */
-   descr = cl->descrs[tno];
-   if (UNLIKELY( !(descr & (TREE_DESCR_16_0 << toff)) )) {
-      if (valid_value_is_below_me_16(descr, toff)) {
-         /* Writing at this level.  Need to fix up 'descr'. */
-         cl->descrs[tno] = pullup_descr_to_16(descr, toff);
-         /* At this point, the tree does not match cl->descr[tno] any
-            more.  The assignments below will fix it up. */
-      } else {
-         /* We can't indiscriminately write on the w16 node as in the
-            w64 case, as that might make the node inconsistent with
-            its parent.  So first, pull down to this level. */
-         SVal* tree = &cl->svals[tno << 3];
-         cl->descrs[tno] = pulldown_to_16(tree, toff, descr);
-      if (SCE_CACHELINE)
-         tl_assert(is_sane_CacheLine(cl)); /* EXPENSIVE */
-      }
-   }
-   tl_assert(svNew != SVal_INVALID);
-   cl->svals[cloff + 0] = svNew;
-   cl->svals[cloff + 1] = SVal_INVALID;
-   return;
-  slowcase: /* misaligned */
-   stats__cline_16to8splits++;
-   zsm_write8( a + 0, svNew );
-   zsm_write8( a + 1, svNew );
-}
-
-static
-void zsm_write32 ( Addr a, SVal svNew ) {
-   CacheLine* cl; 
-   UWord      cloff, tno, toff;
-   UShort     descr;
-   stats__cline_set32s++;
-   if (UNLIKELY(!aligned32(a))) goto slowcase;
-   cl    = get_cacheline(a);
-   cloff = get_cacheline_offset(a);
-   tno   = get_treeno(a);
-   toff  = get_tree_offset(a); /* == 0 or 4 */
-   descr = cl->descrs[tno];
-   if (UNLIKELY( !(descr & (TREE_DESCR_32_0 << toff)) )) {
-      if (valid_value_is_above_me_32(descr, toff)) {
-         /* We can't indiscriminately write on the w32 node as in the
-            w64 case, as that might make the node inconsistent with
-            its parent.  So first, pull down to this level. */
-         SVal* tree = &cl->svals[tno << 3];
-         cl->descrs[tno] = pulldown_to_32(tree, toff, descr);
-         if (SCE_CACHELINE)
-            tl_assert(is_sane_CacheLine(cl)); /* EXPENSIVE */
-      } else {
-         /* Writing at this level.  Need to fix up 'descr'. */
-         cl->descrs[tno] = pullup_descr_to_32(descr, toff);
-         /* At this point, the tree does not match cl->descr[tno] any
-            more.  The assignments below will fix it up. */
-      }
-   }
-   tl_assert(svNew != SVal_INVALID);
-   cl->svals[cloff + 0] = svNew;
-   cl->svals[cloff + 1] = SVal_INVALID;
-   cl->svals[cloff + 2] = SVal_INVALID;
-   cl->svals[cloff + 3] = SVal_INVALID;
-   return;
-  slowcase: /* misaligned */
-   stats__cline_32to16splits++;
-   zsm_write16( a + 0, svNew );
-   zsm_write16( a + 2, svNew );
-}
-
-static
-void zsm_write64 ( Addr a, SVal svNew ) {
-   CacheLine* cl; 
-   UWord      cloff, tno, toff;
-   stats__cline_set64s++;
-   if (UNLIKELY(!aligned64(a))) goto slowcase;
-   cl    = get_cacheline(a);
-   cloff = get_cacheline_offset(a);
-   tno   = get_treeno(a);
-   toff  = get_tree_offset(a); /* == 0 */
-   cl->descrs[tno] = TREE_DESCR_64;
-   tl_assert(svNew != SVal_INVALID);
-   cl->svals[cloff + 0] = svNew;
-   cl->svals[cloff + 1] = SVal_INVALID;
-   cl->svals[cloff + 2] = SVal_INVALID;
-   cl->svals[cloff + 3] = SVal_INVALID;
-   cl->svals[cloff + 4] = SVal_INVALID;
-   cl->svals[cloff + 5] = SVal_INVALID;
-   cl->svals[cloff + 6] = SVal_INVALID;
-   cl->svals[cloff + 7] = SVal_INVALID;
-   return;
-  slowcase: /* misaligned */
-   stats__cline_64to32splits++;
-   zsm_write32( a + 0, svNew );
-   zsm_write32( a + 4, svNew );
-}
-
-static
-SVal zsm_read8 ( Addr a ) {
-   CacheLine* cl; 
-   UWord      cloff, tno, toff;
-   UShort     descr;
-   stats__cline_get8s++;
-   cl    = get_cacheline(a);
-   cloff = get_cacheline_offset(a);
-   tno   = get_treeno(a);
-   toff  = get_tree_offset(a); /* == 0 .. 7 */
-   descr = cl->descrs[tno];
-   if (UNLIKELY( !(descr & (TREE_DESCR_8_0 << toff)) )) {
-      SVal* tree = &cl->svals[tno << 3];
-      cl->descrs[tno] = pulldown_to_8(tree, toff, descr);
-   }
-   return cl->svals[cloff];
-}
-
-static void zsm_copy8 ( Addr src, Addr dst, Bool uu_normalise ) {
-   SVal       sv;
-   stats__cline_copy8s++;
-   sv = zsm_read8( src );
-   zsm_write8( dst, sv );
-}
-
-/* ------------ Shadow memory range setting ops ------------ */
-
-/* Apply 'fn' to SVals in the given range. */
-
-static void zsm_apply_range ( Addr a, SizeT len,
-                              SVal(*fn)(SVal,void*), void* fn_opaque )
-{
-   /* fast track a couple of common cases */
-   if (len == 4 && aligned32(a)) {
-      zsm_apply32( a, fn, fn_opaque );
-      return;
-   }
-   if (len == 8 && aligned64(a)) {
-      zsm_apply64( a, fn, fn_opaque );
-      return;
-   }
-
-   /* be completely general (but as efficient as possible) */
-   if (len == 0) return;
-
-   if (!aligned16(a) && len >= 1) {
-      zsm_apply8( a, fn, fn_opaque );
-      a += 1;
-      len -= 1;
-      tl_assert(aligned16(a));
-   }
-   if (len == 0) return;
-
-   if (!aligned32(a) && len >= 2) {
-      zsm_apply16( a, fn, fn_opaque );
-      a += 2;
-      len -= 2;
-      tl_assert(aligned32(a));
-   }
-   if (len == 0) return;
-
-   if (!aligned64(a) && len >= 4) {
-      zsm_apply32( a, fn, fn_opaque );
-      a += 4;
-      len -= 4;
-      tl_assert(aligned64(a));
-   }
-   if (len == 0) return;
-
-   if (len >= 8) {
-      tl_assert(aligned64(a));
-      while (len >= 8) {
-         zsm_apply64( a, fn, fn_opaque );
-         a += 8;
-         len -= 8;
-      }
-      tl_assert(aligned64(a));
-   }
-   if (len == 0) return;
-
-   if (len >= 4)
-      tl_assert(aligned32(a));
-   if (len >= 4) {
-      zsm_apply32( a, fn, fn_opaque );
-      a += 4;
-      len -= 4;
-   }
-   if (len == 0) return;
-
-   if (len >= 2)
-      tl_assert(aligned16(a));
-   if (len >= 2) {
-      zsm_apply16( a, fn, fn_opaque );
-      a += 2;
-      len -= 2;
-   }
-   if (len == 0) return;
-
-   if (len >= 1) {
-      zsm_apply8( a, fn, fn_opaque );
-      a += 1;
-      len -= 1;
-   }
-   tl_assert(len == 0);
-}
-
-/* Block-copy states (needed for implementing realloc()). */
-
-static void zsm_copy_range ( Addr src, Addr dst, SizeT len )
-{
-   SizeT i;
-   if (len == 0)
-      return;
-
-   /* assert for non-overlappingness */
-   tl_assert(src+len <= dst || dst+len <= src);
-
-   /* To be simple, just copy byte by byte.  But so as not to wreck
-      performance for later accesses to dst[0 .. len-1], normalise
-      destination lines as we finish with them, and also normalise the
-      line containing the first and last address. */
-   for (i = 0; i < len; i++) {
-      Bool normalise
-         = get_cacheline_offset( dst+i+1 ) == 0 /* last in line */
-           || i == 0       /* first in range */
-           || i == len-1;  /* last in range */
-      zsm_copy8( src+i, dst+i, normalise );
-   }
-}
-
-
-/* For setting address ranges to a given value.  Has considerable
-   sophistication so as to avoid generating large numbers of pointless
-   cache loads/writebacks for large ranges. */
-
-/* Do small ranges in-cache, in the obvious way. */
-static
-void zsm_set_range_SMALL ( Addr a, SizeT len, SVal svNew )
-{
-   /* fast track a couple of common cases */
-   if (len == 4 && aligned32(a)) {
-      zsm_write32( a, svNew );
-      return;
-   }
-   if (len == 8 && aligned64(a)) {
-      zsm_write64( a, svNew );
-      return;
-   }
-
-   /* be completely general (but as efficient as possible) */
-   if (len == 0) return;
-
-   if (!aligned16(a) && len >= 1) {
-      zsm_write8( a, svNew );
-      a += 1;
-      len -= 1;
-      tl_assert(aligned16(a));
-   }
-   if (len == 0) return;
-
-   if (!aligned32(a) && len >= 2) {
-      zsm_write16( a, svNew );
-      a += 2;
-      len -= 2;
-      tl_assert(aligned32(a));
-   }
-   if (len == 0) return;
-
-   if (!aligned64(a) && len >= 4) {
-      zsm_write32( a, svNew );
-      a += 4;
-      len -= 4;
-      tl_assert(aligned64(a));
-   }
-   if (len == 0) return;
-
-   if (len >= 8) {
-      tl_assert(aligned64(a));
-      while (len >= 8) {
-         zsm_write64( a, svNew );
-         a += 8;
-         len -= 8;
-      }
-      tl_assert(aligned64(a));
-   }
-   if (len == 0) return;
-
-   if (len >= 4)
-      tl_assert(aligned32(a));
-   if (len >= 4) {
-      zsm_write32( a, svNew );
-      a += 4;
-      len -= 4;
-   }
-   if (len == 0) return;
-
-   if (len >= 2)
-      tl_assert(aligned16(a));
-   if (len >= 2) {
-      zsm_write16( a, svNew );
-      a += 2;
-      len -= 2;
-   }
-   if (len == 0) return;
-
-   if (len >= 1) {
-      zsm_write8( a, svNew );
-      a += 1;
-      len -= 1;
-   }
-   tl_assert(len == 0);
-}
-
-
-/* If we're doing a small range, hand off to zsm_set_range_SMALL.  But
-   for larger ranges, try to operate directly on the out-of-cache
-   representation, rather than dragging lines into the cache,
-   overwriting them, and forcing them out.  This turns out to be an
-   important performance optimisation. */
-
-static void zsm_set_range ( Addr a, SizeT len, SVal svNew )
-{
-   tl_assert(svNew != SVal_INVALID);
-   stats__cache_make_New_arange += (ULong)len;
-
-   if (0 && len > 500)
-      VG_(printf)("make New      ( %#lx, %ld )\n", a, len );
-
-   if (0) {
-      static UWord n_New_in_cache = 0;
-      static UWord n_New_not_in_cache = 0;
-      /* tag is 'a' with the in-line offset masked out, 
-         eg a[31]..a[4] 0000 */
-      Addr       tag = a & ~(N_LINE_ARANGE - 1);
-      UWord      wix = (a >> N_LINE_BITS) & (N_WAY_NENT - 1);
-      if (LIKELY(tag == cache_shmem.tags0[wix])) {
-         n_New_in_cache++;
-      } else {
-         n_New_not_in_cache++;
-      }
-      if (0 == ((n_New_in_cache + n_New_not_in_cache) % 100000))
-         VG_(printf)("shadow_mem_make_New: IN %lu OUT %lu\n",
-                     n_New_in_cache, n_New_not_in_cache );
-   }
-
-   if (LIKELY(len < 2 * N_LINE_ARANGE)) {
-      zsm_set_range_SMALL( a, len, svNew );
-   } else {
-      Addr  before_start  = a;
-      Addr  aligned_start = cacheline_ROUNDUP(a);
-      Addr  after_start   = cacheline_ROUNDDN(a + len);
-      UWord before_len    = aligned_start - before_start;
-      UWord aligned_len   = after_start - aligned_start;
-      UWord after_len     = a + len - after_start;
-      tl_assert(before_start <= aligned_start);
-      tl_assert(aligned_start <= after_start);
-      tl_assert(before_len < N_LINE_ARANGE);
-      tl_assert(after_len < N_LINE_ARANGE);
-      tl_assert(get_cacheline_offset(aligned_start) == 0);
-      if (get_cacheline_offset(a) == 0) {
-         tl_assert(before_len == 0);
-         tl_assert(a == aligned_start);
-      }
-      if (get_cacheline_offset(a+len) == 0) {
-         tl_assert(after_len == 0);
-         tl_assert(after_start == a+len);
-      }
-      if (before_len > 0) {
-         zsm_set_range_SMALL( before_start, before_len, svNew );
-      }
-      if (after_len > 0) {
-         zsm_set_range_SMALL( after_start, after_len, svNew );
-      }
-      stats__cache_make_New_inZrep += (ULong)aligned_len;
-
-      while (1) {
-         Addr tag;
-         UWord wix;
-         if (aligned_start >= after_start)
-            break;
-         tl_assert(get_cacheline_offset(aligned_start) == 0);
-         tag = aligned_start & ~(N_LINE_ARANGE - 1);
-         wix = (aligned_start >> N_LINE_BITS) & (N_WAY_NENT - 1);
-         if (tag == cache_shmem.tags0[wix]) {
-            UWord i;
-            for (i = 0; i < N_LINE_ARANGE / 8; i++)
-               zsm_write64( aligned_start + i * 8, svNew );
-         } else {
-            UWord i;
-            Word zix;
-            SecMap* sm;
-            LineZ* lineZ;
-            /* This line is not in the cache.  Do not force it in; instead
-               modify it in-place. */
-            /* find the Z line to write in and rcdec it or the
-               associated F line. */
-            find_Z_for_writing( &sm, &zix, tag );
-            tl_assert(sm);
-            tl_assert(zix >= 0 && zix < N_SECMAP_ZLINES);
-            lineZ = &sm->linesZ[zix];
-            lineZ->dict[0] = svNew;
-            lineZ->dict[1] = lineZ->dict[2] = lineZ->dict[3] = SVal_INVALID;
-            for (i = 0; i < N_LINE_ARANGE/4; i++)
-               lineZ->ix2s[i] = 0; /* all refer to dict[0] */
-            rcinc_LineZ(lineZ);
-         }
-         aligned_start += N_LINE_ARANGE;
-         aligned_len -= N_LINE_ARANGE;
-      }
-      tl_assert(aligned_start == after_start);
-      tl_assert(aligned_len == 0);
-   }
-}
-
+/* ------------ Cache management ------------ */
 
 static void zsm_flush_cache ( void )
 {
@@ -3300,7 +2720,7 @@ static UWord oldrefGen      = 0;    /* current LRU generation # */
 static UWord oldrefTreeN    = 0;    /* # elems in oldrefTree */
 static UWord oldrefGenIncAt = 0;    /* inc gen # when size hits this */
 
-static void event_map_bind ( Addr a, struct EC_* ecxx, Thr* thr )
+static void event_map_bind ( Addr a, Thr* thr )
 {
    OldRef key, *ref;
    RCEC*  here;
@@ -3647,25 +3067,32 @@ typedef
    }
    MSMInfo;
 
-static void record_race_info ( /*MOD*/MSMInfo* info, SVal svOld, SVal svNew )
+__attribute__((noinline))
+static void record_race_info ( Thr* acc_thr, 
+                               Addr acc_addr, SizeT szB, Bool isWrite,
+                               SVal svOld, SVal svNew )
 {
-   struct EC_* wherep = NULL;
-   Thr*        thrp   = NULL;
    Bool found;
-
-   info->where = main_get_EC( info->acc_thr );
-
-   found = event_map_lookup( &wherep, &thrp, info->acc_thr, info->ea );
+   Thr* thrp = NULL;
+   struct EC_* where  = NULL;
+   struct EC_* wherep = NULL;
+   where = main_get_EC( acc_thr );
+   found = event_map_lookup( &wherep, &thrp, acc_thr, acc_addr );
    if (found) {
-     tl_assert(wherep);
-     tl_assert(thrp);
-     info->wherep = wherep;
-     info->thrp   = thrp;
+      tl_assert(wherep);
+      tl_assert(thrp);
+      tl_assert(thrp->opaque);
+      tl_assert(acc_thr->opaque);
+      HG_(record_error_Race)( acc_thr->opaque, acc_addr,
+                              isWrite, szB, NULL/*mb_lastlock*/,
+                              wherep, thrp->opaque );
    } else {
-     tl_assert(!wherep);
-     tl_assert(!thrp);
-     info->wherep = NULL;
-     info->thrp   = NULL;
+      tl_assert(!wherep);
+      tl_assert(!thrp);
+      tl_assert(acc_thr->opaque);
+      HG_(record_error_Race)( acc_thr->opaque, acc_addr,
+                              isWrite, szB, NULL/*mb_lastlock*/,
+                              NULL, NULL );
    }
 }
 
@@ -3677,9 +3104,13 @@ static Bool is_sane_SVal_C ( SVal sv ) {
    return False;
 }
 
-/* Direct callback from lib_zsm. */
+
 /* Compute new state following a read */
-static SVal msm_read ( SVal svOld, /*MOD*/MSMInfo* info )
+static inline SVal msm_read ( SVal svOld,
+                              /* The following are only needed for 
+                                 creating error reports. */
+                              Thr* acc_thr,
+                              Addr acc_addr, SizeT szB )
 {
    SVal svNew = SVal_INVALID;
    stats__msm_read++;
@@ -3691,8 +3122,8 @@ static SVal msm_read ( SVal svOld, /*MOD*/MSMInfo* info )
 
    if (SVal__isC(svOld)) {
       POrd  ord;
-      VtsID tviR  = info->acc_thr->viR;
-      VtsID tviW  = info->acc_thr->viW;
+      VtsID tviR  = acc_thr->viR;
+      VtsID tviW  = acc_thr->viW;
       VtsID rmini = SVal__unC_Rmin(svOld);
       VtsID wmini = SVal__unC_Wmin(svOld);
 
@@ -3706,10 +3137,8 @@ static SVal msm_read ( SVal svOld, /*MOD*/MSMInfo* info )
          svNew = MSM_RACE2ERR
                     ? SVal__mkE()
                     : SVal__mkC( rmini, VtsID__join2(wmini,tviR) );
-         if (!info->race) {
-            info->race = True;
-            record_race_info( info, svOld, svNew );
-         }
+         record_race_info( acc_thr, acc_addr, szB, False/*!isWrite*/,
+                           svOld, svNew );
          goto out;
       }
    }
@@ -3735,17 +3164,20 @@ static SVal msm_read ( SVal svOld, /*MOD*/MSMInfo* info )
    tl_assert(svNew != SVal_INVALID);
    if (svNew != svOld) {
       if (MSM_CONFACC && SVal__isC(svOld) && SVal__isC(svNew)) {
-         struct EC_* ec = NULL; //main_get_EC( info->acc_thr );
-         event_map_bind( info->ea, ec, info->acc_thr );
+         event_map_bind( acc_addr, acc_thr );
          stats__msm_read_change++;
       }
    }
    return svNew;
 }
 
-/* Direct callback from lib_zsm. */
+
 /* Compute new state following a write */
-static SVal msm_write ( SVal svOld, /*MOD*/MSMInfo* info )
+static inline SVal msm_write ( SVal svOld,
+                              /* The following are only needed for 
+                                 creating error reports. */
+                              Thr* acc_thr,
+                              Addr acc_addr, SizeT szB )
 {
    SVal svNew = SVal_INVALID;
    stats__msm_write++;
@@ -3757,7 +3189,7 @@ static SVal msm_write ( SVal svOld, /*MOD*/MSMInfo* info )
 
    if (SVal__isC(svOld)) {
       POrd  ord;
-      VtsID tviW  = info->acc_thr->viW;
+      VtsID tviW  = acc_thr->viW;
       VtsID wmini = SVal__unC_Wmin(svOld);
 
       ord = VtsID__getOrdering(wmini,tviW);
@@ -3771,10 +3203,8 @@ static SVal msm_write ( SVal svOld, /*MOD*/MSMInfo* info )
                     ? SVal__mkE()
                     : SVal__mkC( VtsID__join2(rmini,tviW),
                                  VtsID__join2(wmini,tviW) );
-         if (!info->race) {
-            info->race = True;
-            record_race_info( info, svOld, svNew );
-         }
+         record_race_info( acc_thr, acc_addr, szB, True/*isWrite*/,
+                           svOld, svNew );
          goto out;
       }
    }
@@ -3800,12 +3230,910 @@ static SVal msm_write ( SVal svOld, /*MOD*/MSMInfo* info )
    tl_assert(svNew != SVal_INVALID);
    if (svNew != svOld) {
       if (MSM_CONFACC && SVal__isC(svOld) && SVal__isC(svNew)) {
-         struct EC_* ec = NULL; //main_get_EC( info->acc_thr );
-         event_map_bind( info->ea, ec, info->acc_thr );
+         event_map_bind( acc_addr, acc_thr );
          stats__msm_write_change++;
       }
    }
    return svNew;
+}
+
+
+/////////////////////////////////////////////////////////
+//                                                     //
+// Apply core MSM to specific memory locations         //
+//                                                     //
+/////////////////////////////////////////////////////////
+
+/*------------- ZSM accesses: 8 bit apply ------------- */
+
+static
+void zsm_apply8 ( Addr a, SVal(*fn)(SVal,void*), void* fn_opaque ) {
+   CacheLine* cl; 
+   UWord      cloff, tno, toff;
+   SVal       svOld, svNew;
+   UShort     descr;
+   stats__cline_read8s++;
+   cl    = get_cacheline(a);
+   cloff = get_cacheline_offset(a);
+   tno   = get_treeno(a);
+   toff  = get_tree_offset(a); /* == 0 .. 7 */
+   descr = cl->descrs[tno];
+   if (UNLIKELY( !(descr & (TREE_DESCR_8_0 << toff)) )) {
+      SVal* tree = &cl->svals[tno << 3];
+      cl->descrs[tno] = pulldown_to_8(tree, toff, descr);
+      if (SCE_CACHELINE)
+         tl_assert(is_sane_CacheLine(cl)); /* EXPENSIVE */
+   }
+   svOld = cl->svals[cloff];
+   svNew = fn( svOld, fn_opaque );
+   tl_assert(svNew != SVal_INVALID);
+   cl->svals[cloff] = svNew;
+}
+
+static
+void zsm_apply8___msm_read ( Thr* thr, Addr a ) {
+   CacheLine* cl; 
+   UWord      cloff, tno, toff;
+   SVal       svOld, svNew;
+   UShort     descr;
+   stats__cline_read8s++;
+   cl    = get_cacheline(a);
+   cloff = get_cacheline_offset(a);
+   tno   = get_treeno(a);
+   toff  = get_tree_offset(a); /* == 0 .. 7 */
+   descr = cl->descrs[tno];
+   if (UNLIKELY( !(descr & (TREE_DESCR_8_0 << toff)) )) {
+      SVal* tree = &cl->svals[tno << 3];
+      cl->descrs[tno] = pulldown_to_8(tree, toff, descr);
+      if (SCE_CACHELINE)
+         tl_assert(is_sane_CacheLine(cl)); /* EXPENSIVE */
+   }
+   svOld = cl->svals[cloff];
+   svNew = msm_read( svOld, thr,a,1 );
+   tl_assert(svNew != SVal_INVALID);
+   cl->svals[cloff] = svNew;
+}
+
+static
+void zsm_apply8___msm_write ( Thr* thr, Addr a ) {
+   CacheLine* cl; 
+   UWord      cloff, tno, toff;
+   SVal       svOld, svNew;
+   UShort     descr;
+   stats__cline_read8s++;
+   cl    = get_cacheline(a);
+   cloff = get_cacheline_offset(a);
+   tno   = get_treeno(a);
+   toff  = get_tree_offset(a); /* == 0 .. 7 */
+   descr = cl->descrs[tno];
+   if (UNLIKELY( !(descr & (TREE_DESCR_8_0 << toff)) )) {
+      SVal* tree = &cl->svals[tno << 3];
+      cl->descrs[tno] = pulldown_to_8(tree, toff, descr);
+      if (SCE_CACHELINE)
+         tl_assert(is_sane_CacheLine(cl)); /* EXPENSIVE */
+   }
+   svOld = cl->svals[cloff];
+   svNew = msm_write( svOld, thr,a,1 );
+   tl_assert(svNew != SVal_INVALID);
+   cl->svals[cloff] = svNew;
+}
+
+/*------------- ZSM accesses: 16 bit apply ------------- */
+
+static
+void zsm_apply16 ( Addr a, SVal(*fn)(SVal,void*), void* fn_opaque ) {
+   CacheLine* cl; 
+   UWord      cloff, tno, toff;
+   SVal       svOld, svNew;
+   UShort     descr;
+   stats__cline_read16s++;
+   if (UNLIKELY(!aligned16(a))) goto slowcase;
+   cl    = get_cacheline(a);
+   cloff = get_cacheline_offset(a);
+   tno   = get_treeno(a);
+   toff  = get_tree_offset(a); /* == 0, 2, 4 or 6 */
+   descr = cl->descrs[tno];
+   if (UNLIKELY( !(descr & (TREE_DESCR_16_0 << toff)) )) {
+      if (valid_value_is_below_me_16(descr, toff)) {
+         goto slowcase;
+      } else {
+         SVal* tree = &cl->svals[tno << 3];
+         cl->descrs[tno] = pulldown_to_16(tree, toff, descr);
+      }
+      if (SCE_CACHELINE)
+         tl_assert(is_sane_CacheLine(cl)); /* EXPENSIVE */
+   }
+   svOld = cl->svals[cloff];
+   svNew = fn( svOld, fn_opaque );
+   tl_assert(svNew != SVal_INVALID);
+   cl->svals[cloff] = svNew;
+   return;
+  slowcase: /* misaligned, or must go further down the tree */
+   stats__cline_16to8splits++;
+   zsm_apply8( a + 0, fn, fn_opaque );
+   zsm_apply8( a + 1, fn, fn_opaque );
+}
+
+static
+void zsm_apply16___msm_read ( Thr* thr, Addr a ) {
+   CacheLine* cl; 
+   UWord      cloff, tno, toff;
+   SVal       svOld, svNew;
+   UShort     descr;
+   stats__cline_read16s++;
+   if (UNLIKELY(!aligned16(a))) goto slowcase;
+   cl    = get_cacheline(a);
+   cloff = get_cacheline_offset(a);
+   tno   = get_treeno(a);
+   toff  = get_tree_offset(a); /* == 0, 2, 4 or 6 */
+   descr = cl->descrs[tno];
+   if (UNLIKELY( !(descr & (TREE_DESCR_16_0 << toff)) )) {
+      if (valid_value_is_below_me_16(descr, toff)) {
+         goto slowcase;
+      } else {
+         SVal* tree = &cl->svals[tno << 3];
+         cl->descrs[tno] = pulldown_to_16(tree, toff, descr);
+      }
+      if (SCE_CACHELINE)
+         tl_assert(is_sane_CacheLine(cl)); /* EXPENSIVE */
+   }
+   svOld = cl->svals[cloff];
+   svNew = msm_read( svOld, thr,a,2 );
+   tl_assert(svNew != SVal_INVALID);
+   cl->svals[cloff] = svNew;
+   return;
+  slowcase: /* misaligned, or must go further down the tree */
+   stats__cline_16to8splits++;
+   zsm_apply8___msm_read( thr, a + 0 );
+   zsm_apply8___msm_read( thr, a + 1 );
+}
+
+static
+void zsm_apply16___msm_write ( Thr* thr, Addr a ) {
+   CacheLine* cl; 
+   UWord      cloff, tno, toff;
+   SVal       svOld, svNew;
+   UShort     descr;
+   stats__cline_read16s++;
+   if (UNLIKELY(!aligned16(a))) goto slowcase;
+   cl    = get_cacheline(a);
+   cloff = get_cacheline_offset(a);
+   tno   = get_treeno(a);
+   toff  = get_tree_offset(a); /* == 0, 2, 4 or 6 */
+   descr = cl->descrs[tno];
+   if (UNLIKELY( !(descr & (TREE_DESCR_16_0 << toff)) )) {
+      if (valid_value_is_below_me_16(descr, toff)) {
+         goto slowcase;
+      } else {
+         SVal* tree = &cl->svals[tno << 3];
+         cl->descrs[tno] = pulldown_to_16(tree, toff, descr);
+      }
+      if (SCE_CACHELINE)
+         tl_assert(is_sane_CacheLine(cl)); /* EXPENSIVE */
+   }
+   svOld = cl->svals[cloff];
+   svNew = msm_write( svOld, thr,a,2 );
+   tl_assert(svNew != SVal_INVALID);
+   cl->svals[cloff] = svNew;
+   return;
+  slowcase: /* misaligned, or must go further down the tree */
+   stats__cline_16to8splits++;
+   zsm_apply8___msm_write( thr, a + 0 );
+   zsm_apply8___msm_write( thr, a + 1 );
+}
+
+/*------------- ZSM accesses: 32 bit apply ------------- */
+
+static
+void zsm_apply32 ( Addr a, SVal(*fn)(SVal,void*), void* fn_opaque ) {
+   CacheLine* cl; 
+   UWord      cloff, tno, toff;
+   SVal       svOld, svNew;
+   UShort     descr;
+   if (UNLIKELY(!aligned32(a))) goto slowcase;
+   cl    = get_cacheline(a);
+   cloff = get_cacheline_offset(a);
+   tno   = get_treeno(a);
+   toff  = get_tree_offset(a); /* == 0 or 4 */
+   descr = cl->descrs[tno];
+   if (UNLIKELY( !(descr & (TREE_DESCR_32_0 << toff)) )) {
+      if (valid_value_is_above_me_32(descr, toff)) {
+         SVal* tree = &cl->svals[tno << 3];
+         cl->descrs[tno] = pulldown_to_32(tree, toff, descr);
+      } else {
+         goto slowcase;
+      }
+      if (SCE_CACHELINE)
+         tl_assert(is_sane_CacheLine(cl)); /* EXPENSIVE */
+   }
+   svOld = cl->svals[cloff];
+   svNew = fn( svOld, fn_opaque );
+   tl_assert(svNew != SVal_INVALID);
+   cl->svals[cloff] = svNew;
+   return;
+  slowcase: /* misaligned, or must go further down the tree */
+   stats__cline_32to16splits++;
+   zsm_apply16( a + 0, fn, fn_opaque );
+   zsm_apply16( a + 2, fn, fn_opaque );
+}
+
+static
+void zsm_apply32___msm_read ( Thr* thr, Addr a ) {
+   CacheLine* cl; 
+   UWord      cloff, tno, toff;
+   SVal       svOld, svNew;
+   UShort     descr;
+   if (UNLIKELY(!aligned32(a))) goto slowcase;
+   cl    = get_cacheline(a);
+   cloff = get_cacheline_offset(a);
+   tno   = get_treeno(a);
+   toff  = get_tree_offset(a); /* == 0 or 4 */
+   descr = cl->descrs[tno];
+   if (UNLIKELY( !(descr & (TREE_DESCR_32_0 << toff)) )) {
+      if (valid_value_is_above_me_32(descr, toff)) {
+         SVal* tree = &cl->svals[tno << 3];
+         cl->descrs[tno] = pulldown_to_32(tree, toff, descr);
+      } else {
+         goto slowcase;
+      }
+      if (SCE_CACHELINE)
+         tl_assert(is_sane_CacheLine(cl)); /* EXPENSIVE */
+   }
+   svOld = cl->svals[cloff];
+   svNew = msm_read( svOld, thr,a,4 );
+   tl_assert(svNew != SVal_INVALID);
+   cl->svals[cloff] = svNew;
+   return;
+  slowcase: /* misaligned, or must go further down the tree */
+   stats__cline_32to16splits++;
+   zsm_apply16___msm_read( thr, a + 0 );
+   zsm_apply16___msm_read( thr, a + 2 );
+}
+
+static
+void zsm_apply32___msm_write ( Thr* thr, Addr a ) {
+   CacheLine* cl; 
+   UWord      cloff, tno, toff;
+   SVal       svOld, svNew;
+   UShort     descr;
+   if (UNLIKELY(!aligned32(a))) goto slowcase;
+   cl    = get_cacheline(a);
+   cloff = get_cacheline_offset(a);
+   tno   = get_treeno(a);
+   toff  = get_tree_offset(a); /* == 0 or 4 */
+   descr = cl->descrs[tno];
+   if (UNLIKELY( !(descr & (TREE_DESCR_32_0 << toff)) )) {
+      if (valid_value_is_above_me_32(descr, toff)) {
+         SVal* tree = &cl->svals[tno << 3];
+         cl->descrs[tno] = pulldown_to_32(tree, toff, descr);
+      } else {
+         goto slowcase;
+      }
+      if (SCE_CACHELINE)
+         tl_assert(is_sane_CacheLine(cl)); /* EXPENSIVE */
+   }
+   svOld = cl->svals[cloff];
+   svNew = msm_write( svOld, thr,a,4 );
+   tl_assert(svNew != SVal_INVALID);
+   cl->svals[cloff] = svNew;
+   return;
+  slowcase: /* misaligned, or must go further down the tree */
+   stats__cline_32to16splits++;
+   zsm_apply16___msm_write( thr, a + 0 );
+   zsm_apply16___msm_write( thr, a + 2 );
+}
+
+/*------------- ZSM accesses: 64 bit apply ------------- */
+
+static
+void zsm_apply64 ( Addr a, SVal(*fn)(SVal,void*), void* fn_opaque ) {
+   CacheLine* cl; 
+   UWord      cloff, tno, toff;
+   SVal       svOld, svNew;
+   UShort     descr;
+   stats__cline_read64s++;
+   if (UNLIKELY(!aligned64(a))) goto slowcase;
+   cl    = get_cacheline(a);
+   cloff = get_cacheline_offset(a);
+   tno   = get_treeno(a);
+   toff  = get_tree_offset(a); /* == 0, unused */
+   descr = cl->descrs[tno];
+   if (UNLIKELY( !(descr & TREE_DESCR_64) )) {
+      goto slowcase;
+   }
+   svOld = cl->svals[cloff];
+   svNew = fn( svOld, fn_opaque );
+   tl_assert(svNew != SVal_INVALID);
+   cl->svals[cloff] = svNew;
+   return;
+  slowcase: /* misaligned, or must go further down the tree */
+   stats__cline_64to32splits++;
+   zsm_apply32( a + 0, fn, fn_opaque );
+   zsm_apply32( a + 4, fn, fn_opaque );
+}
+
+static
+void zsm_apply64___msm_read ( Thr* thr, Addr a ) {
+   CacheLine* cl; 
+   UWord      cloff, tno, toff;
+   SVal       svOld, svNew;
+   UShort     descr;
+   stats__cline_read64s++;
+   if (UNLIKELY(!aligned64(a))) goto slowcase;
+   cl    = get_cacheline(a);
+   cloff = get_cacheline_offset(a);
+   tno   = get_treeno(a);
+   toff  = get_tree_offset(a); /* == 0, unused */
+   descr = cl->descrs[tno];
+   if (UNLIKELY( !(descr & TREE_DESCR_64) )) {
+      goto slowcase;
+   }
+   svOld = cl->svals[cloff];
+   svNew = msm_read( svOld, thr,a,8 );
+   tl_assert(svNew != SVal_INVALID);
+   cl->svals[cloff] = svNew;
+   return;
+  slowcase: /* misaligned, or must go further down the tree */
+   stats__cline_64to32splits++;
+   zsm_apply32___msm_read( thr, a + 0 );
+   zsm_apply32___msm_read( thr, a + 4 );
+}
+
+static
+void zsm_apply64___msm_write ( Thr* thr, Addr a ) {
+   CacheLine* cl; 
+   UWord      cloff, tno, toff;
+   SVal       svOld, svNew;
+   UShort     descr;
+   stats__cline_read64s++;
+   if (UNLIKELY(!aligned64(a))) goto slowcase;
+   cl    = get_cacheline(a);
+   cloff = get_cacheline_offset(a);
+   tno   = get_treeno(a);
+   toff  = get_tree_offset(a); /* == 0, unused */
+   descr = cl->descrs[tno];
+   if (UNLIKELY( !(descr & TREE_DESCR_64) )) {
+      goto slowcase;
+   }
+   svOld = cl->svals[cloff];
+   svNew = msm_write( svOld, thr,a,8 );
+   tl_assert(svNew != SVal_INVALID);
+   cl->svals[cloff] = svNew;
+   return;
+  slowcase: /* misaligned, or must go further down the tree */
+   stats__cline_64to32splits++;
+   zsm_apply32___msm_write( thr, a + 0 );
+   zsm_apply32___msm_write( thr, a + 4 );
+}
+
+/*--------------- ZSM accesses: 8 bit write --------------- */
+
+static
+void zsm_write8 ( Addr a, SVal svNew ) {
+   CacheLine* cl; 
+   UWord      cloff, tno, toff;
+   UShort     descr;
+   stats__cline_set8s++;
+   cl    = get_cacheline(a);
+   cloff = get_cacheline_offset(a);
+   tno   = get_treeno(a);
+   toff  = get_tree_offset(a); /* == 0 .. 7 */
+   descr = cl->descrs[tno];
+   if (UNLIKELY( !(descr & (TREE_DESCR_8_0 << toff)) )) {
+      SVal* tree = &cl->svals[tno << 3];
+      cl->descrs[tno] = pulldown_to_8(tree, toff, descr);
+      if (SCE_CACHELINE)
+         tl_assert(is_sane_CacheLine(cl)); /* EXPENSIVE */
+   }
+   tl_assert(svNew != SVal_INVALID);
+   cl->svals[cloff] = svNew;
+}
+
+/*--------------- ZSM accesses: 16 bit write --------------- */
+
+static
+void zsm_write16 ( Addr a, SVal svNew ) {
+   CacheLine* cl; 
+   UWord      cloff, tno, toff;
+   UShort     descr;
+   stats__cline_set16s++;
+   if (UNLIKELY(!aligned16(a))) goto slowcase;
+   cl    = get_cacheline(a);
+   cloff = get_cacheline_offset(a);
+   tno   = get_treeno(a);
+   toff  = get_tree_offset(a); /* == 0, 2, 4 or 6 */
+   descr = cl->descrs[tno];
+   if (UNLIKELY( !(descr & (TREE_DESCR_16_0 << toff)) )) {
+      if (valid_value_is_below_me_16(descr, toff)) {
+         /* Writing at this level.  Need to fix up 'descr'. */
+         cl->descrs[tno] = pullup_descr_to_16(descr, toff);
+         /* At this point, the tree does not match cl->descr[tno] any
+            more.  The assignments below will fix it up. */
+      } else {
+         /* We can't indiscriminately write on the w16 node as in the
+            w64 case, as that might make the node inconsistent with
+            its parent.  So first, pull down to this level. */
+         SVal* tree = &cl->svals[tno << 3];
+         cl->descrs[tno] = pulldown_to_16(tree, toff, descr);
+      if (SCE_CACHELINE)
+         tl_assert(is_sane_CacheLine(cl)); /* EXPENSIVE */
+      }
+   }
+   tl_assert(svNew != SVal_INVALID);
+   cl->svals[cloff + 0] = svNew;
+   cl->svals[cloff + 1] = SVal_INVALID;
+   return;
+  slowcase: /* misaligned */
+   stats__cline_16to8splits++;
+   zsm_write8( a + 0, svNew );
+   zsm_write8( a + 1, svNew );
+}
+
+/*--------------- ZSM accesses: 32 bit write --------------- */
+
+static
+void zsm_write32 ( Addr a, SVal svNew ) {
+   CacheLine* cl; 
+   UWord      cloff, tno, toff;
+   UShort     descr;
+   stats__cline_set32s++;
+   if (UNLIKELY(!aligned32(a))) goto slowcase;
+   cl    = get_cacheline(a);
+   cloff = get_cacheline_offset(a);
+   tno   = get_treeno(a);
+   toff  = get_tree_offset(a); /* == 0 or 4 */
+   descr = cl->descrs[tno];
+   if (UNLIKELY( !(descr & (TREE_DESCR_32_0 << toff)) )) {
+      if (valid_value_is_above_me_32(descr, toff)) {
+         /* We can't indiscriminately write on the w32 node as in the
+            w64 case, as that might make the node inconsistent with
+            its parent.  So first, pull down to this level. */
+         SVal* tree = &cl->svals[tno << 3];
+         cl->descrs[tno] = pulldown_to_32(tree, toff, descr);
+         if (SCE_CACHELINE)
+            tl_assert(is_sane_CacheLine(cl)); /* EXPENSIVE */
+      } else {
+         /* Writing at this level.  Need to fix up 'descr'. */
+         cl->descrs[tno] = pullup_descr_to_32(descr, toff);
+         /* At this point, the tree does not match cl->descr[tno] any
+            more.  The assignments below will fix it up. */
+      }
+   }
+   tl_assert(svNew != SVal_INVALID);
+   cl->svals[cloff + 0] = svNew;
+   cl->svals[cloff + 1] = SVal_INVALID;
+   cl->svals[cloff + 2] = SVal_INVALID;
+   cl->svals[cloff + 3] = SVal_INVALID;
+   return;
+  slowcase: /* misaligned */
+   stats__cline_32to16splits++;
+   zsm_write16( a + 0, svNew );
+   zsm_write16( a + 2, svNew );
+}
+
+/*--------------- ZSM accesses: 64 bit write --------------- */
+
+static
+void zsm_write64 ( Addr a, SVal svNew ) {
+   CacheLine* cl; 
+   UWord      cloff, tno, toff;
+   stats__cline_set64s++;
+   if (UNLIKELY(!aligned64(a))) goto slowcase;
+   cl    = get_cacheline(a);
+   cloff = get_cacheline_offset(a);
+   tno   = get_treeno(a);
+   toff  = get_tree_offset(a); /* == 0 */
+   cl->descrs[tno] = TREE_DESCR_64;
+   tl_assert(svNew != SVal_INVALID);
+   cl->svals[cloff + 0] = svNew;
+   cl->svals[cloff + 1] = SVal_INVALID;
+   cl->svals[cloff + 2] = SVal_INVALID;
+   cl->svals[cloff + 3] = SVal_INVALID;
+   cl->svals[cloff + 4] = SVal_INVALID;
+   cl->svals[cloff + 5] = SVal_INVALID;
+   cl->svals[cloff + 6] = SVal_INVALID;
+   cl->svals[cloff + 7] = SVal_INVALID;
+   return;
+  slowcase: /* misaligned */
+   stats__cline_64to32splits++;
+   zsm_write32( a + 0, svNew );
+   zsm_write32( a + 4, svNew );
+}
+
+/*------------- ZSM accesses: 8 bit read/copy ------------- */
+
+static
+SVal zsm_read8 ( Addr a ) {
+   CacheLine* cl; 
+   UWord      cloff, tno, toff;
+   UShort     descr;
+   stats__cline_get8s++;
+   cl    = get_cacheline(a);
+   cloff = get_cacheline_offset(a);
+   tno   = get_treeno(a);
+   toff  = get_tree_offset(a); /* == 0 .. 7 */
+   descr = cl->descrs[tno];
+   if (UNLIKELY( !(descr & (TREE_DESCR_8_0 << toff)) )) {
+      SVal* tree = &cl->svals[tno << 3];
+      cl->descrs[tno] = pulldown_to_8(tree, toff, descr);
+   }
+   return cl->svals[cloff];
+}
+
+static void zsm_copy8 ( Addr src, Addr dst, Bool uu_normalise ) {
+   SVal       sv;
+   stats__cline_copy8s++;
+   sv = zsm_read8( src );
+   zsm_write8( dst, sv );
+}
+
+/* ------------ Shadow memory range setting ops ------------ */
+
+static void zsm_apply_range___msm_read ( Thr* thr, 
+                                         Addr a, SizeT len )
+{
+   /* fast track a couple of common cases */
+   if (len == 4 && aligned32(a)) {
+      zsm_apply32___msm_read( thr, a );
+      return;
+   }
+   if (len == 8 && aligned64(a)) {
+      zsm_apply64___msm_read( thr, a );
+      return;
+   }
+
+   /* be completely general (but as efficient as possible) */
+   if (len == 0) return;
+
+   if (!aligned16(a) && len >= 1) {
+      zsm_apply8___msm_read( thr, a );
+      a += 1;
+      len -= 1;
+      tl_assert(aligned16(a));
+   }
+   if (len == 0) return;
+
+   if (!aligned32(a) && len >= 2) {
+      zsm_apply16___msm_read( thr, a );
+      a += 2;
+      len -= 2;
+      tl_assert(aligned32(a));
+   }
+   if (len == 0) return;
+
+   if (!aligned64(a) && len >= 4) {
+      zsm_apply32___msm_read( thr, a );
+      a += 4;
+      len -= 4;
+      tl_assert(aligned64(a));
+   }
+   if (len == 0) return;
+
+   if (len >= 8) {
+      tl_assert(aligned64(a));
+      while (len >= 8) {
+         zsm_apply64___msm_read( thr, a );
+         a += 8;
+         len -= 8;
+      }
+      tl_assert(aligned64(a));
+   }
+   if (len == 0) return;
+
+   if (len >= 4)
+      tl_assert(aligned32(a));
+   if (len >= 4) {
+      zsm_apply32___msm_read( thr, a );
+      a += 4;
+      len -= 4;
+   }
+   if (len == 0) return;
+
+   if (len >= 2)
+      tl_assert(aligned16(a));
+   if (len >= 2) {
+      zsm_apply16___msm_read( thr, a );
+      a += 2;
+      len -= 2;
+   }
+   if (len == 0) return;
+
+   if (len >= 1) {
+      zsm_apply8___msm_read( thr, a );
+      a += 1;
+      len -= 1;
+   }
+   tl_assert(len == 0);
+}
+
+
+
+static void zsm_apply_range___msm_write ( Thr* thr,
+                                          Addr a, SizeT len )
+{
+   /* fast track a couple of common cases */
+   if (len == 4 && aligned32(a)) {
+      zsm_apply32___msm_write( thr, a );
+      return;
+   }
+   if (len == 8 && aligned64(a)) {
+      zsm_apply64___msm_write( thr, a );
+      return;
+   }
+
+   /* be completely general (but as efficient as possible) */
+   if (len == 0) return;
+
+   if (!aligned16(a) && len >= 1) {
+      zsm_apply8___msm_write( thr, a );
+      a += 1;
+      len -= 1;
+      tl_assert(aligned16(a));
+   }
+   if (len == 0) return;
+
+   if (!aligned32(a) && len >= 2) {
+      zsm_apply16___msm_write( thr, a );
+      a += 2;
+      len -= 2;
+      tl_assert(aligned32(a));
+   }
+   if (len == 0) return;
+
+   if (!aligned64(a) && len >= 4) {
+      zsm_apply32___msm_write( thr, a );
+      a += 4;
+      len -= 4;
+      tl_assert(aligned64(a));
+   }
+   if (len == 0) return;
+
+   if (len >= 8) {
+      tl_assert(aligned64(a));
+      while (len >= 8) {
+         zsm_apply64___msm_write( thr, a );
+         a += 8;
+         len -= 8;
+      }
+      tl_assert(aligned64(a));
+   }
+   if (len == 0) return;
+
+   if (len >= 4)
+      tl_assert(aligned32(a));
+   if (len >= 4) {
+      zsm_apply32___msm_write( thr, a );
+      a += 4;
+      len -= 4;
+   }
+   if (len == 0) return;
+
+   if (len >= 2)
+      tl_assert(aligned16(a));
+   if (len >= 2) {
+      zsm_apply16___msm_write( thr, a );
+      a += 2;
+      len -= 2;
+   }
+   if (len == 0) return;
+
+   if (len >= 1) {
+      zsm_apply8___msm_write( thr, a );
+      a += 1;
+      len -= 1;
+   }
+   tl_assert(len == 0);
+}
+
+
+
+
+/* Block-copy states (needed for implementing realloc()). */
+
+static void zsm_copy_range ( Addr src, Addr dst, SizeT len )
+{
+   SizeT i;
+   if (len == 0)
+      return;
+
+   /* assert for non-overlappingness */
+   tl_assert(src+len <= dst || dst+len <= src);
+
+   /* To be simple, just copy byte by byte.  But so as not to wreck
+      performance for later accesses to dst[0 .. len-1], normalise
+      destination lines as we finish with them, and also normalise the
+      line containing the first and last address. */
+   for (i = 0; i < len; i++) {
+      Bool normalise
+         = get_cacheline_offset( dst+i+1 ) == 0 /* last in line */
+           || i == 0       /* first in range */
+           || i == len-1;  /* last in range */
+      zsm_copy8( src+i, dst+i, normalise );
+   }
+}
+
+
+/* For setting address ranges to a given value.  Has considerable
+   sophistication so as to avoid generating large numbers of pointless
+   cache loads/writebacks for large ranges. */
+
+/* Do small ranges in-cache, in the obvious way. */
+static
+void zsm_set_range_SMALL ( Addr a, SizeT len, SVal svNew )
+{
+   /* fast track a couple of common cases */
+   if (len == 4 && aligned32(a)) {
+      zsm_write32( a, svNew );
+      return;
+   }
+   if (len == 8 && aligned64(a)) {
+      zsm_write64( a, svNew );
+      return;
+   }
+
+   /* be completely general (but as efficient as possible) */
+   if (len == 0) return;
+
+   if (!aligned16(a) && len >= 1) {
+      zsm_write8( a, svNew );
+      a += 1;
+      len -= 1;
+      tl_assert(aligned16(a));
+   }
+   if (len == 0) return;
+
+   if (!aligned32(a) && len >= 2) {
+      zsm_write16( a, svNew );
+      a += 2;
+      len -= 2;
+      tl_assert(aligned32(a));
+   }
+   if (len == 0) return;
+
+   if (!aligned64(a) && len >= 4) {
+      zsm_write32( a, svNew );
+      a += 4;
+      len -= 4;
+      tl_assert(aligned64(a));
+   }
+   if (len == 0) return;
+
+   if (len >= 8) {
+      tl_assert(aligned64(a));
+      while (len >= 8) {
+         zsm_write64( a, svNew );
+         a += 8;
+         len -= 8;
+      }
+      tl_assert(aligned64(a));
+   }
+   if (len == 0) return;
+
+   if (len >= 4)
+      tl_assert(aligned32(a));
+   if (len >= 4) {
+      zsm_write32( a, svNew );
+      a += 4;
+      len -= 4;
+   }
+   if (len == 0) return;
+
+   if (len >= 2)
+      tl_assert(aligned16(a));
+   if (len >= 2) {
+      zsm_write16( a, svNew );
+      a += 2;
+      len -= 2;
+   }
+   if (len == 0) return;
+
+   if (len >= 1) {
+      zsm_write8( a, svNew );
+      a += 1;
+      len -= 1;
+   }
+   tl_assert(len == 0);
+}
+
+
+/* If we're doing a small range, hand off to zsm_set_range_SMALL.  But
+   for larger ranges, try to operate directly on the out-of-cache
+   representation, rather than dragging lines into the cache,
+   overwriting them, and forcing them out.  This turns out to be an
+   important performance optimisation. */
+
+static void zsm_set_range ( Addr a, SizeT len, SVal svNew )
+{
+   tl_assert(svNew != SVal_INVALID);
+   stats__cache_make_New_arange += (ULong)len;
+
+   if (0 && len > 500)
+      VG_(printf)("make New      ( %#lx, %ld )\n", a, len );
+
+   if (0) {
+      static UWord n_New_in_cache = 0;
+      static UWord n_New_not_in_cache = 0;
+      /* tag is 'a' with the in-line offset masked out, 
+         eg a[31]..a[4] 0000 */
+      Addr       tag = a & ~(N_LINE_ARANGE - 1);
+      UWord      wix = (a >> N_LINE_BITS) & (N_WAY_NENT - 1);
+      if (LIKELY(tag == cache_shmem.tags0[wix])) {
+         n_New_in_cache++;
+      } else {
+         n_New_not_in_cache++;
+      }
+      if (0 == ((n_New_in_cache + n_New_not_in_cache) % 100000))
+         VG_(printf)("shadow_mem_make_New: IN %lu OUT %lu\n",
+                     n_New_in_cache, n_New_not_in_cache );
+   }
+
+   if (LIKELY(len < 2 * N_LINE_ARANGE)) {
+      zsm_set_range_SMALL( a, len, svNew );
+   } else {
+      Addr  before_start  = a;
+      Addr  aligned_start = cacheline_ROUNDUP(a);
+      Addr  after_start   = cacheline_ROUNDDN(a + len);
+      UWord before_len    = aligned_start - before_start;
+      UWord aligned_len   = after_start - aligned_start;
+      UWord after_len     = a + len - after_start;
+      tl_assert(before_start <= aligned_start);
+      tl_assert(aligned_start <= after_start);
+      tl_assert(before_len < N_LINE_ARANGE);
+      tl_assert(after_len < N_LINE_ARANGE);
+      tl_assert(get_cacheline_offset(aligned_start) == 0);
+      if (get_cacheline_offset(a) == 0) {
+         tl_assert(before_len == 0);
+         tl_assert(a == aligned_start);
+      }
+      if (get_cacheline_offset(a+len) == 0) {
+         tl_assert(after_len == 0);
+         tl_assert(after_start == a+len);
+      }
+      if (before_len > 0) {
+         zsm_set_range_SMALL( before_start, before_len, svNew );
+      }
+      if (after_len > 0) {
+         zsm_set_range_SMALL( after_start, after_len, svNew );
+      }
+      stats__cache_make_New_inZrep += (ULong)aligned_len;
+
+      while (1) {
+         Addr tag;
+         UWord wix;
+         if (aligned_start >= after_start)
+            break;
+         tl_assert(get_cacheline_offset(aligned_start) == 0);
+         tag = aligned_start & ~(N_LINE_ARANGE - 1);
+         wix = (aligned_start >> N_LINE_BITS) & (N_WAY_NENT - 1);
+         if (tag == cache_shmem.tags0[wix]) {
+            UWord i;
+            for (i = 0; i < N_LINE_ARANGE / 8; i++)
+               zsm_write64( aligned_start + i * 8, svNew );
+         } else {
+            UWord i;
+            Word zix;
+            SecMap* sm;
+            LineZ* lineZ;
+            /* This line is not in the cache.  Do not force it in; instead
+               modify it in-place. */
+            /* find the Z line to write in and rcdec it or the
+               associated F line. */
+            find_Z_for_writing( &sm, &zix, tag );
+            tl_assert(sm);
+            tl_assert(zix >= 0 && zix < N_SECMAP_ZLINES);
+            lineZ = &sm->linesZ[zix];
+            lineZ->dict[0] = svNew;
+            lineZ->dict[1] = lineZ->dict[2] = lineZ->dict[3] = SVal_INVALID;
+            for (i = 0; i < N_LINE_ARANGE/4; i++)
+               lineZ->ix2s[i] = 0; /* all refer to dict[0] */
+            rcinc_LineZ(lineZ);
+         }
+         aligned_start += N_LINE_ARANGE;
+         aligned_len -= N_LINE_ARANGE;
+      }
+      tl_assert(aligned_start == after_start);
+      tl_assert(aligned_len == 0);
+   }
 }
 
 
@@ -4184,79 +4512,68 @@ static void trace ( Thr* thr, Addr a, SizeT szB, HChar* s ) {
   VG_(printf)("%s","\n");
 }
 
-Bool libhb_read ( /*OUT*/RaceInfo* ri, Thr* thr, Addr a, SizeT szB )
-{
-   MSMInfo info;
-   void* opaque = (void*)&info;
+void libhb_read_1 ( Thr* thr, Addr a ) {
+   if(TRACEME(a,1))trace(thr,a,1,"rd-before");
+   zsm_apply8___msm_read ( thr, a );
+   if(TRACEME(a,1))trace(thr,a,1,"rd-after ");
+}
+void libhb_read_2 ( Thr* thr, Addr a ) {
+   if(TRACEME(a,2))trace(thr,a,2,"rd-before");
+   zsm_apply16___msm_read ( thr, a );
+   if(TRACEME(a,2))trace(thr,a,2,"rd-after ");
+}
+void libhb_read_4 ( Thr* thr, Addr a ) {
+   if(TRACEME(a,4))trace(thr,a,4,"rd-before");
+   zsm_apply32___msm_read ( thr, a );
+   if(TRACEME(a,4))trace(thr,a,4,"rd-after ");
+}
+void libhb_read_8 ( Thr* thr, Addr a ) {
+   if(TRACEME(a,8))trace(thr,a,8,"rd-before");
+   zsm_apply64___msm_read ( thr, a );
+   if(TRACEME(a,8))trace(thr,a,8,"rd-after ");
+}
+void libhb_read_N ( Thr* thr, Addr a, SizeT szB ) {
    if(TRACEME(a,szB))trace(thr,a,szB,"rd-before");
-   info.acc_thr = thr;
-   info.ea      = a;
-   info.race    = False;
-   switch (szB) {
-      case 8:
-         zsm_apply64( a, (SVal(*)(SVal,void*))msm_read, opaque );
-         break;
-      case 4:
-         zsm_apply32( a, (SVal(*)(SVal,void*))msm_read, opaque );
-         break;
-      case 2:
-         zsm_apply16( a, (SVal(*)(SVal,void*))msm_read, opaque );
-         break;
-      case 1:
-         zsm_apply8 ( a, (SVal(*)(SVal,void*))msm_read, opaque );
-         break;
-      default:
-         zsm_apply_range( a, szB, (SVal(*)(SVal,void*))msm_read, opaque );
-         break;
-   }
+   zsm_apply_range___msm_read ( thr, a, szB );
    if(TRACEME(a,szB))trace(thr,a,szB,"rd-after ");
-   if (!info.race) return False;
-   ri->thr    = thr;
-   ri->where  = info.where;
-   ri->a      = a;
-   ri->szB    = szB;
-   ri->isW    = False;
-   ri->thrp   = info.thrp;
-   ri->wherep = info.wherep;
-   return True;
 }
 
-Bool libhb_write ( /*OUT*/RaceInfo* ri, Thr* thr, Addr a, SizeT szB )
-{
-   MSMInfo info;
-   void* opaque = (void*)&info;
-   if(TRACEME(a,szB))trace(thr,a,szB,"wr-before");
-   info.acc_thr = thr;
-   info.ea      = a;
-   info.race    = False;
-   switch (szB) {
-      case 8:
-         zsm_apply64( a, (SVal(*)(SVal,void*))msm_write, opaque );
-         break;
-      case 4:
-         zsm_apply32( a, (SVal(*)(SVal,void*))msm_write, opaque );
-         break;
-      case 2:
-         zsm_apply16( a, (SVal(*)(SVal,void*))msm_write, opaque );
-         break;
-      case 1:
-         zsm_apply8 ( a, (SVal(*)(SVal,void*))msm_write, opaque );
-         break;
-      default:
-         zsm_apply_range( a, szB, (SVal(*)(SVal,void*))msm_write, opaque );
-         break;
-   }
-   if(TRACEME(a,szB))trace(thr,a,szB,"wr-after ");
-   if (!info.race) return False;
-   ri->thr    = thr;
-   ri->where  = info.where;
-   ri->a      = a;
-   ri->szB    = szB;
-   ri->isW    = True;
-   ri->thrp   = info.thrp;
-   ri->wherep = info.wherep;
-   return True;
+
+
+
+void libhb_write_1 ( Thr* thr, Addr a ) {
+   if(TRACEME(a,1))trace(thr,a,1,"wr-before");
+   zsm_apply8___msm_write ( thr, a );
+   if(TRACEME(a,1))trace(thr,a,1,"wr-after ");
 }
+void libhb_write_2 ( Thr* thr, Addr a ) {
+   if(TRACEME(a,2))trace(thr,a,2,"wr-before");
+   zsm_apply16___msm_write ( thr, a );
+   if(TRACEME(a,2))trace(thr,a,2,"wr-after ");
+}
+void libhb_write_4 ( Thr* thr, Addr a ) {
+   if(TRACEME(a,4))trace(thr,a,4,"wr-before");
+   zsm_apply32___msm_write ( thr, a );
+   if(TRACEME(a,4))trace(thr,a,4,"wr-after ");
+}
+void libhb_write_8 ( Thr* thr, Addr a ) {
+   if(TRACEME(a,8))trace(thr,a,8,"wr-before");
+   zsm_apply64___msm_write ( thr, a );
+   if(TRACEME(a,8))trace(thr,a,8,"wr-after ");
+}
+void libhb_write_N ( Thr* thr, Addr a, SizeT szB ) {
+   if(TRACEME(a,szB))trace(thr,a,szB,"wr-before");
+   zsm_apply_range___msm_write ( thr, a, szB );
+   if(TRACEME(a,szB))trace(thr,a,szB,"wr-after ");
+}
+
+
+
+
+
+
+
+
 
 void libhb_range_new ( Thr* thr, Addr a, SizeT szB )
 {
