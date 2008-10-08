@@ -3228,7 +3228,6 @@ static inline SVal msm_write ( SVal svOld,
 
 /*------------- ZSM accesses: 8 bit apply ------------- */
 
-static
 void zsm_apply8___msm_read ( Thr* thr, Addr a ) {
    CacheLine* cl; 
    UWord      cloff, tno, toff;
@@ -3252,7 +3251,6 @@ void zsm_apply8___msm_read ( Thr* thr, Addr a ) {
    cl->svals[cloff] = svNew;
 }
 
-static
 void zsm_apply8___msm_write ( Thr* thr, Addr a ) {
    CacheLine* cl; 
    UWord      cloff, tno, toff;
@@ -3278,7 +3276,6 @@ void zsm_apply8___msm_write ( Thr* thr, Addr a ) {
 
 /*------------- ZSM accesses: 16 bit apply ------------- */
 
-static
 void zsm_apply16___msm_read ( Thr* thr, Addr a ) {
    CacheLine* cl; 
    UWord      cloff, tno, toff;
@@ -3312,7 +3309,6 @@ void zsm_apply16___msm_read ( Thr* thr, Addr a ) {
    zsm_apply8___msm_read( thr, a + 1 );
 }
 
-static
 void zsm_apply16___msm_write ( Thr* thr, Addr a ) {
    CacheLine* cl; 
    UWord      cloff, tno, toff;
@@ -3348,7 +3344,6 @@ void zsm_apply16___msm_write ( Thr* thr, Addr a ) {
 
 /*------------- ZSM accesses: 32 bit apply ------------- */
 
-static
 void zsm_apply32___msm_read ( Thr* thr, Addr a ) {
    CacheLine* cl; 
    UWord      cloff, tno, toff;
@@ -3381,7 +3376,6 @@ void zsm_apply32___msm_read ( Thr* thr, Addr a ) {
    zsm_apply16___msm_read( thr, a + 2 );
 }
 
-static
 void zsm_apply32___msm_write ( Thr* thr, Addr a ) {
    CacheLine* cl; 
    UWord      cloff, tno, toff;
@@ -3416,7 +3410,6 @@ void zsm_apply32___msm_write ( Thr* thr, Addr a ) {
 
 /*------------- ZSM accesses: 64 bit apply ------------- */
 
-static
 void zsm_apply64___msm_read ( Thr* thr, Addr a ) {
    CacheLine* cl; 
    UWord      cloff, tno, toff;
@@ -3443,7 +3436,6 @@ void zsm_apply64___msm_read ( Thr* thr, Addr a ) {
    zsm_apply32___msm_read( thr, a + 4 );
 }
 
-static
 void zsm_apply64___msm_write ( Thr* thr, Addr a ) {
    CacheLine* cl; 
    UWord      cloff, tno, toff;
@@ -3633,8 +3625,8 @@ static void zsm_copy8 ( Addr src, Addr dst, Bool uu_normalise ) {
 
 /* ------------ Shadow memory range setting ops ------------ */
 
-static void zsm_apply_range___msm_read ( Thr* thr, 
-                                         Addr a, SizeT len )
+void zsm_apply_range___msm_read ( Thr* thr, 
+                                  Addr a, SizeT len )
 {
    /* fast track a couple of common cases */
    if (len == 4 && aligned32(a)) {
@@ -3712,8 +3704,8 @@ static void zsm_apply_range___msm_read ( Thr* thr,
 
 
 
-static void zsm_apply_range___msm_write ( Thr* thr,
-                                          Addr a, SizeT len )
+void zsm_apply_range___msm_write ( Thr* thr,
+                                   Addr a, SizeT len )
 {
    /* fast track a couple of common cases */
    if (len == 4 && aligned32(a)) {
@@ -4374,58 +4366,6 @@ static void trace ( Thr* thr, Addr a, SizeT szB, HChar* s ) {
   VG_(printf)("thr %p (%#lx,%lu) %s: 0x%016llx ", thr,a,szB,s,sv);
   show_thread_state("", thr);
   VG_(printf)("%s","\n");
-}
-
-void libhb_read_1 ( Thr* thr, Addr a ) {
-   if(TRACEME(a,1))trace(thr,a,1,"rd-before");
-   zsm_apply8___msm_read ( thr, a );
-   if(TRACEME(a,1))trace(thr,a,1,"rd-after ");
-}
-void libhb_read_2 ( Thr* thr, Addr a ) {
-   if(TRACEME(a,2))trace(thr,a,2,"rd-before");
-   zsm_apply16___msm_read ( thr, a );
-   if(TRACEME(a,2))trace(thr,a,2,"rd-after ");
-}
-void libhb_read_4 ( Thr* thr, Addr a ) {
-   if(TRACEME(a,4))trace(thr,a,4,"rd-before");
-   zsm_apply32___msm_read ( thr, a );
-   if(TRACEME(a,4))trace(thr,a,4,"rd-after ");
-}
-void libhb_read_8 ( Thr* thr, Addr a ) {
-   if(TRACEME(a,8))trace(thr,a,8,"rd-before");
-   zsm_apply64___msm_read ( thr, a );
-   if(TRACEME(a,8))trace(thr,a,8,"rd-after ");
-}
-void libhb_read_N ( Thr* thr, Addr a, SizeT szB ) {
-   if(TRACEME(a,szB))trace(thr,a,szB,"rd-before");
-   zsm_apply_range___msm_read ( thr, a, szB );
-   if(TRACEME(a,szB))trace(thr,a,szB,"rd-after ");
-}
-
-void libhb_write_1 ( Thr* thr, Addr a ) {
-   if(TRACEME(a,1))trace(thr,a,1,"wr-before");
-   zsm_apply8___msm_write ( thr, a );
-   if(TRACEME(a,1))trace(thr,a,1,"wr-after ");
-}
-void libhb_write_2 ( Thr* thr, Addr a ) {
-   if(TRACEME(a,2))trace(thr,a,2,"wr-before");
-   zsm_apply16___msm_write ( thr, a );
-   if(TRACEME(a,2))trace(thr,a,2,"wr-after ");
-}
-void libhb_write_4 ( Thr* thr, Addr a ) {
-   if(TRACEME(a,4))trace(thr,a,4,"wr-before");
-   zsm_apply32___msm_write ( thr, a );
-   if(TRACEME(a,4))trace(thr,a,4,"wr-after ");
-}
-void libhb_write_8 ( Thr* thr, Addr a ) {
-   if(TRACEME(a,8))trace(thr,a,8,"wr-before");
-   zsm_apply64___msm_write ( thr, a );
-   if(TRACEME(a,8))trace(thr,a,8,"wr-after ");
-}
-void libhb_write_N ( Thr* thr, Addr a, SizeT szB ) {
-   if(TRACEME(a,szB))trace(thr,a,szB,"wr-before");
-   zsm_apply_range___msm_write ( thr, a, szB );
-   if(TRACEME(a,szB))trace(thr,a,szB,"wr-after ");
 }
 
 void libhb_range_new ( Thr* thr, Addr a, SizeT szB )

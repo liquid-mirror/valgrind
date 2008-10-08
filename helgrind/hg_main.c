@@ -1054,13 +1054,13 @@ static void shadow_mem_read_range ( Thread* thr, Addr a, SizeT len )
 {
    Thr*     hbthr = thr->hbthr;
    tl_assert(hbthr);
-   libhb_read_N(hbthr, a, len);
+   LIBHB_READ_N(hbthr, a, len);
 }
 
 static void shadow_mem_write_range ( Thread* thr, Addr a, SizeT len ) {
    Thr*     hbthr = thr->hbthr;
    tl_assert(hbthr);
-   libhb_write_N(hbthr, a, len);
+   LIBHB_WRITE_N(hbthr, a, len);
 }
 
 static void shadow_mem_make_New ( Thread* thr, Addr a, SizeT len )
@@ -1731,70 +1731,70 @@ static VG_REGPARM(1)
 void evh__mem_help_read_1(Addr a) {
    Thread*  thr = get_current_Thread_in_C_C();
    Thr*     hbthr = thr->hbthr;
-   libhb_read_1(hbthr, a);
+   LIBHB_READ_1(hbthr, a);
 }
 
 static VG_REGPARM(1)
 void evh__mem_help_read_2(Addr a) {
    Thread*  thr = get_current_Thread_in_C_C();
    Thr*     hbthr = thr->hbthr;
-   libhb_read_2(hbthr, a);
+   LIBHB_READ_2(hbthr, a);
 }
 
 static VG_REGPARM(1)
 void evh__mem_help_read_4(Addr a) {
    Thread*  thr = get_current_Thread_in_C_C();
    Thr*     hbthr = thr->hbthr;
-   libhb_read_4(hbthr, a);
+   LIBHB_READ_4(hbthr, a);
 }
 
 static VG_REGPARM(1)
 void evh__mem_help_read_8(Addr a) {
    Thread*  thr = get_current_Thread_in_C_C();
    Thr*     hbthr = thr->hbthr;
-   libhb_read_8(hbthr, a);
+   LIBHB_READ_8(hbthr, a);
 }
 
 static VG_REGPARM(2)
 void evh__mem_help_read_N(Addr a, SizeT size) {
    Thread*  thr = get_current_Thread_in_C_C();
    Thr*     hbthr = thr->hbthr;
-   libhb_read_N(hbthr, a, size);
+   LIBHB_READ_N(hbthr, a, size);
 }
 
 static VG_REGPARM(1)
 void evh__mem_help_write_1(Addr a) {
    Thread*  thr = get_current_Thread_in_C_C();
    Thr*     hbthr = thr->hbthr;
-   libhb_write_1(hbthr, a);
+   LIBHB_WRITE_1(hbthr, a);
 }
 
 static VG_REGPARM(1)
 void evh__mem_help_write_2(Addr a) {
    Thread*  thr = get_current_Thread_in_C_C();
    Thr*     hbthr = thr->hbthr;
-   libhb_write_2(hbthr, a);
+   LIBHB_WRITE_2(hbthr, a);
 }
 
 static VG_REGPARM(1)
 void evh__mem_help_write_4(Addr a) {
    Thread*  thr = get_current_Thread_in_C_C();
    Thr*     hbthr = thr->hbthr;
-   libhb_write_4(hbthr, a);
+   LIBHB_WRITE_4(hbthr, a);
 }
 
 static VG_REGPARM(1)
 void evh__mem_help_write_8(Addr a) {
    Thread*  thr = get_current_Thread_in_C_C();
    Thr*     hbthr = thr->hbthr;
-   libhb_write_8(hbthr, a);
+   LIBHB_WRITE_8(hbthr, a);
 }
 
 static VG_REGPARM(2)
 void evh__mem_help_write_N(Addr a, SizeT size) {
    Thread*  thr = get_current_Thread_in_C_C();
    Thr*     hbthr = thr->hbthr;
-   libhb_write_N(hbthr, a, size);
+   LIBHB_WRITE_N(hbthr, a, size);
 }
 
 static void evh__bus_lock(void) {

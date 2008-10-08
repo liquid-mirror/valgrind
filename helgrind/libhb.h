@@ -98,20 +98,34 @@ void libhb_so_recv ( Thr* thr, SO* so, Bool strong_recv );
 /* Has this SO ever been sent on? */
 Bool libhb_so_everSent ( SO* so );
 
-/* Memory accesses (1/2/4/8 byte size).  Returns True if this access
-   resulted in a reportable race, in which case the details are placed
-   in *ri.  If False is returned, the contents of *ri are unspecified
-   and should not be consulted. */
-void libhb_write_1 ( Thr* thr, Addr a );
-void libhb_write_2 ( Thr* thr, Addr a );
-void libhb_write_4 ( Thr* thr, Addr a );
-void libhb_write_8 ( Thr* thr, Addr a );
-void libhb_write_N ( Thr* thr, Addr a, SizeT szB );
-void libhb_read_1  ( Thr* thr, Addr a );
-void libhb_read_2  ( Thr* thr, Addr a );
-void libhb_read_4  ( Thr* thr, Addr a );
-void libhb_read_8  ( Thr* thr, Addr a );
-void libhb_read_N  ( Thr* thr, Addr a, SizeT szB );
+/* Memory accesses (1/2/4/8 byte size).  They report a race if one is
+   found. */
+#define LIBHB_WRITE_1(_thr,_a)    zsm_apply8___msm_write((_thr),(_a))
+#define LIBHB_WRITE_2(_thr,_a)    zsm_apply16___msm_write((_thr),(_a))
+#define LIBHB_WRITE_4(_thr,_a)    zsm_apply32___msm_write((_thr),(_a))
+#define LIBHB_WRITE_8(_thr,_a)    zsm_apply64___msm_write((_thr),(_a))
+#define LIBHB_WRITE_N(_thr,_a,_n) zsm_apply_range___msm_read((_thr),(_a),(_n))
+
+#define LIBHB_READ_1(_thr,_a)    zsm_apply8___msm_read((_thr),(_a))
+#define LIBHB_READ_2(_thr,_a)    zsm_apply16___msm_read((_thr),(_a))
+#define LIBHB_READ_4(_thr,_a)    zsm_apply32___msm_read((_thr),(_a))
+#define LIBHB_READ_8(_thr,_a)    zsm_apply64___msm_read((_thr),(_a))
+#define LIBHB_READ_N(_thr,_a,_n) zsm_apply_range___msm_read((_thr),(_a),(_n))
+
+void zsm_apply8___msm_write ( Thr* thr, Addr a );
+void zsm_apply16___msm_write ( Thr* thr, Addr a );
+void zsm_apply32___msm_write ( Thr* thr, Addr a );
+void zsm_apply64___msm_write ( Thr* thr, Addr a );
+void zsm_apply_range___msm_write ( Thr* thr,
+                                   Addr a, SizeT len );
+
+void zsm_apply8___msm_read ( Thr* thr, Addr a );
+void zsm_apply16___msm_read ( Thr* thr, Addr a );
+void zsm_apply32___msm_read ( Thr* thr, Addr a );
+void zsm_apply64___msm_read ( Thr* thr, Addr a );
+void zsm_apply_range___msm_read ( Thr* thr,
+                                  Addr a, SizeT len );
+
 
 /* Set memory address ranges to new (freshly allocated), or noaccess
    (no longer accessible). */
