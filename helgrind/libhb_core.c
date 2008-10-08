@@ -57,8 +57,8 @@
    Globals needed by other parts of the library.  These are set
    once at startup and then never changed. */
 static void        (*main_get_stacktrace)( Thr*, Addr*, UWord ) = NULL;
-static struct EC_* (*main_stacktrace_to_EC)( Addr*, UWord ) = NULL;
-static struct EC_* (*main_get_EC)( Thr* ) = NULL;
+static struct _EC* (*main_stacktrace_to_EC)( Addr*, UWord ) = NULL;
+static struct _EC* (*main_get_EC)( Thr* ) = NULL;
 
 /////////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////////
@@ -109,11 +109,6 @@ typedef  ULong  SVal;
 */
 static void zsm_init ( void(*rcinc)(SVal), void(*rcdec)(SVal) );
 
-static void zsm_apply8      ( Addr,        SVal(*)(SVal,void*), void* );
-static void zsm_apply16     ( Addr,        SVal(*)(SVal,void*), void* );
-static void zsm_apply32     ( Addr,        SVal(*)(SVal,void*), void* );
-static void zsm_apply64     ( Addr,        SVal(*)(SVal,void*), void* );
-static void zsm_apply_range ( Addr, SizeT, SVal(*)(SVal,void*), void* );
 static void zsm_set_range   ( Addr, SizeT, SVal );
 static SVal zsm_read8       ( Addr );
 static void zsm_copy_range  ( Addr, Addr, SizeT );
@@ -2812,7 +2807,7 @@ static void event_map_bind ( Addr a, Thr* thr )
 
 
 static
-Bool event_map_lookup ( /*OUT*/struct EC_** resEC,
+Bool event_map_lookup ( /*OUT*/struct _EC** resEC,
                         /*OUT*/Thr** resThr,
                         Thr* thr_acc, Addr a )
 {
@@ -3054,19 +3049,6 @@ static ULong stats__msm_read_change  = 0;
 static ULong stats__msm_write        = 0;
 static ULong stats__msm_write_change = 0;
 
-typedef 
-   struct {
-      /* IN - RO */
-      Thr* acc_thr; /* thread making this access */
-      Addr ea;      /* address of access */
-      /* OUT */
-      Bool race; /* caller sets this to False beforehand */
-      struct EC_* where; /* only filled in if .race == True */
-      struct EC_* wherep;
-      Thr* thrp;
-   }
-   MSMInfo;
-
 __attribute__((noinline))
 static void record_race_info ( Thr* acc_thr, 
                                Addr acc_addr, SizeT szB, Bool isWrite,
@@ -3074,8 +3056,8 @@ static void record_race_info ( Thr* acc_thr,
 {
    Bool found;
    Thr* thrp = NULL;
-   struct EC_* where  = NULL;
-   struct EC_* wherep = NULL;
+   struct _EC* where  = NULL;
+   struct _EC* wherep = NULL;
    where = main_get_EC( acc_thr );
    found = event_map_lookup( &wherep, &thrp, acc_thr, acc_addr );
    if (found) {
@@ -3247,30 +3229,6 @@ static inline SVal msm_write ( SVal svOld,
 /*------------- ZSM accesses: 8 bit apply ------------- */
 
 static
-void zsm_apply8 ( Addr a, SVal(*fn)(SVal,void*), void* fn_opaque ) {
-   CacheLine* cl; 
-   UWord      cloff, tno, toff;
-   SVal       svOld, svNew;
-   UShort     descr;
-   stats__cline_read8s++;
-   cl    = get_cacheline(a);
-   cloff = get_cacheline_offset(a);
-   tno   = get_treeno(a);
-   toff  = get_tree_offset(a); /* == 0 .. 7 */
-   descr = cl->descrs[tno];
-   if (UNLIKELY( !(descr & (TREE_DESCR_8_0 << toff)) )) {
-      SVal* tree = &cl->svals[tno << 3];
-      cl->descrs[tno] = pulldown_to_8(tree, toff, descr);
-      if (SCE_CACHELINE)
-         tl_assert(is_sane_CacheLine(cl)); /* EXPENSIVE */
-   }
-   svOld = cl->svals[cloff];
-   svNew = fn( svOld, fn_opaque );
-   tl_assert(svNew != SVal_INVALID);
-   cl->svals[cloff] = svNew;
-}
-
-static
 void zsm_apply8___msm_read ( Thr* thr, Addr a ) {
    CacheLine* cl; 
    UWord      cloff, tno, toff;
@@ -3319,40 +3277,6 @@ void zsm_apply8___msm_write ( Thr* thr, Addr a ) {
 }
 
 /*------------- ZSM accesses: 16 bit apply ------------- */
-
-static
-void zsm_apply16 ( Addr a, SVal(*fn)(SVal,void*), void* fn_opaque ) {
-   CacheLine* cl; 
-   UWord      cloff, tno, toff;
-   SVal       svOld, svNew;
-   UShort     descr;
-   stats__cline_read16s++;
-   if (UNLIKELY(!aligned16(a))) goto slowcase;
-   cl    = get_cacheline(a);
-   cloff = get_cacheline_offset(a);
-   tno   = get_treeno(a);
-   toff  = get_tree_offset(a); /* == 0, 2, 4 or 6 */
-   descr = cl->descrs[tno];
-   if (UNLIKELY( !(descr & (TREE_DESCR_16_0 << toff)) )) {
-      if (valid_value_is_below_me_16(descr, toff)) {
-         goto slowcase;
-      } else {
-         SVal* tree = &cl->svals[tno << 3];
-         cl->descrs[tno] = pulldown_to_16(tree, toff, descr);
-      }
-      if (SCE_CACHELINE)
-         tl_assert(is_sane_CacheLine(cl)); /* EXPENSIVE */
-   }
-   svOld = cl->svals[cloff];
-   svNew = fn( svOld, fn_opaque );
-   tl_assert(svNew != SVal_INVALID);
-   cl->svals[cloff] = svNew;
-   return;
-  slowcase: /* misaligned, or must go further down the tree */
-   stats__cline_16to8splits++;
-   zsm_apply8( a + 0, fn, fn_opaque );
-   zsm_apply8( a + 1, fn, fn_opaque );
-}
 
 static
 void zsm_apply16___msm_read ( Thr* thr, Addr a ) {
@@ -3425,39 +3349,6 @@ void zsm_apply16___msm_write ( Thr* thr, Addr a ) {
 /*------------- ZSM accesses: 32 bit apply ------------- */
 
 static
-void zsm_apply32 ( Addr a, SVal(*fn)(SVal,void*), void* fn_opaque ) {
-   CacheLine* cl; 
-   UWord      cloff, tno, toff;
-   SVal       svOld, svNew;
-   UShort     descr;
-   if (UNLIKELY(!aligned32(a))) goto slowcase;
-   cl    = get_cacheline(a);
-   cloff = get_cacheline_offset(a);
-   tno   = get_treeno(a);
-   toff  = get_tree_offset(a); /* == 0 or 4 */
-   descr = cl->descrs[tno];
-   if (UNLIKELY( !(descr & (TREE_DESCR_32_0 << toff)) )) {
-      if (valid_value_is_above_me_32(descr, toff)) {
-         SVal* tree = &cl->svals[tno << 3];
-         cl->descrs[tno] = pulldown_to_32(tree, toff, descr);
-      } else {
-         goto slowcase;
-      }
-      if (SCE_CACHELINE)
-         tl_assert(is_sane_CacheLine(cl)); /* EXPENSIVE */
-   }
-   svOld = cl->svals[cloff];
-   svNew = fn( svOld, fn_opaque );
-   tl_assert(svNew != SVal_INVALID);
-   cl->svals[cloff] = svNew;
-   return;
-  slowcase: /* misaligned, or must go further down the tree */
-   stats__cline_32to16splits++;
-   zsm_apply16( a + 0, fn, fn_opaque );
-   zsm_apply16( a + 2, fn, fn_opaque );
-}
-
-static
 void zsm_apply32___msm_read ( Thr* thr, Addr a ) {
    CacheLine* cl; 
    UWord      cloff, tno, toff;
@@ -3524,33 +3415,6 @@ void zsm_apply32___msm_write ( Thr* thr, Addr a ) {
 }
 
 /*------------- ZSM accesses: 64 bit apply ------------- */
-
-static
-void zsm_apply64 ( Addr a, SVal(*fn)(SVal,void*), void* fn_opaque ) {
-   CacheLine* cl; 
-   UWord      cloff, tno, toff;
-   SVal       svOld, svNew;
-   UShort     descr;
-   stats__cline_read64s++;
-   if (UNLIKELY(!aligned64(a))) goto slowcase;
-   cl    = get_cacheline(a);
-   cloff = get_cacheline_offset(a);
-   tno   = get_treeno(a);
-   toff  = get_tree_offset(a); /* == 0, unused */
-   descr = cl->descrs[tno];
-   if (UNLIKELY( !(descr & TREE_DESCR_64) )) {
-      goto slowcase;
-   }
-   svOld = cl->svals[cloff];
-   svNew = fn( svOld, fn_opaque );
-   tl_assert(svNew != SVal_INVALID);
-   cl->svals[cloff] = svNew;
-   return;
-  slowcase: /* misaligned, or must go further down the tree */
-   stats__cline_64to32splits++;
-   zsm_apply32( a + 0, fn, fn_opaque );
-   zsm_apply32( a + 4, fn, fn_opaque );
-}
 
 static
 void zsm_apply64___msm_read ( Thr* thr, Addr a ) {
@@ -4199,8 +4063,8 @@ static void show_thread_state ( HChar* str, Thr* t )
 
 Thr* libhb_init (
         void        (*get_stacktrace)( Thr*, Addr*, UWord ),
-        struct EC_* (*stacktrace_to_EC)( Addr*, UWord ),
-        struct EC_* (*get_EC)( Thr* )
+        struct _EC* (*stacktrace_to_EC)( Addr*, UWord ),
+        struct _EC* (*get_EC)( Thr* )
      )
 {
    Thr*  thr;
@@ -4538,9 +4402,6 @@ void libhb_read_N ( Thr* thr, Addr a, SizeT szB ) {
    if(TRACEME(a,szB))trace(thr,a,szB,"rd-after ");
 }
 
-
-
-
 void libhb_write_1 ( Thr* thr, Addr a ) {
    if(TRACEME(a,1))trace(thr,a,1,"wr-before");
    zsm_apply8___msm_write ( thr, a );
@@ -4566,14 +4427,6 @@ void libhb_write_N ( Thr* thr, Addr a, SizeT szB ) {
    zsm_apply_range___msm_write ( thr, a, szB );
    if(TRACEME(a,szB))trace(thr,a,szB,"wr-after ");
 }
-
-
-
-
-
-
-
-
 
 void libhb_range_new ( Thr* thr, Addr a, SizeT szB )
 {

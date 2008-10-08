@@ -41,20 +41,13 @@
 /* struct _EC will be defined by user at some point. */
 typedef  struct _EC  EC;
 
-/* Concrete to user: info on races.  tidp and wherep are the previous
-   (other) access in the race. */
-typedef
-   struct { Thr* thr;  struct EC_* where; Addr a; SizeT szB; Bool isW;
-            Thr* thrp; struct EC_* wherep; }
-   RaceInfo;
-
 /* Initialise library; returns Thr* for root thread.  'shadow_alloc'
    should never return NULL, instead it should simply not return if
    they encounter an out-of-memory condition. */
 Thr* libhb_init (
         void        (*get_stacktrace)( Thr*, Addr*, UWord ),
-        struct EC_* (*stacktrace_to_EC)( Addr*, UWord ),
-        struct EC_* (*get_EC)( Thr* )
+        struct _EC* (*stacktrace_to_EC)( Addr*, UWord ),
+        struct _EC* (*get_EC)( Thr* )
      );
 
 /* Shut down the library, and print stats (in fact that's _all_
