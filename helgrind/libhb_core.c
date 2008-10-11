@@ -2561,19 +2561,41 @@ static void SVal__rcdec ( SVal s ) {
       ordering on the stack trace vectors.
 
    2. An OSet of OldRefs.  These store information about each old ref
-      that we need to record.  It is indexed by address (of the
-      location for which the information is recorded), and contains a
-      pointer to a RCEC in (1).  Each OldRef also contains a
-      generation number, indicating when it was most recently
-      accessed.
+      that we need to record.  It is indexed by address of the
+      location for which the information is recorded.  For LRU
+      purposes, each OldRef also contains a generation number,
+      indicating when it was most recently accessed.
 
-      When we this set becomes too big, we can throw away the subset
-      of this set whose generation numbers are below some threshold;
-      hence doing approximate LRU discarding.  For each discarded
-      OldRef we must of course decrement the reference count on the
-      ECEC it refers to, in order that entries from (1) eventually get
+      The important part of an OldRef is, however, its accs[] array.
+      This is an array of N_OLDREF_ACCS pairs of Thr and a RCEC.  This
+      allows us to collect the last access-traceback by up to
+      N_OLDREF_ACCS different threads for this location.  The accs[]
+      array is a MTF-array.  If a pair falls off the end, that's too
+      bad -- we will lose info about that thread's access to this
+      location.
+
+      When this OSet becomes too big, we can throw away the entries
+      whose generation numbers are below some threshold; hence doing
+      approximate LRU discarding.  For each discarded OldRef we must
+      of course decrement the reference count on the all RCECs it
+      refers to, in order that entries from (1) eventually get
       discarded too.
 */
+
+
+static UWord stats__ctxt_rcdec1 = 0;
+static UWord stats__ctxt_rcdec2 = 0;
+static UWord stats__ctxt_rcdec3 = 0;
+static UWord stats__ctxt_rcdec_calls = 0;
+static UWord stats__ctxt_rcdec_discards = 0;
+static UWord stats__ctxt_rcdec1_eq = 0;
+
+static UWord stats__ctxt_tab_curr = 0;
+static UWord stats__ctxt_tab_max  = 0;
+
+static UWord stats__ctxt_tab_qs   = 0;
+static UWord stats__ctxt_tab_cmps = 0;
+
 
 ///////////////////////////////////////////////////////
 //// Part (1): An OSet of RCECs
@@ -2584,8 +2606,12 @@ static void SVal__rcdec ( SVal s ) {
 // (UInt) `echo "Reference Counted Execution Context" | md5sum`
 #define RCEC_MAGIC 0xab88abb2UL
 
+//#define N_RCEC_TAB 98317 /* prime */
+#define N_RCEC_TAB 196613 /* prime */
+
 typedef
-   struct {
+   struct _RCEC {
+      struct _RCEC* next;
       UWord magic;
       UWord rc;
       UWord rcX; /* used for crosschecking */
@@ -2593,7 +2619,7 @@ typedef
    }
    RCEC;
 
-static OSet* contextTree = NULL; /* OSet* of RCEC */
+static RCEC** contextTab = NULL; /* hash table of RCEC*s */
 
 
 /* Gives an arbitrary total order on RCEC .frames fields */
@@ -2611,20 +2637,13 @@ static Word RCEC__cmp_by_frames ( RCEC* ec1, RCEC* ec2 ) {
 }
 
 
-/* Dec the ref of this EC_RC, and if it becomes zero,
-   delete it from the contextTree. */
+/* Dec the ref of this RCEC. */
 static void ctxt__rcdec ( RCEC* ec )
 {
+   stats__ctxt_rcdec_calls++;
    tl_assert(ec && ec->magic == RCEC_MAGIC);
    tl_assert(ec->rc > 0);
    ec->rc--;
-   if (ec->rc == 0) {
-      void* nd = VG_(OSetGen_Remove)( contextTree, ec );
-      tl_assert(nd); /* must be in the tree */
-      tl_assert(nd == ec);
-      tl_assert( ((RCEC*)nd)->magic == RCEC_MAGIC );
-      VG_(OSetGen_FreeNode)( contextTree, nd );
-   }
 }
 
 static void ctxt__rcinc ( RCEC* ec )
@@ -2633,6 +2652,50 @@ static void ctxt__rcinc ( RCEC* ec )
    ec->rc++;
 }
 
+
+/* Find 'ec' in the RCEC list whose head pointer lives at 'headp' and
+   move it one step closer the the front of the list, so as to make
+   subsequent searches for it cheaper. */
+static void move_RCEC_one_step_forward ( RCEC** headp, RCEC* ec )
+{
+   RCEC *ec0, *ec1, *ec2;
+   if (ec == *headp)
+      tl_assert(0); /* already at head of list */
+   tl_assert(ec != NULL);
+   ec0 = *headp;
+   ec1 = NULL;
+   ec2 = NULL;
+   while (True) {
+      if (ec0 == NULL || ec0 == ec) break;
+      ec2 = ec1;
+      ec1 = ec0;
+      ec0 = ec0->next;
+   }
+   tl_assert(ec0 == ec);
+   if (ec0 != NULL && ec1 != NULL && ec2 != NULL) {
+      RCEC* tmp;
+      /* ec0 points to ec, ec1 to its predecessor, and ec2 to ec1's
+         predecessor.  Swap ec0 and ec1, that is, move ec0 one step
+         closer to the start of the list. */
+      tl_assert(ec2->next == ec1);
+      tl_assert(ec1->next == ec0);
+      tmp = ec0->next;
+      ec2->next = ec0;
+      ec0->next = ec1;
+      ec1->next = tmp;
+   }
+   else
+   if (ec0 != NULL && ec1 != NULL && ec2 == NULL) {
+      /* it's second in the list. */
+      tl_assert(*headp == ec1);
+      tl_assert(ec1->next == ec0);
+      ec1->next = ec0->next;
+      ec0->next = ec1;
+      *headp = ec0;
+   }
+}
+
+
 /* Find the given RCEC in the tree, and return a pointer to it.  Or,
    if not present, add the given one to the tree (by making a copy of
    it, so the caller can immediately deallocate the original) and
@@ -2640,19 +2703,42 @@ static void ctxt__rcinc ( RCEC* ec )
    on its stack, since we will always return a pointer to a copy of
    it, not to the original.  Note that the inserted node will have .rc
    of zero and so the caller must immediatly increment it. */
+__attribute__((noinline))
 static RCEC* ctxt__find_or_add ( RCEC* example )
 {
+   UWord hent;
    RCEC* copy;
    tl_assert(example && example->magic == RCEC_MAGIC);
    tl_assert(example->rc == 0);
-   copy = VG_(OSetGen_Lookup)( contextTree, example );
+
+   /* Search the hash table to see if we already have it. */
+   stats__ctxt_tab_qs++;
+   hent = example->frames[0] % N_RCEC_TAB;
+   copy = contextTab[hent];
+   while (1) {
+      if (!copy) break;
+      tl_assert(copy->magic == RCEC_MAGIC);
+      stats__ctxt_tab_cmps++;
+      if (0 == RCEC__cmp_by_frames(copy, example)) break;
+      copy = copy->next;
+   }
+
    if (copy) {
       tl_assert(copy != example);
+      /* optimisation: if it's not at the head of its list, move 1
+         step fwds, to make future searches cheaper */
+      if (copy != contextTab[hent]) {
+         move_RCEC_one_step_forward( &contextTab[hent], copy );
+      }
    } else {
-      copy = VG_(OSetGen_AllocNode)( contextTree, sizeof(RCEC) );
+      copy = HG_(zalloc)( "libhb.cfoa.1", sizeof(RCEC) );
       tl_assert(copy != example);
       *copy = *example;
-      VG_(OSetGen_Insert)( contextTree, copy );
+      copy->next = contextTab[hent];
+      contextTab[hent] = copy;
+      stats__ctxt_tab_curr++;
+      if (stats__ctxt_tab_curr > stats__ctxt_tab_max)
+         stats__ctxt_tab_max = stats__ctxt_tab_curr;
    }
    return copy;
 }
@@ -2664,6 +2750,7 @@ static inline UWord ROLW ( UWord w, Int n )
    return w;
 }
 
+__attribute__((noinline))
 static RCEC* get_RCEC ( Thr* thr )
 {
    UWord hash, i;
@@ -2694,9 +2781,9 @@ typedef  struct { Thr* thr; RCEC* rcec; }  Thr_n_RCEC;
 
 typedef
    struct {
+      Addr  ea;
       UWord magic;
       UWord gen;    /* when most recently accessed */
-      Addr  ea;
       /* unused slots in this array have .thr == NULL */
       Thr_n_RCEC accs[N_OLDREF_ACCS];
    }
@@ -2748,7 +2835,9 @@ static void event_map_bind ( Addr a, Thr* thr )
             i--;
          }
          here = get_RCEC( thr );
+         if (here == ref->accs[i].rcec) stats__ctxt_rcdec1_eq++;
          ctxt__rcinc( here );
+         stats__ctxt_rcdec1++;
          ctxt__rcdec( ref->accs[i].rcec );
          ref->accs[i].rcec = here;
          tl_assert(ref->accs[i].thr == thr);
@@ -2761,6 +2850,7 @@ static void event_map_bind ( Addr a, Thr* thr )
             /* the last slot is in use.  We must dec the rc on the
                associated rcec. */
             tl_assert(ref->accs[N_OLDREF_ACCS-1].rcec);
+            stats__ctxt_rcdec2++;
             ctxt__rcdec(ref->accs[N_OLDREF_ACCS-1].rcec);
          } else {
             tl_assert(!ref->accs[N_OLDREF_ACCS-1].rcec);
@@ -2850,19 +2940,19 @@ Bool event_map_lookup ( /*OUT*/struct _EC** resEC,
 
 static void event_map_init ( void )
 {
-   tl_assert(!contextTree);
-   contextTree = VG_(OSetGen_Create)(
-                    0, 
-                    (Word(*)(const void *, const void*))RCEC__cmp_by_frames, 
-                    HG_(zalloc), "libhb.event_map_init.1 (context tree)",
-                    HG_(free)
-                 );
-   tl_assert(contextTree);
+   Word i;
+   tl_assert(!contextTab);
+   contextTab = HG_(zalloc)( "libhb.event_map_init.1 (context table)",
+                             N_RCEC_TAB * sizeof(RCEC*) );
+   tl_assert(contextTab);
+   for (i = 0; i < N_RCEC_TAB; i++)
+      contextTab[i] = NULL;
 
    tl_assert(!oldrefTree);
+   tl_assert(offsetof(OldRef,ea) == 0); /* prereq for unboxed cmps */
    oldrefTree = VG_(OSetGen_Create)(
-                   0, 
-                   (Word(*)(const void *, const void*))OldRef__cmp_by_EA,
+                   offsetof(OldRef,ea), /* == 0 */
+                   NULL, /* use unboxed cmp on OldRefs */
                    HG_(zalloc), "libhb.event_map_init.2 (oldref tree)", 
                    HG_(free)
                 );
@@ -2873,19 +2963,32 @@ static void event_map_init ( void )
    oldrefTreeN = 0;
 }
 
-static void event_map__check_reference_counts ( void )
+static void event_map__check_reference_counts ( Bool before )
 {
    RCEC*   rcec;
    OldRef* oldref;
    Word    i;
+   UWord   nEnts = 0;
 
-   /* Set the 'check' reference counts to zero */
-   VG_(OSetGen_ResetIter)( contextTree );
-   while ( (rcec = VG_(OSetGen_Next)( contextTree )) ) {
-      tl_assert(rcec->magic == RCEC_MAGIC);
-      tl_assert(rcec->rc > 0); /* unrefd nodes should be immediately rm'd */
-      rcec->rcX = 0;
+   /* Set the 'check' reference counts to zero.  Also, optionally
+      check that the real reference counts are non-zero.  We allow
+      these to fall to zero before a GC, but the GC must get rid of
+      all those that are zero, hence none should be zero after a
+      GC. */
+   for (i = 0; i < N_RCEC_TAB; i++) {
+      for (rcec = contextTab[i]; rcec; rcec = rcec->next) {
+         nEnts++;
+         tl_assert(rcec);
+         tl_assert(rcec->magic == RCEC_MAGIC);
+         if (!before)
+            tl_assert(rcec->rc > 0);
+         rcec->rcX = 0;
+      }
    }
+
+   /* check that the stats are sane */
+   tl_assert(nEnts == stats__ctxt_tab_curr);
+   tl_assert(stats__ctxt_tab_curr <= stats__ctxt_tab_max);
 
    /* visit all the referencing points, inc check ref counts */
    VG_(OSetGen_ResetIter)( oldrefTree );
@@ -2903,9 +3006,10 @@ static void event_map__check_reference_counts ( void )
    }
 
    /* compare check ref counts with actual */
-   VG_(OSetGen_ResetIter)( contextTree );
-   while ( (rcec = VG_(OSetGen_Next)( contextTree )) ) {
-      tl_assert(rcec->rc == rcec->rcX);
+   for (i = 0; i < N_RCEC_TAB; i++) {
+      for (rcec = contextTab[i]; rcec; rcec = rcec->next) {
+         tl_assert(rcec->rc == rcec->rcX);
+      }
    }
 }
 
@@ -2927,7 +3031,7 @@ static void event_map_maybe_GC ( void )
    tl_assert(oldrefTreeN == (UWord) VG_(OSetGen_Size)( oldrefTree ));
 
    /* Check the reference counts */
-   event_map__check_reference_counts();
+   event_map__check_reference_counts( True/*before*/ );
 
    /* Compute the distribution of generation values in the ref tree */
    /* genMap :: generation-number -> count-of-nodes-with-that-number */
@@ -3006,6 +3110,7 @@ static void event_map_maybe_GC ( void )
       for (j = 0; j < N_OLDREF_ACCS; j++) {
          if (ref->accs[j].rcec) {
             tl_assert(ref->accs[j].thr);
+            stats__ctxt_rcdec3++;
             ctxt__rcdec( ref->accs[j].rcec );
          } else {
             tl_assert(!ref->accs[j].thr);
@@ -3022,12 +3127,30 @@ static void event_map_maybe_GC ( void )
    oldrefTreeN = retained;
    oldrefGenIncAt = oldrefTreeN; /* start new gen right away */
 
-   /* Check the reference counts */
-   event_map__check_reference_counts();
+   /* Throw away all RCECs with zero reference counts */
+   for (i = 0; i < N_RCEC_TAB; i++) {
+      RCEC** pp = &contextTab[i];
+      RCEC*  p  = *pp;
+      while (p) {
+         if (p->rc == 0) {
+            *pp = p->next;
+            HG_(free)(p);
+            p = *pp;
+            tl_assert(stats__ctxt_tab_curr > 0);
+            stats__ctxt_tab_curr--;
+         } else {
+            pp = &p->next;
+            p = p->next;
+         }
+      }
+   }
 
-   if (0)
-   VG_(printf)("XXXX final sizes: oldrefTree %ld, contextTree %ld\n\n",
-               VG_(OSetGen_Size)(oldrefTree), VG_(OSetGen_Size)(contextTree));
+   /* Check the reference counts */
+   event_map__check_reference_counts( False/*after*/ );
+
+   //if (0)
+   //VG_(printf)("XXXX final sizes: oldrefTree %ld, contextTree %ld\n\n",
+   //            VG_(OSetGen_Size)(oldrefTree), VG_(OSetGen_Size)(contextTree));
 
 }
 
@@ -4203,9 +4326,20 @@ void libhb_shutdown ( Bool show_stats )
       );
       VG_(printf)( "   libhb: %lu entries in vts_set\n",
                    VG_(sizeFM)( vts_set ) );
-      //VG_(printf)( "   libhb: %lu entries in event_map\n", 
-      //             HG_(sizeFM)( event_map ) );
 
+      VG_(printf)("%s","\n");
+      VG_(printf)( "   libhb: ctxt__rcdec: 1=%lu(%lu eq), 2=%lu, 3=%lu\n",
+                   stats__ctxt_rcdec1, stats__ctxt_rcdec1_eq,
+                   stats__ctxt_rcdec2,
+                   stats__ctxt_rcdec3 );
+      VG_(printf)( "   libhb: ctxt__rcdec: calls %lu, discards %lu\n",
+                   stats__ctxt_rcdec_calls, stats__ctxt_rcdec_discards);
+      VG_(printf)( "   libhb: contextTab: %lu slots, %lu max ents\n",
+                   (UWord)N_RCEC_TAB,
+                   stats__ctxt_tab_curr );
+      VG_(printf)( "   libhb: contextTab: %lu queries, %lu cmps\n",
+                   stats__ctxt_tab_qs,
+                   stats__ctxt_tab_cmps );
 #if 0
       VG_(printf)("sizeof(AvlNode)     = %lu\n", sizeof(AvlNode));
       VG_(printf)("sizeof(WordBag)     = %lu\n", sizeof(WordBag));
