@@ -42,6 +42,8 @@
 #include "priv_misc.h"            /* self */
 
 
+/* Various functions rely on this returning zeroed memory.
+   alloc_DebugInfo is one of them. */
 void* ML_(dinfo_zalloc) ( HChar* cc, SizeT szB ) {
    void* v;
    vg_assert(szB > 0);

@@ -241,6 +241,8 @@ ML_(cmp_for_DiAddrRange_range) ( const void* keyV, const void* elemV );
 
 #define SEGINFO_STRCHUNKSIZE (64*1024)
 
+#define N_CFSI_SEARCH_CACHE 8
+
 struct _DebugInfo {
 
    /* Admin stuff */
@@ -362,11 +364,20 @@ struct _DebugInfo {
       records require any expression nodes, they are stored in
       cfsi_exprs. */
    DiCfSI* cfsi;
-   UInt    cfsi_used;
-   UInt    cfsi_size;
+   UWord   cfsi_used;
+   UWord   cfsi_size;
    Addr    cfsi_minavma;
    Addr    cfsi_maxavma;
    XArray* cfsi_exprs; /* XArray of CfiExpr */
+   /* Stack unwinding on amd64 causes a lot of searching in .cfsi to
+      find the DiCfSI record that covers a particular address.  To
+      speed up the searches we add a small (8-entry) cache containing
+      cached results from ML_(search_one_cfitab).  This speeds up the
+      searching by about a factor of 3 and overall increases the stack
+      unwind speed by about 50% on amd64-linux on large C++ apps. */
+   UWord cfsi_search_cache_used; /* 0 .. N_CFSI_SEARCH_CACHE */
+   struct { Addr aMin; Addr aMax; Word ix; }
+      cfsi_search_cache[N_CFSI_SEARCH_CACHE];
 
    /* Expandable arrays of characters -- the string table.  Pointers
       into this are stable (the arrays are not reallocated). */
@@ -464,7 +475,7 @@ extern Int ML_(search_one_loctab) ( struct _DebugInfo* di, Addr ptr );
 
 /* Find a CFI-table index containing the specified pointer, or -1 if
    not found.  Binary search.  */
-extern Int ML_(search_one_cfitab) ( struct _DebugInfo* di, Addr ptr );
+extern Word ML_(search_one_cfitab) ( struct _DebugInfo* di, Addr ptr );
 
 /* ------ Misc ------ */
 
