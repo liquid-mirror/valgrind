@@ -241,8 +241,6 @@ ML_(cmp_for_DiAddrRange_range) ( const void* keyV, const void* elemV );
 
 #define SEGINFO_STRCHUNKSIZE (64*1024)
 
-#define N_CFSI_SEARCH_CACHE 8
-
 struct _DebugInfo {
 
    /* Admin stuff */
@@ -300,7 +298,46 @@ struct _DebugInfo {
       in some obscure circumstances (to do with data/sdata/bss) it is
       possible for the mapping to be present but have zero size.
       Certainly text_ is mandatory on all platforms; not sure about
-      the rest though. */
+      the rest though. 
+
+      Comment_on_IMPORTANT_CFSI_REPRESENTATIONAL_INVARIANTS: we require that
+ 
+      either (rx_map_size == 0 && cfsi == NULL) (the degenerate case)
+
+      or the normal case, which is the AND of the following:
+      (0) rx_map_size > 0
+      (1) no two DebugInfos with rx_map_size > 0 
+          have overlapping [rx_map_avma,+rx_map_size)
+      (2) [cfsi_minavma,cfsi_maxavma] does not extend 
+          beyond [rx_map_avma,+rx_map_size); that is, the former is a 
+          subrange or equal to the latter.
+      (3) all DiCfSI in the cfsi array all have ranges that fall within
+          [rx_map_avma,+rx_map_size).
+      (4) all DiCfSI in the cfsi array are non-overlapping
+
+      The cumulative effect of these restrictions is to ensure that
+      all the DiCfSI records in the entire system are non overlapping.
+      Hence any address falls into either exactly one DiCfSI record,
+      or none.  Hence it is safe to cache the results of searches for
+      DiCfSI records.  This is the whole point of these restrictions.
+      The caching of DiCfSI searches is done in VG_(use_CF_info).  The
+      cache is flushed after any change to debugInfo_list.  DiCfSI
+      searches are cached because they are central to stack unwinding
+      on amd64-linux.
+
+      Where are these invariants imposed and checked?
+
+      They are checked after a successful read of debuginfo into
+      a DebugInfo*, in check_CFSI_related_invariants.
+
+      (1) is not really imposed anywhere.  We simply assume that the
+      kernel will not map the text segments from two different objects
+      into the same space.  Sounds reasonable.
+
+      (2) follows from (4) and (3).  It is ensured by canonicaliseCFI.
+      (3) is ensured by ML_(addDiCfSI).
+      (4) is ensured by canonicaliseCFI.
+   */
    /* .text */
    Bool   text_present;
    Addr   text_avma;
@@ -364,20 +401,11 @@ struct _DebugInfo {
       records require any expression nodes, they are stored in
       cfsi_exprs. */
    DiCfSI* cfsi;
-   UWord   cfsi_used;
-   UWord   cfsi_size;
+   UInt    cfsi_used;
+   UInt    cfsi_size;
    Addr    cfsi_minavma;
    Addr    cfsi_maxavma;
    XArray* cfsi_exprs; /* XArray of CfiExpr */
-   /* Stack unwinding on amd64 causes a lot of searching in .cfsi to
-      find the DiCfSI record that covers a particular address.  To
-      speed up the searches we add a small (8-entry) cache containing
-      cached results from ML_(search_one_cfitab).  This speeds up the
-      searching by about a factor of 3 and overall increases the stack
-      unwind speed by about 50% on amd64-linux on large C++ apps. */
-   UWord cfsi_search_cache_used; /* 0 .. N_CFSI_SEARCH_CACHE */
-   struct { Addr aMin; Addr aMax; Word ix; }
-      cfsi_search_cache[N_CFSI_SEARCH_CACHE];
 
    /* Expandable arrays of characters -- the string table.  Pointers
       into this are stable (the arrays are not reallocated). */
@@ -475,7 +503,7 @@ extern Int ML_(search_one_loctab) ( struct _DebugInfo* di, Addr ptr );
 
 /* Find a CFI-table index containing the specified pointer, or -1 if
    not found.  Binary search.  */
-extern Word ML_(search_one_cfitab) ( struct _DebugInfo* di, Addr ptr );
+extern Int ML_(search_one_cfitab) ( struct _DebugInfo* di, Addr ptr );
 
 /* ------ Misc ------ */
 

@@ -365,9 +365,6 @@ void ML_(addDiCfSI) ( struct _DebugInfo* di, DiCfSI* cfsi )
       ML_(ppDiCfSI)(di->cfsi_exprs, cfsi);
    }
 
-   /* invalidate the lookup cache */
-   di->cfsi_search_cache_used = 0;
-
    /* sanity */
    vg_assert(cfsi->len > 0);
    /* If this fails, the implication is you have a single procedure
@@ -1288,11 +1285,8 @@ static void canonicaliseCFI ( struct _DebugInfo* di )
          di->cfsi_maxavma = here_max;
    }
 
-   /* invalidate the lookup cache */
-   di->cfsi_search_cache_used = 0;
-
    if (di->trace_cfi)
-      VG_(printf)("canonicaliseCfiSI: %ld entries, %#lx .. %#lx\n",
+      VG_(printf)("canonicaliseCfiSI: %d entries, %#lx .. %#lx\n",
                   di->cfsi_used,
 	          di->cfsi_minavma, di->cfsi_maxavma);
 
@@ -1426,12 +1420,11 @@ Int ML_(search_one_loctab) ( struct _DebugInfo* di, Addr ptr )
 
 /* Find a CFI-table index containing the specified pointer, or -1
    if not found.  Binary search.  */
-__attribute__((noinline))
-static
-Word search_one_cfitab_WRK ( struct _DebugInfo* di, Addr ptr )
+
+Int ML_(search_one_cfitab) ( struct _DebugInfo* di, Addr ptr )
 {
    Addr a_mid_lo, a_mid_hi;
-   Word mid, size, 
+   Int  mid, size, 
         lo = 0, 
         hi = di->cfsi_used-1;
    while (True) {
@@ -1447,56 +1440,6 @@ Word search_one_cfitab_WRK ( struct _DebugInfo* di, Addr ptr )
       vg_assert(ptr >= a_mid_lo && ptr <= a_mid_hi);
       return mid;
    }
-}
-
-/* Find the CFI-table index containing the specified pointer,
-   or -1 if not found.  It uses search_one_cfitab_WRK to do the
-   real work, but caches the results so as to avoid calling
-   search_one_cfitab_WRK nost of the time. */
-Word ML_(search_one_cfitab) ( struct _DebugInfo* di, Addr ptr )
-{
-   static UWord nq = 0;
-   static UWord nm = 0;
-
-   Word i, w;
-
-   if (0 && 0 == (nq & 0x3FFFF))
-      VG_(printf)("ZZZZZ %lu qs %lu misses\n", nq,nm);
-
-   nq++;
-   /* Check the cache first */
-   for (i = 0; i < di->cfsi_search_cache_used; i++) {
-      if (di->cfsi_search_cache[i].aMin <= ptr
-          && ptr <= di->cfsi_search_cache[i].aMax) {
-         /* found it. Once in every 16 searches, move the found element
-            one step closer to the front. */
-         if (i > 0 && 0 == (nq & 0xF)) {
-            __typeof__(di->cfsi_search_cache[0]) tmp;
-            tmp = di->cfsi_search_cache[i-1];
-            di->cfsi_search_cache[i-1] = di->cfsi_search_cache[i];
-            di->cfsi_search_cache[i] = tmp;
-            i--;
-         }
-         return di->cfsi_search_cache[i].ix;
-      }
-   }
-   /* not found in the cache; do slow search */
-   nm++;
-   w = search_one_cfitab_WRK(di, ptr);
-   if (w >= 0) {
-      /* We got a result, so update the cache.  Slide all entries
-         along one and insert new one at [0]. */
-      for (i = N_CFSI_SEARCH_CACHE-1; i >= 1; i--) {
-         di->cfsi_search_cache[i] = di->cfsi_search_cache[i-1];
-      }
-      if (di->cfsi_search_cache_used < N_CFSI_SEARCH_CACHE)
-         di->cfsi_search_cache_used++;
-      tl_assert(di->cfsi[w].len > 0);
-      di->cfsi_search_cache[0].aMin = di->cfsi[w].base;
-      di->cfsi_search_cache[0].aMax = di->cfsi[w].base + di->cfsi[w].len - 1;
-      di->cfsi_search_cache[0].ix = w;
-   }
-   return w;
 }
 
 
