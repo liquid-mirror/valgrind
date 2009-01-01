@@ -99,7 +99,6 @@ void barrier_initialize(struct barrier_info* const p,
 {
   tl_assert(barrier != 0);
   tl_assert(barrier_type == pthread_barrier || barrier_type == gomp_barrier);
-  tl_assert(count > 0);
   tl_assert(p->a1 == barrier);
 
   p->cleanup           = (void(*)(DrdClientobj*))barrier_cleanup;
@@ -112,7 +111,8 @@ void barrier_initialize(struct barrier_info* const p,
   tl_assert(sizeof(((struct barrier_thread_info*)0)->tid) == sizeof(Word));
   tl_assert(sizeof(((struct barrier_thread_info*)0)->tid)
             >= sizeof(DrdThreadId));
-  p->oset = VG_(OSetGen_Create)(0, 0, VG_(malloc), VG_(free));
+  p->oset = VG_(OSetGen_Create)(0, 0, VG_(malloc), "drd.barrier.bi.1",
+                                      VG_(free));
 }
 
 /** Deallocate the memory allocated by barrier_initialize() and in p->oset. 
@@ -184,6 +184,16 @@ void barrier_init(const Addr barrier,
 
   tl_assert(barrier_type == pthread_barrier || barrier_type == gomp_barrier);
 
+  if (count == 0)
+  {
+    BarrierErrInfo bei = { barrier };
+    VG_(maybe_record_error)(VG_(get_running_tid)(),
+                            BarrierErr,
+                            VG_(get_IP)(VG_(get_running_tid)()),
+                            "pthread_barrier_init: 'count' argument is zero",
+                            &bei);
+  }
+
   if (! reinitialization && barrier_type == pthread_barrier)
   {
     p = barrier_get(barrier);
@@ -193,7 +203,7 @@ void barrier_init(const Addr barrier,
       VG_(maybe_record_error)(VG_(get_running_tid)(),
                               BarrierErr,
                               VG_(get_IP)(VG_(get_running_tid)()),
-                              "Barrier reinitializatoin",
+                              "Barrier reinitialization",
                               &bei);
     }
   }

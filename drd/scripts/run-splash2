@@ -54,12 +54,6 @@ function run_test {
   test_output="${1}-helgrind-4.out" \
   print_runtime_ratio ${avg4} ${stddev4} ${vsz4} ${vszdev4} $VG --tool=helgrind "$@" -p${psep}${p} "${test_args}"
 
-  if [ -e $HGDEV_VG ]; then
-    p=4
-    test_output="${1}-helgrind-hb-4.out" \
-    print_runtime_ratio ${avg4} ${stddev4} ${vsz4} ${vszdev4} $HGDEV_VG --tool=helgrind --pure-happens-before=yes --max-segment-set-size=999999 "$@" -p${psep}${p} "${test_args}"
-  fi
-
   echo ''
 
   rm -f "$tmp"
@@ -83,10 +77,6 @@ fi
 
 if [ "$VG" = "" ]; then
   VG="${DRD_SCRIPTS_DIR}/../../vg-in-place"
-fi
-
-if [ "$HGDEV_VG" = "" ]; then
-  HGDEV_VG="${DRD_SCRIPTS_DIR}/../../../valgrind-hgdev/vg-in-place"
 fi
 
 if [ ! -e "$VG" ]; then
@@ -113,10 +103,8 @@ fi
 # 15. Virtual memory size ratio for --tool=drd --check-stack-var=no -p4 versus -p4.
 # 16. Execution time ratio for --tool=helgrind -p4 versus -p4.
 # 17. Virtual memory size ratio for --tool=helgrind -p4 versus -p4.
-# 18. Execution time ratio for --tool=helgrind --pure-happens-before=yes -p4 versus -p4.
-# 19. Virtual memory size ratio for --tool=helgrind --pure-happens-before=yes -p4 versus -p4.
-# 20. Execution time ratio for Intel Thread Checker -p4 versus -p4.
-# 21. Execution time ratio for Intel Thread Checker -p4 versus -p4.
+# 18. Execution time ratio for Intel Thread Checker -p4 versus -p4.
+# 19. Execution time ratio for Intel Thread Checker -p4 versus -p4.
 #
 # Notes:
 # - Helgrind uses a granularity of one byte for data race detection, while
@@ -197,7 +185,7 @@ run_test ${SPLASH2}/codes/apps/ocean/contiguous_partitions/OCEAN -n258
 
 # Radiosity. Runs fine on a 32-bit OS, but deadlocks on a 64-bit OS. Not clear to me why.
 if [ $(uname -p) = "i686" ]; then
-psep=' ' run_test ${SPLASH2}/codes/apps/radiosity/RADIOSITY -batch -room -ae 5000.0 -en 0.050 -bf 0.10
+  psep=' ' run_test ${SPLASH2}/codes/apps/radiosity/RADIOSITY -batch -room -ae 5000.0 -en 0.050 -bf 0.10
 fi
 
 # Radix

@@ -22,6 +22,8 @@ noinst_SCRIPTS = \
 	filter_cmdline0 filter_linenos \
 	filter_fdleak filter_none_discards filter_stderr
 
+noinst_HEADERS = fdleak.h
+
 EXTRA_DIST = $(noinst_SCRIPTS) \
 	ansi.stderr.exp ansi.vgtest \
 	args.stderr.exp args.stdout.exp args.vgtest \
@@ -76,7 +78,9 @@ EXTRA_DIST = $(noinst_SCRIPTS) \
 	mq.stderr.exp mq.vgtest \
 	mremap.stderr.exp mremap.stdout.exp mremap.vgtest \
 	mremap2.stderr.exp \
-	mremap2.stdout.exp mremap2.stdout.exp2 mremap2.vgtest \
+	mremap2.stdout.exp mremap2.stdout.exp2 \
+	mremap2.stdout.exp-glibc28-amd64 \
+	mremap2.vgtest \
 	munmap_exe.stderr.exp munmap_exe.vgtest \
 	nestedfns.stderr.exp nestedfns.stdout.exp nestedfns.vgtest \
 	pending.stdout.exp pending.stderr.exp pending.vgtest \

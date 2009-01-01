@@ -8,16 +8,22 @@
 
 #define _GNU_SOURCE
 
-#include "config.h"
 #include <pthread.h>
 #include <stdio.h>   /* fprintf() */
 #include <stdlib.h>  /* atoi() */
+#include "../../config.h"
 
 
 /** Only gcc 4.1.0 and later have atomic builtins. */
-#ifndef HAVE_BUILTIN_ATOMIC
+#if defined(HAVE_BUILTIN_ATOMIC)
 static __inline__
-int __sync_add_and_fetch(int* p, int i)
+int sync_add_and_fetch(int* p, int i)
+{
+  return __sync_add_and_fetch(p, i);
+}
+#else
+static __inline__
+int sync_add_and_fetch(int* p, int i)
 {
   if (i == 0)
     return *p;
@@ -26,6 +32,7 @@ int __sync_add_and_fetch(int* p, int i)
 #endif
 
 
+#ifdef HAVE_BUILTIN_ATOMIC
 static int s_x = 0;
 /* s_dummy[] ensures that s_x and s_y are not in the same cache line. */
 static char s_dummy[512];
@@ -34,17 +41,18 @@ static int s_y = 0;
 static void* thread_func_1(void* arg)
 {
   s_y = 1;
-  (void) __sync_add_and_fetch(&s_x, 1);
+  (void) sync_add_and_fetch(&s_x, 1);
   return 0;
 }
 
 static void* thread_func_2(void* arg)
 {
-  while (__sync_add_and_fetch(&s_x, 0) == 0)
+  while (sync_add_and_fetch(&s_x, 0) == 0)
     ;
   fprintf(stderr, "y = %d\n", s_y);
   return 0;
 }
+#endif
 
 int main(int argc, char** argv)
 {
@@ -59,14 +67,14 @@ int main(int argc, char** argv)
   for (i = 0; i < n_threads; i++)
     pthread_join(tid[i], 0);
   fprintf(stderr, "Test finished.\n");
+
+  /* Suppress the compiler warning about s_dummy not being used. */
+  s_dummy[0]++;
 #else
   fprintf(stderr,
           "Sorry, but your compiler does not have built-in support for atomic"
           " operations.\n");
 #endif
-
-  /* Suppress the compiler warning about s_dummy not being used. */
-  s_dummy[0]++;
 
   return 0;
 }

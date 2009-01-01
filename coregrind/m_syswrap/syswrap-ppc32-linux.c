@@ -406,6 +406,8 @@ DECL_TEMPLATE(ppc32_linux, sys_sigreturn);
 DECL_TEMPLATE(ppc32_linux, sys_rt_sigreturn);
 DECL_TEMPLATE(ppc32_linux, sys_sigaction);
 DECL_TEMPLATE(ppc32_linux, sys_sigsuspend);
+DECL_TEMPLATE(ppc32_linux, sys_spu_create);
+DECL_TEMPLATE(ppc32_linux, sys_spu_run);
 
 PRE(sys_socketcall)
 {
@@ -1449,6 +1451,27 @@ PRE(sys_sigsuspend)
    PRE_REG_READ1(int, "sigsuspend", vki_old_sigset_t, mask);
 }
 
+PRE(sys_spu_create)
+{
+   PRE_MEM_RASCIIZ("stat64(filename)", ARG1);
+}
+POST(sys_spu_create)
+{
+   vg_assert(SUCCESS);
+}
+
+PRE(sys_spu_run)
+{
+   *flags |= SfMayBlock;
+   if (ARG2 != 0)
+      PRE_MEM_WRITE("npc", ARG2, sizeof(unsigned int));
+   PRE_MEM_READ("event", ARG3, sizeof(unsigned int));
+}
+POST(sys_spu_run)
+{
+   if (ARG2 != 0)
+      POST_MEM_WRITE(ARG2, sizeof(unsigned int));
+}
 
 #undef PRE
 #undef POST
@@ -1687,13 +1710,12 @@ const SyscallTableEntry ML_(syscall_table)[] = {
    LINXY(__NR_rt_sigqueueinfo,   sys_rt_sigqueueinfo),   // 177
    LINX_(__NR_rt_sigsuspend,     sys_rt_sigsuspend),     // 178
 
-   GENXY(__NR_pread64,           sys_pread64),           // 179
-   GENX_(__NR_pwrite64,          sys_pwrite64),          // 180
+   GENXY(__NR_pread64,           sys_pread64_on32bitplat),  // 179
+   GENX_(__NR_pwrite64,          sys_pwrite64_on32bitplat), // 180
    GENX_(__NR_chown,             sys_chown),             // 181
    GENXY(__NR_getcwd,            sys_getcwd),            // 182
-//..    LINXY(__NR_capget,            sys_capget),            // 183
-//.. 
-//..    LINX_(__NR_capset,            sys_capset),            // 184
+   LINXY(__NR_capget,            sys_capget),            // 183
+   LINX_(__NR_capset,            sys_capset),            // 184
    GENXY(__NR_sigaltstack,       sys_sigaltstack),       // 185
    LINXY(__NR_sendfile,          sys_sendfile),          // 186
 //..    GENXY(__NR_getpmsg,           sys_getpmsg),           // 187
@@ -1801,12 +1823,14 @@ const SyscallTableEntry ML_(syscall_table)[] = {
 /* Number 270 is reserved for sys_request_key */
 /* Number 271 is reserved for sys_keyctl */
 /* Number 272 is reserved for sys_waitid */
-/* Number 273 is reserved for sys_ioprio_set */
-/* Number 274 is reserved for sys_ioprio_get */
+   LINX_(__NR_ioprio_set,        sys_ioprio_set),         // 273
+   LINX_(__NR_ioprio_get,        sys_ioprio_get),         // 274
 
    LINX_(__NR_inotify_init,  sys_inotify_init),               // 275
    LINX_(__NR_inotify_add_watch,  sys_inotify_add_watch),     // 276
    LINX_(__NR_inotify_rm_watch,   sys_inotify_rm_watch),      // 277
+   PLAXY(__NR_spu_run,            sys_spu_run),               // 278
+   PLAX_(__NR_spu_create,         sys_spu_create),            // 279
 
    LINXY(__NR_openat,            sys_openat),            // 286
    LINX_(__NR_mkdirat,           sys_mkdirat),           // 287
@@ -1835,6 +1859,12 @@ const SyscallTableEntry ML_(syscall_table)[] = {
 //   LINXY(__NR_subpage_prot,       sys_ni_syscall),       // 310
    LINXY(__NR_timerfd_settime,   sys_timerfd_settime),  // 311
    LINXY(__NR_timerfd_gettime,   sys_timerfd_gettime),  // 312
+   //   (__NR_signalfd4,         sys_ni_syscall)        // 313
+   LINX_(__NR_eventfd2,          sys_eventfd2),         // 314
+   //   (__NR_epoll_create1,     sys_ni_syscall)        // 315
+   //   (__NR_dup3,              sys_ni_syscall)        // 316
+   LINXY(__NR_pipe2,             sys_pipe2)             // 317
+   //   (__NR_inotify_init1,     sys_ni_syscall)        // 318
 };
 
 const UInt ML_(syscall_table_size) = 

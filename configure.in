@@ -8,7 +8,7 @@
 ##------------------------------------------------------------##
 
 # Process this file with autoconf to produce a configure script.
-AC_INIT(Valgrind, 3.4.0.SVN, valgrind-users@lists.sourceforge.net)
+AC_INIT(Valgrind, 3.4.0.RC1, valgrind-users@lists.sourceforge.net)
 AC_CONFIG_SRCDIR(coregrind/m_main.c)
 AM_CONFIG_HEADER(config.h)
 AM_INIT_AUTOMAKE([foreign])
@@ -76,7 +76,7 @@ fi
 AC_PATH_PROG(PERL, perl)
 
 # figure out where gdb lives
-AC_PATH_PROG(GDB, gdb)
+AC_PATH_PROG(GDB, gdb, "/no/gdb/was/found/at/configure/time")
 AC_DEFINE_UNQUOTED(GDB_PATH, "$GDB", [path to GDB])
 
 # some older automake's don't have it so try something on our own
@@ -126,15 +126,22 @@ case "${gcc_version}" in
 esac
 
 
-# Checks for the platform, with the aim of setting VG_ARCH.  Note
-# that VG_ARCH must be set to reflect the most that this CPU can
-# do: for example if it is a 64-bit capable PowerPC, then it must
-# be set to ppc64 and not ppc32.  Ditto for amd64.
+# Checks for the platform, with the aim of setting VG_ARCH_MAX.  Note
+# that VG_ARCH_MAX must be set to reflect the most that this CPU can
+# do: for example if it is a 64-bit capable PowerPC, then it must be
+# set to ppc64 and not ppc32.  Ditto for amd64.
+#
+# We will later in this file set VG_ARCH_PRI, which is the arch for
+# the primary target.  For example, suppose we do a build on an amd64
+# machine, but --enable-only32bit has been requested.  Then
+# VG_ARCH_MAX will be "amd64" since that reflects the most that this
+# cpu can do, but VG_ARCH_PRI will be "x86", since that reflects the
+# arch corresponding to the primary build (VG_PLATFORM_PRI).
 
 AC_CANONICAL_HOST
 
 AC_MSG_CHECKING([for a supported CPU])
-AC_SUBST(VG_ARCH)
+AC_SUBST(VG_ARCH_MAX)
 
 AC_SUBST(VG_ARCH_ALL)
 VG_ARCH_ALL="amd64 ppc32 ppc64 x86"
@@ -144,14 +151,14 @@ AC_SUBST(VALT_LOAD_ADDRESS)
 case "${host_cpu}" in
      i?86) 
 	AC_MSG_RESULT([ok (${host_cpu})])
-        VG_ARCH="x86"
+        VG_ARCH_MAX="x86"
         valt_load_address_normal="0x38000000"
         valt_load_address_inner="0x28000000"
         ;;
 
      x86_64) 
         AC_MSG_RESULT([ok (${host_cpu})])
-        VG_ARCH="amd64"
+        VG_ARCH_MAX="amd64"
         valt_load_address_normal="0x38000000"
         valt_load_address_inner="0x28000000"
         ;;
@@ -159,7 +166,7 @@ case "${host_cpu}" in
      powerpc64)
 #       This value can only happen on Linux, not on AIX
         AC_MSG_RESULT([ok (${host_cpu})])
-        VG_ARCH="ppc64"
+        VG_ARCH_MAX="ppc64"
         valt_load_address_normal="0x38000000"
         valt_load_address_inner="0x28000000"
         ;;
@@ -170,10 +177,10 @@ case "${host_cpu}" in
         AC_MSG_RESULT([ok (${host_cpu})])
 	case "${host_os}" in
 	   aix5.*)
-	      VG_ARCH="ppc64"
+	      VG_ARCH_MAX="ppc64"
               ;;
            *)
-              VG_ARCH="ppc32"
+              VG_ARCH_MAX="ppc32"
               ;;
         esac
         valt_load_address_normal="0x38000000"
@@ -287,7 +294,7 @@ esac
 # supports building 32 bit programs and disable 32 bit support if it
 # does not support building 32 bit programs
 
-case "$VG_ARCH-$VG_OS" in
+case "$VG_ARCH_MAX-$VG_OS" in
      amd64-linux|ppc64-linux)
         AC_MSG_CHECKING([for 32 bit build support])
         safe_CFLAGS=$CFLAGS
@@ -317,12 +324,23 @@ fi
 # possible.  The system will also be built for this target, but not
 # the regression or performance tests.
 #
+# Also establish VG_ARCH_PRI, which is the arch for the primary
+# build target.  The various makefiles building regression tests
+# sometimes need to see this.
 AC_MSG_CHECKING([for a supported CPU/OS combination])
 
 AC_SUBST(VG_PLATFORM_PRI)
 AC_SUBST(VG_PLATFORM_SEC)
+AC_SUBST(VG_ARCH_PRI)
 
-case "$VG_ARCH-$VG_OS" in
+# By default, the primary arch is the same as the "max" arch, as
+# commented above (at the definition of VG_ARCH_MAX).  We may choose
+# to downgrade it in the big case statement just below here, in the
+# case where we're building on a 64 bit machine but have been
+# requested only to do a 32 bit build.
+VG_ARCH_PRI=$VG_ARCH_MAX
+
+case "$VG_ARCH_MAX-$VG_OS" in
      x86-linux)
 	VG_PLATFORM_PRI="X86_LINUX"
 	VG_PLATFORM_SEC=""
@@ -335,6 +353,7 @@ case "$VG_ARCH-$VG_OS" in
 	elif test x$vg_cv_only32bit = xyes; then
 	   VG_PLATFORM_PRI="X86_LINUX"
 	   VG_PLATFORM_SEC=""
+	   VG_ARCH_PRI="x86"
 	else
 	   VG_PLATFORM_PRI="AMD64_LINUX"
 	   VG_PLATFORM_SEC="X86_LINUX"
@@ -353,6 +372,7 @@ case "$VG_ARCH-$VG_OS" in
 	elif test x$vg_cv_only32bit = xyes; then
 	   VG_PLATFORM_PRI="PPC32_AIX5"
 	   VG_PLATFORM_SEC=""
+	   VG_ARCH_PRI="ppc32"
 	else
 	   VG_PLATFORM_PRI="PPC64_AIX5"
 	   VG_PLATFORM_SEC="PPC32_AIX5"
@@ -366,6 +386,7 @@ case "$VG_ARCH-$VG_OS" in
 	elif test x$vg_cv_only32bit = xyes; then
 	   VG_PLATFORM_PRI="PPC32_LINUX"
 	   VG_PLATFORM_SEC=""
+	   VG_ARCH_PRI="ppc32"
 	else
 	   VG_PLATFORM_PRI="PPC64_LINUX"
 	   VG_PLATFORM_SEC="PPC32_LINUX"
@@ -497,6 +518,16 @@ AC_EGREP_CPP([GLIBC_28], [
 ],
 GLIBC_VERSION="2.8")
 
+AC_EGREP_CPP([GLIBC_29], [
+#include <features.h>
+#ifdef __GNU_LIBRARY__
+ #if (__GLIBC__ == 2 && __GLIBC_MINOR__ == 9)
+  GLIBC_29
+ #endif
+#endif
+],
+GLIBC_VERSION="2.9")
+
 AC_EGREP_CPP([AIX5_LIBC], [
 #include <standards.h>
 #if defined(_AIXVERSION_510) || defined(_AIXVERSION_520) || defined(_AIXVERSION_530)
@@ -560,7 +591,13 @@ case "${GLIBC_VERSION}" in
 	DEFAULT_SUPP="glibc-2.34567-NPTL-helgrind.supp ${DEFAULT_SUPP}"
 	DEFAULT_SUPP="glibc-2.X-drd.supp ${DEFAULT_SUPP}"
 	;;
-
+     2.9)
+	AC_MSG_RESULT(2.9 family)
+	AC_DEFINE([GLIBC_2_9], 1, [Define to 1 if you're using glibc 2.9.x])
+	DEFAULT_SUPP="glibc-2.X.supp ${DEFAULT_SUPP}"
+	DEFAULT_SUPP="glibc-2.34567-NPTL-helgrind.supp ${DEFAULT_SUPP}"
+	DEFAULT_SUPP="glibc-2.X-drd.supp ${DEFAULT_SUPP}"
+	;;
      aix5)
 	AC_MSG_RESULT(AIX 5.1 or 5.2 or 5.3)
 	AC_DEFINE([AIX5_LIBC], 1, [Define to 1 if you're using AIX 5.1 or 5.2 or 5.3])
@@ -569,7 +606,7 @@ case "${GLIBC_VERSION}" in
 
      *)
 	AC_MSG_RESULT(unsupported version)
-	AC_MSG_ERROR([Valgrind requires glibc version 2.2 - 2.8])
+	AC_MSG_ERROR([Valgrind requires glibc version 2.2 - 2.9])
 	AC_MSG_ERROR([or AIX 5.1 or 5.2 or 5.3 GLIBC_VERSION])
 	;;
 esac
@@ -583,6 +620,9 @@ AC_SUBST(GLIBC_VERSION)
 # add the suppressions antidisirregardless.
 DEFAULT_SUPP="xfree-4.supp ${DEFAULT_SUPP}"
 DEFAULT_SUPP="xfree-3.supp ${DEFAULT_SUPP}"
+
+# Add glibc and X11 suppressions for exp-ptrcheck
+DEFAULT_SUPP="exp-ptrcheck.supp ${DEFAULT_SUPP}"
 
 
 # Check for CLOCK_MONOTONIC
@@ -687,6 +727,26 @@ AC_MSG_RESULT([no])
 ])
 
 
+# Check whether FILE has a member called _lock and whether it's a pointer.
+
+AC_MSG_CHECKING([for FILE::_lock])
+
+AC_TRY_COMPILE(
+[
+  #include <stdio.h>
+], [
+  void *p;
+  p = stdout->_lock;
+  return 0;
+], [
+AC_MSG_RESULT([yes])
+AC_DEFINE([HAVE_LIBC_FILE_LOCK], 1,
+          [Define to 1 if FILE has a member called _lock.])
+], [
+AC_MSG_RESULT([no])
+])
+
+
 # Check whether pthread_mutex_t has a member called __m_kind.
 
 AC_MSG_CHECKING([for pthread_mutex_t::__m_kind])
@@ -723,35 +783,6 @@ AC_DEFINE([HAVE_PTHREAD_MUTEX_T__DATA__KIND], 1,
 ], [
 AC_MSG_RESULT([no])
 ])
-
-
-# does this compiler support -fopenmp, does it have the include file
-# <omp.h> and does it have libgomp ?
-
-AC_MSG_CHECKING([for OpenMP])
-
-safe_CFLAGS=$CFLAGS
-CFLAGS="-fopenmp"
-
-AC_LINK_IFELSE(
-[
-#include <omp.h> 
-int main(int argc, char** argv)
-{
-  omp_set_dynamic(0);
-  return 0;
-}
-],
-[
-ac_have_openmp=yes
-AC_MSG_RESULT([yes])
-], [
-ac_have_openmp=no
-AC_MSG_RESULT([no])
-])
-CFLAGS=$safe_CFLAGS
-
-AM_CONDITIONAL([HAVE_OPENMP], [test x$ac_have_openmp = xyes])
 
 
 # does this compiler support -maltivec and does it have the include file
@@ -1133,7 +1164,8 @@ AC_MSG_CHECKING([if gcc supports __sync_bool_compare_and_swap])
 AC_TRY_LINK(,
 [
   int variable = 1;
-  return __sync_bool_compare_and_swap(&variable, 1, 2) ? 1 : 0
+  return (__sync_bool_compare_and_swap(&variable, 1, 2)
+         && __sync_add_and_fetch(&variable, 1) ? 1 : 0)
 ],
 [
   AC_MSG_RESULT([yes])
@@ -1276,6 +1308,7 @@ AC_CHECK_FUNCS([     \
         memset       \
         mkdir        \
         ppoll        \
+        pthread_condattr_setclock \
         semtimedop   \
         signalfd     \
         syscall      \
@@ -1391,6 +1424,22 @@ CFLAGS=$saved_CFLAGS
 AM_CONDITIONAL(BUILD_MPIWRAP_SEC, test x$ac_have_mpi2_sec = xyes)
 
 
+# There now follow some tests for QtCore, Boost, and OpenMP.  These
+# tests are present because Drd has some regression tests that use
+# these packages.  All regression test programs all compiled only
+# for the primary target.  And so it is important that the configure
+# checks that follow, use the correct -m32 or -m64 flag for the
+# primary target (called $mflag_primary).  Otherwise, we can end up
+# in a situation (eg) where, on amd64-linux, the test for Boost checks
+# for usable 64-bit Boost facilities, but because we are doing a 32-bit
+# only build (meaning, the primary target is x86-linux), the build
+# of the regtest programs that use Boost fails, because they are 
+# build as 32-bit (IN THIS EXAMPLE).
+#
+# Hence: ALWAYS USE $mflag_primary FOR CONFIGURE TESTS FOR FACILITIES
+# NEEDED BY THE REGRESSION TEST PROGRAMS.
+
+
 # The test below verifies whether the QtCore package been installed.
 # This test works as follows:
 # - If pkg-config was not installed at the time autogen.sh was run,
@@ -1414,7 +1463,22 @@ ifdef(
     [QtCore],
     [
       PKG_CHECK_MODULES([QTCORE], [QtCore])
-      ac_have_qtcore=yes
+      # Paranoia: don't trust the result reported by pkg-config, but when
+      # pkg-config reports that QtCore has been found, verify whether linking
+      # programs with QtCore succeeds.
+      AC_LANG(C++)
+      safe_CXXFLAGS="${CXXFLAGS}"
+      CXXFLAGS="${QTCORE_CFLAGS} ${QTCORE_LIBS} $mflag_primary"
+      AC_TRY_LINK(
+        [#include <QMutex>],
+        [QMutex Mutex;],
+        [ac_have_qtcore=yes],
+        [
+          AC_MSG_WARN([Although pkg-config detected Qt4, linking Qt4 programs fails. Skipping Qt4.])
+          ac_have_qtcore=no
+        ]
+        )
+      CXXFLAGS="${safe_CXXFLAGS}"
     ],
     [
       ac_have_qtcore=no
@@ -1435,7 +1499,7 @@ if test x$ac_have_qtcore = xyes; then
   AC_MSG_CHECKING([for Qt4 QMutex::tryLock(int)])
   AC_LANG(C++)
   safe_CXXFLAGS="${CXXFLAGS}"
-  CXXFLAGS="${pkg_cv_QTCORE_CFLAGS}"
+  CXXFLAGS="${QTCORE_CFLAGS} $mflag_primary"
   AC_TRY_COMPILE([
     #include <QtCore/QMutex>
   ],
@@ -1455,6 +1519,71 @@ if test x$ac_have_qtcore = xyes; then
   CXXFLAGS="${safe_CXXFLAGS}"
   AC_LANG(C)
 fi
+
+
+# Check whether the boost library 1.35 or later has been installed.
+# The Boost.Threads library has undergone a major rewrite in version 1.35.0.
+
+AC_MSG_CHECKING([for boost])
+
+AC_LANG(C++)
+safe_CXXFLAGS=$CXXFLAGS
+CXXFLAGS="-lboost_thread-mt $mflag_primary"
+
+AC_LINK_IFELSE(
+[
+#include <boost/thread.hpp>
+static void thread_func(void)
+{ }
+int main(int argc, char** argv)
+{
+  boost::thread t(thread_func);
+  return 0;
+}
+],
+[
+ac_have_boost_1_35=yes
+AC_SUBST([BOOST_CFLAGS], [])
+AC_SUBST([BOOST_LIBS], ["${CXXFLAGS}"])
+AC_MSG_RESULT([yes])
+], [
+ac_have_boost_1_35=no
+AC_MSG_RESULT([no])
+])
+
+CXXFLAGS=$safe_CXXFLAGS
+AC_LANG(C)
+
+AM_CONDITIONAL([HAVE_BOOST_1_35], [test x$ac_have_boost_1_35 = xyes])
+
+
+# does this compiler support -fopenmp, does it have the include file
+# <omp.h> and does it have libgomp ?
+
+AC_MSG_CHECKING([for OpenMP])
+
+safe_CFLAGS=$CFLAGS
+CFLAGS="-fopenmp"
+
+AC_LINK_IFELSE(
+[
+#include <omp.h> 
+int main(int argc, char** argv)
+{
+  omp_set_dynamic(0);
+  return 0;
+}
+],
+[
+ac_have_openmp=yes
+AC_MSG_RESULT([yes])
+], [
+ac_have_openmp=no
+AC_MSG_RESULT([no])
+])
+CFLAGS=$safe_CFLAGS
+
+AM_CONDITIONAL([HAVE_OPENMP], [test x$ac_have_openmp = xyes])
 
 
 # -------------------- ok.  We're done. --------------------
@@ -1518,6 +1647,9 @@ AC_OUTPUT(
    exp-omega/Makefile
    exp-omega/tests/Makefile
    exp-omega/docs/Makefile
+   exp-ptrcheck/Makefile
+   exp-ptrcheck/tests/Makefile
+   exp-ptrcheck/docs/Makefile
    drd/Makefile
    drd/docs/Makefile
    drd/scripts/download-and-build-splash2
@@ -1526,9 +1658,12 @@ AC_OUTPUT(
 
 cat<<EOF
 
-   Primary build target: ${VG_PLATFORM_PRI}
- Secondary build target: ${VG_PLATFORM_SEC}
-     Default supp files: ${DEFAULT_SUPP}
+ configure.in: VG_ARCH_MAX = ${VG_ARCH_MAX}
+ configure.in: VG_ARCH_PRI = ${VG_ARCH_PRI}
+
+       Primary build target: ${VG_PLATFORM_PRI}
+     Secondary build target: ${VG_PLATFORM_SEC}
+         Default supp files: ${DEFAULT_SUPP}
 
 EOF
 

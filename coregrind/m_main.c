@@ -133,6 +133,9 @@ static void usage_NORETURN ( Bool debug_help )
 "                              only for code found in stacks, or all [stack]\n"
 "    --kernel-variant=variant1,variant2,...  known variants: bproc [none]\n"
 "                              handle non-standard kernel variants\n"
+"    --read-var-info=yes|no    read debug info on stack and global variables\n"
+"                              and use it to print better error messages in\n"
+"                              tools that make use of it (Memcheck, Helgrind)\n"
 "\n"
 "  user options for Valgrind tools that report errors:\n"
 "    --xml=yes                 all output is in XML (some tools only)\n"
@@ -170,9 +173,9 @@ static void usage_NORETURN ( Bool debug_help )
 "    --debug-dump=frames       mimic /usr/bin/readelf --debug-dump=frames\n"
 "    --trace-redir=no|yes      show redirection details? [no]\n"
 "    --trace-sched=no|yes      show thread scheduler details? [no]\n"
+"    --profile-heap=no|yes     profile Valgrind's own space use\n"
 "    --wait-for-gdb=yes|no     pause on startup to wait for gdb attach\n"
 "    --sym-offsets=yes|no      show syms in form 'name+offset' ? [no]\n"
-"    --read-var-info=yes|no    read variable type & location info? [no]\n"
 "    --command-line-only=no|yes  only use command line options [no]\n"
 "\n"
 "    --vex-iropt-verbosity             0 .. 9 [0]\n"
@@ -210,11 +213,7 @@ static void usage_NORETURN ( Bool debug_help )
 "  tool's start-up message for more information.\n"
 "\n";
 
-#  if defined(GDB_PATH)
    Char* gdb_path = GDB_PATH;
-#  else
-   Char* gdb_path = "/no/gdb/was/found/at/configure/time";
-#  endif
 
    // Ensure the message goes to stdout
    VG_(clo_log_fd) = 1;
@@ -230,7 +229,7 @@ static void usage_NORETURN ( Bool debug_help )
 	 VG_(printf)("    (none)\n");
    }
    if (debug_help) {
-      VG_(printf)(usage2);
+      VG_(printf)("%s", usage2);
 
       if (VG_(details).name) {
          VG_(printf)("  debugging options for %s:\n", VG_(details).name);
@@ -364,7 +363,7 @@ static Bool main_process_cmd_line_options( UInt* client_auxv,
             //   wouldn't disappear on them.)
             if (0)
                VG_(printf)("tool-specific arg: %s\n", arg);
-            arg = VG_(strdup)(arg + toolname_len + 1);
+            arg = VG_(strdup)("main.mpclo.1", arg + toolname_len + 1);
             arg[0] = '-';
             arg[1] = '-';
 
@@ -419,7 +418,6 @@ static Bool main_process_cmd_line_options( UInt* client_auxv,
       else VG_BOOL_CLO(arg, "--trace-redir",      VG_(clo_trace_redir))
 
       else VG_BOOL_CLO(arg, "--trace-syscalls",   VG_(clo_trace_syscalls))
-      else VG_BOOL_CLO(arg, "--trace-pthreads",   VG_(clo_trace_pthreads))
       else VG_BOOL_CLO(arg, "--wait-for-gdb",     VG_(clo_wait_for_gdb))
       else VG_STR_CLO (arg, "--db-command",       VG_(clo_db_command))
       else VG_STR_CLO (arg, "--sim-hints",        VG_(clo_sim_hints))
@@ -438,6 +436,12 @@ static Bool main_process_cmd_line_options( UInt* client_auxv,
          VG_(clo_smc_check) = Vg_SmcStack;
       else if (VG_CLO_STREQ(arg, "--smc-check=all"))
          VG_(clo_smc_check) = Vg_SmcAll;
+
+      else if (VG_CLO_STREQ(arg, "--profile-heap=no"))
+         ; /* We already handled it right at the top of valgrind_main.
+              Just ignore. */
+      else if (VG_CLO_STREQ(arg, "--profile-heap=yes"))
+         ; /* ditto */
 
       else VG_STR_CLO (arg, "--kernel-variant",   VG_(clo_kernel_variant))
 
@@ -557,15 +561,6 @@ static Bool main_process_cmd_line_options( UInt* client_auxv,
    if (VG_(clo_verbosity) < 0)
       VG_(clo_verbosity) = 0;
 
-   if (VG_(clo_db_attach) && VG_(clo_trace_children)) {
-      VG_(message)(Vg_UserMsg, "");
-      VG_(message)(Vg_UserMsg, 
-         "--db-attach=yes conflicts with --trace-children=yes");
-      VG_(message)(Vg_UserMsg, 
-         "Please choose one or the other, but not both.");
-      VG_(err_bad_option)("--db-attach=yes and --trace-children=yes");
-   }
-
    if (VG_(clo_gen_suppressions) > 0 && 
        !VG_(needs).core_errors && !VG_(needs).tool_errors) {
       VG_(message)(Vg_UserMsg, 
@@ -595,6 +590,8 @@ static Bool main_process_cmd_line_options( UInt* client_auxv,
       VG_(clo_track_fds) = False;
       /* Disable timestamped output */
       VG_(clo_time_stamp) = False;
+      /* Disable heap profiling, since that prints lots of stuff. */
+      VG_(clo_profile_heap) = False;
       /* Also, we want to set options for the leak checker, but that
          will have to be done in Memcheck's flag-handling code, not
          here. */
@@ -710,7 +707,7 @@ static Bool main_process_cmd_line_options( UInt* client_auxv,
          the default one. */
       static const Char default_supp[] = "default.supp";
       Int len = VG_(strlen)(VG_(libdir)) + 1 + sizeof(default_supp);
-      Char *buf = VG_(arena_malloc)(VG_AR_CORE, len);
+      Char *buf = VG_(arena_malloc)(VG_AR_CORE, "main.mpclo.2", len);
       VG_(sprintf)(buf, "%s/%s", VG_(libdir), default_supp);
       VG_(clo_suppressions)[VG_(clo_n_suppressions)] = buf;
       VG_(clo_n_suppressions)++;
@@ -1125,6 +1122,11 @@ static IICreateImageInfo   the_iicii;
 static IIFinaliseImageInfo the_iifii;
 
 
+/* A simple pair structure, used for conveying debuginfo handles to
+   calls to VG_TRACK(new_mem_startup, ...). */
+typedef  struct { Addr a; ULong ull; }  Addr_n_ULong;
+
+
 /* --- Forwards decls to do with shutdown --- */
 
 static void final_tidyup(ThreadId tid); 
@@ -1151,7 +1153,7 @@ static Addr* get_seg_starts ( /*OUT*/Int* n_acquired )
 
    n_starts = 1;
    while (True) {
-      starts = VG_(malloc)( n_starts * sizeof(Addr) );
+      starts = VG_(malloc)( "main.gss.1", n_starts * sizeof(Addr) );
       if (starts == NULL)
          break;
       r = VG_(am_get_segment_starts)( starts, n_starts );
@@ -1185,6 +1187,7 @@ Int valgrind_main ( Int argc, HChar **argv, HChar **envp )
    Int     loglevel, i;
    Bool    logging_to_fd;
    struct vki_rlimit zero = { 0, 0 };
+   XArray* addr2dihandle = NULL;
 
    //============================================================
    //
@@ -1214,6 +1217,10 @@ Int valgrind_main ( Int argc, HChar **argv, HChar **envp )
          break;
       if (VG_STREQ(argv[i], "-d")) 
          loglevel++;
+      if (VG_STREQ(argv[i], "--profile-heap=yes"))
+         VG_(clo_profile_heap) = True;
+      if (VG_STREQ(argv[i], "--profile-heap=no"))
+         VG_(clo_profile_heap) = False;
    }
 
    /* ... and start the debug logger.  Now we can safely emit logging
@@ -1330,7 +1337,7 @@ Int valgrind_main ( Int argc, HChar **argv, HChar **envp )
    //   free pair right now to check that nothing is broken.
    //--------------------------------------------------------------
    VG_(debugLog)(1, "main", "Starting the dynamic memory manager\n");
-   { void* p = VG_(malloc)( 12345 );
+   { void* p = VG_(malloc)( "main.vm.1", 12345 );
      if (p) VG_(free)( p );
    }
    VG_(debugLog)(1, "main", "Dynamic memory manager is running\n");
@@ -1340,6 +1347,12 @@ Int valgrind_main ( Int argc, HChar **argv, HChar **envp )
    // Dynamic memory management is now available.
    //
    //============================================================
+
+   //--------------------------------------------------------------
+   // Initialise m_debuginfo
+   //  p: dynamic memory allocation
+   VG_(debugLog)(1, "main", "Initialise m_debuginfo\n");
+   VG_(di_initialise)();
 
    //--------------------------------------------------------------
    // Look for alternative libdir                                  
@@ -1711,11 +1724,30 @@ Int valgrind_main ( Int argc, HChar **argv, HChar **envp )
    //   p: setup_code_redirect_table [so that redirs can be recorded]
    //   p: mallocfree
    //   p: probably: setup fds and process CLOs, so that logging works
+   //   p: initialise m_debuginfo
+   //
+   // While doing this, make a note of the debuginfo-handles that
+   // come back from VG_(di_notify_mmap)/VG_(di_aix5_notify_segchange).
+   // Later, in "Tell the tool about the initial client memory permissions"
+   // (just below) we can then hand these handles off to the tool in
+   // calls to VG_TRACK(new_mem_startup, ...).  This gives the tool the
+   // opportunity to make further queries to m_debuginfo before the
+   // client is started, if it wants.  We put this information into an
+   // XArray, each handle along with the associated segment start address,
+   // and search the XArray for the handles later, when calling
+   // VG_TRACK(new_mem_startup, ...).
    //--------------------------------------------------------------
    VG_(debugLog)(1, "main", "Load initial debug info\n");
+
+   tl_assert(!addr2dihandle);
+   addr2dihandle = VG_(newXA)( VG_(malloc), "main.vm.2",
+                               VG_(free), sizeof(Addr_n_ULong) );
+   tl_assert(addr2dihandle);
+
 #  if defined(VGO_linux)
    { Addr* seg_starts;
      Int   n_seg_starts;
+     Addr_n_ULong anu;
 
      seg_starts = get_seg_starts( &n_seg_starts );
      vg_assert(seg_starts && n_seg_starts >= 0);
@@ -1723,19 +1755,27 @@ Int valgrind_main ( Int argc, HChar **argv, HChar **envp )
      /* show them all to the debug info reader.  allow_SkFileV has to
         be True here so that we read info from the valgrind executable
         itself. */
-     for (i = 0; i < n_seg_starts; i++)
-        VG_(di_notify_mmap)( seg_starts[i], True/*allow_SkFileV*/ );
+     for (i = 0; i < n_seg_starts; i++) {
+        anu.ull = VG_(di_notify_mmap)( seg_starts[i], True/*allow_SkFileV*/ );
+        /* anu.ull holds the debuginfo handle returned by di_notify_mmap,
+           if any. */
+        if (anu.ull > 0) {
+           anu.a = seg_starts[i];
+           VG_(addToXA)( addr2dihandle, &anu );
+        }
+     }
 
      VG_(free)( seg_starts );
    }
 #  elif defined(VGO_aix5)
    { AixCodeSegChange* changes;
      Int changes_size, changes_used;
+     Addr_n_ULong anu;
 
      /* Find out how many AixCodeSegChange records we will need,
 	and acquire them. */
      changes_size = VG_(am_aix5_reread_procmap_howmany_directives)(); 
-     changes = VG_(malloc)(changes_size * sizeof(AixCodeSegChange));
+     changes = VG_(malloc)("main.vm.3", changes_size * sizeof(AixCodeSegChange));
      vg_assert(changes);
 
      /* Now re-read /proc/<pid>/map and acquire a change set */
@@ -1743,17 +1783,23 @@ Int valgrind_main ( Int argc, HChar **argv, HChar **envp )
      vg_assert(changes_used >= 0 && changes_used <= changes_size);
 
      /* And notify m_debuginfo of the changes. */
-     for (i = 0; i < changes_used; i++)
-        VG_(di_aix5_notify_segchange)(
-           changes[i].code_start,
-           changes[i].code_len,
-           changes[i].data_start,
-           changes[i].data_len,
-           changes[i].file_name,
-           changes[i].mem_name,
-           changes[i].is_mainexe,
-           changes[i].acquire
-        );
+     for (i = 0; i < changes_used; i++) {
+        anu.ull = VG_(di_aix5_notify_segchange)(
+                     changes[i].code_start,
+                     changes[i].code_len,
+                     changes[i].data_start,
+                     changes[i].data_len,
+                     changes[i].file_name,
+                     changes[i].mem_name,
+                     changes[i].is_mainexe,
+                     changes[i].acquire
+                  );
+        if (anu.ull > 0) {
+           tl_assert(changes[i].acquire);
+           anu.a = changes[i].code_start; /* is this correct? */
+           VG_(addToXA)( addr2dihandle, &anu );
+        }
+     }
 
      VG_(free)(changes);
    }
@@ -1797,10 +1843,17 @@ Int valgrind_main ( Int argc, HChar **argv, HChar **envp )
    //   p: mallocfree
    //   p: setup_client_stack
    //   p: setup_client_dataseg
+   //
+   // For each segment we tell the client about, look up in 
+   // addr2dihandle as created above, to see if there's a debuginfo
+   // handle associated with the segment, that we can hand along
+   // to the tool, to be helpful.
    //--------------------------------------------------------------
    VG_(debugLog)(1, "main", "Tell tool about initial permissions\n");
    { Addr*     seg_starts;
      Int       n_seg_starts;
+
+     tl_assert(addr2dihandle);
 
      /* Mark the main thread as running while we tell the tool about
         the client memory so that the tool can associate that memory
@@ -1813,9 +1866,11 @@ Int valgrind_main ( Int argc, HChar **argv, HChar **envp )
 
      /* show interesting ones to the tool */
      for (i = 0; i < n_seg_starts; i++) {
+        Word j, n;
         NSegment const* seg 
            = VG_(am_find_nsegment)( seg_starts[i] );
         vg_assert(seg);
+        vg_assert(seg->start == seg_starts[i] );
         if (seg->kind == SkFileC || seg->kind == SkAnonC) {
            VG_(debugLog)(2, "main", 
                             "tell tool about %010lx-%010lx %c%c%c\n",
@@ -1823,12 +1878,28 @@ Int valgrind_main ( Int argc, HChar **argv, HChar **envp )
                              seg->hasR ? 'r' : '-',
                              seg->hasW ? 'w' : '-',
                              seg->hasX ? 'x' : '-' );
+           /* search addr2dihandle to see if we have an entry
+              matching seg->start. */
+           n = VG_(sizeXA)( addr2dihandle );
+           for (j = 0; j < n; j++) {
+              Addr_n_ULong* anl = VG_(indexXA)( addr2dihandle, j );
+              if (anl->a == seg->start) {
+                  tl_assert(anl->ull > 0); /* check it's a valid handle */
+                  break;
+              }
+           }
+           vg_assert(j >= 0 && j <= n);
            VG_TRACK( new_mem_startup, seg->start, seg->end+1-seg->start, 
-                                      seg->hasR, seg->hasW, seg->hasX );
+                     seg->hasR, seg->hasW, seg->hasX,
+                     /* and the retrieved debuginfo handle, if any */
+                     j < n
+                     ? ((Addr_n_ULong*)VG_(indexXA)( addr2dihandle, j ))->ull
+                        : 0 );
         }
      }
 
      VG_(free)( seg_starts );
+     VG_(deleteXA)( addr2dihandle );
 
      /* Also do the initial stack permissions. */
      { NSegment const* seg 
@@ -1865,7 +1936,8 @@ Int valgrind_main ( Int argc, HChar **argv, HChar **envp )
                   - (Addr)&VG_(trampoline_stuff_start),
                False, /* readable? */
                False, /* writable? */
-               True   /* executable? */ );
+               True   /* executable? */,
+               0 /* di_handle: no associated debug info */ );
 
      /* Clear the running thread indicator */
      VG_(running_tid) = VG_INVALID_THREADID;
@@ -2075,6 +2147,14 @@ void shutdown_actions_NORETURN( ThreadId tid,
 
    if (VG_(clo_verbosity) > 1)
       print_all_stats();
+
+   /* Show a profile of the heap(s) at shutdown.  Optionally, first
+      throw away all the debug info, as that makes it easy to spot
+      leaks in the debuginfo reader. */
+   if (VG_(clo_profile_heap)) {
+      if (0) VG_(di_discard_ALL_debuginfo)();
+      VG_(print_arena_cc_analysis)();
+   }
 
    if (VG_(clo_profile_flags) > 0) {
       #define N_MAX 200
@@ -2520,6 +2600,18 @@ void _start_valgrind ( AIX5Bootblock* bootblock )
    /*NOTREACHED*/
    VG_(exit)(0);
 }
+
+/* At some point in Oct 2008, static linking appeared to stop working
+   on AIX 5.3.  This breaks the build since we link statically.  The
+   linking fails citing absence of the following five symbols as the
+   reason.  In the absence of a better solution, here are stand-ins
+   for them.  Kludge appears to work; presumably said functions,
+   assuming they are indeed functions, are never called. */
+void encrypted_pw_passlen ( void ) { vg_assert(0); }
+void crypt_r              ( void ) { vg_assert(0); }
+void max_history_size     ( void ) { vg_assert(0); }
+void getpass_auto         ( void ) { vg_assert(0); }
+void max_pw_passlen       ( void ) { vg_assert(0); }
 
 #endif /* defined(VGP_ppc{32,64}_aix5) */
 

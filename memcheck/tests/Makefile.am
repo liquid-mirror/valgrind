@@ -20,7 +20,7 @@ DIST_SUBDIRS = ${VG_ARCH_ALL} .
 
 noinst_SCRIPTS = filter_allocs filter_leak_check_size \
 		 filter_stderr filter_stderr_backtrace filter_xml \
-		 filter_varinfo3
+		 filter_varinfo3 filter_malloc_free_fill
 
 EXTRA_DIST = $(noinst_SCRIPTS) \
 	addressable.stderr.exp addressable.stdout.exp addressable.vgtest \
@@ -66,6 +66,7 @@ EXTRA_DIST = $(noinst_SCRIPTS) \
 	leak-tree.stderr.exp2 leak-tree.stderr.exp64 \
 	leak-regroot.vgtest leak-regroot.stderr.exp \
 	leakotron.vgtest leakotron.stdout.exp leakotron.stderr.exp \
+	linux-capget linux-capget.stderr.exp \
 	linux-syslog-syscall linux-syslog-syscall.stderr.exp \
 	linux-syscalls-2007 linux-syscalls-2007.stderr.exp \
 	linux-timerfd-syscall linux-timerfd-syscall.stderr.exp \
@@ -159,7 +160,8 @@ EXTRA_DIST = $(noinst_SCRIPTS) \
 	varinfo6.stderr.exp-glibc25-amd64 varinfo6.stderr.exp-glibc25-x86 \
 	vcpu_bz2.stdout.exp vcpu_bz2.stderr.exp vcpu_bz2.vgtest \
 	vcpu_fbench.stdout.exp vcpu_fbench.stderr.exp vcpu_fbench.vgtest \
-	vcpu_fnfns.stdout.exp vcpu_fnfns.stderr.exp vcpu_fnfns.vgtest \
+	vcpu_fnfns.stdout.exp vcpu_fnfns.stdout.exp-glibc28-amd64 \
+	vcpu_fnfns.stderr.exp vcpu_fnfns.vgtest \
 	vgtest_ume.stderr.exp vgtest_ume.disabled \
 	with-space.stderr.exp with-space.stdout.exp with-space.vgtest \
 	wrap1.vgtest wrap1.stdout.exp wrap1.stderr.exp \
@@ -190,6 +192,7 @@ check_PROGRAMS = \
 	file_locking \
 	fprw fwrite hello inits inline \
 	leak-0 leak-cycle leak-pool leak-tree leak-regroot leakotron \
+	linux-capget \
 	linux-syslog-syscall \
 	linux-syscalls-2007 \
 	linux-timerfd-syscall \
@@ -234,8 +237,8 @@ AM_CXXFLAGS = $(AM_CFLAGS)
 # Extra stuff for C tests
 memcmptest_CFLAGS	= $(AM_FLAG_M3264_PRI) $(AM_CFLAGS) -fno-builtin-memcmp
 oset_test_CFLAGS	= $(AM_FLAG_M3264_PRI) \
-				-DVGA_$(VG_ARCH)=1 -DVGO_$(VG_OS)=1 \
-				-DVGP_$(VG_ARCH)_$(VG_OS)=1
+				-DVGA_$(VG_ARCH_PRI)=1 -DVGO_$(VG_OS)=1 \
+				-DVGP_$(VG_ARCH_PRI)_$(VG_OS)=1
 linux_timerfd_syscall_LDADD = -lrt
 vcpu_bz2_CFLAGS		= $(AM_FLAG_M3264_PRI) $(AM_CFLAGS) -O2 -g
 vcpu_fbench_CFLAGS	= $(AM_FLAG_M3264_PRI) $(AM_CFLAGS) -O2 -g
@@ -361,6 +364,6 @@ endif
 #hello_DEPENDENCIES 	= $(top_builddir)/valt_load_address.lds
 
 # vgtest_ume is not working
-#vgtest_ume_CFLAGS	= -DVGA_$(VG_ARCH) -DVGO_$(VG_OS)
+#vgtest_ume_CFLAGS	= -DVGA_$(VG_ARCH_PRI) -DVGO_$(VG_OS)
 #vgtest_ume_LDADD	= ../../coregrind/m_ume.o
 

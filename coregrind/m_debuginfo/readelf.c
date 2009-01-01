@@ -639,7 +639,8 @@ void read_elf_symtab__ppc64_linux(
 
    oset = VG_(OSetGen_Create)( offsetof(TempSym,key), 
                                (OSetCmp_t)cmp_TempSymKey, 
-                               ML_(dinfo_zalloc), ML_(dinfo_free) );
+                               ML_(dinfo_zalloc), "di.respl.1",
+                               ML_(dinfo_free) );
    vg_assert(oset);
 
    /* Perhaps should start at i = 1; ELF docs suggest that entry
@@ -859,7 +860,7 @@ static
 Addr open_debug_file( Char* name, UInt crc, /*OUT*/UWord* size )
 {
    SysRes fd, sres;
-   struct vki_stat stat_buf;
+   struct vg_stat stat_buf;
    UInt calccrc;
 
    fd = VG_(open)(name, VKI_O_RDONLY, 0);
@@ -905,7 +906,7 @@ Addr find_debug_file( struct _DebugInfo* di,
                       Char* objpath, Char* debugname, 
                       UInt crc, /*OUT*/UWord* size )
 {
-   Char *objdir = ML_(dinfo_strdup)(objpath);
+   Char *objdir = ML_(dinfo_strdup)("di.fdf.1", objpath);
    Char *objdirptr;
    Char *debugpath;
    Addr addr = 0;
@@ -914,6 +915,7 @@ Addr find_debug_file( struct _DebugInfo* di,
       *objdirptr = '\0';
 
    debugpath = ML_(dinfo_zalloc)(
+                  "di.fdf.2",
                   VG_(strlen)(objdir) + VG_(strlen)(debugname) + 32);
    
    VG_(sprintf)(debugpath, "%s/%s", objdir, debugname);
@@ -949,8 +951,8 @@ static Bool contained_within ( Addr outer, UWord n_outer,
    return False;
 }
 
-static void* INDEX_BIS ( void* base, Word index, Word scale ) {
-   return (void*)( ((UChar*)base) + index * scale );
+static void* INDEX_BIS ( void* base, Word idx, Word scale ) {
+   return (void*)( ((UChar*)base) + idx * scale );
 }
 
 static Addr round_Addr_upwards ( Addr a, UInt align ) 
@@ -1083,11 +1085,13 @@ Bool ML_(read_elf_debug_info) ( struct _DebugInfo* di )
       return False;
    }
 
-   n_oimage = VG_(fsize)(fd.res);
-   if (n_oimage <= 0) {
-      ML_(symerr)(di, True, "Can't stat .so/.exe (to determine its size)?!");
-      VG_(close)(fd.res);
-      return False;
+   { Long n_oimageLL = VG_(fsize)(fd.res);
+     if (n_oimageLL <= 0) {
+        ML_(symerr)(di, True, "Can't stat .so/.exe (to determine its size)?!");
+        VG_(close)(fd.res);
+        return False;
+     }
+     n_oimage = (UWord)(ULong)n_oimageLL;
    }
 
    sres = VG_(am_mmap_file_float_valgrind)
@@ -1237,7 +1241,7 @@ Bool ML_(read_elf_debug_info) ( struct _DebugInfo* di )
             }
             if (stroff != -1 && strtab != NULL) {
                TRACE_SYMTAB("Found soname = %s\n", strtab+stroff);
-               di->soname = ML_(dinfo_strdup)(strtab+stroff);
+               di->soname = ML_(dinfo_strdup)("di.redi.1", strtab+stroff);
             }
          }
       } /* for (i = 0; i < phdr_nent; i++) ... */

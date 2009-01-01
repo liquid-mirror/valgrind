@@ -65,7 +65,8 @@ static
 void notify_aspacem_of_mmap(Addr a, SizeT len, UInt prot,
                             UInt flags, Int fd, Off64T offset);
 static
-void notify_tool_of_mmap(Addr a, SizeT len, UInt prot, Off64T offset);
+void notify_tool_of_mmap(Addr a, SizeT len, UInt prot, Off64T offset,
+                         ULong di_handle);
 
 
 /* Returns True iff address range is something the client can
@@ -151,13 +152,22 @@ void page_align_addr_and_len( Addr* a, SizeT* len)
 /* When a client mmap has been successfully done, this function must
    be called.  It notifies both aspacem and the tool of the new
    mapping.
-*/
+
+   JRS 2008-Aug-14: But notice this is *very* obscure.  The only place
+   it is called from is POST(sys_io_setup).  In particular,
+   ML_(generic_PRE_sys_mmap), further down in this file, is the
+   "normal case" handler for client mmap.  But it doesn't call this
+   function; instead it does the relevant notifications itself.  Here,
+   we just pass di_handle=0 to notify_tool_of_mmap as we have no
+   better information.  But really this function should be done away
+   with; problem is I don't understand what POST(sys_io_setup) does or
+   how it works. */
 void 
 ML_(notify_aspacem_and_tool_of_mmap) ( Addr a, SizeT len, UInt prot, 
                                        UInt flags, Int fd, Off64T offset )
 {
    notify_aspacem_of_mmap(a, len, prot, flags, fd, offset);
-   notify_tool_of_mmap(a, len, prot, offset);
+   notify_tool_of_mmap(a, len, prot, offset, 0/*di_handle*/);
 }
 
 static
@@ -179,7 +189,8 @@ void notify_aspacem_of_mmap(Addr a, SizeT len, UInt prot,
 }
 
 static
-void notify_tool_of_mmap(Addr a, SizeT len, UInt prot, Off64T offset)
+void notify_tool_of_mmap(Addr a, SizeT len, UInt prot, Off64T offset,
+                         ULong di_handle)
 {
    Bool rr, ww, xx;
 
@@ -192,7 +203,7 @@ void notify_tool_of_mmap(Addr a, SizeT len, UInt prot, Off64T offset)
    ww = toBool(prot & VKI_PROT_WRITE);
    xx = toBool(prot & VKI_PROT_EXEC);
 
-   VG_TRACK( new_mem_mmap, a, len, rr, ww, xx );
+   VG_TRACK( new_mem_mmap, a, len, rr, ww, xx, di_handle );
 }
 
 /* Expand (or shrink) an existing mapping, potentially moving it at
@@ -332,7 +343,8 @@ SysRes do_mremap( Addr old_addr, SizeT old_len,
                                    MIN_SIZET(old_len,new_len) );
          if (new_len > old_len)
             VG_TRACK( new_mem_mmap, new_addr+old_len, new_len-old_len,
-                      old_seg->hasR, old_seg->hasW, old_seg->hasX );
+                      old_seg->hasR, old_seg->hasW, old_seg->hasX,
+                      0/*di_handle*/ );
          VG_TRACK(die_mem_munmap, old_addr, old_len);
          if (d) {
             VG_(discard_translations)( old_addr, old_len, "do_remap(1)" );
@@ -375,7 +387,8 @@ SysRes do_mremap( Addr old_addr, SizeT old_len,
       if (ok) {
          VG_TRACK( new_mem_mmap, needA, needL, 
                                  old_seg->hasR, 
-                                 old_seg->hasW, old_seg->hasX );
+                                 old_seg->hasW, old_seg->hasX,
+                                 0/*di_handle*/ );
          if (d) 
             VG_(discard_translations)( needA, needL, "do_remap(3)" );
          return VG_(mk_SysRes_Success)( old_addr );
@@ -395,7 +408,8 @@ SysRes do_mremap( Addr old_addr, SizeT old_len,
                                    MIN_SIZET(old_len,new_len) );
          if (new_len > old_len)
             VG_TRACK( new_mem_mmap, advised+old_len, new_len-old_len,
-                      old_seg->hasR, old_seg->hasW, old_seg->hasX );
+                      old_seg->hasR, old_seg->hasW, old_seg->hasX,
+                      0/*di_handle*/ );
          VG_TRACK(die_mem_munmap, old_addr, old_len);
          if (d) {
             VG_(discard_translations)( old_addr, old_len, "do_remap(4)" );
@@ -434,7 +448,8 @@ SysRes do_mremap( Addr old_addr, SizeT old_len,
    if (!ok)
       goto eNOMEM;
    VG_TRACK( new_mem_mmap, needA, needL, 
-                           old_seg->hasR, old_seg->hasW, old_seg->hasX );
+                           old_seg->hasR, old_seg->hasW, old_seg->hasX,
+                           0/*di_handle*/ );
    if (d)
       VG_(discard_translations)( needA, needL, "do_remap(6)" );
    return VG_(mk_SysRes_Success)( old_addr );
@@ -539,7 +554,7 @@ void ML_(record_fd_open_with_given_name)(ThreadId tid, Int fd, char *pathname)
 
    /* Not already one: allocate an OpenFd */
    if (i == NULL) {
-      i = VG_(arena_malloc)(VG_AR_CORE, sizeof(OpenFd));
+      i = VG_(arena_malloc)(VG_AR_CORE, "syswrap.rfdowgn.1", sizeof(OpenFd));
 
       i->prev = NULL;
       i->next = allocated_fds;
@@ -549,7 +564,7 @@ void ML_(record_fd_open_with_given_name)(ThreadId tid, Int fd, char *pathname)
    }
 
    i->fd = fd;
-   i->pathname = VG_(arena_strdup)(VG_AR_CORE, pathname);
+   i->pathname = VG_(arena_strdup)(VG_AR_CORE, "syswrap.rfdowgn.2", pathname);
    i->where = (tid == -1) ? NULL : VG_(record_ExeContext)(tid, 0/*first_ip_delta*/);
 }
 
@@ -752,10 +767,10 @@ void VG_(init_preopened_fds)(void)
 }
 
 static
-Char *strdupcat ( const Char *s1, const Char *s2, ArenaId aid )
+Char *strdupcat ( HChar* cc, const Char *s1, const Char *s2, ArenaId aid )
 {
    UInt len = VG_(strlen) ( s1 ) + VG_(strlen) ( s2 ) + 1;
-   Char *result = VG_(arena_malloc) ( aid, len );
+   Char *result = VG_(arena_malloc) ( aid, cc, len );
    VG_(strcpy) ( result, s1 );
    VG_(strcat) ( result, s2 );
    return result;
@@ -765,7 +780,8 @@ static
 void pre_mem_read_sendmsg ( ThreadId tid, Bool read,
                             Char *msg, Addr base, SizeT size )
 {
-   Char *outmsg = strdupcat ( "socketcall.sendmsg", msg, VG_AR_CORE );
+   Char *outmsg = strdupcat ( "di.syswrap.pmrs.1",
+                              "socketcall.sendmsg", msg, VG_AR_CORE );
    PRE_MEM_READ( outmsg, base, size );
    VG_(arena_free) ( VG_AR_CORE, outmsg );
 }
@@ -774,7 +790,8 @@ static
 void pre_mem_write_recvmsg ( ThreadId tid, Bool read,
                              Char *msg, Addr base, SizeT size )
 {
-   Char *outmsg = strdupcat ( "socketcall.recvmsg", msg, VG_AR_CORE );
+   Char *outmsg = strdupcat ( "di.syswrap.pmwr.1",
+                              "socketcall.recvmsg", msg, VG_AR_CORE );
    if ( read )
       PRE_MEM_READ( outmsg, base, size );
    else
@@ -866,7 +883,7 @@ void pre_mem_read_sockaddr ( ThreadId tid,
    /* NULL/zero-length sockaddrs are legal */
    if ( sa == NULL || salen == 0 ) return;
 
-   outmsg = VG_(arena_malloc) ( VG_AR_CORE,
+   outmsg = VG_(arena_malloc) ( VG_AR_CORE, "di.syswrap.pmr_sockaddr.1",
                                 VG_(strlen)( description ) + 30 );
 
    VG_(sprintf) ( outmsg, description, ".sa_family" );
@@ -1563,6 +1580,11 @@ UInt get_sem_count( Int semid )
    union vki_semun arg;
    SysRes res;
 
+   /* Doesn't actually seem to be necessary, but gcc-4.4.0 20081017
+      (experimental) otherwise complains that the use in the return
+      statement below is uninitialised. */
+   buf.sem_nsems = 0;
+
    arg.buf = &buf;
 
 #  ifdef __NR_semctl
@@ -1570,7 +1592,7 @@ UInt get_sem_count( Int semid )
 #  else
    res = VG_(do_syscall5)(__NR_ipc, 3 /* IPCOP_semctl */, semid, 0,
                           VKI_IPC_STAT, (UWord)&arg);
-# endif
+#  endif
    if (res.isError)
       return 0;
 
@@ -1722,7 +1744,8 @@ ML_(generic_POST_sys_shmat) ( ThreadId tid,
 
       /* we don't distinguish whether it's read-only or
        * read-write -- it doesn't matter really. */
-      VG_TRACK( new_mem_mmap, res, segmentSize, True, True, False );
+      VG_TRACK( new_mem_mmap, res, segmentSize, True, True, False,
+                              0/*di_handle*/ );
       if (d)
          VG_(discard_translations)( (Addr64)res, 
                                     (ULong)VG_PGROUNDUP(segmentSize),
@@ -1937,6 +1960,7 @@ ML_(generic_PRE_sys_mmap) ( ThreadId tid,
    }
 
    if (!sres.isError) {
+      ULong di_handle;
       /* Notify aspacem. */
       notify_aspacem_of_mmap(
          (Addr)sres.res, /* addr kernel actually assigned */
@@ -1947,13 +1971,15 @@ ML_(generic_PRE_sys_mmap) ( ThreadId tid,
          arg6  /* offset */
       );
       /* Load symbols? */
-      VG_(di_notify_mmap)( (Addr)sres.res, False/*allow_SkFileV*/ );
+      di_handle = VG_(di_notify_mmap)( (Addr)sres.res, False/*allow_SkFileV*/ );
       /* Notify the tool. */
       notify_tool_of_mmap(
          (Addr)sres.res, /* addr kernel actually assigned */
          arg2, /* length */
          arg3, /* prot */
-         arg6  /* offset */
+         arg6, /* offset */
+         di_handle /* so the tool can refer to the read debuginfo later,
+                      if it wants. */
       );
    }
 
@@ -2036,24 +2062,6 @@ PRE(sys_iopl)
    PRINT("sys_iopl ( %ld )", ARG1);
    PRE_REG_READ1(long, "iopl", unsigned long, level);
 }
-
-// XXX: this wrapper is only suitable for 32-bit platforms
-#if defined(VGP_x86_linux)
-PRE(sys_lookup_dcookie)
-{
-   PRINT("sys_lookup_dcookie (0x%llx, %#lx, %ld)", LOHI64(ARG1,ARG2), ARG3, ARG4);
-   PRE_REG_READ4(long, "lookup_dcookie",
-                 vki_u32, cookie_low32, vki_u32, cookie_high32,
-                 char *, buf, vki_size_t, len);
-   PRE_MEM_WRITE( "lookup_dcookie(buf)", ARG3, ARG4);
-}
-POST(sys_lookup_dcookie)
-{
-   vg_assert(SUCCESS);
-   if (ARG3 != (Addr)NULL)
-      POST_MEM_WRITE( ARG3, RES);
-}
-#endif
 
 PRE(sys_fsync)
 {
@@ -2250,13 +2258,26 @@ PRE(sys_getpriority)
    PRE_REG_READ2(long, "getpriority", int, which, int, who);
 }
 
+PRE(sys_pwrite64_on64bitplat)
+{
+   vg_assert(sizeof(UWord) == 8);
+   *flags |= SfMayBlock;
+   PRINT("sys_pwrite64 ( %ld, %#lx, %llu, %ld )",
+         ARG1, ARG2, (ULong)ARG3, ARG4);
+   PRE_REG_READ4(ssize_t, "pwrite64",
+                 unsigned int, fd, const char *, buf,
+                 vki_size_t, count, vki_loff_t, offset);
+   PRE_MEM_READ( "pwrite64(buf)", ARG2, ARG3 );
+}
+
 // The actual kernel definition of this routine takes a
 // single 64 bit offset argument. This version is for 32 bit
 // platforms only and treats the offset as two values - the
 // kernel relies on stack based argument passing conventions
 // to merge the two together.
-PRE(sys_pwrite64)
+PRE(sys_pwrite64_on32bitplat)
 {
+   vg_assert(sizeof(UWord) == 4);
    *flags |= SfMayBlock;
    PRINT("sys_pwrite64 ( %ld, %#lx, %llu, %lld )",
          ARG1, ARG2, (ULong)ARG3, LOHI64(ARG4,ARG5));
@@ -2304,13 +2325,34 @@ PRE(sys_getsid)
    PRE_REG_READ1(long, "getsid", vki_pid_t, pid);
 }
 
+PRE(sys_pread64_on64bitplat)
+{
+   vg_assert(sizeof(UWord) == 8);
+   *flags |= SfMayBlock;
+   PRINT("sys_pread64 ( %ld, %#lx, %llu, %ld )",
+         ARG1, ARG2, (ULong)ARG3, ARG4);
+   PRE_REG_READ4(ssize_t, "pread64",
+                 unsigned int, fd, char *, buf,
+                 vki_size_t, count, vki_loff_t, offset);
+   PRE_MEM_WRITE( "pread64(buf)", ARG2, ARG3 );
+}
+POST(sys_pread64_on64bitplat)
+{
+   vg_assert(sizeof(UWord) == 8);
+   vg_assert(SUCCESS);
+   if (RES > 0) {
+      POST_MEM_WRITE( ARG2, RES );
+   }
+}
+
 // The actual kernel definition of this routine takes a
 // single 64 bit offset argument. This version is for 32 bit
 // platforms only and treats the offset as two values - the
 // kernel relies on stack based argument passing conventions
 // to merge the two together.
-PRE(sys_pread64)
+PRE(sys_pread64_on32bitplat)
 {
+   vg_assert(sizeof(UWord) == 4);
    *flags |= SfMayBlock;
    PRINT("sys_pread64 ( %ld, %#lx, %llu, %lld )",
          ARG1, ARG2, (ULong)ARG3, LOHI64(ARG4,ARG5));
@@ -2319,8 +2361,9 @@ PRE(sys_pread64)
                  vki_u32, offset_low32, vki_u32, offset_high32);
    PRE_MEM_WRITE( "pread64(buf)", ARG2, ARG3 );
 }
-POST(sys_pread64)
+POST(sys_pread64_on32bitplat)
 {
+   vg_assert(sizeof(UWord) == 4);
    vg_assert(SUCCESS);
    if (RES > 0) {
       POST_MEM_WRITE( ARG2, RES );
@@ -2518,7 +2561,8 @@ PRE(sys_execve)
             tot_args++;
       }
       // allocate
-      argv = VG_(malloc)( (tot_args+1) * sizeof(HChar*) );
+      argv = VG_(malloc)( "di.syswrap.pre_sys_execve.1",
+                          (tot_args+1) * sizeof(HChar*) );
       if (argv == 0) goto hosed;
       // copy
       j = 0;
@@ -2920,6 +2964,8 @@ PRE(sys_fork)
 
    SET_STATUS_from_SysRes( VG_(do_syscall0)(__NR_fork) );
 
+   VG_(do_atfork_pre)(tid);
+
    if (SUCCESS && RES == 0) {
       /* child */
       VG_(do_atfork_child)(tid);
@@ -2937,6 +2983,8 @@ PRE(sys_fork)
    else 
    if (SUCCESS && RES > 0) {
       /* parent */
+      VG_(do_atfork_parent)(tid);
+
       PRINT("   fork: process %d created child %ld\n", VG_(getpid)(), RES);
 
       /* restore signal mask */
@@ -4161,6 +4209,99 @@ PRE(sys_ioctl)
       PRE_MEM_WRITE( "ioctl(I2C_FUNCS)", ARG3, sizeof(unsigned long) );
       break;
 
+      /* Wireless extensions ioctls */
+   case VKI_SIOCSIWCOMMIT:
+   case VKI_SIOCSIWNWID:
+   case VKI_SIOCSIWFREQ:
+   case VKI_SIOCSIWMODE:
+   case VKI_SIOCSIWSENS:
+   case VKI_SIOCSIWRANGE:
+   case VKI_SIOCSIWPRIV:
+   case VKI_SIOCSIWSTATS:
+   case VKI_SIOCSIWSPY:
+   case VKI_SIOCSIWTHRSPY:
+   case VKI_SIOCSIWAP:
+   case VKI_SIOCSIWSCAN:
+   case VKI_SIOCSIWESSID:
+   case VKI_SIOCSIWRATE:
+   case VKI_SIOCSIWNICKN:
+   case VKI_SIOCSIWRTS:
+   case VKI_SIOCSIWFRAG:
+   case VKI_SIOCSIWTXPOW:
+   case VKI_SIOCSIWRETRY:
+   case VKI_SIOCSIWENCODE:
+   case VKI_SIOCSIWPOWER:
+   case VKI_SIOCSIWGENIE:
+   case VKI_SIOCSIWMLME:
+   case VKI_SIOCSIWAUTH:
+   case VKI_SIOCSIWENCODEEXT:
+   case VKI_SIOCSIWPMKSA:
+      break;
+   case VKI_SIOCGIWNAME:
+      if (ARG3) {
+         PRE_MEM_WRITE("ioctl(SIOCGIWNAME)",
+                       (Addr)((struct vki_iwreq *)ARG3)->u.name,
+                       sizeof(((struct vki_iwreq *)ARG3)->u.name));
+      }
+      break;
+   case VKI_SIOCGIWNWID:
+   case VKI_SIOCGIWSENS:
+   case VKI_SIOCGIWRATE:
+   case VKI_SIOCGIWRTS:
+   case VKI_SIOCGIWFRAG:
+   case VKI_SIOCGIWTXPOW:
+   case VKI_SIOCGIWRETRY:
+   case VKI_SIOCGIWPOWER:
+   case VKI_SIOCGIWAUTH:
+      if (ARG3) {
+         PRE_MEM_WRITE("ioctl(SIOCGIW[NWID|SENS|RATE|RTS|FRAG|TXPOW|"
+                       "RETRY|PARAM|AUTH])",
+                       (Addr)&((struct vki_iwreq *)ARG3)->u.nwid,
+                       sizeof(struct vki_iw_param));
+      }
+      break;
+   case VKI_SIOCGIWFREQ:
+      if (ARG3) {
+         PRE_MEM_WRITE("ioctl(SIOCGIWFREQ",
+                       (Addr)&((struct vki_iwreq *)ARG3)->u.freq,
+                       sizeof(struct vki_iw_freq));
+      }
+      break;
+   case VKI_SIOCGIWMODE:
+      if (ARG3) {
+         PRE_MEM_WRITE("ioctl(SIOCGIWMODE",
+                       (Addr)&((struct vki_iwreq *)ARG3)->u.mode,
+                       sizeof(__vki_u32));
+      }
+      break;
+   case VKI_SIOCGIWRANGE:
+   case VKI_SIOCGIWPRIV:
+   case VKI_SIOCGIWSTATS:
+   case VKI_SIOCGIWSPY:
+   case VKI_SIOCGIWTHRSPY:
+   case VKI_SIOCGIWAPLIST:
+   case VKI_SIOCGIWSCAN:
+   case VKI_SIOCGIWESSID:
+   case VKI_SIOCGIWNICKN:
+   case VKI_SIOCGIWENCODE:
+   case VKI_SIOCGIWGENIE:
+   case VKI_SIOCGIWENCODEEXT:
+      if (ARG3) {
+         struct vki_iw_point* point;
+         point = &((struct vki_iwreq *)ARG3)->u.data;
+         PRE_MEM_WRITE("ioctl(SIOCGIW[RANGE|PRIV|STATS|SPY|THRSPY|"
+                       "APLIST|SCAN|ESSID|NICKN|ENCODE|GENIE|ENCODEEXT])",
+                       (Addr)point->pointer, point->length);
+      }
+      break;
+   case VKI_SIOCGIWAP:
+      if (ARG3) {
+         PRE_MEM_WRITE("ioctl(SIOCGIWAP)",
+                       (Addr)&((struct vki_iwreq *)ARG3)->u.ap_addr,
+                       sizeof(struct vki_sockaddr));
+      }
+      break;
+
       /* We don't have any specific information on it, so
 	 try to do something reasonable based on direction and
 	 size bits.  The encoding scheme is described in
@@ -4877,6 +5018,91 @@ POST(sys_ioctl)
       break;
    case VKI_I2C_FUNCS:
       POST_MEM_WRITE( ARG3, sizeof(unsigned long) );
+      break;
+
+      /* Wireless extensions ioctls */
+   case VKI_SIOCSIWCOMMIT:
+   case VKI_SIOCSIWNWID:
+   case VKI_SIOCSIWFREQ:
+   case VKI_SIOCSIWMODE:
+   case VKI_SIOCSIWSENS:
+   case VKI_SIOCSIWRANGE:
+   case VKI_SIOCSIWPRIV:
+   case VKI_SIOCSIWSTATS:
+   case VKI_SIOCSIWSPY:
+   case VKI_SIOCSIWTHRSPY:
+   case VKI_SIOCSIWAP:
+   case VKI_SIOCSIWSCAN:
+   case VKI_SIOCSIWESSID:
+   case VKI_SIOCSIWRATE:
+   case VKI_SIOCSIWNICKN:
+   case VKI_SIOCSIWRTS:
+   case VKI_SIOCSIWFRAG:
+   case VKI_SIOCSIWTXPOW:
+   case VKI_SIOCSIWRETRY:
+   case VKI_SIOCSIWENCODE:
+   case VKI_SIOCSIWPOWER:
+   case VKI_SIOCSIWGENIE:
+   case VKI_SIOCSIWMLME:
+   case VKI_SIOCSIWAUTH:
+   case VKI_SIOCSIWENCODEEXT:
+   case VKI_SIOCSIWPMKSA:
+      break;
+   case VKI_SIOCGIWNAME:
+      if (ARG3) {
+         POST_MEM_WRITE((Addr)((struct vki_iwreq *)ARG3)->u.name,
+                        sizeof(((struct vki_iwreq *)ARG3)->u.name));
+      }
+      break;
+   case VKI_SIOCGIWNWID:
+   case VKI_SIOCGIWSENS:
+   case VKI_SIOCGIWRATE:
+   case VKI_SIOCGIWRTS:
+   case VKI_SIOCGIWFRAG:
+   case VKI_SIOCGIWTXPOW:
+   case VKI_SIOCGIWRETRY:
+   case VKI_SIOCGIWPOWER:
+   case VKI_SIOCGIWAUTH:
+      if (ARG3) {
+         POST_MEM_WRITE((Addr)&((struct vki_iwreq *)ARG3)->u.param,
+                        sizeof(struct vki_iw_param));
+      }
+      break;
+   case VKI_SIOCGIWFREQ:
+      if (ARG3) {
+         POST_MEM_WRITE((Addr)&((struct vki_iwreq *)ARG3)->u.freq,
+                        sizeof(struct vki_iw_freq));
+      }
+      break;
+   case VKI_SIOCGIWMODE:
+      if (ARG3) {
+         POST_MEM_WRITE((Addr)&((struct vki_iwreq *)ARG3)->u.mode,
+                       sizeof(__vki_u32));
+      }
+      break;
+   case VKI_SIOCGIWRANGE:
+   case VKI_SIOCGIWPRIV:
+   case VKI_SIOCGIWSTATS:
+   case VKI_SIOCGIWSPY:
+   case VKI_SIOCGIWTHRSPY:
+   case VKI_SIOCGIWAPLIST:
+   case VKI_SIOCGIWSCAN:
+   case VKI_SIOCGIWESSID:
+   case VKI_SIOCGIWNICKN:
+   case VKI_SIOCGIWENCODE:
+   case VKI_SIOCGIWGENIE:
+   case VKI_SIOCGIWENCODEEXT:
+      if (ARG3) {
+         struct vki_iw_point* point;
+         point = &((struct vki_iwreq *)ARG3)->u.data;
+         POST_MEM_WRITE((Addr)point->pointer, point->length);
+      }
+      break;
+   case VKI_SIOCGIWAP:
+      if (ARG3) {
+         POST_MEM_WRITE((Addr)&((struct vki_iwreq *)ARG3)->u.ap_addr,
+                        sizeof(struct vki_sockaddr));
+      }
       break;
 
       /* We don't have any specific information on it, so

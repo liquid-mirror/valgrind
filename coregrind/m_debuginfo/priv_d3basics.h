@@ -577,7 +577,6 @@ HChar* ML_(pp_DW_AT)       ( DW_AT attr );
 */
 typedef
    struct _GExpr { 
-      struct _GExpr* next;
       UChar payload[0];
    }
    GExpr;
@@ -635,6 +634,15 @@ GXResult ML_(evaluate_Dwarf3_Expr) ( UChar* expr, UWord exprszB,
                                      GExpr* fbGX, RegSummary* regs,
                                      Addr data_bias,
                                      Bool push_initial_zero );
+
+/* Evaluate a very simple Guarded (DWARF3) expression.  The expression
+   is expected to denote a constant, with no reference to any
+   registers nor to any frame base expression.  GXR_Failure is
+   returned if there is more than one guard, or none, a register
+   location is denoted, a frame base expression is required, or the
+   expression is not manifestly a constant.  The range of addresses
+   covered by the guard is also ignored. */
+GXResult ML_(evaluate_trivial_GX)( GExpr* gx, Addr data_bias );
 
 #endif /* ndef __PRIV_D3BASICS_H */
 

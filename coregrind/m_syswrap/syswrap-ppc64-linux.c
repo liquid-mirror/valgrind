@@ -1260,7 +1260,7 @@ const SyscallTableEntry ML_(syscall_table)[] = {
 // _____(__NR_profil,            sys_profil),             //  98
    GENXY(__NR_statfs,            sys_statfs),             //  99
 
-// _____(__NR_fstatfs,           sys_fstatfs),            // 100
+   GENXY(__NR_fstatfs,           sys_fstatfs),            // 100
 // _____(__NR_ioperm,            sys_ioperm),             // 101
    PLAXY(__NR_socketcall,        sys_socketcall),         // 102
    LINXY(__NR_syslog,            sys_syslog),             // 103
@@ -1354,13 +1354,13 @@ const SyscallTableEntry ML_(syscall_table)[] = {
    LINXY(__NR_rt_sigtimedwait,   sys_rt_sigtimedwait),    // 176
 // _____(__NR_rt_sigqueueinfo,   sys_rt_sigqueueinfo),    // 177
 // _____(__NR_rt_sigsuspend,     sys_rt_sigsuspend),      // 178
-// _____(__NR_pread64,           sys_pread64),            // 179
+   GENXY(__NR_pread64,           sys_pread64_on64bitplat), // 179
 
 // _____(__NR_pwrite64,          sys_pwrite64),           // 180
    GENX_(__NR_chown,             sys_chown),              // 181
    GENXY(__NR_getcwd,            sys_getcwd),             // 182
-// _____(__NR_capget,            sys_capget),             // 183
-// _____(__NR_capset,            sys_capset),             // 184
+   LINXY(__NR_capget,            sys_capget),             // 183
+   LINX_(__NR_capset,            sys_capset),             // 184
 
    GENXY(__NR_sigaltstack,       sys_sigaltstack),        // 185
    LINXY(__NR_sendfile,          sys_sendfile),           // 186
@@ -1382,7 +1382,7 @@ const SyscallTableEntry ML_(syscall_table)[] = {
 
 // _____(__NR_pciconfig_iobase,  sys_pciconfig_iobase),   // 200
 // _____(__NR_multiplexer,       sys_multiplexer),        // 201
-// _____(__NR_getdents64,        sys_getdents64),         // 202
+   GENXY(__NR_getdents64,        sys_getdents64),         // 202
 // _____(__NR_pivot_root,        sys_pivot_root),         // 203
    GENXY(__NR_fcntl64,           sys_fcntl64),            // 204 !!!!?? 32bit only */
 
@@ -1465,8 +1465,8 @@ const SyscallTableEntry ML_(syscall_table)[] = {
    LINX_(__NR_request_key,       sys_request_key),        // 270
    LINXY(__NR_keyctl,            sys_keyctl),             // 271
 // _____(__NR_waitid,            sys_waitid),             // 272
-// _____(__NR_ioprio_set,        sys_ioprio_set),         // 273
-// _____(__NR_ioprio_get,        sys_ioprio_get),         // 274
+   LINX_(__NR_ioprio_set,        sys_ioprio_set),         // 273
+   LINX_(__NR_ioprio_get,        sys_ioprio_get),         // 274
 
    LINX_(__NR_inotify_init,  sys_inotify_init),           // 275
    LINX_(__NR_inotify_add_watch,  sys_inotify_add_watch), // 276
@@ -1499,6 +1499,12 @@ const SyscallTableEntry ML_(syscall_table)[] = {
 //   LINXY(__NR_subpage_prot,       sys_ni_syscall),       // 310
    LINXY(__NR_timerfd_settime,   sys_timerfd_settime),  // 311
    LINXY(__NR_timerfd_gettime,   sys_timerfd_gettime),  // 312
+   //   (__NR_signalfd4,         sys_ni_syscall)        // 313
+   LINX_(__NR_eventfd2,          sys_eventfd2),         // 314
+   //   (__NR_epoll_create1,     sys_ni_syscall)        // 315
+   //   (__NR_dup3,              sys_ni_syscall)        // 316
+   LINXY(__NR_pipe2,             sys_pipe2)             // 317
+   //   (__NR_inotify_init1,     sys_ni_syscall)        // 318
 };
 
 const UInt ML_(syscall_table_size) = 

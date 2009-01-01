@@ -2574,6 +2574,10 @@ IRExpr* expr2vbits_Unop ( MCEnv* mce, IROp op, IRAtom* atom )
       case Iop_NegF64:
       case Iop_AbsF64:
       case Iop_Est5FRSqrt:
+      case Iop_RoundF64toF64_NEAREST:
+      case Iop_RoundF64toF64_NegINF:
+      case Iop_RoundF64toF64_PosINF:
+      case Iop_RoundF64toF64_ZERO:
       case Iop_Clz64:
       case Iop_Ctz64:
          return mkPCastTo(mce, Ity_I64, vatom);
@@ -3331,11 +3335,12 @@ static Bool isBogusAtom ( IRAtom* at )
    /* VG_(printf)("%llx\n", n); */
    return (/*32*/    n == 0xFEFEFEFFULL
            /*32*/ || n == 0x80808080ULL
+           /*32*/ || n == 0x7F7F7F7FULL
            /*64*/ || n == 0xFFFFFFFFFEFEFEFFULL
            /*64*/ || n == 0xFEFEFEFEFEFEFEFFULL
            /*64*/ || n == 0x0000000000008080ULL
            /*64*/ || n == 0x8080808080808080ULL
-	   /*64*/ || n == 0x0101010101010101ULL
+           /*64*/ || n == 0x0101010101010101ULL
           );
 }
 
@@ -3783,7 +3788,8 @@ IRSB* MC_(final_tidy) ( IRSB* sb_in )
    IRExpr*   guard;
    IRCallee* cee;
    Bool      alreadyPresent;
-   XArray*   pairs = VG_(newXA)( VG_(malloc), VG_(free), sizeof(Pair) );
+   XArray*   pairs = VG_(newXA)( VG_(malloc), "mc.ft.1",
+                                 VG_(free), sizeof(Pair) );
    /* Scan forwards through the statements.  Each time a call to one
       of the relevant helpers is seen, check if we have made a
       previous call to the same helper using the same guard
@@ -4169,10 +4175,13 @@ static void do_origins_Dirty ( MCEnv* mce, IRDirty* d )
          curr = gen_maxU32( mce, curr, here );
          toDo -= 4;
       }
-      if (toDo != 0)
-         VG_(printf)("Approx: do_origins_Dirty(R): missed %d bytes\n",
-                     (Int)toDo );
-      //tl_assert(toDo == 0); /* also need to handle 1,2-byte excess */
+      /* handle possible 16-bit excess */
+      while (toDo >= 2) {
+         here = gen_load_b( mce, 2, d->mAddr, d->mSize - toDo );
+         curr = gen_maxU32( mce, curr, here );
+         toDo -= 2;
+      }
+      tl_assert(toDo == 0); /* also need to handle 1-byte excess */
    }
 
    /* Whew!  So curr is a 32-bit B-value which should give an origin
@@ -4226,10 +4235,12 @@ static void do_origins_Dirty ( MCEnv* mce, IRDirty* d )
          gen_store_b( mce, 4, d->mAddr, d->mSize - toDo, curr );
          toDo -= 4;
       }
-      if (toDo != 0)
-         VG_(printf)("Approx: do_origins_Dirty(W): missed %d bytes\n",
-                     (Int)toDo );
-      //tl_assert(toDo == 0); /* also need to handle 1,2-byte excess */
+      /* handle possible 16-bit excess */
+      while (toDo >= 2) {
+         gen_store_b( mce, 2, d->mAddr, d->mSize - toDo, curr );
+         toDo -= 2;
+      }
+      tl_assert(toDo == 0); /* also need to handle 1-byte excess */
    }
 
 }

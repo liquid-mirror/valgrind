@@ -41,7 +41,7 @@ static void print_indent(int s)
     /* max of 40 spaces */
     char sp[] = "                                        ";
     if (s>40) s=40;
-    VG_(printf)(sp+40-s);
+    VG_(printf)("%s", sp+40-s);
 }
 
 void CLG_(print_bb)(int s, BB* bb)
@@ -168,7 +168,7 @@ void CLG_(print_eventset)(int s, EventSet* es)
 	if (es->e[i-1].nextTop == i)
 	  VG_(printf)("| ");
       }
-      VG_(printf)(es->e[i].type->name);
+      VG_(printf)("%s", es->e[i].type->name);
     }
   }
   VG_(printf)("\n");
@@ -429,10 +429,10 @@ void CLG_(print_context)(void)
   VG_(printf)("\n");
 }
 
-void* CLG_(malloc)(UWord s, char* f)
+void* CLG_(malloc)(HChar* cc, UWord s, char* f)
 {
     CLG_DEBUG(3, "Malloc(%lu) in %s.\n", s, f);
-    return VG_(malloc)(s);
+    return VG_(malloc)(cc,s);
 }
 
 #else /* CLG_ENABLE_DEBUG */

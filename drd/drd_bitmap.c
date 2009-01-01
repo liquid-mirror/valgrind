@@ -70,7 +70,7 @@ struct bitmap* bm_new_cb(void (*compute_bitmap2)(UWord, struct bitmap2*))
   /* in drd_bitmap.h.                                                    */
   tl_assert((1 << BITS_PER_BITS_PER_UWORD) == BITS_PER_UWORD);
 
-  bm = VG_(malloc)(sizeof(*bm));
+  bm = VG_(malloc)("drd.bitmap.bn.1", sizeof(*bm));
   tl_assert(bm);
   /* Cache initialization. a1 is initialized with a value that never can
    * match any valid address: the upper (ADDR_LSB_BITS + ADDR_IGNORED_BITS)
@@ -81,7 +81,8 @@ struct bitmap* bm_new_cb(void (*compute_bitmap2)(UWord, struct bitmap2*))
     bm->cache[i].a1  = ~(UWord)1;
     bm->cache[i].bm2 = 0;
   }
-  bm->oset = VG_(OSetGen_Create)(0, 0, VG_(malloc), VG_(free));
+  bm->oset = VG_(OSetGen_Create)(0, 0, VG_(malloc), "drd.bitmap.bn.2",
+                                       VG_(free));
   bm->compute_bitmap2 = compute_bitmap2;
 
   s_bitmap_creation_count++;

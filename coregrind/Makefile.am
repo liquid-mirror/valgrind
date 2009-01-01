@@ -121,8 +121,10 @@ noinst_HEADERS = \
 	pub_core_redir.h	\
 	pub_core_replacemalloc.h\
 	pub_core_scheduler.h	\
+	pub_core_seqmatch.h	\
 	pub_core_sigframe.h	\
 	pub_core_signals.h	\
+	pub_core_sparsewa.h	\
 	pub_core_stacks.h	\
 	pub_core_stacktrace.h	\
 	pub_core_syscall.h	\
@@ -136,6 +138,7 @@ noinst_HEADERS = \
 	pub_core_ume.h		\
 	pub_core_vki.h		\
 	pub_core_vkiscnums.h	\
+	pub_core_wordfm.h	\
 	pub_core_xarray.h	\
 	m_coredump/priv_elf.h	\
 	m_debuginfo/priv_misc.h	\
@@ -148,9 +151,11 @@ noinst_HEADERS = \
 	m_debuginfo/priv_readelf.h	\
 	m_debuginfo/priv_readxcoff.h	\
 	m_demangle/ansidecl.h	\
+	m_demangle/cp-demangle.h \
 	m_demangle/dyn-string.h	\
 	m_demangle/demangle.h	\
 	m_demangle/safe-ctype.h \
+	m_demangle/vg_libciface.h \
 	m_scheduler/priv_sema.h \
 	m_syswrap/priv_types_n_macros.h \
 	m_syswrap/priv_syswrap-generic.h \
@@ -187,7 +192,9 @@ COREGRIND_SOURCES_COMMON = \
 	m_options.c \
 	m_oset.c \
 	m_redir.c \
+	m_seqmatch.c \
 	m_signals.c \
+	m_sparsewa.c \
 	m_stacks.c \
 	m_stacktrace.c \
 	m_syscall.c \
@@ -199,6 +206,7 @@ COREGRIND_SOURCES_COMMON = \
 	m_ume.c \
 	m_vki.c \
 	m_vkiscnums.c \
+	m_wordfm.c \
 	m_xarray.c \
 	m_aspacemgr/aspacemgr-common.c \
 	m_debuginfo/misc.c \

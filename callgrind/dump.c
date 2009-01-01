@@ -64,13 +64,13 @@ Int CLG_(get_dump_counter)(void)
 
 Char* CLG_(get_out_file)()
 {
-    CLG_ASSERT(dumps_initialized);
+    CLG_(init_dumps)();
     return out_file;
 }
 
 Char* CLG_(get_out_directory)()
 {
-    CLG_ASSERT(dumps_initialized);
+    CLG_(init_dumps)();
     return out_directory;
 }
 
@@ -105,7 +105,8 @@ void init_dump_array(void)
       CLG_(stat).distinct_fns +
       CLG_(stat).context_counter;
     CLG_ASSERT(dump_array == 0);
-    dump_array = (Bool*) CLG_MALLOC(dump_array_size * sizeof(Bool));
+    dump_array = (Bool*) CLG_MALLOC("cl.dump.ida.1",
+                                    dump_array_size * sizeof(Bool));
     obj_dumped  = dump_array;
     file_dumped = obj_dumped + CLG_(stat).distinct_objs;
     fn_dumped   = file_dumped + CLG_(stat).distinct_files;
@@ -1218,7 +1219,8 @@ BBCC** prepare_dump(void)
 
     /* allocate bbcc array, insert BBCCs and sort */
     prepare_ptr = array =
-      (BBCC**) CLG_MALLOC((prepare_count+1) * sizeof(BBCC*));    
+      (BBCC**) CLG_MALLOC("cl.dump.pd.1",
+                          (prepare_count+1) * sizeof(BBCC*));    
 
     CLG_(forall_bbccs)(hash_addPtr);
 
@@ -1614,6 +1616,8 @@ void CLG_(dump_profile)(Char* trigger, Bool only_current_thread)
    CLG_DEBUG(2, "+ dump_profile(Trigger '%s')\n",
 	    trigger ? trigger : (Char*)"Prg.Term.");
 
+   CLG_(init_dumps)();
+
    if (VG_(clo_verbosity) > 1)
        VG_(message)(Vg_DebugMsg, "Start dumping at BB %llu (%s)...",
 		    CLG_(stat).bb_executions,
@@ -1671,14 +1675,34 @@ void init_cmdbuf(void)
  * <out_file> always starts with a full absolute path.
  * If the output format string represents a relative path, the current
  * working directory at program start is used.
+ *
+ * This function has to be called every time a profile dump is generated
+ * to be able to react on PID changes.
  */
 void CLG_(init_dumps)()
 {
    Int lastSlash, i;
    SysRes res;
 
+   static int thisPID = 0;
+   int currentPID = VG_(getpid)();
+   if (currentPID == thisPID) {
+       /* already initialized, and no PID change */
+       CLG_ASSERT(out_file != 0);
+       return;
+   }
+   thisPID = currentPID;
+   
    if (!CLG_(clo).out_format)
      CLG_(clo).out_format = DEFAULT_OUTFORMAT;
+
+   /* If a file name was already set, clean up before */
+   if (out_file) {
+       VG_(free)(out_file);
+       VG_(free)(out_directory);
+       VG_(free)(filename);
+       out_counter = 0;
+   }
 
    // Setup output filename.
    out_file =
@@ -1693,12 +1717,13 @@ void CLG_(init_dumps)()
        i++;
    }
    i = lastSlash;
-   out_directory = (Char*) CLG_MALLOC(i+1);
+   out_directory = (Char*) CLG_MALLOC("cl.dump.init_dumps.1", i+1);
    VG_(strncpy)(out_directory, out_file, i);
    out_directory[i] = 0;
 
    /* allocate space big enough for final filenames */
-   filename = (Char*) CLG_MALLOC(VG_(strlen)(out_file)+32);
+   filename = (Char*) CLG_MALLOC("cl.dump.init_dumps.2",
+                                 VG_(strlen)(out_file)+32);
    CLG_ASSERT(filename != 0);
        
    /* Make sure the output base file can be written.
@@ -1718,7 +1743,8 @@ void CLG_(init_dumps)()
     }
     if (!res.isError) VG_(close)( (Int)res.res );
 
-    init_cmdbuf();
+    if (!dumps_initialized)
+	init_cmdbuf();
 
     dumps_initialized = True;
 }
