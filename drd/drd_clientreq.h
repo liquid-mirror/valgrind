@@ -201,7 +201,8 @@ typedef enum
   mutex_type_recursive_mutex  = 1,
   mutex_type_errorcheck_mutex = 2,
   mutex_type_default_mutex    = 3,
-  mutex_type_spinlock         = 4
+  mutex_type_spinlock         = 4,
+  mutex_type_libio_file       = 5,
 } MutexT;
 
 typedef enum

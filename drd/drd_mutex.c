@@ -446,6 +446,8 @@ const char* mutex_type_name(const MutexT mt)
     return "mutex";
   case mutex_type_spinlock:
     return "spinlock";
+  case mutex_type_libio_file:
+    return "libio_file";
   default:
     tl_assert(0);
   }
