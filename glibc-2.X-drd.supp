@@ -71,19 +71,6 @@
    fun:random_r
 }
 {
-   libc:stdio
-   drd:ConflictingAccess
-   ...
-   fun:_IO_file_xsputn*
-   fun:vfprintf
-}
-{
-   libc:stdio
-   drd:ConflictingAccess
-   ...
-   fun:fflush
-}
-{
    librt
    drd:ConflictingAccess
    fun:__librt_enable_asynccancel
