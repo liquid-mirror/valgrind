@@ -27,6 +27,9 @@ order to use it.</para>
 
  <listitem>
   <para>Stuff about debug info, compiling without optimisation</para>
+ Nb: using -fprofile-arcs apparently gives misleading results -- eg.
+ suggests that lines that aren't executed actually are.  Don't use it with
+ VCov.
  </listitem>
 
  <listitem>

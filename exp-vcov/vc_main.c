@@ -34,6 +34,8 @@
 // - the new seginfo_* functions -- would providing an iterator be better?
 // - write tests -- work out how to make them deterministic...
 // - write docs
+// - add a first line to the output indicating it's VCov and the output
+// version number.  Eg. "vcov 1"
 
 // Overview:
 // - VCov is a coverage testing tool.  It has similarities and differences
