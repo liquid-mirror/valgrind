@@ -194,7 +194,7 @@ static const char *select_arch(const char *clientname, cpu_type_t default_cputyp
 
 
 /* Where we expect to find all our aux files */
-static const char *valgrind_lib = VG_LIBDIR;
+static const char *valgrind_lib;
 
 int main(int argc, char** argv, char** envp)
 {
@@ -206,7 +206,6 @@ int main(int argc, char** argv, char** envp)
    const char *arch;
    const char *default_arch;
    cpu_type_t default_cputype;
-   const char *cp;
    char *toolfile;
    char launcher_name[PATH_MAX+1];
    char* new_line;
@@ -273,6 +272,12 @@ int main(int argc, char** argv, char** envp)
       }
    }
 
+   /* Establish the correct VALGRIND_LIB. */
+   {  const char *cp;
+      cp = getenv(VALGRIND_LIB);
+      valgrind_lib = ( cp == NULL ? VG_LIBDIR : cp );
+   }
+
    /* Find installed architectures. */
    for (i = 0; i < valid_archs_count; i++) {
       char *tooldir;
@@ -288,6 +293,8 @@ int main(int argc, char** argv, char** envp)
 
    /* Find the "default" arch (VG_PLATFORM_PRI from configure). 
       This is the preferred arch from fat files and the fallback. */
+   default_arch = NULL;
+   default_cputype = 0;
    for (i = 0; i < valid_archs_count; i++) {
       if (!valid_archs[i].cputype) continue;
       if (0 == strncmp(VG_PLATFORM, valid_archs[i].valgrind_name, 
@@ -299,11 +306,13 @@ int main(int argc, char** argv, char** envp)
       }
    }
    if (i == valid_archs_count) barf("Unknown VG_PLATFORM '%s'", VG_PLATFORM);
+   assert(NULL != default_arch);
+   assert(0 != default_cputype);
 
-   /* Work out what arch to use, or use the default arch if
-      not possible. */
+   /* Work out what arch to use, or use the default arch if not possible. */
    if (archname != NULL) {
       // --arch from command line
+      arch = NULL;
       for (i = 0; i < valid_archs_count; i++) {
          if (0 == strcmp(archname, valid_archs[i].apple_name)  ||  
              0 == strcmp(archname, valid_archs[i].valgrind_name))
@@ -313,6 +322,7 @@ int main(int argc, char** argv, char** envp)
          }
       }
       if (i == valid_archs_count) barf("Unknown --arch '%s'", archname);
+      assert(NULL != arch);
       VG_(debugLog)(1, "launcher", "using arch '%s' from --arch=%s\n", 
                     arch, archname);
    } 
@@ -388,12 +398,6 @@ int main(int argc, char** argv, char** envp)
        }
    }
    new_argv[new_argc++] = NULL;
-
-   /* Establish the correct VALGRIND_LIB. */
-   cp = getenv(VALGRIND_LIB);
-
-   if (cp != NULL)
-      valgrind_lib = cp;
 
    /* Build the stage2 invokation, and execve it.  Bye! */
    asprintf(&toolfile, "%s/%s-darwin/%s", valgrind_lib, arch, toolname);
