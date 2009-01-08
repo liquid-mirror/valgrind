@@ -45,7 +45,7 @@
    Assertery.
    ------------------------------------------------------------------ */
 
-#if defined(VGP_x86_linux)
+#if defined(VGP_x86_linux)  ||  defined(VGP_x86_darwin)
 #  define GET_REAL_PC_SP_AND_FP(pc, sp, fp)      \
       asm("call m_libcassert_get_ip;" \
           "m_libcassert_get_ip: popl %0;" \
@@ -54,7 +54,7 @@
           : "=r" (pc),\
             "=r" (sp),\
             "=r" (fp));
-#elif defined(VGP_amd64_linux)
+#elif defined(VGP_amd64_linux)  ||  defined(VGP_amd64_darwin)
 #  define GET_REAL_PC_SP_AND_FP(pc, sp, fp)      \
       asm("leaq 0(%%rip), %0;" \
           "movq %%rsp, %1;" \
@@ -99,9 +99,9 @@
 /* Pull down the entire world */
 void VG_(exit)( Int status )
 {
-#  if defined(VGO_linux)
+#if defined(__NR_exit_group)
    (void)VG_(do_syscall1)(__NR_exit_group, status );
-#  endif
+#endif
    (void)VG_(do_syscall1)(__NR_exit, status );
    /* Why are we still alive here? */
    /*NOTREACHED*/
@@ -159,7 +159,15 @@ static void report_and_quit ( const Char* report,
    VG_(printf)("If that doesn't help, please report this bug to: %s\n\n", 
                report);
    VG_(printf)("In the bug report, send all the above text, the valgrind\n");
-   VG_(printf)("version, and what Linux distro you are using.  Thanks.\n\n");
+   VG_(printf)("version, and what %s you are using.  Thanks.\n\n", 
+#if defined(VGO_linux)
+               "Linux distro"
+#else
+               "OS and OS version"
+#endif
+               );
+
+   __builtin_trap();
    VG_(exit)(1);
 }
 

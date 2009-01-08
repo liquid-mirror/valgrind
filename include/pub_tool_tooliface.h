@@ -399,6 +399,23 @@ extern void VG_(needs_client_requests) (
    Bool (*handle_client_request)(ThreadId tid, UWord* arg_block, UWord* ret)
 );
 
+/* Tool defines its own debugger commands? */
+extern void VG_(needs_debugger_commands) (
+   // Debugger query command started with: "qvalgrind.<toolname>.". 
+   // `arg` points to the rest of the query, if any. These commands 
+   // should be used for data queries and the like.
+   // Return True if option was recognised. A reply must be sent using
+   //   using VG_(debugger_write_command). 
+   // Return False if the option was not recognized. Do not send a reply.
+   // See the GDB remote serial protocol for more command details.
+   Bool (*process_debugger_query)(Int sock, Char* arg),
+
+   // Like process_debugger_query, but prefix was "Qvalgrind.<toolname>.". 
+   // These commands should be used for memory modifications and other 
+   // process-manipulating actions.
+   Bool (*process_debugger_action)(Int sock, Char* arg)
+);
+
 /* Tool does stuff before and/or after system calls? */
 // Nb: If either of the pre_ functions malloc() something to return, the
 // corresponding post_ function had better free() it!
@@ -433,6 +450,7 @@ extern void VG_(needs_malloc_replacement)(
    void  (*p__builtin_delete)     ( ThreadId tid, void* p ),
    void  (*p__builtin_vec_delete) ( ThreadId tid, void* p ),
    void* (*prealloc)              ( ThreadId tid, void* p, SizeT new_size ),
+   SizeT (*pmalloc_usable_size)   ( ThreadId tid, void* p), 
    SizeT client_malloc_redzone_szB
 );
 

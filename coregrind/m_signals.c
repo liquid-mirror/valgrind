@@ -107,6 +107,11 @@
 #include "pub_core_tooliface.h"
 #include "pub_core_coredump.h"
 
+#if defined(VGO_darwin)
+
+#warning GrP fixme signals
+
+#else
 
 /* ---------------------------------------------------------------------
    Forwards decls.
@@ -2146,6 +2151,9 @@ void VG_(sigstartup_actions) ( void )
    /* Leave with all signals still blocked; the thread scheduler loop
       will set the appropriate mask at the appropriate time. */
 }
+
+
+#endif
 
 /*--------------------------------------------------------------------*/
 /*--- end                                                          ---*/

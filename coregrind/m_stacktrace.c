@@ -94,9 +94,9 @@ UInt VG_(get_StackTrace_wrk) ( ThreadId tid_if_known,
       fp_max -= sizeof(Addr);
 
    if (debug)
-      VG_(printf)("n_ips=%d fp_min=0x%lx fp_max_orig=0x%lx, "
+      VG_(printf)("tid=%d? n_ips=%d fp_min=0x%lx fp_max_orig=0x%lx, "
                   "fp_max=0x%lx ip=0x%lx fp=0x%lx\n",
-		  n_ips, fp_min, fp_max_orig, fp_max, ip, fp);
+		  tid_if_known, n_ips, fp_min, fp_max_orig, fp_max, ip, fp);
 
    /* Assertion broken before main() is reached in pthreaded programs;  the
     * offending stack traces only have one item.  --njn, 2002-aug-16 */
@@ -115,7 +115,7 @@ UInt VG_(get_StackTrace_wrk) ( ThreadId tid_if_known,
       piece of code is just too confusing and difficult to
       performance-tune.  */
 
-#  if defined(VGP_x86_linux)
+#  if defined(VGP_x86_linux) || defined(VGP_x86_darwin)
 
    /*--------------------- x86 ---------------------*/
 
@@ -188,7 +188,7 @@ UInt VG_(get_StackTrace_wrk) ( ThreadId tid_if_known,
       break;
    }
 
-#  elif defined(VGP_amd64_linux)
+#  elif defined(VGP_amd64_linux)  ||  defined(VGP_amd64_darwin)
 
    /*--------------------- amd64 ---------------------*/
 
@@ -527,6 +527,24 @@ void VG_(get_and_pp_StackTrace) ( ThreadId tid, UInt n_ips )
    VG_(pp_StackTrace)(ips, n_ips_obtained);
 }
 
+void vg_bt(ThreadId tid)
+{
+    VG_(get_and_pp_StackTrace)(tid, 30);
+}
+
+void vg_taabt(void)
+{
+    int i;
+    for (i = 1; i < VG_N_THREADS; i++) {
+        if (VG_(is_valid_tid)(i)) {
+            VG_(message)(Vg_UserMsg, "");
+            VG_(message)(Vg_UserMsg, "");
+            VG_(message)(Vg_UserMsg, "Thread %d (%p):", i, VG_(threads)[i].os_state.lwpid);
+            VG_(message)(Vg_UserMsg, "");
+            vg_bt(i);
+        }
+    }
+}
 
 void VG_(apply_StackTrace)( void(*action)(UInt n, Addr ip),
                             StackTrace ips, UInt n_ips )

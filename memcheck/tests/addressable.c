@@ -12,6 +12,10 @@
 
 static int pgsz;
 
+#ifndef MAP_ANONYMOUS
+#define MAP_ANONYMOUS 0
+#endif /* MAP_ANONYMOUS */
+
 static char *mm(char *addr, int size, int prot)
 {
 	int flags = MAP_PRIVATE | MAP_ANONYMOUS;

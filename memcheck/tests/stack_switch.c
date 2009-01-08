@@ -3,7 +3,7 @@
 
 #include <stdio.h>
 
-#if defined(_AIX)
+#if defined(_AIX) || defined(__APPLE__)
 int main(int argc, char **argv) 
 {
   printf("this test is linux-specific\n");

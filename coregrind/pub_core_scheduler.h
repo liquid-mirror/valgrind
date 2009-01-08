@@ -94,6 +94,11 @@ extern Bool VG_(in_generated_code);
 /* Sanity checks which may be done at any time.  The scheduler decides when. */
 extern void VG_(sanity_check_general) ( Bool force_expensive );
 
+/* GrP fixme scheduler hacks for debugger */
+extern void VG_(lock)(void);
+extern void VG_(unlock)(void);
+extern void VG_(unlock_lwpid)(Int lwpid);
+
 #endif   // __PUB_CORE_SCHEDULER_H
 
 /*--------------------------------------------------------------------*/

@@ -133,7 +133,9 @@ void VG_(demangle) ( Bool do_cxx_demangle,
    // known incarnations of said into a single name, "(below main)".
    if (0==VG_(strcmp)("__libc_start_main", result)
        || 0==VG_(strcmp)("generic_start_main", result)
-       || 0==VG_(strcmp)("__start", result)) /* on AIX */
+       || 0==VG_(strcmp)("__start", result) /* on AIX */
+       || 0==VG_(strcmp)("_start", result) /* on Darwin */
+       )
       VG_(strncpy_safely)(result, "(below main)", 13);
 
 #  undef N_ZBUF

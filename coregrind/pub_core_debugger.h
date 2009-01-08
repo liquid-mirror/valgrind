@@ -37,6 +37,7 @@
 //--------------------------------------------------------------------
 
 extern void VG_(start_debugger) ( ThreadId tid );
+extern void VG_(start_debugger_signal) ( ThreadId tid, Int sig );
 
 #endif   // __PUB_CORE_DEBUGGER_H
 

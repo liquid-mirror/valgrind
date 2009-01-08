@@ -322,6 +322,43 @@ static Int lc_markstack_pop(void)
 
    If clique != -1, it means we're gathering leaked memory into
    cliques, and clique is the index of the current clique leader. */
+#if defined(VGO_darwin)
+static void lc_scan_memory_WRK(Addr start, SizeT len, Int clique)
+{
+    Addr ptr = VG_ROUNDUP(start, sizeof(Addr));
+    Addr end = VG_ROUNDDN(start+len, sizeof(Addr));
+
+   if (!VG_(am_is_valid_for_client)(ptr, sizeof(Addr), VKI_PROT_READ))
+      ptr = VG_PGROUNDUP(ptr+1);	/* first page bad */
+
+   while (ptr < end) {
+      Addr addr;
+
+      /* Skip invalid chunks */
+      if (!(*lc_is_within_valid_secondary)(ptr)) {
+	 ptr = VG_ROUNDUP(ptr+1, SM_SIZE);
+	 continue;
+      }
+
+      /* Look to see if this page seems reasonble */
+      if ((ptr % VKI_PAGE_SIZE) == 0) {
+	 if (!VG_(am_is_valid_for_client)(ptr, sizeof(Addr), VKI_PROT_READ))
+	    ptr += VKI_PAGE_SIZE; /* bad page - skip it */
+      }
+
+      /* GrP fixme check page readability with kernel */
+      {
+	 if ((*lc_is_valid_aligned_word)(ptr)) {
+            lc_scanned += sizeof(Addr);
+	    addr = *(Addr *)ptr;
+	    lc_markstack_push_WRK(addr, clique);
+	 } else if (0 && VG_DEBUG_LEAKCHECK)
+	    VG_(printf)("%p not valid\n", ptr);
+	 ptr += sizeof(Addr);
+      }
+   }
+}
+#else
 static void lc_scan_memory_WRK(Addr start, SizeT len, Int clique)
 {
    Addr ptr = VG_ROUNDUP(start, sizeof(Addr));
@@ -373,10 +410,12 @@ static void lc_scan_memory_WRK(Addr start, SizeT len, Int clique)
    VG_(sigprocmask)(VKI_SIG_SETMASK, &sigmask, NULL);
    VG_(set_fault_catcher)(NULL);
 }
+#endif
 
 
 static void lc_scan_memory(Addr start, SizeT len)
 {
+   VG_(printf)(".");
    lc_scan_memory_WRK(start, len, -1);
 }
 

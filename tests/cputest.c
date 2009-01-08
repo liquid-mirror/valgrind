@@ -66,10 +66,23 @@ static void cpuid ( unsigned int n,
                     unsigned int* c, unsigned int* d )
 {
    __asm__ __volatile__ (
-      "cpuid"
-      : "=a" (*a), "=b" (*b), "=c" (*c), "=d" (*d)      /* output */
-      : "0" (n)         /* input */
-   );
+       "pushl %%eax\n\t"
+       "pushl %%ebx\n\t"
+       "pushl %%ecx\n\t"
+       "pushl %%edx\n\t"
+       "movl %4, %%eax\n\t"
+       "cpuid\n\t"
+       "movl %%eax,%0\n\t"
+       "movl %%ebx,%1\n\t"
+       "movl %%ecx,%2\n\t"
+       "movl %%edx,%3\n\t"
+       "popl %%edx\n\t"
+       "popl %%ecx\n\t"
+       "popl %%ebx\n\t"
+       "popl %%eax\n\t"
+       : "=m" (*a), "=m" (*b), "=m" (*c), "=m" (*d)
+       : "mr" (n)
+       );
 }
 
 static Bool go(char* cpu)

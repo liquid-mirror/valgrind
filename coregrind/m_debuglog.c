@@ -393,6 +393,82 @@ static UInt local_sys_getpid ( void )
    return (UInt)block[0];
 }
 
+#elif defined(VGP_x86_darwin)
+
+__attribute__((noinline))
+static UInt local_sys_write_stderr ( HChar* buf, Int n )
+{
+   UInt __res;
+   __asm__ volatile (
+      "movl  %2, %%eax\n"    /* push n */
+      "pushl %%eax\n"
+      "movl  %1, %%eax\n"    /* push buf */
+      "pushl %%eax\n"
+      "movl  $1, %%eax\n"    /* push stderr */
+      "pushl %%eax\n"
+      "movl  $4, %%eax\n"    /* %eax = __NR_write */
+      "pushl %%eax\n"        /* push fake return address */
+      "int   $0x80\n"        /* write(stderr, buf, n) */
+      "jnc   1f\n"           /* jump if no error */
+      "movl  $-1, %%eax\n"   /* return -1 if error */
+      "1: "
+      "movl  %%eax, %0\n"    /* __res = eax */
+      "addl  $16, %%esp\n"   /* pop x4 */
+      : "=mr" (__res)
+      : "g" (buf), "g" (n)
+      : "eax", "edx", "cc"
+   );
+   return __res;
+}
+
+static UInt local_sys_getpid ( void )
+{
+   UInt __res;
+   __asm__ volatile (
+      "movl $20, %%eax\n"  /* set %eax = __NR_getpid */
+      "int  $0x80\n"       /* getpid() */
+      "movl %%eax, %0\n"   /* set __res = eax */
+      : "=mr" (__res)
+      :
+      : "eax", "cc" );
+   return __res;
+}
+
+#elif defined(VGP_amd64_darwin)
+
+__attribute__((noinline))
+static UInt local_sys_write_stderr ( HChar* buf, Int n )
+{
+   UInt __res;
+   __asm__ volatile (
+      "movq  $1, %%rdi\n"    /* push stderr */
+      "movq  %1, %%rsi\n"    /* push buf */
+      "movl  %2, %%edx\n"    /* push n */
+      "movl  $" VG_STRINGIFY(sysno_num(__NR_write)) ", %%eax\n"
+      "syscall\n"            /* write(stderr, buf, n) */
+      "jnc   1f\n"           /* jump if no error */
+      "movq  $-1, %%rax\n"   /* return -1 if error */
+      "1: "
+      "movl  %%eax, %0\n"    /* __res = eax */
+      : "=mr" (__res)
+      : "g" (buf), "g" (n)
+      : "rdi", "rsi", "rdx", "rcx", "rax", "cc" );
+   return __res;
+}
+
+static UInt local_sys_getpid ( void )
+{
+   UInt __res;
+   __asm__ volatile (
+      "movl $" VG_STRINGIFY(sysno_num(__NR_getpid)) ", %%eax\n"
+      "syscall\n"          /* getpid() */
+      "movl %%eax, %0\n"   /* set __res = eax */
+      : "=mr" (__res)
+      :
+      : "rax", "rcx", "cc" );
+   return __res;
+}
+
 #else
 # error Unknown platform
 #endif
@@ -450,7 +526,7 @@ static void emit ( HChar* buf, Int n )
 
 /* Copy a string into the buffer. */
 static 
-UInt myvprintf_str ( void(*send)(HChar,void*),
+UInt myvprintf_str ( void(*send_fn)(HChar,void*),
                      void* send_arg2,
                      Int flags, 
                      Int width, 
@@ -465,14 +541,14 @@ UInt myvprintf_str ( void(*send)(HChar,void*),
    if (width == 0) {
       ret += len;
       for (i = 0; i < len; i++)
-          send(MAYBE_TOUPPER(str[i]), send_arg2);
+          send_fn(MAYBE_TOUPPER(str[i]), send_arg2);
       return ret;
    }
 
    if (len > width) {
       ret += width;
       for (i = 0; i < width; i++)
-         send(MAYBE_TOUPPER(str[i]), send_arg2);
+         send_fn(MAYBE_TOUPPER(str[i]), send_arg2);
       return ret;
    }
 
@@ -480,15 +556,15 @@ UInt myvprintf_str ( void(*send)(HChar,void*),
    if (flags & VG_MSG_LJUSTIFY) {
       ret += extra;
       for (i = 0; i < extra; i++)
-         send(' ', send_arg2);
+         send_fn(' ', send_arg2);
    }
    ret += len;
    for (i = 0; i < len; i++)
-      send(MAYBE_TOUPPER(str[i]), send_arg2);
+      send_fn(MAYBE_TOUPPER(str[i]), send_arg2);
    if (!(flags & VG_MSG_LJUSTIFY)) {
       ret += extra;
       for (i = 0; i < extra; i++)
-         send(' ', send_arg2);
+         send_fn(' ', send_arg2);
    }
 
 #  undef MAYBE_TOUPPER
@@ -498,7 +574,7 @@ UInt myvprintf_str ( void(*send)(HChar,void*),
 
 /* Copy a string into the buffer, escaping bad XML chars. */
 static 
-UInt myvprintf_str_XML_simplistic ( void(*send)(HChar,void*),
+UInt myvprintf_str_XML_simplistic ( void(*send_fn)(HChar,void*),
                                     void* send_arg2,
                                     HChar* str )
 {
@@ -517,12 +593,12 @@ UInt myvprintf_str_XML_simplistic ( void(*send)(HChar,void*),
 
       if (alt) {
          while (*alt) {
-            send(*alt, send_arg2);
+            send_fn(*alt, send_arg2);
             ret++;
             alt++;
          }
       } else {
-         send(str[i], send_arg2);
+         send_fn(str[i], send_arg2);
          ret++;
       }
    }
@@ -538,7 +614,7 @@ UInt myvprintf_str_XML_simplistic ( void(*send)(HChar,void*),
  *  WIDTH is the width of the field.
  */
 static 
-UInt myvprintf_int64 ( void(*send)(HChar,void*), 
+UInt myvprintf_int64 ( void(*send_fn)(HChar,void*), 
                        void* send_arg2,
                        Int flags, 
                        Int base, 
@@ -593,13 +669,13 @@ UInt myvprintf_int64 ( void(*send)(HChar,void*),
    /* Reverse copy to buffer.  */
    ret += ind;
    for (i = ind -1; i >= 0; i--) {
-      send(buf[i], send_arg2);
+      send_fn(buf[i], send_arg2);
    }
    if (width > 0 && (flags & VG_MSG_LJUSTIFY)) {
       for(; ind < width; ind++) {
          ret++;
          /* Never pad with zeroes on RHS -- changes the value! */
-         send(' ', send_arg2);
+         send_fn(' ', send_arg2);
       }
    }
    return ret;
@@ -610,7 +686,7 @@ UInt myvprintf_int64 ( void(*send)(HChar,void*),
 /* EXPORTED */
 UInt
 VG_(debugLog_vprintf) ( 
-   void(*send)(HChar,void*), 
+   void(*send_fn)(HChar,void*), 
    void* send_arg2,
    const HChar* format, 
    va_list vargs
@@ -630,7 +706,7 @@ VG_(debugLog_vprintf) (
 
    for (i = 0; format[i] != 0; i++) {
       if (format[i] != '%') {
-         send(format[i], send_arg2);
+         send_fn(format[i], send_arg2);
          ret++;
          continue;
       }
@@ -640,7 +716,7 @@ VG_(debugLog_vprintf) (
          break;
       if (format[i] == '%') {
          /* '%%' is replaced by '%'. */
-         send('%', send_arg2);
+         send_fn('%', send_arg2);
          ret++;
          continue;
       }
@@ -696,25 +772,25 @@ VG_(debugLog_vprintf) (
          case 'd': /* %d */
             flags |= VG_MSG_SIGNED;
             if (is_long)
-               ret += myvprintf_int64(send, send_arg2, flags, 10, width, False,
+               ret += myvprintf_int64(send_fn, send_arg2, flags, 10, width, False,
                                       (ULong)(va_arg (vargs, Long)));
             else
-               ret += myvprintf_int64(send, send_arg2, flags, 10, width, False,
+               ret += myvprintf_int64(send_fn, send_arg2, flags, 10, width, False,
                                       (ULong)(va_arg (vargs, Int)));
             break;
          case 'u': /* %u */
             if (is_long)
-               ret += myvprintf_int64(send, send_arg2, flags, 10, width, False,
+               ret += myvprintf_int64(send_fn, send_arg2, flags, 10, width, False,
                                       (ULong)(va_arg (vargs, ULong)));
             else
-               ret += myvprintf_int64(send, send_arg2, flags, 10, width, False,
+               ret += myvprintf_int64(send_fn, send_arg2, flags, 10, width, False,
                                       (ULong)(va_arg (vargs, UInt)));
             break;
          case 'p': /* %p */
             ret += 2;
-            send('0',send_arg2);
-            send('x',send_arg2);
-            ret += myvprintf_int64(send, send_arg2, flags, 16, width, True,
+            send_fn('0',send_arg2);
+            send_fn('x',send_arg2);
+            ret += myvprintf_int64(send_fn, send_arg2, flags, 16, width, True,
                                    (ULong)((UWord)va_arg (vargs, void *)));
             break;
          case 'x': /* %x */
@@ -722,24 +798,24 @@ VG_(debugLog_vprintf) (
             caps = toBool(format[i] == 'X');
             if (flags & VG_MSG_ALTFORMAT) {
                ret += 2;
-               send('0',send_arg2);
-               send('x',send_arg2);
+               send_fn('0',send_arg2);
+               send_fn('x',send_arg2);
             }
             if (is_long)
-               ret += myvprintf_int64(send, send_arg2, flags, 16, width, caps,
+               ret += myvprintf_int64(send_fn, send_arg2, flags, 16, width, caps,
                                       (ULong)(va_arg (vargs, ULong)));
             else
-               ret += myvprintf_int64(send, send_arg2, flags, 16, width, caps,
+               ret += myvprintf_int64(send_fn, send_arg2, flags, 16, width, caps,
                                       (ULong)(va_arg (vargs, UInt)));
             break;
          case 'c': /* %c */
             ret++;
-            send(va_arg (vargs, int), send_arg2);
+            send_fn(va_arg (vargs, int), send_arg2);
             break;
          case 's': case 'S': { /* %s */
             char *str = va_arg (vargs, char *);
             if (str == (char*) 0) str = "(null)";
-            ret += myvprintf_str(send, send_arg2, 
+            ret += myvprintf_str(send_fn, send_arg2, 
                                  flags, width, str, format[i]=='S');
             break;
          }
@@ -747,7 +823,7 @@ VG_(debugLog_vprintf) (
             /* Note: simplistic; ignores field width and flags */
             char *str = va_arg (vargs, char *);
             if (str == (char*) 0) str = "(null)";
-            ret += myvprintf_str_XML_simplistic(send, send_arg2, str);
+            ret += myvprintf_str_XML_simplistic(send_fn, send_arg2, str);
             break;
          }
 
@@ -764,7 +840,7 @@ VG_(debugLog_vprintf) (
 //                  *cp++ = ')';
 //                  *cp = '\0';
 //               }
-//               ret += myvprintf_str(send, send_arg2, flags, width, buf, 0);
+//               ret += myvprintf_str(send_fn, send_arg2, flags, width, buf, 0);
 //            }
 //            break;
 //         }

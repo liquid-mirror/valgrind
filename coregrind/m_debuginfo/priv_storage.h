@@ -51,8 +51,8 @@ typedef
       Addr  addr;   /* lowest address of entity */
       Addr  tocptr; /* ppc64-linux only: value that R2 should have */
       UChar *name;  /* name */
-      UInt  size;   /* size in bytes */
-      Bool  isText;
+      UInt  size:31;   /* size in bytes */
+      UInt  isText:1;
    }
    DiSym;
 
@@ -475,6 +475,12 @@ void ML_(addLineInfo) ( struct _DebugInfo* di,
                         UChar*   filename, 
                         UChar*   dirname,  /* NULL is allowable */
                         Addr this, Addr next, Int lineno, Int entry);
+
+/* Shrink completed tables to save memory. */
+extern 
+void ML_(shrinkSym) ( struct _DebugInfo *di );
+extern 
+void ML_(shrinkLineInfo) ( struct _DebugInfo *di );
 
 /* Add a CFI summary record.  The supplied DiCfSI is copied. */
 extern void ML_(addDiCfSI) ( struct _DebugInfo* di, DiCfSI* cfsi );

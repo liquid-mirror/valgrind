@@ -3560,6 +3560,7 @@ static void o_pre_clo_init(void)
 				 o__builtin_delete,
 				 o__builtin_vec_delete,
 				 o_realloc,
+				 NULL,
 				 0 );
   // Want stack unwinds
   VG_(track_die_mem_stack)      (o_dieMemStack);

@@ -27,7 +27,6 @@ valgrind_listener_LDFLAGS   = $(AM_CFLAGS_PRI)
 #
 #----------------------------------------------------------
 
-
 #------------------------- mpi wrappers -----------------------
 # Build libmpiwrap.so for the primary target, and for the secondary
 # target if relevant.
@@ -51,10 +50,17 @@ if VGO_AIX5
 			-qflag=w:w -qlanglvl=extended \
 			`echo $(AM_FLAG_M3264_SEC) | sed s/maix/q/g`
 else
+if VGO_DARWIN
+ HACKY_FLAGS_PRI = -g -O -fno-omit-frame-pointer -Wall -dynamic \
+			-dynamiclib -all_load $(AM_FLAG_M3264_PRI)
+ HACKY_FLAGS_SEC = -g -O -fno-omit-frame-pointer -Wall -dynamic \
+			-dynamiclib -all_load $(AM_FLAG_M3264_SEC)
+else
  HACKY_FLAGS_PRI = -g -O -fno-omit-frame-pointer -Wall -fpic -shared \
 			$(AM_FLAG_M3264_PRI)
  HACKY_FLAGS_SEC = -g -O -fno-omit-frame-pointer -Wall -fpic -shared \
 			$(AM_FLAG_M3264_SEC)
+endif
 endif
 
 

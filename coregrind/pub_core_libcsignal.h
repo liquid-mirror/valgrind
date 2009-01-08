@@ -57,6 +57,7 @@ extern Int  VG_(sigismember) ( const vki_sigset_t* set, Int signum );
 
 extern void VG_(sigaddset_from_set) ( vki_sigset_t* dst, vki_sigset_t* src );
 extern void VG_(sigdelset_from_set) ( vki_sigset_t* dst, vki_sigset_t* src );
+extern void VG_(sigintersectset)    ( vki_sigset_t* dst, vki_sigset_t* src );
 
 /* --- Mess with the kernel's sig state --- */
 /* VG_(sigprocmask) is in pub_tool_libcsignal.h. */

@@ -52,6 +52,10 @@ extern Int   VG_(clo_error_exitcode);
 extern Bool  VG_(clo_db_attach);
 /* The debugger command?  default: whatever gdb ./configure found */
 extern Char* VG_(clo_db_command);
+/* Listen for a remote debugger?  default: YES (GrP fixme no?) */
+extern Bool  VG_(clo_db_listen);
+/* TCP port to listen for remote debugger  default: 2159 (gdb-remote) */
+extern Int   VG_(clo_db_listen_port);
 /* Generating a suppression for each error?   default: 0 (NO)
    Other values: 1 (yes, but ask user), 2 (yes, don't ask user) */
 extern Int   VG_(clo_gen_suppressions);
@@ -108,6 +112,8 @@ extern UChar VG_(clo_profile_flags);
 extern Int   VG_(clo_trace_notbelow);
 /* DEBUG: print system calls?  default: NO */
 extern Bool  VG_(clo_trace_syscalls);
+/* DEBUG: print unknown system calls?  default: NO */
+extern Bool  VG_(clo_trace_unknown_syscalls);
 /* DEBUG: print signal details?  default: NO */
 extern Bool  VG_(clo_trace_signals);
 /* DEBUG: print symtab details?  default: NO */

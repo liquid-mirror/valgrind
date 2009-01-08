@@ -78,7 +78,7 @@ static Bool is_base36_digit(Char c, Long* digit)
    return False;
 }
 
-Long VG_(strtoll8) ( Char* str, Char** endptr )
+Long VG_(strtoll8) ( const Char* str, const Char** endptr )
 {
    Bool neg = False;
    Long n = 0, digit = 0;
@@ -100,7 +100,7 @@ Long VG_(strtoll8) ( Char* str, Char** endptr )
    return n;
 }
 
-Long VG_(strtoll10) ( Char* str, Char** endptr )
+Long VG_(strtoll10) ( const Char* str, const Char** endptr )
 {
    Bool neg = False;
    Long n = 0, digit = 0;
@@ -122,7 +122,7 @@ Long VG_(strtoll10) ( Char* str, Char** endptr )
    return n;
 }
 
-Long VG_(strtoll16) ( Char* str, Char** endptr )
+Long VG_(strtoll16) ( const Char* str, const Char** endptr )
 {
    Bool neg = False;
    Long n = 0, digit = 0;
@@ -152,7 +152,7 @@ Long VG_(strtoll16) ( Char* str, Char** endptr )
    return n;
 }
 
-Long VG_(strtoll36) ( Char* str, Char** endptr )
+Long VG_(strtoll36) ( const Char* str, const Char** endptr )
 {
    Bool neg = False;
    Long n = 0, digit = 0;
@@ -174,7 +174,7 @@ Long VG_(strtoll36) ( Char* str, Char** endptr )
    return n;
 }
 
-double VG_(strtod) ( Char* str, Char** endptr )
+double VG_(strtod) ( const Char* str, const Char** endptr )
 {
    Bool neg = False;
    Long digit;
@@ -207,19 +207,28 @@ double VG_(strtod) ( Char* str, Char** endptr )
    return n;
 }
 
-Long VG_(atoll) ( Char* str )
+Long VG_(atoll) ( const Char* str )
 {
    return VG_(strtoll10)(str, NULL);
 }
 
-Long VG_(atoll16) ( Char* str )
+Long VG_(atoll16) ( const Char* str )
 {
    return VG_(strtoll16)(str, NULL);
 }
 
-Long VG_(atoll36) ( Char* str )
+Long VG_(atoll36) ( const Char* str )
 {
    return VG_(strtoll36)(str, NULL);
+}
+
+Char VG_(tolower) ( Char c )
+{
+   if ( c >= 'A'  &&  c <= 'Z' ) {
+      return c - 'A' + 'a';
+   } else {
+      return c;
+   }
 }
 
 /* ---------------------------------------------------------------------
@@ -314,6 +323,22 @@ Int VG_(strcmp) ( const Char* s1, const Char* s2 )
    }
 }
 
+Int VG_(strcasecmp) ( const Char* s1, const Char* s2 )
+{
+   while (True) {
+      UChar c1 = (UChar)VG_(tolower)(*s1);
+      UChar c2 = (UChar)VG_(tolower)(*s2);
+      if (c1 == 0 && c2 == 0) return 0;
+      if (c1 == 0) return -1;
+      if (c2 == 0) return 1;
+
+      if (c1 < c2) return -1;
+      if (c1 > c2) return 1;
+
+      s1++; s2++;
+   }
+}
+
 static Bool isterm ( Char c )
 {
    return ( VG_(isspace)(c) || 0 == c );
@@ -349,6 +374,26 @@ Int VG_(strncmp) ( const Char* s1, const Char* s2, SizeT nmax )
    }
 }
 
+Int VG_(strncasecmp) ( const Char* s1, const Char* s2, SizeT nmax )
+{
+   Int n = 0;
+   while (True) {
+      UChar c1;
+      UChar c2;
+      if (n >= nmax) return 0;
+      c1 = (UChar)VG_(tolower)(*s1);
+      c2 = (UChar)VG_(tolower)(*s2);
+      if (c1 == 0 && c2 == 0) return 0;
+      if (c1 == 0) return -1;
+      if (c2 == 0) return 1;
+
+      if (c1 < c2) return -1;
+      if (c1 > c2) return 1;
+
+      s1++; s2++; n++;
+   }
+}
+
 Int VG_(strncmp_ws) ( const Char* s1, const Char* s2, SizeT nmax )
 {
    Int n = 0;
@@ -375,6 +420,21 @@ Char* VG_(strstr) ( const Char* haystack, Char* needle )
       if (haystack[0] == 0) 
          return NULL;
       if (VG_(strncmp)(haystack, needle, n) == 0) 
+         return (Char*)haystack;
+      haystack++;
+   }
+}
+
+Char* VG_(strcasestr) ( const Char* haystack, Char* needle )
+{
+   Int n; 
+   if (haystack == NULL)
+      return NULL;
+   n = VG_(strlen)(needle);
+   while (True) {
+      if (haystack[0] == 0) 
+         return NULL;
+      if (VG_(strncasecmp)(haystack, needle, n) == 0) 
          return (Char*)haystack;
       haystack++;
    }

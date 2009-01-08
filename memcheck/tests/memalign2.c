@@ -14,7 +14,11 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <assert.h>
+#if defined(__APPLE__)
+#include <malloc/malloc.h>
+#else
 #include <malloc.h>
+#endif
 #include <errno.h>
 
 int main ( void )
@@ -28,6 +32,10 @@ int main ( void )
 
 #  if defined(_AIX)
    printf("AIX 5.2 knows about neither memalign() nor posix_memalign().\n");
+
+#  else
+#  if defined(__APPLE__)
+   printf("MacOS X knows about neither memalign() nor posix_memalign().\n");
 
 #  else
    p = memalign(0, 100);      assert(0 == (long)p % 8);
@@ -69,6 +77,7 @@ int main ( void )
                                                  0 == (long)p % 4096); 
    res = PM(&p, 4097, 100);   assert(EINVAL == res);
 
+#  endif
 #  endif
    
    return 0;

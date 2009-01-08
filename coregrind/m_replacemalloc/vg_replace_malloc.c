@@ -64,6 +64,8 @@
 #  define  m_libc_soname     libcZaZdaZLshrZdoZR     // libc*.a(shr.o)
 #elif defined(VGP_ppc64_aix5)
 #  define  m_libc_soname     libcZaZdaZLshrZu64ZdoZR // libc*.a(shr_64.o)
+#elif defined(VGO_darwin)
+#  define  m_libc_soname libSystemZdZaZddylib // Darwin libSystem.*.dylib
 #else
 #  error "Unknown platform"
 #endif
@@ -138,8 +140,8 @@ static int init_done;
 static void init(void) __attribute__((constructor));
 
 #define MALLOC_TRACE(format, args...)  \
-   if (info.clo_trace_malloc)          \
-      VALGRIND_INTERNAL_PRINTF(format, ## args )
+   if (0 || info.clo_trace_malloc) {        \
+      VALGRIND_INTERNAL_PRINTF(format, ## args ); }
 
 /* Below are new versions of malloc, __builtin_new, free, 
    __builtin_delete, calloc, realloc, memalign, and friends.
@@ -167,6 +169,21 @@ static void init(void) __attribute__((constructor));
       \
       if (!init_done) init(); \
       MALLOC_TRACE(#fnname "(%llu)", (ULong)n ); \
+      \
+      v = (void*)VALGRIND_NON_SIMD_CALL1( info.tl_##vg_replacement, n ); \
+      MALLOC_TRACE(" = %p", v ); \
+      return v; \
+   }
+
+#define ZONEALLOC_or_NULL(soname, fnname, vg_replacement) \
+   \
+   void* VG_REPLACE_FUNCTION_ZU(soname,fnname) (void *zone, SizeT n); \
+   void* VG_REPLACE_FUNCTION_ZU(soname,fnname) (void *zone, SizeT n)  \
+   { \
+      void* v; \
+      \
+      if (!init_done) init(); \
+      MALLOC_TRACE(#fnname "(%p, %llu)", zone, (ULong)n ); \
       \
       v = (void*)VALGRIND_NON_SIMD_CALL1( info.tl_##vg_replacement, n ); \
       MALLOC_TRACE(" = %p", v ); \
@@ -208,6 +225,7 @@ ALLOC_or_NULL(m_libc_soname,      malloc,      malloc);
 #if defined(VGP_ppc32_aix5) || defined(VGP_ppc64_aix5)
 ALLOC_or_NULL(m_libc_soname,      malloc_common, malloc);
 #endif
+ZONEALLOC_or_NULL(m_libc_soname, malloc_zone_malloc, malloc);
 
 
 /*---------------------- new ----------------------*/
@@ -226,7 +244,7 @@ ALLOC_or_BOMB(m_libc_soname,       __builtin_new,  __builtin_new);
 #endif
 
 // operator new(unsigned long), GNU mangling
-#if VG_WORDSIZE == 8 || defined(VGP_ppc32_aix5)
+#if VG_WORDSIZE == 8 || defined(VGP_ppc32_aix5) || defined(VGO_darwin)
  ALLOC_or_BOMB(m_libstdcxx_soname, _Znwm,          __builtin_new);
  ALLOC_or_BOMB(m_libc_soname,      _Znwm,          __builtin_new);
 #endif
@@ -246,7 +264,7 @@ ALLOC_or_BOMB(m_libc_soname,       __builtin_new,  __builtin_new);
 #endif
 
 // operator new(unsigned long, std::nothrow_t const&), GNU mangling
-#if VG_WORDSIZE == 8 || defined(VGP_ppc32_aix5) || defined(VGP_ppc64_aix5)
+#if VG_WORDSIZE == 8 || defined(VGP_ppc32_aix5) || defined(VGP_ppc64_aix5) || defined(VGO_darwin)
  ALLOC_or_NULL(m_libstdcxx_soname, _ZnwmRKSt9nothrow_t,  __builtin_new);
  ALLOC_or_NULL(m_libc_soname,      _ZnwmRKSt9nothrow_t,  __builtin_new);
 #endif
@@ -270,7 +288,7 @@ ALLOC_or_BOMB(m_libc_soname,       __builtin_vec_new, __builtin_vec_new );
 #endif
 
 // operator new[](unsigned long), GNU mangling
-#if VG_WORDSIZE == 8 || defined(VGP_ppc32_aix5) || defined(VGP_ppc64_aix5)
+#if VG_WORDSIZE == 8 || defined(VGP_ppc32_aix5) || defined(VGP_ppc64_aix5) || defined(VGO_darwin)
  ALLOC_or_BOMB(m_libstdcxx_soname, _Znam,             __builtin_vec_new );
  ALLOC_or_BOMB(m_libc_soname,      _Znam,             __builtin_vec_new );
 #endif
@@ -290,7 +308,7 @@ ALLOC_or_BOMB(m_libc_soname,       __builtin_vec_new, __builtin_vec_new );
 #endif
 
 // operator new[](unsigned long, std::nothrow_t const&), GNU mangling
-#if VG_WORDSIZE == 8 || defined(VGP_ppc32_aix5) || defined(VGP_ppc64_aix5)
+#if VG_WORDSIZE == 8 || defined(VGP_ppc32_aix5) || defined(VGP_ppc64_aix5) || defined(VGO_darwin)
  ALLOC_or_NULL(m_libstdcxx_soname, _ZnamRKSt9nothrow_t, __builtin_vec_new );
  ALLOC_or_NULL(m_libc_soname,      _ZnamRKSt9nothrow_t, __builtin_vec_new );
 #endif
@@ -306,6 +324,18 @@ ALLOC_or_BOMB(m_libc_soname,       __builtin_vec_new, __builtin_vec_new );
 /* Generate a replacement for 'fnname' in object 'soname', which calls
    'vg_replacement' to free previously allocated memory.
 */
+#define ZONEFREE(soname, fnname, vg_replacement) \
+   \
+   void VG_REPLACE_FUNCTION_ZU(soname,fnname) (void *zone, void *p); \
+   void VG_REPLACE_FUNCTION_ZU(soname,fnname) (void *zone, void *p)  \
+   { \
+      if (!init_done) init(); \
+      MALLOC_TRACE(#vg_replacement "(%p, %p)", zone, p ); \
+      if (p == NULL)  \
+         return; \
+      (void)VALGRIND_NON_SIMD_CALL1( info.tl_##vg_replacement, p ); \
+   }
+
 #define FREE(soname, fnname, vg_replacement) \
    \
    void VG_REPLACE_FUNCTION_ZU(soname,fnname) (void *p); \
@@ -324,6 +354,7 @@ FREE(m_libc_soname,       free,                 free );
 #if defined(VGP_ppc32_aix5) || defined(VGP_ppc64_aix5)
 FREE(m_libc_soname,       free_common,          free );
 #endif
+ZONEFREE(m_libc_soname,   malloc_zone_free,     free );
 
 
 /*---------------------- cfree ----------------------*/
@@ -379,6 +410,21 @@ FREE(m_libc_soname,       _ZdaPvRKSt9nothrow_t, __builtin_vec_delete );
 
 /*---------------------- calloc ----------------------*/
 
+#define ZONECALLOC(soname, fnname) \
+   \
+   void* VG_REPLACE_FUNCTION_ZU(soname,fnname) ( void *zone, SizeT nmemb, SizeT size ); \
+   void* VG_REPLACE_FUNCTION_ZU(soname,fnname) ( void *zone, SizeT nmemb, SizeT size )  \
+   { \
+      void* v; \
+      \
+      if (!init_done) init(); \
+      MALLOC_TRACE("calloc(%p, %llu,%llu)", zone, (ULong)nmemb, (ULong)size ); \
+      \
+      v = (void*)VALGRIND_NON_SIMD_CALL2( info.tl_calloc, nmemb, size ); \
+      MALLOC_TRACE(" = %p", v ); \
+      return v; \
+   }
+
 #define CALLOC(soname, fnname) \
    \
    void* VG_REPLACE_FUNCTION_ZU(soname,fnname) ( SizeT nmemb, SizeT size ); \
@@ -398,9 +444,34 @@ CALLOC(m_libc_soname, calloc);
 #if defined(VGP_ppc32_aix5) || defined(VGP_ppc64_aix5)
 CALLOC(m_libc_soname, calloc_common);
 #endif
+ZONECALLOC(m_libc_soname, malloc_zone_calloc);
 
 
 /*---------------------- realloc ----------------------*/
+
+#define ZONEREALLOC(soname, fnname) \
+   \
+   void* VG_REPLACE_FUNCTION_ZU(soname,fnname) ( void *zone, void* ptrV, SizeT new_size );\
+   void* VG_REPLACE_FUNCTION_ZU(soname,fnname) ( void *zone, void* ptrV, SizeT new_size ) \
+   { \
+      void* v; \
+      \
+      if (!init_done) init(); \
+      MALLOC_TRACE("realloc(%p,%p,%llu)", zone, ptrV, (ULong)new_size ); \
+      \
+      if (ptrV == NULL) \
+         /* We need to call a malloc-like function; so let's use \
+            one which we know exists. GrP fixme use zonemalloc instead? */ \
+         return VG_REPLACE_FUNCTION_ZU(m_libc_soname,malloc) (new_size); \
+      if (new_size <= 0) { \
+         VG_REPLACE_FUNCTION_ZU(m_libc_soname,free)(ptrV); \
+         MALLOC_TRACE(" = 0"); \
+         return NULL; \
+      } \
+      v = (void*)VALGRIND_NON_SIMD_CALL2( info.tl_realloc, ptrV, new_size ); \
+      MALLOC_TRACE(" = %p", v ); \
+      return v; \
+   }
 
 #define REALLOC(soname, fnname) \
    \
@@ -430,9 +501,33 @@ REALLOC(m_libc_soname, realloc);
 #if defined(VGP_ppc32_aix5) || defined(VGP_ppc64_aix5)
 REALLOC(m_libc_soname, realloc_common);
 #endif
+ZONEREALLOC(m_libc_soname, malloc_zone_realloc);
 
 
 /*---------------------- memalign ----------------------*/
+
+#define ZONEMEMALIGN(soname, fnname) \
+   \
+   void* VG_REPLACE_FUNCTION_ZU(soname,fnname) ( void *zone, SizeT alignment, SizeT n ); \
+   void* VG_REPLACE_FUNCTION_ZU(soname,fnname) ( void *zone, SizeT alignment, SizeT n ) \
+   { \
+      void* v; \
+      \
+      if (!init_done) init(); \
+      MALLOC_TRACE("memalign(%p, al %llu, size %llu)", \
+                   zone, (ULong)alignment, (ULong)n );  \
+      \
+      /* Round up to minimum alignment if necessary. */ \
+      if (alignment < VG_MIN_MALLOC_SZB) \
+         alignment = VG_MIN_MALLOC_SZB; \
+      \
+      /* Round up to nearest power-of-two if necessary (like glibc). */ \
+      while (0 != (alignment & (alignment - 1))) alignment++; \
+      \
+      v = (void*)VALGRIND_NON_SIMD_CALL2( info.tl_memalign, alignment, n ); \
+      MALLOC_TRACE(" = %p", v ); \
+      return v; \
+   }
 
 #define MEMALIGN(soname, fnname) \
    \
@@ -458,6 +553,7 @@ REALLOC(m_libc_soname, realloc_common);
    }
 
 MEMALIGN(m_libc_soname, memalign);
+ZONEMEMALIGN(m_libc_soname, malloc_zone_memalign);
 
 
 /*---------------------- valloc ----------------------*/
@@ -483,7 +579,21 @@ static int local__getpagesize ( void ) {
                 ((SizeT)pszB, size); \
    }
 
+#define ZONEVALLOC(soname, fnname) \
+   \
+   void* VG_REPLACE_FUNCTION_ZU(soname,fnname) ( void *zone, SizeT size ); \
+   void* VG_REPLACE_FUNCTION_ZU(soname,fnname) ( void *zone, SizeT size )  \
+   { \
+      static int pszB = 0; \
+      extern int getpagesize (void); \
+      if (pszB == 0) \
+         pszB = getpagesize(); \
+      return VG_REPLACE_FUNCTION_ZU(m_libc_soname,memalign) \
+                ((SizeT)pszB, size); \
+   }
+
 VALLOC(m_libc_soname, valloc);
+ZONEVALLOC(m_libc_soname, malloc_zone_valloc);
 
 
 /*---------------------- mallopt ----------------------*/
@@ -579,8 +689,8 @@ POSIX_MEMALIGN(m_libc_soname, memalign_common);
 
 #define MALLOC_USABLE_SIZE(soname, fnname) \
    \
-   int VG_REPLACE_FUNCTION_ZU(soname, fnname) ( void* p ); \
-   int VG_REPLACE_FUNCTION_ZU(soname, fnname) ( void* p )  \
+   SizeT VG_REPLACE_FUNCTION_ZU(soname, fnname) ( void* p ); \
+   SizeT VG_REPLACE_FUNCTION_ZU(soname, fnname) ( void* p )  \
    {  \
       SizeT pszB; \
       \
@@ -589,14 +699,14 @@ POSIX_MEMALIGN(m_libc_soname, memalign_common);
       if (NULL == p) \
          return 0; \
       \
-      pszB = (SizeT)VALGRIND_NON_SIMD_CALL2( info.arena_payload_szB, \
-                                             VG_AR_CLIENT, p ); \
+      pszB = (SizeT)VALGRIND_NON_SIMD_CALL1( info.tl_malloc_usable_size, p ); \
       MALLOC_TRACE(" = %llu", (ULong)pszB ); \
       \
       return pszB; \
    }
 
 MALLOC_USABLE_SIZE(m_libc_soname, malloc_usable_size);
+MALLOC_USABLE_SIZE(m_libc_soname, malloc_size);
 
 
 /*---------------------- (unimplemented) ----------------------*/
@@ -653,17 +763,59 @@ MALLOC_STATS(m_libc_soname, malloc_stats);
 MALLINFO(m_libc_soname, mallinfo);
 
 
+#if defined(VGO_darwin)
+
+static vki_malloc_zone_t vg_default_zone = {
+    NULL, // reserved
+    NULL, // reserved
+    NULL, // fixme malloc_size
+    (void*)VG_REPLACE_FUNCTION_ZU(m_libc_soname, malloc_zone_malloc), 
+    (void*)VG_REPLACE_FUNCTION_ZU(m_libc_soname, malloc_zone_calloc), 
+    (void*)VG_REPLACE_FUNCTION_ZU(m_libc_soname, malloc_zone_valloc), 
+    (void*)VG_REPLACE_FUNCTION_ZU(m_libc_soname, malloc_zone_free), 
+    (void*)VG_REPLACE_FUNCTION_ZU(m_libc_soname, malloc_zone_realloc), 
+    NULL, // fixme destroy
+    "ValgrindMallocZone", 
+    NULL, // batch_malloc
+    NULL, // batch_free
+    NULL, // fixme introspect
+    2,  // version (fixme 3?)
+    (void*)VG_REPLACE_FUNCTION_ZU(m_libc_soname, malloc_zone_memalign)
+};
+
+#define DEFAULT_ZONE(soname, fnname) \
+   \
+   void *VG_REPLACE_FUNCTION_ZU(soname, fnname) ( void ); \
+   void *VG_REPLACE_FUNCTION_ZU(soname, fnname) ( void )  \
+   { \
+      return &vg_default_zone; \
+   }
+
+DEFAULT_ZONE(m_libc_soname, malloc_zone_from_ptr);
+DEFAULT_ZONE(m_libc_soname, malloc_default_zone);
+
+// GrP fixme bypass libc's use of zone->introspect->check
+#define ZONE_CHECK(soname, fnname) \
+                                   \
+    int VG_REPLACE_FUNCTION_ZU(soname, fnname)(void* zone); \
+    int VG_REPLACE_FUNCTION_ZU(soname, fnname)(void* zone)  \
+    { \
+        return 1; \
+    }
+
+ZONE_CHECK(m_libc_soname, malloc_zone_check);    
+
+#endif
+
+
 /* All the code in here is unused until this function is called */
 
 static void init(void)
 {
    int res;
-
    if (init_done)
       return;
-
    init_done = 1;
-
    VALGRIND_DO_CLIENT_REQUEST(res, -1, VG_USERREQ__GET_MALLOCFUNCS, &info,
                               0, 0, 0, 0);
 }

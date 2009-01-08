@@ -394,6 +394,8 @@ static Bool get_Dwarf_Reg( /*OUT*/Addr* a, Word regno, RegSummary* regs )
    vg_assert(0);
 #  elif defined(VGP_ppc32_aix5) || defined(VGP_ppc64_aix5)
    vg_assert(0); /* this function should never be called */
+#  elif defined(VGP_x86_darwin) || defined(VGP_amd64_darwin)
+   vg_assert(0); /* this function should never be called */
 #  else
 #    error "Unknown platform"
 #  endif

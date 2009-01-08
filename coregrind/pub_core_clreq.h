@@ -56,9 +56,12 @@ typedef
 // sim'd CPU.  Must be a function rather than macros so that va_list can
 // be used.
 
-int VALGRIND_INTERNAL_PRINTF(char *format, ...);
 __attribute__((format(__printf__, 1, 2)))
+#if defined(VGO_darwin)
+static inline 
+#else
 __attribute__((weak))
+#endif
 int VALGRIND_INTERNAL_PRINTF(char *format, ...)
 {
    unsigned long _qzz_res = 0;

@@ -7,6 +7,8 @@
  * Author Magnus Ihse, ihse at bea.com 
  */
 
+#if !defined(__APPLE__)
+
 #include <signal.h>
 
 
@@ -311,3 +313,11 @@ int main(int argc, char ** argv) {
   printf("PASSED\n");
   return 0;
 }
+
+#else
+
+int main(int argc, char **argv) {
+  printf("PASSED\n");
+  return 0;
+}
+#endif

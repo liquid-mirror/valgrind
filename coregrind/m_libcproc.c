@@ -33,6 +33,7 @@
 #include "pub_core_vkiscnums.h"
 #include "pub_core_libcbase.h"
 #include "pub_core_libcassert.h"
+#include "pub_core_libcfile.h"
 #include "pub_core_libcprint.h"
 #include "pub_core_libcproc.h"
 #include "pub_core_libcsignal.h"
@@ -41,6 +42,11 @@
 #include "pub_core_syscall.h"
 #include "pub_core_xarray.h"
 #include "pub_core_clientstate.h"
+
+#if defined(VGO_darwin)
+#include <mach/mach.h>
+#endif
+
 
 /* ---------------------------------------------------------------------
    Command line and environment stuff
@@ -193,9 +199,18 @@ static void mash_colon_env(Char *varp, const Char *remove_pattern)
 // when starting child processes, so they don't see that added stuff.
 void VG_(env_remove_valgrind_env_stuff)(Char** envp)
 {
+
+#if defined(VGO_darwin)
+
+   // Environment cleanup is also handled during parent launch 
+   // in vg_preloaded.c:vg_cleanup_env().
+
+#endif
+
    Int i;
    Char* ld_preload_str = NULL;
    Char* ld_library_path_str = NULL;
+   Char* dyld_insert_libraries_str = NULL;
    Char* buf;
 
    // Find LD_* variables
@@ -204,6 +219,8 @@ void VG_(env_remove_valgrind_env_stuff)(Char** envp)
          ld_preload_str = &envp[i][11];
       if (VG_(strncmp)(envp[i], "LD_LIBRARY_PATH=", 16) == 0)
          ld_library_path_str = &envp[i][16];
+      if (VG_(strncmp)(envp[i], "DYLD_INSERT_LIBRARIES=", 22) == 0)
+         dyld_insert_libraries_str = &envp[i][22];
    }
 
    buf = VG_(arena_malloc)(VG_AR_CORE, "libcproc.erves.1",
@@ -212,11 +229,15 @@ void VG_(env_remove_valgrind_env_stuff)(Char** envp)
    // Remove Valgrind-specific entries from LD_*.
    VG_(sprintf)(buf, "%s*/vgpreload_*.so", VG_(libdir));
    mash_colon_env(ld_preload_str, buf);
+   mash_colon_env(dyld_insert_libraries_str, buf);
    VG_(sprintf)(buf, "%s*", VG_(libdir));
    mash_colon_env(ld_library_path_str, buf);
 
    // Remove VALGRIND_LAUNCHER variable.
    VG_(env_unsetenv)(envp, VALGRIND_LAUNCHER);
+
+   // Remove DYLD_SHARED_REGION variable.
+   VG_(env_unsetenv)(envp, "DYLD_SHARED_REGION");
 
    // XXX if variable becomes empty, remove it completely?
 
@@ -229,7 +250,7 @@ void VG_(env_remove_valgrind_env_stuff)(Char** envp)
 
 Int VG_(waitpid)(Int pid, Int *status, Int options)
 {
-#  if defined(VGO_linux)
+#  if defined(VGO_linux)  ||  defined(VGO_darwin)
    SysRes res = VG_(do_syscall4)(__NR_wait4, pid, (UWord)status, options, 0);
    return res.isError ? -1 : res.res;
 #  elif defined(VGO_aix5)
@@ -308,7 +329,11 @@ Int VG_(system) ( Char* cmd )
       VG_(exit)(1);
    } else {
       /* parent */
-      Int ir, zzz;
+#if defined(VGO_darwin)
+      /* GrP fixme signals */
+      Int zzz;
+      zzz = VG_(waitpid)(pid, NULL, 0);
+#else
       /* We have to set SIGCHLD to its default behaviour in order that
          VG_(waitpid) works (at least on AIX).  According to the Linux
          man page for waitpid:
@@ -321,6 +346,7 @@ Int VG_(system) ( Char* cmd )
          set to ECHILD.  (The original POSIX standard left the
          behaviour of setting SIGCHLD to SIG_IGN unspecified.)
       */
+      Int ir, zzz;
       struct vki_sigaction sa, saved_sa;
       VG_(memset)( &sa, 0, sizeof(struct vki_sigaction) );
       VG_(sigemptyset)(&sa.sa_mask);
@@ -333,9 +359,93 @@ Int VG_(system) ( Char* cmd )
 
       ir = VG_(sigaction)(VKI_SIGCHLD, &saved_sa, NULL);
       vg_assert(ir == 0);
-
+#endif
       return zzz == -1 ? -1 : 0;
    }
+}
+
+/* Like popen(cmd, "r"): launch child process and read output from it.
+   Return -1 if error, else descriptor to read from.
+   Finish with VG_(pclose). */
+static struct {
+    Int parent_fd;
+    Int child_pid;
+} popen_list[10];
+
+Int VG_(popen_read)(const Char *cmd)
+{
+   Int fds[2];
+   Int    pid;
+
+   if (VG_(pipe)(fds) < 0) return -1;
+
+   pid = VG_(fork)();
+   if (pid < 0) {
+      VG_(close)(fds[0]);
+      VG_(close)(fds[1]);
+      return -1;
+   }
+   else if (pid == 0) {
+      /* child */
+      static Char** envp = NULL;
+      const Char* argv[4];
+
+      VG_(close)(fds[0]);
+      VG_(dup2)(fds[1], 1/*STDOUT_FILENO*/); 
+      VG_(close)(fds[1]);
+
+      /* restore the DATA rlimit for the child */
+      VG_(setrlimit)(VKI_RLIMIT_DATA, &VG_(client_rlimit_data));
+
+      envp = VG_(env_clone)(VG_(client_envp));
+      VG_(env_remove_valgrind_env_stuff)( envp ); 
+
+      argv[0] = "/bin/sh";
+      argv[1] = "-c";
+      argv[2] = cmd;
+      argv[3] = 0;
+
+      (void)VG_(do_syscall3)(__NR_execve, 
+                             (UWord)"/bin/sh", (UWord)argv, (UWord)envp);
+
+      /* If we're still alive here, execve failed. */
+      VG_(exit)(1);
+   } 
+   else {
+      /* parent */
+
+      /* GrP fixme signals */
+
+      Int i;
+      for (i = 0; i < sizeof(popen_list)/sizeof(popen_list[0]); i++) {
+          if (popen_list[i].child_pid == 0) {
+              popen_list[i].child_pid = pid;
+              popen_list[i].parent_fd = fds[0];
+              VG_(close)(fds[1]);
+              return fds[0];
+          }
+      }
+      // static popen_list is full
+      vg_assert(0);
+   }
+}
+
+
+void VG_(pclose)(int fd)
+{
+   Int i;
+   for (i = 0; i < sizeof(popen_list)/sizeof(popen_list[0]); i++) {
+      if (popen_list[i].parent_fd == fd) {
+         /* GrP fixme signals */
+         VG_(waitpid)(popen_list[i].child_pid, NULL, 0);
+         VG_(close)(fd);
+         popen_list[i].child_pid = 0;
+         popen_list[i].parent_fd = 0;
+         return;
+      }
+   }
+   // not in static popen_list
+   vg_assert(0);
 }
 
 /* ---------------------------------------------------------------------
@@ -379,7 +489,13 @@ Int VG_(gettid)(void)
    r = res.res;
    return r;
 
-#  else
+#  elif defined(VGO_darwin)
+
+   // Darwin's gettid syscall is something else.
+   // Use Mach thread ports for lwpid instead.
+   return mach_thread_self();
+
+#  elif defined(VGO_linux)
    SysRes res = VG_(do_syscall0)(__NR_gettid);
 
    if (res.isError && res.res == VKI_ENOSYS) {
@@ -407,6 +523,9 @@ Int VG_(gettid)(void)
    }
 
    return res.res;
+
+#  else
+#  error unknown OS
 #  endif
 }
 
@@ -479,7 +598,8 @@ Int VG_(getgroups)( Int size, UInt* list )
    return sres.res;
 
 #  elif defined(VGP_amd64_linux) || defined(VGP_ppc64_linux) \
-        || defined(VGP_ppc32_aix5) || defined(VGP_ppc64_aix5)
+        || defined(VGP_ppc32_aix5) || defined(VGP_ppc64_aix5) \
+        || defined(VGO_darwin)
    SysRes sres;
    sres = VG_(do_syscall2)(__NR_getgroups, size, (Addr)list);
    if (sres.isError)
@@ -512,6 +632,14 @@ Int VG_(fork) ( void )
 {
    SysRes res;
    res = VG_(do_syscall0)(__NR_fork);
+
+#if defined(VGO_darwin)
+   /* on success: res = child pid; res2 = 1 for child, 0 for parent */
+   if (!res.isError  &&  res.res2) {
+      res.res = 0;  /* this is child: return 0 instead of child pid */
+   }
+#endif
+
    if (res.isError)
       return -1;
    return res.res;
@@ -547,8 +675,9 @@ UInt VG_(read_millisecond_timer) ( void )
    now += (ULong)(nsec / 1000);
 #  else
 
-   struct vki_timespec ts_now;
    SysRes res;
+# if HAVE_CLOCK_MONOTONIC
+   struct vki_timespec ts_now;
    res = VG_(do_syscall2)(__NR_clock_gettime, VKI_CLOCK_MONOTONIC,
                           (UWord)&ts_now);
    if (res.isError == 0)
@@ -556,6 +685,7 @@ UInt VG_(read_millisecond_timer) ( void )
      now = ts_now.tv_sec * 1000000ULL + ts_now.tv_nsec / 1000;
    }
    else
+# endif
    {
      struct vki_timeval tv_now;
      res = VG_(do_syscall2)(__NR_gettimeofday, (UWord)&tv_now, (UWord)NULL);
@@ -569,6 +699,25 @@ UInt VG_(read_millisecond_timer) ( void )
 
    return (now - base) / 1000;
 }
+
+
+void VG_(nanosleep)(struct vki_timespec *ts)
+{
+#if defined(__NR_nanosleep)
+   (void)VG_(do_syscall2)(__NR_nanosleep, (UWord)ts, (UWord)NULL);
+#elif defined(VGO_darwin)
+#  warning GrP fixme use semwait_signal for nanosleep
+#else
+#  error no nanosleep implementation
+#endif
+}
+
+
+void VG_(yield)(void)
+{
+    VG_(do_syscall0)(__NR_sched_yield);
+}
+
 
 /* ---------------------------------------------------------------------
    atfork()
@@ -633,6 +782,86 @@ void VG_(do_atfork_child)(ThreadId tid)
       if (atforks[i].child != NULL)
          (*atforks[i].child)(tid);
 }
+
+
+#if defined(VGO_darwin)
+
+// GrP MACHINE_THREAD_STATE is useless
+#if defined(VGP_x86_darwin)
+# define NATIVE_THREAD_STATE x86_THREAD_STATE32
+# define NATIVE_THREAD_STATE_COUNT x86_THREAD_STATE32_COUNT
+#elif defined(VGP_amd64_darwin)
+# define NATIVE_THREAD_STATE x86_THREAD_STATE64
+# define NATIVE_THREAD_STATE_COUNT x86_THREAD_STATE64_COUNT
+#endif
+
+static void init_thread_state(thread_state_t state, 
+                              UWord fn, UWord arg1, UWord arg2, 
+                              char *stack, UWord stack_size)
+{
+#if defined(VGA_x86)
+    x86_thread_state32_t *regs = (x86_thread_state32_t *)state;
+    UWord *sp = (UWord *)(stack+stack_size-64);
+    VG_(memset)(regs, 0, sizeof(*regs));
+    // Push parameters
+    *--sp = 0;
+    *--sp = 0;
+    *--sp = arg2;
+    *--sp = arg1;
+    // Push return address
+    *--sp = 0;
+    regs->__esp = (Addr)sp;
+    regs->__eip = fn;
+#elif defined(VGA_amd64)
+    x86_thread_state64_t *regs = (x86_thread_state64_t *)state;
+    UWord *sp = (UWord *)(stack+stack_size-64);
+    VG_(memset)(regs, 0, sizeof(*regs));
+    *--sp = 0;  // Push return address
+    regs->__rsp = (Addr)sp;
+    regs->__rip = fn;
+    regs->__rdi = arg1;
+    regs->__rsi = arg2;
+#else
+#error unknown architecture
+#endif
+}
+
+#endif
+
+void VG_(start_helper_thread)(void (*fn)(void))
+{
+#if defined(VGO_darwin)
+#   define stacksize 4096
+    thread_act_t helper_thread;
+    thread_state_data_t helper_state;
+    mach_msg_type_number_t count;
+    kern_return_t kr;
+    char *helper_stack = 
+        VG_(arena_malloc)(VG_AR_CORE, "helper_thread.stack", stacksize);
+    
+    count = NATIVE_THREAD_STATE_COUNT;
+    kr = thread_get_state(mach_thread_self(), NATIVE_THREAD_STATE, 
+                          (thread_state_t)&helper_state, 
+                          &count);
+    vg_assert(kr == 0);
+    vg_assert(count == NATIVE_THREAD_STATE_COUNT);
+    init_thread_state((thread_state_t)&helper_state, 
+                      (UWord)fn, 0, 0, 
+                      helper_stack, stacksize);
+
+    kr = thread_create_running(mach_task_self(), 
+                               NATIVE_THREAD_STATE, 
+                               (thread_state_t)&helper_state, 
+                               NATIVE_THREAD_STATE_COUNT, 
+                               &helper_thread);
+    vg_assert(kr == 0);
+
+#   undef stacksize
+#else
+#  error unknown os
+#endif
+}
+
 
 /*--------------------------------------------------------------------*/
 /*--- end                                                          ---*/

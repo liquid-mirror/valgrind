@@ -5,6 +5,10 @@
 
 #include "../memcheck.h"
 
+#if !defined(MAP_ANONYMOUS)
+#define MAP_ANONYMOUS 0
+#endif
+
 #define SUPERBLOCK_SIZE 100000
 #define REDZONE_SIZE 8
 

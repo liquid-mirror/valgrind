@@ -43,6 +43,7 @@
 #include "pub_tool_replacemalloc.h"
 #include "pub_tool_tooliface.h"
 #include "pub_tool_threadstate.h"
+#include "pub_tool_debugstub.h"
 
 #include "mc_include.h"
 #include "memcheck.h"   /* for client requests */
@@ -64,7 +65,7 @@ static void ocache_sarp_Clear_Origins ( Addr, UWord ); /* fwds */
 // Comment these out to disable the fast cases (don't just set them to zero).
 
 #define PERF_FAST_LOADV    1
-#define PERF_FAST_STOREV   1
+// #define PERF_FAST_STOREV   1
 
 #define PERF_FAST_SARP     1
 
@@ -1351,7 +1352,7 @@ static void set_address_range_perms ( Addr a, SizeT lenT, UWord vabits16,
    if (lenT == 0)
       return;
 
-   if (lenT > 100 * 1000 * 1000) {
+   if (lenT > 256 * 1024 * 1024) {
       if (VG_(clo_verbosity) > 0 && !VG_(clo_xml)) {
          Char* s = "unknown???";
          if (vabits16 == VA_BITS16_NOACCESS ) s = "noaccess";
@@ -3724,7 +3725,7 @@ static UInt mb_get_origin_for_guest_offset ( ThreadId tid,
 static void mc_post_reg_write ( CorePart part, ThreadId tid, 
                                 OffT offset, SizeT size)
 {
-#  define MAX_REG_WRITE_SIZE 1408
+#  define MAX_REG_WRITE_SIZE 2000
    UChar area[MAX_REG_WRITE_SIZE];
    tl_assert(size <= MAX_REG_WRITE_SIZE);
    VG_(memset)(area, V_BITS8_DEFINED, size);
@@ -4610,7 +4611,9 @@ Long          MC_(clo_freelist_vol)           = 10*1000*1000LL;
 LeakCheckMode MC_(clo_leak_check)             = LC_Summary;
 VgRes         MC_(clo_leak_resolution)        = Vg_LowRes;
 Bool          MC_(clo_show_reachable)         = False;
+#if !defined(VGO_darwin)
 Bool          MC_(clo_workaround_gcc296_bugs) = False;
+#endif
 Int           MC_(clo_malloc_fill)            = -1;
 Int           MC_(clo_free_fill)              = -1;
 Int           MC_(clo_mc_level)               = 2;
@@ -4653,7 +4656,9 @@ static Bool mc_process_cmd_line_options(Char* arg)
 
 	VG_BOOL_CLO(arg, "--partial-loads-ok",      MC_(clo_partial_loads_ok))
    else VG_BOOL_CLO(arg, "--show-reachable",        MC_(clo_show_reachable))
+#if !defined(VGO_darwin)
    else VG_BOOL_CLO(arg, "--workaround-gcc296-bugs",MC_(clo_workaround_gcc296_bugs))
+#endif
 
    else VG_BNUM_CLO(arg, "--freelist-vol",  MC_(clo_freelist_vol), 
                                             0, 10*1000*1000*1000LL)
@@ -4727,7 +4732,9 @@ static void mc_print_usage(void)
 "    --track-origins=no|yes           show origins of undefined values? [no]\n"
 "    --partial-loads-ok=no|yes        too hard to explain here; see manual [no]\n"
 "    --freelist-vol=<number>          volume of freed blocks queue [10000000]\n"
+#if !defined(VGO_darwin)
 "    --workaround-gcc296-bugs=no|yes  self explanatory [no]\n"
+#endif
 "    --ignore-ranges=0xPP-0xQQ[,0xRR-0xSS]   assume given addresses are OK\n"
 "    --malloc-fill=<hexnumber>        fill malloc'd areas with given value\n"
 "    --free-fill=<hexnumber>          fill free'd areas with given value\n"
@@ -5052,6 +5059,107 @@ static Bool mc_handle_client_request ( ThreadId tid, UWord* arg, UWord* ret )
    }
    return True;
 }
+
+
+/*------------------------------------------------------------*/
+/*--- Remote debugger commands                             ---*/
+/*------------------------------------------------------------*/
+
+
+// qvalgrind.Memcheck.defined:<addr>,<len>  =>  XX..
+// like gdb protocol's "m" command, but reads V bits instead of memory
+// fixme should be qXfer command (mac os x gdb doesn't have qXfer)
+static Bool handle_defined_command(Int sock, const Char *cmd)
+{
+    Long addr, len;
+    Char *vbits;
+    Char *outbuf;
+    Long i;
+
+    addr = VG_(atoll16)(cmd);
+    cmd = VG_(strchr)(cmd, ',');
+    if (!cmd) return False;
+
+    len = VG_(atoll16)(cmd+1);
+    if (len > 65536) len = 65536;  // sanity
+
+    vbits = VG_(malloc)("mc.gdb.vbits", len);
+    outbuf = VG_(malloc)("mc.gdb.outbuf", 2*len+1);
+
+    tl_assert(V_BIT_DEFINED == 0);
+    for (i = 0; i < len; i++) {
+        UChar v;
+        if (get_vbits8(addr+i, &v)) {
+            // Invert returned bits: uninitialized=0, initialized=1
+            vbits[i] = ~v;
+        } else {
+            // Report unaddressable memory as undefined (unlike get_vbits8)
+            vbits[i] = 0;
+        }
+    }
+
+    VG_(debugstub_tohex)(outbuf, vbits, len);
+    VG_(free)(vbits);
+
+    VG_(debugstub_write_reply)(sock, outbuf);
+    VG_(free)(outbuf);
+
+    return True;
+}
+
+
+// qvalgrind.Memcheck.register-defined:<regnum>  =>  XX..
+// like gdb protocol's "p" command, but reads V bits instead of register value
+// fixme should be qXfer command (mac os x gdb doesn't have qXfer)
+static Bool handle_register_defined_command(Int sock, const Char *cmd)
+{
+    Char vbits[16];
+    Char outbuf[16*2+1];
+    Long i;
+    Int size, regnum;
+
+    regnum = VG_(atoll16)(cmd);
+    
+    size = VG_(reg_for_regnum)(regnum, vbits, 1);  // GrP fixme shadow1 or 2?
+    if (size < 0) {
+        VG_(debugstub_write_reply)(sock, "x");
+        return True;
+    }
+
+    // Invert returned bits: uninitialized=0, initialized=1
+    tl_assert(V_BIT_DEFINED == 0);
+    for (i = 0; i < size; i++) {
+        vbits[i] = ~vbits[i];
+    }
+
+    VG_(debugstub_tohex)(outbuf, vbits, size);
+    VG_(debugstub_write_reply)(sock, outbuf);
+
+    return True;
+}
+
+static Bool mc_handle_debugger_query(Int sock, char *cmd)
+{
+    Bool handled = True;
+
+    if (0 == VG_(strncmp)(cmd, "defined:", 8)) {
+        handled = handle_defined_command(sock, cmd+8);
+    }
+    else if (0 == VG_(strncmp)(cmd, "register-defined:", 17)) {
+        handled = handle_register_defined_command(sock, cmd+17);
+    }
+    else {
+        handled = False;
+    }
+
+    return handled;
+}
+
+static Bool mc_handle_debugger_action(Int sock, char *cmd)
+{
+    return False;
+}
+
 
 /*------------------------------------------------------------*/
 /*--- Crude profiling machinery.                           ---*/
@@ -5644,6 +5752,8 @@ static void mc_pre_clo_init(void)
                                    mc_print_usage,
                                    mc_print_debug_usage);
    VG_(needs_client_requests)     (mc_handle_client_request);
+   VG_(needs_debugger_commands)   (mc_handle_debugger_query, 
+                                   mc_handle_debugger_action);
    VG_(needs_sanity_checks)       (mc_cheap_sanity_check,
                                    mc_expensive_sanity_check);
    VG_(needs_malloc_replacement)  (MC_(malloc),
@@ -5655,6 +5765,7 @@ static void mc_pre_clo_init(void)
                                    MC_(__builtin_delete),
                                    MC_(__builtin_vec_delete),
                                    MC_(realloc),
+                                   MC_(malloc_usable_size), 
                                    MC_MALLOC_REDZONE_SZB );
    VG_(needs_xml_output)          ();
 
@@ -5761,6 +5872,32 @@ static void mc_pre_clo_init(void)
 }
 
 VG_DETERMINE_INTERFACE_VERSION(mc_pre_clo_init)
+
+
+// GrP for debugging
+void mc_print_word(Addr a)
+{
+    UChar abit[4] = {0,0,0,0};
+    UChar vbyte[4] = {0,0,0,0};
+    abit[0] = get_vbits8(a+0, vbyte+0);
+    abit[1] = get_vbits8(a+1, vbyte+1);
+    abit[2] = get_vbits8(a+2, vbyte+2);
+    abit[3] = get_vbits8(a+3, vbyte+3);
+    tl_assert(V_BIT_DEFINED == 0);
+    VG_(printf)("%p: a %d%d%d%d, v 0x%02x%02x%02x%02x\n", 
+                a, 
+                abit[0], abit[1], abit[2], abit[3], 
+                ~vbyte[0], ~vbyte[1], ~vbyte[2], ~vbyte[3]);
+}
+
+void mc_describe_memory(Addr addr, SizeT size)
+{
+    Addr a;
+    for (a = addr; a < addr+size; a += 4) {
+        mc_print_word(a);
+    }
+}
+
 
 /*--------------------------------------------------------------------*/
 /*--- end                                                mc_main.c ---*/

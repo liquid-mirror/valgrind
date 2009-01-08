@@ -77,6 +77,9 @@ extern UChar* VG_(aix5_sysno_to_sysname)( Int sysno );
 
 #endif /* !defined(VG_IN_ASSEMBLY_SOURCE) */
 
+#elif defined(VGO_darwin)
+#  include "vki/vki-scnums-darwin.h"
+
 #else
 #  error Unknown platform
 #endif

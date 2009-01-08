@@ -137,6 +137,7 @@
 #include "pub_core_libcassert.h"
 #include "pub_core_libcprint.h"
 #include "pub_core_options.h"
+#include "pub_core_tooliface.h"    /* VG_(needs) */
 #include "pub_core_xarray.h"
 #include "pub_core_wordfm.h"
 #include "priv_misc.h"             /* dinfo_zalloc/free */
@@ -3817,6 +3818,176 @@ void new_dwarf3_reader_wrk (
 }
 
 
+
+static 
+void read_fnnames_dwarf3_wrk (
+   struct _DebugInfo* di,
+   __attribute__((noreturn))
+   void (*barf)( HChar* ),
+   UChar* debug_info_img,   SizeT debug_info_sz,
+   UChar* debug_abbv_img,   SizeT debug_abbv_sz,
+   UChar* debug_line_img,   SizeT debug_line_sz,
+   UChar* debug_str_img,    SizeT debug_str_sz,
+   UChar* debug_ranges_img, SizeT debug_ranges_sz,
+   UChar* debug_loc_img,    SizeT debug_loc_sz,
+   UChar* debug_name_img,   SizeT debug_name_sz
+)
+{
+   Cursor pubnames, info;
+   Bool td3 = di->trace_symtab;
+
+   /* Read the pubnames table */
+   TRACE_SYMTAB("\n");
+   TRACE_SYMTAB("\n------ The contents of .debug_pubnames ------\n");
+   init_Cursor( &pubnames, debug_name_img, 
+                debug_name_sz, 0, barf, 
+                "Overrun whilst reading .debug_pubnames section" );
+   init_Cursor( &info, debug_info_img, debug_info_sz, 0, barf,
+                "Overrun whilst reading .debug_info section" );
+
+   while (True) {
+      ULong  len, d_i_offset, d_i_length;
+      Bool   is64;
+      UShort version;
+      CUConst cc = {0};
+
+      if (is_at_end_Cursor( &pubnames ))
+         break;
+      /* Read one pubnames group */
+      len = get_Initial_Length( &is64, &pubnames, 
+               "in .debug_pubnames: invalid initial-length field" );
+      version    = get_UShort( &pubnames );
+      d_i_offset = get_Dwarfish_UWord( &pubnames, is64 );
+      d_i_length = get_Dwarfish_UWord( &pubnames, is64 );
+      TRACE_D3("\n");
+      TRACE_D3("\n");
+      TRACE_D3("  Length:                   %llu\n", len);
+      TRACE_D3("  Version:                  %d\n", (Int)version);
+      TRACE_D3("  Offset into .debug_info:  %llx\n", d_i_offset);
+      TRACE_D3("  Length in .debug_info:    %llx\n", d_i_length);
+
+      /* Read the compilation unit for this group. */
+      TRACE_D3("  Compilation Unit @ offset 0x%lx:\n", d_i_offset);
+      set_position_of_Cursor(&info, d_i_offset);
+      parse_CU_Header(&cc, td3, &info, debug_abbv_img, debug_abbv_sz);
+      cc.debug_str_img    = debug_str_img;
+      cc.debug_str_sz     = debug_str_sz;
+      cc.debug_ranges_img = debug_ranges_img;
+      cc.debug_ranges_sz  = debug_ranges_sz;
+      cc.debug_loc_img    = debug_loc_img;
+      cc.debug_loc_sz     = debug_loc_sz;
+      cc.debug_line_img   = debug_line_img;
+      cc.debug_line_sz    = debug_line_sz;
+      cc.cu_start_offset  = d_i_offset;
+      cc.di = di;
+
+      /* Read all pubnames in this group. */
+      TRACE_D3("\n");
+      TRACE_D3("    Offset             Pubname\n");
+
+      while (True) {
+         UChar *pubname;
+         ULong offset = get_Dwarfish_UWord( &pubnames, is64 );
+         if (offset == 0) break;
+         pubname = get_AsciiZ( &pubnames );
+         TRACE_D3("    0x%016llx \"%s\"\n", offset, pubname);
+#if defined(VGO_darwin)
+         if (pubname[0] == '*') {
+             /* GrP fixme versioned symbols get a leading * - why? */
+             pubname++;
+         }
+#endif
+
+         /* Read the DIE for this pubname */
+         if (offset > d_i_length) {
+            barf("debug_info offset from debug_pubnames out of range");
+         }
+
+         {
+             Cursor c, abbv;
+             ULong atag, abbv_code;
+             UWord posn;
+             ULong       cts;
+             Int         ctsSzB;
+             UWord       ctsMemSzB;
+             Bool   have_lo    = False;
+             Bool   have_hi1   = False;
+             Bool   have_range = False;
+             Addr   ip_lo      = 0;
+             Addr   ip_hi1     = 0;
+             Addr   rangeoff   = 0;
+
+             init_Cursor(&c, debug_info_img + d_i_offset + offset, 
+                         d_i_length, 0, barf, 
+                         "Overrun whilst reading DIE for pubname");
+
+             posn = 0;
+             abbv_code = get_ULEB128( &c );
+             set_abbv_Cursor( &abbv, td3, &cc, abbv_code );
+             atag      = get_ULEB128( &abbv );
+             
+             if (atag == 0)
+                 barf("read_DIE: invalid zero tag on DIE");
+             if (atag != DW_TAG_subprogram) {
+                 VG_(message)(Vg_DebugMsg, "UNKNOWN debuginfo: pubname '%s' "
+                              "is not a subprogram!", pubname);
+                 continue;
+             }
+             (void)get_UChar( &abbv );  /* has_children */
+
+             /* Scan DW_TAG_subprogram for PC range */
+             
+             while (True) {
+                 DW_AT   attr = (DW_AT)  get_ULEB128( &abbv );
+                 DW_FORM form = (DW_FORM)get_ULEB128( &abbv );
+                 if (attr == 0 && form == 0) break;
+                 get_Form_contents( &cts, &ctsSzB, &ctsMemSzB,
+                                    &cc, &c, False/*td3*/, form );
+                 if (attr == DW_AT_low_pc && ctsSzB > 0) {
+                     ip_lo   = cts;
+                     have_lo = True;
+                 }
+                 if (attr == DW_AT_high_pc && ctsSzB > 0) {
+                     ip_hi1   = cts;
+                     have_hi1 = True;
+                 }
+                 if (attr == DW_AT_ranges && ctsSzB > 0) {
+                     rangeoff = cts;
+                     have_range = True;
+                 }
+             }
+             /* Do we have something that looks sane? */
+             if ((!have_lo) && (!have_hi1) && (!have_range)) {
+                 /* No range available. */
+             } else if (have_lo && have_hi1 && (!have_range)) {
+                 /* This scope supplies just a single address range. */
+                 if (ip_lo < ip_hi1) {
+                     DiSym sym;
+                     sym.tocptr = 0;
+                     sym.addr = ip_lo + di->text_bias;  // GrP fixme correct bias?
+                     sym.size = ip_hi1 - ip_lo;
+                     sym.name = 
+                         ML_(dinfo_strdup)("di.readdwarf3.symname", pubname);
+                     sym.isText = True;
+                     TRACE_D3("      Recording symbol '%s' at 0x%lx..0x%lx\n", 
+                              sym.name, sym.addr, sym.addr+sym.size);
+                     // GrP fixme check c++ mangling
+                     ML_(addSym)(di, &sym);
+                 }
+             } else if ((!have_lo) && (!have_hi1) && have_range) {
+                 /* This scope supplies multiple address ranges via the use of
+                    a range list. */
+                 // GrP fixme
+                 VG_(message)(Vg_DebugMsg, "UNKNOWN debuginfo: pubname '%s' "
+                              "has multiple PC ranges", pubname);
+             } 
+         }
+      }
+   }
+   TRACE_SYMTAB("\n");   
+}
+
+
 /*------------------------------------------------------------*/
 /*---                                                      ---*/
 /*--- The "new" DWARF3 reader -- top level control logic   ---*/
@@ -3936,6 +4107,57 @@ ML_(new_dwarf3_reader) (
    }
    TRACE_SYMTAB("\n");
 #endif
+
+
+void ML_(read_fnnames_dwarf3) (
+   struct _DebugInfo* di,
+   UChar* debug_info_img,   SizeT debug_info_sz,
+   UChar* debug_abbv_img,   SizeT debug_abbv_sz,
+   UChar* debug_line_img,   SizeT debug_line_sz,
+   UChar* debug_str_img,    SizeT debug_str_sz,
+   UChar* debug_ranges_img, SizeT debug_ranges_sz,
+   UChar* debug_loc_img,    SizeT debug_loc_sz,
+   UChar* debug_name_img,   SizeT debug_name_sz
+)
+{
+   volatile Int  jumped;
+   volatile Bool td3 = di->trace_symtab;
+
+   /* Run the _wrk function to read the dwarf3.  If it succeeds, it
+      just returns normally.  If there is any failure, it longjmp's
+      back here, having first set d3rd_jmpbuf_reason to something
+      useful. */
+   vg_assert(d3rd_jmpbuf_valid  == False);
+   vg_assert(d3rd_jmpbuf_reason == NULL);
+
+   d3rd_jmpbuf_valid = True;
+   jumped = __builtin_setjmp(&d3rd_jmpbuf);
+   if (jumped == 0) {
+      /* try this ... */
+      read_fnnames_dwarf3_wrk( di, barf,
+                               debug_info_img,   debug_info_sz,
+                               debug_abbv_img,   debug_abbv_sz,
+                               debug_line_img,   debug_line_sz,
+                               debug_str_img,    debug_str_sz,
+                               debug_ranges_img, debug_ranges_sz,
+                               debug_loc_img,    debug_loc_sz,
+                               debug_name_img,   debug_name_sz );
+      d3rd_jmpbuf_valid = False;
+      TRACE_D3("\n------ .debug_pubnames reading was successful ------\n");
+   } else {
+      /* It longjmp'd. */
+      d3rd_jmpbuf_valid = False;
+      /* Can't longjump without giving some sort of reason. */
+      vg_assert(d3rd_jmpbuf_reason != NULL);
+
+      TRACE_D3("\n------ .debug_pubnames reading failed ------\n");
+
+      ML_(symerr)(di, True, d3rd_jmpbuf_reason);
+   }
+
+   d3rd_jmpbuf_valid  = False;
+   d3rd_jmpbuf_reason = NULL;
+}
 
 /*--------------------------------------------------------------------*/
 /*--- end                                             readdwarf3.c ---*/

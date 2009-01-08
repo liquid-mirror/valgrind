@@ -48,10 +48,7 @@ typedef
 
       Addr exe_base;     // INOUT: lowest (allowed) address of exe
       Addr exe_end;      // INOUT: highest (allowed) address
-
-      Addr phdr;         // OUT: address phdr was mapped at
-      Int  phnum;        // OUT: number of phdrs
-      Addr interp_base;  // OUT: where interpreter (ld.so) was mapped
+       
       Addr entry;        // OUT: entrypoint in main executable
       Addr init_ip;      // OUT: address of first instruction to execute
       Addr brkbase;      // OUT: base address of brk segment
@@ -59,9 +56,21 @@ typedef
                          // platforms for which that makes sense
                          // (ppc64-linux only)
 
+#if !defined(VGO_darwin)
+      Addr phdr;         // OUT: address phdr was mapped at
+      Int  phnum;        // OUT: number of phdrs
+      Addr interp_base;  // OUT: where interpreter (ld.so) was mapped
+#else
+      Addr  stack_start;      // OUT: address of start of stack segment (hot)
+      Addr  stack_end;        // OUT: address of end of stack segment (cold)
+      Addr  text;             // OUT: address of executable's Mach header
+      Bool  dynamic;          // OUT: False iff executable is static
+      char* executable_path;  // OUT: path passed to execve()
+#endif
+
       // These are the extra args added by #! scripts
-      HChar*  interp_name;  // OUT: the interpreter name
-      HChar*  interp_args;  // OUT: the args for the interpreter
+      char*  interp_name;  // OUT: the interpreter name
+      char*  interp_args;  // OUT: the args for the interpreter
    }
    ExeInfo;
 

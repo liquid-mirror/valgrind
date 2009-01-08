@@ -92,26 +92,26 @@
 #undef PLAT_ppc32_aix5
 #undef PLAT_ppc64_aix5
 
-#if !defined(_AIX) && defined(__i386__)
-#  define PLAT_x86_linux 1
-#elif !defined(_AIX) && defined(__x86_64__)
-#  define PLAT_amd64_linux 1
-#elif !defined(_AIX) && defined(__powerpc__) && !defined(__powerpc64__)
-#  define PLAT_ppc32_linux 1
-#elif !defined(_AIX) && defined(__powerpc__) && defined(__powerpc64__)
-#  define PLAT_ppc64_linux 1
-#elif defined(_AIX) && defined(__64BIT__)
+
+#if defined(_AIX) && defined(__64BIT__)
 #  define PLAT_ppc64_aix5 1
 #elif defined(_AIX) && !defined(__64BIT__)
 #  define PLAT_ppc32_aix5 1
-#endif
-
-
+#elif defined(__APPLE__) && defined(__i386__)
+#  define PLAT_x86_darwin 1
+#elif defined(__APPLE__) && defined(__x86_64__)
+#  define PLAT_amd64_darwin 1
+#elif defined(__i386__)
+#  define PLAT_x86_linux 1
+#elif defined(__x86_64__)
+#  define PLAT_amd64_linux 1
+#elif defined(__powerpc__) && !defined(__powerpc64__)
+#  define PLAT_ppc32_linux 1
+#elif defined(__powerpc__) && defined(__powerpc64__)
+#  define PLAT_ppc64_linux 1
+#else
 /* If we're not compiling for our target platform, don't generate
    any inline asms.  */
-#if !defined(PLAT_x86_linux) && !defined(PLAT_amd64_linux) \
-    && !defined(PLAT_ppc32_linux) && !defined(PLAT_ppc64_linux) \
-    && !defined(PLAT_ppc32_aix5) && !defined(PLAT_ppc64_aix5)
 #  if !defined(NVALGRIND)
 #    define NVALGRIND 1
 #  endif
@@ -174,7 +174,7 @@
 
 /* ------------------------- x86-linux ------------------------- */
 
-#if defined(PLAT_x86_linux)
+#if defined(PLAT_x86_linux)  ||  defined(PLAT_x86_darwin)
 
 typedef
    struct { 
@@ -228,7 +228,7 @@ typedef
 
 /* ------------------------ amd64-linux ------------------------ */
 
-#if defined(PLAT_amd64_linux)
+#if defined(PLAT_amd64_linux)  ||  defined(PLAT_amd64_darwin)
 
 typedef
    struct { 
@@ -612,9 +612,25 @@ typedef
    do { volatile unsigned long _junk;                             \
         CALL_FN_W_WWW(_junk,fnptr,arg1,arg2,arg3); } while (0)
 
+#define CALL_FN_v_WWWW(fnptr, arg1,arg2,arg3,arg4)                \
+   do { volatile unsigned long _junk;                             \
+        CALL_FN_W_WWWW(_junk,fnptr,arg1,arg2,arg3,arg4); } while (0)
+
+#define CALL_FN_v_5W(fnptr, arg1,arg2,arg3,arg4,arg5)             \
+   do { volatile unsigned long _junk;                             \
+        CALL_FN_W_5W(_junk,fnptr,arg1,arg2,arg3,arg4,arg5); } while (0)
+
+#define CALL_FN_v_6W(fnptr, arg1,arg2,arg3,arg4,arg5,arg6)        \
+   do { volatile unsigned long _junk;                             \
+        CALL_FN_W_6W(_junk,fnptr,arg1,arg2,arg3,arg4,arg5,arg6); } while (0)
+
+#define CALL_FN_v_7W(fnptr, arg1,arg2,arg3,arg4,arg5,arg6,arg7)   \
+   do { volatile unsigned long _junk;                             \
+        CALL_FN_W_7W(_junk,fnptr,arg1,arg2,arg3,arg4,arg5,arg6,arg7); } while (0)
+
 /* ------------------------- x86-linux ------------------------- */
 
-#if defined(PLAT_x86_linux)
+#if defined(PLAT_x86_linux)  ||  defined(PLAT_x86_darwin)
 
 /* These regs are trashed by the hidden call.  No need to mention eax
    as gcc can already see that, plus causes gcc to bomb. */
@@ -1011,7 +1027,7 @@ typedef
 
 /* ------------------------ amd64-linux ------------------------ */
 
-#if defined(PLAT_amd64_linux)
+#if defined(PLAT_amd64_linux)  ||  defined(PLAT_amd64_darwin)
 
 /* ARGREGS: rdi rsi rdx rcx r8 r9 (the rest on stack in R-to-L order) */
 

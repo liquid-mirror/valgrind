@@ -45,40 +45,44 @@
    have to use this 'struct vg_stat' impedance-matching type
    instead. */
 struct vg_stat {
-   ULong   st_dev;
-   ULong   st_ino;
-   ULong   st_nlink;
-   UInt    st_mode;
-   UInt    st_uid;
-   UInt    st_gid;
-   ULong   st_rdev;
-   Long    st_size;
-   ULong   st_blksize;
-   ULong   st_blocks;
-   ULong   st_atime;
-   ULong   st_atime_nsec;
-   ULong   st_mtime;
-   ULong   st_mtime_nsec;
-   ULong   st_ctime;
-   ULong   st_ctime_nsec;
+   ULong   dev;
+   ULong   ino;
+   ULong   nlink;
+   UInt    mode;
+   UInt    uid;
+   UInt    gid;
+   ULong   rdev;
+   Long    size;
+   ULong   blksize;
+   ULong   blocks;
+   ULong   atime;
+   ULong   atime_nsec;
+   ULong   mtime;
+   ULong   mtime_nsec;
+   ULong   ctime;
+   ULong   ctime_nsec;
 };
 
 extern SysRes VG_(open)   ( const Char* pathname, Int flags, Int mode );
 extern void   VG_(close)  ( Int fd );
 extern Int    VG_(read)   ( Int fd, void* buf, Int count);
 extern Int    VG_(write)  ( Int fd, const void* buf, Int count);
+extern Int    VG_(select) ( Int nfds, void *rfds, void *wfds, void *efds, void *timeout );
 extern Int    VG_(pipe)   ( Int fd[2] );
 extern OffT   VG_(lseek)  ( Int fd, OffT offset, Int whence );
 
-extern SysRes VG_(stat)   ( Char* file_name, struct vg_stat* buf );
+extern SysRes VG_(stat)   ( const Char* file_name, struct vg_stat* buf );
 extern Int    VG_(fstat)  ( Int   fd,        struct vg_stat* buf );
 extern SysRes VG_(dup)    ( Int oldfd );
 extern SysRes VG_(dup2)   ( Int oldfd, Int newfd );
-extern Int    VG_(rename) ( Char* old_name, Char* new_name );
-extern Int    VG_(unlink) ( Char* file_name );
+extern Int    VG_(rename) ( const Char* old_name, const Char* new_name );
+extern Int    VG_(unlink) ( const Char* file_name );
 
-extern Int    VG_(readlink)( Char* path, Char* buf, UInt bufsize );
-extern Int    VG_(getdents)( UInt fd, struct vki_dirent *dirp, UInt count );
+extern Int    VG_(readlink)( const Char* path, Char* buf, UInt bufsize );
+extern Int    VG_(getdents)( Int fd, struct vki_dirent *dirp, UInt count );
+
+extern Char*  VG_(basename)( const Char* path );
+extern Char*  VG_(dirname) ( const Char* path );
 
 /* Copy the working directory at startup into buf[0 .. size-1], or return
    False if buf is too small. */

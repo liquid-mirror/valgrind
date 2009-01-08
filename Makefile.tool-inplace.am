@@ -5,8 +5,8 @@
 all-local:
 	if [ -n "$(noinst_PROGRAMS)" ] ; then \
 	  for f in $(noinst_PROGRAMS); do \
-	    name=`echo $$f | sed -e 's/-\([^-]*-[^-.]*\)\(\..*\)\?$$/\2/'`; \
-	    plat=`echo $$f | sed -e 's/^.*-\([^-]*-[^-.]*\)\(\..*\)\?$$/\1/'`; \
+	    name=`echo $$f | sed -e 's/-\([^-]*-[^-.]*\)\(\..*\)\{0,1\}$$/\2/'`; \
+	    plat=`echo $$f | sed -e 's/^.*-\([^-]*-[^-.]*\)\(\..*\)\{0,1\}$$/\1/'`; \
 	    mkdir -p $(inplacedir)/$$plat; \
 	    rm -f $(inplacedir)/$$plat/$$name; \
 	    ln -f -s ../../$(subdir)/$$f $(inplacedir)/$$plat/$$name; \

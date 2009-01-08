@@ -37,6 +37,7 @@
 
 extern Bool VG_(isspace) ( Char c );
 extern Bool VG_(isdigit) ( Char c );
+extern Char VG_(tolower) ( Char c );
 
 /* ---------------------------------------------------------------------
    Converting strings to numbers
@@ -53,19 +54,19 @@ extern Bool VG_(isdigit) ( Char c );
 // takes a base, it's because I wanted it to assert if it was given a bogus
 // base (the standard glibc one sets 'errno' in this case).  But
 // m_libcbase.c doesn't import any code, not even vg_assert. --njn
-extern Long  VG_(strtoll8)  ( Char* str, Char** endptr );
-extern Long  VG_(strtoll10) ( Char* str, Char** endptr );
-extern Long  VG_(strtoll16) ( Char* str, Char** endptr );
-extern Long  VG_(strtoll36) ( Char* str, Char** endptr );
+extern Long  VG_(strtoll8)  ( const Char* str, const Char** endptr );
+extern Long  VG_(strtoll10) ( const Char* str, const Char** endptr );
+extern Long  VG_(strtoll16) ( const Char* str, const Char** endptr );
+extern Long  VG_(strtoll36) ( const Char* str, const Char** endptr );
 
    // Convert a string to a double.  After leading whitespace is ignored,
    // it accepts a non-empty sequence of decimal digits possibly containing
    // a '.'.
-extern double VG_(strtod)  ( Char* str, Char** endptr );
+extern double VG_(strtod)  ( const Char* str, const Char** endptr );
 
-extern Long  VG_(atoll)   ( Char* str ); // base 10
-extern Long  VG_(atoll16) ( Char* str ); // base 16; leading 0x accepted
-extern Long  VG_(atoll36) ( Char* str ); // base 36
+extern Long  VG_(atoll)   ( const Char* str ); // base 10
+extern Long  VG_(atoll16) ( const Char* str ); // base 16; leading 0x accepted
+extern Long  VG_(atoll36) ( const Char* str ); // base 36
 
 /* ---------------------------------------------------------------------
    String functions and macros
@@ -82,8 +83,11 @@ extern Char* VG_(strpbrk)        ( const Char* s, const Char* accpt );
 extern Char* VG_(strcpy)         ( Char* dest, const Char* src );
 extern Char* VG_(strncpy)        ( Char* dest, const Char* src, SizeT ndest );
 extern Int   VG_(strcmp)         ( const Char* s1, const Char* s2 );
+extern Int   VG_(strcasecmp)     ( const Char* s1, const Char* s2 );
 extern Int   VG_(strncmp)        ( const Char* s1, const Char* s2, SizeT nmax );
+extern Int   VG_(strncasecmp)    ( const Char* s1, const Char* s2, SizeT nmax );
 extern Char* VG_(strstr)         ( const Char* haystack, Char* needle );
+extern Char* VG_(strcasestr)     ( const Char* haystack, Char* needle );
 extern Char* VG_(strchr)         ( const Char* s, Char c );
 extern Char* VG_(strrchr)        ( const Char* s, Char c );
 extern SizeT VG_(strspn)         ( const Char* s, const Char* accept );
@@ -115,6 +119,7 @@ extern Int   VG_(memcmp) ( const void* s1, const void* s2, SizeT n );
 #define VG_IS_4_ALIGNED(aaa_p)    (0 == (((Addr)(aaa_p)) & ((Addr)0x3)))
 #define VG_IS_8_ALIGNED(aaa_p)    (0 == (((Addr)(aaa_p)) & ((Addr)0x7)))
 #define VG_IS_16_ALIGNED(aaa_p)   (0 == (((Addr)(aaa_p)) & ((Addr)0xf)))
+#define VG_IS_32_ALIGNED(aaa_p)   (0 == (((Addr)(aaa_p)) & ((Addr)0x1f)))
 #define VG_IS_WORD_ALIGNED(aaa_p) (0 == (((Addr)(aaa_p)) & ((Addr)(sizeof(Addr)-1))))
 #define VG_IS_PAGE_ALIGNED(aaa_p) (0 == (((Addr)(aaa_p)) & ((Addr)(VKI_PAGE_SIZE-1))))
 

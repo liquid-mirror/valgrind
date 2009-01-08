@@ -1,0 +1,70 @@
+Valgrind for Mac OS X
+Greg Parker     gparker@apple.com     September 2008
+
+This is a port of Valgrind for Mac OS X.
+http://valgrind.org/
+http://www.apple.com/macosx/
+
+This port is UNSUPPORTED and INCOMPLETE and BUGGY. It may not find bugs 
+in your program, or run your program correctly, or run your program at 
+all. Caveat programmer. 
+
+Requirements:
+    Mac OS X 10.5 Leopard
+    Intel processor (32- or 64-bit)
+    As much RAM as you can afford
+    Valgrind 3.3.1 r8805, VEX r1875
+
+Get and patch Valgrind sources:
+    svn co -r8805 svn://svn.valgrind.org/valgrind/trunk valgrind
+    svn update -r1875 valgrind/VEX
+    patch -p1 -d valgrind < /path/to/valgrind-opensource.patch
+
+Build and install into /usr/local/bin/valgrind:
+    cd valgrind
+    ./autogen.sh
+    ./configure
+    make
+    sudo make install
+
+Run:
+    valgrind [--arch=<arch>] [valgrind-options...] /path/to/program [program-options ...]
+
+Some things that don't work:
+    PowerPC code
+    Signals
+    Many system calls
+    Objective-C garbage collection
+    --db-attach=yes
+    Tools other than memcheck
+
+Messages you may see while running:
+    If you see messages like the following, then your program is using 
+    a system call that Valgrind doesn't support. Your program may run 
+    incorrectly after this.
+        UNKNOWN syscall
+        UNKNOWN mach message descriptor
+        UNKNOWN host message
+        UNKNOWN task message
+        UNKNOWN thread message
+        UNKNOWN fcntl
+        UNKNOWN ioctl
+
+    Messages like the following can probably be ignored.
+        UNKNOWN __disable_threadsignal is unsupported
+        UNKNOWN sigaction is unsupported
+        UNKNOWN Mach port modified
+
+    Messages like the following indicate a mismatch between Valgrind's
+    memory map and the kernel. Occasional failures are expected in
+    multithreaded programs. If the failure repeats for the same address
+    range, then there may be a problem causing false errors or crashes.
+        sync check at ...: FAILED
+
+Errors in system libraries:
+    Some system libraries have false positives or legitimate errors. 
+    Valgrind has a "suppression file" mechanism to ignore specified
+    errors. This port does not include any suppressions, so you'll have 
+    to discover them on your own. Please do not file bug reports against
+    system libraries on Valgrind evidence alone.
+

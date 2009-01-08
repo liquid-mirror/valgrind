@@ -25,8 +25,8 @@
 install-exec-local:
 	if [ -n "$(noinst_PROGRAMS)" ] ; then \
 	  for f in $(noinst_PROGRAMS); do \
-	    name=`echo $$f | sed -e 's/-\([^-]*-[^-.]*\)\(\..*\)\?$$/\2/'`; \
-	    plat=`echo $$f | sed -e 's/^.*-\([^-]*-[^-.]*\)\(\..*\)\?$$/\1/'`; \
+	    name=`echo $$f | sed -e 's/-\([^-]*-[^-.]*\)\(\..*\)\{0,1\}$$/\2/'`; \
+	    plat=`echo $$f | sed -e 's/^.*-\([^-]*-[^-.]*\)\(\..*\)\{0,1\}$$/\1/'`; \
 	    $(mkinstalldirs) $(DESTDIR)$(valdir)/$$plat; \
 	    $(INSTALL_PROGRAM) $$f $(DESTDIR)$(valdir)/$$plat/$$name; \
 	  done ; \

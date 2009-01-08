@@ -146,7 +146,7 @@ UInt ML_(am_sprintf) ( HChar* buf, const HChar *format, ... )
 
 /* Note: this is VG_, not ML_. */
 SysRes VG_(am_do_mmap_NO_NOTIFY)( Addr start, SizeT length, UInt prot, 
-                                  UInt flags, UInt fd, Off64T offset)
+                                  UInt flags, Int fd, Off64T offset)
 {
    SysRes res;
    aspacem_assert(VG_IS_PAGE_ALIGNED(offset));
@@ -159,6 +159,18 @@ SysRes VG_(am_do_mmap_NO_NOTIFY)( Addr start, SizeT length, UInt prot,
         || defined(VGP_ppc32_aix5) || defined(VGP_ppc64_aix5)
    res = VG_(do_syscall6)(__NR_mmap, (UWord)start, length, 
                          prot, flags, fd, offset);
+#  elif defined(VGP_x86_darwin)
+   if (fd == 0  &&  (flags & VKI_MAP_ANONYMOUS)) {
+       fd = -1;  // MAP_ANON with fd==0 is EINVAL
+   }
+   res = VG_(do_syscall7)(__NR_mmap, (UWord)start, length,
+                          prot, flags, fd, offset & 0xffffffff, offset >> 32);
+#  elif defined(VGP_amd64_darwin)
+   if (fd == 0  &&  (flags & VKI_MAP_ANONYMOUS)) {
+       fd = -1;  // MAP_ANON with fd==0 is EINVAL
+   }
+   res = VG_(do_syscall6)(__NR_mmap, (UWord)start, length,
+                          prot, flags, (UInt)fd, offset);
 #  else
 #    error Unknown platform
 #  endif
@@ -175,6 +187,9 @@ SysRes ML_(am_do_munmap_NO_NOTIFY)(Addr start, SizeT length)
 {
    return VG_(do_syscall2)(__NR_munmap, (UWord)start, length );
 }
+
+#if HAVE_MREMAP
+/* The following are used only to implement mremap(). */
 
 SysRes ML_(am_do_extend_mapping_NO_NOTIFY)( 
           Addr  old_addr, 
@@ -225,6 +240,8 @@ SysRes ML_(am_do_relocate_nooverlap_mapping_NO_NOTIFY)(
 #    error Unknown OS
 #  endif
 }
+
+#endif
 
 /* --- Pertaining to files --- */
 
@@ -348,6 +365,9 @@ VgStack* VG_(am_alloc_VgStack)( /*OUT*/Addr* initial_sp )
    *initial_sp = (Addr)&stack->bytes[VG_STACK_GUARD_SZB + VG_STACK_ACTIVE_SZB];
    *initial_sp -= 8;
    *initial_sp &= ~((Addr)0xF);
+#if defined(VGO_darwin)
+   *initial_sp &= ~((Addr)0x1f);  // align more
+#endif
 
    VG_(debugLog)( 1,"aspacem","allocated thread stack at 0x%llx size %d\n",
                   (ULong)(Addr)stack, szB);

@@ -29,6 +29,7 @@
 */
 
 #include "pub_core_basics.h"
+#include "pub_core_libcassert.h"
 #include "pub_core_vki.h"
 #include "pub_core_vkiscnums.h"
 #include "pub_core_syscall.h"
@@ -36,6 +37,8 @@
 /* ---------------------------------------------------------------------
    Building syscall return values.
    ------------------------------------------------------------------ */
+
+#if defined(VGO_linux)
 
 /* Make a SysRes value from an syscall return value.  This is
    Linux-specific.
@@ -56,6 +59,7 @@
    syscall returns a value in -1 .. -4095 as a valid result so we can
    safely test with -4095.
 */
+
 SysRes VG_(mk_SysRes_x86_linux) ( UInt val ) {
    SysRes res;
    res.isError = val >= -4095 && val <= -1;
@@ -112,6 +116,8 @@ SysRes VG_(mk_SysRes_ppc64_linux) ( ULong val, ULong cr0so ) {
    return res;
 }
 
+#elif defined(VGO_aix5)
+
 /* AIX scheme: we have to record both 'res' (r3) and 'err' (r4).  If
    'err' is nonzero then the call has failed, but it could still be
    that AIX userspace will ignore 'err' and instead consult 'res' to
@@ -132,10 +138,49 @@ SysRes VG_(mk_SysRes_ppc64_aix5) ( ULong res, ULong err ) {
    return r;
 }
 
+#elif defined(VGO_darwin)
+
+/* Darwin: 
+   Some syscalls return a double-word result. On 32-bit architectures 
+   this is encoded in a single ULong. */
+
+SysRes VG_(mk_SysRes_32_darwin) ( ULong val, UInt errflag ) {
+   SysRes res;
+   res.isError = errflag != 0;
+   if (res.isError) {
+      res.err = val;
+      res.res = 0;
+      res.res2 = 0;
+   } else {
+      res.err = 0;
+      res.res = val & ~(UInt)0;
+      res.res2 = val >> 32;
+   }
+   return res;
+}
+
+SysRes VG_(mk_SysRes_64_darwin) ( UWord val, UWord val2, UWord errflag ) {
+   SysRes res;
+   res.isError = errflag != 0;
+   if (res.isError) {
+      res.err = val;
+      res.res = 0;
+      res.res2 = 0;
+   } else {
+      res.err = 0;
+      res.res = val;
+      res.res2 = val2;
+   }
+   return res;
+}
+
+#endif
+
 /* Generic constructors. */
 SysRes VG_(mk_SysRes_Error) ( UWord err ) {
    SysRes r;
    r.res     = 0;
+   r.res2    = 0;
    r.err     = err;
    r.isError = True;
    return r;
@@ -144,6 +189,7 @@ SysRes VG_(mk_SysRes_Error) ( UWord err ) {
 SysRes VG_(mk_SysRes_Success) ( UWord res ) {
    SysRes r;
    r.res     = res;
+   r.res2    = 0;
    r.err     = 0;
    r.isError = False;
    return r;
@@ -450,6 +496,144 @@ static void do_syscall_WRK ( UWord* res_r3, UWord* res_r4,
    *res_r4 = args[1];
 }
 
+#elif defined(VGP_x86_darwin)
+
+/* Incoming args (syscall number + up to 8 args) come in on the stack
+
+   The kernel's syscall calling convention is:
+   * the syscall number goes in eax
+   * the args are passed to the syscall on the stack
+   Call instruction:
+   * UNIX: sysenter
+   * UX64: int $0x80
+   * MACH: int $0x81
+   * MDEP: int $0x82
+   Return value:
+   * MACH,MDEP,UNIX: the return value comes back in eax
+   * UX64: the return value comes back in eax:edx
+   Error:
+   * MACH,MDEP: no error is returned
+   * UNIX,UX64: the carry flag indicates success or failure
+*/
+
+__private_extern__ ULong 
+do_syscall_unix_WRK (
+                     UWord a1, UWord a2, UWord a3, /* 4(esp)..12(esp) */
+                     UWord a4, UWord a5, UWord a6, /* 16(esp)..24(esp) */
+                     UWord a7, UWord a8, /* 28(esp)..32(esp) */
+                     UWord syscall_no, /* 36(esp) */
+                     UWord *errflag /* 40(esp) */
+                     );
+// Unix syscall: 64-bit return in eax:edx, with LSB in eax
+// error indicated by carry flag: clear=good, set=bad
+asm(
+    ".private_extern _do_syscall_unix_WRK\n"
+    "_do_syscall_unix_WRK:\n"
+    "        movl    40(%esp), %ecx   \n"  /* assume syscall success */
+    "        movl    $0, (%ecx)       \n"
+    "        movl    36(%esp), %eax   \n"
+    "        int     $0x80            \n"
+    "        jnc     1f               \n"  /* jump if success */
+    "        movl    40(%esp), %ecx   \n"  /* syscall failed - set *errflag */
+    "        movl    $1, (%ecx)       \n"
+    "    1:  ret                      \n"
+    );
+
+
+__private_extern__ UInt 
+do_syscall_mach_WRK (
+                     UWord a1, UWord a2, UWord a3, /* 4(esp)..12(esp) */
+                     UWord a4, UWord a5, UWord a6, /* 16(esp)..24(esp) */
+                     UWord a7, UWord a8, /* 28(esp)..32(esp) */
+                     UWord syscall_no /* 36(esp) */
+                     );
+// Mach trap: 32-bit result, no error flag
+asm(
+    ".private_extern _do_syscall_mach_WRK\n"
+    "_do_syscall_mach_WRK:\n"
+    "        movl    36(%esp), %eax   \n"
+    "        int     $0x81            \n"
+    "        ret                      \n"
+    );
+
+__private_extern__ UInt 
+do_syscall_mdep_WRK (
+                     UWord a1, UWord a2, UWord a3, /* 4(esp)..12(esp) */
+                     UWord a4, UWord a5, UWord a6, /* 16(esp)..24(esp) */
+                     UWord a7, UWord a8, /* 28(esp)..32(esp) */
+                     UWord syscall_no /* 36(esp) */
+                     );
+// mdep trap: 32-bit result, no error flag
+asm(
+    ".private_extern _do_syscall_mdep_WRK\n"
+    "_do_syscall_mdep_WRK:\n"
+    "        movl    36(%esp), %eax   \n"
+    "        int     $0x82            \n"
+    "        ret                      \n"
+    );
+
+
+#elif defined(VGP_amd64_darwin)
+
+/* Incoming args (syscall number + up to 8 args) come in registers and stack
+
+   The kernel's syscall calling convention is:
+   * the syscall number goes in rax
+   * the args are passed to the syscall in registers and the stack
+   * the call instruction is `syscall`
+   Return value:
+   * MACH,MDEP,UNIX: the return value comes back in rax
+   * UX64: the return value comes back in rax:rdx
+   Error:
+   * MACH,MDEP: no error is returned
+   * UNIX,UX64: the carry flag indicates success or failure
+*/
+
+__private_extern__ UWord 
+do_syscall_unix_WRK (
+                     UWord a1, UWord a2, UWord a3, /* rdi, rsi, rdx */
+                     UWord a4, UWord a5, UWord a6, /* rcx, r8,  r9 */
+                     UWord a7, UWord a8,           /* 8(esp), 16(esp) */
+                     UWord syscall_no,             /* 24(esp) */
+                     UWord *errflag,               /* 32(esp) */
+                     UWord *res2                   /* 40(esp) */
+                     );
+// Unix syscall: 128-bit return in rax:rdx, with LSB in rax
+// error indicated by carry flag: clear=good, set=bad
+asm(
+    ".private_extern _do_syscall_unix_WRK\n"
+    "_do_syscall_unix_WRK:\n"
+    "        movq    %rcx, %r10       \n"  /* pass rcx in r10 instead */
+    "        movq    32(%rsp), %rax   \n"  /* assume syscall success */
+    "        movq    $0, (%rax)       \n"
+    "        movq    24(%rsp), %rax   \n"  /* load syscall_no */
+    "        syscall                  \n"
+    "        jnc     1f               \n"  /* jump if success */
+    "        movq    32(%rsp), %rcx   \n"  /* syscall failed - set *errflag */
+    "        movq    $1, (%rcx)       \n"
+    "    1:  movq    40(%rsp), %rcx   \n"  /* save 2nd result word */
+    "        movq    %rdx, (%rcx)     \n"
+    "        retq                     \n"  /* return 1st result word */
+    );
+
+
+__private_extern__ UWord 
+do_syscall_mach_WRK (
+                     UWord a1, UWord a2, UWord a3, /* rdi, rsi, rdx */
+                     UWord a4, UWord a5, UWord a6, /* rcx, r8,  r9 */
+                     UWord a7, UWord a8,           /* 8(esp), 16(esp) */
+                     UWord syscall_no              /* 24(esp) */
+                     );
+// Mach trap: 64-bit result, no error flag
+asm(
+    ".private_extern _do_syscall_mach_WRK\n"
+    "_do_syscall_mach_WRK:\n"
+    "        movq    %rcx, %r10       \n"  /* pass rcx in r10 instead */
+    "        movq    24(%rsp), %rax   \n"  /* load syscall_no */
+    "        syscall                  \n"
+    "        retq                     \n"
+    );
+
 #else
 #  error Unknown platform
 #endif
@@ -525,6 +709,58 @@ SysRes VG_(do_syscall) ( UWord sysno, UWord a1, UWord a2, UWord a3,
 
    return VG_(mk_SysRes_ppc64_aix5)( res, err );
 
+#elif defined(VGP_x86_darwin)
+   UWord err;
+   ULong val;
+   switch (sysno_class(sysno)) {
+   case SYSCALL_CLASS_UNIX:
+       val = do_syscall_unix_WRK(a1,a2,a3,a4,a5,a6,a7,a8,
+                                 sysno_num(sysno), &err);
+       val &= ~(Addr)0;
+       break;
+   case SYSCALL_CLASS_UX64:
+       val = do_syscall_unix_WRK(a1,a2,a3,a4,a5,a6,a7,a8,
+                                 sysno_num(sysno), &err);
+       break;
+   case SYSCALL_CLASS_MACH:
+       val = do_syscall_mach_WRK(a1,a2,a3,a4,a5,a6,a7,a8, 
+                                 sysno_num(sysno));
+       err = 0;
+       break;
+   case SYSCALL_CLASS_MDEP:
+       val = do_syscall_mdep_WRK(a1,a2,a3,a4,a5,a6,a7,a8, 
+                                 sysno_num(sysno));
+       err = 0;
+       break;
+   default:
+       vg_assert(0);
+       break;
+   }
+
+   return VG_(mk_SysRes_32_darwin)( val, err );
+
+#elif defined(VGP_amd64_darwin)
+   UWord err;
+   UWord val, val2;
+   switch (sysno_class(sysno)) {
+   case SYSCALL_CLASS_UNIX:
+   case SYSCALL_CLASS_UX64:
+       val = do_syscall_unix_WRK(a1,a2,a3,a4,a5,a6,a7,a8,
+                                 sysno_num(sysno), &err, &val2);
+       break;
+   case SYSCALL_CLASS_MACH:
+   case SYSCALL_CLASS_MDEP:
+       val = do_syscall_mach_WRK(a1,a2,a3,a4,a5,a6,a7,a8, 
+                                 sysno_num(sysno));
+       err = 0;
+       break;
+   default:
+       vg_assert(0);
+       break;
+   }
+
+   return VG_(mk_SysRes_64_darwin)( val, val2, err );
+   
 #else
 #  error Unknown platform
 #endif
@@ -556,7 +792,9 @@ const HChar* VG_(strerror) ( UWord errnum )
       case VKI_EMFILE:      return "Too many open files";
       case VKI_ENOSYS:      return "Function not implemented";
       case VKI_EOVERFLOW:   return "Value too large for defined data type";
+#if defined(VKI_ERESTARTSYS)
       case VKI_ERESTARTSYS: return "ERESTARTSYS";
+#endif
       default:              return "VG_(strerror): unknown error";
    }
 }

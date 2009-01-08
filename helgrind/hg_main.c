@@ -11,6 +11,8 @@
    Copyright (C) 2007-2008 OpenWorks LLP
       info@open-works.co.uk
 
+   Copyright (C) 2007-2008 Apple, Inc.
+
    This program is free software; you can redistribute it and/or
    modify it under the terms of the GNU General Public License as
    published by the Free Software Foundation; either version 2 of the
@@ -3464,6 +3466,20 @@ static void* hg_cli__realloc ( ThreadId tid, void* payloadV, SizeT new_size )
    }  
 }
 
+static SizeT hg_cli_malloc_usable_size ( ThreadId tid, void* p )
+{
+   MallocMeta *md;
+
+   /* First try and find the block. */
+   md = (MallocMeta*) VG_(HT_lookup)( hg_mallocmeta_table, (UWord)p );
+
+   if (md == NULL) {
+      return 0;
+   }
+
+   return md->szB;
+}
+
 
 /*--------------------------------------------------------------*/
 /*--- Instrumentation                                        ---*/
@@ -3680,7 +3696,7 @@ IRSB* hg_instrument ( VgCallbackClosure* closure,
                   True/*isStore*/,
                   sizeofIRType(hWordTy)
                );
-               break;
+            break;
 
          case Ist_WrTmp: {
             IRExpr* data = st->Ist.WrTmp.data;
@@ -4211,6 +4227,7 @@ static void hg_pre_clo_init ( void )
                                    hg_cli____builtin_delete,
                                    hg_cli____builtin_vec_delete,
                                    hg_cli__realloc,
+                                   hg_cli_malloc_usable_size,
                                    HG_CLI__MALLOC_REDZONE_SZB );
 
    /* 21 Dec 08: disabled this; it mostly causes H to start more

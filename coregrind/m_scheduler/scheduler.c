@@ -71,6 +71,7 @@
 #include "pub_core_libcprint.h"
 #include "pub_core_libcproc.h"
 #include "pub_core_libcsignal.h"
+#include "pub_core_mach.h"
 #include "pub_core_machine.h"
 #include "pub_core_mallocfree.h"
 #include "pub_core_options.h"
@@ -83,6 +84,7 @@
 #include "pub_core_tooliface.h"
 #include "pub_core_translate.h"     // For VG_(translate)()
 #include "pub_core_transtab.h"
+#include "pub_core_debugger.h"
 #include "priv_sema.h"
 #include "pub_core_scheduler.h"     // self
 
@@ -155,6 +157,8 @@ HChar* name_of_sched_event ( UInt event )
       case VEX_TRC_JMP_SYS_SYSCALL:   return "SYSCALL";
       case VEX_TRC_JMP_SYS_INT32:     return "INT32";
       case VEX_TRC_JMP_SYS_INT128:    return "INT128";
+      case VEX_TRC_JMP_SYS_INT129:    return "INT129";
+      case VEX_TRC_JMP_SYS_INT130:    return "INT130";
       case VEX_TRC_JMP_SYS_SYSENTER:  return "SYSENTER";
       case VEX_TRC_JMP_CLIENTREQ:     return "CLIENTREQ";
       case VEX_TRC_JMP_YIELD:         return "YIELD";
@@ -224,6 +228,7 @@ void VG_(acquire_BigLock)(ThreadId tid, HChar* who)
       VG_(printf)("tid %d found %d running\n", tid, VG_(running_tid));
    vg_assert(VG_(running_tid) == VG_INVALID_THREADID);
    VG_(running_tid) = tid;
+   VG_(last_running_tid) = tid;
 
    { Addr gsp = VG_(get_SP)(tid);
      VG_(unknown_SP_update)(gsp, gsp, 0/*unknown origin*/);
@@ -271,6 +276,28 @@ void VG_(release_BigLock)(ThreadId tid, ThreadStatus sleepstate, HChar* who)
    ML_(sema_up)(&the_BigLock);
 }
 
+void VG_(lock)(void)
+{
+    ML_(sema_down)(&the_BigLock);
+    if (VG_(clo_trace_sched)) {
+        print_sched_event(0, " acquired lock (DEBUGGER)");
+    }
+}
+
+void VG_(unlock)(void)
+{
+    if (VG_(clo_trace_sched)) {
+        print_sched_event(0, " releasing lock (DEBUGGER)");
+    }
+    ML_(sema_up)(&the_BigLock);
+}
+
+void VG_(unlock_lwpid)(Int lwpid)
+{
+    while (! ML_(sema_handoff)(&the_BigLock, lwpid)) 
+        ;
+}
+
 /* Clear out the ThreadState and release the semaphore. Leaves the
    ThreadState in VgTs_Zombie state, so that it doesn't get
    reallocated until the caller is really ready. */
@@ -305,7 +332,15 @@ void VG_(get_thread_out_of_syscall)(ThreadId tid)
 	 VG_(message)(Vg_DebugMsg, 
                       "get_thread_out_of_syscall zaps tid %d lwp %d",
 		      tid, VG_(threads)[tid].os_state.lwpid);
+#if VGO_darwin
+      // GrP fixme use mach primitives on darwin?
+      // GrP fixme thread_abort_safely?
+      // GrP fixme race for thread with WaitSys set but not in syscall yet?
+      extern kern_return_t thread_abort(mach_port_t);
+      thread_abort(VG_(threads)[tid].os_state.lwpid);
+#else
       VG_(tkill)(VG_(threads)[tid].os_state.lwpid, VG_SIGVGKILL);
+#endif
    }
 }
 
@@ -393,7 +428,11 @@ void mostly_clear_thread_record ( ThreadId tid )
    VG_(threads)[tid].altstack.ss_size = 0;
    VG_(threads)[tid].altstack.ss_flags = VKI_SS_DISABLE;
 
+#if defined(VGO_darwin)
+# warning GrP fixme signals
+#else
    VG_(clear_out_queued_signals)(tid, &savedmask);
+#endif
 
    VG_(threads)[tid].sched_jmpbuf_valid = False;
 }
@@ -420,6 +459,9 @@ static void sched_fork_cleanup(ThreadId me)
    ThreadId tid;
    vg_assert(VG_(running_tid) == me);
 
+   // GrP fixme hack reset Mach ports
+   VG_(mach_init)();
+
    VG_(threads)[me].os_state.lwpid = VG_(gettid)();
    VG_(threads)[me].os_state.threadgroup = VG_(getpid)();
 
@@ -432,10 +474,7 @@ static void sched_fork_cleanup(ThreadId me)
       }
    }
 
-   /* re-init and take the sema */
-   ML_(sema_deinit)(&the_BigLock);
-   ML_(sema_init)(&the_BigLock);
-   ML_(sema_down)(&the_BigLock);
+   ML_(sema_fork_child)(&the_BigLock);
 }
 
 
@@ -808,7 +847,7 @@ static void handle_tt_miss ( ThreadId tid )
    }
 }
 
-static void handle_syscall(ThreadId tid)
+static void handle_syscall(ThreadId tid, UInt trc)
 {
    ThreadState * volatile tst = VG_(get_ThreadState)(tid);
    Bool jumped; 
@@ -821,7 +860,7 @@ static void handle_syscall(ThreadId tid)
    if (VG_(clo_sanity_level >= 3))
       VG_(am_do_sync_check)("(BEFORE SYSCALL)",__FILE__,__LINE__);
 
-   SCHEDSETJMP(tid, jumped, VG_(client_syscall)(tid));
+   SCHEDSETJMP(tid, jumped, VG_(client_syscall)(tid, trc));
 
    if (VG_(clo_sanity_level >= 3))
       VG_(am_do_sync_check)("(AFTER SYSCALL)",__FILE__,__LINE__);
@@ -833,7 +872,11 @@ static void handle_syscall(ThreadId tid)
    
    if (jumped) {
       block_signals(tid);
+#if defined(VGO_darwin)
+# warning GrP fixme signals
+#else
       VG_(poll_signals)(tid);
+#endif
    }
 }
 
@@ -950,7 +993,11 @@ VgSchedReturnCode VG_(scheduler) ( ThreadId tid )
 
 	 /* Look for any pending signals for this thread, and set them up
 	    for delivery */
+#if defined(VGO_darwin)
+# warning GrP fixme signals
+#else
 	 VG_(poll_signals)(tid);
+#endif
 
 	 if (VG_(is_exiting)(tid))
 	    break;		/* poll_signals picked up a fatal signal */
@@ -1014,8 +1061,10 @@ VgSchedReturnCode VG_(scheduler) ( ThreadId tid )
 	 break;
 
       case VEX_TRC_JMP_SYS_INT128:  /* x86-linux */
-      case VEX_TRC_JMP_SYS_SYSCALL: /* amd64-linux, ppc32-linux */
-	 handle_syscall(tid);
+      case VEX_TRC_JMP_SYS_INT129:  /* x86-darwin */
+      case VEX_TRC_JMP_SYS_INT130:  /* x86-darwin */
+      case VEX_TRC_JMP_SYS_SYSCALL: /* amd64-linux, ppc32-linux, amd64-darwin */
+	 handle_syscall(tid, trc);
 	 if (VG_(clo_sanity_level) > 2)
 	    VG_(sanity_check_general)(True); /* sanity-check every syscall */
 	 break;
@@ -1046,7 +1095,12 @@ VgSchedReturnCode VG_(scheduler) ( ThreadId tid )
          /* Failure of arch-specific address translation (x86/amd64
             segment override use) */
          /* jrs 2005 03 11: is this correct? */
+#if defined(VGO_darwin)
+# warning GrP fixme synth signals
+         VG_(core_panic)("mapfail - no synth signals on darwin");
+#else
          VG_(synth_fault)(tid);
+#endif
          break;
 
       case VEX_TRC_JMP_EMWARN: {
@@ -1096,16 +1150,31 @@ VgSchedReturnCode VG_(scheduler) ( ThreadId tid )
       }
 
       case VEX_TRC_JMP_SIGTRAP:
+#if defined(VGO_darwin) 
+         // GrP fixme signals
+         // GrP remote debugger hack - gdb sets breakpoint (int3) in dyld code
+         VG_(start_debugger_signal)(tid, 5);// gdb TARGET_SIGNAL_TRAP
+#else
          VG_(synth_sigtrap)(tid);
+#endif
          break;
 
       case VEX_TRC_JMP_SIGSEGV:
+#if defined(VGO_darwin)
+# warning GrP fixme synth signals
+         VG_(core_panic)("sigsegv - no synth signals on darwin");
+#else
          VG_(synth_fault)(tid);
+#endif
          break;
 
       case VEX_TRC_JMP_NODECODE:
    VG_(message)(Vg_UserMsg,
       "valgrind: Unrecognised instruction at address %#lx.", VG_(get_IP)(tid));
+#if defined(VGO_darwin)
+   // GrP fixme signals
+   __builtin_trap();
+#else
 #define M(a) VG_(message)(Vg_UserMsg, a);
    M("Your program just tried to execute an instruction that Valgrind" );
    M("did not recognise.  There are two possible reasons for this."    );
@@ -1119,6 +1188,7 @@ VgSchedReturnCode VG_(scheduler) ( ThreadId tid )
    M("probably kill your program."                                     );
 #undef M
          VG_(synth_sigill)(tid, VG_(get_IP)(tid));
+#endif
          break;
 
       case VEX_TRC_JMP_TINVAL:
@@ -1151,7 +1221,13 @@ VgSchedReturnCode VG_(scheduler) ( ThreadId tid )
             vex does not know what it should be.  Vex sets the next
             address to zero, so if you don't guest_EIP, the thread will
             jump to zero afterwards and probably die as a result. */
-#        if defined(VGA_x86)
+#        if defined(VGP_x86_darwin)
+         /* return address in client edx */
+         VG_(threads)[tid].arch.vex.guest_EIP = 
+            VG_(threads)[tid].arch.vex.guest_EDX;
+         handle_syscall(tid, trc);
+
+#        elif defined(VGA_x86)
          //FIXME: VG_(threads)[tid].arch.vex.guest_EIP = ....
          //handle_sysenter_x86(tid);
          vg_assert2(0, "VG_(scheduler), phase 3: "
@@ -1160,6 +1236,7 @@ VgSchedReturnCode VG_(scheduler) ( ThreadId tid )
          vg_assert2(0, "VG_(scheduler), phase 3: "
                        "sysenter_x86 on non-x86 platform?!?!");
 #        endif
+         break;
 
       default: 
 	 vg_assert2(0, "VG_(scheduler), phase 3: "
@@ -1290,7 +1367,8 @@ void do_client_request ( ThreadId tid )
       case VG_USERREQ__CLIENT_CALL0: {
          UWord (*f)(ThreadId) = (void*)arg[1];
 	 if (f == NULL)
-	    VG_(message)(Vg_DebugMsg, "VG_USERREQ__CLIENT_CALL0: func=%p", f);
+	    VG_(message)(Vg_DebugMsg, "VG_USERREQ__CLIENT_CALL0: func=%p; "
+                         "did you forget to pass --tool=foo?", f);
 	 else
 	    SET_CLCALL_RETVAL(tid, f ( tid ), (Addr)f);
          break;
@@ -1298,7 +1376,8 @@ void do_client_request ( ThreadId tid )
       case VG_USERREQ__CLIENT_CALL1: {
          UWord (*f)(ThreadId, UWord) = (void*)arg[1];
 	 if (f == NULL)
-	    VG_(message)(Vg_DebugMsg, "VG_USERREQ__CLIENT_CALL1: func=%p", f);
+	    VG_(message)(Vg_DebugMsg, "VG_USERREQ__CLIENT_CALL1: func=%p; "
+                         "did you forget to pass --tool=foo?", f);
 	 else
 	    SET_CLCALL_RETVAL(tid, f ( tid, arg[2] ), (Addr)f );
          break;
@@ -1306,7 +1385,8 @@ void do_client_request ( ThreadId tid )
       case VG_USERREQ__CLIENT_CALL2: {
          UWord (*f)(ThreadId, UWord, UWord) = (void*)arg[1];
 	 if (f == NULL)
-	    VG_(message)(Vg_DebugMsg, "VG_USERREQ__CLIENT_CALL2: func=%p", f);
+	    VG_(message)(Vg_DebugMsg, "VG_USERREQ__CLIENT_CALL2: func=%p; "
+                         "did you forget to pass --tool=foo?", f);
 	 else
 	    SET_CLCALL_RETVAL(tid, f ( tid, arg[2], arg[3] ), (Addr)f );
          break;
@@ -1314,7 +1394,8 @@ void do_client_request ( ThreadId tid )
       case VG_USERREQ__CLIENT_CALL3: {
          UWord (*f)(ThreadId, UWord, UWord, UWord) = (void*)arg[1];
 	 if (f == NULL)
-	    VG_(message)(Vg_DebugMsg, "VG_USERREQ__CLIENT_CALL3: func=%p", f);
+	    VG_(message)(Vg_DebugMsg, "VG_USERREQ__CLIENT_CALL3: func=%p; "
+                         "did you forget to pass --tool=foo?", f);
 	 else
 	    SET_CLCALL_RETVAL(tid, f ( tid, arg[2], arg[3], arg[4] ), (Addr)f );
          break;
@@ -1372,8 +1453,8 @@ void do_client_request ( ThreadId tid )
 	 info->tl_free                 = VG_(tdict).tool_free;
 	 info->tl___builtin_delete     = VG_(tdict).tool___builtin_delete;
 	 info->tl___builtin_vec_delete = VG_(tdict).tool___builtin_vec_delete;
+         info->tl_malloc_usable_size   = VG_(tdict).tool_malloc_usable_size;
 
-	 info->arena_payload_szB       = VG_(arena_payload_szB);
 	 info->mallinfo                = VG_(mallinfo);
 	 info->clo_trace_malloc        = VG_(clo_trace_malloc);
 
@@ -1463,12 +1544,15 @@ void scheduler_sanity ( ThreadId tid )
       bad = True;
    }
 
+#if !defined(VGO_darwin)
+   // GrP fixme
    if (lwpid != the_BigLock.owner_lwpid) {
       VG_(message)(Vg_DebugMsg,
                    "Thread (LWPID) %d doesn't own the_BigLock\n",
                    tid);
       bad = True;
    }
+#endif
 
    /* Periodically show the state of all threads, for debugging
       purposes. */

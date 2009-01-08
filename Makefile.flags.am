@@ -1,7 +1,7 @@
 
 # Baseline flags for all compilations.  Aim here is to maximise
 # performance and get whatever useful warnings we can out of gcc.
-AM_CFLAGS_BASE = -O2 -g -Wmissing-prototypes -Wall -Wshadow \
+AM_CFLAGS_BASE = -O2 -gstabs -Wmissing-prototypes -Wall -Wshadow \
                  -Wpointer-arith -Wstrict-prototypes -Wmissing-declarations \
 		 @FLAG_W_NO_FORMAT_ZERO_LENGTH@ \
                  -fno-strict-aliasing
@@ -10,7 +10,13 @@ AM_CFLAGS_BASE = -O2 -g -Wmissing-prototypes -Wall -Wshadow \
 # The aim is to give reasonable performance but also to have good
 # stack traces, since users often see stack traces extending 
 # into (and through) the preloads.
-AM_CFLAGS_PIC = -O -g -fpic -fno-omit-frame-pointer -fno-strict-aliasing
+if VGO_DARWIN
+AM_PIC_FLAG = -dynamic
+else
+AM_PIC_FLAG = -fpic
+endif
+
+AM_CFLAGS_PIC = $(AM_PIC_FLAG) -gstabs -fno-omit-frame-pointer -fno-strict-aliasing
 
 # Flags for specific targets
 AM_FLAG_M3264_X86_LINUX   = @FLAG_M32@
@@ -47,6 +53,18 @@ AM_CFLAGS_PPC64_AIX5      = $(WERROR) @FLAG_MAIX64@ -mcpu=powerpc64 $(AM_CFLAGS_
 AM_CCASFLAGS_PPC64_AIX5   = $(add_includes_ppc64_aix5) \
 				@FLAG_MAIX64@ -mcpu=powerpc64 -g
 
+AM_FLAG_M3264_X86_DARWIN = -arch i386
+AM_CPPFLAGS_X86_DARWIN   = $(add_includes_x86_darwin)
+AM_CFLAGS_X86_DARWIN     = $(WERROR) -arch i386 $(AM_CFLAGS_BASE) -O2 -mmacosx-version-min=10.5 -gstabs -fno-stack-protector
+# GrP fixme -O0 for debugging goes here; -O3 crashes
+AM_CCASFLAGS_X86_DARWIN  = $(add_includes_x86_darwin) -arch i386 -gstabs -O0
+
+AM_FLAG_M3264_AMD64_DARWIN = -arch x86_64
+AM_CPPFLAGS_AMD64_DARWIN   = $(add_includes_amd64_darwin)
+AM_CFLAGS_AMD64_DARWIN     = $(WERROR) -arch x86_64 $(AM_CFLAGS_BASE) -O2 -mmacosx-version-min=10.5 -gstabs -fno-stack-protector
+# GrP fixme -O0 for debugging goes here
+AM_CCASFLAGS_AMD64_DARWIN  = $(add_includes_amd64_darwin) -arch x86_64 -gstabs
+
 # Flags for the primary target.  These must be used to build the
 # regtests and performance tests.  In fact, these must be used to
 # build anything which is built only once on a dual-arch build.
@@ -67,9 +85,12 @@ endif
 #
 PRELOAD_LDFLAGS_COMMON_LINUX = -nodefaultlibs -shared -Wl,-z,interpose,-z,initfirst
 PRELOAD_LDFLAGS_COMMON_AIX5  = -nodefaultlibs -shared -Wl,-G -Wl,-bnogc
+PRELOAD_LDFLAGS_COMMON_DARWIN = -dynamic -dynamiclib -all_load
 PRELOAD_LDFLAGS_X86_LINUX   = $(PRELOAD_LDFLAGS_COMMON_LINUX) @FLAG_M32@
 PRELOAD_LDFLAGS_AMD64_LINUX = $(PRELOAD_LDFLAGS_COMMON_LINUX) @FLAG_M64@
 PRELOAD_LDFLAGS_PPC32_LINUX = $(PRELOAD_LDFLAGS_COMMON_LINUX) @FLAG_M32@
 PRELOAD_LDFLAGS_PPC64_LINUX = $(PRELOAD_LDFLAGS_COMMON_LINUX) @FLAG_M64@
 PRELOAD_LDFLAGS_PPC32_AIX5  = $(PRELOAD_LDFLAGS_COMMON_AIX5)  @FLAG_MAIX32@
 PRELOAD_LDFLAGS_PPC64_AIX5  = $(PRELOAD_LDFLAGS_COMMON_AIX5)  @FLAG_MAIX64@
+PRELOAD_LDFLAGS_X86_DARWIN   = $(PRELOAD_LDFLAGS_COMMON_DARWIN) -arch i386
+PRELOAD_LDFLAGS_AMD64_DARWIN = $(PRELOAD_LDFLAGS_COMMON_DARWIN) -arch x86_64

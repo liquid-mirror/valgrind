@@ -36,6 +36,60 @@
 #include "pub_core_libcproc.h"      // For VG_(gettid)()
 #include "priv_sema.h"
 
+#if defined(VGO_darwin)
+
+#include <mach/mach.h>
+#include <mach/task.h>
+#include <mach/semaphore.h>
+
+// GrP fixme being paranoid costs a lot of thread_self_trap calls
+
+void ML_(sema_init)(vg_sema_t *sema)
+{
+    kern_return_t kr;
+    kr = semaphore_create(mach_task_self(), &sema->lock, SYNC_POLICY_FIFO, 1);
+    vg_assert(kr == 0);
+}
+
+void ML_(sema_deinit)(vg_sema_t *sema)
+{
+    kern_return_t kr;
+    kr = semaphore_destroy(mach_task_self(), sema->lock);
+    vg_assert(kr == 0);
+}
+
+void ML_(sema_down)(vg_sema_t *sema)
+{
+    kern_return_t kr;
+    do {
+        kr = semaphore_wait(sema->lock);
+    } while (kr == KERN_ABORTED);
+    vg_assert(kr == 0);
+}
+
+void ML_(sema_up)(vg_sema_t *sema)
+{
+    kern_return_t kr;
+    do {
+        kr = semaphore_signal(sema->lock);
+    } while (kr == KERN_ABORTED);
+    vg_assert(kr == 0);
+}
+
+void ML_(sema_fork_child)(vg_sema_t *sema)
+{
+   /* darwin: no deinit because child has no access to parent's semaphore */
+   ML_(sema_init)(sema);
+   ML_(sema_down)(sema);
+}
+
+Bool ML_(sema_handoff)(vg_sema_t *sema, Int lwpid)
+{
+    return semaphore_signal_thread(sema->lock, (thread_act_t)lwpid) ? False : True;
+}
+
+#else
+
 /* 
    Slower (than the removed futex-based sema scheme) but more portable
    pipe-based token passing scheme.
@@ -137,6 +191,16 @@ void ML_(sema_up)(vg_sema_t *sema)
 
    vg_assert(ret == 1);
 }
+
+void ML_(sema_fork_child)(vg_sema_t *sema)
+{
+   /* re-init and take the sema */
+   ML_(sema_deinit)(sema);
+   ML_(sema_init)(sema);
+   ML_(sema_down)(sema);
+}
+
+#endif
 
 /*--------------------------------------------------------------------*/
 /*--- end                                                          ---*/

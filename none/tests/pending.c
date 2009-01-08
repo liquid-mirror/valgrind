@@ -11,6 +11,7 @@
 #include <unistd.h>
 #include <stdlib.h>
 
+#if !defined(__APPLE__)
 static volatile int gotsig = 0;
 static volatile int early = 1;
 
@@ -82,3 +83,12 @@ int main()
 	printf("OK\n");
 	return 0;
 }
+
+#else
+
+int main(int argc, char **argv)
+{
+	return 0;
+}
+
+#endif

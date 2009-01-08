@@ -86,6 +86,7 @@ typedef
       Bool superblock_discards;
       Bool command_line_options;
       Bool client_requests;
+      Bool debugger_commands;
       Bool syscall_wrapper;
       Bool sanity_checks;
       Bool var_info;
@@ -137,6 +138,10 @@ typedef struct {
    // VG_(needs).client_requests
    Bool (*tool_handle_client_request)(ThreadId, UWord*, UWord*);
 
+   // VG_(needs).debugger_commands
+   Bool (*tool_handle_debugger_query)(Int, Char*);
+   Bool (*tool_handle_debugger_action)(Int, Char*);
+
    // VG_(needs).syscall_wrapper
    void (*tool_pre_syscall) (ThreadId, UInt);
    void (*tool_post_syscall)(ThreadId, UInt, SysRes);
@@ -155,6 +160,7 @@ typedef struct {
    void  (*tool___builtin_delete)    (ThreadId, void*);
    void  (*tool___builtin_vec_delete)(ThreadId, void*);
    void* (*tool_realloc)             (ThreadId, void*, SizeT);
+   SizeT (*tool_malloc_usable_size)  (ThreadId, void*);
    SizeT tool_client_redzone_szB;
 
    // VG_(needs).final_IR_tidy_pass

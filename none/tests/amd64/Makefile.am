@@ -61,7 +61,7 @@ if BUILD_SSSE3_TESTS
  check_PROGRAMS += ssse3_misaligned
 endif
 
-AM_CFLAGS   = $(WERROR) -Winline -Wall -Wshadow -g -I$(top_srcdir)/include
+AM_CFLAGS   = $(WERROR) -Winline -Wall -Wshadow -g -I$(top_srcdir)/include \
 		@FLAG_M64@
 AM_CXXFLAGS = $(AM_CFLAGS)
 

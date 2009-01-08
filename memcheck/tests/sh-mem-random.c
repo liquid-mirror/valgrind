@@ -22,6 +22,10 @@ typedef unsigned long        UWord;
 
 #define PAGE_SIZE 4096ULL
 
+#if !defined(MAP_ANONYMOUS)
+#define MAP_ANONYMOUS 0
+#endif
+
 
 // XXX: should check the error cases for SET/GET_VBITS also
 

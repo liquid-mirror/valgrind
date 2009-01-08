@@ -2230,6 +2230,7 @@ static void ms_pre_clo_init(void)
                                    ms___builtin_delete,
                                    ms___builtin_vec_delete,
                                    ms_realloc,
+                                   NULL,
                                    0 );
 
    // HP_Chunks

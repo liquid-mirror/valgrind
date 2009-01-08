@@ -70,4 +70,28 @@ add_includes_ppc64_aix5 = -I$(top_srcdir)/coregrind \
 		-DVGO_aix5=1 \
 		-DVGP_ppc64_aix5=1
 
+add_includes_x86_darwin = -I$(top_srcdir)/coregrind \
+		-I$(top_srcdir) \
+		-I$(top_srcdir)/coregrind/x86 \
+		-I$(top_srcdir)/coregrind/darwin \
+		-I$(top_srcdir)/coregrind/x86-darwin \
+		-I$(top_srcdir)/include \
+		-I@VEX_DIR@/pub \
+		-DVG_PLATFORM="\"x86-darwin\"" \
+		-DVGA_x86=1 \
+		-DVGO_darwin=1 \
+		-DVGP_x86_darwin=1
+
+add_includes_amd64_darwin = -I$(top_srcdir)/coregrind \
+		-I$(top_srcdir) \
+		-I$(top_srcdir)/coregrind/amd64 \
+		-I$(top_srcdir)/coregrind/darwin \
+		-I$(top_srcdir)/coregrind/amd64-darwin \
+		-I$(top_srcdir)/include \
+		-I@VEX_DIR@/pub \
+		-DVG_PLATFORM="\"amd64-darwin\"" \
+		-DVGA_amd64=1 \
+		-DVGO_darwin=1 \
+		-DVGP_amd64_darwin=1
+
 include $(top_srcdir)/Makefile.flags.am

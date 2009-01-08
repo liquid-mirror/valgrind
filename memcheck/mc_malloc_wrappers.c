@@ -483,6 +483,22 @@ void* MC_(realloc) ( ThreadId tid, void* p_old, SizeT new_szB )
    return p_new;
 }
 
+// Memcheck's allocator always gives the client exactly as much 
+// memory as they asked for, with no additional alignment padding.
+SizeT MC_(malloc_usable_size) ( ThreadId tid, void* p )
+{
+   if (p) {
+      MC_Chunk* mc = VG_(HT_lookup) ( MC_(malloc_list), (UWord)p );
+      if (mc) {
+         return mc->szB;
+      }
+   }
+
+   // bad pointer or no pointer - Linux and Darwin both return 0 with no error.
+   return 0; 
+}
+
+
 /* Memory pool stuff. */
 
 void MC_(create_mempool)(Addr pool, UInt rzB, Bool is_zeroed)

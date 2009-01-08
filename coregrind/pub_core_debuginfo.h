@@ -56,7 +56,7 @@ extern void VG_(di_initialise) ( void );
    in later queries to m_debuginfo.  In this case the handle value
    will be one or above.  If the returned value is zero, no debug info
    was read. */
-#if defined(VGO_linux)
+#if defined(VGO_linux)  ||  defined(VGO_darwin)
 extern ULong VG_(di_notify_mmap)( Addr a, Bool allow_SkFileV );
 
 extern void VG_(di_notify_munmap)( Addr a, SizeT len );
@@ -65,6 +65,7 @@ extern void VG_(di_notify_mprotect)( Addr a, SizeT len, UInt prot );
 #endif
 
 #if defined(VGO_aix5)
+// GrP fixme use this instead for darwin?
 /* AIX5: Very similar, except packaged more neatly.  The supplied
    parameters describe a code segment and its associated data segment,
    that have recently been mapped in -- so we need to read debug info
@@ -118,6 +119,9 @@ Bool VG_(get_fnname_Z_demangle_only) ( Addr a, Char* buf, Int nbuf );
 extern
 Bool VG_(lookup_symbol_SLOW)(UChar* sopatt, UChar* name, Addr* pEnt, Addr* pToc);
 
+/* GrP fixme replace with lookup_symbol_SLOW ? */
+extern
+Addr VG_(dlsym)(Char *fnname);
 #endif   // __PUB_CORE_DEBUGINFO_H
 
 /*--------------------------------------------------------------------*/

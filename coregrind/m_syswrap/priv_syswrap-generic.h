@@ -61,13 +61,53 @@ extern void ML_(record_fd_open_with_given_name)(ThreadId tid, Int fd,
 extern
 Bool ML_(do_sigkill)(Int pid, Int tgid);
 
-/* So that it can be seen from syswrap-x86-linux.c. */
-/* When a client mmap has been successfully done, both aspacem and the
-   tool need to be notified of the new mapping.  Hence this fn. */
-extern 
-void 
+/* So that it can be seen from syswrap-$VG_PLATFORM.c. */
+/* When a client mmap or munmap has been successfully done, both aspacem 
+   and the tool need to be notified of the new mapping.  Hence this fn. */
+extern void 
 ML_(notify_aspacem_and_tool_of_mmap) ( Addr a, SizeT len, UInt prot, 
                                        UInt mm_flags, Int fd, ULong offset );
+extern void 
+ML_(notify_aspacem_and_tool_of_munmap) ( Addr a, SizeT len );
+extern void 
+ML_(notify_aspacem_and_tool_of_mprotect) ( Addr a, SizeT len, Int prot );
+
+/* PRE and POST for platform-specific ioctls */
+extern Bool
+ML_(PRE_sys_ioctl) ( ThreadId tid, UWord arg1, UWord arg2, UWord arg3 );
+extern Bool
+ML_(POST_sys_ioctl) ( ThreadId tid, UInt res, 
+                      UWord arg1, UWord arg2, UWord arg3 );
+
+/* PRE and POST for unknown ioctls based on ioctl request encoding */
+extern 
+void ML_(PRE_unknown_ioctl)(ThreadId tid, UWord request, UWord arg);
+extern 
+void ML_(POST_unknown_ioctl)(ThreadId tid, UInt res, UWord request, UWord arg);
+
+/* PRE and POST for platform-specific sockopts */
+extern void 
+ML_(PRE_sys_getsockopt) ( ThreadId tid, UWord arg0, UWord arg1, 
+                          UWord arg2, UWord arg3, UWord arg4 );
+extern void 
+ML_(POST_sys_getsockopt) ( ThreadId tid, SysRes res,
+                           UWord arg0, UWord arg1, UWord arg2,
+                           UWord arg3, UWord arg4 );
+
+/* PRE and POST for platform-specific fcntls */
+extern void 
+ML_(PRE_sys_fcntl) ( ThreadId tid, SyscallArgLayout *layout, UWord *flags, 
+                     UWord arg1, UWord arg2, UWord arg3 );
+extern void 
+ML_(POST_sys_fcntl) ( ThreadId tid, SyscallStatus *status, 
+                      UWord arg1, UWord arg2, UWord arg3 );
+extern void 
+ML_(PRE_sys_fcntl64) ( ThreadId tid, SyscallArgLayout *layout, UWord *flags, 
+                       UWord arg1, UWord arg2, UWord arg3 );
+extern void 
+ML_(POST_sys_fcntl64) ( ThreadId tid, SyscallStatus *status, 
+                        UWord arg1, UWord arg2, UWord arg3 );
+
 
 
 DECL_TEMPLATE(generic, sys_ni_syscall);            // * P -- unimplemented
@@ -178,10 +218,8 @@ DECL_TEMPLATE(generic, sys_fstatfs);               // * L?
 DECL_TEMPLATE(generic, sys_iopl);                  // (x86/amd64) L
 DECL_TEMPLATE(generic, sys_ipc);                   // (x86) L
 DECL_TEMPLATE(generic, sys_newuname);              // * P
-DECL_TEMPLATE(generic, sys_pread64_on32bitplat);   // * (Unix98?)
-DECL_TEMPLATE(generic, sys_pread64_on64bitplat);   // * (Unix98?)
-DECL_TEMPLATE(generic, sys_pwrite64_on32bitplat);  // * (Unix98?)
-DECL_TEMPLATE(generic, sys_pwrite64_on64bitplat);  // * (Unix98?)
+DECL_TEMPLATE(generic, sys_pread64);               // * (Unix98?)
+DECL_TEMPLATE(generic, sys_pwrite64);              // * (Unix98?)
 DECL_TEMPLATE(generic, sys_sigaltstack);           // (x86) (XPG4-UNIX)
 DECL_TEMPLATE(generic, sys_getpmsg);               // (?) (?)
 DECL_TEMPLATE(generic, sys_putpmsg);               // (?) (?)

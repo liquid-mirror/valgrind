@@ -37,6 +37,7 @@
 #include "pub_core_aspacemgr.h"
 #include "pub_core_commandline.h"
 #include "pub_core_debuglog.h"
+#include "pub_core_debugstub.h"
 #include "pub_core_errormgr.h"
 #include "pub_core_execontext.h"
 #include "pub_core_initimg.h"
@@ -47,6 +48,7 @@
 #include "pub_core_libcproc.h"
 #include "pub_core_libcsignal.h"
 #include "pub_core_syscall.h"       // VG_(strerror)
+#include "pub_core_mach.h"
 #include "pub_core_machine.h"
 #include "pub_core_mallocfree.h"
 #include "pub_core_options.h"
@@ -389,6 +391,8 @@ static Bool main_process_cmd_line_options( UInt* client_auxv,
 
       else VG_BOOL_CLO(arg, "--xml",              VG_(clo_xml))
       else VG_BOOL_CLO(arg, "--db-attach",        VG_(clo_db_attach))
+      else VG_BOOL_CLO(arg, "--db-listen",        VG_(clo_db_listen))
+      else VG_NUM_CLO (arg, "--db-listen-port",   VG_(clo_db_listen_port))
       else VG_BOOL_CLO(arg, "--demangle",         VG_(clo_demangle))
       else VG_BOOL_CLO(arg, "--error-limit",      VG_(clo_error_limit))
       else VG_NUM_CLO (arg, "--error-exitcode",   VG_(clo_error_exitcode))
@@ -418,6 +422,7 @@ static Bool main_process_cmd_line_options( UInt* client_auxv,
       else VG_BOOL_CLO(arg, "--trace-redir",      VG_(clo_trace_redir))
 
       else VG_BOOL_CLO(arg, "--trace-syscalls",   VG_(clo_trace_syscalls))
+      else VG_BOOL_CLO(arg, "--trace-unknown-syscalls",   VG_(clo_trace_unknown_syscalls))
       else VG_BOOL_CLO(arg, "--wait-for-gdb",     VG_(clo_wait_for_gdb))
       else VG_STR_CLO (arg, "--db-command",       VG_(clo_db_command))
       else VG_STR_CLO (arg, "--sim-hints",        VG_(clo_sim_hints))
@@ -972,6 +977,14 @@ static void setup_file_descriptors(void)
       rl.rlim_max = 1024;
    }
 
+#  if defined(VGO_darwin)
+   /* Darwin lies. It reports file max as RLIM_INFINITY but
+      silently disallows anything bigger than 10240. */
+   if (rl.rlim_cur >= 10240  &&  rl.rlim_max == 0x7fffffffffffffffULL) {
+      rl.rlim_max = 10240;
+   }
+#  endif
+
    if (show)
       VG_(printf)("fd limits: host, before: cur %lu max %lu\n", 
                   (UWord)rl.rlim_cur, (UWord)rl.rlim_max);
@@ -1204,6 +1217,14 @@ Int valgrind_main ( Int argc, HChar **argv, HChar **envp )
    VG_(client_envp) = (Char**)envp;
 
    //--------------------------------------------------------------
+   // Start up Mach kernel interface, if any
+   //   p: none
+   //--------------------------------------------------------------
+#if defined(VGO_darwin)
+   VG_(mach_init)();
+#endif
+
+   //--------------------------------------------------------------
    // Start up the logging mechanism
    //   p: none
    //--------------------------------------------------------------
@@ -1284,9 +1305,28 @@ Int valgrind_main ( Int argc, HChar **argv, HChar **envp )
 #  endif
 
    //--------------------------------------------------------------
+   // Darwin only: munmap address-space-filling segments
+   // (oversized pagezero or stack)
+   //   p: none
+   //--------------------------------------------------------------
+#if defined(VGO_darwin)
+# if VG_WORDSIZE == 4
+   VG_(do_syscall2)(__NR_munmap, 0x00000000, 0xf0000000);
+# else
+   // open up client space
+   VG_(do_syscall2)(__NR_munmap, 0x100000000, 0x700000000000-0x100000000);
+   // open up client stack and dyld
+   VG_(do_syscall2)(__NR_munmap, 0x7fff5c000000, 0x4000000);
+# endif
+#endif
+
+   //--------------------------------------------------------------
    // Ensure we're on a plausible stack.
    //   p: logging
    //--------------------------------------------------------------
+#if defined(VGO_darwin)
+   // Darwin doesn't use the interim stack.
+#else
    VG_(debugLog)(1, "main", "Checking current stack is plausible\n");
    { HChar* limLo  = (HChar*)(&VG_(interim_stack).bytes[0]);
      HChar* limHi  = limLo + sizeof(VG_(interim_stack));
@@ -1314,11 +1354,12 @@ Int valgrind_main ( Int argc, HChar **argv, HChar **envp )
       VG_(debugLog)(0, "main", "   Cannot continue.  Sorry.\n");
       VG_(exit)(1);
    }
+#endif
 
    //--------------------------------------------------------------
    // Start up the address space manager, and determine the
    // approximate location of the client's stack
-   //   p: logging, plausible-stack
+   //   p: logging, plausible-stack, darwin-munmap
    //--------------------------------------------------------------
    VG_(debugLog)(1, "main", "Starting the address space manager\n");
    vg_assert(VKI_PAGE_SIZE     == 4096 || VKI_PAGE_SIZE     == 65536);
@@ -1515,8 +1556,12 @@ Int valgrind_main ( Int argc, HChar **argv, HChar **envp )
       /* the_iicii.sp_at_startup  is irrelevant */
       /* the_iicii.clstack_top    is irrelevant */
       the_iicii.toolname          = toolname;
+#     elif defined(VGO_darwin)
+      the_iicii.argv              = argv;
+      the_iicii.envp              = envp;
+      the_iicii.toolname          = toolname;
 #     else
-#       error "Uknown platform"
+#       error "Unknown platform"
 #     endif
 
       /* NOTE: this call reads VG_(clo_main_stacksize). */
@@ -1560,6 +1605,10 @@ Int valgrind_main ( Int argc, HChar **argv, HChar **envp )
    // when it tries to open /proc/<pid>/cmdline for itself.
    //   p: setup file descriptors
    //--------------------------------------------------------------
+#if !HAVE_PROC
+   // client shouldn't be using /proc!
+   VG_(cl_cmdline_fd) = -1;
+#else
    if (!need_help) {
       HChar  buf[50], buf2[50+64];
       HChar  nul[1];
@@ -1597,6 +1646,7 @@ Int valgrind_main ( Int argc, HChar **argv, HChar **envp )
 
       VG_(cl_cmdline_fd) = fd;
    }
+#endif
 
    //--------------------------------------------------------------
    // Init tool part 1: pre_clo_init
@@ -1701,6 +1751,8 @@ Int valgrind_main ( Int argc, HChar **argv, HChar **envp )
       iters = 5;
 #     elif defined(VGP_ppc32_aix5) || defined(VGP_ppc64_aix5)
       iters = 4;
+#     elif defined(VGO_darwin)
+      iters = 5;
 #     else
 #       error "Unknown plat"
 #     endif
@@ -1802,6 +1854,20 @@ Int valgrind_main ( Int argc, HChar **argv, HChar **envp )
      }
 
      VG_(free)(changes);
+   }
+#  elif defined(VGO_darwin)
+   { Addr* seg_starts;
+     Int   n_seg_starts;
+     seg_starts = get_seg_starts( &n_seg_starts );
+     vg_assert(seg_starts && n_seg_starts >= 0);
+
+     /* show them all to the debug info reader.  
+        Don't read from V segments (unlike Linux) */
+     // GrP fixme really?
+     for (i = 0; i < n_seg_starts; i++)
+        VG_(di_notify_mmap)( seg_starts[i], False/*don't allow_SkFileV*/ );
+
+     VG_(free)( seg_starts );
    }
 #  else
 #    error Unknown OS
@@ -1976,7 +2042,21 @@ Int valgrind_main ( Int argc, HChar **argv, HChar **envp )
    //--------------------------------------------------------------
    // Nb: temporarily parks the saved blocking-mask in saved_sigmask.
    VG_(debugLog)(1, "main", "Initialise signal management\n");
+#if defined(VGO_darwin)
+#  warning GrP fixme signals
+#else
    VG_(sigstartup_actions)();
+#endif
+
+   //--------------------------------------------------------------
+   // Listen for remote debugger
+   //   p: scheduler, process_cmd_line_options()
+   //--------------------------------------------------------------
+   if (VG_(clo_db_listen)) {
+       VG_(debugLog)(1, "main", "Listening for debugger on port %d\n", 
+                     VG_(clo_db_listen_port));
+       VG_(debugstub_init)();
+   }
 
    //--------------------------------------------------------------
    // Read suppression file
@@ -2194,7 +2274,12 @@ void shutdown_actions_NORETURN( ThreadId tid,
    case VgSrc_FatalSig:
       /* We were killed by a fatal signal, so replicate the effect */
       vg_assert(VG_(threads)[tid].os_state.fatalsig != 0);
+#if defined(VGO_darwin)
+#warning GrP fixme signals
+#else
       VG_(kill_self)(VG_(threads)[tid].os_state.fatalsig);
+#endif
+
       VG_(core_panic)("main(): signal was supposed to be fatal");
       break;
 
@@ -2208,9 +2293,11 @@ void shutdown_actions_NORETURN( ThreadId tid,
 /* Final clean-up before terminating the process.  
    Clean up the client by calling __libc_freeres() (if requested) 
    This is Linux-specific?
+   GrP fixme glibc-specific, anyway
 */
 static void final_tidyup(ThreadId tid)
 {
+#if !defined(VGO_darwin)
 #  if defined(VGP_ppc64_linux)
    Addr r2;
 #  endif
@@ -2274,11 +2361,12 @@ static void final_tidyup(ThreadId tid)
    VG_(scheduler)(tid);
 
    vg_assert(VG_(is_exiting)(tid));
+#endif
 }
 
 
 /*====================================================================*/
-/*=== Getting to main() alive: LINUX (for AIX5 see below)          ===*/
+/*=== Getting to main() alive: LINUX                               ===*/
 /*====================================================================*/
 
 #if defined(VGO_linux)
@@ -2446,8 +2534,6 @@ asm("\n"
     "\tnop\n"
     "\ttrap\n"
 );
-#else
-#error "_start: needs implementation on this platform"
 #endif
 
 /* --- !!! --- EXTERNAL HEADERS start --- !!! --- */
@@ -2496,14 +2582,12 @@ void _start_in_C_linux ( UWord* pArgc )
    VG_(exit)(r);
 }
 
-#endif /* defined(VGO_linux) */
-
 
 /*====================================================================*/
 /*=== Getting to main() alive: AIX5                                ===*/
 /*====================================================================*/
 
-#if defined(VGP_ppc32_aix5) || defined(VGP_ppc64_aix5)
+#elif defined(VGO_aix5)
 
 /* This is somewhat simpler than the Linux case.  _start_valgrind
    receives control from the magic piece of code created in this
@@ -2613,7 +2697,62 @@ void max_history_size     ( void ) { vg_assert(0); }
 void getpass_auto         ( void ) { vg_assert(0); }
 void max_pw_passlen       ( void ) { vg_assert(0); }
 
-#endif /* defined(VGP_ppc{32,64}_aix5) */
+
+/*====================================================================*/
+/*=== Getting to main() alive: darwin                              ===*/
+/*====================================================================*/
+
+#elif defined(VGO_darwin)
+
+void* __memcpy_chk(void *dest, const void *src, SizeT n, SizeT n2);
+void* __memcpy_chk(void *dest, const void *src, SizeT n, SizeT n2) {
+    // skip check
+   return VG_(memcpy)(dest,src,n);
+}
+void* __memset_chk(void *s, int c, SizeT n, SizeT n2);
+void* __memset_chk(void *s, int c, SizeT n, SizeT n2) {
+    // skip check
+  return VG_(memset)(s,c,n);
+}
+void bzero(void *s, SizeT n);
+void bzero(void *s, SizeT n) {
+    VG_(memset)(s,0,n);
+}
+
+void* memcpy(void *dest, const void *src, SizeT n);
+void* memcpy(void *dest, const void *src, SizeT n) {
+   return VG_(memcpy)(dest,src,n);
+}
+void* memset(void *s, int c, SizeT n);
+void* memset(void *s, int c, SizeT n) {
+  return VG_(memset)(s,c,n);
+}
+
+/* _start in m_start-<arch>-darwin.S calls _start_in_C_darwin(). */
+
+/* Avoid compiler warnings: this fn _is_ used, but labelling it
+   'static' causes gcc to complain it isn't. */
+void _start_in_C_darwin ( UWord* pArgc );
+void _start_in_C_darwin ( UWord* pArgc )
+{
+   Int     r;
+   Int    argc = *(Int *)pArgc;  // not pArgc[0] on LP64
+   HChar** argv = (HChar**)&pArgc[1];
+   HChar** envp = (HChar**)&pArgc[1+argc+1];
+
+   VG_(memset)( &the_iicii, 0, sizeof(the_iicii) );
+   VG_(memset)( &the_iifii, 0, sizeof(the_iifii) );
+
+   the_iicii.sp_at_startup = (Addr)pArgc;
+
+   r = valgrind_main( (Int)argc, argv, envp );
+   /* NOTREACHED */
+   VG_(exit)(r);
+}
+
+#else
+#error dont know how to call valgrind_main on this platform
+#endif
 
 
 /*--------------------------------------------------------------------*/

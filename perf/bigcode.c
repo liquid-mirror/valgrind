@@ -12,6 +12,10 @@
 #include <assert.h>
 #include <sys/mman.h>
 
+#ifndef MAP_ANONYMOUS
+#define MAP_ANONYMOUS 0
+#endif /* MAP_ANONYMOUS */
+
 #define FN_SIZE   996      // Must be big enough to hold the compiled f()
 #define N_LOOPS   20000    // Should be divisible by four
 #define RATIO     4        // Ratio of code sizes between the two modes

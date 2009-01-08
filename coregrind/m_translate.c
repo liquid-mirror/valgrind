@@ -36,8 +36,10 @@
 #include "pub_core_machine.h"    // VG_(fnptr_to_fnentry)
                                  // VG_(get_SP)
                                  // VG_(machine_get_VexArchInfo)
-#include "pub_core_libcbase.h"
+#include "pub_core_errormgr.h"
+#include "pub_core_debugger.h"
 #include "pub_core_libcassert.h"
+#include "pub_core_libcbase.h"
 #include "pub_core_libcprint.h"
 #include "pub_core_options.h"
 
@@ -46,6 +48,7 @@
 
 #include "pub_core_signals.h"    // VG_(synth_fault_{perms,mapping}
 #include "pub_core_stacks.h"     // VG_(unknown_SP_update)()
+#include "pub_core_stacktrace.h"    // For VG_(get_and_pp_StackTrace)()
 #include "pub_core_tooliface.h"  // VG_(tdict)
 
 #include "pub_core_translate.h"
@@ -658,9 +661,8 @@ IRSB* vg_SP_update_pass ( void*             closureV,
 
 /* Vex dumps the final code in here.  Then we can copy it off
    wherever we like. */
-/* 60000: should agree with assertion in VG_(add_to_transtab) in
-   m_transtab.c. */
-#define N_TMPBUF 60000
+// GrP fixme 20000 is too small for vecCGSScanConvolveAndIntegrate+268
+#define N_TMPBUF 128000
 static UChar tmpbuf[N_TMPBUF];
 
 
@@ -708,6 +710,12 @@ static Bool translations_allowable_from_seg ( NSegment const* seg )
 
 static Bool self_check_required ( NSegment const* seg, ThreadId tid )
 {
+   // GrP fixme hack - dyld i386 IMPORT gets rewritten
+   // to really do this correctly, we'd need to flush the 
+   // translation cache whenever a segment became +WX
+   if (seg->hasX  && seg->hasW) {
+      return True;
+   }
    switch (VG_(clo_smc_check)) {
       case Vg_SmcNone:  return False;
       case Vg_SmcAll:   return True;
@@ -1352,6 +1360,25 @@ Bool VG_(translate) ( ThreadId tid,
                                    " - throwing SEGV", addr);
       /* U R busted, sonny.  Place your hands on your head and step
          away from the orig_addr. */
+#if defined(VGO_darwin)
+#warning GrP fixme synth signals
+      {
+          VG_(message)(Vg_UserMsg, "ERROR\n");
+          VG_(message)(Vg_UserMsg, "Thread %d jumped to bad address %p", 
+                       tid, addr);
+          VG_(get_and_pp_StackTrace) ( tid, 30 );
+
+          // copied from m_errormgr.c
+          if (VG_(is_action_requested)( "Attach to debugger", & VG_(clo_db_attach) ))
+          {   
+              VG_(printf)("starting debugger\n");
+              VG_(start_debugger)( tid );
+          }  
+
+          __builtin_trap();
+          VG_(core_panic)("bad code address - no synth signal support on darwin");
+      }
+#else
       /* Code address is bad - deliver a signal instead */
       if (seg != NULL) {
          /* There's some kind of segment at the requested place, but we
@@ -1362,6 +1389,8 @@ Bool VG_(translate) ( ThreadId tid,
            the middle of nowhere. */
          VG_(synth_fault_mapping)(tid, addr);
       }
+#endif
+
       return False;
    }
 
@@ -1416,6 +1445,9 @@ Bool VG_(translate) ( ThreadId tid,
 
 #  if defined(VGP_amd64_linux)
    vex_abiinfo.guest_amd64_assume_fs_is_zero  = True;
+#  endif
+#  if defined(VGP_amd64_darwin)
+   vex_abiinfo.guest_amd64_assume_gs_is_0x60  = True;
 #  endif
 #  if defined(VGP_ppc32_linux)
    vex_abiinfo.guest_ppc_zap_RZ_at_blr        = False;

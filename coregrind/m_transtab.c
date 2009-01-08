@@ -106,6 +106,7 @@ typedef
          the corresponding host code (must be in the same sector!)
          This is a pointer into the sector's tc (code) area. */
       ULong* tcptr;
+      ULong tc_szQ;  // GrP word count occupied following tcptr
 
       /* This is the original guest address that purportedly is the
          entry point of the translation.  You might think that .entry
@@ -246,7 +247,7 @@ typedef
    tt_fast and tt_fastN are referred to from assembly code
    (dispatch.S).
 */
-/*global*/ UInt* VG_(tt_fastN)[VG_TT_FAST_SIZE];
+UInt* VG_(tt_fastN)[VG_TT_FAST_SIZE];
 
 
 /* Make sure we're not used before initialisation. */
@@ -805,7 +806,7 @@ static void invalidate_icache ( void *ptr, Int nbytes )
    cls = vai.ppc_cache_line_szB;
 
    /* Stay sane .. */
-   vg_assert(cls == 32 || cls == 64 || cls == 128);
+   vg_assert(cls == 32 || cls == 128);
 
    startaddr &= ~(cls - 1);
    for (addr = startaddr; addr < endaddr; addr += cls)
@@ -833,7 +834,7 @@ static void invalidate_icache ( void *ptr, Int nbytes )
    pre: youngest_sector points to a valid (although possibly full)
    sector.
 */
-void VG_(add_to_transtab)( VexGuestExtents* vge,
+AddrH VG_(add_to_transtab)( VexGuestExtents* vge,
                            Addr64           entry,
                            AddrH            code,
                            UInt             code_len,
@@ -846,9 +847,7 @@ void VG_(add_to_transtab)( VexGuestExtents* vge,
 
    vg_assert(init_done);
    vg_assert(vge->n_used >= 1 && vge->n_used <= 3);
-
-   /* 60000: should agree with N_TMPBUF in m_translate.c. */
-   vg_assert(code_len > 0 && code_len < 60000);
+   vg_assert(code_len > 0 && code_len < 128000);  // GrP fixme N_TMPBUF from m_translate.c?
 
    if (0)
       VG_(printf)("add_to_transtab(entry = 0x%llx, len = %d)\n",
@@ -940,6 +939,7 @@ void VG_(add_to_transtab)( VexGuestExtents* vge,
 
    sectors[y].tt[i].status = InUse;
    sectors[y].tt[i].tcptr  = tcptr;
+   sectors[y].tt[i].tc_szQ = reqdQ;
    sectors[y].tt[i].count  = 0;
    sectors[y].tt[i].weight = 1;
    sectors[y].tt[i].vge    = *vge;
@@ -950,6 +950,8 @@ void VG_(add_to_transtab)( VexGuestExtents* vge,
 
    /* Note the eclass numbers for this translation. */
    upd_eclasses_after_add( &sectors[y], i );
+
+   return (AddrH)dstP;
 }
 
 
@@ -1318,7 +1320,7 @@ static void init_unredir_tt_tc ( void )
          VG_(out_of_memory_NORETURN)("init_unredir_tt_tc", N_UNREDIR_TT * UNREDIR_SZB);
          /*NOTREACHED*/
       }
-      unredir_tc = (ULong *)sres.res;
+      unredir_tc = (ULong *)(Addr)sres.res;
    }
    unredir_tc_used = 0;
    for (i = 0; i < N_UNREDIR_TT; i++)
@@ -1624,6 +1626,38 @@ ULong VG_(get_BB_profile) ( BBProfEntry tops[], UInt n_tops )
    }
 
    return score_total;
+}
+
+
+// GrP for debugging use
+void vg_untranslate(ULong *host_ip)
+{
+    Int   sno, i, v;
+    
+    for (sno = 0; sno < N_SECTORS; sno++) {
+        if (sectors[sno].tc == NULL)
+            continue;  // empty sector
+        if (host_ip < sectors[sno].tc  ||  host_ip >= sectors[sno].tc_next) 
+            continue;  // host_ip not in this sector
+        
+        for (i = 0; i < N_TTES_PER_SECTOR; i++) {
+            TTEntry *tt = &sectors[sno].tt[i];
+            if (tt->status != InUse)
+                continue;
+            if (host_ip < tt->tcptr  ||  host_ip >= tt->tcptr+tt->tc_szQ) 
+                continue;
+
+            VG_(printf)("host %p..%p -> guest", 
+                        tt->tcptr, tt->tcptr+tt->tc_szQ);
+            for (v = 0; v < tt->vge.n_used; v++) {
+                VG_(printf)("%s %p..%p", 
+                            v==0 ? "" : ",", 
+                            (Addr)tt->vge.base[v], 
+                            (Addr)tt->vge.base[v]+tt->vge.len[v]);
+            }
+            VG_(printf)("\n");
+        }
+    }
 }
 
 /*--------------------------------------------------------------------*/

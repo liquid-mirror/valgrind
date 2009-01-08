@@ -44,49 +44,79 @@
 
 Int VG_(sigfillset)( vki_sigset_t* set )
 {
-   Int i;
    if (set == NULL)
       return -1;
-   for (i = 0; i < _VKI_NSIG_WORDS; i++)
-      set->sig[i] = ~(UWord)0x0;
+#if !defined(_VKI_NSIG_WORDS)
+   *set = ~(vki_sigset_t)0;
+#else
+   {
+      Int i;
+      for (i = 0; i < _VKI_NSIG_WORDS; i++)
+         set->sig[i] = ~(UWord)0x0;
+   }
+#endif
    return 0;
 }
 
 Int VG_(sigemptyset)( vki_sigset_t* set )
 {
-   Int i;
    if (set == NULL)
       return -1;
-   for (i = 0; i < _VKI_NSIG_WORDS; i++)
-      set->sig[i] = 0x0;
+#if !defined(_VKI_NSIG_WORDS)
+   *set = 0;
+#else
+   {
+      Int i;
+      for (i = 0; i < _VKI_NSIG_WORDS; i++)
+         set->sig[i] = 0x0;
+   }
+#endif
    return 0;
 }
 
 Bool VG_(isemptysigset)( const vki_sigset_t* set )
 {
-   Int i;
    vg_assert(set != NULL);
-   for (i = 0; i < _VKI_NSIG_WORDS; i++)
-      if (set->sig[i] != 0x0) return False;
+#if !defined(_VKI_NSIG_WORDS)
+   return (*set == 0) ? True : False;
+#else
+   {
+      Int i;
+      for (i = 0; i < _VKI_NSIG_WORDS; i++)
+         if (set->sig[i] != 0x0) return False;
+   }
+#endif
    return True;
 }
 
 Bool VG_(isfullsigset)( const vki_sigset_t* set )
 {
-   Int i;
    vg_assert(set != NULL);
-   for (i = 0; i < _VKI_NSIG_WORDS; i++)
-      if (set->sig[i] != ~(UWord)0x0) return False;
-   return True;
+#if !defined(_VKI_NSIG_WORDS)
+   return (*set == ~(vki_sigset_t)0) ? True : False;
+#else
+   {
+      Int i;
+      for (i = 0; i < _VKI_NSIG_WORDS; i++)
+         if (set->sig[i] != ~(UWord)0x0) return False;
+      return True;
+   }
+#endif
 }
 
 Bool VG_(iseqsigset)( const vki_sigset_t* set1, const vki_sigset_t* set2 )
 {
-   Int i;
    vg_assert(set1 != NULL && set2 != NULL);
-   for (i = 0; i < _VKI_NSIG_WORDS; i++)
-      if (set1->sig[i] != set2->sig[i]) return False;
-   return True;
+#if !defined(_VKI_NSIG_WORDS)
+   return (*set1 == *set2) ? True : False;
+#else
+   {
+      Int i;
+      for (i = 0; i < _VKI_NSIG_WORDS; i++)
+         if (set1->sig[i] != set2->sig[i]) return False;
+      return True;
+   }
+#endif
 }
 
 
@@ -97,7 +127,11 @@ Int VG_(sigaddset)( vki_sigset_t* set, Int signum )
    if (signum < 1 || signum > _VKI_NSIG)
       return -1;
    signum--;
+#if !defined(_VKI_NSIG_WORDS)
+   *set |= (vki_sigset_t)1 << signum;
+#else
    set->sig[signum / _VKI_NSIG_BPW] |= (1UL << (signum % _VKI_NSIG_BPW));
+#endif
    return 0;
 }
 
@@ -108,7 +142,11 @@ Int VG_(sigdelset)( vki_sigset_t* set, Int signum )
    if (signum < 1 || signum > _VKI_NSIG)
       return -1;
    signum--;
+#if !defined(_VKI_NSIG_WORDS)
+   *set &= ~((vki_sigset_t)1 << signum);
+#else
    set->sig[signum / _VKI_NSIG_BPW] &= ~(1UL << (signum % _VKI_NSIG_BPW));
+#endif
    return 0;
 }
 
@@ -119,39 +157,74 @@ Int VG_(sigismember) ( const vki_sigset_t* set, Int signum )
    if (signum < 1 || signum > _VKI_NSIG)
       return 0;
    signum--;
+#if !defined(_VKI_NSIG_WORDS)
+   return (*set & ((vki_sigset_t)1 << signum)) ? 1 : 0;
+#else
    if (1 & ((set->sig[signum / _VKI_NSIG_BPW]) >> (signum % _VKI_NSIG_BPW)))
       return 1;
    else
       return 0;
+#endif
 }
 
 /* Add all signals in src to dst. */
 void VG_(sigaddset_from_set)( vki_sigset_t* dst, vki_sigset_t* src )
 {
-   Int i;
    vg_assert(dst != NULL && src != NULL);
-   for (i = 0; i < _VKI_NSIG_WORDS; i++)
-      dst->sig[i] |= src->sig[i];
+#if !defined(_VKI_NSIG_WORDS)
+   *dst |= *src;
+#else
+   {
+      Int i;
+      for (i = 0; i < _VKI_NSIG_WORDS; i++)
+         dst->sig[i] |= src->sig[i];
+   }
+#endif
 }
 
 /* Remove all signals in src from dst. */
 void VG_(sigdelset_from_set)( vki_sigset_t* dst, vki_sigset_t* src )
 {
-   Int i;
    vg_assert(dst != NULL && src != NULL);
-   for (i = 0; i < _VKI_NSIG_WORDS; i++)
-      dst->sig[i] &= ~(src->sig[i]);
+#if !defined(_VKI_NSIG_WORDS)
+   *dst &= ~*src;
+#else
+   {
+      Int i;
+      for (i = 0; i < _VKI_NSIG_WORDS; i++)
+         dst->sig[i] &= ~(src->sig[i]);
+   }
+#endif
 }
 
+/* dst = dst `intersect` src. */
+void VG_(sigintersectset)( vki_sigset_t* dst, vki_sigset_t* src )
+{
+   vg_assert(dst != NULL && src != NULL);
+#if !defined(_VKI_NSIG_WORDS)
+   *dst &= *src;
+#else
+   {
+      Int i;
+      for (i = 0; i < _VKI_NSIG_WORDS; i++)
+         dst->sig[i] &= src->sig[i];
+   }
+#endif
+}
 
 /* The functions sigaction, sigprocmask, sigpending and sigsuspend
    return 0 on success and -1 on error.  
 */
 Int VG_(sigprocmask)( Int how, const vki_sigset_t* set, vki_sigset_t* oldset)
 {
+#if defined(__NR_rt_sigprocmask)
    SysRes res = VG_(do_syscall4)(__NR_rt_sigprocmask, 
                                  how, (UWord)set, (UWord)oldset, 
                                  _VKI_NSIG_WORDS * sizeof(UWord));
+#else
+   SysRes res = VG_(do_syscall3)(__NR_sigprocmask, 
+                                 how, (UWord)set, (UWord)oldset);
+#endif
    return res.isError ? -1 : 0;
 }
 
@@ -159,9 +232,14 @@ Int VG_(sigprocmask)( Int how, const vki_sigset_t* set, vki_sigset_t* oldset)
 Int VG_(sigaction) ( Int signum, const struct vki_sigaction* act,  
                      struct vki_sigaction* oldact)
 {
+#if defined(__NR_rt_sigaction)
    SysRes res = VG_(do_syscall4)(__NR_rt_sigaction,
                                  signum, (UWord)act, (UWord)oldact, 
                                  _VKI_NSIG_WORDS * sizeof(UWord));
+#else
+   SysRes res = VG_(do_syscall3)(__NR_sigaction, 
+                                 signum, (UWord)act, (UWord)oldact);
+#endif
    return res.isError ? -1 : 0;
 }
 
@@ -172,14 +250,25 @@ Int VG_(kill)( Int pid, Int signo )
    return res.isError ? -1 : 0;
 }
 
-
+// GrP fixme this is an lwpid, not a ThreadId
 Int VG_(tkill)( ThreadId tid, Int signo )
 {
+#if defined(__NR_tkill)
    SysRes res = VG_(mk_SysRes_Error)(VKI_ENOSYS);
    res = VG_(do_syscall2)(__NR_tkill, tid, signo);
    if (res.isError && res.err == VKI_ENOSYS)
       res = VG_(do_syscall2)(__NR_kill, tid, signo);
    return res.isError ? -1 : 0;
+
+#elif defined(VGO_darwin)
+   // Note that the __pthread_kill syscall takes a Mach thread, not a pthread.
+   SysRes res;
+   res = VG_(do_syscall2)(__NR___pthread_kill, tid, signo);
+   return res.isError ? -1 : 0;
+
+#else
+#error no tkill implementation
+#endif
 }
 
 
@@ -246,16 +335,14 @@ Int VG_(sigtimedwait_zero)( const vki_sigset_t *set,
 
   /* don't try for signals not in 'set' */
   /* pending = pending `intersect` set */
-  for (i = 0; i < _VKI_NSIG_WORDS; i++)
-     pending.sig[i] &= set->sig[i];
+  VG_(sigintersectset)(&pending, set);
 
   /* don't try for signals not blocked at the moment */
   ir = VG_(sigprocmask)(VKI_SIG_SETMASK, NULL, &blocked);
   vg_assert(ir == 0);
 
   /* pending = pending `intersect` blocked */
-  for (i = 0; i < _VKI_NSIG_WORDS; i++)
-     pending.sig[i] &= blocked.sig[i];
+  VG_(sigintersectset)(&pending, set);
 
   /* decide which signal we're going to snarf */
   for (i = 1; i < _VKI_NSIG; i++)
@@ -298,6 +385,14 @@ Int VG_(sigtimedwait_zero)( const vki_sigset_t *set,
   info->si_signo = i;
 
   return i;
+}
+
+#elif defined(VGO_darwin)
+// GrP fixme
+Int VG_(sigtimedwait_zero)( const vki_sigset_t *set, 
+                            vki_siginfo_t *info )
+{
+    __builtin_trap();
 }
 
 #else

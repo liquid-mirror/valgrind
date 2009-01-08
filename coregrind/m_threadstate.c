@@ -38,6 +38,7 @@
 /*------------------------------------------------------------*/
 
 ThreadId VG_(running_tid) = VG_INVALID_THREADID;
+ThreadId VG_(last_running_tid) = VG_INVALID_THREADID;
 
 ThreadState VG_(threads)[VG_N_THREADS];
 

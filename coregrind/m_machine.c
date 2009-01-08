@@ -36,6 +36,8 @@
 #include "pub_core_machine.h"
 #include "pub_core_cpuid.h"
 #include "pub_core_libcsignal.h"   // for ppc32 messing with SIGILL
+#include "pub_core_syscall.h"      // for Darwin call to sysctl
+#include "pub_core_vkiscnums.h"      // for Darwin call to sysctl
 
 
 #define INSTR_PTR(regs)    ((regs).vex.VG_INSTR_PTR)
@@ -98,6 +100,8 @@ void VG_(set_syscall_return_shadows) ( ThreadId tid,
    VG_(threads)[tid].arch.vex_shadow2.guest_GPR3 = s2res;
    VG_(threads)[tid].arch.vex_shadow1.guest_GPR4 = s1err;
    VG_(threads)[tid].arch.vex_shadow2.guest_GPR4 = s2err;
+#  elif defined(VGO_darwin)
+   // GrP fixme darwin syscalls may return more values (2 registers plus error)
 #  else
 #    error "Unknown plat"
 #  endif
@@ -106,7 +110,7 @@ void VG_(set_syscall_return_shadows) ( ThreadId tid,
 void
 VG_(get_shadow_regs_area) ( ThreadId tid, 
                             /*DST*/UChar* dst,
-                            /*SRC*/Int shadowNo, OffT offset, SizeT size )
+                            /*SRC*/Int shadowNo, PtrdiffT offset, SizeT size )
 {
    void*        src;
    ThreadState* tst;
@@ -129,7 +133,7 @@ VG_(get_shadow_regs_area) ( ThreadId tid,
 
 void
 VG_(set_shadow_regs_area) ( ThreadId tid, 
-                            /*DST*/Int shadowNo, OffT offset, SizeT size,
+                            /*DST*/Int shadowNo, PtrdiffT offset, SizeT size,
                             /*SRC*/const UChar* src )
 {
    void*        dst;
@@ -291,7 +295,7 @@ SizeT VG_(thread_get_stack_size)(ThreadId tid)
           then safe to use VG_(machine_get_VexArchInfo) 
    -------------
    ppc32: initially:  call VG_(machine_get_hwcaps)
-                      call VG_(machine_ppc32_set_clszB)
+          then (Linux): call VG_(machine_ppc32_set_clszB)
 
           then safe to use VG_(machine_get_VexArchInfo) 
                        and VG_(machine_ppc32_has_FP)
@@ -318,12 +322,14 @@ static VexArchInfo vai;
 #if defined(VGA_x86)
 UInt VG_(machine_x86_have_mxcsr) = 0;
 #endif
+
 #if defined(VGA_ppc32)
-UInt VG_(machine_ppc32_has_FP)  = 0;
-UInt VG_(machine_ppc32_has_VMX) = 0;
+UInt VG_(machine_ppc32_has_FP);
+UInt VG_(machine_ppc32_has_VMX);
 #endif
+
 #if defined(VGA_ppc64)
-ULong VG_(machine_ppc64_has_VMX) = 0;
+ULong VG_(machine_ppc64_has_VMX);
 #endif
 
 
@@ -643,7 +649,7 @@ void VG_(machine_get_VexArchInfo)( /*OUT*/VexArch* pVa,
 void* VG_(fnptr_to_fnentry)( void* f )
 {
 #if defined(VGP_x86_linux) || defined(VGP_amd64_linux) \
-                           || defined(VGP_ppc32_linux)
+   || defined(VGP_ppc32_linux) || defined(VGO_darwin)
    return f;
 #elif defined(VGP_ppc64_linux) || defined(VGP_ppc32_aix5) \
                                || defined(VGP_ppc64_aix5)

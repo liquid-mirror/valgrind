@@ -166,7 +166,11 @@ AM_CXXFLAGS = $(AM_CFLAGS)
 ansi_CFLAGS		= $(AM_FLAG_M3264_PRI) -ansi
 floored_LDADD 		= -lm
 manythreads_LDADD	= -lpthread
-mq_LDADD		= -lrt
+if VGO_DARWIN
+ nestedfns_CFLAGS	= -fnested-functions
+else
+ mq_LDADD		= -lrt
+endif
 pth_atfork1_LDADD	= -lpthread
 pth_blockedsig_LDADD	= -lpthread
 pth_cancel1_CFLAGS	= $(AM_FLAG_M3264_PRI) -Wno-shadow
@@ -184,6 +188,7 @@ if VGO_AIX5
  res_search_LDADD       = -lpthread
 else
  res_search_LDADD       = -lresolv -lpthread
+ resolv_LDADD           = -lresolv -lpthread
 endif
 semlimit_LDADD		= -lpthread
 susphello_LDADD		= -lpthread
@@ -204,12 +209,21 @@ if VGO_AIX5
  tls_so_LDFLAGS		= -shared -fPIC
  tls_so_LDADD		= `pwd`/tls2.so
 else
+if VGO_DARWIN
+ tls_so_LDFLAGS		= -dynamic -dynamiclib -all_load -fpic
+ tls_so_LDADD		= `pwd`/tls2.so
+else
  tls_so_LDFLAGS		= -Wl,-rpath,$(top_builddir)/none/tests -shared -fPIC
  tls_so_LDADD		= tls2.so
 endif
+endif
 tls_so_CFLAGS		= $(AM_FLAG_M3264_PRI) -fPIC
 tls2_so_SOURCES		= tls2_so.c
+if VGO_DARWIN
+tls2_so_LDFLAGS		= -dynamic -dynamiclib -all_load
+else
 tls2_so_LDFLAGS		= -shared
+endif
 
 # C++ tests
 coolo_sigaction_SOURCES	= coolo_sigaction.cpp

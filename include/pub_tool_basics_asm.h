@@ -38,6 +38,9 @@
 
 #define VGAPPEND(str1,str2) str1##str2
 
+#define VGAPPEND4_(str1,str2,str3,str4) str1##str2##str3##str4
+#define VGAPPEND4(str1,str2,str3,str4) VGAPPEND4_(str1,str2,str3,str4)
+
 /* VG_ is for symbols exported from modules.  ML_ (module-local) is
    for symbols which are not intended to be visible outside modules,
    but which cannot be declared as C 'static's since they need to be
@@ -48,6 +51,17 @@
 */
 #define VG_(str)    VGAPPEND(vgPlain_,          str)
 #define ML_(str)    VGAPPEND(vgModuleLocal_,    str)
+
+/* VGO_(foo) is the same as VG_(foo), except with an OS tag. */
+#define VGO_(str)   VGAPPEND4(vgPlain_,       VG_OS, _, str)
+#define MLO_(str)   VGAPPEND4(vgModuleLocal_, VG_OS, _, str)
+
+/* _VG_(foo) is the same as VG_(foo), except with a leading underscore. 
+   This is needed for assembly definitions on some platforms, and 
+   should not be used in C files.
+*/
+#define _VG_(str)   VGAPPEND(_vgPlain_,          str)
+#define _ML_(str)   VGAPPEND(_vgModuleLocal_,    str)
 
 #endif /* __PUB_TOOL_BASICS_ASM_H */
 

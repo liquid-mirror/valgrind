@@ -6412,7 +6412,11 @@ void set_inbuf ( void )
 }
 
 #include <stdio.h>
+#ifdef __APPLE__
+#include <malloc/malloc.h>
+#else
 #include <malloc.h>
+#endif
 #include <assert.h>
 
 /* For providing services. */

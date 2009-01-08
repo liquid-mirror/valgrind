@@ -108,6 +108,8 @@ Bool is_overlap ( void* dst, const void* src, SizeT dstlen, SizeT srclen )
 #  define  m_libc_soname     libcZaZdaZLshrZdoZR     // libc*.a(shr.o)
 #elif defined(VGP_ppc64_aix5)
 #  define  m_libc_soname     libcZaZdaZLshrZu64ZdoZR // libc*.a(shr_64.o)
+#elif defined(VGO_darwin)
+#  define  m_libc_soname     libSystemZdZaZddylib    // libSystem.*.dylib
 #else
 #  error "Unknown platform"
 #endif
@@ -118,6 +120,9 @@ Bool is_overlap ( void* dst, const void* src, SizeT dstlen, SizeT srclen )
 #define  m_ld_linux_x86_64_so_2  ldZhlinuxZhx86Zh64ZdsoZd2  // ld-linux-x86-64.so.2
 #define  m_ld64_so_1             ld64ZdsoZd1                // ld64.so.1
 #define  m_ld_so_1               ldZdsoZd1                  // ld.so.1
+
+/* --- Executable name for Darwin Mach-O linker. --- */
+#define  m_dyld                  dyld                       // dyld
 
 
 #define STRRCHR(soname, fnname) \
@@ -136,7 +141,9 @@ Bool is_overlap ( void* dst, const void* src, SizeT dstlen, SizeT srclen )
 
 // Apparently rindex() is the same thing as strrchr()
 STRRCHR(m_libc_soname,   strrchr)
+STRRCHR(m_dyld,          strrchr)
 STRRCHR(m_libc_soname,   rindex)
+STRRCHR(m_dyld,          rindex)
 STRRCHR(m_ld_linux_so_2, rindex)
    
 
@@ -157,9 +164,11 @@ STRRCHR(m_ld_linux_so_2, rindex)
 STRCHR(m_libc_soname,          strchr)
 STRCHR(m_ld_linux_so_2,        strchr)
 STRCHR(m_ld_linux_x86_64_so_2, strchr)
+STRCHR(m_dyld,                 strchr)
 STRCHR(m_libc_soname,          index)
 STRCHR(m_ld_linux_so_2,        index)
 STRCHR(m_ld_linux_x86_64_so_2, index)
+STRCHR(m_dyld,                 index)
 
 
 #define STRCAT(soname, fnname) \
@@ -212,6 +221,47 @@ STRCAT(m_libc_soname, strcat)
    }
 
 STRNCAT(m_libc_soname, strncat)
+STRNCAT(m_dyld,        strncat)
+
+
+/* Append src to dst. n is the size of dst's buffer. dst is guaranteed 
+   to be nul-terminated after the copy, unless n <= strlen(dst_orig). 
+   Returns min(n, strlen(dst_orig)) + strlen(src_orig). 
+   Truncation occurred if retval >= n. 
+*/
+#define STRLCAT(soname, fnname) \
+    SizeT VG_REPLACE_FUNCTION_ZU(soname,fnname) \
+        ( char* dst, const char* src, SizeT n ); \
+    SizeT VG_REPLACE_FUNCTION_ZU(soname,fnname) \
+        ( char* dst, const char* src, SizeT n ) \
+    { \
+        const Char* src_orig = src; \
+        Char* dst_orig = dst; \
+        SizeT m = 0; \
+ \
+        while (m < n && *dst) { m++; dst++; } \
+        if (m < n) { \
+            /* Fill as far as dst_orig[n-2], then nul-terminate. */ \
+            while (m < n-1 && *src) { m++; *dst++ = *src++; } \
+            *dst = 0; \
+        } else { \
+            /* No space to copy anything to dst. m == n */ \
+        } \
+        /* Finish counting min(n, strlen(dst_orig)) + strlen(src_orig) */ \
+        while (*src) { m++; src++; } \
+        /* This checks for overlap after copying, unavoidable without */ \
+        /* pre-counting lengths... should be ok */ \
+        if (is_overlap(dst_orig,  \
+                       src_orig,  \
+                       (Addr)dst-(Addr)dst_orig+1,  \
+                       (Addr)src-(Addr)src_orig+1)) \
+           RECORD_OVERLAP_ERROR("strlcat", dst_orig, src_orig, n); \
+ \
+        return m; \
+    }
+
+STRLCAT(m_libc_soname, strlcat)
+STRLCAT(m_dyld,        strlcat)
 
 
 #define STRNLEN(soname, fnname) \
@@ -266,6 +316,7 @@ STRLEN(m_ld_linux_x86_64_so_2, strlen)
    }
 
 STRCPY(m_libc_soname, strcpy)
+STRCPY(m_dyld,        strcpy)
 
 
 #define STRNCPY(soname, fnname) \
@@ -289,6 +340,36 @@ STRCPY(m_libc_soname, strcpy)
    }
 
 STRNCPY(m_libc_soname, strncpy)
+STRNCPY(m_dyld,        strncpy)
+
+
+/* Copy up to n-1 bytes from src to dst. Then nul-terminate dst if n > 0. 
+   Returns strlen(src). Does not zero-fill the remainder of dst. */
+#define STRLCPY(soname, fnname) \
+    SizeT VG_REPLACE_FUNCTION_ZU(soname, fnname) \
+        ( char* dst, const char* src, SizeT n ); \
+    SizeT VG_REPLACE_FUNCTION_ZU(soname, fnname) \
+        ( char* dst, const char* src, SizeT n ) \
+    { \
+        const char* src_orig = src; \
+        char* dst_orig = dst; \
+        SizeT m = 0; \
+ \
+        while (m < n-1 && *src) { m++; *dst++ = *src++; } \
+        /* m non-nul bytes have now been copied, and m <= n-1. */ \
+        /* Check for overlap after copying; all n bytes of dst are relevant, */ \
+        /* but only m+1 bytes of src if terminator was found */ \
+        if (is_overlap(dst_orig, src_orig, n, (m < n) ? m+1 : n)) \
+            RECORD_OVERLAP_ERROR("strlcpy", dst, src, n); \
+        /* Nul-terminate dst. */ \
+        if (n > 0) *dst = 0; \
+        /* Finish counting strlen(src). */ \
+        while (*src) src++; \
+        return src - src_orig; \
+    }
+
+STRLCPY(m_libc_soname, strlcpy)
+STRLCPY(m_dyld,        strlcpy)
 
 
 #define STRNCMP(soname, fnname) \
@@ -312,6 +393,7 @@ STRNCPY(m_libc_soname, strncpy)
    }
 
 STRNCMP(m_libc_soname, strncmp)
+STRNCMP(m_dyld,        strncmp)
 
 
 #define STRCMP(soname, fnname) \
@@ -352,6 +434,7 @@ STRCMP(m_ld64_so_1,            strcmp)
    }
 
 MEMCHR(m_libc_soname, memchr)
+MEMCHR(m_dyld,        memchr)
 
 
 #define MEMCPY(soname, fnname) \
@@ -399,6 +482,9 @@ MEMCHR(m_libc_soname, memchr)
       return dst; \
    }
 
+#if defined(VGO_darwin)
+/* Darwin's memcpy() is overlap-safe, so replace it with MEMMOVE instead. */
+#else
 MEMCPY(m_libc_soname, memcpy)
 MEMCPY(m_ld_so_1,     memcpy) /* ld.so.1 */
 MEMCPY(m_ld64_so_1,   memcpy) /* ld64.so.1 */
@@ -411,6 +497,7 @@ MEMCPY(m_ld64_so_1,   memcpy) /* ld64.so.1 */
    http://bugs.kde.org/show_bug.cgi?id=139776
  */
 MEMCPY(NONE, _intel_fast_memcpy)
+#endif
 
 
 #define MEMCMP(soname, fnname) \
@@ -439,7 +526,9 @@ MEMCPY(NONE, _intel_fast_memcpy)
    }
 
 MEMCMP(m_libc_soname, memcmp)
+MEMCMP(m_dyld,        memcmp)
 MEMCMP(m_libc_soname, bcmp)
+MEMCMP(m_dyld,        bcmp)
 MEMCMP(m_ld_so_1, bcmp)
 
 
@@ -466,9 +555,10 @@ MEMCMP(m_ld_so_1, bcmp)
       return dst; \
    }
 
-STPCPY(m_libc_soname,         stpcpy)
+STPCPY(m_libc_soname,          stpcpy)
 STPCPY(m_ld_linux_so_2,        stpcpy)
 STPCPY(m_ld_linux_x86_64_so_2, stpcpy)
+STPCPY(m_dyld,                 stpcpy)
    
 
 #define MEMSET(soname, fnname) \
@@ -491,6 +581,7 @@ STPCPY(m_ld_linux_x86_64_so_2, stpcpy)
    }
 
 MEMSET(m_libc_soname, memset)
+MEMSET(m_dyld,        memset)
 
 
 #define MEMMOVE(soname, fnname) \
@@ -515,6 +606,36 @@ MEMSET(m_libc_soname, memset)
    }
 
 MEMMOVE(m_libc_soname, memmove)
+MEMMOVE(m_dyld, memmove)
+#if defined(VGO_darwin)
+/* Darwin's memcpy() is overlap-safe, so use MEMMOVE for memcpy() too. */
+MEMMOVE(m_libc_soname, memcpy)
+MEMMOVE(m_dyld, memcpy)
+#endif
+
+
+#define BCOPY(soname, fnname) \
+   void VG_REPLACE_FUNCTION_ZU(soname,fnname) \
+            (const void *srcV, void *dstV, SizeT n); \
+   void VG_REPLACE_FUNCTION_ZU(soname,fnname) \
+            (const void *srcV, void *dstV, SizeT n) \
+   { \
+      SizeT i; \
+      Char* dst = (Char*)dstV; \
+      Char* src = (Char*)srcV; \
+      if (dst < src) { \
+         for (i = 0; i < n; i++) \
+            dst[i] = src[i]; \
+      } \
+      else  \
+      if (dst > src) { \
+         for (i = 0; i < n; i++) \
+            dst[n-i-1] = src[n-i-1]; \
+      } \
+   }
+
+BCOPY(m_libc_soname, bcopy)
+BCOPY(m_dyld,        bcopy)
 
 
 /* glibc 2.5 variant of memmove which checks the dest is big enough.

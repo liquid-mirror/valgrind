@@ -190,7 +190,7 @@ extern Bool VG_(am_notify_munmap)( Addr start, SizeT len );
    USE IT UNLESS YOU UNDERSTAND the request-notify model used by
    aspacem.  In short, DO NOT USE THIS FUNCTION. */
 extern SysRes VG_(am_do_mmap_NO_NOTIFY)
-   ( Addr start, SizeT length, UInt prot, UInt flags, UInt fd, Off64T offset);
+   ( Addr start, SizeT length, UInt prot, UInt flags, Int fd, Off64T offset);
 
 
 //--------------------------------------------------------------
@@ -250,6 +250,8 @@ extern Bool VG_(am_aix5_sbrk_allowed);
    segment array accordingly. */
 extern SysRes VG_(am_mmap_file_fixed_client)
    ( Addr start, SizeT length, UInt prot, Int fd, Off64T offset );
+extern SysRes VG_(am_mmap_named_file_fixed_client)
+   ( Addr start, SizeT length, UInt prot, Int fd, Off64T offset, const HChar *name );
 
 /* Map anonymously at a fixed address for the client, and update
    the segment array accordingly. */

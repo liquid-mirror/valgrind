@@ -12,8 +12,13 @@ fooble:
 bar:
         
 .text
+#if defined(__APPLE__)
+.globl _main
+_main:
+#else
 .globl main
 main:
+#endif
         fstsw   fooble
         fsave   fooble
         frstor  fooble

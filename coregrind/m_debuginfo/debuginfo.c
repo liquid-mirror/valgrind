@@ -52,6 +52,7 @@
 #include "pub_core_oset.h"
 #include "pub_core_stacktrace.h" // VG_(get_StackTrace)
 
+#include "priv_ume.h"            /* HAVE_ELF, HAVE_MACHO */
 #include "priv_misc.h"           /* dinfo_zalloc/free */
 #include "priv_d3basics.h"       /* ML_(pp_GX) */
 #include "priv_tytypes.h"
@@ -66,6 +67,8 @@
 # include "pub_core_libcproc.h"
 # include "pub_core_libcfile.h"
 # include "priv_readxcoff.h"
+#elif defined(VGO_darwin)
+#include "priv_readmacho.h"
 #endif
 
 
@@ -574,7 +577,7 @@ void VG_(di_initialise) ( void )
 /*---                                                        ---*/
 /*--------------------------------------------------------------*/
 
-#if defined(VGO_linux)
+#if defined(VGO_linux)  ||  defined(VGO_darwin)
 
 /* The debug info system is driven by notifications that a text
    segment has been mapped in, or unmapped.  When that happens it
@@ -643,7 +646,7 @@ ULong VG_(di_notify_mmap)( Addr a, Bool allow_SkFileV )
 
    /* stat dereferences symlinks, so we don't expect it to succeed and
       yet produce something that is a symlink. */
-   vg_assert(statres.isError || ! VKI_S_ISLNK(statbuf.st_mode));
+   vg_assert(statres.isError || ! VKI_S_ISLNK(statbuf.mode));
 
    /* Don't let the stat call fail silently.  Filter out some known
       sources of noise before complaining, though. */
@@ -660,7 +663,7 @@ ULong VG_(di_notify_mmap)( Addr a, Bool allow_SkFileV )
 
    /* Finally, the point of all this stattery: if it's not a regular file,
       don't try to read debug info from it. */
-   if (! VKI_S_ISREG(statbuf.st_mode))
+   if (! VKI_S_ISREG(statbuf.mode))
       return 0;
 
    /* no uses of statbuf below here. */
@@ -701,11 +704,11 @@ ULong VG_(di_notify_mmap)( Addr a, Bool allow_SkFileV )
    */
    is_rx_map = False;
    is_rw_map = False;
-#  if defined(VGP_x86_linux)
+#  if defined(VGA_x86)
    is_rx_map = seg->hasR && seg->hasX;
    is_rw_map = seg->hasR && seg->hasW;
-#  elif defined(VGP_amd64_linux) \
-        || defined(VGP_ppc32_linux) || defined(VGP_ppc64_linux)
+#  elif defined(VGA_amd64) \
+        || defined(VGA_ppc32) || defined(VGA_ppc64)
    is_rx_map = seg->hasR && seg->hasX && !seg->hasW;
    is_rw_map = seg->hasR && seg->hasW && !seg->hasX;
 #  else
@@ -749,8 +752,15 @@ ULong VG_(di_notify_mmap)( Addr a, Bool allow_SkFileV )
    vg_assert(nread > 0 && nread <= sizeof(buf1k) );
 
    /* We're only interested in mappings of ELF object files. */
+#if defined(HAVE_ELF)
    if (!ML_(is_elf_object_file)( buf1k, (SizeT)nread ))
       return 0;
+#elif defined(HAVE_MACHO)
+   if (!ML_(is_macho_object_file)( buf1k, (SizeT)nread ))
+      return 0;
+#else
+#  error unknown executable type
+#endif
 
    /* See if we have a DebugInfo for this filename.  If not,
       create one. */
@@ -802,7 +812,13 @@ ULong VG_(di_notify_mmap)( Addr a, Bool allow_SkFileV )
    discard_DebugInfos_which_overlap_with( di );
 
    /* .. and acquire new info. */
+#if defined(HAVE_ELF)
    ok = ML_(read_elf_debug_info)( di );
+#elif defined(HAVE_MACHO)
+      ok = ML_(read_macho_debug_info)( di );
+#else
+#     error unknown executable type
+#endif
 
    if (ok) {
 
@@ -862,7 +878,7 @@ void VG_(di_notify_munmap)( Addr a, SizeT len )
 void VG_(di_notify_mprotect)( Addr a, SizeT len, UInt prot )
 {
    Bool exe_ok = toBool(prot & VKI_PROT_EXEC);
-#  if defined(VGP_x86_linux)
+#  if defined(VGA_x86)
    exe_ok = exe_ok || toBool(prot & VKI_PROT_READ);
 #  endif
    if (0 && !exe_ok) {
@@ -3049,6 +3065,27 @@ VgSectKind VG_(seginfo_sect_kind)( /*OUT*/UChar* name, SizeT n_name,
 
 }
 
+
+Addr VG_(dlsym)(Char *fnname)
+{
+    DebugInfo const *si = NULL;
+
+    if (!fnname) return 0;
+
+    while ((si = VG_(next_seginfo)(si))) {
+        Int idx;
+        for (idx = 0; idx < si->symtab_used; idx++) {
+            if (si->symtab[idx].name) {
+                if (0 == VG_(strcmp)(si->symtab[idx].name, fnname)) {
+                    return si->symtab[idx].addr;
+                }
+            }
+        }
+        
+    }
+
+    return 0;
+}
 
 /*--------------------------------------------------------------------*/
 /*--- end                                                          ---*/

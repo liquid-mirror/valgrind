@@ -38,7 +38,7 @@
 #define __PRIV_READDWARF3_H
 
 
-/* Read DWARF3 ".debug_info" sections. */
+/* Read variables and types from DWARF3 ".debug_info" sections. */
 void 
 ML_(new_dwarf3_reader) (
    struct _DebugInfo* di,
@@ -48,6 +48,20 @@ ML_(new_dwarf3_reader) (
    UChar* debug_str_img,    SizeT debug_str_sz,
    UChar* debug_ranges_img, SizeT debug_ranges_sz,
    UChar* debug_loc_img,    SizeT debug_loc_sz
+);
+
+
+/* Read function names and ranges from DWARF3 debuginfo sections. */
+void 
+ML_(read_fnnames_dwarf3) (
+   struct _DebugInfo* di,
+   UChar* debug_info_img,   SizeT debug_info_sz,
+   UChar* debug_abbv_img,   SizeT debug_abbv_sz,
+   UChar* debug_line_img,   SizeT debug_line_sz,
+   UChar* debug_str_img,    SizeT debug_str_sz,
+   UChar* debug_ranges_img, SizeT debug_ranges_sz,
+   UChar* debug_loc_img,    SizeT debug_loc_sz,
+   UChar* debug_name_img,   SizeT debug_name_sz
 );
 
 #endif /* ndef __PRIV_READDWARF3_H */

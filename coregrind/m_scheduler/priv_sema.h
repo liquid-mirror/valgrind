@@ -33,8 +33,7 @@
 
 /* Not really a semaphore, but use a pipe for a token-passing scheme */
 typedef struct {
-   Int pipe[2];
-   Int owner_lwpid;		/* who currently has it */
+    semaphore_t lock;
 } vg_sema_t;
 
 // Nb: this may be OS-specific, but let's not factor it out until we
@@ -43,6 +42,8 @@ void ML_(sema_init)   ( vg_sema_t *sema );
 void ML_(sema_deinit) ( vg_sema_t *sema );
 void ML_(sema_down)   ( vg_sema_t *sema );
 void ML_(sema_up)     ( vg_sema_t *sema );
+void ML_(sema_fork_child)(vg_sema_t *sema);
+Bool ML_(sema_handoff)( vg_sema_t *sema, Int lwpid );
 
 #endif   // __PRIV_SEMA_H
 

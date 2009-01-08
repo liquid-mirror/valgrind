@@ -303,9 +303,14 @@ if VGP_PPC32_AIX5
  wrap7_LDADD            = `pwd`/wrap7so.so
  wrap7_LDFLAGS          = $(AM_FLAG_M3264_PRI) -Wl,-G -Wl,-bnogc
 else
+if VGO_DARWIN
+ wrap7_LDADD            = `pwd`/wrap7so.so
+ wrap7_LDFLAGS          = $(AM_FLAG_M3264_PRI)
+else
  wrap7_LDADD            = wrap7so.so
  wrap7_LDFLAGS          = $(AM_FLAG_M3264_PRI) \
 				-Wl,-rpath,$(top_builddir)/memcheck/tests
+endif
 endif
 endif
 
@@ -320,8 +325,13 @@ if VGP_PPC32_AIX5
  wrap7so_so_LDFLAGS     = -fpic $(AM_FLAG_M3264_PRI) -shared \
 				-Wl,-G -Wl,-bnogc
 else
+if VGO_DARWIN
+ wrap7so_so_LDFLAGS     = -fpic $(AM_FLAG_M3264_PRI) -dynamic \
+				-dynamiclib -all_load
+else
  wrap7so_so_LDFLAGS     = -fpic $(AM_FLAG_M3264_PRI) -shared \
 				-Wl,-soname -Wl,wrap7so.so
+endif
 endif
 endif
 

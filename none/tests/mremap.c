@@ -3,7 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#if defined(_AIX)
+#if defined(_AIX) || defined(__APPLE__)
 
 int main ( void )
 {

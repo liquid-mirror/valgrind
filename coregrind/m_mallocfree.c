@@ -582,7 +582,7 @@ void ensure_mm_init ( ArenaId aid )
       // Initialise the non-client arenas
       arena_init ( VG_AR_CORE,      "core",     4,             1048576 );
       arena_init ( VG_AR_TOOL,      "tool",     4,             4194304 );
-      arena_init ( VG_AR_DINFO,     "dinfo",    4,             1048576 );
+      arena_init ( VG_AR_DINFO,     "dinfo",    4,            16777216/*GrP superblocks too small*/ );
       arena_init ( VG_AR_DEMANGLE,  "demangle", 4,               65536 );
       arena_init ( VG_AR_EXECTXT,   "exectxt",  4,             1048576 );
       arena_init ( VG_AR_ERRORS,    "errors",   4,               65536 );
@@ -635,6 +635,9 @@ void VG_(out_of_memory_NORETURN) ( HChar* who, SizeT szB )
    } else {
       VG_(debugLog)(0,"mallocfree", s1, who, (ULong)szB, tot_alloc);
    }
+
+   __builtin_trap();
+
    VG_(exit)(1);
 }
 
@@ -1664,8 +1667,7 @@ void* VG_(arena_memalign) ( ArenaId aid, HChar* cc,
 }
 
 
-// The ThreadId doesn't matter, it's not used.
-SizeT VG_(arena_payload_szB) ( ThreadId tid, ArenaId aid, void* ptr )
+SizeT VG_(arena_malloc_usable_size) ( ArenaId aid, void* ptr )
 {
    Arena* a = arenaId_to_ArenaP(aid);
    Block* b = get_payload_block(a, ptr);
@@ -1853,7 +1855,7 @@ Char* VG_(strdup) ( HChar* cc, const Char* s )
 // Useful for querying user blocks.           
 SizeT VG_(malloc_usable_size) ( void* p )                    
 {                                                            
-   return VG_(arena_payload_szB)(VG_INVALID_THREADID, VG_AR_CLIENT, p);    
+   return VG_(arena_malloc_usable_size)(VG_AR_CLIENT, p);
 }                                                            
   
 

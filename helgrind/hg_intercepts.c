@@ -756,6 +756,8 @@ PTH_FUNC(int, pthreadZucondZudestroyZAZa, // pthread_cond_destroy@*
 /*--- pthread_barrier_t functions                              ---*/
 /*----------------------------------------------------------------*/
 
+#if !defined(VGO_darwin)
+
 /* Handled:   pthread_barrier_init
               pthread_barrier_wait
               pthread_barrier_destroy
@@ -860,6 +862,8 @@ PTH_FUNC(int, pthreadZubarrierZudestroy, // pthread_barrier_destroy
 
    return ret;
 }
+
+#endif
 
 /*----------------------------------------------------------------*/
 /*--- pthread_rwlock_t functions                               ---*/
@@ -1603,6 +1607,8 @@ QT4_FUNC(void*, _ZN6QMutexD2Ev, void* mutex)
 #  define  m_libc_soname     libcZaZdaZLshrZdoZR     // libc*.a(shr.o)
 #elif defined(VGP_ppc64_aix5)
 #  define  m_libc_soname     libcZaZdaZLshrZu64ZdoZR // libc*.a(shr_64.o)
+#elif defined(VGO_darwin)
+#  define  m_libc_soname     libSystemZdZaZddylib    // libSystem.*.dylib
 #else
 #  error "Unknown platform"
 #endif

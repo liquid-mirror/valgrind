@@ -41,6 +41,12 @@
 #include "pub_core_libcassert.h"
 #include "pub_core_options.h"
 
+#if VGO_darwin
+
+/* External debugger not supported. Use gdb remote debug instead.
+   VG_(start_debugger) is in m_debugstub.c. */
+
+#else
 
 #define WIFSTOPPED(status) (((status) & 0xff) == 0x7f)
 #define WSTOPSIG(status) (((status) & 0xff00) >> 8)
@@ -314,7 +320,7 @@ void VG_(start_debugger) ( ThreadId tid )
 #  undef N_BUF
 }
 
-
+#endif
 
 /*--------------------------------------------------------------------*/
 /*--- end                                                          ---*/

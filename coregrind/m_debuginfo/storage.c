@@ -228,6 +228,24 @@ void ML_(addSym) ( struct _DebugInfo* di, DiSym* sym )
 }
 
 
+/* Resize the symbol table to save memory.
+*/
+void ML_(shrinkSym)( struct _DebugInfo* di )
+{
+   DiSym* new_tab;
+   UInt new_sz = di->symtab_used;
+   if (new_sz == di->symtab_size) return;
+
+   new_tab = ML_(dinfo_zalloc)( "di.storage.shrinkSym", 
+                                new_sz * sizeof(DiSym) );
+   VG_(memcpy)(new_tab, di->symtab, new_sz * sizeof(DiSym));
+
+   ML_(dinfo_free)(di->symtab);
+   di->symtab = new_tab;
+   di->symtab_size = new_sz;
+}
+
+
 /* Add a location to the location table. 
 */
 static void addLoc ( struct _DebugInfo* di, DiLoc* loc )
@@ -255,6 +273,24 @@ static void addLoc ( struct _DebugInfo* di, DiLoc* loc )
    di->loctab[di->loctab_used] = *loc;
    di->loctab_used++;
    vg_assert(di->loctab_used <= di->loctab_size);
+}
+
+
+/* Resize the lineinfo table to save memory.
+*/
+void ML_(shrinkLineInfo)( struct _DebugInfo* di )
+{
+   DiLoc* new_tab;
+   UInt new_sz = di->loctab_used;
+   if (new_sz == di->loctab_size) return;
+
+   new_tab = ML_(dinfo_zalloc)( "di.storage.shrinkLineInfo", 
+                                new_sz * sizeof(DiLoc) );
+   VG_(memcpy)(new_tab, di->loctab, new_sz * sizeof(DiLoc));
+
+   ML_(dinfo_free)(di->loctab);
+   di->loctab = new_tab;
+   di->loctab_size = new_sz;
 }
 
 
@@ -1046,8 +1082,14 @@ static DiSym* prefersym ( struct _DebugInfo* di, DiSym* a, DiSym* b )
    vlena = lena = VG_(strlen)(a->name);
    vlenb = lenb = VG_(strlen)(b->name);
 
-   vpa = VG_(strchr)(a->name, '@');
-   vpb = VG_(strchr)(b->name, '@');
+#if defined(VGO_darwin)
+#define VERSION_CHAR '$'
+#else
+#define VERSION_CHAR '@'
+#endif
+
+   vpa = VG_(strchr)(a->name, VERSION_CHAR);
+   vpb = VG_(strchr)(b->name, VERSION_CHAR);
 
    if (vpa)
       vlena = vpa - a->name;
@@ -1064,6 +1106,42 @@ static DiSym* prefersym ( struct _DebugInfo* di, DiSym* a, DiSym* b )
        && 0==VG_(strncmp)(a->name, "PMPI_", 5)
        && 0==VG_(strcmp)(b->name, 1+a->name)) {
       preferA = True; goto out;
+   }
+
+   /* GrP Prefer non-empty name */
+   if (vlena  &&  !vlenb) {
+      preferA = True; goto out;
+   }
+   if (vlenb  &&  !vlena) {
+      preferB = True; goto out;
+   }
+
+   /* GrP Prefer non-whitespace name */
+   {
+       Bool blankA = True;
+       Bool blankB = True;
+       Char *s;
+       s = a->name;
+       while (*s) {
+           if (!VG_(isspace)(*s++)) {
+               blankA = False;
+               break;
+           }
+       }
+       s = b->name;
+       while (*s) {
+           if (!VG_(isspace)(*s++)) {
+               blankB = False;
+               break;
+           }
+       }
+
+       if (!blankA  &&  blankB) {
+           preferA = True; goto out;
+       }
+       if (!blankB  &&  blankA) {
+           preferB = True; goto out;
+       }
    }
 
    /* Select the shortest unversioned name */
@@ -1091,8 +1169,23 @@ static DiSym* prefersym ( struct _DebugInfo* di, DiSym* a, DiSym* b )
    if (cmp > 0) {
       preferB = True; goto out;
    }
-   /* If we get here, they are the same (?!).  That's very odd.  In
-      this case we could choose either (arbitrarily), but might as
+
+   /* If we get here, they are the same name. */
+
+#if defined(VGO_darwin)
+   /* GrP Resolved nlist vs DWARF. If one extends to the end of the 
+      text segment, drop it (it's from an nlist and the size was fake). */
+   if (a->isText  &&  b->isText  &&  a->size != b->size) {
+       if (a->addr + a->size == di->text_avma + di->text_size) {
+           preferB = True; goto out;
+       }
+       if (b->addr + b->size == di->text_avma + di->text_size) {
+           preferA = True; goto out;
+       }
+   }
+#endif
+
+   /* In this case we could choose either (arbitrarily), but might as
       well choose the one with the lowest DiSym* address, so as to try
       and make the comparison mechanism more stable (a la sorting
       parlance).  Also, skip the diagnostic printing in this case. */
@@ -1140,11 +1233,16 @@ static void canonicaliseSymtab ( struct _DebugInfo* di )
       for (i = 0; i < j; i++) {
          if (i < j-1
              && di->symtab[i].addr   == di->symtab[i+1].addr
-             && di->symtab[i].size   == di->symtab[i+1].size) {
-            n_merged++;
-            /* merge the two into one */
+#if !defined(VGO_darwin) 
+             && di->symtab[i].size != di->symtab[i+1].size
+#else 
+             /* darwin: use prefersym to resolve same-address but 
+                different-size (probably STABS vs DWARF */
+#endif
+             ) {
 	    di->symtab[di->symtab_used++] 
                = *prefersym(di, &di->symtab[i], &di->symtab[i+1]);
+            n_merged++;
             i++;
          } else {
             di->symtab[di->symtab_used++] = di->symtab[i];

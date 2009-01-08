@@ -75,9 +75,11 @@ typedef UWord                  AddrH;     // 32             64
 typedef UWord                  SizeT;     // 32             64
 typedef  Word                 SSizeT;     // 32             64
 
-typedef  Word                   OffT;     // 32             64
+typedef ULong                   OffT;     // 32             64
 
 typedef ULong                 Off64T;     // 64             64
+
+typedef  Word                  PtrdiffT;  // 32             64
 
 #if !defined(NULL)
 #  define NULL ((void*)0)
@@ -104,6 +106,9 @@ typedef UInt ThreadId;
       When .isError == True,  
          err holds the error code, and res is zero.
 
+   Darwin: 
+      Same as Linux, but the value is sometimes large.
+
    AIX:
       res is the POSIX result of the syscall.
       err is the corresponding errno value.
@@ -118,10 +123,16 @@ typedef UInt ThreadId;
       then consults 'val' to figure out if the syscall failed, rather
       than looking at 'err'.  Hence we need to represent them both.
 */
+typedef UWord SysResValue;
+
 typedef
    struct {
-      UWord res;
-      UWord err;
+      SysResValue res;
+#if defined(VGO_darwin)
+      SysResValue res2;
+#endif
+      SysResValue err;
+
       Bool  isError;
    }
    SysRes;
@@ -143,6 +154,8 @@ typedef
 #  define VG_LITTLEENDIAN 1
 #elif defined(VGA_ppc32) || defined(VGA_ppc64)
 #  define VG_BIGENDIAN 1
+#else
+#  error Unknown arch
 #endif
 
 /* Regparmness */

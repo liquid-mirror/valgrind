@@ -9,6 +9,10 @@
 #include <fcntl.h>
 #include <unistd.h>
 
+#if !defined(MAP_ANONYMOUS)
+#  define MAP_ANONYMOUS 0
+#endif
+
 #if !defined(MAP_NORESERVE)
 #  define MAP_NORESERVE 0
 #endif

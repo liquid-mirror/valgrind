@@ -29,7 +29,7 @@ int main(void)
    vals[8] = EOL;
 
    for (i = 0; EOL != vals[i]; i++) {
-#     if !defined(_AIX)
+#     if !defined(_AIX) && !defined(__APPLE__)
       res = (void*)syscall(__NR_brk, vals[i]);
 #     endif
    }

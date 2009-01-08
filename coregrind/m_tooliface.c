@@ -268,6 +268,16 @@ void VG_(needs_client_requests)(
    VG_(tdict).tool_handle_client_request = handle;
 }
 
+void VG_(needs_debugger_commands)(
+   Bool (*query)(Int, Char*), 
+   Bool (*action)(Int, Char*)
+)
+{
+   VG_(needs).debugger_commands = True;
+   VG_(tdict).tool_handle_debugger_query = query;
+   VG_(tdict).tool_handle_debugger_action = action;
+}
+
 void VG_(needs_syscall_wrapper)(
    void(*pre) (ThreadId, UInt),
    void(*post)(ThreadId, UInt, SysRes res)
@@ -298,6 +308,7 @@ void VG_(needs_malloc_replacement)(
    void  (*__builtin_delete)     ( ThreadId, void* ),
    void  (*__builtin_vec_delete) ( ThreadId, void* ),
    void* (*realloc)              ( ThreadId, void*, SizeT ),
+   SizeT (*malloc_usable_size)   ( ThreadId, void* ), 
    SizeT client_malloc_redzone_szB
 )
 {
@@ -311,6 +322,7 @@ void VG_(needs_malloc_replacement)(
    VG_(tdict).tool___builtin_delete     = __builtin_delete;
    VG_(tdict).tool___builtin_vec_delete = __builtin_vec_delete;
    VG_(tdict).tool_realloc              = realloc;
+   VG_(tdict).tool_malloc_usable_size   = malloc_usable_size;
    VG_(tdict).tool_client_redzone_szB   = client_malloc_redzone_szB;
 }
 

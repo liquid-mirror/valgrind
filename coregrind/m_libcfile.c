@@ -74,14 +74,26 @@ Int VG_(safe_fd)(Int oldfd)
    or if it doesn't exist, we return False. */
 Bool VG_(resolve_filename) ( Int fd, HChar* buf, Int n_buf )
 {
+#if defined(HAVE_PROC)
    HChar tmp[64];
-
-   VG_(sprintf)(tmp, "/proc/self/fd/%d", fd);
    VG_(memset)(buf, 0, n_buf);
-
+   VG_(sprintf)(tmp, "/proc/self/fd/%d", fd);
    if (VG_(readlink)(tmp, buf, n_buf) > 0 && buf[0] == '/')
       return True;
-   else
+#elif defined(VGO_darwin)
+   // GrP Leopard only, I think
+   HChar tmp[VKI_MAXPATHLEN+1];
+   if (0 == VG_(fcntl)(fd, VKI_F_GETPATH, (UWord)tmp)) {
+       if (n_buf > 0) {
+           VG_(strncpy)( buf, tmp, n_buf < sizeof(tmp) ? n_buf : sizeof(tmp) );
+           buf[n_buf-1] = 0;
+       }
+       if (tmp[0] == '/') return True;
+   }
+#else
+#  error need fd-to-filename for this OS
+#endif
+
       return False;
 }
 
@@ -124,15 +136,54 @@ Int VG_(write) ( Int fd, const void* buf, Int count)
    return ret;
 }
 
+Int VG_(select) ( Int nfds, void *rfds, void *wfds, void *efds, void *timeout)
+{
+   Int    ret;
+   SysRes res = VG_(do_syscall5)(__NR_select, nfds, (Addr)rfds, (Addr)wfds, (Addr)efds, (Addr)timeout);
+   if (res.isError) {
+      ret = - (Int)(Word)res.err;
+      vg_assert(ret < 0);
+   } else {
+      ret = (Int)(Word)res.res;
+      vg_assert(ret >= 0);
+   }
+   return ret;    
+}
+
+
 Int VG_(pipe) ( Int fd[2] )
 {
    SysRes res = VG_(do_syscall1)(__NR_pipe, (UWord)fd);
+#if defined(VGO_darwin)
+   if (!res.isError) {
+      fd[0] = (Int)res.res;
+      fd[1] = (Int)res.res2;
+   }
+#endif
    return res.isError ? -1 : 0;
 }
 
 OffT VG_(lseek) ( Int fd, OffT offset, Int whence )
 {
+#if defined(VGO_darwin)
+
+# if VG_WORDSIZE == 8
    SysRes res = VG_(do_syscall3)(__NR_lseek, fd, offset, whence);
+# elif defined(VG_BIGENDIAN)
+   SysRes res = VG_(do_syscall4)(__NR_lseek, fd, 
+                                 offset >> 32, offset & 0xffffffff, whence);
+# else
+   SysRes res = VG_(do_syscall4)(__NR_lseek, fd, 
+                                 offset & 0xffffffff, offset >> 32, whence);
+# endif
+
+#else
+
+   SysRes res = VG_(do_syscall3)(__NR_lseek, fd, offset, whence);
+   vg_assert(sizeof(OffT) == sizeof(Word));
+
+#endif
+
    return res.isError ? (-1) : res.res;
    /* if you change the error-reporting conventions of this, also
       change VG_(pread) and all other usage points. */
@@ -143,31 +194,57 @@ OffT VG_(lseek) ( Int fd, OffT offset, Int whence )
    'struct vg_stat' in order to have a single structure that callers
    can use consistently on all platforms. */
 
-#define TRANSLATE_TO_vg_stat(_p_vgstat, _p_vkistat) \
+#if defined(VGO_linux)
+
+# define TRANSLATE_TO_vg_stat(_p_vgstat, _p_vkistat) \
    do { \
-      (_p_vgstat)->st_dev        = (ULong)( (_p_vkistat)->st_dev ); \
-      (_p_vgstat)->st_ino        = (ULong)( (_p_vkistat)->st_ino ); \
-      (_p_vgstat)->st_nlink      = (ULong)( (_p_vkistat)->st_nlink ); \
-      (_p_vgstat)->st_mode       = (UInt)( (_p_vkistat)->st_mode ); \
-      (_p_vgstat)->st_uid        = (UInt)( (_p_vkistat)->st_uid ); \
-      (_p_vgstat)->st_gid        = (UInt)( (_p_vkistat)->st_gid ); \
-      (_p_vgstat)->st_rdev       = (ULong)( (_p_vkistat)->st_rdev ); \
-      (_p_vgstat)->st_size       = (Long)( (_p_vkistat)->st_size ); \
-      (_p_vgstat)->st_blksize    = (ULong)( (_p_vkistat)->st_blksize ); \
-      (_p_vgstat)->st_blocks     = (ULong)( (_p_vkistat)->st_blocks ); \
-      (_p_vgstat)->st_atime      = (ULong)( (_p_vkistat)->st_atime ); \
-      (_p_vgstat)->st_atime_nsec = (ULong)( (_p_vkistat)->st_atime_nsec ); \
-      (_p_vgstat)->st_mtime      = (ULong)( (_p_vkistat)->st_mtime ); \
-      (_p_vgstat)->st_mtime_nsec = (ULong)( (_p_vkistat)->st_mtime_nsec ); \
-      (_p_vgstat)->st_ctime      = (ULong)( (_p_vkistat)->st_ctime ); \
-      (_p_vgstat)->st_ctime_nsec = (ULong)( (_p_vkistat)->st_ctime_nsec ); \
+      (_p_vgstat)->dev        = (ULong)( (_p_vkistat)->st_dev ); \
+      (_p_vgstat)->ino        = (ULong)( (_p_vkistat)->st_ino ); \
+      (_p_vgstat)->nlink      = (ULong)( (_p_vkistat)->st_nlink ); \
+      (_p_vgstat)->mode       = (UInt)( (_p_vkistat)->st_mode ); \
+      (_p_vgstat)->uid        = (UInt)( (_p_vkistat)->st_uid ); \
+      (_p_vgstat)->gid        = (UInt)( (_p_vkistat)->st_gid ); \
+      (_p_vgstat)->rdev       = (ULong)( (_p_vkistat)->st_rdev ); \
+      (_p_vgstat)->size       = (Long)( (_p_vkistat)->st_size ); \
+      (_p_vgstat)->blksize    = (ULong)( (_p_vkistat)->st_blksize ); \
+      (_p_vgstat)->blocks     = (ULong)( (_p_vkistat)->st_blocks ); \
+      (_p_vgstat)->atime      = (ULong)( (_p_vkistat)->st_atime ); \
+      (_p_vgstat)->atime_nsec = (ULong)( (_p_vkistat)->st_atime_nsec ); \
+      (_p_vgstat)->mtime      = (ULong)( (_p_vkistat)->st_mtime ); \
+      (_p_vgstat)->mtime_nsec = (ULong)( (_p_vkistat)->st_mtime_nsec ); \
+      (_p_vgstat)->ctime      = (ULong)( (_p_vkistat)->st_ctime ); \
+      (_p_vgstat)->ctime_nsec = (ULong)( (_p_vkistat)->st_ctime_nsec ); \
    } while (0)
 
-SysRes VG_(stat) ( Char* file_name, struct vg_stat* vgbuf )
+#elif defined(VGO_darwin)
+
+# define TRANSLATE_TO_vg_stat(_p_vgstat, _p_vkistat) \
+   do { \
+      (_p_vgstat)->dev        = (ULong)( (_p_vkistat)->st_dev ); \
+      (_p_vgstat)->ino        = (ULong)( (_p_vkistat)->st_ino ); \
+      (_p_vgstat)->nlink      = (ULong)( (_p_vkistat)->st_nlink ); \
+      (_p_vgstat)->mode       = (UInt)( (_p_vkistat)->st_mode ); \
+      (_p_vgstat)->uid        = (UInt)( (_p_vkistat)->st_uid ); \
+      (_p_vgstat)->gid        = (UInt)( (_p_vkistat)->st_gid ); \
+      (_p_vgstat)->rdev       = (ULong)( (_p_vkistat)->st_rdev ); \
+      (_p_vgstat)->size       = (Long)( (_p_vkistat)->st_size ); \
+      (_p_vgstat)->blksize    = (ULong)( (_p_vkistat)->st_blksize ); \
+      (_p_vgstat)->blocks     = (ULong)( (_p_vkistat)->st_blocks ); \
+      (_p_vgstat)->atime      = (ULong)( (_p_vkistat)->st_atimespec.tv_sec ); \
+      (_p_vgstat)->atime_nsec = (ULong)( (_p_vkistat)->st_atimespec.tv_nsec ); \
+      (_p_vgstat)->mtime      = (ULong)( (_p_vkistat)->st_mtimespec.tv_sec ); \
+      (_p_vgstat)->mtime_nsec = (ULong)( (_p_vkistat)->st_mtimespec.tv_nsec ); \
+      (_p_vgstat)->ctime      = (ULong)( (_p_vkistat)->st_ctimespec.tv_sec ); \
+      (_p_vgstat)->ctime_nsec = (ULong)( (_p_vkistat)->st_ctimespec.tv_nsec ); \
+   } while (0)
+
+#endif
+
+SysRes VG_(stat) ( const Char* file_name, struct vg_stat* vgbuf )
 {
    SysRes res;
    VG_(memset)(vgbuf, 0, sizeof(*vgbuf));
-#  if defined(VGO_linux)
+#  if defined(VGO_linux)  ||  defined(VGO_darwin)
 #  if defined(__NR_stat64)
    { struct vki_stat64 buf64;
      res = VG_(do_syscall2)(__NR_stat64, (UWord)file_name, (UWord)&buf64);
@@ -194,12 +271,12 @@ SysRes VG_(stat) ( Char* file_name, struct vg_stat* vgbuf )
                             VKI_STX_NORMAL);
      if (!res.isError) {
         VG_(memset)(vgbuf, 0, sizeof(*vgbuf));
-        vgbuf->st_dev  = (ULong)buf.st_dev;
-        vgbuf->st_ino  = (ULong)buf.st_ino;
-        vgbuf->st_mode = (UInt)buf.st_mode;
-        vgbuf->st_uid  = (UInt)buf.st_uid;
-        vgbuf->st_gid  = (UInt)buf.st_gid;
-        vgbuf->st_size = (Long)buf.st_size;
+        vgbuf->dev  = (ULong)buf.st_dev;
+        vgbuf->ino  = (ULong)buf.st_ino;
+        vgbuf->mode = (UInt)buf.st_mode;
+        vgbuf->uid  = (UInt)buf.st_uid;
+        vgbuf->gid  = (UInt)buf.st_gid;
+        vgbuf->size = (Long)buf.st_size;
      }
      return res;
    }
@@ -212,7 +289,7 @@ Int VG_(fstat) ( Int fd, struct vg_stat* vgbuf )
 {
    SysRes res;
    VG_(memset)(vgbuf, 0, sizeof(*vgbuf));
-#  if defined(VGO_linux)
+#  if defined(VGO_linux)  ||  defined(VGO_darwin)
 #  if defined(__NR_fstat64)
    { struct vki_stat64 buf64;
      res = VG_(do_syscall2)(__NR_fstat64, (UWord)fd, (UWord)&buf64);
@@ -244,7 +321,7 @@ Long VG_(fsize) ( Int fd )
 {
    struct vg_stat buf;
    Int res = VG_(fstat)( fd, &buf );
-   return (res == -1) ? (-1LL) : buf.st_size;
+   return (res == -1) ? (-1LL) : buf.size;
 }
 
 Bool VG_(is_dir) ( HChar* f )
@@ -252,7 +329,7 @@ Bool VG_(is_dir) ( HChar* f )
    struct vg_stat buf;
    SysRes res = VG_(stat)(f, &buf);
    return res.isError ? False
-                      : VKI_S_ISDIR(buf.st_mode) ? True : False;
+                      : VKI_S_ISDIR(buf.mode) ? True : False;
 }
 
 SysRes VG_(dup) ( Int oldfd )
@@ -262,7 +339,7 @@ SysRes VG_(dup) ( Int oldfd )
 
 SysRes VG_(dup2) ( Int oldfd, Int newfd )
 {
-#  if defined(VGO_linux)
+#  if defined(VGO_linux)  ||  defined(VGO_darwin)
    return VG_(do_syscall2)(__NR_dup2, oldfd, newfd);
 #  elif defined(VGO_aix5)
    I_die_here;
@@ -272,19 +349,19 @@ SysRes VG_(dup2) ( Int oldfd, Int newfd )
 }
 
 /* Returns -1 on error. */
-Int VG_(fcntl) ( Int fd, Int cmd, Int arg )
+Int VG_(fcntl) ( Int fd, Int cmd, Addr arg )
 {
    SysRes res = VG_(do_syscall3)(__NR_fcntl, fd, cmd, arg);
    return res.isError ? -1 : res.res;
 }
 
-Int VG_(rename) ( Char* old_name, Char* new_name )
+Int VG_(rename) ( const Char* old_name, const Char* new_name )
 {
    SysRes res = VG_(do_syscall2)(__NR_rename, (UWord)old_name, (UWord)new_name);
    return res.isError ? (-1) : 0;
 }
 
-Int VG_(unlink) ( Char* file_name )
+Int VG_(unlink) ( const Char* file_name )
 {
    SysRes res = VG_(do_syscall1)(__NR_unlink, (UWord)file_name);
    return res.isError ? (-1) : 0;
@@ -322,8 +399,8 @@ Bool VG_(record_startup_wd) ( void )
         return True;
      }
    }
-#  elif defined(VGO_aix5)
-   /* We can't ask the kernel, so instead rely on launcher-aix5.c to
+#  elif defined(VGO_aix5)  ||  defined(VGO_darwin)
+   /* We can't ask the kernel, so instead rely on launcher-*.c to
       tell us the startup path.  Note the env var is keyed to the
       parent's PID, not ours, since our parent is the launcher
       process. */
@@ -333,8 +410,11 @@ Bool VG_(record_startup_wd) ( void )
      VG_(sprintf)(envvar, "VALGRIND_STARTUP_PWD_%d_XYZZY", 
                           (Int)VG_(getppid)());
      wd = VG_(getenv)( envvar );
-     if (wd == NULL || (1+VG_(strlen)(wd) >= szB))
-        return False;
+     if (wd == NULL || (1+VG_(strlen)(wd) >= szB)) {
+        // GrP fail nicely
+         VG_(debugLog)(0, "main", "Valgrind: Can't establish current working directory; using '/'.");
+         wd = "/";
+     }
      VG_(strncpy_safely)(startup_wd, wd, szB);
      vg_assert(startup_wd[szB-1] == 0);
      startup_wd_acquired = True;
@@ -357,7 +437,7 @@ Bool VG_(get_startup_wd) ( Char* buf, SizeT size )
    return True;
 }
 
-Int VG_(readlink) (Char* path, Char* buf, UInt bufsiz)
+Int VG_(readlink) (const Char* path, Char* buf, UInt bufsiz)
 {
    SysRes res;
    /* res = readlink( path, buf, bufsiz ); */
@@ -365,13 +445,15 @@ Int VG_(readlink) (Char* path, Char* buf, UInt bufsiz)
    return res.isError ? -1 : res.res;
 }
 
-Int VG_(getdents) (UInt fd, struct vki_dirent *dirp, UInt count)
+#if defined(__NR_getdents)
+Int VG_(getdents) (Int fd, struct vki_dirent *dirp, UInt count)
 {
    SysRes res;
    /* res = getdents( fd, dirp, count ); */
    res = VG_(do_syscall3)(__NR_getdents, fd, (UWord)dirp, count);
    return res.isError ? -1 : res.res;
 }
+#endif
 
 /* Check accessibility of a file.  Returns zero for access granted,
    nonzero otherwise. */
@@ -382,19 +464,21 @@ Int VG_(access) ( HChar* path, Bool irusr, Bool iwusr, Bool ixusr )
       the kernel interfaces.  Therefore I reluctantly resort to
       hardwiring in these magic numbers that I determined by
       experimentation. */
-   UWord w = (irusr ? 4/*R_OK*/ : 0)
-             | (iwusr ? 2/*W_OK*/ : 0)
-             | (ixusr ? 1/*X_OK*/ : 0);
-   SysRes res = VG_(do_syscall2)(__NR_access, (UWord)path, w);
-   return res.isError ? 1 : 0;
-#  elif defined(VGO_aix5)
+#  define VKI_R_OK 4
+#  define VKI_W_OK 2
+#  define VKI_X_OK 1
+#  endif
+
    UWord w = (irusr ? VKI_R_OK : 0)
              | (iwusr ? VKI_W_OK : 0)
              | (ixusr ? VKI_X_OK : 0);
    SysRes res = VG_(do_syscall2)(__NR_access, (UWord)path, w);
    return res.isError ? 1 : 0;   
-#  else
-#    error "Don't know how to do VG_(access) on this OS"
+
+#  if defined(VGO_linux)
+#  undef VKI_R_OK
+#  undef VKI_W_OK
+#  undef VKI_X_OK
 #  endif
 }
 
@@ -419,7 +503,7 @@ Int VG_(access) ( HChar* path, Bool irusr, Bool iwusr, Bool ixusr )
 */
 /* returns: 0 = success, non-0 is failure */
 Int VG_(check_executable)(/*OUT*/Bool* is_setuid,
-                          HChar* f, Bool allow_setuid)
+                          const HChar* f, Bool allow_setuid)
 {
    struct vg_stat st;
    SysRes res = VG_(stat)(f, &st);
@@ -431,19 +515,19 @@ Int VG_(check_executable)(/*OUT*/Bool* is_setuid,
       return res.err;
    }
 
-   if ( (st.st_mode & (VKI_S_ISUID | VKI_S_ISGID)) && !allow_setuid ) {
+   if ( (st.mode & (VKI_S_ISUID | VKI_S_ISGID)) && !allow_setuid ) {
       if (is_setuid)
          *is_setuid = True;
       return VKI_EACCES;
    }
 
-   if (VG_(geteuid)() == st.st_uid) {
-      if (!(st.st_mode & VKI_S_IXUSR))
+   if (VG_(geteuid)() == st.uid) {
+      if (!(st.mode & VKI_S_IXUSR))
          return VKI_EACCES;
    } else {
       Int grpmatch = 0;
 
-      if (VG_(getegid)() == st.st_gid)
+      if (VG_(getegid)() == st.gid)
 	 grpmatch = 1;
       else {
 	 UInt groups[32];
@@ -451,7 +535,7 @@ Int VG_(check_executable)(/*OUT*/Bool* is_setuid,
 	 Int i;
          /* ngrp will be -1 if VG_(getgroups) failed. */
          for (i = 0; i < ngrp; i++) {
-	    if (groups[i] == st.st_gid) {
+	    if (groups[i] == st.gid) {
 	       grpmatch = 1;
 	       break;
 	    }
@@ -459,10 +543,10 @@ Int VG_(check_executable)(/*OUT*/Bool* is_setuid,
       }
 
       if (grpmatch) {
-	 if (!(st.st_mode & VKI_S_IXGRP)) {
+	 if (!(st.mode & VKI_S_IXGRP)) {
             return VKI_EACCES;
          }
-      } else if (!(st.st_mode & VKI_S_IXOTH)) {
+      } else if (!(st.mode & VKI_S_IXOTH)) {
          return VKI_EACCES;
       }
    }
@@ -470,12 +554,31 @@ Int VG_(check_executable)(/*OUT*/Bool* is_setuid,
    return 0;
 }
 
-SysRes VG_(pread) ( Int fd, void* buf, Int count, Int offset )
+SysRes VG_(pread) ( Int fd, void* buf, Int count, OffT offset )
 {
-   OffT off = VG_(lseek)( fd, (OffT)offset, VKI_SEEK_SET);
-   if (off < 0)
+   SysRes res;
+
+#if defined(VGO_darwin)
+
+# if VG_WORDSIZE == 8
+   res = VG_(do_syscall4)(__NR_pread, fd, (UWord)buf, count, offset);
+# elif defined(VG_BIGENDIAN)
+   res = VG_(do_syscall5)(__NR_pread, fd, (UWord)buf, count, 
+                          offset >> 32, offset & 0xffffffff);
+# else
+   res = VG_(do_syscall5)(__NR_pread, fd, (UWord)buf, count, 
+                          offset & 0xffffffff, offset >> 32);
+# endif
+
+#else
+
+   OffT off = VG_(lseek)( fd, offset, VKI_SEEK_SET);
+   if (off != 0)
       return VG_(mk_SysRes_Error)( VKI_EINVAL );
-   return VG_(do_syscall3)(__NR_read, fd, (UWord)buf, count );
+   res = VG_(do_syscall3)(__NR_read, fd, (UWord)buf, count );
+
+#endif
+   return res;
 }
 
 /* Create and open (-rw------) a tmp file name incorporating said arg.
@@ -524,19 +627,15 @@ Int VG_(mkstemp) ( HChar* part_of_name, /*OUT*/HChar* fullname )
    Socket-related stuff.  This is very Linux-kernel specific.
    ------------------------------------------------------------------ */
 
+#if defined(VGO_aix5)
+struct vki_sockaddr_in;
+#endif
+
 static
 Int parse_inet_addr_and_port ( UChar* str, UInt* ip_addr, UShort* port );
 
 static
-Int my_socket ( Int domain, Int type, Int protocol );
-
-static
-Int my_connect ( Int sockfd, 
-#                if defined(VGO_linux)
-                   struct vki_sockaddr_in* serv_addr, 
-#                else
-                   void* serv_addr,
-#                endif
+Int my_connect ( Int sockfd, struct vki_sockaddr_in* serv_addr, 
                  Int addrlen );
 
 UInt VG_(htonl) ( UInt x )
@@ -596,7 +695,7 @@ Int VG_(connect_via_socket)( UChar* str )
 {
 #if defined(VGO_aix5)
    I_die_here;
-#else /* Yay, Linux */
+#else
    Int sd, res;
    struct vki_sockaddr_in servAddr;
    UInt   ip   = 0;
@@ -616,7 +715,7 @@ Int VG_(connect_via_socket)( UChar* str )
    servAddr.sin_port = VG_(htons)(port);
 
    /* create socket */
-   sd = my_socket(VKI_AF_INET, VKI_SOCK_STREAM, 0 /* IPPROTO_IP ? */);
+   sd = VG_(socket)(VKI_AF_INET, VKI_SOCK_STREAM, 0 /* IPPROTO_IP ? */);
    if (sd < 0) {
       /* this shouldn't happen ... nevertheless */
       return -2;
@@ -679,8 +778,8 @@ static Int parse_inet_addr_and_port ( UChar* str, UInt* ip_addr, UShort* port )
 #  undef GET_CH
 }
 
-static
-Int my_socket ( Int domain, Int type, Int protocol )
+// GrP fixme safe_fd?
+Int VG_(socket) ( Int domain, Int type, Int protocol )
 {
 #if defined(VGP_x86_linux) || defined(VGP_ppc32_linux) || defined(VGP_ppc64_linux)
    SysRes res;
@@ -699,18 +798,64 @@ Int my_socket ( Int domain, Int type, Int protocol )
 #elif defined(VGP_ppc32_aix5) || defined(VGP_ppc64_aix5)
    I_die_here;
 
+#elif defined(VGO_darwin)
+   SysRes res;
+   res = VG_(do_syscall3)(__NR_socket, domain, type, protocol);
+   if (!res.isError) {
+       // Set SO_NOSIGPIPE so write() returns EPIPE instead of raising SIGPIPE
+       Int optval = 1;
+       SysRes res2;
+       res2 = VG_(do_syscall5)(__NR_setsockopt, res.res, VKI_SOL_SOCKET, 
+                               VKI_SO_NOSIGPIPE, (UWord)&optval, 
+                               sizeof(optval));
+       // ignore setsockopt() error
+   }
+   return res.isError ? -1 : res.res;
+
 #else
 #  error Unknown arch
 #endif
 }
 
-static
-Int my_connect ( Int sockfd,
-#                if defined(VGO_linux)
-                   struct vki_sockaddr_in* serv_addr, 
+Int VG_(bind)   ( Int sock, const struct vki_sockaddr *addr, vki_socklen_t len)
+{
+#if defined(VGO_darwin)
+    SysRes res;
+    res = VG_(do_syscall3)(__NR_bind, sock, (UWord)addr, (UWord)len);
+    return res.isError ? -1 : res.res;
 #                else
-                   void* serv_addr,
+#   error unknown os
 #                endif
+}
+
+
+Int VG_(listen) ( Int sock, Int backlog )
+{
+#if defined(VGO_darwin)
+    SysRes res;
+    res = VG_(do_syscall2)(__NR_listen, sock, backlog);
+    return res.isError ? -1 : res.res;
+#else
+#   error unknown os
+#endif
+}
+
+
+// GrP fixme safe_fd?
+Int VG_(accept) ( Int sock, struct vki_sockaddr *addr, vki_socklen_t *len)
+{
+#if defined(VGO_darwin)
+    SysRes res;
+    res = VG_(do_syscall3)(__NR_accept, sock, (UWord)addr, (UWord)len);
+    return res.isError ? -1 : res.res;
+#else
+#   error unknown os
+#endif
+}
+
+
+static
+Int my_connect ( Int sockfd, struct vki_sockaddr_in* serv_addr, 
                  Int addrlen )
 {
 #if defined(VGP_x86_linux) || defined(VGP_ppc32_linux) || defined(VGP_ppc64_linux)
@@ -730,6 +875,11 @@ Int my_connect ( Int sockfd,
 #elif defined(VGP_ppc32_aix5) || defined(VGP_ppc64_aix5)
    I_die_here;
 
+#elif defined(VGO_darwin)
+   SysRes res;
+   res = VG_(do_syscall3)(__NR_connect, sockfd, (UWord)serv_addr, addrlen);
+   return res.isError ? -1 : res.res;
+
 #else
 #  error Unknown arch
 #endif
@@ -738,9 +888,17 @@ Int my_connect ( Int sockfd,
 Int VG_(write_socket)( Int sd, void *msg, Int count )
 {
    /* This is actually send(). */
-   /* For Linux, VKI_MSG_NOSIGNAL is a request not to send SIGPIPE on
-      errors on stream oriented sockets when the other end breaks the
-      connection. The EPIPE error is still returned. */
+
+#if defined(VGO_linux)
+   /* Requests not to send SIGPIPE on errors on stream oriented
+      sockets when the other end breaks the connection. The EPIPE
+      error is still returned. */
+   Int flags = VKI_MSG_NOSIGNAL;
+#elif defined(VGO_darwin)
+   /* VG_(socket)() sets SO_NOSIGPIPE to get EPIPE instead of SIGPIPE */
+#else
+#  error Unknown arch
+#endif
 
 #if defined(VGP_x86_linux) || defined(VGP_ppc32_linux) || defined(VGP_ppc64_linux)
    SysRes res;
@@ -760,6 +918,11 @@ Int VG_(write_socket)( Int sd, void *msg, Int count )
 
 #elif defined(VGP_ppc32_aix5) || defined(VGP_ppc64_aix5)
    I_die_here;
+
+#elif defined(VGO_darwin)
+   SysRes res;
+   res = VG_(do_syscall3)(__NR_write, sd, (UWord)msg, count);
+   return res.isError ? -1 : res.res;
 
 #else
 #  error Unknown arch
@@ -786,6 +949,12 @@ Int VG_(getsockname) ( Int sd, struct vki_sockaddr *name, Int *namelen)
 #elif defined(VGP_ppc32_aix5) || defined(VGP_ppc64_aix5)
    I_die_here;
 
+#elif defined(VGO_darwin)
+   SysRes res;
+   res = VG_(do_syscall3)( __NR_getsockname,
+                           (UWord)sd, (UWord)name, (UWord)namelen );
+   return res.isError ? -1 : res.res;
+
 #else
 #  error Unknown arch
 #endif
@@ -810,6 +979,12 @@ Int VG_(getpeername) ( Int sd, struct vki_sockaddr *name, Int *namelen)
 
 #elif defined(VGP_ppc32_aix5) || defined(VGP_ppc64_aix5)
    I_die_here;
+
+#elif defined(VGO_darwin)
+   SysRes res;
+   res = VG_(do_syscall3)( __NR_getpeername,
+                           (UWord)sd, (UWord)name, (UWord)namelen );
+   return res.isError ? -1 : res.res;
 
 #else
 #  error Unknown arch
@@ -840,11 +1015,111 @@ Int VG_(getsockopt) ( Int sd, Int level, Int optname, void *optval,
 #elif defined(VGP_ppc32_aix5) || defined(VGP_ppc64_aix5)
    I_die_here;
 
+#elif defined(VGO_darwin)
+   SysRes res;
+   res = VG_(do_syscall5)( __NR_getsockopt,
+                           (UWord)sd, (UWord)level, (UWord)optname, 
+                           (UWord)optval, (UWord)optlen );
+   return res.isError ? -1 : res.res;
+
 #else
 #  error Unknown arch
 #endif
 }
 
+
+Int VG_(setsockopt) ( Int sd, Int level, Int optname, const void *optval,
+                      Int optlen)
+{
+   SysRes res;
+
+#if defined(VGO_darwin)
+   res = VG_(do_syscall5)( __NR_setsockopt,
+                           (UWord)sd, (UWord)level, (UWord)optname, 
+                           (UWord)optval, (UWord)optlen );
+   return res.isError ? -1 : res.res;
+
+#else
+#  error Unknown arch
+#endif
+}
+
+
+Char *VG_(basename)(const Char *path)
+{
+    static Char buf[VKI_PATH_MAX];
+    
+    const Char *p, *end;
+
+    if (path == NULL  ||  
+        0 == VG_(strcmp)(path, ""))
+    {
+        return ".";
+    }
+
+    p = path + VG_(strlen)(path);
+    while (p > path  &&  *p == '/') {
+        // skip all trailing '/'
+        p--;
+    }
+
+    if (p == path  &&  *p == '/') return "/"; // all slashes
+
+    end = p;
+
+    while (p > path  &&  *p != '/') {
+        // now skip non '/'
+        p--;
+    }
+
+    if (*p == '/') p++;
+
+    VG_(strncpy)(buf, p, end-p+1);
+    buf[end-p+1] = '\0';
+
+    return buf;
+}
+
+
+Char *VG_(dirname)(const Char *path)
+{
+    static Char buf[VKI_PATH_MAX];
+    
+    const Char *p;
+
+    if (path == NULL  ||  
+        0 == VG_(strcmp)(path, "")  ||  
+        0 == VG_(strcmp)(path, "/"))
+    {
+        return ".";
+    }
+
+    p = path + VG_(strlen)(path);
+    while (p > path  &&  *p == '/') {
+        // skip all trailing '/'
+        p--;
+    }
+
+    while (p > path  &&  *p != '/') {
+        // now skip non '/'
+        p--;
+    }
+
+    if (p == path) {
+        if (*p == '/') return "/"; // all slashes
+        else return "."; // no slashes
+    } 
+
+    while (p > path  &&  *p == '/') {
+        // skip '/' again
+        p--;
+    }
+
+    VG_(strncpy)(buf, path, p-path+1);
+    buf[p-path+1] = '\0';
+
+    return buf;
+}
 
 
 /*--------------------------------------------------------------------*/
