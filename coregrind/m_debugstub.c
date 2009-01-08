@@ -145,11 +145,11 @@ static void debugger_lock(Int sock)
     {
         int flags;
         char c;
-        flags = VG_(fcntl)(sock, F_GETFL, 0);
-        VG_(fcntl)(sock, F_SETFL, flags | O_NONBLOCK);
+        flags = VG_(fcntl)(sock, VKI_F_GETFL, 0);
+        VG_(fcntl)(sock, VKI_F_SETFL, flags | VKI_O_NONBLOCK);
         while (1 == VG_(read)(sock, &c, 1)) 
             ;
-        VG_(fcntl)(sock, F_SETFL, flags);
+        VG_(fcntl)(sock, VKI_F_SETFL, flags);
     }
 }
 
@@ -180,25 +180,27 @@ static int reg_from_vex(ThreadId tid, Int regnum, void *rbuf, Int shadow)
     }
 
     switch (regnum) {
-    case rEAX: memcpy(rbuf, &state->guest_EAX, 4); return 4;
-    case rECX: memcpy(rbuf, &state->guest_ECX, 4); return 4;
-    case rEDX: memcpy(rbuf, &state->guest_EDX, 4); return 4;
-    case rEBX: memcpy(rbuf, &state->guest_EBX, 4); return 4;
-    case rESP: memcpy(rbuf, &state->guest_ESP, 4); return 4;
-    case rEBP: memcpy(rbuf, &state->guest_EBP, 4); return 4;
-    case rESI: memcpy(rbuf, &state->guest_ESI, 4); return 4;
-    case rEDI: memcpy(rbuf, &state->guest_EDI, 4); return 4;
+    case rEAX: VG_(memcpy)(rbuf, &state->guest_EAX, 4); return 4;
+    case rECX: VG_(memcpy)(rbuf, &state->guest_ECX, 4); return 4;
+    case rEDX: VG_(memcpy)(rbuf, &state->guest_EDX, 4); return 4;
+    case rEBX: VG_(memcpy)(rbuf, &state->guest_EBX, 4); return 4;
+    case rESP: VG_(memcpy)(rbuf, &state->guest_ESP, 4); return 4;
+    case rEBP: VG_(memcpy)(rbuf, &state->guest_EBP, 4); return 4;
+    case rESI: VG_(memcpy)(rbuf, &state->guest_ESI, 4); return 4;
+    case rEDI: VG_(memcpy)(rbuf, &state->guest_EDI, 4); return 4;
 
-    case rEIP: memcpy(rbuf, &state->guest_EIP, 4); return 4;
+    case rEIP: VG_(memcpy)(rbuf, &state->guest_EIP, 4); return 4;
     case rEFLAGS: 
         if (shadow) return 0;  // fixme
-        w = LibVEX_GuestX86_get_eflags(state); memcpy(rbuf, &w, 4); return 4;
-    case rCS: memcpy(rbuf, &state->guest_CS, 2); return 2;
-    case rSS: memcpy(rbuf, &state->guest_SS, 2); return 2;
-    case rDS: memcpy(rbuf, &state->guest_DS, 2); return 2;
-    case rES: memcpy(rbuf, &state->guest_ES, 2); return 2;
-    case rFS: memcpy(rbuf, &state->guest_FS, 2); return 2;
-    case rGS: memcpy(rbuf, &state->guest_GS, 2); return 2;
+        w = LibVEX_GuestX86_get_eflags(state);
+        VG_(memcpy)(rbuf, &w, 4);
+        return 4;
+    case rCS: VG_(memcpy)(rbuf, &state->guest_CS, 2); return 2;
+    case rSS: VG_(memcpy)(rbuf, &state->guest_SS, 2); return 2;
+    case rDS: VG_(memcpy)(rbuf, &state->guest_DS, 2); return 2;
+    case rES: VG_(memcpy)(rbuf, &state->guest_ES, 2); return 2;
+    case rFS: VG_(memcpy)(rbuf, &state->guest_FS, 2); return 2;
+    case rGS: VG_(memcpy)(rbuf, &state->guest_GS, 2); return 2;
 
         // vex does not simulate 80-bit precision
         // fixme shift by FTOP?
@@ -217,13 +219,13 @@ static int reg_from_vex(ThreadId tid, Int regnum, void *rbuf, Int shadow)
         // vex only models the rounding bits (see libvex_guest_x86.h)
         UWord value = 0x037f;
         value |= state->guest_FPROUND << 10;
-        memcpy(rbuf, &value, 4); 
+        VG_(memcpy)(rbuf, &value, 4); 
         return 4;
     }
     case rFSTAT: {
         UWord value = state->guest_FC3210;
         value |= (state->guest_FTOP & 7) << 11;
-        memcpy(rbuf, &value, 4); 
+        VG_(memcpy)(rbuf, &value, 4); 
         return 4;
     }
     case rFTAG: {
@@ -237,7 +239,7 @@ static int reg_from_vex(ThreadId tid, Int regnum, void *rbuf, Int shadow)
             ((state->guest_FPTAG[5] ? 0 : 3) << 10) | 
             ((state->guest_FPTAG[6] ? 0 : 3) << 12) | 
             ((state->guest_FPTAG[7] ? 0 : 3) << 14);
-        memcpy(rbuf, &value, 4); 
+        VG_(memcpy)(rbuf, &value, 4); 
         return 4;
     }
     case rFISEG: 
@@ -247,24 +249,24 @@ static int reg_from_vex(ThreadId tid, Int regnum, void *rbuf, Int shadow)
     case rFOP: {
         // fixme lie
         UWord value = 0;
-        memcpy(rbuf, &value, 4);
+        VG_(memcpy)(rbuf, &value, 4);
         return 4;
     }
 
-    case rXMM0: memcpy(rbuf, &state->guest_XMM0, 16); return 16;
-    case rXMM1: memcpy(rbuf, &state->guest_XMM1, 16); return 16;
-    case rXMM2: memcpy(rbuf, &state->guest_XMM2, 16); return 16;
-    case rXMM3: memcpy(rbuf, &state->guest_XMM3, 16); return 16;
-    case rXMM4: memcpy(rbuf, &state->guest_XMM4, 16); return 16;
-    case rXMM5: memcpy(rbuf, &state->guest_XMM5, 16); return 16;
-    case rXMM6: memcpy(rbuf, &state->guest_XMM6, 16); return 16;
-    case rXMM7: memcpy(rbuf, &state->guest_XMM7, 16); return 16;
+    case rXMM0: VG_(memcpy)(rbuf, &state->guest_XMM0, 16); return 16;
+    case rXMM1: VG_(memcpy)(rbuf, &state->guest_XMM1, 16); return 16;
+    case rXMM2: VG_(memcpy)(rbuf, &state->guest_XMM2, 16); return 16;
+    case rXMM3: VG_(memcpy)(rbuf, &state->guest_XMM3, 16); return 16;
+    case rXMM4: VG_(memcpy)(rbuf, &state->guest_XMM4, 16); return 16;
+    case rXMM5: VG_(memcpy)(rbuf, &state->guest_XMM5, 16); return 16;
+    case rXMM6: VG_(memcpy)(rbuf, &state->guest_XMM6, 16); return 16;
+    case rXMM7: VG_(memcpy)(rbuf, &state->guest_XMM7, 16); return 16;
 
     case rMXCSR: {
         // vex only models the rounding bits (see libvex_guest_x86.h)
         UWord value = 0x1f80;
         value |= state->guest_SSEROUND << 13;
-        memcpy(rbuf, &value, 4); 
+        VG_(memcpy)(rbuf, &value, 4); 
         return 4;
     }
 
@@ -282,35 +284,37 @@ static int reg_from_vex(ThreadId tid, Int regnum, void *rbuf, Int shadow)
     }
 
     switch (regnum) {
-    case rRAX: memcpy(rbuf, &state->guest_RAX, 8); return 8;
-    case rRCX: memcpy(rbuf, &state->guest_RCX, 8); return 8;
-    case rRDX: memcpy(rbuf, &state->guest_RDX, 8); return 8;
-    case rRBX: memcpy(rbuf, &state->guest_RBX, 8); return 8;
-    case rRSP: memcpy(rbuf, &state->guest_RSP, 8); return 8;
-    case rRBP: memcpy(rbuf, &state->guest_RBP, 8); return 8;
-    case rRSI: memcpy(rbuf, &state->guest_RSI, 8); return 8;
-    case rRDI: memcpy(rbuf, &state->guest_RDI, 8); return 8;
+    case rRAX: VG_(memcpy)(rbuf, &state->guest_RAX, 8); return 8;
+    case rRCX: VG_(memcpy)(rbuf, &state->guest_RCX, 8); return 8;
+    case rRDX: VG_(memcpy)(rbuf, &state->guest_RDX, 8); return 8;
+    case rRBX: VG_(memcpy)(rbuf, &state->guest_RBX, 8); return 8;
+    case rRSP: VG_(memcpy)(rbuf, &state->guest_RSP, 8); return 8;
+    case rRBP: VG_(memcpy)(rbuf, &state->guest_RBP, 8); return 8;
+    case rRSI: VG_(memcpy)(rbuf, &state->guest_RSI, 8); return 8;
+    case rRDI: VG_(memcpy)(rbuf, &state->guest_RDI, 8); return 8;
 
-    case rR8: memcpy(rbuf, &state->guest_R8, 8); return 8;
-    case rR9: memcpy(rbuf, &state->guest_R9, 8); return 8;
-    case rR10: memcpy(rbuf, &state->guest_R10, 8); return 8;
-    case rR11: memcpy(rbuf, &state->guest_R11, 8); return 8;
-    case rR12: memcpy(rbuf, &state->guest_R12, 8); return 8;
-    case rR13: memcpy(rbuf, &state->guest_R13, 8); return 8;
-    case rR14: memcpy(rbuf, &state->guest_R14, 8); return 8;
-    case rR15: memcpy(rbuf, &state->guest_R15, 8); return 8;
+    case rR8: VG_(memcpy)(rbuf, &state->guest_R8, 8); return 8;
+    case rR9: VG_(memcpy)(rbuf, &state->guest_R9, 8); return 8;
+    case rR10: VG_(memcpy)(rbuf, &state->guest_R10, 8); return 8;
+    case rR11: VG_(memcpy)(rbuf, &state->guest_R11, 8); return 8;
+    case rR12: VG_(memcpy)(rbuf, &state->guest_R12, 8); return 8;
+    case rR13: VG_(memcpy)(rbuf, &state->guest_R13, 8); return 8;
+    case rR14: VG_(memcpy)(rbuf, &state->guest_R14, 8); return 8;
+    case rR15: VG_(memcpy)(rbuf, &state->guest_R15, 8); return 8;
 
-    case rRIP: memcpy(rbuf, &state->guest_RIP, 8); return 8;
+    case rRIP: VG_(memcpy)(rbuf, &state->guest_RIP, 8); return 8;
     case rRFLAGS: 
         if (shadow) return 0;  // fixme
-        w = LibVEX_GuestAMD64_get_rflags(state); memcpy(rbuf, &w, 8); return 8;
+        w = LibVEX_GuestAMD64_get_rflags(state);
+        VG_(memcpy)(rbuf, &w, 8);
+        return 8;
     case rCS: return 0; // fixme state->guest_CS;
     case rSS: return 0; // fixme state->guest_SS;
     case rDS: return 0; // fixme state->guest_DS;
     case rES: return 0; // fixme state->guest_ES;
     case rFS: return 0; // fixme state->guest_FS;
     case rGS: 
-        memcpy(rbuf, &state->guest_GS_0x60, 8); return 8; // fixme state->guest_GS;
+        VG_(memcpy)(rbuf, &state->guest_GS_0x60, 8); return 8; // fixme state->guest_GS;
 
         // vex does not simulate 80-bit precision
         // fixme shift by FTOP?
@@ -329,13 +333,13 @@ static int reg_from_vex(ThreadId tid, Int regnum, void *rbuf, Int shadow)
         // vex only models the rounding bits (see libvex_guest_x86.h)
         UWord value = 0x037f;
         value |= state->guest_FPROUND << 10;
-        memcpy(rbuf, &value, 4); 
+        VG_(memcpy)(rbuf, &value, 4); 
         return 4;
     }
     case rFSTAT: {
         UWord value = state->guest_FC3210;
         value |= (state->guest_FTOP & 7) << 11;
-        memcpy(rbuf, &value, 4); 
+        VG_(memcpy)(rbuf, &value, 4); 
         return 4;
     }
     case rFTAG: {
@@ -349,7 +353,7 @@ static int reg_from_vex(ThreadId tid, Int regnum, void *rbuf, Int shadow)
             ((state->guest_FPTAG[5] ? 0 : 3) << 10) | 
             ((state->guest_FPTAG[6] ? 0 : 3) << 12) | 
             ((state->guest_FPTAG[7] ? 0 : 3) << 14);
-        memcpy(rbuf, &value, 4); 
+        VG_(memcpy)(rbuf, &value, 4); 
         return 4;
     }
     case rFISEG: 
@@ -359,32 +363,32 @@ static int reg_from_vex(ThreadId tid, Int regnum, void *rbuf, Int shadow)
     case rFOP: {
         // fixme lie
         UWord value = 0;
-        memcpy(rbuf, &value, 4);
+        VG_(memcpy)(rbuf, &value, 4);
         return 4;
     }
 
-    case rXMM0: memcpy(rbuf, &state->guest_XMM0, 16); return 16;
-    case rXMM1: memcpy(rbuf, &state->guest_XMM1, 16); return 16;
-    case rXMM2: memcpy(rbuf, &state->guest_XMM2, 16); return 16;
-    case rXMM3: memcpy(rbuf, &state->guest_XMM3, 16); return 16;
-    case rXMM4: memcpy(rbuf, &state->guest_XMM4, 16); return 16;
-    case rXMM5: memcpy(rbuf, &state->guest_XMM5, 16); return 16;
-    case rXMM6: memcpy(rbuf, &state->guest_XMM6, 16); return 16;
-    case rXMM7: memcpy(rbuf, &state->guest_XMM7, 16); return 16;
-    case rXMM8: memcpy(rbuf, &state->guest_XMM8, 16); return 16;
-    case rXMM9: memcpy(rbuf, &state->guest_XMM9, 16); return 16;
-    case rXMM10: memcpy(rbuf, &state->guest_XMM10, 16); return 16;
-    case rXMM11: memcpy(rbuf, &state->guest_XMM11, 16); return 16;
-    case rXMM12: memcpy(rbuf, &state->guest_XMM12, 16); return 16;
-    case rXMM13: memcpy(rbuf, &state->guest_XMM13, 16); return 16;
-    case rXMM14: memcpy(rbuf, &state->guest_XMM14, 16); return 16;
-    case rXMM15: memcpy(rbuf, &state->guest_XMM15, 16); return 16;
+    case rXMM0: VG_(memcpy)(rbuf, &state->guest_XMM0, 16); return 16;
+    case rXMM1: VG_(memcpy)(rbuf, &state->guest_XMM1, 16); return 16;
+    case rXMM2: VG_(memcpy)(rbuf, &state->guest_XMM2, 16); return 16;
+    case rXMM3: VG_(memcpy)(rbuf, &state->guest_XMM3, 16); return 16;
+    case rXMM4: VG_(memcpy)(rbuf, &state->guest_XMM4, 16); return 16;
+    case rXMM5: VG_(memcpy)(rbuf, &state->guest_XMM5, 16); return 16;
+    case rXMM6: VG_(memcpy)(rbuf, &state->guest_XMM6, 16); return 16;
+    case rXMM7: VG_(memcpy)(rbuf, &state->guest_XMM7, 16); return 16;
+    case rXMM8: VG_(memcpy)(rbuf, &state->guest_XMM8, 16); return 16;
+    case rXMM9: VG_(memcpy)(rbuf, &state->guest_XMM9, 16); return 16;
+    case rXMM10: VG_(memcpy)(rbuf, &state->guest_XMM10, 16); return 16;
+    case rXMM11: VG_(memcpy)(rbuf, &state->guest_XMM11, 16); return 16;
+    case rXMM12: VG_(memcpy)(rbuf, &state->guest_XMM12, 16); return 16;
+    case rXMM13: VG_(memcpy)(rbuf, &state->guest_XMM13, 16); return 16;
+    case rXMM14: VG_(memcpy)(rbuf, &state->guest_XMM14, 16); return 16;
+    case rXMM15: VG_(memcpy)(rbuf, &state->guest_XMM15, 16); return 16;
 
     case rMXCSR: {
         // vex only models the rounding bits (see libvex_guest_x86.h)
         UWord value = 0x1f80;
         value |= state->guest_SSEROUND << 13;
-        memcpy(rbuf, &value, 4); 
+        VG_(memcpy)(rbuf, &value, 4); 
         return 4;
     }
 
@@ -403,23 +407,23 @@ static void reg_to_vex(ThreadId tid, Int regnum, const void *rbuf)
     VexGuestX86State *state = &VG_(threads)[tid].arch.vex;
 
     switch (regnum) {
-    case rEAX: memcpy(&state->guest_EAX, rbuf, 4); break;
-    case rECX: memcpy(&state->guest_ECX, rbuf, 4); break;
-    case rEDX: memcpy(&state->guest_EDX, rbuf, 4); break;
-    case rEBX: memcpy(&state->guest_EBX, rbuf, 4); break;
-    case rESP: memcpy(&state->guest_ESP, rbuf, 4); break;
-    case rEBP: memcpy(&state->guest_EBP, rbuf, 4); break;
-    case rESI: memcpy(&state->guest_ESI, rbuf, 4); break;
-    case rEDI: memcpy(&state->guest_EDI, rbuf, 4); break;
+    case rEAX: VG_(memcpy)(&state->guest_EAX, rbuf, 4); break;
+    case rECX: VG_(memcpy)(&state->guest_ECX, rbuf, 4); break;
+    case rEDX: VG_(memcpy)(&state->guest_EDX, rbuf, 4); break;
+    case rEBX: VG_(memcpy)(&state->guest_EBX, rbuf, 4); break;
+    case rESP: VG_(memcpy)(&state->guest_ESP, rbuf, 4); break;
+    case rEBP: VG_(memcpy)(&state->guest_EBP, rbuf, 4); break;
+    case rESI: VG_(memcpy)(&state->guest_ESI, rbuf, 4); break;
+    case rEDI: VG_(memcpy)(&state->guest_EDI, rbuf, 4); break;
 
-    case rEIP: memcpy(&state->guest_EIP, rbuf, 4); break;
+    case rEIP: VG_(memcpy)(&state->guest_EIP, rbuf, 4); break;
     case rEFLAGS: break;// fixme LibVEX_GuestX86_put_eflags(state, value);
-    case rCS: memcpy(&state->guest_CS, rbuf, 2); break;
-    case rSS: memcpy(&state->guest_SS, rbuf, 2); break;
-    case rDS: memcpy(&state->guest_DS, rbuf, 2); break;
-    case rES: memcpy(&state->guest_ES, rbuf, 2); break;
-    case rFS: memcpy(&state->guest_FS, rbuf, 2); break;
-    case rGS: memcpy(&state->guest_GS, rbuf, 2); break;
+    case rCS: VG_(memcpy)(&state->guest_CS, rbuf, 2); break;
+    case rSS: VG_(memcpy)(&state->guest_SS, rbuf, 2); break;
+    case rDS: VG_(memcpy)(&state->guest_DS, rbuf, 2); break;
+    case rES: VG_(memcpy)(&state->guest_ES, rbuf, 2); break;
+    case rFS: VG_(memcpy)(&state->guest_FS, rbuf, 2); break;
+    case rGS: VG_(memcpy)(&state->guest_GS, rbuf, 2); break;
 
         // vex does not simulate 80-bit precision
         // fixme shift by FTOP?
@@ -434,14 +438,14 @@ static void reg_to_vex(ThreadId tid, Int regnum, const void *rbuf)
         convert_f80le_to_f64le(rbuf, &state->guest_FPREG[regnum-rST0]);
         break;
 
-    case rXMM0: memcpy(&state->guest_XMM0, rbuf, 16); break;
-    case rXMM1: memcpy(&state->guest_XMM1, rbuf, 16); break;
-    case rXMM2: memcpy(&state->guest_XMM2, rbuf, 16); break;
-    case rXMM3: memcpy(&state->guest_XMM3, rbuf, 16); break;
-    case rXMM4: memcpy(&state->guest_XMM4, rbuf, 16); break;
-    case rXMM5: memcpy(&state->guest_XMM5, rbuf, 16); break;
-    case rXMM6: memcpy(&state->guest_XMM6, rbuf, 16); break;
-    case rXMM7: memcpy(&state->guest_XMM7, rbuf, 16); break;
+    case rXMM0: VG_(memcpy)(&state->guest_XMM0, rbuf, 16); break;
+    case rXMM1: VG_(memcpy)(&state->guest_XMM1, rbuf, 16); break;
+    case rXMM2: VG_(memcpy)(&state->guest_XMM2, rbuf, 16); break;
+    case rXMM3: VG_(memcpy)(&state->guest_XMM3, rbuf, 16); break;
+    case rXMM4: VG_(memcpy)(&state->guest_XMM4, rbuf, 16); break;
+    case rXMM5: VG_(memcpy)(&state->guest_XMM5, rbuf, 16); break;
+    case rXMM6: VG_(memcpy)(&state->guest_XMM6, rbuf, 16); break;
+    case rXMM7: VG_(memcpy)(&state->guest_XMM7, rbuf, 16); break;
 
     default:  vg_assert(0);
     }
@@ -450,25 +454,25 @@ static void reg_to_vex(ThreadId tid, Int regnum, const void *rbuf)
     VexGuestAMD64State *state = &VG_(threads)[tid].arch.vex;
 
     switch (regnum) {
-    case rRAX: memcpy(&state->guest_RAX, rbuf, 8); break;
-    case rRCX: memcpy(&state->guest_RCX, rbuf, 8); break;
-    case rRDX: memcpy(&state->guest_RDX, rbuf, 8); break;
-    case rRBX: memcpy(&state->guest_RBX, rbuf, 8); break;
-    case rRSP: memcpy(&state->guest_RSP, rbuf, 8); break;
-    case rRBP: memcpy(&state->guest_RBP, rbuf, 8); break;
-    case rRSI: memcpy(&state->guest_RSI, rbuf, 8); break;
-    case rRDI: memcpy(&state->guest_RDI, rbuf, 8); break;
+    case rRAX: VG_(memcpy)(&state->guest_RAX, rbuf, 8); break;
+    case rRCX: VG_(memcpy)(&state->guest_RCX, rbuf, 8); break;
+    case rRDX: VG_(memcpy)(&state->guest_RDX, rbuf, 8); break;
+    case rRBX: VG_(memcpy)(&state->guest_RBX, rbuf, 8); break;
+    case rRSP: VG_(memcpy)(&state->guest_RSP, rbuf, 8); break;
+    case rRBP: VG_(memcpy)(&state->guest_RBP, rbuf, 8); break;
+    case rRSI: VG_(memcpy)(&state->guest_RSI, rbuf, 8); break;
+    case rRDI: VG_(memcpy)(&state->guest_RDI, rbuf, 8); break;
 
-    case rR8:  memcpy(&state->guest_R8,  rbuf, 8); break;
-    case rR9:  memcpy(&state->guest_R9,  rbuf, 8); break;
-    case rR10: memcpy(&state->guest_R10, rbuf, 8); break;
-    case rR11: memcpy(&state->guest_R11, rbuf, 8); break;
-    case rR12: memcpy(&state->guest_R12, rbuf, 8); break;
-    case rR13: memcpy(&state->guest_R13, rbuf, 8); break;
-    case rR14: memcpy(&state->guest_R14, rbuf, 8); break;
-    case rR15: memcpy(&state->guest_R15, rbuf, 8); break;
+    case rR8:  VG_(memcpy)(&state->guest_R8,  rbuf, 8); break;
+    case rR9:  VG_(memcpy)(&state->guest_R9,  rbuf, 8); break;
+    case rR10: VG_(memcpy)(&state->guest_R10, rbuf, 8); break;
+    case rR11: VG_(memcpy)(&state->guest_R11, rbuf, 8); break;
+    case rR12: VG_(memcpy)(&state->guest_R12, rbuf, 8); break;
+    case rR13: VG_(memcpy)(&state->guest_R13, rbuf, 8); break;
+    case rR14: VG_(memcpy)(&state->guest_R14, rbuf, 8); break;
+    case rR15: VG_(memcpy)(&state->guest_R15, rbuf, 8); break;
 
-    case rRIP: memcpy(&state->guest_RIP, rbuf, 8); break;
+    case rRIP: VG_(memcpy)(&state->guest_RIP, rbuf, 8); break;
     case rRFLAGS: break;// fixme LibVEX_GuestX86_put_eflags(state, value);
     case rCS: /* fixme state->guest_CS = value; */ break;
     case rSS: /* fixme state->guest_SS = value; */ break;
@@ -490,22 +494,22 @@ static void reg_to_vex(ThreadId tid, Int regnum, const void *rbuf)
         convert_f80le_to_f64le(rbuf, &state->guest_FPREG[regnum-rST0]);
         break;
 
-    case rXMM0: memcpy(&state->guest_XMM0, rbuf, 16); break;
-    case rXMM1: memcpy(&state->guest_XMM1, rbuf, 16); break;
-    case rXMM2: memcpy(&state->guest_XMM2, rbuf, 16); break;
-    case rXMM3: memcpy(&state->guest_XMM3, rbuf, 16); break;
-    case rXMM4: memcpy(&state->guest_XMM4, rbuf, 16); break;
-    case rXMM5: memcpy(&state->guest_XMM5, rbuf, 16); break;
-    case rXMM6: memcpy(&state->guest_XMM6, rbuf, 16); break;
-    case rXMM7: memcpy(&state->guest_XMM7, rbuf, 16); break;
-    case rXMM8: memcpy(&state->guest_XMM8, rbuf, 16); break;
-    case rXMM9: memcpy(&state->guest_XMM9, rbuf, 16); break;
-    case rXMM10: memcpy(&state->guest_XMM10, rbuf, 16); break;
-    case rXMM11: memcpy(&state->guest_XMM11, rbuf, 16); break;
-    case rXMM12: memcpy(&state->guest_XMM12, rbuf, 16); break;
-    case rXMM13: memcpy(&state->guest_XMM13, rbuf, 16); break;
-    case rXMM14: memcpy(&state->guest_XMM14, rbuf, 16); break;
-    case rXMM15: memcpy(&state->guest_XMM15, rbuf, 16); break;
+    case rXMM0: VG_(memcpy)(&state->guest_XMM0, rbuf, 16); break;
+    case rXMM1: VG_(memcpy)(&state->guest_XMM1, rbuf, 16); break;
+    case rXMM2: VG_(memcpy)(&state->guest_XMM2, rbuf, 16); break;
+    case rXMM3: VG_(memcpy)(&state->guest_XMM3, rbuf, 16); break;
+    case rXMM4: VG_(memcpy)(&state->guest_XMM4, rbuf, 16); break;
+    case rXMM5: VG_(memcpy)(&state->guest_XMM5, rbuf, 16); break;
+    case rXMM6: VG_(memcpy)(&state->guest_XMM6, rbuf, 16); break;
+    case rXMM7: VG_(memcpy)(&state->guest_XMM7, rbuf, 16); break;
+    case rXMM8: VG_(memcpy)(&state->guest_XMM8, rbuf, 16); break;
+    case rXMM9: VG_(memcpy)(&state->guest_XMM9, rbuf, 16); break;
+    case rXMM10: VG_(memcpy)(&state->guest_XMM10, rbuf, 16); break;
+    case rXMM11: VG_(memcpy)(&state->guest_XMM11, rbuf, 16); break;
+    case rXMM12: VG_(memcpy)(&state->guest_XMM12, rbuf, 16); break;
+    case rXMM13: VG_(memcpy)(&state->guest_XMM13, rbuf, 16); break;
+    case rXMM14: VG_(memcpy)(&state->guest_XMM14, rbuf, 16); break;
+    case rXMM15: VG_(memcpy)(&state->guest_XMM15, rbuf, 16); break;
 
     default:  vg_assert(0);
     }
@@ -947,6 +951,7 @@ static Bool handle_Q(Int sock, char *cmd)
 }
 
 
+__attribute__((unused))
 static Bool handle_v(Int sock, char *cmd)
 {
     if (0 == VG_(strncmp)(cmd, "Cont", 4)) {
