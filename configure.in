@@ -394,8 +394,12 @@ case "$VG_ARCH_MAX-$VG_OS" in
 	fi
         AC_MSG_RESULT([ok (${host_cpu}-${host_os})])
 	;;
-    x86-darwin|amd64-darwin)
-	# darwin: build universal by default and let the kernel sort it out
+     x86-darwin)
+	VG_PLATFORM_PRI="X86_DARWIN"
+	VG_PLATFORM_SEC=""
+        AC_MSG_RESULT([ok (${host_cpu}-${host_os})])
+	;;
+     amd64-darwin)
 	if test x$vg_cv_only64bit = xyes; then
 	   VG_PLATFORM_PRI="AMD64_DARWIN"
 	   VG_PLATFORM_SEC=""
