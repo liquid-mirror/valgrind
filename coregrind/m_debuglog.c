@@ -444,7 +444,7 @@ static UInt local_sys_write_stderr ( HChar* buf, Int n )
       "movq  $1, %%rdi\n"    /* push stderr */
       "movq  %1, %%rsi\n"    /* push buf */
       "movl  %2, %%edx\n"    /* push n */
-      "movl  $" VG_STRINGIFY(sysno_num(__NR_write)) ", %%eax\n"
+      "movl  $" VG_STRINGIFY(VG_DARWIN_SYSNO_NUM(__NR_write)) ", %%eax\n"
       "syscall\n"            /* write(stderr, buf, n) */
       "jnc   1f\n"           /* jump if no error */
       "movq  $-1, %%rax\n"   /* return -1 if error */
@@ -460,7 +460,7 @@ static UInt local_sys_getpid ( void )
 {
    UInt __res;
    __asm__ volatile (
-      "movl $" VG_STRINGIFY(sysno_num(__NR_getpid)) ", %%eax\n"
+      "movl $" VG_STRINGIFY(VG_DARWIN_SYSNO_NUM(__NR_getpid)) ", %%eax\n"
       "syscall\n"          /* getpid() */
       "movl %%eax, %0\n"   /* set __res = eax */
       : "=mr" (__res)

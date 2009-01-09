@@ -1,7 +1,6 @@
 
 /*--------------------------------------------------------------------*/
-/*--- Top level for kernel interface declarations.                 ---*/
-/*---                                         pub_core_vkiscnums.h ---*/
+/*--- Syscall numbers and related operations. pub_core_vkiscnums.h ---*/
 /*--------------------------------------------------------------------*/
 
 /*
@@ -47,11 +46,34 @@
 /* Make it possible to include this file in assembly sources. */
 #if !defined(VG_IN_ASSEMBLY_SOURCE)
 
-#if defined(VGO_aix5)
+#if defined(VGO_linux)
+   // Nothing
+
+#elif defined(VGO_aix5)
 /* Bind the given syscall name to the given number.  Returns True if
    successful, False if the name is unknown. */
 extern Bool VG_(aix5_register_syscall)( Int, UChar* );
+
+#elif defined(VGO_darwin)
+
+/* Macros for working out which syscall a syscall number refers to. */
+#define VG_DARWIN_SYSNO_INDEX(sysno) ((sysno) & VG_DARWIN_SYSCALL_NUMBER_MASK)
+#define VG_DARWIN_SYSNO_CLASS(sysno) ((sysno) >> VG_DARWIN_SYSCALL_CLASS_SHIFT)
+
+/* Convert a syscall number into a nicer form(?) */
+#if defined(VGA_x86)
+#  define VG_DARWIN_SYSNO_NUM(sysno) VG_DARWIN_SYSNO_PRINT(sysno)
+#elif defined(VGA_amd64)
+#  define VG_DARWIN_SYSNO_NUM(sysno) (sysno)
+#else
+#  error unknown arch
 #endif
+
+
+#else
+#  error Unknown OS
+#endif   // defined(VGO_*)
+
 
 #endif /* !defined(VG_IN_ASSEMBLY_SOURCE) */
 

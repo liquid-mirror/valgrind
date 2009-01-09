@@ -2451,9 +2451,14 @@ void h_post_syscall ( ThreadId tid, UInt sysno, SysRes res )
 
    if (i == n) {
       VG_(printf)("sysno == %u\n", sysno);
-#     if defined(VGO_aix5)
+#     elif defined(VGO_aix5)
+      VG_(printf)("sysno == %u\n", sysno);
       VG_(printf)("syscallnm == %s\n",
                   VG_(aix5_sysno_to_sysname)(sysno));
+#     elif defined(VGO_darwin)
+      VG_(printf)("sysno == %u\n", VG_DARWIN_SYSNO_PRINT(sysno));
+#     else
+#        error "Unsupported OS"
 #     endif
       VG_(tool_panic)("unhandled syscall");
    }

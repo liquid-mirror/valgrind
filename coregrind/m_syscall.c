@@ -144,7 +144,8 @@ SysRes VG_(mk_SysRes_ppc64_aix5) ( ULong res, ULong err ) {
    Some syscalls return a double-word result. On 32-bit architectures 
    this is encoded in a single ULong. */
 
-SysRes VG_(mk_SysRes_32_darwin) ( ULong val, UInt errflag ) {
+#if defined(VGA_x86)
+static SysRes mk_SysRes_32_darwin ( ULong val, UInt errflag ) {
    SysRes res;
    res.isError = errflag != 0;
    if (res.isError) {
@@ -159,7 +160,8 @@ SysRes VG_(mk_SysRes_32_darwin) ( ULong val, UInt errflag ) {
    return res;
 }
 
-SysRes VG_(mk_SysRes_64_darwin) ( UWord val, UWord val2, UWord errflag ) {
+#elif defined(VGA_amd64)
+static SysRes mk_SysRes_64_darwin ( UWord val, UWord val2, UWord errflag ) {
    SysRes res;
    res.isError = errflag != 0;
    if (res.isError) {
@@ -173,6 +175,10 @@ SysRes VG_(mk_SysRes_64_darwin) ( UWord val, UWord val2, UWord errflag ) {
    }
    return res;
 }
+
+#else
+#  error Unknown arch
+#endif
 
 #endif
 
@@ -712,24 +718,24 @@ SysRes VG_(do_syscall) ( UWord sysno, UWord a1, UWord a2, UWord a3,
 #elif defined(VGP_x86_darwin)
    UWord err;
    ULong val;
-   switch (sysno_class(sysno)) {
-   case SYSCALL_CLASS_UNIX:
+   switch (VG_DARWIN_SYSNO_CLASS(sysno)) {
+   case VG_DARWIN_SYSCALL_CLASS_UNIX:
        val = do_syscall_unix_WRK(a1,a2,a3,a4,a5,a6,a7,a8,
-                                 sysno_num(sysno), &err);
+                                 VG_DARWIN_SYSNO_NUM(sysno), &err);
        val &= ~(Addr)0;
        break;
-   case SYSCALL_CLASS_UX64:
+   case VG_DARWIN_SYSCALL_CLASS_UX64:
        val = do_syscall_unix_WRK(a1,a2,a3,a4,a5,a6,a7,a8,
-                                 sysno_num(sysno), &err);
+                                 VG_DARWIN_SYSNO_NUM(sysno), &err);
        break;
-   case SYSCALL_CLASS_MACH:
+   case VG_DARWIN_SYSCALL_CLASS_MACH:
        val = do_syscall_mach_WRK(a1,a2,a3,a4,a5,a6,a7,a8, 
-                                 sysno_num(sysno));
+                                 VG_DARWIN_SYSNO_NUM(sysno));
        err = 0;
        break;
-   case SYSCALL_CLASS_MDEP:
+   case VG_DARWIN_SYSCALL_CLASS_MDEP:
        val = do_syscall_mdep_WRK(a1,a2,a3,a4,a5,a6,a7,a8, 
-                                 sysno_num(sysno));
+                                 VG_DARWIN_SYSNO_NUM(sysno));
        err = 0;
        break;
    default:
@@ -737,21 +743,21 @@ SysRes VG_(do_syscall) ( UWord sysno, UWord a1, UWord a2, UWord a3,
        break;
    }
 
-   return VG_(mk_SysRes_32_darwin)( val, err );
+   return mk_SysRes_32_darwin( val, err );
 
 #elif defined(VGP_amd64_darwin)
    UWord err;
    UWord val, val2;
-   switch (sysno_class(sysno)) {
-   case SYSCALL_CLASS_UNIX:
-   case SYSCALL_CLASS_UX64:
+   switch (VG_DARWIN_SYSNO_CLASS(sysno)) {
+   case VG_DARWIN_SYSCALL_CLASS_UNIX:
+   case VG_DARWIN_SYSCALL_CLASS_UX64:
        val = do_syscall_unix_WRK(a1,a2,a3,a4,a5,a6,a7,a8,
-                                 sysno_num(sysno), &err, &val2);
+                                 VG_DARWIN_SYSNO_NUM(sysno), &err, &val2);
        break;
-   case SYSCALL_CLASS_MACH:
-   case SYSCALL_CLASS_MDEP:
+   case VG_DARWIN_SYSCALL_CLASS_MACH:
+   case VG_DARWIN_SYSCALL_CLASS_MDEP:
        val = do_syscall_mach_WRK(a1,a2,a3,a4,a5,a6,a7,a8, 
-                                 sysno_num(sysno));
+                                 VG_DARWIN_SYSNO_NUM(sysno));
        err = 0;
        break;
    default:
@@ -759,7 +765,7 @@ SysRes VG_(do_syscall) ( UWord sysno, UWord a1, UWord a2, UWord a3,
        break;
    }
 
-   return VG_(mk_SysRes_64_darwin)( val, val2, err );
+   return mk_SysRes_64_darwin( val, val2, err );
    
 #else
 #  error Unknown platform

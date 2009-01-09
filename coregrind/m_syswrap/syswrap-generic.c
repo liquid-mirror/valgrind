@@ -2148,7 +2148,15 @@ PRE(sys_exit)
 
 PRE(sys_ni_syscall)
 {
-   VG_(printf)("UNKNOWN syscall %d! (ni_syscall)\n", sysno_print(SYSNO));
+   VG_(printf)("UNKNOWN syscall %d! (ni_syscall)\n",
+#if defined(VGO_linux) || defined(VGO_aix5)
+      SYSNO
+#elif defined(VGO_darwin)
+      VG_DARWIN_SYSNO_PRINT(SYSNO)
+#else
+#  error Unknown OS
+#endif
+   );
    PRE_REG_READ0(long, "ni_syscall");
    SET_STATUS_Failure( VKI_ENOSYS );
 }

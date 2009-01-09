@@ -424,8 +424,6 @@ void record_port_mod_refs(mach_port_t port, mach_port_type_t right, Int delta)
 
    while(i) {
       if(i->port == port) {
-         int r;
-
          vg_assert(right != MACH_PORT_TYPE_DEAD_NAME);
          if (right & MACH_PORT_TYPE_SEND) {
             // send rights are refcounted
@@ -5985,10 +5983,9 @@ PRE(pthread_set_self)
    syscall tables
    ------------------------------------------------------------------ */
 
-/* Add a Darwin-specific, arch-independent wrapper to a syscall
-   table. */
-#define MACX_(sysno, name)    WRAPPER_ENTRY_X_(darwin, sysno_index(sysno), name) 
-#define MACXY(sysno, name)    WRAPPER_ENTRY_XY(darwin, sysno_index(sysno), name)
+/* Add a Darwin-specific, arch-independent wrapper to a syscall table. */
+#define MACX_(sysno, name)    WRAPPER_ENTRY_X_(darwin, VG_DARWIN_SYSNO_INDEX(sysno), name) 
+#define MACXY(sysno, name)    WRAPPER_ENTRY_XY(darwin, VG_DARWIN_SYSNO_INDEX(sysno), name)
 #define _____(sysno) GENX_(sysno, sys_ni_syscall)
 
 /*

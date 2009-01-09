@@ -319,22 +319,22 @@ UWord ML_(do_syscall_for_client_WRK)( Word syscallno,
                                       const vki_sigset_t *restore_mask,
                                       Word nsigwords)
 {
-    switch (sysno_class(syscallno)) {
-    case SYSCALL_CLASS_UNIX:
+    switch (VG_DARWIN_SYSNO_CLASS(syscallno)) {
+    case VG_DARWIN_SYSCALL_CLASS_UNIX:
         return ML_(do_syscall_for_client_unix_WRK)
-            (sysno_num(syscallno), guest_state, 
+            (VG_DARWIN_SYSNO_NUM(syscallno), guest_state, 
              syscall_mask, restore_mask, nsigwords);
-    case SYSCALL_CLASS_UX64:
+    case VG_DARWIN_SYSCALL_CLASS_UX64:
         return ML_(do_syscall_for_client_ux64_WRK)
-            (sysno_num(syscallno), guest_state, 
+            (VG_DARWIN_SYSNO_NUM(syscallno), guest_state, 
              syscall_mask, restore_mask, nsigwords);
-    case SYSCALL_CLASS_MACH:
+    case VG_DARWIN_SYSCALL_CLASS_MACH:
         return ML_(do_syscall_for_client_mach_WRK)
-            (sysno_num(syscallno), guest_state, 
+            (VG_DARWIN_SYSNO_NUM(syscallno), guest_state, 
              syscall_mask, restore_mask, nsigwords);
-    case SYSCALL_CLASS_MDEP:
+    case VG_DARWIN_SYSCALL_CLASS_MDEP:
         return ML_(do_syscall_for_client_mdep_WRK)
-            (sysno_num(syscallno), guest_state, 
+            (VG_DARWIN_SYSNO_NUM(syscallno), guest_state, 
              syscall_mask, restore_mask, nsigwords);
     default:
         vg_assert(0);
@@ -506,27 +506,27 @@ void getSyscallArgsFromGuestState ( /*OUT*/SyscallArgs*       canonical,
    case VEX_TRC_JMP_SYS_INT128:
        // int $0x80 = Unix, 64-bit result
        vg_assert(canonical->sysno >= 0);
-       canonical->sysno = SYSCALL_CONSTRUCT_UX64(canonical->sysno);
+       canonical->sysno = VG_DARWIN_SYSCALL_CONSTRUCT_UX64(canonical->sysno);
        break;
    case VEX_TRC_JMP_SYS_SYSENTER:
        // syscall = Unix, 32-bit result
        // OR        Mach, 32-bit result
        if (canonical->sysno >= 0) {
            // fixme hack  I386_SYSCALL_NUMBER_MASK
-           canonical->sysno = SYSCALL_CONSTRUCT_UNIX(canonical->sysno & 0xffff);
+           canonical->sysno = VG_DARWIN_SYSCALL_CONSTRUCT_UNIX(canonical->sysno & 0xffff);
        } else {
-           canonical->sysno = SYSCALL_CONSTRUCT_MACH(-canonical->sysno);
+           canonical->sysno = VG_DARWIN_SYSCALL_CONSTRUCT_MACH(-canonical->sysno);
        }
        break;
    case VEX_TRC_JMP_SYS_INT129:
        // int $0x81 = Mach, 32-bit result
        vg_assert(canonical->sysno < 0);
-       canonical->sysno = SYSCALL_CONSTRUCT_MACH(-canonical->sysno);
+       canonical->sysno = VG_DARWIN_SYSCALL_CONSTRUCT_MACH(-canonical->sysno);
        break;
    case VEX_TRC_JMP_SYS_INT130:
        // int $0x82 = mdep, 32-bit result
        vg_assert(canonical->sysno >= 0);
-       canonical->sysno = SYSCALL_CONSTRUCT_MDEP(canonical->sysno);
+       canonical->sysno = VG_DARWIN_SYSCALL_CONSTRUCT_MDEP(canonical->sysno);
        break;
    default: 
        vg_assert(0);
@@ -555,7 +555,7 @@ void getSyscallArgsFromGuestState ( /*OUT*/SyscallArgs*       canonical,
       // GrP fixme hack handle syscall()
       // GrP fixme what about __syscall() ?
       // stack[0] is return address
-      canonical->sysno = SYSCALL_CONSTRUCT_UNIX(gst->guest_RDI);
+      canonical->sysno = VG_DARWIN_SYSCALL_CONSTRUCT_UNIX(gst->guest_RDI);
       vg_assert(canonical->sysno != __NR_syscall);
       canonical->arg1  = gst->guest_RSI;
       canonical->arg2  = gst->guest_RDX;
@@ -567,7 +567,7 @@ void getSyscallArgsFromGuestState ( /*OUT*/SyscallArgs*       canonical,
       canonical->arg8  = stack[3];
       
       PRINT("SYSCALL[%d,?](%5lld) syscall(#%x, ...); please stand by...\n",
-            VG_(getpid)(), /*tid,*/ (Long)0, sysno_print(canonical->sysno));
+            VG_(getpid)(), /*tid,*/ (Long)0, VG_DARWIN_SYSNO_PRINT(canonical->sysno));
    }
 
    // no canonical->sysno adjustment needed
@@ -649,7 +649,7 @@ void putSyscallArgsIntoGuestState ( /*IN*/ SyscallArgs*       canonical,
    VexGuestX86State* gst = (VexGuestX86State*)gst_vanilla;
    UWord *stack = (UWord *)gst->guest_ESP;
 
-   gst->guest_EAX = sysno_num(canonical->sysno);
+   gst->guest_EAX = VG_DARWIN_SYSNO_NUM(canonical->sysno);
 
    // GrP fixme? gst->guest_TEMP_EFLAG_C = 0;
    // stack[0] is return address
@@ -666,7 +666,7 @@ void putSyscallArgsIntoGuestState ( /*IN*/ SyscallArgs*       canonical,
    VexGuestAMD64State* gst = (VexGuestAMD64State*)gst_vanilla;
    UWord *stack = (UWord *)gst->guest_RSP;
 
-   gst->guest_RAX = sysno_num(canonical->sysno);
+   gst->guest_RAX = VG_DARWIN_SYSNO_NUM(canonical->sysno);
    // GrP fixme? gst->guest_TEMP_EFLAG_C = 0;
 
    // stack[0] is return address
@@ -732,25 +732,25 @@ void getSyscallStatusFromGuestState ( /*OUT*/SyscallStatus*     canonical,
    UWord val2;
 
    switch (gst->guest_SC_CLASS) {
-   case SYSCALL_CLASS_UX64:
+   case VG_DARWIN_SYSCALL_CLASS_UX64:
        // int $0x80 = Unix, 64-bit result
        err = carry;
        val = gst->guest_EAX;
        val2 = gst->guest_EDX;
        break;
-   case SYSCALL_CLASS_UNIX:
+   case VG_DARWIN_SYSCALL_CLASS_UNIX:
        // syscall = Unix, 32-bit result
        err = carry;
        val = gst->guest_EAX;
        val2 = 0;
        break;
-   case SYSCALL_CLASS_MACH:
+   case VG_DARWIN_SYSCALL_CLASS_MACH:
        // int $0x81 = Mach, 32-bit result
        err = 0;
        val = gst->guest_EAX;
        val2 = 0;
        break;
-   case SYSCALL_CLASS_MDEP:
+   case VG_DARWIN_SYSCALL_CLASS_MDEP:
        // int $0x82 = mdep, 32-bit result
        err = 0;
        val = gst->guest_EAX;
@@ -782,25 +782,25 @@ void getSyscallStatusFromGuestState ( /*OUT*/SyscallStatus*     canonical,
    UWord val2;
 
    switch (gst->guest_SC_CLASS) {
-   case SYSCALL_CLASS_UX64:
+   case VG_DARWIN_SYSCALL_CLASS_UX64:
        // int $0x80 = Unix, 128-bit result
        err = carry;
        val = gst->guest_RAX;
        val2 = gst->guest_RDX;
        break;
-   case SYSCALL_CLASS_UNIX:
+   case VG_DARWIN_SYSCALL_CLASS_UNIX:
        // syscall = Unix, 64-bit result
        err = carry;
        val = gst->guest_RAX;
        val2 = 0;
        break;
-   case SYSCALL_CLASS_MACH:
+   case VG_DARWIN_SYSCALL_CLASS_MACH:
        // int $0x81 = Mach, 64-bit result
        err = 0;
        val = gst->guest_RAX;
        val2 = 0;
        break;
-   case SYSCALL_CLASS_MDEP:
+   case VG_DARWIN_SYSCALL_CLASS_MDEP:
        // int $0x82 = mdep, 64-bit result
        err = 0;
        val = gst->guest_RAX;
@@ -925,13 +925,13 @@ void putSyscallStatusIntoGuestState ( /*IN*/ ThreadId tid,
    vg_assert(canonical->what == SsComplete);
 
    switch (gst->guest_SC_CLASS) {
-   case SYSCALL_CLASS_UX64:
+   case VG_DARWIN_SYSCALL_CLASS_UX64:
        // int $0x80 = Unix, 64-bit result
        if (!canonical->sres.isError) gst->guest_EDX = canonical->sres.res2;
        VG_TRACK( post_reg_write, Vg_CoreSysCall, tid, 
                  OFFSET_x86_EDX, sizeof(UWord) );
-       // FALL-THROUGH to SYSCALL_CLASS_UNIX
-   case SYSCALL_CLASS_UNIX:
+       // FALL-THROUGH to VG_DARWIN_SYSCALL_CLASS_UNIX
+   case VG_DARWIN_SYSCALL_CLASS_UNIX:
        // syscall = Unix, 32-bit result
        gst->guest_EAX = val;
        LibVEX_GuestX86_put_eflag_c(canonical->sres.isError, gst);
@@ -941,13 +941,13 @@ void putSyscallStatusIntoGuestState ( /*IN*/ ThreadId tid,
        VG_TRACK( post_reg_write, Vg_CoreSysCall, tid, 
                  offsetof(VexGuestX86State, guest_CC_DEP1), sizeof(UInt) );
        break;
-   case SYSCALL_CLASS_MACH:
+   case VG_DARWIN_SYSCALL_CLASS_MACH:
        // int $0x81 = Mach, 32-bit result
        gst->guest_EAX = val;
        VG_TRACK( post_reg_write, Vg_CoreSysCall, tid, 
                  OFFSET_x86_EAX, sizeof(UWord) );
        break;
-   case SYSCALL_CLASS_MDEP:
+   case VG_DARWIN_SYSCALL_CLASS_MDEP:
        // int $0x82 = mdep, 32-bit result
        gst->guest_EAX = val;
        VG_TRACK( post_reg_write, Vg_CoreSysCall, tid, 
@@ -965,7 +965,7 @@ void putSyscallStatusIntoGuestState ( /*IN*/ ThreadId tid,
    vg_assert(canonical->what == SsComplete);
 
    switch (gst->guest_SC_CLASS) {
-   case SYSCALL_CLASS_UNIX:
+   case VG_DARWIN_SYSCALL_CLASS_UNIX:
        // syscall = Unix, 32-bit result
        if (!canonical->sres.isError) gst->guest_RDX = canonical->sres.res2;
        VG_TRACK( post_reg_write, Vg_CoreSysCall, tid, 
@@ -978,13 +978,13 @@ void putSyscallStatusIntoGuestState ( /*IN*/ ThreadId tid,
        VG_TRACK( post_reg_write, Vg_CoreSysCall, tid, 
                  offsetof(VexGuestAMD64State, guest_CC_DEP1), sizeof(ULong) );
        break;
-   case SYSCALL_CLASS_MACH:
+   case VG_DARWIN_SYSCALL_CLASS_MACH:
        // int $0x81 = Mach, 32-bit result
        gst->guest_RAX = val;
        VG_TRACK( post_reg_write, Vg_CoreSysCall, tid, 
                  OFFSET_amd64_RAX, sizeof(UWord) );
        break;
-   case SYSCALL_CLASS_MDEP:
+   case VG_DARWIN_SYSCALL_CLASS_MDEP:
        // int $0x82 = mdep, 32-bit result
        gst->guest_RAX = val;
        VG_TRACK( post_reg_write, Vg_CoreSysCall, tid, 
@@ -1128,7 +1128,7 @@ void bad_before ( ThreadId              tid,
                   /*OUT*/UWord*         flags )
 {
    VG_(message)
-      (Vg_DebugMsg,"WARNING: unhandled syscall: %lld", (Long)sysno_print(args->sysno));
+      (Vg_DebugMsg,"WARNING: unhandled syscall: %lld", (Long)VG_DARWIN_SYSNO_PRINT(args->sysno));
 #  if defined(VGO_aix5)
    VG_(message)
       (Vg_DebugMsg,"           name of syscall: \"%s\"",
@@ -1169,21 +1169,21 @@ static const SyscallTableEntry* get_syscall_entry ( Int syscallno,
    sys = ML_(get_ppc64_aix5_syscall_entry) ( syscallno );
 
 #  elif defined(VGO_darwin)
-   Int idx = sysno_index(syscallno);
+   Int idx = VG_DARWIN_SYSNO_INDEX(syscallno);
 
-   switch (sysno_class(syscallno)) {
-   case SYSCALL_CLASS_UX64:
-   case SYSCALL_CLASS_UNIX:
+   switch (VG_DARWIN_SYSNO_CLASS(syscallno)) {
+   case VG_DARWIN_SYSCALL_CLASS_UX64:
+   case VG_DARWIN_SYSCALL_CLASS_UNIX:
        if (idx >= 0  &&  idx < ML_(syscall_table_size)) {
            sys = &ML_(syscall_table)[idx];
        }
        break;
-   case SYSCALL_CLASS_MACH:
+   case VG_DARWIN_SYSCALL_CLASS_MACH:
        if (idx >= 0  &&  idx < ML_(mach_trap_table_size)) {
            sys = &ML_(mach_trap_table)[idx];
        }
        break;
-   case SYSCALL_CLASS_MDEP:
+   case VG_DARWIN_SYSCALL_CLASS_MDEP:
        if (idx >= 0  &&  idx < ML_(mdep_trap_table_size)) {
            sys = &ML_(mdep_trap_table)[idx];
        }
@@ -1367,7 +1367,7 @@ void VG_(client_syscall) ( ThreadId tid, UInt trc )
 
 #if defined(VGO_darwin)
    // Record syscall class.
-   tst->arch.vex.guest_SC_CLASS = sysno_class(sysno);
+   tst->arch.vex.guest_SC_CLASS = VG_DARWIN_SYSNO_CLASS(sysno);
 #endif
 
    /* The default what-to-do-next thing is hand the syscall to the
@@ -1404,7 +1404,7 @@ void VG_(client_syscall) ( ThreadId tid, UInt trc )
    */
 
    {
-       PRINT("SYSCALL[%d,%d](%5lld) ", VG_(getpid)(), tid, (Long)sysno_print(sysno));
+       PRINT("SYSCALL[%d,%d](%5lld) ", VG_(getpid)(), tid, (Long)VG_DARWIN_SYSNO_PRINT(sysno));
    // VG_(check_segments)("### before syscall");
    }
 
@@ -1526,7 +1526,7 @@ void VG_(client_syscall) ( ThreadId tid, UInt trc )
          vg_assert(sci->status.what == SsComplete);
 
          PRINT("SYSCALL[%d,%d](%5ld) ... [async] --> %s(0x%llx)",
-               VG_(getpid)(), tid, sysno_print(sysno), 
+               VG_(getpid)(), tid, VG_DARWIN_SYSNO_PRINT(sysno), 
                sci->status.sres.isError ? "Failure" : "Success",
                sci->status.sres.isError ? (ULong)sci->status.sres.err
                                         : (ULong)sci->status.sres.res );
@@ -1984,7 +1984,7 @@ void ML_(wqthread_continue_NORETURN)(ThreadId tid)
    VG_(acquire_BigLock)(tid, "wqthread_continue");
 
    PRINT("SYSCALL[%d,%d](%5lld) workq_ops() starting new workqueue item\n", 
-         VG_(getpid)(), tid, (Long)sysno_print(__NR_workq_ops));
+         VG_(getpid)(), tid, (Long)VG_DARWIN_SYSNO_PRINT(__NR_workq_ops));
 
    vg_assert(VG_(is_valid_tid)(tid));
    vg_assert(tid >= 1 && tid < VG_N_THREADS);

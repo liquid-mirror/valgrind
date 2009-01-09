@@ -1,7 +1,6 @@
 
 /*--------------------------------------------------------------------*/
-/*--- Top level for kernel interface system call numbers.          ---*/
-/*---                                         pub_tool_vkiscnums.h ---*/
+/*--- Syscall numbers and related operations. pub_tool_vkiscnums.h ---*/
 /*--------------------------------------------------------------------*/
 
 /*
@@ -43,6 +42,10 @@
    different for each process (in principle; in practice they rarely
    change).  32- and 64-bit AIX5 share a common "implementation".
 
+   On Darwin the __NR_name consts are #define'd constants which are
+   computed using various macros.  32- and 64-bit Darwin share a common
+   "implementation" also.
+
    This file is merely a top-level "steering" file, which pulls in the
    correct bits for the relevant platform.  You should not directly
    #include any file in include/vki; instead #include only this one or
@@ -67,18 +70,22 @@
 #elif defined(VGP_ppc32_aix5) || defined(VGP_ppc64_aix5)
 #  include "vki/vki-scnums-aix5.h"
 
-/* Make it possible to include this file in assembly sources. */
-#if !defined(VG_IN_ASSEMBLY_SOURCE)
-
 /* Look up the name of a syscall, using the bindings previously
    created by VG_(aix5_register_syscall), for the purposes of making
    error messages. */
+// DDD: should combine this and VG_DARWIN_SYSNO_PRINT into a single generic
+// function which returns a string, something like VG_(pprint_sysno)().
 extern UChar* VG_(aix5_sysno_to_sysname)( Int sysno );
 
-#endif /* !defined(VG_IN_ASSEMBLY_SOURCE) */
-
-#elif defined(VGO_darwin)
+#elif defined(VGP_x86_darwin) || defined(VGP_amd64_darwin)
 #  include "vki/vki-scnums-darwin.h"
+
+/* Convert a syscall number into a nice form for printing. */
+#define VG_DARWIN_SYSNO_PRINT(sysno) \
+    ((VG_DARWIN_SYSNO_CLASS(sysno) == VG_DARWIN_SYSCALL_CLASS_MACH) \
+    ? -VG_DARWIN_SYSNO_INDEX(sysno) \
+    :  VG_DARWIN_SYSNO_INDEX(sysno) \
+    )
 
 #else
 #  error Unknown platform
