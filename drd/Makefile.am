@@ -23,7 +23,6 @@ endif
 
 VGPRELOAD_DRD_SOURCES =    \
   drd_gomp_intercepts.c    \
-  drd_libc_intercepts.c    \
   drd_pthread_intercepts.c \
   drd_qtcore_intercepts.c  \
   drd_strmem_intercepts.c
