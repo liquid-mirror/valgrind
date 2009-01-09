@@ -38,7 +38,7 @@
 #include "pub_tool_signals.h"       // I want to get rid of this header...
 
 /* Highest signal the kernel will let us use */
-// GrP fixme extern Int VG_(max_signal);
+extern Int VG_(max_signal);
 
 /* Use high signals because native pthreads wants to use low */
 #define VG_SIGVGKILL       (VG_(max_signal)-0)

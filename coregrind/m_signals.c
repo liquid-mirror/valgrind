@@ -107,6 +107,9 @@
 #include "pub_core_tooliface.h"
 #include "pub_core_coredump.h"
 
+/* Maximum usable signal. */
+Int VG_(max_signal) = _VKI_NSIG;
+
 #if defined(VGO_darwin)
 
 #warning GrP fixme signals
@@ -122,9 +125,6 @@ static void async_signalhandler ( Int sigNo, vki_siginfo_t *info, struct vki_uco
 static void sigvgkill_handler	( Int sigNo, vki_siginfo_t *info, struct vki_ucontext * );
 
 static const Char *signame(Int sigNo);
-
-/* Maximum usable signal. */
-Int VG_(max_signal) = _VKI_NSIG;
 
 #define N_QUEUED_SIGNALS	8
 

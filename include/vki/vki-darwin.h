@@ -87,9 +87,6 @@
 #define VKI_MAX_PAGE_SHIFT VKI_PAGE_SHIFT
 #define VKI_MAX_PAGE_SIZE VKI_PAGE_SIZE
 
-// signals
-#define vgPlain_max_signal _VKI_NSIG
-
 // types
 typedef uint32_t vki_u32;
 
