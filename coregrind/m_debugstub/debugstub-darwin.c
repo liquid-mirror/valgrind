@@ -1366,8 +1366,48 @@ static void debugstub_thread(void)
     }
 }
 
+static void init_thread_state(thread_state_t state, 
+                              UWord fn, UWord arg1, UWord arg2, 
+                              char *stack, UWord stack_size)
+{
+#if defined(VGP_x86_darwin)
+    x86_thread_state32_t *regs = (x86_thread_state32_t *)state;
+    UWord *sp = (UWord *)(stack+stack_size-64);
+    VG_(memset)(regs, 0, sizeof(*regs));
+    // Push parameters
+    *--sp = 0;
+    *--sp = 0;
+    *--sp = arg2;
+    *--sp = arg1;
+    // Push return address
+    *--sp = 0;
+    regs->__esp = (Addr)sp;
+    regs->__eip = fn;
+#elif defined(VGP_amd64_darwin)
+    x86_thread_state64_t *regs = (x86_thread_state64_t *)state;
+    UWord *sp = (UWord *)(stack+stack_size-64);
+    VG_(memset)(regs, 0, sizeof(*regs));
+    *--sp = 0;  // Push return address
+    regs->__rsp = (Addr)sp;
+    regs->__rip = fn;
+    regs->__rdi = arg1;
+    regs->__rsi = arg2;
+#else
+#error unknown architecture
+#endif
+}
+
 static void start_helper_thread(void (*fn)(void))
 {
+// GrP MACHINE_THREAD_STATE is useless
+#if defined(VGP_x86_darwin)
+#  define NATIVE_THREAD_STATE       x86_THREAD_STATE32
+#  define NATIVE_THREAD_STATE_COUNT x86_THREAD_STATE32_COUNT
+#else
+#  define NATIVE_THREAD_STATE       x86_THREAD_STATE64
+#  define NATIVE_THREAD_STATE_COUNT x86_THREAD_STATE64_COUNT
+#endif
+
 #   define stacksize 4096
     thread_act_t helper_thread;
     thread_state_data_t helper_state;
