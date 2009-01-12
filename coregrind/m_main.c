@@ -2052,11 +2052,15 @@ Int valgrind_main ( Int argc, HChar **argv, HChar **envp )
    // Listen for remote debugger
    //   p: scheduler, process_cmd_line_options()
    //--------------------------------------------------------------
+#if defined(VGO_darwin)
    if (VG_(clo_db_listen)) {
        VG_(debugLog)(1, "main", "Listening for debugger on port %d\n", 
                      VG_(clo_db_listen_port));
        VG_(debugstub_init)();
    }
+#else
+   // DDD: Only Darwin does this for the moment.
+#endif
 
    //--------------------------------------------------------------
    // Read suppression file

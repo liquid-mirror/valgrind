@@ -186,7 +186,9 @@ static SysRes mk_SysRes_64_darwin ( UWord val, UWord val2, UWord errflag ) {
 SysRes VG_(mk_SysRes_Error) ( UWord err ) {
    SysRes r;
    r.res     = 0;
+#if defined(VGO_darwin)
    r.res2    = 0;
+#endif
    r.err     = err;
    r.isError = True;
    return r;
@@ -195,7 +197,9 @@ SysRes VG_(mk_SysRes_Error) ( UWord err ) {
 SysRes VG_(mk_SysRes_Success) ( UWord res ) {
    SysRes r;
    r.res     = res;
+#if defined(VGO_darwin)
    r.res2    = 0;
+#endif
    r.err     = 0;
    r.isError = False;
    return r;

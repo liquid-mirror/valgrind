@@ -235,7 +235,6 @@ COREGRIND_SOURCES_COMMON = \
 	m_clientstate.c \
 	m_debugger.c \
 	m_debuglog.c \
-	m_debugstub.c \
 	m_errormgr.c \
 	m_execontext.c \
 	m_hashtable.c \
@@ -288,25 +287,33 @@ COREGRIND_SOURCES_COMMON = \
 
 COREGRIND_LINUX_SOURCE = \
 	m_coredump/coredump-elf.c \
-	m_syswrap/syswrap-linux.c \
-	m_syswrap/syswrap-linux-variants.c \
 	m_aspacemgr/aspacemgr-linux.c \
-	m_initimg/initimg-linux.c \
 	m_debuginfo/readelf.c \
 	m_debuginfo/readdwarf.c \
 	m_debuginfo/readdwarf3.c \
 	m_debuginfo/readstabs.c \
+	m_debugstub/debugstub-linux.c \
+	m_initimg/initimg-linux.c \
+	m_syswrap/syswrap-linux.c \
+	m_syswrap/syswrap-linux-variants.c \
 	m_syswrap/syswrap-generic.c
 
 COREGRIND_AIX5_SOURCE = \
 	m_aspacemgr/aspacemgr-aix5.c \
-	m_initimg/initimg-aix5.c \
 	m_debuginfo/readxcoff.c \
+	m_debugstub/debugstub-aix5.c \
+	m_initimg/initimg-aix5.c \
 	m_syswrap/syswrap-aix5.c
 
     # Note that the *User.c files are generated using 'mig' from $mach_defs
     # above.
 COREGRIND_DARWIN_SOURCE = \
+	m_aspacemgr/aspacemgr-linux.c \
+	m_debuginfo/readdwarf.c \
+	m_debuginfo/readdwarf3.c \
+	m_debuginfo/readstabs.c \
+	m_debuginfo/readmacho.c \
+	m_debugstub/debugstub-darwin.c \
 	m_mach/clockUser.c \
 	m_mach/clock_privUser.c \
 	m_mach/clock_replyUser.c \
@@ -326,15 +333,10 @@ COREGRIND_DARWIN_SOURCE = \
 	m_mach/vm_mapUser.c \
 	m_mach/mach_basics.c \
 	m_mach/mach_msg.c \
-	m_aspacemgr/aspacemgr-linux.c \
 	m_initimg/initimg-darwin.c \
 	m_initimg/initimg-pathscan.c \
 	m_syswrap/syswrap-darwin.c \
-	m_syswrap/syswrap-generic.c \
-	m_debuginfo/readdwarf.c \
-	m_debuginfo/readdwarf3.c \
-	m_debuginfo/readstabs.c \
-	m_debuginfo/readmacho.c
+	m_syswrap/syswrap-generic.c
 
 libcoregrind_x86_linux_a_SOURCES = \
 	$(COREGRIND_SOURCES_COMMON) \

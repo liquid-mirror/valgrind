@@ -1,14 +1,13 @@
-
 /*--------------------------------------------------------------------*/
-/*--- Mach kernel interface module.                pub_core_mach.h ---*/
+/*--- gdb remote debugging                           m_debugstub.c ---*/
 /*--------------------------------------------------------------------*/
 
 /*
    This file is part of Valgrind, a dynamic binary instrumentation
    framework.
 
-   Copyright (C) 2005 Apple Inc.
-      Greg Parker  gparker@apple.com
+   Copyright (C) 2009 Nicholas Nethercote
+      njn@valgrind.org
 
    This program is free software; you can redistribute it and/or
    modify it under the terms of the GNU General Public License as
@@ -28,26 +27,34 @@
    The GNU General Public License is contained in the file COPYING.
 */
 
-#ifndef __PUB_CORE_MACH_H
-#define __PUB_CORE_MACH_H
+#include "pub_core_basics.h"
+#include "pub_core_libcassert.h"
 
-//--------------------------------------------------------------------
-// PURPOSE: This module contains the Mach kernel interface, 
-// for operating systems like Darwin / Mac OS X that use it.
-//--------------------------------------------------------------------
+#include "pub_core_debugstub.h"
 
-// Set which platforms have Mach kernel interfaces.
-#if defined(VGO_darwin)
-#  define VG_HAVE_MACH 1
-#else
-#  undef VG_HAVE_MACH
-#endif
 
-// Call this early in Valgrind's main(). It depends on nothing.
-extern void VG_(mach_init)(void);
+void VG_(debugstub_init)(void)
+{
+   I_die_here;
+}
 
-#endif
+void VG_(debugstub_write_reply)(Int sock, const Char* contents)
+{
+   I_die_here;
+}
 
-/*--------------------------------------------------------------------*/
-/*--- end                                                          ---*/
-/*--------------------------------------------------------------------*/
+void VG_(debugstub_tohex)(Char *dst, const void *src, Int len)
+{
+   I_die_here;
+}
+
+void VG_(debugstub_fromhex)(void *dst, const Char *src, Int len)
+{
+   I_die_here;
+}
+
+Int VG_(reg_for_regnum)(Int regnum, void *rbuf, Int shadow)
+{
+   I_die_here;
+}
+

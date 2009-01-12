@@ -828,41 +828,6 @@ static void init_thread_state(thread_state_t state,
 
 #endif
 
-void VG_(start_helper_thread)(void (*fn)(void))
-{
-#if defined(VGO_darwin)
-#   define stacksize 4096
-    thread_act_t helper_thread;
-    thread_state_data_t helper_state;
-    mach_msg_type_number_t count;
-    kern_return_t kr;
-    char *helper_stack = 
-        VG_(arena_malloc)(VG_AR_CORE, "helper_thread.stack", stacksize);
-    
-    count = NATIVE_THREAD_STATE_COUNT;
-    kr = thread_get_state(mach_thread_self(), NATIVE_THREAD_STATE, 
-                          (thread_state_t)&helper_state, 
-                          &count);
-    vg_assert(kr == 0);
-    vg_assert(count == NATIVE_THREAD_STATE_COUNT);
-    init_thread_state((thread_state_t)&helper_state, 
-                      (UWord)fn, 0, 0, 
-                      helper_stack, stacksize);
-
-    kr = thread_create_running(mach_task_self(), 
-                               NATIVE_THREAD_STATE, 
-                               (thread_state_t)&helper_state, 
-                               NATIVE_THREAD_STATE_COUNT, 
-                               &helper_thread);
-    vg_assert(kr == 0);
-
-#   undef stacksize
-#else
-#  error unknown os
-#endif
-}
-
-
 /*--------------------------------------------------------------------*/
 /*--- end                                                          ---*/
 /*--------------------------------------------------------------------*/

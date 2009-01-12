@@ -157,6 +157,11 @@ typedef unsigned long           vki_u_long;
 
 typedef unsigned int	        vki_uint;
 
+// [[Other OSes (eg. Darwin) have a socklen_t type used in bind(), accept(),
+// etc, but Linux just uses 'int'.  So we use this typedef, which is *not*
+// present in the Linux kernel. --njn]]
+typedef int                     vki_socklen_t;
+
 //----------------------------------------------------------------------
 // Now the rest of the arch-specific stuff
 //----------------------------------------------------------------------

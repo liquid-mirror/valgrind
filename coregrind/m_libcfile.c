@@ -693,9 +693,7 @@ UShort VG_(ntohs) ( UShort x )
 */
 Int VG_(connect_via_socket)( UChar* str )
 {
-#if defined(VGO_aix5)
-   I_die_here;
-#else
+#if defined(VGO_linux) || defined(VGO_darwin)
    Int sd, res;
    struct vki_sockaddr_in servAddr;
    UInt   ip   = 0;
@@ -730,6 +728,12 @@ Int VG_(connect_via_socket)( UChar* str )
    }
 
    return sd;
+
+#elif defined(VGO_aix5)
+   I_die_here;
+
+#else
+#  error Unknown OS
 #endif
 }
 
@@ -819,24 +823,38 @@ Int VG_(socket) ( Int domain, Int type, Int protocol )
 
 Int VG_(bind)   ( Int sock, const struct vki_sockaddr *addr, vki_socklen_t len)
 {
-#if defined(VGO_darwin)
+#if defined(VGO_linux)
+    I_die_here;
+
+#elif defined(VGO_aix5)
+    I_die_here;
+
+#elif defined(VGO_darwin)
     SysRes res;
     res = VG_(do_syscall3)(__NR_bind, sock, (UWord)addr, (UWord)len);
     return res.isError ? -1 : res.res;
-#                else
-#   error unknown os
-#                endif
+
+#else
+#   error Unknown OS
+#endif
 }
 
 
 Int VG_(listen) ( Int sock, Int backlog )
 {
-#if defined(VGO_darwin)
+#if defined(VGO_linux)
+    I_die_here;
+
+#elif defined(VGO_aix5)
+    I_die_here;
+
+#elif defined(VGO_darwin)
     SysRes res;
     res = VG_(do_syscall2)(__NR_listen, sock, backlog);
     return res.isError ? -1 : res.res;
+
 #else
-#   error unknown os
+#   error Unknown OS
 #endif
 }
 
@@ -844,12 +862,19 @@ Int VG_(listen) ( Int sock, Int backlog )
 // GrP fixme safe_fd?
 Int VG_(accept) ( Int sock, struct vki_sockaddr *addr, vki_socklen_t *len)
 {
-#if defined(VGO_darwin)
+#if defined(VGO_linux)
+    I_die_here;
+
+#elif defined(VGO_aix5)
+    I_die_here;
+
+#elif defined(VGO_darwin)
     SysRes res;
     res = VG_(do_syscall3)(__NR_accept, sock, (UWord)addr, (UWord)len);
     return res.isError ? -1 : res.res;
+
 #else
-#   error unknown os
+#   error Unknown OS
 #endif
 }
 
@@ -889,16 +914,12 @@ Int VG_(write_socket)( Int sd, void *msg, Int count )
 {
    /* This is actually send(). */
 
-#if defined(VGO_linux)
-   /* Requests not to send SIGPIPE on errors on stream oriented
-      sockets when the other end breaks the connection. The EPIPE
-      error is still returned. */
-   Int flags = VKI_MSG_NOSIGNAL;
-#elif defined(VGO_darwin)
-   /* VG_(socket)() sets SO_NOSIGPIPE to get EPIPE instead of SIGPIPE */
-#else
-#  error Unknown arch
-#endif
+   /* For Linux, VKI_MSG_NOSIGNAL is a request not to send SIGPIPE on 
+      errors on stream oriented sockets when the other end breaks the
+      connection. The EPIPE error is still returned.
+
+      For Darwin, VG_(socket)() sets SO_NOSIGPIPE to get EPIPE instead of 
+      SIGPIPE */
 
 #if defined(VGP_x86_linux) || defined(VGP_ppc32_linux) || defined(VGP_ppc64_linux)
    SysRes res;
@@ -919,13 +940,13 @@ Int VG_(write_socket)( Int sd, void *msg, Int count )
 #elif defined(VGP_ppc32_aix5) || defined(VGP_ppc64_aix5)
    I_die_here;
 
-#elif defined(VGO_darwin)
+#elif defined(VGP_x86_darwin) || defined(VGP_amd64_darwin)
    SysRes res;
    res = VG_(do_syscall3)(__NR_write, sd, (UWord)msg, count);
    return res.isError ? -1 : res.res;
 
 #else
-#  error Unknown arch
+#  error Unknown platform
 #endif
 }
 
@@ -1031,16 +1052,22 @@ Int VG_(getsockopt) ( Int sd, Int level, Int optname, void *optval,
 Int VG_(setsockopt) ( Int sd, Int level, Int optname, const void *optval,
                       Int optlen)
 {
+#if defined(VGO_linux)
+    I_die_here;
+
+#elif defined(VGO_aix5)
+    I_die_here;
+
+#elif defined(VGO_darwin)
    SysRes res;
 
-#if defined(VGO_darwin)
    res = VG_(do_syscall5)( __NR_setsockopt,
                            (UWord)sd, (UWord)level, (UWord)optname, 
                            (UWord)optval, (UWord)optlen );
    return res.isError ? -1 : res.res;
 
 #else
-#  error Unknown arch
+#  error Unknown OS
 #endif
 }
 

@@ -45,6 +45,8 @@
 
 /* External debugger not supported. Use gdb remote debug instead.
    VG_(start_debugger) is in m_debugstub.c. */
+   // DDD: ugh, that's horrible.  Should fix, probably by having
+   // VG_(start_debugger) and VG_(start_remote_debugger).
 
 #else
 

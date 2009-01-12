@@ -80,9 +80,34 @@ typedef
 /* Guest state layout info for syscall args. */
 typedef
    struct SyscallArgLayout {
+      // Note that, depending on the platform, arguments may be found in
+      // registers or on the stack.  (See the comment at the top of
+      // syswrap-main.c for per-platform details.)  For register arguments
+      // (which have o_arg field names) the o_arg value is the offset from
+      // the vex register state.  For stack arguments (which have s_arg
+      // field names), the s_arg value is the offset from the stack pointer.
       Int o_sysno;
-#if defined(VGP_x86_darwin)
-      /* offsets are from sp; these args are on the stack */
+#if defined(VGP_x86_linux) || defined(VGP_amd64_linux)
+      Int o_arg1;
+      Int o_arg2;
+      Int o_arg3;
+      Int o_arg4;
+      Int o_arg5;
+      Int o_arg6;
+      Int dummy_arg7;
+      Int dummy_arg8;
+      Int o_retval;
+#elif defined(VGP_ppc32_aix5) || defined(VGP_ppc64_aix5)
+      Int o_arg1;
+      Int o_arg2;
+      Int o_arg3;
+      Int o_arg4;
+      Int o_arg5;
+      Int o_arg6;
+      Int o_arg7;
+      Int o_arg8;
+      Int o_retval;
+#elif defined(VGP_x86_darwin)
       Int s_arg1;
       Int s_arg2;
       Int s_arg3;
@@ -91,6 +116,8 @@ typedef
       Int s_arg6;
       Int s_arg7;
       Int s_arg8;
+      Int o_retval_lo;
+      Int o_retval_hi;
 #elif defined(VGP_amd64_darwin)
       Int o_arg1;
       Int o_arg2;
@@ -100,19 +127,11 @@ typedef
       Int o_arg6;
       Int s_arg7;
       Int s_arg8;
-#else
-      /* offsets are from vex register state; these args are in registers */
-      Int o_arg1;
-      Int o_arg2;
-      Int o_arg3;
-      Int o_arg4;
-      Int o_arg5;
-      Int o_arg6;
-      Int o_arg7;
-      Int o_arg8;
-#endif
       Int o_retval_lo;
       Int o_retval_hi;
+#else
+#     error Unknown platform
+#endif
    }
    SyscallArgLayout;
 
@@ -315,11 +334,13 @@ static inline UWord getRES ( SyscallStatus* st ) {
    return st->sres.res;
 }
 
+#if defined(VGO_darwin)
 static inline UWord getRES2 ( SyscallStatus* st ) {
    vg_assert(st->what == SsComplete);
    vg_assert(!st->sres.isError);
    return st->sres.res2;
 }
+#endif
 
 static inline UWord getERR ( SyscallStatus* st ) {
    vg_assert(st->what == SsComplete);

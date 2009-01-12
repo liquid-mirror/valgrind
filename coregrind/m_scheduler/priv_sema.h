@@ -31,10 +31,21 @@
 #ifndef __PRIV_SEMA_H
 #define __PRIV_SEMA_H
 
+#if defined(VGO_linux) || defined(VGO_aix5)
 /* Not really a semaphore, but use a pipe for a token-passing scheme */
+typedef struct {
+   Int pipe[2];
+   Int owner_lwpid;             /* who currently has it */
+} vg_sema_t;
+
+#elif defined(VGO_darwin)
 typedef struct {
     semaphore_t lock;
 } vg_sema_t;
+
+#else
+#   error Unknown OS
+#endif
 
 // Nb: this may be OS-specific, but let's not factor it out until we
 // implement an OS port for which this isn't ok.

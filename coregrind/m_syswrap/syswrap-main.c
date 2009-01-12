@@ -66,17 +66,20 @@
    amd64  rax rdi  rsi  rdx  r10  r8   r9   n/a  n/a  rax       (== NUM)
    ppc32  r0  r3   r4   r5   r6   r7   r8   n/a  n/a  r3+CR0.SO (== ARG1)
    ppc64  r0  r3   r4   r5   r6   r7   r8   n/a  n/a  r3+CR0.SO (== ARG1)
+
    AIX:
    ppc32  r2  r3   r4   r5   r6   r7   r8   r9   r10  r3(res),r4(err)
    ppc64  r2  r3   r4   r5   r6   r7   r8   r9   r10  r3(res),r4(err)
+
    DARWIN:
    ppc32  r0  r3   r4   r5   r6   r7   r8   r9   r10  r3+r4+pc
           BSD syscalls: result is in r3/r4, with LSB in r3
           on failure, execution returns to the instruction following `sc`
           on success, execution returns to the 2nd instruction following `sc`
           Mach traps: result is in r3, and there is no error flag.
-   ppc64  r0   r3    r4    r5    r6    r7    r8    r3+CR0.SO (== ARG1)
-   x86    stack                                       eax+edx+cc
+   ppc64  r0  r3   r4   r5   r6   r7   r8   ??   ??   r3+CR0.SO (== ARG1)
+   x86    stk stk  stk  stk  stk  stk  stk  stk  stk  eax+edx+cc
+   amd64  raw rdi  rsi  rdx  rcx  r8   r9   stk  stk  eax+edx+cc
 */
 
 /* This is the top level of the system-call handler module.  All
@@ -1016,8 +1019,8 @@ void getSyscallArgLayout ( /*OUT*/SyscallArgLayout* layout )
    layout->o_arg4   = OFFSET_x86_ESI;
    layout->o_arg5   = OFFSET_x86_EDI;
    layout->o_arg6   = OFFSET_x86_EBP;
-   layout->o_arg7   = -1; /* impossible value */
-   layout->o_arg8   = -1; /* impossible value */
+   layout->dummy_arg7 = -1; /* impossible value */
+   layout->dummy_arg8 = -1; /* impossible value */
    layout->o_retval = OFFSET_x86_EAX;
 
 #elif defined(VGP_amd64_linux)
@@ -1028,8 +1031,8 @@ void getSyscallArgLayout ( /*OUT*/SyscallArgLayout* layout )
    layout->o_arg4   = OFFSET_amd64_R10;
    layout->o_arg5   = OFFSET_amd64_R8;
    layout->o_arg6   = OFFSET_amd64_R9;
-   layout->o_arg7   = -1; /* impossible value */
-   layout->o_arg8   = -1; /* impossible value */
+   layout->dummy_arg7 = -1; /* impossible value */
+   layout->dummy_arg8 = -1; /* impossible value */
    layout->o_retval = OFFSET_amd64_RAX;
 
 #elif defined(VGP_ppc32_linux)
@@ -1128,11 +1131,20 @@ void bad_before ( ThreadId              tid,
                   /*OUT*/UWord*         flags )
 {
    VG_(message)
-      (Vg_DebugMsg,"WARNING: unhandled syscall: %lld", (Long)VG_DARWIN_SYSNO_PRINT(args->sysno));
-#  if defined(VGO_aix5)
+      (Vg_DebugMsg,"WARNING: unhandled syscall: %lld", (Long)args->sysno);
+   // DDD: make this generic with a common function.
+#  if defined(VGO_linux)
+   // nothing
+#  elif defined(VGO_aix5)
    VG_(message)
       (Vg_DebugMsg,"           name of syscall: \"%s\"",
                     VG_(aix5_sysno_to_sysname)(args->sysno));
+#  elif defined(VGO_darwin)
+   VG_(message)
+      (Vg_DebugMsg,"           a.k.a.: %lld",
+                    (Long)VG_DARWIN_SYSNO_PRINT(args->sysno));
+#  else
+#     error unknown OS
 #  endif
    if (VG_(clo_verbosity) > 1) {
       VG_(get_and_pp_StackTrace)(tid, VG_(clo_backtrace_size));
@@ -1404,7 +1416,16 @@ void VG_(client_syscall) ( ThreadId tid, UInt trc )
    */
 
    {
-       PRINT("SYSCALL[%d,%d](%5lld) ", VG_(getpid)(), tid, (Long)VG_DARWIN_SYSNO_PRINT(sysno));
+      PRINT("SYSCALL[%d,%d](%5lld) ", VG_(getpid)(), tid, (Long)
+      // DDD: make this generic
+      #if defined(VGO_linux) || defined(VGO_aix5)
+         sysno
+      #elif defined(VGO_darwin)
+         VG_DARWIN_SYSNO_PRINT(sysno)
+      #else
+      #  error Unknown OS
+      #endif
+      );
    // VG_(check_segments)("### before syscall");
    }
 
@@ -1526,7 +1547,16 @@ void VG_(client_syscall) ( ThreadId tid, UInt trc )
          vg_assert(sci->status.what == SsComplete);
 
          PRINT("SYSCALL[%d,%d](%5ld) ... [async] --> %s(0x%llx)",
-               VG_(getpid)(), tid, VG_DARWIN_SYSNO_PRINT(sysno), 
+               VG_(getpid)(), tid, 
+               // DDD: make this generic
+               #if defined(VGO_linux) || defined(VGO_aix5)
+                  sysno
+               #elif defined(VGO_darwin)
+                  VG_DARWIN_SYSNO_PRINT(sysno)
+               #else
+               #  error Unknown OS
+               #endif
+               ,
                sci->status.sres.isError ? "Failure" : "Success",
                sci->status.sres.isError ? (ULong)sci->status.sres.err
                                         : (ULong)sci->status.sres.res );
@@ -1590,7 +1620,7 @@ void VG_(client_syscall) ( ThreadId tid, UInt trc )
 */
 void VG_(post_syscall) (ThreadId tid)
 {
-   SyscallArgLayout         layout;
+   //SyscallArgLayout         layout;     DDD (see below)
    SyscallInfo*             sci;
    const SyscallTableEntry* ent;
    SyscallStatus            test_status;
@@ -1629,6 +1659,17 @@ void VG_(post_syscall) (ThreadId tid)
    vg_assert(sci->args.sysno == sci->orig_args.sysno);
    sysno = sci->args.sysno;
    ent = get_syscall_entry(sysno, tst);
+
+   // DDD: the trunk has the following code...
+#if 0
+   /* We need the arg layout .. sigh */
+   getSyscallArgLayout( &layout );
+
+   /* Tell the tool that the assignment has occurred, so it can update
+      shadow regs as necessary. */
+   VG_TRACK( post_reg_write, Vg_CoreSysCall, tid, layout.o_retval,
+                                                  sizeof(UWord) );
+#endif
 
    /* pre: status == Complete (asserted above) */
    /* Consider either success or failure.  Now run the post handler if:

@@ -44,9 +44,7 @@
 #include "pub_core_transtab.h"
 #include "pub_core_scheduler.h"
 #include "pub_core_debugger.h"
-
 #include "pub_core_debugstub.h"
-#include "pub_tool_debugstub.h"
 
 #include <mach/mach.h>
 #include <mach/mach_vm.h>
@@ -527,6 +525,7 @@ Int VG_(reg_for_regnum)(Int regnum, void *rbuf, Int shadow)
 }
 
 
+// DDD: this should be in m_libc somewhere
 static Bool VG_(isxdigit)(int c)
 {
     if (c >= '0'  &&  c <= '9') return True;
@@ -1367,11 +1366,39 @@ static void debugstub_thread(void)
     }
 }
 
+static void start_helper_thread(void (*fn)(void))
+{
+#   define stacksize 4096
+    thread_act_t helper_thread;
+    thread_state_data_t helper_state;
+    mach_msg_type_number_t count;
+    kern_return_t kr;
+    char *helper_stack = 
+        VG_(arena_malloc)(VG_AR_CORE, "helper_thread.stack", stacksize);
+    
+    count = NATIVE_THREAD_STATE_COUNT;
+    kr = thread_get_state(mach_thread_self(), NATIVE_THREAD_STATE, 
+                          (thread_state_t)&helper_state, 
+                          &count);
+    vg_assert(kr == 0);
+    vg_assert(count == NATIVE_THREAD_STATE_COUNT);
+    init_thread_state((thread_state_t)&helper_state, 
+                      (UWord)fn, 0, 0, 
+                      helper_stack, stacksize);
 
+    kr = thread_create_running(mach_task_self(), 
+                               NATIVE_THREAD_STATE, 
+                               (thread_state_t)&helper_state, 
+                               NATIVE_THREAD_STATE_COUNT, 
+                               &helper_thread);
+    vg_assert(kr == 0);
+
+#   undef stacksize
+}
 
 void VG_(debugstub_init)(void)
 {
-    VG_(start_helper_thread)(&debugstub_thread);
+    start_helper_thread(&debugstub_thread);
 }
 
 
