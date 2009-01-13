@@ -1,7 +1,11 @@
 
 #include <stdio.h>
 #include <stdlib.h>
-#include <malloc.h>
+#if defined(__APPLE__)
+#  include <malloc/malloc.h>
+#else
+#  include <malloc.h>
+#endif
 #include <string.h>
 
 const unsigned int vec0[4]

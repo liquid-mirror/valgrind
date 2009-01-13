@@ -1,10 +1,5 @@
 
 #include <stdio.h>
-#ifdef __APPLE__
-#include <malloc/malloc.h>
-#else
-#include <malloc.h>
-#endif
 #include <stdlib.h>
 #include "valgrind.h"
 

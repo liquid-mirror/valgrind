@@ -421,6 +421,28 @@ case "$VG_ARCH_MAX-$VG_OS" in
         ;;
 esac
 
+# Set up VGA_<arch>.  Either one or two of these become defined.
+#
+AM_CONDITIONAL(VGA_X86,   
+               test x$VG_PLATFORM_PRI = xX86_LINUX \
+                 -o x$VG_PLATFORM_SEC = xX86_LINUX \
+                 -o x$VG_PLATFORM_PRI = xX86_DARWIN \
+                 -o x$VG_PLATFORM_SEC = xX86_DARWIN)
+AM_CONDITIONAL(VGA_AMD64, 
+               test x$VG_PLATFORM_PRI = xAMD64_LINUX \
+                 -o x$VG_PLATFORM_PRI = xAMD64_DARWIN)
+AM_CONDITIONAL(VGA_PPC32, 
+               test x$VG_PLATFORM_PRI = xPPC32_LINUX \ 
+                 -o x$VG_PLATFORM_SEC = xPPC32_LINUX \
+                 -o x$VG_PLATFORM_PRI = xPPC32_AIX5 \ 
+                 -o x$VG_PLATFORM_SEC = xPPC32_AIX5 \
+                 -o x$VG_PLATFORM_PRI = xPPC32_DARWIN \ 
+                 -o x$VG_PLATFORM_SEC = xPPC32_DARWIN)
+AM_CONDITIONAL(VGA_PPC64, 
+               test x$VG_PLATFORM_PRI = xPPC64_LINUX \
+                 -o x$VG_PLATFORM_PRI = xPPC64_AIX5 \
+                 -o x$VG_PLATFORM_PRI = xPPC64_DARWIN)
+
 # Set up VGP_<platform>.  Either one or two of these become defined.
 #
 AM_CONDITIONAL(VGP_X86_LINUX,   
@@ -439,17 +461,14 @@ AM_CONDITIONAL(VGP_PPC32_AIX5,
 AM_CONDITIONAL(VGP_PPC64_AIX5, 
                test x$VG_PLATFORM_PRI = xPPC64_AIX5)
 AM_CONDITIONAL(VGP_X86_DARWIN,   
-               test x$VG_PLATFORM_PRI = xX86_DARWIN \
-                 -o x$VG_PLATFORM_SEC = xX86_DARWIN)
+               test x$VG_PLATFORM_PRI = xX86_DARWIN)
 AM_CONDITIONAL(VGP_AMD64_DARWIN, 
-               test x$VG_PLATFORM_PRI = xAMD64_DARWIN \
-                 -o x$VG_PLATFORM_SEC = xAMD64_DARWIN)
+               test x$VG_PLATFORM_PRI = xAMD64_DARWIN)
 AM_CONDITIONAL(VGP_PPC32_DARWIN, 
                test x$VG_PLATFORM_PRI = xPPC32_DARWIN \ 
                  -o x$VG_PLATFORM_SEC = xPPC32_DARWIN)
 AM_CONDITIONAL(VGP_PPC64_DARWIN, 
-               test x$VG_PLATFORM_PRI = xPPC64_DARWIN \ 
-                 -o x$VG_PLATFORM_SEC = xPPC64_DARWIN)
+               test x$VG_PLATFORM_PRI = xPPC64_DARWIN)
 
 # Similarly, set up VGO_<os>.  Exactly one of these becomes defined.
 # Relies on the assumption that the primary and secondary targets are 

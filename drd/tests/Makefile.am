@@ -203,8 +203,6 @@ AM_CXXFLAGS = $(AM_CFLAGS)
 
 check_PROGRAMS =      \
   atomic_var          \
-  bar_bad	      \
-  bar_trivial         \
   circular_buffer     \
   drd_bitmap_test     \
   fp_race             \
@@ -216,12 +214,9 @@ check_PROGRAMS =      \
   hg06_readshared     \
   hold_lock           \
   linuxthreads_det    \
-  matinv              \
   memory_allocation   \
   monitor_example     \
   new_delete          \
-  pth_barrier         \
-  pth_barrier_reinit  \
   pth_broadcast       \
   pth_cancel_locked   \
   pth_cond_race       \
@@ -229,12 +224,10 @@ check_PROGRAMS =      \
   pth_detached        \
   pth_detached_sem    \
   pth_inconsistent_cond_wait \
-  pth_spinlock        \
   recursive_mutex     \
   rwlock_race         \
   rwlock_test         \
   sem_as_mutex        \
-  sigalrm             \
   tc01_simple_race    \
   tc02_simple_tls     \
   tc03_re_excl        \
@@ -257,8 +250,7 @@ check_PROGRAMS =      \
   tc21_pthonce        \
   tc22_exit_w_lock    \
   tc23_bogus_condwait \
-  tc24_nonzero_sem    \
-  trylock
+  tc24_nonzero_sem
 
 if HAVE_BOOST_1_35
 check_PROGRAMS += boost_thread
@@ -270,6 +262,21 @@ endif
 
 if HAVE_QTCORE
 check_PROGRAMS += qt4_mutex qt4_rwlock qt4_semaphore
+endif
+
+# DDD: not sure if these ones should work on Darwin or not... if not, should
+# be moved into x86-linux/.
+# (Darwin pthreads doesn't seem to support barriers.)
+if ! VGO_DARWIN
+   check_PROGRAMS += \
+      bar_bad             \
+      bar_trivial         \
+      matinv              \
+      pth_barrier         \
+      pth_barrier_reinit  \
+      pth_spinlock        \
+      sigalrm             \
+      trylock  
 endif
 
 

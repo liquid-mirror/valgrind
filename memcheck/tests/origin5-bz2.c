@@ -6413,7 +6413,6 @@ void set_inbuf ( void )
 }
 
 #include <stdio.h>
-#include <malloc.h>
 #include <assert.h>
 
 /* For providing services. */

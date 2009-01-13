@@ -3,16 +3,16 @@
 include $(top_srcdir)/Makefile.flags.am
 
 SUBDIRS = .
-if VGP_X86_LINUX
+if VGA_X86
 SUBDIRS += x86
 endif
-if VGP_AMD64_LINUX
+if VGA_AMD64
 SUBDIRS += amd64
 endif
-if VGP_PPC32_LINUX
+if VGA_PPC32
 SUBDIRS += ppc32
 endif
-if VGP_PPC64_LINUX
+if VGA_PPC64
 SUBDIRS += ppc64
 endif
 
@@ -136,12 +136,12 @@ EXTRA_DIST = $(noinst_SCRIPTS) \
 
 check_PROGRAMS = \
 	ansi args \
-	async-sigs bitfield1 blockfault \
+	bitfield1 blockfault \
 	bug129866 \
 	closeall coolo_strlen \
 	discard exec-sigmask execve faultstatus fcntl_setown \
 	fdleak_cmsg fdleak_creat fdleak_dup fdleak_dup2 \
-	fdleak_fcntl fdleak_ipv4 fdleak_open fdleak_pipe \
+	fdleak_fcntl fdleak_open fdleak_pipe \
 	fdleak_socketpair \
 	floored fork fucomip manythreads \
 	munmap_exe map_unaligned map_unmap mq mremap mremap2 \
@@ -157,6 +157,14 @@ check_PROGRAMS = \
 	thread-exits threaded-fork threadederrno \
 	tls tls.so tls2.so vgprintf \
 	coolo_sigaction gxx304
+
+# DDD: not sure if these ones should work on Darwin or not... if not, should
+# be moved into linux/.
+if ! VGO_DARWIN
+   check_PROGRAMS += \
+	async-sigs \
+	fdleak_ipv4
+endif
 
 AM_CFLAGS   = $(WERROR) -Winline -Wall -Wshadow -g $(AM_FLAG_M3264_PRI)
 AM_CPPFLAGS = -I$(top_srcdir) -I$(top_srcdir)/include -I$(top_builddir)/include

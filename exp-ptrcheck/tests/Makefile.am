@@ -77,7 +77,7 @@ EXTRA_DIST = $(noinst_SCRIPTS) \
 	zero.vgtest zero.stderr.exp
 
 check_PROGRAMS = \
-	add and arith bad_percentify base ccc cmp fp \
+	add and arith bad_percentify base cmp fp \
 	globalerr hackedbz2 \
 	hp_bounds hp_dangle idiv imul \
 	justify mm not neg or partial \
@@ -85,6 +85,14 @@ check_PROGRAMS = \
 	pth_create pth_specific realloc \
 	stackerr \
 	strcpy strlen sub supp syscall tricky unaligned xor zero
+
+# DDD: not sure if these ones should work on Darwin or not... if not, should
+# be moved into x86-linux/.
+if ! VGO_DARWIN
+   check_PROGRAMS += \
+	ccc
+endif
+
 
 AM_CPPFLAGS = -I$(top_srcdir) -I$(top_srcdir)/include \
 		-I$(top_srcdir)/coregrind -I$(top_builddir)/include \
@@ -146,9 +154,14 @@ if VGP_PPC32_AIX5
  preen_invars_LDADD            = -ldl
  preen_invars_LDFLAGS          = $(AM_FLAG_M3264_PRI) -Wl,-G -Wl,-bnogc
 else
+if VGO_DARWIN
+ preen_invars_LDADD            = -ldl
+ preen_invars_LDFLAGS          = $(AM_FLAG_M3264_PRI)
+else
  preen_invars_LDADD            = -ldl
  preen_invars_LDFLAGS          = $(AM_FLAG_M3264_PRI) \
 				-Wl,-rpath,$(top_builddir)/memcheck/tests
+endif
 endif
 endif
 
@@ -163,8 +176,13 @@ if VGP_PPC32_AIX5
  preen_invars_so_so_LDFLAGS     = -fpic $(AM_FLAG_M3264_PRI) -shared \
 					-Wl,-G -Wl,-bnogc
 else
+if VGO_DARWIN
+ preen_invars_so_so_LDFLAGS     = -fpic $(AM_FLAG_M3264_PRI) -dynamic \
+					-dynamiclib -all_load
+else
  preen_invars_so_so_LDFLAGS     = -fpic $(AM_FLAG_M3264_PRI) -shared \
 					-Wl,-soname -Wl,preen_invars_so.so
+endif
 endif
 endif
 

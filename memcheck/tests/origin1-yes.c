@@ -124,6 +124,9 @@ int main(void)
 
    // mmap block, initialised
    {
+      #if defined(__APPLE__)
+      #  define MAP_ANONYMOUS MAP_ANON
+      #endif
       int* ptr_to_def_mmap_int =
                mmap(0, 4096, PROT_READ, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
       int def_mmap_int = *ptr_to_def_mmap_int;

@@ -3,17 +3,32 @@
 include $(top_srcdir)/Makefile.flags.am
 
 SUBDIRS = .
-if VGP_X86_LINUX
+
+# Arch-specific tests.
+# DDD: at least some of the supposedly arch-specific tests are really
+# platform-specific, eg. x86/scalar*.c.  Need to create platform-specific
+# dirs.
+if VGA_X86
 SUBDIRS += x86
 endif
-if VGP_AMD64_LINUX
+if VGA_AMD64
 SUBDIRS += amd64
 endif
-if VGP_PPC32_LINUX
+if VGA_PPC32
 SUBDIRS += ppc32
 endif
-if VGP_PPC64_LINUX
+if VGA_PPC64
 SUBDIRS += ppc64
+endif
+
+# OS-specific tests
+if VGO_LINUX
+SUBDIRS += linux
+endif
+
+# Platform-specific tests
+if VGP_X86_LINUX
+SUBDIRS += x86-linux
 endif
 
 DIST_SUBDIRS = ${VG_ARCH_ALL} .
@@ -66,10 +81,8 @@ EXTRA_DIST = $(noinst_SCRIPTS) \
 	leak-tree.stderr.exp2 leak-tree.stderr.exp64 \
 	leak-regroot.vgtest leak-regroot.stderr.exp \
 	leakotron.vgtest leakotron.stdout.exp leakotron.stderr.exp \
-	linux-capget linux-capget.stderr.exp \
 	linux-syslog-syscall linux-syslog-syscall.stderr.exp \
 	linux-syscalls-2007 linux-syscalls-2007.stderr.exp \
-	linux-timerfd-syscall linux-timerfd-syscall.stderr.exp \
 	long_namespace_xml.vgtest long_namespace_xml.stdout.exp \
 	long_namespace_xml.stderr.exp \
 	lsframe1.vgtest lsframe1.stdout.exp lsframe1.stderr.exp \
@@ -192,10 +205,8 @@ check_PROGRAMS = \
 	file_locking \
 	fprw fwrite hello inits inline \
 	leak-0 leak-cycle leak-pool leak-tree leak-regroot leakotron \
-	linux-capget \
 	linux-syslog-syscall \
 	linux-syscalls-2007 \
-	linux-timerfd-syscall \
 	long_namespace_xml \
 	lsframe1 lsframe2 \
 	mallinfo \
@@ -239,7 +250,6 @@ memcmptest_CFLAGS	= $(AM_FLAG_M3264_PRI) $(AM_CFLAGS) -fno-builtin-memcmp
 oset_test_CFLAGS	= $(AM_FLAG_M3264_PRI) \
 				-DVGA_$(VG_ARCH_PRI)=1 -DVGO_$(VG_OS)=1 \
 				-DVGP_$(VG_ARCH_PRI)_$(VG_OS)=1
-linux_timerfd_syscall_LDADD = -lrt
 vcpu_bz2_CFLAGS		= $(AM_FLAG_M3264_PRI) $(AM_CFLAGS) -O2 -g
 vcpu_fbench_CFLAGS	= $(AM_FLAG_M3264_PRI) $(AM_CFLAGS) -O2 -g
 vcpu_fnfns_CFLAGS	= $(AM_FLAG_M3264_PRI) $(AM_CFLAGS) -O2 -g
@@ -346,9 +356,14 @@ if VGP_PPC32_AIX5
  varinfo5_LDADD         = `pwd`/varinfo5so.so
  varinfo5_LDFLAGS       = $(AM_FLAG_M3264_PRI) -Wl,-G -Wl,-bnogc
 else
+if VGO_DARWIN
+ varinfo5_LDADD         = `pwd`/varinfo5so.so
+ varinfo5_LDFLAGS       = $(AM_FLAG_M3264_PRI)
+else
  varinfo5_LDADD         = varinfo5so.so
  varinfo5_LDFLAGS       = $(AM_FLAG_M3264_PRI) \
 				-Wl,-rpath,$(top_builddir)/memcheck/tests
+endif
 endif
 endif
 
@@ -363,8 +378,13 @@ if VGP_PPC32_AIX5
  varinfo5so_so_LDFLAGS  = -fpic $(AM_FLAG_M3264_PRI) -shared \
 				-Wl,-G -Wl,-bnogc
 else
+if VGO_DARWIN
+ varinfo5so_so_LDFLAGS  = -fpic $(AM_FLAG_M3264_PRI) -dynamic \
+				-dynamiclib -all_load
+else
  varinfo5so_so_LDFLAGS  = -fpic $(AM_FLAG_M3264_PRI) -shared \
 				-Wl,-soname -Wl,varinfo5so.so
+endif
 endif
 endif
 

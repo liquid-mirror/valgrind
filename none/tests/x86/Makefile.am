@@ -5,15 +5,19 @@ CLEANFILES = $(addsuffix .c,$(INSN_TESTS))
 INSN_TESTS = insn_basic insn_fpu insn_cmov insn_mmx insn_mmxext \
 		insn_sse insn_sse2
 if BUILD_SSE3_TESTS
- INSN_TESTS += insn_sse3
+   INSN_TESTS += insn_sse3
 endif
 if BUILD_SSSE3_TESTS
- INSN_TESTS += insn_ssse3
+   INSN_TESTS += insn_ssse3
 endif
 
 # Explicitly include insn_sse3 even if ! BUILD_SSE3_TESTS, 
 # to avoid packaging screwups if 'make dist' is run on a machine
 # which failed the BUILD_SSE3_TESTS test in configure.in.
+#
+# DDD: Ones disabled because they don't compile on Darwin:
+#	cpuid.stderr.exp cpuid.stdout.exp cpuid.vgtest \
+#
 EXTRA_DIST = $(noinst_SCRIPTS) \
 	badseg.stderr.exp badseg.stdout.exp badseg.vgtest \
 	bt_everything.stderr.exp bt_everything.stdout.exp bt_everything.vgtest \
@@ -25,7 +29,6 @@ EXTRA_DIST = $(noinst_SCRIPTS) \
 	bug137714-x86.stderr.exp bug137714-x86.stdout.exp bug137714-x86.vgtest \
 	bug152818-x86.vgtest bug152818-x86.stdout.exp \
 	bug152818-x86.stderr.exp \
-	cpuid.stderr.exp cpuid.stdout.exp cpuid.vgtest \
 	cmpxchg8b.stderr.exp cmpxchg8b.stdout.exp cmpxchg8b.vgtest \
 	cse_fail.stderr.exp cse_fail.stdout.exp cse_fail.vgtest \
 	faultstatus.disabled faultstatus.stderr.exp \
@@ -51,26 +54,43 @@ EXTRA_DIST = $(noinst_SCRIPTS) \
 	sigcontext.stdout.exp sigcontext.stderr.exp sigcontext.vgtest \
 	smc1.stderr.exp smc1.stdout.exp smc1.vgtest \
 	ssse3_misaligned.stderr.exp ssse3_misaligned.stdout.exp \
-	ssse3_misaligned.vgtest \
-	ssse3_misaligned.c \
+	ssse3_misaligned.vgtest ssse3_misaligned.c \
 	yield.stderr.exp yield.stdout.exp yield.disabled
 
 check_PROGRAMS = \
 	badseg bt_everything bt_literal \
 	bug125959-x86 \
-	bug126147-x86 \
 	bug132813-x86 \
 	bug135421-x86 \
 	bug137714-x86 \
+	cse_fail \
+	fpu_lazy_eflags \
+	getseg \
+	movx int pushpopseg \
+	smc1 yield
+
+# DDD: not sure if these ones should work on Darwin or not... if not, should
+# be moved into x86-linux/.
+if ! VGO_DARWIN
+   check_PROGRAMS += \
+	bug126147-x86 \
 	bug152818-x86 \
-	cmpxchg8b cpuid cse_fail \
-	faultstatus fcmovnu fpu_lazy_eflags fxtract \
-	getseg incdec_alt $(INSN_TESTS) \
+	cmpxchg8b \
+	cpuid \
+	faultstatus \
+	fcmovnu \
+	fxtract \
+	incdec_alt \
+	$(INSN_TESTS) \
 	jcxz \
-	lahf looper movx int pushpopseg sbbmisc \
-	seg_override sigcontext smc1 yield
-if BUILD_SSSE3_TESTS
- check_PROGRAMS += ssse3_misaligned
+	lahf \
+	looper \
+	sbbmisc \
+	seg_override \
+	sigcontext
+   if BUILD_SSSE3_TESTS
+      check_PROGRAMS += ssse3_misaligned
+   endif
 endif
 
 AM_CFLAGS    = $(WERROR) -Winline -Wall -Wshadow \
