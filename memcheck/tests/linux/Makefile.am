@@ -1,12 +1,12 @@
 noinst_SCRIPTS = filter_stderr
 
 EXTRA_DIST = $(noinst_SCRIPTS) \
-	linux-capget linux-capget.stderr.exp \
-	linux-timerfd-syscall linux-timerfd-syscall.stderr.exp
+	capget capget.stderr.exp \
+	timerfd-syscall timerfd-syscall.stderr.exp
 
 check_PROGRAMS = \
-	linux-capget \
-	linux-timerfd-syscall
+	capget \
+	timerfd-syscall
 
 AM_CPPFLAGS  = -I$(top_srcdir)/include
 AM_CFLAGS    = $(WERROR) @FLAG_M32@ -Winline -Wall -Wshadow -g \
