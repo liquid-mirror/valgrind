@@ -157,6 +157,7 @@ check_PROGRAMS = \
 # DDD: not sure if these ones should work on Darwin or not... if not, should
 # be moved into x86-linux/.
 # (Darwin pthreads doesn't seem to support barriers.)
+# [barriers and spinlocks are optional in pthreads]
 if ! VGO_DARWIN
    check_PROGRAMS += \
 	bar_bad \
