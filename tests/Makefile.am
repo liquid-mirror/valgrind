@@ -24,7 +24,9 @@ AM_CXXFLAGS = $(AM_CFLAGS)
 
 # generic C ones
 cputest_SOURCES 	= cputest.c
-cputest_CFLAGS  	= $(AM_CFLAGS) -D__$(VG_ARCH_MAX)__
+cputest_CFLAGS  	= $(AM_CFLAGS) \
+				-DVGA_$(VG_ARCH_PRI)=1 -DVGO_$(VG_OS)=1 \
+				-DVGP_$(VG_ARCH_PRI)_$(VG_OS)=1
 cputest_DEPENDENCIES	= 
 cputest_LDADD		= 
 toobig_allocs_SOURCES	= toobig-allocs.c

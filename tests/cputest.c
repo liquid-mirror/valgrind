@@ -23,16 +23,22 @@ char* all_archs[] = {
    NULL
 };
 
-#if !defined(_AIX) && defined(__powerpc__) && !defined(__powerpc64__)
+//-----------------------------------------------------------------------------
+// ppc32-linux
+//---------------------------------------------------------------------------
+#if defined(VGP_ppc32_linux)
 static Bool go(char* cpu)
 {
    if ( strcmp( cpu, "ppc32" ) == 0 )
       return True;
    return False;
 }
-#endif // __powerpc__ (32)
+#endif   // VGP_ppc32_linux
 
-#if !defined(_AIX) && defined(__powerpc__) && defined(__powerpc64__)
+//---------------------------------------------------------------------------
+// ppc64-linux
+//---------------------------------------------------------------------------
+#if defined(VGP_ppc64_linux)
 static Bool go(char* cpu)
 {
    if ( strcmp( cpu, "ppc64" ) == 0 )
@@ -41,9 +47,12 @@ static Bool go(char* cpu)
       return True;
    return False;
 }
-#endif // __powerpc__ (64)
+#endif   // VGP_ppc64_linux
 
-#if defined(_AIX)
+//---------------------------------------------------------------------------
+// ppc{32,64}-aix
+//---------------------------------------------------------------------------
+#if defined(VGP_ppc32_aix5) || defined(VGP_ppc64_aix5)
 static Bool go(char* cpu)
 {
    if (sizeof(void*) == 8) {
@@ -58,33 +67,58 @@ static Bool go(char* cpu)
    }
    return False;
 }
-#endif // _AIX
+#endif   // VGP_ppc32_aix5 || VGP_ppc64_aix5
 
-#if !defined(_AIX) && (defined(__i386__) || defined(__x86_64__))
+//---------------------------------------------------------------------------
+// {x86,amd64}-linux (part 1 of 2)
+//---------------------------------------------------------------------------
+#if defined(VGP_x86_linux) || defined(VGP_amd64_linux)
 static void cpuid ( unsigned int n,
                     unsigned int* a, unsigned int* b,
                     unsigned int* c, unsigned int* d )
 {
    __asm__ __volatile__ (
-       "pushl %%eax\n\t"
-       "pushl %%ebx\n\t"
-       "pushl %%ecx\n\t"
-       "pushl %%edx\n\t"
+      "cpuid"
+      : "=a" (*a), "=b" (*b), "=c" (*c), "=d" (*d)      /* output */
+      : "0" (n)         /* input */
+   );
+}
+#endif   // VGP_x86_linux || VGP_amd64_linux
+
+//---------------------------------------------------------------------------
+// {x86,amd64}-darwin (part 1 of 2)
+//---------------------------------------------------------------------------
+#if defined(VGP_x86_darwin) || defined(VGP_amd64_darwin)
+static void cpuid ( unsigned int n,
+                    unsigned int* a, unsigned int* b,
+                    unsigned int* c, unsigned int* d )
+{
+   __asm__ __volatile__ (
+       "push %%eax\n\t"
+       "push %%ebx\n\t"
+       "push %%ecx\n\t"
+       "push %%edx\n\t"
        "movl %4, %%eax\n\t"
        "cpuid\n\t"
        "movl %%eax,%0\n\t"
        "movl %%ebx,%1\n\t"
        "movl %%ecx,%2\n\t"
        "movl %%edx,%3\n\t"
-       "popl %%edx\n\t"
-       "popl %%ecx\n\t"
-       "popl %%ebx\n\t"
-       "popl %%eax\n\t"
+       "pop %%rdx\n\t"
+       "pop %%rcx\n\t"
+       "pop %%rbx\n\t"
+       "pop %%rax\n\t"
        : "=m" (*a), "=m" (*b), "=m" (*c), "=m" (*d)
        : "mr" (n)
        );
 }
+#endif   // VGP_x86_darwin || VGP_amd64_darwin
 
+//---------------------------------------------------------------------------
+// {x86,amd64}-{linux,darwin} (part 2 of 2)
+//---------------------------------------------------------------------------
+#if defined(VGP_x86_linux)  || defined(VGP_amd64_linux) || \
+    defined(VGP_x86_darwin) || defined(VGP_amd64_darwin)
 static Bool go(char* cpu)
 { 
    unsigned int level = 0, cmask = 0, dmask = 0, a, b, c, d;
@@ -136,9 +170,13 @@ static Bool go(char* cpu)
    }
    return False;
 }
-#endif // !_AIX && (__i386__ || __x86_64__)
+#endif   // VGP_x86_linux  || VGP_amd64_linux ||
+         // VGP_x86_darwin || VGP_amd64_darwin
 
 
+//---------------------------------------------------------------------------
+// main
+//---------------------------------------------------------------------------
 int main(int argc, char **argv)
 {
    int i;
