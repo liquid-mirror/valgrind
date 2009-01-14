@@ -14,5 +14,5 @@ AM_CFLAGS    = $(WERROR) @FLAG_M32@ -Winline -Wall -Wshadow -g \
 AM_CXXFLAGS  = $(AM_CFLAGS)
 AM_CCASFLAGS = @FLAG_M32@
 
-linux_timerfd_syscall_LDADD = -lrt
+timerfd_syscall_LDADD = -lrt
 
