@@ -1234,7 +1234,7 @@ static void canonicaliseSymtab ( struct _DebugInfo* di )
          if (i < j-1
              && di->symtab[i].addr   == di->symtab[i+1].addr
 #if !defined(VGO_darwin) 
-             && di->symtab[i].size != di->symtab[i+1].size
+             && di->symtab[i].size   == di->symtab[i+1].size
 #else 
              /* darwin: use prefersym to resolve same-address but 
                 different-size (probably STABS vs DWARF */

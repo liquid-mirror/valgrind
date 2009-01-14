@@ -636,7 +636,7 @@ void VG_(out_of_memory_NORETURN) ( HChar* who, SizeT szB )
       VG_(debugLog)(0,"mallocfree", s1, who, (ULong)szB, tot_alloc);
    }
 
-   __builtin_trap();
+   __builtin_trap();    // DDD ???
 
    VG_(exit)(1);
 }

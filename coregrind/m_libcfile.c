@@ -573,7 +573,7 @@ SysRes VG_(pread) ( Int fd, void* buf, Int count, OffT offset )
 #else
 
    OffT off = VG_(lseek)( fd, offset, VKI_SEEK_SET);
-   if (off != 0)
+   if (off < 0)
       return VG_(mk_SysRes_Error)( VKI_EINVAL );
    res = VG_(do_syscall3)(__NR_read, fd, (UWord)buf, count );
 

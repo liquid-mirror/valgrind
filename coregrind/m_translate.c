@@ -1375,7 +1375,7 @@ Bool VG_(translate) ( ThreadId tid,
               VG_(start_debugger)( tid );
           }  
 
-          __builtin_trap();
+          __builtin_trap();      // DDD ???
           VG_(core_panic)("bad code address - no synth signal support on darwin");
       }
 #else

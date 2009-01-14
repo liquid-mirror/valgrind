@@ -167,7 +167,7 @@ static void report_and_quit ( const Char* report,
 #endif
                );
 
-   __builtin_trap();
+   __builtin_trap();    // DDD ???
    VG_(exit)(1);
 }
 
