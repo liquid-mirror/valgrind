@@ -43,10 +43,12 @@
 #  undef VG_HAVE_MACH
 #endif
 
+#if defined(VG_HAVE_MACH)
 // Call this early in Valgrind's main(). It depends on nothing.
 extern void VG_(mach_init)(void);
-
 #endif
+
+#endif   // __PUB_CORE_MACH_H
 
 /*--------------------------------------------------------------------*/
 /*--- end                                                          ---*/

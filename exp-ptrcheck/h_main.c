@@ -2450,6 +2450,8 @@ void h_post_syscall ( ThreadId tid, UInt sysno, SysRes res )
    tl_assert(i >= 0 && i <= n);
 
    if (i == n) {
+// DDD: genericise this
+#     if defined(VGO_linux)
       VG_(printf)("sysno == %u\n", sysno);
 #     elif defined(VGO_aix5)
       VG_(printf)("sysno == %u\n", sysno);

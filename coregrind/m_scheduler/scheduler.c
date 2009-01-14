@@ -459,8 +459,10 @@ static void sched_fork_cleanup(ThreadId me)
    ThreadId tid;
    vg_assert(VG_(running_tid) == me);
 
+#if defined(VG_HAVE_MACH)
    // GrP fixme hack reset Mach ports
    VG_(mach_init)();
+#endif
 
    VG_(threads)[me].os_state.lwpid = VG_(gettid)();
    VG_(threads)[me].os_state.threadgroup = VG_(getpid)();

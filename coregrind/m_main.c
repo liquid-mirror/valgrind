@@ -1220,7 +1220,7 @@ Int valgrind_main ( Int argc, HChar **argv, HChar **envp )
    // Start up Mach kernel interface, if any
    //   p: none
    //--------------------------------------------------------------
-#if defined(VGO_darwin)
+#if defined(VG_HAVE_MACH)
    VG_(mach_init)();
 #endif
 

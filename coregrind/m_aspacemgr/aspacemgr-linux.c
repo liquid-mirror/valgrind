@@ -2404,6 +2404,12 @@ SysRes VG_(am_mmap_anon_float_valgrind)( SizeT length )
    if (!ok)
       return VG_(mk_SysRes_Error)( VKI_EINVAL );
 
+// DDD: the Darwin tag used here seems to just be for statistical
+// purposes.  --njn
+#ifndef VM_TAG_VALGRIND
+#  define VM_TAG_VALGRIND 0
+#endif
+
    /* We have been advised that the mapping is allowable at the
       specified address.  So hand it off to the kernel, and propagate
       any resulting failure immediately. */
@@ -2415,6 +2421,7 @@ SysRes VG_(am_mmap_anon_float_valgrind)( SizeT length )
              /*VKI_MAP_FIXED|*/VKI_MAP_PRIVATE|VKI_MAP_ANONYMOUS, 
              VM_TAG_VALGRIND, 0
           );
+#if defined(VGO_darwin)
    if (sres.isError) {
        /* try again, ignoring the advisory */
        sres = VG_(am_do_mmap_NO_NOTIFY)( 
@@ -2424,6 +2431,7 @@ SysRes VG_(am_mmap_anon_float_valgrind)( SizeT length )
              VM_TAG_VALGRIND, 0
           );
    }
+#endif
    if (sres.isError)
       return sres;
 

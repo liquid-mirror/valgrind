@@ -1709,6 +1709,8 @@ AC_OUTPUT(
    memcheck/tests/ppc32/Makefile
    memcheck/tests/ppc64/Makefile
    memcheck/tests/x86/Makefile
+   memcheck/tests/linux/Makefile
+   memcheck/tests/x86-linux/Makefile
    memcheck/docs/Makefile
    cachegrind/Makefile
    cachegrind/tests/Makefile

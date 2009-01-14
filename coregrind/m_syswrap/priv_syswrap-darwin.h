@@ -128,6 +128,9 @@ DECL_TEMPLATE(darwin, sys_fsetxattr);
 DECL_TEMPLATE(darwin, sys_initgroups);
 DECL_TEMPLATE(darwin, sys_settid);
 DECL_TEMPLATE(darwin, sys_sendfile);
+DECL_TEMPLATE(darwin, sys_fcntl);
+DECL_TEMPLATE(darwin, sys_fcntl64);
+DECL_TEMPLATE(darwin, sys_ioctl);
 
 // Mach message helpers
 DECL_TEMPLATE(darwin, host_info);

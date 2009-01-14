@@ -342,6 +342,7 @@ libcoregrind_x86_linux_a_SOURCES = \
 	$(COREGRIND_SOURCES_COMMON) \
 	$(COREGRIND_LINUX_SOURCE) \
 	m_coredump/coredump-x86-linux.c \
+	m_cpuid.S \
 	m_dispatch/dispatch-x86-linux.S \
 	m_sigframe/sigframe-x86-linux.c \
 	m_syswrap/syscall-x86-linux.S \
@@ -355,6 +356,7 @@ libcoregrind_amd64_linux_a_SOURCES = \
 	$(COREGRIND_SOURCES_COMMON) \
 	$(COREGRIND_LINUX_SOURCE) \
 	m_coredump/coredump-amd64-linux.c \
+	m_cpuid.S \
 	m_dispatch/dispatch-amd64-linux.S \
 	m_sigframe/sigframe-amd64-linux.c \
 	m_syswrap/syscall-amd64-linux.S \
@@ -418,6 +420,8 @@ libcoregrind_ppc64_aix5_a_CFLAGS = $(AM_CFLAGS_PPC64_AIX5)
 libcoregrind_ppc64_aix5_a_CCASFLAGS = $(AM_CCASFLAGS_PPC64_AIX5)
 libcoregrind_ppc64_aix5_a_AR = $(AR) -X64 cru
 
+# DDD: m_cpuid-x86-darwin.S should be merged into m_cpuid.S, they're very
+# similar.  Likewise for m_cpuid-amd64-darwin.S.
 libcoregrind_x86_darwin_a_SOURCES = \
 	$(COREGRIND_SOURCES_COMMON) \
 	$(COREGRIND_DARWIN_SOURCE) \

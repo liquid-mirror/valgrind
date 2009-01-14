@@ -112,7 +112,7 @@ extern UChar VG_(clo_profile_flags);
 extern Int   VG_(clo_trace_notbelow);
 /* DEBUG: print system calls?  default: NO */
 extern Bool  VG_(clo_trace_syscalls);
-/* DEBUG: print unknown system calls?  default: NO */
+/* DEBUG: print unknown system calls?  default: NO */ // DDD: undocumented
 extern Bool  VG_(clo_trace_unknown_syscalls);
 /* DEBUG: print signal details?  default: NO */
 extern Bool  VG_(clo_trace_signals);

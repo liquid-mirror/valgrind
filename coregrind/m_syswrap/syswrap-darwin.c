@@ -603,273 +603,6 @@ ML_(POST_sys_getsockopt) ( ThreadId tid,
 }
 
 
-/* ---------------------------------------------------------------------
-   darwin ioctl wrapper helpers
-   ------------------------------------------------------------------ */
-
-Bool
-ML_(PRE_sys_ioctl) ( ThreadId tid, UWord arg1, UWord arg2, UWord arg3 )
-{
-#warning GrP fixme darwin-specific ioctl
-   Bool handled = True;
-   
-   switch (arg2) {
-   case VKI_FIODTYPE: 
-      PRE_MEM_WRITE( "ioctl(FIONREAD)", arg3, sizeof(int) );
-      break;
-
-   case VKI_DTRACEHIOC_REMOVE: 
-   case VKI_DTRACEHIOC_ADDDOF: 
-       break;
-
-       // ttycom.h
-   case VKI_TIOCGETA:
-       PRE_MEM_WRITE( "ioctl(TIOCGETA)", arg3, sizeof(struct vki_termios) );
-       break;
-   case VKI_TIOCSETA:
-       PRE_MEM_READ( "ioctl(TIOCSETA)", arg3, sizeof(struct vki_termios) );
-       break;
-   case VKI_TIOCGETD:
-       PRE_MEM_WRITE( "ioctl(TIOCGETD)", arg3, sizeof(int) );
-       break;
-   case VKI_TIOCSETD:
-       PRE_MEM_READ( "ioctl(TIOCSETD)", arg3, sizeof(int) );
-       break;
-   case VKI_TIOCPTYGNAME:
-       PRE_MEM_WRITE( "ioctl(TIOCPTYGNAME)", arg3, 128 );
-       break;
-   case VKI_TIOCPTYGRANT:
-   case VKI_TIOCPTYUNLK:
-       break;
-
-   default:
-      handled = False;
-   }
-
-   return handled;
-}
-
-
-Bool
-ML_(POST_sys_ioctl) ( ThreadId tid, UInt res, 
-                      UWord arg1, UWord arg2, UWord arg3 )
-{
-#warning GrP fixme darwin-specific ioctl
-   Bool handled = True;
-   
-   switch (arg2) {
-   case VKI_FIODTYPE: 
-      POST_MEM_WRITE( arg3, sizeof(int) );
-      break;
-
-   case VKI_DTRACEHIOC_REMOVE: 
-   case VKI_DTRACEHIOC_ADDDOF: 
-       break;
-
-       // ttycom.h
-   case VKI_TIOCGETA:
-       POST_MEM_WRITE( arg3, sizeof(struct vki_termios));
-       break;
-   case VKI_TIOCSETA:
-       break;
-   case VKI_TIOCGETD:
-       POST_MEM_WRITE( arg3, sizeof(int) );
-       break;
-   case VKI_TIOCSETD:
-       break;
-   case VKI_TIOCPTYGNAME:
-       POST_MEM_WRITE( arg3, 128);
-       break;
-   case VKI_TIOCPTYGRANT:
-   case VKI_TIOCPTYUNLK:
-       break;
-
-   default:
-      handled = False;
-   }
-
-   return handled;
-}
-
-
-/* ---------------------------------------------------------------------
-   darwin fcntl wrapper helpers
-   ------------------------------------------------------------------ */
-static const char *name_for_fcntl(UWord cmd) {
-#define F(n) case VKI_##n: return #n
-    switch (cmd) {
-        F(F_CHKCLEAN);
-        F(F_RDAHEAD);
-        F(F_NOCACHE);
-        F(F_FULLFSYNC);
-        F(F_FREEZE_FS);
-        F(F_THAW_FS);
-        F(F_GLOBAL_NOCACHE);
-        F(F_PREALLOCATE);
-        F(F_SETSIZE);
-        F(F_RDADVISE);
-        F(F_READBOOTSTRAP);
-        F(F_WRITEBOOTSTRAP);
-        F(F_LOG2PHYS);
-        F(F_GETPATH);
-        F(F_PATHPKG_CHECK);
-    default:
-        return "UNKNOWN";
-    }
-#undef F
-}
-
-void 
-ML_(PRE_sys_fcntl) ( ThreadId tid, SyscallArgLayout *layout, UWord *flags, 
-                     UWord arg1, UWord arg2, UWord arg3 )
-{
-    switch (arg2) {
-        // none
-    case VKI_F_CHKCLEAN:
-    case VKI_F_RDAHEAD:
-    case VKI_F_NOCACHE:
-    case VKI_F_FULLFSYNC:
-    case VKI_F_FREEZE_FS:
-    case VKI_F_THAW_FS:
-    case VKI_F_GLOBAL_NOCACHE:
-        PRINT("sys_fcntl ( %d, %s )", arg1,name_for_fcntl(arg2));
-        PRE_REG_READ2(long, "fcntl", unsigned int, fd, unsigned int, cmd);
-        break;
-
-        // struct fstore
-    case VKI_F_PREALLOCATE:
-        PRINT("sys_fcntl ( %d, %s, %p )", arg1,name_for_fcntl(arg2),arg3);
-        PRE_REG_READ3(long, "fcntl",
-                      unsigned int, fd, unsigned int, cmd,
-                      struct fstore *, fstore);
-        {
-            struct vki_fstore *fstore = (struct vki_fstore *)arg3;
-            PRE_FIELD_READ( "fcntl(F_PREALLOCATE, fstore->fst_flags)", 
-                            fstore->fst_flags );
-            PRE_FIELD_READ( "fcntl(F_PREALLOCATE, fstore->fst_flags)", 
-                            fstore->fst_posmode );
-            PRE_FIELD_READ( "fcntl(F_PREALLOCATE, fstore->fst_flags)", 
-                            fstore->fst_offset );
-            PRE_FIELD_READ( "fcntl(F_PREALLOCATE, fstore->fst_flags)", 
-                            fstore->fst_length );
-            PRE_FIELD_WRITE( "fcntl(F_PREALLOCATE, fstore->fst_bytesalloc)", 
-                             fstore->fst_bytesalloc);
-        }
-        break;
-
-        // off_t
-    case VKI_F_SETSIZE:
-        PRINT("sys_fcntl ( %d, %s, %p )", arg1,name_for_fcntl(arg2),arg3);
-        PRE_REG_READ3(long, "fcntl",
-                      unsigned int, fd, unsigned int, cmd,
-                      vki_off_t *, offset);
-        break;
-
-        // struct radvisory
-    case VKI_F_RDADVISE:
-        PRINT("sys_fcntl ( %d, %s, %p )", arg1,name_for_fcntl(arg2),arg3);
-        PRE_REG_READ3(long, "fcntl",
-                      unsigned int, fd, unsigned int, cmd,
-                      struct vki_radvisory *, radvisory);
-        {
-            struct vki_radvisory *radvisory = (struct vki_radvisory *)arg3;
-            PRE_FIELD_READ( "fcntl(F_PREALLOCATE, radvisory->ra_offset)", 
-                            radvisory->ra_offset );
-            PRE_FIELD_READ( "fcntl(F_PREALLOCATE, radvisory->ra_count)", 
-                            radvisory->ra_count );
-        }
-        break;
-
-        // struct fbootstraptransfer
-    case VKI_F_READBOOTSTRAP:
-    case VKI_F_WRITEBOOTSTRAP:
-        PRINT("sys_fcntl ( %d, %s, %p )", arg1,name_for_fcntl(arg2),arg3);
-        PRE_REG_READ3(long, "fcntl",
-                      unsigned int, fd, unsigned int, cmd,
-                      struct fbootstraptransfer *, bootstrap);
-        PRE_MEM_READ( "fcntl(F_READ/WRITEBOOTSTRAP, bootstrap)", 
-                      arg3, sizeof(struct vki_fbootstraptransfer) );
-        break;
-
-        // struct log2phys (out)
-    case VKI_F_LOG2PHYS:
-        PRINT("sys_fcntl ( %d, %s, %p )", arg1,name_for_fcntl(arg2),arg3);
-        PRE_REG_READ3(long, "fcntl",
-                      unsigned int, fd, unsigned int, cmd,
-                      struct log2phys *, l2p);
-        PRE_MEM_WRITE( "fcntl(F_LOG2PHYS, l2p)", 
-                       arg3, sizeof(struct vki_log2phys) );
-        break;
-
-        // char[maxpathlen] (out)
-    case VKI_F_GETPATH:
-        PRINT("sys_fcntl ( %d, %s, %p )", arg1,name_for_fcntl(arg2),arg3);
-        PRE_REG_READ3(long, "fcntl",
-                      unsigned int, fd, unsigned int, cmd,
-                      char *, pathbuf);
-        PRE_MEM_WRITE( "fcntl(F_GETPATH, pathbuf)", 
-                       arg3, VKI_MAXPATHLEN );
-        break;
-
-        // char[maxpathlen] (in)
-    case VKI_F_PATHPKG_CHECK:
-        PRINT("sys_fcntl ( %d, %s, %p '%s')", arg1,name_for_fcntl(arg2),arg3,arg3);
-        PRE_REG_READ3(long, "fcntl",
-                      unsigned int, fd, unsigned int, cmd,
-                      char *, pathbuf);
-        PRE_MEM_RASCIIZ( "fcntl(F_PATHPKG_CHECK, pathbuf)", arg3);
-        break;
-
-    default:
-        PRINT("sys_fcntl ( %d, %d [??] )", arg1,arg2);
-        if (VG_(clo_trace_unknown_syscalls)) {
-            VG_(printf)("UNKNOWN fcntl %d!", arg2);
-        }
-        break;
-    }
-}
-
-void 
-ML_(POST_sys_fcntl) ( ThreadId tid, SyscallStatus *status, 
-                     UWord arg1, UWord arg2, UWord arg3 )
-{
-    switch (arg2) {
-    case VKI_F_PREALLOCATE:
-        {
-            struct vki_fstore *fstore = (struct vki_fstore *)arg3;
-            POST_FIELD_WRITE( fstore->fst_bytesalloc );
-        }
-        break;
-
-    case VKI_F_LOG2PHYS:
-        POST_MEM_WRITE( arg3, sizeof(struct vki_log2phys) );
-        break;
-
-    case VKI_F_GETPATH:
-        POST_MEM_WRITE( arg3, 1+VG_(strlen)((char *)arg3) );
-        PRINT("\"%s\"", arg3);
-        break;
-
-    default:
-        break;
-    }
-}
-
-void 
-ML_(PRE_sys_fcntl64) ( ThreadId tid, SyscallArgLayout *layout, UWord *flags, 
-                       UWord arg1, UWord arg2, UWord arg3 )
-{
-}
-
-void 
-ML_(POST_sys_fcntl64) ( ThreadId tid, SyscallStatus *status, 
-                        UWord arg1, UWord arg2, UWord arg3 )
-{
-}
-
-
-
-
 #define PRE(name)       DEFN_PRE_TEMPLATE(darwin, name)
 #define POST(name)      DEFN_POST_TEMPLATE(darwin, name)
 
@@ -900,6 +633,778 @@ ML_(POST_sys_fcntl64) ( ThreadId tid, SyscallStatus *status,
 #define MACH_REMOTE VG_(get_ThreadState)(tid)->os_state.remote_port
 #define MACH_MSGH_ID VG_(get_ThreadState)(tid)->os_state.msgh_id
 
+/* ---------------------------------------------------------------------
+   darwin ioctl wrapper helpers
+   ------------------------------------------------------------------ */
+
+PRE(sys_ioctl)
+{
+   *flags |= SfMayBlock;
+   PRINT("sys_ioctl ( %ld, 0x%lx, %#lx )",ARG1,ARG2,ARG3);
+   PRE_REG_READ3(long, "ioctl",
+                 unsigned int, fd, unsigned int, request, unsigned long, arg);
+
+   switch (ARG2 /* request */) {
+   case VKI_TIOCGWINSZ:
+      PRE_MEM_WRITE( "ioctl(TIOCGWINSZ)", ARG3, sizeof(struct vki_winsize) );
+      break;
+   case VKI_TIOCSWINSZ:
+      PRE_MEM_READ( "ioctl(TIOCSWINSZ)",  ARG3, sizeof(struct vki_winsize) );
+      break;
+   case VKI_TIOCMBIS:
+      PRE_MEM_READ( "ioctl(TIOCMBIS)",    ARG3, sizeof(unsigned int) );
+      break;
+   case VKI_TIOCMBIC:
+      PRE_MEM_READ( "ioctl(TIOCMBIC)",    ARG3, sizeof(unsigned int) );
+      break;
+   case VKI_TIOCMSET:
+      PRE_MEM_READ( "ioctl(TIOCMSET)",    ARG3, sizeof(unsigned int) );
+      break;
+   case VKI_TIOCMGET:
+      PRE_MEM_WRITE( "ioctl(TIOCMGET)",   ARG3, sizeof(unsigned int) );
+      break;
+   case VKI_TIOCGPGRP:
+      /* Get process group ID for foreground processing group. */
+      PRE_MEM_WRITE( "ioctl(TIOCGPGRP)", ARG3, sizeof(vki_pid_t) );
+      break;
+   case VKI_TIOCSPGRP:
+      /* Set a process group ID? */
+      PRE_MEM_WRITE( "ioctl(TIOCGPGRP)", ARG3, sizeof(vki_pid_t) );
+      break;
+   case VKI_TIOCSCTTY:
+      /* Just takes an int value.  */
+      break;
+   case VKI_FIONBIO:
+      PRE_MEM_READ( "ioctl(FIONBIO)",    ARG3, sizeof(int) );
+      break;
+   case VKI_FIOASYNC:
+      PRE_MEM_READ( "ioctl(FIOASYNC)",   ARG3, sizeof(int) );
+      break;
+   case VKI_FIONREAD:                /* identical to SIOCINQ */
+      PRE_MEM_WRITE( "ioctl(FIONREAD)",  ARG3, sizeof(int) );
+      break;
+
+
+      /* These all use struct ifreq AFAIK */
+      /* GrP fixme is sizeof(struct vki_if_req) correct if it's using a sockaddr? */
+   case VKI_SIOCGIFFLAGS:        /* get flags                    */
+      PRE_MEM_RASCIIZ( "ioctl(SIOCGIFFLAGS)",
+                     (Addr)((struct vki_ifreq *)ARG3)->vki_ifr_name );
+      PRE_MEM_WRITE( "ioctl(SIOCGIFFLAGS)", ARG3, sizeof(struct vki_ifreq));
+      break;
+   case VKI_SIOCGIFMTU:          /* get MTU size                 */
+      PRE_MEM_RASCIIZ( "ioctl(SIOCGIFMTU)",
+                     (Addr)((struct vki_ifreq *)ARG3)->vki_ifr_name );
+      PRE_MEM_WRITE( "ioctl(SIOCGIFMTU)", ARG3, sizeof(struct vki_ifreq));
+      break;
+   case VKI_SIOCGIFADDR:         /* get PA address               */
+      PRE_MEM_RASCIIZ( "ioctl(SIOCGIFADDR)",
+                     (Addr)((struct vki_ifreq *)ARG3)->vki_ifr_name );
+      PRE_MEM_WRITE( "ioctl(SIOCGIFADDR)", ARG3, sizeof(struct vki_ifreq));
+      break;
+   case VKI_SIOCGIFNETMASK:      /* get network PA mask          */
+      PRE_MEM_RASCIIZ( "ioctl(SIOCGIFNETMASK)",
+                     (Addr)((struct vki_ifreq *)ARG3)->vki_ifr_name );
+      PRE_MEM_WRITE( "ioctl(SIOCGIFNETMASK)", ARG3, sizeof(struct vki_ifreq));
+      break;
+   case VKI_SIOCGIFMETRIC:       /* get metric                   */
+      PRE_MEM_RASCIIZ( "ioctl(SIOCGIFMETRIC)",
+                     (Addr)((struct vki_ifreq *)ARG3)->vki_ifr_name );
+      PRE_MEM_WRITE( "ioctl(SIOCGIFMETRIC)", ARG3, sizeof(struct vki_ifreq));
+      break;
+   case VKI_SIOCGIFDSTADDR:      /* get remote PA address        */
+      PRE_MEM_RASCIIZ( "ioctl(SIOCGIFDSTADDR)",
+                     (Addr)((struct vki_ifreq *)ARG3)->vki_ifr_name );
+      PRE_MEM_WRITE( "ioctl(SIOCGIFDSTADDR)", ARG3, sizeof(struct vki_ifreq));
+      break;
+   case VKI_SIOCGIFBRDADDR:      /* get broadcast PA address     */
+      PRE_MEM_RASCIIZ( "ioctl(SIOCGIFBRDADDR)",
+                     (Addr)((struct vki_ifreq *)ARG3)->vki_ifr_name );
+      PRE_MEM_WRITE( "ioctl(SIOCGIFBRDADDR)", ARG3, sizeof(struct vki_ifreq));
+      break;
+   case VKI_SIOCGIFCONF:         /* get iface list               */
+      /* WAS:
+	 PRE_MEM_WRITE( "ioctl(SIOCGIFCONF)", ARG3, sizeof(struct ifconf));
+	 KERNEL_DO_SYSCALL(tid,RES);
+	 if (!VG_(is_kerror)(RES) && RES == 0)
+	 POST_MEM_WRITE(ARG3, sizeof(struct ifconf));
+      */
+      PRE_MEM_READ( "ioctl(SIOCGIFCONF)",
+                    (Addr)&((struct vki_ifconf *)ARG3)->ifc_len,
+                    sizeof(((struct vki_ifconf *)ARG3)->ifc_len));
+      PRE_MEM_READ( "ioctl(SIOCGIFCONF)",
+                    (Addr)&((struct vki_ifconf *)ARG3)->vki_ifc_buf,
+                    sizeof(((struct vki_ifconf *)ARG3)->vki_ifc_buf));
+      if ( ARG3 ) {
+	 // TODO len must be readable and writable
+	 // buf pointer only needs to be readable
+	 struct vki_ifconf *ifc = (struct vki_ifconf *) ARG3;
+	 PRE_MEM_WRITE( "ioctl(SIOCGIFCONF).ifc_buf",
+			(Addr)(ifc->vki_ifc_buf), ifc->ifc_len );
+      }
+      break;
+                    
+   case VKI_SIOCSIFFLAGS:        /* set flags                    */
+      PRE_MEM_RASCIIZ( "ioctl(SIOCSIFFLAGS)",
+                     (Addr)((struct vki_ifreq *)ARG3)->vki_ifr_name );
+      PRE_MEM_READ( "ioctl(SIOCSIFFLAGS)",
+                     (Addr)&((struct vki_ifreq *)ARG3)->vki_ifr_flags,
+                     sizeof(((struct vki_ifreq *)ARG3)->vki_ifr_flags) );
+      break;
+   case VKI_SIOCSIFADDR:         /* set PA address               */
+   case VKI_SIOCSIFDSTADDR:      /* set remote PA address        */
+   case VKI_SIOCSIFBRDADDR:      /* set broadcast PA address     */
+   case VKI_SIOCSIFNETMASK:      /* set network PA mask          */
+      PRE_MEM_RASCIIZ( "ioctl(SIOCSIF*ADDR)",
+                     (Addr)((struct vki_ifreq *)ARG3)->vki_ifr_name );
+      PRE_MEM_READ( "ioctl(SIOCSIF*ADDR)",
+                     (Addr)&((struct vki_ifreq *)ARG3)->ifr_addr,
+                     sizeof(((struct vki_ifreq *)ARG3)->ifr_addr) );
+      break;
+   case VKI_SIOCSIFMETRIC:       /* set metric                   */
+      PRE_MEM_RASCIIZ( "ioctl(SIOCSIFMETRIC)",
+                     (Addr)((struct vki_ifreq *)ARG3)->vki_ifr_name );
+      PRE_MEM_READ( "ioctl(SIOCSIFMETRIC)",
+                     (Addr)&((struct vki_ifreq *)ARG3)->vki_ifr_metric,
+                     sizeof(((struct vki_ifreq *)ARG3)->vki_ifr_metric) );
+      break;
+   case VKI_SIOCSIFMTU:          /* set MTU size                 */
+      PRE_MEM_RASCIIZ( "ioctl(SIOCSIFMTU)",
+                     (Addr)((struct vki_ifreq *)ARG3)->vki_ifr_name );
+      PRE_MEM_READ( "ioctl(SIOCSIFMTU)",
+                     (Addr)&((struct vki_ifreq *)ARG3)->vki_ifr_mtu,
+                     sizeof(((struct vki_ifreq *)ARG3)->vki_ifr_mtu) );
+      break;
+      /* Routing table calls.  */
+#ifdef VKI_SIOCADDRT
+   case VKI_SIOCADDRT:           /* add routing table entry      */
+   case VKI_SIOCDELRT:           /* delete routing table entry   */
+      PRE_MEM_READ( "ioctl(SIOCADDRT/DELRT)", ARG3, 
+		    sizeof(struct vki_rtentry));
+      break;
+#endif
+
+   case VKI_SIOCGPGRP:
+      PRE_MEM_WRITE( "ioctl(SIOCGPGRP)", ARG3, sizeof(int) );
+      break;
+   case VKI_SIOCSPGRP:
+      PRE_MEM_READ( "ioctl(SIOCSPGRP)", ARG3, sizeof(int) );
+      //tst->sys_flags &= ~SfMayBlock;
+      break;
+
+   case VKI_TIOCGWINSZ:
+      PRE_MEM_WRITE( "ioctl(TIOCGWINSZ)", ARG3, sizeof(struct vki_winsize) );
+      break;
+   case VKI_TIOCSWINSZ:
+      PRE_MEM_READ( "ioctl(TIOCSWINSZ)",  ARG3, sizeof(struct vki_winsize) );
+      break;
+   case VKI_TIOCMBIS:
+      PRE_MEM_READ( "ioctl(TIOCMBIS)",    ARG3, sizeof(unsigned int) );
+      break;
+   case VKI_TIOCMBIC:
+      PRE_MEM_READ( "ioctl(TIOCMBIC)",    ARG3, sizeof(unsigned int) );
+      break;
+   case VKI_TIOCMSET:
+      PRE_MEM_READ( "ioctl(TIOCMSET)",    ARG3, sizeof(unsigned int) );
+      break;
+   case VKI_TIOCMGET:
+      PRE_MEM_WRITE( "ioctl(TIOCMGET)",   ARG3, sizeof(unsigned int) );
+      break;
+   case VKI_TIOCGPGRP:
+      /* Get process group ID for foreground processing group. */
+      PRE_MEM_WRITE( "ioctl(TIOCGPGRP)", ARG3, sizeof(vki_pid_t) );
+      break;
+   case VKI_TIOCSPGRP:
+      /* Set a process group ID? */
+      PRE_MEM_WRITE( "ioctl(TIOCGPGRP)", ARG3, sizeof(vki_pid_t) );
+      break;
+   case VKI_TIOCSCTTY:
+      /* Just takes an int value.  */
+      break;
+   case VKI_FIONBIO:
+      PRE_MEM_READ( "ioctl(FIONBIO)",    ARG3, sizeof(int) );
+      break;
+   case VKI_FIOASYNC:
+      PRE_MEM_READ( "ioctl(FIOASYNC)",   ARG3, sizeof(int) );
+      break;
+   case VKI_FIONREAD:                /* identical to SIOCINQ */
+      PRE_MEM_WRITE( "ioctl(FIONREAD)",  ARG3, sizeof(int) );
+      break;
+
+
+      /* These all use struct ifreq AFAIK */
+      /* GrP fixme is sizeof(struct vki_if_req) correct if it's using a sockaddr? */
+   case VKI_SIOCGIFFLAGS:        /* get flags                    */
+      PRE_MEM_RASCIIZ( "ioctl(SIOCGIFFLAGS)",
+                     (Addr)((struct vki_ifreq *)ARG3)->vki_ifr_name );
+      PRE_MEM_WRITE( "ioctl(SIOCGIFFLAGS)", ARG3, sizeof(struct vki_ifreq));
+      break;
+   case VKI_SIOCGIFMTU:          /* get MTU size                 */
+      PRE_MEM_RASCIIZ( "ioctl(SIOCGIFMTU)",
+                     (Addr)((struct vki_ifreq *)ARG3)->vki_ifr_name );
+      PRE_MEM_WRITE( "ioctl(SIOCGIFMTU)", ARG3, sizeof(struct vki_ifreq));
+      break;
+   case VKI_SIOCGIFADDR:         /* get PA address               */
+      PRE_MEM_RASCIIZ( "ioctl(SIOCGIFADDR)",
+                     (Addr)((struct vki_ifreq *)ARG3)->vki_ifr_name );
+      PRE_MEM_WRITE( "ioctl(SIOCGIFADDR)", ARG3, sizeof(struct vki_ifreq));
+      break;
+   case VKI_SIOCGIFNETMASK:      /* get network PA mask          */
+      PRE_MEM_RASCIIZ( "ioctl(SIOCGIFNETMASK)",
+                     (Addr)((struct vki_ifreq *)ARG3)->vki_ifr_name );
+      PRE_MEM_WRITE( "ioctl(SIOCGIFNETMASK)", ARG3, sizeof(struct vki_ifreq));
+      break;
+   case VKI_SIOCGIFMETRIC:       /* get metric                   */
+      PRE_MEM_RASCIIZ( "ioctl(SIOCGIFMETRIC)",
+                     (Addr)((struct vki_ifreq *)ARG3)->vki_ifr_name );
+      PRE_MEM_WRITE( "ioctl(SIOCGIFMETRIC)", ARG3, sizeof(struct vki_ifreq));
+      break;
+   case VKI_SIOCGIFDSTADDR:      /* get remote PA address        */
+      PRE_MEM_RASCIIZ( "ioctl(SIOCGIFDSTADDR)",
+                     (Addr)((struct vki_ifreq *)ARG3)->vki_ifr_name );
+      PRE_MEM_WRITE( "ioctl(SIOCGIFDSTADDR)", ARG3, sizeof(struct vki_ifreq));
+      break;
+   case VKI_SIOCGIFBRDADDR:      /* get broadcast PA address     */
+      PRE_MEM_RASCIIZ( "ioctl(SIOCGIFBRDADDR)",
+                     (Addr)((struct vki_ifreq *)ARG3)->vki_ifr_name );
+      PRE_MEM_WRITE( "ioctl(SIOCGIFBRDADDR)", ARG3, sizeof(struct vki_ifreq));
+      break;
+   case VKI_SIOCGIFCONF:         /* get iface list               */
+      /* WAS:
+	 PRE_MEM_WRITE( "ioctl(SIOCGIFCONF)", ARG3, sizeof(struct ifconf));
+	 KERNEL_DO_SYSCALL(tid,RES);
+	 if (!VG_(is_kerror)(RES) && RES == 0)
+	 POST_MEM_WRITE(ARG3, sizeof(struct ifconf));
+      */
+      PRE_MEM_READ( "ioctl(SIOCGIFCONF)",
+                    (Addr)&((struct vki_ifconf *)ARG3)->ifc_len,
+                    sizeof(((struct vki_ifconf *)ARG3)->ifc_len));
+      PRE_MEM_READ( "ioctl(SIOCGIFCONF)",
+                    (Addr)&((struct vki_ifconf *)ARG3)->vki_ifc_buf,
+                    sizeof(((struct vki_ifconf *)ARG3)->vki_ifc_buf));
+      if ( ARG3 ) {
+	 // TODO len must be readable and writable
+	 // buf pointer only needs to be readable
+	 struct vki_ifconf *ifc = (struct vki_ifconf *) ARG3;
+	 PRE_MEM_WRITE( "ioctl(SIOCGIFCONF).ifc_buf",
+			(Addr)(ifc->vki_ifc_buf), ifc->ifc_len );
+      }
+      break;
+                    
+   case VKI_SIOCSIFFLAGS:        /* set flags                    */
+      PRE_MEM_RASCIIZ( "ioctl(SIOCSIFFLAGS)",
+                     (Addr)((struct vki_ifreq *)ARG3)->vki_ifr_name );
+      PRE_MEM_READ( "ioctl(SIOCSIFFLAGS)",
+                     (Addr)&((struct vki_ifreq *)ARG3)->vki_ifr_flags,
+                     sizeof(((struct vki_ifreq *)ARG3)->vki_ifr_flags) );
+      break;
+   case VKI_SIOCSIFADDR:         /* set PA address               */
+   case VKI_SIOCSIFDSTADDR:      /* set remote PA address        */
+   case VKI_SIOCSIFBRDADDR:      /* set broadcast PA address     */
+   case VKI_SIOCSIFNETMASK:      /* set network PA mask          */
+      PRE_MEM_RASCIIZ( "ioctl(SIOCSIF*ADDR)",
+                     (Addr)((struct vki_ifreq *)ARG3)->vki_ifr_name );
+      PRE_MEM_READ( "ioctl(SIOCSIF*ADDR)",
+                     (Addr)&((struct vki_ifreq *)ARG3)->ifr_addr,
+                     sizeof(((struct vki_ifreq *)ARG3)->ifr_addr) );
+      break;
+   case VKI_SIOCSIFMETRIC:       /* set metric                   */
+      PRE_MEM_RASCIIZ( "ioctl(SIOCSIFMETRIC)",
+                     (Addr)((struct vki_ifreq *)ARG3)->vki_ifr_name );
+      PRE_MEM_READ( "ioctl(SIOCSIFMETRIC)",
+                     (Addr)&((struct vki_ifreq *)ARG3)->vki_ifr_metric,
+                     sizeof(((struct vki_ifreq *)ARG3)->vki_ifr_metric) );
+      break;
+   case VKI_SIOCSIFMTU:          /* set MTU size                 */
+      PRE_MEM_RASCIIZ( "ioctl(SIOCSIFMTU)",
+                     (Addr)((struct vki_ifreq *)ARG3)->vki_ifr_name );
+      PRE_MEM_READ( "ioctl(SIOCSIFMTU)",
+                     (Addr)&((struct vki_ifreq *)ARG3)->vki_ifr_mtu,
+                     sizeof(((struct vki_ifreq *)ARG3)->vki_ifr_mtu) );
+      break;
+      /* Routing table calls.  */
+#ifdef VKI_SIOCADDRT
+   case VKI_SIOCADDRT:           /* add routing table entry      */
+   case VKI_SIOCDELRT:           /* delete routing table entry   */
+      PRE_MEM_READ( "ioctl(SIOCADDRT/DELRT)", ARG3, 
+		    sizeof(struct vki_rtentry));
+      break;
+#endif
+
+   case VKI_SIOCGPGRP:
+      PRE_MEM_WRITE( "ioctl(SIOCGPGRP)", ARG3, sizeof(int) );
+      break;
+   case VKI_SIOCSPGRP:
+      PRE_MEM_READ( "ioctl(SIOCSPGRP)", ARG3, sizeof(int) );
+      //tst->sys_flags &= ~SfMayBlock;
+      break;
+
+#warning GrP fixme darwin-specific ioctl
+   case VKI_FIODTYPE: 
+      PRE_MEM_WRITE( "ioctl(FIONREAD)", arg3, sizeof(int) );
+      break;
+
+   case VKI_DTRACEHIOC_REMOVE: 
+   case VKI_DTRACEHIOC_ADDDOF: 
+       break;
+
+       // ttycom.h
+   case VKI_TIOCGETA:
+       PRE_MEM_WRITE( "ioctl(TIOCGETA)", arg3, sizeof(struct vki_termios) );
+       break;
+   case VKI_TIOCSETA:
+       PRE_MEM_READ( "ioctl(TIOCSETA)", arg3, sizeof(struct vki_termios) );
+       break;
+   case VKI_TIOCGETD:
+       PRE_MEM_WRITE( "ioctl(TIOCGETD)", arg3, sizeof(int) );
+       break;
+   case VKI_TIOCSETD:
+       PRE_MEM_READ( "ioctl(TIOCSETD)", arg3, sizeof(int) );
+       break;
+   case VKI_TIOCPTYGNAME:
+       PRE_MEM_WRITE( "ioctl(TIOCPTYGNAME)", arg3, 128 );
+       break;
+   case VKI_TIOCPTYGRANT:
+   case VKI_TIOCPTYUNLK:
+       break;
+
+   default: 
+      ML_(PRE_unknown_ioctl)(tid, ARG2, ARG3);
+      break;
+   }
+}
+
+
+POST(sys_ioctl)
+{
+   vg_assert(SUCCESS);
+   switch (ARG2 /* request */) {
+   case VKI_TIOCGWINSZ:
+      POST_MEM_WRITE( ARG3, sizeof(struct vki_winsize) );
+      break;
+   case VKI_TIOCSWINSZ:
+   case VKI_TIOCMBIS:
+   case VKI_TIOCMBIC:
+   case VKI_TIOCMSET:
+      break;
+   case VKI_TIOCMGET:
+      POST_MEM_WRITE( ARG3, sizeof(unsigned int) );
+      break;
+   case VKI_TIOCGPGRP:
+      /* Get process group ID for foreground processing group. */
+      POST_MEM_WRITE( ARG3, sizeof(vki_pid_t) );
+      break;
+   case VKI_TIOCSPGRP:
+      /* Set a process group ID? */
+      POST_MEM_WRITE( ARG3, sizeof(vki_pid_t) );
+      break;
+   case VKI_TIOCSCTTY:
+      break;
+   case VKI_FIONBIO:
+      break;
+   case VKI_FIOASYNC:
+      break;
+   case VKI_FIONREAD:                /* identical to SIOCINQ */
+      POST_MEM_WRITE( ARG3, sizeof(int) );
+      break;
+
+      /* These all use struct ifreq AFAIK */
+   case VKI_SIOCGIFFLAGS:        /* get flags                    */
+      POST_MEM_WRITE( (Addr)&((struct vki_ifreq *)ARG3)->vki_ifr_flags,
+                      sizeof(((struct vki_ifreq *)ARG3)->vki_ifr_flags) );
+      break;
+   case VKI_SIOCGIFMTU:          /* get MTU size                 */
+      POST_MEM_WRITE( (Addr)&((struct vki_ifreq *)ARG3)->vki_ifr_mtu,
+                      sizeof(((struct vki_ifreq *)ARG3)->vki_ifr_mtu) );
+      break;
+   case VKI_SIOCGIFADDR:         /* get PA address               */
+   case VKI_SIOCGIFDSTADDR:      /* get remote PA address        */
+   case VKI_SIOCGIFBRDADDR:      /* get broadcast PA address     */
+   case VKI_SIOCGIFNETMASK:      /* get network PA mask          */
+      POST_MEM_WRITE(
+                (Addr)&((struct vki_ifreq *)ARG3)->ifr_addr,
+                sizeof(((struct vki_ifreq *)ARG3)->ifr_addr) );
+      break;
+   case VKI_SIOCGIFMETRIC:       /* get metric                   */
+      POST_MEM_WRITE(
+                (Addr)&((struct vki_ifreq *)ARG3)->vki_ifr_metric,
+                sizeof(((struct vki_ifreq *)ARG3)->vki_ifr_metric) );
+      break;
+   case VKI_SIOCGIFCONF:         /* get iface list               */
+      /* WAS:
+	 PRE_MEM_WRITE("ioctl(SIOCGIFCONF)", ARG3, sizeof(struct ifconf));
+	 KERNEL_DO_SYSCALL(tid,RES);
+	 if (!VG_(is_kerror)(RES) && RES == 0)
+	 POST_MEM_WRITE(ARG3, sizeof(struct ifconf));
+      */
+      if (RES == 0 && ARG3 ) {
+	 struct vki_ifconf *ifc = (struct vki_ifconf *) ARG3;
+	 if (ifc->vki_ifc_buf != NULL)
+	    POST_MEM_WRITE( (Addr)(ifc->vki_ifc_buf), ifc->ifc_len );
+      }
+      break;
+                    
+   case VKI_SIOCSIFFLAGS:        /* set flags                    */
+   case VKI_SIOCSIFDSTADDR:      /* set remote PA address        */
+   case VKI_SIOCSIFBRDADDR:      /* set broadcast PA address     */
+   case VKI_SIOCSIFNETMASK:      /* set network PA mask          */
+   case VKI_SIOCSIFMETRIC:       /* set metric                   */
+   case VKI_SIOCSIFADDR:         /* set PA address               */
+   case VKI_SIOCSIFMTU:          /* set MTU size                 */
+      break;
+
+#ifdef VKI_SIOCADDRT
+      /* Routing table calls.  */
+   case VKI_SIOCADDRT:           /* add routing table entry      */
+   case VKI_SIOCDELRT:           /* delete routing table entry   */
+      break;
+#endif
+
+   case VKI_SIOCGPGRP:
+      POST_MEM_WRITE(ARG3, sizeof(int));
+      break;
+   case VKI_SIOCSPGRP:
+      break;
+
+#warning GrP fixme darwin-specific ioctl
+   case VKI_FIODTYPE: 
+      POST_MEM_WRITE( arg3, sizeof(int) );
+      break;
+
+   case VKI_DTRACEHIOC_REMOVE: 
+   case VKI_DTRACEHIOC_ADDDOF: 
+       break;
+
+       // ttycom.h
+   case VKI_TIOCGETA:
+       POST_MEM_WRITE( arg3, sizeof(struct vki_termios));
+       break;
+   case VKI_TIOCSETA:
+       break;
+   case VKI_TIOCGETD:
+       POST_MEM_WRITE( arg3, sizeof(int) );
+       break;
+   case VKI_TIOCSETD:
+       break;
+   case VKI_TIOCPTYGNAME:
+       POST_MEM_WRITE( arg3, 128);
+       break;
+   case VKI_TIOCPTYGRANT:
+   case VKI_TIOCPTYUNLK:
+       break;
+
+   default:
+      break;
+   }
+}
+
+
+/* ---------------------------------------------------------------------
+   darwin fcntl wrapper helpers
+   ------------------------------------------------------------------ */
+static const char *name_for_fcntl(UWord cmd) {
+#define F(n) case VKI_##n: return #n
+    switch (cmd) {
+        F(F_CHKCLEAN);
+        F(F_RDAHEAD);
+        F(F_NOCACHE);
+        F(F_FULLFSYNC);
+        F(F_FREEZE_FS);
+        F(F_THAW_FS);
+        F(F_GLOBAL_NOCACHE);
+        F(F_PREALLOCATE);
+        F(F_SETSIZE);
+        F(F_RDADVISE);
+        F(F_READBOOTSTRAP);
+        F(F_WRITEBOOTSTRAP);
+        F(F_LOG2PHYS);
+        F(F_GETPATH);
+        F(F_PATHPKG_CHECK);
+    default:
+        return "UNKNOWN";
+    }
+#undef F
+}
+
+PRE(sys_fcntl)
+{
+   switch (ARG2) {
+   // These ones ignore ARG3.
+   case VKI_F_GETFD:
+   case VKI_F_GETFL:
+   case VKI_F_GETOWN:
+      PRINT("sys_fcntl ( %ld, %ld )", ARG1,ARG2);
+      PRE_REG_READ2(long, "fcntl", unsigned int, fd, unsigned int, cmd);
+      break;
+
+   // These ones use ARG3 as "arg".
+   case VKI_F_DUPFD:
+   case VKI_F_SETFD:
+   case VKI_F_SETFL:
+   case VKI_F_SETOWN:
+      PRINT("sys_fcntl[ARG3=='arg'] ( %ld, %ld, %ld )", ARG1,ARG2,ARG3);
+      PRE_REG_READ3(long, "fcntl",
+                    unsigned int, fd, unsigned int, cmd, unsigned long, arg);
+      break;
+
+   // These ones use ARG3 as "lock".
+   case VKI_F_GETLK:
+   case VKI_F_SETLK:
+   case VKI_F_SETLKW:
+      PRINT("sys_fcntl[ARG3=='lock'] ( %ld, %ld, %#lx )", ARG1,ARG2,ARG3);
+      PRE_REG_READ3(long, "fcntl",
+                    unsigned int, fd, unsigned int, cmd,
+                    struct flock64 *, lock);
+      // GrP fixme mem read sizeof(flock64)
+      if (ARG2 == VKI_F_SETLKW) 
+         *flags |= SfMayBlock;
+      break;
+
+        // DDD: inconsistent indentation here, sigh
+        // none
+    case VKI_F_CHKCLEAN:
+    case VKI_F_RDAHEAD:
+    case VKI_F_NOCACHE:
+    case VKI_F_FULLFSYNC:
+    case VKI_F_FREEZE_FS:
+    case VKI_F_THAW_FS:
+    case VKI_F_GLOBAL_NOCACHE:
+        PRINT("sys_fcntl ( %d, %s )", ARG1, name_for_fcntl(ARG1));
+        PRE_REG_READ2(long, "fcntl", unsigned int, fd, unsigned int, cmd);
+        break;
+
+        // struct fstore
+    case VKI_F_PREALLOCATE:
+        PRINT("sys_fcntl ( %d, %s, %p )", ARG1, name_for_fcntl(ARG2), ARG3);
+        PRE_REG_READ3(long, "fcntl",
+                      unsigned int, fd, unsigned int, cmd,
+                      struct fstore *, fstore);
+        {
+            struct vki_fstore *fstore = (struct vki_fstore *)ARG3;
+            PRE_FIELD_READ( "fcntl(F_PREALLOCATE, fstore->fst_flags)", 
+                            fstore->fst_flags );
+            PRE_FIELD_READ( "fcntl(F_PREALLOCATE, fstore->fst_flags)", 
+                            fstore->fst_posmode );
+            PRE_FIELD_READ( "fcntl(F_PREALLOCATE, fstore->fst_flags)", 
+                            fstore->fst_offset );
+            PRE_FIELD_READ( "fcntl(F_PREALLOCATE, fstore->fst_flags)", 
+                            fstore->fst_length );
+            PRE_FIELD_WRITE( "fcntl(F_PREALLOCATE, fstore->fst_bytesalloc)", 
+                             fstore->fst_bytesalloc);
+        }
+        break;
+
+        // off_t
+    case VKI_F_SETSIZE:
+        PRINT("sys_fcntl ( %d, %s, %p )", ARG1, name_for_fcntl(ARG2), ARG3);
+        PRE_REG_READ3(long, "fcntl",
+                      unsigned int, fd, unsigned int, cmd,
+                      vki_off_t *, offset);
+        break;
+
+        // struct radvisory
+    case VKI_F_RDADVISE:
+        PRINT("sys_fcntl ( %d, %s, %p )", ARG1, name_for_fcntl(ARG2), ARG3);
+        PRE_REG_READ3(long, "fcntl",
+                      unsigned int, fd, unsigned int, cmd,
+                      struct vki_radvisory *, radvisory);
+        {
+            struct vki_radvisory *radvisory = (struct vki_radvisory *)ARG3;
+            PRE_FIELD_READ( "fcntl(F_PREALLOCATE, radvisory->ra_offset)", 
+                            radvisory->ra_offset );
+            PRE_FIELD_READ( "fcntl(F_PREALLOCATE, radvisory->ra_count)", 
+                            radvisory->ra_count );
+        }
+        break;
+
+        // struct fbootstraptransfer
+    case VKI_F_READBOOTSTRAP:
+    case VKI_F_WRITEBOOTSTRAP:
+        PRINT("sys_fcntl ( %d, %s, %p )", ARG1, name_for_fcntl(ARG2), ARG3);
+        PRE_REG_READ3(long, "fcntl",
+                      unsigned int, fd, unsigned int, cmd,
+                      struct fbootstraptransfer *, bootstrap);
+        PRE_MEM_READ( "fcntl(F_READ/WRITEBOOTSTRAP, bootstrap)", 
+                      ARG3, sizeof(struct vki_fbootstraptransfer) );
+        break;
+
+        // struct log2phys (out)
+    case VKI_F_LOG2PHYS:
+        PRINT("sys_fcntl ( %d, %s, %p )", ARG1, name_for_fcntl(ARG2), ARG3);
+        PRE_REG_READ3(long, "fcntl",
+                      unsigned int, fd, unsigned int, cmd,
+                      struct log2phys *, l2p);
+        PRE_MEM_WRITE( "fcntl(F_LOG2PHYS, l2p)", 
+                       ARG3, sizeof(struct vki_log2phys) );
+        break;
+
+        // char[maxpathlen] (out)
+    case VKI_F_GETPATH:
+        PRINT("sys_fcntl ( %d, %s, %p )", ARG1, name_for_fcntl(ARG2), ARG3);
+        PRE_REG_READ3(long, "fcntl",
+                      unsigned int, fd, unsigned int, cmd,
+                      char *, pathbuf);
+        PRE_MEM_WRITE( "fcntl(F_GETPATH, pathbuf)", 
+                       ARG3, VKI_MAXPATHLEN );
+        break;
+
+        // char[maxpathlen] (in)
+    case VKI_F_PATHPKG_CHECK:
+        PRINT("sys_fcntl ( %d, %s, %p '%s')", ARG1, name_for_fcntl(ARG2), ARG3,
+            ARG3);
+        PRE_REG_READ3(long, "fcntl",
+                      unsigned int, fd, unsigned int, cmd,
+                      char *, pathbuf);
+        PRE_MEM_RASCIIZ( "fcntl(F_PATHPKG_CHECK, pathbuf)", ARG3);
+        break;
+
+    default:
+        PRINT("sys_fcntl ( %d, %d [??] )", ARG1, ARG2);
+        if (VG_(clo_trace_unknown_syscalls)) {
+            VG_(printf)("UNKNOWN fcntl %d!", ARG2);
+        }
+        break;
+    }
+}
+
+POST(sys_fcntl)
+{
+   vg_assert(SUCCESS);
+   switch (ARG2) {
+   case VKI_F_DUPFD:
+      if (!ML_(fd_allowed)(RES, "fcntl(DUPFD)", tid, True)) {
+         VG_(close)(RES);
+         SET_STATUS_Failure( VKI_EMFILE );
+      } else {
+         if (VG_(clo_track_fds))
+            ML_(record_fd_open_named)(tid, RES);
+      }
+      break;
+
+   case VKI_F_GETFD:
+   case VKI_F_GETFL:
+   case VKI_F_GETOWN:
+   case VKI_F_SETFD:
+   case VKI_F_SETFL:
+   case VKI_F_SETOWN:
+   case VKI_F_GETLK:
+   case VKI_F_SETLK:
+   case VKI_F_SETLKW:
+       break;
+
+   case VKI_F_DUPFD:
+      if (!ML_(fd_allowed)(RES, "fcntl(DUPFD)", tid, True)) {
+         VG_(close)(RES);
+         SET_STATUS_Failure( VKI_EMFILE );
+      } else {
+         if (VG_(clo_track_fds))
+            ML_(record_fd_open_named)(tid, RES);
+      }
+      break;
+
+   case VKI_F_GETFD:
+   case VKI_F_GETFL:
+   case VKI_F_GETOWN:
+   case VKI_F_SETFD:
+   case VKI_F_SETFL:
+   case VKI_F_SETOWN:
+   case VKI_F_GETLK:
+   case VKI_F_SETLK:
+   case VKI_F_SETLKW:
+       break;
+
+   // DDD: more inconsistent indentation
+    case VKI_F_PREALLOCATE:
+        {
+            struct vki_fstore *fstore = (struct vki_fstore *)arg3;
+            POST_FIELD_WRITE( fstore->fst_bytesalloc );
+        }
+        break;
+
+    case VKI_F_LOG2PHYS:
+        POST_MEM_WRITE( arg3, sizeof(struct vki_log2phys) );
+        break;
+
+    case VKI_F_GETPATH:
+        POST_MEM_WRITE( arg3, 1+VG_(strlen)((char *)arg3) );
+        PRINT("\"%s\"", arg3);
+        break;
+
+    default:
+        // DDD: ugh, missing lots of cases here, not nice
+        break;
+    }
+}
+
+// XXX: wrapper only suitable for 32-bit systems
+PRE(sys_fcntl64)
+{
+   switch (ARG2) {
+   // These ones ignore ARG3.
+   case VKI_F_GETFD:
+   case VKI_F_GETFL:
+   case VKI_F_GETOWN:
+      PRINT("sys_fcntl64 ( %ld, %ld )", ARG1,ARG2);
+      PRE_REG_READ2(long, "fcntl64", unsigned int, fd, unsigned int, cmd);
+      break;
+
+   // These ones use ARG3 as "arg".
+   case VKI_F_DUPFD:
+   case VKI_F_SETFD:
+   case VKI_F_SETFL:
+   case VKI_F_SETOWN:
+      PRINT("sys_fcntl64[ARG3=='arg'] ( %ld, %ld, %ld )", ARG1,ARG2,ARG3);
+      PRE_REG_READ3(long, "fcntl64",
+                    unsigned int, fd, unsigned int, cmd, unsigned long, arg);
+      break;
+
+   // These ones use ARG3 as "lock".
+   case VKI_F_GETLK:
+   case VKI_F_SETLK:
+   case VKI_F_SETLKW:
+      PRINT("sys_fcntl64[ARG3=='lock'] ( %ld, %ld, %lp )", ARG1,ARG2,ARG3);
+      PRE_REG_READ3(long, "fcntl64",
+                    unsigned int, fd, unsigned int, cmd,
+                    struct flock64 *, lock);
+   if (ARG2 == VKI_F_SETLKW)
+      *flags |= SfMayBlock;
+      break;
+
+   default:
+      I_die_here;    // DDD: do something better here
+      break;
+}
+
+POST(sys_fcntl64)
+{
+   vg_assert(SUCCESS);
+   switch (ARG2) {
+   case VKI_F_DUPFD:
+      if (!ML_(fd_allowed)(RES, "fcntl64(DUPFD)", tid, True)) {
+         VG_(close)(RES);
+         SET_STATUS_Failure( VKI_EMFILE );
+      } else {
+         if (VG_(clo_track_fds))
+            ML_(record_fd_open_named)(tid, RES);
+      }
+      break;
+
+   case VKI_F_GETFD:
+   case VKI_F_GETFL:
+   case VKI_F_GETOWN:
+   case VKI_F_SETFD:
+   case VKI_F_SETFL:
+   case VKI_F_SETOWN:
+   case VKI_F_GETLK:
+   case VKI_F_SETLK:
+   case VKI_F_SETLKW:
+       break;
+
+   default:
+      ML_(POST_sys_fcntl64)(tid, status, ARG1, ARG2, ARG3);
+      break;
+   }
+}
 
 /* ---------------------------------------------------------------------
    unix syscalls
@@ -6089,7 +6594,7 @@ const SyscallTableEntry ML_(syscall_table)[] = {
     MACXY(__NR_getdtablesize, sys_getdtablesize), 
     GENX_(__NR_dup2, sys_dup2), 
 //  _____(__NR_getdopt), 
-    GENXY(__NR_fcntl, sys_fcntl), 
+    MACXY(__NR_fcntl, sys_fcntl), 
     GENX_(__NR_select, sys_select), 
 //  _____(__NR_setdopt), 
     GENX_(__NR_fsync, sys_fsync), 

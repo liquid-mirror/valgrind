@@ -88,9 +88,9 @@ if ! VGO_DARWIN
 	sbbmisc \
 	seg_override \
 	sigcontext
-   if BUILD_SSSE3_TESTS
-      check_PROGRAMS += ssse3_misaligned
-   endif
+if BUILD_SSSE3_TESTS
+   check_PROGRAMS += ssse3_misaligned
+endif
 endif
 
 AM_CFLAGS    = $(WERROR) -Winline -Wall -Wshadow \

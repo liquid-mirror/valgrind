@@ -290,7 +290,7 @@ ESZ(Addr) mapelf(struct elfinfo *e, ESZ(Addr) base)
    return elfbrk;
 }
 
-static Bool match_ELF(const char *hdr, Int len)
+Bool VG_(match_ELF)(const char *hdr, Int len)
 {
    ESZ(Ehdr) *e = (ESZ(Ehdr) *)hdr;
    return (len > sizeof(*e)) && VG_(memcmp)(&e->e_ident[0], ELFMAG, SELFMAG) == 0;
@@ -340,7 +340,7 @@ static Bool match_ELF(const char *hdr, Int len)
 
    - The entry point in INFO is set to the interpreter's entry point,
      and we're done.  */
-static Int load_ELF(Int fd, const HChar* name, /*MOD*/ExeInfo* info)
+Int VG_(load_ELF)(Int fd, const HChar* name, /*MOD*/ExeInfo* info)
 {
    SysRes sres;
    struct elfinfo *e;

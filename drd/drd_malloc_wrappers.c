@@ -278,6 +278,7 @@ void drd_register_malloc_wrappers(const StartUsingMem start_using_mem_callback,
                                 drd___builtin_delete,
                                 drd___builtin_vec_delete,
                                 drd_realloc,
+                                NULL,  // DDD: malloc_usable_size
                                 0);
 }
 
