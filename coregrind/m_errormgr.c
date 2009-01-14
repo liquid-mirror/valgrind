@@ -301,10 +301,6 @@ static void pp_Error ( Error* err )
          VG_(message)(Vg_UserMsg, "Thread %d:", err->tid );
          last_tid_printed = err->tid;
       }
-      VG_(message)(Vg_UserMsg, "");
-      VG_(message)(Vg_UserMsg, "");
-      VG_(message)(Vg_UserMsg, "ERROR");
-      VG_(message)(Vg_UserMsg, "");
    }
 
    switch (err->ekind) {

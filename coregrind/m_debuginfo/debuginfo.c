@@ -3066,6 +3066,7 @@ VgSectKind VG_(seginfo_sect_kind)( /*OUT*/UChar* name, SizeT n_name,
 }
 
 
+// DDD: not used?
 Addr VG_(dlsym)(Char *fnname)
 {
     DebugInfo const *si = NULL;

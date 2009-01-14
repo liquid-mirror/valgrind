@@ -12,24 +12,21 @@
 
 static int pgsz;
 
-#ifndef MAP_ANONYMOUS
-#define MAP_ANONYMOUS 0
-#endif /* MAP_ANONYMOUS */
-
 static char *mm(char *addr, int size, int prot)
 {
+        #if defined(__APPLE__)
+        #   define MAP_ANONYMOUS MAP_ANON
+        #endif
 	int flags = MAP_PRIVATE | MAP_ANONYMOUS;
 	char *ret;
 
-	if (addr)
-		flags |= MAP_FIXED;
+	if (addr) flags |= MAP_FIXED;
 
 	ret = mmap(addr, size, prot, flags, -1, 0);
 	if (ret == (char *)-1) {
 		perror("mmap failed");
 		exit(1);
 	}
-
 	return ret;
 }
 
@@ -37,7 +34,6 @@ static char *mm(char *addr, int size, int prot)
 static void test1()
 {
 	char *m = mm(0, pgsz * 5, PROT_READ);
-
 	VALGRIND_CHECK_MEM_IS_DEFINED(m, pgsz*5); /* all defined */
 }
 
