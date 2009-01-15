@@ -67,7 +67,7 @@ Bool ML_(do_sigkill)(Int pid, Int tgid);
    and the tool need to be notified of the new mapping.  Hence this fn. */
 extern void 
 ML_(notify_aspacem_and_tool_of_mmap) ( Addr a, SizeT len, UInt prot, 
-                                       UInt mm_flags, Int fd, ULong offset );
+                                       UInt mm_flags, Int fd, Off64T offset );
 extern void 
 ML_(notify_aspacem_and_tool_of_munmap) ( Addr a, SizeT len );
 extern void 

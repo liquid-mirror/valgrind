@@ -3723,7 +3723,7 @@ static UInt mb_get_origin_for_guest_offset ( ThreadId tid,
    big as the biggest guest state.
 */
 static void mc_post_reg_write ( CorePart part, ThreadId tid, 
-                                OffT offset, SizeT size)
+                                PtrdiffT offset, SizeT size)
 {
 #  define MAX_REG_WRITE_SIZE 2000
    UChar area[MAX_REG_WRITE_SIZE];
@@ -3735,8 +3735,7 @@ static void mc_post_reg_write ( CorePart part, ThreadId tid,
 
 static 
 void mc_post_reg_write_clientcall ( ThreadId tid, 
-                                    OffT offset, SizeT size,
-                                    Addr f)
+                                    PtrdiffT offset, SizeT size, Addr f)
 {
    mc_post_reg_write(/*dummy*/0, tid, offset, size);
 }
@@ -3746,7 +3745,7 @@ void mc_post_reg_write_clientcall ( ThreadId tid,
    a parameter error.
 */
 static void mc_pre_reg_read ( CorePart part, ThreadId tid, Char* s, 
-                              OffT offset, SizeT size)
+                              PtrdiffT offset, SizeT size)
 {
    Int   i;
    Bool  bad;
