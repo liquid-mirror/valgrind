@@ -415,7 +415,10 @@ static void lc_scan_memory_WRK(Addr start, SizeT len, Int clique)
 
 static void lc_scan_memory(Addr start, SizeT len)
 {
-   VG_(printf)(".");
+   if (VG_(clo_verbosity) > 1) {
+      VG_(message)(Vg_DebugMsg, "Scanning segment: %#lx..%#lx (%ld)",
+                   start, start+len-1, len);
+   }
    lc_scan_memory_WRK(start, len, -1);
 }
 
