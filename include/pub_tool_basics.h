@@ -94,7 +94,16 @@ typedef  Word                 PtrdiffT;   // 32             64
 // - off_t is "used for file sizes".
 // At one point we were using it for memory offsets, but PtrdiffT should be
 // used in those cases.
+// DDD: on Linux and AIX, off_t is a signed word-sized int.  On Darwin it's
+// always a signed 64-bit int.  Need to find a way to remove this #if.
+// Killing OffT in favour of Off64T everywhere might work.
+#if defined(VGO_linux) || defined(VGO_aix5)
 typedef Word                   OffT;      // 32             64
+#elif defined(VGO_darwin)
+typedef Long                   OffT;      // 32             64
+#else
+#  error Unknown OS
+#endif
 typedef Long                 Off64T;      // 64             64
 
 #if !defined(NULL)

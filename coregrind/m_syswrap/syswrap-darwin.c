@@ -69,8 +69,8 @@ typedef char name_t[BOOTSTRAP_MAX_NAME_LEN];
 typedef uint64_t mig_addr_t;
 
 
-// fixme from aspacemgr-linux.c
-extern void sync_mappings(const HChar *when, const HChar *where, Int num);
+// DDD: fixme from aspacemgr-linux.c
+extern void VG_(sync_mappings)(const HChar *when, const HChar *where, Int num);
 
 
 // Saved ports
@@ -5495,7 +5495,7 @@ POST(mach_msg_receive)
    // PRINT("UNHANDLED reply %d", mh->msgh_id);
 
     // Assume the call may have mapped or unmapped memory
-    sync_mappings("after", "mach_msg_receive", 0);
+    VG_(sync_mappings)("after", "mach_msg_receive", 0);
 }
 
 PRE(mach_msg_receive)
@@ -5808,7 +5808,7 @@ POST(mach_msg)
 
 POST(mach_msg_unhandled)
 {
-    sync_mappings("after", "mach_msg_receive", 0);
+    VG_(sync_mappings)("after", "mach_msg_receive", 0);
 }
 
 PRE(mach_msg)
@@ -6202,7 +6202,7 @@ PRE(iokit_user_client_trap)
 
 POST(iokit_user_client_trap)
 {
-    sync_mappings("after", "iokit_user_client_trap", ARG2);
+    VG_(sync_mappings)("after", "iokit_user_client_trap", ARG2);
 }
 
 

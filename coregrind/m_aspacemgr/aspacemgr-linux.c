@@ -3321,7 +3321,7 @@ static unsigned int mach2vki(unsigned int vm_prot)
 static void 
 parse_procselfmaps (
                     void (*record_mapping)( Addr addr, SizeT len, UInt prot,
-                                            ULong dev, ULong ino, ULong foff,
+                                            ULong dev, ULong ino, Off64T foff,
                                             const UChar* filename ),
                     void (*record_gap)( Addr addr, SizeT len )
                     )
@@ -3374,7 +3374,7 @@ static const HChar *sync_mapping_when;
 static const HChar *sync_mapping_where;
 static Int sync_mapping_num;
 static void add_mapping_callback(Addr addr, SizeT len, UInt prot, 
-                                 ULong dev, ULong ino, ULong offset, 
+                                 ULong dev, ULong ino, Off64T offset, 
                                  const UChar *filename)
 {
    // derived from sync_check_mapping_callback()
@@ -3467,7 +3467,9 @@ static void remove_mapping_callback(Addr addr, SizeT len)
 }
 
 
-void sync_mappings(const HChar *when, const HChar *where, Int num)
+// DDD: this is used in other modules -- should have a prototype in a .h
+// file.
+void VG_(sync_mappings)(const HChar *when, const HChar *where, Int num)
 {
     sync_mapping_when = when ?: "?";
     sync_mapping_where = where ?: "?";
