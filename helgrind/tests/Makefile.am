@@ -154,10 +154,9 @@ check_PROGRAMS = \
 	tc23_bogus_condwait \
 	tc24_nonzero_sem
 
-# DDD: not sure if these ones should work on Darwin or not... if not, should
-# be moved into x86-linux/.
-# (Darwin pthreads doesn't seem to support barriers.)
-# [barriers and spinlocks are optional in pthreads]
+# DDD: all of these use barriers and/or spinlocks, which are optional in
+# pthreads and Darwin doesn't support.  Could do a configure-time test like
+# the one done for Qt above.
 if ! VGO_DARWIN
    check_PROGRAMS += \
 	bar_bad \
