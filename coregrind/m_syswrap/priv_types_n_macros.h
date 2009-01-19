@@ -418,16 +418,16 @@ static inline UWord getERR ( SyscallStatus* st ) {
    since the least significant parts of the guest register are stored
    in memory at the lowest address.
 */
-#define PRRAn_LE(n,s,t,a)                            \
-    do {                                             \
-       Int here = layout->o_arg##n;                  \
-       vg_assert(sizeof(t) <= sizeof(UWord));        \
-       vg_assert(here >= 0);                         \
-       VG_(tdict).track_pre_reg_read(                \
-          Vg_CoreSysCall, tid, s"("#a")",            \
-          here, sizeof(t)                            \
-       );                                            \
-    } while (0)
+#define PRRAn_LE(n,s,t,a)                          \
+   do {                                            \
+      Int here = layout->o_arg##n;                 \
+      vg_assert(sizeof(t) <= sizeof(UWord));       \
+      vg_assert(here >= 0);                        \
+      VG_(tdict).track_pre_reg_read(               \
+         Vg_CoreSysCall, tid, s"("#a")",           \
+         here, sizeof(t)                           \
+      );                                           \
+   } while (0)
 
 /* big-endian: the part of the guest state being read is
       let next = offset_of_reg + sizeof(reg) 
@@ -435,17 +435,17 @@ static inline UWord getERR ( SyscallStatus* st ) {
    since the least significant parts of the guest register are stored
    in memory at the highest address.
 */
-#define PRRAn_BE(n,s,t,a)                            \
-    do {                                             \
-       Int here = layout->o_arg##n;                  \
-       Int next = layout->o_arg##n + sizeof(UWord);  \
-       vg_assert(sizeof(t) <= sizeof(UWord));        \
-       vg_assert(here >= 0);                         \
-       VG_(tdict).track_pre_reg_read(                \
-          Vg_CoreSysCall, tid, s"("#a")",            \
-          next-sizeof(t), sizeof(t)                  \
-       );                                            \
-    } while (0)
+#define PRRAn_BE(n,s,t,a)                          \
+   do {                                            \
+      Int here = layout->o_arg##n;                 \
+      Int next = layout->o_arg##n + sizeof(UWord); \
+      vg_assert(sizeof(t) <= sizeof(UWord));       \
+      vg_assert(here >= 0);                        \
+      VG_(tdict).track_pre_reg_read(               \
+         Vg_CoreSysCall, tid, s"("#a")",           \
+         next-sizeof(t), sizeof(t)                 \
+      );                                           \
+   } while (0)
 
 #if defined(VG_BIGENDIAN)
 #  define PRRAn(n,s,t,a) PRRAn_BE(n,s,t,a)
@@ -469,15 +469,15 @@ static inline UWord getERR ( SyscallStatus* st ) {
    since the least significant parts of the guest register are stored
    in memory at the lowest address.
 */
-#define PSRAn_LE(n,s,t,a)                            \
-    do {                                             \
-       Addr here = layout->s_arg##n + SYSCALL_SP;    \
-       vg_assert(sizeof(t) <= sizeof(UWord));        \
-       VG_(tdict).track_pre_mem_read(                \
-          Vg_CoreSysCall, tid, s"("#a")",            \
-          here, sizeof(t)                            \
-       );                                            \
-    } while (0)
+#define PSRAn_LE(n,s,t,a)                          \
+   do {                                            \
+      Addr here = layout->s_arg##n + SYSCALL_SP;   \
+      vg_assert(sizeof(t) <= sizeof(UWord));       \
+      VG_(tdict).track_pre_mem_read(               \
+         Vg_CoreSysCall, tid, s"("#a")",           \
+         here, sizeof(t)                           \
+      );                                           \
+   } while (0)
 
 /* big-endian: the part of the guest state being read is
       let next = offset_of_reg + sizeof(reg) 
@@ -485,15 +485,15 @@ static inline UWord getERR ( SyscallStatus* st ) {
    since the least significant parts of the guest register are stored
    in memory at the highest address.
 */
-#define PSRAn_BE(n,s,t,a)                            \
-    do {                                             \
-       Addr next = layout->o_arg##n + sizeof(UWord) + SYSCALL_SP;  \
-       vg_assert(sizeof(t) <= sizeof(UWord));        \
-       VG_(tdict).track_pre_mem_read(                \
-          Vg_CoreSysCall, tid, s"("#a")",            \
-          next-sizeof(t), sizeof(t)                  \
-       );                                            \
-    } while (0)
+#define PSRAn_BE(n,s,t,a)                                         \
+   do {                                                           \
+      Addr next = layout->o_arg##n + sizeof(UWord) + SYSCALL_SP;  \
+      vg_assert(sizeof(t) <= sizeof(UWord));                      \
+      VG_(tdict).track_pre_mem_read(                              \
+         Vg_CoreSysCall, tid, s"("#a")",                          \
+         next-sizeof(t), sizeof(t)                                \
+      );                                                          \
+   } while (0)
 
 #if defined(VG_BIGENDIAN)
 #  define PSRAn(n,s,t,a) PSRAn_BE(n,s,t,a)
@@ -614,24 +614,24 @@ static inline UWord getERR ( SyscallStatus* st ) {
     POST_MEM_WRITE((UWord)&zzfield, sizeof(zzfield))
 
 
-#define PRE_timeval_READ(zzname, zzarg)                 \
-    do {                                                \
-        struct vki_timeval *zztv = (struct vki_timeval *)zzarg; \
-        PRE_FIELD_READ(zzname, zztv->tv_sec);           \
-        PRE_FIELD_READ(zzname, zztv->tv_usec);          \
-    } while (0)
-#define PRE_timeval_WRITE(zzname, zzarg)                 \
-    do {                                                 \
-        struct vki_timeval *zztv = (struct vki_timeval *)zzarg;  \
-        PRE_FIELD_WRITE(zzname, zztv->tv_sec);           \
-        PRE_FIELD_WRITE(zzname, zztv->tv_usec);          \
-    } while (0)
-#define POST_timeval_WRITE(zzarg)                         \
-    do {                                                  \
-        struct vki_timeval *zztv = (struct vki_timeval *)zzarg;   \
-        POST_FIELD_WRITE(zztv->tv_sec);                   \
-        POST_FIELD_WRITE(zztv->tv_usec);                  \
-    } while (0)
+#define PRE_timeval_READ(zzname, zzarg)                        \
+   do {                                                        \
+      struct vki_timeval *zztv = (struct vki_timeval *)zzarg;  \
+      PRE_FIELD_READ(zzname, zztv->tv_sec);                    \
+      PRE_FIELD_READ(zzname, zztv->tv_usec);                   \
+   } while (0)
+#define PRE_timeval_WRITE(zzname, zzarg)                       \
+   do {                                                        \
+      struct vki_timeval *zztv = (struct vki_timeval *)zzarg;  \
+      PRE_FIELD_WRITE(zzname, zztv->tv_sec);                   \
+      PRE_FIELD_WRITE(zzname, zztv->tv_usec);                  \
+   } while (0)
+#define POST_timeval_WRITE(zzarg)                              \
+   do {                                                        \
+      struct vki_timeval *zztv = (struct vki_timeval *)zzarg;  \
+      POST_FIELD_WRITE(zztv->tv_sec);                          \
+      POST_FIELD_WRITE(zztv->tv_usec);                         \
+   } while (0)
 
 
 #endif   // __PRIV_TYPES_N_MACROS_H

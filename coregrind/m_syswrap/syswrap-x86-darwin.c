@@ -96,45 +96,45 @@ void thread_state_from_vex(thread_state_t mach_generic,
                            mach_msg_type_number_t count, 
                            VexGuestArchState *vex_generic)
 {
-    VexGuestX86State *vex = (VexGuestX86State *)vex_generic;
+   VexGuestX86State *vex = (VexGuestX86State *)vex_generic;
 
-    switch (flavor) {
-    case i386_THREAD_STATE:
-        vg_assert(count == i386_THREAD_STATE_COUNT);
-        x86_thread_state32_from_vex((i386_thread_state_t *)mach_generic, vex);
-        break;
+   switch (flavor) {
+   case i386_THREAD_STATE:
+      vg_assert(count == i386_THREAD_STATE_COUNT);
+      x86_thread_state32_from_vex((i386_thread_state_t *)mach_generic, vex);
+      break;
 
-    case i386_FLOAT_STATE:
-        vg_assert(count == i386_FLOAT_STATE_COUNT);
-        x86_float_state32_from_vex((i386_float_state_t *)mach_generic, vex);
-        break;
-        
-    default:
-        vg_assert(0);
-    }
+   case i386_FLOAT_STATE:
+      vg_assert(count == i386_FLOAT_STATE_COUNT);
+      x86_float_state32_from_vex((i386_float_state_t *)mach_generic, vex);
+      break;
+       
+   default:
+      vg_assert(0);
+   }
 }
 
 
 static void x86_thread_state32_to_vex(const i386_thread_state_t *mach, 
                                       VexGuestX86State *vex)
 {
-    LibVEX_GuestX86_initialise(vex);
-    vex->guest_EAX = mach->__eax;
-    vex->guest_EBX = mach->__ebx;
-    vex->guest_ECX = mach->__ecx;
-    vex->guest_EDX = mach->__edx;
-    vex->guest_EDI = mach->__edi;
-    vex->guest_ESI = mach->__esi;
-    vex->guest_EBP = mach->__ebp;
-    vex->guest_ESP = mach->__esp;
-    vex->guest_SS = mach->__ss;
+   LibVEX_GuestX86_initialise(vex);
+   vex->guest_EAX = mach->__eax;
+   vex->guest_EBX = mach->__ebx;
+   vex->guest_ECX = mach->__ecx;
+   vex->guest_EDX = mach->__edx;
+   vex->guest_EDI = mach->__edi;
+   vex->guest_ESI = mach->__esi;
+   vex->guest_EBP = mach->__ebp;
+   vex->guest_ESP = mach->__esp;
+   vex->guest_SS = mach->__ss;
 #warning GrP fixme eflags
-    vex->guest_EIP = mach->__eip;
-    vex->guest_CS = mach->__cs;
-    vex->guest_DS = mach->__ds;
-    vex->guest_ES = mach->__es;
-    vex->guest_FS = mach->__fs;
-    vex->guest_GS = mach->__gs;
+   vex->guest_EIP = mach->__eip;
+   vex->guest_CS = mach->__cs;
+   vex->guest_DS = mach->__ds;
+   vex->guest_ES = mach->__es;
+   vex->guest_FS = mach->__fs;
+   vex->guest_GS = mach->__gs;
 }
 
 static void x86_float_state32_to_vex(const i386_float_state_t *mach, 
@@ -142,7 +142,7 @@ static void x86_float_state32_to_vex(const i386_float_state_t *mach,
 {
 #warning GrP fixme fp state
 
-    VG_(memcpy)(&vex->guest_XMM0, &mach->__fpu_xmm0, 8 * sizeof(mach->__fpu_xmm0));
+   VG_(memcpy)(&vex->guest_XMM0, &mach->__fpu_xmm0, 8 * sizeof(mach->__fpu_xmm0));
 }
 
 
@@ -151,22 +151,22 @@ void thread_state_to_vex(const thread_state_t mach_generic,
                          mach_msg_type_number_t count, 
                          VexGuestArchState *vex_generic)
 {
-    VexGuestX86State *vex = (VexGuestX86State *)vex_generic;
-    
-    switch(flavor) {
-    case i386_THREAD_STATE:
-        vg_assert(count == i386_THREAD_STATE_COUNT);
-        x86_thread_state32_to_vex((const i386_thread_state_t*)mach_generic,vex);
-        break;
-    case i386_FLOAT_STATE:
-        vg_assert(count == i386_FLOAT_STATE_COUNT);
-        x86_float_state32_to_vex((const i386_float_state_t*)mach_generic,vex);
-        break;
+   VexGuestX86State *vex = (VexGuestX86State *)vex_generic;
+   
+   switch(flavor) {
+   case i386_THREAD_STATE:
+      vg_assert(count == i386_THREAD_STATE_COUNT);
+      x86_thread_state32_to_vex((const i386_thread_state_t*)mach_generic,vex);
+      break;
+   case i386_FLOAT_STATE:
+      vg_assert(count == i386_FLOAT_STATE_COUNT);
+      x86_float_state32_to_vex((const i386_float_state_t*)mach_generic,vex);
+      break;
 
-    default:
-        vg_assert(0);
-        break;
-    }
+   default:
+      vg_assert(0);
+      break;
+   }
 }
 
 
@@ -274,61 +274,61 @@ asm(
 void pthread_hijack(Addr self, Addr kport, Addr func, Addr func_arg, 
                     Addr stacksize, Addr flags, Addr sp)
 {
-    ThreadState *tst = (ThreadState *)func_arg;
-    VexGuestX86State *vex = &tst->arch.vex;
+   ThreadState *tst = (ThreadState *)func_arg;
+   VexGuestX86State *vex = &tst->arch.vex;
 
-    // VG_(printf)("pthread_hijack pthread %p, machthread %p, func %p, arg %p, stack %p, flags %p, stack %p\n", self, kport, func, func_arg, stacksize, flags, sp);
+   // VG_(printf)("pthread_hijack pthread %p, machthread %p, func %p, arg %p, stack %p, flags %p, stack %p\n", self, kport, func, func_arg, stacksize, flags, sp);
 
     
-    // Set thread's registers
-    // Do this FIRST because some code below tries to collect a backtrace, 
-    // which requires valid register data.
-    LibVEX_GuestX86_initialise(vex);
-    vex->guest_EIP = pthread_starter;
-    vex->guest_EAX = self;
-    vex->guest_EBX = kport;
-    vex->guest_ECX = func;
-    vex->guest_EDX = tst->os_state.func_arg;
-    vex->guest_EDI = stacksize;
-    vex->guest_ESI = flags;
-    vex->guest_ESP = sp;
+   // Set thread's registers
+   // Do this FIRST because some code below tries to collect a backtrace, 
+   // which requires valid register data.
+   LibVEX_GuestX86_initialise(vex);
+   vex->guest_EIP = pthread_starter;
+   vex->guest_EAX = self;
+   vex->guest_EBX = kport;
+   vex->guest_ECX = func;
+   vex->guest_EDX = tst->os_state.func_arg;
+   vex->guest_EDI = stacksize;
+   vex->guest_ESI = flags;
+   vex->guest_ESP = sp;
 
-    // Record thread's stack and Mach port and pthread struct
-    tst->os_state.pthread = self;
-    tst->os_state.lwpid = kport;
-    record_named_port(tst->tid, kport, MACH_PORT_RIGHT_SEND, "thread-%p");
+   // Record thread's stack and Mach port and pthread struct
+   tst->os_state.pthread = self;
+   tst->os_state.lwpid = kport;
+   record_named_port(tst->tid, kport, MACH_PORT_RIGHT_SEND, "thread-%p");
 
-    if ((flags & 0x01000000) == 0) {
-        // kernel allocated stack - needs mapping
-        Addr stack = VG_PGROUNDUP(sp) - stacksize;
-        tst->client_stack_highest_word = stack+stacksize;
-        tst->client_stack_szB = stacksize;
+   if ((flags & 0x01000000) == 0) {
+      // kernel allocated stack - needs mapping
+      Addr stack = VG_PGROUNDUP(sp) - stacksize;
+      tst->client_stack_highest_word = stack+stacksize;
+      tst->client_stack_szB = stacksize;
 
-        // pthread structure
-        ML_(notify_aspacem_and_tool_of_mmap)
-            (stack+stacksize, pthread_structsize, 
-             VKI_PROT_READ|VKI_PROT_WRITE, VKI_MAP_PRIVATE, -1, 0);
-        // stack contents
-        ML_(notify_aspacem_and_tool_of_mmap)
-            (stack, stacksize, 
-             VKI_PROT_READ|VKI_PROT_WRITE, VKI_MAP_PRIVATE, -1, 0);
-        // guard page
-        ML_(notify_aspacem_and_tool_of_mmap)
-            (stack-VKI_PAGE_SIZE, VKI_PAGE_SIZE, 
-             0, VKI_MAP_PRIVATE, -1, 0);
-    } else {
-        // client allocated stack
-        find_stack_segment(tst->tid, sp);
-    }
-    VG_(am_do_sync_check)("after", "pthread_hijack", 0);
+      // pthread structure
+      ML_(notify_aspacem_and_tool_of_mmap)
+          (stack+stacksize, pthread_structsize, 
+           VKI_PROT_READ|VKI_PROT_WRITE, VKI_MAP_PRIVATE, -1, 0);
+      // stack contents
+      ML_(notify_aspacem_and_tool_of_mmap)
+          (stack, stacksize, 
+           VKI_PROT_READ|VKI_PROT_WRITE, VKI_MAP_PRIVATE, -1, 0);
+      // guard page
+      ML_(notify_aspacem_and_tool_of_mmap)
+          (stack-VKI_PAGE_SIZE, VKI_PAGE_SIZE, 
+           0, VKI_MAP_PRIVATE, -1, 0);
+   } else {
+      // client allocated stack
+      find_stack_segment(tst->tid, sp);
+   }
+   VG_(am_do_sync_check)("after", "pthread_hijack", 0);
 
-    // Tell parent thread's POST(sys_bsdthread_create) that we're done 
-    // initializing registers and mapping memory.
-    semaphore_signal(tst->os_state.bsdthread_create_sema);
+   // Tell parent thread's POST(sys_bsdthread_create) that we're done 
+   // initializing registers and mapping memory.
+   semaphore_signal(tst->os_state.bsdthread_create_sema);
 
-    // Go!
-    call_on_new_stack_0_1(tst->os_state.valgrind_stack_init_SP, 0, 
-                          start_thread_NORETURN, (Word)tst);
+   // Go!
+   call_on_new_stack_0_1(tst->os_state.valgrind_stack_init_SP, 0, 
+                         start_thread_NORETURN, (Word)tst);
 
    /*NOTREACHED*/
    vg_assert(0);
@@ -364,89 +364,87 @@ asm(
 void wqthread_hijack(Addr self, Addr kport, Addr stackaddr, Addr workitem, 
                      Int reuse, Addr sp)
 {
-    ThreadState *tst;
-    VexGuestX86State *vex;
-    Addr stack;
-    SizeT stacksize;
+   ThreadState *tst;
+   VexGuestX86State *vex;
+   Addr stack;
+   SizeT stacksize;
 
-    if (reuse) {
-        // This thread already exists; we're merely re-entering 
-        // after leaving via workq_ops(WQOPS_THREAD_RETURN). 
-        // Don't allocate any V thread resources.
-        // Do reset thread registers.
-        ThreadId tid = VG_(lwpid_to_vgtid)(kport);
-        vg_assert(VG_(is_valid_tid)(tid));
-        vg_assert(mach_thread_self() == kport);
+   if (reuse) {
+      // This thread already exists; we're merely re-entering 
+      // after leaving via workq_ops(WQOPS_THREAD_RETURN). 
+      // Don't allocate any V thread resources.
+      // Do reset thread registers.
+      ThreadId tid = VG_(lwpid_to_vgtid)(kport);
+      vg_assert(VG_(is_valid_tid)(tid));
+      vg_assert(mach_thread_self() == kport);
 
-        tst = VG_(get_ThreadState)(tid);
-        vex = &tst->arch.vex;
-        vg_assert(tst->os_state.pthread == self);
-    }
-    else {
-        // This is a new thread.
-        tst = VG_(get_ThreadState)(VG_(alloc_ThreadState)());        
-        vex = &tst->arch.vex;
-        allocstack(tst->tid);
-        LibVEX_GuestX86_initialise(vex);
-    }
+      tst = VG_(get_ThreadState)(tid);
+      vex = &tst->arch.vex;
+      vg_assert(tst->os_state.pthread == self);
+   }
+   else {
+      // This is a new thread.
+      tst = VG_(get_ThreadState)(VG_(alloc_ThreadState)());        
+      vex = &tst->arch.vex;
+      allocstack(tst->tid);
+      LibVEX_GuestX86_initialise(vex);
+   }
         
-    // Set thread's registers
-    // Do this FIRST because some code below tries to collect a backtrace, 
-    // which requires valid register data.
-    vex->guest_EIP = wqthread_starter;
-    vex->guest_EAX = self;
-    vex->guest_EBX = kport;
-    vex->guest_ECX = stackaddr;
-    vex->guest_EDX = workitem;
-    vex->guest_EDI = reuse;
-    vex->guest_ESI = 0;
-    vex->guest_ESP = sp;
+   // Set thread's registers
+   // Do this FIRST because some code below tries to collect a backtrace, 
+   // which requires valid register data.
+   vex->guest_EIP = wqthread_starter;
+   vex->guest_EAX = self;
+   vex->guest_EBX = kport;
+   vex->guest_ECX = stackaddr;
+   vex->guest_EDX = workitem;
+   vex->guest_EDI = reuse;
+   vex->guest_ESI = 0;
+   vex->guest_ESP = sp;
 
-    stacksize = 512*1024;  // wq stacks are always DEFAULT_STACK_SIZE
-    stack = VG_PGROUNDUP(sp) - stacksize;
+   stacksize = 512*1024;  // wq stacks are always DEFAULT_STACK_SIZE
+   stack = VG_PGROUNDUP(sp) - stacksize;
 
-    if (reuse) {
-        // Continue V's thread back in the scheduler. 
-        // The client thread is of course in another location entirely.
-        ML_(wqthread_continue_NORETURN)(tst->tid);
-    } 
-    else {
+   if (reuse) {
+       // Continue V's thread back in the scheduler. 
+       // The client thread is of course in another location entirely.
+       ML_(wqthread_continue_NORETURN)(tst->tid);
+   } 
+   else {
+      // Record thread's stack and Mach port and pthread struct
+      tst->os_state.pthread = self;
+      tst->os_state.lwpid = kport;
+      record_named_port(tst->tid, kport, MACH_PORT_RIGHT_SEND, "wqthread-%p");
+      
+      // kernel allocated stack - needs mapping
+      tst->client_stack_highest_word = stack+stacksize;
+      tst->client_stack_szB = stacksize;
 
-        // Record thread's stack and Mach port and pthread struct
-        tst->os_state.pthread = self;
-        tst->os_state.lwpid = kport;
-        record_named_port(tst->tid, kport, MACH_PORT_RIGHT_SEND, "wqthread-%p");
-        
-        // kernel allocated stack - needs mapping
-        tst->client_stack_highest_word = stack+stacksize;
-        tst->client_stack_szB = stacksize;
+      // fixme scheduler lock?!
+      
+      // pthread structure
+      ML_(notify_aspacem_and_tool_of_mmap)
+          (stack+stacksize, pthread_structsize, 
+           VKI_PROT_READ|VKI_PROT_WRITE, VKI_MAP_PRIVATE, -1, 0);
+      // stack contents
+      // fixme uninitialized!
+      ML_(notify_aspacem_and_tool_of_mmap)
+          (stack, stacksize, 
+           VKI_PROT_READ|VKI_PROT_WRITE, VKI_MAP_PRIVATE, -1, 0);
+      // guard page
+      // fixme ban_mem_stack!
+      ML_(notify_aspacem_and_tool_of_mmap)
+          (stack-VKI_PAGE_SIZE, VKI_PAGE_SIZE, 
+           0, VKI_MAP_PRIVATE, -1, 0);
 
-        // fixme scheduler lock?!
-        
-        // pthread structure
-        ML_(notify_aspacem_and_tool_of_mmap)
-            (stack+stacksize, pthread_structsize, 
-             VKI_PROT_READ|VKI_PROT_WRITE, VKI_MAP_PRIVATE, -1, 0);
-        // stack contents
-        // fixme uninitialized!
-        ML_(notify_aspacem_and_tool_of_mmap)
-            (stack, stacksize, 
-             VKI_PROT_READ|VKI_PROT_WRITE, VKI_MAP_PRIVATE, -1, 0);
-        // guard page
-        // fixme ban_mem_stack!
-        ML_(notify_aspacem_and_tool_of_mmap)
-            (stack-VKI_PAGE_SIZE, VKI_PAGE_SIZE, 
-             0, VKI_MAP_PRIVATE, -1, 0);
+      VG_(am_do_sync_check)("after", "wqthread_hijack", 0);
 
-        VG_(am_do_sync_check)("after", "wqthread_hijack", 0);
+      // Go!
+      call_on_new_stack_0_1(tst->os_state.valgrind_stack_init_SP, 0, 
+                            start_thread_NORETURN, (Word)tst);
+   }
 
-        // Go!
-        call_on_new_stack_0_1(tst->os_state.valgrind_stack_init_SP, 0, 
-                              start_thread_NORETURN, (Word)tst);
-    }
-
-    /*NOTREACHED*/
-    vg_assert(0);
+   /*NOTREACHED*/
+   vg_assert(0);
 }
-
 

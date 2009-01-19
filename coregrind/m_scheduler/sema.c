@@ -178,20 +178,20 @@ void ML_(sema_deinit)(vg_sema_t *sema)
 
 void ML_(sema_down)(vg_sema_t *sema)
 {
-    kern_return_t kr;
-    do {
-        kr = semaphore_wait(sema->lock);
-    } while (kr == KERN_ABORTED);
-    vg_assert(kr == 0);
+   kern_return_t kr;
+   do {
+      kr = semaphore_wait(sema->lock);
+   } while (kr == KERN_ABORTED);
+   vg_assert(kr == 0);
 }
 
 void ML_(sema_up)(vg_sema_t *sema)
 {
-    kern_return_t kr;
-    do {
-        kr = semaphore_signal(sema->lock);
-    } while (kr == KERN_ABORTED);
-    vg_assert(kr == 0);
+   kern_return_t kr;
+   do {
+      kr = semaphore_signal(sema->lock);
+   } while (kr == KERN_ABORTED);
+   vg_assert(kr == 0);
 }
 
 void ML_(sema_fork_child)(vg_sema_t *sema)

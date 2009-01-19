@@ -356,11 +356,11 @@ int main(int argc, char** argv, char** envp)
        ; /* executable path is after last envp item */
    /* envp[i] == NULL ; envp[i+1] == executable_path */
    if (envp[i+1][0] != '/') {
-       strcpy(launcher_name, cwd);
-       strcat(launcher_name, "/");
+      strcpy(launcher_name, cwd);
+      strcat(launcher_name, "/");
    }
    if (strlen(launcher_name) + strlen(envp[i+1]) > PATH_MAX)
-       barf("launcher path is too long");
+      barf("launcher path is too long");
    strcat(launcher_name, envp[i+1]);
 
    /* tediously augment the env: VALGRIND_LAUNCHER=launcher_name */
@@ -383,26 +383,26 @@ int main(int argc, char** argv, char** envp)
 
    /* tediously edit env: hide dyld options from valgrind's captive dyld */
    for (i = 0; envp[i]; i++) {
-       if (0 == strncmp(envp[i], "DYLD_", 5)) {
-           envp[i][0] = 'V';  /* VYLD_; changed back by initimg-darwin */
-       }
+      if (0 == strncmp(envp[i], "DYLD_", 5)) {
+         envp[i][0] = 'V';  /* VYLD_; changed back by initimg-darwin */
+      }
    }
 
    /* tediously edit argv: remove --arch= */
    new_argv = malloc((1+argc) * sizeof(char *));
    for (i = 0, new_argc = 0; i < argc; i++) {
-       if (0 == strncmp(argv[i], "--arch=", 7)) {
-           // skip
-       } else {
-           new_argv[new_argc++] = argv[i];
-       }
+      if (0 == strncmp(argv[i], "--arch=", 7)) {
+         // skip
+      } else {
+         new_argv[new_argc++] = argv[i];
+      }
    }
    new_argv[new_argc++] = NULL;
 
    /* Build the stage2 invokation, and execve it.  Bye! */
    asprintf(&toolfile, "%s/%s-darwin/%s", valgrind_lib, arch, toolname);
    if (access(toolfile, R_OK|X_OK) != 0) {
-       barf("tool '%s' not installed (%s)", toolname, toolfile);
+      barf("tool '%s' not installed (%s)", toolname, toolfile);
    }
 
    VG_(debugLog)(1, "launcher", "launching %s\n", toolfile);

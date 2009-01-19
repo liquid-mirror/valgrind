@@ -1118,30 +1118,30 @@ static DiSym* prefersym ( struct _DebugInfo* di, DiSym* a, DiSym* b )
 
    /* GrP Prefer non-whitespace name */
    {
-       Bool blankA = True;
-       Bool blankB = True;
-       Char *s;
-       s = a->name;
-       while (*s) {
-           if (!VG_(isspace)(*s++)) {
-               blankA = False;
-               break;
-           }
-       }
-       s = b->name;
-       while (*s) {
-           if (!VG_(isspace)(*s++)) {
-               blankB = False;
-               break;
-           }
-       }
+      Bool blankA = True;
+      Bool blankB = True;
+      Char *s;
+      s = a->name;
+      while (*s) {
+         if (!VG_(isspace)(*s++)) {
+            blankA = False;
+            break;
+         }
+      }
+      s = b->name;
+      while (*s) {
+         if (!VG_(isspace)(*s++)) {
+            blankB = False;
+            break;
+         }
+      }
 
-       if (!blankA  &&  blankB) {
-           preferA = True; goto out;
-       }
-       if (!blankB  &&  blankA) {
-           preferB = True; goto out;
-       }
+      if (!blankA  &&  blankB) {
+         preferA = True; goto out;
+      }
+      if (!blankB  &&  blankA) {
+         preferB = True; goto out;
+      }
    }
 
    /* Select the shortest unversioned name */
@@ -1176,12 +1176,12 @@ static DiSym* prefersym ( struct _DebugInfo* di, DiSym* a, DiSym* b )
    /* GrP Resolved nlist vs DWARF. If one extends to the end of the 
       text segment, drop it (it's from an nlist and the size was fake). */
    if (a->isText  &&  b->isText  &&  a->size != b->size) {
-       if (a->addr + a->size == di->text_avma + di->text_size) {
-           preferB = True; goto out;
-       }
-       if (b->addr + b->size == di->text_avma + di->text_size) {
-           preferA = True; goto out;
-       }
+      if (a->addr + a->size == di->text_avma + di->text_size) {
+         preferB = True; goto out;
+      }
+      if (b->addr + b->size == di->text_avma + di->text_size) {
+         preferA = True; goto out;
+      }
    }
 #endif
 

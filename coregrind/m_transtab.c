@@ -1632,32 +1632,32 @@ ULong VG_(get_BB_profile) ( BBProfEntry tops[], UInt n_tops )
 // GrP for debugging use
 void vg_untranslate(ULong *host_ip)
 {
-    Int   sno, i, v;
-    
-    for (sno = 0; sno < N_SECTORS; sno++) {
-        if (sectors[sno].tc == NULL)
-            continue;  // empty sector
-        if (host_ip < sectors[sno].tc  ||  host_ip >= sectors[sno].tc_next) 
-            continue;  // host_ip not in this sector
-        
-        for (i = 0; i < N_TTES_PER_SECTOR; i++) {
-            TTEntry *tt = &sectors[sno].tt[i];
-            if (tt->status != InUse)
-                continue;
-            if (host_ip < tt->tcptr  ||  host_ip >= tt->tcptr+tt->tc_szQ) 
-                continue;
+   Int   sno, i, v;
+   
+   for (sno = 0; sno < N_SECTORS; sno++) {
+      if (sectors[sno].tc == NULL)
+         continue;  // empty sector
+      if (host_ip < sectors[sno].tc  ||  host_ip >= sectors[sno].tc_next) 
+         continue;  // host_ip not in this sector
+      
+      for (i = 0; i < N_TTES_PER_SECTOR; i++) {
+         TTEntry *tt = &sectors[sno].tt[i];
+         if (tt->status != InUse)
+            continue;
+         if (host_ip < tt->tcptr  ||  host_ip >= tt->tcptr+tt->tc_szQ) 
+            continue;
 
-            VG_(printf)("host %p..%p -> guest", 
-                        tt->tcptr, tt->tcptr+tt->tc_szQ);
-            for (v = 0; v < tt->vge.n_used; v++) {
-                VG_(printf)("%s %p..%p", 
-                            v==0 ? "" : ",", 
-                            (Addr)tt->vge.base[v], 
-                            (Addr)tt->vge.base[v]+tt->vge.len[v]);
-            }
-            VG_(printf)("\n");
-        }
-    }
+         VG_(printf)("host %p..%p -> guest", 
+                     tt->tcptr, tt->tcptr+tt->tc_szQ);
+         for (v = 0; v < tt->vge.n_used; v++) {
+             VG_(printf)("%s %p..%p", 
+                         v==0 ? "" : ",", 
+                         (Addr)tt->vge.base[v], 
+                         (Addr)tt->vge.base[v]+tt->vge.len[v]);
+         }
+         VG_(printf)("\n");
+      }
+   }
 }
 
 /*--------------------------------------------------------------------*/

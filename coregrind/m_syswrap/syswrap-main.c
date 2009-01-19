@@ -322,27 +322,27 @@ UWord ML_(do_syscall_for_client_WRK)( Word syscallno,
                                       const vki_sigset_t *restore_mask,
                                       Word nsigwords)
 {
-    switch (VG_DARWIN_SYSNO_CLASS(syscallno)) {
-    case VG_DARWIN_SYSCALL_CLASS_UNIX:
-        return ML_(do_syscall_for_client_unix_WRK)
-            (VG_DARWIN_SYSNO_NUM(syscallno), guest_state, 
-             syscall_mask, restore_mask, nsigwords);
-    case VG_DARWIN_SYSCALL_CLASS_UX64:
-        return ML_(do_syscall_for_client_ux64_WRK)
-            (VG_DARWIN_SYSNO_NUM(syscallno), guest_state, 
-             syscall_mask, restore_mask, nsigwords);
-    case VG_DARWIN_SYSCALL_CLASS_MACH:
-        return ML_(do_syscall_for_client_mach_WRK)
-            (VG_DARWIN_SYSNO_NUM(syscallno), guest_state, 
-             syscall_mask, restore_mask, nsigwords);
-    case VG_DARWIN_SYSCALL_CLASS_MDEP:
-        return ML_(do_syscall_for_client_mdep_WRK)
-            (VG_DARWIN_SYSNO_NUM(syscallno), guest_state, 
-             syscall_mask, restore_mask, nsigwords);
-    default:
-        vg_assert(0);
-        return 0;
-    }
+   switch (VG_DARWIN_SYSNO_CLASS(syscallno)) {
+   case VG_DARWIN_SYSCALL_CLASS_UNIX:
+      return ML_(do_syscall_for_client_unix_WRK)
+         (VG_DARWIN_SYSNO_NUM(syscallno), guest_state, 
+          syscall_mask, restore_mask, nsigwords);
+   case VG_DARWIN_SYSCALL_CLASS_UX64:
+      return ML_(do_syscall_for_client_ux64_WRK)
+         (VG_DARWIN_SYSNO_NUM(syscallno), guest_state, 
+          syscall_mask, restore_mask, nsigwords);
+   case VG_DARWIN_SYSCALL_CLASS_MACH:
+      return ML_(do_syscall_for_client_mach_WRK)
+         (VG_DARWIN_SYSNO_NUM(syscallno), guest_state, 
+          syscall_mask, restore_mask, nsigwords);
+   case VG_DARWIN_SYSCALL_CLASS_MDEP:
+      return ML_(do_syscall_for_client_mdep_WRK)
+         (VG_DARWIN_SYSNO_NUM(syscallno), guest_state, 
+          syscall_mask, restore_mask, nsigwords);
+   default:
+      vg_assert(0);
+      return 0;
+   }
 }
 #endif
 
@@ -507,33 +507,33 @@ void getSyscallArgsFromGuestState ( /*OUT*/SyscallArgs*       canonical,
 
    switch (trc) {
    case VEX_TRC_JMP_SYS_INT128:
-       // int $0x80 = Unix, 64-bit result
-       vg_assert(canonical->sysno >= 0);
-       canonical->sysno = VG_DARWIN_SYSCALL_CONSTRUCT_UX64(canonical->sysno);
-       break;
+      // int $0x80 = Unix, 64-bit result
+      vg_assert(canonical->sysno >= 0);
+      canonical->sysno = VG_DARWIN_SYSCALL_CONSTRUCT_UX64(canonical->sysno);
+      break;
    case VEX_TRC_JMP_SYS_SYSENTER:
-       // syscall = Unix, 32-bit result
-       // OR        Mach, 32-bit result
-       if (canonical->sysno >= 0) {
-           // fixme hack  I386_SYSCALL_NUMBER_MASK
-           canonical->sysno = VG_DARWIN_SYSCALL_CONSTRUCT_UNIX(canonical->sysno & 0xffff);
-       } else {
-           canonical->sysno = VG_DARWIN_SYSCALL_CONSTRUCT_MACH(-canonical->sysno);
-       }
-       break;
+      // syscall = Unix, 32-bit result
+      // OR        Mach, 32-bit result
+      if (canonical->sysno >= 0) {
+         // fixme hack  I386_SYSCALL_NUMBER_MASK
+         canonical->sysno = VG_DARWIN_SYSCALL_CONSTRUCT_UNIX(canonical->sysno & 0xffff);
+      } else {
+         canonical->sysno = VG_DARWIN_SYSCALL_CONSTRUCT_MACH(-canonical->sysno);
+      }
+      break;
    case VEX_TRC_JMP_SYS_INT129:
-       // int $0x81 = Mach, 32-bit result
-       vg_assert(canonical->sysno < 0);
-       canonical->sysno = VG_DARWIN_SYSCALL_CONSTRUCT_MACH(-canonical->sysno);
-       break;
+      // int $0x81 = Mach, 32-bit result
+      vg_assert(canonical->sysno < 0);
+      canonical->sysno = VG_DARWIN_SYSCALL_CONSTRUCT_MACH(-canonical->sysno);
+      break;
    case VEX_TRC_JMP_SYS_INT130:
-       // int $0x82 = mdep, 32-bit result
-       vg_assert(canonical->sysno >= 0);
-       canonical->sysno = VG_DARWIN_SYSCALL_CONSTRUCT_MDEP(canonical->sysno);
-       break;
+      // int $0x82 = mdep, 32-bit result
+      vg_assert(canonical->sysno >= 0);
+      canonical->sysno = VG_DARWIN_SYSCALL_CONSTRUCT_MDEP(canonical->sysno);
+      break;
    default: 
-       vg_assert(0);
-       break;
+      vg_assert(0);
+      break;
    }
    
 #elif defined(VGP_amd64_darwin)
@@ -1186,23 +1186,23 @@ static const SyscallTableEntry* get_syscall_entry ( Int syscallno,
    switch (VG_DARWIN_SYSNO_CLASS(syscallno)) {
    case VG_DARWIN_SYSCALL_CLASS_UX64:
    case VG_DARWIN_SYSCALL_CLASS_UNIX:
-       if (idx >= 0  &&  idx < ML_(syscall_table_size)) {
-           sys = &ML_(syscall_table)[idx];
-       }
-       break;
+      if (idx >= 0  &&  idx < ML_(syscall_table_size)) {
+         sys = &ML_(syscall_table)[idx];
+      }
+      break;
    case VG_DARWIN_SYSCALL_CLASS_MACH:
-       if (idx >= 0  &&  idx < ML_(mach_trap_table_size)) {
-           sys = &ML_(mach_trap_table)[idx];
-       }
-       break;
+      if (idx >= 0  &&  idx < ML_(mach_trap_table_size)) {
+         sys = &ML_(mach_trap_table)[idx];
+      }
+      break;
    case VG_DARWIN_SYSCALL_CLASS_MDEP:
-       if (idx >= 0  &&  idx < ML_(mdep_trap_table_size)) {
-           sys = &ML_(mdep_trap_table)[idx];
-       }
-       break;
+      if (idx >= 0  &&  idx < ML_(mdep_trap_table_size)) {
+         sys = &ML_(mdep_trap_table)[idx];
+      }
+      break;
    default: 
-       vg_assert(0);
-       break;
+      vg_assert(0);
+      break;
    }
 
 #  else

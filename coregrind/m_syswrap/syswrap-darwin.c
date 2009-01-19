@@ -97,7 +97,7 @@ static VgSchedReturnCode ML_(thread_wrapper)(Word /*ThreadId*/ tidW)
 
    if (0)
       VG_(printf)("thread tid %d started: stack = %p\n",
-		  tid, &tid);
+                  tid, &tid);
 
    VG_TRACK(pre_thread_first_insn, tid);
 
@@ -179,12 +179,12 @@ void find_stack_segment(ThreadId tid, Addr sp)
       tst->client_stack_szB = tst->client_stack_highest_word - seg->start;
 
       if (1)
-	 VG_(printf)("tid %d: guessed client stack range %#lx-%#lx\n",
-		     tid, seg->start, VG_PGROUNDUP(sp));
+         VG_(printf)("tid %d: guessed client stack range %#lx-%#lx\n",
+                     tid, seg->start, VG_PGROUNDUP(sp));
    } else {
        VG_(printf)("couldn't find user stack\n");
       VG_(message)(Vg_UserMsg, "!? New thread %d starts with SP(%p) unmapped\n",
-		   tid, sp);
+                   tid, sp);
       tst->client_stack_szB  = 0;
    }
 }
@@ -724,10 +724,10 @@ PRE(sys_ioctl)
       break;
    case VKI_SIOCGIFCONF:         /* get iface list               */
       /* WAS:
-	 PRE_MEM_WRITE( "ioctl(SIOCGIFCONF)", ARG3, sizeof(struct ifconf));
-	 KERNEL_DO_SYSCALL(tid,RES);
-	 if (!VG_(is_kerror)(RES) && RES == 0)
-	 POST_MEM_WRITE(ARG3, sizeof(struct ifconf));
+         PRE_MEM_WRITE( "ioctl(SIOCGIFCONF)", ARG3, sizeof(struct ifconf));
+         KERNEL_DO_SYSCALL(tid,RES);
+         if (!VG_(is_kerror)(RES) && RES == 0)
+         POST_MEM_WRITE(ARG3, sizeof(struct ifconf));
       */
       PRE_MEM_READ( "ioctl(SIOCGIFCONF)",
                     (Addr)&((struct vki_ifconf *)ARG3)->ifc_len,
@@ -736,11 +736,11 @@ PRE(sys_ioctl)
                     (Addr)&((struct vki_ifconf *)ARG3)->vki_ifc_buf,
                     sizeof(((struct vki_ifconf *)ARG3)->vki_ifc_buf));
       if ( ARG3 ) {
-	 // TODO len must be readable and writable
-	 // buf pointer only needs to be readable
-	 struct vki_ifconf *ifc = (struct vki_ifconf *) ARG3;
-	 PRE_MEM_WRITE( "ioctl(SIOCGIFCONF).ifc_buf",
-			(Addr)(ifc->vki_ifc_buf), ifc->ifc_len );
+         // TODO len must be readable and writable
+         // buf pointer only needs to be readable
+         struct vki_ifconf *ifc = (struct vki_ifconf *) ARG3;
+         PRE_MEM_WRITE( "ioctl(SIOCGIFCONF).ifc_buf",
+                        (Addr)(ifc->vki_ifc_buf), ifc->ifc_len );
       }
       break;
                     
@@ -780,7 +780,7 @@ PRE(sys_ioctl)
    case VKI_SIOCADDRT:           /* add routing table entry      */
    case VKI_SIOCDELRT:           /* delete routing table entry   */
       PRE_MEM_READ( "ioctl(SIOCADDRT/DELRT)", ARG3, 
-		    sizeof(struct vki_rtentry));
+                    sizeof(struct vki_rtentry));
       break;
 #endif
 
@@ -885,15 +885,15 @@ POST(sys_ioctl)
       break;
    case VKI_SIOCGIFCONF:         /* get iface list               */
       /* WAS:
-	 PRE_MEM_WRITE("ioctl(SIOCGIFCONF)", ARG3, sizeof(struct ifconf));
-	 KERNEL_DO_SYSCALL(tid,RES);
-	 if (!VG_(is_kerror)(RES) && RES == 0)
-	 POST_MEM_WRITE(ARG3, sizeof(struct ifconf));
+         PRE_MEM_WRITE("ioctl(SIOCGIFCONF)", ARG3, sizeof(struct ifconf));
+         KERNEL_DO_SYSCALL(tid,RES);
+         if (!VG_(is_kerror)(RES) && RES == 0)
+         POST_MEM_WRITE(ARG3, sizeof(struct ifconf));
       */
       if (RES == 0 && ARG3 ) {
-	 struct vki_ifconf *ifc = (struct vki_ifconf *) ARG3;
-	 if (ifc->vki_ifc_buf != NULL)
-	    POST_MEM_WRITE( (Addr)(ifc->vki_ifc_buf), ifc->ifc_len );
+         struct vki_ifconf *ifc = (struct vki_ifconf *) ARG3;
+         if (ifc->vki_ifc_buf != NULL)
+            POST_MEM_WRITE( (Addr)(ifc->vki_ifc_buf), ifc->ifc_len );
       }
       break;
                     
@@ -957,25 +957,25 @@ POST(sys_ioctl)
    ------------------------------------------------------------------ */
 static const char *name_for_fcntl(UWord cmd) {
 #define F(n) case VKI_##n: return #n
-    switch (cmd) {
-        F(F_CHKCLEAN);
-        F(F_RDAHEAD);
-        F(F_NOCACHE);
-        F(F_FULLFSYNC);
-        F(F_FREEZE_FS);
-        F(F_THAW_FS);
-        F(F_GLOBAL_NOCACHE);
-        F(F_PREALLOCATE);
-        F(F_SETSIZE);
-        F(F_RDADVISE);
-        F(F_READBOOTSTRAP);
-        F(F_WRITEBOOTSTRAP);
-        F(F_LOG2PHYS);
-        F(F_GETPATH);
-        F(F_PATHPKG_CHECK);
-    default:
-        return "UNKNOWN";
-    }
+   switch (cmd) {
+      F(F_CHKCLEAN);
+      F(F_RDAHEAD);
+      F(F_NOCACHE);
+      F(F_FULLFSYNC);
+      F(F_FREEZE_FS);
+      F(F_THAW_FS);
+      F(F_GLOBAL_NOCACHE);
+      F(F_PREALLOCATE);
+      F(F_SETSIZE);
+      F(F_RDADVISE);
+      F(F_READBOOTSTRAP);
+      F(F_WRITEBOOTSTRAP);
+      F(F_LOG2PHYS);
+      F(F_GETPATH);
+      F(F_PATHPKG_CHECK);
+   default:
+      return "UNKNOWN";
+   }
 #undef F
 }
 
@@ -1013,111 +1013,110 @@ PRE(sys_fcntl)
          *flags |= SfMayBlock;
       break;
 
-        // DDD: inconsistent indentation here, sigh
-        // none
-    case VKI_F_CHKCLEAN:
-    case VKI_F_RDAHEAD:
-    case VKI_F_NOCACHE:
-    case VKI_F_FULLFSYNC:
-    case VKI_F_FREEZE_FS:
-    case VKI_F_THAW_FS:
-    case VKI_F_GLOBAL_NOCACHE:
-        PRINT("sys_fcntl ( %d, %s )", ARG1, name_for_fcntl(ARG1));
-        PRE_REG_READ2(long, "fcntl", unsigned int, fd, unsigned int, cmd);
-        break;
+       // none
+   case VKI_F_CHKCLEAN:
+   case VKI_F_RDAHEAD:
+   case VKI_F_NOCACHE:
+   case VKI_F_FULLFSYNC:
+   case VKI_F_FREEZE_FS:
+   case VKI_F_THAW_FS:
+   case VKI_F_GLOBAL_NOCACHE:
+      PRINT("sys_fcntl ( %d, %s )", ARG1, name_for_fcntl(ARG1));
+      PRE_REG_READ2(long, "fcntl", unsigned int, fd, unsigned int, cmd);
+      break;
 
-        // struct fstore
-    case VKI_F_PREALLOCATE:
-        PRINT("sys_fcntl ( %d, %s, %p )", ARG1, name_for_fcntl(ARG2), ARG3);
-        PRE_REG_READ3(long, "fcntl",
-                      unsigned int, fd, unsigned int, cmd,
-                      struct fstore *, fstore);
-        {
-            struct vki_fstore *fstore = (struct vki_fstore *)ARG3;
-            PRE_FIELD_READ( "fcntl(F_PREALLOCATE, fstore->fst_flags)", 
-                            fstore->fst_flags );
-            PRE_FIELD_READ( "fcntl(F_PREALLOCATE, fstore->fst_flags)", 
-                            fstore->fst_posmode );
-            PRE_FIELD_READ( "fcntl(F_PREALLOCATE, fstore->fst_flags)", 
-                            fstore->fst_offset );
-            PRE_FIELD_READ( "fcntl(F_PREALLOCATE, fstore->fst_flags)", 
-                            fstore->fst_length );
-            PRE_FIELD_WRITE( "fcntl(F_PREALLOCATE, fstore->fst_bytesalloc)", 
-                             fstore->fst_bytesalloc);
-        }
-        break;
+       // struct fstore
+   case VKI_F_PREALLOCATE:
+      PRINT("sys_fcntl ( %d, %s, %p )", ARG1, name_for_fcntl(ARG2), ARG3);
+      PRE_REG_READ3(long, "fcntl",
+                    unsigned int, fd, unsigned int, cmd,
+                    struct fstore *, fstore);
+      {
+         struct vki_fstore *fstore = (struct vki_fstore *)ARG3;
+         PRE_FIELD_READ( "fcntl(F_PREALLOCATE, fstore->fst_flags)", 
+                         fstore->fst_flags );
+         PRE_FIELD_READ( "fcntl(F_PREALLOCATE, fstore->fst_flags)", 
+                         fstore->fst_posmode );
+         PRE_FIELD_READ( "fcntl(F_PREALLOCATE, fstore->fst_flags)", 
+                         fstore->fst_offset );
+         PRE_FIELD_READ( "fcntl(F_PREALLOCATE, fstore->fst_flags)", 
+                         fstore->fst_length );
+         PRE_FIELD_WRITE( "fcntl(F_PREALLOCATE, fstore->fst_bytesalloc)", 
+                          fstore->fst_bytesalloc);
+      }
+      break;
 
-        // off_t
-    case VKI_F_SETSIZE:
-        PRINT("sys_fcntl ( %d, %s, %p )", ARG1, name_for_fcntl(ARG2), ARG3);
-        PRE_REG_READ3(long, "fcntl",
-                      unsigned int, fd, unsigned int, cmd,
-                      vki_off_t *, offset);
-        break;
+       // off_t
+   case VKI_F_SETSIZE:
+      PRINT("sys_fcntl ( %d, %s, %p )", ARG1, name_for_fcntl(ARG2), ARG3);
+      PRE_REG_READ3(long, "fcntl",
+                    unsigned int, fd, unsigned int, cmd,
+                    vki_off_t *, offset);
+      break;
 
-        // struct radvisory
-    case VKI_F_RDADVISE:
-        PRINT("sys_fcntl ( %d, %s, %p )", ARG1, name_for_fcntl(ARG2), ARG3);
-        PRE_REG_READ3(long, "fcntl",
-                      unsigned int, fd, unsigned int, cmd,
-                      struct vki_radvisory *, radvisory);
-        {
-            struct vki_radvisory *radvisory = (struct vki_radvisory *)ARG3;
-            PRE_FIELD_READ( "fcntl(F_PREALLOCATE, radvisory->ra_offset)", 
-                            radvisory->ra_offset );
-            PRE_FIELD_READ( "fcntl(F_PREALLOCATE, radvisory->ra_count)", 
-                            radvisory->ra_count );
-        }
-        break;
+       // struct radvisory
+   case VKI_F_RDADVISE:
+      PRINT("sys_fcntl ( %d, %s, %p )", ARG1, name_for_fcntl(ARG2), ARG3);
+      PRE_REG_READ3(long, "fcntl",
+                    unsigned int, fd, unsigned int, cmd,
+                    struct vki_radvisory *, radvisory);
+      {
+         struct vki_radvisory *radvisory = (struct vki_radvisory *)ARG3;
+         PRE_FIELD_READ( "fcntl(F_PREALLOCATE, radvisory->ra_offset)", 
+                         radvisory->ra_offset );
+         PRE_FIELD_READ( "fcntl(F_PREALLOCATE, radvisory->ra_count)", 
+                         radvisory->ra_count );
+      }
+      break;
 
-        // struct fbootstraptransfer
-    case VKI_F_READBOOTSTRAP:
-    case VKI_F_WRITEBOOTSTRAP:
-        PRINT("sys_fcntl ( %d, %s, %p )", ARG1, name_for_fcntl(ARG2), ARG3);
-        PRE_REG_READ3(long, "fcntl",
-                      unsigned int, fd, unsigned int, cmd,
-                      struct fbootstraptransfer *, bootstrap);
-        PRE_MEM_READ( "fcntl(F_READ/WRITEBOOTSTRAP, bootstrap)", 
-                      ARG3, sizeof(struct vki_fbootstraptransfer) );
-        break;
+       // struct fbootstraptransfer
+   case VKI_F_READBOOTSTRAP:
+   case VKI_F_WRITEBOOTSTRAP:
+      PRINT("sys_fcntl ( %d, %s, %p )", ARG1, name_for_fcntl(ARG2), ARG3);
+      PRE_REG_READ3(long, "fcntl",
+                    unsigned int, fd, unsigned int, cmd,
+                    struct fbootstraptransfer *, bootstrap);
+      PRE_MEM_READ( "fcntl(F_READ/WRITEBOOTSTRAP, bootstrap)", 
+                    ARG3, sizeof(struct vki_fbootstraptransfer) );
+      break;
 
-        // struct log2phys (out)
-    case VKI_F_LOG2PHYS:
-        PRINT("sys_fcntl ( %d, %s, %p )", ARG1, name_for_fcntl(ARG2), ARG3);
-        PRE_REG_READ3(long, "fcntl",
-                      unsigned int, fd, unsigned int, cmd,
-                      struct log2phys *, l2p);
-        PRE_MEM_WRITE( "fcntl(F_LOG2PHYS, l2p)", 
-                       ARG3, sizeof(struct vki_log2phys) );
-        break;
+       // struct log2phys (out)
+   case VKI_F_LOG2PHYS:
+      PRINT("sys_fcntl ( %d, %s, %p )", ARG1, name_for_fcntl(ARG2), ARG3);
+      PRE_REG_READ3(long, "fcntl",
+                    unsigned int, fd, unsigned int, cmd,
+                    struct log2phys *, l2p);
+      PRE_MEM_WRITE( "fcntl(F_LOG2PHYS, l2p)", 
+                     ARG3, sizeof(struct vki_log2phys) );
+      break;
 
-        // char[maxpathlen] (out)
-    case VKI_F_GETPATH:
-        PRINT("sys_fcntl ( %d, %s, %p )", ARG1, name_for_fcntl(ARG2), ARG3);
-        PRE_REG_READ3(long, "fcntl",
-                      unsigned int, fd, unsigned int, cmd,
-                      char *, pathbuf);
-        PRE_MEM_WRITE( "fcntl(F_GETPATH, pathbuf)", 
-                       ARG3, VKI_MAXPATHLEN );
-        break;
+       // char[maxpathlen] (out)
+   case VKI_F_GETPATH:
+      PRINT("sys_fcntl ( %d, %s, %p )", ARG1, name_for_fcntl(ARG2), ARG3);
+      PRE_REG_READ3(long, "fcntl",
+                    unsigned int, fd, unsigned int, cmd,
+                    char *, pathbuf);
+      PRE_MEM_WRITE( "fcntl(F_GETPATH, pathbuf)", 
+                     ARG3, VKI_MAXPATHLEN );
+      break;
 
-        // char[maxpathlen] (in)
-    case VKI_F_PATHPKG_CHECK:
-        PRINT("sys_fcntl ( %d, %s, %p '%s')", ARG1, name_for_fcntl(ARG2), ARG3,
-            ARG3);
-        PRE_REG_READ3(long, "fcntl",
-                      unsigned int, fd, unsigned int, cmd,
-                      char *, pathbuf);
-        PRE_MEM_RASCIIZ( "fcntl(F_PATHPKG_CHECK, pathbuf)", ARG3);
-        break;
+       // char[maxpathlen] (in)
+   case VKI_F_PATHPKG_CHECK:
+      PRINT("sys_fcntl ( %d, %s, %p '%s')", ARG1, name_for_fcntl(ARG2), ARG3,
+          ARG3);
+      PRE_REG_READ3(long, "fcntl",
+                    unsigned int, fd, unsigned int, cmd,
+                    char *, pathbuf);
+      PRE_MEM_RASCIIZ( "fcntl(F_PATHPKG_CHECK, pathbuf)", ARG3);
+      break;
 
-    default:
-        PRINT("sys_fcntl ( %d, %d [??] )", ARG1, ARG2);
-        if (VG_(clo_trace_unknown_syscalls)) {
-            VG_(printf)("UNKNOWN fcntl %d!", ARG2);
-        }
-        break;
-    }
+   default:
+      PRINT("sys_fcntl ( %d, %d [??] )", ARG1, ARG2);
+      if (VG_(clo_trace_unknown_syscalls)) {
+          VG_(printf)("UNKNOWN fcntl %d!", ARG2);
+      }
+      break;
+   }
 }
 
 POST(sys_fcntl)
@@ -1145,27 +1144,26 @@ POST(sys_fcntl)
    case VKI_F_SETLKW:
        break;
 
-   // DDD: more inconsistent indentation
-    case VKI_F_PREALLOCATE:
-        {
-            struct vki_fstore *fstore = (struct vki_fstore *)ARG3;
-            POST_FIELD_WRITE( fstore->fst_bytesalloc );
-        }
-        break;
+   case VKI_F_PREALLOCATE:
+      {
+         struct vki_fstore *fstore = (struct vki_fstore *)ARG3;
+         POST_FIELD_WRITE( fstore->fst_bytesalloc );
+      }
+      break;
 
-    case VKI_F_LOG2PHYS:
-        POST_MEM_WRITE( ARG3, sizeof(struct vki_log2phys) );
-        break;
+   case VKI_F_LOG2PHYS:
+      POST_MEM_WRITE( ARG3, sizeof(struct vki_log2phys) );
+      break;
 
-    case VKI_F_GETPATH:
-        POST_MEM_WRITE( ARG3, 1+VG_(strlen)((char *)ARG3) );
-        PRINT("\"%s\"", ARG3);
-        break;
+   case VKI_F_GETPATH:
+      POST_MEM_WRITE( ARG3, 1+VG_(strlen)((char *)ARG3) );
+      PRINT("\"%s\"", ARG3);
+      break;
 
-    default:
-        // DDD: ugh, missing lots of cases here, not nice
-        break;
-    }
+   default:
+      // DDD: ugh, missing lots of cases here, not nice
+      break;
+   }
 }
 
 // XXX: wrapper only suitable for 32-bit systems
@@ -1299,39 +1297,39 @@ PRE(sys_kqueue)
 
 POST(sys_kqueue)
 {
-    if (!ML_(fd_allowed)(RES, "kqueue", tid, True)) {
-        VG_(close)(RES);
-        SET_STATUS_Failure( VKI_EMFILE );
-    } else {
-        if (VG_(clo_track_fds)) {
-            ML_(record_fd_open_with_given_name)(tid, RES, NULL);
-        }
-    }
+   if (!ML_(fd_allowed)(RES, "kqueue", tid, True)) {
+      VG_(close)(RES);
+      SET_STATUS_Failure( VKI_EMFILE );
+   } else {
+      if (VG_(clo_track_fds)) {
+         ML_(record_fd_open_with_given_name)(tid, RES, NULL);
+      }
+   }
 }
 
 PRE(sys_kevent)
 {
-    PRINT("kevent( %d, %p, %d, %p, %d, %p )", 
-          ARG1, ARG2, ARG3, ARG4, ARG5, ARG6);
-    PRE_REG_READ6(int,"kevent", int,kq, 
-                  const struct vki_kevent *,changelist, int,nchanges, 
-                  struct vki_kevent *,eventlist, int,nevents, 
-                  const struct vki_timespec *,timeout);
+   PRINT("kevent( %d, %p, %d, %p, %d, %p )", 
+         ARG1, ARG2, ARG3, ARG4, ARG5, ARG6);
+   PRE_REG_READ6(int,"kevent", int,kq, 
+                 const struct vki_kevent *,changelist, int,nchanges, 
+                 struct vki_kevent *,eventlist, int,nevents, 
+                 const struct vki_timespec *,timeout);
 
-    if (ARG3) PRE_MEM_READ ("kevent(changelist)", 
-                            ARG2, ARG3 * sizeof(struct vki_kevent));
-    if (ARG5) PRE_MEM_WRITE("kevent(eventlist)", 
-                            ARG4, ARG5 * sizeof(struct vki_kevent));
-    if (ARG6) PRE_MEM_READ ("kevent(timeout)", 
-                            ARG6, sizeof(struct vki_timespec));
+   if (ARG3) PRE_MEM_READ ("kevent(changelist)", 
+                           ARG2, ARG3 * sizeof(struct vki_kevent));
+   if (ARG5) PRE_MEM_WRITE("kevent(eventlist)", 
+                           ARG4, ARG5 * sizeof(struct vki_kevent));
+   if (ARG6) PRE_MEM_READ ("kevent(timeout)", 
+                           ARG6, sizeof(struct vki_timespec));
 
-    *flags |= SfMayBlock;
+   *flags |= SfMayBlock;
 }
 
 POST(sys_kevent)
 {
-    PRINT("kevent ret %d dst %p (%zu)", RES, ARG4, sizeof(struct vki_kevent));
-    if (RES > 0) POST_MEM_WRITE(ARG4, RES * sizeof(struct vki_kevent));
+   PRINT("kevent ret %d dst %p (%zu)", RES, ARG4, sizeof(struct vki_kevent));
+   if (RES > 0) POST_MEM_WRITE(ARG4, RES * sizeof(struct vki_kevent));
 }
 
 
@@ -1341,89 +1339,89 @@ SizeT pthread_structsize = 0;
 
 PRE(sys_bsdthread_register)
 {
-    PRINT("bsdthread_register( %p, %p, %lu )", ARG1, ARG2, ARG3);
-    PRE_REG_READ3(int,"__bsdthread_register", void *,"threadstart", 
-                  void *,"wqthread", size_t,"pthsize");
+   PRINT("bsdthread_register( %p, %p, %lu )", ARG1, ARG2, ARG3);
+   PRE_REG_READ3(int,"__bsdthread_register", void *,"threadstart", 
+                 void *,"wqthread", size_t,"pthsize");
 
-    pthread_starter = ARG1;
-    wqthread_starter = ARG2;
-    pthread_structsize = ARG3;
-    ARG1 = (Word)&pthread_hijack_asm;
-    ARG2 = (Word)&wqthread_hijack_asm;
+   pthread_starter = ARG1;
+   wqthread_starter = ARG2;
+   pthread_structsize = ARG3;
+   ARG1 = (Word)&pthread_hijack_asm;
+   ARG2 = (Word)&wqthread_hijack_asm;
 }
 
 PRE(sys_workq_open)
 {
-    PRINT("workq_open()");
-    PRE_REG_READ0(int, "workq_open");
+   PRINT("workq_open()");
+   PRE_REG_READ0(int, "workq_open");
 
-    // This creates lots of threads and thread stacks under the covers, 
-    // but we ignore them all until some work item starts running on it.
+   // This creates lots of threads and thread stacks under the covers, 
+   // but we ignore them all until some work item starts running on it.
 }
 
 static const char *workqop_name(int op)
 {
-    switch (op) {
-    case VKI_WQOPS_QUEUE_ADD: return "QUEUE_ADD";
-    case VKI_WQOPS_QUEUE_REMOVE: return "QUEUE_REMOVE";
-    case VKI_WQOPS_THREAD_RETURN: return "THREAD_RETURN";
-    default: return "?";
-    }
+   switch (op) {
+   case VKI_WQOPS_QUEUE_ADD: return "QUEUE_ADD";
+   case VKI_WQOPS_QUEUE_REMOVE: return "QUEUE_REMOVE";
+   case VKI_WQOPS_THREAD_RETURN: return "THREAD_RETURN";
+   default: return "?";
+   }
 }
 
 
 PRE(sys_workq_ops)
 {
-    PRINT("workq_ops( %d(%s), %p, %d )", ARG1, workqop_name(ARG1), ARG2, ARG3);
-    PRE_REG_READ3(int,"workq_ops", int,"options", void *,"item", 
-                  int,"priority");
+   PRINT("workq_ops( %d(%s), %p, %d )", ARG1, workqop_name(ARG1), ARG2, ARG3);
+   PRE_REG_READ3(int,"workq_ops", int,"options", void *,"item", 
+                 int,"priority");
 
-    switch (ARG1) {
-    case VKI_WQOPS_QUEUE_ADD:
-    case VKI_WQOPS_QUEUE_REMOVE:
-        // fixme need anything here?
-        // fixme may block?
-        break;
+   switch (ARG1) {
+   case VKI_WQOPS_QUEUE_ADD:
+   case VKI_WQOPS_QUEUE_REMOVE:
+      // fixme need anything here?
+      // fixme may block?
+      break;
 
-    case VKI_WQOPS_THREAD_RETURN: {
-        // The interesting case. The kernel will do one of two things:
-        // 1. Return normally. We continue; libc proceeds to stop the thread.
-        //    V does nothing special here.
-        // 2. Jump to wqthread_hijack. This wipes the stack and runs a 
-        //    new work item, and never returns from workq_ops. 
-        //    V handles this by longjmp() from wqthread_hijack back to the 
-        //    scheduler, which continues at the new client SP/IP/state.
-        //    This works something like V's signal handling.
-        //    To the tool, this looks like workq_ops() sometimes returns 
-        //    to a strange address.
-        ThreadState *tst = VG_(get_ThreadState)(tid);
-        tst->os_state.wq_jmpbuf_valid = True;
-        *flags |= SfMayBlock;  // fixme true?
-        break;
-    }
+   case VKI_WQOPS_THREAD_RETURN: {
+      // The interesting case. The kernel will do one of two things:
+      // 1. Return normally. We continue; libc proceeds to stop the thread.
+      //    V does nothing special here.
+      // 2. Jump to wqthread_hijack. This wipes the stack and runs a 
+      //    new work item, and never returns from workq_ops. 
+      //    V handles this by longjmp() from wqthread_hijack back to the 
+      //    scheduler, which continues at the new client SP/IP/state.
+      //    This works something like V's signal handling.
+      //    To the tool, this looks like workq_ops() sometimes returns 
+      //    to a strange address.
+      ThreadState *tst = VG_(get_ThreadState)(tid);
+      tst->os_state.wq_jmpbuf_valid = True;
+      *flags |= SfMayBlock;  // fixme true?
+      break;
+   }
 
-    default:
-        VG_(printf)("UNKNOWN workq_ops option %d\n", ARG1);
-        break;
-    }
+   default:
+      VG_(printf)("UNKNOWN workq_ops option %d\n", ARG1);
+      break;
+   }
 }
 
 POST(sys_workq_ops)
 {
-    ThreadState *tst = VG_(get_ThreadState)(tid);
-    tst->os_state.wq_jmpbuf_valid = False;
+   ThreadState *tst = VG_(get_ThreadState)(tid);
+   tst->os_state.wq_jmpbuf_valid = False;
 }
 
 
 
 PRE(sys___mac_syscall)
 {
-    PRINT("__mac_syscall( %p, %d, %p )", ARG1, ARG2, ARG3);
-    PRE_REG_READ3(int,"__mac_syscall", char *,"policy", 
-                  int,"call", void *,"arg");
+   PRINT("__mac_syscall( %p, %d, %p )", ARG1, ARG2, ARG3);
+   PRE_REG_READ3(int,"__mac_syscall", char *,"policy", 
+                 int,"call", void *,"arg");
 
-    // GrP fixme check call's arg?
-    // GrP fixme check policy?
+   // GrP fixme check call's arg?
+   // GrP fixme check policy?
 }
 
 
@@ -1452,7 +1450,7 @@ PRE(sys_exit)
       VG_(threads)[t].os_state.exitcode = ARG1;
 
       if (t != tid)
-	 VG_(get_thread_out_of_syscall)(t);	/* unblock it, if blocked */
+         VG_(get_thread_out_of_syscall)(t);     /* unblock it, if blocked */
    }
 
    /* We have to claim the syscall already succeeded. */
@@ -1536,7 +1534,7 @@ PRE(sys_watchevent)
 {
     PRINT("watchevent(%p, %#x)", ARG1, ARG2);
     PRE_REG_READ2(long, "watchevent",
-	vki_eventreq *, "event", unsigned int, "eventmask");
+        vki_eventreq *, "event", unsigned int, "eventmask");
 
     PRE_MEM_READ("watchevent(event)", ARG1, sizeof(vki_eventreq));
     PRE_MEM_READ("watchevent(eventmask)", ARG2, sizeof(unsigned int));
@@ -1546,70 +1544,69 @@ PRE(sys_watchevent)
 #define WAITEVENT_FAST_POLL ((Addr)(struct timeval *)-1)
 PRE(sys_waitevent)
 {
-    PRINT("waitevent(%p, %p)", ARG1, ARG2);
-    PRE_REG_READ2(long, "waitevent",
-	vki_eventreq *, "event", struct timeval *, "timeout");
-    PRE_MEM_WRITE("waitevent(event)", ARG1, sizeof(vki_eventreq));
+   PRINT("waitevent(%p, %p)", ARG1, ARG2);
+   PRE_REG_READ2(long, "waitevent",
+      vki_eventreq *, "event", struct timeval *, "timeout");
+   PRE_MEM_WRITE("waitevent(event)", ARG1, sizeof(vki_eventreq));
 
-    if (ARG2  &&  ARG2 != WAITEVENT_FAST_POLL) {
-	PRE_timeval_READ("waitevent(timeout)", ARG2);
-    }
+   if (ARG2  &&  ARG2 != WAITEVENT_FAST_POLL) {
+      PRE_timeval_READ("waitevent(timeout)", ARG2);
+   }
 
-    /* XXX ((timeval*)-1) is valid for ARG2 -- jpeach */
-    *flags |= SfMayBlock;
+   /* XXX ((timeval*)-1) is valid for ARG2 -- jpeach */
+   *flags |= SfMayBlock;
 }
 
 POST(sys_waitevent)
 {
-    POST_MEM_WRITE(ARG1, sizeof(vki_eventreq));
+   POST_MEM_WRITE(ARG1, sizeof(vki_eventreq));
 }
 
 PRE(sys_modwatch)
 {
-    PRINT("modwatch(%p, %#x)", ARG1, ARG2);
-    PRE_REG_READ2(long, "modwatch",
-	vki_eventreq *, "event", unsigned int, "eventmask");
+   PRINT("modwatch(%p, %#x)", ARG1, ARG2);
+   PRE_REG_READ2(long, "modwatch",
+      vki_eventreq *, "event", unsigned int, "eventmask");
 
-    PRE_MEM_READ("modwatch(event)", ARG1, sizeof(vki_eventreq));
-    PRE_MEM_READ("modwatch(eventmask)", ARG2, sizeof(unsigned int));
+   PRE_MEM_READ("modwatch(event)", ARG1, sizeof(vki_eventreq));
+   PRE_MEM_READ("modwatch(eventmask)", ARG2, sizeof(unsigned int));
 }
 
 PRE(sys_getxattr)
 {
-    PRINT("getxattr(%p(%s), %p(%s), %p, %u, %u, %d)",
-	ARG1, (char *)ARG1, ARG2, (char *)ARG2,
-	ARG3, ARG4, ARG5, ARG6);
+   PRINT("getxattr(%p(%s), %p(%s), %p, %u, %u, %d)",
+         ARG1, (char *)ARG1, ARG2, (char *)ARG2, ARG3, ARG4, ARG5, ARG6);
 
-    PRE_REG_READ6(vki_ssize_t, "getxattr",
-                 const char *, path, char *, name, void *, value,
-                 vki_size_t, size, uint32_t, position, int, options);
-    PRE_MEM_RASCIIZ("getxattr(path)", ARG1);
-    PRE_MEM_RASCIIZ("getxattr(name)", ARG2);
-    PRE_MEM_WRITE( "getxattr(value)", ARG3, ARG4);
+   PRE_REG_READ6(vki_ssize_t, "getxattr",
+                const char *, path, char *, name, void *, value,
+                vki_size_t, size, uint32_t, position, int, options);
+   PRE_MEM_RASCIIZ("getxattr(path)", ARG1);
+   PRE_MEM_RASCIIZ("getxattr(name)", ARG2);
+   PRE_MEM_WRITE( "getxattr(value)", ARG3, ARG4);
 }
 
 POST(sys_getxattr)
 {
-    vg_assert((vki_ssize_t)RES >= 0);
-    POST_MEM_WRITE(ARG3, (vki_ssize_t)RES);
+   vg_assert((vki_ssize_t)RES >= 0);
+   POST_MEM_WRITE(ARG3, (vki_ssize_t)RES);
 }
 
 PRE(sys_fgetxattr)
 {
-    PRINT("fgetxattr(%d, %p(%s), %p, %u, %u, %d)",
-	ARG1, ARG2, (char *)ARG2, ARG3, ARG4, ARG5, ARG6);
+   PRINT("fgetxattr(%d, %p(%s), %p, %u, %u, %d)",
+      ARG1, ARG2, (char *)ARG2, ARG3, ARG4, ARG5, ARG6);
 
-    PRE_REG_READ6(vki_ssize_t, "fgetxattr",
+   PRE_REG_READ6(vki_ssize_t, "fgetxattr",
                  int, fd, char *, name, void *, value,
                  vki_size_t, size, uint32_t, position, int, options);
-    PRE_MEM_RASCIIZ("getxattr(name)", ARG2);
-    PRE_MEM_WRITE( "getxattr(value)", ARG3, ARG4);
+   PRE_MEM_RASCIIZ("getxattr(name)", ARG2);
+   PRE_MEM_WRITE( "getxattr(value)", ARG3, ARG4);
 }
 
 POST(sys_fgetxattr)
 {
-    vg_assert((vki_ssize_t)RES >= 0);
-    POST_MEM_WRITE(ARG3, (vki_ssize_t)RES);
+   vg_assert((vki_ssize_t)RES >= 0);
+   POST_MEM_WRITE(ARG3, (vki_ssize_t)RES);
 }
 
 PRE(sys_setxattr)
@@ -1797,152 +1794,152 @@ static void scan_attrlist(ThreadId tid, struct vki_attrlist *attrList,
                           void (*fn)(ThreadId, void *attrData, SizeT size)
                           )
 {
-    typedef struct {
-        uint32_t attrBit;
-        int32_t attrSize;
-    } attrspec;
-    static const attrspec commonattr[] = {
-        // This order is important.
-        { ATTR_CMN_NAME,            -1 }, 
-        { ATTR_CMN_DEVID,           sizeof(dev_t) }, 
-        { ATTR_CMN_FSID,            sizeof(fsid_t) }, 
-        { ATTR_CMN_OBJTYPE,         sizeof(fsobj_type_t) }, 
-        { ATTR_CMN_OBJTAG,          sizeof(fsobj_tag_t) }, 
-        { ATTR_CMN_OBJID,           sizeof(fsobj_id_t) }, 
-        { ATTR_CMN_OBJPERMANENTID,  sizeof(fsobj_id_t) }, 
-        { ATTR_CMN_PAROBJID,        sizeof(fsobj_id_t) }, 
-        { ATTR_CMN_SCRIPT,          sizeof(text_encoding_t) }, 
-        { ATTR_CMN_CRTIME,          sizeof(struct timespec) }, 
-        { ATTR_CMN_MODTIME,         sizeof(struct timespec) }, 
-        { ATTR_CMN_CHGTIME,         sizeof(struct timespec) }, 
-        { ATTR_CMN_ACCTIME,         sizeof(struct timespec) }, 
-        { ATTR_CMN_BKUPTIME,        sizeof(struct timespec) }, 
-        { ATTR_CMN_FNDRINFO,        32 /*FileInfo+ExtendedFileInfo, or FolderInfo+ExtendedFolderInfo*/ }, 
-        { ATTR_CMN_OWNERID,         sizeof(uid_t) }, 
-        { ATTR_CMN_GRPID,           sizeof(gid_t) }, 
-        { ATTR_CMN_ACCESSMASK,      sizeof(uint32_t) }, 
-        { ATTR_CMN_NAMEDATTRCOUNT,  sizeof(uint32_t) }, 
-        { ATTR_CMN_NAMEDATTRLIST,   -1 }, 
-        { ATTR_CMN_FLAGS,           sizeof(uint32_t) }, 
-        { ATTR_CMN_USERACCESS,      sizeof(uint32_t) }, 
-        { ATTR_CMN_FILEID,          sizeof(uint64_t) }, 
-        { ATTR_CMN_PARENTID,        sizeof(uint64_t) }, 
-        { 0,                        0 }
-    };
-    static const attrspec volattr[] = {
-        // This order is important.
-        { ATTR_VOL_INFO,            0 }, 
-        { ATTR_VOL_FSTYPE,          sizeof(uint32_t) }, 
-        { ATTR_VOL_SIGNATURE,       sizeof(uint32_t) }, 
-        { ATTR_VOL_SIZE,            sizeof(off_t) }, 
-        { ATTR_VOL_SPACEFREE,       sizeof(off_t) }, 
-        { ATTR_VOL_SPACEAVAIL,      sizeof(off_t) }, 
-        { ATTR_VOL_MINALLOCATION,   sizeof(off_t) }, 
-        { ATTR_VOL_ALLOCATIONCLUMP, sizeof(off_t) }, 
-        { ATTR_VOL_IOBLOCKSIZE,     sizeof(uint32_t) }, 
-        { ATTR_VOL_OBJCOUNT,        sizeof(uint32_t) }, 
-        { ATTR_VOL_FILECOUNT,       sizeof(uint32_t) }, 
-        { ATTR_VOL_DIRCOUNT,        sizeof(uint32_t) }, 
-        { ATTR_VOL_MAXOBJCOUNT,     sizeof(uint32_t) }, 
-        { ATTR_VOL_MOUNTPOINT,      -1 }, 
-        { ATTR_VOL_NAME,            -1 }, 
-        { ATTR_VOL_MOUNTFLAGS,      sizeof(uint32_t) }, 
-        { ATTR_VOL_MOUNTEDDEVICE,   -1 }, 
-        { ATTR_VOL_ENCODINGSUSED,   sizeof(uint64_t) }, 
-        { ATTR_VOL_CAPABILITIES,    sizeof(vol_capabilities_attr_t) }, 
-        { ATTR_VOL_ATTRIBUTES,      sizeof(vol_attributes_attr_t) }, 
-        { 0,                        0 }
-    };
-    static const attrspec dirattr[] = {
-        // This order is important.
-        { ATTR_DIR_LINKCOUNT,       sizeof(uint32_t) }, 
-        { ATTR_DIR_ENTRYCOUNT,      sizeof(uint32_t) }, 
-        { ATTR_DIR_MOUNTSTATUS,     sizeof(uint32_t) }, 
-        { 0,                        0 }
-    };
-    static const attrspec fileattr[] = {
-        // This order is important.
-        { ATTR_FILE_LINKCOUNT,      sizeof(uint32_t) }, 
-        { ATTR_FILE_TOTALSIZE,      sizeof(off_t) }, 
-        { ATTR_FILE_ALLOCSIZE,      sizeof(off_t) }, 
-        { ATTR_FILE_IOBLOCKSIZE,    sizeof(uint32_t) }, 
-        { ATTR_FILE_CLUMPSIZE,      sizeof(uint32_t) }, 
-        { ATTR_FILE_DEVTYPE,        sizeof(uint32_t) }, 
-        { ATTR_FILE_FILETYPE,       sizeof(uint32_t) }, 
-        { ATTR_FILE_FORKCOUNT,      sizeof(uint32_t) }, 
-        { ATTR_FILE_FORKLIST,       -1 }, 
-        { ATTR_FILE_DATALENGTH,     sizeof(off_t) }, 
-        { ATTR_FILE_DATAALLOCSIZE,  sizeof(off_t) }, 
-        { ATTR_FILE_DATAEXTENTS,    sizeof(extentrecord) }, 
-        { ATTR_FILE_RSRCLENGTH,     sizeof(off_t) }, 
-        { ATTR_FILE_RSRCALLOCSIZE,  sizeof(off_t) }, 
-        { ATTR_FILE_RSRCEXTENTS,    sizeof(extentrecord) }, 
-        { 0,                        0 }
-    };
-    static const attrspec forkattr[] = {
-        // This order is important.
-        { ATTR_FORK_TOTALSIZE,      sizeof(off_t) }, 
-        { ATTR_FORK_ALLOCSIZE,      sizeof(off_t) }, 
-        { 0,                        0 }
-    };
+   typedef struct {
+      uint32_t attrBit;
+      int32_t attrSize;
+   } attrspec;
+   static const attrspec commonattr[] = {
+      // This order is important.
+      { ATTR_CMN_NAME,            -1 }, 
+      { ATTR_CMN_DEVID,           sizeof(dev_t) }, 
+      { ATTR_CMN_FSID,            sizeof(fsid_t) }, 
+      { ATTR_CMN_OBJTYPE,         sizeof(fsobj_type_t) }, 
+      { ATTR_CMN_OBJTAG,          sizeof(fsobj_tag_t) }, 
+      { ATTR_CMN_OBJID,           sizeof(fsobj_id_t) }, 
+      { ATTR_CMN_OBJPERMANENTID,  sizeof(fsobj_id_t) }, 
+      { ATTR_CMN_PAROBJID,        sizeof(fsobj_id_t) }, 
+      { ATTR_CMN_SCRIPT,          sizeof(text_encoding_t) }, 
+      { ATTR_CMN_CRTIME,          sizeof(struct timespec) }, 
+      { ATTR_CMN_MODTIME,         sizeof(struct timespec) }, 
+      { ATTR_CMN_CHGTIME,         sizeof(struct timespec) }, 
+      { ATTR_CMN_ACCTIME,         sizeof(struct timespec) }, 
+      { ATTR_CMN_BKUPTIME,        sizeof(struct timespec) }, 
+      { ATTR_CMN_FNDRINFO,        32 /*FileInfo+ExtendedFileInfo, or FolderInfo+ExtendedFolderInfo*/ }, 
+      { ATTR_CMN_OWNERID,         sizeof(uid_t) }, 
+      { ATTR_CMN_GRPID,           sizeof(gid_t) }, 
+      { ATTR_CMN_ACCESSMASK,      sizeof(uint32_t) }, 
+      { ATTR_CMN_NAMEDATTRCOUNT,  sizeof(uint32_t) }, 
+      { ATTR_CMN_NAMEDATTRLIST,   -1 }, 
+      { ATTR_CMN_FLAGS,           sizeof(uint32_t) }, 
+      { ATTR_CMN_USERACCESS,      sizeof(uint32_t) }, 
+      { ATTR_CMN_FILEID,          sizeof(uint64_t) }, 
+      { ATTR_CMN_PARENTID,        sizeof(uint64_t) }, 
+      { 0,                        0 }
+   };
+   static const attrspec volattr[] = {
+      // This order is important.
+      { ATTR_VOL_INFO,            0 }, 
+      { ATTR_VOL_FSTYPE,          sizeof(uint32_t) }, 
+      { ATTR_VOL_SIGNATURE,       sizeof(uint32_t) }, 
+      { ATTR_VOL_SIZE,            sizeof(off_t) }, 
+      { ATTR_VOL_SPACEFREE,       sizeof(off_t) }, 
+      { ATTR_VOL_SPACEAVAIL,      sizeof(off_t) }, 
+      { ATTR_VOL_MINALLOCATION,   sizeof(off_t) }, 
+      { ATTR_VOL_ALLOCATIONCLUMP, sizeof(off_t) }, 
+      { ATTR_VOL_IOBLOCKSIZE,     sizeof(uint32_t) }, 
+      { ATTR_VOL_OBJCOUNT,        sizeof(uint32_t) }, 
+      { ATTR_VOL_FILECOUNT,       sizeof(uint32_t) }, 
+      { ATTR_VOL_DIRCOUNT,        sizeof(uint32_t) }, 
+      { ATTR_VOL_MAXOBJCOUNT,     sizeof(uint32_t) }, 
+      { ATTR_VOL_MOUNTPOINT,      -1 }, 
+      { ATTR_VOL_NAME,            -1 }, 
+      { ATTR_VOL_MOUNTFLAGS,      sizeof(uint32_t) }, 
+      { ATTR_VOL_MOUNTEDDEVICE,   -1 }, 
+      { ATTR_VOL_ENCODINGSUSED,   sizeof(uint64_t) }, 
+      { ATTR_VOL_CAPABILITIES,    sizeof(vol_capabilities_attr_t) }, 
+      { ATTR_VOL_ATTRIBUTES,      sizeof(vol_attributes_attr_t) }, 
+      { 0,                        0 }
+   };
+   static const attrspec dirattr[] = {
+      // This order is important.
+      { ATTR_DIR_LINKCOUNT,       sizeof(uint32_t) }, 
+      { ATTR_DIR_ENTRYCOUNT,      sizeof(uint32_t) }, 
+      { ATTR_DIR_MOUNTSTATUS,     sizeof(uint32_t) }, 
+      { 0,                        0 }
+   };
+   static const attrspec fileattr[] = {
+      // This order is important.
+      { ATTR_FILE_LINKCOUNT,      sizeof(uint32_t) }, 
+      { ATTR_FILE_TOTALSIZE,      sizeof(off_t) }, 
+      { ATTR_FILE_ALLOCSIZE,      sizeof(off_t) }, 
+      { ATTR_FILE_IOBLOCKSIZE,    sizeof(uint32_t) }, 
+      { ATTR_FILE_CLUMPSIZE,      sizeof(uint32_t) }, 
+      { ATTR_FILE_DEVTYPE,        sizeof(uint32_t) }, 
+      { ATTR_FILE_FILETYPE,       sizeof(uint32_t) }, 
+      { ATTR_FILE_FORKCOUNT,      sizeof(uint32_t) }, 
+      { ATTR_FILE_FORKLIST,       -1 }, 
+      { ATTR_FILE_DATALENGTH,     sizeof(off_t) }, 
+      { ATTR_FILE_DATAALLOCSIZE,  sizeof(off_t) }, 
+      { ATTR_FILE_DATAEXTENTS,    sizeof(extentrecord) }, 
+      { ATTR_FILE_RSRCLENGTH,     sizeof(off_t) }, 
+      { ATTR_FILE_RSRCALLOCSIZE,  sizeof(off_t) }, 
+      { ATTR_FILE_RSRCEXTENTS,    sizeof(extentrecord) }, 
+      { 0,                        0 }
+   };
+   static const attrspec forkattr[] = {
+      // This order is important.
+      { ATTR_FORK_TOTALSIZE,      sizeof(off_t) }, 
+      { ATTR_FORK_ALLOCSIZE,      sizeof(off_t) }, 
+      { 0,                        0 }
+   };
 
-    static const attrspec *attrdefs[5] = { 
-        commonattr, volattr, dirattr, fileattr, forkattr 
-    };
-    attrgroup_t a[5];
-    uint8_t *d, *dend;
-    int g, i;
+   static const attrspec *attrdefs[5] = { 
+      commonattr, volattr, dirattr, fileattr, forkattr 
+   };
+   attrgroup_t a[5];
+   uint8_t *d, *dend;
+   int g, i;
 
-    vg_assert(attrList->bitmapcount == 5);
-    VG_(memcpy)(a, &attrList->commonattr, sizeof(a));
-    d = attrBuf;
-    dend = d + attrBufSize;
+   vg_assert(attrList->bitmapcount == 5);
+   VG_(memcpy)(a, &attrList->commonattr, sizeof(a));
+   d = attrBuf;
+   dend = d + attrBufSize;
 
-    for (g = 0; g < 5; g++) {
-        for (i = 0; attrdefs[g][i].attrBit; i++) {
-            uint32_t bit = attrdefs[g][i].attrBit;
-            int32_t size = attrdefs[g][i].attrSize;
+   for (g = 0; g < 5; g++) {
+      for (i = 0; attrdefs[g][i].attrBit; i++) {
+         uint32_t bit = attrdefs[g][i].attrBit;
+         int32_t size = attrdefs[g][i].attrSize;
 
-            if (a[g] & bit) {
-                a[g] &= ~bit;  // clear bit for error check later
-                if (size == -1) {
-                    attrreference_t *ref = (attrreference_t *)d;
-                    size = MIN(sizeof(attrreference_t), dend - d);
-                    fn(tid, d, size);
-                    if (size >= sizeof(attrreference_t)  &&  
-                        d + ref->attr_dataoffset < dend) 
-                    {
-                        fn(tid, d + ref->attr_dataoffset, 
-                           MIN(ref->attr_length, dend - (d + ref->attr_dataoffset)));
-                    }
-                    d += size;
-                } 
-                else {
-                    size = MIN(size, dend - d);
-                    fn(tid, d, size);
-                    d += size;
-                }
-                
-                if ((uintptr_t)d % 4) d += 4 - ((uintptr_t)d % 4);
-                if (d > dend) d = dend;
+         if (a[g] & bit) {
+             a[g] &= ~bit;  // clear bit for error check later
+            if (size == -1) {
+               attrreference_t *ref = (attrreference_t *)d;
+               size = MIN(sizeof(attrreference_t), dend - d);
+               fn(tid, d, size);
+               if (size >= sizeof(attrreference_t)  &&  
+                   d + ref->attr_dataoffset < dend) 
+               {
+                  fn(tid, d + ref->attr_dataoffset, 
+                     MIN(ref->attr_length, dend - (d + ref->attr_dataoffset)));
+               }
+               d += size;
+            } 
+            else {
+               size = MIN(size, dend - d);
+               fn(tid, d, size);
+               d += size;
             }
-        }
+            
+            if ((uintptr_t)d % 4) d += 4 - ((uintptr_t)d % 4);
+            if (d > dend) d = dend;
+         }
+      }
 
-        // Known bits are cleared. Die if any bits are left.
-        if (a[g] != 0) {
-            VG_(message)(Vg_UserMsg, "UNKNOWN attrlist flags %d:0x%x\n", g, a[g]);
-        }
-    }
+      // Known bits are cleared. Die if any bits are left.
+      if (a[g] != 0) {
+         VG_(message)(Vg_UserMsg, "UNKNOWN attrlist flags %d:0x%x\n", g, a[g]);
+      }
+   }
 }
 
 static void get1attr(ThreadId tid, void *attrData, SizeT attrDataSize)
 {
-    POST_MEM_WRITE((Addr)attrData, attrDataSize);
+   POST_MEM_WRITE((Addr)attrData, attrDataSize);
 }
 
 static void set1attr(ThreadId tid, void *attrData, SizeT attrDataSize)
 {
-    PRE_MEM_READ("setattrlist(attrBuf value)", (Addr)attrData, attrDataSize);
+   PRE_MEM_READ("setattrlist(attrBuf value)", (Addr)attrData, attrDataSize);
 }
 
 PRE(sys_getattrlist)
@@ -2086,7 +2083,7 @@ PRE(sys_initgroups)
 {
     PRINT("sys_initgroups(%s, %p, %u)", ARG1, ARG2, ARG3);
     PRE_REG_READ3(long, "initgroups",
-	int, setlen, vki_gid_t *, gidset, vki_uid_t, gmuid);
+        int, setlen, vki_gid_t *, gidset, vki_uid_t, gmuid);
     PRE_MEM_READ("gidset", ARG2, ARG1 * sizeof(vki_gid_t));
 }
 
@@ -2175,38 +2172,38 @@ PRE(sys_sendto)
 PRE(sys_sendfile)
 {
 #if VG_WORDSIZE == 4
-    PRINT("sys_sendfile(%d, %d, %d, %p, %p, %d)",
-          ARG1, ARG2, LOHI64(ARG3, ARG4), ARG5, ARG6, ARG7);
+   PRINT("sys_sendfile(%d, %d, %d, %p, %p, %d)",
+         ARG1, ARG2, LOHI64(ARG3, ARG4), ARG5, ARG6, ARG7);
 
-    PRE_REG_READ7(long, "sendfile",
-	int, fromfd, int, tofd,
-	vki_uint32_t, offset_low32, vki_uint32_t, offset_high32,
-	vki_uint64_t *, nwritten, struct sf_hdtr *, sf_header, int, flags);
-    PRE_MEM_WRITE("sendfile(nwritten)", ARG5, sizeof(vki_uint64_t));
-    if (ARG6) PRE_MEM_WRITE("sendfile(sf_header)", ARG6, sizeof(struct sf_hdtr));
+   PRE_REG_READ7(long, "sendfile",
+      int, fromfd, int, tofd,
+      vki_uint32_t, offset_low32, vki_uint32_t, offset_high32,
+      vki_uint64_t *, nwritten, struct sf_hdtr *, sf_header, int, flags);
+   PRE_MEM_WRITE("sendfile(nwritten)", ARG5, sizeof(vki_uint64_t));
+   if (ARG6) PRE_MEM_WRITE("sendfile(sf_header)", ARG6, sizeof(struct sf_hdtr));
 #else
-    PRINT("sys_sendfile(%d, %d, %d, %p, %p, %d)",
-	ARG1, ARG2, ARG3, ARG4, ARG5, ARG6);
+   PRINT("sys_sendfile(%d, %d, %d, %p, %p, %d)",
+      ARG1, ARG2, ARG3, ARG4, ARG5, ARG6);
 
-    PRE_REG_READ6(long, "sendfile",
-	int, fromfd, int, tofd,
-        vki_uint64_t, offset, 
-	vki_uint64_t *, nwritten, struct sf_hdtr *, sf_header, int, flags);
-    PRE_MEM_WRITE("sendfile(nwritten)", ARG4, sizeof(vki_uint64_t));
-    if (ARG5) PRE_MEM_WRITE("sendfile(sf_header)", ARG5, sizeof(struct sf_hdtr));
+   PRE_REG_READ6(long, "sendfile",
+      int, fromfd, int, tofd,
+      vki_uint64_t, offset, 
+      vki_uint64_t *, nwritten, struct sf_hdtr *, sf_header, int, flags);
+   PRE_MEM_WRITE("sendfile(nwritten)", ARG4, sizeof(vki_uint64_t));
+   if (ARG5) PRE_MEM_WRITE("sendfile(sf_header)", ARG5, sizeof(struct sf_hdtr));
 #endif
 
-    *flags |= SfMayBlock;
+   *flags |= SfMayBlock;
 }
 
 POST(sys_sendfile)
 {
 #if VG_WORDSIZE == 4
-    POST_MEM_WRITE(ARG5, sizeof(vki_uint64_t));
-    if (ARG6) POST_MEM_WRITE(ARG6, sizeof(struct sf_hdtr));
+   POST_MEM_WRITE(ARG5, sizeof(vki_uint64_t));
+   if (ARG6) POST_MEM_WRITE(ARG6, sizeof(struct sf_hdtr));
 #else
-    POST_MEM_WRITE(ARG4, sizeof(vki_uint64_t));
-    if (ARG5) POST_MEM_WRITE(ARG5, sizeof(struct sf_hdtr));
+   POST_MEM_WRITE(ARG4, sizeof(vki_uint64_t));
+   if (ARG5) POST_MEM_WRITE(ARG5, sizeof(struct sf_hdtr));
 #endif
 }
 
@@ -2326,21 +2323,21 @@ POST(sys_socketpair)
 
 PRE(sys_gethostuuid)
 {
-    PRINT("sys_gethostuuid ( %p, %p )", ARG1, ARG2);
-    PRE_REG_READ2(int,"gethostuuid", 
-                  char *,"uuid_buf", 
-                  const struct vki_timespec *,"timeout");
+   PRINT("sys_gethostuuid ( %p, %p )", ARG1, ARG2);
+   PRE_REG_READ2(int,"gethostuuid", 
+                 char *,"uuid_buf", 
+                 const struct vki_timespec *,"timeout");
 
-    PRE_MEM_WRITE("uuid_buf", ARG1, 16);
-    PRE_MEM_READ("timeout", ARG2, sizeof(struct vki_timespec));
+   PRE_MEM_WRITE("uuid_buf", ARG1, 16);
+   PRE_MEM_READ("timeout", ARG2, sizeof(struct vki_timespec));
 
-    *flags |= SfMayBlock;
+   *flags |= SfMayBlock;
 }
 
 
 POST(sys_gethostuuid)
 {
-    POST_MEM_WRITE(ARG1, 16);
+   POST_MEM_WRITE(ARG1, 16);
 }
 
 /* Darwin pipe() returns the two descriptors in two registers. */
@@ -2352,11 +2349,11 @@ PRE(sys_pipe)
 
 POST(sys_pipe)
 {
-    Int p0, p1;
-    vg_assert(SUCCESS);
-    // not RES because we need the doubleword result
-    p0 = status->sres.res;
-    p1 = status->sres.res2;
+   Int p0, p1;
+   vg_assert(SUCCESS);
+   // not RES because we need the doubleword result
+   p0 = status->sres.res;
+   p1 = status->sres.res2;
 
    if (!ML_(fd_allowed)(p0, "pipe", tid, True) ||
        !ML_(fd_allowed)(p1, "pipe", tid, True)) {
@@ -2374,49 +2371,49 @@ POST(sys_pipe)
 
 PRE(sys_getlogin)
 {
-    PRINT("getlogin ( %p, %d )", ARG1, ARG2);
-    PRE_REG_READ2(long, "getlogin", 
-                  char *,"namebuf", unsigned int,"namelen");
+   PRINT("getlogin ( %p, %d )", ARG1, ARG2);
+   PRE_REG_READ2(long, "getlogin", 
+                 char *,"namebuf", unsigned int,"namelen");
 
-    PRE_MEM_WRITE("getlogin(namebuf)", ARG1, ARG2);
+   PRE_MEM_WRITE("getlogin(namebuf)", ARG1, ARG2);
 }
 
 POST(sys_getlogin)
 {
-    POST_MEM_WRITE(ARG1, ARG2);
+   POST_MEM_WRITE(ARG1, ARG2);
 }
 
 
 PRE(sys_ptrace)
 {
-    PRINT("ptrace ( %d, %d, %p, %d )", ARG1, ARG2, ARG3, ARG4);
-    PRE_REG_READ4(long, "ptrace", 
-                  int,"request", vki_pid_t,"pid", 
-                  vki_caddr_t,"addr", int,"data");
+   PRINT("ptrace ( %d, %d, %p, %d )", ARG1, ARG2, ARG3, ARG4);
+   PRE_REG_READ4(long, "ptrace", 
+                 int,"request", vki_pid_t,"pid", 
+                 vki_caddr_t,"addr", int,"data");
     
-    // Note: some code uses ptrace(random, 0, 0, 0) as a profiling mechanism. 
+   // Note: some code uses ptrace(random, 0, 0, 0) as a profiling mechanism. 
 
-    // GrP fixme anything needed?
+   // GrP fixme anything needed?
 }
 
 
 PRE(sys_issetugid)
 {
-    PRINT("issetugid ( )");
-    PRE_REG_READ0(long, "issetugid");
+   PRINT("issetugid ( )");
+   PRE_REG_READ0(long, "issetugid");
 }
 
 
 PRE(sys_getdtablesize)
 {
-    PRINT("getdtablesize ( )");
-    PRE_REG_READ0(long, "getdtablesize");
+   PRINT("getdtablesize ( )");
+   PRE_REG_READ0(long, "getdtablesize");
 }
 
 POST(sys_getdtablesize)
 {
-    // Subtract Valgrind's fd range from client's dtable
-    if (RES > VG_(fd_hard_limit)) SET_STATUS_Success(VG_(fd_hard_limit));
+   // Subtract Valgrind's fd range from client's dtable
+   if (RES > VG_(fd_hard_limit)) SET_STATUS_Success(VG_(fd_hard_limit));
 }
 
 PRE(sys_lseek)
@@ -2460,9 +2457,9 @@ PRE(sys_getdirentries)
 
 POST(sys_getdirentries) 
 {
-    POST_MEM_WRITE(ARG4, sizeof(long));
-    // GrP fixme be specific about d_name?
-    POST_MEM_WRITE(ARG2, RES);
+   POST_MEM_WRITE(ARG4, sizeof(long));
+   // GrP fixme be specific about d_name?
+   POST_MEM_WRITE(ARG2, RES);
 }
 
 
@@ -2477,9 +2474,9 @@ PRE(sys_getdirentries64)
 
 POST(sys_getdirentries64) 
 {
-    POST_MEM_WRITE(ARG4, sizeof(vki_off_t));
-    // GrP fixme be specific about d_name? (fixme copied from 32 bit version)
-    POST_MEM_WRITE(ARG2, RES);
+   POST_MEM_WRITE(ARG4, sizeof(vki_off_t));
+   // GrP fixme be specific about d_name? (fixme copied from 32 bit version)
+   POST_MEM_WRITE(ARG2, RES);
 }
 
 
@@ -2513,107 +2510,107 @@ POST(sys_fstatfs64)
 
 PRE(sys_auditon)
 {
-    PRINT("sys_auditon ( %d, %p, %d )", ARG1, ARG2, ARG3);
-    PRE_REG_READ3(int,"auditon", 
-                  int,"cmd", void*,"data", unsigned int,"length");
+   PRINT("sys_auditon ( %d, %p, %d )", ARG1, ARG2, ARG3);
+   PRE_REG_READ3(int,"auditon", 
+                 int,"cmd", void*,"data", unsigned int,"length");
 
-    switch (ARG1) {
+   switch (ARG1) {
 
-    case VKI_A_SETPOLICY: 
-    case VKI_A_SETKMASK:
-    case VKI_A_SETQCTRL:
-    case VKI_A_SETCOND:
-    case VKI_A_SETCLASS:
-    case VKI_A_SETPMASK:
-    case VKI_A_SETFSIZE:
-        // kernel reads data..data+length
-        PRE_MEM_READ("auditon(data)", ARG2, ARG3);
-        break;
+   case VKI_A_SETPOLICY: 
+   case VKI_A_SETKMASK:
+   case VKI_A_SETQCTRL:
+   case VKI_A_SETCOND:
+   case VKI_A_SETCLASS:
+   case VKI_A_SETPMASK:
+   case VKI_A_SETFSIZE:
+      // kernel reads data..data+length
+      PRE_MEM_READ("auditon(data)", ARG2, ARG3);
+      break;
 
-    case VKI_A_GETKMASK:
-    case VKI_A_GETPOLICY:
-    case VKI_A_GETQCTRL:
-    case VKI_A_GETFSIZE:
-    case VKI_A_GETCOND:
-        // kernel writes data..data+length
-        // fixme be precise about what gets written
-        PRE_MEM_WRITE("auditon(data)", ARG2, ARG3);
-        break;
+   case VKI_A_GETKMASK:
+   case VKI_A_GETPOLICY:
+   case VKI_A_GETQCTRL:
+   case VKI_A_GETFSIZE:
+   case VKI_A_GETCOND:
+      // kernel writes data..data+length
+      // fixme be precise about what gets written
+      PRE_MEM_WRITE("auditon(data)", ARG2, ARG3);
+      break;
 
 
-    case VKI_A_GETCLASS:
-    case VKI_A_GETPINFO:
-    case VKI_A_GETPINFO_ADDR:
-        // kernel reads and writes data..data+length
-        // fixme be precise about what gets read and written
-        PRE_MEM_READ("auditon(data)", ARG2, ARG3);
-        PRE_MEM_WRITE("auditon(data)", ARG2, ARG3);
-        break;
+   case VKI_A_GETCLASS:
+   case VKI_A_GETPINFO:
+   case VKI_A_GETPINFO_ADDR:
+      // kernel reads and writes data..data+length
+      // fixme be precise about what gets read and written
+      PRE_MEM_READ("auditon(data)", ARG2, ARG3);
+      PRE_MEM_WRITE("auditon(data)", ARG2, ARG3);
+      break;
 
-    case VKI_A_SETKAUDIT:
-    case VKI_A_SETSTAT:
-    case VKI_A_SETUMASK:
-    case VKI_A_SETSMASK:
-    case VKI_A_GETKAUDIT:
-    case VKI_A_GETCWD:
-    case VKI_A_GETCAR:
-    case VKI_A_GETSTAT:
-        // unimplemented on darwin
-        break;
+   case VKI_A_SETKAUDIT:
+   case VKI_A_SETSTAT:
+   case VKI_A_SETUMASK:
+   case VKI_A_SETSMASK:
+   case VKI_A_GETKAUDIT:
+   case VKI_A_GETCWD:
+   case VKI_A_GETCAR:
+   case VKI_A_GETSTAT:
+      // unimplemented on darwin
+      break;
 
-    default:
-        VG_(message)(Vg_UserMsg, "UNKNOWN auditon cmd %d", ARG1);
-        break;
-    }
+   default:
+      VG_(message)(Vg_UserMsg, "UNKNOWN auditon cmd %d", ARG1);
+      break;
+   }
 }
 
 POST(sys_auditon)
 {
-    switch (ARG1) {
+   switch (ARG1) {
 
-    case VKI_A_SETPOLICY: 
-    case VKI_A_SETKMASK:
-    case VKI_A_SETQCTRL:
-    case VKI_A_SETCOND:
-    case VKI_A_SETCLASS:
-    case VKI_A_SETPMASK:
-    case VKI_A_SETFSIZE:
-        // kernel reads data..data+length
-        break;
+   case VKI_A_SETPOLICY: 
+   case VKI_A_SETKMASK:
+   case VKI_A_SETQCTRL:
+   case VKI_A_SETCOND:
+   case VKI_A_SETCLASS:
+   case VKI_A_SETPMASK:
+   case VKI_A_SETFSIZE:
+      // kernel reads data..data+length
+      break;
 
-    case VKI_A_GETKMASK:
-    case VKI_A_GETPOLICY:
-    case VKI_A_GETQCTRL:
-    case VKI_A_GETFSIZE:
-    case VKI_A_GETCOND:
-        // kernel writes data..data+length
-        // fixme be precise about what gets written
-        POST_MEM_WRITE(ARG2, ARG3);
-        break;
+   case VKI_A_GETKMASK:
+   case VKI_A_GETPOLICY:
+   case VKI_A_GETQCTRL:
+   case VKI_A_GETFSIZE:
+   case VKI_A_GETCOND:
+      // kernel writes data..data+length
+      // fixme be precise about what gets written
+      POST_MEM_WRITE(ARG2, ARG3);
+      break;
 
 
-    case VKI_A_GETCLASS:
-    case VKI_A_GETPINFO:
-    case VKI_A_GETPINFO_ADDR:
-        // kernel reads and writes data..data+length
-        // fixme be precise about what gets read and written
-        POST_MEM_WRITE(ARG2, ARG3);
-        break;
+   case VKI_A_GETCLASS:
+   case VKI_A_GETPINFO:
+   case VKI_A_GETPINFO_ADDR:
+      // kernel reads and writes data..data+length
+      // fixme be precise about what gets read and written
+      POST_MEM_WRITE(ARG2, ARG3);
+      break;
 
-    case VKI_A_SETKAUDIT:
-    case VKI_A_SETSTAT:
-    case VKI_A_SETUMASK:
-    case VKI_A_SETSMASK:
-    case VKI_A_GETKAUDIT:
-    case VKI_A_GETCWD:
-    case VKI_A_GETCAR:
-    case VKI_A_GETSTAT:
-        // unimplemented on darwin
-        break;
+   case VKI_A_SETKAUDIT:
+   case VKI_A_SETSTAT:
+   case VKI_A_SETUMASK:
+   case VKI_A_SETSMASK:
+   case VKI_A_GETKAUDIT:
+   case VKI_A_GETCWD:
+   case VKI_A_GETCAR:
+   case VKI_A_GETSTAT:
+      // unimplemented on darwin
+      break;
 
-    default:
-        break;
-    }    
+   default:
+      break;
+   }    
 }
 
 
@@ -2646,12 +2643,12 @@ PRE(sys_mmap)
 
 POST(sys_mmap)
 {
-    if (RES != -1) {
-        ML_(notify_aspacem_and_tool_of_mmap)
-            (RES, ARG2, ARG3, ARG4, ARG5, ARG6);
-        // Try to load symbols from the region
-        VG_(di_notify_mmap)( (Addr)RES, False/*allow_SkFileV*/ );
-    }
+   if (RES != -1) {
+      ML_(notify_aspacem_and_tool_of_mmap)
+          (RES, ARG2, ARG3, ARG4, ARG5, ARG6);
+      // Try to load symbols from the region
+      VG_(di_notify_mmap)( (Addr)RES, False/*allow_SkFileV*/ );
+   }
 }
 
 
@@ -2929,13 +2926,13 @@ static void import_complex_message(ThreadId tid, mach_msg_header_t *mh)
 static void pre_port_desc_read(ThreadId tid, mach_msg_port_descriptor_t *desc2)
 {
 #pragma pack(4)
-    struct {
-        mach_port_t name;
-        mach_msg_size_t pad1;
-        uint16_t pad2;
-        uint8_t disposition;
-        uint8_t type;
-    } *desc = (void*)desc2;
+   struct {
+      mach_port_t name;
+      mach_msg_size_t pad1;
+      uint16_t pad2;
+      uint8_t disposition;
+      uint8_t type;
+   } *desc = (void*)desc2;
 #pragma pack()
 
    PRE_FIELD_READ("msg->desc.port.name",        desc->name);
@@ -2947,19 +2944,19 @@ static void pre_port_desc_read(ThreadId tid, mach_msg_port_descriptor_t *desc2)
 static void pre_ool_desc_read(ThreadId tid, mach_msg_ool_descriptor_t *desc2)
 {
 #pragma pack(4)
-    struct {
-        Addr address;
+   struct {
+      Addr address;
 #if VG_WORDSIZE != 8
-        mach_msg_size_t size;
+      mach_msg_size_t size;
 #endif
-        uint8_t deallocate;
-        uint8_t copy;
-        uint8_t pad1;
-        uint8_t type;
+      uint8_t deallocate;
+      uint8_t copy;
+      uint8_t pad1;
+      uint8_t type;
 #if VG_WORDSIZE == 8
-        mach_msg_size_t size;
+      mach_msg_size_t size;
 #endif
-    } *desc = (void*)desc2;
+   } *desc = (void*)desc2;
 #pragma pack()
 
    PRE_FIELD_READ("msg->desc.out_of_line.address",    desc->address);
@@ -2973,19 +2970,19 @@ static void pre_oolports_desc_read(ThreadId tid,
                                    mach_msg_ool_ports_descriptor_t *desc2)
 {
 #pragma pack(4)
-    struct {
-        Addr address;
+   struct {
+      Addr address;
 #if VG_WORDSIZE != 8
-        mach_msg_size_t size;
+      mach_msg_size_t size;
 #endif
-        uint8_t deallocate;
-        uint8_t copy;
-        uint8_t disposition;
-        uint8_t type;
+      uint8_t deallocate;
+      uint8_t copy;
+      uint8_t disposition;
+      uint8_t type;
 #if VG_WORDSIZE == 8
-        mach_msg_size_t size;
+      mach_msg_size_t size;
 #endif
-    } *desc = (void*)desc2;
+   } *desc = (void*)desc2;
 #pragma pack()
 
    PRE_FIELD_READ("msg->desc.ool_ports.address",     desc->address);
@@ -3075,172 +3072,172 @@ static size_t export_complex_message(ThreadId tid, mach_msg_header_t *mh)
 POST(host_info)
 {
 #pragma pack(4)
-    typedef struct {
-        mach_msg_header_t Head;
-        NDR_record_t NDR;
-        kern_return_t RetCode;
-        mach_msg_type_number_t host_info_outCnt;
-        integer_t host_info_out[14];
-    } Reply;
+   typedef struct {
+      mach_msg_header_t Head;
+      NDR_record_t NDR;
+      kern_return_t RetCode;
+      mach_msg_type_number_t host_info_outCnt;
+      integer_t host_info_out[14];
+   } Reply;
 #pragma pack()
 
-    Reply *reply = (Reply *)ARG1;
+   Reply *reply = (Reply *)ARG1;
 
-    if (reply->RetCode) PRINT("mig return %d", reply->RetCode);
+   if (reply->RetCode) PRINT("mig return %d", reply->RetCode);
 }
 
 PRE(host_info)
 {
 #pragma pack(4)
-    typedef struct {
-        mach_msg_header_t Head;
-        NDR_record_t NDR;
-        host_flavor_t flavor;
-        mach_msg_type_number_t host_info_outCnt;
-    } Request;
+   typedef struct {
+      mach_msg_header_t Head;
+      NDR_record_t NDR;
+      host_flavor_t flavor;
+      mach_msg_type_number_t host_info_outCnt;
+   } Request;
 #pragma pack()
 
-    Request *req = (Request *)ARG1;
+   Request *req = (Request *)ARG1;
 
-    PRINT("host_info(mach_host_self(), flavor %d)", req->flavor);
+   PRINT("host_info(mach_host_self(), flavor %d)", req->flavor);
 
-    AFTER = POST_FN(host_info);
+   AFTER = POST_FN(host_info);
 }
 
 
 POST(host_page_size)
 {
 #pragma pack(4)
-    typedef struct {
-        mach_msg_header_t Head;
-        NDR_record_t NDR;
-        kern_return_t RetCode;
-        vm_size_t out_page_size;
-    } Reply;
+   typedef struct {
+      mach_msg_header_t Head;
+      NDR_record_t NDR;
+      kern_return_t RetCode;
+      vm_size_t out_page_size;
+   } Reply;
 #pragma pack()
 
-    Reply *reply = (Reply *)ARG1;
+   Reply *reply = (Reply *)ARG1;
 
-    if (!reply->RetCode) {
-        PRINT("page size %p", reply->out_page_size);
-    } else {
-        PRINT("mig return %d", reply->RetCode);
-    }
+   if (!reply->RetCode) {
+      PRINT("page size %p", reply->out_page_size);
+   } else {
+      PRINT("mig return %d", reply->RetCode);
+   }
 }
 
 PRE(host_page_size)
 {
-    PRINT("host_page_size(mach_host_self(), ...)");
+   PRINT("host_page_size(mach_host_self(), ...)");
     
-    AFTER = POST_FN(host_page_size);
+   AFTER = POST_FN(host_page_size);
 }
 
 
 POST(host_get_io_master)
 {
 #pragma pack(4)
-    typedef struct {
-        mach_msg_header_t Head;
-        /* start of the kernel processed data */
-        mach_msg_body_t msgh_body;
-        mach_msg_port_descriptor_t io_master;
-        /* end of the kernel processed data */
-    } Reply;
+   typedef struct {
+      mach_msg_header_t Head;
+      /* start of the kernel processed data */
+      mach_msg_body_t msgh_body;
+      mach_msg_port_descriptor_t io_master;
+      /* end of the kernel processed data */
+   } Reply;
 #pragma pack()
 
-    Reply *reply = (Reply *)ARG1;
+   Reply *reply = (Reply *)ARG1;
 
-    assign_port_name(reply->io_master.name, "io_master-%p");
-    PRINT("%s", name_for_port(reply->io_master.name));
+   assign_port_name(reply->io_master.name, "io_master-%p");
+   PRINT("%s", name_for_port(reply->io_master.name));
 }
 
 PRE(host_get_io_master)
 {
 #pragma pack(4)
-    typedef struct {
-        mach_msg_header_t Head;
-    } Request;
+   typedef struct {
+      mach_msg_header_t Head;
+   } Request;
 #pragma pack()
 
-    // Request *req = (Request *)ARG1;
+   // Request *req = (Request *)ARG1;
 
-    PRINT("host_get_io_master(mach_host_self())");
+   PRINT("host_get_io_master(mach_host_self())");
 
-    AFTER = POST_FN(host_get_io_master);
+   AFTER = POST_FN(host_get_io_master);
 }
 
 
 POST(host_get_clock_service)
 {
 #pragma pack(4)
-    typedef struct {
-        mach_msg_header_t Head;
-        /* start of the kernel processed data */
-        mach_msg_body_t msgh_body;
-        mach_msg_port_descriptor_t clock_serv;
-        /* end of the kernel processed data */
-    } Reply;
+   typedef struct {
+      mach_msg_header_t Head;
+      /* start of the kernel processed data */
+      mach_msg_body_t msgh_body;
+      mach_msg_port_descriptor_t clock_serv;
+      /* end of the kernel processed data */
+   } Reply;
 #pragma pack()
 
-    Reply *reply = (Reply *)ARG1;
+   Reply *reply = (Reply *)ARG1;
 
-    assign_port_name(reply->clock_serv.name, "clock-%p");
-    PRINT("%s", name_for_port(reply->clock_serv.name));
+   assign_port_name(reply->clock_serv.name, "clock-%p");
+   PRINT("%s", name_for_port(reply->clock_serv.name));
 }
 
 PRE(host_get_clock_service)
 {
 #pragma pack(4)
-    typedef struct {
-        mach_msg_header_t Head;
-        NDR_record_t NDR;
-        clock_id_t clock_id;
-    } Request;
+   typedef struct {
+      mach_msg_header_t Head;
+      NDR_record_t NDR;
+      clock_id_t clock_id;
+   } Request;
 #pragma pack()
 
-    Request *req = (Request *)ARG1;
+   Request *req = (Request *)ARG1;
 
-    PRINT("host_get_clock_service(mach_host_self(), %d)", req->clock_id);
+   PRINT("host_get_clock_service(mach_host_self(), %d)", req->clock_id);
 
-    AFTER = POST_FN(host_get_clock_service);
+   AFTER = POST_FN(host_get_clock_service);
 }
 
 
 PRE(host_request_notification)
 {
 #pragma pack(4)
-    typedef struct {
-        mach_msg_header_t Head;
-        /* start of the kernel processed data */
-        mach_msg_body_t msgh_body;
-        mach_msg_port_descriptor_t notify_port;
-        /* end of the kernel processed data */
-        NDR_record_t NDR;
-        host_flavor_t notify_type;
-    } Request;
+   typedef struct {
+      mach_msg_header_t Head;
+      /* start of the kernel processed data */
+      mach_msg_body_t msgh_body;
+      mach_msg_port_descriptor_t notify_port;
+      /* end of the kernel processed data */
+      NDR_record_t NDR;
+      host_flavor_t notify_type;
+   } Request;
 #pragma pack()
 
-    Request *req = (Request *)ARG1;
+   Request *req = (Request *)ARG1;
 
-    if (MACH_REMOTE == mach_task_self()) { 
-        if (req->notify_type == 0) {
-            PRINT("host_request_notification(mach_host_self(), %s, %s)", 
-                  "HOST_NOTIFY_CALENDAR_CHANGE", 
-                  name_for_port(req->notify_port.name));
-        } else {
-            PRINT("host_request_notification(mach_host_self(), %d, %s)",
-                  req->notify_type, 
-                  name_for_port(req->notify_port.name));
-        } 
-    } else {
-        PRINT("host_request_notification(%s, %d, %s)",
-              name_for_port(MACH_REMOTE), 
-              req->notify_type, 
-              name_for_port(req->notify_port.name));
-    }
+   if (MACH_REMOTE == mach_task_self()) { 
+      if (req->notify_type == 0) {
+         PRINT("host_request_notification(mach_host_self(), %s, %s)", 
+               "HOST_NOTIFY_CALENDAR_CHANGE", 
+               name_for_port(req->notify_port.name));
+      } else {
+         PRINT("host_request_notification(mach_host_self(), %d, %s)",
+               req->notify_type, 
+               name_for_port(req->notify_port.name));
+      } 
+   } else {
+      PRINT("host_request_notification(%s, %d, %s)",
+            name_for_port(MACH_REMOTE), 
+            req->notify_type, 
+            name_for_port(req->notify_port.name));
+   }
 
     // fixme only do this on success
-    assign_port_name(req->notify_port.name, "host_notify-%p");
+   assign_port_name(req->notify_port.name, "host_notify-%p");
 }
 
 
@@ -3252,19 +3249,19 @@ PRE(host_request_notification)
 PRE(mach_port_type)
 {
 #pragma pack(4)
-    typedef struct {
-        mach_msg_header_t Head;
-        NDR_record_t NDR;
-        mach_port_name_t name;
-    } Request;
+   typedef struct {
+      mach_msg_header_t Head;
+      NDR_record_t NDR;
+      mach_port_name_t name;
+   } Request;
 #pragma pack()
 
-    Request *req = (Request *)ARG1;
+   Request *req = (Request *)ARG1;
 
-    PRINT("mach_port_type(%s, %s, ...)", 
-          name_for_port(MACH_REMOTE), name_for_port(req->name));
+   PRINT("mach_port_type(%s, %s, ...)", 
+         name_for_port(MACH_REMOTE), name_for_port(req->name));
 
-    AFTER = POST_FN(mach_port_type);
+   AFTER = POST_FN(mach_port_type);
 }
 
 POST(mach_port_type)
@@ -3275,23 +3272,23 @@ POST(mach_port_type)
 PRE(mach_port_extract_member)
 {
 #pragma pack(4)
-    typedef struct {
-        mach_msg_header_t Head;
-        NDR_record_t NDR;
-        mach_port_name_t name;
-        mach_port_name_t pset;
-    } Request;
+   typedef struct {
+      mach_msg_header_t Head;
+      NDR_record_t NDR;
+      mach_port_name_t name;
+      mach_port_name_t pset;
+   } Request;
 #pragma pack()
 
-    Request *req = (Request *)ARG1;
+   Request *req = (Request *)ARG1;
 
-    PRINT("mach_port_extract_member(%s, 0x%x, 0x%x)", 
-          name_for_port(MACH_REMOTE), 
-          req->name, req->pset);
+   PRINT("mach_port_extract_member(%s, 0x%x, 0x%x)", 
+         name_for_port(MACH_REMOTE), 
+         req->name, req->pset);
 
-    AFTER = POST_FN(mach_port_extract_member);
+   AFTER = POST_FN(mach_port_extract_member);
 
-    // GrP fixme port tracker?
+   // GrP fixme port tracker?
 }
 
 POST(mach_port_extract_member)
@@ -3313,20 +3310,20 @@ POST(mach_port_extract_member)
 PRE(mach_port_allocate)
 {
 #pragma pack(4)
-    typedef struct {
-        mach_msg_header_t Head;
-        NDR_record_t NDR;
-        mach_port_right_t right;
-    } Request;
+   typedef struct {
+      mach_msg_header_t Head;
+      NDR_record_t NDR;
+      mach_port_right_t right;
+   } Request;
 #pragma pack()
 
-    Request *req = (Request *)ARG1;
+   Request *req = (Request *)ARG1;
 
-    PRINT("mach_port_allocate(mach_task_self(), %d, ...)", req->right);
+   PRINT("mach_port_allocate(mach_task_self(), %d, ...)", req->right);
 
-    MACH_ARG(mach_port_allocate.right) = req->right;
+   MACH_ARG(mach_port_allocate.right) = req->right;
 
-    AFTER = POST_FN(mach_port_allocate);
+   AFTER = POST_FN(mach_port_allocate);
 }
 
 POST(mach_port_allocate)
@@ -3360,22 +3357,22 @@ POST(mach_port_allocate)
 PRE(mach_port_deallocate)
 {
 #pragma pack(4)
-    typedef struct {
-        mach_msg_header_t Head;
-        NDR_record_t NDR;
-        mach_port_name_t name;
-    } Request;
+   typedef struct {
+      mach_msg_header_t Head;
+      NDR_record_t NDR;
+      mach_port_name_t name;
+   } Request;
 #pragma pack()
 
-    Request *req = (Request *)ARG1;
+   Request *req = (Request *)ARG1;
 
-    PRINT("mach_port_deallocate(%s, %s)", 
-          name_for_port(MACH_REMOTE), 
-          name_for_port(req->name));
+   PRINT("mach_port_deallocate(%s, %s)", 
+         name_for_port(MACH_REMOTE), 
+         name_for_port(req->name));
 
-    MACH_ARG(mach_port.port) = req->name;
+   MACH_ARG(mach_port.port) = req->name;
 
-    AFTER = POST_FN(mach_port_deallocate);
+   AFTER = POST_FN(mach_port_deallocate);
 
    // Must block to prevent race (other thread allocates and 
    // notifies after we deallocate but before we notify)
@@ -3410,24 +3407,24 @@ POST(mach_port_deallocate)
 PRE(mach_port_get_refs)
 {
 #pragma pack(4)
-    typedef struct {
-        mach_msg_header_t Head;
-        NDR_record_t NDR;
-        mach_port_name_t name;
-        mach_port_right_t right;
-    } Request;
+   typedef struct {
+      mach_msg_header_t Head;
+      NDR_record_t NDR;
+      mach_port_name_t name;
+      mach_port_right_t right;
+   } Request;
 #pragma pack()
 
-    Request *req = (Request *)ARG1;
+   Request *req = (Request *)ARG1;
 
-    PRINT("mach_port_get_refs(%s, %s, 0x%x)", 
-          name_for_port(MACH_REMOTE), 
-          name_for_port(req->name), req->right);
+   PRINT("mach_port_get_refs(%s, %s, 0x%x)", 
+         name_for_port(MACH_REMOTE), 
+         name_for_port(req->name), req->right);
 
-    MACH_ARG(mach_port_mod_refs.port) = req->name;
-    MACH_ARG(mach_port_mod_refs.right) = req->right;
+   MACH_ARG(mach_port_mod_refs.port) = req->name;
+   MACH_ARG(mach_port_mod_refs.right) = req->right;
     
-    AFTER = POST_FN(mach_port_get_refs);
+   AFTER = POST_FN(mach_port_get_refs);
 }
 
 POST(mach_port_get_refs)
@@ -3454,26 +3451,26 @@ POST(mach_port_get_refs)
 PRE(mach_port_mod_refs)
 {
 #pragma pack(4)
-    typedef struct {
-        mach_msg_header_t Head;
-        NDR_record_t NDR;
-        mach_port_name_t name;
-        mach_port_right_t right;
-        mach_port_delta_t delta;
-    } Request;
+   typedef struct {
+      mach_msg_header_t Head;
+      NDR_record_t NDR;
+      mach_port_name_t name;
+      mach_port_right_t right;
+      mach_port_delta_t delta;
+   } Request;
 #pragma pack()
 
-    Request *req = (Request *)ARG1;
+   Request *req = (Request *)ARG1;
 
-    PRINT("mach_port_mod_refs(%s, %s, 0x%x, 0x%x)", 
-          name_for_port(MACH_REMOTE), 
-          name_for_port(req->name), req->right, req->delta);
+   PRINT("mach_port_mod_refs(%s, %s, 0x%x, 0x%x)", 
+         name_for_port(MACH_REMOTE), 
+         name_for_port(req->name), req->right, req->delta);
 
-    MACH_ARG(mach_port_mod_refs.port) = req->name;
-    MACH_ARG(mach_port_mod_refs.right) = req->right;
-    MACH_ARG(mach_port_mod_refs.delta) = req->delta;
+   MACH_ARG(mach_port_mod_refs.port) = req->name;
+   MACH_ARG(mach_port_mod_refs.right) = req->right;
+   MACH_ARG(mach_port_mod_refs.delta) = req->delta;
     
-    AFTER = POST_FN(mach_port_mod_refs);
+   AFTER = POST_FN(mach_port_mod_refs);
 
    // Must block to prevent race (other thread allocates and 
    // notifies after we deallocate but before we notify)
@@ -3510,62 +3507,62 @@ POST(mach_port_mod_refs)
 PRE(mach_port_get_set_status)
 {
 #pragma pack(4)
-    typedef struct {
-        mach_msg_header_t Head;
-        NDR_record_t NDR;
-        mach_port_name_t name;
-    } Request;
+   typedef struct {
+      mach_msg_header_t Head;
+      NDR_record_t NDR;
+      mach_port_name_t name;
+   } Request;
 #pragma pack()
 
-    Request *req = (Request *)ARG1;
+   Request *req = (Request *)ARG1;
 
-    PRINT("mach_port_get_set_status(%s, %s)", 
-          name_for_port(MACH_REMOTE), 
-          name_for_port(req->name));
+   PRINT("mach_port_get_set_status(%s, %s)", 
+         name_for_port(MACH_REMOTE), 
+         name_for_port(req->name));
 
-    AFTER = POST_FN(mach_port_get_set_status);
+   AFTER = POST_FN(mach_port_get_set_status);
 }
 
 POST(mach_port_get_set_status)
 {
 #pragma pack(4)
-    typedef struct {
-        mach_msg_header_t Head;
-        /* start of the kernel processed data */
-        mach_msg_body_t msgh_body;
-        mach_msg_ool_descriptor_t members;
-        /* end of the kernel processed data */
-        NDR_record_t NDR;
-        mach_msg_type_number_t membersCnt;
-        mach_msg_trailer_t trailer;
-    } Reply;
+   typedef struct {
+      mach_msg_header_t Head;
+      /* start of the kernel processed data */
+      mach_msg_body_t msgh_body;
+      mach_msg_ool_descriptor_t members;
+      /* end of the kernel processed data */
+      NDR_record_t NDR;
+      mach_msg_type_number_t membersCnt;
+      mach_msg_trailer_t trailer;
+   } Reply;
 #pragma pack()
 
-    // Reply *reply = (Reply *)ARG1;
+   // Reply *reply = (Reply *)ARG1;
 
-    // GrP fixme nothing to do?
+   // GrP fixme nothing to do?
 }
 
 
 PRE(mach_port_destroy)
 {
 #pragma pack(4)
-    typedef struct {
-        mach_msg_header_t Head;
-        NDR_record_t NDR;
-        mach_port_name_t name;
-    } Request;
+   typedef struct {
+      mach_msg_header_t Head;
+      NDR_record_t NDR;
+      mach_port_name_t name;
+   } Request;
 #pragma pack()
 
-    Request *req = (Request *)ARG1;
+   Request *req = (Request *)ARG1;
 
-    PRINT("mach_port_destroy(%s, %s)", 
-          name_for_port(MACH_REMOTE), 
-          name_for_port(req->name));
+   PRINT("mach_port_destroy(%s, %s)", 
+         name_for_port(MACH_REMOTE), 
+         name_for_port(req->name));
 
-    MACH_ARG(mach_port.port) = req->name;
+   MACH_ARG(mach_port.port) = req->name;
 
-    AFTER = POST_FN(mach_port_destroy);
+   AFTER = POST_FN(mach_port_destroy);
 
    // Must block to prevent race (other thread allocates and 
    // notifies after we deallocate but before we notify)
@@ -3600,27 +3597,27 @@ POST(mach_port_destroy)
 PRE(mach_port_request_notification)
 {
 #pragma pack(4)
-    typedef struct {
-        mach_msg_header_t Head;
-        /* start of the kernel processed data */
-        mach_msg_body_t msgh_body;
-        mach_msg_port_descriptor_t notify;
-        /* end of the kernel processed data */
-        NDR_record_t NDR;
-        mach_port_name_t name;
-        mach_msg_id_t msgid;
-        mach_port_mscount_t sync;
-    } Request;
+   typedef struct {
+      mach_msg_header_t Head;
+      /* start of the kernel processed data */
+      mach_msg_body_t msgh_body;
+      mach_msg_port_descriptor_t notify;
+      /* end of the kernel processed data */
+      NDR_record_t NDR;
+      mach_port_name_t name;
+      mach_msg_id_t msgid;
+      mach_port_mscount_t sync;
+   } Request;
 #pragma pack()
 
-    Request *req = (Request *)ARG1;
+   Request *req = (Request *)ARG1;
 
-    PRINT("mach_port_request_notification(%s, %s, %d, %d, %d, %d, ...)", 
-          name_for_port(MACH_REMOTE), 
-          name_for_port(req->name), req->msgid, req->sync, 
-          req->notify.name, req->notify.disposition);
+   PRINT("mach_port_request_notification(%s, %s, %d, %d, %d, %d, ...)", 
+         name_for_port(MACH_REMOTE), 
+         name_for_port(req->name), req->msgid, req->sync, 
+         req->notify.name, req->notify.disposition);
 
-    AFTER = POST_FN(mach_port_request_notification);
+   AFTER = POST_FN(mach_port_request_notification);
 }
 
 POST(mach_port_request_notification)
@@ -3632,34 +3629,34 @@ POST(mach_port_request_notification)
 PRE(mach_port_insert_right)
 {
 #pragma pack(4)
-    typedef struct {
-        mach_msg_header_t Head;
-        /* start of the kernel processed data */
-        mach_msg_body_t msgh_body;
-        mach_msg_port_descriptor_t poly;
-        /* end of the kernel processed data */
-        NDR_record_t NDR;
-        mach_port_name_t name;
-    } Request;
+   typedef struct {
+      mach_msg_header_t Head;
+      /* start of the kernel processed data */
+      mach_msg_body_t msgh_body;
+      mach_msg_port_descriptor_t poly;
+      /* end of the kernel processed data */
+      NDR_record_t NDR;
+      mach_port_name_t name;
+   } Request;
 #pragma pack()
 
-    Request *req = (Request *)ARG1;
+   Request *req = (Request *)ARG1;
 
-    PRINT("mach_port_insert_right(%s, %s, %d, %d)", 
-          name_for_port(MACH_REMOTE), 
-          name_for_port(req->name), req->poly.name, req->poly.disposition);
+   PRINT("mach_port_insert_right(%s, %s, %d, %d)", 
+         name_for_port(MACH_REMOTE), 
+         name_for_port(req->name), req->poly.name, req->poly.disposition);
 
-    AFTER = POST_FN(mach_port_insert_right);
+   AFTER = POST_FN(mach_port_insert_right);
 
-    if (MACH_REMOTE == mach_task_self()) {
-       // fixme import_complex_message handles everything?
-       // what about export_complex_message for MOVE variants?
-    } else {
-       VG_(printf)("UNKNOWN mach_port_insert_right into remote task!\n");
-       // fixme also may remove rights from this task?
-    }
+   if (MACH_REMOTE == mach_task_self()) {
+      // fixme import_complex_message handles everything?
+      // what about export_complex_message for MOVE variants?
+   } else {
+      VG_(printf)("UNKNOWN mach_port_insert_right into remote task!\n");
+      // fixme also may remove rights from this task?
+   }
 
-    // fixme port tracker?
+   // fixme port tracker?
 }
 
 POST(mach_port_insert_right)
@@ -3670,22 +3667,22 @@ POST(mach_port_insert_right)
 PRE(mach_port_get_attributes)
 {
 #pragma pack(4)
-    typedef struct {
-        mach_msg_header_t Head;
-        NDR_record_t NDR;
-        mach_port_name_t name;
-        mach_port_flavor_t flavor;
-        mach_msg_type_number_t port_info_outCnt;
-    } Request;
+   typedef struct {
+      mach_msg_header_t Head;
+      NDR_record_t NDR;
+      mach_port_name_t name;
+      mach_port_flavor_t flavor;
+      mach_msg_type_number_t port_info_outCnt;
+   } Request;
 #pragma pack()
 
-    Request *req = (Request *)ARG1;
+   Request *req = (Request *)ARG1;
 
-    PRINT("mach_port_get_attributes(%s, %s, %d, ..., %d)", 
-          name_for_port(MACH_REMOTE), 
-          name_for_port(req->name), req->flavor, req->port_info_outCnt);
+   PRINT("mach_port_get_attributes(%s, %s, %d, ..., %d)", 
+         name_for_port(MACH_REMOTE), 
+         name_for_port(req->name), req->flavor, req->port_info_outCnt);
 
-    AFTER = POST_FN(mach_port_get_attributes);
+   AFTER = POST_FN(mach_port_get_attributes);
 }
 
 POST(mach_port_get_attributes)
@@ -3696,23 +3693,23 @@ POST(mach_port_get_attributes)
 PRE(mach_port_set_attributes)
 {
 #pragma pack(4)
-    typedef struct {
-        mach_msg_header_t Head;
-        NDR_record_t NDR;
-        mach_port_name_t name;
-        mach_port_flavor_t flavor;
-        mach_msg_type_number_t port_infoCnt;
-        integer_t port_info[10];
-    } Request;
+   typedef struct {
+      mach_msg_header_t Head;
+      NDR_record_t NDR;
+      mach_port_name_t name;
+      mach_port_flavor_t flavor;
+      mach_msg_type_number_t port_infoCnt;
+      integer_t port_info[10];
+   } Request;
 #pragma pack()
 
-    Request *req = (Request *)ARG1;
+   Request *req = (Request *)ARG1;
 
-    PRINT("mach_port_set_attributes(%s, %s, %d, ..., %d)", 
-          name_for_port(MACH_REMOTE), 
-          name_for_port(req->name), req->flavor, req->port_infoCnt);
+   PRINT("mach_port_set_attributes(%s, %s, %d, ..., %d)", 
+        name_for_port(MACH_REMOTE), 
+        name_for_port(req->name), req->flavor, req->port_infoCnt);
 
-    AFTER = POST_FN(mach_port_set_attributes);
+   AFTER = POST_FN(mach_port_set_attributes);
 }
 
 POST(mach_port_set_attributes)
@@ -3723,22 +3720,22 @@ POST(mach_port_set_attributes)
 PRE(mach_port_insert_member)
 {
 #pragma pack(4)
-    typedef struct {
-        mach_msg_header_t Head;
-        NDR_record_t NDR;
-        mach_port_name_t name;
-        mach_port_name_t pset;
-    } Request;
+   typedef struct {
+      mach_msg_header_t Head;
+      NDR_record_t NDR;
+      mach_port_name_t name;
+      mach_port_name_t pset;
+   } Request;
 #pragma pack()
 
-    Request *req = (Request *)ARG1;
+   Request *req = (Request *)ARG1;
 
-    PRINT("mach_port_insert_member(%s, 0x%x, 0x%x)", 
-          name_for_port(MACH_REMOTE), req->name, req->pset);
+   PRINT("mach_port_insert_member(%s, 0x%x, 0x%x)", 
+         name_for_port(MACH_REMOTE), req->name, req->pset);
 
-    AFTER = POST_FN(mach_port_insert_member);
+   AFTER = POST_FN(mach_port_insert_member);
 
-    // fixme port tracker?
+   // fixme port tracker?
 }
 
 POST(mach_port_insert_member)
@@ -3835,111 +3832,111 @@ POST(task_get_special_port)
 PRE(semaphore_create)
 {
 #pragma pack(4)
-    typedef struct {
-        mach_msg_header_t Head;
-        NDR_record_t NDR;
-        int policy;
-        int value;
-    } Request;
+   typedef struct {
+      mach_msg_header_t Head;
+      NDR_record_t NDR;
+      int policy;
+      int value;
+   } Request;
 #pragma pack()
 
-    Request *req = (Request *)ARG1;
+   Request *req = (Request *)ARG1;
 
-    PRINT("semaphore_create(%s, ..., %d, %d)",
-          name_for_port(MACH_REMOTE), req->policy, req->value);
+   PRINT("semaphore_create(%s, ..., %d, %d)",
+         name_for_port(MACH_REMOTE), req->policy, req->value);
 
-    AFTER = POST_FN(semaphore_create);
+   AFTER = POST_FN(semaphore_create);
 }
 
 POST(semaphore_create)
 {
 #pragma pack(4)
-    typedef struct {
-        mach_msg_header_t Head;
-        /* start of the kernel processed data */
-        mach_msg_body_t msgh_body;
-        mach_msg_port_descriptor_t semaphore;
-        /* end of the kernel processed data */
-        mach_msg_trailer_t trailer;
-    } Reply;
+   typedef struct {
+      mach_msg_header_t Head;
+      /* start of the kernel processed data */
+      mach_msg_body_t msgh_body;
+      mach_msg_port_descriptor_t semaphore;
+      /* end of the kernel processed data */
+      mach_msg_trailer_t trailer;
+   } Reply;
 #pragma pack()
 
-    Reply *reply = (Reply *)ARG1;
+   Reply *reply = (Reply *)ARG1;
 
-    assign_port_name(reply->semaphore.name, "semaphore-%p");
-    PRINT("%s", name_for_port(reply->semaphore.name));
+   assign_port_name(reply->semaphore.name, "semaphore-%p");
+   PRINT("%s", name_for_port(reply->semaphore.name));
 }
 
 
 PRE(semaphore_destroy)
 {
 #pragma pack(4)
-    typedef struct {
-        mach_msg_header_t Head;
-        /* start of the kernel processed data */
-        mach_msg_body_t msgh_body;
-        mach_msg_port_descriptor_t semaphore;
-        /* end of the kernel processed data */
-        mach_msg_trailer_t trailer;
-    } Request;
+   typedef struct {
+      mach_msg_header_t Head;
+      /* start of the kernel processed data */
+      mach_msg_body_t msgh_body;
+      mach_msg_port_descriptor_t semaphore;
+      /* end of the kernel processed data */
+      mach_msg_trailer_t trailer;
+   } Request;
 #pragma pack()
 
-    Request *req = (Request *)ARG1;
+   Request *req = (Request *)ARG1;
 
-    PRINT("semaphore_destroy(%s, %s)", 
-          name_for_port(MACH_REMOTE), name_for_port(req->semaphore.name));
+   PRINT("semaphore_destroy(%s, %s)", 
+         name_for_port(MACH_REMOTE), name_for_port(req->semaphore.name));
 
-    record_port_destroy(req->semaphore.name);
+   record_port_destroy(req->semaphore.name);
 
-    AFTER = POST_FN(semaphore_destroy);
+   AFTER = POST_FN(semaphore_destroy);
 }
 
 POST(semaphore_destroy)
 {
 #pragma pack(4)
-    typedef struct {
-        mach_msg_header_t Head;
-        NDR_record_t NDR;
-        kern_return_t RetCode;
-        mach_msg_trailer_t trailer;
-    } Reply;
+   typedef struct {
+      mach_msg_header_t Head;
+      NDR_record_t NDR;
+      kern_return_t RetCode;
+      mach_msg_trailer_t trailer;
+   } Reply;
 #pragma pack()
 
-    Reply *reply = (Reply *)ARG1;        
-    if (!reply->RetCode) {
-    } else {
-        PRINT("mig return %d", reply->RetCode);
-    }
+   Reply *reply = (Reply *)ARG1;        
+   if (!reply->RetCode) {
+   } else {
+      PRINT("mig return %d", reply->RetCode);
+   }
 }
 
 
 PRE(mach_ports_lookup)
 {
 #pragma pack(4)
-    typedef struct {
-        mach_msg_header_t Head;
-    } Request;
+   typedef struct {
+       mach_msg_header_t Head;
+   } Request;
 #pragma pack()
 
-    // Request *req = (Request *)ARG1;
+   // Request *req = (Request *)ARG1;
 
-    PRINT("mach_ports_lookup(%s)", name_for_port(MACH_REMOTE));
+   PRINT("mach_ports_lookup(%s)", name_for_port(MACH_REMOTE));
 
-    AFTER = POST_FN(mach_ports_lookup);
+   AFTER = POST_FN(mach_ports_lookup);
 }
 
 POST(mach_ports_lookup)
 {
 #pragma pack(4)
-    typedef struct {
-        mach_msg_header_t Head;
-        /* start of the kernel processed data */
-        mach_msg_body_t msgh_body;
-        mach_msg_ool_ports_descriptor_t init_port_set;
-        /* end of the kernel processed data */
-        NDR_record_t NDR;
-        mach_msg_type_number_t init_port_setCnt;
-    } Reply;
+   typedef struct {
+      mach_msg_header_t Head;
+      /* start of the kernel processed data */
+      mach_msg_body_t msgh_body;
+      mach_msg_ool_ports_descriptor_t init_port_set;
+      /* end of the kernel processed data */
+      NDR_record_t NDR;
+      mach_msg_type_number_t init_port_setCnt;
+   } Reply;
 #pragma pack()
 
     // Reply *reply = (Reply *)ARG1;
@@ -3949,40 +3946,40 @@ POST(mach_ports_lookup)
 PRE(task_threads)
 {
 #pragma pack(4)
-    typedef struct {
-        mach_msg_header_t Head;
-    } Request;
+   typedef struct {
+      mach_msg_header_t Head;
+   } Request;
 #pragma pack()
 
-    // Request *req = (Request *)ARG1;
+   // Request *req = (Request *)ARG1;
 
-    PRINT("task_threads(%s)", name_for_port(MACH_REMOTE));
+   PRINT("task_threads(%s)", name_for_port(MACH_REMOTE));
 
-    AFTER = POST_FN(task_threads);
+   AFTER = POST_FN(task_threads);
 }
 
 POST(task_threads)
 {
 #pragma pack(4)
-    typedef struct {
-        mach_msg_header_t Head;
-        /* start of the kernel processed data */
-        mach_msg_body_t msgh_body;
-        mach_msg_ool_ports_descriptor_t act_list;
-        /* end of the kernel processed data */
-        NDR_record_t NDR;
-        mach_msg_type_number_t act_listCnt;
-        mach_msg_trailer_t trailer;
-    } Reply;
+   typedef struct {
+      mach_msg_header_t Head;
+      /* start of the kernel processed data */
+      mach_msg_body_t msgh_body;
+      mach_msg_ool_ports_descriptor_t act_list;
+      /* end of the kernel processed data */
+      NDR_record_t NDR;
+      mach_msg_type_number_t act_listCnt;
+      mach_msg_trailer_t trailer;
+   } Reply;
 #pragma pack()
 
-    Reply *reply = (Reply *)ARG1;
+   Reply *reply = (Reply *)ARG1;
 
-    if (MACH_REMOTE == vg_task_port) {
-       assign_port_names(&reply->act_list, "thread-%p");
-    } else {
-       assign_port_names(&reply->act_list, "remote-thread-%p");
-    }
+   if (MACH_REMOTE == vg_task_port) {
+      assign_port_names(&reply->act_list, "thread-%p");
+   } else {
+      assign_port_names(&reply->act_list, "remote-thread-%p");
+   }
 }
 
 
@@ -4027,25 +4024,25 @@ POST(task_resume)
 PRE(vm_allocate)
 {
 #pragma pack(4)
-    typedef struct {
-        mach_msg_header_t Head;
-        NDR_record_t NDR;
-        vm_address_t address;
-        vm_size_t size;
-        int flags;
-    } Request;
+   typedef struct {
+      mach_msg_header_t Head;
+      NDR_record_t NDR;
+      vm_address_t address;
+      vm_size_t size;
+      int flags;
+   } Request;
 #pragma pack()
 
-    Request *req = (Request *)ARG1;
+   Request *req = (Request *)ARG1;
 
-    PRINT("vm_allocate (%s, at %p, size %d, flags 0x%x)", 
-          name_for_port(MACH_REMOTE), 
-          req->address, req->size, req->flags);
+   PRINT("vm_allocate (%s, at %p, size %d, flags 0x%x)", 
+         name_for_port(MACH_REMOTE), 
+         req->address, req->size, req->flags);
 
-    MACH_ARG(vm_allocate.size) = req->size;
-    MACH_ARG(vm_allocate.flags) = req->flags;
+   MACH_ARG(vm_allocate.size) = req->size;
+   MACH_ARG(vm_allocate.flags) = req->flags;
 
-    AFTER = POST_FN(vm_allocate);
+   AFTER = POST_FN(vm_allocate);
 }
 
 POST(vm_allocate)
@@ -4375,15 +4372,15 @@ POST(vm_read_overwrite)
    if (reply->RetCode) {
        PRINT("mig return %d", reply->RetCode);
    } else {
-       PRINT("read %llu bytes", (unsigned long long)reply->outsize);
-       if (MACH_REMOTE == vg_task_port) {
-           // vm_read_overwrite from self
-           // GrP fixme copy initialized state
-           POST_MEM_WRITE(MACH_ARG(vm_read_overwrite.data), reply->outsize);
-       } else {
-           // vm_read_overwrite from remote
-           POST_MEM_WRITE(MACH_ARG(vm_read_overwrite.data), reply->outsize);
-       }
+      PRINT("read %llu bytes", (unsigned long long)reply->outsize);
+      if (MACH_REMOTE == vg_task_port) {
+         // vm_read_overwrite from self
+         // GrP fixme copy initialized state
+         POST_MEM_WRITE(MACH_ARG(vm_read_overwrite.data), reply->outsize);
+      } else {
+         // vm_read_overwrite from remote
+         POST_MEM_WRITE(MACH_ARG(vm_read_overwrite.data), reply->outsize);
+      }
    }
 }
 
@@ -4440,300 +4437,300 @@ POST(vm_copy)
 PRE(vm_map)
 {
 #pragma pack(4)
-    typedef struct {
-        mach_msg_header_t Head;
-        /* start of the kernel processed data */
-        mach_msg_body_t msgh_body;
-        mach_msg_port_descriptor_t object;
-        /* end of the kernel processed data */
-        NDR_record_t NDR;
-        vm_address_t address;
-        vm_size_t size;
-        vm_address_t mask;
-        int flags;
-        vm_offset_t offset;
-        boolean_t copy;
-        vm_prot_t cur_protection;
-        vm_prot_t max_protection;
-        vm_inherit_t inheritance;
-    } Request;
+   typedef struct {
+      mach_msg_header_t Head;
+      /* start of the kernel processed data */
+      mach_msg_body_t msgh_body;
+      mach_msg_port_descriptor_t object;
+      /* end of the kernel processed data */
+      NDR_record_t NDR;
+      vm_address_t address;
+      vm_size_t size;
+      vm_address_t mask;
+      int flags;
+      vm_offset_t offset;
+      boolean_t copy;
+      vm_prot_t cur_protection;
+      vm_prot_t max_protection;
+      vm_inherit_t inheritance;
+   } Request;
 #pragma pack()
 
-    Request *req = (Request *)ARG1;
+   Request *req = (Request *)ARG1;
 
-    // GrP fixme check these
-    PRINT("vm_map(in %s, at %p, size %d, from %s ...)", 
-          name_for_port(MACH_REMOTE), 
-          req->address, req->size, 
-          name_for_port(req->object.name));
+   // GrP fixme check these
+   PRINT("vm_map(in %s, at %p, size %d, from %s ...)", 
+         name_for_port(MACH_REMOTE), 
+         req->address, req->size, 
+         name_for_port(req->object.name));
 
-    MACH_ARG(vm_map.size) = req->size;
-    MACH_ARG(vm_map.copy) = req->copy;
-    MACH_ARG(vm_map.protection) = (req->cur_protection & req->max_protection);
+   MACH_ARG(vm_map.size) = req->size;
+   MACH_ARG(vm_map.copy) = req->copy;
+   MACH_ARG(vm_map.protection) = (req->cur_protection & req->max_protection);
 
-    AFTER = POST_FN(vm_map);
+   AFTER = POST_FN(vm_map);
 }
 
 POST(vm_map)
 {
 #pragma pack(4)
-    typedef struct {
-        mach_msg_header_t Head;
-        NDR_record_t NDR;
-        kern_return_t RetCode;
-        vm_address_t address;
-        mach_msg_trailer_t trailer;
-    } Reply;
+   typedef struct {
+      mach_msg_header_t Head;
+      NDR_record_t NDR;
+      kern_return_t RetCode;
+      vm_address_t address;
+      mach_msg_trailer_t trailer;
+   } Reply;
 #pragma pack()
 
-    Reply *reply = (Reply *)ARG1;
+   Reply *reply = (Reply *)ARG1;
 
-    if (!reply->RetCode) {
-       // GrP fixme check src and dest tasks
-       PRINT("mapped at %p", reply->address);
-       // GrP fixme max prot
-       ML_(notify_aspacem_and_tool_of_mmap)
+   if (!reply->RetCode) {
+      // GrP fixme check src and dest tasks
+      PRINT("mapped at %p", reply->address);
+      // GrP fixme max prot
+      ML_(notify_aspacem_and_tool_of_mmap)
           (reply->address, VG_PGROUNDUP(MACH_ARG(vm_map.size)), 
-           MACH_ARG(vm_map.protection), VKI_MAP_SHARED, -1, 0);
-       // GrP fixme VKI_MAP_PRIVATE if !copy?
-    } else {
-        PRINT("mig return %d", reply->RetCode);
-    }
+          MACH_ARG(vm_map.protection), VKI_MAP_SHARED, -1, 0);
+      // GrP fixme VKI_MAP_PRIVATE if !copy?
+   } else {
+      PRINT("mig return %d", reply->RetCode);
+   }
 }
 
 
 PRE(vm_remap)
 {
 #pragma pack(4)
-    typedef struct {
-        mach_msg_header_t Head;
-        /* start of the kernel processed data */
-        mach_msg_body_t msgh_body;
-        mach_msg_port_descriptor_t src_task;
-        /* end of the kernel processed data */
-        NDR_record_t NDR;
-        vm_address_t target_address;
-        vm_size_t size;
-        vm_address_t mask;
-        boolean_t anywhere;
-        vm_address_t src_address;
-        boolean_t copy;
-        vm_inherit_t inheritance;
-    } Request;
+   typedef struct {
+      mach_msg_header_t Head;
+      /* start of the kernel processed data */
+      mach_msg_body_t msgh_body;
+      mach_msg_port_descriptor_t src_task;
+      /* end of the kernel processed data */
+      NDR_record_t NDR;
+      vm_address_t target_address;
+      vm_size_t size;
+      vm_address_t mask;
+      boolean_t anywhere;
+      vm_address_t src_address;
+      boolean_t copy;
+      vm_inherit_t inheritance;
+   } Request;
 #pragma pack()
 
-    Request *req = (Request *)ARG1;
+   Request *req = (Request *)ARG1;
 
-    // GrP fixme check src and dest tasks
+   // GrP fixme check src and dest tasks
 
-    if (VG_(clo_trace_syscalls)) {
-        mach_port_name_t source_task = req->src_task.name;
-        if (source_task == mach_task_self()) {
-           PRINT("vm_remap(mach_task_self(), "
-                 "to %p size %d, from mach_task_self() at %p, ...)",
-                 req->target_address, req->size, req->src_address);
-        } else {
-            PRINT("vm_remap(mach_task_self(), "
-                  "to %p size %d, from task %p at %p, ...)",
-                  req->target_address, req->size, 
-                  source_task,  req->src_address);
-        }
-    }
+   if (VG_(clo_trace_syscalls)) {
+      mach_port_name_t source_task = req->src_task.name;
+      if (source_task == mach_task_self()) {
+         PRINT("vm_remap(mach_task_self(), "
+               "to %p size %d, from mach_task_self() at %p, ...)",
+               req->target_address, req->size, req->src_address);
+      } else {
+          PRINT("vm_remap(mach_task_self(), "
+                "to %p size %d, from task %p at %p, ...)",
+                req->target_address, req->size, 
+                source_task,  req->src_address);
+      }
+   }
 
-    // arg1 is task
-    // vt->syscall_arg2 = req->target_address;
-    MACH_ARG(vm_remap.size) = req->size;
-    // vt->syscall_arg4 = req->copy;
+   // arg1 is task
+   // vt->syscall_arg2 = req->target_address;
+   MACH_ARG(vm_remap.size) = req->size;
+   // vt->syscall_arg4 = req->copy;
 
-    AFTER = POST_FN(vm_remap);
+   AFTER = POST_FN(vm_remap);
 }
 
 POST(vm_remap)
 {
 #pragma pack(4)
-    typedef struct {
-        mach_msg_header_t Head;
-        NDR_record_t NDR;
-        kern_return_t RetCode;
-        vm_address_t target_address;
-        vm_prot_t cur_protection;
-        vm_prot_t max_protection;
-        mach_msg_trailer_t trailer;
-    } Reply;
+   typedef struct {
+      mach_msg_header_t Head;
+      NDR_record_t NDR;
+      kern_return_t RetCode;
+      vm_address_t target_address;
+      vm_prot_t cur_protection;
+      vm_prot_t max_protection;
+      mach_msg_trailer_t trailer;
+   } Reply;
 #pragma pack()
 
-    Reply *reply = (Reply *)ARG1;
+   Reply *reply = (Reply *)ARG1;
 
-    if (!reply->RetCode) {
-       // GrP fixme check src and dest tasks
-        UInt prot = reply->cur_protection & reply->max_protection;
-        // GrP fixme max prot
-        PRINT("mapped at %p", reply->target_address);
-        ML_(notify_aspacem_and_tool_of_mmap)
-           (reply->target_address, VG_PGROUNDUP(MACH_ARG(vm_remap.size)), 
-            prot, VKI_MAP_SHARED, -1, 0);
-        // GrP fixme VKI_MAP_FIXED if !copy?
-        // GrP fixme copy initialized bits from source to dest if source_task is also mach_task_self
-    } else {
-        PRINT("mig return %d", reply->RetCode);
-    }
+   if (!reply->RetCode) {
+      // GrP fixme check src and dest tasks
+      UInt prot = reply->cur_protection & reply->max_protection;
+      // GrP fixme max prot
+      PRINT("mapped at %p", reply->target_address);
+      ML_(notify_aspacem_and_tool_of_mmap)
+          (reply->target_address, VG_PGROUNDUP(MACH_ARG(vm_remap.size)), 
+          prot, VKI_MAP_SHARED, -1, 0);
+      // GrP fixme VKI_MAP_FIXED if !copy?
+      // GrP fixme copy initialized bits from source to dest if source_task is also mach_task_self
+   } else {
+      PRINT("mig return %d", reply->RetCode);
+   }
 }
 
 
 PRE(mach_make_memory_entry_64)
 {
 #pragma pack(4)
-    typedef struct {
-        mach_msg_header_t Head;
-        /* start of the kernel processed data */
-        mach_msg_body_t msgh_body;
-        mach_msg_port_descriptor_t parent_entry;
-        /* end of the kernel processed data */
-        NDR_record_t NDR;
-        memory_object_size_t size;
-        memory_object_offset_t offset;
-        vm_prot_t permission;
-    } Request;
+   typedef struct {
+      mach_msg_header_t Head;
+      /* start of the kernel processed data */
+      mach_msg_body_t msgh_body;
+      mach_msg_port_descriptor_t parent_entry;
+      /* end of the kernel processed data */
+      NDR_record_t NDR;
+      memory_object_size_t size;
+      memory_object_offset_t offset;
+      vm_prot_t permission;
+   } Request;
 #pragma pack()
 
-    Request *req = (Request *)ARG1;
+   Request *req = (Request *)ARG1;
 
-    PRINT("mach_make_memory_entry_64(%s, %d, %d, %d, ..., %d)", 
-          name_for_port(MACH_REMOTE), 
-          req->size, req->offset, req->permission, req->parent_entry);
+   PRINT("mach_make_memory_entry_64(%s, %d, %d, %d, ..., %d)", 
+         name_for_port(MACH_REMOTE), 
+         req->size, req->offset, req->permission, req->parent_entry);
 
-    AFTER = POST_FN(mach_make_memory_entry_64);
+   AFTER = POST_FN(mach_make_memory_entry_64);
 }
 
 POST(mach_make_memory_entry_64)
 {
 #pragma pack(4)
-    typedef struct {
-        mach_msg_header_t Head;
-        mach_msg_body_t msgh_body;
-        mach_msg_port_descriptor_t object;
-        NDR_record_t NDR;
-        memory_object_size_t size;
-    } Reply;
+   typedef struct {
+      mach_msg_header_t Head;
+      mach_msg_body_t msgh_body;
+      mach_msg_port_descriptor_t object;
+      NDR_record_t NDR;
+      memory_object_size_t size;
+   } Reply;
 #pragma pack()
 
-    Reply *reply = (Reply *)ARG1;
+   Reply *reply = (Reply *)ARG1;
 
-    if (reply->Head.msgh_bits & MACH_MSGH_BITS_COMPLEX) {
-        assign_port_name(reply->object.name, "memory-%p");
-        PRINT("%s", name_for_port(reply->object.name));
-    }
+   if (reply->Head.msgh_bits & MACH_MSGH_BITS_COMPLEX) {
+      assign_port_name(reply->object.name, "memory-%p");
+      PRINT("%s", name_for_port(reply->object.name));
+   }
 }
 
 
 PRE(vm_purgable_control)
 {
 #pragma pack(4)
-    typedef struct {
-        mach_msg_header_t Head;
-        NDR_record_t NDR;
-        vm_address_t address;
-        vm_purgable_t control;
-        int state;
-    } Request;
+   typedef struct {
+      mach_msg_header_t Head;
+      NDR_record_t NDR;
+      vm_address_t address;
+      vm_purgable_t control;
+      int state;
+   } Request;
 #pragma pack()
 
-    Request *req = (Request *)ARG1;
+   Request *req = (Request *)ARG1;
 
-    PRINT("vm_purgable_control(%s, %p, %d, %d)", 
-          name_for_port(MACH_REMOTE), 
-          req->address, req->control, req->state);
+   PRINT("vm_purgable_control(%s, %p, %d, %d)", 
+         name_for_port(MACH_REMOTE), 
+         req->address, req->control, req->state);
 
-    // fixme verify address?
+   // fixme verify address?
 
-    AFTER = POST_FN(vm_purgable_control);
+   AFTER = POST_FN(vm_purgable_control);
 }
 
 POST(vm_purgable_control)
 {
 #pragma pack(4)
-    typedef struct {
-        mach_msg_header_t Head;
-        NDR_record_t NDR;
-        kern_return_t RetCode;
-        int state;
-    } Reply;
+   typedef struct {
+      mach_msg_header_t Head;
+      NDR_record_t NDR;
+      kern_return_t RetCode;
+      int state;
+   } Reply;
 #pragma pack()
 
-    Reply *reply = (Reply *)ARG1;
+   Reply *reply = (Reply *)ARG1;
 
-    if (!reply->RetCode) {
-    } else {
-        PRINT("mig return %d", reply->RetCode);
-    }
+   if (!reply->RetCode) {
+   } else {
+      PRINT("mig return %d", reply->RetCode);
+   }
 }
 
 
 PRE(mach_vm_purgable_control)
 {
 #pragma pack(4)
-    typedef struct {
-        mach_msg_header_t Head;
-        NDR_record_t NDR;
-        mach_vm_address_t address;
-        vm_purgable_t control;
-        int state;
-    } Request;
+   typedef struct {
+      mach_msg_header_t Head;
+      NDR_record_t NDR;
+      mach_vm_address_t address;
+      vm_purgable_t control;
+      int state;
+   } Request;
 #pragma pack()
 
-    Request *req = (Request *)ARG1;
+   Request *req = (Request *)ARG1;
 
-    PRINT("mach_vm_purgable_control(%s, 0x%llx, %d, %d)", 
-          name_for_port(MACH_REMOTE), 
-          (unsigned long long)req->address, req->control, req->state);
+   PRINT("mach_vm_purgable_control(%s, 0x%llx, %d, %d)", 
+         name_for_port(MACH_REMOTE), 
+         (unsigned long long)req->address, req->control, req->state);
 
-    // fixme verify address?
+   // fixme verify address?
 
-    AFTER = POST_FN(mach_vm_purgable_control);
+   AFTER = POST_FN(mach_vm_purgable_control);
 }
 
 POST(mach_vm_purgable_control)
 {
 #pragma pack(4)
-    typedef struct {
-        mach_msg_header_t Head;
-        NDR_record_t NDR;
-        kern_return_t RetCode;
-        int state;
-    } Reply;
+   typedef struct {
+      mach_msg_header_t Head;
+      NDR_record_t NDR;
+      kern_return_t RetCode;
+      int state;
+   } Reply;
 #pragma pack()
 
-    Reply *reply = (Reply *)ARG1;
+   Reply *reply = (Reply *)ARG1;
 
-    if (!reply->RetCode) {
-    } else {
-        PRINT("mig return %d", reply->RetCode);
-    }
+   if (!reply->RetCode) {
+   } else {
+      PRINT("mig return %d", reply->RetCode);
+   }
 }
 
 
 PRE(mach_vm_allocate)
 {
 #pragma pack(4)
-    typedef struct {
-        mach_msg_header_t Head;
-        NDR_record_t NDR;
-        mach_vm_address_t address;
-        mach_vm_size_t size;
-        int flags;
-    } Request;
+   typedef struct {
+      mach_msg_header_t Head;
+      NDR_record_t NDR;
+      mach_vm_address_t address;
+      mach_vm_size_t size;
+      int flags;
+   } Request;
 #pragma pack()
 
-    Request *req = (Request *)ARG1;
+   Request *req = (Request *)ARG1;
 
-    PRINT("mach_vm_allocate (%s, at 0x%llx, size %lld, flags 0x%x)", 
-          name_for_port(MACH_REMOTE), 
-          req->address, req->size, req->flags);
+   PRINT("mach_vm_allocate (%s, at 0x%llx, size %lld, flags 0x%x)", 
+         name_for_port(MACH_REMOTE), 
+         req->address, req->size, req->flags);
 
-    MACH_ARG(mach_vm_allocate.size) = req->size;
-    MACH_ARG(mach_vm_allocate.flags) = req->flags;
+   MACH_ARG(mach_vm_allocate.size) = req->size;
+   MACH_ARG(mach_vm_allocate.flags) = req->flags;
 
-    AFTER = POST_FN(mach_vm_allocate);
+   AFTER = POST_FN(mach_vm_allocate);
 }
 
 POST(mach_vm_allocate)
@@ -4887,13 +4884,13 @@ POST(mach_vm_protect)
 PRE(mach_vm_inherit)
 {
 #pragma pack(4)
-    typedef struct {
-        mach_msg_header_t Head;
-        NDR_record_t NDR;
-        mach_vm_address_t address;
-        mach_vm_size_t size;
-        vm_inherit_t new_inheritance;
-    } Request;
+   typedef struct {
+      mach_msg_header_t Head;
+      NDR_record_t NDR;
+      mach_vm_address_t address;
+      mach_vm_size_t size;
+      vm_inherit_t new_inheritance;
+   } Request;
 #pragma pack()
 
    Request *req = (Request *)ARG1;
@@ -4980,115 +4977,115 @@ POST(mach_vm_copy)
 PRE(mach_vm_map)
 {
 #pragma pack(4)
-    typedef struct {
-        mach_msg_header_t Head;
-        /* start of the kernel processed data */
-        mach_msg_body_t msgh_body;
-        mach_msg_port_descriptor_t object;
-        /* end of the kernel processed data */
-        NDR_record_t NDR;
-        mach_vm_address_t address;
-        mach_vm_size_t size;
-        mach_vm_address_t mask;
-        int flags;
-        memory_object_offset_t offset;
-        boolean_t copy;
-        vm_prot_t cur_protection;
-        vm_prot_t max_protection;
-        vm_inherit_t inheritance;
-    } Request;
+   typedef struct {
+      mach_msg_header_t Head;
+      /* start of the kernel processed data */
+      mach_msg_body_t msgh_body;
+      mach_msg_port_descriptor_t object;
+      /* end of the kernel processed data */
+      NDR_record_t NDR;
+      mach_vm_address_t address;
+      mach_vm_size_t size;
+      mach_vm_address_t mask;
+      int flags;
+      memory_object_offset_t offset;
+      boolean_t copy;
+      vm_prot_t cur_protection;
+      vm_prot_t max_protection;
+      vm_inherit_t inheritance;
+   } Request;
 #pragma pack()
 
-    Request *req = (Request *)ARG1;
+   Request *req = (Request *)ARG1;
 
-    // GrP fixme check these
-    PRINT("mach_vm_map(in %s, at 0x%llx, size %llu, from %s ...)", 
-          name_for_port(MACH_REMOTE), 
-          req->address, req->size, 
-          name_for_port(req->object.name));
+   // GrP fixme check these
+   PRINT("mach_vm_map(in %s, at 0x%llx, size %llu, from %s ...)", 
+         name_for_port(MACH_REMOTE), 
+         req->address, req->size, 
+         name_for_port(req->object.name));
 
-    MACH_ARG(mach_vm_map.size) = req->size;
-    MACH_ARG(mach_vm_map.copy) = req->copy;
-    MACH_ARG(mach_vm_map.protection) = 
-        (req->cur_protection & req->max_protection);
+   MACH_ARG(mach_vm_map.size) = req->size;
+   MACH_ARG(mach_vm_map.copy) = req->copy;
+   MACH_ARG(mach_vm_map.protection) = 
+      (req->cur_protection & req->max_protection);
 
-    AFTER = POST_FN(mach_vm_map);
+   AFTER = POST_FN(mach_vm_map);
 }
 
 POST(mach_vm_map)
 {
 #pragma pack(4)
-    typedef struct {
-        mach_msg_header_t Head;
-        NDR_record_t NDR;
-        kern_return_t RetCode;
-        mach_vm_address_t address;
-        mach_msg_trailer_t trailer;
-    } Reply;
+   typedef struct {
+      mach_msg_header_t Head;
+      NDR_record_t NDR;
+      kern_return_t RetCode;
+      mach_vm_address_t address;
+      mach_msg_trailer_t trailer;
+   } Reply;
 #pragma pack()
 
-    Reply *reply = (Reply *)ARG1;
+   Reply *reply = (Reply *)ARG1;
 
-    if (!reply->RetCode) {
-       // GrP fixme check src and dest tasks
-       PRINT("mapped at 0x%llx", reply->address);
-       // GrP fixme max prot
-       ML_(notify_aspacem_and_tool_of_mmap)
-          (reply->address, VG_PGROUNDUP(MACH_ARG(mach_vm_map.size)), 
-           MACH_ARG(mach_vm_map.protection), VKI_MAP_SHARED, -1, 0);
-       // GrP fixme VKI_MAP_PRIVATE if !copy?
-    } else {
-        PRINT("mig return %d", reply->RetCode);
-    }
+   if (!reply->RetCode) {
+      // GrP fixme check src and dest tasks
+      PRINT("mapped at 0x%llx", reply->address);
+      // GrP fixme max prot
+      ML_(notify_aspacem_and_tool_of_mmap)
+         (reply->address, VG_PGROUNDUP(MACH_ARG(mach_vm_map.size)), 
+          MACH_ARG(mach_vm_map.protection), VKI_MAP_SHARED, -1, 0);
+      // GrP fixme VKI_MAP_PRIVATE if !copy?
+   } else {
+      PRINT("mig return %d", reply->RetCode);
+   }
 }
 
 
 PRE(mach_vm_region_recurse)
 {
 #pragma pack(4)
-    typedef struct {
-        mach_msg_header_t Head;
-        NDR_record_t NDR;
-        mach_vm_address_t address;
-        natural_t nesting_depth;
-        mach_msg_type_number_t infoCnt;
-    } Request;
+   typedef struct {
+      mach_msg_header_t Head;
+      NDR_record_t NDR;
+      mach_vm_address_t address;
+      natural_t nesting_depth;
+      mach_msg_type_number_t infoCnt;
+   } Request;
 #pragma pack()
 
-    Request *req = (Request *)ARG1;
+   Request *req = (Request *)ARG1;
 
-    PRINT("mach_vm_region_recurse(in %s, at 0x%llx, depth %u, count %u)", 
-          name_for_port(MACH_REMOTE), 
-          req->address, req->nesting_depth, req->infoCnt);
+   PRINT("mach_vm_region_recurse(in %s, at 0x%llx, depth %u, count %u)", 
+         name_for_port(MACH_REMOTE), 
+         req->address, req->nesting_depth, req->infoCnt);
 
-    AFTER = POST_FN(mach_vm_region_recurse);
+   AFTER = POST_FN(mach_vm_region_recurse);
 }
 
 POST(mach_vm_region_recurse)
 {
 #pragma pack(4)
-    typedef struct {
-        mach_msg_header_t Head;
-        NDR_record_t NDR;
-        kern_return_t RetCode;
-        mach_vm_address_t address;
-        mach_vm_size_t size;
-        natural_t nesting_depth;
-        mach_msg_type_number_t infoCnt;
-        int info[19];
-    } Reply;
+   typedef struct {
+      mach_msg_header_t Head;
+      NDR_record_t NDR;
+      kern_return_t RetCode;
+      mach_vm_address_t address;
+      mach_vm_size_t size;
+      natural_t nesting_depth;
+      mach_msg_type_number_t infoCnt;
+      int info[19];
+   } Reply;
 #pragma pack()
 
-    Reply *reply = (Reply *)ARG1;
+   Reply *reply = (Reply *)ARG1;
 
-    if (!reply->RetCode) {
-        PRINT("got region at 0x%llx, size %llu, depth %u, count %u", 
-              reply->address, reply->size, 
-              reply->nesting_depth, reply->infoCnt);
-        // fixme mark info contents beyond infoCnt as bogus
-    } else {
-        PRINT("mig return %d", reply->RetCode);
-    }
+   if (!reply->RetCode) {
+       PRINT("got region at 0x%llx, size %llu, depth %u, count %u", 
+             reply->address, reply->size, 
+             reply->nesting_depth, reply->infoCnt);
+       // fixme mark info contents beyond infoCnt as bogus
+   } else {
+      PRINT("mig return %d", reply->RetCode);
+   }
 }
 
 
@@ -5105,29 +5102,29 @@ POST(thread_terminate)
 
 PRE(thread_terminate)
 {
-    mach_msg_header_t *mh = (mach_msg_header_t *)ARG1;
-    Bool self_terminate = (mh->msgh_request_port == MACH_THREAD);
+   mach_msg_header_t *mh = (mach_msg_header_t *)ARG1;
+   Bool self_terminate = (mh->msgh_request_port == MACH_THREAD);
 
-    PRINT("thread_terminate(%s)", name_for_port(mh->msgh_request_port));
+   PRINT("thread_terminate(%s)", name_for_port(mh->msgh_request_port));
 
-    AFTER = POST_FN(thread_terminate);
+   AFTER = POST_FN(thread_terminate);
 
-    if (self_terminate) {
-        // Terminating this thread.
-        // Copied from sys_exit.
-        ThreadState *tst = VG_(get_ThreadState)(tid);
-        tst->exitreason = VgSrc_ExitThread;
-        tst->os_state.exitcode = 0;  // GrP fixme anything better?
-        SET_STATUS_Success(0);
-        *flags &= ~SfMayBlock;  // clear flag set by PRE(mach_msg)
-    } else {
-        // Terminating some other thread.
-        // Do keep the scheduler lock while terminating any other thread. 
-        // Otherwise we might halt the other thread while it holds the lock, 
-        // which would deadlock the process.
-        // GrP fixme good enough?
-        // GrP fixme need to clean up other thread's valgrind data?
-    }
+   if (self_terminate) {
+      // Terminating this thread.
+      // Copied from sys_exit.
+      ThreadState *tst = VG_(get_ThreadState)(tid);
+      tst->exitreason = VgSrc_ExitThread;
+      tst->os_state.exitcode = 0;  // GrP fixme anything better?
+      SET_STATUS_Success(0);
+      *flags &= ~SfMayBlock;  // clear flag set by PRE(mach_msg)
+   } else {
+      // Terminating some other thread.
+      // Do keep the scheduler lock while terminating any other thread. 
+      // Otherwise we might halt the other thread while it holds the lock, 
+      // which would deadlock the process.
+      // GrP fixme good enough?
+      // GrP fixme need to clean up other thread's valgrind data?
+   }
 }
 
 
@@ -5228,43 +5225,43 @@ PRE(sys_bsdthread_create)
 
 POST(sys_bsdthread_create)
 { 
-    // Wait for pthreead_hijack to finish on new thread.
-    // Otherwise V thinks the new pthread struct is still 
-    // unmapped when we return to libc, causing false errors
+   // Wait for pthreead_hijack to finish on new thread.
+   // Otherwise V thinks the new pthread struct is still 
+   // unmapped when we return to libc, causing false errors
 
-    ThreadState *tst = (ThreadState *)ARG2;
-    semaphore_wait(tst->os_state.bsdthread_create_sema);
-    semaphore_destroy(mach_task_self(), tst->os_state.bsdthread_create_sema);
+   ThreadState *tst = (ThreadState *)ARG2;
+   semaphore_wait(tst->os_state.bsdthread_create_sema);
+   semaphore_destroy(mach_task_self(), tst->os_state.bsdthread_create_sema);
 
-    // fixme semaphore destroy needed when thread creation fails
-    // fixme probably other cleanup too
+   // fixme semaphore destroy needed when thread creation fails
+   // fixme probably other cleanup too
 }
 
 
 PRE(sys_bsdthread_terminate)
 {
-    ThreadState *tst;
+   ThreadState *tst;
 
-    PRINT("bsdthread_terminate( %p, %lx, %s, %s )", 
-          ARG1, ARG2, name_for_port(ARG3), name_for_port(ARG4));
-    PRE_REG_READ4(int,"bsdthread_terminate", 
-                  void *,"freeaddr", size_t,"freesize", 
-                  mach_port_t,"kport", mach_port_t,"joinsem");
+   PRINT("bsdthread_terminate( %p, %lx, %s, %s )", 
+         ARG1, ARG2, name_for_port(ARG3), name_for_port(ARG4));
+   PRE_REG_READ4(int,"bsdthread_terminate", 
+                 void *,"freeaddr", size_t,"freesize", 
+                 mach_port_t,"kport", mach_port_t,"joinsem");
 
-    // Free memory and signal semaphore.
-    // fixme errors?
-    if (ARG4) semaphore_signal((semaphore_t)ARG4);
-    if (ARG1  &&  ARG2) {
-        ML_(notify_aspacem_and_tool_of_munmap)(ARG1, ARG2);
-        vm_deallocate(mach_task_self(), (vm_address_t)ARG1, (vm_size_t)ARG2);
-    }
+   // Free memory and signal semaphore.
+   // fixme errors?
+   if (ARG4) semaphore_signal((semaphore_t)ARG4);
+   if (ARG1  &&  ARG2) {
+       ML_(notify_aspacem_and_tool_of_munmap)(ARG1, ARG2);
+       vm_deallocate(mach_task_self(), (vm_address_t)ARG1, (vm_size_t)ARG2);
+   }
 
-    // Tell V to terminate the thread.
-    // Copied from sys_exit.
-    tst = VG_(get_ThreadState)(tid);
-    tst->exitreason = VgSrc_ExitThread;
-    tst->os_state.exitcode = 0;  // GrP fixme anything better?
-    SET_STATUS_Success(0);
+   // Tell V to terminate the thread.
+   // Copied from sys_exit.
+   tst = VG_(get_ThreadState)(tid);
+   tst->exitreason = VgSrc_ExitThread;
+   tst->os_state.exitcode = 0;  // GrP fixme anything better?
+   SET_STATUS_Success(0);
 }
 
 
@@ -5274,79 +5271,79 @@ POST(thread_suspend)
 
 PRE(thread_suspend)
 {
-    mach_msg_header_t *mh = (mach_msg_header_t *)ARG1;
-    Bool self_suspend = (mh->msgh_request_port == MACH_THREAD);
+   mach_msg_header_t *mh = (mach_msg_header_t *)ARG1;
+   Bool self_suspend = (mh->msgh_request_port == MACH_THREAD);
 
-    PRINT("thread_suspend(%s)", name_for_port(mh->msgh_request_port));
+   PRINT("thread_suspend(%s)", name_for_port(mh->msgh_request_port));
 
-    AFTER = POST_FN(thread_suspend);
+   AFTER = POST_FN(thread_suspend);
 
-    if (self_suspend) {
-        // Don't keep the scheduler lock while self-suspending.
-        // Otherwise we might halt while still holding the lock, 
-        // which would deadlock the process.
-        *flags |= SfMayBlock;
-    } else {
-        // Do keep the scheduler lock while suspending any other thread. 
-        // Otherwise we might halt the other thread while it holds the lock, 
-        // which would deadlock the process.
-    }
+   if (self_suspend) {
+       // Don't keep the scheduler lock while self-suspending.
+       // Otherwise we might halt while still holding the lock, 
+       // which would deadlock the process.
+       *flags |= SfMayBlock;
+   } else {
+       // Do keep the scheduler lock while suspending any other thread. 
+       // Otherwise we might halt the other thread while it holds the lock, 
+       // which would deadlock the process.
+   }
 }
 
 
 POST(thread_get_state)
 {
 #pragma pack(4)
-    typedef struct {
-        mach_msg_header_t Head;
-        NDR_record_t NDR;
-        kern_return_t RetCode;
-        mach_msg_type_number_t old_stateCnt;
-        natural_t old_state[144];
-        mach_msg_trailer_t trailer;
-    } Reply;
+   typedef struct {
+      mach_msg_header_t Head;
+      NDR_record_t NDR;
+      kern_return_t RetCode;
+      mach_msg_type_number_t old_stateCnt;
+      natural_t old_state[144];
+      mach_msg_trailer_t trailer;
+   } Reply;
 #pragma pack()
 
-    Reply *reply = (Reply *)ARG1;
-    // mach_port_t thread = MACH_ARG(thread_get_state.thread);
-    thread_state_flavor_t flavor = MACH_ARG(thread_get_state.flavor);
+   Reply *reply = (Reply *)ARG1;
+   // mach_port_t thread = MACH_ARG(thread_get_state.thread);
+   thread_state_flavor_t flavor = MACH_ARG(thread_get_state.flavor);
 
-    if (!reply->RetCode) {
-       thread_state_from_vex((thread_state_t)reply->old_state, 
+   if (!reply->RetCode) {
+      thread_state_from_vex((thread_state_t)reply->old_state, 
                              flavor, reply->old_stateCnt, 
                              &VG_(get_ThreadState)(tid)->arch.vex);
-    } else {
-        PRINT("mig return %d", reply->RetCode);
-    }
+   } else {
+      PRINT("mig return %d", reply->RetCode);
+   }
 }
 
 PRE(thread_get_state)
 {
 #pragma pack(4)
-    typedef struct {
-        mach_msg_header_t Head;
-        NDR_record_t NDR;
-        thread_state_flavor_t flavor;
-        mach_msg_type_number_t old_stateCnt;
-    } Request;
+   typedef struct {
+      mach_msg_header_t Head;
+      NDR_record_t NDR;
+      thread_state_flavor_t flavor;
+      mach_msg_type_number_t old_stateCnt;
+   } Request;
 #pragma pack()
     
-    Request *req = (Request *)ARG1;
-    // Bool self = (req->Head.msgh_request_port == MACH_THREAD);
+   Request *req = (Request *)ARG1;
+   // Bool self = (req->Head.msgh_request_port == MACH_THREAD);
 
-    // GrP fixme   if (self) {
-    PRINT("thread_get_state(%s, %d)", 
-          name_for_port(req->Head.msgh_request_port), req->flavor);
-        /*} else {
-        PRINT("thread_get_state(0x%x, %d)", 
-              req->Head.msgh_request_port, req->flavor);
-              }*/
+   // GrP fixme   if (self) {
+   PRINT("thread_get_state(%s, %d)", 
+         name_for_port(req->Head.msgh_request_port), req->flavor);
+       /*} else {
+       PRINT("thread_get_state(0x%x, %d)", 
+             req->Head.msgh_request_port, req->flavor);
+             }*/
 
-    // Hack the thread state after making the real call.
-    MACH_ARG(thread_get_state.thread) = req->Head.msgh_request_port;
-    MACH_ARG(thread_get_state.flavor) = req->flavor;
+   // Hack the thread state after making the real call.
+   MACH_ARG(thread_get_state.thread) = req->Head.msgh_request_port;
+   MACH_ARG(thread_get_state.flavor) = req->flavor;
 
-    AFTER = POST_FN(thread_get_state);
+   AFTER = POST_FN(thread_get_state);
 }
 
 
@@ -5356,32 +5353,32 @@ POST(thread_policy)
 
 PRE(thread_policy)
 {
-    mach_msg_header_t *mh = (mach_msg_header_t *)ARG1;
-    // Bool self = (mh->msgh_request_port == MACH_THREAD);
+   mach_msg_header_t *mh = (mach_msg_header_t *)ARG1;
+   // Bool self = (mh->msgh_request_port == MACH_THREAD);
 
-    // GrP fixme   if (self) {
-       PRINT("thread_policy(%s, ...)", name_for_port(mh->msgh_request_port));
-       /*} else {
-       PRINT("thread_policy(thread 0x%x, ...)", mh->msgh_request_port);
-       }*/
+   // GrP fixme   if (self) {
+      PRINT("thread_policy(%s, ...)", name_for_port(mh->msgh_request_port));
+      /*} else {
+      PRINT("thread_policy(thread 0x%x, ...)", mh->msgh_request_port);
+      }*/
 
-    AFTER = POST_FN(thread_policy);
+   AFTER = POST_FN(thread_policy);
 }
 
 
 PRE(thread_info)
 {
-    mach_msg_header_t *mh = (mach_msg_header_t *)ARG1;
+   mach_msg_header_t *mh = (mach_msg_header_t *)ARG1;
 
-    PRINT("thread_info(%s, ...)", name_for_port(mh->msgh_request_port));
-    // GrP fixme does any thread info need to be hijacked?
+   PRINT("thread_info(%s, ...)", name_for_port(mh->msgh_request_port));
+   // GrP fixme does any thread info need to be hijacked?
 
-    AFTER = POST_FN(thread_info);
+   AFTER = POST_FN(thread_info);
 }
 
 POST(thread_info)
 {
-    // fixme mark unused parts of thread_info_out as uninitialized?
+   // fixme mark unused parts of thread_info_out as uninitialized?
 }
 
 
@@ -5494,8 +5491,8 @@ POST(mach_msg_receive)
    // import_complex_message handles everything
    // PRINT("UNHANDLED reply %d", mh->msgh_id);
 
-    // Assume the call may have mapped or unmapped memory
-    VG_(sync_mappings)("after", "mach_msg_receive", 0);
+   // Assume the call may have mapped or unmapped memory
+   VG_(sync_mappings)("after", "mach_msg_receive", 0);
 }
 
 PRE(mach_msg_receive)
@@ -5537,34 +5534,34 @@ PRE(mach_msg_bootstrap)
 
 PRE(mach_msg_host)
 {
-    // message to host self - check for host-level kernel calls
+   // message to host self - check for host-level kernel calls
 
-    mach_msg_header_t *mh = (mach_msg_header_t *)ARG1;
+   mach_msg_header_t *mh = (mach_msg_header_t *)ARG1;
 
-    switch (mh->msgh_id) {
-    case 200:
-        CALL_PRE(host_info);
-        return;
-    case 202:
-        CALL_PRE(host_page_size);
-        return;
-    case 205:
-        CALL_PRE(host_get_io_master);
-        return;
-    case 206:
-        CALL_PRE(host_get_clock_service);
-        return;
-    case 217:
-        CALL_PRE(host_request_notification);
-        return;
+   switch (mh->msgh_id) {
+   case 200:
+      CALL_PRE(host_info);
+      return;
+   case 202:
+      CALL_PRE(host_page_size);
+      return;
+   case 205:
+      CALL_PRE(host_get_io_master);
+      return;
+   case 206:
+      CALL_PRE(host_get_clock_service);
+      return;
+   case 217:
+      CALL_PRE(host_request_notification);
+      return;
 
-    default:
-        // unknown message to host self
-        VG_(printf)("UNKNOWN host message [id %d, to %s, reply 0x%x]\n", 
-                    mh->msgh_id, name_for_port(mh->msgh_request_port), 
-                    mh->msgh_reply_port);
-        return;
-    }
+   default:
+      // unknown message to host self
+      VG_(printf)("UNKNOWN host message [id %d, to %s, reply 0x%x]\n", 
+                  mh->msgh_id, name_for_port(mh->msgh_request_port), 
+                  mh->msgh_reply_port);
+      return;
+   }
 } 
 
 PRE(mach_msg_task)
@@ -5722,41 +5719,41 @@ PRE(mach_msg_task)
 
 PRE(mach_msg_thread)
 {
-    // message to local thread - check for thread-level kernel calls
+   // message to local thread - check for thread-level kernel calls
 
-    mach_msg_header_t *mh = (mach_msg_header_t *)ARG1;
+   mach_msg_header_t *mh = (mach_msg_header_t *)ARG1;
 
-    switch (mh->msgh_id) {
-    case 3600: 
-        CALL_PRE(thread_terminate);
-        return;
-    case 3603:
-        CALL_PRE(thread_get_state);
-        return;
-    case 3605: 
-        CALL_PRE(thread_suspend);
-        return;
-    case 3612: 
-        CALL_PRE(thread_info);
-        return;
-    case 3616: 
-        CALL_PRE(thread_policy);
-        return;
-    default:
-        // unknown message to a thread
-        VG_(printf)("UNKNOWN thread message [id %d, to %s, reply 0x%x]\n", 
-                    mh->msgh_id, name_for_port(mh->msgh_request_port), 
-                    mh->msgh_reply_port);
-        return;
-    }
+   switch (mh->msgh_id) {
+   case 3600: 
+      CALL_PRE(thread_terminate);
+      return;
+   case 3603:
+      CALL_PRE(thread_get_state);
+      return;
+   case 3605: 
+      CALL_PRE(thread_suspend);
+      return;
+   case 3612: 
+      CALL_PRE(thread_info);
+      return;
+   case 3616: 
+      CALL_PRE(thread_policy);
+      return;
+   default:
+      // unknown message to a thread
+      VG_(printf)("UNKNOWN thread message [id %d, to %s, reply 0x%x]\n", 
+                  mh->msgh_id, name_for_port(mh->msgh_request_port), 
+                  mh->msgh_reply_port);
+      return;
+   }
 }
 
 
 static int is_thread_port(mach_port_t port)
 {
-    if (port == 0) return False;
+   if (port == 0) return False;
 
-    return VG_(lwpid_to_vgtid)(port) != VG_INVALID_THREADID;
+   return VG_(lwpid_to_vgtid)(port) != VG_INVALID_THREADID;
 }
 
 
@@ -5808,7 +5805,7 @@ POST(mach_msg)
 
 POST(mach_msg_unhandled)
 {
-    VG_(sync_mappings)("after", "mach_msg_receive", 0);
+   VG_(sync_mappings)("after", "mach_msg_receive", 0);
 }
 
 PRE(mach_msg)
@@ -6048,14 +6045,14 @@ PRE(semaphore_timedwait_signal)
 
 PRE(sys___semwait_signal)
 {
-    PRINT("sys___semwait_signal(wait %s, signal %s, %d, %d, %g seconds)", 
-          name_for_port(ARG1), name_for_port(ARG2), ARG3, ARG4, ARG5+ARG6/1000000000.0);
-    PRE_REG_READ6(long, "sys___semwait_signal", 
-                  int,"cond_sem", int,"mutex_sem",
-                  int,"timeout", int,"relative", 
-                  vki_time_t,"tv_sec", int,"tv_nsec");
+   PRINT("sys___semwait_signal(wait %s, signal %s, %d, %d, %g seconds)", 
+         name_for_port(ARG1), name_for_port(ARG2), ARG3, ARG4, ARG5+ARG6/1000000000.0);
+   PRE_REG_READ6(long, "sys___semwait_signal", 
+                 int,"cond_sem", int,"mutex_sem",
+                 int,"timeout", int,"relative", 
+                 vki_time_t,"tv_sec", int,"tv_nsec");
 
-    *flags |= SfMayBlock;
+   *flags |= SfMayBlock;
 }
 
 
@@ -6189,20 +6186,20 @@ POST(mk_timer_cancel)
 
 PRE(iokit_user_client_trap)
 {
-    PRINT("iokit_user_client_trap(%s, %d, %llx, %llx, %llx, %llx, %llx, %llx)",
-          name_for_port(ARG1), ARG2, ARG3, ARG4, ARG5, ARG6, ARG7, ARG8);
-    PRE_REG_READ8(kern_return_t, "iokit_user_client_trap", 
-                  mach_port_t,connect, unsigned int,index, 
-                  uintptr_t,p1, uintptr_t,p2, uintptr_t,p3, 
-                  uintptr_t,p4, uintptr_t,p5, uintptr_t,p6);
+   PRINT("iokit_user_client_trap(%s, %d, %llx, %llx, %llx, %llx, %llx, %llx)",
+         name_for_port(ARG1), ARG2, ARG3, ARG4, ARG5, ARG6, ARG7, ARG8);
+   PRE_REG_READ8(kern_return_t, "iokit_user_client_trap", 
+                 mach_port_t,connect, unsigned int,index, 
+                 uintptr_t,p1, uintptr_t,p2, uintptr_t,p3, 
+                 uintptr_t,p4, uintptr_t,p5, uintptr_t,p6);
 
-    // can't do anything else with this in general
-    // might be able to use connect+index to choose something sometimes
+   // can't do anything else with this in general
+   // might be able to use connect+index to choose something sometimes
 }
 
 POST(iokit_user_client_trap)
 {
-    VG_(sync_mappings)("after", "iokit_user_client_trap", ARG2);
+   VG_(sync_mappings)("after", "iokit_user_client_trap", ARG2);
 }
 
 
@@ -6241,19 +6238,19 @@ POST(MKGetTimeBaseInfo)
 
 PRE(swtch)
 {
-    PRINT("swtch ( )");
-    PRE_REG_READ0(long, "swtch");
+   PRINT("swtch ( )");
+   PRE_REG_READ0(long, "swtch");
 
-    *flags |= SfMayBlock;
+   *flags |= SfMayBlock;
 }
 
 
 PRE(swtch_pri)
 {
-    PRINT("swtch ( %d )", ARG1);
-    PRE_REG_READ1(long, "swtch", int,"pri");
+   PRINT("swtch ( %d )", ARG1);
+   PRE_REG_READ1(long, "swtch", int,"pri");
 
-    *flags |= SfMayBlock;
+   *flags |= SfMayBlock;
 }
 
 
@@ -6327,443 +6324,443 @@ PRE(pthread_set_self)
 #define _____(sysno) GENX_(sysno, sys_ni_syscall)
 
 /*
-  //  _____ : unsupported by the kernel
-      _____ : unimplemented in valgrind (sys_ni_syscall)
-      GEN   : handlers are in syswrap-generic.c
-      MAC   : handlers are in this file
-         X_ : PRE handler only
-         XY : PRE and POST handlers
+  // _____ : unsupported by the kernel
+     _____ : unimplemented in valgrind (sys_ni_syscall)
+     GEN   : handlers are in syswrap-generic.c
+     MAC   : handlers are in this file
+        X_ : PRE handler only
+        XY : PRE and POST handlers
 */
 const SyscallTableEntry ML_(syscall_table)[] = {
-    _____(__NR_syscall),   // 0
-    MACX_(__NR_exit, sys_exit), 
-    GENX_(__NR_fork, sys_fork), 
-    GENXY(__NR_read, sys_read), 
-    GENX_(__NR_write, sys_write), 
-    GENXY(__NR_open, sys_open), 
-    GENXY(__NR_close, sys_close), 
-    GENXY(__NR_wait4, sys_wait4), 
-//  _____(__NR_creat), 
-    GENX_(__NR_link, sys_link), 
-    GENX_(__NR_unlink, sys_unlink), 
-//  _____(__NR_execv), 
-    GENX_(__NR_chdir, sys_chdir), 
-    GENX_(__NR_fchdir, sys_fchdir), 
-    GENX_(__NR_mknod, sys_mknod), 
-    GENX_(__NR_chmod, sys_chmod), 
-    GENX_(__NR_chown, sys_chown), 
-//  _____(__NR_break), 
-    MACXY(__NR_getfsstat, sys_getfsstat), 
-//  _____(__NR_lseek), 
-    GENX_(__NR_getpid, sys_getpid),     // 20
-//  _____(__NR_mount), 
-//  _____(__NR_umount), 
-    GENX_(__NR_setuid, sys_setuid), 
-    GENX_(__NR_getuid, sys_getuid), 
-    GENX_(__NR_geteuid, sys_geteuid), 
-    MACX_(__NR_ptrace, sys_ptrace), 
-    MACXY(__NR_recvmsg, sys_recvmsg), 
-    MACX_(__NR_sendmsg, sys_sendmsg), 
-    MACXY(__NR_recvfrom, sys_recvfrom), 
-    MACXY(__NR_accept, sys_accept), 
-    MACXY(__NR_getpeername, sys_getpeername), 
-    MACXY(__NR_getsockname, sys_getsockname), 
-    GENX_(__NR_access, sys_access), 
-    MACX_(__NR_chflags, sys_chflags), 
-    MACX_(__NR_fchflags, sys_fchflags), 
-    GENX_(__NR_sync, sys_sync), 
-    GENX_(__NR_kill, sys_kill), 
-//  _____(__NR_stat), 
-    GENX_(__NR_getppid, sys_getppid), 
-//  _____(__NR_lstat),      // 40
-    GENXY(__NR_dup, sys_dup), 
-    MACXY(__NR_pipe, sys_pipe), 
-    GENX_(__NR_getegid, sys_getegid), 
-    _____(__NR_profil), 
-//  _____(__NR_ktrace), 
-    MACX_(__NR_sigaction, sys_sigaction), 
-    GENX_(__NR_getgid, sys_getgid), 
-    MACXY(__NR_sigprocmask, sys_sigprocmask), 
-    MACXY(__NR_getlogin, sys_getlogin), 
-    _____(__NR_setlogin), 
-    _____(__NR_acct), 
-    _____(__NR_sigpending), 
-    MACX_(__NR_sigaltstack, sys_sigaltstack), 
-    MACXY(__NR_ioctl, sys_ioctl), 
-    _____(__NR_reboot), 
-    _____(__NR_revoke), 
-    _____(__NR_symlink), 
-    GENX_(__NR_readlink, sys_readlink), 
-    GENX_(__NR_execve, sys_execve), 
-    GENX_(__NR_umask, sys_umask),     // 60
-    GENX_(__NR_chroot, sys_chroot), 
-//  _____(__NR_fstat), 
-//  _____(__NR_63), 
-//  _____(__NR_getpagesize), 
-    GENX_(__NR_msync, sys_msync), 
-    _____(__NR_vfork), 
-//  _____(__NR_vread), 
-//  _____(__NR_vwrite), 
-//  _____(__NR_sbrk), 
-//  _____(__NR_sstk), 
-//  _____(__NR_mmap), 
-//  _____(__NR_vadvise), 
-    GENXY(__NR_munmap, sys_munmap), 
-    GENXY(__NR_mprotect, sys_mprotect), 
-    GENX_(__NR_madvise, sys_madvise), 
-//  _____(__NR_vhangup), 
-//  _____(__NR_vlimit), 
-    _____(__NR_mincore), 
-    GENXY(__NR_getgroups, sys_getgroups), 
-    _____(__NR_setgroups),   // 80
-    GENX_(__NR_getpgrp, sys_getpgrp), 
-    _____(__NR_setpgid), 
-    GENX_(__NR_setitimer, sys_setitimer), 
-//  _____(__NR_wait), 
-    _____(__NR_swapon), 
-    GENX_(__NR_getitimer, sys_getitimer), 
-//  _____(__NR_gethostname), 
-//  _____(__NR_sethostname), 
-    MACXY(__NR_getdtablesize, sys_getdtablesize), 
-    GENX_(__NR_dup2, sys_dup2), 
-//  _____(__NR_getdopt), 
-    MACXY(__NR_fcntl, sys_fcntl), 
-    GENX_(__NR_select, sys_select), 
-//  _____(__NR_setdopt), 
-    GENX_(__NR_fsync, sys_fsync), 
-    GENX_(__NR_setpriority, sys_setpriority), 
-    MACXY(__NR_socket, sys_socket), 
-    MACX_(__NR_connect, sys_connect), 
-//  _____(__NR_accept), 
-    GENX_(__NR_getpriority, sys_getpriority),   // 100
-//  _____(__NR_send), 
-//  _____(__NR_recv), 
-//  _____(__NR_sigreturn), 
-    MACX_(__NR_bind, sys_bind), 
-    MACX_(__NR_setsockopt, sys_setsockopt), 
-    MACX_(__NR_listen, sys_listen), 
-//  _____(__NR_vtimes), 
-//  _____(__NR_sigvec), 
-//  _____(__NR_sigblock), 
-//  _____(__NR_sigsetmask), 
-    _____(__NR_sigsuspend), 
-//  _____(__NR_sigstack), 
-//  _____(__NR_recvmsg), 
-//  _____(__NR_sendmsg), 
-//  _____(__NR_vtrace), 
-    GENXY(__NR_gettimeofday, sys_gettimeofday), 
-    GENXY(__NR_getrusage, sys_getrusage), 
-    MACXY(__NR_getsockopt, sys_getsockopt), 
-//  _____(__NR_resuba), 
-    GENXY(__NR_readv, sys_readv),        // 120
-    GENX_(__NR_writev, sys_writev), 
-    _____(__NR_settimeofday), 
-    GENX_(__NR_fchown, sys_fchown), 
-    GENX_(__NR_fchmod, sys_fchmod), 
-//  _____(__NR_recvfrom), 
-    _____(__NR_setreuid), 
-    _____(__NR_setregid), 
-    GENX_(__NR_rename, sys_rename), 
-//  _____(__NR_truncate), 
-//  _____(__NR_ftruncate), 
-    GENX_(__NR_flock, sys_flock), 
-    _____(__NR_mkfifo), 
-    MACX_(__NR_sendto, sys_sendto), 
-    MACX_(__NR_shutdown, sys_shutdown), 
-    MACXY(__NR_socketpair, sys_socketpair), 
-    GENX_(__NR_mkdir, sys_mkdir), 
-    GENX_(__NR_rmdir, sys_rmdir), 
-    GENX_(__NR_utimes, sys_utimes), 
-    _____(__NR_futimes), 
-    _____(__NR_adjtime),     // 140
-//  _____(__NR_getpeername), 
-    MACXY(__NR_gethostuuid, sys_gethostuuid), 
-//  _____(__NR_sethostid), 
-//  _____(__NR_getrlimit), 
-//  _____(__NR_setrlimit), 
-//  _____(__NR_killpg), 
-    GENX_(__NR_setsid, sys_setsid), 
-//  _____(__NR_setquota), 
-//  _____(__NR_qquota), 
-//  _____(__NR_getsockname), 
-    _____(__NR_getpgid), 
-    _____(__NR_setprivexec), 
-    GENXY(__NR_pread, sys_pread64), 
-    GENX_(__NR_pwrite, sys_pwrite64), 
-    _____(__NR_nfssvc), 
-//  _____(__NR_getdirentries), 
-    GENXY(__NR_statfs, sys_statfs), 
-    GENXY(__NR_fstatfs, sys_fstatfs), 
-    _____(__NR_unmount), 
-//  _____(__NR_async_daemon),   // 160
-    _____(__NR_getfh), 
-//  _____(__NR_getdomainname), 
-//  _____(__NR_setdomainname), 
-//  _____(__NR_164), 
-    _____(__NR_quotactl), 
-//  _____(__NR_exportfs), 
-    _____(__NR_mount), 
-//  _____(__NR_ustat), 
-    _____(__NR_csops), 
-//  _____(__NR_table), 
-//  _____(__NR_wait3), 
-//  _____(__NR_rpause), 
-    _____(__NR_waitid), 
-//  _____(__NR_getdents), 
-//  _____(__NR_gc_control), 
-    _____(__NR_add_profil), 
-//  _____(__NR_177), 
-//  _____(__NR_178), 
-//  _____(__NR_179), 
-    MACX_(__NR_kdebug_trace, sys_kdebug_trace),   // 180
-    GENX_(__NR_setgid, sys_setgid), 
-    MACX_(__NR_setegid, sys_setegid), 
-    MACX_(__NR_seteuid, sys_seteuid), 
-    _____(__NR_sigreturn), 
-    _____(__NR_chud), 
-//  _____(__NR_186), 
-//  _____(__NR_187), 
-    GENXY(__NR_stat, sys_newstat), 
-    GENXY(__NR_fstat, sys_newfstat), 
-    GENXY(__NR_lstat, sys_newlstat), 
-    MACX_(__NR_pathconf, sys_pathconf), 
-    MACX_(__NR_fpathconf, sys_fpathconf), 
-//  _____(__NR_193), 
-    GENXY(__NR_getrlimit, sys_getrlimit), 
-    GENX_(__NR_setrlimit, sys_setrlimit), 
-    MACXY(__NR_getdirentries, sys_getdirentries), 
-    MACXY(__NR_mmap, sys_mmap), 
-//  _____(__NR___syscall), 
-    MACX_(__NR_lseek, sys_lseek), 
-    GENX_(__NR_truncate, sys_truncate64),   // 200
-    GENX_(__NR_ftruncate, sys_ftruncate64), 
-    MACXY(__NR___sysctl, sys_sysctl), 
-    GENX_(__NR_mlock, sys_mlock), 
-    GENX_(__NR_munlock, sys_munlock), 
-    _____(__NR_undelete), 
-    _____(__NR_ATsocket), 
-    _____(__NR_ATgetmsg), 
-    _____(__NR_ATputmsg), 
-    _____(__NR_ATPsndreq), 
-    _____(__NR_ATPsndrsp), 
-    _____(__NR_ATPgetreq), 
-    _____(__NR_ATPgetrsp), 
-//  _____(__NR_213), 
-    _____(__NR_kqueue_from_portset_np), 
-    _____(__NR_kqueue_portset_np), 
-    _____(__NR_mkcomplex), 
-    _____(__NR_statv), 
-    _____(__NR_lstatv), 
-    _____(__NR_fstatv), 
-    MACXY(__NR_getattrlist, sys_getattrlist),   // 220
-    MACX_(__NR_setattrlist, sys_setattrlist), 
-    MACXY(__NR_getdirentriesattr, sys_getdirentriesattr), 
-    _____(__NR_exchangedata), 
-//  _____(__NR_checkuseraccess), 
-    _____(__NR_searchfs), 
-    GENX_(__NR_delete, sys_unlink), 
-    _____(__NR_copyfile), 
-//  _____(__NR_228), 
-//  _____(__NR_229), 
-    GENXY(__NR_poll, sys_poll), 
-    MACX_(__NR_watchevent, sys_watchevent), 
-    MACXY(__NR_waitevent, sys_waitevent), 
-    MACX_(__NR_modwatch, sys_modwatch), 
-    MACXY(__NR_getxattr, sys_getxattr), 
-    MACXY(__NR_fgetxattr, sys_fgetxattr), 
-    MACX_(__NR_setxattr, sys_setxattr), 
-    MACX_(__NR_fsetxattr, sys_fsetxattr), 
-    _____(__NR_removexattr), 
-    _____(__NR_fremovexattr), 
-    MACXY(__NR_listxattr, sys_listxattr),    // 240
-    _____(__NR_flistxattr), 
-    MACXY(__NR_fsctl, sys_fsctl), 
-    MACX_(__NR_initgroups, sys_initgroups), 
-    _____(__NR_posix_spawn), 
-//  _____(__NR_245), 
-//  _____(__NR_246), 
-    _____(__NR_nfsclnt), 
-    _____(__NR_fhopen), 
-//  _____(__NR_249), 
-    _____(__NR_minherit), 
-    _____(__NR_semsys), 
-    _____(__NR_msgsys), 
-    _____(__NR_shmsys), 
-    MACXY(__NR_semctl, sys_semctl), 
-    MACX_(__NR_semget, sys_semget), 
-    MACX_(__NR_semop, sys_semop), 
+   _____(__NR_syscall),   // 0
+   MACX_(__NR_exit, sys_exit), 
+   GENX_(__NR_fork, sys_fork), 
+   GENXY(__NR_read, sys_read), 
+   GENX_(__NR_write, sys_write), 
+   GENXY(__NR_open, sys_open), 
+   GENXY(__NR_close, sys_close), 
+   GENXY(__NR_wait4, sys_wait4), 
+// _____(__NR_creat), 
+   GENX_(__NR_link, sys_link), 
+   GENX_(__NR_unlink, sys_unlink), 
+// _____(__NR_execv), 
+   GENX_(__NR_chdir, sys_chdir), 
+   GENX_(__NR_fchdir, sys_fchdir), 
+   GENX_(__NR_mknod, sys_mknod), 
+   GENX_(__NR_chmod, sys_chmod), 
+   GENX_(__NR_chown, sys_chown), 
+// _____(__NR_break), 
+   MACXY(__NR_getfsstat, sys_getfsstat), 
+// _____(__NR_lseek), 
+   GENX_(__NR_getpid, sys_getpid),     // 20
+// _____(__NR_mount), 
+// _____(__NR_umount), 
+   GENX_(__NR_setuid, sys_setuid), 
+   GENX_(__NR_getuid, sys_getuid), 
+   GENX_(__NR_geteuid, sys_geteuid), 
+   MACX_(__NR_ptrace, sys_ptrace), 
+   MACXY(__NR_recvmsg, sys_recvmsg), 
+   MACX_(__NR_sendmsg, sys_sendmsg), 
+   MACXY(__NR_recvfrom, sys_recvfrom), 
+   MACXY(__NR_accept, sys_accept), 
+   MACXY(__NR_getpeername, sys_getpeername), 
+   MACXY(__NR_getsockname, sys_getsockname), 
+   GENX_(__NR_access, sys_access), 
+   MACX_(__NR_chflags, sys_chflags), 
+   MACX_(__NR_fchflags, sys_fchflags), 
+   GENX_(__NR_sync, sys_sync), 
+   GENX_(__NR_kill, sys_kill), 
+// _____(__NR_stat), 
+   GENX_(__NR_getppid, sys_getppid), 
+// _____(__NR_lstat),      // 40
+   GENXY(__NR_dup, sys_dup), 
+   MACXY(__NR_pipe, sys_pipe), 
+   GENX_(__NR_getegid, sys_getegid), 
+   _____(__NR_profil), 
+// _____(__NR_ktrace), 
+   MACX_(__NR_sigaction, sys_sigaction), 
+   GENX_(__NR_getgid, sys_getgid), 
+   MACXY(__NR_sigprocmask, sys_sigprocmask), 
+   MACXY(__NR_getlogin, sys_getlogin), 
+   _____(__NR_setlogin), 
+   _____(__NR_acct), 
+   _____(__NR_sigpending), 
+   MACX_(__NR_sigaltstack, sys_sigaltstack), 
+   MACXY(__NR_ioctl, sys_ioctl), 
+   _____(__NR_reboot), 
+   _____(__NR_revoke), 
+   _____(__NR_symlink), 
+   GENX_(__NR_readlink, sys_readlink), 
+   GENX_(__NR_execve, sys_execve), 
+   GENX_(__NR_umask, sys_umask),     // 60
+   GENX_(__NR_chroot, sys_chroot), 
+// _____(__NR_fstat), 
+// _____(__NR_63), 
+// _____(__NR_getpagesize), 
+   GENX_(__NR_msync, sys_msync), 
+   _____(__NR_vfork), 
+// _____(__NR_vread), 
+// _____(__NR_vwrite), 
+// _____(__NR_sbrk), 
+// _____(__NR_sstk), 
+// _____(__NR_mmap), 
+// _____(__NR_vadvise), 
+   GENXY(__NR_munmap, sys_munmap), 
+   GENXY(__NR_mprotect, sys_mprotect), 
+   GENX_(__NR_madvise, sys_madvise), 
+// _____(__NR_vhangup), 
+// _____(__NR_vlimit), 
+   _____(__NR_mincore), 
+   GENXY(__NR_getgroups, sys_getgroups), 
+   _____(__NR_setgroups),   // 80
+   GENX_(__NR_getpgrp, sys_getpgrp), 
+   _____(__NR_setpgid), 
+   GENX_(__NR_setitimer, sys_setitimer), 
+// _____(__NR_wait), 
+   _____(__NR_swapon), 
+   GENX_(__NR_getitimer, sys_getitimer), 
+// _____(__NR_gethostname), 
+// _____(__NR_sethostname), 
+   MACXY(__NR_getdtablesize, sys_getdtablesize), 
+   GENX_(__NR_dup2, sys_dup2), 
+// _____(__NR_getdopt), 
+   MACXY(__NR_fcntl, sys_fcntl), 
+   GENX_(__NR_select, sys_select), 
+// _____(__NR_setdopt), 
+   GENX_(__NR_fsync, sys_fsync), 
+   GENX_(__NR_setpriority, sys_setpriority), 
+   MACXY(__NR_socket, sys_socket), 
+   MACX_(__NR_connect, sys_connect), 
+// _____(__NR_accept), 
+   GENX_(__NR_getpriority, sys_getpriority),   // 100
+// _____(__NR_send), 
+// _____(__NR_recv), 
+// _____(__NR_sigreturn), 
+   MACX_(__NR_bind, sys_bind), 
+   MACX_(__NR_setsockopt, sys_setsockopt), 
+   MACX_(__NR_listen, sys_listen), 
+// _____(__NR_vtimes), 
+// _____(__NR_sigvec), 
+// _____(__NR_sigblock), 
+// _____(__NR_sigsetmask), 
+   _____(__NR_sigsuspend), 
+// _____(__NR_sigstack), 
+// _____(__NR_recvmsg), 
+// _____(__NR_sendmsg), 
+// _____(__NR_vtrace), 
+   GENXY(__NR_gettimeofday, sys_gettimeofday), 
+   GENXY(__NR_getrusage, sys_getrusage), 
+   MACXY(__NR_getsockopt, sys_getsockopt), 
+// _____(__NR_resuba), 
+   GENXY(__NR_readv, sys_readv),        // 120
+   GENX_(__NR_writev, sys_writev), 
+   _____(__NR_settimeofday), 
+   GENX_(__NR_fchown, sys_fchown), 
+   GENX_(__NR_fchmod, sys_fchmod), 
+// _____(__NR_recvfrom), 
+   _____(__NR_setreuid), 
+   _____(__NR_setregid), 
+   GENX_(__NR_rename, sys_rename), 
+// _____(__NR_truncate), 
+// _____(__NR_ftruncate), 
+   GENX_(__NR_flock, sys_flock), 
+   _____(__NR_mkfifo), 
+   MACX_(__NR_sendto, sys_sendto), 
+   MACX_(__NR_shutdown, sys_shutdown), 
+   MACXY(__NR_socketpair, sys_socketpair), 
+   GENX_(__NR_mkdir, sys_mkdir), 
+   GENX_(__NR_rmdir, sys_rmdir), 
+   GENX_(__NR_utimes, sys_utimes), 
+   _____(__NR_futimes), 
+   _____(__NR_adjtime),     // 140
+// _____(__NR_getpeername), 
+   MACXY(__NR_gethostuuid, sys_gethostuuid), 
+// _____(__NR_sethostid), 
+// _____(__NR_getrlimit), 
+// _____(__NR_setrlimit), 
+// _____(__NR_killpg), 
+   GENX_(__NR_setsid, sys_setsid), 
+// _____(__NR_setquota), 
+// _____(__NR_qquota), 
+// _____(__NR_getsockname), 
+   _____(__NR_getpgid), 
+   _____(__NR_setprivexec), 
+   GENXY(__NR_pread, sys_pread64), 
+   GENX_(__NR_pwrite, sys_pwrite64), 
+   _____(__NR_nfssvc), 
+// _____(__NR_getdirentries), 
+   GENXY(__NR_statfs, sys_statfs), 
+   GENXY(__NR_fstatfs, sys_fstatfs), 
+   _____(__NR_unmount), 
+// _____(__NR_async_daemon),   // 160
+   _____(__NR_getfh), 
+// _____(__NR_getdomainname), 
+// _____(__NR_setdomainname), 
+// _____(__NR_164), 
+   _____(__NR_quotactl), 
+// _____(__NR_exportfs), 
+   _____(__NR_mount), 
+// _____(__NR_ustat), 
+   _____(__NR_csops), 
+// _____(__NR_table), 
+// _____(__NR_wait3), 
+// _____(__NR_rpause), 
+   _____(__NR_waitid), 
+// _____(__NR_getdents), 
+// _____(__NR_gc_control), 
+   _____(__NR_add_profil), 
+// _____(__NR_177), 
+// _____(__NR_178), 
+// _____(__NR_179), 
+   MACX_(__NR_kdebug_trace, sys_kdebug_trace),   // 180
+   GENX_(__NR_setgid, sys_setgid), 
+   MACX_(__NR_setegid, sys_setegid), 
+   MACX_(__NR_seteuid, sys_seteuid), 
+   _____(__NR_sigreturn), 
+   _____(__NR_chud), 
+// _____(__NR_186), 
+// _____(__NR_187), 
+   GENXY(__NR_stat, sys_newstat), 
+   GENXY(__NR_fstat, sys_newfstat), 
+   GENXY(__NR_lstat, sys_newlstat), 
+   MACX_(__NR_pathconf, sys_pathconf), 
+   MACX_(__NR_fpathconf, sys_fpathconf), 
+// _____(__NR_193), 
+   GENXY(__NR_getrlimit, sys_getrlimit), 
+   GENX_(__NR_setrlimit, sys_setrlimit), 
+   MACXY(__NR_getdirentries, sys_getdirentries), 
+   MACXY(__NR_mmap, sys_mmap), 
+// _____(__NR___syscall), 
+   MACX_(__NR_lseek, sys_lseek), 
+   GENX_(__NR_truncate, sys_truncate64),   // 200
+   GENX_(__NR_ftruncate, sys_ftruncate64), 
+   MACXY(__NR___sysctl, sys_sysctl), 
+   GENX_(__NR_mlock, sys_mlock), 
+   GENX_(__NR_munlock, sys_munlock), 
+   _____(__NR_undelete), 
+   _____(__NR_ATsocket), 
+   _____(__NR_ATgetmsg), 
+   _____(__NR_ATputmsg), 
+   _____(__NR_ATPsndreq), 
+   _____(__NR_ATPsndrsp), 
+   _____(__NR_ATPgetreq), 
+   _____(__NR_ATPgetrsp), 
+// _____(__NR_213), 
+   _____(__NR_kqueue_from_portset_np), 
+   _____(__NR_kqueue_portset_np), 
+   _____(__NR_mkcomplex), 
+   _____(__NR_statv), 
+   _____(__NR_lstatv), 
+   _____(__NR_fstatv), 
+   MACXY(__NR_getattrlist, sys_getattrlist),   // 220
+   MACX_(__NR_setattrlist, sys_setattrlist), 
+   MACXY(__NR_getdirentriesattr, sys_getdirentriesattr), 
+   _____(__NR_exchangedata), 
+// _____(__NR_checkuseraccess), 
+   _____(__NR_searchfs), 
+   GENX_(__NR_delete, sys_unlink), 
+   _____(__NR_copyfile), 
+// _____(__NR_228), 
+// _____(__NR_229), 
+   GENXY(__NR_poll, sys_poll), 
+   MACX_(__NR_watchevent, sys_watchevent), 
+   MACXY(__NR_waitevent, sys_waitevent), 
+   MACX_(__NR_modwatch, sys_modwatch), 
+   MACXY(__NR_getxattr, sys_getxattr), 
+   MACXY(__NR_fgetxattr, sys_fgetxattr), 
+   MACX_(__NR_setxattr, sys_setxattr), 
+   MACX_(__NR_fsetxattr, sys_fsetxattr), 
+   _____(__NR_removexattr), 
+   _____(__NR_fremovexattr), 
+   MACXY(__NR_listxattr, sys_listxattr),    // 240
+   _____(__NR_flistxattr), 
+   MACXY(__NR_fsctl, sys_fsctl), 
+   MACX_(__NR_initgroups, sys_initgroups), 
+   _____(__NR_posix_spawn), 
+// _____(__NR_245), 
+// _____(__NR_246), 
+   _____(__NR_nfsclnt), 
+   _____(__NR_fhopen), 
+// _____(__NR_249), 
+   _____(__NR_minherit), 
+   _____(__NR_semsys), 
+   _____(__NR_msgsys), 
+   _____(__NR_shmsys), 
+   MACXY(__NR_semctl, sys_semctl), 
+   MACX_(__NR_semget, sys_semget), 
+   MACX_(__NR_semop, sys_semop), 
 //  _____(__NR_257), 
-    _____(__NR_msgctl), 
-    _____(__NR_msgget), 
-    _____(__NR_msgsnd),   // 260
-    _____(__NR_msgrcv), 
-    _____(__NR_shmat), 
-    _____(__NR_shmctl), 
-    _____(__NR_shmdt), 
-    _____(__NR_shmget), 
-    MACXY(__NR_shm_open, sys_shm_open), 
-    _____(__NR_shm_unlink), 
-    _____(__NR_sem_open), 
-    _____(__NR_sem_close), 
-    _____(__NR_sem_unlink), 
-    _____(__NR_sem_wait), 
-    _____(__NR_sem_trywait), 
-    _____(__NR_sem_post), 
-    _____(__NR_sem_getvalue), 
-    _____(__NR_sem_init), 
-    _____(__NR_sem_destroy), 
-    _____(__NR_open_extended), 
-    _____(__NR_umask_extended), 
-    MACXY(__NR_stat_extended, sys_statx), 
-    _____(__NR_lstat_extended),   // 280
-    _____(__NR_fstat_extended), 
-    _____(__NR_chmod_extended), 
-    _____(__NR_fchmod_extended), 
-    _____(__NR_access_extended), 
-    MACX_(__NR_settid, sys_settid), 
-    _____(__NR_gettid), 
-    _____(__NR_setsgroups), 
-    _____(__NR_getsgroups), 
-    _____(__NR_setwgroups), 
-    _____(__NR_getwgroups), 
-    _____(__NR_mkfifo_extended), 
-    _____(__NR_mkdir_extended), 
-    _____(__NR_identitysvc), 
-    _____(__NR_shared_region_check_np), 
-    _____(__NR_shared_region_map_np), 
-//  _____(__NR_load_shared_file), 
-//  _____(__NR_reset_shared_file), 
-//  _____(__NR_new_system_shared_regions), 
-//  _____(__NR_shared_region_map_file_np), 
-//  _____(__NR_shared_region_make_private_np),   // 300
-    _____(__NR___pthread_mutex_destroy), 
-    _____(__NR___pthread_mutex_init), 
-    _____(__NR___pthread_mutex_lock), 
-    _____(__NR___pthread_mutex_trylock), 
-    _____(__NR___pthread_mutex_unlock), 
-    _____(__NR___pthread_cond_init), 
-    _____(__NR___pthread_cond_destroy), 
-    _____(__NR___pthread_cond_broadcast), 
-    _____(__NR___pthread_cond_signal), 
-    _____(__NR_getsid), 
-    _____(__NR_settid_with_pid), 
-    _____(__NR___pthread_cond_timedwait), 
-    _____(__NR_aio_fsync), 
-    _____(__NR_aio_return), 
-    _____(__NR_aio_suspend), 
-    _____(__NR_aio_cancel), 
-    _____(__NR_aio_error), 
-    _____(__NR_aio_read), 
-    _____(__NR_aio_write), 
-    _____(__NR_lio_listio),   // 320
-    _____(__NR___pthread_cond_wait), 
-    _____(__NR_iopolicysys), 
-//  _____(__NR_323), 
-    _____(__NR_mlockall), 
-    _____(__NR_munlockall), 
-//  _____(__NR_326), 
-    MACX_(__NR_issetugid, sys_issetugid), 
-    _____(__NR___pthread_kill), 
-    MACX_(__NR___pthread_sigmask, sys___pthread_sigmask), 
-    _____(__NR___sigwait), 
-    MACX_(__NR___disable_threadsignal, sys___disable_threadsignal), 
-    _____(__NR___pthread_markcancel), 
-    _____(__NR___pthread_canceled), 
-    MACX_(__NR___semwait_signal, sys___semwait_signal), 
-//  _____(__NR_utrace), 
-    _____(__NR_proc_info), 
-    MACXY(__NR_sendfile, sys_sendfile), 
-    MACXY(__NR_stat64, sys_stat64), 
-    MACXY(__NR_fstat64, sys_fstat64), 
-    MACXY(__NR_lstat64, sys_lstat64),    // 340
-    _____(__NR_stat64_extended), 
-    _____(__NR_lstat64_extended), 
-    _____(__NR_fstat64_extended), 
-    MACXY(__NR_getdirentries64, sys_getdirentries64), 
-    MACXY(__NR_statfs64, sys_statfs64), 
-    MACXY(__NR_fstatfs64, sys_fstatfs64), 
-    _____(__NR_getfsstat64), 
-    _____(__NR___pthread_chdir), 
-    _____(__NR___pthread_fchdir), 
-    _____(__NR_audit), 
-    MACXY(__NR_auditon, sys_auditon), 
-//  _____(__NR_352), 
-    _____(__NR_getauid), 
-    _____(__NR_setauid), 
-    _____(__NR_getaudit), 
-    _____(__NR_setaudit), 
-    _____(__NR_getaudit_addr), 
-    _____(__NR_setaudit_addr), 
-    _____(__NR_auditctl), 
-    MACXY(__NR_bsdthread_create, sys_bsdthread_create),   // 360
-    MACX_(__NR_bsdthread_terminate, sys_bsdthread_terminate), 
-    MACX_(__NR_kqueue, sys_kqueue), 
-    MACXY(__NR_kevent, sys_kevent), 
-    _____(__NR_lchown), 
-    _____(__NR_stack_snapshot), 
-    MACX_(__NR_bsdthread_register, sys_bsdthread_register), 
-    MACX_(__NR_workq_open, sys_workq_open), 
-    MACXY(__NR_workq_ops, sys_workq_ops), 
-//  _____(__NR_369),
-//  _____(__NR_370),
-//  _____(__NR_371), 
-//  _____(__NR_372),
-//  _____(__NR_373),
-//  _____(__NR_374),
-//  _____(__NR_375),
-//  _____(__NR_376),
-//  _____(__NR_377),
-//  _____(__NR_378),
-//  _____(__NR_379),
-    _____(__NR___mac_execve),   // 380
-    MACX_(__NR___mac_syscall, sys___mac_syscall),
-    _____(__NR___mac_get_file),
-    _____(__NR___mac_set_file),
-    _____(__NR___mac_get_link),
-    _____(__NR___mac_set_link),
-    _____(__NR___mac_get_proc),
-    _____(__NR___mac_set_proc),
-    _____(__NR___mac_get_fd),
-    _____(__NR___mac_set_fd),
-    _____(__NR___mac_get_pid),
-    _____(__NR___mac_get_lcid),
-    _____(__NR___mac_get_lctx),
-    _____(__NR___mac_set_lctx),
-    _____(__NR_setlcid),
-    _____(__NR_getlcid),
-    // GrP fixme need any special nocancel handling?
-    GENXY(__NR_read_nocancel, sys_read),
-    GENX_(__NR_write_nocancel, sys_write),
-    GENXY(__NR_open_nocancel, sys_open),
-    GENXY(__NR_close_nocancel, sys_close),
-    _____(__NR_wait4_nocancel),   // 400
-    MACXY(__NR_recvmsg_nocancel, sys_recvmsg),
-    MACX_(__NR_sendmsg_nocancel, sys_sendmsg),
-    MACXY(__NR_recvfrom_nocancel, sys_recvfrom),
-    MACXY(__NR_accept_nocancel, sys_accept),
-    GENX_(__NR_msync_nocancel, sys_msync),
-    MACXY(__NR_fcntl_nocancel, sys_fcntl),
-    GENX_(__NR_select_nocancel, sys_select),
-    GENX_(__NR_fsync_nocancel, sys_fsync),
-    MACX_(__NR_connect_nocancel, sys_connect),
-    _____(__NR_sigsuspend_nocancel),
-    GENXY(__NR_readv_nocancel, sys_readv),
-    GENX_(__NR_writev_nocancel, sys_writev),
-    MACX_(__NR_sendto_nocancel, sys_sendto),
-    GENXY(__NR_pread_nocancel, sys_pread64),
-    GENX_(__NR_pwrite_nocancel, sys_pwrite64),
-    _____(__NR_waitid_nocancel),
-    GENXY(__NR_poll_nocancel, sys_poll),
-    _____(__NR_msgsnd_nocancel),
-    _____(__NR_msgrcv_nocancel),
-    _____(__NR_sem_wait_nocancel),   // 420
-    _____(__NR_aio_suspend_nocancel),
-    _____(__NR___sigwait_nocancel),
-    MACX_(__NR___semwait_signal_nocancel, sys___semwait_signal), 
-    _____(__NR___mac_mount),
-    _____(__NR___mac_get_mount),
-    _____(__NR___mac_getfsstat),
-    _____(__NR_MAXSYSCALL)
+   _____(__NR_msgctl), 
+   _____(__NR_msgget), 
+   _____(__NR_msgsnd),   // 260
+   _____(__NR_msgrcv), 
+   _____(__NR_shmat), 
+   _____(__NR_shmctl), 
+   _____(__NR_shmdt), 
+   _____(__NR_shmget), 
+   MACXY(__NR_shm_open, sys_shm_open), 
+   _____(__NR_shm_unlink), 
+   _____(__NR_sem_open), 
+   _____(__NR_sem_close), 
+   _____(__NR_sem_unlink), 
+   _____(__NR_sem_wait), 
+   _____(__NR_sem_trywait), 
+   _____(__NR_sem_post), 
+   _____(__NR_sem_getvalue), 
+   _____(__NR_sem_init), 
+   _____(__NR_sem_destroy), 
+   _____(__NR_open_extended), 
+   _____(__NR_umask_extended), 
+   MACXY(__NR_stat_extended, sys_statx), 
+   _____(__NR_lstat_extended),   // 280
+   _____(__NR_fstat_extended), 
+   _____(__NR_chmod_extended), 
+   _____(__NR_fchmod_extended), 
+   _____(__NR_access_extended), 
+   MACX_(__NR_settid, sys_settid), 
+   _____(__NR_gettid), 
+   _____(__NR_setsgroups), 
+   _____(__NR_getsgroups), 
+   _____(__NR_setwgroups), 
+   _____(__NR_getwgroups), 
+   _____(__NR_mkfifo_extended), 
+   _____(__NR_mkdir_extended), 
+   _____(__NR_identitysvc), 
+   _____(__NR_shared_region_check_np), 
+   _____(__NR_shared_region_map_np), 
+// _____(__NR_load_shared_file), 
+// _____(__NR_reset_shared_file), 
+// _____(__NR_new_system_shared_regions), 
+// _____(__NR_shared_region_map_file_np), 
+// _____(__NR_shared_region_make_private_np),   // 300
+   _____(__NR___pthread_mutex_destroy), 
+   _____(__NR___pthread_mutex_init), 
+   _____(__NR___pthread_mutex_lock), 
+   _____(__NR___pthread_mutex_trylock), 
+   _____(__NR___pthread_mutex_unlock), 
+   _____(__NR___pthread_cond_init), 
+   _____(__NR___pthread_cond_destroy), 
+   _____(__NR___pthread_cond_broadcast), 
+   _____(__NR___pthread_cond_signal), 
+   _____(__NR_getsid), 
+   _____(__NR_settid_with_pid), 
+   _____(__NR___pthread_cond_timedwait), 
+   _____(__NR_aio_fsync), 
+   _____(__NR_aio_return), 
+   _____(__NR_aio_suspend), 
+   _____(__NR_aio_cancel), 
+   _____(__NR_aio_error), 
+   _____(__NR_aio_read), 
+   _____(__NR_aio_write), 
+   _____(__NR_lio_listio),   // 320
+   _____(__NR___pthread_cond_wait), 
+   _____(__NR_iopolicysys), 
+// _____(__NR_323), 
+   _____(__NR_mlockall), 
+   _____(__NR_munlockall), 
+// _____(__NR_326), 
+   MACX_(__NR_issetugid, sys_issetugid), 
+   _____(__NR___pthread_kill), 
+   MACX_(__NR___pthread_sigmask, sys___pthread_sigmask), 
+   _____(__NR___sigwait), 
+   MACX_(__NR___disable_threadsignal, sys___disable_threadsignal), 
+   _____(__NR___pthread_markcancel), 
+   _____(__NR___pthread_canceled), 
+   MACX_(__NR___semwait_signal, sys___semwait_signal), 
+// _____(__NR_utrace), 
+   _____(__NR_proc_info), 
+   MACXY(__NR_sendfile, sys_sendfile), 
+   MACXY(__NR_stat64, sys_stat64), 
+   MACXY(__NR_fstat64, sys_fstat64), 
+   MACXY(__NR_lstat64, sys_lstat64),    // 340
+   _____(__NR_stat64_extended), 
+   _____(__NR_lstat64_extended), 
+   _____(__NR_fstat64_extended), 
+   MACXY(__NR_getdirentries64, sys_getdirentries64), 
+   MACXY(__NR_statfs64, sys_statfs64), 
+   MACXY(__NR_fstatfs64, sys_fstatfs64), 
+   _____(__NR_getfsstat64), 
+   _____(__NR___pthread_chdir), 
+   _____(__NR___pthread_fchdir), 
+   _____(__NR_audit), 
+   MACXY(__NR_auditon, sys_auditon), 
+// _____(__NR_352), 
+   _____(__NR_getauid), 
+   _____(__NR_setauid), 
+   _____(__NR_getaudit), 
+   _____(__NR_setaudit), 
+   _____(__NR_getaudit_addr), 
+   _____(__NR_setaudit_addr), 
+   _____(__NR_auditctl), 
+   MACXY(__NR_bsdthread_create, sys_bsdthread_create),   // 360
+   MACX_(__NR_bsdthread_terminate, sys_bsdthread_terminate), 
+   MACX_(__NR_kqueue, sys_kqueue), 
+   MACXY(__NR_kevent, sys_kevent), 
+   _____(__NR_lchown), 
+   _____(__NR_stack_snapshot), 
+   MACX_(__NR_bsdthread_register, sys_bsdthread_register), 
+   MACX_(__NR_workq_open, sys_workq_open), 
+   MACXY(__NR_workq_ops, sys_workq_ops), 
+// _____(__NR_369),
+// _____(__NR_370),
+// _____(__NR_371), 
+// _____(__NR_372),
+// _____(__NR_373),
+// _____(__NR_374),
+// _____(__NR_375),
+// _____(__NR_376),
+// _____(__NR_377),
+// _____(__NR_378),
+// _____(__NR_379),
+   _____(__NR___mac_execve),   // 380
+   MACX_(__NR___mac_syscall, sys___mac_syscall),
+   _____(__NR___mac_get_file),
+   _____(__NR___mac_set_file),
+   _____(__NR___mac_get_link),
+   _____(__NR___mac_set_link),
+   _____(__NR___mac_get_proc),
+   _____(__NR___mac_set_proc),
+   _____(__NR___mac_get_fd),
+   _____(__NR___mac_set_fd),
+   _____(__NR___mac_get_pid),
+   _____(__NR___mac_get_lcid),
+   _____(__NR___mac_get_lctx),
+   _____(__NR___mac_set_lctx),
+   _____(__NR_setlcid),
+   _____(__NR_getlcid),
+   // GrP fixme need any special nocancel handling?
+   GENXY(__NR_read_nocancel, sys_read),
+   GENX_(__NR_write_nocancel, sys_write),
+   GENXY(__NR_open_nocancel, sys_open),
+   GENXY(__NR_close_nocancel, sys_close),
+   _____(__NR_wait4_nocancel),   // 400
+   MACXY(__NR_recvmsg_nocancel, sys_recvmsg),
+   MACX_(__NR_sendmsg_nocancel, sys_sendmsg),
+   MACXY(__NR_recvfrom_nocancel, sys_recvfrom),
+   MACXY(__NR_accept_nocancel, sys_accept),
+   GENX_(__NR_msync_nocancel, sys_msync),
+   MACXY(__NR_fcntl_nocancel, sys_fcntl),
+   GENX_(__NR_select_nocancel, sys_select),
+   GENX_(__NR_fsync_nocancel, sys_fsync),
+   MACX_(__NR_connect_nocancel, sys_connect),
+   _____(__NR_sigsuspend_nocancel),
+   GENXY(__NR_readv_nocancel, sys_readv),
+   GENX_(__NR_writev_nocancel, sys_writev),
+   MACX_(__NR_sendto_nocancel, sys_sendto),
+   GENXY(__NR_pread_nocancel, sys_pread64),
+   GENX_(__NR_pwrite_nocancel, sys_pwrite64),
+   _____(__NR_waitid_nocancel),
+   GENXY(__NR_poll_nocancel, sys_poll),
+   _____(__NR_msgsnd_nocancel),
+   _____(__NR_msgrcv_nocancel),
+   _____(__NR_sem_wait_nocancel),   // 420
+   _____(__NR_aio_suspend_nocancel),
+   _____(__NR___sigwait_nocancel),
+   MACX_(__NR___semwait_signal_nocancel, sys___semwait_signal), 
+   _____(__NR___mac_mount),
+   _____(__NR___mac_get_mount),
+   _____(__NR___mac_getfsstat),
+   _____(__NR_MAXSYSCALL)
 };
 
 
@@ -6771,122 +6768,122 @@ const SyscallTableEntry ML_(syscall_table)[] = {
 // Use ML_(mach_trap_table)[-mach_trap_number] .
 
 const SyscallTableEntry ML_(mach_trap_table)[] = {
-//  _____(__NR_0), 
-//  _____(__NR_1), 
-//  _____(__NR_2), 
-//  _____(__NR_3), 
-//  _____(__NR_4), 
-//  _____(__NR_5), 
-//  _____(__NR_6), 
-//  _____(__NR_7), 
-//  _____(__NR_8), 
-//  _____(__NR_9), 
-//  _____(__NR_10), 
-//  _____(__NR_11), 
-//  _____(__NR_12), 
-//  _____(__NR_13), 
-//  _____(__NR_14), 
-//  _____(__NR_15), 
-//  _____(__NR_16), 
-//  _____(__NR_17), 
-//  _____(__NR_18), 
-//  _____(__NR_19), 
-//  _____(__NR_20),   // -20
-//  _____(__NR_21), 
-//  _____(__NR_22), 
-//  _____(__NR_23), 
-//  _____(__NR_24), 
-//  _____(__NR_25), 
-    MACXY(__NR_mach_reply_port, mach_reply_port), 
-    MACXY(__NR_thread_self_trap, mach_thread_self), 
-    MACXY(__NR_task_self_trap, mach_task_self), 
-    MACXY(__NR_host_self_trap, mach_host_self), 
-//  _____(__NR_30), 
-    MACXY(__NR_mach_msg_trap, mach_msg), 
-    _____(__NR_mach_msg_overwrite_trap), 
-    MACX_(__NR_semaphore_signal_trap, semaphore_signal), 
-    MACX_(__NR_semaphore_signal_all_trap, semaphore_signal_all), 
-    MACX_(__NR_semaphore_signal_thread_trap, semaphore_signal_thread), 
-    MACX_(__NR_semaphore_wait_trap, semaphore_wait), 
-    MACX_(__NR_semaphore_wait_signal_trap, semaphore_wait_signal), 
-    MACX_(__NR_semaphore_timedwait_trap, semaphore_timedwait), 
-    MACX_(__NR_semaphore_timedwait_signal_trap, semaphore_timedwait_signal), 
-//  _____(__NR_40),    // -40
+// _____(__NR_0), 
+// _____(__NR_1), 
+// _____(__NR_2), 
+// _____(__NR_3), 
+// _____(__NR_4), 
+// _____(__NR_5), 
+// _____(__NR_6), 
+// _____(__NR_7), 
+// _____(__NR_8), 
+// _____(__NR_9), 
+// _____(__NR_10), 
+// _____(__NR_11), 
+// _____(__NR_12), 
+// _____(__NR_13), 
+// _____(__NR_14), 
+// _____(__NR_15), 
+// _____(__NR_16), 
+// _____(__NR_17), 
+// _____(__NR_18), 
+// _____(__NR_19), 
+// _____(__NR_20),   // -20
+// _____(__NR_21), 
+// _____(__NR_22), 
+// _____(__NR_23), 
+// _____(__NR_24), 
+// _____(__NR_25), 
+   MACXY(__NR_mach_reply_port, mach_reply_port), 
+   MACXY(__NR_thread_self_trap, mach_thread_self), 
+   MACXY(__NR_task_self_trap, mach_task_self), 
+   MACXY(__NR_host_self_trap, mach_host_self), 
+// _____(__NR_30), 
+   MACXY(__NR_mach_msg_trap, mach_msg), 
+   _____(__NR_mach_msg_overwrite_trap), 
+   MACX_(__NR_semaphore_signal_trap, semaphore_signal), 
+   MACX_(__NR_semaphore_signal_all_trap, semaphore_signal_all), 
+   MACX_(__NR_semaphore_signal_thread_trap, semaphore_signal_thread), 
+   MACX_(__NR_semaphore_wait_trap, semaphore_wait), 
+   MACX_(__NR_semaphore_wait_signal_trap, semaphore_wait_signal), 
+   MACX_(__NR_semaphore_timedwait_trap, semaphore_timedwait), 
+   MACX_(__NR_semaphore_timedwait_signal_trap, semaphore_timedwait_signal), 
+// _____(__NR_40),    // -40
 #if defined(VGA_x86)
-    _____(__NR_init_process), 
-//  _____(__NR_42), 
-    _____(__NR_map_fd), 
+   _____(__NR_init_process), 
+// _____(__NR_42), 
+   _____(__NR_map_fd), 
 #else
-//  _____(__NR_41), 
-//  _____(__NR_42), 
-//  _____(__NR_43), 
+// _____(__NR_41), 
+// _____(__NR_42), 
+// _____(__NR_43), 
 #endif
-    _____(__NR_task_name_for_pid), 
-    MACXY(__NR_task_for_pid, task_for_pid), 
-    MACXY(__NR_pid_for_task, pid_for_task), 
-//  _____(__NR_47), 
+   _____(__NR_task_name_for_pid), 
+   MACXY(__NR_task_for_pid, task_for_pid), 
+   MACXY(__NR_pid_for_task, pid_for_task), 
+// _____(__NR_47), 
 #if defined(VGA_x86)
-    _____(__NR_macx_swapon), 
-    _____(__NR_macx_swapoff), 
-//  _____(__NR_50), 
-    _____(__NR_macx_triggers), 
-    _____(__NR_macx_backing_store_suspend), 
-    _____(__NR_macx_backing_store_recovery), 
+   _____(__NR_macx_swapon), 
+   _____(__NR_macx_swapoff), 
+// _____(__NR_50), 
+   _____(__NR_macx_triggers), 
+   _____(__NR_macx_backing_store_suspend), 
+   _____(__NR_macx_backing_store_recovery), 
 #else
-//  _____(__NR_48), 
-//  _____(__NR_49), 
-//  _____(__NR_50), 
-//  _____(__NR_51), 
-//  _____(__NR_52), 
-//  _____(__NR_53), 
+// _____(__NR_48), 
+// _____(__NR_49), 
+// _____(__NR_50), 
+// _____(__NR_51), 
+// _____(__NR_52), 
+// _____(__NR_53), 
 #endif
-//  _____(__NR_54), 
-//  _____(__NR_55), 
-//  _____(__NR_56), 
-//  _____(__NR_57), 
-//  _____(__NR_58), 
-    MACX_(__NR_swtch_pri, swtch_pri), 
-    MACX_(__NR_swtch, swtch),   // -60
-    MACX_(__NR_syscall_thread_switch, syscall_thread_switch), 
-    _____(__NR_clock_sleep_trap), 
-//  _____(__NR_63), 
-//  _____(__NR_64), 
-//  _____(__NR_65), 
-//  _____(__NR_66), 
-//  _____(__NR_67), 
-//  _____(__NR_68), 
-//  _____(__NR_69), 
-//  _____(__NR_70), 
-//  _____(__NR_71), 
-//  _____(__NR_72), 
-//  _____(__NR_73), 
-//  _____(__NR_74), 
-//  _____(__NR_75), 
-//  _____(__NR_76), 
-//  _____(__NR_77), 
-//  _____(__NR_78), 
-//  _____(__NR_79), 
-//  _____(__NR_80),   // -80
-//  _____(__NR_81), 
-//  _____(__NR_82), 
-//  _____(__NR_83), 
-//  _____(__NR_84), 
-//  _____(__NR_85), 
-//  _____(__NR_86), 
-//  _____(__NR_87), 
-//  _____(__NR_88), 
-    MACXY(__NR_mach_timebase_info, mach_timebase_info), 
-    MACX_(__NR_mach_wait_until, mach_wait_until), 
-    MACXY(__NR_mk_timer_create, mk_timer_create), 
-    MACXY(__NR_mk_timer_destroy, mk_timer_destroy), 
-    MACX_(__NR_mk_timer_arm, mk_timer_arm), 
-    MACXY(__NR_mk_timer_cancel, mk_timer_cancel), 
-//  _____(__NR_95), 
-//  _____(__NR_96), 
-//  _____(__NR_97), 
-//  _____(__NR_98), 
-//  _____(__NR_99), 
-    MACXY(__NR_iokit_user_client_trap, iokit_user_client_trap), // -100
+// _____(__NR_54), 
+// _____(__NR_55), 
+// _____(__NR_56), 
+// _____(__NR_57), 
+// _____(__NR_58), 
+   MACX_(__NR_swtch_pri, swtch_pri), 
+   MACX_(__NR_swtch, swtch),   // -60
+   MACX_(__NR_syscall_thread_switch, syscall_thread_switch), 
+   _____(__NR_clock_sleep_trap), 
+// _____(__NR_63), 
+// _____(__NR_64), 
+// _____(__NR_65), 
+// _____(__NR_66), 
+// _____(__NR_67), 
+// _____(__NR_68), 
+// _____(__NR_69), 
+// _____(__NR_70), 
+// _____(__NR_71), 
+// _____(__NR_72), 
+// _____(__NR_73), 
+// _____(__NR_74), 
+// _____(__NR_75), 
+// _____(__NR_76), 
+// _____(__NR_77), 
+// _____(__NR_78), 
+// _____(__NR_79), 
+// _____(__NR_80),   // -80
+// _____(__NR_81), 
+// _____(__NR_82), 
+// _____(__NR_83), 
+// _____(__NR_84), 
+// _____(__NR_85), 
+// _____(__NR_86), 
+// _____(__NR_87), 
+// _____(__NR_88), 
+   MACXY(__NR_mach_timebase_info, mach_timebase_info), 
+   MACX_(__NR_mach_wait_until, mach_wait_until), 
+   MACXY(__NR_mk_timer_create, mk_timer_create), 
+   MACXY(__NR_mk_timer_destroy, mk_timer_destroy), 
+   MACX_(__NR_mk_timer_arm, mk_timer_arm), 
+   MACXY(__NR_mk_timer_cancel, mk_timer_cancel), 
+// _____(__NR_95), 
+// _____(__NR_96), 
+// _____(__NR_97), 
+// _____(__NR_98), 
+// _____(__NR_99), 
+   MACXY(__NR_iokit_user_client_trap, iokit_user_client_trap), // -100
 };
 
 
@@ -6896,11 +6893,11 @@ const SyscallTableEntry ML_(mach_trap_table)[] = {
 
 #if defined(VGA_x86)
 const SyscallTableEntry ML_(mdep_trap_table)[] = {
-    MACX_(__NR_pthread_set_self, pthread_set_self), 
+   MACX_(__NR_pthread_set_self, pthread_set_self), 
 };
 #elif defined(VGA_amd64)
 const SyscallTableEntry ML_(mdep_trap_table)[] = {
-    MACX_(__NR_pthread_set_self, pthread_set_self), 
+   MACX_(__NR_pthread_set_self, pthread_set_self), 
 };
 #else
 #error unknown architecture

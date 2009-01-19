@@ -3184,7 +3184,7 @@ static void common_post_getrlimit(ThreadId tid, UWord a1, UWord a2)
    case VKI_RLIMIT_STACK:
       *((struct vki_rlimit *)a2) = VG_(client_rlimit_stack);
       break;
-    }
+   }
 }
 
 PRE(sys_old_getrlimit)

@@ -278,24 +278,24 @@ void VG_(release_BigLock)(ThreadId tid, ThreadStatus sleepstate, HChar* who)
 
 void VG_(lock)(void)
 {
-    ML_(sema_down)(&the_BigLock);
-    if (VG_(clo_trace_sched)) {
-        print_sched_event(0, " acquired lock (DEBUGGER)");
-    }
+   ML_(sema_down)(&the_BigLock);
+   if (VG_(clo_trace_sched)) {
+      print_sched_event(0, " acquired lock (DEBUGGER)");
+   }
 }
 
 void VG_(unlock)(void)
 {
-    if (VG_(clo_trace_sched)) {
-        print_sched_event(0, " releasing lock (DEBUGGER)");
-    }
-    ML_(sema_up)(&the_BigLock);
+   if (VG_(clo_trace_sched)) {
+      print_sched_event(0, " releasing lock (DEBUGGER)");
+   }
+   ML_(sema_up)(&the_BigLock);
 }
 
 void VG_(unlock_lwpid)(Int lwpid)
 {
-    while (! ML_(sema_handoff)(&the_BigLock, lwpid)) 
-        ;
+   while (! ML_(sema_handoff)(&the_BigLock, lwpid)) 
+      ;
 }
 
 /* Clear out the ThreadState and release the semaphore. Leaves the

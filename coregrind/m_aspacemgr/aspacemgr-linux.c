@@ -3312,10 +3312,10 @@ static void parse_procselfmaps (
 
 static unsigned int mach2vki(unsigned int vm_prot)
 {
-        return
-            ((vm_prot & VM_PROT_READ)    ? VKI_PROT_READ    : 0) |
-            ((vm_prot & VM_PROT_WRITE)   ? VKI_PROT_WRITE   : 0) |
-            ((vm_prot & VM_PROT_EXECUTE) ? VKI_PROT_EXEC    : 0) ;
+   return
+      ((vm_prot & VM_PROT_READ)    ? VKI_PROT_READ    : 0) |
+      ((vm_prot & VM_PROT_WRITE)   ? VKI_PROT_WRITE   : 0) |
+      ((vm_prot & VM_PROT_EXECUTE) ? VKI_PROT_EXEC    : 0) ;
 }
 
 static void 
@@ -3324,46 +3324,46 @@ parse_procselfmaps (
                                             ULong dev, ULong ino, Off64T foff,
                                             const UChar* filename ),
                     void (*record_gap)( Addr addr, SizeT len )
-                    )
+                   )
 {
-    vm_address_t iter;
-    unsigned int depth;
-    vm_address_t last;
+   vm_address_t iter;
+   unsigned int depth;
+   vm_address_t last;
 
-    iter = 0;
-    depth = 0;
-    last = 0;
-    while (1) {
-        mach_vm_address_t addr = iter;
-        mach_vm_size_t size;
-        vm_region_submap_short_info_data_64_t info;
-        kern_return_t kr;
+   iter = 0;
+   depth = 0;
+   last = 0;
+   while (1) {
+      mach_vm_address_t addr = iter;
+      mach_vm_size_t size;
+      vm_region_submap_short_info_data_64_t info;
+      kern_return_t kr;
 
-        while (1) {
-            mach_msg_type_number_t info_count = VM_REGION_SUBMAP_SHORT_INFO_COUNT_64;
-            kr = mach_vm_region_recurse(mach_task_self(), &addr, &size, &depth,
-                                        (vm_region_info_t)&info, &info_count);
-            if (kr) return;
-            if (info.is_submap) {
-                depth++;
-                continue;
-            }
-            break;
-        }
-        iter = addr + size;
+      while (1) {
+         mach_msg_type_number_t info_count = VM_REGION_SUBMAP_SHORT_INFO_COUNT_64;
+         kr = mach_vm_region_recurse(mach_task_self(), &addr, &size, &depth,
+                                     (vm_region_info_t)&info, &info_count);
+         if (kr) return;
+         if (info.is_submap) {
+            depth++;
+            continue;
+         }
+         break;
+      }
+      iter = addr + size;
 
-        if (addr > last  &&  record_gap) {
-            (*record_gap)(last, addr - last);
-        }
-        if (record_mapping) {
-            (*record_mapping)(addr, size, mach2vki(info.protection),
-                              0, 0, info.offset, NULL);
-        }
-        last = addr + size;
-    }
+      if (addr > last  &&  record_gap) {
+         (*record_gap)(last, addr - last);
+      }
+      if (record_mapping) {
+         (*record_mapping)(addr, size, mach2vki(info.protection),
+                           0, 0, info.offset, NULL);
+      }
+      last = addr + size;
+   }
 
-    if ((Addr)-1 > last  &&  record_gap)
-        (*record_gap)(last, (Addr)-1 - last);
+   if ((Addr)-1 > last  &&  record_gap)
+      (*record_gap)(last, (Addr)-1 - last);
 }
 
 
@@ -3453,16 +3453,16 @@ static void remove_mapping_callback(Addr addr, SizeT len)
    /* NSegments iLo .. iHi inclusive should agree with the presented
       data. */
    for (i = iLo; i <= iHi; i++) {
-       if (nsegments[i].kind != SkFree  &&  nsegments[i].kind != SkResvn) {
-           // V has a mapping, kernel doesn't
-           if (VG_(clo_trace_syscalls)) 
-               VG_(debugLog)(0,"aspacem","\nremoved region 0x%010llx..0x%010llx at %s:%d (%s)", 
-                             (ULong)nsegments[i].start, (ULong)(nsegments[i].end+1), 
-                             sync_mapping_where, sync_mapping_num, sync_mapping_when);
-           ML_(notify_aspacem_and_tool_of_munmap)
-               (nsegments[i].start, 1+(nsegments[i].end-nsegments[i].start));
-           return;
-       }
+      if (nsegments[i].kind != SkFree  &&  nsegments[i].kind != SkResvn) {
+         // V has a mapping, kernel doesn't
+         if (VG_(clo_trace_syscalls)) 
+            VG_(debugLog)(0,"aspacem","\nremoved region 0x%010llx..0x%010llx at %s:%d (%s)", 
+                          (ULong)nsegments[i].start, (ULong)(nsegments[i].end+1), 
+                          sync_mapping_where, sync_mapping_num, sync_mapping_when);
+         ML_(notify_aspacem_and_tool_of_munmap)
+            (nsegments[i].start, 1+(nsegments[i].end-nsegments[i].start));
+         return;
+      }
    }
 }
 

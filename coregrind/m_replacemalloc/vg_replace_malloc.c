@@ -797,11 +797,11 @@ DEFAULT_ZONE(m_libc_soname, malloc_default_zone);
 // GrP fixme bypass libc's use of zone->introspect->check
 #define ZONE_CHECK(soname, fnname) \
                                    \
-    int VG_REPLACE_FUNCTION_ZU(soname, fnname)(void* zone); \
-    int VG_REPLACE_FUNCTION_ZU(soname, fnname)(void* zone)  \
-    { \
-        return 1; \
-    }
+   int VG_REPLACE_FUNCTION_ZU(soname, fnname)(void* zone); \
+   int VG_REPLACE_FUNCTION_ZU(soname, fnname)(void* zone)  \
+   { \
+      return 1; \
+   }
 
 ZONE_CHECK(m_libc_soname, malloc_zone_check);    
 

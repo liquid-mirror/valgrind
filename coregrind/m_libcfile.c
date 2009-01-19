@@ -84,17 +84,17 @@ Bool VG_(resolve_filename) ( Int fd, HChar* buf, Int n_buf )
    // GrP Leopard only, I think
    HChar tmp[VKI_MAXPATHLEN+1];
    if (0 == VG_(fcntl)(fd, VKI_F_GETPATH, (UWord)tmp)) {
-       if (n_buf > 0) {
-           VG_(strncpy)( buf, tmp, n_buf < sizeof(tmp) ? n_buf : sizeof(tmp) );
-           buf[n_buf-1] = 0;
-       }
-       if (tmp[0] == '/') return True;
+      if (n_buf > 0) {
+         VG_(strncpy)( buf, tmp, n_buf < sizeof(tmp) ? n_buf : sizeof(tmp) );
+         buf[n_buf-1] = 0;
+      }
+      if (tmp[0] == '/') return True;
    }
 #else
 #  error need fd-to-filename for this OS
 #endif
 
-      return False;
+   return False;
 }
 
 SysRes VG_(open) ( const Char* pathname, Int flags, Int mode )
@@ -1074,78 +1074,78 @@ Int VG_(setsockopt) ( Int sd, Int level, Int optname, const void *optval,
 
 Char *VG_(basename)(const Char *path)
 {
-    static Char buf[VKI_PATH_MAX];
-    
-    const Char *p, *end;
+   static Char buf[VKI_PATH_MAX];
+   
+   const Char *p, *end;
 
-    if (path == NULL  ||  
-        0 == VG_(strcmp)(path, ""))
-    {
-        return ".";
-    }
+   if (path == NULL  ||  
+       0 == VG_(strcmp)(path, ""))
+   {
+      return ".";
+   }
 
-    p = path + VG_(strlen)(path);
-    while (p > path  &&  *p == '/') {
-        // skip all trailing '/'
-        p--;
-    }
+   p = path + VG_(strlen)(path);
+   while (p > path  &&  *p == '/') {
+      // skip all trailing '/'
+      p--;
+   }
 
-    if (p == path  &&  *p == '/') return "/"; // all slashes
+   if (p == path  &&  *p == '/') return "/"; // all slashes
 
-    end = p;
+   end = p;
 
-    while (p > path  &&  *p != '/') {
-        // now skip non '/'
-        p--;
-    }
+   while (p > path  &&  *p != '/') {
+      // now skip non '/'
+      p--;
+   }
 
-    if (*p == '/') p++;
+   if (*p == '/') p++;
 
-    VG_(strncpy)(buf, p, end-p+1);
-    buf[end-p+1] = '\0';
+   VG_(strncpy)(buf, p, end-p+1);
+   buf[end-p+1] = '\0';
 
-    return buf;
+   return buf;
 }
 
 
 Char *VG_(dirname)(const Char *path)
 {
-    static Char buf[VKI_PATH_MAX];
+   static Char buf[VKI_PATH_MAX];
     
-    const Char *p;
+   const Char *p;
 
-    if (path == NULL  ||  
-        0 == VG_(strcmp)(path, "")  ||  
-        0 == VG_(strcmp)(path, "/"))
-    {
-        return ".";
-    }
+   if (path == NULL  ||  
+       0 == VG_(strcmp)(path, "")  ||  
+       0 == VG_(strcmp)(path, "/"))
+   {
+      return ".";
+   }
 
-    p = path + VG_(strlen)(path);
-    while (p > path  &&  *p == '/') {
-        // skip all trailing '/'
-        p--;
-    }
+   p = path + VG_(strlen)(path);
+   while (p > path  &&  *p == '/') {
+      // skip all trailing '/'
+      p--;
+   }
 
-    while (p > path  &&  *p != '/') {
-        // now skip non '/'
-        p--;
-    }
+   while (p > path  &&  *p != '/') {
+      // now skip non '/'
+      p--;
+   }
 
-    if (p == path) {
-        if (*p == '/') return "/"; // all slashes
-        else return "."; // no slashes
-    } 
+   if (p == path) {
+      if (*p == '/') return "/"; // all slashes
+      else return "."; // no slashes
+   } 
 
-    while (p > path  &&  *p == '/') {
-        // skip '/' again
-        p--;
-    }
+   while (p > path  &&  *p == '/') {
+      // skip '/' again
+      p--;
+   }
 
-    VG_(strncpy)(buf, path, p-path+1);
-    buf[p-path+1] = '\0';
+   VG_(strncpy)(buf, path, p-path+1);
+   buf[p-path+1] = '\0';
 
-    return buf;
+   return buf;
 }
 
 

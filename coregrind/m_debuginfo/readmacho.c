@@ -78,9 +78,9 @@
 
 Bool ML_(is_macho_object_file)( const void *buf, SizeT size )
 {
-    // GrP fixme Mach-O headers might not be in this mapped data
-    // Assume it's Mach-O and let ML_(read_macho_debug_info) sort it out.
-    return True;
+   // GrP fixme Mach-O headers might not be in this mapped data
+   // Assume it's Mach-O and let ML_(read_macho_debug_info) sort it out.
+   return True;
 }
 
 
@@ -131,9 +131,9 @@ void read_symtab( struct _DebugInfo* di,
 
 static Bool file_exists_p(const Char *path)
 {
-    struct vg_stat sbuf;
-    SysRes res = VG_(stat)(path, &sbuf);
-    return res.isError ? False : True;
+   struct vg_stat sbuf;
+   SysRes res = VG_(stat)(path, &sbuf);
+   return res.isError ? False : True;
 }
 
 
@@ -142,86 +142,86 @@ static Bool file_exists_p(const Char *path)
 static Char *
 find_separate_debug_file (const Char *executable_name)
 {
-    Char *basename_str;
-    Char *dot_ptr;
-    Char *slash_ptr;
-    Char *dsymfile;
+   Char *basename_str;
+   Char *dot_ptr;
+   Char *slash_ptr;
+   Char *dsymfile;
     
-    /* Make sure the object file name itself doesn't contain ".dSYM" in it or we
-       will end up with an infinite loop where after we add a dSYM symbol file,
-       it will then enter this function asking if there is a debug file for the
-       dSYM file itself.  */
-    if (VG_(strcasestr) (executable_name, ".dSYM") == NULL)
-    {
+   /* Make sure the object file name itself doesn't contain ".dSYM" in it or we
+      will end up with an infinite loop where after we add a dSYM symbol file,
+      it will then enter this function asking if there is a debug file for the
+      dSYM file itself.  */
+   if (VG_(strcasestr) (executable_name, ".dSYM") == NULL)
+   {
         /* Check for the existence of a .dSYM file for a given executable.  */
-        basename_str = VG_(basename) (executable_name);
-        dsymfile = VG_(malloc)("di.readmacho.dsymfile", 
-                               VG_(strlen) (executable_name)
-                               + VG_(strlen) (APPLE_DSYM_EXT_AND_SUBDIRECTORY)
-                               + VG_(strlen) (basename_str)
-                               + 1);
+      basename_str = VG_(basename) (executable_name);
+      dsymfile = VG_(malloc)("di.readmacho.dsymfile", 
+                             VG_(strlen) (executable_name)
+                             + VG_(strlen) (APPLE_DSYM_EXT_AND_SUBDIRECTORY)
+                             + VG_(strlen) (basename_str)
+                             + 1);
         
-        /* First try for the dSYM in the same directory as the original file.  */
-        VG_(strcpy) (dsymfile, executable_name);
-        VG_(strcat) (dsymfile, APPLE_DSYM_EXT_AND_SUBDIRECTORY);
-        VG_(strcat) (dsymfile, basename_str);
+      /* First try for the dSYM in the same directory as the original file.  */
+      VG_(strcpy) (dsymfile, executable_name);
+      VG_(strcat) (dsymfile, APPLE_DSYM_EXT_AND_SUBDIRECTORY);
+      VG_(strcat) (dsymfile, basename_str);
         
-        if (file_exists_p (dsymfile))
-            return dsymfile;
+      if (file_exists_p (dsymfile))
+         return dsymfile;
         
-        /* Now search for any parent directory that has a '.' in it so we can find
-           Mac OS X applications, bundles, plugins, and any other kinds of files. 
-           Mac OS X application bundles wil have their program in
-           "/some/path/MyApp.app/Contents/MacOS/MyApp" (or replace ".app" with
-           ".bundle" or ".plugin" for other types of bundles).  So we look for any
-           prior '.' character and try appending the apple dSYM extension and
-           subdirectory and see if we find an existing dSYM file (in the above
-           MyApp example the dSYM would be at either:
-           "/some/path/MyApp.app.dSYM/Contents/Resources/DWARF/MyApp" or
-           "/some/path/MyApp.dSYM/Contents/Resources/DWARF/MyApp".  */
-        VG_(strcpy) (dsymfile, VG_(dirname) (executable_name));
-        while ((dot_ptr = VG_(strrchr) (dsymfile, '.')))
-        {
-            /* Find the directory delimiter that follows the '.' character since
-               we now look for a .dSYM that follows any bundle extension.  */
-            slash_ptr = VG_(strchr) (dot_ptr, '/');
-            if (slash_ptr)
-            {
-                /* NULL terminate the string at the '/' character and append
-                   the path down to the dSYM file.  */
-                *slash_ptr = '\0';
-                VG_(strcat) (slash_ptr, APPLE_DSYM_EXT_AND_SUBDIRECTORY);
-                VG_(strcat) (slash_ptr, basename_str);
-                if (file_exists_p (dsymfile))
-                    return dsymfile;
-            }
-            
-            /* NULL terminate the string at the '.' character and append
-               the path down to the dSYM file.  */
-            *dot_ptr = '\0';
-            VG_(strcat) (dot_ptr, APPLE_DSYM_EXT_AND_SUBDIRECTORY);
-            VG_(strcat) (dot_ptr, basename_str);
-            if (file_exists_p (dsymfile))
-                return dsymfile;
-            
-            /* NULL terminate the string at the '.' locatated by the strrchr()
-               function again.  */
-            *dot_ptr = '\0';
-            
-            /* We found a previous extension '.' character and did not find a
-               dSYM file so now find previous directory delimiter so we don't
-               try multiple times on a file name that may have a version number
-               in it such as "/some/path/MyApp.6.0.4.app".  */
-            slash_ptr = VG_(strrchr) (dsymfile, '/');
-            if (!slash_ptr)
-                break;
-            /* NULL terminate the string at the previous directory character
-               and search again.  */
+      /* Now search for any parent directory that has a '.' in it so we can find
+         Mac OS X applications, bundles, plugins, and any other kinds of files. 
+         Mac OS X application bundles wil have their program in
+         "/some/path/MyApp.app/Contents/MacOS/MyApp" (or replace ".app" with
+         ".bundle" or ".plugin" for other types of bundles).  So we look for any
+         prior '.' character and try appending the apple dSYM extension and
+         subdirectory and see if we find an existing dSYM file (in the above
+         MyApp example the dSYM would be at either:
+         "/some/path/MyApp.app.dSYM/Contents/Resources/DWARF/MyApp" or
+         "/some/path/MyApp.dSYM/Contents/Resources/DWARF/MyApp".  */
+      VG_(strcpy) (dsymfile, VG_(dirname) (executable_name));
+      while ((dot_ptr = VG_(strrchr) (dsymfile, '.')))
+      {
+         /* Find the directory delimiter that follows the '.' character since
+            we now look for a .dSYM that follows any bundle extension.  */
+         slash_ptr = VG_(strchr) (dot_ptr, '/');
+         if (slash_ptr)
+         {
+             /* NULL terminate the string at the '/' character and append
+                the path down to the dSYM file.  */
             *slash_ptr = '\0';
-        }
-    }
+            VG_(strcat) (slash_ptr, APPLE_DSYM_EXT_AND_SUBDIRECTORY);
+            VG_(strcat) (slash_ptr, basename_str);
+            if (file_exists_p (dsymfile))
+               return dsymfile;
+         }
+         
+         /* NULL terminate the string at the '.' character and append
+            the path down to the dSYM file.  */
+         *dot_ptr = '\0';
+         VG_(strcat) (dot_ptr, APPLE_DSYM_EXT_AND_SUBDIRECTORY);
+         VG_(strcat) (dot_ptr, basename_str);
+         if (file_exists_p (dsymfile))
+            return dsymfile;
+         
+         /* NULL terminate the string at the '.' locatated by the strrchr()
+            function again.  */
+         *dot_ptr = '\0';
+         
+         /* We found a previous extension '.' character and did not find a
+            dSYM file so now find previous directory delimiter so we don't
+            try multiple times on a file name that may have a version number
+            in it such as "/some/path/MyApp.6.0.4.app".  */
+         slash_ptr = VG_(strrchr) (dsymfile, '/');
+         if (!slash_ptr)
+            break;
+         /* NULL terminate the string at the previous directory character
+            and search again.  */
+         *slash_ptr = '\0';
+      }
+   }
 
-    return NULL;
+   return NULL;
 }
 
 
@@ -573,47 +573,47 @@ Bool ML_(read_macho_debug_info)( struct _DebugInfo* di )
    */
 
    if (ob_oimage  &&  symcmd  &&  dysymcmd) {
-       /* Read nlist symbol table and STABS debug info */
-       struct NLIST *syms;
-       UChar *strs;
-       
-       if (ob_n_oimage < symcmd->stroff + symcmd->strsize  ||  
-           ob_n_oimage < symcmd->symoff + symcmd->nsyms*sizeof(struct NLIST))
-       {
-           ML_(symerr)(NULL, False, "Invalid Mach-O file (5 too small).");
-           goto bad_nlist;
-       }   
-       if (dysymcmd->ilocalsym + dysymcmd->nlocalsym > symcmd->nsyms  ||  
-           dysymcmd->iextdefsym + dysymcmd->nextdefsym > symcmd->nsyms)
-       {
-           ML_(symerr)(NULL, False, "Invalid Mach-O file (bad symbol table).");
-           goto bad_nlist;
-       }
-       
-       syms = (struct NLIST *)(ob_oimage + symcmd->symoff);
-       strs = (UChar *)(ob_oimage + symcmd->stroff);
-       
-       if (VG_(clo_verbosity) > 1)
-           VG_(message)(Vg_DebugMsg, "Reading nlist symbols and STABS debuginfo for %s (%p) (%d %d)",
-                        di->filename, di->text_avma, 
-                        dysymcmd->nextdefsym, dysymcmd->nlocalsym );
-       // extern symbols
-       read_symtab(di, 
-                   syms + dysymcmd->iextdefsym, dysymcmd->nextdefsym, 
-                   strs, symcmd->strsize);
-       // static and private_extern symbols
-       read_symtab(di, 
-                   syms + dysymcmd->ilocalsym, dysymcmd->nlocalsym, 
-                   strs, symcmd->strsize);
-       if (!got_dwarf) {
-           // debug info
-           ML_(read_debuginfo_stabs) ( di, di->text_bias, 
-                                       (UChar *)syms, 
-                                       symcmd->nsyms * sizeof(struct NLIST), 
-                                       strs, symcmd->strsize);
-       }
-       
-       got_nlist = True;
+      /* Read nlist symbol table and STABS debug info */
+      struct NLIST *syms;
+      UChar *strs;
+      
+      if (ob_n_oimage < symcmd->stroff + symcmd->strsize  ||  
+          ob_n_oimage < symcmd->symoff + symcmd->nsyms*sizeof(struct NLIST))
+      {
+         ML_(symerr)(NULL, False, "Invalid Mach-O file (5 too small).");
+         goto bad_nlist;
+      }   
+      if (dysymcmd->ilocalsym + dysymcmd->nlocalsym > symcmd->nsyms  ||  
+          dysymcmd->iextdefsym + dysymcmd->nextdefsym > symcmd->nsyms)
+      {
+         ML_(symerr)(NULL, False, "Invalid Mach-O file (bad symbol table).");
+         goto bad_nlist;
+      }
+      
+      syms = (struct NLIST *)(ob_oimage + symcmd->symoff);
+      strs = (UChar *)(ob_oimage + symcmd->stroff);
+      
+      if (VG_(clo_verbosity) > 1)
+         VG_(message)(Vg_DebugMsg, "Reading nlist symbols and STABS debuginfo for %s (%p) (%d %d)",
+                      di->filename, di->text_avma, 
+                      dysymcmd->nextdefsym, dysymcmd->nlocalsym );
+      // extern symbols
+      read_symtab(di, 
+                  syms + dysymcmd->iextdefsym, dysymcmd->nextdefsym, 
+                  strs, symcmd->strsize);
+      // static and private_extern symbols
+      read_symtab(di, 
+                  syms + dysymcmd->ilocalsym, dysymcmd->nlocalsym, 
+                  strs, symcmd->strsize);
+      if (!got_dwarf) {
+         // debug info
+         ML_(read_debuginfo_stabs) ( di, di->text_bias, 
+                                     (UChar *)syms, 
+                                     symcmd->nsyms * sizeof(struct NLIST), 
+                                     strs, symcmd->strsize);
+      }
+      
+      got_nlist = True;
    }
    
  bad_nlist: 

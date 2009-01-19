@@ -5070,40 +5070,40 @@ static Bool mc_handle_client_request ( ThreadId tid, UWord* arg, UWord* ret )
 // fixme should be qXfer command (mac os x gdb doesn't have qXfer)
 static Bool handle_defined_command(Int sock, const Char *cmd)
 {
-    Long addr, len;
-    Char *vbits;
-    Char *outbuf;
-    Long i;
+   Long addr, len;
+   Char *vbits;
+   Char *outbuf;
+   Long i;
 
-    addr = VG_(atoll16)(cmd);
-    cmd = VG_(strchr)(cmd, ',');
-    if (!cmd) return False;
+   addr = VG_(atoll16)(cmd);
+   cmd = VG_(strchr)(cmd, ',');
+   if (!cmd) return False;
 
-    len = VG_(atoll16)(cmd+1);
-    if (len > 65536) len = 65536;  // sanity
+   len = VG_(atoll16)(cmd+1);
+   if (len > 65536) len = 65536;  // sanity
 
-    vbits = VG_(malloc)("mc.gdb.vbits", len);
-    outbuf = VG_(malloc)("mc.gdb.outbuf", 2*len+1);
+   vbits = VG_(malloc)("mc.gdb.vbits", len);
+   outbuf = VG_(malloc)("mc.gdb.outbuf", 2*len+1);
 
-    tl_assert(V_BIT_DEFINED == 0);
-    for (i = 0; i < len; i++) {
-        UChar v;
-        if (get_vbits8(addr+i, &v)) {
-            // Invert returned bits: uninitialized=0, initialized=1
-            vbits[i] = ~v;
-        } else {
-            // Report unaddressable memory as undefined (unlike get_vbits8)
-            vbits[i] = 0;
-        }
-    }
+   tl_assert(V_BIT_DEFINED == 0);
+   for (i = 0; i < len; i++) {
+      UChar v;
+      if (get_vbits8(addr+i, &v)) {
+         // Invert returned bits: uninitialized=0, initialized=1
+         vbits[i] = ~v;
+      } else {
+         // Report unaddressable memory as undefined (unlike get_vbits8)
+         vbits[i] = 0;
+      }
+   }
 
-    VG_(debugstub_tohex)(outbuf, vbits, len);
-    VG_(free)(vbits);
+   VG_(debugstub_tohex)(outbuf, vbits, len);
+   VG_(free)(vbits);
 
-    VG_(debugstub_write_reply)(sock, outbuf);
-    VG_(free)(outbuf);
+   VG_(debugstub_write_reply)(sock, outbuf);
+   VG_(free)(outbuf);
 
-    return True;
+   return True;
 }
 
 
@@ -5112,51 +5112,51 @@ static Bool handle_defined_command(Int sock, const Char *cmd)
 // fixme should be qXfer command (mac os x gdb doesn't have qXfer)
 static Bool handle_register_defined_command(Int sock, const Char *cmd)
 {
-    Char vbits[16];
-    Char outbuf[16*2+1];
-    Long i;
-    Int size, regnum;
+   Char vbits[16];
+   Char outbuf[16*2+1];
+   Long i;
+   Int size, regnum;
 
-    regnum = VG_(atoll16)(cmd);
-    
-    size = VG_(reg_for_regnum)(regnum, vbits, 1);  // GrP fixme shadow1 or 2?
-    if (size < 0) {
-        VG_(debugstub_write_reply)(sock, "x");
-        return True;
-    }
+   regnum = VG_(atoll16)(cmd);
+   
+   size = VG_(reg_for_regnum)(regnum, vbits, 1);  // GrP fixme shadow1 or 2?
+   if (size < 0) {
+      VG_(debugstub_write_reply)(sock, "x");
+      return True;
+   }
 
-    // Invert returned bits: uninitialized=0, initialized=1
-    tl_assert(V_BIT_DEFINED == 0);
-    for (i = 0; i < size; i++) {
-        vbits[i] = ~vbits[i];
-    }
+   // Invert returned bits: uninitialized=0, initialized=1
+   tl_assert(V_BIT_DEFINED == 0);
+   for (i = 0; i < size; i++) {
+      vbits[i] = ~vbits[i];
+   }
 
-    VG_(debugstub_tohex)(outbuf, vbits, size);
-    VG_(debugstub_write_reply)(sock, outbuf);
+   VG_(debugstub_tohex)(outbuf, vbits, size);
+   VG_(debugstub_write_reply)(sock, outbuf);
 
-    return True;
+   return True;
 }
 
 static Bool mc_handle_debugger_query(Int sock, char *cmd)
 {
-    Bool handled = True;
+   Bool handled = True;
 
-    if (0 == VG_(strncmp)(cmd, "defined:", 8)) {
-        handled = handle_defined_command(sock, cmd+8);
-    }
-    else if (0 == VG_(strncmp)(cmd, "register-defined:", 17)) {
-        handled = handle_register_defined_command(sock, cmd+17);
-    }
-    else {
-        handled = False;
-    }
+   if (0 == VG_(strncmp)(cmd, "defined:", 8)) {
+      handled = handle_defined_command(sock, cmd+8);
+   }
+   else if (0 == VG_(strncmp)(cmd, "register-defined:", 17)) {
+      handled = handle_register_defined_command(sock, cmd+17);
+   }
+   else {
+      handled = False;
+   }
 
-    return handled;
+   return handled;
 }
 
 static Bool mc_handle_debugger_action(Int sock, char *cmd)
 {
-    return False;
+   return False;
 }
 
 
@@ -5876,25 +5876,25 @@ VG_DETERMINE_INTERFACE_VERSION(mc_pre_clo_init)
 // GrP for debugging
 void mc_print_word(Addr a)
 {
-    UChar abit[4] = {0,0,0,0};
-    UChar vbyte[4] = {0,0,0,0};
-    abit[0] = get_vbits8(a+0, vbyte+0);
-    abit[1] = get_vbits8(a+1, vbyte+1);
-    abit[2] = get_vbits8(a+2, vbyte+2);
-    abit[3] = get_vbits8(a+3, vbyte+3);
-    tl_assert(V_BIT_DEFINED == 0);
-    VG_(printf)("%p: a %d%d%d%d, v 0x%02x%02x%02x%02x\n", 
-                a, 
-                abit[0], abit[1], abit[2], abit[3], 
-                ~vbyte[0], ~vbyte[1], ~vbyte[2], ~vbyte[3]);
+   UChar abit[4] = {0,0,0,0};
+   UChar vbyte[4] = {0,0,0,0};
+   abit[0] = get_vbits8(a+0, vbyte+0);
+   abit[1] = get_vbits8(a+1, vbyte+1);
+   abit[2] = get_vbits8(a+2, vbyte+2);
+   abit[3] = get_vbits8(a+3, vbyte+3);
+   tl_assert(V_BIT_DEFINED == 0);
+   VG_(printf)("%p: a %d%d%d%d, v 0x%02x%02x%02x%02x\n", 
+               a, 
+               abit[0], abit[1], abit[2], abit[3], 
+               ~vbyte[0], ~vbyte[1], ~vbyte[2], ~vbyte[3]);
 }
 
 void mc_describe_memory(Addr addr, SizeT size)
 {
-    Addr a;
-    for (a = addr; a < addr+size; a += 4) {
-        mc_print_word(a);
-    }
+   Addr a;
+   for (a = addr; a < addr+size; a += 4) {
+       mc_print_word(a);
+   }
 }
 
 

@@ -234,31 +234,31 @@ STRNCAT(m_dyld,        strncat)
         ( char* dst, const char* src, SizeT n ); \
     SizeT VG_REPLACE_FUNCTION_ZU(soname,fnname) \
         ( char* dst, const char* src, SizeT n ) \
-    { \
-        const Char* src_orig = src; \
-        Char* dst_orig = dst; \
-        SizeT m = 0; \
- \
-        while (m < n && *dst) { m++; dst++; } \
-        if (m < n) { \
-            /* Fill as far as dst_orig[n-2], then nul-terminate. */ \
-            while (m < n-1 && *src) { m++; *dst++ = *src++; } \
-            *dst = 0; \
-        } else { \
-            /* No space to copy anything to dst. m == n */ \
-        } \
-        /* Finish counting min(n, strlen(dst_orig)) + strlen(src_orig) */ \
-        while (*src) { m++; src++; } \
-        /* This checks for overlap after copying, unavoidable without */ \
-        /* pre-counting lengths... should be ok */ \
-        if (is_overlap(dst_orig,  \
-                       src_orig,  \
-                       (Addr)dst-(Addr)dst_orig+1,  \
-                       (Addr)src-(Addr)src_orig+1)) \
-           RECORD_OVERLAP_ERROR("strlcat", dst_orig, src_orig, n); \
- \
-        return m; \
-    }
+   { \
+      const Char* src_orig = src; \
+      Char* dst_orig = dst; \
+      SizeT m = 0; \
+\
+      while (m < n && *dst) { m++; dst++; } \
+      if (m < n) { \
+         /* Fill as far as dst_orig[n-2], then nul-terminate. */ \
+         while (m < n-1 && *src) { m++; *dst++ = *src++; } \
+         *dst = 0; \
+      } else { \
+         /* No space to copy anything to dst. m == n */ \
+      } \
+      /* Finish counting min(n, strlen(dst_orig)) + strlen(src_orig) */ \
+      while (*src) { m++; src++; } \
+      /* This checks for overlap after copying, unavoidable without */ \
+      /* pre-counting lengths... should be ok */ \
+      if (is_overlap(dst_orig,  \
+                     src_orig,  \
+                     (Addr)dst-(Addr)dst_orig+1,  \
+                     (Addr)src-(Addr)src_orig+1)) \
+         RECORD_OVERLAP_ERROR("strlcat", dst_orig, src_orig, n); \
+\
+      return m; \
+   }
 
 STRLCAT(m_libc_soname, strlcat)
 STRLCAT(m_dyld,        strlcat)
@@ -346,27 +346,27 @@ STRNCPY(m_dyld,        strncpy)
 /* Copy up to n-1 bytes from src to dst. Then nul-terminate dst if n > 0. 
    Returns strlen(src). Does not zero-fill the remainder of dst. */
 #define STRLCPY(soname, fnname) \
-    SizeT VG_REPLACE_FUNCTION_ZU(soname, fnname) \
-        ( char* dst, const char* src, SizeT n ); \
-    SizeT VG_REPLACE_FUNCTION_ZU(soname, fnname) \
-        ( char* dst, const char* src, SizeT n ) \
-    { \
-        const char* src_orig = src; \
-        char* dst_orig = dst; \
-        SizeT m = 0; \
- \
-        while (m < n-1 && *src) { m++; *dst++ = *src++; } \
-        /* m non-nul bytes have now been copied, and m <= n-1. */ \
-        /* Check for overlap after copying; all n bytes of dst are relevant, */ \
-        /* but only m+1 bytes of src if terminator was found */ \
-        if (is_overlap(dst_orig, src_orig, n, (m < n) ? m+1 : n)) \
-            RECORD_OVERLAP_ERROR("strlcpy", dst, src, n); \
-        /* Nul-terminate dst. */ \
-        if (n > 0) *dst = 0; \
-        /* Finish counting strlen(src). */ \
-        while (*src) src++; \
-        return src - src_orig; \
-    }
+   SizeT VG_REPLACE_FUNCTION_ZU(soname, fnname) \
+       ( char* dst, const char* src, SizeT n ); \
+   SizeT VG_REPLACE_FUNCTION_ZU(soname, fnname) \
+       ( char* dst, const char* src, SizeT n ) \
+   { \
+      const char* src_orig = src; \
+      char* dst_orig = dst; \
+      SizeT m = 0; \
+\
+      while (m < n-1 && *src) { m++; *dst++ = *src++; } \
+      /* m non-nul bytes have now been copied, and m <= n-1. */ \
+      /* Check for overlap after copying; all n bytes of dst are relevant, */ \
+      /* but only m+1 bytes of src if terminator was found */ \
+      if (is_overlap(dst_orig, src_orig, n, (m < n) ? m+1 : n)) \
+          RECORD_OVERLAP_ERROR("strlcpy", dst, src, n); \
+      /* Nul-terminate dst. */ \
+      if (n > 0) *dst = 0; \
+      /* Finish counting strlen(src). */ \
+      while (*src) src++; \
+      return src - src_orig; \
+   }
 
 STRLCPY(m_libc_soname, strlcpy)
 STRLCPY(m_dyld,        strlcpy)
