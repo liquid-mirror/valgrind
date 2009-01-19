@@ -86,7 +86,7 @@ static void barf ( const char *format, ... )
    va_list vargs;
 
    va_start(vargs, format);
-   fprintf(stderr, "valgrind: Cannot continue: ");
+   fprintf(stderr, "valgrind: ");
    vfprintf(stderr, format, vargs);
    fprintf(stderr, "\n");
    va_end(vargs);
