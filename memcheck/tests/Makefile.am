@@ -5,9 +5,6 @@ include $(top_srcdir)/Makefile.flags.am
 SUBDIRS = .
 
 # Arch-specific tests.
-# DDD: at least some of the supposedly arch-specific tests are really
-# platform-specific, eg. x86/scalar*.c.  Need to create platform-specific
-# dirs.
 if VGA_X86
 SUBDIRS += x86
 endif
