@@ -59,7 +59,6 @@ EXTRA_DIST = $(noinst_SCRIPTS) \
 
 check_PROGRAMS = \
 	badseg bt_everything bt_literal \
-	bug125959-x86 \
 	bug132813-x86 \
 	bug135421-x86 \
 	bug137714-x86 \
@@ -73,6 +72,7 @@ check_PROGRAMS = \
 # be moved into x86-linux/.
 if ! VGO_DARWIN
    check_PROGRAMS += \
+	bug125959-x86 \
 	bug126147-x86 \
 	bug152818-x86 \
 	cmpxchg8b \

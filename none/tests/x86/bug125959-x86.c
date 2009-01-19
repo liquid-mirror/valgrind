@@ -11,14 +11,11 @@ static int lookup ( int i )
   block[2] = 0;
   __asm__ __volatile__(
      "movl %0,%%esi\n\t"
-     // DDD: changed %ebx to %ecx for Darwin, because %ebx is apparently
-     // used for PIC:
-     //   bug125959-x86.c:12: error: PIC register ‘ebx’ clobbered in ‘asm’
-     "movl 0(%%esi),%%ecx\n\t"
+     "movl 0(%%esi),%%ebx\n\t"
      "movl 4(%%esi),%%eax\n\t"
      "xlat\n\t"
      "movl %%eax,8(%%esi)\n\t"
-     : : /*in*/"r"(block) : "esi", "ecx", "eax", "memory", "cc"
+     : : /*in*/"r"(block) : "esi", "ebx", "eax", "memory", "cc"
   );
   return block[2];
 }

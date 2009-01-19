@@ -1,2 +1,2 @@
-prog: linux-capget
+prog: capget
 stderr_filter: ../filter_allocs

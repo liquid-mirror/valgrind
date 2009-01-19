@@ -2,20 +2,17 @@
 #include <sys/mman.h>
 #include <assert.h>
 #include <stdlib.h>
-
 #include "../memcheck.h"
 
 #if !defined(MAP_ANONYMOUS)
 #define MAP_ANONYMOUS 0
 #endif
-
 #define SUPERBLOCK_SIZE 100000
 #define REDZONE_SIZE 8
 
 static const int USE_MMAP = 0;
 
-typedef struct _level_list
-{
+typedef struct _level_list {
    struct _level_list *next;
    char *where;
 } level_list;
@@ -30,7 +27,6 @@ typedef struct _pool {
 pool *make_pool()
 {
    pool *p;
-
    if(USE_MMAP) {
       p = (pool *)mmap(0, sizeof(pool), PROT_READ|PROT_WRITE|PROT_EXEC,
                        MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
