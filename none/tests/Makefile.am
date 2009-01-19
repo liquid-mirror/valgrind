@@ -146,7 +146,6 @@ check_PROGRAMS = \
 	floored fork fucomip manythreads \
 	munmap_exe map_unaligned map_unmap mq mremap mremap2 \
 	nestedfns \
-	pending \
 	pth_atfork1 pth_blockedsig pth_cancel1 pth_cancel2 pth_cvsimple \
 	pth_empty pth_exit pth_exit2 pth_mutexspeed pth_once pth_rwlock \
 	pth_stackalign \
@@ -159,11 +158,12 @@ check_PROGRAMS = \
 	coolo_sigaction gxx304
 
 # DDD: not sure if these ones should work on Darwin or not... if not, should
-# be moved into linux/.
+# be moved into linux/.  ('pending' probably should, it uses signals.)
 if ! VGO_DARWIN
    check_PROGRAMS += \
 	async-sigs \
-	fdleak_ipv4
+	fdleak_ipv4 \
+	pending
 endif
 
 AM_CFLAGS   = $(WERROR) -Winline -Wall -Wshadow -g $(AM_FLAG_M3264_PRI)
