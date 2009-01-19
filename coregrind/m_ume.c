@@ -34,7 +34,7 @@
 
 typedef struct {
    const HChar *name;
-   Bool (*match_fn)(const char *hdr, Int len);
+   Bool (*match_fn)(char *hdr, Int len);
    Int  (*load_fn)(Int fd, const HChar *name, ExeInfo *info);
 } ExeHandler;
 

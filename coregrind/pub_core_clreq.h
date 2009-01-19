@@ -56,12 +56,14 @@ typedef
 // sim'd CPU.  Must be a function rather than macros so that va_list can
 // be used.
 
-__attribute__((format(__printf__, 1, 2)))
+// DDD: this is not nice...
 #if defined(VGO_darwin)
 static inline 
 #else
+int VALGRIND_INTERNAL_PRINTF(char *format, ...);   // Declare first.
 __attribute__((weak))
 #endif
+__attribute__((format(__printf__, 1, 2)))
 int VALGRIND_INTERNAL_PRINTF(char *format, ...)
 {
    unsigned long _qzz_res = 0;

@@ -52,7 +52,7 @@ struct ume_auxv *VG_(find_auxv)(UWord* sp)
     return NULL; 
 }
 
-Bool VG_(match_ELF)(const char *hdr, Int len)
+Bool VG_(match_ELF)(char *hdr, Int len)
 {
     return False;
 }
@@ -290,7 +290,7 @@ ESZ(Addr) mapelf(struct elfinfo *e, ESZ(Addr) base)
    return elfbrk;
 }
 
-Bool VG_(match_ELF)(const char *hdr, Int len)
+Bool VG_(match_ELF)(char *hdr, Int len)
 {
    ESZ(Ehdr) *e = (ESZ(Ehdr) *)hdr;
    return (len > sizeof(*e)) && VG_(memcmp)(&e->e_ident[0], ELFMAG, SELFMAG) == 0;

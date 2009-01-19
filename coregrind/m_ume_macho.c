@@ -35,7 +35,7 @@
 
 /* Non-Darwin doesn't do Mach-O */
 
-Bool VG_(match_macho)(const char *hdr, Int len)
+Bool VG_(match_macho)(char *hdr, Int len)
 {
    return False;
 }

@@ -45,7 +45,7 @@ Int VG_(load_script)(Int fd, const HChar* name, ExeInfo* info)
 
 #else
 
-Bool VG_(match_script)(const char *hdr, Int len)
+Bool VG_(match_script)(char *hdr, Int len)
 {
    Char* end    = hdr + len;
    Char* interp = hdr + 2;

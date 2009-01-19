@@ -68,13 +68,13 @@
 
 extern int VG_(do_exec_inner)(const HChar *exe, ExeInfo *info);
 
-extern Bool VG_(match_script)(const char *hdr, Int len);
+extern Bool VG_(match_script)(char *hdr, Int len);
 extern Int VG_(load_script)(Int fd, const HChar *name, ExeInfo *info);
 
-extern Bool VG_(match_ELF)(const char *hdr, Int len);
+extern Bool VG_(match_ELF)(char *hdr, Int len);
 extern Int VG_(load_ELF)(Int fd, const HChar *name, ExeInfo *info);
 
-extern Bool VG_(match_macho)(const char *hdr, Int len);
+extern Bool VG_(match_macho)(char *hdr, Int len);
 extern Int VG_(load_macho)(Int fd, const HChar *name, ExeInfo *info);
 
 #endif

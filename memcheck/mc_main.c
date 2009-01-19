@@ -5137,7 +5137,7 @@ static Bool handle_register_defined_command(Int sock, const Char *cmd)
    return True;
 }
 
-static Bool mc_handle_debugger_query(Int sock, char *cmd)
+static Bool mc_handle_debugger_query(Int sock, Char* cmd)
 {
    Bool handled = True;
 
@@ -5154,7 +5154,7 @@ static Bool mc_handle_debugger_query(Int sock, char *cmd)
    return handled;
 }
 
-static Bool mc_handle_debugger_action(Int sock, char *cmd)
+static Bool mc_handle_debugger_action(Int sock, Char* cmd)
 {
    return False;
 }
@@ -5883,7 +5883,7 @@ void mc_print_word(Addr a)
    abit[2] = get_vbits8(a+2, vbyte+2);
    abit[3] = get_vbits8(a+3, vbyte+3);
    tl_assert(V_BIT_DEFINED == 0);
-   VG_(printf)("%p: a %d%d%d%d, v 0x%02x%02x%02x%02x\n", 
+   VG_(printf)("%#lx: a %d%d%d%d, v 0x%02x%02x%02x%02x\n", 
                a, 
                abit[0], abit[1], abit[2], abit[3], 
                ~vbyte[0], ~vbyte[1], ~vbyte[2], ~vbyte[3]);

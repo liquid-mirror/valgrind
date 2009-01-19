@@ -2154,7 +2154,7 @@ PRE(sys_exit)
 
 PRE(sys_ni_syscall)
 {
-   VG_(printf)("UNKNOWN syscall %d! (ni_syscall)\n",
+   VG_(printf)("UNKNOWN syscall %ld! (ni_syscall)\n",
 #if defined(VGO_linux) || defined(VGO_aix5)
       SYSNO
 #elif defined(VGO_darwin)
@@ -2380,8 +2380,8 @@ PRE(sys_pwrite64)
                  unsigned int, fd, const char *, buf, vki_size_t, count,
                  UWord, offset_low32, UWord, offset_high32);
 #else
-   PRINT("sys_pwrite64 ( %d, %p, %llu, %lld )",
-         ARG1, ARG2, (ULong)ARG3, ARG4);
+   PRINT("sys_pwrite64 ( %ld, %#lx, %llu, %lld )",
+         ARG1, ARG2, (ULong)ARG3, (Long)ARG4);
    PRE_REG_READ4(ssize_t, "pwrite64",
                  unsigned int, fd, const char *, buf, vki_size_t, count,
                  UWord, offset);
@@ -2431,14 +2431,14 @@ PRE(sys_pread64)
 {
    *flags |= SfMayBlock;
 #if VG_WORDSIZE == 4
-   PRINT("sys_pread64 ( %d, %p, %llu, %lld )",
+   PRINT("sys_pread64 ( %ld, %#lx, %llu, %lld )",
          ARG1, ARG2, (ULong)ARG3, LOHI64(ARG4,ARG5));
    PRE_REG_READ5(ssize_t, "pread64",
                  unsigned int, fd, char *, buf, vki_size_t, count,
                  UWord, offset_low32, UWord, offset_high32);
 #else
-   PRINT("sys_pread64 ( %d, %p, %llu, %lld )",
-         ARG1, ARG2, (ULong)ARG3, ARG4);
+   PRINT("sys_pread64 ( %ld, %#lx, %llu, %lld )",
+         ARG1, ARG2, (ULong)ARG3, (Long)ARG4);
    PRE_REG_READ4(ssize_t, "pread64",
                  unsigned int, fd, char *, buf, vki_size_t, count,
                  UWord, offset);
@@ -2898,49 +2898,6 @@ PRE(sys_fchmod)
    PRE_REG_READ2(long, "fchmod", unsigned int, fildes, vki_mode_t, mode);
 }
 
-PRE(sys_fcntl)
-{
-   switch (ARG2) {
-   // These ones ignore ARG3.
-   case VKI_F_GETFD:
-   case VKI_F_GETFL:
-   case VKI_F_GETOWN:
-      PRINT("sys_fcntl ( %ld, %ld )", ARG1,ARG2);
-      PRE_REG_READ2(long, "fcntl", unsigned int, fd, unsigned int, cmd);
-      break;
-
-   // These ones use ARG3 as "arg".
-   case VKI_F_DUPFD:
-   case VKI_F_SETFD:
-   case VKI_F_SETFL:
-   case VKI_F_SETOWN:
-      PRINT("sys_fcntl[ARG3=='arg'] ( %ld, %ld, %ld )", ARG1,ARG2,ARG3);
-      PRE_REG_READ3(long, "fcntl",
-                    unsigned int, fd, unsigned int, cmd, unsigned long, arg);
-      break;
-
-   // These ones use ARG3 as "lock".
-   case VKI_F_GETLK:
-   case VKI_F_SETLK:
-   case VKI_F_SETLKW:
-      PRINT("sys_fcntl[ARG3=='lock'] ( %ld, %ld, %#lx )", ARG1,ARG2,ARG3);
-      PRE_REG_READ3(long, "fcntl",
-                    unsigned int, fd, unsigned int, cmd,
-                    struct flock64 *, lock);
-      // GrP fixme mem read sizeof(flock64)
-      if (ARG2 == VKI_F_SETLKW) 
-         *flags |= SfMayBlock;
-      break;
-
-   default:
-      I_die_here;
-      break;
-   }
-
-   if (ARG2 == VKI_F_SETLKW)
-      *flags |= SfMayBlock;
-}
-
 PRE(sys_newfstat)
 {
    PRINT("sys_newfstat ( %ld, %#lx )", ARG1,ARG2);
@@ -2959,7 +2916,6 @@ static vki_sigset_t fork_saved_mask;
 // ignore the various args it gets, and so it looks arch-neutral.  Hmm.
 PRE(sys_fork)
 {
-   UWord childPid;    
    UWord result;
    vki_sigset_t mask;
 
@@ -3034,7 +2990,7 @@ PRE(sys_ftruncate64)
                  unsigned int, fd,
                  UWord, length_low32, UWord, length_high32);
 #else
-   PRINT("sys_ftruncate64 ( %d, %lld )", ARG1, ARG2);
+   PRINT("sys_ftruncate64 ( %ld, %lld )", ARG1, (Long)ARG2);
    PRE_REG_READ2(long, "ftruncate64",
                  unsigned int,fd, UWord,length);
 #endif
@@ -3044,12 +3000,12 @@ PRE(sys_truncate64)
 {
    *flags |= SfMayBlock;
 #if VG_WORDSIZE == 4
-   PRINT("sys_truncate64 ( %#lx, %lld )", ARG1, LOHI64(ARG2, ARG3));
+   PRINT("sys_truncate64 ( %#lx, %lld )", ARG1, (Long)LOHI64(ARG2, ARG3));
    PRE_REG_READ3(long, "truncate64",
                  const char *, path,
                  UWord, length_low32, UWord, length_high32);
 #else
-   PRINT("sys_truncate64 ( %p, %lld )", ARG1, ARG2);
+   PRINT("sys_truncate64 ( %#lx, %lld )", ARG1, (Long)ARG2);
    PRE_REG_READ2(long, "truncate64",
                  const char *,path, UWord,length);
 #endif
@@ -3297,7 +3253,7 @@ void ML_(PRE_unknown_ioctl)(ThreadId tid, UWord request, UWord arg)
        * commands becomes very tiresome.
        */
    } else if (/* size == 0 || */ dir == _VKI_IOC_NONE) {
-      VG_(message)(Vg_UserMsg, "UNKNOWN ioctl 0x%x\n", request);
+      VG_(message)(Vg_UserMsg, "UNKNOWN ioctl %#lx\n", request);
       VG_(get_and_pp_StackTrace)(tid, VG_(clo_backtrace_size));
       /*
         static Int moans = 3;
@@ -3316,7 +3272,7 @@ void ML_(PRE_unknown_ioctl)(ThreadId tid, UWord request, UWord arg)
         }
       */
    } else {
-      VG_(message)(Vg_UserMsg, "UNKNOWN ioctl 0x%x\n", request);
+      VG_(message)(Vg_UserMsg, "UNKNOWN ioctl %#lx\n", request);
       VG_(get_and_pp_StackTrace)(tid, VG_(clo_backtrace_size));
       if ((dir & _VKI_IOC_WRITE) && size > 0)
          PRE_MEM_READ( "ioctl(generic)", arg, size);

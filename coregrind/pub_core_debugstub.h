@@ -31,7 +31,11 @@
 #ifndef __PUB_CORE_DEBUGSTUB_H
 #define __PUB_CORE_DEBUGSTUB_H
 
-extern void VG_(debugstub_init)(void);
+extern void VG_(debugstub_init)        ( void );
+extern void VG_(debugstub_write_reply) ( Int sock, const Char* contents );
+extern void VG_(debugstub_tohex)       ( Char *dst, const void *src, Int len );
+extern void VG_(debugstub_fromhex)     ( void *dst, const Char *src, Int len );
+extern Int  VG_(reg_for_regnum)        ( Int regnum, void *rbuf, Int shadow );
 
 #endif  // __PUB_CORE_DEBUGSTUB_H
 

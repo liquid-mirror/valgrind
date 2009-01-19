@@ -3867,7 +3867,7 @@ void read_fnnames_dwarf3_wrk (
       TRACE_D3("  Length in .debug_info:    %llx\n", d_i_length);
 
       /* Read the compilation unit for this group. */
-      TRACE_D3("  Compilation Unit @ offset 0x%lx:\n", d_i_offset);
+      TRACE_D3("  Compilation Unit @ offset 0x%llx:\n", d_i_offset);
       set_position_of_Cursor(&info, d_i_offset);
       parse_CU_Header(&cc, td3, &info, debug_abbv_img, debug_abbv_sz);
       cc.debug_str_img    = debug_str_img;
