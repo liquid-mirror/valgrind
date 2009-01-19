@@ -1,8 +1,5 @@
 #include <assert.h>
 #include <stdio.h>
-#if !defined(_AIX)
-# include <sys/syscall.h>
-#endif
 #include <sys/types.h>
 #include <unistd.h>
 
@@ -29,9 +26,7 @@ int main(void)
    vals[8] = EOL;
 
    for (i = 0; EOL != vals[i]; i++) {
-#     if !defined(_AIX) && !defined(__APPLE__)
       res = (void*)syscall(__NR_brk, vals[i]);
-#     endif
    }
 
    assert( 0 == brk(orig_ds) );  // libc brk()
