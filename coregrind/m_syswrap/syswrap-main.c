@@ -501,7 +501,7 @@ void getSyscallArgsFromGuestState ( /*OUT*/SyscallArgs*       canonical,
       canonical->arg7  = stack[8];
       canonical->arg8  = stack[9];
       
-      PRINT("SYSCALL[%d,?](%5lld) syscall(#%d, ...); please stand by...\n",
+      PRINT("SYSCALL[%d,?](%5lld) syscall(#%ld, ...); please stand by...\n",
             VG_(getpid)(), /*tid,*/ (Long)0, canonical->sysno);
    }
 
@@ -1854,7 +1854,7 @@ void ML_(fixup_guest_state_to_restart_syscall) ( ThreadArchState* arch )
 
        if (p[0] != 0xcd || (p[1] != 0x80 && p[1] != 0x81))
            VG_(message)(Vg_DebugMsg,
-                        "?! restarting over syscall at %p %02x %02x\n",
+                        "?! restarting over syscall at %#x %02x %02x\n",
                         arch->vex.guest_EIP, p[0], p[1]);
 
        vg_assert(p[0] == 0xcd && (p[1] == 0x80 || p[1] == 0x81));

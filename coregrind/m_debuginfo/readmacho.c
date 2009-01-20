@@ -320,7 +320,7 @@ static Addr make_thin(Addr fat, UInt fat_size, UInt *thin_size)
 
    if (*thin_size < sizeof(struct MACH_HEADER)) {
       ML_(symerr)(NULL, False, "Invalid Mach-O file (3 too small).");
-      VG_(printf)("%d %d\n", *thin_size, sizeof(struct MACH_HEADER));
+      VG_(printf)("%d %lu\n", *thin_size, sizeof(struct MACH_HEADER));
       return 0;
    }
 
@@ -518,7 +518,8 @@ Bool ML_(read_macho_debug_info)( struct _DebugInfo* di )
    
       if (debug_info_img) {
          if (VG_(clo_verbosity) > 1)
-            VG_(message)(Vg_DebugMsg, "Reading DWARF debuginfo for %s (%p) from %s"
+            VG_(message)(Vg_DebugMsg,
+                         "Reading DWARF debuginfo for %s (%#lx) from %s"
                          " (%d %d %d %d %d %d)",
                          di->filename, di->text_avma, dsymfile, 
                          debug_info_sz, debug_abbv_sz, debug_line_sz, 
@@ -594,7 +595,7 @@ Bool ML_(read_macho_debug_info)( struct _DebugInfo* di )
       strs = (UChar *)(ob_oimage + symcmd->stroff);
       
       if (VG_(clo_verbosity) > 1)
-         VG_(message)(Vg_DebugMsg, "Reading nlist symbols and STABS debuginfo for %s (%p) (%d %d)",
+         VG_(message)(Vg_DebugMsg, "Reading nlist symbols and STABS debuginfo for %s (%#lx) (%d %d)",
                       di->filename, di->text_avma, 
                       dysymcmd->nextdefsym, dysymcmd->nlocalsym );
       // extern symbols

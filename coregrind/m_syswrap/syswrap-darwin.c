@@ -183,7 +183,7 @@ void find_stack_segment(ThreadId tid, Addr sp)
                      tid, seg->start, VG_PGROUNDUP(sp));
    } else {
        VG_(printf)("couldn't find user stack\n");
-      VG_(message)(Vg_UserMsg, "!? New thread %d starts with SP(%p) unmapped\n",
+      VG_(message)(Vg_UserMsg, "!? New thread %d starts with SP(%#lx) unmapped\n",
                    tid, sp);
       tst->client_stack_szB  = 0;
    }
@@ -340,6 +340,7 @@ static OpenPort *allocated_ports;
 static Int allocated_port_count = 0;
 
 
+__attribute__((unused))
 static Bool port_exists(mach_port_t port)
 {
    OpenPort *i;
@@ -410,7 +411,7 @@ static const char *name_for_port(mach_port_t port)
       i = i->next;
    }
 
-   VG_(sprintf)(buf, "NONPORT-%p", port);
+   VG_(sprintf)(buf, "NONPORT-%#x", port);
    return buf;
 }
 
@@ -461,7 +462,7 @@ void record_port_mod_refs(mach_port_t port, mach_port_type_t right, Int delta)
       i = i->next;
    }
 
-   VG_(printf)("UNKNOWN Mach port modified (port %p delta %d)\n", port, delta);
+   VG_(printf)("UNKNOWN Mach port modified (port %#x delta %d)\n", port, delta);
 }
 
 static 
@@ -1021,13 +1022,13 @@ PRE(sys_fcntl)
    case VKI_F_FREEZE_FS:
    case VKI_F_THAW_FS:
    case VKI_F_GLOBAL_NOCACHE:
-      PRINT("sys_fcntl ( %d, %s )", ARG1, name_for_fcntl(ARG1));
+      PRINT("sys_fcntl ( %ld, %s )", ARG1, name_for_fcntl(ARG1));
       PRE_REG_READ2(long, "fcntl", unsigned int, fd, unsigned int, cmd);
       break;
 
        // struct fstore
    case VKI_F_PREALLOCATE:
-      PRINT("sys_fcntl ( %d, %s, %p )", ARG1, name_for_fcntl(ARG2), ARG3);
+      PRINT("sys_fcntl ( %ld, %s, %#lx )", ARG1, name_for_fcntl(ARG2), ARG3);
       PRE_REG_READ3(long, "fcntl",
                     unsigned int, fd, unsigned int, cmd,
                     struct fstore *, fstore);
@@ -1048,7 +1049,7 @@ PRE(sys_fcntl)
 
        // off_t
    case VKI_F_SETSIZE:
-      PRINT("sys_fcntl ( %d, %s, %p )", ARG1, name_for_fcntl(ARG2), ARG3);
+      PRINT("sys_fcntl ( %ld, %s, %#lx )", ARG1, name_for_fcntl(ARG2), ARG3);
       PRE_REG_READ3(long, "fcntl",
                     unsigned int, fd, unsigned int, cmd,
                     vki_off_t *, offset);
@@ -1056,7 +1057,7 @@ PRE(sys_fcntl)
 
        // struct radvisory
    case VKI_F_RDADVISE:
-      PRINT("sys_fcntl ( %d, %s, %p )", ARG1, name_for_fcntl(ARG2), ARG3);
+      PRINT("sys_fcntl ( %ld, %s, %#lx )", ARG1, name_for_fcntl(ARG2), ARG3);
       PRE_REG_READ3(long, "fcntl",
                     unsigned int, fd, unsigned int, cmd,
                     struct vki_radvisory *, radvisory);
@@ -1072,7 +1073,7 @@ PRE(sys_fcntl)
        // struct fbootstraptransfer
    case VKI_F_READBOOTSTRAP:
    case VKI_F_WRITEBOOTSTRAP:
-      PRINT("sys_fcntl ( %d, %s, %p )", ARG1, name_for_fcntl(ARG2), ARG3);
+      PRINT("sys_fcntl ( %ld, %s, %#lx )", ARG1, name_for_fcntl(ARG2), ARG3);
       PRE_REG_READ3(long, "fcntl",
                     unsigned int, fd, unsigned int, cmd,
                     struct fbootstraptransfer *, bootstrap);
@@ -1082,7 +1083,7 @@ PRE(sys_fcntl)
 
        // struct log2phys (out)
    case VKI_F_LOG2PHYS:
-      PRINT("sys_fcntl ( %d, %s, %p )", ARG1, name_for_fcntl(ARG2), ARG3);
+      PRINT("sys_fcntl ( %ld, %s, %#lx )", ARG1, name_for_fcntl(ARG2), ARG3);
       PRE_REG_READ3(long, "fcntl",
                     unsigned int, fd, unsigned int, cmd,
                     struct log2phys *, l2p);
@@ -1092,7 +1093,7 @@ PRE(sys_fcntl)
 
        // char[maxpathlen] (out)
    case VKI_F_GETPATH:
-      PRINT("sys_fcntl ( %d, %s, %p )", ARG1, name_for_fcntl(ARG2), ARG3);
+      PRINT("sys_fcntl ( %ld, %s, %#lx )", ARG1, name_for_fcntl(ARG2), ARG3);
       PRE_REG_READ3(long, "fcntl",
                     unsigned int, fd, unsigned int, cmd,
                     char *, pathbuf);
@@ -1102,8 +1103,8 @@ PRE(sys_fcntl)
 
        // char[maxpathlen] (in)
    case VKI_F_PATHPKG_CHECK:
-      PRINT("sys_fcntl ( %d, %s, %p '%s')", ARG1, name_for_fcntl(ARG2), ARG3,
-          ARG3);
+      PRINT("sys_fcntl ( %ld, %s, %#lx '%s')", ARG1, name_for_fcntl(ARG2), ARG3,
+          (char *)ARG3);
       PRE_REG_READ3(long, "fcntl",
                     unsigned int, fd, unsigned int, cmd,
                     char *, pathbuf);
@@ -1111,9 +1112,9 @@ PRE(sys_fcntl)
       break;
 
    default:
-      PRINT("sys_fcntl ( %d, %d [??] )", ARG1, ARG2);
+      PRINT("sys_fcntl ( %ld, %ld [??] )", ARG1, ARG2);
       if (VG_(clo_trace_unknown_syscalls)) {
-          VG_(printf)("UNKNOWN fcntl %d!", ARG2);
+          VG_(printf)("UNKNOWN fcntl %ld!", ARG2);
       }
       break;
    }
@@ -1157,7 +1158,7 @@ POST(sys_fcntl)
 
    case VKI_F_GETPATH:
       POST_MEM_WRITE( ARG3, 1+VG_(strlen)((char *)ARG3) );
-      PRINT("\"%s\"", ARG3);
+      PRINT("\"%s\"", (char*)ARG3);
       break;
 
    default:
@@ -1192,7 +1193,7 @@ PRE(sys_fcntl64)
    case VKI_F_GETLK:
    case VKI_F_SETLK:
    case VKI_F_SETLKW:
-      PRINT("sys_fcntl64[ARG3=='lock'] ( %ld, %ld, %lp )", ARG1,ARG2,ARG3);
+      PRINT("sys_fcntl64[ARG3=='lock'] ( %ld, %ld, %#lx )", ARG1,ARG2,ARG3);
       PRE_REG_READ3(long, "fcntl64",
                     unsigned int, fd, unsigned int, cmd,
                     struct flock64 *, lock);
@@ -1243,14 +1244,14 @@ POST(sys_fcntl64)
 
 PRE(sys_semget)
 {
-   PRINT("sys_semget ( %d, %d, %d )",ARG1,ARG2,ARG3);
+   PRINT("sys_semget ( %ld, %ld, %ld )",ARG1,ARG2,ARG3);
    PRE_REG_READ3(long, "semget", vki_key_t, key, int, nsems, int, semflg);
 }
 
 PRE(sys_semop)
 {
    *flags |= SfMayBlock;
-   PRINT("sys_semop ( %d, %p, %u )",ARG1,ARG2,ARG3);
+   PRINT("sys_semop ( %ld, %#lx, %lu )",ARG1,ARG2,ARG3);
    PRE_REG_READ3(long, "semop",
                  int, semid, struct sembuf *, sops, vki_size_t, nsoops);
    ML_(generic_PRE_sys_semop)(tid, ARG1,ARG2,ARG3);
@@ -1261,23 +1262,23 @@ PRE(sys_semctl)
    switch (ARG3) {
    case VKI_IPC_STAT:
    case VKI_IPC_SET:
-      PRINT("sys_semctl ( %d, %d, %d, %p )",ARG1,ARG2,ARG3,ARG4);
+      PRINT("sys_semctl ( %ld, %ld, %ld, %#lx )",ARG1,ARG2,ARG3,ARG4);
       PRE_REG_READ4(long, "semctl",
                     int, semid, int, semnum, int, cmd, struct semid_ds *, arg);
       break;
    case VKI_GETALL:
    case VKI_SETALL:
-      PRINT("sys_semctl ( %d, %d, %d, %p )",ARG1,ARG2,ARG3,ARG4);
+      PRINT("sys_semctl ( %ld, %ld, %ld, %#lx )",ARG1,ARG2,ARG3,ARG4);
       PRE_REG_READ4(long, "semctl",
                     int, semid, int, semnum, int, cmd, unsigned short *, arg);
       break;
    case VKI_SETVAL:
-      PRINT("sys_semctl ( %d, %d, %d, %p )",ARG1,ARG2,ARG3,ARG4);
+      PRINT("sys_semctl ( %ld, %ld, %ld, %#lx )",ARG1,ARG2,ARG3,ARG4);
       PRE_REG_READ4(long, "semctl",
                     int, semid, int, semnum, int, cmd, int, arg);
       break;
    default:
-      PRINT("sys_semctl ( %d, %d, %d )",ARG1,ARG2,ARG3);
+      PRINT("sys_semctl ( %ld, %ld, %ld )",ARG1,ARG2,ARG3);
       PRE_REG_READ3(long, "semctl",
                     int, semid, int, semnum, int, cmd);
       break;
@@ -1309,7 +1310,7 @@ POST(sys_kqueue)
 
 PRE(sys_kevent)
 {
-   PRINT("kevent( %d, %p, %d, %p, %d, %p )", 
+   PRINT("kevent( %ld, %#lx, %ld, %#lx, %ld, %#lx )", 
          ARG1, ARG2, ARG3, ARG4, ARG5, ARG6);
    PRE_REG_READ6(int,"kevent", int,kq, 
                  const struct vki_kevent *,changelist, int,nchanges, 
@@ -1328,7 +1329,7 @@ PRE(sys_kevent)
 
 POST(sys_kevent)
 {
-   PRINT("kevent ret %d dst %p (%zu)", RES, ARG4, sizeof(struct vki_kevent));
+   PRINT("kevent ret %ld dst %#lx (%zu)", RES, ARG4, sizeof(struct vki_kevent));
    if (RES > 0) POST_MEM_WRITE(ARG4, RES * sizeof(struct vki_kevent));
 }
 
@@ -1339,7 +1340,7 @@ SizeT pthread_structsize = 0;
 
 PRE(sys_bsdthread_register)
 {
-   PRINT("bsdthread_register( %p, %p, %lu )", ARG1, ARG2, ARG3);
+   PRINT("bsdthread_register( %#lx, %#lx, %lu )", ARG1, ARG2, ARG3);
    PRE_REG_READ3(int,"__bsdthread_register", void *,"threadstart", 
                  void *,"wqthread", size_t,"pthsize");
 
@@ -1372,7 +1373,8 @@ static const char *workqop_name(int op)
 
 PRE(sys_workq_ops)
 {
-   PRINT("workq_ops( %d(%s), %p, %d )", ARG1, workqop_name(ARG1), ARG2, ARG3);
+   PRINT("workq_ops( %ld(%s), %#lx, %ld )", ARG1, workqop_name(ARG1), ARG2,
+      ARG3);
    PRE_REG_READ3(int,"workq_ops", int,"options", void *,"item", 
                  int,"priority");
 
@@ -1401,7 +1403,7 @@ PRE(sys_workq_ops)
    }
 
    default:
-      VG_(printf)("UNKNOWN workq_ops option %d\n", ARG1);
+      VG_(printf)("UNKNOWN workq_ops option %ld\n", ARG1);
       break;
    }
 }
@@ -1416,7 +1418,7 @@ POST(sys_workq_ops)
 
 PRE(sys___mac_syscall)
 {
-   PRINT("__mac_syscall( %p, %d, %p )", ARG1, ARG2, ARG3);
+   PRINT("__mac_syscall( %#lx, %ld, %#lx )", ARG1, ARG2, ARG3);
    PRE_REG_READ3(int,"__mac_syscall", char *,"policy", 
                  int,"call", void *,"arg");
 
@@ -1432,7 +1434,7 @@ PRE(sys_exit)
    ThreadId     t;
    ThreadState* tst;
 
-   PRINT("darwin exit( %d )", ARG1);
+   PRINT("darwin exit( %ld )", ARG1);
    PRE_REG_READ1(void, "exit", int, exit_code);
 
    tst = VG_(get_ThreadState)(tid);
@@ -1499,7 +1501,7 @@ PRE(sys___disable_threadsignal)
 
 PRE(sys_kdebug_trace)
 {
-   PRINT("kdebug_trace(%d, %d, %d, %d, %d, %d)", 
+   PRINT("kdebug_trace(%ld, %ld, %ld, %ld, %ld, %ld)", 
          ARG1, ARG2, ARG3, ARG4, ARG5, ARG6);
    PRE_REG_READ6(long, "kdebug_trace", 
                  int,"code", int,"arg1", int,"arg2", 
@@ -1510,20 +1512,20 @@ PRE(sys_kdebug_trace)
 
 PRE(sys_seteuid)
 {
-    PRINT("seteuid(%d)", ARG1);
+    PRINT("seteuid(%ld)", ARG1);
     PRE_REG_READ1(long, "seteuid", vki_uid_t, "uid");
 }
 
 
 PRE(sys_setegid)
 {
-    PRINT("setegid(%d)", ARG1);
+    PRINT("setegid(%ld)", ARG1);
     PRE_REG_READ1(long, "setegid", vki_uid_t, "uid");
 }
 
 PRE(sys_settid)
 {
-    PRINT("settid(%d, %d)", ARG1, ARG2);
+    PRINT("settid(%ld, %ld)", ARG1, ARG2);
     PRE_REG_READ2(long, "settid", vki_uid_t, "uid", vki_gid_t, "gid");
 }
 
@@ -1532,7 +1534,7 @@ PRE(sys_settid)
  */
 PRE(sys_watchevent)
 {
-    PRINT("watchevent(%p, %#x)", ARG1, ARG2);
+    PRINT("watchevent(%#lx, %#lx)", ARG1, ARG2);
     PRE_REG_READ2(long, "watchevent",
         vki_eventreq *, "event", unsigned int, "eventmask");
 
@@ -1544,7 +1546,7 @@ PRE(sys_watchevent)
 #define WAITEVENT_FAST_POLL ((Addr)(struct timeval *)-1)
 PRE(sys_waitevent)
 {
-   PRINT("waitevent(%p, %p)", ARG1, ARG2);
+   PRINT("waitevent(%#lx, %#lx)", ARG1, ARG2);
    PRE_REG_READ2(long, "waitevent",
       vki_eventreq *, "event", struct timeval *, "timeout");
    PRE_MEM_WRITE("waitevent(event)", ARG1, sizeof(vki_eventreq));
@@ -1564,7 +1566,7 @@ POST(sys_waitevent)
 
 PRE(sys_modwatch)
 {
-   PRINT("modwatch(%p, %#x)", ARG1, ARG2);
+   PRINT("modwatch(%#lx, %#lx)", ARG1, ARG2);
    PRE_REG_READ2(long, "modwatch",
       vki_eventreq *, "event", unsigned int, "eventmask");
 
@@ -1574,7 +1576,7 @@ PRE(sys_modwatch)
 
 PRE(sys_getxattr)
 {
-   PRINT("getxattr(%p(%s), %p(%s), %p, %u, %u, %d)",
+   PRINT("getxattr(%#lx(%s), %#lx(%s), %#lx, %lu, %lu, %ld)",
          ARG1, (char *)ARG1, ARG2, (char *)ARG2, ARG3, ARG4, ARG5, ARG6);
 
    PRE_REG_READ6(vki_ssize_t, "getxattr",
@@ -1593,7 +1595,7 @@ POST(sys_getxattr)
 
 PRE(sys_fgetxattr)
 {
-   PRINT("fgetxattr(%d, %p(%s), %p, %u, %u, %d)",
+   PRINT("fgetxattr(%ld, %#lx(%s), %#lx, %lu, %lu, %ld)",
       ARG1, ARG2, (char *)ARG2, ARG3, ARG4, ARG5, ARG6);
 
    PRE_REG_READ6(vki_ssize_t, "fgetxattr",
@@ -1611,7 +1613,7 @@ POST(sys_fgetxattr)
 
 PRE(sys_setxattr)
 {
-   PRINT("setxattr ( %p(%s), %p(%s), %p, %u, %u, %d )", 
+   PRINT("setxattr ( %#lx(%s), %#lx(%s), %#lx, %lu, %lu, %ld )", 
          ARG1, (char *)ARG1, ARG2, (char*)ARG2, ARG3, ARG4, ARG5, ARG6 );
    PRE_REG_READ6(int, "setxattr", 
                  const char *,"path", char *,"name", void *,"value", 
@@ -1625,7 +1627,7 @@ PRE(sys_setxattr)
 
 PRE(sys_fsetxattr)
 {
-   PRINT( "fsetxattr ( %d, %p(%s), %p, %u, %u, %d )", 
+   PRINT( "fsetxattr ( %ld, %#lx(%s), %#lx, %lu, %lu, %ld )", 
           ARG1, ARG2, (char*)ARG2, ARG3, ARG4, ARG5, ARG6 );
    PRE_REG_READ6(int, "fsetxattr", 
                  int,"fd", char *,"name", void *,"value", 
@@ -1638,7 +1640,7 @@ PRE(sys_fsetxattr)
 
 PRE(sys_listxattr)
 {
-   PRINT( "listxattr ( %p(%s), %p, %u, %d )", 
+   PRINT( "listxattr ( %#lx(%s), %#lx, %lu, %ld )", 
           ARG1, (char *)ARG1, ARG2, ARG3, ARG4 );
    PRE_REG_READ4 (long, "listxattr", 
                  const char *,"path", char *,"namebuf", 
@@ -1659,7 +1661,7 @@ POST(sys_listxattr)
 
 PRE(sys_shm_open)
 {
-   PRINT("shm_open(%p(%s), %d, %d)", ARG1, (char *)ARG1, ARG2, ARG3);
+   PRINT("shm_open(%#lx(%s), %ld, %ld)", ARG1, (char *)ARG1, ARG2, ARG3);
    PRE_REG_READ3(long, "shm_open",
                  const char *,"name", int,"flags", vki_mode_t,"mode");
 
@@ -1683,7 +1685,8 @@ POST(sys_shm_open)
 
 PRE(sys_statx)
 {
-   PRINT("statx( %p(%s), %p, %p, %p )", ARG1, ARG1, ARG2, ARG3, ARG4);
+   PRINT("statx( %#lx(%s), %#lx, %#lx, %#lx )",
+      ARG1, (char *)ARG1, ARG2, ARG3, ARG4);
    PRE_REG_READ4(int, "statx", char *, file_name, struct stat *, buf, 
                  void *, fsacl, vki_size_t *, fsacl_size);
    PRE_MEM_RASCIIZ( "statx(file_name)",  ARG1 );
@@ -1713,7 +1716,7 @@ POST(sys_accessx)
 
 PRE(sys_chflags)
 {
-   PRINT("sys_chflags ( %p(%s), %u )", ARG1, ARG1, ARG2);
+   PRINT("sys_chflags ( %#lx(%s), %lu )", ARG1, (char *)ARG1, ARG2);
    PRE_REG_READ2(int, "chflags", const char *,path, unsigned int,flags);
    PRE_MEM_RASCIIZ("chflags(path)", ARG1);
 
@@ -1722,7 +1725,7 @@ PRE(sys_chflags)
 
 PRE(sys_fchflags)
 {
-   PRINT("sys_fchflags ( %d, %u )", ARG1, ARG2);
+   PRINT("sys_fchflags ( %ld, %lu )", ARG1, ARG2);
    PRE_REG_READ2(int, "fchflags", int,fd, unsigned int,flags);
 
    // fixme sanity-check flags value?
@@ -1735,7 +1738,7 @@ POST(sys_stat64)
 
 PRE(sys_stat64)
 {
-   PRINT("sys_stat64 ( %p(%s), %p )", ARG1, ARG1, ARG2);
+   PRINT("sys_stat64 ( %#lx(%s), %#lx )", ARG1, (char *)ARG1, ARG2);
    PRE_REG_READ2(long, "stat", const char *,path, struct stat64 *,buf);
    PRE_MEM_RASCIIZ("stat64(path)", ARG1);
    PRE_MEM_WRITE( "stat64(buf)", ARG2, sizeof(struct vki_stat64) );
@@ -1749,7 +1752,7 @@ POST(sys_lstat64)
 
 PRE(sys_lstat64)
 {
-   PRINT("sys_lstat64 ( %p(%s), %p )", ARG1, ARG1, ARG2);
+   PRINT("sys_lstat64 ( %#lx(%s), %#lx )", ARG1, (char *)ARG1, ARG2);
    PRE_REG_READ2(long, "stat", const char *,path, struct stat64 *,buf);
    PRE_MEM_RASCIIZ("lstat64(path)", ARG1);
    PRE_MEM_WRITE( "lstat64(buf)", ARG2, sizeof(struct vki_stat64) );
@@ -1763,7 +1766,7 @@ POST(sys_fstat64)
 
 PRE(sys_fstat64)
 {
-   PRINT("sys_fstat64 ( %d, %p )", ARG1,ARG2);
+   PRINT("sys_fstat64 ( %ld, %#lx )", ARG1,ARG2);
    PRE_REG_READ2(long, "fstat", unsigned int, fd, struct stat64 *, buf);
    PRE_MEM_WRITE( "fstat64(buf)", ARG2, sizeof(struct vki_stat64) );
 }
@@ -1771,7 +1774,7 @@ PRE(sys_fstat64)
 
 PRE(sys_getfsstat)
 {
-   PRINT("getfsstat(%p, %d, %d)", ARG1, ARG2, ARG3);
+   PRINT("getfsstat(%#lx, %ld, %ld)", ARG1, ARG2, ARG3);
    PRE_REG_READ3(int, "getfsstat", struct vki_statfs *, buf, 
                  int, bufsize, int, flags);
    if (ARG1) {
@@ -1944,8 +1947,8 @@ static void set1attr(ThreadId tid, void *attrData, SizeT attrDataSize)
 
 PRE(sys_getattrlist)
 {
-   PRINT("getattrlist(%p(%s), %p, %p, %u, %u)", 
-         ARG1, ARG1, ARG2, ARG3, ARG4, ARG5);
+   PRINT("getattrlist(%#lx(%s), %#lx, %#lx, %lu, %lu)", 
+         ARG1, (char *)ARG1, ARG2, ARG3, ARG4, ARG5);
    PRE_REG_READ5(int, "getattrlist", 
                  const char *,path, struct vki_attrlist *,attrList, 
                  void *,attrBuf, vki_size_t,attrBufSize, unsigned int,options);
@@ -1967,8 +1970,8 @@ POST(sys_getattrlist)
 
 PRE(sys_setattrlist)
 {
-   PRINT("setattrlist(%p(%s), %p, %p, %u, %u)", 
-         ARG1, ARG1, ARG2, ARG3, ARG4, ARG5);
+   PRINT("setattrlist(%#lx(%s), %#lx, %#lx, %lu, %lu)", 
+         ARG1, (char *)ARG1, ARG2, ARG3, ARG4, ARG5);
    PRE_REG_READ5(int, "setattrlist", 
                  const char *,path, struct vki_attrlist *,attrList, 
                  void *,attrBuf, vki_size_t,attrBufSize, unsigned int,options);
@@ -1980,7 +1983,7 @@ PRE(sys_setattrlist)
 
 PRE(sys_getdirentriesattr)
 {
-   PRINT("getdirentriesattr(%d, %p, %p, %d, %p, %p, %p, %d)", 
+   PRINT("getdirentriesattr(%ld, %#lx, %#lx, %ld, %#lx, %#lx, %#lx, %ld)", 
          ARG1, ARG2, ARG3, ARG4, ARG5, ARG6, ARG7, ARG8);
    PRE_REG_READ8(int, "getdirentriesattr", 
                  int,fd, struct vki_attrlist *,attrList, 
@@ -2017,13 +2020,14 @@ POST(sys_getdirentriesattr)
 
    POST_MEM_WRITE(ARG3, p - (char *)ARG3);
 
-   PRINT("got %d records, %lu/%lu bytes\n", count, p-(char *)ARG3, ARG4);
+   PRINT("got %d records, %d/%lu bytes\n", count, p-(char *)ARG3, ARG4);
 }
 
 
 PRE(sys_fsctl)
 {
-   PRINT("fsctl ( %p(%s), %d, %p, %d )", ARG1, (char *)ARG1, ARG2, ARG3, ARG4);
+   PRINT("fsctl ( %#lx(%s), %ld, %#lx, %ld )",
+      ARG1, (char *)ARG1, ARG2, ARG3, ARG4);
    PRE_REG_READ4( long, "fsctl", 
                   char *,"path", unsigned int,"request", 
                   void *,"data", unsigned int,"options");
@@ -2081,7 +2085,7 @@ POST(sys_fsctl)
 
 PRE(sys_initgroups)
 {
-    PRINT("sys_initgroups(%s, %p, %u)", ARG1, ARG2, ARG3);
+    PRINT("sys_initgroups(%s, %#lx, %lu)", (char *)ARG1, ARG2, ARG3);
     PRE_REG_READ3(long, "initgroups",
         int, setlen, vki_gid_t *, gidset, vki_uid_t, gmuid);
     PRE_MEM_READ("gidset", ARG2, ARG1 * sizeof(vki_gid_t));
@@ -2089,7 +2093,7 @@ PRE(sys_initgroups)
 
 PRE(sys_socket)
 {
-   PRINT("sys_socket ( %d, %d, %d )",ARG1,ARG2,ARG3);
+   PRINT("sys_socket ( %ld, %ld, %ld )",ARG1,ARG2,ARG3);
    PRE_REG_READ3(long, "socket", int, domain, int, type, int, protocol);
 }
 
@@ -2104,7 +2108,8 @@ POST(sys_socket)
 
 PRE(sys_setsockopt)
 {
-   PRINT("sys_setsockopt ( %d, %d, %d, %p, %d )",ARG1,ARG2,ARG3,ARG4,ARG5);
+   PRINT("sys_setsockopt ( %ld, %ld, %ld, %#lx, %ld )",
+      ARG1,ARG2,ARG3,ARG4,ARG5);
    PRE_REG_READ5(long, "setsockopt",
                  int, s, int, level, int, optname,
                  const void *, optval, int, optlen);
@@ -2114,7 +2119,8 @@ PRE(sys_setsockopt)
 
 PRE(sys_getsockopt)
 {
-   PRINT("sys_getsockopt ( %d, %d, %d, %p, %p )",ARG1,ARG2,ARG3,ARG4,ARG5);
+   PRINT("sys_getsockopt ( %ld, %ld, %ld, %#lx, %#lx )",
+      ARG1,ARG2,ARG3,ARG4,ARG5);
    PRE_REG_READ5(long, "getsockopt",
                  int, s, int, level, int, optname,
                  void *, optval, int, *optlen);
@@ -2132,7 +2138,7 @@ POST(sys_getsockopt)
 PRE(sys_connect)
 {
    *flags |= SfMayBlock;
-   PRINT("sys_connect ( %d, %p, %d )",ARG1,ARG2,ARG3);
+   PRINT("sys_connect ( %ld, %#lx, %ld )",ARG1,ARG2,ARG3);
    PRE_REG_READ3(long, "connect",
                  int, sockfd, struct sockaddr *, serv_addr, int, addrlen);
    ML_(generic_PRE_sys_connect)(tid, ARG1,ARG2,ARG3);
@@ -2142,7 +2148,7 @@ PRE(sys_connect)
 PRE(sys_accept)
 {
    *flags |= SfMayBlock;
-   PRINT("sys_accept ( %d, %p, %d )",ARG1,ARG2,ARG3);
+   PRINT("sys_accept ( %ld, %#lx, %ld )",ARG1,ARG2,ARG3);
    PRE_REG_READ3(long, "accept",
                  int, s, struct sockaddr *, addr, int, *addrlen);
    ML_(generic_PRE_sys_accept)(tid, ARG1,ARG2,ARG3);
@@ -2161,7 +2167,8 @@ POST(sys_accept)
 PRE(sys_sendto)
 {
    *flags |= SfMayBlock;
-   PRINT("sys_sendto ( %d, %s, %d, %u, %p, %d )",ARG1,ARG2,ARG3,ARG4,ARG5,ARG6);
+   PRINT("sys_sendto ( %ld, %s, %ld, %lu, %#lx, %ld )",
+      ARG1,(char *)ARG2,ARG3,ARG4,ARG5,ARG6);
    PRE_REG_READ6(long, "sendto",
                  int, s, const void *, msg, int, len, 
                  unsigned int, flags, 
@@ -2172,7 +2179,7 @@ PRE(sys_sendto)
 PRE(sys_sendfile)
 {
 #if VG_WORDSIZE == 4
-   PRINT("sys_sendfile(%d, %d, %d, %p, %p, %d)",
+   PRINT("sys_sendfile(%ld, %ld, %llu, %#lx, %#lx, %ld)",
          ARG1, ARG2, LOHI64(ARG3, ARG4), ARG5, ARG6, ARG7);
 
    PRE_REG_READ7(long, "sendfile",
@@ -2182,7 +2189,7 @@ PRE(sys_sendfile)
    PRE_MEM_WRITE("sendfile(nwritten)", ARG5, sizeof(vki_uint64_t));
    if (ARG6) PRE_MEM_WRITE("sendfile(sf_header)", ARG6, sizeof(struct sf_hdtr));
 #else
-   PRINT("sys_sendfile(%d, %d, %d, %p, %p, %d)",
+   PRINT("sys_sendfile(%ld, %ld, %ld, %#lx, %#lx, %ld)",
       ARG1, ARG2, ARG3, ARG4, ARG5, ARG6);
 
    PRE_REG_READ6(long, "sendfile",
@@ -2210,7 +2217,8 @@ POST(sys_sendfile)
 PRE(sys_recvfrom)
 {
    *flags |= SfMayBlock;
-   PRINT("sys_recvfrom ( %d, %p, %d, %u, %p, %p )",ARG1,ARG2,ARG3,ARG4,ARG5,ARG6);
+   PRINT("sys_recvfrom ( %ld, %#lx, %ld, %lu, %#lx, %#lx )",
+      ARG1,ARG2,ARG3,ARG4,ARG5,ARG6);
    PRE_REG_READ6(long, "recvfrom",
                  int, s, void *, buf, int, len, unsigned int, flags,
                  struct sockaddr *, from, int *, fromlen);
@@ -2228,7 +2236,7 @@ POST(sys_recvfrom)
 PRE(sys_sendmsg)
 {
    *flags |= SfMayBlock;
-   PRINT("sys_sendmsg ( %d, %p, %d )",ARG1,ARG2,ARG3);
+   PRINT("sys_sendmsg ( %ld, %#lx, %ld )",ARG1,ARG2,ARG3);
    PRE_REG_READ3(long, "sendmsg",
                  int, s, const struct msghdr *, msg, int, flags);
    ML_(generic_PRE_sys_sendmsg)(tid, ARG1,ARG2);
@@ -2238,7 +2246,7 @@ PRE(sys_sendmsg)
 PRE(sys_recvmsg)
 {
    *flags |= SfMayBlock;
-   PRINT("sys_recvmsg ( %d, %p, %d )",ARG1,ARG2,ARG3);
+   PRINT("sys_recvmsg ( %ld, %#lx, %ld )",ARG1,ARG2,ARG3);
    PRE_REG_READ3(long, "recvmsg", int, s, struct msghdr *, msg, int, flags);
    ML_(generic_PRE_sys_recvmsg)(tid, ARG1,ARG2);
 }
@@ -2252,14 +2260,14 @@ POST(sys_recvmsg)
 PRE(sys_shutdown)
 {
    *flags |= SfMayBlock;
-   PRINT("sys_shutdown ( %d, %d )",ARG1,ARG2);
+   PRINT("sys_shutdown ( %ld, %ld )",ARG1,ARG2);
    PRE_REG_READ2(int, "shutdown", int, s, int, how);
 }
 
 
 PRE(sys_bind)
 {
-   PRINT("sys_bind ( %d, %p, %d )",ARG1,ARG2,ARG3);
+   PRINT("sys_bind ( %ld, %#lx, %ld )",ARG1,ARG2,ARG3);
    PRE_REG_READ3(long, "bind",
                  int, sockfd, struct sockaddr *, my_addr, int, addrlen);
    ML_(generic_PRE_sys_bind)(tid, ARG1,ARG2,ARG3);
@@ -2268,14 +2276,14 @@ PRE(sys_bind)
 
 PRE(sys_listen)
 {
-   PRINT("sys_listen ( %d, %d )",ARG1,ARG2);
+   PRINT("sys_listen ( %ld, %ld )",ARG1,ARG2);
    PRE_REG_READ2(long, "listen", int, s, int, backlog);
 }
 
 
 PRE(sys_getsockname)
 {
-   PRINT("sys_getsockname ( %d, %p, %p )",ARG1,ARG2,ARG3);
+   PRINT("sys_getsockname ( %ld, %#lx, %#lx )",ARG1,ARG2,ARG3);
    PRE_REG_READ3(long, "getsockname",
                  int, s, struct sockaddr *, name, int *, namelen);
    ML_(generic_PRE_sys_getsockname)(tid, ARG1,ARG2,ARG3);
@@ -2291,7 +2299,7 @@ POST(sys_getsockname)
 
 PRE(sys_getpeername)
 {
-   PRINT("sys_getpeername ( %d, %p, %p )",ARG1,ARG2,ARG3);
+   PRINT("sys_getpeername ( %ld, %#lx, %#lx )",ARG1,ARG2,ARG3);
    PRE_REG_READ3(long, "getpeername",
                  int, s, struct sockaddr *, name, int *, namelen);
    ML_(generic_PRE_sys_getpeername)(tid, ARG1,ARG2,ARG3);
@@ -2307,7 +2315,7 @@ POST(sys_getpeername)
 
 PRE(sys_socketpair)
 {
-   PRINT("sys_socketpair ( %d, %d, %d, %p )",ARG1,ARG2,ARG3,ARG4);
+   PRINT("sys_socketpair ( %ld, %ld, %ld, %#lx )",ARG1,ARG2,ARG3,ARG4);
    PRE_REG_READ4(long, "socketpair",
                  int, d, int, type, int, protocol, int *, sv);
    ML_(generic_PRE_sys_socketpair)(tid, ARG1,ARG2,ARG3,ARG4);
@@ -2323,7 +2331,7 @@ POST(sys_socketpair)
 
 PRE(sys_gethostuuid)
 {
-   PRINT("sys_gethostuuid ( %p, %p )", ARG1, ARG2);
+   PRINT("sys_gethostuuid ( %#lx, %#lx )", ARG1, ARG2);
    PRE_REG_READ2(int,"gethostuuid", 
                  char *,"uuid_buf", 
                  const struct vki_timespec *,"timeout");
@@ -2371,7 +2379,7 @@ POST(sys_pipe)
 
 PRE(sys_getlogin)
 {
-   PRINT("getlogin ( %p, %d )", ARG1, ARG2);
+   PRINT("getlogin ( %#lx, %ld )", ARG1, ARG2);
    PRE_REG_READ2(long, "getlogin", 
                  char *,"namebuf", unsigned int,"namelen");
 
@@ -2386,7 +2394,7 @@ POST(sys_getlogin)
 
 PRE(sys_ptrace)
 {
-   PRINT("ptrace ( %d, %d, %p, %d )", ARG1, ARG2, ARG3, ARG4);
+   PRINT("ptrace ( %ld, %ld, %#lx, %ld )", ARG1, ARG2, ARG3, ARG4);
    PRE_REG_READ4(long, "ptrace", 
                  int,"request", vki_pid_t,"pid", 
                  vki_caddr_t,"addr", int,"data");
@@ -2418,7 +2426,7 @@ POST(sys_getdtablesize)
 
 PRE(sys_lseek)
 {
-   PRINT("lseek ( %d, %lld, %d )", ARG1,ARG2,ARG3);
+   PRINT("lseek ( %ld, %ld, %ld )", ARG1,ARG2,ARG3);
    PRE_REG_READ4(vki_off_t, "lseek",
                  unsigned int,fd, int,offset_hi, int,offset_lo, 
                  unsigned int,whence);
@@ -2427,7 +2435,7 @@ PRE(sys_lseek)
 
 PRE(sys_pathconf)
 {
-   PRINT("pathconf(%p(%s), %d)", ARG1,(char *)ARG1,ARG2);
+   PRINT("pathconf(%#lx(%s), %ld)", ARG1,(char *)ARG1,ARG2);
    PRE_REG_READ2(long,"pathconf", const char *,"path", int,"name");
    PRE_MEM_RASCIIZ("pathconf(path)", ARG1);
 
@@ -2438,7 +2446,7 @@ PRE(sys_pathconf)
 
 PRE(sys_fpathconf)
 {
-   PRINT("fpathconf(%d, %d)", ARG1,ARG2);
+   PRINT("fpathconf(%ld, %ld)", ARG1,ARG2);
    PRE_REG_READ2(long,"fpathconf", int,"fd", int,"name");
 
    if (!ML_(fd_allowed)(ARG1, "fpathconf", tid, False))
@@ -2448,7 +2456,7 @@ PRE(sys_fpathconf)
 
 PRE(sys_getdirentries)
 {
-   PRINT("getdirentries(%d, %p, %d, %p)", ARG1, ARG2, ARG3, ARG4);
+   PRINT("getdirentries(%ld, %#lx, %ld, %#lx)", ARG1, ARG2, ARG3, ARG4);
    PRE_REG_READ4(int, "getdirentries", 
                  int, fd, char *, buf, int, nbytes, long *, basep);
    PRE_MEM_WRITE("getdirentries(basep)", ARG4, sizeof(long));
@@ -2465,7 +2473,7 @@ POST(sys_getdirentries)
 
 PRE(sys_getdirentries64)
 {
-   PRINT("getdirentries64(%d, %p, %u, %p)", ARG1, ARG2, ARG3, ARG4);
+   PRINT("getdirentries64(%ld, %#lx, %lu, %#lx)", ARG1, ARG2, ARG3, ARG4);
    PRE_REG_READ4(vki_ssize_t, "getdirentries", 
                  int,fd, char *,buf, vki_size_t,nbytes, vki_off_t *,basep);
    PRE_MEM_WRITE("getdirentries(position)", ARG4, sizeof(vki_off_t));
@@ -2482,7 +2490,7 @@ POST(sys_getdirentries64)
 
 PRE(sys_statfs64)
 {
-   PRINT("sys_statfs64 ( %p(%s), %p )",ARG1,ARG1,ARG2);
+   PRINT("sys_statfs64 ( %#lx(%s), %#lx )",ARG1,(char *)ARG1,ARG2);
    PRE_REG_READ2(long, "statfs64", const char *, path, struct statfs64 *, buf);
    PRE_MEM_RASCIIZ( "statfs64(path)", ARG1 );
    PRE_MEM_WRITE( "statfs64(buf)", ARG2, sizeof(struct vki_statfs64) );
@@ -2496,7 +2504,7 @@ POST(sys_statfs64)
 
 PRE(sys_fstatfs64)
 {
-   PRINT("sys_fstatfs64 ( %d, %p )",ARG1,ARG2);
+   PRINT("sys_fstatfs64 ( %ld, %#lx )",ARG1,ARG2);
    PRE_REG_READ2(long, "fstatfs64",
                  unsigned int, fd, struct statfs *, buf);
    PRE_MEM_WRITE( "fstatfs64(buf)", ARG2, sizeof(struct vki_statfs64) );
@@ -2510,7 +2518,7 @@ POST(sys_fstatfs64)
 
 PRE(sys_auditon)
 {
-   PRINT("sys_auditon ( %d, %p, %d )", ARG1, ARG2, ARG3);
+   PRINT("sys_auditon ( %ld, %#lx, %ld )", ARG1, ARG2, ARG3);
    PRE_REG_READ3(int,"auditon", 
                  int,"cmd", void*,"data", unsigned int,"length");
 
@@ -2559,7 +2567,7 @@ PRE(sys_auditon)
       break;
 
    default:
-      VG_(message)(Vg_UserMsg, "UNKNOWN auditon cmd %d", ARG1);
+      VG_(message)(Vg_UserMsg, "UNKNOWN auditon cmd %ld", ARG1);
       break;
    }
 }
@@ -2619,7 +2627,7 @@ PRE(sys_mmap)
    // SysRes r;
 
 #if VG_WORDSIZE == 4
-   PRINT("sys_mmap ( %p, %u, %d, %d, %d, %lld )",
+   PRINT("sys_mmap ( %#lx, %lu, %ld, %ld, %ld, %lld )",
          ARG1, ARG2, ARG3, ARG4, ARG5, LOHI64(ARG6, ARG7) );
    PRE_REG_READ7(Addr, "mmap",
                  Addr,start, vki_size_t,length, int,prot, int,flags, int,fd, 
@@ -2629,7 +2637,7 @@ PRE(sys_mmap)
    // r = ML_(generic_PRE_sys_mmap)( tid, ARG1, ARG2, ARG3, ARG4, ARG5, 
    // (Off64T)LOHI64(ARG6, ARG7) );
 #else
-   PRINT("sys_mmap ( %p, %u, %d, %d, %d, %d )",
+   PRINT("sys_mmap ( %#lx, %lu, %ld, %ld, %ld, %ld )",
          ARG1, ARG2, ARG3, ARG4, ARG5, ARG6 );
    PRE_REG_READ6(long, "mmap",
                  Addr,start, vki_size_t,length, int,prot, int,flags, int,fd, 
@@ -2654,7 +2662,7 @@ POST(sys_mmap)
 
 PRE(sys_sysctl)
 {
-   PRINT( "sysctl ( %p, %d, %p, %p, %p, %d )", 
+   PRINT( "sysctl ( %#lx, %ld, %#lx, %#lx, %#lx, %ld )", 
           ARG1, ARG2, ARG3, ARG4, ARG5, ARG6 );
 
    PRE_REG_READ6(int, "sysctl", int*, name, unsigned int, namelen, 
@@ -2749,7 +2757,7 @@ POST(sys_sysctl)
 
 PRE(sys_sigpending)
 {
-   PRINT( "sys_sigpending ( %p )", ARG1 );
+   PRINT( "sys_sigpending ( %#lx )", ARG1 );
    PRE_REG_READ1(long, "sigpending", vki_sigset_t *, set);
    PRE_MEM_WRITE( "sigpending(set)", ARG1, sizeof(vki_sigset_t));
 }
@@ -2764,7 +2772,7 @@ PRE(sys_sigprocmask)
    vki_sigset_t* set;
    vki_sigset_t* oldset;
 
-   PRINT("sys_sigprocmask ( %d, %p, %p )",ARG1,ARG2,ARG3);
+   PRINT("sys_sigprocmask ( %ld, %#lx, %#lx )",ARG1,ARG2,ARG3);
    PRE_REG_READ3(long, "sigprocmask", 
                  int, how, vki_sigset_t *, set, vki_sigset_t *, oldset);
    if (ARG2 != 0)
@@ -2797,7 +2805,7 @@ POST(sys_sigprocmask)
 
 PRE(sys_sigaltstack)
 {
-   PRINT("sigaltstack ( %p, %p )",ARG1,ARG2);
+   PRINT("sigaltstack ( %#lx, %#lx )",ARG1,ARG2);
    PRE_REG_READ2(int, "sigaltstack",
                  const vki_stack_t *, ss, vki_stack_t *, oss);
    if (ARG1 != 0) {
@@ -2881,7 +2889,7 @@ static void import_complex_message(ThreadId tid, mach_msg_header_t *mh)
             Addr start = VG_PGROUNDDN((Addr)desc->out_of_line.address);
             Addr end = VG_PGROUNDUP((Addr)desc->out_of_line.address + 
                                     (Addr)desc->out_of_line.size);
-            PRINT("got ool mem %p..%p; ", desc->out_of_line.address, 
+            PRINT("got ool mem %p..%#lx; ", desc->out_of_line.address, 
                   (Addr)desc->out_of_line.address+desc->out_of_line.size);
 
             ML_(notify_aspacem_and_tool_of_mmap)
@@ -2894,7 +2902,7 @@ static void import_complex_message(ThreadId tid, mach_msg_header_t *mh)
       case MACH_MSG_OOL_PORTS_DESCRIPTOR:
          // out-of-line array of ports - map it
          // GrP fixme see fixmes above
-         PRINT("got %d ool ports %p..%p", desc->ool_ports.count, desc->ool_ports.address, (Addr)desc->ool_ports.address+desc->ool_ports.count*sizeof(mach_port_t));
+         PRINT("got %d ool ports %p..%#lx", desc->ool_ports.count, desc->ool_ports.address, (Addr)desc->ool_ports.address+desc->ool_ports.count*sizeof(mach_port_t));
 
          if (desc->ool_ports.count > 0) {
             Addr start = VG_PGROUNDDN((Addr)desc->ool_ports.address);
@@ -2916,7 +2924,7 @@ static void import_complex_message(ThreadId tid, mach_msg_header_t *mh)
          break;
 
       default:
-         VG_(printf)("UNKNOWN Mach descriptor type %d!\n", desc->type);
+         VG_(printf)("UNKNOWN Mach descriptor type %u!\n", desc->type.type);
          break;
       }
    }
@@ -3033,7 +3041,7 @@ static size_t export_complex_message(ThreadId tid, mach_msg_header_t *mh)
             vm_size_t size = desc->out_of_line.size;
             Addr start = VG_PGROUNDDN((Addr)desc->out_of_line.address);
             Addr end = VG_PGROUNDUP((Addr)desc->out_of_line.address + size);
-            PRINT("kill ool mem %p..%p; ", desc->out_of_line.address, 
+            PRINT("kill ool mem %p..%#lx; ", desc->out_of_line.address, 
                   (Addr)desc->out_of_line.address + size);
             ML_(notify_aspacem_and_tool_of_munmap)(start, end - start);
          }
@@ -3049,13 +3057,13 @@ static size_t export_complex_message(ThreadId tid, mach_msg_header_t *mh)
             vm_size_t size = desc->ool_ports.count * sizeof(mach_port_t);
             Addr start = VG_PGROUNDDN((Addr)desc->ool_ports.address);
             Addr end = VG_PGROUNDUP((Addr)desc->ool_ports.address + size);
-            PRINT("kill ool port array %p..%p; ", desc->ool_ports.address, 
+            PRINT("kill ool port array %p..%#lx; ", desc->ool_ports.address, 
                   (Addr)desc->ool_ports.address + size);
             ML_(notify_aspacem_and_tool_of_munmap)(start, end - start);
          }
          break;
       default:
-         VG_(printf)("UNKNOWN Mach descriptor type %d!\n", desc->type);
+         VG_(printf)("UNKNOWN Mach descriptor type %u!\n", desc->type.type);
          break;
       }
    }
@@ -3119,7 +3127,7 @@ POST(host_page_size)
    Reply *reply = (Reply *)ARG1;
 
    if (!reply->RetCode) {
-      PRINT("page size %p", reply->out_page_size);
+      PRINT("page size %u", reply->out_page_size);
    } else {
       PRINT("mig return %d", reply->RetCode);
    }
@@ -3801,7 +3809,7 @@ POST(task_get_special_port)
    
    Reply *reply = (Reply *)ARG1;
 
-   PRINT("got port %p ", reply->special_port.name);
+   PRINT("got port %#x ", reply->special_port.name);
 
    switch (MACH_ARG(task_get_special_port.which_port)) {
    case TASK_BOOTSTRAP_PORT:
@@ -4035,7 +4043,7 @@ PRE(vm_allocate)
 
    Request *req = (Request *)ARG1;
 
-   PRINT("vm_allocate (%s, at %p, size %d, flags 0x%x)", 
+   PRINT("vm_allocate (%s, at %#x, size %d, flags %#x)", 
          name_for_port(MACH_REMOTE), 
          req->address, req->size, req->flags);
 
@@ -4061,7 +4069,7 @@ POST(vm_allocate)
    
    if (!reply->RetCode) {
       if (MACH_REMOTE == vg_task_port) {
-         PRINT("allocated at %p", reply->address);
+         PRINT("allocated at %#x", reply->address);
          // requesting 0 bytes returns address 0 with no error
          if (MACH_ARG(vm_allocate.size)) {
             ML_(notify_aspacem_and_tool_of_mmap)
@@ -4069,7 +4077,7 @@ POST(vm_allocate)
                  VKI_PROT_READ|VKI_PROT_WRITE, VKI_MAP_ANON, -1, 0);
          }
       } else {
-         PRINT("allocated at %p in remote task %s", reply->address, 
+         PRINT("allocated at %#x in remote task %s", reply->address, 
                name_for_port(MACH_REMOTE));
       }
    } else {
@@ -4091,7 +4099,7 @@ PRE(vm_deallocate)
    
    Request *req = (Request *)ARG1;
    
-   PRINT("vm_deallocate(%s, at %p, size %d)", 
+   PRINT("vm_deallocate(%s, at %#x, size %d)", 
          name_for_port(MACH_REMOTE), 
          req->address, req->size);
    
@@ -4149,7 +4157,7 @@ PRE(vm_protect)
    
    Request *req = (Request *)ARG1;
    
-   PRINT("vm_protect(%s, at %p, size %d, set_max %d, prot %d)", 
+   PRINT("vm_protect(%s, at %#x, size %d, set_max %d, prot %d)", 
          name_for_port(MACH_REMOTE), req->address, req->size, 
          req->set_maximum, req->new_protection);
    
@@ -4208,7 +4216,7 @@ PRE(vm_inherit)
    
    Request *req = (Request *)ARG1;
    
-   PRINT("vm_inherit(%s, at %p, size %d, value %d)", 
+   PRINT("vm_inherit(%s, at %#x, size %d, value %d)", 
          name_for_port(MACH_REMOTE), 
          req->address, req->size, 
          req->new_inheritance);
@@ -4252,7 +4260,7 @@ PRE(vm_read)
 
    Request *req = (Request *)ARG1;
 
-   PRINT("vm_read(from %s at %p size %u)", 
+   PRINT("vm_read(from %s at %#x size %u)", 
          name_for_port(MACH_REMOTE), req->address, req->size);
    
    MACH_ARG(vm_read.addr) = req->address;
@@ -4344,7 +4352,7 @@ PRE(vm_read_overwrite)
 
    Request *req = (Request *)ARG1;
 
-   PRINT("vm_read_overwrite(from %s at %p size %u to %p)", 
+   PRINT("vm_read_overwrite(from %s at %#x size %u to %#x)", 
          name_for_port(MACH_REMOTE), req->address, req->size, req->data);
    
    MACH_ARG(vm_read_overwrite.addr) = req->address;
@@ -4399,7 +4407,7 @@ PRE(vm_copy)
    
    Request *req = (Request *)ARG1;
    
-   PRINT("vm_copy(%s, %p, %d, %p)", 
+   PRINT("vm_copy(%s, %#x, %d, %#x)", 
          name_for_port(MACH_REMOTE), 
          req->source_address, req->size, req->dest_address);
 
@@ -4459,7 +4467,7 @@ PRE(vm_map)
    Request *req = (Request *)ARG1;
 
    // GrP fixme check these
-   PRINT("vm_map(in %s, at %p, size %d, from %s ...)", 
+   PRINT("vm_map(in %s, at %#x, size %d, from %s ...)", 
          name_for_port(MACH_REMOTE), 
          req->address, req->size, 
          name_for_port(req->object.name));
@@ -4487,7 +4495,7 @@ POST(vm_map)
 
    if (!reply->RetCode) {
       // GrP fixme check src and dest tasks
-      PRINT("mapped at %p", reply->address);
+      PRINT("mapped at %#x", reply->address);
       // GrP fixme max prot
       ML_(notify_aspacem_and_tool_of_mmap)
           (reply->address, VG_PGROUNDUP(MACH_ARG(vm_map.size)), 
@@ -4527,11 +4535,11 @@ PRE(vm_remap)
       mach_port_name_t source_task = req->src_task.name;
       if (source_task == mach_task_self()) {
          PRINT("vm_remap(mach_task_self(), "
-               "to %p size %d, from mach_task_self() at %p, ...)",
+               "to %#x size %d, from mach_task_self() at %#x, ...)",
                req->target_address, req->size, req->src_address);
       } else {
           PRINT("vm_remap(mach_task_self(), "
-                "to %p size %d, from task %p at %p, ...)",
+                "to %#x size %d, from task %u at %#x, ...)",
                 req->target_address, req->size, 
                 source_task,  req->src_address);
       }
@@ -4565,7 +4573,7 @@ POST(vm_remap)
       // GrP fixme check src and dest tasks
       UInt prot = reply->cur_protection & reply->max_protection;
       // GrP fixme max prot
-      PRINT("mapped at %p", reply->target_address);
+      PRINT("mapped at %#x", reply->target_address);
       ML_(notify_aspacem_and_tool_of_mmap)
           (reply->target_address, VG_PGROUNDUP(MACH_ARG(vm_remap.size)), 
           prot, VKI_MAP_SHARED, -1, 0);
@@ -4595,9 +4603,9 @@ PRE(mach_make_memory_entry_64)
 
    Request *req = (Request *)ARG1;
 
-   PRINT("mach_make_memory_entry_64(%s, %d, %d, %d, ..., %d)", 
+   PRINT("mach_make_memory_entry_64(%s, %llu, %llu, %d, ..., %u)", 
          name_for_port(MACH_REMOTE), 
-         req->size, req->offset, req->permission, req->parent_entry);
+         req->size, req->offset, req->permission, req->parent_entry.type);
 
    AFTER = POST_FN(mach_make_memory_entry_64);
 }
@@ -4637,7 +4645,7 @@ PRE(vm_purgable_control)
 
    Request *req = (Request *)ARG1;
 
-   PRINT("vm_purgable_control(%s, %p, %d, %d)", 
+   PRINT("vm_purgable_control(%s, %#x, %d, %d)", 
          name_for_port(MACH_REMOTE), 
          req->address, req->control, req->state);
 
@@ -5201,7 +5209,7 @@ PRE(sys_bsdthread_create)
 {
    ThreadState *tst;
 
-   PRINT("bsdthread_create( %p, %p, %p, %p, %x )", 
+   PRINT("bsdthread_create( %#lx, %#lx, %#lx, %#lx, %#lx )", 
          ARG1, ARG2, ARG3, ARG4, ARG5);
    PRE_REG_READ5(pthread_t,"bsdthread_create", 
                  void *,"func", void *,"func_arg", void *,"stack", 
@@ -5242,7 +5250,7 @@ PRE(sys_bsdthread_terminate)
 {
    ThreadState *tst;
 
-   PRINT("bsdthread_terminate( %p, %lx, %s, %s )", 
+   PRINT("bsdthread_terminate( %#lx, %lx, %s, %s )", 
          ARG1, ARG2, name_for_port(ARG3), name_for_port(ARG4));
    PRE_REG_READ4(int,"bsdthread_terminate", 
                  void *,"freeaddr", size_t,"freesize", 
@@ -5932,7 +5940,7 @@ PRE(mach_thread_self)
 POST(mach_thread_self)
 {
    record_named_port(tid, RES, MACH_PORT_RIGHT_SEND, "thread-%p");
-   PRINT("thread 0x%x", RES);
+   PRINT("thread %#lx", RES);
 }
 
 
@@ -5945,7 +5953,7 @@ POST(mach_host_self)
 {
    vg_host_port = RES;
    record_named_port(tid, RES, MACH_PORT_RIGHT_SEND, "mach_host_self()");
-   PRINT("host 0x%x", RES);
+   PRINT("host %#lx", RES);
 }
 
 
@@ -5958,13 +5966,14 @@ POST(mach_task_self)
 {
    vg_task_port = RES;
    record_named_port(tid, RES, MACH_PORT_RIGHT_SEND, "mach_task_self()");
-   PRINT("task 0x%x", RES);
+   PRINT("task %#lx", RES);
 }
 
 
 PRE(syscall_thread_switch)
 {
-   PRINT("syscall_thread_switch(%s, %d, %d)", name_for_port(ARG1), ARG2, ARG3);
+   PRINT("syscall_thread_switch(%s, %ld, %ld)",
+      name_for_port(ARG1), ARG2, ARG3);
    PRE_REG_READ3(long, "syscall_thread_switch", 
                  mach_port_t,"thread", int,"option", natural_t,"timeout");
 
@@ -6045,7 +6054,7 @@ PRE(semaphore_timedwait_signal)
 
 PRE(sys___semwait_signal)
 {
-   PRINT("sys___semwait_signal(wait %s, signal %s, %d, %d, %g seconds)", 
+   PRINT("sys___semwait_signal(wait %s, signal %s, %ld, %ld, %g seconds)", 
          name_for_port(ARG1), name_for_port(ARG2), ARG3, ARG4, ARG5+ARG6/1000000000.0);
    PRE_REG_READ6(long, "sys___semwait_signal", 
                  int,"cond_sem", int,"mutex_sem",
@@ -6058,7 +6067,7 @@ PRE(sys___semwait_signal)
 
 PRE(task_for_pid)
 {
-   PRINT("task_for_pid(%s, %d, %p)", name_for_port(ARG1), ARG2, ARG3);
+   PRINT("task_for_pid(%s, %ld, %#lx)", name_for_port(ARG1), ARG2, ARG3);
    PRE_REG_READ3(long, "task_for_pid", 
                  mach_port_t,"target", 
                  vki_pid_t, "pid", mach_port_t *,"task");
@@ -6079,7 +6088,7 @@ POST(task_for_pid)
 
 PRE(pid_for_task)
 {
-   PRINT("pid_for_task(%s, %p)", name_for_port(ARG1), ARG2);
+   PRINT("pid_for_task(%s, %#lx)", name_for_port(ARG1), ARG2);
    PRE_REG_READ2(long, "task_for_pid", mach_port_t,"task", vki_pid_t *,"pid");
    PRE_MEM_WRITE("task_for_pid(pid)", ARG2, sizeof(vki_pid_t));
 }
@@ -6097,7 +6106,7 @@ POST(pid_for_task)
 
 PRE(mach_timebase_info)
 {
-   PRINT("mach_timebase_info(%p)", ARG1);
+   PRINT("mach_timebase_info(%#lx)", ARG1);
    PRE_REG_READ1(long, "mach_timebase_info", void *,"info");
    PRE_MEM_WRITE("mach_timebase_info(info)", ARG1, sizeof(struct vki_mach_timebase_info));
 }
@@ -6168,7 +6177,7 @@ PRE(mk_timer_arm)
 
 PRE(mk_timer_cancel)
 {
-   PRINT("mk_timer_cancel(%s, %p)", name_for_port(ARG1), ARG2);
+   PRINT("mk_timer_cancel(%s, %#lx)", name_for_port(ARG1), ARG2);
    PRE_REG_READ2(long, "mk_timer_cancel", 
                  mach_port_t,"name", Addr,"result_time");
    if (ARG2) {
@@ -6186,7 +6195,7 @@ POST(mk_timer_cancel)
 
 PRE(iokit_user_client_trap)
 {
-   PRINT("iokit_user_client_trap(%s, %d, %llx, %llx, %llx, %llx, %llx, %llx)",
+   PRINT("iokit_user_client_trap(%s, %ld, %lx, %lx, %lx, %lx, %lx, %lx)",
          name_for_port(ARG1), ARG2, ARG3, ARG4, ARG5, ARG6, ARG7, ARG8);
    PRE_REG_READ8(kern_return_t, "iokit_user_client_trap", 
                  mach_port_t,connect, unsigned int,index, 
@@ -6247,7 +6256,7 @@ PRE(swtch)
 
 PRE(swtch_pri)
 {
-   PRINT("swtch ( %d )", ARG1);
+   PRINT("swtch ( %ld )", ARG1);
    PRE_REG_READ1(long, "swtch", int,"pri");
 
    *flags |= SfMayBlock;
@@ -6268,7 +6277,7 @@ static VexGuestX86SegDescr* alloc_zeroed_x86_LDT ( void )
 
 PRE(pthread_set_self)
 {
-   PRINT("pthread_set_self ( 0x%x )", ARG1);
+   PRINT("pthread_set_self ( %#lx )", ARG1);
    PRE_REG_READ1(void, "pthread_set_self", struct pthread_t *, self);
 
 #if defined(VGA_x86)

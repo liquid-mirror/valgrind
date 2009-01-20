@@ -57,20 +57,6 @@
 /*--- detector.                                            ---*/
 /*------------------------------------------------------------*/
 
-static 
-jmp_buf memscan_jmpbuf;
-
-
-static
-void scan_all_valid_memory_catcher ( Int sigNo, Addr addr )
-{
-   if (0)
-      VG_(printf)("OUCH! sig=%d addr=%#lx\n", sigNo, addr);
-   if (sigNo == VKI_SIGSEGV || sigNo == VKI_SIGBUS)
-      __builtin_longjmp(memscan_jmpbuf, 1);
-}
-
-
 /* TODO: GIVE THIS A PROPER HOME
    TODO: MERGE THIS WITH DUPLICATE IN m_main.c and coredump-elf.c.
    Extract from aspacem a vector of the current segment start
@@ -325,8 +311,8 @@ static Int lc_markstack_pop(void)
 #if defined(VGO_darwin)
 static void lc_scan_memory_WRK(Addr start, SizeT len, Int clique)
 {
-    Addr ptr = VG_ROUNDUP(start, sizeof(Addr));
-    Addr end = VG_ROUNDDN(start+len, sizeof(Addr));
+   Addr ptr = VG_ROUNDUP(start,     sizeof(Addr));
+   Addr end = VG_ROUNDDN(start+len, sizeof(Addr));
 
    if (!VG_(am_is_valid_for_client)(ptr, sizeof(Addr), VKI_PROT_READ))
       ptr = VG_PGROUNDUP(ptr+1);	/* first page bad */
@@ -353,12 +339,23 @@ static void lc_scan_memory_WRK(Addr start, SizeT len, Int clique)
 	    addr = *(Addr *)ptr;
 	    lc_markstack_push_WRK(addr, clique);
 	 } else if (0 && VG_DEBUG_LEAKCHECK)
-	    VG_(printf)("%p not valid\n", ptr);
+	    VG_(printf)("%#lx not valid\n", ptr);
 	 ptr += sizeof(Addr);
       }
    }
 }
 #else
+static jmp_buf memscan_jmpbuf;
+
+static
+void scan_all_valid_memory_catcher ( Int sigNo, Addr addr )
+{
+   if (0)
+      VG_(printf)("OUCH! sig=%d addr=%#lx\n", sigNo, addr);
+   if (sigNo == VKI_SIGSEGV || sigNo == VKI_SIGBUS)
+      __builtin_longjmp(memscan_jmpbuf, 1);
+}
+
 static void lc_scan_memory_WRK(Addr start, SizeT len, Int clique)
 {
    Addr ptr = VG_ROUNDUP(start, sizeof(Addr));

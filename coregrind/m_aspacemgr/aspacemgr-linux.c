@@ -3467,8 +3467,6 @@ static void remove_mapping_callback(Addr addr, SizeT len)
 }
 
 
-// DDD: this is used in other modules -- should have a prototype in a .h
-// file.
 void VG_(sync_mappings)(const HChar *when, const HChar *where, Int num)
 {
     sync_mapping_when = when ?: "?";

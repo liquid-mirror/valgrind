@@ -740,6 +740,7 @@ void VG_(show_open_fds) (void)
    VG_(message)(Vg_UserMsg, "");
 }
 
+#if !defined(VGO_darwin)
 /* If /proc/self/fd doesn't exist for some weird reason (like you've
    got a kernel that doesn't have /proc support compiled in), then we
    need to find out what file descriptors we inherited from our parent
@@ -765,6 +766,7 @@ void do_hacky_preopened(void)
       if(VG_(fcntl)(i, VKI_F_GETFL, 0) != -1)
          ML_(record_fd_open_nameless)(-1, i);
 }
+#endif
 
 /* Initialize the list of open file descriptors with the file descriptors
    we inherited from out parent process. */

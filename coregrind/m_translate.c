@@ -1364,7 +1364,7 @@ Bool VG_(translate) ( ThreadId tid,
 #warning GrP fixme synth signals
       {
           VG_(message)(Vg_UserMsg, "ERROR\n");
-          VG_(message)(Vg_UserMsg, "Thread %d jumped to bad address %p", 
+          VG_(message)(Vg_UserMsg, "Thread %d jumped to bad address %#llx", 
                        tid, addr);
           VG_(get_and_pp_StackTrace) ( tid, 30 );
 

@@ -780,6 +780,7 @@ static vki_malloc_zone_t vg_default_zone = {
     NULL, // batch_free
     NULL, // fixme introspect
     2,  // version (fixme 3?)
+    // DDD: on my machine this last field doesn't exist in malloc_zone_t.
     (void*)VG_REPLACE_FUNCTION_ZU(m_libc_soname, malloc_zone_memalign)
 };
 

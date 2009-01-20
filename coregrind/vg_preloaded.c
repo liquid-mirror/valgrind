@@ -113,7 +113,7 @@ static void env_unsetenv ( Char **env, const Char *varname )
 static void vg_cleanup_env(void)  __attribute__((constructor));
 static void vg_cleanup_env(void)
 {
-    char **envp = *_NSGetEnviron();
+    Char **envp = (Char**)*_NSGetEnviron();
     env_unsetenv(envp, "VALGRIND_LAUNCHER");
     env_unsetenv(envp, "DYLD_SHARED_REGION");
     // GrP fixme should be more like mash_colon_env()

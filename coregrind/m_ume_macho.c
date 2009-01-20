@@ -74,11 +74,6 @@ static void print(const char *str)
    VG_(printf)("%s", str);
 }
 
-static void printhex(unsigned int u)
-{
-   VG_(printf)("0x%x", u);
-}
-
 static void check_mmap(SysRes res, Addr base, SizeT len)
 {
    if (res.isError) {
@@ -723,7 +718,7 @@ load_mach_file(int fd, vki_off_t offset, vki_off_t size, unsigned long filetype,
 }
 
 
-Bool VG_(match_macho)(const char *hdr, Int len)
+Bool VG_(match_macho)(char *hdr, Int len)
 {
    vki_uint32_t *magic = (vki_uint32_t *)hdr;
 

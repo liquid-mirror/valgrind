@@ -328,16 +328,19 @@ void VG_(get_thread_out_of_syscall)(ThreadId tid)
    vg_assert(!VG_(is_running_thread)(tid));
 
    if (VG_(threads)[tid].status == VgTs_WaitSys) {
-      if (VG_(clo_trace_signals))
+      if (VG_(clo_trace_signals)) {
 	 VG_(message)(Vg_DebugMsg, 
                       "get_thread_out_of_syscall zaps tid %d lwp %d",
 		      tid, VG_(threads)[tid].os_state.lwpid);
+      }
 #if VGO_darwin
-      // GrP fixme use mach primitives on darwin?
-      // GrP fixme thread_abort_safely?
-      // GrP fixme race for thread with WaitSys set but not in syscall yet?
-      extern kern_return_t thread_abort(mach_port_t);
-      thread_abort(VG_(threads)[tid].os_state.lwpid);
+      {
+         // GrP fixme use mach primitives on darwin?
+         // GrP fixme thread_abort_safely?
+         // GrP fixme race for thread with WaitSys set but not in syscall yet?
+         extern kern_return_t thread_abort(mach_port_t);
+         thread_abort(VG_(threads)[tid].os_state.lwpid);
+      }
 #else
       VG_(tkill)(VG_(threads)[tid].os_state.lwpid, VG_SIGVGKILL);
 #endif
@@ -408,8 +411,6 @@ static void os_state_init(ThreadState *tst)
 static 
 void mostly_clear_thread_record ( ThreadId tid )
 {
-   vki_sigset_t savedmask;
-
    vg_assert(tid >= 0 && tid < VG_N_THREADS);
    VG_(cleanup_thread)(&VG_(threads)[tid].arch);
    VG_(threads)[tid].tid = tid;
@@ -431,7 +432,10 @@ void mostly_clear_thread_record ( ThreadId tid )
 #if defined(VGO_darwin)
 # warning GrP fixme signals
 #else
-   VG_(clear_out_queued_signals)(tid, &savedmask);
+   {
+      vki_sigset_t savedmask;
+      VG_(clear_out_queued_signals)(tid, &savedmask);
+   }
 #endif
 
    VG_(threads)[tid].sched_jmpbuf_valid = False;

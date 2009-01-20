@@ -120,6 +120,10 @@ extern void VG_(am_show_nsegments) ( Int logLevel, HChar* who );
 extern Bool VG_(am_do_sync_check) ( const HChar* fn, 
                                     const HChar* file, Int line );
 
+#if defined(VGO_darwin)
+// DDD: ugh.
+void VG_(sync_mappings)(const HChar *when, const HChar *where, Int num);
+#endif
 
 //--------------------------------------------------------------
 // Functions pertaining to the central query-notify mechanism
