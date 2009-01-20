@@ -345,6 +345,8 @@ case "$VG_ARCH_MAX-$VG_OS" in
      x86-linux)
 	VG_PLATFORM_PRI="X86_LINUX"
 	VG_PLATFORM_SEC=""
+        valt_load_address_normal="0x38000000"
+        valt_load_address_inner="0x28000000"
         AC_MSG_RESULT([ok (${host_cpu}-${host_os})])
 	;;
      amd64-linux)
@@ -359,11 +361,15 @@ case "$VG_ARCH_MAX-$VG_OS" in
 	   VG_PLATFORM_PRI="AMD64_LINUX"
 	   VG_PLATFORM_SEC="X86_LINUX"
 	fi
+        valt_load_address_normal="0x38000000"
+        valt_load_address_inner="0x28000000"
         AC_MSG_RESULT([ok (${host_cpu}-${host_os})])
 	;;
      ppc32-linux)
 	VG_PLATFORM_PRI="PPC32_LINUX"
 	VG_PLATFORM_SEC=""
+        valt_load_address_normal="0x38000000"
+        valt_load_address_inner="0x28000000"
         AC_MSG_RESULT([ok (${host_cpu}-${host_os})])
 	;;
      ppc64-aix5)
@@ -378,6 +384,8 @@ case "$VG_ARCH_MAX-$VG_OS" in
 	   VG_PLATFORM_PRI="PPC64_AIX5"
 	   VG_PLATFORM_SEC="PPC32_AIX5"
 	fi
+        valt_load_address_normal="0x38000000"
+        valt_load_address_inner="0x28000000"
         AC_MSG_RESULT([ok (${host_cpu}-${host_os})])
 	;;
      ppc64-linux)
@@ -392,11 +400,15 @@ case "$VG_ARCH_MAX-$VG_OS" in
 	   VG_PLATFORM_PRI="PPC64_LINUX"
 	   VG_PLATFORM_SEC="PPC32_LINUX"
 	fi
+        valt_load_address_normal="0x38000000"
+        valt_load_address_inner="0x28000000"
         AC_MSG_RESULT([ok (${host_cpu}-${host_os})])
 	;;
      x86-darwin)
 	VG_PLATFORM_PRI="X86_DARWIN"
 	VG_PLATFORM_SEC=""
+        valt_load_address_normal="0x0"
+        valt_load_address_inner="0x0"
         AC_MSG_RESULT([ok (${host_cpu}-${host_os})])
 	;;
      amd64-darwin)
@@ -411,6 +423,8 @@ case "$VG_ARCH_MAX-$VG_OS" in
 	   VG_PLATFORM_PRI="AMD64_DARWIN"
 	   VG_PLATFORM_SEC="X86_DARWIN"
 	fi
+        valt_load_address_normal="0x0"
+        valt_load_address_inner="0x0"
         AC_MSG_RESULT([ok (${host_cpu}-${host_os})])
 	;;
     *)
@@ -499,16 +513,6 @@ AM_CONDITIONAL(VGP_HAVE_SECONDARY,
 # Check if this should be built as an inner Valgrind, to be run within
 # another Valgrind.  Choose the load address accordingly.
 AC_SUBST(VALT_LOAD_ADDRESS)
-case "$VG_ARCH-$VG_OS" in
-	*-linux|*-aix5)
-        valt_load_address_normal="0x38000000"
-        valt_load_address_inner="0x28000000"
-	;;
-	*)
-        valt_load_address_normal="0"
-        valt_load_address_inner="0"
-	;;		
-esac
 AC_CACHE_CHECK([for use as an inner Valgrind], vg_cv_inner,
    [AC_ARG_ENABLE(inner, 
       [  --enable-inner          enables self-hosting],
