@@ -1363,7 +1363,8 @@ void MC_(print_extra_suppression_info) ( Error* err )
 
 
 // GrP for debugging
-void mc_describe_address(Addr addr)
+__attribute__((unused))
+static void mc_describe_address(Addr addr)
 {
     AddrInfo ai = {0};
 
