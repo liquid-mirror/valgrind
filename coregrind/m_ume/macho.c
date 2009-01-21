@@ -35,8 +35,9 @@
 #include "pub_core_debuglog.h"
 #include "pub_core_libcassert.h"    // VG_(exit), vg_assert
 #include "pub_core_libcbase.h"      // VG_(memcmp), etc
-#include "pub_core_libcprint.h"
 #include "pub_core_libcfile.h"      // VG_(open) et al
+#include "pub_core_libcprint.h"
+#include "pub_core_libcproc.h"
 #include "pub_core_machine.h"       // VG_ELF_CLASS (XXX: which should be moved)
 #include "pub_core_mallocfree.h"    // VG_(malloc), VG_(free)
 #include "pub_core_syscall.h"       // VG_(strerror)
@@ -717,7 +718,7 @@ load_mach_file(int fd, vki_off_t offset, vki_off_t size, unsigned long filetype,
 }
 
 
-Bool VG_(match_macho)(char *hdr, Int len)
+Bool VG_(match_macho)(Char *hdr, Int len)
 {
    vki_uint32_t *magic = (vki_uint32_t *)hdr;
 

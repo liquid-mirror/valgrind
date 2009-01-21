@@ -37,6 +37,10 @@
 #elif defined(VGO_aix5)
 // The AIX port doesn't use UME.
 
+#elif defined(VGO_darwin)
+#  define HAVE_MACHO
+#  define HAVE_SCRIPT
+
 #else
 #error unknown architecture
 #endif
@@ -51,6 +55,11 @@ extern Int  VG_(load_ELF)  ( Int fd, const HChar *name, ExeInfo *info );
 #if defined(HAVE_SCRIPT)
 extern Bool VG_(match_script) ( Char *hdr, Int len );
 extern Int  VG_(load_script)  ( Int fd, const HChar *name, ExeInfo *info );
+#endif
+
+#if defined(HAVE_MACHO)
+extern Bool VG_(match_macho) ( Char *hdr, Int len );
+extern Int  VG_(load_macho)  ( Int fd, const HChar *name, ExeInfo *info );
 #endif
 
 #endif /* __PRIV_UME_H */
