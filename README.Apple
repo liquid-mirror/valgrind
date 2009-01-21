@@ -15,10 +15,8 @@ Requirements:
     As much RAM as you can afford
     Valgrind 3.3.1 r8805, VEX r1875
 
-Get and patch Valgrind sources:
-    svn co -r8805 svn://svn.valgrind.org/valgrind/trunk valgrind
-    svn update -r1875 valgrind/VEX
-    patch -p1 -d valgrind < /path/to/valgrind-opensource.patch
+Get the DARWIN branch:
+    svn co svn://svn.valgrind.org/valgrind/branches/DARWIN valgrind
 
 Build and install into /usr/local/bin/valgrind:
     cd valgrind
