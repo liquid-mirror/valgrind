@@ -301,7 +301,7 @@ case "$VG_ARCH_MAX-$VG_OS" in
         safe_CFLAGS=$CFLAGS
         CFLAGS="-m32"
         AC_TRY_LINK(, [
-        int main () { return 0 ; }
+          return 0;
         ],
         [
         AC_MSG_RESULT([yes])
@@ -938,7 +938,7 @@ safe_CFLAGS=$CFLAGS
 CFLAGS="-m32"
 
 AC_TRY_COMPILE(, [
-int main () { return 0 ; }
+  return 0;
 ],
 [
 FLAG_M32="-m32"
@@ -959,7 +959,7 @@ safe_CFLAGS=$CFLAGS
 CFLAGS="-maix32"
 
 AC_TRY_COMPILE(, [
-return 0 ;
+  return 0;
 ],
 [
 FLAG_MAIX32="-maix32"
@@ -980,7 +980,7 @@ safe_CFLAGS=$CFLAGS
 CFLAGS="-m64"
 
 AC_TRY_COMPILE(, [
-return 0 ;
+  return 0;
 ],
 [
 FLAG_M64="-m64"
@@ -1001,7 +1001,7 @@ safe_CFLAGS=$CFLAGS
 CFLAGS="-maix64"
 
 AC_TRY_COMPILE(, [
-return 0 ;
+  return 0;
 ],
 [
 FLAG_MAIX64="-maix64"
@@ -1022,7 +1022,7 @@ safe_CFLAGS=$CFLAGS
 CFLAGS="-mmmx"
 
 AC_TRY_COMPILE(, [
-return 0 ;
+  return 0;
 ],
 [
 FLAG_MMMX="-mmmx"
@@ -1043,7 +1043,7 @@ safe_CFLAGS=$CFLAGS
 CFLAGS="-msse"
 
 AC_TRY_COMPILE(, [
-return 0 ;
+  return 0;
 ],
 [
 FLAG_MSSE="-msse"
@@ -1064,7 +1064,7 @@ safe_CFLAGS=$CFLAGS
 CFLAGS="-mpreferred-stack-boundary=2"
 
 AC_TRY_COMPILE(, [
-return 0 ;
+  return 0;
 ],
 [
 PREFERRED_STACK_BOUNDARY="-mpreferred-stack-boundary=2"
@@ -1085,7 +1085,7 @@ safe_CFLAGS=$CFLAGS
 CFLAGS="-Wno-pointer-sign"
 
 AC_TRY_COMPILE(, [
-return 0 ;
+  return 0;
 ],
 [
 no_pointer_sign=yes
@@ -1108,7 +1108,7 @@ safe_CFLAGS=$CFLAGS
 CFLAGS="-Wdeclaration-after-statement"
 
 AC_TRY_COMPILE(, [
-return 0 ;
+  return 0;
 ],
 [
 declaration_after_statement=yes
@@ -1191,7 +1191,7 @@ safe_CFLAGS=$CFLAGS
 CFLAGS="-fno-stack-protector"
 
 AC_TRY_COMPILE(, [
-int main () { return 0 ; }
+  return 0;
 ],
 [
 no_stack_protector=yes
