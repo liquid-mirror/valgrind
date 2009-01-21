@@ -1,6 +1,6 @@
 
 /*--------------------------------------------------------------------*/
-/*--- User-mode execve() for #! scripts             m_ume_script.c ---*/
+/*--- User-mode execve() for #! scripts.            m_ume_script.c ---*/
 /*--------------------------------------------------------------------*/
 
 /*
@@ -28,24 +28,22 @@
    The GNU General Public License is contained in the file COPYING.
 */
 
+#include "pub_core_basics.h"
+#include "pub_core_vki.h"
+
+#include "pub_core_libcbase.h"
+#include "pub_core_libcassert.h"    // VG_(exit), vg_assert
+#include "pub_core_libcfile.h"      // VG_(close) et al
+#include "pub_core_libcprint.h"
+#include "pub_core_mallocfree.h"    // VG_(strdup)
+#include "pub_core_ume.h"           // self
+
 #include "priv_ume.h"
 
 
-#if !defined(HAVE_SCRIPT)
+#if defined(HAVE_SCRIPT)
 
-Bool VG_(match_script)(const char *hdr, Int len)
-{
-    return False;
-}
-
-Int VG_(load_script)(Int fd, const HChar* name, ExeInfo* info)
-{
-    return VKI_ENOEXEC;
-}
-
-#else
-
-Bool VG_(match_script)(char *hdr, Int len)
+Bool VG_(match_script)(Char *hdr, Int len)
 {
    Char* end    = hdr + len;
    Char* interp = hdr + 2;
@@ -119,12 +117,12 @@ Int VG_(load_script)(Int fd, const HChar* name, ExeInfo* info)
    if (!eol && cp < end) {
       /* skip space before arg */
       while (cp < end && VG_(isspace)(*cp) && *cp != '\n')
-	 cp++;
+         cp++;
 
       /* arg is from here to eol */
       arg = cp;
       while (cp < end && *cp != '\n')
-	 cp++;
+         cp++;
       *cp = '\0';
    }
    
@@ -145,8 +143,7 @@ Int VG_(load_script)(Int fd, const HChar* name, ExeInfo* info)
    return VG_(do_exec_inner)(interp, info);
 }
 
-#endif
-
+#endif /* defined(HAVE_SCRIPT) */
 
 /*--------------------------------------------------------------------*/
 /*--- end                                                          ---*/

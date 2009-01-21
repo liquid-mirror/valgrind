@@ -1,4 +1,3 @@
-
 /*--------------------------------------------------------------------*/
 /*--- User-mode execve().                               priv_ume.h ---*/
 /*--------------------------------------------------------------------*/
@@ -31,52 +30,27 @@
 #ifndef __PRIV_UME_H
 #define __PRIV_UME_H
 
-#include "pub_core_basics.h"
-#include "pub_core_vki.h"
-
 #if defined(VGO_linux) 
-#define HAVE_UME
-#define HAVE_SCRIPT
-#define HAVE_ELF
-
-#elif defined(VGO_darwin)
-#define HAVE_UME
-#define HAVE_SCRIPT
-#define HAVE_MACHO
+#  define HAVE_ELF
+#  define HAVE_SCRIPT
 
 #elif defined(VGO_aix5)
-#undef HAVE_UME
+// The AIX port doesn't use UME.
 
 #else
 #error unknown architecture
 #endif
 
-#if defined(HAVE_UME)
-
-#include "pub_core_aspacemgr.h"   // various mapping fns
-#include "pub_core_debuglog.h"
-#include "pub_core_libcbase.h"
-#include "pub_core_machine.h"
-#include "pub_core_libcprint.h"
-#include "pub_core_libcfile.h"    // VG_(close) et al
-#include "pub_core_libcproc.h"    // VG_(geteuid), VG_(getegid)
-#include "pub_core_libcassert.h"  // VG_(exit), vg_assert
-#include "pub_core_mallocfree.h"  // VG_(malloc), VG_(free)
-#include "pub_core_syscall.h"     // VG_(strerror)
-#include "pub_core_options.h"     // VG_(clo_xml)
-#include "pub_core_ume.h"         // self
-
 extern int VG_(do_exec_inner)(const HChar *exe, ExeInfo *info);
 
-extern Bool VG_(match_script)(char *hdr, Int len);
-extern Int VG_(load_script)(Int fd, const HChar *name, ExeInfo *info);
+#if defined(HAVE_ELF)
+extern Bool VG_(match_ELF) ( Char *hdr, Int len );
+extern Int  VG_(load_ELF)  ( Int fd, const HChar *name, ExeInfo *info );
+#endif
 
-extern Bool VG_(match_ELF)(char *hdr, Int len);
-extern Int VG_(load_ELF)(Int fd, const HChar *name, ExeInfo *info);
-
-extern Bool VG_(match_macho)(char *hdr, Int len);
-extern Int VG_(load_macho)(Int fd, const HChar *name, ExeInfo *info);
-
+#if defined(HAVE_SCRIPT)
+extern Bool VG_(match_script) ( Char *hdr, Int len );
+extern Int  VG_(load_script)  ( Int fd, const HChar *name, ExeInfo *info );
 #endif
 
 #endif /* __PRIV_UME_H */

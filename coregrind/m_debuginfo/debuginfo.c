@@ -52,7 +52,9 @@
 #include "pub_core_oset.h"
 #include "pub_core_stacktrace.h" // VG_(get_StackTrace)
 
-#include "priv_ume.h"            /* HAVE_ELF, HAVE_MACHO */
+// DDD: HAVE_ELF, HAVE_MACHO should be in a pub_*.h file somewhere.
+#include "pub_core_ume.h"        // DDD: needed for priv_ume.h
+#include "m_ume/priv_ume.h"      /* HAVE_ELF, HAVE_MACHO */
 #include "priv_misc.h"           /* dinfo_zalloc/free */
 #include "priv_d3basics.h"       /* ML_(pp_GX) */
 #include "priv_tytypes.h"

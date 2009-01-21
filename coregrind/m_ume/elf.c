@@ -28,41 +28,24 @@
    The GNU General Public License is contained in the file COPYING.
 */
 
-
 #include "pub_core_basics.h"
 #include "pub_core_vki.h"
-#include "pub_core_aspacemgr.h"   // various mapping fns
+
+#include "pub_core_aspacemgr.h"     // various mapping fns
 #include "pub_core_debuglog.h"
-#include "pub_core_libcbase.h"
-#include "pub_core_machine.h"
+#include "pub_core_libcassert.h"    // VG_(exit), vg_assert
+#include "pub_core_libcbase.h"      // VG_(memcmp), etc
 #include "pub_core_libcprint.h"
-#include "pub_core_libcfile.h"    // VG_(close) et al
-#include "pub_core_libcproc.h"    // VG_(geteuid), VG_(getegid)
-#include "pub_core_libcassert.h"  // VG_(exit), vg_assert
-#include "pub_core_mallocfree.h"  // VG_(malloc), VG_(free)
-#include "pub_core_syscall.h"     // VG_(strerror)
-#include "pub_core_ume.h"         // self
+#include "pub_core_libcfile.h"      // VG_(open) et al
+#include "pub_core_machine.h"       // VG_ELF_CLASS (XXX: which should be moved)
+#include "pub_core_mallocfree.h"    // VG_(malloc), VG_(free)
+#include "pub_core_syscall.h"       // VG_(strerror)
+#include "pub_core_ume.h"           // self
+
 #include "priv_ume.h"
 
 
-#if !defined(HAVE_ELF)
-
-struct ume_auxv *VG_(find_auxv)(UWord* sp) 
-{ 
-    return NULL; 
-}
-
-Bool VG_(match_ELF)(char *hdr, Int len)
-{
-    return False;
-}
-
-Int VG_(load_ELF)(Int fd, const HChar *name, ExeInfo *info)
-{
-    return VKI_ENOEXEC;
-}
-
-#else
+#if defined(HAVE_ELF)
 
 /* --- !!! --- EXTERNAL HEADERS start --- !!! --- */
 #define _GNU_SOURCE
@@ -72,19 +55,19 @@ Int VG_(load_ELF)(Int fd, const HChar *name, ExeInfo *info)
 /* --- !!! --- EXTERNAL HEADERS end --- !!! --- */
 
 
-#if	VG_WORDSIZE == 8
-#define ESZ(x)	Elf64_##x
-#elif	VG_WORDSIZE == 4
-#define ESZ(x)	Elf32_##x
+#if     VG_WORDSIZE == 8
+#define ESZ(x)  Elf64_##x
+#elif   VG_WORDSIZE == 4
+#define ESZ(x)  Elf32_##x
 #else
 #error VG_WORDSIZE needs to ==4 or ==8
 #endif
 
 struct elfinfo
 {
-   ESZ(Ehdr)	e;
-   ESZ(Phdr)	*p;
-   Int		fd;
+   ESZ(Ehdr)    e;
+   ESZ(Phdr)    *p;
+   Int          fd;
 };
 
 static void check_mmap(SysRes res, Addr base, SizeT len)
@@ -100,32 +83,6 @@ static void check_mmap(SysRes res, Addr base, SizeT len)
       }
       VG_(exit)(1);
    }
-}
-
-/*------------------------------------------------------------*/
-/*--- Finding auxv on the stack                            ---*/
-/*------------------------------------------------------------*/
-
-struct ume_auxv *VG_(find_auxv)(UWord* sp)
-{
-   sp++;                // skip argc (Nb: is word-sized, not int-sized!)
-
-   while (*sp != 0)     // skip argv
-      sp++;
-   sp++;
-
-   while (*sp != 0)     // skip env
-      sp++;
-   sp++;
-   
-#if defined(VGA_ppc32) || defined(VGA_ppc64)
-# if defined AT_IGNOREPPC
-   while (*sp == AT_IGNOREPPC)        // skip AT_IGNOREPPC entries
-      sp += 2;
-# endif
-#endif
-
-   return (struct ume_auxv *)sp;
 }
 
 /*------------------------------------------------------------*/
@@ -205,23 +162,23 @@ ESZ(Addr) mapelf(struct elfinfo *e, ESZ(Addr) base)
    SysRes res;
    ESZ(Addr) elfbrk = 0;
 
-   for(i = 0; i < e->e.e_phnum; i++) {
+   for (i = 0; i < e->e.e_phnum; i++) {
       ESZ(Phdr) *ph = &e->p[i];
       ESZ(Addr) addr, brkaddr;
       ESZ(Word) memsz;
 
       if (ph->p_type != PT_LOAD)
-	 continue;
+         continue;
 
       addr    = ph->p_vaddr+base;
       memsz   = ph->p_memsz;
       brkaddr = addr+memsz;
 
       if (brkaddr > elfbrk)
-	 elfbrk = brkaddr;
+         elfbrk = brkaddr;
    }
 
-   for(i = 0; i < e->e.e_phnum; i++) {
+   for (i = 0; i < e->e.e_phnum; i++) {
       ESZ(Phdr) *ph = &e->p[i];
       ESZ(Addr) addr, bss, brkaddr;
       ESZ(Off) off;
@@ -230,7 +187,7 @@ ESZ(Addr) mapelf(struct elfinfo *e, ESZ(Addr) base)
       unsigned prot = 0;
 
       if (ph->p_type != PT_LOAD)
-	 continue;
+         continue;
 
       if (ph->p_flags & PF_X) prot |= VKI_PROT_EXEC;
       if (ph->p_flags & PF_W) prot |= VKI_PROT_WRITE;
@@ -264,33 +221,33 @@ ESZ(Addr) mapelf(struct elfinfo *e, ESZ(Addr) base)
 
       // if memsz > filesz, fill the remainder with zeroed pages
       if (memsz > filesz) {
-	 UInt bytes;
+         UInt bytes;
 
-	 bytes = VG_PGROUNDUP(brkaddr)-VG_PGROUNDUP(bss);
-	 if (bytes > 0) {
+         bytes = VG_PGROUNDUP(brkaddr)-VG_PGROUNDUP(bss);
+         if (bytes > 0) {
             if (0) VG_(debugLog)(0,"ume","mmap_anon_fixed_client #2\n");
-	    res = VG_(am_mmap_anon_fixed_client)(
+            res = VG_(am_mmap_anon_fixed_client)(
                      VG_PGROUNDUP(bss), bytes,
-		     prot
+                     prot
                   );
             if (0) VG_(am_show_nsegments)(0,"after #2");
             check_mmap(res, VG_PGROUNDUP(bss), bytes);
          }
 
-	 bytes = bss & (VKI_PAGE_SIZE - 1);
+         bytes = bss & (VKI_PAGE_SIZE - 1);
 
          // The 'prot' condition allows for a read-only bss
          if ((prot & VKI_PROT_WRITE) && (bytes > 0)) {
-	    bytes = VKI_PAGE_SIZE - bytes;
-	    VG_(memset)((char *)bss, 0, bytes);
-	 }
+            bytes = VKI_PAGE_SIZE - bytes;
+            VG_(memset)((char *)bss, 0, bytes);
+         }
       }
    }
 
    return elfbrk;
 }
 
-Bool VG_(match_ELF)(char *hdr, Int len)
+Bool VG_(match_ELF)(Char *hdr, Int len)
 {
    ESZ(Ehdr) *e = (ESZ(Ehdr) *)hdr;
    return (len > sizeof(*e)) && VG_(memcmp)(&e->e_ident[0], ELFMAG, SELFMAG) == 0;
@@ -345,10 +302,10 @@ Int VG_(load_ELF)(Int fd, const HChar* name, /*MOD*/ExeInfo* info)
    SysRes sres;
    struct elfinfo *e;
    struct elfinfo *interp = NULL;
-   ESZ(Addr) minaddr = ~0;	/* lowest mapped address */
-   ESZ(Addr) maxaddr = 0;	/* highest mapped address */
-   ESZ(Addr) interp_addr = 0;	/* interpreter (ld.so) address */
-   ESZ(Word) interp_size = 0;	/* interpreter size */
+   ESZ(Addr) minaddr = ~0;      /* lowest mapped address */
+   ESZ(Addr) maxaddr = 0;       /* highest mapped address */
+   ESZ(Addr) interp_addr = 0;   /* interpreter (ld.so) address */
+   ESZ(Word) interp_size = 0;   /* interpreter size */
    ESZ(Word) interp_align = VKI_PAGE_SIZE;
    Int i;
    void *entry;
@@ -371,73 +328,85 @@ Int VG_(load_ELF)(Int fd, const HChar* name, /*MOD*/ExeInfo* info)
    /* The kernel maps position-independent executables at TASK_SIZE*2/3;
       duplicate this behavior as close as we can. */
    if (e->e.e_type == ET_DYN && ebase == 0) {
-      ebase = VG_PGROUNDDN(info->exe_base + (info->exe_end - info->exe_base) * 2 / 3);
+      ebase = VG_PGROUNDDN(info->exe_base 
+                           + (info->exe_end - info->exe_base) * 2 / 3);
+      /* We really don't want to load PIEs at zero or too close.  It
+         works, but it's unrobust (NULL pointer reads and writes
+         become legit, which is really bad) and causes problems for
+         exp-ptrcheck, which assumes all numbers below 1MB are
+         nonpointers.  So, hackily, move it above 1MB. */
+      /* Later .. is appears ppc32-linux tries to put [vdso] at 1MB,
+         which totally screws things up, because nothing else can go
+         there.  So bump the hacky load addess along by 0x8000, to
+         0x108000. */
+      if (ebase < 0x108000)
+         ebase = 0x108000;
    }
 
    info->phnum = e->e.e_phnum;
    info->entry = e->e.e_entry + ebase;
    info->phdr = 0;
 
-   for(i = 0; i < e->e.e_phnum; i++) {
+   for (i = 0; i < e->e.e_phnum; i++) {
       ESZ(Phdr) *ph = &e->p[i];
 
       switch(ph->p_type) {
       case PT_PHDR:
-	 info->phdr = ph->p_vaddr + ebase;
-	 break;
+         info->phdr = ph->p_vaddr + ebase;
+         break;
 
       case PT_LOAD:
-	 if (ph->p_vaddr < minaddr)
-	    minaddr = ph->p_vaddr;
-	 if (ph->p_vaddr+ph->p_memsz > maxaddr)
-	    maxaddr = ph->p_vaddr+ph->p_memsz;
-	 break;
-			
+         if (ph->p_vaddr < minaddr)
+            minaddr = ph->p_vaddr;
+         if (ph->p_vaddr+ph->p_memsz > maxaddr)
+            maxaddr = ph->p_vaddr+ph->p_memsz;
+         break;
+                        
       case PT_INTERP: {
-	 char *buf = VG_(malloc)("ume.LE.1", ph->p_filesz+1);
-	 Int j;
-	 Int intfd;
-	 Int baseaddr_set;
+         HChar *buf = VG_(malloc)("ume.LE.1", ph->p_filesz+1);
+         Int j;
+         Int intfd;
+         Int baseaddr_set;
 
          vg_assert(buf);
-	 VG_(pread)(fd, buf, ph->p_filesz, ph->p_offset);
-	 buf[ph->p_filesz] = '\0';
+         VG_(pread)(fd, buf, ph->p_filesz, ph->p_offset);
+         buf[ph->p_filesz] = '\0';
 
-	 sres = VG_(open)(buf, VKI_O_RDONLY, 0);
+         sres = VG_(open)(buf, VKI_O_RDONLY, 0);
          if (sres.isError) {
-	    VG_(printf)("valgrind: m_ume.c: can't open interpreter\n");
-	    VG_(exit)(1);
-	 }
+            VG_(printf)("valgrind: m_ume.c: can't open interpreter\n");
+            VG_(exit)(1);
+         }
          intfd = sres.res;
 
-	 interp = readelf(intfd, buf);
-	 if (interp == NULL) {
-	    VG_(printf)("valgrind: m_ume.c: can't read interpreter\n");
-	    return 1;
-	 }
-	 VG_(free)(buf);
+         interp = readelf(intfd, buf);
+         if (interp == NULL) {
+            VG_(printf)("valgrind: m_ume.c: can't read interpreter\n");
+            return 1;
+         }
+         VG_(free)(buf);
 
-	 baseaddr_set = 0;
-	 for(j = 0; j < interp->e.e_phnum; j++) {
-	    ESZ(Phdr) *iph = &interp->p[j];
-	    ESZ(Addr) end;
+         baseaddr_set = 0;
+         for (j = 0; j < interp->e.e_phnum; j++) {
+            ESZ(Phdr) *iph = &interp->p[j];
+            ESZ(Addr) end;
 
-	    if (iph->p_type != PT_LOAD)
-	       continue;
-	    
-	    if (!baseaddr_set) {
-	       interp_addr  = iph->p_vaddr;
-	       interp_align = iph->p_align;
-	       baseaddr_set = 1;
-	    }
+            if (iph->p_type != PT_LOAD)
+               continue;
+            
+            if (!baseaddr_set) {
+               interp_addr  = iph->p_vaddr;
+               interp_align = iph->p_align;
+               baseaddr_set = 1;
+            }
 
-	    /* assumes that all segments in the interp are close */
-	    end = (iph->p_vaddr - interp_addr) + iph->p_memsz;
+            /* assumes that all segments in the interp are close */
+            end = (iph->p_vaddr - interp_addr) + iph->p_memsz;
 
-	    if (end > interp_size)
-	       interp_size = end;
-	 }
-	 break;
+            if (end > interp_size)
+               interp_size = end;
+         }
+         break;
 
       default:
          // do nothing
@@ -451,17 +420,17 @@ Int VG_(load_ELF)(Int fd, const HChar* name, /*MOD*/ExeInfo* info)
 
    if (info->exe_base != info->exe_end) {
       if (minaddr >= maxaddr ||
-	  (minaddr + ebase < info->exe_base ||
-	   maxaddr + ebase > info->exe_end)) {
-	 VG_(printf)("Executable range %p-%p is outside the\n"
+          (minaddr + ebase < info->exe_base ||
+           maxaddr + ebase > info->exe_end)) {
+         VG_(printf)("Executable range %p-%p is outside the\n"
                      "acceptable range %p-%p\n",
                      (char *)minaddr + ebase, (char *)maxaddr + ebase,
                      (char *)info->exe_base,  (char *)info->exe_end);
-	 return VKI_ENOMEM;
+         return VKI_ENOMEM;
       }
    }
 
-   info->brkbase = mapelf(e, ebase);	/* map the executable */
+   info->brkbase = mapelf(e, ebase);    /* map the executable */
 
    if (info->brkbase == 0)
       return VKI_ENOMEM;
@@ -543,8 +512,7 @@ Int VG_(load_ELF)(Int fd, const HChar* name, /*MOD*/ExeInfo* info)
    return 0;
 }
 
-#endif
-
+#endif /* defined(HAVE_ELF) */
 
 /*--------------------------------------------------------------------*/
 /*--- end                                                          ---*/

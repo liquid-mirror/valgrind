@@ -28,25 +28,24 @@
    The GNU General Public License is contained in the file COPYING.
 */
 
+#include "pub_core_basics.h"
+#include "pub_core_vki.h"
+
+#include "pub_core_aspacemgr.h"     // various mapping fns
+#include "pub_core_debuglog.h"
+#include "pub_core_libcassert.h"    // VG_(exit), vg_assert
+#include "pub_core_libcbase.h"      // VG_(memcmp), etc
+#include "pub_core_libcprint.h"
+#include "pub_core_libcfile.h"      // VG_(open) et al
+#include "pub_core_machine.h"       // VG_ELF_CLASS (XXX: which should be moved)
+#include "pub_core_mallocfree.h"    // VG_(malloc), VG_(free)
+#include "pub_core_syscall.h"       // VG_(strerror)
+#include "pub_core_ume.h"           // self
+
 #include "priv_ume.h"
 
 
-#if !defined(HAVE_MACHO)
-
-/* Non-Darwin doesn't do Mach-O */
-
-Bool VG_(match_macho)(char *hdr, Int len)
-{
-   return False;
-}
-
-
-Int VG_(load_macho)(Int fd, const HChar *name, ExeInfo *info)
-{
-   return VKI_ENOEXEC;
-}
-
-#else
+#if defined(HAVE_MACHO)
 
 #include <mach/mach.h>
 
@@ -768,4 +767,9 @@ Int VG_(load_macho)(Int fd, const HChar *name, ExeInfo *info)
    return 0;
 }
 
-#endif
+#endif   // defined(HAVE_MACHO)
+
+/*--------------------------------------------------------------------*/
+/*--- end                                                          ---*/
+/*--------------------------------------------------------------------*/
+

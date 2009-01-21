@@ -29,12 +29,25 @@
    The GNU General Public License is contained in the file COPYING.
 */
 
+
+#include "pub_core_basics.h"
+#include "pub_core_vki.h"
+
+#include "pub_core_libcbase.h"
+#include "pub_core_libcassert.h"    // VG_(exit), vg_assert
+#include "pub_core_libcfile.h"      // VG_(close) et al
+#include "pub_core_libcprint.h"     // VG_(message)
+#include "pub_core_mallocfree.h"    // VG_(strdup)
+#include "pub_core_syscall.h"       // VG_(mk_SysRes_Error)
+#include "pub_core_options.h"       // VG_(clo_xml)
+#include "pub_core_ume.h"           // self
+
 #include "priv_ume.h"
 
 
 typedef struct {
    const HChar *name;
-   Bool (*match_fn)(char *hdr, Int len);
+   Bool (*match_fn)(Char *hdr, Int len);
    Int  (*load_fn)(Int fd, const HChar *name, ExeInfo *info);
 } ExeHandler;
 
@@ -53,7 +66,8 @@ static ExeHandler exe_handlers[] = {
 
 
 // Check the file looks executable.
-SysRes VG_(pre_exec_check)(const HChar* exe_name, Int* out_fd, Bool allow_setuid)
+SysRes 
+VG_(pre_exec_check)(const HChar* exe_name, Int* out_fd, Bool allow_setuid)
 {
    Int fd, ret, i;
    SysRes res;
@@ -117,13 +131,12 @@ SysRes VG_(pre_exec_check)(const HChar* exe_name, Int* out_fd, Bool allow_setuid
    return res;
 }
 
-
 // returns: 0 = success, non-0 is failure
 //
-// We can execute only ELF or Mach-O binaries or scripts that begin with "#!".
-// (Not, for example, scripts that don't begin with "#!";  see the 
+// We can execute only binaries (ELF, etc) or scripts that begin with "#!".
+// (Not, for example, scripts that don't begin with "#!";  see the
 // VG_(do_exec)() invocation from m_main.c for how that's handled.)
-Int VG_(do_exec_inner)(const HChar *exe, ExeInfo *info)
+Int VG_(do_exec_inner)(const HChar* exe, ExeInfo* info)
 {
    SysRes res;
    Int fd;
@@ -133,7 +146,7 @@ Int VG_(do_exec_inner)(const HChar *exe, ExeInfo *info)
    if (res.isError)
       return res.err;
 
-   vg_assert2(res.res >= 0  &&  res.res < EXE_HANDLER_COUNT, 
+   vg_assert2(res.res >= 0 && res.res < EXE_HANDLER_COUNT, 
               "invalid VG_(pre_exec_check) result");
 
    ret = (*exe_handlers[res.res].load_fn)(fd, exe, info);
@@ -144,7 +157,7 @@ Int VG_(do_exec_inner)(const HChar *exe, ExeInfo *info)
 }
 
 
-static Bool is_hash_bang_file(const Char* f)
+static Bool is_hash_bang_file(Char* f)
 {
    SysRes res = VG_(open)(f, VKI_O_RDONLY, 0);
    if (!res.isError) {
@@ -160,7 +173,7 @@ static Bool is_hash_bang_file(const Char* f)
 // Look at the first 80 chars, and if any are greater than 127, it's binary.
 // This is crude, but should be good enough.  Note that it fails on a
 // zero-length file, as we want.
-static Bool is_binary_file(const Char* f)
+static Bool is_binary_file(Char* f)
 {
    SysRes res = VG_(open)(f, VKI_O_RDONLY, 0);
    if (!res.isError) {
@@ -186,8 +199,7 @@ static Bool is_binary_file(const Char* f)
 // bash as a guide).  It's worth noting that the shell can execute some
 // things that VG_(do_exec)() (which subsitutes for the kernel's exec())
 // will refuse to (eg. scripts lacking a "#!" prefix).
-static Int do_exec_shell_followup(Int ret, const HChar* exe_name,
-                                  ExeInfo* info)
+static Int do_exec_shell_followup(Int ret, HChar* exe_name, ExeInfo* info)
 {
    Char*  default_interp_name = "/bin/sh";
    SysRes res;
@@ -266,11 +278,11 @@ Int VG_(do_exec)(const HChar* exe_name, ExeInfo* info)
    ret = VG_(do_exec_inner)(exe_name, info);
 
    if (0 != ret) {
-      ret = do_exec_shell_followup(ret, exe_name, info);
+      Char* exe_name_casted = (Char*)exe_name;
+      ret = do_exec_shell_followup(ret, exe_name_casted, info);
    }
    return ret;
 }
-
 
 /*--------------------------------------------------------------------*/
 /*--- end                                                          ---*/
