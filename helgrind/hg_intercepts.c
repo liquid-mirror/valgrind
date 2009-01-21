@@ -756,7 +756,7 @@ PTH_FUNC(int, pthreadZucondZudestroyZAZa, // pthread_cond_destroy@*
 /*--- pthread_barrier_t functions                              ---*/
 /*----------------------------------------------------------------*/
 
-#if !defined(VGO_darwin)
+#if defined(HAVE_PTHREAD_BARRIER)
 
 /* Handled:   pthread_barrier_init
               pthread_barrier_wait
@@ -863,7 +863,7 @@ PTH_FUNC(int, pthreadZubarrierZudestroy, // pthread_barrier_destroy
    return ret;
 }
 
-#endif
+#endif   // defined(HAVE_PTHREAD_BARRIER)
 
 /*----------------------------------------------------------------*/
 /*--- pthread_rwlock_t functions                               ---*/
