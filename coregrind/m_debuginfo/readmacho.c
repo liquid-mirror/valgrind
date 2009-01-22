@@ -44,6 +44,8 @@
 #include "pub_core_tooliface.h"    /* VG_(needs) */
 #include "pub_core_xarray.h"
 #include "pub_core_clientstate.h"
+#include "pub_core_debuginfo.h"
+
 #include "priv_d3basics.h"
 #include "priv_misc.h"
 #include "priv_tytypes.h"
