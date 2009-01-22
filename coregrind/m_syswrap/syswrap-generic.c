@@ -2126,13 +2126,7 @@ ML_(generic_PRE_sys_mmap) ( ThreadId tid,
 // Combine two 32-bit values into a 64-bit value
 // Always use with low-numbered arg first (e.g. LOHI64(ARG1,ARG2) )
 // GrP fixme correct for ppc-linux?
-# if defined(VGA_ppc32)
-#  define LOHI64(hi,lo)   ( (lo) | ((ULong)(hi) << 32) )
-# elif defined(VGA_x86)
-#define LOHI64(lo,hi)   ( (lo) | ((ULong)(hi) << 32) )
-# else
-#  error unknown architecture
-# endif
+#define LOHI64(lo,hi)   ( ((ULong)(lo)) | (((ULong)(hi)) << 32) )
 #endif
 
 //zz //PRE(sys_exit_group, Special)

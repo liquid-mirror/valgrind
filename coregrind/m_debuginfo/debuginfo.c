@@ -1054,7 +1054,17 @@ static void search_all_symtabs ( Addr ptr, /*OUT*/DebugInfo** pdi,
                    (di->bss_present
                     && di->bss_size > 0
                     && di->bss_avma <= ptr 
-                    && ptr < di->bss_avma + di->bss_size);
+                    && ptr < di->bss_avma + di->bss_size)
+                   ||
+                   (di->sbss_present
+                    && di->sbss_size > 0
+                    && di->sbss_avma <= ptr 
+                    && ptr < di->sbss_avma + di->sbss_size)
+                   ||
+                   (di->rodata_present
+                    && di->rodata_size > 0
+                    && di->rodata_avma <= ptr 
+                    && ptr < di->rodata_avma + di->rodata_size);
       }
 
       if (!inRange) continue;
@@ -1082,6 +1092,7 @@ static void search_all_loctabs ( Addr ptr, /*OUT*/DebugInfo** pdi,
    DebugInfo* di;
    for (di = debugInfo_list; di != NULL; di = di->next) {
       if (di->text_present
+          && di->text_size > 0
           && di->text_avma <= ptr 
           && ptr < di->text_avma + di->text_size) {
          lno = ML_(search_one_loctab) ( di, ptr );
@@ -1268,6 +1279,7 @@ Bool VG_(get_objname) ( Addr a, Char* buf, Int nbuf )
       expect this to produce a result. */
    for (di = debugInfo_list; di != NULL; di = di->next) {
       if (di->text_present
+          && di->text_size > 0
           && di->text_avma <= a 
           && a < di->text_avma + di->text_size) {
          VG_(strncpy_safely)(buf, di->filename, nbuf);
@@ -1306,6 +1318,7 @@ DebugInfo* VG_(find_seginfo) ( Addr a )
    DebugInfo* di;
    for (di = debugInfo_list; di != NULL; di = di->next) {
       if (di->text_present
+          && di->text_size > 0
           && di->text_avma <= a 
           && a < di->text_avma + di->text_size) {
          return di;
@@ -1946,7 +1959,7 @@ static Bool data_address_is_in_var ( /*OUT*/PtrdiffT* offset,
                                      DiVariable*   var,
                                      RegSummary*   regs,
                                      Addr          data_addr,
-                                     Addr          data_bias )
+                                     const DebugInfo* di )
 {
    MaybeULong mul;
    SizeT      var_szB;
@@ -1983,7 +1996,7 @@ static Bool data_address_is_in_var ( /*OUT*/PtrdiffT* offset,
       return False;
    }
 
-   res = ML_(evaluate_GX)( var->gexpr, var->fbGX, regs, data_bias );
+   res = ML_(evaluate_GX)( var->gexpr, var->fbGX, regs, di );
 
    if (show) {
       VG_(printf)("VVVV: -> ");
@@ -2261,7 +2274,7 @@ Bool consider_vars_in_frame ( /*OUT*/Char* dname1,
                         var->name,arange->aMin,arange->aMax,ip);
          if (data_address_is_in_var( &offset, di->admin_tyents,
                                      var, &regs,
-                                     data_addr, di->data_bias )) {
+                                     data_addr, di )) {
             PtrdiffT residual_offset = 0;
             XArray* described = ML_(describe_type)( &residual_offset,
                                                     di->admin_tyents, 
@@ -2360,7 +2373,7 @@ Bool VG_(get_data_description)( /*OUT*/Char* dname1,
             fail. */
          if (data_address_is_in_var( &offset, di->admin_tyents, var, 
                                      NULL/* RegSummary* */, 
-                                     data_addr, di->data_bias )) {
+                                     data_addr, di )) {
             PtrdiffT residual_offset = 0;
             XArray* described = ML_(describe_type)( &residual_offset,
                                                     di->admin_tyents,
@@ -2485,7 +2498,7 @@ Bool VG_(get_data_description)( /*OUT*/Char* dname1,
 static 
 void analyse_deps ( /*MOD*/XArray* /* of FrameBlock */ blocks,
                     XArray* /* TyEnt */ tyents,
-                    Addr ip, Addr data_bias, DiVariable* var,
+                    Addr ip, const DebugInfo* di, DiVariable* var,
                     Bool arrays_only )
 {
    GXResult   res_sp_6k, res_sp_7k, res_fp_6k, res_fp_7k;
@@ -2530,22 +2543,22 @@ void analyse_deps ( /*MOD*/XArray* /* of FrameBlock */ blocks,
    regs.fp   = 0;
    regs.ip   = ip;
    regs.sp   = 6 * 1024;
-   res_sp_6k = ML_(evaluate_GX)( var->gexpr, var->fbGX, &regs, data_bias );
+   res_sp_6k = ML_(evaluate_GX)( var->gexpr, var->fbGX, &regs, di );
 
    regs.fp   = 0;
    regs.ip   = ip;
    regs.sp   = 7 * 1024;
-   res_sp_7k = ML_(evaluate_GX)( var->gexpr, var->fbGX, &regs, data_bias );
+   res_sp_7k = ML_(evaluate_GX)( var->gexpr, var->fbGX, &regs, di );
 
    regs.fp   = 6 * 1024;
    regs.ip   = ip;
    regs.sp   = 0;
-   res_fp_6k = ML_(evaluate_GX)( var->gexpr, var->fbGX, &regs, data_bias );
+   res_fp_6k = ML_(evaluate_GX)( var->gexpr, var->fbGX, &regs, di );
 
    regs.fp   = 7 * 1024;
    regs.ip   = ip;
    regs.sp   = 0;
-   res_fp_7k = ML_(evaluate_GX)( var->gexpr, var->fbGX, &regs, data_bias );
+   res_fp_7k = ML_(evaluate_GX)( var->gexpr, var->fbGX, &regs, di );
 
    vg_assert(res_sp_6k.kind == res_sp_7k.kind);
    vg_assert(res_sp_6k.kind == res_fp_6k.kind);
@@ -2567,7 +2580,7 @@ void analyse_deps ( /*MOD*/XArray* /* of FrameBlock */ blocks,
       if (sp_delta == 1024 && fp_delta == 0) {
          regs.sp = regs.fp = 0;
          regs.ip = ip;
-         res = ML_(evaluate_GX)( var->gexpr, var->fbGX, &regs, data_bias );
+         res = ML_(evaluate_GX)( var->gexpr, var->fbGX, &regs, di );
          tl_assert(res.kind == GXR_Value);
          if (debug)
          VG_(printf)("   %5ld .. %5ld (sp) %s\n",
@@ -2586,7 +2599,7 @@ void analyse_deps ( /*MOD*/XArray* /* of FrameBlock */ blocks,
       if (sp_delta == 0 && fp_delta == 1024) {
          regs.sp = regs.fp = 0;
          regs.ip = ip;
-         res = ML_(evaluate_GX)( var->gexpr, var->fbGX, &regs, data_bias );
+         res = ML_(evaluate_GX)( var->gexpr, var->fbGX, &regs, di );
          tl_assert(res.kind == GXR_Value);
          if (debug)
          VG_(printf)("   %5ld .. %5ld (FP) %s\n",
@@ -2716,7 +2729,7 @@ void* /* really, XArray* of StackBlock */
             VG_(printf)("QQQQ:    var:name=%s %#lx-%#lx %#lx\n", 
                         var->name,arange->aMin,arange->aMax,ip);
          analyse_deps( res, di->admin_tyents, ip,
-                       di->data_bias, var, arrays_only );
+                       di, var, arrays_only );
       }
    }
 
@@ -2799,7 +2812,7 @@ void* /* really, XArray* of GlobalBlock */
                it. */
             if (0) { VG_(printf)("EVAL: "); ML_(pp_GX)(var->gexpr);
                      VG_(printf)("\n"); }
-            res = ML_(evaluate_trivial_GX)( var->gexpr, di->data_bias );
+            res = ML_(evaluate_trivial_GX)( var->gexpr, di );
 
             /* Not a constant address => not interesting */
             if (res.kind != GXR_Value) {
@@ -2957,6 +2970,7 @@ const HChar* VG_(pp_SectKind)( VgSectKind kind )
       case Vg_SectGOT:     return "GOT";
       case Vg_SectPLT:     return "PLT";
       case Vg_SectOPD:     return "OPD";
+      case Vg_SectGOTPLT:  return "GOTPLT";
       default:             vg_assert(0);
    }
 }
@@ -3004,6 +3018,12 @@ VgSectKind VG_(seginfo_sect_kind)( /*OUT*/UChar* name, SizeT n_name,
       if (di->bss_present
           && di->bss_size > 0
           && a >= di->bss_avma && a < di->bss_avma + di->bss_size) {
+         res = Vg_SectBSS;
+         break;
+      }
+      if (di->sbss_present
+          && di->sbss_size > 0
+          && a >= di->sbss_avma && a < di->sbss_avma + di->sbss_size) {
          res = Vg_SectBSS;
          break;
       }
