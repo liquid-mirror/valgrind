@@ -33,7 +33,7 @@ check_PROGRAMS = \
 
 # DDD: not sure if these ones should work on Darwin or not... if not, should
 # be moved into x86-linux/.
-if ! VGO_DARWIN
+if ! VGCONF_OS_IS_DARWIN
    check_PROGRAMS += \
 	fxsave \
 	int3-x86 \

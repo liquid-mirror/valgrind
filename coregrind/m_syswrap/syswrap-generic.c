@@ -1978,7 +1978,7 @@ ML_(generic_PRE_sys_mmap) ( ThreadId tid,
     // * needs to not use fixed-position mmap() on Darwin
     //   (mmap will cheerfully smash whatever's already there, which might 
     //   be a new mapping from some other thread in a nonblocking call)
-#if defined(VGO_DARWIN)
+#if defined(VGO_darwin)
     __builtin_trap();
 #endif
 

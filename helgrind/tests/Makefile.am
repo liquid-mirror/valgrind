@@ -157,7 +157,7 @@ check_PROGRAMS = \
 # DDD: all of these use barriers and/or spinlocks, which are optional in
 # pthreads and Darwin doesn't support.  Could do a configure-time test like
 # the one done for Qt above.
-if ! VGO_DARWIN
+if ! VGCONF_OS_IS_DARWIN
    check_PROGRAMS += \
 	bar_bad \
 	bar_trivial \

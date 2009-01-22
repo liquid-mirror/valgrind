@@ -70,7 +70,7 @@ check_PROGRAMS = \
 
 # DDD: not sure if these ones should work on Darwin or not... if not, should
 # be moved into x86-linux/.
-if ! VGO_DARWIN
+if ! VGCONF_OS_IS_DARWIN
    check_PROGRAMS += \
 	bug125959-x86 \
 	bug126147-x86 \
@@ -120,7 +120,6 @@ insn_sse2_SOURCES	= insn_sse2.def
 insn_sse2_LDADD		= -lm
 insn_sse3_SOURCES	= insn_sse3.def
 insn_sse3_LDADD		= -lm
-yield_CFLAGS		= $(AM_CFLAGS) -D__$(VG_ARCH_PRI)__
 yield_LDADD		= -lpthread
 
 .def.c: $(srcdir)/gen_insn_test.pl

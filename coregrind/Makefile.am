@@ -21,28 +21,28 @@ AM_CPPFLAGS_AMD64_DARWIN += -DVG_LIBDIR="\"$(valdir)"\"
 default.supp: $(SUPP_FILES)
 
 noinst_LIBRARIES =
-if VGP_X86_LINUX
+if VGCONF_PLATFORMS_INCLUDE_X86_LINUX
 noinst_LIBRARIES += libcoregrind_x86_linux.a libreplacemalloc_toolpreload_x86_linux.a
 endif
-if VGP_AMD64_LINUX
+if VGCONF_PLATFORMS_INCLUDE_AMD64_LINUX
 noinst_LIBRARIES += libcoregrind_amd64_linux.a libreplacemalloc_toolpreload_amd64_linux.a
 endif
-if VGP_PPC32_LINUX
+if VGCONF_PLATFORMS_INCLUDE_PPC32_LINUX
 noinst_LIBRARIES += libcoregrind_ppc32_linux.a libreplacemalloc_toolpreload_ppc32_linux.a
 endif
-if VGP_PPC64_LINUX
+if VGCONF_PLATFORMS_INCLUDE_PPC64_LINUX
 noinst_LIBRARIES += libcoregrind_ppc64_linux.a libreplacemalloc_toolpreload_ppc64_linux.a
 endif
-if VGP_PPC32_AIX5
+if VGCONF_PLATFORMS_INCLUDE_PPC32_AIX5
 noinst_LIBRARIES += libcoregrind_ppc32_aix5.a libreplacemalloc_toolpreload_ppc32_aix5.a
 endif
-if VGP_PPC64_AIX5
+if VGCONF_PLATFORMS_INCLUDE_PPC64_AIX5
 noinst_LIBRARIES += libcoregrind_ppc64_aix5.a libreplacemalloc_toolpreload_ppc64_aix5.a
 endif
-if VGP_X86_DARWIN
+if VGCONF_PLATFORMS_INCLUDE_X86_DARWIN
 noinst_LIBRARIES += libcoregrind_x86_darwin.a libreplacemalloc_toolpreload_x86_darwin.a
 endif
-if VGP_AMD64_DARWIN
+if VGCONF_PLATFORMS_INCLUDE_AMD64_DARWIN
 noinst_LIBRARIES += libcoregrind_amd64_darwin.a libreplacemalloc_toolpreload_amd64_darwin.a
 endif
 
@@ -52,25 +52,25 @@ endif
 bin_PROGRAMS = \
 	valgrind no_op_client_for_valgrind
 
-if VGO_AIX5
+if VGCONF_OS_IS_LINUX
+valgrind_SOURCES = \
+	launcher-linux.c \
+	m_debuglog.c
+endif
+if VGCONF_OS_IS_AIX5
 valgrind_SOURCES = \
 	launcher-aix5.c \
 	m_debuglog.c \
 	m_vkiscnums.c
 endif
-if VGO_LINUX
-valgrind_SOURCES = \
-	launcher-linux.c \
-	m_debuglog.c
-endif
-if VGO_DARWIN
+if VGCONF_OS_IS_DARWIN
 valgrind_SOURCES = \
 	launcher-darwin.c \
 	m_debuglog.c
 endif
 
 # Mach RPC interface definitions
-if VGO_DARWIN
+if VGCONF_OS_IS_DARWIN
 mach_defs = \
 	clock.defs \
 	clock_priv.defs \
@@ -116,28 +116,28 @@ no_op_client_for_valgrind_LDFLAGS   = $(AM_CFLAGS_PRI)
 
 
 noinst_PROGRAMS =
-if VGP_X86_LINUX
+if VGCONF_PLATFORMS_INCLUDE_X86_LINUX
 noinst_PROGRAMS += vgpreload_core-x86-linux.so
 endif
-if VGP_AMD64_LINUX
+if VGCONF_PLATFORMS_INCLUDE_AMD64_LINUX
 noinst_PROGRAMS += vgpreload_core-amd64-linux.so
 endif
-if VGP_PPC32_LINUX
+if VGCONF_PLATFORMS_INCLUDE_PPC32_LINUX
 noinst_PROGRAMS += vgpreload_core-ppc32-linux.so
 endif
-if VGP_PPC64_LINUX
+if VGCONF_PLATFORMS_INCLUDE_PPC64_LINUX
 noinst_PROGRAMS += vgpreload_core-ppc64-linux.so
 endif
-if VGP_PPC32_AIX5
+if VGCONF_PLATFORMS_INCLUDE_PPC32_AIX5
 noinst_PROGRAMS += vgpreload_core-ppc32-aix5.so
 endif
-if VGP_PPC64_AIX5
+if VGCONF_PLATFORMS_INCLUDE_PPC64_AIX5
 noinst_PROGRAMS += vgpreload_core-ppc64-aix5.so
 endif
-if VGP_X86_DARWIN
+if VGCONF_PLATFORMS_INCLUDE_X86_DARWIN
 noinst_PROGRAMS += vgpreload_core-x86-darwin.so
 endif
-if VGP_AMD64_DARWIN
+if VGCONF_PLATFORMS_INCLUDE_AMD64_DARWIN
 noinst_PROGRAMS += vgpreload_core-amd64-darwin.so
 endif
 

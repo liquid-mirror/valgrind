@@ -5,30 +5,24 @@ include $(top_srcdir)/Makefile.flags.am
 SUBDIRS = .
 
 # Arch-specific tests.
-if VGA_X86
+if VGCONF_ARCHS_INCLUDE_X86
 SUBDIRS += x86
 endif
-if VGA_AMD64
+if VGCONF_ARCHS_INCLUDE_AMD64
 SUBDIRS += amd64
-endif
-if VGA_PPC32
-SUBDIRS += ppc32
-endif
-if VGA_PPC64
-SUBDIRS += ppc64
 endif
 
 # OS-specific tests
-if VGO_LINUX
+if VGCONF_OS_IS_LINUX
 SUBDIRS += linux
 endif
 
 # Platform-specific tests
-if VGP_X86_LINUX
+if VGCONF_PLATFORMS_INCLUDE_X86_LINUX
 SUBDIRS += x86-linux
 endif
 
-DIST_SUBDIRS = ${VG_ARCH_ALL} .
+DIST_SUBDIRS = x86 amd64 linux x86-linux .
 
 noinst_SCRIPTS = filter_allocs filter_leak_check_size \
 		 filter_stderr filter_stderr_backtrace filter_xml \
@@ -242,8 +236,9 @@ AM_CXXFLAGS = $(AM_CFLAGS)
 # Extra stuff for C tests
 memcmptest_CFLAGS	= $(AM_FLAG_M3264_PRI) $(AM_CFLAGS) -fno-builtin-memcmp
 oset_test_CFLAGS	= $(AM_FLAG_M3264_PRI) \
-				-DVGA_$(VG_ARCH_PRI)=1 -DVGO_$(VG_OS)=1 \
-				-DVGP_$(VG_ARCH_PRI)_$(VG_OS)=1
+				-DVGA_$(VGCONF_ARCH_PRI)=1 \
+				-DVGO_$(VGCONF_OS)=1 \
+				-DVGP_$(VGCONF_ARCH_PRI)_$(VGCONF_OS)=1
 vcpu_bz2_CFLAGS		= $(AM_FLAG_M3264_PRI) $(AM_CFLAGS) -O2 -g
 vcpu_fbench_CFLAGS	= $(AM_FLAG_M3264_PRI) $(AM_CFLAGS) -O2 -g
 vcpu_fnfns_CFLAGS	= $(AM_FLAG_M3264_PRI) $(AM_CFLAGS) -O2 -g
@@ -279,8 +274,8 @@ deep_templates_SOURCES	= deep_templates.cpp
 long_namespace_xml_SOURCES = long_namespace_xml.cpp
 deep_templates_CXXFLAGS	= $(AM_FLAG_M3264_PRI) $(AM_CFLAGS) -O -gstabs
 
-if VGP_PPC32_AIX5
-if VGP_PPC64_AIX5
+if VGCONF_PLATFORMS_INCLUDE_PPC32_AIX5
+if VGCONF_PLATFORMS_INCLUDE_PPC64_AIX5
 else
  # persuade the AIX linker not to junk apparently unused
  # function descriptors.  Unfortunately -Wl,-G -Wl,-bnogc
@@ -299,15 +294,15 @@ endif
 # Build shared object for wrap7
 wrap7_SOURCES           = wrap7.c
 wrap7_DEPENDENCIES      = wrap7so.so
-if VGP_PPC64_AIX5 
+if VGCONF_PLATFORMS_INCLUDE_PPC64_AIX5 
  wrap7_LDADD            = `pwd`/wrap7so.so
  wrap7_LDFLAGS          = $(AM_FLAG_M3264_PRI)
 else
-if VGP_PPC32_AIX5
+if VGCONF_PLATFORMS_INCLUDE_PPC32_AIX5
  wrap7_LDADD            = `pwd`/wrap7so.so
  wrap7_LDFLAGS          = $(AM_FLAG_M3264_PRI) -Wl,-G -Wl,-bnogc
 else
-if VGO_DARWIN
+if VGCONF_OS_IS_DARWIN
  wrap7_LDADD            = `pwd`/wrap7so.so
  wrap7_LDFLAGS          = $(AM_FLAG_M3264_PRI)
 else
@@ -322,14 +317,14 @@ wrap7so_so_SOURCES      = wrap7so.c
 wrap7so_so_LDADD        = 
 wrap7so_so_DEPENDENCIES = 
 wrap7so_so_CFLAGS       = -fpic $(AM_FLAG_M3264_PRI)
-if VGP_PPC64_AIX5
+if VGCONF_PLATFORMS_INCLUDE_PPC64_AIX5
  wrap7so_so_LDFLAGS     = -fpic $(AM_FLAG_M3264_PRI) -shared
 else
-if VGP_PPC32_AIX5
+if VGCONF_PLATFORMS_INCLUDE_PPC32_AIX5
  wrap7so_so_LDFLAGS     = -fpic $(AM_FLAG_M3264_PRI) -shared \
 				-Wl,-G -Wl,-bnogc
 else
-if VGO_DARWIN
+if VGCONF_OS_IS_DARWIN
  wrap7so_so_LDFLAGS     = -fpic $(AM_FLAG_M3264_PRI) -dynamic \
 				-dynamiclib -all_load
 else
@@ -342,15 +337,15 @@ endif
 # Build shared object for varinfo5
 varinfo5_SOURCES        = varinfo5.c
 varinfo5_DEPENDENCIES   = varinfo5so.so
-if VGP_PPC64_AIX5 
+if VGCONF_PLATFORMS_INCLUDE_PPC64_AIX5 
  varinfo5_LDADD         = `pwd`/varinfo5so.so
  varinfo5_LDFLAGS       = $(AM_FLAG_M3264_PRI)
 else
-if VGP_PPC32_AIX5
+if VGCONF_PLATFORMS_INCLUDE_PPC32_AIX5
  varinfo5_LDADD         = `pwd`/varinfo5so.so
  varinfo5_LDFLAGS       = $(AM_FLAG_M3264_PRI) -Wl,-G -Wl,-bnogc
 else
-if VGO_DARWIN
+if VGCONF_OS_IS_DARWIN
  varinfo5_LDADD         = `pwd`/varinfo5so.so
  varinfo5_LDFLAGS       = $(AM_FLAG_M3264_PRI)
 else
@@ -365,14 +360,14 @@ varinfo5so_so_SOURCES   = varinfo5so.c
 varinfo5so_so_LDADD     = 
 varinfo5so_so_DEPENDENCIES = 
 varinfo5so_so_CFLAGS    = -fpic $(AM_FLAG_M3264_PRI) -g -O
-if VGP_PPC64_AIX5
+if VGCONF_PLATFORMS_INCLUDE_PPC64_AIX5
  varinfo5so_so_LDFLAGS  = -fpic $(AM_FLAG_M3264_PRI) -shared
 else
-if VGP_PPC32_AIX5
+if VGCONF_PLATFORMS_INCLUDE_PPC32_AIX5
  varinfo5so_so_LDFLAGS  = -fpic $(AM_FLAG_M3264_PRI) -shared \
 				-Wl,-G -Wl,-bnogc
 else
-if VGO_DARWIN
+if VGCONF_OS_IS_DARWIN
  varinfo5so_so_LDFLAGS  = -fpic $(AM_FLAG_M3264_PRI) -dynamic \
 				-dynamiclib -all_load
 else

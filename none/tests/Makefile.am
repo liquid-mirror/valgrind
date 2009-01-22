@@ -3,20 +3,20 @@
 include $(top_srcdir)/Makefile.flags.am
 
 SUBDIRS = .
-if VGA_X86
+if VGCONF_ARCHS_INCLUDE_X86
 SUBDIRS += x86
 endif
-if VGA_AMD64
+if VGCONF_ARCHS_INCLUDE_AMD64
 SUBDIRS += amd64
 endif
-if VGA_PPC32
+if VGCONF_ARCHS_INCLUDE_PPC32
 SUBDIRS += ppc32
 endif
-if VGA_PPC64
+if VGCONF_ARCHS_INCLUDE_PPC64
 SUBDIRS += ppc64
 endif
 
-DIST_SUBDIRS = ${VG_ARCH_ALL} .
+DIST_SUBDIRS = x86 amd64 ppc32 ppc64 .
 
 noinst_SCRIPTS = \
 	filter_cmdline0 filter_linenos \
@@ -159,7 +159,7 @@ check_PROGRAMS = \
 
 # DDD: not sure if these ones should work on Darwin or not... if not, should
 # be moved into linux/.  ('pending' probably should, it uses signals.)
-if ! VGO_DARWIN
+if ! VGCONF_OS_IS_DARWIN
    check_PROGRAMS += \
 	async-sigs \
 	fdleak_ipv4 \
@@ -174,7 +174,7 @@ AM_CXXFLAGS = $(AM_CFLAGS)
 ansi_CFLAGS		= $(AM_FLAG_M3264_PRI) -ansi
 floored_LDADD 		= -lm
 manythreads_LDADD	= -lpthread
-if VGO_DARWIN
+if VGCONF_OS_IS_DARWIN
  nestedfns_CFLAGS	= -fnested-functions
 else
  mq_LDADD		= -lrt
@@ -192,7 +192,7 @@ pth_mutexspeed_LDADD	= -lpthread
 pth_once_LDADD		= -lpthread
 pth_rwlock_LDADD	= -lpthread
 pth_stackalign_LDADD	= -lpthread
-if VGO_AIX5
+if VGCONF_OS_IS_AIX5
  res_search_LDADD       = -lpthread
 else
  res_search_LDADD       = -lresolv -lpthread
@@ -205,7 +205,7 @@ threaded_fork_LDADD	= -lpthread
 threadederrno_LDADD	= -lpthread
 tls_SOURCES		= tls.c tls2.c
 tls_DEPENDENCIES	= tls.so
-if VGO_AIX5
+if VGCONF_OS_IS_AIX5
  tls_LDFLAGS		= 
 else
  tls_LDFLAGS		= -Wl,-rpath,$(top_builddir)/none/tests
@@ -213,11 +213,11 @@ endif
 tls_LDADD		= tls.so -lpthread
 tls_so_SOURCES		= tls_so.c
 tls_so_DEPENDENCIES	= tls2.so
-if VGO_AIX5
+if VGCONF_OS_IS_AIX5
  tls_so_LDFLAGS		= -shared -fPIC
  tls_so_LDADD		= `pwd`/tls2.so
 else
-if VGO_DARWIN
+if VGCONF_OS_IS_DARWIN
  tls_so_LDFLAGS		= -dynamic -dynamiclib -all_load -fpic
  tls_so_LDADD		= `pwd`/tls2.so
 else
@@ -227,7 +227,7 @@ endif
 endif
 tls_so_CFLAGS		= $(AM_FLAG_M3264_PRI) -fPIC
 tls2_so_SOURCES		= tls2_so.c
-if VGO_DARWIN
+if VGCONF_OS_IS_DARWIN
 tls2_so_LDFLAGS		= -dynamic -dynamiclib -all_load
 else
 tls2_so_LDFLAGS		= -shared
