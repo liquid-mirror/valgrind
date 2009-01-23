@@ -834,7 +834,7 @@ static void invalidate_icache ( void *ptr, Int nbytes )
    pre: youngest_sector points to a valid (although possibly full)
    sector.
 */
-AddrH VG_(add_to_transtab)( VexGuestExtents* vge,
+void VG_(add_to_transtab)( VexGuestExtents* vge,
                            Addr64           entry,
                            AddrH            code,
                            UInt             code_len,
@@ -950,8 +950,6 @@ AddrH VG_(add_to_transtab)( VexGuestExtents* vge,
 
    /* Note the eclass numbers for this translation. */
    upd_eclasses_after_add( &sectors[y], i );
-
-   return (AddrH)dstP;
 }
 
 

@@ -59,7 +59,7 @@ extern UInt*          VG_(tt_fastN)[VG_TT_FAST_SIZE];
 extern void VG_(init_tt_tc)       ( void );
 
 extern
-AddrH VG_(add_to_transtab)( VexGuestExtents* vge,
+void VG_(add_to_transtab)( VexGuestExtents* vge,
                            Addr64           entry,
                            AddrH            code,
                            UInt             code_len,
