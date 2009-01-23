@@ -271,7 +271,7 @@ case "${host_os}" in
 
      *darwin*)
         AC_MSG_RESULT([ok (${host_os})])
-        VG_OS="darwin"
+        VGCONF_OS="darwin"
 
 	AC_MSG_CHECKING([for the kernel version])
 	kernel=`uname -r`
@@ -436,23 +436,27 @@ case "$ARCH_MAX-$VGCONF_OS" in
         AC_MSG_RESULT([ok (${host_cpu}-${host_os})])
 	;;
      x86-darwin)
-	VG_PLATFORM_PRI="X86_DARWIN"
-	VG_PLATFORM_SEC=""
+        VGCONF_ARCH_PRI="x86"
+	VGCONF_PLATFORM_PRI_CAPS="X86_DARWIN"
+	VGCONF_PLATFORM_SEC_CAPS=""
         valt_load_address_normal="0x0"
         valt_load_address_inner="0x0"
         AC_MSG_RESULT([ok (${host_cpu}-${host_os})])
 	;;
      amd64-darwin)
 	if test x$vg_cv_only64bit = xyes; then
-	   VG_PLATFORM_PRI="AMD64_DARWIN"
-	   VG_PLATFORM_SEC=""
+           VGCONF_ARCH_PRI="amd64"
+	   VGCONF_PLATFORM_PRI_CAPS="AMD64_DARWIN"
+	   VGCONF_PLATFORM_SEC_CAPS=""
 	elif test x$vg_cv_only32bit = xyes; then
-	   VG_PLATFORM_PRI="X86_DARWIN"
-	   VG_PLATFORM_SEC=""
-	   VG_ARCH_PRI="x86"
+           VGCONF_ARCH_PRI="x86"
+	   VGCONF_PLATFORM_PRI_CAPS="X86_DARWIN"
+	   VGCONF_PLATFORM_SEC_CAPS=""
+	   VGCONF_ARCH_PRI_CAPS="x86"
 	else
-	   VG_PLATFORM_PRI="AMD64_DARWIN"
-	   VG_PLATFORM_SEC="X86_DARWIN"
+           VGCONF_ARCH_PRI="amd64"
+	   VGCONF_PLATFORM_PRI_CAPS="AMD64_DARWIN"
+	   VGCONF_PLATFORM_SEC_CAPS="X86_DARWIN"
 	fi
         valt_load_address_normal="0x0"
         valt_load_address_inner="0x0"
@@ -462,7 +466,7 @@ case "$ARCH_MAX-$VGCONF_OS" in
         VGCONF_ARCH_PRI="unknown"
 	VGCONF_PLATFORM_PRI_CAPS="UNKNOWN"
 	VGCONF_PLATFORM_SEC_CAPS="UNKNOWN"
-        AC_MSG_RESULT([no (${host_cpu}-${host_os})])
+        AC_MSG_RESULT([no (${ARCH_MAX}-${VGCONF_OS})])
         AC_MSG_ERROR([Valgrind is platform specific. Sorry. Please consider doing a port.])
         ;;
 esac
@@ -474,7 +478,7 @@ esac
 AM_CONDITIONAL(VGCONF_ARCHS_INCLUDE_X86,   
                test x$VGCONF_PLATFORM_PRI_CAPS = xX86_LINUX \
                  -o x$VGCONF_PLATFORM_SEC_CAPS = xX86_LINUX \
-                 -0 x$VGCONF_PLATFORM_PRI_CAPS = xX86_DARWIN \
+                 -o x$VGCONF_PLATFORM_PRI_CAPS = xX86_DARWIN \
                  -o x$VGCONF_PLATFORM_SEC_CAPS = xX86_DARWIN )
 AM_CONDITIONAL(VGCONF_ARCHS_INCLUDE_AMD64, 
                test x$VGCONF_PLATFORM_PRI_CAPS = xAMD64_LINUX \
@@ -508,7 +512,8 @@ AM_CONDITIONAL(VGCONF_PLATFORMS_INCLUDE_PPC64_AIX5,
                test x$VGCONF_PLATFORM_PRI_CAPS = xPPC64_AIX5)
 
 AM_CONDITIONAL(VGCONF_PLATFORMS_INCLUDE_X86_DARWIN,   
-               test x$VGCONF_PLATFORM_PRI_CAPS = xX86_DARWIN)
+               test x$VGCONF_PLATFORM_PRI_CAPS = xX86_DARWIN \
+                 -o x$VGCONF_PLATFORM_SEC_CAPS = xX86_DARWIN)
 AM_CONDITIONAL(VGCONF_PLATFORMS_INCLUDE_AMD64_DARWIN, 
                test x$VGCONF_PLATFORM_PRI_CAPS = xAMD64_DARWIN)
 
@@ -525,8 +530,8 @@ AM_CONDITIONAL(VGCONF_OS_IS_AIX5,
                test x$VGCONF_PLATFORM_PRI_CAPS = xPPC32_AIX5 \
                  -o x$VGCONF_PLATFORM_PRI_CAPS = xPPC64_AIX5)
 AM_CONDITIONAL(VGCONF_OS_IS_DARWIN,
-               test x$VG_PLATFORM_PRI = xX86_DARWIN \
-                 -o x$VG_PLATFORM_PRI = xAMD64_DARWIN)
+               test x$VGCONF_PLATFORM_PRI_CAPS = xX86_DARWIN \
+                 -o x$VGCONF_PLATFORM_PRI_CAPS = xAMD64_DARWIN)
 
 
 # Sometimes, in the Makefile.am files, it's useful to know whether or not
@@ -1833,6 +1838,7 @@ cat<<EOF
 
  configure.in: ARCH_MAX        = ${ARCH_MAX}
  configure.in: VGCONF_ARCH_PRI = ${VGCONF_ARCH_PRI}
+ configure.in: VGCONF_OS       = ${VGCONF_OS}
 
        Primary build target: ${VGCONF_PLATFORM_PRI_CAPS}
      Secondary build target: ${VGCONF_PLATFORM_SEC_CAPS}
