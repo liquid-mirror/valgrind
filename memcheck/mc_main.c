@@ -65,7 +65,7 @@ static void ocache_sarp_Clear_Origins ( Addr, UWord ); /* fwds */
 // Comment these out to disable the fast cases (don't just set them to zero).
 
 #define PERF_FAST_LOADV    1
-// #define PERF_FAST_STOREV   1
+#define PERF_FAST_STOREV   1
 
 #define PERF_FAST_SARP     1
 
