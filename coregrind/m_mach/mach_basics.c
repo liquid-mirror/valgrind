@@ -37,7 +37,7 @@
 #include <mach/machine/ndr_def.h>
 
 /* From mach_traps-<arch>-darwin.S */
-extern mach_port_name_t host_self_trap(void);
+//extern mach_port_name_t host_self_trap(void);
 extern mach_port_name_t thread_self_trap(void);
 extern mach_port_t mach_reply_port(void);
 
@@ -46,10 +46,11 @@ vm_size_t vm_page_size = 0;
 mach_port_name_t mach_task_self_ = 0;
 
 
-mach_port_name_t mach_host_self(void)
-{
-    return host_self_trap();
-}
+// DDD: doesn't get used...
+//mach_port_name_t mach_host_self(void)
+//{
+//    return host_self_trap();
+//}
 
 
 mach_port_name_t mach_thread_self(void)

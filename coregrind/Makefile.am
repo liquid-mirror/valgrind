@@ -70,22 +70,39 @@ valgrind_SOURCES = \
 endif
 
 # Mach RPC interface definitions
+# DDD: these ones aren't used...
+#	clock.defs \
+#	clock_priv.defs \
+#	clock_reply.defs \
+#	exc.defs \
+#	host_priv.defs \
+#	host_security.defs \
+#	ledger.defs \
+#	lock_set.defs \
+#	mach_host.defs \
+#	mach_port.defs \
+#	notify.defs \
+#	processor.defs \
+#	processor_set.defs \
+#
+# mach_vm:
+# - mach_vm_protect is used in debugstub-darwin.c.
+# - mach_vm_region_recurse is used in aspacemgr-linux.c
+#
+# task:
+# - thread_create_running is used in debugstub-darwin.c
+# - semaphore_create is used in sema.c, syswrap-darwin.c
+# - semaphore_destroy is used in sema.c, syswrap-darwin.c
+#
+# thread_act:
+# - thread_get_state is used in scheduler.c
+# - thread_abort is used in debugstub-darwin.c
+#
+# vm_map:
+# - vm_deallocate is used in syswrap-darwin.c
 if VGCONF_OS_IS_DARWIN
 mach_defs = \
-	clock.defs \
-	clock_priv.defs \
-	clock_reply.defs \
-	exc.defs \
-	host_priv.defs \
-	host_security.defs \
-	ledger.defs \
-	lock_set.defs \
-	mach_host.defs \
-	mach_port.defs \
 	mach_vm.defs \
-	notify.defs \
-	processor.defs \
-	processor_set.defs \
 	task.defs \
 	thread_act.defs \
 	vm_map.defs
@@ -307,6 +324,21 @@ COREGRIND_AIX5_SOURCE = \
 
     # Note that the *User.c files are generated using 'mig' from $mach_defs
     # above.
+    # DDD: these ones aren't generated (see above)...
+    #	m_mach/clockUser.c \
+    #	m_mach/clock_privUser.c \
+    #	m_mach/clock_replyUser.c \
+    #	m_mach/excUser.c \
+    #	m_mach/host_privUser.c \
+    #	m_mach/host_securityUser.c \
+    #	m_mach/ledgerUser.c \
+    #	m_mach/lock_setUser.c \
+    #	m_mach/mach_hostUser.c \
+    #	m_mach/mach_portUser.c \
+    #	m_mach/notifyUser.c \
+    #	m_mach/processorUser.c \
+    #	m_mach/processor_setUser.c \
+    #
 COREGRIND_DARWIN_SOURCE = \
 	m_aspacemgr/aspacemgr-linux.c \
 	m_debuginfo/readdwarf.c \
@@ -314,23 +346,10 @@ COREGRIND_DARWIN_SOURCE = \
 	m_debuginfo/readstabs.c \
 	m_debuginfo/readmacho.c \
 	m_debugstub/debugstub-darwin.c \
-	m_mach/clockUser.c \
-	m_mach/clock_privUser.c \
-	m_mach/clock_replyUser.c \
-	m_mach/excUser.c \
-	m_mach/host_privUser.c \
-	m_mach/host_securityUser.c \
-	m_mach/ledgerUser.c \
-	m_mach/lock_setUser.c \
-	m_mach/mach_hostUser.c \
-	m_mach/mach_portUser.c \
 	m_mach/mach_vmUser.c \
-	m_mach/notifyUser.c \
-	m_mach/processorUser.c \
-	m_mach/processor_setUser.c \
 	m_mach/taskUser.c \
-	m_mach/thread_actUser.c \
-	m_mach/vm_mapUser.c \
+    	m_mach/thread_actUser.c \
+    	m_mach/vm_mapUser.c \
 	m_mach/mach_basics.c \
 	m_mach/mach_msg.c \
 	m_initimg/initimg-darwin.c \

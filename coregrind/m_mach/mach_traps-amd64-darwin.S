@@ -39,15 +39,16 @@ _task_self_trap:
 	syscall
 	ret
 
-	// mach_port_name_t host_self_trap(void)
-	.text
-	.align 4
-	.globl _host_self_trap
-_host_self_trap:
-	movq	$__NR_host_self_trap, %rax
-	movq	%rcx, %r10
-	syscall
-	ret
+// DDD: doesn't get used...
+//	// mach_port_name_t host_self_trap(void)
+//	.text
+//	.align 4
+//	.globl _host_self_trap
+//_host_self_trap:
+//	movq	$__NR_host_self_trap, %rax
+//	movq	%rcx, %r10
+//	syscall
+//	ret
 
 	// mach_port_name_t thread_self_trap(void)
 	.text
