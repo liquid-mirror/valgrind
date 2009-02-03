@@ -24,7 +24,7 @@ EXTRA_DIST = $(noinst_SCRIPTS) \
 	new-cpp.post.exp new-cpp.stderr.exp new-cpp.vgtest \
 	no-stack-no-heap.post.exp no-stack-no-heap.stderr.exp no-stack-no-heap.vgtest \
 	null.post.exp null.stderr.exp null.vgtest \
-	one.post.exp one.stderr.exp one.vgtest \
+	one.post.exp one.post.exp2 one.stderr.exp one.vgtest \
 	overloaded-new.post.exp overloaded-new.stderr.exp overloaded-new.vgtest \
 	params.post.exp params.stderr.exp params.vgtest \
 	peak.post.exp peak.stderr.exp peak.vgtest \
