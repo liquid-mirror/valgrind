@@ -235,22 +235,25 @@ Number of snapshots: 50
 //  -  15,000 XPts            800,000 XPts
 //  -   1,800 top-XPts
 
-static UInt n_heap_allocs          = 0;
-static UInt n_heap_reallocs        = 0;
-static UInt n_heap_frees           = 0;
-static UInt n_stack_allocs         = 0;
-static UInt n_stack_frees          = 0;
-static UInt n_xpts                 = 0;
-static UInt n_xpt_init_expansions  = 0;
-static UInt n_xpt_later_expansions = 0;
-static UInt n_sxpt_allocs          = 0;
-static UInt n_sxpt_frees           = 0;
-static UInt n_skipped_snapshots    = 0;
-static UInt n_real_snapshots       = 0;
-static UInt n_detailed_snapshots   = 0;
-static UInt n_peak_snapshots       = 0;
-static UInt n_cullings             = 0;
-static UInt n_XCon_redos           = 0;
+static UInt n_heap_allocs           = 0;
+static UInt n_heap_reallocs         = 0;
+static UInt n_heap_frees            = 0;
+static UInt n_ignored_heap_allocs   = 0;
+static UInt n_ignored_heap_frees    = 0;
+static UInt n_ignored_heap_reallocs = 0;
+static UInt n_stack_allocs          = 0;
+static UInt n_stack_frees           = 0;
+static UInt n_xpts                  = 0;
+static UInt n_xpt_init_expansions   = 0;
+static UInt n_xpt_later_expansions  = 0;
+static UInt n_sxpt_allocs           = 0;
+static UInt n_sxpt_frees            = 0;
+static UInt n_skipped_snapshots     = 0;
+static UInt n_real_snapshots        = 0;
+static UInt n_detailed_snapshots    = 0;
+static UInt n_peak_snapshots        = 0;
+static UInt n_cullings              = 0;
+static UInt n_XCon_redos            = 0;
 
 //------------------------------------------------------------//
 //--- Globals                                              ---//
@@ -288,6 +291,7 @@ static Bool have_started_executing_code = False;
 //------------------------------------------------------------//
 
 static XArray* alloc_fns;
+static XArray* ignore_fns;
 
 static void init_alloc_fns(void)
 {
@@ -317,18 +321,26 @@ static void init_alloc_fns(void)
    DO("operator new[](unsigned long, std::nothrow_t const&)");
 }
 
-static Bool is_alloc_fn(Char* fnname)
+static void init_ignore_fns(void)
 {
-   Char** alloc_fn_ptr;
+   // Create the (empty) list.
+   ignore_fns = VG_(newXA)(VG_(malloc), "ms.main.iif.1",
+                                        VG_(free), sizeof(Char*));
+}
+
+// Determines if the named function is a member of the XArray.
+static Bool is_member_fn(XArray* fns, Char* fnname)
+{
+   Char** fn_ptr;
    Int i;
  
    // Nb: It's a linear search through the list, because we're comparing
    // strings rather than pointers to strings.
    // Nb: This gets called a lot.  It was an OSet, but they're quite slow to
    // iterate through so it wasn't a good choice.
-   for (i = 0; i < VG_(sizeXA)(alloc_fns); i++) {
-      alloc_fn_ptr = VG_(indexXA)(alloc_fns, i);
-      if (VG_STREQ(fnname, *alloc_fn_ptr))
+   for (i = 0; i < VG_(sizeXA)(fns); i++) {
+      fn_ptr = VG_(indexXA)(fns, i);
+      if (VG_STREQ(fnname, *fn_ptr))
          return True;
    }
    return False;
@@ -397,6 +409,11 @@ static Bool ms_process_cmd_line_option(Char* arg)
       VG_(addToXA)(alloc_fns, &alloc_fn);
    }
 
+   else if (VG_CLO_STREQN(12, arg, "--ignore-fn=")) {
+      Char* ignore_fn = &arg[12];
+      VG_(addToXA)(ignore_fns, &ignore_fn);
+   }
+
    else if (VG_CLO_STREQN(18, arg, "--massif-out-file=")) {
       clo_massif_out_file = &arg[18];
    }
@@ -415,7 +432,8 @@ static void ms_print_usage(void)
 "                               ignored if --heap=no [8]\n"
 "    --stacks=no|yes           profile stack(s) [no]\n"
 "    --depth=<number>          depth of contexts [30]\n"
-"    --alloc-fn=<name>         specify <fn> as an alloc function [empty]\n"
+"    --alloc-fn=<name>         specify <name> as an alloc function [empty]\n"
+"    --ignore-fn=<name>        ignore heap allocations within <name> [empty]\n"
 "    --threshold=<m.n>         significance threshold, as a percentage [1.0]\n"
 "    --peak-inaccuracy=<m.n>   maximum peak inaccuracy, as a percentage [1.0]\n"
 "    --time-unit=i|ms|B        time unit: instructions executed, milliseconds\n"
@@ -783,6 +801,15 @@ static void sanity_check_SXTree(SXPt* sxpt)
 // enough.
 #define BUF_LEN   2048
 
+// Determine if the given IP belongs to a function that should be ignored.
+static Bool fn_should_be_ignored(Addr ip)
+{
+   static Char buf[BUF_LEN];
+   return
+      ( VG_(get_fnname)(ip, buf, BUF_LEN) && is_member_fn(ignore_fns, buf)
+      ? True : False );
+}
+
 // Get the stack trace for an XCon, filtering out uninteresting entries:
 // alloc-fns and entries above alloc-fns, and entries below main-or-below-main.
 //   Eg:       alloc-fn1 / alloc-fn2 / a / b / main / (below main) / c
@@ -792,7 +819,7 @@ static void sanity_check_SXTree(SXPt* sxpt)
 static
 Int get_IPs( ThreadId tid, Bool is_custom_alloc, Addr ips[])
 {
-   Char buf[BUF_LEN];
+   static Char buf[BUF_LEN];
    Int n_ips, i, n_alloc_fns_removed;
    Int overestimate;
    Bool redo;
@@ -835,7 +862,7 @@ Int get_IPs( ThreadId tid, Bool is_custom_alloc, Addr ips[])
       // involves calls to VG_(malloc)/VG_(free)).
       for (i = n_alloc_fns_removed; i < n_ips; i++) {
          if (VG_(get_fnname)(ips[i], buf, BUF_LEN)) {
-            if (is_alloc_fn(buf)) {
+            if (is_member_fn(alloc_fns, buf)) {
                n_alloc_fns_removed++;
             } else {
                break;
@@ -862,14 +889,21 @@ Int get_IPs( ThreadId tid, Bool is_custom_alloc, Addr ips[])
 }
 
 // Gets an XCon and puts it in the tree.  Returns the XCon's bottom-XPt.
+// Unless the allocation should be ignored, in which case we return NULL.
 static XPt* get_XCon( ThreadId tid, Bool is_custom_alloc )
 {
-   Addr ips[MAX_IPS];
+   static Addr ips[MAX_IPS];
    Int i;
    XPt* xpt = alloc_xpt;
 
    // After this call, the IPs we want are in ips[0]..ips[n_ips-1].
    Int n_ips = get_IPs(tid, is_custom_alloc, ips);
+
+   // Should we ignore this allocation?  (Nb: n_ips can be zero, eg. if
+   // 'main' is marked as an alloc-fn.)
+   if (n_ips > 0 && fn_should_be_ignored(ips[0])) {
+      return NULL;
+   }
 
    // Now do the search/insertion of the XCon.
    for (i = 0; i < n_ips; i++) {
@@ -1496,18 +1530,27 @@ void* new_block ( ThreadId tid, void* p, SizeT req_szB, SizeT req_alignB,
    if (clo_heap) {
       VERB(3, "<<< new_mem_heap (%lu, %lu)", req_szB, slop_szB);
 
-      // Update statistics.
-      n_heap_allocs++;
-
-      // Update heap stats.
-      update_heap_stats(req_szB, clo_heap_admin + slop_szB);
-
-      // Update XTree.
       hc->where = get_XCon( tid, is_custom_alloc );
-      update_XCon(hc->where, req_szB);
 
-      // Maybe take a snapshot.
-      maybe_take_snapshot(Normal, "  alloc");
+      if (hc->where) {
+         // Update statistics.
+         n_heap_allocs++;
+
+         // Update heap stats.
+         update_heap_stats(req_szB, clo_heap_admin + slop_szB);
+
+         // Update XTree.
+         update_XCon(hc->where, req_szB);
+
+         // Maybe take a snapshot.
+         maybe_take_snapshot(Normal, "  alloc");
+
+      } else {
+         // Ignored allocation.
+         n_ignored_heap_allocs++;
+
+         VERB(3, "(ignored)");
+      }
 
       VERB(3, ">>>");
    }
@@ -1529,20 +1572,27 @@ void die_block ( void* p, Bool custom_free )
    if (clo_heap) {
       VERB(3, "<<< die_mem_heap");
 
-      // Update statistics
-      n_heap_frees++;
+      if (hc->where) {
+         // Update statistics.
+         n_heap_frees++;
 
-      // Maybe take a peak snapshot, since it's a deallocation.
-      maybe_take_snapshot(Peak, "de-PEAK");
+         // Maybe take a peak snapshot, since it's a deallocation.
+         maybe_take_snapshot(Peak, "de-PEAK");
 
-      // Update heap stats.
-      update_heap_stats(-hc->req_szB, -clo_heap_admin - hc->slop_szB);
+         // Update heap stats.
+         update_heap_stats(-hc->req_szB, -clo_heap_admin - hc->slop_szB);
 
-      // Update XTree.
-      update_XCon(hc->where, -hc->req_szB);
+         // Update XTree.
+         update_XCon(hc->where, -hc->req_szB);
 
-      // Maybe take a snapshot.
-      maybe_take_snapshot(Normal, "dealloc");
+         // Maybe take a snapshot.
+         maybe_take_snapshot(Normal, "dealloc");
+
+      } else {
+         n_ignored_heap_frees++;
+
+         VERB(3, "(ignored)");
+      }
 
       VERB(3, ">>> (-%lu, -%lu)", hc->req_szB, hc->slop_szB);
    }
@@ -1553,6 +1603,12 @@ void die_block ( void* p, Bool custom_free )
       VG_(cli_free)( p );
 }
 
+// Nb: --ignore-fn is tricky for realloc.  If the block's original alloc was
+// ignored, but the realloc is not requested to be ignored, and we are
+// shrinking the block, then we have to ignore the realloc -- otherwise we
+// could end up with negative heap sizes.  This isn't a danger if we are
+// growing such a block, but for consistency (it also simplifies things) we
+// ignore such reallocs as well.
 static __inline__
 void* renew_block ( ThreadId tid, void* p_old, SizeT new_req_szB )
 {
@@ -1560,6 +1616,7 @@ void* renew_block ( ThreadId tid, void* p_old, SizeT new_req_szB )
    void*     p_new;
    SizeT     old_req_szB, old_slop_szB, new_slop_szB, new_actual_szB;
    XPt      *old_where, *new_where;
+   Bool      is_ignored = False;
 
    // Remove the old block
    hc = VG_(HT_remove)(malloc_list, (UWord)p_old);
@@ -1573,12 +1630,18 @@ void* renew_block ( ThreadId tid, void* p_old, SizeT new_req_szB )
    if (clo_heap) {
       VERB(3, "<<< renew_mem_heap (%lu)", new_req_szB);
 
-      // Update statistics
-      n_heap_reallocs++;
+      if (hc->where) {
+         // Update statistics.
+         n_heap_reallocs++;
 
-      // Maybe take a peak snapshot, if it's (effectively) a deallocation.
-      if (new_req_szB < old_req_szB) {
-         maybe_take_snapshot(Peak, "re-PEAK");
+         // Maybe take a peak snapshot, if it's (effectively) a deallocation.
+         if (new_req_szB < old_req_szB) {
+            maybe_take_snapshot(Peak, "re-PEAK");
+         }
+      } else {
+         // The original malloc was ignored, so we have to ignore the
+         // realloc as well.
+         is_ignored = True;
       }
    }
 
@@ -1614,9 +1677,17 @@ void* renew_block ( ThreadId tid, void* p_old, SizeT new_req_szB )
       // Update XTree.
       if (clo_heap) {
          new_where = get_XCon( tid, /*custom_malloc*/False);
-         hc->where = new_where;
-         update_XCon(old_where, -old_req_szB);
-         update_XCon(new_where,  new_req_szB);
+         if (!is_ignored && new_where) {
+            hc->where = new_where;
+            update_XCon(old_where, -old_req_szB);
+            update_XCon(new_where,  new_req_szB);
+         } else {
+            // The realloc itself is ignored.
+            is_ignored = True;
+
+            // Update statistics.
+            n_ignored_heap_reallocs++;
+         }
       }
    }
 
@@ -1628,11 +1699,17 @@ void* renew_block ( ThreadId tid, void* p_old, SizeT new_req_szB )
    VG_(HT_add_node)(malloc_list, hc);
 
    if (clo_heap) {
-      // Update heap stats.
-      update_heap_stats(new_req_szB - old_req_szB, new_slop_szB - old_slop_szB);
+      if (!is_ignored) {
+         // Update heap stats.
+         update_heap_stats(new_req_szB - old_req_szB,
+                          new_slop_szB - old_slop_szB);
 
-      // Maybe take a snapshot.
-      maybe_take_snapshot(Normal, "realloc");
+         // Maybe take a snapshot.
+         maybe_take_snapshot(Normal, "realloc");
+      } else {
+
+         VERB(3, "(ignored)");
+      }
 
       VERB(3, ">>> (%ld, %ld)",
          new_req_szB - old_req_szB, new_slop_szB - old_slop_szB);
@@ -2138,25 +2215,28 @@ static void ms_fini(Int exit_status)
 
    // Stats
    tl_assert(n_xpts > 0);  // always have alloc_xpt
-   VERB(1, "heap allocs:          %u", n_heap_allocs);
-   VERB(1, "heap reallocs:        %u", n_heap_reallocs);
-   VERB(1, "heap frees:           %u", n_heap_frees);
-   VERB(1, "stack allocs:         %u", n_stack_allocs);
-   VERB(1, "stack frees:          %u", n_stack_frees);
-   VERB(1, "XPts:                 %u", n_xpts);
-   VERB(1, "top-XPts:             %u (%d%%)",
+   VERB(1, "heap allocs:           %u", n_heap_allocs);
+   VERB(1, "heap reallocs:         %u", n_heap_reallocs);
+   VERB(1, "heap frees:            %u", n_heap_frees);
+   VERB(1, "ignored heap allocs:   %u", n_ignored_heap_allocs);
+   VERB(1, "ignored heap frees:    %u", n_ignored_heap_frees);
+   VERB(1, "ignored heap reallocs: %u", n_ignored_heap_reallocs);
+   VERB(1, "stack allocs:          %u", n_stack_allocs);
+   VERB(1, "stack frees:           %u", n_stack_frees);
+   VERB(1, "XPts:                  %u", n_xpts);
+   VERB(1, "top-XPts:              %u (%d%%)",
       alloc_xpt->n_children,
       ( n_xpts ? alloc_xpt->n_children * 100 / n_xpts : 0));
-   VERB(1, "XPt init expansions:  %u", n_xpt_init_expansions);
-   VERB(1, "XPt later expansions: %u", n_xpt_later_expansions);
-   VERB(1, "SXPt allocs:          %u", n_sxpt_allocs);
-   VERB(1, "SXPt frees:           %u", n_sxpt_frees);
-   VERB(1, "skipped snapshots:    %u", n_skipped_snapshots);
-   VERB(1, "real snapshots:       %u", n_real_snapshots);
-   VERB(1, "detailed snapshots:   %u", n_detailed_snapshots);
-   VERB(1, "peak snapshots:       %u", n_peak_snapshots);
-   VERB(1, "cullings:             %u", n_cullings);
-   VERB(1, "XCon redos:           %u", n_XCon_redos);
+   VERB(1, "XPt init expansions:   %u", n_xpt_init_expansions);
+   VERB(1, "XPt later expansions:  %u", n_xpt_later_expansions);
+   VERB(1, "SXPt allocs:           %u", n_sxpt_allocs);
+   VERB(1, "SXPt frees:            %u", n_sxpt_frees);
+   VERB(1, "skipped snapshots:     %u", n_skipped_snapshots);
+   VERB(1, "real snapshots:        %u", n_real_snapshots);
+   VERB(1, "detailed snapshots:    %u", n_detailed_snapshots);
+   VERB(1, "peak snapshots:        %u", n_peak_snapshots);
+   VERB(1, "cullings:              %u", n_cullings);
+   VERB(1, "XCon redos:            %u", n_XCon_redos);
 }
 
 
@@ -2196,12 +2276,21 @@ static void ms_post_clo_init(void)
       clo_heap_admin = 0;
    }
 
-   // Print alloc-fns, if necessary.
+   // Print alloc-fns and ignore-fns, if necessary.
    if (VG_(clo_verbosity) > 1) {
       VERB(1, "alloc-fns:");
       for (i = 0; i < VG_(sizeXA)(alloc_fns); i++) {
-         Char** alloc_fn_ptr = VG_(indexXA)(alloc_fns, i);
-         VERB(1, "  %d: %s", i, *alloc_fn_ptr);
+         Char** fn_ptr = VG_(indexXA)(alloc_fns, i);
+         VERB(1, "  %d: %s", i, *fn_ptr);
+      }
+
+      VERB(1, "ignore-fns:");
+      if (0 == VG_(sizeXA)(ignore_fns)) {
+         VERB(1, "  <empty>");
+      }
+      for (i = 0; i < VG_(sizeXA)(ignore_fns); i++) {
+         Char** fn_ptr = VG_(indexXA)(ignore_fns, i);
+         VERB(1, "  %d: %s", i, *fn_ptr);
       }
    }
 
@@ -2233,12 +2322,12 @@ static void ms_pre_clo_init(void)
       "Copyright (C) 2003-2008, and GNU GPL'd, by Nicholas Nethercote");
    VG_(details_bug_reports_to)  (VG_BUGS_TO);
 
-   // Basic functions
+   // Basic functions.
    VG_(basic_tool_funcs)          (ms_post_clo_init,
                                    ms_instrument,
                                    ms_fini);
 
-   // Needs
+   // Needs.
    VG_(needs_libc_freeres)();
    VG_(needs_command_line_options)(ms_process_cmd_line_option,
                                    ms_print_usage,
@@ -2258,14 +2347,15 @@ static void ms_pre_clo_init(void)
                                    NULL,
                                    0 );
 
-   // HP_Chunks
+   // HP_Chunks.
    malloc_list = VG_(HT_construct)( "Massif's malloc list" );
 
    // Dummy node at top of the context structure.
    alloc_xpt = new_XPt(/*ip*/0, /*parent*/NULL);
 
-   // Initialise alloc_fns.
+   // Initialise alloc_fns and ignore_fns.
    init_alloc_fns();
+   init_ignore_fns();
 
    // Initialise args_for_massif.
    args_for_massif = VG_(newXA)(VG_(malloc), "ms.main.mprci.1", 

@@ -1,3 +1,4 @@
 prog: ../../tests/toobig-allocs
 vgopts: --massif-out-file=massif.out
+vgopts: --ignore-fn=__part_load_locale --ignore-fn=__time_load_locale --ignore-fn=dwarf2_unwind_dyld_add_image_hook --ignore-fn=get_or_create_key_element
 cleanup: rm massif.out
