@@ -2,6 +2,9 @@
 # For AM_FLAG_M3264_PRI
 include $(top_srcdir)/Makefile.flags.am
 
+# For check-local and clean-local
+include $(top_srcdir)/Makefile.tool-tests.am
+
 SUBDIRS = .
 
 # Arch-specific tests.

@@ -1,3 +1,6 @@
+# For check-local and clean-local
+include $(top_srcdir)/Makefile.tool-tests.am
+
 noinst_SCRIPTS = filter_cpuid filter_stderr gen_insn_test.pl
 
 CLEANFILES = $(addsuffix .c,$(INSN_TESTS))
