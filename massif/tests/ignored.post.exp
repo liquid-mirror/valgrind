@@ -40,7 +40,7 @@ Number of snapshots: 5
   2            800              800              800             0            0
   3            800              800              800             0            0
 100.00% (800B) (heap allocation functions) malloc/new/new[], --alloc-fns, etc.
-->100.00% (800B) 0x........: main (ignored.c:31)
+->100.00% (800B) 0x........: main (ignored.c:38)
 | 
 ->00.00% (0B) in 1+ places, all below ms_print's threshold (01.00%)
 
