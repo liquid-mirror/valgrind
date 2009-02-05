@@ -19,7 +19,7 @@ EXTRA_DIST = $(noinst_SCRIPTS) \
 	deep-D.post.exp deep-D.stderr.exp deep-D.vgtest \
         culling1.stderr.exp culling1.vgtest \
         culling2.stderr.exp culling2.vgtest \
-	custom_alloc.post.exp custom_alloc.stderr.exp custom_alloc.vgtest
+	custom_alloc.post.exp custom_alloc.stderr.exp custom_alloc.vgtest \
 	ignored.post.exp ignored.stderr.exp ignored.vgtest \
 	ignoring.post.exp ignoring.stderr.exp ignoring.vgtest \
 	insig.post.exp insig.stderr.exp insig.vgtest \
@@ -41,7 +41,7 @@ EXTRA_DIST = $(noinst_SCRIPTS) \
 	thresholds_5_10.post.exp  thresholds_5_10.stderr.exp  thresholds_5_10.vgtest \
 	thresholds_10_10.post.exp thresholds_10_10.stderr.exp thresholds_10_10.vgtest \
         toobig-allocs.stderr.exp toobig-allocs.vgtest \
-	zero1.post.exp zero1.stderr.exp zero1.vgtest
+	zero1.post.exp zero1.stderr.exp zero1.vgtest \
 	zero2.post.exp zero2.stderr.exp zero2.vgtest
 
 AM_CFLAGS   = $(WERROR) -Winline -Wall -Wshadow -g $(AM_FLAG_M3264_PRI)
