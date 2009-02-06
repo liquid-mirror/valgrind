@@ -6,6 +6,7 @@
 
 include $(top_srcdir)/Makefile.all.am
 include $(top_srcdir)/Makefile.flags.am
+include $(top_srcdir)/Makefile.inplace.am
 include $(top_srcdir)/Makefile.install.am
 
 AM_CPPFLAGS_CORE_COMMON = \
@@ -598,15 +599,6 @@ clean-local:
 	rm -f $(mach_srcs) $(mach_server_srcs) $(mach_hdrs)
 
 MANUAL_DEPS = $(noinst_HEADERS) $(include_HEADERS)
-
-all-local:
-	for f in $(noinst_PROGRAMS); do \
-	  p=`echo $$f | sed -e 's/^[^-]*-//' -e 's/\..*$$//'`; \
-	  n=`echo $$f | sed -e 's/-[^-]\{1,\}-[^-.]\{1,\}//'`; \
-	  mkdir -p $(inplacedir)/$$p; \
-	  rm -f $(inplacedir)/$$p/$$n; \
-	  ln -f -s ../../$(subdir)/$$f $(inplacedir)/$$p/$$n; \
-	done
 
 EXTRA_DIST = \
 	m_debuginfo/UNUSED_STABS.txt \
