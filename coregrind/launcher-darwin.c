@@ -291,7 +291,7 @@ int main(int argc, char** argv, char** envp)
       free(tooldir);
    }
 
-   /* Find the "default" arch (VG_PLATFORM_PRI from configure). 
+   /* Find the "default" arch (VGCONF_ARCH_PRI from configure). 
       This is the preferred arch from fat files and the fallback. */
    default_arch = NULL;
    default_cputype = 0;
