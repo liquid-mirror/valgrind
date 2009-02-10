@@ -50,7 +50,7 @@
 #include "pub_core_machine.h"    // VG_PLAT_USES_PPCTOC
 #include "pub_core_xarray.h"
 #include "pub_core_oset.h"
-#include "pub_core_stacktrace.h" // VG_(get_StackTrace)
+#include "pub_core_stacktrace.h" // VG_(get_StackTrace) XXX: circular dependency
 
 // DDD: HAVE_ELF, HAVE_MACHO should be in a pub_*.h file somewhere.
 #include "pub_core_ume.h"        // DDD: needed for priv_ume.h
@@ -1129,6 +1129,7 @@ Bool get_sym_name ( Bool demangle, Addr a, Char* buf, Int nbuf,
    if (demangle) {
       VG_(demangle) ( True/*do C++ demangle*/,
                       di->symtab[sno].name, buf, nbuf );
+
    } else {
       VG_(strncpy_safely) ( buf, di->symtab[sno].name, nbuf );
    }
@@ -1242,6 +1243,47 @@ Bool VG_(get_fnname_Z_demangle_only) ( Addr a, Char* buf, Int nbuf )
    buf[nbuf-1] = 0; /* paranoia */
    return True;
 #  undef N_TMPBUF
+}
+
+Vg_FnNameKind VG_(get_fnname_kind) ( Char* name )
+{
+   if (VG_STREQ("main", name)) {
+      return Vg_FnNameMain;
+
+   } else if (
+#if defined(VGO_linux)
+       VG_STREQ("__libc_start_main",  name) ||  // glibc glibness
+       VG_STREQ("generic_start_main", name) ||  // Yellow Dog doggedness
+#elif defined(VGO_aix5)
+       VG_STREQ("__start", name)            ||  // AIX aches
+#elif defined(VGO_darwin)
+       // See readmacho.c for an explanation of this.
+       VG_STREQ("start_according_to_valgrind", name) ||  // Darwin, darling
+#else
+#      error Unknown OS
+#endif
+       0) {
+      return Vg_FnNameBelowMain;
+
+   } else {
+      return Vg_FnNameNormal;
+   }
+}
+
+Vg_FnNameKind VG_(get_fnname_kind_from_IP) ( Addr ip )
+{
+   // We don't need a big buffer;  all the special names are small.
+   #define BUFLEN 50
+   Char buf[50];
+
+   // We don't demangle, because it's faster not to, and the special names
+   // we're looking for won't be demangled.
+   if (VG_(get_fnname_nodemangle) ( ip, buf, BUFLEN )) {
+      buf[BUFLEN-1] = '\0';      // paranoia
+      return VG_(get_fnname_kind)(buf);
+   } else {
+      return Vg_FnNameNormal;    // Don't know the name, treat it as normal.
+   }
 }
 
 /* Looks up data_addr in the collection of data symbols, and if found

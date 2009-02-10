@@ -119,8 +119,17 @@ void read_symtab( struct _DebugInfo* di,
       risym.size = di->text_avma+di->text_size - sym_addr; // let canonicalize fix it
       risym.name = ML_(addStr)(di, o_strtab + nl->n_un.n_strx, -1);
       risym.isText = True;
-      if (risym.name[0] == '_') risym.name++;  // skip leading underscore
-
+      // Lots of user function names get prepended with an underscore.  Eg. the
+      // function 'f' becomes the symbol '_f'.  And the "below main"
+      // function is called "start".  So we skip the leading underscore, and
+      // if we see 'start' and --show-below-main=no, we rename it as
+      // "start_according_to_valgrind", which makes it easy to spot later
+      // and display as "(below main)".
+      if (risym.name[0] == '_') {
+         risym.name++;
+      } else if (!VG_(clo_show_below_main) && VG_STREQ(risym.name, "start")) {
+         risym.name = "start_according_to_valgrind";
+      }
       ML_(addSym)(di, &risym);
    }
 }
