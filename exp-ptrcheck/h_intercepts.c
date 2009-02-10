@@ -44,31 +44,6 @@
    memcheck/mc_replace_strmem.c.  If you copy more in, please keep
    them in the same order as in mc_replace_strmem.c. */
 
-/* --------- Some handy Z-encoded names. --------- */
-
-/* --- Soname of the standard C library. --- */
-
-#if defined(VGO_linux)
-#  define  m_libc_soname     libcZdsoZa              // libc.so*
-#elif defined(VGP_ppc32_aix5)
-   /* AIX has both /usr/lib/libc.a and /usr/lib/libc_r.a. */
-#  define  m_libc_soname     libcZaZdaZLshrZdoZR     // libc*.a(shr.o)
-#elif defined(VGP_ppc64_aix5)
-#  define  m_libc_soname     libcZaZdaZLshrZu64ZdoZR // libc*.a(shr_64.o)
-#else
-#  error "Unknown platform"
-#endif
-
-/* --- Sonames for Linux ELF linkers. --- */
-
-#define  m_ld_linux_so_2         ldZhlinuxZdsoZd2           // ld-linux.so.2
-#define  m_ld_linux_x86_64_so_2  ldZhlinuxZhx86Zh64ZdsoZd2  // ld-linux-x86-64.so.2
-#define  m_ld64_so_1             ld64ZdsoZd1                // ld64.so.1
-#define  m_ld_so_1               ldZdsoZd1                  // ld.so.1
-
-
-
-
 // Note that this replacement often doesn't get used because gcc inlines
 // calls to strlen() with its own built-in version.  This can be very
 // confusing if you aren't expecting it.  Other small functions in this file
@@ -82,10 +57,10 @@
       return i; \
    }
 
-STRLEN(m_libc_soname,          strlen)
-STRLEN(m_ld_linux_so_2,        strlen)
-STRLEN(m_ld_linux_x86_64_so_2, strlen)
-STRLEN(m_ld_so_1,              strlen)
+STRLEN(VG_Z_LIBC_SONAME,          strlen)
+STRLEN(VG_Z_LD_LINUX_SO_2,        strlen)
+STRLEN(VG_Z_LD_LINUX_X86_64_SO_2, strlen)
+STRLEN(VG_Z_LD_SO_1,              strlen)
 
 
 #define STRCMP(soname, fnname) \
@@ -108,9 +83,9 @@ STRLEN(m_ld_so_1,              strlen)
       return 0; \
    }
 
-STRCMP(m_libc_soname,          strcmp)
-STRCMP(m_ld_linux_x86_64_so_2, strcmp)
-STRCMP(m_ld64_so_1,            strcmp)
+STRCMP(VG_Z_LIBC_SONAME,          strcmp)
+STRCMP(VG_Z_LD_LINUX_X86_64_SO_2, strcmp)
+STRCMP(VG_Z_LD64_SO_1,            strcmp)
 
 
 #define MEMCPY(soname, fnname) \
@@ -155,9 +130,9 @@ STRCMP(m_ld64_so_1,            strcmp)
    return dest; \
    }
 
-MEMCPY(m_libc_soname, memcpy)
-MEMCPY(m_ld_so_1,     memcpy) /* ld.so.1 */
-MEMCPY(m_ld64_so_1,   memcpy) /* ld64.so.1 */
+MEMCPY(VG_Z_LIBC_SONAME, memcpy)
+MEMCPY(VG_Z_LD_SO_1,     memcpy) /* ld.so.1 */
+MEMCPY(VG_Z_LD64_SO_1,   memcpy) /* ld64.so.1 */
 
 
 /* Copy SRC to DEST, returning the address of the terminating '\0' in
@@ -172,9 +147,9 @@ MEMCPY(m_ld64_so_1,   memcpy) /* ld64.so.1 */
       return dst; \
    }
 
-STPCPY(m_libc_soname,         stpcpy)
-STPCPY(m_ld_linux_so_2,        stpcpy)
-STPCPY(m_ld_linux_x86_64_so_2, stpcpy)
+STPCPY(VG_Z_LIBC_SONAME,          stpcpy)
+STPCPY(VG_Z_LD_LINUX_SO_2,        stpcpy)
+STPCPY(VG_Z_LD_LINUX_X86_64_SO_2, stpcpy)
 
 
 /*--------------------------------------------------------------------*/

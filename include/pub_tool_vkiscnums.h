@@ -80,12 +80,21 @@ extern UChar* VG_(aix5_sysno_to_sysname)( Int sysno );
 #elif defined(VGP_x86_darwin) || defined(VGP_amd64_darwin)
 #  include "vki/vki-scnums-darwin.h"
 
-/* Convert a syscall number into a nice form for printing. */
+// Convert a syscall number into a nice form for printing.  Unix syscalls
+// get positive numbers (0..400-odd), Mach traps get negative numbers
+// (-10..-127).  
+// DDD: Machine-dependent ones get positive numbers which will overlap with
+// Unix ones!  So eg. both 'pthread_set_self' and 'read' are reported as
+// "3".
 #define VG_DARWIN_SYSNO_PRINT(sysno) \
     ((VG_DARWIN_SYSNO_CLASS(sysno) == VG_DARWIN_SYSCALL_CLASS_MACH) \
     ? -VG_DARWIN_SYSNO_INDEX(sysno) \
     :  VG_DARWIN_SYSNO_INDEX(sysno) \
     )
+
+/* Macros for working out which syscall a syscall number refers to. */
+#define VG_DARWIN_SYSNO_INDEX(sysno) ((sysno) & VG_DARWIN_SYSCALL_NUMBER_MASK)
+#define VG_DARWIN_SYSNO_CLASS(sysno) ((sysno) >> VG_DARWIN_SYSCALL_CLASS_SHIFT)
 
 #else
 #  error Unknown platform

@@ -189,8 +189,12 @@ struct semaphore_info* semaphore_init(const Addr semaphore,
   return p;
 }
 
-/** Called after sem_destroy(). */
-void semaphore_destroy(const Addr semaphore)
+/** Called after sem_destroy().
+ * The "my_" prefix avoids a clash with
+ * coregrind/m_mach/taskUser.c:semaphore_destroy on Darwin.
+ * XXX: this function should have a DRD_() wrapper! */
+
+void my_semaphore_destroy(const Addr semaphore)
 {
   struct semaphore_info* p;
 

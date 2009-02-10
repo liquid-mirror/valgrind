@@ -780,7 +780,7 @@ void drd_semaphore_init(const Addr semaphore,
 
 void drd_semaphore_destroy(const Addr semaphore)
 {
-  semaphore_destroy(semaphore);
+  my_semaphore_destroy(semaphore);
 }
 
 void drd_semaphore_pre_wait(const DrdThreadId tid, const Addr semaphore)

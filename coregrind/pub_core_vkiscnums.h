@@ -56,10 +56,6 @@ extern Bool VG_(aix5_register_syscall)( Int, UChar* );
 
 #elif defined(VGO_darwin)
 
-/* Macros for working out which syscall a syscall number refers to. */
-#define VG_DARWIN_SYSNO_INDEX(sysno) ((sysno) & VG_DARWIN_SYSCALL_NUMBER_MASK)
-#define VG_DARWIN_SYSNO_CLASS(sysno) ((sysno) >> VG_DARWIN_SYSCALL_CLASS_SHIFT)
-
 /* Convert a syscall number into a nicer form(?) */
 #if defined(VGA_x86)
 #  define VG_DARWIN_SYSNO_NUM(sysno) VG_DARWIN_SYSNO_PRINT(sysno)

@@ -571,6 +571,7 @@ PTH_FUNC(int, pthreadZucondZubroadcastZa, // pthread_cond_broadcast*
 }
 
 
+#if defined(HAVE_PTHREAD_SPIN_LOCK)
 // pthread_spin_init
 PTH_FUNC(int, pthreadZuspinZuinit, // pthread_spin_init
          pthread_spinlock_t *spinlock,
@@ -651,7 +652,10 @@ PTH_FUNC(int, pthreadZuspinZuunlock, // pthread_spin_unlock
                              spinlock, 0, 0, 0, 0);
   return ret;
 }
+#endif   // HAVE_PTHREAD_SPIN_LOCK
 
+
+#if defined(HAVE_PTHREAD_BARRIER_INIT)
 // pthread_barrier_init
 PTH_FUNC(int, pthreadZubarrierZuinit, // pthread_barrier_init
          pthread_barrier_t* barrier,
@@ -703,6 +707,7 @@ PTH_FUNC(int, pthreadZubarrierZuwait, // pthread_barrier_wait
                              0, 0);
   return ret;
 }
+#endif   // HAVE_PTHREAD_BARRIER_INIT
 
 
 // sem_init

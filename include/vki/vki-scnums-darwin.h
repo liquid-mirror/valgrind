@@ -38,6 +38,9 @@
 // Don't pass __NR_something directly to any syscall instruction.
 // Hack: x86 `int $0x80` (unix, 64-bit result) are special.
 
+// Encoding: the top 8-bits are the syscall class.  The low 24 are the
+// syscall number (index) within that class.
+
 #define VG_DARWIN_SYSCALL_CLASS_SHIFT     24
 #define VG_DARWIN_SYSCALL_CLASS_MASK      (0xFF << VG_DARWIN_SYSCALL_CLASS_SHIFT)
 #define VG_DARWIN_SYSCALL_NUMBER_MASK     (~VG_DARWIN_SYSCALL_CLASS_MASK)
