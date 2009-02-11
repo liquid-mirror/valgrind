@@ -748,8 +748,10 @@ static vki_malloc_zone_t vg_default_zone = {
     NULL, // batch_free
     NULL, // fixme introspect
     2,  // version (fixme 3?)
-    // DDD: on my machine this last field doesn't exist in malloc_zone_t.
+    // DDD: this field exists in Mac OS 10.6, but not 10.5.
+    #if 0
     (void*)VG_REPLACE_FUNCTION_ZU(VG_Z_LIBC_SONAME, malloc_zone_memalign)
+    #endif
 };
 
 #define DEFAULT_ZONE(soname, fnname) \
