@@ -46,7 +46,7 @@ sed "/warning: line info addresses out of order/d" |
 # complete list of messages in the bash source file siglist.c.
 # DDD: this used "sed -r", but that isn't supported on Darwin, and getting
 # the GNU and BSD versions of sed to work similarly is awful.
-perl -n -e 'print if !/^(Segmentation fault|Alarm clock|Aborted)( \(core dumped\))?$/' |
+perl -n -e 'print if !/^(Segmentation fault|Alarm clock|Aborted|Bus error)( \(core dumped\))?$/' |
 
 # Remove any ": dumping core" message as the user might have a
 # limit set that prevents the core dump
