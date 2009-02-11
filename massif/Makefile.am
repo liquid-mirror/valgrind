@@ -5,6 +5,7 @@ SUBDIRS += perf
 bin_SCRIPTS = ms_print
 
 noinst_PROGRAMS = 
+noinst_DSYMS =
 if VGCONF_PLATFORMS_INCLUDE_X86_LINUX
 noinst_PROGRAMS += massif-x86-linux vgpreload_massif-x86-linux.so
 endif
@@ -25,9 +26,11 @@ noinst_PROGRAMS += massif-ppc64-aix5 vgpreload_massif-ppc64-aix5.so
 endif
 if VGCONF_PLATFORMS_INCLUDE_X86_DARWIN
 noinst_PROGRAMS += massif-x86-darwin vgpreload_massif-x86-darwin.so
+noinst_DSYMS    +=                   vgpreload_massif-x86-darwin.so
 endif
 if VGCONF_PLATFORMS_INCLUDE_AMD64_DARWIN
 noinst_PROGRAMS += massif-amd64-darwin vgpreload_massif-amd64-darwin.so
+noinst_DSYMS    +=                     vgpreload_massif-amd64-darwin.so
 endif
 
 vgpreload_massif_x86_linux_so_SOURCES      = 

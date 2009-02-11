@@ -7,15 +7,15 @@
 # newer than their corresponding .dSYM directory.
 if VGCONF_OS_IS_DARWIN
 check-local:
-	for i in $(check_PROGRAMS) ; do \
-	    if [ ! -e $$i.dSYM  -o  $$i -nt $$i.dSYM ] ; then \
-	        echo "dsymutil $$i"; \
-	        dsymutil $$i; \
+	for f in $(check_PROGRAMS) ; do \
+	    if [ ! -e $$f.dSYM  -o  $$f -nt $$f.dSYM ] ; then \
+	        echo "dsymutil $$f"; \
+	        dsymutil $$f; \
 	    fi \
 	done
 
 clean-local:
-	for i in $(check_PROGRAMS) ; do \
-	    rm -rf $$i.dSYM; \
+	for f in $(check_PROGRAMS) ; do \
+	    rm -rf $$f.dSYM; \
 	done
 endif  

@@ -584,13 +584,15 @@ vgpreload_core_amd64_darwin_so_CPPFLAGS = $(AM_CPPFLAGS_AMD64_DARWIN)
 vgpreload_core_amd64_darwin_so_CFLAGS = $(AM_CFLAGS_AMD64_DARWIN) $(AM_CFLAGS_PIC)
 vgpreload_core_amd64_darwin_so_LDFLAGS = $(PRELOAD_LDFLAGS_AMD64_DARWIN)
 
+all-local: inplace-noinst_PROGRAMS
+
 clean-local:
 	$(MAKE) -C @VEX_DIR@ CC="$(CC)" AR="$(AR)" clean
 	rm -f $(mach_srcs) $(mach_server_srcs) $(mach_hdrs)
 
 # Nb: The loop installs the libvex library for possible use by standalone
 # tools.
-install-exec-local: install-exec-local-programs
+install-exec-local: install-noinst_PROGRAMS
 	for v in $(LIBVEX) ; do \
 	  $(INSTALL_DATA) @VEX_DIR@/$$v $(DESTDIR)$(valdir) ; \
 	done

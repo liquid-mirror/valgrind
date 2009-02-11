@@ -8,7 +8,7 @@ sed "s/<obj>.*<\/obj>/<obj>...<\/obj>/" |
 sed "s/<line>.*<\/line>/<line>...<\/line>/" |
 sed "s/<dir>.*<\/dir>/<dir>...<\/dir>/" |
 sed "s/<count>.*<\/count>/<count>...<\/count>/" |
-sed "s/\(m_replacemalloc\/\)\?vg_replace_malloc.c/vg_replace_malloc.c/" |
+perl    -p -e "s/(m_replacemalloc\/)?vg_replace_malloc.c/vg_replace_malloc.c/" |
 perl -0 -p -e "s/<suppcounts>.*<\/suppcounts>/<suppcounts>...<\/suppcounts>/s" |
 perl    -p -e "s/<time>.*<\/time>/<time>...<\/time>/s" |
 perl -0 -p -e "s/<vargv>.*<\/vargv>/<vargv>...<\/vargv>/s"
@@ -23,6 +23,7 @@ perl -0 -p -e "s/<vargv>.*<\/vargv>/<vargv>...<\/vargv>/s"
 # 
 # The other is that as somebody else said you need to change the input
 # record separator so that it reads in the whole file as a single line
-# which you can do with the -0 switch.
+# (which means we can do multi-line matching in a single regexp) which you
+# can do with the -0 switch.                                              
 #
 # Hence -0 -p.

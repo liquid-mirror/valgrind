@@ -1,6 +1,7 @@
 include $(top_srcdir)/Makefile.tool.am
 
 noinst_PROGRAMS =
+noinst_DSYMS =
 if VGCONF_PLATFORMS_INCLUDE_X86_LINUX
   noinst_PROGRAMS += drd-x86-linux   vgpreload_drd-x86-linux.so
 endif
@@ -21,9 +22,11 @@ if VGCONF_PLATFORMS_INCLUDE_PPC64_AIX5
 endif
 if VGCONF_PLATFORMS_INCLUDE_X86_DARWIN
   noinst_PROGRAMS += drd-x86-darwin  vgpreload_drd-x86-darwin.so
+  noinst_DSYMS    +=                 vgpreload_drd-x86-darwin.so
 endif
 if VGCONF_PLATFORMS_INCLUDE_AMD64_DARWIN
   noinst_PROGRAMS += drd-amd64-darwin vgpreload_drd-amd64-darwin.so
+  noinst_DSYMS    +=                  vgpreload_drd-amd64-darwin.so
 endif
 
 

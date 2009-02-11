@@ -1,6 +1,7 @@
 include $(top_srcdir)/Makefile.tool.am
 
 noinst_PROGRAMS = 
+noinst_DSYMS = 
 if VGCONF_PLATFORMS_INCLUDE_X86_LINUX
 noinst_PROGRAMS += memcheck-x86-linux vgpreload_memcheck-x86-linux.so
 endif
@@ -21,9 +22,11 @@ noinst_PROGRAMS += memcheck-ppc64-aix5 vgpreload_memcheck-ppc64-aix5.so
 endif
 if VGCONF_PLATFORMS_INCLUDE_X86_DARWIN
 noinst_PROGRAMS += memcheck-x86-darwin vgpreload_memcheck-x86-darwin.so
+noinst_DSYMS    +=                     vgpreload_memcheck-x86-darwin.so
 endif
 if VGCONF_PLATFORMS_INCLUDE_AMD64_DARWIN
 noinst_PROGRAMS += memcheck-amd64-darwin vgpreload_memcheck-amd64-darwin.so
+noinst_DSYMS    +=                       vgpreload_memcheck-amd64-darwin.so
 endif
 
 VGPRELOAD_MEMCHECK_SOURCES_COMMON = mc_replace_strmem.c
