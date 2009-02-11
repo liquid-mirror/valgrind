@@ -278,17 +278,18 @@ int main(int argc, char** argv, char** envp)
       valgrind_lib = ( cp == NULL ? VG_LIBDIR : cp );
    }
 
-   /* Find installed architectures. */
+   /* Find installed architectures. Use vgpreload_core-<platform>.so as the
+    * indicator of whether the platform is installed. */
    for (i = 0; i < valid_archs_count; i++) {
-      char *tooldir;
-      asprintf(&tooldir, "%s/%s-darwin", valgrind_lib, valid_archs[i].valgrind_name);
-      if (access(tooldir, R_OK|X_OK) != 0) {
+      char *vgpreload_core;
+      asprintf(&vgpreload_core, "%s/vgpreload_core-%s-darwin.so", valgrind_lib, valid_archs[i].valgrind_name);
+      if (access(vgpreload_core, R_OK|X_OK) != 0) {
          VG_(debugLog)(1, "launcher", "arch '%s' IS NOT installed\n", valid_archs[i].valgrind_name);
          bzero(&valid_archs[i], sizeof(valid_archs[i]));
       } else {
          VG_(debugLog)(1, "launcher", "arch '%s' IS installed\n", valid_archs[i].valgrind_name);
       }
-      free(tooldir);
+      free(vgpreload_core);
    }
 
    /* Find the "default" arch (VGCONF_ARCH_PRI from configure). 
@@ -305,7 +306,7 @@ int main(int argc, char** argv, char** envp)
          break;
       }
    }
-   if (i == valid_archs_count) barf("Unknown VG_PLATFORM '%s'", VG_PLATFORM);
+   if (i == valid_archs_count) barf("Unknown/uninstalled VG_PLATFORM '%s'", VG_PLATFORM);
    assert(NULL != default_arch);
    assert(0 != default_cputype);
 
@@ -400,9 +401,9 @@ int main(int argc, char** argv, char** envp)
    new_argv[new_argc++] = NULL;
 
    /* Build the stage2 invokation, and execve it.  Bye! */
-   asprintf(&toolfile, "%s/%s-darwin/%s", valgrind_lib, arch, toolname);
+   asprintf(&toolfile, "%s/%s-%s-darwin", valgrind_lib, toolname, arch);
    if (access(toolfile, R_OK|X_OK) != 0) {
-      barf("tool '%s' not installed (%s)", toolname, toolfile);
+      barf("tool '%s' not installed (%s) (%s)", toolname, toolfile, strerror(errno));
    }
 
    VG_(debugLog)(1, "launcher", "launching %s\n", toolfile);
