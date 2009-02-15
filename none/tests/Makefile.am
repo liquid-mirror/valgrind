@@ -162,8 +162,12 @@ check_PROGRAMS = \
 	tls tls.so tls2.so vgprintf \
 	coolo_sigaction gxx304
 
-# DDD: not sure if these ones should work on Darwin or not... if not, should
-# be moved into linux/.  ('pending' probably should, it uses signals.)
+# DDD: 
+# - async-sigs and fdleak_ipv4 both build and run under Valgrind (although
+#   they die)... I think they are disabled because they currently screw up
+#   other tests.
+# - 'pending' doesn't build because Darwin lacks sigwaitinfo [should
+#   probably do a configure-time check for it]
 if ! VGCONF_OS_IS_DARWIN
    check_PROGRAMS += \
 	async-sigs \
