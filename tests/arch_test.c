@@ -193,7 +193,7 @@ int main(int argc, char **argv)
 {
    int i;
    if ( argc != 2 ) {
-      fprintf( stderr, "usage: cputest <cpu-type>\n" );
+      fprintf( stderr, "usage: arch_test <cpu-type>\n" );
       exit( 2 );
    }
    if (go( argv[1] )) {
