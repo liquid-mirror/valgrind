@@ -2150,7 +2150,7 @@ PRE(sys_exit)
 
 PRE(sys_ni_syscall)
 {
-   VG_(printf)("UNKNOWN syscall %ld! (ni_syscall)\n",
+   PRINT("unimplemented (by the kernel) syscall %ld! (ni_syscall)\n",
 #if defined(VGO_linux) || defined(VGO_aix5)
       SYSNO
 #elif defined(VGO_darwin)
