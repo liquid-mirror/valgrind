@@ -1187,20 +1187,20 @@ static const SyscallTableEntry* get_syscall_entry ( Int syscallno,
    switch (VG_DARWIN_SYSNO_CLASS(syscallno)) {
    case VG_DARWIN_SYSCALL_CLASS_UX64:
    case VG_DARWIN_SYSCALL_CLASS_UNIX:
-      if (idx >= 0  &&  idx < ML_(syscall_table_size)) {
+      if (idx >= 0 && idx < ML_(syscall_table_size) &&
+          ML_(syscall_table)[idx].before != NULL)
          sys = &ML_(syscall_table)[idx];
-      }
-      break;
+         break;
    case VG_DARWIN_SYSCALL_CLASS_MACH:
-      if (idx >= 0  &&  idx < ML_(mach_trap_table_size)) {
+      if (idx >= 0 && idx < ML_(mach_trap_table_size) &&
+          ML_(mach_trap_table)[idx].before != NULL)
          sys = &ML_(mach_trap_table)[idx];
-      }
-      break;
+         break;
    case VG_DARWIN_SYSCALL_CLASS_MDEP:
-      if (idx >= 0  &&  idx < ML_(mdep_trap_table_size)) {
+      if (idx >= 0 && idx < ML_(mdep_trap_table_size) &&
+          ML_(mdep_trap_table)[idx].before != NULL)
          sys = &ML_(mdep_trap_table)[idx];
-      }
-      break;
+         break;
    default: 
       vg_assert(0);
       break;

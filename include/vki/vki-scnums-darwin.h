@@ -294,7 +294,6 @@
 #define	__NR_adjtime        VG_DARWIN_SYSCALL_CONSTRUCT_UNIX(140)
 			/* 141  old getpeername */
 #define __NR_gethostuuid    VG_DARWIN_SYSCALL_CONSTRUCT_UNIX(142)
-			/* 142  old gethostid */
 			/* 143  old sethostid */
 			/* 144  old getrlimit */
 			/* 145  old setrlimit */
