@@ -21,26 +21,32 @@
   The GNU General Public License is contained in the file COPYING.
 */
 
-#ifndef __MALLOC_WRAPPERS_H
-#define __MALLOC_WRAPPERS_H
+
+/*
+ * Functions related to instrumentation of loads and stores.
+ */
 
 
-#include "drd_basics.h"          /* DRD_() */
-#include "pub_tool_basics.h"     /* Bool */
-#include "pub_tool_execontext.h" /* ExeContext */
+#ifndef __DRD_LOAD_STORE_H
+#define __DRD_LOAD_STORE_H
 
 
-typedef void (*StartUsingMem)(const Addr a1, const Addr a2, UInt ec_uniq);
-typedef void (*StopUsingMem)(const Addr a1, const Addr a2);
+#include <libvex.h>             /* IRSB */
+#include <pub_tool_tooliface.h> /* VgCallbackClosure */
 
 
-void DRD_(register_malloc_wrappers)(const StartUsingMem start_callback,
-                                    const StopUsingMem stop_callback);
-Bool DRD_(heap_addrinfo)(Addr const a,
-                         Addr* const data,
-                         SizeT* const size,
-                         ExeContext** const where);
-void DRD_(print_malloc_stats)(void);
+Bool DRD_(get_check_stack_accesses)(void);
+void DRD_(set_check_stack_accesses)(const Bool c);
+IRSB* DRD_(instrument)(VgCallbackClosure* const closure,
+                       IRSB* const bb_in,
+                       VexGuestLayout* const layout,
+                       VexGuestExtents* const vge, 
+                       IRType const gWordTy,
+                       IRType const hWordTy);
+void DRD_(trace_mem_access)(const Addr addr, const SizeT size,
+                            const BmAccessTypeT access_type);
+VG_REGPARM(2) void DRD_(trace_load)(Addr addr, SizeT size);
+VG_REGPARM(2) void DRD_(trace_store)(Addr addr, SizeT size);
 
 
-#endif // __MALLOC_WRAPPERS_H
+#endif //  __DRD_LOAD_STORE_H

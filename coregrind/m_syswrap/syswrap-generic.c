@@ -1185,6 +1185,7 @@ Bool ML_(fd_allowed)(Int fd, const Char *syscallname, ThreadId tid, Bool isNewFd
       VG_(message)(Vg_UserMsg, 
          "Warning: invalid file descriptor %d in syscall %s()",
          fd, syscallname);
+      OINK(VG_(clo_log_fd));
       if (fd == VG_(clo_log_fd))
 	 VG_(message)(Vg_UserMsg, 
             "   Use --log-fd=<number> to select an alternative log fd.");

@@ -1,8 +1,7 @@
 /*
-  This file is part of drd, a data race detector.
+  This file is part of drd, a thread error detector.
 
-  Copyright (C) 2006-2008 Bart Van Assche
-  bart.vanassche@gmail.com
+  Copyright (C) 2006-2009 Bart Van Assche <bart.vanassche@gmail.com>.
 
   This program is free software; you can redistribute it and/or
   modify it under the terms of the GNU General Public License as
@@ -147,8 +146,8 @@ typedef struct {
 } GenericErrInfo;
 
 
-void set_show_conflicting_segments(const Bool scs);
-void drd_register_error_handlers(void);
+void DRD_(set_show_conflicting_segments)(const Bool scs);
+void DRD_(register_error_handlers)(void);
 
 
 #endif /* __DRD_ERROR_H */
