@@ -484,8 +484,6 @@ void* MC_(realloc) ( ThreadId tid, void* p_old, SizeT new_szB )
    return p_new;
 }
 
-// Memcheck's allocator always gives the client exactly as much 
-// memory as they asked for, with no additional alignment padding.
 SizeT MC_(malloc_usable_size) ( ThreadId tid, void* p )
 {
    MC_Chunk* mc = VG_(HT_lookup) ( MC_(malloc_list), (UWord)p );
