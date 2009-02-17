@@ -488,15 +488,11 @@ void* MC_(realloc) ( ThreadId tid, void* p_old, SizeT new_szB )
 // memory as they asked for, with no additional alignment padding.
 SizeT MC_(malloc_usable_size) ( ThreadId tid, void* p )
 {
-   if (p) {
-      MC_Chunk* mc = VG_(HT_lookup) ( MC_(malloc_list), (UWord)p );
-      if (mc) {
-         return mc->szB;
-      }
-   }
+   MC_Chunk* mc = VG_(HT_lookup) ( MC_(malloc_list), (UWord)p );
 
-   // bad pointer or no pointer - Linux and Darwin both return 0 with no error.
-   return 0; 
+   // There may be slop, but pretend there isn't because only the asked-for
+   // area will be marked as addressable.
+   return ( mc ? mc->szB : 0 );
 }
 
 

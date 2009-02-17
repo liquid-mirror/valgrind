@@ -69,10 +69,20 @@ typedef Int ArenaId;
 // This is both the minimum payload size of a malloc'd block, and its
 // minimum alignment.  Must be a power of 2 greater than 4, and should be
 // greater than 8.
-#if defined(VGO_darwin)
+#if   defined(VGP_x86_linux)   || \
+      defined(VGP_ppc32_linux) || \
+      defined(VGP_ppc32_aix5)
+#  define VG_MIN_MALLOC_SZB        8
+// Nb: We always use 16 bytes for Darwin, even on 32-bits, so it can be used
+// for any AltiVec- or SSE-related type.
+#elif defined(VGP_amd64_linux) || \
+      defined(VGP_ppc64_linux) || \
+      defined(VGP_ppc64_aix5)  || \
+      defined(VGP_x86_darwin)  || \
+      defined(VGP_amd64_darwin)
 #  define VG_MIN_MALLOC_SZB       16
 #else
-#  define VG_MIN_MALLOC_SZB        8
+#  error Unknown platform
 #endif
 
 /* This struct definition MUST match the system one. */

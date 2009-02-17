@@ -3468,16 +3468,11 @@ static void* hg_cli__realloc ( ThreadId tid, void* payloadV, SizeT new_size )
 
 static SizeT hg_cli_malloc_usable_size ( ThreadId tid, void* p )
 {
-   MallocMeta *md;
+   MallocMeta *md = VG_(HT_lookup)( hg_mallocmeta_table, (UWord)p );
 
-   /* First try and find the block. */
-   md = (MallocMeta*) VG_(HT_lookup)( hg_mallocmeta_table, (UWord)p );
-
-   if (md == NULL) {
-      return 0;
-   }
-
-   return md->szB;
+   // There may be slop, but pretend there isn't because only the asked-for
+   // area will have been shadowed properly.
+   return ( md ? md->szB : 0 );
 }
 
 

@@ -1561,10 +1561,8 @@ void* new_block ( ThreadId tid, void* p, SizeT req_szB, SizeT req_alignB,
 static __inline__
 void die_block ( void* p, Bool custom_free )
 {
-   HP_Chunk* hc;
-
    // Remove HP_Chunk from malloc_list
-   hc = VG_(HT_remove)(malloc_list, (UWord)p);
+   HP_Chunk* hc = VG_(HT_remove)(malloc_list, (UWord)p);
    if (NULL == hc) {
       return;   // must have been a bogus free()
    }
@@ -1768,6 +1766,12 @@ static void* ms_realloc ( ThreadId tid, void* p_old, SizeT new_szB )
    return renew_block(tid, p_old, new_szB);
 }
 
+static SizeT ms_malloc_usable_size ( ThreadId tid, void* p )                    
+{                                                            
+   HP_Chunk* hc = VG_(HT_lookup)( malloc_list, (UWord)p );
+
+   return ( hc ? hc->req_szB + hc->slop_szB : 0 );
+}                                                            
 
 //------------------------------------------------------------//
 //--- Stacks                                               ---//
@@ -2339,7 +2343,7 @@ static void ms_pre_clo_init(void)
                                    ms___builtin_delete,
                                    ms___builtin_vec_delete,
                                    ms_realloc,
-                                   NULL,
+                                   ms_malloc_usable_size,
                                    0 );
 
    // HP_Chunks.

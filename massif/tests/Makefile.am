@@ -25,6 +25,7 @@ EXTRA_DIST = $(noinst_SCRIPTS) \
 	insig.post.exp insig.stderr.exp insig.vgtest \
 	long-names.post.exp long-names.stderr.exp long-names.vgtest \
 	long-time.post.exp long-time.stderr.exp long-time.vgtest \
+	malloc_usable.stderr.exp malloc_usable.vgtest \
 	new-cpp.post.exp new-cpp.stderr.exp new-cpp.vgtest \
 	no-stack-no-heap.post.exp no-stack-no-heap.stderr.exp no-stack-no-heap.vgtest \
 	null.post.exp null.stderr.exp null.vgtest \
@@ -62,6 +63,7 @@ check_PROGRAMS = \
 	insig \
 	long-names \
 	long-time \
+	malloc_usable \
 	new-cpp \
 	null \
 	one \
