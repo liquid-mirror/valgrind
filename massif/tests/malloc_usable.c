@@ -14,7 +14,7 @@ int main(void)
    int* x = malloc(99);
 
    // DDD: would be better to have a HAVE_MALLOC_USABLE_SIZE variable here
-#  if !defined(_AIX)
+#  if !defined(_AIX) && !defined(__APPLE__)
    assert(104 == malloc_usable_size(x) ||
           112 == malloc_usable_size(x));
    assert(  0 == malloc_usable_size(NULL));
