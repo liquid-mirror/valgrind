@@ -89,8 +89,8 @@ AM_CCASFLAGS_X86_DARWIN  = $(add_includes_x86_darwin) -arch i386 -g -O0
 AM_FLAG_M3264_AMD64_DARWIN = -arch x86_64
 AM_CPPFLAGS_AMD64_DARWIN  = $(AM_CPPFLAGS_COMMON) \
 			    -DVGA_amd64=1 \
-			    -DVGO_linux=1 \
-			    -DVGP_amd64_linux=1
+			    -DVGO_darwin=1 \
+			    -DVGP_amd64_darwin=1
 AM_CFLAGS_AMD64_DARWIN     = $(WERROR) -arch x86_64 $(AM_CFLAGS_BASE) \
 			    -mmacosx-version-min=10.5 -fno-stack-protector
 # GrP fixme -O0 for debugging goes here
