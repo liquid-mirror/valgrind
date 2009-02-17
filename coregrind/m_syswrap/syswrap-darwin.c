@@ -583,26 +583,8 @@ void VG_(show_open_ports)(void)
 
 
 /* ---------------------------------------------------------------------
-   darwin sockopt wrapper helpers
+   wrappers
    ------------------------------------------------------------------ */
-
-void 
-ML_(PRE_sys_getsockopt) ( ThreadId tid, 
-                          UWord arg0, UWord arg1, UWord arg2,
-                          UWord arg3, UWord arg4 )
-{
-#warning GrP fixme darwin-specific sockopts
-}
-
-void 
-ML_(POST_sys_getsockopt) ( ThreadId tid, 
-                           SysRes res,
-                           UWord arg0, UWord arg1, UWord arg2,
-                           UWord arg3, UWord arg4 )
-{
-#warning GrP fixme darwin-specific sockopts
-}
-
 
 #define PRE(name)       DEFN_PRE_TEMPLATE(darwin, name)
 #define POST(name)      DEFN_POST_TEMPLATE(darwin, name)
@@ -635,7 +617,7 @@ ML_(POST_sys_getsockopt) ( ThreadId tid,
 #define MACH_MSGH_ID VG_(get_ThreadState)(tid)->os_state.msgh_id
 
 /* ---------------------------------------------------------------------
-   darwin ioctl wrapper helpers
+   darwin ioctl wrapper
    ------------------------------------------------------------------ */
 
 PRE(sys_ioctl)
@@ -954,7 +936,7 @@ POST(sys_ioctl)
 
 
 /* ---------------------------------------------------------------------
-   darwin fcntl wrapper helpers
+   darwin fcntl wrapper
    ------------------------------------------------------------------ */
 static const char *name_for_fcntl(UWord cmd) {
 #define F(n) case VKI_##n: return #n
@@ -2119,19 +2101,36 @@ PRE(sys_setsockopt)
 
 PRE(sys_getsockopt)
 {
+   Addr optval_p = ARG3;
+   Addr optlen_p = ARG4;
    PRINT("sys_getsockopt ( %ld, %ld, %ld, %#lx, %#lx )",
       ARG1,ARG2,ARG3,ARG4,ARG5);
    PRE_REG_READ5(long, "getsockopt",
                  int, s, int, level, int, optname,
                  void *, optval, int, *optlen);
-   ML_(generic_PRE_sys_getsockopt)(tid, ARG1,ARG2,ARG3,ARG4,ARG5);
+   /* int getsockopt(int socket, int level, int option_name, 
+                     void *restrict option_value,
+                     socklen_t *restrict option_len); */
+   /* vg_assert(sizeof(socklen_t) == sizeof(UInt)); */
+   if (optval_p != (Addr)NULL) {
+      ML_(buf_and_len_pre_check) ( tid, optval_p, optlen_p,
+                                   "socketcall.getsockopt(optval)",
+                                   "socketcall.getsockopt(optlen)" );
+#     warning GrP fixme darwin-specific sockopts
+   }
 }
 
 POST(sys_getsockopt)
 {
+   Addr optval_p = ARG3;
+   Addr optlen_p = ARG4;
    vg_assert(SUCCESS);
-   ML_(generic_POST_sys_getsockopt)(tid, VG_(mk_SysRes_Success)(RES),
-                                         ARG1,ARG2,ARG3,ARG4,ARG5);
+   if (optval_p != (Addr)NULL) {
+      ML_(buf_and_len_post_check) ( tid, VG_(mk_SysRes_Success)(RES),
+                                    optval_p, optlen_p,
+                                    "socketcall.getsockopt(optlen_out)" );
+#     warning GrP fixme darwin-specific sockopts
+   }
 }
 
 

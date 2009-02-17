@@ -983,9 +983,8 @@ static UInt deref_UInt ( ThreadId tid, Addr a, Char* s )
       return *a_p;
 }
 
-static 
-void buf_and_len_pre_check( ThreadId tid, Addr buf_p, Addr buflen_p,
-                            Char* buf_s, Char* buflen_s )
+void ML_(buf_and_len_pre_check) ( ThreadId tid, Addr buf_p, Addr buflen_p,
+                                  Char* buf_s, Char* buflen_s )
 {
    if (VG_(tdict).track_pre_mem_write) {
       UInt buflen_in = deref_UInt( tid, buflen_p, buflen_s);
@@ -995,9 +994,8 @@ void buf_and_len_pre_check( ThreadId tid, Addr buf_p, Addr buflen_p,
    }
 }
 
-static 
-void buf_and_len_post_check( ThreadId tid, SysRes res,
-                             Addr buf_p, Addr buflen_p, Char* s )
+void ML_(buf_and_len_post_check) ( ThreadId tid, SysRes res,
+                                   Addr buf_p, Addr buflen_p, Char* s )
 {
    if (!res.isError && VG_(tdict).track_post_mem_write) {
       UInt buflen_out = deref_UInt( tid, buflen_p, s);
@@ -1284,9 +1282,9 @@ ML_(generic_PRE_sys_accept) ( ThreadId tid,
    Addr addr_p     = arg1;
    Addr addrlen_p  = arg2;
    if (addr_p != (Addr)NULL) 
-      buf_and_len_pre_check ( tid, addr_p, addrlen_p,
-                              "socketcall.accept(addr)",
-                              "socketcall.accept(addrlen_in)" );
+      ML_(buf_and_len_pre_check) ( tid, addr_p, addrlen_p,
+                                   "socketcall.accept(addr)",
+                                   "socketcall.accept(addrlen_in)" );
 }
 
 SysRes 
@@ -1303,8 +1301,8 @@ ML_(generic_POST_sys_accept) ( ThreadId tid,
       Addr addr_p     = arg1;
       Addr addrlen_p  = arg2;
       if (addr_p != (Addr)NULL) 
-         buf_and_len_post_check ( tid, res, addr_p, addrlen_p,
-                                  "socketcall.accept(addrlen_out)" );
+         ML_(buf_and_len_post_check) ( tid, res, addr_p, addrlen_p,
+                                       "socketcall.accept(addrlen_out)" );
       if (VG_(clo_track_fds))
           ML_(record_fd_open_nameless)(tid, res.res);
    }
@@ -1358,9 +1356,9 @@ ML_(generic_PRE_sys_recvfrom) ( ThreadId tid,
    Addr fromlen_p  = arg5;
    PRE_MEM_WRITE( "socketcall.recvfrom(buf)", buf_p, len );
    if (from_p != (Addr)NULL) 
-      buf_and_len_pre_check ( tid, from_p, fromlen_p, 
-                              "socketcall.recvfrom(from)",
-                              "socketcall.recvfrom(fromlen_in)" );
+      ML_(buf_and_len_pre_check) ( tid, from_p, fromlen_p, 
+                                   "socketcall.recvfrom(from)",
+                                   "socketcall.recvfrom(fromlen_in)" );
 }
 
 void 
@@ -1376,8 +1374,8 @@ ML_(generic_POST_sys_recvfrom) ( ThreadId tid,
 
    vg_assert(!res.isError); /* guaranteed by caller */
    if (from_p != (Addr)NULL) 
-      buf_and_len_post_check ( tid, res, from_p, fromlen_p,
-                               "socketcall.recvfrom(fromlen_out)" );
+      ML_(buf_and_len_post_check) ( tid, res, from_p, fromlen_p,
+                                    "socketcall.recvfrom(fromlen_out)" );
    POST_MEM_WRITE( buf_p, len );
 }
 
@@ -1439,49 +1437,6 @@ ML_(generic_PRE_sys_setsockopt) ( ThreadId tid,
 /* ------ */
 
 void 
-ML_(generic_PRE_sys_getsockopt) ( ThreadId tid, 
-                                  UWord arg0, UWord arg1, UWord arg2,
-                                  UWord arg3, UWord arg4 )
-{
-   /* int getsockopt(int s, int level, int optname, 
-                     void *optval, socklen_t *optlen); */
-   Addr optval_p  = arg3;
-   Addr optlen_p  = arg4;
-   /* vg_assert(sizeof(socklen_t) == sizeof(UInt)); */
-   if (optval_p != (Addr)NULL) {
-      buf_and_len_pre_check ( tid, optval_p, optlen_p,
-                              "socketcall.getsockopt(optval)",
-                              "socketcall.getsockopt(optlen)" );
-   }
-
-   // DDD fixme
-   I_die_here;
-   //ML_(PRE_sys_getsockopt)(tid, arg0, arg1, arg2, arg3, arg4);
-}
-
-void 
-ML_(generic_POST_sys_getsockopt) ( ThreadId tid,
-                                   SysRes res,
-                                   UWord arg0, UWord arg1, UWord arg2,
-                                   UWord arg3, UWord arg4 )
-{
-   Addr optval_p  = arg3;
-   Addr optlen_p  = arg4;
-   vg_assert(!res.isError); /* guaranteed by caller */
-   if (optval_p != (Addr)NULL) {
-      buf_and_len_post_check ( tid, res, optval_p, optlen_p,
-                               "socketcall.getsockopt(optlen_out)" );
-
-   }
-
-   // DDD fixme
-   I_die_here;
-   //ML_(POST_sys_getsockopt)(tid, res, arg0, arg1, arg2, arg3, arg4);
-}
-
-/* ------ */
-
-void 
 ML_(generic_PRE_sys_getsockname) ( ThreadId tid,
                                    UWord arg0, UWord arg1, UWord arg2 )
 {
@@ -1489,9 +1444,9 @@ ML_(generic_PRE_sys_getsockname) ( ThreadId tid,
    Addr name_p     = arg1;
    Addr namelen_p  = arg2;
    /* Nb: name_p cannot be NULL */
-   buf_and_len_pre_check ( tid, name_p, namelen_p,
-                           "socketcall.getsockname(name)",
-                           "socketcall.getsockname(namelen_in)" );
+   ML_(buf_and_len_pre_check) ( tid, name_p, namelen_p,
+                                "socketcall.getsockname(name)",
+                                "socketcall.getsockname(namelen_in)" );
 }
 
 void 
@@ -1502,8 +1457,8 @@ ML_(generic_POST_sys_getsockname) ( ThreadId tid,
    Addr name_p     = arg1;
    Addr namelen_p  = arg2;
    vg_assert(!res.isError); /* guaranteed by caller */
-   buf_and_len_post_check ( tid, res, name_p, namelen_p,
-                            "socketcall.getsockname(namelen_out)" );
+   ML_(buf_and_len_post_check) ( tid, res, name_p, namelen_p,
+                                 "socketcall.getsockname(namelen_out)" );
 }
 
 /* ------ */
@@ -1516,9 +1471,9 @@ ML_(generic_PRE_sys_getpeername) ( ThreadId tid,
    Addr name_p     = arg1;
    Addr namelen_p  = arg2;
    /* Nb: name_p cannot be NULL */
-   buf_and_len_pre_check ( tid, name_p, namelen_p,
-                           "socketcall.getpeername(name)",
-                           "socketcall.getpeername(namelen_in)" );
+   ML_(buf_and_len_pre_check) ( tid, name_p, namelen_p,
+                                "socketcall.getpeername(name)",
+                                "socketcall.getpeername(namelen_in)" );
 }
 
 void 
@@ -1529,8 +1484,8 @@ ML_(generic_POST_sys_getpeername) ( ThreadId tid,
    Addr name_p     = arg1;
    Addr namelen_p  = arg2;
    vg_assert(!res.isError); /* guaranteed by caller */
-   buf_and_len_post_check ( tid, res, name_p, namelen_p,
-                            "socketcall.getpeername(namelen_out)" );
+   ML_(buf_and_len_post_check) ( tid, res, name_p, namelen_p,
+                                 "socketcall.getpeername(namelen_out)" );
 }
 
 /* ------ */
@@ -1978,20 +1933,20 @@ ML_(generic_PRE_sys_mmap) ( ThreadId tid,
                             UWord arg1, UWord arg2, UWord arg3,
                             UWord arg4, UWord arg5, Off64T arg6 )
 {
-    // GrP fixme this has races - don't use
-    // * needs to RETRY if advisory succeeds but map fails  
-    //   (could have been some other thread in a nonblocking call)
-    // * needs to not use fixed-position mmap() on Darwin
-    //   (mmap will cheerfully smash whatever's already there, which might 
-    //   be a new mapping from some other thread in a nonblocking call)
-#if defined(VGO_darwin)
-    __builtin_trap();
-#endif
-
    Addr       advised;
    SysRes     sres;
    MapRequest mreq;
    Bool       mreq_ok;
+
+   // GrP fixme this has races - don't use
+   // * needs to RETRY if advisory succeeds but map fails  
+   //   (could have been some other thread in a nonblocking call)
+   // * needs to not use fixed-position mmap() on Darwin
+   //   (mmap will cheerfully smash whatever's already there, which might 
+   //   be a new mapping from some other thread in a nonblocking call)
+#if defined(VGO_darwin)
+   __builtin_trap();
+#endif
 
    if (arg2 == 0) {
       /* SuSV3 says: If len is zero, mmap() shall fail and no mapping

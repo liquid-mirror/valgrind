@@ -73,20 +73,18 @@ ML_(notify_aspacem_and_tool_of_munmap) ( Addr a, SizeT len );
 extern void 
 ML_(notify_aspacem_and_tool_of_mprotect) ( Addr a, SizeT len, Int prot );
 
+extern void
+ML_(buf_and_len_pre_check) ( ThreadId tid, Addr buf_p, Addr buflen_p,
+                             Char* buf_s, Char* buflen_s );
+extern void
+ML_(buf_and_len_post_check) ( ThreadId tid, SysRes res,
+                              Addr buf_p, Addr buflen_p, Char* s );
+
 /* PRE and POST for unknown ioctls based on ioctl request encoding */
 extern 
 void ML_(PRE_unknown_ioctl)(ThreadId tid, UWord request, UWord arg);
 extern 
 void ML_(POST_unknown_ioctl)(ThreadId tid, UInt res, UWord request, UWord arg);
-
-/* PRE and POST for platform-specific sockopts */
-extern void 
-ML_(PRE_sys_getsockopt) ( ThreadId tid, UWord arg0, UWord arg1, 
-                          UWord arg2, UWord arg3, UWord arg4 );
-extern void 
-ML_(POST_sys_getsockopt) ( ThreadId tid, SysRes res,
-                           UWord arg0, UWord arg1, UWord arg2,
-                           UWord arg3, UWord arg4 );
 
 
 DECL_TEMPLATE(generic, sys_ni_syscall);            // * P -- unimplemented
@@ -234,8 +232,6 @@ extern void   ML_(generic_PRE_sys_recv)         ( TId, UW, UW, UW );
 extern void   ML_(generic_POST_sys_recv)        ( TId, UW, UW, UW, UW );
 extern void   ML_(generic_PRE_sys_connect)      ( TId, UW, UW, UW );
 extern void   ML_(generic_PRE_sys_setsockopt)   ( TId, UW, UW, UW, UW, UW );
-extern void   ML_(generic_PRE_sys_getsockopt)   ( TId, UW, UW, UW, UW, UW );
-extern void   ML_(generic_POST_sys_getsockopt)  ( TId, SR, UW, UW, UW, UW, UW );
 extern void   ML_(generic_PRE_sys_getsockname)  ( TId, UW, UW, UW );
 extern void   ML_(generic_POST_sys_getsockname) ( TId, SR, UW, UW, UW );
 extern void   ML_(generic_PRE_sys_getpeername)  ( TId, UW, UW, UW );
