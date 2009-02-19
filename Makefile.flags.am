@@ -16,7 +16,7 @@ else
 AM_PIC_FLAG = -fpic
 endif
 
-AM_CFLAGS_PIC = $(AM_PIC_FLAG) -g -fno-omit-frame-pointer -fno-strict-aliasing
+AM_CFLAGS_PIC = $(AM_PIC_FLAG) -O -g -fno-omit-frame-pointer -fno-strict-aliasing
 
 # Flags for specific targets.
 # Nb: the AM_CPPFLAGS_* values are suitable for building tools and auxprogs.
