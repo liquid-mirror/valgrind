@@ -1,4 +1,4 @@
-# For check-local and clean-local
+
 include $(top_srcdir)/Makefile.tool-tests.am
 
 noinst_SCRIPTS = filter_stderr filter_pushfpopf filter_tronical
@@ -47,10 +47,8 @@ if ! VGCONF_OS_IS_DARWIN
 	tronical
 endif
 
-AM_CPPFLAGS  = -I$(top_srcdir)/include
-AM_CFLAGS    = $(WERROR) @FLAG_M32@ -Winline -Wall -Wshadow -g \
-		$(FLAG_MMMX) $(FLAG_MSSE)
-AM_CXXFLAGS  = $(AM_CFLAGS)
+AM_CFLAGS   += @FLAG_M32@ $(FLAG_MMMX) $(FLAG_MSSE)
+AM_CXXFLAGS += @FLAG_M32@ $(FLAG_MMMX) $(FLAG_MSSE)
 AM_CCASFLAGS = @FLAG_M32@
 
 # must be built with these flags -- bug only occurred with them

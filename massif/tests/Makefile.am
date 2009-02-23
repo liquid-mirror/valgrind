@@ -1,8 +1,4 @@
 
-# For AM_FLAG_M3264_PRI
-include $(top_srcdir)/Makefile.flags.am
-
-# For check-local and clean-local
 include $(top_srcdir)/Makefile.tool-tests.am
 
 noinst_SCRIPTS = filter_stderr filter_verbose
@@ -45,12 +41,6 @@ EXTRA_DIST = $(noinst_SCRIPTS) \
 	zero1.post.exp zero1.stderr.exp zero1.vgtest \
 	zero2.post.exp zero2.stderr.exp zero2.vgtest
 
-AM_CFLAGS   = $(WERROR) -Winline -Wall -Wshadow -g $(AM_FLAG_M3264_PRI)
-
-AM_CPPFLAGS = -I$(top_srcdir) -I$(top_srcdir)/include \
-		-I$(top_srcdir)/coregrind -I$(top_builddir)/include \
-		-I@VEX_DIR@/pub
-
 check_PROGRAMS = \
 	alloc-fns \
 	basic \
@@ -72,6 +62,9 @@ check_PROGRAMS = \
 	realloc \
 	thresholds \
 	zero
+
+AM_CFLAGS   += $(AM_FLAG_M3264_PRI)
+AM_CXXFLAGS += $(AM_FLAG_M3264_PRI)
 
 # C++ tests
 new_cpp_SOURCES		= new-cpp.cpp

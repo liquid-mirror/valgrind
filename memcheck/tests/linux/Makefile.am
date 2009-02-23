@@ -1,4 +1,4 @@
-# For check-local and clean-local
+
 include $(top_srcdir)/Makefile.tool-tests.am
 
 noinst_SCRIPTS = filter_stderr
@@ -15,10 +15,9 @@ check_PROGRAMS = \
 	stack_switch \
 	timerfd-syscall
 
-AM_CPPFLAGS  = -I$(top_srcdir)/include
-AM_CFLAGS    = $(WERROR) $(AM_FLAG_M3264_PRI) -Winline -Wall -Wshadow -g \
-		$(FLAG_MMMX) $(FLAG_MSSE)
-AM_CXXFLAGS  = $(AM_CFLAGS)
+
+AM_CFLAGS   += $(AM_FLAG_M3264_PRI)
+AM_CXXFLAGS += $(AM_FLAG_M3264_PRI)
 
 stack_switch_LDADD    = -lpthread
 timerfd_syscall_LDADD = -lrt

@@ -1,8 +1,4 @@
 
-# For AM_FLAG_M3264_PRI
-include $(top_srcdir)/Makefile.flags.am
-
-# For check-local and clean-local
 include $(top_srcdir)/Makefile.tool-tests.am
 
 noinst_SCRIPTS = filter_stderr
@@ -130,8 +126,6 @@ check_PROGRAMS = \
 	hg04_race \
 	hg05_race2 \
 	hg06_readshared \
-	rwlock_race \
-	rwlock_test \
 	tc01_simple_race \
 	tc02_simple_tls \
 	tc03_re_excl \
@@ -151,26 +145,21 @@ check_PROGRAMS = \
 	tc17_sembar \
 	tc18_semabuse \
 	tc19_shadowmem \
-	tc20_verifywrap \
 	tc21_pthonce \
 	tc22_exit_w_lock \
 	tc23_bogus_condwait \
 	tc24_nonzero_sem
 
 if HAVE_PTHREAD_BARRIER
-check_PROGRAMS += bar_bad bar_trivial pth_barrier
+check_PROGRAMS += bar_bad bar_trivial
 endif
 
+if HAVE_PTHREAD_MUTEX_TIMEDLOCK
+check_PROGRAMS += tc20_verifywrap
+endif
 
-AM_CPPFLAGS = -I$(top_srcdir) -I$(top_srcdir)/include \
-                -I$(top_srcdir)/coregrind -I$(top_builddir)/include \
-                -I@VEX_DIR@/pub
+AM_CFLAGS   += $(AM_FLAG_M3264_PRI)
+AM_CXXFLAGS += $(AM_FLAG_M3264_PRI)
 
-# are these necessary?
-AM_CFLAGS	= $(WERROR) -Winline -Wall -Wshadow -g $(AM_FLAG_M3264_PRI)
-LDADD		= -lpthread
+LDADD = -lpthread
 
-# only needed because of referencing sources in drd/tests
-pth_barrier_SOURCES	= ../../drd/tests/pth_barrier.c
-rwlock_race_SOURCES	= ../../drd/tests/rwlock_race.c
-rwlock_test_SOURCES	= ../../drd/tests/rwlock_test.c

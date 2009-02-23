@@ -1,7 +1,4 @@
-# For AM_FLAG_M3264_PRI
-include $(top_srcdir)/Makefile.flags.am
 
-# For check-local and clean-local
 include $(top_srcdir)/Makefile.tool-tests.am
 
 SUBDIRS = .
@@ -22,7 +19,7 @@ EXTRA_DIST = $(noinst_SCRIPTS) \
 
 check_PROGRAMS = clreq simwork threads
 
-AM_CPPFLAGS = -I$(top_srcdir)/include
-AM_CFLAGS   = $(WERROR) -Winline -Wall -Wshadow -g $(AM_FLAG_M3264_PRI)
+AM_CFLAGS   += $(AM_FLAG_M3264_PRI)
+AM_CXXFLAGS += $(AM_FLAG_M3264_PRI)
 
 threads_LDADD = -lpthread

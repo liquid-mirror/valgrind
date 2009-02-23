@@ -1,4 +1,4 @@
-# For check-local and clean-local
+
 include $(top_srcdir)/Makefile.tool-tests.am
 
 noinst_SCRIPTS = filter_cpuid filter_stderr gen_insn_test.pl
@@ -17,10 +17,6 @@ endif
 # Explicitly include insn_sse3 even if ! BUILD_SSE3_TESTS, 
 # to avoid packaging screwups if 'make dist' is run on a machine
 # which failed the BUILD_SSE3_TESTS test in configure.in.
-#
-# DDD: Ones disabled because they don't compile on Darwin:
-#	cpuid.stderr.exp cpuid.stdout.exp cpuid.vgtest \
-#
 EXTRA_DIST = $(noinst_SCRIPTS) \
 	badseg.stderr.exp badseg.stdout.exp badseg.vgtest \
 	bt_everything.stderr.exp bt_everything.stdout.exp bt_everything.vgtest \
@@ -33,6 +29,7 @@ EXTRA_DIST = $(noinst_SCRIPTS) \
 	bug152818-x86.vgtest bug152818-x86.stdout.exp \
 	bug152818-x86.stderr.exp \
 	cmpxchg8b.stderr.exp cmpxchg8b.stdout.exp cmpxchg8b.vgtest \
+	cpuid.stderr.exp cpuid.stdout.exp cpuid.vgtest \
 	cse_fail.stderr.exp cse_fail.stdout.exp cse_fail.vgtest \
 	faultstatus.disabled faultstatus.stderr.exp \
 	fcmovnu.vgtest fcmovnu.stderr.exp fcmovnu.stdout.exp \
@@ -96,11 +93,10 @@ if BUILD_SSSE3_TESTS
 endif
 endif
 
-AM_CFLAGS    = $(WERROR) -Winline -Wall -Wshadow \
-		@FLAG_M32@ -g -I$(top_srcdir)/include \
-		$(FLAG_MMMX) $(FLAG_MSSE)
-AM_CXXFLAGS  = $(AM_CFLAGS)
+AM_CFLAGS   += @FLAG_M32@ $(FLAG_MMMX) $(FLAG_MSSE)
+AM_CXXFLAGS += @FLAG_M32@ $(FLAG_MMMX) $(FLAG_MSSE)
 AM_CCASFLAGS = @FLAG_M32@
+
 
 # generic C ones
 cpuid_SOURCES 		= cpuid_c.c cpuid_s.s

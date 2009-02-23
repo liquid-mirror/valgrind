@@ -1,8 +1,4 @@
 
-# For AM_FLAG_M3264_PRI
-include $(top_srcdir)/Makefile.flags.am
-
-# For check-local and clean-local
 include $(top_srcdir)/Makefile.tool-tests.am
 
 SUBDIRS = .
@@ -165,12 +161,12 @@ if ! VGCONF_OS_IS_DARWIN
 	pending
 endif
 
-AM_CFLAGS   = $(WERROR) -Winline -Wall -Wshadow -g $(AM_FLAG_M3264_PRI)
-AM_CPPFLAGS = -I$(top_srcdir) -I$(top_srcdir)/include -I$(top_builddir)/include
-AM_CXXFLAGS = $(AM_CFLAGS)
+
+AM_CFLAGS   += $(AM_FLAG_M3264_PRI)
+AM_CXXFLAGS += $(AM_FLAG_M3264_PRI)
 
 # Extra stuff for C tests
-ansi_CFLAGS		= $(AM_FLAG_M3264_PRI) -ansi
+ansi_CFLAGS		= $(AM_CFLAGS) -ansi
 floored_LDADD 		= -lm
 manythreads_LDADD	= -lpthread
 if VGCONF_OS_IS_DARWIN
@@ -180,7 +176,7 @@ else
 endif
 pth_atfork1_LDADD	= -lpthread
 pth_blockedsig_LDADD	= -lpthread
-pth_cancel1_CFLAGS	= $(AM_FLAG_M3264_PRI) -Wno-shadow
+pth_cancel1_CFLAGS	= $(AM_CFLAGS) -Wno-shadow
 pth_cancel1_LDADD	= -lpthread
 pth_cancel2_LDADD	= -lpthread
 pth_cvsimple_LDADD	= -lpthread
@@ -224,7 +220,7 @@ else
  tls_so_LDADD		= tls2.so
 endif
 endif
-tls_so_CFLAGS		= $(AM_FLAG_M3264_PRI) -fPIC
+tls_so_CFLAGS		= $(AM_CFLAGS) -fPIC
 tls2_so_SOURCES		= tls2_so.c
 if VGCONF_OS_IS_DARWIN
 tls2_so_LDFLAGS		= -dynamic -dynamiclib -all_load
