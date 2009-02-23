@@ -44,6 +44,7 @@ struct pattern
     struct chunk_t chunk[];
 };
 
+#if defined(HAVE_ELF)
 /* Scan for a pattern in the code of an ELF object.
  * If found, return true and set runtime_resolve_{addr,length}
  */
@@ -102,7 +103,8 @@ static Bool check_code(obj_node* obj,
     CLG_DEBUG(1, " found nothing.\n");
     return False;
 }
-    	       
+#endif   // HAVE_ELF
+
 
 /* _ld_runtime_resolve, located in ld.so, needs special handling:
  * The jump at end into the resolved function should not be

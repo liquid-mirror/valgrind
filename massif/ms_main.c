@@ -220,8 +220,6 @@ Number of snapshots: 50
       VG_(message)(Vg_DebugMsg, "Massif: " format, ##args); \
    }
 
-
-
 //------------------------------------------------------------//
 //--- Statistics                                           ---//
 //------------------------------------------------------------//
@@ -370,7 +368,7 @@ static Bool clo_heap            = True;
    // a UInt, but this caused problems on 64-bit machines when it was
    // multiplied by a small negative number and then promoted to a
    // word-sized type -- it ended up with a value of 4.2 billion.  Sigh.
-static SizeT  clo_heap_admin      = 8;
+static SSizeT clo_heap_admin      = 8;
 static Bool   clo_stacks          = False;
 static UInt   clo_depth           = 30;
 static double clo_threshold       = 1.0;  // percentage
@@ -1298,7 +1296,7 @@ static Time get_time(void)
 // in /usr/include/time.h on Darwin.
 static void
 take_snapshot(Snapshot* snapshot, SnapshotKind kind, Time my_time,
-              Bool is_detailed, Char* what)
+              Bool is_detailed)
 {
    tl_assert(!is_snapshot_in_use(snapshot));
    tl_assert(have_started_executing_code);
@@ -1386,7 +1384,7 @@ maybe_take_snapshot(SnapshotKind kind, Char* what)
 
    // Take the snapshot.
    snapshot = & snapshots[next_snapshot_i];
-   take_snapshot(snapshot, kind, my_time, is_detailed, what);
+   take_snapshot(snapshot, kind, my_time, is_detailed);
 
    // Record if it was detailed.
    if (is_detailed) {
@@ -1503,7 +1501,7 @@ void* new_block ( ThreadId tid, void* p, SizeT req_szB, SizeT req_alignB,
    Bool is_custom_alloc = (NULL != p);
    SizeT actual_szB, slop_szB;
 
-   if (req_szB < 0) return NULL;
+   if ((SSizeT)req_szB < 0) return NULL;
 
    // Allocate and zero if necessary
    if (!p) {
@@ -1746,7 +1744,7 @@ static void *ms_memalign ( ThreadId tid, SizeT alignB, SizeT szB )
    return new_block( tid, NULL, szB, alignB, False );
 }
 
-static void ms_free ( ThreadId tid, void* p )
+static void ms_free ( ThreadId tid __attribute__((unused)), void* p )
 {
    die_block( p, /*custom_free*/False );
 }
@@ -1766,7 +1764,7 @@ static void* ms_realloc ( ThreadId tid, void* p_old, SizeT new_szB )
    return renew_block(tid, p_old, new_szB);
 }
 
-static SizeT ms_malloc_usable_size ( ThreadId tid, void* p )                    
+static SizeT ms_malloc_usable_size ( ThreadId tid, void* p )
 {                                                            
    HP_Chunk* hc = VG_(HT_lookup)( malloc_list, (UWord)p );
 
@@ -1788,7 +1786,7 @@ static void update_stack_stats(SSizeT stack_szB_delta)
    update_alloc_stats(stack_szB_delta);
 }
 
-static INLINE void new_mem_stack_2(Addr a, SizeT len, Char* what)
+static INLINE void new_mem_stack_2(SizeT len, Char* what)
 {
    if (have_started_executing_code) {
       VERB(3, "<<< new_mem_stack (%ld)", len);
@@ -1799,7 +1797,7 @@ static INLINE void new_mem_stack_2(Addr a, SizeT len, Char* what)
    }
 }
 
-static INLINE void die_mem_stack_2(Addr a, SizeT len, Char* what)
+static INLINE void die_mem_stack_2(SizeT len, Char* what)
 {
    if (have_started_executing_code) {
       VERB(3, "<<< die_mem_stack (%ld)", -len);
@@ -1813,22 +1811,22 @@ static INLINE void die_mem_stack_2(Addr a, SizeT len, Char* what)
 
 static void new_mem_stack(Addr a, SizeT len)
 {
-   new_mem_stack_2(a, len, "stk-new");
+   new_mem_stack_2(len, "stk-new");
 }
 
 static void die_mem_stack(Addr a, SizeT len)
 {
-   die_mem_stack_2(a, len, "stk-die");
+   die_mem_stack_2(len, "stk-die");
 }
 
 static void new_mem_stack_signal(Addr a, SizeT len, ThreadId tid)
 {
-   new_mem_stack_2(a, len, "sig-new");
+   new_mem_stack_2(len, "sig-new");
 }
 
 static void die_mem_stack_signal(Addr a, SizeT len)
 {
-   die_mem_stack_2(a, len, "sig-die");
+   die_mem_stack_2(len, "sig-die");
 }
 
 

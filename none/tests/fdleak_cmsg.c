@@ -18,7 +18,7 @@
 # include <memory.h>
 #endif
 
-
+#include <string.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <sys/un.h>
@@ -59,7 +59,7 @@ server (void)
 
    memset(&addr, 0, sizeof(addr));
    addr.sun_family = AF_UNIX;
-   sprintf(addr.sun_path, sock);
+   sprintf(addr.sun_path, "%s", sock);
 
    unlink(addr.sun_path);
    if(bind(s, (struct sockaddr *)&addr, sizeof(addr)) == -1) {
@@ -135,7 +135,7 @@ client (void)
    }
 
    addr.sun_family = AF_UNIX;
-   sprintf(addr.sun_path, sock);
+   sprintf(addr.sun_path, "%s", sock);
 
    do {
      count++;

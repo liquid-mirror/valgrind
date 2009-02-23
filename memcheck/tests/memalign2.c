@@ -23,6 +23,13 @@
 
 int main ( void )
 {
+#  if defined(_AIX)
+   printf("AIX 5.2 knows about neither memalign() nor posix_memalign().\n");
+
+#  elif defined(__APPLE__)
+   printf("MacOS X knows about neither memalign() nor posix_memalign().\n");
+
+#  else
    // Nb: assuming VG_MIN_MALLOC_SZB is 8!
    // Should work with both 32-bit and 64-bit pointers, though.
 
@@ -30,14 +37,6 @@ int main ( void )
    int  res;
    assert(sizeof(long int) == sizeof(void*));
 
-#  if defined(_AIX)
-   printf("AIX 5.2 knows about neither memalign() nor posix_memalign().\n");
-
-#  else
-#  if defined(__APPLE__)
-   printf("MacOS X knows about neither memalign() nor posix_memalign().\n");
-
-#  else
    p = memalign(0, 100);      assert(0 == (long)p % 8);
    p = memalign(1, 100);      assert(0 == (long)p % 8);
    p = memalign(2, 100);      assert(0 == (long)p % 8);
@@ -77,7 +76,6 @@ int main ( void )
                                                  0 == (long)p % 4096); 
    res = PM(&p, 4097, 100);   assert(EINVAL == res);
 
-#  endif
 #  endif
    
    return 0;

@@ -316,6 +316,7 @@ int main(int argc, char ** argv) {
 
 #else
 
+#include <stdio.h>
 int main(int argc, char **argv) {
   printf("PASSED\n");
   return 0;

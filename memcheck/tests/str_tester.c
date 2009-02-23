@@ -1059,7 +1059,7 @@ test_memcpy (void)
     }
 }
 
-#if !defined(_AIX)
+#if !defined(_AIX) && !defined(__APPLE__)
 static void
 test_mempcpy (void)
 {
@@ -1463,7 +1463,7 @@ main (void)
   /* memmove - must work on overlap.  */
   test_memmove ();
 
-# if !defined(_AIX)
+# if !defined(_AIX) && !defined(__APPLE__)
   /* mempcpy */
   test_mempcpy ();
 # endif
