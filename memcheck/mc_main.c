@@ -5125,7 +5125,7 @@ static Bool mc_handle_client_request ( ThreadId tid, UWord* arg, UWord* ret )
 // qvalgrind.Memcheck.defined:<addr>,<len>  =>  XX..
 // like gdb protocol's "m" command, but reads V bits instead of memory
 // fixme should be qXfer command (mac os x gdb doesn't have qXfer)
-static Bool handle_defined_command(Int sock, const Char *cmd)
+static Bool handle_defined_command(Int sock, Char *cmd)
 {
    Long addr, len;
    Char *vbits;
@@ -5167,7 +5167,7 @@ static Bool handle_defined_command(Int sock, const Char *cmd)
 // qvalgrind.Memcheck.register-defined:<regnum>  =>  XX..
 // like gdb protocol's "p" command, but reads V bits instead of register value
 // fixme should be qXfer command (mac os x gdb doesn't have qXfer)
-static Bool handle_register_defined_command(Int sock, const Char *cmd)
+static Bool handle_register_defined_command(Int sock, Char *cmd)
 {
    Char vbits[16];
    Char outbuf[16*2+1];

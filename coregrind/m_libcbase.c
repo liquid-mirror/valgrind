@@ -50,12 +50,6 @@ Bool VG_(isdigit) ( Char c )
    Converting strings to numbers
    ------------------------------------------------------------------ */
 
-static Bool is_oct_digit(Char c, Long* digit)
-{
-   if (c >= '0' && c <= '7') { *digit = (Long)(c - '0'); return True; }
-   return False;
-}
-
 static Bool is_dec_digit(Char c, Long* digit)
 {
    if (c >= '0' && c <= '9') { *digit = (Long)(c - '0'); return True; }
@@ -70,40 +64,11 @@ static Bool is_hex_digit(Char c, Long* digit)
    return False;
 }
 
-static Bool is_base36_digit(Char c, Long* digit)
+Long VG_(strtoll10) ( Char* str, Char** endptr )
 {
-   if (c >= '0' && c <= '9') { *digit = (Long)(c - '0');        return True; }
-   if (c >= 'A' && c <= 'Z') { *digit = (Long)((c - 'A') + 10); return True; }
-   if (c >= 'a' && c <= 'z') { *digit = (Long)((c - 'a') + 10); return True; }
-   return False;
-}
-
-Long VG_(strtoll8) ( const Char* str, const Char** endptr )
-{
-   Bool neg = False;
+   Bool neg = False, converted = False;
    Long n = 0, digit = 0;
-
-   // Skip leading whitespace.
-   while (VG_(isspace)(*str)) str++;
-
-   // Allow a leading '-' or '+'.
-   if (*str == '-') { str++; neg = True; }
-   else if (*str == '+') { str++; }
-
-   while (is_oct_digit(*str, &digit)) {
-      n = 8*n + digit;
-      str++;
-   }
-
-   if (neg) n = -n;
-   if (endptr) *endptr = str;    // Record first failing character.
-   return n;
-}
-
-Long VG_(strtoll10) ( const Char* str, const Char** endptr )
-{
-   Bool neg = False;
-   Long n = 0, digit = 0;
+   Char* str0 = str;
 
    // Skip leading whitespace.
    while (VG_(isspace)(*str)) str++;
@@ -113,19 +78,22 @@ Long VG_(strtoll10) ( const Char* str, const Char** endptr )
    else if (*str == '+') { str++; }
 
    while (is_dec_digit(*str, &digit)) {
+      converted = True;          // Ok, we've actually converted a digit.
       n = 10*n + digit;
       str++;
    }
 
-   if (neg) n = -n;
+   if (!converted) str = str0;   // If nothing converted, endptr points to
+   if (neg) n = -n;              //   the start of the string.
    if (endptr) *endptr = str;    // Record first failing character.
    return n;
 }
 
-Long VG_(strtoll16) ( const Char* str, const Char** endptr )
+Long VG_(strtoll16) ( Char* str, Char** endptr )
 {
-   Bool neg = False;
+   Bool neg = False, converted = False;
    Long n = 0, digit = 0;
+   Char* str0 = str;
 
    // Skip leading whitespace.
    while (VG_(isspace)(*str)) str++;
@@ -143,38 +111,18 @@ Long VG_(strtoll16) ( const Char* str, const Char** endptr )
    }
 
    while (is_hex_digit(*str, &digit)) {
+      converted = True;          // Ok, we've actually converted a digit.
       n = 16*n + digit;
       str++;
    }
 
-   if (neg) n = -n;
+   if (!converted) str = str0;   // If nothing converted, endptr points to
+   if (neg) n = -n;              //   the start of the string.
    if (endptr) *endptr = str;    // Record first failing character.
    return n;
 }
 
-Long VG_(strtoll36) ( const Char* str, const Char** endptr )
-{
-   Bool neg = False;
-   Long n = 0, digit = 0;
-
-   // Skip leading whitespace.
-   while (VG_(isspace)(*str)) str++;
-
-   // Allow a leading '-' or '+'.
-   if (*str == '-') { str++; neg = True; }
-   else if (*str == '+') { str++; }
-
-   while (is_base36_digit(*str, &digit)) {
-      n = 36*n + digit;
-      str++;
-   }
-
-   if (neg) n = -n;
-   if (endptr) *endptr = str;    // Record first failing character.
-   return n;
-}
-
-double VG_(strtod) ( const Char* str, const Char** endptr )
+double VG_(strtod) ( Char* str, Char** endptr )
 {
    Bool neg = False;
    Long digit;
@@ -207,19 +155,14 @@ double VG_(strtod) ( const Char* str, const Char** endptr )
    return n;
 }
 
-Long VG_(atoll) ( const Char* str )
+Long VG_(atoll) ( Char* str )
 {
    return VG_(strtoll10)(str, NULL);
 }
 
-Long VG_(atoll16) ( const Char* str )
+Long VG_(atoll16) ( Char* str )
 {
    return VG_(strtoll16)(str, NULL);
-}
-
-Long VG_(atoll36) ( const Char* str )
-{
-   return VG_(strtoll36)(str, NULL);
 }
 
 Char VG_(tolower) ( Char c )

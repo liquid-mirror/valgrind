@@ -54,7 +54,7 @@
 /* Unbounded integer arg */
 #define VG_NUM_CLO(qq_arg, qq_option, qq_var) \
    if (VG_CLO_STREQN(VG_(strlen)(qq_option)+1, qq_arg, qq_option"=")) { \
-      const Char* s; \
+      Char* s; \
       Long n = VG_(strtoll10)( &qq_arg[ VG_(strlen)(qq_option)+1 ], &s );\
       (qq_var) = n; \
       /* Check for non-numeralness, or overflow */ \
@@ -64,7 +64,7 @@
 /* Bounded integer arg */
 #define VG_BNUM_CLO(qq_arg, qq_option, qq_var, qq_lo, qq_hi) \
    if (VG_CLO_STREQN(VG_(strlen)(qq_option)+1, qq_arg, qq_option"=")) { \
-      const Char* s; \
+      Char* s; \
       Long n = VG_(strtoll10)( &qq_arg[ VG_(strlen)(qq_option)+1 ], &s );\
       (qq_var) = n; \
       /* Check for non-numeralness, or overflow */ \
@@ -76,7 +76,7 @@
 /* Bounded hexadecimal arg */
 #define VG_BHEX_CLO(qq_arg, qq_option, qq_var, qq_lo, qq_hi) \
    if (VG_CLO_STREQN(VG_(strlen)(qq_option)+1, qq_arg, qq_option"=")) { \
-      const Char* s; \
+      Char* s; \
       Long n = VG_(strtoll16)( &qq_arg[ VG_(strlen)(qq_option)+1 ], &s );\
       (qq_var) = n; \
       /* Check for non-numeralness, or overflow */ \
@@ -88,7 +88,7 @@
 /* Double arg */
 #define VG_DBL_CLO(qq_arg, qq_option, qq_var) \
    if (VG_CLO_STREQN(VG_(strlen)(qq_option)+1, qq_arg, qq_option"=")) { \
-      const Char* s; \
+      Char* s; \
       double n = VG_(strtod)( &qq_arg[ VG_(strlen)(qq_option)+1 ], &s );\
       (qq_var) = n; \
       /* Check for non-numeralness */ \
