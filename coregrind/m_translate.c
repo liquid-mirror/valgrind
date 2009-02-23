@@ -1361,7 +1361,7 @@ Bool VG_(translate) ( ThreadId tid,
       /* U R busted, sonny.  Place your hands on your head and step
          away from the orig_addr. */
 #if defined(VGO_darwin)
-#warning GrP fixme synth signals
+      // DDD: #warning GrP fixme synth signals
       {
           VG_(message)(Vg_UserMsg, "ERROR\n");
           VG_(message)(Vg_UserMsg, "Thread %d jumped to bad address %#llx", 

@@ -1704,7 +1704,7 @@ void VG_(post_syscall) (ThreadId tid)
       might have been created, and will have set SfPollAfter to
       request a poll for them once the syscall is done. */
 #if defined(VGO_darwin)
-# warning GrP fixme signals
+   // DDD: # warning GrP fixme signals
 #else
    if (sci->flags & SfPollAfter)
       VG_(poll_signals)(tid);
@@ -1849,7 +1849,7 @@ void ML_(fixup_guest_state_to_restart_syscall) ( ThreadArchState* arch )
       int $0x80 == CD 80
       int $0x80 == CD 81
    */
-#warning GrP fixme sysenter, int $0x81, int $0x82
+   // DDD: #warning GrP fixme sysenter, int $0x81, int $0x82
    {
        UChar *p = (UChar *)arch->vex.guest_EIP;
 
@@ -1862,7 +1862,7 @@ void ML_(fixup_guest_state_to_restart_syscall) ( ThreadArchState* arch )
    }
    
 #elif defined(VGP_amd64_darwin)
-#warning GrP fixme amd64 restart unimplemented
+   // DDD: #warning GrP fixme amd64 restart unimplemented
    vg_assert(0);
    
 #else

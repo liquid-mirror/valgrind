@@ -775,7 +775,7 @@ PRE(sys_ioctl)
       //tst->sys_flags &= ~SfMayBlock;
       break;
 
-#warning GrP fixme darwin-specific ioctl
+   // DDD: #warning GrP fixme darwin-specific ioctl
    case VKI_FIODTYPE: 
       PRE_MEM_WRITE( "ioctl(FIONREAD)", ARG3, sizeof(int) );
       break;
@@ -902,7 +902,7 @@ POST(sys_ioctl)
    case VKI_SIOCSPGRP:
       break;
 
-#warning GrP fixme darwin-specific ioctl
+   // DDD: #warning GrP fixme darwin-specific ioctl
    case VKI_FIODTYPE: 
       POST_MEM_WRITE( ARG3, sizeof(int) );
       break;
@@ -2116,8 +2116,8 @@ PRE(sys_getsockopt)
       ML_(buf_and_len_pre_check) ( tid, optval_p, optlen_p,
                                    "socketcall.getsockopt(optval)",
                                    "socketcall.getsockopt(optlen)" );
-#     warning GrP fixme darwin-specific sockopts
    }
+   // DDD: #warning GrP fixme darwin-specific sockopts
 }
 
 POST(sys_getsockopt)
@@ -2129,7 +2129,7 @@ POST(sys_getsockopt)
       ML_(buf_and_len_post_check) ( tid, VG_(mk_SysRes_Success)(RES),
                                     optval_p, optlen_p,
                                     "socketcall.getsockopt(optlen_out)" );
-#     warning GrP fixme darwin-specific sockopts
+   // DDD: #warning GrP fixme darwin-specific sockopts
    }
 }
 
@@ -2783,7 +2783,7 @@ PRE(sys_sigprocmask)
    oldset = (vki_sigset_t*)ARG3;
 
 #if defined(VGO_darwin)
-#warning GrP fixme signals
+   // DDD: #warning GrP fixme signals
 #else
    SET_STATUS_from_SysRes(
       VG_(do_sys_sigprocmask) ( tid, ARG1 /*how*/, set, oldset)
@@ -2817,7 +2817,7 @@ PRE(sys_sigaltstack)
       PRE_MEM_WRITE( "sigaltstack(oss)", ARG2, sizeof(vki_stack_t) );
    }
 
-# warning GrP fixme signals
+   // DDD: # warning GrP fixme signals
    // GrP fixme leopard 9A241 setjmp dies if sigaltstack fails (ecx)
    SET_STATUS_Success(0);
 }
@@ -4876,7 +4876,7 @@ POST(mach_vm_protect)
                                  MACH_ARG(mach_vm_protect.size));
          UInt prot = MACH_ARG(mach_vm_protect.new_protection);
          if (MACH_ARG(mach_vm_protect.set_maximum)) {
-#warning GrP fixme mprotect max
+            // DDD: #warning GrP fixme mprotect max
             //VG_(mprotect_max_range)(start, end-start, prot);
          } else {
             ML_(notify_aspacem_and_tool_of_mprotect)(start, end-start, prot);

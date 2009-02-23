@@ -430,7 +430,7 @@ void mostly_clear_thread_record ( ThreadId tid )
    VG_(threads)[tid].altstack.ss_flags = VKI_SS_DISABLE;
 
 #if defined(VGO_darwin)
-# warning GrP fixme signals
+   // DDD: #warning GrP fixme signals
 #else
    {
       vki_sigset_t savedmask;
@@ -879,7 +879,7 @@ static void handle_syscall(ThreadId tid, UInt trc)
    if (jumped) {
       block_signals(tid);
 #if defined(VGO_darwin)
-# warning GrP fixme signals
+      // DDD: #warning GrP fixme signals
 #else
       VG_(poll_signals)(tid);
 #endif
@@ -1000,7 +1000,7 @@ VgSchedReturnCode VG_(scheduler) ( ThreadId tid )
 	 /* Look for any pending signals for this thread, and set them up
 	    for delivery */
 #if defined(VGO_darwin)
-# warning GrP fixme signals
+         // DDD: #warning GrP fixme signals
 #else
 	 VG_(poll_signals)(tid);
 #endif
@@ -1102,7 +1102,7 @@ VgSchedReturnCode VG_(scheduler) ( ThreadId tid )
             segment override use) */
          /* jrs 2005 03 11: is this correct? */
 #if defined(VGO_darwin)
-# warning GrP fixme synth signals
+         // DDD: #warning GrP fixme synth signals
          VG_(core_panic)("mapfail - no synth signals on darwin");
 #else
          VG_(synth_fault)(tid);
@@ -1167,7 +1167,7 @@ VgSchedReturnCode VG_(scheduler) ( ThreadId tid )
 
       case VEX_TRC_JMP_SIGSEGV:
 #if defined(VGO_darwin)
-# warning GrP fixme synth signals
+         // DDD: #warning GrP fixme synth signals
          VG_(core_panic)("sigsegv - no synth signals on darwin");
 #else
          VG_(synth_fault)(tid);

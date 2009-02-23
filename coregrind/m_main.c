@@ -2043,7 +2043,7 @@ Int valgrind_main ( Int argc, HChar **argv, HChar **envp )
    // Nb: temporarily parks the saved blocking-mask in saved_sigmask.
    VG_(debugLog)(1, "main", "Initialise signal management\n");
 #if defined(VGO_darwin)
-#  warning GrP fixme signals
+   // DDD: #warning GrP fixme signals
 #else
    VG_(sigstartup_actions)();
 #endif
@@ -2279,7 +2279,7 @@ void shutdown_actions_NORETURN( ThreadId tid,
       /* We were killed by a fatal signal, so replicate the effect */
       vg_assert(VG_(threads)[tid].os_state.fatalsig != 0);
 #if defined(VGO_darwin)
-#warning GrP fixme signals
+      // DDD: #warning GrP fixme signals
 #else
       VG_(kill_self)(VG_(threads)[tid].os_state.fatalsig);
 #endif

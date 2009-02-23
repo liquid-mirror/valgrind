@@ -774,7 +774,7 @@ void do_hacky_preopened(void)
 void VG_(init_preopened_fds)(void)
 {
 #if defined(VGO_darwin)
-#  warning GrP fixme preopened fds
+   // DDD: #warning GrP fixme preopened fds
 #else
    Int ret;
    struct vki_dirent d;
@@ -2454,7 +2454,7 @@ void VG_(reap_threads)(ThreadId self)
       /* Let other thread(s) run */
       VG_(vg_yield)();
 #if defined(VGO_darwin)
-# warning GrP fixme signals
+      // DDD: #warning GrP fixme signals
 #else
       VG_(poll_signals)(self);
 #endif
@@ -2629,7 +2629,7 @@ PRE(sys_execve)
    VG_(setrlimit)(VKI_RLIMIT_DATA, &VG_(client_rlimit_data));
 
 #if defined(VGO_darwin)
-#  warning GrP fixme exec signals busted
+   // DDD: #warning GrP fixme exec signals busted
 #else
    /*
       Set the signal state up for exec.
@@ -4056,7 +4056,7 @@ PRE(sys_sigaltstack)
    }
 
 #if defined(VGO_darwin)
-# warning GrP fixme signals
+   // DDD: #warning GrP fixme signals
 #else
    SET_STATUS_from_SysRes( 
       VG_(do_sys_sigaltstack) (tid, (vki_stack_t*)ARG1, 

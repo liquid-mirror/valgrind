@@ -706,7 +706,7 @@ void VG_(nanosleep)(struct vki_timespec *ts)
 #if defined(__NR_nanosleep)
    (void)VG_(do_syscall2)(__NR_nanosleep, (UWord)ts, (UWord)NULL);
 #elif defined(VGO_darwin)
-#  warning GrP fixme use semwait_signal for nanosleep
+   // DDD: #warning GrP fixme use semwait_signal for nanosleep
 #else
 #  error no nanosleep implementation
 #endif

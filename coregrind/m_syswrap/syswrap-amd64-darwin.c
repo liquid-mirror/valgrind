@@ -92,9 +92,9 @@ static void x86_thread_state64_from_vex(x86_thread_state64_t *mach,
 static void x86_float_state64_from_vex(x86_float_state64_t *mach, 
                                        VexGuestAMD64State *vex)
 {
-#warning GrP fixme fp state
+   // DDD: #warning GrP fixme fp state
 
-    VG_(memcpy)(&mach->__fpu_xmm0, &vex->guest_XMM0, 16 * sizeof(mach->__fpu_xmm0));
+   VG_(memcpy)(&mach->__fpu_xmm0, &vex->guest_XMM0, 16 * sizeof(mach->__fpu_xmm0));
 }
 
 
@@ -134,7 +134,7 @@ static void x86_thread_state64_to_vex(const x86_thread_state64_t *mach,
    vex->guest_RSI = mach->__rsi;
    vex->guest_RBP = mach->__rbp;
    vex->guest_RSP = mach->__rsp;
-#warning GrP fixme eflags
+   // DDD: #warning GrP fixme eflags
    vex->guest_RIP = mach->__rip;
    vex->guest_R8  = mach->__r8;
    vex->guest_R9  = mach->__r9;
@@ -154,7 +154,7 @@ static void x86_thread_state64_to_vex(const x86_thread_state64_t *mach,
 static void x86_float_state64_to_vex(const x86_float_state64_t *mach, 
                                      VexGuestAMD64State *vex)
 {
-#warning GrP fixme fp state
+   // DDD: #warning GrP fixme fp state
 
    VG_(memcpy)(&vex->guest_XMM0, &mach->__fpu_xmm0, 16 * sizeof(mach->__fpu_xmm0));
 }

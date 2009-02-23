@@ -2206,7 +2206,7 @@ SysRes VG_(am_mmap_named_file_fixed_client)
    /* We have been advised that the mapping is allowable at the
       specified address.  So hand it off to the kernel, and propagate
       any resulting failure immediately. */
-#warning GrP fixme MAP_FIXED can clobber memory!
+   // DDD: #warning GrP fixme MAP_FIXED can clobber memory!
    sres = VG_(am_do_mmap_NO_NOTIFY)( 
              start, length, prot, 
              VKI_MAP_FIXED|VKI_MAP_PRIVATE, 
@@ -2275,7 +2275,7 @@ SysRes VG_(am_mmap_anon_fixed_client) ( Addr start, SizeT length, UInt prot )
    /* We have been advised that the mapping is allowable at the
       specified address.  So hand it off to the kernel, and propagate
       any resulting failure immediately. */
-#warning GrP fixme MAP_FIXED can clobber memory!
+   // DDD: #warning GrP fixme MAP_FIXED can clobber memory!
    sres = VG_(am_do_mmap_NO_NOTIFY)( 
              start, length, prot, 
              VKI_MAP_FIXED|VKI_MAP_PRIVATE|VKI_MAP_ANONYMOUS, 
@@ -2333,7 +2333,7 @@ SysRes VG_(am_mmap_anon_float_client) ( SizeT length, Int prot )
    /* We have been advised that the mapping is allowable at the
       advised address.  So hand it off to the kernel, and propagate
       any resulting failure immediately. */
-#warning GrP fixme MAP_FIXED can clobber memory!
+   // DDD: #warning GrP fixme MAP_FIXED can clobber memory!
    sres = VG_(am_do_mmap_NO_NOTIFY)( 
              advised, length, prot, 
              VKI_MAP_FIXED|VKI_MAP_PRIVATE|VKI_MAP_ANONYMOUS, 
@@ -2793,7 +2793,7 @@ Bool VG_(am_extend_into_adjacent_reservation_client) ( NSegment* seg,
         return False;
         
       /* Extend the kernel's mapping. */
-#warning GrP fixme MAP_FIXED can clobber memory!
+      // DDD: #warning GrP fixme MAP_FIXED can clobber memory!
       sres = VG_(am_do_mmap_NO_NOTIFY)( 
                 nsegments[segR].start, delta,
                 prot,
@@ -2829,7 +2829,7 @@ Bool VG_(am_extend_into_adjacent_reservation_client) ( NSegment* seg,
         return False;
         
       /* Extend the kernel's mapping. */
-#warning GrP fixme MAP_FIXED can clobber memory!
+      // DDD: #warning GrP fixme MAP_FIXED can clobber memory!
       sres = VG_(am_do_mmap_NO_NOTIFY)( 
                 nsegments[segA].start-delta, delta,
                 prot,

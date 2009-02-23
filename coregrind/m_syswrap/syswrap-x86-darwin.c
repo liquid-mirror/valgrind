@@ -85,9 +85,9 @@ static void x86_thread_state32_from_vex(i386_thread_state_t *mach,
 static void x86_float_state32_from_vex(i386_float_state_t *mach, 
                                        VexGuestX86State *vex)
 {
-#warning GrP fixme fp state
+   // DDD: #warning GrP fixme fp state
 
-    VG_(memcpy)(&mach->__fpu_xmm0, &vex->guest_XMM0, 8 * sizeof(mach->__fpu_xmm0));
+   VG_(memcpy)(&mach->__fpu_xmm0, &vex->guest_XMM0, 8 * sizeof(mach->__fpu_xmm0));
 }
 
 
@@ -128,7 +128,7 @@ static void x86_thread_state32_to_vex(const i386_thread_state_t *mach,
    vex->guest_EBP = mach->__ebp;
    vex->guest_ESP = mach->__esp;
    vex->guest_SS = mach->__ss;
-#warning GrP fixme eflags
+   // DDD: #warning GrP fixme eflags
    vex->guest_EIP = mach->__eip;
    vex->guest_CS = mach->__cs;
    vex->guest_DS = mach->__ds;
@@ -140,7 +140,7 @@ static void x86_thread_state32_to_vex(const i386_thread_state_t *mach,
 static void x86_float_state32_to_vex(const i386_float_state_t *mach, 
                                      VexGuestX86State *vex)
 {
-#warning GrP fixme fp state
+   // DDD: #warning GrP fixme fp state
 
    VG_(memcpy)(&vex->guest_XMM0, &mach->__fpu_xmm0, 8 * sizeof(mach->__fpu_xmm0));
 }

@@ -35,5 +35,5 @@
 
 void VG_(make_coredump)(ThreadId tid, const vki_siginfo_t *si, UInt max_size)
 {
-#warning GrP fixme coredump
+   // DDD: #warning GrP fixme coredump
 }

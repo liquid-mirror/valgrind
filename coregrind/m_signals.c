@@ -112,7 +112,7 @@ Int VG_(max_signal) = _VKI_NSIG;
 
 #if defined(VGO_darwin)
 
-#warning GrP fixme signals
+// DDD: #warning GrP fixme signals
 
 #else
 
