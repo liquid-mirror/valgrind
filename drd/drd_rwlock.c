@@ -49,7 +49,9 @@ struct rwlock_thread_info
 
 /* Local functions. */
 
-static void DRD_(rwlock_cleanup)(struct rwlock_info* p);
+static void rwlock_cleanup(struct rwlock_info* p);
+static void rwlock_delete_thread(struct rwlock_info* const p,
+                                 const DrdThreadId tid);
 
 
 /* Local variables. */
@@ -184,7 +186,8 @@ void DRD_(rwlock_initialize)(struct rwlock_info* const p, const Addr rwlock)
   tl_assert(p->a1 == rwlock);
   tl_assert(p->type == ClientRwlock);
 
-  p->cleanup         = (void(*)(DrdClientobj*))&(DRD_(rwlock_cleanup));
+  p->cleanup         = (void(*)(DrdClientobj*))rwlock_cleanup;
+  p->delete_thread = (void(*)(DrdClientobj*, DrdThreadId))rwlock_delete_thread;
   p->thread_info     = VG_(OSetGen_Create)(
                           0, 0, VG_(malloc), "drd.rwlock.ri.1", VG_(free));
   p->acquiry_time_ms = 0;
@@ -192,7 +195,7 @@ void DRD_(rwlock_initialize)(struct rwlock_info* const p, const Addr rwlock)
 }
 
 /** Deallocate the memory that was allocated by rwlock_initialize(). */
-static void DRD_(rwlock_cleanup)(struct rwlock_info* p)
+static void rwlock_cleanup(struct rwlock_info* p)
 {
   struct rwlock_thread_info* q;
 
@@ -464,12 +467,13 @@ void DRD_(rwlock_post_wrlock)(const Addr rwlock, const Bool took_lock)
 
 /**
  * Update rwlock_info state when unlocking the pthread_rwlock_t rwlock.
- * Note: this function must be called before pthread_rwlock_unlock() is called,
- * or a race condition is triggered !
- * @return New value of the rwlock recursion count.
+ *
  * @param rwlock Pointer to pthread_rwlock_t data structure in the client space.
- * @param tid ThreadId of the thread calling pthread_rwlock_unlock().
- * @param vc Pointer to the current vector clock of thread tid.
+ *
+ * @return New value of the rwlock recursion count.
+ *
+ * @note This function must be called before pthread_rwlock_unlock() is called,
+ *   or a race condition is triggered !
  */
 void DRD_(rwlock_pre_unlock)(const Addr rwlock)
 {
@@ -567,26 +571,21 @@ void DRD_(rwlock_pre_unlock)(const Addr rwlock)
  * Call this function when thread tid stops to exist, such that the
  * "last owner" field can be cleared if it still refers to that thread.
  */
-void DRD_(rwlock_thread_delete)(const DrdThreadId tid)
+static void rwlock_delete_thread(struct rwlock_info* const p,
+                                 const DrdThreadId tid)
 {
-  struct rwlock_info* p;
-
-  DRD_(clientobj_resetiter)();
-  for ( ; (p = &(DRD_(clientobj_next)(ClientRwlock)->rwlock)) != 0; )
+  struct rwlock_thread_info* q;
+  if (DRD_(rwlock_is_locked_by)(p, tid))
   {
-    struct rwlock_thread_info* q;
-    if (DRD_(rwlock_is_locked_by)(p, tid))
-    {
-      RwlockErrInfo REI = { p->a1 };
-      VG_(maybe_record_error)(VG_(get_running_tid)(),
-                              RwlockErr,
-                              VG_(get_IP)(VG_(get_running_tid)()),
-                              "Reader-writer lock still locked at thread exit",
-                              &REI);
-      q = DRD_(lookup_or_insert_node)(p->thread_info, tid);
-      q->reader_nesting_count = 0;
-      q->writer_nesting_count = 0;
-    }
+    RwlockErrInfo REI = { p->a1 };
+    VG_(maybe_record_error)(VG_(get_running_tid)(),
+                            RwlockErr,
+                            VG_(get_IP)(VG_(get_running_tid)()),
+                            "Reader-writer lock still locked at thread exit",
+                            &REI);
+    q = DRD_(lookup_or_insert_node)(p->thread_info, tid);
+    q->reader_nesting_count = 0;
+    q->writer_nesting_count = 0;
   }
 }
 
