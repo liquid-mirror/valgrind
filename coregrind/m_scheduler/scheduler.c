@@ -370,7 +370,7 @@ void VG_(vg_yield)(void)
 
 /* Set the standard set of blocked signals, used whenever we're not
    running a client syscall. */
-static void block_signals(ThreadId tid)
+static void block_signals(void)
 {
    vki_sigset_t mask;
 
@@ -727,7 +727,7 @@ static UInt run_thread_for_a_while ( ThreadId tid )
          handler to longjmp. */
       vg_assert(trc == 0);
       trc = VG_TRC_FAULT_SIGNAL;
-      block_signals(tid);
+      block_signals();
    } 
 
    done_this_time = (Int)dispatch_ctr_SAVED - (Int)VG_(dispatch_ctr) - 0;
@@ -803,7 +803,7 @@ static UInt run_noredir_translation ( Addr hcode, ThreadId tid )
          handler to longjmp. */
       vg_assert(argblock[2] == 0); /* next guest IP was not written */
       vg_assert(argblock[3] == 0); /* trc was not written */
-      block_signals(tid);
+      block_signals();
       retval = VG_TRC_FAULT_SIGNAL;
    } else {
       /* store away the guest program counter */
@@ -877,7 +877,7 @@ static void handle_syscall(ThreadId tid, UInt trc)
    vg_assert(VG_(is_running_thread)(tid));
    
    if (jumped) {
-      block_signals(tid);
+      block_signals();
 #if defined(VGO_darwin)
       // DDD: #warning GrP fixme signals
 #else
@@ -937,7 +937,7 @@ VgSchedReturnCode VG_(scheduler) ( ThreadId tid )
       print_sched_event(tid, "entering VG_(scheduler)");      
 
    /* set the proper running signal mask */
-   block_signals(tid);
+   block_signals();
    
    vg_assert(VG_(is_running_thread)(tid));
 
