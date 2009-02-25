@@ -4675,6 +4675,10 @@ Int           MC_(clo_mc_level)               = 2;
 
 static Bool mc_process_cmd_line_options(Char* arg)
 {
+   Char* tmp_str;
+   Char* bad_level_msg =
+      "ERROR: --track-origins=yes has no effect when --undef-value-errors=no";
+
    tl_assert( MC_(clo_mc_level) >= 1 && MC_(clo_mc_level) <= 3 );
 
    /* Set MC_(clo_mc_level):
@@ -4687,10 +4691,13 @@ static Bool mc_process_cmd_line_options(Char* arg)
       --track-origins=yes as meaningless.
    */
    if (0 == VG_(strcmp)(arg, "--undef-value-errors=no")) {
-      if (MC_(clo_mc_level) == 3)
-         goto mc_level_error;
-      MC_(clo_mc_level) = 1;
-      return True;
+      if (MC_(clo_mc_level) == 3) {
+         VG_(message)(Vg_DebugMsg, "%s", bad_level_msg);
+         return False;
+      } else {
+         MC_(clo_mc_level) = 1;
+         return True;
+      }
    }
    if (0 == VG_(strcmp)(arg, "--undef-value-errors=yes")) {
       if (MC_(clo_mc_level) == 1)
@@ -4703,40 +4710,44 @@ static Bool mc_process_cmd_line_options(Char* arg)
       return True;
    }
    if (0 == VG_(strcmp)(arg, "--track-origins=yes")) {
-      if (MC_(clo_mc_level) == 1)
-         goto mc_level_error;
-      MC_(clo_mc_level) = 3;
-      return True;
+      if (MC_(clo_mc_level) == 1) {
+         VG_(message)(Vg_DebugMsg, "%s", bad_level_msg);
+         return False;
+      } else {
+         MC_(clo_mc_level) = 3;
+         return True;
+      }
    }
 
-	VG_BOOL_CLO(arg, "--partial-loads-ok",      MC_(clo_partial_loads_ok))
-   else VG_BOOL_CLO(arg, "--show-reachable",        MC_(clo_show_reachable))
+	if VG_BOOL_CLO(arg, "--partial-loads-ok", MC_(clo_partial_loads_ok)) {}
+   else if VG_BOOL_CLO(arg, "--show-reachable",   MC_(clo_show_reachable))   {}
 #if !defined(VGO_darwin)
-   else VG_BOOL_CLO(arg, "--workaround-gcc296-bugs",MC_(clo_workaround_gcc296_bugs))
+   else if VG_BOOL_CLO(arg, "--workaround-gcc296-bugs",
+                                            MC_(clo_workaround_gcc296_bugs)) {}
 #endif
 
-   else VG_BNUM_CLO(arg, "--freelist-vol",  MC_(clo_freelist_vol), 
-                                            0, 10*1000*1000*1000LL)
+   else if VG_BINT_CLO(arg, "--freelist-vol",  MC_(clo_freelist_vol), 
+                                               0, 10*1000*1000*1000LL) {}
    
-   else if (VG_CLO_STREQ(arg, "--leak-check=no"))
-      MC_(clo_leak_check) = LC_Off;
-   else if (VG_CLO_STREQ(arg, "--leak-check=summary"))
-      MC_(clo_leak_check) = LC_Summary;
-   else if (VG_CLO_STREQ(arg, "--leak-check=yes") ||
-	    VG_CLO_STREQ(arg, "--leak-check=full"))
-      MC_(clo_leak_check) = LC_Full;
+   else if VG_XACT_CLO(arg, "--leak-check=no",
+                            MC_(clo_leak_check), LC_Off) {}
+   else if VG_XACT_CLO(arg, "--leak-check=summary",
+                            MC_(clo_leak_check), LC_Summary) {}
+   else if VG_XACT_CLO(arg, "--leak-check=yes",
+                            MC_(clo_leak_check), LC_Full) {}
+   else if VG_XACT_CLO(arg, "--leak-check=full",
+                            MC_(clo_leak_check), LC_Full) {}
 
-   else if (VG_CLO_STREQ(arg, "--leak-resolution=low"))
-      MC_(clo_leak_resolution) = Vg_LowRes;
-   else if (VG_CLO_STREQ(arg, "--leak-resolution=med"))
-      MC_(clo_leak_resolution) = Vg_MedRes;
-   else if (VG_CLO_STREQ(arg, "--leak-resolution=high"))
-      MC_(clo_leak_resolution) = Vg_HighRes;
+   else if VG_XACT_CLO(arg, "--leak-resolution=low",
+                            MC_(clo_leak_resolution), Vg_LowRes) {}
+   else if VG_XACT_CLO(arg, "--leak-resolution=med",
+                            MC_(clo_leak_resolution), Vg_MedRes) {}
+   else if VG_XACT_CLO(arg, "--leak-resolution=high",
+                            MC_(clo_leak_resolution), Vg_HighRes) {}
 
-   else if (VG_CLO_STREQN(16,arg,"--ignore-ranges=")) {
-      Int    i;
-      UChar* txt = (UChar*)(arg+16);
-      Bool   ok  = parse_ignore_ranges(txt);
+   else if VG_STR_CLO(arg, "--ignore-ranges", tmp_str) {
+      Int  i;
+      Bool ok  = parse_ignore_ranges(tmp_str);
       if (!ok)
         return False;
       tl_assert(ignoreRanges.used >= 0);
@@ -4762,19 +4773,13 @@ static Bool mc_process_cmd_line_options(Char* arg)
       }
    }
 
-   else VG_BHEX_CLO(arg, "--malloc-fill", MC_(clo_malloc_fill), 0x00, 0xFF)
-   else VG_BHEX_CLO(arg, "--free-fill",   MC_(clo_free_fill), 0x00, 0xFF)
+   else if VG_BHEX_CLO(arg, "--malloc-fill", MC_(clo_malloc_fill), 0x00,0xFF) {}
+   else if VG_BHEX_CLO(arg, "--free-fill",   MC_(clo_free_fill),   0x00,0xFF) {}
 
    else
       return VG_(replacement_malloc_process_cmd_line_option)(arg);
 
    return True;
-   /*NOTREACHED*/
-
-  mc_level_error:
-   VG_(message)(Vg_DebugMsg, "ERROR: --track-origins=yes has no effect "
-                             "when --undef-value-errors=no");
-   return False;
 }
 
 static void mc_print_usage(void)
@@ -5131,11 +5136,11 @@ static Bool handle_defined_command(Int sock, Char *cmd)
    Char *outbuf;
    Long i;
 
-   addr = VG_(atoll16)(cmd);
+   addr = VG_(strtoll16)(cmd, NULL);
    cmd = VG_(strchr)(cmd, ',');
    if (!cmd) return False;
 
-   len = VG_(atoll16)(cmd+1);
+   len = VG_(strtoll16)(cmd+1, NULL);
    if (len > 65536) len = 65536;  // sanity
 
    vbits = VG_(malloc)("mc.gdb.vbits", len);
@@ -5173,7 +5178,7 @@ static Bool handle_register_defined_command(Int sock, Char *cmd)
    Long i;
    Int size, regnum;
 
-   regnum = VG_(atoll16)(cmd);
+   regnum = VG_(strtoll16)(cmd, NULL);
    
    size = VG_(reg_for_regnum)(regnum, vbits, 1);  // GrP fixme shadow1 or 2?
    if (size < 0) {

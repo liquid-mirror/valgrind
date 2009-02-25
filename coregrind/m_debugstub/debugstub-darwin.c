@@ -784,13 +784,13 @@ static void handle_m(Int sock, char *cmd)
 {
    Long addr, len;
 
-   addr = VG_(atoll16)(cmd);
+   addr = VG_(strtoll16)(cmd, NULL);
    cmd = VG_(strchr)(cmd, ',');
    if (!cmd) {
       write_command(sock, "E01"); // fixme errno
       return;
    }
-   len = VG_(atoll16)(cmd+1);
+   len = VG_(strtoll16)(cmd+1, NULL);
    if (len > (sizeof(outbuf)-1) / 2) len = (sizeof(outbuf)-1) / 2;
 
    if (! VG_(am_is_valid_for_client)((Addr)addr, (SizeT)len, VKI_PROT_READ)) {
@@ -807,14 +807,14 @@ static void handle_M(Int sock, char *cmd)
    Long addr, len;
    unsigned char *inbuf;
 
-   addr = VG_(atoll16)(cmd);
+   addr = VG_(strtoll16)(cmd, NULL);
 
    cmd = VG_(strchr)(cmd, ',');
    if (!cmd) {
       write_command(sock, "E01"); // fixme errno
       return;
    }
-   len = VG_(atoll16)(cmd+1);
+   len = VG_(strtoll16)(cmd+1, NULL);
 
    if (! VG_(am_is_valid_for_client)((Addr)addr, (SizeT)len, VKI_PROT_READ)) {
       write_command(sock, "E14");  // fixme EFAULT
@@ -983,7 +983,7 @@ static Bool handle_v(Int sock, char *cmd)
          }
          if (cmd[0] == ':') {
             // target thread ID
-            tid = VG_(atoll16)(cmd+1);
+            tid = VG_(strtoll16)(cmd+1, NULL);
             continueOthers = False;
          }
 
@@ -1013,7 +1013,7 @@ static void handle_p(Int sock, char *cmd)
 {
    char rbuf[16];
    int rsize;
-   Long reg = VG_(atoll16)(cmd);
+   Long reg = VG_(strtoll16)(cmd, NULL);
    if (!VG_(is_valid_tid)(query_tid)) {
       write_command(sock, "E01"); // fixme errno
    } else if (reg < 0  ||  reg >= rcount) {
@@ -1030,7 +1030,7 @@ static void handle_P(Int sock, char *cmd)
    uint8_t rbuf[16] = {0};
    int rsize;
 
-   Long reg = VG_(atoll16)(cmd);
+   Long reg = VG_(strtoll16)(cmd, NULL);
    cmd = VG_(strchr)(cmd, '=');
    if (!cmd) {
       write_command(sock, "E01");
@@ -1064,7 +1064,7 @@ static void handle_P(Int sock, char *cmd)
 
 static void handle_T(Int sock, char *cmd)
 {
-   Long tid = VG_(atoll16)(cmd);
+   Long tid = VG_(strtoll16)(cmd, NULL);
    if (VG_(is_valid_tid)(tid)) {
       write_command(sock, "OK");
    } else {
@@ -1220,7 +1220,7 @@ static Bool handle_command(Int sock, char *cmd)
    else if (cmd[0] == 'H') {
       // Hcxx, Hgxx: set thread focus
       if (cmd[1] == 'g' || cmd[1] == 'c') {
-         ThreadId tid = VG_(atoll16)(cmd+2);
+         ThreadId tid = VG_(strtoll16)(cmd+2, NULL);
          // fixme -1
          if (tid == 0) {
             tid = first_valid_tid();
