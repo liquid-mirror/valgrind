@@ -24,10 +24,10 @@
 int main ( void )
 {
 #  if defined(_AIX)
-   printf("AIX 5.2 knows about neither memalign() nor posix_memalign().\n");
+   // AIX 5.2 has neither memalign() nor posix_memalign();  do nothing.
 
 #  elif defined(__APPLE__)
-   printf("MacOS X knows about neither memalign() nor posix_memalign().\n");
+   // Likewise for Mac OS X.
 
 #  else
    // Nb: assuming VG_MIN_MALLOC_SZB is 8!
