@@ -193,11 +193,11 @@ Char* VG_(strncat) ( Char* dest, const Char* src, SizeT n )
    return dest_orig;
 }
 
-Char* VG_(strpbrk) ( const Char* s, const Char* accept )
+Char* VG_(strpbrk) ( const Char* s, const Char* s2 )
 {
    const Char* a;
    while (*s) {
-      a = accept;
+      a = s2;
       while (*a)
          if (*a++ == *s)
             return (Char *) s;
@@ -272,25 +272,6 @@ Int VG_(strcasecmp) ( const Char* s1, const Char* s2 )
    }
 }
 
-static Bool isterm ( Char c )
-{
-   return ( VG_(isspace)(c) || 0 == c );
-}
-
-Int VG_(strcmp_ws) ( const Char* s1, const Char* s2 )
-{
-   while (True) {
-      if (isterm(*s1) && isterm(*s2)) return 0;
-      if (isterm(*s1)) return -1;
-      if (isterm(*s2)) return 1;
-
-      if (*(UChar*)s1 < *(UChar*)s2) return -1;
-      if (*(UChar*)s1 > *(UChar*)s2) return 1;
-
-      s1++; s2++;
-   }
-}
-
 Int VG_(strncmp) ( const Char* s1, const Char* s2, SizeT nmax )
 {
    SizeT n = 0;
@@ -322,22 +303,6 @@ Int VG_(strncasecmp) ( const Char* s1, const Char* s2, SizeT nmax )
 
       if (c1 < c2) return -1;
       if (c1 > c2) return 1;
-
-      s1++; s2++; n++;
-   }
-}
-
-Int VG_(strncmp_ws) ( const Char* s1, const Char* s2, SizeT nmax )
-{
-   Int n = 0;
-   while (True) {
-      if (n >= nmax) return 0;
-      if (isterm(*s1) && isterm(*s2)) return 0;
-      if (isterm(*s1)) return -1;
-      if (isterm(*s2)) return 1;
-
-      if (*(UChar*)s1 < *(UChar*)s2) return -1;
-      if (*(UChar*)s1 > *(UChar*)s2) return 1;
 
       s1++; s2++; n++;
    }
@@ -391,12 +356,13 @@ Char* VG_(strrchr) ( const Char* s, Char c )
    return NULL;
 }
 
-SizeT VG_(strspn) ( const Char* s, const Char* accept )
+// "2" suffix avoids shadowing problems in memcheck/tests/unit_libcbase.c.
+SizeT VG_(strspn) ( const Char* s, const Char* s2 )
 {
    const Char *p, *a;
    SizeT count = 0;
    for (p = s; *p != '\0'; ++p) {
-      for (a = accept; *a != '\0'; ++a)
+      for (a = s2; *a != '\0'; ++a)
          if (*p == *a)
             break;
       if (*a == '\0')
