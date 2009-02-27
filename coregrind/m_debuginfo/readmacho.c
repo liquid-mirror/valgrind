@@ -62,19 +62,19 @@
 /* --- !!! --- EXTERNAL HEADERS end --- !!! --- */
 
 #if VG_WORDSIZE == 4
-#define MAGIC MH_MAGIC
-#define MACH_HEADER mach_header
-#define LC_SEGMENT_CMD LC_SEGMENT
-#define SEGMENT_COMMAND segment_command
-#define SECTION section
-#define NLIST nlist
+# define MAGIC MH_MAGIC
+# define MACH_HEADER mach_header
+# define LC_SEGMENT_CMD LC_SEGMENT
+# define SEGMENT_COMMAND segment_command
+# define SECTION section
+# define NLIST nlist
 #else
-#define MAGIC MH_MAGIC_64
-#define MACH_HEADER mach_header_64
-#define LC_SEGMENT_CMD LC_SEGMENT_64
-#define SEGMENT_COMMAND segment_command_64
-#define SECTION section_64
-#define NLIST nlist_64
+# define MAGIC MH_MAGIC_64
+# define MACH_HEADER mach_header_64
+# define LC_SEGMENT_CMD LC_SEGMENT_64
+# define SEGMENT_COMMAND segment_command_64
+# define SECTION section_64
+# define NLIST nlist_64
 #endif
 
 
@@ -116,7 +116,8 @@ void read_symtab( struct _DebugInfo* di,
 
       risym.tocptr = 0;
       risym.addr = sym_addr;
-      risym.size = di->text_avma+di->text_size - sym_addr; // let canonicalize fix it
+      risym.size = // let canonicalize fix it
+                   di->text_avma+di->text_size - sym_addr;
       risym.name = ML_(addStr)(di, o_strtab + nl->n_un.n_strx, -1);
       risym.isText = True;
       // Lots of user function names get prepended with an underscore.  Eg. the
@@ -135,7 +136,7 @@ void read_symtab( struct _DebugInfo* di,
 }
 
 
-#if ! defined (APPLE_DSYM_EXT_AND_SUBDIRECTORY)
+#if !defined(APPLE_DSYM_EXT_AND_SUBDIRECTORY)
 #define APPLE_DSYM_EXT_AND_SUBDIRECTORY ".dSYM/Contents/Resources/DWARF/"
 #endif
 
@@ -286,7 +287,8 @@ static Addr make_thin(Addr fat, UInt fat_size, UInt *thin_size)
       struct fat_arch *arch_be;
       struct fat_arch arch;
       int f;
-      if (fat_size < sizeof(struct fat_header) + fh.nfat_arch * sizeof(struct fat_arch)) {
+      if (fat_size < sizeof(struct fat_header)
+          + fh.nfat_arch * sizeof(struct fat_arch)) {
          ML_(symerr)(NULL, False, "Invalid Mach-O file (1 too small).");
          return 0;
       }
@@ -295,17 +297,17 @@ static Addr make_thin(Addr fat, UInt fat_size, UInt *thin_size)
            f++, arch_be++)
       {
          Int cputype;
-#       if defined(VGA_ppc)
+#        if defined(VGA_ppc)
          cputype = CPU_TYPE_POWERPC;
-#       elif defined(VGA_ppc64)
+#        elif defined(VGA_ppc64)
          cputype = CPU_TYPE_POWERPC64;
-#       elif defined(VGA_x86)
+#        elif defined(VGA_x86)
          cputype = CPU_TYPE_X86;
-#       elif defined(VGA_amd64)
+#        elif defined(VGA_amd64)
          cputype = CPU_TYPE_X86_64;
-#       else
-#        error unknown architecture
-#       endif
+#        else
+#          error "unknown architecture"
+#        endif
          arch.cputype = VG_(ntohl)(arch_be->cputype);
          arch.cpusubtype = VG_(ntohl)(arch_be->cpusubtype);
          arch.offset = VG_(ntohl)(arch_be->offset);
@@ -321,7 +323,8 @@ static Addr make_thin(Addr fat, UInt fat_size, UInt *thin_size)
          }
       }
       if (f == fh.nfat_arch) {
-         ML_(symerr)(NULL, True, "No acceptable architecture found in fat file.");
+         ML_(symerr)(NULL, True,
+                     "No acceptable architecture found in fat file.");
          return 0;
       }
    } else {
@@ -402,8 +405,8 @@ Bool ML_(read_macho_debug_info)( struct _DebugInfo* di )
       and uuid and nlist and STABS */
 
    if (VG_(clo_verbosity) > 1)
-      VG_(message)(Vg_DebugMsg, "Looking for debug info in %s ...",
-                   di->filename);
+      VG_(message)(Vg_DebugMsg,
+                   "%s (%#lx)", di->filename, di->rx_map_avma );
 
    di->text_bias = 0;
    ob_map_base = map_file(di->filename, &ob_map_size);
@@ -422,7 +425,8 @@ Bool ML_(read_macho_debug_info)( struct _DebugInfo* di )
 
          for (c = 0, cmd = (struct load_command *)(mh+1);
               c < mh->ncmds;
-              c++, cmd = (struct load_command *)(cmd->cmdsize + (unsigned long)cmd))
+              c++, cmd = (struct load_command *)(cmd->cmdsize
+                                                 + (unsigned long)cmd))
          {
             if (cmd->cmd == LC_SYMTAB) {
                symcmd = (struct symtab_command *)cmd;
@@ -437,7 +441,8 @@ Bool ML_(read_macho_debug_info)( struct _DebugInfo* di )
                UChar *soname = VG_(strrchr)(dylibname, '/');
                if (!soname) soname = dylibname;
                else soname++;
-               di->soname = VG_(arena_strdup)(VG_AR_DINFO, "di.readmacho.dylibname", soname);
+               di->soname = VG_(arena_strdup)(VG_AR_DINFO,
+                               "di.readmacho.dylibname", soname);
             }
             else if (cmd->cmd==LC_ID_DYLINKER  &&  mh->filetype==MH_DYLINKER) {
                struct dylinker_command *dcmd = (struct dylinker_command *)cmd;
@@ -445,7 +450,8 @@ Bool ML_(read_macho_debug_info)( struct _DebugInfo* di )
                UChar *soname = VG_(strrchr)(dylinkername, '/');
                if (!soname) soname = dylinkername;
                else soname++;
-               di->soname = VG_(arena_strdup)(VG_AR_DINFO, "di.readmacho.dylinkername", soname);
+               di->soname = VG_(arena_strdup)(VG_AR_DINFO,
+                               "di.readmacho.dylinkername", soname);
             }
             else if (cmd->cmd == LC_SEGMENT_CMD) {
                struct SEGMENT_COMMAND *seg = (struct SEGMENT_COMMAND *)cmd;
@@ -467,11 +473,12 @@ Bool ML_(read_macho_debug_info)( struct _DebugInfo* di )
          }
       }
 
-      ; /* Don't unmap object yet; we'll read nlist and STABS after DWARF. */
+      /* Don't unmap object yet; we'll read nlist and STABS after DWARF. */
    }
 
    if (!di->soname) {
-      di->soname = VG_(arena_strdup)(VG_AR_DINFO, "di.readmacho.noname", "NONE");
+      di->soname = VG_(arena_strdup)(VG_AR_DINFO,
+                                     "di.readmacho.noname", "NONE");
    }
 
 
@@ -482,28 +489,27 @@ Bool ML_(read_macho_debug_info)( struct _DebugInfo* di )
 
    if (dsymfile) {
       if (VG_(clo_verbosity) > 1)
-         VG_(message)(Vg_DebugMsg, "Looking for debug info in %s ...",
-                      dsymfile);
+         VG_(message)(Vg_DebugMsg, "   dsyms= %s", dsymfile);
       dw_map_base = map_file(dsymfile, &dw_map_size);
       if (dw_map_base) {
           dw_oimage = make_thin(dw_map_base, dw_map_size, &dw_n_oimage);
       }
    }
    if (dw_oimage) {
-      UChar *debug_info_img = NULL;
-      Int debug_info_sz;
-      UChar *debug_abbv_img;
-      Int debug_abbv_sz;
-      UChar *debug_line_img;
-      Int debug_line_sz;
-      UChar *debug_str_img;
-      Int debug_str_sz;
-      UChar *debug_ranges_img;
-      Int debug_ranges_sz;
-      UChar *debug_loc_img;
-      Int debug_loc_sz;
-      UChar *debug_name_img;
-      Int debug_name_sz;
+      UChar* debug_info_img = NULL;
+      Int    debug_info_sz;
+      UChar* debug_abbv_img;
+      Int    debug_abbv_sz;
+      UChar* debug_line_img;
+      Int    debug_line_sz;
+      UChar* debug_str_img;
+      Int    debug_str_sz;
+      UChar* debug_ranges_img;
+      Int    debug_ranges_sz;
+      UChar* debug_loc_img;
+      Int    debug_loc_sz;
+      UChar* debug_name_img;
+      Int    debug_name_sz;
       
       debug_info_img = 
           getsectdata(dw_oimage, dw_n_oimage, 
@@ -528,14 +534,18 @@ Bool ML_(read_macho_debug_info)( struct _DebugInfo* di )
                       "__DWARF", "__debug_pubnames", &debug_name_sz);
    
       if (debug_info_img) {
-         if (VG_(clo_verbosity) > 1)
+         if (VG_(clo_verbosity) > 1) {
+            if (0)
             VG_(message)(Vg_DebugMsg,
-                         "Reading DWARF debuginfo for %s (%#lx) from %s"
+                         "Reading dwarf3 for %s (%#lx) from %s"
                          " (%d %d %d %d %d %d)",
                          di->filename, di->text_avma, dsymfile, 
                          debug_info_sz, debug_abbv_sz, debug_line_sz, 
                          debug_str_sz, debug_ranges_sz, debug_loc_sz
                          );
+            VG_(message)(Vg_DebugMsg,
+               "   reading dwarf3 from dsyms file");
+         }
          /* The old reader: line numbers and unwind info only */
          ML_(read_debuginfo_dwarf3) ( di,
                                       debug_info_img, debug_info_sz,
@@ -606,9 +616,9 @@ Bool ML_(read_macho_debug_info)( struct _DebugInfo* di )
       strs = (UChar *)(ob_oimage + symcmd->stroff);
       
       if (VG_(clo_verbosity) > 1)
-         VG_(message)(Vg_DebugMsg, "Reading nlist symbols and STABS debuginfo for %s (%#lx) (%d %d)",
-                      di->filename, di->text_avma, 
-                      dysymcmd->nextdefsym, dysymcmd->nlocalsym );
+         VG_(message)(Vg_DebugMsg,
+            "   reading syms   from primary file (%d %d)",
+            dysymcmd->nextdefsym, dysymcmd->nlocalsym );
       // extern symbols
       read_symtab(di, 
                   syms + dysymcmd->iextdefsym, dysymcmd->nextdefsym, 
@@ -619,6 +629,9 @@ Bool ML_(read_macho_debug_info)( struct _DebugInfo* di )
                   strs, symcmd->strsize);
       if (!got_dwarf) {
          // debug info
+         VG_(message)(Vg_DebugMsg,
+            "   reading stabs  from primary file (%d %d)",
+            dysymcmd->nextdefsym, dysymcmd->nlocalsym );
          ML_(read_debuginfo_stabs) ( di, di->text_bias, 
                                      (UChar *)syms, 
                                      symcmd->nsyms * sizeof(struct NLIST), 
@@ -647,4 +660,6 @@ Bool ML_(read_macho_debug_info)( struct _DebugInfo* di )
    return False;
 }
 
-
+/*--------------------------------------------------------------------*/
+/*--- end                                              readmacho.c ---*/
+/*--------------------------------------------------------------------*/
