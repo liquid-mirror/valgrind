@@ -86,15 +86,21 @@ Bool ML_(is_macho_object_file)( const void *buf, SizeT size )
 }
 
 
-/* Read a symbol table (nlist) */
+/* Read a symbol table (nlist).  Add the resulting candidate symbols
+   to 'syms'; the caller will post-process them and hand them off to
+   ML_(addSym) itself. */
 static
-void read_symtab( struct _DebugInfo* di, 
+void read_symtab( /*OUT*/XArray* /* DiSym */ syms,
+                  struct _DebugInfo* di, 
                   struct NLIST* o_symtab, UInt o_symtab_count,
                   UChar*     o_strtab, UInt o_strtab_sz )
 {
-   Int   i;
-   Addr  sym_addr;
-   DiSym risym;
+   Int    i;
+   Addr   sym_addr;
+   DiSym  risym;
+   UChar* name;
+
+   static UChar* s_a_t_v = NULL; /* do not make non-static */
 
    for (i = 0; i < o_symtab_count; i++) {
       struct NLIST *nl = o_symtab+i;
@@ -107,6 +113,10 @@ void read_symtab( struct _DebugInfo* di,
          continue;
       }
       
+      if (di->trace_symtab)
+         VG_(printf)("nlist raw: avma %010lx  %s\n",
+                     sym_addr, o_strtab + nl->n_un.n_strx );
+
       /* If no part of the symbol falls within the mapped range,
          ignore it. */
       if (sym_addr <= di->text_avma
@@ -114,11 +124,22 @@ void read_symtab( struct _DebugInfo* di,
          continue;
       }
 
+      /* skip names which point outside the string table;
+         following these risks segfaulting Valgrind */
+      name = o_strtab + nl->n_un.n_strx;
+      if (name < o_strtab || name >= o_strtab + o_strtab_sz)
+         continue;
+
+      /* skip nameless symbols; these appear to be common, but
+         useless */
+      if (*name == 0)
+         continue;
+
       risym.tocptr = 0;
       risym.addr = sym_addr;
       risym.size = // let canonicalize fix it
                    di->text_avma+di->text_size - sym_addr;
-      risym.name = ML_(addStr)(di, o_strtab + nl->n_un.n_strx, -1);
+      risym.name = ML_(addStr)(di, name, -1);
       risym.isText = True;
       // Lots of user function names get prepended with an underscore.  Eg. the
       // function 'f' becomes the symbol '_f'.  And the "below main"
@@ -129,10 +150,107 @@ void read_symtab( struct _DebugInfo* di,
       if (risym.name[0] == '_') {
          risym.name++;
       } else if (!VG_(clo_show_below_main) && VG_STREQ(risym.name, "start")) {
-         risym.name = "start_according_to_valgrind";
+         if (s_a_t_v == NULL)
+            s_a_t_v = ML_(addStr)(di, "start_according_to_valgrind", -1);
+         vg_assert(s_a_t_v);
+         risym.name = s_a_t_v;
       }
-      ML_(addSym)(di, &risym);
+
+      vg_assert(risym.name);
+      VG_(addToXA)( syms, &risym );
    }
+}
+
+
+/* Compare DiSyms by their start address, and for equal addresses, use
+   the name as a secondary sort key. */
+static Int cmp_DiSym_by_start_then_name ( void* v1, void* v2 )
+{
+   DiSym* s1 = (DiSym*)v1;
+   DiSym* s2 = (DiSym*)v2;
+   if (s1->addr < s2->addr) return -1;
+   if (s1->addr > s2->addr) return 1;
+   return VG_(strcmp)(s1->name, s2->name);
+}
+
+/* 'cand' is a bunch of candidate symbols obtained by reading
+   nlist-style symbol table entries.  Their ends may overlap, so sort
+   them and truncate them accordingly.  The code in this routine is
+   copied almost verbatim from read_symbol_table() in readxcoff.c. */
+static void tidy_up_cand_syms ( /*MOD*/XArray* /* of DiSym */ syms,
+                                Bool trace_symtab )
+{
+   Word nsyms, i, j, k, m;
+
+   nsyms = VG_(sizeXA)(syms);
+
+   VG_(setCmpFnXA)(syms, cmp_DiSym_by_start_then_name);
+   VG_(sortXA)(syms);
+
+   /* We only know for sure the start addresses (actual VMAs) of
+      symbols, and an overestimation of their end addresses.  So sort
+      by start address, then clip each symbol so that its end address
+      does not overlap with the next one along.
+
+      There is a small refinement: if a group of symbols have the same
+      address, treat them as a group: find the next symbol along that
+      has a higher start address, and clip all of the group
+      accordingly.  This clips the group as a whole so as not to
+      overlap following symbols.  This leaves prefersym() in
+      storage.c, which is not nlist-specific, to later decide which of
+      the symbols in the group to keep.
+
+      Another refinement is that we need to get rid of symbols which,
+      after clipping, have identical starts, ends, and names.  So the
+      sorting uses the name as a secondary key.
+   */
+
+   for (i = 0; i < nsyms; i++) {
+      for (k = i+1;
+           k < nsyms
+             && ((DiSym*)VG_(indexXA)(syms,i))->addr
+                 == ((DiSym*)VG_(indexXA)(syms,k))->addr;
+           k++)
+         ;
+      /* So now [i .. k-1] is a group all with the same start address.
+         Clip their ending addresses so they don't overlap [k].  In
+         the normal case (no overlaps), k == i+1. */
+      if (k < nsyms) {
+         DiSym* next = (DiSym*)VG_(indexXA)(syms,k);
+         for (m = i; m < k; m++) {
+            DiSym* here = (DiSym*)VG_(indexXA)(syms,m);
+            vg_assert(here->addr < next->addr);
+            if (here->addr + here->size > next->addr)
+               here->size = next->addr - here->addr;
+         }
+      }
+      i = k-1;
+      vg_assert(i <= nsyms);
+   }
+
+   j = 0;
+   if (nsyms > 0) {
+      j = 1;
+      for (i = 1; i < nsyms; i++) {
+         DiSym *s_j1, *s_j, *s_i;
+         vg_assert(j <= i);
+         s_j1 = (DiSym*)VG_(indexXA)(syms, j-1);
+         s_j  = (DiSym*)VG_(indexXA)(syms, j);
+         s_i  = (DiSym*)VG_(indexXA)(syms, i);
+         if (s_i->addr != s_j1->addr
+             || s_i->size != s_j1->size
+             || 0 != VG_(strcmp)(s_i->name, s_j1->name)) {
+            *s_j = *s_i;
+            j++;
+         } else {
+            if (trace_symtab)
+               VG_(printf)("nlist cleanup: dump duplicate avma %010lx  %s\n",
+                           s_i->addr, s_i->name );
+         }
+      }
+   }
+   vg_assert(j >= 0 && j <= nsyms);
+   VG_(dropTailXA)(syms, nsyms - j);
 }
 
 
@@ -358,7 +476,7 @@ static UChar *getsectdata(Addr base, Int size,
 {
    struct MACH_HEADER *mh = (struct MACH_HEADER *)base;
    struct load_command *cmd;          
-   int c;
+   Int c;
 
    for (c = 0, cmd = (struct load_command *)(mh+1);
         c < mh->ncmds;
@@ -368,7 +486,7 @@ static UChar *getsectdata(Addr base, Int size,
          struct SEGMENT_COMMAND *seg = (struct SEGMENT_COMMAND *)cmd;
          if (0 == VG_(strncmp(seg->segname, segname, sizeof(seg->segname)))) {
             struct SECTION *sects = (struct SECTION *)(seg+1);
-            int s;
+            Int s;
             for (s = 0; s < seg->nsects; s++) {
                if (0 == VG_(strncmp(sects[s].sectname, sectname, 
                                     sizeof(sects[s].sectname)))) 
@@ -399,7 +517,7 @@ Bool ML_(read_macho_debug_info)( struct _DebugInfo* di )
    Bool got_nlist = False;
    Bool got_dwarf = False;
    Bool got_uuid = False;
-   unsigned char uuid[16];
+   UChar uuid[16];
 
    /* mmap the object file to look for di->soname and di->text_bias 
       and uuid and nlist and STABS */
@@ -598,7 +716,9 @@ Bool ML_(read_macho_debug_info)( struct _DebugInfo* di )
       /* Read nlist symbol table and STABS debug info */
       struct NLIST *syms;
       UChar *strs;
-      
+      XArray* /* DiSym */ candSyms = NULL;
+      Word i, nCandSyms;
+
       if (ob_n_oimage < symcmd->stroff + symcmd->strsize  ||  
           ob_n_oimage < symcmd->symoff + symcmd->nsyms*sizeof(struct NLIST))
       {
@@ -619,19 +739,48 @@ Bool ML_(read_macho_debug_info)( struct _DebugInfo* di )
          VG_(message)(Vg_DebugMsg,
             "   reading syms   from primary file (%d %d)",
             dysymcmd->nextdefsym, dysymcmd->nlocalsym );
+
+      /* Read candidate symbols into 'candSyms', so we can truncate
+         overlapping ends and generally tidy up, before presenting
+         them to ML_(addSym). */
+      candSyms = VG_(newXA)(
+                    ML_(dinfo_zalloc), "di.readmacho.candsyms.1",
+                    ML_(dinfo_free), sizeof(DiSym)
+                 );
+      vg_assert(candSyms);
+
       // extern symbols
-      read_symtab(di, 
+      read_symtab(candSyms,
+                  di, 
                   syms + dysymcmd->iextdefsym, dysymcmd->nextdefsym, 
                   strs, symcmd->strsize);
       // static and private_extern symbols
-      read_symtab(di, 
+      read_symtab(candSyms,
+                  di, 
                   syms + dysymcmd->ilocalsym, dysymcmd->nlocalsym, 
                   strs, symcmd->strsize);
+
+      /* tidy up the cand syms -- trim overlapping ends.  May resize
+         candSyms. */
+      tidy_up_cand_syms( candSyms, di->trace_symtab );
+
+      /* and finally present them to ML_(addSym) */
+      nCandSyms = VG_(sizeXA)( candSyms );
+      for (i = 0; i < nCandSyms; i++) {
+         DiSym* cand = (DiSym*) VG_(indexXA)( candSyms, i );
+         if (di->trace_symtab)
+            VG_(printf)("nlist final: acquire  avma %010lx-%010lx  %s\n",
+                        cand->addr, cand->addr + cand->size - 1, cand->name );
+         ML_(addSym)( di, cand );
+      }
+      VG_(deleteXA)( candSyms );
+
       if (!got_dwarf) {
          // debug info
-         VG_(message)(Vg_DebugMsg,
-            "   reading stabs  from primary file (%d %d)",
-            dysymcmd->nextdefsym, dysymcmd->nlocalsym );
+         if (VG_(clo_verbosity) > 1)
+            VG_(message)(Vg_DebugMsg,
+               "   reading stabs  from primary file (%d %d)",
+               dysymcmd->nextdefsym, dysymcmd->nlocalsym );
          ML_(read_debuginfo_stabs) ( di,
                                      (UChar *)syms, 
                                      symcmd->nsyms * sizeof(struct NLIST), 
