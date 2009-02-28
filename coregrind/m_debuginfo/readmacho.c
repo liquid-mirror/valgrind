@@ -632,7 +632,7 @@ Bool ML_(read_macho_debug_info)( struct _DebugInfo* di )
          VG_(message)(Vg_DebugMsg,
             "   reading stabs  from primary file (%d %d)",
             dysymcmd->nextdefsym, dysymcmd->nlocalsym );
-         ML_(read_debuginfo_stabs) ( di, di->text_bias, 
+         ML_(read_debuginfo_stabs) ( di,
                                      (UChar *)syms, 
                                      symcmd->nsyms * sizeof(struct NLIST), 
                                      strs, symcmd->strsize);
