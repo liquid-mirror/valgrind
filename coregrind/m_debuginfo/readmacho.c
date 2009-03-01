@@ -38,7 +38,6 @@
 #include "pub_core_libcproc.h"
 #include "pub_core_aspacemgr.h"    /* for mmaping debuginfo files */
 #include "pub_core_machine.h"      /* VG_ELF_CLASS */
-#include "pub_core_mallocfree.h"
 #include "pub_core_options.h"
 #include "pub_core_oset.h"
 #include "pub_core_tooliface.h"    /* VG_(needs) */
@@ -283,13 +282,14 @@ find_separate_debug_file (const Char *executable_name)
       dSYM file itself.  */
    if (VG_(strcasestr) (executable_name, ".dSYM") == NULL)
    {
-        /* Check for the existence of a .dSYM file for a given executable.  */
+      /* Check for the existence of a .dSYM file for a given executable.  */
       basename_str = VG_(basename) (executable_name);
-      dsymfile = VG_(malloc)("di.readmacho.dsymfile", 
-                             VG_(strlen) (executable_name)
-                             + VG_(strlen) (APPLE_DSYM_EXT_AND_SUBDIRECTORY)
-                             + VG_(strlen) (basename_str)
-                             + 1);
+      dsymfile = ML_(dinfo_zalloc)("di.readmacho.dsymfile", 
+                    VG_(strlen) (executable_name)
+                    + VG_(strlen) (APPLE_DSYM_EXT_AND_SUBDIRECTORY)
+                    + VG_(strlen) (basename_str)
+                    + 1
+                 );
         
       /* First try for the dSYM in the same directory as the original file.  */
       VG_(strcpy) (dsymfile, executable_name);
@@ -559,8 +559,8 @@ Bool ML_(read_macho_debug_info)( struct _DebugInfo* di )
                UChar *soname = VG_(strrchr)(dylibname, '/');
                if (!soname) soname = dylibname;
                else soname++;
-               di->soname = VG_(arena_strdup)(VG_AR_DINFO,
-                               "di.readmacho.dylibname", soname);
+               di->soname = ML_(dinfo_strdup)("di.readmacho.dylibname",
+                                              soname);
             }
             else if (cmd->cmd==LC_ID_DYLINKER  &&  mh->filetype==MH_DYLINKER) {
                struct dylinker_command *dcmd = (struct dylinker_command *)cmd;
@@ -568,8 +568,8 @@ Bool ML_(read_macho_debug_info)( struct _DebugInfo* di )
                UChar *soname = VG_(strrchr)(dylinkername, '/');
                if (!soname) soname = dylinkername;
                else soname++;
-               di->soname = VG_(arena_strdup)(VG_AR_DINFO,
-                               "di.readmacho.dylinkername", soname);
+               di->soname = ML_(dinfo_strdup)("di.readmacho.dylinkername",
+                                              soname);
             }
             else if (cmd->cmd == LC_SEGMENT_CMD) {
                struct SEGMENT_COMMAND *seg = (struct SEGMENT_COMMAND *)cmd;
@@ -595,8 +595,7 @@ Bool ML_(read_macho_debug_info)( struct _DebugInfo* di )
    }
 
    if (!di->soname) {
-      di->soname = VG_(arena_strdup)(VG_AR_DINFO,
-                                     "di.readmacho.noname", "NONE");
+      di->soname = ML_(dinfo_strdup)("di.readmacho.noname", "NONE");
    }
 
 
@@ -704,7 +703,7 @@ Bool ML_(read_macho_debug_info)( struct _DebugInfo* di )
       vg_assert(!m_res.isError);
    }
 
-   if (dsymfile) VG_(free)(dsymfile);
+   if (dsymfile) ML_(dinfo_free)(dsymfile);
 
 
    /* Read nlist symbol tables and (if no DWARF) STABS debuginfo. 
