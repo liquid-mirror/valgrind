@@ -130,7 +130,7 @@ int main()
 	total = L_bytes + D_bytes + R_bytes + S_bytes;
 
         if (0) {
-		PRINT_LEAK_COUNTS;
+		PRINT_LEAK_COUNTS(stderr);
         }
 
 	if (R_bytes != 0)

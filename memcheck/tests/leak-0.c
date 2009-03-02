@@ -17,7 +17,7 @@ int main()
 
 	GET_FINAL_LEAK_COUNTS;
 
-	PRINT_LEAK_COUNTS;
+	PRINT_LEAK_COUNTS(stderr);
 
 	free(foo);
 	return 0;

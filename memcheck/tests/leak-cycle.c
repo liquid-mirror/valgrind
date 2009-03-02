@@ -70,7 +70,7 @@ int main()
 
 	GET_FINAL_LEAK_COUNTS;
 
-	PRINT_LEAK_COUNTS;
+	PRINT_LEAK_COUNTS(stderr);
 
 	return 0;
 }

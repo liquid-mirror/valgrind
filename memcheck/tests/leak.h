@@ -29,15 +29,15 @@
 
 // Print leak counts.  When used in conjunction with -q the normal counts
 // aren't shown, which is what we want.
-#define PRINT_LEAK_COUNTS \
+#define PRINT_LEAK_COUNTS(where) \
    do { \
-      fprintf(stderr,"leaked:     %3ld bytes in %2ld blocks\n", \
+      fprintf(where,"leaked:     %3ld bytes in %2ld blocks\n", \
                      L_bytes,L_blocks); \
-      fprintf(stderr,"dubious:    %3ld bytes in %2ld blocks\n", \
+      fprintf(where,"dubious:    %3ld bytes in %2ld blocks\n", \
                      D_bytes,D_blocks); \
-      fprintf(stderr,"reachable:  %3ld bytes in %2ld blocks\n", \
+      fprintf(where,"reachable:  %3ld bytes in %2ld blocks\n", \
                      R_bytes,R_blocks); \
-      fprintf(stderr,"suppressed: %3ld bytes in %2ld blocks\n", \
+      fprintf(where,"suppressed: %3ld bytes in %2ld blocks\n", \
                      S_bytes,S_blocks); \
    } while (0)
 
