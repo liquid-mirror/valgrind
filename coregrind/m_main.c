@@ -1203,9 +1203,9 @@ Int valgrind_main ( Int argc, HChar **argv, HChar **envp )
    // Start up Mach kernel interface, if any
    //   p: none
    //--------------------------------------------------------------
-#if defined(VG_HAVE_MACH)
+#  if defined(VGO_darwin)
    VG_(mach_init)();
-#endif
+#  endif
 
    //--------------------------------------------------------------
    // Start up the logging mechanism

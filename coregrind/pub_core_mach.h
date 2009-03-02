@@ -36,14 +36,7 @@
 // for operating systems like Darwin / Mac OS X that use it.
 //--------------------------------------------------------------------
 
-// Set which platforms have Mach kernel interfaces.
 #if defined(VGO_darwin)
-#  define VG_HAVE_MACH 1
-#else
-#  undef VG_HAVE_MACH
-#endif
-
-#if defined(VG_HAVE_MACH)
 // Call this early in Valgrind's main(). It depends on nothing.
 extern void VG_(mach_init)(void);
 #endif
