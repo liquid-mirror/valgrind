@@ -2035,7 +2035,7 @@ Int valgrind_main ( Int argc, HChar **argv, HChar **envp )
    //   p: scheduler, process_cmd_line_options()
    //--------------------------------------------------------------
 #if defined(VGO_darwin)
-   if (VG_(clo_db_listen)) {
+   if (VG_(clo_db_listen) && VG_(clo_verbosity) > 0) {
        VG_(debugLog)(1, "main", "Listening for debugger on port %d\n", 
                      VG_(clo_db_listen_port));
        VG_(debugstub_init)();

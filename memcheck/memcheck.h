@@ -231,7 +231,7 @@ typedef
       specified, which works no matter what type 'leaked', 'dubious', etc
       are.  We also initialise '_qzz_leaked', etc because
       VG_USERREQ__COUNT_LEAKS doesn't mark the values returned as
-      initialised. */                                                    \
+      defined. */                                                        \
    {unsigned long _qzz_res;                                              \
     unsigned long _qzz_leaked    = 0, _qzz_dubious    = 0;               \
     unsigned long _qzz_reachable = 0, _qzz_suppressed = 0;               \
@@ -253,7 +253,7 @@ typedef
       specified, which works no matter what type 'leaked', 'dubious', etc
       are.  We also initialise '_qzz_leaked', etc because
       VG_USERREQ__COUNT_LEAKS doesn't mark the values returned as
-      initialised. */                                                    \
+      defined. */                                                        \
    {unsigned long _qzz_res;                                              \
     unsigned long _qzz_leaked    = 0, _qzz_dubious    = 0;               \
     unsigned long _qzz_reachable = 0, _qzz_suppressed = 0;               \

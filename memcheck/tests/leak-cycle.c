@@ -38,7 +38,7 @@ int main()
 
 	struct n *volatile c1, *volatile c2;
 
-        GET_INIITAL_LEAK_COUNTS;
+        GET_INITIAL_LEAK_COUNTS;
 
 	/* two simple cycles */
 	c1 = mkcycle();
