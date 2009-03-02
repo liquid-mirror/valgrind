@@ -142,7 +142,5 @@ int main()
 		       bytes, total);
 	else
 		printf("PASS\n");
-
-        printf("stack addr: %p\n", &i);
 	return 0;
 }
