@@ -18,7 +18,7 @@ For counts of detected errors, rerun with: -v
 searching for pointers to 1 not-freed blocks.
 checked ... bytes.
 
-1,048,576 bytes in 1 blocks are definitely lost in loss record 1 of 1
+1,048,576 bytes in 1 blocks are definitely lost in loss record ... of ...
    at 0x........: malloc (vg_replace_malloc.c:...)
    by 0x........: main (pointer-trace.c:24)
 
