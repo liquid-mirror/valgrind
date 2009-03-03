@@ -3667,6 +3667,10 @@ void check_mem_is_defined ( CorePart part, ThreadId tid, Char* s,
                                       isAddrErr ? 0 : otag );
          break;
       
+      case Vg_CoreSysCallArgInMem:
+         MC_(record_regparam_error) ( tid, s, otag );
+         break;
+
       /* If we're being asked to jump to a silly address, record an error 
          message before potentially crashing the entire system. */
       case Vg_CoreTranslate:

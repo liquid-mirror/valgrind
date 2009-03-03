@@ -474,7 +474,7 @@ static inline UWord getERR ( SyscallStatus* st ) {
       Addr here = layout->s_arg##n + SYSCALL_SP;   \
       vg_assert(sizeof(t) <= sizeof(UWord));       \
       VG_(tdict).track_pre_mem_read(               \
-         Vg_CoreSysCall, tid, s"("#a")",           \
+         Vg_CoreSysCallArgInMem, tid, s"("#a")",   \
          here, sizeof(t)                           \
       );                                           \
    } while (0)
@@ -490,7 +490,7 @@ static inline UWord getERR ( SyscallStatus* st ) {
       Addr next = layout->o_arg##n + sizeof(UWord) + SYSCALL_SP;  \
       vg_assert(sizeof(t) <= sizeof(UWord));                      \
       VG_(tdict).track_pre_mem_read(                              \
-         Vg_CoreSysCall, tid, s"("#a")",                          \
+         Vg_CoreSysCallArgInMem, tid, s"("#a")",                  \
          next-sizeof(t), sizeof(t)                                \
       );                                                          \
    } while (0)

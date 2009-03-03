@@ -490,6 +490,9 @@ void getSyscallArgsFromGuestState ( /*OUT*/SyscallArgs*       canonical,
       // GrP fixme hack handle syscall()
       // GrP fixme what about __syscall() ?
       // stack[0] is return address
+      // DDD: the tool can't see that the params have been shifted!  Can
+      //      lead to incorrect checking, I think, because the PRRAn/PSARn
+      //      macros will mention the pre-shifted args.
       canonical->sysno = stack[1];
       vg_assert(canonical->sysno != 0);
       canonical->arg1  = stack[2];
@@ -558,6 +561,9 @@ void getSyscallArgsFromGuestState ( /*OUT*/SyscallArgs*       canonical,
       // GrP fixme hack handle syscall()
       // GrP fixme what about __syscall() ?
       // stack[0] is return address
+      // DDD: the tool can't see that the params have been shifted!  Can
+      //      lead to incorrect checking, I think, because the PRRAn/PSARn
+      //      macros will mention the pre-shifted args.
       canonical->sysno = VG_DARWIN_SYSCALL_CONSTRUCT_UNIX(gst->guest_RDI);
       vg_assert(canonical->sysno != __NR_syscall);
       canonical->arg1  = gst->guest_RSI;

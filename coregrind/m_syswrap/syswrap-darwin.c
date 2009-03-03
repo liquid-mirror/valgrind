@@ -1417,7 +1417,7 @@ PRE(sys_exit)
    ThreadState* tst;
 
    PRINT("darwin exit( %ld )", ARG1);
-   PRE_REG_READ1(void, "exit", int, exit_code);
+   PRE_REG_READ1(void, "exit", int, status);
 
    tst = VG_(get_ThreadState)(tid);
 
@@ -6406,7 +6406,7 @@ const SyscallTableEntry ML_(syscall_table)[] = {
    _____(VG_DARWIN_SYSCALL_CONSTRUCT_UNIX(63)),    // used internally, reserved
    _____(VG_DARWIN_SYSCALL_CONSTRUCT_UNIX(64)),    // old getpagesize
    GENX_(__NR_msync, sys_msync), 
-// _____(__NR_vfork), 
+   GENX_(__NR_vfork, sys_fork),              // (We treat vfork as fork.)
    _____(VG_DARWIN_SYSCALL_CONSTRUCT_UNIX(67)),    // old vread
    _____(VG_DARWIN_SYSCALL_CONSTRUCT_UNIX(68)),    // old vwrite
    _____(VG_DARWIN_SYSCALL_CONSTRUCT_UNIX(69)),    // old sbrk
