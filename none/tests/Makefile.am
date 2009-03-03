@@ -127,14 +127,14 @@ EXTRA_DIST = $(noinst_SCRIPTS) \
 
 check_PROGRAMS = \
 	ansi args \
-	bitfield1 blockfault \
+	bitfield1 \
 	bug129866 \
 	closeall coolo_strlen \
 	discard exec-sigmask execve faultstatus fcntl_setown \
 	fdleak_cmsg fdleak_creat fdleak_dup fdleak_dup2 \
 	fdleak_fcntl fdleak_open fdleak_pipe \
 	fdleak_socketpair \
-	floored fork fucomip manythreads \
+	floored fork fucomip \
 	munmap_exe map_unaligned map_unmap mq \
 	nestedfns \
 	pth_atfork1 pth_blockedsig pth_cancel1 pth_cancel2 pth_cvsimple \
@@ -159,6 +159,22 @@ if ! VGCONF_OS_IS_DARWIN
 	async-sigs \
 	fdleak_ipv4 \
 	pending
+endif
+# DDD:
+# - blockfault hangs
+# - manythreads has lots of this:
+# --61831:0:aspacem  sync_check_mapping_callback: segment mismatch:
+#                    kernel's seg:
+# --61831:0:aspacem  start=0x102538000 end=0x1025b7fff prot=3 dev=0 ino=0 
+#                    offset=0 name="(none)"
+# --61831:0:aspacem  sync_check_mapping_callback: segment mismatch: V's seg:
+# --61831:0:aspacem  NSegment{    , start=0x10067a000, end=0x109a1efff,
+#                    smode=SmFixed, dev=0, ino=0, offset=0, fnIdx=-1, hasR=0,
+#                    hasW=0, hasX=0, hasT=0, mark=0, name="(none)"}
+if ! VGCONF_PLATFORMS_INCLUDE_AMD64_DARWIN
+   check_PROGRAMS += \
+	blockfault \
+	manythreads
 endif
 
 

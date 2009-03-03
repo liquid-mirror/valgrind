@@ -6,8 +6,10 @@
 
 #include <stdlib.h>
 #include <stdio.h>
-#include <malloc.h>  /* for memalign */
 #include <assert.h>
+#if !defined(__APPLE__)
+#include <malloc.h>
+#endif
 
 typedef  unsigned char  UChar;
 
@@ -168,10 +170,17 @@ int main ( void )
 {
    XMMRegs* regs;
    Mem*     mem;
-   regs = memalign(16, sizeof(XMMRegs)); assert(regs);
-   mem  = memalign(16, sizeof(Mem)); assert(mem);
+   // Darwin lacks memalign, but malloc is always 16-aligned anyway.
+   #if defined(__APPLE__)
+   regs = malloc(sizeof(XMMRegs) + 16); assert(regs);
+   mem  = malloc(sizeof(Mem) + 16); assert(mem);
+   #else
+   regs = memalign(16, sizeof(XMMRegs) + 16); assert(regs);
+   mem  = memalign(16, sizeof(Mem) + 16); assert(mem);
+   #endif
 
-   /* Both have to be 16-aligned so we can do movapd et al */
+   /* Both have to be 16-aligned so we can do movapd et al. 16-byte
+    * alignment is standard on AMD64. */
    assert( 0 == (0xFL & (unsigned long int)regs) );
    assert( 0 == (0xFL & (unsigned long int)mem) );
 

@@ -29,6 +29,10 @@
 #include <stdlib.h>
 #include <sys/mman.h>
 
+#if !defined(MAP_ANONYMOUS)
+#define MAP_ANONYMOUS 0
+#endif
+
 int main(int argc, char **argv)
 {
    void *p;

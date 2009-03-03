@@ -67,6 +67,9 @@ check_PROGRAMS = \
 	getseg \
 	movx int pushpopseg \
 	smc1 yield
+if BUILD_SSSE3_TESTS
+   check_PROGRAMS += ssse3_misaligned
+endif
 
 # DDD: not sure if these ones should work on Darwin or not... if not, should
 # be moved into x86-linux/.
@@ -88,9 +91,6 @@ if ! VGCONF_OS_IS_DARWIN
 	sbbmisc \
 	seg_override \
 	sigcontext
-if BUILD_SSSE3_TESTS
-   check_PROGRAMS += ssse3_misaligned
-endif
 endif
 
 AM_CFLAGS   += @FLAG_M32@ $(FLAG_MMMX) $(FLAG_MSSE)
