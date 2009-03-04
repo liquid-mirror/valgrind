@@ -65,6 +65,7 @@ check_PROGRAMS = \
 	cse_fail \
 	fpu_lazy_eflags \
 	getseg \
+	$(INSN_TESTS) \
 	movx int pushpopseg \
 	smc1 yield
 if BUILD_SSSE3_TESTS
@@ -84,7 +85,6 @@ if ! VGCONF_OS_IS_DARWIN
 	fcmovnu \
 	fxtract \
 	incdec_alt \
-	$(INSN_TESTS) \
 	jcxz \
 	lahf \
 	looper \

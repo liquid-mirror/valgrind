@@ -48,34 +48,36 @@ our %SubTypeSuffixes = (
                         );
 
 our %RegNums = (
+                # We avoid using %ebx and %bx because %ebx is the PIC
+                # register on Darwin and so cannot be clobbered.
                 al => 0, ax => 0, eax => 0,
-                bl => 1, bx => 1, ebx => 1,
-                cl => 2, cx => 2, ecx => 2,
-                dl => 3, dx => 3, edx => 3,
+                cl => 1, cx => 1, ecx => 1,
+                dl => 2, dx => 2, edx => 2,
+                bl => 3, si => 3, esi => 3,
                 ah => 4,
-                bh => 5,
-                ch => 6,
-                dh => 7,
+                ch => 5,
+                dh => 6,
+                bh => 7,
                 st0 => 0, st1 => 1, st2 => 2, st3 => 3,
                 st4 => 4, st5 => 5, st6 => 6, st7 => 7
                 );
 
 our %RegTypes = (
                  al => "r8", ah => "r8", ax => "r16", eax => "r32",
-                 bl => "r8", bh => "r8", bx => "r16", ebx => "r32",
                  cl => "r8", ch => "r8", cx => "r16", ecx => "r32",
-                 dl => "r8", dh => "r8", dx => "r16", edx => "r32"
+                 dl => "r8", dh => "r8", dx => "r16", edx => "r32",
+                 bl => "r8", bh => "r8", si => "r16", esi => "r32"
                  );
 
 our @IntRegs = (
                 { r8 => "al", r16 => "ax", r32 => "eax" },
-                { r8 => "bl", r16 => "bx", r32 => "ebx" },
                 { r8 => "cl", r16 => "cx", r32 => "ecx" },
                 { r8 => "dl", r16 => "dx", r32 => "edx" },
+                { r8 => "bl", r16 => "si", r32 => "esi" },
                 { r8 => "ah" },
-                { r8 => "bh" },
                 { r8 => "ch" },
-                { r8 => "dh" }
+                { r8 => "dh" },
+                { r8 => "bh" }
                 );
 
 print <<EOF;
@@ -328,7 +330,7 @@ while (<>)
     {
         my $name = "arg$argc";
 
-        if ($arg =~ /^([abcd]l|[abcd]x|e[abcd]x|r8|r16|r32|mm|xmm|m8|m16|m32|m64|m128)\.(sb|ub|sw|uw|sd|ud|sq|uq|ps|pd)\[([^\]]+)\]$/)
+        if ($arg =~ /^([abcd]l|[abcd]x|e[abcd]x|si|esi|r8|r16|r32|mm|xmm|m8|m16|m32|m64|m128)\.(sb|ub|sw|uw|sd|ud|sq|uq|ps|pd)\[([^\]]+)\]$/)
         {
             my $type = $RegTypes{$1} || $1;
             my $regnum = $RegNums{$1};
