@@ -24,7 +24,7 @@ fi
 # as the one holding this script.
 dir=`dirname $0`
 
-if $dir/arch_test $1 && sh $dir/os_test $2 ; then
+if $dir/arch_test $1 && $dir/os_test $2 ; then
     exit 0;         # Matches this platform.
 fi
 
