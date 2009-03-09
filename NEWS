@@ -1,4 +1,39 @@
 
+Release 3.5.0 (???)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+* A new Memcheck client request VALGRIND_COUNT_LEAK_BLOCKS has been added.
+  It is similar to VALGRIND_COUNT_LEAKS but counts blocks instead of bytes.
+  [XXX: consider adding VALGRIND_COUNT_LEAK_BYTES as a synonym and
+  deprecating VALGRIND_COUNT_LEAKS, which wasn't a good name to begin with]
+
+* Memcheck's leak checker has been improved.  
+  - The results for --leak-check=summary now match the summary results for
+    --leak-check=full.  Previously they could differ because
+    --leak-check=summary counted "indirectly lost" blocks and "suppressed"
+    blocks as "definitely lost".
+  - Blocks that are only reachable via at least one interior-pointer, but
+    are directly pointed to by a start-pointer, were previously marked as
+    "still reachable".  They are now correctly marked as "possibly lost".
+
+* The location of some install files has changed.  This should not affect
+  most users.  Those who might be affected:
+
+  - For people who use Valgrind with MPI programs, the installed
+    libmpiwrap.so library has moved from $(INSTALL)/<platform>/libmpiwrap.so
+    to $(INSTALL)/libmpiwrap-<platform>.so.
+
+  - For people who distribute standalone Valgrind tools, the installed
+    libraries such as $(INSTALL)/<platform>/libcoregrind.a have moved to
+    $(INSTALL)/libcoregrind-<platform>.a.
+
+  These changes were made to simplify the build system.
+
+* Previously, all the distributed suppression (*.supp) files were installed.
+  Now, only default.supp is installed.  This should not affect users as the
+  other installed suppression files were not read.
+
+
+
 Release 3.4.0 (2 January 2009)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 3.4.0 is a feature release with many significant improvements and the
