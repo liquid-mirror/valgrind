@@ -20,14 +20,16 @@ and supply the following two config files:
     is empty.
   ABT_CONFIGURE_OPTIONS: gives extra configure options.  The default is empty.
   ABT_RUN_REGTEST: if provided, it must be the name of an argumentless shell
-    function (also specified in the tag.conf file) it's an argumentless bash
-    function that will be used to run the tests.  If not specified, the usual
-    "perl tests/vg_regtest --all" will be used.
+    function (also specified in the tag.conf file) that will be used to run
+    the tests.  If not specified, the usual "perl tests/vg_regtest --all"
+    will be used.
   ABT_JOBS: allows parallel builds -- it's passed as the argument to "make
     -j" when building Valgrind and the tests.  The default is 1.
+    [XXX: the .NOTPARALLEL that currently resides in Makefile.all.am foils
+     this!]
 
 - conf/<tag>.sendmail:  this should be a script that sends an email to the
-  desired recipient (eg. the valgrind-developers list).  It must take two
+  desired recipient (eg. the valgrind-developers list).  It takes three
   command line arguments.  The first is the email subject line, the second
   is the name of the file containing the email's body (showing the tests
   that failed, and the difference between now and 24 hours ago), the third
