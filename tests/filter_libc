@@ -25,6 +25,10 @@ while (<>)
 
     s/($libc_symbols) \(.+\.[cS]:\d+\)$/$1 (in \/...libc...)/;
 
+    # Tidy up in cases where glibc (+ libdl + libpthread + ld) have
+    # been built with debugging information, hence source locs are present.
+    s/\((exit|_exit|brk|sbrk).c:[0-9]*\)/(in \/...libc...)/;
+
     print;
 }
 
