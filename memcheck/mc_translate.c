@@ -430,65 +430,6 @@ static IRAtom* mkUifU ( MCEnv* mce, IRType vty, IRAtom* a1, IRAtom* a2 ) {
    }
 }
 
-/* GrP like mkUifU, but returns D if either operand is zero
-   For example, Iop_Mul(x, 0) is defined no matter what x is. */
-static IRAtom* mkUifNEZU32 ( MCEnv* mce, IRAtom* a1, IRAtom* a2, IRAtom* val1, IRAtom *val2 ) {
-   IRAtom *mask;
-   IRAtom *mask1;
-   IRAtom *mask2;
-   IRAtom *shadow;
-   tl_assert(isShadowAtom(mce,a1));
-   tl_assert(isShadowAtom(mce,a2));
-   tl_assert(isOriginalAtom(mce,val1));
-   tl_assert(isOriginalAtom(mce,val2));
-
-   // mask: all-0 if value is defined and zero, nonzero otherwise
-   mask1 = assignNew('V', mce, Ity_I32, binop(Iop_Or32, a1, val1));
-   mask2 = assignNew('V', mce, Ity_I32, binop(Iop_Or32, a2, val2));
-
-   // mask: all-0 if value is both defined and zero, all-1 otherwise
-   mask1 = assignNew('V', mce, Ity_I32, unop(Iop_CmpwNEZ32, mask1));
-   mask2 = assignNew('V', mce, Ity_I32, unop(Iop_CmpwNEZ32, mask2));
-
-   // mask: all-0 if either value is both defined and zero, all-1 otherwise
-   mask = assignNew('V', mce, Ity_I32, binop(Iop_And32, mask1, mask2));
-   
-   // shadow: same as normal UifU value
-   shadow = assignNew('V', mce, Ity_I32, binop(Iop_Or32, a1, a2));
-
-   // shadow&mask: all-0 if either value is defined and zero, else same as UifU
-   return assignNew('V', mce, Ity_I32, binop(Iop_And32, mask, shadow));
-}
-
-static IRAtom* mkUifNEZU64 ( MCEnv* mce, IRAtom* a1, IRAtom* a2, IRAtom* val1, IRAtom *val2 ) {
-   IRAtom *mask;
-   IRAtom *mask1;
-   IRAtom *mask2;
-   IRAtom *shadow;
-   tl_assert(isShadowAtom(mce,a1));
-   tl_assert(isShadowAtom(mce,a2));
-   tl_assert(isOriginalAtom(mce,val1));
-   tl_assert(isOriginalAtom(mce,val2));
-
-   // mask: all-0 if value is defined and zero, nonzero otherwise
-   mask1 = assignNew('V', mce, Ity_I64, binop(Iop_Or64, a1, val1));
-   mask2 = assignNew('V', mce, Ity_I64, binop(Iop_Or64, a2, val2));
-
-   // mask: all-0 if value is both defined and zero, all-1 otherwise
-   mask1 = assignNew('V', mce, Ity_I64, unop(Iop_CmpwNEZ64, mask1));
-   mask2 = assignNew('V', mce, Ity_I64, unop(Iop_CmpwNEZ64, mask2));
-
-   // mask: all-0 if either value is both defined and zero, all-1 otherwise
-   mask = assignNew('V', mce, Ity_I64, binop(Iop_And64, mask1, mask2));
-   
-   // shadow: same as normal UifU shadow
-   shadow = assignNew('V', mce, Ity_I64, binop(Iop_Or64, a1, a2));
-
-   // shadow&mask: all-0 if either value is defined and zero, else same as UifU
-   return assignNew('V', mce, Ity_I64, binop(Iop_And64, mask, shadow));
-}
-
-
 /* --------- The Left-family of operations. --------- */
 
 static IRAtom* mkLeft8 ( MCEnv* mce, IRAtom* a1 ) {
@@ -2456,10 +2397,8 @@ IRAtom* expr2vbits_Binop ( MCEnv* mce,
             goto cheap_AddSub32;
 
       cheap_AddSub32:
-         return mkLeft32(mce, mkUifU32(mce, vatom1,vatom2));
-
       case Iop_Mul32:
-         return mkLeft32(mce, mkUifNEZU32(mce, vatom1,vatom2, atom1,atom2));
+         return mkLeft32(mce, mkUifU32(mce, vatom1,vatom2));
 
       case Iop_CmpORD32S:
       case Iop_CmpORD32U:
@@ -2481,10 +2420,8 @@ IRAtom* expr2vbits_Binop ( MCEnv* mce,
             goto cheap_AddSub64;
 
       cheap_AddSub64:
-         return mkLeft64(mce, mkUifU64(mce, vatom1,vatom2));
-
       case Iop_Mul64:
-         return mkLeft64(mce, mkUifNEZU64(mce, vatom1,vatom2, atom1,atom2));
+         return mkLeft64(mce, mkUifU64(mce, vatom1,vatom2));
 
       case Iop_Mul16:
       case Iop_Add16:
