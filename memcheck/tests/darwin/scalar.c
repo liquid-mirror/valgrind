@@ -48,6 +48,441 @@ int main(void)
    SY(__NR_write, x0, x0, x0+1); FAIL;
    //res = write(x0, x0, x0+1); FAIL;
 
+   // __NR_open 5
+   // __NR_close 6
+   // __NR_wait4 7
+   // /* 8  old creat */
+   // __NR_link 9
+   // __NR_unlink 10
+   // /* 11  old execv */
+   // __NR_chdir 12
+   // __NR_fchdir 13
+   // __NR_mknod 14
+   // __NR_chmod 15
+   // __NR_chown 16
+   // /* 17  old break */
+   // __NR_getfsstat 18
+   // /* 19  old lseek */
+   // __NR_getpid 20
+   // /* 21  old mount */
+   // /* 22  old umount */
+   // __NR_setuid 23
+   // __NR_getuid 24
+   // __NR_geteuid 25
+   // __NR_ptrace 26
+   // __NR_recvmsg 27
+   // __NR_sendmsg 28
+   // __NR_recvfrom 29
+   // __NR_accept 30
+   // __NR_getpeername 31
+   // __NR_getsockname 32
+   // __NR_access 33
+   // __NR_chflags 34
+   // __NR_fchflags 35
+   // __NR_sync 36
+   // __NR_kill 37
+   // /* 38  old stat */
+   // __NR_getppid 39
+   // /* 40  old lstat */
+   // __NR_dup 41
+   // __NR_pipe           VG_DARWIN_SYSCALL_CONSTRUCT_UX64(42
+   // __NR_getegid 43
+   // __NR_profil 44
+   // /* 45  old ktrace */
+   // __NR_sigaction 46
+   // __NR_getgid 47
+   // __NR_sigprocmask 48
+   // __NR_getlogin 49
+   // __NR_setlogin 50
+   // __NR_acct 51
+   // __NR_sigpending 52
+   // __NR_sigaltstack 53
+   // __NR_ioctl 54
+   // __NR_reboot 55
+   // __NR_revoke 56
+   // __NR_symlink 57
+   // __NR_readlink 58
+   // __NR_execve 59
+   // __NR_umask 60
+   // __NR_chroot 61
+   // /* 62  old fstat */
+   // /* 63  used internally , reserved */
+   // /* 64  old getpagesize */
+   // __NR_msync 65
+   // __NR_vfork 66
+   // /* 67  old vread */
+   // /* 68  old vwrite */
+   // /* 69  old sbrk */
+   // /* 70  old sstk */
+   // /* 71  old mmap */
+   // /* 72  old vadvise */
+   // __NR_munmap 73
+   // __NR_mprotect 74
+   // __NR_madvise 75
+   // /* 76  old vhangup */
+   // /* 77  old vlimit */
+   // __NR_mincore 78
+   // __NR_getgroups 79
+   // __NR_setgroups 80
+   // __NR_getpgrp 81
+   // __NR_setpgid 82
+   // __NR_setitimer 83
+   // /* 84  old wait */
+   // __NR_swapon 85
+   // __NR_getitimer 86
+   // /* 87  old gethostname */
+   // /* 88  old sethostname */
+   // __NR_getdtablesize 89
+   // __NR_dup2 90
+   // /* 91  old getdopt */
+   // __NR_fcntl 92
+   // __NR_select 93
+   // /* 94  old setdopt */
+   // __NR_fsync 95
+   // __NR_setpriority 96
+   // __NR_socket 97
+   // __NR_connect 98
+   // /* 99  old accept */
+   // __NR_getpriority 100
+   // /* 101  old send */
+   // /* 102  old recv */
+   // /* 103  old sigreturn */
+   // __NR_bind 104
+
+   // __NR_setsockopt 105
+   GO(__NR_setsockopt, "5s 1m");
+   SY(__NR_setsockopt, x0, x0, x0, x0+1, x0+1); FAIL;
+
+   // __NR_listen 106
+   // /* 107  old vtimes */
+   // /* 108  old sigvec */
+   // /* 109  old sigblock */
+   // /* 110  old sigsetmask */
+   // __NR_sigsuspend 111
+   // /* 112  old sigstack */
+   // /* 113  old recvmsg */
+   // /* 114  old sendmsg */
+   // /* 115  old vtrace */
+   // __NR_gettimeofday 116
+   // __NR_getrusage 117
+
+   // __NR_getsockopt 118
+   // Nb: there's no "getsockopt(optlen) points to unaddressable byte(s)";
+   // difficult to get with arg4 being checked with buf_and_len_pre_check.
+   GO(__NR_getsockopt, "5s 1m");
+   SY(__NR_getsockopt, x0, x0, x0, x0+1, x0+&px[1]); FAIL;
+
+   // /* 119  old resuba */
+   // __NR_readv 120
+   // __NR_writev 121
+   // __NR_settimeofday 122
+   // __NR_fchown 123
+   // __NR_fchmod 124
+   // /* 125  old recvfrom */
+   // __NR_setreuid 126
+   // __NR_setregid 127
+   // __NR_rename 128
+   // /* 129  old truncate */
+   // /* 130  old ftruncate */
+   // __NR_flock 131
+   // __NR_mkfifo 132
+   // __NR_sendto 133
+   // __NR_shutdown 134
+   // __NR_socketpair 135
+   // __NR_mkdir 136
+   // __NR_rmdir 137
+   // __NR_utimes 138
+   // __NR_futimes 139
+   // __NR_adjtime 140
+   // /* 141  old getpeername */
+   // __NR_gethostuuid 142
+   // /* 143  old sethostid */
+   // /* 144  old getrlimit */
+   // /* 145  old setrlimit */
+   // /* 146  old killpg */
+   // __NR_setsid 147
+   // /* 148  old setquota */
+   // /* 149  old qquota */
+   // /* 150  old getsockname */
+   // __NR_getpgid 151
+   // __NR_setprivexec 152
+   // __NR_pread 153
+   // __NR_pwrite 154
+   // __NR_nfssvc 155
+   // /* 156  old getdirentries */
+   // __NR_statfs 157
+   // __NR_fstatfs 158
+   // __NR_unmount 159
+   // /* 160  old async_daemon */
+   // __NR_getfh 161
+   // /* 162  old getdomainname */
+   // /* 163  old setdomainname */
+   // /* 164 */
+   // __NR_quotactl 165
+   // /* 166  old exportfs */
+   // __NR_mount 167
+   // /* 168  old ustat */
+   // __NR_csops 169
+   // /* 170  old table */
+   // /* 171  old wait3 */
+   // /* 172  old rpause */
+   // __NR_waitid 173
+   // /* 174  old getdents */
+   // /* 175  old gc_control */
+   // __NR_add_profil 176
+   // /* 177 */
+   // /* 178 */
+   // /* 179 */
+   // __NR_kdebug_trace 180
+   // __NR_setgid 181
+   // __NR_setegid 182
+   // __NR_seteuid 183
+   // __NR_sigreturn 184
+   // __NR_chud 185
+   // /* 186 */
+   // /* 187 */
+   // __NR_stat 188
+   // __NR_fstat 189
+   // __NR_lstat 190
+   // __NR_pathconf 191
+   // __NR_fpathconf 192
+   // /* 193 */
+   // __NR_getrlimit 194
+   // __NR_setrlimit 195
+   // __NR_getdirentries 196
+   // __NR_mmap 197
+   // /* 198  __syscall */
+   // __NR_lseek          VG_DARWIN_SYSCALL_CONSTRUCT_UX64(199
+   // __NR_truncate 200
+   // __NR_ftruncate 201
+   // __NR___sysctl 202
+   // __NR_mlock 203
+   // __NR_munlock 204
+   // __NR_undelete 205
+   // __NR_ATsocket 206
+   // __NR_ATgetmsg 207
+   // __NR_ATputmsg 208
+   // __NR_ATPsndreq 209
+   // __NR_ATPsndrsp 210
+   // __NR_ATPgetreq 211
+   // __NR_ATPgetrsp 212
+   // /* 213  Reserved for AppleTalk */
+   // __NR_kqueue_from_portset_np 214
+   // __NR_kqueue_portset_np 215
+   // __NR_mkcomplex 216
+   // __NR_statv 217
+   // __NR_lstatv 218
+   // __NR_fstatv 219
+   // __NR_getattrlist 220
+   // __NR_setattrlist 221
+   // __NR_getdirentriesattr 222
+   // __NR_exchangedata 223
+   // /* 224  checkuseraccess */
+   // __NR_searchfs 225
+   // __NR_delete 226
+   // __NR_copyfile 227
+   // /* 228 */
+   // /* 229 */
+   // __NR_poll 230
+   // __NR_watchevent 231
+   // __NR_waitevent 232
+   // __NR_modwatch 233
+   // __NR_getxattr 234
+   // __NR_fgetxattr 235
+   // __NR_setxattr 236
+   // __NR_fsetxattr 237
+   // __NR_removexattr 238
+   // __NR_fremovexattr 239
+   // __NR_listxattr 240
+   // __NR_flistxattr 241
+   // __NR_fsctl 242
+   // __NR_initgroups 243
+   // __NR_posix_spawn 244
+   // /* 245 */
+   // /* 246 */
+   // __NR_nfsclnt 247
+   // __NR_fhopen 248
+   // /* 249 */
+   // __NR_minherit 250
+   // __NR_semsys 251
+   // __NR_msgsys 252
+   // __NR_shmsys 253
+   // __NR_semctl 254
+   // __NR_semget 255
+   // __NR_semop 256
+   // /* 257 */
+   // __NR_msgctl 258
+   // __NR_msgget 259
+   // __NR_msgsnd 260
+   // __NR_msgrcv 261
+   // __NR_shmat 262
+   // __NR_shmctl 263
+   // __NR_shmdt 264
+   // __NR_shmget 265
+   // __NR_shm_open 266
+   // __NR_shm_unlink 267
+   // __NR_sem_open 268
+   // __NR_sem_close 269
+   // __NR_sem_unlink 270
+   // __NR_sem_wait 271
+   // __NR_sem_trywait 272
+   // __NR_sem_post 273
+   // __NR_sem_getvalue 274
+   // __NR_sem_init 275
+   // __NR_sem_destroy 276
+   // __NR_open_extended 277
+   // __NR_umask_extended 278
+   // __NR_stat_extended 279
+   // __NR_lstat_extended 280
+   // __NR_fstat_extended 281
+   // __NR_chmod_extended 282
+   // __NR_fchmod_extended 283
+   // __NR_access_extended 284
+   // __NR_settid 285
+   // __NR_gettid 286
+   // __NR_setsgroups 287
+   // __NR_getsgroups 288
+   // __NR_setwgroups 289
+   // __NR_getwgroups 290
+   // __NR_mkfifo_extended 291
+   // __NR_mkdir_extended 292
+   // __NR_identitysvc 293
+   // __NR_shared_region_check_np 294
+   // __NR_shared_region_map_np 295
+   // /* 296  old load_shared_file */
+   // /* 297  old reset_shared_file */
+   // /* 298  old new_system_shared_regions */
+   // /* 299  old shared_region_map_file_np */
+   // /* 300  old shared_region_make_private_np */
+   // __NR___pthread_mutex_destroy 301
+   // __NR___pthread_mutex_init 302
+   // __NR___pthread_mutex_lock 303
+   // __NR___pthread_mutex_trylock 304
+   // __NR___pthread_mutex_unlock 305
+   // __NR___pthread_cond_init 306
+   // __NR___pthread_cond_destroy 307
+   // __NR___pthread_cond_broadcast 308
+   // __NR___pthread_cond_signal 309
+   // __NR_getsid 310
+   // __NR_settid_with_pid 311
+   // __NR___pthread_cond_timedwait 312
+   // __NR_aio_fsync 313
+   // __NR_aio_return 314
+   // __NR_aio_suspend 315
+   // __NR_aio_cancel 316
+   // __NR_aio_error 317
+   // __NR_aio_read 318
+   // __NR_aio_write 319
+   // __NR_lio_listio 320
+   // __NR___pthread_cond_wait 321
+   // __NR_iopolicysys 322
+   // /* 323 */
+   // __NR_mlockall 324
+   // __NR_munlockall 325
+   // /* 326 */
+   // __NR_issetugid 327
+   // __NR___pthread_kill 328
+   // __NR___pthread_sigmask 329
+   // __NR___sigwait 330
+   // __NR_sigwait 330) // GrP fixme hack
+   // __NR___disable_threadsignal 331
+   // __NR___pthread_markcancel 332
+   // __NR___pthread_canceled 333
+   // __NR___semwait_signal 334
+   // /* 335  old utrace */
+   // __NR_proc_info 336
+   // __NR_sendfile 337
+   // __NR_stat64 338
+   // __NR_fstat64 339
+   // __NR_lstat64 340
+   // __NR_stat64_extended 341
+   // __NR_lstat64_extended 342
+   // __NR_fstat64_extended 343
+   // __NR_getdirentries64 344
+   // __NR_statfs64 345
+   // __NR_fstatfs64 346
+   // __NR_getfsstat64 347
+   // __NR___pthread_chdir 348
+   // __NR___pthread_fchdir 349
+   // __NR_audit 350
+   // __NR_auditon 351
+   // /* 352 */
+   // __NR_getauid 353
+   // __NR_setauid 354
+   // __NR_getaudit 355
+   // __NR_setaudit 356
+   // __NR_getaudit_addr 357
+   // __NR_setaudit_addr 358
+   // __NR_auditctl 359
+   // __NR_bsdthread_create 360
+   // __NR_bsdthread_terminate 361
+   // __NR_kqueue 362
+   // __NR_kevent 363
+   // __NR_lchown 364
+   // __NR_stack_snapshot 365
+   // __NR_bsdthread_register 366
+   // __NR_workq_open 367
+   // __NR_workq_ops 368
+   // /* 369 */
+   // /* 370 */
+   // /* 371 */
+   // /* 372 */
+   // /* 373 */
+   // /* 374 */
+   // /* 375 */
+   // /* 376 */
+   // /* 377 */
+   // /* 378 */
+   // /* 379 */
+   // __NR___mac_execve 380
+   // __NR___mac_syscall 381
+   // __NR___mac_get_file 382
+   // __NR___mac_set_file 383
+   // __NR___mac_get_link 384
+   // __NR___mac_set_link 385
+   // __NR___mac_get_proc 386
+   // __NR___mac_set_proc 387
+   // __NR___mac_get_fd 388
+   // __NR___mac_set_fd 389
+   // __NR___mac_get_pid 390
+   // __NR___mac_get_lcid 391
+   // __NR___mac_get_lctx 392
+   // __NR___mac_set_lctx 393
+   // __NR_setlcid 394
+   // __NR_getlcid 395
+   // __NR_read_nocancel 396
+   // __NR_write_nocancel 397
+   // __NR_open_nocancel 398
+   // __NR_close_nocancel 399
+   // __NR_wait4_nocancel 400
+   // __NR_recvmsg_nocancel 401
+   // __NR_sendmsg_nocancel 402
+   // __NR_recvfrom_nocancel 403
+   // __NR_accept_nocancel 404
+   // __NR_msync_nocancel 405
+   // __NR_fcntl_nocancel 406
+   // __NR_select_nocancel 407
+   // __NR_fsync_nocancel 408
+   // __NR_connect_nocancel 409
+   // __NR_sigsuspend_nocancel 410
+   // __NR_readv_nocancel 411
+   // __NR_writev_nocancel 412
+   // __NR_sendto_nocancel 413
+   // __NR_pread_nocancel 414
+   // __NR_pwrite_nocancel 415
+   // __NR_waitid_nocancel 416
+   // __NR_poll_nocancel 417
+   // __NR_msgsnd_nocancel 418
+   // __NR_msgrcv_nocancel 419
+   // __NR_sem_wait_nocancel 420
+   // __NR_aio_suspend_nocancel 421
+   // __NR___sigwait_nocancel 422
+   // __NR___semwait_signal_nocancel 423
+   // __NR___mac_mount 424
+   // __NR___mac_get_mount 425
+   // __NR___mac_getfsstat 426
+   // __NR_MAXSYSCALL 427
+
 #if 0
    // XXX: all these are copied from x86-darwin/scalar.c.
 
@@ -547,7 +982,7 @@ int main(void)
 
    // __NR_clone 120
 #ifndef CLONE_PARENT_SETTID
-#define CLONE_PARENT_SETTID	0x00100000
+#define CLONE_PARENT_SETTID   0x00100000
 #endif
    // XXX: should really be "4s 2m"?  Not sure... (see PRE(sys_clone))
    GO(__NR_clone, "4s 0m");

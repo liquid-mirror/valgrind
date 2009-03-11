@@ -39,6 +39,52 @@ Syscall param write(buf) points to unaddressable byte(s)
    ...
  Address 0x........ is not stack'd, malloc'd or (recently) free'd
 -----------------------------------------------------
+105:     __NR_setsockopt 5s 1m
+-----------------------------------------------------
+
+Syscall param setsockopt(s) contains uninitialised byte(s)
+   ...
+
+Syscall param setsockopt(level) contains uninitialised byte(s)
+   ...
+
+Syscall param setsockopt(optname) contains uninitialised byte(s)
+   ...
+
+Syscall param setsockopt(optval) contains uninitialised byte(s)
+   ...
+
+Syscall param setsockopt(optlen) contains uninitialised byte(s)
+   ...
+
+Syscall param socketcall.setsockopt(optval) points to unaddressable byte(s)
+   ...
+ Address 0x........ is not stack'd, malloc'd or (recently) free'd
+-----------------------------------------------------
+118:     __NR_getsockopt 5s 1m
+-----------------------------------------------------
+
+Syscall param getsockopt(s) contains uninitialised byte(s)
+   ...
+
+Syscall param getsockopt(level) contains uninitialised byte(s)
+   ...
+
+Syscall param getsockopt(optname) contains uninitialised byte(s)
+   ...
+
+Syscall param getsockopt(optval) contains uninitialised byte(s)
+   ...
+
+Syscall param getsockopt(optlen) contains uninitialised byte(s)
+   ...
+
+Syscall param socketcall.getsockopt(optlen) points to unaddressable byte(s)
+   ...
+ Address 0x........ is 0 bytes after a block of size 4 alloc'd
+   at 0x........: malloc (vg_replace_malloc.c:...)
+   by 0x........: main (scalar.c:24)
+-----------------------------------------------------
 9999:                9999 1e
 -----------------------------------------------------
 WARNING: unhandled syscall: 1660954383
