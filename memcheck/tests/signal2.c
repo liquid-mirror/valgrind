@@ -34,7 +34,7 @@ char* get_bad_place ( void )
    assert(pagesz == 4096 || pagesz == 65536);
    void* ptr = mmap(0, pagesz, PROT_READ, MAP_ANON|MAP_PRIVATE, -1, 0);
    assert(ptr != (void*)-1);
-   int r = munmap(ptr, 4096);
+   int r = munmap(ptr, pagesz);
    assert(r == 0);
    return ptr;
 }
