@@ -4174,6 +4174,13 @@ ExeContext*  for_libhb__get_EC ( Thr* hbt )
 static void hg_pre_clo_init ( void )
 {
    Thr* hbthr_root;
+
+#if defined(VGO_darwin)
+   // This makes the (all-failing) regtests run much faster.
+   VG_(printf)("Helgrind doesn't work on Darwin yet, sorry.\n");
+   VG_(exit)(1);
+#endif
+
    VG_(details_name)            ("Helgrind");
    VG_(details_version)         (NULL);
    VG_(details_description)     ("a thread error detector");
