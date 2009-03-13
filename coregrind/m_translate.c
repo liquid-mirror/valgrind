@@ -1360,25 +1360,6 @@ Bool VG_(translate) ( ThreadId tid,
                                    " - throwing SEGV", addr);
       /* U R busted, sonny.  Place your hands on your head and step
          away from the orig_addr. */
-#if defined(VGO_darwin)
-      // DDD: #warning GrP fixme synth signals
-      {
-          VG_(message)(Vg_UserMsg, "ERROR\n");
-          VG_(message)(Vg_UserMsg, "Thread %d jumped to bad address %#llx", 
-                       tid, addr);
-          VG_(get_and_pp_StackTrace) ( tid, 30 );
-
-          // copied from m_errormgr.c
-          if (VG_(is_action_requested)( "Attach to debugger", & VG_(clo_db_attach) ))
-          {   
-              VG_(printf)("starting debugger\n");
-              VG_(start_debugger)( tid );
-          }  
-
-          __builtin_trap();      // DDD ???
-          VG_(core_panic)("bad code address - no synth signal support on darwin");
-      }
-#else
       /* Code address is bad - deliver a signal instead */
       if (seg != NULL) {
          /* There's some kind of segment at the requested place, but we
@@ -1389,8 +1370,6 @@ Bool VG_(translate) ( ThreadId tid,
            the middle of nowhere. */
          VG_(synth_fault_mapping)(tid, addr);
       }
-#endif
-
       return False;
    }
 

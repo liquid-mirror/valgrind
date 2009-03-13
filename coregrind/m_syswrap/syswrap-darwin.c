@@ -1494,14 +1494,34 @@ PRE(sys_exit)
 
 PRE(sys_sigaction)
 {
-   // GrP fixme
-   static Bool warned;
-   if (!warned && VG_(clo_trace_unknown_syscalls)) {
-      VG_(printf)("UNKNOWN __sigaction is unsupported. "
-                  "This warning will not be repeated.\n");
-      warned = True;
+   PRINT("sys_sigaction ( %ld, %#lx, %#lx )", ARG1,ARG2,ARG3);
+   PRE_REG_READ3(long, "sigaction",
+                 int, signum, vki_sigaction_toK_t *, act,
+                 vki_sigaction_fromK_t *, oldact);
+
+   if (ARG2 != 0) {
+      vki_sigaction_toK_t *sa = (vki_sigaction_toK_t *)ARG2;
+      PRE_MEM_READ( "sigaction(act->sa_handler)",
+                    (Addr)&sa->ksa_handler, sizeof(sa->ksa_handler));
+      PRE_MEM_READ( "sigaction(act->sa_mask)",
+                    (Addr)&sa->sa_mask, sizeof(sa->sa_mask));
+      PRE_MEM_READ( "sigaction(act->sa_flags)",
+                    (Addr)&sa->sa_flags, sizeof(sa->sa_flags));
    }
-   SET_STATUS_Failure( VKI_EINVAL );
+   if (ARG3 != 0)
+      PRE_MEM_WRITE( "sigaction(oldact)",
+                     ARG3, sizeof(vki_sigaction_fromK_t));
+
+   SET_STATUS_from_SysRes(
+      VG_(do_sys_sigaction)(ARG1, (const vki_sigaction_toK_t *)ARG2,
+                                  (vki_sigaction_fromK_t *)ARG3)
+   );
+}
+POST(sys_sigaction)
+{
+   vg_assert(SUCCESS);
+   if (RES == 0 && ARG3 != 0)
+      POST_MEM_WRITE( ARG3, sizeof(vki_sigaction_fromK_t));
 }
 
 
@@ -1518,16 +1538,32 @@ PRE(sys___pthread_sigmask)
 }
 
 
+PRE(sys___pthread_markcancel)
+{
+   *flags |= SfMayBlock; /* might kill this thread??? */
+   PRINT("__pthread_markcancel ( %#lx )", ARG1);
+   PRE_REG_READ1(long, "__pthread_markcancel", void*, arg1);
+   /* Just let it go through.  No idea if this is correct. */
+}
+
+
 PRE(sys___disable_threadsignal)
 {
-   // GrP fixme
-   static Bool warned;
-   if (!warned && VG_(clo_trace_unknown_syscalls)) {
-      VG_(printf)("UNKNOWN __disable_threadsignal is unsupported. "
-                  "This warning will not be repeated.\n");
-      warned = True;
-   }
-   SET_STATUS_Failure( VKI_EINVAL );
+   vki_sigset_t set;
+   PRINT("__disable_threadsignal(%ld, %ld, %ld)", ARG1, ARG2, ARG3);
+   /* I don't think this really looks at its arguments.  So don't
+      bother to check them. */
+
+   VG_(sigfillset)( &set );
+   SET_STATUS_from_SysRes(
+      VG_(do_sys_sigprocmask) ( tid, VKI_SIG_BLOCK, &set, NULL )
+   );
+
+   /* We don't expect that blocking all signals for this thread could
+      cause any more to be delivered (how could it?), but just in case
+      .. */
+   if (SUCCESS)
+      *flags |= SfPollAfter;
 }
 
 
@@ -2816,29 +2852,38 @@ POST(sys_sigpending)
    POST_MEM_WRITE( ARG1, sizeof(vki_sigset_t) ) ;
 }
 
+
 PRE(sys_sigprocmask)
 {
-   vki_sigset_t* set;
-   vki_sigset_t* oldset;
-
-   PRINT("sys_sigprocmask ( %ld, %#lx, %#lx )",ARG1,ARG2,ARG3);
-   PRE_REG_READ3(long, "sigprocmask", 
+   UWord arg1;
+   PRINT("sigprocmask ( %ld, %#lx, %#lx )", ARG1, ARG2, ARG3);
+   PRE_REG_READ3(long, "sigprocmask",
                  int, how, vki_sigset_t *, set, vki_sigset_t *, oldset);
    if (ARG2 != 0)
       PRE_MEM_READ( "sigprocmask(set)", ARG2, sizeof(vki_sigset_t));
    if (ARG3 != 0)
       PRE_MEM_WRITE( "sigprocmask(oldset)", ARG3, sizeof(vki_sigset_t));
 
-   set    = (vki_sigset_t*)ARG2;
-   oldset = (vki_sigset_t*)ARG3;
-
-#if defined(VGO_darwin)
-   // DDD: #warning GrP fixme signals
-#else
+   /* Massage ARG1 ('how').  If ARG2 (the new mask) is NULL then the
+      value of 'how' is irrelevant, and it appears that Darwin's libc
+      passes zero, which is not equal to any of
+      SIG_{BLOCK,UNBLOCK,SETMASK}.  This causes
+      VG_(do_sys_sigprocmask) to complain, since it checks the 'how'
+      value independently of the other args.  Solution: in this case,
+      simply pass a valid (but irrelevant) value for 'how'. */
+   /* Also, in this case the new set is passed to the kernel by
+      reference, not value, as in some other sigmask related Darwin
+      syscalls. */
+   arg1 = ARG1;
+   if (ARG2 == 0  /* the new-set is NULL */
+       && ARG1 != VKI_SIG_BLOCK
+       && ARG1 != VKI_SIG_UNBLOCK && ARG1 != VKI_SIG_SETMASK) {
+      arg1 = VKI_SIG_SETMASK;
+   }
    SET_STATUS_from_SysRes(
-      VG_(do_sys_sigprocmask) ( tid, ARG1 /*how*/, set, oldset)
+      VG_(do_sys_sigprocmask) ( tid, arg1, (vki_sigset_t*)ARG2,
+                                           (vki_sigset_t*)ARG3 )
    );
-#endif
 
    if (SUCCESS)
       *flags |= SfPollAfter;
@@ -2852,24 +2897,16 @@ POST(sys_sigprocmask)
 }
 
 
-PRE(sys_sigaltstack)
+PRE(sys_sigsuspend)
 {
-   PRINT("sigaltstack ( %#lx, %#lx )",ARG1,ARG2);
-   PRE_REG_READ2(int, "sigaltstack",
-                 const vki_stack_t *, ss, vki_stack_t *, oss);
-   if (ARG1 != 0) {
-      const vki_stack_t *ss = (vki_stack_t *)ARG1;
-      PRE_MEM_READ( "sigaltstack(ss)", (Addr)&ss->ss_sp, sizeof(ss->ss_sp) );
-      PRE_MEM_READ( "sigaltstack(ss)", (Addr)&ss->ss_flags, sizeof(ss->ss_flags) );
-      PRE_MEM_READ( "sigaltstack(ss)", (Addr)&ss->ss_size, sizeof(ss->ss_size) );
-   }
-   if (ARG2 != 0) {
-      PRE_MEM_WRITE( "sigaltstack(oss)", ARG2, sizeof(vki_stack_t) );
-   }
-
-   // DDD: # warning GrP fixme signals
-   // GrP fixme leopard 9A241 setjmp dies if sigaltstack fails (ecx)
-   SET_STATUS_Success(0);
+   /* Just hand this off to the kernel.  Is that really correct?  And
+      shouldn't we at least set SfPollAfter?  These questions apply to
+      all the Linux versions too. */
+   /* I think the first arg is the 32-bit signal mask (by value), and
+      the other two args are ignored. */
+   *flags |= SfMayBlock;
+   PRINT("sys_sigsuspend ( %ld, %ld, %ld )", ARG1,ARG2,ARG3 );
+   PRE_REG_READ1(int, "sigsuspend", int, sigmask);
 }
 
 
@@ -6312,6 +6349,33 @@ PRE(swtch_pri)
 }
 
 
+PRE(sys_FAKE_SIGRETURN)
+{
+   /* See comments on PRE(sys_rt_sigreturn) in syswrap-amd64-linux.c for
+      an explanation of what follows. */
+   /* This handles the fake signal-return system call created by
+      sigframe-x86-darwin.c. */
+
+   PRINT("FAKE_SIGRETURN ( )");
+
+   vg_assert(VG_(is_valid_tid)(tid));
+   vg_assert(tid >= 1 && tid < VG_N_THREADS);
+   vg_assert(VG_(is_running_thread)(tid));
+
+   /* Remove the signal frame from this thread's (guest) stack,
+      in the process restoring the pre-signal guest state. */
+   VG_(sigframe_destroy)(tid, True);
+
+   /* Tell the driver not to update the guest state with the "result",
+      and set a bogus result to keep it happy. */
+   *flags |= SfNoWriteResult;
+   SET_STATUS_Success(0);
+
+   /* Check to see if any signals arose as a result of this. */
+   *flags |= SfPollAfter;
+}
+
+
 /* ---------------------------------------------------------------------
    machine-dependent traps
    ------------------------------------------------------------------ */
@@ -6439,14 +6503,14 @@ const SyscallTableEntry ML_(syscall_table)[] = {
    GENX_(__NR_getegid, sys_getegid), 
 // _____(__NR_profil), 
    _____(VG_DARWIN_SYSCALL_CONSTRUCT_UNIX(45)),    // old ktrace
-   MACX_(__NR_sigaction, sys_sigaction), 
+   MACXY(__NR_sigaction, sys_sigaction), 
    GENX_(__NR_getgid, sys_getgid), 
    MACXY(__NR_sigprocmask, sys_sigprocmask), 
    MACXY(__NR_getlogin, sys_getlogin), 
 // _____(__NR_setlogin), 
 // _____(__NR_acct), 
 // _____(__NR_sigpending), 
-   MACX_(__NR_sigaltstack, sys_sigaltstack), 
+   GENXY(__NR_sigaltstack, sys_sigaltstack), 
    MACXY(__NR_ioctl, sys_ioctl), 
 // _____(__NR_reboot), 
 // _____(__NR_revoke), 
@@ -6504,7 +6568,7 @@ const SyscallTableEntry ML_(syscall_table)[] = {
    _____(VG_DARWIN_SYSCALL_CONSTRUCT_UNIX(108)),   // old sigvec
    _____(VG_DARWIN_SYSCALL_CONSTRUCT_UNIX(109)),   // old sigblock
    _____(VG_DARWIN_SYSCALL_CONSTRUCT_UNIX(110)),   // old sigsetmask
-// _____(__NR_sigsuspend), 
+   MACX_(__NR_sigsuspend, sys_sigsuspend),         // old sigsuspend
    _____(VG_DARWIN_SYSCALL_CONSTRUCT_UNIX(112)),   // old sigstack
    _____(VG_DARWIN_SYSCALL_CONSTRUCT_UNIX(113)),   // old recvmsg
    _____(VG_DARWIN_SYSCALL_CONSTRUCT_UNIX(114)),   // old sendmsg
@@ -6726,8 +6790,8 @@ const SyscallTableEntry ML_(syscall_table)[] = {
    MACX_(__NR___pthread_sigmask, sys___pthread_sigmask), 
 // _____(__NR___sigwait), 
    MACX_(__NR___disable_threadsignal, sys___disable_threadsignal), 
-// _____(__NR___pthread_markcancel), 
-// _____(__NR___pthread_canceled), 
+   MACX_(__NR___pthread_markcancel, sys___pthread_markcancel), 
+// (__NR___pthread_canceled), 
    MACX_(__NR___semwait_signal, sys___semwait_signal), 
    _____(VG_DARWIN_SYSCALL_CONSTRUCT_UNIX(335)),   // old utrace
 // _____(__NR_proc_info), 
@@ -6823,6 +6887,7 @@ const SyscallTableEntry ML_(syscall_table)[] = {
 // _____(__NR___mac_get_mount),
 // _____(__NR___mac_getfsstat),
 // _____(__NR_MAXSYSCALL)
+   MACX_(__NR_DARWIN_FAKE_SIGRETURN, sys_FAKE_SIGRETURN)
 };
 
 
@@ -6973,3 +7038,8 @@ const UInt ML_(mach_trap_table_size) =
 
 const UInt ML_(mdep_trap_table_size) = 
             sizeof(ML_(mdep_trap_table)) / sizeof(ML_(mdep_trap_table)[0]);
+
+
+/*--------------------------------------------------------------------*/
+/*--- end                                         syswrap-darwin.c ---*/
+/*--------------------------------------------------------------------*/

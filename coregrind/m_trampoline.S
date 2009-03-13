@@ -736,7 +736,7 @@ VG_(trampoline_stuff_end):
 #	undef UD2_1024
 #	undef UD2_PAGE
 
-	/*---------------- x86-darwin ----------------*/
+/*---------------- x86-darwin ----------------*/
 #else
 #if defined(VGP_x86_darwin)
 
@@ -745,6 +745,14 @@ VG_(trampoline_stuff_end):
 
 .globl _VG_(trampoline_stuff_start)
 _VG_(trampoline_stuff_start):
+
+.globl _VG_(x86_darwin_SUBST_FOR_sigreturn)
+_VG_(x86_darwin_SUBST_FOR_sigreturn):
+        /* XXX does this need to have any special form? (cf x86-linux
+	version) */
+        movl    $ __NR_DARWIN_FAKE_SIGRETURN, %eax
+        int     $0x80
+        ud2
 
 .globl _VG_(darwin_REDIR_FOR_strlen)
 _VG_(darwin_REDIR_FOR_strlen):
@@ -888,7 +896,7 @@ _VG_(trampoline_stuff_end):
 .fill 2048, 2, 0x0b0f /* `ud2` */
 
 
-	/*---------------- amd64-darwin ----------------*/
+/*---------------- amd64-darwin ----------------*/
 #else
 #if defined(VGP_amd64_darwin)
 

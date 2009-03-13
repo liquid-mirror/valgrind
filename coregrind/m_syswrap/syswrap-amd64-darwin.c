@@ -198,6 +198,7 @@ ThreadState *build_thread(const thread_state_t state,
 
    thread_state_to_vex(state, flavor, count, &tst->arch.vex);
 
+   I_die_here;
    // GrP fixme signals, sig_mask, tmp_sig_mask, os_state.parent
 
    find_stack_segment(tid, tst->arch.vex.guest_RSP);

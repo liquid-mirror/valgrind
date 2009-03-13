@@ -2451,6 +2451,7 @@ void VG_(reap_threads)(ThreadId self)
       /* Let other thread(s) run */
       VG_(vg_yield)();
 #if defined(VGO_darwin)
+      I_die_here;
       // DDD: #warning GrP fixme signals
 #else
       VG_(poll_signals)(self);
@@ -2625,9 +2626,6 @@ PRE(sys_execve)
    /* restore the DATA rlimit for the child */
    VG_(setrlimit)(VKI_RLIMIT_DATA, &VG_(client_rlimit_data));
 
-#if defined(VGO_darwin)
-   // DDD: #warning GrP fixme exec signals busted
-#else
    /*
       Set the signal state up for exec.
 
@@ -2649,14 +2647,20 @@ PRE(sys_execve)
       vki_sigset_t allsigs;
       vki_siginfo_t info;
 
+      /* What this loop does: it queries SCSS (the signal state that
+         the client _thinks_ the kernel is in) by calling
+         VG_(do_sys_sigaction), and modifies the real kernel signal
+         state accordingly. */
       for (i = 1; i < VG_(max_signal); i++) {
-         struct vki_sigaction sa;
-         VG_(do_sys_sigaction)(i, NULL, &sa);
-         if (sa.ksa_handler == VKI_SIG_IGN)
-            VG_(sigaction)(i, &sa, NULL);
+         vki_sigaction_fromK_t sa_f;
+         vki_sigaction_toK_t   sa_t;
+         VG_(do_sys_sigaction)(i, NULL, &sa_f);
+         VG_(convert_sigaction_fromK_to_toK)(&sa_f, &sa_t);
+         if (sa_t.ksa_handler == VKI_SIG_IGN)
+            VG_(sigaction)(i, &sa_t, NULL);
          else {
-            sa.ksa_handler = VKI_SIG_DFL;
-            VG_(sigaction)(i, &sa, NULL);
+            sa_t.ksa_handler = VKI_SIG_DFL;
+            VG_(sigaction)(i, &sa_t, NULL);
          }
       }
 
@@ -2666,7 +2670,6 @@ PRE(sys_execve)
 
       VG_(sigprocmask)(VKI_SIG_SETMASK, &tst->sig_mask, NULL);
    }
-#endif
 
    if (0) {
       Char **cpp;
@@ -3321,7 +3324,11 @@ PRE(sys_kill)
    if (ARG2 == VKI_SIGKILL && ML_(do_sigkill)(ARG1, -1))
       SET_STATUS_Success(0);
    else
-      SET_STATUS_from_SysRes( VG_(do_syscall2)(SYSNO, ARG1, ARG2) );
+      /* re syscall3: Darwin has a 3rd arg, which is a flag (boolean)
+         affecting how posix-compliant the call is.  I guess it is
+         harmless to pass the 3rd arg on other platforms; hence pass
+         it on all. */
+      SET_STATUS_from_SysRes( VG_(do_syscall3)(SYSNO, ARG1, ARG2, ARG3) );
 
    if (VG_(clo_trace_signals))
       VG_(message)(Vg_DebugMsg, "kill: sent signal %ld to pid %ld",
@@ -4036,7 +4043,6 @@ PRE(sys_pause)
    PRE_REG_READ0(long, "pause");
 }
 
-// XXX: x86-specific
 PRE(sys_sigaltstack)
 {
    PRINT("sigaltstack ( %#lx, %#lx )",ARG1,ARG2);
@@ -4052,14 +4058,10 @@ PRE(sys_sigaltstack)
       PRE_MEM_WRITE( "sigaltstack(oss)", ARG2, sizeof(vki_stack_t) );
    }
 
-#if defined(VGO_darwin)
-   // DDD: #warning GrP fixme signals
-#else
    SET_STATUS_from_SysRes( 
       VG_(do_sys_sigaltstack) (tid, (vki_stack_t*)ARG1, 
                               (vki_stack_t*)ARG2)
    );
-#endif
 }
 POST(sys_sigaltstack)
 {

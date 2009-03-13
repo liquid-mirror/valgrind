@@ -159,15 +159,7 @@ static void report_and_quit ( const Char* report,
    VG_(printf)("If that doesn't help, please report this bug to: %s\n\n", 
                report);
    VG_(printf)("In the bug report, send all the above text, the valgrind\n");
-   VG_(printf)("version, and what %s you are using.  Thanks.\n\n", 
-#if defined(VGO_linux)
-               "Linux distro"
-#else
-               "OS and OS version"
-#endif
-               );
-
-   __builtin_trap();    // DDD ???
+   VG_(printf)("version, and what OS and version you are using.  Thanks.\n\n" );
    VG_(exit)(1);
 }
 

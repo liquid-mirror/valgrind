@@ -411,6 +411,8 @@ static void os_state_init(ThreadState *tst)
 static 
 void mostly_clear_thread_record ( ThreadId tid )
 {
+   vki_sigset_t savedmask;
+
    vg_assert(tid >= 0 && tid < VG_N_THREADS);
    VG_(cleanup_thread)(&VG_(threads)[tid].arch);
    VG_(threads)[tid].tid = tid;
@@ -429,14 +431,7 @@ void mostly_clear_thread_record ( ThreadId tid )
    VG_(threads)[tid].altstack.ss_size = 0;
    VG_(threads)[tid].altstack.ss_flags = VKI_SS_DISABLE;
 
-#if defined(VGO_darwin)
-   // DDD: #warning GrP fixme signals
-#else
-   {
-      vki_sigset_t savedmask;
-      VG_(clear_out_queued_signals)(tid, &savedmask);
-   }
-#endif
+   VG_(clear_out_queued_signals)(tid, &savedmask);
 
    VG_(threads)[tid].sched_jmpbuf_valid = False;
 }
@@ -879,6 +874,7 @@ static void handle_syscall(ThreadId tid, UInt trc)
    if (jumped) {
       block_signals();
 #if defined(VGO_darwin)
+      I_die_here;
       // DDD: #warning GrP fixme signals
 #else
       VG_(poll_signals)(tid);
@@ -999,11 +995,7 @@ VgSchedReturnCode VG_(scheduler) ( ThreadId tid )
 
 	 /* Look for any pending signals for this thread, and set them up
 	    for delivery */
-#if defined(VGO_darwin)
-         // DDD: #warning GrP fixme signals
-#else
 	 VG_(poll_signals)(tid);
-#endif
 
 	 if (VG_(is_exiting)(tid))
 	    break;		/* poll_signals picked up a fatal signal */
@@ -1104,6 +1096,7 @@ VgSchedReturnCode VG_(scheduler) ( ThreadId tid )
 #if defined(VGO_darwin)
          // DDD: #warning GrP fixme synth signals
          VG_(core_panic)("mapfail - no synth signals on darwin");
+         I_die_here;
 #else
          VG_(synth_fault)(tid);
 #endif
@@ -1159,6 +1152,7 @@ VgSchedReturnCode VG_(scheduler) ( ThreadId tid )
 #if defined(VGO_darwin) 
          // GrP fixme signals
          // GrP remote debugger hack - gdb sets breakpoint (int3) in dyld code
+         I_die_here;
          VG_(start_debugger_signal)(tid, 5);// gdb TARGET_SIGNAL_TRAP
 #else
          VG_(synth_sigtrap)(tid);
@@ -1168,6 +1162,7 @@ VgSchedReturnCode VG_(scheduler) ( ThreadId tid )
       case VEX_TRC_JMP_SIGSEGV:
 #if defined(VGO_darwin)
          // DDD: #warning GrP fixme synth signals
+         I_die_here;
          VG_(core_panic)("sigsegv - no synth signals on darwin");
 #else
          VG_(synth_fault)(tid);

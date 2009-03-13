@@ -330,8 +330,9 @@ Int VG_(system) ( Char* cmd )
    } else {
       /* parent */
 #if defined(VGO_darwin)
-      /* GrP fixme signals */
       Int zzz;
+      I_die_here;
+      /* GrP fixme signals */
       zzz = VG_(waitpid)(pid, NULL, 0);
 #else
       /* We have to set SIGCHLD to its default behaviour in order that

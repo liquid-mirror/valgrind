@@ -347,24 +347,74 @@ typedef uint32_t vki_u32;
 
 #include <sys/signal.h>
 
-#define _VKI_NSIG NSIG
-#define vki_sigset_t sigset_t
+/* While we fully intend to make 'vki_sigset_t' match the native
+   Darwin 'sigset_t', we can't just clone the Darwin sigset_t type,
+   because it isn't an array, and the VG_(sigfillset) etc functions
+   assume it is.  So instead define another isomorphic type, and check
+   in VG_(vki_do_initial_consistency_checks) that it really is
+   correct. */
+/* #define vki_sigset_t sigset_t */
+#define _VKI_NSIG_BPW   32
+#define _VKI_NSIG       32
+#define _VKI_NSIG_WORDS (_VKI_NSIG / _VKI_NSIG_BPW)
+typedef struct {
+   UInt sig[_VKI_NSIG_WORDS];
+} vki_sigset_t;
+/* and now let VG_(vki_do_initial_consistency_checks) make sure it
+   matches 'sigset_t'. */
+
 
 #define VKI_SS_ONSTACK	SS_ONSTACK
 #define	VKI_SS_DISABLE	SS_DISABLE
 #define	VKI_MINSIGSTKSZ	MINSIGSTKSZ
 #define	VKI_SIGSTKSZ	SIGSTKSZ
 
-#define vki_sigaltstack sigaltstack
-#define vki_stack_t stack_t
-#define vki_sigval sigval
-#define vki_siginfo_t siginfo_t
-#define vki_sigaction_u sigaction_u
-#define vki_sigaction sigaction
-#define vki_user_sigaction user_sigaction
+#define vki_stack_t        stack_t
+#define vki_siginfo_t      siginfo_t
 
-#define	vki_sa_handler sa_handler
-#define	vki_sa_sigaction sa_sigaction
+/* There are two versions of this.  'struct __sigaction' is used for
+   passing sigactions to the kernel interface, and has the added
+   complexity of requiring an extra pointer to a new demultiplexing
+   function to be run in user space.  'struct sigaction' is used for
+   receiving old sigactions from the kernel, and lacks this
+   demux-function pointer.  So the type of the second and third
+   parameters in Darwin's sys_sigaction appear to be different,
+   respectively 'struct __sigaction*' and 'struct sigaction*'.
+*/
+//#define vki_sigaction      __sigaction
+//#define vki_user_sigaction sigaction
+//#define vki_sigaltstack    sigaltstack
+//#define vki_sigval         sigval
+//#define vki_sigaction_u    sigaction_u
+//#define vki_sigaction     sigaction
+
+//typedef  struct __sigaction  vki_sigaction_toK_t;
+//typedef  struct sigaction    vki_sigaction_fromK_t;
+
+typedef
+   struct {
+      void* ksa_handler;
+      void (*sa_tramp)(void*,UWord,UWord,void*,void*);
+      vki_sigset_t sa_mask;
+      UWord sa_flags;
+   }
+   vki_sigaction_toK_t;
+
+typedef
+   struct {
+      void* ksa_handler;
+      vki_sigset_t sa_mask;
+      UWord sa_flags;
+   }
+   vki_sigaction_fromK_t;
+
+
+
+/* and /usr/include/sys/signal.c in turn defines 'sa_handler' to
+   be '__sigaction_u.__sa_handler' */
+//#define	ksa_handler      sa_handler
+
+//#define	vki_sa_sigaction sa_sigaction
 
 #define VKI_SA_ONSTACK	SA_ONSTACK
 #define VKI_SA_RESTART	SA_RESTART
@@ -376,6 +426,8 @@ typedef uint32_t vki_u32;
 #define	VKI_SA_SIGINFO	SA_SIGINFO
 #define	VKI_SA_USERTRAMP	SA_USERTRAMP
 #define	VKI_SA_64REGSET	SA_64REGSET
+#define VKI_SA_RESTORER  0 /* Darwin doesn't have this */
+#define VKI_SI_TKILL     0 /* Darwin doesn't have this */
 
 #define	VKI_SIG_BLOCK	SIG_BLOCK
 #define	VKI_SIG_UNBLOCK	SIG_UNBLOCK
@@ -412,6 +464,38 @@ typedef uint32_t vki_u32;
 #define VKI_SIGINFO	SIGINFO
 #define VKI_SIGUSR1	SIGUSR1
 #define VKI_SIGUSR2	SIGUSR2
+
+#define VKI_SIG_DFL     SIG_DFL
+#define VKI_SIG_IGN     SIG_IGN
+
+
+#define VKI_SI_USER      SI_USER
+#define VKI_SEGV_MAPERR  SEGV_MAPERR
+#define VKI_SEGV_ACCERR  SEGV_ACCERR
+#define VKI_ILL_ILLOPC   ILL_ILLOPC
+#define VKI_ILL_ILLOPN   ILL_ILLOPN
+#define VKI_ILL_ILLADR   ILL_ILLADR
+#define VKI_ILL_ILLTRP   ILL_ILLTRP
+#define VKI_ILL_PRVOPC   ILL_PRVOPC
+#define VKI_ILL_PRVREG   ILL_PRVREG
+#define VKI_ILL_COPROC   ILL_COPROC
+#define VKI_ILL_BADSTK   ILL_BADSTK
+#define VKI_FPE_INTDIV   FPE_INTDIV
+#define VKI_FPE_INTOVF   FPE_INTOVF
+#define VKI_FPE_FLTDIV   FPE_FLTDIV
+#define VKI_FPE_FLTOVF   FPE_FLTOVF
+#define VKI_FPE_FLTUND   FPE_FLTUND
+#define VKI_FPE_FLTRES   FPE_FLTRES
+#define VKI_FPE_FLTINV   FPE_FLTINV
+#define VKI_FPE_FLTSUB   FPE_FLTSUB
+#define VKI_BUS_ADRALN   BUS_ADRALN
+#define VKI_BUS_ADRERR   BUS_ADRERR
+#define VKI_BUS_OBJERR   BUS_OBJERR
+#define VKI_TRAP_BRKPT   TRAP_BRKPT
+
+/* JRS: not 100% sure, but I think these two are correct */
+#define VKI_SA_ONESHOT   SA_RESETHAND
+#define VKI_SA_NOMASK    SA_NODEFER
 
 
 #include <sys/errno.h>
@@ -868,9 +952,11 @@ struct ByteRangeLockPB2
 #define VKI_DTRACEHIOC_ADDDOF   DTRACEHIOC_ADDDOF
 
 
-// #include <sys/ucontext.h>
+#include <sys/ucontext.h>
 
-struct vki_ucontext;
+/* quite why sys/ucontext.h provides a 'struct __darwin_ucontext'
+   but no 'struct ucontext' beats me. -- JRS */
+#define vki_ucontext __darwin_ucontext
 
 
 #include <sys/termios.h>

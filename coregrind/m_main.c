@@ -1734,7 +1734,7 @@ Int valgrind_main ( Int argc, HChar **argv, HChar **envp )
 #     elif defined(VGP_ppc32_aix5) || defined(VGP_ppc64_aix5)
       iters = 4;
 #     elif defined(VGO_darwin)
-      iters = 5;
+      iters = 3;
 #     else
 #       error "Unknown plat"
 #     endif
@@ -2024,11 +2024,10 @@ Int valgrind_main ( Int argc, HChar **argv, HChar **envp )
    //--------------------------------------------------------------
    // Nb: temporarily parks the saved blocking-mask in saved_sigmask.
    VG_(debugLog)(1, "main", "Initialise signal management\n");
-#if defined(VGO_darwin)
-   // DDD: #warning GrP fixme signals
-#else
+   /* Check that the kernel-interface signal definitions look sane */
+   VG_(vki_do_initial_consistency_checks)();
+   /* .. and go on to use them. */
    VG_(sigstartup_actions)();
-#endif
 
    //--------------------------------------------------------------
    // Listen for remote debugger
@@ -2260,12 +2259,7 @@ void shutdown_actions_NORETURN( ThreadId tid,
    case VgSrc_FatalSig:
       /* We were killed by a fatal signal, so replicate the effect */
       vg_assert(VG_(threads)[tid].os_state.fatalsig != 0);
-#if defined(VGO_darwin)
-      // DDD: #warning GrP fixme signals
-#else
       VG_(kill_self)(VG_(threads)[tid].os_state.fatalsig);
-#endif
-
       VG_(core_panic)("main(): signal was supposed to be fatal");
       break;
 

@@ -69,6 +69,7 @@ DECL_TEMPLATE(darwin, sys_workq_ops);
 DECL_TEMPLATE(darwin, sys___mac_syscall);
 DECL_TEMPLATE(darwin, sys_exit);
 DECL_TEMPLATE(darwin, sys_sigaction);
+DECL_TEMPLATE(darwin, sys___pthread_markcancel);
 DECL_TEMPLATE(darwin, sys___pthread_sigmask);
 DECL_TEMPLATE(darwin, sys___disable_threadsignal);
 DECL_TEMPLATE(darwin, sys_kdebug_trace);
@@ -122,7 +123,7 @@ DECL_TEMPLATE(darwin, sys_mmap);
 DECL_TEMPLATE(darwin, sys_sysctl);
 DECL_TEMPLATE(darwin, sys_sigpending);
 DECL_TEMPLATE(darwin, sys_sigprocmask);
-DECL_TEMPLATE(darwin, sys_sigaltstack);
+DECL_TEMPLATE(darwin, sys_sigsuspend);
 DECL_TEMPLATE(darwin, sys_watchevent);
 DECL_TEMPLATE(darwin, sys_waitevent);
 DECL_TEMPLATE(darwin, sys_modwatch);
@@ -136,6 +137,7 @@ DECL_TEMPLATE(darwin, sys_sendfile);
 DECL_TEMPLATE(darwin, sys_fcntl);
 DECL_TEMPLATE(darwin, sys_fcntl64);
 DECL_TEMPLATE(darwin, sys_ioctl);
+DECL_TEMPLATE(darwin, sys_FAKE_SIGRETURN);
 
 // Mach message helpers
 DECL_TEMPLATE(darwin, host_info);

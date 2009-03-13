@@ -79,7 +79,7 @@
           Mach traps: result is in r3, and there is no error flag.
    ppc64  r0  r3   r4   r5   r6   r7   r8   ??   ??   r3+CR0.SO (== ARG1)
    x86    stk stk  stk  stk  stk  stk  stk  stk  stk  eax+edx+cc
-   amd64  raw rdi  rsi  rdx  rcx  r8   r9   stk  stk  eax+edx+cc
+   amd64  rax rdi  rsi  rdx  rcx  r8   r9   stk  stk  eax+edx+cc
 */
 
 /* This is the top level of the system-call handler module.  All
@@ -1709,12 +1709,8 @@ void VG_(post_syscall) (ThreadId tid)
    /* The pre/post wrappers may have concluded that pending signals
       might have been created, and will have set SfPollAfter to
       request a poll for them once the syscall is done. */
-#if defined(VGO_darwin)
-   // DDD: # warning GrP fixme signals
-#else
    if (sci->flags & SfPollAfter)
       VG_(poll_signals)(tid);
-#endif
 
    /* Similarly, the wrappers might have asked for a yield
       afterwards. */
