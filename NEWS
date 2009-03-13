@@ -2,7 +2,8 @@
 Release 3.5.0 (???)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 * XXX: x86/Darwin (aka. Mac OS X support)...  Possibly also amd64/Darwin
-  support...
+  support...  Many thanks to Greg Parker for developing this port over
+  several years.
 
 * A new Memcheck client request VALGRIND_COUNT_LEAK_BLOCKS has been added.
   It is similar to VALGRIND_COUNT_LEAKS but counts blocks instead of bytes.
