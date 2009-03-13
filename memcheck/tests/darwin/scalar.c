@@ -321,12 +321,30 @@ int main(void)
    // __NR_shmget 265
    // __NR_shm_open 266
    // __NR_shm_unlink 267
+
    // __NR_sem_open 268
+   GO(__NR_sem_open, "2s 1m");
+   SY(__NR_sem_open, x0, x0); FAIL;
+
+   GO(__NR_sem_open, "(4-args) 2s 0m");
+   SY(__NR_sem_open, "my_sem", O_CREAT|O_EXCL, x0, x0); FAIL;
+
    // __NR_sem_close 269
+   // Nb: we add 0x12345 to make sure it's not a valid semaphore descriptor.
+   GO(__NR_sem_close, "1s 0m");
+   SY(__NR_sem_close, x0+0x12345); FAIL;
+
    // __NR_sem_unlink 270
+   GO(__NR_sem_unlink, "1s 1m");
+   SY(__NR_sem_unlink, x0); FAIL;
+
    // __NR_sem_wait 271
    // __NR_sem_trywait 272
+
    // __NR_sem_post 273
+   GO(__NR_sem_post, "1s 0m");
+   SY(__NR_sem_post, x0); FAIL;
+
    // __NR_sem_getvalue 274
    // __NR_sem_init 275
    // __NR_sem_destroy 276
@@ -474,7 +492,11 @@ int main(void)
    // __NR_poll_nocancel 417
    // __NR_msgsnd_nocancel 418
    // __NR_msgrcv_nocancel 419
+
    // __NR_sem_wait_nocancel 420
+   GO(__NR_sem_wait_nocancel, "1s 0m");
+   SY(__NR_sem_wait_nocancel, x0); FAIL;
+
    // __NR_aio_suspend_nocancel 421
    // __NR___sigwait_nocancel 422
    // __NR___semwait_signal_nocancel 423

@@ -61,6 +61,7 @@
 
 #include <mach/mach.h>
 #include <mach/mach_vm.h>
+#include <semaphore.h>
 #define msgh_request_port      msgh_remote_port
 #define msgh_reply_port        msgh_local_port
 #define BOOTSTRAP_MAX_NAME_LEN                  128
@@ -1272,6 +1273,55 @@ POST(sys_semctl)
    ML_(generic_POST_sys_semctl)(tid, RES,ARG1,ARG2,ARG3,ARG4);
 }
 
+PRE(sys_sem_open)
+{
+   if (ARG2 & VKI_O_CREAT) {
+      // 4-arg version
+      PRINT("sys_sem_open ( %#lx(%s), %ld, %ld, %ld )",
+            ARG1,(char*)ARG1,ARG2,ARG3,ARG4);
+      PRE_REG_READ4(vki_sem_t *, "sem_open",
+                    const char *, name, int, oflag, vki_mode_t, mode,
+                    unsigned int, value);
+   } else {
+      // 2-arg version
+      PRINT("sys_sem_open ( %#lx(%s), %ld )",ARG1,(char*)ARG1,ARG2);
+      PRE_REG_READ2(vki_sem_t *, "sem_open",
+                    const char *, name, int, oflag);
+   }
+   PRE_MEM_RASCIIZ( "sem_open(name)", ARG1 );
+
+   /* Otherwise handle normally */
+   *flags |= SfMayBlock;
+}
+
+PRE(sys_sem_close)
+{
+    PRINT("sem_close( %#lx )", ARG1);
+    PRE_REG_READ1(int, "sem_close", vki_sem_t *, sem);
+}
+
+PRE(sys_sem_unlink)
+{
+    PRINT("sem_unlink(  %#lx(%s) )", ARG1,(char*)ARG1);
+    PRE_REG_READ1(int, "sem_unlink", const char *, name);
+    PRE_MEM_RASCIIZ( "sem_unlink(name)", ARG1 );
+}
+
+PRE(sys_sem_post)
+{
+    PRINT("sem_post( %#lx )", ARG1);
+    PRE_REG_READ1(int, "sem_post", vki_sem_t *, sem);
+
+   *flags |= SfMayBlock;
+}
+
+PRE(sys_sem_wait_nocancel)
+{
+    PRINT("sem_wait_nocancel( %#lx )", ARG1);
+    PRE_REG_READ1(int, "sem_wait_nocancel", vki_sem_t *, sem);
+
+   *flags |= SfMayBlock;
+}
 
 PRE(sys_kqueue)
 {
@@ -6339,6 +6389,9 @@ PRE(pthread_set_self)
         X_ : PRE handler only
         XY : PRE and POST handlers
 */
+// DDD: the "sys_" prefixes I think aren't necessary.  The name on the right
+// is meant to be the name of the function implementing the syscall in the
+// kernel.  On Darwin that seems to usually match the __NR_xyz name.
 const SyscallTableEntry ML_(syscall_table)[] = {
 // _____(__NR_syscall),   // 0
    MACX_(__NR_exit, sys_exit), 
@@ -6608,12 +6661,13 @@ const SyscallTableEntry ML_(syscall_table)[] = {
 // _____(__NR_shmget), 
    MACXY(__NR_shm_open, sys_shm_open), 
 // _____(__NR_shm_unlink), 
-// _____(__NR_sem_open), 
-// _____(__NR_sem_close), 
-// _____(__NR_sem_unlink), 
+   MACX_(__NR_sem_open, sys_sem_open), 
+   MACX_(__NR_sem_close, sys_sem_close), 
+   MACX_(__NR_sem_unlink, sys_sem_unlink), 
 // _____(__NR_sem_wait), 
 // _____(__NR_sem_trywait), 
 // _____(__NR_sem_post), 
+   MACX_(__NR_sem_post, sys_sem_post), 
 // _____(__NR_sem_getvalue), 
 // _____(__NR_sem_init), 
 // _____(__NR_sem_destroy), 
@@ -6702,7 +6756,7 @@ const SyscallTableEntry ML_(syscall_table)[] = {
 // _____(__NR_auditctl), 
    MACXY(__NR_bsdthread_create, sys_bsdthread_create),   // 360
    MACX_(__NR_bsdthread_terminate, sys_bsdthread_terminate), 
-   MACX_(__NR_kqueue, sys_kqueue), 
+   MACXY(__NR_kqueue, sys_kqueue), 
    MACXY(__NR_kevent, sys_kevent), 
 // _____(__NR_lchown), 
 // _____(__NR_stack_snapshot), 
@@ -6761,7 +6815,7 @@ const SyscallTableEntry ML_(syscall_table)[] = {
    GENXY(__NR_poll_nocancel, sys_poll),
 // _____(__NR_msgsnd_nocancel),
 // _____(__NR_msgrcv_nocancel),
-// _____(__NR_sem_wait_nocancel),   // 420
+   MACX_(__NR_sem_wait_nocancel, sys_sem_wait_nocancel), // 420
 // _____(__NR_aio_suspend_nocancel),
 // _____(__NR___sigwait_nocancel),
    MACX_(__NR___semwait_signal_nocancel, sys___semwait_signal), 

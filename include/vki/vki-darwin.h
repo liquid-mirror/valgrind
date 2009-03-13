@@ -571,6 +571,11 @@ typedef uint32_t vki_u32;
 #define vki_semun semun
 
 
+#include <sys/semaphore.h>
+
+#define vki_sem_t sem_t
+
+
 #include <sys/mount.h>
 
 #define	VKI_MFSNAMELEN	MFSNAMELEN

@@ -85,6 +85,56 @@ Syscall param socketcall.getsockopt(optlen) points to unaddressable byte(s)
    at 0x........: malloc (vg_replace_malloc.c:...)
    by 0x........: main (scalar.c:24)
 -----------------------------------------------------
+268:       __NR_sem_open 2s 1m
+-----------------------------------------------------
+
+Syscall param sem_open(name) contains uninitialised byte(s)
+   ...
+
+Syscall param sem_open(oflag) contains uninitialised byte(s)
+   ...
+
+Syscall param sem_open(name) points to unaddressable byte(s)
+   ...
+ Address 0x........ is not stack'd, malloc'd or (recently) free'd
+-----------------------------------------------------
+268:       __NR_sem_open (4-args) 2s 0m
+-----------------------------------------------------
+
+Syscall param sem_open(mode) contains uninitialised byte(s)
+   ...
+
+Syscall param sem_open(value) contains uninitialised byte(s)
+   ...
+-----------------------------------------------------
+269:      __NR_sem_close 1s 0m
+-----------------------------------------------------
+
+Syscall param sem_close(sem) contains uninitialised byte(s)
+   ...
+-----------------------------------------------------
+270:     __NR_sem_unlink 1s 1m
+-----------------------------------------------------
+
+Syscall param sem_unlink(name) contains uninitialised byte(s)
+   ...
+
+Syscall param sem_unlink(name) points to unaddressable byte(s)
+   ...
+ Address 0x........ is not stack'd, malloc'd or (recently) free'd
+-----------------------------------------------------
+273:       __NR_sem_post 1s 0m
+-----------------------------------------------------
+
+Syscall param sem_post(sem) contains uninitialised byte(s)
+   ...
+-----------------------------------------------------
+420:__NR_sem_wait_nocancel 1s 0m
+-----------------------------------------------------
+
+Syscall param sem_wait_nocancel(sem) contains uninitialised byte(s)
+   ...
+-----------------------------------------------------
 9999:                9999 1e
 -----------------------------------------------------
 WARNING: unhandled syscall: 1660954383
