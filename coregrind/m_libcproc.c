@@ -329,12 +329,6 @@ Int VG_(system) ( Char* cmd )
       VG_(exit)(1);
    } else {
       /* parent */
-#if defined(VGO_darwin)
-      Int zzz;
-      I_die_here;
-      /* GrP fixme signals */
-      zzz = VG_(waitpid)(pid, NULL, 0);
-#else
       /* We have to set SIGCHLD to its default behaviour in order that
          VG_(waitpid) works (at least on AIX).  According to the Linux
          man page for waitpid:
@@ -348,8 +342,9 @@ Int VG_(system) ( Char* cmd )
          behaviour of setting SIGCHLD to SIG_IGN unspecified.)
       */
       Int ir, zzz;
-      struct vki_sigaction sa, saved_sa;
-      VG_(memset)( &sa, 0, sizeof(struct vki_sigaction) );
+      vki_sigaction_toK_t sa, sa2;
+      vki_sigaction_fromK_t saved_sa;
+      VG_(memset)( &sa, 0, sizeof(sa) );
       VG_(sigemptyset)(&sa.sa_mask);
       sa.ksa_handler = VKI_SIG_DFL;
       sa.sa_flags    = 0;
@@ -358,9 +353,9 @@ Int VG_(system) ( Char* cmd )
 
       zzz = VG_(waitpid)(pid, NULL, 0);
 
-      ir = VG_(sigaction)(VKI_SIGCHLD, &saved_sa, NULL);
+      VG_(convert_sigaction_fromK_to_toK)( &saved_sa, &sa2 );
+      ir = VG_(sigaction)(VKI_SIGCHLD, &sa2, NULL);
       vg_assert(ir == 0);
-#endif
       return zzz == -1 ? -1 : 0;
    }
 }
