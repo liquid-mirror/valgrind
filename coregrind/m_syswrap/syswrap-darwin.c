@@ -58,10 +58,13 @@
 #include "priv_syswrap-darwin.h"    /* for decls of darwin-ish wrappers */
 #include "priv_syswrap-main.h"
 
-
+/* --- !!! --- EXTERNAL HEADERS start --- !!! --- */
 #include <mach/mach.h>
 #include <mach/mach_vm.h>
 #include <semaphore.h>
+#include <sys/acl.h>   /* struct kauth_filesec */
+/* --- !!! --- EXTERNAL HEADERS end --- !!! --- */
+
 #define msgh_request_port      msgh_remote_port
 #define msgh_reply_port        msgh_local_port
 #define BOOTSTRAP_MAX_NAME_LEN                  128
@@ -1296,30 +1299,35 @@ PRE(sys_sem_open)
 
 PRE(sys_sem_close)
 {
-    PRINT("sem_close( %#lx )", ARG1);
-    PRE_REG_READ1(int, "sem_close", vki_sem_t *, sem);
+   PRINT("sem_close( %#lx )", ARG1);
+   PRE_REG_READ1(int, "sem_close", vki_sem_t *, sem);
 }
 
 PRE(sys_sem_unlink)
 {
-    PRINT("sem_unlink(  %#lx(%s) )", ARG1,(char*)ARG1);
-    PRE_REG_READ1(int, "sem_unlink", const char *, name);
-    PRE_MEM_RASCIIZ( "sem_unlink(name)", ARG1 );
+   PRINT("sem_unlink(  %#lx(%s) )", ARG1,(char*)ARG1);
+   PRE_REG_READ1(int, "sem_unlink", const char *, name);
+   PRE_MEM_RASCIIZ( "sem_unlink(name)", ARG1 );
 }
 
 PRE(sys_sem_post)
 {
-    PRINT("sem_post( %#lx )", ARG1);
-    PRE_REG_READ1(int, "sem_post", vki_sem_t *, sem);
-
+   PRINT("sem_post( %#lx )", ARG1);
+   PRE_REG_READ1(int, "sem_post", vki_sem_t *, sem);
    *flags |= SfMayBlock;
 }
 
 PRE(sys_sem_wait_nocancel)
 {
-    PRINT("sem_wait_nocancel( %#lx )", ARG1);
-    PRE_REG_READ1(int, "sem_wait_nocancel", vki_sem_t *, sem);
+   PRINT("sem_wait_nocancel( %#lx )", ARG1);
+   PRE_REG_READ1(int, "sem_wait_nocancel", vki_sem_t *, sem);
+   *flags |= SfMayBlock;
+}
 
+PRE(sys_sem_trywait)
+{
+   PRINT("sem_trywait( %#lx )", ARG1);
+   PRE_REG_READ1(int, "sem_trywait", vki_sem_t *, sem);
    *flags |= SfMayBlock;
 }
 
@@ -1716,12 +1724,29 @@ PRE(sys_listxattr)
    
    PRE_MEM_RASCIIZ( "listxattr(path)", ARG1 );
    PRE_MEM_WRITE( "listxattr(namebuf)", ARG2, ARG3 );
-
    *flags |= SfMayBlock;
 }
-
 POST(sys_listxattr)
 {
+   vg_assert(SUCCESS);
+   vg_assert((vki_ssize_t)RES >= 0);
+   POST_MEM_WRITE( ARG2, (vki_ssize_t)RES );
+}
+
+
+PRE(sys_flistxattr)
+{
+   PRINT( "flistxattr ( %ld, %#lx, %lu, %ld )", 
+          ARG1, ARG2, ARG3, ARG4 );
+   PRE_REG_READ4 (long, "flistxattr", 
+                  int, "fd", char *,"namebuf", 
+                 vki_size_t,"size", int,"options" );
+   PRE_MEM_WRITE( "flistxattr(namebuf)", ARG2, ARG3 );
+   *flags |= SfMayBlock;
+}
+POST(sys_flistxattr)
+{
+   vg_assert(SUCCESS);
    vg_assert((vki_ssize_t)RES >= 0);
    POST_MEM_WRITE( ARG2, (vki_ssize_t)RES );
 }
@@ -1763,12 +1788,28 @@ PRE(sys_statx)
    PRE_MEM_WRITE(   "statx(fsacl_size)", ARG4, sizeof(vki_size_t) );
    PRE_MEM_WRITE(   "statx(fsacl)",      ARG3, *(vki_size_t *)ARG4 );
 }
-
 POST(sys_statx)
 {
    POST_MEM_WRITE( ARG2, sizeof(struct vki_stat) );
    POST_MEM_WRITE( ARG4, sizeof(vki_size_t) );
    POST_MEM_WRITE( ARG3, *(vki_size_t *)ARG4 );
+}
+
+
+PRE(sys_fchmod_extended)
+{
+   PRINT("sys_fchmod_extended ( %ld, %ld, %ld, %ld, %#lx )",
+         ARG1, ARG2, ARG3, ARG4, ARG5);
+   PRE_REG_READ5(long, "fchmod", 
+                 unsigned int, fildes, 
+                 uid_t, uid,
+                 gid_t, gid,
+                 vki_mode_t, mode,
+                 void* /*really,user_addr_t*/, xsecurity);
+   /* relative to the xnu sources (kauth_copyinfilesec), this
+      is just way wrong. */
+   PRE_MEM_READ( "fchmod_extended(xsecurity)", ARG5, 
+                 sizeof(struct kauth_filesec) );
 }
 
 
@@ -6698,7 +6739,7 @@ const SyscallTableEntry ML_(syscall_table)[] = {
 // _____(__NR_removexattr), 
 // _____(__NR_fremovexattr), 
    MACXY(__NR_listxattr, sys_listxattr),    // 240
-// _____(__NR_flistxattr), 
+   MACXY(__NR_flistxattr, sys_flistxattr), 
    MACXY(__NR_fsctl, sys_fsctl), 
    MACX_(__NR_initgroups, sys_initgroups), 
 // _____(__NR_posix_spawn), 
@@ -6729,7 +6770,7 @@ const SyscallTableEntry ML_(syscall_table)[] = {
    MACX_(__NR_sem_close, sys_sem_close), 
    MACX_(__NR_sem_unlink, sys_sem_unlink), 
 // _____(__NR_sem_wait), 
-// _____(__NR_sem_trywait), 
+   MACX_(__NR_sem_trywait, sys_sem_trywait), 
 // _____(__NR_sem_post), 
    MACX_(__NR_sem_post, sys_sem_post), 
 // _____(__NR_sem_getvalue), 
@@ -6741,7 +6782,7 @@ const SyscallTableEntry ML_(syscall_table)[] = {
 // _____(__NR_lstat_extended),   // 280
 // _____(__NR_fstat_extended), 
 // _____(__NR_chmod_extended), 
-// _____(__NR_fchmod_extended), 
+   MACX_(__NR_fchmod_extended, sys_fchmod_extended), 
 // _____(__NR_access_extended), 
    MACX_(__NR_settid, sys_settid), 
 // _____(__NR_gettid), 
