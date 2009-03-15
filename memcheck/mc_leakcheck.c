@@ -658,7 +658,6 @@ lc_push_if_a_chunk_ptr(Addr ptr, Int clique, Bool is_prior_definite)
 }
 
 
-#if !defined(VGO_darwin)
 static jmp_buf memscan_jmpbuf;
 
 static
@@ -669,7 +668,6 @@ void scan_all_valid_memory_catcher ( Int sigNo, Addr addr )
    if (sigNo == VKI_SIGSEGV || sigNo == VKI_SIGBUS)
       __builtin_longjmp(memscan_jmpbuf, 1);
 }
-#endif
 
 // Scan a block of memory between [start, start+len).  This range may
 // be bogus, inaccessable, or otherwise strange; we deal with it.  For each
@@ -680,17 +678,13 @@ lc_scan_memory(Addr start, SizeT len, Bool is_prior_definite, Int clique)
 {
    Addr ptr = VG_ROUNDUP(start,     sizeof(Addr));
    Addr end = VG_ROUNDDN(start+len, sizeof(Addr));
-#if !defined(VGO_darwin)
    vki_sigset_t sigmask;
-#endif
 
    if (VG_DEBUG_LEAKCHECK)
       VG_(printf)("scan %#lx-%#lx (%lu)\n", start, end, len);
 
-#if !defined(VGO_darwin)
    VG_(sigprocmask)(VKI_SIG_SETMASK, NULL, &sigmask);
    VG_(set_fault_catcher)(scan_all_valid_memory_catcher);
-#endif
 
    // We might be in the middle of a page.  Do a cheap check to see if
    // it's valid;  if not, skip onto the next page.
@@ -714,11 +708,7 @@ lc_scan_memory(Addr start, SizeT len, Bool is_prior_definite, Int clique)
          }
       }
 
-#if !defined(VGO_darwin)
-      if (__builtin_setjmp(memscan_jmpbuf) == 0) 
-#endif
-      /* DDD: GrP fixme check page readability with kernel */
-      {
+      if (__builtin_setjmp(memscan_jmpbuf) == 0) {
          if ( MC_(is_valid_aligned_word)(ptr) ) {
             lc_scanned_szB += sizeof(Addr);
             addr = *(Addr *)ptr;
@@ -730,7 +720,6 @@ lc_scan_memory(Addr start, SizeT len, Bool is_prior_definite, Int clique)
          }
          ptr += sizeof(Addr);
       }
-#if !defined(VGO_darwin)
       else {
          // We need to restore the signal mask, because we were
          // longjmped out of a signal handler.
@@ -738,13 +727,10 @@ lc_scan_memory(Addr start, SizeT len, Bool is_prior_definite, Int clique)
 
          ptr = VG_PGROUNDUP(ptr+1);     // Bad page - skip it.
       }
-#endif
    }
 
-#if !defined(VGO_darwin)
    VG_(sigprocmask)(VKI_SIG_SETMASK, &sigmask, NULL);
    VG_(set_fault_catcher)(NULL);
-#endif
 }
 
 
