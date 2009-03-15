@@ -1571,7 +1571,7 @@ void VG_(synth_sigtrap)(ThreadId tid)
    vg_assert(VG_(threads)[tid].status == VgTs_Runnable);
 
    VG_(memset)(&info, 0, sizeof(info));
-   VG_(memset)(&uc, 0, sizeof(uc));
+   VG_(memset)(&uc,   0, sizeof(uc));
    info.si_signo = VKI_SIGTRAP;
    info.si_code = VKI_TRAP_BRKPT; /* tjh: only ever called for a brkpt ins */
 
@@ -1582,11 +1582,13 @@ void VG_(synth_sigtrap)(ThreadId tid)
                                           breakpoint trap... */
 #  elif defined(VGP_x86_darwin) || defined(VGP_amd64_darwin)
    /* the same thing, but using Darwin field/struct names */
-   struct __darwin_mcontext32 mc;
-   VG_(memset)(&mc, 0, sizeof(mc));
-   uc.uc_mcontext = &mc;
-   uc.uc_mcontext->__es.__trapno = 3;
-   uc.uc_mcontext->__es.__err = 0;
+   {
+      struct __darwin_mcontext32 mc;
+      VG_(memset)(&mc, 0, sizeof(mc));
+      uc.uc_mcontext = &mc;
+      uc.uc_mcontext->__es.__trapno = 3;
+      uc.uc_mcontext->__es.__err = 0;
+   }
 #  endif
 
    resume_scheduler(tid);
