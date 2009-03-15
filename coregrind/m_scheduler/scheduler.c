@@ -873,12 +873,7 @@ static void handle_syscall(ThreadId tid, UInt trc)
    
    if (jumped) {
       block_signals();
-#if defined(VGO_darwin)
-      I_die_here;
-      // DDD: #warning GrP fixme signals
-#else
       VG_(poll_signals)(tid);
-#endif
    }
 }
 
@@ -1149,14 +1144,7 @@ VgSchedReturnCode VG_(scheduler) ( ThreadId tid )
       }
 
       case VEX_TRC_JMP_SIGTRAP:
-#if defined(VGO_darwin) 
-         // GrP fixme signals
-         // GrP remote debugger hack - gdb sets breakpoint (int3) in dyld code
-         I_die_here;
-         VG_(start_debugger_signal)(tid, 5);// gdb TARGET_SIGNAL_TRAP
-#else
          VG_(synth_sigtrap)(tid);
-#endif
          break;
 
       case VEX_TRC_JMP_SIGSEGV:

@@ -1515,6 +1515,7 @@ static void synth_fault_common(ThreadId tid, Addr addr, Int si_code)
 
    vg_assert(VG_(threads)[tid].status == VgTs_Runnable);
 
+   VG_(memset)(&info, 0, sizeof(info));
    info.si_signo = VKI_SIGSEGV;
    info.si_code = si_code;
    info.VKI_SIGINFO_si_addr = (void*)addr;
@@ -1552,6 +1553,7 @@ void VG_(synth_sigill)(ThreadId tid, Addr addr)
 
    vg_assert(VG_(threads)[tid].status == VgTs_Runnable);
 
+   VG_(memset)(&info, 0, sizeof(info));
    info.si_signo = VKI_SIGILL;
    info.si_code  = VKI_ILL_ILLOPC; /* jrs: no idea what this should be */
    info.VKI_SIGINFO_si_addr = (void*)addr;
@@ -1568,18 +1570,21 @@ void VG_(synth_sigtrap)(ThreadId tid)
 
    vg_assert(VG_(threads)[tid].status == VgTs_Runnable);
 
+   VG_(memset)(&info, 0, sizeof(info));
+   VG_(memset)(&uc, 0, sizeof(uc));
    info.si_signo = VKI_SIGTRAP;
    info.si_code = VKI_TRAP_BRKPT; /* tjh: only ever called for a brkpt ins */
 
 #  if defined(VGP_x86_linux) || defined(VGP_amd64_linux)
-   uc.uc_mcontext->trapno = 3;     /* tjh: this is the x86 trap number
+   uc.uc_mcontext.trapno = 3;     /* tjh: this is the x86 trap number
                                           for a breakpoint trap... */
    uc.uc_mcontext.err = 0;        /* tjh: no error code for x86
                                           breakpoint trap... */
 #  elif defined(VGP_x86_darwin) || defined(VGP_amd64_darwin)
    /* the same thing, but using Darwin field/struct names */
-   /* XXX JRS this doesn't work, maybe because uc.uc_mcontext
-      points to unwritable memory? */
+   struct __darwin_mcontext32 mc;
+   VG_(memset)(&mc, 0, sizeof(mc));
+   uc.uc_mcontext = &mc;
    uc.uc_mcontext->__es.__trapno = 3;
    uc.uc_mcontext->__es.__err = 0;
 #  endif
