@@ -1567,6 +1567,9 @@ void VG_(synth_sigtrap)(ThreadId tid)
 {
    vki_siginfo_t info;
    struct vki_ucontext uc;
+#  if defined(VGP_x86_darwin) || defined(VGP_amd64_darwin)
+   struct __darwin_mcontext32 mc;
+#  endif
 
    vg_assert(VG_(threads)[tid].status == VgTs_Runnable);
 
@@ -1582,13 +1585,10 @@ void VG_(synth_sigtrap)(ThreadId tid)
                                           breakpoint trap... */
 #  elif defined(VGP_x86_darwin) || defined(VGP_amd64_darwin)
    /* the same thing, but using Darwin field/struct names */
-   {
-      struct __darwin_mcontext32 mc;
-      VG_(memset)(&mc, 0, sizeof(mc));
-      uc.uc_mcontext = &mc;
-      uc.uc_mcontext->__es.__trapno = 3;
-      uc.uc_mcontext->__es.__err = 0;
-   }
+   VG_(memset)(&mc, 0, sizeof(mc));
+   uc.uc_mcontext = &mc;
+   uc.uc_mcontext->__es.__trapno = 3;
+   uc.uc_mcontext->__es.__err = 0;
 #  endif
 
    resume_scheduler(tid);
