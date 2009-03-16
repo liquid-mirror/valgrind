@@ -284,6 +284,7 @@ void pthread_hijack(Addr self, Addr kport, Addr func, Addr func_arg,
    // Set thread's registers
    // Do this FIRST because some code below tries to collect a backtrace, 
    // which requires valid register data.
+   // DDD: need to do post_reg_write events here?
    LibVEX_GuestX86_initialise(vex);
    vex->guest_EIP = pthread_starter;
    vex->guest_EAX = self;
@@ -326,6 +327,10 @@ void pthread_hijack(Addr self, Addr kport, Addr func, Addr func_arg,
    // Tell parent thread's POST(sys_bsdthread_create) that we're done 
    // initializing registers and mapping memory.
    semaphore_signal(tst->os_state.bsdthread_create_sema);
+
+   // DDD: should this be here rather than in POST(sys_bsdthread_create)?
+   // But we don't have ptid here...
+   //VG_TRACK ( pre_thread_ll_create, ptid, tst->tid );
 
    // Go!
    call_on_new_stack_0_1(tst->os_state.valgrind_stack_init_SP, 0, 

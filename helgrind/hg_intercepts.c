@@ -58,9 +58,16 @@
 /*---                                                          ---*/
 /*----------------------------------------------------------------*/
 
-#define PTH_FUNC(ret_ty, f, args...) \
+#if defined(VGO_darwin)
+// Darwin pthread funcs appear to be in the main C library.
+#  define PTH_FUNC(ret_ty, f, args...) \
+   ret_ty I_WRAP_SONAME_FNNAME_ZZ(libSystemZdZaZddylib,f)(args); \
+   ret_ty I_WRAP_SONAME_FNNAME_ZZ(libSystemZdZaZddylib,f)(args)
+#else
+#  define PTH_FUNC(ret_ty, f, args...) \
    ret_ty I_WRAP_SONAME_FNNAME_ZZ(libpthreadZdsoZd0,f)(args); \
    ret_ty I_WRAP_SONAME_FNNAME_ZZ(libpthreadZdsoZd0,f)(args)
+#endif
 
 // Do a client request.  This is a macro rather than a function 
 // so as to avoid having an extra function in the stack trace.
@@ -195,7 +202,10 @@ static void* mythread_wrapper ( void* xargsV )
 }
 
 // pthread_create
-PTH_FUNC(int, pthreadZucreateZAZa, // pthread_create@*
+// DDD: need to remove "@*" suffixes from all pthread functions that have
+// them for Darwin?
+//PTH_FUNC(int, pthreadZucreateZAZa, // pthread_create@*
+PTH_FUNC(int, pthreadZucreate, // pthread_create
               pthread_t *thread, const pthread_attr_t *attr,
               void *(*start) (void *), void *arg)
 {

@@ -84,14 +84,14 @@ static mach_port_t vg_bootstrap_port = 0;
 
 // Run a thread from beginning to end and return the thread's
 // scheduler-return-code.
-static VgSchedReturnCode ML_(thread_wrapper)(Word /*ThreadId*/ tidW)
+static VgSchedReturnCode thread_wrapper(Word /*ThreadId*/ tidW)
 {
    VgSchedReturnCode ret;
    ThreadId     tid = (ThreadId)tidW;
    ThreadState* tst = VG_(get_ThreadState)(tid);
 
-   VG_(debugLog)(1, "core_os", 
-                    "ML_(thread_wrapper)(tid=%lld): entry\n", 
+   VG_(debugLog)(1, "syswrap-darwin", 
+                    "thread_wrapper(tid=%lld): entry\n", 
                     (ULong)tidW);
 
    vg_assert(tst->status == VgTs_Init);
@@ -118,8 +118,8 @@ static VgSchedReturnCode ML_(thread_wrapper)(Word /*ThreadId*/ tidW)
    vg_assert(tst->status == VgTs_Runnable);
    vg_assert(VG_(is_running_thread)(tid));
 
-   VG_(debugLog)(1, "core_os", 
-                    "ML_(thread_wrapper)(tid=%lld): done\n", 
+   VG_(debugLog)(1, "syswrap-darwin", 
+                    "thread_wrapper(tid=%lld): done\n", 
                     (ULong)tidW);
 
    /* Return to caller, still holding the lock. */
@@ -204,20 +204,21 @@ static void run_a_thread_NORETURN ( Word tidW )
    ThreadId tid = (ThreadId)tidW;
 
    VG_(debugLog)(1, "syswrap-darwin", 
-                    "run_a_thread_NORETURN(tid=%lld): "
-                       "ML_(thread_wrapper) called\n",
-                       (ULong)tidW);
+                    "run_a_thread_NORETURN(tid=%lld): pre-thread_wrapper\n",
+                    (ULong)tidW);
 
    /* Run the thread all the way through. */
-   src = ML_(thread_wrapper)(tid);  
+   src = thread_wrapper(tid);  
 
    VG_(debugLog)(1, "syswrap-darwin", 
-                    "run_a_thread_NORETURN(tid=%lld): "
-                       "ML_(thread_wrapper) done\n",
-                       (ULong)tidW);
+                    "run_a_thread_NORETURN(tid=%lld): post-thread_wrapper\n",
+                    (ULong)tidW);
 
    c = VG_(count_living_threads)();
    vg_assert(c >= 1); /* stay sane */
+
+   // Tell the tool this thread is exiting
+   VG_TRACK( pre_thread_ll_exit, tid );
 
    if (c == 1) {
 
@@ -5352,15 +5353,15 @@ PRE(sys_bsdthread_create)
    tst->os_state.func_arg = (Addr)ARG2;
    ARG2 = (Word)tst;
 
-   // Create a semaphore that pthread_hijack will signal once it starts
-   // POST(sys_bsdthread_create) needs to wait for the new memory map to appear
+   // Create a semaphore that pthread_hijack will signal once it starts.
+   // POST(sys_bsdthread_create) needs to wait for the new memory map to appear.
    semaphore_create(mach_task_self(), &tst->os_state.bsdthread_create_sema, 
                     SYNC_POLICY_FIFO, 0);
 }
 
 POST(sys_bsdthread_create)
 { 
-   // Wait for pthreead_hijack to finish on new thread.
+   // Wait for pthread_hijack to finish on new thread.
    // Otherwise V thinks the new pthread struct is still 
    // unmapped when we return to libc, causing false errors
 
@@ -5370,6 +5371,12 @@ POST(sys_bsdthread_create)
 
    // fixme semaphore destroy needed when thread creation fails
    // fixme probably other cleanup too
+
+   // DDD: I'm not at all sure this is the right spot for this.  It probably
+   // should be in pthread_hijack instead, just before the call to
+   // start_thread_NORETURN(), call_on_new_stack_0_1(), but we don't have the
+   // parent tid value there...
+   VG_TRACK ( pre_thread_ll_create, tid, tst->tid );
 }
 
 
@@ -6383,8 +6390,8 @@ PRE(swtch)
 
 PRE(swtch_pri)
 {
-   PRINT("swtch ( %ld )", ARG1);
-   PRE_REG_READ1(long, "swtch", int,"pri");
+   PRINT("swtch_pri ( %ld )", ARG1);
+   PRE_REG_READ1(long, "swtch_pri", int,"pri");
 
    *flags |= SfMayBlock;
 }
