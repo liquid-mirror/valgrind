@@ -2462,7 +2462,7 @@ PRE(sys_rt_sigaction)
                  struct sigaction *, oldact, vki_size_t, sigsetsize);
 
    if (ARG2 != 0) {
-      struct vki_sigaction *sa = (struct vki_sigaction *)ARG2;
+      vki_sigaction_toK_t *sa = (vki_sigaction_toK_t *)ARG2;
       PRE_MEM_READ( "rt_sigaction(act->sa_handler)", (Addr)&sa->ksa_handler, sizeof(sa->ksa_handler));
       PRE_MEM_READ( "rt_sigaction(act->sa_mask)", (Addr)&sa->sa_mask, sizeof(sa->sa_mask));
       PRE_MEM_READ( "rt_sigaction(act->sa_flags)", (Addr)&sa->sa_flags, sizeof(sa->sa_flags));
@@ -2470,22 +2470,22 @@ PRE(sys_rt_sigaction)
          PRE_MEM_READ( "rt_sigaction(act->sa_restorer)", (Addr)&sa->sa_restorer, sizeof(sa->sa_restorer));
    }
    if (ARG3 != 0)
-      PRE_MEM_WRITE( "rt_sigaction(oldact)", ARG3, sizeof(struct vki_sigaction));
+      PRE_MEM_WRITE( "rt_sigaction(oldact)", ARG3, sizeof(vki_sigaction_fromK_t));
 
    // XXX: doesn't seem right to be calling do_sys_sigaction for
    // sys_rt_sigaction... perhaps this function should be renamed
    // VG_(do_sys_rt_sigaction)()  --njn
 
    SET_STATUS_from_SysRes(
-      VG_(do_sys_sigaction)(ARG1, (const struct vki_sigaction *)ARG2,
-                            (struct vki_sigaction *)ARG3)
+      VG_(do_sys_sigaction)(ARG1, (const vki_sigaction_toK_t *)ARG2,
+                            (vki_sigaction_fromK_t *)ARG3)
    );
 }
 POST(sys_rt_sigaction)
 {
    vg_assert(SUCCESS);
    if (RES == 0 && ARG3 != 0)
-      POST_MEM_WRITE( ARG3, sizeof(struct vki_sigaction));
+      POST_MEM_WRITE( ARG3, sizeof(vki_sigaction_fromK_t));
 }
 
 PRE(sys_rt_sigprocmask)

@@ -771,10 +771,10 @@ SysRes VG_(do_sys_sigaltstack) ( ThreadId tid, vki_stack_t* ss, vki_stack_t* oss
    if (VG_(clo_trace_signals))
       VG_(message)(Vg_DebugExtraMsg, 
          "sys_sigaltstack: tid %d, "
-         "ss %p{%p,sz=%lu,flags=0x%llx}, oss %p (current SP %p)",
+         "ss %p{%p,sz=%llu,flags=0x%llx}, oss %p (current SP %p)",
          tid, (void*)ss, 
                    ss ? ss->ss_sp : 0,
-                   ss ? ss->ss_size : 0,
+                   (ULong)(ss ? ss->ss_size : 0),
                    (ULong)(ss ? ss->ss_flags : 0),
          (void*)oss, (void*)m_SP );
 
@@ -1857,6 +1857,7 @@ void sync_signalhandler ( Int sigNo,
    info->si_code = (Short)info->si_code;
 #  endif
 
+   /* // debug code:
    if (0) {
       VG_(printf)("info->si_signo  %d\n", info->si_signo);
       VG_(printf)("info->si_errno  %d\n", info->si_errno);
@@ -1866,6 +1867,7 @@ void sync_signalhandler ( Int sigNo,
       VG_(printf)("info->si_status %d\n", info->si_status);
       VG_(printf)("info->si_addr   %p\n", info->si_addr);
    }
+   */
 
    /* Figure out if the signal is being sent from outside the process.
       (Why do we care?)  If it is, then treat it more like an async
