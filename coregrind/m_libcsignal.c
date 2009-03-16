@@ -290,22 +290,22 @@ Int VG_(kill)( Int pid, Int signo )
 // GrP fixme this is an lwpid, not a ThreadId
 Int VG_(tkill)( ThreadId tid, Int signo )
 {
-#if defined(__NR_tkill)
+#  if defined(__NR_tkill)
    SysRes res = VG_(mk_SysRes_Error)(VKI_ENOSYS);
    res = VG_(do_syscall2)(__NR_tkill, tid, signo);
    if (res.isError && res.err == VKI_ENOSYS)
       res = VG_(do_syscall2)(__NR_kill, tid, signo);
    return res.isError ? -1 : 0;
 
-#elif defined(VGO_darwin)
+#  elif defined(VGO_darwin)
    // Note that the __pthread_kill syscall takes a Mach thread, not a pthread.
    SysRes res;
    res = VG_(do_syscall2)(__NR___pthread_kill, tid, signo);
    return res.isError ? -1 : 0;
 
-#else
-#error no tkill implementation
-#endif
+#  else
+#    error "Unsupported plat"
+#  endif
 }
 
 /* ---------------------- sigtimedwait_zero ----------------------- */
@@ -534,7 +534,7 @@ Int VG_(sigtimedwait_zero)( const vki_sigset_t *set,
 }
 
 #else
-#  error Unknown OS
+#  error "Unknown OS"
 #endif
 
 /*--------------------------------------------------------------------*/
