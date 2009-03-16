@@ -135,6 +135,7 @@ DECL_TEMPLATE(darwin, sys_fgetxattr);
 DECL_TEMPLATE(darwin, sys_setxattr);
 DECL_TEMPLATE(darwin, sys_fsetxattr);
 DECL_TEMPLATE(darwin, sys_initgroups);
+DECL_TEMPLATE(darwin, sys_posix_spawn);
 DECL_TEMPLATE(darwin, sys_settid);
 DECL_TEMPLATE(darwin, sys_sendfile);
 DECL_TEMPLATE(darwin, sys_fcntl);

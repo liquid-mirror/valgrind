@@ -1521,7 +1521,12 @@ void VG_(client_syscall) ( ThreadId tid, UInt trc )
 
          /* Gack.  More impedance matching.  Copy the possibly
             modified syscall args back into the guest state. */
-         vg_assert(eq_SyscallArgs(&sci->args, &sci->orig_args));
+         /* JRS 2009-Mar-16: if the syscall args are possibly modified,
+            then this assertion is senseless:
+              vg_assert(eq_SyscallArgs(&sci->args, &sci->orig_args));
+            The case that exposed it was sys_posix_spawn on Darwin,
+            which heavily modifies its arguments but then lets the call
+            go through anyway, with SfToBlock set, hence we end up here. */
          putSyscallArgsIntoGuestState( &sci->args, &tst->arch.vex );
 
          /* Drop the lock */

@@ -2201,6 +2201,237 @@ PRE(sys_initgroups)
     PRE_MEM_READ("gidset", ARG2, ARG1 * sizeof(vki_gid_t));
 }
 
+
+//--------- posix_spawn ---------//
+/* Largely copied from PRE(sys_execve) in syswrap-generic.c, and from
+   the simpler AIX equivalent (syswrap-aix5.c). */
+// Pre_read a char** argument.
+static void pre_argv_envp(Addr a, ThreadId tid, Char* s1, Char* s2)
+{
+   while (True) {
+      Addr a_deref;
+      Addr* a_p = (Addr*)a;
+      PRE_MEM_READ( s1, (Addr)a_p, sizeof(Addr) );
+      a_deref = *a_p;
+      if (0 == a_deref)
+         break;
+      PRE_MEM_RASCIIZ( s2, a_deref );
+      a += sizeof(char*);
+   }
+}
+static SysRes simple_pre_exec_check(const HChar* exe_name)
+{
+   Int fd, ret;
+   SysRes res;
+   Bool setuid_allowed;
+
+   // Check it's readable
+   res = VG_(open)(exe_name, VKI_O_RDONLY, 0);
+   if (res.isError) {
+      return res;
+   }
+   fd = res.res;
+   VG_(close)(fd);
+
+   // Check we have execute permissions.  We allow setuid executables
+   // to be run only in the case when we are not simulating them, that
+   // is, they to be run natively.
+   setuid_allowed = VG_(clo_trace_children)  ? False  : True;
+   ret = VG_(check_executable)(NULL/*&is_setuid*/,
+                               (HChar*)exe_name, setuid_allowed);
+   if (0 != ret) {
+      return VG_(mk_SysRes_Error)(ret);
+   }
+   return VG_(mk_SysRes_Success)(0);
+}
+PRE(sys_posix_spawn)
+{
+   Char*        path = NULL;       /* path to executable */
+   Char**       envp = NULL;
+   Char**       argv = NULL;
+   Char**       arg2copy;
+   Char*        launcher_basename = NULL;
+   Int          i, j, tot_args;
+   SysRes       res;
+
+   /* args: pid_t* pid
+            char*  path
+            posix_spawn_file_actions_t* file_actions
+            char** argv
+            char** envp
+   */
+   PRINT("sys_posix_spawn( %#lx, %#lx(%s), %#lx, %#lx, %#lx )",
+         ARG1, ARG2, ARG2 ? (HChar*)ARG2 : "(null)", ARG3, ARG4, ARG5 );
+
+   /* Standard pre-syscall checks */
+
+   PRE_REG_READ5(int, "posix_spawn", vki_pid_t*, pid, char*, path,
+                 void*, file_actions, char**, argv, char**, envp );
+   PRE_MEM_WRITE("posix_spawn(pid)", ARG1, sizeof(vki_pid_t) );
+   PRE_MEM_RASCIIZ("posix_spawn(path)", ARG2);
+   //FIXME: check file_actions
+   if (ARG4 != 0)
+      pre_argv_envp( ARG4, tid, "posix_spawn(argv)",
+                                "posix_spawn(argv[i])" );
+   if (ARG5 != 0)
+      pre_argv_envp( ARG5, tid, "posix_spawn(envp)",
+                                "posix_spawn(envp[i])" );
+
+   if (0)
+   VG_(printf)("sys_posix_spawn( %#lx, %#lx(%s), %#lx, %#lx, %#lx )\n",
+         ARG1, ARG2, ARG2 ? (HChar*)ARG2 : "(null)", ARG3, ARG4, ARG5 );
+
+   /* Now follows a bunch of logic copied from PRE(sys_execve) in
+      syswrap-generic.c. */
+
+   /* Check that the name at least begins in client-accessible storage. */
+   if (!VG_(am_is_valid_for_client)( ARG2, 1, VKI_PROT_READ )) {
+      SET_STATUS_Failure( VKI_EFAULT );
+      return;
+   }
+
+   // Do the important checks:  it is a file, is executable, permissions are
+   // ok, etc.  We allow setuid executables to run only in the case when
+   // we are not simulating them, that is, they to be run natively.
+   res = simple_pre_exec_check((const HChar*)ARG2);
+   if (res.isError) {
+      SET_STATUS_Failure( res.err );
+      return;
+   }
+
+   /* If we're tracing the child, and the launcher name looks bogus
+      (possibly because launcher.c couldn't figure it out, see
+      comments therein) then we have no option but to fail. */
+   if (VG_(clo_trace_children)
+       && (VG_(name_of_launcher) == NULL
+           || VG_(name_of_launcher)[0] != '/')) {
+      SET_STATUS_Failure( VKI_ECHILD ); /* "No child processes" */
+      return;
+   }
+
+   /* Ok.  So let's give it a try. */
+   VG_(debugLog)(1, "syswrap", "Posix_spawn of %s\n", (Char*)ARG2);
+
+   // Set up the child's exe path.
+   //
+   if (VG_(clo_trace_children)) {
+
+      // We want to exec the launcher.  Get its pre-remembered path.
+      path = VG_(name_of_launcher);
+      // VG_(name_of_launcher) should have been acquired by m_main at
+      // startup.  The following two assertions should be assured by
+      // the "If we're tracking the child .." test just above here.
+      vg_assert(path);
+      vg_assert(path[0] == '/');
+      launcher_basename = path;
+
+   } else {
+      path = (Char*)ARG2;
+   }
+
+   // Set up the child's environment.
+   //
+   // Remove the valgrind-specific stuff from the environment so the
+   // child doesn't get vgpreload_core.so, vgpreload_<tool>.so, etc.
+   // This is done unconditionally, since if we are tracing the child,
+   // the child valgrind will set up the appropriate client environment.
+   // Nb: we make a copy of the environment before trying to mangle it
+   // as it might be in read-only memory (this was bug #101881).
+   //
+   // Then, if tracing the child, set VALGRIND_LIB for it.
+   //
+   if (ARG5 == 0) {
+      envp = NULL;
+   } else {
+      envp = VG_(env_clone)( (Char**)ARG5 );
+      vg_assert(envp);
+      VG_(env_remove_valgrind_env_stuff)( envp );
+   }
+
+   if (VG_(clo_trace_children)) {
+      // Set VALGRIND_LIB in ARG5 (the environment)
+      VG_(env_setenv)( &envp, VALGRIND_LIB, VG_(libdir));
+   }
+
+   // Set up the child's args.  If not tracing it, they are
+   // simply ARG4.  Otherwise, they are
+   //
+   // [launcher_basename] ++ VG_(args_for_valgrind) ++ [ARG2] ++ ARG4[1..]
+   //
+   // except that the first VG_(args_for_valgrind_noexecpass) args
+   // are omitted.
+   //
+   if (!VG_(clo_trace_children)) {
+      argv = (Char**)ARG4;
+   } else {
+      vg_assert( VG_(args_for_valgrind) );
+      vg_assert( VG_(args_for_valgrind_noexecpass) >= 0 );
+      vg_assert( VG_(args_for_valgrind_noexecpass)
+                   <= VG_(sizeXA)( VG_(args_for_valgrind) ) );
+      /* how many args in total will there be? */
+      // launcher basename
+      tot_args = 1;
+      // V's args
+      tot_args += VG_(sizeXA)( VG_(args_for_valgrind) );
+      tot_args -= VG_(args_for_valgrind_noexecpass);
+      // name of client exe
+      tot_args++;
+      // args for client exe, skipping [0]
+      arg2copy = (Char**)ARG4;
+      if (arg2copy && arg2copy[0]) {
+         for (i = 1; arg2copy[i]; i++)
+            tot_args++;
+      }
+      // allocate
+      argv = VG_(malloc)( "di.syswrap.pre_sys_execve.1",
+                          (tot_args+1) * sizeof(HChar*) );
+      vg_assert(argv);
+      // copy
+      j = 0;
+      argv[j++] = launcher_basename;
+      for (i = 0; i < VG_(sizeXA)( VG_(args_for_valgrind) ); i++) {
+         if (i < VG_(args_for_valgrind_noexecpass))
+            continue;
+         argv[j++] = * (HChar**) VG_(indexXA)( VG_(args_for_valgrind), i );
+      }
+      argv[j++] = (Char*)ARG2;
+      if (arg2copy && arg2copy[0])
+         for (i = 1; arg2copy[i]; i++)
+            argv[j++] = arg2copy[i];
+      argv[j++] = NULL;
+      // check
+      vg_assert(j == tot_args+1);
+   }
+
+   /* XXXX JRS FIXME: sort out the signal state.  What signal
+      state does the child inherit from the parent?  */
+
+   if (0) {
+      Char **cpp;
+      VG_(printf)("posix_spawn: %s\n", path);
+      for (cpp = argv; cpp && *cpp; cpp++)
+         VG_(printf)("argv: %s\n", *cpp);
+      if (1)
+         for (cpp = envp; cpp && *cpp; cpp++)
+            VG_(printf)("env: %s\n", *cpp);
+   }
+
+   /* Let the call go through as usual.  However, we have to poke
+      the altered arguments back into the argument slots. */
+   ARG2 = (UWord)path;
+   ARG4 = (UWord)argv;
+   ARG5 = (UWord)envp;
+
+   /* not to mention .. */
+   *flags |= SfMayBlock;
+}
+POST(sys_posix_spawn)
+{
+   vg_assert(SUCCESS);
+   //POST_MEM_WRITE( ARG1, sizeof(vki_pid_t) );
+}
+
+
 PRE(sys_socket)
 {
    PRINT("sys_socket ( %ld, %ld, %ld )",ARG1,ARG2,ARG3);
@@ -6749,7 +6980,7 @@ const SyscallTableEntry ML_(syscall_table)[] = {
    MACXY(__NR_flistxattr, sys_flistxattr), 
    MACXY(__NR_fsctl, sys_fsctl), 
    MACX_(__NR_initgroups, sys_initgroups), 
-// _____(__NR_posix_spawn), 
+   MACXY(__NR_posix_spawn, sys_posix_spawn), 
    _____(VG_DARWIN_SYSCALL_CONSTRUCT_UNIX(245)),   // ???
    _____(VG_DARWIN_SYSCALL_CONSTRUCT_UNIX(246)),   // ???
 // _____(__NR_nfsclnt), 
