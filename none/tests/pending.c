@@ -69,6 +69,7 @@ int main()
 	}
 
 	printf("6: checking SIGUSR2 still pending...\n");
+#       if HAVE_SIGWAITINFO
 	if (sigwaitinfo(&all, &info) == -1) {
 		perror("FAILED: sigwaitinfo failed");
 		return 1;
@@ -78,6 +79,7 @@ int main()
 			info.si_signo);
 		return 1;
 	}
+#       endif
 
 	printf("OK\n");
 	return 0;

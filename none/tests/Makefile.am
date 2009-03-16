@@ -137,6 +137,7 @@ check_PROGRAMS = \
 	floored fork fucomip \
 	munmap_exe map_unaligned map_unmap mq \
 	nestedfns \
+	pending \
 	pth_atfork1 pth_blockedsig pth_cancel1 pth_cancel2 pth_cvsimple \
 	pth_empty pth_exit pth_exit2 pth_mutexspeed pth_once pth_rwlock \
 	pth_stackalign \
@@ -152,13 +153,10 @@ check_PROGRAMS = \
 # - async-sigs and fdleak_ipv4 both build and run under Valgrind (although
 #   they die)... I think they are disabled because they currently screw up
 #   other tests.
-# - 'pending' doesn't build because Darwin lacks sigwaitinfo [should
-#   probably do a configure-time check for it]
 if ! VGCONF_OS_IS_DARWIN
    check_PROGRAMS += \
 	async-sigs \
-	fdleak_ipv4 \
-	pending
+	fdleak_ipv4
 endif
 # DDD:
 # - blockfault hangs
