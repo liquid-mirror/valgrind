@@ -363,6 +363,7 @@ int main(int argc, char** argv, char** envp)
    if (strlen(launcher_name) + strlen(envp[i+1]) > PATH_MAX)
       barf("launcher path is too long");
    strcat(launcher_name, envp[i+1]);
+   VG_(debugLog)(1, "launcher", "launcher_name = %s\n", launcher_name);
 
    /* tediously augment the env: VALGRIND_LAUNCHER=launcher_name */
    asprintf(&new_line, VALGRIND_LAUNCHER "=%s", launcher_name);

@@ -1384,13 +1384,14 @@ Int valgrind_main ( Int argc, HChar **argv, HChar **envp )
 
    //--------------------------------------------------------------
    // Extract the launcher name from the environment.
-   VG_(debugLog)(1, "main", "Getting stage1's name\n");
+   VG_(debugLog)(1, "main", "Getting launcher's name ...\n");
    VG_(name_of_launcher) = VG_(getenv)(VALGRIND_LAUNCHER);
    if (VG_(name_of_launcher) == NULL) {
       VG_(printf)("valgrind: You cannot run '%s' directly.\n", argv[0]);
       VG_(printf)("valgrind: You should use $prefix/bin/valgrind.\n");
       VG_(exit)(1);
    }
+   VG_(debugLog)(1, "main", "... %s\n", VG_(name_of_launcher));
 
    //--------------------------------------------------------------
    // Get the current process datasize rlimit, and set it to zero.
