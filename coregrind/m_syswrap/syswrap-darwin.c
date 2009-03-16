@@ -1229,6 +1229,16 @@ POST(sys_fcntl64)
    unix syscalls
    ------------------------------------------------------------------ */
 
+PRE(sys_futimes)
+{
+   PRINT("sys_futimes ( %ld, %#lx )", ARG1,ARG2);
+   PRE_REG_READ2(long, "futimes", int, fd, struct timeval *, tvp);
+   if (ARG2 != 0) {
+      PRE_timeval_READ( "futimes(tvp[0])", ARG2 );
+      PRE_timeval_READ( "futimes(tvp[1])", ARG2+sizeof(struct vki_timeval) );
+   }
+}
+
 PRE(sys_semget)
 {
    PRINT("sys_semget ( %ld, %ld, %ld )",ARG1,ARG2,ARG3);
@@ -1799,6 +1809,8 @@ POST(sys_statx)
 
 PRE(sys_fchmod_extended)
 {
+   /* Note: this is not really correct.  Handling of
+      sys_chmod_extended is broken in the same way. */
    PRINT("sys_fchmod_extended ( %ld, %ld, %ld, %ld, %#lx )",
          ARG1, ARG2, ARG3, ARG4, ARG5);
    PRE_REG_READ5(long, "fchmod", 
@@ -1810,6 +1822,25 @@ PRE(sys_fchmod_extended)
    /* relative to the xnu sources (kauth_copyinfilesec), this
       is just way wrong. */
    PRE_MEM_READ( "fchmod_extended(xsecurity)", ARG5, 
+                 sizeof(struct kauth_filesec) );
+}
+
+PRE(sys_chmod_extended)
+{
+   /* Note: this is not really correct.  Handling of
+      sys_fchmod_extended is broken in the same way. */
+   PRINT("sys_chmod_extended ( %#lx(%s), %ld, %ld, %ld, %#lx )",
+         ARG1, ARG1 ? (HChar*)ARG1 : "(null)", ARG2, ARG3, ARG4, ARG5);
+   PRE_REG_READ5(long, "chmod", 
+                 unsigned int, fildes, 
+                 uid_t, uid,
+                 gid_t, gid,
+                 vki_mode_t, mode,
+                 void* /*really,user_addr_t*/, xsecurity);
+   PRE_MEM_RASCIIZ("chmod_extended(path)", ARG1);
+   /* relative to the xnu sources (kauth_copyinfilesec), this
+      is just way wrong. */
+   PRE_MEM_READ( "chmod_extended(xsecurity)", ARG5, 
                  sizeof(struct kauth_filesec) );
 }
 
@@ -6875,7 +6906,7 @@ const SyscallTableEntry ML_(syscall_table)[] = {
    GENX_(__NR_mkdir, sys_mkdir), 
    GENX_(__NR_rmdir, sys_rmdir), 
    GENX_(__NR_utimes, sys_utimes), 
-// _____(__NR_futimes), 
+   MACX_(__NR_futimes, sys_futimes), 
 // _____(__NR_adjtime),     // 140
    _____(VG_DARWIN_SYSCALL_CONSTRUCT_UNIX(141)),   // old getpeername
    MACXY(__NR_gethostuuid, sys_gethostuuid), 
@@ -7019,7 +7050,7 @@ const SyscallTableEntry ML_(syscall_table)[] = {
    MACXY(__NR_stat_extended, sys_statx), 
 // _____(__NR_lstat_extended),   // 280
 // _____(__NR_fstat_extended), 
-// _____(__NR_chmod_extended), 
+   MACX_(__NR_chmod_extended, sys_chmod_extended), 
    MACX_(__NR_fchmod_extended, sys_fchmod_extended), 
 // _____(__NR_access_extended), 
    MACX_(__NR_settid, sys_settid), 

@@ -4026,7 +4026,7 @@ PRE(sys_utimes)
    if (ARG2 != 0) {
       PRE_timeval_READ( "utimes(tvp[0])", ARG2 );
       PRE_timeval_READ( "utimes(tvp[1])", ARG2+sizeof(struct vki_timeval) );
-}
+   }
 }
 
 PRE(sys_acct)

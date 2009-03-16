@@ -81,6 +81,7 @@ DECL_TEMPLATE(darwin, sys_flistxattr);
 DECL_TEMPLATE(darwin, sys_shm_open);
 DECL_TEMPLATE(darwin, sys_statx);
 DECL_TEMPLATE(darwin, sys_fchmod_extended);
+DECL_TEMPLATE(darwin, sys_chmod_extended);
 DECL_TEMPLATE(darwin, sys_accessx);
 DECL_TEMPLATE(darwin, sys_chflags);
 DECL_TEMPLATE(darwin, sys_fchflags);
@@ -141,6 +142,7 @@ DECL_TEMPLATE(darwin, sys_sendfile);
 DECL_TEMPLATE(darwin, sys_fcntl);
 DECL_TEMPLATE(darwin, sys_fcntl64);
 DECL_TEMPLATE(darwin, sys_ioctl);
+DECL_TEMPLATE(darwin, sys_futimes);
 DECL_TEMPLATE(darwin, sys_FAKE_SIGRETURN);
 
 // Mach message helpers
