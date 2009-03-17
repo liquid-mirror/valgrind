@@ -396,7 +396,7 @@ typedef
       void* ksa_handler;
       void (*sa_tramp)(void*,UWord,UWord,void*,void*);
       vki_sigset_t sa_mask;
-      UWord sa_flags;
+      int sa_flags;
    }
    vki_sigaction_toK_t;
 
@@ -404,7 +404,7 @@ typedef
    struct {
       void* ksa_handler;
       vki_sigset_t sa_mask;
-      UWord sa_flags;
+      int sa_flags;
    }
    vki_sigaction_fromK_t;
 

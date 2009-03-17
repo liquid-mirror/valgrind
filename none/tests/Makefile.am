@@ -145,7 +145,7 @@ check_PROGRAMS = \
 	rlimit_nofile selfrun sem semlimit sha1_test \
 	shortpush shorts stackgrowth sigstackgrowth susphello \
 	syscall-restart1 syscall-restart2 system \
-	thread-exits threaded-fork threadederrno \
+	threaded-fork threadederrno \
 	tls tls.so tls2.so vgprintf \
 	coolo_sigaction gxx304
 
@@ -160,7 +160,7 @@ if ! VGCONF_OS_IS_DARWIN
 endif
 # DDD:
 # - blockfault hangs
-# - manythreads has lots of this:
+# - manythreads and thread-exits have lots of this:
 # --61831:0:aspacem  sync_check_mapping_callback: segment mismatch:
 #                    kernel's seg:
 # --61831:0:aspacem  start=0x102538000 end=0x1025b7fff prot=3 dev=0 ino=0 
@@ -172,7 +172,8 @@ endif
 if ! VGCONF_PLATFORMS_INCLUDE_AMD64_DARWIN
    check_PROGRAMS += \
 	blockfault \
-	manythreads
+	manythreads \
+	thread-exits
 endif
 
 

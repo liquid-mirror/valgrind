@@ -339,6 +339,27 @@ typedef struct SigQueue {
       return ss->__ebp;
    }
 
+#elif defined(VGP_amd64_darwin)
+
+   static inline Addr VG_UCONTEXT_INSTR_PTR( void* ucV ) {
+      I_die_here;
+   }
+   static inline Addr VG_UCONTEXT_STACK_PTR( void* ucV ) {
+      I_die_here;
+   }
+   static inline Addr VG_UCONTEXT_SYSCALL_NUM( void* ucV ) {
+      I_die_here;
+   }
+   static inline SysRes VG_UCONTEXT_SYSCALL_SYSRES( void* ucV ) {
+      I_die_here;
+   }
+   static inline Addr VG_UCONTEXT_LINK_REG( void* ucV ) {
+      return 0; /* No, really.  We have no LRs today. */
+   }
+   static inline Addr VG_UCONTEXT_FRAME_PTR( void* ucV ) {
+      I_die_here;
+   }
+
 #else 
 #  error Unknown platform
 #endif
@@ -647,6 +668,12 @@ extern void my_sigreturn(void);
    "my_sigreturn:\n" \
    "movl $" VG_STRINGIFY(__NR_DARWIN_FAKE_SIGRETURN) ",%eax\n" \
    "int $0x80"
+#elif defined(VGP_amd64_darwin)
+   // DDD: todo
+#  define _MY_SIGRETURN(name) \
+   ".text\n" \
+   "my_sigreturn:\n" \
+   "ud2\n"
 #else
 #  error Unknown platform
 #endif
@@ -688,8 +715,9 @@ static void handle_SCSS_change ( Bool force_update )
 
       ksa.ksa_handler = skss.skss_per_sig[sig].skss_handler;
       ksa.sa_flags    = skss.skss_per_sig[sig].skss_flags;
-#     if !defined(VGP_ppc32_linux) && !defined(VGP_ppc32_aix5) \
-         && !defined(VGP_ppc64_aix5) && !defined(VGP_x86_darwin)
+#     if !defined(VGP_ppc32_linux) && \
+         !defined(VGP_ppc32_aix5) && !defined(VGP_ppc64_aix5) && \
+         !defined(VGP_x86_darwin) && !defined(VGP_amd64_darwin)
       ksa.sa_restorer = my_sigreturn;
 #     endif
       /* Re above ifdef (also the assertion below), PaulM says:
@@ -723,8 +751,9 @@ static void handle_SCSS_change ( Bool force_update )
                    == skss_old.skss_per_sig[sig].skss_handler);
          vg_assert(ksa_old.sa_flags 
                    == skss_old.skss_per_sig[sig].skss_flags);
-#        if !defined(VGP_ppc32_linux) && !defined(VGP_ppc32_aix5) \
-            && !defined(VGP_ppc64_aix5) && !defined(VGP_x86_darwin)
+#        if !defined(VGP_ppc32_linux) && \
+            !defined(VGP_ppc32_aix5) && !defined(VGP_ppc64_aix5) && \
+            !defined(VGP_x86_darwin) && !defined(VGP_amd64_darwin)
          vg_assert(ksa_old.sa_restorer 
                    == my_sigreturn);
 #        endif
@@ -847,8 +876,8 @@ SysRes VG_(do_sys_sigaction) ( Int signo,
       old_act->ksa_handler = scss.scss_per_sig[signo].scss_handler;
       old_act->sa_flags    = scss.scss_per_sig[signo].scss_flags;
       old_act->sa_mask     = scss.scss_per_sig[signo].scss_mask;
-#     if !defined(VGP_ppc32_aix5) && !defined(VGP_ppc64_aix5) \
-         && !defined(VGP_x86_darwin)
+#     if !defined(VGP_ppc32_aix5) && !defined(VGP_ppc64_aix5) && \
+         !defined(VGP_x86_darwin) && !defined(VGP_amd64_darwin)
       old_act->sa_restorer = scss.scss_per_sig[signo].scss_restorer;
 #     endif
    }
@@ -860,8 +889,8 @@ SysRes VG_(do_sys_sigaction) ( Int signo,
       scss.scss_per_sig[signo].scss_mask     = new_act->sa_mask;
 
       scss.scss_per_sig[signo].scss_restorer = NULL;
-#     if !defined(VGP_ppc32_aix5) && !defined(VGP_ppc64_aix5) \
-         && !defined(VGP_x86_darwin)
+#     if !defined(VGP_ppc32_aix5) && !defined(VGP_ppc64_aix5) && \
+         !defined(VGP_x86_darwin) && !defined(VGP_amd64_darwin)
       scss.scss_per_sig[signo].scss_restorer = new_act->sa_restorer;
 #     endif
 
@@ -1186,8 +1215,8 @@ void VG_(kill_self)(Int sigNo)
 
    sa.ksa_handler = VKI_SIG_DFL;
    sa.sa_flags = 0;
-#  if !defined(VGP_ppc32_aix5) && !defined(VGP_ppc64_aix5) \
-      && !defined(VGP_x86_darwin)
+#  if !defined(VGP_ppc32_aix5) && !defined(VGP_ppc64_aix5) && \
+      !defined(VGP_x86_darwin) && !defined(VGP_amd64_darwin)
    sa.sa_restorer = 0;
 #  endif
    VG_(sigemptyset)(&sa.sa_mask);
@@ -1567,8 +1596,10 @@ void VG_(synth_sigtrap)(ThreadId tid)
 {
    vki_siginfo_t info;
    struct vki_ucontext uc;
-#  if defined(VGP_x86_darwin) || defined(VGP_amd64_darwin)
+#  if defined(VGP_x86_darwin)
    struct __darwin_mcontext32 mc;
+#  elif defined(VGP_amd64_darwin)
+   struct __darwin_mcontext64 mc;
 #  endif
 
    vg_assert(VG_(threads)[tid].status == VgTs_Runnable);
@@ -2129,8 +2160,8 @@ void pp_ksigaction ( vki_sigaction_toK_t* sa )
    VG_(printf)("pp_ksigaction: handler %p, flags 0x%x, restorer %p\n", 
                sa->ksa_handler, 
                (UInt)sa->sa_flags, 
-#              if !defined(VGP_ppc32_aix5) && !defined(VGP_ppc64_aix5) \
-                  && !defined(VGP_x86_darwin)
+#              if !defined(VGP_ppc32_aix5) && !defined(VGP_ppc64_aix5) && \
+                  !defined(VGP_x86_darwin) && !defined(VGP_amd64_darwin)
                   sa->sa_restorer
 #              else
                   (void*)0
@@ -2152,8 +2183,8 @@ void VG_(set_default_handler)(Int signo)
 
    sa.ksa_handler = VKI_SIG_DFL;
    sa.sa_flags = 0;
-#  if !defined(VGP_ppc32_aix5) && !defined(VGP_ppc64_aix5) \
-      && !defined(VGP_x86_darwin)
+#  if !defined(VGP_ppc32_aix5) && !defined(VGP_ppc64_aix5) && \
+      !defined(VGP_x86_darwin) && !defined(VGP_amd64_darwin)
    sa.sa_restorer = 0;
 #  endif
    VG_(sigemptyset)(&sa.sa_mask);
@@ -2256,8 +2287,8 @@ void VG_(sigstartup_actions) ( void )
 
 	 tsa.ksa_handler = (void *)sync_signalhandler;
 	 tsa.sa_flags = VKI_SA_SIGINFO;
-#        if !defined(VGP_ppc32_aix5) && !defined(VGP_ppc64_aix5) \
-            && !defined(VGP_x86_darwin)
+#        if !defined(VGP_ppc32_aix5) && !defined(VGP_ppc64_aix5) && \
+            !defined(VGP_x86_darwin) && !defined(VGP_amd64_darwin)
 	 tsa.sa_restorer = 0;
 #        endif
 	 VG_(sigfillset)(&tsa.sa_mask);
@@ -2284,8 +2315,8 @@ void VG_(sigstartup_actions) ( void )
       scss.scss_per_sig[i].scss_mask     = sa.sa_mask;
 
       scss.scss_per_sig[i].scss_restorer = NULL;
-#     if !defined(VGP_ppc32_aix5) && !defined(VGP_ppc64_aix5) \
-         && !defined(VGP_x86_darwin)
+#     if !defined(VGP_ppc32_aix5) && !defined(VGP_ppc64_aix5) && \
+         !defined(VGP_x86_darwin) && !defined(VGP_amd64_darwin)
       scss.scss_per_sig[i].scss_restorer = sa.sa_restorer;
 #     endif
 
