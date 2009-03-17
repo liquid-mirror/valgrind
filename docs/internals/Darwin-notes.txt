@@ -50,6 +50,6 @@ with the Linux or AIX ports.
 
 m_main: Darwin port relies on blocking out big sections of address
 space with mmap at startup.  We know from history that this is a bad
-idea.  Also, startup is not done on the interim startup stack -- why
-not?
+idea.  (It's also really slow on 64-bit builds, taking 3--4 seconds.)
+Also, startup is not done on the interim startup stack -- why not?
 
