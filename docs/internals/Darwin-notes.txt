@@ -1,0 +1,55 @@
+
+Valgrind-developer notes, todos re the MacOSX port.
+
+* m_syswrap/syscall-x86-darwin.S
+  - correct signal mask is not applied during syscall
+  - restart-labels are completely bogus
+
+* m_syswrap/syswrap-darwin.c:
+  - PRE(sys_posix_spawn) completely ignores signal issues, and
+    also ignores the file_actions argument
+
+* env var handling w/ exec on Darwin: is there something odd?  Compare
+  "valgrind env" on Darwin and Linux.  On the former there are
+  settings VALGRIND_LIB and VALGRIND_LIB_INNER, but not for the
+  former.
+
+* Cleanups: sort wrappers in syswrap-darwin.c and priv_syswrap-darwin.h
+  alphabetically.  Also, some aren't properly implemented -- check and
+  print warnings
+
+* Cleanups: m_scheduler/sema.c: use pipe implementation
+  (but this apparently causes none/tests/pth_cancel1 to hang.
+  I have no idea why, despite quite some investigation).
+
+* Cleanups: m_debugstub: move to attic
+
+* syswrap-darwin.c: sys_{f,}chmod_extended: handling of ARG5 is way
+  wrong
+
+* Cleanups (Linux,AIX5): bogus launcher-path mangling logic in
+  PRE(sys_execve)
+
+* Cleanups (ALL PLATFORMS): m_signals.c: are the _MY_SIGRETURN
+  assembly stubs actually necessary for anything?  I don't know.
+
+--------
+
+Urr.  Nastyness.  There seem to be 4 different syscall types on
+Darwin, with 4 different conventions for returning results.  In order
+to determine which syscall type we've got, it is sufficient to look at
+the syscall number.  Is that correct?  If that's not true, then it
+becomes impossible to write VG_UCONTEXT_SYSCALL_SYSRES for Darwin.
+
+
+m_main doesn't read symbols for the valgrind exe itself, which is
+annoying.  On minimal investigation it seems that the executable isn't
+even listed by aspacem.  This is very strange and not in accordance
+with the Linux or AIX ports.
+
+
+m_main: Darwin port relies on blocking out big sections of address
+space with mmap at startup.  We know from history that this is a bad
+idea.  Also, startup is not done on the interim startup stack -- why
+not?
+
