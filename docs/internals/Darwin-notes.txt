@@ -13,6 +13,8 @@ Valgrind-developer notes, todos re the MacOSX port.
   "valgrind env" on Darwin and Linux.  On the former there are
   settings VALGRIND_LIB and VALGRIND_LIB_INNER, but not for the
   former.
+  There's a suspicious-looking "#if defined(VGO_darwin)" in 
+  VG_(env_remove_valgrind_env_stuff).  Maybe related?
 
 * Cleanups: sort wrappers in syswrap-darwin.c and priv_syswrap-darwin.h
   alphabetically.  Also, some aren't properly implemented -- check and
@@ -33,6 +35,11 @@ Valgrind-developer notes, todos re the MacOSX port.
 * Cleanups (ALL PLATFORMS): m_signals.c: are the _MY_SIGRETURN
   assembly stubs actually necessary for anything?  I don't know.
 
+* Cleanups: check that changes to VG_(stat) and VG_(stat64) have
+  not broken 64-bit statting on 32-bit Linux
+
+* Cleanups: #if !HAVE_PROC in m_main (to do with /proc/<pid>/cmdline
+
 --------
 
 Urr.  Nastyness.  There seem to be 4 different syscall types on
@@ -48,8 +55,25 @@ even listed by aspacem.  This is very strange and not in accordance
 with the Linux or AIX ports.
 
 
+m_main: relatedly, Darwin version does not collect/give out
+initial debuginfo handles; hence ptrcheck won't work
+
+
 m_main: Darwin port relies on blocking out big sections of address
 space with mmap at startup.  We know from history that this is a bad
 idea.  (It's also really slow on 64-bit builds, taking 3--4 seconds.)
 Also, startup is not done on the interim startup stack -- why not?
 
+
+VG_(post_syscall): contains important-looking code that is #if 0'd
+out.  Said code does VG_TRACK( post_reg_write).  Needs looking into.
+
+
+VG_(di_notify_mmap): Linux version is also used for Darwin, and
+contains some ifdeffery.  Clean up.
+
+
+Get rid of priv_types_n_macros.h: RES2, getRES2, etc
+
+
+PRE(sys_fork), #ifdeffery
