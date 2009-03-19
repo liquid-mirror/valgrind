@@ -133,11 +133,22 @@ typedef struct SigQueue {
 
 /* ------ Macros for pulling stuff out of ucontexts ------ */
 
+/* Q: what does UCONTEXT_SYSCALL_SYSRES do?  A: let's suppose the
+   machine context (uc) reflects the situation that a syscall had just
+   completed, quite literally -- that is, that the program counter was
+   now at the instruction following the syscall.  (or we're slightly
+   downstream, but we're sure no relevant register has yet changed
+   value.)  Then UCONTEXT_SYSCALL_SYSRES returns a SysRes reflecting
+   the result of the syscall; it does this by fishing relevant bits of
+   the machine state out of the uc.  Of course if the program counter
+   was somewhere else entirely then the result is likely to be
+   meaningless, so the caller of UCONTEXT_SYSCALL_SYSRES has to be
+   very careful to pay attention to the results only when it is sure
+   that the said constraint on the program counter is indeed valid. */
 #if defined(VGP_x86_linux)
 #  define VG_UCONTEXT_INSTR_PTR(uc)       ((uc)->uc_mcontext.eip)
 #  define VG_UCONTEXT_STACK_PTR(uc)       ((uc)->uc_mcontext.esp)
 #  define VG_UCONTEXT_FRAME_PTR(uc)       ((uc)->uc_mcontext.ebp)
-#  define VG_UCONTEXT_SYSCALL_NUM(uc)     ((uc)->uc_mcontext.eax)
 #  define VG_UCONTEXT_SYSCALL_SYSRES(uc)                        \
       /* Convert the value in uc_mcontext.eax into a SysRes. */ \
       VG_(mk_SysRes_x86_linux)( (uc)->uc_mcontext.eax )
@@ -147,7 +158,6 @@ typedef struct SigQueue {
 #  define VG_UCONTEXT_INSTR_PTR(uc)       ((uc)->uc_mcontext.rip)
 #  define VG_UCONTEXT_STACK_PTR(uc)       ((uc)->uc_mcontext.rsp)
 #  define VG_UCONTEXT_FRAME_PTR(uc)       ((uc)->uc_mcontext.rbp)
-#  define VG_UCONTEXT_SYSCALL_NUM(uc)     ((uc)->uc_mcontext.rax)
 #  define VG_UCONTEXT_SYSCALL_SYSRES(uc)                        \
       /* Convert the value in uc_mcontext.rax into a SysRes. */ \
       VG_(mk_SysRes_amd64_linux)( (uc)->uc_mcontext.rax )
@@ -201,7 +211,6 @@ typedef struct SigQueue {
 #  define VG_UCONTEXT_INSTR_PTR(uc)       ((uc)->uc_regs->mc_gregs[VKI_PT_NIP])
 #  define VG_UCONTEXT_STACK_PTR(uc)       ((uc)->uc_regs->mc_gregs[VKI_PT_R1])
 #  define VG_UCONTEXT_FRAME_PTR(uc)       ((uc)->uc_regs->mc_gregs[VKI_PT_R1])
-#  define VG_UCONTEXT_SYSCALL_NUM(uc)     ((uc)->uc_regs->mc_gregs[VKI_PT_R0])
 #  define VG_UCONTEXT_SYSCALL_SYSRES(uc)                            \
       /* Convert the values in uc_mcontext r3,cr into a SysRes. */  \
       VG_(mk_SysRes_ppc32_linux)(                                   \
@@ -214,7 +223,6 @@ typedef struct SigQueue {
 #  define VG_UCONTEXT_INSTR_PTR(uc)       ((uc)->uc_mcontext.gp_regs[VKI_PT_NIP])
 #  define VG_UCONTEXT_STACK_PTR(uc)       ((uc)->uc_mcontext.gp_regs[VKI_PT_R1])
 #  define VG_UCONTEXT_FRAME_PTR(uc)       ((uc)->uc_mcontext.gp_regs[VKI_PT_R1])
-#  define VG_UCONTEXT_SYSCALL_NUM(uc)     ((uc)->uc_mcontext.gp_regs[VKI_PT_R0])
    /* Dubious hack: if there is an error, only consider the lowest 8
       bits of r3.  memcheck/tests/post-syscall shows a case where an
       interrupted syscall should have produced a ucontext with 0x4
@@ -247,12 +255,6 @@ typedef struct SigQueue {
       struct __jmpbuf* mc = &(uc->uc_mcontext);
       struct mstsave* jc = &mc->jmp_context;
       return jc->gpr[1];
-   }
-   static inline Addr VG_UCONTEXT_SYSCALL_NUM( void* ucV ) {
-      ucontext_t* uc = (ucontext_t*)ucV;
-      struct __jmpbuf* mc = &(uc->uc_mcontext);
-      struct mstsave* jc = &mc->jmp_context;
-      return jc->gpr[2];
    }
    static inline SysRes VG_UCONTEXT_SYSCALL_SYSRES( void* ucV ) {
       ucontext_t* uc = (ucontext_t*)ucV;
@@ -287,12 +289,6 @@ typedef struct SigQueue {
       struct __context64* jc = &mc->jmp_context;
       return jc->gpr[1];
    }
-   static inline Addr VG_UCONTEXT_SYSCALL_NUM( void* ucV ) {
-      ucontext_t* uc = (ucontext_t*)ucV;
-      struct __jmpbuf* mc = &(uc->uc_mcontext);
-      struct __context64* jc = &mc->jmp_context;
-      return jc->gpr[2];
-   }
    static inline SysRes VG_UCONTEXT_SYSCALL_SYSRES( void* ucV ) {
       ucontext_t* uc = (ucontext_t*)ucV;
       struct __jmpbuf* mc = &(uc->uc_mcontext);
@@ -323,27 +319,38 @@ typedef struct SigQueue {
       struct __darwin_i386_thread_state* ss = &mc->__ss;
       return ss->__esp;
    }
-   static inline Addr VG_UCONTEXT_SYSCALL_NUM( void* ucV ) {
-      I_die_here;
-   }
-   static inline SysRes VG_UCONTEXT_SYSCALL_SYSRES( void* ucV ) {
-      /* this is massively complicated by the problem that there are 4
-         different kinds of syscalls, each with its own return
-         convention. */
+   static inline SysRes VG_UCONTEXT_SYSCALL_SYSRES( void* ucV,
+                                                    UWord scclass ) {
+      /* this is complicated by the problem that there are 3 different
+         kinds of syscalls, each with its own return convention.
+         NB: scclass is a host word, hence UWord is good for both
+         amd64-darwin and x86-darwin */
       ucontext_t* uc = (ucontext_t*)ucV;
       struct __darwin_mcontext32* mc = uc->uc_mcontext;
       struct __darwin_i386_thread_state* ss = &mc->__ss;
-      UInt sysno = ss->__eax;
-      VG_(printf)("VG_UCONTEXT_SYSCALL_SYSRES: sysno = 0x%x\n", sysno);
-      VG_(printf)("%08x\n", ss->__eax);
-      VG_(printf)("%08x\n", ss->__ebx);
-      VG_(printf)("%08x\n", ss->__ecx);
-      VG_(printf)("%08x\n", ss->__edx);
-      VG_(printf)("%08x\n", ss->__esi);
-      VG_(printf)("%08x\n", ss->__edi);
-      VG_(printf)("%08x\n", ss->__ebp);
-      VG_(printf)("%08x\n", ss->__esp);
-      I_die_here;
+      /* duplicates logic in m_syswrap.getSyscallStatusFromGuestState */
+      UInt carry = 1 & ss->__eflags;
+      UInt err = 0;
+      UInt wLO = 0;
+      UInt wHI = 0;
+      switch (scclass) {
+         case VG_DARWIN_SYSCALL_CLASS_UNIX:
+            err = carry;
+            wLO = ss->__eax;
+            wHI = ss->__edx;
+            break;
+         case VG_DARWIN_SYSCALL_CLASS_MACH:
+            wLO = ss->__eax;
+            break;
+         case VG_DARWIN_SYSCALL_CLASS_MDEP:
+            wLO = ss->__eax;
+            break;
+         default: 
+            vg_assert(0);
+            break;
+      }
+      return VG_(mk_SysRes_x86_darwin)( scclass, err ? True : False, 
+                                        wHI, wLO );
    }
    static inline Addr VG_UCONTEXT_LINK_REG( void* ucV ) {
       return 0; /* No, really.  We have no LRs today. */
@@ -361,9 +368,6 @@ typedef struct SigQueue {
       I_die_here;
    }
    static inline Addr VG_UCONTEXT_STACK_PTR( void* ucV ) {
-      I_die_here;
-   }
-   static inline Addr VG_UCONTEXT_SYSCALL_NUM( void* ucV ) {
       I_die_here;
    }
    static inline SysRes VG_UCONTEXT_SYSCALL_SYSRES( void* ucV ) {
@@ -1737,8 +1741,13 @@ static
 void async_signalhandler ( Int sigNo,
                            vki_siginfo_t *info, struct vki_ucontext *uc )
 {
-   ThreadId tid = VG_(lwpid_to_vgtid)(VG_(gettid)());
-   ThreadState *tst = VG_(get_ThreadState)(tid);
+   ThreadId     tid = VG_(lwpid_to_vgtid)(VG_(gettid)());
+   ThreadState* tst = VG_(get_ThreadState)(tid);
+   SysRes       sres;
+
+   /* The thread isn't currently running, make it so before going on */
+   vg_assert(tst->status == VgTs_WaitSys);
+   VG_(acquire_BigLock)(tid, "async_signalhandler");
 
 #  if defined(VGO_linux)
    /* The linux kernel uses the top 16 bits of si_code for it's own
@@ -1756,23 +1765,67 @@ void async_signalhandler ( Int sigNo,
       VG_(message)(Vg_DebugMsg, "Async handler got signal %d for tid %d info %d",
 		   sigNo, tid, info->si_code);
 
-   vg_assert(tst->status == VgTs_WaitSys);
+   /* Update thread state properly.  The signal can only have been
+      delivered whilst we were in
+      coregrind/m_syswrap/syscall-<PLAT>.S, and only then in the
+      window between the two sigprocmask calls, since at all other
+      times, we run with async signals on the host blocked.  Hence
+      make enquiries on the basis that we were in or very close to a
+      syscall, and attempt to fix up the guest state accordingly.
 
-   /* The thread isn't currently running, make it so before going on */
-   VG_(acquire_BigLock)(tid, "async_signalhandler");
+      (normal async signals occurring during computation are blocked,
+      but periodically polled for using VG_(sigtimedwait_zero), and
+      delivered at a point convenient for us.  Hence this routine only
+      deals with signals that are delivered to a thread during a
+      syscall.) */
 
-   /* Update thread state properly */
+   /* First, extract a SysRes from the ucontext_t* given to this
+      handler.  If it is subsequently established by
+      VG_(fixup_guest_state_after_syscall_interrupted) that the
+      syscall was complete but the results had not been committed yet
+      to the guest state, then it'll have to commit the results itself
+      "by hand", and so we need to extract the SysRes.  Of course if
+      the thread was not in that particular window then the
+      SysRes will be meaningless, but that's OK too because
+      VG_(fixup_guest_state_after_syscall_interrupted) will detect
+      that the thread was not in said window and ignore the SysRes. */
+
+   /* To make matters more complex still, on Darwin we need to know
+      the "class" of the syscall under consideration in order to be
+      able to extract the a correct SysRes.  The class will have been
+      saved just before the syscall, by VG_(client_syscall), into this
+      thread's tst->arch.vex.guest_SC_CLASS.  Hence: */
+#  if defined(VGO_darwin)
+   sres = VG_UCONTEXT_SYSCALL_SYSRES(uc, tst->arch.vex.guest_SC_CLASS);
+#  else
+   sres = VG_UCONTEXT_SYSCALL_SYSRES(uc);
+#  endif
+
+   /* (1) */
    VG_(fixup_guest_state_after_syscall_interrupted)(
       tid, 
       VG_UCONTEXT_INSTR_PTR(uc), 
-      VG_UCONTEXT_SYSCALL_NUM(uc), 
-      VG_UCONTEXT_SYSCALL_SYSRES(uc),  
+      sres,  
       !!(scss.scss_per_sig[sigNo].scss_flags & VKI_SA_RESTART)
    );
 
+   /* (2) */
    /* Set up the thread's state to deliver a signal */
    if (!is_sig_ign(info->si_signo))
       deliver_signal(tid, info, uc);
+
+   /* It's crucial that (1) and (2) happen in the order (1) then (2)
+      and not the other way around.  (1) fixes up the guest thread
+      state to reflect the fact that the syscall was interrupted --
+      either to restart the syscall or to return EINTR.  (2) then sets
+      up the thread state to deliver the signal.  Then we resume
+      execution.  First, the signal handler is run, since that's the
+      second adjustment we made to the thread state.  If that returns,
+      then we resume at the guest state created by (1), viz, either
+      the syscall returns EINTR or is restarted.
+
+      If (2) was done before (1) the outcome would be completely
+      different, and wrong. */
 
    /* longjmp back to the thread's main loop to start executing the
       handler. */
