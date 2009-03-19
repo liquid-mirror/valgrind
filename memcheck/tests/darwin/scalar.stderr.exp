@@ -137,7 +137,7 @@ Syscall param sem_wait_nocancel(sem) contains uninitialised byte(s)
 -----------------------------------------------------
 9999:                9999 1e
 -----------------------------------------------------
-WARNING: unhandled syscall: 1660954383
+WARNING: unhandled syscall: 33564431
            a.k.a.: 9999
 You may be able to write your own handler.
 Read the file README_MISSING_SYSCALL_OR_IOCTL.
