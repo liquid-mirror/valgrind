@@ -755,6 +755,7 @@ void getSyscallStatusFromGuestState ( /*OUT*/SyscallStatus*     canonical,
    canonical->what = SsComplete;
 
 #  elif defined(VGP_x86_darwin)
+   /* duplicates logic in m_signals.VG_UCONTEXT_SYSCALL_SYSRES */
    VexGuestX86State* gst = (VexGuestX86State*)gst_vanilla;
    UInt carry = 1 & LibVEX_GuestX86_get_eflags(gst);
    UInt err = 0;
@@ -1378,10 +1379,18 @@ void VG_(client_syscall) ( ThreadId tid, UInt trc )
       is interrupted by a signal. */
    sysno = sci->orig_args.sysno;
 
-#if defined(VGO_darwin)
-   // Record syscall class.
+#  if defined(VGO_darwin)
+   /* Record syscall class.  But why?  Because the syscall might be
+      interrupted by a signal, and in the signal handler (which will
+      be m_signals.async_signalhandler) we will need to build a SysRes
+      reflecting the syscall return result.  In order to do that we
+      need to know the syscall class.  Hence stash it in the guest
+      state of this thread.  This madness is not needed on Linux or
+      AIX5, because those OSs only have a single syscall return
+      convention and so there is no ambiguity involved in converting
+      the post-signal machine state into a SysRes. */
    tst->arch.vex.guest_SC_CLASS = VG_DARWIN_SYSNO_CLASS(sysno);
-#endif
+#  endif
 
    /* The default what-to-do-next thing is hand the syscall to the
       kernel, so we pre-set that here.  Set .sres to something
@@ -1775,11 +1784,32 @@ void VG_(post_syscall) (ThreadId tid)
 /* These are addresses within ML_(do_syscall_for_client_WRK).  See
    syscall-$PLAT.S for details. 
 */
-extern const Addr ML_(blksys_setup);
-extern const Addr ML_(blksys_restart);
-extern const Addr ML_(blksys_complete);
-extern const Addr ML_(blksys_committed);
-extern const Addr ML_(blksys_finished);
+#if defined(VGO_linux) || defined(VGO_aix5)
+  extern const Addr ML_(blksys_setup);
+  extern const Addr ML_(blksys_restart);
+  extern const Addr ML_(blksys_complete);
+  extern const Addr ML_(blksys_committed);
+  extern const Addr ML_(blksys_finished);
+#elif defined(VGO_darwin)
+  /* Darwin requires extra uglyness */
+  extern const Addr ML_(blksys_setup_MACH);
+  extern const Addr ML_(blksys_restart_MACH);
+  extern const Addr ML_(blksys_complete_MACH);
+  extern const Addr ML_(blksys_committed_MACH);
+  extern const Addr ML_(blksys_finished_MACH);
+  extern const Addr ML_(blksys_setup_MDEP);
+  extern const Addr ML_(blksys_restart_MDEP);
+  extern const Addr ML_(blksys_complete_MDEP);
+  extern const Addr ML_(blksys_committed_MDEP);
+  extern const Addr ML_(blksys_finished_MDEP);
+  extern const Addr ML_(blksys_setup_UNIX);
+  extern const Addr ML_(blksys_restart_UNIX);
+  extern const Addr ML_(blksys_complete_UNIX);
+  extern const Addr ML_(blksys_committed_UNIX);
+  extern const Addr ML_(blksys_finished_UNIX);
+#else
+# error "Unknown OS"
+#endif
 
 
 /* Back up guest state to restart a system call. */
@@ -1870,24 +1900,27 @@ void ML_(fixup_guest_state_to_restart_syscall) ( ThreadArchState* arch )
    }
 
 #elif defined(VGP_x86_darwin)
-   arch->vex.guest_EIP -= 2;             // sizeof(int $0x80)
+   arch->vex.guest_EIP = arch->vex.guest_IP_AT_SYSCALL; 
 
    /* Make sure our caller is actually sane, and we're really backing
       back over a syscall.
 
       int $0x80 == CD 80
-      int $0x80 == CD 81
+      int $0x81 == CD 81
+      int $0x82 == CD 82
+      sysenter  == 0F 34
    */
-   // DDD: #warning GrP fixme sysenter, int $0x81, int $0x82
    {
        UChar *p = (UChar *)arch->vex.guest_EIP;
-
-       if (p[0] != 0xcd || (p[1] != 0x80 && p[1] != 0x81))
+       Bool  ok = (p[0] == 0xCD && p[1] == 0x80) 
+                  || (p[0] == 0xCD && p[1] == 0x81)
+                  || (p[0] == 0xCD && p[1] == 0x82)  
+                  || (p[0] == 0x0F && p[1] == 0x34);
+       if (!ok)
            VG_(message)(Vg_DebugMsg,
                         "?! restarting over syscall at %#x %02x %02x\n",
                         arch->vex.guest_EIP, p[0], p[1]);
-
-       vg_assert(p[0] == 0xcd && (p[1] == 0x80 || p[1] == 0x81));
+       vg_assert(ok);
    }
    
 #elif defined(VGP_amd64_darwin)
@@ -1932,18 +1965,19 @@ void ML_(fixup_guest_state_to_restart_syscall) ( ThreadArchState* arch )
 void 
 VG_(fixup_guest_state_after_syscall_interrupted)( ThreadId tid, 
                                                   Addr     ip, 
-                                                  UWord    sysnum, 
                                                   SysRes   sres,
                                                   Bool     restart)
 {
-   /* Note that the sysnum arg seems to contain not-dependable-on info
-      (I think it depends on the state the real syscall was in at
-      interrupt) and so is ignored, apart from in the following
-      printf.
+   /* Note that we don't know the syscall number here, since (1) in
+      general there's no reliable way to get hold of it short of
+      stashing it in the guest state before the syscall, and (2) in
+      any case we don't need to know it for the actions done by this
+      routine.
 
       Furthermore, 'sres' is only used in the case where the syscall
       is complete, but the result has not been committed to the guest
-      state yet.  */
+      state yet.  In any other situation it will be meaningless and
+      therefore ignored. */
 
    static const Bool debug = False;
 
@@ -1952,15 +1986,59 @@ VG_(fixup_guest_state_after_syscall_interrupted)( ThreadId tid,
    ThreadArchState* th_regs;
    SyscallInfo*     sci;
 
-   if (debug)
-      VG_(printf)( "interrupted_syscall %d: tid=%d, IP=0x%llx, "
-                   "restart=%s, sysret.isError=%s, sysret.val=%lld\n", 
-                   (Int)sysnum,
-                   (Int)tid,
-                   (ULong)ip, 
-                   restart ? "True" : "False", 
-                   sr_isError(sres) ? "True" : "False",
-                   (Long)(sr_isError(sres) ? sr_Err(sres) : sr_Res(sres)) );
+   /* Compute some Booleans indicating which range we're in. */
+   Bool outside_range, 
+        in_setup_to_restart,      // [1,2) in the .S files
+        at_restart,               // [2]   in the .S files
+        in_complete_to_committed, // [3,4) in the .S files
+        in_committed_to_finished; // [4,5) in the .S files
+
+#  if defined(VGO_linux) || defined(VGO_aix5)
+   outside_range
+      = ip < ML_(blksys_setup) || ip >= ML_(blksys_finished);
+   in_setup_to_restart
+      = ip >= ML_(blksys_setup) && ip < ML_(blksys_restart); 
+   at_restart
+      = ip == ML_(blksys_restart); 
+   in_complete_to_committed
+      = ip >= ML_(blksys_complete) && ip < ML_(blksys_committed); 
+   in_committed_to_finished
+      = ip >= ML_(blksys_committed) && ip < ML_(blksys_finished);
+#  elif defined(VGO_darwin)
+   outside_range
+      =  (ip < ML_(blksys_setup_MACH) || ip >= ML_(blksys_finished_MACH))
+      && (ip < ML_(blksys_setup_MDEP) || ip >= ML_(blksys_finished_MDEP))
+      && (ip < ML_(blksys_setup_UNIX) || ip >= ML_(blksys_finished_UNIX));
+   in_setup_to_restart
+      =  (ip >= ML_(blksys_setup_MACH) && ip < ML_(blksys_restart_MACH))
+      || (ip >= ML_(blksys_setup_MDEP) && ip < ML_(blksys_restart_MDEP))
+      || (ip >= ML_(blksys_setup_UNIX) && ip < ML_(blksys_restart_UNIX));
+   at_restart
+      =  (ip == ML_(blksys_restart_MACH))
+      || (ip == ML_(blksys_restart_MDEP))
+      || (ip == ML_(blksys_restart_UNIX));
+   in_complete_to_committed
+      =  (ip >= ML_(blksys_complete_MACH) && ip < ML_(blksys_committed_MACH))
+      || (ip >= ML_(blksys_complete_MDEP) && ip < ML_(blksys_committed_MDEP))
+      || (ip >= ML_(blksys_complete_UNIX) && ip < ML_(blksys_committed_UNIX));
+   in_committed_to_finished
+      =  (ip >= ML_(blksys_committed_MACH) && ip < ML_(blksys_finished_MACH))
+      || (ip >= ML_(blksys_committed_MDEP) && ip < ML_(blksys_finished_MDEP))
+      || (ip >= ML_(blksys_committed_UNIX) && ip < ML_(blksys_finished_UNIX));
+   /* Wasn't that just So Much Fun?  Does your head hurt yet?  Mine does. */
+#  else
+#    error "Unknown OS"
+#  endif
+
+   if (VG_(clo_trace_signals))
+      VG_(message)( Vg_DebugMsg,
+                    "interrupted_syscall: tid=%d, ip=0x%llx, "
+                    "restart=%s, sres.isErr=%s, sres.val=%lld", 
+                    (Int)tid,
+                    (ULong)ip, 
+                    restart ? "True" : "False", 
+                    sr_isError(sres) ? "True" : "False",
+                    (Long)(sr_isError(sres) ? sr_Err(sres) : sr_Res(sres)) );
 
    vg_assert(VG_(is_valid_tid)(tid));
    vg_assert(tid >= 1 && tid < VG_N_THREADS);
@@ -1972,10 +2050,10 @@ VG_(fixup_guest_state_after_syscall_interrupted)( ThreadId tid,
 
    /* Figure out what the state of the syscall was by examining the
       (real) IP at the time of the signal, and act accordingly. */
-
-   if (ip < ML_(blksys_setup) || ip >= ML_(blksys_finished)) {
-      VG_(printf)("  not in syscall (%#lx - %#lx)\n",
-                  ML_(blksys_setup), ML_(blksys_finished));
+   if (outside_range) {
+      if (VG_(clo_trace_signals))
+         VG_(message)( Vg_DebugMsg,
+                       "  not in syscall at all: hmm, very suspicious" );
       /* Looks like we weren't in a syscall at all.  Hmm. */
       vg_assert(sci->status.what != SsIdle);
       return;
@@ -1986,22 +2064,29 @@ VG_(fixup_guest_state_after_syscall_interrupted)( ThreadId tid,
       Hence: */
    vg_assert(sci->status.what != SsIdle);
 
-   if (ip >= ML_(blksys_setup) && ip < ML_(blksys_restart)) {
+   /* now, do one of four fixup actions, depending on where the IP has
+      got to. */
+
+   if (in_setup_to_restart) {
       /* syscall hasn't even started; go around again */
-      if (debug)
-         VG_(printf)("  not started: restart\n");
+      if (VG_(clo_trace_signals))
+         VG_(message)( Vg_DebugMsg, "  not started: restarting");
       vg_assert(sci->status.what == SsHandToKernel);
       ML_(fixup_guest_state_to_restart_syscall)(th_regs);
    } 
 
    else 
-   if (ip == ML_(blksys_restart)) {
+   if (at_restart) {
       /* We're either about to run the syscall, or it was interrupted
          and the kernel restarted it.  Restart if asked, otherwise
          EINTR it. */
-      if (restart)
+      if (restart) {
+         if (VG_(clo_trace_signals))
+            VG_(message)( Vg_DebugMsg, "  at syscall instr: restarting");
          ML_(fixup_guest_state_to_restart_syscall)(th_regs);
-      else {
+      } else {
+         if (VG_(clo_trace_signals))
+            VG_(message)( Vg_DebugMsg, "  at syscall instr: returning EINTR");
          canonical = convert_SysRes_to_SyscallStatus( 
                         VG_(mk_SysRes_Error)( VKI_EINTR ) 
                      );
@@ -2013,12 +2098,13 @@ VG_(fixup_guest_state_after_syscall_interrupted)( ThreadId tid,
    }
 
    else 
-   if (ip >= ML_(blksys_complete) && ip < ML_(blksys_committed)) {
+   if (in_complete_to_committed) {
       /* Syscall complete, but result hasn't been written back yet.
          Write the SysRes we were supplied with back to the guest
          state. */
-      if (debug)
-         VG_(printf)("  completed\n");
+      if (VG_(clo_trace_signals))
+         VG_(message)( Vg_DebugMsg,
+                       "  completed, but uncommitted: committing");
       canonical = convert_SysRes_to_SyscallStatus( sres );
       if (!(sci->flags & SfNoWriteResult))
          putSyscallStatusIntoGuestState( tid, &canonical, &th_regs->vex );
@@ -2026,13 +2112,14 @@ VG_(fixup_guest_state_after_syscall_interrupted)( ThreadId tid,
       VG_(post_syscall)(tid);
    } 
 
-   else 
-   if (ip >= ML_(blksys_committed) && ip < ML_(blksys_finished)) {
+   else  
+   if (in_committed_to_finished) {
       /* Result committed, but the signal mask has not been restored;
          we expect our caller (the signal handler) will have fixed
          this up. */
-      if (debug)
-         VG_(printf)("  all done\n");
+      if (VG_(clo_trace_signals))
+         VG_(message)( Vg_DebugMsg,
+                       "  completed and committed: nothing to do");
       VG_(post_syscall)(tid);
    } 
 

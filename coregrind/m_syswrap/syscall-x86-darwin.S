@@ -206,19 +206,47 @@ _ML_(do_syscall_for_client_mdep_WRK):
 /* export the ranges so that
    VG_(fixup_guest_state_after_syscall_interrupted) can do the
    right thing */
-	
-/* GrP fixme wrong */
-.globl _ML_(blksys_setup)
-.globl _ML_(blksys_restart)
-.globl _ML_(blksys_complete)
-.globl _ML_(blksys_committed)
-.globl _ML_(blksys_finished)
-_ML_(blksys_setup):	.long L_1_1
-_ML_(blksys_restart):	.long L_1_2
-_ML_(blksys_complete):	.long L_1_3
-_ML_(blksys_committed):	.long L_1_4
-_ML_(blksys_finished):	.long L_1_5
 
+/* eg MK_L_SCLASS_N(UNIX,99) produces L_3_99
+   since UNIX is #defined to 3 at the top of this file */
+#define FOO(scclass,labelno) L_##scclass##_##labelno
+#define MK_L_SCCLASS_N(scclass,labelno) FOO(scclass,labelno)
+
+.globl _ML_(blksys_setup_MACH)
+.globl _ML_(blksys_restart_MACH)
+.globl _ML_(blksys_complete_MACH)
+.globl _ML_(blksys_committed_MACH)
+.globl _ML_(blksys_finished_MACH)
+_ML_(blksys_setup_MACH):	.long MK_L_SCCLASS_N(MACH,1)
+_ML_(blksys_restart_MACH):	.long MK_L_SCCLASS_N(MACH,2)
+_ML_(blksys_complete_MACH):	.long MK_L_SCCLASS_N(MACH,3)
+_ML_(blksys_committed_MACH):	.long MK_L_SCCLASS_N(MACH,4)
+_ML_(blksys_finished_MACH):	.long MK_L_SCCLASS_N(MACH,5)
+
+.globl _ML_(blksys_setup_MDEP)
+.globl _ML_(blksys_restart_MDEP)
+.globl _ML_(blksys_complete_MDEP)
+.globl _ML_(blksys_committed_MDEP)
+.globl _ML_(blksys_finished_MDEP)
+_ML_(blksys_setup_MDEP):	.long MK_L_SCCLASS_N(MDEP,1)
+_ML_(blksys_restart_MDEP):	.long MK_L_SCCLASS_N(MDEP,2)
+_ML_(blksys_complete_MDEP):	.long MK_L_SCCLASS_N(MDEP,3)
+_ML_(blksys_committed_MDEP):	.long MK_L_SCCLASS_N(MDEP,4)
+_ML_(blksys_finished_MDEP):	.long MK_L_SCCLASS_N(MDEP,5)
+
+.globl _ML_(blksys_setup_UNIX)
+.globl _ML_(blksys_restart_UNIX)
+.globl _ML_(blksys_complete_UNIX)
+.globl _ML_(blksys_committed_UNIX)
+.globl _ML_(blksys_finished_UNIX)
+_ML_(blksys_setup_UNIX):	.long MK_L_SCCLASS_N(UNIX,1)
+_ML_(blksys_restart_UNIX):	.long MK_L_SCCLASS_N(UNIX,2)
+_ML_(blksys_complete_UNIX):	.long MK_L_SCCLASS_N(UNIX,3)
+_ML_(blksys_committed_UNIX):	.long MK_L_SCCLASS_N(UNIX,4)
+_ML_(blksys_finished_UNIX):	.long MK_L_SCCLASS_N(UNIX,5)
+
+
+ 
 /*--------------------------------------------------------------------*/
 /*--- end                                                          ---*/
 /*--------------------------------------------------------------------*/
