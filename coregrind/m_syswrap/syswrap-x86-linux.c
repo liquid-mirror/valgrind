@@ -299,7 +299,7 @@ static SysRes do_clone ( ThreadId ptid,
 		     ptst->arch.vex.guest_ESP,
 		     ctst->arch.vex.guest_FS, ctst->arch.vex.guest_GS);
       res = sys_set_thread_area(ctid, tlsinfo);
-      if (res.isError)
+      if (sr_isError(res))
 	 goto out;
    }
 
@@ -318,7 +318,7 @@ static SysRes do_clone ( ThreadId ptid,
    VG_(sigprocmask)(VKI_SIG_SETMASK, &savedmask, NULL);
 
   out:
-   if (res.isError) {
+   if (sr_isError(res)) {
       /* clone failed */
       VG_(cleanup_thread)(&ctst->arch);
       ctst->status = VgTs_Empty;

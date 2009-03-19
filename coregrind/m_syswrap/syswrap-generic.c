@@ -490,7 +490,7 @@ SysRes do_mremap( Addr old_addr, SizeT old_len,
   shrink_in_place:
    {
    SysRes sres = VG_(am_munmap_client)( &d, old_addr+new_len, old_len-new_len );
-   if (sres.isError)
+   if (sr_isError(sres))
       return sres;
    VG_TRACK( die_mem_munmap, old_addr+new_len, old_len-new_len );
    if (d)
@@ -779,12 +779,12 @@ void VG_(init_preopened_fds)(void)
    SysRes f;
 
    f = VG_(open)("/proc/self/fd", VKI_O_RDONLY, 0);
-   if (f.isError) {
+   if (sr_isError(f)) {
       do_hacky_preopened();
       return;
    }
 
-   while ((ret = VG_(getdents)(f.res, &d, sizeof(d))) != 0) {
+   while ((ret = VG_(getdents)(sr_Res(f), &d, sizeof(d))) != 0) {
       if (ret == -1)
          goto out;
 
@@ -792,7 +792,7 @@ void VG_(init_preopened_fds)(void)
          Char* s;
          Int fno = VG_(strtoll10)(d.d_name, &s);
          if (*s == '\0') {
-            if (fno != f.res)
+            if (fno != sr_Res(f))
                if (VG_(clo_track_fds))
                   ML_(record_fd_open_named)(-1, fno);
          } else {
@@ -801,11 +801,11 @@ void VG_(init_preopened_fds)(void)
          }
       }
 
-      VG_(lseek)(f.res, d.d_off, VKI_SEEK_SET);
+      VG_(lseek)(sr_Res(f), d.d_off, VKI_SEEK_SET);
    }
 
   out:
-   VG_(close)(f.res);
+   VG_(close)(sr_Res(f));
 #endif
 }
 

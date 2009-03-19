@@ -69,8 +69,8 @@ extern SysRes VG_(do_syscall) ( UWord sysno,
 #define vgPlain_do_syscall8(s,a,b,c,d,e,f,g,h) VG_(do_syscall)((s),(a),(b),\
                                                            (c),(d),(e),(f),(g),(h))
 
-extern SysRes VG_(mk_SysRes_x86_linux)   ( UInt  val );
-extern SysRes VG_(mk_SysRes_amd64_linux) ( ULong val );
+extern SysRes VG_(mk_SysRes_x86_linux)   ( Int  val );
+extern SysRes VG_(mk_SysRes_amd64_linux) ( Long val );
 extern SysRes VG_(mk_SysRes_ppc32_linux) ( UInt  val, UInt  cr0so );
 extern SysRes VG_(mk_SysRes_ppc64_linux) ( ULong val, ULong cr0so );
 extern SysRes VG_(mk_SysRes_ppc32_aix5)  ( UInt val, UInt err );

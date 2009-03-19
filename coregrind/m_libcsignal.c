@@ -293,7 +293,7 @@ Int VG_(tkill)( ThreadId tid, Int signo )
 #  if defined(__NR_tkill)
    SysRes res = VG_(mk_SysRes_Error)(VKI_ENOSYS);
    res = VG_(do_syscall2)(__NR_tkill, tid, signo);
-   if (sr_isError(res) && res.err == VKI_ENOSYS)
+   if (sr_isError(res) && sr_Err(res) == VKI_ENOSYS)
       res = VG_(do_syscall2)(__NR_kill, tid, signo);
    return sr_isError(res) ? -1 : 0;
 
@@ -335,7 +335,7 @@ Int VG_(sigtimedwait_zero)( const vki_sigset_t *set,
    static const struct vki_timespec zero = { 0, 0 };
    SysRes res = VG_(do_syscall4)(__NR_rt_sigtimedwait, (UWord)set, (UWord)info, 
                                  (UWord)&zero, sizeof(*set));
-   return sr_isError(res) ? -1 : res.res;
+   return sr_isError(res) ? -1 : sr_Res(res);
 }
 
 /* ---------- sigtimedwait_zero: AIX5 ----------- */

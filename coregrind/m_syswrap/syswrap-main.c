@@ -380,12 +380,18 @@ Bool eq_SyscallArgs ( SyscallArgs* a1, SyscallArgs* a2 )
 static
 Bool eq_SyscallStatus ( SyscallStatus* s1, SyscallStatus* s2 )
 {
-  //   return s1->what == s2->what && sr_EQ( s1->sres, s2->sres );
-  if (s1->what == s2->what && sr_EQ( s1->sres, s2->sres )) return True;
-  vg_assert(s1->what == s2->what);
-  VG_(printf)("{%lu %lu %u}\n", s1->sres._wLO, s1->sres._wHI, s1->sres._mode);
-  VG_(printf)("{%lu %lu %u}\n", s2->sres._wLO, s2->sres._wHI, s2->sres._mode);
-  vg_assert(0);
+   /* was: return s1->what == s2->what && sr_EQ( s1->sres, s2->sres ); */
+   if (s1->what == s2->what && sr_EQ( s1->sres, s2->sres ))
+      return True;
+#  if defined(VGO_darwin)
+   /* Darwin-specific debugging guff */
+   vg_assert(s1->what == s2->what);
+   VG_(printf)("eq_SyscallStatus:\n");
+   VG_(printf)("  {%lu %lu %u}\n", s1->sres._wLO, s1->sres._wHI, s1->sres._mode);
+   VG_(printf)("  {%lu %lu %u}\n", s2->sres._wLO, s2->sres._wHI, s2->sres._mode);
+   vg_assert(0);
+#  endif
+   return False;
 }
 
 /* Convert between SysRes and SyscallStatus, to the extent possible. */
@@ -842,13 +848,13 @@ void putSyscallStatusIntoGuestState ( /*IN*/ ThreadId tid,
 #  if defined(VGP_x86_linux)
    VexGuestX86State* gst = (VexGuestX86State*)gst_vanilla;
    vg_assert(canonical->what == SsComplete);
-   if (canonical->sres.isError) {
+   if (sr_isError(canonical->sres)) {
       /* This isn't exactly right, in that really a Failure with res
          not in the range 1 .. 4095 is unrepresentable in the
          Linux-x86 scheme.  Oh well. */
-      gst->guest_EAX = - (Int)canonical->sres.err;
+      gst->guest_EAX = - (Int)sr_Err(canonical->sres);
    } else {
-      gst->guest_EAX = canonical->sres.res;
+      gst->guest_EAX = sr_Res(canonical->sres);
    }
    VG_TRACK( post_reg_write, Vg_CoreSysCall, tid, 
              OFFSET_x86_EAX, sizeof(UWord) );
@@ -856,13 +862,13 @@ void putSyscallStatusIntoGuestState ( /*IN*/ ThreadId tid,
 #  elif defined(VGP_amd64_linux)
    VexGuestAMD64State* gst = (VexGuestAMD64State*)gst_vanilla;
    vg_assert(canonical->what == SsComplete);
-   if (canonical->sres.isError) {
+   if (sr_isError(canonical->sres)) {
       /* This isn't exactly right, in that really a Failure with res
          not in the range 1 .. 4095 is unrepresentable in the
          Linux-x86 scheme.  Oh well. */
-      gst->guest_RAX = - (Long)canonical->sres.err;
+      gst->guest_RAX = - (Long)sr_Err(canonical->sres);
    } else {
-      gst->guest_RAX = canonical->sres.res;
+      gst->guest_RAX = sr_Res(canonical->sres);
    }
    VG_TRACK( post_reg_write, Vg_CoreSysCall, tid, 
              OFFSET_amd64_RAX, sizeof(UWord) );

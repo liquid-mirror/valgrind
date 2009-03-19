@@ -191,6 +191,35 @@ typedef
 #  error "Unknown OS"
 #endif
 
+
+/* ---- And now some basic accessor functions for it. ---- */
+
+#if defined(VGO_linux)
+
+static inline Bool sr_isError ( SysRes sr ) {
+   return sr._isError;
+}
+static inline UWord sr_Res ( SysRes sr ) {
+   return sr._isError ? 0 : sr._val;
+}
+static inline UWord sr_ResHI ( SysRes sr ) {
+   return 0;
+}
+static inline UWord sr_Err ( SysRes sr ) {
+   return sr._isError ? sr._val : 0;
+}
+static inline Bool sr_EQ ( SysRes sr1, SysRes sr2 ) {
+   return sr1._val == sr2._val 
+          && ((sr1._isError && sr2._isError) 
+              || (!sr1._isError && !sr2._isError));
+}
+
+#elif defined(VGO_aix5)
+#  error "need to define SysRes accessors on AIX5 (copy from 3.4.1 sources)"
+
+
+#elif defined(VGO_darwin)
+
 static inline Bool sr_isError ( SysRes sr ) {
    switch (sr._mode) {
       case SysRes_UNIX_ERR: return True;
@@ -226,6 +255,10 @@ static inline Bool sr_EQ ( SysRes sr1, SysRes sr2 ) {
    return sr1._mode == sr2._mode
           && sr1._wLO == sr2._wLO && sr1._wHI == sr2._wHI;
 }
+
+#else
+#  error "Unknown OS"
+#endif
 
 
 /* ---------------------------------------------------------------------

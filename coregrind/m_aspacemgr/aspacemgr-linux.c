@@ -3098,18 +3098,18 @@ static void read_procselfmaps_into_buf ( void )
    
    /* Read the initial memory mapping from the /proc filesystem. */
    fd = ML_(am_open)( "/proc/self/maps", VKI_O_RDONLY, 0 );
-   if (fd.isError)
+   if (sr_isError(fd))
       ML_(am_barf)("can't open /proc/self/maps");
 
    buf_n_tot = 0;
    do {
-      n_chunk = ML_(am_read)( fd.res, &procmap_buf[buf_n_tot],
+      n_chunk = ML_(am_read)( sr_Res(fd), &procmap_buf[buf_n_tot],
                               M_PROCMAP_BUF - buf_n_tot );
       if (n_chunk >= 0)
          buf_n_tot += n_chunk;
    } while ( n_chunk > 0 && buf_n_tot < M_PROCMAP_BUF );
 
-   ML_(am_close)(fd.res);
+   ML_(am_close)(sr_Res(fd));
 
    if (buf_n_tot >= M_PROCMAP_BUF-5)
       ML_(am_barf_toolow)("M_PROCMAP_BUF");

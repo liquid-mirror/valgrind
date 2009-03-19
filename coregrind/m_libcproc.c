@@ -433,7 +433,7 @@ Int VG_(gettid)(void)
       if (!sr_isError(res) && sr_Res(res) > 0) {
          Char* s;
          pid[sr_Res(res)] = '\0';
-         sr_Res(res) = VG_(strtoll10)(pid, &s);
+         res = VG_(mk_SysRes_Success)(  VG_(strtoll10)(pid, &s) );
          if (*s != '\0') {
             VG_(message)(Vg_DebugMsg, 
                "Warning: invalid file name linked to by /proc/self: %s", pid);
