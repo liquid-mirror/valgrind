@@ -80,8 +80,8 @@ static void load_client ( /*OUT*/ExeInfo* info,
       executable.  This is needed for attaching to GDB. */
    // GrP fixme ...which doesn't work anyway
    res = VG_(open)(exe_name, VKI_O_RDONLY, VKI_S_IRUSR);
-   if (!res.isError)
-      VG_(cl_exec_fd) = res.res;
+   if (!sr_isError(res))
+      VG_(cl_exec_fd) = sr_Res(res);
 
    /* Copy necessary bits of 'info' that were filled in */
    *client_ip  = info->init_ip;

@@ -327,6 +327,22 @@ typedef struct SigQueue {
       I_die_here;
    }
    static inline SysRes VG_UCONTEXT_SYSCALL_SYSRES( void* ucV ) {
+      /* this is massively complicated by the problem that there are 4
+         different kinds of syscalls, each with its own return
+         convention. */
+      ucontext_t* uc = (ucontext_t*)ucV;
+      struct __darwin_mcontext32* mc = uc->uc_mcontext;
+      struct __darwin_i386_thread_state* ss = &mc->__ss;
+      UInt sysno = ss->__eax;
+      VG_(printf)("VG_UCONTEXT_SYSCALL_SYSRES: sysno = 0x%x\n", sysno);
+      VG_(printf)("%08x\n", ss->__eax);
+      VG_(printf)("%08x\n", ss->__ebx);
+      VG_(printf)("%08x\n", ss->__ecx);
+      VG_(printf)("%08x\n", ss->__edx);
+      VG_(printf)("%08x\n", ss->__esi);
+      VG_(printf)("%08x\n", ss->__edi);
+      VG_(printf)("%08x\n", ss->__ebp);
+      VG_(printf)("%08x\n", ss->__esp);
       I_die_here;
    }
    static inline Addr VG_UCONTEXT_LINK_REG( void* ucV ) {

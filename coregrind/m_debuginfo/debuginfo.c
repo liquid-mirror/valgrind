@@ -648,11 +648,11 @@ ULong VG_(di_notify_mmap)( Addr a, Bool allow_SkFileV )
 
    /* stat dereferences symlinks, so we don't expect it to succeed and
       yet produce something that is a symlink. */
-   vg_assert(statres.isError || ! VKI_S_ISLNK(statbuf.mode));
+   vg_assert(sr_isError(statres) || ! VKI_S_ISLNK(statbuf.mode));
 
    /* Don't let the stat call fail silently.  Filter out some known
       sources of noise before complaining, though. */
-   if (statres.isError) {
+   if (sr_isError(statres)) {
       DebugInfo fake_di;
       Bool quiet = VG_(strstr)(filename, "/var/run/nscd/") != NULL;
       if (!quiet && VG_(clo_verbosity) > 1) {
@@ -729,9 +729,8 @@ ULong VG_(di_notify_mmap)( Addr a, Bool allow_SkFileV )
    /* object file. Ignore the file if we do not have read permission. */
    VG_(memset)(buf1k, 0, sizeof(buf1k));
    fd = VG_(open)( filename, VKI_O_RDONLY, 0 );
-   if (fd.isError) {
-      if (fd.err != VKI_EACCES)
-      {
+   if (sr_isError(fd)) {
+      if (sr_Err(fd) != VKI_EACCES) {
          DebugInfo fake_di;
          VG_(memset)(&fake_di, 0, sizeof(fake_di));
          fake_di.filename = filename;
@@ -739,8 +738,8 @@ ULong VG_(di_notify_mmap)( Addr a, Bool allow_SkFileV )
       }
       return 0;
    }
-   nread = VG_(read)( fd.res, buf1k, sizeof(buf1k) );
-   VG_(close)( fd.res );
+   nread = VG_(read)( sr_Res(fd), buf1k, sizeof(buf1k) );
+   VG_(close)( sr_Res(fd) );
 
    if (nread == 0)
       return 0;

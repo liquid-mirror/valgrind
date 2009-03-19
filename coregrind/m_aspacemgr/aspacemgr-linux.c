@@ -2213,14 +2213,14 @@ SysRes VG_(am_mmap_named_file_fixed_client)
              VKI_MAP_FIXED|VKI_MAP_PRIVATE, 
              fd, offset 
           );
-   if (sres.isError)
+   if (sr_isError(sres))
       return sres;
 
-   if (sres.res != start) {
+   if (sr_Res(sres) != start) {
       /* I don't think this can happen.  It means the kernel made a
          fixed map succeed but not at the requested location.  Try to
          repair the damage, then return saying the mapping failed. */
-      (void)ML_(am_do_munmap_NO_NOTIFY)( sres.res, length );
+      (void)ML_(am_do_munmap_NO_NOTIFY)( sr_Res(sres), length );
       return VG_(mk_SysRes_Error)( VKI_EINVAL );
    }
 
@@ -2282,14 +2282,14 @@ SysRes VG_(am_mmap_anon_fixed_client) ( Addr start, SizeT length, UInt prot )
              VKI_MAP_FIXED|VKI_MAP_PRIVATE|VKI_MAP_ANONYMOUS, 
              0, 0 
           );
-   if (sres.isError)
+   if (sr_isError(sres))
       return sres;
 
-   if (sres.res != start) {
+   if (sr_Res(sres) != start) {
       /* I don't think this can happen.  It means the kernel made a
          fixed map succeed but not at the requested location.  Try to
          repair the damage, then return saying the mapping failed. */
-      (void)ML_(am_do_munmap_NO_NOTIFY)( sres.res, length );
+      (void)ML_(am_do_munmap_NO_NOTIFY)( sr_Res(sres), length );
       return VG_(mk_SysRes_Error)( VKI_EINVAL );
    }
 
@@ -2340,14 +2340,14 @@ SysRes VG_(am_mmap_anon_float_client) ( SizeT length, Int prot )
              VKI_MAP_FIXED|VKI_MAP_PRIVATE|VKI_MAP_ANONYMOUS, 
              0, 0 
           );
-   if (sres.isError)
+   if (sr_isError(sres))
       return sres;
 
-   if (sres.res != advised) {
+   if (sr_Res(sres) != advised) {
       /* I don't think this can happen.  It means the kernel made a
          fixed map succeed but not at the requested location.  Try to
          repair the damage, then return saying the mapping failed. */
-      (void)ML_(am_do_munmap_NO_NOTIFY)( sres.res, length );
+      (void)ML_(am_do_munmap_NO_NOTIFY)( sr_Res(sres), length );
       return VG_(mk_SysRes_Error)( VKI_EINVAL );
    }
 
@@ -2423,7 +2423,7 @@ SysRes VG_(am_mmap_anon_float_valgrind)( SizeT length )
              VM_TAG_VALGRIND, 0
           );
 #if defined(VGO_darwin)
-   if (sres.isError) {
+   if (sr_isError(sres)) {
        /* try again, ignoring the advisory */
        sres = VG_(am_do_mmap_NO_NOTIFY)( 
              0, length, 
@@ -2433,13 +2433,13 @@ SysRes VG_(am_mmap_anon_float_valgrind)( SizeT length )
           );
    }
 #endif
-   if (sres.isError)
+   if (sr_isError(sres))
       return sres;
 
    /* Ok, the mapping succeeded.  Now notify the interval map. */
    init_nsegment( &seg );
    seg.kind  = SkAnonV;
-   seg.start = sres.res;
+   seg.start = sr_Res(sres);
    seg.end   = seg.start + VG_PGROUNDUP(length) - 1;
    seg.hasR  = True;
    seg.hasW  = True;
@@ -2455,7 +2455,7 @@ SysRes VG_(am_mmap_anon_float_valgrind)( SizeT length )
 void* VG_(am_shadow_alloc)(SizeT size)
 {
    SysRes sres = VG_(am_mmap_anon_float_valgrind)( size );
-   return sres.isError ? NULL : (void*)sres.res;
+   return sr_isError(sres) ? NULL : (void*)sr_Res(sres);
 }
 
 /* Same comments apply as per VG_(am_sbrk_anon_float_client).  On
@@ -2503,21 +2503,21 @@ SysRes VG_(am_mmap_file_float_valgrind) ( SizeT length, UInt prot,
              VKI_MAP_FIXED|VKI_MAP_PRIVATE, 
              fd, offset 
           );
-   if (sres.isError)
+   if (sr_isError(sres))
       return sres;
 
-   if (sres.res != advised) {
+   if (sr_Res(sres) != advised) {
       /* I don't think this can happen.  It means the kernel made a
          fixed map succeed but not at the requested location.  Try to
          repair the damage, then return saying the mapping failed. */
-      (void)ML_(am_do_munmap_NO_NOTIFY)( sres.res, length );
+      (void)ML_(am_do_munmap_NO_NOTIFY)( sr_Res(sres), length );
       return VG_(mk_SysRes_Error)( VKI_EINVAL );
    }
 
    /* Ok, the mapping succeeded.  Now notify the interval map. */
    init_nsegment( &seg );
    seg.kind   = SkFileV;
-   seg.start  = sres.res;
+   seg.start  = sr_Res(sres);
    seg.end    = seg.start + VG_PGROUNDUP(length) - 1;
    seg.offset = offset;
    seg.hasR   = toBool(prot & VKI_PROT_READ);
@@ -2574,7 +2574,7 @@ SysRes am_munmap_both_wrk ( /*OUT*/Bool* need_discard,
    d = any_Ts_in_range( start, len );
 
    sres = ML_(am_do_munmap_NO_NOTIFY)( start, len );
-   if (sres.isError)
+   if (sr_isError(sres))
       return sres;
 
    VG_(am_notify_munmap)( start, len );
@@ -2608,7 +2608,7 @@ SysRes VG_(am_munmap_valgrind)( Addr start, SizeT len )
                                   start, len, False/*valgrind*/ );
    /* If this assertion fails, it means we allowed translations to be
       made from a V-owned section.  Which shouldn't happen. */
-   if (!r.isError)
+   if (!sr_isError(r))
       aspacem_assert(!need_discard);
    return r;
 }
@@ -2801,11 +2801,11 @@ Bool VG_(am_extend_into_adjacent_reservation_client) ( NSegment* seg,
                 VKI_MAP_FIXED|VKI_MAP_PRIVATE|VKI_MAP_ANONYMOUS, 
                 0, 0 
              );
-      if (sres.isError)
+      if (sr_isError(sres))
          return False; /* kernel bug if this happens? */
-      if (sres.res != nsegments[segR].start) {
+      if (sr_Res(sres) != nsegments[segR].start) {
          /* kernel bug if this happens? */
-        (void)ML_(am_do_munmap_NO_NOTIFY)( sres.res, delta );
+        (void)ML_(am_do_munmap_NO_NOTIFY)( sr_Res(sres), delta );
         return False;
       }
 
@@ -2837,11 +2837,11 @@ Bool VG_(am_extend_into_adjacent_reservation_client) ( NSegment* seg,
                 VKI_MAP_FIXED|VKI_MAP_PRIVATE|VKI_MAP_ANONYMOUS, 
                 0, 0 
              );
-      if (sres.isError)
+      if (sr_isError(sres))
          return False; /* kernel bug if this happens? */
-      if (sres.res != nsegments[segA].start-delta) {
+      if (sr_Res(sres) != nsegments[segA].start-delta) {
          /* kernel bug if this happens? */
-        (void)ML_(am_do_munmap_NO_NOTIFY)( sres.res, delta );
+        (void)ML_(am_do_munmap_NO_NOTIFY)( sr_Res(sres), delta );
         return False;
       }
 
@@ -2898,12 +2898,12 @@ Bool VG_(am_extend_map_client)( /*OUT*/Bool* need_discard,
    sres = ML_(am_do_extend_mapping_NO_NOTIFY)( seg->start, 
                                                seg_old_len,
                                                seg_old_len + delta );
-   if (sres.isError) {
+   if (sr_isError(sres)) {
       AM_SANITY_CHECK;
       return False;
    } else {
       /* the area must not have moved */
-      aspacem_assert(sres.res == seg->start);
+      aspacem_assert(sr_Res(sres) == seg->start);
    }
 
    *need_discard = any_Ts_in_range( seg_copy.end+1, delta );
@@ -2963,11 +2963,11 @@ Bool VG_(am_relocate_nooverlap_client)( /*OUT*/Bool* need_discard,
 
    sres = ML_(am_do_relocate_nooverlap_mapping_NO_NOTIFY)
              ( old_addr, old_len, new_addr, new_len );
-   if (sres.isError) {
+   if (sr_isError(sres)) {
       AM_SANITY_CHECK;
       return False;
    } else {
-      aspacem_assert(sres.res == new_addr);
+      aspacem_assert(sr_Res(sres) == new_addr);
    }
 
    *need_discard = any_Ts_in_range( old_addr, old_len )

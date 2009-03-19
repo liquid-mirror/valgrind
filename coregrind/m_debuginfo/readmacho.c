@@ -262,7 +262,7 @@ static Bool file_exists_p(const Char *path)
 {
    struct vg_stat sbuf;
    SysRes res = VG_(stat)(path, &sbuf);
-   return res.isError ? False : True;
+   return sr_isError(res) ? False : True;
 }
 
 
@@ -361,25 +361,25 @@ static Addr map_file(Char *filename, UInt *size)
    struct vg_stat stat_buf;
 
    fd = VG_(stat)(filename, &stat_buf);
-   if (fd.isError) {
+   if (sr_isError(fd)) {
       ML_(symerr)(NULL, False, "Can't stat image (to determine its size)?!");
       return 0;
    }
    *size = stat_buf.size;
 
    fd = VG_(open)(filename, VKI_O_RDONLY, 0);
-   if (fd.isError) {
+   if (sr_isError(fd)) {
       ML_(symerr)(NULL, False, "Can't open image to read symbols?!");
       return 0;
    }
 
    sres = VG_(am_mmap_file_float_valgrind)
-             ( *size, VKI_PROT_READ, fd.res, 0 );
+             ( *size, VKI_PROT_READ, sr_Res(fd), 0 );
 
-   VG_(close)(fd.res);
+   VG_(close)(sr_Res(fd));
 
-   if (sres.isError) return 0;
-   else return sres.res;
+   if (sr_isError(sres)) return 0;
+   else return sr_Res(sres);
 }
 
 
@@ -700,7 +700,7 @@ Bool ML_(read_macho_debug_info)( struct _DebugInfo* di )
 
    if (dw_map_base) {
       m_res = VG_(am_munmap_valgrind) ( dw_map_base, dw_map_size );
-      vg_assert(!m_res.isError);
+      vg_assert(!sr_isError(m_res));
    }
 
    if (dsymfile) ML_(dinfo_free)(dsymfile);
@@ -797,7 +797,7 @@ Bool ML_(read_macho_debug_info)( struct _DebugInfo* di )
 
    if (ob_map_base) {
       m_res = VG_(am_munmap_valgrind) ( ob_map_base, ob_map_size );
-      vg_assert(!m_res.isError);
+      vg_assert(!sr_isError(m_res));
    }
 
    if (got_dwarf  ||  got_nlist) {

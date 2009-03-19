@@ -76,7 +76,7 @@ static void print(const char *str)
 
 static void check_mmap(SysRes res, Addr base, SizeT len)
 {
-   if (res.isError) {
+   if (sr_isError(res)) {
       VG_(printf)("valgrind: mmap(0x%llx, %lld) failed in UME.\n", 
                   (ULong)base, (Long)len);
       VG_(exit)(1);
@@ -123,8 +123,8 @@ open_dylinker(const char *filename, vki_uint8_t **out_linker_entry)
    }
 
    res = VG_(open)(filename, VKI_O_RDONLY, 0);
-   fd = res.res;
-   if (res.isError) {
+   fd = sr_Res(res);
+   if (sr_isError(res)) {
       print("couldn't open dylinker: ");
       print(filename);
       print("\n");
@@ -441,7 +441,7 @@ load_thin_file(int fd, vki_off_t offset, vki_off_t size, unsigned long filetype,
       print("bad executable (no Mach-O header)\n");
    }
    res = VG_(pread)(fd, &mh, sizeof(mh), offset);
-   if (res.isError  ||  res.res != sizeof(mh)) {
+   if (sr_isError(res)  ||  sr_Res(res) != sizeof(mh)) {
       print("bad executable (no Mach-O header)\n");
       return -1;
    }
@@ -469,7 +469,7 @@ load_thin_file(int fd, vki_off_t offset, vki_off_t size, unsigned long filetype,
 
    headers = VG_(malloc)("ume.macho.headers", len);
    res = VG_(pread)(fd, headers, len, offset);
-   if (res.isError) {
+   if (sr_isError(res)) {
       print("couldn't read load commands from executable\n");
       return -1;
    }
@@ -633,7 +633,7 @@ load_fat_file(int fd, vki_off_t offset, vki_off_t size, unsigned long filetype,
       return -1;
    }
    res = VG_(pread)(fd, &fh, sizeof(fh), offset);
-   if (res.isError  ||  res.res != sizeof(fh)) {
+   if (sr_isError(res)  ||  sr_Res(res) != sizeof(fh)) {
       print("bad executable (bad fat header)\n");
       return -1;
    }
@@ -650,7 +650,7 @@ load_fat_file(int fd, vki_off_t offset, vki_off_t size, unsigned long filetype,
 
       res = VG_(pread)(fd, &arch, sizeof(arch), arch_offset);
       arch_offset += sizeof(arch);
-      if (res.isError  ||  res.res != sizeof(arch)) {
+      if (sr_isError(res)  ||  sr_Res(res) != sizeof(arch)) {
          VG_(printf)("bad executable (corrupt fat arch) %x %llu\n", 
                      arch.cputype, (ULong)arch_offset);
          return -1;
@@ -695,7 +695,7 @@ load_mach_file(int fd, vki_off_t offset, vki_off_t size, unsigned long filetype,
       return -1;
    }
    res = VG_(pread)(fd, &magic, sizeof(magic), offset);
-   if (res.isError  ||  res.res != sizeof(magic)) {
+   if (sr_isError(res)  ||  sr_Res(res) != sizeof(magic)) {
       print("bad executable (no Mach-O magic)\n");
       return -1;
    }

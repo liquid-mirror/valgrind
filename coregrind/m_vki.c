@@ -122,6 +122,9 @@ void VG_(vki_do_initial_consistency_checks) ( void )
      vg_assert(offsetof(f1.sa_flags)   == offsetof(f2.sa_flags));
 #    endif
    }
+   /* also .. */
+   /* VKI_SET_SIGMASK is hardwired into syscall-x86-darwin.S */
+   vg_assert(VKI_SIG_SETMASK == 3);
 
 #  else
 #     error "Unknown OS" 

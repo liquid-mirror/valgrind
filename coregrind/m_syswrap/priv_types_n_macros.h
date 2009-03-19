@@ -321,31 +321,29 @@ SyscallTableEntry* ML_(get_ppc64_aix5_syscall_entry) ( UInt sysno );
 
 /* Reference to the syscall's current result status/value.  General
    paranoia all round. */
-#define SUCCESS       (status->what == SsComplete && !status->sres.isError)
-#define FAILURE       (status->what == SsComplete &&  status->sres.isError)
+#define SUCCESS       (status->what == SsComplete && !sr_isError(status->sres))
+#define FAILURE       (status->what == SsComplete &&  sr_isError(status->sres))
 #define SWHAT         (status->what)
 #define RES           (getRES(status))
-#define RES2          (getRES2(status))
+#define RESHI         (getRESHI(status))
 #define ERR           (getERR(status))
 
 static inline UWord getRES ( SyscallStatus* st ) {
    vg_assert(st->what == SsComplete);
-   vg_assert(!st->sres.isError);
-   return st->sres.res;
+   vg_assert(!sr_isError(st->sres));
+   return sr_Res(st->sres);
 }
 
-#if defined(VGO_darwin)
-static inline UWord getRES2 ( SyscallStatus* st ) {
+static inline UWord getRESHI ( SyscallStatus* st ) {
    vg_assert(st->what == SsComplete);
-   vg_assert(!st->sres.isError);
-   return st->sres.res2;
+   vg_assert(!sr_isError(st->sres));
+   return sr_ResHI(st->sres);
 }
-#endif
 
 static inline UWord getERR ( SyscallStatus* st ) {
    vg_assert(st->what == SsComplete);
-   vg_assert(st->sres.isError);
-   return st->sres.err;
+   vg_assert(sr_isError(st->sres));
+   return sr_Err(st->sres);
 }
 
 

@@ -2258,10 +2258,10 @@ static SysRes simple_pre_exec_check(const HChar* exe_name)
 
    // Check it's readable
    res = VG_(open)(exe_name, VKI_O_RDONLY, 0);
-   if (res.isError) {
+   if (sr_isError(res)) {
       return res;
    }
-   fd = res.res;
+   fd = sr_Res(res);
    VG_(close)(fd);
 
    // Check we have execute permissions.  We allow setuid executables
@@ -2325,8 +2325,8 @@ PRE(sys_posix_spawn)
    // ok, etc.  We allow setuid executables to run only in the case when
    // we are not simulating them, that is, they to be run natively.
    res = simple_pre_exec_check((const HChar*)ARG2);
-   if (res.isError) {
-      SET_STATUS_Failure( res.err );
+   if (sr_isError(res)) {
+      SET_STATUS_Failure( sr_Err(res) );
       return;
    }
 
@@ -2748,9 +2748,8 @@ POST(sys_pipe)
 {
    Int p0, p1;
    vg_assert(SUCCESS);
-   // not RES because we need the doubleword result
-   p0 = status->sres.res;
-   p1 = status->sres.res2;
+   p0 = RES;
+   p1 = RESHI;
 
    if (!ML_(fd_allowed)(p0, "pipe", tid, True) ||
        !ML_(fd_allowed)(p1, "pipe", tid, True)) {
@@ -3209,7 +3208,7 @@ PRE(sys_sigsuspend)
    /* I think the first arg is the 32-bit signal mask (by value), and
       the other two args are ignored. */
    *flags |= SfMayBlock;
-   PRINT("sys_sigsuspend ( %ld, %ld, %ld )", ARG1,ARG2,ARG3 );
+   PRINT("sys_sigsuspend ( mask=0x%08lx )", ARG1 );
    PRE_REG_READ1(int, "sigsuspend", int, sigmask);
 }
 
@@ -5513,7 +5512,18 @@ PRE(thread_terminate)
       ThreadState *tst = VG_(get_ThreadState)(tid);
       tst->exitreason = VgSrc_ExitThread;
       tst->os_state.exitcode = 0;  // GrP fixme anything better?
-      SET_STATUS_Success(0);
+      // What we would like to do is:
+      //   SET_STATUS_Success(0);
+      // but that doesn't work, because this is a MACH-class syscall,
+      // and SET_STATUS_Success creates a UNIX-class syscall result.
+      // Hence we have to laboriously construct the full SysRes "by hand"
+      // and use that to set the syscall return status.
+      SET_STATUS_from_SysRes(
+         VG_(mk_SysRes_x86_darwin)(
+            VG_DARWIN_SYSCALL_CLASS_MACH,
+            False/*success*/, 0, 0
+         )
+      );
       *flags &= ~SfMayBlock;  // clear flag set by PRE(mach_msg)
    } else {
       // Terminating some other thread.
@@ -6450,8 +6460,11 @@ PRE(semaphore_timedwait_signal)
 
 PRE(sys___semwait_signal)
 {
-   PRINT("sys___semwait_signal(wait %s, signal %s, %ld, %ld, %g seconds)", 
-         name_for_port(ARG1), name_for_port(ARG2), ARG3, ARG4, ARG5+ARG6/1000000000.0);
+   /* args: int cond_sem, int mutex_sem,
+            int timeout, int relative,
+            time_t tv_sec, time_t tv_nsec */
+   PRINT("sys___semwait_signal(wait %s, signal %s, %ld, %ld, %lds:%ldns)", 
+         name_for_port(ARG1), name_for_port(ARG2), ARG3, ARG4, ARG5, ARG6);
    PRE_REG_READ6(long, "sys___semwait_signal", 
                  int,"cond_sem", int,"mutex_sem",
                  int,"timeout", int,"relative", 
@@ -6728,7 +6741,19 @@ PRE(pthread_set_self)
       
       tst->os_state.pthread = ARG1;
       tst->arch.vex.guest_GS = 0x37;
-      SET_STATUS_Success(0x37);      
+
+      // What we would like to do is:
+      //   SET_STATUS_Success(0x37);
+      // but that doesn't work, because this is a MDEP-class syscall,
+      // and SET_STATUS_Success creates a UNIX-class syscall result.
+      // Hence we have to laboriously construct the full SysRes "by hand"
+      // and use that to set the syscall return status.
+      SET_STATUS_from_SysRes(
+         VG_(mk_SysRes_x86_darwin)(
+            VG_DARWIN_SYSNO_CLASS(__NR_pthread_set_self),
+            False, 0, 0x37
+         )
+      );
    }
 
 #elif defined(VGA_amd64)

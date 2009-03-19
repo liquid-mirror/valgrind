@@ -143,6 +143,13 @@ typedef uint32_t vki_u32;
 #define vki_stat stat
 #define vki_stat64 stat64
 
+#define st_atime      st_atimespec.tv_sec
+#define st_atime_nsec st_atimespec.tv_nsec
+#define st_mtime      st_mtimespec.tv_sec
+#define st_mtime_nsec st_mtimespec.tv_nsec
+#define st_ctime      st_ctimespec.tv_sec
+#define st_ctime_nsec st_ctimespec.tv_nsec
+
 
 #include <sys/dirent.h>
 

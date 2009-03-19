@@ -50,30 +50,23 @@
 #define VG_DARWIN_SYSCALL_CLASS_UNIX      2       /* Unix/BSD */
 #define VG_DARWIN_SYSCALL_CLASS_MDEP      3       /* Machine-dependent */
 #define VG_DARWIN_SYSCALL_CLASS_DIAG      4       /* Diagnostics */
-#define VG_DARWIN_SYSCALL_CLASS_UX64      99      /* hack: x86 `int $0x80` */
 
 #define VG_DARWIN_SYSCALL_CONSTRUCT_MACH(syscall_number) \
     ((VG_DARWIN_SYSCALL_CLASS_MACH << VG_DARWIN_SYSCALL_CLASS_SHIFT) | \
      (VG_DARWIN_SYSCALL_NUMBER_MASK & (syscall_number)))
+
 #define VG_DARWIN_SYSCALL_CONSTRUCT_UNIX(syscall_number) \
     ((VG_DARWIN_SYSCALL_CLASS_UNIX << VG_DARWIN_SYSCALL_CLASS_SHIFT) | \
      (VG_DARWIN_SYSCALL_NUMBER_MASK & (syscall_number)))
+
 #define VG_DARWIN_SYSCALL_CONSTRUCT_MDEP(syscall_number) \
     ((VG_DARWIN_SYSCALL_CLASS_MDEP << VG_DARWIN_SYSCALL_CLASS_SHIFT) | \
      (VG_DARWIN_SYSCALL_NUMBER_MASK & (syscall_number)))
+
 #define VG_DARWIN_SYSCALL_CONSTRUCT_DIAG(syscall_number) \
     ((VG_DARWIN_SYSCALL_CLASS_DIAG << VG_DARWIN_SYSCALL_CLASS_SHIFT) | \
      (VG_DARWIN_SYSCALL_NUMBER_MASK & (syscall_number)))
 
-#if defined(VGA_x86)
-#define VG_DARWIN_SYSCALL_CONSTRUCT_UX64(syscall_number) \
-    ((VG_DARWIN_SYSCALL_CLASS_UX64 << VG_DARWIN_SYSCALL_CLASS_SHIFT) | \
-     (VG_DARWIN_SYSCALL_NUMBER_MASK & (syscall_number)))
-#else
-#define VG_DARWIN_SYSCALL_CONSTRUCT_UX64(syscall_number) \
-    ((VG_DARWIN_SYSCALL_CLASS_UNIX/*not a typo*/ << VG_DARWIN_SYSCALL_CLASS_SHIFT) | \
-     (VG_DARWIN_SYSCALL_NUMBER_MASK & (syscall_number)))
-#endif
 
 
 // mdep syscalls
@@ -153,7 +146,7 @@
  
 #define	__NR_syscall        VG_DARWIN_SYSCALL_CONSTRUCT_UNIX(0)
 #define	__NR_exit           VG_DARWIN_SYSCALL_CONSTRUCT_UNIX(1)
-#define	__NR_fork           VG_DARWIN_SYSCALL_CONSTRUCT_UX64(2)
+#define	__NR_fork           VG_DARWIN_SYSCALL_CONSTRUCT_UNIX(2) // was UX64
 #define	__NR_read           VG_DARWIN_SYSCALL_CONSTRUCT_UNIX(3)
 #define	__NR_write          VG_DARWIN_SYSCALL_CONSTRUCT_UNIX(4)
 #define	__NR_open           VG_DARWIN_SYSCALL_CONSTRUCT_UNIX(5)
@@ -193,7 +186,7 @@
 #define	__NR_getppid        VG_DARWIN_SYSCALL_CONSTRUCT_UNIX(39)
 			/* 40  old lstat */
 #define	__NR_dup            VG_DARWIN_SYSCALL_CONSTRUCT_UNIX(41)
-#define	__NR_pipe           VG_DARWIN_SYSCALL_CONSTRUCT_UX64(42)
+#define	__NR_pipe           VG_DARWIN_SYSCALL_CONSTRUCT_UNIX(42) // was UX64
 #define	__NR_getegid        VG_DARWIN_SYSCALL_CONSTRUCT_UNIX(43)
 #define	__NR_profil         VG_DARWIN_SYSCALL_CONSTRUCT_UNIX(44)
 			/* 45  old ktrace */
@@ -350,7 +343,7 @@
 #define	__NR_getdirentries  VG_DARWIN_SYSCALL_CONSTRUCT_UNIX(196)
 #define	__NR_mmap           VG_DARWIN_SYSCALL_CONSTRUCT_UNIX(197)
 			/* 198  __syscall */
-#define	__NR_lseek          VG_DARWIN_SYSCALL_CONSTRUCT_UX64(199)
+#define	__NR_lseek          VG_DARWIN_SYSCALL_CONSTRUCT_UNIX(199) // was UX64
 #define	__NR_truncate       VG_DARWIN_SYSCALL_CONSTRUCT_UNIX(200)
 #define	__NR_ftruncate      VG_DARWIN_SYSCALL_CONSTRUCT_UNIX(201)
 #define	__NR___sysctl       VG_DARWIN_SYSCALL_CONSTRUCT_UNIX(202)

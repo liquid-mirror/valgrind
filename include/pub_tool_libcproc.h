@@ -52,8 +52,6 @@ extern Int  VG_(waitpid)( Int pid, Int *status, Int options );
 extern Int  VG_(system) ( Char* cmd );
 extern Int  VG_(fork)   ( void);
 extern void VG_(execv)  ( Char* filename, Char** argv );
-extern Int VG_(popen_read)(const Char *cmd);
-extern void VG_(pclose)(int fd);
 
 /* ---------------------------------------------------------------------
    Resource limits

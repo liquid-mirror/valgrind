@@ -179,7 +179,7 @@ Int VG_(sigprocmask)( Int how, const vki_sigset_t* set, vki_sigset_t* oldset)
    SysRes res = VG_(do_syscall3)(__NR_sigprocmask, 
                                  how, (UWord)set, (UWord)oldset);
 #  endif
-   return res.isError ? -1 : 0;
+   return sr_isError(res) ? -1 : 0;
 }
 
 
@@ -248,7 +248,7 @@ Int VG_(sigaction) ( Int signum,
       vg_assert(oldactCopy.after[1]  == 0x5555555555555555ULL);
       *oldact = *real_oldact;
    }
-   return res.isError ? -1 : 0;
+   return sr_isError(res) ? -1 : 0;
 
 #  elif defined(VGO_linux) || defined(VGO_aix5)
    /* Normal case: vki_sigaction_toK_t and vki_sigaction_fromK_t are
@@ -256,7 +256,7 @@ Int VG_(sigaction) ( Int signum,
    SysRes res = VG_(do_syscall4)(__NR_rt_sigaction,
                                  signum, (UWord)act, (UWord)oldact, 
                                  _VKI_NSIG_WORDS * sizeof(UWord));
-   return res.isError ? -1 : 0;
+   return sr_isError(res) ? -1 : 0;
 #  else
 #    error "Unsupported OS"
 #  endif
@@ -284,7 +284,7 @@ VG_(convert_sigaction_fromK_to_toK)( vki_sigaction_fromK_t* fromK,
 Int VG_(kill)( Int pid, Int signo )
 {
    SysRes res = VG_(do_syscall2)(__NR_kill, pid, signo);
-   return res.isError ? -1 : 0;
+   return sr_isError(res) ? -1 : 0;
 }
 
 // GrP fixme this is an lwpid, not a ThreadId
@@ -293,15 +293,15 @@ Int VG_(tkill)( ThreadId tid, Int signo )
 #  if defined(__NR_tkill)
    SysRes res = VG_(mk_SysRes_Error)(VKI_ENOSYS);
    res = VG_(do_syscall2)(__NR_tkill, tid, signo);
-   if (res.isError && res.err == VKI_ENOSYS)
+   if (sr_isError(res) && res.err == VKI_ENOSYS)
       res = VG_(do_syscall2)(__NR_kill, tid, signo);
-   return res.isError ? -1 : 0;
+   return sr_isError(res) ? -1 : 0;
 
 #  elif defined(VGO_darwin)
    // Note that the __pthread_kill syscall takes a Mach thread, not a pthread.
    SysRes res;
    res = VG_(do_syscall2)(__NR___pthread_kill, tid, signo);
-   return res.isError ? -1 : 0;
+   return sr_isError(res) ? -1 : 0;
 
 #  else
 #    error "Unsupported plat"
@@ -335,7 +335,7 @@ Int VG_(sigtimedwait_zero)( const vki_sigset_t *set,
    static const struct vki_timespec zero = { 0, 0 };
    SysRes res = VG_(do_syscall4)(__NR_rt_sigtimedwait, (UWord)set, (UWord)info, 
                                  (UWord)&zero, sizeof(*set));
-   return res.isError ? -1 : res.res;
+   return sr_isError(res) ? -1 : res.res;
 }
 
 /* ---------- sigtimedwait_zero: AIX5 ----------- */
@@ -468,7 +468,7 @@ Int VG_(sigtimedwait_zero)( const vki_sigset_t *set,
 
   /* Find out what's pending: Darwin sigpending */
   sr = VG_(do_syscall1)(__NR_sigpending, (UWord)&pending);
-  vg_assert(!sr.isError);
+  vg_assert(!sr_isError(sr));
 
   /* don't try for signals not in 'set' */
   /* pending = pending `intersect` set */
@@ -516,10 +516,11 @@ Int VG_(sigtimedwait_zero)( const vki_sigset_t *set,
   if (debug)
      VG_(debugLog)(0, "libcsignal",
                       "sigtimedwait_zero: sigsuspend got "
-                      "res %ld %ld err %ld\n", 
-                      sr.res, sr.res2, sr.err);
-  vg_assert(sr.isError);
-  vg_assert(sr.err == VKI_EINTR);
+                      "res: %s %#lx\n", 
+                      sr_isError(sr) ? "FAIL" : "SUCCESS",
+                      sr_isError(sr) ? sr_Err(sr) : sr_Res(sr));
+  vg_assert(sr_isError(sr));
+  vg_assert(sr_Err(sr) == VKI_EINTR);
 
   /* Restore signal's handler to whatever it was before */
   VG_(convert_sigaction_fromK_to_toK)( &saved_sa, &saved_sa2 );

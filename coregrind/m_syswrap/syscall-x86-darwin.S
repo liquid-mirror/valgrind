@@ -29,6 +29,7 @@
 */
 
 #include "pub_core_basics_asm.h"
+#include "pub_core_vkiscnums.h"
 #include "libvex_guest_offsets.h"
 		
 	
@@ -65,18 +66,18 @@
 				  void* guest_state,		// ebp+12
 				  const vki_sigset_t *sysmask,	// ebp+16
 				  const vki_sigset_t *postmask,	// ebp+20
-				  Int nsigwords)		// ebp+24
-				   
+				  Int sigsetSzB)		// ebp+24
+
+        Note that sigsetSzB is totally ignored (and irrelevant).
 */
 
-/* from vki_arch.h */	
-#define VKI_SIG_SETMASK	2
+/* from vki-darwin.h, checked at startup by m_vki.c */	
+#define VKI_SIG_SETMASK	3
 
-/* DO_SYSCALL MACH|MDEP|UNIX|UX64 */
+/* DO_SYSCALL MACH|MDEP|UNIX */
 #define MACH 1
 #define MDEP 2
 #define UNIX 3
-#define UX64 4
 	
 .macro DO_SYSCALL
 	/* establish stack frame */
@@ -89,7 +90,15 @@ L_$0_1:	/* Even though we can't take a signal until the sigprocmask completes,
 	   If eip is in the range [1,2), the syscall hasn't been started yet */
 
 	/* Set the signal mask which should be current during the syscall. */
-	/* GrP fixme signals (deleted) */
+        /* Set up for sigprocmask(SIG_SETMASK, sysmask, postmask) */
+        pushl   20(%ebp)
+        pushl   16(%ebp)
+        pushl   $$VKI_SIG_SETMASK
+        pushl   $$0xcafebabe    /* totally fake return address */
+        movl    $$__NR_sigprocmask, %eax
+        int     $$0x80  /* should be sysenter? */
+        jc      L_$0_7  /* sigprocmask failed */
+        addl    $$16,%esp
 
 	/* Copy syscall parameters to the stack - assume no more than 8 
 	 * plus the return address */
@@ -123,9 +132,7 @@ L_$0_1:	/* Even though we can't take a signal until the sigprocmask completes,
 	/* If eip==2, then the syscall was either just about to start, 
 	   or was interrupted and the kernel was restarting it. */
 L_$0_2:
-.if $0 == UX64
-	int	$$0x80			/* UX64 */
-.elseif $0 == UNIX
+.if $0 == UNIX
 	int	$$0x80			/* UNIX (fixme should be sysenter?) */
 .elseif $0 == MACH
 	int	$$0x81
@@ -135,17 +142,14 @@ L_$0_2:
 	error$0 x
 .endif
 
-L_$0_3:	/* In the range [3, 4), the syscall result is in %eax and %edx and C, but hasn't been committed to the thread state. */
+L_$0_3:	/* In the range [3, 4), the syscall result is in %eax and %edx and C,
+           but hasn't been committed to the thread state. */
 	setc	0(%esp)				/* stash returned carry flag */
 	movl	12(%ebp), %ecx
-	movl	%eax, OFFSET_x86_EAX(%ecx)	/* save EAX to vex*/
-.if $0 == UX64
+	movl	%eax, OFFSET_x86_EAX(%ecx)	/* save EAX to vex */
 	movl	%edx, OFFSET_x86_EDX(%ecx)	/* save EDX to vex */
-.endif
-.if $0 != MACH
-.if $0 != MDEP
-	/* UNIX or UX64 */
-	/* save carry flag to vex */
+.if $0 == UNIX
+	/* UNIX: save carry flag to vex */
 	subl	$$12, %esp
 	movl	%ecx, 4(%esp)
 	movl	$$0, 0(%esp)
@@ -154,19 +158,35 @@ L_$0_3:	/* In the range [3, 4), the syscall result is in %eax and %edx and C, bu
 	call	_LibVEX_GuestX86_put_eflag_c
 	addl	$$12, %esp
 .endif
-.endif
 
-L_$0_4:	/* Re-block signals.  If eip is in [4,5), then the syscall is complete and 
-	   we needn't worry about it. */
-	/* GrP fixme signals (deleted) */
+L_$0_4:	/* Re-block signals.  If eip is in [4,5), then the syscall is
+           complete and we needn't worry about it. */
+        /* Set up for sigprocmask(SIG_SETMASK, postmask, NULL) */
+        pushl   $$0
+        pushl   20(%ebp)
+        pushl   $$VKI_SIG_SETMASK
+        pushl   $$0xcafef00d    /* totally fake return address */
+        movl    $$__NR_sigprocmask, %eax
+        int     $$0x80  /* should be sysenter? */
+        jc      L_$0_7  /* sigprocmask failed */
+        addl    $$16,%esp
 
 L_$0_5:	/* now safe from signals */
-
-	/* Return zero (GrP fixme signals) */
-	movl	$$0, %eax
+	movl	$$0, %eax       /* SUCCESS */
 	movl	%ebp, %esp
 	popl	%ebp
 	ret
+
+L_$0_7: /* failure: return 0x8000 | error code */
+        /* Note that we enter here with %esp being 16 too low
+           (4 extra words on the stack).  But because we're nuking
+           the stack frame now, that doesn't matter. */
+        andl    $$0x7FFF, %eax
+        orl     $$0x8000, %eax
+	movl	%ebp, %esp
+	popl	%ebp
+	ret
+
 .endmacro
 	
 
@@ -174,10 +194,6 @@ L_$0_5:	/* now safe from signals */
 _ML_(do_syscall_for_client_unix_WRK):
 	DO_SYSCALL UNIX
 
-.globl _ML_(do_syscall_for_client_ux64_WRK)
-_ML_(do_syscall_for_client_ux64_WRK):
-	DO_SYSCALL UX64
-	
 .globl _ML_(do_syscall_for_client_mach_WRK)
 _ML_(do_syscall_for_client_mach_WRK):
 	DO_SYSCALL MACH

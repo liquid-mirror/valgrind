@@ -44,7 +44,9 @@
 #include "pub_core_clientstate.h"
 
 #if defined(VGO_darwin)
-#include <mach/mach.h>
+/* --- !!! --- EXTERNAL HEADERS start --- !!! --- */
+#include <mach/mach.h>   /* mach_thread_self */
+/* --- !!! --- EXTERNAL HEADERS end --- !!! --- */
 #endif
 
 
@@ -133,6 +135,7 @@ Char **VG_(env_setenv) ( Char ***envp, const Char* varname, const Char *val )
 
    return oldenv;
 }
+
 
 /* Walk through a colon-separated environment variable, and remove the
    entries which match remove_pattern.  It slides everything down over
@@ -250,17 +253,17 @@ void VG_(env_remove_valgrind_env_stuff)(Char** envp)
 
 Int VG_(waitpid)(Int pid, Int *status, Int options)
 {
-#  if defined(VGO_linux)  ||  defined(VGO_darwin)
+#  if defined(VGO_linux) || defined(VGO_darwin)
    SysRes res = VG_(do_syscall4)(__NR_wait4, pid, (UWord)status, options, 0);
-   return res.isError ? -1 : res.res;
+   return sr_isError(res) ? -1 : sr_Res(res);
 #  elif defined(VGO_aix5)
    /* magic number 4 obtained by truss-ing a C program doing
       'waitpid'.  Note status and pid args opposite way round from
       POSIX. */
    SysRes res = VG_(do_syscall5)(__NR_AIX5_kwaitpid, 
                                  (UWord)status, pid, 4 | options,0,0);
-   if (0) VG_(printf)("waitpid: got 0x%lx 0x%lx\n", res.res, res.err);
-   return res.isError ? -1 : res.res;
+   if (0) VG_(printf)("waitpid: got 0x%lx 0x%lx\n", sr_Res(res), res.err);
+   return sr_isError(res) ? -1 : sr_Res(res);
 #  else
 #    error Unknown OS
 #  endif
@@ -307,7 +310,7 @@ void VG_(execv) ( Char* filename, Char** argv )
    res = VG_(do_syscall3)(__NR_execve,
                           (UWord)filename, (UWord)argv, (UWord)envp);
 
-   VG_(printf)("EXEC failed, errno = %ld\n", res.res);
+   VG_(printf)("EXEC failed, errno = %lld\n", (Long)sr_Err(res));
 }
 
 /* Return -1 if error, else 0.  NOTE does not indicate return code of
@@ -360,90 +363,6 @@ Int VG_(system) ( Char* cmd )
    }
 }
 
-/* Like popen(cmd, "r"): launch child process and read output from it.
-   Return -1 if error, else descriptor to read from.
-   Finish with VG_(pclose). */
-static struct {
-    Int parent_fd;
-    Int child_pid;
-} popen_list[10];
-
-Int VG_(popen_read)(const Char *cmd)
-{
-   Int fds[2];
-   Int    pid;
-
-   if (VG_(pipe)(fds) < 0) return -1;
-
-   pid = VG_(fork)();
-   if (pid < 0) {
-      VG_(close)(fds[0]);
-      VG_(close)(fds[1]);
-      return -1;
-   }
-   else if (pid == 0) {
-      /* child */
-      static Char** envp = NULL;
-      const Char* argv[4];
-
-      VG_(close)(fds[0]);
-      VG_(dup2)(fds[1], 1/*STDOUT_FILENO*/); 
-      VG_(close)(fds[1]);
-
-      /* restore the DATA rlimit for the child */
-      VG_(setrlimit)(VKI_RLIMIT_DATA, &VG_(client_rlimit_data));
-
-      envp = VG_(env_clone)(VG_(client_envp));
-      VG_(env_remove_valgrind_env_stuff)( envp ); 
-
-      argv[0] = "/bin/sh";
-      argv[1] = "-c";
-      argv[2] = cmd;
-      argv[3] = 0;
-
-      (void)VG_(do_syscall3)(__NR_execve, 
-                             (UWord)"/bin/sh", (UWord)argv, (UWord)envp);
-
-      /* If we're still alive here, execve failed. */
-      VG_(exit)(1);
-   } 
-   else {
-      /* parent */
-
-      /* GrP fixme signals */
-
-      Int i;
-      for (i = 0; i < sizeof(popen_list)/sizeof(popen_list[0]); i++) {
-          if (popen_list[i].child_pid == 0) {
-              popen_list[i].child_pid = pid;
-              popen_list[i].parent_fd = fds[0];
-              VG_(close)(fds[1]);
-              return fds[0];
-          }
-      }
-      // static popen_list is full
-      vg_assert(0);
-   }
-}
-
-
-void VG_(pclose)(int fd)
-{
-   Int i;
-   for (i = 0; i < sizeof(popen_list)/sizeof(popen_list[0]); i++) {
-      if (popen_list[i].parent_fd == fd) {
-         /* GrP fixme signals */
-         VG_(waitpid)(popen_list[i].child_pid, NULL, 0);
-         VG_(close)(fd);
-         popen_list[i].child_pid = 0;
-         popen_list[i].parent_fd = 0;
-         return;
-      }
-   }
-   // not in static popen_list
-   vg_assert(0);
-}
-
 /* ---------------------------------------------------------------------
    Resource limits
    ------------------------------------------------------------------ */
@@ -456,9 +375,9 @@ Int VG_(getrlimit) (Int resource, struct vki_rlimit *rlim)
 #  ifdef __NR_ugetrlimit
    res = VG_(do_syscall2)(__NR_ugetrlimit, resource, (UWord)rlim);
 #  endif
-   if (res.isError && res.err == VKI_ENOSYS)
+   if (sr_isError(res) && sr_Err(res) == VKI_ENOSYS)
       res = VG_(do_syscall2)(__NR_getrlimit, resource, (UWord)rlim);
-   return res.isError ? -1 : res.res;
+   return sr_isError(res) ? -1 : sr_Res(res);
 }
 
 
@@ -468,7 +387,7 @@ Int VG_(setrlimit) (Int resource, const struct vki_rlimit *rlim)
    SysRes res;
    /* res = setrlimit( resource, rlim ); */
    res = VG_(do_syscall2)(__NR_setrlimit, resource, (UWord)rlim);
-   return res.isError ? -1 : res.res;
+   return sr_isError(res) ? -1 : sr_Res(res);
 }
 
 /* ---------------------------------------------------------------------
@@ -482,11 +401,10 @@ Int VG_(gettid)(void)
    Int    r;
    vg_assert(__NR_AIX5__thread_self != __NR_AIX5_UNKNOWN);
    res = VG_(do_syscall0)(__NR_AIX5__thread_self);
-   r = res.res;
+   r = sr_Res(res);
    return r;
 
 #  elif defined(VGO_darwin)
-
    // Darwin's gettid syscall is something else.
    // Use Mach thread ports for lwpid instead.
    return mach_thread_self();
@@ -494,7 +412,7 @@ Int VG_(gettid)(void)
 #  elif defined(VGO_linux)
    SysRes res = VG_(do_syscall0)(__NR_gettid);
 
-   if (res.isError && res.res == VKI_ENOSYS) {
+   if (sr_isError(res) && sr_Res(res) == VKI_ENOSYS) {
       Char pid[16];      
       /*
        * The gettid system call does not exist. The obvious assumption
@@ -512,10 +430,10 @@ Int VG_(gettid)(void)
 
       res = VG_(do_syscall3)(__NR_readlink, (UWord)"/proc/self",
                              (UWord)pid, sizeof(pid));
-      if (!res.isError && res.res > 0) {
+      if (!sr_isError(res) && sr_Res(res) > 0) {
          Char* s;
-         pid[res.res] = '\0';
-         res.res = VG_(strtoll10)(pid, &s);
+         pid[sr_Res(res)] = '\0';
+         sr_Res(res) = VG_(strtoll10)(pid, &s);
          if (*s != '\0') {
             VG_(message)(Vg_DebugMsg, 
                "Warning: invalid file name linked to by /proc/self: %s", pid);
@@ -523,10 +441,10 @@ Int VG_(gettid)(void)
       }
    }
 
-   return res.res;
+   return sr_Res(res);
 
 #  else
-#  error unknown OS
+#    error "Unknown OS"
 #  endif
 }
 
@@ -534,32 +452,32 @@ Int VG_(gettid)(void)
 Int VG_(getpid) ( void )
 {
    /* ASSUMES SYSCALL ALWAYS SUCCEEDS */
-   return VG_(do_syscall0)(__NR_getpid) . res;
+   return sr_Res( VG_(do_syscall0)(__NR_getpid) );
 }
 
 Int VG_(getpgrp) ( void )
 {
    /* ASSUMES SYSCALL ALWAYS SUCCEEDS */
-   return VG_(do_syscall0)(__NR_getpgrp) . res;
+   return sr_Res( VG_(do_syscall0)(__NR_getpgrp) );
 }
 
 Int VG_(getppid) ( void )
 {
    /* ASSUMES SYSCALL ALWAYS SUCCEEDS */
-   return VG_(do_syscall0)(__NR_getppid) . res;
+   return sr_Res( VG_(do_syscall0)(__NR_getppid) );
 }
 
 Int VG_(geteuid) ( void )
 {
    /* ASSUMES SYSCALL ALWAYS SUCCEEDS */
 #  if defined(VGP_ppc32_aix5) || defined(VGP_ppc64_aix5)
-   return VG_(do_syscall1)(__NR_AIX5_getuidx, 1) . res;
+   return sr_Res( VG_(do_syscall1)(__NR_AIX5_getuidx, 1) );
 #  elif defined(__NR_geteuid32)
    // We use the 32-bit version if it's supported.  Otherwise, IDs greater
    // than 65536 cause problems, as bug #151209 showed.
-   return VG_(do_syscall0)(__NR_geteuid32) . res;
+   return sr_Res( VG_(do_syscall0)(__NR_geteuid32) );
 #  else
-   return VG_(do_syscall0)(__NR_geteuid) . res;
+   return sr_Res( VG_(do_syscall0)(__NR_geteuid) );
 #  endif
 }
 
@@ -567,13 +485,13 @@ Int VG_(getegid) ( void )
 {
    /* ASSUMES SYSCALL ALWAYS SUCCEEDS */
 #  if defined(VGP_ppc32_aix5) || defined(VGP_ppc64_aix5)
-   return VG_(do_syscall1)(__NR_AIX5_getgidx, 1) . res;
+   return sr_Res( VG_(do_syscall1)(__NR_AIX5_getgidx, 1) );
 #  elif defined(__NR_getegid32)
    // We use the 32-bit version if it's supported.  Otherwise, IDs greater
    // than 65536 cause problems, as bug #151209 showed.
-   return VG_(do_syscall0)(__NR_getegid32) . res;
+   return sr_Res( VG_(do_syscall0)(__NR_getegid32) );
 #  else
-   return VG_(do_syscall0)(__NR_getegid) . res;
+   return sr_Res( VG_(do_syscall0)(__NR_getegid) );
 #  endif
 }
 
@@ -590,22 +508,22 @@ Int VG_(getgroups)( Int size, UInt* list )
    if (size < 0) return -1;
    if (size > 64) size = 64;
    sres = VG_(do_syscall2)(__NR_getgroups, size, (Addr)list16);
-   if (sres.isError)
+   if (sr_isError(sres))
       return -1;
-   if (sres.res > size)
+   if (sr_Res(sres) > size)
       return -1;
-   for (i = 0; i < sres.res; i++)
+   for (i = 0; i < sr_Res(sres); i++)
       list[i] = (UInt)list16[i];
-   return sres.res;
+   return sr_Res(sres);
 
 #  elif defined(VGP_amd64_linux) || defined(VGP_ppc64_linux) \
         || defined(VGP_ppc32_aix5) || defined(VGP_ppc64_aix5) \
         || defined(VGO_darwin)
    SysRes sres;
    sres = VG_(do_syscall2)(__NR_getgroups, size, (Addr)list);
-   if (sres.isError)
+   if (sr_isError(sres))
       return -1;
-   return sres.res;
+   return sr_Res(sres);
 
 #  else
 #     error "VG_(getgroups): needs implementation on this platform"
@@ -620,9 +538,9 @@ Int VG_(ptrace) ( Int request, Int pid, void *addr, void *data )
 {
    SysRes res;
    res = VG_(do_syscall4)(__NR_ptrace, request, pid, (UWord)addr, (UWord)data);
-   if (res.isError)
+   if (sr_isError(res))
       return -1;
-   return res.res;
+   return sr_Res(res);
 }
 
 /* ---------------------------------------------------------------------
@@ -631,19 +549,27 @@ Int VG_(ptrace) ( Int request, Int pid, void *addr, void *data )
 
 Int VG_(fork) ( void )
 {
+#  if defined(VGO_linux) || defined(VGO_aix5)
    SysRes res;
    res = VG_(do_syscall0)(__NR_fork);
-
-#if defined(VGO_darwin)
-   /* on success: res = child pid; res2 = 1 for child, 0 for parent */
-   if (!res.isError  &&  res.res2) {
-      res.res = 0;  /* this is child: return 0 instead of child pid */
-   }
-#endif
-
-   if (res.isError)
+   if (sr_isError(res))
       return -1;
-   return res.res;
+   return sr_Res(res);
+
+#  elif defined(VGO_darwin)
+   SysRes res;
+   res = VG_(do_syscall0)(__NR_fork); /* __NR_fork is UX64 */
+   if (sr_isError(res))
+      return -1;
+   /* on success: wLO = child pid; wHI = 1 for child, 0 for parent */
+   if (sr_ResHI(res) != 0) {
+      return 0;  /* this is child: return 0 instead of child pid */
+   }
+   return sr_Res(res);
+
+#  else
+#    error "Unknown OS"
+#  endif
 }
 
 /* ---------------------------------------------------------------------
@@ -656,7 +582,7 @@ UInt VG_(read_millisecond_timer) ( void )
    static ULong base = 0;
    ULong  now;
 
-#  if defined(VGP_ppc32_aix5) || defined(VGP_ppc64_aix5)
+#  if defined(VGO_aix5)
    /* AIX requires a totally different implementation since
       sys_gettimeofday doesn't exist.  We use the POWER real-time
       register facility.  This will SIGILL on PowerPC 970 on AIX,
@@ -674,49 +600,39 @@ UInt VG_(read_millisecond_timer) ( void )
    vg_assert(nsec < 1000*1000*1000);
    now  = ((ULong)sec1) * 1000000ULL;
    now += (ULong)(nsec / 1000);
-#  else
 
-   SysRes res;
-# if HAVE_CLOCK_MONOTONIC
-   struct vki_timespec ts_now;
-   res = VG_(do_syscall2)(__NR_clock_gettime, VKI_CLOCK_MONOTONIC,
-                          (UWord)&ts_now);
-   if (res.isError == 0)
-   {
-     now = ts_now.tv_sec * 1000000ULL + ts_now.tv_nsec / 1000;
+#  elif defined(VGO_linux)
+   { SysRes res;
+     struct vki_timespec ts_now;
+     res = VG_(do_syscall2)(__NR_clock_gettime, VKI_CLOCK_MONOTONIC,
+                            (UWord)&ts_now);
+     if (sr_isError(res) == 0) {
+        now = ts_now.tv_sec * 1000000ULL + ts_now.tv_nsec / 1000;
+     } else {
+       struct vki_timeval tv_now;
+       res = VG_(do_syscall2)(__NR_gettimeofday, (UWord)&tv_now, (UWord)NULL);
+       vg_assert(! sr_isError(res));
+       now = tv_now.tv_sec * 1000000ULL + tv_now.tv_usec;
+     }
    }
-   else
-# endif
-   {
+
+#  elif defined(VGO_darwin)
+   { SysRes res;
      struct vki_timeval tv_now;
      res = VG_(do_syscall2)(__NR_gettimeofday, (UWord)&tv_now, (UWord)NULL);
-     vg_assert(! res.isError);
+     vg_assert(! sr_isError(res));
      now = tv_now.tv_sec * 1000000ULL + tv_now.tv_usec;
    }
+
+#  else
+#    error "Unknown OS"
 #  endif
-   
+
+   /* COMMON CODE */  
    if (base == 0)
       base = now;
 
    return (now - base) / 1000;
-}
-
-
-void VG_(nanosleep)(struct vki_timespec *ts)
-{
-#if defined(__NR_nanosleep)
-   (void)VG_(do_syscall2)(__NR_nanosleep, (UWord)ts, (UWord)NULL);
-#elif defined(VGO_darwin)
-   // DDD: #warning GrP fixme use semwait_signal for nanosleep
-#else
-#  error no nanosleep implementation
-#endif
-}
-
-
-void VG_(yield)(void)
-{
-    VG_(do_syscall0)(__NR_sched_yield);
 }
 
 

@@ -66,7 +66,7 @@
 				  void* guest_state,		// rsi
 				  const vki_sigset_t *sysmask,	// rdx
 				  const vki_sigset_t *postmask,	// rcx
-				  Int nsigwords)		// r8
+				  Int sigsetSzB)		// r8
 				   
 */
 
@@ -87,7 +87,7 @@
 	pushq	%rsi  // -16(%rbp)  guest_state
 	pushq	%rdx  // -24(%rbp)  sysmask
 	pushq	%rcx  // -32(%rbp)  postmask
-	pushq	%r8   // -40(%rbp)  nsigwords
+	pushq	%r8   // -40(%rbp)  sigsetSzB
 	// stack is now aligned
 	
 L_$0_1:	/* Even though we can't take a signal until the sigprocmask completes,
@@ -101,7 +101,7 @@ L_$0_1:	/* Even though we can't take a signal until the sigprocmask completes,
 	movq	$VKI_SIG_SETMASK, %rdi		// how
 	movq	-24(%rbp), %rsi			// sysmask
 	movq	-32(%rbp), %rdx			// postmask
-	movq	-40(%rbp), %r10			// nsigwords in r10 not rcx
+	movq	-40(%rbp), %r10			// sigsetSzB in r10 not rcx
 	fixme return address
 	syscall
 
@@ -165,7 +165,7 @@ L_$0_4:	/* Re-block signals.  If eip is in [4,5), then the syscall
 	movq	$VKI_SIG_SETMASK, %rdi		// how
 	movq	%rcx, %rsi			// postmask
 	xorq	%rdx, %rdx			// NULL
-	movq	%r8, %r10			// nsigwords
+	movq	%r8, %r10			// sigsetSzB
 	fixme return address
 	syscall
 
