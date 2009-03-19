@@ -1979,8 +1979,6 @@ VG_(fixup_guest_state_after_syscall_interrupted)( ThreadId tid,
       state yet.  In any other situation it will be meaningless and
       therefore ignored. */
 
-   static const Bool debug = False;
-
    ThreadState*     tst;
    SyscallStatus    canonical;
    ThreadArchState* th_regs;
