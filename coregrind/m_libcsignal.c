@@ -287,20 +287,19 @@ Int VG_(kill)( Int pid, Int signo )
    return sr_isError(res) ? -1 : 0;
 }
 
-// GrP fixme this is an lwpid, not a ThreadId
-Int VG_(tkill)( ThreadId tid, Int signo )
+Int VG_(tkill)( Int lwpid, Int signo )
 {
 #  if defined(__NR_tkill)
    SysRes res = VG_(mk_SysRes_Error)(VKI_ENOSYS);
-   res = VG_(do_syscall2)(__NR_tkill, tid, signo);
+   res = VG_(do_syscall2)(__NR_tkill, lwpid, signo);
    if (sr_isError(res) && sr_Err(res) == VKI_ENOSYS)
-      res = VG_(do_syscall2)(__NR_kill, tid, signo);
+      res = VG_(do_syscall2)(__NR_kill, lwpid, signo);
    return sr_isError(res) ? -1 : 0;
 
 #  elif defined(VGO_darwin)
    // Note that the __pthread_kill syscall takes a Mach thread, not a pthread.
    SysRes res;
-   res = VG_(do_syscall2)(__NR___pthread_kill, tid, signo);
+   res = VG_(do_syscall2)(__NR___pthread_kill, lwpid, signo);
    return sr_isError(res) ? -1 : 0;
 
 #  else
