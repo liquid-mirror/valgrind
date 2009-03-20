@@ -77,3 +77,11 @@ Get rid of priv_types_n_macros.h: RES2, getRES2, etc
 
 
 PRE(sys_fork), #ifdeffery
+
+
+syswrap-generic.c: VG_(init_preopened_fds) is #ifdefd for Darwin
+
+
+scheduler.c: fi VEX_TRC_JMP_NODECODE and VEX_TRC_JMP_SIGSEGV
+also: get rid of VG_(lock), VG_(unlock), VG_(unlock_lwpid)
+also: VG_(get_thread_out_of_syscall)
