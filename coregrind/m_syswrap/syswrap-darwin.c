@@ -1547,6 +1547,8 @@ POST(sys_sigaction)
 PRE(sys___pthread_sigmask)
 {
    // GrP fixme
+   // JRS: arguments are identical to sigprocmask 
+   // (how, sigset_t*, sigset_t*).  Perhaps behave identically?
    static Bool warned;
    if (!warned && VG_(clo_trace_unknown_syscalls)) {
       VG_(printf)("UNKNOWN __pthread_sigmask is unsupported. "
@@ -1554,6 +1556,16 @@ PRE(sys___pthread_sigmask)
       warned = True;
    }
    SET_STATUS_Success( 0 );
+}
+
+
+PRE(sys___pthread_canceled)
+{
+   *flags |= SfMayBlock; /* might kill this thread??? */
+   /* I don't think so -- I think it just changes the cancellation
+      state.  But taking no chances. */
+   PRINT("__pthread_canceled ( %ld )", ARG1);
+   PRE_REG_READ1(long, "__pthread_canceled", void*, arg1);
 }
 
 
@@ -7126,7 +7138,7 @@ const SyscallTableEntry ML_(syscall_table)[] = {
 // _____(__NR___sigwait), 
    MACX_(__NR___disable_threadsignal, sys___disable_threadsignal), 
    MACX_(__NR___pthread_markcancel, sys___pthread_markcancel), 
-// (__NR___pthread_canceled), 
+   MACX_(__NR___pthread_canceled, sys___pthread_canceled),
    MACX_(__NR___semwait_signal, sys___semwait_signal), 
    _____(VG_DARWIN_SYSCALL_CONSTRUCT_UNIX(335)),   // old utrace
 // _____(__NR_proc_info), 
