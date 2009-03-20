@@ -341,6 +341,7 @@ void VG_(get_thread_out_of_syscall)(ThreadId tid)
    vg_assert(!VG_(is_running_thread)(tid));
 
    if (VG_(threads)[tid].status == VgTs_WaitSys) {
+      __attribute__((unused)) Int r;
       if (VG_(clo_trace_signals)) {
 	 VG_(message)(Vg_DebugMsg, 
                       "get_thread_out_of_syscall zaps tid %d lwp %d",
@@ -355,7 +356,21 @@ void VG_(get_thread_out_of_syscall)(ThreadId tid)
          thread_abort(VG_(threads)[tid].os_state.lwpid);
       }
 #else
-      VG_(tkill)(VG_(threads)[tid].os_state.lwpid, VG_SIGVGKILL);
+      r = VG_(tkill)(VG_(threads)[tid].os_state.lwpid, VG_SIGVGKILL);
+      /* JRS 2009-Mar-20: should we assert for r==0 (tkill succeeded)?
+         I'm really not sure.  Here's a race scenario which argues
+         that we shoudn't; but equally I'm not sure the scenario is
+         even possible, because of constraints caused by the question
+         of who holds the BigLock when.
+
+         Target thread tid does sys_read on a socket and blocks.  This
+         function gets called, and we observe correctly that tid's
+         status is WaitSys but then for whatever reason this function
+         goes very slowly for a while.  Then data arrives from
+         wherever, tid's sys_read returns, tid exits.  Then we do
+         tkill on tid, but tid no longer exists; tkill returns an
+         error code and the assert fails. */
+      /* vg_assert(r == 0); */
 #endif
    }
 }
