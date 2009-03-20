@@ -276,6 +276,19 @@ void VG_(release_BigLock)(ThreadId tid, ThreadStatus sleepstate, HChar* who)
    ML_(sema_up)(&the_BigLock);
 }
 
+/* See pub_core_scheduler.h for description */
+void VG_(acquire_BigLock_LL) ( HChar* who )
+{
+   ML_(sema_down)(&the_BigLock);
+}
+
+/* See pub_core_scheduler.h for description */
+void VG_(release_BigLock_LL) ( HChar* who )
+{
+   ML_(sema_up)(&the_BigLock);
+}
+
+
 void VG_(lock)(void)
 {
    ML_(sema_down)(&the_BigLock);

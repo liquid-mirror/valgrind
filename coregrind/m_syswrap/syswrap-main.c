@@ -2141,7 +2141,7 @@ void ML_(wqthread_continue_NORETURN)(ThreadId tid)
    ThreadState*     tst;
    SyscallInfo*     sci;
 
-   VG_(acquire_BigLock)(tid, "wqthread_continue");
+   VG_(acquire_BigLock)(tid, "wqthread_continue_NORETURN");
 
    PRINT("SYSCALL[%d,%d](%5lld) workq_ops() starting new workqueue item\n", 
          VG_(getpid)(), tid, (Long)VG_DARWIN_SYSNO_PRINT(__NR_workq_ops));
