@@ -138,10 +138,6 @@ typedef struct {
    // VG_(needs).client_requests
    Bool (*tool_handle_client_request)(ThreadId, UWord*, UWord*);
 
-   // VG_(needs).debugger_commands
-   Bool (*tool_handle_debugger_query)(Int, Char*);
-   Bool (*tool_handle_debugger_action)(Int, Char*);
-
    // VG_(needs).syscall_wrapper
    void (*tool_pre_syscall) (ThreadId, UInt);
    void (*tool_post_syscall)(ThreadId, UInt, SysRes);

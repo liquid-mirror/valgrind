@@ -228,7 +228,6 @@ void VG_(acquire_BigLock)(ThreadId tid, HChar* who)
       VG_(printf)("tid %d found %d running\n", tid, VG_(running_tid));
    vg_assert(VG_(running_tid) == VG_INVALID_THREADID);
    VG_(running_tid) = tid;
-   VG_(last_running_tid) = tid;
 
    { Addr gsp = VG_(get_SP)(tid);
      VG_(unknown_SP_update)(gsp, gsp, 0/*unknown origin*/);
@@ -288,28 +287,6 @@ void VG_(release_BigLock_LL) ( HChar* who )
    ML_(sema_up)(&the_BigLock);
 }
 
-
-void VG_(lock)(void)
-{
-   ML_(sema_down)(&the_BigLock);
-   if (VG_(clo_trace_sched)) {
-      print_sched_event(0, " acquired lock (DEBUGGER)");
-   }
-}
-
-void VG_(unlock)(void)
-{
-   if (VG_(clo_trace_sched)) {
-      print_sched_event(0, " releasing lock (DEBUGGER)");
-   }
-   ML_(sema_up)(&the_BigLock);
-}
-
-void VG_(unlock_lwpid)(Int lwpid)
-{
-   while (! ML_(sema_handoff)(&the_BigLock, lwpid)) 
-      ;
-}
 
 /* Clear out the ThreadState and release the semaphore. Leaves the
    ThreadState in VgTs_Zombie state, so that it doesn't get

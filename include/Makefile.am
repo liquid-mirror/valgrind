@@ -11,7 +11,6 @@ incinc_HEADERS = \
 	pub_tool_clreq.h		\
 	pub_tool_cpuid.h 		\
 	pub_tool_debuginfo.h 		\
-	pub_tool_debugstub.h 		\
 	pub_tool_errormgr.h 		\
 	pub_tool_execontext.h 		\
 	pub_tool_hashtable.h 		\

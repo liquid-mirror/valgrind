@@ -41,14 +41,6 @@
 #include "pub_core_libcassert.h"
 #include "pub_core_options.h"
 
-#if VGO_darwin
-
-/* External debugger not supported. Use gdb remote debug instead.
-   VG_(start_debugger) is in m_debugstub.c. */
-   // DDD: ugh, that's horrible.  Should fix, probably by having
-   // VG_(start_debugger) and VG_(start_remote_debugger).
-
-#else
 
 #define WIFSTOPPED(status) (((status) & 0xff) == 0x7f)
 #define WSTOPSIG(status) (((status) & 0xff00) >> 8)
@@ -219,6 +211,12 @@ static Int ptrace_setregs(Int pid, VexGuestArchState* vex)
 #elif defined(VGP_ppc64_aix5)
    I_die_here;
 
+#elif defined(VGP_x86_darwin)
+   I_die_here;
+
+#elif defined(VGP_amd64_darwin)
+   I_die_here;
+
 #else
 #  error Unknown arch
 #endif
@@ -322,7 +320,7 @@ void VG_(start_debugger) ( ThreadId tid )
 #  undef N_BUF
 }
 
-#endif
+
 
 /*--------------------------------------------------------------------*/
 /*--- end                                                          ---*/

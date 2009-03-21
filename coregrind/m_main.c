@@ -37,7 +37,6 @@
 #include "pub_core_aspacemgr.h"
 #include "pub_core_commandline.h"
 #include "pub_core_debuglog.h"
-#include "pub_core_debugstub.h"
 #include "pub_core_errormgr.h"
 #include "pub_core_execontext.h"
 #include "pub_core_initimg.h"
@@ -2029,22 +2028,6 @@ Int valgrind_main ( Int argc, HChar **argv, HChar **envp )
    VG_(vki_do_initial_consistency_checks)();
    /* .. and go on to use them. */
    VG_(sigstartup_actions)();
-
-   //--------------------------------------------------------------
-   // Listen for remote debugger
-   //   p: scheduler, process_cmd_line_options()
-   //--------------------------------------------------------------
-#if defined(VGO_darwin)
-#if 0
-   if (VG_(clo_db_listen) && VG_(clo_verbosity) > 0) {
-       VG_(debugLog)(1, "main", "Listening for debugger on port %d\n", 
-                     VG_(clo_db_listen_port));
-       VG_(debugstub_init)();
-   }
-#endif
-#else
-   // DDD: Only Darwin does this for the moment.
-#endif
 
    //--------------------------------------------------------------
    // Read suppression file

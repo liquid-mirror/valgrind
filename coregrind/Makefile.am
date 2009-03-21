@@ -191,7 +191,6 @@ noinst_HEADERS = \
 	pub_core_debuginfo.h	\
 	pub_core_debugger.h	\
 	pub_core_debuglog.h	\
-	pub_core_debugstub.h	\
 	pub_core_demangle.h	\
 	pub_core_dispatch.h	\
 	pub_core_dispatch_asm.h	\
@@ -329,7 +328,6 @@ COREGRIND_LINUX_SOURCE = \
 	m_debuginfo/readdwarf.c \
 	m_debuginfo/readdwarf3.c \
 	m_debuginfo/readstabs.c \
-	m_debugstub/debugstub-linux.c \
 	m_initimg/initimg-linux.c \
 	m_syswrap/syswrap-linux.c \
 	m_syswrap/syswrap-linux-variants.c \
@@ -338,7 +336,6 @@ COREGRIND_LINUX_SOURCE = \
 COREGRIND_AIX5_SOURCE = \
 	m_aspacemgr/aspacemgr-aix5.c \
 	m_debuginfo/readxcoff.c \
-	m_debugstub/debugstub-aix5.c \
 	m_initimg/initimg-aix5.c \
 	m_syswrap/syswrap-aix5.c
 
@@ -365,7 +362,6 @@ COREGRIND_DARWIN_SOURCE = \
 	m_debuginfo/readdwarf3.c \
 	m_debuginfo/readstabs.c \
 	m_debuginfo/readmacho.c \
-	m_debugstub/debugstub-darwin.c \
 	m_mach/mach_vmUser.c \
 	m_mach/taskUser.c \
     	m_mach/thread_actUser.c \

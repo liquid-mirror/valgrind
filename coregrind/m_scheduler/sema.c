@@ -147,13 +147,6 @@ void ML_(sema_fork_child)(vg_sema_t *sema)
    ML_(sema_down)(sema);
 }
 
-Bool ML_(sema_handoff)(vg_sema_t *sema, Int lwpid)
-{
-    // XXX: This function is currently only used by VG_(unlock_lwpid), which
-    // is only used in debugstub-darwin.c.
-    I_die_here;
-}
-
 #elif defined(VGO_darwin)
 
 #include <mach/mach.h>
@@ -199,11 +192,6 @@ void ML_(sema_fork_child)(vg_sema_t *sema)
    /* darwin: no deinit because child has no access to parent's semaphore */
    ML_(sema_init)(sema);
    ML_(sema_down)(sema);
-}
-
-Bool ML_(sema_handoff)(vg_sema_t *sema, Int lwpid)
-{
-    return semaphore_signal_thread(sema->lock, (thread_act_t)lwpid) ? False : True;
 }
 
 #else

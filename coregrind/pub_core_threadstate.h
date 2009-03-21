@@ -366,12 +366,6 @@ extern ThreadState VG_(threads)[VG_N_THREADS];
 // to write to this.
 extern ThreadId VG_(running_tid);
 
-// The currently running or most recently run thread. 
-// Not necessarily a valid thread.
-// m_scheduler should be the only other module to write to this.
-extern ThreadId VG_(last_running_tid);
-
-
 
 /*------------------------------------------------------------*/
 /*--- Basic operations on the thread table.                ---*/

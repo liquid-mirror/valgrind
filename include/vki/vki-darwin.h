@@ -778,6 +778,12 @@ typedef
 typedef struct eventreq vki_eventreq;
 
 
+#include <sys/ptrace.h>
+
+#define VKI_PTRACE_TRACEME   PT_TRACE_ME
+#define VKI_PTRACE_DETACH    PT_DETACH
+
+
 // sqlite/src/os_unix.c
 
 struct ByteRangeLockPB2

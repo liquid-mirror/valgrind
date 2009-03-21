@@ -54,7 +54,6 @@ void ML_(sema_deinit) ( vg_sema_t *sema );
 void ML_(sema_down)   ( vg_sema_t *sema );
 void ML_(sema_up)     ( vg_sema_t *sema );
 void ML_(sema_fork_child)(vg_sema_t *sema);
-Bool ML_(sema_handoff)( vg_sema_t *sema, Int lwpid );
 
 #endif   // __PRIV_SEMA_H
 

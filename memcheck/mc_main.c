@@ -43,7 +43,6 @@
 #include "pub_tool_replacemalloc.h"
 #include "pub_tool_tooliface.h"
 #include "pub_tool_threadstate.h"
-#include "pub_tool_debugstub.h"
 
 #include "mc_include.h"
 #include "memcheck.h"   /* for client requests */
@@ -5131,106 +5130,6 @@ static Bool mc_handle_client_request ( ThreadId tid, UWord* arg, UWord* ret )
 
 
 /*------------------------------------------------------------*/
-/*--- Remote debugger commands                             ---*/
-/*------------------------------------------------------------*/
-
-
-// qvalgrind.Memcheck.defined:<addr>,<len>  =>  XX..
-// like gdb protocol's "m" command, but reads V bits instead of memory
-// fixme should be qXfer command (mac os x gdb doesn't have qXfer)
-static Bool handle_defined_command(Int sock, Char *cmd)
-{
-   Long addr, len;
-   Char *vbits;
-   Char *outbuf;
-   Long i;
-
-   addr = VG_(strtoll16)(cmd, NULL);
-   cmd = VG_(strchr)(cmd, ',');
-   if (!cmd) return False;
-
-   len = VG_(strtoll16)(cmd+1, NULL);
-   if (len > 65536) len = 65536;  // sanity
-
-   vbits = VG_(malloc)("mc.gdb.vbits", len);
-   outbuf = VG_(malloc)("mc.gdb.outbuf", 2*len+1);
-
-   tl_assert(V_BIT_DEFINED == 0);
-   for (i = 0; i < len; i++) {
-      UChar v;
-      if (get_vbits8(addr+i, &v)) {
-         // Invert returned bits: uninitialized=0, initialized=1
-         vbits[i] = ~v;
-      } else {
-         // Report unaddressable memory as undefined (unlike get_vbits8)
-         vbits[i] = 0;
-      }
-   }
-
-   VG_(debugstub_tohex)(outbuf, vbits, len);
-   VG_(free)(vbits);
-
-   VG_(debugstub_write_reply)(sock, outbuf);
-   VG_(free)(outbuf);
-
-   return True;
-}
-
-
-// qvalgrind.Memcheck.register-defined:<regnum>  =>  XX..
-// like gdb protocol's "p" command, but reads V bits instead of register value
-// fixme should be qXfer command (mac os x gdb doesn't have qXfer)
-static Bool handle_register_defined_command(Int sock, Char *cmd)
-{
-   Char vbits[16];
-   Char outbuf[16*2+1];
-   Long i;
-   Int size, regnum;
-
-   regnum = VG_(strtoll16)(cmd, NULL);
-   
-   size = VG_(reg_for_regnum)(regnum, vbits, 1);  // GrP fixme shadow1 or 2?
-   if (size < 0) {
-      VG_(debugstub_write_reply)(sock, "x");
-      return True;
-   }
-
-   // Invert returned bits: uninitialized=0, initialized=1
-   tl_assert(V_BIT_DEFINED == 0);
-   for (i = 0; i < size; i++) {
-      vbits[i] = ~vbits[i];
-   }
-
-   VG_(debugstub_tohex)(outbuf, vbits, size);
-   VG_(debugstub_write_reply)(sock, outbuf);
-
-   return True;
-}
-
-static Bool mc_handle_debugger_query(Int sock, Char* cmd)
-{
-   Bool handled = True;
-
-   if (0 == VG_(strncmp)(cmd, "defined:", 8)) {
-      handled = handle_defined_command(sock, cmd+8);
-   }
-   else if (0 == VG_(strncmp)(cmd, "register-defined:", 17)) {
-      handled = handle_register_defined_command(sock, cmd+17);
-   }
-   else {
-      handled = False;
-   }
-
-   return handled;
-}
-
-static Bool mc_handle_debugger_action(Int sock, Char* cmd)
-{
-   return False;
-}
-
-
-/*------------------------------------------------------------*/
 /*--- Crude profiling machinery.                           ---*/
 /*------------------------------------------------------------*/
 
@@ -5821,8 +5720,6 @@ static void mc_pre_clo_init(void)
                                    mc_print_usage,
                                    mc_print_debug_usage);
    VG_(needs_client_requests)     (mc_handle_client_request);
-   VG_(needs_debugger_commands)   (mc_handle_debugger_query, 
-                                   mc_handle_debugger_action);
    VG_(needs_sanity_checks)       (mc_cheap_sanity_check,
                                    mc_expensive_sanity_check);
    VG_(needs_malloc_replacement)  (MC_(malloc),
@@ -5941,34 +5838,6 @@ static void mc_pre_clo_init(void)
 }
 
 VG_DETERMINE_INTERFACE_VERSION(mc_pre_clo_init)
-
-
-// GrP for debugging
-static void mc_print_word(Addr a)
-{
-   UChar abit[4] = {0,0,0,0};
-   UChar vbyte[4] = {0,0,0,0};
-   abit[0] = get_vbits8(a+0, vbyte+0);
-   abit[1] = get_vbits8(a+1, vbyte+1);
-   abit[2] = get_vbits8(a+2, vbyte+2);
-   abit[3] = get_vbits8(a+3, vbyte+3);
-   tl_assert(V_BIT_DEFINED == 0);
-   VG_(printf)("%#lx: a %d%d%d%d, v 0x%02x%02x%02x%02x\n", 
-               a, 
-               abit[0], abit[1], abit[2], abit[3], 
-               ~vbyte[0], ~vbyte[1], ~vbyte[2], ~vbyte[3]);
-}
-
-// GrP for debugging
-__attribute__((unused))
-static void mc_describe_memory(Addr addr, SizeT size)
-{
-   Addr a;
-   for (a = addr; a < addr+size; a += 4) {
-       mc_print_word(a);
-   }
-}
-
 
 /*--------------------------------------------------------------------*/
 /*--- end                                                mc_main.c ---*/
