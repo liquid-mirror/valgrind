@@ -85,3 +85,8 @@ syswrap-generic.c: VG_(init_preopened_fds) is #ifdefd for Darwin
 scheduler.c: fi VEX_TRC_JMP_NODECODE and VEX_TRC_JMP_SIGSEGV
 also: get rid of VG_(lock), VG_(unlock), VG_(unlock_lwpid)
 also: VG_(get_thread_out_of_syscall)
+
+
+look at notes in coregrind/Makefile.am re Mach RPC interface
+definitions.  See if we can get rid of any more stuff now that
+m_debugstub is gone.
