@@ -642,7 +642,7 @@ Bool ML_(read_macho_debug_info)( struct _DebugInfo* di )
                       "__DWARF", "__debug_str", &debug_str_sz);
       debug_ranges_img = 
           getsectdata(dw_oimage, dw_n_oimage, 
-                      "__DWARF", "__debug_aranges", &debug_ranges_sz);
+                      "__DWARF", "__debug_ranges", &debug_ranges_sz);
       debug_loc_img = 
           getsectdata(dw_oimage, dw_n_oimage, 
                       "__DWARF", "__debug_loc", &debug_loc_sz);
