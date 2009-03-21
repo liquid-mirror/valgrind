@@ -204,19 +204,19 @@ void VG_(acquire_BigLock)(ThreadId tid, HChar* who)
 {
    ThreadState *tst;
 
-#if 0
+#  if 0
    if (VG_(clo_trace_sched)) {
       HChar buf[100];
       vg_assert(VG_(strlen)(who) <= 100-50);
       VG_(sprintf)(buf, "waiting for lock (%s)", who);
       print_sched_event(tid, buf);
    }
-#endif
+#  endif
 
    /* First, acquire the_BigLock.  We can't do anything else safely
       prior to this point.  Even doing debug printing prior to this
       point is, technically, wrong. */
-   ML_(sema_down)(&the_BigLock);
+   ML_(sema_down)(&the_BigLock, False/*not LL*/);
 
    tst = VG_(get_ThreadState)(tid);
 
@@ -272,19 +272,19 @@ void VG_(release_BigLock)(ThreadId tid, ThreadStatus sleepstate, HChar* who)
 
    /* Release the_BigLock; this will reschedule any runnable
       thread. */
-   ML_(sema_up)(&the_BigLock);
+   ML_(sema_up)(&the_BigLock, False/*not LL*/);
 }
 
 /* See pub_core_scheduler.h for description */
 void VG_(acquire_BigLock_LL) ( HChar* who )
 {
-   ML_(sema_down)(&the_BigLock);
+  ML_(sema_down)(&the_BigLock, True/*LL*/);
 }
 
 /* See pub_core_scheduler.h for description */
 void VG_(release_BigLock_LL) ( HChar* who )
 {
-   ML_(sema_up)(&the_BigLock);
+   ML_(sema_up)(&the_BigLock, True/*LL*/);
 }
 
 
@@ -306,7 +306,7 @@ void VG_(exit_thread)(ThreadId tid)
    if (VG_(clo_trace_sched))
       print_sched_event(tid, "release lock in VG_(exit_thread)");
 
-   ML_(sema_up)(&the_BigLock);
+   ML_(sema_up)(&the_BigLock, False/*not LL*/);
 }
 
 /* If 'tid' is blocked in a syscall, send it SIGVGKILL so as to get it
@@ -324,7 +324,7 @@ void VG_(get_thread_out_of_syscall)(ThreadId tid)
                       "get_thread_out_of_syscall zaps tid %d lwp %d",
 		      tid, VG_(threads)[tid].os_state.lwpid);
       }
-#if VGO_darwin
+#     if VGO_darwin
       {
          // GrP fixme use mach primitives on darwin?
          // GrP fixme thread_abort_safely?
@@ -332,7 +332,7 @@ void VG_(get_thread_out_of_syscall)(ThreadId tid)
          extern kern_return_t thread_abort(mach_port_t);
          thread_abort(VG_(threads)[tid].os_state.lwpid);
       }
-#else
+#     else
       r = VG_(tkill)(VG_(threads)[tid].os_state.lwpid, VG_SIGVGKILL);
       /* JRS 2009-Mar-20: should we assert for r==0 (tkill succeeded)?
          I'm really not sure.  Here's a race scenario which argues
@@ -348,7 +348,7 @@ void VG_(get_thread_out_of_syscall)(ThreadId tid)
          tkill on tid, but tid no longer exists; tkill returns an
          error code and the assert fails. */
       /* vg_assert(r == 0); */
-#endif
+#     endif
    }
 }
 
