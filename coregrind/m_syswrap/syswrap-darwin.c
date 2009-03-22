@@ -2838,9 +2838,6 @@ PRE(sys_pathconf)
    PRINT("pathconf(%#lx(%s), %ld)", ARG1,(char *)ARG1,ARG2);
    PRE_REG_READ2(long,"pathconf", const char *,"path", int,"name");
    PRE_MEM_RASCIIZ("pathconf(path)", ARG1);
-
-   if (!ML_(fd_allowed)(ARG1, "pathconf", tid, False))
-      SET_STATUS_Failure( VKI_EBADF );
 }
 
 
