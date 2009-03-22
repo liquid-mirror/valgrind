@@ -87,17 +87,18 @@ typedef
       // the vex register state.  For stack arguments (which have s_arg
       // field names), the s_arg value is the offset from the stack pointer.
       Int o_sysno;
-#if defined(VGP_x86_linux) || defined(VGP_amd64_linux)
+#     if defined(VGP_x86_linux) || defined(VGP_amd64_linux) \
+         || defined(VGP_ppc32_linux) || defined(VGP_ppc64_linux)
       Int o_arg1;
       Int o_arg2;
       Int o_arg3;
       Int o_arg4;
       Int o_arg5;
       Int o_arg6;
-      Int dummy_arg7;
-      Int dummy_arg8;
+      Int uu_arg7;
+      Int uu_arg8;
       Int o_retval;
-#elif defined(VGP_ppc32_aix5) || defined(VGP_ppc64_aix5)
+#     elif defined(VGP_ppc32_aix5) || defined(VGP_ppc64_aix5)
       Int o_arg1;
       Int o_arg2;
       Int o_arg3;
@@ -107,7 +108,7 @@ typedef
       Int o_arg7;
       Int o_arg8;
       Int o_retval;
-#elif defined(VGP_x86_darwin)
+#     elif defined(VGP_x86_darwin)
       Int s_arg1;
       Int s_arg2;
       Int s_arg3;
@@ -118,7 +119,7 @@ typedef
       Int s_arg8;
       Int o_retval_lo;
       Int o_retval_hi;
-#elif defined(VGP_amd64_darwin)
+#     elif defined(VGP_amd64_darwin)
       Int o_arg1;
       Int o_arg2;
       Int o_arg3;
@@ -129,9 +130,9 @@ typedef
       Int s_arg8;
       Int o_retval_lo;
       Int o_retval_hi;
-#else
-#     error Unknown platform
-#endif
+#     else
+#       error "Unknown platform"
+#     endif
    }
    SyscallArgLayout;
 

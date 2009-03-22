@@ -151,7 +151,8 @@ typedef struct {
 
 /* These are 'legacy' sigactions in which the size of sa_mask is fixed
    (cannot be expanded at any future point) because it is sandwiched
-   between two other fields. */
+   between two other fields.
+   (there is identical kludgery in vki-ppc32-linux.h) */
 struct vki_old_sigaction {
         // [[Nb: a 'k' prefix is added to "sa_handler" because
         // bits/sigaction.h (which gets dragged in somehow via signal.h)

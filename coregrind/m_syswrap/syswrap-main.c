@@ -878,14 +878,14 @@ void putSyscallStatusIntoGuestState ( /*IN*/ ThreadId tid,
    VexGuestPPC32State* gst = (VexGuestPPC32State*)gst_vanilla;
    UInt old_cr = LibVEX_GuestPPC32_get_CR(gst);
    vg_assert(canonical->what == SsComplete);
-   if (canonical->sres.isError) {
+   if (sr_isError(canonical->sres)) {
       /* set CR0.SO */
       LibVEX_GuestPPC32_put_CR( old_cr | (1<<28), gst );
-      gst->guest_GPR3 = canonical->sres.err;
+      gst->guest_GPR3 = sr_Err(canonical->sres);
    } else {
       /* clear CR0.SO */
       LibVEX_GuestPPC32_put_CR( old_cr & ~(1<<28), gst );
-      gst->guest_GPR3 = canonical->sres.res;
+      gst->guest_GPR3 = sr_Res(canonical->sres);
    }
    VG_TRACK( post_reg_write, Vg_CoreSysCall, tid, 
              OFFSET_ppc32_GPR3, sizeof(UWord) );
@@ -896,14 +896,14 @@ void putSyscallStatusIntoGuestState ( /*IN*/ ThreadId tid,
    VexGuestPPC64State* gst = (VexGuestPPC64State*)gst_vanilla;
    UInt old_cr = LibVEX_GuestPPC64_get_CR(gst);
    vg_assert(canonical->what == SsComplete);
-   if (canonical->sres.isError) {
+   if (sr_isError(canonical->sres)) {
       /* set CR0.SO */
       LibVEX_GuestPPC64_put_CR( old_cr | (1<<28), gst );
-      gst->guest_GPR3 = canonical->sres.err;
+      gst->guest_GPR3 = sr_Err(canonical->sres);
    } else {
       /* clear CR0.SO */
       LibVEX_GuestPPC64_put_CR( old_cr & ~(1<<28), gst );
-      gst->guest_GPR3 = canonical->sres.res;
+      gst->guest_GPR3 = sr_Res(canonical->sres);
    }
    VG_TRACK( post_reg_write, Vg_CoreSysCall, tid, 
              OFFSET_ppc64_GPR3, sizeof(UWord) );
@@ -1022,8 +1022,8 @@ void getSyscallArgLayout ( /*OUT*/SyscallArgLayout* layout )
    layout->o_arg4   = OFFSET_x86_ESI;
    layout->o_arg5   = OFFSET_x86_EDI;
    layout->o_arg6   = OFFSET_x86_EBP;
-   layout->dummy_arg7 = -1; /* impossible value */
-   layout->dummy_arg8 = -1; /* impossible value */
+   layout->uu_arg7  = -1; /* impossible value */
+   layout->uu_arg8  = -1; /* impossible value */
    layout->o_retval = OFFSET_x86_EAX;
 
 #elif defined(VGP_amd64_linux)
@@ -1034,8 +1034,8 @@ void getSyscallArgLayout ( /*OUT*/SyscallArgLayout* layout )
    layout->o_arg4   = OFFSET_amd64_R10;
    layout->o_arg5   = OFFSET_amd64_R8;
    layout->o_arg6   = OFFSET_amd64_R9;
-   layout->dummy_arg7 = -1; /* impossible value */
-   layout->dummy_arg8 = -1; /* impossible value */
+   layout->uu_arg7  = -1; /* impossible value */
+   layout->uu_arg8  = -1; /* impossible value */
    layout->o_retval = OFFSET_amd64_RAX;
 
 #elif defined(VGP_ppc32_linux)
@@ -1046,8 +1046,8 @@ void getSyscallArgLayout ( /*OUT*/SyscallArgLayout* layout )
    layout->o_arg4   = OFFSET_ppc32_GPR6;
    layout->o_arg5   = OFFSET_ppc32_GPR7;
    layout->o_arg6   = OFFSET_ppc32_GPR8;
-   layout->o_arg7   = -1; /* impossible value */
-   layout->o_arg8   = -1; /* impossible value */
+   layout->uu_arg7  = -1; /* impossible value */
+   layout->uu_arg8  = -1; /* impossible value */
    layout->o_retval = OFFSET_ppc32_GPR3;
 
 #elif defined(VGP_ppc64_linux)
@@ -1058,8 +1058,8 @@ void getSyscallArgLayout ( /*OUT*/SyscallArgLayout* layout )
    layout->o_arg4   = OFFSET_ppc64_GPR6;
    layout->o_arg5   = OFFSET_ppc64_GPR7;
    layout->o_arg6   = OFFSET_ppc64_GPR8;
-   layout->o_arg7   = -1; /* impossible value */
-   layout->o_arg8   = -1; /* impossible value */
+   layout->uu_arg7  = -1; /* impossible value */
+   layout->uu_arg8  = -1; /* impossible value */
    layout->o_retval = OFFSET_ppc64_GPR3;
 
 #elif defined(VGP_ppc32_aix5)

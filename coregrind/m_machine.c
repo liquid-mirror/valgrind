@@ -402,11 +402,19 @@ Bool VG_(machine_get_hwcaps)( void )
    { /* ppc32 doesn't seem to have a sane way to find out what insn
         sets the CPU supports.  So we have to arse around with
         SIGILLs.  Yuck. */
-     vki_sigset_t         saved_set, tmp_set;
-     struct vki_sigaction saved_act, tmp_act;
+     vki_sigset_t          saved_set, tmp_set;
+     vki_sigaction_fromK_t saved_act;
+     vki_sigaction_toK_t   tmp_act;
 
      volatile Bool have_F, have_V, have_FX, have_GX;
      Int r;
+
+     /* This is a kludge.  Really we ought to back-convert saved_act
+        into a toK_t using VG_(convert_sigaction_fromK_to_toK), but
+        since that's a no-op on all ppc32 platforms so far supported,
+        it's not worth the typing effort.  At least include most basic
+        sanity check: */
+     vg_assert(sizeof(vki_sigaction_fromK_t) == sizeof(vki_sigaction_toK_t));
 
      VG_(sigemptyset)(&tmp_set);
      VG_(sigaddset)(&tmp_set, VKI_SIGILL);
@@ -508,17 +516,28 @@ Bool VG_(machine_get_hwcaps)( void )
 
 #elif defined(VGA_ppc64)
    { /* Same idiocy as for ppc32 - arse around with SIGILLs. */
-     vki_sigset_t         saved_set, tmp_set;
-     struct vki_sigaction saved_act, tmp_act;
+     vki_sigset_t          saved_set, tmp_set;
+     vki_sigaction_fromK_t saved_act;
+     vki_sigaction_toK_t   tmp_act;
 
      volatile Bool have_F, have_V, have_FX, have_GX;
+     Int r;
+
+     /* This is a kludge.  Really we ought to back-convert saved_act
+        into a toK_t using VG_(convert_sigaction_fromK_to_toK), but
+        since that's a no-op on all ppc64 platforms so far supported,
+        it's not worth the typing effort.  At least include most basic
+        sanity check: */
+     vg_assert(sizeof(vki_sigaction_fromK_t) == sizeof(vki_sigaction_toK_t));
 
      VG_(sigemptyset)(&tmp_set);
      VG_(sigaddset)(&tmp_set, VKI_SIGILL);
 
-     VG_(sigprocmask)(VKI_SIG_UNBLOCK, &tmp_set, &saved_set);
+     r = VG_(sigprocmask)(VKI_SIG_UNBLOCK, &tmp_set, &saved_set);
+     vg_assert(r == 0);
 
-     VG_(sigaction)(VKI_SIGILL, NULL, &saved_act);
+     r = VG_(sigaction)(VKI_SIGILL, NULL, &saved_act);
+     vg_assert(r == 0);
      tmp_act = saved_act;
 
      /* NODEFER: signal handler does not return (from the kernel's point of
@@ -531,7 +550,8 @@ Bool VG_(machine_get_hwcaps)( void )
      /* standard FP insns */
      have_F = True;
      tmp_act.ksa_handler = handler_sigill;
-     VG_(sigaction)(VKI_SIGILL, &tmp_act, NULL);
+     r = VG_(sigaction)(VKI_SIGILL, &tmp_act, NULL);
+     vg_assert(r == 0);
      if (__builtin_setjmp(env_sigill)) {
         have_F = False;
      } else {
@@ -541,7 +561,8 @@ Bool VG_(machine_get_hwcaps)( void )
      /* Altivec insns */
      have_V = True;
      tmp_act.ksa_handler = handler_sigill;
-     VG_(sigaction)(VKI_SIGILL, &tmp_act, NULL);
+     r = VG_(sigaction)(VKI_SIGILL, &tmp_act, NULL);
+     vg_assert(r == 0);
      if (__builtin_setjmp(env_sigill)) {
         have_V = False;
      } else {
@@ -551,7 +572,8 @@ Bool VG_(machine_get_hwcaps)( void )
      /* General-Purpose optional (fsqrt, fsqrts) */
      have_FX = True;
      tmp_act.ksa_handler = handler_sigill;
-     VG_(sigaction)(VKI_SIGILL, &tmp_act, NULL);
+     r = VG_(sigaction)(VKI_SIGILL, &tmp_act, NULL);
+     vg_assert(r == 0);
      if (__builtin_setjmp(env_sigill)) {
         have_FX = False;
      } else {
@@ -561,15 +583,18 @@ Bool VG_(machine_get_hwcaps)( void )
      /* Graphics optional (stfiwx, fres, frsqrte, fsel) */
      have_GX = True;
      tmp_act.ksa_handler = handler_sigill;
-     VG_(sigaction)(VKI_SIGILL, &tmp_act, NULL);
+     r = VG_(sigaction)(VKI_SIGILL, &tmp_act, NULL);
+     vg_assert(r == 0);
      if (__builtin_setjmp(env_sigill)) {
         have_GX = False;
      } else {
         __asm__ __volatile__(".long 0xFC000034"); /*frsqrte 0,0*/
      }
 
-     VG_(sigaction)(VKI_SIGILL, &saved_act, NULL);
-     VG_(sigprocmask)(VKI_SIG_SETMASK, &saved_set, NULL);
+     r = VG_(sigaction)(VKI_SIGILL, &saved_act, NULL);
+     vg_assert(r == 0);
+     r = VG_(sigprocmask)(VKI_SIG_SETMASK, &saved_set, NULL);
+     vg_assert(r == 0);
      /*
      if (0)
         VG_(printf)("F %d V %d FX %d GX %d\n", 
