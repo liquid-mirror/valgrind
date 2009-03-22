@@ -5,85 +5,68 @@
 #
 
 {
-   macos-10.5-pasteboard-1
+   mach_msg_trap-1
    Memcheck:Param
    mach_msg(msg.msgh_remote_port)
    fun:mach_msg_trap
-   fun:CFPasteboardCreate
-   fun:*Pasteboard*
+   obj:/System/Library/Frameworks/CoreFoundation*
+   obj:/System/Library/Frameworks/ApplicationServices*
 }
 
 {
-   macos-10.5-pasteboard-2
+   mach_msg_trap-2
    Memcheck:Param
    mach_msg(msg.msgh_remote_port)
    fun:mach_msg_trap
-   fun:CFPasteboardCreate
-   fun:*PB*
+   obj:/System/Library/Frameworks/CoreFoundation*
+   obj:/System/Library/Frameworks/CoreServices*
 }
 
 {
-   macos-10.5-pasteboard-3
+   mach_msg_trap-3
    Memcheck:Param
    mach_msg(msg.msgh_remote_port)
    fun:mach_msg_trap
-   fun:CFPasteboardCreate
-   fun:*Prefs*
+   obj:/System/Library/Frameworks/CoreFoundation*
+   obj:/System/Library/Frameworks/Carbon*
 }
 
 {
-   macos-10.5-pasteboard-4
-   Memcheck:Param
-   mach_msg(msg.msgh_remote_port)
-   fun:mach_msg_trap
-   fun:CFPasteboardCreate
-   fun:CacheFMMapData
-}
-
-{
-   macos-10.5-gle-1
-   Memcheck:Cond
-   fun:gleUpdate*
-   ...
-   fun:gleUpdate*
-}
-
-{
-   macos-10.5-gle-2
-   Memcheck:Cond
-   fun:gleUpdate*
-   ...
-   fun:gleInitialize*
-}
-
-{
-   macos-10.5-PMMutex-1
-   Memcheck:Cond
-   fun:_ZN7PMMutex*
-   fun:_ZN7PMMutex*
-   fun:_ZN7PMMutex*
-}
-
-{
-   macos-10.5-misc-1
+   macos-Cond-1
    Memcheck:Cond
    fun:GetVariationInfoFromName
-   fun:_Z22FindBestFamilyInstanceP23privateFontObjectRecordPsS1_Pt
-   fun:FOGetFontFamilyInstanceFromFont
+   obj:/System/Library/Frameworks/ApplicationServices*
+   obj:/System/Library/Frameworks/ApplicationServices*
 }
 
 {
-   macos-10.5-misc-2
+   macos-Cond-2
    Memcheck:Cond
-   fun:_ZN17CASettingsStorage15RefreshSettingsEv
-   fun:_ZNK17CASettingsStorage15CopyCFTypeValueEPK10__CFStringRPKvS4_
-   fun:_ZNK17CASettingsStorage14CopyArrayValueEPK10__CFStringRPK9__CFArrayS5_
+   fun:*PMMutex*Lock*
+   obj:/System/Library/Frameworks/ApplicationServices*
+   obj:/System/Library/Frameworks/ApplicationServices*
 }
 
 {
-   macos-10.5-misc-3
+   macos-Cond-3
    Memcheck:Cond
-   fun:*ImageContent*
-   fun:*IconView*LoadIconData*
-   fun:*IconView*InitializeCommon*
+   fun:sseCGSBlendXXXX8888
+   obj:/System/Library/Frameworks/ApplicationServices*
+   obj:/System/Library/Frameworks/ApplicationServices*
+}
+
+{
+   macos-Cond-4
+   Memcheck:Cond
+   fun:*CASettingsStorage*RefreshSettings*
+   obj:/System/Library/Frameworks/CoreAudio*
+   obj:/System/Library/Frameworks/CoreAudio*
+}
+
+{
+   macos-Cond-5
+   Memcheck:Cond
+   fun:gle*
+   obj:/System/Library/Frameworks/OpenGL*
+   obj:/System/Library/Frameworks/OpenGL*
 }
