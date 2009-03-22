@@ -37,6 +37,11 @@
 #include "pub_core_syscall.h"
 #include "pub_core_libcsignal.h"    /* self */
 
+/* IMPORTANT: on Darwin it is essential to use the _nocancel versions
+   of syscalls rather than the vanilla version, if a _nocancel version
+   is available.  See docs/internals/Darwin-notes.txt for the reason
+   why. */
+
 /* sigemptyset, sigfullset, sigaddset and sigdelset return 0 on
    success and -1 on error.  */
 /* I believe the indexing scheme in ->sig[] is also correct for

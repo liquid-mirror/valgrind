@@ -41,6 +41,11 @@
 #include "pub_core_clientstate.h"   // VG_(fd_hard_limit)
 #include "pub_core_syscall.h"
 
+/* IMPORTANT: on Darwin it is essential to use the _nocancel versions
+   of syscalls rather than the vanilla version, if a _nocancel version
+   is available.  See docs/internals/Darwin-notes.txt for the reason
+   why. */
+
 /* ---------------------------------------------------------------------
    File stuff
    ------------------------------------------------------------------ */
@@ -103,19 +108,20 @@ Bool VG_(resolve_filename) ( Int fd, HChar* buf, Int n_buf )
 
 SysRes VG_(open) ( const Char* pathname, Int flags, Int mode )
 {  
-   SysRes res = VG_(do_syscall3)(__NR_open, (UWord)pathname, flags, mode);
+   SysRes res = VG_(do_syscall3)(__NR_open_nocancel,
+                                 (UWord)pathname, flags, mode);
    return res;
 }
 
 void VG_(close) ( Int fd )
 {
-   (void)VG_(do_syscall1)(__NR_close, fd);
+   (void)VG_(do_syscall1)(__NR_close_nocancel, fd);
 }
 
 Int VG_(read) ( Int fd, void* buf, Int count)
 {
    Int    ret;
-   SysRes res = VG_(do_syscall3)(__NR_read, fd, (UWord)buf, count);
+   SysRes res = VG_(do_syscall3)(__NR_read_nocancel, fd, (UWord)buf, count);
    if (sr_isError(res)) {
       ret = - (Int)(Word)sr_Err(res);
       vg_assert(ret < 0);
@@ -129,7 +135,7 @@ Int VG_(read) ( Int fd, void* buf, Int count)
 Int VG_(write) ( Int fd, const void* buf, Int count)
 {
    Int    ret;
-   SysRes res = VG_(do_syscall3)(__NR_write, fd, (UWord)buf, count);
+   SysRes res = VG_(do_syscall3)(__NR_write_nocancel, fd, (UWord)buf, count);
    if (sr_isError(res)) {
       ret = - (Int)(Word)sr_Err(res);
       vg_assert(ret < 0);
@@ -143,8 +149,9 @@ Int VG_(write) ( Int fd, const void* buf, Int count)
 Int VG_(select) ( Int nfds, void *rfds, void *wfds, void *efds, void *timeout)
 {
    Int    ret;
-   SysRes res = VG_(do_syscall5)(__NR_select, nfds, (Addr)rfds, (Addr)wfds,
-                                              (Addr)efds, (Addr)timeout);
+   SysRes res = VG_(do_syscall5)(__NR_select_nocancel, nfds,
+                                 (Addr)rfds, (Addr)wfds,
+                                 (Addr)efds, (Addr)timeout);
    if (sr_isError(res)) {
       ret = - (Int)(Word)sr_Err(res);
       vg_assert(ret < 0);
@@ -343,7 +350,7 @@ SysRes VG_(dup2) ( Int oldfd, Int newfd )
 /* Returns -1 on error. */
 Int VG_(fcntl) ( Int fd, Int cmd, Addr arg )
 {
-   SysRes res = VG_(do_syscall3)(__NR_fcntl, fd, cmd, arg);
+   SysRes res = VG_(do_syscall3)(__NR_fcntl_nocancel, fd, cmd, arg);
    return sr_isError(res) ? -1 : sr_Res(res);
 }
 
@@ -554,11 +561,11 @@ SysRes VG_(pread) ( Int fd, void* buf, Int count, OffT offset )
 {
    SysRes res;
 #  if defined(VGP_amd64_darwin)
-   res = VG_(do_syscall4)(__NR_pread, fd, (UWord)buf, count, offset);
+   res = VG_(do_syscall4)(__NR_pread_nocancel, fd, (UWord)buf, count, offset);
    return res;
 #  elif defined(VGP_x86_darwin)
    /* ppc32-darwin is the same, but with the args inverted */
-   res = VG_(do_syscall5)(__NR_pread, fd, (UWord)buf, count, 
+   res = VG_(do_syscall5)(__NR_pread_nocancel, fd, (UWord)buf, count, 
                           offset & 0xffffffff, offset >> 32);
    return res;
 #  elif defined(VGO_linux) || defined(VGO_aix5)
@@ -863,7 +870,7 @@ Int VG_(accept) ( Int sock, struct vki_sockaddr *addr, vki_socklen_t *len)
 
 #  elif defined(VGO_darwin)
    SysRes res;
-   res = VG_(do_syscall3)(__NR_accept, sock, (UWord)addr, (UWord)len);
+   res = VG_(do_syscall3)(__NR_accept_nocancel, sock, (UWord)addr, (UWord)len);
    return sr_isError(res) ? -1 : sr_Res(res);
 
 #  else
@@ -896,7 +903,8 @@ Int my_connect ( Int sockfd, struct vki_sockaddr_in* serv_addr,
 
 #  elif defined(VGO_darwin)
    SysRes res;
-   res = VG_(do_syscall3)(__NR_connect, sockfd, (UWord)serv_addr, addrlen);
+   res = VG_(do_syscall3)(__NR_connect_nocancel,
+                          sockfd, (UWord)serv_addr, addrlen);
    return sr_isError(res) ? -1 : sr_Res(res);
 
 #  else
@@ -937,7 +945,7 @@ Int VG_(write_socket)( Int sd, void *msg, Int count )
 
 #  elif defined(VGP_x86_darwin) || defined(VGP_amd64_darwin)
    SysRes res;
-   res = VG_(do_syscall3)(__NR_write, sd, (UWord)msg, count);
+   res = VG_(do_syscall3)(__NR_write_nocancel, sd, (UWord)msg, count);
    return sr_isError(res) ? -1 : sr_Res(res);
 
 #  else

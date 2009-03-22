@@ -1,5 +1,52 @@
 
-Valgrind-developer notes, todos re the MacOSX port.
+Valgrind-developer notes, re the MacOSX port
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+JRS 22 Mar 09: re these comments in m_libc* and m_debuglog:
+
+/* IMPORTANT: on Darwin it is essential to use the _nocancel versions
+   of syscalls rather than the vanilla version, if a _nocancel version
+   is available.  See docs/internals/Darwin-notes.txt for the reason
+   why. */
+
+when Valgrind does (for its own purposes, not for the client)
+read/write/open/close etc syscalls, it really is critical to use the
+_nocancel versions of syscalls rather than the vanilla versions.  This
+holds throughout the entire code base: whenever V does a syscall for
+its own purposes, we must use the _nocancel version if it exists.
+This is of course most prevalent in m_libc* since all of our
+own-purpose (non-client) syscalls should get routed through there.
+
+Why?  Because on Darwin, pthread cancellation is done within the
+kernel (unlike on Linux, iiuc).  And read/write/open/close and a whole
+bunch of other syscalls to do with stream I/O are cancellation points.
+So what can happen is, client informs the kernel that a given thread
+is to be cancelled.  Then at the next (eg) VG_(printf) call by that
+thread, which leads to a sys_write, the write syscall gets hit by the
+cancellation request, and is duly nuked by the kernel.  Of course from
+the outside it looks as if the thread had mysteriously disappeared off
+the radar for no reason.
+
+In short, we need to use _nocancel versions in order to ensure that
+cancellation requests only take effect at the places where the client
+does a syscall, and not the places where Valgrind does syscalls.
+
+How observed: using the standard pipe-based implementation in
+coregrind/m_scheduler/sema.c, none/tests/pth_cancel1 would hang
+(compared to succeeding using native Darwin semaphores).  And if the
+"pause()" call in said test is turned into a spin ("while (1) ;") then
+the entire Valgrind run mysteriously disappears, rather than spinning
+using native Darwin semaphores.
+
+Because the pipe-based semaphore intensively uses sys_read/sys_write,
+it is not surprising that it inadvertantly was eating up cancellation
+requests directed to client threads.  With abovementioned change in
+force the pipe-based semaphore appears to work correctly.
+
+
+
+Valgrind-developer notes, todos re the MacOSX port
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 * m_syswrap/syscall-amd64-darwin.S
   - correct signal mask is not applied during syscall

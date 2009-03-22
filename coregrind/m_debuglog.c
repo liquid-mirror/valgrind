@@ -46,6 +46,11 @@
 /* This module is also notable because it is linked into both 
    stage1 and stage2. */
 
+/* IMPORTANT: on Darwin it is essential to use the _nocancel versions
+   of syscalls rather than the vanilla version, if a _nocancel version
+   is available.  See docs/internals/Darwin-notes.txt for the reason
+   why. */
+
 #include "pub_core_basics.h"     /* basic types */
 #include "pub_core_vkiscnums.h"  /* for syscall numbers */
 #include "pub_core_debuglog.h"   /* our own iface */
@@ -395,6 +400,10 @@ static UInt local_sys_getpid ( void )
 
 #elif defined(VGP_x86_darwin)
 
+/* Using _SYSNO_INDEX rather than _SYSNO_NUM assumes that these are
+   Unix-class syscalls (which they are).  Unfortunately _SYSNO_NUM
+   involves a C-style "cond ? :" expression which doesn't impress the
+   Darwin assembler very much. */
 __attribute__((noinline))
 static UInt local_sys_write_stderr ( HChar* buf, Int n )
 {
@@ -406,7 +415,8 @@ static UInt local_sys_write_stderr ( HChar* buf, Int n )
       "pushl %%eax\n"
       "movl  $1, %%eax\n"    /* push stderr */
       "pushl %%eax\n"
-      "movl  $4, %%eax\n"    /* %eax = __NR_write */
+      "movl  $"VG_STRINGIFY(VG_DARWIN_SYSNO_INDEX(__NR_write_nocancel))
+             ", %%eax\n"
       "pushl %%eax\n"        /* push fake return address */
       "int   $0x80\n"        /* write(stderr, buf, n) */
       "jnc   1f\n"           /* jump if no error */
@@ -425,7 +435,7 @@ static UInt local_sys_getpid ( void )
 {
    UInt __res;
    __asm__ volatile (
-      "movl $20, %%eax\n"  /* set %eax = __NR_getpid */
+      "movl $"VG_STRINGIFY(VG_DARWIN_SYSNO_INDEX(__NR_getpid))", %%eax\n"
       "int  $0x80\n"       /* getpid() */
       "movl %%eax, %0\n"   /* set __res = eax */
       : "=mr" (__res)
@@ -444,7 +454,8 @@ static UInt local_sys_write_stderr ( HChar* buf, Int n )
       "movq  $1, %%rdi\n"    /* push stderr */
       "movq  %1, %%rsi\n"    /* push buf */
       "movl  %2, %%edx\n"    /* push n */
-      "movl  $" VG_STRINGIFY(VG_DARWIN_SYSNO_NUM(__NR_write)) ", %%eax\n"
+      "movl  $"VG_STRINGIFY(VG_DARWIN_SYSNO_NUM(__NR_write_nocancel))
+             ", %%eax\n"
       "syscall\n"            /* write(stderr, buf, n) */
       "jnc   1f\n"           /* jump if no error */
       "movq  $-1, %%rax\n"   /* return -1 if error */
@@ -460,7 +471,7 @@ static UInt local_sys_getpid ( void )
 {
    UInt __res;
    __asm__ volatile (
-      "movl $" VG_STRINGIFY(VG_DARWIN_SYSNO_NUM(__NR_getpid)) ", %%eax\n"
+      "movl $"VG_STRINGIFY(VG_DARWIN_SYSNO_NUM(__NR_getpid))", %%eax\n"
       "syscall\n"          /* getpid() */
       "movl %%eax, %0\n"   /* set __res = eax */
       : "=mr" (__res)
