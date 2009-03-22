@@ -108,20 +108,34 @@ Bool VG_(resolve_filename) ( Int fd, HChar* buf, Int n_buf )
 
 SysRes VG_(open) ( const Char* pathname, Int flags, Int mode )
 {  
+#  if defined(VGO_darwin)
    SysRes res = VG_(do_syscall3)(__NR_open_nocancel,
                                  (UWord)pathname, flags, mode);
+#  else
+   SysRes res = VG_(do_syscall3)(__NR_open,
+                                 (UWord)pathname, flags, mode);
+#  endif
    return res;
 }
 
 void VG_(close) ( Int fd )
 {
+   /* Hmm.  Return value is not checked.  That's uncool. */
+#  if defined(VGO_darwin)
    (void)VG_(do_syscall1)(__NR_close_nocancel, fd);
+#  else
+   (void)VG_(do_syscall1)(__NR_close, fd);
+#  endif
 }
 
 Int VG_(read) ( Int fd, void* buf, Int count)
 {
    Int    ret;
+#  if defined(VGO_darwin)
    SysRes res = VG_(do_syscall3)(__NR_read_nocancel, fd, (UWord)buf, count);
+#  else
+   SysRes res = VG_(do_syscall3)(__NR_read, fd, (UWord)buf, count);
+#  endif
    if (sr_isError(res)) {
       ret = - (Int)(Word)sr_Err(res);
       vg_assert(ret < 0);
@@ -135,7 +149,11 @@ Int VG_(read) ( Int fd, void* buf, Int count)
 Int VG_(write) ( Int fd, const void* buf, Int count)
 {
    Int    ret;
+#  if defined(VGO_darwin)
    SysRes res = VG_(do_syscall3)(__NR_write_nocancel, fd, (UWord)buf, count);
+#  else
+   SysRes res = VG_(do_syscall3)(__NR_write, fd, (UWord)buf, count);
+#  endif
    if (sr_isError(res)) {
       ret = - (Int)(Word)sr_Err(res);
       vg_assert(ret < 0);
@@ -149,9 +167,15 @@ Int VG_(write) ( Int fd, const void* buf, Int count)
 Int VG_(select) ( Int nfds, void *rfds, void *wfds, void *efds, void *timeout)
 {
    Int    ret;
+#  if defined(VGO_darwin)
    SysRes res = VG_(do_syscall5)(__NR_select_nocancel, nfds,
                                  (Addr)rfds, (Addr)wfds,
                                  (Addr)efds, (Addr)timeout);
+#  else
+   SysRes res = VG_(do_syscall5)(__NR_select, nfds,
+                                 (Addr)rfds, (Addr)wfds,
+                                 (Addr)efds, (Addr)timeout);
+#  endif
    if (sr_isError(res)) {
       ret = - (Int)(Word)sr_Err(res);
       vg_assert(ret < 0);
@@ -350,7 +374,11 @@ SysRes VG_(dup2) ( Int oldfd, Int newfd )
 /* Returns -1 on error. */
 Int VG_(fcntl) ( Int fd, Int cmd, Addr arg )
 {
+#  if defined(VGO_darwin)
    SysRes res = VG_(do_syscall3)(__NR_fcntl_nocancel, fd, cmd, arg);
+#  else
+   SysRes res = VG_(do_syscall3)(__NR_fcntl, fd, cmd, arg);
+#  endif
    return sr_isError(res) ? -1 : sr_Res(res);
 }
 

@@ -257,7 +257,11 @@ void VG_(env_remove_valgrind_env_stuff)(Char** envp)
 
 Int VG_(waitpid)(Int pid, Int *status, Int options)
 {
-#  if defined(VGO_linux) || defined(VGO_darwin)
+#  if defined(VGO_linux)
+   SysRes res = VG_(do_syscall4)(__NR_wait4,
+                                 pid, (UWord)status, options, 0);
+   return sr_isError(res) ? -1 : sr_Res(res);
+#  elif defined(VGO_darwin)
    SysRes res = VG_(do_syscall4)(__NR_wait4_nocancel,
                                  pid, (UWord)status, options, 0);
    return sr_isError(res) ? -1 : sr_Res(res);
