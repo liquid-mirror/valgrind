@@ -36,7 +36,6 @@
 #include "pub_core_libcproc.h"      // For VG_(gettid)()
 #include "priv_sema.h"
 
-#if defined(VGO_linux) || defined(VGO_aix5)
 /* 
    Slower (than the removed futex-based sema scheme) but more portable
    pipe-based token passing scheme.
@@ -88,7 +87,7 @@ void ML_(sema_deinit)(vg_sema_t *sema)
 }
 
 /* get a token */
-void ML_(sema_down)(vg_sema_t *sema)
+void ML_(sema_down)( vg_sema_t *sema, Bool as_LL )
 {
    Char buf[2];
    Int ret;
@@ -115,13 +114,15 @@ void ML_(sema_down)(vg_sema_t *sema)
    if (sema_char == 'Z') sema_char = 'A'; else sema_char++;
 
    sema->owner_lwpid = lwpid;
+   sema->held_as_LL = as_LL;
 }
 
 /* put token back */
-void ML_(sema_up)(vg_sema_t *sema)
+void ML_(sema_up)( vg_sema_t *sema, Bool as_LL )
 {
    Int ret;
    Char buf[2];
+   vg_assert(as_LL == sema->held_as_LL);
    buf[0] = sema_char; 
    buf[1] = 0;
    vg_assert(sema->owner_lwpid != -1); /* must be initialised */
@@ -138,67 +139,6 @@ void ML_(sema_up)(vg_sema_t *sema)
 
    vg_assert(ret == 1);
 }
-
-void ML_(sema_fork_child)(vg_sema_t *sema)
-{
-   /* re-init and take the sema */
-   ML_(sema_deinit)(sema);
-   ML_(sema_init)(sema);
-   ML_(sema_down)(sema, False/*not LL*/);
-}
-
-#elif defined(VGO_darwin)
-
-#include <mach/mach.h>
-#include <mach/task.h>
-#include <mach/semaphore.h>
-
-// GrP fixme being paranoid costs a lot of thread_self_trap calls
-
-void ML_(sema_init)(vg_sema_t *sema)
-{
-    kern_return_t kr;
-    kr = semaphore_create(mach_task_self(), &sema->lock, SYNC_POLICY_FIFO, 1);
-    vg_assert(kr == 0);
-}
-
-void ML_(sema_deinit)(vg_sema_t *sema)
-{
-    kern_return_t kr;
-    kr = semaphore_destroy(mach_task_self(), sema->lock);
-    vg_assert(kr == 0);
-}
-
-void ML_(sema_down)(vg_sema_t *sema, Bool as_LL)
-{
-   kern_return_t kr;
-   do {
-      kr = semaphore_wait(sema->lock);
-   } while (kr == KERN_ABORTED);
-   vg_assert(kr == 0);
-   sema->held_as_LL = as_LL;
-}
-
-void ML_(sema_up)(vg_sema_t *sema, Bool as_LL)
-{
-   kern_return_t kr;
-   vg_assert(as_LL == sema->held_as_LL);
-   do {
-      kr = semaphore_signal(sema->lock);
-   } while (kr == KERN_ABORTED);
-   vg_assert(kr == 0);
-}
-
-void ML_(sema_fork_child)(vg_sema_t *sema)
-{
-   /* darwin: no deinit because child has no access to parent's semaphore */
-   ML_(sema_init)(sema);
-   ML_(sema_down)(sema, False/*not LL*/);
-}
-
-#else
-#  error Unknown OS
-#endif
 
 /*--------------------------------------------------------------------*/
 /*--- end                                                          ---*/

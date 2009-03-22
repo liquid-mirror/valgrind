@@ -31,7 +31,6 @@
 #ifndef __PRIV_SEMA_H
 #define __PRIV_SEMA_H
 
-#if defined(VGO_linux) || defined(VGO_aix5)
 /* Not really a semaphore, but use a pipe for a token-passing scheme */
 typedef struct {
    Int  pipe[2];
@@ -39,23 +38,12 @@ typedef struct {
    Bool held_as_LL;   /* if held, True == held by a _LL call */
 } vg_sema_t;
 
-#elif defined(VGO_darwin)
-typedef struct {
-   semaphore_t lock;
-   Bool held_as_LL;   /* if held, True == held by a _LL call */
-} vg_sema_t;
-
-#else
-#   error Unknown OS
-#endif
-
 // Nb: this may be OS-specific, but let's not factor it out until we
 // implement an OS port for which this isn't ok.
 void ML_(sema_init)   ( vg_sema_t *sema );
 void ML_(sema_deinit) ( vg_sema_t *sema );
 void ML_(sema_down)   ( vg_sema_t *sema, Bool as_LL );
 void ML_(sema_up)     ( vg_sema_t *sema, Bool as_LL );
-void ML_(sema_fork_child)(vg_sema_t *sema);
 
 #endif   // __PRIV_SEMA_H
 

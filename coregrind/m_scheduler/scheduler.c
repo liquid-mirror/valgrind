@@ -324,7 +324,7 @@ void VG_(get_thread_out_of_syscall)(ThreadId tid)
                       "get_thread_out_of_syscall zaps tid %d lwp %d",
 		      tid, VG_(threads)[tid].os_state.lwpid);
       }
-#     if VGO_darwin
+#     if defined(VGO_darwin)
       {
          // GrP fixme use mach primitives on darwin?
          // GrP fixme thread_abort_safely?
@@ -480,7 +480,10 @@ static void sched_fork_cleanup(ThreadId me)
       }
    }
 
-   ML_(sema_fork_child)(&the_BigLock);
+   /* re-init and take the sema */
+   ML_(sema_deinit)(&the_BigLock);
+   ML_(sema_init)(&the_BigLock);
+   ML_(sema_down)(&the_BigLock, False/*not LL*/);
 }
 
 
