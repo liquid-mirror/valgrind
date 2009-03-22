@@ -1,7 +1,7 @@
 
 Valgrind-developer notes, todos re the MacOSX port.
 
-* m_syswrap/syscall-x86-darwin.S
+* m_syswrap/syscall-amd64-darwin.S
   - correct signal mask is not applied during syscall
   - restart-labels are completely bogus
 
@@ -42,13 +42,6 @@ Valgrind-developer notes, todos re the MacOSX port.
 
 --------
 
-Urr.  Nastyness.  There seem to be 4 different syscall types on
-Darwin, with 4 different conventions for returning results.  In order
-to determine which syscall type we've got, it is sufficient to look at
-the syscall number.  Is that correct?  If that's not true, then it
-becomes impossible to write VG_UCONTEXT_SYSCALL_SYSRES for Darwin.
-
-
 m_main doesn't read symbols for the valgrind exe itself, which is
 annoying.  On minimal investigation it seems that the executable isn't
 even listed by aspacem.  This is very strange and not in accordance
@@ -73,18 +66,13 @@ VG_(di_notify_mmap): Linux version is also used for Darwin, and
 contains some ifdeffery.  Clean up.
 
 
-Get rid of priv_types_n_macros.h: RES2, getRES2, etc
-
-
 PRE(sys_fork), #ifdeffery
 
 
 syswrap-generic.c: VG_(init_preopened_fds) is #ifdefd for Darwin
 
 
-scheduler.c: fi VEX_TRC_JMP_NODECODE and VEX_TRC_JMP_SIGSEGV
-also: get rid of VG_(lock), VG_(unlock), VG_(unlock_lwpid)
-also: VG_(get_thread_out_of_syscall)
+scheduler.c: #ifdeffery in VG_(get_thread_out_of_syscall)
 
 
 look at notes in coregrind/Makefile.am re Mach RPC interface
