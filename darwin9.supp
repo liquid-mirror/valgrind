@@ -70,3 +70,12 @@
    obj:/System/Library/Frameworks/OpenGL*
    obj:/System/Library/Frameworks/OpenGL*
 }
+
+{
+   futimes-1
+   Memcheck:Param
+   futimes(tvp[1])
+   fun:futimes
+   obj:/usr/lib/libSystem*
+   obj:/usr/lib/libSystem*
+}
