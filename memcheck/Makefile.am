@@ -161,7 +161,7 @@ memcheck_ppc64_aix5_LDFLAGS      = $(TOOL_LDFLAGS_PPC64_AIX5)
 
 memcheck_x86_darwin_SOURCES      = $(MEMCHECK_SOURCES_COMMON)
 memcheck_x86_darwin_CPPFLAGS     = $(AM_CPPFLAGS_X86_DARWIN)
-memcheck_x86_darwin_CFLAGS       = $(AM_CFLAGS_X86_DARWIN) -O2
+memcheck_x86_darwin_CFLAGS       = $(AM_CFLAGS_X86_DARWIN) -O2 -mdynamic-no-pic
 memcheck_x86_darwin_CCASFLAGS    = $(AM_CCASFLAGS_X86_DARWIN)
 memcheck_x86_darwin_DEPENDENCIES = $(COREGRIND_LIBS_X86_DARWIN)
 memcheck_x86_darwin_LDADD        = $(TOOL_LDADD_X86_DARWIN)
