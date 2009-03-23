@@ -70,6 +70,7 @@ DECL_TEMPLATE(darwin, sys_workq_ops);
 DECL_TEMPLATE(darwin, sys___mac_syscall);
 DECL_TEMPLATE(darwin, sys_exit);
 DECL_TEMPLATE(darwin, sys_sigaction);
+DECL_TEMPLATE(darwin, sys___pthread_canceled);
 DECL_TEMPLATE(darwin, sys___pthread_markcancel);
 DECL_TEMPLATE(darwin, sys___pthread_sigmask);
 DECL_TEMPLATE(darwin, sys___disable_threadsignal);
