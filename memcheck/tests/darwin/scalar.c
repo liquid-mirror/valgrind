@@ -327,7 +327,7 @@ int main(void)
    SY(__NR_sem_open, x0, x0); FAIL;
 
    GO(__NR_sem_open, "(4-args) 2s 0m");
-   SY(__NR_sem_open, "my_sem", O_CREAT|O_EXCL, x0, x0); FAIL;
+   SY(__NR_sem_open, "my_sem", O_CREAT|O_EXCL, x0, x0); SUCC_OR_FAIL;
 
    // __NR_sem_close 269
    // Nb: we add 0x12345 to make sure it's not a valid semaphore descriptor.
