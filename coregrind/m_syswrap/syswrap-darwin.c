@@ -5634,21 +5634,27 @@ PRE(sys_bsdthread_create)
    tst->os_state.func_arg = (Addr)ARG2;
    ARG2 = (Word)tst;
 
-   // Create a semaphore that pthread_hijack will signal once it starts.
-   // POST(sys_bsdthread_create) needs to wait for the new memory map to appear.
-   semaphore_create(mach_task_self(), &tst->os_state.bsdthread_create_sema, 
+   // Create a semaphore that pthread_hijack will signal once it starts
+   // POST(sys_bsdthread_create) needs to wait for the new memory map to appear
+   semaphore_create(mach_task_self(), &tst->os_state.child_go, 
+                    SYNC_POLICY_FIFO, 0);
+   semaphore_create(mach_task_self(), &tst->os_state.child_done, 
                     SYNC_POLICY_FIFO, 0);
 }
 
 POST(sys_bsdthread_create)
 { 
-   // Wait for pthread_hijack to finish on new thread.
-   // Otherwise V thinks the new pthread struct is still 
-   // unmapped when we return to libc, causing false errors
+   // Tell new thread's pthread_hijack to proceed, and wait for it to finish.
+   // We hold V's lock on the child's behalf.
+   // If we return before letting pthread_hijack do its thing, V thinks 
+   // the new pthread struct is still unmapped when we return to libc, 
+   // causing false errors.
 
    ThreadState *tst = (ThreadState *)ARG2;
-   semaphore_wait(tst->os_state.bsdthread_create_sema);
-   semaphore_destroy(mach_task_self(), tst->os_state.bsdthread_create_sema);
+   semaphore_signal(tst->os_state.child_go);
+   semaphore_wait(tst->os_state.child_done);
+   semaphore_destroy(mach_task_self(), tst->os_state.child_go);
+   semaphore_destroy(mach_task_self(), tst->os_state.child_done);
 
    // fixme semaphore destroy needed when thread creation fails
    // fixme probably other cleanup too

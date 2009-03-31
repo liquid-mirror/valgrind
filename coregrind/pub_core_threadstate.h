@@ -160,7 +160,8 @@ typedef
       Addr func_arg;
 
       // Synchronization between child thread and parent thread's POST wrapper
-      semaphore_t bsdthread_create_sema;
+      semaphore_t child_go;
+      semaphore_t child_done;
 
       // Workqueue re-entry 
       // (setjmp in PRE(workq_ops), longjmp in wqthread_hijack)

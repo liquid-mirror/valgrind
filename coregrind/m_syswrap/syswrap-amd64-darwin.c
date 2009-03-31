@@ -291,7 +291,10 @@ void pthread_hijack(Addr self, Addr kport, Addr func, Addr func_arg,
 
    // VG_(printf)("pthread_hijack pthread %p, machthread %p, func %p, arg %p, stack %p, flags %p, stack %p\n", self, kport, func, func_arg, stacksize, flags, sp);
 
-    
+   // Wait for parent thread's permission.
+   // The parent thread holds V's lock on our behalf.
+   semaphore_wait(tst->os_state.child_go);
+
    // Set thread's registers
    // Do this FIRST because some code below tries to collect a backtrace, 
    // which requires valid register data.
@@ -336,7 +339,8 @@ void pthread_hijack(Addr self, Addr kport, Addr func, Addr func_arg,
 
    // Tell parent thread's POST(sys_bsdthread_create) that we're done 
    // initializing registers and mapping memory.
-   semaphore_signal(tst->os_state.bsdthread_create_sema);
+   semaphore_signal(tst->os_state.child_done);
+   // LOCK IS GONE BELOW THIS POINT
 
    // Go!
    call_on_new_stack_0_1(tst->os_state.valgrind_stack_init_SP, 0, 
