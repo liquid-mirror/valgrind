@@ -275,6 +275,7 @@ asm(
 void pthread_hijack(Addr self, Addr kport, Addr func, Addr func_arg, 
                     Addr stacksize, Addr flags, Addr sp)
 {
+   vki_sigset_t blockall;
    ThreadState *tst = (ThreadState *)func_arg;
    VexGuestX86State *vex = &tst->arch.vex;
 
@@ -283,6 +284,11 @@ void pthread_hijack(Addr self, Addr kport, Addr func, Addr func_arg,
    // Wait for parent thread's permission.
    // The parent thread holds V's lock on our behalf.
    semaphore_wait(tst->os_state.child_go);
+
+   /* Start the thread with all signals blocked.  VG_(scheduler) will
+      set the mask correctly when we finally get there. */
+   VG_(sigfillset)(&blockall);
+   VG_(sigprocmask)(VKI_SIG_SETMASK, &blockall, NULL);
 
    // Set thread's registers
    // Do this FIRST because some code below tries to collect a backtrace, 
@@ -377,6 +383,7 @@ void wqthread_hijack(Addr self, Addr kport, Addr stackaddr, Addr workitem,
    VexGuestX86State *vex;
    Addr stack;
    SizeT stacksize;
+   vki_sigset_t blockall;
 
    /* When we enter here we hold no lock (!), so we better acquire it
       pronto.  Why do we hold no lock?  Because (presumably) the only
@@ -387,6 +394,11 @@ void wqthread_hijack(Addr self, Addr kport, Addr stackaddr, Addr workitem,
       pulled out of a hat.  In any case we still need to take a
       lock. */
    VG_(acquire_BigLock_LL)("wqthread_hijack");
+
+   /* Start the thread with all signals blocked.  VG_(scheduler) will
+      set the mask correctly when we finally get there. */
+   VG_(sigfillset)(&blockall);
+   VG_(sigprocmask)(VKI_SIG_SETMASK, &blockall, NULL);
 
    if (reuse) {
       // This thread already exists; we're merely re-entering 
