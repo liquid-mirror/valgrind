@@ -176,6 +176,7 @@ void VG_(sigcomplementset)( vki_sigset_t* dst, vki_sigset_t* src )
 */
 Int VG_(sigprocmask)( Int how, const vki_sigset_t* set, vki_sigset_t* oldset)
 {
+#  if defined(VGO_linux) || defined(VGO_aix5)
 #  if defined(__NR_rt_sigprocmask)
    SysRes res = VG_(do_syscall4)(__NR_rt_sigprocmask, 
                                  how, (UWord)set, (UWord)oldset, 
@@ -183,6 +184,16 @@ Int VG_(sigprocmask)( Int how, const vki_sigset_t* set, vki_sigset_t* oldset)
 #  else
    SysRes res = VG_(do_syscall3)(__NR_sigprocmask, 
                                  how, (UWord)set, (UWord)oldset);
+#  endif
+
+#  elif defined(VGO_darwin)
+   /* On Darwin, __NR_sigprocmask appears to affect the entire
+      process, not just this thread.  Hence need to use
+      __NR___pthread_sigmask instead. */
+   SysRes res =  VG_(do_syscall3)(__NR___pthread_sigmask, 
+                                  how, (UWord)set, (UWord)oldset);
+#  else
+#    error "Unknown OS"
 #  endif
    return sr_isError(res) ? -1 : 0;
 }
@@ -288,7 +299,14 @@ VG_(convert_sigaction_fromK_to_toK)( vki_sigaction_fromK_t* fromK,
 
 Int VG_(kill)( Int pid, Int signo )
 {
+#  if defined(VGO_linux) || defined(VGO_aix5)
    SysRes res = VG_(do_syscall2)(__NR_kill, pid, signo);
+#  elif defined(VGO_darwin)
+   SysRes res = VG_(do_syscall3)(__NR_kill,
+                                 pid, signo, 1/*posix-compliant*/);
+#  else
+#    error "Unsupported OS"
+#  endif
    return sr_isError(res) ? -1 : 0;
 }
 

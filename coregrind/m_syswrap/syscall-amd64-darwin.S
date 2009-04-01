@@ -96,7 +96,7 @@ L_$0_1:	/* Even though we can't take a signal until the sigprocmask completes,
 
 	/* Set the signal mask which should be current during the syscall. */
 	/* GrP fixme signals
-
+           JRS fixme: use __NR___pthread_sigmask, not __NR_rt_sigprocmask
 	movq	$__NR_rt_sigprocmask, %rax	// syscall #
 	movq	$VKI_SIG_SETMASK, %rdi		// how
 	movq	-24(%rbp), %rsi			// sysmask
@@ -159,6 +159,7 @@ L_$0_3:	/* In the range [3, 4), the syscall result is in %rax,
 L_$0_4:	/* Re-block signals.  If eip is in [4,5), then the syscall 
 	   is complete and we needn't worry about it. */
 	/* GrP fixme signals
+           JRS fixme: use __NR___pthread_sigmask, not __NR_rt_sigprocmask
 	PUSH_di_si_dx_cx_8
 
 	movq	$__NR_rt_sigprocmask, %rax	// syscall #

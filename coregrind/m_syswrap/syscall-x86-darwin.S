@@ -85,19 +85,19 @@
 	mov	%esp, %ebp
 	subl	$$8, %esp	/* 16-byte align stack */
 	
-L_$0_1:	/* Even though we can't take a signal until the sigprocmask completes,
-	   start the range early.
+L_$0_1:	/* Even though we can't take a signal until the
+           __pthread_sigmask completes, start the range early.
 	   If eip is in the range [1,2), the syscall hasn't been started yet */
 
 	/* Set the signal mask which should be current during the syscall. */
-        /* Set up for sigprocmask(SIG_SETMASK, sysmask, postmask) */
+        /* Set up for __pthread_sigmask(SIG_SETMASK, sysmask, postmask) */
         pushl   20(%ebp)
         pushl   16(%ebp)
         pushl   $$VKI_SIG_SETMASK
         pushl   $$0xcafebabe    /* totally fake return address */
-        movl    $$__NR_sigprocmask, %eax
+        movl    $$__NR___pthread_sigmask, %eax
         int     $$0x80  /* should be sysenter? */
-        jc      L_$0_7  /* sigprocmask failed */
+        jc      L_$0_7  /* __pthread_sigmask failed */
         addl    $$16,%esp
 
 	/* Copy syscall parameters to the stack - assume no more than 8 
@@ -161,14 +161,14 @@ L_$0_3:	/* In the range [3, 4), the syscall result is in %eax and %edx and C,
 
 L_$0_4:	/* Re-block signals.  If eip is in [4,5), then the syscall is
            complete and we needn't worry about it. */
-        /* Set up for sigprocmask(SIG_SETMASK, postmask, NULL) */
+        /* Set up for __pthread_sigmask(SIG_SETMASK, postmask, NULL) */
         pushl   $$0
         pushl   20(%ebp)
         pushl   $$VKI_SIG_SETMASK
         pushl   $$0xcafef00d    /* totally fake return address */
-        movl    $$__NR_sigprocmask, %eax
+        movl    $$__NR___pthread_sigmask, %eax
         int     $$0x80  /* should be sysenter? */
-        jc      L_$0_7  /* sigprocmask failed */
+        jc      L_$0_7  /* __pthread_sigmask failed */
         addl    $$16,%esp
 
 L_$0_5:	/* now safe from signals */
