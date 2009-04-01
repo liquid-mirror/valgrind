@@ -2246,6 +2246,13 @@ void shutdown_actions_NORETURN( ThreadId tid,
       /* We were killed by a fatal signal, so replicate the effect */
       vg_assert(VG_(threads)[tid].os_state.fatalsig != 0);
       VG_(kill_self)(VG_(threads)[tid].os_state.fatalsig);
+      /* we shouldn't be alive at this point.  But VG_(kill_self)
+         sometimes fails with EPERM on Darwin, for unclear reasons. */
+#     if defined(VGO_darwin)
+      VG_(debugLog)(0, "main", "VG_(kill_self) failed.  Exiting normally.\n");
+      VG_(exit)(0); /* bogus, but we really need to exit now */
+      /* fall through .. */
+#     endif
       VG_(core_panic)("main(): signal was supposed to be fatal");
       break;
 

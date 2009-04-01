@@ -555,13 +555,13 @@ void calculate_SKSS_from_SCSS ( SKSS* dst )
       case VKI_SIGCONT:
 	 /* Let the kernel handle SIGCONT unless the client is actually
 	    catching it. */
-      case VKI_SIGCHLD:                                                        
-      case VKI_SIGWINCH:                                                       
-      case VKI_SIGURG:                                                         
-         /* For signals which are have a default action of Ignore,             
-            only set a handler if the client has set a signal handler.         
-            Otherwise the kernel will interrupt a syscall which                
-            wouldn't have otherwise been interrupted. */                 
+      case VKI_SIGCHLD:
+      case VKI_SIGWINCH:
+      case VKI_SIGURG:
+         /* For signals which are have a default action of Ignore,
+            only set a handler if the client has set a signal handler.
+            Otherwise the kernel will interrupt a syscall which
+            wouldn't have otherwise been interrupted. */
 	 if (scss.scss_per_sig[sig].scss_handler == VKI_SIG_DFL)
 	    skss_handler = VKI_SIG_DFL;
 	 else if (scss.scss_per_sig[sig].scss_handler == VKI_SIG_IGN)
@@ -1229,6 +1229,7 @@ static const Char *signame(Int sigNo)
 /* Hit ourselves with a signal using the default handler */
 void VG_(kill_self)(Int sigNo)
 {
+   Int r;
    vki_sigset_t	         mask, origmask;
    vki_sigaction_toK_t   sa, origsa2;
    vki_sigaction_fromK_t origsa;   
@@ -1247,7 +1248,9 @@ void VG_(kill_self)(Int sigNo)
    VG_(sigaddset)(&mask, sigNo);
    VG_(sigprocmask)(VKI_SIG_UNBLOCK, &mask, &origmask);
 
-   VG_(kill)(VG_(getpid)(), sigNo);
+   r = VG_(kill)(VG_(getpid)(), sigNo);
+   /* This sometimes fails with EPERM on Darwin.  I don't know why. */
+   /* vg_assert(r == 0); */
 
    VG_(convert_sigaction_fromK_to_toK)( &origsa, &origsa2 );
    VG_(sigaction)(sigNo, &origsa2, NULL);
