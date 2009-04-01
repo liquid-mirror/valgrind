@@ -399,10 +399,25 @@ static void os_state_clear(ThreadState *tst)
 {
    tst->os_state.lwpid       = 0;
    tst->os_state.threadgroup = 0;
-#  if defined(VGO_aix5)
+#  if defined(VGO_linux)
+   /* no other fields to clear */
+#  elif defined(VGO_aix5)
    tst->os_state.cancel_async    = False;
    tst->os_state.cancel_disabled = False;
    tst->os_state.cancel_progress = Canc_NoRequest;
+#  elif defined(VGO_darwin)
+   tst->os_state.post_mach_trap_fn = NULL;
+   tst->os_state.pthread           = 0;
+   tst->os_state.func_arg          = 0;
+   VG_(memset)(&tst->os_state.child_go, 0, sizeof(tst->os_state.child_go));
+   VG_(memset)(&tst->os_state.child_done, 0, sizeof(tst->os_state.child_done));
+   tst->os_state.wq_jmpbuf_valid   = False;
+   VG_(memset)(&tst->os_state.wq_jmpbuf, 0, sizeof(tst->os_state.wq_jmpbuf));
+   tst->os_state.remote_port       = 0;
+   tst->os_state.msgh_id           = 0;
+   VG_(memset)(&tst->os_state.mach_args, 0, sizeof(tst->os_state.mach_args));
+#  else
+#    error "Unknown OS"
 #  endif
 }
 
