@@ -412,7 +412,6 @@ static void os_state_clear(ThreadState *tst)
    VG_(memset)(&tst->os_state.child_go, 0, sizeof(tst->os_state.child_go));
    VG_(memset)(&tst->os_state.child_done, 0, sizeof(tst->os_state.child_done));
    tst->os_state.wq_jmpbuf_valid   = False;
-   VG_(memset)(&tst->os_state.wq_jmpbuf, 0, sizeof(tst->os_state.wq_jmpbuf));
    tst->os_state.remote_port       = 0;
    tst->os_state.msgh_id           = 0;
    VG_(memset)(&tst->os_state.mach_args, 0, sizeof(tst->os_state.mach_args));
