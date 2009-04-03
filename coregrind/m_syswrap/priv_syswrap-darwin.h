@@ -145,6 +145,7 @@ DECL_TEMPLATE(darwin, sys_fcntl64);
 DECL_TEMPLATE(darwin, sys_ioctl);
 DECL_TEMPLATE(darwin, sys_futimes);
 DECL_TEMPLATE(darwin, sys_FAKE_SIGRETURN);
+DECL_TEMPLATE(darwin, sys_sigreturn);
 
 // Mach message helpers
 DECL_TEMPLATE(darwin, host_info);

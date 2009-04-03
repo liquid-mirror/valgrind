@@ -46,7 +46,6 @@
 #include "pub_core_mallocfree.h"
 #include "pub_core_options.h"
 #include "pub_core_scheduler.h"
-#include "pub_core_sigframe.h"      // For VG_(sigframe_destroy)()
 #include "pub_core_signals.h"
 #include "pub_core_syscall.h"
 #include "pub_core_syswrap.h"

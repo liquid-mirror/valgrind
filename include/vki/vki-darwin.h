@@ -504,6 +504,9 @@ typedef
 #define VKI_SA_ONESHOT   SA_RESETHAND
 #define VKI_SA_NOMASK    SA_NODEFER
 
+#define VKI_UC_SET_ALT_STACK   0x40000000
+#define VKI_UC_RESET_ALT_STACK 0x80000000
+
 
 #include <sys/errno.h>
 

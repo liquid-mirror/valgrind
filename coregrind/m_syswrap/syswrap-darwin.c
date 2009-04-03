@@ -6693,6 +6693,7 @@ PRE(sys_FAKE_SIGRETURN)
       an explanation of what follows. */
    /* This handles the fake signal-return system call created by
       sigframe-x86-darwin.c. */
+   /* See also comments just below on PRE(sys_sigreturn). */
 
    PRINT("FAKE_SIGRETURN ( )");
 
@@ -6711,6 +6712,82 @@ PRE(sys_FAKE_SIGRETURN)
 
    /* Check to see if any signals arose as a result of this. */
    *flags |= SfPollAfter;
+}
+
+
+PRE(sys_sigreturn)
+{
+   /* This is the "real" sigreturn.  But because we construct all the
+      signal frames ourselves (of course, in m_sigframe), this cannot
+      happen as a result of normal signal delivery.  I think it
+      happens only when doing siglongjmp, in which case Darwin's Libc
+      appears to use it for two different purposes: to mess with the
+      per-thread sigaltstack flags (as per arg 2), or to restore the
+      thread's state from a ucontext* (as per arg 1). */
+
+   PRINT("sigreturn ( uctx=%#lx, infostyle=%#lx )", ARG1, ARG2);
+
+   vg_assert(VG_(is_valid_tid)(tid));
+   vg_assert(tid >= 1 && tid < VG_N_THREADS);
+   vg_assert(VG_(is_running_thread)(tid));
+
+   if (ARG2 == VKI_UC_SET_ALT_STACK) {
+      /* This is confusing .. the darwin kernel sources imply there is
+         a per-thread on-altstack/not-on-altstack flag, which is set
+         by this flag.  Just ignore it and claim success for the time
+         being. */
+      VG_(debugLog)(0, "syswrap-darwin",
+                       "WARNING: Ignoring sys_sigreturn( ..., "
+                       "UC_SET_ALT_STACK );\n");
+      SET_STATUS_Success(0);
+      return;
+   }
+   if (ARG2 == VKI_UC_RESET_ALT_STACK) {
+      /* Ditto */
+      VG_(debugLog)(0, "syswrap-darwin",
+                       "WARNING: Ignoring sys_sigreturn( ..., "
+                       "UC_RESET_ALT_STACK );\n");
+      SET_STATUS_Success(0);
+      return;
+   }
+
+   /* Otherwise claim this isn't supported.  (Could be
+      catastrophic).
+
+      What do we have to do if we do need to support it?
+
+      1. Change the second argument of VG_(sigframe_destroy) from
+         "Bool isRT" to "UInt sysno", so we can pass the syscall
+         number, so it can distinguish this case from the
+         __NR_DARWIN_FAKE_SIGRETURN case.
+
+      2. In VG_(sigframe_destroy), look at sysno to distinguish the
+         cases.  For __NR_DARWIN_FAKE_SIGRETURN, behave as at present.
+         For this case, restore the thread's CPU state (or at least
+         the integer regs) from the ucontext in ARG1 (and do all the
+         other "signal-returns" stuff too).
+
+      3. For (2), how do we know where the ucontext is?  One way is to
+         temporarily copy ARG1 into this thread's guest_EBX (or any
+         other int reg), and have VG_(sigframe_destroy) read
+         guest_EBX.  Why is it ok to trash guest_EBX (or any other int
+         reg)?  Because VG_(sigframe_destroy) is just about to
+         overwrite all the regs anyway -- since the primary purpose of
+         calling it is to restore the register state from the ucontext
+         pointed to by ARG1.
+
+      Hey, it's uggerly.  But at least it's documented.
+   */
+   /* But in the meantime ... */
+   VG_(debugLog)(0, "syswrap-darwin",
+                    "WARNING: Ignoring sys_sigreturn( uctx=..., 0 );\n");
+   VG_(debugLog)(0, "syswrap-darwin",
+                    "WARNING: Thread/program/Valgrind "
+                    "will likely segfault now.\n");
+   VG_(debugLog)(0, "syswrap-darwin",
+                    "WARNING: Please file a bug report at "
+                    "http://www.valgrind.org.\n");
+   SET_STATUS_Failure( VKI_ENOSYS );
 }
 
 
@@ -6991,7 +7068,7 @@ const SyscallTableEntry ML_(syscall_table)[] = {
    GENX_(__NR_setgid, sys_setgid), 
    MACX_(__NR_setegid, sys_setegid), 
    MACX_(__NR_seteuid, sys_seteuid), 
-// _____(__NR_sigreturn), 
+   MACX_(__NR_sigreturn, sys_sigreturn), 
 // _____(__NR_chud), 
    _____(VG_DARWIN_SYSCALL_CONSTRUCT_UNIX(186)),   // ??? 
    _____(VG_DARWIN_SYSCALL_CONSTRUCT_UNIX(187)),   // ??? 
