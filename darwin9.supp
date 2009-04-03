@@ -41,6 +41,15 @@
 }
 
 {
+   mach_msg_trap-5
+   Memcheck:Param
+   mach_msg(msg.msgh_remote_port)
+   fun:mach_msg_trap
+   obj:/System/Library/Frameworks/CoreFoundation*
+   obj:/System/Library/Frameworks/AppKit*
+}
+
+{
    macos-Cond-1
    Memcheck:Cond
    fun:GetVariationInfoFromName
