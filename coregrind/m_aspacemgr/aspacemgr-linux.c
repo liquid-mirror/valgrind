@@ -3319,6 +3319,8 @@ static unsigned int mach2vki(unsigned int vm_prot)
       ((vm_prot & VM_PROT_EXECUTE) ? VKI_PROT_EXEC    : 0) ;
 }
 
+static UInt stats_machcalls = 0;
+
 static void 
 parse_procselfmaps (
                     void (*record_mapping)( Addr addr, SizeT len, UInt prot,
@@ -3341,10 +3343,13 @@ parse_procselfmaps (
       kern_return_t kr;
 
       while (1) {
-         mach_msg_type_number_t info_count = VM_REGION_SUBMAP_SHORT_INFO_COUNT_64;
+         mach_msg_type_number_t info_count
+            = VM_REGION_SUBMAP_SHORT_INFO_COUNT_64;
+         stats_machcalls++;
          kr = mach_vm_region_recurse(mach_task_self(), &addr, &size, &depth,
                                      (vm_region_info_t)&info, &info_count);
-         if (kr) return;
+         if (kr) 
+            return;
          if (info.is_submap) {
             depth++;
             continue;
@@ -3369,11 +3374,11 @@ parse_procselfmaps (
 
 
 // GrP hack
-extern void ML_(notify_aspacem_and_tool_of_mmap) ( Addr a, SizeT len, UInt prot, UInt flags, Int fd, Off64T offset );
+extern void ML_(notify_aspacem_and_tool_of_mmap)
+   ( Addr a, SizeT len, UInt prot, UInt flags, Int fd, Off64T offset );
 extern void ML_(notify_aspacem_and_tool_of_munmap) ( Addr a, SizeT len );
 static const HChar *sync_mapping_when;
 static const HChar *sync_mapping_where;
-static Int sync_mapping_num;
 static void add_mapping_callback(Addr addr, SizeT len, UInt prot, 
                                  ULong dev, ULong ino, Off64T offset, 
                                  const UChar *filename)
@@ -3404,30 +3409,34 @@ static void add_mapping_callback(Addr addr, SizeT len, UInt prot,
       else if (nsegments[i].kind == SkFree || nsegments[i].kind == SkResvn) {
           /* Add mapping for SkResvn regions */
           if (VG_(clo_trace_syscalls)) 
-              VG_(debugLog)(0,"aspacem","\nadded region %p..%p at %s:%d (%s)", 
+              VG_(debugLog)(0,"aspacem","\nadded region %p..%p at %s (%s)", 
                             (void*)addr, (void*)(addr+len), 
-                          sync_mapping_where, sync_mapping_num, sync_mapping_when);
+                            sync_mapping_where,
+                            sync_mapping_when);
           ML_(notify_aspacem_and_tool_of_mmap)
               (addr, len, prot, VKI_MAP_PRIVATE, 0, offset);
           return;
       } 
-      else if (nsegments[i].kind == SkAnonC  ||  nsegments[i].kind == SkFileC  ||  nsegments[i].kind == SkShmC) {
+      else if (nsegments[i].kind == SkAnonC  ||  nsegments[i].kind == SkFileC
+               ||  nsegments[i].kind == SkShmC) {
           /* Check permissions on client regions */
           // fixme
           seg_prot = 0;
           if (nsegments[i].hasR) seg_prot |= VKI_PROT_READ;
           if (nsegments[i].hasW) seg_prot |= VKI_PROT_WRITE;
-#if defined(VGA_x86)
+#         if defined(VGA_x86)
           // fixme sloppyXcheck 
           // darwin: kernel X ignored and spuriously changes? (vm_copy)
           seg_prot |= (prot & VKI_PROT_EXEC);
-#else
+#         else
           if (nsegments[i].hasX) seg_prot |= VKI_PROT_EXEC;
-#endif
+#         endif
           if (seg_prot != prot) {
               if (VG_(clo_trace_syscalls)) 
-                  VG_(debugLog)(0,"aspacem","\nregion %p..%p permission mismatch (kernel %x, V %x)", 
-                                (void*)nsegments[i].start, (void*)(nsegments[i].end+1), prot, seg_prot);
+                  VG_(debugLog)(0,"aspacem","\nregion %p..%p permission "
+                                  "mismatch (kernel %x, V %x)", 
+                                  (void*)nsegments[i].start,
+                                  (void*)(nsegments[i].end+1), prot, seg_prot);
           }
       }
       else {
@@ -3457,9 +3466,12 @@ static void remove_mapping_callback(Addr addr, SizeT len)
       if (nsegments[i].kind != SkFree  &&  nsegments[i].kind != SkResvn) {
          // V has a mapping, kernel doesn't
          if (VG_(clo_trace_syscalls)) 
-            VG_(debugLog)(0,"aspacem","\nremoved region 0x%010llx..0x%010llx at %s:%d (%s)", 
-                          (ULong)nsegments[i].start, (ULong)(nsegments[i].end+1), 
-                          sync_mapping_where, sync_mapping_num, sync_mapping_when);
+            VG_(debugLog)(0,"aspacem","\nremoved region 0x%010llx..0x%010llx"
+                          " at %s (%s)", 
+                          (ULong)nsegments[i].start,
+                          (ULong)(nsegments[i].end+1), 
+                          sync_mapping_where,
+                          sync_mapping_when);
          ML_(notify_aspacem_and_tool_of_munmap)
             (nsegments[i].start, 1+(nsegments[i].end-nsegments[i].start));
          return;
@@ -3470,10 +3482,15 @@ static void remove_mapping_callback(Addr addr, SizeT len)
 
 void VG_(sync_mappings)(const HChar *when, const HChar *where, Int num)
 {
-    sync_mapping_when = when ?: "?";
-    sync_mapping_where = where ?: "?";
-    sync_mapping_num = 0;
-    parse_procselfmaps(&add_mapping_callback, &remove_mapping_callback);
+   static UInt stats_synccalls = 1;
+   sync_mapping_when = when ?: "?";
+   sync_mapping_where = where ?: "?";
+   parse_procselfmaps(&add_mapping_callback, &remove_mapping_callback);
+   if (0)
+      VG_(debugLog)(0,"aspacem",
+         "[%u,%u] VG_(sync_mappings)(%s, %s, %d)\n",
+         stats_synccalls++, stats_machcalls, when, where, num
+      );
 }
 
 
