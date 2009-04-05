@@ -123,7 +123,8 @@ void VG_(vki_do_initial_consistency_checks) ( void )
 #    endif
    }
    /* also .. */
-   /* VKI_SET_SIGMASK is hardwired into syscall-x86-darwin.S */
+   /* VKI_SET_SIGMASK is hardwired into syscall-x86-darwin.S and
+      syscall-amd64-darwin.S */
    vg_assert(VKI_SIG_SETMASK == 3);
 
 #  else

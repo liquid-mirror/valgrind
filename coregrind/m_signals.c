@@ -370,7 +370,8 @@ typedef struct SigQueue {
    static inline Addr VG_UCONTEXT_STACK_PTR( void* ucV ) {
       I_die_here;
    }
-   static inline SysRes VG_UCONTEXT_SYSCALL_SYSRES( void* ucV ) {
+   static inline SysRes VG_UCONTEXT_SYSCALL_SYSRES( void* ucV,
+                                                    UWord scclass ) {
       I_die_here;
    }
    static inline Addr VG_UCONTEXT_LINK_REG( void* ucV ) {

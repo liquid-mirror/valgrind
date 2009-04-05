@@ -79,12 +79,12 @@
           Mach traps: result is in r3, and there is no error flag.
    ppc64  r0  r3   r4   r5   r6   r7   r8   ??   ??   r3+CR0.SO (== ARG1)
    x86    eax +4   +8   +12  +16  +20  +24  +28  +32  edx:eax, eflags.c
-   amd64  rax rdi  rsi  rdx  rcx  r8   r9   stk  stk  edx:eax, eflags.c
+   amd64  rax rdi  rsi  rdx  rcx  r8   r9   +8   +16  rdx:rax, rflags.c
 
-   For x86-darwin, "+N" denotes "in memory at N(%esp)".  Apparently
-   0(%esp) is some kind of return address (perhaps for syscalls done
-   with "sysenter"?)  I don't think it is relevant for syscalls done
-   with "int $0x80/1/2".
+   For x86-darwin, "+N" denotes "in memory at N(%esp)"; ditto
+   amd64-darwin.  Apparently 0(%esp) is some kind of return address
+   (perhaps for syscalls done with "sysenter"?)  I don't think it is
+   relevant for syscalls done with "int $0x80/1/2".
 */
 
 /* This is the top level of the system-call handler module.  All
@@ -595,7 +595,7 @@ void getSyscallArgsFromGuestState ( /*OUT*/SyscallArgs*       canonical,
       canonical->arg7  = stack[2];
       canonical->arg8  = stack[3];
       
-      PRINT("SYSCALL[%d,?](%5lld) syscall(#%x, ...); please stand by...\n",
+      PRINT("SYSCALL[%d,?](%5lld) syscall(#%lx, ...); please stand by...\n",
             VG_(getpid)(), /*tid,*/ (Long)0,
             VG_DARWIN_SYSNO_PRINT(canonical->sysno));
    }
@@ -787,53 +787,35 @@ void getSyscallStatusFromGuestState ( /*OUT*/SyscallStatus*     canonical,
    canonical->what = SsComplete;
 
 #  elif defined(VGP_amd64_darwin)
+   /* duplicates logic in m_signals.VG_UCONTEXT_SYSCALL_SYSRES */
    VexGuestAMD64State* gst = (VexGuestAMD64State*)gst_vanilla;
-   UInt carry = 1 & LibVEX_GuestAMD64_get_rflags(gst);
-   UInt err;
-   UWord val;
-   UWord val2;
-
+   ULong carry = 1 & LibVEX_GuestAMD64_get_rflags(gst);
+   ULong err = 0;
+   ULong wLO = 0;
+   ULong wHI = 0;
    switch (gst->guest_SC_CLASS) {
-   case VG_DARWIN_SYSCALL_CLASS_UX64:
-       // int $0x80 = Unix, 128-bit result
-       err = carry;
-       val = gst->guest_RAX;
-       val2 = gst->guest_RDX;
-       break;
-   case VG_DARWIN_SYSCALL_CLASS_UNIX:
-       // syscall = Unix, 64-bit result
-       err = carry;
-       val = gst->guest_RAX;
-       val2 = 0;
-       break;
-   case VG_DARWIN_SYSCALL_CLASS_MACH:
-       // int $0x81 = Mach, 64-bit result
-       err = 0;
-       val = gst->guest_RAX;
-       val2 = 0;
-       break;
-   case VG_DARWIN_SYSCALL_CLASS_MDEP:
-       // int $0x82 = mdep, 64-bit result
-       err = 0;
-       val = gst->guest_RAX;
-       val2 = 0;
-       break;
-   default: 
-       vg_assert(0);
-       break;
+      case VG_DARWIN_SYSCALL_CLASS_UNIX:
+         // syscall = Unix, 128-bit result
+         err = carry;
+         wLO = gst->guest_RAX;
+         wHI = gst->guest_RDX;
+         break;
+      case VG_DARWIN_SYSCALL_CLASS_MACH:
+         // syscall = Mach, 64-bit result
+         wLO = gst->guest_RAX;
+         break;
+      case VG_DARWIN_SYSCALL_CLASS_MDEP:
+         // syscall = mdep, 64-bit result
+         wLO = gst->guest_RAX;
+         break;
+      default: 
+         vg_assert(0);
+         break;
    }
-
-   if (err) {
-       canonical->sres.isError = True;
-       canonical->sres.res = 0;
-       canonical->sres.res2 = 0;
-       canonical->sres.err = val;
-   } else {
-       canonical->sres.isError = False;
-       canonical->sres.res = val;
-       canonical->sres.res2 = val2;
-       canonical->sres.err = 0;
-   }
+   canonical->sres = VG_(mk_SysRes_amd64_darwin)(
+                        gst->guest_SC_CLASS, err ? True : False, 
+                        wHI, wLO
+                     );
    canonical->what = SsComplete;
 
 #  else
@@ -935,8 +917,7 @@ void putSyscallStatusIntoGuestState ( /*IN*/ ThreadId tid,
    SysRes sres = canonical->sres;
    vg_assert(canonical->what == SsComplete);
    /* Unfortunately here we have to break abstraction and look
-      directly inside 'res', in order to decide what to do.  There are
-      6 cases (yuck). */
+      directly inside 'res', in order to decide what to do. */
    switch (sres._mode) {
       case SysRes_MACH: // int $0x81 = Mach, 32-bit result
       case SysRes_MDEP: // int $0x82 = mdep, 32-bit result
@@ -966,39 +947,35 @@ void putSyscallStatusIntoGuestState ( /*IN*/ ThreadId tid,
    
 #elif defined(VGP_amd64_darwin)
    VexGuestAMD64State* gst = (VexGuestAMD64State*)gst_vanilla;
-   UWord val = 
-       canonical->sres.isError ? canonical->sres.err : canonical->sres.res;
+   SysRes sres = canonical->sres;
    vg_assert(canonical->what == SsComplete);
-
-   switch (gst->guest_SC_CLASS) {
-   case VG_DARWIN_SYSCALL_CLASS_UNIX:
-       // syscall = Unix, 32-bit result
-       if (!canonical->sres.isError) gst->guest_RDX = canonical->sres.res2;
-       VG_TRACK( post_reg_write, Vg_CoreSysCall, tid, 
-                 OFFSET_amd64_RDX, sizeof(UWord) );
-       gst->guest_RAX = val;
-       LibVEX_GuestAMD64_put_rflag_c(canonical->sres.isError, gst);
-       VG_TRACK( post_reg_write, Vg_CoreSysCall, tid, 
-                 OFFSET_amd64_RAX, sizeof(UWord) );
-       // fixme sets defined for entire rflags, not just bit c
-       VG_TRACK( post_reg_write, Vg_CoreSysCall, tid, 
-                 offsetof(VexGuestAMD64State, guest_CC_DEP1), sizeof(ULong) );
-       break;
-   case VG_DARWIN_SYSCALL_CLASS_MACH:
-       // int $0x81 = Mach, 32-bit result
-       gst->guest_RAX = val;
-       VG_TRACK( post_reg_write, Vg_CoreSysCall, tid, 
-                 OFFSET_amd64_RAX, sizeof(UWord) );
-       break;
-   case VG_DARWIN_SYSCALL_CLASS_MDEP:
-       // int $0x82 = mdep, 32-bit result
-       gst->guest_RAX = val;
-       VG_TRACK( post_reg_write, Vg_CoreSysCall, tid, 
-                 OFFSET_amd64_RAX, sizeof(UWord) );
-       break;
-   default: 
-       vg_assert(0);
-       break;
+   /* Unfortunately here we have to break abstraction and look
+      directly inside 'res', in order to decide what to do. */
+   switch (sres._mode) {
+      case SysRes_MACH: // syscall = Mach, 64-bit result
+      case SysRes_MDEP: // syscall = mdep, 64-bit result
+         gst->guest_RAX = sres._wLO;
+         VG_TRACK( post_reg_write, Vg_CoreSysCall, tid, 
+                   OFFSET_amd64_RAX, sizeof(ULong) );
+         break;
+      case SysRes_UNIX_OK:  // syscall = Unix, 128-bit result
+      case SysRes_UNIX_ERR: // syscall = Unix, 128-bit error
+         gst->guest_RAX = sres._wLO;
+         VG_TRACK( post_reg_write, Vg_CoreSysCall, tid, 
+                   OFFSET_amd64_RAX, sizeof(ULong) );
+         gst->guest_RDX = sres._wHI;
+         VG_TRACK( post_reg_write, Vg_CoreSysCall, tid, 
+                   OFFSET_amd64_RDX, sizeof(ULong) );
+         LibVEX_GuestAMD64_put_rflag_c( sres._mode==SysRes_UNIX_ERR ? 1 : 0,
+                                        gst );
+         // fixme sets defined for entire rflags, not just bit c
+         // DDD: this breaks exp-ptrcheck.
+         VG_TRACK( post_reg_write, Vg_CoreSysCall, tid, 
+                   offsetof(VexGuestAMD64State, guest_CC_DEP1), sizeof(ULong) );
+         break;
+      default: 
+         vg_assert(0);
+         break;
    }
    
 #  else

@@ -192,22 +192,37 @@ SysRes VG_(mk_SysRes_x86_darwin) ( UChar scclass, Bool isErr,
    return res;
 }
 
-static SysRes mk_SysRes_amd64_darwin ( UWord val, UWord val2, UWord errflag ) {
-   I_die_here;
-   /*
+SysRes VG_(mk_SysRes_amd64_darwin) ( UChar scclass, Bool isErr,
+                                     ULong wHI, ULong wLO )
+{
    SysRes res;
-   res.isError = errflag != 0;
-   if (res.isError) {
-      res.err = val;
-      res.res = 0;
-      res.res2 = 0;
-   } else {
-      res.err = 0;
-      res.res = val;
-      res.res2 = val2;
+   res._wHI  = 0;
+   res._wLO  = 0;
+   res._mode = 0; /* invalid */
+   vg_assert(isErr == False || isErr == True);
+   vg_assert(sizeof(UWord) == sizeof(ULong));
+   switch (scclass) {
+      case VG_DARWIN_SYSCALL_CLASS_UNIX:
+         res._wLO  = wLO;
+         res._wHI  = wHI;
+         res._mode = isErr ? SysRes_UNIX_ERR : SysRes_UNIX_OK;
+         break;
+      case VG_DARWIN_SYSCALL_CLASS_MACH:
+         vg_assert(!isErr);
+         vg_assert(wHI == 0);
+         res._wLO  = wLO;
+         res._mode = SysRes_MACH;
+         break;
+      case VG_DARWIN_SYSCALL_CLASS_MDEP:
+         vg_assert(!isErr);
+         vg_assert(wHI == 0);
+         res._wLO  = wLO;
+         res._mode = SysRes_MDEP;
+         break;
+      default:
+         vg_assert(0);
    }
    return res;
-   */
 }
 
 /* Generic constructors.  We assume (without checking if this makes
@@ -559,6 +574,8 @@ static void do_syscall_WRK ( UWord* res_r3, UWord* res_r4,
    Error:
    * MACH,MDEP: no error is returned
    * UNIX: the carry flag indicates success or failure
+
+   nb here, sizeof(UWord) == sizeof(UInt)
 */
 
 __private_extern__ ULong 
@@ -616,13 +633,15 @@ asm(
    The kernel's syscall calling convention is:
    * the syscall number goes in rax
    * the args are passed to the syscall in registers and the stack
-   * the call instruction is `syscall`
+   * the call instruction is 'syscall'
    Return value:
    * MACH,MDEP: the return value comes back in rax
-   * UNIX: the return value comes back in rdx:rax
+   * UNIX: the return value comes back in rdx:rax (hi64:lo64)
    Error:
    * MACH,MDEP: no error is returned
    * UNIX: the carry flag indicates success or failure
+
+   nb here, sizeof(UWord) == sizeof(ULong)
 */
 
 __private_extern__ UWord 
@@ -630,8 +649,8 @@ do_syscall_unix_WRK ( UWord a1, UWord a2, UWord a3, /* rdi, rsi, rdx */
                       UWord a4, UWord a5, UWord a6, /* rcx, r8,  r9 */
                       UWord a7, UWord a8,           /* 8(rsp), 16(rsp) */
                       UWord syscall_no,             /* 24(rsp) */
-                      /*OUT*/UWord *errflag,        /* 32(rsp) */
-                      /*OUT*/UWord *res2 );         /* 40(rsp) */
+                      /*OUT*/ULong* errflag,        /* 32(rsp) */
+                      /*OUT*/ULong* res2 );         /* 40(rsp) */
 // Unix syscall: 128-bit return in rax:rdx, with LSB in rax
 // error indicated by carry flag: clear=good, set=bad
 asm(".private_extern _do_syscall_unix_WRK\n"
@@ -767,18 +786,16 @@ SysRes VG_(do_syscall) ( UWord sysno, UWord a1, UWord a2, UWord a3,
    return VG_(mk_SysRes_x86_darwin)( scclass, err ? True : False, wHI, wLO );
 
 #  elif defined(VGP_amd64_darwin)
-   UWord err = 0;
-   UWord val = 0, val2 = 0;
+   ULong wLO = 0, wHI = 0, err = 0;
    UChar scclass = VG_DARWIN_SYSNO_CLASS(sysno);
-   switch (VG_DARWIN_SYSNO_CLASS(sysno)) {
+   switch (scclass) {
       case VG_DARWIN_SYSCALL_CLASS_UNIX:
-      case VG_DARWIN_SYSCALL_CLASS_UX64:
-         val = do_syscall_unix_WRK(a1,a2,a3,a4,a5,a6,a7,a8,
-                                   VG_DARWIN_SYSNO_NUM(sysno), &err, &val2);
+         wLO = do_syscall_unix_WRK(a1,a2,a3,a4,a5,a6,a7,a8,
+                                   VG_DARWIN_SYSNO_NUM(sysno), &err, &wHI);
          break;
       case VG_DARWIN_SYSCALL_CLASS_MACH:
       case VG_DARWIN_SYSCALL_CLASS_MDEP:
-         val = do_syscall_mach_WRK(a1,a2,a3,a4,a5,a6,a7,a8, 
+         wLO = do_syscall_mach_WRK(a1,a2,a3,a4,a5,a6,a7,a8, 
                                    VG_DARWIN_SYSNO_NUM(sysno));
          err = 0;
          break;
@@ -786,8 +803,8 @@ SysRes VG_(do_syscall) ( UWord sysno, UWord a1, UWord a2, UWord a3,
          vg_assert(0);
          break;
    }
-   return mk_SysRes_amd64_darwin( val, val2, err );
-   
+   return VG_(mk_SysRes_amd64_darwin)( scclass, err ? True : False, wHI, wLO );
+  
 #else
 #  error Unknown platform
 #endif

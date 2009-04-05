@@ -6854,7 +6854,14 @@ PRE(pthread_set_self)
       ThreadState *tst = VG_(get_ThreadState)(tid);
       tst->os_state.pthread = ARG1;
       tst->arch.vex.guest_GS_0x60 = ARG1;
-      SET_STATUS_Success(0x60);
+      // SET_STATUS_Success(0x60);
+      // see comments on x86 case just above
+      SET_STATUS_from_SysRes(
+         VG_(mk_SysRes_amd64_darwin)(
+            VG_DARWIN_SYSNO_CLASS(__NR_pthread_set_self),
+            False, 0, 0x60
+         )
+      );
    }
 
 #else
