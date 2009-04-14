@@ -581,6 +581,13 @@ Bool ML_(read_macho_debug_info)( struct _DebugInfo* di )
                   di->text_avma = di->rx_map_avma;
                   di->text_size = seg->vmsize;
                   di->text_bias = di->text_avma - (Addr)seg->vmaddr;
+                  /* Make the _debug_ values be the same as the
+                     svma/bias for the primary object, since there is
+                     no secondary (debuginfo) object, but nevertheless
+                     downstream biasing of Dwarf3 relies on the
+                     _debug_ values. */
+                  di->text_debug_svma = di->text_svma;
+                  di->text_debug_bias = di->text_bias;
                }
             }
             else if (cmd->cmd == LC_UUID) {
