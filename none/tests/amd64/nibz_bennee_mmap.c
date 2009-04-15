@@ -27,7 +27,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
-#include "vgtest_sys_mman.h"
+#include "tests/sys_mman.h"
 
 int main(int argc, char **argv)
 {
