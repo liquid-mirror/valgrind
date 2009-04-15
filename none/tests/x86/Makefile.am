@@ -26,8 +26,7 @@ EXTRA_DIST = $(noinst_SCRIPTS) \
 	bug132813-x86.stderr.exp bug132813-x86.stdout.exp bug132813-x86.vgtest \
 	bug135421-x86.stderr.exp bug135421-x86.stdout.exp bug135421-x86.vgtest \
 	bug137714-x86.stderr.exp bug137714-x86.stdout.exp bug137714-x86.vgtest \
-	bug152818-x86.vgtest bug152818-x86.stdout.exp \
-	bug152818-x86.stderr.exp \
+	bug152818-x86.stderr.exp bug152818-x86.stdout.exp bug152818-x86.vgtest \
 	cmpxchg8b.stderr.exp cmpxchg8b.stdout.exp cmpxchg8b.vgtest \
 	cpuid.stderr.exp cpuid.stdout.exp cpuid.vgtest \
 	cse_fail.stderr.exp cse_fail.stdout.exp cse_fail.vgtest \
@@ -62,9 +61,11 @@ check_PROGRAMS = \
 	bt_everything \
 	bt_literal \
 	bug126147-x86 \
+	bug125959-x86 \
 	bug132813-x86 \
 	bug135421-x86 \
 	bug137714-x86 \
+	bug152818-x86 \
 	cmpxchg8b \
 	cse_fail \
 	fcmovnu \
@@ -90,8 +91,6 @@ endif
 # be moved into x86-linux/.
 if ! VGCONF_OS_IS_DARWIN
    check_PROGRAMS += \
-	bug125959-x86 \
-	bug152818-x86 \
 	cpuid \
 	faultstatus \
 	seg_override \
@@ -102,10 +101,17 @@ AM_CFLAGS   += @FLAG_M32@ $(FLAG_MMMX) $(FLAG_MSSE)
 AM_CXXFLAGS += @FLAG_M32@ $(FLAG_MMMX) $(FLAG_MSSE)
 AM_CCASFLAGS = @FLAG_M32@
 
+# Some of the tests (bug125959_x86, bug152818_x86, insn_*) need
+# -mdynamic-no-pic.  I tried setting *_CFLAGS separately for all of them,
+# but it caused problems with the generation of insn_*.c.  So just use this
+# crude approach of setting -mdynamic-no-pic for all tests in this
+# directory.
+if VGCONF_OS_IS_DARWIN
+AM_CFLAGS += -mdynamic-no-pic
+endif
 
-# generic C ones
 cpuid_SOURCES 		= cpuid_c.c cpuid_s.s
-# fpu_lazy_eflags must use these flags -- the bug only occurred with them
+# fpu_lazy_eflags must use these flags -- the bug only occurred with them.
 fpu_lazy_eflags_CFLAGS	= @FLAG_M32@ -O2 -march=pentiumpro
 fxtract_LDADD		= -lm
 insn_basic_SOURCES	= insn_basic.def
@@ -124,6 +130,8 @@ insn_sse2_SOURCES	= insn_sse2.def
 insn_sse2_LDADD		= -lm
 insn_sse3_SOURCES	= insn_sse3.def
 insn_sse3_LDADD		= -lm
+insn_ssse3_SOURCES	= insn_ssse3.def
+insn_ssse3_LDADD	= -lm
 yield_LDADD		= -lpthread
 
 .def.c: $(srcdir)/gen_insn_test.pl

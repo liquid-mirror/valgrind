@@ -11,12 +11,11 @@ AM_CFLAGS_BASE = -O2 -g -Wmissing-prototypes -Wall -Wshadow \
 # stack traces, since users often see stack traces extending 
 # into (and through) the preloads.
 if VGCONF_OS_IS_DARWIN
-AM_PIC_FLAG = -dynamic
+AM_CFLAGS_PIC = -dynamic -O -g -fno-omit-frame-pointer -fno-strict-aliasing -mno-dynamic-no-pic
 else
-AM_PIC_FLAG = -fpic
+AM_CFLAGS_PIC = -fpic -O -g -fno-omit-frame-pointer -fno-strict-aliasing
 endif
 
-AM_CFLAGS_PIC = $(AM_PIC_FLAG) -O -g -fno-omit-frame-pointer -fno-strict-aliasing
 
 # Flags for specific targets.
 # Nb: the AM_CPPFLAGS_* values are suitable for building tools and auxprogs.
@@ -81,7 +80,8 @@ AM_CPPFLAGS_X86_DARWIN	  = $(AM_CPPFLAGS_COMMON) \
 			    -DVGO_darwin=1 \
 			    -DVGP_x86_darwin=1
 AM_CFLAGS_X86_DARWIN     = $(WERROR) -arch i386 $(AM_CFLAGS_BASE) \
-			    -mmacosx-version-min=10.5 -fno-stack-protector
+			    -mmacosx-version-min=10.5 -fno-stack-protector \
+			    -mdynamic-no-pic
 # GrP fixme -O0 for debugging goes here; -O3 crashes
 # [Nb: that comment was from when we had -gstabs here instead of -g]
 AM_CCASFLAGS_X86_DARWIN  = $(add_includes_x86_darwin) -arch i386 -g -O0

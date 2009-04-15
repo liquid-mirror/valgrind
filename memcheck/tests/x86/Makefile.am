@@ -32,6 +32,7 @@ check_PROGRAMS = \
 	fprem \
 	fxsave \
 	pushfw_x86 \
+	pushpopmem \
 	sse_memory \
 	xor-undef-x86
 
@@ -42,7 +43,6 @@ if ! VGCONF_OS_IS_DARWIN
 	int3-x86 \
 	more_x86_fp \
 	pushfpopf \
-	pushpopmem \
 	tronical
 endif
 
@@ -50,9 +50,11 @@ AM_CFLAGS   += @FLAG_M32@ $(FLAG_MMMX) $(FLAG_MSSE)
 AM_CXXFLAGS += @FLAG_M32@ $(FLAG_MMMX) $(FLAG_MSSE)
 AM_CCASFLAGS = @FLAG_M32@
 
-# must be built with these flags -- bug only occurred with them
+
+# fpeflags must use these flags -- bug only occurred with them.
 fpeflags_CFLAGS		= $(AM_CFLAGS) -march=i686
 pushfpopf_SOURCES 	= pushfpopf_c.c pushfpopf_s.s
+pushpopmem_CFLAGS 	= $(AM_CFLAGS) -mdynamic-no-pic
 tronical_SOURCES 	= tronical.S
 
 more_x86_fp_LDADD	= -lm
