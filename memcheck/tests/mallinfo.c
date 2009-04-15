@@ -1,8 +1,4 @@
-#if defined(__APPLE__)
-#include <malloc/malloc.h>
-#else
-#include <malloc.h>
-#endif
+#include "tests/malloc.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h> // getopt()

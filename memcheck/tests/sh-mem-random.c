@@ -5,7 +5,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
-#include <sys/mman.h>
+#include "tests/sys_mman.h"
 #include "memcheck/memcheck.h"
 
 // All the sizes here are in *bytes*, not bits.
@@ -21,10 +21,6 @@ typedef double               F8;
 typedef unsigned long        UWord;
 
 #define PAGE_SIZE 4096ULL
-
-#if !defined(MAP_ANONYMOUS)
-#define MAP_ANONYMOUS 0
-#endif
 
 
 // XXX: should check the error cases for SET/GET_VBITS also

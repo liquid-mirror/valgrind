@@ -31,7 +31,7 @@
 
 #include <stdio.h>
 #include <assert.h>
-#include <sys/mman.h>
+#include "tests/sys_mman.h"
 
 typedef unsigned long long int Addr;
 typedef unsigned char UChar;
@@ -101,7 +101,7 @@ int main ( void )
 {
    int i;
    code = mmap(NULL, 20, PROT_READ|PROT_WRITE|PROT_EXEC,
-               MAP_PRIVATE|MAP_ANON, -1, 0);
+               MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
    assert(code != MAP_FAILED);
    for (i = 0; i < 10; i += 2) {
       set_dest ( (Addr)&p );

@@ -1,4 +1,4 @@
-#include <sys/mman.h>
+#include "tests/sys_mman.h"
 #include <unistd.h>
 #include "arith_include1.c"
 
@@ -10,10 +10,6 @@ void mywrite(char* buf, int len)
 {
    write(-1, buf, len);
 }
-
-#if defined(__APPLE__)
-#  define MAP_ANONYMOUS MAP_ANON
-#endif
 
 int main(void)
 {

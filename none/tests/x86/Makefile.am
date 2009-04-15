@@ -58,16 +58,30 @@ EXTRA_DIST = $(noinst_SCRIPTS) \
 	yield.stderr.exp yield.stdout.exp yield.disabled
 
 check_PROGRAMS = \
-	badseg bt_everything bt_literal \
+	badseg \
+	bt_everything \
+	bt_literal \
+	bug126147-x86 \
 	bug132813-x86 \
 	bug135421-x86 \
 	bug137714-x86 \
+	cmpxchg8b \
 	cse_fail \
+	fcmovnu \
 	fpu_lazy_eflags \
+	fxtract \
 	getseg \
+	incdec_alt \
 	$(INSN_TESTS) \
-	movx int pushpopseg \
-	smc1 yield
+	jcxz \
+	lahf \
+	looper \
+	movx \
+	int \
+	pushpopseg \
+	sbbmisc \
+	smc1 \
+	yield
 if BUILD_SSSE3_TESTS
    check_PROGRAMS += ssse3_misaligned
 endif
@@ -77,18 +91,9 @@ endif
 if ! VGCONF_OS_IS_DARWIN
    check_PROGRAMS += \
 	bug125959-x86 \
-	bug126147-x86 \
 	bug152818-x86 \
-	cmpxchg8b \
 	cpuid \
 	faultstatus \
-	fcmovnu \
-	fxtract \
-	incdec_alt \
-	jcxz \
-	lahf \
-	looper \
-	sbbmisc \
 	seg_override \
 	sigcontext
 endif

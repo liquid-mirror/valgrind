@@ -1,8 +1,5 @@
 
-
-#if !defined(__APPLE__)
-#include <malloc.h>
-#endif
+#include "tests/malloc.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -11,14 +8,7 @@
 
 void maybe_fault ( int delta )
 {
-   // Darwin lacks memalign, but malloc is always 16-aligned anyway.
-   #if defined(__APPLE__)
-   char* x = malloc(32/*size*/);
-   #else
-   char* x = memalign(16/*alignment*/,32/*size*/);
-   #endif
-   assert(x);
-   assert(0 == ((16-1) & (unsigned long)x));
+   char* x = memalign16(32);
    memset(x, 0, 32);
    __asm__ __volatile__(
       "pabsb (%0),%%xmm7"

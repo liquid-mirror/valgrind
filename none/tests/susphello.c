@@ -7,6 +7,7 @@
  * Author Magnus Ihse, ihse at bea.com 
  */
 
+// DDD: add a comment explaining why it's not tested on Darwin.
 #if !defined(__APPLE__)
 
 #include <signal.h>

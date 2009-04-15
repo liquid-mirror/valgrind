@@ -29,19 +29,20 @@ check_PROGRAMS = \
 	bug152022 \
 	espindola2 \
 	fpeflags \
+	fprem \
+	fxsave \
 	pushfw_x86 \
-	fprem xor-undef-x86
+	xor-undef-x86 \
+	sse_memory
 
 # DDD: not sure if these ones should work on Darwin or not... if not, should
 # be moved into x86-linux/.
 if ! VGCONF_OS_IS_DARWIN
    check_PROGRAMS += \
-	fxsave \
 	int3-x86 \
 	more_x86_fp \
 	pushfpopf \
 	pushpopmem \
-	sse_memory \
 	tronical
 endif
 

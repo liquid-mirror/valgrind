@@ -1,15 +1,11 @@
 #include <assert.h>
-#if defined(__APPLE__)
-#include <malloc/malloc.h>
-#else
-#include <malloc.h>
-#endif
+#include "tests/malloc.h"
 #include <stdlib.h>
 #include <stdio.h>
 
 int main(void)
 {
-#  if !defined(_AIX) && !defined(__APPLE__)
+#  if !defined(VGO_aix5) && !defined(VGO_darwin)
    // Because Memcheck marks any slop as inaccessible, it doesn't round up
    // sizes for malloc_usable_size().
    int* x = malloc(99);

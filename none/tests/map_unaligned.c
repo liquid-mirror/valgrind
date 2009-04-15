@@ -1,10 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include <sys/mman.h>
-
-#if defined(__APPLE__)
-#  define MAP_ANONYMOUS MAP_ANON
-#endif
+#include "tests/sys_mman.h"
 
 int main(int argc, char **argv)
 {

@@ -14,23 +14,20 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <assert.h>
-#if defined(__APPLE__)
-#include <malloc/malloc.h>
-#else
-#include <malloc.h>
-#endif
+#include "tests/malloc.h"
 #include <errno.h>
 
 int main ( void )
 {
-#  if defined(_AIX)
+#  if defined(VGO_aix5)
    // AIX 5.2 has neither memalign() nor posix_memalign();  do nothing.
 
-#  elif defined(__APPLE__)
+#  elif defined(VGO_darwin)
    // Likewise for Mac OS X.
 
 #  else
    // Nb: assuming VG_MIN_MALLOC_SZB is 8!
+   // DDD: (this is no longer true)
    // Should work with both 32-bit and 64-bit pointers, though.
 
    int* p;

@@ -27,11 +27,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
-#include <sys/mman.h>
-
-#if !defined(MAP_ANONYMOUS)
-#define MAP_ANONYMOUS 0
-#endif
+#include "vgtest_sys_mman.h"
 
 int main(int argc, char **argv)
 {

@@ -264,6 +264,7 @@ test_stpcpy (void)
   SIMPLE_COPY(stpcpy, 16, "6666666666666666", 59);
 }
 
+// DDD: better done by testing for the function.
 #if !defined(__APPLE__)
 static void
 test_stpncpy (void)
@@ -465,6 +466,7 @@ test_strchr (void)
    }
 }
 
+// DDD: better done by testing for the function.
 #if !defined(_AIX) && !defined(__APPLE__)
 static void
 test_strchrnul (void)
@@ -501,6 +503,7 @@ test_strchrnul (void)
 }
 #endif /* !defined(_AIX) */
 
+// DDD: better done by testing for the function.
 #if !defined(_AIX) && !defined(__APPLE__)
 static void
 test_rawmemchr (void)
@@ -576,6 +579,7 @@ test_strrchr (void)
    }
 }
 
+// DDD: better done by testing for the function.
 #if !defined(_AIX) && !defined(__APPLE__)
 static void
 test_memrchr (void)

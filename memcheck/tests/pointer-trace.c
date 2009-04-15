@@ -2,15 +2,14 @@
    Make sure that leak-check's pointer tracing avoids traps, i.e. tricky
    memory areas where it could crash if not careful.
  */
+
 #include <stdio.h>
 #include "memcheck/memcheck.h"
-#include <sys/mman.h>
+#include "tests/sys_mman.h"
 #include <stdlib.h>
 #include <fcntl.h>
 #include <unistd.h>
-#if defined(__APPLE__)
-#  define MAP_ANONYMOUS MAP_ANON
-#endif
+
 #if !defined(MAP_NORESERVE)
 #  define MAP_NORESERVE 0
 #endif
@@ -21,6 +20,7 @@ int main()
 	int i;
 	int fd;
 	char *map;
+
 	/* I _think_ the point of this is to fill ptrs with a pointer
 	   to every 4th page in the entire address space, hence
 	   guaranteeing that at least one of them points into one of
