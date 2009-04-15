@@ -35,7 +35,6 @@ EXTRA_DIST = $(noinst_SCRIPTS) \
 	args.stderr.exp args.stdout.exp args.vgtest \
 	async-sigs.stderr.exp async-sigs.stdout.exp async-sigs.vgtest \
 	bitfield1.stderr.exp bitfield1.vgtest \
-	blockfault.vgtest blockfault.stderr.exp blockfault.stdout.exp \
 	bug129866.vgtest bug129866.stderr.exp bug129866.stdout.exp \
 	closeall.stderr.exp closeall.vgtest \
 	cmdline0.stderr.exp cmdline0.stdout.exp cmdline0.vgtest \
@@ -159,7 +158,6 @@ if ! VGCONF_OS_IS_DARWIN
 	fdleak_ipv4
 endif
 # DDD:
-# - blockfault hangs
 # - manythreads and thread-exits have lots of this:
 # --61831:0:aspacem  sync_check_mapping_callback: segment mismatch:
 #                    kernel's seg:
@@ -171,7 +169,6 @@ endif
 #                    hasW=0, hasX=0, hasT=0, mark=0, name="(none)"}
 if ! VGCONF_PLATFORMS_INCLUDE_AMD64_DARWIN
    check_PROGRAMS += \
-	blockfault \
 	manythreads \
 	thread-exits
 endif

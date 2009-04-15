@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <signal.h>
+#include "tests/sys_mman.h"
 
 static void handler(int sig, siginfo_t *info, void *v)
 {
@@ -13,8 +14,10 @@ static void handler(int sig, siginfo_t *info, void *v)
    the default handler */
 int main()
 {
-#if defined(_AIX)
-  printf("this test hangs when run (even natively) on AIX\n");
+	int* unmapped_page = get_unmapped_page();
+
+#if defined(VGO_aix5) || defined(VGO_darwin)
+  printf("this test hangs when run (even natively) on AIX or Darwin\n");
   return 0;
 #endif
 	struct sigaction sa;
@@ -29,7 +32,7 @@ int main()
 	sigfillset(&mask);
 	sigprocmask(SIG_BLOCK, &mask, NULL);
 
-	*(volatile int *)12345 = 213;
+	*(volatile int *)unmapped_page = 213;
 
 	return 0;
 }
