@@ -72,12 +72,12 @@ check_PROGRAMS = \
 	fxtract \
 	getseg \
 	incdec_alt \
+	int \
 	$(INSN_TESTS) \
 	jcxz \
 	lahf \
 	looper \
 	movx \
-	int \
 	pushpopseg \
 	sbbmisc \
 	smc1 \
