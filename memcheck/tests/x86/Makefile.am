@@ -54,7 +54,11 @@ AM_CCASFLAGS = @FLAG_M32@
 # fpeflags must use these flags -- bug only occurred with them.
 fpeflags_CFLAGS		= $(AM_CFLAGS) -march=i686
 pushfpopf_SOURCES 	= pushfpopf_c.c pushfpopf_s.s
+if VGCONF_OS_IS_DARWIN
 pushpopmem_CFLAGS 	= $(AM_CFLAGS) -mdynamic-no-pic
+else
+pushpopmem_CFLAGS 	= $(AM_CFLAGS)
+endif
 tronical_SOURCES 	= tronical.S
 
 more_x86_fp_LDADD	= -lm

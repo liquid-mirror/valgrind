@@ -15,11 +15,6 @@ static void handler(int sig, siginfo_t *info, void *v)
 int main()
 {
 	int* unmapped_page = get_unmapped_page();
-
-#if defined(VGO_aix5) || defined(VGO_darwin)
-  printf("this test hangs when run (even natively) on AIX or Darwin\n");
-  return 0;
-#endif
 	struct sigaction sa;
 	sigset_t mask;
 
