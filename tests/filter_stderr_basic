@@ -49,6 +49,9 @@ perl -n -e 'print if !/^(Segmentation fault|Alarm clock|Aborted|Bus error)( \(co
 # limit set that prevents the core dump
 sed "s/\(signal [0-9]* (SIG[A-Z]*)\): dumping core/\1/" |
 
+# Remove the size in "The main thread stack size..." message.
+sed "s/The main thread stack size used in this run was [0-9]*/The main thread stack size used in this run was .../" |
+
 # DDD
 # Remove Darwin messages relating to the debugger.
 perl -n -e 'print if !/^Listening for debugger on port [0-9]+$/'
