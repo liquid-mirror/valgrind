@@ -32,8 +32,8 @@ check_PROGRAMS = \
 	fprem \
 	fxsave \
 	pushfw_x86 \
-	xor-undef-x86 \
-	sse_memory
+	sse_memory \
+	xor-undef-x86
 
 # DDD: not sure if these ones should work on Darwin or not... if not, should
 # be moved into x86-linux/.
