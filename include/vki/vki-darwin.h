@@ -290,6 +290,7 @@ typedef uint32_t vki_u32;
 #define VKI_F_NOCACHE	F_NOCACHE
 #define VKI_F_LOG2PHYS	F_LOG2PHYS
 #define VKI_F_GETPATH	F_GETPATH
+#define VKI_F_ADDSIGS	F_ADDSIGS
 #define VKI_F_FULLFSYNC	F_FULLFSYNC
 #define VKI_F_PATHPKG_CHECK	F_PATHPKG_CHECK
 #define VKI_F_FREEZE_FS	F_FREEZE_FS
@@ -302,7 +303,17 @@ typedef uint32_t vki_u32;
 #define vki_fstore fstore
 #define vki_fbootstraptransfer fbootstraptransfer
 #define vki_log2phys log2phys
+#define vki_fsignatures_t fsignatures_t
 
+// These constants aren't in a standard header, they are from the kernel code:
+// xnu-1228.3.13/bsd/sys/codesign.h
+// Mac OS X 10.5.6 - Darwin 9.6
+#define VKI_CS_OPS_STATUS           0       /* return status */
+#define VKI_CS_OPS_MARKINVALID      1       /* invalidate process */
+#define VKI_CS_OPS_MARKHARD         2       /* set HARD flag */
+#define VKI_CS_OPS_MARKKILL         3       /* set KILL flag (sticky) */
+#define VKI_CS_OPS_PIDPATH          4       /* get executable's pathname */
+#define VKI_CS_OPS_CDHASH           5       /* get code directory hash */
 
 #include <sys/mman.h>
 

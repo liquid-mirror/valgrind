@@ -961,6 +961,7 @@ static const char *name_for_fcntl(UWord cmd) {
       F(F_LOG2PHYS);
       F(F_GETPATH);
       F(F_PATHPKG_CHECK);
+      F(F_ADDSIGS);   
    default:
       return "UNKNOWN";
    }
@@ -1096,6 +1097,25 @@ PRE(sys_fcntl)
                     unsigned int, fd, unsigned int, cmd,
                     char *, pathbuf);
       PRE_MEM_RASCIIZ( "fcntl(F_PATHPKG_CHECK, pathbuf)", ARG3);
+      break;
+
+   case VKI_F_ADDSIGS: /* Add detached signatures (for code signing) */
+      PRINT("sys_fcntl ( %ld, %s )", ARG1, name_for_fcntl(ARG2));
+      PRE_REG_READ3(long, "fcntl",
+                    unsigned int, fd, unsigned int, cmd,
+                    vki_fsignatures_t *, sigs);
+
+      {
+         vki_fsignatures_t *fsigs = (vki_fsignatures_t*)ARG3;
+         PRE_FIELD_READ( "fcntl(F_ADDSIGS, fsigs->fs_blob_start)",
+                         fsigs->fs_blob_start);
+         PRE_FIELD_READ( "fcntl(F_ADDSIGS, fsigs->fs_blob_size)",
+                         fsigs->fs_blob_size);
+
+         if (fsigs->fs_blob_start)
+            PRE_MEM_READ( "fcntl(F_ADDSIGS, fsigs->fs_blob_start)",
+                          (Addr)fsigs->fs_blob_start, fsigs->fs_blob_size);
+      }
       break;
 
    default:
@@ -2912,6 +2932,31 @@ POST(sys_fstatfs64)
    POST_MEM_WRITE( ARG2, sizeof(struct vki_statfs64) );
 }
 
+PRE(sys_csops)
+{
+   PRINT("sys_csops ( %ld, %#lx, %#lx, %lu )", ARG1, ARG2, ARG3, ARG4);
+   PRE_REG_READ4(int, "csops",
+                 vki_pid_t, pid, uint32_t, ops,
+                 void *, useraddr, vki_size_t, usersize);
+
+   PRE_MEM_WRITE( "csops(addr)", ARG3, ARG4 );
+
+   // If the pid is ours, don't mark the program as KILL or HARD
+   // Maybe we should keep track of this for later calls to STATUS
+   if (!ARG1 || VG_(getpid)() == ARG1) {
+      switch (ARG2) {
+      case VKI_CS_OPS_MARKINVALID:
+      case VKI_CS_OPS_MARKHARD:
+      case VKI_CS_OPS_MARKKILL:
+         SET_STATUS_Success(0);
+      }
+   }
+}
+
+POST(sys_csops)
+{
+   POST_MEM_WRITE( ARG3, ARG4 );
+}
 
 PRE(sys_auditon)
 {
@@ -7060,7 +7105,7 @@ const SyscallTableEntry ML_(syscall_table)[] = {
    _____(VG_DARWIN_SYSCALL_CONSTRUCT_UNIX(166)),   // old exportfs
 // _____(__NR_mount), 
    _____(VG_DARWIN_SYSCALL_CONSTRUCT_UNIX(168)),   // old ustat
-// _____(__NR_csops), 
+   MACXY(__NR_csops, sys_csops),                   // code-signing ops
    _____(VG_DARWIN_SYSCALL_CONSTRUCT_UNIX(170)),   // old table
    _____(VG_DARWIN_SYSCALL_CONSTRUCT_UNIX(171)),   // old wait3
    _____(VG_DARWIN_SYSCALL_CONSTRUCT_UNIX(172)),   // old rpause

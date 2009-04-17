@@ -120,6 +120,7 @@ DECL_TEMPLATE(darwin, sys_getdirentries);
 DECL_TEMPLATE(darwin, sys_getdirentries64);
 DECL_TEMPLATE(darwin, sys_statfs64);
 DECL_TEMPLATE(darwin, sys_fstatfs64);
+DECL_TEMPLATE(darwin, sys_csops);
 DECL_TEMPLATE(darwin, sys_auditon);
 DECL_TEMPLATE(darwin, sys_pathconf);
 DECL_TEMPLATE(darwin, sys_fpathconf);
