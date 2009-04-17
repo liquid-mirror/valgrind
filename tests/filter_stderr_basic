@@ -2,6 +2,10 @@
 
 # This filter should be applied to *every* stderr result.  It removes
 # Valgrind startup stuff and pid numbers.
+#
+# Nb: The GNU and BSD implementations of 'sed' are quite different, so
+# anything remotely complicated (e.g. "\(a\|b\)" alternatives) can't be
+# easily done.  Use Perl instead for any such cases.
 
 dir=`dirname $0`
 
@@ -41,8 +45,6 @@ sed "/warning: line info addresses out of order/d" |
 # of the bash process. Newer bash versions redirect such messages properly.
 # Suppress any redirected abnormal termination messages. You can find the
 # complete list of messages in the bash source file siglist.c.
-# DDD: this used "sed -r", but that isn't supported on Darwin, and getting
-# the GNU and BSD versions of sed to work similarly is awful.
 perl -n -e 'print if !/^(Segmentation fault|Alarm clock|Aborted|Bus error)( \(core dumped\))?$/' |
 
 # Remove any ": dumping core" message as the user might have a
@@ -50,8 +52,5 @@ perl -n -e 'print if !/^(Segmentation fault|Alarm clock|Aborted|Bus error)( \(co
 sed "s/\(signal [0-9]* (SIG[A-Z]*)\): dumping core/\1/" |
 
 # Remove the size in "The main thread stack size..." message.
-sed "s/The main thread stack size used in this run was [0-9]*/The main thread stack size used in this run was .../" |
+sed "s/The main thread stack size used in this run was [0-9]*/The main thread stack size used in this run was .../"
 
-# DDD
-# Remove Darwin messages relating to the debugger.
-perl -n -e 'print if !/^Listening for debugger on port [0-9]+$/'
