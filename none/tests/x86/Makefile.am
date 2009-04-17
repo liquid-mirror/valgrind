@@ -66,6 +66,7 @@ check_PROGRAMS = \
 	bug152818-x86 \
 	cmpxchg8b \
 	cse_fail \
+	faultstatus \
 	fcmovnu \
 	fpu_lazy_eflags \
 	fxtract \
@@ -89,8 +90,7 @@ endif
 # be moved into x86-linux/.
 if ! VGCONF_OS_IS_DARWIN
    check_PROGRAMS += \
-	cpuid \
-	faultstatus
+	cpuid
 endif
 
 AM_CFLAGS   += @FLAG_M32@ $(FLAG_MMMX) $(FLAG_MSSE)
