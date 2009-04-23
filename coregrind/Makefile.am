@@ -237,6 +237,7 @@ noinst_HEADERS = \
 	m_debuginfo/priv_storage.h	\
 	m_debuginfo/priv_tytypes.h      \
 	m_debuginfo/priv_readstabs.h	\
+	m_debuginfo/priv_readpdb.h	\
 	m_debuginfo/priv_d3basics.h	\
 	m_debuginfo/priv_readdwarf.h	\
 	m_debuginfo/priv_readdwarf3.h	\
@@ -322,12 +323,13 @@ COREGRIND_SOURCES_COMMON = \
 	m_ume/script.c
 
 COREGRIND_LINUX_SOURCE = \
-	m_coredump/coredump-elf.c \
 	m_aspacemgr/aspacemgr-linux.c \
+	m_coredump/coredump-elf.c \
 	m_debuginfo/readelf.c \
 	m_debuginfo/readdwarf.c \
 	m_debuginfo/readdwarf3.c \
 	m_debuginfo/readstabs.c \
+	m_debuginfo/readpdb.c \
 	m_initimg/initimg-linux.c \
 	m_syswrap/syswrap-linux.c \
 	m_syswrap/syswrap-linux-variants.c \
@@ -362,6 +364,7 @@ COREGRIND_DARWIN_SOURCE = \
 	m_debuginfo/readdwarf3.c \
 	m_debuginfo/readstabs.c \
 	m_debuginfo/readmacho.c \
+	m_debuginfo/readpdb.c \
 	m_mach/mach_vmUser.c \
 	m_mach/taskUser.c \
     	m_mach/thread_actUser.c \
