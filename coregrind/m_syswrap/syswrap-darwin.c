@@ -7039,10 +7039,10 @@ const SyscallTableEntry ML_(syscall_table)[] = {
 // _____(__NR_setgroups),   // 80
    GENX_(__NR_getpgrp, sys_getpgrp), 
 // _____(__NR_setpgid), 
-   GENX_(__NR_setitimer, sys_setitimer), 
+   GENXY(__NR_setitimer, sys_setitimer), 
    _____(VG_DARWIN_SYSCALL_CONSTRUCT_UNIX(84)),    // old wait
 // _____(__NR_swapon), 
-   GENX_(__NR_getitimer, sys_getitimer), 
+   GENXY(__NR_getitimer, sys_getitimer), 
    _____(VG_DARWIN_SYSCALL_CONSTRUCT_UNIX(87)),    // old gethostname
    _____(VG_DARWIN_SYSCALL_CONSTRUCT_UNIX(88)),    // old sethostname
    MACXY(__NR_getdtablesize, sys_getdtablesize), 

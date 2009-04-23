@@ -2217,14 +2217,20 @@ PRE(sys_putpmsg)
 
 PRE(sys_getitimer)
 {
+   struct vki_itimerval *value = (struct vki_itimerval*)ARG2;
    PRINT("sys_getitimer ( %ld, %#lx )", ARG1, ARG2);
    PRE_REG_READ2(long, "getitimer", int, which, struct itimerval *, value);
-   PRE_MEM_WRITE( "getitimer(value)", ARG2, sizeof(struct vki_itimerval) );
+
+   PRE_timeval_WRITE( "getitimer(value.it_interval)", &(value->it_interval));
+   PRE_timeval_WRITE( "getitimer(value.it_value)", &(value->it_value));
 }
+
 POST(sys_getitimer)
 {
    if (ARG2 != (Addr)NULL) {
-      POST_MEM_WRITE(ARG2, sizeof(struct vki_itimerval));
+      struct vki_itimerval *value = (struct vki_itimerval*)ARG2;
+      POST_timeval_WRITE( &(value->it_interval) );
+      POST_timeval_WRITE( &(value->it_value) );
    }
 }
 
@@ -2234,16 +2240,28 @@ PRE(sys_setitimer)
    PRE_REG_READ3(long, "setitimer", 
                  int, which,
                  struct itimerval *, value, struct itimerval *, ovalue);
-   if (ARG2 != (Addr)NULL)
-      PRE_MEM_READ( "setitimer(value)", ARG2, sizeof(struct vki_itimerval) );
-   if (ARG3 != (Addr)NULL)
-      PRE_MEM_WRITE( "setitimer(ovalue)", ARG3, sizeof(struct vki_itimerval));
+   if (ARG2 != (Addr)NULL) {
+      struct vki_itimerval *value = (struct vki_itimerval*)ARG2;
+      PRE_timeval_READ( "getitimer(value->it_interval)",
+                         &(value->it_interval));
+      PRE_timeval_READ( "getitimer(value->it_value)",
+                         &(value->it_value));
+   }
+   if (ARG3 != (Addr)NULL) {
+      struct vki_itimerval *ovalue = (struct vki_itimerval*)ARG3;
+      PRE_timeval_WRITE( "getitimer(ovalue->it_interval)",
+                         &(ovalue->it_interval));
+      PRE_timeval_WRITE( "getitimer(ovalue->it_value)",
+                         &(ovalue->it_value));
+   }
 }
 
 POST(sys_setitimer)
 {
    if (ARG3 != (Addr)NULL) {
-      POST_MEM_WRITE(ARG3, sizeof(struct vki_itimerval));
+      struct vki_itimerval *ovalue = (struct vki_itimerval*)ARG3;
+      POST_timeval_WRITE( &(ovalue->it_interval) );
+      POST_timeval_WRITE( &(ovalue->it_value) );
    }
 }
 
