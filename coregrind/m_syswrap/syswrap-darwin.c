@@ -1348,6 +1348,26 @@ PRE(sys_sem_post)
    *flags |= SfMayBlock;
 }
 
+PRE(sys_sem_destroy)
+{
+  PRINT("sem_destroy( %#lx )", ARG1);
+  PRE_REG_READ1(int, "sem_destroy", vki_sem_t *, sem);
+  PRE_MEM_READ("sem_destroy(sem)", ARG1, sizeof(vki_sem_t));
+}
+
+PRE(sys_sem_init)
+{
+  PRINT("sem_init( %#lx, %ld, %ld )", ARG1, ARG2, ARG3);
+  PRE_REG_READ3(int, "sem_init", vki_sem_t *, sem,
+                int, pshared, unsigned int, value);
+  PRE_MEM_WRITE("sem_init(sem)", ARG1, sizeof(vki_sem_t));
+}
+
+POST(sys_sem_init)
+{
+  POST_MEM_WRITE(ARG1, sizeof(vki_sem_t));
+}
+
 PRE(sys_sem_wait_nocancel)
 {
    PRINT("sem_wait_nocancel( %#lx )", ARG1);
@@ -7212,8 +7232,8 @@ const SyscallTableEntry ML_(syscall_table)[] = {
 // _____(__NR_sem_post), 
    MACX_(__NR_sem_post, sys_sem_post), 
 // _____(__NR_sem_getvalue), 
-// _____(__NR_sem_init), 
-// _____(__NR_sem_destroy), 
+   MACXY(__NR_sem_init, sys_sem_init), 
+   MACX_(__NR_sem_destroy, sys_sem_destroy), 
 // _____(__NR_open_extended), 
 // _____(__NR_umask_extended), 
    MACXY(__NR_stat_extended, sys_statx), 

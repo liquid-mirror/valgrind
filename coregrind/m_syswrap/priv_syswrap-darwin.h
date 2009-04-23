@@ -58,6 +58,8 @@ DECL_TEMPLATE(darwin, sys_sem_open);
 DECL_TEMPLATE(darwin, sys_sem_close);
 DECL_TEMPLATE(darwin, sys_sem_unlink);
 DECL_TEMPLATE(darwin, sys_sem_post);
+DECL_TEMPLATE(darwin, sys_sem_init);
+DECL_TEMPLATE(darwin, sys_sem_destroy);
 DECL_TEMPLATE(darwin, sys_sem_wait_nocancel);
 DECL_TEMPLATE(darwin, sys_sem_trywait);
 DECL_TEMPLATE(darwin, sys_bsdthread_create);
