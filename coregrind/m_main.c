@@ -439,6 +439,9 @@ static Bool main_process_cmd_line_options( const HChar* toolname )
 
       else if VG_STR_CLO (arg, "--kernel-variant",   VG_(clo_kernel_variant)) {}
 
+      else if VG_BOOL_CLO(arg, "--auto-run-dsymutil",
+                               VG_(clo_auto_run_dsymutil)) {}
+
       else if VG_BINT_CLO(arg, "--vex-iropt-verbosity",
                        VG_(clo_vex_control).iropt_verbosity, 0, 10) {}
       else if VG_BINT_CLO(arg, "--vex-iropt-level",

@@ -42,6 +42,7 @@ default.supp: $(SUPP_FILES)
 noinst_PROGRAMS =
 pkglib_LIBRARIES =
 LIBVEX =
+DSYMUTIL_ME_TOO =
 
 if VGCONF_PLATFORMS_INCLUDE_X86_LINUX
 noinst_PROGRAMS  += vgpreload_core-x86-linux.so
@@ -83,12 +84,14 @@ if VGCONF_PLATFORMS_INCLUDE_X86_DARWIN
 noinst_PROGRAMS  += vgpreload_core-x86-darwin.so
 pkglib_LIBRARIES += libcoregrind-x86-darwin.a libreplacemalloc_toolpreload-x86-darwin.a
 LIBVEX           += libvex-x86-darwin.a
+DSYMUTIL_ME_TOO  += vgpreload_core-x86-darwin.so
 endif
 
 if VGCONF_PLATFORMS_INCLUDE_AMD64_DARWIN
 noinst_PROGRAMS  += vgpreload_core-amd64-darwin.so
 pkglib_LIBRARIES += libcoregrind-amd64-darwin.a libreplacemalloc_toolpreload-amd64-darwin.a
 LIBVEX           += libvex-amd64-darwin.a
+DSYMUTIL_ME_TOO  += vgpreload_core-amd64-darwin.so
 endif
 
 
@@ -367,8 +370,8 @@ COREGRIND_DARWIN_SOURCE = \
 	m_debuginfo/readpdb.c \
 	m_mach/mach_vmUser.c \
 	m_mach/taskUser.c \
-    	m_mach/thread_actUser.c \
-    	m_mach/vm_mapUser.c \
+	m_mach/thread_actUser.c \
+	m_mach/vm_mapUser.c \
 	m_mach/mach_basics.c \
 	m_mach/mach_msg.c \
 	m_initimg/initimg-darwin.c \
@@ -584,10 +587,15 @@ vgpreload_core_amd64_darwin_so_CFLAGS = $(AM_CFLAGS_AMD64_DARWIN) $(AM_CFLAGS_PI
 vgpreload_core_amd64_darwin_so_LDFLAGS = $(PRELOAD_LDFLAGS_AMD64_DARWIN)
 
 all-local: inplace-noinst_PROGRAMS
+	for f in $(DSYMUTIL_ME_TOO); do \
+	   echo "dsymutil $$f"; \
+	   dsymutil $$f; \
+	done
 
 clean-local:
 	$(MAKE) -C @VEX_DIR@ CC="$(CC)" AR="$(AR)" clean
 	rm -f $(mach_srcs) $(mach_server_srcs) $(mach_hdrs)
+	rm -rf vgpreload_core-*.dSYM
 
 # Nb: The loop installs the libvex library for possible use by standalone
 # tools.

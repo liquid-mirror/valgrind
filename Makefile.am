@@ -112,6 +112,8 @@ all-local: default.supp
 
 distclean-local:
 	rm -rf $(inplacedir)
+clean-local:
+	rm -rf .in_place/*.dSYM
 
 # These list the bits of vex we need to install
 

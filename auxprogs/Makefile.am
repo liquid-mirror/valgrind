@@ -124,8 +124,9 @@ endif
 ## cleanery
 clean-local:
 	rm -f libmpiwrap-.c \
-	libmpiwrap-@VGCONF_ARCH_PRI@-@VGCONF_OS@.c \
-	libmpiwrap-@VGCONF_ARCH_SEC@-@VGCONF_OS@.c
+		libmpiwrap-@VGCONF_ARCH_PRI@-@VGCONF_OS@.c \
+		libmpiwrap-@VGCONF_ARCH_SEC@-@VGCONF_OS@.c
+	rm -rf libmpiwrap-*.dSYM
 
 #
 #----------------------------------------------------------

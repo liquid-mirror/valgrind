@@ -77,13 +77,241 @@
 #endif
 
 
-Bool ML_(is_macho_object_file)( const void *buf, SizeT size )
+/*------------------------------------------------------------*/
+/*---                                                      ---*/
+/*--- Mach-O file mapping/unmapping helpers                ---*/
+/*---                                                      ---*/
+/*------------------------------------------------------------*/
+
+typedef
+   struct {
+      /* These two describe the entire mapped-in ("primary") image,
+         fat headers, kitchen sink, whatnot: the entire file.  The
+         image is mapped into img[0 .. img_szB-1]. */
+      UChar* img;
+      SizeT  img_szB;
+      /* These two describe the Mach-O object of interest, which is
+         presumably somewhere inside the primary image.
+         map_image_aboard() below, which generates this info, will
+         carefully check that the macho_ fields denote a section of
+         memory that falls entirely inside img[0 .. img_szB-1]. */
+      UChar* macho_img;
+      SizeT  macho_img_szB;
+   }
+   ImageInfo;
+
+
+Bool ML_(is_macho_object_file)( const void* buf, SizeT szB )
 {
    // GrP fixme Mach-O headers might not be in this mapped data
-   // Assume it's Mach-O and let ML_(read_macho_debug_info) sort it out.
-   return True;
+
+   /* (JRS: ... because we only mapped a page for this initial check,
+      or at least not very much, and what's at the start of the file
+      is in general a so-called fat header.  The Mach-O object we're
+      interested in could be arbitrarily far along the image, and so
+      we can't assume its header will fall within this page.) */
+
+   /* But we can say that either it's a fat object, in which case it
+      begins with a fat header, or it's unadorned Mach-O, in which
+      case it starts with a normal header.  At least do what checks we
+      can to establish whether or not we're looking at something
+      sane. */
+
+   const struct fat_header*  fh_be = buf;
+   const struct MACH_HEADER* mh    = buf;
+
+   vg_assert(buf);
+   if (szB < sizeof(struct fat_header))
+      return False;
+   if (VG_(ntohl)(fh_be->magic) == FAT_MAGIC)
+      return True;
+
+   if (szB < sizeof(struct MACH_HEADER))
+      return False;
+   if (mh->magic == MAGIC)
+      return True;
+
+   return False;
 }
 
+
+/* Unmap an image mapped in by map_image_aboard. */
+static void unmap_image ( /*MOD*/ImageInfo* ii )
+{
+   SysRes sres;
+   vg_assert(ii->img);
+   vg_assert(ii->img_szB > 0);
+   sres = VG_(am_munmap_valgrind)( (Addr)ii->img, ii->img_szB );
+   /* Do we care if this fails?  I suppose so; it would indicate
+      some fairly serious snafu with the mapping of the file. */
+   vg_assert( !sr_isError(sres) );
+   VG_(memset)(ii, 0, sizeof(*ii));
+}
+
+
+/* Map a given fat or thin object aboard, find the thin part if
+   necessary, do some checks, and write details of both the fat and
+   thin parts into *ii.  Returns False (and leaves the file unmapped)
+   on failure.  Guarantees to return pointers to a valid(ish) Mach-O
+   image if it succeeds. */
+static Bool map_image_aboard ( DebugInfo* di, /* only for err msgs */
+                               /*OUT*/ImageInfo* ii, UChar* filename )
+{
+   VG_(memset)(ii, 0, sizeof(*ii));
+
+   /* First off, try to map the thing in. */
+   { SizeT  size;
+     SysRes fd, sres;
+     struct vg_stat stat_buf;
+
+     fd = VG_(stat)(filename, &stat_buf);
+     if (sr_isError(fd)) {
+        ML_(symerr)(di, True, "Can't stat image (to determine its size)?!");
+        return False;
+     }
+     size = stat_buf.size;
+
+     fd = VG_(open)(filename, VKI_O_RDONLY, 0);
+     if (sr_isError(fd)) {
+       ML_(symerr)(di, True, "Can't open image to read symbols?!");
+        return False;
+     }
+
+     sres = VG_(am_mmap_file_float_valgrind)
+               ( size, VKI_PROT_READ, sr_Res(fd), 0 );
+     if (sr_isError(sres)) {
+        ML_(symerr)(di, True, "Can't mmap image to read symbols?!");
+        return False;
+     }
+
+     VG_(close)(sr_Res(fd));
+
+     ii->img     = (UChar*)sr_Res(sres);
+     ii->img_szB = size;
+   }
+
+   /* Now it's mapped in and we have .img and .img_szB set.  Look for
+      the embedded Mach-O object.  If not findable, unmap and fail. */
+   { struct fat_header*  fh_be;
+     struct fat_header   fh;
+     struct MACH_HEADER* mh;
+     
+     // Assume initially that we have a thin image, and update
+     // these if it turns out to be fat.
+     ii->macho_img     = ii->img;
+     ii->macho_img_szB = ii->img_szB;
+
+     // Check for fat header.
+     if (ii->img_szB < sizeof(struct fat_header)) {
+        ML_(symerr)(di, True, "Invalid Mach-O file (0 too small).");
+        goto unmap_and_fail;
+     }
+
+     // Fat header is always BIG-ENDIAN
+     fh_be = (struct fat_header *)ii->img;
+     fh.magic = VG_(ntohl)(fh_be->magic);
+     fh.nfat_arch = VG_(ntohl)(fh_be->nfat_arch);
+     if (fh.magic == FAT_MAGIC) {
+        // Look for a good architecture.
+        struct fat_arch *arch_be;
+        struct fat_arch arch;
+        Int f;
+        if (ii->img_szB < sizeof(struct fat_header)
+                          + fh.nfat_arch * sizeof(struct fat_arch)) {
+           ML_(symerr)(di, True, "Invalid Mach-O file (1 too small).");
+           goto unmap_and_fail;
+        }
+        for (f = 0, arch_be = (struct fat_arch *)(fh_be+1); 
+             f < fh.nfat_arch;
+             f++, arch_be++) {
+           Int cputype;
+#          if defined(VGA_ppc)
+           cputype = CPU_TYPE_POWERPC;
+#          elif defined(VGA_ppc64)
+           cputype = CPU_TYPE_POWERPC64;
+#          elif defined(VGA_x86)
+           cputype = CPU_TYPE_X86;
+#          elif defined(VGA_amd64)
+           cputype = CPU_TYPE_X86_64;
+#          else
+#            error "unknown architecture"
+#          endif
+           arch.cputype    = VG_(ntohl)(arch_be->cputype);
+           arch.cpusubtype = VG_(ntohl)(arch_be->cpusubtype);
+           arch.offset     = VG_(ntohl)(arch_be->offset);
+           arch.size       = VG_(ntohl)(arch_be->size);
+           if (arch.cputype == cputype) {
+              if (ii->img_szB < arch.offset + arch.size) {
+                 ML_(symerr)(di, True, "Invalid Mach-O file (2 too small).");
+                 goto unmap_and_fail;
+              }
+              ii->macho_img     = ii->img + arch.offset;
+              ii->macho_img_szB = arch.size;
+              break;
+           }
+        }
+        if (f == fh.nfat_arch) {
+           ML_(symerr)(di, True,
+                       "No acceptable architecture found in fat file.");
+           goto unmap_and_fail;
+        }
+     }
+
+     /* Sanity check what we found. */
+
+     /* assured by logic above */
+     vg_assert(ii->img_szB >= sizeof(struct fat_header));
+
+     if (ii->macho_img_szB < sizeof(struct MACH_HEADER)) {
+        ML_(symerr)(di, True, "Invalid Mach-O file (3 too small).");
+        goto unmap_and_fail;
+     }
+
+     if (ii->macho_img_szB > ii->img_szB) {
+        ML_(symerr)(di, True, "Invalid Mach-O file (thin bigger than fat).");
+        goto unmap_and_fail;
+     }
+
+     if (ii->macho_img >= ii->img
+         && ii->macho_img + ii->macho_img_szB <= ii->img + ii->img_szB) {
+        /* thin entirely within fat, as expected */
+     } else {
+        ML_(symerr)(di, True, "Invalid Mach-O file (thin not inside fat).");
+        goto unmap_and_fail;
+     }
+
+     mh = (struct MACH_HEADER *)ii->macho_img;
+     if (mh->magic != MAGIC) {
+        ML_(symerr)(di, True, "Invalid Mach-O file (bad magic).");
+        goto unmap_and_fail;
+     }
+
+     if (ii->macho_img_szB < sizeof(struct MACH_HEADER) + mh->sizeofcmds) {
+        ML_(symerr)(di, True, "Invalid Mach-O file (4 too small).");
+        goto unmap_and_fail;
+     }
+   }
+
+   vg_assert(ii->img);
+   vg_assert(ii->macho_img);
+   vg_assert(ii->img_szB > 0);
+   vg_assert(ii->macho_img_szB > 0);
+   vg_assert(ii->macho_img >= ii->img);
+   vg_assert(ii->macho_img + ii->macho_img_szB <= ii->img + ii->img_szB);
+   return True;  /* success */
+   /*NOTREACHED*/
+
+  unmap_and_fail:
+   unmap_image(ii);
+   return False; /* bah! */
+}
+
+
+/*------------------------------------------------------------*/
+/*---                                                      ---*/
+/*--- Mach-O symbol table reading                          ---*/
+/*---                                                      ---*/
+/*------------------------------------------------------------*/
 
 /* Read a symbol table (nlist).  Add the resulting candidate symbols
    to 'syms'; the caller will post-process them and hand them off to
@@ -253,6 +481,12 @@ static void tidy_up_cand_syms ( /*MOD*/XArray* /* of DiSym */ syms,
 }
 
 
+/*------------------------------------------------------------*/
+/*---                                                      ---*/
+/*--- Mach-O top-level processing                          ---*/
+/*---                                                      ---*/
+/*------------------------------------------------------------*/
+
 #if !defined(APPLE_DSYM_EXT_AND_SUBDIRECTORY)
 #define APPLE_DSYM_EXT_AND_SUBDIRECTORY ".dSYM/Contents/Resources/DWARF/"
 #endif
@@ -355,124 +589,9 @@ find_separate_debug_file (const Char *executable_name)
 }
 
 
-static Addr map_file(Char *filename, UInt *size)
-{
-   SysRes fd, sres;
-   struct vg_stat stat_buf;
-
-   fd = VG_(stat)(filename, &stat_buf);
-   if (sr_isError(fd)) {
-      ML_(symerr)(NULL, False, "Can't stat image (to determine its size)?!");
-      return 0;
-   }
-   *size = stat_buf.size;
-
-   fd = VG_(open)(filename, VKI_O_RDONLY, 0);
-   if (sr_isError(fd)) {
-      ML_(symerr)(NULL, False, "Can't open image to read symbols?!");
-      return 0;
-   }
-
-   sres = VG_(am_mmap_file_float_valgrind)
-             ( *size, VKI_PROT_READ, sr_Res(fd), 0 );
-
-   VG_(close)(sr_Res(fd));
-
-   if (sr_isError(sres)) return 0;
-   else return sr_Res(sres);
-}
-
-
-static Addr make_thin(Addr fat, UInt fat_size, UInt *thin_size)
-{
-   struct fat_header *fh_be;
-   struct fat_header fh;
-   struct MACH_HEADER *mh;
-   Addr result = fat;
-
-   // Check for fat header.
-   if (fat_size < sizeof(struct fat_header)) {
-      ML_(symerr)(NULL, False, "Invalid Mach-O file (0 too small).");
-      return 0;
-   }
-
-   // Fat header is always BIG-ENDIAN
-   fh_be = (struct fat_header *)fat;
-   fh.magic = VG_(ntohl)(fh_be->magic);
-   fh.nfat_arch = VG_(ntohl)(fh_be->nfat_arch);
-   if (fh.magic == FAT_MAGIC) {
-      // Look for a good architecture.
-      struct fat_arch *arch_be;
-      struct fat_arch arch;
-      int f;
-      if (fat_size < sizeof(struct fat_header)
-          + fh.nfat_arch * sizeof(struct fat_arch)) {
-         ML_(symerr)(NULL, False, "Invalid Mach-O file (1 too small).");
-         return 0;
-      }
-      for (f = 0, arch_be = (struct fat_arch *)(fh_be+1); 
-           f < fh.nfat_arch;
-           f++, arch_be++)
-      {
-         Int cputype;
-#        if defined(VGA_ppc)
-         cputype = CPU_TYPE_POWERPC;
-#        elif defined(VGA_ppc64)
-         cputype = CPU_TYPE_POWERPC64;
-#        elif defined(VGA_x86)
-         cputype = CPU_TYPE_X86;
-#        elif defined(VGA_amd64)
-         cputype = CPU_TYPE_X86_64;
-#        else
-#          error "unknown architecture"
-#        endif
-         arch.cputype = VG_(ntohl)(arch_be->cputype);
-         arch.cpusubtype = VG_(ntohl)(arch_be->cpusubtype);
-         arch.offset = VG_(ntohl)(arch_be->offset);
-         arch.size = VG_(ntohl)(arch_be->size);
-         if (arch.cputype == cputype) {
-            if (fat_size < arch.offset + arch.size) {
-               ML_(symerr)(NULL, False, "Invalid Mach-O file (2 too small).");
-               return 0;
-            }
-            result = fat + arch.offset;
-            *thin_size = arch.size;
-            break;
-         }
-      }
-      if (f == fh.nfat_arch) {
-         ML_(symerr)(NULL, True,
-                     "No acceptable architecture found in fat file.");
-         return 0;
-      }
-   } else {
-       // Not fat.
-       *thin_size = fat_size;
-   }
-
-   if (*thin_size < sizeof(struct MACH_HEADER)) {
-      ML_(symerr)(NULL, False, "Invalid Mach-O file (3 too small).");
-      VG_(printf)("%d %lu\n", *thin_size, sizeof(struct MACH_HEADER));
-      return 0;
-   }
-
-   mh = (struct MACH_HEADER *)result;
-   if (mh->magic != MAGIC) {
-      ML_(symerr)(NULL, False, "Invalid Mach-O file (bad magic).");
-      return 0;
-   }
-
-   if (*thin_size < sizeof(struct MACH_HEADER) + mh->sizeofcmds) {
-      ML_(symerr)(NULL, False, "Invalid Mach-O file (4 too small).");
-      return 0;
-   }
-
-   return result;
-}
-
-
-static UChar *getsectdata(Addr base, Int size, 
-                          Char *segname, Char *sectname, Int *sect_size)
+static UChar *getsectdata(UChar* base, SizeT size, 
+                          Char *segname, Char *sectname,
+                          /*OUT*/Word *sect_size)
 {
    struct MACH_HEADER *mh = (struct MACH_HEADER *)base;
    struct load_command *cmd;          
@@ -504,20 +623,52 @@ static UChar *getsectdata(Addr base, Int size,
 }
 
 
+/* Brute force just simply search for uuid[0..15] in img[0..n_img-1] */
+static Bool check_uuid_matches ( Addr imgA, Word n_img, UChar* uuid )
+{
+   Word   i;
+   UChar* img = (UChar*)imgA;
+   UChar  first = uuid[0];
+   if (n_img < 16)
+      return False;
+   for (i = 0; i < n_img-16; i++) {
+      if (img[i] != first)
+         continue;
+      if (0 == VG_(memcmp)( &img[i], &uuid[0], 16 ))
+         return True;
+   }
+   return False;
+}
+
+
+/* Heuristic kludge: return True if this looks like an installed
+   standard library; hence we shouldn't consider automagically running
+   dsymutil on it. */
+static Bool is_systemish_library_name ( UChar* name )
+{
+   vg_assert(name);
+   if (0 == VG_(strncasecmp)(name, "/usr/", 5)
+       || 0 == VG_(strncasecmp)(name, "/bin/", 5)
+       || 0 == VG_(strncasecmp)(name, "/sbin/", 6)
+       || 0 == VG_(strncasecmp)(name, "/System/", 8)
+       || 0 == VG_(strncasecmp)(name, "/Library/", 9)) {
+      return True;
+   } else {
+      return False;
+   }
+}
+
+
 Bool ML_(read_macho_debug_info)( struct _DebugInfo* di )
 {
-   SysRes m_res;
-   Addr ob_map_base = 0, ob_oimage = 0;
-   UInt ob_map_size, ob_n_oimage;
    struct symtab_command *symcmd = NULL;
    struct dysymtab_command *dysymcmd = NULL;
-   Addr dw_map_base = 0, dw_oimage = 0;
-   UInt dw_map_size, dw_n_oimage;
-   Char *dsymfile = NULL;
-   Bool got_nlist = False;
-   Bool got_dwarf = False;
-   Bool got_uuid = False;
+   HChar* dsymfilename = NULL;
+   Bool have_uuid = False;
    UChar uuid[16];
+   ImageInfo ii;  /* main file */
+   ImageInfo iid; /* auxiliary .dSYM file */
+   Bool ok;
 
    /* mmap the object file to look for di->soname and di->text_bias 
       and uuid and nlist and STABS */
@@ -526,61 +677,68 @@ Bool ML_(read_macho_debug_info)( struct _DebugInfo* di )
       VG_(message)(Vg_DebugMsg,
                    "%s (%#lx)", di->filename, di->rx_map_avma );
 
-   di->text_bias = 0;
-   ob_map_base = map_file(di->filename, &ob_map_size);
-   if (ob_map_base) {
-      ob_oimage = make_thin(ob_map_base, ob_map_size, &ob_n_oimage);
-      if (ob_oimage) {
-         // Find LC_SYMTAB and LC_DYSYMTAB, if present.
-         // Read di->soname from LC_ID_DYLIB if present, 
-         //    or from LC_ID_DYLINKER if present, 
-         //    or use "NONE".
-         // Get di->text_bias (aka slide) based on the corresponding LC_SEGMENT
-         // Get uuid for later dsym search
-         struct MACH_HEADER *mh = (struct MACH_HEADER *)ob_oimage;
-         struct load_command *cmd;
-         int c;
+   VG_(memset)(&ii,   0, sizeof(ii));
+   VG_(memset)(&iid,  0, sizeof(iid));
+   VG_(memset)(&uuid, 0, sizeof(uuid));
 
-         for (c = 0, cmd = (struct load_command *)(mh+1);
-              c < mh->ncmds;
-              c++, cmd = (struct load_command *)(cmd->cmdsize
-                                                 + (unsigned long)cmd))
-         {
-            if (cmd->cmd == LC_SYMTAB) {
-               symcmd = (struct symtab_command *)cmd;
-            } 
-            else if (cmd->cmd == LC_DYSYMTAB) {
-               dysymcmd = (struct dysymtab_command *)cmd;
-            } 
-            else if (cmd->cmd == LC_ID_DYLIB  &&  mh->filetype == MH_DYLIB) {
-               // GrP fixme bundle?
-               struct dylib_command *dcmd = (struct dylib_command *)cmd;
-               UChar *dylibname = dcmd->dylib.name.offset + (UChar *)dcmd;
-               UChar *soname = VG_(strrchr)(dylibname, '/');
-               if (!soname) soname = dylibname;
-               else soname++;
-               di->soname = ML_(dinfo_strdup)("di.readmacho.dylibname",
-                                              soname);
-            }
-            else if (cmd->cmd==LC_ID_DYLINKER  &&  mh->filetype==MH_DYLINKER) {
-               struct dylinker_command *dcmd = (struct dylinker_command *)cmd;
-               UChar *dylinkername = dcmd->name.offset + (UChar *)dcmd;
-               UChar *soname = VG_(strrchr)(dylinkername, '/');
-               if (!soname) soname = dylinkername;
-               else soname++;
-               di->soname = ML_(dinfo_strdup)("di.readmacho.dylinkername",
-                                              soname);
-            }
-            else if (cmd->cmd == LC_SEGMENT_CMD) {
-               struct SEGMENT_COMMAND *seg = (struct SEGMENT_COMMAND *)cmd;
-               if (!di->text_present  &&  seg->fileoff == 0  &&  
-                   seg->filesize != 0) 
-               {
-                  di->text_present = True;
-                  di->text_svma = (Addr)seg->vmaddr;
-                  di->text_avma = di->rx_map_avma;
-                  di->text_size = seg->vmsize;
-                  di->text_bias = di->text_avma - (Addr)seg->vmaddr;
+   ok = map_image_aboard( di, &ii, di->filename );
+   if (!ok) goto fail;
+
+   vg_assert(ii.macho_img != NULL && ii.macho_img_szB > 0);
+
+   /* Poke around in the Mach-O header, to find some important
+      stuff. */
+   // Find LC_SYMTAB and LC_DYSYMTAB, if present.
+   // Read di->soname from LC_ID_DYLIB if present, 
+   //    or from LC_ID_DYLINKER if present, 
+   //    or use "NONE".
+   // Get di->text_bias (aka slide) based on the corresponding LC_SEGMENT
+   // Get uuid for later dsym search
+
+   di->text_bias = 0;
+
+   { struct MACH_HEADER *mh = (struct MACH_HEADER *)ii.macho_img;
+     struct load_command *cmd;
+     Int c;
+
+     for (c = 0, cmd = (struct load_command *)(mh+1);
+          c < mh->ncmds;
+          c++, cmd = (struct load_command *)(cmd->cmdsize
+                                             + (unsigned long)cmd)) {
+        if (cmd->cmd == LC_SYMTAB) {
+           symcmd = (struct symtab_command *)cmd;
+        } 
+        else if (cmd->cmd == LC_DYSYMTAB) {
+           dysymcmd = (struct dysymtab_command *)cmd;
+        } 
+        else if (cmd->cmd == LC_ID_DYLIB && mh->filetype == MH_DYLIB) {
+           // GrP fixme bundle?
+           struct dylib_command *dcmd = (struct dylib_command *)cmd;
+           UChar *dylibname = dcmd->dylib.name.offset + (UChar *)dcmd;
+           UChar *soname = VG_(strrchr)(dylibname, '/');
+           if (!soname) soname = dylibname;
+           else soname++;
+           di->soname = ML_(dinfo_strdup)("di.readmacho.dylibname",
+                                          soname);
+        }
+        else if (cmd->cmd==LC_ID_DYLINKER  &&  mh->filetype==MH_DYLINKER) {
+           struct dylinker_command *dcmd = (struct dylinker_command *)cmd;
+           UChar *dylinkername = dcmd->name.offset + (UChar *)dcmd;
+           UChar *soname = VG_(strrchr)(dylinkername, '/');
+           if (!soname) soname = dylinkername;
+           else soname++;
+           di->soname = ML_(dinfo_strdup)("di.readmacho.dylinkername",
+                                          soname);
+        }
+        else if (cmd->cmd == LC_SEGMENT_CMD) {
+           struct SEGMENT_COMMAND *seg = (struct SEGMENT_COMMAND *)cmd;
+           if (!di->text_present && seg->fileoff == 0
+               && seg->filesize != 0) {
+              di->text_present = True;
+              di->text_svma = (Addr)seg->vmaddr;
+              di->text_avma = di->rx_map_avma;
+              di->text_size = seg->vmsize;
+              di->text_bias = di->text_avma - (Addr)seg->vmaddr;
                   /* Make the _debug_ values be the same as the
                      svma/bias for the primary object, since there is
                      no secondary (debuginfo) object, but nevertheless
@@ -588,158 +746,44 @@ Bool ML_(read_macho_debug_info)( struct _DebugInfo* di )
                      _debug_ values. */
                   di->text_debug_svma = di->text_svma;
                   di->text_debug_bias = di->text_bias;
-               }
-            }
-            else if (cmd->cmd == LC_UUID) {
-                struct uuid_command *uuid_cmd = (struct uuid_command *)cmd;
-                VG_(memcpy)(uuid, uuid_cmd->uuid, sizeof(uuid));
-                got_uuid = True;
-            }
-         }
-      }
-
-      /* Don't unmap object yet; we'll read nlist and STABS after DWARF. */
+           }
+        }
+        else if (cmd->cmd == LC_UUID) {
+            struct uuid_command *uuid_cmd = (struct uuid_command *)cmd;
+            VG_(memcpy)(uuid, uuid_cmd->uuid, sizeof(uuid));
+            have_uuid = True;
+        }
+     }
    }
 
    if (!di->soname) {
       di->soname = ML_(dinfo_strdup)("di.readmacho.noname", "NONE");
    }
 
+   /* Now we have the base object to hand.  Read symbols from it. */
 
-   /* mmap the dSYM file to look for DWARF debug info */
+   if (ii.macho_img && ii.macho_img_szB > 0 && symcmd && dysymcmd) {
 
-   dsymfile = find_separate_debug_file(di->filename);
-   // fixme verify dsymfile matches uuid
-
-   if (dsymfile) {
-      if (VG_(clo_verbosity) > 1)
-         VG_(message)(Vg_DebugMsg, "   dsyms= %s", dsymfile);
-      dw_map_base = map_file(dsymfile, &dw_map_size);
-      if (dw_map_base) {
-          dw_oimage = make_thin(dw_map_base, dw_map_size, &dw_n_oimage);
-      }
-   }
-   if (dw_oimage) {
-      UChar* debug_info_img = NULL;
-      Int    debug_info_sz;
-      UChar* debug_abbv_img;
-      Int    debug_abbv_sz;
-      UChar* debug_line_img;
-      Int    debug_line_sz;
-      UChar* debug_str_img;
-      Int    debug_str_sz;
-      UChar* debug_ranges_img;
-      Int    debug_ranges_sz;
-      UChar* debug_loc_img;
-      Int    debug_loc_sz;
-      UChar* debug_name_img;
-      Int    debug_name_sz;
-      
-      debug_info_img = 
-          getsectdata(dw_oimage, dw_n_oimage, 
-                      "__DWARF", "__debug_info", &debug_info_sz);
-      debug_abbv_img = 
-          getsectdata(dw_oimage, dw_n_oimage, 
-                      "__DWARF", "__debug_abbrev", &debug_abbv_sz);
-      debug_line_img = 
-          getsectdata(dw_oimage, dw_n_oimage, 
-                      "__DWARF", "__debug_line", &debug_line_sz);
-      debug_str_img = 
-          getsectdata(dw_oimage, dw_n_oimage, 
-                      "__DWARF", "__debug_str", &debug_str_sz);
-      debug_ranges_img = 
-          getsectdata(dw_oimage, dw_n_oimage, 
-                      "__DWARF", "__debug_ranges", &debug_ranges_sz);
-      debug_loc_img = 
-          getsectdata(dw_oimage, dw_n_oimage, 
-                      "__DWARF", "__debug_loc", &debug_loc_sz);
-      debug_name_img = 
-          getsectdata(dw_oimage, dw_n_oimage, 
-                      "__DWARF", "__debug_pubnames", &debug_name_sz);
-   
-      if (debug_info_img) {
-         if (VG_(clo_verbosity) > 1) {
-            if (0)
-            VG_(message)(Vg_DebugMsg,
-                         "Reading dwarf3 for %s (%#lx) from %s"
-                         " (%d %d %d %d %d %d)",
-                         di->filename, di->text_avma, dsymfile, 
-                         debug_info_sz, debug_abbv_sz, debug_line_sz, 
-                         debug_str_sz, debug_ranges_sz, debug_loc_sz
-                         );
-            VG_(message)(Vg_DebugMsg,
-               "   reading dwarf3 from dsyms file");
-         }
-         /* The old reader: line numbers and unwind info only */
-         ML_(read_debuginfo_dwarf3) ( di,
-                                      debug_info_img, debug_info_sz,
-                                      debug_abbv_img, debug_abbv_sz,
-                                      debug_line_img, debug_line_sz,
-                                      debug_str_img,  debug_str_sz );
-         /* Function names and ranges from debug_pubnames */
-         ML_(read_fnnames_dwarf3) ( di,
-                                    debug_info_img,   debug_info_sz,
-                                    debug_abbv_img,   debug_abbv_sz,
-                                    debug_line_img,   debug_line_sz,
-                                    debug_str_img,    debug_str_sz,
-                                    debug_ranges_img, debug_ranges_sz,
-                                    debug_loc_img,    debug_loc_sz,
-                                    debug_name_img,   debug_name_sz);
-
-         /* The new reader: read the DIEs in .debug_info to acquire
-            information on variable types and locations.  But only if
-            the tool asks for it, or the user requests it on the
-            command line. */
-         if (VG_(needs).var_info /* the tool requires it */
-             || VG_(clo_read_var_info) /* the user asked for it */) {
-            ML_(new_dwarf3_reader)(
-               di, debug_info_img,   debug_info_sz,
-                   debug_abbv_img,   debug_abbv_sz,
-                   debug_line_img,   debug_line_sz,
-                   debug_str_img,    debug_str_sz,
-                   debug_ranges_img, debug_ranges_sz,
-                   debug_loc_img,    debug_loc_sz
-            );
-         }
-         got_dwarf = True;
-      }
-   }
-
-   if (dw_map_base) {
-      m_res = VG_(am_munmap_valgrind) ( dw_map_base, dw_map_size );
-      vg_assert(!sr_isError(m_res));
-   }
-
-   if (dsymfile) ML_(dinfo_free)(dsymfile);
-
-
-   /* Read nlist symbol tables and (if no DWARF) STABS debuginfo. 
-      In particular, hand-written assembly often has an nlist entry 
-      but no DWARF debuginfo. Prefer the DWARF version.
-   */
-
-   if (ob_oimage  &&  symcmd  &&  dysymcmd) {
-      /* Read nlist symbol table and STABS debug info */
+      /* Read nlist symbol table */
       struct NLIST *syms;
       UChar *strs;
       XArray* /* DiSym */ candSyms = NULL;
       Word i, nCandSyms;
 
-      if (ob_n_oimage < symcmd->stroff + symcmd->strsize  ||  
-          ob_n_oimage < symcmd->symoff + symcmd->nsyms*sizeof(struct NLIST))
-      {
-         ML_(symerr)(NULL, False, "Invalid Mach-O file (5 too small).");
-         goto bad_nlist;
+      if (ii.macho_img_szB < symcmd->stroff + symcmd->strsize
+          || ii.macho_img_szB < symcmd->symoff + symcmd->nsyms
+                                                 * sizeof(struct NLIST)) {
+         ML_(symerr)(di, False, "Invalid Mach-O file (5 too small).");
+         goto fail;
       }   
-      if (dysymcmd->ilocalsym + dysymcmd->nlocalsym > symcmd->nsyms  ||  
-          dysymcmd->iextdefsym + dysymcmd->nextdefsym > symcmd->nsyms)
-      {
-         ML_(symerr)(NULL, False, "Invalid Mach-O file (bad symbol table).");
-         goto bad_nlist;
+      if (dysymcmd->ilocalsym + dysymcmd->nlocalsym > symcmd->nsyms
+          || dysymcmd->iextdefsym + dysymcmd->nextdefsym > symcmd->nsyms) {
+         ML_(symerr)(di, False, "Invalid Mach-O file (bad symbol table).");
+         goto fail;
       }
       
-      syms = (struct NLIST *)(ob_oimage + symcmd->symoff);
-      strs = (UChar *)(ob_oimage + symcmd->stroff);
+      syms = (struct NLIST *)(ii.macho_img + symcmd->symoff);
+      strs = (UChar *)(ii.macho_img + symcmd->stroff);
       
       if (VG_(clo_verbosity) > 1)
          VG_(message)(Vg_DebugMsg,
@@ -780,38 +824,237 @@ Bool ML_(read_macho_debug_info)( struct _DebugInfo* di )
          ML_(addSym)( di, cand );
       }
       VG_(deleteXA)( candSyms );
+   }
 
-      if (!got_dwarf) {
-         // debug info
-         if (VG_(clo_verbosity) > 1)
-            VG_(message)(Vg_DebugMsg,
-               "   reading stabs  from primary file (%d %d)",
-               dysymcmd->nextdefsym, dysymcmd->nlocalsym );
-         ML_(read_debuginfo_stabs) ( di,
-                                     (UChar *)syms, 
-                                     symcmd->nsyms * sizeof(struct NLIST), 
-                                     strs, symcmd->strsize);
+   /* Now we move on to reading the DWARF3, if we can find any.  Since
+      this always appears to come from dSYM files, we first need to
+      check that we can verify that we've got the right file.  That
+      means, if a UUID was not found in the primary object, we might
+      as well stop now, since without it we won't be able to verify
+      that the dSYM matches the primary.  And our policy is to load no
+      debug info rather than incorrect debug info.  Except, don't
+      bother to complain about system libraries, it's pointless. */
+   if (!have_uuid) {
+      if (!is_systemish_library_name(di->filename)) {
+         ML_(symerr)(di, True, "no UUID in Mach-O primary; "
+                               "so dSYM correctness can't be verified");
       }
-      
-      got_nlist = True;
+      goto success;
    }
+
+   /* mmap the dSYM file to look for DWARF debug info.  If successful,
+      use the .macho_img and .macho_img_szB in iid. */
+
+   dsymfilename = find_separate_debug_file( di->filename );
+
+   /* Try to load it. */
+   if (dsymfilename) {
+      Bool valid;
+
+      if (VG_(clo_verbosity) > 1)
+         VG_(message)(Vg_DebugMsg, "   dSYM= %s", dsymfilename);
+
+      ok = map_image_aboard( di, &iid, dsymfilename );
+      if (!ok) goto fail;
+
+      /* check it has the right uuid. */
+      vg_assert(have_uuid);
+      valid = iid.macho_img && iid.macho_img_szB > 0 
+              && check_uuid_matches( (Addr)iid.macho_img,
+                                     iid.macho_img_szB, uuid );
+      if (valid)
+         goto read_the_dwarf;
+
+      if (VG_(clo_verbosity) > 1)
+         VG_(message)(Vg_DebugMsg, "   dSYM does not have "
+                                   "correct UUID (out of date?)");
+   }
+
+   /* There was no dsym file, or it doesn't match.  We'll have to try
+      regenerating it, unless auto-run-dsymutil is disabled, in which
+      case just complain instead. */
+
+   /* If this looks like a lib that we shouldn't run dsymutil on, just
+      give up.  (possible reasons: is system lib, or in /usr etc, or
+      the dsym dir would not be writable by the user, or we're running
+      as root) */
+   vg_assert(di->filename);
+   if (is_systemish_library_name(di->filename))
+      goto success;
+
+   if (!VG_(clo_auto_run_dsymutil)) {
+      if (VG_(clo_verbosity) == 1) {
+         VG_(message)(Vg_DebugMsg, "%s:", di->filename);
+      }
+      if (VG_(clo_verbosity) > 0)
+         VG_(message)(Vg_DebugMsg, "%sdSYM directory %s; consider using "
+                      "--auto-run-dsymutil=yes",
+                      VG_(clo_verbosity) > 1 ? "   " : "",
+                      dsymfilename ? "has wrong UUID" : "is missing"); 
+      goto success;
+   }
+
+   /* Run dsymutil */
+
+   { Int r;
+     HChar* dsymutil = "/usr/bin/dsymutil ";
+     HChar* cmd = ML_(dinfo_zalloc)( "di.readmacho.tmp1", 
+                                     VG_(strlen)(dsymutil)
+                                     + VG_(strlen)(di->filename)
+                                     + 30 /* misc */ );
+     VG_(strcpy)(cmd, dsymutil);
+     if (0) VG_(strcat)(cmd, "--verbose ");
+     VG_(strcat)(cmd, di->filename);
+     VG_(message)(Vg_DebugMsg, "run: %s", cmd);
+     r = VG_(system)( cmd );
+     if (r)
+        VG_(message)(Vg_DebugMsg, "run: %s FAILED", dsymutil);
+     ML_(dinfo_free)(cmd);
+     dsymfilename = find_separate_debug_file(di->filename);
+   }
+
+   /* Try again to load it. */
+   if (dsymfilename) {
+      Bool valid;
+
+      if (VG_(clo_verbosity) > 1)
+         VG_(message)(Vg_DebugMsg, "   dsyms= %s", dsymfilename);
+
+      ok = map_image_aboard( di, &iid, dsymfilename );
+      if (!ok) goto fail;
+
+      /* check it has the right uuid. */
+      vg_assert(have_uuid);
+      valid = iid.macho_img && iid.macho_img_szB > 0 
+              && check_uuid_matches( (Addr)iid.macho_img,
+                                     iid.macho_img_szB, uuid );
+      if (!valid) {
+         if (VG_(clo_verbosity) > 0) {
+            VG_(message)(Vg_DebugMsg,
+               "WARNING: did not find expected UUID %02X%02X%02X%02X"
+               "-%02X%02X-%02X%02X-%02X%02X-%02X%02X%02X%02X%02X%02X"
+               " in dSYM dir",
+               (UInt)uuid[0], (UInt)uuid[1], (UInt)uuid[2], (UInt)uuid[3],
+               (UInt)uuid[4], (UInt)uuid[5], (UInt)uuid[6], (UInt)uuid[7],
+               (UInt)uuid[8], (UInt)uuid[9], (UInt)uuid[10],
+               (UInt)uuid[11], (UInt)uuid[12], (UInt)uuid[13],
+               (UInt)uuid[14], (UInt)uuid[15] );
+            VG_(message)(Vg_DebugMsg,
+                         "WARNING: for %s", di->filename);
+         }
+         unmap_image( &iid );
+         /* unmap_image zeroes the fields, so the following test makes
+            sense. */
+         goto fail;
+      }
+   }
+
+   /* Right.  Finally we have our best try at the dwarf image, so go
+      on to reading stuff out of it. */
+
+  read_the_dwarf:
+   if (iid.macho_img && iid.macho_img_szB > 0) {
+      UChar* debug_info_img = NULL;
+      Word   debug_info_sz;
+      UChar* debug_abbv_img;
+      Word   debug_abbv_sz;
+      UChar* debug_line_img;
+      Word   debug_line_sz;
+      UChar* debug_str_img;
+      Word   debug_str_sz;
+      UChar* debug_ranges_img;
+      Word   debug_ranges_sz;
+      UChar* debug_loc_img;
+      Word   debug_loc_sz;
+      UChar* debug_name_img;
+      Word   debug_name_sz;
+
+      debug_info_img = 
+          getsectdata(iid.macho_img, iid.macho_img_szB, 
+                      "__DWARF", "__debug_info", &debug_info_sz);
+      debug_abbv_img = 
+          getsectdata(iid.macho_img, iid.macho_img_szB, 
+                      "__DWARF", "__debug_abbrev", &debug_abbv_sz);
+      debug_line_img = 
+          getsectdata(iid.macho_img, iid.macho_img_szB, 
+                      "__DWARF", "__debug_line", &debug_line_sz);
+      debug_str_img = 
+          getsectdata(iid.macho_img, iid.macho_img_szB, 
+                      "__DWARF", "__debug_str", &debug_str_sz);
+      debug_ranges_img = 
+          getsectdata(iid.macho_img, iid.macho_img_szB, 
+                      "__DWARF", "__debug_ranges", &debug_ranges_sz);
+      debug_loc_img = 
+          getsectdata(iid.macho_img, iid.macho_img_szB, 
+                      "__DWARF", "__debug_loc", &debug_loc_sz);
+      debug_name_img = 
+          getsectdata(iid.macho_img, iid.macho_img_szB, 
+                      "__DWARF", "__debug_pubnames", &debug_name_sz);
    
- bad_nlist: 
-   ;
-   
-   ML_(shrinkSym)(di);
-   ML_(shrinkLineInfo)(di);
+      if (debug_info_img) {
+         if (VG_(clo_verbosity) > 1) {
+            if (0)
+            VG_(message)(Vg_DebugMsg,
+                         "Reading dwarf3 for %s (%#lx) from %s"
+                         " (%ld %ld %ld %ld %ld %ld)",
+                         di->filename, di->text_avma, dsymfilename,
+                         debug_info_sz, debug_abbv_sz, debug_line_sz, 
+                         debug_str_sz, debug_ranges_sz, debug_loc_sz
+                         );
+            VG_(message)(Vg_DebugMsg,
+               "   reading dwarf3 from dsyms file");
+         }
+         /* The old reader: line numbers and unwind info only */
+         ML_(read_debuginfo_dwarf3) ( di,
+                                      debug_info_img, debug_info_sz,
+                                      debug_abbv_img, debug_abbv_sz,
+                                      debug_line_img, debug_line_sz,
+                                      debug_str_img,  debug_str_sz );
+         /* Function names and ranges from debug_pubnames */
+         ML_(read_fnnames_dwarf3) ( di,
+                                    debug_info_img,   debug_info_sz,
+                                    debug_abbv_img,   debug_abbv_sz,
+                                    debug_line_img,   debug_line_sz,
+                                    debug_str_img,    debug_str_sz,
+                                    debug_ranges_img, debug_ranges_sz,
+                                    debug_loc_img,    debug_loc_sz,
+                                    debug_name_img,   debug_name_sz);
 
-   if (ob_map_base) {
-      m_res = VG_(am_munmap_valgrind) ( ob_map_base, ob_map_size );
-      vg_assert(!sr_isError(m_res));
+         /* The new reader: read the DIEs in .debug_info to acquire
+            information on variable types and locations.  But only if
+            the tool asks for it, or the user requests it on the
+            command line. */
+         if (VG_(needs).var_info /* the tool requires it */
+             || VG_(clo_read_var_info) /* the user asked for it */) {
+            ML_(new_dwarf3_reader)(
+               di, debug_info_img,   debug_info_sz,
+                   debug_abbv_img,   debug_abbv_sz,
+                   debug_line_img,   debug_line_sz,
+                   debug_str_img,    debug_str_sz,
+                   debug_ranges_img, debug_ranges_sz,
+                   debug_loc_img,    debug_loc_sz
+            );
+         }
+      }
    }
 
-   if (got_dwarf  ||  got_nlist) {
-      return True;
-   }
+   if (dsymfilename) ML_(dinfo_free)(dsymfilename);
 
-   ML_(symerr)(NULL, True, "No symbol table found.");
+  success:
+   if (ii.img)
+      unmap_image(&ii);
+   if (iid.img)
+      unmap_image(&iid);
+   return True;
+
+   /* NOTREACHED */
+
+  fail:
+   ML_(symerr)(di, True, "Error reading Mach-O object.");
+   if (ii.img)
+      unmap_image(&ii);
+   if (iid.img)
+      unmap_image(&iid);
    return False;
 }
 
