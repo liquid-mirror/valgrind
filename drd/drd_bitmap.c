@@ -255,15 +255,14 @@ void DRD_(bm_access_store_8)(struct bitmap* const bm, const Addr a1)
 Bool DRD_(bm_has)(struct bitmap* const bm, const Addr a1, const Addr a2,
                   const BmAccessTypeT access_type)
 {
-   Addr b;
-   for (b = a1; b < a2; b++)
-   {
-      if (! DRD_(bm_has_1)(bm, b, access_type))
-      {
-         return False;
-      }
-   }
-   return True;
+#ifdef ENABLE_DRD_CONSISTENCY_CHECKS
+   tl_assert(access_type == eLoad || access_type == eStore);
+#endif
+
+   if (access_type == eLoad)
+      return DRD_(bm_has_any_load)(bm, a1, a2);
+   else
+      return DRD_(bm_has_any_store)(bm, a1, a2);
 }
 
 Bool
@@ -459,9 +458,22 @@ void DRD_(bm_clear)(struct bitmap* const bm, const Addr a1, const Addr a2)
    tl_assert(a1);
    tl_assert(a1 <= a2);
 
+#if 0
+   if (a2 - a1 >= ADDR0_COUNT)
+      VG_(message)(Vg_DebugMsg, "bm_clear(bm = %p, a1 = 0x%lx, a2 = 0x%lx, delta = 0x%lx",
+                   bm, a1, a2, a2 - a1);
+#endif
+
    for (b = a1; b < a2; b = b_next)
    {
-      struct bitmap2* const p2 = bm2_lookup_exclusive(bm, b >> ADDR0_BITS);
+      struct bitmap2* p2;
+      Addr c;
+
+#ifdef ENABLE_DRD_CONSISTENCY_CHECKS
+      tl_assert(a1 <= b && b < a2);
+#endif
+
+      p2 = bm2_lookup_exclusive(bm, b >> ADDR0_BITS);
 
       b_next = (b & ~ADDR0_MASK) + ADDR0_COUNT;
       if (b_next > a2)
@@ -469,39 +481,43 @@ void DRD_(bm_clear)(struct bitmap* const bm, const Addr a1, const Addr a2)
          b_next = a2;
       }
 
-      if (p2)
+      if (p2 == 0)
+         continue;
+
+      c = b;
+      /* If the first address in the bitmap that must be cleared does not */
+      /* start on an UWord boundary, start clearing the first addresses.  */
+      if (UWORD_LSB(c))
       {
-         Addr c = b;
-         /* If the first address in the bitmap that must be cleared does not */
-         /* start on an UWord boundary, start clearing the first addresses.  */
-         if (UWORD_LSB(c))
-         {
-            Addr c_next = UWORD_MSB(c) + BITS_PER_UWORD;
-            if (c_next > b_next)
-               c_next = b_next;
-            bm0_clear_range(p2->bm1.bm0_r, c & ADDR0_MASK, c_next - c);
-            bm0_clear_range(p2->bm1.bm0_w, c & ADDR0_MASK, c_next - c);
-            c = c_next;
-         }
-         /* If some UWords have to be cleared entirely, do this now. */
-         if (UWORD_LSB(c) == 0)
-         {
-            const Addr c_next = UWORD_MSB(b_next);
-            tl_assert(UWORD_LSB(c) == 0);
-            tl_assert(UWORD_LSB(c_next) == 0);
-            tl_assert(c_next <= b_next);
-            tl_assert(c <= c_next);
-            if (c_next > c)
-            {
-               UWord idx = (c & ADDR0_MASK) >> BITS_PER_BITS_PER_UWORD;
-               VG_(memset)(&p2->bm1.bm0_r[idx], 0, (c_next - c) / 8);
-               VG_(memset)(&p2->bm1.bm0_w[idx], 0, (c_next - c) / 8);
-               c = c_next;
-            }
-         }
-         /* If the last address in the bitmap that must be cleared does not */
-         /* fall on an UWord boundary, clear the last addresses.            */
-         /* tl_assert(c <= b_next); */
+	 Addr c_next = UWORD_MSB(c) + BITS_PER_UWORD;
+	 if (c_next > b_next)
+	    c_next = b_next;
+	 bm0_clear_range(p2->bm1.bm0_r, c & ADDR0_MASK, c_next - c);
+	 bm0_clear_range(p2->bm1.bm0_w, c & ADDR0_MASK, c_next - c);
+	 c = c_next;
+      }
+      /* If some UWords have to be cleared entirely, do this now. */
+      if (UWORD_LSB(c) == 0)
+      {
+	 const Addr c_next = UWORD_MSB(b_next);
+#ifdef ENABLE_DRD_CONSISTENCY_CHECKS
+	 tl_assert(UWORD_LSB(c) == 0);
+	 tl_assert(UWORD_LSB(c_next) == 0);
+	 tl_assert(c_next <= b_next);
+	 tl_assert(c <= c_next);
+#endif
+	 if (c_next > c)
+	 {
+	    UWord idx = (c & ADDR0_MASK) >> BITS_PER_BITS_PER_UWORD;
+	    VG_(memset)(&p2->bm1.bm0_r[idx], 0, (c_next - c) / 8);
+	    VG_(memset)(&p2->bm1.bm0_w[idx], 0, (c_next - c) / 8);
+	    c = c_next;
+	 }
+      }
+      /* If the last address in the bitmap that must be cleared does not */
+      /* fall on an UWord boundary, clear the last addresses.            */
+      if (c < b_next)
+      {
          bm0_clear_range(p2->bm1.bm0_r, c & ADDR0_MASK, b_next - c);
          bm0_clear_range(p2->bm1.bm0_w, c & ADDR0_MASK, b_next - c);
       }
@@ -514,14 +530,84 @@ void DRD_(bm_clear)(struct bitmap* const bm, const Addr a1, const Addr a2)
  */
 void DRD_(bm_clear_load)(struct bitmap* const bm, const Addr a1, const Addr a2)
 {
-   Addr a;
+   Addr b, b_next;
 
-   for (a = a1; a < a2; a++)
+   tl_assert(bm);
+   tl_assert(a1);
+   tl_assert(a1 <= a2);
+
+#if 0
+   if (a2 - a1 >= ADDR0_COUNT)
+      VG_(message)(Vg_DebugMsg, "bm_clear_load(bm = %p, a1 = 0x%lx, a2 = 0x%lx, delta = 0x%lx",
+                   bm, a1, a2, a2 - a1);
+#endif
+
+   for (b = a1; b < a2; b = b_next)
    {
-      struct bitmap2* const p2 = bm2_lookup_exclusive(bm, a >> ADDR0_BITS);
-      if (p2)
+      struct bitmap2* p2;
+      Addr c;
+
+#ifdef ENABLE_DRD_CONSISTENCY_CHECKS
+      tl_assert(a1 <= b && b < a2);
+#endif
+
+      p2 = bm2_lookup_exclusive(bm, b >> ADDR0_BITS);
+
+      b_next = (b & ~ADDR0_MASK) + ADDR0_COUNT;
+      if (b_next > a2)
       {
-         bm0_clear(p2->bm1.bm0_r, a & ADDR0_MASK);
+         b_next = a2;
+      }
+
+      if (p2 == 0)
+         continue;
+
+      c = b;
+      /* If the first address in the bitmap that must be cleared does not */
+      /* start on an UWord boundary, start clearing the first addresses.  */
+#ifdef ENABLE_DRD_CONSISTENCY_CHECKS
+      tl_assert(a1 <= b && b <= c && c < b_next && b_next <= a2);
+#endif
+      if (UWORD_LSB(c))
+      {
+	 Addr c_next = UWORD_MSB(c) + BITS_PER_UWORD;
+	 if (c_next > b_next)
+	    c_next = b_next;
+#ifdef ENABLE_DRD_CONSISTENCY_CHECKS
+	 tl_assert(a1 <= b && b <= c && c < c_next && c_next <= b_next
+		   && b_next <= a2);
+#endif
+	 bm0_clear_range(p2->bm1.bm0_r, c & ADDR0_MASK, c_next - c);
+	 c = c_next;
+      }
+      /* If some UWords have to be cleared entirely, do this now. */
+#ifdef ENABLE_DRD_CONSISTENCY_CHECKS
+      tl_assert(a1 <= b && b <= c && c <= b_next && b_next <= a2);
+#endif
+      if (UWORD_LSB(c) == 0)
+      {
+	 const Addr c_next = UWORD_MSB(b_next);
+#ifdef ENABLE_DRD_CONSISTENCY_CHECKS
+	 tl_assert(UWORD_LSB(c) == 0);
+	 tl_assert(UWORD_LSB(c_next) == 0);
+	 tl_assert(a1 <= b && b <= c && c <= c_next && c_next <= b_next
+		   && b_next <= a2);
+#endif
+	 if (c_next > c)
+	 {
+	    UWord idx = (c & ADDR0_MASK) >> BITS_PER_BITS_PER_UWORD;
+	    VG_(memset)(&p2->bm1.bm0_r[idx], 0, (c_next - c) / 8);
+	    c = c_next;
+	 }
+      }
+      /* If the last address in the bitmap that must be cleared does not */
+      /* fall on an UWord boundary, clear the last addresses.            */
+#ifdef ENABLE_DRD_CONSISTENCY_CHECKS
+      tl_assert(a1 <= b && b <= c && c <= b_next && b_next <= a2);
+#endif
+      if (c < b_next)
+      {
+	 bm0_clear_range(p2->bm1.bm0_r, c & ADDR0_MASK, b_next - c);
       }
    }
 }
@@ -533,14 +619,84 @@ void DRD_(bm_clear_load)(struct bitmap* const bm, const Addr a1, const Addr a2)
 void DRD_(bm_clear_store)(struct bitmap* const bm,
                           const Addr a1, const Addr a2)
 {
-   Addr a;
+   Addr b, b_next;
 
-   for (a = a1; a < a2; a++)
+   tl_assert(bm);
+   tl_assert(a1);
+   tl_assert(a1 <= a2);
+
+#if 0
+   if (a2 - a1 >= ADDR0_COUNT)
+      VG_(message)(Vg_DebugMsg, "bm_clear_store(bm = %p, a1 = 0x%lx, a2 = 0x%lx, delta = 0x%lx",
+                   bm, a1, a2, a2 - a1);
+#endif
+
+   for (b = a1; b < a2; b = b_next)
    {
-      struct bitmap2* const p2 = bm2_lookup_exclusive(bm, a >> ADDR0_BITS);
-      if (p2)
+      struct bitmap2* p2;
+      Addr c;
+
+#ifdef ENABLE_DRD_CONSISTENCY_CHECKS
+      tl_assert(a1 <= b && b < a2);
+#endif
+
+      p2 = bm2_lookup_exclusive(bm, b >> ADDR0_BITS);
+
+      b_next = (b & ~ADDR0_MASK) + ADDR0_COUNT;
+      if (b_next > a2)
       {
-         bm0_clear(p2->bm1.bm0_w, a & ADDR0_MASK);
+	b_next = a2;
+      }
+
+      if (p2 == 0)
+         continue;
+
+      c = b;
+      /* If the first address in the bitmap that must be cleared does not */
+      /* start on an UWord boundary, start clearing the first addresses.  */
+#ifdef ENABLE_DRD_CONSISTENCY_CHECKS
+      tl_assert(a1 <= b && b <= c && c < b_next && b_next <= a2);
+#endif
+      if (UWORD_LSB(c))
+      {
+	Addr c_next = UWORD_MSB(c) + BITS_PER_UWORD;
+	if (c_next > b_next)
+	  c_next = b_next;
+#ifdef ENABLE_DRD_CONSISTENCY_CHECKS
+	tl_assert(a1 <= b && b <= c && c < c_next && c_next <= b_next
+		  && b_next <= a2);
+#endif
+	bm0_clear_range(p2->bm1.bm0_w, c & ADDR0_MASK, c_next - c);
+	c = c_next;
+      }
+      /* If some UWords have to be cleared entirely, do this now. */
+#ifdef ENABLE_DRD_CONSISTENCY_CHECKS
+      tl_assert(a1 <= b && b <= c && c <= b_next && b_next <= a2);
+#endif
+      if (UWORD_LSB(c) == 0)
+      {
+	const Addr c_next = UWORD_MSB(b_next);
+#ifdef ENABLE_DRD_CONSISTENCY_CHECKS
+	tl_assert(UWORD_LSB(c) == 0);
+	tl_assert(UWORD_LSB(c_next) == 0);
+	tl_assert(a1 <= b && b <= c && c <= c_next && c_next <= b_next
+		  && b_next <= a2);
+#endif
+	if (c_next > c)
+	{
+	  UWord idx = (c & ADDR0_MASK) >> BITS_PER_BITS_PER_UWORD;
+	  VG_(memset)(&p2->bm1.bm0_w[idx], 0, (c_next - c) / 8);
+	  c = c_next;
+	}
+      }
+      /* If the last address in the bitmap that must be cleared does not */
+      /* fall on an UWord boundary, clear the last addresses.            */
+#ifdef ENABLE_DRD_CONSISTENCY_CHECKS
+      tl_assert(a1 <= b && b <= c && c <= b_next && b_next <= a2);
+#endif
+      if (c < b_next)
+      {
+	bm0_clear_range(p2->bm1.bm0_w, c & ADDR0_MASK, b_next - c);
       }
    }
 }
