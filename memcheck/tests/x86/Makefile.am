@@ -34,6 +34,7 @@ check_PROGRAMS = \
 	pushfw_x86 \
 	pushpopmem \
 	sse_memory \
+	tronical \
 	xor-undef-x86
 
 # DDD: not sure if these ones should work on Darwin or not... if not, should
@@ -42,8 +43,7 @@ if ! VGCONF_OS_IS_DARWIN
    check_PROGRAMS += \
 	int3-x86 \
 	more_x86_fp \
-	pushfpopf \
-	tronical
+	pushfpopf
 endif
 
 AM_CFLAGS   += @FLAG_M32@ $(FLAG_MMMX) $(FLAG_MSSE)
