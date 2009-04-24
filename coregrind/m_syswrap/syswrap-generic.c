@@ -2242,16 +2242,16 @@ PRE(sys_setitimer)
                  struct itimerval *, value, struct itimerval *, ovalue);
    if (ARG2 != (Addr)NULL) {
       struct vki_itimerval *value = (struct vki_itimerval*)ARG2;
-      PRE_timeval_READ( "getitimer(value->it_interval)",
+      PRE_timeval_READ( "setitimer(value->it_interval)",
                          &(value->it_interval));
-      PRE_timeval_READ( "getitimer(value->it_value)",
+      PRE_timeval_READ( "setitimer(value->it_value)",
                          &(value->it_value));
    }
    if (ARG3 != (Addr)NULL) {
       struct vki_itimerval *ovalue = (struct vki_itimerval*)ARG3;
-      PRE_timeval_WRITE( "getitimer(ovalue->it_interval)",
+      PRE_timeval_WRITE( "setitimer(ovalue->it_interval)",
                          &(ovalue->it_interval));
-      PRE_timeval_WRITE( "getitimer(ovalue->it_value)",
+      PRE_timeval_WRITE( "setitimer(ovalue->it_value)",
                          &(ovalue->it_value));
    }
 }
