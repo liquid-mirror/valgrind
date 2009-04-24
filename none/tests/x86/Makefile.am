@@ -65,6 +65,7 @@ check_PROGRAMS = \
 	bug137714-x86 \
 	bug152818-x86 \
 	cmpxchg8b \
+	cpuid \
 	cse_fail \
 	faultstatus \
 	fcmovnu \
@@ -86,16 +87,10 @@ if BUILD_SSSE3_TESTS
    check_PROGRAMS += ssse3_misaligned
 endif
 
-# DDD: not sure if these ones should work on Darwin or not... if not, should
-# be moved into x86-linux/.
-if ! VGCONF_OS_IS_DARWIN
-   check_PROGRAMS += \
-	cpuid
-endif
 
 AM_CFLAGS   += @FLAG_M32@ $(FLAG_MMMX) $(FLAG_MSSE)
 AM_CXXFLAGS += @FLAG_M32@ $(FLAG_MMMX) $(FLAG_MSSE)
-AM_CCASFLAGS = @FLAG_M32@
+AM_CCASFLAGS = $(AM_CPPFLAGS) @FLAG_M32@
 
 # Some of the tests (bug125959_x86, bug152818_x86, insn_*) need
 # -mdynamic-no-pic.  I tried setting *_CFLAGS separately for all of them,
