@@ -32,8 +32,8 @@ check_PROGRAMS = \
 	fprem \
 	fxsave \
 	more_x86_fp \
-	pushfw_x86 \
 	pushfpopf \
+	pushfw_x86 \
 	pushpopmem \
 	sse_memory \
 	tronical \
