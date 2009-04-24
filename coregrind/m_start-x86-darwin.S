@@ -28,6 +28,8 @@
    The GNU General Public License is contained in the file COPYING.
 */
 
+#include "pub_core_basics_asm.h"
+
 	.text
 	.align	2,0x90
 Ldyld_stub_binding_helper:

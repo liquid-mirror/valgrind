@@ -743,19 +743,19 @@ VG_(trampoline_stuff_end):
         /* a leading page of unexecutable code */
 .fill 2048, 2, 0x0b0f /* `ud2` */
 
-.globl _VG_(trampoline_stuff_start)
-_VG_(trampoline_stuff_start):
+.globl VG_(trampoline_stuff_start)
+VG_(trampoline_stuff_start):
 
-.globl _VG_(x86_darwin_SUBST_FOR_sigreturn)
-_VG_(x86_darwin_SUBST_FOR_sigreturn):
+.globl VG_(x86_darwin_SUBST_FOR_sigreturn)
+VG_(x86_darwin_SUBST_FOR_sigreturn):
         /* XXX does this need to have any special form? (cf x86-linux
 	version) */
         movl    $ __NR_DARWIN_FAKE_SIGRETURN, %eax
         int     $0x80
         ud2
 
-.globl _VG_(darwin_REDIR_FOR_strlen)
-_VG_(darwin_REDIR_FOR_strlen):
+.globl VG_(darwin_REDIR_FOR_strlen)
+VG_(darwin_REDIR_FOR_strlen):
         movl    4(%esp), %edx
         movl    %edx, %eax
         jmp     1f
@@ -767,8 +767,8 @@ _VG_(darwin_REDIR_FOR_strlen):
         subl    %edx, %eax
         ret
 
-.globl _VG_(darwin_REDIR_FOR_strcat)
-_VG_(darwin_REDIR_FOR_strcat):
+.globl VG_(darwin_REDIR_FOR_strcat)
+VG_(darwin_REDIR_FOR_strcat):
         pushl   %esi
         movl    8(%esp), %esi
         movl    12(%esp), %ecx
@@ -791,8 +791,8 @@ _VG_(darwin_REDIR_FOR_strcat):
         ret
 
 
-.globl _VG_(darwin_REDIR_FOR_strcmp)
-_VG_(darwin_REDIR_FOR_strcmp):
+.globl VG_(darwin_REDIR_FOR_strcmp)
+VG_(darwin_REDIR_FOR_strcmp):
         movl    4(%esp), %edx
         movl    8(%esp), %ecx
         jmp     1f
@@ -812,8 +812,8 @@ _VG_(darwin_REDIR_FOR_strcmp):
         ret
 
 
-.globl _VG_(darwin_REDIR_FOR_strcpy)
-_VG_(darwin_REDIR_FOR_strcpy):
+.globl VG_(darwin_REDIR_FOR_strcpy)
+VG_(darwin_REDIR_FOR_strcpy):
 	pushl	%ebp
 	movl	%esp, %ebp
 	pushl	%esi
@@ -834,8 +834,8 @@ _VG_(darwin_REDIR_FOR_strcpy):
 	leave
 	ret
 
-.globl _VG_(darwin_REDIR_FOR_strlcat)
-_VG_(darwin_REDIR_FOR_strlcat):
+.globl VG_(darwin_REDIR_FOR_strlcat)
+VG_(darwin_REDIR_FOR_strlcat):
 	pushl	%ebp
 	movl	%esp, %ebp
 	pushl	%edi
@@ -864,7 +864,7 @@ _VG_(darwin_REDIR_FOR_strlcat):
 3:
 	movl	12(%ebp), %eax
 	movl	%eax, (%esp)
-	call	_VG_(darwin_REDIR_FOR_strlen)
+	call	VG_(darwin_REDIR_FOR_strlen)
 	jmp	7f
 4:
 	cmpl	$1, %esi
@@ -889,8 +889,8 @@ _VG_(darwin_REDIR_FOR_strlcat):
 	ret
 	
 	
-.globl _VG_(trampoline_stuff_end)
-_VG_(trampoline_stuff_end):
+.globl VG_(trampoline_stuff_end)
+VG_(trampoline_stuff_end):
 
         /* a trailing page of unexecutable code */
 .fill 2048, 2, 0x0b0f /* `ud2` */
@@ -903,11 +903,11 @@ _VG_(trampoline_stuff_end):
         /* a leading page of unexecutable code */
 .fill 2048, 2, 0x0b0f /* `ud2` */
 
-.globl _VG_(trampoline_stuff_start)
-_VG_(trampoline_stuff_start):
+.globl VG_(trampoline_stuff_start)
+VG_(trampoline_stuff_start):
 
-.globl _VG_(darwin_REDIR_FOR_strlen)
-_VG_(darwin_REDIR_FOR_strlen):
+.globl VG_(darwin_REDIR_FOR_strlen)
+VG_(darwin_REDIR_FOR_strlen):
         movq    %rdi, %rax
         jmp     1f
 0:
@@ -918,8 +918,8 @@ _VG_(darwin_REDIR_FOR_strlen):
         subq    %rdi, %rax
         ret
 
-.globl _VG_(darwin_REDIR_FOR_strcat)
-_VG_(darwin_REDIR_FOR_strcat):
+.globl VG_(darwin_REDIR_FOR_strcat)
+VG_(darwin_REDIR_FOR_strcat):
 	movq	%rdi, %rdx
 	jmp	1f
 0:
@@ -938,8 +938,8 @@ _VG_(darwin_REDIR_FOR_strcat):
 	ret
 
 
-.globl _VG_(darwin_REDIR_FOR_strcmp)
-_VG_(darwin_REDIR_FOR_strcmp):
+.globl VG_(darwin_REDIR_FOR_strcmp)
+VG_(darwin_REDIR_FOR_strcmp):
 	jmp	1f
 0:
 	incq	%rdi
@@ -956,8 +956,8 @@ _VG_(darwin_REDIR_FOR_strcmp):
 	subl	%edx, %eax
 	ret
 
-.globl _VG_(darwin_REDIR_FOR_strcpy)
-_VG_(darwin_REDIR_FOR_strcpy):
+.globl VG_(darwin_REDIR_FOR_strcpy)
+VG_(darwin_REDIR_FOR_strcpy):
 	pushq	%rbp
 	movq	%rdi, %rdx
 	movq	%rsp, %rbp
@@ -974,8 +974,8 @@ _VG_(darwin_REDIR_FOR_strcpy):
 	movq	%rdi, %rax
 	ret
 	
-.globl _VG_(darwin_REDIR_FOR_strlcat)
-_VG_(darwin_REDIR_FOR_strlcat):
+.globl VG_(darwin_REDIR_FOR_strlcat)
+VG_(darwin_REDIR_FOR_strlcat):
 	pushq	%rbp
 	leaq	(%rdx,%rdi), %rax
 	movq	%rdi, %rcx
@@ -1000,7 +1000,7 @@ _VG_(darwin_REDIR_FOR_strlcat):
 	jmp	6f
 3:
 	movq	%rsi, %rdi
-	call	_VG_(darwin_REDIR_FOR_strlen)
+	call	VG_(darwin_REDIR_FOR_strlen)
 	jmp	7f
 4:
 	cmpq	$1, %rdi
@@ -1023,14 +1023,14 @@ _VG_(darwin_REDIR_FOR_strlcat):
 	leave
 	ret
 
-.globl _VG_(darwin_REDIR_FOR_arc4random)
-_VG_(darwin_REDIR_FOR_arc4random):
+.globl VG_(darwin_REDIR_FOR_arc4random)
+VG_(darwin_REDIR_FOR_arc4random):
 	/* not very random, hope dyld won't mind */
 	movq	$0x76616c6772696e64, %rax
 	ret
 
-.globl _VG_(trampoline_stuff_end)
-_VG_(trampoline_stuff_end):
+.globl VG_(trampoline_stuff_end)
+VG_(trampoline_stuff_end):
 
         /* a trailing page of unexecutable code */
 .fill 2048, 2, 0x0b0f /* `ud2` */

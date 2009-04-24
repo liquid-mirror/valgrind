@@ -455,19 +455,17 @@ libcoregrind_ppc64_aix5_a_CFLAGS = $(AM_CFLAGS_PPC64_AIX5)
 libcoregrind_ppc64_aix5_a_CCASFLAGS = $(AM_CCASFLAGS_PPC64_AIX5)
 libcoregrind_ppc64_aix5_a_AR = $(AR) -X64 cru
 
-# DDD: m_cpuid-x86-darwin.S should be merged into m_cpuid.S, they're very
-# similar.  Likewise for m_cpuid-amd64-darwin.S.
 libcoregrind_x86_darwin_a_SOURCES = \
 	$(COREGRIND_SOURCES_COMMON) \
 	$(COREGRIND_DARWIN_SOURCE) \
 	m_coredump/coredump-x86-darwin.c \
+	m_cpuid.S \
 	m_dispatch/dispatch-x86-darwin.S \
-	m_sigframe/sigframe-x86-darwin.c \
-	m_syswrap/syscall-x86-darwin.S \
-	m_syswrap/syswrap-x86-darwin.c \
 	m_mach/mach_traps-x86-darwin.S \
+	m_sigframe/sigframe-x86-darwin.c \
 	m_start-x86-darwin.S \
-	m_cpuid-x86-darwin.S
+	m_syswrap/syscall-x86-darwin.S \
+	m_syswrap/syswrap-x86-darwin.c
 libcoregrind_x86_darwin_a_CPPFLAGS = $(AM_CPPFLAGS_X86_DARWIN)
 libcoregrind_x86_darwin_a_CFLAGS = $(AM_CFLAGS_X86_DARWIN)
 libcoregrind_x86_darwin_a_CCASFLAGS = $(AM_CCASFLAGS_X86_DARWIN)
@@ -477,13 +475,13 @@ libcoregrind_amd64_darwin_a_SOURCES = \
 	$(COREGRIND_SOURCES_COMMON) \
 	$(COREGRIND_DARWIN_SOURCE) \
 	m_coredump/coredump-amd64-darwin.c \
+	m_cpuid.S \
 	m_dispatch/dispatch-amd64-darwin.S \
-	m_sigframe/sigframe-amd64-darwin.c \
-	m_syswrap/syscall-amd64-darwin.S \
-	m_syswrap/syswrap-amd64-darwin.c \
 	m_mach/mach_traps-amd64-darwin.S \
+	m_sigframe/sigframe-amd64-darwin.c \
 	m_start-amd64-darwin.S \
-	m_cpuid-amd64-darwin.S
+	m_syswrap/syscall-amd64-darwin.S \
+	m_syswrap/syswrap-amd64-darwin.c
 libcoregrind_amd64_darwin_a_CPPFLAGS = $(AM_CPPFLAGS_AMD64_DARWIN)
 libcoregrind_amd64_darwin_a_CFLAGS = $(AM_CFLAGS_AMD64_DARWIN)
 libcoregrind_amd64_darwin_a_CCASFLAGS = $(AM_CCASFLAGS_AMD64_DARWIN)

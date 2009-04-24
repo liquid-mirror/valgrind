@@ -4,6 +4,8 @@
 /* Useful listing: 
 	gcc -o tests/fpu_28_108 tests/fpu_28_108.S -Wa,-a */
 
+#include "tests/asm.h"
+
 .data
 fooble:
         .long 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
@@ -12,13 +14,8 @@ fooble:
 bar:
         
 .text
-#if defined(__APPLE__)
-.globl _main
-_main:
-#else
-.globl main
-main:
-#endif
+.globl VG_SYM_ASM(main)
+VG_SYM_ASM(main):
         fstsw   fooble
         fsave   fooble
         frstor  fooble

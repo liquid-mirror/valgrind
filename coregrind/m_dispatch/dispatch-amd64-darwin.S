@@ -51,8 +51,8 @@ UWord VG_(run_innerloop) ( void* guest_state, UWord do_profiling );
 */
 
 .text
-.globl _VG_(run_innerloop)
-_VG_(run_innerloop):
+.globl VG_(run_innerloop)
+VG_(run_innerloop):
 	/* %rdi holds guest_state */
 	/* %rsi holds do_profiling */
 	
@@ -72,7 +72,7 @@ _VG_(run_innerloop):
 	pushq	%r15
 	pushq	%rdi  /* guest_state */
 
-	movq	_VG_(dispatch_ctr)@GOTPCREL(%rip), %r15
+	movq	VG_(dispatch_ctr)@GOTPCREL(%rip), %r15
 	movl	(%r15), %r15d
 	pushq	%r15
 
@@ -104,8 +104,8 @@ _VG_(run_innerloop):
 
 	/* fall into main loop  (the right one) */
 	cmpq	$0, %rsi
-	je	_VG_(run_innerloop__dispatch_unprofiled)
-	jmp	_VG_(run_innerloop__dispatch_profiled)
+	je	VG_(run_innerloop__dispatch_unprofiled)
+	jmp	VG_(run_innerloop__dispatch_profiled)
 	/*NOTREACHED*/	
 
 /*----------------------------------------------------*/
@@ -113,14 +113,14 @@ _VG_(run_innerloop):
 /*----------------------------------------------------*/
 
 .align	4
-.globl	_VG_(run_innerloop__dispatch_unprofiled)
-_VG_(run_innerloop__dispatch_unprofiled):
+.globl	VG_(run_innerloop__dispatch_unprofiled)
+VG_(run_innerloop__dispatch_unprofiled):
 	/* AT ENTRY: %rax is next guest addr, %rbp is possibly
            modified guest state ptr */
 
 	/* Has the guest state pointer been messed with?  If yes, exit. */
 	cmpq	8(%rsp), %rbp
-	movq	_VG_(tt_fast)@GOTPCREL(%rip), %rcx
+	movq	VG_(tt_fast)@GOTPCREL(%rip), %rcx
 	jnz	gsp_changed
 
 	/* save the jump address in the guest state */
@@ -151,14 +151,14 @@ _VG_(run_innerloop__dispatch_unprofiled):
 /*----------------------------------------------------*/
 
 .align	4
-.globl	_VG_(run_innerloop__dispatch_profiled)
-_VG_(run_innerloop__dispatch_profiled):
+.globl	VG_(run_innerloop__dispatch_profiled)
+VG_(run_innerloop__dispatch_profiled):
 	/* AT ENTRY: %rax is next guest addr, %rbp is possibly
            modified guest state ptr */
 
 	/* Has the guest state pointer been messed with?  If yes, exit. */
 	cmpq	8(%rsp), %rbp
-	movq	_VG_(tt_fast)@GOTPCREL(%rip), %rcx
+	movq	VG_(tt_fast)@GOTPCREL(%rip), %rcx
 	jnz	gsp_changed
 
 	/* save the jump address in the guest state */
@@ -178,7 +178,7 @@ _VG_(run_innerloop__dispatch_profiled):
 	jnz	fast_lookup_failed
 
 	/* increment bb profile counter */
-	movq	_VG_(tt_fastN)@GOTPCREL(%rip), %rdx
+	movq	VG_(tt_fastN)@GOTPCREL(%rip), %rdx
 	shrq	$1, %rbx		/* entry# * sizeof(UInt*) */
 	movq	(%rdx,%rbx,1), %rdx
 	addl	$1, (%rdx)
@@ -256,7 +256,7 @@ run_innerloop_exit_REALLY:
 
 	/* restore VG_(dispatch_ctr) */	
 	popq	%r14
-	movq	_VG_(dispatch_ctr)@GOTPCREL(%rip), %r15
+	movq	VG_(dispatch_ctr)@GOTPCREL(%rip), %r15
 	movl	%r14d, (%r15)
 
 	popq	%rdi
@@ -295,8 +295,8 @@ void VG_(run_a_noredir_translation) ( UWord* argblock );
       3: output: guest state pointer afterwards (== thread return code)
 */
 .align 4
-.globl _VG_(run_a_noredir_translation)
-_VG_(run_a_noredir_translation):
+.globl VG_(run_a_noredir_translation)
+VG_(run_a_noredir_translation):
 	/* Save callee-saves regs */
 	pushq %rbx
 	pushq %rbp
@@ -312,8 +312,8 @@ _VG_(run_a_noredir_translation):
 	ud2
 	/* If the translation has been correctly constructed, we
 	should resume at the the following label. */
-.globl _VG_(run_a_noredir_translation__return_point)
-_VG_(run_a_noredir_translation__return_point):
+.globl VG_(run_a_noredir_translation__return_point)
+VG_(run_a_noredir_translation__return_point):
 	popq %rdi
 	movq %rax, 16(%rdi)
 	movq %rbp, 24(%rdi)

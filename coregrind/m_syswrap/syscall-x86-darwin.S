@@ -61,7 +61,7 @@
 	
 	Prototype:
 
-	Int _ML_(do_syscall_for_client_WRK)(
+	Int ML_(do_syscall_for_client_WRK)(
 	                          Int syscallno,		// ebp+8
 				  void* guest_state,		// ebp+12
 				  const vki_sigset_t *sysmask,	// ebp+16
@@ -190,16 +190,16 @@ L_$0_7: /* failure: return 0x8000 | error code */
 .endmacro
 	
 
-.globl _ML_(do_syscall_for_client_unix_WRK)
-_ML_(do_syscall_for_client_unix_WRK):
+.globl ML_(do_syscall_for_client_unix_WRK)
+ML_(do_syscall_for_client_unix_WRK):
 	DO_SYSCALL UNIX
 
-.globl _ML_(do_syscall_for_client_mach_WRK)
-_ML_(do_syscall_for_client_mach_WRK):
+.globl ML_(do_syscall_for_client_mach_WRK)
+ML_(do_syscall_for_client_mach_WRK):
 	DO_SYSCALL MACH
 	
-.globl _ML_(do_syscall_for_client_mdep_WRK)
-_ML_(do_syscall_for_client_mdep_WRK):
+.globl ML_(do_syscall_for_client_mdep_WRK)
+ML_(do_syscall_for_client_mdep_WRK):
 	DO_SYSCALL MDEP
 
 .data
@@ -212,38 +212,38 @@ _ML_(do_syscall_for_client_mdep_WRK):
 #define FOO(scclass,labelno) L_##scclass##_##labelno
 #define MK_L_SCCLASS_N(scclass,labelno) FOO(scclass,labelno)
 
-.globl _ML_(blksys_setup_MACH)
-.globl _ML_(blksys_restart_MACH)
-.globl _ML_(blksys_complete_MACH)
-.globl _ML_(blksys_committed_MACH)
-.globl _ML_(blksys_finished_MACH)
-_ML_(blksys_setup_MACH):	.long MK_L_SCCLASS_N(MACH,1)
-_ML_(blksys_restart_MACH):	.long MK_L_SCCLASS_N(MACH,2)
-_ML_(blksys_complete_MACH):	.long MK_L_SCCLASS_N(MACH,3)
-_ML_(blksys_committed_MACH):	.long MK_L_SCCLASS_N(MACH,4)
-_ML_(blksys_finished_MACH):	.long MK_L_SCCLASS_N(MACH,5)
+.globl ML_(blksys_setup_MACH)
+.globl ML_(blksys_restart_MACH)
+.globl ML_(blksys_complete_MACH)
+.globl ML_(blksys_committed_MACH)
+.globl ML_(blksys_finished_MACH)
+ML_(blksys_setup_MACH):	.long MK_L_SCCLASS_N(MACH,1)
+ML_(blksys_restart_MACH):	.long MK_L_SCCLASS_N(MACH,2)
+ML_(blksys_complete_MACH):	.long MK_L_SCCLASS_N(MACH,3)
+ML_(blksys_committed_MACH):	.long MK_L_SCCLASS_N(MACH,4)
+ML_(blksys_finished_MACH):	.long MK_L_SCCLASS_N(MACH,5)
 
-.globl _ML_(blksys_setup_MDEP)
-.globl _ML_(blksys_restart_MDEP)
-.globl _ML_(blksys_complete_MDEP)
-.globl _ML_(blksys_committed_MDEP)
-.globl _ML_(blksys_finished_MDEP)
-_ML_(blksys_setup_MDEP):	.long MK_L_SCCLASS_N(MDEP,1)
-_ML_(blksys_restart_MDEP):	.long MK_L_SCCLASS_N(MDEP,2)
-_ML_(blksys_complete_MDEP):	.long MK_L_SCCLASS_N(MDEP,3)
-_ML_(blksys_committed_MDEP):	.long MK_L_SCCLASS_N(MDEP,4)
-_ML_(blksys_finished_MDEP):	.long MK_L_SCCLASS_N(MDEP,5)
+.globl ML_(blksys_setup_MDEP)
+.globl ML_(blksys_restart_MDEP)
+.globl ML_(blksys_complete_MDEP)
+.globl ML_(blksys_committed_MDEP)
+.globl ML_(blksys_finished_MDEP)
+ML_(blksys_setup_MDEP):	.long MK_L_SCCLASS_N(MDEP,1)
+ML_(blksys_restart_MDEP):	.long MK_L_SCCLASS_N(MDEP,2)
+ML_(blksys_complete_MDEP):	.long MK_L_SCCLASS_N(MDEP,3)
+ML_(blksys_committed_MDEP):	.long MK_L_SCCLASS_N(MDEP,4)
+ML_(blksys_finished_MDEP):	.long MK_L_SCCLASS_N(MDEP,5)
 
-.globl _ML_(blksys_setup_UNIX)
-.globl _ML_(blksys_restart_UNIX)
-.globl _ML_(blksys_complete_UNIX)
-.globl _ML_(blksys_committed_UNIX)
-.globl _ML_(blksys_finished_UNIX)
-_ML_(blksys_setup_UNIX):	.long MK_L_SCCLASS_N(UNIX,1)
-_ML_(blksys_restart_UNIX):	.long MK_L_SCCLASS_N(UNIX,2)
-_ML_(blksys_complete_UNIX):	.long MK_L_SCCLASS_N(UNIX,3)
-_ML_(blksys_committed_UNIX):	.long MK_L_SCCLASS_N(UNIX,4)
-_ML_(blksys_finished_UNIX):	.long MK_L_SCCLASS_N(UNIX,5)
+.globl ML_(blksys_setup_UNIX)
+.globl ML_(blksys_restart_UNIX)
+.globl ML_(blksys_complete_UNIX)
+.globl ML_(blksys_committed_UNIX)
+.globl ML_(blksys_finished_UNIX)
+ML_(blksys_setup_UNIX):	.long MK_L_SCCLASS_N(UNIX,1)
+ML_(blksys_restart_UNIX):	.long MK_L_SCCLASS_N(UNIX,2)
+ML_(blksys_complete_UNIX):	.long MK_L_SCCLASS_N(UNIX,3)
+ML_(blksys_committed_UNIX):	.long MK_L_SCCLASS_N(UNIX,4)
+ML_(blksys_finished_UNIX):	.long MK_L_SCCLASS_N(UNIX,5)
 
 
  
