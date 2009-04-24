@@ -31,6 +31,7 @@ check_PROGRAMS = \
 	fpeflags \
 	fprem \
 	fxsave \
+	more_x86_fp \
 	pushfw_x86 \
 	pushfpopf \
 	pushpopmem \
@@ -42,8 +43,7 @@ check_PROGRAMS = \
 # be moved into x86-linux/.
 if ! VGCONF_OS_IS_DARWIN
    check_PROGRAMS += \
-	int3-x86 \
-	more_x86_fp
+	int3-x86
 endif
 
 AM_CFLAGS    += @FLAG_M32@ $(FLAG_MMMX) $(FLAG_MSSE)
