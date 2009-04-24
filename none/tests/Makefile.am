@@ -187,7 +187,7 @@ ansi_CFLAGS		= $(AM_CFLAGS) -ansi
 floored_LDADD 		= -lm
 manythreads_LDADD	= -lpthread
 if VGCONF_OS_IS_DARWIN
- nestedfns_CFLAGS	= -fnested-functions
+ nestedfns_CFLAGS	= $(AM_CFLAGS) -fnested-functions
 else
  mq_LDADD		= -lrt
 endif

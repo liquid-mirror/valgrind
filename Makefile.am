@@ -110,10 +110,8 @@ all-local: default.supp
 	rm -f $(inplacedir)/default.supp
 	ln -s ../default.supp $(inplacedir)
 
-distclean-local:
-	rm -rf $(inplacedir)
 clean-local:
-	rm -rf .in_place/*.dSYM
+	rm -rf $(inplacedir)
 
 # These list the bits of vex we need to install
 
