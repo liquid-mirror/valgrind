@@ -101,7 +101,7 @@ if VGCONF_OS_IS_DARWIN
 AM_CFLAGS += -mdynamic-no-pic
 endif
 
-cpuid_SOURCES 		= cpuid_c.c cpuid_s.s
+cpuid_SOURCES 		= cpuid_c.c cpuid_s.S
 # fpu_lazy_eflags must use these flags -- the bug only occurred with them.
 fpu_lazy_eflags_CFLAGS	= $(AM_CFLAGS) -O2 -march=pentiumpro
 fxtract_LDADD		= -lm
