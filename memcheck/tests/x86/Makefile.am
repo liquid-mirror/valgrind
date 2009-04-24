@@ -32,6 +32,7 @@ check_PROGRAMS = \
 	fprem \
 	fxsave \
 	pushfw_x86 \
+	pushfpopf \
 	pushpopmem \
 	sse_memory \
 	tronical \
@@ -42,8 +43,7 @@ check_PROGRAMS = \
 if ! VGCONF_OS_IS_DARWIN
    check_PROGRAMS += \
 	int3-x86 \
-	more_x86_fp \
-	pushfpopf
+	more_x86_fp
 endif
 
 AM_CFLAGS    += @FLAG_M32@ $(FLAG_MMMX) $(FLAG_MSSE)
