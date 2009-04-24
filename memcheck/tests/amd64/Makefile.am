@@ -35,9 +35,9 @@ if ! VGCONF_OS_IS_DARWIN
 	sse_memory
 endif
 
-AM_CFLAGS   += @FLAG_M64@
-AM_CXXFLAGS += @FLAG_M64@
-AM_CCASFLAGS = @FLAG_M64@
+AM_CFLAGS    += @FLAG_M64@
+AM_CXXFLAGS  += @FLAG_M64@
+AM_CCASFLAGS += @FLAG_M64@
 
 more_x87_fp_CFLAGS	= $(AM_CFLAGS) -O -ffast-math -mfpmath=387 \
 				-mfancy-math-387

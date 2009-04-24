@@ -76,9 +76,9 @@ if ! VGCONF_OS_IS_DARWIN
 	slahf-amd64
 endif
 
-AM_CFLAGS   += @FLAG_M64@
-AM_CXXFLAGS += @FLAG_M64@
-AM_CCASFLAGS = @FLAG_M64@
+AM_CFLAGS    += @FLAG_M64@
+AM_CXXFLAGS  += @FLAG_M64@
+AM_CCASFLAGS += @FLAG_M64@
 
 # generic C ones
 bug132918_LDADD		= -lm
