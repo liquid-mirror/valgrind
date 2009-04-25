@@ -13,7 +13,6 @@ EXTRA_DIST = $(noinst_SCRIPTS) \
 	$(addsuffix .stderr.exp,$(INSN_TESTS)) \
 	$(addsuffix .stdout.exp,$(INSN_TESTS)) \
 	$(addsuffix .vgtest,$(INSN_TESTS)) \
-	int3-x86.vgtest int3-x86.stderr.exp int3-x86.stdout.exp \
 	pushfpopf.stderr.exp pushfpopf.stdout.exp pushfpopf.vgtest \
 	pushfw_x86.vgtest pushfw_x86.stdout.exp pushfw_x86.stderr.exp \
 	pushpopmem.stderr.exp pushpopmem.stdout.exp pushpopmem.vgtest \
@@ -38,13 +37,6 @@ check_PROGRAMS = \
 	sse_memory \
 	tronical \
 	xor-undef-x86
-
-# DDD: not sure if these ones should work on Darwin or not... if not, should
-# be moved into x86-linux/.
-if ! VGCONF_OS_IS_DARWIN
-   check_PROGRAMS += \
-	int3-x86
-endif
 
 AM_CFLAGS    += @FLAG_M32@ $(FLAG_MMMX) $(FLAG_MSSE)
 AM_CXXFLAGS  += @FLAG_M32@ $(FLAG_MMMX) $(FLAG_MSSE)
