@@ -119,7 +119,8 @@ valgrind_SOURCES = \
 endif
 
 # Mach RPC interface definitions
-# DDD: these ones aren't used...
+# Here are some more .defs files that are not used, but could be in the
+# future:
 #	clock.defs \
 #	clock_priv.defs \
 #	clock_reply.defs \
@@ -134,21 +135,6 @@ endif
 #	processor.defs \
 #	processor_set.defs \
 #
-# mach_vm:
-# - mach_vm_protect is used in debugstub-darwin.c.
-# - mach_vm_region_recurse is used in aspacemgr-linux.c
-#
-# task:
-# - thread_create_running is used in debugstub-darwin.c
-# - semaphore_create is used in sema.c, syswrap-darwin.c
-# - semaphore_destroy is used in sema.c, syswrap-darwin.c
-#
-# thread_act:
-# - thread_get_state is used in scheduler.c
-# - thread_abort is used in debugstub-darwin.c
-#
-# vm_map:
-# - vm_deallocate is used in syswrap-darwin.c
 if VGCONF_OS_IS_DARWIN
 mach_defs = \
 	mach_vm.defs \
@@ -346,21 +332,6 @@ COREGRIND_AIX5_SOURCE = \
 
     # Note that the *User.c files are generated using 'mig' from $mach_defs
     # above.
-    # DDD: these ones aren't generated (see above)...
-    #	m_mach/clockUser.c \
-    #	m_mach/clock_privUser.c \
-    #	m_mach/clock_replyUser.c \
-    #	m_mach/excUser.c \
-    #	m_mach/host_privUser.c \
-    #	m_mach/host_securityUser.c \
-    #	m_mach/ledgerUser.c \
-    #	m_mach/lock_setUser.c \
-    #	m_mach/mach_hostUser.c \
-    #	m_mach/mach_portUser.c \
-    #	m_mach/notifyUser.c \
-    #	m_mach/processorUser.c \
-    #	m_mach/processor_setUser.c \
-    #
 COREGRIND_DARWIN_SOURCE = \
 	m_aspacemgr/aspacemgr-linux.c \
 	m_debuginfo/readdwarf.c \
