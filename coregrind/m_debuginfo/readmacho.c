@@ -826,21 +826,16 @@ Bool ML_(read_macho_debug_info)( struct _DebugInfo* di )
       VG_(deleteXA)( candSyms );
    }
 
-   /* Now we move on to reading the DWARF3, if we can find any.  Since
-      this always appears to come from dSYM files, we first need to
-      check that we can verify that we've got the right file.  That
-      means, if a UUID was not found in the primary object, we might
-      as well stop now, since without it we won't be able to verify
-      that the dSYM matches the primary.  And our policy is to load no
-      debug info rather than incorrect debug info.  Except, don't
-      bother to complain about system libraries, it's pointless. */
-   if (!have_uuid) {
-      if (!is_systemish_library_name(di->filename)) {
-         ML_(symerr)(di, True, "no UUID in Mach-O primary; "
-                               "so dSYM correctness can't be verified");
-      }
+   /* If there's no UUID in the primary, don't even bother to try and
+      read any DWARF, since we won't be able to verify it matches.
+      Our policy is not to load debug info unless we can verify that
+      it matches the primary.  Just declare success at this point.
+      And don't complain to the user, since that would cause us to
+      complain on objects compiled without -g.  (Some versions of
+      XCode are observed to omit a UUID entry for object linked(?)
+      without -g.  Others don't appear to omit it.) */
+   if (!have_uuid)
       goto success;
-   }
 
    /* mmap the dSYM file to look for DWARF debug info.  If successful,
       use the .macho_img and .macho_img_szB in iid. */
