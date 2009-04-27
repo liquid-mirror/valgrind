@@ -46,13 +46,6 @@ vm_size_t vm_page_size = 0;
 mach_port_name_t mach_task_self_ = 0;
 
 
-// DDD: doesn't get used...
-//mach_port_name_t mach_host_self(void)
-//{
-//    return host_self_trap();
-//}
-
-
 mach_port_name_t mach_thread_self(void)
 {
     return thread_self_trap();
@@ -87,7 +80,7 @@ void VG_(mach_init)(void)
     reply = 0;
     mach_task_self_ = task_self_trap();
 
-    // GrP fixme host_page_size(mach_host_self(), &vm_page_size);
+    // GrP fixme host_page_size(host_self_trap(), &vm_page_size);
     vm_page_size = 4096;
 }
 

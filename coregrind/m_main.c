@@ -416,8 +416,6 @@ static Bool main_process_cmd_line_options( const HChar* toolname )
       else if VG_BOOL_CLO(arg, "--trace-redir",      VG_(clo_trace_redir)) {}
 
       else if VG_BOOL_CLO(arg, "--trace-syscalls",   VG_(clo_trace_syscalls)) {}
-      else if VG_BOOL_CLO(arg, "--trace-unknown-syscalls",
-                                             VG_(clo_trace_unknown_syscalls)) {}
       else if VG_BOOL_CLO(arg, "--wait-for-gdb",     VG_(clo_wait_for_gdb)) {}
       else if VG_STR_CLO (arg, "--db-command",       VG_(clo_db_command)) {}
       else if VG_STR_CLO (arg, "--sim-hints",        VG_(clo_sim_hints)) {}

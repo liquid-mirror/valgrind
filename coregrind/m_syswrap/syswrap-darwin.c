@@ -1120,9 +1120,7 @@ PRE(sys_fcntl)
 
    default:
       PRINT("sys_fcntl ( %ld, %ld [??] )", ARG1, ARG2);
-      if (VG_(clo_trace_unknown_syscalls)) {
-          VG_(printf)("UNKNOWN fcntl %ld!", ARG2);
-      }
+      VG_(printf)("UNKNOWN fcntl %ld!", ARG2);
       break;
    }
 }
@@ -1590,7 +1588,7 @@ PRE(sys___pthread_sigmask)
    // JRS: arguments are identical to sigprocmask 
    // (how, sigset_t*, sigset_t*).  Perhaps behave identically?
    static Bool warned;
-   if (!warned && VG_(clo_trace_unknown_syscalls)) {
+   if (!warned) {
       VG_(printf)("UNKNOWN __pthread_sigmask is unsupported. "
                   "This warning will not be repeated.\n");
       warned = True;

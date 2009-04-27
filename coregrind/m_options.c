@@ -68,7 +68,6 @@ UChar  VG_(clo_trace_flags)    = 0; // 00000000b
 UChar  VG_(clo_profile_flags)  = 0; // 00000000b
 Int    VG_(clo_trace_notbelow) = 999999999;
 Bool   VG_(clo_trace_syscalls) = False;
-Bool   VG_(clo_trace_unknown_syscalls) = True;  // GrP
 Bool   VG_(clo_trace_signals)  = False;
 Bool   VG_(clo_trace_symtab)   = False;
 HChar* VG_(clo_trace_symtab_patt) = "*";

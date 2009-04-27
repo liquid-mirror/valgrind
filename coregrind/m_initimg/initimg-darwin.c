@@ -78,7 +78,6 @@ static void load_client ( /*OUT*/ExeInfo* info,
 
    /* Get hold of a file descriptor which refers to the client
       executable.  This is needed for attaching to GDB. */
-   // GrP fixme ...which doesn't work anyway
    res = VG_(open)(exe_name, VKI_O_RDONLY, VKI_S_IRUSR);
    if (!sr_isError(res))
       VG_(cl_exec_fd) = sr_Res(res);
