@@ -82,9 +82,10 @@ extern Int VG_(access) ( HChar* path, Bool irusr, Bool iwusr, Bool ixusr );
 extern Int VG_(check_executable)(/*OUT*/Bool* is_setuid,
                                  const HChar* f, Bool allow_setuid);
 
-/* Note this moves (or at least, is believed to move) the file pointer
+/* DDD: Note this moves (or at least, is believed to move) the file pointer
    on Linux and AIX5 but doesn't on Darwin.  This inconsistency should
-   be fixed. */
+   be fixed.  (In other words, why isn't the Linux/AIX5 version implemented in
+   terms of pread()?) */
 extern SysRes VG_(pread) ( Int fd, void* buf, Int count, OffT offset );
 
 /* Create and open (-rw------) a tmp file name incorporating said arg.

@@ -582,9 +582,10 @@ Int VG_(check_executable)(/*OUT*/Bool* is_setuid,
    return 0;
 }
 
-/* Note this moves (or at least, is believed to move) the file pointer
+/* DDD: Note this moves (or at least, is believed to move) the file pointer
    on Linux and AIX5 but doesn't on Darwin.  This inconsistency should
-   be fixed. */
+   be fixed.  (In other words, why isn't the Linux/AIX5 version implemented in
+   terms of pread()?) */
 SysRes VG_(pread) ( Int fd, void* buf, Int count, OffT offset )
 {
    SysRes res;
