@@ -264,6 +264,8 @@ static void run_a_thread_NORETURN ( Word tidW )
       mach_msg(&msg, MACH_SEND_MSG|MACH_MSG_OPTION_NONE, 
                sizeof(msg), 0, 0, MACH_MSG_TIMEOUT_NONE, 0);
       
+      // DDD: This is reached sometimes on none/tests/manythreads, maybe
+      // because of the race above.
       VG_(core_panic)("Thread exit failed?\n");
    }
    
@@ -7044,7 +7046,7 @@ const SyscallTableEntry ML_(syscall_table)[] = {
    _____(VG_DARWIN_SYSCALL_CONSTRUCT_UNIX(87)),    // old gethostname
    _____(VG_DARWIN_SYSCALL_CONSTRUCT_UNIX(88)),    // old sethostname
    MACXY(__NR_getdtablesize, sys_getdtablesize), 
-   GENX_(__NR_dup2, sys_dup2), 
+   GENXY(__NR_dup2, sys_dup2), 
    _____(VG_DARWIN_SYSCALL_CONSTRUCT_UNIX(91)),    // old getdopt
    MACXY(__NR_fcntl, sys_fcntl), 
    GENX_(__NR_select, sys_select), 

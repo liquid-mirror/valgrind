@@ -88,7 +88,6 @@ Bool VG_(resolve_filename) ( Int fd, HChar* buf, Int n_buf )
    else
       return False;
 #  elif defined(VGO_darwin)
-   // GrP Leopard only, I think
    HChar tmp[VKI_MAXPATHLEN+1];
    if (0 == VG_(fcntl)(fd, VKI_F_GETPATH, (UWord)tmp)) {
       if (n_buf > 0) {
