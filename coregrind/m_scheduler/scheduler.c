@@ -1107,14 +1107,7 @@ VgSchedReturnCode VG_(scheduler) ( ThreadId tid )
       case VEX_TRC_JMP_MAPFAIL:
          /* Failure of arch-specific address translation (x86/amd64
             segment override use) */
-         /* jrs 2005 03 11: is this correct? */
-#if defined(VGO_darwin)
-         // DDD: #warning GrP fixme synth signals
-         VG_(core_panic)("mapfail - no synth signals on darwin");
-         I_die_here;
-#else
          VG_(synth_fault)(tid);
-#endif
          break;
 
       case VEX_TRC_JMP_EMWARN: {
