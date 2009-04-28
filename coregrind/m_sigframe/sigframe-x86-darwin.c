@@ -70,8 +70,8 @@ struct hacky_sigframe {
    VexGuestX86State gst;
    VexGuestX86State gshadow1;
    VexGuestX86State gshadow2;
-   UChar            fake_siginfo[ sizeof(vki_siginfo_t) ];
-   UChar            fake_ucontext[ sizeof(struct vki_ucontext) ];
+   vki_siginfo_t    fake_siginfo;
+   struct vki_ucontext fake_ucontext;
    UInt             magicPI;
    UInt             sigNo_private;
    vki_sigset_t     mask; // saved sigmask; restore when hdlr returns
@@ -146,6 +146,11 @@ void VG_(sigframe_create) ( ThreadId tid,
    frame->sigNo_private = sigNo;
    frame->mask          = tst->sig_mask;
    frame->magicPI       = 0x31415927;
+
+   /* Minimally fill in the siginfo and ucontext.  Note, utter
+      lameness prevails.  Be underwhelmed, be very underwhelmed. */
+   frame->fake_siginfo.si_signo = sigNo;
+   frame->fake_siginfo.si_code  = siginfo->si_code;
 
    /* Set up stack pointer */
    vg_assert(esp == (Addr)&frame->returnAddr);
