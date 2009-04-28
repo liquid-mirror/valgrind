@@ -70,6 +70,8 @@ struct hacky_sigframe {
    VexGuestX86State gst;
    VexGuestX86State gshadow1;
    VexGuestX86State gshadow2;
+   UChar            fake_siginfo[ sizeof(vki_siginfo_t) ];
+   UChar            fake_ucontext[ sizeof(struct vki_ucontext) ];
    UInt             magicPI;
    UInt             sigNo_private;
    vki_sigset_t     mask; // saved sigmask; restore when hdlr returns
@@ -134,6 +136,8 @@ void VG_(sigframe_create) ( ThreadId tid,
    VG_(memset)(&frame->gst,      0, sizeof(VexGuestX86State));
    VG_(memset)(&frame->gshadow1, 0, sizeof(VexGuestX86State));
    VG_(memset)(&frame->gshadow2, 0, sizeof(VexGuestX86State));
+   VG_(memset)(&frame->fake_siginfo,  0, sizeof(frame->fake_siginfo));
+   VG_(memset)(&frame->fake_ucontext, 0, sizeof(frame->fake_ucontext));
 
    /* save stuff in frame */
    frame->gst           = tst->arch.vex;
@@ -157,10 +161,14 @@ void VG_(sigframe_create) ( ThreadId tid,
              (Addr)frame, 4*sizeof(UInt) );
    frame->returnAddr  = (UInt)&VG_(x86_darwin_SUBST_FOR_sigreturn);
    frame->a1_signo    = sigNo;
-   frame->a2_siginfo  = 0; /* oh well */
-   frame->a3_ucontext = 0; /* oh well */
+   frame->a2_siginfo  = (UInt)&frame->fake_siginfo;  /* oh well */
+   frame->a3_ucontext = (UInt)&frame->fake_ucontext; /* oh well */
    VG_TRACK( post_mem_write, Vg_CoreSignal, tid,
              (Addr)frame, 4*sizeof(UInt) );
+   VG_TRACK( post_mem_write, Vg_CoreSignal, tid,
+             (Addr)&frame->fake_siginfo, sizeof(frame->fake_siginfo));
+   VG_TRACK( post_mem_write, Vg_CoreSignal, tid,
+             (Addr)&frame->fake_ucontext, sizeof(frame->fake_ucontext));
 
    if (VG_(clo_trace_signals))
       VG_(message)(Vg_DebugMsg,
