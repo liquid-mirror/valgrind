@@ -103,9 +103,8 @@ typedef
 
 Bool ML_(is_macho_object_file)( const void* buf, SizeT szB )
 {
-   // GrP fixme Mach-O headers might not be in this mapped data
-
-   /* (JRS: ... because we only mapped a page for this initial check,
+   /* (JRS: the Mach-O headers might not be in this mapped data,
+      because we only mapped a page for this initial check,
       or at least not very much, and what's at the start of the file
       is in general a so-called fat header.  The Mach-O object we're
       interested in could be arbitrarily far along the image, and so
