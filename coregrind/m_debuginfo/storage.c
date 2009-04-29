@@ -1054,14 +1054,26 @@ static Int compare_DiSym ( void* va, void* vb )
 }
 
 
-/* Two symbols have the same address.  Which name do we prefer?
+/* Two symbols have the same address.  Which name do we prefer?  In order:
 
-   The general rule is to prefer the shorter symbol name.  If the
-   symbol contains a '@', which means it is versioned, then the length
-   up to the '@' is used for length comparison purposes (so
-   "foo@GLIBC_2.4.2" is considered shorter than "foobar"), but if two
-   symbols have the same length, the one with the version string is
-   preferred.  If all else fails, use alphabetical ordering.
+   - Prefer "PMPI_<foo>" over "MPI_<foo>".
+
+   - Else, prefer a non-NULL name over a NULL one.
+
+   - Else, prefer a non-whitespace name over an all-whitespace name.
+
+   - Else, prefer the shorter symbol name.  If the symbol contains a
+     version symbol ('@' on Linux, other platforms may differ), which means it
+     is versioned, then the length up to the version symbol is used for length
+     comparison purposes (so "foo@GLIBC_2.4.2" is considered shorter than
+     "foobar"). 
+     
+   - Else, if two symbols have the same length, prefer a versioned symbol over
+     a non-versioned symbol.
+     
+   - Else, use alphabetical ordering.
+
+   - Otherwise, they must be the same;  use the symbol with the lower address.
 
    Very occasionally this goes wrong (eg. 'memcmp' and 'bcmp' are
    aliases in glibc, we choose the 'bcmp' symbol because it's shorter,
@@ -1082,10 +1094,12 @@ static DiSym* prefersym ( struct _DebugInfo* di, DiSym* a, DiSym* b )
    vlena = VG_(strlen)(a->name);
    vlenb = VG_(strlen)(b->name);
 
-#if defined(VGO_darwin)
-#define VERSION_CHAR '$'
+#if defined(VGO_linux) || defined(VGO_aix5)
+#  define VERSION_CHAR '@'
+#elif defined(VGO_darwin)
+#  define VERSION_CHAR '$'
 #else
-#define VERSION_CHAR '@'
+#  error Unknown OS
 #endif
 
    vpa = VG_(strchr)(a->name, VERSION_CHAR);
@@ -1108,7 +1122,7 @@ static DiSym* prefersym ( struct _DebugInfo* di, DiSym* a, DiSym* b )
       preferA = True; goto out;
    }
 
-   /* GrP Prefer non-empty name */
+   /* Prefer non-empty name. */
    if (vlena  &&  !vlenb) {
       preferA = True; goto out;
    }
@@ -1116,7 +1130,7 @@ static DiSym* prefersym ( struct _DebugInfo* di, DiSym* a, DiSym* b )
       preferB = True; goto out;
    }
 
-   /* GrP Prefer non-whitespace name */
+   /* Prefer non-whitespace name. */
    {
       Bool blankA = True;
       Bool blankB = True;
@@ -1173,6 +1187,7 @@ static DiSym* prefersym ( struct _DebugInfo* di, DiSym* a, DiSym* b )
    /* If we get here, they are the same name. */
 
 #if defined(VGO_darwin)
+   // DDD: don't need this now that stabs is disabled for Darwin?
    /* GrP Resolved nlist vs DWARF. If one extends to the end of the 
       text segment, drop it (it's from an nlist and the size was fake). */
    if (a->isText  &&  b->isText  &&  a->size != b->size) {
@@ -1236,6 +1251,7 @@ static void canonicaliseSymtab ( struct _DebugInfo* di )
 #if !defined(VGO_darwin) 
              && di->symtab[i].size   == di->symtab[i+1].size
 #else 
+             // DDD: don't need this now that stabs is disabled for Darwin?
              /* darwin: use prefersym to resolve same-address but 
                 different-size (probably STABS vs DWARF */
 #endif
