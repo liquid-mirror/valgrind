@@ -484,7 +484,7 @@ void wqthread_hijack(Addr self, Addr kport, Addr stackaddr, Addr workitem,
          thread_wrapper which acquires the lock before continuing.
          Let's hope nothing non-thread-local happens until that point.
 
-         FIXME: I think this is plain wrong .. if we get to
+         DDD: I think this is plain wrong .. if we get to
          thread_wrapper not holding the lock, and someone has recycled
          this thread slot in the meantime, we're hosed.  Is that
          possible, though? */

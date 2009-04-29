@@ -2352,7 +2352,7 @@ PRE(sys_posix_spawn)
                  void*, file_actions, char**, argv, char**, envp );
    PRE_MEM_WRITE("posix_spawn(pid)", ARG1, sizeof(vki_pid_t) );
    PRE_MEM_RASCIIZ("posix_spawn(path)", ARG2);
-   //FIXME: check file_actions
+   // DDD: check file_actions
    if (ARG4 != 0)
       pre_argv_envp( ARG4, tid, "posix_spawn(argv)",
                                 "posix_spawn(argv[i])" );
@@ -2486,7 +2486,7 @@ PRE(sys_posix_spawn)
       vg_assert(j == tot_args+1);
    }
 
-   /* XXXX JRS FIXME: sort out the signal state.  What signal
+   /* DDD: sort out the signal state.  What signal
       state does the child inherit from the parent?  */
 
    if (0) {
