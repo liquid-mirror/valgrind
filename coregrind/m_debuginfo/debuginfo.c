@@ -763,7 +763,7 @@ ULong VG_(di_notify_mmap)( Addr a, Bool allow_SkFileV )
    if (!ML_(is_macho_object_file)( buf1k, (SizeT)nread ))
       return 0;
 #else
-#  error unknown executable type
+#  error "unknown executable type"
 #endif
 
    /* See if we have a DebugInfo for this filename.  If not,
@@ -819,9 +819,9 @@ ULong VG_(di_notify_mmap)( Addr a, Bool allow_SkFileV )
 #if defined(HAVE_ELF)
    ok = ML_(read_elf_debug_info)( di );
 #elif defined(HAVE_MACHO)
-      ok = ML_(read_macho_debug_info)( di );
+   ok = ML_(read_macho_debug_info)( di );
 #else
-#     error unknown executable type
+#  error "unknown executable type"
 #endif
 
    if (ok) {

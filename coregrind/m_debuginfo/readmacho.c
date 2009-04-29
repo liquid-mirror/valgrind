@@ -676,6 +676,10 @@ Bool ML_(read_macho_debug_info)( struct _DebugInfo* di )
       VG_(message)(Vg_DebugMsg,
                    "%s (%#lx)", di->filename, di->rx_map_avma );
 
+   /* This should be ensured by our caller. */
+   vg_assert(di->have_rx_map);
+   vg_assert(di->have_rw_map);
+
    VG_(memset)(&ii,   0, sizeof(ii));
    VG_(memset)(&iid,  0, sizeof(iid));
    VG_(memset)(&uuid, 0, sizeof(uuid));
@@ -697,62 +701,105 @@ Bool ML_(read_macho_debug_info)( struct _DebugInfo* di )
    di->text_bias = 0;
 
    { struct MACH_HEADER *mh = (struct MACH_HEADER *)ii.macho_img;
-     struct load_command *cmd;
-     Int c;
+      struct load_command *cmd;
+      Int c;
 
-     for (c = 0, cmd = (struct load_command *)(mh+1);
-          c < mh->ncmds;
-          c++, cmd = (struct load_command *)(cmd->cmdsize
-                                             + (unsigned long)cmd)) {
-        if (cmd->cmd == LC_SYMTAB) {
-           symcmd = (struct symtab_command *)cmd;
-        } 
-        else if (cmd->cmd == LC_DYSYMTAB) {
-           dysymcmd = (struct dysymtab_command *)cmd;
-        } 
-        else if (cmd->cmd == LC_ID_DYLIB && mh->filetype == MH_DYLIB) {
-           // GrP fixme bundle?
-           struct dylib_command *dcmd = (struct dylib_command *)cmd;
-           UChar *dylibname = dcmd->dylib.name.offset + (UChar *)dcmd;
-           UChar *soname = VG_(strrchr)(dylibname, '/');
-           if (!soname) soname = dylibname;
-           else soname++;
-           di->soname = ML_(dinfo_strdup)("di.readmacho.dylibname",
-                                          soname);
-        }
-        else if (cmd->cmd==LC_ID_DYLINKER  &&  mh->filetype==MH_DYLINKER) {
-           struct dylinker_command *dcmd = (struct dylinker_command *)cmd;
-           UChar *dylinkername = dcmd->name.offset + (UChar *)dcmd;
-           UChar *soname = VG_(strrchr)(dylinkername, '/');
-           if (!soname) soname = dylinkername;
-           else soname++;
-           di->soname = ML_(dinfo_strdup)("di.readmacho.dylinkername",
-                                          soname);
-        }
-        else if (cmd->cmd == LC_SEGMENT_CMD) {
-           struct SEGMENT_COMMAND *seg = (struct SEGMENT_COMMAND *)cmd;
-           if (!di->text_present && seg->fileoff == 0
-               && seg->filesize != 0) {
-              di->text_present = True;
-              di->text_svma = (Addr)seg->vmaddr;
-              di->text_avma = di->rx_map_avma;
-              di->text_size = seg->vmsize;
-              di->text_bias = di->text_avma - (Addr)seg->vmaddr;
-              /* Make the _debug_ values be the same as the
-                 svma/bias for the primary object, since there is
-                 no secondary (debuginfo) object, but nevertheless
-                 downstream biasing of Dwarf3 relies on the
-                 _debug_ values. */
-              di->text_debug_svma = di->text_svma;
-              di->text_debug_bias = di->text_bias;
-           }
-        }
-        else if (cmd->cmd == LC_UUID) {
-            struct uuid_command *uuid_cmd = (struct uuid_command *)cmd;
-            VG_(memcpy)(uuid, uuid_cmd->uuid, sizeof(uuid));
-            have_uuid = True;
-        }
-     }
+      for (c = 0, cmd = (struct load_command *)(mh+1);
+           c < mh->ncmds;
+           c++, cmd = (struct load_command *)(cmd->cmdsize
+                                              + (unsigned long)cmd)) {
+         if (cmd->cmd == LC_SYMTAB) {
+            symcmd = (struct symtab_command *)cmd;
+         } 
+         else if (cmd->cmd == LC_DYSYMTAB) {
+            dysymcmd = (struct dysymtab_command *)cmd;
+         } 
+         else if (cmd->cmd == LC_ID_DYLIB && mh->filetype == MH_DYLIB) {
+            // GrP fixme bundle?
+            struct dylib_command *dcmd = (struct dylib_command *)cmd;
+            UChar *dylibname = dcmd->dylib.name.offset + (UChar *)dcmd;
+            UChar *soname = VG_(strrchr)(dylibname, '/');
+            if (!soname) soname = dylibname;
+            else soname++;
+            di->soname = ML_(dinfo_strdup)("di.readmacho.dylibname",
+                                           soname);
+         }
+         else if (cmd->cmd==LC_ID_DYLINKER  &&  mh->filetype==MH_DYLINKER) {
+            struct dylinker_command *dcmd = (struct dylinker_command *)cmd;
+            UChar *dylinkername = dcmd->name.offset + (UChar *)dcmd;
+            UChar *soname = VG_(strrchr)(dylinkername, '/');
+            if (!soname) soname = dylinkername;
+            else soname++;
+            di->soname = ML_(dinfo_strdup)("di.readmacho.dylinkername",
+                                           soname);
+         }
+
+         // A comment from Julian about why varinfo[35] fail:
+         //
+         // My impression is, from comparing the output of otool -l for these
+         // executables with the logic in ML_(read_macho_debug_info),
+         // specifically the part that begins "else if (cmd->cmd ==
+         // LC_SEGMENT_CMD) {", that it's a complete hack which just happens
+         // to work ok for text symbols.  In particular, it appears to assume
+         // that in a "struct load_command" of type LC_SEGMENT_CMD, the first
+         // "struct SEGMENT_COMMAND" inside it is going to contain the info we
+         // need.  However, otool -l shows, and also the Apple docs state,
+         // that a struct load_command may contain an arbitrary number of
+         // struct SEGMENT_COMMANDs, so I'm not sure why it's OK to merely
+         // snarf the first.  But I'm not sure about this.
+         //
+         // The "Try for __DATA" block below simply adds acquisition of data
+         // svma/bias values using the same assumption.  It also needs
+         // (probably) to deal with bss sections, but I don't understand how
+         // this all ties together really, so it requires further study.
+         //
+         // If you can get your head around the relationship between MachO
+         // segments, sections and load commands, this might be relatively
+         // easy to fix properly.
+         //
+         // Basically we need to come up with plausible numbers for di->
+         // {text,data,bss}_{avma,svma}, from which the _bias numbers are
+         // then trivially derived.  Then I think the debuginfo reader should
+         // work pretty well.
+         else if (cmd->cmd == LC_SEGMENT_CMD) {
+            struct SEGMENT_COMMAND *seg = (struct SEGMENT_COMMAND *)cmd;
+            /* Try for __TEXT */
+            if (!di->text_present
+                && 0 == VG_(strcmp)(seg->segname, "__TEXT")
+                /* DDD: is the  next line a kludge? -- JRS */
+                && seg->fileoff == 0 && seg->filesize != 0) {
+               di->text_present = True;
+               di->text_svma = (Addr)seg->vmaddr;
+               di->text_avma = di->rx_map_avma;
+               di->text_size = seg->vmsize;
+               di->text_bias = di->text_avma - di->text_svma;
+               /* Make the _debug_ values be the same as the
+                  svma/bias for the primary object, since there is
+                  no secondary (debuginfo) object, but nevertheless
+                  downstream biasing of Dwarf3 relies on the
+                  _debug_ values. */
+               di->text_debug_svma = di->text_svma;
+               di->text_debug_bias = di->text_bias;
+            }
+            /* Try for __DATA */
+            if (!di->data_present
+                && 0 == VG_(strcmp)(seg->segname, "__DATA")
+                /* && DDD:seg->fileoff == 0 */ && seg->filesize != 0) {
+               di->data_present = True;
+               di->data_svma = (Addr)seg->vmaddr;
+               di->data_avma = di->rw_map_avma;
+               di->data_size = seg->vmsize;
+               di->data_bias = di->data_avma - di->data_svma;
+               di->data_debug_svma = di->data_svma;
+               di->data_debug_bias = di->data_bias;
+            }
+         }
+         else if (cmd->cmd == LC_UUID) {
+             struct uuid_command *uuid_cmd = (struct uuid_command *)cmd;
+             VG_(memcpy)(uuid, uuid_cmd->uuid, sizeof(uuid));
+             have_uuid = True;
+         }
+      }
    }
 
    if (!di->soname) {
