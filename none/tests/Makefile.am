@@ -135,7 +135,7 @@ check_PROGRAMS = \
 	bug129866 \
 	closeall coolo_strlen \
 	discard exec-sigmask execve faultstatus fcntl_setown \
-	fdleak_cmsg fdleak_creat fdleak_dup fdleak_dup2 \
+	fdleak_cmsg fdleak_creat fdleak_dup fdleak_dup2 fdleak_ipv4 \
 	fdleak_fcntl fdleak_open fdleak_pipe \
 	fdleak_socketpair \
 	floored fork fucomip \
@@ -153,14 +153,11 @@ check_PROGRAMS = \
 	tls tls.so tls2.so vgprintf \
 	coolo_sigaction gxx304
 
-# DDD: 
-# - async-sigs and fdleak_ipv4 both build and run under Valgrind (although
-#   they die)... I think they are disabled because they currently screw up
-#   other tests.
+# DDD: async-sigs builds and runs under Valgrind, although it fails I think
+# it is disabled because it currently screw up other tests.
 if ! VGCONF_OS_IS_DARWIN
    check_PROGRAMS += \
-	async-sigs \
-	fdleak_ipv4
+	async-sigs
 endif
 # DDD:
 # - manythreads and thread-exits have lots of this:
