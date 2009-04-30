@@ -1777,8 +1777,10 @@ static int sanitize_si_code(int si_code)
       mask them off) sign extends them when exporting to user space so
       we do the same thing here. */
    return (Short)si_code;
-#elif defined(VGO_aix5)
+#elif defined(VGO_aix5) || defined(VGO_darwin)
    return si_code;
+#else
+#  error Unknown OS
 #endif
 }
 
