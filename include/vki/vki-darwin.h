@@ -445,7 +445,6 @@ typedef
 #define	VKI_SA_USERTRAMP	SA_USERTRAMP
 #define	VKI_SA_64REGSET	SA_64REGSET
 #define VKI_SA_RESTORER  0 /* Darwin doesn't have this */
-#define VKI_SI_TKILL     0 /* Darwin doesn't have this */
 
 #define	VKI_SIG_BLOCK	SIG_BLOCK
 #define	VKI_SIG_UNBLOCK	SIG_UNBLOCK
