@@ -1437,10 +1437,10 @@ static void default_action(const vki_siginfo_t *info, ThreadId tid)
       if (sigNo == VKI_SIGSEGV 
           && info && is_signal_from_kernel(info->si_code)
           && info->si_code == VKI_SEGV_MAPERR) {
-         VG_UMSG("If you believe this happened as a result of a stack" );
-         VG_UMSG("overflow in your program's main thread (unlikely but");
-         VG_UMSG("possible), you can try to increase the size of the"  );
-         VG_UMSG("main thread stack using the --main-stacksize= flag." );
+         VG_UMSG(" If you believe this happened as a result of a stack" );
+         VG_UMSG(" overflow in your program's main thread (unlikely but");
+         VG_UMSG(" possible), you can try to increase the size of the"  );
+         VG_UMSG(" main thread stack using the --main-stacksize= flag." );
          // FIXME: assumes main ThreadId == 1
          if (VG_(is_valid_tid)(1)) {
             VG_UMSG(" The main thread stack size used in this run was %d.",
@@ -1996,6 +1996,7 @@ void sync_signalhandler ( Int sigNo,
       that is, merely queue it for later delivery. */
 
    if (from_outside) {
+      ThreadId qtid;
       /* If some user-process sent us one of these signals (ie,
 	 they're not the result of a faulting instruction), then treat
 	 it as an async signal.  This is tricky because we could get
@@ -2020,6 +2021,7 @@ void sync_signalhandler ( Int sigNo,
 	 VG_(core_panic)("async_signalhandler returned!?\n");
       }
 
+#     if defined(VGO_linux)
       if (info->VKI_SIGINFO_si_pid == 0) {
 	 /* There's a per-user limit of pending siginfo signals.  If
 	    you exceed this, by having more than that number of
@@ -2052,6 +2054,7 @@ void sync_signalhandler ( Int sigNo,
 	 resume_scheduler(tid);
 	 VG_(exit)(99);		/* If we can't resume, then just exit */
       }
+#     endif
 
       if (VG_(clo_trace_signals))
          VG_DMSG("Routing user-sent sync signal %d via queue", sigNo);
@@ -2059,10 +2062,12 @@ void sync_signalhandler ( Int sigNo,
       /* Since every thread has these signals unblocked, we can't rely
 	 on the kernel to route them properly, so we need to queue
 	 them manually. */
+      qtid = 0;         /* shared pending by default */
+#     if defined(VGO_linux)
       if (info->si_code == VKI_SI_TKILL)
-	 queue_signal(tid, info); /* directed to us specifically */
-      else
-	 queue_signal(0, info);	/* shared pending */
+	 qtid = tid;    /* directed to us specifically */
+#     endif
+      queue_signal(qtid, info);
 
       return;
    } /* if (!is_signal_from_kernel(info->si_code)) */
