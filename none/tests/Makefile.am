@@ -130,6 +130,7 @@ EXTRA_DIST = $(noinst_SCRIPTS) \
 
 check_PROGRAMS = \
 	ansi args \
+	async-sigs \
 	bitfield1 \
 	bug129866 \
 	closeall coolo_strlen \
@@ -152,12 +153,6 @@ check_PROGRAMS = \
 	tls tls.so tls2.so vgprintf \
 	coolo_sigaction gxx304
 
-# DDD: async-sigs builds and runs under Valgrind, although it fails I think
-# it is disabled because it currently screw up other tests.
-if ! VGCONF_OS_IS_DARWIN
-   check_PROGRAMS += \
-	async-sigs
-endif
 # DDD:
 # - manythreads and thread-exits have lots of this:
 # --61831:0:aspacem  sync_check_mapping_callback: segment mismatch:
