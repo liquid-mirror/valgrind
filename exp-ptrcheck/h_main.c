@@ -1163,7 +1163,6 @@ static void pre_mem_access2 ( CorePart part, ThreadId tid, Char* str,
                               Addr s/*tart*/, Addr e/*nd*/ )
 {
    Seg  *seglo, *seghi;
-   Bool s_in_seglo, s_in_seghi, e_in_seglo, e_in_seghi;
 
    // Don't check code being translated -- very slow, and not much point
    if (Vg_CoreTranslate == part) return;
@@ -1183,22 +1182,7 @@ static void pre_mem_access2 ( CorePart part, ThreadId tid, Char* str,
    tl_assert( BOTTOM != seglo && NONPTR != seglo );
    tl_assert( BOTTOM != seghi && NONPTR != seghi );
 
-   /* so seglo and seghi are either UNKNOWN or P(..) */
-   s_in_seglo
-      = is_known_segment(seglo)
-        && seglo->addr <= s && s < seglo->addr + seglo->szB;
-   s_in_seghi
-      = is_known_segment(seghi)
-        && seghi->addr <= s && s < seghi->addr + seghi->szB;
-   e_in_seglo
-      = is_known_segment(seglo)
-        && seglo->addr <= e && e < seglo->addr + seglo->szB;
-   e_in_seghi
-      = is_known_segment(seghi)
-        && seghi->addr <= e && e < seghi->addr + seghi->szB;
-
-   /* record an error if start and end are in different, but known
-      segments */
+   /* record an error if start and end are in different, but known segments */
    if (is_known_segment(seglo) && is_known_segment(seghi)
        && seglo != seghi) {
       h_record_sysparam_error(tid, part, str, s, e, seglo, seghi);
@@ -1549,7 +1533,7 @@ static void get_IntRegInfo ( /*OUT*/IntRegInfo* iii, Int offset, Int szB )
    if (o == GOF(LR)        && is4) goto exactly1;
    if (o == GOF(CTR)       && is4) goto exactly1;
    if (o == GOF(CIA)       && is4) goto none;
-   if (o == GOF(CIA_AT_SC) && is4) goto none;
+   if (o == GOF(IP_AT_SYSCALL) && is4) goto none;
    if (o == GOF(RESVN)     && is4) goto none;
    if (o == GOF(TISTART)   && is4) goto none;
    if (o == GOF(TILEN)     && is4) goto none;
@@ -1713,7 +1697,7 @@ static void get_IntRegInfo ( /*OUT*/IntRegInfo* iii, Int offset, Int szB )
    if (o == GOF(LR)        && is8) goto exactly1;
    if (o == GOF(CTR)       && is8) goto exactly1;
    if (o == GOF(CIA)       && is8) goto none;
-   if (o == GOF(CIA_AT_SC) && is8) goto none;
+   if (o == GOF(IP_AT_SYSCALL) && is8) goto none;
    if (o == GOF(RESVN)     && is8) goto none;
    if (o == GOF(TISTART)   && is8) goto none;
    if (o == GOF(TILEN)     && is8) goto none;

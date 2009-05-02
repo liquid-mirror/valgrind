@@ -602,6 +602,7 @@ void ensure_mm_init ( ArenaId aid )
 /*--- Superblock management                                ---*/
 /*------------------------------------------------------------*/
 
+__attribute__((noreturn))
 void VG_(out_of_memory_NORETURN) ( HChar* who, SizeT szB )
 {
    static Bool alreadyCrashing = False;
@@ -1852,7 +1853,7 @@ Char* VG_(strdup) ( HChar* cc, const Char* s )
 // Useful for querying user blocks.           
 SizeT VG_(malloc_usable_size) ( void* p )                    
 {                                                            
-   return VG_(arena_malloc_usable_size)(VG_AR_CLIENT, p);    
+   return VG_(arena_malloc_usable_size)(VG_AR_CLIENT, p);
 }                                                            
   
 
