@@ -11,12 +11,12 @@
 
    Initial version (Annelid):
 
-   Copyright (C) 2003-2008 Nicholas Nethercote
+   Copyright (C) 2003-2009 Nicholas Nethercote
       njn@valgrind.org
 
    Valgrind-3.X port:
 
-   Copyright (C) 2008-2008 OpenWorks Ltd
+   Copyright (C) 2008-2009 OpenWorks Ltd
       info@open-works.co.uk
 
    This program is free software; you can redistribute it and/or
@@ -997,6 +997,15 @@ void* h_replace_realloc ( ThreadId tid, void* p_old, SizeT new_size )
 
       return (void*)p_new;
    }
+}
+
+SizeT h_replace_malloc_usable_size ( ThreadId tid, void* p )
+{
+   Seg* seg = find_Seg_by_addr( (Addr)p );
+
+   // There may be slop, but pretend there isn't because only the asked-for
+   // area will have been shadowed properly.
+   return ( seg ? seg->szB : 0 );
 }
 
 
@@ -2205,6 +2214,7 @@ static void setup_post_syscall_table ( void )
       ADD(0, __NR_exit); /* hmm, why are we still alive? */
       ADD(0, __NR_exit_group);
       ADD(0, __NR_fadvise64);
+      ADD(0, __NR_fallocate);
       ADD(0, __NR_fchmod);
       ADD(0, __NR_fchown);
 #     if defined(__NR_fchown32)
@@ -2252,6 +2262,9 @@ static void setup_post_syscall_table ( void )
       ADD(0, __NR_getppid);
       ADD(0, __NR_getresgid);
       ADD(0, __NR_getresuid);
+#     if defined(__NR_getresuid32)
+      ADD(0, __NR_getresuid32);
+#     endif
       ADD(0, __NR_getrlimit);
       ADD(0, __NR_getrusage);
 #     if defined(__NR_getsockname)

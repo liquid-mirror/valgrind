@@ -1,5 +1,5 @@
 /*
-  This file is part of drd, a data race detector.
+  This file is part of drd, a thread error detector.
 
   Copyright (C) 2006-2009 Bart Van Assche <bart.vanassche@gmail.com>.
 
@@ -25,6 +25,7 @@
 #include "drd_barrier.h"
 #include "drd_clientreq.h"
 #include "drd_cond.h"
+#include "drd_load_store.h"
 #include "drd_mutex.h"
 #include "drd_rwlock.h"
 #include "drd_semaphore.h"
@@ -327,7 +328,7 @@ Bool DRD_(handle_client_request)(ThreadId vg_tid, UWord* arg, UWord* ret)
 
   case VG_USERREQ__POST_BARRIER_WAIT:
     if (DRD_(thread_leave_synchr)(drd_tid) == 0)
-      DRD_(barrier_post_wait)(drd_tid, arg[1], arg[2], arg[3]);
+      DRD_(barrier_post_wait)(drd_tid, arg[1], arg[2], arg[3], arg[4]);
     break;
 
   case VG_USERREQ__PRE_RWLOCK_INIT:
@@ -365,6 +366,11 @@ Bool DRD_(handle_client_request)(ThreadId vg_tid, UWord* arg, UWord* ret)
       
   case VG_USERREQ__POST_RWLOCK_UNLOCK:
     DRD_(thread_leave_synchr)(drd_tid);
+    break;
+
+  case VG_USERREQ__DRD_CLEAN_MEMORY:
+    if (arg[2] > 0)
+      DRD_(clean_memory)(arg[1], arg[2]);
     break;
 
   default:

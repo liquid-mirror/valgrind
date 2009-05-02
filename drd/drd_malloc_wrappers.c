@@ -1,8 +1,7 @@
 /*
-  This file is part of drd, a data race detector.
+  This file is part of drd, a thread error detector.
 
-  Copyright (C) 2006-2008 Bart Van Assche
-  bart.vanassche@gmail.com
+  Copyright (C) 2006-2009 Bart Van Assche <bart.vanassche@gmail.com>.
 
   This program is free software; you can redistribute it and/or
   modify it under the terms of the GNU General Public License as
@@ -244,6 +243,15 @@ static void DRD_(__builtin_vec_delete)(ThreadId tid, void* p)
   DRD_(handle_free)(tid, (Addr)p);
 }
 
+static SizeT DRD_(malloc_usable_size) ( ThreadId tid, void* p )
+{
+   DRD_Chunk *mc = VG_(HT_lookup)( DRD_(s_malloc_list), (UWord)p );
+
+   // There may be slop, but pretend there isn't because only the asked-for
+   // area will have been shadowed properly.
+   return ( mc ? mc->size : 0 );
+}
+
 void DRD_(register_malloc_wrappers)(const StartUsingMem start_callback,
                                     const StopUsingMem stop_callback)
 {
@@ -265,6 +273,7 @@ void DRD_(register_malloc_wrappers)(const StartUsingMem start_callback,
                                 DRD_(__builtin_delete),
                                 DRD_(__builtin_vec_delete),
                                 DRD_(realloc),
+                                DRD_(malloc_usable_size),
                                 0);
 }
 

@@ -6,7 +6,7 @@
 /*
    This file is part of Callgrind, a Valgrind tool for call tracing.
 
-   Copyright (C) 2002-2008, Josef Weidendorfer (Josef.Weidendorfer@gmx.de)
+   Copyright (C) 2002-2009, Josef Weidendorfer (Josef.Weidendorfer@gmx.de)
 
    This program is free software; you can redistribute it and/or
    modify it under the terms of the GNU General Public License as
@@ -183,7 +183,7 @@ BBCC* lookup_bbcc(BB* bb, Context* cxt)
 	    bbcc, bbcc ? bbcc->tid : 0);
 
    CLG_DEBUGIF(2)
-     if (bbcc) CLG_(print_bbcc)(-2,bbcc,False);
+     if (bbcc) CLG_(print_bbcc)(-2,bbcc);
 
    return bbcc;
 }
@@ -411,7 +411,7 @@ static BBCC* clone_bbcc(BBCC* orig, Context* cxt, Int rec_index)
 
 
     CLG_DEBUGIF(3)
-      CLG_(print_bbcc)(-2, new, False);
+      CLG_(print_bbcc)(-2, new);
 
     CLG_DEBUG(2,"- clone_BBCC(%p, %d) for BB %#lx\n"
 		"   orig %s\n"
@@ -453,7 +453,7 @@ BBCC* CLG_(get_bbcc)(BB* bb)
      bb->last_bbcc = bbcc;
 
      CLG_DEBUGIF(3)
-       CLG_(print_bbcc)(-2, bbcc, False);
+       CLG_(print_bbcc)(-2, bbcc);
    }
 
    CLG_DEBUG(3, "- get_bbcc(BB %#lx): BBCC %p\n",

@@ -1,5 +1,5 @@
 /*
-  This file is part of drd, a data race detector.
+  This file is part of drd, a thread error detector.
 
   Copyright (C) 2006-2009 Bart Van Assche <bart.vanassche@gmail.com>.
 
@@ -47,6 +47,7 @@ void DRD_(trace_mem_access)(const Addr addr, const SizeT size,
                             const BmAccessTypeT access_type);
 VG_REGPARM(2) void DRD_(trace_load)(Addr addr, SizeT size);
 VG_REGPARM(2) void DRD_(trace_store)(Addr addr, SizeT size);
+void DRD_(clean_memory)(const Addr a1, const SizeT len);
 
 
 #endif //  __DRD_LOAD_STORE_H

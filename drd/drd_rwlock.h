@@ -1,8 +1,7 @@
 /*
-  This file is part of drd, a data race detector.
+  This file is part of drd, a thread error detector.
 
-  Copyright (C) 2006-2008 Bart Van Assche
-  bart.vanassche@gmail.com
+  Copyright (C) 2006-2009 Bart Van Assche <bart.vanassche@gmail.com>.
 
   This program is free software; you can redistribute it and/or
   modify it under the terms of the GNU General Public License as
@@ -48,7 +47,6 @@ void DRD_(rwlock_post_rdlock)(const Addr rwlock, const Bool took_lock);
 void DRD_(rwlock_pre_wrlock)(const Addr rwlock);
 void DRD_(rwlock_post_wrlock)(const Addr rwlock, const Bool took_lock);
 void DRD_(rwlock_pre_unlock)(const Addr rwlock);
-void DRD_(rwlock_thread_delete)(const DrdThreadId tid);
 ULong DRD_(get_rwlock_segment_creation_count)(void);
 
 

@@ -1,8 +1,7 @@
 /*
-  This file is part of drd, a data race detector.
+  This file is part of drd, a thread error detector.
 
-  Copyright (C) 2006-2008 Bart Van Assche
-  bart.vanassche@gmail.com
+  Copyright (C) 2006-2009 Bart Van Assche <bart.vanassche@gmail.com>.
 
   This program is free software; you can redistribute it and/or
   modify it under the terms of the GNU General Public License as
@@ -48,7 +47,6 @@ void DRD_(semaphore_post_wait)(const DrdThreadId tid, const Addr semaphore,
 void DRD_(semaphore_pre_post)(const DrdThreadId tid, const Addr semaphore);
 void DRD_(semaphore_post_post)(const DrdThreadId tid, const Addr semaphore,
                                const Bool waited);
-void DRD_(semaphore_thread_delete)(const DrdThreadId tid);
 ULong DRD_(get_semaphore_segment_creation_count)(void);
 
 

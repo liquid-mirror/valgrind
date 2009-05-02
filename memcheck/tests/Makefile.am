@@ -1,6 +1,5 @@
 
-# For AM_FLAG_M3264_PRI
-include $(top_srcdir)/Makefile.flags.am
+include $(top_srcdir)/Makefile.tool-tests.am
 
 SUBDIRS = .
 
@@ -24,9 +23,9 @@ endif
 
 DIST_SUBDIRS = x86 amd64 linux x86-linux .
 
-noinst_SCRIPTS = filter_allocs filter_leak_check_size \
-		 filter_stderr filter_stderr_backtrace filter_xml \
-		 filter_varinfo3 filter_malloc_free_fill
+noinst_SCRIPTS = filter_allocs \
+		 filter_stderr filter_xml \
+		 filter_varinfo3
 
 EXTRA_DIST = $(noinst_SCRIPTS) \
 	addressable.stderr.exp addressable.stdout.exp addressable.vgtest \
@@ -40,7 +39,7 @@ EXTRA_DIST = $(noinst_SCRIPTS) \
 	badpoll.stderr.exp badpoll.vgtest \
 	badrw.stderr.exp badrw.vgtest \
 	brk2.stderr.exp brk2.vgtest \
-	buflen_check.stderr.exp buflen_check.stderr.exp2 buflen_check.vgtest \
+	buflen_check.stderr.exp buflen_check.vgtest \
 	clientperm.stderr.exp \
 	clientperm.stdout.exp clientperm.vgtest \
 	custom_alloc.stderr.exp custom_alloc.vgtest \
@@ -52,25 +51,24 @@ EXTRA_DIST = $(noinst_SCRIPTS) \
 	error_counts.stderr.exp error_counts.stdout.exp error_counts.vgtest \
 	errs1.stderr.exp errs1.vgtest \
 	exitprog.stderr.exp exitprog.vgtest \
-	execve.stderr.exp execve.stderr.exp2 execve.vgtest \
-	execve2.stderr.exp execve2.stderr.exp2 execve2.vgtest \
+	execve.stderr.exp execve.vgtest \
+	execve2.stderr.exp execve2.vgtest \
 	file_locking.stderr.exp file_locking.vgtest \
 	fprw.stderr.exp fprw.vgtest \
-	fwrite.stderr.exp fwrite.stderr.exp2 fwrite.vgtest \
+	fwrite.stderr.exp fwrite.vgtest \
 	inits.stderr.exp inits.vgtest \
 	inline.stderr.exp inline.stdout.exp inline.vgtest \
 	leak-0.vgtest leak-0.stderr.exp \
-	leak-cycle.vgtest leak-cycle.stderr.exp leak-cycle.stderr.exp64 \
-	leak-pool-0.vgtest leak-pool-0.stderr.exp leak-pool-0.stderr.exp64 \
-	leak-pool-1.vgtest leak-pool-1.stderr.exp leak-pool-1.stderr.exp64 \
-	leak-pool-2.vgtest leak-pool-2.stderr.exp leak-pool-2.stderr.exp64 \
-	leak-pool-3.vgtest leak-pool-3.stderr.exp leak-pool-3.stderr.exp64 \
-	leak-pool-4.vgtest leak-pool-4.stderr.exp leak-pool-4.stderr.exp64 \
-	leak-pool-5.vgtest leak-pool-5.stderr.exp leak-pool-5.stderr.exp64 \
+	leak-cases-full.vgtest leak-cases-full.stderr.exp \
+	leak-cases-summary.vgtest leak-cases-summary.stderr.exp \
+	leak-cycle.vgtest leak-cycle.stderr.exp \
+	leak-pool-0.vgtest leak-pool-0.stderr.exp \
+	leak-pool-1.vgtest leak-pool-1.stderr.exp \
+	leak-pool-2.vgtest leak-pool-2.stderr.exp \
+	leak-pool-3.vgtest leak-pool-3.stderr.exp \
+	leak-pool-4.vgtest leak-pool-4.stderr.exp \
+	leak-pool-5.vgtest leak-pool-5.stderr.exp \
 	leak-tree.vgtest leak-tree.stderr.exp \
-	leak-tree.stderr.exp2 leak-tree.stderr.exp64 \
-	leak-regroot.vgtest leak-regroot.stderr.exp \
-	leakotron.vgtest leakotron.stdout.exp leakotron.stderr.exp \
 	linux-syslog-syscall linux-syslog-syscall.stderr.exp \
 	linux-syscalls-2007 linux-syscalls-2007.stderr.exp \
 	long_namespace_xml.vgtest long_namespace_xml.stdout.exp \
@@ -78,7 +76,7 @@ EXTRA_DIST = $(noinst_SCRIPTS) \
 	lsframe1.vgtest lsframe1.stdout.exp lsframe1.stderr.exp \
 	lsframe2.vgtest lsframe2.stdout.exp lsframe2.stderr.exp \
 	mallinfo.stderr.exp mallinfo.vgtest \
-	malloc_free_fill.vgtest malloc_free_fill.stdout.exp \
+	malloc_free_fill.vgtest \
 	malloc_free_fill.stderr.exp \
 	malloc_usable.stderr.exp malloc_usable.vgtest \
 	malloc1.stderr.exp malloc1.vgtest \
@@ -93,7 +91,8 @@ EXTRA_DIST = $(noinst_SCRIPTS) \
 	memcmptest.stderr.exp memcmptest.stderr.exp2 \
 	memcmptest.stdout.exp memcmptest.vgtest \
 	mempool.stderr.exp mempool.stderr.exp64 mempool.vgtest \
-	mismatches.stderr.exp mismatches.stderr.exp64 mismatches.vgtest \
+	metadata.stderr.exp metadata.stdout.exp metadata.vgtest \
+	mismatches.stderr.exp mismatches.vgtest \
 	mmaptest.stderr.exp mmaptest.vgtest \
 	nanoleak.stderr.exp nanoleak.vgtest \
 	nanoleak_supp.stderr.exp nanoleak_supp.vgtest nanoleak.supp \
@@ -109,8 +108,7 @@ EXTRA_DIST = $(noinst_SCRIPTS) \
 	origin3-no.vgtest origin3-no.stdout.exp \
 	origin3-no.stderr.exp \
 	origin4-many.vgtest origin4-many.stdout.exp \
-	origin4-many.stderr.exp-glibc25-x86 \
-	origin4-many.stderr.exp-glibc25-amd64 \
+	origin4-many.stderr.exp \
 	origin5-bz2.vgtest origin5-bz2.stdout.exp \
 	origin5-bz2.stderr.exp-glibc25-x86 \
 	origin5-bz2.stderr.exp-glibc25-amd64 \
@@ -118,7 +116,6 @@ EXTRA_DIST = $(noinst_SCRIPTS) \
 	origin6-fp.vgtest origin6-fp.stdout.exp \
 	origin6-fp.stderr.exp-glibc25-amd64 \
 	origin6-fp.stderr.exp-glibc27-ppc64 \
-	oset_test.stderr.exp oset_test.stdout.exp oset_test.vgtest \
 	overlap.stderr.exp overlap.stdout.exp overlap.vgtest \
 	partiallydefinedeq.vgtest partiallydefinedeq.stderr.exp \
 	partiallydefinedeq.stderr.exp2 \
@@ -129,7 +126,7 @@ EXTRA_DIST = $(noinst_SCRIPTS) \
 	pdb-realloc2.stderr.exp pdb-realloc2.stdout.exp pdb-realloc2.vgtest \
 	pipe.stderr.exp pipe.vgtest \
 	pointer-trace.vgtest \
-	pointer-trace.stderr.exp pointer-trace.stderr.exp64 \
+	pointer-trace.stderr.exp \
 	post-syscall.stderr.exp post-syscall.stdout.exp post-syscall.vgtest \
 	realloc1.stderr.exp realloc1.vgtest \
 	realloc2.stderr.exp realloc2.vgtest \
@@ -150,9 +147,9 @@ EXTRA_DIST = $(noinst_SCRIPTS) \
 	supp2.stderr.exp supp2.vgtest \
 	supp.supp \
 	suppfree.stderr.exp suppfree.vgtest \
-	toobig-allocs.stderr.exp toobig-allocs.vgtest \
 	trivialleak.stderr.exp trivialleak.vgtest \
-	metadata.stderr.exp metadata.stdout.exp metadata.vgtest \
+	unit_libcbase.stderr.exp unit_libcbase.vgtest \
+	unit_oset.stderr.exp unit_oset.stdout.exp unit_oset.vgtest \
 	varinfo1.vgtest varinfo1.stdout.exp varinfo1.stderr.exp \
 	varinfo2.vgtest varinfo2.stdout.exp varinfo2.stderr.exp \
 	varinfo3.vgtest varinfo3.stdout.exp varinfo3.stderr.exp \
@@ -174,12 +171,10 @@ EXTRA_DIST = $(noinst_SCRIPTS) \
 	wrap7.vgtest wrap7.stdout.exp wrap7.stderr.exp \
 	wrap8.vgtest wrap8.stdout.exp wrap8.stderr.exp \
 	wrap8.stdout.exp2 wrap8.stderr.exp2 \
-	writev.stderr.exp writev.stderr.exp2 writev.stderr.exp3 writev.vgtest \
-	xml1.stderr.exp xml1.stderr.exp2 xml1.stderr.exp3 \
-	xml1.stderr.exp64 xml1.stderr.exp64_2 xml1.stdout.exp \
-	xml1.vgtest \
-	zeropage.stderr.exp zeropage.stderr.exp2 zeropage.stdout.exp \
-	zeropage.vgtest
+	writev.stderr.exp writev.vgtest \
+	xml1.stderr.exp xml1.stderr.exp2 \
+	xml1.stderr.exp64 xml1.stdout.exp \
+	xml1.vgtest
 
 check_PROGRAMS = \
 	addressable \
@@ -190,8 +185,10 @@ check_PROGRAMS = \
 	describe-block \
 	doublefree error_counts errs1 exitprog execve execve2 erringfds \
 	file_locking \
-	fprw fwrite hello inits inline \
-	leak-0 leak-cycle leak-pool leak-tree leak-regroot leakotron \
+	fprw fwrite inits inline \
+	leak-0 \
+	leak-cases \
+	leak-cycle leak-pool leak-tree \
 	linux-syslog-syscall \
 	linux-syscalls-2007 \
 	long_namespace_xml \
@@ -201,9 +198,10 @@ check_PROGRAMS = \
 	malloc_usable malloc1 malloc2 malloc3 manuel1 manuel2 manuel3 \
 	match-overrun \
 	memalign_test memalign2 memcmptest mempool mmaptest \
+	mismatches new_override metadata \
 	nanoleak nanoleak2 new_nothrow \
 	noisy_child \
-	null_socket oset_test \
+	null_socket \
 	origin1-yes origin2-not-quite origin3-no \
 	origin4-many origin5-bz2 origin6-fp \
 	overlap \
@@ -217,60 +215,60 @@ check_PROGRAMS = \
 	stack_changes strchr str_tester \
 	supp_unknown supp1 supp2 suppfree \
 	trivialleak \
-	mismatches new_override metadata \
+	unit_libcbase unit_oset \
 	varinfo1 varinfo2 varinfo3 varinfo4 \
 	varinfo5 varinfo5so.so varinfo6 \
 	vcpu_fbench vcpu_fnfns \
 	xml1 \
 	wrap1 wrap2 wrap3 wrap4 wrap5 wrap6 wrap7 wrap7so.so wrap8 \
-	writev zeropage
+	writev
 
 
-AM_CPPFLAGS = -I$(top_srcdir) -I$(top_srcdir)/include \
-		-I$(top_srcdir)/coregrind -I$(top_builddir)/include \
-		-I@VEX_DIR@/pub
-AM_CFLAGS   = $(WERROR) -Winline -Wall -Wshadow -g $(AM_FLAG_M3264_PRI)
-AM_CXXFLAGS = $(AM_CFLAGS)
+AM_CFLAGS   += $(AM_FLAG_M3264_PRI)
+AM_CXXFLAGS += $(AM_FLAG_M3264_PRI)
 
-# Extra stuff for C tests
-memcmptest_CFLAGS	= $(AM_FLAG_M3264_PRI) $(AM_CFLAGS) -fno-builtin-memcmp
-oset_test_CFLAGS	= $(AM_FLAG_M3264_PRI) \
-				-DVGA_$(VGCONF_ARCH_PRI)=1 \
-				-DVGO_$(VGCONF_OS)=1 \
-				-DVGP_$(VGCONF_ARCH_PRI)_$(VGCONF_OS)=1
-vcpu_bz2_CFLAGS		= $(AM_FLAG_M3264_PRI) $(AM_CFLAGS) -O2 -g
-vcpu_fbench_CFLAGS	= $(AM_FLAG_M3264_PRI) $(AM_CFLAGS) -O2 -g
-vcpu_fnfns_CFLAGS	= $(AM_FLAG_M3264_PRI) $(AM_CFLAGS) -O2 -g
-vcpu_fnfns_LDADD	= -lm
-wrap6_CFLAGS		= $(AM_FLAG_M3264_PRI) $(AM_CFLAGS) -O2 -g
+deep_templates_SOURCES	= deep_templates.cpp
+deep_templates_CXXFLAGS	= $(AM_CFLAGS) -O -gstabs
+
+long_namespace_xml_SOURCES = long_namespace_xml.cpp
+
+memcmptest_CFLAGS	= $(AM_CFLAGS) -fno-builtin-memcmp
+
+mismatches_SOURCES	= mismatches.cpp
+
+new_nothrow_SOURCES 	= new_nothrow.cpp
+new_override_SOURCES 	= new_override.cpp
+
+# This requires optimisation in order to get just one resulting error.
+origin4_many_CFLAGS	= $(AM_CFLAGS) -O
+
+# Apply -O so as to run in reasonable time.
+origin5_bz2_CFLAGS	= $(AM_CFLAGS) -O -Wno-inline
+origin6_fp_CFLAGS	= $(AM_CFLAGS) -O
 
 # Don't allow GCC to inline memcpy(), because then we can't intercept it
 overlap_CFLAGS		= $(AM_CFLAGS) -fno-builtin-memcpy
+
 str_tester_CFLAGS	= $(AM_CFLAGS) -Wno-shadow
+
 supp_unknown_SOURCES	= badjump.c
 supp1_SOURCES		= supp.c
 supp2_SOURCES		= supp.c
+
+vcpu_bz2_CFLAGS		= $(AM_CFLAGS) -O2
+vcpu_fbench_CFLAGS	= $(AM_CFLAGS) -O2
+vcpu_fnfns_CFLAGS	= $(AM_CFLAGS) -O2
+vcpu_fnfns_LDADD	= -lm
+wrap6_CFLAGS		= $(AM_CFLAGS) -O2
+
 # To make it a bit more realistic, have some optimisation enabled
 # for the varinfo tests.  We still expect sane results.
-varinfo1_CFLAGS		= $(AM_FLAG_M3264_PRI) $(AM_CFLAGS) -O -g
-varinfo2_CFLAGS		= $(AM_FLAG_M3264_PRI) $(AM_CFLAGS) -O -g -Wno-shadow
-varinfo3_CFLAGS		= $(AM_FLAG_M3264_PRI) $(AM_CFLAGS) -O -g
-varinfo4_CFLAGS		= $(AM_FLAG_M3264_PRI) $(AM_CFLAGS) -O -g
-varinfo5_CFLAGS		= $(AM_FLAG_M3264_PRI) $(AM_CFLAGS) -O -g
-varinfo6_CFLAGS		= $(AM_FLAG_M3264_PRI) $(AM_CFLAGS) -O -g
-# This requires optimisation in order to get just one resulting error
-origin4_many_CFLAGS	= $(AM_FLAG_M3264_PRI) $(AM_CFLAGS) -O -g
-# Apply -O so as to run in reasonable time
-origin5_bz2_CFLAGS	= $(AM_FLAG_M3264_PRI) $(AM_CFLAGS) -O -g
-origin6_fp_CFLAGS	= $(AM_FLAG_M3264_PRI) $(AM_CFLAGS) -O -g
-
-# C++ tests
-mismatches_SOURCES	= mismatches.cpp
-new_nothrow_SOURCES 	= new_nothrow.cpp
-new_override_SOURCES 	= new_override.cpp
-deep_templates_SOURCES	= deep_templates.cpp
-long_namespace_xml_SOURCES = long_namespace_xml.cpp
-deep_templates_CXXFLAGS	= $(AM_FLAG_M3264_PRI) $(AM_CFLAGS) -O -gstabs
+varinfo1_CFLAGS		= $(AM_CFLAGS) -O
+varinfo2_CFLAGS		= $(AM_CFLAGS) -O -Wno-shadow
+varinfo3_CFLAGS		= $(AM_CFLAGS) -O
+varinfo4_CFLAGS		= $(AM_CFLAGS) -O
+varinfo5_CFLAGS		= $(AM_CFLAGS) -O
+varinfo6_CFLAGS		= $(AM_CFLAGS) -O
 
 if VGCONF_PLATFORMS_INCLUDE_PPC32_AIX5
 if VGCONF_PLATFORMS_INCLUDE_PPC64_AIX5
@@ -279,46 +277,13 @@ else
  # function descriptors.  Unfortunately -Wl,-G -Wl,-bnogc
  # produces a link error on 64-bit AIX, hence only 32-bit
  # gets these flags.
- wrap1_LDFLAGS		= $(AM_FLAG_M3264_PRI) -Wl,-G -Wl,-bnogc
- wrap2_LDFLAGS		= $(AM_FLAG_M3264_PRI) -Wl,-G -Wl,-bnogc
- wrap3_LDFLAGS		= $(AM_FLAG_M3264_PRI) -Wl,-G -Wl,-bnogc
- wrap4_LDFLAGS		= $(AM_FLAG_M3264_PRI) -Wl,-G -Wl,-bnogc
- wrap5_LDFLAGS		= $(AM_FLAG_M3264_PRI) -Wl,-G -Wl,-bnogc
- wrap6_LDFLAGS		= $(AM_FLAG_M3264_PRI) -Wl,-G -Wl,-bnogc
- wrap8_LDFLAGS		= $(AM_FLAG_M3264_PRI) -Wl,-G -Wl,-bnogc
-endif
-endif
-
-# Build shared object for wrap7
-wrap7_SOURCES           = wrap7.c
-wrap7_DEPENDENCIES      = wrap7so.so
-if VGCONF_PLATFORMS_INCLUDE_PPC64_AIX5 
- wrap7_LDADD            = `pwd`/wrap7so.so
- wrap7_LDFLAGS          = $(AM_FLAG_M3264_PRI)
-else
-if VGCONF_PLATFORMS_INCLUDE_PPC32_AIX5
- wrap7_LDADD            = `pwd`/wrap7so.so
- wrap7_LDFLAGS          = $(AM_FLAG_M3264_PRI) -Wl,-G -Wl,-bnogc
-else
- wrap7_LDADD            = wrap7so.so
- wrap7_LDFLAGS          = $(AM_FLAG_M3264_PRI) \
-				-Wl,-rpath,$(top_builddir)/memcheck/tests
-endif
-endif
-
-wrap7so_so_SOURCES      = wrap7so.c
-wrap7so_so_LDADD        = 
-wrap7so_so_DEPENDENCIES = 
-wrap7so_so_CFLAGS       = -fpic $(AM_FLAG_M3264_PRI)
-if VGCONF_PLATFORMS_INCLUDE_PPC64_AIX5
- wrap7so_so_LDFLAGS     = -fpic $(AM_FLAG_M3264_PRI) -shared
-else
-if VGCONF_PLATFORMS_INCLUDE_PPC32_AIX5
- wrap7so_so_LDFLAGS     = -fpic $(AM_FLAG_M3264_PRI) -shared \
-				-Wl,-G -Wl,-bnogc
-else
- wrap7so_so_LDFLAGS     = -fpic $(AM_FLAG_M3264_PRI) -shared \
-				-Wl,-soname -Wl,wrap7so.so
+ wrap1_LDFLAGS = $(AM_FLAG_M3264_PRI) -Wl,-G -Wl,-bnogc
+ wrap2_LDFLAGS = $(AM_FLAG_M3264_PRI) -Wl,-G -Wl,-bnogc
+ wrap3_LDFLAGS = $(AM_FLAG_M3264_PRI) -Wl,-G -Wl,-bnogc
+ wrap4_LDFLAGS = $(AM_FLAG_M3264_PRI) -Wl,-G -Wl,-bnogc
+ wrap5_LDFLAGS = $(AM_FLAG_M3264_PRI) -Wl,-G -Wl,-bnogc
+ wrap6_LDFLAGS = $(AM_FLAG_M3264_PRI) -Wl,-G -Wl,-bnogc
+ wrap8_LDFLAGS = $(AM_FLAG_M3264_PRI) -Wl,-G -Wl,-bnogc
 endif
 endif
 
@@ -340,9 +305,7 @@ endif
 endif
 
 varinfo5so_so_SOURCES   = varinfo5so.c
-varinfo5so_so_LDADD     = 
-varinfo5so_so_DEPENDENCIES = 
-varinfo5so_so_CFLAGS    = -fpic $(AM_FLAG_M3264_PRI) -g -O
+varinfo5so_so_CFLAGS    = $(AM_CFLAGS) -fpic -O -Wno-shadow
 if VGCONF_PLATFORMS_INCLUDE_PPC64_AIX5
  varinfo5so_so_LDFLAGS  = -fpic $(AM_FLAG_M3264_PRI) -shared
 else
@@ -354,9 +317,35 @@ else
 				-Wl,-soname -Wl,varinfo5so.so
 endif
 endif
+# Build shared object for wrap7
+wrap7_SOURCES           = wrap7.c
+wrap7_DEPENDENCIES      = wrap7so.so
+if VGCONF_PLATFORMS_INCLUDE_PPC64_AIX5 
+ wrap7_LDADD            = `pwd`/wrap7so.so
+ wrap7_LDFLAGS          = $(AM_FLAG_M3264_PRI)
+else
+if VGCONF_PLATFORMS_INCLUDE_PPC32_AIX5
+ wrap7_LDADD            = `pwd`/wrap7so.so
+ wrap7_LDFLAGS          = $(AM_FLAG_M3264_PRI) -Wl,-G -Wl,-bnogc
+else
+ wrap7_LDADD            = wrap7so.so
+ wrap7_LDFLAGS          = $(AM_FLAG_M3264_PRI) \
+				-Wl,-rpath,$(top_builddir)/memcheck/tests
+endif
+endif
 
-# Valgrind unit self-tests
-#hello_LDFLAGS		= -Wl,-defsym,valt_load_address=0x50000000 \
-#			  -Wl,-T,$(top_builddir)/valt_load_address.lds
-#hello_DEPENDENCIES 	= $(top_builddir)/valt_load_address.lds
+wrap7so_so_SOURCES      = wrap7so.c
+wrap7so_so_CFLAGS       = $(AM_CFLAGS) -fpic
+if VGCONF_PLATFORMS_INCLUDE_PPC64_AIX5
+ wrap7so_so_LDFLAGS     = -fpic $(AM_FLAG_M3264_PRI) -shared
+else
+if VGCONF_PLATFORMS_INCLUDE_PPC32_AIX5
+ wrap7so_so_LDFLAGS     = -fpic $(AM_FLAG_M3264_PRI) -shared \
+				-Wl,-G -Wl,-bnogc
+else
+ wrap7so_so_LDFLAGS     = -fpic $(AM_FLAG_M3264_PRI) -shared \
+				-Wl,-soname -Wl,wrap7so.so
+endif
+endif
+
 

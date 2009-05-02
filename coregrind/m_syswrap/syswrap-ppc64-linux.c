@@ -7,8 +7,8 @@
    This file is part of Valgrind, a dynamic binary instrumentation
    framework.
 
-   Copyright (C) 2005-2008 Nicholas Nethercote <njn@valgrind.org>
-   Copyright (C) 2005-2008 Cerion Armour-Brown <cerion@open-works.co.uk>
+   Copyright (C) 2005-2009 Nicholas Nethercote <njn@valgrind.org>
+   Copyright (C) 2005-2009 Cerion Armour-Brown <cerion@open-works.co.uk>
 
    This program is free software; you can redistribute it and/or
    modify it under the terms of the GNU General Public License as
@@ -534,8 +534,8 @@ PRE(sys_socketcall)
      /* int getsockopt(int s, int level, int optname,
 	void *optval, socklen_t *optlen); */
      PRE_MEM_READ( "socketcall.getsockopt(args)", ARG2, 5*sizeof(Addr) );
-     ML_(generic_PRE_sys_getsockopt)( tid, ARG2_0, ARG2_1, ARG2_2,
-				      ARG2_3, ARG2_4 );
+     ML_(linux_PRE_sys_getsockopt)( tid, ARG2_0, ARG2_1, ARG2_2,
+				    ARG2_3, ARG2_4 );
      break;
 
    case VKI_SYS_GETSOCKNAME:
@@ -655,9 +655,9 @@ POST(sys_socketcall)
     break;
 
   case VKI_SYS_GETSOCKOPT:
-    ML_(generic_POST_sys_getsockopt)( tid, VG_(mk_SysRes_Success)(RES),
-				      ARG2_0, ARG2_1,
-				      ARG2_2, ARG2_3, ARG2_4 );
+    ML_(linux_POST_sys_getsockopt)( tid, VG_(mk_SysRes_Success)(RES),
+				    ARG2_0, ARG2_1,
+				    ARG2_2, ARG2_3, ARG2_4 );
     break;
 
   case VKI_SYS_GETSOCKNAME:
@@ -1204,9 +1204,9 @@ const SyscallTableEntry ML_(syscall_table)[] = {
 // _____(__NR_acct,              sys_acct),               //  51
    LINX_(__NR_umount2,           sys_umount),             //  52
 // _____(__NR_lock,              sys_lock),               //  53
-   GENXY(__NR_ioctl,             sys_ioctl),              //  54
+   LINXY(__NR_ioctl,             sys_ioctl),              //  54
 
-   GENXY(__NR_fcntl,             sys_fcntl),              //  55
+   LINXY(__NR_fcntl,             sys_fcntl),              //  55
 // _____(__NR_mpx,               sys_mpx),                //  56
    GENX_(__NR_setpgid,           sys_setpgid),            //  57
 // _____(__NR_ulimit,            sys_ulimit),             //  58
@@ -1384,7 +1384,7 @@ const SyscallTableEntry ML_(syscall_table)[] = {
 // _____(__NR_multiplexer,       sys_multiplexer),        // 201
    GENXY(__NR_getdents64,        sys_getdents64),         // 202
 // _____(__NR_pivot_root,        sys_pivot_root),         // 203
-   GENXY(__NR_fcntl64,           sys_fcntl64),            // 204 !!!!?? 32bit only */
+   LINXY(__NR_fcntl64,           sys_fcntl64),            // 204 !!!!?? 32bit only */
 
    GENX_(__NR_madvise,           sys_madvise),            // 205
 // _____(__NR_mincore,           sys_mincore),            // 206

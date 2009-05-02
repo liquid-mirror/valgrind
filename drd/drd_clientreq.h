@@ -1,8 +1,7 @@
 /*
-  This file is part of drd, a data race detector.
+  This file is part of drd, a thread error detector.
 
-  Copyright (C) 2006-2008 Bart Van Assche
-  bart.vanassche@gmail.com
+  Copyright (C) 2006-2009 Bart Van Assche <bart.vanassche@gmail.com>.
 
   This program is free software; you can redistribute it and/or
   modify it under the terms of the GNU General Public License as
@@ -59,10 +58,10 @@ enum {
   VG_USERREQ__DRD_START_RECORDING,
   /* args: none. */
 
-  /* Tell the core the pthread_t of the running thread */
+  /* Tell drd the pthread_t of the running thread. */
   VG_USERREQ__SET_PTHREADID,
   /* args: pthread_t. */
-  /* Ask the core that a the thread's state transition from */
+  /* Ask drd that a the thread's state transition from */
   /* VgTs_Zombie to VgTs_Empty is delayed until */
   /* VG_USERREQ__POST_THREAD_JOIN is performed. */
   VG_USERREQ__SET_JOINABLE,
@@ -179,7 +178,7 @@ enum {
   /* args: Addr barrier, BarrierT type. */
   /* To notify the drd tool of a pthread_barrier_wait call. */
   VG_USERREQ__POST_BARRIER_WAIT,
-  /* args: Addr barrier, BarrierT type, Word has_waited */
+  /* args: Addr barrier, BarrierT type, Word has_waited, Word serializing */
 
   /* To notify the drd tool of a pthread_rwlock_init call. */
   VG_USERREQ__PRE_RWLOCK_INIT,

@@ -7,7 +7,7 @@
    This file is part of Cachegrind, a Valgrind tool for cache
    profiling programs.
 
-   Copyright (C) 2005-2008 Nicholas Nethercote
+   Copyright (C) 2005-2009 Nicholas Nethercote
       njn@valgrind.org
 
    This program is free software; you can redistribute it and/or
@@ -54,9 +54,8 @@ void VG_(configure_caches)(cache_t* I1c, cache_t* D1c, cache_t* L2c,
    // cachegrind/tests/filter_stderr!
    //
    if (!all_caches_clo_defined) {
-      VG_(message)(Vg_DebugMsg, 
-                   "Warning: Cannot auto-detect cache config on PPC64, using one "
-                   "or more defaults ");
+      VG_DMSG("Warning: Cannot auto-detect cache config on PPC64, using one "
+              "or more defaults ");
    }
 }
 

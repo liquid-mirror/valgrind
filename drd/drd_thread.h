@@ -1,8 +1,7 @@
 /*
-  This file is part of drd, a data race detector.
+  This file is part of drd, a thread error detector.
 
-  Copyright (C) 2006-2008 Bart Van Assche
-  bart.vanassche@gmail.com
+  Copyright (C) 2006-2009 Bart Van Assche <bart.vanassche@gmail.com>.
 
   This program is free software; you can redistribute it and/or
   modify it under the terms of the GNU General Public License as
@@ -32,35 +31,45 @@
 #include "drd_basics.h"
 #include "drd_segment.h"
 #include "pub_drd_bitmap.h"
-#include "pub_tool_libcassert.h"  // tl_assert()
-#include "pub_tool_stacktrace.h"  // StackTrace
-#include "pub_tool_threadstate.h" // VG_N_THREADS
+#include "pub_tool_libcassert.h"  /* tl_assert()        */
+#include "pub_tool_stacktrace.h"  /* typedef StackTrace */
+#include "pub_tool_threadstate.h" /* VG_N_THREADS       */
 
 
 /* Defines. */
 
+/** Maximum number of threads DRD keeps information about. */
 #define DRD_N_THREADS VG_N_THREADS
 
+/** A number different from any valid DRD thread ID. */
 #define DRD_INVALID_THREADID 0
 
-/* Note: the PThreadId typedef and the INVALID_POSIX_THREADID depend on the */
-/* operating system and threading library in use. PThreadId must contain at */
-/* least the same number of bits as pthread_t, and INVALID_POSIX_THREADID   */
-/* must be a value that will never be returned by pthread_self().           */
-
+/**
+ * A number different from any valid POSIX thread ID.
+ *
+ * @note The PThreadId typedef and the INVALID_POSIX_THREADID depend on the
+ * operating system and threading library in use. PThreadId must contain at
+ * least as many bits as pthread_t, and INVALID_POSIX_THREADID
+ * must be a value that will never be returned by pthread_self().
+ */
 #define INVALID_POSIX_THREADID ((PThreadId)0)
 
 
 /* Type definitions. */
 
+/**
+ * POSIX thread ID. The type PThreadId must be at least as wide as
+ * pthread_t.
+ */
 typedef UWord PThreadId;
 
+/** Per-thread information managed by DRD. */
 typedef struct
 {
-  Segment*  first;
-  Segment*  last;
-  ThreadId  vg_threadid;
-  PThreadId pt_threadid;
+  Segment*  first;         /**< Pointer to first segment. */
+  Segment*  last;          /**< Pointer to last segment. */
+  ThreadId  vg_threadid;   /**< Valgrind thread ID. */
+  PThreadId pt_threadid;   /**< POSIX thread ID. */
   Addr      stack_min_min; /**< Lowest value stack pointer ever had. */
   Addr      stack_min;     /**< Current stack pointer. */
   Addr      stack_startup; /**<Stack pointer after pthread_create() finished.*/
@@ -87,8 +96,15 @@ typedef struct
  * can be accessed by inline functions.
  */
 
+/**
+ * DRD thread ID of the currently running thread. It is crucial for correct
+ * operation of DRD that this number is always in sync with
+ * VG_(get_running_tid)().
+ */
 extern DrdThreadId    DRD_(g_drd_running_tid);
+/** Per-thread information managed by DRD. */
 extern ThreadInfo     DRD_(g_threadinfo)[DRD_N_THREADS];
+/** Conflict set for the currently running thread. */
 extern struct bitmap* DRD_(g_conflict_set);
 
 
@@ -154,6 +170,15 @@ ULong thread_get_compute_conflict_set_bitmap2_count(void);
 
 /* Inline function definitions. */
 
+/**
+ * Whether or not the specified DRD thread ID is valid.
+ *
+ * A DRD thread ID is valid if and only if the following conditions are met:
+ * - The ID is a valid index of the DRD_(g_threadinfo)[] array.
+ * - The ID is not equal to DRD_INVALID_THREADID.
+ * - The ID refers either to a thread known by the Valgrind core, a joinable
+ *   thread that has not yet been joined or a detached thread.
+ */
 static __inline__
 Bool DRD_(IsValidDrdThreadId)(const DrdThreadId tid)
 {
@@ -163,6 +188,7 @@ Bool DRD_(IsValidDrdThreadId)(const DrdThreadId tid)
                 && DRD_(g_threadinfo)[tid].detached_posix_thread == False));
 }
 
+/** Returns the DRD thread ID of the currently running thread. */
 static __inline__
 DrdThreadId DRD_(thread_get_running_tid)(void)
 {
@@ -170,12 +196,17 @@ DrdThreadId DRD_(thread_get_running_tid)(void)
   return DRD_(g_drd_running_tid);
 }
 
+/** Returns a pointer to the conflict set for the currently running thread. */
 static __inline__
 struct bitmap* DRD_(thread_get_conflict_set)(void)
 {
   return DRD_(g_conflict_set);
 }
 
+/**
+ * Reports whether or not memory access recording is enabled for the 
+ * currently running thread.
+ */
 static __inline__
 Bool DRD_(running_thread_is_recording)(void)
 {
@@ -187,6 +218,10 @@ Bool DRD_(running_thread_is_recording)(void)
           && DRD_(g_threadinfo)[DRD_(g_drd_running_tid)].is_recording);
 }
 
+/**
+ * Update the information about the lowest stack address that has ever been
+ * accessed by a thread.
+ */
 static __inline__
 void DRD_(thread_set_stack_min)(const DrdThreadId tid, const Addr stack_min)
 {
@@ -219,6 +254,27 @@ Bool DRD_(thread_address_on_stack)(const Addr a)
 	  && a < DRD_(g_threadinfo)[DRD_(g_drd_running_tid)].stack_max);
 }
 
+/**
+ * Return true if and only if the specified address is on the stack of any
+ * thread.
+ */
+static __inline__
+Bool DRD_(thread_address_on_any_stack)(const Addr a)
+{
+  int i;
+
+  for (i = 1; i < DRD_N_THREADS; i++)
+  {
+    if (DRD_(g_threadinfo)[i].vg_thread_exists
+        && DRD_(g_threadinfo)[i].stack_min <= a
+	&& a < DRD_(g_threadinfo)[i].stack_max)
+    {
+      return True;
+    }
+  }
+  return False;
+}
+
 /** Return a pointer to the latest segment for the specified thread. */
 static __inline__
 Segment* DRD_(thread_get_segment)(const DrdThreadId tid)
@@ -238,4 +294,4 @@ Segment* DRD_(running_thread_get_segment)(void)
   return DRD_(thread_get_segment)(DRD_(g_drd_running_tid));
 }
 
-#endif // __THREAD_H
+#endif /* __THREAD_H */

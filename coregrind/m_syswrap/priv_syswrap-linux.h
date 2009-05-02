@@ -7,7 +7,7 @@
    This file is part of Valgrind, a dynamic binary instrumentation
    framework.
 
-   Copyright (C) 2000-2008 Nicholas Nethercote
+   Copyright (C) 2000-2009 Nicholas Nethercote
       njn@valgrind.org
 
    This program is free software; you can redistribute it and/or
@@ -47,6 +47,11 @@ extern SysRes ML_(do_fork_clone) ( ThreadId tid, UInt flags,
 DECL_TEMPLATE(linux, sys_mount);
 DECL_TEMPLATE(linux, sys_oldumount);
 DECL_TEMPLATE(linux, sys_umount);
+
+// POSIX, but various sub-cases differ between Linux and Darwin.
+DECL_TEMPLATE(linux, sys_fcntl);
+DECL_TEMPLATE(linux, sys_fcntl64);
+DECL_TEMPLATE(linux, sys_ioctl);
 
 DECL_TEMPLATE(linux, sys_setfsuid16);
 DECL_TEMPLATE(linux, sys_setfsuid);
@@ -252,11 +257,13 @@ DECL_TEMPLATE(linux, sys_lookup_dcookie);        // (*/32/64) L
 #define UW  UWord
 #define SR  SysRes
 
-extern void   ML_(linux_PRE_sys_msgsnd)  ( TId, UW, UW, UW, UW );
-extern void   ML_(linux_PRE_sys_msgrcv)  ( TId, UW, UW, UW, UW, UW );
-extern void   ML_(linux_POST_sys_msgrcv) ( TId, UW, UW, UW, UW, UW, UW );
-extern void   ML_(linux_PRE_sys_msgctl)  ( TId, UW, UW, UW );
-extern void   ML_(linux_POST_sys_msgctl) ( TId, UW, UW, UW, UW );
+extern void ML_(linux_PRE_sys_msgsnd)      ( TId, UW, UW, UW, UW );
+extern void ML_(linux_PRE_sys_msgrcv)      ( TId, UW, UW, UW, UW, UW );
+extern void ML_(linux_POST_sys_msgrcv)     ( TId, UW, UW, UW, UW, UW, UW );
+extern void ML_(linux_PRE_sys_msgctl)      ( TId, UW, UW, UW );
+extern void ML_(linux_POST_sys_msgctl)     ( TId, UW, UW, UW, UW );
+extern void ML_(linux_PRE_sys_getsockopt)  ( TId, UW, UW, UW, UW, UW );
+extern void ML_(linux_POST_sys_getsockopt) ( TId, SR, UW, UW, UW, UW, UW );
 
 #undef TId
 #undef UW

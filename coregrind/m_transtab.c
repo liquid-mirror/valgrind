@@ -8,7 +8,7 @@
    This file is part of Valgrind, a dynamic binary instrumentation
    framework.
 
-   Copyright (C) 2000-2008 Julian Seward 
+   Copyright (C) 2000-2009 Julian Seward 
       jseward@acm.org
 
    This program is free software; you can redistribute it and/or
@@ -1350,8 +1350,7 @@ static Bool sanity_check_redir_tt_tc ( void )
 void VG_(add_to_unredir_transtab)( VexGuestExtents* vge,
                                    Addr64           entry,
                                    AddrH            code,
-                                   UInt             code_len,
-                                   Bool             is_self_checking )
+                                   UInt             code_len )
 {
    Int   i, j, code_szQ;
    HChar *srcP, *dstP;

@@ -9,9 +9,9 @@
    This file is part of Ptrcheck, a Valgrind tool for checking pointer
    use in programs.
 
-   Copyright (C) 2003-2008 Nicholas Nethercote
+   Copyright (C) 2003-2009 Nicholas Nethercote
       njn@valgrind.org
-   Copyright (C) 2008-2008 OpenWorks Ltd
+   Copyright (C) 2008-2009 OpenWorks Ltd
       info@open-works.co.uk
 
    This program is free software; you can redistribute it and/or
@@ -65,6 +65,7 @@ void  h_replace_free ( ThreadId tid, void* p );
 void  h_replace___builtin_delete ( ThreadId tid, void* p );
 void  h_replace___builtin_vec_delete ( ThreadId tid, void* p );
 void* h_replace_realloc ( ThreadId tid, void* p_old, SizeT new_size );
+SizeT h_replace_malloc_usable_size ( ThreadId tid, void* p );
 
 void h_new_mem_startup( Addr a, SizeT len,
                         Bool rr, Bool ww, Bool xx, ULong di_handle );

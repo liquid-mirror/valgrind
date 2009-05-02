@@ -8,7 +8,7 @@
    This file is part of Valgrind, a dynamic binary instrumentation
    framework.
 
-   Copyright (C) 2000-2008 Julian Seward 
+   Copyright (C) 2000-2009 Julian Seward 
       jseward@acm.org
 
    This program is free software; you can redistribute it and/or
@@ -559,8 +559,7 @@ POSIX_MEMALIGN(VG_Z_LIBC_SONAME, memalign_common);
       if (NULL == p) \
          return 0; \
       \
-      pszB = (SizeT)VALGRIND_NON_SIMD_CALL2( info.arena_payload_szB, \
-                                             VG_AR_CLIENT, p ); \
+      pszB = (SizeT)VALGRIND_NON_SIMD_CALL1( info.tl_malloc_usable_size, p ); \
       MALLOC_TRACE(" = %llu", (ULong)pszB ); \
       \
       return pszB; \

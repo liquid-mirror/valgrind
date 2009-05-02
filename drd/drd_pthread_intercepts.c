@@ -4,7 +4,7 @@
 /*--------------------------------------------------------------------*/
 
 /*
-  This file is part of DRD, a data race detector.
+  This file is part of DRD, a thread error detector.
 
   Copyright (C) 2006-2009 Bart Van Assche <bart.vanassche@gmail.com>.
 
@@ -61,6 +61,22 @@
 
 /* Defines. */
 
+/*
+ * Do not undefine the two macro's below, or the following two subtle race
+ * conditions will be introduced in the data race detection algorithm:
+ * - sg_init() runs on the context of the created thread and copies the
+ *   vector clock of the creator thread. This only works reliably if
+ *   the creator thread waits until this copy has been performed.
+ * - Since DRD_(thread_compute_minimum_vc)() does not take the vector
+ *   clocks into account that are involved in thread creation but
+ *   for which the corresponding thread has not yet been created, by
+ *   undefining the macro below it becomes possible that segments get
+ *   discarded that should not yet be discarded. Or: some data races
+ *   are not detected.
+ */
+#define WAIT_UNTIL_CREATED_THREAD_STARTED
+#define ALLOCATE_THREAD_ARGS_ON_THE_STACK
+
 #define PTH_FUNC(ret_ty, f, args...)                            \
   ret_ty VG_WRAP_FUNCTION_ZZ(libpthreadZdsoZd0,f)(args);        \
   ret_ty VG_WRAP_FUNCTION_ZZ(libpthreadZdsoZd0,f)(args)
@@ -73,7 +89,9 @@ typedef struct
   void* (*start)(void*);
   void* arg;
   int   detachstate;
+#if defined(WAIT_UNTIL_CREATED_THREAD_STARTED)
   int   wrapper_started;
+#endif
 } DrdPosixThreadArgs;
 
 
@@ -182,7 +200,15 @@ static void* DRD_(thread_wrapper)(void* arg)
 
   arg_ptr = (DrdPosixThreadArgs*)arg;
   arg_copy = *arg_ptr;
+#if defined(WAIT_UNTIL_CREATED_THREAD_STARTED)
   arg_ptr->wrapper_started = 1;
+#else
+#if defined(ALLOCATE_THREAD_ARGS_ON_THE_STACK)
+#error Defining ALLOCATE_THREAD_ARGS_ON_THE_STACK but not WAIT_UNTIL_CREATED_THREAD_STARTED is not supported.
+#else
+  free(arg_ptr);
+#endif
+#endif
 
   VALGRIND_DO_CLIENT_REQUEST(res, -1, VG_USERREQ__SET_PTHREADID,
                              pthread_self(), 0, 0, 0, 0);
@@ -194,8 +220,10 @@ static void* DRD_(thread_wrapper)(void* arg)
 }
 
 /**
- * Return 1 if the LinuxThread implementation has been detected, and 0
- * otherwise. For more information about the confstr() function, see also
+ * Return 1 if the LinuxThreads implementation of POSIX Threads has been
+ * detected, and 0 otherwise.
+ *
+ * @see For more information about the confstr() function, see also
  * http://www.opengroup.org/onlinepubs/009695399/functions/confstr.html
  */
 static int DRD_(detected_linuxthreads)(void)
@@ -272,39 +300,52 @@ PTH_FUNC(int, pthreadZucreateZa, // pthread_create*
   int    res;
   int    ret;
   OrigFn fn;
+#if defined(ALLOCATE_THREAD_ARGS_ON_THE_STACK)
   DrdPosixThreadArgs thread_args;
+#endif
+  DrdPosixThreadArgs* thread_args_p;
 
   VALGRIND_GET_ORIG_FN(fn);
 
-  DRD_IGNORE_VAR(thread_args.wrapper_started);
-  thread_args.start           = start;
-  thread_args.arg             = arg;
-  thread_args.wrapper_started = 0;
+#if defined(ALLOCATE_THREAD_ARGS_ON_THE_STACK)
+  thread_args_p = &thread_args;
+#else
+  thread_args_p = malloc(sizeof(*thread_args_p));
+#endif
+  assert(thread_args_p);
+
+  thread_args_p->start           = start;
+  thread_args_p->arg             = arg;
+#if defined(WAIT_UNTIL_CREATED_THREAD_STARTED)
+  DRD_IGNORE_VAR(thread_args_p->wrapper_started);
+  thread_args_p->wrapper_started = 0;
+#endif
   /*
    * Find out whether the thread will be started as a joinable thread
    * or as a detached thread. If no thread attributes have been specified,
-   * the new thread will be started as a joinable thread.
+   * this means that the new thread will be started as a joinable thread.
    */
-  thread_args.detachstate = PTHREAD_CREATE_JOINABLE;
+  thread_args_p->detachstate = PTHREAD_CREATE_JOINABLE;
   if (attr)
   {
-    if (pthread_attr_getdetachstate(attr, &thread_args.detachstate) != 0)
+    if (pthread_attr_getdetachstate(attr, &thread_args_p->detachstate) != 0)
     {
       assert(0);
     }
   }
-  assert(thread_args.detachstate == PTHREAD_CREATE_JOINABLE
-         || thread_args.detachstate == PTHREAD_CREATE_DETACHED);
+  assert(thread_args_p->detachstate == PTHREAD_CREATE_JOINABLE
+         || thread_args_p->detachstate == PTHREAD_CREATE_DETACHED);
 
   /* Suppress NPTL-specific conflicts between creator and created thread. */
   VALGRIND_DO_CLIENT_REQUEST(res, -1, VG_USERREQ__DRD_STOP_RECORDING,
                              0, 0, 0, 0, 0);
 
-  CALL_FN_W_WWWW(ret, fn, thread, attr, DRD_(thread_wrapper), &thread_args);
+  CALL_FN_W_WWWW(ret, fn, thread, attr, DRD_(thread_wrapper), thread_args_p);
 
   VALGRIND_DO_CLIENT_REQUEST(res, -1, VG_USERREQ__DRD_START_RECORDING,
                              0, 0, 0, 0, 0);
 
+#if defined(WAIT_UNTIL_CREATED_THREAD_STARTED)
   if (ret == 0)
   {
     /*
@@ -313,11 +354,20 @@ PTH_FUNC(int, pthreadZucreateZa, // pthread_create*
      *   passed via dynamically allocated memory and if the loop below is
      *   removed.
      */
-    while (! thread_args.wrapper_started)
+    while (! thread_args_p->wrapper_started)
     {
       sched_yield();
     }
   }
+
+#if defined(ALLOCATE_THREAD_ARGS_DYNAMICALLY)
+  free(thread_args_p);
+#endif
+
+#endif
+
+  VALGRIND_DO_CLIENT_REQUEST(res, -1, VG_USERREQ__DRD_START_NEW_SEGMENT,
+                             pthread_self(), 0, 0, 0, 0);
 
   return ret;
 }
@@ -706,7 +756,7 @@ PTH_FUNC(int, pthreadZubarrierZuwait, // pthread_barrier_wait
   VALGRIND_DO_CLIENT_REQUEST(res, -1, VG_USERREQ__POST_BARRIER_WAIT,
                              barrier, pthread_barrier,
                              ret == 0 || ret == PTHREAD_BARRIER_SERIAL_THREAD,
-                             0, 0);
+                             ret == PTHREAD_BARRIER_SERIAL_THREAD, 0);
   return ret;
 }
 

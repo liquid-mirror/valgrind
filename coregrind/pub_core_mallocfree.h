@@ -7,7 +7,7 @@
    This file is part of Valgrind, a dynamic binary instrumentation
    framework.
 
-   Copyright (C) 2000-2008 Julian Seward
+   Copyright (C) 2000-2009 Julian Seward
       jseward@acm.org
 
    This program is free software; you can redistribute it and/or
@@ -99,6 +99,8 @@ extern Char* VG_(arena_strdup)  ( ArenaId aid, HChar* cc,
 
 // Nb: The ThreadId doesn't matter, it's not used.
 extern SizeT VG_(arena_payload_szB) ( ThreadId tid, ArenaId aid, void* payload );
+
+extern SizeT VG_(arena_malloc_usable_size) ( ArenaId aid, void* payload );
 
 extern void  VG_(mallinfo) ( ThreadId tid, struct vg_mallinfo* mi );
 

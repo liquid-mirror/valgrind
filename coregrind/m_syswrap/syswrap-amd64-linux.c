@@ -7,7 +7,7 @@
    This file is part of Valgrind, a dynamic binary instrumentation
    framework.
 
-   Copyright (C) 2000-2008 Nicholas Nethercote
+   Copyright (C) 2000-2009 Nicholas Nethercote
       njn@valgrind.org
 
    This program is free software; you can redistribute it and/or
@@ -641,13 +641,13 @@ PRE(sys_getsockopt)
    PRE_REG_READ5(long, "getsockopt",
                  int, s, int, level, int, optname,
                  void *, optval, int, *optlen);
-   ML_(generic_PRE_sys_getsockopt)(tid, ARG1,ARG2,ARG3,ARG4,ARG5);
+   ML_(linux_PRE_sys_getsockopt)(tid, ARG1,ARG2,ARG3,ARG4,ARG5);
 }
 POST(sys_getsockopt)
 {
    vg_assert(SUCCESS);
-   ML_(generic_POST_sys_getsockopt)(tid, VG_(mk_SysRes_Success)(RES),
-                                         ARG1,ARG2,ARG3,ARG4,ARG5);
+   ML_(linux_POST_sys_getsockopt)(tid, VG_(mk_SysRes_Success)(RES),
+                                       ARG1,ARG2,ARG3,ARG4,ARG5);
 }
 
 PRE(sys_connect)
@@ -1034,7 +1034,7 @@ const SyscallTableEntry ML_(syscall_table)[] = {
    LINXY(__NR_rt_sigprocmask,    sys_rt_sigprocmask), // 14 
 
    PLAX_(__NR_rt_sigreturn,      sys_rt_sigreturn),   // 15 
-   GENXY(__NR_ioctl,             sys_ioctl),          // 16 
+   LINXY(__NR_ioctl,             sys_ioctl),          // 16 
    GENXY(__NR_pread64,           sys_pread64_on64bitplat),  // 17 
    GENX_(__NR_pwrite64,          sys_pwrite64_on64bitplat), // 18 
    GENXY(__NR_readv,             sys_readv),          // 19 
@@ -1101,7 +1101,7 @@ const SyscallTableEntry ML_(syscall_table)[] = {
 
    PLAXY(__NR_msgrcv,            sys_msgrcv),         // 70 
    PLAXY(__NR_msgctl,            sys_msgctl),         // 71 
-   GENXY(__NR_fcntl,             sys_fcntl),          // 72 
+   LINXY(__NR_fcntl,             sys_fcntl),          // 72 
    GENX_(__NR_flock,             sys_flock),          // 73 
    GENX_(__NR_fsync,             sys_fsync),          // 74 
 

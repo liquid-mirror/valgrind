@@ -1,8 +1,7 @@
 /*
-  This file is part of drd, a data race detector.
+  This file is part of drd, a thread error detector.
 
-  Copyright (C) 2006-2008 Bart Van Assche
-  bart.vanassche@gmail.com
+  Copyright (C) 2006-2009 Bart Van Assche <bart.vanassche@gmail.com>.
 
   This program is free software; you can redistribute it and/or
   modify it under the terms of the GNU General Public License as
@@ -59,7 +58,7 @@ typedef struct segment
 } Segment;
 
 
-Segment* DRD_(sg_new)(const ThreadId creator, const ThreadId created);
+Segment* DRD_(sg_new)(const DrdThreadId creator, const DrdThreadId created);
 int DRD_(sg_get_refcnt)(const Segment* const sg);
 Segment* DRD_(sg_get)(Segment* const sg);
 void DRD_(sg_put)(Segment* const sg);

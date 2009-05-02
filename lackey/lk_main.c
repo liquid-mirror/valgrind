@@ -7,7 +7,7 @@
    This file is part of Lackey, an example Valgrind tool that does
    some simple program measurement and tracing.
 
-   Copyright (C) 2002-2008 Nicholas Nethercote
+   Copyright (C) 2002-2009 Nicholas Nethercote
       njn@valgrind.org
 
    This program is free software; you can redistribute it and/or
@@ -196,11 +196,11 @@ static Char* clo_fnname = "_dl_runtime_resolve";
 
 static Bool lk_process_cmd_line_option(Char* arg)
 {
-   VG_STR_CLO(arg, "--fnname", clo_fnname)
-   else VG_BOOL_CLO(arg, "--basic-counts",      clo_basic_counts)
-   else VG_BOOL_CLO(arg, "--detailed-counts",   clo_detailed_counts)
-   else VG_BOOL_CLO(arg, "--trace-mem",         clo_trace_mem)
-   else VG_BOOL_CLO(arg, "--trace-superblocks", clo_trace_sbs)
+   if VG_STR_CLO(arg, "--fnname", clo_fnname) {}
+   else if VG_BOOL_CLO(arg, "--basic-counts",      clo_basic_counts) {}
+   else if VG_BOOL_CLO(arg, "--detailed-counts",   clo_detailed_counts) {}
+   else if VG_BOOL_CLO(arg, "--trace-mem",         clo_trace_mem) {}
+   else if VG_BOOL_CLO(arg, "--trace-superblocks", clo_trace_sbs) {}
    else
       return False;
    
@@ -368,17 +368,14 @@ static void instrument_detail(IRSB* sb, Op op, IRType type)
 static void print_details ( void )
 {
    Int typeIx;
-   VG_(message)(Vg_UserMsg,
-                "   Type        Loads       Stores       AluOps");
-   VG_(message)(Vg_UserMsg,
-                "   -------------------------------------------");
+   VG_UMSG("   Type        Loads       Stores       AluOps");
+   VG_UMSG("   -------------------------------------------");
    for (typeIx = 0; typeIx < N_TYPES; typeIx++) {
-      VG_(message)(Vg_UserMsg,
-                   "   %4s %'12llu %'12llu %'12llu",
-                   nameOfTypeIndex( typeIx ),
-                   detailCounts[OpLoad ][typeIx],
-                   detailCounts[OpStore][typeIx],
-                   detailCounts[OpAlu  ][typeIx]
+      VG_UMSG("   %4s %'12llu %'12llu %'12llu",
+              nameOfTypeIndex( typeIx ),
+              detailCounts[OpLoad ][typeIx],
+              detailCounts[OpStore][typeIx],
+              detailCounts[OpAlu  ][typeIx]
       );
    }
 }
@@ -865,45 +862,44 @@ static void lk_fini(Int exitcode)
       ULong total_Jccs = n_Jccs + n_IJccs;
       ULong taken_Jccs = (n_Jccs - n_Jccs_untaken) + n_IJccs_untaken;
 
-      VG_(message)(Vg_UserMsg,
-         "Counted %'llu calls to %s()", n_func_calls, clo_fnname);
+      VG_UMSG("Counted %'llu calls to %s()", n_func_calls, clo_fnname);
 
-      VG_(message)(Vg_UserMsg, "");
-      VG_(message)(Vg_UserMsg, "Jccs:");
-      VG_(message)(Vg_UserMsg, "  total:         %'llu", total_Jccs);
+      VG_UMSG("");
+      VG_UMSG("Jccs:");
+      VG_UMSG("  total:         %'llu", total_Jccs);
       VG_(percentify)(taken_Jccs, (total_Jccs ? total_Jccs : 1),
          percentify_decs, percentify_size, percentify_buf);
-      VG_(message)(Vg_UserMsg, "  taken:         %'llu (%s)",
+      VG_UMSG("  taken:         %'llu (%s)",
          taken_Jccs, percentify_buf);
       
-      VG_(message)(Vg_UserMsg, "");
-      VG_(message)(Vg_UserMsg, "Executed:");
-      VG_(message)(Vg_UserMsg, "  SBs entered:   %'llu", n_SBs_entered);
-      VG_(message)(Vg_UserMsg, "  SBs completed: %'llu", n_SBs_completed);
-      VG_(message)(Vg_UserMsg, "  guest instrs:  %'llu", n_guest_instrs);
-      VG_(message)(Vg_UserMsg, "  IRStmts:       %'llu", n_IRStmts);
+      VG_UMSG("");
+      VG_UMSG("Executed:");
+      VG_UMSG("  SBs entered:   %'llu", n_SBs_entered);
+      VG_UMSG("  SBs completed: %'llu", n_SBs_completed);
+      VG_UMSG("  guest instrs:  %'llu", n_guest_instrs);
+      VG_UMSG("  IRStmts:       %'llu", n_IRStmts);
       
-      VG_(message)(Vg_UserMsg, "");
-      VG_(message)(Vg_UserMsg, "Ratios:");
+      VG_UMSG("");
+      VG_UMSG("Ratios:");
       tl_assert(n_SBs_entered); // Paranoia time.
-      VG_(message)(Vg_UserMsg, "  guest instrs : SB entered  = %3llu : 10",
+      VG_UMSG("  guest instrs : SB entered  = %'llu : 10",
          10 * n_guest_instrs / n_SBs_entered);
-      VG_(message)(Vg_UserMsg, "       IRStmts : SB entered  = %3llu : 10",
+      VG_UMSG("       IRStmts : SB entered  = %'llu : 10",
          10 * n_IRStmts / n_SBs_entered);
       tl_assert(n_guest_instrs); // Paranoia time.
-      VG_(message)(Vg_UserMsg, "       IRStmts : guest instr = %3llu : 10",
+      VG_UMSG("       IRStmts : guest instr = %'llu : 10",
          10 * n_IRStmts / n_guest_instrs);
    }
 
    if (clo_detailed_counts) {
-      VG_(message)(Vg_UserMsg, "");
-      VG_(message)(Vg_UserMsg, "IR-level counts by type:");
+      VG_UMSG("");
+      VG_UMSG("IR-level counts by type:");
       print_details();
    }
 
    if (clo_basic_counts) {
-      VG_(message)(Vg_UserMsg, "");
-      VG_(message)(Vg_UserMsg, "Exit code:       %d", exitcode);
+      VG_UMSG("");
+      VG_UMSG("Exit code:       %d", exitcode);
    }
 }
 
@@ -913,7 +909,7 @@ static void lk_pre_clo_init(void)
    VG_(details_version)         (NULL);
    VG_(details_description)     ("an example Valgrind tool");
    VG_(details_copyright_author)(
-      "Copyright (C) 2002-2008, and GNU GPL'd, by Nicholas Nethercote.");
+      "Copyright (C) 2002-2009, and GNU GPL'd, by Nicholas Nethercote.");
    VG_(details_bug_reports_to)  (VG_BUGS_TO);
    VG_(details_avg_translation_sizeB) ( 200 );
 

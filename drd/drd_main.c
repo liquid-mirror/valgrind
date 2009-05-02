@@ -1,5 +1,5 @@
 /*
-  This file is part of drd, a data race detector.
+  This file is part of drd, a thread error detector.
 
   Copyright (C) 2006-2009 Bart Van Assche <bart.vanassche@gmail.com>.
 
@@ -84,28 +84,28 @@ static Bool DRD_(process_cmd_line_option)(Char* arg)
   int trace_suppression      = -1;
   Char* trace_address        = 0;
 
-  VG_BOOL_CLO     (arg, "--check-stack-var",     check_stack_accesses)
-  else VG_BOOL_CLO(arg, "--drd-stats",           DRD_(s_print_stats))
-  else VG_BOOL_CLO(arg, "--first-race-only",     DRD_(s_drd_first_race_only))
-  else VG_BOOL_CLO(arg,"--report-signal-unlocked",report_signal_unlocked)
-  else VG_BOOL_CLO(arg, "--segment-merging",     segment_merging)
-  else VG_BOOL_CLO(arg, "--show-confl-seg",      show_confl_seg)
-  else VG_BOOL_CLO(arg, "--show-stack-usage",    DRD_(s_show_stack_usage))
-  else VG_BOOL_CLO(arg, "--trace-barrier",       trace_barrier)
-  else VG_BOOL_CLO(arg, "--trace-clientobj",     trace_clientobj)
-  else VG_BOOL_CLO(arg, "--trace-cond",          trace_cond)
-  else VG_BOOL_CLO(arg, "--trace-conflict-set",  trace_conflict_set)
-  else VG_BOOL_CLO(arg, "--trace-csw",           trace_csw)
-  else VG_BOOL_CLO(arg, "--trace-fork-join",     trace_fork_join)
-  else VG_BOOL_CLO(arg, "--trace-mutex",         trace_mutex)
-  else VG_BOOL_CLO(arg, "--trace-rwlock",        trace_rwlock)
-  else VG_BOOL_CLO(arg, "--trace-segment",       trace_segment)
-  else VG_BOOL_CLO(arg, "--trace-semaphore",     trace_semaphore)
-  else VG_BOOL_CLO(arg, "--trace-suppr",         trace_suppression)
-  else VG_BOOL_CLO(arg, "--var-info",            DRD_(s_var_info))
-  else VG_NUM_CLO (arg, "--exclusive-threshold", exclusive_threshold_ms)
-  else VG_NUM_CLO (arg, "--shared-threshold",    shared_threshold_ms)
-  else VG_STR_CLO (arg, "--trace-addr",          trace_address)
+  if     VG_BOOL_CLO(arg, "--check-stack-var",     check_stack_accesses) {}
+  else if VG_BOOL_CLO(arg, "--drd-stats",           DRD_(s_print_stats)) {}
+  else if VG_BOOL_CLO(arg, "--first-race-only",     DRD_(s_drd_first_race_only)) {}
+  else if VG_BOOL_CLO(arg,"--report-signal-unlocked",report_signal_unlocked) {}
+  else if VG_BOOL_CLO(arg, "--segment-merging",     segment_merging) {}
+  else if VG_BOOL_CLO(arg, "--show-confl-seg",      show_confl_seg) {}
+  else if VG_BOOL_CLO(arg, "--show-stack-usage",    DRD_(s_show_stack_usage)) {}
+  else if VG_BOOL_CLO(arg, "--trace-barrier",       trace_barrier) {}
+  else if VG_BOOL_CLO(arg, "--trace-clientobj",     trace_clientobj) {}
+  else if VG_BOOL_CLO(arg, "--trace-cond",          trace_cond) {}
+  else if VG_BOOL_CLO(arg, "--trace-conflict-set",  trace_conflict_set) {}
+  else if VG_BOOL_CLO(arg, "--trace-csw",           trace_csw) {}
+  else if VG_BOOL_CLO(arg, "--trace-fork-join",     trace_fork_join) {}
+  else if VG_BOOL_CLO(arg, "--trace-mutex",         trace_mutex) {}
+  else if VG_BOOL_CLO(arg, "--trace-rwlock",        trace_rwlock) {}
+  else if VG_BOOL_CLO(arg, "--trace-segment",       trace_segment) {}
+  else if VG_BOOL_CLO(arg, "--trace-semaphore",     trace_semaphore) {}
+  else if VG_BOOL_CLO(arg, "--trace-suppr",         trace_suppression) {}
+  else if VG_BOOL_CLO(arg, "--var-info",            DRD_(s_var_info)) {}
+  else if VG_INT_CLO (arg, "--exclusive-threshold", exclusive_threshold_ms) {}
+  else if VG_INT_CLO (arg, "--shared-threshold",    shared_threshold_ms)    {}
+  else if VG_STR_CLO (arg, "--trace-addr",          trace_address) {}
   else
     return VG_(replacement_malloc_process_cmd_line_option)(arg);
 
@@ -315,6 +315,17 @@ static __inline__
 void drd_stop_using_nonstack_mem(const Addr a1, const SizeT len)
 {
   drd_stop_using_mem(a1, len, False);
+}
+
+/**
+ * Discard all information DRD has about memory accesses and client objects
+ * in the specified address range.
+ */
+void DRD_(clean_memory)(const Addr a1, const SizeT len)
+{
+  const Bool is_stack_memory = DRD_(thread_address_on_any_stack)(a1);
+  drd_stop_using_mem(a1, len, is_stack_memory);
+  drd_start_using_mem(a1, len);
 }
 
 /**
@@ -599,7 +610,7 @@ void drd_pre_clo_init(void)
   VG_(details_name)            ("drd");
   VG_(details_version)         (NULL);
   VG_(details_description)     ("a thread error detector");
-  VG_(details_copyright_author)("Copyright (C) 2006-2008, and GNU GPL'd,"
+  VG_(details_copyright_author)("Copyright (C) 2006-2009, and GNU GPL'd,"
                                 " by Bart Van Assche.");
   VG_(details_bug_reports_to)  (VG_BUGS_TO);
 

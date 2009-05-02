@@ -9,7 +9,7 @@
    This file is part of MemCheck, a heavyweight Valgrind tool for
    detecting memory errors.
 
-   Copyright (C) 2000-2008 Julian Seward 
+   Copyright (C) 2000-2009 Julian Seward 
       jseward@acm.org
 
    This program is free software; you can redistribute it and/or
@@ -1056,9 +1056,9 @@ INLINE Bool MC_(in_ignored_range) ( Addr a )
 
 static Bool isHex ( UChar c )
 {
-  return ((c >= '0' && c <= '9')
-	  || (c >= 'a' && c <= 'f')
-	  || (c >= 'A' && c <= 'F'));
+  return ((c >= '0' && c <= '9') ||
+	  (c >= 'a' && c <= 'f') ||
+	  (c >= 'A' && c <= 'F'));
 }
 
 static UInt fromHex ( UChar c )
@@ -3640,7 +3640,7 @@ void check_mem_is_addressable ( CorePart part, ThreadId tid, Char* s,
          break;
 
       case Vg_CoreSignal:
-         MC_(record_core_mem_error)( tid, /*isAddrErr*/True, s );
+         MC_(record_core_mem_error)( tid, s );
          break;
 
       default:
@@ -4411,7 +4411,6 @@ void MC_(helperc_value_checkN_fail_no_o) ( HWord sz ) {
    but we took them out because they ranged from not-very-helpful to
    downright annoying, and they complicated the error data structures. */
 static Int mc_get_or_set_vbits_for_client ( 
-   ThreadId tid,
    Addr a, 
    Addr vbits, 
    SizeT szB, 
@@ -4460,8 +4459,7 @@ static Int mc_get_or_set_vbits_for_client (
    address space is possibly in use, or not.  If in doubt return
    True.
 */
-static
-Bool mc_is_within_valid_secondary ( Addr a )
+Bool MC_(is_within_valid_secondary) ( Addr a )
 {
    SecMap* sm = maybe_get_secmap_for ( a );
    if (sm == NULL || sm == &sm_distinguished[SM_DIST_NOACCESS]
@@ -4476,35 +4474,16 @@ Bool mc_is_within_valid_secondary ( Addr a )
 
 /* For the memory leak detector, say whether or not a given word
    address is to be regarded as valid. */
-static
-Bool mc_is_valid_aligned_word ( Addr a )
+Bool MC_(is_valid_aligned_word) ( Addr a )
 {
    tl_assert(sizeof(UWord) == 4 || sizeof(UWord) == 8);
-   if (sizeof(UWord) == 4) {
-      tl_assert(VG_IS_4_ALIGNED(a));
-   } else {
-      tl_assert(VG_IS_8_ALIGNED(a));
-   }
+   tl_assert(VG_IS_WORD_ALIGNED(a));
    if (is_mem_defined( a, sizeof(UWord), NULL, NULL) == MC_Ok
        && !MC_(in_ignored_range)(a)) {
       return True;
    } else {
       return False;
    }
-}
-
-
-/* Leak detector for this tool.  We don't actually do anything, merely
-   run the generic leak detector with suitable parameters for this
-   tool. */
-static void mc_detect_memory_leaks ( ThreadId tid, LeakCheckMode mode )
-{
-   MC_(do_detect_memory_leaks) ( 
-      tid, 
-      mode, 
-      mc_is_within_valid_secondary, 
-      mc_is_valid_aligned_word 
-   );
 }
 
 
@@ -4673,6 +4652,10 @@ Int           MC_(clo_mc_level)               = 2;
 
 static Bool mc_process_cmd_line_options(Char* arg)
 {
+   Char* tmp_str;
+   Char* bad_level_msg =
+      "ERROR: --track-origins=yes has no effect when --undef-value-errors=no";
+
    tl_assert( MC_(clo_mc_level) >= 1 && MC_(clo_mc_level) <= 3 );
 
    /* Set MC_(clo_mc_level):
@@ -4685,10 +4668,13 @@ static Bool mc_process_cmd_line_options(Char* arg)
       --track-origins=yes as meaningless.
    */
    if (0 == VG_(strcmp)(arg, "--undef-value-errors=no")) {
-      if (MC_(clo_mc_level) == 3)
-         goto mc_level_error;
-      MC_(clo_mc_level) = 1;
-      return True;
+      if (MC_(clo_mc_level) == 3) {
+         VG_(message)(Vg_DebugMsg, "%s", bad_level_msg);
+         return False;
+      } else {
+         MC_(clo_mc_level) = 1;
+         return True;
+      }
    }
    if (0 == VG_(strcmp)(arg, "--undef-value-errors=yes")) {
       if (MC_(clo_mc_level) == 1)
@@ -4701,38 +4687,42 @@ static Bool mc_process_cmd_line_options(Char* arg)
       return True;
    }
    if (0 == VG_(strcmp)(arg, "--track-origins=yes")) {
-      if (MC_(clo_mc_level) == 1)
-         goto mc_level_error;
-      MC_(clo_mc_level) = 3;
-      return True;
+      if (MC_(clo_mc_level) == 1) {
+         VG_(message)(Vg_DebugMsg, "%s", bad_level_msg);
+         return False;
+      } else {
+         MC_(clo_mc_level) = 3;
+         return True;
+      }
    }
 
-	VG_BOOL_CLO(arg, "--partial-loads-ok",      MC_(clo_partial_loads_ok))
-   else VG_BOOL_CLO(arg, "--show-reachable",        MC_(clo_show_reachable))
-   else VG_BOOL_CLO(arg, "--workaround-gcc296-bugs",MC_(clo_workaround_gcc296_bugs))
+	if VG_BOOL_CLO(arg, "--partial-loads-ok", MC_(clo_partial_loads_ok)) {}
+   else if VG_BOOL_CLO(arg, "--show-reachable",   MC_(clo_show_reachable))   {}
+   else if VG_BOOL_CLO(arg, "--workaround-gcc296-bugs",
+                                            MC_(clo_workaround_gcc296_bugs)) {}
 
-   else VG_BNUM_CLO(arg, "--freelist-vol",  MC_(clo_freelist_vol), 
-                                            0, 10*1000*1000*1000LL)
+   else if VG_BINT_CLO(arg, "--freelist-vol",  MC_(clo_freelist_vol), 
+                                               0, 10*1000*1000*1000LL) {}
    
-   else if (VG_CLO_STREQ(arg, "--leak-check=no"))
-      MC_(clo_leak_check) = LC_Off;
-   else if (VG_CLO_STREQ(arg, "--leak-check=summary"))
-      MC_(clo_leak_check) = LC_Summary;
-   else if (VG_CLO_STREQ(arg, "--leak-check=yes") ||
-	    VG_CLO_STREQ(arg, "--leak-check=full"))
-      MC_(clo_leak_check) = LC_Full;
+   else if VG_XACT_CLO(arg, "--leak-check=no",
+                            MC_(clo_leak_check), LC_Off) {}
+   else if VG_XACT_CLO(arg, "--leak-check=summary",
+                            MC_(clo_leak_check), LC_Summary) {}
+   else if VG_XACT_CLO(arg, "--leak-check=yes",
+                            MC_(clo_leak_check), LC_Full) {}
+   else if VG_XACT_CLO(arg, "--leak-check=full",
+                            MC_(clo_leak_check), LC_Full) {}
 
-   else if (VG_CLO_STREQ(arg, "--leak-resolution=low"))
-      MC_(clo_leak_resolution) = Vg_LowRes;
-   else if (VG_CLO_STREQ(arg, "--leak-resolution=med"))
-      MC_(clo_leak_resolution) = Vg_MedRes;
-   else if (VG_CLO_STREQ(arg, "--leak-resolution=high"))
-      MC_(clo_leak_resolution) = Vg_HighRes;
+   else if VG_XACT_CLO(arg, "--leak-resolution=low",
+                            MC_(clo_leak_resolution), Vg_LowRes) {}
+   else if VG_XACT_CLO(arg, "--leak-resolution=med",
+                            MC_(clo_leak_resolution), Vg_MedRes) {}
+   else if VG_XACT_CLO(arg, "--leak-resolution=high",
+                            MC_(clo_leak_resolution), Vg_HighRes) {}
 
-   else if (VG_CLO_STREQN(16,arg,"--ignore-ranges=")) {
-      Int    i;
-      UChar* txt = (UChar*)(arg+16);
-      Bool   ok  = parse_ignore_ranges(txt);
+   else if VG_STR_CLO(arg, "--ignore-ranges", tmp_str) {
+      Int  i;
+      Bool ok  = parse_ignore_ranges(tmp_str);
       if (!ok)
         return False;
       tl_assert(ignoreRanges.used >= 0);
@@ -4758,19 +4748,13 @@ static Bool mc_process_cmd_line_options(Char* arg)
       }
    }
 
-   else VG_BHEX_CLO(arg, "--malloc-fill", MC_(clo_malloc_fill), 0x00, 0xFF)
-   else VG_BHEX_CLO(arg, "--free-fill",   MC_(clo_free_fill), 0x00, 0xFF)
+   else if VG_BHEX_CLO(arg, "--malloc-fill", MC_(clo_malloc_fill), 0x00,0xFF) {}
+   else if VG_BHEX_CLO(arg, "--free-fill",   MC_(clo_free_fill),   0x00,0xFF) {}
 
    else
       return VG_(replacement_malloc_process_cmd_line_option)(arg);
 
    return True;
-   /*NOTREACHED*/
-
-  mc_level_error:
-   VG_(message)(Vg_DebugMsg, "ERROR: --track-origins=yes has no effect "
-                             "when --undef-value-errors=no");
-   return False;
 }
 
 static void mc_print_usage(void)
@@ -4929,7 +4913,7 @@ static Bool mc_handle_client_request ( ThreadId tid, UWord* arg, UWord* ret )
       }
 
       case VG_USERREQ__DO_LEAK_CHECK:
-         mc_detect_memory_leaks(tid, arg[1] ? LC_Summary : LC_Full);
+         MC_(detect_memory_leaks)(tid, arg[1] ? LC_Summary : LC_Full);
          *ret = 0; /* return value is meaningless */
          break;
 
@@ -4983,12 +4967,12 @@ static Bool mc_handle_client_request ( ThreadId tid, UWord* arg, UWord* ret )
 
       case VG_USERREQ__GET_VBITS:
          *ret = mc_get_or_set_vbits_for_client
-                   ( tid, arg[1], arg[2], arg[3], False /* get them */ );
+                   ( arg[1], arg[2], arg[3], False /* get them */ );
          break;
 
       case VG_USERREQ__SET_VBITS:
          *ret = mc_get_or_set_vbits_for_client
-                   ( tid, arg[1], arg[2], arg[3], True /* set them */ );
+                   ( arg[1], arg[2], arg[3], True /* set them */ );
          break;
 
       case VG_USERREQ__COUNT_LEAKS: { /* count leaked bytes */
@@ -5001,17 +4985,33 @@ static Bool mc_handle_client_request ( ThreadId tid, UWord* arg, UWord* ret )
          *argp[4] = MC_(bytes_suppressed);
          // there is no argp[5]
          //*argp[5] = MC_(bytes_indirect);
-         // XXX need to make *argp[1-4] defined
+         // XXX need to make *argp[1-4] defined;  currently done in the
+         // VALGRIND_COUNT_LEAKS_MACRO by initialising them to zero.
+         *ret = 0;
+         return True;
+      }
+      case VG_USERREQ__COUNT_LEAK_BLOCKS: { /* count leaked blocks */
+         UWord** argp = (UWord**)arg;
+         // MC_(blocks_leaked) et al were set by the last leak check (or zero
+         // if no prior leak checks performed).
+         *argp[1] = MC_(blocks_leaked) + MC_(blocks_indirect);
+         *argp[2] = MC_(blocks_dubious);
+         *argp[3] = MC_(blocks_reachable);
+         *argp[4] = MC_(blocks_suppressed);
+         // there is no argp[5]
+         //*argp[5] = MC_(blocks_indirect);
+         // XXX need to make *argp[1-4] defined;  currently done in the
+         // VALGRIND_COUNT_LEAK_BLOCKS_MACRO by initialising them to zero.
          *ret = 0;
          return True;
       }
       case VG_USERREQ__MALLOCLIKE_BLOCK: {
          Addr p         = (Addr)arg[1];
          SizeT sizeB    =       arg[2];
-         UInt rzB       =       arg[3];
+         //UInt rzB       =       arg[3];    XXX: unused!
          Bool is_zeroed = (Bool)arg[4];
 
-         MC_(new_block) ( tid, p, sizeB, /*ignored*/0, rzB, is_zeroed, 
+         MC_(new_block) ( tid, p, sizeB, /*ignored*/0, is_zeroed, 
                           MC_AllocCustom, MC_(malloc_list) );
          return True;
       }
@@ -5570,7 +5570,7 @@ static void mc_fini ( Int exitcode )
    }
 
    if (MC_(clo_leak_check) != LC_Off)
-      mc_detect_memory_leaks(1/*bogus ThreadId*/, MC_(clo_leak_check));
+      MC_(detect_memory_leaks)(1/*bogus ThreadId*/, MC_(clo_leak_check));
 
    done_prof_mem();
 
@@ -5674,7 +5674,7 @@ static void mc_pre_clo_init(void)
    VG_(details_version)         (NULL);
    VG_(details_description)     ("a memory error detector");
    VG_(details_copyright_author)(
-      "Copyright (C) 2002-2008, and GNU GPL'd, by Julian Seward et al.");
+      "Copyright (C) 2002-2009, and GNU GPL'd, by Julian Seward et al.");
    VG_(details_bug_reports_to)  (VG_BUGS_TO);
    VG_(details_avg_translation_sizeB) ( 556 );
 
@@ -5711,6 +5711,7 @@ static void mc_pre_clo_init(void)
                                    MC_(__builtin_delete),
                                    MC_(__builtin_vec_delete),
                                    MC_(realloc),
+                                   MC_(malloc_usable_size), 
                                    MC_MALLOC_REDZONE_SZB );
    VG_(needs_xml_output)          ();
 

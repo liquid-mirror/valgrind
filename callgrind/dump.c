@@ -6,7 +6,7 @@
 /*
    This file is part of Callgrind, a Valgrind tool for call tracing.
 
-   Copyright (C) 2002-2008, Josef Weidendorfer (Josef.Weidendorfer@gmx.de)
+   Copyright (C) 2002-2009, Josef Weidendorfer (Josef.Weidendorfer@gmx.de)
 
    This program is free software; you can redistribute it and/or
    modify it under the terms of the GNU General Public License as
@@ -787,7 +787,7 @@ static Bool fprint_bbcc(Int fd, BBCC* bbcc, AddrPos* last)
   CLG_ASSERT(bbcc->cxt != 0);
   CLG_DEBUGIF(1) {
     VG_(printf)("+ fprint_bbcc (Instr %d): ", bb->instr_count);
-    CLG_(print_bbcc)(15, bbcc, False);
+    CLG_(print_bbcc)(15, bbcc);
   }
 
   CLG_ASSERT(currSum == 0 || currSum == 1);
@@ -1473,7 +1473,7 @@ static int new_dumpfile(Char buf[BUF_LEN], int tid, Char* trigger)
 }
 
 
-static void close_dumpfile(Char buf[BUF_LEN], int fd, int tid)
+static void close_dumpfile(int fd)
 {
     if (fd <0) return;
 
@@ -1575,7 +1575,7 @@ static void print_bbccs_of_thread(thread_info* ti)
     p++;
   }
 
-  close_dumpfile(print_buf, print_fd, CLG_(current_tid));
+  close_dumpfile(print_fd);
   if (array) VG_(free)(array);
   
   /* set counters of last dump */
@@ -1640,7 +1640,6 @@ void init_cmdbuf(void)
   Int i,j,size = 0;
   HChar* argv;
 
-#if VG_CORE_INTERFACE_VERSION > 8
   if (VG_(args_the_exename))
       size = VG_(sprintf)(cmdbuf, " %s", VG_(args_the_exename));
 
@@ -1651,15 +1650,6 @@ void init_cmdbuf(void)
       for(j=0;argv[j]!=0;j++)
 	  if (size < BUF_LEN) cmdbuf[size++] = argv[j];
   }
-#else
-  for(i = 0; i < VG_(client_argc); i++) {
-    argv = VG_(client_argv)[i];
-    if (!argv) continue;
-    if ((size>0) && (size < BUF_LEN)) cmdbuf[size++] = ' ';
-    for(j=0;argv[j]!=0;j++)
-      if (size < BUF_LEN) cmdbuf[size++] = argv[j];
-  }
-#endif
 
   if (size == BUF_LEN) size--;
   cmdbuf[size] = 0;

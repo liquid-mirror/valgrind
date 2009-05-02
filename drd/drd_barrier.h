@@ -1,8 +1,7 @@
 /*
-  This file is part of drd, a data race detector.
+  This file is part of drd, a thread error detector.
 
-  Copyright (C) 2006-2008 Bart Van Assche
-  bart.vanassche@gmail.com
+  Copyright (C) 2006-2009 Bart Van Assche <bart.vanassche@gmail.com>.
 
   This program is free software; you can redistribute it and/or
   modify it under the terms of the GNU General Public License as
@@ -46,8 +45,8 @@ void DRD_(barrier_destroy)(const Addr barrier, const BarrierT barrier_type);
 void DRD_(barrier_pre_wait)(const DrdThreadId tid, const Addr barrier,
                             const BarrierT barrier_type);
 void DRD_(barrier_post_wait)(const DrdThreadId tid, const Addr barrier,
-                             const BarrierT barrier_type, const Bool waited);
-void DRD_(barrier_thread_delete)(const DrdThreadId threadid);
+                             const BarrierT barrier_type, const Bool waited,
+                             const Bool serializing);
 void DRD_(barrier_stop_using_mem)(const Addr a1, const Addr a2);
 ULong DRD_(get_barrier_segment_creation_count)(void);
 

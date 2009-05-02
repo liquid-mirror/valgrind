@@ -6,7 +6,7 @@
 /*
    This file is part of Callgrind, a Valgrind tool for call tracing.
 
-   Copyright (C) 2002-2008, Josef Weidendorfer (Josef.Weidendorfer@gmx.de)
+   Copyright (C) 2002-2009, Josef Weidendorfer (Josef.Weidendorfer@gmx.de)
 
    This program is free software; you can redistribute it and/or
    modify it under the terms of the GNU General Public License as
@@ -422,7 +422,7 @@ exec_state* exec_state_save(void)
   CLG_DEBUGIF(1) {
     CLG_DEBUG(1, "  cxtinfo_save(sig %d): collect %s, jmps_passed %d\n",
 	     es->sig, es->collect ? "Yes": "No", es->jmps_passed);	
-    CLG_(print_bbcc)(-9, es->bbcc, False);
+    CLG_(print_bbcc)(-9, es->bbcc);
     CLG_(print_cost)(-9, CLG_(sets).full, es->cost);
   }
 
@@ -448,7 +448,7 @@ exec_state* exec_state_restore(void)
   CLG_DEBUGIF(1) {
 	CLG_DEBUG(1, "  exec_state_restore(sig %d): collect %s, jmps_passed %d\n",
 		  es->sig, es->collect ? "Yes": "No", es->jmps_passed);
-	CLG_(print_bbcc)(-9, es->bbcc, False);
+	CLG_(print_bbcc)(-9, es->bbcc);
 	CLG_(print_cxt)(-9, es->cxt, 0);
 	CLG_(print_cost)(-9, CLG_(sets).full, es->cost);
   }

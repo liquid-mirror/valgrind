@@ -8,10 +8,10 @@
    This file is part of Callgrind, a Valgrind tool for call graph
    profiling programs.
 
-   Copyright (C) 2002-2008, Josef Weidendorfer (Josef.Weidendorfer@gmx.de)
+   Copyright (C) 2002-2009, Josef Weidendorfer (Josef.Weidendorfer@gmx.de)
 
    This tool is derived from and contains code from Cachegrind
-   Copyright (C) 2002-2008 Nicholas Nethercote (njn@valgrind.org)
+   Copyright (C) 2002-2009 Nicholas Nethercote (njn@valgrind.org)
 
    This program is free software; you can redistribute it and/or
    modify it under the terms of the GNU General Public License as
@@ -389,10 +389,10 @@ void CLG_(collectBlockInfo)(IRSB* bbIn,
 }
 
 static
-void collectStatementInfo(IRTypeEnv* tyenv, IRSB* bbOut, IRStmt* st,
+void collectStatementInfo(IRTypeEnv* tyenv, IRStmt* st,
 			  Addr* instrAddr, UInt* instrLen,
 			  IRExpr** loadAddrExpr, IRExpr** storeAddrExpr,
-			  UInt* dataSize, IRType hWordTy)
+			  UInt* dataSize)
 {
    CLG_ASSERT(isFlatIRStmt(st));
 
@@ -602,8 +602,8 @@ IRSB* CLG_(instrument)( VgCallbackClosure* closure,
 	  i++;
 	  stnext = ( i < bbIn->stmts_used ? bbIn->stmts[i] : NULL );
 	  beforeIBoundary = !stnext || (Ist_IMark == stnext->tag);
-	  collectStatementInfo(bbIn->tyenv, bbOut, st, &instrAddr, &instrLen,
-			       &loadAddrExpr, &storeAddrExpr, &dataSize, hWordTy);
+	  collectStatementInfo(bbIn->tyenv, st, &instrAddr, &instrLen,
+			       &loadAddrExpr, &storeAddrExpr, &dataSize);
 
 	  // instrument a simulator call before conditional jumps
 	  if (st->tag == Ist_Exit) {
@@ -1083,7 +1083,7 @@ void CLG_(pre_clo_init)(void)
     VG_(details_name)            ("Callgrind");
     VG_(details_version)         (NULL);
     VG_(details_description)     ("a call-graph generating cache profiler");
-    VG_(details_copyright_author)("Copyright (C) 2002-2008, and GNU GPL'd, "
+    VG_(details_copyright_author)("Copyright (C) 2002-2009, and GNU GPL'd, "
 				  "by Josef Weidendorfer et al.");
     VG_(details_bug_reports_to)  (VG_BUGS_TO);
     VG_(details_avg_translation_sizeB) ( 500 );

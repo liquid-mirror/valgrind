@@ -1,29 +1,24 @@
 
-# For AM_FLAG_M3264_PRI
-include $(top_srcdir)/Makefile.flags.am
+include $(top_srcdir)/Makefile.tool-tests.am
 
 noinst_SCRIPTS = \
-	vg_regtest \
 	filter_addresses \
 	filter_discards \
 	filter_libc \
 	filter_numbers \
 	filter_stderr_basic \
 	filter_sink \
-	filter_test_paths
+	platform_test \
+	vg_regtest
 
 EXTRA_DIST = $(noinst_SCRIPTS)
 
 check_PROGRAMS = \
-	cputest \
-	toobig-allocs \
-	true
+	arch_test \
+	os_test \
+	true \
+	x86_amd64_features
 
-AM_CFLAGS   = $(WERROR) -Winline -Wall -Wshadow -g $(AM_FLAG_M3264_PRI)
-AM_CXXFLAGS = $(AM_CFLAGS)
+AM_CFLAGS   += $(AM_FLAG_M3264_PRI)
+AM_CXXFLAGS += $(AM_FLAG_M3264_PRI)
 
-# generic C ones
-cputest_CFLAGS  	= $(AM_CFLAGS) \
-				-DVGA_$(VGCONF_ARCH_PRI)=1 \
-				-DVGO_$(VGCONF_OS)=1 \
-				-DVGP_$(VGCONF_ARCH_PRI)_$(VGCONF_OS)=1
