@@ -51,7 +51,7 @@
 
 
 /** Number of least significant address bits that are ignored. */
-#define ADDR_IGNORED_BITS 2
+#define ADDR_IGNORED_BITS 0
 #define ADDR_IGNORED_MASK ((1U << ADDR_IGNORED_BITS) - 1U)
 
 /** Round argument a up to a multiple of (1 << ADDR_GRANULARITY), and next
