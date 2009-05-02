@@ -67,6 +67,7 @@ static Bool DRD_(process_cmd_line_option)(Char* arg)
 {
   int check_stack_accesses   = -1;
   int exclusive_threshold_ms = -1;
+  int report_signal_unlocked = -1;
   int segment_merging        = -1;
   int shared_threshold_ms    = -1;
   int show_confl_seg         = -1;
@@ -86,7 +87,7 @@ static Bool DRD_(process_cmd_line_option)(Char* arg)
   VG_BOOL_CLO     (arg, "--check-stack-var",     check_stack_accesses)
   else VG_BOOL_CLO(arg, "--drd-stats",           DRD_(s_print_stats))
   else VG_BOOL_CLO(arg, "--first-race-only",     DRD_(s_drd_first_race_only))
-  else VG_BOOL_CLO(arg,"--report-signal-unlocked",s_drd_report_signal_unlocked)
+  else VG_BOOL_CLO(arg,"--report-signal-unlocked",report_signal_unlocked)
   else VG_BOOL_CLO(arg, "--segment-merging",     segment_merging)
   else VG_BOOL_CLO(arg, "--show-confl-seg",      show_confl_seg)
   else VG_BOOL_CLO(arg, "--show-stack-usage",    DRD_(s_show_stack_usage))
@@ -112,42 +113,46 @@ static Bool DRD_(process_cmd_line_option)(Char* arg)
     DRD_(set_check_stack_accesses)(check_stack_accesses);
   if (exclusive_threshold_ms != -1)
   {
-    mutex_set_lock_threshold(exclusive_threshold_ms);
-    rwlock_set_exclusive_threshold(exclusive_threshold_ms);
+    DRD_(mutex_set_lock_threshold)(exclusive_threshold_ms);
+    DRD_(rwlock_set_exclusive_threshold)(exclusive_threshold_ms);
+  }
+  if (report_signal_unlocked != -1)
+  {
+    DRD_(cond_set_report_signal_unlocked)(report_signal_unlocked);
   }
   if (shared_threshold_ms != -1)
   {
-    rwlock_set_shared_threshold(shared_threshold_ms);
+    DRD_(rwlock_set_shared_threshold)(shared_threshold_ms);
   }
   if (segment_merging != -1)
-    thread_set_segment_merging(segment_merging);
+    DRD_(thread_set_segment_merging)(segment_merging);
   if (show_confl_seg != -1)
-    set_show_conflicting_segments(show_confl_seg);
+    DRD_(set_show_conflicting_segments)(show_confl_seg);
   if (trace_address)
   {
     const Addr addr = VG_(strtoll16)(trace_address, 0);
     DRD_(start_tracing_address_range)(addr, addr + 1);
   }
   if (trace_barrier != -1)
-    barrier_set_trace(trace_barrier);
+    DRD_(barrier_set_trace)(trace_barrier);
   if (trace_clientobj != -1)
-    clientobj_set_trace(trace_clientobj);
+    DRD_(clientobj_set_trace)(trace_clientobj);
   if (trace_cond != -1)
-    cond_set_trace(trace_cond);
+    DRD_(cond_set_trace)(trace_cond);
   if (trace_csw != -1)
-    thread_trace_context_switches(trace_csw);
+    DRD_(thread_trace_context_switches)(trace_csw);
   if (trace_fork_join != -1)
     DRD_(thread_set_trace_fork_join)(trace_fork_join);
   if (trace_conflict_set != -1)
-    thread_trace_conflict_set(trace_conflict_set);
+    DRD_(thread_trace_conflict_set)(trace_conflict_set);
   if (trace_mutex != -1)
-    mutex_set_trace(trace_mutex);
+    DRD_(mutex_set_trace)(trace_mutex);
   if (trace_rwlock != -1)
-    rwlock_set_trace(trace_rwlock);
+    DRD_(rwlock_set_trace)(trace_rwlock);
   if (trace_segment != -1)
     DRD_(sg_set_trace)(trace_segment);
   if (trace_semaphore != -1)
-    semaphore_set_trace(trace_semaphore);
+    DRD_(semaphore_set_trace)(trace_semaphore);
   if (trace_suppression != -1)
     DRD_(suppression_set_trace)(trace_suppression);
 
@@ -222,7 +227,7 @@ static void drd_pre_mem_read(const CorePart part,
 {
   if (size > 0)
   {
-    drd_trace_load(a, size);
+    DRD_(trace_load)(a, size);
   }
 }
 
@@ -245,7 +250,7 @@ static void drd_pre_mem_read_asciiz(const CorePart part,
   tl_assert(size < 4096);
   if (size > 0)
   {
-    drd_trace_load(a, size);
+    DRD_(trace_load)(a, size);
   }
 }
 
@@ -254,10 +259,10 @@ static void drd_post_mem_write(const CorePart part,
                                const Addr a,
                                const SizeT size)
 {
-  thread_set_vg_running_tid(VG_(get_running_tid)());
+  DRD_(thread_set_vg_running_tid)(VG_(get_running_tid)());
   if (size > 0)
   {
-    drd_trace_store(a, size);
+    DRD_(trace_store)(a, size);
   }
 }
 
@@ -300,8 +305,8 @@ void drd_stop_using_mem(const Addr a1, const SizeT len,
   }
   if (! is_stack_mem || DRD_(get_check_stack_accesses)())
   {
-    thread_stop_using_mem(a1, a2);
-    clientobj_stop_using_mem(a1, a2);
+    DRD_(thread_stop_using_mem)(a1, a2);
+    DRD_(clientobj_stop_using_mem)(a1, a2);
     DRD_(suppression_stop_using_mem)(a1, a2);
   }
 }
@@ -366,7 +371,7 @@ void drd_start_using_mem_w_perms(const Addr a, const SizeT len,
                                  const Bool rr, const Bool ww, const Bool xx,
                                  ULong di_handle)
 {
-  thread_set_vg_running_tid(VG_(get_running_tid)());
+  DRD_(thread_set_vg_running_tid)(VG_(get_running_tid)());
 
   drd_start_using_mem(a, len);
 
@@ -379,7 +384,8 @@ void drd_start_using_mem_w_perms(const Addr a, const SizeT len,
 static __inline__
 void drd_start_using_mem_stack(const Addr a, const SizeT len)
 {
-  thread_set_stack_min(thread_get_running_tid(), a - VG_STACK_REDZONE_SZB);
+  DRD_(thread_set_stack_min)(DRD_(thread_get_running_tid)(),
+                             a - VG_STACK_REDZONE_SZB);
   drd_start_using_mem(a - VG_STACK_REDZONE_SZB, 
                       len + VG_STACK_REDZONE_SZB);
 }
@@ -390,8 +396,8 @@ void drd_start_using_mem_stack(const Addr a, const SizeT len)
 static __inline__
 void drd_stop_using_mem_stack(const Addr a, const SizeT len)
 {
-  thread_set_stack_min(thread_get_running_tid(),
-                       a + len - VG_STACK_REDZONE_SZB);
+  DRD_(thread_set_stack_min)(DRD_(thread_get_running_tid)(),
+                             a + len - VG_STACK_REDZONE_SZB);
   drd_stop_using_mem(a - VG_STACK_REDZONE_SZB, len + VG_STACK_REDZONE_SZB,
                      True);
 }
@@ -400,7 +406,7 @@ static void drd_start_using_mem_stack_signal(
                const Addr a, const SizeT len,
                ThreadId tid_for_whom_the_signal_frame_is_being_constructed)
 {
-  thread_set_vg_running_tid(VG_(get_running_tid)());
+  DRD_(thread_set_vg_running_tid)(VG_(get_running_tid)());
   drd_start_using_mem(a, len);
 }
 
@@ -412,12 +418,12 @@ static void drd_stop_using_mem_stack_signal(Addr a, SizeT len)
 static
 void drd_pre_thread_create(const ThreadId creator, const ThreadId created)
 {
-  const DrdThreadId drd_creator = VgThreadIdToDrdThreadId(creator);
+  const DrdThreadId drd_creator = DRD_(VgThreadIdToDrdThreadId)(creator);
   tl_assert(created != VG_INVALID_THREADID);
-  thread_pre_create(drd_creator, created);
-  if (IsValidDrdThreadId(drd_creator))
+  DRD_(thread_pre_create)(drd_creator, created);
+  if (DRD_(IsValidDrdThreadId)(drd_creator))
   {
-    thread_new_segment(drd_creator);
+    DRD_(thread_new_segment)(drd_creator);
   }
   if (DRD_(thread_get_trace_fork_join)())
   {
@@ -437,7 +443,7 @@ void drd_post_thread_create(const ThreadId vg_created)
 
   tl_assert(vg_created != VG_INVALID_THREADID);
 
-  drd_created = thread_post_create(vg_created);
+  drd_created = DRD_(thread_post_create)(vg_created);
   if (DRD_(thread_get_trace_fork_join)())
   {
     VG_(message)(Vg_DebugMsg,
@@ -446,9 +452,9 @@ void drd_post_thread_create(const ThreadId vg_created)
   }
   if (! DRD_(get_check_stack_accesses)())
   {
-    DRD_(start_suppression)(thread_get_stack_max(drd_created)
-                            - thread_get_stack_size(drd_created),
-                            thread_get_stack_max(drd_created),
+    DRD_(start_suppression)(DRD_(thread_get_stack_max)(drd_created)
+                            - DRD_(thread_get_stack_size)(drd_created),
+                            DRD_(thread_get_stack_max)(drd_created),
                             "stack");
   }
 }
@@ -460,28 +466,29 @@ static void drd_thread_finished(ThreadId vg_tid)
 
   tl_assert(VG_(get_running_tid)() == vg_tid);
 
-  drd_tid = VgThreadIdToDrdThreadId(vg_tid);
+  drd_tid = DRD_(VgThreadIdToDrdThreadId)(vg_tid);
   if (DRD_(thread_get_trace_fork_join)())
   {
     VG_(message)(Vg_DebugMsg,
                  "drd_thread_finished tid = %d/%d%s",
                  vg_tid,
                  drd_tid,
-                 thread_get_joinable(drd_tid)
+                 DRD_(thread_get_joinable)(drd_tid)
                  ? ""
                  : " (which is a detached thread)");
   }
   if (DRD_(s_show_stack_usage))
   {
-    const SizeT stack_size = thread_get_stack_size(drd_tid);
+    const SizeT stack_size = DRD_(thread_get_stack_size)(drd_tid);
     const SizeT used_stack
-      = thread_get_stack_max(drd_tid) - thread_get_stack_min_min(drd_tid);
+      = (DRD_(thread_get_stack_max)(drd_tid)
+         - DRD_(thread_get_stack_min_min)(drd_tid));
     VG_(message)(Vg_UserMsg,
                  "thread %d/%d%s finished and used %ld bytes out of %ld"
                  " on its stack. Margin: %ld bytes.",
                  vg_tid,
                  drd_tid,
-                 thread_get_joinable(drd_tid)
+                 DRD_(thread_get_joinable)(drd_tid)
                  ? ""
                  : " (which is a detached thread)",
                  used_stack,
@@ -489,12 +496,12 @@ static void drd_thread_finished(ThreadId vg_tid)
                  stack_size - used_stack);
 
   }
-  drd_stop_using_mem(thread_get_stack_min(drd_tid),
-                     thread_get_stack_max(drd_tid)
-                     - thread_get_stack_min(drd_tid),
+  drd_stop_using_mem(DRD_(thread_get_stack_min)(drd_tid),
+                     DRD_(thread_get_stack_max)(drd_tid)
+                     - DRD_(thread_get_stack_min)(drd_tid),
                      True);
-  thread_stop_recording(drd_tid);
-  thread_finished(drd_tid);
+  DRD_(thread_stop_recording)(drd_tid);
+  DRD_(thread_finished)(drd_tid);
 }
 
 //
@@ -519,7 +526,7 @@ static void DRD_(post_clo_init)(void)
 static void drd_start_client_code(const ThreadId tid, const ULong bbs_done)
 {
   tl_assert(tid == VG_(get_running_tid)());
-  thread_set_vg_running_tid(tid);
+  DRD_(thread_set_vg_running_tid)(tid);
 }
 
 static void DRD_(fini)(Int exitcode)
@@ -532,12 +539,12 @@ static void DRD_(fini)(Int exitcode)
     ULong dscvc;
 
     update_conflict_set_count
-      = thread_get_update_conflict_set_count(&dsnsc, &dscvc);
+      = DRD_(thread_get_update_conflict_set_count)(&dsnsc, &dscvc);
 
     VG_(message)(Vg_UserMsg,
                  "   thread: %lld context switches"
                  " / %lld updates of the conflict set",
-                 thread_get_context_switch_count(),
+                 DRD_(thread_get_context_switch_count)(),
                  update_conflict_set_count);
     VG_(message)(Vg_UserMsg,
                  "           (%lld new sg + %lld combine vc + %lld csw);",
@@ -552,32 +559,35 @@ static void DRD_(fini)(Int exitcode)
                  " %lld discard points,",
                  DRD_(sg_get_segments_created_count)(),
                  DRD_(sg_get_max_segments_alive_count)(),
-                 thread_get_discard_ordered_segments_count());
+                 DRD_(thread_get_discard_ordered_segments_count)());
     VG_(message)(Vg_UserMsg,
                  "           %lld merges.",
                  sg_get_segment_merge_count());
     VG_(message)(Vg_UserMsg,
                  "           (%lld m, %lld rw, %lld s, %lld b)",
-                 get_mutex_segment_creation_count(),
-                 get_rwlock_segment_creation_count(),
-                 get_semaphore_segment_creation_count(),
-                 get_barrier_segment_creation_count());
+                 DRD_(get_mutex_segment_creation_count)(),
+                 DRD_(get_rwlock_segment_creation_count)(),
+                 DRD_(get_semaphore_segment_creation_count)(),
+                 DRD_(get_barrier_segment_creation_count)());
     VG_(message)(Vg_UserMsg,
-                 "  bitmaps: %lld level 1 bitmaps were allocated;",
-                 bm_get_bitmap_creation_count());
+                 "  bitmaps: %lld level 1 / %lld level 2 bitmap refs",
+                 DRD_(bm_get_bitmap_creation_count)(),
+                 DRD_(bm_get_bitmap2_node_creation_count)());
+#if 0
     VG_(message)(Vg_UserMsg,
                  "           %lld level 1 bitmap merges were carried out.",
                  bm_get_bitmap_merge_count());
+#endif
     VG_(message)(Vg_UserMsg,
                  "           %lld level 2 bitmaps were allocated;",
-                 bm_get_bitmap2_creation_count());
+                 DRD_(bm_get_bitmap2_creation_count)());
     VG_(message)(Vg_UserMsg,
                  "           %lld level 2 bitmap merges were carried out.",
                  bm_get_bitmap2_merge_count());
     VG_(message)(Vg_UserMsg,
                  "    mutex: %lld non-recursive lock/unlock events.",
-                 get_mutex_lock_count());
-    drd_print_malloc_stats();
+                 DRD_(get_mutex_lock_count)());
+    DRD_(print_malloc_stats)();
   }
 }
 
@@ -624,14 +634,14 @@ void drd_pre_clo_init(void)
   VG_(track_pre_thread_ll_exit)   (drd_thread_finished);
 
   // Other stuff.
-  drd_register_malloc_wrappers(drd_start_using_mem_w_ecu,
-                               drd_stop_using_nonstack_mem);
+  DRD_(register_malloc_wrappers)(drd_start_using_mem_w_ecu,
+                                 drd_stop_using_nonstack_mem);
 
   DRD_(clientreq_init)();
 
   DRD_(suppression_init)();
 
-  clientobj_init();
+  DRD_(clientobj_init)();
 }
 
 

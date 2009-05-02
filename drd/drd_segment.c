@@ -57,13 +57,14 @@ void DRD_(sg_init)(Segment* const sg,
                    DrdThreadId const created)
 {
   Segment* creator_sg;
-  ThreadId vg_created = DrdThreadIdToVgThreadId(created);
+  ThreadId vg_created = DRD_(DrdThreadIdToVgThreadId)(created);
 
   tl_assert(sg);
-  tl_assert(creator == DRD_INVALID_THREADID || IsValidDrdThreadId(creator));
+  tl_assert(creator == DRD_INVALID_THREADID
+            || DRD_(IsValidDrdThreadId)(creator));
 
   creator_sg = (creator != DRD_INVALID_THREADID
-                ? thread_get_segment(creator) : 0);
+                ? DRD_(thread_get_segment)(creator) : 0);
 
   sg->next = 0;
   sg->prev = 0;
@@ -79,7 +80,7 @@ void DRD_(sg_init)(Segment* const sg,
   else
     DRD_(vc_init)(&sg->vc, 0, 0);
   DRD_(vc_increment)(&sg->vc, created);
-  sg->bm = bm_new();
+  sg->bm = DRD_(bm_new)();
 
   if (DRD_(s_trace_segment))
   {
@@ -87,7 +88,7 @@ void DRD_(sg_init)(Segment* const sg,
     VG_(snprintf)(msg, sizeof(msg),
                   "New segment for thread %d/%d with vc ",
                   created != VG_INVALID_THREADID
-                  ? DrdThreadIdToVgThreadId(created)
+                  ? DRD_(DrdThreadIdToVgThreadId)(created)
                   : DRD_INVALID_THREADID,
                   created);
     DRD_(vc_snprint)(msg + VG_(strlen)(msg), sizeof(msg) - VG_(strlen)(msg),
@@ -103,7 +104,7 @@ static void DRD_(sg_cleanup)(Segment* const sg)
   tl_assert(sg->refcnt == 0);
 
   DRD_(vc_cleanup)(&sg->vc);
-  bm_delete(sg->bm);
+  DRD_(bm_delete)(sg->bm);
   sg->bm = 0;
 }
 
@@ -216,7 +217,7 @@ void DRD_(sg_merge)(const Segment* const sg1, Segment* const sg2)
   // Keep sg1->stacktrace.
   // Keep sg1->vc.
   // Merge sg2->bm into sg1->bm.
-  bm_merge(sg1->bm, sg2->bm);
+  DRD_(bm_merge2)(sg1->bm, sg2->bm);
 }
 
 /** Print the vector clock and the bitmap of the specified segment. */
@@ -226,7 +227,7 @@ void DRD_(sg_print)(const Segment* const sg)
   VG_(printf)("vc: ");
   DRD_(vc_print)(&sg->vc);
   VG_(printf)("\n");
-  bm_print(sg->bm);
+  DRD_(bm_print)(sg->bm);
 }
 
 /** Query whether segment tracing has been enabled. */

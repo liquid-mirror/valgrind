@@ -23,17 +23,18 @@
 */
 
 
-#include "pub_tool_basics.h"      // Addr, SizeT
-#include "pub_tool_debuginfo.h"   // VG_(get_objname)()
-#include "pub_tool_libcassert.h"  // tl_assert()
-#include "pub_tool_libcbase.h"    // VG_(memset)
-#include "pub_tool_libcprint.h"   // VG_(printf)
-#include "pub_tool_machine.h"     // VG_(get_IP)()
-#include "pub_tool_mallocfree.h"  // VG_(malloc), VG_(free)
-#include "pub_drd_bitmap.h"
+#include "drd_basics.h"           /* DRD_() */
 #include "drd_bitmap.h"
 #include "drd_error.h"
 #include "drd_suppression.h"
+#include "pub_drd_bitmap.h"
+#include "pub_tool_basics.h"      /* Addr, SizeT */
+#include "pub_tool_debuginfo.h"   /* VG_(get_objname)() */
+#include "pub_tool_libcassert.h"  /* tl_assert() */
+#include "pub_tool_libcbase.h"    /* VG_(memset) */
+#include "pub_tool_libcprint.h"   /* VG_(printf) */
+#include "pub_tool_machine.h"     /* VG_(get_IP)() */
+#include "pub_tool_mallocfree.h"  /* VG_(malloc), VG_(free) */
 
 
 /* Forward declarations. */
@@ -41,7 +42,13 @@
 struct bitmap2;
 
 
-/* Local constants. */
+/* Local function declarations. */
+
+static void bm2_merge(struct bitmap2* const bm2l,
+                      const struct bitmap2* const bm2r);
+
+
+/* Local variables. */
 
 static ULong s_bitmap_creation_count;
 static ULong s_bitmap_merge_count;
@@ -50,8 +57,7 @@ static ULong s_bitmap2_merge_count;
 
 /* Function definitions. */
 
-/** Allocate and initialize a new bitmap structure. */
-struct bitmap* bm_new(void)
+struct bitmap* DRD_(bm_new)()
 {
   return bm_new_cb(0);
 }
@@ -90,7 +96,7 @@ struct bitmap* bm_new_cb(void (*compute_bitmap2)(UWord, struct bitmap2*))
   return bm;
 }
 
-void bm_delete(struct bitmap* const bm)
+void DRD_(bm_delete)(struct bitmap* const bm)
 {
   tl_assert(bm);
 
@@ -107,9 +113,9 @@ void bm_delete(struct bitmap* const bm)
  * not a problem since the upper part of the address space is reserved
  * for the kernel.
  */
-void bm_access_range(struct bitmap* const bm,
-                     const Addr a1, const Addr a2,
-                     const BmAccessTypeT access_type)
+void DRD_(bm_access_range)(struct bitmap* const bm,
+                           const Addr a1, const Addr a2,
+                           const BmAccessTypeT access_type)
 {
   Addr b, b_next;
 
@@ -168,34 +174,34 @@ void bm_access_range(struct bitmap* const bm,
   }
 }
 
-void bm_access_range_load(struct bitmap* const bm,
-                          const Addr a1, const Addr a2)
+void DRD_(bm_access_range_load)(struct bitmap* const bm,
+                                const Addr a1, const Addr a2)
 {
-  bm_access_range(bm, a1, a2, eLoad);
+  DRD_(bm_access_range)(bm, a1, a2, eLoad);
 }
 
-void bm_access_load_1(struct bitmap* const bm, const Addr a1)
+void DRD_(bm_access_load_1)(struct bitmap* const bm, const Addr a1)
 {
   bm_access_aligned_load(bm, a1, 1);
 }
 
-void bm_access_load_2(struct bitmap* const bm, const Addr a1)
+void DRD_(bm_access_load_2)(struct bitmap* const bm, const Addr a1)
 {
   if ((a1 & 1) == 0)
     bm_access_aligned_load(bm, a1, 2);
   else
-    bm_access_range(bm, a1, a1 + 2, eLoad);
+    DRD_(bm_access_range)(bm, a1, a1 + 2, eLoad);
 }
 
-void bm_access_load_4(struct bitmap* const bm, const Addr a1)
+void DRD_(bm_access_load_4)(struct bitmap* const bm, const Addr a1)
 {
   if ((a1 & 3) == 0)
     bm_access_aligned_load(bm, a1, 4);
   else
-    bm_access_range(bm, a1, a1 + 4, eLoad);
+    DRD_(bm_access_range)(bm, a1, a1 + 4, eLoad);
 }
 
-void bm_access_load_8(struct bitmap* const bm, const Addr a1)
+void DRD_(bm_access_load_8)(struct bitmap* const bm, const Addr a1)
 {
   if ((a1 & 7) == 0)
     bm_access_aligned_load(bm, a1, 8);
@@ -205,37 +211,37 @@ void bm_access_load_8(struct bitmap* const bm, const Addr a1)
     bm_access_aligned_load(bm, a1 + 4, 4);
   }
   else
-    bm_access_range(bm, a1, a1 + 8, eLoad);
+    DRD_(bm_access_range)(bm, a1, a1 + 8, eLoad);
 }
 
-void bm_access_range_store(struct bitmap* const bm,
-                           const Addr a1, const Addr a2)
+void DRD_(bm_access_range_store)(struct bitmap* const bm,
+                                 const Addr a1, const Addr a2)
 {
-  bm_access_range(bm, a1, a2, eStore);
+  DRD_(bm_access_range)(bm, a1, a2, eStore);
 }
 
-void bm_access_store_1(struct bitmap* const bm, const Addr a1)
+void DRD_(bm_access_store_1)(struct bitmap* const bm, const Addr a1)
 {
   bm_access_aligned_store(bm, a1, 1);
 }
 
-void bm_access_store_2(struct bitmap* const bm, const Addr a1)
+void DRD_(bm_access_store_2)(struct bitmap* const bm, const Addr a1)
 {
   if ((a1 & 1) == 0)
     bm_access_aligned_store(bm, a1, 2);
   else
-    bm_access_range(bm, a1, a1 + 2, eStore);
+    DRD_(bm_access_range)(bm, a1, a1 + 2, eStore);
 }
 
-void bm_access_store_4(struct bitmap* const bm, const Addr a1)
+void DRD_(bm_access_store_4)(struct bitmap* const bm, const Addr a1)
 {
   if ((a1 & 3) == 0)
     bm_access_aligned_store(bm, a1, 4);
   else
-    bm_access_range(bm, a1, a1 + 4, eStore);
+    DRD_(bm_access_range)(bm, a1, a1 + 4, eStore);
 }
 
-void bm_access_store_8(struct bitmap* const bm, const Addr a1)
+void DRD_(bm_access_store_8)(struct bitmap* const bm, const Addr a1)
 {
   if ((a1 & 7) == 0)
     bm_access_aligned_store(bm, a1, 8);
@@ -245,16 +251,16 @@ void bm_access_store_8(struct bitmap* const bm, const Addr a1)
     bm_access_aligned_store(bm, a1 + 4, 4);
   }
   else
-    bm_access_range(bm, a1, a1 + 8, eStore);
+    DRD_(bm_access_range)(bm, a1, a1 + 8, eStore);
 }
 
-Bool bm_has(struct bitmap* const bm, const Addr a1, const Addr a2,
-            const BmAccessTypeT access_type)
+Bool DRD_(bm_has)(struct bitmap* const bm, const Addr a1, const Addr a2,
+                  const BmAccessTypeT access_type)
 {
   Addr b;
   for (b = a1; b < a2; b++)
   {
-    if (! bm_has_1(bm, b, access_type))
+    if (! DRD_(bm_has_1)(bm, b, access_type))
     {
       return False;
     }
@@ -262,7 +268,8 @@ Bool bm_has(struct bitmap* const bm, const Addr a1, const Addr a2,
   return True;
 }
 
-Bool bm_has_any_load(struct bitmap* const bm, const Addr a1, const Addr a2)
+Bool
+DRD_(bm_has_any_load)(struct bitmap* const bm, const Addr a1, const Addr a2)
 {
   Addr b, b_next;
 
@@ -314,8 +321,8 @@ Bool bm_has_any_load(struct bitmap* const bm, const Addr a1, const Addr a2)
   return 0;
 }
 
-Bool bm_has_any_store(struct bitmap* const bm,
-                      const Addr a1, const Addr a2)
+Bool DRD_(bm_has_any_store)(struct bitmap* const bm,
+                            const Addr a1, const Addr a2)
 {
   Addr b, b_next;
 
@@ -369,8 +376,8 @@ Bool bm_has_any_store(struct bitmap* const bm,
 
 /* Return True if there is a read access, write access or both   */
 /* to any of the addresses in the range [ a1, a2 [ in bitmap bm. */
-Bool bm_has_any_access(struct bitmap* const bm,
-                       const Addr a1, const Addr a2)
+Bool DRD_(bm_has_any_access)(struct bitmap* const bm,
+                             const Addr a1, const Addr a2)
 {
   Addr b, b_next;
 
@@ -422,11 +429,12 @@ Bool bm_has_any_access(struct bitmap* const bm,
   return False;
 }
 
-/** Report whether an access of type access_type at address a is recorded in
- *  bitmap bm.
+/**
+ * Report whether an access of type access_type at address a is recorded in
+ * bitmap bm.
  */
-Bool bm_has_1(struct bitmap* const bm,
-              const Addr a, const BmAccessTypeT access_type)
+Bool DRD_(bm_has_1)(struct bitmap* const bm,
+                    const Addr a, const BmAccessTypeT access_type)
 {
   const struct bitmap2* p2;
   const struct bitmap1* p1;
@@ -445,9 +453,7 @@ Bool bm_has_1(struct bitmap* const bm,
   return False;
 }
 
-void bm_clear(struct bitmap* const bm,
-              const Addr a1,
-              const Addr a2)
+void DRD_(bm_clear)(struct bitmap* const bm, const Addr a1, const Addr a2)
 {
   Addr b, b_next;
 
@@ -509,11 +515,11 @@ void bm_clear(struct bitmap* const bm,
   }
 }
 
-/** Clear all references to loads in bitmap bm starting at address a1 and
- *  up to but not including address a2.
+/**
+ * Clear all references to loads in bitmap bm starting at address a1 and
+ * up to but not including address a2.
  */
-void bm_clear_load(struct bitmap* const bm,
-                   const Addr a1, const Addr a2)
+void DRD_(bm_clear_load)(struct bitmap* const bm, const Addr a1, const Addr a2)
 {
   Addr a;
 
@@ -527,11 +533,12 @@ void bm_clear_load(struct bitmap* const bm,
   }
 }
 
-/** Clear all references to stores in bitmap bm starting at address a1 and
- *  up to but not including address a2.
+/**
+ * Clear all references to stores in bitmap bm starting at address a1 and
+ * up to but not including address a2.
  */
-void bm_clear_store(struct bitmap* const bm,
-                    const Addr a1, const Addr a2)
+void DRD_(bm_clear_store)(struct bitmap* const bm,
+                          const Addr a1, const Addr a2)
 {
   Addr a;
 
@@ -545,23 +552,24 @@ void bm_clear_store(struct bitmap* const bm,
   }
 }
 
-/** Clear bitmap bm starting at address a1 and up to but not including address
- *  a2. Return True if and only if any of the addresses was set before
- *  clearing.
+/**
+ * Clear bitmap bm starting at address a1 and up to but not including address
+ * a2. Return True if and only if any of the addresses was set before
+ * clearing.
  */
-Bool bm_test_and_clear(struct bitmap* const bm,
-                       const Addr a1, const Addr a2)
+Bool DRD_(bm_test_and_clear)(struct bitmap* const bm,
+                             const Addr a1, const Addr a2)
 {
   Bool result;
 
-  result = bm_has_any_access(bm, a1, a2) != 0;
-  bm_clear(bm, a1, a2);
+  result = DRD_(bm_has_any_access)(bm, a1, a2) != 0;
+  DRD_(bm_clear)(bm, a1, a2);
   return result;
 }
 
-Bool bm_has_conflict_with(struct bitmap* const bm,
-                          const Addr a1, const Addr a2,
-                          const BmAccessTypeT access_type)
+Bool DRD_(bm_has_conflict_with)(struct bitmap* const bm,
+                                const Addr a1, const Addr a2,
+                                const BmAccessTypeT access_type)
 {
   Addr b, b_next;
 
@@ -626,80 +634,81 @@ Bool bm_has_conflict_with(struct bitmap* const bm,
   return False;
 }
 
-Bool bm_load_has_conflict_with(struct bitmap* const bm,
-                               const Addr a1, const Addr a2)
+Bool DRD_(bm_load_has_conflict_with)(struct bitmap* const bm,
+                                     const Addr a1, const Addr a2)
 {
-  return bm_has_conflict_with(bm, a1, a2, eLoad);
+  return DRD_(bm_has_conflict_with)(bm, a1, a2, eLoad);
 }
 
-Bool bm_load_1_has_conflict_with(struct bitmap* const bm, const Addr a1)
+Bool DRD_(bm_load_1_has_conflict_with)(struct bitmap* const bm, const Addr a1)
 {
   return bm_aligned_load_has_conflict_with(bm, a1, 1);
 }
 
-Bool bm_load_2_has_conflict_with(struct bitmap* const bm, const Addr a1)
+Bool DRD_(bm_load_2_has_conflict_with)(struct bitmap* const bm, const Addr a1)
 {
   if ((a1 & 1) == 0)
     return bm_aligned_load_has_conflict_with(bm, a1, 2);
   else
-    return bm_has_conflict_with(bm, a1, a1 + 2, eLoad);
+    return DRD_(bm_has_conflict_with)(bm, a1, a1 + 2, eLoad);
 }
 
-Bool bm_load_4_has_conflict_with(struct bitmap* const bm, const Addr a1)
+Bool DRD_(bm_load_4_has_conflict_with)(struct bitmap* const bm, const Addr a1)
 {
   if ((a1 & 3) == 0)
     return bm_aligned_load_has_conflict_with(bm, a1, 4);
   else
-    return bm_has_conflict_with(bm, a1, a1 + 4, eLoad);
+    return DRD_(bm_has_conflict_with)(bm, a1, a1 + 4, eLoad);
 }
 
-Bool bm_load_8_has_conflict_with(struct bitmap* const bm, const Addr a1)
+Bool DRD_(bm_load_8_has_conflict_with)(struct bitmap* const bm, const Addr a1)
 {
   if ((a1 & 7) == 0)
     return bm_aligned_load_has_conflict_with(bm, a1, 8);
   else
-    return bm_has_conflict_with(bm, a1, a1 + 8, eLoad);
+    return DRD_(bm_has_conflict_with)(bm, a1, a1 + 8, eLoad);
 }
 
-Bool bm_store_1_has_conflict_with(struct bitmap* const bm, const Addr a1)
+Bool DRD_(bm_store_1_has_conflict_with)(struct bitmap* const bm, const Addr a1)
 {
   return bm_aligned_store_has_conflict_with(bm, a1, 1);
 }
 
-Bool bm_store_2_has_conflict_with(struct bitmap* const bm, const Addr a1)
+Bool DRD_(bm_store_2_has_conflict_with)(struct bitmap* const bm, const Addr a1)
 {
   if ((a1 & 1) == 0)
     return bm_aligned_store_has_conflict_with(bm, a1, 2);
   else
-    return bm_has_conflict_with(bm, a1, a1 + 2, eStore);
+    return DRD_(bm_has_conflict_with)(bm, a1, a1 + 2, eStore);
 }
 
-Bool bm_store_4_has_conflict_with(struct bitmap* const bm, const Addr a1)
+Bool DRD_(bm_store_4_has_conflict_with)(struct bitmap* const bm, const Addr a1)
 {
   if ((a1 & 3) == 0)
     return bm_aligned_store_has_conflict_with(bm, a1, 4);
   else
-    return bm_has_conflict_with(bm, a1, a1 + 4, eStore);
+    return DRD_(bm_has_conflict_with)(bm, a1, a1 + 4, eStore);
 }
 
-Bool bm_store_8_has_conflict_with(struct bitmap* const bm, const Addr a1)
+Bool DRD_(bm_store_8_has_conflict_with)(struct bitmap* const bm, const Addr a1)
 {
   if ((a1 & 7) == 0)
     return bm_aligned_store_has_conflict_with(bm, a1, 8);
   else
-    return bm_has_conflict_with(bm, a1, a1 + 8, eStore);
+    return DRD_(bm_has_conflict_with)(bm, a1, a1 + 8, eStore);
 }
 
-Bool bm_store_has_conflict_with(struct bitmap* const bm,
-                                const Addr a1, const Addr a2)
+Bool DRD_(bm_store_has_conflict_with)(struct bitmap* const bm,
+                                      const Addr a1, const Addr a2)
 {
-  return bm_has_conflict_with(bm, a1, a2, eStore);
+  return DRD_(bm_has_conflict_with)(bm, a1, a2, eStore);
 }
 
-/** Return True if the two bitmaps *lhs and *rhs are identical, and false
- *  if not.
+/**
+ * Return True if the two bitmaps *lhs and *rhs are identical, and false
+ * if not.
  */
-Bool bm_equal(struct bitmap* const lhs, struct bitmap* const rhs)
+Bool DRD_(bm_equal)(struct bitmap* const lhs, struct bitmap* const rhs)
 {
   struct bitmap2* bm2l;
   struct bitmap2* bm2r;
@@ -714,7 +723,7 @@ Bool bm_equal(struct bitmap* const lhs, struct bitmap* const rhs)
   for ( ; (bm2l = VG_(OSetGen_Next)(lhs->oset)) != 0; )
   {
     while (bm2l
-           && ! bm_has_any_access(lhs,
+           && ! DRD_(bm_has_any_access)(lhs,
                                   make_address(bm2l->addr, 0),
                                   make_address(bm2l->addr + 1, 0)))
     {
@@ -737,7 +746,7 @@ Bool bm_equal(struct bitmap* const lhs, struct bitmap* const rhs)
       return False;
     }
     tl_assert(bm2r);
-    tl_assert(bm_has_any_access(rhs,
+    tl_assert(DRD_(bm_has_any_access)(rhs,
                                 make_address(bm2r->addr, 0),
                                 make_address(bm2r->addr + 1, 0)));
 
@@ -755,7 +764,7 @@ Bool bm_equal(struct bitmap* const lhs, struct bitmap* const rhs)
   bm2r = VG_(OSetGen_Next)(rhs->oset);
   if (bm2r)
   {
-    tl_assert(bm_has_any_access(rhs,
+    tl_assert(DRD_(bm_has_any_access)(rhs,
                                 make_address(bm2r->addr, 0),
                                 make_address(bm2r->addr + 1, 0)));
 #if 0
@@ -768,7 +777,7 @@ Bool bm_equal(struct bitmap* const lhs, struct bitmap* const rhs)
   return True;
 }
 
-void bm_swap(struct bitmap* const bm1, struct bitmap* const bm2)
+void DRD_(bm_swap)(struct bitmap* const bm1, struct bitmap* const bm2)
 {
   OSet* const tmp = bm1->oset;
   bm1->oset = bm2->oset;
@@ -776,7 +785,8 @@ void bm_swap(struct bitmap* const bm1, struct bitmap* const bm2)
 }
 
 /** Merge bitmaps *lhs and *rhs into *lhs. */
-void bm_merge(struct bitmap* const lhs, struct bitmap* const rhs)
+void DRD_(bm_merge2)(struct bitmap* const lhs,
+                     struct bitmap* const rhs)
 {
   struct bitmap2* bm2l;
   struct bitmap2* bm2r;
@@ -837,8 +847,7 @@ void bm_xor(struct bitmap* const lhs, struct bitmap* const rhs)
  * @param rhs Bitmap to be compared with lhs.
  * @return !=0 if there are data races, == 0 if there are none.
  */
-int bm_has_races(struct bitmap* const lhs,
-                 struct bitmap* const rhs)
+int DRD_(bm_has_races)(struct bitmap* const lhs, struct bitmap* const rhs)
 {
   VG_(OSetGen_ResetIter)(lhs->oset);
   VG_(OSetGen_ResetIter)(rhs->oset);
@@ -887,7 +896,7 @@ int bm_has_races(struct bitmap* const lhs,
   return 0;
 }
 
-void bm_print(struct bitmap* const bm)
+void DRD_(bm_print)(struct bitmap* const bm)
 {
   struct bitmap2* bm2;
 
@@ -923,16 +932,20 @@ void bm2_print(const struct bitmap2* const bm2)
   }
 }
 
-ULong bm_get_bitmap_creation_count(void)
+ULong DRD_(bm_get_bitmap_creation_count)(void)
 {
   return s_bitmap_creation_count;
 }
 
-ULong bm_get_bitmap_merge_count(void)
+ULong DRD_(bm_get_bitmap2_node_creation_count)(void)
 {
   return s_bitmap_merge_count;
 }
 
+ULong DRD_(bm_get_bitmap2_creation_count)(void)
+{
+  return s_bitmap2_creation_count;
+}
 
 
 /** Clear the bitmap contents. */
