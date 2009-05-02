@@ -27,6 +27,8 @@
 #define __DRD_BITMAP_H
 
 
+#include "pub_drd_bitmap.h"
+#include "pub_tool_basics.h"
 #include "pub_tool_oset.h"
 #include "pub_tool_libcbase.h"
 
