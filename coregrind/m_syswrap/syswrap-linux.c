@@ -373,7 +373,7 @@ SysRes ML_(do_fork_clone) ( ThreadId tid, UInt flags,
 #define POST(name)      DEFN_POST_TEMPLATE(linux, name)
 
 // Combine two 32-bit values into a 64-bit value
-#define LOHI64(lo,hi)   ( (lo) | ((ULong)(hi) << 32) )
+#define LOHI64(lo,hi)   ( ((ULong)(lo)) | (((ULong)(hi)) << 32) )
 
 /* ---------------------------------------------------------------------
    *mount wrappers
@@ -2431,7 +2431,7 @@ POST(sys_sigprocmask)
 
 PRE(sys_signalfd)
 {
-   PRINT("sys_signalfd ( %d, %#lx, %llu )", (Int)ARG1, ARG2, (ULong) ARG3);
+   PRINT("sys_signalfd ( %d, %#lx, %llu )", (Int)ARG1,ARG2,(ULong)ARG3);
    PRE_REG_READ3(long, "sys_signalfd",
                  int, fd, vki_sigset_t *, sigmask, vki_size_t, sigsetsize);
    PRE_MEM_READ( "signalfd(sigmask)", ARG2, sizeof(vki_sigset_t) );
@@ -2441,6 +2441,26 @@ PRE(sys_signalfd)
 POST(sys_signalfd)
 {
    if (!ML_(fd_allowed)(RES, "signalfd", tid, True)) {
+      VG_(close)(RES);
+      SET_STATUS_Failure( VKI_EMFILE );
+   } else {
+      if (VG_(clo_track_fds))
+         ML_(record_fd_open_nameless) (tid, RES);
+   }
+}
+
+PRE(sys_signalfd4)
+{
+   PRINT("sys_signalfd4 ( %d, %#lx, %llu, %ld )", (Int)ARG1,ARG2,(ULong)ARG3,ARG4);
+   PRE_REG_READ4(long, "sys_signalfd4",
+                 int, fd, vki_sigset_t *, sigmask, vki_size_t, sigsetsize, int, flags);
+   PRE_MEM_READ( "signalfd(sigmask)", ARG2, sizeof(vki_sigset_t) );
+   if ((int)ARG1 != -1 && !ML_(fd_allowed)(ARG1, "signalfd", tid, False))
+      SET_STATUS_Failure( VKI_EBADF );
+}
+POST(sys_signalfd4)
+{
+   if (!ML_(fd_allowed)(RES, "signalfd4", tid, True)) {
       VG_(close)(RES);
       SET_STATUS_Failure( VKI_EMFILE );
    } else {

@@ -31,7 +31,7 @@
 #include "pub_core_basics.h"
 #include "pub_core_vki.h"
 #include "pub_core_threadstate.h"
-#include "pub_core_debuginfo.h"
+#include "pub_core_debuginfo.h"     // XXX: circular dependency
 #include "pub_core_aspacemgr.h"     // For VG_(is_addressable)()
 #include "pub_core_libcbase.h"
 #include "pub_core_libcassert.h"
@@ -337,8 +337,8 @@ UInt VG_(get_StackTrace_wrk) ( ThreadId tid_if_known,
       UChar buf_lr[M_VG_ERRTXT], buf_ip[M_VG_ERRTXT];
       /* The following conditional looks grossly inefficient and
          surely could be majorly improved, with not much effort. */
-      if (VG_(get_fnname_nodemangle) (lr, buf_lr, M_VG_ERRTXT))
-         if (VG_(get_fnname_nodemangle) (ip, buf_ip, M_VG_ERRTXT))
+      if (VG_(get_fnname_raw) (lr, buf_lr, M_VG_ERRTXT))
+         if (VG_(get_fnname_raw) (ip, buf_ip, M_VG_ERRTXT))
             if (VG_(strncmp)(buf_lr, buf_ip, M_VG_ERRTXT))
                lr_is_first_RA = True;
 #     undef M_VG_ERRTXT
@@ -531,11 +531,7 @@ void VG_(get_and_pp_StackTrace) ( ThreadId tid, UInt n_ips )
 void VG_(apply_StackTrace)( void(*action)(UInt n, Addr ip),
                             StackTrace ips, UInt n_ips )
 {
-   #define MYBUF_LEN 50  // only needs to be long enough for 
-                         // the names specially tested for
-
    Bool main_done = False;
-   Char mybuf[MYBUF_LEN];     // ok to stack allocate mybuf[] -- it's tiny
    Int i = 0;
 
    vg_assert(n_ips > 0);
@@ -545,23 +541,24 @@ void VG_(apply_StackTrace)( void(*action)(UInt n, Addr ip),
       // Stop after the first appearance of "main" or one of the other names
       // (the appearance of which is a pretty good sign that we've gone past
       // main without seeing it, for whatever reason)
-      if ( ! VG_(clo_show_below_main)) {
-         VG_(get_fnname_nodemangle)( ip, mybuf, MYBUF_LEN );
-         mybuf[MYBUF_LEN-1] = 0; // paranoia
-         if ( VG_STREQ("main", mybuf)
-#             if defined(VGO_linux)
-              || VG_STREQ("__libc_start_main", mybuf)   // glibc glibness
-              || VG_STREQ("generic_start_main", mybuf)  // Yellow Dog doggedness
-#             endif
-            )
+      if ( ! VG_(clo_show_below_main) ) {
+         Vg_FnNameKind kind = VG_(get_fnname_kind_from_IP)(ip);
+         if (Vg_FnNameMain == kind || Vg_FnNameBelowMain == kind) {
             main_done = True;
+         }
       }
 
       // Act on the ip
       action(i, ip);
 
       i++;
-   } while (i < n_ips && ips[i] != 0 && !main_done);
+      // re 'while' condition: stop if we hit a zero value (the traditional
+      // end-of-stack marker) or a ~0 value.  The latter because r8818 
+      // (in this file) changes the meaning of entries [1] and above in a
+      // stack trace, by subtracting 1 from them.  Hence stacks that used
+      // to end with a zero value now end in -1 and so we must detect
+      // that too.
+   } while (i < n_ips && ips[i] != 0 && ips[i] != ~(Addr)0 && !main_done);
 
    #undef MYBUF_LEN
 }

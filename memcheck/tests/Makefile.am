@@ -3,20 +3,26 @@
 include $(top_srcdir)/Makefile.flags.am
 
 SUBDIRS = .
-if VGP_X86_LINUX
+
+# Arch-specific tests.
+if VGCONF_ARCHS_INCLUDE_X86
 SUBDIRS += x86
 endif
-if VGP_AMD64_LINUX
+if VGCONF_ARCHS_INCLUDE_AMD64
 SUBDIRS += amd64
 endif
-if VGP_PPC32_LINUX
-SUBDIRS += ppc32
-endif
-if VGP_PPC64_LINUX
-SUBDIRS += ppc64
+
+# OS-specific tests
+if VGCONF_OS_IS_LINUX
+SUBDIRS += linux
 endif
 
-DIST_SUBDIRS = ${VG_ARCH_ALL} .
+# Platform-specific tests
+if VGCONF_PLATFORMS_INCLUDE_X86_LINUX
+SUBDIRS += x86-linux
+endif
+
+DIST_SUBDIRS = x86 amd64 linux x86-linux .
 
 noinst_SCRIPTS = filter_allocs filter_leak_check_size \
 		 filter_stderr filter_stderr_backtrace filter_xml \
@@ -33,7 +39,6 @@ EXTRA_DIST = $(noinst_SCRIPTS) \
 	badloop.stderr.exp badloop.vgtest \
 	badpoll.stderr.exp badpoll.vgtest \
 	badrw.stderr.exp badrw.vgtest \
-	brk.stderr.exp brk.vgtest \
 	brk2.stderr.exp brk2.vgtest \
 	buflen_check.stderr.exp buflen_check.stderr.exp2 buflen_check.vgtest \
 	clientperm.stderr.exp \
@@ -66,10 +71,8 @@ EXTRA_DIST = $(noinst_SCRIPTS) \
 	leak-tree.stderr.exp2 leak-tree.stderr.exp64 \
 	leak-regroot.vgtest leak-regroot.stderr.exp \
 	leakotron.vgtest leakotron.stdout.exp leakotron.stderr.exp \
-	linux-capget linux-capget.stderr.exp \
 	linux-syslog-syscall linux-syslog-syscall.stderr.exp \
 	linux-syscalls-2007 linux-syscalls-2007.stderr.exp \
-	linux-timerfd-syscall linux-timerfd-syscall.stderr.exp \
 	long_namespace_xml.vgtest long_namespace_xml.stdout.exp \
 	long_namespace_xml.stderr.exp \
 	lsframe1.vgtest lsframe1.stdout.exp lsframe1.stderr.exp \
@@ -140,7 +143,6 @@ EXTRA_DIST = $(noinst_SCRIPTS) \
 	sigprocmask.stderr.exp sigprocmask.stderr.exp2 sigprocmask.vgtest \
 	stack_changes.stderr.exp stack_changes.stdout.exp \
 	stack_changes.stdout.exp2 stack_changes.vgtest \
-	stack_switch.stderr.exp stack_switch.vgtest \
 	strchr.stderr.exp strchr.stderr.exp2 strchr.vgtest \
 	str_tester.stderr.exp str_tester.vgtest \
 	supp_unknown.stderr.exp supp_unknown.vgtest supp_unknown.supp \
@@ -162,7 +164,6 @@ EXTRA_DIST = $(noinst_SCRIPTS) \
 	vcpu_fbench.stdout.exp vcpu_fbench.stderr.exp vcpu_fbench.vgtest \
 	vcpu_fnfns.stdout.exp vcpu_fnfns.stdout.exp-glibc28-amd64 \
 	vcpu_fnfns.stderr.exp vcpu_fnfns.vgtest \
-	vgtest_ume.stderr.exp vgtest_ume.disabled \
 	with-space.stderr.exp with-space.stdout.exp with-space.vgtest \
 	wrap1.vgtest wrap1.stdout.exp wrap1.stderr.exp \
 	wrap2.vgtest wrap2.stdout.exp wrap2.stderr.exp \
@@ -180,11 +181,10 @@ EXTRA_DIST = $(noinst_SCRIPTS) \
 	zeropage.stderr.exp zeropage.stderr.exp2 zeropage.stdout.exp \
 	zeropage.vgtest
 
-# vgtest_ume is not working
 check_PROGRAMS = \
 	addressable \
 	badaddrvalue badfree badjump badjump2 \
-	badloop badpoll badrw brk brk2 buflen_check \
+	badloop badpoll badrw brk2 buflen_check \
 	clientperm custom_alloc \
 	deep_templates \
 	describe-block \
@@ -192,10 +192,8 @@ check_PROGRAMS = \
 	file_locking \
 	fprw fwrite hello inits inline \
 	leak-0 leak-cycle leak-pool leak-tree leak-regroot leakotron \
-	linux-capget \
 	linux-syslog-syscall \
 	linux-syscalls-2007 \
-	linux-timerfd-syscall \
 	long_namespace_xml \
 	lsframe1 lsframe2 \
 	mallinfo \
@@ -216,13 +214,13 @@ check_PROGRAMS = \
 	realloc1 realloc2 realloc3 \
 	sh-mem sh-mem-random \
 	sigaltstack signal2 sigprocmask sigkill \
-	stack_changes stack_switch strchr str_tester \
+	stack_changes strchr str_tester \
 	supp_unknown supp1 supp2 suppfree \
 	trivialleak \
 	mismatches new_override metadata \
 	varinfo1 varinfo2 varinfo3 varinfo4 \
 	varinfo5 varinfo5so.so varinfo6 \
-	vcpu_bz2 vcpu_fbench vcpu_fnfns \
+	vcpu_fbench vcpu_fnfns \
 	xml1 \
 	wrap1 wrap2 wrap3 wrap4 wrap5 wrap6 wrap7 wrap7so.so wrap8 \
 	writev zeropage
@@ -237,9 +235,9 @@ AM_CXXFLAGS = $(AM_CFLAGS)
 # Extra stuff for C tests
 memcmptest_CFLAGS	= $(AM_FLAG_M3264_PRI) $(AM_CFLAGS) -fno-builtin-memcmp
 oset_test_CFLAGS	= $(AM_FLAG_M3264_PRI) \
-				-DVGA_$(VG_ARCH_PRI)=1 -DVGO_$(VG_OS)=1 \
-				-DVGP_$(VG_ARCH_PRI)_$(VG_OS)=1
-linux_timerfd_syscall_LDADD = -lrt
+				-DVGA_$(VGCONF_ARCH_PRI)=1 \
+				-DVGO_$(VGCONF_OS)=1 \
+				-DVGP_$(VGCONF_ARCH_PRI)_$(VGCONF_OS)=1
 vcpu_bz2_CFLAGS		= $(AM_FLAG_M3264_PRI) $(AM_CFLAGS) -O2 -g
 vcpu_fbench_CFLAGS	= $(AM_FLAG_M3264_PRI) $(AM_CFLAGS) -O2 -g
 vcpu_fnfns_CFLAGS	= $(AM_FLAG_M3264_PRI) $(AM_CFLAGS) -O2 -g
@@ -248,7 +246,6 @@ wrap6_CFLAGS		= $(AM_FLAG_M3264_PRI) $(AM_CFLAGS) -O2 -g
 
 # Don't allow GCC to inline memcpy(), because then we can't intercept it
 overlap_CFLAGS		= $(AM_CFLAGS) -fno-builtin-memcpy
-stack_switch_LDADD      = -lpthread
 str_tester_CFLAGS	= $(AM_CFLAGS) -Wno-shadow
 supp_unknown_SOURCES	= badjump.c
 supp1_SOURCES		= supp.c
@@ -275,8 +272,8 @@ deep_templates_SOURCES	= deep_templates.cpp
 long_namespace_xml_SOURCES = long_namespace_xml.cpp
 deep_templates_CXXFLAGS	= $(AM_FLAG_M3264_PRI) $(AM_CFLAGS) -O -gstabs
 
-if VGP_PPC32_AIX5
-if VGP_PPC64_AIX5
+if VGCONF_PLATFORMS_INCLUDE_PPC32_AIX5
+if VGCONF_PLATFORMS_INCLUDE_PPC64_AIX5
 else
  # persuade the AIX linker not to junk apparently unused
  # function descriptors.  Unfortunately -Wl,-G -Wl,-bnogc
@@ -295,11 +292,11 @@ endif
 # Build shared object for wrap7
 wrap7_SOURCES           = wrap7.c
 wrap7_DEPENDENCIES      = wrap7so.so
-if VGP_PPC64_AIX5 
+if VGCONF_PLATFORMS_INCLUDE_PPC64_AIX5 
  wrap7_LDADD            = `pwd`/wrap7so.so
  wrap7_LDFLAGS          = $(AM_FLAG_M3264_PRI)
 else
-if VGP_PPC32_AIX5
+if VGCONF_PLATFORMS_INCLUDE_PPC32_AIX5
  wrap7_LDADD            = `pwd`/wrap7so.so
  wrap7_LDFLAGS          = $(AM_FLAG_M3264_PRI) -Wl,-G -Wl,-bnogc
 else
@@ -313,10 +310,10 @@ wrap7so_so_SOURCES      = wrap7so.c
 wrap7so_so_LDADD        = 
 wrap7so_so_DEPENDENCIES = 
 wrap7so_so_CFLAGS       = -fpic $(AM_FLAG_M3264_PRI)
-if VGP_PPC64_AIX5
+if VGCONF_PLATFORMS_INCLUDE_PPC64_AIX5
  wrap7so_so_LDFLAGS     = -fpic $(AM_FLAG_M3264_PRI) -shared
 else
-if VGP_PPC32_AIX5
+if VGCONF_PLATFORMS_INCLUDE_PPC32_AIX5
  wrap7so_so_LDFLAGS     = -fpic $(AM_FLAG_M3264_PRI) -shared \
 				-Wl,-G -Wl,-bnogc
 else
@@ -328,11 +325,11 @@ endif
 # Build shared object for varinfo5
 varinfo5_SOURCES        = varinfo5.c
 varinfo5_DEPENDENCIES   = varinfo5so.so
-if VGP_PPC64_AIX5 
+if VGCONF_PLATFORMS_INCLUDE_PPC64_AIX5 
  varinfo5_LDADD         = `pwd`/varinfo5so.so
  varinfo5_LDFLAGS       = $(AM_FLAG_M3264_PRI)
 else
-if VGP_PPC32_AIX5
+if VGCONF_PLATFORMS_INCLUDE_PPC32_AIX5
  varinfo5_LDADD         = `pwd`/varinfo5so.so
  varinfo5_LDFLAGS       = $(AM_FLAG_M3264_PRI) -Wl,-G -Wl,-bnogc
 else
@@ -346,10 +343,10 @@ varinfo5so_so_SOURCES   = varinfo5so.c
 varinfo5so_so_LDADD     = 
 varinfo5so_so_DEPENDENCIES = 
 varinfo5so_so_CFLAGS    = -fpic $(AM_FLAG_M3264_PRI) -g -O
-if VGP_PPC64_AIX5
+if VGCONF_PLATFORMS_INCLUDE_PPC64_AIX5
  varinfo5so_so_LDFLAGS  = -fpic $(AM_FLAG_M3264_PRI) -shared
 else
-if VGP_PPC32_AIX5
+if VGCONF_PLATFORMS_INCLUDE_PPC32_AIX5
  varinfo5so_so_LDFLAGS  = -fpic $(AM_FLAG_M3264_PRI) -shared \
 				-Wl,-G -Wl,-bnogc
 else
@@ -362,8 +359,4 @@ endif
 #hello_LDFLAGS		= -Wl,-defsym,valt_load_address=0x50000000 \
 #			  -Wl,-T,$(top_builddir)/valt_load_address.lds
 #hello_DEPENDENCIES 	= $(top_builddir)/valt_load_address.lds
-
-# vgtest_ume is not working
-#vgtest_ume_CFLAGS	= -DVGA_$(VG_ARCH_PRI) -DVGO_$(VG_OS)
-#vgtest_ume_LDADD	= ../../coregrind/m_ume.o
 

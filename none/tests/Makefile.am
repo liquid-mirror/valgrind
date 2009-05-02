@@ -3,20 +3,27 @@
 include $(top_srcdir)/Makefile.flags.am
 
 SUBDIRS = .
-if VGP_X86_LINUX
+
+# Arch-specific tests.
+if VGCONF_ARCHS_INCLUDE_X86
 SUBDIRS += x86
 endif
-if VGP_AMD64_LINUX
+if VGCONF_ARCHS_INCLUDE_AMD64
 SUBDIRS += amd64
 endif
-if VGP_PPC32_LINUX
+if VGCONF_ARCHS_INCLUDE_PPC32
 SUBDIRS += ppc32
 endif
-if VGP_PPC64_LINUX
+if VGCONF_ARCHS_INCLUDE_PPC64
 SUBDIRS += ppc64
 endif
 
-DIST_SUBDIRS = ${VG_ARCH_ALL} .
+# OS-specific tests
+if VGCONF_OS_IS_LINUX
+SUBDIRS += linux
+endif
+
+DIST_SUBDIRS = x86 amd64 ppc32 ppc64 linux .
 
 noinst_SCRIPTS = \
 	filter_cmdline0 filter_linenos \
@@ -76,11 +83,6 @@ EXTRA_DIST = $(noinst_SCRIPTS) \
 	map_unaligned.stderr.exp map_unaligned.vgtest \
 	map_unmap.stderr.exp map_unmap.stdout.exp map_unmap.vgtest \
 	mq.stderr.exp mq.vgtest \
-	mremap.stderr.exp mremap.stdout.exp mremap.vgtest \
-	mremap2.stderr.exp \
-	mremap2.stdout.exp mremap2.stdout.exp2 \
-	mremap2.stdout.exp-glibc28-amd64 \
-	mremap2.vgtest \
 	munmap_exe.stderr.exp munmap_exe.vgtest \
 	nestedfns.stderr.exp nestedfns.stdout.exp nestedfns.vgtest \
 	pending.stdout.exp pending.stderr.exp pending.vgtest \
@@ -144,7 +146,7 @@ check_PROGRAMS = \
 	fdleak_fcntl fdleak_ipv4 fdleak_open fdleak_pipe \
 	fdleak_socketpair \
 	floored fork fucomip manythreads \
-	munmap_exe map_unaligned map_unmap mq mremap mremap2 \
+	munmap_exe map_unaligned map_unmap mq \
 	nestedfns \
 	pending \
 	pth_atfork1 pth_blockedsig pth_cancel1 pth_cancel2 pth_cvsimple \
@@ -180,7 +182,7 @@ pth_mutexspeed_LDADD	= -lpthread
 pth_once_LDADD		= -lpthread
 pth_rwlock_LDADD	= -lpthread
 pth_stackalign_LDADD	= -lpthread
-if VGO_AIX5
+if VGCONF_OS_IS_AIX5
  res_search_LDADD       = -lpthread
 else
  res_search_LDADD       = -lresolv -lpthread
@@ -192,7 +194,7 @@ threaded_fork_LDADD	= -lpthread
 threadederrno_LDADD	= -lpthread
 tls_SOURCES		= tls.c tls2.c
 tls_DEPENDENCIES	= tls.so
-if VGO_AIX5
+if VGCONF_OS_IS_AIX5
  tls_LDFLAGS		= 
 else
  tls_LDFLAGS		= -Wl,-rpath,$(top_builddir)/none/tests
@@ -200,7 +202,7 @@ endif
 tls_LDADD		= tls.so -lpthread
 tls_so_SOURCES		= tls_so.c
 tls_so_DEPENDENCIES	= tls2.so
-if VGO_AIX5
+if VGCONF_OS_IS_AIX5
  tls_so_LDFLAGS		= -shared -fPIC
  tls_so_LDADD		= `pwd`/tls2.so
 else

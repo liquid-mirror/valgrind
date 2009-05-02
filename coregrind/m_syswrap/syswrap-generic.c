@@ -2029,7 +2029,7 @@ ML_(generic_PRE_sys_mmap) ( ThreadId tid,
 #define POST(name)     DEFN_POST_TEMPLATE(generic, name)
 
 // Combine two 32-bit values into a 64-bit value
-#define LOHI64(lo,hi)   ( (lo) | ((ULong)(hi) << 32) )
+#define LOHI64(lo,hi)   ( ((ULong)(lo)) | (((ULong)(hi)) << 32) )
 
 //zz //PRE(sys_exit_group, Special)
 //zz //{
@@ -3351,10 +3351,9 @@ PRE(sys_ioctl)
       PRE_MEM_WRITE( "ioctl(SG_GET_RESERVED_SIZE)", ARG3, sizeof(int) );
       break;
    case VKI_SG_GET_TIMEOUT:
-      PRE_MEM_WRITE( "ioctl(SG_GET_TIMEOUT)", ARG3, sizeof(int) );
       break;
    case VKI_SG_GET_VERSION_NUM:
-      PRE_MEM_READ(  "ioctl(SG_GET_VERSION_NUM)",  ARG3, sizeof(int) );
+      PRE_MEM_WRITE(  "ioctl(SG_GET_VERSION_NUM)",  ARG3, sizeof(int) );
       break;
    case VKI_SG_EMULATED_HOST: /* 0x2203 */
       PRE_MEM_WRITE( "ioctl(SG_EMULATED_HOST)",    ARG3, sizeof(int) );
@@ -4431,9 +4430,9 @@ POST(sys_ioctl)
       POST_MEM_WRITE(ARG3, sizeof(int));
       break;
    case VKI_SG_GET_TIMEOUT:
-      POST_MEM_WRITE(ARG3, sizeof(int));
       break;
    case VKI_SG_GET_VERSION_NUM:
+      POST_MEM_WRITE(ARG3, sizeof(int));
       break;
    case VKI_SG_EMULATED_HOST:
       POST_MEM_WRITE(ARG3, sizeof(int));

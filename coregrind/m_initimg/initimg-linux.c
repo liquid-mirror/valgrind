@@ -202,8 +202,8 @@ static void load_client ( /*OUT*/ExeInfo* info,
 /* Prepare the client's environment.  This is basically a copy of our
    environment, except:
 
-     LD_PRELOAD=$VALGRIND_LIB/PLATFORM/vgpreload_core.so:
-                ($VALGRIND_LIB/PLATFORM/vgpreload_TOOL.so:)?
+     LD_PRELOAD=$VALGRIND_LIB/vgpreload_core-PLATFORM.so:
+                ($VALGRIND_LIB/vgpreload_TOOL-PLATFORM.so:)?
                 $LD_PRELOAD
 
    If this is missing, then it is added.
@@ -242,18 +242,18 @@ static HChar** setup_client_env ( HChar** origenv, const HChar* toolname)
                                            preload_string_len);
    vg_assert(preload_string);
 
-   /* Determine if there's a vgpreload_<tool>.so file, and setup
+   /* Determine if there's a vgpreload_<tool>_<platform>.so file, and setup
       preload_string. */
    preload_tool_path = VG_(malloc)("initimg-linux.sce.2", preload_tool_path_len);
    vg_assert(preload_tool_path);
    VG_(snprintf)(preload_tool_path, preload_tool_path_len,
-                 "%s/%s/vgpreload_%s.so", VG_(libdir), VG_PLATFORM, toolname);
+                 "%s/vgpreload_%s-%s.so", VG_(libdir), toolname, VG_PLATFORM);
    if (VG_(access)(preload_tool_path, True/*r*/, False/*w*/, False/*x*/) == 0) {
-      VG_(snprintf)(preload_string, preload_string_len, "%s/%s/%s.so:%s", 
-                    VG_(libdir), VG_PLATFORM, preload_core, preload_tool_path);
+      VG_(snprintf)(preload_string, preload_string_len, "%s/%s-%s.so:%s", 
+                    VG_(libdir), preload_core, VG_PLATFORM, preload_tool_path);
    } else {
-      VG_(snprintf)(preload_string, preload_string_len, "%s/%s/%s.so", 
-                    VG_(libdir), VG_PLATFORM, preload_core);
+      VG_(snprintf)(preload_string, preload_string_len, "%s/%s-%s.so", 
+                    VG_(libdir), preload_core, VG_PLATFORM);
    }
    VG_(free)(preload_tool_path);
 
@@ -412,6 +412,38 @@ static char *copy_str(char **tab, const char *str)
 
    ---------------------------------------------------------------- */
 
+struct auxv
+{
+   Word a_type;
+   union {
+      void *a_ptr;
+      Word a_val;
+   } u;
+};
+
+static
+struct auxv *find_auxv(UWord* sp)
+{
+   sp++;                // skip argc (Nb: is word-sized, not int-sized!)
+
+   while (*sp != 0)     // skip argv
+      sp++;
+   sp++;
+
+   while (*sp != 0)     // skip env
+      sp++;
+   sp++;
+   
+#if defined(VGA_ppc32) || defined(VGA_ppc64)
+# if defined AT_IGNOREPPC
+   while (*sp == AT_IGNOREPPC)        // skip AT_IGNOREPPC entries
+      sp += 2;
+# endif
+#endif
+
+   return (struct auxv *)sp;
+}
+
 static 
 Addr setup_client_stack( void*  init_sp,
                          char** orig_envp, 
@@ -425,9 +457,9 @@ Addr setup_client_stack( void*  init_sp,
    char *strtab;		/* string table */
    char *stringbase;
    Addr *ptr;
-   struct ume_auxv *auxv;
-   const struct ume_auxv *orig_auxv;
-   const struct ume_auxv *cauxv;
+   struct auxv *auxv;
+   const struct auxv *orig_auxv;
+   const struct auxv *cauxv;
    unsigned stringsize;		/* total size of strings in bytes */
    unsigned auxsize;		/* total size of auxv in bytes */
    Int argc;			/* total argc */
@@ -442,7 +474,7 @@ Addr setup_client_stack( void*  init_sp,
    vg_assert( VG_(args_for_client) );
 
    /* use our own auxv as a prototype */
-   orig_auxv = VG_(find_auxv)(init_sp);
+   orig_auxv = find_auxv(init_sp);
 
    /* ==================== compute sizes ==================== */
 
@@ -636,7 +668,7 @@ Addr setup_client_stack( void*  init_sp,
    *ptr++ = 0;
 
    /* --- auxv --- */
-   auxv = (struct ume_auxv *)ptr;
+   auxv = (struct auxv *)ptr;
    *client_auxv = (UInt *)auxv;
 
 #  if defined(VGP_ppc32_linux) || defined(VGP_ppc64_linux)

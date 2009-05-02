@@ -28,9 +28,6 @@ sed "/For more details, rerun with: -v/d"                             |
 # Anonymise line numbers in vg_replace_malloc.c, remove dirname if present
 sed "s/\(m_replacemalloc\/\)\?vg_replace_malloc.c:[0-9]*/vg_replace_malloc.c:.../"           |
 
-# Anonymise vg_intercept lines
-#sed "s/vg_intercept.c:[0-9]*/vg_intercept.c:.../"                     |
-
 # Hide suppressed error counts
 sed "s/^\(ERROR SUMMARY[^(]*(suppressed: \)[0-9]*\( from \)[0-9]*)$/\10\20)/" |
 
@@ -45,7 +42,7 @@ sed "/warning: line info addresses out of order/d"                     |
 # of the bash process. Newer bash versions redirect such messages properly.
 # Suppress any redirected abnormal termination messages. You can find the
 # complete list of messages in the bash source file siglist.c.
-sed -r "/^(Segmentation fault|Alarm clock|Aborted)( \(core dumped\))?$/d" |
+sed -r "/^(Segmentation fault|Alarm clock|Aborted|Bus error)( \(core dumped\))?$/d" |
 
 # Remove any ": dumping core" message as the user might have a
 # limit set that prevents the core dump
