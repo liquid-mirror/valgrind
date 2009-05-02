@@ -47,48 +47,15 @@ Bool DRD_(handle_client_request)(ThreadId vg_tid, UWord* arg, UWord* ret);
 static Addr DRD_(highest_used_stack_address)(const ThreadId vg_tid);
 
 
+/* Function definitions. */
+
 /**
- * Walk the stack up to the highest stack frame, and return the stack pointer
- * of the highest stack frame. It is assumed that there are no more than
- * ten stack frames above the current frame. This should be no problem
- * since this function is either called indirectly from the _init() function
- * in vgpreload_exp-drd-*.so or from the thread wrapper for a newly created
- * thread. See also drd_pthread_intercepts.c.
+ * Tell the Valgrind core the address of the DRD function that processes
+ * client requests. Must be called before any client code is run.
  */
-static Addr DRD_(highest_used_stack_address)(const ThreadId vg_tid)
+void DRD_(clientreq_init)(void)
 {
-    UInt nframes;
-    const UInt n_ips = 10;
-    UInt i;
-    Addr ips[n_ips], sps[n_ips];
-    Addr husa;
-
-    nframes = VG_(get_StackTrace)(vg_tid, ips, n_ips, sps, 0, 0);
-    tl_assert(1 <= nframes && nframes <= n_ips);
-
-    /* A hack to work around VG_(get_StackTrace)()'s behavior that sometimes */
-    /* the topmost stackframes it returns are bogus (this occurs sometimes   */
-    /* at least on amd64, ppc32 and ppc64).                                  */
-
-    husa = sps[0];
-
-    tl_assert(VG_(thread_get_stack_max)(vg_tid)
-              - VG_(thread_get_stack_size)(vg_tid) <= husa
-              && husa < VG_(thread_get_stack_max)(vg_tid));
-
-    for (i = 1; i < nframes; i++)
-    {
-      if (sps[i] == 0)
-        break;
-      if (husa < sps[i] && sps[i] < VG_(thread_get_stack_max)(vg_tid))
-        husa = sps[i];
-    }
-
-    tl_assert(VG_(thread_get_stack_max)(vg_tid)
-              - VG_(thread_get_stack_size)(vg_tid) <= husa
-              && husa < VG_(thread_get_stack_max)(vg_tid));
-
-    return husa;
+  VG_(needs_client_requests)(DRD_(handle_client_request));
 }
 
 /**
@@ -115,11 +82,11 @@ Bool DRD_(handle_client_request)(ThreadId vg_tid, UWord* arg, UWord* ret)
     break;
 
   case VG_USERREQ__DRD_START_SUPPRESSION:
-    drd_start_suppression(arg[1], arg[1] + arg[2], "client");
+    DRD_(start_suppression)(arg[1], arg[1] + arg[2], "client");
     break;
 
   case VG_USERREQ__DRD_FINISH_SUPPRESSION:
-    drd_finish_suppression(arg[1], arg[1] + arg[2]);
+    DRD_(finish_suppression)(arg[1], arg[1] + arg[2]);
     break;
 
   case VG_USERREQ__DRD_SUPPRESS_CURRENT_STACK:
@@ -143,8 +110,8 @@ Bool DRD_(handle_client_request)(ThreadId vg_tid, UWord* arg, UWord* ret)
     }
 #endif
     thread_set_stack_startup(drd_tid, VG_(get_SP)(vg_tid));
-    drd_start_suppression(topmost_sp, VG_(thread_get_stack_max)(vg_tid),
-                          "stack top");
+    DRD_(start_suppression)(topmost_sp, VG_(thread_get_stack_max)(vg_tid),
+                            "stack top");
     break;
   }
 
@@ -153,11 +120,11 @@ Bool DRD_(handle_client_request)(ThreadId vg_tid, UWord* arg, UWord* ret)
     break;
 
   case VG_USERREQ__DRD_START_TRACE_ADDR:
-    drd_start_tracing_address_range(arg[1], arg[1] + arg[2]);
+    DRD_(start_tracing_address_range)(arg[1], arg[1] + arg[2]);
     break;
 
   case VG_USERREQ__DRD_STOP_TRACE_ADDR:
-    drd_stop_tracing_address_range(arg[1], arg[1] + arg[2]);
+    DRD_(stop_tracing_address_range)(arg[1], arg[1] + arg[2]);
     break;
 
   case VG_USERREQ__DRD_STOP_RECORDING:
@@ -411,10 +378,45 @@ Bool DRD_(handle_client_request)(ThreadId vg_tid, UWord* arg, UWord* ret)
 }
 
 /**
- * Tell the Valgrind core the address of the DRD function that processes
- * client requests. Must be called before any client code is run.
+ * Walk the stack up to the highest stack frame, and return the stack pointer
+ * of the highest stack frame. It is assumed that there are no more than
+ * ten stack frames above the current frame. This should be no problem
+ * since this function is either called indirectly from the _init() function
+ * in vgpreload_exp-drd-*.so or from the thread wrapper for a newly created
+ * thread. See also drd_pthread_intercepts.c.
  */
-void DRD_(clientreq_init)(void)
+static Addr DRD_(highest_used_stack_address)(const ThreadId vg_tid)
 {
-  VG_(needs_client_requests)(DRD_(handle_client_request));
+    UInt nframes;
+    const UInt n_ips = 10;
+    UInt i;
+    Addr ips[n_ips], sps[n_ips];
+    Addr husa;
+
+    nframes = VG_(get_StackTrace)(vg_tid, ips, n_ips, sps, 0, 0);
+    tl_assert(1 <= nframes && nframes <= n_ips);
+
+    /* A hack to work around VG_(get_StackTrace)()'s behavior that sometimes */
+    /* the topmost stackframes it returns are bogus (this occurs sometimes   */
+    /* at least on amd64, ppc32 and ppc64).                                  */
+
+    husa = sps[0];
+
+    tl_assert(VG_(thread_get_stack_max)(vg_tid)
+              - VG_(thread_get_stack_size)(vg_tid) <= husa
+              && husa < VG_(thread_get_stack_max)(vg_tid));
+
+    for (i = 1; i < nframes; i++)
+    {
+      if (sps[i] == 0)
+        break;
+      if (husa < sps[i] && sps[i] < VG_(thread_get_stack_max)(vg_tid))
+        husa = sps[i];
+    }
+
+    tl_assert(VG_(thread_get_stack_max)(vg_tid)
+              - VG_(thread_get_stack_size)(vg_tid) <= husa
+              && husa < VG_(thread_get_stack_max)(vg_tid));
+
+    return husa;
 }
