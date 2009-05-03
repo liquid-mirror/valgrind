@@ -213,8 +213,10 @@ static __inline__ void bm0_set(UWord* bm0, const UWord a)
    bm0[uword_msb(a)] |= (UWord)1 << uword_lsb(a);
 }
 
-/** Set the bits corresponding to all of the addresses in range
- *  [ a .. a + size [ in bitmap bm0.
+/**
+ * Set the bits corresponding to all of the addresses in range
+ * [ a << ADDR_IGNORED_BITS .. (a + size) << ADDR_IGNORED_BITS [
+ * in bitmap bm0.
  */
 static __inline__ void bm0_set_range(UWord* bm0,
                                      const UWord a, const SizeT size)
@@ -238,13 +240,17 @@ static __inline__ void bm0_clear(UWord* bm0, const UWord a)
    bm0[uword_msb(a)] &= ~((UWord)1 << uword_lsb(a));
 }
 
-/** Clear all of the addresses in range [ a .. a + size [ in bitmap bm0. */
+/**
+ * Clear all of the addresses in range
+ * [ a << ADDR_IGNORED_BITS .. (a + size) << ADDR_IGNORED_BITS [
+ * in bitmap bm0.
+ */
 static __inline__ void bm0_clear_range(UWord* bm0,
                                        const UWord a, const SizeT size)
 {
 #ifdef ENABLE_DRD_CONSISTENCY_CHECKS
    tl_assert(address_msb(make_address(0, a)) == 0);
-   tl_assert(address_msb(make_address(0, a) + size) == 0);
+   tl_assert(size == 0 || address_msb(make_address(0, a + size - 1)) == 0);
    tl_assert(size == 0 || uword_msb(a) == uword_msb(a + size - 1));
 #endif
    /*
@@ -268,7 +274,11 @@ static __inline__ UWord bm0_is_set(const UWord* bm0, const UWord a)
    return (bm0[uword_msb(a)] & ((UWord)1 << uword_lsb(a)));
 }
 
-/** Return true if any of the bits [ a .. a+size [ are set in bm0. */
+/**
+ * Return true if a bit corresponding to any of the addresses in range
+ * [ a << ADDR_IGNORED_BITS .. (a + size) << ADDR_IGNORED_BITS [
+ * is set in bm0.
+ */
 static __inline__ UWord bm0_is_any_set(const UWord* bm0,
                                        const Addr a, const SizeT size)
 {
