@@ -55,7 +55,6 @@
 
 /* Local variables. */
 
-static Bool DRD_(s_first_race_only)  = False;
 static Bool DRD_(s_print_stats)      = False;
 static Bool DRD_(s_var_info)         = False;
 static Bool DRD_(s_show_stack_usage) = False;
@@ -68,6 +67,7 @@ static Bool DRD_(process_cmd_line_option)(Char* arg)
 {
    int check_stack_accesses   = -1;
    int exclusive_threshold_ms = -1;
+   int first_race_only        = -1;
    int report_signal_unlocked = -1;
    int segment_merging        = -1;
    int shared_threshold_ms    = -1;
@@ -87,7 +87,7 @@ static Bool DRD_(process_cmd_line_option)(Char* arg)
 
    if      VG_BOOL_CLO(arg, "--check-stack-var",     check_stack_accesses) {}
    else if VG_BOOL_CLO(arg, "--drd-stats",           DRD_(s_print_stats)) {}
-   else if VG_BOOL_CLO(arg, "--first-race-only",     DRD_(s_first_race_only)) {}
+   else if VG_BOOL_CLO(arg, "--first-race-only",     first_race_only) {}
    else if VG_BOOL_CLO(arg,"--report-signal-unlocked",report_signal_unlocked) {}
    else if VG_BOOL_CLO(arg, "--segment-merging",     segment_merging) {}
    else if VG_BOOL_CLO(arg, "--show-confl-seg",      show_confl_seg) {}
@@ -117,6 +117,10 @@ static Bool DRD_(process_cmd_line_option)(Char* arg)
    {
       DRD_(mutex_set_lock_threshold)(exclusive_threshold_ms);
       DRD_(rwlock_set_exclusive_threshold)(exclusive_threshold_ms);
+   }
+   if (first_race_only != -1)
+   {
+      DRD_(set_first_race_only)(first_race_only);
    }
    if (report_signal_unlocked != -1)
    {
@@ -567,13 +571,13 @@ static void DRD_(fini)(Int exitcode)
                    DRD_(thread_get_context_switch_count)(),
                    update_conflict_set_count);
       VG_(message)(Vg_UserMsg,
-                   "           (%lld new sg + %lld combine vc + %lld csw);",
+                   "           (%lld new sg + %lld combine vc + %lld csw).",
                    dsnsc,
                    dscvc,
                    update_conflict_set_count - dsnsc - dscvc);
       VG_(message)(Vg_UserMsg,
                    " segments: created %lld segments, max %lld alive,"
-                   " %lld discard points,",
+                   " %lld discard points.",
                    DRD_(sg_get_segments_created_count)(),
                    DRD_(sg_get_max_segments_alive_count)(),
                    DRD_(thread_get_discard_ordered_segments_count)());
@@ -591,7 +595,7 @@ static void DRD_(fini)(Int exitcode)
                    DRD_(bm_get_bitmap_creation_count)(),
                    DRD_(bm_get_bitmap2_node_creation_count)());
       VG_(message)(Vg_UserMsg,
-                   "           %lld level 2 bitmaps were allocated.",
+                   "           and %lld level 2 bitmaps were allocated.",
                    DRD_(bm_get_bitmap2_creation_count)());
       VG_(message)(Vg_UserMsg,
                    "    mutex: %lld non-recursive lock/unlock events.",
