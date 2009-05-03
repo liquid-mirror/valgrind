@@ -1152,7 +1152,7 @@ ULong DRD_(bm_get_bitmap_creation_count)(void)
 
 ULong DRD_(bm_get_bitmap2_node_creation_count)(void)
 {
-   return s_bitmap_merge_count;
+   return s_bitmap2_node_creation_count;
 }
 
 ULong DRD_(bm_get_bitmap2_creation_count)(void)
@@ -1160,6 +1160,10 @@ ULong DRD_(bm_get_bitmap2_creation_count)(void)
    return s_bitmap2_creation_count;
 }
 
+ULong DRD_(bm_get_bitmap2_merge_count)(void)
+{
+   return s_bitmap2_merge_count;
+}
 
 /** Clear the bitmap contents. */
 void bm2_clear(struct bitmap2* const bm2)
@@ -1206,14 +1210,4 @@ void bm2_xor(struct bitmap2* const bm2l, const struct bitmap2* const bm2r)
    {
       bm2l->bm1.bm0_w[k] ^= bm2r->bm1.bm0_w[k];
    }
-}
-
-ULong bm_get_bitmap2_creation_count(void)
-{
-   return s_bitmap2_creation_count;
-}
-
-ULong bm_get_bitmap2_merge_count(void)
-{
-   return s_bitmap2_merge_count;
 }

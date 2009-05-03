@@ -262,7 +262,7 @@ ULong DRD_(sg_get_max_segments_alive_count)(void)
    return s_max_segments_alive_count;
 }
 
-ULong sg_get_segment_merge_count(void)
+ULong DRD_(sg_get_segment_merge_count)(void)
 {
    return s_segment_merge_count;
 }

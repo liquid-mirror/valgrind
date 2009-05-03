@@ -127,7 +127,7 @@ void DRD_(bm_print)(struct bitmap* bm);
 ULong DRD_(bm_get_bitmap_creation_count)(void);
 ULong DRD_(bm_get_bitmap2_node_creation_count)(void);
 ULong DRD_(bm_get_bitmap2_creation_count)(void);
-ULong bm_get_bitmap2_merge_count(void);
+ULong DRD_(bm_get_bitmap2_merge_count)(void);
 
 /* Second-level bitmaps. */
 void bm2_clear(struct bitmap2* const bm2);

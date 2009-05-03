@@ -63,7 +63,6 @@ static ULong    s_conflict_set_new_segment_count;
 static ULong    s_conflict_set_combine_vc_count;
 static ULong    s_conflict_set_bitmap_creation_count;
 static ULong    s_conflict_set_bitmap2_creation_count;
-static ULong    s_compute_conflict_set_bitmap2_count;
 static ThreadId s_vg_running_tid  = VG_INVALID_THREADID;
 DrdThreadId     DRD_(g_drd_running_tid) = DRD_INVALID_THREADID;
 ThreadInfo      DRD_(g_threadinfo)[DRD_N_THREADS];
@@ -1178,9 +1177,4 @@ ULong DRD_(thread_get_conflict_set_bitmap_creation_count)(void)
 ULong DRD_(thread_get_conflict_set_bitmap2_creation_count)(void)
 {
    return s_conflict_set_bitmap2_creation_count;
-}
-
-ULong thread_get_compute_conflict_set_bitmap2_count(void)
-{
-  return s_compute_conflict_set_bitmap2_count;
 }

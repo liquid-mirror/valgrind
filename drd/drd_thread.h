@@ -169,7 +169,6 @@ ULong DRD_(thread_get_discard_ordered_segments_count)(void);
 ULong DRD_(thread_get_update_conflict_set_count)(ULong* dsnsc, ULong* dscvc);
 ULong DRD_(thread_get_conflict_set_bitmap_creation_count)(void);
 ULong DRD_(thread_get_conflict_set_bitmap2_creation_count)(void);
-ULong thread_get_compute_conflict_set_bitmap2_count(void);
 
 
 /* Inline function definitions. */

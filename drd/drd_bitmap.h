@@ -180,6 +180,7 @@ Addr first_address_with_higher_uword_msb(const Addr a)
 /* Local variables. */
 
 static ULong s_bitmap2_creation_count;
+static ULong s_bitmap2_node_creation_count;
 
 
 
